@@ -30,16 +30,16 @@ func TestFetchTxsReturnsCursorRewindBeforeReorgMutation(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(sidecar.ChainBlockResp{
 				Height:       101,
 				Reward:       defaultCoinbaseValue,
-				Hash:         "canonical-101",
-				PreviousHash: "canonical-100",
+				Hash:         testBlockHash(101),
+				PreviousHash: testBlockHash(100),
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/chain/block/100":
 			block100Calls <- struct{}{}
 			_ = json.NewEncoder(w).Encode(sidecar.ChainBlockResp{
 				Height:       100,
 				Reward:       defaultCoinbaseValue,
-				Hash:         "canonical-100",
-				PreviousHash: "hash-99",
+				Hash:         testBlockHash(100),
+				PreviousHash: testBlockHash(99),
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/scanner/sync":
 			w.WriteHeader(http.StatusConflict)
@@ -72,8 +72,8 @@ func TestFetchTxsReturnsCursorRewindBeforeReorgMutation(t *testing.T) {
 	reorgStore := NewReorgStore(db)
 	stale := &reorgBlockMeta{
 		Height:               100,
-		BlockHash:            "stale-100",
-		PreviousHash:         "hash-99",
+		BlockHash:            testStaleBlockHash(100),
+		PreviousHash:         testBlockHash(99),
 		CustomerTransactions: []string{"orphaned-tx"},
 	}
 	if err = reorgStore.Set(stale); err != nil {

@@ -3,7 +3,6 @@ package monero
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -40,8 +39,8 @@ func TestFetchTxsCallsScannerSyncWithBlockMetadata(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(sidecar.ChainBlockResp{
 				Height:       height,
 				Reward:       defaultCoinbaseValue + 200000,
-				Hash:         fmt.Sprintf("hash-%d", height),
-				PreviousHash: fmt.Sprintf("hash-%d", height-1),
+				Hash:         testBlockHash(height),
+				PreviousHash: testBlockHash(height - 1),
 				TxHashes:     []string{},
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/scanner/sync":
@@ -81,11 +80,11 @@ func TestFetchTxsCallsScannerSyncWithBlockMetadata(t *testing.T) {
 	if captured.TipHeight != 150 {
 		t.Fatalf("expected tip height 150, got %d", captured.TipHeight)
 	}
-	if captured.BlockHash != "hash-100" {
-		t.Fatalf("expected block hash hash-100, got %s", captured.BlockHash)
+	if captured.BlockHash != testBlockHash(100) {
+		t.Fatalf("expected block hash %s, got %s", testBlockHash(100), captured.BlockHash)
 	}
-	if captured.ParentHash != "hash-99" {
-		t.Fatalf("expected parent hash hash-99, got %s", captured.ParentHash)
+	if captured.ParentHash != testBlockHash(99) {
+		t.Fatalf("expected parent hash %s, got %s", testBlockHash(99), captured.ParentHash)
 	}
 	if captured.ReorgWindow != 72 {
 		t.Fatalf("expected reorg window 72, got %d", captured.ReorgWindow)
@@ -112,8 +111,8 @@ func TestFetchTxsMapsScannerSyncHashMismatchToUnavailableBlock(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(sidecar.ChainBlockResp{
 				Height:       height,
 				Reward:       defaultCoinbaseValue + 200000,
-				Hash:         fmt.Sprintf("hash-%d", height),
-				PreviousHash: fmt.Sprintf("hash-%d", height-1),
+				Hash:         testBlockHash(height),
+				PreviousHash: testBlockHash(height - 1),
 				TxHashes:     []string{},
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/scanner/sync":

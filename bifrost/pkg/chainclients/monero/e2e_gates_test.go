@@ -132,8 +132,8 @@ func newFrostTransfersServer(
 			_ = json.NewEncoder(w).Encode(sidecar.ChainBlockResp{
 				Height:       height,
 				Reward:       defaultCoinbaseValue + 200000,
-				Hash:         "hash-" + rawHeight,
-				PreviousHash: "hash-" + strconv.FormatInt(height-1, 10),
+				Hash:         testBlockHash(height),
+				PreviousHash: testBlockHash(height - 1),
 				TxHashes:     chainTxHashes,
 			})
 		case strings.HasPrefix(r.URL.Path, "/v1/monero/chain/tx/") && strings.HasSuffix(r.URL.Path, "/exists"):

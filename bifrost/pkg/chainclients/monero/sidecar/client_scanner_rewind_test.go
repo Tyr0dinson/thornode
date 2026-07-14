@@ -293,7 +293,7 @@ func TestRewindScannerForReorgSerializesSyncAndSeedsContinuity(t *testing.T) {
 
 	syncResult := make(chan error, 1)
 	go func() {
-		_, err := client.SyncAt(90, 100, "hash-90", anchorHash, 10)
+		_, err := client.SyncAt(90, 100, strings.Repeat("e", 64), anchorHash, 10)
 		syncResult <- err
 	}()
 	select {
@@ -313,6 +313,87 @@ func TestRewindScannerForReorgSerializesSyncAndSeedsContinuity(t *testing.T) {
 	if req.ResetEpoch == nil || *req.ResetEpoch != 4 ||
 		req.ExpectedNextHeight == nil || *req.ExpectedNextHeight != 90 {
 		t.Fatalf("sync did not bind post-rewind continuity: %+v", req)
+	}
+}
+
+// A 5xx is neither ambiguous (no replay) nor definitive (the latch is retained),
+// so the pending rewind stays set. A deeper reorg then supersedes it. Because the
+// authenticated cursor provably never moved, the new rewind must still go through
+// rather than latching reorg recovery shut for the life of the process.
+func TestRewindScannerForReorgSupersedesPendingRewindWhenCursorNeverMoved(t *testing.T) {
+	t.Parallel()
+
+	firstAnchor := strings.Repeat("a", 64)
+	secondAnchor := strings.Repeat("b", 64)
+	var postCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == scannerStatePath:
+			// The cursor never moves: epoch 3 / next 100 throughout.
+			writeScannerRewindTestState(w, 3, 100, 99, strings.Repeat("c", 64), strings.Repeat("d", 64))
+		case r.Method == http.MethodPost && r.URL.Path == scannerRewindPath:
+			if postCalls.Add(1) == 1 {
+				http.Error(w, "boom", http.StatusInternalServerError)
+				return
+			}
+			var req ScannerRewindReq
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if req.TargetNextHeight != 85 || req.AnchorHeight != 84 || req.AnchorHash != secondAnchor {
+				t.Errorf("second rewind did not carry the superseding anchor: %+v", req)
+			}
+			if req.ExpectedResetEpoch != 3 || req.ExpectedNextHeight != 100 {
+				t.Errorf("second rewind did not bind the unmoved cursor: %+v", req)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(ScannerRewindResp{
+				Rewound:            true,
+				PreviousNextHeight: 100,
+				NextHeight:         85,
+				ResetEpoch:         4,
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := newScannerRewindTestClient(t, server.URL)
+	if _, err := client.RewindScannerForReorg(90, 89, firstAnchor); err == nil {
+		t.Fatal("expected the 5xx rewind to fail")
+	}
+	if client.pendingScannerRewind == nil {
+		t.Fatal("a 5xx rewind must latch a pending result")
+	}
+
+	resp, err := client.RewindScannerForReorg(85, 84, secondAnchor)
+	if err != nil {
+		t.Fatalf("superseding rewind was refused after an unresolved pending rewind: %v", err)
+	}
+	if !resp.Rewound || resp.NextHeight != 85 || resp.ResetEpoch != 4 {
+		t.Fatalf("unexpected superseding rewind response: %+v", resp)
+	}
+	if client.pendingScannerRewind != nil {
+		t.Fatal("a committed rewind must clear the pending latch")
+	}
+}
+
+func TestRewindScannerForReorgRejectsNonHexAnchor(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("an invalid anchor hash must never reach the sidecar: %s", r.URL.Path)
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	client := newScannerRewindTestClient(t, server.URL)
+	for _, anchor := range []string{"", "not-hex", strings.Repeat("a", 63), strings.Repeat("z", 64)} {
+		if _, err := client.RewindScannerForReorg(90, 89, anchor); err == nil {
+			t.Fatalf("expected anchor %q to be rejected client-side", anchor)
+		}
 	}
 }
 

@@ -2,7 +2,6 @@ package monero
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -255,8 +254,8 @@ func newMockFrostServer(t *testing.T, blockHeight int64, outgoing []sidecar.Tran
 			_ = json.NewEncoder(w).Encode(sidecar.ChainBlockResp{
 				Height:       height,
 				Reward:       defaultCoinbaseValue + 200000,
-				Hash:         fmt.Sprintf("hash-%d", height),
-				PreviousHash: fmt.Sprintf("hash-%d", height-1),
+				Hash:         testBlockHash(height),
+				PreviousHash: testBlockHash(height - 1),
 				TxHashes:     []string{},
 			})
 

@@ -250,3 +250,16 @@ func expectedXMRVaultAddressFromKeygenRequest(vaultPubKeyFrost string) (common.A
 	}
 	return expectedXMRVaultAddress(pubKey)
 }
+
+// testBlockHash builds a deterministic, height-keyed 64-hex block hash. The
+// sidecar client validates block_hash/parent_hash as 32-byte hex, matching what
+// monerod actually returns, so fixtures must look like real hashes.
+func testBlockHash(height int64) string {
+	return fmt.Sprintf("%064x", height)
+}
+
+// testStaleBlockHash is a valid but different 64-hex hash for the same height:
+// the block a reorg discarded.
+func testStaleBlockHash(height int64) string {
+	return fmt.Sprintf("ff%062x", height)
+}

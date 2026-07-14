@@ -25,7 +25,16 @@ import (
 )
 
 const (
-	defaultSignCombineMaxAttempts    = 3
+	// Retrying combine is only safe against a duplicate Monero broadcast if the
+	// signer durably replays combine by (msg_id, session_id, all_shares). No
+	// capability in RequireCompatibility asserts that contract yet, and the
+	// sidecar image digest is unpinned, so a rollback to a signer without the
+	// durable path would silently double-broadcast. Stay single-shot until the
+	// signer advertises an idempotent-combine capability and NewClient requires
+	// it; then restore this to 3. The backoff policy below stays wired so that
+	// is a one-line change.
+	// ponytail: single-shot combine, raise once idempotency is handshake-proven.
+	defaultSignCombineMaxAttempts    = 1
 	defaultSignCombineInitialBackoff = 200 * time.Millisecond
 	defaultSignCombineMaxBackoff     = time.Second
 	scannerStatePath                 = "/v1/monero/scanner/state"
@@ -531,11 +540,11 @@ func (c *Client) SyncAt(height, tipHeight int64, blockHash, parentHash string, r
 	if reorgWindow < 0 {
 		reorgWindow = 0
 	}
-	normalizedBlockHash, err := normalizeScannerRequestHash("block_hash", blockHash)
+	normalizedBlockHash, err := normalizeScannerHash("block_hash", blockHash)
 	if err != nil {
 		return Transfers{}, err
 	}
-	normalizedParentHash, err := normalizeScannerRequestHash("parent_hash", parentHash)
+	normalizedParentHash, err := normalizeScannerHash("parent_hash", parentHash)
 	if err != nil {
 		return Transfers{}, err
 	}
@@ -607,11 +616,11 @@ func (c *Client) PreflightScannerHeight(requestedHeight int64, blockHash, parent
 	if requestedHeight == math.MaxInt64 {
 		return fmt.Errorf("height cannot advance beyond the int64 scanner range")
 	}
-	normalizedBlockHash, err := normalizeScannerRequestHash("block_hash", blockHash)
+	normalizedBlockHash, err := normalizeScannerHash("block_hash", blockHash)
 	if err != nil {
 		return err
 	}
-	normalizedParentHash, err := normalizeScannerRequestHash("parent_hash", parentHash)
+	normalizedParentHash, err := normalizeScannerHash("parent_hash", parentHash)
 	if err != nil {
 		return err
 	}
@@ -666,7 +675,7 @@ func (c *Client) RewindScannerForReorg(
 	if targetNextHeight != anchorHeight+1 {
 		return ScannerRewindResp{}, fmt.Errorf("scanner reorg target_next_height must equal anchor_height plus one")
 	}
-	normalizedAnchorHash, err := normalizeScannerRequestHash("anchor_hash", anchorHash)
+	normalizedAnchorHash, err := normalizeScannerHash("anchor_hash", anchorHash)
 	if err != nil {
 		return ScannerRewindResp{}, err
 	}
@@ -764,23 +773,35 @@ func (c *Client) scannerRewindRequestLocked(
 	continuity scannerContinuityCache,
 ) (ScannerRewindReq, error) {
 	if pending := c.pendingScannerRewind; pending != nil {
-		if pending.Network != network ||
-			pending.TargetNextHeight != targetNextHeight ||
-			pending.AnchorHeight != anchorHeight ||
-			pending.AnchorHash != anchorHash {
-			return ScannerRewindReq{}, fmt.Errorf("a different scanner rewind has an ambiguous pending result")
-		}
 		postEpoch, ok := checkedNextResetEpoch(pending.ExpectedResetEpoch)
 		if !ok {
 			return ScannerRewindReq{}, fmt.Errorf("pending scanner rewind reset epoch is exhausted")
 		}
+		// A committed rewind advances the reset epoch, so authenticated continuity
+		// still sitting on the pending rewind's original epoch and height proves it
+		// never committed, and matching its anchor under the post-commit epoch proves
+		// it did. Either way the outcome is known and the latch has served its purpose.
 		atOriginalCursor := continuity.resetEpoch == pending.ExpectedResetEpoch &&
 			continuity.nextHeight == pending.ExpectedNextHeight
 		atCommittedAnchor := scannerContinuityMatchesRewindAnchor(continuity, *pending, postEpoch)
-		if !atOriginalCursor && !atCommittedAnchor {
-			return ScannerRewindReq{}, fmt.Errorf("pending scanner rewind no longer matches authenticated continuity")
+
+		if pending.Network == network &&
+			pending.TargetNextHeight == targetNextHeight &&
+			pending.AnchorHeight == anchorHeight &&
+			pending.AnchorHash == anchorHash {
+			if !atOriginalCursor && !atCommittedAnchor {
+				return ScannerRewindReq{}, fmt.Errorf("pending scanner rewind no longer matches authenticated continuity")
+			}
+			return *pending, nil
 		}
-		return *pending, nil
+
+		// A deeper reorg superseded the ambiguous rewind. Retain the latch only while
+		// its outcome is genuinely unknown; otherwise resolving it here is what keeps
+		// reorg recovery alive, since the superseding rewind can never replay it.
+		if !atOriginalCursor && !atCommittedAnchor {
+			return ScannerRewindReq{}, fmt.Errorf("a different scanner rewind has an ambiguous pending result")
+		}
+		c.pendingScannerRewind = nil
 	}
 
 	if targetNextHeight >= continuity.nextHeight {
@@ -935,11 +956,11 @@ func scannerContinuityFromState(state ScannerState) (scannerContinuityCache, err
 	if *state.NextHeight != *state.LastHeight+1 {
 		return scannerContinuityCache{}, fmt.Errorf("scanner state next_height is not contiguous with last_height")
 	}
-	lastBlockHash, err := normalizeScannerStateHash("last_block_hash", state.LastBlockHash)
+	lastBlockHash, err := normalizeScannerHash("last_block_hash", state.LastBlockHash)
 	if err != nil {
 		return scannerContinuityCache{}, fmt.Errorf("invalid scanner state: %w", err)
 	}
-	lastParentHash, err := normalizeScannerStateHash("last_parent_hash", state.LastParentHash)
+	lastParentHash, err := normalizeScannerHash("last_parent_hash", state.LastParentHash)
 	if err != nil {
 		return scannerContinuityCache{}, fmt.Errorf("invalid scanner state: %w", err)
 	}
@@ -951,15 +972,12 @@ func scannerContinuityFromState(state ScannerState) (scannerContinuityCache, err
 	return continuity, nil
 }
 
-func normalizeScannerRequestHash(field, value string) (string, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return "", fmt.Errorf("%s must not be empty", field)
-	}
-	return strings.ToLower(value), nil
-}
-
-func normalizeScannerStateHash(field, value string) (string, error) {
+// normalizeScannerHash validates every hash crossing the sidecar boundary, in
+// both directions. Outbound, anchor_hash is the compare-and-set token binding a
+// durable cursor mutation to a specific chain and block_hash/parent_hash are what
+// the sidecar uses to detect a continuity break, so they are checked here rather
+// than trusting the sidecar to reject garbage.
+func normalizeScannerHash(field, value string) (string, error) {
 	value = strings.TrimSpace(value)
 	if len(value) != 64 {
 		return "", fmt.Errorf("%s must be a 32-byte hexadecimal hash", field)

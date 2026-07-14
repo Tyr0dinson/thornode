@@ -754,7 +754,7 @@ func TestSyncAtRejectsMalformedScannerContinuityWithoutRetry(t *testing.T) {
 			if err != nil {
 				t.Fatalf("new client: %v", err)
 			}
-			_, err = client.SyncAt(50, 60, "hash-50", "hash-49", 10)
+			_, err = client.SyncAt(50, 60, strings.Repeat("a", 64), strings.Repeat("b", 64), 10)
 			if err == nil {
 				t.Fatal("expected malformed continuity to fail closed")
 			}
