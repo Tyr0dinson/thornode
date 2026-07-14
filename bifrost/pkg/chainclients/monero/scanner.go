@@ -62,6 +62,10 @@ type Scanner struct {
 	scanMu               sync.Mutex
 	reorgDeliveryPending bool
 
+	// errataDeliveryTimeout bounds both the send to the observer and the wait
+	// for its acknowledgement. Zero means the default; tests shorten it.
+	errataDeliveryTimeout time.Duration
+
 	asgardMu       sync.RWMutex
 	asgardLookup   map[string]common.PubKey
 	asgardUpdated  time.Time
@@ -487,6 +491,24 @@ func (s *Scanner) mapScannerContinuityError(fetchHeight int64, err error) error 
 			}
 		}
 		return &btypes.RewindRequiredError{NextHeight: rewind.NextHeight}
+	}
+	// The sidecar has durably scanned PAST this height. Unlike a rewind, no
+	// amount of retrying repairs it, and rewinding forward to meet the sidecar
+	// would skip the intervening blocks without observing them. Map it to the
+	// terminal scanner error so BlockScanner stops for the operator instead of
+	// re-fetching this height forever.
+	var recovery *sidecar.ScannerRecoveryRequiredError
+	if errors.As(err, &recovery) {
+		return &btypes.ScannerRecoveryRequiredError{
+			CurrentHeight: fetchHeight,
+			NextHeight:    recovery.NextHeight,
+			Reason: fmt.Sprintf(
+				"authenticated sidecar cursor is ahead of the requested height (reset epoch %d); "+
+					"the sidecar has already scanned past this block, so retrying cannot recover: "+
+					"restore compatible sidecar state or deliberately reset the Bifrost cursor",
+				recovery.ResetEpoch,
+			),
+		}
 	}
 	if isFrostScannerHashMismatchErr(err) {
 		return btypes.ErrUnavailableBlock
@@ -978,6 +1000,24 @@ func (s *Scanner) buildReorgJournal(height int64) (*reorgJournal, error) {
 	}
 	sort.Slice(rescanHeights, func(i, j int) bool { return rescanHeights[i] < rescanHeights[j] })
 	sort.Slice(errataRecords, func(i, j int) bool { return errataRecords[i].Height < errataRecords[j].Height })
+
+	// replayReorgJournal requires Heights to be exactly the contiguous range
+	// (anchorHeight, height). A metadata gap ABOVE the anchor is skipped by the
+	// walk above when it is seen before any mismatch, which silently truncates
+	// the range: every subsequent replay then fails the contiguity check in
+	// replayReorgJournal and returns ErrUnavailableBlock, stalling the scanner
+	// on this height indefinitely and silently. Fail closed instead, so the
+	// gap is reported rather than retried forever.
+	if wantLen := height - 1 - anchorHeight; int64(len(rescanHeights)) != wantLen ||
+		rescanHeights[0] != anchorHeight+1 ||
+		rescanHeights[len(rescanHeights)-1] != height-1 {
+		return nil, fmt.Errorf(
+			"xmr reorg replay range is not contiguous: missing reorg metadata between "+
+				"common ancestor %d and height %d, cannot replay safely",
+			anchorHeight, height,
+		)
+	}
+
 	journal := &reorgJournal{
 		Version:      2,
 		Phase:        reorgPhaseDiscovered,
@@ -1055,14 +1095,27 @@ func (s *Scanner) deliverReorgErrata(records []reorgErrataRecord) error {
 		if s.errataAckRequired {
 			block.Persisted = make(chan error, 1)
 		}
-		s.globalErrataQueue <- block
+		// The queue is unbuffered and this runs with scanMu held, so an
+		// observer that has already stopped consuming would otherwise block
+		// the scanner forever and wedge BlockScanner.Stop(). Bound the send
+		// like the acknowledgement below: the replay is redriven on the next
+		// FetchTxs with the same DeliveryID, so a timeout is safe to retry.
+		timeout := s.errataDeliveryTimeout
+		if timeout <= 0 {
+			timeout = 2 * constants.ThorchainBlockTime
+		}
+		select {
+		case s.globalErrataQueue <- block:
+		case <-time.After(timeout):
+			return fmt.Errorf("timed out delivering monero errata to observer at height %d", record.Height)
+		}
 		if block.Persisted != nil {
 			select {
 			case err := <-block.Persisted:
 				if err != nil {
 					return fmt.Errorf("observer failed to durably process monero errata: %w", err)
 				}
-			case <-time.After(2 * constants.ThorchainBlockTime):
+			case <-time.After(timeout):
 				return fmt.Errorf("timed out waiting for observer to durably process monero errata")
 			}
 		}

@@ -381,6 +381,31 @@ func (e *ScannerRewindRequiredError) Error() string {
 	)
 }
 
+// ScannerRecoveryRequiredError reports that the authenticated sidecar cursor is
+// AHEAD of the height Bifrost attempted to scan, which happens after a
+// Bifrost-side cursor rollback. Unlike a rewind, no amount of retrying repairs
+// it: the sidecar has already durably scanned past this height, so re-fetching
+// the same block forever would silently stall the chain. It is terminal and
+// requires an operator to reconcile the two cursors.
+type ScannerRecoveryRequiredError struct {
+	RequestedHeight int64
+	NextHeight      int64
+	ResetEpoch      uint64
+}
+
+func (e *ScannerRecoveryRequiredError) Error() string {
+	if e == nil {
+		return "sidecar scanner recovery required"
+	}
+	return fmt.Sprintf(
+		"sidecar scanner cursor is ahead of requested height, operator recovery required: "+
+			"requested %d, next height %d, reset epoch %d",
+		e.RequestedHeight,
+		e.NextHeight,
+		e.ResetEpoch,
+	)
+}
+
 type ScannerResetResp struct {
 	Reset              bool   `json:"reset"`
 	BirthdayHeight     int64  `json:"birthday_height"`

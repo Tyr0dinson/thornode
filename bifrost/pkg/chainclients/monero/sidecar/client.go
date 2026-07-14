@@ -658,12 +658,11 @@ func (c *Client) PreflightScannerHeight(requestedHeight int64, blockHash, parent
 	) {
 		return nil
 	}
-	return fmt.Errorf(
-		"sidecar scanner cursor is ahead of requested height: requested %d, next height %d, reset epoch %d",
-		requestedHeight,
-		continuity.nextHeight,
-		continuity.resetEpoch,
-	)
+	return &ScannerRecoveryRequiredError{
+		RequestedHeight: requestedHeight,
+		NextHeight:      int64(continuity.nextHeight),
+		ResetEpoch:      continuity.resetEpoch,
+	}
 }
 
 // RewindScannerForReorg performs a bounded, authenticated compare-and-set on

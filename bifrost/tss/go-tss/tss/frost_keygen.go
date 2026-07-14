@@ -32,6 +32,16 @@ const (
 	frostDKGResult = "frost_dkg_result"
 )
 
+// frostKeygenMsgTypes are the p2p message types a FROST DKG session subscribes
+// to. Subscribe and cancel must cover exactly this set.
+var frostKeygenMsgTypes = []messages.THORChainTSSMessageType{
+	messages.TSSFrostDKGRound1Msg,
+	messages.TSSFrostDKGRound2Msg,
+	messages.TSSFrostDKGRound3Msg,
+	messages.TSSFrostVerifyMsg,
+	messages.TSSFrostDKGResultMsg,
+}
+
 type FrostKeygenCoordinator struct {
 	logger           zerolog.Logger
 	p2pCommunication *p2p.Communication
@@ -116,20 +126,27 @@ func (t *TssServer) FrostKeygen(req FrostKeygenRequest, sidecar FrostSidecarKeyg
 	if err != nil {
 		return FrostKeygenResponse{}, fmt.Errorf("fail to compute frost keygen msgID: %w", err)
 	}
-	msgChan := make(chan *p2p.Message, 1024)
+	// Restrict DKG ingress to the declared participant set with the same hard
+	// per-session budgets keysign uses. An unrestricted subscription accepts
+	// frames from any authenticated peer with no byte or message ceiling.
+	allowedPeerIDs, err := conversion.GetPeerIDsFromPubKeys(req.SignerPubKeys)
+	if err != nil {
+		return FrostKeygenResponse{}, fmt.Errorf("fail to resolve frost keygen session peers: %w", err)
+	}
+
+	msgChan := make(chan *p2p.Message, p2p.FrostSessionQueueSize)
 	sigChan := make(chan string, 2)
 
-	t.p2pCommunication.SetSubscribe(messages.TSSFrostDKGRound1Msg, msgID, msgChan)
-	t.p2pCommunication.SetSubscribe(messages.TSSFrostDKGRound2Msg, msgID, msgChan)
-	t.p2pCommunication.SetSubscribe(messages.TSSFrostDKGRound3Msg, msgID, msgChan)
-	t.p2pCommunication.SetSubscribe(messages.TSSFrostVerifyMsg, msgID, msgChan)
-	t.p2pCommunication.SetSubscribe(messages.TSSFrostDKGResultMsg, msgID, msgChan)
+	for _, msgType := range frostKeygenMsgTypes {
+		t.p2pCommunication.SetSubscribeWithPeers(
+			msgType, msgID, msgChan, allowedPeerIDs,
+			p2p.FrostMaxSessionPayload, p2p.FrostMaxMessagesPerPeer,
+		)
+	}
 	defer func() {
-		t.p2pCommunication.CancelSubscribe(messages.TSSFrostDKGRound1Msg, msgID)
-		t.p2pCommunication.CancelSubscribe(messages.TSSFrostDKGRound2Msg, msgID)
-		t.p2pCommunication.CancelSubscribe(messages.TSSFrostDKGRound3Msg, msgID)
-		t.p2pCommunication.CancelSubscribe(messages.TSSFrostVerifyMsg, msgID)
-		t.p2pCommunication.CancelSubscribe(messages.TSSFrostDKGResultMsg, msgID)
+		for _, msgType := range frostKeygenMsgTypes {
+			t.p2pCommunication.CancelSubscribe(msgType, msgID)
+		}
 		t.p2pCommunication.ReleaseStream(msgID)
 		t.partyCoordinator.ReleaseStream(msgID)
 		close(sigChan)
@@ -148,6 +165,16 @@ func (t *TssServer) FrostKeygen(req FrostKeygenRequest, sidecar FrostSidecarKeyg
 			Status: tcommon.Fail,
 			Blame:  blame.NewBlame(errJoinParty.Error(), nil),
 		}, nil
+	}
+
+	// Party formation resolved the peers that actually joined; narrow the
+	// allow-list to them so a declared-but-absent signer cannot inject frames.
+	// The result type keeps the full signer allow-list, matching keysign.
+	for _, msgType := range frostKeygenMsgTypes {
+		if msgType == messages.TSSFrostDKGResultMsg {
+			continue
+		}
+		t.p2pCommunication.UpdateSubscribePeers(msgType, msgID, onlinePeers)
 	}
 
 	activeParticipants, err := conversion.GetPubKeysFromPeerIDs(peerIDsToStrings(onlinePeers))

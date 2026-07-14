@@ -240,10 +240,26 @@ func (s *ObserverStorage) GetPendingErrataTx(tx types.ErrataTx) (persistedErrata
 	return s.getPersistedErrataLocked(tx)
 }
 
+// errataOutboxChain reports whether a chain uses the durable, acknowledged
+// errata outbox. Only XMR does: the outbox exists to make XMR reorg replay
+// restartable, and only the XMR scanner sets ErrataBlock.Persisted. Other
+// chains publish errata without a local durability handshake, so there is no
+// local delivery for a THORChain commit to race against.
+func errataOutboxChain(chain common.Chain) bool {
+	return chain.Equals(common.XMRChain)
+}
+
 // MarkErrataCommitted records the THORChain commit independently from local
 // on-deck cleanup. A commit that arrives before the local scanner delivery is
 // retained as a tombstone so a later AddErrataBlock cannot resurrect work that
 // THORChain already accepted.
+//
+// The commit handler fires for every quorum errata on every chain, including
+// ones this node never delivered. Creating a tombstone for those would write a
+// LevelDB record per BTC/ETH/DOGE errata on every node, which the retry ticker
+// then re-reads until the 30-day prune collects it. The tombstone only defends
+// against a commit racing ahead of a local delivery, which is outbox-only, so
+// a commit with no local record on a non-outbox chain is dropped.
 func (s *ObserverStorage) MarkErrataCommitted(tx types.ErrataTx) error {
 	if s == nil || s.db == nil {
 		return fmt.Errorf("observer storage is not configured")
@@ -256,6 +272,9 @@ func (s *ObserverStorage) MarkErrataCommitted(tx types.ErrataTx) error {
 		return err
 	}
 	if !found {
+		if !errataOutboxChain(tx.Chain) {
+			return nil
+		}
 		record = persistedErrata{Tx: tx}
 	}
 	record.Tx = tx
