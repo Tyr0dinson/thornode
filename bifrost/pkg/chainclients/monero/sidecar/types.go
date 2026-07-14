@@ -24,11 +24,13 @@ const (
 
 	// CapabilityIdempotentCombine asserts that the signer durably replays combine
 	// by (msg_id, session_id, all_shares), so a retried combine cannot produce a
-	// second Monero broadcast. It is deliberately NOT required by NewClient: a
-	// signer that does not advertise it still works, it just gets single-shot
-	// combine. Requiring it would hard-fail every deployment whose signer image
-	// predates the contract.
-	CapabilityIdempotentCombine = "idempotent-combine-v1"
+	// second Monero broadcast. The signer advertises this alongside its
+	// durable_combine_response path, which replays the committed result after a
+	// session loss instead of re-signing. It is deliberately NOT required by
+	// NewClient: a signer that does not advertise it still works, it just gets
+	// single-shot combine. Requiring it would hard-fail every deployment whose
+	// signer image predates the contract.
+	CapabilityIdempotentCombine = "durable-sign-result-recovery-v1"
 )
 
 // Info is the authenticated compatibility contract exposed by the signer.
