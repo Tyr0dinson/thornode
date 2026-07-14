@@ -72,7 +72,11 @@ func parseDaemonEndpointURL(endpoint string) (*url.URL, error) {
 	if endpoint == "" {
 		return nil, fmt.Errorf("monero rpc host is empty")
 	}
-	if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
+	// Only default the scheme when there is none. Matching on a lowercase
+	// "http://" prefix instead would prepend a second scheme to "HTTPS://host",
+	// which parses as host "HTTPS" and slips past the allowlist below, leaving a
+	// mis-cased or wrong scheme accepted as a garbage host.
+	if !strings.Contains(endpoint, "://") {
 		endpoint = "http://" + endpoint
 	}
 	parsed, err := url.Parse(endpoint)

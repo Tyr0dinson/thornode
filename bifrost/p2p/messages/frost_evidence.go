@@ -160,11 +160,39 @@ func (e FrostEquivocationEvidence) Validate() error {
 	return nil
 }
 
+// canonical returns the envelope with every field normalized exactly as
+// SignBytes normalizes it. Signing and validation both trim and lower-case,
+// so an envelope that differs from its canonical form only in whitespace or
+// case produces identical signing bytes and verifies identically: without
+// pinning the wire form, one equivocation would have many valid encodings.
+func (e FrostSignedEnvelope) canonical() FrostSignedEnvelope {
+	e.SessionID = strings.ToLower(strings.TrimSpace(e.SessionID))
+	e.VaultPubKey = strings.ToLower(strings.TrimSpace(e.VaultPubKey))
+	e.Network = strings.ToLower(strings.TrimSpace(e.Network))
+	e.Round = strings.TrimSpace(e.Round)
+	e.SenderPubKey = strings.TrimSpace(e.SenderPubKey)
+	e.PayloadHash = strings.ToLower(strings.TrimSpace(e.PayloadHash))
+	return e
+}
+
+func (e FrostSignedEnvelope) isCanonical() bool {
+	c := e.canonical()
+	return c.SessionID == e.SessionID &&
+		c.VaultPubKey == e.VaultPubKey &&
+		c.Network == e.Network &&
+		c.Round == e.Round &&
+		c.SenderPubKey == e.SenderPubKey &&
+		c.PayloadHash == e.PayloadHash
+}
+
 func MarshalFrostEquivocationEvidence(e FrostEquivocationEvidence) ([]byte, error) {
 	if err := e.Validate(); err != nil {
 		return nil, err
 	}
-	if strings.ToLower(e.Second.PayloadHash) < strings.ToLower(e.First.PayloadHash) {
+	// Normalize before ordering. Comparing raw payload hashes would sort on
+	// whitespace and case that neither the signature nor Validate can see.
+	e.First, e.Second = e.First.canonical(), e.Second.canonical()
+	if e.Second.PayloadHash < e.First.PayloadHash {
 		e.First, e.Second = e.Second, e.First
 	}
 	buf, err := json.Marshal(e)
@@ -194,7 +222,14 @@ func UnmarshalFrostEquivocationEvidence(buf []byte) (FrostEquivocationEvidence, 
 	if err := evidence.Validate(); err != nil {
 		return FrostEquivocationEvidence{}, err
 	}
-	if strings.ToLower(evidence.Second.PayloadHash) < strings.ToLower(evidence.First.PayloadHash) {
+	// Evidence is a slashing artifact, so exactly one byte encoding may decode
+	// for a given equivocation. Reject any envelope that is not already in its
+	// canonical form rather than normalizing it here, which would let the same
+	// equivocation arrive under several distinct evidence hashes.
+	if !evidence.First.isCanonical() || !evidence.Second.isCanonical() {
+		return FrostEquivocationEvidence{}, fmt.Errorf("non-canonical FROST evidence encoding")
+	}
+	if evidence.Second.PayloadHash < evidence.First.PayloadHash {
 		return FrostEquivocationEvidence{}, fmt.Errorf("non-canonical FROST evidence ordering")
 	}
 	return evidence, nil
