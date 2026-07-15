@@ -808,6 +808,31 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 					}
 				}
 
+				// Symmetrically, prefer migrating a NON-gas asset to ActiveVaults that
+				// already hold enough of the chain's gas asset to actually send it out.
+				// Without this a non-gas asset (e.g. TRON.USDT) can migrate to a vault
+				// that lacks the gas asset (TRX) while gas disperses elsewhere, leaving
+				// no single vault holding both. Every outbound of that asset then wedges
+				// in the insufficient-gas reschedule loop until a churn rebalances —
+				// which never happens while HALTCHURNING is set. Only narrow when at
+				// least one gas-capable vault exists, so migration never stalls on a
+				// gas-poor chain.
+				if !coin.Asset.IsGasAsset() {
+					if maxGasCoin, gasErr := mgr.GasMgr().GetMaxGas(ctx, chain); gasErr != nil {
+						ctx.Logger().Error("fail to get max gas for migration co-location", "chain", chain, "error", gasErr)
+					} else if !maxGasCoin.IsEmpty() {
+						var gasCapableVaults Vaults
+						for _, activeVault := range targetVaults {
+							if activeVault.GetCoin(chain.GetGasAsset()).Amount.GTE(maxGasCoin.Amount) {
+								gasCapableVaults = append(gasCapableVaults, activeVault)
+							}
+						}
+						if len(gasCapableVaults) != 0 {
+							targetVaults = gasCapableVaults
+						}
+					}
+				}
+
 				// GetMostSecure also takes into account migration outbound items.
 				target := vm.k.GetMostSecure(ctx, targetVaults, signingTransactionPeriod)
 				// get address of asgard pubkey

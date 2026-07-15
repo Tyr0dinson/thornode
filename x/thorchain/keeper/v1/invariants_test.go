@@ -2,6 +2,7 @@ package keeperv1
 
 import (
 	"fmt"
+	"strings"
 
 	. "gopkg.in/check.v1"
 
@@ -353,4 +354,47 @@ func (s *InvariantsSuite) TestStreamingSwapsInvariant(c *C) {
 	c.Assert(broken, Equals, true)
 	c.Assert(len(msg), Equals, 1)
 	c.Assert(msg[0], Equals, fmt.Sprintf("%s: state.success_count 3 > state.quantity 2", limitTx.ID))
+}
+
+// TestVaultGasInvariant verifies an active vault holding a non-gas asset but too
+// little of the chain's gas asset is flagged, while healthy / assetless vaults
+// are not.
+func (s *InvariantsSuite) TestVaultGasInvariant(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	c.Assert(k.SaveNetworkFee(ctx, common.ETHChain, NetworkFee{
+		Chain:              common.ETHChain,
+		TransactionSize:    1,
+		TransactionFeeRate: 1000000000000,
+	}), IsNil)
+	minGas := vaultChainMinGas(ctx, k, common.ETHChain)
+	c.Assert(minGas.IsZero(), Equals, false)
+
+	usdc, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	c.Assert(err, IsNil)
+
+	// Wedged: holds a non-gas asset but gas below one send.
+	wedged := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+	wedged.Coins = common.Coins{
+		common.NewCoin(usdc, cosmos.NewUint(1000)),
+		common.NewCoin(common.ETHAsset, common.SafeSub(minGas, cosmos.OneUint())),
+	}
+	c.Assert(k.SetVault(ctx, wedged), IsNil)
+
+	// Healthy: same asset but enough gas -> not flagged.
+	healthy := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+	healthy.Coins = common.Coins{
+		common.NewCoin(usdc, cosmos.NewUint(1000)),
+		common.NewCoin(common.ETHAsset, minGas),
+	}
+	c.Assert(k.SetVault(ctx, healthy), IsNil)
+
+	// Gas-only: holds no non-gas asset -> not flagged even with zero gas.
+	gasOnly := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+	gasOnly.Coins = common.Coins{common.NewCoin(common.ETHAsset, cosmos.ZeroUint())}
+	c.Assert(k.SetVault(ctx, gasOnly), IsNil)
+
+	msg, broken := VaultGasInvariant(k)(ctx)
+	c.Assert(broken, Equals, true)
+	c.Assert(msg, HasLen, 1) // only the wedged vault
+	c.Assert(strings.Contains(msg[0], wedged.PubKey.String()), Equals, true)
 }

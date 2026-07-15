@@ -19,6 +19,77 @@ func (s *NetworkManagerTestSuite) SetUpSuite(c *C) {
 	SetupConfigForTest()
 }
 
+// TestMigrateFundsCoLocatesNonGasWithGas verifies a non-gas asset migrates to an
+// active vault that holds the chain's gas asset, even when a gas-poor vault would
+// otherwise be the most-secure (highest-value) target — so the asset and its gas
+// stay co-located and the outbound does not wedge.
+func (s *NetworkManagerTestSuite) TestMigrateFundsCoLocatesNonGasWithGas(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	interval := mgr.GetConstants().GetInt64Value(constants.FundMigrationInterval)
+	ctx = ctx.WithBlockHeight(interval)
+	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.ETHChain, NetworkFee{
+		Chain:              common.ETHChain,
+		TransactionSize:    1,
+		TransactionFeeRate: 10000,
+	}), IsNil)
+	maxGasCoin, err := mgr.GasMgr().GetMaxGas(ctx, common.ETHChain)
+	c.Assert(err, IsNil)
+
+	usdc, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	c.Assert(err, IsNil)
+
+	// Pools so prepareTxOutItem can price the outbound and so the USDC-heavy vault
+	// scores as higher value (thus most-secure) than the gas-holding vault.
+	for _, p := range []common.Asset{common.ETHAsset, usdc} {
+		pool := NewPool()
+		pool.Asset = p
+		pool.Status = PoolAvailable
+		pool.BalanceRune = cosmos.NewUint(100 * common.One)
+		pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+		pool.LPUnits = cosmos.NewUint(100 * common.One)
+		c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+	}
+
+	// Retiring vault holds only the non-gas asset to migrate.
+	retiring := GetRandomVault()
+	retiring.Status = RetiringVault
+	retiring.StatusSince = 0
+	retiring.Chains = common.Chains{common.ETHChain}.Strings()
+	retiring.Coins = common.Coins{common.NewCoin(usdc, cosmos.NewUint(50*common.One))}
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+
+	// Gas-poor vault: empty, so it is the lowest-value (thus most-secure) target
+	// GetMostSecure would pick absent co-location — but it has no ETH gas to send.
+	gasPoor := GetRandomVault()
+	gasPoor.Status = ActiveVault
+	gasPoor.Chains = common.Chains{common.ETHChain}.Strings()
+	gasPoor.Coins = common.Coins{}
+	c.Assert(mgr.Keeper().SetVault(ctx, gasPoor), IsNil)
+
+	// Gas-capable vault: holds enough gas to send (and so scores higher value).
+	gasCapable := GetRandomVault()
+	gasCapable.Status = ActiveVault
+	gasCapable.Chains = common.Chains{common.ETHChain}.Strings()
+	gasCapable.Coins = common.Coins{common.NewCoin(common.ETHAsset, maxGasCoin.Amount.MulUint64(4))}
+	c.Assert(mgr.Keeper().SetVault(ctx, gasCapable), IsNil)
+
+	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
+
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 1)
+	c.Assert(items[0].Coin.Asset.Equals(usdc), Equals, true)
+
+	gasCapableAddr, err := gasCapable.GetAddress(common.ETHChain)
+	c.Assert(err, IsNil)
+	gasPoorAddr, err := gasPoor.GetAddress(common.ETHChain)
+	c.Assert(err, IsNil)
+	c.Assert(items[0].ToAddress.Equals(gasCapableAddr), Equals, true) // co-located with gas
+	c.Assert(items[0].ToAddress.Equals(gasPoorAddr), Equals, false)   // not the gas-poor vault
+}
+
 func (s *NetworkManagerTestSuite) TestRotateVaultKeepsUnrelatedRegularFamiliesActive(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())

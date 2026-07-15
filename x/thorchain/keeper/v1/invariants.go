@@ -19,7 +19,71 @@ func (k KVStore) InvariantRoutes() []common.InvariantRoute {
 		common.NewInvariantRoute("runepool", RUNEPoolInvariant(k)),
 		common.NewInvariantRoute("tcy_claim", TCYClaimInvariant(k)),
 		common.NewInvariantRoute("vault_deficit", VaultDeficitInvariant(k)),
+		common.NewInvariantRoute("vault_gas", VaultGasInvariant(k)),
 	}
+}
+
+// VaultGasInvariant reports active vaults that hold a non-gas asset on a chain
+// while lacking the gas asset needed to actually send it out (an L1 send needs
+// the chain's gas asset to sign/broadcast). This surfaces the "asset on one
+// vault, gas on another" composition that wedges outbounds — e.g. a vault holding
+// TRON.USDT but too little TRON.TRX — so it can be monitored and rebalanced. It
+// is diagnostic only and never halts the chain.
+func VaultGasInvariant(k KVStore) common.Invariant {
+	return func(ctx cosmos.Context) (msg []string, broken bool) {
+		iterator := k.GetVaultIterator(ctx)
+		defer iterator.Close()
+		for ; iterator.Valid(); iterator.Next() {
+			var vault Vault
+			k.Cdc().MustUnmarshal(iterator.Value(), &vault)
+			if vault.Status != ActiveVault {
+				continue
+			}
+			for _, chain := range vault.GetChains() {
+				if chain.IsTHORChain() {
+					continue
+				}
+				gasAsset := chain.GetGasAsset()
+
+				// Only vaults that actually hold a non-gas asset on this chain are
+				// at risk of a wedged outbound.
+				holdsNonGas := false
+				for _, c := range vault.Coins {
+					if c.Amount.IsZero() || c.Asset.Equals(gasAsset) || !c.Asset.GetChain().Equals(chain) {
+						continue
+					}
+					holdsNonGas = true
+					break
+				}
+				if !holdsNonGas {
+					continue
+				}
+
+				minGas := vaultChainMinGas(ctx, k, chain)
+				if minGas.IsZero() {
+					continue // no valid network fee known; cannot assess
+				}
+				if vault.GetCoin(gasAsset).Amount.LT(minGas) {
+					broken = true
+					msg = append(msg, fmt.Sprintf("vault_gas: %s holds %s asset(s) with insufficient %s gas (%s < %s)",
+						vault.PubKey, chain, gasAsset, vault.GetCoin(gasAsset).Amount, minGas))
+				}
+			}
+		}
+		return msg, broken
+	}
+}
+
+// vaultChainMinGas returns the gas needed to send a single outbound on the chain,
+// mirroring GasMgr.GetGasDetails (rate*3/2 * size) from the stored network fee, so
+// this keeper-level invariant does not depend on the gas manager.
+func vaultChainMinGas(ctx cosmos.Context, k KVStore, chain common.Chain) cosmos.Uint {
+	nf, err := k.GetNetworkFee(ctx, chain)
+	if err != nil || nf.Valid() != nil {
+		return cosmos.ZeroUint()
+	}
+	gasRate := cosmos.NewUint(nf.TransactionFeeRate).MulUint64(3).QuoUint64(2)
+	return chain.NativeGasToThorCoinCeil(gasRate.MulUint64(nf.TransactionSize)).Amount
 }
 
 // VaultDeficitInvariant reports vaults with positive coins and deficit for the same asset.
