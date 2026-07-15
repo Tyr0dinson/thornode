@@ -509,7 +509,7 @@ func TestShouldAdoptFrostFailureResultPreservesTerminalShare(t *testing.T) {
 		{"share can adopt share blame", withoutNode(frostRoundShare), withNode(frostRoundShare), true},
 		{"preprocess can adopt result blame", withoutNode(frostRoundPreprocess), withNode(frostRoundResult), true},
 		{"existing local blame is retained", withNode(frostRoundShare), withNode(frostRoundShare), false},
-		{"success candidate is not a failure replacement", withoutNode(frostRoundShare), {Status: tcommon.Success}, false},
+		{"success candidate is not a failure replacement", withoutNode(frostRoundShare), FrostKeySignResponse{Status: tcommon.Success}, false},
 	}
 	for _, tc := range tests {
 		if got := shouldAdoptFrostFailureResult(tc.local, tc.candidate); got != tc.want {
