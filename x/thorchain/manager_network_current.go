@@ -817,6 +817,14 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 				// which never happens while HALTCHURNING is set. Only narrow when at
 				// least one gas-capable vault exists, so migration never stalls on a
 				// gas-poor chain.
+				//
+				// Accepted tradeoff: if exactly one vault is gas-capable, all of the
+				// chain's non-gas value funnels there (GetMostSecure over a singleton
+				// is unconditional). That is intended — it is the only vault that can
+				// actually send the asset — but a barely-capable vault (~one send's
+				// gas) can be re-wedged after a single outbound. The vault_gas invariant
+				// surfaces that state; a follow-up could require N×maxGas of headroom
+				// here instead of a single send if the funneling proves an issue.
 				if !coin.Asset.IsGasAsset() {
 					if maxGasCoin, gasErr := mgr.GasMgr().GetMaxGas(ctx, chain); gasErr != nil {
 						ctx.Logger().Error("fail to get max gas for migration co-location", "chain", chain, "error", gasErr)

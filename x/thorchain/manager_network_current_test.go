@@ -90,6 +90,59 @@ func (s *NetworkManagerTestSuite) TestMigrateFundsCoLocatesNonGasWithGas(c *C) {
 	c.Assert(items[0].ToAddress.Equals(gasPoorAddr), Equals, false)   // not the gas-poor vault
 }
 
+// TestMigrateFundsCoLocationFallbackDoesNotStall verifies the co-location safety
+// guard: when NO active vault holds enough gas, migration falls back to the full
+// target set and still schedules the outbound, rather than narrowing to an empty
+// set and silently dropping the coin every round (which would wedge the churn).
+func (s *NetworkManagerTestSuite) TestMigrateFundsCoLocationFallbackDoesNotStall(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	interval := mgr.GetConstants().GetInt64Value(constants.FundMigrationInterval)
+	ctx = ctx.WithBlockHeight(interval)
+	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.ETHChain, NetworkFee{
+		Chain:              common.ETHChain,
+		TransactionSize:    1,
+		TransactionFeeRate: 10000,
+	}), IsNil)
+
+	usdc, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	c.Assert(err, IsNil)
+
+	pool := NewPool()
+	pool.Asset = usdc
+	pool.Status = PoolAvailable
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.LPUnits = cosmos.NewUint(100 * common.One)
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	retiring := GetRandomVault()
+	retiring.Status = RetiringVault
+	retiring.StatusSince = 0
+	retiring.Chains = common.Chains{common.ETHChain}.Strings()
+	retiring.Coins = common.Coins{common.NewCoin(usdc, cosmos.NewUint(50*common.One))}
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+
+	// The only active ETH vault holds NO gas -> not gas-capable. The co-location
+	// narrowing must fall back to the full set so migration still schedules here.
+	active := GetRandomVault()
+	active.Status = ActiveVault
+	active.Chains = common.Chains{common.ETHChain}.Strings()
+	active.Coins = common.Coins{}
+	c.Assert(mgr.Keeper().SetVault(ctx, active), IsNil)
+
+	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
+
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 1) // NOT stalled: the USDC migrate is scheduled
+	c.Assert(items[0].Coin.Asset.Equals(usdc), Equals, true)
+	activeAddr, err := active.GetAddress(common.ETHChain)
+	c.Assert(err, IsNil)
+	c.Assert(items[0].ToAddress.Equals(activeAddr), Equals, true)
+}
+
 func (s *NetworkManagerTestSuite) TestRotateVaultKeepsUnrelatedRegularFamiliesActive(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
