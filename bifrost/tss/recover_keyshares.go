@@ -411,8 +411,8 @@ func quarantineRecoveryFileLocked(path string) error {
 		return fmt.Errorf("recovery artifact is not a regular file")
 	}
 	quarantined := fmt.Sprintf("%s.invalid-%d", path, time.Now().UnixNano())
-	if err := os.Rename(path, quarantined); err != nil {
-		return err
+	if renameErr := os.Rename(path, quarantined); renameErr != nil {
+		return renameErr
 	}
 	moved, err := os.Lstat(quarantined)
 	if err != nil {
