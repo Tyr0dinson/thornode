@@ -1730,7 +1730,7 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	if msgID == "" {
 		signErr := fmt.Errorf("FROST keysign returned empty msg_id")
 		c.clearSidecarSessionsAfterFrostFailure("frost_empty_msg_id", signErr)
-		return nil, nil, nil, signErr
+		return nil, nil, nil, terminalFrostShareError(signErr)
 	}
 	// Treat the TSS response as untrusted until Bifrost independently verifies
 	// the actual fee against the scheduled cap. This is the local guard for
@@ -1749,7 +1749,7 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	); validateErr != nil {
 		signErr := fmt.Errorf("invalid FROST eventuality: %w", validateErr)
 		c.clearSidecarSessionsAfterFrostFailure("frost_invalid_eventuality", signErr)
-		return nil, nil, nil, signErr
+		return nil, nil, nil, terminalFrostShareError(signErr)
 	}
 	var localSpentRefs []sidecar.SpentRef
 	for _, ref := range resp.SpentOutputRefs {
@@ -1772,7 +1772,7 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	}
 	signedTx, err := json.Marshal(payload)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("fail to encode FROST signed tx payload: %w", err)
+		return nil, nil, nil, terminalFrostShareError(fmt.Errorf("fail to encode FROST signed tx payload: %w", err))
 	}
 	ckptBytes, ckptErr := json.Marshal(signCheckpoint{SpentOutputRefs: localSpentRefs})
 	if ckptErr != nil {
@@ -1949,6 +1949,16 @@ func maxGasToAtomic(maxGas common.Gas) (uint64, error) {
 type xmrMaxGasExceededError struct {
 	actualFeeAtomic uint64
 	maxGasAtomic    uint64
+}
+
+func terminalFrostShareError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return errors.Join(err, bifrosttss.NewKeysignError(ttypes.Blame{
+		FailReason: err.Error(),
+		Round:      messages.FROSTKEYSIGNSHARE,
+	}))
 }
 
 func (e xmrMaxGasExceededError) Error() string {

@@ -400,6 +400,33 @@ func TestSignTxClearsSidecarSessionsOnEmptyMsgID(t *testing.T) {
 	if signErr == nil || !strings.Contains(signErr.Error(), "empty msg_id") {
 		t.Fatalf("expected empty msg_id error, got %T %v", signErr, signErr)
 	}
+	var keysignErr bifrosttss.KeysignError
+	if !errors.As(signErr, &keysignErr) || !keysignErr.IsTerminalRound() {
+		t.Fatalf("empty post-share result must retain terminal FROST semantics: %v", signErr)
+	}
+	if got := atomic.LoadInt32(clearHits); got != 1 {
+		t.Fatalf("expected clear sessions hit once, got %d", got)
+	}
+}
+
+func TestSignTxInvalidEventualityRetainsTerminalShare(t *testing.T) {
+	tssServer := &mockFrostTssServer{
+		resp: tssp.FrostKeySignResponse{
+			Status: gotsscommon.Success,
+			MsgID:  strings.Repeat("a", 64),
+		},
+	}
+	c, tx, server, clearHits := newFrostSignTxCleanupFixture(t, tssServer, 0)
+	defer server.Close()
+
+	_, _, _, signErr := c.signTx(tx, 12345)
+	if signErr == nil || !strings.Contains(signErr.Error(), "invalid FROST eventuality") {
+		t.Fatalf("expected invalid eventuality error, got %T %v", signErr, signErr)
+	}
+	var keysignErr bifrosttss.KeysignError
+	if !errors.As(signErr, &keysignErr) || !keysignErr.IsTerminalRound() {
+		t.Fatalf("invalid post-share result must retain terminal FROST semantics: %v", signErr)
+	}
 	if got := atomic.LoadInt32(clearHits); got != 1 {
 		t.Fatalf("expected clear sessions hit once, got %d", got)
 	}

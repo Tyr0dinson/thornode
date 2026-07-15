@@ -485,6 +485,39 @@ func TestFrostDecoyContextDeterministic(t *testing.T) {
 	}
 }
 
+func TestShouldAdoptFrostFailureResultPreservesTerminalShare(t *testing.T) {
+	withNode := func(round string) FrostKeySignResponse {
+		return FrostKeySignResponse{
+			Status: tcommon.Fail,
+			Blame:  buildBlame("peer failure", round, []string{testPubKeys[1]}),
+		}
+	}
+	withoutNode := func(round string) FrostKeySignResponse {
+		return FrostKeySignResponse{
+			Status: tcommon.Fail,
+			Blame:  buildBlame("local failure", round, nil),
+		}
+	}
+
+	tests := []struct {
+		name      string
+		local     FrostKeySignResponse
+		candidate FrostKeySignResponse
+		want      bool
+	}{
+		{"share cannot downgrade to preprocess", withoutNode(frostRoundShare), withNode(frostRoundPreprocess), false},
+		{"share can adopt share blame", withoutNode(frostRoundShare), withNode(frostRoundShare), true},
+		{"preprocess can adopt result blame", withoutNode(frostRoundPreprocess), withNode(frostRoundResult), true},
+		{"existing local blame is retained", withNode(frostRoundShare), withNode(frostRoundShare), false},
+		{"success candidate is not a failure replacement", withoutNode(frostRoundShare), {Status: tcommon.Success}, false},
+	}
+	for _, tc := range tests {
+		if got := shouldAdoptFrostFailureResult(tc.local, tc.candidate); got != tc.want {
+			t.Fatalf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
 func TestFrostExchangePreprocessAcceptsTranscriptVerification(t *testing.T) {
 	ensureBech32Prefix()
 

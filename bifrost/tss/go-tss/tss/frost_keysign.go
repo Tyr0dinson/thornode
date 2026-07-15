@@ -707,10 +707,22 @@ func (t *TssServer) FrostKeySign(req FrostKeySignRequest, sidecar FrostSidecarCl
 	if err := coordinator.BroadcastResult(resp, allPeerIDs); err != nil {
 		t.logger.Warn().Err(err).Msg("fail to broadcast local frost failure result")
 	}
-	if waitErr == nil && waitResp.Status == tcommon.Fail && len(waitResp.Blame.BlameNodes) > 0 && len(resp.Blame.BlameNodes) == 0 {
+	if waitErr == nil && shouldAdoptFrostFailureResult(resp, waitResp) {
 		return waitResp, nil
 	}
 	return resp, nil
+}
+
+func shouldAdoptFrostFailureResult(local, candidate FrostKeySignResponse) bool {
+	if candidate.Status != tcommon.Fail || len(candidate.Blame.BlameNodes) == 0 || len(local.Blame.BlameNodes) > 0 {
+		return false
+	}
+	// Once the local signature share has escaped, never replace that terminal
+	// state with a failure attributed to an earlier or non-terminal phase. A
+	// share-phase quorum failure is safe to adopt because it preserves the same
+	// vault-stick/checkpoint semantics while adding actionable peer blame.
+	return strings.TrimSpace(local.Blame.Round) != frostRoundShare ||
+		strings.TrimSpace(candidate.Blame.Round) == frostRoundShare
 }
 
 func (c *FrostSignCoordinator) Execute(
