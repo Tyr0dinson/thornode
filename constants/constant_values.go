@@ -206,6 +206,7 @@ const (
 	L1DynamicFeeDeadbandBPS
 	L1DynamicFeeWindowEpochs
 	VaultDeficitGasHaltMaxGasMultiplier
+	MigrationVaultGasMultiplier
 )
 
 // ConstantValues define methods used to get constant values

@@ -186,6 +186,7 @@ Operational notes:
 - `HaltChurning`: Pause churning
 - `DesiredValidatorSet`\*: Maximum number of validators
 - `FundMigrationInterval`\*: Number of blocks between attempts to migrate funds between asgard vaults during a migration
+- `MigrationVaultGasMultiplier`: During churn migration, a non-gas asset is only co-located onto active vaults holding at least this multiple of maxGas of the chain's gas asset (headroom for several sends before re-wedging); higher = stricter (fewer targets, more fallback), 0 disables gas-aware co-location (default 3)
 - `NumberOfNewNodesPerChurn`#: Number of targeted additional nodes added to the validator set each churn
 - `BadValidatorRedline`\*: Redline multiplier to find a multitude of bad actors
 - `LowBondValidatorRate`: Rate to mark a validator to be rotated out for low bond

@@ -36,6 +36,8 @@ func (s *NetworkManagerTestSuite) TestMigrateFundsCoLocatesNonGasWithGas(c *C) {
 	}), IsNil)
 	maxGasCoin, err := mgr.GasMgr().GetMaxGas(ctx, common.ETHChain)
 	c.Assert(err, IsNil)
+	// Require 3x maxGas of headroom for a vault to be a co-location target.
+	mgr.Keeper().SetMimir(ctx, constants.MigrationVaultGasMultiplier.String(), 3)
 
 	usdc, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
 	c.Assert(err, IsNil)
@@ -105,6 +107,7 @@ func (s *NetworkManagerTestSuite) TestMigrateFundsCoLocationFallbackDoesNotStall
 		TransactionSize:    1,
 		TransactionFeeRate: 10000,
 	}), IsNil)
+	mgr.Keeper().SetMimir(ctx, constants.MigrationVaultGasMultiplier.String(), 3)
 
 	usdc, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
 	c.Assert(err, IsNil)
@@ -141,6 +144,77 @@ func (s *NetworkManagerTestSuite) TestMigrateFundsCoLocationFallbackDoesNotStall
 	activeAddr, err := active.GetAddress(common.ETHChain)
 	c.Assert(err, IsNil)
 	c.Assert(items[0].ToAddress.Equals(activeAddr), Equals, true)
+}
+
+// TestMigrateFundsGasMultiplierRaisesThreshold verifies the MigrationVaultGasMultiplier
+// mimir controls how much gas headroom a vault needs to be a co-location target: at
+// N=3 a vault with only 2x maxGas is excluded (and the 4x-maxGas vault chosen), even
+// though at N=1 the 2x vault — lower value, thus more secure — would have won.
+func (s *NetworkManagerTestSuite) TestMigrateFundsGasMultiplierRaisesThreshold(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	interval := mgr.GetConstants().GetInt64Value(constants.FundMigrationInterval)
+	ctx = ctx.WithBlockHeight(interval)
+	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.ETHChain, NetworkFee{
+		Chain:              common.ETHChain,
+		TransactionSize:    1,
+		TransactionFeeRate: 10000,
+	}), IsNil)
+	maxGasCoin, err := mgr.GasMgr().GetMaxGas(ctx, common.ETHChain)
+	c.Assert(err, IsNil)
+	mgr.Keeper().SetMimir(ctx, constants.MigrationVaultGasMultiplier.String(), 3)
+
+	usdc, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	c.Assert(err, IsNil)
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.Status = PoolAvailable
+	ethPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	ethPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	ethPool.LPUnits = cosmos.NewUint(100 * common.One)
+	c.Assert(mgr.Keeper().SetPool(ctx, ethPool), IsNil)
+	usdcPool := NewPool()
+	usdcPool.Asset = usdc
+	usdcPool.Status = PoolAvailable
+	usdcPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	usdcPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	usdcPool.LPUnits = cosmos.NewUint(100 * common.One)
+	c.Assert(mgr.Keeper().SetPool(ctx, usdcPool), IsNil)
+
+	retiring := GetRandomVault()
+	retiring.Status = RetiringVault
+	retiring.StatusSince = 0
+	retiring.Chains = common.Chains{common.ETHChain}.Strings()
+	retiring.Coins = common.Coins{common.NewCoin(usdc, cosmos.NewUint(50*common.One))}
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+
+	// vLow: 2x maxGas -> below the 3x threshold, excluded (but lower value, so it
+	// would be the most-secure pick at N=1).
+	vLow := GetRandomVault()
+	vLow.Status = ActiveVault
+	vLow.Chains = common.Chains{common.ETHChain}.Strings()
+	vLow.Coins = common.Coins{common.NewCoin(common.ETHAsset, maxGasCoin.Amount.MulUint64(2))}
+	c.Assert(mgr.Keeper().SetVault(ctx, vLow), IsNil)
+
+	// vHigh: 4x maxGas -> above the 3x threshold, the only capable vault.
+	vHigh := GetRandomVault()
+	vHigh.Status = ActiveVault
+	vHigh.Chains = common.Chains{common.ETHChain}.Strings()
+	vHigh.Coins = common.Coins{common.NewCoin(common.ETHAsset, maxGasCoin.Amount.MulUint64(4))}
+	c.Assert(mgr.Keeper().SetVault(ctx, vHigh), IsNil)
+
+	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
+
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 1)
+	vHighAddr, err := vHigh.GetAddress(common.ETHChain)
+	c.Assert(err, IsNil)
+	vLowAddr, err := vLow.GetAddress(common.ETHChain)
+	c.Assert(err, IsNil)
+	c.Assert(items[0].ToAddress.Equals(vHighAddr), Equals, true) // 3x threshold excluded vLow
+	c.Assert(items[0].ToAddress.Equals(vLowAddr), Equals, false)
 }
 
 func (s *NetworkManagerTestSuite) TestRotateVaultKeepsUnrelatedRegularFamiliesActive(c *C) {

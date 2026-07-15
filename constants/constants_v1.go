@@ -173,6 +173,7 @@ func NewConstantValue() *ConstantVals {
 			L1DynamicFeeWindowEpochs:            3,                  // epochs averaged on each side of the last bps change when measuring the fees_rune gradient (clamped into [1, MaxDynamicFeeHistory])
 			VaultDeficitGasHaltMaxGasMultiplier: 30,                 // multiple of current max gas at which gas-related vault deficits halt signing and trading
 			MaxAbsentKeygenReporters:            1,                  // number of keygen members allowed to skip MsgTssPool reporting before a successful keygen finalizes (mainnet default)
+			MigrationVaultGasMultiplier:         3,                  // during churn migration, a non-gas asset is only co-located onto active vaults holding >= this multiple of maxGas of the chain's gas asset (headroom for several sends); 0 disables gas-aware co-location
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

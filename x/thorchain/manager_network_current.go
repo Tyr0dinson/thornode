@@ -823,15 +823,19 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 				// is unconditional). That is intended — it is the only vault that can
 				// actually send the asset — but a barely-capable vault (~one send's
 				// gas) can be re-wedged after a single outbound. The vault_gas invariant
-				// surfaces that state; a follow-up could require N×maxGas of headroom
-				// here instead of a single send if the funneling proves an issue.
-				if !coin.Asset.IsGasAsset() {
+				// surfaces that state. The required headroom is the
+				// MigrationVaultGasMultiplier mimir (N×maxGas): higher N means a
+				// co-located vault can send more times before re-wedging, at the cost
+				// of fewer vaults qualifying (more fallback). N<=0 disables co-location.
+				gasMult := vm.k.GetConfigInt64(ctx, constants.MigrationVaultGasMultiplier)
+				if !coin.Asset.IsGasAsset() && gasMult > 0 {
 					if maxGasCoin, gasErr := mgr.GasMgr().GetMaxGas(ctx, chain); gasErr != nil {
 						ctx.Logger().Error("fail to get max gas for migration co-location", "chain", chain, "error", gasErr)
 					} else if !maxGasCoin.IsEmpty() {
+						gasThreshold := maxGasCoin.Amount.MulUint64(uint64(gasMult))
 						var gasCapableVaults Vaults
 						for _, activeVault := range targetVaults {
-							if activeVault.GetCoin(chain.GetGasAsset()).Amount.GTE(maxGasCoin.Amount) {
+							if activeVault.GetCoin(chain.GetGasAsset()).Amount.GTE(gasThreshold) {
 								gasCapableVaults = append(gasCapableVaults, activeVault)
 							}
 						}
