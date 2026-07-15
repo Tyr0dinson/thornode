@@ -319,6 +319,13 @@ func (s *Scanner) fetchTxsLocked(fetchHeight, chainHeight int64) (stypes.TxIn, e
 		if errors.Is(reorgErr, btypes.ErrUnavailableBlock) {
 			return txIn, btypes.ErrUnavailableBlock
 		}
+		if errors.Is(reorgErr, ErrReorgSupersessionUnsafe) {
+			return txIn, &btypes.ScannerRecoveryRequiredError{
+				CurrentHeight: fetchHeight,
+				NextHeight:    fetchHeight,
+				Reason:        reorgErr.Error() + "; journal retained for inspection, do not reset the cursor blindly",
+			}
+		}
 		return txIn, fmt.Errorf("fail to process monero reorg at %d: %w", fetchHeight, reorgErr)
 	} else if len(items) > 0 {
 		txIn.TxArray = append(txIn.TxArray, items...)
@@ -762,17 +769,18 @@ func (s *Scanner) processReorg(block sidecar.ChainBlock, chainHeight int64) ([]*
 			return nil, matchErr
 		}
 		if !matches {
-			if err = s.reorgStore.DeleteJournal(); err != nil {
-				return nil, err
-			}
-			journal, err = s.discoverReorg(block.Height)
-			if err != nil {
-				return nil, err
-			}
-			if journal == nil {
-				return nil, nil
-			}
-			return s.replayReorgJournal(journal, chainHeight, block)
+			// ReplayedMetas/ReplayedItems may be the only durable description of
+			// an intermediate fork whose observations reached Observer before the
+			// delivery checkpoint committed. Replacing this journal would make a
+			// later fork's errata impossible to construct. Stop with the journal
+			// intact; automatic supersession needs a durable observation-ACK phase
+			// and must also include the current fetch-height metadata.
+			return nil, fmt.Errorf(
+				"%w: %s journal anchored at %d no longer matches canonical before delivery commit",
+				ErrReorgSupersessionUnsafe,
+				journal.Phase,
+				journal.AnchorHeight,
+			)
 		}
 		return s.resumeReorgDelivery(journal)
 	}

@@ -2,46 +2,56 @@ package monero
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/rs/zerolog/log"
+	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb/storage"
 
+	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
+	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
 )
 
-// reorgJournalMatchesCanonical is the predicate that gates the journal
-// supersession branch in processReorg: a delivered/replayed journal whose
-// replayed metas no longer match canonical must return false, which drives
-// DeleteJournal -> rediscover. The reviewer suspected a metadata-loss bug here.
-// There is none: DeleteJournal drops only journal state, and buildReorgJournal
-// re-derives divergence from the still-present block metas. This test pins both
-// halves — the predicate detects a second reorg, and it accepts an unchanged
-// chain — so a future refactor cannot silently turn the self-healing path into
-// a stale-journal resume.
-func TestReorgJournalMatchesCanonicalDetectsSecondReorg(t *testing.T) {
+// TestProcessReorgRetainsIntermediateForkOnSecondReorg covers A -> B -> C
+// before B's delivery checkpoint commits. Observer may already have persisted
+// B transactions, while their only recoverable description is the pending
+// journal. Superseding that journal from A's published metadata would omit B
+// errata. The safe near-launch behavior is therefore a terminal, inspectable
+// stop with every A/B artifact left untouched.
+func TestProcessReorgRetainsIntermediateForkOnSecondReorg(t *testing.T) {
 	t.Parallel()
 
 	anchorHash := testXMRHash("sup-anchor-98")
-	replayed99 := testXMRHash("sup-99")
-	replayed100 := testXMRHash("sup-100")
-	next101 := testXMRHash("sup-101")
-	// The second reorg: height 100's canonical hash changes out from under the
-	// already-delivered journal.
-	rewritten100 := testXMRHash("sup-100-rewritten")
+	a99 := testXMRHash("sup-a-99")
+	a100 := testXMRHash("sup-a-100")
+	b99 := testXMRHash("sup-b-99")
+	b100 := testXMRHash("sup-b-100")
+	c99 := testXMRHash("sup-c-99")
+	c100 := testXMRHash("sup-c-100")
+	c101 := testXMRHash("sup-c-101")
+	aTx := testXMRHash("sup-a-tx")
+	bTx := testXMRHash("sup-b-tx")
 
-	blockHashAt := map[int64]string{
-		99:  replayed99,
-		100: replayed100,
-		101: next101,
+	canonical := map[int64]sidecar.ChainBlock{
+		99:  withBlockHeader(99, defaultCoinbaseValue, c99, anchorHash),
+		100: withBlockHeader(100, defaultCoinbaseValue, c100, c99),
+		101: withBlockHeader(101, defaultCoinbaseValue, c101, c100),
 	}
+	continuity := newTestScannerContinuity(101)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if continuity.handle(t, w, r) {
+			return
+		}
 		if !strings.HasPrefix(r.URL.Path, "/v1/monero/chain/block/") {
 			http.NotFound(w, r)
 			return
@@ -51,12 +61,12 @@ func TestReorgJournalMatchesCanonicalDetectsSecondReorg(t *testing.T) {
 			http.Error(w, "bad height", http.StatusBadRequest)
 			return
 		}
-		hash := blockHashAt[height]
-		prev := blockHashAt[height-1]
-		if height == 99 {
-			prev = anchorHash
+		block, ok := canonical[height]
+		if !ok {
+			http.Error(w, "unknown height", http.StatusNotFound)
+			return
 		}
-		_ = json.NewEncoder(w).Encode(sidecar.ChainBlockResp(withBlockHeader(height, defaultCoinbaseValue, hash, prev)))
+		_ = json.NewEncoder(w).Encode(sidecar.ChainBlockResp(block))
 	}))
 	defer server.Close()
 
@@ -67,42 +77,106 @@ func TestReorgJournalMatchesCanonicalDetectsSecondReorg(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new sidecar client: %v", err)
 	}
+	db, err := leveldb.Open(storage.NewMemStorage(), nil)
+	if err != nil {
+		t.Fatalf("open in-memory leveldb: %v", err)
+	}
+	defer db.Close()
 
-	scanner := NewScanner(log.Logger, client, nil, common.XMRChain, common.EmptyPubKey, 72)
+	store := NewReorgStore(db)
+	publishedA := []*reorgBlockMeta{
+		{Height: 98, BlockHash: anchorHash, PreviousHash: testXMRHash("sup-a-97")},
+		{Height: 99, BlockHash: a99, PreviousHash: anchorHash},
+		{Height: 100, BlockHash: a100, PreviousHash: a99, CustomerTransactions: []string{aTx}},
+	}
+	for _, meta := range publishedA {
+		if err = store.Set(meta); err != nil {
+			t.Fatalf("seed A metadata at %d: %v", meta.Height, err)
+		}
+	}
 
-	// A journal that has already replayed heights 99 and 100 off anchor 98.
-	journal := &reorgJournal{
+	intermediateB := &reorgJournal{
 		Version:      2,
 		Phase:        reorgPhaseDelivered,
 		AnchorHeight: 98,
 		AnchorHash:   anchorHash,
 		Heights:      []int64{99, 100},
+		Errata: []reorgErrataRecord{
+			{Height: 100, TxIDs: []string{aTx}},
+		},
 		ReplayedMetas: []*reorgBlockMeta{
-			{Height: 99, BlockHash: replayed99, PreviousHash: anchorHash},
-			{Height: 100, BlockHash: replayed100, PreviousHash: replayed99},
+			{Height: 99, BlockHash: b99, PreviousHash: anchorHash},
+			{Height: 100, BlockHash: b100, PreviousHash: b99, CustomerTransactions: []string{bTx}},
+		},
+		ReplayedItems: []*stypes.TxInItem{
+			{BlockHeight: 100, Tx: bTx, Sender: "intermediate-b"},
 		},
 	}
-	nextBlock := withBlockHeader(101, defaultCoinbaseValue, next101, replayed100)
-
-	// Canonical is unchanged: the journal still matches, so processReorg would
-	// resume delivery rather than re-discover.
-	matches, err := scanner.reorgJournalMatchesCanonical(journal, nextBlock)
-	if err != nil {
-		t.Fatalf("match check: %v", err)
+	if err = store.SetJournal(intermediateB); err != nil {
+		t.Fatalf("seed B journal: %v", err)
 	}
-	if !matches {
-		t.Fatal("an unchanged canonical chain must still match the delivered journal")
+	wantJournal, err := store.GetJournal()
+	if err != nil {
+		t.Fatalf("reload seeded B journal: %v", err)
 	}
 
-	// A second reorg rewrites height 100. The predicate must now report a
-	// mismatch, which is what triggers supersession (DeleteJournal + rediscover).
-	blockHashAt[100] = rewritten100
-	matches, err = scanner.reorgJournalMatchesCanonical(journal, nextBlock)
-	if err != nil {
-		t.Fatalf("match check after second reorg: %v", err)
+	scanner := NewScanner(log.Logger, client, nil, common.XMRChain, common.EmptyPubKey, 72)
+	scanner.SetReorgStore(store)
+	errataQueue := make(chan stypes.ErrataBlock, 1)
+	scanner.SetErrataQueue(errataQueue)
+
+	for attempt := 1; attempt <= 2; attempt++ {
+		_, processErr := scanner.processReorg(canonical[101], 101)
+		if !errors.Is(processErr, ErrReorgSupersessionUnsafe) {
+			t.Fatalf("attempt %d: expected unsafe-supersession stop, got %v", attempt, processErr)
+		}
+
+		gotJournal, loadErr := store.GetJournal()
+		if loadErr != nil {
+			t.Fatalf("attempt %d: reload B journal: %v", attempt, loadErr)
+		}
+		if !reflect.DeepEqual(gotJournal, wantJournal) {
+			t.Fatalf("attempt %d mutated the only durable B history:\n got: %#v\nwant: %#v", attempt, gotJournal, wantJournal)
+		}
+		if len(gotJournal.ReplayedItems) != 1 || gotJournal.ReplayedItems[0].Tx != bTx {
+			t.Fatalf("attempt %d lost intermediate B transaction %s: %#v", attempt, bTx, gotJournal.ReplayedItems)
+		}
+		for _, wantMeta := range publishedA {
+			gotMeta, metaErr := store.Get(wantMeta.Height)
+			if metaErr != nil {
+				t.Fatalf("attempt %d: reload A metadata at %d: %v", attempt, wantMeta.Height, metaErr)
+			}
+			if !reflect.DeepEqual(gotMeta, wantMeta) {
+				t.Fatalf("attempt %d replaced published A metadata at %d: got %#v want %#v", attempt, wantMeta.Height, gotMeta, wantMeta)
+			}
+		}
+		select {
+		case errata := <-errataQueue:
+			t.Fatalf("attempt %d emitted errata while supersession was unsafe: %#v", attempt, errata)
+		default:
+		}
 	}
-	if matches {
-		t.Fatal("a journal whose replayed height was reorged again must not match; " +
-			"resuming its stale delivery would publish superseded metadata")
+
+	// The public FetchTxs path must convert the preservation sentinel into the
+	// terminal control-flow error that stops BlockScanner and pages an operator,
+	// rather than hammering the same unsafe supersession forever.
+	_, fetchErr := scanner.FetchTxs(101, 101)
+	var recoveryRequired *btypes.ScannerRecoveryRequiredError
+	if !errors.As(fetchErr, &recoveryRequired) {
+		t.Fatalf("expected terminal scanner recovery error, got %v", fetchErr)
+	}
+	if recoveryRequired.CurrentHeight != 101 || recoveryRequired.NextHeight != 101 {
+		t.Fatalf("unexpected recovery heights: %#v", recoveryRequired)
+	}
+	if !strings.Contains(recoveryRequired.Reason, ErrReorgSupersessionUnsafe.Error()) ||
+		!strings.Contains(recoveryRequired.Reason, "journal retained") {
+		t.Fatalf("recovery reason does not explain the retained journal: %q", recoveryRequired.Reason)
+	}
+	gotJournal, err := store.GetJournal()
+	if err != nil {
+		t.Fatalf("reload B journal after public-path stop: %v", err)
+	}
+	if !reflect.DeepEqual(gotJournal, wantJournal) {
+		t.Fatalf("public-path stop mutated the B journal: got %#v want %#v", gotJournal, wantJournal)
 	}
 }
