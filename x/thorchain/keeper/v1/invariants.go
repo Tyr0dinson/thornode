@@ -27,8 +27,12 @@ func (k KVStore) InvariantRoutes() []common.InvariantRoute {
 // while lacking the gas asset needed to actually send it out (an L1 send needs
 // the chain's gas asset to sign/broadcast). This surfaces the "asset on one
 // vault, gas on another" composition that wedges outbounds — e.g. a vault holding
-// TRON.USDT but too little TRON.TRX — so it can be monitored and rebalanced. It
-// is diagnostic only and never halts the chain.
+// TRON.USDT but too little TRON.TRX — so ops can alert and rebalance.
+//
+// It is diagnostic telemetry only: a gas-poor vault is an operational condition,
+// not state corruption, so this NEVER sets `broken`. It reports the affected
+// vaults in `msg` (readable at /thorchain/invariant/vault_gas) without ever
+// failing the invariant/export checks or halting the chain.
 func VaultGasInvariant(k KVStore) common.Invariant {
 	return func(ctx cosmos.Context) (msg []string, broken bool) {
 		iterator := k.GetVaultIterator(ctx)
@@ -64,7 +68,7 @@ func VaultGasInvariant(k KVStore) common.Invariant {
 					continue // no valid network fee known; cannot assess
 				}
 				if vault.GetCoin(gasAsset).Amount.LT(minGas) {
-					broken = true
+					// Report only — deliberately do NOT set broken (see doc comment).
 					msg = append(msg, fmt.Sprintf("vault_gas: %s holds %s asset(s) with insufficient %s gas (%s < %s)",
 						vault.PubKey, chain, gasAsset, vault.GetCoin(gasAsset).Amount, minGas))
 				}

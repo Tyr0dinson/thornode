@@ -1,0 +1,42 @@
+{{ template "default-state.yaml" }}
+---
+type: state
+genesis:
+  app_state:
+    thorchain:
+      network_fees:
+        - chain: ETH
+          transaction_fee_rate: "80"
+          transaction_size: "80000"
+      vaults:
+        - block_height: "0"
+          chains:
+            - THOR
+            - ETH
+          coins:
+            - amount: "100000000000"
+              asset: ETH.USDC-0X9999999999999999999999999999999999999999
+              decimals: "8"
+            - amount: "1000" # far below one send's gas -> wedged
+              asset: ETH.ETH
+              decimals: "8"
+          inbound_tx_count: "1"
+          membership:
+            - {{ pubkey_fish }}
+          pub_key: {{ pubkey_fish }}
+          status: ActiveVault
+          type: AsgardVault
+---
+type: create-blocks
+count: 1
+---
+# vault_gas is diagnostic telemetry: it reports the gas-poor vault (holds ETH.USDC
+# but too little ETH to send it) in msg, but must NEVER set broken — a gas-poor
+# vault is an operational condition, not state corruption, so it must not fail the
+# invariant/export checks or halt the chain.
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/vault_gas
+asserts:
+  - .broken == false
+  - .msg | length > 0
+  - .msg | join(" ") | contains("{{ pubkey_fish }}")

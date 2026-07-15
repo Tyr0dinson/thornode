@@ -393,8 +393,10 @@ func (s *InvariantsSuite) TestVaultGasInvariant(c *C) {
 	gasOnly.Coins = common.Coins{common.NewCoin(common.ETHAsset, cosmos.ZeroUint())}
 	c.Assert(k.SetVault(ctx, gasOnly), IsNil)
 
+	// Diagnostic only: reports the wedged vault in msg, but never sets broken so
+	// it can never fail the invariant/export checks or halt the chain.
 	msg, broken := VaultGasInvariant(k)(ctx)
-	c.Assert(broken, Equals, true)
+	c.Assert(broken, Equals, false)
 	c.Assert(msg, HasLen, 1) // only the wedged vault
 	c.Assert(strings.Contains(msg[0], wedged.PubKey.String()), Equals, true)
 }
