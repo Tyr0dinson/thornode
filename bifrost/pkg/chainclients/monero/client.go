@@ -32,6 +32,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/app"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/runners"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
@@ -1716,7 +1717,11 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		if maxGasErr, ok := xmrMaxGasExceededFromFrostResponse(resp, signReqCtx.maxGasAtomic); ok {
 			return nil, nil, nil, maxGasErr
 		}
-		if len(resp.Blame.BlameNodes) > 0 {
+		// Preserve an ordinary FROST phase even when no peer is blameable. The
+		// signer uses frost_share to keep the vault/checkpoint once a signature
+		// share may have escaped; postKeysignFailure independently refuses to
+		// submit empty-node blame on-chain.
+		if len(resp.Blame.BlameNodes) > 0 || strings.TrimSpace(resp.Blame.Round) != "" {
 			return nil, nil, nil, bifrosttss.NewKeysignError(frostBlameToThorchainBlame(resp.Blame))
 		}
 		return nil, nil, nil, fmt.Errorf("FROST keysign failed: %s", resp.Blame.FailReason)
@@ -1953,6 +1958,16 @@ func (e xmrMaxGasExceededError) Error() string {
 		e.actualFeeAtomic,
 		e.maxGasAtomic,
 	)
+}
+
+// Unwrap preserves the terminal FROST share phase for signer retry safety.
+// The embedded blame has no nodes, so it cannot produce an on-chain failure
+// vote or slash; it only prevents rescheduling after signature shares exist.
+func (e xmrMaxGasExceededError) Unwrap() error {
+	return bifrosttss.NewKeysignError(ttypes.Blame{
+		FailReason: e.Error(),
+		Round:      messages.FROSTKEYSIGNSHARE,
+	})
 }
 
 // enforceXMRMaxGas is the Bifrost-side safety check for older or mismatched

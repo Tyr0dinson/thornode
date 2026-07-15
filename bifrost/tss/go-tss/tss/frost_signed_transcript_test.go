@@ -9,6 +9,7 @@ import (
 	legacybech32 "github.com/cosmos/cosmos-sdk/types/bech32/legacybech32"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
+	tcommon "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/common"
 )
 
 func TestFrostSignedEnvelopeAndEcho(t *testing.T) {
@@ -146,14 +147,20 @@ func TestFrostEquivocationEvidenceRejectsCrossNetworkPair(t *testing.T) {
 	}
 }
 
-func TestFrostEvidenceBlameActivationBoundary(t *testing.T) {
-	if frostEvidenceBlameActivated("3.19.5") {
-		t.Fatalf("FROST evidence blame must remain disabled in 3.19.x")
+func TestFrostEquivocationRemainsNonActionableOnChain(t *testing.T) {
+	coord := &FrostSignCoordinator{}
+	resp := coord.failForEquivocation(messages.FrostEquivocationEvidence{
+		First: messages.FrostSignedEnvelope{
+			Round:        frostRoundShare,
+			SenderPubKey: "thorpub1culprit",
+			PayloadHash:  strings.Repeat("a", 64),
+		},
+		Second: messages.FrostSignedEnvelope{PayloadHash: strings.Repeat("b", 64)},
+	})
+	if resp.Status != tcommon.Fail {
+		t.Fatalf("equivocation must fail the local ceremony, got %q", resp.Status)
 	}
-	if !frostEvidenceBlameActivated("3.20.0") {
-		t.Fatalf("FROST evidence blame must activate at 3.20.0")
-	}
-	if frostEvidenceBlameActivated("not-a-version") {
-		t.Fatalf("invalid version must fail closed")
+	if resp.Blame.Round != frostRoundShare || len(resp.Blame.BlameNodes) != 0 {
+		t.Fatalf("unvalidated evidence must not become on-chain blame: %+v", resp.Blame)
 	}
 }

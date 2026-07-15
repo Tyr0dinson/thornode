@@ -13,6 +13,7 @@ import (
 
 	"github.com/blang/semver"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
@@ -562,6 +563,10 @@ func TestEnforceXMRMaxGasRejectsOverCapFees(t *testing.T) {
 	if !strings.Contains(err.Error(), tssp.FrostFailReasonXMRMaxGasExceeded) {
 		t.Fatalf("expected stable max gas error prefix, got %v", err)
 	}
+	var keysignErr bifrosttss.KeysignError
+	if !errors.As(err, &keysignErr) || !keysignErr.IsTerminalRound() {
+		t.Fatalf("over-cap result must preserve terminal FROST share semantics: %v", err)
+	}
 }
 
 func TestSignTxPostsKeysignFailureWhenSignFails(t *testing.T) {
@@ -643,7 +648,7 @@ func TestSignTxPostsKeysignFailureWhenSignFails(t *testing.T) {
 	}
 }
 
-func TestSignTxSkipsKeysignFailurePostWhenBlameNodesEmpty(t *testing.T) {
+func TestSignTxKeepsTerminalRoundWithoutPostingEmptyBlame(t *testing.T) {
 	t.Parallel()
 
 	vaultPubKey, vaultAddress := testVaultPubKeyAndAddress(t)
@@ -664,6 +669,7 @@ func TestSignTxSkipsKeysignFailurePostWhenBlameNodesEmpty(t *testing.T) {
 			Status: gotsscommon.Fail,
 			Blame: gotssblame.Blame{
 				FailReason: "xmr keysign failed",
+				Round:      messages.FROSTKEYSIGNSHARE,
 			},
 		},
 	}
@@ -706,6 +712,13 @@ func TestSignTxSkipsKeysignFailurePostWhenBlameNodesEmpty(t *testing.T) {
 	_, _, _, signErr := c.SignTx(tx, 999)
 	if signErr == nil {
 		t.Fatalf("expected SignTx error")
+	}
+	var keysignErr bifrosttss.KeysignError
+	if !errors.As(signErr, &keysignErr) {
+		t.Fatalf("expected round-only failure to remain a keysign error, got %T: %v", signErr, signErr)
+	}
+	if !keysignErr.IsTerminalRound() {
+		t.Fatalf("expected FROST share failure to remain terminal")
 	}
 
 	if bridge.calls != 0 {

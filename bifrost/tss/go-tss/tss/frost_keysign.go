@@ -30,9 +30,9 @@ const (
 	frostPlanHashDomain          = "thorchain-frost-eventuality-plan-v2"
 	frostEventualityIDDomain     = "thorchain-frost-eventuality-id-v2"
 	frostEventualityVersion      = uint8(2)
-	frostRoundPreprocess         = "frost_preprocess"
-	frostRoundShare              = "frost_share"
-	frostRoundResult             = "frost_result"
+	frostRoundPreprocess         = messages.FROSTKEYSIGNPREPROCESS
+	frostRoundShare              = messages.FROSTKEYSIGNSHARE
+	frostRoundResult             = messages.FROSTKEYSIGNRESULT
 	frostEventualityHashHexBytes = 64
 	frostMaxResultTxHexChars     = 2 * 1024 * 1024
 	frostMaxResultSpentRefs      = 4096
@@ -45,19 +45,18 @@ const (
 var errFrostResultTimeout = errors.New("timeout waiting for frost result")
 
 type FrostSignCoordinator struct {
-	logger            zerolog.Logger
-	p2pCommunication  *p2p.Communication
-	sidecar           FrostSidecarClient
-	localPubKey       string
-	msgID             string
-	vaultPubKey       string
-	network           string
-	expectedPlanHash  string
-	msgChan           chan *p2p.Message
-	timeout           time.Duration
-	privateKey        tcrypto.PrivKey
-	strictTranscript  bool
-	evidenceActivated bool
+	logger           zerolog.Logger
+	p2pCommunication *p2p.Communication
+	sidecar          FrostSidecarClient
+	localPubKey      string
+	msgID            string
+	vaultPubKey      string
+	network          string
+	expectedPlanHash string
+	msgChan          chan *p2p.Message
+	timeout          time.Duration
+	privateKey       tcrypto.PrivKey
+	strictTranscript bool
 }
 
 func NewFrostSignCoordinator(
@@ -69,23 +68,21 @@ func NewFrostSignCoordinator(
 	msgChan chan *p2p.Message,
 	timeout time.Duration,
 	privateKey tcrypto.PrivKey,
-	evidenceActivated bool,
 ) *FrostSignCoordinator {
 	if timeout <= 0 {
 		timeout = 90 * time.Second
 	}
 	return &FrostSignCoordinator{
-		logger:            log.With().Str("module", "frost_keysign").Str("msg_id", msgID).Logger(),
-		p2pCommunication:  comm,
-		sidecar:           sidecar,
-		localPubKey:       strings.TrimSpace(localPubKey),
-		msgID:             strings.TrimSpace(msgID),
-		expectedPlanHash:  strings.TrimSpace(expectedPlanHash),
-		msgChan:           msgChan,
-		timeout:           timeout,
-		privateKey:        privateKey,
-		strictTranscript:  privateKey != nil,
-		evidenceActivated: evidenceActivated,
+		logger:           log.With().Str("module", "frost_keysign").Str("msg_id", msgID).Logger(),
+		p2pCommunication: comm,
+		sidecar:          sidecar,
+		localPubKey:      strings.TrimSpace(localPubKey),
+		msgID:            strings.TrimSpace(msgID),
+		expectedPlanHash: strings.TrimSpace(expectedPlanHash),
+		msgChan:          msgChan,
+		timeout:          timeout,
+		privateKey:       privateKey,
+		strictTranscript: privateKey != nil,
 	}
 }
 
@@ -607,7 +604,6 @@ func (t *TssServer) FrostKeySign(req FrostKeySignRequest, sidecar FrostSidecarCl
 		msgChan,
 		t.conf.KeySignTimeout,
 		t.privateKey,
-		frostEvidenceBlameActivated(req.Version),
 	)
 
 	// Nodes outside the filtered active set must not join the FROST ceremony,
@@ -848,40 +844,30 @@ func (c *FrostSignCoordinator) Execute(
 		AllShares: shares,
 	})
 	if err != nil {
-		return FrostKeySignResponse{
-			Status: tcommon.Fail,
-			Blame:  blame.NewBlame(fmt.Sprintf("frost combine failed: %v", err), nil),
-		}
+		return c.failForPubKeys(fmt.Sprintf("frost combine failed: %v", err), frostRoundShare, nil)
 	}
 	// The sidecar enforces MaxGas during transaction construction, but keep the
 	// same cap check here so a buggy or mismatched signer cannot return an
 	// over-cap transaction that Bifrost would later observe.
 	if req.MaxGasAtomic > 0 && combineResp.FeeAtomic > req.MaxGasAtomic {
-		return FrostKeySignResponse{
-			FeeAtomic: combineResp.FeeAtomic,
-			Status:    tcommon.Fail,
-			Blame: blame.NewBlame(
-				fmt.Sprintf("%s actual_fee_atomic=%d max_gas_atomic=%d", FrostFailReasonXMRMaxGasExceeded, combineResp.FeeAtomic, req.MaxGasAtomic),
-				nil,
-			),
-		}
+		resp := c.failForPubKeys(
+			fmt.Sprintf("%s actual_fee_atomic=%d max_gas_atomic=%d", FrostFailReasonXMRMaxGasExceeded, combineResp.FeeAtomic, req.MaxGasAtomic),
+			frostRoundShare,
+			nil,
+		)
+		resp.FeeAtomic = combineResp.FeeAtomic
+		return resp
 	}
 	if err := validateFrostPreparedInputs(prepareResp.SelectedInputs, combineResp.SpentOutputRefs, combineResp.TxHash); err != nil {
-		return FrostKeySignResponse{
-			Status: tcommon.Fail,
-			Blame:  blame.NewBlame(fmt.Sprintf("frost combine input binding failed: %v", err), nil),
-		}
+		return c.failForPubKeys(fmt.Sprintf("frost combine input binding failed: %v", err), frostRoundShare, nil)
 	}
 	txKey := combineResp.TxKey
 	if _, err := FrostTxKeyHash(txKey); err != nil {
-		return FrostKeySignResponse{Status: tcommon.Fail, Blame: blame.NewBlame(fmt.Sprintf("invalid frost combine tx_key: %v", err), nil)}
+		return c.failForPubKeys(fmt.Sprintf("invalid frost combine tx_key: %v", err), frostRoundShare, nil)
 	}
 	eventuality, err := BuildFrostEventuality(c.expectedPlanHash, combineResp.TxHash, combineResp.TxHex, txKey, combineResp.FeeAtomic)
 	if err != nil {
-		return FrostKeySignResponse{
-			Status: tcommon.Fail,
-			Blame:  blame.NewBlame(fmt.Sprintf("failed to derive eventuality: %v", err), nil),
-		}
+		return c.failForPubKeys(fmt.Sprintf("failed to derive eventuality: %v", err), frostRoundShare, nil)
 	}
 
 	return FrostKeySignResponse{
@@ -1541,35 +1527,24 @@ func (c *FrostSignCoordinator) failForPubKeys(reason, round string, pubKeys []st
 }
 
 func (c *FrostSignCoordinator) failForEquivocation(evidence messages.FrostEquivocationEvidence) FrostKeySignResponse {
-	if !c.evidenceActivated {
-		// The v2 round identifiers are consensus-gated at 3.20. Before that
-		// boundary, preserve the local diagnostic but emit no actionable blame.
-		return c.failForPubKeys(frostEquivocationFailReason, "", nil)
+	// Signed transcript equivocation is sufficient to abort the local ceremony,
+	// but MsgTssKeysignFail has no consensus-side evidence verifier yet. Emitting
+	// a culprit or FROSTV2 round here would either fail message construction or,
+	// if merely allow-listed, make unvalidated evidence slashable. Keep the
+	// diagnostic local until the message ID and handler bind and verify it.
+	// Preserve only the ordinary ceremony phase so the signer can apply its
+	// terminal-share retry guard without making the evidence actionable.
+	c.logger.Error().
+		Str("sender", evidence.First.SenderPubKey).
+		Str("round", evidence.First.Round).
+		Str("first_payload_hash", evidence.First.PayloadHash).
+		Str("second_payload_hash", evidence.Second.PayloadHash).
+		Msg("detected signed FROST equivocation; on-chain evidence reporting is disabled")
+	round := strings.TrimSpace(evidence.First.Round)
+	if round != frostRoundPreprocess && round != frostRoundShare {
+		round = ""
 	}
-	buf, err := messages.MarshalFrostEquivocationEvidence(evidence)
-	if err != nil {
-		return c.failForPubKeys(fmt.Sprintf("failed to encode FROST equivocation evidence: %v", err), "", nil)
-	}
-	round := ""
-	switch evidence.First.Round {
-	case frostRoundPreprocess:
-		round = messages.FrostBlameRoundPreprocessEquivocation
-	case frostRoundShare:
-		round = messages.FrostBlameRoundShareEquivocation
-	default:
-		return c.failForPubKeys("unsupported FROST equivocation evidence round", "", nil)
-	}
-	b := blame.NewBlame(frostEquivocationFailReason, []blame.Node{{
-		Pubkey:    evidence.First.SenderPubKey,
-		BlameData: buf,
-	}})
-	b.Round = round
-	return FrostKeySignResponse{Status: tcommon.Fail, Blame: b}
-}
-
-func frostEvidenceBlameActivated(version string) bool {
-	old, err := conversion.VersionLTCheck(strings.TrimSpace(version), "3.20.0")
-	return err == nil && !old
+	return c.failForPubKeys(frostEquivocationFailReason, round, nil)
 }
 
 func parseWrappedMessage(raw []byte) (messages.WrappedMessage, bool) {
