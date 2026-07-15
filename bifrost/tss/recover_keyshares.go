@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	ctypes "github.com/cosmos/cosmos-sdk/types"
@@ -29,7 +30,10 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
-var keyshareRecoveryNodeHome = app.DefaultNodeHome
+var (
+	keyshareRecoveryNodeHome = app.DefaultNodeHome
+	recoveryArtifactMu       sync.Mutex
+)
 
 const (
 	maxFrostRecoveryFileBytes  = int64(1024 * 1024)
@@ -393,9 +397,29 @@ func validateFrostRecoveryFile(path, seedPhrase, network string, vaultPubKey com
 }
 
 func quarantineRecoveryFile(path string) error {
+	recoveryArtifactMu.Lock()
+	defer recoveryArtifactMu.Unlock()
+	return quarantineRecoveryFileLocked(path)
+}
+
+func quarantineRecoveryFileLocked(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("recovery artifact is not a regular file")
+	}
 	quarantined := fmt.Sprintf("%s.invalid-%d", path, time.Now().UnixNano())
 	if err := os.Rename(path, quarantined); err != nil {
 		return err
+	}
+	moved, err := os.Lstat(quarantined)
+	if err != nil {
+		return fmt.Errorf("failed to inspect quarantined recovery artifact: %w", err)
+	}
+	if !moved.Mode().IsRegular() || !os.SameFile(info, moved) {
+		return fmt.Errorf("recovery artifact changed while being quarantined")
 	}
 	return syncRecoveryDirectory(filepath.Dir(path))
 }
@@ -660,6 +684,9 @@ func encryptAtRestForRecovery(data []byte, seedPhrase string) ([]byte, error) {
 }
 
 func writeRecoveredBytes(path string, data []byte) error {
+	recoveryArtifactMu.Lock()
+	defer recoveryArtifactMu.Unlock()
+
 	if len(data) == 0 || int64(len(data)) > maxFrostRecoveryFileBytes {
 		return fmt.Errorf("recovery artifact size %d is outside 1..%d", len(data), maxFrostRecoveryFileBytes)
 	}
@@ -692,11 +719,27 @@ func writeRecoveredBytes(path string, data []byte) error {
 		return fmt.Errorf("failed to close recovery temp file: %w", err)
 	}
 
-	if _, err := os.Lstat(path); err == nil {
-		return fmt.Errorf("recovery file already exists: %s", path)
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("failed to inspect recovery destination: %w", err)
+	if fi, statErr := os.Lstat(path); statErr == nil {
+		if !fi.Mode().IsRegular() {
+			return fmt.Errorf("recovery destination is not a regular file: %s", path)
+		}
+		if fi.Size() != 0 {
+			return fmt.Errorf("recovery file already exists: %s", path)
+		}
+		// A zero-byte regular file is not a recovered keyshare, but leaving it
+		// in place makes every retry fail the no-overwrite guard below. Preserve
+		// it for inspection, sync the rename, then publish the authenticated
+		// replacement through the same temp-file path as a missing artifact.
+		if err := quarantineRecoveryFileLocked(path); err != nil {
+			return fmt.Errorf("failed to quarantine empty recovery file: %w", err)
+		}
+	} else if !os.IsNotExist(statErr) {
+		return fmt.Errorf("failed to inspect recovery destination: %w", statErr)
 	}
+	// Recovery writers in this process are serialized by recoveryArtifactMu;
+	// the node home is a single-process ownership boundary. Rename publishes a
+	// single durable name, avoiding a crash state that leaves a second hard link
+	// to key material under the temporary filename.
 	if err := os.Rename(tmpPath, path); err != nil {
 		return fmt.Errorf("failed to publish recovery file: %w", err)
 	}

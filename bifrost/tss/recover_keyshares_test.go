@@ -404,6 +404,67 @@ func (s *RecoverKeysharesSuite) TestWriteRecoveredBytesDoesNotReplaceExisting(c 
 	c.Assert(entries, HasLen, 1)
 }
 
+func (s *RecoverKeysharesSuite) TestLegacyRecoveryReplacesEmptyArtifacts(c *C) {
+	_, cleanup := setupRecoveryKeysharesTest(c)
+	defer cleanup()
+
+	legacyPubKey := types.GetRandomPubKey()
+	eddsaPubKey := types.GetRandomEd25519PubKey()
+	signer, err := types.GetRandomPubKey().GetThorAddress()
+	c.Assert(err, IsNil)
+	target := keyshareRecoveryTarget{
+		kind:            recoveryTargetLegacy,
+		pubKey:          legacyPubKey,
+		poolPubKeyEddsa: eddsaPubKey,
+	}
+	vaults := types.Vaults{{PubKey: legacyPubKey, PubKeyEddsa: eddsaPubKey, BlockHeight: 123}}
+	ecdsaPath := localstateKeysharePath(legacyPubKey)
+	eddsaPath := localstateKeysharePath(eddsaPubKey)
+	c.Assert(os.WriteFile(ecdsaPath, nil, 0o600), IsNil)
+	c.Assert(os.WriteFile(eddsaPath, nil, 0o600), IsNil)
+
+	err = recoverLegacyKeySharesFromBackups(signer, target, vaults, recoveryBackups{
+		secp256k1: encryptedLocalStateTestFile(c),
+		eddsa:     encryptedLocalStateTestFile(c),
+	})
+	c.Assert(err, IsNil)
+	original := readLocalStateTestFile(c)
+	assertRecoveredLocalState(c, ecdsaPath, original)
+	assertRecoveredLocalState(c, eddsaPath, original)
+	assertEmptyRecoveryArtifactQuarantined(c, ecdsaPath)
+	assertEmptyRecoveryArtifactQuarantined(c, eddsaPath)
+}
+
+func (s *RecoverKeysharesSuite) TestFrostRecoveryReplacesEmptyArtifact(c *C) {
+	rawKeyshares := []byte("deadbeefcafebabe")
+	vaultPubKey := types.GetRandomEd25519PubKey()
+	encrypted, err := EncryptRawKeyshares(rawKeyshares, Mnemonic)
+	c.Assert(err, IsNil)
+
+	dir, err := os.MkdirTemp("", "recover-keyshares-empty-frost-*")
+	c.Assert(err, IsNil)
+	defer os.RemoveAll(dir)
+
+	path := filepath.Join(dir, "frost-recovery.hex")
+	c.Assert(os.WriteFile(path, nil, 0o600), IsNil)
+	exists, err := recoveryFileExists(path)
+	c.Assert(err, IsNil)
+	c.Assert(exists, Equals, false)
+	c.Assert(writeRecoveredRawKeyshares(path, encrypted, Mnemonic, "mocknet", vaultPubKey), IsNil)
+	c.Assert(validateFrostRecoveryFile(path, Mnemonic, "mocknet", vaultPubKey), IsNil)
+	assertEmptyRecoveryArtifactQuarantined(c, path)
+}
+
+func assertEmptyRecoveryArtifactQuarantined(c *C, path string) {
+	matches, err := filepath.Glob(path + ".invalid-*")
+	c.Assert(err, IsNil)
+	c.Assert(matches, HasLen, 1)
+	fi, err := os.Stat(matches[0])
+	c.Assert(err, IsNil)
+	c.Assert(fi.Mode().IsRegular(), Equals, true)
+	c.Assert(fi.Size(), Equals, int64(0))
+}
+
 func setupRecoveryKeysharesTest(c *C) (string, func()) {
 	dir, err := os.MkdirTemp("", "recover-keyshares-home-*")
 	c.Assert(err, IsNil)
