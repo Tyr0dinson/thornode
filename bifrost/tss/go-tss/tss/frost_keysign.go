@@ -582,10 +582,11 @@ func (t *TssServer) FrostKeySign(req FrostKeySignRequest, sidecar FrostSidecarCl
 	}
 	msgChan := make(chan *p2p.Message, p2p.FrostSessionQueueSize)
 	sigChan := make(chan string, 2)
+	verificationMessageLimit := p2p.FrostVerificationMessagesPerPeer(len(activeSignerPubKeys), 2)
 
 	t.p2pCommunication.SetSubscribeWithPeers(messages.TSSFrostPreprocessMsg, msgID, msgChan, allowedPeerIDs, p2p.FrostMaxSessionPayload, p2p.FrostMaxMessagesPerPeer)
 	t.p2pCommunication.SetSubscribeWithPeers(messages.TSSFrostShareMsg, msgID, msgChan, allowedPeerIDs, p2p.FrostMaxSessionPayload, p2p.FrostMaxMessagesPerPeer)
-	t.p2pCommunication.SetSubscribeWithPeers(messages.TSSFrostVerifyMsg, msgID, msgChan, allowedPeerIDs, p2p.FrostMaxSessionPayload, p2p.FrostMaxMessagesPerPeer)
+	t.p2pCommunication.SetSubscribeWithPeers(messages.TSSFrostVerifyMsg, msgID, msgChan, allowedPeerIDs, p2p.FrostMaxSessionPayload, verificationMessageLimit)
 	t.p2pCommunication.SetSubscribeWithPeers(messages.TSSFrostResultMsg, msgID, msgChan, allowedPeerIDs, p2p.FrostMaxSessionPayload, p2p.FrostMaxMessagesPerPeer)
 	defer func() {
 		t.p2pCommunication.CancelSubscribe(messages.TSSFrostPreprocessMsg, msgID)

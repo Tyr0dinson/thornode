@@ -136,11 +136,16 @@ func (t *TssServer) FrostKeygen(req FrostKeygenRequest, sidecar FrostSidecarKeyg
 
 	msgChan := make(chan *p2p.Message, p2p.FrostSessionQueueSize)
 	sigChan := make(chan string, 2)
+	verificationMessageLimit := p2p.FrostVerificationMessagesPerPeer(len(req.SignerPubKeys), 3)
 
 	for _, msgType := range frostKeygenMsgTypes {
+		messageLimit := p2p.FrostMaxMessagesPerPeer
+		if msgType == messages.TSSFrostVerifyMsg {
+			messageLimit = verificationMessageLimit
+		}
 		t.p2pCommunication.SetSubscribeWithPeers(
 			msgType, msgID, msgChan, allowedPeerIDs,
-			p2p.FrostMaxSessionPayload, p2p.FrostMaxMessagesPerPeer,
+			p2p.FrostMaxSessionPayload, messageLimit,
 		)
 	}
 	defer func() {

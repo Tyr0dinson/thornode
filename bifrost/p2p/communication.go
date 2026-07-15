@@ -61,10 +61,14 @@ const (
 	// the per-frame limit, at most 64 MiB can be retained while the coordinator
 	// is stalled.
 	FrostSessionQueueSize = 64
-	// FrostMaxMessagesPerPeer bounds retained/processed traffic per peer for one
-	// message type and session. 128 covers one transcript echo per member in the
-	// current maximum-size vault while preventing unbounded variants.
+	// FrostMaxMessagesPerPeer is the baseline retained/processed traffic bound
+	// per peer for one message type and session. Shared FROST verification topics
+	// use FrostVerificationMessagesPerPeer because one peer legitimately echoes
+	// every participant's transcript in every ceremony round.
 	FrostMaxMessagesPerPeer = uint32(128)
+	// frostVerificationMessageHeadroom permits a small, bounded amount of
+	// delivery overlap without weakening the cumulative byte limits below.
+	frostVerificationMessageHeadroom = uint32(16)
 	// FrostMaxBytesPerPeer is a per-peer MEMORY backstop, not a fairness
 	// guarantee. It is a fixed constant, so it does not scale down with party
 	// size: at the maximum ~128-member vault it is ~16x a peer's fair share of
@@ -82,6 +86,28 @@ const (
 	FrostMaxBytesPerPeer = uint64(8 * 1024 * 1024)
 	FrostMaxSessionBytes = uint64(64 * 1024 * 1024)
 )
+
+// FrostVerificationMessagesPerPeer sizes the shared verification-topic count
+// for a complete ceremony. The baseline preserves the existing allowance for
+// small parties; larger parties receive exactly one echo per participant and
+// round plus bounded delivery headroom. Byte budgets remain the hard memory
+// bound even if the participant set grows unexpectedly.
+func FrostVerificationMessagesPerPeer(partySize, rounds int) uint32 {
+	if partySize <= 0 || rounds <= 0 {
+		return FrostMaxMessagesPerPeer
+	}
+	max := ^uint32(0)
+	party := uint64(partySize)
+	roundCount := uint64(rounds)
+	if party > uint64(max-frostVerificationMessageHeadroom)/roundCount {
+		return max
+	}
+	limit := uint32(party*roundCount) + frostVerificationMessageHeadroom
+	if limit < FrostMaxMessagesPerPeer {
+		return FrostMaxMessagesPerPeer
+	}
+	return limit
+}
 
 // Message that get transfer across the wire
 type Message struct {
