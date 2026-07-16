@@ -485,6 +485,25 @@ func handleObservedTxInQuorum(
 		}
 	}
 
+	// Resolve reference memo before any finalized refund path. In particular,
+	// an inactive-vault XMR refund needs the registered ADD asset address rather
+	// than the unavailable observed sender encoded by the raw r:<ref> memo.
+	// Keep the parsed memo aligned as well so post-handler completion logic uses
+	// the actual transaction type rather than TxReferenceReadMemo.
+	// Amount-encoded memoless inbounds have their synthesized r:<ref> memo on
+	// the voter, while the observed transaction memo remains empty. Preserve
+	// that synthesized memo so successful processing consumes the reference.
+	referenceMemo := voter.Tx.Tx.Memo
+	referenceAsset := common.EmptyAsset
+	if len(tx.Tx.Coins) > 0 {
+		referenceAsset = tx.Tx.Coins[0].Asset
+	}
+	referenceResolved := false
+	if resolvedMemo, ok := resolveReferenceMemo(ctx, mgr, k, &tx, &voter); ok {
+		memo = resolvedMemo
+		referenceResolved = true
+	}
+
 	// Finalized inbounds observed on an inactive vault keep the historical
 	// direct-refund behavior unless the voter already shows mempool-swap
 	// participation through a live TOR reservation.
@@ -540,25 +559,6 @@ func handleObservedTxInQuorum(
 			ctx.Logger().Info("finalized mempool swap still pending advanced-queue settlement", "hash", voter.TxID)
 		}
 		return nil
-	}
-
-	// Resolve reference memo before any finalized refund path. In particular,
-	// an inactive-vault XMR refund needs the registered ADD asset address rather
-	// than the unavailable observed sender encoded by the raw r:<ref> memo.
-	// Keep the parsed memo aligned as well so post-handler completion logic uses
-	// the actual transaction type rather than TxReferenceReadMemo.
-	// Amount-encoded memoless inbounds have their synthesized r:<ref> memo on
-	// the voter, while the observed transaction memo remains empty. Preserve
-	// that synthesized memo so successful processing consumes the reference.
-	referenceMemo := voter.Tx.Tx.Memo
-	referenceAsset := common.EmptyAsset
-	if len(tx.Tx.Coins) > 0 {
-		referenceAsset = tx.Tx.Coins[0].Asset
-	}
-	referenceResolved := false
-	if resolvedMemo, ok := resolveReferenceMemo(ctx, mgr, k, &tx, &voter); ok {
-		memo = resolvedMemo
-		referenceResolved = true
 	}
 
 	ctx.Logger().Debug(
