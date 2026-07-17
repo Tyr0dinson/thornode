@@ -2643,12 +2643,19 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult
 	if c.scanner != nil {
 		c.scanner.scanMu.Lock()
 	}
+	registrationBirthday := frostResp.ObservedMoneroHeight
+	if c.blockScanner != nil {
+		registrationBirthday = xmrVaultRegistrationBirthday(
+			registrationBirthday,
+			c.blockScanner.PreviousHeight(),
+		)
+	}
 	_, registerErr := c.sidecar.RegisterVault(sidecar.RegisterVaultReq{
 		VaultPubKey:         frostVaultPubKey.String(),
 		GroupKey:            groupKeyHex,
 		Address:             frostAddr.String(),
 		Source:              "bifrost",
-		VaultCreationHeight: frostResp.ObservedMoneroHeight,
+		VaultCreationHeight: registrationBirthday,
 	})
 	if c.scanner != nil {
 		c.scanner.scanMu.Unlock()
@@ -2672,6 +2679,17 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult
 		FrostKeyshareHex:     keyshareHex,
 		ObservedMoneroHeight: frostResp.ObservedMoneroHeight,
 	}, nil
+}
+
+// xmrVaultRegistrationBirthday prevents the first vault registration from
+// starting the sidecar scanner ahead of Bifrost's already-running block
+// scanner. Scanning a conservative range before key creation is safe, while a
+// forward cursor jump could skip blocks Bifrost still expects to observe.
+func xmrVaultRegistrationBirthday(observedHeight, previousBlock int64) int64 {
+	if observedHeight > 0 && previousBlock >= 0 && previousBlock < observedHeight {
+		return previousBlock + 1
+	}
+	return observedHeight
 }
 
 func monovaultKeygenLabel(blockHeight int64, poolPubKey common.PubKey, members []string) string {

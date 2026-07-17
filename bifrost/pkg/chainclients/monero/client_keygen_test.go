@@ -296,6 +296,49 @@ func TestClientKeygenRegistersObservedMoneroHeightAsBirthday(t *testing.T) {
 	}
 }
 
+func TestXMRVaultRegistrationBirthdayAlignsFirstVaultWithBlockScanner(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name           string
+		observedHeight int64
+		previousBlock  int64
+		want           int64
+	}{
+		{
+			name:           "mocknet first vault",
+			observedHeight: 567,
+			previousBlock:  511,
+			want:           512,
+		},
+		{
+			name:           "scanner already at birthday",
+			observedHeight: 567,
+			previousBlock:  567,
+			want:           567,
+		},
+		{
+			name:           "scanner already ahead",
+			observedHeight: 567,
+			previousBlock:  600,
+			want:           567,
+		},
+		{
+			name:           "key only registration",
+			observedHeight: 0,
+			previousBlock:  511,
+			want:           0,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if got := xmrVaultRegistrationBirthday(test.observedHeight, test.previousBlock); got != test.want {
+				t.Fatalf("expected registration birthday %d, got %d", test.want, got)
+			}
+		})
+	}
+}
+
 func TestClientKeygenAllowsMonovaultRequestWithoutPreseededEddsaKey(t *testing.T) {
 	t.Parallel()
 
