@@ -17,9 +17,10 @@ func (k KVStore) SetStagedOutbound(ctx cosmos.Context, item TxOutItem, scheduled
 	if inHash.IsEmpty() {
 		return fmt.Errorf("cannot stage outbound with empty InHash")
 	}
+	cacheCtx, commit := ctx.CacheContext()
 
 	// Get existing list or create new one
-	list, err := k.getStagedOutboundList(ctx, inHash)
+	list, err := k.getStagedOutboundList(cacheCtx, inHash)
 	if err != nil {
 		return fmt.Errorf("failed to get staged outbound list: %w", err)
 	}
@@ -28,12 +29,18 @@ func (k KVStore) SetStagedOutbound(ctx cosmos.Context, item TxOutItem, scheduled
 	staged := StagedOutbound{
 		TxOutItem:       item,
 		ScheduledHeight: scheduledHeight,
-		StagedHeight:    ctx.BlockHeight(),
+		StagedHeight:    cacheCtx.BlockHeight(),
 	}
 	list.Items = append(list.Items, staged)
 
-	// Save the updated list
-	return k.setStagedOutboundList(ctx, inHash, list)
+	if err := k.adjustStagedOutboundTotals(cacheCtx, []StagedOutbound{staged}, true); err != nil {
+		return fmt.Errorf("failed to update staged outbound totals: %w", err)
+	}
+	if err := k.setStagedOutboundList(cacheCtx, inHash, list); err != nil {
+		return err
+	}
+	commit()
+	return nil
 }
 
 // HasStagedOutbound returns whether any staged outbounds exist for an inbound transaction.
@@ -53,8 +60,22 @@ func (k KVStore) GetStagedOutbounds(ctx cosmos.Context, inHash common.TxID) ([]S
 
 // DeleteStagedOutbounds removes all staged outbounds for an inbound transaction.
 func (k KVStore) DeleteStagedOutbounds(ctx cosmos.Context, inHash common.TxID) {
+	cacheCtx, commit := ctx.CacheContext()
+	list, err := k.getStagedOutboundList(cacheCtx, inHash)
+	if err != nil {
+		ctx.Logger().Error("failed to get staged outbounds for deletion", "error", err, "in_hash", inHash)
+		return
+	}
+	if len(list.Items) == 0 {
+		return
+	}
+	if err := k.adjustStagedOutboundTotals(cacheCtx, list.Items, false); err != nil {
+		ctx.Logger().Error("failed to update staged outbound totals during deletion", "error", err, "in_hash", inHash)
+		return
+	}
 	key := k.GetKey(prefixStagedOutbound, inHash.String())
-	k.del(ctx, key)
+	k.del(cacheCtx, key)
+	commit()
 }
 
 // GetStagedOutboundIterator returns an iterator over all staged outbound lists.
@@ -69,7 +90,6 @@ func (k KVStore) GetStagedOutboundSummary(ctx cosmos.Context) (keeper.StagedOutb
 		RuneValue:  cosmos.ZeroUint(),
 		CloutValue: cosmos.ZeroUint(),
 	}
-	items := make([]TxOutItem, 0)
 	iter := k.GetStagedOutboundIterator(ctx)
 	defer iter.Close()
 
@@ -84,7 +104,6 @@ func (k KVStore) GetStagedOutboundSummary(ctx cosmos.Context) (keeper.StagedOutb
 		summary.OutboundCount += int64(len(list.Items))
 
 		for _, staged := range list.Items {
-			items = append(items, staged.TxOutItem)
 			if staged.StagedHeight <= 0 || staged.StagedHeight > ctx.BlockHeight() {
 				continue
 			}
@@ -95,9 +114,11 @@ func (k KVStore) GetStagedOutboundSummary(ctx cosmos.Context) (keeper.StagedOutb
 		}
 	}
 
-	// Value all staged items together so GetTOIsValue can reuse one pool cache
-	// across the entire staged-outbound store.
-	summary.RuneValue, summary.CloutValue = k.GetTOIsValue(ctx, items...)
+	var err error
+	summary.RuneValue, summary.CloutValue, err = k.GetStagedOutboundValue(ctx)
+	if err != nil {
+		return summary, err
+	}
 
 	return summary, nil
 }
@@ -105,8 +126,25 @@ func (k KVStore) GetStagedOutboundSummary(ctx cosmos.Context) (keeper.StagedOutb
 // GetStagedOutboundValue returns the total RUNE value and clout of all staged outbounds.
 // This is used by CalcTxOutHeight to include staged values in delay calculations.
 func (k KVStore) GetStagedOutboundValue(ctx cosmos.Context) (cosmos.Uint, cosmos.Uint, error) {
-	summary, err := k.GetStagedOutboundSummary(ctx)
-	return summary.RuneValue, summary.CloutValue, err
+	items := make([]TxOutItem, 0)
+	iter := k.getIterator(ctx, prefixStagedOutboundCoinTotal)
+	defer iter.Close()
+
+	for ; iter.Valid(); iter.Next() {
+		var coin common.Coin
+		if err := k.cdc.Unmarshal(iter.Value(), &coin); err != nil {
+			return cosmos.ZeroUint(), cosmos.ZeroUint(), dbError(ctx, "failed to unmarshal staged outbound coin total", err)
+		}
+		items = append(items, TxOutItem{Coin: coin})
+	}
+
+	runeValue, _ := k.GetTOIsValue(ctx, items...)
+	cloutValue := cosmos.ZeroUint()
+	_, err := k.getUint(ctx, k.GetKey(prefixStagedOutboundCloutTotal, "total"), &cloutValue)
+	if err != nil {
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), err
+	}
+	return runeValue, cloutValue, nil
 }
 
 // RestoreStagedOutboundList writes an entire StagedOutboundList to the store
@@ -116,10 +154,106 @@ func (k KVStore) RestoreStagedOutboundList(ctx cosmos.Context, list StagedOutbou
 	if list.InHash.IsEmpty() {
 		return fmt.Errorf("cannot restore staged outbound list with empty InHash")
 	}
-	return k.setStagedOutboundList(ctx, list.InHash, list)
+	cacheCtx, commit := ctx.CacheContext()
+	previous, err := k.getStagedOutboundList(cacheCtx, list.InHash)
+	if err != nil {
+		return fmt.Errorf("failed to get existing staged outbound list: %w", err)
+	}
+	if err := k.adjustStagedOutboundTotals(cacheCtx, previous.Items, false); err != nil {
+		return fmt.Errorf("failed to remove existing staged outbound totals: %w", err)
+	}
+	if err := k.adjustStagedOutboundTotals(cacheCtx, list.Items, true); err != nil {
+		return fmt.Errorf("failed to restore staged outbound totals: %w", err)
+	}
+	if err := k.setStagedOutboundList(cacheCtx, list.InHash, list); err != nil {
+		return err
+	}
+	commit()
+	return nil
 }
 
 // Internal helper functions
+
+func stagedOutboundTotalDelta(items []StagedOutbound) (common.Coins, cosmos.Uint) {
+	coins := common.Coins{}
+	clout := cosmos.ZeroUint()
+	for _, staged := range items {
+		itemCoins := append(common.Coins{staged.TxOutItem.Coin}, staged.TxOutItem.MaxGas...)
+		for _, coin := range itemCoins {
+			if coin.IsEmpty() {
+				continue
+			}
+			coins = coins.Add(coin)
+		}
+		if staged.TxOutItem.CloutSpent != nil {
+			clout = clout.Add(*staged.TxOutItem.CloutSpent)
+		}
+	}
+	return coins, clout
+}
+
+// adjustStagedOutboundTotals maintains raw per-asset amounts rather than a
+// cached RUNE valuation. Reads therefore avoid scanning every staged outbound
+// while still reflecting pool-price changes made later in the same block.
+func (k KVStore) adjustStagedOutboundTotals(ctx cosmos.Context, items []StagedOutbound, add bool) error {
+	deltaCoins, deltaClout := stagedOutboundTotalDelta(items)
+	if len(deltaCoins) == 0 && deltaClout.IsZero() {
+		return nil
+	}
+
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	type coinUpdate struct {
+		key  []byte
+		coin common.Coin
+	}
+	updates := make([]coinUpdate, 0, len(deltaCoins))
+	for _, delta := range deltaCoins {
+		key := k.GetKey(prefixStagedOutboundCoinTotal, delta.Asset.String())
+		current := common.NewCoin(delta.Asset, cosmos.ZeroUint())
+		if store.Has(key) {
+			if err := k.cdc.Unmarshal(store.Get(key), &current); err != nil {
+				return dbError(ctx, "failed to unmarshal staged outbound coin total", err)
+			}
+			if !current.Asset.Equals(delta.Asset) {
+				return fmt.Errorf("staged outbound coin total asset mismatch: expected %s, got %s", delta.Asset, current.Asset)
+			}
+		}
+
+		if add {
+			current.Amount = current.Amount.Add(delta.Amount)
+		} else {
+			if current.Amount.LT(delta.Amount) {
+				return fmt.Errorf("staged outbound coin total underflow for %s: %s < %s", delta.Asset, current.Amount, delta.Amount)
+			}
+			current.Amount = current.Amount.Sub(delta.Amount)
+		}
+		updates = append(updates, coinUpdate{key: key, coin: current})
+	}
+
+	cloutKey := k.GetKey(prefixStagedOutboundCloutTotal, "total")
+	currentClout := cosmos.ZeroUint()
+	if _, err := k.getUint(ctx, cloutKey, &currentClout); err != nil {
+		return err
+	}
+	if add {
+		currentClout = currentClout.Add(deltaClout)
+	} else {
+		if currentClout.LT(deltaClout) {
+			return fmt.Errorf("staged outbound clout total underflow: %s < %s", currentClout, deltaClout)
+		}
+		currentClout = currentClout.Sub(deltaClout)
+	}
+
+	for _, update := range updates {
+		if update.coin.Amount.IsZero() {
+			store.Delete(update.key)
+			continue
+		}
+		store.Set(update.key, k.cdc.MustMarshal(&update.coin))
+	}
+	k.setUint(ctx, cloutKey, currentClout)
+	return nil
+}
 
 func (k KVStore) setStagedOutboundList(ctx cosmos.Context, inHash common.TxID, list StagedOutboundList) error {
 	key := k.GetKey(prefixStagedOutbound, inHash.String())

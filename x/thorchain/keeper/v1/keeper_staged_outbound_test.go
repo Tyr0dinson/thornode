@@ -330,6 +330,63 @@ func (s *KeeperStagedOutboundSuite) TestGetStagedOutboundValueMultiple(c *C) {
 	c.Check(cloutValue.String(), Equals, "100") // 30 + 70
 }
 
+func (s *KeeperStagedOutboundSuite) TestStagedOutboundValueTotalsTrackMutationsAndPoolPrices(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	pool := NewPool()
+	pool.Asset = common.ETHAsset
+	pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.Status = types.PoolStatus_Available
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	firstClout := cosmos.NewUint(30)
+	first := TxOutItem{
+		Chain:      common.ETHChain,
+		ToAddress:  GetRandomETHAddress(),
+		Coin:       common.NewCoin(common.ETHAsset, cosmos.NewUint(10*common.One)),
+		MaxGas:     common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One))},
+		InHash:     GetRandomTxHash(),
+		CloutSpent: &firstClout,
+	}
+	secondClout := cosmos.NewUint(20)
+	second := TxOutItem{
+		Chain:      common.ETHChain,
+		ToAddress:  GetRandomETHAddress(),
+		Coin:       common.NewCoin(common.ETHAsset, cosmos.NewUint(5*common.One)),
+		InHash:     GetRandomTxHash(),
+		CloutSpent: &secondClout,
+	}
+
+	c.Assert(k.SetStagedOutbound(ctx, first, 100), IsNil)
+	c.Assert(k.SetStagedOutbound(ctx, second, 110), IsNil)
+
+	runeValue, cloutValue, err := k.GetStagedOutboundValue(ctx)
+	c.Assert(err, IsNil)
+	expected := pool.AssetValueInRune(cosmos.NewUint(16 * common.One))
+	c.Check(runeValue.Equal(expected), Equals, true)
+	c.Check(cloutValue.Equal(firstClout.Add(secondClout)), Equals, true)
+
+	// Deleting one inbound subtracts its coin, MaxGas, and clout from the
+	// aggregate without touching the other staged outbound.
+	k.DeleteStagedOutbounds(ctx, first.InHash)
+	runeValue, cloutValue, err = k.GetStagedOutboundValue(ctx)
+	c.Assert(err, IsNil)
+	expected = pool.AssetValueInRune(second.Coin.Amount)
+	c.Check(runeValue.Equal(expected), Equals, true)
+	c.Check(cloutValue.Equal(secondClout), Equals, true)
+
+	// The index stores raw asset amounts, so valuation still follows a pool
+	// price change made after staging instead of returning a stale block cache.
+	pool.BalanceRune = pool.BalanceRune.MulUint64(2)
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+	runeValue, cloutValue, err = k.GetStagedOutboundValue(ctx)
+	c.Assert(err, IsNil)
+	expected = pool.AssetValueInRune(second.Coin.Amount)
+	c.Check(runeValue.Equal(expected), Equals, true)
+	c.Check(cloutValue.Equal(secondClout), Equals, true)
+}
+
 func (s *KeeperStagedOutboundSuite) TestGetStagedOutboundSummary(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	ctx = ctx.WithBlockHeight(200)

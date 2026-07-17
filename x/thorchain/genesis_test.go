@@ -234,6 +234,53 @@ func exportedAddress(g GenesisState, asset common.Asset) string {
 	return ""
 }
 
+func (GenesisTestSuite) TestGenesisStagedMempoolSwapRoundTrip(c *C) {
+	SetupConfigForTest()
+
+	srcCtx, srcMgr := setupManagerForTest(c)
+	srcCtx = srcCtx.WithBlockHeight(42)
+	inHash := GetRandomTxHash()
+	cloutSpent := cosmos.NewUint(17)
+	item := TxOutItem{
+		Chain:       common.THORChain,
+		ToAddress:   GetRandomTHORAddress(),
+		VaultPubKey: GetRandomPubKey(),
+		Coin:        common.NewCoin(common.RuneAsset(), cosmos.NewUint(25*common.One)),
+		Memo:        "OUT:" + inHash.String(),
+		InHash:      inHash,
+		CloutSpent:  &cloutSpent,
+	}
+	c.Assert(srcMgr.Keeper().SetStagedOutbound(srcCtx, item, 100), IsNil)
+
+	reservedTOR := cosmos.NewUint(1234)
+	voter := NewObservedTxVoter(inHash, ObservedTxs{})
+	voter.Actions = []TxOutItem{item}
+	voter.MempoolSwapTOR = reservedTOR
+	srcMgr.Keeper().SetObservedTxInVoter(srcCtx, voter)
+	srcMgr.Keeper().SetMempoolSwapUsageTOR(srcCtx, reservedTOR)
+
+	exported := ExportGenesis(srcCtx, srcMgr.Keeper())
+	c.Assert(exported.StagedOutbounds, HasLen, 1)
+	c.Assert(exported.StagedOutbounds[0].Items, HasLen, 1)
+	c.Check(exported.StagedOutbounds[0].Items[0].StagedHeight, Equals, int64(42))
+
+	dstCtx, dstMgr := setupManagerForTest(c)
+	dstCtx = dstCtx.WithBlockHeight(500)
+	InitGenesis(dstCtx, dstMgr.Keeper(), exported)
+
+	restored, err := dstMgr.Keeper().GetStagedOutbounds(dstCtx, inHash)
+	c.Assert(err, IsNil)
+	c.Assert(restored, HasLen, 1)
+	c.Check(restored[0].StagedHeight, Equals, int64(42))
+	c.Check(restored[0].ScheduledHeight, Equals, int64(100))
+	c.Check(dstMgr.Keeper().GetMempoolSwapUsageTOR(dstCtx).Equal(reservedTOR), Equals, true)
+
+	runeValue, cloutValue, err := dstMgr.Keeper().GetStagedOutboundValue(dstCtx)
+	c.Assert(err, IsNil)
+	c.Check(runeValue.Equal(item.Coin.Amount), Equals, true)
+	c.Check(cloutValue.Equal(cloutSpent), Equals, true)
+}
+
 // TestGenesisDynamicFeeRoundtrip seeds a DynamicFeeRecord, accumulator, and
 // last-observed-epoch-blocks value into one keeper, exports the state,
 // imports into a fresh keeper, and re-exports. It then asserts the two
