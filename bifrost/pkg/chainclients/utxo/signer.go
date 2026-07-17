@@ -91,8 +91,8 @@ func (c *Client) SignTx(txs []stypes.TxOutItem, thorchainHeight int64) ([]byte, 
 	// mimir is set AND the recorded broadcast is verified absent on chain.
 	mimirKey := fmt.Sprintf(constants.MimirTemplateSkipSignerCache, c.cfg.ChainID)
 	gateFn := func() bool {
-		skipCache, err := c.bridge.GetMimir(mimirKey)
-		return err == nil && skipCache > 0
+		skipCache, mimirErr := c.bridge.GetMimir(mimirKey)
+		return mimirErr == nil && skipCache > 0
 	}
 	verifyFn := func(sig string) signercache.LookupResult {
 		verbose, txLookupErr := c.rpc.GetRawTransactionVerbose(sig)
