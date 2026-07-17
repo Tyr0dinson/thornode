@@ -425,11 +425,9 @@ func handleObservedTxInQuorum(
 				voter.UpdatedVault = true
 			}
 		}
-	}
-	// Only update chain height when the transaction is finalized. This intentionally
-	// applies to every unfinalized inbound, not only mempool-eligible swaps, so
-	// LastChainHeight stays aligned with the inbound balances reflected in vault state.
-	if hasFinalised {
+
+		// Advance chain height under the same finalized-or-Migrate gate used for
+		// vault accounting above. Other unfinalized inbounds leave it unchanged.
 		if err = k.SetLastChainHeight(ctx, tx.Tx.Chain, tx.BlockHeight); err != nil {
 			ctx.Logger().Error("fail to set last chain height", "error", err)
 		}

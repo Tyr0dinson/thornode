@@ -1183,7 +1183,7 @@ func (s *HandlerObservedTxInSuite) TestMigrateMemo(c *C) {
 		Gas: common.Gas{
 			common.NewCoin(common.ETHAsset, cosmos.NewUint(10000)),
 		},
-	}, 13, vault.PubKey, 13)
+	}, 13, vault.PubKey, 15)
 
 	txs := ObservedTxs{tx}
 	keeper := &TestObservedTxInHandleKeeper{
@@ -1205,6 +1205,15 @@ func (s *HandlerObservedTxInSuite) TestMigrateMemo(c *C) {
 	msg := NewMsgObservedTxIn(txs, keeper.nas[0].NodeAddress)
 	_, err = handler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
+
+	// Migrate inbounds update the destination vault at observation consensus,
+	// before finalization, so LastChainHeight must advance at the same time.
+	voter, err := keeper.GetObservedTxInVoter(ctx, tx.Tx.ID)
+	c.Assert(err, IsNil)
+	c.Check(voter.FinalisedHeight, Equals, int64(0))
+	c.Check(voter.UpdatedVault, Equals, true)
+	c.Check(keeper.height, Equals, tx.BlockHeight)
+	c.Check(keeper.vault.Coins.GetCoin(common.ETHAsset).Amount.Equal(cosmos.NewUint(1024)), Equals, true)
 }
 
 type xmrMigrateInboundTestCase struct {
