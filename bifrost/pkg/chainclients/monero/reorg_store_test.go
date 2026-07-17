@@ -154,7 +154,7 @@ func TestXMRReorgStoreJournalRoundTripPreservesReplayedItems(t *testing.T) {
 
 // TestXMRReorgStoreGetJournalRejectsUnknownVersion pins the current fail-closed
 // behaviour: an on-disk journal whose Version is not 2 hard-errors instead of
-// being ignored. fetchTxsLocked propagates this error on every block, so a
+// being ignored. FetchTxs propagates this error on every block, so a
 // corrupt or future-version journal wedges the XMR scanner until an operator
 // intervenes. That is deliberate (silently dropping a journal could lose errata
 // or double-observe), but it means a downgrade after a journal-format bump is a

@@ -246,24 +246,14 @@ func (s *Scanner) FetchMemPool(height int64) (stypes.TxIn, error) {
 }
 
 func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, error) {
-	s.scanMu.Lock()
-	txIn, err := s.fetchTxsLocked(fetchHeight, chainHeight)
-	s.scanMu.Unlock()
-
-	// Solvency reporting may register vaults through Client. Run it after the
-	// scan critical section so the registration path can take scanMu and cannot
-	// deadlock while still remaining serialized against the next block.
-	if err == nil && s.solvencyReporter != nil {
-		if solErr := s.solvencyReporter(fetchHeight); solErr != nil {
-			s.logger.Err(solErr).Int64("height", fetchHeight).Msg("fail to report monero solvency")
-		}
-	}
-	return txIn, err
-}
-
-func (s *Scanner) fetchTxsLocked(fetchHeight, chainHeight int64) (stypes.TxIn, error) {
 	txIn := stypes.TxIn{Chain: common.XMRChain}
-	if s.reorgDeliveryPending {
+	// Avoid remote reads while Observer still owns the previous delivery. Check
+	// again after taking the continuity lock below to close the race with a
+	// delivery becoming pending during ChainBlock or FeeRate.
+	s.scanMu.Lock()
+	deliveryPending := s.reorgDeliveryPending
+	s.scanMu.Unlock()
+	if deliveryPending {
 		return txIn, btypes.ErrUnavailableBlock
 	}
 	if s.sidecar == nil {
@@ -288,6 +278,21 @@ func (s *Scanner) fetchTxsLocked(fetchHeight, chainHeight int64) (stypes.TxIn, e
 		}
 	} else if feeAtomic := averageNetworkFeeFromBlock(block.Reward, len(block.TxHashes)); feeAtomic > 0 {
 		s.lastFee.Store(feeAtomic)
+	}
+
+	// ChainBlock and FeeRate are independent reads. Serialize only registration,
+	// continuity, reorg, sync, and journal mutations. Keeping FetchTxs free of an
+	// enclosing scanMu lock prevents this narrower lock from becoming recursive
+	// when companion scanner changes are merged.
+	s.scanMu.Lock()
+	locked := true
+	defer func() {
+		if locked {
+			s.scanMu.Unlock()
+		}
+	}()
+	if s.reorgDeliveryPending {
+		return txIn, btypes.ErrUnavailableBlock
 	}
 
 	// Registration may rewind the sidecar to an older vault birthday. Refresh
@@ -363,6 +368,16 @@ func (s *Scanner) fetchTxsLocked(fetchHeight, chainHeight int64) (stypes.TxIn, e
 			if pruneErr := s.reorgStore.Delete(pruneHeight); pruneErr != nil {
 				s.logger.Debug().Err(pruneErr).Int64("height", pruneHeight).Msg("fail to prune monero reorg block meta")
 			}
+		}
+	}
+
+	// Solvency reporting may register vaults through Client. Run it after the
+	// scan critical section so registration can take scanMu without deadlocking.
+	s.scanMu.Unlock()
+	locked = false
+	if s.solvencyReporter != nil {
+		if solErr := s.solvencyReporter(fetchHeight); solErr != nil {
+			s.logger.Err(solErr).Int64("height", fetchHeight).Msg("fail to report monero solvency")
 		}
 	}
 

@@ -27,7 +27,7 @@ import (
 // transactions: AbortPersistence() instead of FinalizePersistence().
 //
 // attachReorgCheckpoint sets reorgDeliveryPending, which hard-blocks every
-// subsequent fetchTxsLocked with ErrUnavailableBlock. If the abort closure ever
+// subsequent FetchTxs with ErrUnavailableBlock. If the abort closure ever
 // stopped clearing that flag, the XMR scanner would wedge permanently after any
 // observer hiccup, since BlockScanner leaves its scan position un-advanced and
 // simply re-fetches the same block.

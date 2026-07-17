@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rs/zerolog/log"
 
@@ -67,7 +68,18 @@ func TestFetchTxsCallsScannerSyncWithBlockMetadata(t *testing.T) {
 	}
 	scanner := NewScanner(log.Logger, frostSigner, bridge, common.XMRChain, common.EmptyPubKey, 72)
 
-	_, err = scanner.FetchTxs(100, 150)
+	// Bound the call so a future merge cannot combine this function's narrower
+	// continuity lock with an outer scanMu lock and hang the whole test package.
+	fetchDone := make(chan error, 1)
+	go func() {
+		_, fetchErr := scanner.FetchTxs(100, 150)
+		fetchDone <- fetchErr
+	}()
+	select {
+	case err = <-fetchDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("FetchTxs deadlocked while acquiring the scanner continuity lock")
+	}
 	if err != nil {
 		t.Fatalf("fetch txs: %v", err)
 	}
