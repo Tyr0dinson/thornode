@@ -201,3 +201,73 @@ func TestValidateReorgReplayRange(t *testing.T) {
 		})
 	}
 }
+
+func TestReplayReorgJournalRequiresRecoveryWhenSidecarReturnsWrongHeight(t *testing.T) {
+	t.Parallel()
+
+	anchorHash := testXMRHash("wrong-height-anchor")
+	wrongBlock := withBlockHeader(
+		100,
+		defaultCoinbaseValue,
+		testXMRHash("wrong-height-block"),
+		anchorHash,
+	)
+	continuity := newTestScannerContinuity(101)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if continuity.handle(t, w, r) {
+			return
+		}
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/chain/block/99":
+			// A sidecar must return the exact requested height. Returning a
+			// valid-looking adjacent block is structural corruption, not a
+			// transient reorg, and must stop BlockScanner recovery retries.
+			_ = json.NewEncoder(w).Encode(sidecar.ChainBlockResp(wrongBlock))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := sidecar.NewClientWithEndpoint(
+		config.BifrostChainConfiguration{SignerExpectedNetwork: "mocknet"},
+		server.URL,
+	)
+	if err != nil {
+		t.Fatalf("new sidecar client: %v", err)
+	}
+	scanner := NewScanner(log.Logger, client, nil, common.XMRChain, common.EmptyPubKey, 72)
+	journal := &reorgJournal{
+		Phase:        reorgPhaseDiscovered,
+		AnchorHeight: 98,
+		AnchorHash:   anchorHash,
+		Heights:      []int64{99, 100},
+	}
+	nextBlock := withBlockHeader(
+		101,
+		defaultCoinbaseValue,
+		testXMRHash("wrong-height-next"),
+		testXMRHash("wrong-height-parent"),
+	)
+
+	_, err = scanner.replayReorgJournal(journal, 101, nextBlock)
+	var recovery *btypes.ScannerRecoveryRequiredError
+	if !errors.As(err, &recovery) {
+		t.Fatalf("wrong replay height must require operator recovery, got %v", err)
+	}
+	if recovery.CurrentHeight != 101 || recovery.NextHeight != 99 {
+		t.Fatalf("unexpected recovery bounds: %+v", recovery)
+	}
+	if !strings.Contains(recovery.Reason, "requested height 99") ||
+		!strings.Contains(recovery.Reason, "returned height 100") {
+		t.Fatalf("unexpected recovery reason: %q", recovery.Reason)
+	}
+	if errors.Is(err, btypes.ErrUnavailableBlock) {
+		t.Fatalf("wrong replay height must not be retried as transient: %v", err)
+	}
+	rewindCalls, _ := continuity.snapshot()
+	if rewindCalls != 1 {
+		t.Fatalf("expected one guarded sidecar rewind before replay, got %d", rewindCalls)
+	}
+}
