@@ -2830,13 +2830,19 @@ func (s *SlashingSuite) TestLackSigningForceRollbackStuckFinalizedMempoolSwap(c 
 
 	inTxID := GetRandomTxHash()
 	reservedTOR := cosmos.NewUint(500 * common.One)
+	sender := GetRandomBTCAddress()
+	vaultAddr, err := vault.PubKey.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
 
 	voter := NewObservedTxVoter(inTxID, ObservedTxs{
 		ObservedTx{
 			Tx: common.Tx{
-				ID:    inTxID,
-				Chain: common.BTCChain,
-				Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One))},
+				ID:          inTxID,
+				Chain:       common.BTCChain,
+				FromAddress: sender,
+				ToAddress:   vaultAddr,
+				Coins:       common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One))},
+				Gas:         common.Gas{common.NewCoin(common.BTCAsset, cosmos.OneUint())},
 			},
 			Status:         common.Status_done,
 			BlockHeight:    ctx.BlockHeight(),
@@ -2880,6 +2886,17 @@ func (s *SlashingSuite) TestLackSigningForceRollbackStuckFinalizedMempoolSwap(c 
 	c.Assert(err, IsNil)
 	c.Check(updatedVoter.HasReservedMempoolSwapTOR(), Equals, false, Commentf("force rollback should release TOR reservation"))
 	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true, Commentf("force rollback should release global mempool swap usage"))
+
+	outItems, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(outItems, HasLen, 1, Commentf("force rollback should schedule exactly one source-asset refund"))
+	c.Assert(updatedVoter.Actions, HasLen, 1, Commentf("force rollback should replace staged actions with the refund action"))
+	c.Check(outItems[0].Coin.Asset.Equals(common.BTCAsset), Equals, true)
+	c.Check(outItems[0].Coin.Amount.GT(cosmos.ZeroUint()), Equals, true)
+	c.Check(outItems[0].Coin.Amount.LTE(cosmos.NewUint(common.One)), Equals, true)
+	c.Check(outItems[0].ToAddress.Equals(sender), Equals, true)
+	c.Check(outItems[0].GetMemo(), Equals, NewRefundMemo(inTxID).String())
+	c.Check(updatedVoter.Actions[0].GetMemo(), Equals, NewRefundMemo(inTxID).String())
 }
 
 // TestLackSigningRetriesInactiveVaultFinalizedMempoolSwapRollback verifies

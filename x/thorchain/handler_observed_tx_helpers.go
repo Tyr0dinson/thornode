@@ -3128,6 +3128,31 @@ func rollbackMempoolSwapAtomic(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 	return nil
 }
 
+// rollbackAndRefundFinalizedMempoolSwapAtomic unwinds a finalized mempool swap
+// and schedules its original inbound back to the sender as one cached
+// operation. A finalized inbound is already in a vault, so clearing the
+// speculative swap without replacing it with a refund would strand the user's
+// funds. Keeping both steps under the same outer CacheContext also ensures a
+// hard refund error cannot commit the rollback by itself.
+func rollbackAndRefundFinalizedMempoolSwapAtomic(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter) error {
+	cacheCtx, commit := ctx.CacheContext()
+	if err := rollbackMempoolSwapCached(cacheCtx, mgr.Keeper(), mgr, voter); err != nil {
+		return fmt.Errorf("fail to roll back finalized mempool swap: %w", err)
+	}
+	if err := refundTx(
+		cacheCtx,
+		voter.Tx,
+		mgr,
+		CodeSwapFail,
+		"stuck finalized mempool swap could not finalize outbounds",
+		"",
+	); err != nil {
+		return fmt.Errorf("fail to refund finalized mempool swap: %w", err)
+	}
+	commit()
+	return nil
+}
+
 // clearMempoolRollbackState clears speculative mempool-swap state after a
 // successful inline rollback. It preserves Reverted because errata uses that
 // flag as terminal invalidation state, not as rollback bookkeeping.

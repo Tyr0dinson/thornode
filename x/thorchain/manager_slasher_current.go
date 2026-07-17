@@ -947,8 +947,8 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				if entry.oldestAge >= forceRollbackAge {
 					ctx.Logger().Error("force-rolling back stuck finalized mempool swap",
 						"hash", inHash, "oldest_age", entry.oldestAge, "force_rollback_age", forceRollbackAge)
-					if err := rollbackMempoolSwapAtomic(ctx, s.keeper, mgr, voter); err != nil {
-						ctx.Logger().Error("fail to force roll back stuck mempool swap", "error", err, "hash", inHash)
+					if err := rollbackAndRefundFinalizedMempoolSwapAtomic(ctx, mgr, voter); err != nil {
+						ctx.Logger().Error("fail to force roll back and refund stuck mempool swap", "error", err, "hash", inHash)
 					} else {
 						incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "force_rollback")})
 					}
