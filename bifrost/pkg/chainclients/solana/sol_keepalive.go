@@ -337,7 +337,7 @@ func (c *SOLClient) keepAliveVault(vault ttypes.Vault, currentSlot uint64, refre
 		return nil
 	}
 
-	txid, err := c.BroadcastTx(toi, signed)
+	txid, err := c.BroadcastTx([]stypes.TxOutItem{toi}, signed)
 	if err != nil {
 		return fmt.Errorf("fail to broadcast keep-alive tx: %w", err)
 	}

@@ -1119,7 +1119,7 @@ func (s *SolTestSuite) TestBroadcastTxBlockhashValidity(c *C) {
 			}
 
 			phase.Store(1)
-			_, err = client.BroadcastTx(txOut, rawTx)
+			_, err = client.BroadcastTx([]stypes.TxOutItem{txOut}, rawTx)
 			c.Assert(err, NotNil, Commentf("%s", tc.name))
 			c.Assert(errors.Is(err, stypes.ErrResignRequired), Equals, tc.expired, Commentf("%s", tc.name))
 			c.Assert(client.signerCacheManager.HasSigned(txOut.CacheHash()), Equals, false)
@@ -1153,7 +1153,7 @@ func (s *SolTestSuite) TestBroadcastTxBlockhashValidity(c *C) {
 			c.Assert(<-broadcasts, Equals, base64.StdEncoding.EncodeToString(rawTx))
 			if !tc.expired {
 				// Retry the original signed bytes after the provider recovers.
-				sig, retryErr := client.BroadcastTx(txOut, rawTx)
+				sig, retryErr := client.BroadcastTx([]stypes.TxOutItem{txOut}, rawTx)
 				c.Assert(retryErr, IsNil)
 				c.Assert(sig, Equals, "retry-sig")
 				c.Assert(<-broadcasts, Equals, base64.StdEncoding.EncodeToString(rawTx))

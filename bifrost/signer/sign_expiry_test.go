@@ -28,7 +28,7 @@ func (b *expiryChainClient) SignTx(tx types.TxOutItem, _ int64) ([]byte, []byte,
 	return nil, tx.Checkpoint, nil, b.err
 }
 
-func (b *expiryChainClient) BroadcastTx(types.TxOutItem, []byte) (string, error) {
+func (b *expiryChainClient) BroadcastTx([]types.TxOutItem, []byte) (string, error) {
 	b.broadcastCount++
 	return "", b.err
 }

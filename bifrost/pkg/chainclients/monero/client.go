@@ -1457,7 +1457,7 @@ func (c *Client) consolidateVault(
 		}
 		c.applySpentOutputRefsFromTxInItem(observation)
 
-		txHash, broadcastErr := c.BroadcastTx(txOutItem, rawTx)
+		txHash, broadcastErr := c.BroadcastTx([]stypes.TxOutItem{txOutItem}, rawTx)
 		if broadcastErr != nil {
 			lastErr = broadcastErr
 			if !isRetryableConsolidationErr(broadcastErr) {
@@ -1835,12 +1835,15 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	return signedTx, checkpoint, observation, err
 }
 
-func (c *Client) BroadcastTx(tx stypes.TxOutItem, txBytes []byte) (string, error) {
+func (c *Client) BroadcastTx(txs []stypes.TxOutItem, txBytes []byte) (string, error) {
+	if len(txs) == 0 {
+		return "", fmt.Errorf("no txns to broadcast")
+	}
 	var payload signedTxPayload
 	if err := json.Unmarshal(txBytes, &payload); err != nil {
 		return "", fmt.Errorf("fail to decode monero signed tx payload: %w", err)
 	}
-	return c.broadcastTx(tx, payload)
+	return c.broadcastTx(txs[0], payload)
 }
 
 func (c *Client) broadcastTx(tx stypes.TxOutItem, payload signedTxPayload) (string, error) {

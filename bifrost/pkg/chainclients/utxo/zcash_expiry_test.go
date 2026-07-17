@@ -499,7 +499,7 @@ func (s *ZcashSignerSuite) TestZECExpiryRequiresLiveTip(c *C) {
 			spent, spentErr := s.client.temporalStorage.GetSpentUtxosByHeight(3500000)
 			c.Assert(spentErr, IsNil)
 			c.Assert(spent, HasLen, 1)
-			_, err = s.client.BroadcastTx(fixture.tx, raw)
+			_, err = s.client.BroadcastTx([]stypes.TxOutItem{fixture.tx}, raw)
 			c.Assert(err, ErrorMatches, ".*tip unavailable.*")
 			c.Assert(errors.Is(err, chainclienttypes.ErrTxExpired), Equals, false)
 		} else {
@@ -643,7 +643,7 @@ func (s *ZcashSignerSuite) TestZECExpiryBroadcast(c *C) {
 		s.client.rpc, err = utxorpcc.NewClient(server.Listener.Addr().String(), s.cfg.UserName, s.cfg.Password, 0, time.Second, common.ZECChain, s.client.log)
 		c.Assert(err, IsNil)
 		txOut := stypes.TxOutItem{Chain: common.ZECChain, Memo: tc.name}
-		got, err := s.client.BroadcastTx(txOut, payload)
+		got, err := s.client.BroadcastTx([]stypes.TxOutItem{txOut}, payload)
 		c.Assert(err != nil, Equals, tc.wantErr, Commentf("%s: %v", tc.name, err))
 		c.Assert(errors.Is(err, chainclienttypes.ErrTxExpired), Equals, tc.expired, Commentf(tc.name))
 		if !tc.wantErr {

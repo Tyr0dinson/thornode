@@ -169,7 +169,7 @@ func TestBroadcastTxAllowsWrongSequence(t *testing.T) {
 		accts: NewCosmosMetaDataStore(),
 	}
 
-	txid, err := client.BroadcastTx(stypes.TxOutItem{}, []byte("signed"))
+	txid, err := client.BroadcastTx([]stypes.TxOutItem{{}}, []byte("signed"))
 	if err != nil {
 		t.Fatalf("expected wrong-sequence broadcast to be tolerated, got %v", err)
 	}
@@ -193,7 +193,7 @@ func TestBroadcastTxAllowsTxInMempoolCache(t *testing.T) {
 		accts: NewCosmosMetaDataStore(),
 	}
 
-	txid, err := client.BroadcastTx(stypes.TxOutItem{}, []byte("signed"))
+	txid, err := client.BroadcastTx([]stypes.TxOutItem{{}}, []byte("signed"))
 	if err != nil {
 		t.Fatalf("expected mempool-cache broadcast to be tolerated, got %v", err)
 	}

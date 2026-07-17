@@ -440,7 +440,7 @@ func (s *BackfillSuite) TestBroadcastTxRecordsExpiringEntry(c *C) {
 	}
 	txBytes, _ := json.Marshal(api.Transaction{TxId: "expiring-entry"})
 
-	_, err := s.client.BroadcastTx(txOutItem, txBytes)
+	_, err := s.client.BroadcastTx([]types.TxOutItem{txOutItem}, txBytes)
 	c.Assert(err, IsNil)
 
 	time.Sleep(2 * time.Millisecond)
