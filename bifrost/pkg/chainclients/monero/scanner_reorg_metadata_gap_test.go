@@ -143,3 +143,61 @@ func TestBuildReorgJournalFailsClosedOnLeadingMetadataGap(t *testing.T) {
 		t.Fatalf("expected common ancestor 98, got %d", journal.AnchorHeight)
 	}
 }
+
+func TestValidateReorgReplayRange(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		heights    []int64
+		nextHeight int64
+		wantReason string
+	}{
+		{
+			name:       "contiguous range joins next block",
+			heights:    []int64{99, 100},
+			nextHeight: 101,
+		},
+		{
+			name:       "truncated range cannot join next block",
+			heights:    []int64{99},
+			nextHeight: 101,
+			wantReason: "cannot join scan height 101",
+		},
+		{
+			name:       "internal gap is structural",
+			heights:    []int64{99, 101},
+			nextHeight: 102,
+			wantReason: "non-contiguous",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			journal := &reorgJournal{
+				Phase:        reorgPhaseDiscovered,
+				AnchorHeight: 98,
+				AnchorHash:   testXMRHash("range-anchor"),
+				Heights:      tc.heights,
+			}
+			err := validateReorgReplayRange(journal, tc.nextHeight)
+			if tc.wantReason == "" {
+				if err != nil {
+					t.Fatalf("valid replay range rejected: %v", err)
+				}
+				return
+			}
+
+			var recovery *btypes.ScannerRecoveryRequiredError
+			if !errors.As(err, &recovery) {
+				t.Fatalf("structural mismatch must require operator recovery, got %v", err)
+			}
+			if errors.Is(err, btypes.ErrUnavailableBlock) {
+				t.Fatalf("structural mismatch must not be classified as transient: %v", err)
+			}
+			if !strings.Contains(recovery.Reason, tc.wantReason) {
+				t.Fatalf("expected reason containing %q, got %q", tc.wantReason, recovery.Reason)
+			}
+		})
+	}
+}

@@ -857,6 +857,10 @@ func (s *Scanner) refreshDiscoveredReorgJournal(journal *reorgJournal, nextHeigh
 }
 
 func (s *Scanner) replayReorgJournal(journal *reorgJournal, chainHeight int64, nextBlock sidecar.ChainBlock) ([]*stypes.TxInItem, error) {
+	if err := validateReorgReplayRange(journal, nextBlock.Height); err != nil {
+		return nil, err
+	}
+
 	// The durable Discovered record is an intent only. Rewind the authenticated
 	// sidecar cursor before scanning, changing phase, delivering errata, or
 	// replacing metadata. Repeating this on every resume makes partial replay
@@ -883,7 +887,22 @@ func (s *Scanner) replayReorgJournal(journal *reorgJournal, chainHeight int64, n
 			}
 			return nil, fmt.Errorf("fail to fetch monero block %d during reorg replay: %w", height, blockErr)
 		}
-		if reorgBlock.Height != height || !strings.EqualFold(reorgBlock.PreviousHash, expectedPreviousHash) {
+		if reorgBlock.Height != height {
+			return nil, &btypes.ScannerRecoveryRequiredError{
+				CurrentHeight: nextBlock.Height,
+				NextHeight:    journal.AnchorHeight + 1,
+				Reason: fmt.Sprintf(
+					"monero reorg replay requested height %d but the sidecar returned height %d",
+					height, reorgBlock.Height,
+				),
+			}
+		}
+		if !strings.EqualFold(reorgBlock.PreviousHash, expectedPreviousHash) {
+			s.logger.Warn().
+				Int64("height", height).
+				Str("expected_previous_hash", expectedPreviousHash).
+				Str("actual_previous_hash", reorgBlock.PreviousHash).
+				Msg("monero chain changed during reorg replay; rediscovering")
 			return nil, btypes.ErrUnavailableBlock
 		}
 
@@ -900,13 +919,64 @@ func (s *Scanner) replayReorgJournal(journal *reorgJournal, chainHeight int64, n
 		expectedHeight++
 		expectedPreviousHash = reorgBlock.Hash
 	}
-	if nextBlock.Height != expectedHeight || !strings.EqualFold(nextBlock.PreviousHash, expectedPreviousHash) {
+	if nextBlock.Height != expectedHeight {
+		return nil, &btypes.ScannerRecoveryRequiredError{
+			CurrentHeight: nextBlock.Height,
+			NextHeight:    journal.AnchorHeight + 1,
+			Reason: fmt.Sprintf(
+				"monero reorg replay ended at height %d but must join height %d",
+				expectedHeight, nextBlock.Height,
+			),
+		}
+	}
+	if !strings.EqualFold(nextBlock.PreviousHash, expectedPreviousHash) {
+		s.logger.Warn().
+			Int64("height", nextBlock.Height).
+			Str("expected_previous_hash", expectedPreviousHash).
+			Str("actual_previous_hash", nextBlock.PreviousHash).
+			Msg("monero chain changed at the reorg replay join; rediscovering")
 		return nil, btypes.ErrUnavailableBlock
 	}
 	if err := s.reorgStore.CommitReplay(journal, metas, reScannedItems); err != nil {
 		return nil, err
 	}
 	return s.resumeReorgDelivery(journal)
+}
+
+// validateReorgReplayRange separates a malformed durable replay intent from a
+// live chain change. The former cannot repair itself by retrying the same scan
+// height and must stop BlockScanner with an operator-recovery error.
+func validateReorgReplayRange(journal *reorgJournal, nextBlockHeight int64) error {
+	if journal == nil || journal.Phase != reorgPhaseDiscovered || len(journal.Heights) == 0 {
+		return nil // prepareSidecarReorgReplay reports the general journal error.
+	}
+
+	targetNextHeight := journal.AnchorHeight + 1
+	expectedHeight := targetNextHeight
+	for _, height := range journal.Heights {
+		if height != expectedHeight {
+			return &btypes.ScannerRecoveryRequiredError{
+				CurrentHeight: nextBlockHeight,
+				NextHeight:    targetNextHeight,
+				Reason: fmt.Sprintf(
+					"stored monero reorg journal is non-contiguous at height %d (expected %d)",
+					height, expectedHeight,
+				),
+			}
+		}
+		expectedHeight++
+	}
+	if expectedHeight != nextBlockHeight {
+		return &btypes.ScannerRecoveryRequiredError{
+			CurrentHeight: nextBlockHeight,
+			NextHeight:    targetNextHeight,
+			Reason: fmt.Sprintf(
+				"stored monero reorg journal ends at height %d and cannot join scan height %d",
+				expectedHeight-1, nextBlockHeight,
+			),
+		}
+	}
+	return nil
 }
 
 func (s *Scanner) prepareSidecarReorgReplay(journal *reorgJournal) error {
