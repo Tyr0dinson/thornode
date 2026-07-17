@@ -3041,6 +3041,7 @@ func (vm *NetworkMgr) claimingSwapRuneToTCY(ctx cosmos.Context, mgr Manager) err
 func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) ([]assetAmount, error) {
 	// Use a map to track signed amounts per asset
 	assetAmounts := make(map[common.Asset]math.Int)
+	vaultCache := make(map[common.PubKey]types.Vault)
 
 	// Initialize with zero for all pool assets to ensure we detect under-solvency
 	poolIterator := mgr.Keeper().GetPoolIterator(ctx)
@@ -3069,6 +3070,7 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 		if err := vm.k.Cdc().Unmarshal(vaultIterator.Value(), &vault); err != nil {
 			return nil, fmt.Errorf("fail to unmarshal vault: %w", err)
 		}
+		vaultCache[vault.PubKey] = vault
 		if !vault.IsAsgard() {
 			continue
 		}
@@ -3266,6 +3268,16 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 	}
 
 	// Step 6: Subtract pending and scheduled outbounds (skip inactive vaults)
+	getVault := func(pubKey common.PubKey) (types.Vault, error) {
+		if vault, ok := vaultCache[pubKey]; ok {
+			return vault, nil
+		}
+		vault, err := vm.k.GetVault(ctx, pubKey)
+		if err == nil {
+			vaultCache[pubKey] = vault
+		}
+		return vault, err
+	}
 
 	// Step 6a: Scan backward for pending outbounds that haven't been signed yet.
 	// Outbounds scheduled at past block heights with empty OutHash are still pending
@@ -3301,7 +3313,7 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 				continue
 			}
 			// Skip outbounds from inactive vaults
-			vault, err := vm.k.GetVault(ctx, item.VaultPubKey)
+			vault, err := getVault(item.VaultPubKey)
 			if err != nil {
 				ctx.Logger().Error("fail to get vault for pending txout", "pubkey", item.VaultPubKey, "error", err)
 				continue
@@ -3356,7 +3368,7 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 		for _, item := range txOut.TxArray {
 			// Skip outbounds from inactive vaults (e.g., pending refunds)
 			// We only subtract outbounds from active vaults since we only added active vault balances
-			vault, err := vm.k.GetVault(ctx, item.VaultPubKey)
+			vault, err := getVault(item.VaultPubKey)
 			if err != nil {
 				ctx.Logger().Error("fail to get vault for scheduled txout", "pubkey", item.VaultPubKey, "error", err)
 				continue
@@ -3406,7 +3418,7 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 				continue
 			}
 			// Skip outbounds from inactive vaults
-			vault, err := vm.k.GetVault(ctx, item.VaultPubKey)
+			vault, err := getVault(item.VaultPubKey)
 			if err != nil {
 				ctx.Logger().Error("fail to get vault for staged outbound", "pubkey", item.VaultPubKey, "error", err)
 				continue

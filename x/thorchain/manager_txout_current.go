@@ -365,11 +365,10 @@ func (tos *TxOutStorage) shouldStageForMempoolSwap(ctx cosmos.Context, item TxOu
 	if voter.FinalisedHeight != 0 {
 		return false
 	}
-
-	activeNodeAccounts, err := tos.keeper.ListActiveValidators(ctx)
-	if err != nil || voter.HasFinalised(activeNodeAccounts) {
-		return false
-	}
+	// The observed-tx quorum path sets FinalisedHeight in the same cached
+	// transaction that records finalization. Recomputing quorum here would load
+	// the full active validator set for every staged output without providing a
+	// newer source of truth.
 	return true
 }
 
@@ -1281,19 +1280,7 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem, opt
 				return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get observed tx voter: %w", err)
 			}
 
-			if voter.HasReservedMempoolSwapTOR() {
-				if voter.FinalisedHeight == 0 {
-					// Mempool swap: only set FinalisedHeight when actually finalized by validators,
-					// so it remains 0 until finalization to enable reversal.
-					activeNodeAccounts, err := tos.keeper.ListActiveValidators(ctx)
-					if err != nil {
-						return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get active node accounts: %w", err)
-					}
-					if voter.HasFinalised(activeNodeAccounts) {
-						voter.FinalisedHeight = ctx.BlockHeight()
-					}
-				}
-			} else {
+			if !voter.HasReservedMempoolSwapTOR() {
 				// Non-mempool path (including internally-generated swaps like recovery swaps):
 				// refresh FinalisedHeight at action-recording time so LackSigning age
 				// calculations start from the recorded outbound action, matching legacy behavior.

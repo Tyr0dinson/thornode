@@ -889,21 +889,15 @@ func rollbackAndRefundInactiveVaultMempoolSwap(ctx cosmos.Context, mgr Manager, 
 // inbound later finalizes to the inactive vault, the finalized observed-tx path
 // will handle the normal inactive-vault refund.
 func rollbackUnfinalizedMempoolSwapsForInactiveVault(ctx cosmos.Context, k keeper.Keeper, mgr Manager, vault Vault) {
-	hashes := collectUnfinalizedMempoolSwapHashesForInactiveVault(ctx, k, vault.PubKey)
-	for _, inHash := range hashes {
-		voter, err := k.GetObservedTxInVoter(ctx, inHash)
-		if err != nil {
-			ctx.Logger().Error("fail to get observed tx voter for inactive-vault mempool rollback", "error", err, "hash", inHash)
-			continue
-		}
-
+	voters := collectUnfinalizedMempoolSwapsForInactiveVault(ctx, k, vault.PubKey)
+	for _, voter := range voters {
 		ctx.Logger().Info("rolling back unfinalized mempool swap for inactive vault",
-			"hash", inHash,
+			"hash", voter.TxID,
 			"vault", vault.PubKey)
 
 		if err := rollbackMempoolSwapAtomic(ctx, k, mgr, voter); err != nil {
 			// Leave the state intact for the LackSigning timeout fallback to retry.
-			ctx.Logger().Error("fail to roll back unfinalized inactive-vault mempool swap", "error", err, "hash", inHash)
+			ctx.Logger().Error("fail to roll back unfinalized inactive-vault mempool swap", "error", err, "hash", voter.TxID)
 			continue
 		}
 
@@ -911,13 +905,14 @@ func rollbackUnfinalizedMempoolSwapsForInactiveVault(ctx cosmos.Context, k keepe
 	}
 }
 
-// collectUnfinalizedMempoolSwapHashesForInactiveVault finds unfinalized
+// collectUnfinalizedMempoolSwapsForInactiveVault finds unfinalized
 // mempool-swap inbounds observed to the vault that is transitioning inactive.
 // Staged outbounds are a definitive mempool-swap marker; queued-only advanced
 // swaps additionally require a live TOR reservation so normal queued swaps are
-// not rolled back.
-func collectUnfinalizedMempoolSwapHashesForInactiveVault(ctx cosmos.Context, k keeper.Keeper, vaultPubKey common.PubKey) []common.TxID {
-	hashes := make([]common.TxID, 0)
+// not rolled back. Returning the voter loaded during matching avoids fetching
+// every candidate a second time before rollback.
+func collectUnfinalizedMempoolSwapsForInactiveVault(ctx cosmos.Context, k keeper.Keeper, vaultPubKey common.PubKey) []ObservedTxVoter {
+	voters := make([]ObservedTxVoter, 0)
 	seen := make(map[common.TxID]struct{})
 
 	addIfMatch := func(inHash common.TxID, requireReservation bool) {
@@ -942,18 +937,8 @@ func collectUnfinalizedMempoolSwapHashesForInactiveVault(ctx cosmos.Context, k k
 			return
 		}
 
-		hasCleanupState, err := needsMempoolSwapRollback(ctx, k, voter)
-		if err != nil {
-			ctx.Logger().Error("fail to inspect mempool rollback state for inactive vault", "error", err, "hash", inHash)
-			return
-		}
-		// Nothing to roll back if the voter no longer owns staged or reserved state.
-		if !hasCleanupState {
-			return
-		}
-
 		seen[inHash] = struct{}{}
-		hashes = append(hashes, inHash)
+		voters = append(voters, voter)
 	}
 
 	// Staged outbound entries are keyed by inbound hash and exist only for
@@ -983,7 +968,7 @@ func collectUnfinalizedMempoolSwapHashesForInactiveVault(ctx cosmos.Context, k k
 		addIfMatch(msg.Tx.ID, true)
 	}
 
-	return hashes
+	return voters
 }
 
 // processTxOutAttestation applies a single attestation for an observed tx and saves
