@@ -3051,22 +3051,45 @@ func finalizeOutboundsCached(ctx cosmos.Context, mgr Manager, voter ObservedTxVo
 // only credits the slices it has already executed (State.In). A rollback that
 // catches a stream mid-flight must unwind what was credited, not what was
 // deposited, otherwise it removes asset the pool never received.
-func mempoolRollbackCreditedSourceAmount(ctx cosmos.Context, k keeper.Keeper, voter ObservedTxVoter, deposit cosmos.Uint) cosmos.Uint {
+func mempoolRollbackCreditedSourceAmount(
+	ctx cosmos.Context,
+	k keeper.Keeper,
+	voter ObservedTxVoter,
+	deposit,
+	stagedSourceRefund cosmos.Uint,
+) (cosmos.Uint, error) {
 	if !k.HasAdvSwapQueueItem(ctx, voter.TxID, 0) {
-		// Nothing left in the queue means the swap ran to completion, so the
-		// full deposit reached the pool.
-		return deposit
+		// A completed partial stream removes its advanced-queue item after
+		// staging the unconsumed input as a source-asset refund. Only the
+		// remainder of the deposit was credited to the pool. If no refund was
+		// staged, either the whole deposit executed or an unrefundable remainder
+		// was donated to the source pool, so the full deposit is pool-credited.
+		if stagedSourceRefund.GT(deposit) {
+			return cosmos.ZeroUint(), fmt.Errorf("staged source refund exceeds mempool swap deposit: %s > %s", stagedSourceRefund, deposit)
+		}
+		return common.SafeSub(deposit, stagedSourceRefund), nil
 	}
 	msg, err := k.GetAdvSwapQueueItem(ctx, voter.TxID, 0)
 	if err != nil || msg.State == nil || msg.State.In.IsNil() {
 		ctx.Logger().Error("fail to read advanced-queue swap state for mempool rollback deduction, falling back to deposit",
 			"error", err, "hash", voter.TxID)
-		return deposit
+		return deposit, nil
 	}
 	if msg.State.In.GT(deposit) {
-		return deposit
+		return deposit, nil
 	}
-	return msg.State.In
+	return msg.State.In, nil
+}
+
+// isStagedMempoolSourceRefund identifies the unconsumed input refund staged by
+// advanced-swap settlement. It is not swap output and must not be reverse-
+// swapped during rollback; the funds never entered the source pool.
+func isStagedMempoolSourceRefund(voter ObservedTxVoter, sourceAsset common.Asset, item TxOutItem) bool {
+	if !item.Coin.Asset.Equals(sourceAsset) || !item.Chain.Equals(sourceAsset.GetChain()) {
+		return false
+	}
+	baseMemo, _, _ := strings.Cut(item.GetMemo(), "|")
+	return strings.EqualFold(baseMemo, NewRefundMemo(voter.TxID).String())
 }
 
 // deductMempoolRollbackSourceAsset removes the source asset that was credited
@@ -3138,6 +3161,7 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 	}
 
 	var actionsToRollback []mempoolRollbackAction
+	stagedSourceRefund := cosmos.ZeroUint()
 	if len(stagedItems) == 0 {
 		// Advanced swaps can build up executed output in queue state before
 		// any staged outbound exists. Recover that output so rollback still
@@ -3156,6 +3180,10 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 	} else {
 		actionsToRollback = make([]mempoolRollbackAction, 0, len(stagedItems))
 		for i, staged := range stagedItems {
+			if isStagedMempoolSourceRefund(voter, sourceAsset, staged.TxOutItem) {
+				stagedSourceRefund = stagedSourceRefund.Add(staged.TxOutItem.Coin.Amount)
+				continue
+			}
 			actionsToRollback = append(actionsToRollback, mempoolRollbackAction{
 				item:        staged.TxOutItem,
 				actionIndex: i,
@@ -3185,10 +3213,14 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 	// deposit the swap was built from, which will never be received.
 	//
 	// Only the portion the swap actually executed made it into the pool, so the
-	// pool deduction below uses the credited amount rather than the deposit. The
-	// two are equal for a completed swap and differ for a half-run stream.
+	// pool deduction below uses the credited amount rather than the deposit. A
+	// completed partial stream records its unconsumed input as a staged refund,
+	// while a mid-flight stream still exposes State.In in the queue.
 	sourceAmount := voter.Tx.Tx.Coins[0].Amount
-	creditedSourceAmount := mempoolRollbackCreditedSourceAmount(ctx, keeper, voter, sourceAmount)
+	creditedSourceAmount, err := mempoolRollbackCreditedSourceAmount(ctx, keeper, voter, sourceAmount, stagedSourceRefund)
+	if err != nil {
+		return err
+	}
 	assetRemovedFromPool := false
 	aggregateDonatedAmount := cosmos.ZeroUint()
 	var rollbackSwapVault Vault
@@ -3336,6 +3368,15 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 // the reclaim logic in handler_common_outbound for observed outbounds, but is
 // triggered during rollback since the outbound never actually went out.
 func reclaimStagedClout(ctx cosmos.Context, k keeper.Keeper, voter ObservedTxVoter, stagedItems []keeper.StagedOutbound) error {
+	cacheCtx, commit := ctx.CacheContext()
+	if err := reclaimStagedCloutCached(cacheCtx, k, voter, stagedItems); err != nil {
+		return err
+	}
+	commit()
+	return nil
+}
+
+func reclaimStagedCloutCached(ctx cosmos.Context, k keeper.Keeper, voter ObservedTxVoter, stagedItems []keeper.StagedOutbound) error {
 	fromAddr := voter.Tx.Tx.FromAddress
 
 	for _, staged := range stagedItems {

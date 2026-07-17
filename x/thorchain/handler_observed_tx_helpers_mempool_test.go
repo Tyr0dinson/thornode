@@ -24,6 +24,19 @@ func (k failGetStagedOutboundsKeeper) GetStagedOutbounds(_ cosmos.Context, _ com
 	return nil, fmt.Errorf("fail to get staged outbounds")
 }
 
+type failSecondSetSwapperCloutKeeper struct {
+	keeper.Keeper
+	setCalls int
+}
+
+func (k *failSecondSetSwapperCloutKeeper) SetSwapperClout(ctx cosmos.Context, record SwapperClout) error {
+	k.setCalls++
+	if k.setCalls == 2 {
+		return fmt.Errorf("fail second swapper clout write")
+	}
+	return k.Keeper.SetSwapperClout(ctx, record)
+}
+
 func runSwapQueues(c *C, ctx cosmos.Context, mgr *Mgrs) {
 	c.Assert(mgr.SwapQ().EndBlock(ctx, mgr), IsNil)
 	if mgr.Keeper().AdvSwapQueueEnabled(ctx) {
@@ -35,6 +48,43 @@ func setupAdvancedMempoolManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
 	return ctx, mgr
+}
+
+func (s *HandlerObservedTxHelpersMempoolSuite) TestReclaimStagedCloutRollbackOnPartialWriteError(c *C) {
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
+	sender := GetRandomBTCAddress()
+	recipient := GetRandomBTCAddress()
+
+	senderClout := NewSwapperClout(sender)
+	senderClout.Spent = cosmos.NewUint(100)
+	recipientClout := NewSwapperClout(recipient)
+	recipientClout.Spent = cosmos.NewUint(100)
+	c.Assert(mgr.Keeper().SetSwapperClout(ctx, senderClout), IsNil)
+	c.Assert(mgr.Keeper().SetSwapperClout(ctx, recipientClout), IsNil)
+
+	spent := cosmos.NewUint(80)
+	voter := NewObservedTxVoter(GetRandomTxHash(), ObservedTxs{})
+	voter.Tx = ObservedTx{Tx: common.Tx{FromAddress: sender}}
+	stagedItems := []keeper.StagedOutbound{{
+		TxOutItem: TxOutItem{
+			ToAddress:  recipient,
+			CloutSpent: &spent,
+		},
+	}}
+	failKeeper := &failSecondSetSwapperCloutKeeper{Keeper: mgr.Keeper()}
+
+	err := reclaimStagedClout(ctx, failKeeper, voter, stagedItems)
+	c.Assert(err, ErrorMatches, "fail to save recipient clout: fail second swapper clout write")
+	c.Check(failKeeper.setCalls, Equals, 2)
+
+	// The sender write happened inside the nested cache before the recipient
+	// write failed. Neither side may escape to the parent context.
+	updatedSender, err := mgr.Keeper().GetSwapperClout(ctx, sender)
+	c.Assert(err, IsNil)
+	updatedRecipient, err := mgr.Keeper().GetSwapperClout(ctx, recipient)
+	c.Assert(err, IsNil)
+	c.Check(updatedSender.Reclaimed.IsZero(), Equals, true)
+	c.Check(updatedRecipient.Reclaimed.IsZero(), Equals, true)
 }
 
 func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutbounds(c *C) {
@@ -1416,6 +1466,72 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestSecuredTargetAdvQueuePartialR
 			partialSwap.State.In, sourcePoolAfter.BalanceAsset, poolBeforeRollback.BalanceAsset))
 	c.Check(sourcePoolAfter.BalanceAsset.Equal(sourcePool.BalanceAsset), Equals, true,
 		Commentf("partial rollback should restore the source pool asset balance to its pre-swap value"))
+}
+
+// TestCompletedPartialMempoolRollbackUsesStagedRemainder verifies the
+// queue-removed partial-settlement case. The staged source refund represents
+// input that never entered the pool, so rollback must neither deduct nor
+// reverse-swap it.
+func (s *HandlerObservedTxHelpersMempoolSuite) TestCompletedPartialMempoolRollbackUsesStagedRemainder(c *C) {
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
+
+	deposit := cosmos.NewUint(100 * common.One)
+	credited := cosmos.NewUint(40 * common.One)
+	remainder := common.SafeSub(deposit, credited)
+	runeOutput := cosmos.NewUint(10 * common.One)
+	reservedTOR := cosmos.NewUint(5 * common.One)
+
+	sourcePool := NewPool()
+	sourcePool.Asset = common.BTCAsset
+	sourcePool.BalanceRune = cosmos.NewUint(1000 * common.One).Sub(runeOutput)
+	sourcePool.BalanceAsset = cosmos.NewUint(1000 * common.One).Add(credited)
+	sourcePool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, sourcePool), IsNil)
+
+	inTxID := GetRandomTxHash()
+	voter := NewObservedTxVoter(inTxID, ObservedTxs{})
+	voter.Tx = ObservedTx{Tx: common.Tx{
+		ID:          inTxID,
+		Chain:       common.BTCChain,
+		FromAddress: GetRandomBTCAddress(),
+		Coins:       common.Coins{common.NewCoin(common.BTCAsset, deposit)},
+	}}
+	voter.MempoolSwapTOR = reservedTOR
+
+	swapOutput := TxOutItem{
+		Chain:     common.THORChain,
+		InHash:    inTxID,
+		ToAddress: GetRandomTHORAddress(),
+		Coin:      common.NewCoin(common.RuneAsset(), runeOutput),
+	}
+	sourceRefund := TxOutItem{
+		Chain:       common.BTCChain,
+		InHash:      inTxID,
+		ToAddress:   voter.Tx.Tx.FromAddress,
+		VaultPubKey: GetRandomPubKey(),
+		Coin:        common.NewCoin(common.BTCAsset, remainder),
+		Memo:        NewRefundMemo(inTxID).String(),
+	}
+	voter.Actions = []TxOutItem{swapOutput, sourceRefund}
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, reservedTOR)
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, swapOutput, ctx.BlockHeight()+10), IsNil)
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, sourceRefund, ctx.BlockHeight()+10), IsNil)
+
+	// Settlement has removed the advanced-queue item, leaving only staged
+	// output and remainder records to describe the completed partial fill.
+	c.Check(mgr.Keeper().HasAdvSwapQueueItem(ctx, inTxID, 0), Equals, false)
+	c.Assert(rollbackMempoolSwapAtomic(ctx, mgr.Keeper(), mgr, voter), IsNil)
+
+	poolAfter, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(poolAfter.BalanceRune.Equal(cosmos.NewUint(1000*common.One)), Equals, true)
+	c.Check(poolAfter.BalanceAsset.Equal(cosmos.NewUint(1000*common.One)), Equals, true,
+		Commentf("rollback should deduct credited input %s, not deposit %s", credited, deposit))
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true)
+	staged, err := mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(staged, HasLen, 0)
 }
 
 // TestInactiveVaultSkipsMempoolSwapBeforeFinalization verifies that speculative
