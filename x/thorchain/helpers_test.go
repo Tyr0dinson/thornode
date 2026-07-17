@@ -1299,6 +1299,21 @@ func (HelperSuite) TestSettleSwapPostSwapMemoRollbackOnSetPoolError(c *C) {
 	c.Check(updatedPool.BalanceRune.Equal(sourcePool.BalanceRune), Equals, true, Commentf("failed post-swap settlement must preserve pool rune balance"))
 }
 
+func (HelperSuite) TestExecutePostSwapMemoRejectsUnsupportedMemo(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	msg := types.MsgSwap{
+		Tx:           common.Tx{ID: GetRandomTxHash()},
+		TargetAsset:  common.BTCAsset,
+		Destination:  GetRandomBTCAddress(),
+		PostSwapMemo: "SWAP:BTC.BTC:" + GetRandomBTCAddress().String(),
+		State:        &types.SwapState{Out: cosmos.NewUint(common.One)},
+	}
+
+	err := executePostSwapMemoCached(ctx, mgr, msg)
+	c.Assert(err, NotNil)
+	c.Check(strings.Contains(err.Error(), "unsupported post-swap memo type"), Equals, true)
+}
+
 func (HelperSuite) TestSettleSwapRefundFromInactiveVault(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 

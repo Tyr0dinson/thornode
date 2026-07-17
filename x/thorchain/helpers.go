@@ -2279,6 +2279,13 @@ func settleSwapResultCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settle
 // processing error.
 func executePostSwapMemoCached(ctx cosmos.Context, mgr Manager, msg MsgSwap) error {
 	ctx.Logger().Info("processing post-swap memo", "memo", msg.PostSwapMemo, "output", msg.State.Out.String())
+	postSwapMemo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), msg.PostSwapMemo)
+	if err != nil {
+		return fmt.Errorf("fail to parse post-swap memo: %w", err)
+	}
+	if !postSwapMemo.IsType(mem.TxDonate) {
+		return fmt.Errorf("unsupported post-swap memo type: %s", postSwapMemo.GetType())
+	}
 
 	// Generate a deterministic transaction hash from original tx ID + block height + memo
 	hashInput := fmt.Sprintf("%s|%d|%s", msg.Tx.ID, ctx.BlockHeight(), msg.PostSwapMemo)

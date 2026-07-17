@@ -2598,14 +2598,22 @@ func needsMempoolSwapRollback(ctx cosmos.Context, k keeper.Keeper, voter Observe
 	return len(stagedItems) > 0, nil
 }
 
+// validateStagedOutboundActionAlignment ensures the positional mapping used to
+// restore native staged outbounds is complete. Every prepared mempool outbound
+// records one voter action and stages one outbound in the same order.
+func validateStagedOutboundActionAlignment(voter ObservedTxVoter, stagedItems []keeper.StagedOutbound) error {
+	if len(stagedItems) != len(voter.Actions) {
+		return fmt.Errorf("staged outbound/action count mismatch for %s: %d staged, %d actions", voter.TxID, len(stagedItems), len(voter.Actions))
+	}
+	return nil
+}
+
 // restoreFinalNativeMempoolTxOutItem maps a staged native mempool outbound
-// back to the final native action in voter.Actions. Secured targets are
+// back to the voter action recorded at the same position. Secured targets are
 // restored from the escrowed underlying asset while other native targets must
-// still match the original staged asset. This relies on staged outbounds and
-// voter.Actions preserving the same prepared-output order; if that ordering
-// model changes in the future, this positional mapping must be revisited.
+// still match the original staged asset.
 func restoreFinalNativeMempoolTxOutItem(voter ObservedTxVoter, index int, staged keeper.StagedOutbound) (TxOutItem, error) {
-	if index >= len(voter.Actions) {
+	if index < 0 || index >= len(voter.Actions) {
 		return TxOutItem{}, fmt.Errorf("staged outbound index %d has no matching voter action", index)
 	}
 	action := voter.Actions[index]
@@ -2935,6 +2943,9 @@ func finalizeOutboundsCached(ctx cosmos.Context, mgr Manager, voter ObservedTxVo
 	if len(stagedItems) == 0 {
 		ctx.Logger().Debug("no staged outbounds to finalize, skipping", "hash", voter.TxID)
 		return nil
+	}
+	if err = validateStagedOutboundActionAlignment(voter, stagedItems); err != nil {
+		return err
 	}
 
 	// Release mempool swap capacity if this was a mempool swap

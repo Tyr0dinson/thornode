@@ -87,6 +87,51 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestReclaimStagedCloutRollbackOnP
 	c.Check(updatedRecipient.Reclaimed.IsZero(), Equals, true)
 }
 
+func (s *HandlerObservedTxHelpersMempoolSuite) TestRestoreFinalNativeMempoolTxOutItemValidatesPosition(c *C) {
+	inHash := GetRandomTxHash()
+	securedAsset := common.BTCAsset.GetSecuredAsset()
+	voter := NewObservedTxVoter(inHash, ObservedTxs{})
+	voter.Actions = []TxOutItem{
+		{
+			Chain:  common.THORChain,
+			InHash: inHash,
+			Coin:   common.NewCoin(securedAsset, cosmos.NewUint(3*common.One)),
+		},
+		{
+			Chain:  common.THORChain,
+			InHash: inHash,
+			Coin:   common.NewCoin(common.RuneAsset(), cosmos.NewUint(5*common.One)),
+		},
+	}
+
+	staged := []keeper.StagedOutbound{
+		{
+			TxOutItem: TxOutItem{
+				Chain:  common.THORChain,
+				InHash: inHash,
+				Coin:   common.NewCoin(common.BTCAsset, voter.Actions[0].Coin.Amount),
+			},
+		},
+		{
+			TxOutItem: voter.Actions[1],
+		},
+	}
+
+	c.Assert(validateStagedOutboundActionAlignment(voter, staged), IsNil)
+	err := validateStagedOutboundActionAlignment(voter, staged[:1])
+	c.Assert(err, ErrorMatches, "staged outbound/action count mismatch for .*: 1 staged, 2 actions")
+
+	securedItem, err := restoreFinalNativeMempoolTxOutItem(voter, 0, staged[0])
+	c.Assert(err, IsNil)
+	c.Check(securedItem.Coin.Asset.Equals(securedAsset), Equals, true)
+	runeItem, err := restoreFinalNativeMempoolTxOutItem(voter, 1, staged[1])
+	c.Assert(err, IsNil)
+	c.Check(runeItem.Coin.Asset.Equals(common.RuneAsset()), Equals, true)
+
+	_, err = restoreFinalNativeMempoolTxOutItem(voter, 0, staged[1])
+	c.Assert(err, ErrorMatches, "staged escrow asset mismatch at index 0: staged .* action .*")
+}
+
 func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutbounds(c *C) {
 	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
