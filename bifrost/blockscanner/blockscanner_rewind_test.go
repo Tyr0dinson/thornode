@@ -160,6 +160,23 @@ func (s *BlockScannerExtraSuite) TestRewindRequiredErrorExtractionAcceptsWrapped
 	c.Check(ok, Equals, false)
 }
 
+func (s *BlockScannerExtraSuite) TestScannerRecoveryExtractionAcceptsWrappedValueAndPointer(c *C) {
+	want := btypes.ScannerRecoveryRequiredError{CurrentHeight: 200, NextHeight: 128, Reason: "test"}
+
+	recovery, ok := scannerRecoveryRequired(fmt.Errorf("wrapped: %w", want))
+	c.Assert(ok, Equals, true)
+	c.Assert(recovery, NotNil)
+	c.Check(*recovery, DeepEquals, want)
+
+	recovery, ok = scannerRecoveryRequired(fmt.Errorf("wrapped: %w", &want))
+	c.Assert(ok, Equals, true)
+	c.Assert(recovery, NotNil)
+	c.Check(*recovery, DeepEquals, want)
+
+	_, ok = scannerRecoveryRequired(errors.New("ordinary fetch error"))
+	c.Check(ok, Equals, false)
+}
+
 type rewindPrefetchFetcher struct {
 	mu              sync.Mutex
 	calls           map[int64]int
@@ -515,7 +532,8 @@ func (s *BlockScannerExtraSuite) TestPersistenceFailuresBackOffAndReportUnhealth
 }
 
 type terminalRecoveryFetcher struct {
-	calls atomic.Int64
+	calls   atomic.Int64
+	asValue bool
 }
 
 func (f *terminalRecoveryFetcher) FetchMemPool(int64) (stypes.TxIn, error) {
@@ -524,11 +542,15 @@ func (f *terminalRecoveryFetcher) FetchMemPool(int64) (stypes.TxIn, error) {
 
 func (f *terminalRecoveryFetcher) FetchTxs(fetchHeight, _ int64) (stypes.TxIn, error) {
 	f.calls.Add(1)
-	return stypes.TxIn{}, &btypes.ScannerRecoveryRequiredError{
+	recovery := btypes.ScannerRecoveryRequiredError{
 		CurrentHeight: fetchHeight,
 		NextHeight:    fetchHeight - btypes.MaxCursorRewindBlocks - 1,
 		Reason:        "test discontinuity",
 	}
+	if f.asValue {
+		return stypes.TxIn{}, recovery
+	}
+	return stypes.TxIn{}, &recovery
 }
 
 func (f *terminalRecoveryFetcher) GetHeight() (int64, error) {
@@ -543,24 +565,26 @@ func (s *BlockScannerExtraSuite) TestOperatorRecoveryErrorStopsRetryLoop(c *C) {
 	server, bridge := s.newRewindTestBridge(c)
 	defer server.Close()
 
-	fetcher := &terminalRecoveryFetcher{}
-	scanner, err := NewBlockScanner(config.BifrostBlockScannerConfiguration{
-		StartBlockHeight:           999,
-		BlockHeightDiscoverBackoff: time.Millisecond,
-		ChainID:                    common.XMRChain,
-		MaxHealthyLag:              time.Hour,
-	}, NewMockScannerStorage(), m, bridge, fetcher)
-	c.Assert(err, IsNil)
+	for _, asValue := range []bool{false, true} {
+		fetcher := &terminalRecoveryFetcher{asValue: asValue}
+		scanner, err := NewBlockScanner(config.BifrostBlockScannerConfiguration{
+			StartBlockHeight:           999,
+			BlockHeightDiscoverBackoff: time.Millisecond,
+			ChainID:                    common.XMRChain,
+			MaxHealthyLag:              time.Hour,
+		}, NewMockScannerStorage(), m, bridge, fetcher)
+		c.Assert(err, IsNil)
 
-	scanner.Start(make(chan stypes.TxIn, 1), make(chan common.NetworkFee, 1))
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) && fetcher.calls.Load() == 0 {
-		time.Sleep(time.Millisecond)
+		scanner.Start(make(chan stypes.TxIn, 1), make(chan common.NetworkFee, 1))
+		deadline := time.Now().Add(time.Second)
+		for time.Now().Before(deadline) && fetcher.calls.Load() == 0 {
+			time.Sleep(time.Millisecond)
+		}
+		time.Sleep(30 * time.Millisecond)
+		c.Check(fetcher.calls.Load(), Equals, int64(1), Commentf("asValue=%t", asValue))
+		c.Check(scanner.IsHealthy(), Equals, false, Commentf("asValue=%t", asValue))
+		scanner.Stop()
 	}
-	time.Sleep(30 * time.Millisecond)
-	c.Check(fetcher.calls.Load(), Equals, int64(1))
-	c.Check(scanner.IsHealthy(), Equals, false)
-	scanner.Stop()
 }
 
 func (f *abortingErrorFetcher) FetchMemPool(int64) (stypes.TxIn, error) {

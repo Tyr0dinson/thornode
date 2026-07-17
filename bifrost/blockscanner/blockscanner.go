@@ -215,6 +215,21 @@ func rewindRequiredNextHeight(err error) (int64, bool) {
 	return 0, false
 }
 
+func scannerRecoveryRequired(err error) (*btypes.ScannerRecoveryRequiredError, bool) {
+	// ScannerRecoveryRequiredError also has a value receiver. Accept both forms
+	// so a producer cannot accidentally turn an operator fail-stop into an
+	// endlessly retried transient error merely by returning a value.
+	var value btypes.ScannerRecoveryRequiredError
+	if errors.As(err, &value) {
+		return &value, true
+	}
+	var pointer *btypes.ScannerRecoveryRequiredError
+	if errors.As(err, &pointer) && pointer != nil {
+		return pointer, true
+	}
+	return nil, false
+}
+
 // GetMessages return the channel
 func (b *BlockScanner) GetMessages() <-chan int64 {
 	return b.scanChan
@@ -443,8 +458,7 @@ func (b *BlockScanner) scanBlocks() {
 					txIn.AbortPersistence()
 				}
 
-				var recoveryRequired *btypes.ScannerRecoveryRequiredError
-				if errors.As(err, &recoveryRequired) {
+				if recoveryRequired, recovery := scannerRecoveryRequired(err); recovery {
 					clearPrefetch()
 					b.logger.Error().Err(err).
 						Int64("current_height", recoveryRequired.CurrentHeight).
