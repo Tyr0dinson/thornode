@@ -69,6 +69,7 @@ func (k KVStore) GetStagedOutboundSummary(ctx cosmos.Context) (keeper.StagedOutb
 		RuneValue:  cosmos.ZeroUint(),
 		CloutValue: cosmos.ZeroUint(),
 	}
+	items := make([]TxOutItem, 0)
 	iter := k.GetStagedOutboundIterator(ctx)
 	defer iter.Close()
 
@@ -82,10 +83,8 @@ func (k KVStore) GetStagedOutboundSummary(ctx cosmos.Context) (keeper.StagedOutb
 		summary.InboundCount++
 		summary.OutboundCount += int64(len(list.Items))
 
-		// Extract TxOutItems from staged outbounds
-		items := make([]TxOutItem, len(list.Items))
-		for i, staged := range list.Items {
-			items[i] = staged.TxOutItem
+		for _, staged := range list.Items {
+			items = append(items, staged.TxOutItem)
 			if staged.StagedHeight <= 0 || staged.StagedHeight > ctx.BlockHeight() {
 				continue
 			}
@@ -94,12 +93,11 @@ func (k KVStore) GetStagedOutboundSummary(ctx cosmos.Context) (keeper.StagedOutb
 				summary.OldestAge = age
 			}
 		}
-
-		// Calculate value using existing helper
-		itemRuneValue, itemCloutValue := k.GetTOIsValue(ctx, items...)
-		summary.RuneValue = summary.RuneValue.Add(itemRuneValue)
-		summary.CloutValue = summary.CloutValue.Add(itemCloutValue)
 	}
+
+	// Value all staged items together so GetTOIsValue can reuse one pool cache
+	// across the entire staged-outbound store.
+	summary.RuneValue, summary.CloutValue = k.GetTOIsValue(ctx, items...)
 
 	return summary, nil
 }
