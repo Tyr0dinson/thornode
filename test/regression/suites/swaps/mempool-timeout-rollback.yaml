@@ -1,0 +1,239 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Unfinalized mempool swaps must roll back after the default three signing periods.
+# SigningTransactionPeriod is shortened to keep the regression fast, while
+# MaxOutboundAttempts remains at zero so LackSigning uses its default fallback of three.
+########################################################################################
+# Give TOR accounting a deterministic price basis.
+type: tx-mimir
+key: DollarsPerRune
+value: 100000000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Enable mempool swaps with enough capacity for the test swap.
+type: tx-mimir
+key: MempoolSwapCapTOR
+value: 100000000000000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Disable the per-pool depth cap so admission is controlled by the global cap.
+type: tx-mimir
+key: MempoolSwapPoolCapBPS
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Pin the advanced queue mode used by mempool execution instead of relying on
+# the mocknet default.
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Use three-block signing periods so the fallback timeout age is nine blocks.
+type: tx-mimir
+key: SigningTransactionPeriod
+value: 3
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Pin the production default. A non-positive value selects the three-attempt fallback.
+type: tx-mimir
+key: MaxOutboundAttempts
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .DOLLARSPERRUNE == 100000000
+  - .MEMPOOLSWAPCAPTOR == 100000000000000
+  - .MEMPOOLSWAPPOOLCAPBPS == 0
+  - .SIGNINGTRANSACTIONPERIOD == 3
+  - .MAXOUTBOUNDATTEMPTS == 0
+  - .ENABLEADVSWAPQUEUE == 1
+---
+# Record the asset-side depths that the rollback must restore. RUNE depths are
+# intentionally not pinned because block rewards and rollback liquidity effects change them.
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .balance_asset == "${BTC_ASSET_DEPTH=100000000}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
+asserts:
+  - .balance_asset == "${ETH_ASSET_DEPTH=1000000000}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .mempool_swap_usage_tor == "0"
+---
+# Observe a BTC-to-ETH swap that never finalizes. At this point THORChain is at
+# height 7, so the transaction executes and stages its outbound at height 8.
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "100000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+          decimals: 8
+      memo: "=:ETH.ETH:{{ addr_eth_fox }}"
+    block_height: 8
+    finalise_height: 100
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# The speculative swap completed, reserved TOR capacity, and staged its outbound
+# instead of exposing it to Bifrost. Pinning staged_height modulo three makes the
+# later off-boundary assertion meaningful without relying only on comments.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/staged
+asserts:
+  - .staged_outbound_items|length == 1
+  - .staged_outbound_items[0].tx_out_item.in_hash == "{{ observe_txid 1 }}"
+  - .staged_outbound_items[0].tx_out_item.chain == "ETH"
+  - .staged_outbound_items[0].tx_out_item.to_address == "{{ addr_eth_fox }}"
+  - (.staged_outbound_items[0].staged_height|tonumber) % 3 == 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .mempool_swap_usage_tor|tonumber > 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ observe_txid 1 }}
+status: 400
+asserts:
+  - .message|contains("not found in any queue")
+---
+# Confirm that speculative execution changed both pools before rollback.
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .balance_asset|tonumber > ${BTC_ASSET_DEPTH}
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
+asserts:
+  - .balance_asset|tonumber < ${ETH_ASSET_DEPTH}
+---
+# The staged item is now nine blocks old, but height 17 is not a signing-period
+# boundary. Recovery must therefore leave it untouched for this block.
+type: create-blocks
+count: 9
+---
+type: check
+endpoint: http://localhost:1317/thorchain/lastblock
+asserts:
+  - .[0].thorchain == 17
+  - .[0].thorchain % 3 == 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/staged
+asserts:
+  - .staged_outbound_items|length == 1
+  - .staged_outbound_items[0].tx_out_item.in_hash == "{{ observe_txid 1 }}"
+  - (.staged_outbound_items[0].staged_height|tonumber) == 8
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .mempool_swap_usage_tor|tonumber > 0
+---
+# Height 18 is the next signing-period boundary. LackSigning must atomically
+# unwind the speculative swap and release all associated state there.
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/lastblock
+asserts:
+  - .[0].thorchain == 18
+  - .[0].thorchain % 3 == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/staged
+asserts:
+  - (.staged_outbound_items // [])|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ observe_txid 1 }}
+status: 400
+asserts:
+  - .message|contains("not found in any queue")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .mempool_swap_usage_tor == "0"
+---
+# Asset depths return exactly to their pre-swap values after the reverse swap.
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .balance_asset == "${BTC_ASSET_DEPTH}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
+asserts:
+  - .balance_asset == "${ETH_ASSET_DEPTH}"
+---
+# Verify that recovery occurred on the boundary itself and used the timeout path.
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.end_block_events[]|select(.type == "mempool_swap_reverted" and .tx_id == "{{ observe_txid 1 }}")]|length == 1'
+  - .end_block_events[]|select(.type == "mempool_swap_reverted")|.block_height == "18"
+  - .end_block_events[]|select(.type == "mempool_swap_reverted")|.source_asset == "BTC.BTC"
+  - .end_block_events[]|select(.type == "mempool_swap_reverted")|.source_amount == "100000000"
+  - '[.end_block_events[]|select(.type == "security" and .msg == "mempool swap rolled back")]|length == 1'
