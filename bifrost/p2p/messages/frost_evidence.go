@@ -16,11 +16,28 @@ const (
 	FrostBlameRoundPreprocessEquivocation = "FROSTV2PreprocessEquivocation"
 	FrostBlameRoundShareEquivocation      = "FROSTV2ShareEquivocation"
 
-	FrostMaxEvidenceBytes = 16 * 1024
-	frostHashHexChars     = 64
-	frostMaxSignatureSize = 128
-	frostMaxVaultKeyChars = 256
+	FrostMaxEvidenceBytes       = 16 * 1024
+	frostHashHexChars           = 64
+	frostMaxSignatureSize       = 128
+	frostMaxVaultKeyChars       = 256
+	frostMaxParticipantKeyChars = 256
+	frostMaxRoundChars          = 64
 )
+
+func validateFrostStatementField(name, value string, maxLen int) error {
+	if value == "" || len(value) > maxLen {
+		return fmt.Errorf("invalid FROST %s length", name)
+	}
+	for i := 0; i < len(value); i++ {
+		// Signed statements are newline-delimited key=value records. Restrict
+		// free-form values to visible ASCII so control characters cannot make one
+		// signature authenticate two different field tuples.
+		if value[i] < 0x21 || value[i] > 0x7e {
+			return fmt.Errorf("invalid FROST %s character", name)
+		}
+	}
+	return nil
+}
 
 func IsFrostEvidenceBlameRound(round string) bool {
 	return round == FrostBlameRoundPreprocessEquivocation || round == FrostBlameRoundShareEquivocation
@@ -71,8 +88,14 @@ func (e FrostSignedEnvelope) SignBytes() ([]byte, error) {
 	default:
 		return nil, fmt.Errorf("invalid FROST envelope network")
 	}
-	if len(vaultPubKey) > frostMaxVaultKeyChars {
-		return nil, fmt.Errorf("invalid FROST envelope vault pubkey length")
+	if err := validateFrostStatementField("envelope vault pubkey", vaultPubKey, frostMaxVaultKeyChars); err != nil {
+		return nil, err
+	}
+	if err := validateFrostStatementField("envelope round", round, frostMaxRoundChars); err != nil {
+		return nil, err
+	}
+	if err := validateFrostStatementField("envelope sender pubkey", sender, frostMaxParticipantKeyChars); err != nil {
+		return nil, err
 	}
 	if len(sessionID) != frostHashHexChars {
 		return nil, fmt.Errorf("invalid FROST envelope session id length")
@@ -114,13 +137,17 @@ func (e FrostSignedEcho) SignBytes() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if e.ProtocolVersion != FrostProtocolVersion || strings.TrimSpace(e.AttesterPubKey) == "" {
+	attester := strings.TrimSpace(e.AttesterPubKey)
+	if e.ProtocolVersion != FrostProtocolVersion || attester == "" {
 		return nil, fmt.Errorf("incomplete FROST echo")
+	}
+	if err := validateFrostStatementField("echo attester pubkey", attester, frostMaxParticipantKeyChars); err != nil {
+		return nil, err
 	}
 	return []byte(strings.Join([]string{
 		"domain=thorchain-frost-signed-echo-v2",
 		"protocol_version=" + strconv.FormatUint(uint64(e.ProtocolVersion), 10),
-		"attester_pub_key=" + strings.TrimSpace(e.AttesterPubKey),
+		"attester_pub_key=" + attester,
 		"target_statement=" + hex.EncodeToString(targetBytes),
 		"target_signature=" + hex.EncodeToString(e.Target.Signature),
 	}, "\n")), nil

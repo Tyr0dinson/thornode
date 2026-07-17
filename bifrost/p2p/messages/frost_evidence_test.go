@@ -296,6 +296,46 @@ func TestFrostSignBytesNormalizesFields(t *testing.T) {
 	}
 }
 
+func TestFrostSignBytesRejectsUnsafeFreeFormFields(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		mutir func(*FrostSignedEnvelope)
+	}{
+		{"newline in vault", func(e *FrostSignedEnvelope) { e.VaultPubKey += "\nround=frost_share" }},
+		{"newline in round", func(e *FrostSignedEnvelope) { e.Round += "\nsender_pub_key=tthorpub1other" }},
+		{"newline in sender", func(e *FrostSignedEnvelope) { e.SenderPubKey += "\nparticipant_index=9" }},
+		{"control in round", func(e *FrostSignedEnvelope) { e.Round += "\tother" }},
+		{"non ascii sender", func(e *FrostSignedEnvelope) { e.SenderPubKey += "é" }},
+		{"oversized round", func(e *FrostSignedEnvelope) { e.Round = strings.Repeat("r", frostMaxRoundChars+1) }},
+		{"oversized sender", func(e *FrostSignedEnvelope) {
+			e.SenderPubKey = strings.Repeat("p", frostMaxParticipantKeyChars+1)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			envelope := testEnvelope(evidenceHashA)
+			tc.mutir(&envelope)
+			if _, err := envelope.SignBytes(); err == nil {
+				t.Fatal("unsafe envelope field was accepted")
+			}
+		})
+	}
+
+	for _, attester := range []string{
+		"tthorpub1attester\ntarget_statement=00",
+		"tthorpub1attester\tother",
+		strings.Repeat("p", frostMaxParticipantKeyChars+1),
+	} {
+		echo := FrostSignedEcho{
+			ProtocolVersion: FrostProtocolVersion,
+			AttesterPubKey:  attester,
+			Target:          testEnvelope(evidenceHashA),
+		}
+		if _, err := echo.SignBytes(); err == nil {
+			t.Fatalf("unsafe echo attester %q was accepted", attester)
+		}
+	}
+}
+
 // An echo binds the target's signature, so it cannot be transplanted onto a
 // different envelope carrying the same statement.
 func TestFrostEchoBindsTargetSignature(t *testing.T) {
