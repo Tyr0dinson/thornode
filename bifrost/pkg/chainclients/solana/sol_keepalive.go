@@ -328,7 +328,7 @@ func (c *SOLClient) keepAliveVault(vault ttypes.Vault, currentSlot uint64, refre
 	// anchorHeight is the shared, valid keysign height: every member derives the
 	// same THORChain-block boundary (≤ tip), so they batch into one keysign session
 	// — the property scheduled outbounds get from their consensus txOut.Height.
-	signed, _, _, err := c.SignTx(toi, anchorHeight)
+	signed, _, _, err := c.SignTx([]stypes.TxOutItem{toi}, anchorHeight)
 	if err != nil {
 		return fmt.Errorf("fail to sign keep-alive tx: %w", err)
 	}
