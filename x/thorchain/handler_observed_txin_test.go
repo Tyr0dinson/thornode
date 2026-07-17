@@ -969,8 +969,8 @@ func (s *HandlerObservedTxInSuite) testHandleWithConfirmation(c *C) {
 	c.Assert(voter.Txs, HasLen, 1)
 	c.Assert(voter.UpdatedVault, Equals, false)
 	c.Assert(voter.FinalisedHeight, Equals, int64(0))
-	// Chain height is only set when transaction is finalized, not at consensus.
-	// This prevents out-of-order chain heights when mempool swaps are enabled.
+	// Chain height is only set when the transaction is finalized, not at consensus,
+	// so it stays aligned with the inbound balances reflected in vault state.
 	c.Check(keeper.height, Equals, int64(0))
 	ethCoin := keeper.vault.Coins.GetCoin(common.ETHAsset)
 	c.Assert(ethCoin.Amount.Equal(cosmos.ZeroUint()), Equals, true)

@@ -426,9 +426,9 @@ func handleObservedTxInQuorum(
 			}
 		}
 	}
-	// Only update chain height when transaction is finalized, not from mempool observations.
-	// Mempool transactions can arrive out of order relative to their external chain block heights,
-	// and SetLastChainHeight rejects attempts to set a lower height than already stored.
+	// Only update chain height when the transaction is finalized. This intentionally
+	// applies to every unfinalized inbound, not only mempool-eligible swaps, so
+	// LastChainHeight stays aligned with the inbound balances reflected in vault state.
 	if hasFinalised {
 		if err = k.SetLastChainHeight(ctx, tx.Tx.Chain, tx.BlockHeight); err != nil {
 			ctx.Logger().Error("fail to set last chain height", "error", err)
