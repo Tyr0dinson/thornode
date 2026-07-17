@@ -372,6 +372,71 @@ type persistenceFailureFetcher struct {
 	failureOnce     sync.Once
 }
 
+type emptyPersistenceFetcher struct {
+	persisted chan error
+	finalized atomic.Bool
+}
+
+func (f *emptyPersistenceFetcher) FetchMemPool(int64) (stypes.TxIn, error) {
+	return stypes.TxIn{}, nil
+}
+
+func (f *emptyPersistenceFetcher) FetchTxs(fetchHeight, _ int64) (stypes.TxIn, error) {
+	if fetchHeight != 2 {
+		return stypes.TxIn{}, nil
+	}
+	return stypes.TxIn{
+		Chain:     common.ETHChain,
+		Persisted: f.persisted,
+		FinalizePersistence: func() error {
+			f.finalized.Store(true)
+			return nil
+		},
+	}, nil
+}
+
+func (f *emptyPersistenceFetcher) GetHeight() (int64, error) {
+	return 2, nil
+}
+
+func (f *emptyPersistenceFetcher) GetNetworkFee() (uint64, uint64) {
+	return 250, 30
+}
+
+func (s *BlockScannerExtraSuite) TestEmptyTxInPersistenceIsDeliveredAndAcknowledged(c *C) {
+	server, bridge := s.newRewindTestBridge(c)
+	defer server.Close()
+
+	fetcher := &emptyPersistenceFetcher{persisted: make(chan error, 1)}
+	scanner, err := NewBlockScanner(config.BifrostBlockScannerConfiguration{
+		StartBlockHeight:           1,
+		BlockHeightDiscoverBackoff: time.Millisecond,
+		ChainID:                    common.ETHChain,
+		MaxHealthyLag:              time.Hour,
+	}, NewMockScannerStorage(), m, bridge, fetcher)
+	c.Assert(err, IsNil)
+
+	txQueue := make(chan stypes.TxIn, 1)
+	scanner.Start(txQueue, make(chan common.NetworkFee, 1))
+	defer scanner.Stop()
+
+	select {
+	case txIn := <-txQueue:
+		c.Check(len(txIn.TxArray), Equals, 0)
+		c.Assert(txIn.Persisted, NotNil)
+		txIn.Persisted <- nil
+	case <-time.After(time.Second):
+		c.Fatal("empty TxIn persistence handshake was not enqueued")
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) && scanner.PreviousHeight() != 2 {
+		time.Sleep(time.Millisecond)
+	}
+	c.Check(scanner.PreviousHeight(), Equals, int64(2))
+	c.Check(fetcher.finalized.Load(), Equals, true)
+}
+
 func (f *persistenceFailureFetcher) signalFailure() {
 	f.failureOnce.Do(func() { close(f.failureObserved) })
 }

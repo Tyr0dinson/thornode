@@ -547,7 +547,10 @@ func (b *BlockScanner) scanBlocks() {
 			b.logger.Debug().Msgf("the gap is %d , healthy: %+v", chainHeight-currentBlock, b.healthy.Load())
 
 			b.metrics.GetCounter(metrics.TotalBlockScanned).Inc()
-			if len(txIn.TxArray) > 0 {
+			// A scanner may need Observer to acknowledge durable metadata even when
+			// the delivery contains no transaction items. Enqueue those handshakes so
+			// Observer's empty-TxIn acknowledgement path remains reachable.
+			if len(txIn.TxArray) > 0 || txIn.Persisted != nil {
 				select {
 				case <-b.stopChan:
 					return
