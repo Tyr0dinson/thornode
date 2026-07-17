@@ -29,6 +29,11 @@ import (
 // stuck reservations.
 const mempoolSwapForceRollbackTimeoutMultiplier int64 = 3
 
+// defaultMempoolSwapTimeoutAttempts keeps speculative-state recovery live when
+// outbound rescheduling is disabled with MaxOutboundAttempts=0. Three signing
+// periods matches the timeout previously used by the common configured value.
+const defaultMempoolSwapTimeoutAttempts int64 = 3
+
 // Slasher is current implementation of slasher
 type SlasherImpl struct {
 	keeper   keeper.Keeper
@@ -869,15 +874,22 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 
 	// Handle timeout for staged outbounds (mempool swaps waiting for inbound finalization).
 	// Staged outbounds are not in the TxOut queue, so they need separate timeout handling.
-	if maxOutboundAttempts > 0 {
-		timeoutAge := signingTransPeriod * maxOutboundAttempts
+	mempoolSwapTimeoutAttempts := maxOutboundAttempts
+	if mempoolSwapTimeoutAttempts <= 0 {
+		mempoolSwapTimeoutAttempts = defaultMempoolSwapTimeoutAttempts
+	}
+	mempoolSwapEnabled := mgr.Keeper().GetConfigInt64(ctx, constants.MempoolSwapCapTOR) > 0
+	hasMempoolSwapReservations := !mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero()
+	isMempoolSwapRecoveryBlock := ctx.BlockHeight()%signingTransPeriod == 0
+	if (mempoolSwapEnabled || hasMempoolSwapReservations) && isMempoolSwapRecoveryBlock {
+		timeoutAge := signingTransPeriod * mempoolSwapTimeoutAttempts
 		forceRollbackAge := mempoolSwapForceRollbackTimeoutMultiplier * timeoutAge
 
 		// Collect timed-out inHashes first, then process after closing iterator
 		// to avoid iterator invalidation when rollbackMempoolSwapAtomic deletes from store
 		type timedOutEntry struct {
 			inHash    common.TxID
-			oldestAge int64
+			stagedAge int64
 		}
 		var timedOutEntries []timedOutEntry
 		stagedIter := s.keeper.GetStagedOutboundIterator(ctx)
@@ -888,7 +900,7 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				continue
 			}
 			// Check timeout based on staged height
-			// Timeout if staged for longer than signingTransPeriod * maxOutboundAttempts
+			// Timeout if staged for longer than the configured number of signing periods.
 			var oldest int64
 			for _, staged := range stagedList.Items {
 				if staged.StagedHeight <= 0 || staged.StagedHeight > ctx.BlockHeight() {
@@ -900,11 +912,7 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				}
 			}
 			if oldest >= timeoutAge {
-				ctx.Logger().Info("staged mempool swap timed out",
-					"hash", stagedList.InHash,
-					"oldest_age", oldest,
-					"current_height", ctx.BlockHeight())
-				timedOutEntries = append(timedOutEntries, timedOutEntry{inHash: stagedList.InHash, oldestAge: oldest})
+				timedOutEntries = append(timedOutEntries, timedOutEntry{inHash: stagedList.InHash, stagedAge: oldest})
 			}
 		}
 		stagedIter.Close()
@@ -921,6 +929,18 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 			// If the inbound already finalized, the staged outbounds should be
 			// finalized on retry instead of being rolled back.
 			if voter.FinalisedHeight > 0 {
+				// Confirmation time must not consume the finalization retry window.
+				// StagedHeight remains the timeout clock for an inbound that never
+				// finalizes, while finalized swaps get a fresh clock starting at the
+				// consensus finalization height.
+				if voter.FinalisedHeight > ctx.BlockHeight() {
+					continue
+				}
+				finalizedAge := ctx.BlockHeight() - voter.FinalisedHeight
+				if finalizedAge < timeoutAge {
+					continue
+				}
+
 				// Finalized staged mempool swaps normally retry finalization here.
 				// The exception is an inbound that finalized on an inactive vault:
 				// those staged outputs are speculative state that must be unwound
@@ -944,9 +964,9 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				// If finalization has been retried beyond the force-rollback
 				// threshold, the failure is likely deterministic. Force-rollback
 				// to release the TOR capacity reservation.
-				if entry.oldestAge >= forceRollbackAge {
+				if finalizedAge >= forceRollbackAge {
 					ctx.Logger().Error("force-rolling back stuck finalized mempool swap",
-						"hash", inHash, "oldest_age", entry.oldestAge, "force_rollback_age", forceRollbackAge)
+						"hash", inHash, "finalized_age", finalizedAge, "force_rollback_age", forceRollbackAge)
 					if err := rollbackAndRefundFinalizedMempoolSwapAtomic(ctx, mgr, voter); err != nil {
 						ctx.Logger().Error("fail to force roll back and refund stuck mempool swap", "error", err, "hash", inHash)
 					} else {
@@ -970,7 +990,7 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 			// transitions inactive. This timeout rollback remains a fallback for missed
 			// transition cleanup, rollback errors, and active-vault swaps whose inbound
 			// never finalizes.
-			ctx.Logger().Info("rolling back staged mempool swap due to timeout", "hash", inHash)
+			ctx.Logger().Info("rolling back staged mempool swap due to timeout", "hash", inHash, "staged_age", entry.stagedAge)
 			if err := rollbackMempoolSwapAtomic(ctx, s.keeper, mgr, voter); err != nil {
 				ctx.Logger().Error("fail to roll back staged mempool swap", "error", err, "hash", inHash)
 			} else {
@@ -981,11 +1001,9 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 		// Some finalized inactive-vault mempool swaps can still be stranded only
 		// in swap-queue state if cleanup previously failed before any staged
 		// outbound was written. Reconcile those queue-backed leftovers on the same
-		// timeout cadence as staged mempool recovery, but only scan the advanced
-		// queue once per signing transaction period to avoid a full per-block walk.
-		if ctx.BlockHeight()%signingTransPeriod == 0 {
-			s.retryTimedOutInactiveVaultQueueBackedMempoolSwaps(ctx, mgr, timeoutAge)
-		}
+		// timeout cadence as staged mempool recovery. The enclosing recovery-block
+		// gate keeps both store walks off the per-block path.
+		s.retryTimedOutInactiveVaultQueueBackedMempoolSwaps(ctx, mgr, timeoutAge)
 	}
 
 	return resultErr
@@ -1006,9 +1024,7 @@ func (s *SlasherImpl) collectTimedOutInactiveVaultMempoolQueueHashes(ctx cosmos.
 		}
 
 		inHash := msg.Tx.ID
-		// If staged outbounds still exist, the normal staged timeout recovery
-		// path above will handle this inbound, so skip it here.
-		if inHash.IsEmpty() || s.keeper.HasStagedOutbound(ctx, inHash) {
+		if inHash.IsEmpty() {
 			continue
 		}
 
@@ -1017,7 +1033,14 @@ func (s *SlasherImpl) collectTimedOutInactiveVaultMempoolQueueHashes(ctx cosmos.
 			ctx.Logger().Error("fail to get observed tx voter for queued mempool swap", "error", err, "hash", inHash)
 			continue
 		}
-		if voter.UnfinalizedHeight == 0 || voter.FinalisedHeight == 0 || voter.Tx.ObservedPubKey.IsEmpty() {
+		// The reservation is the queue-only marker that distinguishes mempool
+		// work from ordinary queued swaps. Check it before any additional reads.
+		if !voter.HasReservedMempoolSwapTOR() || voter.UnfinalizedHeight == 0 || voter.FinalisedHeight == 0 || voter.Tx.ObservedPubKey.IsEmpty() {
+			continue
+		}
+		// If staged outbounds still exist, the normal staged timeout recovery
+		// path above will handle this inbound, so skip it here.
+		if s.keeper.HasStagedOutbound(ctx, inHash) {
 			continue
 		}
 
@@ -1032,18 +1055,6 @@ func (s *SlasherImpl) collectTimedOutInactiveVaultMempoolQueueHashes(ctx cosmos.
 			continue
 		}
 		if observedVault.Status != InactiveVault {
-			continue
-		}
-
-		// Reuse the shared rollback predicate so this queue-only recovery path
-		// only retries inbounds that still have speculative mempool state to
-		// unwind.
-		hasCleanupState, err := needsMempoolSwapRollback(ctx, s.keeper, voter)
-		if err != nil {
-			ctx.Logger().Error("fail to inspect queued mempool swap cleanup state", "error", err, "hash", inHash)
-			continue
-		}
-		if !hasCleanupState {
 			continue
 		}
 

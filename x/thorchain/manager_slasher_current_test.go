@@ -22,6 +22,13 @@ func (s *SlashingSuite) SetUpSuite(_ *C) {
 	SetupConfigForTest()
 }
 
+func roundUpToSigningPeriod(height, signingTransPeriod int64) int64 {
+	if rem := height % signingTransPeriod; rem != 0 {
+		height += signingTransPeriod - rem
+	}
+	return height
+}
+
 func (s *SlashingSuite) TestNodeSignSlashErrors(c *C) {
 	testCases := []struct {
 		name        string
@@ -2638,7 +2645,7 @@ func (s *SlashingSuite) TestLackSigningWithMempoolSwaps(c *C) {
 	// and the outbound must be at height = lackSigningHeight - signingTransPeriod
 	// since LackSigning checks TxOut at (currentBlockHeight - signingTransPeriod).
 	voterHeight := ctx.BlockHeight()
-	lackSigningHeight := voterHeight + (maxOutboundAttempts * signingTransPeriod) + 10
+	lackSigningHeight := roundUpToSigningPeriod(voterHeight+(maxOutboundAttempts*signingTransPeriod)+10, signingTransPeriod)
 	outboundHeight := lackSigningHeight - signingTransPeriod
 
 	txOutItem := TxOutItem{
@@ -2674,7 +2681,7 @@ func (s *SlashingSuite) TestLackSigningWithMempoolSwaps(c *C) {
 	// Test 2: Finalized inbound (traditional flow) should NOT be rolled back
 	finalizedTxID := GetRandomTxHash()
 	test2VoterHeight := ctx.BlockHeight()
-	test2LackSigningHeight := test2VoterHeight + (maxOutboundAttempts * signingTransPeriod) + 10
+	test2LackSigningHeight := roundUpToSigningPeriod(test2VoterHeight+(maxOutboundAttempts*signingTransPeriod)+10, signingTransPeriod)
 	finalizedOutHeight := test2LackSigningHeight - signingTransPeriod
 
 	finalizedVoter := NewObservedTxVoter(finalizedTxID, ObservedTxs{
@@ -2721,6 +2728,73 @@ func (s *SlashingSuite) TestLackSigningWithMempoolSwaps(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(updatedFinalizedVoter.Reverted, Equals, false,
 		Commentf("finalized inbound should not set voter.Reverted"))
+}
+
+func (s *SlashingSuite) TestLackSigningRecoversMempoolSwapWhenOutboundRetriesDisabled(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	signingTransPeriod := int64(10)
+	mgr.Keeper().SetMimir(ctx, constants.SigningTransactionPeriod.String(), signingTransPeriod)
+	mgr.Keeper().SetMimir(ctx, constants.MaxOutboundAttempts.String(), 0)
+	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
+
+	sourceAmount := cosmos.NewUint(common.One)
+	runeOutput := cosmos.NewUint(7 * common.One)
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceRune = cosmos.NewUint(1000 * common.One).Sub(runeOutput)
+	pool.BalanceAsset = cosmos.NewUint(1000 * common.One).Add(sourceAmount)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	inTxID := GetRandomTxHash()
+	reservedTOR := cosmos.NewUint(5 * common.One)
+	voter := NewObservedTxVoter(inTxID, ObservedTxs{})
+	voter.Tx = ObservedTx{Tx: common.Tx{
+		ID:    inTxID,
+		Chain: common.BTCChain,
+		Coins: common.Coins{common.NewCoin(common.BTCAsset, sourceAmount)},
+	}}
+	voter.UnfinalizedHeight = ctx.BlockHeight()
+	voter.MempoolSwapTOR = reservedTOR
+	stagedOutbound := TxOutItem{
+		Chain:     common.THORChain,
+		InHash:    inTxID,
+		ToAddress: GetRandomTHORAddress(),
+		Coin:      common.NewCoin(common.RuneAsset(), runeOutput),
+	}
+	voter.Actions = []TxOutItem{stagedOutbound}
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, reservedTOR)
+	stagedHeight := ctx.BlockHeight() + 10
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, stagedOutbound, stagedHeight), IsNil)
+
+	// MaxOutboundAttempts=0 must not disable mempool cleanup. The fallback is
+	// three signing periods, independent of traditional outbound rescheduling.
+	// Recovery waits for the next signing-period boundary instead of scanning
+	// the staged store on every block.
+	timeoutHeight := stagedHeight + defaultMempoolSwapTimeoutAttempts*signingTransPeriod
+	if timeoutHeight%signingTransPeriod == 0 {
+		timeoutHeight++
+	}
+	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+	ctx = ctx.WithBlockHeight(timeoutHeight)
+	c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
+	stagedItems, err := mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(stagedItems, HasLen, 1, Commentf("off-cadence blocks should not run staged timeout recovery"))
+
+	ctx = ctx.WithBlockHeight(roundUpToSigningPeriod(timeoutHeight, signingTransPeriod))
+	c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
+
+	stagedItems, err = mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(stagedItems, HasLen, 0)
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true)
+	updatedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(updatedVoter.HasReservedMempoolSwapTOR(), Equals, false)
+	c.Check(updatedVoter.Actions, IsNil)
 }
 
 func (s *SlashingSuite) TestLackSigningRetriesFinalizedStagedMempoolSwap(c *C) {
@@ -2776,7 +2850,7 @@ func (s *SlashingSuite) TestLackSigningRetriesFinalizedStagedMempoolSwap(c *C) {
 	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, reservedTOR)
 	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, nativeOutbound, ctx.BlockHeight()+10), IsNil)
 
-	timeoutHeight := ctx.BlockHeight() + (signingTransPeriod * maxOutboundAttempts) + 10
+	timeoutHeight := roundUpToSigningPeriod(ctx.BlockHeight()+(signingTransPeriod*maxOutboundAttempts)+10, signingTransPeriod)
 	ctx = ctx.WithBlockHeight(timeoutHeight)
 
 	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
@@ -2798,6 +2872,67 @@ func (s *SlashingSuite) TestLackSigningRetriesFinalizedStagedMempoolSwap(c *C) {
 	c.Assert(err, IsNil)
 	recipientBalance := mgr.Keeper().GetBalance(ctx, recipientAcc).AmountOf(common.RuneNative.Native())
 	c.Check(recipientBalance.Equal(cosmos.NewIntFromBigInt(stagedAmount.BigInt())), Equals, true, Commentf("native finalize retry should pay the staged outbound"))
+}
+
+func (s *SlashingSuite) TestLackSigningStartsFinalizedRetryTimeoutAtFinalization(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	signingTransPeriod := int64(10)
+	maxOutboundAttempts := int64(3)
+	timeoutAge := signingTransPeriod * maxOutboundAttempts
+	mgr.Keeper().SetMimir(ctx, constants.SigningTransactionPeriod.String(), signingTransPeriod)
+	mgr.Keeper().SetMimir(ctx, constants.MaxOutboundAttempts.String(), maxOutboundAttempts)
+
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = ActiveVault
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	inTxID := GetRandomTxHash()
+	recipient := GetRandomTHORAddress()
+	stagedAmount := cosmos.NewUint(7 * common.One)
+	stagedOutbound := TxOutItem{
+		Chain:       common.THORChain,
+		InHash:      inTxID,
+		ToAddress:   recipient,
+		VaultPubKey: vault.PubKey,
+		Coin:        common.NewCoin(common.RuneAsset(), stagedAmount),
+		Memo:        "OUT:" + inTxID.String(),
+	}
+
+	// Make the staged outbound older than a normal timeout, then place
+	// finalization immediately before a recovery boundary. Confirmation time
+	// must not make this outbound eligible for an immediate retry.
+	firstRecoveryHeight := roundUpToSigningPeriod(ctx.BlockHeight()+(2*timeoutAge), signingTransPeriod)
+	finalizedHeight := firstRecoveryHeight - 1
+	voter := NewObservedTxVoter(inTxID, ObservedTxs{})
+	voter.Tx = ObservedTx{Tx: common.Tx{ID: inTxID, Chain: common.BTCChain}}
+	voter.FinalisedHeight = finalizedHeight
+	voter.Actions = []TxOutItem{stagedOutbound}
+	voter.MempoolSwapTOR = cosmos.NewUint(5 * common.One)
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, voter.MempoolSwapTOR)
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, stagedOutbound, ctx.BlockHeight()+5), IsNil)
+
+	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+	ctx = ctx.WithBlockHeight(firstRecoveryHeight)
+	c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
+
+	stagedItems, err := mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(stagedItems, HasLen, 1, Commentf("confirmation time should not consume the finalized retry timeout"))
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).Equal(voter.MempoolSwapTOR), Equals, true)
+
+	ctx = ctx.WithBlockHeight(roundUpToSigningPeriod(finalizedHeight+timeoutAge, signingTransPeriod))
+	c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
+	stagedItems, err = mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(stagedItems, HasLen, 0)
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true)
+	recipientAcc, err := recipient.AccAddress()
+	c.Assert(err, IsNil)
+	recipientBalance := mgr.Keeper().GetBalance(ctx, recipientAcc).AmountOf(common.RuneNative.Native())
+	c.Check(recipientBalance.Equal(cosmos.NewIntFromBigInt(stagedAmount.BigInt())), Equals, true)
 }
 
 // TestLackSigningForceRollbackStuckFinalizedMempoolSwap verifies that
@@ -2872,7 +3007,7 @@ func (s *SlashingSuite) TestLackSigningForceRollbackStuckFinalizedMempoolSwap(c 
 
 	// Advance to 3x the normal timeout (force-rollback threshold)
 	timeoutAge := signingTransPeriod * maxOutboundAttempts
-	forceRollbackHeight := ctx.BlockHeight() + (3 * timeoutAge) + 10
+	forceRollbackHeight := roundUpToSigningPeriod(ctx.BlockHeight()+(3*timeoutAge)+10, signingTransPeriod)
 	ctx = ctx.WithBlockHeight(forceRollbackHeight)
 
 	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
@@ -2980,7 +3115,7 @@ func (s *SlashingSuite) TestLackSigningRetriesInactiveVaultFinalizedMempoolSwapR
 	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, voter.MempoolSwapTOR)
 	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, stagedOutbound, ctx.BlockHeight()+10), IsNil)
 
-	timeoutHeight := ctx.BlockHeight() + (signingTransPeriod * maxOutboundAttempts) + 10
+	timeoutHeight := roundUpToSigningPeriod(ctx.BlockHeight()+(signingTransPeriod*maxOutboundAttempts)+10, signingTransPeriod)
 	ctx = ctx.WithBlockHeight(timeoutHeight)
 
 	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
@@ -3104,10 +3239,7 @@ func (s *SlashingSuite) TestLackSigningRetriesInactiveVaultFinalizedQueuedMempoo
 	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, *queuedSwap), IsNil)
 	c.Check(mgr.Keeper().HasStagedOutbound(ctx, inTxID), Equals, false, Commentf("queued recovery fixture should not rely on staged outbounds"))
 
-	timeoutHeight := ctx.BlockHeight() + (signingTransPeriod * maxOutboundAttempts) + 10
-	if rem := timeoutHeight % signingTransPeriod; rem != 0 {
-		timeoutHeight += signingTransPeriod - rem
-	}
+	timeoutHeight := roundUpToSigningPeriod(ctx.BlockHeight()+(signingTransPeriod*maxOutboundAttempts)+10, signingTransPeriod)
 	ctx = ctx.WithBlockHeight(timeoutHeight)
 
 	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
@@ -3173,7 +3305,6 @@ func (s *SlashingSuite) TestCollectTimedOutInactiveVaultMempoolQueueHashesDedupe
 	voter.Height = ctx.BlockHeight()
 	voter.UnfinalizedHeight = ctx.BlockHeight()
 	voter.FinalisedHeight = ctx.BlockHeight()
-	voter.MempoolSwapTOR = cosmos.NewUint(50 * common.One)
 	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 
 	queuedSwap0 := NewMsgSwap(
@@ -3222,6 +3353,13 @@ func (s *SlashingSuite) TestCollectTimedOutInactiveVaultMempoolQueueHashesDedupe
 	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
 	seen := make(map[string]struct{})
 	var hashes []common.TxID
+	slasher.collectTimedOutInactiveVaultMempoolQueueHashes(ctx, mgr.Keeper().GetAdvSwapQueueItemIterator(ctx), timeoutAge, seen, &hashes)
+	c.Assert(hashes, HasLen, 0, Commentf("ordinary queued swaps must not enter mempool timeout recovery"))
+
+	voter.MempoolSwapTOR = cosmos.NewUint(50 * common.One)
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	seen = make(map[string]struct{})
+	hashes = nil
 	slasher.collectTimedOutInactiveVaultMempoolQueueHashes(ctx, mgr.Keeper().GetAdvSwapQueueItemIterator(ctx), timeoutAge, seen, &hashes)
 
 	c.Assert(hashes, HasLen, 1)

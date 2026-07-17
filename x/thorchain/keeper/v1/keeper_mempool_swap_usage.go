@@ -38,6 +38,11 @@ func (k KVStore) AddMempoolSwapUsageTOR(ctx cosmos.Context, tor cosmos.Uint) cos
 // Returns the new total after subtraction.
 func (k KVStore) SubMempoolSwapUsageTOR(ctx cosmos.Context, tor cosmos.Uint) cosmos.Uint {
 	current := k.GetMempoolSwapUsageTOR(ctx)
+	if tor.GT(current) {
+		ctx.Logger().Error("mempool swap usage underflow; clamping to zero",
+			"current_tor", current,
+			"subtract_tor", tor)
+	}
 	newTotal := common.SafeSub(current, tor)
 	k.SetMempoolSwapUsageTOR(ctx, newTotal)
 	return newTotal
