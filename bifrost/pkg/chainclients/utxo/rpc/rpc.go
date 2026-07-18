@@ -407,6 +407,16 @@ func extractBTCError(err error) error {
 		return nil
 	}
 
+	// Bitcoin Core >=28 answers JSON-RPC 2.0 requests with HTTP 200 and a
+	// spec-compliant error object, which the go-ethereum rpc client surfaces as
+	// an rpc.Error (structured code + message) rather than the pre-28 HTTP-500
+	// "<status>: <json body>" string the split below expects. Convert it
+	// directly so the RPC error code (e.g. -4 wallet already exists) survives.
+	var rpcErr rpc.Error
+	if errors.As(err, &rpcErr) {
+		return btcjson.NewRPCError(btcjson.RPCErrorCode(rpcErr.ErrorCode()), rpcErr.Error())
+	}
+
 	// split the error into the HTTP status and the JSON response
 	parts := strings.SplitN(err.Error(), ": ", 2)
 	if len(parts) != 2 {
