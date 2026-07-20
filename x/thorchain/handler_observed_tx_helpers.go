@@ -553,6 +553,23 @@ func handleObservedTxInQuorum(
 			if err = finalizeOutboundsAtomic(ctx, mgr, voter); err != nil {
 				ctx.Logger().Error("fail to finalize outbounds", "error", err, "hash", voter.TxID)
 			}
+		} else if !k.HasAdvSwapQueueItem(ctx, voter.TxID, 0) && !k.HasStagedOutbound(ctx, voter.TxID) {
+			// A finalized mempool swap with no Actions is normally still
+			// mid-settlement in the advanced queue. But if settlement already ran
+			// while the inbound was unfinalized, it removed the queue item (and,
+			// for a failed output, donated the coin back to its pool and refunded
+			// the remainder) while releaseMempoolSwapCapacityAfterFinalizedSettlement
+			// skipped the reservation because FinalisedHeight was still 0. Now that
+			// the inbound is finalized with no queue item and no staged outbound
+			// left, nothing else will ever release it: the staged and queue sweeps
+			// are index-driven and this voter has neither index. The pool is already
+			// settled and the finalized deposit backs the credited source, so
+			// recovery here is release-only — free the reservation and clear the
+			// mempool markers; there is nothing to roll back or refund.
+			ctx.Logger().Info("recovering orphaned finalized mempool swap reservation", "hash", voter.TxID)
+			// releaseMempoolSwapCapacityAndClear persists the cleared voter.
+			releaseMempoolSwapCapacityAndClear(ctx, k, voter, "released mempool swap capacity for settled-but-orphaned finalized swap")
+			incrMempoolSwapCounter("completed_total", []metrics.Label{telemetry.NewLabel("path", "finalized_orphan_recovery")})
 		} else {
 			ctx.Logger().Info("finalized mempool swap still pending advanced-queue settlement", "hash", voter.TxID)
 		}

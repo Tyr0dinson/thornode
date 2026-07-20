@@ -1909,6 +1909,71 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestEmptyRollbackDeductsConsumedA
 		Commentf("empty-branch rollback must remove the consumed credit (%s) even when the queue item is already gone: want %s got %s", consumed, baseBalance, poolAfter.BalanceAsset))
 }
 
+// TestFinalizedOrphanedMempoolSwapReleasesReservation covers the settled-but-
+// orphaned finalized mempool swap: settlement ran while the inbound was
+// unfinalized (removing the advanced-queue item and, for a failed output,
+// donating it back to its pool + refunding the remainder) but could not release
+// the TOR reservation because FinalisedHeight was still 0. Once the inbound
+// finalizes with no queue item and no staged outbound, no index-driven sweep can
+// find it. handleObservedTxInQuorum must release the reservation — the pool is
+// already settled and the finalized deposit backs the credited source, so this
+// is release-only (nothing to roll back or refund).
+func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizedOrphanedMempoolSwapReleasesReservation(c *C) {
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
+
+	sourcePool := NewPool()
+	sourcePool.Asset = common.BTCAsset
+	sourcePool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	sourcePool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	sourcePool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, sourcePool), IsNil)
+
+	activeVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain, common.ETHChain, common.THORChain}.Strings(), nil)
+	activeVault.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One))}
+	c.Assert(mgr.Keeper().SetVault(ctx, activeVault), IsNil)
+
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	toAddr, err := activeVault.PubKey.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+
+	inTxID := GetRandomTxHash()
+	inboundTx := common.NewTx(
+		inTxID,
+		GetRandomBTCAddress(),
+		toAddr,
+		common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))},
+		common.Gas{common.NewCoin(common.BTCAsset, cosmos.OneUint())},
+		"SWAP:ETH.ETH:"+GetRandomETHAddress().String(),
+	)
+	finalizedTx := NewObservedTx(inboundTx, 12, activeVault.PubKey, 12)
+
+	// Orphan state: finalized + reservation held, but Actions empty, no advanced-
+	// queue item, and no staged outbound (settlement removed the queue item while
+	// the inbound was unfinalized).
+	voter := NewObservedTxVoter(inTxID, ObservedTxs{finalizedTx})
+	voter.Tx = finalizedTx
+	voter.Height = ctx.BlockHeight()
+	voter.FinalisedHeight = ctx.BlockHeight()
+	voter.MempoolSwapTOR = cosmos.NewUint(50 * common.One)
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, cosmos.NewUint(50*common.One))
+	c.Assert(mgr.Keeper().HasAdvSwapQueueItem(ctx, inTxID, 0), Equals, false)
+	c.Assert(mgr.Keeper().HasStagedOutbound(ctx, inTxID), Equals, false)
+
+	err = handleObservedTxInQuorum(ctx, mgr, na.NodeAddress, NodeAccounts{na}, NewInternalHandler(mgr), finalizedTx, voter, []cosmos.AccAddress{na.NodeAddress}, true)
+	c.Assert(err, IsNil)
+
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true,
+		Commentf("orphaned finalized mempool swap must release the held TOR reservation"))
+	updated, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(updated.HasReservedMempoolSwapTOR(), Equals, false,
+		Commentf("orphan recovery must clear the voter's reservation marker"))
+}
+
 // TestInactiveVaultSkipsMempoolSwapBeforeFinalization verifies that speculative
 // mempool processing never starts when the source vault is inactive.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestInactiveVaultSkipsMempoolSwapBeforeFinalization(c *C) {
