@@ -1,0 +1,206 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Rollback of a mempool swap whose secured target shares its underlying asset with the
+# source (BTC.BTC -> BTC-BTC). Escrow denominates the staged output in the underlying
+# asset, so the recovered output IS the source asset. A reverse swap would be
+# source-to-source, which MsgSwap.ValidateBasic rejects, so this class must unwind
+# through direct pool accounting instead. Without that, the rollback aborts and leaves
+# the staged outbound and TOR reservation stranded forever.
+#
+# The cross-asset equivalent lives in mempool-timeout-rollback.yaml.
+########################################################################################
+# Give TOR accounting a deterministic price basis.
+type: tx-mimir
+key: DollarsPerRune
+value: 100000000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Enable mempool swaps with enough capacity for the test swap.
+type: tx-mimir
+key: MempoolSwapCapTOR
+value: 100000000000000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Disable the per-pool depth cap so admission is controlled by the global cap.
+type: tx-mimir
+key: MempoolSwapPoolCapBPS
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Mempool swaps are advanced-queue only.
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Use three-block signing periods so the fallback timeout age is nine blocks.
+type: tx-mimir
+key: SigningTransactionPeriod
+value: 3
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Pin the production default. A non-positive value selects the three-attempt fallback.
+type: tx-mimir
+key: MaxOutboundAttempts
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .DOLLARSPERRUNE == 100000000
+  - .MEMPOOLSWAPCAPTOR == 100000000000000
+  - .MEMPOOLSWAPPOOLCAPBPS == 0
+  - .SIGNINGTRANSACTIONPERIOD == 3
+  - .MAXOUTBOUNDATTEMPTS == 0
+  - .ENABLEADVSWAPQUEUE == 1
+---
+# Record the asset depth the rollback must restore exactly. RUNE depth is not pinned
+# because block rewards and rollback liquidity effects move it.
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .balance_asset == "${BTC_ASSET_DEPTH=100000000}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .mempool_swap_usage_tor == "0"
+---
+# The recipient starts with no secured balance.
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - ([.balances[]|select(.denom == "btc-btc")]|length) == 0
+---
+# Observe an explicitly streaming BTC.BTC -> BTC-BTC swap that never finalizes.
+# Secured targets are THOR-native, so they only take the mempool path when the swap
+# actually streams; requesting it explicitly makes admission deterministic here.
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "10000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+          decimals: 8
+      memo: "=:BTC-BTC:{{ addr_thor_fox }}:0/1/10"
+    block_height: 8
+    finalise_height: 200
+    observed_pub_key: {{ pubkey_dog }}
+---
+# Let the ten-part stream finish while the inbound stays unfinalized.
+type: create-blocks
+count: 12
+---
+# The completed stream stages one native outbound escrowing the UNDERLYING asset.
+# That BTC.BTC denomination is precisely what makes the reverse swap degenerate.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/staged
+asserts:
+  - .staged_outbound_items|length == 1
+  - .staged_outbound_items[0].tx_out_item.in_hash == "{{ observe_txid 1 }}"
+  - .staged_outbound_items[0].tx_out_item.chain == "THOR"
+  - .staged_outbound_items[0].tx_out_item.coin.asset == "BTC.BTC"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .mempool_swap_usage_tor|tonumber > 0
+---
+# Speculative execution has moved the source pool.
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .balance_asset|tonumber != ${BTC_ASSET_DEPTH}
+---
+# Nothing is exposed to Bifrost and the recipient holds no secured balance yet.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - ([.balances[]|select(.denom == "btc-btc")]|length) == 0
+---
+# Run well past the nine-block timeout age so LackSigning reaches a signing-period
+# boundary and unwinds the speculative swap.
+type: create-blocks
+count: 15
+---
+# The staged outbound is gone. Before the same-asset fix the rollback aborted on
+# "swap Source and Target cannot be the same" and this item stayed here forever.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/staged
+asserts:
+  - (.staged_outbound_items // [])|length == 0
+---
+# The reservation is released rather than stranded.
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .mempool_swap_usage_tor == "0"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ observe_txid 1 }}
+status: 400
+asserts:
+  - .message|contains("not found in any queue")
+---
+# The speculative secured balance was never credited.
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - ([.balances[]|select(.denom == "btc-btc")]|length) == 0
+---
+# The round-trip invariant: returning the escrowed output and removing the phantom
+# credit must land the pool back on its exact pre-swap depth. This is the assertion
+# that catches an over- or under-refund in the same-asset accounting reversal.
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .balance_asset == "${BTC_ASSET_DEPTH}"
