@@ -3269,6 +3269,97 @@ func (s *SlashingSuite) TestLackSigningRetriesInactiveVaultFinalizedQueuedMempoo
 	c.Check(updatedVoter.Actions[0].GetMemo(), Equals, NewRefundMemo(inTxID).String())
 }
 
+// TestCollectTimedOutMempoolQueueHashesFindsUnfinalizedActiveVaultSwap covers
+// the queue-only recovery gap: an admitted mempool swap that reserved TOR
+// capacity, then stalled in the queue on an ACTIVE vault without ever
+// finalizing or producing a staged outbound. A limit swap whose price is never
+// met lands here. No other sweep reaches it -- the staged sweep needs a
+// staged_outbound, LackSigning needs a txout item, and settlement release is
+// gated on FinalisedHeight != 0 -- so without this branch the reservation is
+// held indefinitely.
+func (s *SlashingSuite) TestCollectTimedOutMempoolQueueHashesFindsUnfinalizedActiveVaultSwap(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	timeoutAge := int64(50)
+
+	activeVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain, common.ETHChain}.Strings(), nil)
+	activeVault.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, activeVault), IsNil)
+
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	toAddr, err := activeVault.PubKey.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+
+	inTxID := GetRandomTxHash()
+	inboundTx := common.NewTx(
+		inTxID,
+		GetRandomBTCAddress(),
+		toAddr,
+		common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))},
+		common.Gas{common.NewCoin(common.BTCAsset, cosmos.OneUint())},
+		"SWAP:ETH.ETH:"+GetRandomETHAddress().String(),
+	)
+	// Observed but never finalized: FinalisedHeight stays zero.
+	unfinalizedTx := NewObservedTx(inboundTx, 12, activeVault.PubKey, 0)
+
+	voter := NewObservedTxVoter(inTxID, ObservedTxs{unfinalizedTx})
+	voter.Tx = unfinalizedTx
+	voter.Height = ctx.BlockHeight()
+	voter.UnfinalizedHeight = ctx.BlockHeight()
+	voter.FinalisedHeight = 0
+	voter.MempoolSwapTOR = cosmos.NewUint(50 * common.One)
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
+	queuedSwap := NewMsgSwap(
+		inboundTx,
+		common.ETHAsset,
+		GetRandomETHAddress(),
+		cosmos.ZeroUint(),
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		"",
+		"",
+		nil,
+		MarketSwap,
+		1,
+		0,
+		types2.SwapVersion_v2,
+		na.NodeAddress,
+	)
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, *queuedSwap), IsNil)
+	c.Check(mgr.Keeper().HasStagedOutbound(ctx, inTxID), Equals, false,
+		Commentf("this recovery gap is defined by having no staged outbound"))
+
+	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+
+	// Before the timeout elapses nothing should be collected.
+	seen := make(map[string]struct{})
+	var hashes []common.TxID
+	slasher.collectTimedOutMempoolQueueHashes(ctx, mgr.Keeper().GetAdvSwapQueueItemIterator(ctx), timeoutAge, seen, &hashes)
+	c.Check(hashes, HasLen, 0, Commentf("swaps younger than timeoutAge must not be recovered"))
+
+	ctx = ctx.WithBlockHeight(voter.UnfinalizedHeight + timeoutAge + 1)
+
+	seen = make(map[string]struct{})
+	hashes = nil
+	slasher.collectTimedOutMempoolQueueHashes(ctx, mgr.Keeper().GetAdvSwapQueueItemIterator(ctx), timeoutAge, seen, &hashes)
+	c.Assert(hashes, HasLen, 1, Commentf("timed-out unfinalized queue-only mempool swap must be recovered"))
+	c.Check(hashes[0].Equals(inTxID), Equals, true)
+
+	// Without the reservation marker this is an ordinary queued swap and must
+	// stay out of mempool recovery entirely.
+	voter.MempoolSwapTOR = cosmos.ZeroUint()
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	seen = make(map[string]struct{})
+	hashes = nil
+	slasher.collectTimedOutMempoolQueueHashes(ctx, mgr.Keeper().GetAdvSwapQueueItemIterator(ctx), timeoutAge, seen, &hashes)
+	c.Check(hashes, HasLen, 0, Commentf("non-mempool queued swaps must not enter mempool timeout recovery"))
+}
+
 // TestCollectTimedOutInactiveVaultMempoolQueueHashesDedupesSameInbound verifies
 // the queued-timeout collector only returns one retry hash even if multiple
 // advanced-queue rows share the same inbound txid.
@@ -3353,14 +3444,14 @@ func (s *SlashingSuite) TestCollectTimedOutInactiveVaultMempoolQueueHashesDedupe
 	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
 	seen := make(map[string]struct{})
 	var hashes []common.TxID
-	slasher.collectTimedOutInactiveVaultMempoolQueueHashes(ctx, mgr.Keeper().GetAdvSwapQueueItemIterator(ctx), timeoutAge, seen, &hashes)
+	slasher.collectTimedOutMempoolQueueHashes(ctx, mgr.Keeper().GetAdvSwapQueueItemIterator(ctx), timeoutAge, seen, &hashes)
 	c.Assert(hashes, HasLen, 0, Commentf("ordinary queued swaps must not enter mempool timeout recovery"))
 
 	voter.MempoolSwapTOR = cosmos.NewUint(50 * common.One)
 	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 	seen = make(map[string]struct{})
 	hashes = nil
-	slasher.collectTimedOutInactiveVaultMempoolQueueHashes(ctx, mgr.Keeper().GetAdvSwapQueueItemIterator(ctx), timeoutAge, seen, &hashes)
+	slasher.collectTimedOutMempoolQueueHashes(ctx, mgr.Keeper().GetAdvSwapQueueItemIterator(ctx), timeoutAge, seen, &hashes)
 
 	c.Assert(hashes, HasLen, 1)
 	c.Check(hashes[0].Equals(inTxID), Equals, true)

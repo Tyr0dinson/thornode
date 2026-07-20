@@ -1003,17 +1003,29 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 		// outbound was written. Reconcile those queue-backed leftovers on the same
 		// timeout cadence as staged mempool recovery. The enclosing recovery-block
 		// gate keeps both store walks off the per-block path.
-		s.retryTimedOutInactiveVaultQueueBackedMempoolSwaps(ctx, mgr, timeoutAge)
+		s.retryTimedOutQueueBackedMempoolSwaps(ctx, mgr, timeoutAge)
 	}
 
 	return resultErr
 }
 
-// collectTimedOutInactiveVaultMempoolQueueHashes finds finalized inactive-vault
-// mempool swaps that are stranded only in swap-queue state. Those entries have
-// no staged outbounds left, so the normal staged timeout sweep cannot discover
-// them even though they still need rollback/refund cleanup.
-func (s *SlasherImpl) collectTimedOutInactiveVaultMempoolQueueHashes(ctx cosmos.Context, iter cosmos.Iterator, timeoutAge int64, seen map[string]struct{}, hashes *[]common.TxID) {
+// collectTimedOutMempoolQueueHashes finds mempool swaps that are stranded only
+// in swap-queue state. Those entries have no staged outbounds left, so the
+// normal staged timeout sweep cannot discover them even though they still hold
+// a TOR reservation.
+//
+// Two classes qualify, and they time out on different clocks:
+//
+//   - Finalized inbounds observed into a vault that has since gone inactive.
+//     These need rollback plus a refund of the received deposit.
+//   - Unfinalized inbounds that were admitted, reserved capacity, and then
+//     stalled in the queue without ever producing a staged outbound. An
+//     eligible limit swap whose price is never met lands here. No release path
+//     covers these: the staged sweep sees no staged_outbound, LackSigning needs
+//     a txout item, and settlement release is gated on FinalisedHeight != 0. So
+//     without this branch the reservation is held indefinitely. Vault status is
+//     deliberately not checked, since the whole gap is active-vault swaps.
+func (s *SlasherImpl) collectTimedOutMempoolQueueHashes(ctx cosmos.Context, iter cosmos.Iterator, timeoutAge int64, seen map[string]struct{}, hashes *[]common.TxID) {
 	defer iter.Close()
 
 	for ; iter.Valid(); iter.Next() {
@@ -1035,7 +1047,7 @@ func (s *SlasherImpl) collectTimedOutInactiveVaultMempoolQueueHashes(ctx cosmos.
 		}
 		// The reservation is the queue-only marker that distinguishes mempool
 		// work from ordinary queued swaps. Check it before any additional reads.
-		if !voter.HasReservedMempoolSwapTOR() || voter.UnfinalizedHeight == 0 || voter.FinalisedHeight == 0 || voter.Tx.ObservedPubKey.IsEmpty() {
+		if !voter.HasReservedMempoolSwapTOR() || voter.UnfinalizedHeight == 0 || voter.Tx.ObservedPubKey.IsEmpty() {
 			continue
 		}
 		// If staged outbounds still exist, the normal staged timeout recovery
@@ -1049,13 +1061,18 @@ func (s *SlasherImpl) collectTimedOutInactiveVaultMempoolQueueHashes(ctx cosmos.
 			continue
 		}
 
-		observedVault, err := s.keeper.GetVault(ctx, voter.Tx.ObservedPubKey)
-		if err != nil {
-			ctx.Logger().Error("fail to get observed vault for queued mempool swap", "error", err, "hash", inHash)
-			continue
-		}
-		if observedVault.Status != InactiveVault {
-			continue
+		// Unfinalized swaps recover regardless of vault status: an active vault
+		// is the normal case for a stalled queue item, and it is the case no
+		// other sweep reaches.
+		if voter.FinalisedHeight != 0 {
+			observedVault, err := s.keeper.GetVault(ctx, voter.Tx.ObservedPubKey)
+			if err != nil {
+				ctx.Logger().Error("fail to get observed vault for queued mempool swap", "error", err, "hash", inHash)
+				continue
+			}
+			if observedVault.Status != InactiveVault {
+				continue
+			}
 		}
 
 		if _, ok := seen[inHash.String()]; ok {
@@ -1066,20 +1083,34 @@ func (s *SlasherImpl) collectTimedOutInactiveVaultMempoolQueueHashes(ctx cosmos.
 	}
 }
 
-// retryTimedOutInactiveVaultQueueBackedMempoolSwaps runs the queued-only retry
-// pass after the staged timeout sweep. It deduplicates hashes across the basic
-// and advanced swap queues, then reuses the same rollback+refund helper as the
-// observed-tx path so recovery behavior stays consistent.
-func (s *SlasherImpl) retryTimedOutInactiveVaultQueueBackedMempoolSwaps(ctx cosmos.Context, mgr Manager, timeoutAge int64) {
+// retryTimedOutQueueBackedMempoolSwaps runs the queued-only retry pass after the
+// staged timeout sweep. It deduplicates hashes across the basic and advanced
+// swap queues, then recovers each one according to whether its inbound
+// finalized.
+func (s *SlasherImpl) retryTimedOutQueueBackedMempoolSwaps(ctx cosmos.Context, mgr Manager, timeoutAge int64) {
 	seen := make(map[string]struct{})
 	var hashes []common.TxID
-	s.collectTimedOutInactiveVaultMempoolQueueHashes(ctx, s.keeper.GetSwapQueueIterator(ctx), timeoutAge, seen, &hashes)
-	s.collectTimedOutInactiveVaultMempoolQueueHashes(ctx, s.keeper.GetAdvSwapQueueItemIterator(ctx), timeoutAge, seen, &hashes)
+	s.collectTimedOutMempoolQueueHashes(ctx, s.keeper.GetSwapQueueIterator(ctx), timeoutAge, seen, &hashes)
+	s.collectTimedOutMempoolQueueHashes(ctx, s.keeper.GetAdvSwapQueueItemIterator(ctx), timeoutAge, seen, &hashes)
 
 	for _, inHash := range hashes {
 		voter, err := s.keeper.GetObservedTxInVoter(ctx, inHash)
 		if err != nil {
 			ctx.Logger().Error("fail to get observed tx voter for queued mempool retry", "error", err, "hash", inHash)
+			continue
+		}
+
+		// An unfinalized inbound was never received, so there is nothing to
+		// refund. Roll back the speculative state only, matching how the other
+		// unfinalized cleanup paths behave. Scheduling a refund here would pay
+		// out against a deposit that never arrived.
+		if voter.FinalisedHeight == 0 {
+			ctx.Logger().Info("rolling back unfinalized queued mempool swap due to queued-timeout", "hash", inHash)
+			if err := rollbackMempoolSwapAtomic(ctx, s.keeper, mgr, voter); err != nil {
+				ctx.Logger().Error("fail to roll back unfinalized mempool swap from queued-timeout retry", "error", err, "hash", inHash)
+			} else {
+				incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "queued_timeout")})
+			}
 			continue
 		}
 
