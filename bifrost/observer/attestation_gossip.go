@@ -179,6 +179,7 @@ type AttestationGossip struct {
 
 	observerHandleObservedTxCommitted func(tx common.ObservedTx, allowFutureObservation bool)
 	observerHandleErrataCommitted     func(errata common.ErrataTx)
+	observerHandleErrataTxCommitted   func(errata common.ErrataTx) error
 	observerApplySpentOutputRefs      func(tx common.ObservedTx, onOutcome func(applied bool))
 	applySpentRefsSem                 chan struct{}
 	applyCommittedSpentRefsSem        chan struct{}
@@ -377,6 +378,10 @@ func (s *AttestationGossip) SetObserverHandleObservedTxCommitted(o *Observer) {
 	s.observerHandleObservedTxCommitted = o.handleObservedTxCommitted
 }
 
+func (s *AttestationGossip) SetObserverHandleErrataTxCommitted(o *Observer) {
+	s.observerHandleErrataTxCommitted = o.handleErrataTxCommitted
+}
+
 // SetObserverApplySpentOutputRefs wires the XMR sidecar import. The import
 // reports its final outcome through onOutcome exactly once, which may happen
 // after the call returns when the client retries transient failures.
@@ -563,9 +568,29 @@ func (s *AttestationGossip) handleQuorumErrataTxCommitted(en *ebifrost.EventNoti
 		s.logger.Error().Err(err).Msg("fail to unmarshal quorum errata")
 		return
 	}
-	if qe.ErrataTx == nil {
-		s.logger.Error().Msg("quorum errata commit omitted errata tx")
+	if qe.ErrataTx == nil || qe.ErrataTx.Chain.IsEmpty() || qe.ErrataTx.Id.IsEmpty() {
+		s.logger.Error().Msg("committed quorum errata is missing chain or transaction id")
 		return
+	}
+
+	// A committed batch can contain only another node's vote. Clear this
+	// observer's durable outbox only when Thornode confirms that this node's
+	// exact attestation was included in the delivered message.
+	localAttestationCommitted := false
+	for _, attestation := range qe.Attestations {
+		if attestation != nil && bytes.Equal(attestation.PubKey, s.pubKey) {
+			localAttestationCommitted = true
+			break
+		}
+	}
+	if localAttestationCommitted && s.observerHandleErrataTxCommitted != nil {
+		if err := s.observerHandleErrataTxCommitted(*qe.ErrataTx); err != nil {
+			s.logger.Error().Err(err).
+				Str("chain", qe.ErrataTx.Chain.String()).
+				Str("txid", qe.ErrataTx.Id.String()).
+				Msg("fail to durably apply committed errata; retain retryable attestations")
+			return
+		}
 	}
 
 	s.mu.Lock()

@@ -1107,6 +1107,121 @@ func (s *HandlerObservedTxInSuite) TestMigrateMemo(c *C) {
 	c.Assert(err, IsNil)
 }
 
+type xmrMigrateInboundTestCase struct {
+	unknownSource   bool
+	scheduledAmount cosmos.Uint
+	maxGas          cosmos.Uint
+	receivedAmount  cosmos.Uint
+	observedGas     cosmos.Uint
+}
+
+func defaultXMRMigrateInboundTestCase() xmrMigrateInboundTestCase {
+	return xmrMigrateInboundTestCase{
+		scheduledAmount: cosmos.NewUint(1024),
+		maxGas:          cosmos.NewUint(100),
+		receivedAmount:  cosmos.NewUint(1024),
+		observedGas:     cosmos.NewUint(1),
+	}
+}
+
+func (s *HandlerObservedTxInSuite) TestXMRMigrateInboundRequiresScheduledSource(c *C) {
+	unknownCase := defaultXMRMigrateInboundTestCase()
+	unknownCase.unknownSource = true
+	unknownVault, unknownVoter := s.runXMRMigrateInbound(c, unknownCase)
+	c.Check(unknownVault.Coins.GetCoin(common.XMRAsset).IsEmpty(), Equals, true)
+	c.Check(unknownVault.InboundTxCount, Equals, int64(0))
+	c.Check(unknownVoter.UpdatedVault, Equals, false)
+
+	validCase := defaultXMRMigrateInboundTestCase()
+	validVault, validVoter := s.runXMRMigrateInbound(c, validCase)
+	c.Check(validVault.Coins.GetCoin(common.XMRAsset).Amount.Equal(cosmos.NewUint(1024)), Equals, true)
+	c.Check(validVault.InboundTxCount, Equals, int64(1))
+	c.Check(validVoter.UpdatedVault, Equals, true)
+
+	leftoverMaxGasCase := xmrMigrateInboundTestCase{
+		scheduledAmount: cosmos.NewUint(12076340400),
+		maxGas:          cosmos.NewUint(1800000),
+		receivedAmount:  cosmos.NewUint(12077865900),
+		observedGas:     cosmos.NewUint(1200000),
+	}
+	leftoverMaxGasVault, leftoverMaxGasVoter := s.runXMRMigrateInbound(c, leftoverMaxGasCase)
+	c.Check(leftoverMaxGasVault.Coins.GetCoin(common.XMRAsset).Amount.Equal(leftoverMaxGasCase.receivedAmount), Equals, true)
+	c.Check(leftoverMaxGasVault.InboundTxCount, Equals, int64(1))
+	c.Check(leftoverMaxGasVoter.UpdatedVault, Equals, true)
+
+	overMaxCase := leftoverMaxGasCase
+	overMaxCase.receivedAmount = overMaxCase.scheduledAmount.Add(overMaxCase.maxGas).Add(cosmos.NewUint(1))
+	overMaxVault, overMaxVoter := s.runXMRMigrateInbound(c, overMaxCase)
+	c.Check(overMaxVault.Coins.GetCoin(common.XMRAsset).IsEmpty(), Equals, true)
+	c.Check(overMaxVault.InboundTxCount, Equals, int64(0))
+	c.Check(overMaxVoter.UpdatedVault, Equals, false)
+}
+
+func (s *HandlerObservedTxInSuite) runXMRMigrateInbound(c *C, testCase xmrMigrateInboundTestCase) (Vault, ObservedTxVoter) {
+	ctx, _ := setupKeeperForTest(c)
+
+	sourcePubKey := GetRandomEd25519PubKey()
+	sourceAddr, err := sourcePubKey.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+	targetPubKey := GetRandomEd25519PubKey()
+	targetAddr, err := targetPubKey.GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+
+	targetVault := NewVaultV2(
+		1,
+		ActiveVault,
+		AsgardVault,
+		targetPubKey,
+		common.Chains{common.XMRChain}.Strings(),
+		nil,
+		GetRandomEd25519PubKey(),
+	)
+	targetVault.PubKeyFrost = targetPubKey
+
+	txout := NewTxOut(12)
+	txout.TxArray = append(txout.TxArray, TxOutItem{
+		Chain:            common.XMRChain,
+		InHash:           common.BlankTxID,
+		ToAddress:        targetAddr,
+		VaultPubKeyFrost: sourcePubKey,
+		Coin:             common.NewCoin(common.XMRAsset, testCase.scheduledAmount),
+		MaxGas:           common.Gas{common.NewCoin(common.XMRAsset, testCase.maxGas)},
+		Memo:             NewMigrateMemo(12).String(),
+	})
+
+	txID := GetRandomTxHash()
+	fromAddr := sourceAddr
+	if testCase.unknownSource {
+		fromAddr, err = common.NewAddress(common.XMRUnknownSenderAddress(txID.String(), targetAddr.String()))
+		c.Assert(err, IsNil)
+	}
+	tx := NewObservedTx(common.Tx{
+		ID:          txID,
+		Chain:       common.XMRChain,
+		Coins:       common.NewCoins(common.NewCoin(common.XMRAsset, testCase.receivedAmount)),
+		Memo:        NewMigrateMemo(12).String(),
+		FromAddress: fromAddr,
+		ToAddress:   targetAddr,
+		Gas:         common.Gas{common.NewCoin(common.XMRAsset, testCase.observedGas)},
+	}, 13, targetPubKey, 13)
+
+	keeper := &TestObservedTxInHandleKeeper{
+		nas:         NodeAccounts{GetRandomValidatorNode(NodeActive)},
+		voter:       NewObservedTxVoter(tx.Tx.ID, make(ObservedTxs, 0)),
+		vault:       targetVault,
+		vaultExists: true,
+		txOut:       txout,
+	}
+	handler := NewObservedTxInHandler(NewDummyMgrWithKeeper(keeper))
+	msg := NewMsgObservedTxIn(ObservedTxs{tx}, keeper.nas[0].NodeAddress)
+	_, err = handler.handle(ctx, *msg)
+	c.Assert(err, IsNil)
+
+	voter, err := keeper.GetObservedTxInVoter(ctx, tx.Tx.ID)
+	c.Assert(err, IsNil)
+	return keeper.vault, voter
+}
+
 type ObservedTxInHandlerTestHelper struct {
 	keeper.Keeper
 	failListActiveValidators bool

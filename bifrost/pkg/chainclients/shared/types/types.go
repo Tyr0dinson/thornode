@@ -68,6 +68,15 @@ type ChainClient interface {
 	RollbackBlockScanner() error
 }
 
+// PermanentErrataQuarantiner is an optional chain-client safety hook used
+// when Observer receives a committed errata quorum event. Implementations must
+// durably prevent the exact transaction from being broadcast or re-observed
+// before returning success. Observer currently requires this hook for XMR,
+// whose transactions do not expire, and leaves other chains unchanged.
+type PermanentErrataQuarantiner interface {
+	QuarantinePermanentErrata(errata common.ErrataTx, orphanHeight int64) error
+}
+
 // CustomKeygenRequest carries common keygen context for chain-specific hooks.
 type CustomKeygenRequest struct {
 	Members          []string

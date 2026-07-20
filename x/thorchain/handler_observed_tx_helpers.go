@@ -270,13 +270,15 @@ func handleObservedTxInQuorum(
 	// so the ActiveVault balance increase is guaranteed to never be early nor late?
 	if hasFinalised || memo.IsType(TxMigrate) {
 		if vault.IsAsgard() && !voter.UpdatedVault {
-			if !tx.Tx.FromAddress.Equals(tx.Tx.ToAddress) {
+			if tx.Tx.FromAddress.Equals(tx.Tx.ToAddress) {
 				// Don't add to or subtract from vault balances when the sender and recipient are the same
 				// (particularly avoid Consolidate SafeSub zeroing of vault balances).
+				voter.UpdatedVault = true
+			} else if shouldCreditObservedInboundVault(ctx, mgr, tx, memo.IsType(TxMigrate), memo.GetBlockHeight()) {
 				vault.AddFunds(tx.Tx.Coins)
 				vault.InboundTxCount++
+				voter.UpdatedVault = true
 			}
-			voter.UpdatedVault = true
 		}
 	}
 	if err = k.SetLastChainHeight(ctx, tx.Tx.Chain, tx.BlockHeight); err != nil {
@@ -427,6 +429,77 @@ func handleObservedTxInQuorum(
 	ctx.Logger().Info("tx in processed", "chain", tx.Tx.Chain, "id", tx.Tx.ID, "finalized", tx.IsFinal())
 
 	return nil
+}
+
+func shouldCreditObservedInboundVault(ctx cosmos.Context, mgr Manager, tx common.ObservedTx, isMigrate bool, migrateHeight int64) bool {
+	if !tx.Tx.Chain.Equals(common.XMRChain) || !isMigrate {
+		return true
+	}
+	if common.IsXMRUnknownSenderAddress(tx.Tx.FromAddress) {
+		ctx.Logger().Info("skip xmr migrate inbound vault credit: source vault is unknown", "tx", tx.Tx.ID.String(), "to", tx.Tx.ToAddress.String())
+		return false
+	}
+
+	txOut, err := mgr.Keeper().GetTxOut(ctx, migrateHeight)
+	if err != nil {
+		ctx.Logger().Error("skip xmr migrate inbound vault credit: fail to get txout", "height", migrateHeight, "tx", tx.Tx.ID.String(), "error", err)
+		return false
+	}
+	for _, item := range txOut.TxArray {
+		if !xmrMigrateInboundMatchesTxOut(tx.Tx, item) {
+			continue
+		}
+		return true
+	}
+
+	ctx.Logger().Info(
+		"skip xmr migrate inbound vault credit: no matching scheduled txout",
+		"tx", tx.Tx.ID.String(),
+		"height", migrateHeight,
+		"from", tx.Tx.FromAddress.String(),
+		"to", tx.Tx.ToAddress.String(),
+		"coins", tx.Tx.Coins.String(),
+	)
+	return false
+}
+
+func xmrMigrateInboundMatchesTxOut(tx common.Tx, item TxOutItem) bool {
+	if !item.Chain.Equals(common.XMRChain) {
+		return false
+	}
+	if !item.InHash.Equals(common.BlankTxID) {
+		return false
+	}
+	if !common.AddressEquals(item.Chain, item.ToAddress, tx.ToAddress) {
+		return false
+	}
+
+	sourcePubKey, err := txOutSourcePubKey(item)
+	if err != nil {
+		return false
+	}
+	fromAddress, err := sourcePubKey.GetAddress(item.Chain)
+	if err != nil {
+		return false
+	}
+	if !common.AddressEquals(item.Chain, fromAddress, tx.FromAddress) {
+		return false
+	}
+
+	matchCoin := tx.Coins.Contains(item.Coin)
+	if matchCoin {
+		return true
+	}
+
+	asset := item.Chain.GetGasAsset()
+	if !item.Coin.Asset.Equals(asset) {
+		return false
+	}
+	// Inbound XMR gas is observer-reported and may not equal the actual signer fee.
+	received := tx.Coins.GetCoin(asset).Amount
+	minReceived := item.Coin.Amount
+	maxReceived := item.Coin.Amount.Add(item.MaxGas.ToCoins().GetCoin(asset).Amount)
+	return !received.LT(minReceived) && !received.GT(maxReceived)
 }
 
 // processTxOutAttestation processes a single attestation for an observed tx.
@@ -720,6 +793,9 @@ func handleObservedTxOutQuorum(
 			// update the observing addresses
 			mgr.ObMgr().AppendObserver(tx.Tx.Chain, observers)
 		}
+		if len(tx.SpentOutputRefs) > 0 && (voter.Height > 0 || voter.FinalisedHeight > 0) {
+			saveXMRSpentOutputRefsWithQuorum(ctx, mgr, voter, tx, activeNodeAccounts)
+		}
 		return nil
 	}
 
@@ -913,11 +989,7 @@ func handleObservedTxOutQuorum(
 			ctx.Logger().Error("fail to save vault", "error", err)
 		}
 	}
-	if len(tx.SpentOutputRefs) > 0 {
-		if err := k.SetXMRSpentOutputRefs(ctx, tx.ObservedPubKey, tx.Tx.ID, tx.SpentOutputRefs, tx.BlockHeight, ctx.BlockHeight()); err != nil {
-			ctx.Logger().Error("fail to save xmr spent output refs", "error", err)
-		}
-	}
+	saveXMRSpentOutputRefsWithQuorum(ctx, mgr, voter, tx, activeNodeAccounts)
 
 	// Mark voter as done AFTER all vault operations to prevent
 	// inconsistency if vault ops fail.
@@ -927,6 +999,146 @@ func handleObservedTxOutQuorum(
 	ctx.Logger().Info("tx out processed", "chain", tx.Tx.Chain, "id", tx.Tx.ID, "finalized", tx.IsFinal())
 
 	return nil
+}
+
+// saveXMRSpentOutputRefsWithQuorum persists XMR spent-output refs for the
+// voter's consensus outbound once a supermajority of active nodes has
+// reported matching refs. Safe to call repeatedly: it skips the write when
+// the refs are already stored.
+func saveXMRSpentOutputRefsWithQuorum(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter, tx common.ObservedTx, activeNodeAccounts NodeAccounts) {
+	if !tx.Tx.Chain.Equals(common.XMRChain) {
+		return
+	}
+	if len(tx.SpentOutputRefs) == 0 {
+		return
+	}
+	if voter.Height <= 0 && voter.FinalisedHeight <= 0 {
+		return
+	}
+
+	// Spent refs are side metadata for the outbound that already reached
+	// consensus. Do not let a separate ref-bearing observation select its own
+	// outbound; it must attach to the voter's consensus tx.
+	consensusTx := voter.GetTx(activeNodeAccounts)
+	if consensusTx == nil || consensusTx.IsEmpty() {
+		return
+	}
+
+	refTx := findSpentOutputRefs(*consensusTx, voter, activeNodeAccounts)
+	if len(refTx.SpentOutputRefs) == 0 {
+		return
+	}
+
+	existing, err := mgr.Keeper().GetXMRSpentOutputRefs(ctx, refTx.ObservedPubKey)
+	existingSet := make(map[string]struct{}, len(existing))
+	if err != nil {
+		ctx.Logger().Error("fail to get xmr spent output refs", "error", err)
+	} else {
+		for _, ref := range existing {
+			existingSet[common.SpentOutputRefIdentity(ref)] = struct{}{}
+		}
+	}
+
+	allExisting := len(existingSet) > 0
+	for _, ref := range refTx.SpentOutputRefs {
+		if _, ok := existingSet[common.SpentOutputRefIdentity(ref)]; !ok {
+			allExisting = false
+			break
+		}
+	}
+	if allExisting {
+		return
+	}
+
+	if err := mgr.Keeper().SetXMRSpentOutputRefs(ctx, refTx.ObservedPubKey, refTx.Tx.ID, refTx.SpentOutputRefs, refTx.BlockHeight, ctx.BlockHeight()); err != nil {
+		ctx.Logger().Error("fail to save xmr spent output refs", "error", err)
+	}
+}
+
+// findSpentOutputRefs returns the observed tx whose spent-output refs reached
+// supermajority for this outbound voter's consensus tx.
+func findSpentOutputRefs(consensusTx common.ObservedTx, voter ObservedTxVoter, nas NodeAccounts) common.ObservedTx {
+	for _, candidate := range voter.Txs {
+		// Candidate ref sets are only eligible when their outbound payload is the
+		// same payload that already reached consensus.
+		if !matchesConsensusOutboundIgnoringSpentRefs(candidate, consensusTx) || len(candidate.SpentOutputRefs) == 0 {
+			continue
+		}
+
+		voters := make(map[string]struct{})
+		for _, tx := range voter.Txs {
+			if tx.IsFinal() != candidate.IsFinal() {
+				continue
+			}
+			if !tx.ObservedPubKey.Equals(candidate.ObservedPubKey) {
+				continue
+			}
+			if !tx.Tx.EqualsEx(candidate.Tx) {
+				continue
+			}
+			if !tx.HasEquivalentXMRTxKey(candidate) {
+				continue
+			}
+			// Count only observations that both agree with the candidate ref set
+			// and still bind back to the consensus outbound.
+			if !matchesConsensusOutboundIgnoringSpentRefs(tx, consensusTx) {
+				continue
+			}
+			if !common.SpentOutputRefsEqual(tx.SpentOutputRefs, candidate.SpentOutputRefs) {
+				continue
+			}
+			for _, signer := range tx.GetSigners() {
+				if !nas.IsNodeKeys(signer) {
+					continue
+				}
+				voters[signer.String()] = struct{}{}
+			}
+		}
+
+		if HasSuperMajority(len(voters), len(nas)) {
+			return candidate
+		}
+	}
+
+	return common.ObservedTx{}
+}
+
+// matchesConsensusOutboundIgnoringSpentRefs binds spent-ref metadata to the
+// already-consensed outbound payload. XMR observers can report the same
+// outbound at different external heights, so height fields are not part of
+// this metadata identity check.
+func matchesConsensusOutboundIgnoringSpentRefs(tx, consensusTx common.ObservedTx) bool {
+	if !tx.Tx.Chain.Equals(common.XMRChain) || !consensusTx.Tx.Chain.Equals(common.XMRChain) {
+		return false
+	}
+	if tx.IsFinal() != consensusTx.IsFinal() {
+		return false
+	}
+	if !tx.Tx.EqualsEx(consensusTx.Tx) {
+		return false
+	}
+	if !tx.ObservedPubKey.Equals(consensusTx.ObservedPubKey) {
+		return false
+	}
+	if !strings.EqualFold(tx.Aggregator, consensusTx.Aggregator) {
+		return false
+	}
+	if !strings.EqualFold(tx.AggregatorTarget, consensusTx.AggregatorTarget) {
+		return false
+	}
+
+	emptyAmt := cosmos.ZeroUint()
+	if tx.AggregatorTargetLimit == nil {
+		tx.AggregatorTargetLimit = &emptyAmt
+	}
+	if consensusTx.AggregatorTargetLimit == nil {
+		consensusTx.AggregatorTargetLimit = &emptyAmt
+	}
+	if !tx.AggregatorTargetLimit.Equal(*consensusTx.AggregatorTargetLimit) {
+		return false
+	}
+
+	return tx.HasEquivalentXMRTxKey(consensusTx)
 }
 
 type vaultDeficitReason string
@@ -1063,8 +1275,13 @@ func findOriginalMemoForOutbound(ctx cosmos.Context, mgr Manager, tx common.Obse
 	k := mgr.Keeper()
 	signingTransPeriod := k.GetConfigInt64(ctx, constants.SigningTransactionPeriod)
 	searchPeriod := signingTransPeriod
-	if tx.Tx.Chain.Equals(common.XMRChain) {
+	switch {
+	case tx.Tx.Chain.Equals(common.XMRChain):
 		searchPeriod = signingTransPeriod * xmrSigningPeriodMultiplier
+	case isObservedEVMAggregatorOutbound(tx):
+		searchPeriod = signingTransPeriod * evmAggregatorSigningPeriodMultiplier
+	case isObservedEVMTokenOutbound(tx):
+		searchPeriod = signingTransPeriod * evmTokenSigningPeriodMultiplier
 	}
 
 	// Search recent TxOut blocks for matching TxOutItem
@@ -1094,8 +1311,11 @@ func findOriginalMemoForOutbound(ctx cosmos.Context, mgr Manager, tx common.Obse
 			continue
 		}
 		for _, item := range txOut.TxArray {
-			// Skip if already has an OutHash (already processed)
-			if !item.OutHash.IsEmpty() {
+			// CommonOutboundTxHandler records the current observation's OutHash
+			// before memo recovery runs, so that exact item remains eligible here.
+			// Exclude every other completed item; duplicate delivery of the current
+			// transaction is stopped earlier by the ObservedTxVoter done guard.
+			if !item.OutHash.IsEmpty() && !item.OutHash.Equals(tx.Tx.ID) {
 				continue
 			}
 			if !item.Chain.Equals(tx.Tx.Chain) {

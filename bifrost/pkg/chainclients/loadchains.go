@@ -24,8 +24,9 @@ import (
 
 // ChainClient exports the shared type.
 type (
-	ChainClient             = types.ChainClient
-	CustomKeygenChainClient = types.CustomKeygenChainClient
+	ChainClient                = types.ChainClient
+	CustomKeygenChainClient    = types.CustomKeygenChainClient
+	PermanentErrataQuarantiner = types.PermanentErrataQuarantiner
 )
 
 // LoadChains returns chain clients from chain configuration

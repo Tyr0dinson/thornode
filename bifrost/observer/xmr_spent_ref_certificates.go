@@ -506,6 +506,15 @@ func (s *AttestationGossip) historicalXMRSpentRefCertificateSnapshot(
 	return bucket.observedTx, attestations, bucket.applied, true
 }
 
+func (s *AttestationGossip) historicalXMRSpentRefCertificateApplied(obsTx common.ObservedTx) bool {
+	payload, err := obsTx.GetSignablePayloadWithInbound(false)
+	if err != nil {
+		return false
+	}
+	_, _, applied, ok := s.historicalXMRSpentRefCertificateSnapshot(sha256.Sum256(payload))
+	return ok && applied
+}
+
 func (s *AttestationGossip) historicalXMRSpentRefAttestations(payloadHash [sha256.Size]byte) []*common.Attestation {
 	_, attestations, _, _ := s.historicalXMRSpentRefCertificateSnapshot(payloadHash)
 	return attestations
