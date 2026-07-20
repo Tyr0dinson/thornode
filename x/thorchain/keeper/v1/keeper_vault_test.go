@@ -236,6 +236,59 @@ func (s *KeeperVaultSuite) TestGetPendingOutboundsSkipsExpiredDurableMigrateHeig
 	c.Assert(outbounds, HasLen, 0)
 }
 
+func (s *KeeperVaultSuite) TestGetPendingOutboundsRetainsExtendedEVMClasses(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	signingPeriod := k.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	c.Assert(signingPeriod > 0, Equals, true)
+	ctx = ctx.WithBlockHeight(signingPeriod*4 + 10)
+	usdc, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	c.Assert(err, IsNil)
+	vaultPubKey := GetRandomPubKey()
+
+	addTxOut := func(height int64, items ...TxOutItem) {
+		txOut := NewTxOut(height)
+		txOut.TxArray = items
+		c.Assert(k.SetTxOut(ctx, txOut), IsNil)
+	}
+	extendedItem := func(height int64, token bool) TxOutItem {
+		item := TxOutItem{
+			Chain:       common.ETHChain,
+			VaultPubKey: vaultPubKey,
+			Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(uint64(height))),
+		}
+		if token {
+			item.Coin = common.NewCoin(usdc, cosmos.NewUint(uint64(height)))
+		} else {
+			item.Aggregator = "0xaggregator"
+		}
+		return item
+	}
+
+	justPastStandard := ctx.BlockHeight() - signingPeriod - 1
+	justInsideExtended := ctx.BlockHeight() - signingPeriod*3 + 1
+	justPastExtended := ctx.BlockHeight() - signingPeriod*3 - 1
+	addTxOut(justPastStandard,
+		extendedItem(justPastStandard, false),
+		extendedItem(justPastStandard, true),
+		TxOutItem{Chain: common.ETHChain, VaultPubKey: vaultPubKey, Coin: common.NewCoin(common.ETHAsset, cosmos.OneUint())},
+	)
+	addTxOut(justInsideExtended,
+		extendedItem(justInsideExtended, false),
+		extendedItem(justInsideExtended, true),
+	)
+	addTxOut(justPastExtended,
+		extendedItem(justPastExtended, false),
+		extendedItem(justPastExtended, true),
+	)
+
+	ethOutbounds := k.GetPendingOutbounds(ctx, common.ETHAsset)
+	c.Assert(ethOutbounds, HasLen, 2)
+	for _, outbound := range ethOutbounds {
+		c.Assert(outbound.Aggregator, Equals, "0xaggregator")
+	}
+	c.Assert(k.GetPendingOutbounds(ctx, usdc), HasLen, 2)
+}
+
 func (s *KeeperVaultSuite) TestVaultSorBySecurity(c *C) {
 	ctx, k := setupKeeperForTest(c)
 

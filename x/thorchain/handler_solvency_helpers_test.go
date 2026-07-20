@@ -3,6 +3,7 @@ package thorchain
 import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	. "gopkg.in/check.v1"
 )
@@ -657,6 +658,40 @@ func (s *HandlerSolvencyHelpersSuite) TestExcludePendingOutboundFromVault_Succes
 	// Original vault coins should not be mutated
 	originalETH := vault.Coins.GetCoin(common.ETHAsset)
 	c.Assert(originalETH.Amount.Equal(cosmos.NewUint(1000*common.One)), Equals, true)
+}
+
+func (s *HandlerSolvencyHelpersSuite) TestExcludePendingOutboundFromVaultRetainsExtendedEVMClasses(c *C) {
+	ctx, mgr, _, vault := setupSolvencyHelpersTest(c)
+	signingPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	c.Assert(signingPeriod > 0, Equals, true)
+	ctx = ctx.WithBlockHeight(signingPeriod*4 + 10)
+	usdc, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	c.Assert(err, IsNil)
+	vault.AddFunds(common.NewCoins(common.NewCoin(usdc, cosmos.NewUint(1000*common.One))))
+
+	addTxOut := func(height int64, items ...TxOutItem) {
+		txOut := NewTxOut(height)
+		txOut.TxArray = items
+		c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+	}
+	justPastStandard := ctx.BlockHeight() - signingPeriod - 1
+	justInsideExtended := ctx.BlockHeight() - signingPeriod*3 + 1
+	addTxOut(justPastStandard,
+		TxOutItem{Chain: common.ETHChain, VaultPubKey: vault.PubKey, Coin: common.NewCoin(common.ETHAsset, cosmos.NewUint(50*common.One)), Aggregator: "0xaggregator"},
+		TxOutItem{Chain: common.ETHChain, VaultPubKey: vault.PubKey, Coin: common.NewCoin(usdc, cosmos.NewUint(70*common.One))},
+		TxOutItem{Chain: common.ETHChain, VaultPubKey: vault.PubKey, Coin: common.NewCoin(common.ETHAsset, cosmos.NewUint(200*common.One))},
+	)
+	addTxOut(justInsideExtended,
+		TxOutItem{Chain: common.ETHChain, VaultPubKey: vault.PubKey, Coin: common.NewCoin(common.ETHAsset, cosmos.NewUint(50*common.One)), Aggregator: "0xaggregator"},
+		TxOutItem{Chain: common.ETHChain, VaultPubKey: vault.PubKey, Coin: common.NewCoin(usdc, cosmos.NewUint(80*common.One))},
+	)
+
+	adjusted, pending, err := excludePendingOutboundFromVault(ctx, mgr, vault)
+	c.Assert(err, IsNil)
+	c.Assert(adjusted.Coins.GetCoin(common.ETHAsset).Amount.Equal(cosmos.NewUint(900*common.One)), Equals, true)
+	c.Assert(adjusted.Coins.GetCoin(usdc).Amount.Equal(cosmos.NewUint(850*common.One)), Equals, true)
+	c.Assert(pending[common.ETHAsset.String()].Equal(cosmos.NewUint(100*common.One)), Equals, true)
+	c.Assert(pending[usdc.String()].Equal(cosmos.NewUint(150*common.One)), Equals, true)
 }
 
 func (s *HandlerSolvencyHelpersSuite) TestProcessSolvencyAttestation_InsolventButAlreadyHalted(c *C) {

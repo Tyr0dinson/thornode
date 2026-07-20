@@ -13,6 +13,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	thortypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 func processSolvencyAttestation(
@@ -357,10 +358,11 @@ func excludePendingOutboundFromVault(ctx cosmos.Context, mgr Manager, vault Vaul
 	vault.Coins = coinsCopy
 	pendingOutbounds := make(map[string]cosmos.Uint)
 
-	// go back SigningTransactionPeriod blocks to see whether there are outstanding tx, the vault need to send out
-	// if there is , deduct it from their balance
+	// Scan the longest live signing period, then apply the exact per-item period
+	// in deductVaultBlockPendingOutbound. This keeps solvency accounting aligned
+	// with LackSigning without retaining ordinary outbounds for too long.
 	signingPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
-	startHeight := ctx.BlockHeight() - signingPeriod
+	startHeight := ctx.BlockHeight() - thortypes.MaxTxOutSigningTransactionPeriod(signingPeriod)
 	if startHeight < 1 {
 		startHeight = 1
 	}
@@ -376,7 +378,11 @@ func excludePendingOutboundFromVault(ctx cosmos.Context, mgr Manager, vault Vaul
 }
 
 func deductVaultBlockPendingOutbound(ctx cosmos.Context, mgr Manager, vault Vault, block *TxOut, pendingOutbounds map[string]cosmos.Uint) (Vault, map[string]cosmos.Uint) {
+	signingPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
 	for _, txOutItem := range block.TxArray {
+		if ctx.BlockHeight()-block.Height > txOutItem.SigningTransactionPeriod(signingPeriod) {
+			continue
+		}
 		if !txOutItem.VaultPubKey.Equals(vault.PubKey) {
 			continue
 		}

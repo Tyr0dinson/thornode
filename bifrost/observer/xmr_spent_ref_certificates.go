@@ -15,6 +15,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
+	bifrosttypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	thortypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -321,7 +322,10 @@ func (s *AttestationGossip) validateHistoricalXMRSpentRefCertificate(
 		return empty, common.AttestTx{}, fmt.Errorf("load historical certificate source vault: %w", err)
 	}
 	if !historicalVaultContainsAttester(vault.Membership, tx.Attestation.PubKey) {
-		return empty, common.AttestTx{}, fmt.Errorf("historical certificate signer is not a source-vault member")
+		return empty, common.AttestTx{}, fmt.Errorf(
+			"%w: historical certificate signer is not a source-vault member",
+			bifrosttypes.ErrObservedTxNotApplicable,
+		)
 	}
 	if !s.historicalXMRCertificatePlan(payloadHash, tx.ObsTx) {
 		return empty, common.AttestTx{}, fmt.Errorf("historical certificate does not match a planned outbound")

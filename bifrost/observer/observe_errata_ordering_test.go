@@ -712,7 +712,7 @@ func TestXMRMissingVoterRemainsRecheckableAfterFreshHeightBarrier(t *testing.T) 
 	require.True(t, *tombstone.VoterReverted)
 }
 
-func TestObserverStartDoesNotStartXMRWithUnresolvedCommittedErrata(t *testing.T) {
+func TestUnresolvedCommittedErrataDefersOnlyXMRChainStart(t *testing.T) {
 	observer, storage := newErrataOrderingObserver(t)
 	errata := common.ErrataTx{
 		Chain: common.XMRChain,
@@ -723,17 +723,31 @@ func TestObserverStartDoesNotStartXMRWithUnresolvedCommittedErrata(t *testing.T)
 	require.True(t, bridgeOK)
 	bridge.getBlockHeightFreshFunc = func() (int64, error) { return 900, nil }
 	bridge.getObservedTxVoterFreshFunc = func(string) (*stypes.QueryObservedTxVoter, bool, error) {
-		return nil, false, nil
+		return &stypes.QueryObservedTxVoter{TxID: errata.Id, Reverted: false}, true, nil
 	}
-	chain := &errataStartOrderChain{}
-	observer.chains = map[common.Chain]chainclients.ChainClient{common.XMRChain: chain}
+	xmrChain := &errataStartOrderChain{}
+	btcChain := &errataStartOrderChain{}
+	observer.chains = map[common.Chain]chainclients.ChainClient{
+		common.XMRChain: xmrChain,
+		common.BTCChain: btcChain,
+	}
 
-	err := observer.Start(context.Background())
-	require.ErrorContains(t, err, "outcome(s) remain unresolved")
-	require.Zero(t, chain.starts, "XMR must not scan or rebroadcast before the outcome is classified")
+	unresolved, err := observer.reconcileCommittedXMRErrata()
+	require.NoError(t, err)
+	require.Equal(t, 1, unresolved)
+	observer.startConfiguredChainClients(true)
+	require.Equal(t, 1, btcChain.starts, "unrelated chain clients must remain operational")
+	require.Zero(t, xmrChain.starts, "XMR must not scan or rebroadcast before the outcome is classified")
 	tombstone, getErr := storage.getErrataTombstone(errata.Chain, errata.Id.String())
 	require.NoError(t, getErr)
 	require.Equal(t, int64(901), tombstone.VerifyAfterHeight)
+	require.Nil(t, tombstone.VoterReverted, "a false voter is not a permanent terminal")
+
+	bridge.getObservedTxVoterFreshFunc = func(string) (*stypes.QueryObservedTxVoter, bool, error) {
+		return &stypes.QueryObservedTxVoter{TxID: errata.Id, Reverted: true}, true, nil
+	}
+	observer.startDeferredXMRChain(context.Background())
+	require.Equal(t, 1, xmrChain.starts)
 }
 
 func TestErrataTombstoneRetainsEveryOrphanHeight(t *testing.T) {

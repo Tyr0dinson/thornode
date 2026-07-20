@@ -1422,6 +1422,7 @@ func (s *Scanner) attachObservationReceiptBarrier(
 			terminal.Do(func() {
 				permanentlyRejected := errors.Is(err, stypes.ErrObservedTxPermanentlyReverted)
 				orphaned := errors.Is(err, stypes.ErrObservedTxOrphaned)
+				notApplicable := errors.Is(err, stypes.ErrObservedTxNotApplicable)
 				if permanentlyRejected {
 					if quarantineErr := s.quarantineObserverRejectedTx(item); quarantineErr != nil {
 						s.logger.Error().Err(quarantineErr).Str("txid", item.Tx).
@@ -1429,7 +1430,7 @@ func (s *Scanner) attachObservationReceiptBarrier(
 						permanentlyRejected = false
 					}
 				}
-				terminalRejection := orphaned || permanentlyRejected
+				terminalRejection := orphaned || permanentlyRejected || notApplicable
 				if previousRejected != nil {
 					previousRejected(err)
 				}

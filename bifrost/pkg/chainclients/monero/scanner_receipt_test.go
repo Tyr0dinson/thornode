@@ -267,6 +267,44 @@ func TestExactOrphanReceiptAcknowledgesWithoutPermanentQuarantine(t *testing.T) 
 	}
 }
 
+func TestNotApplicableReceiptAcknowledgesWithoutPermanentQuarantine(t *testing.T) {
+	store := newScannerReceiptStore(t)
+	item := scannerReceiptItem("not-applicable-terminal", 46)
+	meta := &reorgBlockMeta{Height: 46, BlockHash: "h46", PreviousHash: "h45"}
+	if err := store.PutObservationReceipt(meta, []*stypes.TxInItem{item}); err != nil {
+		t.Fatal(err)
+	}
+	claims, err := store.ListObservationReceipts()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	scanner := NewScanner(log.Logger, nil, nil, common.XMRChain, common.EmptyPubKey, 72)
+	scanner.SetReorgStore(store)
+	quarantines := 0
+	scanner.SetClaimQuarantineHandler(func(string) error {
+		quarantines++
+		return nil
+	})
+	handoff := append([]*stypes.TxInItem(nil), claims[0].entry.Items...)
+	scanner.attachObservationReceiptBarrier(handoff, claims, nil)
+	handoff[0].OnObservedTxRejected(fmt.Errorf(
+		"historical vault did not include this node: %w",
+		stypes.ErrObservedTxNotApplicable,
+	))
+
+	remaining, err := store.ListObservationReceipts()
+	if err != nil || len(remaining) != 0 {
+		t.Fatalf("not-applicable receipt was not acknowledged: remaining=%d err=%v", len(remaining), err)
+	}
+	if quarantines != 0 {
+		t.Fatalf("not-applicable rejection quarantined signed claim: calls=%d", quarantines)
+	}
+	if reverted, err := store.IsRevertedTx(item.Tx); err != nil || reverted {
+		t.Fatalf("not-applicable rejection quarantined scanner TxID: reverted=%t err=%v", reverted, err)
+	}
+}
+
 func TestFutureRelocationWatchBindsProcessedJournalAndErratasOnDisappearance(t *testing.T) {
 	store := newScannerReceiptStore(t)
 	txID := testXMRHash("future-remine")

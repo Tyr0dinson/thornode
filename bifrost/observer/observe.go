@@ -224,6 +224,50 @@ func (o *Observer) getChain(chainID common.Chain) (chainclients.ChainClient, err
 	return chain, nil
 }
 
+func (o *Observer) startChainClient(chain chainclients.ChainClient) {
+	chain.Start(o.globalTxsQueue, o.globalErrataQueue, o.globalSolvencyQueue, o.globalNetworkFeeQueue)
+}
+
+func (o *Observer) startConfiguredChainClients(deferXMR bool) {
+	for chainID, chain := range o.chains {
+		if deferXMR && chainID.Equals(common.XMRChain) {
+			continue
+		}
+		o.startChainClient(chain)
+	}
+}
+
+// startDeferredXMRChain keeps an unresolved committed errata scoped to XMR.
+// Other chain clients remain operational while the durable voter outcome is
+// retried. Only an explicit Reverted result creates the permanent quarantine;
+// a false voter is never converted into an unsafe timeout-based terminal.
+func (o *Observer) startDeferredXMRChain(ctx context.Context) {
+	chain, ok := o.chains[common.XMRChain]
+	if !ok || chain == nil {
+		return
+	}
+	ticker := time.NewTicker(errataRetryInterval)
+	defer ticker.Stop()
+	for {
+		unresolved, err := o.reconcileCommittedXMRErrata()
+		if err == nil && unresolved == 0 {
+			o.startChainClient(chain)
+			o.logger.Info().Msg("started XMR chain client after committed errata reconciliation")
+			return
+		}
+		if err != nil {
+			o.logger.Warn().Err(err).
+				Int("unresolved", unresolved).
+				Msg("defer XMR chain client while committed errata reconciliation is unavailable")
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
 func (o *Observer) Start(ctx context.Context) error {
 	if err := o.restoreDeck(); err != nil {
 		return fmt.Errorf("restore observer deck: %w", err)
@@ -235,20 +279,17 @@ func (o *Observer) Start(ctx context.Context) error {
 	if err := o.replayPermanentErrataQuarantines(); err != nil {
 		return fmt.Errorf("replay permanent observer errata quarantines: %w", err)
 	}
-	// Resolve every delivered-but-unclassified XMR errata before a chain client
-	// can scan or rebroadcast. Returning an error here is intentionally
-	// fail-closed: the durable verification barrier survives restart, while
-	// Thornode continues advancing independently of Bifrost.
+	// Resolve every delivered-but-unclassified XMR errata before XMR can scan or
+	// rebroadcast. An unresolved result defers only XMR; stopping every unrelated
+	// chain client would turn one partial errata vote into a global outage.
 	unresolved, err := o.reconcileCommittedXMRErrata()
-	if err != nil {
-		return fmt.Errorf("reconcile committed XMR errata before chain start: %w", err)
+	deferXMR := err != nil || unresolved != 0
+	if deferXMR {
+		o.logger.Warn().Err(err).
+			Int("unresolved", unresolved).
+			Msg("starting non-XMR chain clients while committed XMR errata remains unresolved")
 	}
-	if unresolved != 0 {
-		return fmt.Errorf("reconcile committed XMR errata before chain start: %d outcome(s) remain unresolved", unresolved)
-	}
-	for _, chain := range o.chains {
-		chain.Start(o.globalTxsQueue, o.globalErrataQueue, o.globalSolvencyQueue, o.globalNetworkFeeQueue)
-	}
+	o.startConfiguredChainClients(deferXMR)
 	o.oracle.Start()
 	go o.processOracle()
 	go o.processTxIns()
@@ -259,6 +300,9 @@ func (o *Observer) Start(ctx context.Context) error {
 	go o.deck(ctx)
 	go o.attestationGossip.Start(ctx)
 	go o.processPriceFeedQueue(ctx)
+	if deferXMR {
+		go o.startDeferredXMRChain(ctx)
+	}
 	return nil
 }
 
@@ -906,15 +950,15 @@ func (o *Observer) attestHistoricalXMRSpentRefCertificates(txIn types.TxIn) erro
 		rejectObservedTx(certificateItems, err)
 		return err
 	}
-	var attestErr error
+	var resultErr error
 	for i := range observed {
+		item := certificateItems[i]
 		if err = o.attestationGossip.AttestObservedTx(
 			context.Background(),
 			&observed[i],
 			false,
 			false,
 		); err != nil {
-			attestErr = errors.Join(attestErr, err)
 			// Most pre-attributed XMR outbounds are from vaults this node never
 			// controlled. They are intentionally ignored by the narrow admission
 			// gate rather than turning an inactive scanner block into an error.
@@ -922,23 +966,24 @@ func (o *Observer) attestHistoricalXMRSpentRefCertificates(txIn types.TxIn) erro
 				Str("tx_id", observed[i].Tx.ID.String()).
 				Str("vault", observed[i].ObservedPubKey.String()).
 				Msg("inactive observer did not qualify for historical XMR certificate")
+			rejectObservedTx([]*types.TxInItem{item}, err)
+			if errors.Is(err, types.ErrObservedTxNotApplicable) {
+				continue
+			}
+			resultErr = errors.Join(resultErr, err)
+			continue
 		}
-	}
-	if attestErr != nil {
-		rejectObservedTx(certificateItems, attestErr)
-		return attestErr
-	}
-	for i := range observed {
 		if !o.attestationGossip.historicalXMRSpentRefCertificateApplied(observed[i]) {
 			// The scanner receipt is the durable delivery outbox. Retain it until
 			// the certificate reaches the sidecar-applied terminal; after a crash
 			// the scanner will replay and re-sign the same observation.
-			rejectObservedTx(certificateItems, errHistoricalXMRCertificatePending)
-			return errHistoricalXMRCertificatePending
+			rejectObservedTx([]*types.TxInItem{item}, errHistoricalXMRCertificatePending)
+			resultErr = errors.Join(resultErr, errHistoricalXMRCertificatePending)
+			continue
 		}
+		invokeObservedTxCallbacks(takeObservedTxStoredCallbacks([]*types.TxInItem{item}))
 	}
-	invokeObservedTxCallbacks(takeObservedTxStoredCallbacks(certificateItems))
-	return nil
+	return resultErr
 }
 
 // enforceErrataTombstones runs with o.lock held. A scanner tombstone fences

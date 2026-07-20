@@ -229,7 +229,7 @@ func (s *SlasherImpl) HandleMissingSign(ctx cosmos.Context, addr crypto.Address,
 // lands on-chain thornode emits a "missing tx out" security event.
 // Process XMR outbounds from a 3x-older batch to give FROST and chain
 // confirmation enough headroom.
-const xmrSigningPeriodMultiplier = 3
+const xmrSigningPeriodMultiplier = types.ExtendedOutboundSigningPeriodMultiplier
 
 // staleOutboundObservationSigningPeriods bounds how long a non-finalised
 // observed outbound can pin reassignment or treasury recovery.
@@ -241,13 +241,13 @@ const staleOutboundObservationSigningPeriods = 3
 // before the standard signing window expires. Rescheduling inside that window
 // can create a direct fallback outbound while the original aggregator call is
 // still in flight, duplicating the outbound.
-const evmAggregatorSigningPeriodMultiplier = 3
+const evmAggregatorSigningPeriodMultiplier = types.ExtendedOutboundSigningPeriodMultiplier
 
 // evmTokenSigningPeriodMultiplier scales SigningTransactionPeriod for EVM token
 // outbounds. The signer may need to submit an ERC20 approval transaction before
 // the actual transfer, so a valid token outbound can observe after the standard
 // signing window even when the signer is behaving correctly.
-const evmTokenSigningPeriodMultiplier = 3
+const evmTokenSigningPeriodMultiplier = types.ExtendedOutboundSigningPeriodMultiplier
 
 func isEVMAggregatorTxOut(toi TxOutItem) bool {
 	return toi.Chain.IsEVM() && txOutHasAggregator(toi)
@@ -271,16 +271,7 @@ func isObservedEVMTokenOutbound(tx common.ObservedTx) bool {
 }
 
 func txOutSigningPeriod(toi TxOutItem, signingTransPeriod int64) int64 {
-	switch {
-	case toi.Chain.Equals(common.XMRChain):
-		return signingTransPeriod * xmrSigningPeriodMultiplier
-	case isEVMAggregatorTxOut(toi):
-		return signingTransPeriod * evmAggregatorSigningPeriodMultiplier
-	case isEVMTokenTxOut(toi):
-		return signingTransPeriod * evmTokenSigningPeriodMultiplier
-	default:
-		return signingTransPeriod
-	}
+	return toi.SigningTransactionPeriod(signingTransPeriod)
 }
 
 // LackSigning slash account that fail to sign tx

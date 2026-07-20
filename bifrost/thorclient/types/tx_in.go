@@ -21,6 +21,11 @@ var (
 	// TxID-level Reverted barrier from transient Observer rejection. Durable chain
 	// scanners must quarantine the exact TxID before acknowledging this rejection.
 	ErrObservedTxPermanentlyReverted = errors.New("observed transaction is permanently reverted")
+
+	// ErrObservedTxNotApplicable identifies a durable observation which is valid
+	// but this node is not authorized to attest. Scanners may acknowledge it
+	// without quarantining the transaction or retaining it for futile replay.
+	ErrObservedTxNotApplicable = errors.New("observed transaction is not applicable to this node")
 )
 
 type TxIn struct {

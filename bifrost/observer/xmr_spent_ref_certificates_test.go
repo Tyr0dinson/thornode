@@ -293,6 +293,123 @@ func TestHistoricalXMRCertificateRetainsScannerReceiptUntilApplied(t *testing.T)
 	require.NoError(t, *rejected)
 }
 
+func TestHistoricalXMRCertificateMixedBatchHandlesEachItemIndependently(t *testing.T) {
+	ag, _, keys, _, bridge, _ := setupTestGossip(t)
+	memberObs, memberPlan := observerTestXMRPlan(t)
+	canonicalID, err := common.NewTxID(memberObs.Tx.ID.String())
+	require.NoError(t, err)
+	memberObs.Tx.ID = canonicalID
+	memberObs.SpentOutputRefs[0].SpendTxHash = canonicalID.String()
+
+	nonmemberObs := memberObs
+	nonmemberID, err := common.NewTxID(observerTestHash("xmr-mixed-nonmember"))
+	require.NoError(t, err)
+	nonmemberObs.Tx.ID = nonmemberID
+	nonmemberObs.ObservedPubKey = randomXMRObservedPubKey(t)
+	nonmemberAddress, err := nonmemberObs.ObservedPubKey.GetAddress(common.XMRChain)
+	require.NoError(t, err)
+	nonmemberObs.Tx.FromAddress = nonmemberAddress
+	nonmemberObs.SpentOutputRefs = []common.OutputRef{
+		observerTestOutputRef("xmr-mixed-nonmember-ref", nonmemberObs.Tx.ID.String()),
+	}
+	nonmemberPlan := memberPlan
+	nonmemberPlan.vaultPubKeyFrost = nonmemberObs.ObservedPubKey
+
+	localMember := observerTestPubKey(t, keys.privKey)
+	otherMember := observerTestPubKey(t, secp256k1.GenPrivKey())
+	memberVault := observerTestRetiringVaultFunc(memberObs.ObservedPubKey, localMember)
+	nonmemberVault := observerTestRetiringVaultFunc(nonmemberObs.ObservedPubKey, otherMember)
+	bridge.getVaultFunc = func(pubKey string) (thortypes.Vault, error) {
+		switch pubKey {
+		case memberObs.ObservedPubKey.String():
+			return memberVault(pubKey)
+		case nonmemberObs.ObservedPubKey.String():
+			return nonmemberVault(pubKey)
+		default:
+			return thortypes.Vault{}, nil
+		}
+	}
+	bridge.getKeysignFunc = func(height int64, _ string) (tctypes.TxOut, error) {
+		toItem := func(planned plannedXMROutbound) tctypes.TxArrayItem {
+			return tctypes.TxArrayItem{
+				Chain:            planned.chain,
+				ToAddress:        planned.toAddress,
+				VaultPubKey:      planned.vaultPubKey,
+				VaultPubKeyFrost: planned.vaultPubKeyFrost,
+				Coin:             planned.coins.GetCoin(common.XMRAsset),
+				Memo:             planned.memo,
+				MaxGas:           planned.maxGas,
+			}
+		}
+		return tctypes.TxOut{Height: height, TxArray: []tctypes.TxArrayItem{
+			toItem(memberPlan),
+			toItem(nonmemberPlan),
+		}}, nil
+	}
+	ag.setActiveValidators(nil)
+	ag.SetObserverApplySpentOutputRefs(func(_ common.ObservedTx, onOutcome func(bool)) {
+		if onOutcome != nil {
+			onOutcome(true)
+		}
+	})
+
+	// Pre-apply the authorized member certificate so the mixed handoff has one
+	// stored terminal and one permanently inapplicable terminal.
+	require.NoError(t, ag.AttestObservedTx(context.Background(), &memberObs, false, false))
+	require.Eventually(t, func() bool {
+		return ag.historicalXMRSpentRefCertificateApplied(memberObs)
+	}, time.Second, 10*time.Millisecond)
+
+	toItem := func(obs common.ObservedTx, stored *bool, rejected *error) *tctypes.TxInItem {
+		spentRefs := make([]*common.OutputRef, 0, len(obs.SpentOutputRefs))
+		for i := range obs.SpentOutputRefs {
+			ref := obs.SpentOutputRefs[i]
+			spentRefs = append(spentRefs, &ref)
+		}
+		return &tctypes.TxInItem{
+			BlockHeight:         obs.BlockHeight,
+			Tx:                  obs.Tx.ID.String(),
+			Memo:                obs.Tx.Memo,
+			Sender:              obs.Tx.FromAddress.String(),
+			To:                  obs.Tx.ToAddress.String(),
+			Coins:               obs.Tx.Coins,
+			Gas:                 obs.Tx.Gas,
+			ObservedVaultPubKey: obs.ObservedPubKey,
+			SpentOutputRefs:     spentRefs,
+			OnObservedTxStored:  func() { *stored = true },
+			OnObservedTxRejected: func(err error) {
+				*rejected = err
+			},
+		}
+	}
+	memberStored, nonmemberStored := false, false
+	var memberRejected, nonmemberRejected error
+	txIn := tctypes.TxIn{
+		Chain:    common.XMRChain,
+		Filtered: true,
+		TxArray: []*tctypes.TxInItem{
+			toItem(memberObs, &memberStored, &memberRejected),
+			toItem(nonmemberObs, &nonmemberStored, &nonmemberRejected),
+		},
+	}
+	observer := &Observer{
+		logger: ag.logger,
+		chains: map[common.Chain]chainclients.ChainClient{
+			common.XMRChain: &historicalXMRConfirmationChain{
+				confirmations: memberObs.FinaliseHeight - memberObs.BlockHeight,
+			},
+		},
+		tssKeysignMetricMgr: metrics.NewTssKeysignMetricMgr(),
+		attestationGossip:   ag,
+	}
+
+	require.NoError(t, observer.attestHistoricalXMRSpentRefCertificates(txIn))
+	require.True(t, memberStored)
+	require.NoError(t, memberRejected)
+	require.False(t, nonmemberStored)
+	require.ErrorIs(t, nonmemberRejected, tctypes.ErrObservedTxNotApplicable)
+}
+
 func TestHistoricalXMRSpentRefCertificateRejectsUnauthorizedVariants(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -384,6 +501,9 @@ func TestHistoricalXMRSpentRefCertificateRejectsUnauthorizedVariants(t *testing.
 
 			err := ag.acceptHistoricalXMRSpentRefCertificate(certificate, transportPeer)
 			require.ErrorContains(t, err, tc.contains)
+			if tc.name == "nonmember" {
+				require.ErrorIs(t, err, tctypes.ErrObservedTxNotApplicable)
+			}
 			ag.mu.Lock()
 			assert.Empty(t, ag.historicalXMRSpentRefCertificates)
 			assert.Empty(t, ag.observedTxs)

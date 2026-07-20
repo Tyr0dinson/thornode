@@ -177,10 +177,10 @@ func (vm *ValidatorMgr) hasPendingKeygen(ctx cosmos.Context, keygenType thortype
 			if keygen.Type != keygenType {
 				continue
 			}
-			// At the retry boundary a replacement keygen may be scheduled for the
-			// current height while reports for the previous keygen are still valid
-			// through this block. Treat only strictly younger keygens as pending.
-			if ctx.BlockHeight()-height >= keygenResultValidityBlocksForBlock(ctx, vm.k, keygen.Type, keygenBlock) {
+			// Reports remain valid through the exact retry boundary. Keep the
+			// keygen pending through that block so BeginBlock cannot schedule a
+			// replacement which overlaps a still-valid DeliverTx result.
+			if ctx.BlockHeight()-height > keygenResultValidityBlocksForBlock(ctx, vm.k, keygen.Type, keygenBlock) {
 				continue
 			}
 			if !keygenResolvedByVaults(keygen, readyVaults) {

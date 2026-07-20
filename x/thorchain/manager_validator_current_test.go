@@ -1162,14 +1162,18 @@ func (vts *ValidatorMgrTestSuite) TestHasPendingCoScheduledKeygenUsesExtendedVal
 
 	pending, err := validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+extendedValidity), AsgardKeygen)
 	c.Assert(err, IsNil)
-	c.Assert(pending, Equals, false)
+	c.Assert(pending, Equals, true)
 
 	pending, err = validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+extendedValidity), XMRMonovaultKeygen)
+	c.Assert(err, IsNil)
+	c.Assert(pending, Equals, true)
+
+	pending, err = validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+extendedValidity+1), XMRMonovaultKeygen)
 	c.Assert(err, IsNil)
 	c.Assert(pending, Equals, false)
 }
 
-func (vts *ValidatorMgrTestSuite) TestHasPendingStandaloneAsgardExpiresAtRetryBoundary(c *C) {
+func (vts *ValidatorMgrTestSuite) TestHasPendingStandaloneAsgardExpiresAfterRetryBoundary(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	const retryBlocks int64 = 2
 	k.SetMimir(ctx, constants.ChurnRetryInterval.String(), retryBlocks)
@@ -1189,6 +1193,10 @@ func (vts *ValidatorMgrTestSuite) TestHasPendingStandaloneAsgardExpiresAtRetryBo
 	c.Assert(pending, Equals, true)
 
 	pending, err = validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+retryBlocks), AsgardKeygen)
+	c.Assert(err, IsNil)
+	c.Assert(pending, Equals, true)
+
+	pending, err = validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+retryBlocks+1), AsgardKeygen)
 	c.Assert(err, IsNil)
 	c.Assert(pending, Equals, false)
 }
