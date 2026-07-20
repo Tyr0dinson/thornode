@@ -1201,7 +1201,7 @@ func (k KVStoreDummy) HasStagedOutbound(_ cosmos.Context, _ common.TxID) bool {
 func (k KVStoreDummy) GetStagedOutbounds(_ cosmos.Context, _ common.TxID) ([]StagedOutbound, error) {
 	return nil, kaboom
 }
-func (k KVStoreDummy) DeleteStagedOutbounds(_ cosmos.Context, _ common.TxID) {}
+func (k KVStoreDummy) DeleteStagedOutbounds(_ cosmos.Context, _ common.TxID) error { return kaboom }
 func (k KVStoreDummy) GetStagedOutboundIterator(_ cosmos.Context) cosmos.Iterator {
 	return nil
 }

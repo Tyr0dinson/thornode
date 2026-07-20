@@ -130,7 +130,7 @@ func (s *KeeperStagedOutboundSuite) TestDeleteStagedOutbounds(c *C) {
 	c.Assert(outbounds, HasLen, 1)
 
 	// Delete staged outbounds
-	k.DeleteStagedOutbounds(ctx, inHash)
+	c.Assert(k.DeleteStagedOutbounds(ctx, inHash), IsNil)
 
 	// Verify it was deleted
 	outbounds, err = k.GetStagedOutbounds(ctx, inHash)
@@ -369,7 +369,7 @@ func (s *KeeperStagedOutboundSuite) TestStagedOutboundValueTotalsTrackMutationsA
 
 	// Deleting one inbound subtracts its coin, MaxGas, and clout from the
 	// aggregate without touching the other staged outbound.
-	k.DeleteStagedOutbounds(ctx, first.InHash)
+	c.Assert(k.DeleteStagedOutbounds(ctx, first.InHash), IsNil)
 	runeValue, cloutValue, err = k.GetStagedOutboundValue(ctx)
 	c.Assert(err, IsNil)
 	expected = pool.AssetValueInRune(second.Coin.Amount)

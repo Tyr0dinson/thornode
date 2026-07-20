@@ -2957,8 +2957,11 @@ func finalizeOutboundsCached(ctx cosmos.Context, mgr Manager, voter ObservedTxVo
 
 	// Delete staged outbounds BEFORE processing to prevent double-processing on retry.
 	// This helper runs inside a CacheContext, so any later error discards both the deletion
-	// and any partial queue/native-outbound work.
-	mgr.Keeper().DeleteStagedOutbounds(ctx, voter.TxID)
+	// and any partial queue/native-outbound work. A deletion failure must abort here rather
+	// than materialize the outbound while the staged list stays live for a later timeout pass.
+	if err = mgr.Keeper().DeleteStagedOutbounds(ctx, voter.TxID); err != nil {
+		return fmt.Errorf("fail to delete staged outbounds before finalization: %w", err)
+	}
 
 	finalizedOutbounds := make([]finalizedMempoolOutbound, 0, len(stagedItems))
 	for i, staged := range stagedItems {
@@ -3215,6 +3218,20 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 
 	if len(actionsToRollback) == 0 {
 		ctx.Logger().Debug("no staged outbounds to roll back", "hash", voter.TxID)
+		// Nothing to unwind does not mean nothing was staged: source refunds are
+		// filtered out of actionsToRollback, so a cancelled or fully-failed swap
+		// can land here with a refund-only staged list. Clearing the voter below
+		// drops the ownership markers, so those records must go first or they
+		// outlive the rollback and can be finalized again as a duplicate payout.
+		if len(stagedItems) > 0 {
+			if err = reclaimStagedClout(ctx, keeper, voter, stagedItems); err != nil {
+				ctx.Logger().Error("fail to reclaim staged clout on refund-only rollback", "error", err, "hash", voter.TxID)
+				// Non-fatal: clout auto-restores after CloutReset blocks.
+			}
+			if err = keeper.DeleteStagedOutbounds(ctx, voter.TxID); err != nil {
+				return fmt.Errorf("fail to delete refund-only staged outbounds on rollback: %w", err)
+			}
+		}
 		// Even without staged outbounds, the primary swap item at queue index 0
 		// can still be hanging around. Clear it so a later queue pass cannot
 		// re-process this inbound.
@@ -3353,7 +3370,9 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 	// Delete all staged outbounds AFTER processing succeeds.
 	// This helper runs inside a CacheContext, so returning an error discards all prior pool,
 	// usage, and queue mutations and allows a clean retry.
-	keeper.DeleteStagedOutbounds(ctx, voter.TxID)
+	if err = keeper.DeleteStagedOutbounds(ctx, voter.TxID); err != nil {
+		return fmt.Errorf("fail to delete staged outbounds on rollback: %w", err)
+	}
 	// Rollback may have started after the main queue item at index 0 was already
 	// written for this inbound. Clear that leftover work now that the inline
 	// rollback succeeded.

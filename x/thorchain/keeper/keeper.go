@@ -652,7 +652,7 @@ type KeeperStagedOutbound interface {
 	// GetStagedOutbounds returns all staged outbounds for an inbound transaction
 	GetStagedOutbounds(ctx cosmos.Context, inHash common.TxID) ([]StagedOutbound, error)
 	// DeleteStagedOutbounds removes all staged outbounds for an inbound transaction
-	DeleteStagedOutbounds(ctx cosmos.Context, inHash common.TxID)
+	DeleteStagedOutbounds(ctx cosmos.Context, inHash common.TxID) error
 	// GetStagedOutboundIterator returns an iterator over all staged outbound lists
 	GetStagedOutboundIterator(ctx cosmos.Context) cosmos.Iterator
 	// GetStagedOutboundValue returns the total RUNE value and clout of all staged outbounds

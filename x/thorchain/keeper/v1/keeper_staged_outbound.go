@@ -59,23 +59,24 @@ func (k KVStore) GetStagedOutbounds(ctx cosmos.Context, inHash common.TxID) ([]S
 }
 
 // DeleteStagedOutbounds removes all staged outbounds for an inbound transaction.
-func (k KVStore) DeleteStagedOutbounds(ctx cosmos.Context, inHash common.TxID) {
+// Callers rely on this for exactly-once processing, so a failure must abort the
+// surrounding transition rather than let it commit over live staged records.
+func (k KVStore) DeleteStagedOutbounds(ctx cosmos.Context, inHash common.TxID) error {
 	cacheCtx, commit := ctx.CacheContext()
 	list, err := k.getStagedOutboundList(cacheCtx, inHash)
 	if err != nil {
-		ctx.Logger().Error("failed to get staged outbounds for deletion", "error", err, "in_hash", inHash)
-		return
+		return fmt.Errorf("failed to get staged outbounds for deletion %s: %w", inHash, err)
 	}
 	if len(list.Items) == 0 {
-		return
+		return nil
 	}
 	if err := k.adjustStagedOutboundTotals(cacheCtx, list.Items, false); err != nil {
-		ctx.Logger().Error("failed to update staged outbound totals during deletion", "error", err, "in_hash", inHash)
-		return
+		return fmt.Errorf("failed to update staged outbound totals during deletion %s: %w", inHash, err)
 	}
 	key := k.GetKey(prefixStagedOutbound, inHash.String())
 	k.del(cacheCtx, key)
 	commit()
+	return nil
 }
 
 // GetStagedOutboundIterator returns an iterator over all staged outbound lists.

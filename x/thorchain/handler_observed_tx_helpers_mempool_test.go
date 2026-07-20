@@ -1579,6 +1579,65 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestCompletedPartialMempoolRollba
 	c.Check(staged, HasLen, 0)
 }
 
+// TestRefundOnlyStagedMempoolRollbackClearsStagedRecords covers a swap that
+// settled with no executed output, so the only staged record is the unconsumed
+// source refund. Refunds are filtered out of the rollback action list, which
+// sends this through the zero-action branch. That branch still has to delete
+// the staged record, or it outlives the voter that owned it and a later
+// finalization pass can pay it out a second time.
+func (s *HandlerObservedTxHelpersMempoolSuite) TestRefundOnlyStagedMempoolRollbackClearsStagedRecords(c *C) {
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
+
+	deposit := cosmos.NewUint(100 * common.One)
+	reservedTOR := cosmos.NewUint(5 * common.One)
+
+	sourcePool := NewPool()
+	sourcePool.Asset = common.BTCAsset
+	sourcePool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	sourcePool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	sourcePool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, sourcePool), IsNil)
+
+	inTxID := GetRandomTxHash()
+	voter := NewObservedTxVoter(inTxID, ObservedTxs{})
+	voter.Tx = ObservedTx{Tx: common.Tx{
+		ID:          inTxID,
+		Chain:       common.BTCChain,
+		FromAddress: GetRandomBTCAddress(),
+		Coins:       common.Coins{common.NewCoin(common.BTCAsset, deposit)},
+	}}
+	voter.MempoolSwapTOR = reservedTOR
+
+	// Nothing executed, so the entire deposit is staged back as a refund and
+	// there is no swap output alongside it.
+	sourceRefund := TxOutItem{
+		Chain:       common.BTCChain,
+		InHash:      inTxID,
+		ToAddress:   voter.Tx.Tx.FromAddress,
+		VaultPubKey: GetRandomPubKey(),
+		Coin:        common.NewCoin(common.BTCAsset, deposit),
+		Memo:        NewRefundMemo(inTxID).String(),
+	}
+	voter.Actions = []TxOutItem{sourceRefund}
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, reservedTOR)
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, sourceRefund, ctx.BlockHeight()+10), IsNil)
+	c.Check(mgr.Keeper().HasStagedOutbound(ctx, inTxID), Equals, true)
+
+	c.Assert(rollbackMempoolSwapAtomic(ctx, mgr.Keeper(), mgr, voter), IsNil)
+
+	staged, err := mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(staged, HasLen, 0,
+		Commentf("refund-only staged records must not survive rollback"))
+	c.Check(mgr.Keeper().HasStagedOutbound(ctx, inTxID), Equals, false)
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true)
+
+	voterAfter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(voterAfter.HasReservedMempoolSwapTOR(), Equals, false)
+}
+
 // TestInactiveVaultSkipsMempoolSwapBeforeFinalization verifies that speculative
 // mempool processing never starts when the source vault is inactive.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestInactiveVaultSkipsMempoolSwapBeforeFinalization(c *C) {
@@ -2192,9 +2251,38 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapSynthAffilia
 	c.Assert(mgr.Keeper().MintToModule(ctx, ModuleName, synthCoin), IsNil)
 	c.Assert(mgr.Keeper().SendFromModuleToModule(ctx, ModuleName, AsgardName, common.NewCoins(synthCoin)), IsNil)
 
+	// Snapshot the balances the rollback has to actually move. Asserting only
+	// against expectedReverse would pass even if the executed rollback consumed
+	// a smaller amount and stranded synths in Asgard.
+	asgardSynthBefore := mgr.Keeper().GetBalanceOfModule(ctx, AsgardName, targetAsset.Native())
+	synthSupplyBefore := mgr.Keeper().GetTotalSupply(ctx, targetAsset)
+	c.Assert(asgardSynthBefore.Equal(outboundAmount), Equals, true)
+
+	btcPoolBefore, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+
 	// Roll back and make sure the gross amount is used.
 	err = rollbackMempoolSwapAtomic(ctx, mgr.Keeper(), mgr, voter)
 	c.Assert(err, IsNil)
+
+	// The executed rollback must have consumed the whole staged synth amount.
+	asgardSynthAfter := mgr.Keeper().GetBalanceOfModule(ctx, AsgardName, targetAsset.Native())
+	c.Check(asgardSynthAfter.IsZero(), Equals, true,
+		Commentf("rollback should consume the full staged synth from Asgard, %s left behind", asgardSynthAfter))
+	synthSupplyAfter := mgr.Keeper().GetTotalSupply(ctx, targetAsset)
+	c.Check(common.SafeSub(synthSupplyBefore, synthSupplyAfter).Equal(outboundAmount), Equals, true,
+		Commentf("rollback should burn the full gross synth amount: before %s after %s", synthSupplyBefore, synthSupplyAfter))
+
+	// The recovered source asset is donated back into the BTC pool, and the
+	// speculatively credited input is removed from it.
+	btcPoolAfter, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(common.SafeSub(btcPoolBefore.BalanceAsset, btcPoolAfter.BalanceAsset).Equal(cosmos.NewUint(100*common.One)), Equals, true,
+		Commentf("rollback should remove the speculatively credited BTC input: before %s after %s",
+			btcPoolBefore.BalanceAsset, btcPoolAfter.BalanceAsset))
+	c.Check(btcPoolAfter.BalanceRune.GT(btcPoolBefore.BalanceRune), Equals, true,
+		Commentf("rollback should return the recovered synth value to the BTC pool: before %s after %s",
+			btcPoolBefore.BalanceRune, btcPoolAfter.BalanceRune))
 
 	updatedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
 	c.Assert(err, IsNil)

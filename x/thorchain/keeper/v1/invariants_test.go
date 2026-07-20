@@ -107,7 +107,7 @@ func (s *InvariantsSuite) TestAsgardInvariant(c *C) {
 	msg, broken = invariant(ctx)
 	c.Assert(broken, Equals, false)
 	c.Assert(msg, IsNil)
-	k.DeleteStagedOutbounds(ctx, stagedEscrow.InHash)
+	c.Assert(k.DeleteStagedOutbounds(ctx, stagedEscrow.InHash), IsNil)
 
 	// send a little more to make asgard oversolvent
 	extraCoins := common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(1)))
