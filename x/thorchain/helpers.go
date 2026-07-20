@@ -2894,16 +2894,6 @@ func isMempoolSwapEligible(
 		return false
 	}
 
-	// A secured target sharing its underlying asset with the source (ETH.ETH ->
-	// ETH-ETH) is a 1:1 secure, so it gains nothing from overlapping inbound
-	// confirmation. It also cannot be unwound: escrow denominates the staged
-	// output in the underlying asset, so the rollback reverse swap would be
-	// source-to-source, which MsgSwap.ValidateBasic rejects. That would strand
-	// the staged outbound and the TOR reservation, so keep it off this path.
-	if targetAsset.IsSecuredAsset() && targetAsset.GetLayer1Asset().Equals(sourceAsset) {
-		return false
-	}
-
 	// L1 targets still benefit from overlapping inbound confirmation
 	// with outbound scheduling/signing even when the swap is not streaming.
 	if !targetAsset.IsNative() {

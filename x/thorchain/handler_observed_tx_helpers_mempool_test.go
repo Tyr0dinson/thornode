@@ -1513,6 +1513,130 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestSecuredTargetAdvQueuePartialR
 		Commentf("partial rollback should restore the source pool asset balance to its pre-swap value"))
 }
 
+func (s *HandlerObservedTxHelpersMempoolSuite) TestSameUnderlyingSecuredTargetRollbackUnwindsWithoutSwap(c *C) {
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
+	mgr.Keeper().SetMimir(ctx, constants.AdvSwapQueueRapidSwapMax.String(), 1)
+	mgr.Keeper().SetMimir(ctx, "DollarsPerRune", 5_00000000)
+
+	// This test checks the partial advanced-queue case, before any staged outbound exists.
+	sourcePool := NewPool()
+	sourcePool.Asset = common.BTCAsset
+	sourcePool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	sourcePool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	sourcePool.LPUnits = sourcePool.BalanceRune
+	sourcePool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, sourcePool), IsNil)
+
+	targetPool := NewPool()
+	targetPool.Asset = common.ETHAsset
+	targetPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	targetPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	targetPool.LPUnits = targetPool.BalanceRune
+	targetPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, targetPool), IsNil)
+
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	activeVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain, common.THORChain}.Strings(), nil)
+	activeVault.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, activeVault), IsNil)
+
+	toAddr, err := activeVault.PubKey.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+	destination := GetRandomTHORAddress()
+	owner, err := cosmos.AccAddressFromBech32(destination.String())
+	c.Assert(err, IsNil)
+
+	inTxID := GetRandomTxHash()
+	inboundTx := common.NewTx(
+		inTxID,
+		GetRandomBTCAddress(),
+		toAddr,
+		common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))},
+		common.Gas{common.NewCoin(common.BTCAsset, cosmos.OneUint())},
+		fmt.Sprintf("SWAP:%s:%s:0/1/1", common.BTCAsset.GetSecuredAsset(), destination),
+	)
+	observedTx := NewObservedTx(inboundTx, 12, activeVault.PubKey, 15)
+
+	voter := NewObservedTxVoter(inTxID, ObservedTxs{observedTx})
+	voter.Tx = observedTx
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
+	err = handleObservedTxInQuorum(ctx, mgr, na.NodeAddress, NodeAccounts{na}, NewInternalHandler(mgr), observedTx, voter, []cosmos.AccAddress{na.NodeAddress}, true)
+	c.Assert(err, IsNil)
+
+	queuedSwap, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, inTxID, 0)
+	c.Assert(err, IsNil)
+	c.Assert(queuedSwap.State, NotNil)
+
+	queuedSwap.State.Quantity = 2
+	queuedSwap.State.Interval = 1
+	queuedSwap.State.Deposit = queuedSwap.Tx.Coins[0].Amount
+	queuedSwap.State.In = cosmos.ZeroUint()
+	queuedSwap.State.Out = cosmos.ZeroUint()
+	queuedSwap.State.Count = 0
+	queuedSwap.State.LastHeight = ctx.BlockHeight() - 1
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, queuedSwap), IsNil)
+
+	// Run one queue step so the swap has partial output stored in queue state.
+	c.Assert(mgr.AdvSwapQueueMgr().EndBlock(ctx, mgr, false), IsNil)
+
+	partialSwap, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, inTxID, 0)
+	c.Assert(err, IsNil)
+	c.Check(partialSwap.State.Out.GT(cosmos.ZeroUint()), Equals, true, Commentf("partial advanced-queue execution should accumulate emitted output"))
+	// Only the executed slice of the deposit has reached the pool so far, so the
+	// rollback must unwind State.In rather than the full deposit.
+	c.Check(partialSwap.State.In.GT(cosmos.ZeroUint()), Equals, true, Commentf("partial advanced-queue execution should credit part of the deposit"))
+	c.Check(partialSwap.State.In.LT(partialSwap.State.Deposit), Equals, true, Commentf("stream must still be mid-flight for this to be a partial rollback"))
+
+	poolBeforeRollback, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+
+	partialVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+
+	stagedItems, err := mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(stagedItems, HasLen, 0, Commentf("partial advanced-queue execution should not stage the secured outbound yet"))
+	pendingAction, err := buildPendingMempoolRollbackAction(ctx, mgr.Keeper(), partialVoter)
+	c.Assert(err, IsNil)
+	c.Assert(pendingAction, NotNil)
+	// Escrow denominates a secured target's output in its underlying asset, so
+	// for a same-underlying swap the recovered output IS the source asset. A
+	// reverse swap would be source-to-source and MsgSwap.ValidateBasic rejects
+	// it, which is why this class unwinds through direct pool accounting.
+	c.Check(pendingAction.Coin.Asset.Equals(common.BTCAsset), Equals, true,
+		Commentf("same-underlying secured output should be recovered as the source asset"))
+
+	// Roll back the partial mempool execution.
+	err = rollbackMempoolSwapAtomic(ctx, mgr.Keeper(), mgr, partialVoter)
+	c.Assert(err, IsNil, Commentf("same-asset rollback must not abort on a source-to-source swap"))
+
+	_, err = mgr.Keeper().GetAdvSwapQueueItem(ctx, inTxID, 0)
+	c.Assert(err, NotNil, Commentf("partial rollback should remove the pending advanced-queue swap"))
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true, Commentf("partial rollback should release mempool swap capacity"))
+	c.Check(mgr.SecuredAssetManager().BalanceOf(ctx, common.BTCAsset, owner).IsZero(), Equals, true, Commentf("partial rollback should not credit the secured balance"))
+	_, err = mgr.Keeper().GetSwapQueueItem(ctx, CreateMempoolRollbackTxID(inTxID, 0), 0)
+	c.Assert(err, NotNil, Commentf("same-asset rollback should not queue a reverse swap"))
+
+	// The round-trip invariant: the forward flow credited State.In into the
+	// pool and took State.Out back out to escrow, so returning the escrowed
+	// output and removing the phantom credit must land exactly on the starting
+	// balance. This is the check that catches an over- or under-refund.
+	sourcePoolAfter, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(sourcePoolAfter.BalanceAsset.Equal(sourcePool.BalanceAsset), Equals, true,
+		Commentf("same-asset rollback should restore the source pool asset balance to its pre-swap value: got %s want %s (before rollback %s, state_in %s, state_out %s)",
+			sourcePoolAfter.BalanceAsset, sourcePool.BalanceAsset, poolBeforeRollback.BalanceAsset, partialSwap.State.In, partialSwap.State.Out))
+	c.Check(sourcePoolAfter.BalanceAsset.Equal(common.SafeSub(poolBeforeRollback.BalanceAsset.Add(partialSwap.State.Out), partialSwap.State.In)), Equals, true,
+		Commentf("same-asset rollback should return the escrowed output and deduct only the credited State.In"))
+}
+
 // TestCompletedPartialMempoolRollbackUsesStagedRemainder verifies the
 // queue-removed partial-settlement case. The staged source refund represents
 // input that never entered the pool, so rollback must neither deduct nor

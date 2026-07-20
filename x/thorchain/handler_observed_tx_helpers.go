@@ -3323,6 +3323,44 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 			return fmt.Errorf("unsupported native mempool rollback target: %s", action.Coin.Asset)
 		}
 
+		// A secured target sharing its underlying asset with the source
+		// (BTC.BTC -> BTC-BTC) escrows its output in the source asset itself,
+		// so a reverse swap here would be source-to-source and rejected by
+		// MsgSwap.ValidateBasic, aborting the whole rollback.
+		//
+		// The forward flow still round-tripped the pool -- the speculative
+		// credit went in and the escrowed output came back out -- so unwind it
+		// directly: return the escrowed output and remove the phantom credit.
+		// That is exactly what the reverse-swap plus DONATE pair achieves for
+		// cross-asset rollbacks, minus the swap that cannot be expressed.
+		if action.Coin.Asset.Equals(sourceAsset) {
+			var pool Pool
+			pool, err = keeper.GetPool(ctx, sourceAsset.GetLayer1Asset())
+			if err != nil {
+				return fmt.Errorf("fail to get pool for same-asset rollback: %w", err)
+			}
+			pool.BalanceAsset = pool.BalanceAsset.Add(action.Coin.Amount)
+			eventAssetAmount := cosmos.ZeroUint()
+			if !assetRemovedFromPool {
+				pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, creditedSourceAmount)
+				assetRemovedFromPool = true
+				eventAssetAmount = creditedSourceAmount
+			}
+			if err = keeper.SetPool(ctx, pool); err != nil {
+				return fmt.Errorf("fail to set pool after same-asset rollback: %w", err)
+			}
+			aggregateDonatedAmount = aggregateDonatedAmount.Add(action.Coin.Amount)
+			ctx.Logger().Info("rolled back same-asset secured mempool swap",
+				"pool", sourceAsset.GetLayer1Asset(),
+				"asset_returned", action.Coin.Amount,
+				"asset_removed", eventAssetAmount)
+			emitPoolBalanceChangedEvent(ctx,
+				NewPoolMod(sourceAsset.GetLayer1Asset(), cosmos.ZeroUint(), false, eventAssetAmount, false),
+				"mempool swap rollback",
+				mgr)
+			continue
+		}
+
 		if rollbackSwapVault.IsEmpty() {
 			rollbackSwapVault, err = selectActiveVaultForSourceChain(ctx, keeper, sourceAsset.GetChain())
 			if err != nil {

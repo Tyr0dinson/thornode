@@ -3223,15 +3223,15 @@ func (s *HelperSuite) TestIsMempoolSwapEligible(c *C) {
 		Commentf("implicit streaming THOR targets should be mempool-eligible when the advanced queue will split them"),
 	)
 
-	// A secured target sharing the source underlying cannot be rolled back:
-	// the rollback reverse swap would be source-to-source. Explicit streaming
-	// otherwise short-circuits straight past the depth check, so this must be
-	// rejected on asset identity rather than on streaming behavior.
+	// Same-underlying secured targets (BTC.BTC -> BTC-BTC) are a supported
+	// mempool swap class, covered by suites/swaps/mempool-native-swaps.yaml.
+	// Their rollback is handled by same-asset accounting reversal rather than
+	// by excluding them from admission.
 	c.Check(
 		isMempoolSwapEligible(ctx, mgr, common.ETHAsset, common.ETHAsset.GetSecuredAsset(), cosmos.NewUint(common.One), MarketSwap, 1, 2),
 		Equals,
-		false,
-		Commentf("secured targets sharing the source underlying should never be mempool-eligible"),
+		true,
+		Commentf("same-underlying secured targets remain mempool-eligible"),
 	)
 	c.Check(
 		isMempoolSwapEligible(ctx, mgr, common.BTCAsset, common.ETHAsset.GetSecuredAsset(), cosmos.NewUint(common.One), MarketSwap, 1, 2),
