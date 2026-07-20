@@ -1762,6 +1762,153 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRefundOnlyStagedMempoolRollba
 	c.Check(voterAfter.HasReservedMempoolSwapTOR(), Equals, false)
 }
 
+// TestEmptyRollbackDeductsMidFlightCreditedSource covers the fund-loss gap where
+// a mid-flight streaming swap credited an executed slice into the pool (State.In)
+// but its output never reached a staged outbound (State.Out == 0). That leaves
+// actionsToRollback empty, so the rollback takes the early-return branch. The
+// speculatively credited State.In must still be removed, or the pool is left
+// overstated by State.In (SafeSub-masked). It must NOT deduct when no advanced
+// queue item exists (nothing executed => nothing credited), which the
+// refund-only test above locks in.
+func (s *HandlerObservedTxHelpersMempoolSuite) TestEmptyRollbackDeductsMidFlightCreditedSource(c *C) {
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
+	mgr.Keeper().SetMimir(ctx, constants.AdvSwapQueueRapidSwapMax.String(), 1)
+	mgr.Keeper().SetMimir(ctx, "DollarsPerRune", 5_00000000)
+
+	sourcePool := NewPool()
+	sourcePool.Asset = common.BTCAsset
+	sourcePool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	sourcePool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	sourcePool.LPUnits = sourcePool.BalanceRune
+	sourcePool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, sourcePool), IsNil)
+
+	targetPool := NewPool()
+	targetPool.Asset = common.ETHAsset
+	targetPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	targetPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	targetPool.LPUnits = targetPool.BalanceRune
+	targetPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, targetPool), IsNil)
+
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	activeVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain, common.THORChain}.Strings(), nil)
+	activeVault.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One))}
+	c.Assert(mgr.Keeper().SetVault(ctx, activeVault), IsNil)
+
+	toAddr, err := activeVault.PubKey.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+	destination := GetRandomTHORAddress()
+
+	inTxID := GetRandomTxHash()
+	inboundTx := common.NewTx(
+		inTxID,
+		GetRandomBTCAddress(),
+		toAddr,
+		common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))},
+		common.Gas{common.NewCoin(common.BTCAsset, cosmos.OneUint())},
+		fmt.Sprintf("SWAP:%s:%s:0/1/1", common.ETHAsset.GetSecuredAsset(), destination),
+	)
+	observedTx := NewObservedTx(inboundTx, 12, activeVault.PubKey, 15)
+	voter := NewObservedTxVoter(inTxID, ObservedTxs{observedTx})
+	voter.Tx = observedTx
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
+	c.Assert(handleObservedTxInQuorum(ctx, mgr, na.NodeAddress, NodeAccounts{na}, NewInternalHandler(mgr), observedTx, voter, []cosmos.AccAddress{na.NodeAddress}, true), IsNil)
+
+	// Force the "executed slice credited, output never staged" state: State.In > 0
+	// (source credited) but State.Out == 0 (no output => buildPendingMempoolRollbackAction
+	// returns nil => empty actionsToRollback branch).
+	queued, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, inTxID, 0)
+	c.Assert(err, IsNil)
+	c.Assert(queued.State, NotNil)
+	credited := cosmos.NewUint(40000000) // 0.4 of the 1 BTC deposit
+	queued.State.Deposit = queued.Tx.Coins[0].Amount
+	queued.State.In = credited
+	queued.State.Out = cosmos.ZeroUint()
+	queued.State.Count = 1
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, queued), IsNil)
+
+	// Reflect the speculative pool credit that execution of that slice would have made.
+	poolCredited, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	baseBalance := poolCredited.BalanceAsset
+	poolCredited.BalanceAsset = poolCredited.BalanceAsset.Add(credited)
+	c.Assert(mgr.Keeper().SetPool(ctx, poolCredited), IsNil)
+
+	staged, err := mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Assert(staged, HasLen, 0, Commentf("no output staged yet, so rollback must hit the empty branch"))
+
+	rbVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Assert(rollbackMempoolSwapCached(ctx, mgr.Keeper(), mgr, rbVoter), IsNil)
+
+	poolAfter, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(poolAfter.BalanceAsset.Equal(baseBalance), Equals, true,
+		Commentf("empty-branch rollback must remove the mid-flight credited State.In (%s): want %s got %s", credited, baseBalance, poolAfter.BalanceAsset))
+	c.Check(mgr.Keeper().HasAdvSwapQueueItem(ctx, inTxID, 0), Equals, false,
+		Commentf("empty-branch rollback must clear the pending advanced-queue item"))
+}
+
+// TestEmptyRollbackDeductsConsumedAfterQueueItemRemoved covers the residual of
+// the same class: a stream executed (crediting the consumed portion into the
+// pool) and then had its advanced-queue item removed by settlement after its
+// output failed to stage, leaving only an unconsumed source refund staged. The
+// queue item is gone, so the deduction must fall back to deposit minus the
+// staged refund (the consumed amount) rather than deduct nothing.
+func (s *HandlerObservedTxHelpersMempoolSuite) TestEmptyRollbackDeductsConsumedAfterQueueItemRemoved(c *C) {
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
+
+	deposit := cosmos.NewUint(100 * common.One)
+	refund := cosmos.NewUint(60 * common.One)   // unconsumed input staged back to the user
+	consumed := common.SafeSub(deposit, refund) // 40, credited into the pool by executed slices
+	baseBalance := cosmos.NewUint(1000 * common.One)
+
+	sourcePool := NewPool()
+	sourcePool.Asset = common.BTCAsset
+	sourcePool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	sourcePool.BalanceAsset = baseBalance.Add(consumed) // executed slices already credited `consumed`
+	sourcePool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, sourcePool), IsNil)
+
+	inTxID := GetRandomTxHash()
+	voter := NewObservedTxVoter(inTxID, ObservedTxs{})
+	voter.Tx = ObservedTx{Tx: common.Tx{
+		ID:          inTxID,
+		Chain:       common.BTCChain,
+		FromAddress: GetRandomBTCAddress(),
+		Coins:       common.Coins{common.NewCoin(common.BTCAsset, deposit)},
+	}}
+	voter.MempoolSwapTOR = cosmos.NewUint(5 * common.One)
+
+	sourceRefund := TxOutItem{
+		Chain:       common.BTCChain,
+		InHash:      inTxID,
+		ToAddress:   voter.Tx.Tx.FromAddress,
+		VaultPubKey: GetRandomPubKey(),
+		Coin:        common.NewCoin(common.BTCAsset, refund),
+		Memo:        NewRefundMemo(inTxID).String(),
+	}
+	voter.Actions = []TxOutItem{sourceRefund}
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, voter.MempoolSwapTOR)
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, sourceRefund, ctx.BlockHeight()+10), IsNil)
+	c.Assert(mgr.Keeper().HasAdvSwapQueueItem(ctx, inTxID, 0), Equals, false)
+
+	c.Assert(rollbackMempoolSwapCached(ctx, mgr.Keeper(), mgr, voter), IsNil)
+
+	poolAfter, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(poolAfter.BalanceAsset.Equal(baseBalance), Equals, true,
+		Commentf("empty-branch rollback must remove the consumed credit (%s) even when the queue item is already gone: want %s got %s", consumed, baseBalance, poolAfter.BalanceAsset))
+}
+
 // TestInactiveVaultSkipsMempoolSwapBeforeFinalization verifies that speculative
 // mempool processing never starts when the source vault is inactive.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestInactiveVaultSkipsMempoolSwapBeforeFinalization(c *C) {

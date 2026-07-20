@@ -3218,6 +3218,33 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 
 	if len(actionsToRollback) == 0 {
 		ctx.Logger().Debug("no staged outbounds to roll back", "hash", voter.TxID)
+		// A rollback with no actions to unwind can still have speculatively
+		// credited source into the pool, and must remove exactly what was
+		// credited:
+		//   - a mid-flight stream whose advanced-queue item is still present
+		//     credited State.In;
+		//   - a stream that executed and then had its queue item removed by
+		//     settlement (its output failed to stage, so only an unconsumed
+		//     source refund staged) credited deposit minus that staged refund;
+		//   - a swap that never executed credited nothing.
+		// mempoolRollbackCreditedSourceAmount returns the right amount for the
+		// first two: with a queue item it uses State.In, without one it uses
+		// SafeSub(deposit, stagedSourceRefund) (which is also zero for a full
+		// refund). The only case it over-reports is no queue item AND nothing
+		// staged — i.e. nothing executed, nothing credited — so gate the
+		// deduction on a queue item or a staged record existing. Must run before
+		// the queue item and staged records are cleared below.
+		if keeper.HasAdvSwapQueueItem(ctx, voter.TxID, 0) || len(stagedItems) > 0 {
+			creditedSourceAmount, cErr := mempoolRollbackCreditedSourceAmount(ctx, keeper, voter, voter.Tx.Tx.Coins[0].Amount, stagedSourceRefund)
+			if cErr != nil {
+				return cErr
+			}
+			if !creditedSourceAmount.IsZero() {
+				if err = deductMempoolRollbackSourceAsset(ctx, mgr, sourceAsset, creditedSourceAmount); err != nil {
+					return err
+				}
+			}
+		}
 		// Nothing to unwind does not mean nothing was staged: source refunds are
 		// filtered out of actionsToRollback, so a cancelled or fully-failed swap
 		// can land here with a refund-only staged list. Clearing the voter below
