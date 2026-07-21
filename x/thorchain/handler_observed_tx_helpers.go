@@ -549,11 +549,12 @@ func handleObservedTxInQuorum(
 	// forcing an immediate hard failure here; if retries also fail, LackSigning
 	// force-rolls back the swap after 3x the normal timeout to release TOR capacity.
 	if hasFinalised && voter.HasReservedMempoolSwapTOR() {
-		if len(voter.Actions) > 0 {
+		switch {
+		case len(voter.Actions) > 0:
 			if err = finalizeOutboundsAtomic(ctx, mgr, voter); err != nil {
 				ctx.Logger().Error("fail to finalize outbounds", "error", err, "hash", voter.TxID)
 			}
-		} else if !k.HasAdvSwapQueueItem(ctx, voter.TxID, 0) && !k.HasStagedOutbound(ctx, voter.TxID) {
+		case !k.HasAdvSwapQueueItem(ctx, voter.TxID, 0) && !k.HasStagedOutbound(ctx, voter.TxID):
 			// A finalized mempool swap with no Actions is normally still
 			// mid-settlement in the advanced queue. But if settlement already ran
 			// while the inbound was unfinalized, it removed the queue item (and,
@@ -570,7 +571,7 @@ func handleObservedTxInQuorum(
 			// releaseMempoolSwapCapacityAndClear persists the cleared voter.
 			releaseMempoolSwapCapacityAndClear(ctx, k, voter, "released mempool swap capacity for settled-but-orphaned finalized swap")
 			incrMempoolSwapCounter("completed_total", []metrics.Label{telemetry.NewLabel("path", "finalized_orphan_recovery")})
-		} else {
+		default:
 			ctx.Logger().Info("finalized mempool swap still pending advanced-queue settlement", "hash", voter.TxID)
 		}
 		return nil
