@@ -63,6 +63,10 @@ lint:
         - bifrost/pkg/chainclients/tron/api/core
         - bifrost/pkg/chainclients/utxo/zecutil
         - chain/evm/contracts/audits/**
+    - linters:
+        - markdownlint
+      paths:
+        - docs/architecture/adr-031-rujira-alignment.md
 actions:
   disabled:
     - trunk-announce
