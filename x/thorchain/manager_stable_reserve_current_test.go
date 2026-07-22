@@ -754,6 +754,38 @@ func (s *StableReserveMgrSuite) TestFreeStableSwapOraclePricingFillsBandEdges(c 
 	c.Check(mgr.SecuredAssetManager().BalanceOf(ctx, usdc, moduleAddr).Equal(cosmos.NewUint(100*common.One)), Equals, true)
 }
 
+func (s *StableReserveMgrSuite) TestFreeStableSwapOraclePricingNeverPaysOutMoreUnits(c *C) {
+	ctx, mgr, usdc, usdt := setupStableReserveSuite(c)
+	stableReserveMgr := mgr.StableReserveManager()
+	fundStableReserveSurplus(c, ctx, mgr, usdt, cosmos.NewUint(150*common.One))
+
+	mgr.Keeper().SetMimir(ctx, constants.StableReserveOraclePricing.String(), 1)
+	mgr.Keeper().SetMimir(ctx, "DollarsPerRune", int64(common.One))
+	setStableReservePoolPriceBps(c, ctx, mgr, usdc, 10_100) // source dearer
+	setStableReservePoolPriceBps(c, ctx, mgr, usdt, 9_900)  // target cheaper
+
+	tx := common.NewTx(
+		GetRandomTxHash(),
+		GetRandomETHAddress(),
+		GetRandomETHAddress(),
+		common.NewCoins(common.NewCoin(usdc, cosmos.NewUint(100*common.One))),
+		common.Gas{common.NewCoin(common.ETHAsset, cosmos.OneUint())},
+		"=:ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7",
+	)
+	msg := NewMsgSwap(tx, usdt, common.NoopAddress, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketSwap, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr())
+
+	filled, emit, err := stableReserveMgr.TrySwap(ctx, mgr, *msg)
+	c.Assert(err, IsNil)
+
+	c.Check(filled, Equals, true)
+	// Unclamped this is floor(100e8 * 1.01 / 0.99) = 10_202_020_202.
+	c.Check(emit.Equal(cosmos.NewUint(100*common.One)), Equals, true)
+
+	// units in == units out: the reserve's token count must not shrink
+	c.Check(mgr.SecuredAssetManager().BalanceOf(ctx, usdc, moduleAddr).Equal(cosmos.NewUint(100*common.One)), Equals, true)
+	c.Check(mgr.SecuredAssetManager().BalanceOf(ctx, usdt, moduleAddr).Equal(cosmos.NewUint(50*common.One)), Equals, true)
+}
+
 func (s *StableReserveMgrSuite) TestFreeStableSwapRefusesSameTickerPoolDepeg(c *C) {
 	ctx, mgr, ethUSDC, _ := setupStableReserveSuite(c)
 	stableReserveMgr := mgr.StableReserveManager()
