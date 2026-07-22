@@ -61,6 +61,99 @@ func (k *TestObservedTxInValidateKeeper) SetNodeAccount(_ cosmos.Context, na Nod
 
 var _ = Suite(&HandlerObservedTxInSuite{})
 
+// TestCommittedXMRErrataIsAppliedWhenInboundLaterReachesQuorum covers the
+// ordering where errata consensus arrives while the original inbound has only
+// partial observations. The later inbound quorum must become Reverted before
+// any normal inbound accounting can execute.
+func (s *HandlerObservedTxInSuite) TestCommittedXMRErrataIsAppliedWhenInboundLaterReachesQuorum(c *C) {
+	w := getHandlerTestWrapper(c, 20, true, false)
+	tx := NewObservedTx(GetRandomTx(), 10, GetRandomPubKey(), 10)
+	tx.Tx.Chain = common.XMRChain
+	tx.Tx.Coins = common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One)))
+
+	// Partial inbound state exists when the errata reaches consensus, so the
+	// errata handler cannot mark the selected transaction yet.
+	voter := NewObservedTxVoter(tx.Tx.ID, ObservedTxs{tx})
+	w.keeper.SetObservedTxInVoter(w.ctx, voter)
+	errataVoter := NewErrataTxVoter(tx.Tx.ID, common.XMRChain)
+	err := processErrataTxAttestation(
+		w.ctx,
+		w.mgr,
+		&errataVoter,
+		w.activeNodeAccount.NodeAddress,
+		NodeAccounts{w.activeNodeAccount},
+		&common.ErrataTx{Id: tx.Tx.ID, Chain: common.XMRChain},
+		true,
+	)
+	c.Assert(err, IsNil)
+	c.Check(errataVoter.BlockHeight, Equals, w.ctx.BlockHeight())
+	pending, err := w.keeper.GetObservedTxInVoter(w.ctx, tx.Tx.ID)
+	c.Assert(err, IsNil)
+	c.Check(pending.Tx.IsEmpty(), Equals, true)
+	c.Check(pending.Reverted, Equals, false)
+	w.keeper.SetErrataTxVoter(w.ctx, errataVoter)
+
+	// Model processTxInAttestation selecting and persisting the transaction at
+	// the later quorum before the shared quorum handler runs.
+	voter.Tx = tx
+	voter.Height = w.ctx.BlockHeight()
+	voter.FinalisedHeight = w.ctx.BlockHeight()
+	w.keeper.SetObservedTxInVoter(w.ctx, voter)
+
+	err = handleObservedTxInQuorum(
+		w.ctx,
+		w.mgr,
+		w.activeNodeAccount.NodeAddress,
+		NodeAccounts{w.activeNodeAccount},
+		nil,
+		tx,
+		voter,
+		nil,
+		true,
+	)
+	c.Assert(err, IsNil)
+
+	stored, err := w.keeper.GetObservedTxInVoter(w.ctx, tx.Tx.ID)
+	c.Assert(err, IsNil)
+	c.Check(stored.Reverted, Equals, true)
+	c.Check(stored.UpdatedVault, Equals, false)
+	c.Assert(stored.Actions, HasLen, 0)
+
+	// Late/final observations are idempotent once the monotonic state is set.
+	err = applyCommittedXMRErrataToInboundConsensus(w.ctx, w.keeper, &stored)
+	c.Assert(err, IsNil)
+	c.Check(stored.Reverted, Equals, true)
+}
+
+func (s *HandlerObservedTxInSuite) TestUncommittedOrForeignErrataDoesNotRevertXMRInbound(c *C) {
+	for _, tc := range []struct {
+		name   string
+		chain  common.Chain
+		height int64
+	}{
+		{name: "uncommitted", chain: common.XMRChain, height: 0},
+		{name: "different chain", chain: common.BTCChain, height: 19},
+	} {
+		c.Log(tc.name)
+		w := getHandlerTestWrapper(c, 20, true, false)
+		tx := NewObservedTx(GetRandomTx(), 10, GetRandomPubKey(), 10)
+		tx.Tx.Chain = common.XMRChain
+		tx.Tx.Coins = common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One)))
+		voter := NewObservedTxVoter(tx.Tx.ID, ObservedTxs{tx})
+		voter.Tx = tx
+		voter.Height = w.ctx.BlockHeight()
+		voter.FinalisedHeight = w.ctx.BlockHeight()
+		w.keeper.SetObservedTxInVoter(w.ctx, voter)
+		errataVoter := NewErrataTxVoter(tx.Tx.ID, tc.chain)
+		errataVoter.BlockHeight = tc.height
+		w.keeper.SetErrataTxVoter(w.ctx, errataVoter)
+
+		err := applyCommittedXMRErrataToInboundConsensus(w.ctx, w.keeper, &voter)
+		c.Assert(err, IsNil)
+		c.Check(voter.Reverted, Equals, false)
+	}
+}
+
 func (s *HandlerObservedTxInSuite) TestValidate(c *C) {
 	var err error
 	ctx, _ := setupKeeperForTest(c)
@@ -670,6 +763,10 @@ func (k *TestObservedTxInHandleKeeper) SetSwapQueueItem(_ cosmos.Context, msg Ms
 
 func (k *TestObservedTxInHandleKeeper) ListActiveValidators(_ cosmos.Context) (NodeAccounts, error) {
 	return k.nas, nil
+}
+
+func (k *TestObservedTxInHandleKeeper) GetErrataTxVoter(_ cosmos.Context, txID common.TxID, chain common.Chain) (ErrataTxVoter, error) {
+	return NewErrataTxVoter(txID, chain), nil
 }
 
 func (k *TestObservedTxInHandleKeeper) GetObservedTxInVoter(_ cosmos.Context, _ common.TxID) (ObservedTxVoter, error) {

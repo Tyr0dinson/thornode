@@ -191,13 +191,22 @@ func handleObservedTxInQuorum(
 	}
 
 	// all logic after this is upon consensus
+	k := mgr.Keeper()
+
+	// An XMR errata can reach consensus while the original inbound has only
+	// partial observations. In that ordering the errata voter is committed,
+	// but the empty inbound voter cannot yet be marked Reverted and later
+	// errata votes short-circuit on BlockHeight. Re-apply that monotonic outcome
+	// at the inbound's first quorum, before any vault, pool, memo, or swap side
+	// effect can run.
+	if err := applyCommittedXMRErrataToInboundConsensus(ctx, k, &voter); err != nil {
+		return err
+	}
 
 	if voter.Reverted {
 		ctx.Logger().Info("tx had been reverted", "Tx", tx.String())
 		return nil
 	}
-
-	k := mgr.Keeper()
 
 	vault, err := k.GetVault(ctx, tx.ObservedPubKey)
 	if err != nil {
@@ -428,6 +437,27 @@ func handleObservedTxInQuorum(
 
 	ctx.Logger().Info("tx in processed", "chain", tx.Tx.Chain, "id", tx.Tx.ID, "finalized", tx.IsFinal())
 
+	return nil
+}
+
+// applyCommittedXMRErrataToInboundConsensus closes the ordering gap between a
+// committed errata voter and the original XMR inbound reaching quorum. It must
+// not run the normal errata accounting reversal: at this point the inbound has
+// not executed any value-changing path, so marking it Reverted is sufficient
+// and avoids subtracting state which was never credited.
+func applyCommittedXMRErrataToInboundConsensus(ctx cosmos.Context, k keeper.Keeper, voter *ObservedTxVoter) error {
+	if voter == nil || voter.Reverted || voter.Tx.IsEmpty() || !voter.Tx.Tx.Chain.Equals(common.XMRChain) {
+		return nil
+	}
+	errataVoter, err := k.GetErrataTxVoter(ctx, voter.TxID, voter.Tx.Tx.Chain)
+	if err != nil {
+		return fmt.Errorf("fail to get errata voter for inbound %s: %w", voter.TxID, err)
+	}
+	if errataVoter.BlockHeight <= 0 {
+		return nil
+	}
+	voter.SetReverted()
+	k.SetObservedTxInVoter(ctx, *voter)
 	return nil
 }
 
