@@ -190,6 +190,7 @@ func validateErrataTombstone(tombstone errataTombstone) error {
 
 type errataTombstoneUpdate struct {
 	forceCommitted    bool
+	completeOutbox    bool
 	verifyAfterHeight int64
 	voterReverted     *bool
 	recordDelivery    bool
@@ -237,6 +238,9 @@ func (s *ObserverStorage) applyErrataBatch(
 	update errataTombstoneUpdate,
 	mutations []errataDeckMutation,
 ) error {
+	if update.completeOutbox && !update.forceCommitted {
+		return errors.New("observer errata outbox completion requires a committed event")
+	}
 	if update.verifyAfterHeight < 0 {
 		return errors.New("observer errata verification height is invalid")
 	}
@@ -261,9 +265,11 @@ func (s *ObserverStorage) applyErrataBatch(
 		if block.Height > 0 {
 			tombstone.OrphanHeights = []int64{block.Height}
 		}
+		hadLocalDelivery := false
 		if existing, err := s.getErrataTombstone(tx.Chain, tx.TxID.String()); err != nil {
 			return err
 		} else if existing != nil {
+			hadLocalDelivery = existing.OrphanHeight > 0 || len(existing.OrphanHeights) > 0
 			tombstone = *existing
 			if block.Height <= 0 || tombstone.blocksHeight(block.Height) {
 				// The scanner can crash after this batch is fsynced but before it
@@ -306,6 +312,44 @@ func (s *ObserverStorage) applyErrataBatch(
 			return fmt.Errorf("encode observer errata tombstone: %w", err)
 		}
 		batch.Put([]byte(key), encoded)
+
+		// A committed quorum event is useful for the local durable outbox only
+		// when it contains this node's attestation. The gossip layer enforces
+		// that ownership check before calling recordLocalErrataCommitted.
+		// Persist the tombstone and outbox completion in this same sync batch so
+		// a crash cannot leave an acknowledged local vote retrying indefinitely.
+		if update.completeOutbox && errataOutboxChain(tx.Chain) {
+			outboxKey := []byte(pendingErrataKey(tx))
+			record, found, getErr := s.getPersistedErrataLocked(tx)
+			if getErr != nil {
+				return getErr
+			}
+			// Scanner delivery writes its tombstone and outbox record in one
+			// batch. If delivery is already visible but its record is gone, this
+			// is a duplicate committed event after completion; do not resurrect
+			// a commit-only retry record. A commit before scanner handoff has no
+			// delivered height and still needs the placeholder.
+			if !found && !hadLocalDelivery {
+				record = persistedErrata{Tx: tx}
+				found = true
+			}
+			if found {
+				record.Tx = tx
+				record.Committed = true
+				if record.CommittedAtUnixNano == 0 {
+					record.CommittedAtUnixNano = time.Now().UnixNano()
+				}
+				if errataFinished(record) {
+					batch.Delete(outboxKey)
+				} else {
+					outboxData, encodeErr := json.Marshal(record)
+					if encodeErr != nil {
+						return fmt.Errorf("encode committed errata outbox: %w", encodeErr)
+					}
+					batch.Put(outboxKey, outboxData)
+				}
+			}
+		}
 
 		if update.recordDelivery && errataOutboxChain(tx.Chain) {
 			outboxKey := []byte(pendingErrataKey(tx))
@@ -533,6 +577,23 @@ func (s *ObserverStorage) recordErrataCommitted(errata common.ErrataTx, verifyAf
 	}, errataTombstoneUpdate{
 		forceCommitted:    true,
 		verifyAfterHeight: verifyAfterHeight,
+	}, nil)
+}
+
+// recordLocalErrataCommitted atomically records the committed tombstone and
+// completes this node's durable retry. Callers must first prove that the
+// committed quorum event includes this node's attestation.
+func (s *ObserverStorage) recordLocalErrataCommitted(errata common.ErrataTx) error {
+	if errata.Chain.IsEmpty() || errata.Id.IsEmpty() {
+		return errors.New("committed observer errata is invalid")
+	}
+	s.errataMu.Lock()
+	defer s.errataMu.Unlock()
+	return s.applyErrataBatch(types.ErrataBlock{
+		Txs: []types.ErrataTx{{Chain: errata.Chain, TxID: errata.Id}},
+	}, errataTombstoneUpdate{
+		forceCommitted: true,
+		completeOutbox: true,
 	}, nil)
 }
 

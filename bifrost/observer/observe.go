@@ -207,14 +207,6 @@ func NewObserver(pubkeyMgr *pubkeymanager.PubKeyManager,
 		// leave a durable deck/outbox entry pending indefinitely.
 		attestationGossip.SetObserverHandleObservedTxCommitted(observer)
 		attestationGossip.SetObserverHandleErrataTxCommitted(observer)
-		attestationGossip.SetErrataCommittedHandler(func(errata common.ErrataTx) {
-			if markErr := storage.MarkErrataCommitted(types.ErrataTx{Chain: errata.Chain, TxID: errata.Id}); markErr != nil {
-				observer.logger.Error().Err(markErr).
-					Str("chain", errata.Chain.String()).
-					Str("txid", errata.Id.String()).
-					Msg("failed to mark durable errata committed")
-			}
-		})
 	}
 	return observer, nil
 }
@@ -509,7 +501,7 @@ func (o *Observer) handleObservedTxCommitted(tx common.ObservedTx, allowFutureOb
 // legitimately commit before the original observation reaches consensus.
 func (o *Observer) handleErrataTxCommitted(errata common.ErrataTx) error {
 	o.lock.Lock()
-	err := o.storage.recordErrataCommitted(errata, 0)
+	err := o.storage.recordLocalErrataCommitted(errata)
 	o.lock.Unlock()
 	if err != nil {
 		o.logger.Error().Err(err).
