@@ -19,7 +19,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
-	"gitlab.com/thorchain/thornode/v3/bifrost/tss/keyverify" // TEMP: keyverify
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
@@ -92,12 +91,10 @@ type HealthServer struct {
 	tssServer         tss.Server
 	chains            map[common.Chain]chainclients.ChainClient
 	providerPayload   []byte
-	markerStore       *keyverify.MarkerStore // TEMP: keyverify
-	keyverifyDisabled bool                   // TEMP: keyverify
 }
 
 // NewHealthServer create a new instance of health server
-func NewHealthServer(addr string, tssServer tss.Server, chains map[common.Chain]chainclients.ChainClient, markerStore *keyverify.MarkerStore, keyverifyDisabled bool) *HealthServer {
+func NewHealthServer(addr string, tssServer tss.Server, chains map[common.Chain]chainclients.ChainClient) *HealthServer {
 	res := make(ProviderResponse)
 	for chain, client := range chains {
 		cfg := client.GetConfig()
@@ -118,8 +115,6 @@ func NewHealthServer(addr string, tssServer tss.Server, chains map[common.Chain]
 		tssServer:         tssServer,
 		chains:            chains,
 		providerPayload:   providerPayload,
-		markerStore:       markerStore,       // TEMP: keyverify
-		keyverifyDisabled: keyverifyDisabled, // TEMP: keyverify
 	}
 	s := &http.Server{
 		Addr:              addr,
@@ -139,7 +134,6 @@ func (s *HealthServer) newHandler() http.Handler {
 	router.Handle("/status/scanner", http.HandlerFunc(s.chainScanner)).Methods(http.MethodGet)
 	router.Handle("/status/provider", http.HandlerFunc(s.providerStatus)).Methods(http.MethodGet)
 	router.Handle("/status/signing", http.HandlerFunc(s.currentSigning)).Methods(http.MethodGet)
-	router.Handle("/status/keyverify", keyverify.Handler(s.markerStore, s.logger, s.keyverifyDisabled)).Methods(http.MethodGet) // TEMP: keyverify
 	router.Handle("/version", http.HandlerFunc(s.versionHandler)).Methods(http.MethodGet)
 	return router
 }
