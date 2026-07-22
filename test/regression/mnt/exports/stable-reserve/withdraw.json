@@ -120,6 +120,9 @@
         "tx_size_cost_per_byte": "10"
       }
     },
+    "authz": {
+      "authorization": []
+    },
     "bank": {
       "balances": [
         {
@@ -397,6 +400,7 @@
           ],
           "finalised_height": "4",
           "height": "4",
+          "mempool_swap_tor": "0",
           "out_txs": null,
           "outbound_height": "4",
           "tx": {
@@ -539,6 +543,7 @@
           "asset": "ETH.USDC-0X9999999999999999999999999999999999999999"
         }
       ],
+      "staged_outbounds": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
       "swapper_clout": [

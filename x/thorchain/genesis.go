@@ -993,7 +993,10 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 
 	// Export voters for staged outbound swaps that weren't already captured
 	// via the TxOut path. These voters carry MempoolSwapTOR which is needed
-	// to recompute usage accounting on import.
+	// to recompute usage accounting on import. Internally generated swaps
+	// (POL, savers, stable reserve) have no voter at all, and GetObservedTxInVoter
+	// returns a key-only record for those - skip them rather than export a
+	// phantom voter that import would then persist.
 	for _, list := range stagedOutbounds {
 		if list.InHash.IsEmpty() || voterSeen[list.InHash] {
 			continue
@@ -1001,6 +1004,9 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		txInVoter, voterErr := k.GetObservedTxInVoter(ctx, list.InHash)
 		if voterErr != nil {
 			ctx.Logger().Error("fail to get voter for staged outbound", "error", voterErr, "hash", list.InHash)
+			continue
+		}
+		if txInVoter.IsEmpty() {
 			continue
 		}
 		observedTxInVoters = append(observedTxInVoters, txInVoter)
@@ -1020,6 +1026,9 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 			ctx.Logger().Error("fail to get voter for advanced queue item", "error", voterErr, "hash", msg.Tx.ID)
 			continue
 		}
+		if txInVoter.IsEmpty() {
+			continue
+		}
 		observedTxInVoters = append(observedTxInVoters, txInVoter)
 		voterSeen[msg.Tx.ID] = true
 	}
@@ -1030,6 +1039,9 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		txInVoter, voterErr := k.GetObservedTxInVoter(ctx, msg.Tx.ID)
 		if voterErr != nil {
 			ctx.Logger().Error("fail to get voter for legacy queue item", "error", voterErr, "hash", msg.Tx.ID)
+			continue
+		}
+		if txInVoter.IsEmpty() {
 			continue
 		}
 		observedTxInVoters = append(observedTxInVoters, txInVoter)

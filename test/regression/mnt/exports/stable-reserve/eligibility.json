@@ -120,6 +120,9 @@
         "tx_size_cost_per_byte": "10"
       }
     },
+    "authz": {
+      "authorization": []
+    },
     "bank": {
       "balances": [
         {
@@ -351,6 +354,7 @@
           ],
           "finalised_height": "3",
           "height": "3",
+          "mempool_swap_tor": "0",
           "out_txs": null,
           "outbound_height": "3",
           "tx": {
@@ -441,6 +445,7 @@
           ],
           "finalised_height": "5",
           "height": "5",
+          "mempool_swap_tor": "0",
           "out_txs": null,
           "outbound_height": "5",
           "tx": {
@@ -574,7 +579,7 @@
       },
       "rune_providers": [],
       "secured_assets": [],
-      "sol_vault_nonces": [],
+      "staged_outbounds": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
       "swapper_clout": [],
