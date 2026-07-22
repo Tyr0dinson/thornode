@@ -573,7 +573,8 @@ func (s *HandlerSolvencyHelpersSuite) TestDeductVaultBlockPendingOutbound_NoMatc
 		},
 	}
 
-	result, _ := deductVaultBlockPendingOutbound(ctx, mgr, vault, block, make(map[string]cosmos.Uint))
+	signingPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	result, _ := deductVaultBlockPendingOutbound(ctx, mgr, vault, block, make(map[string]cosmos.Uint), signingPeriod)
 	// Balance should be unchanged since VaultPubKey doesn't match
 	ethCoin := result.Coins.GetCoin(common.ETHAsset)
 	c.Assert(ethCoin.Amount.Equal(cosmos.NewUint(1000*common.One)), Equals, true)
@@ -599,7 +600,8 @@ func (s *HandlerSolvencyHelpersSuite) TestDeductVaultBlockPendingOutbound_Alread
 		},
 	}
 
-	result, _ := deductVaultBlockPendingOutbound(ctx, mgr, vault, block, make(map[string]cosmos.Uint))
+	signingPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	result, _ := deductVaultBlockPendingOutbound(ctx, mgr, vault, block, make(map[string]cosmos.Uint), signingPeriod)
 	// Balance should be unchanged since tx already has OutHash
 	ethCoin := result.Coins.GetCoin(common.ETHAsset)
 	c.Assert(ethCoin.Amount.Equal(cosmos.NewUint(1000*common.One)), Equals, true)
@@ -627,7 +629,8 @@ func (s *HandlerSolvencyHelpersSuite) TestDeductVaultBlockPendingOutbound_WithGa
 		},
 	}
 
-	result, _ := deductVaultBlockPendingOutbound(ctx, mgr, vault, block, make(map[string]cosmos.Uint))
+	signingPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	result, _ := deductVaultBlockPendingOutbound(ctx, mgr, vault, block, make(map[string]cosmos.Uint), signingPeriod)
 	// Should deduct both the coin amount and gas
 	ethCoin := result.Coins.GetCoin(common.ETHAsset)
 	expected := cosmos.NewUint(899 * common.One) // 1000 - 100 - 1

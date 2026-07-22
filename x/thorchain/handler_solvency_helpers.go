@@ -372,13 +372,12 @@ func excludePendingOutboundFromVault(ctx cosmos.Context, mgr Manager, vault Vaul
 			ctx.Logger().Error("fail to get block tx out", "error", err)
 			return vault, pendingOutbounds, fmt.Errorf("fail to get block tx out, err: %w", err)
 		}
-		vault, pendingOutbounds = deductVaultBlockPendingOutbound(ctx, mgr, vault, blockOut, pendingOutbounds)
+		vault, pendingOutbounds = deductVaultBlockPendingOutbound(ctx, mgr, vault, blockOut, pendingOutbounds, signingPeriod)
 	}
 	return vault, pendingOutbounds, nil
 }
 
-func deductVaultBlockPendingOutbound(ctx cosmos.Context, mgr Manager, vault Vault, block *TxOut, pendingOutbounds map[string]cosmos.Uint) (Vault, map[string]cosmos.Uint) {
-	signingPeriod := mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
+func deductVaultBlockPendingOutbound(ctx cosmos.Context, mgr Manager, vault Vault, block *TxOut, pendingOutbounds map[string]cosmos.Uint, signingPeriod int64) (Vault, map[string]cosmos.Uint) {
 	for _, txOutItem := range block.TxArray {
 		if ctx.BlockHeight()-block.Height > txOutItem.SigningTransactionPeriod(signingPeriod) {
 			continue
