@@ -86,11 +86,11 @@ type VaultResponse struct {
 
 // HealthServer to provide something for health check and also p2pid
 type HealthServer struct {
-	logger            zerolog.Logger
-	s                 *http.Server
-	tssServer         tss.Server
-	chains            map[common.Chain]chainclients.ChainClient
-	providerPayload   []byte
+	logger          zerolog.Logger
+	s               *http.Server
+	tssServer       tss.Server
+	chains          map[common.Chain]chainclients.ChainClient
+	providerPayload []byte
 }
 
 // NewHealthServer create a new instance of health server
@@ -111,10 +111,10 @@ func NewHealthServer(addr string, tssServer tss.Server, chains map[common.Chain]
 	}
 
 	hs := &HealthServer{
-		logger:            log.With().Str("module", "http").Logger(),
-		tssServer:         tssServer,
-		chains:            chains,
-		providerPayload:   providerPayload,
+		logger:          log.With().Str("module", "http").Logger(),
+		tssServer:       tssServer,
+		chains:          chains,
+		providerPayload: providerPayload,
 	}
 	s := &http.Server{
 		Addr:              addr,
