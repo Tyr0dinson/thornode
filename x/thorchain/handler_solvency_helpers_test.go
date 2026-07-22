@@ -574,7 +574,7 @@ func (s *HandlerSolvencyHelpersSuite) TestDeductVaultBlockPendingOutbound_NoMatc
 	}
 
 	signingPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
-	result, _ := deductVaultBlockPendingOutbound(ctx, mgr, vault, block, make(map[string]cosmos.Uint), signingPeriod)
+	result, _ := deductVaultBlockPendingOutbound(ctx, mgr, vault, block, make(map[string]cosmos.Uint), common.ETHChain, signingPeriod)
 	// Balance should be unchanged since VaultPubKey doesn't match
 	ethCoin := result.Coins.GetCoin(common.ETHAsset)
 	c.Assert(ethCoin.Amount.Equal(cosmos.NewUint(1000*common.One)), Equals, true)
@@ -601,7 +601,7 @@ func (s *HandlerSolvencyHelpersSuite) TestDeductVaultBlockPendingOutbound_Alread
 	}
 
 	signingPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
-	result, _ := deductVaultBlockPendingOutbound(ctx, mgr, vault, block, make(map[string]cosmos.Uint), signingPeriod)
+	result, _ := deductVaultBlockPendingOutbound(ctx, mgr, vault, block, make(map[string]cosmos.Uint), common.ETHChain, signingPeriod)
 	// Balance should be unchanged since tx already has OutHash
 	ethCoin := result.Coins.GetCoin(common.ETHAsset)
 	c.Assert(ethCoin.Amount.Equal(cosmos.NewUint(1000*common.One)), Equals, true)
@@ -630,7 +630,7 @@ func (s *HandlerSolvencyHelpersSuite) TestDeductVaultBlockPendingOutbound_WithGa
 	}
 
 	signingPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
-	result, _ := deductVaultBlockPendingOutbound(ctx, mgr, vault, block, make(map[string]cosmos.Uint), signingPeriod)
+	result, _ := deductVaultBlockPendingOutbound(ctx, mgr, vault, block, make(map[string]cosmos.Uint), common.ETHChain, signingPeriod)
 	// Should deduct both the coin amount and gas
 	ethCoin := result.Coins.GetCoin(common.ETHAsset)
 	expected := cosmos.NewUint(899 * common.One) // 1000 - 100 - 1
@@ -652,7 +652,7 @@ func (s *HandlerSolvencyHelpersSuite) TestExcludePendingOutboundFromVault_Succes
 	}
 	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
 
-	adjusted, _, err := excludePendingOutboundFromVault(ctx, mgr, vault)
+	adjusted, _, err := excludePendingOutboundFromVault(ctx, mgr, vault, common.ETHChain)
 	c.Assert(err, IsNil)
 	ethCoin := adjusted.Coins.GetCoin(common.ETHAsset)
 	expected := cosmos.NewUint(950 * common.One) // 1000 - 50
@@ -661,6 +661,35 @@ func (s *HandlerSolvencyHelpersSuite) TestExcludePendingOutboundFromVault_Succes
 	// Original vault coins should not be mutated
 	originalETH := vault.Coins.GetCoin(common.ETHAsset)
 	c.Assert(originalETH.Amount.Equal(cosmos.NewUint(1000*common.One)), Equals, true)
+}
+
+func (s *HandlerSolvencyHelpersSuite) TestExcludePendingOutboundFromVaultScopesToReportedChain(c *C) {
+	ctx, mgr, _, vault := setupSolvencyHelpersTest(c)
+	vault.AddFunds(common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1000*common.One))))
+
+	prevHeight := ctx.BlockHeight() - 1
+	txOut := NewTxOut(prevHeight)
+	txOut.TxArray = []TxOutItem{
+		{
+			Chain:       common.BTCChain,
+			VaultPubKey: vault.PubKey,
+			Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(50*common.One)),
+		},
+		{
+			Chain:       common.ETHChain,
+			VaultPubKey: vault.PubKey,
+			Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(75*common.One)),
+		},
+	}
+	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+
+	adjusted, pending, err := excludePendingOutboundFromVault(ctx, mgr, vault, common.BTCChain)
+	c.Assert(err, IsNil)
+	c.Assert(adjusted.Coins.GetCoin(common.BTCAsset).Amount.Equal(cosmos.NewUint(950*common.One)), Equals, true)
+	c.Assert(adjusted.Coins.GetCoin(common.ETHAsset).Amount.Equal(cosmos.NewUint(1000*common.One)), Equals, true)
+	c.Assert(pending[common.BTCAsset.String()].Equal(cosmos.NewUint(50*common.One)), Equals, true)
+	_, hasETHPending := pending[common.ETHAsset.String()]
+	c.Assert(hasETHPending, Equals, false)
 }
 
 func (s *HandlerSolvencyHelpersSuite) TestExcludePendingOutboundFromVaultRetainsExtendedEVMClasses(c *C) {
@@ -693,7 +722,7 @@ func (s *HandlerSolvencyHelpersSuite) TestExcludePendingOutboundFromVaultRetains
 		TxOutItem{Chain: common.ETHChain, VaultPubKey: vault.PubKey, Coin: common.NewCoin(usdc, cosmos.NewUint(80*common.One))},
 	)
 
-	adjusted, pending, err := excludePendingOutboundFromVault(ctx, mgr, vault)
+	adjusted, pending, err := excludePendingOutboundFromVault(ctx, mgr, vault, common.ETHChain)
 	c.Assert(err, IsNil)
 	c.Assert(adjusted.Coins.GetCoin(common.ETHAsset).Amount.Equal(cosmos.NewUint(900*common.One)), Equals, true)
 	c.Assert(adjusted.Coins.GetCoin(usdc).Amount.Equal(cosmos.NewUint(850*common.One)), Equals, true)

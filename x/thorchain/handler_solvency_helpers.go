@@ -235,7 +235,7 @@ func isVaultInsolvent(ctx cosmos.Context, k keeper.Keeper, vault Vault) (bool, e
 // insolvent usually means vault has more coins than wallet
 // return true means the vault is insolvent , the network should halt , otherwise false
 func insolvencyCheck(ctx cosmos.Context, mgr Manager, vault Vault, coins common.Coins, chain common.Chain) bool {
-	adjustVault, pendingOutbounds, err := excludePendingOutboundFromVault(ctx, mgr, vault)
+	adjustVault, pendingOutbounds, err := excludePendingOutboundFromVault(ctx, mgr, vault, chain)
 	if err != nil {
 		ctx.Logger().Error("fail to exclude pending outbound from vault, assuming insolvent", "error", err)
 		return true
@@ -347,7 +347,7 @@ func pendingRagnarokOutboundsExplainGap(
 	return pendingAmount.GTE(shortage)
 }
 
-func excludePendingOutboundFromVault(ctx cosmos.Context, mgr Manager, vault Vault) (Vault, map[string]cosmos.Uint, error) {
+func excludePendingOutboundFromVault(ctx cosmos.Context, mgr Manager, vault Vault, chain common.Chain) (Vault, map[string]cosmos.Uint, error) {
 	// Deep copy vault coins to avoid mutating the caller's slice backing array.
 	// Element-by-element copy ensures the pass-by-value contract is honored,
 	// even if future code modifies Amount in-place rather than via SafeSub.
@@ -358,11 +358,12 @@ func excludePendingOutboundFromVault(ctx cosmos.Context, mgr Manager, vault Vaul
 	vault.Coins = coinsCopy
 	pendingOutbounds := make(map[string]cosmos.Uint)
 
-	// Scan the longest live signing period, then apply the exact per-item period
-	// in deductVaultBlockPendingOutbound. This keeps solvency accounting aligned
-	// with LackSigning without retaining ordinary outbounds for too long.
+	// Scan the longest live signing period for the reported chain, then apply the
+	// exact per-item period in deductVaultBlockPendingOutbound. This keeps
+	// solvency accounting aligned with LackSigning without retaining ordinary
+	// outbounds for too long.
 	signingPeriod := mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
-	startHeight := ctx.BlockHeight() - thortypes.MaxTxOutSigningTransactionPeriod(signingPeriod)
+	startHeight := ctx.BlockHeight() - thortypes.MaxTxOutSigningTransactionPeriodForChain(chain, signingPeriod)
 	if startHeight < 1 {
 		startHeight = 1
 	}
@@ -372,13 +373,16 @@ func excludePendingOutboundFromVault(ctx cosmos.Context, mgr Manager, vault Vaul
 			ctx.Logger().Error("fail to get block tx out", "error", err)
 			return vault, pendingOutbounds, fmt.Errorf("fail to get block tx out, err: %w", err)
 		}
-		vault, pendingOutbounds = deductVaultBlockPendingOutbound(ctx, mgr, vault, blockOut, pendingOutbounds, signingPeriod)
+		vault, pendingOutbounds = deductVaultBlockPendingOutbound(ctx, mgr, vault, blockOut, pendingOutbounds, chain, signingPeriod)
 	}
 	return vault, pendingOutbounds, nil
 }
 
-func deductVaultBlockPendingOutbound(ctx cosmos.Context, mgr Manager, vault Vault, block *TxOut, pendingOutbounds map[string]cosmos.Uint, signingPeriod int64) (Vault, map[string]cosmos.Uint) {
+func deductVaultBlockPendingOutbound(ctx cosmos.Context, mgr Manager, vault Vault, block *TxOut, pendingOutbounds map[string]cosmos.Uint, chain common.Chain, signingPeriod int64) (Vault, map[string]cosmos.Uint) {
 	for _, txOutItem := range block.TxArray {
+		if !txOutItem.Chain.Equals(chain) {
+			continue
+		}
 		if ctx.BlockHeight()-block.Height > txOutItem.SigningTransactionPeriod(signingPeriod) {
 			continue
 		}

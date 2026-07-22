@@ -228,7 +228,11 @@ func (k KVStore) GetPendingOutbounds(ctx cosmos.Context, asset common.Asset) []T
 	if standardStartHeight < 1 {
 		standardStartHeight = 1
 	}
-	startHeight := ctx.BlockHeight() - thortypes.MaxTxOutSigningTransactionPeriod(signingPeriod)
+	// Use the longest period the requested asset's underlying chain can contain.
+	// GetChain reports THOR for synth, trade, and secured assets, so use the L1
+	// chain to retain any EVM/XMR-backed liabilities conservatively.
+	scanPeriod := thortypes.MaxTxOutSigningTransactionPeriodForChain(asset.GetLayer1Asset().Chain, signingPeriod)
+	startHeight := ctx.BlockHeight() - scanPeriod
 	if startHeight < 1 {
 		startHeight = 1
 	}

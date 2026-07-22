@@ -195,4 +195,17 @@ func (TxOutTestSuite) TestSigningTransactionPeriodClasses(c *C) {
 		c.Assert(tc.item.SigningTransactionPeriod(signingPeriod), Equals, tc.expected, Commentf(tc.name))
 	}
 	c.Assert(MaxTxOutSigningTransactionPeriod(signingPeriod), Equals, signingPeriod*3)
+
+	chainTests := []struct {
+		name     string
+		chain    common.Chain
+		expected int64
+	}{
+		{name: "standard chain", chain: common.BTCChain, expected: signingPeriod},
+		{name: "XMR chain", chain: common.XMRChain, expected: signingPeriod * 3},
+		{name: "EVM chain", chain: common.ETHChain, expected: signingPeriod * 3},
+	}
+	for _, tc := range chainTests {
+		c.Assert(MaxTxOutSigningTransactionPeriodForChain(tc.chain, signingPeriod), Equals, tc.expected, Commentf(tc.name))
+	}
 }

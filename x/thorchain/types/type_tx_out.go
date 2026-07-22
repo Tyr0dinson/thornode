@@ -21,6 +21,16 @@ func MaxTxOutSigningTransactionPeriod(signingPeriod int64) int64 {
 	return signingPeriod * ExtendedOutboundSigningPeriodMultiplier
 }
 
+// MaxTxOutSigningTransactionPeriodForChain returns the longest live outbound
+// period a chain can contain. XMR outbounds and EVM token/aggregator outbounds
+// use the extended period; all other chains only need the standard window.
+func MaxTxOutSigningTransactionPeriodForChain(chain common.Chain, signingPeriod int64) int64 {
+	if chain.Equals(common.XMRChain) || chain.IsEVM() {
+		return MaxTxOutSigningTransactionPeriod(signingPeriod)
+	}
+	return signingPeriod
+}
+
 // SigningTransactionPeriod returns the same per-item lifetime used by
 // LackSigning. XMR and EVM token/aggregator outbounds need additional time for
 // their sign, broadcast, and observation paths; all balance reservation paths
