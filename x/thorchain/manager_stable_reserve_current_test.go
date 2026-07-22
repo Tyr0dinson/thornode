@@ -757,6 +757,7 @@ func (s *StableReserveMgrSuite) TestFreeStableSwapOraclePricingFillsBandEdges(c 
 func (s *StableReserveMgrSuite) TestFreeStableSwapOraclePricingNeverPaysOutMoreUnits(c *C) {
 	ctx, mgr, usdc, usdt := setupStableReserveSuite(c)
 	stableReserveMgr := mgr.StableReserveManager()
+	moduleAddr := mgr.Keeper().GetModuleAccAddress(StableReserveName)
 	fundStableReserveSurplus(c, ctx, mgr, usdt, cosmos.NewUint(150*common.One))
 
 	mgr.Keeper().SetMimir(ctx, constants.StableReserveOraclePricing.String(), 1)
