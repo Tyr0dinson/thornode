@@ -12,7 +12,6 @@ import (
 	"cosmossdk.io/log"
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/types/bech32"
 
 	cmttypes "github.com/cometbft/cometbft/types"
 	common "gitlab.com/thorchain/thornode/v3/common"
@@ -21,9 +20,6 @@ import (
 )
 
 const (
-	// This is a dummy address used for injected transactions.
-	// It is not used otherwise, as quorum msg attestations are verified within the handlers.
-	ebifrostSigner                     = "thor1zxhfu0qmmq6gmgq4sgz0xgq69h0nhqx5yrseu5"
 	cachedBlocks                       = 10
 	EventQuorumTxCommitted             = "quorum_tx_committed"
 	EventQuorumNetworkFeeCommitted     = "quorum_network_fee_committed"
@@ -42,7 +38,7 @@ var notifyEvents = []string{
 	EventQuorumPriceFeedBatchCommitted,
 }
 
-var _, ebifrostSignerAcc, _ = bech32.DecodeAndConvert(ebifrostSigner)
+var ebifrostSignerAcc = types.EnshrinedBifrostSigner()
 
 // EnshrinedBifrost is a thornode service that is used to communicate with bifrost
 // for the purpose of observing transactions and processing quorum attestations.

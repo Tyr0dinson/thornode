@@ -103,11 +103,11 @@ func (h ObservedTxQuorumHandler) handle(ctx cosmos.Context, msg types.MsgObserve
 	}
 
 	if inbound {
-		if err := handleObservedTxInQuorum(ctx, h.mgr, msg.Signer, activeNodeAccounts, handler, obsTx, voter, accAddrs, crossedQuorum); err != nil {
+		if err := handleObservedTxInQuorum(ctx, h.mgr, types.EnshrinedBifrostSigner(), activeNodeAccounts, handler, obsTx, voter, accAddrs, crossedQuorum); err != nil {
 			return nil, wrapError(ctx, err, "fail to handle observed tx in quorum")
 		}
 	} else {
-		if err := handleObservedTxOutQuorum(ctx, h.mgr, msg.Signer, activeNodeAccounts, handler, obsTx, voter, accAddrs, crossedQuorum); err != nil {
+		if err := handleObservedTxOutQuorum(ctx, h.mgr, types.EnshrinedBifrostSigner(), activeNodeAccounts, handler, obsTx, voter, accAddrs, crossedQuorum); err != nil {
 			return nil, wrapError(ctx, err, "fail to handle observed tx out quorum")
 		}
 	}

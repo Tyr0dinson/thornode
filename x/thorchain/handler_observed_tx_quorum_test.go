@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/cometbft/cometbft/crypto/secp256k1"
@@ -8,6 +9,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -60,6 +62,45 @@ func attestObservedTx(c *C, privKey secp256k1.PrivKey, obsTx common.ObservedTx, 
 	}
 }
 
+// finalizedInboundQuorumTx creates a finalized inbound with a valid 3-of-4
+// attestation quorum. Tests can then exercise the production handler path while
+// varying only the external memo and the unauthenticated envelope signer.
+func finalizedInboundQuorumTx(c *C, mgr *Mgrs, ctx cosmos.Context, memo string) *common.QuorumTx {
+	_, privKey1 := nodeWithPrivKey(c, mgr.Keeper(), ctx)
+	_, privKey2 := nodeWithPrivKey(c, mgr.Keeper(), ctx)
+	_, privKey3 := nodeWithPrivKey(c, mgr.Keeper(), ctx)
+	nodeWithPrivKey(c, mgr.Keeper(), ctx)
+
+	vaultPubKey := GetRandomPubKey()
+	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, vaultPubKey, common.Chains{common.ETHChain}.Strings(), nil)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+	vaultAddr, err := vaultPubKey.GetAddress(common.ETHChain)
+	c.Assert(err, IsNil)
+
+	obsTx := common.NewObservedTx(
+		common.Tx{
+			ID:          GetRandomTxHash(),
+			Chain:       common.ETHChain,
+			FromAddress: GetRandomETHAddress(),
+			ToAddress:   vaultAddr,
+			Coins:       common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One))),
+			Gas:         common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(10_000))},
+			Memo:        memo,
+		},
+		12, vaultPubKey, 12,
+	)
+
+	return &common.QuorumTx{
+		ObsTx:   obsTx,
+		Inbound: true,
+		Attestations: []*common.Attestation{
+			attestObservedTx(c, privKey1, obsTx, true),
+			attestObservedTx(c, privKey2, obsTx, true),
+			attestObservedTx(c, privKey3, obsTx, true),
+		},
+	}
+}
+
 // --- Run / validate tests ---
 
 func (s *HandlerObservedTxQuorumSuite) TestRunInvalidMessageType(c *C) {
@@ -88,9 +129,19 @@ func (s *HandlerObservedTxQuorumSuite) TestValidateNilQuoTx(c *C) {
 	handler := NewObservedTxQuorumHandler(mgr)
 
 	// Nil QuoTx should fail ValidateBasic
-	msg := types.NewMsgObservedTxQuorum(nil, GetRandomBech32Addr())
+	msg := types.NewMsgObservedTxQuorum(nil, types.EnshrinedBifrostSigner())
 	err := handler.validate(ctx, *msg)
 	c.Assert(err, NotNil)
+}
+
+func (s *HandlerObservedTxQuorumSuite) TestValidateRejectsForgedEnvelopeSigner(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	handler := NewObservedTxQuorumHandler(mgr)
+
+	msg := types.NewMsgObservedTxQuorum(&common.QuorumTx{}, GetRandomBech32Addr())
+	err := handler.validate(ctx, *msg)
+	c.Assert(err, NotNil)
+	c.Assert(strings.Contains(err.Error(), "invalid enshrined Bifrost signer"), Equals, true)
 }
 
 // --- handle tests ---
@@ -612,7 +663,7 @@ func (s *HandlerObservedTxQuorumSuite) TestRunFullInboundFlow(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
 	// Create 4 node accounts with known private keys
-	na1, privKey1 := nodeWithPrivKey(c, mgr.Keeper(), ctx)
+	_, privKey1 := nodeWithPrivKey(c, mgr.Keeper(), ctx)
 	_, privKey2 := nodeWithPrivKey(c, mgr.Keeper(), ctx)
 	_, privKey3 := nodeWithPrivKey(c, mgr.Keeper(), ctx)
 	nodeWithPrivKey(c, mgr.Keeper(), ctx)
@@ -649,7 +700,7 @@ func (s *HandlerObservedTxQuorumSuite) TestRunFullInboundFlow(c *C) {
 		Attestations: []*common.Attestation{att1, att2, att3},
 	}
 
-	msg := types.NewMsgObservedTxQuorum(quoTx, na1.NodeAddress)
+	msg := types.NewMsgObservedTxQuorum(quoTx, types.EnshrinedBifrostSigner())
 
 	handler := NewObservedTxQuorumHandler(mgr)
 	result, err := handler.Run(ctx, msg)
@@ -660,7 +711,7 @@ func (s *HandlerObservedTxQuorumSuite) TestRunFullInboundFlow(c *C) {
 func (s *HandlerObservedTxQuorumSuite) TestRunFullOutboundFlow(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
-	na1, privKey1 := nodeWithPrivKey(c, mgr.Keeper(), ctx)
+	_, privKey1 := nodeWithPrivKey(c, mgr.Keeper(), ctx)
 	_, privKey2 := nodeWithPrivKey(c, mgr.Keeper(), ctx)
 	_, privKey3 := nodeWithPrivKey(c, mgr.Keeper(), ctx)
 	nodeWithPrivKey(c, mgr.Keeper(), ctx)
@@ -697,12 +748,63 @@ func (s *HandlerObservedTxQuorumSuite) TestRunFullOutboundFlow(c *C) {
 		Attestations: []*common.Attestation{att1, att2, att3},
 	}
 
-	msg := types.NewMsgObservedTxQuorum(quoTx, na1.NodeAddress)
+	msg := types.NewMsgObservedTxQuorum(quoTx, types.EnshrinedBifrostSigner())
 
 	handler := NewObservedTxQuorumHandler(mgr)
 	result, err := handler.Run(ctx, msg)
 	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
+}
+
+// TestHandleDoesNotDebitForgedEnvelopeSigner bypasses Run/ValidateBasic to
+// prove the handler itself never treats the quorum envelope as account
+// authority. Before the fix, the external reference memo charged this account.
+func (s *HandlerObservedTxQuorumSuite) TestHandleDoesNotDebitForgedEnvelopeSigner(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+
+	k.SetMimir(ctx, constants.MemolessTxnTTL.String(), 100)
+	k.SetMimir(ctx, constants.MemolessTxnRefCount.String(), 99_999)
+	cost := int64(10 * common.One)
+	k.SetMimir(ctx, constants.MemolessTxnCost.String(), cost)
+
+	victim := GetRandomBech32Addr()
+	FundAccount(c, ctx, k, victim, uint64(cost))
+	before := k.GetBalance(ctx, victim).AmountOf(common.RuneNative.Native())
+
+	memo := fmt.Sprintf("reference:ETH:=:THOR.RUNE:%s", GetRandomTHORAddress())
+	msg := types.NewMsgObservedTxQuorum(finalizedInboundQuorumTx(c, mgr, ctx, memo), victim)
+	_, _ = NewObservedTxQuorumHandler(mgr).handle(ctx, *msg)
+
+	voter, err := k.GetObservedTxInVoter(ctx, msg.QuoTx.ObsTx.Tx.ID)
+	c.Assert(err, IsNil)
+	c.Assert(voter.UpdatedVault, Equals, true)
+	c.Assert(k.GetLastReferenceNumber(ctx, common.ETHAsset), Equals, "")
+	after := k.GetBalance(ctx, victim).AmountOf(common.RuneNative.Native())
+	c.Assert(after.Equal(before), Equals, true)
+}
+
+// TestHandleDoesNotAuthorizeMaintWithForgedEnvelopeSigner exercises the same
+// direct-handler bypass for a native node-operator action.
+func (s *HandlerObservedTxQuorumSuite) TestHandleDoesNotAuthorizeMaintWithForgedEnvelopeSigner(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	victim := GetRandomBech32Addr()
+	target := GetRandomValidatorNode(NodeStandby)
+	target.BondAddress = common.Address(victim.String())
+	target.Maintenance = false
+	c.Assert(k.SetNodeAccount(ctx, target), IsNil)
+
+	memo := fmt.Sprintf("maint:%s", target.NodeAddress)
+	msg := types.NewMsgObservedTxQuorum(finalizedInboundQuorumTx(c, mgr, ctx, memo), victim)
+	_, _ = NewObservedTxQuorumHandler(mgr).handle(ctx, *msg)
+
+	voter, err := k.GetObservedTxInVoter(ctx, msg.QuoTx.ObsTx.Tx.ID)
+	c.Assert(err, IsNil)
+	c.Assert(voter.UpdatedVault, Equals, true)
+	updated, err := k.GetNodeAccount(ctx, target.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(updated.Maintenance, Equals, false)
 }
 
 // TestObservedTxQuorumKeeper is a keeper wrapper that can simulate failures.

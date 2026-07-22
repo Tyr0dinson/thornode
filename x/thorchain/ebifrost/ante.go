@@ -42,10 +42,13 @@ func (itd InjectedTxDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate b
 
 	// make sure entire tx is only allowed msgs
 	for _, m := range msgs {
-		switch m.(type) {
-		case *types.MsgObservedTxQuorum, *types.MsgNetworkFeeQuorum, *types.MsgSolvencyQuorum, *types.MsgErrataTxQuorum, *types.MsgPriceFeedQuorumBatch:
+		switch msg := m.(type) {
+		case *types.MsgObservedTxQuorum:
+			if !types.IsEnshrinedBifrostSigner(msg.Signer) {
+				return ctx, cosmos.ErrUnauthorized("invalid enshrined Bifrost signer")
+			}
+		case *types.MsgNetworkFeeQuorum, *types.MsgSolvencyQuorum, *types.MsgErrataTxQuorum, *types.MsgPriceFeedQuorumBatch:
 			// allowed
-
 		default:
 			return ctx, cosmos.ErrUnauthorized(fmt.Sprintf("invalid inject tx message type: %T", m))
 		}

@@ -1092,6 +1092,25 @@ func TestAnteHandleInjectTxDeliverTxAllowedMsg(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestAnteHandleInjectObservedTxRequiresEnshrinedSigner(t *testing.T) {
+	registry := codectypes.NewInterfaceRegistry()
+	types.RegisterInterfaces(registry)
+	cdc := codec.NewProtoCodec(registry)
+	decorator := NewInjectedTxDecorator()
+	next := func(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context, error) {
+		t.Fatal("next should not be called for inject tx")
+		return ctx, nil
+	}
+
+	canonical := &types.MsgObservedTxQuorum{Signer: types.EnshrinedBifrostSigner()}
+	_, err := decorator.AnteHandle(sdk.Context{}, NewInjectTx(cdc, []sdk.Msg{canonical}), false, next)
+	require.NoError(t, err)
+
+	forged := &types.MsgObservedTxQuorum{Signer: types.GetRandomBech32Addr()}
+	_, err = decorator.AnteHandle(sdk.Context{}, NewInjectTx(cdc, []sdk.Msg{forged}), false, next)
+	require.ErrorContains(t, err, "invalid enshrined Bifrost signer")
+}
+
 func TestAnteHandleInjectTxMultipleMsgs(t *testing.T) {
 	registry := codectypes.NewInterfaceRegistry()
 	types.RegisterInterfaces(registry)

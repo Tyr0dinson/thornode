@@ -33,6 +33,9 @@ func (m *MsgObservedTxQuorum) ValidateBasic() error {
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
+	if !IsEnshrinedBifrostSigner(m.Signer) {
+		return cosmos.ErrUnauthorized("invalid enshrined Bifrost signer")
+	}
 	if m.QuoTx == nil {
 		return cosmos.ErrUnknownRequest("QuoTx cannot be nil")
 	}
