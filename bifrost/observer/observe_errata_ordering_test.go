@@ -208,9 +208,10 @@ func TestPendingErrataRejectsOnlyOrphanHeight(t *testing.T) {
 
 func TestPendingErrataRetriesAcrossObserverRestartUntilCommittedEvent(t *testing.T) {
 	observer, storage := newErrataOrderingObserver(t)
+	errata := common.ErrataTx{Chain: common.XMRChain, Id: common.TxID("pending-restart")}
 	require.NoError(t, observer.filterErrataTx(types.ErrataBlock{
 		Height: 77,
-		Txs:    []types.ErrataTx{{Chain: common.BTCChain, TxID: common.TxID("pending-restart")}},
+		Txs:    []types.ErrataTx{{Chain: errata.Chain, TxID: errata.Id}},
 	}))
 
 	// A new Observer object over the same durable storage models process
@@ -231,27 +232,65 @@ func TestPendingErrataRetriesAcrossObserverRestartUntilCommittedEvent(t *testing
 		}
 		return nil
 	}
-	restarted.retryPendingErrata(context.Background())
+	firstAttempt := time.Now()
+	restarted.retryPendingErrataAt(context.Background(), firstAttempt)
 	pending, err := storage.getPendingErrata()
 	require.NoError(t, err)
 	require.Len(t, pending, 1)
-	restarted.retryPendingErrata(context.Background())
+	restarted.retryPendingErrataAt(context.Background(), firstAttempt.Add(errataAttestationRetryDelay(1)))
 	pending, err = storage.getPendingErrata()
 	require.NoError(t, err)
 	require.Len(t, pending, 1, "local enqueue must not clear the durable outbox")
 	require.Equal(t, 2, attempts)
+	record, found, err := storage.GetPendingErrataTx(types.ErrataTx{Chain: errata.Chain, TxID: errata.Id})
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, uint32(2), record.AttestationAttempts)
 
 	// Only the committed-quorum event is a strong enough terminal receipt.
-	require.NoError(t, restarted.handleErrataTxCommitted(common.ErrataTx{
-		Chain: common.BTCChain,
-		Id:    common.TxID("pending-restart"),
-	}))
+	require.NoError(t, restarted.handleErrataTxCommitted(errata))
 	pending, err = storage.getPendingErrata()
 	require.NoError(t, err)
 	require.Empty(t, pending)
-	tombstone, err := storage.getErrataTombstone(common.BTCChain, "pending-restart")
+	tombstone, err := storage.getErrataTombstone(errata.Chain, errata.Id.String())
 	require.NoError(t, err)
 	require.True(t, tombstone.Committed)
+}
+
+func TestCallbackErrataUsesDurableRetryBackoffAndExhaustion(t *testing.T) {
+	observer, storage := newErrataOrderingObserver(t)
+	errata := types.ErrataTx{Chain: common.XMRChain, TxID: common.TxID("callback-retry-ledger")}
+	require.NoError(t, observer.filterErrataTx(types.ErrataBlock{
+		Height: 79,
+		Txs:    []types.ErrataTx{errata},
+	}))
+
+	record, found, err := storage.GetPendingErrataTx(errata)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.True(t, record.DeliverySeen)
+	require.True(t, record.CleanupComplete)
+
+	attempts := 0
+	observer.errataAttestFn = func(context.Context, common.ErrataTx) error {
+		attempts++
+		return nil
+	}
+	firstAttempt := time.Now()
+	observer.retryPendingErrataAt(context.Background(), firstAttempt)
+	observer.retryPendingErrataAt(context.Background(), firstAttempt.Add(errataAttestationRetryDelay(1)-time.Nanosecond))
+	require.Equal(t, 1, attempts, "durable backoff must suppress an early callback retry")
+
+	observer.retryPendingErrataAt(context.Background(), firstAttempt.Add(errataAttestationRetryHorizon))
+	require.Equal(t, 1, attempts, "the 24-hour horizon must quarantine instead of gossiping forever")
+	record, found, err = storage.GetPendingErrataTx(errata)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.True(t, record.AttestationRetryExhausted)
+	require.Equal(t, uint32(1), record.AttestationAttempts)
+	pending, err := storage.GetPendingErrata()
+	require.NoError(t, err)
+	require.Empty(t, pending)
 }
 
 func TestCrashAfterLocalErrataEnqueueReplaysOutboxAfterRestart(t *testing.T) {
@@ -267,7 +306,8 @@ func TestCrashAfterLocalErrataEnqueueReplaysOutboxAfterRestart(t *testing.T) {
 		firstEnqueues++
 		return nil // accepted only by the volatile in-memory batcher
 	}
-	observer.retryPendingErrata(context.Background())
+	firstAttempt := time.Now()
+	observer.retryPendingErrataAt(context.Background(), firstAttempt)
 	require.Equal(t, 1, firstEnqueues)
 	pending, err := storage.getPendingErrata()
 	require.NoError(t, err)
@@ -288,7 +328,7 @@ func TestCrashAfterLocalErrataEnqueueReplaysOutboxAfterRestart(t *testing.T) {
 		restartEnqueues++
 		return nil
 	}
-	restarted.retryPendingErrata(context.Background())
+	restarted.retryPendingErrataAt(context.Background(), firstAttempt.Add(errataAttestationRetryDelay(1)))
 	require.Equal(t, 1, restartEnqueues)
 	pending, err = storage.getPendingErrata()
 	require.NoError(t, err)
@@ -323,6 +363,9 @@ func TestDuplicateErrataHandoffPreservesCommittedGeneration(t *testing.T) {
 	pending, err := storage.getPendingErrata()
 	require.NoError(t, err)
 	require.Empty(t, pending)
+	_, found, err := storage.GetPendingErrataTx(types.ErrataTx{Chain: errata.Chain, TxID: errata.Id})
+	require.NoError(t, err)
+	require.False(t, found, "a duplicate callback must not reopen an already committed outbox entry")
 }
 
 func TestQuorumErrataCommittedEventClearsOutboxWithoutVolatileState(t *testing.T) {
@@ -731,6 +774,7 @@ func TestUnresolvedCommittedErrataDefersOnlyXMRChainStart(t *testing.T) {
 		common.XMRChain: xmrChain,
 		common.BTCChain: btcChain,
 	}
+	observer.stopChan = make(chan struct{})
 
 	unresolved, err := observer.reconcileCommittedXMRErrata()
 	require.NoError(t, err)
@@ -738,6 +782,14 @@ func TestUnresolvedCommittedErrataDefersOnlyXMRChainStart(t *testing.T) {
 	observer.startConfiguredChainClients(true)
 	require.Equal(t, 1, btcChain.starts, "unrelated chain clients must remain operational")
 	require.Zero(t, xmrChain.starts, "XMR must not scan or rebroadcast before the outcome is classified")
+	started := observer.startedChainClientSnapshot()
+	require.Len(t, started, 1)
+	require.Same(t, btcChain, started[0])
+	for _, chain := range started {
+		require.NoError(t, chain.RollbackBlockScanner())
+	}
+	require.Equal(t, 1, btcChain.rollbacks)
+	require.Zero(t, xmrChain.rollbacks, "a deferred scanner has no rollback receiver")
 	tombstone, getErr := storage.getErrataTombstone(errata.Chain, errata.Id.String())
 	require.NoError(t, getErr)
 	require.Equal(t, int64(901), tombstone.VerifyAfterHeight)
@@ -748,6 +800,43 @@ func TestUnresolvedCommittedErrataDefersOnlyXMRChainStart(t *testing.T) {
 	}
 	observer.startDeferredXMRChain(context.Background())
 	require.Equal(t, 1, xmrChain.starts)
+	observer.stopStartedChainClients()
+	require.Equal(t, 1, btcChain.stops)
+	require.Equal(t, 1, xmrChain.stops)
+}
+
+func TestDeferredXMRChainCannotStartAfterObserverStop(t *testing.T) {
+	observer, storage := newErrataOrderingObserver(t)
+	errata := common.ErrataTx{
+		Chain: common.XMRChain,
+		Id:    common.TxID("abababababababababababababababababababababababababababababababab"),
+	}
+	require.NoError(t, storage.applyCommittedErrata(errata, nil))
+	bridge, bridgeOK := observer.thorchainBridge.(*MockThorchainBridge)
+	require.True(t, bridgeOK)
+	bridge.getBlockHeightFreshFunc = func() (int64, error) { return 900, nil }
+	bridge.getObservedTxVoterFreshFunc = func(string) (*stypes.QueryObservedTxVoter, bool, error) {
+		return &stypes.QueryObservedTxVoter{TxID: errata.Id, Reverted: false}, true, nil
+	}
+	xmrChain := &errataStartOrderChain{}
+	btcChain := &errataStartOrderChain{}
+	observer.chains = map[common.Chain]chainclients.ChainClient{
+		common.XMRChain: xmrChain,
+		common.BTCChain: btcChain,
+	}
+	observer.stopChan = make(chan struct{})
+	observer.startConfiguredChainClients(true)
+	require.Equal(t, 1, btcChain.starts)
+
+	observer.stopStartedChainClients()
+	require.Equal(t, 1, btcChain.stops)
+	require.Zero(t, xmrChain.stops)
+
+	bridge.getObservedTxVoterFreshFunc = func(string) (*stypes.QueryObservedTxVoter, bool, error) {
+		return &stypes.QueryObservedTxVoter{TxID: errata.Id, Reverted: true}, true, nil
+	}
+	observer.startDeferredXMRChain(context.Background())
+	require.Zero(t, xmrChain.starts, "shutdown must win over late errata reconciliation")
 }
 
 func TestErrataTombstoneRetainsEveryOrphanHeight(t *testing.T) {
@@ -780,7 +869,9 @@ func TestErrataTombstoneRetainsEveryOrphanHeight(t *testing.T) {
 
 type errataStartOrderChain struct {
 	mockChainClient
-	starts int
+	starts    int
+	stops     int
+	rollbacks int
 }
 
 func (c *errataStartOrderChain) Start(
@@ -790,6 +881,15 @@ func (c *errataStartOrderChain) Start(
 	chan common.NetworkFee,
 ) {
 	c.starts++
+}
+
+func (c *errataStartOrderChain) Stop() {
+	c.stops++
+}
+
+func (c *errataStartOrderChain) RollbackBlockScanner() error {
+	c.rollbacks++
+	return nil
 }
 
 func TestObserverStartupReplaysOnlyExplicitlyRevertedXMRBeforeChainStart(t *testing.T) {
@@ -878,7 +978,8 @@ func TestPendingErrataResubmitsAfterThrottleUntilCommittedEvent(t *testing.T) {
 	// The durable outbox contributes this node's vote; one peer vote completes
 	// this implementation's two-of-three supermajority and produces the first
 	// successful gRPC send.
-	observer.retryPendingErrata(context.Background())
+	firstAttempt := time.Now()
+	observer.retryPendingErrataAt(context.Background(), firstAttempt)
 	ag.handleErrataAttestation(context.Background(), common.AttestErrataTx{
 		ErrataTx: &errata,
 		Attestation: &common.Attestation{
@@ -889,7 +990,7 @@ func TestPendingErrataResubmitsAfterThrottleUntilCommittedEvent(t *testing.T) {
 	require.Equal(t, 1, submissions)
 
 	// A tick before the throttle expires remains deduped end to end.
-	observer.retryPendingErrata(context.Background())
+	observer.retryPendingErrataAt(context.Background(), firstAttempt)
 	require.Equal(t, 1, submissions)
 
 	// No committed event arrived. Once the existing throttle expires, the
@@ -901,7 +1002,8 @@ func TestPendingErrataResubmitsAfterThrottleUntilCommittedEvent(t *testing.T) {
 	ag.mu.Unlock()
 	state.lastAttestationsSent = time.Now().Add(-ag.config.MinTimeBetweenAttestations - time.Second)
 	state.mu.Unlock()
-	observer.retryPendingErrata(context.Background())
+	secondAttempt := firstAttempt.Add(errataAttestationRetryDelay(1))
+	observer.retryPendingErrataAt(context.Background(), secondAttempt)
 	require.Equal(t, 2, submissions)
 
 	state.mu.Lock()
@@ -934,7 +1036,8 @@ func TestPendingErrataResubmitsAfterThrottleUntilCommittedEvent(t *testing.T) {
 	}
 	state.lastAttestationsSent = time.Now().Add(-ag.config.MinTimeBetweenAttestations - time.Second)
 	state.mu.Unlock()
-	observer.retryPendingErrata(context.Background())
+	thirdAttempt := secondAttempt.Add(errataAttestationRetryDelay(2))
+	observer.retryPendingErrataAt(context.Background(), thirdAttempt)
 	require.Equal(t, 3, submissions)
 
 	// The replayed committed event can now fsync the barrier and only then mark
@@ -954,7 +1057,7 @@ func TestPendingErrataResubmitsAfterThrottleUntilCommittedEvent(t *testing.T) {
 	state.mu.Lock()
 	state.lastAttestationsSent = time.Now().Add(-ag.config.MinTimeBetweenAttestations - time.Second)
 	state.mu.Unlock()
-	observer.retryPendingErrata(context.Background())
+	observer.retryPendingErrataAt(context.Background(), thirdAttempt.Add(errataAttestationRetryDelay(3)))
 	require.Equal(t, 3, submissions)
 }
 

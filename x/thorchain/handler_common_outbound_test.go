@@ -356,6 +356,10 @@ func (s *HandlerCommonOutboundSuite) TestEVMOutboundGasShouldSlash(c *check.C) {
 	tokenOutbound := gasOutbound
 	tokenOutbound.Coin = common.NewCoin(tokenAsset, cosmos.NewUint(1))
 	c.Assert(evmOutboundGasShouldSlash(tokenOutbound, cosmos.NewUint(constants.MaxPOLGas), cosmos.NewUint(constants.MaxPOLGas)), check.Equals, false)
+	// Bifrost permits equality with the multiplied scheduled allowance. The
+	// observer must not slash the same exact-cap transaction.
+	tokenBoundaryCap := cosmos.NewUint(54_000_000)
+	c.Assert(evmOutboundGasShouldSlash(tokenOutbound, tokenBoundaryCap, tokenBoundaryCap), check.Equals, false)
 	c.Assert(evmOutboundGasShouldSlash(tokenOutbound, cosmos.NewUint(54_000_000), cosmos.NewUint(constants.MaxPOLGas)), check.Equals, false)
 	c.Assert(evmOutboundGasShouldSlash(tokenOutbound, cosmos.NewUint(54_000_001), cosmos.NewUint(constants.MaxPOLGas)), check.Equals, true)
 
@@ -370,6 +374,8 @@ func (s *HandlerCommonOutboundSuite) TestEVMOutboundGasShouldSlash(c *check.C) {
 
 	aggregatorOutbound := tokenOutbound
 	aggregatorOutbound.Aggregator = "aggregator"
+	aggregatorBoundaryCap := cosmos.NewUint(180_000_000)
+	c.Assert(evmOutboundGasShouldSlash(aggregatorOutbound, aggregatorBoundaryCap, aggregatorBoundaryCap), check.Equals, false)
 	c.Assert(evmOutboundGasShouldSlash(aggregatorOutbound, cosmos.NewUint(180_000_000), cosmos.NewUint(constants.MaxPOLGas)), check.Equals, false)
 	c.Assert(evmOutboundGasShouldSlash(aggregatorOutbound, cosmos.NewUint(180_000_001), cosmos.NewUint(constants.MaxPOLGas)), check.Equals, true)
 }

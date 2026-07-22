@@ -92,6 +92,9 @@ func TxInKey(txIn *types.TxIn) txInKey {
 type Observer struct {
 	logger                zerolog.Logger
 	chains                map[common.Chain]chainclients.ChainClient
+	chainLifecycleMu      sync.Mutex
+	startedChains         map[common.Chain]chainclients.ChainClient
+	stopping              bool
 	oracle                *oracle.Oracle
 	stopChan              chan struct{}
 	pubkeyMgr             *pubkeymanager.PubKeyManager
@@ -176,6 +179,7 @@ func NewObserver(pubkeyMgr *pubkeymanager.PubKeyManager,
 	observer := &Observer{
 		logger:                logger,
 		chains:                chains,
+		startedChains:         make(map[common.Chain]chainclients.ChainClient),
 		oracle:                priceOracle,
 		stopChan:              make(chan struct{}),
 		m:                     m,
@@ -224,8 +228,21 @@ func (o *Observer) getChain(chainID common.Chain) (chainclients.ChainClient, err
 	return chain, nil
 }
 
-func (o *Observer) startChainClient(chain chainclients.ChainClient) {
+func (o *Observer) startChainClient(chainID common.Chain, chain chainclients.ChainClient) bool {
+	o.chainLifecycleMu.Lock()
+	defer o.chainLifecycleMu.Unlock()
+	if o.stopping {
+		return false
+	}
+	if o.startedChains == nil {
+		o.startedChains = make(map[common.Chain]chainclients.ChainClient)
+	}
+	if _, started := o.startedChains[chainID]; started {
+		return false
+	}
 	chain.Start(o.globalTxsQueue, o.globalErrataQueue, o.globalSolvencyQueue, o.globalNetworkFeeQueue)
+	o.startedChains[chainID] = chain
+	return true
 }
 
 func (o *Observer) startConfiguredChainClients(deferXMR bool) {
@@ -233,7 +250,38 @@ func (o *Observer) startConfiguredChainClients(deferXMR bool) {
 		if deferXMR && chainID.Equals(common.XMRChain) {
 			continue
 		}
-		o.startChainClient(chain)
+		o.startChainClient(chainID, chain)
+	}
+}
+
+func (o *Observer) startedChainClientSnapshot() []chainclients.ChainClient {
+	o.chainLifecycleMu.Lock()
+	defer o.chainLifecycleMu.Unlock()
+	started := make([]chainclients.ChainClient, 0, len(o.startedChains))
+	for _, chain := range o.startedChains {
+		started = append(started, chain)
+	}
+	return started
+}
+
+func (o *Observer) stopStartedChainClients() {
+	o.chainLifecycleMu.Lock()
+	if o.stopping {
+		o.chainLifecycleMu.Unlock()
+		return
+	}
+	o.stopping = true
+	if o.stopChan != nil {
+		close(o.stopChan)
+	}
+	started := make([]chainclients.ChainClient, 0, len(o.startedChains))
+	for _, chain := range o.startedChains {
+		started = append(started, chain)
+	}
+	o.chainLifecycleMu.Unlock()
+
+	for _, chain := range started {
+		chain.Stop()
 	}
 }
 
@@ -249,10 +297,18 @@ func (o *Observer) startDeferredXMRChain(ctx context.Context) {
 	ticker := time.NewTicker(errataRetryInterval)
 	defer ticker.Stop()
 	for {
+		select {
+		case <-o.stopChan:
+			return
+		case <-ctx.Done():
+			return
+		default:
+		}
 		unresolved, err := o.reconcileCommittedXMRErrata()
 		if err == nil && unresolved == 0 {
-			o.startChainClient(chain)
-			o.logger.Info().Msg("started XMR chain client after committed errata reconciliation")
+			if o.startChainClient(common.XMRChain, chain) {
+				o.logger.Info().Msg("started XMR chain client after committed errata reconciliation")
+			}
 			return
 		}
 		if err != nil {
@@ -261,6 +317,8 @@ func (o *Observer) startDeferredXMRChain(ctx context.Context) {
 				Msg("defer XMR chain client while committed errata reconciliation is unavailable")
 		}
 		select {
+		case <-o.stopChan:
+			return
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
@@ -294,7 +352,6 @@ func (o *Observer) Start(ctx context.Context) error {
 	go o.processOracle()
 	go o.processTxIns()
 	go o.processErrataTx(ctx)
-	go o.processPendingErrata(ctx)
 	go o.processSolvencyQueue(ctx)
 	go o.processNetworkFeeQueue(ctx)
 	go o.deck(ctx)
@@ -533,7 +590,7 @@ func (o *Observer) sendDeck(ctx context.Context) {
 			o.attestationGossip.askForAttestationState(ctx)
 			if lastNodeStatus != stypes.NodeStatus_Unknown {
 				// if this is not the first startup, we just churned in. rollback block scanners to re-observe recent blocks
-				for _, chain := range o.chains {
+				for _, chain := range o.startedChainClientSnapshot() {
 					if err := chain.RollbackBlockScanner(); err != nil {
 						o.logger.Error().Err(err).Msg("fail to rollback chain")
 					}
@@ -1220,33 +1277,16 @@ func (o *Observer) processErrataTx(ctx context.Context) {
 		case <-o.stopChan:
 			return
 		case <-retryTicker.C:
-			pending, err := o.storage.GetPendingErrata()
-			if err != nil {
-				o.logger.Error().Err(err).Msg("failed to load durable errata outbox")
-				continue
-			}
-			for _, record := range pending {
-				block := types.ErrataBlock{
-					Height:     record.Height,
-					DeliveryID: record.DeliveryID,
-					Txs:        []types.ErrataTx{record.Tx},
-				}
-				if processErr := o.attestErrataBlock(ctx, block, false); processErr != nil {
-					o.logger.Error().Err(processErr).
-						Str("chain", record.Tx.Chain.String()).
-						Str("txid", record.Tx.TxID.String()).
-						Msg("failed to process durable errata outbox record")
-				}
-			}
+			o.retryPendingErrata(ctx)
 		case <-pruneTicker.C:
 			o.pruneCommittedOnlyErrata()
 		case errataBlock, more := <-o.globalErrataQueue:
 			if !more {
 				return
 			}
-			// A producer opts into the durable, acknowledged errata outbox by
-			// supplying Persisted. Producers that use the callback handoff, or
-			// neither, keep the tombstone/one-shot paths below.
+			// A producer opts into the scanner-owned durable delivery contract by
+			// supplying Persisted. This path resumes a scanner journal only after
+			// observer cleanup and outbox state are both durable.
 			if errataBlock.Persisted != nil {
 				persistErr := o.storage.AddErrataBlock(errataBlock)
 				if persistErr != nil {
@@ -1314,7 +1354,7 @@ func (o *Observer) processErrataTx(ctx context.Context) {
 // events clean local observer state and attest once without entering the
 // durable retry outbox.
 func (o *Observer) processLegacyErrataBlock(ctx context.Context, errataBlock types.ErrataBlock) error {
-	if err := o.filterErrataTx(errataBlock); err != nil {
+	if err := o.filterLegacyErrataTx(errataBlock); err != nil {
 		return err
 	}
 	if o.attestationGossip == nil {
@@ -1459,10 +1499,7 @@ func (o *Observer) broadcastErrataBlock(ctx context.Context, errataBlock types.E
 		if !recorded {
 			continue
 		}
-		if o.attestationGossip == nil {
-			return fmt.Errorf("attestation gossip is not configured")
-		}
-		if err := o.attestationGossip.AttestErrata(ctx, common.ErrataTx{
+		if err := o.attestErrata(ctx, common.ErrataTx{
 			Chain: errataTx.Chain,
 			Id:    errataTx.TxID,
 		}); err != nil {
@@ -1499,45 +1536,36 @@ func errataAttestationRetryDelay(attempts uint32) time.Duration {
 	return delay
 }
 
-func (o *Observer) processPendingErrata(ctx context.Context) {
-	ticker := time.NewTicker(errataRetryInterval)
-	defer ticker.Stop()
-	o.retryPendingErrata(ctx)
-	for {
-		select {
-		case <-o.stopChan:
-			return
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			o.retryPendingErrata(ctx)
-		}
-	}
+func (o *Observer) retryPendingErrata(ctx context.Context) {
+	o.retryPendingErrataAt(ctx, time.Now())
 }
 
-func (o *Observer) retryPendingErrata(ctx context.Context) {
+func (o *Observer) retryPendingErrataAt(ctx context.Context, now time.Time) {
 	o.errataAttestMu.Lock()
 	defer o.errataAttestMu.Unlock()
-	pending, err := o.storage.getPendingErrata()
+	pending, err := o.storage.GetPendingErrata()
 	if err != nil {
 		o.logger.Error().Err(err).Msg("fail to load pending errata attestations")
 		return
 	}
-	for _, tombstone := range pending {
-		errata := common.ErrataTx{Chain: tombstone.Chain, Id: tombstone.TxID}
-		if err = o.attestErrata(ctx, errata); err != nil {
+	for _, record := range pending {
+		block := types.ErrataBlock{
+			Height:     record.Height,
+			DeliveryID: record.DeliveryID,
+			Txs:        []types.ErrataTx{record.Tx},
+		}
+		if err = o.cleanupErrataBlock(block); err == nil {
+			err = o.broadcastErrataBlock(ctx, block, now, false)
+		}
+		if err != nil {
 			if o.errCounter != nil {
 				o.errCounter.WithLabelValues("fail_to_broadcast_errata_tx", "").Inc()
 			}
 			o.logger.Error().Err(err).
-				Str("chain", tombstone.Chain.String()).Str("txid", tombstone.TxID.String()).
-				Uint64("generation", tombstone.Generation).
+				Str("chain", record.Tx.Chain.String()).Str("txid", record.Tx.TxID.String()).
+				Str("delivery_id", record.DeliveryID).
 				Msg("fail to broadcast durable pending errata; will retry")
-			continue
 		}
-		// Do not clear the outbox here. AttestErrata only placed the vote in an
-		// in-memory batch. handleErrataTxCommitted records the durable terminal
-		// receipt after thornode emits the committed-quorum event.
 	}
 	if _, err = o.reconcileCommittedXMRErrata(); err != nil {
 		o.logger.Warn().Err(err).Msg("committed XMR errata outcomes remain unresolved")
@@ -1687,6 +1715,14 @@ func (o *Observer) attestErrata(ctx context.Context, errata common.ErrataTx) err
 // the transaction that has been re-org out ,still in bifrost memory waiting for confirmation, as such, it should be
 // removed from ondeck tx queue, and not forward it to THORChain
 func (o *Observer) filterErrataTx(block types.ErrataBlock) error {
+	return o.filterErrataTxWithOutbox(block, true)
+}
+
+func (o *Observer) filterLegacyErrataTx(block types.ErrataBlock) error {
+	return o.filterErrataTxWithOutbox(block, false)
+}
+
+func (o *Observer) filterErrataTxWithOutbox(block types.ErrataBlock, durableOutbox bool) error {
 	o.lock.Lock()
 	if len(block.Txs) == 0 {
 		o.lock.Unlock()
@@ -1701,9 +1737,15 @@ func (o *Observer) filterErrataTx(block types.ErrataBlock) error {
 
 	mutations, updated, removedItems := o.collectErrataDeckMutations(errataIDs, block.Height, false)
 
-	if err := o.storage.applyErrata(block, mutations); err != nil {
+	var persistErr error
+	if durableOutbox {
+		persistErr = o.storage.applyErrata(block, mutations)
+	} else {
+		persistErr = o.storage.applyLegacyErrata(block, mutations)
+	}
+	if persistErr != nil {
 		o.lock.Unlock()
-		return err
+		return persistErr
 	}
 	o.applyErrataDeckUpdates(updated)
 	callbacks := takeObservedTxRejectedCallbacks(removedItems, errObservedTxErrata)
@@ -1955,13 +1997,8 @@ func (o *Observer) Stop() error {
 	o.logger.Debug().Msg("request to stop observer")
 	defer o.logger.Debug().Msg("observer stopped")
 
+	o.stopStartedChainClients()
 	o.oracle.Stop()
-
-	for _, chain := range o.chains {
-		chain.Stop()
-	}
-
-	close(o.stopChan)
 	if err := o.pubkeyMgr.Stop(); err != nil {
 		o.logger.Error().Err(err).Msg("fail to stop pool address manager")
 	}

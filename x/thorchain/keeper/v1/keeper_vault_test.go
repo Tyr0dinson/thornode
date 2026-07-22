@@ -238,7 +238,11 @@ func (s *KeeperVaultSuite) TestGetPendingOutboundsSkipsExpiredDurableMigrateHeig
 
 func (s *KeeperVaultSuite) TestGetPendingOutboundsRetainsExtendedEVMClasses(c *C) {
 	ctx, k := setupKeeperForTest(c)
-	signingPeriod := k.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	defaultSigningPeriod := k.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	overrideSigningPeriod := defaultSigningPeriod * 2
+	k.SetMimir(ctx, constants.SigningTransactionPeriod.String(), overrideSigningPeriod)
+	signingPeriod := k.GetConfigInt64(ctx, constants.SigningTransactionPeriod)
+	c.Assert(signingPeriod, Equals, overrideSigningPeriod)
 	c.Assert(signingPeriod > 0, Equals, true)
 	ctx = ctx.WithBlockHeight(signingPeriod*4 + 10)
 	usdc, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")

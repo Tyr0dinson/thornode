@@ -223,7 +223,7 @@ func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signi
 // GetPendingOutbounds selects txouts in the outbound and scheduled outbound queues (for deduction to leave only 'available' balances),
 // as the amounts of both types of txout items are yet to be deducted from the vault balances.
 func (k KVStore) GetPendingOutbounds(ctx cosmos.Context, asset common.Asset) []TxOutItem {
-	signingPeriod := k.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	signingPeriod := k.GetConfigInt64(ctx, constants.SigningTransactionPeriod)
 	standardStartHeight := ctx.BlockHeight() - signingPeriod
 	if standardStartHeight < 1 {
 		standardStartHeight = 1

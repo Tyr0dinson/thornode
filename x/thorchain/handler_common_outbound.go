@@ -358,7 +358,7 @@ func evmOutboundGasShouldSlash(txOutItem TxOutItem, gasAmount, maxGasCap cosmos.
 		allowance = allowance.MulUint64(uint64(constants.EVMTokenMaxGasMultiplier))
 	}
 
-	if allowance.GT(maxGasCap) && !gasAmount.GT(allowance) {
+	if !allowance.LT(maxGasCap) && !gasAmount.GT(allowance) {
 		return false
 	}
 	return true

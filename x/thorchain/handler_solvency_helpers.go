@@ -361,7 +361,7 @@ func excludePendingOutboundFromVault(ctx cosmos.Context, mgr Manager, vault Vaul
 	// Scan the longest live signing period, then apply the exact per-item period
 	// in deductVaultBlockPendingOutbound. This keeps solvency accounting aligned
 	// with LackSigning without retaining ordinary outbounds for too long.
-	signingPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	signingPeriod := mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
 	startHeight := ctx.BlockHeight() - thortypes.MaxTxOutSigningTransactionPeriod(signingPeriod)
 	if startHeight < 1 {
 		startHeight = 1
@@ -378,7 +378,7 @@ func excludePendingOutboundFromVault(ctx cosmos.Context, mgr Manager, vault Vaul
 }
 
 func deductVaultBlockPendingOutbound(ctx cosmos.Context, mgr Manager, vault Vault, block *TxOut, pendingOutbounds map[string]cosmos.Uint) (Vault, map[string]cosmos.Uint) {
-	signingPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	signingPeriod := mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
 	for _, txOutItem := range block.TxArray {
 		if ctx.BlockHeight()-block.Height > txOutItem.SigningTransactionPeriod(signingPeriod) {
 			continue

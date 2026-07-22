@@ -662,7 +662,11 @@ func (s *HandlerSolvencyHelpersSuite) TestExcludePendingOutboundFromVault_Succes
 
 func (s *HandlerSolvencyHelpersSuite) TestExcludePendingOutboundFromVaultRetainsExtendedEVMClasses(c *C) {
 	ctx, mgr, _, vault := setupSolvencyHelpersTest(c)
-	signingPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	defaultSigningPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	overrideSigningPeriod := defaultSigningPeriod * 2
+	mgr.Keeper().SetMimir(ctx, constants.SigningTransactionPeriod.String(), overrideSigningPeriod)
+	signingPeriod := mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
+	c.Assert(signingPeriod, Equals, overrideSigningPeriod)
 	c.Assert(signingPeriod > 0, Equals, true)
 	ctx = ctx.WithBlockHeight(signingPeriod*4 + 10)
 	usdc, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")

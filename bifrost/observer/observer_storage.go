@@ -192,12 +192,25 @@ type errataTombstoneUpdate struct {
 	forceCommitted    bool
 	verifyAfterHeight int64
 	voterReverted     *bool
+	recordDelivery    bool
 }
 
 // applyErrata atomically fsyncs every tombstone and the corresponding exact
 // on-deck mutations. A crash can therefore expose either the old deck without
 // a tombstone or the new deck with tombstones, never a resurrectable orphan.
 func (s *ObserverStorage) applyErrata(
+	block types.ErrataBlock,
+	mutations []errataDeckMutation,
+) error {
+	s.errataMu.Lock()
+	defer s.errataMu.Unlock()
+	return s.applyErrataBatch(block, errataTombstoneUpdate{recordDelivery: true}, mutations)
+}
+
+// applyLegacyErrata writes only the TxID tombstone and deck cleanup. Producers
+// without an acknowledgement callback retain their original one-shot gossip
+// behavior and must not silently enter XMR's durable retry outbox.
+func (s *ObserverStorage) applyLegacyErrata(
 	block types.ErrataBlock,
 	mutations []errataDeckMutation,
 ) error {
@@ -293,6 +306,34 @@ func (s *ObserverStorage) applyErrataBatch(
 			return fmt.Errorf("encode observer errata tombstone: %w", err)
 		}
 		batch.Put([]byte(key), encoded)
+
+		if update.recordDelivery && errataOutboxChain(tx.Chain) {
+			outboxKey := []byte(pendingErrataKey(tx))
+			record, found, getErr := s.getPersistedErrataLocked(tx)
+			if getErr != nil {
+				return getErr
+			}
+			if !found {
+				record = persistedErrata{Tx: tx}
+			}
+			record.Height = block.Height
+			record.DeliveryID = block.DeliveryID
+			record.Tx = tx
+			record.DeliverySeen = true
+			record.Committed = record.Committed || tombstone.Committed
+			// The same synchronous batch contains the TxID tombstone and every
+			// on-deck mutation, so callback delivery is already cleanup-complete.
+			record.CleanupComplete = true
+			if errataFinished(record) {
+				batch.Delete(outboxKey)
+			} else {
+				outboxData, encodeErr := json.Marshal(record)
+				if encodeErr != nil {
+					return fmt.Errorf("encode callback errata outbox: %w", encodeErr)
+				}
+				batch.Put(outboxKey, outboxData)
+			}
+		}
 	}
 	for _, mutation := range mutations {
 		key := []byte(createObserverTxKey(
