@@ -243,6 +243,10 @@ func (s *StableReserveMgr) TrySwap(ctx cosmos.Context, mgr Manager, msg MsgSwap)
 		if !ok || grossTarget.IsZero() {
 			return false, cosmos.ZeroUint(), nil
 		}
+		// Value-neutral pricing must never shrink the reserve's token count: pool
+		// prices can dislocate within the eligibility band, so cap the payout at what
+		// came in and let the surplus accrue to the reserve.
+		grossTarget = cosmos.MinUint(grossTarget, grossIn)
 	} else if !stableReserveSourceWorthAtLeastTarget(srcPrice, tgtPrice) {
 		return false, cosmos.ZeroUint(), nil
 	}
