@@ -1291,7 +1291,7 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 	if obsForRefs == nil {
 		obsForRefs = item.Observation
 	}
-	if !s.applySpentOutputRefsFromObs(item.TxOutItem, obsForRefs) {
+	if !s.applySpentOutputRefsFromObs(ctx, item.TxOutItem, obsForRefs) {
 		s.logger.Warn().
 			Interface("tx", item.TxOutItem).
 			Msg("xmr spent output refs not durable; keeping tx out store item for retry")
@@ -1361,13 +1361,13 @@ func signingTimeoutForChain(chain common.Chain) time.Duration {
 	return 5 * time.Minute
 }
 
-func (s *Signer) applySpentOutputRefsFromObs(tx types.TxOutItem, obs *types.TxInItem) bool {
+func (s *Signer) applySpentOutputRefsFromObs(ctx context.Context, tx types.TxOutItem, obs *types.TxInItem) bool {
 	if obs == nil || len(obs.SpentOutputRefs) == 0 {
 		return true
 	}
 	chain, ok := s.chains[tx.Chain]
 	if !ok {
-		return true
+		return !tx.Chain.Equals(common.XMRChain)
 	}
 	obsTx := common.NewObservedTx(
 		common.NewTx(
@@ -1388,11 +1388,29 @@ func (s *Signer) applySpentOutputRefsFromObs(tx types.TxOutItem, obs *types.TxIn
 		Str("tx_hash", obs.Tx).
 		Int("refs", len(obs.SpentOutputRefs)).
 		Msg("applying spent output refs from signing observation")
-	type spentRefApplier interface {
-		ApplySpentOutputRefs(common.ObservedTx) bool
+	applier, ok := chain.(chainclienttypes.SpentOutputRefsApplier)
+	if !ok {
+		// Exact spent refs are an XMR signing invariant. Other clients may carry
+		// future optional metadata, but XMR must never discard the TxOut until
+		// the production sidecar confirms durable import.
+		return !tx.Chain.Equals(common.XMRChain)
 	}
-	if applier, ok := chain.(spentRefApplier); ok {
-		return applier.ApplySpentOutputRefs(obsTx)
+
+	outcome := make(chan bool, 1)
+	applier.ApplySpentOutputRefsWithOutcome(obsTx, func(applied bool) {
+		// The contract is exactly-once, but keep a misbehaving implementation
+		// from blocking its retry goroutine after the signer has timed out.
+		select {
+		case outcome <- applied:
+		default:
+		}
+	})
+	select {
+	case applied := <-outcome:
+		return applied
+	case <-ctx.Done():
+		return false
+	case <-s.stopChan:
+		return false
 	}
-	return true
 }

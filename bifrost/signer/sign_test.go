@@ -2,6 +2,7 @@ package signer
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -146,7 +147,7 @@ func TestApplySpentOutputRefsFromObsUsesObservationHeight(t *testing.T) {
 
 	// The helper receives the signer TxInItem shape and should preserve the
 	// observation height when building the sidecar import input.
-	signer.applySpentOutputRefsFromObs(types.TxOutItem{Chain: common.XMRChain}, &types.TxInItem{
+	signer.applySpentOutputRefsFromObs(context.Background(), types.TxOutItem{Chain: common.XMRChain}, &types.TxInItem{
 		BlockHeight:         123,
 		Tx:                  spendTxHash,
 		Sender:              "xmr-vault",
@@ -185,7 +186,7 @@ func TestApplySpentOutputRefsFromObsReturnsImportResult(t *testing.T) {
 
 	// A false return from ApplySpentOutputRefs should propagate all
 	// the way back to processTransaction's retry decision.
-	applied := signer.applySpentOutputRefsFromObs(types.TxOutItem{Chain: common.XMRChain}, &types.TxInItem{
+	applied := signer.applySpentOutputRefsFromObs(context.Background(), types.TxOutItem{Chain: common.XMRChain}, &types.TxInItem{
 		BlockHeight:         123,
 		Tx:                  spendTxHash,
 		Sender:              "xmr-vault",
@@ -208,6 +209,32 @@ func TestApplySpentOutputRefsFromObsReturnsImportResult(t *testing.T) {
 	}
 	if len(chain.applied) != 1 {
 		t.Fatalf("expected one spent-ref application, got %d", len(chain.applied))
+	}
+}
+
+func TestApplySpentOutputRefsFromObsFailsClosedWithoutXMRDurabilityHook(t *testing.T) {
+	spendTxHash := strings.Repeat("1", 64)
+	signer := &Signer{
+		chains: map[common.Chain]chainclients.ChainClient{
+			common.XMRChain: &MockChainClient{},
+		},
+		logger: log.Logger,
+	}
+
+	applied := signer.applySpentOutputRefsFromObs(context.Background(), types.TxOutItem{Chain: common.XMRChain}, &types.TxInItem{
+		BlockHeight:         123,
+		Tx:                  spendTxHash,
+		ObservedVaultPubKey: types2.GetRandomPubKey(),
+		SpentOutputRefs: []*common.OutputRef{{
+			TxHash:      strings.Repeat("2", 64),
+			OutputIndex: 1,
+			KeyImage:    strings.Repeat("3", 64),
+			SpendTxHash: spendTxHash,
+		}},
+	})
+
+	if applied {
+		t.Fatal("expected XMR spent-ref import to fail closed without the durability hook")
 	}
 }
 
@@ -542,11 +569,12 @@ func (b *spentRefApplyingChainClient) GetChain() common.Chain {
 	return common.XMRChain
 }
 
-func (b *spentRefApplyingChainClient) ApplySpentOutputRefs(tx common.ObservedTx) bool {
+func (b *spentRefApplyingChainClient) ApplySpentOutputRefsWithOutcome(tx common.ObservedTx, onOutcome func(bool)) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	b.applied = append(b.applied, tx)
-	return b.result
+	result := b.result
+	b.mu.Unlock()
+	onOutcome(result)
 }
 
 type MockCustomKeygenChainClient struct {

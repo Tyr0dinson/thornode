@@ -77,6 +77,14 @@ type PermanentErrataQuarantiner interface {
 	QuarantinePermanentErrata(errata common.ErrataTx, orphanHeight int64) error
 }
 
+// SpentOutputRefsApplier is the optional XMR durability hook used after a
+// signed outbound exposes its exact consumed outputs. Implementations report
+// the final import outcome exactly once, including after any bounded retries.
+// Callers must retain the outbound until the callback reports success.
+type SpentOutputRefsApplier interface {
+	ApplySpentOutputRefsWithOutcome(tx common.ObservedTx, onOutcome func(applied bool))
+}
+
 // CustomKeygenRequest carries common keygen context for chain-specific hooks.
 type CustomKeygenRequest struct {
 	Members          []string

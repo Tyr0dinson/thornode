@@ -217,6 +217,11 @@ type Client struct {
 	recoveryRetryMaxAttempts int
 }
 
+// Keep the production Monero client and the signer durability contract from
+// drifting independently. A missing final-outcome hook must be a build error,
+// not a runtime assertion miss which lets the signer discard the outbound.
+var _ types.SpentOutputRefsApplier = (*Client)(nil)
+
 // NewClient creates a monero chain client backed by the shared block scanner.
 func NewClient(
 	thorKeys *thorclient.Keys,
