@@ -260,6 +260,14 @@ contributing to fee-generating activity on Rujira. These are guidelines, and the
 actual compensation plan should be assessed case by case. The App Layer might
 also use some of its POL to cover a shortfall in such an event.
 
+To further protect THORChain POL, we introduce an additional cap linking the Secured Asset protected amount to the revenue contributed by Rujira to THORChain:
+
+- If revenue contributed by Rujira over the last 12m >= 3.5% of Secured Assets TVL at time of the hack, then secured assets get first-in-line protection up to 20% of TC remaining POL post-hack.
+- Otherwise secured assets get first-in-line protection for up to `Revenue*contributed_by_Rujira_last_12m / (3.5% * SA_TVL_at_time of_hack) \* 20% of TC remaining POL post-hack.
+
+Illustrative table:
+[Picture Attached]
+
 Rujira also supports THORChain materially increasing the share of its system
 income going to POL, with a 20-30% target, to rebuild a buffer in case of future
 exploits, reinforce App Layer users' trust, and maximize long-term revenue
