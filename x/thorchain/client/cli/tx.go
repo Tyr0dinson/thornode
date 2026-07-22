@@ -573,21 +573,37 @@ func extractOpenAPIObservedTx(otx openapi.ObservedTx) (*common.ObservedTx, error
 	tx := &common.ObservedTx{}
 	var err error
 
+	// All openapi fields below are optional pointers (omitempty); a missing
+	// field decodes to nil. Guard every dereference: required fields error
+	// cleanly, optional fields fall back to their zero value, rather than
+	// panicking with a nil pointer dereference.
+	if otx.Tx.Id == nil {
+		return nil, fmt.Errorf("observed tx missing id")
+	}
 	tx.Tx.ID, err = common.NewTxID(*otx.Tx.Id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse tx id: %w", err)
 	}
 
+	if otx.Tx.Chain == nil {
+		return nil, fmt.Errorf("observed tx missing chain")
+	}
 	tx.Tx.Chain, err = common.NewChain(*otx.Tx.Chain)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse chain: %w", err)
 	}
 
+	if otx.Tx.FromAddress == nil {
+		return nil, fmt.Errorf("observed tx missing from address")
+	}
 	tx.Tx.FromAddress, err = common.NewAddress(*otx.Tx.FromAddress)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse from address: %w", err)
 	}
 
+	if otx.Tx.ToAddress == nil {
+		return nil, fmt.Errorf("observed tx missing to address")
+	}
 	tx.Tx.ToAddress, err = common.NewAddress(*otx.Tx.ToAddress)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse to address: %w", err)
@@ -623,7 +639,9 @@ func extractOpenAPIObservedTx(otx openapi.ObservedTx) (*common.ObservedTx, error
 		}
 	}
 
-	tx.Tx.Memo = *otx.Tx.Memo
+	if otx.Tx.Memo != nil {
+		tx.Tx.Memo = *otx.Tx.Memo
+	}
 
 	if otx.Aggregator != nil {
 		tx.Aggregator = *otx.Aggregator
@@ -636,12 +654,18 @@ func extractOpenAPIObservedTx(otx openapi.ObservedTx) (*common.ObservedTx, error
 		tx.AggregatorTargetLimit = &target
 	}
 
-	tx.BlockHeight = *otx.ExternalObservedHeight
-	tx.FinaliseHeight = *otx.ExternalConfirmationDelayHeight
+	if otx.ExternalObservedHeight != nil {
+		tx.BlockHeight = *otx.ExternalObservedHeight
+	}
+	if otx.ExternalConfirmationDelayHeight != nil {
+		tx.FinaliseHeight = *otx.ExternalConfirmationDelayHeight
+	}
 
-	tx.ObservedPubKey, err = common.NewPubKey(*otx.ObservedPubKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse observed public key: %w", err)
+	if otx.ObservedPubKey != nil {
+		tx.ObservedPubKey, err = common.NewPubKey(*otx.ObservedPubKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse observed public key: %w", err)
+		}
 	}
 
 	return tx, nil
