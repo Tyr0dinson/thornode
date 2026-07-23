@@ -102,6 +102,48 @@ func TestFrostEvidenceRejectsNonCanonicalEnvelope(t *testing.T) {
 	}
 }
 
+func TestFrostEvidenceRejectsNonCanonicalJSONBytes(t *testing.T) {
+	canonical, err := MarshalFrostEquivocationEvidence(testEvidence())
+	if err != nil {
+		t.Fatalf("marshal canonical evidence: %v", err)
+	}
+
+	var generic map[string]any
+	if err := json.Unmarshal(canonical, &generic); err != nil {
+		t.Fatalf("decode canonical evidence: %v", err)
+	}
+	reordered, err := json.Marshal(map[string]any{
+		"second":           generic["second"],
+		"first":            generic["first"],
+		"protocol_version": generic["protocol_version"],
+	})
+	if err != nil {
+		t.Fatalf("marshal reordered evidence: %v", err)
+	}
+
+	withWhitespace := append([]byte(" \n"), canonical...)
+	withWhitespace = append(withWhitespace, '\n')
+
+	duplicateVersion := bytes.Replace(
+		canonical,
+		[]byte(`{"protocol_version":2,`),
+		[]byte(`{"protocol_version":2,"protocol_version":2,`),
+		1,
+	)
+
+	for name, encoded := range map[string][]byte{
+		"whitespace":       withWhitespace,
+		"reordered fields": reordered,
+		"duplicate field":  duplicateVersion,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := UnmarshalFrostEquivocationEvidence(encoded); err == nil {
+				t.Fatal("non-canonical JSON encoding was accepted")
+			}
+		})
+	}
+}
+
 // The malleability this guards: a padded payload hash sorts on the space
 // (0x20, below every hex digit) while the signature and Validate see only the
 // trimmed value. Marshal must normalize before ordering, or a second valid

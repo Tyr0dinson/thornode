@@ -4,10 +4,12 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -31,13 +33,74 @@ type handlerStream struct {
 	*MockNetworkStream
 	conn        network.Conn
 	resetCalled atomic.Bool
+	closeCalled atomic.Bool
+	closeErr    error
 }
 
 func (s *handlerStream) Reset() error {
 	s.resetCalled.Store(true)
 	return nil
 }
+
+func (s *handlerStream) Close() error {
+	s.closeCalled.Store(true)
+	return s.closeErr
+}
 func (s *handlerStream) Conn() network.Conn { return s.conn }
+
+type stagedHandlerStream struct {
+	*handlerStream
+	initial     []byte
+	remainder   []byte
+	initialAt   int
+	remainderAt int
+	bodyGate    <-chan struct{}
+	prefixReady chan<- struct{}
+	prefixOnce  sync.Once
+}
+
+func (s *stagedHandlerStream) Read(p []byte) (int, error) {
+	if s.initialAt < len(s.initial) {
+		n := copy(p, s.initial[s.initialAt:])
+		s.initialAt += n
+		if s.initialAt == len(s.initial) {
+			s.prefixOnce.Do(func() { s.prefixReady <- struct{}{} })
+		}
+		return n, nil
+	}
+	<-s.bodyGate
+	if s.remainderAt >= len(s.remainder) {
+		return 0, io.EOF
+	}
+	n := copy(p, s.remainder[s.remainderAt:])
+	s.remainderAt += n
+	return n, nil
+}
+
+func newStagedHandlerStream(
+	remote peer.ID,
+	frame []byte,
+	bodyGate <-chan struct{},
+	prefixReady chan<- struct{},
+) *stagedHandlerStream {
+	wire := make([]byte, LengthHeader+len(frame))
+	binary.LittleEndian.PutUint32(wire[:LengthHeader], uint32(len(frame)))
+	copy(wire[LengthHeader:], frame)
+	initialSize := LengthHeader + TSSFramePreflightBytes
+	if initialSize > len(wire) {
+		initialSize = len(wire)
+	}
+	return &stagedHandlerStream{
+		handlerStream: &handlerStream{
+			MockNetworkStream: NewMockNetworkStream(),
+			conn:              fakeTSSConn{remote: remote},
+		},
+		initial:     wire[:initialSize],
+		remainder:   wire[initialSize:],
+		bodyGate:    bodyGate,
+		prefixReady: prefixReady,
+	}
+}
 
 func newHandlerStream(remote peer.ID, frame []byte) *handlerStream {
 	base := NewMockNetworkStream()
@@ -265,6 +328,9 @@ func TestHandleStreamTssDeliversAuthorizedFrame(t *testing.T) {
 	sub := comm.getSubscriber(topic, msgID)
 	select {
 	case msg := <-sub.channel:
+		if !msg.Accept() {
+			t.Fatal("authorized frame reservation was not accepted by the coordinator")
+		}
 		if msg.PeerID != member {
 			t.Fatalf("delivered frame attributed to the wrong peer: %s", msg.PeerID)
 		}
@@ -282,8 +348,256 @@ func TestHandleStreamTssDeliversAuthorizedFrame(t *testing.T) {
 	if stream.resetCalled.Load() {
 		t.Fatal("an authorized frame's stream must not be reset")
 	}
-	// Delivered streams ARE parked, keyed by msgID, for the ceremony to release.
+	if !stream.closeCalled.Load() {
+		t.Fatal("an accepted FROST stream must be gracefully closed")
+	}
+	if got := parkedStreamCount(comm.streamMgr); got != 0 {
+		t.Fatalf("an accepted FROST stream must not remain parked, got %d parked", got)
+	}
+}
+
+func TestTSSReaderSlotReleasedBeforeCrossSessionDeliveryBackpressure(t *testing.T) {
+	ApplyDeadline.Store(false)
+	t.Cleanup(func() { ApplyDeadline.Store(true) })
+
+	topic := messages.TSSFrostShareMsg
+	peerA := peer.ID("session-a-peer")
+	peerB := peer.ID("session-b-peer")
+	channelA := make(chan *Message, 1)
+	channelA <- &Message{}
+	channelB := make(chan *Message, 1)
+	comm := &Communication{
+		subscribers:      make(map[messages.THORChainTSSMessageType]*MessageIDSubscriber),
+		subscriberLocker: &sync.Mutex{},
+		streamMgr:        NewStreamMgr(),
+		stopChan:         make(chan struct{}),
+		tssReaders:       newTSSReaderLimiter(1, 1),
+	}
+	comm.SetSubscribeWithPeers(topic, "session-a", channelA, []peer.ID{peerA}, FrostMaxSessionPayload, 8)
+	comm.SetSubscribeWithPeers(topic, "session-b", channelB, []peer.ID{peerB}, FrostMaxSessionPayload, 8)
+
+	frameA, err := json.Marshal(messages.WrappedMessage{
+		MessageType: topic,
+		MsgID:       "session-a",
+		Payload:     []byte("a"),
+	})
+	if err != nil {
+		t.Fatalf("marshal session A frame: %v", err)
+	}
+	frameB, err := json.Marshal(messages.WrappedMessage{
+		MessageType: topic,
+		MsgID:       "session-b",
+		Payload:     []byte("b"),
+	})
+	if err != nil {
+		t.Fatalf("marshal session B frame: %v", err)
+	}
+
+	streamA := newHandlerStream(peerA, frameA)
+	doneA := make(chan struct{})
+	go func() {
+		comm.handleStreamTss(streamA)
+		close(doneA)
+	}()
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		state := snapshotFrostBudget(comm.frostBudget)
+		if state.inFlightFrames == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("session A did not reach bounded delivery backpressure")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if total, peers := comm.tssReaders.snapshot(); total != 0 || len(peers) != 0 {
+		t.Fatalf("authenticated session A retained preflight reader capacity: total=%d peers=%v", total, peers)
+	}
+
+	streamB := newHandlerStream(peerB, frameB)
+	comm.handleStreamTss(streamB)
+	select {
+	case message := <-channelB:
+		if !message.Accept() {
+			t.Fatal("concurrent session B frame was not accepted")
+		}
+	default:
+		t.Fatal("session A backpressure prevented session B delivery")
+	}
+	if streamB.resetCalled.Load() {
+		t.Fatal("concurrent session B was reset by exhausted preflight readers")
+	}
+
+	<-channelA // release the deliberately full queue
+	select {
+	case <-doneA:
+	case <-time.After(time.Second):
+		t.Fatal("session A did not resume after coordinator backpressure cleared")
+	}
+	select {
+	case message := <-channelA:
+		if !message.Accept() {
+			t.Fatal("session A frame was not accepted after backpressure cleared")
+		}
+	default:
+		t.Fatal("session A frame was not delivered after backpressure cleared")
+	}
+	if total, peers := comm.tssReaders.snapshot(); total != 0 || len(peers) != 0 {
+		t.Fatalf("reader slots leaked after both sessions completed: total=%d peers=%v", total, peers)
+	}
+}
+
+func TestFrostAuthenticatedPrefixesDoNotExhaustPreflightReaders(t *testing.T) {
+	ApplyDeadline.Store(false)
+	t.Cleanup(func() { ApplyDeadline.Store(true) })
+
+	const sessions = int(TSSMaxConcurrentReaders) + 32
+	topic := messages.TSSFrostShareMsg
+	bodyGate := make(chan struct{})
+	prefixReady := make(chan struct{}, sessions)
+	comm := &Communication{
+		subscribers:      make(map[messages.THORChainTSSMessageType]*MessageIDSubscriber),
+		subscriberLocker: &sync.Mutex{},
+		streamMgr:        NewStreamMgr(),
+		stopChan:         make(chan struct{}),
+		tssReaders:       newTSSReaderLimiter(TSSMaxConcurrentReaders, TSSMaxReadersPerPeer),
+	}
+	channels := make([]chan *Message, sessions)
+	streams := make([]*stagedHandlerStream, sessions)
+	var wg sync.WaitGroup
+	for i := 0; i < sessions; i++ {
+		msgID := fmt.Sprintf("slow-valid-session-%03d", i)
+		remote := peer.ID(fmt.Sprintf("slow-valid-peer-%03d", i))
+		channels[i] = make(chan *Message, 1)
+		comm.SetSubscribeWithPeers(
+			topic,
+			msgID,
+			channels[i],
+			[]peer.ID{remote},
+			FrostMaxSessionPayload,
+			8,
+		)
+		frame, err := json.Marshal(messages.WrappedMessage{
+			MessageType: topic,
+			MsgID:       msgID,
+			Payload:     []byte(strings.Repeat("x", 8*1024)),
+		})
+		if err != nil {
+			t.Fatalf("session %d: marshal frame: %v", i, err)
+		}
+		streams[i] = newStagedHandlerStream(remote, frame, bodyGate, prefixReady)
+		wg.Add(1)
+		go func(stream *stagedHandlerStream) {
+			defer wg.Done()
+			comm.handleStreamTss(stream)
+		}(streams[i])
+	}
+
+	reached := 0
+	deadline := time.After(3 * time.Second)
+	for reached < sessions {
+		select {
+		case <-prefixReady:
+			reached++
+		case <-deadline:
+			close(bodyGate)
+			wg.Wait()
+			t.Fatalf(
+				"only %d/%d authenticated FROST prefixes progressed; reader cap is %d",
+				reached,
+				sessions,
+				TSSMaxConcurrentReaders,
+			)
+		}
+	}
+	// prefixReady fires when the staged stream has returned the prefix bytes;
+	// allow the handler callback which authenticates that prefix to run and
+	// release its slot before inspecting the limiter.
+	readerDeadline := time.Now().Add(time.Second)
+	for {
+		total, peers := comm.tssReaders.snapshot()
+		if total == 0 && len(peers) == 0 {
+			break
+		}
+		if time.Now().After(readerDeadline) {
+			close(bodyGate)
+			wg.Wait()
+			t.Fatalf("authenticated FROST bodies retained preflight readers: total=%d peers=%v", total, peers)
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if total, peers := comm.tssReaders.snapshot(); total != 0 || len(peers) != 0 {
+		close(bodyGate)
+		wg.Wait()
+		t.Fatalf("authenticated FROST bodies retained preflight readers: total=%d peers=%v", total, peers)
+	}
+
+	close(bodyGate)
+	wg.Wait()
+	for i, channel := range channels {
+		select {
+		case message := <-channel:
+			if !message.Accept() {
+				t.Fatalf("session %d: authenticated frame was not accepted", i)
+			}
+		default:
+			t.Fatalf("session %d: authenticated frame was not delivered", i)
+		}
+		if streams[i].resetCalled.Load() {
+			t.Fatalf("session %d: valid FROST stream was reset", i)
+		}
+	}
+}
+
+func TestFrostOutboundStreamClosesWithoutParking(t *testing.T) {
+	comm := &Communication{streamMgr: NewStreamMgr()}
+	stream := &handlerStream{MockNetworkStream: NewMockNetworkStream()}
+
+	if err := comm.finishWrittenTSSStream(stream, "frost-session", true); err != nil {
+		t.Fatalf("finish FROST stream: %v", err)
+	}
+	if !stream.closeCalled.Load() {
+		t.Fatal("successfully written FROST stream was not gracefully closed")
+	}
+	if stream.resetCalled.Load() {
+		t.Fatal("successfully written FROST stream was reset")
+	}
+	if got := parkedStreamCount(comm.streamMgr); got != 0 {
+		t.Fatalf("successfully written FROST stream remained parked: %d", got)
+	}
+}
+
+func TestFrostOutboundCloseFailureResetsWithoutParking(t *testing.T) {
+	comm := &Communication{streamMgr: NewStreamMgr()}
+	stream := newHandlerStream(peer.ID("remote-peer"), nil)
+	stream.closeErr = fmt.Errorf("close failed")
+
+	if err := comm.finishWrittenTSSStream(stream, "frost-session", true); err == nil {
+		t.Fatal("expected the graceful close error")
+	}
+	if !stream.closeCalled.Load() {
+		t.Fatal("FROST outbound stream was not gracefully closed")
+	}
+	if !stream.resetCalled.Load() {
+		t.Fatal("FROST outbound stream was not reset after graceful close failed")
+	}
+	if got := parkedStreamCount(comm.streamMgr); got != 0 {
+		t.Fatalf("failed FROST outbound close parked %d streams", got)
+	}
+}
+
+func TestLegacyOutboundStreamRemainsParked(t *testing.T) {
+	comm := &Communication{streamMgr: NewStreamMgr()}
+	stream := &handlerStream{MockNetworkStream: NewMockNetworkStream()}
+
+	if err := comm.finishWrittenTSSStream(stream, "legacy-session", false); err != nil {
+		t.Fatalf("finish legacy stream: %v", err)
+	}
+	if stream.closeCalled.Load() || stream.resetCalled.Load() {
+		t.Fatal("legacy stream lifecycle changed")
+	}
 	if got := parkedStreamCount(comm.streamMgr); got != 1 {
-		t.Fatalf("a delivered stream must be parked for release, got %d parked", got)
+		t.Fatalf("legacy stream should remain parked for session release, got %d", got)
 	}
 }

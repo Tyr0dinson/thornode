@@ -149,6 +149,7 @@ func (t *TssServer) FrostKeygen(req FrostKeygenRequest, sidecar FrostSidecarKeyg
 		)
 	}
 	defer func() {
+		t.p2pCommunication.CancelFrostBroadcasts(msgID)
 		for _, msgType := range frostKeygenMsgTypes {
 			t.p2pCommunication.CancelSubscribe(msgType, msgID)
 		}
@@ -635,6 +636,9 @@ func (c *FrostKeygenCoordinator) exchangeRound1(
 	for !verifier.isComplete() {
 		select {
 		case msg := <-c.msgChan:
+			if msg == nil || !msg.Accept() {
+				continue
+			}
 			wrapped, ok := parseWrappedMessage(msg.Payload)
 			if !ok {
 				continue
@@ -787,6 +791,9 @@ func (c *FrostKeygenCoordinator) exchangeRound2(
 	for !verifier.isComplete() {
 		select {
 		case msg := <-c.msgChan:
+			if msg == nil || !msg.Accept() {
+				continue
+			}
 			wrapped, ok := parseWrappedMessage(msg.Payload)
 			if !ok {
 				continue
@@ -975,6 +982,9 @@ func (c *FrostKeygenCoordinator) exchangeRound3(
 	for !verifier.isComplete() {
 		select {
 		case msg := <-c.msgChan:
+			if msg == nil || !msg.Accept() {
+				continue
+			}
 			wrapped, ok := parseWrappedMessage(msg.Payload)
 			if !ok {
 				continue
@@ -1215,6 +1225,9 @@ func (c *FrostKeygenCoordinator) WaitForResult(activeParticipants []string, quor
 	for {
 		select {
 		case msg := <-c.msgChan:
+			if msg == nil || !msg.Accept() {
+				continue
+			}
 			wrapped, ok := parseWrappedMessage(msg.Payload)
 			if !ok || wrapped.MessageType != messages.TSSFrostDKGResultMsg {
 				continue
@@ -1303,15 +1316,14 @@ func (c *FrostKeygenCoordinator) BroadcastResult(resp FrostKeygenResponse, peers
 }
 
 func (c *FrostKeygenCoordinator) broadcast(msgType messages.THORChainTSSMessageType, payload []byte, peers []peer.ID) error {
-	c.p2pCommunication.BroadcastMsgChan <- &messages.BroadcastMsgChan{
+	return c.p2pCommunication.QueueFrostBroadcast(&messages.BroadcastMsgChan{
 		WrappedMessage: messages.WrappedMessage{
 			MessageType: msgType,
 			MsgID:       c.msgID,
 			Payload:     payload,
 		},
 		PeersID: peers,
-	}
-	return nil
+	})
 }
 
 func (c *FrostKeygenCoordinator) broadcastTranscriptVerification(

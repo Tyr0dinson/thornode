@@ -80,8 +80,12 @@ func TestFrostFullPartyVerificationRoundsFitPreflightBudgets(t *testing.T) {
 
 			for _, remote := range remotePeers {
 				for frame := uint32(0); frame < limit; frame++ {
-					if _, _, err := comm.preflightTSSFrame(remote, verificationFrameBytes, prefix); err != nil {
+					_, _, reservation, err := comm.preflightTSSFrame(remote, verificationFrameBytes, prefix)
+					if err != nil {
 						t.Fatalf("peer %s frame %d/%d rejected in %d-round ceremony: %v", remote, frame+1, limit, tc.rounds, err)
+					}
+					if reservation == nil || !reservation.accept() {
+						t.Fatalf("peer %s frame %d/%d reservation did not settle", remote, frame+1, limit)
 					}
 				}
 			}
@@ -93,7 +97,7 @@ func TestFrostFullPartyVerificationRoundsFitPreflightBudgets(t *testing.T) {
 			if sub.sessionBytes >= FrostMaxSessionBytes {
 				t.Fatalf("full ceremony exhausted byte budget: used %d of %d", sub.sessionBytes, FrostMaxSessionBytes)
 			}
-			if _, _, err := comm.preflightTSSFrame(remotePeers[0], verificationFrameBytes, prefix); err == nil {
+			if _, _, _, err := comm.preflightTSSFrame(remotePeers[0], verificationFrameBytes, prefix); err == nil {
 				t.Fatalf("frame %d must be rejected after peer reaches the %d-round verification limit", limit+1, tc.rounds)
 			}
 		})
@@ -159,7 +163,7 @@ func TestFrostFullPartyCompletesWithinSessionBudget(t *testing.T) {
 // sign) and is attributable via equivocation evidence. If this test's count
 // ever changes, the fairness characteristics of the constants changed with it.
 func TestFrostPerPeerCapIsAMemoryBackstopNotFairness(t *testing.T) {
-	starvers := int(FrostMaxSessionBytes / FrostMaxBytesPerPeer) // 8
+	starvers := int(FrostMaxSessionBytes / FrostMaxBytesPerPeer) // 16
 	party := make([]peer.ID, starvers+1)
 	for i := range party {
 		party[i] = peer.ID(fmt.Sprintf("member-%d", i))

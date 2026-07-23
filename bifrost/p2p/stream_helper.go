@@ -90,6 +90,31 @@ func (sm *StreamMgr) AddStream(msgID string, stream network.Stream) {
 	}
 }
 
+// RemoveStream forgets one stream without touching other frames in the
+// ceremony. Revoked or failed inbound frames use this before Reset so they do
+// not remain retained until the entire ceremony is released.
+func (sm *StreamMgr) RemoveStream(msgID string, stream network.Stream) {
+	if sm == nil || stream == nil {
+		return
+	}
+	sm.streamLocker.Lock()
+	defer sm.streamLocker.Unlock()
+
+	streams := sm.unusedStreams[msgID]
+	for i, candidate := range streams {
+		if candidate != stream {
+			continue
+		}
+		streams = append(streams[:i], streams[i+1:]...)
+		if len(streams) == 0 {
+			delete(sm.unusedStreams, msgID)
+		} else {
+			sm.unusedStreams[msgID] = streams
+		}
+		return
+	}
+}
+
 // ReadStreamWithBuffer read data from the given stream
 func ReadStreamWithBuffer(stream network.Stream) ([]byte, error) {
 	if ApplyDeadline.Load() {

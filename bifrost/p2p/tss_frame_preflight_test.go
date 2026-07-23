@@ -116,12 +116,17 @@ func TestTSSFramePreflightAcceptsRealWrappedMessage(t *testing.T) {
 			_, _ = base.Write(frame)
 
 			comm := newTSSPreflightCommunication(topic, msgID, []peer.ID{remote}, FrostMaxSessionPayload, 2)
+			var reservation *messageReservation
 			got, err := readStreamWithBufferPreflight(base, TSSFramePreflightBytes, func(length uint32, prefix []byte) error {
-				_, _, preflightErr := comm.preflightTSSFrame(remote, length, prefix)
+				_, _, gotReservation, preflightErr := comm.preflightTSSFrame(remote, length, prefix)
+				reservation = gotReservation
 				return preflightErr
 			})
 			if err != nil {
 				t.Fatalf("real WrappedMessage must survive preflight: %v", err)
+			}
+			if reservation == nil || !reservation.accept() {
+				t.Fatal("round-tripped frame did not settle its preflight reservation")
 			}
 
 			var received messages.WrappedMessage
@@ -161,7 +166,7 @@ func TestTSSFramePreflightRejectsBeforeFullAllocation(t *testing.T) {
 			comm := newTSSPreflightCommunication(topic, msgID, []peer.ID{allowed}, FrostMaxSessionPayload, 2)
 			stream := framedPreflightStream(t, tc.declaredLength, prefix)
 			_, err := readStreamWithBufferPreflight(stream, TSSFramePreflightBytes, func(length uint32, gotPrefix []byte) error {
-				_, _, preflightErr := comm.preflightTSSFrame(tc.remote, length, gotPrefix)
+				_, _, _, preflightErr := comm.preflightTSSFrame(tc.remote, length, gotPrefix)
 				return preflightErr
 			})
 			if !errors.Is(err, ErrTSSFramePreflightRejected) {
@@ -185,12 +190,15 @@ func TestTSSFramePreflightPreservesMatchingLegacyLimitOnly(t *testing.T) {
 	legacyLength := uint32(FrostMaxSessionPayload + 1)
 
 	legacy := newTSSPreflightCommunication(topic, msgID, nil, 0, 0)
-	header, subscription, err := legacy.preflightTSSFrame(remote, legacyLength, prefix)
+	header, subscription, reservation, err := legacy.preflightTSSFrame(remote, legacyLength, prefix)
 	if err != nil {
 		t.Fatalf("matching legacy subscription should retain 20 MiB allowance: %v", err)
 	}
 	if header.MessageType != topic || header.MsgID != msgID || subscription == nil {
 		t.Fatalf("unexpected legacy preflight result: %+v", header)
+	}
+	if reservation == nil || !reservation.accept() {
+		t.Fatal("matching legacy preflight reservation did not settle")
 	}
 
 	missing := &Communication{
@@ -198,7 +206,7 @@ func TestTSSFramePreflightPreservesMatchingLegacyLimitOnly(t *testing.T) {
 		subscribers:      make(map[messages.THORChainTSSMessageType]*MessageIDSubscriber),
 		subscriberLocker: &sync.Mutex{},
 	}
-	if _, _, err := missing.preflightTSSFrame(remote, legacyLength, prefix); err == nil {
+	if _, _, _, err := missing.preflightTSSFrame(remote, legacyLength, prefix); err == nil {
 		t.Fatal("20 MiB legacy allowance must require an existing matching subscription")
 	}
 }
@@ -211,7 +219,7 @@ func TestTSSFramePreflightCountsEachFrameOnce(t *testing.T) {
 	prefix := tssFramePrefix(t, topic, msgID)
 
 	for attempt := 0; attempt < 2; attempt++ {
-		_, subscription, err := comm.preflightTSSFrame(remote, 1024, prefix)
+		_, subscription, reservation, err := comm.preflightTSSFrame(remote, 1024, prefix)
 		if err != nil {
 			t.Fatalf("frame %d should reserve one allowance: %v", attempt+1, err)
 		}
@@ -221,8 +229,11 @@ func TestTSSFramePreflightCountsEachFrameOnce(t *testing.T) {
 		if subscription.peerCounts[remote] != uint32(attempt+1) {
 			t.Fatalf("post-read authorization double-counted frame %d", attempt+1)
 		}
+		if reservation == nil || !reservation.accept() {
+			t.Fatalf("frame %d reservation did not settle", attempt+1)
+		}
 	}
-	if _, _, err := comm.preflightTSSFrame(remote, 1024, prefix); err == nil {
+	if _, _, _, err := comm.preflightTSSFrame(remote, 1024, prefix); err == nil {
 		t.Fatal("third frame must be rejected after exactly two preflight reservations")
 	}
 	subscription := comm.getSubscriber(topic, msgID)
@@ -254,22 +265,26 @@ func TestTSSFramePreflightEnforcesCumulativeByteBudgets(t *testing.T) {
 		subscriberLocker: &sync.Mutex{},
 	}
 
-	if _, _, err := comm.preflightTSSFrame(outsider, 4096, prefix); err == nil {
+	if _, _, _, err := comm.preflightTSSFrame(outsider, 4096, prefix); err == nil {
 		t.Fatal("outsider must fail preflight authorization")
 	}
-	if _, _, err := comm.preflightTSSFrame(peerA, 8193, prefix); err == nil {
+	if _, _, _, err := comm.preflightTSSFrame(peerA, 8193, prefix); err == nil {
 		t.Fatal("oversized frame must fail preflight authorization")
 	}
-	if _, _, err := comm.preflightTSSFrame(peerA, 8192, prefix); err != nil {
+	if _, _, reservation, err := comm.preflightTSSFrame(peerA, 8192, prefix); err != nil {
 		t.Fatalf("peer A should be able to reserve its allowance: %v", err)
+	} else if reservation == nil || !reservation.accept() {
+		t.Fatal("peer A reservation did not settle")
 	}
-	if _, _, err := comm.preflightTSSFrame(peerA, 1, prefix); err == nil {
+	if _, _, _, err := comm.preflightTSSFrame(peerA, 1, prefix); err == nil {
 		t.Fatal("peer A must not consume peer B's allowance")
 	}
-	if _, _, err := comm.preflightTSSFrame(peerB, 4096, prefix); err != nil {
+	if _, _, reservation, err := comm.preflightTSSFrame(peerB, 4096, prefix); err != nil {
 		t.Fatalf("peer B should retain a fair share of the session: %v", err)
+	} else if reservation == nil || !reservation.accept() {
+		t.Fatal("peer B reservation did not settle")
 	}
-	if _, _, err := comm.preflightTSSFrame(peerB, 1, prefix); err == nil {
+	if _, _, _, err := comm.preflightTSSFrame(peerB, 1, prefix); err == nil {
 		t.Fatal("session cumulative byte budget must fail closed")
 	}
 

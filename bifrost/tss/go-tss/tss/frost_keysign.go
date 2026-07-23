@@ -729,6 +729,7 @@ func (t *TssServer) FrostKeySign(req FrostKeySignRequest, sidecar FrostSidecarCl
 	t.p2pCommunication.SetSubscribeWithPeers(messages.TSSFrostVerifyMsg, msgID, msgChan, allowedPeerIDs, p2p.FrostMaxSessionPayload, verificationMessageLimit)
 	t.p2pCommunication.SetSubscribeWithPeers(messages.TSSFrostResultMsg, msgID, msgChan, allowedPeerIDs, p2p.FrostMaxSessionPayload, p2p.FrostMaxMessagesPerPeer)
 	defer func() {
+		t.p2pCommunication.CancelFrostBroadcasts(msgID)
 		t.p2pCommunication.CancelSubscribe(messages.TSSFrostPreprocessMsg, msgID)
 		t.p2pCommunication.CancelSubscribe(messages.TSSFrostShareMsg, msgID)
 		t.p2pCommunication.CancelSubscribe(messages.TSSFrostVerifyMsg, msgID)
@@ -1195,6 +1196,9 @@ func (c *FrostSignCoordinator) exchangePreprocess(
 	for !verifier.isComplete() {
 		select {
 		case msg := <-c.msgChan:
+			if msg == nil || !msg.Accept() {
+				continue
+			}
 			wrapped, ok := parseWrappedMessage(msg.Payload)
 			if !ok {
 				continue
@@ -1386,6 +1390,9 @@ func (c *FrostSignCoordinator) exchangeShares(
 	for !verifier.isComplete() {
 		select {
 		case msg := <-c.msgChan:
+			if msg == nil || !msg.Accept() {
+				continue
+			}
 			wrapped, ok := parseWrappedMessage(msg.Payload)
 			if !ok {
 				continue
@@ -1541,6 +1548,9 @@ func (c *FrostSignCoordinator) WaitForResult(activeParticipants []string, quorum
 	for {
 		select {
 		case msg := <-c.msgChan:
+			if msg == nil || !msg.Accept() {
+				continue
+			}
 			wrapped, ok := parseWrappedMessage(msg.Payload)
 			if !ok || wrapped.MessageType != messages.TSSFrostResultMsg {
 				continue
@@ -1678,15 +1688,14 @@ func (c *FrostSignCoordinator) BroadcastResult(resp FrostKeySignResponse, peers 
 }
 
 func (c *FrostSignCoordinator) broadcast(msgType messages.THORChainTSSMessageType, payload []byte, peers []peer.ID) error {
-	c.p2pCommunication.BroadcastMsgChan <- &messages.BroadcastMsgChan{
+	return c.p2pCommunication.QueueFrostBroadcast(&messages.BroadcastMsgChan{
 		WrappedMessage: messages.WrappedMessage{
 			MessageType: msgType,
 			MsgID:       c.msgID,
 			Payload:     payload,
 		},
 		PeersID: peers,
-	}
-	return nil
+	})
 }
 
 func (c *FrostSignCoordinator) broadcastTranscriptVerification(

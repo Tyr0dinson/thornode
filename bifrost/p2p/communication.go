@@ -73,7 +73,7 @@ const (
 	// guarantee. It is a fixed constant, so it does not scale down with party
 	// size: at the maximum ~128-member vault it is ~16x a peer's fair share of
 	// FrostMaxSessionBytes, which means a handful of authenticated members
-	// (FrostMaxSessionBytes/FrostMaxBytesPerPeer = 8) can spend the whole
+	// (FrostMaxSessionBytes/FrostMaxBytesPerPeer = 16) can spend the whole
 	// session budget and starve the rest. This is tolerated because such an
 	// attacker must already be an authorized party member, who can fail the
 	// ceremony by other means (bad share, refusing to sign) and is attributable
@@ -81,10 +81,36 @@ const (
 	// session cap (see TestFrostFullPartyCompletesWithinSessionBudget); the
 	// starvation characteristic is pinned by
 	// TestFrostPerPeerCapIsAMemoryBackstopNotFairness.
-	// FrostMaxSessionBytes bounds cumulative bytes accepted for one type+msgID
-	// subscription before any full-frame allocation.
+	// FrostMaxSessionBytes bounds cumulative bytes once across every topic in a
+	// FROST ceremony. FrostMaxNodeBytes applies once across all ceremonies; the
+	// concurrency caps additionally bound slow/truncated in-flight readers.
 	FrostMaxBytesPerPeer = uint64(8 * 1024 * 1024)
-	FrostMaxSessionBytes = uint64(64 * 1024 * 1024)
+	FrostMaxSessionBytes = uint64(128 * 1024 * 1024)
+	FrostMaxNodeBytes    = uint64(256 * 1024 * 1024)
+
+	// A ceremony may retain one full 64-frame coordinator queue plus an equal
+	// amount of bounded delivery backpressure. The node-wide count admits that
+	// full allowance for each of the default ten concurrent signers; byte and
+	// reader limits remain the hard live-memory bounds.
+	FrostMaxConcurrentFramesPerSession = uint32(2 * FrostSessionQueueSize)
+	FrostMaxConcurrentFrames           = uint32(10) * FrostMaxConcurrentFramesPerSession
+	TSSMaxConcurrentReaders            = uint32(256)
+	TSSMaxReadersPerPeer               = uint32(16)
+	// Each broadcast fans out one writer per remote party member. Per-ceremony
+	// isolation prevents one stalled party from monopolizing the bounded
+	// node-wide pool; FrostBroadcastMsgChan supplies coordinator backpressure
+	// without blocking legacy TSS traffic.
+	FrostMaxConcurrentBroadcastsPerSession = uint32(2)
+	FrostMaxConcurrentBroadcasts           = uint32(8)
+	// One maximum-party DKG can emit roughly three verification broadcasts per
+	// remote participant. Keep enough pending room to discover and fairly
+	// schedule another ceremony behind that legitimate single-session burst.
+	FrostMaxPendingBroadcasts = 512
+	// Terminal results have a dedicated ingress so scheduler backpressure from
+	// obsolete round traffic cannot prevent keyless/standby members receiving
+	// the completed DKG or keysign outcome.
+	FrostMaxPendingResults       = 32
+	FrostBroadcastEnqueueTimeout = 250 * time.Millisecond
 )
 
 // FrostVerificationMessagesPerPeer sizes the shared verification-topic count
@@ -113,6 +139,27 @@ func FrostVerificationMessagesPerPeer(partySize, rounds int) uint32 {
 type Message struct {
 	PeerID  peer.ID
 	Payload []byte
+
+	reservation *messageReservation
+}
+
+// Accept commits a fully read frame when the protocol coordinator removes it
+// from the bounded queue. It returns false if party narrowing revoked the
+// authorization epoch while the frame was queued or in flight.
+func (m *Message) Accept() bool {
+	if m == nil || m.reservation == nil {
+		return m != nil
+	}
+	return m.reservation.accept()
+}
+
+// Reject refunds a queued reservation and resets its inbound stream. It is
+// idempotent so party narrowing and handler teardown may race safely.
+func (m *Message) Reject() {
+	if m == nil || m.reservation == nil {
+		return
+	}
+	m.reservation.reject()
 }
 
 const maxTSSFrameMsgIDBytes = 256
@@ -197,19 +244,24 @@ func validTSSFrameMsgID(msgID string) bool {
 // preflightTSSFrame authenticates and reserves exactly one message allowance
 // before the outer frame is allocated. Legacy subscriptions retain their
 // existing 20 MiB frame limit only when type+msgID actually match.
-func (c *Communication) preflightTSSFrame(remotePeer peer.ID, length uint32, prefix []byte) (tssFrameHeader, *MessageSubscription, error) {
+func (c *Communication) preflightTSSFrame(
+	remotePeer peer.ID,
+	length uint32,
+	prefix []byte,
+) (tssFrameHeader, *MessageSubscription, *messageReservation, error) {
 	header, err := decodeTSSFrameHeader(prefix)
 	if err != nil {
-		return tssFrameHeader{}, nil, err
+		return tssFrameHeader{}, nil, nil, err
 	}
 	subscription := c.getSubscriber(header.MessageType, header.MsgID)
 	if subscription == nil {
-		return tssFrameHeader{}, nil, fmt.Errorf("no matching TSS session subscription")
+		return tssFrameHeader{}, nil, nil, fmt.Errorf("no matching TSS session subscription")
 	}
-	if !subscription.accepts(remotePeer, int(length)) {
-		return tssFrameHeader{}, nil, fmt.Errorf("unauthorized, over-limit, or exhausted TSS session frame")
+	reservation := subscription.reserve(remotePeer, int(length))
+	if reservation == nil {
+		return tssFrameHeader{}, nil, nil, fmt.Errorf("unauthorized, over-limit, or exhausted TSS session frame")
 	}
-	return header, subscription, nil
+	return header, subscription, reservation, nil
 }
 
 // Communication use p2p to broadcast messages among all the TSS nodes
@@ -225,10 +277,32 @@ type Communication struct {
 	subscriberLocker *sync.Mutex
 	streamCount      int64
 	BroadcastMsgChan chan *messages.BroadcastMsgChan
-	externalAddr     maddr.Multiaddr
-	streamMgr        *StreamMgr
-	nodeGater        *NodeGater // gater to restrict connections to allowed nodes only
-	peerFinder       peerFinder
+	// FrostBroadcastMsgChan is intentionally separate from the legacy TSS
+	// channel. Saturated/offline XMR ceremonies must not stop BTC and other
+	// legacy keygen/keysign traffic from being discovered and dispatched.
+	FrostBroadcastMsgChan       chan *messages.BroadcastMsgChan
+	FrostResultBroadcastMsgChan chan *messages.BroadcastMsgChan
+	cancelFrostBroadcastChan    chan frostBroadcastCancelRequest
+	externalAddr                maddr.Multiaddr
+	streamMgr                   *StreamMgr
+	nodeGater                   *NodeGater // gater to restrict connections to allowed nodes only
+	peerFinder                  peerFinder
+	frostBudget                 *frostIngressBudget
+	tssReaders                  *tssReaderLimiter
+
+	// broadcastToPeersFn is a deterministic test seam. Production leaves it
+	// nil and uses broadcastToPeers.
+	broadcastToPeersFn func([]peer.ID, []byte, string, bool)
+}
+
+type frostBroadcastCancelRequest struct {
+	msgID string
+	done  chan struct{}
+}
+
+type frostBroadcastCompletion struct {
+	msgID    string
+	terminal bool
 }
 
 type peerFinder interface {
@@ -311,8 +385,19 @@ func NewCommunication(cfg P2PConfig, stateManager *storage.FileStateMgr, bridge 
 		subscriberLocker: &sync.Mutex{},
 		streamCount:      0,
 		BroadcastMsgChan: make(chan *messages.BroadcastMsgChan, 1024),
-		externalAddr:     externalAddr,
-		streamMgr:        NewStreamMgr(),
+		FrostBroadcastMsgChan: make(
+			chan *messages.BroadcastMsgChan,
+			FrostMaxConcurrentBroadcasts,
+		),
+		FrostResultBroadcastMsgChan: make(
+			chan *messages.BroadcastMsgChan,
+			FrostMaxPendingResults,
+		),
+		cancelFrostBroadcastChan: make(chan frostBroadcastCancelRequest, 128),
+		externalAddr:             externalAddr,
+		streamMgr:                NewStreamMgr(),
+		frostBudget:              newDefaultFrostIngressBudget(),
+		tssReaders:               newTSSReaderLimiter(TSSMaxConcurrentReaders, TSSMaxReadersPerPeer),
 	}
 
 	// If bridge is provided, create the node gater
@@ -356,11 +441,26 @@ const (
 // Broadcast message to Peers. msgType decides whether a failed write is
 // retried (only keygen traffic is retried; see writeAttemptsFor).
 func (c *Communication) Broadcast(peers []peer.ID, msg []byte, msgID string, msgType messages.THORChainTSSMessageType) {
+	c.broadcast(peers, msg, msgID, msgType, false)
+}
+
+func (c *Communication) broadcast(peers []peer.ID, msg []byte, msgID string, msgType messages.THORChainTSSMessageType, closeAfterWrite bool) {
 	if len(peers) == 0 {
 		return
 	}
 	c.wg.Add(1)
-	go c.broadcastToPeers(peers, msg, msgID, msgType)
+	go func() {
+		defer c.wg.Done()
+		c.dispatchBroadcastToPeers(peers, msg, msgID, msgType, closeAfterWrite)
+	}()
+}
+
+func (c *Communication) dispatchBroadcastToPeers(peers []peer.ID, msg []byte, msgID string, msgType messages.THORChainTSSMessageType, closeAfterWrite bool) {
+	if c.broadcastToPeersFn != nil {
+		c.broadcastToPeersFn(peers, msg, msgID, closeAfterWrite)
+		return
+	}
+	c.broadcastToPeers(peers, msg, msgID, msgType, closeAfterWrite)
 }
 
 // writeAttemptsFor returns how many times a write of this message type may be
@@ -376,8 +476,7 @@ func writeAttemptsFor(msgType messages.THORChainTSSMessageType) int {
 	}
 }
 
-func (c *Communication) broadcastToPeers(peers []peer.ID, msg []byte, msgID string, msgType messages.THORChainTSSMessageType) {
-	defer c.wg.Done()
+func (c *Communication) broadcastToPeers(peers []peer.ID, msg []byte, msgID string, msgType messages.THORChainTSSMessageType, closeAfterWrite bool) {
 	defer func() {
 		c.logger.Debug().Msgf("finished sending message to peer(%v)", peers)
 	}()
@@ -392,7 +491,7 @@ func (c *Communication) broadcastToPeers(peers []peer.ID, msg []byte, msgID stri
 	for _, p := range peers {
 		go func(p peer.ID) {
 			defer wgSend.Done()
-			attempts, err := c.writeToStreamWithRetry(p, msg, msgID, maxAttempts)
+			attempts, err := c.writeToStreamWithRetry(p, msg, msgID, maxAttempts, closeAfterWrite)
 			if err != nil {
 				atomic.AddInt64(&failed, 1)
 				c.logger.Error().Err(err).
@@ -424,13 +523,13 @@ func (c *Communication) broadcastToPeers(peers []peer.ID, msg []byte, msgID stri
 
 // writeToStreamWithRetry pushes msg to a single peer, retrying on a fresh
 // stream up to maxAttempts times within the streamWriteRetryBudget.
-func (c *Communication) writeToStreamWithRetry(pID peer.ID, msg []byte, msgID string, maxAttempts int) (int, error) {
+func (c *Communication) writeToStreamWithRetry(pID peer.ID, msg []byte, msgID string, maxAttempts int, closeAfterWrite bool) (int, error) {
 	var err error
 	deadline := time.Now().Add(streamWriteRetryBudget)
 	attempt := 0
 	for attempt < maxAttempts {
 		attempt++
-		err = c.writeToStream(pID, msg, msgID)
+		err = c.writeToStream(pID, msg, msgID, closeAfterWrite)
 		if err == nil {
 			if attempt > 1 {
 				c.logger.Info().
@@ -457,7 +556,7 @@ func (c *Communication) writeToStreamWithRetry(pID peer.ID, msg []byte, msgID st
 	return attempt, err
 }
 
-func (c *Communication) writeToStream(pID peer.ID, msg []byte, msgID string) error {
+func (c *Communication) writeToStream(pID peer.ID, msg []byte, msgID string, closeAfterWrite bool) error {
 	// don't send to ourselves
 	if pID == c.host.ID() {
 		return nil
@@ -470,18 +569,72 @@ func (c *Communication) writeToStream(pID peer.ID, msg []byte, msgID string) err
 		return nil
 	}
 
-	defer func() {
-		c.streamMgr.AddStream(msgID, stream)
-	}()
 	c.logger.Debug().Msgf(">>>writing messages to peer(%s)", pID)
 
-	return WriteStreamWithBuffer(msg, stream)
+	if closeAfterWrite {
+		// connectToOnePeer bounds discovery/opening. Bound the write itself as
+		// well so a cancellation acknowledgment can wait for all old round
+		// writers to quiesce without trusting the remote peer to read.
+		if err := stream.SetWriteDeadline(time.Now().Add(TimeoutConnecting)); err != nil {
+			_ = stream.Reset()
+			return fmt.Errorf("fail to set FROST stream write deadline: %w", err)
+		}
+	}
+	if err := WriteStreamWithBuffer(msg, stream); err != nil {
+		if closeAfterWrite {
+			_ = stream.Reset()
+		} else {
+			c.streamMgr.AddStream(msgID, stream)
+		}
+		return err
+	}
+	return c.finishWrittenTSSStream(stream, msgID, closeAfterWrite)
+}
+
+func (c *Communication) finishWrittenTSSStream(stream network.Stream, msgID string, closeAfterWrite bool) error {
+	if closeAfterWrite {
+		if err := stream.Close(); err != nil {
+			_ = stream.Reset()
+			return fmt.Errorf("fail to gracefully close FROST stream: %w", err)
+		}
+		return nil
+	}
+	c.streamMgr.AddStream(msgID, stream)
+	return nil
 }
 
 func (c *Communication) handleStreamTss(stream network.Stream) {
 	remotePeer := stream.Conn().RemotePeer()
+	if !c.acquireTSSReadSlot(remotePeer) {
+		if err := stream.Reset(); err != nil {
+			c.logger.Debug().Err(err).Msg("fail to reset TSS stream rejected by reader concurrency bound")
+		}
+		return
+	}
+	readerSlotHeld := true
+	defer func() {
+		if readerSlotHeld {
+			c.releaseTSSReadSlot(remotePeer)
+		}
+	}()
+
 	peerID := remotePeer.String()
 	c.logger.Debug().Msgf("reading from tss stream of peer: %s", peerID)
+
+	var reservation *messageReservation
+	delivered := false
+	defer func() {
+		if delivered {
+			return
+		}
+		if reservation != nil {
+			reservation.reject()
+			return
+		}
+		if err := stream.Reset(); err != nil {
+			c.logger.Debug().Err(err).Msg("fail to reset rejected or truncated TSS stream")
+		}
+	}()
 
 	select {
 	case <-c.stopChan:
@@ -491,39 +644,48 @@ func (c *Communication) handleStreamTss(stream network.Stream) {
 		var subscription *MessageSubscription
 		dataBuf, err := readStreamWithBufferPreflight(stream, TSSFramePreflightBytes, func(length uint32, prefix []byte) error {
 			var preflightErr error
-			preflightHeader, subscription, preflightErr = c.preflightTSSFrame(remotePeer, length, prefix)
+			preflightHeader, subscription, reservation, preflightErr = c.preflightTSSFrame(remotePeer, length, prefix)
+			if reservation != nil {
+				reservation.attachStream(stream, c.streamMgr, preflightHeader.MsgID)
+			}
+			if preflightErr == nil &&
+				subscription != nil &&
+				subscription.sessionBudget != nil &&
+				readerSlotHeld {
+				// A valid FROST prefix has already authenticated the peer,
+				// session, declared frame size, and aggregate reservation.
+				// From here the FROST byte/frame budgets—not the scarce
+				// pre-auth reader slots—bound a slow body.
+				c.releaseTSSReadSlot(remotePeer)
+				readerSlotHeld = false
+			}
 			return preflightErr
 		})
 		if err != nil {
 			c.logger.Error().Err(err).Msgf("fail to read from stream,peerID: %s", peerID)
-			if errors.Is(err, ErrTSSFramePreflightRejected) {
-				if resetErr := stream.Reset(); resetErr != nil {
-					c.logger.Debug().Err(resetErr).Msg("fail to reset preflight-rejected TSS stream")
-				}
-				return
-			}
-			c.streamMgr.AddStream(StreamUnknown, stream)
 			return
+		}
+		// The reader limiter protects only unauthenticated/preflight I/O. Once
+		// the bounded frame has been read and charged to an authenticated
+		// ceremony reservation, release it before JSON work or coordinator
+		// backpressure. Holding this slot until delivery lets one full session
+		// exhaust the global reader pool and reject every concurrent ceremony.
+		if readerSlotHeld {
+			c.releaseTSSReadSlot(remotePeer)
+			readerSlotHeld = false
 		}
 		var wrappedMsg messages.WrappedMessage
 		if err := json.Unmarshal(dataBuf, &wrappedMsg); nil != err {
 			c.logger.Error().Err(err).Msg("fail to unmarshal wrapped message bytes")
-			c.streamMgr.AddStream(StreamUnknown, stream)
 			return
 		}
 		if wrappedMsg.MessageType != preflightHeader.MessageType || wrappedMsg.MsgID != preflightHeader.MsgID {
 			c.logger.Warn().Msg("dropping TSS frame whose full message changed its preflight session header")
-			if err := stream.Reset(); err != nil {
-				c.logger.Debug().Err(err).Msg("fail to reset header-mismatched TSS stream")
-			}
 			return
 		}
 		if current := c.getSubscriber(wrappedMsg.MessageType, wrappedMsg.MsgID); current != subscription ||
-			!subscription.authorized(remotePeer, len(dataBuf)) {
+			!reservation.current() {
 			c.logger.Warn().Msg("dropping TSS frame whose subscription changed after preflight")
-			if err := stream.Reset(); err != nil {
-				c.logger.Debug().Err(err).Msg("fail to reset stale-subscription TSS stream")
-			}
 			return
 		}
 		c.logger.Debug().
@@ -532,25 +694,45 @@ func (c *Communication) handleStreamTss(stream network.Stream) {
 			Int("payload_bytes", len(wrappedMsg.Payload)).
 			Msg("received TSS message")
 		message := &Message{
-			PeerID:  remotePeer,
-			Payload: dataBuf,
+			PeerID:      remotePeer,
+			Payload:     dataBuf,
+			reservation: reservation,
 		}
 		// Park before delivery so a consumer cannot race ReleaseStream ahead of
-		// this stream being tracked. Bounded FROST queues apply backpressure rather
-		// than dropping a valid ceremony frame during a burst.
-		c.streamMgr.AddStream(wrappedMsg.MsgID, stream)
+		// this stream being tracked. parkStream also closes the revocation race
+		// between the current() check above and retaining the stream.
+		if !reservation.parkStream() {
+			message.Reject()
+			return
+		}
+		// Bounded FROST queues apply backpressure rather than dropping a valid
+		// ceremony frame during a burst.
 		if !subscription.deliver(message, c.stopChan) {
 			c.logger.Warn().
 				Str("peer", remotePeer.String()).
 				Str("msg_id", wrappedMsg.MsgID).
 				Str("message_type", wrappedMsg.MessageType.String()).
 				Msg("stopped before TSS session message delivery completed")
-			if err := stream.Reset(); err != nil {
-				c.logger.Debug().Err(err).Msg("fail to reset undelivered TSS stream")
-			}
+			message.Reject()
+			return
 		}
+		delivered = true
 
 	}
+}
+
+func (c *Communication) acquireTSSReadSlot(id peer.ID) bool {
+	if c == nil || c.tssReaders == nil {
+		return false
+	}
+	return c.tssReaders.acquire(id)
+}
+
+func (c *Communication) releaseTSSReadSlot(id peer.ID) {
+	if c == nil || c.tssReaders == nil {
+		return
+	}
+	c.tssReaders.release(id)
 }
 
 func (c *Communication) getPeers() addr.AddrList {
@@ -886,6 +1068,9 @@ func (c *Communication) SetSubscribe(topic messages.THORChainTSSMessageType, msg
 	c.subscriberLocker.Lock()
 	defer c.subscriberLocker.Unlock()
 
+	if c.tssReaders == nil {
+		c.tssReaders = newTSSReaderLimiter(TSSMaxConcurrentReaders, TSSMaxReadersPerPeer)
+	}
 	messageIDSubscribers, ok := c.subscribers[topic]
 	if !ok {
 		messageIDSubscribers = NewMessageIDSubscriber()
@@ -913,10 +1098,17 @@ func (c *Communication) SetSubscribeWithPeers(
 		messageIDSubscribers = NewMessageIDSubscriber()
 		c.subscribers[topic] = messageIDSubscribers
 	}
+	if c.frostBudget == nil {
+		c.frostBudget = newDefaultFrostIngressBudget()
+	}
+	if c.tssReaders == nil {
+		c.tssReaders = newTSSReaderLimiter(TSSMaxConcurrentReaders, TSSMaxReadersPerPeer)
+	}
 	// Copy the caller-owned slice so later party filtering cannot mutate the
 	// authorization decision of an already registered subscription.
 	peers := append([]peer.ID(nil), allowedPeers...)
-	messageIDSubscribers.SubscribeRestrictedWithBudgets(
+	sessionBudget := c.frostBudget.attach(msgID)
+	messageIDSubscribers.subscribeRestrictedWithBudgets(
 		msgID,
 		channel,
 		peers,
@@ -924,6 +1116,7 @@ func (c *Communication) SetSubscribeWithPeers(
 		maxMessagesPerPeer,
 		FrostMaxBytesPerPeer,
 		FrostMaxSessionBytes,
+		sessionBudget,
 	)
 }
 
@@ -972,8 +1165,99 @@ func (c *Communication) ProcessBroadcast() {
 	c.logger.Debug().Msg("start to process broadcast message channel")
 	defer c.logger.Debug().Msg("stop process broadcast message channel")
 	defer c.wg.Done()
+	scheduler := newFrostBroadcastScheduler(
+		FrostMaxConcurrentBroadcasts,
+		FrostMaxConcurrentBroadcastsPerSession,
+		FrostMaxPendingBroadcasts,
+	)
+	completed := make(chan frostBroadcastCompletion, FrostMaxConcurrentBroadcasts)
+	cancelWaiters := make(map[string][]chan struct{})
+	deferredFrost := make([]frostBroadcastTask, 0, FrostMaxConcurrentBroadcasts)
+	deferTask := func(task frostBroadcastTask) {
+		if !task.terminal {
+			deferredFrost = append(deferredFrost, task)
+			return
+		}
+		// Terminal results retain FIFO relative to each other, but are admitted
+		// before deferred round traffic as soon as the scheduler has capacity.
+		insertAt := 0
+		for insertAt < len(deferredFrost) && deferredFrost[insertAt].terminal {
+			insertAt++
+		}
+		deferredFrost = append(deferredFrost, frostBroadcastTask{})
+		copy(deferredFrost[insertAt+1:], deferredFrost[insertAt:])
+		deferredFrost[insertAt] = task
+	}
 	for {
+		for {
+			task, ok := scheduler.next()
+			if !ok {
+				break
+			}
+			c.wg.Add(1)
+			go func(task frostBroadcastTask) {
+				defer c.wg.Done()
+				c.dispatchBroadcastToPeers(task.peers, task.msg, task.msgID, task.msgType, true)
+				select {
+				case completed <- frostBroadcastCompletion{
+					msgID:    task.msgID,
+					terminal: task.terminal,
+				}:
+				case <-c.stopChan:
+				}
+			}(task)
+		}
+
+		fedDeferred := false
+		for len(deferredFrost) > 0 &&
+			(scheduler.maxPending <= 0 || scheduler.pending < scheduler.maxPending) {
+			task := deferredFrost[0]
+			deferredFrost[0] = frostBroadcastTask{}
+			deferredFrost = deferredFrost[1:]
+			if !scheduler.enqueue(task) {
+				// The loop condition and single-goroutine scheduler ownership
+				// make this unreachable, but retain the task fail closed.
+				deferredFrost = append([]frostBroadcastTask{task}, deferredFrost...)
+				break
+			}
+			fedDeferred = true
+		}
+		if fedDeferred {
+			continue
+		}
+
+		frostInput := (<-chan *messages.BroadcastMsgChan)(c.FrostBroadcastMsgChan)
+		if len(deferredFrost) > 0 ||
+			(scheduler.maxPending > 0 && scheduler.pending >= scheduler.maxPending) {
+			frostInput = nil
+		}
 		select {
+		case msg := <-c.FrostResultBroadcastMsgChan:
+			task, err := frostBroadcastTaskFromMessage(msg)
+			if err != nil {
+				c.logger.Error().Err(err).Msg("invalid message on FROST result broadcast channel")
+				continue
+			}
+			if !task.terminal {
+				c.logger.Error().
+					Str("message_type", msg.WrappedMessage.MessageType.String()).
+					Msg("non-terminal message received on FROST result broadcast channel")
+				continue
+			}
+			if !scheduler.enqueue(task) {
+				deferTask(task)
+			}
+		case msg := <-frostInput:
+			task, err := frostBroadcastTaskFromMessage(msg)
+			if err != nil {
+				c.logger.Error().Err(err).Msg("invalid message on FROST broadcast channel")
+				continue
+			}
+			if !scheduler.enqueue(task) {
+				c.logger.Error().
+					Str("msg_id", task.msgID).
+					Msg("bounded FROST broadcast scheduler rejected a task")
+			}
 		case msg := <-c.BroadcastMsgChan:
 			wrappedMsgBytes, err := json.Marshal(msg.WrappedMessage)
 			if err != nil {
@@ -981,12 +1265,209 @@ func (c *Communication) ProcessBroadcast() {
 				continue
 			}
 			c.logger.Debug().Msgf("broadcast message %s to %+v", msg.WrappedMessage, msg.PeersID)
-			c.Broadcast(msg.PeersID, wrappedMsgBytes, msg.WrappedMessage.MsgID, msg.WrappedMessage.MessageType)
+			if isFrostMessageType(msg.WrappedMessage.MessageType) {
+				task, taskErr := frostBroadcastTaskFromMessage(msg)
+				if taskErr != nil {
+					c.logger.Error().Err(taskErr).Msg("invalid FROST message on legacy broadcast channel")
+					continue
+				}
+				if !scheduler.enqueue(task) {
+					if task.terminal {
+						deferTask(task)
+						continue
+					}
+					c.logger.Error().
+						Str("msg_id", msg.WrappedMessage.MsgID).
+						Msg("bounded FROST broadcast scheduler rejected a task")
+				}
+				continue
+			}
+			c.broadcast(
+				msg.PeersID,
+				wrappedMsgBytes,
+				msg.WrappedMessage.MsgID,
+				msg.WrappedMessage.MessageType,
+				false,
+			)
 
+		case request := <-c.cancelFrostBroadcastChan:
+			dropped := scheduler.cancel(request.msgID)
+
+			// A coordinator queues all of its messages before synchronously
+			// canceling. Drain the isolated ingress channel as part of that
+			// cancellation barrier so stale round frames cannot be selected
+			// after the acknowledgment. Preserve other ceremonies and final
+			// result propagation in a small local deferred queue.
+			filteredDeferred := deferredFrost[:0]
+			for i := range deferredFrost {
+				task := deferredFrost[i]
+				if task.msgID == request.msgID && !task.terminal {
+					dropped++
+					deferredFrost[i] = frostBroadcastTask{}
+					continue
+				}
+				filteredDeferred = append(filteredDeferred, task)
+			}
+			deferredFrost = filteredDeferred
+
+		drainFrost:
+			for c.FrostBroadcastMsgChan != nil {
+				select {
+				case msg := <-c.FrostBroadcastMsgChan:
+					task, err := frostBroadcastTaskFromMessage(msg)
+					if err != nil {
+						c.logger.Error().Err(err).Msg("invalid message on FROST broadcast channel")
+						continue
+					}
+					if task.msgID == request.msgID && !task.terminal {
+						dropped++
+						continue
+					}
+					deferTask(task)
+				default:
+					break drainFrost
+				}
+			}
+			if dropped > 0 {
+				c.logger.Info().
+					Str("msg_id", request.msgID).
+					Int("dropped", dropped).
+					Msg("canceled pending FROST broadcasts for completed ceremony")
+			}
+			if scheduler.activeOrdinary(request.msgID) == 0 {
+				close(request.done)
+			} else {
+				// Do not let a retry reuse the deterministic msgID until every
+				// old ordinary writer has either closed or hit its write
+				// deadline. Terminal result propagation is intentionally
+				// independent and does not delay the cancellation barrier.
+				cancelWaiters[request.msgID] = append(
+					cancelWaiters[request.msgID],
+					request.done,
+				)
+			}
+		case completion := <-completed:
+			scheduler.complete(completion.msgID, completion.terminal)
+			if scheduler.activeOrdinary(completion.msgID) == 0 {
+				for _, done := range cancelWaiters[completion.msgID] {
+					close(done)
+				}
+				delete(cancelWaiters, completion.msgID)
+			}
 		case <-c.stopChan:
 			return
 		}
 	}
+}
+
+// CancelFrostBroadcasts removes pending fanout work when a coordinator exits.
+// Already-active writers remain bounded to two per ceremony and report their
+// ordinary completion; hundreds of stale queued writes cannot outlive a timed
+// out DKG/keysign and backpressure later XMR work.
+func (c *Communication) CancelFrostBroadcasts(msgID string) {
+	if c == nil || msgID == "" || c.cancelFrostBroadcastChan == nil {
+		return
+	}
+	request := frostBroadcastCancelRequest{
+		msgID: msgID,
+		done:  make(chan struct{}),
+	}
+	select {
+	case c.cancelFrostBroadcastChan <- request:
+	case <-c.stopChan:
+		return
+	}
+	select {
+	case <-request.done:
+	case <-c.stopChan:
+	}
+}
+
+func frostBroadcastTaskFromMessage(msg *messages.BroadcastMsgChan) (frostBroadcastTask, error) {
+	if msg == nil {
+		return frostBroadcastTask{}, errors.New("nil FROST broadcast message")
+	}
+	if !validTSSFrameMsgID(msg.WrappedMessage.MsgID) {
+		return frostBroadcastTask{}, errors.New("invalid FROST broadcast message ID")
+	}
+	if !isFrostMessageType(msg.WrappedMessage.MessageType) {
+		return frostBroadcastTask{}, fmt.Errorf(
+			"non-FROST message type %s",
+			msg.WrappedMessage.MessageType,
+		)
+	}
+	wrappedMsgBytes, err := json.Marshal(msg.WrappedMessage)
+	if err != nil {
+		return frostBroadcastTask{}, fmt.Errorf("marshal FROST wrapped message: %w", err)
+	}
+	return frostBroadcastTask{
+		peers:    append([]peer.ID(nil), msg.PeersID...),
+		msg:      wrappedMsgBytes,
+		msgID:    msg.WrappedMessage.MsgID,
+		msgType:  msg.WrappedMessage.MessageType,
+		terminal: isFrostTerminalResult(msg.WrappedMessage.MessageType),
+	}, nil
+}
+
+// QueueFrostBroadcast routes FROST traffic to its isolated, bounded ingress.
+// The legacy fallback preserves focused coordinator tests which construct a
+// minimal Communication without starting the production P2P service.
+func (c *Communication) QueueFrostBroadcast(msg *messages.BroadcastMsgChan) error {
+	if c == nil || msg == nil {
+		return errors.New("FROST broadcast is not configured")
+	}
+	out := c.FrostBroadcastMsgChan
+	if isFrostTerminalResult(msg.WrappedMessage.MessageType) &&
+		c.FrostResultBroadcastMsgChan != nil {
+		out = c.FrostResultBroadcastMsgChan
+	}
+	if out == nil {
+		out = c.BroadcastMsgChan
+	}
+	if out == nil {
+		return errors.New("FROST broadcast channel is not configured")
+	}
+	select {
+	case out <- msg:
+		return nil
+	case <-c.stopChan:
+		return errors.New("P2P communication stopped before FROST broadcast was queued")
+	default:
+	}
+	// Briefly absorb legitimate verification bursts, but never let scheduler
+	// saturation pin a coordinator past its ceremony timeout or prevent its
+	// deferred cancellation from running.
+	timer := time.NewTimer(FrostBroadcastEnqueueTimeout)
+	defer timer.Stop()
+	select {
+	case out <- msg:
+		return nil
+	case <-c.stopChan:
+		return errors.New("P2P communication stopped before FROST broadcast was queued")
+	case <-timer.C:
+		return errors.New("bounded FROST broadcast ingress remained full")
+	}
+}
+
+func isFrostMessageType(msgType messages.THORChainTSSMessageType) bool {
+	switch msgType {
+	case messages.TSSFrostPreprocessMsg,
+		messages.TSSFrostShareMsg,
+		messages.TSSFrostVerifyMsg,
+		messages.TSSFrostResultMsg,
+		messages.TSSFrostDKGRound1Msg,
+		messages.TSSFrostDKGRound2Msg,
+		messages.TSSFrostDKGRound3Msg,
+		messages.TSSFrostDKGResultMsg:
+		return true
+	default:
+		return false
+	}
+}
+
+func isFrostTerminalResult(msgType messages.THORChainTSSMessageType) bool {
+	return msgType == messages.TSSFrostResultMsg ||
+		msgType == messages.TSSFrostDKGResultMsg
 }
 
 func (c *Communication) ReleaseStream(msgID string) {
