@@ -33,6 +33,8 @@ var failClosedRequiredCapabilities = []string{
 	sidecar.CapabilityScannerBoundedRewind,
 	sidecar.CapabilitySharePlanQuarantine,
 	sidecar.CapabilityVerifiedAbsenceBalance,
+	sidecar.CapabilityCanonicalObservation,
+	sidecar.CapabilityCanonicalTxLocation,
 }
 
 // failClosedSignerNetwork is the network both the config and a well-behaved
@@ -210,7 +212,7 @@ func TestNewClientFailsClosedOnSignerContract(t *testing.T) {
 
 // TestNewClientRejectsEachMissingSignerCapability walks the capability list and
 // drops one capability at a time, so weakening any single element of the
-// eleven-capability handshake fails here.
+// thirteen-capability handshake fails here.
 func TestNewClientRejectsEachMissingSignerCapability(t *testing.T) {
 	for _, dropped := range failClosedRequiredCapabilities {
 		t.Run(dropped, func(t *testing.T) {

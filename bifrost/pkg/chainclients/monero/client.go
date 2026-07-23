@@ -266,6 +266,8 @@ func NewClient(
 		sidecar.CapabilityScannerBoundedRewind,
 		sidecar.CapabilitySharePlanQuarantine,
 		sidecar.CapabilityVerifiedAbsenceBalance,
+		sidecar.CapabilityCanonicalObservation,
+		sidecar.CapabilityCanonicalTxLocation,
 	)
 	if compatibilityErr != nil {
 		return nil, fmt.Errorf("xmr signer compatibility check failed: %w", compatibilityErr)

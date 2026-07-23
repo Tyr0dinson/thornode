@@ -81,7 +81,20 @@ TEST_BUILD_FLAGS := -parallel=$(PARALLELISM) -tags=mocknet
 ifdef RUN
 RUN_FLAG := -run=$(RUN)
 endif
-XMR_E2E_RUN := TestSeraiDistributedSignAndSubmitFlow|TestSeraiDistributedSignFailsClosedWhenThresholdCannotBeMet|TestKeygenFailsClosedWhenPeerCoordinationFails|TestXMRScannerInboundDeferredReferenceMemoAttribution|TestXMRScannerInboundMemolessDeferredAttribution|TestXMRReportSolvencyMultiVaultAccounting
+empty :=
+space := $(empty) $(empty)
+XMR_E2E_TESTS := \
+	TestNewClientFailsClosedOnSignerContract \
+	TestNewClientRejectsEachMissingSignerCapability \
+	TestClientKeygenPersistsVaultAddress \
+	TestSignTxSuppressesSecondFrostRoundWithDifferentActiveSetAndWithholding \
+	TestSignTxRecoversSignedPayloadAcrossRescheduledFrostVaults \
+	TestSignTxFailsBeforeSignerCacheWhenSignedPayloadPersistenceFails \
+	TestXMRScannerInboundNoteMemoAttribution \
+	TestXMRScannerInboundMemolessDeferredAttribution \
+	TestXMRScannerOutgoingMemolessDeferredAttribution \
+	TestXMRReportSolvencyMultiVaultAccounting
+XMR_E2E_RUN := ^($(subst $(space),|,$(strip $(XMR_E2E_TESTS))))$$
 BINARIES?=./cmd/thornode ./cmd/bifrost ./tools/recover-keyshare-backup
 GOVERSION=$(shell awk '($$1 == "go") { print $$2 }' go.mod)
 
@@ -238,7 +251,17 @@ test-go-tss:
 	@go test ${TEST_BUILD_FLAGS} ${RUN_FLAG} --race "./bifrost/tss/go-tss/..."
 
 test-xmr-e2e:
-	@go test -count=1 ./bifrost/pkg/chainclients/monero -run '${XMR_E2E_RUN}'
+	@set -eu; \
+		listed="$$(go test ${TEST_BUILD_FLAGS} ./bifrost/pkg/chainclients/monero -list '${XMR_E2E_RUN}')"; \
+		found="$$(printf '%s\n' "$$listed" | grep '^Test' || true)"; \
+		expected="$(words $(XMR_E2E_TESTS))"; \
+		actual="$$(printf '%s\n' "$$found" | sed '/^$$/d' | wc -l | tr -d ' ')"; \
+		if [ "$$actual" != "$$expected" ]; then \
+			echo >&2 "xmr-e2e gate is stale: expected $$expected named tests, found $$actual"; \
+			printf '%s\n' "$$found" >&2; \
+			exit 1; \
+		fi
+	@go test -count=1 ${TEST_BUILD_FLAGS} ./bifrost/pkg/chainclients/monero -run '${XMR_E2E_RUN}'
 
 test-network-specific:
 	@go test -tags stagenet ${RUN_FLAG} ./common

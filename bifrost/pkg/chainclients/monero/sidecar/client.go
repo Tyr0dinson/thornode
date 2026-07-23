@@ -20,7 +20,6 @@ import (
 	"sync"
 	"time"
 
-	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
 )
 
@@ -90,10 +89,6 @@ type Client struct {
 	daemonUsername  string
 	daemonPassword  string
 	expectedNetwork string
-	// chainNetwork is the Monero network this Bifrost is configured for. It is
-	// the compare-and-set token sent on a scanner rewind and is distinct from
-	// expectedNetwork, which is what the signer must prove it is running.
-	chainNetwork string
 
 	// Sync calls remain serialized, while registration/reset responses may
 	// update the continuity cache as soon as they arrive. Keeping those locks
@@ -158,8 +153,6 @@ func NewClientWithEndpoint(cfg config.BifrostChainConfiguration, endpoint string
 	}
 
 	endpoint = strings.TrimSuffix(parsedEndpoint.String(), "/")
-	chainNetwork := normalizeChainNetwork(cfg.ChainNetwork)
-
 	daemonEndpoint := ""
 	if strings.TrimSpace(cfg.RPCHost) != "" {
 		parsedDaemon, err := parseDaemonEndpointURL(cfg.RPCHost)
@@ -214,28 +207,11 @@ func NewClientWithEndpoint(cfg config.BifrostChainConfiguration, endpoint string
 		daemonUsername:  daemonUsername,
 		daemonPassword:  daemonPassword,
 		expectedNetwork: strings.TrimSpace(cfg.SignerExpectedNetwork),
-		chainNetwork:    chainNetwork,
 
 		signCombineMaxAttempts:    defaultSignCombineMaxAttempts,
 		signCombineInitialBackoff: defaultSignCombineInitialBackoff,
 		signCombineMaxBackoff:     defaultSignCombineMaxBackoff,
 	}, nil
-}
-
-func normalizeChainNetwork(configured string) string {
-	if network := strings.ToLower(strings.TrimSpace(configured)); network != "" {
-		return network
-	}
-	switch common.CurrentChainNetwork {
-	case common.MainNet:
-		return "mainnet"
-	case common.ChainNet:
-		return "chainnet"
-	case common.StageNet:
-		return "stagenet"
-	default:
-		return "mocknet"
-	}
 }
 
 func parseSidecarEndpointURL(endpoint string) (*url.URL, error) {
@@ -635,9 +611,24 @@ func (c *Client) ScannerState() (ScannerState, error) {
 func (c *Client) RewindScanner(req ScannerRewindReq) (ScannerRewindResp, error) {
 	c.scannerSyncMu.Lock()
 	defer c.scannerSyncMu.Unlock()
-	if strings.TrimSpace(req.Network) == "" {
-		req.Network = c.chainNetwork
+	expectedNetwork := strings.ToLower(strings.TrimSpace(c.expectedNetwork))
+	if expectedNetwork == "" {
+		return ScannerRewindResp{}, fmt.Errorf("expected sidecar network is not configured")
 	}
+	requestNetwork := strings.ToLower(strings.TrimSpace(req.Network))
+	if requestNetwork != "" && requestNetwork != expectedNetwork {
+		return ScannerRewindResp{}, fmt.Errorf(
+			"scanner rewind network %q does not match expected sidecar network %q",
+			requestNetwork,
+			expectedNetwork,
+		)
+	}
+	// The rewind compare-and-set token is the THOR deployment identity exposed
+	// by /info and XMR_FROST_CHAIN_NETWORK (chainnet/mocknet/etc.), not the
+	// Monero daemon network configured in ChainNetwork. Derive it here so every
+	// ordinary scanner recovery path uses the same fail-closed identity as the
+	// bounded reorg helper.
+	req.Network = expectedNetwork
 	var out ScannerRewindResp
 	if err := c.call(http.MethodPost, c.scannerRewindPath, req, &out); err != nil {
 		return ScannerRewindResp{}, fmt.Errorf("fail to call scanner rewind endpoint: %w", err)

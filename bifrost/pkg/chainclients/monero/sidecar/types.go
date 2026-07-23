@@ -21,6 +21,8 @@ const (
 	CapabilityScannerBoundedRewind   = "scanner-bounded-rewind-v1"
 	CapabilitySharePlanQuarantine    = "share-issued-plan-quarantine-v1"
 	CapabilityVerifiedAbsenceBalance = "verified-absence-balance-quarantine-v1"
+	CapabilityCanonicalObservation   = "canonical-outgoing-observation-v1"
+	CapabilityCanonicalTxLocation    = "canonical-tx-location-v1"
 
 	// CapabilityIdempotentCombine asserts that the signer durably replays combine
 	// by (msg_id, session_id, all_shares), so a retried combine cannot produce a

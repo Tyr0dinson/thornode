@@ -111,19 +111,20 @@ x-bifrost-env: &bifrost-env
   BIFROST_CHAINS_XMR_RPC_HOST: "http://monero-daemon:18081"
   BIFROST_CHAINS_XMR_CHAIN_NETWORK: "mainnet"
   BIFROST_CHAINS_XMR_DISABLE_TLS: "true"
+  BIFROST_CHAINS_XMR_SIGNER_AUTHORIZATION_BEARER: "${XMR_FROST_AUTH_BEARER:-xmr-frost-chainnet-token}"
+  BIFROST_CHAINS_XMR_SIGNER_ALLOW_INSECURE_HTTP: "true"
+  BIFROST_CHAINS_XMR_SIGNER_EXPECTED_NETWORK: "chainnet"
 
 x-frost-env: &frost-env
   XMR_FROST_LISTEN_ADDR: "0.0.0.0:8283"
   XMR_FROST_DAEMON_URL: "http://monero-daemon:18081"
-  XMR_FROST_DAEMON_DISABLE_TLS: "true"
   XMR_FROST_DATA_DIR: "/home/serai/xmr-frost"
   XMR_FROST_CHAIN_NETWORK: "chainnet"
+  XMR_FROST_AUTH_BEARER: "${XMR_FROST_AUTH_BEARER:-xmr-frost-chainnet-token}"
+  SIGNER_SEED_PHRASE_FILE: "/run/thornode/seed_phrase"
   XMR_FROST_MAX_SIGN_SCAN_LAG_BLOCKS: "32"
-  XMR_FROST_RATE_LIMIT_GLOBAL_RPS: "500"
-  XMR_FROST_RATE_LIMIT_GLOBAL_BURST: "5000"
-  XMR_FROST_RATE_LIMIT_PER_IP_RPS: "500"
-  XMR_FROST_RATE_LIMIT_PER_IP_BURST: "5000"
-  XMR_FROST_ADMIN_ALLOW_NON_LOOPBACK: "true"
+  XMR_FROST_MAX_REQUESTS_PER_SECOND: "256"
+  XMR_FROST_MAX_REQUESTS_PER_IP_SECOND: "64"
 
 x-frost-healthcheck: &frost-healthcheck
   test:
@@ -198,7 +199,9 @@ services:
         condition: service_healthy
     environment:
       <<: *frost-env
-      SIGNER_SEED_PHRASE: "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
+    configs:
+      - source: seed-dog
+        target: /run/thornode/seed_phrase
     volumes:
       - xmr-frost-data:/home/serai/xmr-frost
     ports:
@@ -210,7 +213,9 @@ services:
     <<: *frost-signer
     environment:
       <<: *frost-env
-      SIGNER_SEED_PHRASE: "cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat crawl"
+    configs:
+      - source: seed-cat
+        target: /run/thornode/seed_phrase
     volumes:
       - xmr-frost-data-cat:/home/serai/xmr-frost
     ports: []
@@ -219,7 +224,9 @@ services:
     <<: *frost-signer
     environment:
       <<: *frost-env
-      SIGNER_SEED_PHRASE: "fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox filter"
+    configs:
+      - source: seed-fox
+        target: /run/thornode/seed_phrase
     volumes:
       - xmr-frost-data-fox:/home/serai/xmr-frost
     ports: []
