@@ -43,6 +43,26 @@ func (k KVStore) GetTssKeysignFailVoterIterator(ctx cosmos.Context) cosmos.Itera
 // GetTssKeysignFailVoter - gets information of a tss keysign failure voter object
 func (k KVStore) GetTssKeysignFailVoter(ctx cosmos.Context, id string) (TssKeysignFailVoter, error) {
 	record := TssKeysignFailVoter{ID: id}
-	_, err := k.getTssKeysignFailVoter(ctx, k.GetKey(prefixTssKeysignFailure, id), &record)
+	found, err := k.getTssKeysignFailVoter(ctx, k.GetKey(prefixTssKeysignFailure, id), &record)
+	if err != nil {
+		return record, err
+	}
+	// Before the explicit Completed field existed, the earliest handler marked
+	// consensus by setting Height and retained Signers. Later handlers stopped
+	// setting Height and cleared both Signers and LastRoundCount. Current
+	// production code never sets Height on an in-progress voter and never
+	// persists a genuinely new voter before its first signer is recorded.
+	// Therefore either historical terminal shape is unambiguous:
+	//   1. positive Height, with or without retained Signers; or
+	//   2. a stored empty consensus state.
+	//
+	// A missing voter is initialized identically in memory, which is why found
+	// is required here.
+	// Normalize legacy terminal voters on read; the handler persists the
+	// explicit marker if a replay reaches it.
+	if found && !record.Completed &&
+		(record.Height > 0 || (len(record.Signers) == 0 && record.LastRoundCount == 0)) {
+		record.Completed = true
+	}
 	return record, err
 }

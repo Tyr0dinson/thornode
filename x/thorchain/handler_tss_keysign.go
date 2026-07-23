@@ -87,6 +87,17 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 	if err != nil {
 		return nil, err
 	}
+	if voter.Completed {
+		// A keysign failure is a one-shot consensus decision. In particular,
+		// do not transiently charge ObserveSlashPoints before rejecting a
+		// replay: completed voters intentionally clear their signer set, so
+		// Sign alone cannot distinguish a fresh Cosmos message from a new vote.
+		// Persist here as well to lazily upgrade legacy completed voters whose
+		// empty state was normalized by the keeper.
+		h.mgr.Keeper().SetTssKeysignFailVoter(ctx, voter)
+		ctx.Logger().Info("MsgTssKeysignFail voter already completed", "ID", msg.ID)
+		return &cosmos.Result{}, nil
+	}
 	observeSlashPoints := h.mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
 
 	// add labels to telemetry context
@@ -245,6 +256,7 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 	h.mgr.Slasher().DecSlashPoints(slashCtx, observeSlashPoints, voter.GetSigners()...)
 	voter.Signers = nil
 	voter.LastRoundCount = 0
+	voter.Completed = true
 	h.mgr.Keeper().SetTssKeysignFailVoter(ctx, voter)
 
 	slashPoints := h.mgr.GetConstants().GetInt64Value(constants.FailKeysignSlashPoints)

@@ -392,6 +392,186 @@ func (h HandlerTssKeysignSuite) TestDuplicateKeysignFailureVoteDoesNotSlashAgain
 	c.Assert(after, Equals, before)
 }
 
+// TestCompletedKeysignFailureCannotBeReplayed submits production
+// MsgTssKeysignFail messages through consensus, then recreates fresh Cosmos
+// messages from the same simple majority after the original jail has expired.
+// A completed voter must reject every replay before ObserveSlashPoints and must
+// not slash, jail, or freeze the vault a second time.
+func (h HandlerTssKeysignSuite) TestCompletedKeysignFailureCannotBeReplayed(c *C) {
+	helper := newTssKeysignHandlerTestHelper(c)
+	handler := NewTssKeysignHandler(NewDummyMgrWithKeeper(helper.keeper))
+	coin := common.NewCoin(common.XMRAsset, cosmos.NewUint(100))
+	coins := common.Coins{coin}
+
+	vault := NewVault(
+		helper.ctx.BlockHeight(),
+		ActiveVault,
+		AsgardVault,
+		GetRandomPubKey(),
+		common.Chains{common.XMRChain}.Strings(),
+		[]ChainContract{},
+	)
+	members := make(NodeAccounts, 0, 8)
+	for i := 0; i < 8; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		c.Assert(helper.keeper.SetNodeAccount(helper.ctx, na), IsNil)
+		vault.Membership = append(vault.Membership, na.PubKeySet.Secp256k1.String())
+		members = append(members, na)
+	}
+	c.Assert(helper.keeper.SetVault(helper.ctx, vault), IsNil)
+
+	blamed := members[7]
+	blame := Blame{
+		FailReason: "terminal FROST failure",
+		Round:      tssMessages.FROSTKEYSIGNRESULT,
+		BlameNodes: []Node{{Pubkey: blamed.PubKeySet.Secp256k1.String()}},
+	}
+	const memo = "completed-keysign-replay"
+
+	// Five of eight vault members are a simple majority.
+	var voterID string
+	for i := 0; i < 5; i++ {
+		msg, err := NewMsgTssKeysignFail(
+			helper.ctx.BlockHeight(),
+			blame,
+			memo,
+			coins,
+			members[i].NodeAddress,
+			vault.PubKey,
+		)
+		c.Assert(err, IsNil)
+		voterID = msg.ID
+		_, err = handler.Run(helper.ctx, msg)
+		c.Assert(err, IsNil)
+	}
+
+	voter, err := helper.keeper.GetTssKeysignFailVoter(helper.ctx, voterID)
+	c.Assert(err, IsNil)
+	c.Assert(voter.Completed, Equals, true)
+	c.Assert(voter.Signers, HasLen, 0)
+	c.Assert(voter.LastRoundCount, Equals, int64(0))
+
+	blamedSlashPoints, err := helper.keeper.GetNodeAccountSlashPoints(helper.ctx, blamed.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(blamedSlashPoints, Equals, helper.constAccessor.GetInt64Value(constants.FailKeysignSlashPoints))
+	originalJail, err := helper.keeper.GetNodeAccountJail(helper.ctx, blamed.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(originalJail.IsJailed(helper.ctx), Equals, true)
+
+	gotVault, err := helper.keeper.GetVault(helper.ctx, vault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(gotVault.Frozen, DeepEquals, []string{common.XMRChain.String()})
+
+	submitterSlashPoints := make([]int64, 5)
+	for i := 0; i < 5; i++ {
+		submitterSlashPoints[i], err = helper.keeper.GetNodeAccountSlashPoints(helper.ctx, members[i].NodeAddress)
+		c.Assert(err, IsNil)
+	}
+
+	// Model a later replay after the original penalty has expired and the vault
+	// has been deliberately unfrozen. Without a durable terminal marker, a
+	// fresh majority can extend the jail and freeze the vault again.
+	replayCtx := helper.ctx.WithBlockHeight(originalJail.ReleaseHeight + 1)
+	gotVault.Frozen = nil
+	c.Assert(helper.keeper.SetVault(replayCtx, gotVault), IsNil)
+
+	for i := 0; i < 5; i++ {
+		replay, err := NewMsgTssKeysignFail(
+			helper.ctx.BlockHeight(),
+			blame,
+			memo,
+			coins,
+			members[i].NodeAddress,
+			vault.PubKey,
+		)
+		c.Assert(err, IsNil)
+		c.Assert(replay.ID, Equals, voterID)
+		_, err = handler.Run(replayCtx, replay)
+		c.Assert(err, IsNil)
+
+		// Assert after every message so a transient observation charge cannot
+		// be hidden by the consensus path refunding it on the fifth replay.
+		points, err := helper.keeper.GetNodeAccountSlashPoints(replayCtx, members[i].NodeAddress)
+		c.Assert(err, IsNil)
+		c.Assert(points, Equals, submitterSlashPoints[i])
+	}
+
+	afterSlashPoints, err := helper.keeper.GetNodeAccountSlashPoints(replayCtx, blamed.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(afterSlashPoints, Equals, blamedSlashPoints)
+	afterJail, err := helper.keeper.GetNodeAccountJail(replayCtx, blamed.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(afterJail.ReleaseHeight, Equals, originalJail.ReleaseHeight)
+	c.Assert(afterJail.IsJailed(replayCtx), Equals, false)
+	gotVault, err = helper.keeper.GetVault(replayCtx, vault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(gotVault.Frozen, HasLen, 0)
+}
+
+func (h HandlerTssKeysignSuite) TestLegacyCompletedKeysignFailureCannotBeReplayed(c *C) {
+	helper := newTssKeysignHandlerTestHelper(c)
+	handler := NewTssKeysignHandler(NewDummyMgrWithKeeper(helper.keeper))
+	msg, err := NewMsgTssKeysignFail(
+		helper.ctx.BlockHeight(),
+		helper.blame,
+		"legacy-completed-replay",
+		common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100))},
+		helper.nodeAccount.NodeAddress,
+		helper.retiringVault.PubKey,
+	)
+	c.Assert(err, IsNil)
+
+	// Persist the pre-Completed terminal representation. It must not be
+	// confused with the absent voter returned for a genuinely new ID.
+	helper.keeper.SetTssKeysignFailVoter(helper.ctx, TssKeysignFailVoter{ID: msg.ID})
+	before, err := helper.keeper.GetNodeAccountSlashPoints(helper.ctx, msg.Signer)
+	c.Assert(err, IsNil)
+	_, err = handler.Run(helper.ctx, msg)
+	c.Assert(err, IsNil)
+	after, err := helper.keeper.GetNodeAccountSlashPoints(helper.ctx, msg.Signer)
+	c.Assert(err, IsNil)
+	c.Assert(after, Equals, before)
+
+	voter, err := helper.keeper.GetTssKeysignFailVoter(helper.ctx, msg.ID)
+	c.Assert(err, IsNil)
+	c.Assert(voter.Completed, Equals, true)
+	c.Assert(voter.Signers, HasLen, 0)
+}
+
+func (h HandlerTssKeysignSuite) TestPositiveHeightLegacyCompletedKeysignFailureCannotBeReplayed(c *C) {
+	helper := newTssKeysignHandlerTestHelper(c)
+	handler := NewTssKeysignHandler(NewDummyMgrWithKeeper(helper.keeper))
+	msg, err := NewMsgTssKeysignFail(
+		helper.ctx.BlockHeight(),
+		helper.blame,
+		"positive-height-legacy-completed-replay",
+		common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100))},
+		helper.nodeAccount.NodeAddress,
+		helper.retiringVault.PubKey,
+	)
+	c.Assert(err, IsNil)
+
+	helper.keeper.SetTssKeysignFailVoter(helper.ctx, TssKeysignFailVoter{
+		ID:      msg.ID,
+		Height:  helper.ctx.BlockHeight() - 1,
+		Signers: []string{GetRandomBech32Addr().String(), GetRandomBech32Addr().String()},
+	})
+	before, err := helper.keeper.GetNodeAccountSlashPoints(helper.ctx, msg.Signer)
+	c.Assert(err, IsNil)
+
+	_, err = handler.Run(helper.ctx, msg)
+	c.Assert(err, IsNil)
+
+	after, err := helper.keeper.GetNodeAccountSlashPoints(helper.ctx, msg.Signer)
+	c.Assert(err, IsNil)
+	c.Assert(after, Equals, before)
+	voter, err := helper.keeper.GetTssKeysignFailVoter(helper.ctx, msg.ID)
+	c.Assert(err, IsNil)
+	c.Assert(voter.Completed, Equals, true)
+	c.Assert(voter.Height, Equals, helper.ctx.BlockHeight()-1)
+	c.Assert(voter.Signers, HasLen, 2)
+}
+
 func (h HandlerTssKeysignSuite) TestTssKeysignFailHandler_accept_standby_node_messages(c *C) {
 	helper := newTssKeysignHandlerTestHelper(c)
 	handler := NewTssKeysignHandler(NewDummyMgrWithKeeper(helper.keeper))
