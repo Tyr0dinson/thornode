@@ -1153,7 +1153,7 @@ func TestSignTxTreatsSuccessfulOverCapFrostResultAsTerminal(t *testing.T) {
 	defer server.Close()
 	tx.MaxGas = common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))}
 
-	_, _, _, signErr := c.SignTx(tx, 12345)
+	_, _, _, signErr := c.SignTx([]stypes.TxOutItem{tx}, 12345)
 	var maxGasErr xmrMaxGasExceededError
 	if !errors.As(signErr, &maxGasErr) {
 		t.Fatalf("expected typed max gas error, got %T %v", signErr, signErr)
@@ -1325,7 +1325,7 @@ func TestSignTxReportsNetworkFeeWhenXMRMaxGasExceeded(t *testing.T) {
 	}
 
 	const thorchainTxOutHeight = int64(12345)
-	_, _, _, signErr := c.SignTx(tx, thorchainTxOutHeight)
+	_, _, _, signErr := c.SignTx([]stypes.TxOutItem{tx}, thorchainTxOutHeight)
 	if signErr == nil {
 		t.Fatalf("expected SignTx error")
 	}

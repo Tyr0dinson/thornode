@@ -213,9 +213,15 @@ type MockCaptureSignChainClient struct {
 	observation *types.TxInItem
 }
 
-func (b *MockCaptureSignChainClient) SignTx(tai types.TxOutItem, height int64) ([]byte, []byte, *types.TxInItem, error) {
-	b.signedTx = tai
-	return []byte("signed-tx"), nil, b.observation, nil
+func (b *MockCaptureSignChainClient) SignTx(tai []types.TxOutItem, height int64) ([]byte, []byte, []*types.TxInItem, error) {
+	if len(tai) > 0 {
+		b.signedTx = tai[0]
+	}
+	var obs []*types.TxInItem
+	if b.observation != nil {
+		obs = []*types.TxInItem{b.observation}
+	}
+	return []byte("signed-tx"), nil, obs, nil
 }
 
 func (b *MockCaptureSignChainClient) BroadcastTx(_ types.TxOutItem, tx []byte) (string, error) {
@@ -1094,7 +1100,7 @@ func (s *SignCoverageSuite) TestSignAndBroadcast_RefreshesUnsignedGasFromLatestK
 	checkpoint, obs, err := sign.signAndBroadcast(item)
 	c.Assert(err, IsNil)
 	c.Assert(checkpoint, IsNil)
-	c.Assert(obs, DeepEquals, signedObs)
+	c.Assert(obs, DeepEquals, []*types.TxInItem{signedObs})
 	c.Assert(cc.signedTx.GasRate, Equals, int64(25))
 	c.Assert(cc.signedTx.MaxGas.Equals(newMaxGas), Equals, true)
 

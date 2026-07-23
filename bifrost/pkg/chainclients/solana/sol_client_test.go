@@ -1275,7 +1275,7 @@ func (s *SolTestSuite) TestSignSOLTx_ObservationUsesOriginalMemo(c *C) {
 
 	pubkeys := pubkeyMgr.GetPubKeys()
 	originalMemo := "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87"
-	_, _, obs, err := client.SignTx(stypes.TxOutItem{
+	_, _, obs, err := client.SignTx([]stypes.TxOutItem{{
 		Chain:            common.SOLChain,
 		ToAddress:        "D9A6eE2pZ6oSiGb8BPkag4gvAeEhHvc3eEYPBoLSMshG",
 		VaultPubKey:      pubkeys[0],
@@ -1289,10 +1289,10 @@ func (s *SolTestSuite) TestSignSOLTx_ObservationUsesOriginalMemo(c *C) {
 		GasRate:      1,
 		Memo:         "",
 		OriginalMemo: originalMemo,
-	}, 123)
+	}}, 123)
 	c.Assert(err, IsNil)
-	c.Assert(obs, NotNil)
-	c.Check(obs.Memo, Equals, originalMemo)
+	c.Assert(obs, HasLen, 1)
+	c.Check(obs[0].Memo, Equals, originalMemo)
 }
 
 func (s *SolTestSuite) TestSignTxExpiredEntryLandedButFailedReSigns(c *C) {
@@ -1309,7 +1309,7 @@ func (s *SolTestSuite) TestSignTxExpiredEntryLandedButFailedReSigns(c *C) {
 		txOut.CacheHash(), txOut.CacheVault(common.SOLChain), "failed-sig", expired,
 	), IsNil)
 
-	result, _, _, err := e.SignTx(txOut, 1)
+	result, _, _, err := e.SignTx([]stypes.TxOutItem{txOut}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)                                                   // re-signed
 	c.Assert(rpc.getTxCalls, Equals, 1)                                        // RPC verified first

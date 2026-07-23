@@ -496,7 +496,7 @@ func (s *TronTestSuite) checkpointTestTxOut(amount uint64) types.TxOutItem {
 func (s *TronTestSuite) TestSignTxReusesExactCheckpoint(c *C) {
 	txOutItem := s.checkpointTestTxOut(123_456_789)
 
-	signed, _, _, err := s.client.SignTx(txOutItem, 1)
+	signed, _, _, err := s.client.SignTx([]types.TxOutItem{txOutItem}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(signed, NotNil)
 
@@ -519,7 +519,7 @@ func (s *TronTestSuite) TestSignTxReusesExactCheckpoint(c *C) {
 	}()
 
 	txOutItem.Checkpoint = checkpoint
-	retried, _, _, err := s.client.SignTx(txOutItem, 2)
+	retried, _, _, err := s.client.SignTx([]types.TxOutItem{txOutItem}, 2)
 	c.Assert(err, IsNil)
 	c.Assert(retried, NotNil)
 
@@ -532,7 +532,7 @@ func (s *TronTestSuite) TestSignTxReusesExactCheckpoint(c *C) {
 
 func (s *TronTestSuite) TestSignCheckpointRejectsChangedOrCorruptState(c *C) {
 	txOutItem := s.checkpointTestTxOut(123_456_790)
-	signed, _, _, err := s.client.SignTx(txOutItem, 1)
+	signed, _, _, err := s.client.SignTx([]types.TxOutItem{txOutItem}, 1)
 	c.Assert(err, IsNil)
 
 	var unsigned api.Transaction
@@ -568,7 +568,7 @@ func (s *TronTestSuite) TestSignCheckpointRejectsChangedOrCorruptState(c *C) {
 
 func (s *TronTestSuite) TestSignFailureReturnsExactCheckpoint(c *C) {
 	txOutItem := s.checkpointTestTxOut(123_456_791)
-	signed, _, _, err := s.client.SignTx(txOutItem, 1)
+	signed, _, _, err := s.client.SignTx([]types.TxOutItem{txOutItem}, 1)
 	c.Assert(err, IsNil)
 
 	var unsigned api.Transaction
