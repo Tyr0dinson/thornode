@@ -139,10 +139,6 @@ func (k *TestSlashingLackKeeper) SetNodeAccount(_ cosmos.Context, na NodeAccount
 	return nil
 }
 
-func (k *TestSlashingLackKeeper) GetConfigInt64(ctx cosmos.Context, key constants.ConstantName) int64 {
-	return constants.GetConstantValues(GetCurrentVersion()).GetInt64Value(key)
-}
-
 type TestSlashObservingKeeper struct {
 	keeper.KVStoreDummy
 	addrs                     []cosmos.AccAddress
