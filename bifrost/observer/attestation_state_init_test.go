@@ -1137,6 +1137,140 @@ func (s *doneResponderStream) GetWrittenData() []byte {
 	return s.writtenData.Bytes()
 }
 
+type slowAttestationStateStream struct {
+	MockStream
+	responseDelay time.Duration
+	pendingWrites bytes.Buffer
+	responses     chan []byte
+	reset         chan struct{}
+	resetOnce     sync.Once
+	stateMu       sync.Mutex
+	reads         int
+}
+
+func newSlowAttestationStateStream(responseDelay time.Duration) *slowAttestationStateStream {
+	return &slowAttestationStateStream{
+		MockStream: MockStream{
+			peer: peer.ID("slow-state-peer"),
+			mu:   new(sync.Mutex),
+		},
+		responseDelay: responseDelay,
+		responses:     make(chan []byte, 8),
+		reset:         make(chan struct{}),
+	}
+}
+
+func (s *slowAttestationStateStream) Write(p []byte) (int, error) {
+	_, _ = s.pendingWrites.Write(p)
+	for s.pendingWrites.Len() >= p2p.LengthHeader {
+		raw := s.pendingWrites.Bytes()
+		length := int(binary.LittleEndian.Uint32(raw[:p2p.LengthHeader]))
+		if len(raw) < p2p.LengthHeader+length {
+			break
+		}
+		frame := append([]byte(nil), raw[p2p.LengthHeader:p2p.LengthHeader+length]...)
+		s.pendingWrites.Next(p2p.LengthHeader + length)
+
+		var response []byte
+		switch {
+		case bytes.HasPrefix(frame, prefixBatchBegin):
+			response = []byte(streamAckBegin)
+		case bytes.HasPrefix(frame, prefixBatchHeader):
+			response = []byte(streamAckHeader)
+		case bytes.HasPrefix(frame, prefixBatchData):
+			response = []byte(streamAckData)
+		case bytes.HasPrefix(frame, prefixBatchEnd):
+			response = []byte(p2p.StreamMsgDone)
+		default:
+			return len(p), fmt.Errorf("unexpected state frame: %x", frame)
+		}
+		framed := make([]byte, p2p.LengthHeader+len(response))
+		binary.LittleEndian.PutUint32(framed, uint32(len(response)))
+		copy(framed[p2p.LengthHeader:], response)
+		s.responses <- framed
+	}
+	return len(p), nil
+}
+
+func (s *slowAttestationStateStream) Read(p []byte) (int, error) {
+	var response []byte
+	select {
+	case <-s.reset:
+		return 0, io.ErrClosedPipe
+	case response = <-s.responses:
+	}
+	timer := time.NewTimer(s.responseDelay)
+	defer timer.Stop()
+	select {
+	case <-s.reset:
+		return 0, io.ErrClosedPipe
+	case <-timer.C:
+	}
+	s.stateMu.Lock()
+	s.reads++
+	s.stateMu.Unlock()
+	return copy(p, response), nil
+}
+
+func (s *slowAttestationStateStream) Reset() error {
+	s.resetOnce.Do(func() { close(s.reset) })
+	return nil
+}
+
+func (s *slowAttestationStateStream) readCount() int {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	return s.reads
+}
+
+func TestSendAttestationStateUsesTotalTransferTimeout(t *testing.T) {
+	ag, _, _, _, _, _ := setupTestGossip(t)
+	ag.config.PeerTimeout = 35 * time.Millisecond
+	observed := &common.ObservedTx{
+		Tx: common.Tx{
+			ID:    common.TxID("xmr-state-total-timeout"),
+			Chain: common.XMRChain,
+		},
+		BlockHeight:    200,
+		FinaliseHeight: 200,
+	}
+	state := ag.observedTxsPool.NewAttestationState(&attestableObservedTx{
+		ObservedTx: observed,
+		inbound:    true,
+	})
+	ag.observedTxs[observedTxKey(*observed, true, false)] = state
+
+	// Each response is individually faster than the configured timeout. Four
+	// rolling deadlines would therefore let this transfer run for roughly
+	// 60ms; the total watchdog must reset it around 35ms instead.
+	stream := newSlowAttestationStateStream(15 * time.Millisecond)
+	done := make(chan struct{})
+	started := time.Now()
+	go func() {
+		ag.sendAttestationState(stream)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("total attestation state timeout did not reset the stream")
+	}
+	require.Less(t, time.Since(started), 100*time.Millisecond)
+	require.Less(t, stream.readCount(), 4, "all rolling acknowledgments unexpectedly completed")
+
+	writerAcquired := make(chan struct{})
+	go func() {
+		ag.xmrErrataBarrier.Lock()
+		close(writerAcquired)
+		ag.xmrErrataBarrier.Unlock()
+	}()
+	select {
+	case <-writerAcquired:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("XMR errata writer remained blocked after state transfer timeout")
+	}
+}
+
 // TestAskStreamForStateEmptyState is a regression test for the prefix-strip
 // bug in askStreamForState.
 //

@@ -576,13 +576,31 @@ func (s *BlockScannerExtraSuite) TestOperatorRecoveryErrorStopsRetryLoop(c *C) {
 		c.Assert(err, IsNil)
 
 		scanner.Start(make(chan stypes.TxIn, 1), make(chan common.NetworkFee, 1))
-		deadline := time.Now().Add(time.Second)
-		for time.Now().Before(deadline) && fetcher.calls.Load() == 0 {
-			time.Sleep(time.Millisecond)
+		select {
+		case <-scanner.terminalRecoveryChan:
+		case <-time.After(time.Second):
+			c.Fatalf("asValue=%t: scanner did not enter terminal recovery", asValue)
 		}
-		time.Sleep(30 * time.Millisecond)
 		c.Check(fetcher.calls.Load(), Equals, int64(1), Commentf("asValue=%t", asValue))
 		c.Check(scanner.IsHealthy(), Equals, false, Commentf("asValue=%t", asValue))
+
+		// Observer invokes this path when the node churns in. Once FetchTxs has
+		// entered terminal recovery there is no scanBlocks receiver left on the
+		// unbuffered rollback channel, so the call must return the original
+		// typed recovery error rather than wedging the observer.
+		rollbackResult := make(chan error, 1)
+		go func() {
+			rollbackResult <- scanner.RollbackToLastObserved()
+		}()
+		select {
+		case rollbackErr := <-rollbackResult:
+			var recovery *btypes.ScannerRecoveryRequiredError
+			c.Assert(errors.As(rollbackErr, &recovery), Equals, true, Commentf("asValue=%t: %v", asValue, rollbackErr))
+			c.Assert(recovery, NotNil)
+			c.Check(recovery.Reason, Equals, "test discontinuity")
+		case <-time.After(time.Second):
+			c.Fatalf("asValue=%t: churn rollback blocked after terminal scanner recovery", asValue)
+		}
 		scanner.Stop()
 	}
 }

@@ -146,6 +146,7 @@ func setupTestGossip(t *testing.T) (*AttestationGossip, *MockHost, *MockKeys, *M
 
 		peerMgr: newPeerManager(getTestLogger(t), 2),
 	}
+	batcher.xmrErrataBarrier = &ag.xmrErrataBarrier
 
 	// Set active validators
 	ag.setActiveValidators([]common.PubKey{common.PubKey(pubKey), pubkey2, pubkey3})

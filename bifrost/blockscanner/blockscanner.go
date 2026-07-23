@@ -54,6 +54,10 @@ type BlockScanner struct {
 	thorchainBridge       thorclient.ThorchainBridge
 	chainScanner          BlockScannerFetcher
 	healthy               *atomic.Bool
+	terminalRecoveryMu    sync.RWMutex
+	terminalRecovery      *btypes.ScannerRecoveryRequiredError
+	terminalRecoveryChan  chan struct{}
+	terminalRecoveryOnce  sync.Once
 }
 
 // NewBlockScanner create a new instance of BlockScanner
@@ -71,18 +75,19 @@ func NewBlockScanner(cfg config.BifrostBlockScannerConfiguration, scannerStorage
 
 	logger := log.Logger.With().Str("module", "blockscanner").Str("chain", cfg.ChainID.String()).Logger()
 	scanner := &BlockScanner{
-		cfg:             cfg,
-		logger:          logger,
-		wg:              &sync.WaitGroup{},
-		stopChan:        make(chan struct{}),
-		scanChan:        make(chan int64),
-		rollbackChan:    make(chan int64),
-		scannerStorage:  scannerStorage,
-		metrics:         m,
-		errorCounter:    m.GetCounterVec(metrics.CommonBlockScannerError),
-		thorchainBridge: thorchainBridge,
-		chainScanner:    chainScanner,
-		healthy:         &atomic.Bool{},
+		cfg:                  cfg,
+		logger:               logger,
+		wg:                   &sync.WaitGroup{},
+		stopChan:             make(chan struct{}),
+		scanChan:             make(chan int64),
+		rollbackChan:         make(chan int64),
+		scannerStorage:       scannerStorage,
+		metrics:              m,
+		errorCounter:         m.GetCounterVec(metrics.CommonBlockScannerError),
+		thorchainBridge:      thorchainBridge,
+		chainScanner:         chainScanner,
+		healthy:              &atomic.Bool{},
+		terminalRecoveryChan: make(chan struct{}),
 	}
 
 	scanner.previousBlock, err = scanner.GetStartHeight()
@@ -99,8 +104,35 @@ func (b *BlockScanner) PreviousHeight() int64 {
 	return atomic.LoadInt64(&b.previousBlock)
 }
 
+func (b *BlockScanner) setTerminalRecovery(recovery *btypes.ScannerRecoveryRequiredError) {
+	if recovery == nil {
+		return
+	}
+	recoveryCopy := *recovery
+	b.terminalRecoveryMu.Lock()
+	b.terminalRecovery = &recoveryCopy
+	b.terminalRecoveryMu.Unlock()
+	b.terminalRecoveryOnce.Do(func() {
+		close(b.terminalRecoveryChan)
+	})
+}
+
+func (b *BlockScanner) terminalRecoveryError() *btypes.ScannerRecoveryRequiredError {
+	b.terminalRecoveryMu.RLock()
+	defer b.terminalRecoveryMu.RUnlock()
+	if b.terminalRecovery == nil {
+		return nil
+	}
+	recoveryCopy := *b.terminalRecovery
+	return &recoveryCopy
+}
+
 // RollbackToLastObserved rollback the block scanner to last observed height minus flex period
 func (b *BlockScanner) RollbackToLastObserved() error {
+	if recovery := b.terminalRecoveryError(); recovery != nil {
+		return recovery
+	}
+
 	lastObservedHeight, err := b.thorchainBridge.GetLastObservedInHeight(b.cfg.ChainID)
 	if err != nil {
 		return fmt.Errorf("fail to get last observed height: %w", err)
@@ -139,8 +171,18 @@ func (b *BlockScanner) RollbackToLastObserved() error {
 		rollbackHeight = 0
 	}
 
-	b.rollbackChan <- rollbackHeight
-	return nil
+	select {
+	case b.rollbackChan <- rollbackHeight:
+		return nil
+	case <-b.terminalRecoveryChan:
+		recovery := b.terminalRecoveryError()
+		if recovery == nil {
+			return errors.New("block scanner stopped for operator recovery")
+		}
+		return recovery
+	case <-b.stopChan:
+		return errors.New("block scanner stopped before rollback")
+	}
 }
 
 func (b *BlockScanner) rollback(height int64) error {
@@ -464,6 +506,7 @@ func (b *BlockScanner) scanBlocks() {
 						Int64("current_height", recoveryRequired.CurrentHeight).
 						Int64("next_height", recoveryRequired.NextHeight).
 						Msg("chain scanner stopped pending operator recovery")
+					b.setTerminalRecovery(recoveryRequired)
 					b.healthy.Store(false)
 					b.recordError("operator_recovery_required")
 					return

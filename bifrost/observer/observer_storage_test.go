@@ -236,11 +236,9 @@ func TestErrataCleanupPersistsAcrossRestart(t *testing.T) {
 	require.NoError(t, storage.AddOrUpdateTx(txIn))
 	errata := types.ErrataTx{Chain: common.BTCChain, TxID: "orphaned"}
 	block := types.ErrataBlock{
-		Height:     99,
-		DeliveryID: "btc-reorg-99-orphaned",
-		Txs:        []types.ErrataTx{errata},
+		Height: 99,
+		Txs:    []types.ErrataTx{errata},
 	}
-	require.NoError(t, storage.AddErrataBlock(block))
 
 	key := TxInKey(txIn)
 	observer := &Observer{
@@ -249,9 +247,9 @@ func TestErrataCleanupPersistsAcrossRestart(t *testing.T) {
 		onDeck:  map[txInKey]*types.TxIn{key: txIn},
 		storage: storage,
 	}
-	// cleanupErrataBlock is the production entry point: it runs filterErrataTx
-	// and then durably marks the outbox record cleanup-complete.
-	require.NoError(t, observer.cleanupErrataBlock(block))
+	// Non-XMR clients retain the production one-shot path: the deck mutation is
+	// durable, but no XMR-specific retry outbox record is created.
+	require.NoError(t, observer.cleanupLegacyErrataBlock(block))
 	require.Len(t, observer.onDeck[key].TxArray, 1)
 	assert.Equal(t, "retained", observer.onDeck[key].TxArray[0].Tx)
 
@@ -265,13 +263,6 @@ func TestErrataCleanupPersistsAcrossRestart(t *testing.T) {
 	require.Len(t, stored, 1)
 	require.Len(t, stored[0].TxArray, 1)
 	assert.Equal(t, "retained", stored[0].TxArray[0].Tx)
-
-	record, found, err := reopened.GetPendingErrataTx(errata)
-	require.NoError(t, err)
-	require.True(t, found)
-	assert.True(t, record.CleanupComplete)
-	assert.False(t, record.Committed)
-	require.NoError(t, reopened.MarkErrataCommitted(errata))
 	pending, err := reopened.GetPendingErrata()
 	require.NoError(t, err)
 	assert.Empty(t, pending)

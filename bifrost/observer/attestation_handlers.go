@@ -56,9 +56,13 @@ func (s *AttestationGossip) AttestObservedTx(ctx context.Context, obsTx *common.
 
 	// Handle the attestation locally first
 	s.logger.Debug().Msg("handling attestation locally")
-	s.handleObservedTxAttestation(ctx, msg)
-
-	s.batcher.AddObservedTx(msg)
+	if !s.handleObservedTxAttestationAndQueue(ctx, msg) {
+		// A durable XMR errata barrier can reject a stale local observation.
+		// Do not broadcast an attestation this node refused to admit itself:
+		// peers which have not yet learned the same errata must not be asked to
+		// accumulate a vote for the orphaned view.
+		return nil
+	}
 
 	return nil
 }
@@ -147,16 +151,6 @@ func (s *AttestationGossip) AttestSolvency(ctx context.Context, solvency common.
 
 // AttestErrata creates and broadcasts an attestation for an errata transaction
 func (s *AttestationGossip) AttestErrata(ctx context.Context, errata common.ErrataTx) error {
-	// First remove any observed transactions for this chain/tx ID
-	s.mu.Lock()
-	for k := range s.observedTxs {
-		if k.Chain.Equals(errata.Chain) && k.ID.Equals(errata.Id) {
-			// Remove this tx from the list as we've observed an error
-			delete(s.observedTxs, k)
-		}
-	}
-	s.mu.Unlock()
-
 	if !s.isActiveValidator(s.host.ID()) {
 		return fmt.Errorf("skipping attest errata tx: not active")
 	}
@@ -189,6 +183,33 @@ func (s *AttestationGossip) AttestErrata(ctx context.Context, errata common.Erra
 	s.batcher.AddErrataTx(msg)
 
 	return nil
+}
+
+// removeObservedTxsForErrata performs the one-time volatile half of Observer's
+// initial errata cleanup. AttestErrata deliberately does not call this method:
+// its durable outbox may retransmit the same vote until Thornode confirms it,
+// and a retransmission must never delete an observation re-mined in the
+// meantime. XMR cleanup is scoped to the orphaned height so the same immutable
+// transaction can be observed at a new canonical location; legacy chains keep
+// their historical TxID-wide behavior.
+func (s *AttestationGossip) removeObservedTxsForErrata(errata common.ErrataTx, orphanHeight int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for k, state := range s.observedTxs {
+		if !k.Chain.Equals(errata.Chain) || !k.ID.Equals(errata.Id) {
+			continue
+		}
+		if errata.Chain.Equals(common.XMRChain) && orphanHeight > 0 &&
+			state != nil && state.Item != nil && state.Item.ObservedTx != nil &&
+			state.Item.ObservedTx.BlockHeight != orphanHeight {
+			continue
+		}
+		delete(s.observedTxs, k)
+	}
+	if s.batcher != nil {
+		s.batcher.removeObservedTxsForErrata(errata, orphanHeight)
+	}
 }
 
 // AttestPriceFeed creates and broadcasts an attestation for a price feed
@@ -233,6 +254,14 @@ func (s *AttestationGossip) handleStreamAttestationState(stream network.Stream) 
 	logger.Debug().Msg("reading attestation state message")
 
 	defer closeStream(logger, stream)
+	timeout := s.config.PeerTimeout
+	if timeout <= 0 {
+		timeout = defaultPeerTimeout
+	}
+	if err := stream.SetDeadline(time.Now().Add(timeout)); err != nil {
+		logger.Error().Err(err).Msg("fail to bound attestation state stream")
+		return
+	}
 
 	// Read and process the message
 	data, err := p2p.ReadStreamWithBuffer(stream)

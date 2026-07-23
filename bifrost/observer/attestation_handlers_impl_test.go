@@ -279,6 +279,48 @@ func TestSendAttestationsToThornode(t *testing.T) {
 	assert.False(t, state.lastAttestationsSent.IsZero())
 }
 
+func TestThornodeQuorumSubmissionHasHardTimeout(t *testing.T) {
+	ag, _, _, grpcClient, _, _ := setupTestGossip(t)
+	ag.config.PeerTimeout = 25 * time.Millisecond
+	obsTx := &common.ObservedTx{
+		Tx: common.Tx{
+			ID:    common.TxID("bounded-xmr-quorum"),
+			Chain: common.XMRChain,
+		},
+	}
+	state := ag.observedTxsPool.NewAttestationState(&attestableObservedTx{ObservedTx: obsTx})
+	state.attestations = []attestationSentState{{
+		attestation: &common.Attestation{
+			PubKey:    []byte("pubkey"),
+			Signature: []byte("signature"),
+		},
+	}}
+
+	var rpcErr error
+	grpcClient.sendQuorumTxFunc = func(
+		ctx context.Context,
+		_ *common.QuorumTx,
+		_ ...grpc.CallOption,
+	) (*ebifrost.SendQuorumTxResult, error) {
+		<-ctx.Done()
+		rpcErr = ctx.Err()
+		return nil, rpcErr
+	}
+
+	started := time.Now()
+	ag.sendObservedTxAttestationsToThornode(
+		context.Background(),
+		*obsTx,
+		state,
+		true,
+		false,
+		false,
+	)
+	require.ErrorIs(t, rpcErr, context.DeadlineExceeded)
+	require.Less(t, time.Since(started), 500*time.Millisecond)
+	require.False(t, state.attestations[0].sent)
+}
+
 // TestHandleObservedTxAttestationSeparatesFutureObservation ensures the same
 // observed tx is tracked separately when AllowFutureObservation differs. The
 // quorum path must not merge future outbound migration observations with normal

@@ -1,6 +1,7 @@
 package observer
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -205,6 +206,7 @@ func NewObserver(pubkeyMgr *pubkeymanager.PubKeyManager,
 		// Register committed-event callbacks before Start launches the gossip
 		// event client. Otherwise a fast committed event can race startup and
 		// leave a durable deck/outbox entry pending indefinitely.
+		attestationGossip.SetObserverStorage(storage)
 		attestationGossip.SetObserverHandleObservedTxCommitted(observer)
 		attestationGossip.SetObserverHandleErrataTxCommitted(observer)
 	}
@@ -595,14 +597,17 @@ func (o *Observer) sendDeck(ctx context.Context) {
 		return
 	}
 
-	o.lock.Lock()
-	defer o.lock.Unlock()
-
-	for k, deck := range o.onDeck {
-		chainClient, err := o.getChain(deck.Chain)
-		if err != nil {
-			o.logger.Error().Err(err).Msg("fail to retrieve chain client")
-			continue
+	type deckSendSnapshot struct {
+		key         txInKey
+		source      *types.TxIn
+		deck        *types.TxIn
+		fingerprint []byte
+	}
+	sendLockedDeck := func(k txInKey, deck *types.TxIn) {
+		chainClient, chainErr := o.getChain(deck.Chain)
+		if chainErr != nil {
+			o.logger.Error().Err(chainErr).Msg("fail to retrieve chain client")
+			return
 		}
 
 		final := chainClient.ConfirmationCountReady(*deck) && !deck.MemPool
@@ -612,46 +617,141 @@ func (o *Observer) sendDeck(ctx context.Context) {
 		} else {
 			invalidIndices = o.sendToQuorumChecker(deck, final, k.height)
 		}
+		if len(invalidIndices) == 0 {
+			return
+		}
 
-		// Remove invalid transactions from deck
-		if len(invalidIndices) > 0 {
-			// Sort indices in descending order to remove from highest to lowest
-			// This preserves indices during removal
-			for i := 0; i < len(invalidIndices); i++ {
-				for j := i + 1; j < len(invalidIndices); j++ {
-					if invalidIndices[i] < invalidIndices[j] {
-						invalidIndices[i], invalidIndices[j] = invalidIndices[j], invalidIndices[i]
-					}
+		// Preserve the historical serialized on-deck behavior for every legacy
+		// chain. Their errata cleanup is TxID-wide and does not use XMR's writer
+		// barrier, so releasing o.lock here would only create a stale
+		// re-admission window without solving a lock inversion.
+		slices.Sort(invalidIndices)
+		slices.Reverse(invalidIndices)
+		firstItemRemoved := false
+		for _, idx := range invalidIndices {
+			if idx >= 0 && idx < len(deck.TxArray) {
+				if idx == 0 {
+					firstItemRemoved = true
 				}
-			}
-
-			firstItemRemoved := false
-			for _, idx := range invalidIndices {
-				if idx >= 0 && idx < len(deck.TxArray) {
-					if idx == 0 {
-						firstItemRemoved = true
-					}
-					o.logger.Info().Msgf("removing invalid tx (%s) from ondeck", deck.TxArray[idx].Tx)
-					deck.TxArray = slices.Delete(deck.TxArray, idx, idx+1)
-				}
-			}
-
-			if len(deck.TxArray) == 0 {
-				o.logger.Debug().Msgf("deck is empty after removing invalid txs, removing from ondeck")
-				delete(o.onDeck, k)
-				if err := o.storage.RemoveTx(deck, k.height); err != nil {
-					o.logger.Error().Err(err).Msg("fail to remove tx from storage")
-				}
-			} else {
-				// Update confirmation required if first item was removed
-				if firstItemRemoved && len(deck.TxArray) > 0 {
-					deck.ConfirmationRequired = k.height - deck.TxArray[0].BlockHeight
-				}
-				if err := o.storage.AddOrUpdateTx(deck); err != nil {
-					o.logger.Error().Err(err).Msg("fail to update tx in storage")
-				}
+				o.logger.Info().Msgf("removing invalid tx (%s) from ondeck", deck.TxArray[idx].Tx)
+				deck.TxArray = slices.Delete(deck.TxArray, idx, idx+1)
 			}
 		}
+
+		if len(deck.TxArray) == 0 {
+			o.logger.Debug().Msgf("deck is empty after removing invalid txs, removing from ondeck")
+			delete(o.onDeck, k)
+			if err := o.storage.RemoveTx(deck, k.height); err != nil {
+				o.logger.Error().Err(err).Msg("fail to remove tx from storage")
+			}
+			return
+		}
+		if firstItemRemoved {
+			deck.ConfirmationRequired = k.height - deck.TxArray[0].BlockHeight
+		}
+		if err := o.storage.AddOrUpdateTx(deck); err != nil {
+			o.logger.Error().Err(err).Msg("fail to update tx in storage")
+		}
+	}
+
+	o.lock.Lock()
+	snapshots := make([]deckSendSnapshot, 0, len(o.onDeck))
+	for k, deck := range o.onDeck {
+		if !deck.Chain.Equals(common.XMRChain) {
+			sendLockedDeck(k, deck)
+			continue
+		}
+		fingerprint, marshalErr := json.Marshal(deck)
+		if marshalErr != nil {
+			o.logger.Error().Err(marshalErr).Msg("fail to snapshot on-deck observation")
+			continue
+		}
+		copyDeck := *deck
+		copyDeck.TxArray = make([]*types.TxInItem, 0, len(deck.TxArray))
+		for _, item := range deck.TxArray {
+			if item == nil {
+				copyDeck.TxArray = append(copyDeck.TxArray, nil)
+				continue
+			}
+			copyDeck.TxArray = append(copyDeck.TxArray, item.Copy())
+		}
+		snapshots = append(snapshots, deckSendSnapshot{
+			key:         k,
+			source:      deck,
+			deck:        &copyDeck,
+			fingerprint: fingerprint,
+		})
+	}
+	o.lock.Unlock()
+
+	for _, snapshot := range snapshots {
+		chainClient, err := o.getChain(snapshot.deck.Chain)
+		if err != nil {
+			o.logger.Error().Err(err).Msg("fail to retrieve chain client")
+			continue
+		}
+
+		final := chainClient.ConfirmationCountReady(*snapshot.deck) && !snapshot.deck.MemPool
+		var invalidIndices []int
+		if o.sendDeckFn != nil {
+			invalidIndices = o.sendDeckFn(snapshot.deck, final, snapshot.key.height)
+		} else {
+			invalidIndices = o.sendToQuorumChecker(snapshot.deck, final, snapshot.key.height)
+		}
+
+		if len(invalidIndices) == 0 {
+			continue
+		}
+
+		// XMR network conversion, Thornode RPC, and gossip admission above must
+		// not run while holding o.lock: XMR errata cleanup takes its writer
+		// barrier before this mutex. Revalidate the exact durable deck snapshot
+		// before applying conversion failures so concurrent
+		// commits/errata/additions cannot make stale indices delete newer state.
+		o.lock.Lock()
+		live, ok := o.onDeck[snapshot.key]
+		liveFingerprint, fingerprintErr := json.Marshal(live)
+		if !ok ||
+			live != snapshot.source ||
+			fingerprintErr != nil ||
+			!bytes.Equal(liveFingerprint, snapshot.fingerprint) {
+			o.lock.Unlock()
+			o.logger.Debug().
+				Str("chain", snapshot.key.chain.String()).
+				Int64("height", snapshot.key.height).
+				Msg("skip stale invalid-index cleanup for changed on-deck observation")
+			continue
+		}
+
+		// Sort indices in descending order to preserve positions during removal.
+		slices.Sort(invalidIndices)
+		slices.Reverse(invalidIndices)
+		firstItemRemoved := false
+		for _, idx := range invalidIndices {
+			if idx >= 0 && idx < len(live.TxArray) {
+				if idx == 0 {
+					firstItemRemoved = true
+				}
+				o.logger.Info().Msgf("removing invalid tx (%s) from ondeck", live.TxArray[idx].Tx)
+				live.TxArray = slices.Delete(live.TxArray, idx, idx+1)
+			}
+		}
+
+		if len(live.TxArray) == 0 {
+			o.logger.Debug().Msgf("deck is empty after removing invalid txs, removing from ondeck")
+			delete(o.onDeck, snapshot.key)
+			if err := o.storage.RemoveTx(live, snapshot.key.height); err != nil {
+				o.logger.Error().Err(err).Msg("fail to remove tx from storage")
+			}
+		} else {
+			if firstItemRemoved {
+				live.ConfirmationRequired = snapshot.key.height - live.TxArray[0].BlockHeight
+			}
+			if err := o.storage.AddOrUpdateTx(live); err != nil {
+				o.logger.Error().Err(err).Msg("fail to update tx in storage")
+			}
+		}
+		o.lock.Unlock()
 	}
 }
 
@@ -1280,16 +1380,6 @@ func (o *Observer) processErrataTx(ctx context.Context) {
 			// supplying Persisted. This path resumes a scanner journal only after
 			// observer cleanup and outbox state are both durable.
 			if errataBlock.Persisted != nil {
-				persistErr := o.storage.AddErrataBlock(errataBlock)
-				if persistErr != nil {
-					ackErrataPersistence(errataBlock, persistErr)
-					rejectErrataBlock(errataBlock, persistErr)
-					o.logger.Error().Err(persistErr).
-						Str("delivery_id", errataBlock.DeliveryID).
-						Msg("failed to persist errata before attestation")
-					continue
-				}
-
 				// The XMR scanner may emit a re-mined transaction as soon as this
 				// acknowledgement is released. Finish both durable on-deck cleanup
 				// and the local errata attestation first, so neither cleanup path can
@@ -1324,7 +1414,7 @@ func (o *Observer) processErrataTx(ctx context.Context) {
 			}
 
 			// filter
-			if err := o.filterErrataTx(errataBlock); err != nil {
+			if err := o.cleanupErrataBlock(errataBlock); err != nil {
 				if o.errCounter != nil {
 					o.errCounter.WithLabelValues("fail_to_persist_errata_tombstone", "").Inc()
 				}
@@ -1346,7 +1436,7 @@ func (o *Observer) processErrataTx(ctx context.Context) {
 // events clean local observer state and attest once without entering the
 // durable retry outbox.
 func (o *Observer) processLegacyErrataBlock(ctx context.Context, errataBlock types.ErrataBlock) error {
-	if err := o.filterLegacyErrataTx(errataBlock); err != nil {
+	if err := o.cleanupLegacyErrataBlock(errataBlock); err != nil {
 		return err
 	}
 	if o.attestationGossip == nil {
@@ -1407,29 +1497,56 @@ func (o *Observer) attestErrataBlock(ctx context.Context, errataBlock types.Erra
 }
 
 func (o *Observer) cleanupErrataBlock(errataBlock types.ErrataBlock) error {
-	cleanupBlock := types.ErrataBlock{Height: errataBlock.Height, DeliveryID: errataBlock.DeliveryID}
-	for _, errataTx := range errataBlock.Txs {
-		record, found, err := o.storage.GetPendingErrataTx(errataTx)
-		if err != nil {
-			return err
-		}
-		if found && record.DeliverySeen && !record.CleanupComplete {
-			cleanupBlock.Txs = append(cleanupBlock.Txs, errataTx)
-		}
+	unlock := o.lockXMRErrataCleanup(errataBlock)
+	defer unlock()
+
+	cleaned, err := o.applyErrataTxWithOutbox(errataBlock, true)
+	if err != nil {
+		return err
 	}
-	if len(cleanupBlock.Txs) > 0 {
-		// filterErrataTx atomically fsyncs the TxID tombstones and the exact
-		// on-deck mutations. Marking the outbox records cleanup-complete
-		// afterwards is idempotent: a crash in between simply replays this
-		// block from the outbox on restart.
-		if err := o.filterErrataTx(cleanupBlock); err != nil {
-			return err
-		}
-		if err := o.storage.CompleteErrataCleanup(cleanupBlock.Txs, nil); err != nil {
-			return err
-		}
-	}
+	o.removeInitialErrataObservations(errataBlock.Height, cleaned)
 	return nil
+}
+
+func (o *Observer) cleanupLegacyErrataBlock(errataBlock types.ErrataBlock) error {
+	unlock := o.lockXMRErrataCleanup(errataBlock)
+	defer unlock()
+
+	cleaned, err := o.applyErrataTxWithOutbox(errataBlock, false)
+	if err != nil {
+		return err
+	}
+	o.removeInitialErrataObservations(errataBlock.Height, cleaned)
+	return nil
+}
+
+func (o *Observer) lockXMRErrataCleanup(errataBlock types.ErrataBlock) func() {
+	if o.attestationGossip == nil {
+		return func() {}
+	}
+	for _, tx := range errataBlock.Txs {
+		if tx.Chain.Equals(common.XMRChain) {
+			// Hold the writer before the durable tombstone batch begins and
+			// through height-scoped gossip removal. Every XMR ingress and late
+			// quorum send takes the corresponding reader before the gossip
+			// mutex, giving cleanup one unambiguous linearization point.
+			o.attestationGossip.xmrErrataBarrier.Lock()
+			return o.attestationGossip.xmrErrataBarrier.Unlock
+		}
+	}
+	return func() {}
+}
+
+func (o *Observer) removeInitialErrataObservations(orphanHeight int64, errataTxs []types.ErrataTx) {
+	if o.attestationGossip == nil {
+		return
+	}
+	for _, errataTx := range errataTxs {
+		o.attestationGossip.removeObservedTxsForErrata(common.ErrataTx{
+			Chain: errataTx.Chain,
+			Id:    errataTx.TxID,
+		}, orphanHeight)
+	}
 }
 
 func (o *Observer) broadcastErrataBlock(ctx context.Context, errataBlock types.ErrataBlock, now time.Time, forceAttempt bool) error {
@@ -1445,14 +1562,25 @@ func (o *Observer) broadcastErrataBlock(ctx context.Context, errataBlock types.E
 		if !found || record.Committed {
 			continue
 		}
+		if !record.CleanupComplete {
+			return fmt.Errorf("local cleanup is not durable for errata %s/%s", errataTx.Chain, errataTx.TxID)
+		}
+		// A lagging peer or state sync can reintroduce the orphaned observation
+		// after the initial local cleanup. Re-apply only the volatile,
+		// height-scoped gossip barrier on every durable outbox pass. This keeps
+		// the orphan from regaining quorum while preserving the same immutable
+		// XMR transaction if it is canonically mined at a different height.
+		if o.attestationGossip != nil {
+			o.attestationGossip.removeObservedTxsForErrata(common.ErrataTx{
+				Chain: errataTx.Chain,
+				Id:    errataTx.TxID,
+			}, errataBlock.Height)
+		}
 		if record.AttestationRetryExhausted {
 			if forceAttempt && broadcastErr == nil {
 				broadcastErr = fmt.Errorf("errata attestation retry horizon exhausted for %s/%s; operator recovery required", errataTx.Chain, errataTx.TxID)
 			}
 			continue
-		}
-		if !record.CleanupComplete {
-			return fmt.Errorf("local cleanup is not durable for errata %s/%s", errataTx.Chain, errataTx.TxID)
 		}
 		if record.FirstAttemptAtUnixNano != 0 {
 			firstAttempt := time.Unix(0, record.FirstAttemptAtUnixNano)
@@ -1546,9 +1674,11 @@ func (o *Observer) retryPendingErrataAt(ctx context.Context, now time.Time) {
 			DeliveryID: record.DeliveryID,
 			Txs:        []types.ErrataTx{record.Tx},
 		}
-		if err = o.cleanupErrataBlock(block); err == nil {
-			err = o.broadcastErrataBlock(ctx, block, now, false)
-		}
+		// Initial delivery atomically persisted cleanup before this record became
+		// retryable. From here onward the outbox owns retransmission only: replaying
+		// destructive cleanup could erase the same transaction after a canonical
+		// re-mine.
+		err = o.broadcastErrataBlock(ctx, block, now, false)
 		if err != nil {
 			if o.errCounter != nil {
 				o.errCounter.WithLabelValues("fail_to_broadcast_errata_tx", "").Inc()
@@ -1664,6 +1794,13 @@ func (o *Observer) reconcileCommittedXMRErrata() (int, error) {
 			continue
 		}
 
+		// Linearize the permanent TxID-wide upgrade with every XMR ingress,
+		// queued peer broadcast, and late quorum submission. The scanner
+		// quarantine above is idempotent and intentionally runs before taking
+		// this process-local barrier.
+		if o.attestationGossip != nil {
+			o.attestationGossip.xmrErrataBarrier.Lock()
+		}
 		o.lock.Lock()
 		errataIDs := map[string]struct{}{
 			errataObservationKey(tombstone.Chain, tombstone.TxID.String()): {},
@@ -1674,6 +1811,12 @@ func (o *Observer) reconcileCommittedXMRErrata() (int, error) {
 			o.applyErrataDeckUpdates(updated)
 		}
 		o.lock.Unlock()
+		if err == nil && o.attestationGossip != nil {
+			o.attestationGossip.removeObservedTxsForErrata(errata, 0)
+		}
+		if o.attestationGossip != nil {
+			o.attestationGossip.xmrErrataBarrier.Unlock()
+		}
 		if err != nil {
 			unresolved++
 			reconcileErrors = append(reconcileErrors, fmt.Errorf(
@@ -1683,6 +1826,9 @@ func (o *Observer) reconcileCommittedXMRErrata() (int, error) {
 				Msg("fail to persist permanent XMR errata outcome; will retry")
 			continue
 		}
+		// The voter result and volatile purge above are one ordered permanent
+		// TxID-wide terminal. Ingress after the commit is rejected by the
+		// tombstone; ingress before it is removed before the writer releases.
 		callbacks := takeObservedTxRejectedCallbacks(
 			removedItems,
 			fmt.Errorf("%w: %s transaction id is permanently reverted", types.ErrObservedTxPermanentlyReverted, tombstone.Chain),
@@ -1707,22 +1853,53 @@ func (o *Observer) attestErrata(ctx context.Context, errata common.ErrataTx) err
 // the transaction that has been re-org out ,still in bifrost memory waiting for confirmation, as such, it should be
 // removed from ondeck tx queue, and not forward it to THORChain
 func (o *Observer) filterErrataTx(block types.ErrataBlock) error {
-	return o.filterErrataTxWithOutbox(block, true)
+	_, err := o.applyErrataTxWithOutbox(block, true)
+	return err
 }
 
-func (o *Observer) filterLegacyErrataTx(block types.ErrataBlock) error {
-	return o.filterErrataTxWithOutbox(block, false)
-}
-
-func (o *Observer) filterErrataTxWithOutbox(block types.ErrataBlock, durableOutbox bool) error {
+func (o *Observer) applyErrataTxWithOutbox(
+	block types.ErrataBlock,
+	durableOutbox bool,
+) ([]types.ErrataTx, error) {
 	o.lock.Lock()
 	if len(block.Txs) == 0 {
 		o.lock.Unlock()
-		return nil
+		return nil, nil
 	}
 
+	// Only initial delivery is destructive. A scanner or durable-outbox replay
+	// of an already cleaned height is a retransmission, even after its completed
+	// outbox record has been removed. New orphan heights remain distinct cleanup
+	// generations for the same immutable XMR transaction.
+	cleanupTxs := make([]types.ErrataTx, 0, len(block.Txs))
 	errataIDs := make(map[string]struct{}, len(block.Txs))
 	for _, tx := range block.Txs {
+		alreadyCleaned := false
+		if durableOutbox {
+			record, found, err := o.storage.GetPendingErrataTx(tx)
+			if err != nil {
+				o.lock.Unlock()
+				return nil, err
+			}
+			if found && record.DeliverySeen && record.CleanupComplete {
+				alreadyCleaned = record.Height == block.Height && block.Height > 0
+				if block.Height == 0 && block.DeliveryID != "" {
+					alreadyCleaned = record.DeliveryID == block.DeliveryID
+				}
+			}
+			if !found {
+				tombstone, err := o.storage.getErrataTombstone(tx.Chain, tx.TxID.String())
+				if err != nil {
+					o.lock.Unlock()
+					return nil, err
+				}
+				alreadyCleaned = tombstone != nil && block.Height > 0 && tombstone.blocksHeight(block.Height)
+			}
+		}
+		if alreadyCleaned {
+			continue
+		}
+		cleanupTxs = append(cleanupTxs, tx)
 		key := errataObservationKey(tx.Chain, tx.TxID.String())
 		errataIDs[key] = struct{}{}
 	}
@@ -1737,18 +1914,18 @@ func (o *Observer) filterErrataTxWithOutbox(block types.ErrataBlock, durableOutb
 	}
 	if persistErr != nil {
 		o.lock.Unlock()
-		return persistErr
+		return nil, persistErr
 	}
 	o.applyErrataDeckUpdates(updated)
 	callbacks := takeObservedTxRejectedCallbacks(removedItems, errObservedTxErrata)
 	o.lock.Unlock()
 	invokeObservedTxCallbacks(callbacks)
-	for _, tx := range block.Txs {
+	for _, tx := range cleanupTxs {
 		o.logger.Info().Str("chain", tx.Chain.String()).
 			Str("txid", tx.TxID.String()).
 			Msg("durably removed on-deck transaction due to errata")
 	}
-	return nil
+	return cleanupTxs, nil
 }
 
 // collectErrataDeckMutations runs with o.lock held and describes the exact

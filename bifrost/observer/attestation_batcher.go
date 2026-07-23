@@ -46,7 +46,13 @@ type AttestationBatcher struct {
 	logger  zerolog.Logger
 	metrics *batchMetrics
 
-	peerMgr *peerManager
+	// xmrErrataBarrier is shared with AttestationGossip. Batch dequeue and
+	// transmission take its reader so durable XMR errata cleanup can purge a
+	// queued stale observation without racing an already-dequeued broadcast.
+	xmrErrataBarrier *sync.RWMutex
+
+	peerMgr           *peerManager
+	broadcastToPeerFn func(context.Context, peer.ID, []byte)
 }
 
 // Metrics for the batcher
@@ -168,6 +174,11 @@ func (b *AttestationBatcher) Start(ctx context.Context) {
 }
 
 func (b *AttestationBatcher) sendBatches(ctx context.Context, force bool) {
+	if b.xmrErrataBarrier != nil {
+		b.xmrErrataBarrier.RLock()
+		defer b.xmrErrataBarrier.RUnlock()
+	}
+
 	b.mu.Lock()
 
 	// Only send if we have messages to send or enough time has passed
@@ -298,6 +309,24 @@ func (b *AttestationBatcher) AddObservedTx(tx common.AttestTx) {
 	}
 }
 
+func (b *AttestationBatcher) removeObservedTxsForErrata(errata common.ErrataTx, orphanHeight int64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	filtered := b.observedTxBatch[:0]
+	for _, tx := range b.observedTxBatch {
+		if tx == nil || !tx.ObsTx.Tx.Chain.Equals(errata.Chain) || !tx.ObsTx.Tx.ID.Equals(errata.Id) {
+			filtered = append(filtered, tx)
+			continue
+		}
+		if errata.Chain.Equals(common.XMRChain) && orphanHeight > 0 &&
+			tx.ObsTx.BlockHeight != orphanHeight {
+			filtered = append(filtered, tx)
+		}
+	}
+	b.observedTxBatch = filtered
+}
+
 // AddNetworkFee adds a network fee attestation to the batch
 func (b *AttestationBatcher) AddNetworkFee(fee common.AttestNetworkFee) {
 	maxBatchSize := b.getMaxBatchSize()
@@ -397,7 +426,9 @@ func (b *AttestationBatcher) triggerBatchSend() {
 	}
 }
 
-// broadcastToAllPeers sends the batch payload to all connected peers without blocking on slow peers
+// broadcastToAllPeers sends the batch payload to all connected peers. Batches
+// carrying XMR observations wait for every bounded peer attempt so the caller's
+// errata read barrier covers the actual write, not merely goroutine creation.
 func (b *AttestationBatcher) broadcastToAllPeers(ctx context.Context, batch common.AttestationBatch) {
 	// Marshal the batch
 	payload, err := batch.Marshal()
@@ -435,13 +466,33 @@ func (b *AttestationBatcher) broadcastToAllPeers(ctx context.Context, batch comm
 		Int("payload_bytes", len(payload)).
 		Msg("broadcasting attestation batch to peers")
 
-	// Launch each send operation in its own goroutine and don't wait for completion
+	waitForCompletion := false
+	for _, tx := range batch.AttestTxs {
+		if tx != nil && tx.ObsTx.Tx.Chain.Equals(common.XMRChain) {
+			waitForCompletion = true
+			break
+		}
+	}
+	var sends sync.WaitGroup
+	if waitForCompletion {
+		sends.Add(len(peersToSend))
+	}
 	for _, p := range peersToSend {
-		// Launch a goroutine for each peer and don't wait for completion
-		go b.broadcastToPeer(ctx, p, payload)
+		go func(remote peer.ID) {
+			if waitForCompletion {
+				defer sends.Done()
+			}
+			if b.broadcastToPeerFn != nil {
+				b.broadcastToPeerFn(ctx, remote, payload)
+			} else {
+				b.broadcastToPeer(ctx, remote, payload)
+			}
+		}(p)
+	}
+	if waitForCompletion {
+		sends.Wait()
 	}
 
-	// Function returns immediately without waiting for sends to complete
 	b.logger.Debug().Msg("broadcast initiated to all peers")
 }
 

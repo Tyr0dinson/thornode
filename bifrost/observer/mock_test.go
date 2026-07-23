@@ -371,6 +371,10 @@ func (m *MockStream) SetReadDeadline(t time.Time) error {
 	return nil
 }
 
+func (m *MockStream) SetDeadline(t time.Time) error {
+	return nil
+}
+
 func (m *MockStream) Reset() error {
 	return nil
 }

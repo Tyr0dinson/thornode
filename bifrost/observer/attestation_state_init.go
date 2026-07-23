@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"sync"
+	"time"
 
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -70,11 +71,39 @@ func (s *AttestationGossip) askForAttestationState(ctx context.Context) {
 
 func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 	remotePeer := stream.Conn().RemotePeer()
-	s.logger.Debug().Str("peer", remotePeer.String()).Msg("sending attestation state")
+	logger := s.logger.With().Str("peer", remotePeer.String()).Logger()
+	logger.Debug().Msg("sending attestation state")
+
+	// This is a total transfer budget, not a rolling per-frame timeout. State
+	// containing XMR observations holds xmrErrataBarrier.RLock until the peer has
+	// acknowledged the final frame, so a peer which acknowledges just often
+	// enough must not postpone durable errata cleanup indefinitely. The handler
+	// also applies the stream deadline before parsing the request; this watchdog
+	// makes direct callers and the complete send phase independently bounded.
+	timeout := s.config.PeerTimeout
+	if timeout <= 0 {
+		timeout = defaultPeerTimeout
+	}
+	transferTimeout := time.AfterFunc(timeout, func() {
+		logger.Warn().Dur("timeout", timeout).Msg("resetting timed-out attestation state transfer")
+		if err := stream.Reset(); err != nil {
+			logger.Debug().Err(err).Msg("failed to reset timed-out attestation state stream")
+		}
+	})
+	defer transferTimeout.Stop()
+
+	s.xmrErrataBarrier.RLock()
+	xmrBarrierHeld := true
+	defer func() {
+		if xmrBarrierHeld {
+			s.xmrErrataBarrier.RUnlock()
+		}
+	}()
 	s.mu.Lock()
 
 	// Collect all QuorumTxs
 	allQuorumTxs := make([]*common.QuorumTx, 0, len(s.observedTxs))
+	containsXMR := false
 	for k, ots := range s.observedTxs {
 		ots.mu.Lock()
 
@@ -85,6 +114,7 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 			Attestations:           ots.AttestationsCopy(),
 		}
 		allQuorumTxs = append(allQuorumTxs, quorumTxs)
+		containsXMR = containsXMR || quorumTxs.ObsTx.Tx.Chain.Equals(common.XMRChain)
 
 		ots.mu.Unlock()
 	}
@@ -151,6 +181,10 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 	}
 
 	s.mu.Unlock()
+	if !containsXMR {
+		s.xmrErrataBarrier.RUnlock()
+		xmrBarrierHeld = false
+	}
 
 	// Calculate total number of batches
 	totalTxs := len(allQuorumTxs)

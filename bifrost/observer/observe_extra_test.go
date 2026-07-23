@@ -1975,7 +1975,7 @@ func (s *ObserveExtraSuite) TestAttestErrataNotActive(c *C) {
 	c.Assert(err.Error(), Equals, "skipping attest errata tx: not active")
 }
 
-func (s *ObserveExtraSuite) TestAttestErrataRemovesObservedTx(c *C) {
+func (s *ObserveExtraSuite) TestInitialErrataCleanupRemovesObservedTx(c *C) {
 	ag, _ := newTestAttestationGossip(c, []peer.ID{"self", "peer1"})
 
 	// Add an observed tx first
@@ -1994,11 +1994,13 @@ func (s *ObserveExtraSuite) TestAttestErrataRemovesObservedTx(c *C) {
 	c.Assert(len(ag.observedTxs) > 0, Equals, true)
 	ag.mu.Unlock()
 
-	// Now attest errata for the same chain/ID - should remove the observed tx
+	// Initial Observer cleanup removes the orphaned observation before the
+	// errata vote enters its durable retransmission loop.
 	errata := common.ErrataTx{
 		Chain: common.BTCChain,
 		Id:    "errata_tx",
 	}
+	ag.removeObservedTxsForErrata(errata, 100)
 	err = ag.AttestErrata(context.Background(), errata)
 	c.Assert(err, IsNil)
 
@@ -2006,6 +2008,42 @@ func (s *ObserveExtraSuite) TestAttestErrataRemovesObservedTx(c *C) {
 	// The observed tx should be removed since errata was for the same chain/ID
 	c.Assert(len(ag.observedTxs), Equals, 0)
 	ag.mu.Unlock()
+}
+
+func (s *ObserveExtraSuite) TestAttestErrataRetryPreservesCanonicalXMRRemine(c *C) {
+	ag, _ := newTestAttestationGossip(c, []peer.ID{"self", "peer1"})
+	errata := common.ErrataTx{
+		Chain: common.XMRChain,
+		Id:    "remine_between_retries",
+	}
+
+	orphan := &common.ObservedTx{
+		Tx: common.Tx{
+			ID:    errata.Id,
+			Chain: errata.Chain,
+		},
+		BlockHeight:    100,
+		FinaliseHeight: 100,
+	}
+	c.Assert(ag.AttestObservedTx(context.Background(), orphan, true, false), IsNil)
+	ag.removeObservedTxsForErrata(errata, orphan.BlockHeight)
+
+	canonical := *orphan
+	canonical.BlockHeight = 101
+	canonical.FinaliseHeight = 101
+	c.Assert(ag.AttestObservedTx(context.Background(), &canonical, true, false), IsNil)
+	canonicalKey := observedTxKey(canonical, true, false)
+
+	// The durable outbox may call AttestErrata repeatedly until a committed
+	// receipt arrives. Those calls are transmission-only and must not erase the
+	// same immutable transaction at its new canonical height.
+	c.Assert(ag.AttestErrata(context.Background(), errata), IsNil)
+	c.Assert(ag.AttestErrata(context.Background(), errata), IsNil)
+
+	ag.mu.Lock()
+	_, found := ag.observedTxs[canonicalKey]
+	ag.mu.Unlock()
+	c.Assert(found, Equals, true)
 }
 
 // ---------------------------------------------------------------------------

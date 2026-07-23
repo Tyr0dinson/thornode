@@ -516,6 +516,23 @@ func TestXMRCommittedErrataQuarantinesAfterPendingBarrierBeforeTerminalReceipt(t
 		Chain: common.XMRChain,
 		Id:    common.TxID("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
 	}
+	gossip, _, _, _, _, _ := setupTestGossip(t)
+	gossip.SetObserverStorage(storage)
+	observer.attestationGossip = gossip
+	preexistingGossipObservation := common.ObservedTx{
+		Tx: common.Tx{
+			Chain: errata.Chain,
+			ID:    errata.Id,
+		},
+		BlockHeight:    119,
+		FinaliseHeight: 119,
+	}
+	preexistingGossipKey := observedTxKey(preexistingGossipObservation, true, false)
+	gossip.mu.Lock()
+	gossip.observedTxs[preexistingGossipKey] = gossip.observedTxsPool.NewAttestationState(
+		&attestableObservedTx{ObservedTx: &preexistingGossipObservation, inbound: true},
+	)
+	gossip.mu.Unlock()
 	rejected := false
 	item := errataOrderingItem(errata.Id.String(), 120, "event-first-local-deck")
 	item.OnObservedTxRejected = func(err error) {
@@ -556,6 +573,10 @@ func TestXMRCommittedErrataQuarantinesAfterPendingBarrierBeforeTerminalReceipt(t
 	require.NotNil(t, tombstone.VoterReverted)
 	require.True(t, *tombstone.VoterReverted)
 	require.NotContains(t, observer.onDeck, key)
+	gossip.mu.Lock()
+	_, preexistingGossipSurvived := gossip.observedTxs[preexistingGossipKey]
+	gossip.mu.Unlock()
+	require.False(t, preexistingGossipSurvived, "permanent errata must purge pre-existing gossip state TxID-wide")
 
 	var higherRejected error
 	higher := errataOrderingItem(errata.Id.String(), 250, "canonical-after-revert")
@@ -585,6 +606,108 @@ func TestXMRCommittedErrataQuarantinesAfterPendingBarrierBeforeTerminalReceipt(t
 	require.NoError(t, restarted.processObservedTx(*errataOrderingTxIn(common.XMRChain, 300, 0, remined)))
 	require.ErrorIs(t, restartedRejected, types.ErrObservedTxPermanentlyReverted)
 	require.Empty(t, restarted.onDeck)
+}
+
+func TestXMRPermanentErrataUpgradeWaitsForInFlightQuorumSubmission(t *testing.T) {
+	observer, storage := newErrataOrderingObserver(t)
+	errata := common.ErrataTx{
+		Chain: common.XMRChain,
+		Id:    common.TxID("1212121212121212121212121212121212121212121212121212121212121212"),
+	}
+	require.NoError(t, storage.applyCommittedErrata(errata, nil))
+	require.NoError(t, storage.recordErrataCommitted(errata, 1))
+
+	gossip, _, _, grpcClient, _, _ := setupTestGossip(t)
+	gossip.SetObserverStorage(storage)
+	gossip.avMu.Lock()
+	for id := range gossip.activeVals {
+		if id != gossip.host.ID() {
+			delete(gossip.activeVals, id)
+		}
+	}
+	gossip.avMu.Unlock()
+	observer.attestationGossip = gossip
+
+	observed := common.ObservedTx{
+		Tx: common.Tx{
+			Chain: errata.Chain,
+			ID:    errata.Id,
+		},
+		BlockHeight:    250,
+		FinaliseHeight: 250,
+	}
+	key := observedTxKey(observed, true, false)
+	quorumEntered := make(chan struct{})
+	releaseQuorum := make(chan struct{})
+	grpcClient.sendQuorumTxFunc = func(
+		context.Context,
+		*common.QuorumTx,
+		...grpc.CallOption,
+	) (*ebifrost.SendQuorumTxResult, error) {
+		close(quorumEntered)
+		<-releaseQuorum
+		return &ebifrost.SendQuorumTxResult{}, nil
+	}
+	attestResult := make(chan error, 1)
+	go func() {
+		attestResult <- gossip.AttestObservedTx(context.Background(), &observed, true, false)
+	}()
+	select {
+	case <-quorumEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for in-flight quorum submission")
+	}
+
+	beforePermanentWrite := make(chan struct{})
+	storage.beforeErrataWrite = func() error {
+		close(beforePermanentWrite)
+		return nil
+	}
+	reconcileResult := make(chan error, 1)
+	go func() {
+		unresolved, err := observer.reconcileCommittedXMRErrata()
+		if err == nil && unresolved != 0 {
+			err = fmt.Errorf("unexpected unresolved errata count: %d", unresolved)
+		}
+		reconcileResult <- err
+	}()
+
+	select {
+	case <-beforePermanentWrite:
+		t.Fatal("permanent errata write crossed an in-flight quorum submission")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(releaseQuorum)
+	select {
+	case err := <-attestResult:
+		require.NoError(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for quorum submission")
+	}
+	select {
+	case <-beforePermanentWrite:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for permanent errata write")
+	}
+	select {
+	case err := <-reconcileResult:
+		require.NoError(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for permanent errata reconciliation")
+	}
+
+	tombstone, err := storage.getErrataTombstone(errata.Chain, errata.Id.String())
+	require.NoError(t, err)
+	require.NotNil(t, tombstone)
+	require.True(t, tombstone.isPermanentlyReverted())
+	gossip.mu.Lock()
+	_, survivedUpgrade := gossip.observedTxs[key]
+	gossip.mu.Unlock()
+	require.False(t, survivedUpgrade)
+	gossip.batcher.mu.Lock()
+	defer gossip.batcher.mu.Unlock()
+	require.Empty(t, gossip.batcher.observedTxBatch)
 }
 
 func TestXMRCommittedErrataQuarantineFailureRetriesOutcomeAfterRestart(t *testing.T) {
@@ -1200,6 +1323,53 @@ func TestInactiveTransitionRetainsAndActiveTransitionRegossipsXMRDeck(t *testing
 	observer.sendDeck(context.Background())
 	require.Equal(t, 1, regossiped)
 	require.Contains(t, observer.onDeck, key)
+}
+
+func TestSendDeckUnlocksOnlyXMRNetworkSubmission(t *testing.T) {
+	observer, _ := newErrataOrderingObserver(t)
+	observer.thorchainBridge = &MockThorchainBridge2{
+		nodeStatus: stypes.NodeStatus_Active,
+	}
+	observer.attestationGossip = &AttestationGossip{
+		logger: log.Logger,
+		host:   NewMockHost(nil),
+	}
+	observer.chains = map[common.Chain]chainclients.ChainClient{
+		common.BTCChain: &mockChainClient{},
+		common.XMRChain: &mockChainClient{},
+	}
+
+	btcDeck := errataOrderingTxIn(
+		common.BTCChain,
+		100,
+		0,
+		errataOrderingItem("serialized-btc", 100, "legacy"),
+	)
+	xmrDeck := errataOrderingTxIn(
+		common.XMRChain,
+		101,
+		0,
+		errataOrderingItem("unlocked-xmr", 101, "xmr"),
+	)
+	observer.onDeck[TxInKey(btcDeck)] = btcDeck
+	observer.onDeck[TxInKey(xmrDeck)] = xmrDeck
+
+	seen := make(map[common.Chain]bool)
+	observer.sendDeckFn = func(deck *types.TxIn, _ bool, _ int64) []int {
+		seen[deck.Chain] = true
+		acquired := observer.lock.TryLock()
+		if deck.Chain.Equals(common.XMRChain) {
+			require.True(t, acquired, "XMR send must not hold Observer lock before taking the errata reader")
+			observer.lock.Unlock()
+		} else {
+			require.False(t, acquired, "legacy chain send must preserve serialized on-deck behavior")
+		}
+		return nil
+	}
+
+	observer.sendDeck(context.Background())
+	require.True(t, seen[common.BTCChain])
+	require.True(t, seen[common.XMRChain])
 }
 
 func TestErrataStoredCallbackRunsAfterDurableAcceptance(t *testing.T) {

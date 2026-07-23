@@ -165,6 +165,11 @@ type AttestationGossip struct {
 	historicalXMRCertificateReconcileRunning bool
 	pendingXMRSpentRefsReconcileRunning      bool
 	mu                                       sync.Mutex
+	// xmrErrataBarrier orders every XMR quorum submission before or after the
+	// durable errata tombstone which invalidates that observation height.
+	// Readers must acquire this before mu; errata cleanup holds the writer from
+	// before its atomic storage batch through volatile gossip removal.
+	xmrErrataBarrier sync.RWMutex
 
 	observedTxsPool *AttestationStatePool[*attestableObservedTx]
 	networkFeesPool *AttestationStatePool[*common.NetworkFee]
@@ -180,8 +185,13 @@ type AttestationGossip struct {
 	observerHandleObservedTxCommitted func(tx common.ObservedTx, allowFutureObservation bool)
 	observerHandleErrataTxCommitted   func(errata common.ErrataTx) error
 	observerApplySpentOutputRefs      func(tx common.ObservedTx, onOutcome func(applied bool))
-	applySpentRefsSem                 chan struct{}
-	applyCommittedSpentRefsSem        chan struct{}
+	observerStorage                   *ObserverStorage
+	// xmrErrataAdmissionRequired is immutable for production instances and is
+	// also enabled when tests wire storage explicitly. It makes the short
+	// constructor window before Observer supplies storage fail closed for XMR.
+	xmrErrataAdmissionRequired bool
+	applySpentRefsSem          chan struct{}
+	applyCommittedSpentRefsSem chan struct{}
 
 	batcher *AttestationBatcher
 
@@ -259,7 +269,8 @@ func NewAttestationGossip(
 
 		priceFeedsDelay: NewDelay(),
 
-		batcher: batcher,
+		batcher:                    batcher,
+		xmrErrataAdmissionRequired: true,
 
 		// Bound concurrent sidecar mark-spent calls. Committed catch-up has a
 		// separate reserve so pre-quorum gossip cannot consume all capacity.
@@ -267,6 +278,7 @@ func NewAttestationGossip(
 		applyCommittedSpentRefsSem: make(chan struct{}, 4),
 	}
 	batcher.setActiveValGetter(s.getActiveValidators)
+	batcher.xmrErrataBarrier = &s.xmrErrataBarrier
 	// Register event handlers
 	eventClient.RegisterHandler(ebifrost.EventQuorumTxCommitted, s.handleQuorumTxCommitted)
 	eventClient.RegisterHandler(ebifrost.EventQuorumNetworkFeeCommitted, s.handleQuorumNetworkFeeCommitted)
@@ -371,6 +383,15 @@ func (s *AttestationGossip) SetObserverHandleObservedTxCommitted(o *Observer) {
 
 func (s *AttestationGossip) SetObserverHandleErrataTxCommitted(o *Observer) {
 	s.observerHandleErrataTxCommitted = o.handleErrataTxCommitted
+}
+
+// SetObserverStorage wires the durable XMR errata admission barrier before the
+// gossip event client or peer stream handlers start accepting observations.
+func (s *AttestationGossip) SetObserverStorage(storage *ObserverStorage) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.observerStorage = storage
+	s.xmrErrataAdmissionRequired = true
 }
 
 // SetObserverApplySpentOutputRefs wires the XMR sidecar import. The import
@@ -623,10 +644,18 @@ func (s *AttestationGossip) Start(ctx context.Context) {
 		case <-ticker.C:
 			// prune old attestations and check for late ones to send
 			now := time.Now()
+			// The observation portion holds mu while issuing late submissions.
+			// Acquire the errata reader first, then release both before any
+			// unrelated network-fee/solvency bridge call. A stalled non-XMR RPC
+			// must not hold XMR's durable cleanup writer hostage.
+			s.xmrErrataBarrier.RLock()
 			s.mu.Lock()
 
 			// Prune observed transactions
 			for k, state := range s.observedTxs {
+				if !k.Chain.Equals(common.XMRChain) {
+					continue
+				}
 				state.mu.Lock()
 				if state.ExpiredAfterQuorum(s.config.LateObserveTimeout, s.config.NonQuorumTimeout) {
 					delete(s.observedTxs, k)
@@ -634,6 +663,24 @@ func (s *AttestationGossip) Start(ctx context.Context) {
 				} else if state.ShouldSendLate(s.config.MinTimeBetweenAttestations) {
 					s.logger.Debug().Msg("sending late observed tx attestations")
 
+					s.sendObservedTxAttestationsToThornode(ctx, *state.Item.ObservedTx, state, k.Inbound, k.AllowFutureObservation, false)
+				}
+				state.mu.Unlock()
+			}
+			s.mu.Unlock()
+			s.xmrErrataBarrier.RUnlock()
+
+			s.mu.Lock()
+			for k, state := range s.observedTxs {
+				if k.Chain.Equals(common.XMRChain) {
+					continue
+				}
+				state.mu.Lock()
+				if state.ExpiredAfterQuorum(s.config.LateObserveTimeout, s.config.NonQuorumTimeout) {
+					delete(s.observedTxs, k)
+					s.observedTxsPool.PutAttestationState(state)
+				} else if state.ShouldSendLate(s.config.MinTimeBetweenAttestations) {
+					s.logger.Debug().Msg("sending late observed tx attestations")
 					s.sendObservedTxAttestationsToThornode(ctx, *state.Item.ObservedTx, state, k.Inbound, k.AllowFutureObservation, false)
 				}
 				state.mu.Unlock()
