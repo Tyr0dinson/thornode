@@ -230,37 +230,49 @@ func (s *StableReserveMgr) TrySwap(ctx cosmos.Context, mgr Manager, msg MsgSwap)
 		return false, cosmos.ZeroUint(), nil
 	}
 
-	// Both legs pass IsEligibleStable independently against $1 ± tolerance, so two
-	// healthy stables can still sit on opposite edges of the band. Both pricing
-	// modes below need these prices — the default mode to guard against that
-	// arbitrage drain, oracle mode to scale the fill. Use per-asset pool prices
-	// here; ticker oracle prices collapse same-ticker assets across chains.
-	srcPrice, ok := s.stableReservePoolPrice(ctx, source)
-	if !ok {
-		return false, cosmos.ZeroUint(), nil
-	}
-	tgtPrice, ok := s.stableReservePoolPrice(ctx, target)
-	if !ok {
-		return false, cosmos.ZeroUint(), nil
-	}
 	grossIn := msg.Tx.Coins[0].Amount
 	grossTarget := grossIn
 	if s.keeper.GetConfigInt64(ctx, constants.StableReserveOraclePricing) > 0 {
-		// Oracle pricing: scale the output by srcPrice/tgtPrice so the fill is
-		// value-neutral. That makes the source-worth-at-least-target guard
-		// redundant — every in-band pair fills, the reserve just pays out the
-		// value equivalent rather than a flat 1:1 count.
+		// Oracle pricing: scale the output by the enshrined oracle's per-ticker USD
+		// prices — quorum-signed and swap-independent, unlike pool ratios an attacker
+		// can dislocate within the band. The price-feed batch is injected at the front
+		// of every block (~1s cadence), so a healthy oracle has both legs priced before
+		// swaps run. If either price is missing (oracle halted or unattested) decline
+		// the fill so the swap falls through to the regular AMM pools. IsEligibleStable
+		// already fetched and range-checked both, so this is normally guaranteed.
+		srcOracle, err := s.keeper.GetPrice(ctx, source.Ticker.String())
+		if err != nil {
+			return false, cosmos.ZeroUint(), nil
+		}
+		tgtOracle, err := s.keeper.GetPrice(ctx, target.Ticker.String())
+		if err != nil {
+			return false, cosmos.ZeroUint(), nil
+		}
 		var ok bool
-		grossTarget, ok = stableReserveOracleRatioOutput(grossIn, srcPrice, tgtPrice)
+		grossTarget, ok = stableReserveOracleRatioOutput(grossIn, srcOracle.Price, tgtOracle.Price)
 		if !ok || grossTarget.IsZero() {
 			return false, cosmos.ZeroUint(), nil
 		}
-		// Value-neutral pricing must never shrink the reserve's token count: pool
-		// prices can dislocate within the eligibility band, so cap the payout at what
+		// Value-neutral pricing must never shrink the reserve's token count: oracle
+		// prices can still straddle the eligibility band, so cap the payout at what
 		// came in and let the surplus accrue to the reserve.
 		grossTarget = cosmos.MinUint(grossTarget, grossIn)
-	} else if !stableReserveSourceWorthAtLeastTarget(srcPrice, tgtPrice) {
-		return false, cosmos.ZeroUint(), nil
+	} else {
+		// Default 1:1 fill. Both legs pass IsEligibleStable against $1 ± tolerance
+		// independently, so two healthy stables can still sit on opposite band edges;
+		// guard against that arbitrage drain with per-asset pool prices (ticker oracle
+		// prices would collapse same-ticker assets across chains).
+		srcPrice, ok := s.stableReservePoolPrice(ctx, source)
+		if !ok {
+			return false, cosmos.ZeroUint(), nil
+		}
+		tgtPrice, ok := s.stableReservePoolPrice(ctx, target)
+		if !ok {
+			return false, cosmos.ZeroUint(), nil
+		}
+		if !stableReserveSourceWorthAtLeastTarget(srcPrice, tgtPrice) {
+			return false, cosmos.ZeroUint(), nil
+		}
 	}
 	fee, err := mgr.GasMgr().GetAssetOutboundFee(ctx, target, false)
 	if err != nil {

@@ -727,11 +727,14 @@ func (s *StableReserveMgrSuite) TestFreeStableSwapOraclePricingFillsBandEdges(c 
 
 	// Same opposite-band-edge pair the 1:1 path refuses above. With
 	// StableReserveOraclePricing on, the fill goes through but the output is
-	// scaled by srcPrice/tgtPrice instead of paying out 1:1.
+	// scaled by the oracle srcPrice/tgtPrice instead of paying out 1:1. Pool prices
+	// only need to stay in-band so IsEligibleStable still passes.
 	mgr.Keeper().SetMimir(ctx, constants.StableReserveOraclePricing.String(), 1)
 	mgr.Keeper().SetMimir(ctx, "DollarsPerRune", int64(common.One))
 	setStableReservePoolPriceBps(c, ctx, mgr, usdc, 9_900)
 	setStableReservePoolPriceBps(c, ctx, mgr, usdt, 10_100)
+	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "0.99"}), IsNil)
+	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdt.Ticker.String(), Price: "1.01"}), IsNil)
 
 	tx := common.NewTx(
 		GetRandomTxHash(),
@@ -762,8 +765,10 @@ func (s *StableReserveMgrSuite) TestFreeStableSwapOraclePricingNeverPaysOutMoreU
 
 	mgr.Keeper().SetMimir(ctx, constants.StableReserveOraclePricing.String(), 1)
 	mgr.Keeper().SetMimir(ctx, "DollarsPerRune", int64(common.One))
-	setStableReservePoolPriceBps(c, ctx, mgr, usdc, 10_100) // source dearer
-	setStableReservePoolPriceBps(c, ctx, mgr, usdt, 9_900)  // target cheaper
+	setStableReservePoolPriceBps(c, ctx, mgr, usdc, 10_100)                                               // source dearer
+	setStableReservePoolPriceBps(c, ctx, mgr, usdt, 9_900)                                                // target cheaper
+	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "1.01"}), IsNil) // source dearer
+	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdt.Ticker.String(), Price: "0.99"}), IsNil) // target cheaper
 
 	tx := common.NewTx(
 		GetRandomTxHash(),
@@ -785,6 +790,35 @@ func (s *StableReserveMgrSuite) TestFreeStableSwapOraclePricingNeverPaysOutMoreU
 	// units in == units out: the reserve's token count must not shrink
 	c.Check(mgr.SecuredAssetManager().BalanceOf(ctx, usdc, moduleAddr).Equal(cosmos.NewUint(100*common.One)), Equals, true)
 	c.Check(mgr.SecuredAssetManager().BalanceOf(ctx, usdt, moduleAddr).Equal(cosmos.NewUint(50*common.One)), Equals, true)
+}
+
+func (s *StableReserveMgrSuite) TestFreeStableSwapOraclePricingFallsBackWhenPriceMissing(c *C) {
+	ctx, mgr, usdc, usdt := setupStableReserveSuite(c)
+	stableReserveMgr := mgr.StableReserveManager()
+	fundStableReserveSurplus(c, ctx, mgr, usdt, cosmos.NewUint(150*common.One))
+
+	mgr.Keeper().SetMimir(ctx, constants.StableReserveOraclePricing.String(), 1)
+	mgr.Keeper().SetMimir(ctx, "DollarsPerRune", int64(common.One))
+	setStableReservePoolPriceBps(c, ctx, mgr, usdc, 10_000)
+	setStableReservePoolPriceBps(c, ctx, mgr, usdt, 10_000)
+	// Oracle halted/unattested: the target leg has no price. The reserve declines
+	// the fill so the swap falls through to the regular AMM pools.
+	mgr.Keeper().DelPrice(ctx, usdt.Ticker.String())
+
+	tx := common.NewTx(
+		GetRandomTxHash(),
+		GetRandomETHAddress(),
+		GetRandomETHAddress(),
+		common.NewCoins(common.NewCoin(usdc, cosmos.NewUint(100*common.One))),
+		common.Gas{common.NewCoin(common.ETHAsset, cosmos.OneUint())},
+		"=:ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7",
+	)
+	msg := NewMsgSwap(tx, usdt, common.NoopAddress, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketSwap, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr())
+
+	filled, emit, err := stableReserveMgr.TrySwap(ctx, mgr, *msg)
+	c.Assert(err, IsNil)
+	c.Check(filled, Equals, false)
+	c.Check(emit.IsZero(), Equals, true)
 }
 
 func (s *StableReserveMgrSuite) TestFreeStableSwapRefusesSameTickerPoolDepeg(c *C) {
