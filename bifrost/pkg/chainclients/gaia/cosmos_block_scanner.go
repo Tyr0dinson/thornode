@@ -322,6 +322,33 @@ func (c *CosmosBlockScanner) averageFeeLocked() sdkmath.Uint {
 }
 
 func (c *CosmosBlockScanner) updateGasFees(height int64) error {
+	// Seed lastFee from THORNode's consensus fee on first use. lastFee inits to 0
+	// on (re)start and is otherwise only ever set from this node's own samples, so
+	// the very first post-decision would be made against 0 — which sets the node's
+	// posting *phase* from its own first sample rather than the network's. When
+	// the fee oscillates one resolution bucket at a time, a node that starts in
+	// the wrong phase posts (height,rate) voters no one joins and stays silent
+	// where the majority posts, phase-locking it into a permanent minority and
+	// slashing it while healthy. Reconciling here lands a restarting node in the
+	// majority bucket; the existing hysteresis keeps it there.
+	//
+	// Fetch the consensus fee OUTSIDE networkFeeMu (it is an HTTP call to
+	// THORNode): the lock also serializes the FetchTxs prefetch goroutines and the
+	// solvency reader, so a slow/hung bridge under the lock would stall observation
+	// — the exact slashing class this is meant to prevent. Only fetch at a post
+	// boundary, and only while we still have no local fee.
+	var seedFee sdkmath.Uint
+	if c.bridge != nil && height%GasUpdatePeriodBlocks == 0 {
+		c.networkFeeMu.Lock()
+		needSeed := c.lastFee.IsNil() || c.lastFee.IsZero()
+		c.networkFeeMu.Unlock()
+		if needSeed {
+			if _, thorRate, ferr := c.bridge.GetNetworkFee(c.cfg.ChainID); ferr == nil && thorRate > 0 {
+				seedFee = sdkmath.NewUint(thorRate)
+			}
+		}
+	}
+
 	var gasFee sdkmath.Uint
 	var networkFee common.NetworkFee
 	postNetworkFee, err := func() (bool, error) {
@@ -339,6 +366,11 @@ func (c *CosmosBlockScanner) updateGasFees(height int64) error {
 		// sanity check the fee is not zero
 		if gasFee.IsZero() {
 			return false, errors.New("suggested gas fee was zero")
+		}
+
+		// apply the consensus fee fetched above the lock, if still unseeded
+		if !seedFee.IsNil() && !seedFee.IsZero() && (c.lastFee.IsNil() || c.lastFee.IsZero()) {
+			c.lastFee = seedFee
 		}
 
 		// skip fee if less than 1 resolution away from the last

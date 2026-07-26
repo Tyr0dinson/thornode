@@ -1439,6 +1439,53 @@ func (s *ExtraTestSuite) TestUpdateGasFeesPostsFee(c *C) {
 	c.Check(len(feeQueue), Equals, 0)
 }
 
+// fakeReconcileBridge is a minimal ThorchainBridge that implements only
+// GetNetworkFee; every other method comes from the embedded nil interface and
+// would panic if called, which is fine because the reconcile path uses only
+// GetNetworkFee.
+type fakeReconcileBridge struct {
+	thorclient.ThorchainBridge
+	rate uint64
+}
+
+func (f fakeReconcileBridge) GetNetworkFee(common.Chain) (uint64, uint64, error) {
+	return 1, f.rate, nil
+}
+
+// TestUpdateGasFeesReconcilesLastFeeFromThornode pins the #3101 fix: on a fresh
+// scanner (lastFee == 0, as after a restart) updateGasFees seeds lastFee from
+// THORNode's consensus fee, so a node whose freshly computed fee already matches
+// consensus stays silent (joins the majority) instead of posting a minority
+// voter. Without the seed, lastFee stays 0, the delta exceeds resolution, and the
+// node posts the minority (height,rate) voter that phase-locks it.
+func (s *ExtraTestSuite) TestUpdateGasFeesReconcilesLastFeeFromThornode(c *C) {
+	feeQueue := make(chan common.NetworkFee, 10)
+	cfg := config.BifrostBlockScannerConfiguration{
+		ChainID:            common.GAIAChain,
+		GasPriceResolution: 1_000,
+		WhitelistCosmosAssets: []config.WhitelistCosmosAsset{
+			{Denom: "uatom", Decimals: 6, THORChainSymbol: "ATOM"},
+		},
+	}
+	feeCache := make([]sdkmath.Uint, GasCacheTransactions)
+	for i := range feeCache {
+		feeCache[i] = sdkmath.NewUint(5000)
+	}
+	scanner := &CosmosBlockScanner{
+		cfg:                   cfg,
+		feeCache:              feeCache,
+		globalNetworkFeeQueue: feeQueue,
+		bridge:                fakeReconcileBridge{rate: 5000},
+	}
+
+	// lastFee starts at 0; consensus fee (5000) equals the freshly computed fee,
+	// so after seeding the delta is 0 and the node must NOT post.
+	err := scanner.updateGasFees(10)
+	c.Assert(err, IsNil)
+	c.Check(len(feeQueue), Equals, 0)
+	c.Check(scanner.lastFee.Uint64(), Equals, uint64(5000))
+}
+
 // -------------------------------------------------------------------------------------
 // GetAccountByAddress with height
 // -------------------------------------------------------------------------------------
