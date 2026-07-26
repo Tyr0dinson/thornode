@@ -321,6 +321,88 @@ func (c *Client) RegisterPublicKey(pubkey common.PubKey) error {
 	return err
 }
 
+// ImportVaultAddresses re-imports each vault pubkey's address into the wallet,
+// with a rescan when the address is not yet tracked. It is meant to run once at
+// chain-client startup.
+//
+// Bifrost only imports a vault address when its pubkey is first added (the
+// RegisterPublicKey callback), and that callback is registered after pubkeyMgr's
+// initial synchronous pubkey fetch. So on a restart the existing vault addresses
+// are never re-imported: listunspent returns [] for them, and the node both
+// reports those vaults falsely insolvent (wallet_amount=0, an unrefunded solvency
+// slash every cadence) and cannot select inputs to sign their outbounds or
+// migration. Importing here re-establishes the wallet's view of current vaults.
+//
+// Already-tracked addresses are skipped: a rescan is expensive and locks the
+// wallet, and a live-imported address catches its funding without one. This is
+// best-effort — per-address failures are logged and block neither the others nor
+// startup. (This heals the startup-ordering trigger; a wallet that is watching an
+// address but missing its history after a snapshot restore is not re-scanned
+// here, since it reads as already-imported — that path needs a ReportSolvency
+// reconcile backstop.)
+func (c *Client) ImportVaultAddresses(pubkeys common.PubKeys) {
+	// Ensure a wallet exists before any wallet-scoped RPC, matching
+	// RegisterPublicKey — on a fresh or snapshot-restored data dir there may be no
+	// loaded wallet, and every getaddressinfo/importaddress would otherwise error.
+	switch c.cfg.ChainID {
+	case common.LTCChain, common.BTCChain:
+		if err := c.rpc.CreateWallet(""); err != nil {
+			c.log.Info().Err(err).Msg("bootstrap import: create wallet (may already exist)")
+		}
+	}
+
+	// Collect the untracked addresses first. Every IsAddressImported query must
+	// complete BEFORE any rescan begins: a rescan locks the wallet, so an
+	// interleaved query would fail with "wallet is currently rescanning" and only
+	// the first untracked address would ever be imported per boot.
+	var toImport []string
+	for _, pk := range pubkeys {
+		if pk.IsEmpty() {
+			continue
+		}
+		addr, err := pk.GetAddress(c.cfg.ChainID)
+		if err != nil {
+			c.log.Error().Err(err).Stringer("pubkey", pk).Msg("bootstrap import: fail to get address")
+			continue
+		}
+		if addr.IsEmpty() {
+			continue
+		}
+		imported, err := c.rpc.IsAddressImported(addr.String())
+		if err != nil {
+			c.log.Error().Err(err).Str("addr", addr.String()).Msg("bootstrap import: fail to query address tracking")
+			continue
+		}
+		if !imported {
+			toImport = append(toImport, addr.String())
+		}
+	}
+	if len(toImport) == 0 {
+		return
+	}
+
+	// Import each address watch-only without a rescan (fast), then trigger a
+	// SINGLE rescan for the whole batch. A per-address rescan=true would lock the
+	// wallet on the first address and starve the rest.
+	for _, addr := range toImport {
+		if err := c.rpc.ImportAddress(addr); err != nil {
+			c.log.Error().Err(err).Str("addr", addr).Msg("bootstrap import: fail to import vault address")
+		}
+	}
+	// ImportAddressRescan re-imports (a no-op for an already-watched address) and
+	// rescans the whole chain for the wallet, indexing history for every address
+	// added above. The rescan runs for a long time server-side and the RPC client
+	// will usually time out before it finishes — that is expected; the daemon
+	// keeps rescanning after the client disconnects. (importaddress rescan=true
+	// works on DOGE Core too, which lacks rescanblockchain.)
+	if err := c.rpc.ImportAddressRescan(toImport[0]); err != nil {
+		c.log.Info().Err(err).Int("count", len(toImport)).
+			Msg("bootstrap import: triggered wallet rescan for vault addresses (a client timeout here is expected; rescan continues server-side)")
+	} else {
+		c.log.Info().Int("count", len(toImport)).Msg("bootstrap import: imported and rescanned vault addresses")
+	}
+}
+
 // GetAccount returns the account details for the given public key.
 func (c *Client) GetAccount(pubkey common.PubKey, height *big.Int) (common.Account, error) {
 	acct := common.Account{}

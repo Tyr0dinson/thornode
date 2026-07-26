@@ -94,6 +94,12 @@ func LoadChains(thorKeys *thorclient.Keys,
 				continue
 			}
 			pubKeyValidator.RegisterCallback(utxoClient.RegisterPublicKey)
+			// The callback above only fires for newly-added pubkeys and is
+			// registered after pubkeyMgr's initial fetch, so existing vault
+			// addresses would never be (re)imported after a restart -- leaving
+			// listunspent empty for them, which drives false insolvency reports
+			// and unsignable outbounds. Re-import the current vaults now. (#3084)
+			utxoClient.ImportVaultAddresses(pubKeyValidator.GetAlgoPubKeys(common.SigningAlgoSecp256k1, true))
 		}
 		chains[chain.ChainID] = client
 	}
