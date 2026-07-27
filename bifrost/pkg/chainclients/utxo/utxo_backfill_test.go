@@ -190,6 +190,11 @@ func (s *CoverageBackfillSuite) SetUpTest(c *C) {
 	s.cfg.RPCHost = s.server.Listener.Addr().String()
 	s.client, err = NewClient(s.keys, s.cfg, nil, s.bridge, s.m)
 	s.client.disableVinZeroBatch = true
+	// #3084: solvency reporting is gated on the wallet being import-ready. These
+	// tests exercise the cadence/reporting logic downstream of that gate, so mark
+	// the wallet ready (the post-bootstrap steady state).
+	s.client.bootImportOK.Store(true)
+	s.client.walletRescanDone.Store(true)
 	netFeeQueue := make(chan common.NetworkFee, 100)
 	s.client.globalNetworkFeeQueue = netFeeQueue
 	s.client.globalErrataQueue = make(chan stypes.ErrataBlock, 10)

@@ -1,6 +1,7 @@
 package utxo
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math/big"
@@ -87,6 +88,13 @@ type Client struct {
 	lastFeeRate             stdatomic.Uint64
 	feeRateCache            []uint64
 	lastSolvencyCheckHeight stdatomic.Int64
+
+	// #3084 bootstrap-import readiness. Solvency must not be reported until the
+	// vault addresses are imported (bootImportOK) AND their wallet rescan has
+	// finished (walletRescanDone), otherwise listunspent is partial and drives
+	// false insolvency reports.
+	bootImportOK     stdatomic.Bool
+	walletRescanDone stdatomic.Bool
 
 	// ---------- testing ----------
 	disableVinZeroBatch bool
@@ -334,13 +342,19 @@ func (c *Client) RegisterPublicKey(pubkey common.PubKey) error {
 // migration. Importing here re-establishes the wallet's view of current vaults.
 //
 // Already-tracked addresses are skipped: a rescan is expensive and locks the
-// wallet, and a live-imported address catches its funding without one. This is
-// best-effort — per-address failures are logged and block neither the others nor
-// startup. (This heals the startup-ordering trigger; a wallet that is watching an
-// address but missing its history after a snapshot restore is not re-scanned
-// here, since it reads as already-imported — that path needs a ReportSolvency
-// reconcile backstop.)
-func (c *Client) ImportVaultAddresses(pubkeys common.PubKeys) {
+// wallet, and a live-imported address catches its funding without one. (This
+// heals the startup-ordering trigger; a wallet that is watching an address but
+// missing its history after a snapshot restore is not re-scanned here, since it
+// reads as already-imported — that path needs a ReportSolvency reconcile
+// backstop.)
+//
+// It returns an error and fails closed on any RPC failure so the caller can
+// surface an incomplete import. Solvency reporting is gated on this succeeding:
+// bootImportOK is set once the addresses are confirmed tracked, and
+// walletRescanDone flips once the triggered rescan has finished — until both
+// hold, shouldReportSolvency returns false so a partially-scanned wallet cannot
+// drive a false-insolvency slash.
+func (c *Client) ImportVaultAddresses(pubkeys common.PubKeys) error {
 	// Ensure a wallet exists before any wallet-scoped RPC, matching
 	// RegisterPublicKey — on a fresh or snapshot-restored data dir there may be no
 	// loaded wallet, and every getaddressinfo/importaddress would otherwise error.
@@ -370,15 +384,15 @@ func (c *Client) ImportVaultAddresses(pubkeys common.PubKeys) {
 		}
 		imported, err := c.rpc.IsAddressImported(addr.String())
 		if err != nil {
-			c.log.Error().Err(err).Str("addr", addr.String()).Msg("bootstrap import: fail to query address tracking")
-			continue
+			return fmt.Errorf("bootstrap import: query tracking for %s: %w", addr.String(), err)
 		}
 		if !imported {
 			toImport = append(toImport, addr.String())
 		}
 	}
 	if len(toImport) == 0 {
-		return
+		c.bootImportOK.Store(true)
+		return nil
 	}
 
 	// Import each address watch-only without a rescan (fast), then trigger a
@@ -386,9 +400,27 @@ func (c *Client) ImportVaultAddresses(pubkeys common.PubKeys) {
 	// wallet on the first address and starve the rest.
 	for _, addr := range toImport {
 		if err := c.rpc.ImportAddress(addr); err != nil {
-			c.log.Error().Err(err).Str("addr", addr).Msg("bootstrap import: fail to import vault address")
+			return fmt.Errorf("bootstrap import: import %s: %w", addr, err)
 		}
 	}
+
+	// Verify each address is now tracked BEFORE triggering the rescan — a running
+	// rescan locks the wallet, so IsAddressImported would then fail with "currently
+	// rescanning". importaddress with rescan=false establishes iswatchonly
+	// immediately, so this confirms tracking without waiting on the scan.
+	for _, addr := range toImport {
+		imported, err := c.rpc.IsAddressImported(addr)
+		if err != nil {
+			return fmt.Errorf("bootstrap import: verify %s: %w", addr, err)
+		}
+		if !imported {
+			return fmt.Errorf("bootstrap import: %s not tracked after import", addr)
+		}
+	}
+	// Tracking confirmed: listunspent will now see these vaults' UTXOs. Solvency
+	// can be reported once the rescan below finishes indexing their history.
+	c.bootImportOK.Store(true)
+
 	// ImportAddressRescan re-imports (a no-op for an already-watched address) and
 	// rescans the whole chain for the wallet, indexing history for every address
 	// added above. The rescan runs for a long time server-side and the RPC client
@@ -396,11 +428,56 @@ func (c *Client) ImportVaultAddresses(pubkeys common.PubKeys) {
 	// keeps rescanning after the client disconnects. (importaddress rescan=true
 	// works on DOGE Core too, which lacks rescanblockchain.)
 	if err := c.rpc.ImportAddressRescan(toImport[0]); err != nil {
-		c.log.Info().Err(err).Int("count", len(toImport)).
-			Msg("bootstrap import: triggered wallet rescan for vault addresses (a client timeout here is expected; rescan continues server-side)")
-	} else {
-		c.log.Info().Int("count", len(toImport)).Msg("bootstrap import: imported and rescanned vault addresses")
+		// A client timeout is expected — the daemon keeps rescanning and
+		// walletReady polls getwalletinfo to detect completion.
+		if errors.Is(err, context.DeadlineExceeded) {
+			c.log.Info().Err(err).Int("count", len(toImport)).
+				Msg("bootstrap import: triggered wallet rescan for vault addresses (a client timeout here is expected; rescan continues server-side)")
+			return nil
+		}
+		// Any other error is definitive (e.g. Bitcoin Core in pruning mode
+		// disables importaddress rescan). The addresses are tracked, but their
+		// history will never be indexed, so the daemon sits idle and walletReady's
+		// getwalletinfo check would (wrongly) latch ready over a partial
+		// listunspent. Reset bootImportOK so solvency stays gated until an operator
+		// resolves it, rather than open the gate and drive a false-insolvency slash.
+		c.bootImportOK.Store(false)
+		c.log.Error().Err(err).Int("count", len(toImport)).
+			Msg("bootstrap import: wallet rescan rejected by daemon (not a client timeout); solvency stays gated until resolved (e.g. Bitcoin Core pruning mode disables importaddress rescan)")
+		return fmt.Errorf("bootstrap import: rescan: %w", err)
 	}
+	c.log.Info().Int("count", len(toImport)).Msg("bootstrap import: imported and rescanned vault addresses")
+	return nil
+}
+
+// walletReady reports whether the wallet has imported the vault addresses and
+// finished any bootstrap rescan, so listunspent-based solvency is trustworthy.
+// Fail-closed: until confirmed, solvency reporting is skipped rather than risk a
+// false-insolvency slash on a partially-scanned wallet (#3084).
+func (c *Client) walletReady() bool {
+	// ZEC retrieves UTXOs via getaddressutxos (zebrad has no wallet), so it never
+	// runs a bootstrap import or rescan and there is nothing to gate — it is always
+	// ready. Without this it would gate on bootImportOK, which is never set for ZEC
+	// (loadchains only imports for BTC/BCH/LTC/DOGE), silencing ZEC solvency forever.
+	if c.cfg.ChainID.Equals(common.ZECChain) {
+		return true
+	}
+	if !c.bootImportOK.Load() {
+		return false
+	}
+	if c.walletRescanDone.Load() {
+		return true
+	}
+	scanning, err := c.rpc.RescanInProgress()
+	if err != nil {
+		c.log.Debug().Err(err).Msg("solvency gate: rescan-status check failed; deferring solvency report")
+		return false
+	}
+	if scanning {
+		return false
+	}
+	c.walletRescanDone.Store(true)
+	return true
 }
 
 // GetAccount returns the account details for the given public key.
@@ -808,6 +885,9 @@ func (c *Client) ShouldReportSolvency(height int64) bool {
 }
 
 func (c *Client) shouldReportSolvency(height int64) bool {
+	if !c.walletReady() {
+		return false
+	}
 	lastHeight := c.lastSolvencyCheckHeight.Load()
 	if height-lastHeight <= 1 {
 		return false

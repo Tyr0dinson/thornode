@@ -270,6 +270,21 @@ func (c *Client) IsAddressImported(address string) (bool, error) {
 	return info.IsMine || info.IsWatchOnly, nil
 }
 
+// RescanInProgress reports whether the wallet is currently rescanning.
+// getwalletinfo.scanning is false when idle, or an object {duration,progress}
+// while a rescan runs. Used to gate solvency reporting until a bootstrap import
+// rescan has finished indexing vault UTXOs (#3084).
+func (c *Client) RescanInProgress() (bool, error) {
+	var info struct {
+		Scanning json.RawMessage `json:"scanning"`
+	}
+	if err := c.Call(&info, "getwalletinfo"); err != nil {
+		return false, err
+	}
+	s := strings.TrimSpace(string(info.Scanning))
+	return s != "" && s != "false" && s != "null", nil
+}
+
 func (c *Client) getAddressTrackingInfo(method, address string) (struct {
 	IsMine      bool `json:"ismine"`
 	IsWatchOnly bool `json:"iswatchonly"`

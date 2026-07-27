@@ -1182,6 +1182,58 @@ func (s *RPCSuite) TestGetNetworkInfoWarnings(c *C) {
 	}
 }
 
+// TestRescanInProgress covers the getwalletinfo.scanning field parsing: an idle
+// wallet reports scanning=false (or omits it / null), while a running rescan
+// reports an object. Only the object form must gate solvency (#3084).
+func (s *RPCSuite) TestRescanInProgress(c *C) {
+	log := zerolog.Nop()
+	cases := []struct {
+		name     string
+		scanning interface{}
+		present  bool
+		want     bool
+	}{
+		{"idle false", false, true, false},
+		{"null", nil, true, false},
+		{"absent", nil, false, false},
+		{"rescanning object", map[string]interface{}{"duration": 42, "progress": 0.3}, true, true},
+	}
+	for _, tc := range cases {
+		srv := newMockRPCServer(func(method string, params []interface{}) (interface{}, *btcjson.RPCError) {
+			c.Assert(method, Equals, "getwalletinfo")
+			res := map[string]interface{}{}
+			if tc.present {
+				res["scanning"] = tc.scanning
+			}
+			return res, nil
+		})
+
+		cl, err := NewClient(srv.URL, "user", "pass", 0, time.Second*10, common.BTCChain, log)
+		c.Assert(err, IsNil)
+
+		scanning, err := cl.RescanInProgress()
+		c.Assert(err, IsNil, Commentf("case %s", tc.name))
+		c.Assert(scanning, Equals, tc.want, Commentf("case %s", tc.name))
+		srv.Close()
+	}
+}
+
+// TestRescanInProgressError surfaces a getwalletinfo RPC failure to the caller so
+// walletReady can fail closed.
+func (s *RPCSuite) TestRescanInProgressError(c *C) {
+	log := zerolog.Nop()
+	srv := newMockRPCServer(func(method string, params []interface{}) (interface{}, *btcjson.RPCError) {
+		return nil, btcjson.NewRPCError(btcjson.ErrRPCInternal.Code, "boom")
+	})
+	defer srv.Close()
+
+	cl, err := NewClient(srv.URL, "user", "pass", 0, time.Second*10, common.BTCChain, log)
+	c.Assert(err, IsNil)
+
+	_, err = cl.RescanInProgress()
+	c.Assert(err, NotNil)
+}
+
 // TestFlexibleWarningsUnmarshal covers the raw decode of the warnings field.
 func (s *RPCSuite) TestFlexibleWarningsUnmarshal(c *C) {
 	var w flexibleWarnings

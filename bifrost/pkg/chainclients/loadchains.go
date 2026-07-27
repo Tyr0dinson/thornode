@@ -99,7 +99,9 @@ func LoadChains(thorKeys *thorclient.Keys,
 			// addresses would never be (re)imported after a restart -- leaving
 			// listunspent empty for them, which drives false insolvency reports
 			// and unsignable outbounds. Re-import the current vaults now. (#3084)
-			utxoClient.ImportVaultAddresses(pubKeyValidator.GetAlgoPubKeys(common.SigningAlgoSecp256k1, true))
+			if err := utxoClient.ImportVaultAddresses(pubKeyValidator.GetAlgoPubKeys(common.SigningAlgoSecp256k1, true)); err != nil {
+				logger.Error().Err(err).Stringer("chain", chain.ChainID).Msg("bootstrap import incomplete; solvency reporting gated until the wallet is repaired (#3084)")
+			}
 		}
 		chains[chain.ChainID] = client
 	}
