@@ -42,9 +42,12 @@ func (vts *ValidatorMgrTestSuite) TestChurnWithChainHalt(c *C) {
 	standbyNode.Bond = cosmos.NewUint(uint64(minBond))
 	c.Assert(k.SetNodeAccount(ctx, standbyNode), IsNil)
 
-	// 1 vault with btc, created at block 1 (so lastChurnHeight=1)
+	// 1 vault with btc, created at block 1 (so lastChurnHeight=1).
+	// It must hold BTC funds: a halted chain only blocks rotation while there are
+	// funds on it to migrate. See TestChurnWithHaltedEmptyChain for the other case.
 	vault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{})
 	vault.Membership = append(vault.Membership, standbyNode.PubKeySet.Secp256k1.String())
+	vault.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)))
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
 	// Set block height to churn interval after vault creation (1 + 60 = 61)
@@ -69,6 +72,62 @@ func (vts *ValidatorMgrTestSuite) TestChurnWithChainHalt(c *C) {
 	ready, err = k.ListValidatorsByStatus(ctx, NodeReady)
 	c.Assert(err, IsNil)
 	c.Assert(len(ready), Equals, 1) // standby node should be ready if churn started
+}
+
+// A halted chain with no funds on it must not block rotation. There is nothing to
+// migrate, so the reason the halt gate exists does not apply - and without this,
+// halting a newly activated chain would stop churn network-wide.
+func (vts *ValidatorMgrTestSuite) TestChurnWithHaltedEmptyChain(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	mgr := NewDummyMgr()
+	mgr.K = k
+	networkMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(networkMgr, NotNil)
+	minBond := constants.GetConstantValues(GetCurrentVersion()).GetInt64Value(constants.MinimumBondInRune)
+
+	standbyNode := GetRandomValidatorNode(NodeStandby)
+	standbyNode.Bond = cosmos.NewUint(uint64(minBond))
+	c.Assert(k.SetNodeAccount(ctx, standbyNode), IsNil)
+
+	// vault serves BTC and LTC, but holds funds only on BTC
+	vault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.BTCChain, common.LTCChain}.Strings(), []ChainContract{})
+	vault.Membership = append(vault.Membership, standbyNode.PubKeySet.Secp256k1.String())
+	vault.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)))
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	mgr.Keeper().SetMimir(ctx, constants.ChurnInterval.String(), 60)
+	ctx = ctx.WithBlockHeight(61)
+
+	// halt the chain the vault holds nothing on
+	mgr.Keeper().SetMimir(ctx, "HaltLTCChain", 1)
+
+	c.Assert(networkMgr.BeginBlock(ctx, mgr, nil), IsNil)
+	ready, err := k.ListValidatorsByStatus(ctx, NodeReady)
+	c.Assert(err, IsNil)
+	c.Assert(len(ready), Equals, 1) // churn proceeds: nothing to migrate on LTC
+
+	// but once the vault holds LTC, the halt blocks rotation again
+	ctx2, k2 := setupKeeperForTest(c)
+	mgr2 := NewDummyMgr()
+	mgr2.K = k2
+	networkMgr2 := newValidatorMgr(k2, mgr2.NetworkMgr(), mgr2.TxOutStore(), mgr2.EventMgr())
+	standby2 := GetRandomValidatorNode(NodeStandby)
+	standby2.Bond = cosmos.NewUint(uint64(minBond))
+	c.Assert(k2.SetNodeAccount(ctx2, standby2), IsNil)
+	vault2 := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.BTCChain, common.LTCChain}.Strings(), []ChainContract{})
+	vault2.Membership = append(vault2.Membership, standby2.PubKeySet.Secp256k1.String())
+	vault2.Coins = common.NewCoins(common.NewCoin(common.LTCAsset, cosmos.NewUint(100*common.One)))
+	c.Assert(k2.SetVault(ctx2, vault2), IsNil)
+	k2.SetMimir(ctx2, constants.ChurnInterval.String(), 60)
+	ctx2 = ctx2.WithBlockHeight(61)
+	k2.SetMimir(ctx2, "HaltLTCChain", 1)
+
+	c.Assert(networkMgr2.BeginBlock(ctx2, mgr2, nil), IsNil)
+	ready2, err := k2.ListValidatorsByStatus(ctx2, NodeReady)
+	c.Assert(err, IsNil)
+	c.Assert(len(ready2), Equals, 0) // funds on the halted chain still block
 }
 
 func (vts *ValidatorMgrTestSuite) TestChurnWithRetiringVaultDust(c *C) {

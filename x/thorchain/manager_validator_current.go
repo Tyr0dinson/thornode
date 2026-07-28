@@ -119,8 +119,16 @@ func (vm *ValidatorMgr) BeginBlock(ctx cosmos.Context, mgr Manager, existingVali
 	}
 	activeChains = activeChains.Distinct()
 
+	// A halted chain blocks rotation only while vaults still hold funds on it. The
+	// gate exists so the network does not churn while a chain is broken and its
+	// funds cannot migrate; with no funds there is no migration to block. Without
+	// this, halting a newly activated chain - the one most likely to need halting -
+	// would stop churn network-wide.
 	for _, chain := range activeChains {
-		if mgr.Keeper().IsChainHalted(ctx, chain) {
+		if !mgr.Keeper().IsChainHalted(ctx, chain) {
+			continue
+		}
+		if chainHasVaultFunds(ctx, vm.k, chain) {
 			ctx.Logger().Info("Skipping node account rotation for halted chain", "chain", chain)
 			telemetry.IncrCounterWithLabels(
 				[]string{"thornode", "churn", "skipped"},
@@ -132,6 +140,7 @@ func (vm *ValidatorMgr) BeginBlock(ctx cosmos.Context, mgr Manager, existingVali
 			)
 			return nil
 		}
+		ctx.Logger().Info("Halted chain holds no vault funds, not blocking rotation", "chain", chain)
 	}
 
 	// Do not churn while a RetiringVault still has real funds to migrate.
@@ -193,6 +202,46 @@ func (vm *ValidatorMgr) BeginBlock(ctx cosmos.Context, mgr Manager, existingVali
 		[]metrics.Label{telemetry.NewLabel("status", "ok")},
 	)
 	return nil
+}
+
+// chainHasVaultFunds reports whether any active or retiring vault still has
+// exposure on the chain - either a non-zero balance or an outstanding deficit.
+//
+// Retiring vaults are included deliberately: migration flows out of them, so a
+// retiring vault holding funds on a halted chain must still block rotation.
+//
+// Scope note: this widens the *funds* check only. The caller still iterates the
+// chain union of ACTIVE vaults, so a chain served solely by a retiring vault is
+// never passed here at all. That gap is pre-existing and unchanged by this helper.
+//
+// Fails closed. On any keeper error this returns true, so unreadable state blocks
+// rotation rather than permitting it - same posture as isVaultInsolvent.
+//
+// Caveat: this reads vault.Coins, thornode's accounting view, and a chain is often
+// halted precisely because accounting and reality diverged (SolvencyHalt<CHAIN>Chain
+// feeds IsChainHalted). A solvency halt only fires for a chain the network has funds
+// on, so Coins is non-zero there and the gate still blocks; the behaviour change is
+// confined to chains with a zero recorded balance.
+func chainHasVaultFunds(ctx cosmos.Context, k keeper.Keeper, chain common.Chain) bool {
+	for _, status := range []VaultStatus{ActiveVault, RetiringVault} {
+		vaults, err := k.GetAsgardVaultsByStatus(ctx, status)
+		if err != nil {
+			ctx.Logger().Error("fail to get vaults for halted chain funds check, assuming funded",
+				"chain", chain, "status", status, "error", err)
+			return true
+		}
+		for _, vault := range vaults {
+			if vault.HasFundsForChain(chain) {
+				return true
+			}
+			for _, coin := range vault.Deficit {
+				if coin.Asset.GetChain().Equals(chain) && !coin.Amount.IsZero() {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func (vm *ValidatorMgr) hasPendingKeygen(ctx cosmos.Context, keygenType thortypes.KeygenType) (bool, error) {
