@@ -120,7 +120,7 @@ func chainActivationReady(ctx cosmos.Context, k keeper.Keeper, chain common.Chai
 	if err != nil {
 		return false, "fail to get network fee"
 	}
-	if err := nf.Valid(); err != nil {
+	if nf.Valid() != nil {
 		return false, "no network fee consensus"
 	}
 
