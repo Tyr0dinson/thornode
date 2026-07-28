@@ -1,0 +1,79 @@
+{{ template "default-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# baseline: DOT is not served by any active vault, so it is not advertised
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/inbound_addresses
+asserts:
+  - '[.[]|select(.chain == "DOT")]|length == 0'
+  - .|length == 15
+---
+########################################################################################
+# operator intent alone is not enough - without a network fee there is no proof the
+# network can actually observe the chain, so nothing is stamped
+########################################################################################
+type: tx-mimir
+key: "EnableDOTChain"
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 2
+---
+type: check
+endpoint: http://localhost:1317/thorchain/inbound_addresses
+asserts:
+  - '[.[]|select(.chain == "DOT")]|length == 0'
+  - .|length == 15
+---
+########################################################################################
+# a network fee reaching consensus is the readiness proof: it means a supermajority
+# of active nodes independently scanned DOT and agreed a rate
+########################################################################################
+type: tx-network-fee
+signer: {{ addr_thor_dog }}
+block_height: 1
+chain: DOT
+transaction_size: 1000
+transaction_rate: 10
+---
+type: create-blocks
+count: 2
+---
+########################################################################################
+# DOT is now stamped onto the live vault and advertised - no churn happened
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/inbound_addresses
+asserts:
+  - '[.[]|select(.chain == "DOT")]|length == 1'
+  # DOT is ed25519, so the address derives from the vault's eddsa key, not its secp key
+  - '[.[]|select(.chain == "DOT")][0].pub_key == "{{ pubkey_dog_eddsa }}"'
+  - '[.[]|select(.chain == "DOT")][0].address != ""'
+  - '[.[]|select(.chain == "DOT")][0].halted == false'
+  # the fee that gated activation is also what prices the first outbound
+  - '[.[]|select(.chain == "DOT")][0].outbound_tx_size == "1000"'
+  - '[.[]|select(.chain == "DOT")][0].observed_fee_rate == "10"'
+  - .|length == 16
+---
+########################################################################################
+# the vault itself carries the chain, and its chain set stays sorted so it matches the
+# canonical form ConsensusChains produces at keygen
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - '[.[0].chains[]|select(. == "DOT")]|length == 1'
+  - '.[0].chains == (.[0].chains|sort)'
+---
+########################################################################################
+# lastblock now reports the chain too
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/lastblock/DOT
+asserts:
+  - '.[0].chain == "DOT"'

@@ -504,6 +504,13 @@ func (vm *NetworkMgr) EndBlock(ctx cosmos.Context, mgr Manager) error {
 	controller := NewRouterUpgradeController(mgr)
 	controller.Process(ctx)
 
+	// After the router controller, so any newly installed ChainContract is visible,
+	// and before migrateFunds, so chain membership and routers are settled before
+	// migration scheduling reads them in this same block.
+	if err := vm.activateEnabledChains(ctx, mgr); err != nil {
+		ctx.Logger().Error("fail to activate enabled chains", "error", err)
+	}
+
 	if err := vm.POLCycle(ctx, mgr); err != nil {
 		ctx.Logger().Error("fail to process POL liquidity", "error", err)
 	}

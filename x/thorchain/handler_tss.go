@@ -825,9 +825,15 @@ func (h TssHandler) refreshInitVaultChains(ctx cosmos.Context, msg *MsgTssPool, 
 }
 
 // tryRotateInitVaults rotates every vault into Active, or skips and emits
-// a security event if their Chains disagree. vault.Chains is immutable once
-// Active, so an asymmetric set would leave some Asgards permanently
-// without an address for a chain. ChurnRetryInterval retries on skip.
+// a security event if their Chains disagree. RotateVault promotes init vaults as
+// a set, so an asymmetric set would leave some Asgards without an address for a
+// chain. ChurnRetryInterval retries on skip.
+//
+// Note vault.Chains is NOT immutable post-creation: AddFunds/addFund append on
+// observing a coin for an unknown chain (type_vault.go), and activateEnabledChains
+// converges live vaults onto a mimir-enabled chain. Both this function and
+// ConsensusChains sort by chain string, so the positional slices.Equal below is
+// valid against either producer.
 func (h TssHandler) tryRotateInitVaults(ctx cosmos.Context, initVaults Vaults) error {
 	if !initVaultsAgreeOnChains(initVaults) {
 		chainSets := make([]string, len(initVaults))
