@@ -66,13 +66,26 @@ func (vm *NetworkMgr) activateEnabledChains(ctx cosmos.Context, mgr Manager) err
 		return fmt.Errorf("fail to get retiring vaults: %w", err)
 	}
 
+	// The readiness proof is re-tested against today's validators, so it has to be
+	// today's validators that are read - not whoever was active when the fee was agreed.
+	activeNodes, err := k.ListActiveValidators(ctx)
+	if err != nil {
+		return fmt.Errorf("fail to list active validators: %w", err)
+	}
+
 	ready := make(common.Chains, 0, len(requested))
+	// proved[chain] is the node set that demonstrably observed that chain, carried
+	// through so the retiring-vault pass can apply the same keysign bar. Only ever
+	// indexed by chain, never ranged over, so it introduces no map-order dependence.
+	proved := make(map[common.Chain]map[string]bool, len(requested))
 	for _, chain := range requested {
-		if ok, reason := chainActivationReady(ctx, k, chain, active); !ok {
+		ok, signed, reason := chainActivationReady(ctx, k, chain, active, activeNodes)
+		if !ok {
 			ctx.Logger().Debug("chain activation not ready", "chain", chain, "reason", reason)
 			continue
 		}
 		ready = append(ready, chain)
+		proved[chain] = signed
 	}
 	if len(ready) == 0 {
 		return nil
@@ -80,22 +93,12 @@ func (vm *NetworkMgr) activateEnabledChains(ctx cosmos.Context, mgr Manager) err
 
 	// One converge pass for all ready chains. Stamping them one at a time would read
 	// stale vault copies on the second chain and write back a set missing the first.
-	return stampChainsOnVaults(ctx, mgr, ready, active, retiring)
+	return stampChainsOnVaults(ctx, mgr, ready, active, retiring, proved)
 }
 
 // chainActivationRequested reports whether Enable<CHAIN>Chain is set and in effect.
 // Same value convention as every halt key in keeper_halt.go, so unset, absent and 0
 // all mean disabled through one path.
-//
-// ponytail: global gate, per-vault membership check if multi-Asgard skew bites.
-// A node without the chain client cannot sign for it (signer.getChain errors
-// "not supported"), and TSS keysign needs GetThreshold(n)+1 = ceil(2n/3) of *that
-// vault's* membership. A global 2/3 can hold while one vault sits below threshold,
-// giving that vault an inbound address it cannot sign outbounds for. To tighten:
-//
-//	nodeMimirs, _ := k.GetNodeMimirs(ctx, key)
-//	for each active vault: count members whose vote > 0 (pk.GetThorAddress(),
-//	idiom at handler_tss.go:349-360), require HasSuperMajority(votes, len(Membership))
 func chainActivationRequested(ctx cosmos.Context, k keeper.Keeper, chain common.Chain) bool {
 	v, err := k.GetMimirWithRef(ctx, constants.MimirTemplateEnableChain, chain)
 	if err != nil {
@@ -104,13 +107,28 @@ func chainActivationRequested(ctx cosmos.Context, k keeper.Keeper, chain common.
 	return v > 0 && v <= ctx.BlockHeight()
 }
 
-// chainActivationReady applies the objective gates. The returned string names the
-// failing gate, for logging only.
-func chainActivationReady(ctx cosmos.Context, k keeper.Keeper, chain common.Chain, active Vaults) (bool, string) {
+// chainActivationReadinessWindow bounds how old the network-fee quorum backing an
+// activation may be. Freshness is a separate property from who signed: G4b already
+// re-tests the signer set against today's validators, but a node that proved the chain
+// observable a year ago and is still active proves nothing about today - bifrost can be
+// restarted with that chain disabled in its config. Because SetLastChainHeight only
+// moves forward on fee consensus, a chain whose observations stop has its voter age
+// out, and an already-granted activation is not renewed.
+//
+// ponytail: fixed window, promote to a mimir if operators need it per chain. ~1 day at
+// 6s blocks - generous enough that the slowest supported chain still reports well
+// inside it, tight enough that a proof from a bygone validator set cannot be reused.
+const chainActivationReadinessWindow = int64(14400)
+
+// chainActivationReady applies the objective gates. On success it also returns the set
+// of node addresses that proved the chain observable, so the retiring-vault pass can
+// apply the same keysign bar without repeating the voter lookup. The returned string
+// names the failing gate, for logging only.
+func chainActivationReady(ctx cosmos.Context, k keeper.Keeper, chain common.Chain, active Vaults, activeNodes NodeAccounts) (bool, map[string]bool, string) {
 	// G1: THORChain is implicit, and XMR is FROST/monovault-only - its address
 	// needs PubKeyFrost, which only XMRMonovaultKeygen produces.
 	if chain.IsTHORChain() || chain.Equals(common.XMRChain) {
-		return false, "chain not eligible"
+		return false, nil, "chain not eligible"
 	}
 
 	// G3: a valid network fee means ObservedNetworkFeeVoter reached a 2/3
@@ -118,27 +136,68 @@ func chainActivationReady(ctx cosmos.Context, k keeper.Keeper, chain common.Chai
 	// zero-valued fee with a nil error - so gate on Valid(), never on the error.
 	nf, err := k.GetNetworkFee(ctx, chain)
 	if err != nil {
-		return false, "fail to get network fee"
+		return false, nil, "fail to get network fee"
 	}
 	if nf.Valid() != nil {
-		return false, "no network fee consensus"
+		return false, nil, "no network fee consensus"
 	}
 
 	// G4: the observation pipeline is producing heights. Written by
 	// processNetworkFeeAttestation on fee consensus, before the chain is on any vault.
 	height, err := k.GetLastChainHeight(ctx, chain)
 	if err != nil || height <= 0 {
-		return false, "no observed chain height"
+		return false, nil, "no observed chain height"
 	}
 
 	// G5: stamping a halted chain would hand it a network-wide churn kill switch
-	// (manager_validator_current.go aborts rotation on any halted active chain).
+	// (manager_validator_current.go aborts rotation on any halted active chain that
+	// still holds funds).
 	if k.IsChainHalted(ctx, chain) {
-		return false, "chain halted"
+		return false, nil, "chain halted"
 	}
 
-	// G6: every eligible active vault must derive an address. This is what fails
-	// closed on a chain needing a signing scheme the live vaults don't hold.
+	// The stored NetworkFee is a bare (size, rate) pair - it records neither who proved
+	// the chain observable nor when, so on its own it cannot carry a readiness proof.
+	// The voter behind it can: height plus that fee's rate and size are exactly its key,
+	// and processNetworkFeeAttestation writes both records from the same attestation.
+	//
+	// A miss returns a zero-signer record rather than an error, so G4a/G4b/G6 all fail
+	// closed on one. The pair can only desync when SetLastChainHeight rejects a backwards
+	// height after SaveNetworkFee already succeeded; the next attestation resyncs them and
+	// activation simply retries, since this runs every block.
+	voter, err := k.GetObservedNetworkFeeVoter(ctx, height, chain, int64(nf.TransactionFeeRate), int64(nf.TransactionSize))
+	if err != nil {
+		return false, nil, "fail to get network fee voter"
+	}
+
+	// G4a: the proof is recent. BlockHeight is stamped once, by the attestation that
+	// carried the voter over the line, so 0 means it never reached consensus at all.
+	if voter.BlockHeight <= 0 {
+		return false, nil, "readiness proof never reached consensus"
+	}
+	if ctx.BlockHeight()-voter.BlockHeight > chainActivationReadinessWindow {
+		return false, nil, "readiness proof is stale"
+	}
+
+	// G4b: the proof still holds among *today's* active nodes. HasConsensus counts only
+	// signers that are currently node keys, so a quorum assembled by validators who have
+	// since churned out no longer clears the bar.
+	if !voter.HasConsensus(activeNodes) {
+		return false, nil, "readiness proof lacks a current supermajority"
+	}
+
+	// Signers are the nodes that demonstrably ran the chain client: reporting a fee for
+	// a chain requires having scanned it.
+	signed := make(map[string]bool, len(voter.Signers))
+	for _, addr := range voter.GetSigners() {
+		signed[addr.String()] = true
+	}
+
+	// G6: every eligible active vault must derive an address *and* hold enough
+	// chain-capable members to sign for it. The global quorum in G4b is not sufficient
+	// here: with multiple Asgards it can be concentrated outside one vault, and TSS
+	// keysign needs a supermajority of *that vault's* membership. Publishing an inbound
+	// address for a vault that cannot assemble a keysign party would strand deposits.
 	eligible := 0
 	for _, vault := range active {
 		if isChainActivationExempt(vault) {
@@ -146,13 +205,50 @@ func chainActivationReady(ctx cosmos.Context, k keeper.Keeper, chain common.Chai
 		}
 		eligible++
 		if _, err := vault.GetAddress(chain); err != nil {
-			return false, fmt.Sprintf("vault %s cannot derive address", vault.PubKey)
+			return false, nil, fmt.Sprintf("vault %s cannot derive address", vault.PubKey)
+		}
+		if ok, reason := vaultHasChainKeysignQuorum(ctx, vault, signed); !ok {
+			return false, nil, reason
 		}
 	}
 	if eligible == 0 {
-		return false, "no eligible active vaults"
+		return false, nil, "no eligible active vaults"
 	}
 
+	return true, signed, ""
+}
+
+// vaultHasChainKeysignQuorum reports whether enough of the vault's own members proved
+// the chain observable to clear a TSS keysign.
+//
+// HasSuperMajority is the same ceil(2n/3) bar as conversion.GetThreshold(n)+1, the
+// requiredSigners figure the keysign party is built against (querier.go). It is used
+// here rather than GetThreshold because it is integer-only - GetThreshold reaches for
+// math.Ceil on a float, which has no place in EndBlock consensus code.
+func vaultHasChainKeysignQuorum(ctx cosmos.Context, vault Vault, signed map[string]bool) (bool, string) {
+	members := vault.GetMembership()
+	if len(members) == 0 {
+		return false, fmt.Sprintf("vault %s has empty membership", vault.PubKey)
+	}
+
+	capable := 0
+	for _, pk := range members {
+		addr, err := pk.GetThorAddress()
+		if err != nil {
+			// Fail closed: an unreadable member counts as incapable, never as capable.
+			ctx.Logger().Error("fail to get thor address for vault member",
+				"pub_key", pk, "vault", vault.PubKey, "error", err)
+			continue
+		}
+		if signed[addr.String()] {
+			capable++
+		}
+	}
+
+	if !HasSuperMajority(capable, len(members)) {
+		return false, fmt.Sprintf("vault %s below keysign threshold: %d of %d members proved the chain",
+			vault.PubKey, capable, len(members))
+	}
 	return true, ""
 }
 
@@ -170,7 +266,7 @@ func isChainActivationExempt(vault Vault) bool {
 // appends on observing a coin for an unknown chain), in append order. A per-vault
 // "append if missing" would skip exactly that vault, leaving it with a divergent
 // ordering while its siblings get normalised.
-func stampChainsOnVaults(ctx cosmos.Context, mgr Manager, chains common.Chains, active, retiring Vaults) error {
+func stampChainsOnVaults(ctx cosmos.Context, mgr Manager, chains common.Chains, active, retiring Vaults, proved map[common.Chain]map[string]bool) error {
 	k := mgr.Keeper()
 
 	pending := make(Vaults, 0, len(active)+len(retiring))
@@ -202,6 +298,15 @@ func stampChainsOnVaults(ctx cosmos.Context, mgr Manager, chains common.Chains, 
 			if _, err := vault.GetAddress(chain); err != nil {
 				ctx.Logger().Info("skipping retiring vault that cannot address chain",
 					"chain", chain, "pub_key", vault.PubKey, "error", err)
+				continue
+			}
+			// Same keysign bar the active vaults cleared. A retiring vault still signs
+			// migrations and outbounds, so one whose own members never proved the chain
+			// would be handed an address it cannot sign for - the active-vault harm in
+			// miniature. Skipped rather than fatal, per the best-effort rule above.
+			if ok, reason := vaultHasChainKeysignQuorum(ctx, vault, proved[chain]); !ok {
+				ctx.Logger().Info("skipping retiring vault below keysign threshold",
+					"chain", chain, "pub_key", vault.PubKey, "reason", reason)
 				continue
 			}
 			addable = append(addable, chain)
@@ -250,8 +355,17 @@ func applyChainsToVault(ctx cosmos.Context, k keeper.Keeper, vault Vault, chains
 		dirty = true
 	}
 
+	// Populate only a router the vault is missing, never replace one it already has.
+	// A vault's router is pinned for its lifetime and rolls over at churn -
+	// migrateFunds refreshes Routers only when nil, and RouterUpgradeController
+	// deliberately leaves live vaults on the old address (its test asserts exactly
+	// that). Overwriting here would break that invariant every time a chain with an
+	// Enable<CHAIN>Chain mimir still set later has its router upgraded: the mimir
+	// persists, so this pass runs forever. Worse on a retiring vault, where it would
+	// point ERC20 migrations at a contract that never held that vault's funds.
 	for _, cc := range k.GetChainContracts(ctx, chains) {
-		if vault.GetContract(cc.Chain).Router.Equals(cc.Router) {
+		existing := vault.GetContract(cc.Chain)
+		if !existing.IsEmpty() {
 			continue
 		}
 		vault.UpdateContract(cc)
