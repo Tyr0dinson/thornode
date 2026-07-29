@@ -792,19 +792,41 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 					ctx.Logger().Info("Skipping migration scheduling while a migrate transaction is still pending on this chain", "vault_pubkey", vault.PubKey, "chain", chain)
 					continue
 				}
+
+				// Only vaults that carry the chain and can derive an address for it, which
+				// is exactly what vaultCanSignChain tests.
+				//
+				// There used to be a fallback here that, when no active vault carried the
+				// chain, targeted the regular Asgard family anyway - on the reasoning that
+				// some churn/bootstrap paths materialize Asgards with an incomplete chain
+				// list. That is no longer safe: handleObservedTxInQuorum no-ops an inbound
+				// on a chain the receiving vault does not serve, so those funds would be
+				// signed out of the retiring vault and never credited anywhere. It only
+				// appeared to work before because AddFunds silently appended the chain on
+				// observation - the same ungated write chain_activation.go's gates exist to
+				// prevent - so the fallback was self-healing by way of the hole.
 				targetVaults := filterVaultsByChain(active, chain)
-				if len(targetVaults) == 0 && !chain.Equals(common.XMRChain) {
-					// Some churn/bootstrap paths still materialize regular Asgards without a
-					// fully populated external-chain list. In that case, keep migration on
-					// the regular Asgard family rather than stalling or ever targeting a
-					// vault that also serves the single-vault XMR chain.
-					for _, activeVault := range active {
-						if !activeVault.HasChain(common.XMRChain) {
-							targetVaults = append(targetVaults, activeVault)
+				// Keep the old explicit exclusion: a non-XMR chain must never migrate into
+				// the XMR monovault. filterVaultsByChain happens to cover this today only
+				// because the monovault is pinned to {THOR, XMR}, and that pinning is an
+				// assumption held elsewhere rather than an invariant enforced here.
+				if !chain.Equals(common.XMRChain) {
+					kept := make(Vaults, 0, len(targetVaults))
+					for _, targetVault := range targetVaults {
+						if targetVault.HasChain(common.XMRChain) {
+							continue
 						}
+						kept = append(kept, targetVault)
 					}
+					targetVaults = kept
 				}
 				if len(targetVaults) == 0 {
+					// Stall rather than migrate somewhere the funds cannot be credited. The
+					// coins stay in the retiring vault, which does carry the chain and can
+					// still sign for it, and the retiring-vault funds check in
+					// ValidatorMgr.BeginBlock holds the churn until an operator brings the
+					// chain onto the active vaults - which is what Enable<CHAIN>Chain is for.
+					// Recoverable and loud, where the old path was silent and lossy.
 					ctx.Logger().Error("no active target vault for migration chain", "chain", chain.String())
 					// A post-churn topology failure: the retiring vault keeps its
 					// funds for this chain indefinitely, and nothing else in the

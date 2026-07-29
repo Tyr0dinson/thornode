@@ -205,6 +205,7 @@ func ensureVaultAndGetTxInVoter(ctx cosmos.Context, vaultPubKey common.PubKey, t
 const (
 	compromisedVaultMimirKeyPrefix  = "CompromisedVault-"
 	compromisedVaultNoOpSecurityMsg = "inbound to compromised vault no-oped"
+	unsupportedChainNoOpSecurityMsg = "inbound for unsupported chain no-oped"
 )
 
 // isVaultCompromised reports whether CompromisedVault-<pubkey> is set.
@@ -219,24 +220,62 @@ func isVaultCompromised(ctx cosmos.Context, k keeper.Keeper, vaultPubKey common.
 	return flagged > 0, nil
 }
 
-// emitCompromisedVaultNoOpSecurityEvent emits the operator-facing alert for an
-// inbound that reached quorum but was intentionally skipped because its vault is
-// flagged by CompromisedVault-<pubkey>.
-func emitCompromisedVaultNoOpSecurityEvent(ctx cosmos.Context, mgr Manager, tx common.ObservedTx, vaultPubKey common.PubKey) {
+// vaultSupportsChain reports whether the vault may be credited for an inbound on the
+// chain.
+//
+// Without this, an inbound on a chain the vault does not carry is still credited, and
+// AddFunds appends the chain to vault.Chains as a side effect (type_vault.go). Bifrost
+// derives an inbound address for every chain client it runs and never consults
+// vault.Chains, so that address is reachable long before the chain is activated - which
+// means anyone able to derive it could stamp a chain onto every live Asgard for the cost
+// of one dust transaction, bypassing every gate in chain_activation.go.
+//
+// The address of an unsupported chain is never advertised by queryInboundAddresses, so
+// no-oping funds sent there is the same treatment the protocol already gives an
+// unsupported asset.
+//
+// THORChain is exempt, and the exemption is unreachable rather than load-bearing:
+// bifrost ships no THORChain client (bifrost/pkg/chainclients), so no observed tx
+// carries Chain == THOR - native RUNE arrives by MsgDeposit. It is kept because
+// vault.Chains does not consistently carry THOR (queryInboundAddresses appends it
+// separately, querier.go:495), so gating on it could only ever fail closed for the
+// wrong reason. Delete it if a THORChain observation path is ever added deliberately.
+func vaultSupportsChain(vault Vault, chain common.Chain) bool {
+	return chain.IsTHORChain() || vault.HasChain(chain)
+}
+
+// noOpSecurityMetricReason maps an operator-facing *NoOpSecurityMsg to a short, stable
+// telemetry label value.
+func noOpSecurityMetricReason(reason string) string {
+	switch reason {
+	case compromisedVaultNoOpSecurityMsg:
+		return "compromised_vault"
+	case unsupportedChainNoOpSecurityMsg:
+		return "unsupported_chain"
+	default:
+		return "unknown"
+	}
+}
+
+// emitInboundNoOpSecurityEvent emits the operator-facing alert for an inbound that
+// reached quorum but was intentionally skipped. reason is one of the *NoOpSecurityMsg
+// constants above.
+func emitInboundNoOpSecurityEvent(ctx cosmos.Context, mgr Manager, tx common.ObservedTx, vaultPubKey common.PubKey, reason string) {
 	telemetry.IncrCounterWithLabels(
-		[]string{"thornode", "inbound", "compromised_vault_noop"},
+		[]string{"thornode", "inbound", "noop"},
 		1,
 		[]metrics.Label{
 			telemetry.NewLabel("chain", telemChain(tx.Tx.Chain)),
 			telemetry.NewLabel("pubkey", vaultPubKey.String()),
+			telemetry.NewLabel("reason", noOpSecurityMetricReason(reason)),
 		},
 	)
 
 	// EventSecurity includes the external tx attributes, but not the observed
 	// vault pubkey, so keep the vault key in the message for incident review.
-	msg := fmt.Sprintf("%s: vault=%s", compromisedVaultNoOpSecurityMsg, vaultPubKey.String())
+	msg := fmt.Sprintf("%s: vault=%s", reason, vaultPubKey.String())
 	if err := mgr.EventMgr().EmitEvent(ctx, NewEventSecurity(tx.Tx, msg)); err != nil {
-		ctx.Logger().Error("fail to emit compromised vault no-op security event", "pub_key", vaultPubKey.String(), "tx", tx.Tx.ID.String(), "error", err)
+		ctx.Logger().Error("fail to emit inbound no-op security event", "pub_key", vaultPubKey.String(), "tx", tx.Tx.ID.String(), "reason", reason, "error", err)
 	}
 }
 
@@ -295,12 +334,24 @@ func handleObservedTxInQuorum(
 	if compromisedErr != nil {
 		ctx.Logger().Error("failed to read CompromisedVault mimir, treating inbound as no-op", "pub_key", vault.PubKey.String(), "error", compromisedErr)
 	}
-	if compromised {
+
+	// Both no-op reasons share one branch: the tx is real and has quorum, but must not
+	// move THORChain state. Compromised is checked first so an inbound that is both keeps
+	// reporting the more serious reason.
+	noOpReason := ""
+	switch {
+	case compromised:
+		noOpReason = compromisedVaultNoOpSecurityMsg
+	case !vaultSupportsChain(vault, tx.Tx.Chain):
+		noOpReason = unsupportedChainNoOpSecurityMsg
+	}
+
+	if noOpReason != "" {
 		// The tx has already reached observation quorum. Record observation
 		// metadata, but deliberately skip every value-changing action below:
 		// vault accounting, memo resolution, refunds, swap queueing, and
-		// internal handler dispatch. Funds sent to a compromised vault should
-		// not affect THORChain state.
+		// internal handler dispatch. Funds sent to a compromised vault, or on a
+		// chain the vault does not serve, should not affect THORChain state.
 		if err = k.SetLastChainHeight(ctx, tx.Tx.Chain, tx.BlockHeight); err != nil {
 			ctx.Logger().Error("fail to set last chain height", "error", err)
 		}
@@ -310,11 +361,11 @@ func handleObservedTxInQuorum(
 			// Mark finalised no-op observations done so they do not remain as
 			// pending inbound work waiting for an outbound that will never be
 			// scheduled.
-			emitCompromisedVaultNoOpSecurityEvent(ctx, mgr, tx, vault.PubKey)
+			emitInboundNoOpSecurityEvent(ctx, mgr, tx, vault.PubKey, noOpReason)
 			voter.SetDone()
-			ctx.Logger().Info("observed tx in to compromised vault no-oped", "pub_key", vault.PubKey.String(), "tx", tx.Tx.ID.String())
+			ctx.Logger().Info("observed tx in no-oped", "reason", noOpReason, "chain", tx.Tx.Chain.String(), "pub_key", vault.PubKey.String(), "tx", tx.Tx.ID.String())
 		} else {
-			ctx.Logger().Info("observed tx in to compromised vault pending confirmation counting", "pub_key", vault.PubKey.String(), "tx", tx.Tx.ID.String())
+			ctx.Logger().Info("observed tx in pending confirmation counting before no-op", "reason", noOpReason, "chain", tx.Tx.Chain.String(), "pub_key", vault.PubKey.String(), "tx", tx.Tx.ID.String())
 		}
 		k.SetObservedTxInVoter(ctx, voter)
 		return nil

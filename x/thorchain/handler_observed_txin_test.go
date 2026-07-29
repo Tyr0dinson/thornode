@@ -19,20 +19,26 @@ import (
 
 type HandlerObservedTxInSuite struct{}
 
-// compromisedVaultNoOpSecurityMsgFromEvents returns the security-event message
-// for a compromised-vault no-op so tests can assert the operator alert path.
-func compromisedVaultNoOpSecurityMsgFromEvents(ctx cosmos.Context) string {
+// noOpSecurityMsgFromEvents returns the security-event message carrying the given
+// no-op reason, so tests can assert the operator alert path.
+func noOpSecurityMsgFromEvents(ctx cosmos.Context, reason string) string {
 	for _, event := range ctx.EventManager().Events() {
 		if event.Type != types.SecurityEventType {
 			continue
 		}
 		for _, attr := range event.Attributes {
-			if attr.Key == "msg" && strings.HasPrefix(attr.Value, compromisedVaultNoOpSecurityMsg) {
+			if attr.Key == "msg" && strings.HasPrefix(attr.Value, reason) {
 				return attr.Value
 			}
 		}
 	}
 	return ""
+}
+
+// compromisedVaultNoOpSecurityMsgFromEvents returns the security-event message
+// for a compromised-vault no-op so tests can assert the operator alert path.
+func compromisedVaultNoOpSecurityMsgFromEvents(ctx cosmos.Context) string {
+	return noOpSecurityMsgFromEvents(ctx, compromisedVaultNoOpSecurityMsg)
 }
 
 type TestObservedTxInValidateKeeper struct {
@@ -1145,6 +1151,107 @@ func (s *HandlerObservedTxInSuite) TestCompromisedVaultInboundIsNoOp(c *C) {
 	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(items, HasLen, 0)
+}
+
+// TestUnsupportedChainInboundIsNoOp verifies an inbound on a chain the vault does not
+// serve is recorded but never credited - and, critically, that it does not append the
+// chain to vault.Chains. Bifrost derives an inbound address for every chain client it
+// runs regardless of vault.Chains, so without this guard anyone could stamp a chain onto
+// every live Asgard with one dust transaction, bypassing the gates in chain_activation.go.
+func (s *HandlerObservedTxInSuite) TestUnsupportedChainInboundIsNoOp(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(18)
+	k := mgr.Keeper()
+
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	// Vault serves ETH only. BTC is a chain the binary supports but this vault does not.
+	vaultPubKey := GetRandomPubKey()
+	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, vaultPubKey, common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	vaultAddr, err := vaultPubKey.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+	tx := common.NewTx(
+		GetRandomTxHash(),
+		GetRandomBTCAddress(),
+		vaultAddr,
+		common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One))),
+		common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(1000))},
+		"swap:ETH.ETH:"+GetRandomETHAddress().String(),
+	)
+	obsTx := NewObservedTx(tx, 12, vaultPubKey, 12)
+	msg := NewMsgObservedTxIn(ObservedTxs{obsTx}, na.NodeAddress)
+
+	handler := NewObservedTxInHandler(mgr)
+	_, err = handler.handle(ctx, *msg)
+	c.Assert(err, IsNil)
+
+	updatedVault, err := k.GetVault(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	// The bypass this guard closes: AddFunds would have appended BTC here.
+	c.Assert(updatedVault.HasChain(common.BTCChain), Equals, false)
+	c.Assert(updatedVault.GetCoin(common.BTCAsset).Amount.IsZero(), Equals, true)
+	c.Assert(updatedVault.InboundTxCount, Equals, int64(0))
+
+	voter, err := k.GetObservedTxInVoter(ctx, tx.ID)
+	c.Assert(err, IsNil)
+	c.Assert(voter.FinalisedHeight, Equals, ctx.BlockHeight())
+	c.Assert(voter.Tx.Status, Equals, common.Status_done)
+	c.Assert(voter.UpdatedVault, Equals, false)
+
+	securityMsg := noOpSecurityMsgFromEvents(ctx, unsupportedChainNoOpSecurityMsg)
+	c.Assert(securityMsg, Not(Equals), "")
+	c.Assert(strings.Contains(securityMsg, vaultPubKey.String()), Equals, true)
+
+	// No swap queued and no refund scheduled: the funds sit at an address the network
+	// never advertised, exactly as an unsupported asset does.
+	queue := newSwapQueue(k)
+	swaps, err := queue.FetchQueue(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(swaps, HasLen, 0)
+
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 0)
+}
+
+// TestSupportedChainInboundStillCredits is the negative control for the guard above:
+// the same flow on a chain the vault does serve must still credit normally.
+func (s *HandlerObservedTxInSuite) TestSupportedChainInboundStillCredits(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(18)
+	k := mgr.Keeper()
+
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	vaultPubKey := GetRandomPubKey()
+	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, vaultPubKey, common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	vaultAddr, err := vaultPubKey.GetAddress(common.ETHChain)
+	c.Assert(err, IsNil)
+	tx := common.NewTx(
+		GetRandomTxHash(),
+		GetRandomETHAddress(),
+		vaultAddr,
+		common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(10*common.One))),
+		common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(37500))},
+		"swap:BTC.BTC:"+GetRandomBTCAddress().String(),
+	)
+	obsTx := NewObservedTx(tx, 12, vaultPubKey, 12)
+	msg := NewMsgObservedTxIn(ObservedTxs{obsTx}, na.NodeAddress)
+
+	handler := NewObservedTxInHandler(mgr)
+	_, err = handler.handle(ctx, *msg)
+	c.Assert(err, IsNil)
+
+	updatedVault, err := k.GetVault(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(updatedVault.GetCoin(common.ETHAsset).Amount.IsZero(), Equals, false)
+	c.Assert(noOpSecurityMsgFromEvents(ctx, unsupportedChainNoOpSecurityMsg), Equals, "")
 }
 
 // Test migrate memo

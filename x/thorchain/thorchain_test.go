@@ -195,7 +195,7 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 	signer, err := common.PubKey(keygen.Members[0]).GetThorAddress()
 	c.Assert(err, IsNil)
 	keygenTime := int64(1024)
-	msg, err := NewMsgTssPoolV2(keygen.Members, newVaultPk, nil, nil, AsgardKeygen, ctx.BlockHeight(), nil, common.Chains{common.RuneAsset().Chain}.Strings(), signer, keygenTime, GetRandomPubKey(), nil, nil, common.EmptyPubKey)
+	msg, err := NewMsgTssPoolV2(keygen.Members, newVaultPk, nil, nil, AsgardKeygen, ctx.BlockHeight(), nil, common.Chains{common.RuneAsset().Chain, common.ETHChain}.Strings(), signer, keygenTime, GetRandomPubKey(), nil, nil, common.EmptyPubKey)
 	c.Assert(err, IsNil)
 	tssHandler := NewTssHandler(mgr)
 
@@ -214,6 +214,16 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 	}
 	voter.Signers = signers // ensure we have consensus, so handler is properly executed
 	voter.Secp256K1Signatures = signatures
+	// Assigning Signers directly skips TssVoter.Sign, which is what normally records
+	// each signer's reported chain list - so without this the voter reached consensus
+	// with an empty chain set and the incoming vault was created serving no chains at
+	// all. That was masked by a migrateFunds fallback that targeted vaults which did not
+	// carry the chain; with that fallback gone the fixture has to model a real keygen,
+	// where the members report the chains they serve (ETH, which the retiring vault
+	// holds funds on).
+	for range signers {
+		voter.Chains = append(voter.Chains, msg.Chains...)
+	}
 	mgr.Keeper().SetTssVoter(ctx, voter)
 
 	_, err = tssHandler.Run(ctx, msg)
