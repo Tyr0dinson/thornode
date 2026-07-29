@@ -500,6 +500,7 @@ type KeeperNetworkFee interface {
 type KeeperObservedNetworkFeeVoter interface {
 	SetObservedNetworkFeeVoter(ctx cosmos.Context, networkFeeVoter ObservedNetworkFeeVoter)
 	GetObservedNetworkFeeVoterIterator(ctx cosmos.Context) cosmos.Iterator
+	GetObservedNetworkFeeVoterIteratorForChain(ctx cosmos.Context, chain common.Chain) cosmos.Iterator
 	GetObservedNetworkFeeVoter(ctx cosmos.Context, height int64, chain common.Chain, rate, size int64) (ObservedNetworkFeeVoter, error)
 }
 

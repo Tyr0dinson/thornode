@@ -2,6 +2,7 @@ package keeperv1
 
 import (
 	"fmt"
+	"strings"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -34,6 +35,20 @@ func (k KVStore) getObservedNetworkFeeVoter(ctx cosmos.Context, key []byte, reco
 func (k KVStore) SetObservedNetworkFeeVoter(ctx cosmos.Context, networkFeeVoter ObservedNetworkFeeVoter) {
 	key := networkFeeVoter.ID()
 	k.setObservedNetworkFeeVoter(ctx, k.GetKey(prefixNetworkFeeVoter, key), networkFeeVoter)
+}
+
+// GetObservedNetworkFeeVoterIteratorForChain iterates only the voters for one chain.
+//
+// ObservedNetworkFeeVoter.ID() formats as "CHAIN-height-rate-size", so the chain leads
+// the key and a prefix scan is exact. The trailing "-" is what makes it safe: without
+// it a chain ID that is a prefix of another would pull in the wrong records.
+//
+// The unscoped iterator walks every voter the network has ever recorded, for every
+// chain, and that store is never pruned - so anything on a per-block path must use this.
+func (k KVStore) GetObservedNetworkFeeVoterIteratorForChain(ctx cosmos.Context, chain common.Chain) cosmos.Iterator {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	prefix := fmt.Sprintf("%s/%s-", prefixNetworkFeeVoter, strings.ToUpper(chain.String()))
+	return cosmos.KVStorePrefixIterator(store, []byte(prefix))
 }
 
 // GetObservedNetworkFeeVoterIterator iterate tx in voters

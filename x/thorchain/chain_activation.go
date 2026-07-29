@@ -72,12 +72,18 @@ func (vm *NetworkMgr) activateEnabledChains(ctx cosmos.Context, mgr Manager) err
 
 	// Drop chains that are already fully stamped BEFORE running the gates. The enable
 	// mimir persists after activation, so this routine keeps being entered for the rest
-	// of the chain's life; without this the fee-voter scan below would run every block
-	// forever. Retiring vaults are excluded from the test on purpose - they are
-	// best-effort, so one that can never be stamped must not hold the costly path open.
+	// of the chain's life, and without this the fee-voter scan below would run on every
+	// one of those blocks.
+	//
+	// Retiring vaults count too. One that missed the keysign quorum on the block the
+	// active vaults activated would otherwise never be reconsidered - the chain drops out
+	// of pending for good and stampChainsOnVaults, its only evaluation point, is never
+	// reached again. Including them costs at most until they churn out, and only for
+	// those that can address the chain at all, so a permanently unaddressable vault
+	// still cannot hold the path open.
 	pending := make(common.Chains, 0, len(requested))
 	for _, chain := range requested {
-		if chainNeedsStamping(ctx, k, chain, active) {
+		if chainNeedsStamping(ctx, k, chain, active) || retiringNeedsStamping(ctx, k, chain, retiring) {
 			pending = append(pending, chain)
 		}
 	}
@@ -98,7 +104,7 @@ func (vm *NetworkMgr) activateEnabledChains(ctx cosmos.Context, mgr Manager) err
 	// indexed by chain, never ranged over, so it introduces no map-order dependence.
 	proved := make(map[common.Chain]map[string]bool, len(pending))
 	for _, chain := range pending {
-		ok, signed, reason := chainActivationReady(ctx, k, chain, active, activeNodes)
+		ok, signed, reason := chainActivationReady(ctx, k, chain, active, activeNodes, retiring)
 		if !ok {
 			// Info, not Debug: production runs at info level, and an operator who has
 			// set the mimir and is waiting needs to see which gate is holding it. Only
@@ -143,9 +149,27 @@ func chainNeedsStamping(ctx cosmos.Context, k keeper.Keeper, chain common.Chain,
 			return true
 		}
 		existing := vault.GetContract(chain)
-		if existing.IsEmpty() && len(k.GetChainContracts(ctx, common.Chains{chain})) > 0 {
-			return true
+		if existing.IsEmpty() {
+			if cc, err := k.GetChainContract(ctx, chain); err == nil && !cc.IsEmpty() {
+				return true
+			}
 		}
+	}
+	return false
+}
+
+// retiringNeedsStamping reports whether a retiring vault could still take the chain.
+// Only vaults that can derive an address qualify: the keysign quorum is the condition
+// worth retrying, an underivable address never is.
+func retiringNeedsStamping(ctx cosmos.Context, k keeper.Keeper, chain common.Chain, retiring Vaults) bool {
+	for _, vault := range retiring {
+		if isChainActivationExempt(vault) || vault.HasChain(chain) {
+			continue
+		}
+		if _, err := vault.GetAddress(chain); err != nil {
+			continue
+		}
+		return true
 	}
 	return false
 }
@@ -168,9 +192,15 @@ func chainNeedsStamping(ctx cosmos.Context, k keeper.Keeper, chain common.Chain,
 // turn on - there may be exactly one voter, written once and never refreshed. Any bar
 // measured on voter age is therefore unsatisfiable there, not merely strict.
 //
-// What keeps the proof current instead is the filter to activeNodes, re-evaluated every
-// block: a departed, banned or standby node stops counting the moment it leaves the
-// active set, which is the property that actually matters for signing.
+// The filter to activeNodes establishes who the attesters ARE, not that their
+// attestation is still current - a node that scanned the chain a year ago, is still
+// active, and has since dropped the client from its bifrost config counts the same as
+// one scanning it now. G6b is what supplies currency, by deferring to the most recent
+// keygen vote; this function deliberately supplies only identity.
+//
+// Scoped to the chain's own keys: the voter store is never pruned, and this runs every
+// block for as long as a chain sits unconverged, so the unscoped iterator would make
+// EndBlock cost scale with every fee voter the network has ever recorded.
 func chainAttesters(ctx cosmos.Context, k keeper.Keeper, chain common.Chain, activeNodes NodeAccounts) map[string]bool {
 	isActive := make(map[string]bool, len(activeNodes))
 	for _, na := range activeNodes {
@@ -178,7 +208,7 @@ func chainAttesters(ctx cosmos.Context, k keeper.Keeper, chain common.Chain, act
 	}
 
 	attesters := make(map[string]bool, len(activeNodes))
-	iter := k.GetObservedNetworkFeeVoterIterator(ctx)
+	iter := k.GetObservedNetworkFeeVoterIteratorForChain(ctx, chain)
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
 		var voter ObservedNetworkFeeVoter
@@ -207,7 +237,7 @@ func chainAttesters(ctx cosmos.Context, k keeper.Keeper, chain common.Chain, act
 // of node addresses that proved the chain observable, so the retiring-vault pass can
 // apply the same keysign bar without repeating the voter lookup. The returned string
 // names the failing gate, for logging only.
-func chainActivationReady(ctx cosmos.Context, k keeper.Keeper, chain common.Chain, active Vaults, activeNodes NodeAccounts) (bool, map[string]bool, string) {
+func chainActivationReady(ctx cosmos.Context, k keeper.Keeper, chain common.Chain, active Vaults, activeNodes NodeAccounts, retiring Vaults) (bool, map[string]bool, string) {
 	// G1: THORChain is implicit, and XMR is FROST/monovault-only - its address
 	// needs PubKeyFrost, which only XMRMonovaultKeygen produces.
 	if chain.IsTHORChain() || chain.Equals(common.XMRChain) {
@@ -255,11 +285,47 @@ func chainActivationReady(ctx cosmos.Context, k keeper.Keeper, chain common.Chai
 		}
 	}
 
+	// G6a: never overrule a keygen vote that is newer than the vault set which had the
+	// chain.
+	//
+	// vault.Chains is written at keygen from TssVoter.ConsensusChains(), a 2/3 vote over
+	// what each bifrost reports it actually runs. So when a retiring vault holds the chain
+	// and a newer active vault does not, the churn that produced the active set was told
+	// by a supermajority that the chain is no longer run - operators disabled it in
+	// bifrost, say. Re-stamping it from the historical attester union would silently
+	// override that fresh vote and publish an inbound address nobody is scanning.
+	//
+	// This is what supplies currency to the proof; the active-set filter in chainAttesters
+	// cannot, since it establishes who the attesters are rather than that they still run
+	// the client. The signal is deliberately drawn from the vaults rather than from the
+	// mimir's effective height: that value is routinely backdated to 1 to mean "now", so
+	// it cannot date the operator's intent.
+	//
+	// Known limit: it lasts only while a retiring vault that held the chain is still
+	// around, i.e. the migration window after the churn that dropped it. Beyond that the
+	// evidence is gone from state and the operator is expected to unset the mimir. That
+	// window is exactly when the re-stamp would otherwise happen.
+	for _, retired := range retiring {
+		if isChainActivationExempt(retired) || !retired.HasChain(chain) {
+			continue
+		}
+		for _, vault := range active {
+			if isChainActivationExempt(vault) || vault.HasChain(chain) {
+				continue
+			}
+			if vault.BlockHeight > retired.BlockHeight {
+				return false, nil, fmt.Sprintf(
+					"vault %s was keygen'd at %d without the chain, after retiring vault %s at %d held it",
+					vault.PubKey, vault.BlockHeight, retired.PubKey, retired.BlockHeight)
+			}
+		}
+	}
+
 	// The nodes that proved the chain observable, restricted to those still active.
-	// See chainAttesters for why this is a scan and why no freshness window applies.
+	// See chainAttesters for why this is a scan and what it does and does not prove.
 	signed := chainAttesters(ctx, k, chain, activeNodes)
 
-	// G6: the proof still holds across the network as it stands today. Same ceil(2n/3)
+	// G6b: the proof still holds across the network as it stands today. Same ceil(2n/3)
 	// bar ObservedNetworkFeeVoter.HasConsensus applies, but recomputed from the filtered
 	// attester set, so a quorum assembled by validators who have since churned out - or
 	// one propped up by members who have gone standby - no longer clears it.
@@ -269,7 +335,7 @@ func chainActivationReady(ctx cosmos.Context, k keeper.Keeper, chain common.Chai
 	}
 
 	// G7: every eligible active vault must derive an address *and* hold enough
-	// chain-capable members to sign for it. The network-wide quorum in G6 is not sufficient
+	// chain-capable members to sign for it. The network-wide quorum in G6b is not sufficient
 	// here: with multiple Asgards it can be concentrated outside one vault, and TSS
 	// keysign needs a supermajority of *that vault's* membership. Publishing an inbound
 	// address for a vault that cannot assemble a keysign party would strand deposits.

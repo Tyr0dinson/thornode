@@ -905,6 +905,10 @@ func (k KVStoreDummy) GetChainContractIterator(ctx cosmos.Context) cosmos.Iterat
 	return nil
 }
 
+func (k KVStoreDummy) GetObservedNetworkFeeVoterIteratorForChain(_ cosmos.Context, _ common.Chain) cosmos.Iterator {
+	return nil
+}
+
 func (k KVStoreDummy) GetChainContracts(ctx cosmos.Context, chains common.Chains) []ChainContract {
 	return nil
 }

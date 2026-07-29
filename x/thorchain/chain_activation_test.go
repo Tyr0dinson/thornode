@@ -703,3 +703,162 @@ func (s *ChainActivationTestSuite) TestDeterministicAcrossVaultOrdering(c *C) {
 	c.Assert(slices.Contains(forward[vaultB.PubKey.String()], common.BCHChain.String()), Equals, true)
 	c.Assert(slices.Contains(forward[vaultA.PubKey.String()], common.BCHChain.String()), Equals, false)
 }
+
+// --- the readiness proof must belong to the chain being activated ---
+
+// chainAttesters filters voters by chain. Without that filter a fully-attested voter
+// for ANY chain would satisfy the readiness proof for EVERY chain, so a chain could go
+// live on zero attestations of its own. No other test catches this: the negative cases
+// all leave the voter store empty, and TestTwoChainsActivatedInSameBlock seeds two
+// chains that are both meant to activate.
+func (s *ChainActivationTestSuite) TestAttestationForOtherChainDoesNotCount(c *C) {
+	ctx, mgr, nodes := setupActivation(c, 4)
+	vault := newActivationVault(c, ActiveVault, nodes)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// a complete, consensus-reached proof for BCH ...
+	satisfyActivationGates(ctx, c, mgr.Keeper(), common.BCHChain, nodes)
+	// ... plus a valid fee and height for LTC, but no LTC voter at all
+	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, activationChain, types.NetworkFee{
+		Chain: activationChain, TransactionSize: 1000, TransactionFeeRate: 10,
+	}), IsNil)
+	c.Assert(mgr.Keeper().SetLastChainHeight(ctx, activationChain, activationChainHeight), IsNil)
+	mgr.Keeper().SetMimir(ctx, activationMimirKey(activationChain), 1)
+
+	runActivation(ctx, c, mgr)
+
+	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), vault.PubKey), activationChain.String()), Equals, false)
+	// directly: BCH's attesters must not be visible to LTC
+	activeNodes, err := mgr.Keeper().ListActiveValidators(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(len(chainAttesters(ctx, mgr.Keeper(), common.BCHChain, activeNodes)), Equals, 4)
+	c.Assert(len(chainAttesters(ctx, mgr.Keeper(), activationChain, activeNodes)), Equals, 0)
+
+	// and once LTC has its own proof it activates
+	satisfyActivationGates(ctx, c, mgr.Keeper(), activationChain, nodes)
+	runActivation(ctx, c, mgr)
+	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), vault.PubKey), activationChain.String()), Equals, true)
+}
+
+// A churn that drops the chain from the fresh keygen consensus must not be overridden
+// by the historical attester union. The retiring vault holding the chain while a newer
+// active vault does not is the signature of exactly that.
+func (s *ChainActivationTestSuite) TestNoRestampWhenNewerKeygenDroppedChain(c *C) {
+	ctx, mgr, nodes := setupActivation(c, 4)
+
+	// the pre-churn vault held the chain ...
+	retiring := newActivationVault(c, RetiringVault, nodes)
+	retiring.BlockHeight = 100
+	retiring.Chains = append(retiring.Chains, activationChain.String())
+	// ... the vault the churn produced does not, because ConsensusChains no longer had it
+	fresh := newActivationVault(c, ActiveVault, nodes)
+	fresh.BlockHeight = 200
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+	c.Assert(mgr.Keeper().SetVault(ctx, fresh), IsNil)
+
+	// the attester union is untouched by any of that and still covers everyone
+	satisfyActivationGates(ctx, c, mgr.Keeper(), activationChain, nodes)
+	mgr.Keeper().SetMimir(ctx, activationMimirKey(activationChain), 1)
+
+	runActivation(ctx, c, mgr)
+
+	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), fresh.PubKey), activationChain.String()), Equals, false)
+}
+
+// The same evidence must not block an ordinary first activation: a retiring vault that
+// predates the active one and never held the chain says nothing about the keygen vote.
+func (s *ChainActivationTestSuite) TestOlderRetiringVaultDoesNotBlockFirstActivation(c *C) {
+	ctx, mgr, nodes := setupActivation(c, 4)
+	retiring := newActivationVault(c, RetiringVault, nodes)
+	retiring.BlockHeight = 100
+	fresh := newActivationVault(c, ActiveVault, nodes)
+	fresh.BlockHeight = 200
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+	c.Assert(mgr.Keeper().SetVault(ctx, fresh), IsNil)
+	satisfyActivationGates(ctx, c, mgr.Keeper(), activationChain, nodes)
+	mgr.Keeper().SetMimir(ctx, activationMimirKey(activationChain), 1)
+
+	runActivation(ctx, c, mgr)
+
+	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), fresh.PubKey), activationChain.String()), Equals, true)
+}
+
+// --- chainNeedsStamping: the switch that decides whether the voter scan runs ---
+
+func (s *ChainActivationTestSuite) TestChainNeedsStampingBranches(c *C) {
+	ctx, mgr, nodes := setupActivation(c, 4)
+	k := mgr.Keeper()
+
+	// chain absent
+	absent := newActivationVault(c, ActiveVault, nodes)
+	c.Assert(chainNeedsStamping(ctx, k, activationChain, Vaults{absent}), Equals, true)
+
+	// present but not in canonical order (the AddFunds append case)
+	unsorted := newActivationVault(c, ActiveVault, nodes)
+	unsorted.Chains = append(unsorted.Chains, activationChain.String())
+	c.Assert(slices.IsSorted(unsorted.Chains), Equals, false)
+	c.Assert(chainNeedsStamping(ctx, k, activationChain, Vaults{unsorted}), Equals, true)
+
+	// present and canonical - nothing to do, so the scan must not run
+	done := newActivationVault(c, ActiveVault, nodes)
+	done.Chains = sortChainsForVault(append(done.GetChains(), activationChain).Distinct()).Strings()
+	c.Assert(chainNeedsStamping(ctx, k, activationChain, Vaults{done}), Equals, false)
+
+	// canonical, but an EVM router is still missing
+	evmChain := common.AVAXChain
+	evm := newActivationVault(c, ActiveVault, nodes)
+	evm.Chains = sortChainsForVault(append(evm.GetChains(), evmChain).Distinct()).Strings()
+	c.Assert(chainNeedsStamping(ctx, k, evmChain, Vaults{evm}), Equals, false) // no contract stored yet
+	k.SetChainContract(ctx, types.ChainContract{Chain: evmChain, Router: GetRandomETHAddress()})
+	c.Assert(chainNeedsStamping(ctx, k, evmChain, Vaults{evm}), Equals, true)
+
+	// the XMR monovault is exempt and never counts as needing work
+	mono := newActivationVault(c, ActiveVault, nodes)
+	mono.Chains = xmrMonovaultChains().Strings()
+	c.Assert(chainNeedsStamping(ctx, k, activationChain, Vaults{mono}), Equals, false)
+}
+
+// The mimir key this feature depends on has to be a legal mimir key for every chain,
+// or the chain is simply unactivatable through this mechanism with nothing to say so.
+func (s *ChainActivationTestSuite) TestActivationMimirKeysAreValid(c *C) {
+	for _, chain := range common.AllChains {
+		key := activationMimirKey(chain)
+		c.Assert(len(key) <= constants.MaxMimirLength, Equals, true,
+			Commentf("mimir key %q exceeds MaxMimirLength", key))
+		// mimirValidKey is the very matcher handler_mimir.go gates MsgMimir on
+		c.Assert(mimirValidKey(key), Equals, true,
+			Commentf("mimir key %q does not match MimirKeyRegex", key))
+	}
+}
+
+// TestXMRNeverActivated passes even with G1 removed, because the test vault has no
+// PubKeyFrost so G7 blocks XMR anyway. These call the gate directly so the eligibility
+// check is pinned on its own reason rather than on a downstream accident.
+func (s *ChainActivationTestSuite) TestIneligibleChainsRejectedByEligibilityGate(c *C) {
+	ctx, mgr, nodes := setupActivation(c, 4)
+	vault := newActivationVault(c, ActiveVault, nodes)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+	active := Vaults{vault}
+
+	for _, chain := range []common.Chain{common.THORChain, common.XMRChain} {
+		satisfyActivationGates(ctx, c, mgr.Keeper(), chain, nodes)
+		ok, signed, reason := chainActivationReady(ctx, mgr.Keeper(), chain, active, nodes, nil)
+		c.Assert(ok, Equals, false)
+		c.Assert(signed, IsNil)
+		c.Assert(reason, Equals, "chain not eligible", Commentf("chain %s", chain))
+	}
+}
+
+// With every active vault exempt there is no one to prove the chain for, so readiness
+// must fail rather than vacuously succeed on an empty loop.
+func (s *ChainActivationTestSuite) TestNoEligibleActiveVaults(c *C) {
+	ctx, mgr, nodes := setupActivation(c, 4)
+	mono := newActivationVault(c, ActiveVault, nodes)
+	mono.Chains = xmrMonovaultChains().Strings()
+	c.Assert(mgr.Keeper().SetVault(ctx, mono), IsNil)
+	satisfyActivationGates(ctx, c, mgr.Keeper(), activationChain, nodes)
+
+	ok, _, reason := chainActivationReady(ctx, mgr.Keeper(), activationChain, Vaults{mono}, nodes, nil)
+	c.Assert(ok, Equals, false)
+	c.Assert(reason, Equals, "no eligible active vaults")
+}
