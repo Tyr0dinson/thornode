@@ -128,7 +128,12 @@ func (vm *ValidatorMgr) BeginBlock(ctx cosmos.Context, mgr Manager, existingVali
 		if !mgr.Keeper().IsChainHalted(ctx, chain) {
 			continue
 		}
-		if chainHasVaultFunds(ctx, vm.k, chain) {
+		// THORChain is exempt from the narrowing: native RUNE is not held as a coin in
+		// Vault.Coins, so the funds check would read empty for it every time and silently
+		// remove the HaltTHORChain churn stop entirely. That stop is unrelated to
+		// migration - it gates rotating validators while the chain itself is halted - so
+		// it stays unconditional.
+		if chain.IsTHORChain() || chainHasVaultFunds(ctx, vm.k, chain) {
 			ctx.Logger().Info("Skipping node account rotation for halted chain", "chain", chain)
 			telemetry.IncrCounterWithLabels(
 				[]string{"thornode", "churn", "skipped"},

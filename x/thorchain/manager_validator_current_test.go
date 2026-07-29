@@ -130,6 +130,40 @@ func (vts *ValidatorMgrTestSuite) TestChurnWithHaltedEmptyChain(c *C) {
 	c.Assert(len(ready2), Equals, 0) // funds on the halted chain still block
 }
 
+// HaltTHORChain must keep blocking rotation unconditionally. Native RUNE is not held
+// as a coin in Vault.Coins, so the funds narrowing would read THORChain as empty every
+// time and remove that stop entirely - a churn-safety regression rather than the
+// intended relaxation, which is only about external chains with nothing to migrate.
+func (vts *ValidatorMgrTestSuite) TestChurnBlockedByHaltTHORChain(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	mgr := NewDummyMgr()
+	mgr.K = k
+	networkMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	minBond := constants.GetConstantValues(GetCurrentVersion()).GetInt64Value(constants.MinimumBondInRune)
+
+	standbyNode := GetRandomValidatorNode(NodeStandby)
+	standbyNode.Bond = cosmos.NewUint(uint64(minBond))
+	c.Assert(k.SetNodeAccount(ctx, standbyNode), IsNil)
+
+	// vault serves THOR and BTC, and holds no BTC - so only the THOR halt is in play
+	vault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.THORChain, common.BTCChain}.Strings(), []ChainContract{})
+	vault.Membership = append(vault.Membership, standbyNode.PubKeySet.Secp256k1.String())
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	k.SetMimir(ctx, constants.ChurnInterval.String(), 60)
+	ctx = ctx.WithBlockHeight(61)
+	k.SetMimir(ctx, "HaltTHORChain", 1)
+
+	// the funds check genuinely reads empty for THOR, so it is the exemption blocking
+	c.Assert(chainHasVaultFunds(ctx, k, common.THORChain), Equals, false)
+
+	c.Assert(networkMgr.BeginBlock(ctx, mgr, nil), IsNil)
+	ready, err := k.ListValidatorsByStatus(ctx, NodeReady)
+	c.Assert(err, IsNil)
+	c.Assert(len(ready), Equals, 0)
+}
+
 func (vts *ValidatorMgrTestSuite) TestChurnWithRetiringVaultDust(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	mgr := NewDummyMgr()

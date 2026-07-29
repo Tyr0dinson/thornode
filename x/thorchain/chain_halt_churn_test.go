@@ -1,12 +1,14 @@
 package thorchain
 
 import (
+	"errors"
 	"fmt"
 
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -82,6 +84,40 @@ func (s *ChainHaltChurnTestSuite) TestZeroAmountCoinDoesNotBlock(c *C) {
 	c.Assert(mgr.Keeper().SetVault(ctx, newFundsCheckVault(ActiveVault, coins)), IsNil)
 
 	c.Assert(chainHasVaultFunds(ctx, mgr.Keeper(), common.BTCChain), Equals, false)
+}
+
+// erroringVaultKeeper makes the vault read fail, to exercise the fail-closed branch.
+type erroringVaultKeeper struct {
+	keeper.Keeper
+}
+
+func (k erroringVaultKeeper) GetAsgardVaultsByStatus(cosmos.Context, types.VaultStatus) (Vaults, error) {
+	return nil, errors.New("kaboom")
+}
+
+// Unreadable vault state must block rotation, not permit it. This is the security-
+// relevant branch of the narrowing: fail-open would mean a halted chain whose vault
+// state cannot be read stops blocking churn, which is exactly what the original
+// unconditional gate existed to prevent.
+func (s *ChainHaltChurnTestSuite) TestKeeperErrorFailsClosed(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	c.Assert(mgr.Keeper().SetVault(ctx, newFundsCheckVault(ActiveVault, nil)), IsNil)
+
+	// with a readable keeper there are no funds, so it does not block ...
+	c.Assert(chainHasVaultFunds(ctx, mgr.Keeper(), common.BTCChain), Equals, false)
+	// ... but an unreadable one must
+	c.Assert(chainHasVaultFunds(ctx, erroringVaultKeeper{mgr.Keeper()}, common.BTCChain), Equals, true)
+}
+
+// THORChain is exempt from the funds narrowing. Native RUNE is not held as a coin in
+// Vault.Coins, so the funds check reads empty for it unconditionally - without the
+// exemption the HaltTHORChain churn stop would be silently removed altogether.
+func (s *ChainHaltChurnTestSuite) TestTHORChainFundsCheckIsAlwaysEmpty(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	coins := common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(100)))
+	c.Assert(mgr.Keeper().SetVault(ctx, newFundsCheckVault(ActiveVault, coins)), IsNil)
+
+	c.Assert(chainHasVaultFunds(ctx, mgr.Keeper(), common.THORChain), Equals, false)
 }
 
 // End-to-end through the rotation gate: a halted chain with no funds must not stop

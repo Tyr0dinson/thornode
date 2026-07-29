@@ -93,17 +93,17 @@ func newActivationVault(c *C, status types.VaultStatus, members NodeAccounts) Va
 
 // setReadinessProof writes the fee, the observed height, and the voter that produced
 // them - the same three records processNetworkFeeAttestation writes on fee consensus.
-// consensusHeight is the THORChain height the voter reached consensus at.
-func setReadinessProof(ctx cosmos.Context, c *C, k keeper.Keeper, chain common.Chain, signers NodeAccounts, consensusHeight int64) {
+// consensusHeight is the THORChain height the voter reached consensus at; feeHeight is
+// the chain height the fee was reported for, which is also part of the voter key.
+func setReadinessProof(ctx cosmos.Context, c *C, k keeper.Keeper, chain common.Chain, signers NodeAccounts, consensusHeight, feeHeight int64) {
 	c.Assert(k.SaveNetworkFee(ctx, chain, types.NetworkFee{
 		Chain:              chain,
 		TransactionSize:    1000,
 		TransactionFeeRate: 10,
 	}), IsNil)
-	c.Assert(k.SetLastChainHeight(ctx, chain, activationChainHeight), IsNil)
+	c.Assert(k.SetLastChainHeight(ctx, chain, feeHeight), IsNil)
 
-	// key must match GetObservedNetworkFeeVoter(height, chain, rate, size)
-	voter := types.NewObservedNetworkFeeVoter(activationChainHeight, chain)
+	voter := types.NewObservedNetworkFeeVoter(feeHeight, chain)
 	voter.FeeRate = 10
 	voter.TransactionSize = 1000
 	voter.BlockHeight = consensusHeight
@@ -115,7 +115,14 @@ func setReadinessProof(ctx cosmos.Context, c *C, k keeper.Keeper, chain common.C
 
 // satisfyActivationGates sets everything except the enable mimir itself.
 func satisfyActivationGates(ctx cosmos.Context, c *C, k keeper.Keeper, chain common.Chain, signers NodeAccounts) {
-	setReadinessProof(ctx, c, k, chain, signers, ctx.BlockHeight())
+	setReadinessProof(ctx, c, k, chain, signers, ctx.BlockHeight(), activationChainHeight)
+	if chain.IsEVM() {
+		// EVM chains additionally need a router before they may be advertised. Only
+		// filled in when absent, so a caller that pinned its own contract keeps it.
+		if cc, err := k.GetChainContract(ctx, chain); err == nil && cc.IsEmpty() {
+			k.SetChainContract(ctx, types.ChainContract{Chain: chain, Router: GetRandomETHAddress()})
+		}
+	}
 }
 
 func runActivation(ctx cosmos.Context, c *C, mgr Manager) {
@@ -234,32 +241,101 @@ func (s *ChainActivationTestSuite) TestNoStampWhileInitVaultPresent(c *C) {
 	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), active.PubKey), activationChain.String()), Equals, false)
 }
 
-// --- readiness proof: freshness and binding to the current validator set ---
+// --- readiness proof: binding to the current validator set ---
 
-// A fee quorum from beyond the readiness window is not proof the chain is observable
-// now. Bifrost can be restarted with a chain disabled, so an aged proof means nothing
-// even when every signer is still active.
-func (s *ChainActivationTestSuite) TestNoStampWhenReadinessProofStale(c *C) {
+// Bifrost posts MsgNetworkFee only when the rate *changes*, so on a stable-fee chain
+// (XRP, Cosmos, TRON - the chains this feature targets) the single voter is written
+// once and never refreshed. Any bar measured on voter age would be unsatisfiable there,
+// so an old voter must still activate. What keeps the proof honest is the active-set
+// filter, not the clock.
+func (s *ChainActivationTestSuite) TestActivatesOnLongStandingVoter(c *C) {
 	ctx, mgr, nodes := setupActivation(c, 4)
-	ctx = ctx.WithBlockHeight(chainActivationReadinessWindow + 500)
+	ctx = ctx.WithBlockHeight(2_000_000)
 	writeNodes(ctx, c, mgr.Keeper(), nodes)
 
 	vault := newActivationVault(c, ActiveVault, nodes)
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
-	// one block beyond the window
-	stale := ctx.BlockHeight() - chainActivationReadinessWindow - 1
-	setReadinessProof(ctx, c, mgr.Keeper(), activationChain, nodes, stale)
+	// consensus reached a million blocks ago and never revisited since
+	setReadinessProof(ctx, c, mgr.Keeper(), activationChain, nodes, 1, activationChainHeight)
 	mgr.Keeper().SetMimir(ctx, activationMimirKey(activationChain), 1)
 
 	runActivation(ctx, c, mgr)
 
+	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), vault.PubKey), activationChain.String()), Equals, true)
+}
+
+// The voter cannot be found by keying off GetLastChainHeight: fee consensus is only one
+// of that value's three writers, and every observed inbound advances it too. Anyone can
+// force the drift by sending dust to the derived pre-activation address, so activation
+// must not depend on the two agreeing.
+func (s *ChainActivationTestSuite) TestActivatesAfterObservedInboundAdvancedChainHeight(c *C) {
+	ctx, mgr, nodes := setupActivation(c, 4)
+	vault := newActivationVault(c, ActiveVault, nodes)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// fee consensus at chain height 1024 ...
+	satisfyActivationGates(ctx, c, mgr.Keeper(), activationChain, nodes)
+	// ... then an observed inbound pushes the last chain height well past it, exactly as
+	// handler_observed_tx_helpers.go does on every inbound reaching consensus
+	c.Assert(mgr.Keeper().SetLastChainHeight(ctx, activationChain, activationChainHeight+5000), IsNil)
+	mgr.Keeper().SetMimir(ctx, activationMimirKey(activationChain), 1)
+
+	runActivation(ctx, c, mgr)
+
+	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), vault.PubKey), activationChain.String()), Equals, true)
+}
+
+// A member who signed the fee while active and has since gone standby is no longer
+// running the chain client, but vault Membership does not change until the vault
+// retires. Counting them would let a vault clear its own keysign threshold on paper
+// while short of live signers - the stranding case the per-vault gate exists to stop.
+func (s *ChainActivationTestSuite) TestSignerGoneStandbyNoLongerCounts(c *C) {
+	ctx, mgr, nodes := setupActivation(c, 4)
+	vault := newActivationVault(c, ActiveVault, nodes)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+	satisfyActivationGates(ctx, c, mgr.Keeper(), activationChain, nodes)
+	mgr.Keeper().SetMimir(ctx, activationMimirKey(activationChain), 1)
+
+	// two of the four signers leave the active set; the vault keeps all four members
+	for _, na := range nodes[:2] {
+		na.Status = NodeStandby
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+	}
+
+	runActivation(ctx, c, mgr)
+
+	// 2 of the vault's 4 members are still capable, below the ceil(2*4/3)=3 needed
 	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), vault.PubKey), activationChain.String()), Equals, false)
 
-	// the very same proof one block inside the window does activate, so it is the
-	// window that rejected it and nothing else
-	setReadinessProof(ctx, c, mgr.Keeper(), activationChain, nodes, stale+1)
+	// bring one back and the same vault activates, so it is the active-set filter that
+	// rejected it rather than anything else
+	na := nodes[0]
+	na.Status = NodeActive
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 	runActivation(ctx, c, mgr)
 	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), vault.PubKey), activationChain.String()), Equals, true)
+}
+
+// An EVM chain advertised without a router is a dead deposit path: bifrost will not
+// recognise router deposits, yet /inbound_addresses presents the chain as live.
+func (s *ChainActivationTestSuite) TestNoStampWhenEVMChainHasNoRouter(c *C) {
+	ctx, mgr, nodes := setupActivation(c, 4)
+	evmChain := common.AVAXChain
+	vault := newActivationVault(c, ActiveVault, nodes)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// readiness proof only - deliberately no ChainContract
+	setReadinessProof(ctx, c, mgr.Keeper(), evmChain, nodes, ctx.BlockHeight(), activationChainHeight)
+	mgr.Keeper().SetMimir(ctx, activationMimirKey(evmChain), 1)
+
+	runActivation(ctx, c, mgr)
+
+	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), vault.PubKey), evmChain.String()), Equals, false)
+
+	// once the router is stored it activates, so it is the contract gate doing the work
+	mgr.Keeper().SetChainContract(ctx, types.ChainContract{Chain: evmChain, Router: GetRandomETHAddress()})
+	runActivation(ctx, c, mgr)
+	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), vault.PubKey), evmChain.String()), Equals, true)
 }
 
 // A proof approved solely by nodes that have since churned out must not activate a
