@@ -76,7 +76,7 @@ func (p *parser) ParseAddLiquidityMemo() (AddLiquidityMemo, error) {
 	asset := p.getAsset(1, true, common.EmptyAsset)
 	var addr, assetAddr common.Address
 	if asset.GetLayer1Asset().GetChain().RequiresExplicitRefundAddress() {
-		addr, assetAddr = p.getAddressAndRefundAddressWithKeeper(2, false, common.NoAddress, asset.Chain)
+		addr, assetAddr = p.getAddressAndRefundAddressWithKeeper(2, false, asset.Chain)
 	} else {
 		// Preserve the existing single-address ADD grammar on every other chain.
 		addr = p.getAddressWithKeeper(2, false, common.NoAddress, asset.Chain)
@@ -103,20 +103,13 @@ func ParseAddLiquidityMemoV1(ctx cosmos.Context, keeper keeper.Keeper, asset com
 	if len(parts) >= 3 && len(parts[2]) > 0 {
 		switch {
 		case asset.GetLayer1Asset().GetChain().RequiresExplicitRefundAddress():
-			// Build a lightweight parser so keeperless ParseMemo consumers apply
-			// the same PAIRADDR/ASSETADDR rules as keeper-backed parsing. An invalid
-			// optional asset address is treated as absent, while an asset address
-			// without a pair address remains invalid.
-			addressParser := parser{
-				memo:   strings.Join(parts, ":"),
-				ctx:    ctx,
-				keeper: keeper,
-				parts:  parts,
-				errs:   make([]error, 0),
-			}
-			addr, assetAddr = addressParser.getAddressAndRefundAddressWithKeeper(2, false, common.NoAddress, asset.Chain)
-			if parseErr := addressParser.Error(); parseErr != nil {
-				return AddLiquidityMemo{}, parseErr
+			addr, assetAddr, err = parseDestinationAndRefund(
+				parts[2],
+				newAddressResolver(ctx, keeper, asset.Chain),
+				common.NewAddress,
+			)
+			if err != nil {
+				return AddLiquidityMemo{}, err
 			}
 		case keeper == nil:
 			addr, err = common.NewAddress(parts[2])

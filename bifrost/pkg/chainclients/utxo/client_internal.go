@@ -527,13 +527,8 @@ func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool, 
 	addresses := c.getAddressesFromScriptPubKey(output.ScriptPubKey)
 	toAddr := addresses[0]
 
-	// strip CashAddr prefixes for BCH/XEC before matching vault addresses
-	if c.cfg.ChainID.Equals(common.BCHChain) {
-		toAddr = c.stripCashAddressPrefix(toAddr)
-	}
-	if c.cfg.ChainID.Equals(common.XECChain) {
-		toAddr = stripXECAddressPrefix(toAddr)
-	}
+	// Match daemon-reported CashAddr values to THORChain's canonical vault form.
+	toAddr = c.normalizeCashAddress(toAddr)
 
 	isInbound := c.isAsgardAddress(toAddr)
 	if isInbound {
@@ -562,15 +557,6 @@ func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool, 
 		Memo: memo,
 		Gas:  gas,
 	}, nil
-}
-
-// stripCashAddressPrefix removes the CashAddr prefix before ":" when present.
-func (c *Client) stripCashAddressPrefix(addr string) string {
-	split := strings.Split(addr, ":")
-	if len(split) > 1 {
-		return split[1]
-	}
-	return split[0]
 }
 
 func (c *Client) getVinZeroTxs(block *btcjson.GetBlockVerboseTxResult) (map[string]*btcjson.TxRawResult, error) {
@@ -772,13 +758,7 @@ func (c *Client) getOutput(sender string, tx *btcjson.TxRawResult, consolidate b
 			// TODO check what we do if get multiple addresses
 			continue
 		}
-		receiver := addresses[0]
-		if c.cfg.ChainID.Equals(common.BCHChain) {
-			receiver = c.stripCashAddressPrefix(receiver)
-		}
-		if c.cfg.ChainID.Equals(common.XECChain) {
-			receiver = stripXECAddressPrefix(receiver)
-		}
+		receiver := c.normalizeCashAddress(addresses[0])
 		// To be observed, either the sender or receiver must be an observed THORChain vault;
 		// if the sender is a vault then assume the first Vout is the output (and a later Vout could be change).
 		// If the sender isn't a vault, then do do not for instance
@@ -861,14 +841,7 @@ func (c *Client) getSender(tx *btcjson.TxRawResult, vinZeroTxs map[string]*btcjs
 	if len(addresses) == 0 {
 		return "", fmt.Errorf("no address available in vout")
 	}
-	address := addresses[0]
-
-	if c.cfg.ChainID.Equals(common.BCHChain) {
-		address = c.stripCashAddressPrefix(address)
-	}
-	if c.cfg.ChainID.Equals(common.XECChain) {
-		address = stripXECAddressPrefix(address)
-	}
+	address := c.normalizeCashAddress(addresses[0])
 	return address, nil
 }
 

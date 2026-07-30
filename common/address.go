@@ -509,8 +509,20 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 			return MockNet
 		}
 	case XECChain:
-		if addr.IsChain(chain) {
-			return mainNetPredicate()
+		if params := GetXECAddressParams(MainNet); params != nil {
+			if _, err := bchutil.DecodeAddress(addr.String(), params); err == nil {
+				return mainNetPredicate()
+			}
+		}
+		if params := GetXECAddressParams(TestNet); params != nil {
+			if _, err := bchutil.DecodeAddress(addr.String(), params); err == nil {
+				return MockNet
+			}
+		}
+		if params := GetXECAddressParams(MockNet); params != nil {
+			if _, err := bchutil.DecodeAddress(addr.String(), params); err == nil {
+				return MockNet
+			}
 		}
 	case DOGEChain:
 		// Check mainnet other formats

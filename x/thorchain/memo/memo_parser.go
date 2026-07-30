@@ -29,7 +29,7 @@ func newParser(ctx cosmos.Context, keeper keeper.Keeper, version semver.Version,
 		return parser{}, fmt.Errorf("memo can't be empty")
 	}
 	memo = strings.Split(memo, "|")[0]
-	parts := strings.Split(memo, ":")
+	parts := splitMemoParts(memo)
 	memoType, err := StringToTxType(parts[0])
 	if err != nil {
 		return parser{}, err
@@ -44,6 +44,40 @@ func newParser(ctx cosmos.Context, keeper keeper.Keeper, version semver.Version,
 		parts:   parts,
 		errs:    make([]error, 0),
 	}, nil
+}
+
+// splitMemoParts preserves an XEC CashAddr as one memo field even though the
+// address itself contains the memo separator. Only a checksum-valid XEC
+// address is rejoined, so ordinary fields that happen to contain "ecash",
+// "ectest", or "ecregtest" keep the existing grammar.
+func splitMemoParts(memo string) []string {
+	var parts []string
+	var token string
+	var check bool
+
+	prefix := common.XECChain.AddressPrefix(common.CurrentChainNetwork)
+
+	for part := range strings.SplitSeq(memo, ":") {
+		tokens := strings.Split(part, "/")
+		joined := false
+
+		if check && len(parts) > 0 {
+			address := token + ":" + tokens[0]
+			if common.IsValidXECAddress(address) {
+				parts[len(parts)-1] += ":" + part
+				joined = true
+			}
+		}
+
+		if !joined {
+			parts = append(parts, part)
+		}
+
+		token = tokens[len(tokens)-1]
+		check = strings.EqualFold(token, prefix)
+	}
+
+	return parts
 }
 
 func (p *parser) getType() TxType {
@@ -403,36 +437,50 @@ func (p *parser) getUintArrayBySeparator(idx int, required bool, separator strin
 	return result
 }
 
-func (p *parser) getAddressAndRefundAddressWithKeeper(idx int, required bool, def common.Address, chain common.Chain) (common.Address, common.Address) {
-	p.incRequired(required)
+type addressResolver func(string) (common.Address, error)
 
-	//nolint:ineffassign
-	destination := common.NoAddress
+func newAddressResolver(ctx cosmos.Context, k keeper.Keeper, chain common.Chain) addressResolver {
+	if k == nil {
+		return common.NewAddress
+	}
+	return func(value string) (common.Address, error) {
+		return FetchAddress(ctx, k, value, chain)
+	}
+}
+
+// parseDestinationAndRefund applies the shared destination/refund grammar while
+// allowing callers to choose literal or state-backed address resolution.
+func parseDestinationAndRefund(value string, resolveDestination, resolveRefund addressResolver) (common.Address, common.Address, error) {
+	destinationValue, refundValue, hasRefund := strings.Cut(value, "/")
+
+	destination, err := resolveDestination(destinationValue)
+	if err != nil {
+		return common.NoAddress, common.NoAddress, fmt.Errorf("cannot parse '%s' as an Address: %w", destinationValue, err)
+	}
+
 	refundAddress := common.NoAddress
-	addresses := p.get(idx)
-
-	if strings.Contains(addresses, "/") {
-		parts := strings.SplitN(addresses, "/", 2)
-		if p.keeper == nil {
-			dest, err := common.NewAddress(parts[0])
-			if err != nil {
-				if required || parts[0] != "" {
-					p.addErr(fmt.Errorf("cannot parse '%s' as an Address: %w", parts[0], err))
-				}
-			}
-			destination = dest
-		} else {
-			destination = p.getAddressFromString(parts[0], chain, required)
-		}
-		if len(parts) > 1 {
-			refundAddress, _ = common.NewAddress(parts[1])
-		}
-	} else {
-		destination = p.getAddressWithKeeper(idx, false, common.NoAddress, chain)
+	if hasRefund {
+		// Refund addresses are optional, so an invalid value is treated as absent.
+		refundAddress, _ = resolveRefund(refundValue)
 	}
 
 	if destination.IsEmpty() && !refundAddress.IsEmpty() {
-		p.addErr(fmt.Errorf("refund address is set but destination address is empty"))
+		return common.NoAddress, common.NoAddress, fmt.Errorf("refund address is set but destination address is empty")
+	}
+
+	return destination, refundAddress, nil
+}
+
+func (p *parser) getAddressAndRefundAddressWithKeeper(idx int, required bool, chain common.Chain) (common.Address, common.Address) {
+	p.incRequired(required)
+
+	destination, refundAddress, err := parseDestinationAndRefund(
+		p.get(idx),
+		newAddressResolver(p.ctx, p.keeper, chain),
+		common.NewAddress,
+	)
+	if err != nil && (required || p.get(idx) != "") {
+		p.addErr(err)
 	}
 
 	return destination, refundAddress

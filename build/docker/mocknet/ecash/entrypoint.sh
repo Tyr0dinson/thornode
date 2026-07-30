@@ -18,8 +18,11 @@ bitcoin_wallet_cli() {
   bitcoin_cli -rpcwallet="$WALLET_NAME" "$@"
 }
 
+# Disable Avalanche because single-node mocknet has no quorum to finalize
+# mempool transactions for inclusion in mined blocks.
 bitcoind \
   -regtest \
+  -avalanche=0 \
   -server=1 \
   -listen=1 \
   -txindex=1 \

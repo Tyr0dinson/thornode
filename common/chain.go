@@ -386,6 +386,9 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 		return "0x"
 	}
 	if c.Equals(XECChain) {
+		if params := GetXECAddressParams(cn); params != nil {
+			return params.CashAddressPrefix
+		}
 		return "ecash"
 	}
 	if c.Equals(TAOChain) {

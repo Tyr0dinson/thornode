@@ -24,6 +24,7 @@ import (
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"github.com/gcash/bchutil"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
 	. "gopkg.in/check.v1"
@@ -431,9 +432,20 @@ func (s *CoverageBackfillSuite) TestGetAccount(c *C) {
 // client_internal.go tests
 ////////////////////////////////////////////////////////////////////////////////////////
 
-func (s *CoverageBackfillSuite) TestStripCashAddressPrefix(c *C) {
-	c.Assert(s.client.stripCashAddressPrefix("bitcoincash:qp3w"), Equals, "qp3w")
-	c.Assert(s.client.stripCashAddressPrefix("qp3w"), Equals, "qp3w")
+func (s *CoverageBackfillSuite) TestNormalizeCashAddressBCH(c *C) {
+	client := *s.client
+	client.cfg.ChainID = common.BCHChain
+
+	params := client.getChainCfgBCH()
+	address, err := bchutil.NewAddressPubKeyHash(make([]byte, 20), params)
+	c.Assert(err, IsNil)
+
+	bare := address.String()
+	prefixed := params.CashAddressPrefix + ":" + bare
+	c.Check(client.normalizeCashAddress(prefixed), Equals, bare)
+	c.Check(client.normalizeCashAddress(bare), Equals, bare)
+
+	c.Check(s.client.normalizeCashAddress(prefixed), Equals, prefixed)
 }
 
 func (s *CoverageBackfillSuite) TestDecodeHexString(c *C) {

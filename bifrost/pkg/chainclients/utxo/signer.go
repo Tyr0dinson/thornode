@@ -137,7 +137,9 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		if !ok {
 			return nil, nil, nil, fmt.Errorf("decoded xec address has unexpected type %T", outputAddr)
 		}
-		outputAddrStr = xecAddr.String()
+		// bchutil omits the CashAddr prefix; normalize before comparing with
+		// THORChain's canonical XEC destination.
+		outputAddrStr = c.normalizeCashAddress(xecAddr.String())
 	case common.LTCChain:
 		outputAddr, err = ltctxscript.DecodeAddress(tx.ToAddress.String(), c.getChainCfgLTC())
 		if err != nil {
@@ -576,8 +578,12 @@ func (c *Client) BroadcastTx(txOut stypes.TxOutItem, payload []byte) (string, er
 
 		var maxFee any
 		switch c.cfg.ChainID {
-		case common.DOGEChain, common.BCHChain, common.XECChain:
+		case common.DOGEChain, common.BCHChain:
 			maxFee = true // "allowHighFees"
+		case common.XECChain:
+			// Bitcoin ABC's second argument is a numeric maximum fee rate;
+			// zero disables the fee-rate limit.
+			maxFee = 0
 		case common.LTCChain, common.BTCChain:
 			// "maxfeerate" is denominated in BTC/kvB, not sats - Core multiplies by 1e8
 			// itself and rejects anything >= 1 BTC/kvB. 0.1 is Core's own default.

@@ -385,8 +385,10 @@ func (c *Client) BroadcastTx(payload []byte) (string, error) {
 
 	var maxFee any
 	switch c.chain {
-	case common.DOGEChain, common.BCHChain, common.XECChain:
+	case common.DOGEChain, common.BCHChain:
 		maxFee = true // "allowHighFees"
+	case common.XECChain:
+		maxFee = 0 // disable the fee-rate limit
 	case common.LTCChain, common.BTCChain:
 		maxFee = 10_000_000
 	}

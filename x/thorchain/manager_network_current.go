@@ -86,6 +86,7 @@ func (vm *NetworkMgr) processGenesisSetup(ctx cosmos.Context) error {
 			common.BTCChain,
 			common.LTCChain,
 			common.BCHChain,
+			common.XECChain,
 			common.ETHChain,
 			common.DOGEChain,
 			common.AVAXChain,

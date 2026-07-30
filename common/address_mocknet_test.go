@@ -69,3 +69,12 @@ func (s *AddressSuite) TestXECCashAddrCasing(c *C) {
 	c.Assert(IsValidXECAddress(upper), Equals, true)
 	c.Assert(IsValidXECAddress(mixed), Equals, false)
 }
+
+func (s *AddressSuite) TestXECAddressNetwork(c *C) {
+	addr, err := NewAddress("ecregtest:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cp764s9vu")
+	c.Assert(err, IsNil)
+	c.Check(addr.GetChain(), Equals, XECChain)
+	c.Check(addr.GetNetwork(XECChain), Equals, MockNet)
+	c.Check(XECChain.IsValidAddress(addr), Equals, true)
+	c.Check(XECChain.AddressPrefix(MockNet), Equals, "ecregtest")
+}

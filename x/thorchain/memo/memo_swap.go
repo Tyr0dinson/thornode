@@ -160,7 +160,7 @@ func (p *parser) ParseSwapMemo() (SwapMemo, error) {
 	asset := p.getAsset(1, true, common.EmptyAsset)
 
 	// DESTADDR can be empty , if it is empty , it will swap to the sender address
-	destination, refundAddress := p.getAddressAndRefundAddressWithKeeper(2, false, common.NoAddress, asset.Chain)
+	destination, refundAddress := p.getAddressAndRefundAddressWithKeeper(2, false, asset.Chain)
 
 	// price limit can be empty , when it is empty , there is no price protection
 	var slip cosmos.Uint
@@ -260,15 +260,16 @@ func ParseSwapMemoV1(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asse
 	}
 	// DESTADDR can be empty , if it is empty , it will swap to the sender address
 	destination := common.NoAddress
+	refundAddress := common.NoAddress
 	affAddr := common.NoAddress
 	affPts := uint64(0)
 	if len(parts) > 2 {
 		if len(parts[2]) > 0 {
-			if keeper == nil {
-				destination, err = common.NewAddress(parts[2])
-			} else {
-				destination, err = FetchAddress(ctx, keeper, parts[2], asset.Chain)
-			}
+			destination, refundAddress, err = parseDestinationAndRefund(
+				parts[2],
+				newAddressResolver(ctx, keeper, asset.Chain),
+				common.NewAddress,
+			)
 			if err != nil {
 				return SwapMemo{}, err
 			}
@@ -298,5 +299,5 @@ func ParseSwapMemoV1(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asse
 		}
 	}
 
-	return NewSwapMemo(asset, destination, slip, affAddr, cosmos.NewUint(affPts), "", "", cosmos.ZeroUint(), swapType, 0, 0, types.NewTHORName("", 0, nil), "", nil, nil), nil
+	return NewSwapMemo(asset, destination, slip, affAddr, cosmos.NewUint(affPts), "", "", cosmos.ZeroUint(), swapType, 0, 0, types.NewTHORName("", 0, nil), refundAddress, nil, nil), nil
 }

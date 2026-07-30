@@ -48,6 +48,58 @@ func (s *MemoParserSuite) TestTxTypeIsInbound(c *C) {
 	c.Check(TxUnknown.IsInbound(), Equals, false)
 }
 
+func (s *MemoParserSuite) TestParseAddLiquidityMemoWithXECAddress(c *C) {
+	xecAddress := "ecash:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cfrxuq9n3"
+	if common.CurrentChainNetwork == common.MockNet {
+		xecAddress = "ecregtest:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cp764s9vu"
+	}
+
+	memo, err := ParseMemo(common.LatestVersion, "+:XEC.XEC:"+xecAddress)
+	c.Assert(err, IsNil)
+
+	add, ok := memo.(AddLiquidityMemo)
+	c.Assert(ok, Equals, true)
+	c.Check(add.GetDestination().String(), Equals, xecAddress)
+
+	// A non-address field named after an XEC prefix must not consume the next
+	// memo field.
+	c.Check(splitMemoParts("+:BTC.BTC:ecash:100"), DeepEquals,
+		[]string{"+", "BTC.BTC", "ecash", "100"})
+}
+
+func (s *MemoParserSuite) TestParseSwapMemoWithXECAddress(c *C) {
+	xecAddress := "ecash:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cfrxuq9n3"
+	if common.CurrentChainNetwork == common.MockNet {
+		xecAddress = "ecregtest:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cp764s9vu"
+	}
+
+	memo, err := ParseMemo(common.LatestVersion, "=:XEC.XEC:"+xecAddress)
+	c.Assert(err, IsNil)
+
+	swap, ok := memo.(SwapMemo)
+	c.Assert(ok, Equals, true)
+	c.Check(swap.GetDestination().String(), Equals, xecAddress)
+
+	compound := "=:XEC.XEC:" + xecAddress + "/" + xecAddress
+	c.Check(splitMemoParts(compound), DeepEquals,
+		[]string{"=", "XEC.XEC", xecAddress + "/" + xecAddress})
+
+	memo, err = ParseMemo(common.LatestVersion, compound)
+	c.Assert(err, IsNil)
+	swap, ok = memo.(SwapMemo)
+	c.Assert(ok, Equals, true)
+	c.Check(swap.GetDestination().String(), Equals, xecAddress)
+	c.Check(swap.GetRefundAddress().String(), Equals, xecAddress)
+
+	btcAddress := "bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej"
+	memo, err = ParseMemo(common.LatestVersion, "=:BTC.BTC:"+btcAddress+"/"+xecAddress)
+	c.Assert(err, IsNil)
+	swap, ok = memo.(SwapMemo)
+	c.Assert(ok, Equals, true)
+	c.Check(swap.GetDestination().String(), Equals, btcAddress)
+	c.Check(swap.GetRefundAddress().String(), Equals, xecAddress)
+}
+
 func (s *MemoParserSuite) TestTxTypeIsOutbound(c *C) {
 	c.Check(TxOutbound.IsOutbound(), Equals, true)
 	c.Check(TxRefund.IsOutbound(), Equals, true)
@@ -1097,19 +1149,26 @@ func (s *MemoParserSuite) TestGetAddressAndRefundAddressWithoutKeeper(c *C) {
 
 	// With refund address (no keeper)
 	p := parser{parts: []string{fmt.Sprintf("%s/%s", addr, refAddr)}, errs: make([]error, 0), keeper: nil}
-	dest, refund := p.getAddressAndRefundAddressWithKeeper(0, false, common.NoAddress, common.THORChain)
+	dest, refund := p.getAddressAndRefundAddressWithKeeper(0, false, common.THORChain)
 	c.Check(dest, Equals, addr)
 	c.Check(refund, Equals, refAddr)
 
 	// Without refund address (no keeper)
 	p = parser{parts: []string{addr.String()}, errs: make([]error, 0), keeper: nil}
-	dest, refund = p.getAddressAndRefundAddressWithKeeper(0, false, common.NoAddress, common.THORChain)
+	dest, refund = p.getAddressAndRefundAddressWithKeeper(0, false, common.THORChain)
 	c.Check(dest, Equals, addr)
 	c.Check(refund, Equals, common.NoAddress)
 
+	// An optional invalid refund must not discard a valid destination.
+	p = parser{parts: []string{fmt.Sprintf("%s/invalid", addr)}, errs: make([]error, 0), keeper: nil}
+	dest, refund = p.getAddressAndRefundAddressWithKeeper(0, false, common.THORChain)
+	c.Check(dest, Equals, addr)
+	c.Check(refund, Equals, common.NoAddress)
+	c.Check(p.errs, HasLen, 0)
+
 	// Empty destination with refund address should error
 	p = parser{parts: []string{fmt.Sprintf("/%s", refAddr)}, errs: make([]error, 0), keeper: nil}
-	dest, refund = p.getAddressAndRefundAddressWithKeeper(0, false, common.NoAddress, common.THORChain)
+	dest, refund = p.getAddressAndRefundAddressWithKeeper(0, false, common.THORChain)
 	c.Check(dest.IsEmpty(), Equals, true)
 	c.Check(refund, Equals, refAddr)
 	c.Check(len(p.errs) > 0, Equals, true) // refund set but no destination

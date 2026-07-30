@@ -3,7 +3,6 @@ package utxo
 import (
 	"fmt"
 	"math"
-	"strings"
 
 	"github.com/btcsuite/btcutil"
 	bchchaincfg "github.com/gcash/bchd/chaincfg"
@@ -17,24 +16,6 @@ func (c *Client) getChainCfgXEC() *bchchaincfg.Params {
 		c.log.Fatal().Msg("unsupported network")
 	}
 	return params
-}
-
-func stripXECAddressPrefix(addr string) string {
-	if len(addr) == 0 {
-		return addr
-	}
-
-	params := common.GetXECAddressParams(common.CurrentChainNetwork)
-	if params == nil {
-		return addr
-	}
-
-	prefix, payload, found := strings.Cut(addr, ":")
-	if !found || !strings.EqualFold(prefix, params.CashAddressPrefix) {
-		return addr
-	}
-
-	return payload
 }
 
 func rpcAmountToSatsForChain(chain common.Chain, value float64) (int64, error) {

@@ -647,7 +647,7 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-    image: ${DOCKER_MIRROR:-}bitcoinabc/bitcoin-abc
+    image: ${DOCKER_MIRROR:-}bitcoinabc/bitcoin-abc:0.33.8
     restart: unless-stopped
     volumes:
       - "./mocknet/ecash/entrypoint.sh:/mocknet/entrypoint.sh"
