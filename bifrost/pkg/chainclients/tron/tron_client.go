@@ -593,7 +593,7 @@ func (c *TronClient) SignTx(
 			return nil, nil, nil, err
 		}
 
-		nativeFeeLimit := c.config.ChainID.ThorchainToNativeGas(txOutItem.MaxGas[0].Amount)
+		nativeFeeLimit := c.config.ChainID.ThorchainToNativeGasFloor(txOutItem.MaxGas[0].Amount)
 		tronTx, err = c.createTrc20Transaction(
 			fromAddress,
 			txOutItem.ToAddress.String(),
@@ -766,7 +766,7 @@ func isTronNotFoundErr(err error) bool {
 // GetGasEstimateForSolvency returns the current gas fee estimate used by solvency checks.
 func (c *TronClient) GetGasEstimateForSolvency() cosmos.Uint {
 	fee := math.NewUint(c.tronScanner.currentFee.Load())
-	return c.config.ChainID.NativeGasToThorchain(fee)
+	return c.config.ChainID.NativeGasToThorchainFloor(fee)
 }
 
 func (c *TronClient) ShouldReportSolvency(height int64) bool {

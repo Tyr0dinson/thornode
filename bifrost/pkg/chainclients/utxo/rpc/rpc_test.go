@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	ethrpc "github.com/ethereum/go-ethereum/rpc"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	. "gopkg.in/check.v1"
 )
 
@@ -183,6 +185,49 @@ func (s *RPCSuite) TestNewClientInvalidURL(c *C) {
 	c.Assert(cl, IsNil)
 }
 
+func (s *RPCSuite) TestAmountConverter(c *C) {
+	testCases := []struct {
+		chain     common.Chain
+		rpcAmount float64
+		baseUnits uint64
+	}{
+		{chain: common.BTCChain, rpcAmount: 0.00000257, baseUnits: 257},
+		{chain: common.BCHChain, rpcAmount: 0.00000257, baseUnits: 257},
+		{chain: common.XECChain, rpcAmount: 0.01, baseUnits: 1},
+		{chain: common.XECChain, rpcAmount: 1.23, baseUnits: 123},
+		{chain: common.XECChain, rpcAmount: 100_000_000_000, baseUnits: 10_000_000_000_000},
+	}
+
+	for _, tc := range testCases {
+		client := &Client{amounts: newConverter(tc.chain)}
+		baseUnits, err := client.ToBaseUnits(tc.rpcAmount)
+		c.Assert(err, IsNil, Commentf("chain: %s, amount: %v", tc.chain, tc.rpcAmount))
+		c.Check(baseUnits.Equal(cosmos.NewUint(tc.baseUnits)), Equals, true)
+
+		rpcAmount, err := client.FromBaseUnits(baseUnits)
+		c.Assert(err, IsNil)
+		c.Check(rpcAmount, Equals, tc.rpcAmount)
+	}
+}
+
+func (s *RPCSuite) TestAmountConverterRejectsInvalidAmounts(c *C) {
+	client := &Client{amounts: newConverter(common.XECChain)}
+	for _, rpcAmount := range []float64{1.001, -1, math.Inf(1), math.NaN(), math.MaxFloat64} {
+		_, err := client.ToBaseUnits(rpcAmount)
+		c.Check(err, NotNil, Commentf("amount: %v", rpcAmount))
+	}
+
+	_, err := client.FromBaseUnits(cosmos.Uint{})
+	c.Check(err, NotNil)
+}
+
+func (s *RPCSuite) TestAmountConverterAcceptsNegativeZero(c *C) {
+	client := &Client{amounts: newConverter(common.XECChain)}
+	baseUnits, err := client.ToBaseUnits(math.Copysign(0, -1))
+	c.Assert(err, IsNil)
+	c.Check(baseUnits.IsZero(), Equals, true)
+}
+
 // ---------------------------------------------------------------------------
 // GetBlockCount tests
 // ---------------------------------------------------------------------------
@@ -308,6 +353,32 @@ func (s *RPCSuite) TestGetBlockStats(c *C) {
 	stats, err := cl.GetBlockStats("abc123")
 	c.Assert(err, IsNil)
 	c.Assert(stats, NotNil)
+}
+
+func (s *RPCSuite) TestGetAverageFeeRateUsesNativeUnits(c *C) {
+	testCases := []struct {
+		chain  common.Chain
+		result map[string]interface{}
+	}{
+		{chain: common.BTCChain, result: map[string]interface{}{"avgfeerate": 257}},
+		{chain: common.LTCChain, result: map[string]interface{}{"avgfeerate": 257}},
+		{chain: common.BCHChain, result: map[string]interface{}{"avgfeerate": 0.00000257}},
+		{chain: common.XECChain, result: map[string]interface{}{"avgfeerate": 2.57}},
+	}
+
+	for _, tc := range testCases {
+		srv := newMockRPCServer(func(method string, params []interface{}) (interface{}, *btcjson.RPCError) {
+			c.Assert(method, Equals, "getblockstats")
+			return tc.result, nil
+		})
+		client, err := NewClient(srv.URL, "user", "pass", 0, time.Second*10, tc.chain, zerolog.Nop())
+		c.Assert(err, IsNil)
+
+		rate, err := client.GetAverageFeeRate("abc123")
+		c.Assert(err, IsNil)
+		c.Check(rate, Equals, uint64(257), Commentf("chain: %s", tc.chain))
+		srv.Close()
+	}
 }
 
 // ---------------------------------------------------------------------------

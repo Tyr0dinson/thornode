@@ -337,7 +337,7 @@ func (c *Client) GetAccount(pubkey common.PubKey, height *big.Int) (common.Accou
 		return acct, fmt.Errorf("fail to get UTXOs: %w", err)
 	}
 
-	totalSats := int64(0)
+	totalBaseUnits := cosmos.ZeroUint()
 	for _, item := range utxos {
 		if !c.isValidUTXO(item.ScriptPubKey) {
 			continue
@@ -348,15 +348,15 @@ func (c *Client) GetAccount(pubkey common.PubKey, height *big.Int) (common.Accou
 				continue
 			}
 		}
-		amt, err := c.rpcAmountToSats(item.Amount)
+		baseUnits, err := c.rpc.ToBaseUnits(item.Amount)
 		if err != nil {
 			return acct, fmt.Errorf("fail to convert UTXO amount: %w", err)
 		}
-		totalSats += amt
+		totalBaseUnits = totalBaseUnits.Add(baseUnits)
 	}
 	return common.NewAccount(0, 0,
 		common.Coins{
-			common.NewCoin(c.cfg.ChainID.GetGasAsset(), cosmos.NewUint(uint64(totalSats))),
+			c.cfg.ChainID.NativeGasToThorCoin(totalBaseUnits),
 		}, false), nil
 }
 
@@ -762,7 +762,8 @@ func (c *Client) ReportSolvency(height int64) error {
 	if c.GetChain() == common.ZECChain {
 		txSize = 1 // ZEC lastFeeRate is already the full ZIP-317 fee, not a per-byte rate
 	}
-	currentGasFee := cosmos.NewUint(3 * txSize * c.lastFeeRate.Load())
+	currentGasFeeNative := cosmos.NewUint(3 * txSize * c.lastFeeRate.Load())
+	currentGasFee := c.cfg.ChainID.NativeGasToThorchainFloor(currentGasFeeNative)
 
 	// report insolvent asgard vaults,
 	// or else all if the chain is halted and all are solvent

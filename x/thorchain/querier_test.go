@@ -2171,7 +2171,7 @@ func (s *QuerierSuite) TestQuerySwap(c *C) {
 	)
 	asgard.PubKeyFrost = GetRandomEd25519PubKey()
 	asgard.AddFunds(common.Coins{
-		common.NewCoin(common.XMRAsset, common.XMRChain.ThorchainToNativeGas(cosmos.NewUint(100*common.One))),
+		common.NewCoin(common.XMRAsset, common.XMRChain.ThorchainToNativeGasFloor(cosmos.NewUint(100*common.One))),
 	})
 
 	c.Assert(s.mgr.Keeper().SetVault(s.ctx, asgard), IsNil)

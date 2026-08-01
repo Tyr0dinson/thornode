@@ -2,6 +2,7 @@ package common
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/btcsuite/btcd/chaincfg"
@@ -265,8 +266,10 @@ func (c Chain) GetGasUnits() (gasRateUnits string, gasRateUnitsPerOne cosmos.Uin
 		return "drop", cosmos.NewUint(1e6)
 	case TRONChain:
 		return "sun", cosmos.NewUint(1e6)
-	case BTCChain, BCHChain, XECChain, LTCChain, DOGEChain, ZECChain:
+	case BTCChain, BCHChain, LTCChain, DOGEChain, ZECChain:
 		return "satsperbyte", cosmos.NewUint(1e8)
+	case XECChain:
+		return "satsperbyte", cosmos.NewUint(1e2)
 	case ETHChain, BSCChain, POLChain:
 		return "gwei", cosmos.NewUint(1e9)
 	case AVAXChain:
@@ -290,23 +293,48 @@ func (c Chain) GetGasUnits() (gasRateUnits string, gasRateUnitsPerOne cosmos.Uin
 	}
 }
 
-// NativeGasToThorchain converts native gas units to THORChain units (1e8).
-func (c Chain) NativeGasToThorchain(native cosmos.Uint) cosmos.Uint {
+// NativeGasToThorchainFloor converts native gas units to THORChain units
+// (1e8), flooring amounts that are not exactly representable.
+func (c Chain) NativeGasToThorchainFloor(native cosmos.Uint) cosmos.Uint {
 	_, gasRateUnitsPerOne := c.GetGasUnits()
-	return native.MulUint64(One).Quo(gasRateUnitsPerOne)
+	thorUnitsPerOne := cosmos.NewUint(One)
+	if gasRateUnitsPerOne.LTE(thorUnitsPerOne) {
+		return native.Mul(thorUnitsPerOne.Quo(gasRateUnitsPerOne))
+	}
+	return native.Quo(gasRateUnitsPerOne.Quo(thorUnitsPerOne))
 }
 
-// ThorchainToNativeGas converts THORChain units (1e8) to native gas units.
-func (c Chain) ThorchainToNativeGas(thorchain cosmos.Uint) cosmos.Uint {
+// ThorchainToNativeGasFloor converts THORChain units (1e8) to native gas
+// units, flooring amounts that are not exactly representable.
+func (c Chain) ThorchainToNativeGasFloor(thorchain cosmos.Uint) cosmos.Uint {
 	_, gasRateUnitsPerOne := c.GetGasUnits()
-	return thorchain.Mul(gasRateUnitsPerOne).QuoUint64(One)
+	thorUnitsPerOne := cosmos.NewUint(One)
+	if gasRateUnitsPerOne.LTE(thorUnitsPerOne) {
+		return thorchain.Quo(thorUnitsPerOne.Quo(gasRateUnitsPerOne))
+	}
+	return thorchain.Mul(gasRateUnitsPerOne.Quo(thorUnitsPerOne))
+}
+
+// ThorchainToNativeGasExact converts THORChain units (1e8) to native gas
+// units and rejects amounts that are not exactly representable.
+func (c Chain) ThorchainToNativeGasExact(thorchain cosmos.Uint) (cosmos.Uint, error) {
+	native := c.ThorchainToNativeGasFloor(thorchain)
+	if !c.NativeGasToThorchainFloor(native).Equal(thorchain) {
+		return cosmos.Uint{}, fmt.Errorf(
+			"%s amount %s is not representable with %d decimals",
+			c,
+			thorchain,
+			c.GetGasAssetDecimal(),
+		)
+	}
+	return native, nil
 }
 
 // NativeGasToThorCoin converts native gas units to Coin with THORChain units
 // (1e8). The coin Decimals field records the chain gas-asset precision
 // metadata; it does not describe the precision of the Amount field.
 func (c Chain) NativeGasToThorCoin(native cosmos.Uint) Coin {
-	coin := NewCoin(c.GetGasAsset(), c.NativeGasToThorchain(native))
+	coin := NewCoin(c.GetGasAsset(), c.NativeGasToThorchainFloor(native))
 	coin.Decimals = c.GetGasAssetDecimal()
 	return coin
 }
@@ -332,7 +360,8 @@ func (c Chain) NativeGasToThorCoinCeil(native cosmos.Uint) Coin {
 	return coin
 }
 
-// GetGasAssetDecimal returns the external precision of the chain gas asset.
+// GetGasAssetDecimal returns the precision metadata THORChain uses for the
+// chain gas asset.
 func (c Chain) GetGasAssetDecimal() int64 {
 	switch c {
 	case GAIAChain, NOBLEChain, TRONChain, ADAChain:
@@ -345,6 +374,8 @@ func (c Chain) GetGasAssetDecimal() int64 {
 		return 10
 	case XMRChain:
 		return 12
+	case XECChain:
+		return 2
 	default:
 		return cosmos.DefaultCoinDecimals
 	}
@@ -463,7 +494,7 @@ func (c Chain) DustThreshold() cosmos.Uint {
 	case BCHChain:
 		return cosmos.NewUint(10_000)
 	case XECChain:
-		return cosmos.NewUint(546)
+		return cosmos.NewUint(10_000_000_000)
 	case ZECChain:
 		return cosmos.NewUint(15_000)
 	case DOGEChain:

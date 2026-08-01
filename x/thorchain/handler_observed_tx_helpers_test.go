@@ -169,6 +169,18 @@ func (s *HandlerObservedTxHelpersSuite) TestGenerateReferenceMemoIDDecimalPrecis
 	}
 }
 
+func (s *HandlerObservedTxHelpersSuite) TestExtractReferenceFromNormalizedXECAmount(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Bifrost observes 1234.56 XEC as 123456000000 in THORChain's 1e8
+	// amount field. XEC's two-decimal precision normalizes that back to
+	// 123456 native cents before reference extraction.
+	amount := cosmos.NewUint(123_456).MulUint64(1_000_000).Uint64()
+	refID, err := ExtractReferenceFromAmount(ctx, mgr, common.XECAsset, amount)
+	c.Assert(err, IsNil)
+	c.Assert(refID, Equals, "23456")
+}
+
 // TestExtractReferenceFromAmountERC20 exercises ExtractReferenceFromAmount directly
 // (rather than through the generateReferenceMemoID wrapper) for ETH ERC20 assets at
 // both the 6-decimal boundary (USDC, USDT — the "divide to native" branch) and

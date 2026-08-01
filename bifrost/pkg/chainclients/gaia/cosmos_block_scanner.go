@@ -271,7 +271,7 @@ func (c *CosmosBlockScanner) updateGasCache(tx ctypes.FeeTx) {
 	fee = fee.Quo(sdkmath.NewUint(GasPriceFactor))             // unroll the multiple
 
 	// gas rate from THORChain decimals to gas rate units
-	fee = c.cfg.ChainID.ThorchainToNativeGas(fee)
+	fee = c.cfg.ChainID.ThorchainToNativeGasFloor(fee)
 	if fee.IsZero() {
 		fee = cosmos.OneUint()
 	}

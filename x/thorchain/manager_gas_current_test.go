@@ -498,3 +498,60 @@ func (GasManagerTestSuite) TestGetAssetOutboundFeeLowDecimalGasChains(c *C) {
 		c.Assert(fee.Uint64(), Equals, uint64(19050000), Commentf("%s fee %d", tc.chain, fee.Uint64()))
 	}
 }
+
+func (GasManagerTestSuite) TestGetAssetOutboundFeeUsesChainDecimalsWithoutPool(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	gasMgr := newGasMgr(constants.GetConstantValues(GetCurrentVersion()), k)
+
+	// Use a non-integer multiplier so the unrounded fee contains half of an XEC
+	// native unit. This is the case that made an early refund unsignable before
+	// the XEC pool had recorded its decimals.
+	k.SetMimir(ctx, constants.TargetOutboundFeeSurplusRune.String(), 100*common.One)
+	k.SetMimir(ctx, constants.MinOutboundFeeMultiplierBasisPoints.String(), 12_345)
+	k.SetMimir(ctx, constants.MaxOutboundFeeMultiplierBasisPoints.String(), 12_345)
+	c.Assert(k.SaveNetworkFee(ctx, common.XECChain, NewNetworkFee(common.XECChain, 1500, 2)), IsNil)
+
+	pool, err := k.GetPool(ctx, common.XECAsset)
+	c.Assert(err, IsNil)
+	c.Assert(pool.IsEmpty(), Equals, true)
+	c.Assert(pool.Decimals, Equals, int64(0))
+
+	fee, err := gasMgr.GetAssetOutboundFee(ctx, common.XECAsset, false)
+	c.Assert(err, IsNil)
+	c.Assert(fee.String(), Equals, "3703000000")
+
+	nativeFee, err := common.XECChain.ThorchainToNativeGasExact(fee)
+	c.Assert(err, IsNil)
+	c.Assert(nativeFee.Uint64(), Equals, uint64(3703))
+}
+
+func (GasManagerTestSuite) TestGetAssetOutboundFeeRoundsMinimumToChainDecimals(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	gasMgr := newGasMgr(constants.GetConstantValues(GetCurrentVersion()), k)
+
+	// Model a gas pool with balances but without stored decimal metadata. Its
+	// minimum USD fee converts to half of an XEC native unit.
+	c.Assert(k.SetPool(ctx, Pool{
+		Asset:        common.XECAsset,
+		BalanceRune:  cosmos.NewUint(common.One),
+		BalanceAsset: cosmos.NewUint(3_703_500_000),
+		Decimals:     0,
+		Status:       PoolAvailable,
+	}), IsNil)
+	k.SetMimir(ctx, "DollarsPerRune", common.One)
+	k.SetMimir(ctx, constants.MinimumL1OutboundFeeUSD.String(), common.One)
+	k.SetMimir(ctx, constants.TargetOutboundFeeSurplusRune.String(), 100*common.One)
+	k.SetMimir(ctx, constants.MinOutboundFeeMultiplierBasisPoints.String(), 10_000)
+	k.SetMimir(ctx, constants.MaxOutboundFeeMultiplierBasisPoints.String(), 10_000)
+	c.Assert(k.SaveNetworkFee(ctx, common.XECChain, NewNetworkFee(common.XECChain, 1, 1)), IsNil)
+	_, err := common.XECChain.ThorchainToNativeGasExact(cosmos.NewUint(3_703_500_000))
+	c.Assert(err, NotNil)
+
+	fee, err := gasMgr.GetAssetOutboundFee(ctx, common.XECAsset, false)
+	c.Assert(err, IsNil)
+	c.Assert(fee.String(), Equals, "3703000000")
+
+	nativeFee, err := common.XECChain.ThorchainToNativeGasExact(fee)
+	c.Assert(err, IsNil)
+	c.Assert(nativeFee.Uint64(), Equals, uint64(3703))
+}

@@ -161,24 +161,14 @@ func getUTXOStartupImportLock(chain common.Chain) *sync.Mutex {
 	return actual.(*sync.Mutex)
 }
 
-func (c *Client) rpcAmountToSats(value float64) (int64, error) {
-	if c.chain.Equals(common.XECChain) {
-		return int64(math.Round(value * 100)), nil
+func toInt64(amount cosmos.Uint) (int64, error) {
+	if amount.IsNil() {
+		return 0, fmt.Errorf("amount is nil")
 	}
-
-	amt, err := btcutil.NewAmount(value)
-	if err != nil {
-		return 0, err
+	if amount.GT(cosmos.NewUint(math.MaxInt64)) {
+		return 0, fmt.Errorf("amount does not fit int64: %s", amount.String())
 	}
-	return int64(amt), nil
-}
-
-func (c *Client) satsToRPCAmount(sats int64) float64 {
-	if c.chain.Equals(common.XECChain) {
-		return float64(sats) / 100
-	}
-
-	return btcutil.Amount(sats).ToBTC()
+	return int64(amount.Uint64()), nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -203,17 +193,17 @@ func (c *Client) GetAccount(pk *common.PubKey) (*common.Account, error) {
 	}
 
 	// sum balance
-	totalSats := int64(0)
+	totalBaseUnits := cosmos.ZeroUint()
 	for _, item := range utxos {
-		amt, err := c.rpcAmountToSats(item.Amount)
+		baseUnits, err := c.rpc.ToBaseUnits(item.Amount)
 		if err != nil {
 			return nil, fmt.Errorf("fail to convert UTXO amount: %w", err)
 		}
-		totalSats += amt
+		totalBaseUnits = totalBaseUnits.Add(baseUnits)
 	}
 
 	// create account
-	coin := common.NewCoin(c.chain.GetGasAsset(), cosmos.NewUint(uint64(totalSats)))
+	coin := c.chain.NativeGasToThorCoin(totalBaseUnits)
 	a := common.NewAccount(0, 0, common.NewCoins(coin), false)
 
 	return &a, nil
@@ -452,7 +442,7 @@ func (c *Client) getSourceScript(tx SimTx) ([]byte, error) {
 	}
 }
 
-func (c *Client) getUtxoToSpend(total float64) ([]btcjson.ListUnspentResult, error) {
+func (c *Client) getUtxoToSpend(total int64) ([]btcjson.ListUnspentResult, error) {
 	utxos, err := c.rpc.ListUnspent(c.address.String())
 	if err != nil {
 		return nil, fmt.Errorf("fail to get UTXOs: %w", err)
@@ -470,7 +460,7 @@ func (c *Client) getUtxoToSpend(total float64) ([]btcjson.ListUnspentResult, err
 
 	// collect UTXOs to spend
 	var result []btcjson.ListUnspentResult
-	var toSpend float64
+	var toSpend int64
 
 	if c.chain.Equals(common.ZECChain) {
 		c.mtx.Lock()
@@ -488,7 +478,18 @@ func (c *Client) getUtxoToSpend(total float64) ([]btcjson.ListUnspentResult, err
 		}
 
 		result = append(result, item)
-		toSpend += item.Amount
+		baseUnits, err := c.rpc.ToBaseUnits(item.Amount)
+		if err != nil {
+			return nil, fmt.Errorf("convert UTXO amount to base units: %w", err)
+		}
+		amount, err := toInt64(baseUnits)
+		if err != nil {
+			return nil, err
+		}
+		if amount > math.MaxInt64-toSpend {
+			return nil, fmt.Errorf("sum of UTXOs overflows int64")
+		}
+		toSpend += amount
 		if toSpend >= total {
 			break
 		}
@@ -496,7 +497,7 @@ func (c *Client) getUtxoToSpend(total float64) ([]btcjson.ListUnspentResult, err
 
 	// error if there is insufficient balance
 	if toSpend < total {
-		return nil, fmt.Errorf("insufficient balance: %f < %f", toSpend, total)
+		return nil, fmt.Errorf("insufficient balance: %d < %d", toSpend, total)
 	}
 
 	return result, nil
@@ -522,15 +523,21 @@ func (c *Client) getGasSats() float64 {
 	}
 }
 
-func (c *Client) getPaymentAmount(tx SimTx) float64 {
-	amtToPay1e8 := tx.Coin.Amount.Uint64()
-	amtToPay := c.satsToRPCAmount(int64(amtToPay1e8))
-	amtToPay += c.getGasSats()
+func (c *Client) getPaymentAmount(tx SimTx) (int64, error) {
+	amtToPay, err := c.chain.ThorchainToNativeGasExact(tx.Coin.Amount)
+	if err != nil {
+		return 0, fmt.Errorf("convert outbound amount to native units: %w", err)
+	}
+	gasBaseUnits, err := c.rpc.ToBaseUnits(c.getGasSats())
+	if err != nil {
+		return 0, fmt.Errorf("convert gas to base units: %w", err)
+	}
+	amtToPay = amtToPay.Add(gasBaseUnits)
 	if memoScripts, err := c.getMemoScripts(tx.Memo); err == nil && len(memoScripts) > 1 {
 		p2wpkhOutputsCost := int64(len(memoScripts)-1) * c.chain.P2WPKHOutputValue()
-		amtToPay += c.satsToRPCAmount(p2wpkhOutputsCost)
+		amtToPay = amtToPay.Add(cosmos.NewUint(uint64(p2wpkhOutputsCost)))
 	}
-	return amtToPay
+	return toInt64(amtToPay)
 }
 
 func (c *Client) getMemoScripts(memo string) ([][]byte, error) {
@@ -668,7 +675,11 @@ func (c *Client) pendingSpentUtxoLocked(key string) bool {
 func (c *Client) buildTx(tx SimTx, sourceScript []byte) (
 	*btcwire.MsgTx, map[string]int64, error,
 ) {
-	txes, err := c.getUtxoToSpend(c.getPaymentAmount(tx))
+	paymentAmount, err := c.getPaymentAmount(tx)
+	if err != nil {
+		return nil, nil, err
+	}
+	txes, err := c.getUtxoToSpend(paymentAmount)
 	if err != nil {
 		return nil, nil, fmt.Errorf("fail to get unspent UTXO: %w", err)
 	}
@@ -685,11 +696,18 @@ func (c *Client) buildTx(tx SimTx, sourceScript []byte) (
 		outputPoint := wire.NewOutPoint(txID, item.Vout)
 		sourceTxIn := wire.NewTxIn(outputPoint, nil, nil)
 		redeemTx.AddTxIn(sourceTxIn)
-		amt, err := c.rpcAmountToSats(item.Amount)
+		baseUnits, err := c.rpc.ToBaseUnits(item.Amount)
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to parse amount(%f): %w", item.Amount, err)
 		}
+		amt, err := toInt64(baseUnits)
+		if err != nil {
+			return nil, nil, fmt.Errorf("amount does not fit wire value: %w", err)
+		}
 		individualAmounts[fmt.Sprintf("%s-%d", txID, item.Vout)] = amt
+		if amt > math.MaxInt64-totalAmt {
+			return nil, nil, fmt.Errorf("sum of transaction inputs overflows int64")
+		}
 		totalAmt += amt
 	}
 
@@ -760,7 +778,15 @@ func (c *Client) buildTx(tx SimTx, sourceScript []byte) (
 	}
 
 	// pay to customer
-	redeemTxOut := wire.NewTxOut(int64(tx.Coin.Amount.Uint64()), buf)
+	outboundNative, err := c.chain.ThorchainToNativeGasExact(tx.Coin.Amount)
+	if err != nil {
+		return nil, nil, fmt.Errorf("convert outbound amount to native units: %w", err)
+	}
+	outboundAmount, err := toInt64(outboundNative)
+	if err != nil {
+		return nil, nil, fmt.Errorf("outbound amount does not fit wire value: %w", err)
+	}
+	redeemTxOut := wire.NewTxOut(outboundAmount, buf)
 	redeemTx.AddTxOut(redeemTxOut)
 
 	memoScripts, err := c.getMemoScripts(tx.Memo)
@@ -774,14 +800,27 @@ func (c *Client) buildTx(tx SimTx, sourceScript []byte) (
 	}
 
 	// add output to pay the balance back ourselves
-	gasSats, err := c.rpcAmountToSats(c.getGasSats())
+	gasBaseUnits, err := c.rpc.ToBaseUnits(c.getGasSats())
 	if err != nil {
 		return nil, nil, fmt.Errorf("fail to convert gas amount: %w", err)
 	}
-	balance := totalAmt - redeemTxOut.Value - gasSats - p2wpkhOutputsCost
-	if balance < 0 {
-		return nil, nil, fmt.Errorf("not enough balance to pay customer: %d", balance)
+	gasSats, err := toInt64(gasBaseUnits)
+	if err != nil {
+		return nil, nil, fmt.Errorf("gas amount does not fit wire value: %w", err)
 	}
+	balance := totalAmt
+	if redeemTxOut.Value > balance {
+		return nil, nil, fmt.Errorf("not enough balance to pay customer: %d", balance-redeemTxOut.Value)
+	}
+	balance -= redeemTxOut.Value
+	if gasSats > balance {
+		return nil, nil, fmt.Errorf("not enough balance to pay transaction fee: %d", balance-gasSats)
+	}
+	balance -= gasSats
+	if p2wpkhOutputsCost > balance {
+		return nil, nil, fmt.Errorf("not enough balance to pay memo outputs: %d", balance-p2wpkhOutputsCost)
+	}
+	balance -= p2wpkhOutputsCost
 	if balance > 0 {
 		redeemTx.AddTxOut(wire.NewTxOut(balance, sourceScript))
 	}

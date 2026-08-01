@@ -227,32 +227,6 @@ func TestZECSpentUtxosOnlyFinalizedAfterSuccessfulBroadcast(t *testing.T) {
 	}
 }
 
-func TestXECRPCAmountConversion(t *testing.T) {
-	client := &Client{chain: common.XECChain}
-
-	testCases := []struct {
-		rpcAmount float64
-		wantSats  int64
-	}{
-		{rpcAmount: 0.01, wantSats: 1},
-		{rpcAmount: 1.23, wantSats: 123},
-		{rpcAmount: 100, wantSats: 10000},
-	}
-
-	for _, tc := range testCases {
-		gotSats, err := client.rpcAmountToSats(tc.rpcAmount)
-		if err != nil {
-			t.Fatalf("rpcAmountToSats(%f) returned error: %v", tc.rpcAmount, err)
-		}
-		if gotSats != tc.wantSats {
-			t.Fatalf("rpcAmountToSats(%f) = %d, want %d", tc.rpcAmount, gotSats, tc.wantSats)
-		}
-		if gotRPC := client.satsToRPCAmount(tc.wantSats); gotRPC != tc.rpcAmount {
-			t.Fatalf("satsToRPCAmount(%d) = %f, want %f", tc.wantSats, gotRPC, tc.rpcAmount)
-		}
-	}
-}
-
 func TestXECMocknetAddressUsesECRegtestPrefix(t *testing.T) {
 	params := common.GetXECAddressParams(common.MockNet)
 	if params == nil {

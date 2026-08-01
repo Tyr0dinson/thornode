@@ -98,15 +98,26 @@ func TestUpdateCurrentBlockHeightMonotonic(t *testing.T) {
 
 // TestAllNotSelectedForKeysign covers the signer stand-down helper with plain
 // and aggregated errors from the UTXO signing path.
-func (s *HelpersSuite) TestAllNotSelectedForKeysign(c *C) {
-	c.Assert(allNotSelectedForKeysign(nil), Equals, false)
-	c.Assert(allNotSelectedForKeysign(tss.ErrNotSelectedForKeysign), Equals, true)
-
+func TestAllNotSelectedForKeysign(t *testing.T) {
 	allNotSelected := multierror.Append(nil, tss.ErrNotSelectedForKeysign, tss.ErrNotSelectedForKeysign)
-	c.Assert(allNotSelectedForKeysign(allNotSelected), Equals, true)
-
 	mixed := multierror.Append(nil, tss.ErrNotSelectedForKeysign, errors.New("signature failed"))
-	c.Assert(allNotSelectedForKeysign(mixed), Equals, false)
+
+	for _, tc := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "nil", err: nil, want: false},
+		{name: "single not selected", err: tss.ErrNotSelectedForKeysign, want: true},
+		{name: "all not selected", err: allNotSelected, want: true},
+		{name: "mixed errors", err: mixed, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := allNotSelectedForKeysign(tc.err); got != tc.want {
+				t.Fatalf("got %t, want %t", got, tc.want)
+			}
+		})
+	}
 }
 
 func GetMetricForTest(c *C, chain common.Chain) *metrics.Metrics {

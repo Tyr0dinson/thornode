@@ -148,7 +148,7 @@ func (c *XrpBlockScanner) updateFeeCache(fee common.Coin) {
 	}
 
 	// gas rate from THORChain decimals to gas rate units
-	gasRate := c.cfg.ChainID.ThorchainToNativeGas(fee.Amount)
+	gasRate := c.cfg.ChainID.ThorchainToNativeGasFloor(fee.Amount)
 	if gasRate.IsZero() {
 		gasRate = sdkmath.OneUint()
 	}

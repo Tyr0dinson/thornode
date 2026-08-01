@@ -999,7 +999,10 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 		// and leaves unburnt synths in the Pool Module
 		if !outputs[i].Coin.Asset.IsSyntheticAsset() {
 			// sanity check: ensure outbound amount respect asset decimals
-			outputs[i].Coin.Amount = cosmos.RoundToDecimal(outputs[i].Coin.Amount, pool.Decimals)
+			outputs[i].Coin.Amount = cosmos.RoundToDecimal(
+				outputs[i].Coin.Amount,
+				outboundPrecision(pool, outputs[i].Coin.Asset),
+			)
 		}
 
 		if !outputs[i].InHash.Equals(common.BlankTxID) {

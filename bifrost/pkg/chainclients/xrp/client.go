@@ -696,7 +696,7 @@ func (c *Client) getSignerCacheExpiry() time.Duration {
 
 // GetGasEstimateForSolvency returns the current gas fee estimate used by solvency checks.
 func (c *Client) GetGasEstimateForSolvency() cosmos.Uint {
-	return c.cfg.ChainID.NativeGasToThorchain(c.xrpScanner.getLastFee())
+	return c.cfg.ChainID.NativeGasToThorchainFloor(c.xrpScanner.getLastFee())
 }
 
 func (c *Client) ReportSolvency(blockHeight int64) error {

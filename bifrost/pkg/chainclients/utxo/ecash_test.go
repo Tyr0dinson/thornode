@@ -1,15 +1,39 @@
 package utxo
 
 import (
+	"time"
+
+	"github.com/btcsuite/btcd/btcjson"
 	"github.com/gcash/bchutil"
+	"github.com/rs/zerolog"
 	. "gopkg.in/check.v1"
 
+	utxorpc "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
+	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 type ECashSuite struct{}
 
 var _ = Suite(&ECashSuite{})
+
+func newXECAmountTestClient(c *C) *Client {
+	rpcClient, err := utxorpc.NewClient(
+		"http://127.0.0.1:1",
+		"",
+		"",
+		0,
+		time.Second,
+		common.XECChain,
+		zerolog.Nop(),
+	)
+	c.Assert(err, IsNil)
+	client := &Client{rpc: rpcClient}
+	client.cfg.ChainID = common.XECChain
+	return client
+}
 
 func (s *ECashSuite) TestNormalizeCashAddressMatchesXECVaultDerivation(c *C) {
 	if common.CurrentChainNetwork != common.MockNet {
@@ -60,4 +84,54 @@ func (s *ECashSuite) TestNormalizeCashAddressLeavesNonCashAddrAlone(c *C) {
 	// A foreign network prefix must not be rewritten as an XEC prefix.
 	other := "bitcoincash:qqsqgupa7tajw5wkunpjezjjnkmmuevcmgs7saqa99"
 	c.Check(client.normalizeCashAddress(other), Equals, other)
+}
+
+func (s *ECashSuite) TestXECAmountBoundaries(c *C) {
+	client := newXECAmountTestClient(c)
+
+	baseUnits, err := client.rpc.ToBaseUnits(1)
+	c.Assert(err, IsNil)
+	c.Check(baseUnits.Equal(cosmos.NewUint(100)), Equals, true)
+
+	coin, err := client.rpcAmountToThorCoin(1)
+	c.Assert(err, IsNil)
+	c.Check(coin.Amount.Equal(cosmos.NewUint(common.One)), Equals, true)
+	c.Check(coin.Decimals, Equals, int64(2))
+
+	wireAmount, err := common.XECChain.ThorchainToNativeGasExact(cosmos.NewUint(common.One))
+	c.Assert(err, IsNil)
+	c.Check(wireAmount.Equal(cosmos.NewUint(100)), Equals, true)
+
+	_, err = common.XECChain.ThorchainToNativeGasExact(cosmos.NewUint(common.One + 1))
+	c.Check(err, NotNil)
+
+	tx := stypes.TxOutItem{
+		Chain: common.XECChain,
+		Coins: common.NewCoins(common.NewCoin(common.XECAsset, cosmos.NewUint(common.One))),
+	}
+	payment, err := client.getPaymentAmount(tx)
+	c.Assert(err, IsNil)
+	c.Check(int64(payment), Equals, int64(100))
+
+	tx.Coins[0].Amount = tx.Coins[0].Amount.Add(cosmos.OneUint())
+	_, err = client.getPaymentAmount(tx)
+	c.Check(err, NotNil)
+}
+
+func (s *ECashSuite) TestXECConsolidationNormalizesNativeUTXOs(c *C) {
+	if common.CurrentChainNetwork != common.MockNet {
+		c.Skip("XEC address params are network specific")
+	}
+
+	client := newXECAmountTestClient(c)
+	client.lastFeeRate.Store(2)
+	vault := ttypes.Vault{
+		PubKey: common.PubKey("tthorpub1addwnpepqwznsrgk2t5vn2cszr6ku6zned6tqxknugzw3vhdcjza284d7djp5rql6vn"),
+	}
+
+	txOut, err := client.buildConsolidateTxOutItem(vault, []btcjson.ListUnspentResult{{Amount: 1}})
+	c.Assert(err, IsNil)
+	coin := txOut.Coins.GetCoin(common.XECAsset)
+	c.Check(coin.Amount.Equal(cosmos.NewUint(common.One)), Equals, true)
+	c.Check(coin.Decimals, Equals, int64(2))
 }

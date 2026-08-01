@@ -206,7 +206,6 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 				{common.ZECChain, 1, 50_000},
 				{common.LTCChain, 250, 103},
 				{common.BCHChain, 1500, 7},
-				{common.XECChain, 1500, 7},
 				{common.DOGEChain, 1000, 1500000},
 				{common.TRONChain, 1, 1_000_000},
 			}
@@ -348,8 +347,10 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 		// determine the amount of txs for seeding, to create multiple utxos
 		chainSeedTxs := 1
 		switch chain {
-		case common.BTCChain, common.LTCChain, common.BCHChain, common.XECChain:
+		case common.BTCChain, common.LTCChain, common.BCHChain:
 			chainSeedAmount = sdkmath.NewUint(10 * common.One)
+		case common.XECChain: // more since dust threshold is 100 XEC
+			chainSeedAmount = sdkmath.NewUint(1_000_000 * common.One)
 		case common.BSCChain, common.BASEChain, common.ETHChain, common.SOLChain:
 			chainSeedAmount = sdkmath.NewUint(100 * common.One)
 		case common.ZECChain:

@@ -117,6 +117,35 @@ func (s ChainSuite) TestChain(c *C) {
 	c.Assert(BTCChain.RequiresExplicitRefundAddress(), Equals, false)
 }
 
+func (s ChainSuite) TestXECGasPrecisionAndConversions(c *C) {
+	c.Assert(XECChain.GetGasAssetDecimal(), Equals, int64(2))
+	units, unitsPerOne := XECChain.GetGasUnits()
+	c.Assert(units, Equals, "satsperbyte")
+	c.Assert(unitsPerOne.Equal(cosmos.NewUint(100)), Equals, true)
+
+	native := cosmos.NewUint(100)
+	c.Assert(XECChain.NativeGasToThorchainFloor(native).Equal(cosmos.NewUint(100_000_000)), Equals, true)
+	coin := XECChain.NativeGasToThorCoin(native)
+	c.Assert(coin.Amount.Equal(cosmos.NewUint(100_000_000)), Equals, true)
+	c.Assert(coin.Decimals, Equals, int64(2))
+
+	c.Assert(XECChain.ThorchainToNativeGasFloor(coin.Amount).Equal(native), Equals, true)
+	exact, err := XECChain.ThorchainToNativeGasExact(coin.Amount)
+	c.Assert(err, IsNil)
+	c.Assert(exact.Equal(native), Equals, true)
+	_, err = XECChain.ThorchainToNativeGasExact(coin.Amount.Add(cosmos.OneUint()))
+	c.Assert(err, NotNil)
+
+	// XEC values above btcutil.Amount's range still normalize without an
+	// intermediate int64 conversion.
+	largeNative := cosmos.NewUint(10_000_000_000_000)
+	largeThor := cosmos.NewUint(10_000_000_000_000_000_000)
+	c.Assert(XECChain.NativeGasToThorchainFloor(largeNative).Equal(largeThor), Equals, true)
+
+	c.Assert(XECChain.DustThreshold().Equal(cosmos.NewUint(10_000_000_000)), Equals, true)
+	c.Assert(XECChain.P2WPKHOutputValue(), Equals, int64(546))
+}
+
 // NativeGasToThorCoinCeil rounds up when the gas asset has more decimals
 // than THORChain (1e8) and any sub-1e8 native precision would otherwise
 // be silently dropped. Exercise both the exact-amount path (no ceil)

@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"strings"
 	"time"
@@ -219,66 +220,41 @@ func (c *Client) updateNetworkInfo() {
 		c.log.Err(err).Msg("fail to get network info")
 		return
 	}
-	amt, err := c.rpcAmountToSats(networkInfo.RelayFee)
+	relayFeeBaseUnits, err := c.rpc.ToBaseUnits(networkInfo.RelayFee)
 	if err != nil {
 		c.log.Err(err).Msg("fail to get minimum relay fee")
 		return
 	}
-	c.minRelayFeeSats.Store(uint64(amt))
+	amt, err := toUint64(relayFeeBaseUnits)
+	if err != nil {
+		c.log.Err(err).Msg("minimum relay fee does not fit uint64")
+		return
+	}
+	c.minRelayFeeSats.Store(amt)
 }
 
 func (c *Client) sendNetworkFee(height int64) error {
-	// get block stats
-	var feeRate uint64
-	switch c.cfg.ChainID {
-	case common.BCHChain, common.XECChain:
-		// BCH/XEC return avgfeerate as a float in sats/vbyte.
-		hash, err := c.rpc.GetBlockHash(height)
-		if err != nil {
-			return fmt.Errorf("fail to get block hash: %w", err)
-		}
-		type BlockStats struct {
-			AverageFeeRate float64 `json:"avgfeerate"`
-		}
-		var bs BlockStats
-		err = c.rpc.Call(&bs, "getblockstats", hash)
-		if err != nil {
-			return fmt.Errorf("fail to get block stats: %w", err)
-		}
-		feeRate = uint64(bs.AverageFeeRate)
-
-	case common.LTCChain, common.BTCChain:
-		hash, err := c.rpc.GetBlockHash(height)
-		if err != nil {
-			return fmt.Errorf("fail to get block hash: %w", err)
-		}
-		bs, err := c.rpc.GetBlockStats(hash)
-		if err != nil {
-			return fmt.Errorf("fail to get block stats: %w", err)
-		}
-		feeRate = uint64(bs.AverageFeeRate)
-
-	default:
-		c.log.Fatal().Msg("unsupported chain")
+	hash, err := c.rpc.GetBlockHash(height)
+	if err != nil {
+		return fmt.Errorf("fail to get block hash: %w", err)
 	}
-
-	if feeRate == 0 {
-		return nil
+	feeRate, err := c.rpc.GetAverageFeeRate(hash)
+	if err != nil {
+		return fmt.Errorf("fail to get average fee rate: %w", err)
 	}
+	observedFeeRate := feeRate
 
 	c.networkFeeLock.Lock()
 	defer c.networkFeeLock.Unlock()
 
-	minRelayFeeSats := c.minRelayFeeSats.Load()
-	if c.cfg.UTXO.EstimatedAverageTxSize*feeRate < minRelayFeeSats {
-		feeRate = minRelayFeeSats / c.cfg.UTXO.EstimatedAverageTxSize
-		if feeRate*c.cfg.UTXO.EstimatedAverageTxSize < minRelayFeeSats {
-			feeRate++
-		}
-	}
-
-	if feeRate < uint64(c.cfg.UTXO.MinSatsPerVByte) {
-		feeRate = uint64(c.cfg.UTXO.MinSatsPerVByte)
+	feeRate = c.floorFeeRate(feeRate)
+	if observedFeeRate == 0 && feeRate != 0 {
+		c.log.Info().
+			Uint64("replacement_fee_rate", feeRate).
+			Uint64("minimum_relay_fee", c.minRelayFeeSats.Load()).
+			Int64("configured_min_fee_rate", c.cfg.UTXO.MinSatsPerVByte).
+			Int64("default_fee_rate", c.cfg.UTXO.DefaultSatsPerVByte).
+			Msg("replaced zero average fee-rate observation")
 	}
 
 	// if gas cache blocks are set, use the max gas over that window
@@ -315,22 +291,32 @@ func (c *Client) sendNetworkFee(height int64) error {
 	return nil
 }
 
+func (c *Client) floorFeeRate(feeRate uint64) uint64 {
+	minRelayFeeSats := c.minRelayFeeSats.Load()
+	if minRelayFeeSats > 0 {
+		// getnetworkinfo.relayfee is denominated per 1,000 virtual bytes.
+		relayFeeRate := minRelayFeeSats / 1000
+		if minRelayFeeSats%1000 != 0 {
+			relayFeeRate++
+		}
+		if feeRate < relayFeeRate {
+			feeRate = relayFeeRate
+		}
+	}
+
+	if c.cfg.UTXO.MinSatsPerVByte > 0 && feeRate < uint64(c.cfg.UTXO.MinSatsPerVByte) {
+		feeRate = uint64(c.cfg.UTXO.MinSatsPerVByte)
+	}
+	if feeRate == 0 && c.cfg.UTXO.DefaultSatsPerVByte > 0 {
+		feeRate = uint64(c.cfg.UTXO.DefaultSatsPerVByte)
+	}
+	return feeRate
+}
+
 // sendNetworkFeeFromBlock will send network fee to Thornode based on the block result,
 // for chains like Dogecoin which do not support the getblockstats RPC.
 func (c *Client) sendNetworkFeeFromBlock(blockResult *btcjson.GetBlockVerboseTxResult) error {
 	height := blockResult.Height
-	var total float64 // total coinbase value, block reward + all transaction fees in the block
-	var totalVSize int32
-	for _, tx := range blockResult.Tx {
-		if len(tx.Vin) == 1 && tx.Vin[0].IsCoinBase() {
-			for _, opt := range tx.Vout {
-				total += opt.Value
-			}
-		} else {
-			totalVSize += tx.Vsize
-		}
-	}
-
 	transactionSize := c.cfg.UTXO.EstimatedAverageTxSize
 	var feeRateSats uint64
 
@@ -344,17 +330,54 @@ func (c *Client) sendNetworkFeeFromBlock(blockResult *btcjson.GetBlockVerboseTxR
 		feeRateSats = c.getGasCoinZEC(&tx, memo).Amount.Uint64()
 		transactionSize = 1
 	} else {
+		var totalVSize int32
+		for i := range blockResult.Tx {
+			tx := &blockResult.Tx[i]
+			if len(tx.Vin) != 1 || !tx.Vin[0].IsCoinBase() {
+				totalVSize += tx.Vsize
+			}
+		}
+
 		// skip updating network fee if there are no utxos (except coinbase) in the block
 		if totalVSize == 0 {
 			return nil
 		}
-		amt, err := c.rpcAmountToSats(total - c.cfg.ChainID.DefaultCoinbase())
-		if err != nil {
-			return fmt.Errorf("fail to parse total block fee amount, err: %w", err)
+
+		var coinbaseBaseUnits uint64
+		for i := range blockResult.Tx {
+			tx := &blockResult.Tx[i]
+			if len(tx.Vin) != 1 || !tx.Vin[0].IsCoinBase() {
+				continue
+			}
+			outputBaseUnits, err := c.sumVoutBaseUnits(tx)
+			if err != nil {
+				return fmt.Errorf("fail to sum coinbase outputs: %w", err)
+			}
+			if math.MaxUint64-coinbaseBaseUnits < outputBaseUnits {
+				return fmt.Errorf("sum of coinbase outputs overflows uint64")
+			}
+			coinbaseBaseUnits += outputBaseUnits
 		}
 
-		// average fee rate in sats/vbyte or default min relay fee
-		feeRateSats = uint64(float64(amt) / float64(totalVSize))
+		subsidyBaseUnits, err := c.rpc.ToBaseUnits(c.cfg.ChainID.DefaultCoinbase())
+		if err != nil {
+			return fmt.Errorf("fail to parse default coinbase value: %w", err)
+		}
+		subsidy, err := toUint64(subsidyBaseUnits)
+		if err != nil {
+			return fmt.Errorf("default coinbase value does not fit uint64: %w", err)
+		}
+		if coinbaseBaseUnits < subsidy {
+			return fmt.Errorf(
+				"coinbase value %d is below default subsidy %d",
+				coinbaseBaseUnits,
+				subsidy,
+			)
+		}
+		feeBaseUnits := coinbaseBaseUnits - subsidy
+
+		// average fee rate in base units per vbyte or default min relay fee
+		feeRateSats = feeBaseUnits / uint64(totalVSize)
 		if c.cfg.UTXO.DefaultMinRelayFeeSats > feeRateSats {
 			feeRateSats = c.cfg.UTXO.DefaultMinRelayFeeSats
 		}
@@ -537,7 +560,7 @@ func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool, 
 			return types.TxInItem{}, fmt.Errorf("invalid utxo")
 		}
 	}
-	amount, err := c.rpcAmountToSatsU64(output.Value)
+	coin, err := c.rpcAmountToThorCoin(output.Value)
 	if err != nil {
 		return types.TxInItem{}, fmt.Errorf("fail to parse float64: %w", err)
 	}
@@ -551,11 +574,9 @@ func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool, 
 		Tx:          tx.Txid,
 		Sender:      sender,
 		To:          toAddr,
-		Coins: common.Coins{
-			common.NewCoin(c.cfg.ChainID.GetGasAsset(), cosmos.NewUint(amount)),
-		},
-		Memo: memo,
-		Gas:  gas,
+		Coins:       common.Coins{coin},
+		Memo:        memo,
+		Gas:         gas,
 	}, nil
 }
 
@@ -563,7 +584,11 @@ func (c *Client) getVinZeroTxs(block *btcjson.GetBlockVerboseTxResult) (map[stri
 	vinZeroTxs := make(map[string]*btcjson.TxRawResult)
 	start := time.Now()
 
-	dustThreshold := c.cfg.ChainID.DustThreshold().Uint64()
+	dustBaseUnits := c.cfg.ChainID.ThorchainToNativeGasFloor(c.cfg.ChainID.DustThreshold())
+	dustThreshold, err := toUint64(dustBaseUnits)
+	if err != nil {
+		return nil, fmt.Errorf("dust threshold does not fit uint64: %w", err)
+	}
 
 	// create our batches
 	batches := [][]string{}
@@ -576,10 +601,10 @@ func (c *Client) getVinZeroTxs(block *btcjson.GetBlockVerboseTxResult) (map[stri
 		}
 
 		// skip if sum of vout value is under thorchain dust threshold
-		voutSats, err := sumVoutSats(c.cfg.ChainID, &block.Tx[i])
+		voutBaseUnits, err := c.sumVoutBaseUnits(&block.Tx[i])
 		if err != nil {
-			c.log.Error().Err(err).Str("txid", block.Tx[i].Txid).Msg("fail to sum vout sats")
-		} else if voutSats < dustThreshold {
+			c.log.Error().Err(err).Str("txid", block.Tx[i].Txid).Msg("fail to sum vout base-unit amounts")
+		} else if voutBaseUnits < dustThreshold {
 			skipDustCount++
 			continue
 		}
@@ -813,8 +838,10 @@ func (c *Client) getSender(tx *btcjson.TxRawResult, vinZeroTxs map[string]*btcjs
 		vinTx, ok := vinZeroTxs[tx.Vin[0].Txid]
 		if !ok {
 			// if vouts are below dust this is expected, so skip log noise
-			value, err := sumVoutSats(c.cfg.ChainID, tx)
-			if err != nil || value >= c.cfg.ChainID.DustThreshold().Uint64() {
+			valueBaseUnits, err := c.sumVoutBaseUnits(tx)
+			dustBaseUnits := c.cfg.ChainID.ThorchainToNativeGasFloor(c.cfg.ChainID.DustThreshold())
+			dust, dustErr := toUint64(dustBaseUnits)
+			if err != nil || dustErr != nil || valueBaseUnits >= dust {
 				c.log.Debug().Str("txid", tx.Txid).Msg("vin zero tx not found")
 			}
 			return "", fmt.Errorf("missing vin zero tx")
@@ -1043,9 +1070,16 @@ func (c *Client) getGas(tx *btcjson.TxRawResult, isInbound bool) (common.Gas, er
 			return common.Gas{}, fmt.Errorf("fail to query raw tx from node")
 		}
 
-		amount, err := c.rpcAmountToSatsU64(vinTx.Vout[vin.Vout].Value)
+		baseUnits, err := c.rpc.ToBaseUnits(vinTx.Vout[vin.Vout].Value)
 		if err != nil {
 			return nil, err
+		}
+		amount, err := toUint64(baseUnits)
+		if err != nil {
+			return nil, err
+		}
+		if math.MaxUint64-sumVin < amount {
+			return nil, fmt.Errorf("sum of transaction inputs overflows uint64")
 		}
 		sumVin += amount
 	}
@@ -1057,39 +1091,45 @@ func (c *Client) getGas(tx *btcjson.TxRawResult, isInbound bool) (common.Gas, er
 			break
 		}
 
-		amount, err := c.rpcAmountToSatsU64(vout.Value)
+		baseUnits, err := c.rpc.ToBaseUnits(vout.Value)
 		if err != nil {
 			return nil, err
 		}
+		amount, err := toUint64(baseUnits)
+		if err != nil {
+			return nil, err
+		}
+		if math.MaxUint64-sumVout < amount {
+			return nil, fmt.Errorf("sum of transaction outputs overflows uint64")
+		}
 		sumVout += amount
+	}
+	if sumVout > sumVin {
+		return nil, fmt.Errorf("transaction outputs exceed inputs")
 	}
 	totalGas := sumVin - sumVout
 	return common.Gas{
-		common.NewCoin(c.cfg.ChainID.GetGasAsset(), cosmos.NewUint(totalGas)),
+		c.cfg.ChainID.NativeGasToThorCoin(cosmos.NewUint(totalGas)),
 	}, nil
 }
 
-func (c *Client) getCoinbaseValue(blockHeight int64) (int64, error) {
+func (c *Client) getCoinbaseValue(blockHeight int64) (cosmos.Uint, error) {
 	// TODO: this is inefficient, in particular for dogecoin, investigate coinbase cache
 	result, err := c.getBlock(blockHeight)
 	if err != nil {
-		return 0, fmt.Errorf("fail to get block verbose tx: %w", err)
+		return cosmos.ZeroUint(), fmt.Errorf("fail to get block verbose tx: %w", err)
 	}
-	for _, tx := range result.Tx {
+	for i := range result.Tx {
+		tx := &result.Tx[i]
 		if len(tx.Vin) == 1 && tx.Vin[0].IsCoinBase() {
-			total := float64(0)
-			for _, opt := range tx.Vout {
-				total += opt.Value
-			}
-			var amt int64
-			amt, err = c.rpcAmountToSats(total)
+			baseUnits, err := c.sumVoutBaseUnits(tx)
 			if err != nil {
-				return 0, fmt.Errorf("fail to parse amount: %w", err)
+				return cosmos.ZeroUint(), fmt.Errorf("fail to sum coinbase outputs: %w", err)
 			}
-			return amt, nil
+			return c.cfg.ChainID.NativeGasToThorchainFloor(cosmos.NewUint(baseUnits)), nil
 		}
 	}
-	return 0, fmt.Errorf("fail to get coinbase value")
+	return cosmos.ZeroUint(), fmt.Errorf("fail to get coinbase value")
 }
 
 // getBlockRequiredConfirmation find out how many confirmation the given txIn need to have before it can be send to THORChain
@@ -1107,15 +1147,15 @@ func (c *Client) getBlockRequiredConfirmation(txIn types.TxIn, height int64) (in
 	if err != nil {
 		c.log.Err(err).Msgf("fail to get conf multiplier mimir value for %s", c.GetChain().String())
 	}
-	if totalFeeAndSubsidy == 0 {
-		var cbValue int64
-		cbValue, err = c.rpcAmountToSats(c.cfg.ChainID.DefaultCoinbase())
+	if totalFeeAndSubsidy.IsZero() {
+		var subsidyBaseUnits cosmos.Uint
+		subsidyBaseUnits, err = c.rpc.ToBaseUnits(c.cfg.ChainID.DefaultCoinbase())
 		if err != nil {
 			return 0, fmt.Errorf("fail to get default coinbase value: %w", err)
 		}
-		totalFeeAndSubsidy = cbValue
+		totalFeeAndSubsidy = c.cfg.ChainID.NativeGasToThorchainFloor(subsidyBaseUnits)
 	}
-	confValue := common.GetUncappedShare(confMul, cosmos.NewUint(constants.MaxBasisPts), cosmos.SafeUintFromInt64(totalFeeAndSubsidy))
+	confValue := common.GetUncappedShare(confMul, cosmos.NewUint(constants.MaxBasisPts), totalFeeAndSubsidy)
 	confirm := totalTxValue.Quo(confValue).Uint64()
 	confirm, err = utxo.MaxConfAdjustment(confirm, c.GetChain().String(), c.bridge)
 	if err != nil {
@@ -1124,7 +1164,7 @@ func (c *Client) getBlockRequiredConfirmation(txIn types.TxIn, height int64) (in
 	if confirm < c.cfg.MinConfirmations {
 		confirm = c.cfg.MinConfirmations
 	}
-	c.log.Info().Msgf("totalTxValue:%s, totalFeeAndSubsidy:%d, confirm:%d", totalTxValue, totalFeeAndSubsidy, confirm)
+	c.log.Info().Msgf("totalTxValue:%s, totalFeeAndSubsidy:%s, confirm:%d", totalTxValue, totalFeeAndSubsidy, confirm)
 
 	return int64(confirm), nil
 }

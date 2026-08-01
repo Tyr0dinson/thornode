@@ -704,7 +704,7 @@ func (c *CosmosClient) GetConfirmationCount(txIn stypes.TxIn) int64 {
 
 // GetGasEstimateForSolvency returns the current gas fee estimate used by solvency checks.
 func (c *CosmosClient) GetGasEstimateForSolvency() cosmos.Uint {
-	return c.cfg.ChainID.NativeGasToThorchain(c.cosmosScanner.getLastFee())
+	return c.cfg.ChainID.NativeGasToThorchainFloor(c.cosmosScanner.getLastFee())
 }
 
 func (c *CosmosClient) ReportSolvency(blockHeight int64) error {

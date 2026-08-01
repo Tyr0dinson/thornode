@@ -211,6 +211,7 @@ func (Test) TestInitBifrost(c *C) {
 	config.Bifrost.Chains.BCH.BlockScanner.DBPath = filepath.Join(tmpDir, "bch")
 	config.Bifrost.Chains.BSC.BlockScanner.DBPath = filepath.Join(tmpDir, "bsc")
 	config.Bifrost.Chains.DOGE.BlockScanner.DBPath = filepath.Join(tmpDir, "doge")
+	config.Bifrost.Chains.XEC.BlockScanner.DBPath = filepath.Join(tmpDir, "xec")
 	config.Bifrost.Chains.GAIA.BlockScanner.DBPath = filepath.Join(tmpDir, "gaia")
 	config.Bifrost.Chains.NOBLE.BlockScanner.DBPath = filepath.Join(tmpDir, "noble")
 	config.Bifrost.Chains.LTC.BlockScanner.DBPath = filepath.Join(tmpDir, "ltc")

@@ -25,12 +25,14 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/gcash/bchutil"
+	"github.com/rs/zerolog"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	sutxo "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
+	utxorpc "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -225,15 +227,24 @@ func (s *CoverageBackfillSuite) TestSumVoutSats(c *C) {
 			{Value: 0.1},
 		},
 	}
-	sum, err := sumVoutSats(common.BTCChain, tx)
+	baseUnits, err := s.client.sumVoutBaseUnits(tx)
 	c.Assert(err, IsNil)
-	c.Assert(sum, Equals, uint64(160000000)) // 1.6 BTC in sats
+	c.Assert(baseUnits, Equals, uint64(160000000)) // 1.6 BTC in sats
 
 	// Test with no vouts
 	tx = &btcjson.TxRawResult{Vout: nil}
-	sum, err = sumVoutSats(common.BTCChain, tx)
+	baseUnits, err = s.client.sumVoutBaseUnits(tx)
 	c.Assert(err, IsNil)
-	c.Assert(sum, Equals, uint64(0))
+	c.Assert(baseUnits, Equals, uint64(0))
+
+	// Convert before summing so binary float accumulation cannot turn
+	// 0.1 + 0.2 into a fractional native-unit amount.
+	tx = &btcjson.TxRawResult{
+		Vout: []btcjson.Vout{{Value: 0.1}, {Value: 0.2}},
+	}
+	baseUnits, err = s.client.sumVoutBaseUnits(tx)
+	c.Assert(err, IsNil)
+	c.Assert(baseUnits, Equals, uint64(30_000_000))
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -562,6 +573,30 @@ func (s *CoverageBackfillSuite) TestSendNetworkFee(c *C) {
 	c.Assert(s.client.lastFeeRate.Load() > 0, Equals, true)
 }
 
+func (s *CoverageBackfillSuite) TestZeroNetworkFeeUsesConfiguredFloors(c *C) {
+	originalSize := s.client.cfg.UTXO.EstimatedAverageTxSize
+	originalMin := s.client.cfg.UTXO.MinSatsPerVByte
+	originalDefault := s.client.cfg.UTXO.DefaultSatsPerVByte
+	defer func() {
+		s.client.cfg.UTXO.EstimatedAverageTxSize = originalSize
+		s.client.cfg.UTXO.MinSatsPerVByte = originalMin
+		s.client.cfg.UTXO.DefaultSatsPerVByte = originalDefault
+	}()
+
+	s.client.cfg.UTXO.EstimatedAverageTxSize = 1500
+	s.client.cfg.UTXO.MinSatsPerVByte = 2
+	s.client.cfg.UTXO.DefaultSatsPerVByte = 25
+
+	s.client.minRelayFeeSats.Store(4500)
+	c.Check(s.client.floorFeeRate(0), Equals, uint64(5))
+
+	s.client.minRelayFeeSats.Store(0)
+	c.Check(s.client.floorFeeRate(0), Equals, uint64(2))
+
+	s.client.cfg.UTXO.MinSatsPerVByte = 0
+	c.Check(s.client.floorFeeRate(0), Equals, uint64(25))
+}
+
 func (s *CoverageBackfillSuite) TestSendNetworkFeeSameFee(c *C) {
 	// When fee hasn't changed, should not send
 	s.client.lastFeeRate.Store(0)
@@ -603,7 +638,7 @@ func (s *CoverageBackfillSuite) TestSendNetworkFeeFromBlock(c *C) {
 		Tx: []btcjson.TxRawResult{
 			{
 				Vin:   []btcjson.Vin{{Coinbase: "04ffff001d0104"}},
-				Vout:  []btcjson.Vout{{Value: 50.0}},
+				Vout:  []btcjson.Vout{{Value: 10_000}, {Value: 0.1}, {Value: 0.2}},
 				Vsize: 200,
 			},
 			{
@@ -632,7 +667,7 @@ func (s *CoverageBackfillSuite) TestSendNetworkFeeFromBlockNoNonCoinbase(c *C) {
 		Tx: []btcjson.TxRawResult{
 			{
 				Vin:  []btcjson.Vin{{Coinbase: "04ffff001d0104"}},
-				Vout: []btcjson.Vout{{Value: 50.0}},
+				Vout: []btcjson.Vout{{Value: 10_000}},
 			},
 		},
 	}
@@ -650,7 +685,7 @@ func (s *CoverageBackfillSuite) TestSendNetworkFeeFromBlockSmallDelta(c *C) {
 		Tx: []btcjson.TxRawResult{
 			{
 				Vin:  []btcjson.Vin{{Coinbase: "04ffff001d0104"}},
-				Vout: []btcjson.Vout{{Value: 50.0}},
+				Vout: []btcjson.Vout{{Value: 10_000}, {Value: 0.1}, {Value: 0.2}},
 			},
 			{
 				Vin:   []btcjson.Vin{{Txid: "abc123"}},
@@ -675,6 +710,49 @@ func (s *CoverageBackfillSuite) TestSendNetworkFeeFromBlockSmallDelta(c *C) {
 	c.Assert(s.client.lastFeeRate.Load(), Equals, savedRate)
 
 	s.client.cfg.ChainID = oldChain
+}
+
+func (s *CoverageBackfillSuite) TestSendNetworkFeeFromBlockRejectsLowCoinbase(c *C) {
+	block := &btcjson.GetBlockVerboseTxResult{
+		Height: 100,
+		Tx: []btcjson.TxRawResult{
+			{
+				Vin:  []btcjson.Vin{{Coinbase: "04ffff001d0104"}},
+				Vout: []btcjson.Vout{{Value: 9_999.99}},
+			},
+			{
+				Vin:   []btcjson.Vin{{Txid: "abc123"}},
+				Vsize: 250,
+			},
+		},
+	}
+
+	oldChain := s.client.cfg.ChainID
+	s.client.cfg.ChainID = common.DOGEChain
+	defer func() { s.client.cfg.ChainID = oldChain }()
+
+	err := s.client.sendNetworkFeeFromBlock(block)
+	c.Assert(err, NotNil)
+}
+
+func (s *CoverageBackfillSuite) TestSendNetworkFeeFromBlockZECIgnoresCoinbaseAmounts(c *C) {
+	block := &btcjson.GetBlockVerboseTxResult{
+		Height: 100,
+		Tx: []btcjson.TxRawResult{
+			{
+				Vin:  []btcjson.Vin{{Coinbase: "04ffff001d0104"}},
+				Vout: []btcjson.Vout{{Value: 0.000000001}},
+			},
+		},
+	}
+
+	oldChain := s.client.cfg.ChainID
+	s.client.cfg.ChainID = common.ZECChain
+	s.client.lastFeeRate.Store(0)
+	defer func() { s.client.cfg.ChainID = oldChain }()
+
+	err := s.client.sendNetworkFeeFromBlock(block)
+	c.Assert(err, IsNil)
 }
 
 func (s *CoverageBackfillSuite) TestConfirmTx(c *C) {
@@ -747,12 +825,14 @@ func (s *CoverageBackfillSuite) TestGetPaymentAmount(c *C) {
 			common.NewCoin(common.BTCAsset, cosmos.NewUint(5000)),
 		},
 	}
-	amt := s.client.getPaymentAmount(tx)
+	amt, err := s.client.getPaymentAmount(tx)
+	c.Assert(err, IsNil)
 	c.Assert(int64(amt), Equals, int64(105000))
 
 	// Without MaxGas
 	tx.MaxGas = nil
-	amt = s.client.getPaymentAmount(tx)
+	amt, err = s.client.getPaymentAmount(tx)
+	c.Assert(err, IsNil)
 	c.Assert(int64(amt), Equals, int64(100000))
 
 	// ZEC chain ignores MaxGas
@@ -763,7 +843,8 @@ func (s *CoverageBackfillSuite) TestGetPaymentAmount(c *C) {
 	tx.Coins = common.Coins{
 		common.NewCoin(common.ZECAsset, cosmos.NewUint(100000)),
 	}
-	amt = s.client.getPaymentAmount(tx)
+	amt, err = s.client.getPaymentAmount(tx)
+	c.Assert(err, IsNil)
 	c.Assert(int64(amt), Equals, int64(100000)) // ZEC doesn't add gas
 	s.client.cfg.ChainID = common.BTCChain
 }
@@ -1410,7 +1491,7 @@ func (s *CoverageBackfillSuite) TestGetBlockRequiredConfirmation(c *C) {
 func (s *CoverageBackfillSuite) TestGetCoinbaseValue(c *C) {
 	value, err := s.client.getCoinbaseValue(1696761)
 	c.Assert(err, IsNil)
-	c.Assert(value > 0, Equals, true)
+	c.Assert(value.IsZero(), Equals, false)
 }
 
 func (s *CoverageBackfillSuite) TestGetGas(c *C) {
@@ -1471,29 +1552,6 @@ func (s *CoverageBackfillSuite) TestRegexpRemoveTrailingZeros(c *C) {
 	c.Assert(result, Equals, "abcdef")
 }
 
-// HelpersSuite tests helper functions without requiring the full Client setup
-type HelpersSuite struct{}
-
-var _ = Suite(&HelpersSuite{})
-
-func (s *HelpersSuite) TestSumVoutSatsEmpty(c *C) {
-	tx := &btcjson.TxRawResult{}
-	sum, err := sumVoutSats(common.BTCChain, tx)
-	c.Assert(err, IsNil)
-	c.Assert(sum, Equals, uint64(0))
-}
-
-func (s *HelpersSuite) TestSumVoutSatsSingleVout(c *C) {
-	tx := &btcjson.TxRawResult{
-		Vout: []btcjson.Vout{
-			{Value: 1.0},
-		},
-	}
-	sum, err := sumVoutSats(common.BTCChain, tx)
-	c.Assert(err, IsNil)
-	c.Assert(sum, Equals, uint64(100000000))
-}
-
 // MemoToScriptsSuite tests the exported MemoToScripts function independently
 type MemoToScriptsSuite struct{}
 
@@ -1548,8 +1606,22 @@ func (s *SignerInternalSuite) SetUpTest(c *C) {
 	cfg.UTXO.DefaultSatsPerVByte = 25
 	cfg.UTXO.MaxSatsPerVByte = 1000
 
+	// getGasCoin converts the stored fee through the RPC amount converter, so
+	// the client needs a constructed rpc.Client (no server is contacted).
+	rpcClient, err := utxorpc.NewClient(
+		"http://127.0.0.1:1",
+		"",
+		"",
+		0,
+		time.Second,
+		cfg.ChainID,
+		zerolog.Nop(),
+	)
+	c.Assert(err, IsNil)
+
 	s.client = &Client{
 		cfg:                       cfg,
+		rpc:                       rpcClient,
 		temporalStorage:           ts,
 		signerLock:                &sync.Mutex{},
 		vaultLocks:                make(map[string]*sync.Mutex),

@@ -318,7 +318,7 @@ func (c *SOLClient) GetGasEstimateForSolvency() cosmos.Uint {
 	nativeCurrentFee := cosmos.NewUint(3).
 		MulUint64(c.cfg.BlockScanner.MaxGasLimit).
 		MulUint64(c.solScanner.lastFeeRate.Load())
-	return c.cfg.ChainID.NativeGasToThorchain(nativeCurrentFee)
+	return c.cfg.ChainID.NativeGasToThorchainFloor(nativeCurrentFee)
 }
 
 // ReportSolvency reports solvency once per configured solvency blocks.

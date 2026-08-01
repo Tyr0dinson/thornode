@@ -360,6 +360,14 @@ func (a *SwapMemolessActor) prepareSwapMemolessByAmount(config *OpConfig) OpResu
 		a.swapAmount = a.swapAmount.Add(sdkmath.NewUint(a.memolessRef))
 	}
 
+	// When the amount has fewer native digits than the reference space
+	// (e.g. a sub-1000-XEC swap at 2 decimals vs a 5-digit reference),
+	// clearing the last digits erases the amount and leaves only the
+	// reference, which is below dust. Encode upward instead.
+	if a.swapAmount.LTE(sdkmath.NewUint(a.memolessRef).MulUint64(scalingDivisor)) {
+		a.swapAmount = a.amountWithEncodedRefAtOrAbove(before)
+	}
+
 	a.Log().Info().
 		Stringer("before", before).
 		Stringer("after", a.swapAmount).

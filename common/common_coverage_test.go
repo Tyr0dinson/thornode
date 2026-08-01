@@ -1156,6 +1156,10 @@ func (s *CoverageSuite) TestChainGetGasUnits(c *C) {
 	c.Assert(units, Equals, "satsperbyte")
 	c.Assert(perOne.Equal(cosmos.NewUint(1e8)), Equals, true)
 
+	units, perOne = XECChain.GetGasUnits()
+	c.Assert(units, Equals, "satsperbyte")
+	c.Assert(perOne.Equal(cosmos.NewUint(100)), Equals, true)
+
 	units, perOne = ETHChain.GetGasUnits()
 	c.Assert(units, Equals, "gwei")
 	c.Assert(perOne.Equal(cosmos.NewUint(1e9)), Equals, true)
@@ -1183,14 +1187,14 @@ func (s *CoverageSuite) TestChainGetGasUnits(c *C) {
 
 func (s *CoverageSuite) TestChainNativeGasConversions(c *C) {
 	// BTC: 1e8 per one, so 1e8 native = 1e8 thorchain
-	result := BTCChain.NativeGasToThorchain(cosmos.NewUint(1e8))
+	result := BTCChain.NativeGasToThorchainFloor(cosmos.NewUint(1e8))
 	c.Assert(result.Equal(cosmos.NewUint(1e8)), Equals, true)
 
-	result2 := BTCChain.ThorchainToNativeGas(cosmos.NewUint(1e8))
+	result2 := BTCChain.ThorchainToNativeGasFloor(cosmos.NewUint(1e8))
 	c.Assert(result2.Equal(cosmos.NewUint(1e8)), Equals, true)
 
 	// ETH: 1e9 per one, so 1e9 native = 1e8 thorchain
-	result3 := ETHChain.NativeGasToThorchain(cosmos.NewUint(1e9))
+	result3 := ETHChain.NativeGasToThorchainFloor(cosmos.NewUint(1e9))
 	c.Assert(result3.Equal(cosmos.NewUint(1e8)), Equals, true)
 }
 
@@ -1203,12 +1207,14 @@ func (s *CoverageSuite) TestChainGetGasAssetDecimal(c *C) {
 	c.Assert(SUIChain.GetGasAssetDecimal(), Equals, int64(9))
 	c.Assert(ADAChain.GetGasAssetDecimal(), Equals, int64(6))
 	c.Assert(ETHChain.GetGasAssetDecimal(), Equals, int64(8))
+	c.Assert(XECChain.GetGasAssetDecimal(), Equals, int64(2))
 }
 
 func (s *CoverageSuite) TestChainDustThreshold(c *C) {
 	c.Assert(BTCChain.DustThreshold().Equal(cosmos.NewUint(1_000)), Equals, true)
 	c.Assert(LTCChain.DustThreshold().Equal(cosmos.NewUint(100_000)), Equals, true)
 	c.Assert(BCHChain.DustThreshold().Equal(cosmos.NewUint(10_000)), Equals, true)
+	c.Assert(XECChain.DustThreshold().Equal(cosmos.NewUint(10_000_000_000)), Equals, true)
 	c.Assert(ZECChain.DustThreshold().Equal(cosmos.NewUint(15_000)), Equals, true)
 	c.Assert(DOGEChain.DustThreshold().Equal(cosmos.NewUint(100_000_000)), Equals, true)
 	c.Assert(ETHChain.DustThreshold().Equal(cosmos.NewUint(1_000)), Equals, true)
@@ -1228,6 +1234,7 @@ func (s *CoverageSuite) TestChainP2WPKHOutputValue(c *C) {
 	c.Assert(LTCChain.P2WPKHOutputValue(), Equals, int64(2940))
 	c.Assert(DOGEChain.P2WPKHOutputValue(), Equals, int64(18_200_000))
 	c.Assert(BCHChain.P2WPKHOutputValue(), Equals, int64(546))
+	c.Assert(XECChain.P2WPKHOutputValue(), Equals, int64(546))
 	c.Assert(ZECChain.P2WPKHOutputValue(), Equals, int64(2730))
 	c.Assert(ETHChain.P2WPKHOutputValue(), Equals, int64(0))
 }

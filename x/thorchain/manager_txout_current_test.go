@@ -79,6 +79,29 @@ func (s TxOutStoreSuite) TestTakeAffiliateFee(c *C) {
 	c.Assert(amount.Equal(toi.Coin.Amount), Equals, true, Commentf("Amount should be unchanged"))
 }
 
+func (s TxOutStoreSuite) TestOutboundPrecision(c *C) {
+	zeroDecimalPool := NewPool()
+
+	// Gas assets remain representable before a pool has stored its precision.
+	c.Assert(outboundPrecision(zeroDecimalPool, common.XECAsset), Equals, int64(2))
+	amount := cosmos.NewUint(3_703_500_000)
+	c.Assert(
+		cosmos.RoundToDecimal(amount, outboundPrecision(zeroDecimalPool, common.XECAsset)).String(),
+		Equals,
+		"3703000000",
+	)
+
+	// Once present, pool precision remains authoritative.
+	xecPool := NewPool()
+	xecPool.Decimals = 4
+	c.Assert(outboundPrecision(xecPool, common.XECAsset), Equals, int64(4))
+
+	// Zero retains its existing "no rounding" meaning for non-gas assets.
+	nonGasAsset, err := common.NewAsset("ETH.USDC")
+	c.Assert(err, IsNil)
+	c.Assert(outboundPrecision(zeroDecimalPool, nonGasAsset), Equals, int64(0))
+}
+
 func (s TxOutStoreSuite) TestIsAffiliateFeeExempt(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 	txOutStore := newTxOutStorage(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())

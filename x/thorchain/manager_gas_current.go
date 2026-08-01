@@ -147,14 +147,13 @@ func (gm *GasMgr) GetAssetOutboundFee(ctx cosmos.Context, asset common.Asset, in
 
 	// Calculate outbound fee based on current fee multiplier
 	nativeChainBaseFee := cosmos.NewUint(chainOutboundFee.TransactionSize).MulUint64(chainOutboundFee.TransactionFeeRate)
-	chainBaseFee := asset.GetChain().NativeGasToThorchain(nativeChainBaseFee)
+	chainBaseFee := asset.GetChain().NativeGasToThorchainFloor(nativeChainBaseFee)
 	feeMultiplierBps := gm.CalcOutboundFeeMultiplier(ctx, cosmos.NewUint(uint64(targetOutboundFeeSurplus)), outboundFeeSpentRune, outboundFeeWithheldRune, cosmos.NewUint(uint64(maxMultiplierBasisPoints)), cosmos.NewUint(uint64(minMultiplierBasisPoints)))
 	finalFee := common.GetUncappedShare(feeMultiplierBps, cosmos.NewUint(constants.MaxBasisPts), chainBaseFee)
 
-	fee := cosmos.RoundToDecimal(
-		finalFee,
-		gasPool.Decimals,
-	)
+	gasPrecision := outboundPrecision(gasPool, asset.GetChain().GetGasAsset())
+	fee := cosmos.RoundToDecimal(finalFee, gasPrecision)
+	minAsset = cosmos.RoundToDecimal(minAsset, gasPrecision)
 
 	// Ensure fee is always more than minAsset
 	if fee.LT(minAsset) {

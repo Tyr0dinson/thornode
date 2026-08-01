@@ -474,7 +474,7 @@ func (s *ExtraTestSuite) TestUpdateGasCacheTinyFeeBecomesOne(c *C) {
 	scanner := &CosmosBlockScanner{cfg: cfg}
 
 	// Very small fee with very large gas should produce a zero fee after
-	// ThorchainToNativeGas conversion, triggering the fee.IsZero() -> OneUint() path
+	// ThorchainToNativeGasFloor conversion, triggering the fee.IsZero() -> OneUint() path
 	scanner.updateGasCache(&MockFeeTx{
 		gas: 300000000, // 3e8 - large enough to make fee zero after division
 		fee: ctypes.Coins{ctypes.NewCoin("uatom", sdkmath.NewInt(1))},

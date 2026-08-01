@@ -1760,7 +1760,7 @@ func TestUpdateFeeCacheGrowsToMax(t *testing.T) {
 
 func TestAverageFeeNonEmpty(t *testing.T) {
 	scanner := &XrpBlockScanner{}
-	// Directly populate feeCache to avoid ThorchainToNativeGas conversion
+	// Directly populate feeCache to avoid ThorchainToNativeGasFloor conversion
 	scanner.feeCache = []sdkmath.Uint{sdkmath.NewUint(100), sdkmath.NewUint(200)}
 
 	avg := scanner.averageFee()

@@ -18,6 +18,7 @@ import (
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc/zec"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 // op-geth rpc uses 10s timeouts
@@ -49,6 +50,7 @@ type Client struct {
 	client     rpcClient
 	log        zerolog.Logger
 	chain      common.Chain
+	amounts    converter
 	maxRetries int
 	timeout    time.Duration
 }
@@ -71,6 +73,7 @@ func NewClient(host, user, password string, maxRetries int, timeout time.Duratio
 	client := Client{
 		log:        log,
 		chain:      chain,
+		amounts:    newConverter(chain),
 		maxRetries: maxRetries,
 		timeout:    timeout,
 	}
@@ -94,6 +97,18 @@ func NewClient(host, user, password string, maxRetries int, timeout time.Duratio
 	}
 
 	return &client, nil
+}
+
+// ToBaseUnits converts this RPC client's decimal whole-coin wire amount to
+// integer base units.
+func (c *Client) ToBaseUnits(rpcAmount float64) (cosmos.Uint, error) {
+	return c.amounts.toBaseUnits(rpcAmount)
+}
+
+// FromBaseUnits converts integer base units to this RPC client's decimal
+// whole-coin wire amount.
+func (c *Client) FromBaseUnits(baseUnits cosmos.Uint) (float64, error) {
+	return c.amounts.fromBaseUnits(baseUnits)
 }
 
 // GetBlockCount returns the number of blocks in the longest block chain.
@@ -148,6 +163,41 @@ func (c *Client) GetBlockStats(hash string) (*btcjson.GetBlockStatsResult, error
 	var stats btcjson.GetBlockStatsResult
 	err := c.Call(&stats, "getblockstats", hash)
 	return &stats, extractBTCError(err)
+}
+
+// GetAverageFeeRate returns the block's average fee rate in chain base units
+// per virtual byte. Bitcoin Core-family daemons expose this field in two
+// incompatible wire formats: BTC/LTC use an integer base-unit amount, while
+// BCH/XEC use a decimal whole-asset amount.
+func (c *Client) GetAverageFeeRate(hash string) (uint64, error) {
+	switch c.chain {
+	case common.BTCChain, common.LTCChain:
+		stats, err := c.GetBlockStats(hash)
+		if err != nil {
+			return 0, err
+		}
+		if stats.AverageFeeRate < 0 {
+			return 0, fmt.Errorf("negative average fee rate: %d", stats.AverageFeeRate)
+		}
+		return uint64(stats.AverageFeeRate), nil
+	case common.BCHChain, common.XECChain:
+		var stats struct {
+			AverageFeeRate float64 `json:"avgfeerate"`
+		}
+		if err := c.Call(&stats, "getblockstats", hash); err != nil {
+			return 0, extractBTCError(err)
+		}
+		feeBaseUnits, err := c.ToBaseUnits(stats.AverageFeeRate)
+		if err != nil {
+			return 0, fmt.Errorf("convert average fee rate to base units: %w", err)
+		}
+		if !feeBaseUnits.BigInt().IsUint64() {
+			return 0, fmt.Errorf("average fee rate overflows uint64: %s", feeBaseUnits)
+		}
+		return feeBaseUnits.Uint64(), nil
+	default:
+		return 0, fmt.Errorf("average fee rate is unsupported for chain %s", c.chain)
+	}
 }
 
 // GetMempoolEntry returns mempool data for the given transaction.

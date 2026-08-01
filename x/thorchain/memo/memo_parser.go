@@ -465,7 +465,9 @@ func parseDestinationAndRefund(value string, resolveDestination, resolveRefund a
 	}
 
 	if destination.IsEmpty() && !refundAddress.IsEmpty() {
-		return common.NoAddress, common.NoAddress, fmt.Errorf("refund address is set but destination address is empty")
+		// Surface the refund address alongside the error: refund handling may
+		// still use it even though the memo as a whole is invalid.
+		return destination, refundAddress, fmt.Errorf("refund address is set but destination address is empty")
 	}
 
 	return destination, refundAddress, nil

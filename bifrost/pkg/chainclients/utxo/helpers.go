@@ -1,6 +1,8 @@
 package utxo
 
 import (
+	"fmt"
+
 	"github.com/btcsuite/btcd/btcec"
 	btcjson "github.com/btcsuite/btcd/btcjson"
 	"github.com/cometbft/cometbft/crypto/secp256k1"
@@ -14,14 +16,21 @@ func bech32AccountPubKey(key *btcec.PrivateKey) (common.PubKey, error) {
 	return common.NewPubKeyFromCrypto(pk)
 }
 
-func sumVoutSats(chain common.Chain, tx *btcjson.TxRawResult) (uint64, error) {
-	var sumVout uint64 = 0
+func (c *Client) sumVoutBaseUnits(tx *btcjson.TxRawResult) (uint64, error) {
+	var totalBaseUnits uint64
 	for _, vout := range tx.Vout {
-		amount, err := rpcAmountToSatsForChain(chain, vout.Value)
+		baseUnits, err := c.rpc.ToBaseUnits(vout.Value)
 		if err != nil {
 			return 0, err
 		}
-		sumVout += uint64(amount)
+		amount, err := toUint64(baseUnits)
+		if err != nil {
+			return 0, err
+		}
+		if ^uint64(0)-totalBaseUnits < amount {
+			return 0, fmt.Errorf("sum of transaction outputs overflows uint64")
+		}
+		totalBaseUnits += amount
 	}
-	return sumVout, nil
+	return totalBaseUnits, nil
 }
