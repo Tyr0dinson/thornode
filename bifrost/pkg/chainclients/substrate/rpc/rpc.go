@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,11 @@ import (
 	"golang.org/x/crypto/blake2b"
 
 	"gitlab.com/thorchain/thornode/v3/common/crypto/ss58"
+)
+
+const (
+	codeInvalidTx         = 1010 // "Invalid Transaction"
+	codeTxAlreadyImported = 1013 // "Transaction Already Imported"
 )
 
 // Client is a JSON-RPC client for Substrate-based chains.
@@ -62,6 +68,19 @@ func (e *jsonRPCError) Error() string {
 		return fmt.Sprintf("rpc error (code: %d): %s: %s", e.Code, e.Message, string(e.Data))
 	}
 	return fmt.Sprintf("rpc error (code: %d): %s", e.Code, e.Message)
+}
+
+func IsAlreadyImportedErr(err error) bool {
+	var rpcErr *jsonRPCError
+	return errors.As(err, &rpcErr) && rpcErr.Code == codeTxAlreadyImported
+}
+
+func IsStaleNonceErr(err error) bool {
+	var rpcErr *jsonRPCError
+	if !errors.As(err, &rpcErr) || rpcErr.Code != codeInvalidTx {
+		return false
+	}
+	return strings.Contains(strings.ToLower(string(rpcErr.Data)), "outdated")
 }
 
 // call executes a JSON-RPC call.

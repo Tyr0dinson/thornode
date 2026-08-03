@@ -24,7 +24,11 @@ type Params struct {
 	DefaultFee        uint64
 	BalanceSize       int
 	CheckMetadataHash bool // whether the runtime includes CheckMetadataHash (RFC-0078)
-	Indexes           map[string]byte
+	// ChargeAssetTxPayment marks runtimes (e.g. Polkadot Asset Hub) whose fee
+	// extension is ChargeAssetTxPayment instead of ChargeTransactionPayment,
+	// encoding an extra Option<AssetId> byte after the tip.
+	ChargeAssetTxPayment bool
+	Indexes              map[string]byte
 }
 
 func (p Params) ValidateMetadata(metadata *types.Metadata) error {

@@ -6,21 +6,26 @@ package substrate
 import "gitlab.com/thorchain/thornode/v3/common"
 
 var ChainParams = map[common.Chain]Params{
+	// DOT targets Polkadot Asset Hub (spec_name "statemint"), where user DOT
+	// balances live since the Asset Hub Migration (2025-11). The relay chain
+	// no longer holds user DOT. Indexes verified against live Asset Hub
+	// metadata, specVersion 2003001.
 	common.DOTChain: {
-		SpecName:          "polkadot",
-		MortalEraPeriod:   128,
-		DefaultFee:        20_000_000, // 0.002 DOT
-		BalanceSize:       16,
-		CheckMetadataHash: true,
+		SpecName:             "statemint",
+		MortalEraPeriod:      128,
+		DefaultFee:           20_000_000, // 0.002 DOT — recalibrate against live TransactionFeePaid before activation
+		BalanceSize:          16,
+		CheckMetadataHash:    true,
+		ChargeAssetTxPayment: true,
 		Indexes: map[string]byte{
-			BalancesPallet:                 5,
+			BalancesPallet:                 10,
 			BalancesTransferAllowDeathCall: 0,
 			BalancesTransferKeepAliveCall:  3,
 			BalancesTransferEvent:          2,
 			SystemPallet:                   0,
 			SystemRemarkCall:               0,
-			TransactionPaymentPallet:       32,
-			UtilityPallet:                  26,
+			TransactionPaymentPallet:       11,
+			UtilityPallet:                  40,
 			UtilityBatchAllCall:            2,
 		},
 	},

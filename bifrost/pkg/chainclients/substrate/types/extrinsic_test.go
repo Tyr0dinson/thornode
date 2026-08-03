@@ -2,6 +2,7 @@ package types
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -233,11 +234,89 @@ func (s *ExtrinsicSuite) TestSigningPayloadContainsAllFields(c *C) {
 	blockHash := make([]byte, 32)
 	blockHash[0] = 0xBB
 
-	payload, err := SigningPayload(callData, era, 1, 0, true, MetadataModeDisabled, 100, 1, genesisHash, blockHash)
+	payload, err := SigningPayload(callData, era, 1, 0, true, MetadataModeDisabled, false, 100, 1, genesisHash, blockHash)
 	c.Assert(err, IsNil)
 	c.Assert(payload[0], Equals, byte(5))
 	c.Assert(payload[1], Equals, byte(3))
 	c.Assert(payload[len(payload)-1], Equals, byte(0x00))
 	c.Assert(payload[len(payload)-33], Equals, byte(0xBB))
 	c.Assert(payload[len(payload)-65], Equals, byte(0xAA))
+}
+
+func (s *ExtrinsicSuite) TestSigningPayloadChargeAssetTxPayment(c *C) {
+	callData := []byte{10, 3}
+	era := MortalEra(64, 10)
+	genesisHash := make([]byte, 32)
+	blockHash := make([]byte, 32)
+
+	without, err := SigningPayload(callData, era, 1, 0, true, MetadataModeDisabled, false, 100, 1, genesisHash, blockHash)
+	c.Assert(err, IsNil)
+	with, err := SigningPayload(callData, era, 1, 0, true, MetadataModeDisabled, true, 100, 1, genesisHash, blockHash)
+	c.Assert(err, IsNil)
+
+	// ChargeAssetTxPayment adds exactly one explicit byte: Option<AssetId>::None
+	// (0x00) between the tip and the metadata mode byte. The implicit section
+	// (spec version onward) is unchanged.
+	c.Assert(len(with), Equals, len(without)+1)
+	// Explicit section before the option byte: callData | era | nonce | tip
+	prefixLen := len(callData) + len(era) + 1 /* compact nonce=1 */ + 1 /* compact tip=0 */
+	c.Check(bytes.Equal(with[:prefixLen], without[:prefixLen]), Equals, true)
+	c.Check(with[prefixLen], Equals, byte(0x00), Commentf("Option<AssetId>::None byte"))
+	c.Check(bytes.Equal(with[prefixLen+1:], without[prefixLen:]), Equals, true,
+		Commentf("metadata mode byte and implicit section must be unchanged"))
+}
+
+func (s *ExtrinsicSuite) TestEncodeParseRoundTripChargeAssetTxPayment(c *C) {
+	signer := make([]byte, 32)
+	signer[0] = 0x01
+	sig := make([]byte, 64)
+	sig[0] = 0xFF
+	callData := []byte{10, 3, 0x00}
+
+	ext := &Extrinsic{
+		Signer:               signer,
+		SignatureType:        SignatureTypeEd25519,
+		Signature:            sig,
+		Era:                  MortalEra(64, 10),
+		Nonce:                5,
+		Tip:                  0,
+		MetadataMode:         MetadataModeDisabled,
+		CheckMetadataHash:    true,
+		ChargeAssetTxPayment: true,
+		CallData:             callData,
+	}
+	encoded := EncodeSignedExtrinsic(ext)
+
+	// Round trip with matching flags recovers all fields
+	parsed, err := ParseSignedExtrinsic(encoded, true, true)
+	c.Assert(err, IsNil)
+	c.Check(bytes.Equal(parsed.Signer, signer), Equals, true)
+	c.Check(parsed.Nonce, Equals, uint64(5))
+	c.Check(parsed.Tip, Equals, uint64(0))
+	c.Check(parsed.MetadataMode, Equals, byte(MetadataModeDisabled))
+	c.Check(bytes.Equal(parsed.CallData, callData), Equals, true)
+
+	// Encoding one extra byte vs. the relay-style layout
+	extNoOption := *ext
+	extNoOption.ChargeAssetTxPayment = false
+	c.Check(len(encoded), Equals, len(EncodeSignedExtrinsic(&extNoOption))+1)
+
+	// Parsing without the flag misaligns by one byte: the option byte is
+	// consumed as the metadata mode byte and the call data shifts. Pin the
+	// shift so a params/codec mismatch cannot go unnoticed.
+	misparsed, err := ParseSignedExtrinsic(encoded, true, false)
+	c.Assert(err, IsNil)
+	c.Check(bytes.Equal(misparsed.CallData, callData), Equals, false)
+
+	// A Some(assetId) variant (vault never signs one) must be rejected: flip
+	// the option byte, which sits directly before the mode byte and call data.
+	mutated := make([]byte, len(encoded))
+	copy(mutated, encoded)
+	optionPos := len(mutated) - len(callData) - 1 /* mode byte */ - 1 /* option byte */
+	c.Assert(mutated[optionPos], Equals, byte(0x00))
+	mutated[optionPos] = 0x01
+	_, err = ParseSignedExtrinsic(mutated, true, true)
+	c.Assert(err, NotNil)
+	c.Check(strings.Contains(err.Error(), "non-native fee asset"), Equals, true,
+		Commentf("got: %v", err))
 }

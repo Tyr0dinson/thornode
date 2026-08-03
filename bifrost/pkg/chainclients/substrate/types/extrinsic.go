@@ -37,7 +37,12 @@ type Extrinsic struct {
 	Tip               uint64
 	MetadataMode      byte // CheckMetadataHash mode (0x00 = disabled)
 	CheckMetadataHash bool // if false, MetadataMode is not encoded
-	CallData          []byte
+	// ChargeAssetTxPayment marks runtimes (e.g. Polkadot Asset Hub) whose fee
+	// extension is ChargeAssetTxPayment instead of ChargeTransactionPayment.
+	// It encodes Option<AssetId> after the tip — always None (0x00) here,
+	// since the vault only ever pays fees in the native asset.
+	ChargeAssetTxPayment bool
+	CallData             []byte
 }
 
 // ErrUnsignedExtrinsic indicates the version byte's bit 7 is clear (the
@@ -88,16 +93,20 @@ func BatchAll(palletIndex, callIndex byte, calls [][]byte) []byte {
 // The payload follows the standard Substrate TransactionExtensions order
 // (for runtimes including CheckMetadataHash per RFC-0078):
 //
-//	Encoded extensions: era | compact(nonce) | compact(tip) | metadata_mode
+//	Encoded extensions: era | compact(nonce) | compact(tip) | [asset_id] | metadata_mode
 //	Implicit data:      spec_version | tx_version | genesis_hash | block_hash | Option<Hash>::None
 //
 // The metadata_mode byte (0x00 = disabled) is from CheckMetadataHash.
 // When mode is disabled, the implicit Option<Hash> encodes as None (0x00).
+// On ChargeAssetTxPayment runtimes (Asset Hub) the fee extension encodes
+// Option<AssetId> directly after the tip — always None (0x00) for native-asset
+// fees; its implicit is empty.
 func SigningPayload(
 	callData, era []byte,
 	nonce, tip uint64,
 	checkMetadataHash bool,
 	metadataMode byte,
+	chargeAssetTxPayment bool,
 	specVersion, txVersion uint32,
 	genesisHash, blockHash []byte,
 ) ([]byte, error) {
@@ -111,6 +120,10 @@ func SigningPayload(
 	payload = append(payload, era...)
 	payload = append(payload, EncodeCompact(nonce)...)
 	payload = append(payload, EncodeCompact(tip)...)
+	// ChargeAssetTxPayment: Option<AssetId>::None (pay fees in native asset)
+	if chargeAssetTxPayment {
+		payload = append(payload, 0x00)
+	}
 	// Metadata hash
 	if checkMetadataHash {
 		payload = append(payload, metadataMode)
@@ -151,6 +164,11 @@ func EncodeSignedExtrinsic(ext *Extrinsic) []byte {
 
 	// Tip (compact)
 	body = append(body, EncodeCompact(ext.Tip)...)
+
+	// ChargeAssetTxPayment: Option<AssetId>::None (pay fees in native asset)
+	if ext.ChargeAssetTxPayment {
+		body = append(body, 0x00)
+	}
 
 	// CheckMetadataHash mode byte
 	if ext.CheckMetadataHash {
@@ -234,7 +252,7 @@ func HexEncodeHead(data []byte, n int) string {
 	return hex.EncodeToString(data[:n])
 }
 
-func ParseSignedExtrinsic(data []byte, checkMetadataHash bool) (*Extrinsic, error) {
+func ParseSignedExtrinsic(data []byte, checkMetadataHash, chargeAssetTxPayment bool) (*Extrinsic, error) {
 	// Decode the length prefix
 	_, consumed, err := DecodeCompact(data)
 	if err != nil {
@@ -331,6 +349,20 @@ func ParseSignedExtrinsic(data []byte, checkMetadataHash bool) (*Extrinsic, erro
 	}
 	pos += tipLen
 
+	// ChargeAssetTxPayment (Asset Hub): Option<AssetId> follows the tip.
+	// Only None (0x00, native-asset fees) is supported — a Some variant is
+	// followed by a variable-length AssetId which cannot be skipped safely,
+	// and the vault never signs one.
+	if chargeAssetTxPayment {
+		if pos >= len(body) {
+			return nil, fmt.Errorf("extrinsic too short for asset id option byte")
+		}
+		if body[pos] != 0x00 {
+			return nil, fmt.Errorf("unsupported non-native fee asset id option: %d", body[pos])
+		}
+		pos++ // skip Option<AssetId>::None byte
+	}
+
 	// CheckMetadataHash mode byte (RFC-0078, present in DOT/KSM/TAO runtimes).
 	// Chains without this extension would not have this byte
 	var metadataMode byte
@@ -346,14 +378,15 @@ func ParseSignedExtrinsic(data []byte, checkMetadataHash bool) (*Extrinsic, erro
 	callData := body[pos:]
 
 	return &Extrinsic{
-		Signer:            signerPubkey,
-		Signature:         signature,
-		SignatureType:     sigType,
-		Era:               era,
-		Nonce:             nonceVal.Uint64(),
-		Tip:               tipVal.Uint64(),
-		MetadataMode:      metadataMode,
-		CheckMetadataHash: checkMetadataHash,
-		CallData:          callData,
+		Signer:               signerPubkey,
+		Signature:            signature,
+		SignatureType:        sigType,
+		Era:                  era,
+		Nonce:                nonceVal.Uint64(),
+		Tip:                  tipVal.Uint64(),
+		MetadataMode:         metadataMode,
+		CheckMetadataHash:    checkMetadataHash,
+		ChargeAssetTxPayment: chargeAssetTxPayment,
+		CallData:             callData,
 	}, nil
 }

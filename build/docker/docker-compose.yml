@@ -1152,7 +1152,9 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
-      start_period: 10s
+      # First boot builds Asset Hub genesis state from the plain chain spec,
+      # which takes a few minutes before the RPC comes up.
+      start_period: 300s
     platform: linux/amd64
 
   # ------------------------------ zcash ------------------------------

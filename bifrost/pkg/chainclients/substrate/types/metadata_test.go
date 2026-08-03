@@ -23,6 +23,11 @@ var _ = Suite(&MetadataSuite{})
 //
 //	curl -sS -H 'Content-Type: application/json' \
 //	  -d '{"jsonrpc":"2.0","id":1,"method":"state_getMetadata","params":[]}' \
+//	  https://polkadot-asset-hub-rpc.polkadot.io | jq -r .result \
+//	  > testdata/metadata-dot-assethub-<spec_version>.hex
+//
+//	curl -sS -H 'Content-Type: application/json' \
+//	  -d '{"jsonrpc":"2.0","id":1,"method":"state_getMetadata","params":[]}' \
 //	  https://rpc.polkadot.io | jq -r .result \
 //	  > testdata/metadata-dot-mainnet-<spec_version>.hex
 //
@@ -41,7 +46,13 @@ func (s *MetadataSuite) TestParseMetadataGoldenVectors(c *C) {
 		fixturePath string
 	}{
 		{
-			name:        "DOT mainnet v2.2.1",
+			name:        "DOT Asset Hub 2003001",
+			fixturePath: "testdata/metadata-dot-assethub-2003001.hex",
+		},
+		{
+			// Relay-chain metadata: kept as a ParseMetadata golden vector and
+			// as the wrong-runtime input for params_mainnet_test.go
+			name:        "DOT relay mainnet v2.2.1",
 			fixturePath: "testdata/metadata-dot-mainnet-2002001.hex",
 		},
 		{

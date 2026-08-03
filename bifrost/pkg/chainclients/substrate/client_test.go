@@ -51,6 +51,16 @@ type mockBridge struct {
 	thorclient.ThorchainBridge
 }
 
+type rpcError struct {
+	Code    int
+	Message string
+	Data    string
+}
+
+func (e *rpcError) Error() string {
+	return e.Message
+}
+
 // ---------------------------------------------------------------------------
 // nonceMetadata JSON serialization
 // ---------------------------------------------------------------------------
@@ -127,7 +137,16 @@ func (h *rpcHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	result, err := fn(req.Params)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%d,"error":{"code":-32000,"message":"%s"}}`, req.ID, err.Error())
+
+		var rpcErr *rpcError
+		if errors.As(err, &rpcErr) {
+			fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%d,"error":{"code":%d,"message":"%s","data":"%s"}}`,
+				req.ID, rpcErr.Code, rpcErr.Message, rpcErr.Data)
+		} else {
+			fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%d,"error":{"code":%d,"message":"%s"}}`,
+				req.ID, -32000, err.Error())
+		}
+
 		return
 	}
 
@@ -462,7 +481,11 @@ func (s *ClientSuite) TestBroadcastTx_Success(c *C) {
 func (s *ClientSuite) TestBroadcastTx_AlreadyImported(c *C) {
 	h := newRPCHandler()
 	h.on("author_submitExtrinsic", func(_ json.RawMessage) (interface{}, error) {
-		return nil, fmt.Errorf("rpc error (code: 1013): Transaction already imported")
+		return nil, &rpcError{
+			Code:    1013,
+			Message: "Transaction Already Imported",
+			Data:    "0x1234",
+		}
 	})
 	srv := httptest.NewServer(h)
 	defer srv.Close()
@@ -528,7 +551,11 @@ func (s *ClientSuite) TestBroadcastTx_Stale(c *C) {
 	for _, tt := range tests {
 		h := newRPCHandler()
 		h.on("author_submitExtrinsic", func(_ json.RawMessage) (interface{}, error) {
-			return nil, fmt.Errorf("rpc error (code: 1010): Stale")
+			return nil, &rpcError{
+				Code:    1010,
+				Message: "Invalid Transaction",
+				Data:    "Transaction is outdated",
+			}
 		})
 		srv := httptest.NewServer(h)
 

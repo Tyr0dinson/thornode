@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"strings"
 	"sync"
 	"time"
 
@@ -497,6 +496,7 @@ func (c *Client) createAndSignExtrinsic(
 		0, // tip = 0
 		c.chainScanner.params.CheckMetadataHash,
 		stypes.MetadataModeDisabled,
+		c.chainScanner.params.ChargeAssetTxPayment,
 		specVersion,
 		txVersion,
 		genesisHashBytes,
@@ -529,15 +529,16 @@ func (c *Client) createAndSignExtrinsic(
 
 	// Assemble the signed extrinsic
 	ext := &stypes.Extrinsic{
-		Signer:            vaultPubkeyBytes,
-		SignatureType:     stypes.SignatureTypeEd25519,
-		Signature:         sig,
-		Era:               era,
-		Nonce:             uint64(nonce),
-		Tip:               0,
-		MetadataMode:      stypes.MetadataModeDisabled,
-		CheckMetadataHash: c.chainScanner.params.CheckMetadataHash,
-		CallData:          callData,
+		Signer:               vaultPubkeyBytes,
+		SignatureType:        stypes.SignatureTypeEd25519,
+		Signature:            sig,
+		Era:                  era,
+		Nonce:                uint64(nonce),
+		Tip:                  0,
+		MetadataMode:         stypes.MetadataModeDisabled,
+		CheckMetadataHash:    c.chainScanner.params.CheckMetadataHash,
+		ChargeAssetTxPayment: c.chainScanner.params.ChargeAssetTxPayment,
+		CallData:             callData,
 	}
 
 	return stypes.EncodeSignedExtrinsic(ext), nil
@@ -551,19 +552,18 @@ func (c *Client) BroadcastTx(txOutItem ttypes.TxOutItem, rawTx []byte) (string, 
 	hexTx := stypes.HexEncode(rawTx)
 	nodeHash, err := c.rpcClient.SubmitExtrinsic(hexTx)
 	if err != nil {
-		errMsg := err.Error()
 		switch {
 		// Tx already in the pool — another bifrost instance submitted first.
 		// Same pattern as XRP (tefPAST_SEQ) and Cosmos (CosmosSuccessCodes).
-		case strings.Contains(errMsg, "AlreadyImported") || strings.Contains(errMsg, "already imported"):
+		case rpc.IsAlreadyImportedErr(err):
 			c.logger.Info().Str("txid", txHash).Msg("extrinsic already in pool, treating as success")
-		case strings.Contains(errMsg, "Stale"):
+		case rpc.IsStaleNonceErr(err):
 			// Stale means the nonce slot was burned. Usually that's our prior
 			// submission already confirming, but it can also be an external burn.
 			// The migration cache tells us which: a hit means the scanner saw the
 			// tx land — treat as success; a miss means abandon, since re-broad-
 			// casting risks a double-spend.
-			extrinsic, parseErr := stypes.ParseSignedExtrinsic(rawTx, c.chainScanner.params.CheckMetadataHash)
+			extrinsic, parseErr := stypes.ParseSignedExtrinsic(rawTx, c.chainScanner.params.CheckMetadataHash, c.chainScanner.params.ChargeAssetTxPayment)
 			if parseErr != nil {
 				return "", fmt.Errorf("failed to parse extrinsic: %w", parseErr)
 			}

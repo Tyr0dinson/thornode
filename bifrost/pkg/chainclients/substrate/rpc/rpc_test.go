@@ -173,15 +173,17 @@ func (s *RPCSuite) TestSystemAccountStorageKey_Deterministic(c *C) {
 // ---------------------------------------------------------------------------
 
 func (s *RPCSuite) TestJSONRPCError_WithData(c *C) {
-	// Substrate returns error details in the "data" field
-	raw := `{"code":1010,"message":"Invalid Transaction","data":"Stale"}`
+	// Substrate returns error details in the "data" field. A stale nonce is
+	// code 1010 "Invalid Transaction" with data "Transaction is outdated"
+	// (sp-runtime transaction_validity.rs, InvalidTransaction::Stale).
+	raw := `{"code":1010,"message":"Invalid Transaction","data":"Transaction is outdated"}`
 	var rpcErr jsonRPCError
 	err := json.Unmarshal([]byte(raw), &rpcErr)
 	c.Assert(err, IsNil)
 
 	errMsg := rpcErr.Error()
-	c.Check(strings.Contains(errMsg, "Stale"), Equals, true,
-		Commentf("error should contain 'Stale', got: %s", errMsg))
+	c.Check(strings.Contains(errMsg, "Transaction is outdated"), Equals, true,
+		Commentf("error should contain 'Transaction is outdated', got: %s", errMsg))
 	c.Check(strings.Contains(errMsg, "Invalid Transaction"), Equals, true,
 		Commentf("error should contain 'Invalid Transaction', got: %s", errMsg))
 }
@@ -200,15 +202,16 @@ func (s *RPCSuite) TestJSONRPCError_WithoutData(c *C) {
 }
 
 func (s *RPCSuite) TestJSONRPCError_AlreadyImported(c *C) {
-	// Substrate returns "Already imported" in the data field for pool errors
-	raw := `{"code":1013,"message":"Already Imported","data":"AlreadyImported"}`
+	// Substrate returns code 1013 "Transaction Already Imported" with the tx
+	// hash in the data field (sc-rpc-api author/error.rs).
+	raw := `{"code":1013,"message":"Transaction Already Imported","data":"0x1234"}`
 	var rpcErr jsonRPCError
 	err := json.Unmarshal([]byte(raw), &rpcErr)
 	c.Assert(err, IsNil)
 
 	errMsg := rpcErr.Error()
-	c.Check(strings.Contains(errMsg, "AlreadyImported"), Equals, true,
-		Commentf("error should contain 'AlreadyImported', got: %s", errMsg))
+	c.Check(strings.Contains(errMsg, "Transaction Already Imported"), Equals, true,
+		Commentf("error should contain 'Transaction Already Imported', got: %s", errMsg))
 }
 
 // ---------------------------------------------------------------------------
@@ -216,10 +219,10 @@ func (s *RPCSuite) TestJSONRPCError_AlreadyImported(c *C) {
 // ---------------------------------------------------------------------------
 
 func (s *RPCSuite) TestSubmitExtrinsic_SubstrateErrorDataPropagated(c *C) {
-	// Simulate Substrate returning a pool error with "Stale" in the data field
+	// Simulate Substrate rejecting a stale-nonce tx as a real node does
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"error":{"code":1010,"message":"Invalid Transaction","data":"Stale"}}`)
+		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"error":{"code":1010,"message":"Invalid Transaction","data":"Transaction is outdated"}}`)
 	}))
 	defer srv.Close()
 
@@ -227,15 +230,18 @@ func (s *RPCSuite) TestSubmitExtrinsic_SubstrateErrorDataPropagated(c *C) {
 	_, err := client.SubmitExtrinsic("0xdeadbeef")
 	c.Assert(err, NotNil, Commentf("expected error from SubmitExtrinsic"))
 
-	// The error must contain "Stale" for BroadcastTx to classify it correctly
-	c.Check(strings.Contains(err.Error(), "Stale"), Equals, true,
-		Commentf("error should propagate 'Stale' from data field, got: %s", err.Error()))
+	// BroadcastTx classifies stale nonces via IsStaleNonceErr, which must
+	// still match after SubmitExtrinsic wraps the error
+	c.Check(IsStaleNonceErr(err), Equals, true,
+		Commentf("IsStaleNonceErr should match wrapped pool error, got: %s", err.Error()))
+	c.Check(IsAlreadyImportedErr(err), Equals, false,
+		Commentf("stale error must not classify as already-imported"))
 }
 
 func (s *RPCSuite) TestSubmitExtrinsic_AlreadyImportedPropagated(c *C) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"error":{"code":1013,"message":"Already Imported","data":"AlreadyImported"}}`)
+		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"error":{"code":1013,"message":"Transaction Already Imported","data":"0x1234"}}`)
 	}))
 	defer srv.Close()
 
@@ -243,6 +249,88 @@ func (s *RPCSuite) TestSubmitExtrinsic_AlreadyImportedPropagated(c *C) {
 	_, err := client.SubmitExtrinsic("0xdeadbeef")
 	c.Assert(err, NotNil, Commentf("expected error from SubmitExtrinsic"))
 
-	c.Check(strings.Contains(err.Error(), "AlreadyImported"), Equals, true,
-		Commentf("error should propagate 'AlreadyImported' from data field, got: %s", err.Error()))
+	c.Check(IsAlreadyImportedErr(err), Equals, true,
+		Commentf("IsAlreadyImportedErr should match wrapped pool error, got: %s", err.Error()))
+	c.Check(IsStaleNonceErr(err), Equals, false,
+		Commentf("already-imported error must not classify as stale"))
+}
+
+// ---------------------------------------------------------------------------
+// Broadcast error classification predicates
+// ---------------------------------------------------------------------------
+
+func (s *RPCSuite) TestIsStaleNonceErr(c *C) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "stale nonce",
+			err:  &jsonRPCError{Code: 1010, Message: "Invalid Transaction", Data: json.RawMessage(`"Transaction is outdated"`)},
+			want: true,
+		},
+		{
+			name: "stale nonce wrapped",
+			err:  fmt.Errorf("failed to submit extrinsic: %w", &jsonRPCError{Code: 1010, Message: "Invalid Transaction", Data: json.RawMessage(`"Transaction is outdated"`)}),
+			want: true,
+		},
+		{
+			// Code 1010 covers every InvalidTransaction variant; only the
+			// Stale variant ("outdated") may be treated as a burned nonce.
+			name: "1010 bad signature is not stale",
+			err:  &jsonRPCError{Code: 1010, Message: "Invalid Transaction", Data: json.RawMessage(`"Transaction has a bad signature"`)},
+			want: false,
+		},
+		{
+			name: "1010 payment failure is not stale",
+			err:  &jsonRPCError{Code: 1010, Message: "Invalid Transaction", Data: json.RawMessage(`"Inability to pay some fees (e.g. account balance too low)"`)},
+			want: false,
+		},
+		{
+			name: "already imported is not stale",
+			err:  &jsonRPCError{Code: 1013, Message: "Transaction Already Imported", Data: json.RawMessage(`"0x1234"`)},
+			want: false,
+		},
+		{
+			name: "plain error is not stale",
+			err:  fmt.Errorf("rpc error (code: 1010): Invalid Transaction: Transaction is outdated"),
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		c.Check(IsStaleNonceErr(tt.err), Equals, tt.want, Commentf(tt.name))
+	}
+}
+
+func (s *RPCSuite) TestIsAlreadyImportedErr(c *C) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "already imported",
+			err:  &jsonRPCError{Code: 1013, Message: "Transaction Already Imported", Data: json.RawMessage(`"0x1234"`)},
+			want: true,
+		},
+		{
+			name: "already imported wrapped",
+			err:  fmt.Errorf("failed to submit extrinsic: %w", &jsonRPCError{Code: 1013, Message: "Transaction Already Imported", Data: json.RawMessage(`"0x1234"`)}),
+			want: true,
+		},
+		{
+			name: "invalid tx is not already imported",
+			err:  &jsonRPCError{Code: 1010, Message: "Invalid Transaction", Data: json.RawMessage(`"Transaction is outdated"`)},
+			want: false,
+		},
+		{
+			name: "plain error is not already imported",
+			err:  fmt.Errorf("rpc error (code: 1013): Transaction Already Imported"),
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		c.Check(IsAlreadyImportedErr(tt.err), Equals, tt.want, Commentf(tt.name))
+	}
 }

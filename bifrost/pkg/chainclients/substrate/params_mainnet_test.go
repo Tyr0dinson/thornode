@@ -29,20 +29,30 @@ func (s *ParamsSuite) TestValidateMetadataAgainstFixture(c *C) {
 		wantErrIn   string
 	}{
 		{
-			name:        "DOT mainnet — clean",
-			fixturePath: "types/testdata/metadata-dot-mainnet-2002001.hex",
+			name:        "DOT Asset Hub — clean",
+			fixturePath: "types/testdata/metadata-dot-assethub-2003001.hex",
 			chainID:     common.DOTChain,
 			tamper:      nil,
 			wantErrIn:   "",
 		},
 		{
-			name:        "DOT mainnet — Balances pallet renumbered",
-			fixturePath: "types/testdata/metadata-dot-mainnet-2002001.hex",
+			name:        "DOT Asset Hub — Balances pallet renumbered",
+			fixturePath: "types/testdata/metadata-dot-assethub-2003001.hex",
 			chainID:     common.DOTChain,
 			tamper: func(m *stypes.Metadata) {
 				bumpPalletIndex(m, "Balances", +1)
 			},
 			wantErrIn: "Balances",
+		},
+		{
+			// DOT targets Asset Hub since the Asset Hub Migration; validating
+			// against relay-chain metadata (Balances at 5, not 10) must fail
+			// so a mis-pointed RPC endpoint is caught at startup.
+			name:        "DOT params against relay-chain metadata — rejected",
+			fixturePath: "types/testdata/metadata-dot-mainnet-2002001.hex",
+			chainID:     common.DOTChain,
+			tamper:      nil,
+			wantErrIn:   "invalid pallet index",
 		},
 		{
 			name:        "TAO mainnet — clean",

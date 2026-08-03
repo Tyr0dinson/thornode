@@ -392,7 +392,7 @@ func (s *Scanner) processExtrinsic(extHex string, blockHeight int64, actualFee u
 	txHash := stypes.ExtrinsicHash(raw)
 
 	var extrinsic *stypes.Extrinsic
-	extrinsic, err = stypes.ParseSignedExtrinsic(raw, s.params.CheckMetadataHash)
+	extrinsic, err = stypes.ParseSignedExtrinsic(raw, s.params.CheckMetadataHash, s.params.ChargeAssetTxPayment)
 	if err != nil {
 		if errors.Is(err, stypes.ErrUnsignedExtrinsic) {
 			return nil, nil

@@ -6,21 +6,25 @@ package substrate
 import "gitlab.com/thorchain/thornode/v3/common"
 
 var ChainParams = map[common.Chain]Params{
+	// Mocknet runs the real Asset Hub Polkadot runtime (polkadot-omni-node in
+	// dev mode; see build/docker/mocknet/polkadot), so these params are
+	// identical to the mainnet entry in params_mainnet.go.
 	common.DOTChain: {
-		SpecName:          "rococo",
-		MortalEraPeriod:   128,
-		DefaultFee:        20_000_000, // 0.002 DOT
-		BalanceSize:       16,
-		CheckMetadataHash: true,
+		SpecName:             "statemint",
+		MortalEraPeriod:      128,
+		DefaultFee:           20_000_000, // 0.002 DOT
+		BalanceSize:          16,
+		CheckMetadataHash:    true,
+		ChargeAssetTxPayment: true,
 		Indexes: map[string]byte{
-			BalancesPallet:                 4,
+			BalancesPallet:                 10,
 			BalancesTransferAllowDeathCall: 0,
 			BalancesTransferKeepAliveCall:  3,
 			BalancesTransferEvent:          2,
 			SystemPallet:                   0,
 			SystemRemarkCall:               0,
-			TransactionPaymentPallet:       33,
-			UtilityPallet:                  24,
+			TransactionPaymentPallet:       11,
+			UtilityPallet:                  40,
 			UtilityBatchAllCall:            2,
 		},
 	},
