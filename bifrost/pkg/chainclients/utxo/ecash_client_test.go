@@ -1,3 +1,6 @@
+//go:build mocknet
+// +build mocknet
+
 package utxo
 
 import (
@@ -216,10 +219,6 @@ func (s *ECashClientSuite) TearDownTest(c *C) {
 }
 
 func (s *ECashClientSuite) TestFetchTxsNormalizesXECAndReportsNativeFee(c *C) {
-	if common.CurrentChainNetwork != common.MockNet {
-		c.Skip("the block fixture uses eCash regtest addresses")
-	}
-
 	// Consolidation is unrelated to scanning and would require a full THORChain
 	// bridge fixture, so mark it in progress for this focused public-path test.
 	s.client.consolidateInProgress.Store(true)
@@ -259,10 +258,6 @@ func (s *ECashClientSuite) TestFetchTxsNormalizesXECAndReportsNativeFee(c *C) {
 }
 
 func (s *ECashClientSuite) TestSignAndBroadcastOneXEC(c *C) {
-	if common.CurrentChainNetwork != common.MockNet {
-		c.Skip("the signer fixture uses eCash regtest addresses")
-	}
-
 	wif, err := btcutil.DecodeWIF("cRr3fyhDouygaZKvQEKHWiKyNCqCJHBF5h4NifbxVAyYiWRb28xL")
 	c.Assert(err, IsNil)
 	s.client.nodePrivKey = wif.PrivKey

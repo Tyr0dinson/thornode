@@ -1100,7 +1100,7 @@ func (c *Client) getGas(tx *btcjson.TxRawResult, isInbound bool) (common.Gas, er
 	}
 	totalGas := sumVin - sumVout
 	return common.Gas{
-		c.cfg.ChainID.NativeGasToThorCoin(cosmos.NewUint(totalGas)),
+		c.toThorCoin(cosmos.NewUint(totalGas)),
 	}, nil
 }
 

@@ -356,7 +356,7 @@ func (c *Client) GetAccount(pubkey common.PubKey, height *big.Int) (common.Accou
 	}
 	return common.NewAccount(0, 0,
 		common.Coins{
-			c.cfg.ChainID.NativeGasToThorCoin(totalBaseUnits),
+			c.toThorCoin(totalBaseUnits),
 		}, false), nil
 }
 

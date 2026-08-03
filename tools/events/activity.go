@@ -302,7 +302,11 @@ func LargeStreamingSwaps(block *thorscan.BlockResponse) {
 				util.FormatUSD(fromCloutUSD),
 			),
 		)
-		memoParts := memo.SplitMemoParts(event["memo"])
+		memoParts, err := memo.SplitMemoParts(event["memo"])
+		if err != nil {
+			log.Error().Str("memo", event["memo"]).Err(err).Msg("unable to split swap memo")
+			continue
+		}
 
 		// get to address from memo ("to" field in event is asgard)
 		if event["memo"] != "noop" { // streaming loans send "noop"

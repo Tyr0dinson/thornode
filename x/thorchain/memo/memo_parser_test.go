@@ -63,7 +63,9 @@ func (s *MemoParserSuite) TestParseAddLiquidityMemoWithXECAddress(c *C) {
 
 	// A non-address field named after an XEC prefix must not consume the next
 	// memo field.
-	c.Check(SplitMemoParts("+:BTC.BTC:ecash:100"), DeepEquals,
+	parts, err := SplitMemoParts("+:BTC.BTC:ecash:100")
+	c.Assert(err, IsNil)
+	c.Check(parts, DeepEquals,
 		[]string{"+", "BTC.BTC", "ecash", "100"})
 }
 
@@ -81,7 +83,9 @@ func (s *MemoParserSuite) TestParseSwapMemoWithXECAddress(c *C) {
 	c.Check(swap.GetDestination().String(), Equals, xecAddress)
 
 	compound := "=:XEC.XEC:" + xecAddress + "/" + xecAddress
-	c.Check(SplitMemoParts(compound), DeepEquals,
+	parts, err := SplitMemoParts(compound)
+	c.Assert(err, IsNil)
+	c.Check(parts, DeepEquals,
 		[]string{"=", "XEC.XEC", xecAddress + "/" + xecAddress})
 
 	memo, err = ParseMemo(common.LatestVersion, compound)
@@ -100,8 +104,60 @@ func (s *MemoParserSuite) TestParseSwapMemoWithXECAddress(c *C) {
 	c.Check(swap.GetRefundAddress().String(), Equals, xecAddress)
 
 	streaming := "=:XEC.XEC:" + xecAddress + ":0/10/20:affiliate:10"
-	c.Check(SplitMemoParts(streaming), DeepEquals,
+	parts, err = SplitMemoParts(streaming)
+	c.Assert(err, IsNil)
+	c.Check(parts, DeepEquals,
 		[]string{"=", "XEC.XEC", xecAddress, "0/10/20", "affiliate", "10"})
+}
+
+func (s *MemoParserSuite) TestInvalidXECRefundIsRejectedWithoutGuessingFields(c *C) {
+	destination := "bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej"
+	prefix := common.XECChain.AddressPrefix(common.CurrentChainNetwork)
+
+	for _, memoType := range []string{TxSwap.String(), TxLimitSwap.String()} {
+		for _, invalidPayload := range []string{"qqtypo", "123"} {
+			memoText := fmt.Sprintf("%s:BTC.BTC:%s/%s:%s:100", memoType, destination, prefix, invalidPayload)
+			parts, err := SplitMemoParts(memoText)
+			c.Check(parts, IsNil)
+			c.Check(err, NotNil)
+
+			_, err = ParseMemo(common.LatestVersion, memoText)
+			c.Check(err, NotNil)
+		}
+	}
+
+	// Without a following ':' there is no field-boundary ambiguity, so keep
+	// the established behavior of treating the invalid refund as absent.
+	memoText := fmt.Sprintf("=:BTC.BTC:%s/%s", destination, prefix)
+	parts, err := SplitMemoParts(memoText)
+	c.Assert(err, IsNil)
+	c.Check(parts, DeepEquals, []string{"=", "BTC.BTC", destination + "/" + prefix})
+
+	parsed, err := ParseMemo(common.LatestVersion, memoText)
+	c.Assert(err, IsNil)
+	swap, ok := parsed.(SwapMemo)
+	c.Assert(ok, Equals, true)
+	c.Check(swap.GetDestination().String(), Equals, destination)
+	c.Check(swap.GetRefundAddress(), Equals, common.NoAddress)
+
+	// A prefix-like ordinary field must retain the existing memo grammar.
+	parts, err = SplitMemoParts("+:BTC.BTC:" + prefix + ":100")
+	c.Assert(err, IsNil)
+	c.Check(parts, DeepEquals,
+		[]string{"+", "BTC.BTC", prefix, "100"})
+
+	// A different network's prefix is not a supported address prefix on the
+	// current network and therefore keeps the established memo grammar.
+	otherNetwork := common.MockNet
+	if common.CurrentChainNetwork == common.MockNet {
+		otherNetwork = common.MainNet
+	}
+	otherPrefix := common.XECChain.AddressPrefix(otherNetwork)
+	otherMemo := fmt.Sprintf("=:BTC.BTC:%s/%s:123:100", destination, otherPrefix)
+	parts, err = SplitMemoParts(otherMemo)
+	c.Assert(err, IsNil)
+	c.Check(parts, DeepEquals,
+		[]string{"=", "BTC.BTC", destination + "/" + otherPrefix, "123", "100"})
 }
 
 func (s *MemoParserSuite) TestTxTypeIsOutbound(c *C) {
@@ -1166,8 +1222,16 @@ func (s *MemoParserSuite) TestGetAddressAndRefundAddressWithoutKeeper(c *C) {
 	c.Check(dest, Equals, addr)
 	c.Check(refund, Equals, common.NoAddress)
 
-	// An optional invalid refund must not discard a valid destination.
+	// Preserve the established behavior for an invalid optional non-XEC refund:
+	// retain the valid destination and treat the refund as absent.
 	p = parser{parts: []string{fmt.Sprintf("%s/invalid", addr)}, errs: make([]error, 0), keeper: nil}
+	dest, refund = p.getAddressAndRefundAddressWithKeeper(0, false, common.THORChain)
+	c.Check(dest, Equals, addr)
+	c.Check(refund, Equals, common.NoAddress)
+	c.Check(p.errs, HasLen, 0)
+
+	// A trailing separator still means that no refund address was supplied.
+	p = parser{parts: []string{fmt.Sprintf("%s/", addr)}, errs: make([]error, 0), keeper: nil}
 	dest, refund = p.getAddressAndRefundAddressWithKeeper(0, false, common.THORChain)
 	c.Check(dest, Equals, addr)
 	c.Check(refund, Equals, common.NoAddress)

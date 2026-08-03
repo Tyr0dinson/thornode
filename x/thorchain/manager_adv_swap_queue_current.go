@@ -981,7 +981,11 @@ func (vm *SwapQueueAdv) addLiquidityFee(ctx cosmos.Context, pool Pool, sourceCoi
 	swapSlipBps := swapper.CalcSwapSlip(X, x)
 	minSlipBps := getMinSlipBps(ctx, vm.k, common.NoAddress, nonRuneAsset, stableSwap, nil, nil, common.EmptyAsset, common.EmptyAsset, nil)
 	emit, fee, _ := swapper.GetSwapCalc(X, x, Y, swapSlipBps, minSlipBps)
-	emit = cosmos.RoundToDecimal(emit, pool.Decimals)
+	emitAsset := common.RuneAsset()
+	if sourceCoin.IsRune() {
+		emitAsset = pool.Asset
+	}
+	emit = cosmos.RoundToDecimal(emit, outboundPrecision(pool, emitAsset))
 	if sourceCoin.IsRune() {
 		fee = pool.AssetValueInRune(fee)
 	}

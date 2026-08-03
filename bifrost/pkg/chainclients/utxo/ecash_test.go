@@ -36,21 +36,20 @@ func newXECAmountTestClient(c *C) *Client {
 }
 
 func (s *ECashSuite) TestNormalizeCashAddressMatchesXECVaultDerivation(c *C) {
-	if common.CurrentChainNetwork != common.MockNet {
-		c.Skip("XEC address params are network specific")
-	}
-
 	client := &Client{}
 	client.cfg.ChainID = common.XECChain
 
-	pk := common.PubKey("tthorpub1addwnpepqwznsrgk2t5vn2cszr6ku6zned6tqxknugzw3vhdcjza284d7djp5rql6vn")
+	pk := common.PubKey("thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy2cr8a2")
+	if common.CurrentChainNetwork == common.MockNet {
+		pk = common.PubKey("tthorpub1addwnpepqwznsrgk2t5vn2cszr6ku6zned6tqxknugzw3vhdcjza284d7djp5rql6vn")
+	}
 	vaultAddr, err := pk.GetAddress(common.XECChain)
 	c.Assert(err, IsNil)
 
 	// THORChain's canonical XEC form includes its network-specific prefix.
 	c.Check(common.IsValidXECAddress(vaultAddr.String()), Equals, true)
 
-	params := common.GetXECAddressParams(common.MockNet)
+	params := common.GetXECAddressParams(common.CurrentChainNetwork)
 	c.Assert(params, NotNil)
 	bare := vaultAddr.String()[len(params.CashAddressPrefix)+1:]
 	c.Check(common.IsValidXECAddress(bare), Equals, false)
@@ -68,10 +67,6 @@ func (s *ECashSuite) TestNormalizeCashAddressMatchesXECVaultDerivation(c *C) {
 }
 
 func (s *ECashSuite) TestNormalizeCashAddressLeavesNonCashAddrAlone(c *C) {
-	if common.CurrentChainNetwork != common.MockNet {
-		c.Skip("XEC address params are network specific")
-	}
-
 	client := &Client{}
 	client.cfg.ChainID = common.XECChain
 

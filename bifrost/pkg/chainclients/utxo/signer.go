@@ -412,10 +412,10 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 			sender.String(),
 			tx.ToAddress.String(),
 			common.NewCoins(
-				c.cfg.ChainID.NativeGasToThorCoin(cosmos.NewUint(uint64(amt))),
+				c.toThorCoin(cosmos.NewUint(uint64(amt))),
 			),
 			common.Gas(common.NewCoins(
-				c.cfg.ChainID.NativeGasToThorCoin(cosmos.NewUint(uint64(gas))),
+				c.toThorCoin(cosmos.NewUint(uint64(gas))),
 			)),
 			tx.VaultPubKey,
 			"",

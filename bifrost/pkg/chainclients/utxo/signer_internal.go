@@ -883,7 +883,7 @@ func (c *Client) buildConsolidateTxOutItem(vault types.Vault, utxos []btcjson.Li
 		VaultPubKey:      vault.PubKey,
 		VaultPubKeyEddsa: vault.PubKeyEddsa,
 		Coins: common.Coins{
-			c.cfg.ChainID.NativeGasToThorCoin(cosmos.NewUint(uint64(total))),
+			c.toThorCoin(cosmos.NewUint(uint64(total))),
 		},
 		Memo:    mem.NewConsolidateMemo().String(),
 		MaxGas:  nil,

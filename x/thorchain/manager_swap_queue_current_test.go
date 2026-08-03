@@ -386,11 +386,41 @@ func expectedSwapLeg(ctx cosmos.Context, k keeper.Keeper, pool Pool, sourceCoin 
 	swapSlipBps := swapper.CalcSwapSlip(X, x)
 	minSlipBps := getMinSlipBps(ctx, k, common.NoAddress, nonRuneAsset, stableSwap, nil, nil, common.EmptyAsset, common.EmptyAsset, nil)
 	emit, fee, _ := swapper.GetSwapCalc(X, x, Y, swapSlipBps, minSlipBps)
-	emit = cosmos.RoundToDecimal(emit, pool.Decimals)
+	emitAsset := common.RuneAsset()
+	if sourceCoin.IsRune() {
+		emitAsset = pool.Asset
+	}
+	emit = cosmos.RoundToDecimal(emit, outboundPrecision(pool, emitAsset))
 	if sourceCoin.IsRune() {
 		fee = pool.AssetValueInRune(fee)
 	}
 	return emit, fee
+}
+
+func (s SwapQueueSuite) TestLiquidityFeeEmitUsesEmittedAssetPrecision(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	pool := NewPool()
+	pool.Asset = common.XECAsset
+	pool.Decimals = 2
+	pool.BalanceRune = cosmos.NewUint(1_000 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(2_000 * common.One)
+
+	// An asset-to-RUNE leg must retain RUNE's full precision in both queue
+	// implementations, even when the external pool has only two decimals.
+	sourceCoin := common.NewCoin(common.XECAsset, cosmos.NewUint(123_456_789))
+	classicItem := swapItem{fee: cosmos.ZeroUint()}
+	classicEmit := newSwapQueue(k).addLiquidityFee(ctx, pool, sourceCoin, &classicItem, 10_000, pool.Asset, false)
+	advancedItem := swapItem{fee: cosmos.ZeroUint()}
+	advancedEmit := newSwapQueueAdv(k).addLiquidityFee(ctx, pool, sourceCoin, &advancedItem, 10_000, pool.Asset, false)
+
+	c.Assert(classicEmit.Equal(advancedEmit), Equals, true)
+	c.Assert(classicEmit.Equal(cosmos.RoundToDecimal(classicEmit, pool.Decimals)), Equals, false)
+
+	// A RUNE-to-XEC leg still rounds to the external asset's two decimals.
+	runeCoin := common.NewCoin(common.RuneAsset(), cosmos.NewUint(123_456_789))
+	classicItem = swapItem{fee: cosmos.ZeroUint()}
+	xecEmit := newSwapQueue(k).addLiquidityFee(ctx, pool, runeCoin, &classicItem, 10_000, pool.Asset, false)
+	c.Assert(xecEmit.Equal(cosmos.RoundToDecimal(xecEmit, pool.Decimals)), Equals, true)
 }
 
 func (s SwapQueueSuite) TestStreamingSwapSelection(c *C) {

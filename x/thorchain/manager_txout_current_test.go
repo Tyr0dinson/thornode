@@ -93,8 +93,17 @@ func (s TxOutStoreSuite) TestOutboundPrecision(c *C) {
 
 	// Once present, pool precision remains authoritative.
 	xecPool := NewPool()
+	xecPool.Asset = common.XECAsset
 	xecPool.Decimals = 4
 	c.Assert(outboundPrecision(xecPool, common.XECAsset), Equals, int64(4))
+
+	// A pool's external precision must not truncate assets represented natively
+	// on THORChain.
+	xecPool.Decimals = 2
+	c.Assert(outboundPrecision(xecPool, common.RuneAsset()), Equals, int64(cosmos.DefaultCoinDecimals))
+	c.Assert(outboundPrecision(xecPool, common.XECAsset.GetSyntheticAsset()), Equals, int64(cosmos.DefaultCoinDecimals))
+	c.Assert(outboundPrecision(xecPool, common.XECAsset.GetTradeAsset()), Equals, int64(cosmos.DefaultCoinDecimals))
+	c.Assert(outboundPrecision(xecPool, common.XECAsset.GetSecuredAsset()), Equals, int64(cosmos.DefaultCoinDecimals))
 
 	// Zero retains its existing "no rounding" meaning for non-gas assets.
 	nonGasAsset, err := common.NewAsset("ETH.USDC")

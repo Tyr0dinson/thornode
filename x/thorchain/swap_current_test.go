@@ -38,6 +38,50 @@ func (s *SwapSuite) SetUpSuite(c *C) {
 	SetupConfigForTest()
 }
 
+func (s *SwapSuite) TestXECPoolDoesNotTruncateRuneEmit(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	pool := NewPool()
+	pool.Asset = common.XECAsset
+	pool.Decimals = 2
+	pool.BalanceRune = cosmos.NewUint(1_000 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(2_000 * common.One)
+	pool.LPUnits = pool.BalanceRune
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	destination := GetRandomTHORAddress()
+	tx := common.NewTx(
+		GetRandomTxHash(),
+		common.Address("xec-sender"),
+		common.Address("xec-vault"),
+		common.Coins{common.NewCoin(common.XECAsset, cosmos.NewUint(123_456_789))},
+		common.Gas{common.NewCoin(common.XECAsset, cosmos.NewUint(100_000_000))},
+		"=:THOR.RUNE:"+destination.String(),
+	)
+	tx.Chain = common.XECChain
+
+	emit, _, err := newSwapper().Swap(
+		ctx,
+		mgr.Keeper(),
+		tx,
+		common.RuneAsset(),
+		destination,
+		cosmos.ZeroUint(),
+		"",
+		"",
+		nil,
+		StreamingSwap{},
+		20_000,
+		mgr,
+		nil,
+		nil,
+	)
+	c.Assert(err, IsNil)
+	c.Assert(emit.Equal(cosmos.RoundToDecimal(emit, pool.Decimals)), Equals, false,
+		Commentf("RUNE emit %s was truncated to XEC's two-decimal precision", emit))
+}
+
 func (s *SwapSuite) TestSwap(c *C) {
 	poolStorage := &TestSwapKeeper{}
 	inputs := []struct {

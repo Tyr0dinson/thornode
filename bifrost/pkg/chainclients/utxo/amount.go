@@ -16,7 +16,18 @@ func (c *Client) rpcAmountToThorCoin(rpcAmount float64) (common.Coin, error) {
 	if err != nil {
 		return common.Coin{}, err
 	}
-	return c.cfg.ChainID.NativeGasToThorCoin(baseUnits), nil
+	return c.toThorCoin(baseUnits), nil
+}
+
+// toThorCoin converts UTXO base units to THORChain's 1e8 representation. It
+// preserves legacy zero decimal metadata for 8-decimal UTXO chains while
+// retaining explicit non-default precision such as XEC's 2 decimals.
+func (c *Client) toThorCoin(baseUnits cosmos.Uint) common.Coin {
+	coin := c.cfg.ChainID.NativeGasToThorCoin(baseUnits)
+	if coin.Decimals == cosmos.DefaultCoinDecimals {
+		coin.Decimals = 0
+	}
+	return coin
 }
 
 // dustBaseUnits returns the configured chain's economic dust threshold in

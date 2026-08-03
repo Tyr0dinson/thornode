@@ -28,7 +28,10 @@ func newParser(ctx cosmos.Context, keeper keeper.Keeper, version semver.Version,
 	if len(memo) == 0 {
 		return parser{}, fmt.Errorf("memo can't be empty")
 	}
-	parts := SplitMemoParts(memo)
+	parts, err := SplitMemoParts(memo)
+	if err != nil {
+		return parser{}, err
+	}
 	memo = strings.Join(parts, ":")
 	memoType, err := StringToTxType(parts[0])
 	if err != nil {
@@ -47,26 +50,32 @@ func newParser(ctx cosmos.Context, keeper keeper.Keeper, version semver.Version,
 }
 
 // SplitMemoParts separates memo fields while preserving an XEC CashAddr as one
-// field even though the address itself contains the memo separator. Only a
-// checksum-valid XEC address is rejoined, so ordinary fields that happen to
-// contain "ecash", "ectest", or "ecregtest" keep the existing grammar.
-func SplitMemoParts(memo string) []string {
+// field even though the address itself contains the memo separator. It rejects
+// an invalid current-network XEC refund when its payload is ambiguous with the
+// following memo field. Other invalid addresses keep the existing grammar.
+func SplitMemoParts(memo string) ([]string, error) {
 	memo = strings.Split(memo, "|")[0]
 	var parts []string
 	var token string
-	var check bool
+	var isValidPrefix bool
+	var isRefundPrefix bool
 
 	prefix := common.XECChain.AddressPrefix(common.CurrentChainNetwork)
+	txType, err := StringToTxType(strings.Split(memo, ":")[0])
+	isSwap := err == nil && (txType == TxSwap || txType == TxLimitSwap)
 
 	for part := range strings.SplitSeq(memo, ":") {
 		tokens := strings.Split(part, "/")
 		joined := false
 
-		if check && len(parts) > 0 {
+		if isValidPrefix && len(parts) > 0 {
 			address := token + ":" + tokens[0]
+
 			if common.IsValidXECAddress(address) {
 				parts[len(parts)-1] += ":" + part
 				joined = true
+			} else if isSwap && len(parts) == 3 && isRefundPrefix {
+				return nil, fmt.Errorf("invalid XEC refund address %q: payload is ambiguous with the following memo field", address)
 			}
 		}
 
@@ -75,10 +84,11 @@ func SplitMemoParts(memo string) []string {
 		}
 
 		token = tokens[len(tokens)-1]
-		check = strings.EqualFold(token, prefix)
+		isValidPrefix = strings.EqualFold(token, prefix)
+		isRefundPrefix = len(tokens) == 2 && isValidPrefix
 	}
 
-	return parts
+	return parts, nil
 }
 
 func (p *parser) getType() TxType {
@@ -461,7 +471,9 @@ func parseDestinationAndRefund(value string, resolveDestination, resolveRefund a
 
 	refundAddress := common.NoAddress
 	if hasRefund {
-		// Refund addresses are optional, so an invalid value is treated as absent.
+		// TODO: Decide whether all explicitly invalid refund addresses should
+		// reject the memo in a version-gated change. Preserve the established
+		// optional-refund behavior for now.
 		refundAddress, _ = resolveRefund(refundValue)
 	}
 
