@@ -555,7 +555,7 @@ func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool, 
 	}
 	coin, err := c.rpcAmountToThorCoin(output.Value)
 	if err != nil {
-		return types.TxInItem{}, fmt.Errorf("fail to parse float64: %w", err)
+		return types.TxInItem{}, fmt.Errorf("fail to convert RPC output amount: %w", err)
 	}
 
 	gas, err := c.getGas(tx, isInbound)

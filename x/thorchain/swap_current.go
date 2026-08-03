@@ -358,7 +358,7 @@ func (s *SwapperImpl) swapOne(ctx cosmos.Context,
 		liquidityFee cosmos.Uint
 	)
 	emitAssets, liquidityFee, swapEvt.SwapSlip = s.GetSwapCalc(X, x, Y, swapSlipBps, minSlipBps)
-	emitAssets = cosmos.RoundToDecimal(emitAssets, pool.Decimals)
+	emitAssets = cosmos.RoundToDecimal(emitAssets, outboundPrecision(pool, target))
 	swapEvt.EmitAsset = common.NewCoin(target, emitAssets)
 	swapEvt.LiquidityFee = liquidityFee
 

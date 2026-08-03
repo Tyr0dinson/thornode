@@ -26,6 +26,7 @@ RPC=http://thornode:${THORNODE_PORT}
 BITCOIN_ENDPOINT="${BIFROST_CHAINS_BTC_RPC_HOST:-${BTC_HOST:-bitcoin-daemon:${BITCOIN_DAEMON_SERVICE_PORT_RPC:-8332}}}"
 LITECOIN_ENDPOINT="${BIFROST_CHAINS_LTC_RPC_HOST:-${LTC_HOST:-litecoin-daemon:${LITECOIN_DAEMON_SERVICE_PORT_RPC:-9332}}}"
 BITCOIN_CASH_ENDPOINT="${BIFROST_CHAINS_BCH_RPC_HOST:-${BCH_HOST:-bitcoin-cash-daemon:${BITCOIN_CASH_DAEMON_SERVICE_PORT_RPC:-8332}}}"
+XEC_ENDPOINT="${BIFROST_CHAINS_XEC_RPC_HOST:-http://xec:18443}"
 DOGECOIN_ENDPOINT="${BIFROST_CHAINS_DOGE_RPC_HOST:-${DOGE_HOST:-dogecoin-daemon:${DOGECOIN_DAEMON_SERVICE_PORT_RPC:-22555}}}"
 ETHEREUM_ENDPOINT="${BIFROST_CHAINS_ETH_RPC_HOST:-${ETH_HOST:-http://ethereum-daemon:${ETHEREUM_DAEMON_SERVICE_PORT_RPC:-8545}}}"
 ETHEREUM_BEACON_ENDPOINT=$(printf '%s' "$ETHEREUM_ENDPOINT" | sed -E 's#^([a-zA-Z][a-zA-Z0-9+.-]*://)([^/:]+)(:[0-9]+)?(/.*)?$#\1\2:3500#')
@@ -94,6 +95,15 @@ if [ "$VALIDATOR" = "true" ]; then
   BCH_SYNC_HEIGHT=$(echo "$BCH_RESULT" | jq -r ".result.blocks")
   BCH_PROGRESS=$(echo "$BCH_RESULT" | jq -r ".result.verificationprogress")
   BCH_PROGRESS=$(calc_progress "$BCH_SYNC_HEIGHT" "$BCH_HEIGHT" "$BCH_PROGRESS")
+
+  if [ "$BIFROST_CHAINS_XEC_DISABLED" = "false" ]; then
+    # calculate XEC chain sync progress
+    XEC_RESULT=$(curl -sL --fail -m 10 --user thorchain:password --data-binary '{"jsonrpc": "1.0", "id": "node-status", "method": "getblockchaininfo", "params": []}' -H 'content-type: text/plain;' "$XEC_ENDPOINT")
+    XEC_HEIGHT=$(echo "$XEC_RESULT" | jq -r ".result.headers")
+    XEC_SYNC_HEIGHT=$(echo "$XEC_RESULT" | jq -r ".result.blocks")
+    XEC_PROGRESS=$(echo "$XEC_RESULT" | jq -r ".result.verificationprogress")
+    XEC_PROGRESS=$(calc_progress "$XEC_SYNC_HEIGHT" "$XEC_HEIGHT" "$XEC_PROGRESS")
+  fi
 
   # calculate DOGE chain sync progress
   DOGE_RESULT=$(curl -sL --fail -m 10 --data-binary '{"jsonrpc": "1.0", "id": "node-status", "method": "getblockchaininfo", "params": []}' -H 'content-type: text/plain;' http://thorchain:password@"$DOGECOIN_ENDPOINT")
@@ -230,6 +240,8 @@ LTC_HEIGHT=${LTC_HEIGHT:=0}
 LTC_SYNC_HEIGHT=${LTC_SYNC_HEIGHT:=0}
 BCH_HEIGHT=${BCH_HEIGHT:=0}
 BCH_SYNC_HEIGHT=${BCH_SYNC_HEIGHT:=0}
+XEC_HEIGHT=${XEC_HEIGHT:=0}
+XEC_SYNC_HEIGHT=${XEC_SYNC_HEIGHT:=0}
 DOGE_HEIGHT=${DOGE_HEIGHT:=0}
 DOGE_SYNC_HEIGHT=${DOGE_SYNC_HEIGHT:=0}
 GAIA_HEIGHT=${GAIA_HEIGHT:=0}
@@ -251,6 +263,9 @@ if [ "$VALIDATOR" = "true" ]; then
   printf "%-18s %-10s %-14s %-10s\n" "ETH (beacon slot)" "$ETH_BEACON_PROGRESS" "$(format_int $((ETH_BEACON_SYNC_HEIGHT - ETH_BEACON_HEIGHT)))" "$(format_int "$ETH_BEACON_HEIGHT")"
   printf "%-18s %-10s %-14s %-10s\n" LTC "$LTC_PROGRESS" "$(format_int $((LTC_SYNC_HEIGHT - LTC_HEIGHT)))" "$(format_int "$LTC_HEIGHT")"
   printf "%-18s %-10s %-14s %-10s\n" BCH "$BCH_PROGRESS" "$(format_int $((BCH_SYNC_HEIGHT - BCH_HEIGHT)))" "$(format_int "$BCH_HEIGHT")"
+  if [ "$BIFROST_CHAINS_XEC_DISABLED" = "false" ]; then
+    printf "%-18s %-10s %-14s %-10s\n" XEC "$XEC_PROGRESS" "$(format_int $((XEC_SYNC_HEIGHT - XEC_HEIGHT)))" "$(format_int "$XEC_HEIGHT")"
+  fi
   printf "%-18s %-10s %-14s %-10s\n" DOGE "$DOGE_PROGRESS" "$(format_int $((DOGE_SYNC_HEIGHT - DOGE_HEIGHT)))" "$(format_int "$DOGE_HEIGHT")"
   printf "%-18s %-10s %-14s %-10s\n" GAIA "$GAIA_PROGRESS" "$(format_int $((GAIA_SYNC_HEIGHT - GAIA_HEIGHT)))" "$(format_int "$GAIA_HEIGHT")"
   printf "%-18s %-10s %-14s %-10s\n" AVAX "$AVAX_PROGRESS" "$(format_int $((AVAX_SYNC_HEIGHT - AVAX_HEIGHT)))" "$(format_int "$AVAX_HEIGHT")"

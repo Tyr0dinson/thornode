@@ -104,4 +104,11 @@ func (s *AddressSuite) TestXECCashAddrCasing(c *C) {
 	c.Assert(IsValidXECAddress(upper), Equals, true)
 	c.Assert(IsValidXECAddress(mixedPrefix), Equals, false)
 	c.Assert(IsValidXECAddress(mixedPayload), Equals, false)
+
+	c.Assert(XECChain.IsValidAddress(Address(lower)), Equals, true)
+	c.Assert(XECChain.IsValidAddress(Address(upper)), Equals, true)
+	c.Assert(XECChain.IsValidAddress(Address(mixedPrefix)), Equals, false)
+	c.Assert(XECChain.IsValidAddress(Address("ecash:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cfrxuq9n4")), Equals, false)
+	c.Assert(XECChain.IsValidAddress(Address("ecashgarbage")), Equals, false)
+	c.Assert(XECChain.IsValidAddress(Address("ecregtest:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cp764s9vu")), Equals, false)
 }

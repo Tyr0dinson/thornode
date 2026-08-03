@@ -169,11 +169,15 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 						}
 						poolCache[txOutItem.Coin.Asset] = p
 					}
-					if !p.IsEmpty() {
-						matchCoin = tx.Tx.Coins.EqualsEx(common.Coins{
-							common.NewCoin(txOutItem.Coin.Asset, cosmos.RoundToDecimal(txOutItem.Coin.Amount, p.Decimals)),
-						})
-					}
+					matchCoin = tx.Tx.Coins.EqualsEx(common.Coins{
+						common.NewCoin(
+							txOutItem.Coin.Asset,
+							cosmos.RoundToDecimal(
+								txOutItem.Coin.Amount,
+								outboundPrecision(p, txOutItem.Coin.Asset),
+							),
+						),
+					})
 				}
 				// when outbound is gas asset
 				if !matchCoin && txOutItem.Coin.Asset.Equals(txOutItem.Chain.GetGasAsset()) {

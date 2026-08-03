@@ -391,6 +391,9 @@ func (c Chain) RequiresExplicitRefundAddress() bool {
 // IsValidAddress make sure the address is correct for the chain
 // And this also make sure mocknet doesn't use mainnet address vice versa
 func (c Chain) IsValidAddress(addr Address) bool {
+	if c.Equals(XECChain) {
+		return addr.IsValidXECAddress()
+	}
 	if c.Equals(XMRChain) {
 		if !IsValidXMRAddress(addr.String()) {
 			return false
