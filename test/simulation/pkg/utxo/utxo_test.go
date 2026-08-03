@@ -33,7 +33,9 @@ func TestNewClientAllowsSlowImportAddressDuringStartup(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatalf("failed to read request body: %v", err)
+			t.Errorf("failed to read request body: %v", err)
+			http.Error(w, "failed to read request body", http.StatusBadRequest)
+			return
 		}
 		requestBody := string(body)
 
@@ -45,7 +47,9 @@ func TestNewClientAllowsSlowImportAddressDuringStartup(t *testing.T) {
 			time.Sleep(1500 * time.Millisecond)
 			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":null}`))
 		default:
-			t.Fatalf("expected getaddressinfo or importaddress RPC during startup, got %s", body)
+			t.Errorf("expected getaddressinfo or importaddress RPC during startup, got %s", body)
+			http.Error(w, "unexpected RPC method", http.StatusBadRequest)
+			return
 		}
 	}))
 	defer server.Close()
@@ -61,7 +65,9 @@ func TestNewClientSerializesConcurrentImportAddressStartup(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatalf("failed to read request body: %v", err)
+			t.Errorf("failed to read request body: %v", err)
+			http.Error(w, "failed to read request body", http.StatusBadRequest)
+			return
 		}
 		requestBody := string(body)
 
@@ -76,7 +82,9 @@ func TestNewClientSerializesConcurrentImportAddressStartup(t *testing.T) {
 			time.Sleep(1500 * time.Millisecond)
 			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":null}`))
 		default:
-			t.Fatalf("expected getaddressinfo or importaddress RPC during startup, got %s", body)
+			t.Errorf("expected getaddressinfo or importaddress RPC during startup, got %s", body)
+			http.Error(w, "unexpected RPC method", http.StatusBadRequest)
+			return
 		}
 	}))
 	defer server.Close()
@@ -110,7 +118,9 @@ func TestNewClientSkipsImportWhenAddressAlreadyTracked(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatalf("failed to read request body: %v", err)
+			t.Errorf("failed to read request body: %v", err)
+			http.Error(w, "failed to read request body", http.StatusBadRequest)
+			return
 		}
 		requestBody := string(body)
 
@@ -122,7 +132,9 @@ func TestNewClientSkipsImportWhenAddressAlreadyTracked(t *testing.T) {
 			importCalls++
 			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":null}`))
 		default:
-			t.Fatalf("unexpected RPC during startup: %s", requestBody)
+			t.Errorf("unexpected RPC during startup: %s", requestBody)
+			http.Error(w, "unexpected RPC method", http.StatusBadRequest)
+			return
 		}
 	}))
 	defer server.Close()
@@ -141,7 +153,9 @@ func TestNewClientSkipsImportWhenDogecoinUsesValidateAddress(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatalf("failed to read request body: %v", err)
+			t.Errorf("failed to read request body: %v", err)
+			http.Error(w, "failed to read request body", http.StatusBadRequest)
+			return
 		}
 		requestBody := string(body)
 
@@ -155,7 +169,9 @@ func TestNewClientSkipsImportWhenDogecoinUsesValidateAddress(t *testing.T) {
 			importCalls++
 			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":null}`))
 		default:
-			t.Fatalf("unexpected RPC during startup: %s", requestBody)
+			t.Errorf("unexpected RPC during startup: %s", requestBody)
+			http.Error(w, "unexpected RPC method", http.StatusBadRequest)
+			return
 		}
 	}))
 	defer server.Close()

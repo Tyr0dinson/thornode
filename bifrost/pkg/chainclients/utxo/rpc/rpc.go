@@ -118,9 +118,9 @@ func (c *Client) GetBlockCount() (int64, error) {
 	return count, extractBTCError(err)
 }
 
-// SendRawTransaction serializes and sends the transaction. The maxFeeParam differs in
-// type between chains - ensure the correct variant is used.
-func (c *Client) SendRawTransaction(tx SerializableTx, maxFeeParam any) (string, error) {
+// SendRawTransaction serializes and sends the transaction using the optional
+// argument expected by the configured chain's daemon.
+func (c *Client) SendRawTransaction(tx SerializableTx) (string, error) {
 	txHex := ""
 	if tx != nil {
 		buf := bytes.NewBuffer(make([]byte, 0, tx.SerializeSize()))
@@ -130,7 +130,21 @@ func (c *Client) SendRawTransaction(tx SerializableTx, maxFeeParam any) (string,
 		txHex = hex.EncodeToString(buf.Bytes())
 	}
 
-	args := []interface{}{txHex, maxFeeParam}
+	args := []interface{}{txHex}
+	switch c.chain {
+	case common.DOGEChain, common.BCHChain:
+		// These daemons expose the legacy allowHighFees boolean.
+		args = append(args, true)
+	case common.XECChain:
+		// Bitcoin ABC applies its denomination-correct default fee-rate limit
+		// when the optional maxfeerate argument is omitted.
+	case common.LTCChain, common.BTCChain:
+		// maxfeerate is denominated in whole coins per kvB. Core rejects values
+		// greater than or equal to one; 0.1 is its own default.
+		args = append(args, 0.1)
+	default:
+		return "", fmt.Errorf("unsupported chain for sendrawtransaction: %s", c.chain)
+	}
 
 	var txid string
 	err := c.Call(&txid, "sendrawtransaction", args...)

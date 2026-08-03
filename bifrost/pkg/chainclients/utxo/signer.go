@@ -474,6 +474,8 @@ func (c *Client) getSignerCacheExpiry() time.Duration {
 //   - bitcoind (BTC): returns *btcjson.RPCError code -5 ("Invalid or non-wallet
 //     transaction id"); litecoind (LTC), dogecoind (DOGE), bcashnode (BCH) are
 //     bitcoind-derived and behave the same.
+//   - Bitcoin ABC (XEC): returns *btcjson.RPCError code -5 for a missing
+//     mempool or blockchain transaction.
 //   - zebrad (ZEC): surfaces JSON-RPC errors as *zec.Error (not *btcjson.RPCError);
 //     getrawtransaction on a missing tx returns code -5, bitcoind-compatible.
 //
@@ -576,21 +578,7 @@ func (c *Client) BroadcastTx(txOut stypes.TxOutItem, payload []byte) (string, er
 			return "", fmt.Errorf("fail to deserialize payload: %w", err)
 		}
 
-		var maxFee any
-		switch c.cfg.ChainID {
-		case common.DOGEChain, common.BCHChain:
-			maxFee = true // "allowHighFees"
-		case common.XECChain:
-			// Bitcoin ABC's second argument is a numeric maximum fee rate;
-			// zero disables the fee-rate limit.
-			maxFee = 0
-		case common.LTCChain, common.BTCChain:
-			// "maxfeerate" is denominated in BTC/kvB, not sats - Core multiplies by 1e8
-			// itself and rejects anything >= 1 BTC/kvB. 0.1 is Core's own default.
-			maxFee = 0.1
-		}
-
-		txid, err = c.rpc.SendRawTransaction(redeemTx, maxFee)
+		txid, err = c.rpc.SendRawTransaction(redeemTx)
 	}
 
 	if txid != "" {

@@ -63,7 +63,7 @@ func (s *MemoParserSuite) TestParseAddLiquidityMemoWithXECAddress(c *C) {
 
 	// A non-address field named after an XEC prefix must not consume the next
 	// memo field.
-	c.Check(splitMemoParts("+:BTC.BTC:ecash:100"), DeepEquals,
+	c.Check(SplitMemoParts("+:BTC.BTC:ecash:100"), DeepEquals,
 		[]string{"+", "BTC.BTC", "ecash", "100"})
 }
 
@@ -81,7 +81,7 @@ func (s *MemoParserSuite) TestParseSwapMemoWithXECAddress(c *C) {
 	c.Check(swap.GetDestination().String(), Equals, xecAddress)
 
 	compound := "=:XEC.XEC:" + xecAddress + "/" + xecAddress
-	c.Check(splitMemoParts(compound), DeepEquals,
+	c.Check(SplitMemoParts(compound), DeepEquals,
 		[]string{"=", "XEC.XEC", xecAddress + "/" + xecAddress})
 
 	memo, err = ParseMemo(common.LatestVersion, compound)
@@ -98,6 +98,10 @@ func (s *MemoParserSuite) TestParseSwapMemoWithXECAddress(c *C) {
 	c.Assert(ok, Equals, true)
 	c.Check(swap.GetDestination().String(), Equals, btcAddress)
 	c.Check(swap.GetRefundAddress().String(), Equals, xecAddress)
+
+	streaming := "=:XEC.XEC:" + xecAddress + ":0/10/20:affiliate:10"
+	c.Check(SplitMemoParts(streaming), DeepEquals,
+		[]string{"=", "XEC.XEC", xecAddress, "0/10/20", "affiliate", "10"})
 }
 
 func (s *MemoParserSuite) TestTxTypeIsOutbound(c *C) {
@@ -564,6 +568,9 @@ func (s *MemoParserSuite) TestNewParser(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(len(p.parts), Equals, 2)
 	c.Check(p.parts[1], Equals, "BTC.BTC")
+	c.Check(p.memo, Equals, "swap:BTC.BTC")
+	p.addErr(fmt.Errorf("fixture error"))
+	c.Check(p.Error().Error(), Equals, "MEMO: swap:BTC.BTC\nPARSE FAILURE(S): fixture error")
 }
 
 // ============================================================

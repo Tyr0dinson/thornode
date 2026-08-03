@@ -219,6 +219,11 @@ func (s *BitcoinCashSuite) TestGetBlock(c *C) {
 }
 
 func (s *BitcoinCashSuite) TestFetchTxs(c *C) {
+	// FetchTxs starts consolidation as a production side effect. It is unrelated
+	// to this scanner test and must not outlive the fixture server.
+	s.client.consolidateInProgress.Store(true)
+	defer s.client.consolidateInProgress.Store(false)
+
 	var vaultPubKey common.PubKey
 	var err error
 	if common.CurrentChainNetwork == common.MainNet {

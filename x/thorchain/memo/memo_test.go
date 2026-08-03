@@ -1152,6 +1152,14 @@ func (s *MemoSuite) TestReferenceWriteMemoValidation(c *C) {
 	c.Assert(ok, Equals, true)
 	c.Assert(refMemo.Memo, Equals, fmt.Sprintf("=:THOR.RUNE:%s", thorAddr.String()))
 
+	// Integrator metadata after a pipe is not part of the parsed or persisted
+	// reference memo.
+	parsed, err = ParseMemoWithTHORNames(ctx, k, validMemo+"|thorswap")
+	c.Assert(err, IsNil)
+	refMemo, ok = parsed.(ReferenceWriteMemo)
+	c.Assert(ok, Equals, true)
+	c.Assert(refMemo.Memo, Equals, fmt.Sprintf("=:THOR.RUNE:%s", thorAddr.String()))
+
 	// Test invalid embedded memo - malformed swap
 	invalidMemo1 := "reference:ETH:=:INVALID_ASSET:address"
 	_, err = ParseMemoWithTHORNames(ctx, k, invalidMemo1)

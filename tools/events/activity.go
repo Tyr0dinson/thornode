@@ -302,22 +302,26 @@ func LargeStreamingSwaps(block *thorscan.BlockResponse) {
 				util.FormatUSD(fromCloutUSD),
 			),
 		)
+		memoParts := memo.SplitMemoParts(event["memo"])
 
 		// get to address from memo ("to" field in event is asgard)
 		if event["memo"] != "noop" { // streaming loans send "noop"
-			memoParts := strings.Split(event["memo"], ":")
-			toAddress := memoParts[2]
-			toClout := util.Clout(block.Header.Height, toAddress)
-			toCloutUSD := util.USDValue(block.Header.Height, toClout)
-			totalCloutUSD += uint64(toCloutUSD)
-			cloutFields.Set(
-				fmt.Sprintf("Clout (%s)", toAddress),
-				fmt.Sprintf(
-					"%f RUNE (%s)",
-					float64(toClout.Amount.Uint64())/common.One,
-					util.FormatUSD(toCloutUSD),
-				),
-			)
+			if len(memoParts) <= 2 {
+				log.Error().Str("memo", event["memo"]).Msg("swap memo has no destination")
+			} else if memoParts[2] != "" {
+				toAddress := memoParts[2]
+				toClout := util.Clout(block.Header.Height, toAddress)
+				toCloutUSD := util.USDValue(block.Header.Height, toClout)
+				totalCloutUSD += uint64(toCloutUSD)
+				cloutFields.Set(
+					fmt.Sprintf("Clout (%s)", toAddress),
+					fmt.Sprintf(
+						"%f RUNE (%s)",
+						float64(toClout.Amount.Uint64())/common.One,
+						util.FormatUSD(toCloutUSD),
+					),
+				)
+			}
 		}
 
 		// verify precise amount
@@ -356,9 +360,8 @@ func LargeStreamingSwaps(block *thorscan.BlockResponse) {
 		fields.Set("Quantity", fmt.Sprintf("%s swaps", event["streaming_swap_quantity"]))
 
 		// attempt adding interval and expected time
-		args := strings.Split(event["memo"], ":")
-		if len(args) > 3 {
-			limitParams := strings.Split(args[3], "/")
+		if len(memoParts) > 3 {
+			limitParams := strings.Split(memoParts[3], "/")
 			var interval int
 			if len(limitParams) > 1 {
 				interval, err = strconv.Atoi(limitParams[1])

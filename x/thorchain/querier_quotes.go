@@ -1300,6 +1300,16 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 				return nil, err
 			}
 			address = hash.String()
+		case common.XECChain:
+			params := common.GetXECAddressParams(network)
+			if params == nil {
+				return nil, fmt.Errorf("XEC address params not configured for network: %v", network)
+			}
+			hash, err := bchutil.NewAddressPubKeyHash(data, params)
+			if err != nil {
+				return nil, err
+			}
+			address = params.CashAddressPrefix + ":" + hash.String()
 		case common.ZECChain:
 			params := "mainnet"
 			if network == common.MockNet {

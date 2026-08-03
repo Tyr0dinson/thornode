@@ -242,20 +242,16 @@ func (c *Client) sendNetworkFee(height int64) error {
 	if err != nil {
 		return fmt.Errorf("fail to get average fee rate: %w", err)
 	}
-	observedFeeRate := feeRate
+	// A zero average has no useful fee-rate information. Keep the previously
+	// reported value instead of replacing it with a configured floor.
+	if feeRate == 0 {
+		return nil
+	}
 
 	c.networkFeeLock.Lock()
 	defer c.networkFeeLock.Unlock()
 
 	feeRate = c.floorFeeRate(feeRate)
-	if observedFeeRate == 0 && feeRate != 0 {
-		c.log.Info().
-			Uint64("replacement_fee_rate", feeRate).
-			Uint64("minimum_relay_fee", c.minRelayFeeSats.Load()).
-			Int64("configured_min_fee_rate", c.cfg.UTXO.MinSatsPerVByte).
-			Int64("default_fee_rate", c.cfg.UTXO.DefaultSatsPerVByte).
-			Msg("replaced zero average fee-rate observation")
-	}
 
 	// if gas cache blocks are set, use the max gas over that window
 	if c.cfg.BlockScanner.GasCacheBlocks > 0 {
@@ -306,9 +302,6 @@ func (c *Client) floorFeeRate(feeRate uint64) uint64 {
 
 	if c.cfg.UTXO.MinSatsPerVByte > 0 && feeRate < uint64(c.cfg.UTXO.MinSatsPerVByte) {
 		feeRate = uint64(c.cfg.UTXO.MinSatsPerVByte)
-	}
-	if feeRate == 0 && c.cfg.UTXO.DefaultSatsPerVByte > 0 {
-		feeRate = uint64(c.cfg.UTXO.DefaultSatsPerVByte)
 	}
 	return feeRate
 }
@@ -584,8 +577,7 @@ func (c *Client) getVinZeroTxs(block *btcjson.GetBlockVerboseTxResult) (map[stri
 	vinZeroTxs := make(map[string]*btcjson.TxRawResult)
 	start := time.Now()
 
-	dustBaseUnits := c.cfg.ChainID.ThorchainToNativeGasFloor(c.cfg.ChainID.DustThreshold())
-	dustThreshold, err := toUint64(dustBaseUnits)
+	dustThreshold, err := toUint64(c.dustBaseUnits())
 	if err != nil {
 		return nil, fmt.Errorf("dust threshold does not fit uint64: %w", err)
 	}
@@ -839,8 +831,7 @@ func (c *Client) getSender(tx *btcjson.TxRawResult, vinZeroTxs map[string]*btcjs
 		if !ok {
 			// if vouts are below dust this is expected, so skip log noise
 			valueBaseUnits, err := c.sumVoutBaseUnits(tx)
-			dustBaseUnits := c.cfg.ChainID.ThorchainToNativeGasFloor(c.cfg.ChainID.DustThreshold())
-			dust, dustErr := toUint64(dustBaseUnits)
+			dust, dustErr := toUint64(c.dustBaseUnits())
 			if err != nil || dustErr != nil || valueBaseUnits >= dust {
 				c.log.Debug().Str("txid", tx.Txid).Msg("vin zero tx not found")
 			}

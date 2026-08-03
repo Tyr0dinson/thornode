@@ -563,22 +563,38 @@ func (s *RPCSuite) TestBatchGetRawTransactionVerboseZEC(c *C) {
 // SendRawTransaction tests
 // ---------------------------------------------------------------------------
 
-func (s *RPCSuite) TestSendRawTransaction(c *C) {
-	log := zerolog.Nop()
-	srv := newMockRPCServer(func(method string, params []interface{}) (interface{}, *btcjson.RPCError) {
-		c.Assert(method, Equals, "sendrawtransaction")
-		return "txid_result_123", nil
-	})
-	defer srv.Close()
+func (s *RPCSuite) TestSendRawTransactionArguments(c *C) {
+	for _, tc := range []struct {
+		name       string
+		chain      common.Chain
+		wantParams []interface{}
+	}{
+		{name: "BTC", chain: common.BTCChain, wantParams: []interface{}{"010203", 0.1}},
+		{name: "LTC", chain: common.LTCChain, wantParams: []interface{}{"010203", 0.1}},
+		{name: "BCH", chain: common.BCHChain, wantParams: []interface{}{"010203", true}},
+		{name: "DOGE", chain: common.DOGEChain, wantParams: []interface{}{"010203", true}},
+		{name: "XEC", chain: common.XECChain, wantParams: []interface{}{"010203"}},
+	} {
+		srv := newMockRPCServer(func(method string, params []interface{}) (interface{}, *btcjson.RPCError) {
+			c.Check(method, Equals, "sendrawtransaction", Commentf(tc.name))
+			c.Check(params, DeepEquals, tc.wantParams, Commentf(tc.name))
+			return "txid_result_123", nil
+		})
 
-	cl, err := NewClient(srv.URL, "user", "pass", 0, time.Second*10, common.BTCChain, log)
-	c.Assert(err, IsNil)
+		cl, err := NewClient(srv.URL, "user", "pass", 0, time.Second*10, tc.chain, zerolog.Nop())
+		c.Assert(err, IsNil, Commentf(tc.name))
 
-	txData := []byte{0x01, 0x02, 0x03}
-	tx := &mockTx{data: txData}
-	txid, err := cl.SendRawTransaction(tx, 0.1)
-	c.Assert(err, IsNil)
-	c.Assert(txid, Equals, "txid_result_123")
+		txid, err := cl.SendRawTransaction(&mockTx{data: []byte{0x01, 0x02, 0x03}})
+		c.Assert(err, IsNil, Commentf(tc.name))
+		c.Check(txid, Equals, "txid_result_123", Commentf(tc.name))
+		srv.Close()
+	}
+}
+
+func (s *RPCSuite) TestSendRawTransactionRejectsUnsupportedChain(c *C) {
+	cl := &Client{chain: common.ETHChain}
+	_, err := cl.SendRawTransaction(&mockTx{data: []byte{0x01}})
+	c.Assert(err, ErrorMatches, "unsupported chain for sendrawtransaction: ETH")
 }
 
 func (s *RPCSuite) TestSendRawTransactionNilTx(c *C) {
@@ -591,7 +607,7 @@ func (s *RPCSuite) TestSendRawTransactionNilTx(c *C) {
 	cl, err := NewClient(srv.URL, "user", "pass", 0, time.Second*10, common.BTCChain, log)
 	c.Assert(err, IsNil)
 
-	txid, err := cl.SendRawTransaction(nil, 0)
+	txid, err := cl.SendRawTransaction(nil)
 	c.Assert(err, IsNil)
 	c.Assert(txid, Equals, "txid_nil")
 }
@@ -607,7 +623,7 @@ func (s *RPCSuite) TestSendRawTransactionSerializeError(c *C) {
 	c.Assert(err, IsNil)
 
 	tx := &mockTx{data: []byte{0x01}, serError: fmt.Errorf("serialize failed")}
-	_, err = cl.SendRawTransaction(tx, 0)
+	_, err = cl.SendRawTransaction(tx)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, "serialize failed")
 }
@@ -630,7 +646,7 @@ func (s *RPCSuite) TestSendRawTransactionHex(c *C) {
 
 	data := []byte{0xDE, 0xAD, 0xBE, 0xEF}
 	tx := &mockTx{data: data}
-	_, err = cl.SendRawTransaction(tx, false)
+	_, err = cl.SendRawTransaction(tx)
 	c.Assert(err, IsNil)
 	c.Assert(receivedHex, Equals, hex.EncodeToString(data))
 }
@@ -1110,7 +1126,7 @@ func (s *RPCSuite) TestSendRawTransactionRPCError(c *C) {
 	c.Assert(err, IsNil)
 
 	tx := &mockTx{data: []byte{0x01}}
-	_, err = cl.SendRawTransaction(tx, 0)
+	_, err = cl.SendRawTransaction(tx)
 	c.Assert(err, NotNil)
 }
 

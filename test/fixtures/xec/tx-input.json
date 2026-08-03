@@ -1,0 +1,37 @@
+{
+  "result": {
+    "txid": "d86cbb3662b3ef30dc2b1648963d2b33433a3a3e045159230fb1ad558cc8d7ff",
+    "hash": "d86cbb3662b3ef30dc2b1648963d2b33433a3a3e045159230fb1ad558cc8d7ff",
+    "version": 2,
+    "size": 100,
+    "locktime": 0,
+    "vin": [
+      {
+        "coinbase": "51000c000000000000000000000000",
+        "sequence": 4294967295
+      }
+    ],
+    "vout": [
+      {
+        "value": 50000000,
+        "n": 0,
+        "scriptPubKey": {
+          "asm": "OP_DUP OP_HASH160 7494cdeb3ccab734451fe6171197fdeb854a7cde OP_EQUALVERIFY OP_CHECKSIG",
+          "hex": "76a9147494cdeb3ccab734451fe6171197fdeb854a7cde88ac",
+          "reqSigs": 1,
+          "type": "pubkeyhash",
+          "addresses": [
+            "ecregtest:qp6ffn0t8n9twdz9rlnpwyvhlh4c2jnumcl2ak30p8"
+          ]
+        }
+      }
+    ],
+    "hex": "02000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0f51000c000000000000000000000000ffffffff0100f2052a010000001976a9147494cdeb3ccab734451fe6171197fdeb854a7cde88ac00000000",
+    "blockhash": "76a4de96cfe9dfbf4c06951555124758310f4199a4af1e6200ccfd4a949fafa3",
+    "confirmations": 102,
+    "time": 1785592620,
+    "blocktime": 1785592620
+  },
+  "error": null,
+  "id": 1
+}

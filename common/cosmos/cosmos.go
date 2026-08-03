@@ -209,6 +209,19 @@ func SafeUintFromInt64(i int64) Uint {
 	return NewUint(uint64(i))
 }
 
+// UintToInt64 converts a Uint to int64 without silently truncating values that
+// cannot be represented by the wire type.
+func UintToInt64(value Uint) (int64, error) {
+	if value.IsNil() {
+		return 0, fmt.Errorf("value is nil")
+	}
+	integer := value.BigInt()
+	if !integer.IsInt64() {
+		return 0, fmt.Errorf("value does not fit int64: %s", value.String())
+	}
+	return integer.Int64(), nil
+}
+
 // MinUint returns the minimum of two Uints.
 func MinUint(u1, u2 Uint) Uint {
 	if u1.LT(u2) {

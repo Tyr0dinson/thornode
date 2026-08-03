@@ -28,8 +28,8 @@ func newParser(ctx cosmos.Context, keeper keeper.Keeper, version semver.Version,
 	if len(memo) == 0 {
 		return parser{}, fmt.Errorf("memo can't be empty")
 	}
-	memo = strings.Split(memo, "|")[0]
-	parts := splitMemoParts(memo)
+	parts := SplitMemoParts(memo)
+	memo = strings.Join(parts, ":")
 	memoType, err := StringToTxType(parts[0])
 	if err != nil {
 		return parser{}, err
@@ -46,11 +46,12 @@ func newParser(ctx cosmos.Context, keeper keeper.Keeper, version semver.Version,
 	}, nil
 }
 
-// splitMemoParts preserves an XEC CashAddr as one memo field even though the
-// address itself contains the memo separator. Only a checksum-valid XEC
-// address is rejoined, so ordinary fields that happen to contain "ecash",
-// "ectest", or "ecregtest" keep the existing grammar.
-func splitMemoParts(memo string) []string {
+// SplitMemoParts separates memo fields while preserving an XEC CashAddr as one
+// field even though the address itself contains the memo separator. Only a
+// checksum-valid XEC address is rejoined, so ordinary fields that happen to
+// contain "ecash", "ectest", or "ecregtest" keep the existing grammar.
+func SplitMemoParts(memo string) []string {
+	memo = strings.Split(memo, "|")[0]
 	var parts []string
 	var token string
 	var check bool

@@ -1,0 +1,18 @@
+{
+  "result": [
+    {
+      "txid": "05aa81ee89142a6358263ee87e34fea77534bfd0e4c5ba9def56b6ea0d729cb4",
+      "vout": 2,
+      "address": "ecregtest:qqv0vpvwpf3dgm42qslyl7jh20u9xvd805dzf5tp47",
+      "scriptPubKey": "76a91418f6058e0a62d46eaa043e4ffa5753f85331a77d88ac",
+      "amount": 49999897.36,
+      "confirmations": 1,
+      "spendable": true,
+      "solvable": true,
+      "desc": "pkh([84cea902/0'/1'/1']0332ca6805952fb6bbfe599b00127c20fa2765a50798cc439dd973b0b531e80d4b)#pxeakhme",
+      "safe": true
+    }
+  ],
+  "error": null,
+  "id": 1
+}

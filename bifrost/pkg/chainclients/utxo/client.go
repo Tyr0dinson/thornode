@@ -300,9 +300,9 @@ func (c *Client) RegisterPublicKey(pubkey common.PubKey) error {
 		return fmt.Errorf("fail to get address from pubkey(%s): %w", pubkey, err)
 	}
 
-	// litecoin does not have a default wallet so we need to create one
+	// Modern BTC, LTC, and XEC daemons do not create a default wallet.
 	switch c.cfg.ChainID {
-	case common.LTCChain, common.BTCChain:
+	case common.LTCChain, common.BTCChain, common.XECChain:
 		err = c.rpc.CreateWallet("")
 		if err != nil {
 			c.log.Info().Err(err).Msg("fail to create wallet")

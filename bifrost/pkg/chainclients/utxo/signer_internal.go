@@ -73,8 +73,7 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total btcutil.Amount) ([]b
 
 	var result []btcjson.ListUnspentResult
 	var toSpend btcutil.Amount
-	dustBaseUnits := c.cfg.ChainID.ThorchainToNativeGasFloor(c.cfg.ChainID.DustThreshold())
-	minUTXORPCAmount, err := c.rpc.FromBaseUnits(dustBaseUnits)
+	minUTXORPCAmount, err := c.rpc.FromBaseUnits(c.dustBaseUnits())
 	if err != nil {
 		return nil, fmt.Errorf("convert dust threshold to RPC amount: %w", err)
 	}
@@ -143,7 +142,7 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total btcutil.Amount) ([]b
 		if err != nil {
 			return nil, fmt.Errorf("fail to convert UTXO to base units: %w", err)
 		}
-		amount, err := toInt64(baseUnits)
+		amount, err := cosmos.UintToInt64(baseUnits)
 		if err != nil {
 			return nil, fmt.Errorf("UTXO amount does not fit wire amount: %w", err)
 		}
@@ -261,7 +260,7 @@ func (c *Client) getPaymentAmount(tx stypes.TxOutItem) (btcutil.Amount, error) {
 		}
 		amtToPay = amtToPay.Add(gasAmt)
 	}
-	wireAmount, err := toInt64(amtToPay)
+	wireAmount, err := cosmos.UintToInt64(amtToPay)
 	if err != nil {
 		return 0, err
 	}
@@ -423,7 +422,7 @@ func (c *Client) getGasCoin(tx stypes.TxOutItem, vSize int64) common.Coin {
 				c.log.Err(err).Msg("fail to convert stored fee to base units")
 			} else {
 				var amt int64
-				amt, err = toInt64(feeBaseUnits)
+				amt, err = cosmos.UintToInt64(feeBaseUnits)
 				if err != nil {
 					c.log.Err(err).Msg("stored fee does not fit int64")
 				} else {
@@ -485,7 +484,7 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 			return nil, nil, fmt.Errorf("fail to parse amount(%f): %w", item.Amount, err)
 		}
 		var amt int64
-		amt, err = toInt64(baseUnits)
+		amt, err = cosmos.UintToInt64(baseUnits)
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to parse amount(%f): %w", item.Amount, err)
 		}
@@ -674,7 +673,7 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 		coinToCustomer = common.SafeSub(coinToCustomer, cosmos.NewUint(gap))
 	}
 
-	gasAmt, conversionErr := toInt64(cosmos.NewUint(gasAmtSats))
+	gasAmt, conversionErr := cosmos.UintToInt64(cosmos.NewUint(gasAmtSats))
 	if conversionErr != nil {
 		return nil, nil, fmt.Errorf("transaction fee does not fit wire amount: %w", conversionErr)
 	}
@@ -687,7 +686,7 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 	}
 
 	// pay to customer
-	customerAmount, err := toInt64(coinToCustomer)
+	customerAmount, err := cosmos.UintToInt64(coinToCustomer)
 	if err != nil {
 		return nil, nil, fmt.Errorf("outbound amount does not fit wire amount: %w", err)
 	}
@@ -860,7 +859,7 @@ func (c *Client) buildConsolidateTxOutItem(vault types.Vault, utxos []btcjson.Li
 		if err != nil {
 			return stypes.TxOutItem{}, fmt.Errorf("convert utxo amount %f: %w", item.Amount, err)
 		}
-		amt, err := toInt64(baseUnits)
+		amt, err := cosmos.UintToInt64(baseUnits)
 		if err != nil {
 			return stypes.TxOutItem{}, fmt.Errorf("utxo amount %f does not fit wire amount: %w", item.Amount, err)
 		}

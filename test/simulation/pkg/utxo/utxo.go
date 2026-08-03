@@ -161,16 +161,6 @@ func getUTXOStartupImportLock(chain common.Chain) *sync.Mutex {
 	return actual.(*sync.Mutex)
 }
 
-func toInt64(amount cosmos.Uint) (int64, error) {
-	if amount.IsNil() {
-		return 0, fmt.Errorf("amount is nil")
-	}
-	if amount.GT(cosmos.NewUint(math.MaxInt64)) {
-		return 0, fmt.Errorf("amount does not fit int64: %s", amount.String())
-	}
-	return int64(amount.Uint64()), nil
-}
-
 ////////////////////////////////////////////////////////////////////////////////////////
 // GetAccount
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -317,7 +307,7 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 	}
 	wg.Wait()
 	if utxoErr != nil {
-		return nil, fmt.Errorf("fail to sign the message: %w", err)
+		return nil, fmt.Errorf("fail to sign the message: %w", utxoErr)
 	}
 
 	// convert back to wire tx
@@ -373,18 +363,8 @@ func (c *Client) BroadcastTx(payload []byte) (string, error) {
 		return "", fmt.Errorf("fail to deserialize payload: %w", err)
 	}
 
-	var maxFee any
-	switch c.chain {
-	case common.DOGEChain, common.BCHChain:
-		maxFee = true // "allowHighFees"
-	case common.XECChain:
-		maxFee = 0 // disable the fee-rate limit
-	case common.LTCChain, common.BTCChain:
-		maxFee = 10_000_000
-	}
-
 	// broadcast tx
-	return c.rpc.SendRawTransaction(redeemTx, maxFee)
+	return c.rpc.SendRawTransaction(redeemTx)
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -482,7 +462,7 @@ func (c *Client) getUtxoToSpend(total int64) ([]btcjson.ListUnspentResult, error
 		if err != nil {
 			return nil, fmt.Errorf("convert UTXO amount to base units: %w", err)
 		}
-		amount, err := toInt64(baseUnits)
+		amount, err := cosmos.UintToInt64(baseUnits)
 		if err != nil {
 			return nil, err
 		}
@@ -537,7 +517,7 @@ func (c *Client) getPaymentAmount(tx SimTx) (int64, error) {
 		p2wpkhOutputsCost := int64(len(memoScripts)-1) * c.chain.P2WPKHOutputValue()
 		amtToPay = amtToPay.Add(cosmos.NewUint(uint64(p2wpkhOutputsCost)))
 	}
-	return toInt64(amtToPay)
+	return cosmos.UintToInt64(amtToPay)
 }
 
 func (c *Client) getMemoScripts(memo string) ([][]byte, error) {
@@ -700,7 +680,7 @@ func (c *Client) buildTx(tx SimTx, sourceScript []byte) (
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to parse amount(%f): %w", item.Amount, err)
 		}
-		amt, err := toInt64(baseUnits)
+		amt, err := cosmos.UintToInt64(baseUnits)
 		if err != nil {
 			return nil, nil, fmt.Errorf("amount does not fit wire value: %w", err)
 		}
@@ -782,7 +762,7 @@ func (c *Client) buildTx(tx SimTx, sourceScript []byte) (
 	if err != nil {
 		return nil, nil, fmt.Errorf("convert outbound amount to native units: %w", err)
 	}
-	outboundAmount, err := toInt64(outboundNative)
+	outboundAmount, err := cosmos.UintToInt64(outboundNative)
 	if err != nil {
 		return nil, nil, fmt.Errorf("outbound amount does not fit wire value: %w", err)
 	}
@@ -804,7 +784,7 @@ func (c *Client) buildTx(tx SimTx, sourceScript []byte) (
 	if err != nil {
 		return nil, nil, fmt.Errorf("fail to convert gas amount: %w", err)
 	}
-	gasSats, err := toInt64(gasBaseUnits)
+	gasSats, err := cosmos.UintToInt64(gasBaseUnits)
 	if err != nil {
 		return nil, nil, fmt.Errorf("gas amount does not fit wire value: %w", err)
 	}

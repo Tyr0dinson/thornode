@@ -124,13 +124,24 @@ func GetMetricForTest(c *C, chain common.Chain) *metrics.Metrics {
 	if m != nil {
 		return m
 	}
+	chains := common.Chains{
+		common.DOGEChain,
+		common.BCHChain,
+		common.LTCChain,
+		common.BTCChain,
+		common.ZECChain,
+		common.XECChain,
+	}
+	if !chains.Has(chain) {
+		chains = append(chains, chain)
+	}
 	var err error
 	m, err = metrics.NewMetrics(config.BifrostMetricsConfiguration{
 		Enabled:      false,
 		ListenPort:   9000,
 		ReadTimeout:  time.Second,
 		WriteTimeout: time.Second,
-		Chains:       common.Chains{common.DOGEChain, common.BCHChain, common.LTCChain, common.BTCChain},
+		Chains:       chains,
 	})
 	c.Assert(m, NotNil)
 	c.Assert(err, IsNil)

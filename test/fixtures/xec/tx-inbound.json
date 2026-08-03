@@ -1,0 +1,64 @@
+{
+  "result": {
+    "txid": "05aa81ee89142a6358263ee87e34fea77534bfd0e4c5ba9def56b6ea0d729cb4",
+    "hash": "05aa81ee89142a6358263ee87e34fea77534bfd0e4c5ba9def56b6ea0d729cb4",
+    "version": 2,
+    "size": 264,
+    "locktime": 0,
+    "vin": [
+      {
+        "txid": "d86cbb3662b3ef30dc2b1648963d2b33433a3a3e045159230fb1ad558cc8d7ff",
+        "vout": 0,
+        "scriptSig": {
+          "asm": "30440220735cfe3c17fd640e0b3be90f7e04b260a3c893b4e702976845e8d4e82957954502200226ea55eb4bca5743c1db514fd73a2c2d6010b9dc3c9fdefdfd7c641ea021e4[ALL|FORKID] 03976324df3b9547b2f4cd328301d59532bfc443dbb900efd377ad643a589e63c5",
+          "hex": "4730440220735cfe3c17fd640e0b3be90f7e04b260a3c893b4e702976845e8d4e82957954502200226ea55eb4bca5743c1db514fd73a2c2d6010b9dc3c9fdefdfd7c641ea021e4412103976324df3b9547b2f4cd328301d59532bfc443dbb900efd377ad643a589e63c5"
+        },
+        "sequence": 4294967294
+      }
+    ],
+    "vout": [
+      {
+        "value": 100,
+        "n": 0,
+        "scriptPubKey": {
+          "asm": "OP_DUP OP_HASH160 4d7f46fc17ef248b18c0df11582d2cdb1743b0ca OP_EQUALVERIFY OP_CHECKSIG",
+          "hex": "76a9144d7f46fc17ef248b18c0df11582d2cdb1743b0ca88ac",
+          "reqSigs": 1,
+          "type": "pubkeyhash",
+          "addresses": [
+            "ecregtest:qpxh73huzlhjfzcccr03zkpd9nd3wsaseg5aean4r2"
+          ]
+        }
+      },
+      {
+        "value": 0,
+        "n": 1,
+        "scriptPubKey": {
+          "asm": "OP_RETURN 535741503a54484f522e52554e453a7474686f723166697874757265",
+          "hex": "6a1c535741503a54484f522e52554e453a7474686f723166697874757265",
+          "type": "nulldata"
+        }
+      },
+      {
+        "value": 49999897.36,
+        "n": 2,
+        "scriptPubKey": {
+          "asm": "OP_DUP OP_HASH160 18f6058e0a62d46eaa043e4ffa5753f85331a77d OP_EQUALVERIFY OP_CHECKSIG",
+          "hex": "76a91418f6058e0a62d46eaa043e4ffa5753f85331a77d88ac",
+          "reqSigs": 1,
+          "type": "pubkeyhash",
+          "addresses": [
+            "ecregtest:qqv0vpvwpf3dgm42qslyl7jh20u9xvd805dzf5tp47"
+          ]
+        }
+      }
+    ],
+    "hex": "0200000001ffd7c88c55adb10f235951043e3a3a43332b3d9648162bdc30efb36236bb6cd8000000006a4730440220735cfe3c17fd640e0b3be90f7e04b260a3c893b4e702976845e8d4e82957954502200226ea55eb4bca5743c1db514fd73a2c2d6010b9dc3c9fdefdfd7c641ea021e4412103976324df3b9547b2f4cd328301d59532bfc443dbb900efd377ad643a589e63c5feffffff0310270000000000001976a9144d7f46fc17ef248b18c0df11582d2cdb1743b0ca88ac00000000000000001e6a1c535741503a54484f522e52554e453a7474686f723166697874757265e8c9052a010000001976a91418f6058e0a62d46eaa043e4ffa5753f85331a77d88ac00000000",
+    "blockhash": "0a0d997aeaf94c89379fbf9de688ecaeded81c37774f6680f83703a17e32b438",
+    "confirmations": 1,
+    "time": 1785592653,
+    "blocktime": 1785592653
+  },
+  "error": null,
+  "id": 1
+}

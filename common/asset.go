@@ -137,9 +137,7 @@ func NewAssetWithShortCodesV3_1_0(input string) (Asset, error) {
 	shorts[DOGEAsset.ShortCode()] = DOGEAsset.String()
 	shorts[ETHAsset.ShortCode()] = ETHAsset.String()
 	shorts[LTCAsset.ShortCode()] = LTCAsset.String()
-	if shortCode := XECAsset.ShortCode(); shortCode != "" {
-		shorts[shortCode] = XECAsset.String()
-	}
+	shorts[XECAsset.ShortCode()] = XECAsset.String()
 	shorts[SOLAsset.ShortCode()] = SOLAsset.String()
 	shorts[RuneNative.ShortCode()] = RuneNative.String()
 	shorts[BaseETHAsset.ShortCode()] = BaseETHAsset.String()

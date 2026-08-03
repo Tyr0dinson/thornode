@@ -1,7 +1,9 @@
 package cosmos
 
 import (
+	"math"
 	"math/big"
+	"strings"
 	"testing"
 
 	sdkmath "cosmossdk.io/math"
@@ -262,6 +264,36 @@ func TestSafeUintFromInt64(t *testing.T) {
 			result := SafeUintFromInt64(tt.input)
 			if !result.Equal(tt.expected) {
 				t.Errorf("SafeUintFromInt64(%d) = %s, want %s", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestUintToInt64(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		value      Uint
+		want       int64
+		wantErrSub string
+	}{
+		{name: "nil", value: Uint{}, wantErrSub: "value is nil"},
+		{name: "ordinary", value: NewUint(42), want: 42},
+		{name: "maximum", value: NewUint(math.MaxInt64), want: math.MaxInt64},
+		{name: "overflow", value: NewUint(uint64(math.MaxInt64) + 1), wantErrSub: "value does not fit int64"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := UintToInt64(tc.value)
+			if tc.wantErrSub != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErrSub) {
+					t.Fatalf("expected error containing %q, got %v", tc.wantErrSub, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("got %d, want %d", got, tc.want)
 			}
 		})
 	}

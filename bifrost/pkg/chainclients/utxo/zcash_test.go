@@ -60,6 +60,7 @@ func (s *ZcashSuite) SetUpTest(c *C) {
 		DisableTLS:  true,
 		HTTPostMode: true,
 		BlockScanner: config.BifrostBlockScannerConfiguration{
+			ChainID:          common.ZECChain,
 			StartBlockHeight: 1, // avoids querying thorchain for block height
 		},
 	}

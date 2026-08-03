@@ -1,0 +1,54 @@
+{
+  "result": {
+    "version": 330800,
+    "subversion": "/Bitcoin ABC:0.33.8(EB32.0)/",
+    "protocolversion": 70017,
+    "localservices": "0000000000000405",
+    "localservicesnames": [
+      "NETWORK",
+      "BLOOM",
+      "NETWORK_LIMITED"
+    ],
+    "localrelay": true,
+    "timeoffset": 0,
+    "networkactive": true,
+    "connections": 0,
+    "connections_in": 0,
+    "connections_out": 0,
+    "networks": [
+      {
+        "name": "ipv4",
+        "limited": false,
+        "reachable": true,
+        "proxy": "",
+        "proxy_randomize_credentials": false
+      },
+      {
+        "name": "ipv6",
+        "limited": false,
+        "reachable": true,
+        "proxy": "",
+        "proxy_randomize_credentials": false
+      },
+      {
+        "name": "onion",
+        "limited": true,
+        "reachable": false,
+        "proxy": "",
+        "proxy_randomize_credentials": false
+      },
+      {
+        "name": "i2p",
+        "limited": true,
+        "reachable": false,
+        "proxy": "",
+        "proxy_randomize_credentials": false
+      }
+    ],
+    "relayfee": 10,
+    "localaddresses": [],
+    "warnings": ""
+  },
+  "error": null,
+  "id": 1
+}

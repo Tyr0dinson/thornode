@@ -218,7 +218,7 @@ func (s *CoverageBackfillSuite) TestBech32AccountPubKey(c *C) {
 	c.Assert(pk.IsEmpty(), Equals, false)
 }
 
-func (s *CoverageBackfillSuite) TestSumVoutSats(c *C) {
+func (s *CoverageBackfillSuite) TestSumVoutBaseUnits(c *C) {
 	// Test with valid vouts
 	tx := &btcjson.TxRawResult{
 		Vout: []btcjson.Vout{
@@ -444,7 +444,7 @@ func (s *CoverageBackfillSuite) TestGetAccount(c *C) {
 ////////////////////////////////////////////////////////////////////////////////////////
 
 func (s *CoverageBackfillSuite) TestNormalizeCashAddressBCH(c *C) {
-	client := *s.client
+	client := &Client{}
 	client.cfg.ChainID = common.BCHChain
 
 	params := client.getChainCfgBCH()
@@ -573,28 +573,88 @@ func (s *CoverageBackfillSuite) TestSendNetworkFee(c *C) {
 	c.Assert(s.client.lastFeeRate.Load() > 0, Equals, true)
 }
 
-func (s *CoverageBackfillSuite) TestZeroNetworkFeeUsesConfiguredFloors(c *C) {
+func (s *CoverageBackfillSuite) TestSendNetworkFeeSkipsZeroObservation(c *C) {
+	originalStats := btcChainRPCs["getblockstats"]
+	defer func() { btcChainRPCs["getblockstats"] = originalStats }()
+	btcChainRPCs["getblockstats"] = map[string]interface{}{
+		"result": map[string]interface{}{"avgfeerate": 0},
+		"error":  nil,
+		"id":     2,
+	}
+
+	s.client.lastFeeRate.Store(100)
+	s.client.feeRateCache = nil
+	err := s.client.sendNetworkFee(1696761)
+	c.Assert(err, IsNil)
+	c.Check(s.client.lastFeeRate.Load(), Equals, uint64(100))
+}
+
+func (s *CoverageBackfillSuite) TestSendNetworkFeeXECUsesNativeRate(c *C) {
+	originalStats := btcChainRPCs["getblockstats"]
+	defer func() { btcChainRPCs["getblockstats"] = originalStats }()
+	btcChainRPCs["getblockstats"] = map[string]interface{}{
+		"result": map[string]interface{}{"avgfeerate": 0.02},
+		"error":  nil,
+		"id":     2,
+	}
+
+	xecRPC, err := utxorpc.NewClient(
+		s.server.URL, bob, password, 0, time.Second, common.XECChain, zerolog.Nop(),
+	)
+	c.Assert(err, IsNil)
+
+	originalRPC := s.client.rpc
+	originalChain := s.client.cfg.ChainID
+	originalGasCacheBlocks := s.client.cfg.BlockScanner.GasCacheBlocks
+	originalMinRate := s.client.cfg.UTXO.MinSatsPerVByte
+	originalQueue := s.client.globalNetworkFeeQueue
+	defer func() {
+		s.client.rpc = originalRPC
+		s.client.cfg.ChainID = originalChain
+		s.client.cfg.BlockScanner.GasCacheBlocks = originalGasCacheBlocks
+		s.client.cfg.UTXO.MinSatsPerVByte = originalMinRate
+		s.client.globalNetworkFeeQueue = originalQueue
+	}()
+
+	queue := make(chan common.NetworkFee, 1)
+	s.client.rpc = xecRPC
+	s.client.cfg.ChainID = common.XECChain
+	s.client.cfg.BlockScanner.GasCacheBlocks = 0
+	s.client.cfg.UTXO.MinSatsPerVByte = 2
+	s.client.globalNetworkFeeQueue = queue
+	s.client.lastFeeRate.Store(0)
+	s.client.minRelayFeeSats.Store(0)
+	s.client.feeRateCache = nil
+
+	err = s.client.sendNetworkFee(1696761)
+	c.Assert(err, IsNil)
+	c.Check(s.client.lastFeeRate.Load(), Equals, uint64(2))
+
+	select {
+	case fee := <-queue:
+		c.Check(fee.Chain, Equals, common.XECChain)
+		c.Check(fee.TransactionRate, Equals, uint64(2))
+	case <-time.After(time.Second):
+		c.Fatal("expected XEC network fee")
+	}
+}
+
+func (s *CoverageBackfillSuite) TestFeeRateUsesConfiguredFloors(c *C) {
 	originalSize := s.client.cfg.UTXO.EstimatedAverageTxSize
 	originalMin := s.client.cfg.UTXO.MinSatsPerVByte
-	originalDefault := s.client.cfg.UTXO.DefaultSatsPerVByte
 	defer func() {
 		s.client.cfg.UTXO.EstimatedAverageTxSize = originalSize
 		s.client.cfg.UTXO.MinSatsPerVByte = originalMin
-		s.client.cfg.UTXO.DefaultSatsPerVByte = originalDefault
 	}()
 
 	s.client.cfg.UTXO.EstimatedAverageTxSize = 1500
 	s.client.cfg.UTXO.MinSatsPerVByte = 2
-	s.client.cfg.UTXO.DefaultSatsPerVByte = 25
 
 	s.client.minRelayFeeSats.Store(4500)
-	c.Check(s.client.floorFeeRate(0), Equals, uint64(5))
+	c.Check(s.client.floorFeeRate(1), Equals, uint64(5))
 
 	s.client.minRelayFeeSats.Store(0)
-	c.Check(s.client.floorFeeRate(0), Equals, uint64(2))
-
-	s.client.cfg.UTXO.MinSatsPerVByte = 0
-	c.Check(s.client.floorFeeRate(0), Equals, uint64(25))
+	c.Check(s.client.floorFeeRate(1), Equals, uint64(2))
 }
 
 func (s *CoverageBackfillSuite) TestSendNetworkFeeSameFee(c *C) {
@@ -1669,6 +1729,11 @@ func (s *SignerInternalSuite) TestIsSelfTransactionWithBlockMeta(c *C) {
 ////////////////////////////////////////////////////////////////////////////////////////
 
 func (s *CoverageBackfillSuite) TestFetchTxs(c *C) {
+	// FetchTxs starts consolidation as a production side effect. It is unrelated
+	// to this scanner test and must not outlive the fixture server.
+	s.client.consolidateInProgress.Store(true)
+	defer s.client.consolidateInProgress.Store(false)
+
 	txIn, err := s.client.FetchTxs(1696761, 1696770)
 	c.Assert(err, IsNil)
 	c.Assert(txIn.Chain, Equals, common.BTCChain)

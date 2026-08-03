@@ -186,7 +186,7 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 				return
 			}
 
-			// default network fees on chains needing a window of blocks before bifrost sends.
+			// Default network fees for chains that may not publish one immediately.
 			// Cosmos-family chains currently use a 200k gas limit with a 0.001 min gas
 			// price in mocknet, so 200 uatom/uusdc is the minimum accepted fee.
 			defaultFees := []struct {
@@ -206,6 +206,7 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 				{common.ZECChain, 1, 50_000},
 				{common.LTCChain, 250, 103},
 				{common.BCHChain, 1500, 7},
+				{common.XECChain, 1500, 2},
 				{common.DOGEChain, 1000, 1500000},
 				{common.TRONChain, 1, 1_000_000},
 			}
