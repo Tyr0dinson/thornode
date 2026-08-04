@@ -2341,7 +2341,7 @@
       {
         "chain": "THOR",
         "coin": "826441100 ETH-USDC-0X9999999999999999999999999999999999999999",
-        "emit_asset": "972668000 THOR.RUNE",
+        "emit_asset": "972668075 THOR.RUNE",
         "from": "tthor102ae04vpk6v2tvjgzdsc2s7ncnptj6pwz0pg2k",
         "id": "FDBC38014E1CDADCE11D527786E36A9D4A3ED2773801552AC51C1625812504C2",
         "liquidity_fee": "8762715",
@@ -2528,7 +2528,7 @@
       {
         "chain": "THOR",
         "coin": "826441100 ETH-USDC-0X9999999999999999999999999999999999999999",
-        "emit_asset": "955608500 THOR.RUNE",
+        "emit_asset": "955608511 THOR.RUNE",
         "from": "tthor102ae04vpk6v2tvjgzdsc2s7ncnptj6pwz0pg2k",
         "id": "FDBC38014E1CDADCE11D527786E36A9D4A3ED2773801552AC51C1625812504C2",
         "liquidity_fee": "8532161",
@@ -2715,7 +2715,7 @@
       {
         "chain": "THOR",
         "coin": "826441100 ETH-USDC-0X9999999999999999999999999999999999999999",
-        "emit_asset": "938994000 THOR.RUNE",
+        "emit_asset": "938994087 THOR.RUNE",
         "from": "tthor102ae04vpk6v2tvjgzdsc2s7ncnptj6pwz0pg2k",
         "id": "FDBC38014E1CDADCE11D527786E36A9D4A3ED2773801552AC51C1625812504C2",
         "liquidity_fee": "8309626",
@@ -2902,7 +2902,7 @@
       {
         "chain": "THOR",
         "coin": "826441100 ETH-USDC-0X9999999999999999999999999999999999999999",
-        "emit_asset": "922809400 THOR.RUNE",
+        "emit_asset": "922809449 THOR.RUNE",
         "from": "tthor102ae04vpk6v2tvjgzdsc2s7ncnptj6pwz0pg2k",
         "id": "FDBC38014E1CDADCE11D527786E36A9D4A3ED2773801552AC51C1625812504C2",
         "liquidity_fee": "8094765",
@@ -3276,7 +3276,7 @@
       {
         "chain": "THOR",
         "coin": "826441100 ETH-USDC-0X9999999999999999999999999999999999999999",
-        "emit_asset": "891671300 THOR.RUNE",
+        "emit_asset": "891671366 THOR.RUNE",
         "from": "tthor102ae04vpk6v2tvjgzdsc2s7ncnptj6pwz0pg2k",
         "id": "FDBC38014E1CDADCE11D527786E36A9D4A3ED2773801552AC51C1625812504C2",
         "liquidity_fee": "7686771",
@@ -3463,7 +3463,7 @@
       {
         "chain": "THOR",
         "coin": "826441100 ETH-USDC-0X9999999999999999999999999999999999999999",
-        "emit_asset": "876690300 THOR.RUNE",
+        "emit_asset": "876690365 THOR.RUNE",
         "from": "tthor102ae04vpk6v2tvjgzdsc2s7ncnptj6pwz0pg2k",
         "id": "FDBC38014E1CDADCE11D527786E36A9D4A3ED2773801552AC51C1625812504C2",
         "liquidity_fee": "7493031",
@@ -3650,7 +3650,7 @@
       {
         "chain": "THOR",
         "coin": "826441100 ETH-USDC-0X9999999999999999999999999999999999999999",
-        "emit_asset": "862083900 THOR.RUNE",
+        "emit_asset": "862083976 THOR.RUNE",
         "from": "tthor102ae04vpk6v2tvjgzdsc2s7ncnptj6pwz0pg2k",
         "id": "FDBC38014E1CDADCE11D527786E36A9D4A3ED2773801552AC51C1625812504C2",
         "liquidity_fee": "7305749",
@@ -3837,7 +3837,7 @@
       {
         "chain": "THOR",
         "coin": "826441100 ETH-USDC-0X9999999999999999999999999999999999999999",
-        "emit_asset": "847839800 THOR.RUNE",
+        "emit_asset": "847839812 THOR.RUNE",
         "from": "tthor102ae04vpk6v2tvjgzdsc2s7ncnptj6pwz0pg2k",
         "id": "FDBC38014E1CDADCE11D527786E36A9D4A3ED2773801552AC51C1625812504C2",
         "liquidity_fee": "7124658",
@@ -4024,7 +4024,7 @@
       {
         "chain": "THOR",
         "coin": "826441100 ETH-USDC-0X9999999999999999999999999999999999999999",
-        "emit_asset": "833945900 THOR.RUNE",
+        "emit_asset": "833945995 THOR.RUNE",
         "from": "tthor102ae04vpk6v2tvjgzdsc2s7ncnptj6pwz0pg2k",
         "id": "FDBC38014E1CDADCE11D527786E36A9D4A3ED2773801552AC51C1625812504C2",
         "liquidity_fee": "6949506",
@@ -4042,19 +4042,19 @@
         "type": "swap"
       },
       {
-        "amount": "9009351000rune",
+        "amount": "9009351536rune",
         "mode": "EndBlock",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "9009351000rune",
+        "amount": "9009351536rune",
         "mode": "EndBlock",
         "receiver": "tthor102ae04vpk6v2tvjgzdsc2s7ncnptj6pwz0pg2k",
         "type": "coin_received"
       },
       {
-        "amount": "9009351000rune",
+        "amount": "9009351536rune",
         "mode": "EndBlock",
         "recipient": "tthor102ae04vpk6v2tvjgzdsc2s7ncnptj6pwz0pg2k",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
@@ -4066,7 +4066,7 @@
         "type": "message"
       },
       {
-        "amount": "9009351000",
+        "amount": "9009351536",
         "mode": "EndBlock",
         "tx_id": "FDBC38014E1CDADCE11D527786E36A9D4A3ED2773801552AC51C1625812504C2",
         "type": "stable_reserve_rescue_rune_settled"
@@ -4080,7 +4080,7 @@
         "interval": "1",
         "last_height": "15",
         "mode": "EndBlock",
-        "out": "9009351000 THOR.RUNE",
+        "out": "9009351536 THOR.RUNE",
         "quantity": "10",
         "tx_id": "FDBC38014E1CDADCE11D527786E36A9D4A3ED2773801552AC51C1625812504C2",
         "type": "streaming_swap"

@@ -595,7 +595,7 @@
       {
         "chain": "THOR",
         "coin": "10200000009 ETH-USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48",
-        "emit_asset": "13614004100 THOR.RUNE",
+        "emit_asset": "13614004169 THOR.RUNE",
         "from": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "id": "EC1F7BF2C33F47DB4445BB3FCA5EFC928D43B3C373003426AB2DF8F351D8671E",
         "liquidity_fee": "6810407",
@@ -613,19 +613,19 @@
         "type": "swap"
       },
       {
-        "amount": "13614004100rune",
+        "amount": "13614004169rune",
         "mode": "EndBlock",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "13614004100rune",
+        "amount": "13614004169rune",
         "mode": "EndBlock",
         "receiver": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "type": "coin_received"
       },
       {
-        "amount": "13614004100rune",
+        "amount": "13614004169rune",
         "mode": "EndBlock",
         "recipient": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
@@ -638,7 +638,7 @@
       },
       {
         "chain": "THOR",
-        "coin": "13614004100 THOR.RUNE",
+        "coin": "13614004169 THOR.RUNE",
         "from": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "id": "0000000000000000000000000000000000000000000000000000000000000000",
         "in_tx_id": "EC1F7BF2C33F47DB4445BB3FCA5EFC928D43B3C373003426AB2DF8F351D8671E",

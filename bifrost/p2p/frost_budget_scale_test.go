@@ -89,6 +89,7 @@ func TestFrostFullPartyVerificationRoundsFitPreflightBudgets(t *testing.T) {
 			sub := comm.getSubscriber(messages.TSSFrostVerifyMsg, msgID)
 			if sub == nil {
 				t.Fatal("expected verification subscription")
+				return
 			}
 			if sub.sessionBytes >= FrostMaxSessionBytes {
 				t.Fatalf("full ceremony exhausted byte budget: used %d of %d", sub.sessionBytes, FrostMaxSessionBytes)

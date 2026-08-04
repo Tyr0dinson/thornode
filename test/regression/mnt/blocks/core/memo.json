@@ -3815,7 +3815,7 @@
       {
         "chain": "GAIA",
         "coin": "50000100 GAIA.ATOM",
-        "emit_asset": "13889353300 THOR.RUNE",
+        "emit_asset": "13889353327 THOR.RUNE",
         "from": "cosmos13wrmhnh2qe98rjse30pl7u6jxszjjwl4t2v05e",
         "id": "0000000000000000000000000000000000000000000000000000000000000008",
         "liquidity_fee": "69446905531",
@@ -3834,7 +3834,7 @@
       },
       {
         "chain": "GAIA",
-        "coin": "13889353300 THOR.RUNE",
+        "coin": "13889353327 THOR.RUNE",
         "emit_asset": "11399392 BTC.BTC",
         "from": "cosmos13wrmhnh2qe98rjse30pl7u6jxszjjwl4t2v05e",
         "id": "0000000000000000000000000000000000000000000000000000000000000008",
@@ -4472,7 +4472,7 @@
       {
         "chain": "BTC",
         "coin": "5000001 BTC.BTC",
-        "emit_asset": "5381051201 THOR.RUNE",
+        "emit_asset": "5381051202 THOR.RUNE",
         "from": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal",
         "id": "0000000000000000000000000000000000000000000000000000000000000006",
         "liquidity_fee": "291384190",
@@ -4491,7 +4491,7 @@
       },
       {
         "chain": "BTC",
-        "coin": "5381051201 THOR.RUNE",
+        "coin": "5381051202 THOR.RUNE",
         "emit_asset": "45488489 ETH.ETH",
         "from": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal",
         "id": "0000000000000000000000000000000000000000000000000000000000000006",

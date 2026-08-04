@@ -135,7 +135,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "400928763194",
+              "amount": "400928762658",
               "denom": "rune"
             }
           ]
@@ -153,7 +153,7 @@
           "address": "tthor102ae04vpk6v2tvjgzdsc2s7ncnptj6pwz0pg2k",
           "coins": [
             {
-              "amount": "9009351000",
+              "amount": "9009351536",
               "denom": "rune"
             }
           ]
@@ -395,7 +395,7 @@
           "LP_units": "100000000000",
           "asset": "ETH.USDC-0X9999999999999999999999999999999999999999",
           "balance_asset": "100000000000",
-          "balance_rune": "100918081256",
+          "balance_rune": "100918080720",
           "decimals": "6",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",

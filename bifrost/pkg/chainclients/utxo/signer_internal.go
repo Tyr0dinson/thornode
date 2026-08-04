@@ -254,9 +254,9 @@ func (c *Client) getPaymentAmount(tx stypes.TxOutItem) (btcutil.Amount, error) {
 	// ZEC gas is calculated differently, see getUtxoToSpend()
 	if !tx.MaxGas.IsEmpty() && c.cfg.ChainID != common.ZECChain {
 		gasCoin := tx.MaxGas.ToCoins().GetCoin(c.cfg.ChainID.GetGasAsset())
-		gasAmt, err := c.cfg.ChainID.ThorchainToNativeGasExact(gasCoin.Amount)
-		if err != nil {
-			return 0, fmt.Errorf("convert max gas to native units: %w", err)
+		gasAmt, gasErr := c.cfg.ChainID.ThorchainToNativeGasExact(gasCoin.Amount)
+		if gasErr != nil {
+			return 0, fmt.Errorf("convert max gas to native units: %w", gasErr)
 		}
 		amtToPay = amtToPay.Add(gasAmt)
 	}

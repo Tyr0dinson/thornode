@@ -230,7 +230,7 @@
             "in": "50420169",
             "interval": "1",
             "last_height": "5",
-            "out": "50368800",
+            "out": "50368860",
             "quantity": "119",
             "withdrawn": "0"
           },
@@ -497,7 +497,7 @@
           "LP_units": "100000000000",
           "asset": "ETH.USDC-0X9999999999999999999999999999999999999999",
           "balance_asset": "100051440269",
-          "balance_rune": "99950671291",
+          "balance_rune": "99950671231",
           "decimals": "6",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",

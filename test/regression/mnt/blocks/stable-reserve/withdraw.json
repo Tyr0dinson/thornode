@@ -1083,7 +1083,7 @@
         "id": "F637F21C9438A81DDCDAA4BAAEF1D7B8E18A2385564B26BF620E6B9CDB4B2BBE",
         "memo": "stable-reserve-withdraw-fee:0000000000000000000000000000000000000000000000000000000000000002",
         "mode": "EndBlock",
-        "reason": "zero emit asset; fail to refund (100 ETH.USDC-0X9999999999999999999999999999999999999999): not enough asset to pay for fees",
+        "reason": "invalid tx type: stable-reserve-withdraw-fee; fail to refund (100 ETH.USDC-0X9999999999999999999999999999999999999999): not enough asset to pay for fees",
         "to": "0xd58610f89265a2fb637ac40edf59141ff873b266",
         "type": "refund"
       },
@@ -1551,7 +1551,7 @@
       {
         "chain": "THOR",
         "coin": "50420169 ETH-USDC-0X9999999999999999999999999999999999999999",
-        "emit_asset": "50368800 THOR.RUNE",
+        "emit_asset": "50368860 THOR.RUNE",
         "from": "tthor102ae04vpk6v2tvjgzdsc2s7ncnptj6pwz0pg2k",
         "id": "3B331A9C2064B6025D2C4E3F9818A96F54A70B20B188EF0E3542CD58E2933BD3",
         "liquidity_fee": "25395",

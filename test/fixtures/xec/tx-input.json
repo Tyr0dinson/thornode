@@ -20,9 +20,7 @@
           "hex": "76a9147494cdeb3ccab734451fe6171197fdeb854a7cde88ac",
           "reqSigs": 1,
           "type": "pubkeyhash",
-          "addresses": [
-            "ecregtest:qp6ffn0t8n9twdz9rlnpwyvhlh4c2jnumcl2ak30p8"
-          ]
+          "addresses": ["ecregtest:qp6ffn0t8n9twdz9rlnpwyvhlh4c2jnumcl2ak30p8"]
         }
       }
     ],

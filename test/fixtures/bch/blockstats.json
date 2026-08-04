@@ -4,7 +4,9 @@
     "avgfeerate": 0.00000257,
     "avgtxsize": 237,
     "blockhash": "3b978a5ad28a322d58bea1accc347dec4afdb480110fde497013615c75e70ded",
-    "feerate_percentiles": [0.00000257, 0.00000257, 0.00000257, 0.00000257, 0.00000257],
+    "feerate_percentiles": [
+      0.00000257, 0.00000257, 0.00000257, 0.00000257, 0.00000257
+    ],
     "height": 273,
     "ins": 1,
     "maxfee": 0.0004,

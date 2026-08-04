@@ -360,7 +360,7 @@
         {
           "LP_units": "100000000000",
           "asset": "ETH.USDC-0X9999999999999999999999999999999999999999",
-          "balance_asset": "100156948100",
+          "balance_asset": "100156947900",
           "balance_rune": "99874532741",
           "decimals": "6",
           "pending_inbound_asset": "0",
@@ -395,7 +395,7 @@
         {
           "address": "0xdd99304abf262d653e2eb6722d874c2b86efdcea",
           "reclaimed": "0",
-          "score": "21565332",
+          "score": "21565338",
           "spent": "0"
         }
       ],
@@ -429,7 +429,7 @@
               "decimals": "8"
             },
             {
-              "amount": "100156948100",
+              "amount": "100156947900",
               "asset": "ETH.USDC-0X9999999999999999999999999999999999999999",
               "decimals": "6"
             }

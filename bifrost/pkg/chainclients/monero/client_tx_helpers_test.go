@@ -297,6 +297,7 @@ func TestBuildOutboundObservationUsesOriginalMemo(t *testing.T) {
 	)
 	if observation == nil {
 		t.Fatal("expected outbound observation")
+		return
 	}
 	if observation.Memo != outboundMemo {
 		t.Fatalf("expected observation memo %q, got %q", outboundMemo, observation.Memo)
@@ -336,6 +337,7 @@ func TestBuildOutboundObservationConvertsFallbackNetworkFeeToThorchainUnits(t *t
 	)
 	if observation == nil {
 		t.Fatal("expected outbound observation")
+		return
 	}
 	if len(observation.Gas) != 1 {
 		t.Fatalf("expected one gas coin, got %d", len(observation.Gas))
@@ -381,6 +383,7 @@ func TestBuildOutboundObservationAddsUnusedMaxGasForMigration(t *testing.T) {
 	)
 	if observation == nil {
 		t.Fatal("expected outbound observation")
+		return
 	}
 	if got := observation.Coins.GetCoin(common.XMRAsset).Amount.Uint64(); got != 1_040 {
 		t.Fatalf("expected migration observation amount 1040 after unused MaxGas sweep, got %d", got)
@@ -420,6 +423,7 @@ func TestBuildOutboundObservationDoesNotSweepUnusedMaxGasForNormalOutbound(t *te
 	)
 	if observation == nil {
 		t.Fatal("expected outbound observation")
+		return
 	}
 	if got := observation.Coins.GetCoin(common.XMRAsset).Amount.Uint64(); got != 1_000 {
 		t.Fatalf("expected normal outbound amount to remain 1000, got %d", got)

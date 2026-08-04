@@ -4,11 +4,7 @@
     "subversion": "/Bitcoin ABC:0.33.8(EB32.0)/",
     "protocolversion": 70017,
     "localservices": "0000000000000405",
-    "localservicesnames": [
-      "NETWORK",
-      "BLOOM",
-      "NETWORK_LIMITED"
-    ],
+    "localservicesnames": ["NETWORK", "BLOOM", "NETWORK_LIMITED"],
     "localrelay": true,
     "timeoffset": 0,
     "networkactive": true,

@@ -403,9 +403,11 @@ func TestFetchTxsPreservesInboundAndOutboundViewsForSameTxIDAcrossVaults(t *test
 	}
 	if outbound == nil {
 		t.Fatal("expected outbound observation to be preserved")
+		return
 	}
 	if inbound == nil {
 		t.Fatal("expected inbound observation to be preserved")
+		return
 	}
 	if !outbound.ObservedVaultPubKey.Equals(sourceVaultPubKey) {
 		t.Fatalf("expected outbound vault pubkey %s, got %s", sourceVaultPubKey, outbound.ObservedVaultPubKey)
@@ -658,6 +660,7 @@ func TestAuthenticatedMigrationReplayObserverAckRejectAndReorg(t *testing.T) {
 	}
 	if destinationItem == nil || destinationItem.OnObservedTxRejected == nil || destinationItem.OnObservedTxStored == nil {
 		t.Fatal("destination replay is missing observer terminal callbacks")
+		return
 	}
 	if destinationItem.TxKey != "" || len(destinationItem.SpentOutputRefs) != 0 ||
 		destinationItem.Gas.ToCoins().GetCoin(common.XMRAsset).Amount.Uint64() != 1 {

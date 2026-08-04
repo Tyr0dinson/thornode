@@ -138,7 +138,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "532848580672219",
+              "amount": "532848580672218",
               "denom": "rune"
             }
           ]
@@ -156,7 +156,7 @@
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "coins": [
             {
-              "amount": "10181000000",
+              "amount": "10181482422",
               "denom": "eth-gusd-0x056fd409e1d7a124bd7017459dfea2f387b6d5cd"
             },
             {
@@ -178,7 +178,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "50000020620064",
+              "amount": "50000020620065",
               "denom": "rune"
             }
           ]
@@ -192,7 +192,7 @@
       "send_enabled": [],
       "supply": [
         {
-          "amount": "10181000000",
+          "amount": "10181482422",
           "denom": "eth-gusd-0x056fd409e1d7a124bd7017459dfea2f387b6d5cd"
         },
         {
@@ -270,7 +270,7 @@
       ],
       "network": {
         "NodeIncomeSplit": "10000",
-        "bond_reward_rune": "24620064",
+        "bond_reward_rune": "24620065",
         "total_bond_units": "5"
       },
       "network_fees": [
@@ -315,8 +315,8 @@
         {
           "LP_units": "10586030083716",
           "asset": "ETH.GUSD-0X056FD409E1D7A124BD7017459DFEA2F387B6D5CD",
-          "balance_asset": "11315706977642",
-          "balance_rune": "15130588979576",
+          "balance_asset": "11315706495220",
+          "balance_rune": "15130588979644",
           "decimals": "2",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -327,7 +327,7 @@
           "LP_units": "127610836755029",
           "asset": "ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48",
           "balance_asset": "387705333089356",
-          "balance_rune": "517717991692643",
+          "balance_rune": "517717991692574",
           "decimals": "6",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -347,7 +347,7 @@
       "secured_assets": [
         {
           "asset": "ETH-GUSD-0X056FD409E1D7A124BD7017459DFEA2F387B6D5CD",
-          "depth": "10181000000"
+          "depth": "10181482422"
         },
         {
           "asset": "ETH-USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48",
@@ -360,7 +360,7 @@
         {
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "reclaimed": "0",
-          "score": "19070849",
+          "score": "19070850",
           "spent": "0"
         }
       ],

@@ -27,13 +27,14 @@ func (c converter) toBaseUnits(rpcAmount float64) (cosmos.Uint, error) {
 	if math.IsNaN(rpcAmount) || math.IsInf(rpcAmount, 0) {
 		return cosmos.Uint{}, fmt.Errorf("non-finite RPC amount: %v", rpcAmount)
 	}
-	if rpcAmount < 0 {
-		return cosmos.Uint{}, fmt.Errorf("negative RPC amount: %v", rpcAmount)
-	}
 
-	value, ok := new(big.Rat).SetString(strconv.FormatFloat(rpcAmount, 'f', -1, 64))
+	rpcValue := strconv.FormatFloat(rpcAmount, 'f', -1, 64)
+	value, ok := new(big.Rat).SetString(rpcValue) // nolint:gosec // G113: rpcValue is bounded by float64 formatting.
 	if !ok {
 		return cosmos.Uint{}, fmt.Errorf("invalid RPC amount: %v", rpcAmount)
+	}
+	if value.Sign() < 0 {
+		return cosmos.Uint{}, fmt.Errorf("negative RPC amount: %v", rpcAmount)
 	}
 	value.Mul(value, new(big.Rat).SetInt(c.baseUnitsPerCoin.BigInt()))
 	if !value.IsInt() {

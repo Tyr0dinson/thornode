@@ -33,6 +33,7 @@ func TestSetSubscribeWithPeersRestrictsIngress(t *testing.T) {
 	sub := c.getSubscriber(messages.TSSFrostDKGRound1Msg, "msg-id")
 	if sub == nil {
 		t.Fatal("expected a subscription to be registered")
+		return
 	}
 	if sub.accepts(outsider, 1) {
 		t.Fatal("outsider peer must not be accepted by a restricted subscription")

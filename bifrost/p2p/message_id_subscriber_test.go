@@ -63,6 +63,7 @@ func TestRestrictedSubscriptionEnforcesByteBudgetsFairly(t *testing.T) {
 	sub := ms.GetSubscriber("frost")
 	if sub == nil {
 		t.Fatal("expected restricted subscription")
+		return
 	}
 
 	// Authorization failures must not consume any cumulative allowance.

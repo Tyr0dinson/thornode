@@ -114,6 +114,7 @@ func TestGetTxInFromFailedTransactionBuildsGasObservation(t *testing.T) {
 	})
 	if item == nil {
 		t.Fatal("expected failed vault outbound to produce a gas observation")
+		return
 	}
 	if item.Memo != memo.NewOutboundMemo(common.TxID(strings.ToUpper(hash))).String() {
 		t.Fatalf("expected uppercase outbound memo, got %s", item.Memo)
