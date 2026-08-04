@@ -1241,7 +1241,7 @@ func (s *MemoParserSuite) TestGetAddressAndRefundAddressWithoutKeeper(c *C) {
 	p = parser{parts: []string{fmt.Sprintf("/%s", refAddr)}, errs: make([]error, 0), keeper: nil}
 	dest, refund = p.getAddressAndRefundAddressWithKeeper(0, false, common.THORChain)
 	c.Check(dest.IsEmpty(), Equals, true)
-	c.Check(refund, Equals, refAddr)
+	c.Check(refund, Equals, common.NoAddress)
 	c.Check(len(p.errs) > 0, Equals, true) // refund set but no destination
 }
 
