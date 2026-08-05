@@ -199,6 +199,18 @@ func (Test) TestInitSetsListenAddresses(c *C) {
 
 func (Test) TestInitBifrost(c *C) {
 	Init()
+	chains := reflect.ValueOf(&config.Bifrost.Chains).Elem()
+	for i := 0; i < chains.NumField(); i++ {
+		chain, ok := chains.Field(i).Addr().Interface().(*BifrostChainConfiguration)
+		if !ok {
+			c.Errorf("unexpected bifrost chain configuration type at field %d", i)
+			continue
+		}
+		chain.RPCHost = "localhost"
+		if chain.ChainID == common.TRONChain {
+			chain.APIHost = "localhost"
+		}
+	}
 
 	// Override all paths to use temp directories
 	tmpDir := c.MkDir()
@@ -461,57 +473,93 @@ func (t *errorTransport) RoundTrip(_ *http.Request) (*http.Response, error) {
 // Validate
 // -------------------------------------------------------------------------------------
 
-func (Test) TestValidateBTC(c *C) {
+func validChainConfig(chain common.Chain) BifrostChainConfiguration {
 	cfg := BifrostChainConfiguration{
-		ChainID: common.BTCChain,
-		RPCHost: "localhost:8332",
+		ChainID: chain,
+		RPCHost: "localhost",
 	}
+	cfg.BlockScanner.ChainID = chain
+	if chain == common.TRONChain {
+		cfg.APIHost = "localhost"
+	}
+	return cfg
+}
+
+func (Test) TestValidateBTC(c *C) {
+	cfg := validChainConfig(common.BTCChain)
 	cfg.UTXO.MaxMempoolAncestors = 25
-	cfg.Validate() // should not panic
+	c.Assert(cfg.Validate(), IsNil)
 }
 
 func (Test) TestValidateETH(c *C) {
-	cfg := BifrostChainConfiguration{
-		ChainID: common.ETHChain,
-		RPCHost: "localhost:8545",
-	}
-	cfg.Validate() // should not panic - default case, no UTXO check
+	cfg := validChainConfig(common.ETHChain)
+	c.Assert(cfg.Validate(), IsNil)
 }
 
 func (Test) TestValidateTRON(c *C) {
-	cfg := BifrostChainConfiguration{
-		ChainID: common.TRONChain,
-		APIHost: "localhost:8090",
-	}
-	cfg.Validate() // should not panic
+	cfg := validChainConfig(common.TRONChain)
+	c.Assert(cfg.Validate(), IsNil)
 }
 
 func (Test) TestValidateBCH(c *C) {
-	cfg := BifrostChainConfiguration{
-		ChainID: common.BCHChain,
-		RPCHost: "localhost:8332",
-	}
-	// BCH has no ancestor limit, any value is fine
+	cfg := validChainConfig(common.BCHChain)
+	// BCH has no chain-enforced count limit, so any non-negative value is valid.
 	cfg.UTXO.MaxMempoolAncestors = 100
-	cfg.Validate()
+	c.Assert(cfg.Validate(), IsNil)
 }
 
 func (Test) TestValidateLTC(c *C) {
-	cfg := BifrostChainConfiguration{
-		ChainID: common.LTCChain,
-		RPCHost: "localhost:9332",
-	}
+	cfg := validChainConfig(common.LTCChain)
 	cfg.UTXO.MaxMempoolAncestors = 10
-	cfg.Validate()
+	c.Assert(cfg.Validate(), IsNil)
 }
 
 func (Test) TestValidateDOGE(c *C) {
-	cfg := BifrostChainConfiguration{
-		ChainID: common.DOGEChain,
-		RPCHost: "localhost:22555",
-	}
+	cfg := validChainConfig(common.DOGEChain)
 	cfg.UTXO.MaxMempoolAncestors = 0
-	cfg.Validate()
+	c.Assert(cfg.Validate(), IsNil)
+}
+
+func (Test) TestValidateAncestorLimits(c *C) {
+	btc := validChainConfig(common.BTCChain)
+	btc.UTXO.MaxMempoolAncestors = 26
+	c.Assert(btc.Validate(), ErrorMatches, "max_mempool_ancestors exceeds BTC chain limit of 25.*")
+
+	doge := validChainConfig(common.DOGEChain)
+	doge.UTXO.MaxMempoolAncestors = -1
+	c.Assert(doge.Validate(), ErrorMatches, "max_mempool_ancestors cannot be negative.*")
+
+	xec := validChainConfig(common.XECChain)
+	xec.UTXO.MaxMempoolAncestors = -1
+	c.Assert(xec.Validate(), ErrorMatches, "max_mempool_ancestors cannot be negative.*")
+
+	xec.UTXO.MaxMempoolAncestors = 100
+	c.Assert(xec.Validate(), IsNil)
+}
+
+func (Test) TestValidateDisabledChainWithoutHost(c *C) {
+	cfg := validChainConfig(common.XECChain)
+	cfg.Disabled = true
+	cfg.RPCHost = ""
+	c.Assert(cfg.Validate(), IsNil)
+
+	cfg.UTXO.MaxMempoolAncestors = -1
+	c.Assert(cfg.Validate(), ErrorMatches, "max_mempool_ancestors cannot be negative.*")
+}
+
+func (Test) TestValidateRequiredFields(c *C) {
+	xec := validChainConfig(common.XECChain)
+	xec.RPCHost = ""
+	c.Assert(xec.Validate(), ErrorMatches, "rpc host is required for XEC")
+
+	tron := validChainConfig(common.TRONChain)
+	tron.APIHost = ""
+	c.Assert(tron.Validate(), ErrorMatches, "api host is required for TRON")
+
+	disabled := validChainConfig(common.XECChain)
+	disabled.Disabled = true
+	disabled.BlockScanner.ChainID = common.EmptyChain
+	c.Assert(disabled.Validate(), ErrorMatches, "invalid block scanner chain ID.*")
 }
 
 // -------------------------------------------------------------------------------------

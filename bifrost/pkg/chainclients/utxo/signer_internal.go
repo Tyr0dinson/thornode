@@ -623,9 +623,9 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 
 	// maxFee in sats
 	maxFeeSats := totalSize * c.cfg.UTXO.MaxSatsPerVByte
-	gasAmtSats, conversionErr := toUint64(gasCoin.Amount)
-	if conversionErr != nil {
-		return nil, nil, fmt.Errorf("convert gas amount to uint64: %w", conversionErr)
+	gasAmtSats, err := toUint64(gasCoin.Amount)
+	if err != nil {
+		return nil, nil, fmt.Errorf("convert gas amount to uint64: %w", err)
 	}
 
 	// make sure the transaction fee is not more than the max, otherwise it might reject the transaction
@@ -639,9 +639,10 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 			MulUint64(uint64(totalSize)).
 			AddUint64(999).
 			QuoUint64(1000)
-		minRelayFeeSats, conversionErr := toUint64(minRelayFee)
-		if conversionErr != nil {
-			return nil, nil, fmt.Errorf("minimum relay fee does not fit uint64: %w", conversionErr)
+		var minRelayFeeSats uint64
+		minRelayFeeSats, err = toUint64(minRelayFee)
+		if err != nil {
+			return nil, nil, fmt.Errorf("minimum relay fee does not fit uint64: %w", err)
 		}
 		if gasAmtSats < minRelayFeeSats {
 			diffStats := minRelayFeeSats - gasAmtSats
@@ -653,13 +654,15 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 	// if the total gas spend is more than max gas , then we have to take away some from the amount pay to customer
 	if !tx.MaxGas.IsEmpty() {
 		maxGasCoin := tx.MaxGas.ToCoins().GetCoin(c.cfg.ChainID.GetGasAsset())
-		maxGasNative, conversionErr := c.cfg.ChainID.ThorchainToNativeGasExact(maxGasCoin.Amount)
-		if conversionErr != nil {
-			return nil, nil, fmt.Errorf("convert max gas to native units: %w", conversionErr)
+		var maxGasNative cosmos.Uint
+		maxGasNative, err = c.cfg.ChainID.ThorchainToNativeGasExact(maxGasCoin.Amount)
+		if err != nil {
+			return nil, nil, fmt.Errorf("convert max gas to native units: %w", err)
 		}
-		maxGasSats, conversionErr := toUint64(maxGasNative)
-		if conversionErr != nil {
-			return nil, nil, fmt.Errorf("max gas does not fit wire amount: %w", conversionErr)
+		var maxGasSats uint64
+		maxGasSats, err = toUint64(maxGasNative)
+		if err != nil {
+			return nil, nil, fmt.Errorf("max gas does not fit wire amount: %w", err)
 		}
 		if gasAmtSats > maxGasSats {
 			c.log.Info().Msgf("max gas: %s, however estimated gas need %d", tx.MaxGas, gasAmtSats)
@@ -676,13 +679,13 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 		coinToCustomer = common.SafeSub(coinToCustomer, cosmos.NewUint(gap))
 	}
 
-	gasAmt, conversionErr := cosmos.UintToInt64(cosmos.NewUint(gasAmtSats))
-	if conversionErr != nil {
-		return nil, nil, fmt.Errorf("transaction fee does not fit wire amount: %w", conversionErr)
+	gasAmt, err := cosmos.UintToInt64(cosmos.NewUint(gasAmtSats))
+	if err != nil {
+		return nil, nil, fmt.Errorf("transaction fee does not fit wire amount: %w", err)
 	}
-	gasRPCAmount, conversionErr := c.rpc.FromBaseUnits(cosmos.NewUint(gasAmtSats))
-	if conversionErr != nil {
-		return nil, nil, fmt.Errorf("convert transaction fee to RPC amount: %w", conversionErr)
+	gasRPCAmount, err := c.rpc.FromBaseUnits(cosmos.NewUint(gasAmtSats))
+	if err != nil {
+		return nil, nil, fmt.Errorf("convert transaction fee to RPC amount: %w", err)
 	}
 	if err = c.temporalStorage.UpsertTransactionFee(gasRPCAmount, int32(totalSize)); err != nil {
 		c.log.Err(err).Msg("fail to save gas info to UTXO storage")

@@ -1099,18 +1099,14 @@ func (s *SlasherImpl) updatePoolFromSlash(ctx cosmos.Context, pool types.Pool, s
 	}
 	// PoolAmt is an older int64 event schema. Keep pool accounting exact, but
 	// saturate event-only values that cannot be represented by that schema.
-	stolenAmtInt64, err := cosmos.UintToInt64(stolenAsset.Amount)
-	if err != nil {
-		stolenAmtInt64 = math.MaxInt64
-	}
-	creditAmtInt64, err := cosmos.UintToInt64(runeCreditAmt)
-	if err != nil {
-		creditAmtInt64 = math.MaxInt64
-	}
+	// TODO: Extend EventSlash with an additive arbitrary-precision signed amount
+	// and retire this lossy legacy representation in a separate change.
+	stolenAmtInt64 := legacyPoolAmount(ctx, stolenAsset.Asset, stolenAsset.Amount)
+	creditAmtInt64 := legacyPoolAmount(ctx, common.RuneAsset(), runeCreditAmt)
 	poolSlashAmt := []PoolAmt{
 		{
 			Asset:  pool.Asset,
-			Amount: 0 - stolenAmtInt64,
+			Amount: -stolenAmtInt64,
 		},
 		{
 			Asset:  common.RuneAsset(),
@@ -1121,6 +1117,22 @@ func (s *SlasherImpl) updatePoolFromSlash(ctx cosmos.Context, pool types.Pool, s
 	if err := mgr.EventMgr().EmitEvent(ctx, eventSlash); err != nil {
 		ctx.Logger().Error("fail to emit slash event", "error", err)
 	}
+}
+
+func legacyPoolAmount(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint) int64 {
+	value, err := cosmos.UintToInt64(amount)
+	if err == nil {
+		return value
+	}
+
+	ctx.Logger().Error(
+		"slash amount exceeds legacy PoolAmt event range; saturating event value",
+		"asset", asset.String(),
+		"amount", amount.String(),
+		"event_amount", int64(math.MaxInt64),
+		"error", err,
+	)
+	return math.MaxInt64
 }
 
 // hasActiveOutboundObservation reports whether an observed link should still

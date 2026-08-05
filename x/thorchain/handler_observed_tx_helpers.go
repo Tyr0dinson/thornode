@@ -1658,11 +1658,12 @@ func ExtractReferenceFromAmount(ctx cosmos.Context, mgr Manager, asset common.As
 	}
 
 	var decimals int64
-	if asset.IsNative() {
+	switch {
+	case asset.IsNative():
 		decimals = int64(common.THORChainDecimals)
-	} else if asset.IsGasAsset() {
+	case asset.IsGasAsset():
 		decimals = asset.Chain.GetGasAssetDecimal()
-	} else {
+	default:
 		pool, err := mgr.Keeper().GetPool(ctx, asset)
 		if err != nil {
 			ctx.Logger().Error("unable to fetch pool for ref memo", "error", err)

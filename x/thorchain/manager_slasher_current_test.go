@@ -3,6 +3,7 @@ package thorchain
 import (
 	"errors"
 	"fmt"
+	"math"
 
 	. "gopkg.in/check.v1"
 
@@ -1068,6 +1069,8 @@ func (s *SlashingSuite) TestUpdatePoolFromSlash(c *C) {
 
 	// Pool accounting must remain exact even though the legacy slash event can
 	// only represent an int64 and therefore saturates its display-only amount.
+	eventMgr := newRecordingEventMgr()
+	mgr.eventMgr = eventMgr
 	slasher.updatePoolFromSlash(
 		ctx,
 		xecPool,
@@ -1079,6 +1082,14 @@ func (s *SlashingSuite) TestUpdatePoolFromSlash(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(xecPool.BalanceAsset.Equal(largeAssetDepth.Sub(largeStolen)), Equals, true)
 	c.Assert(xecPool.BalanceRune.Equal(largeRuneDepth.Add(largeCredit)), Equals, true)
+	c.Assert(eventMgr.events, HasLen, 1)
+	eventSlash, ok := eventMgr.events[0].(*types2.EventSlash)
+	c.Assert(ok, Equals, true)
+	c.Assert(eventSlash.SlashAmount, HasLen, 2)
+	c.Assert(eventSlash.SlashAmount[0].Asset.Equals(common.XECAsset), Equals, true)
+	c.Assert(eventSlash.SlashAmount[0].Amount, Equals, -int64(math.MaxInt64))
+	c.Assert(eventSlash.SlashAmount[1].Asset.Equals(common.RuneAsset()), Equals, true)
+	c.Assert(eventSlash.SlashAmount[1].Amount, Equals, int64(math.MaxInt64))
 }
 
 func (s *SlashingSuite) TestNetworkShouldNotSlashMorethanVaultAmount(c *C) {

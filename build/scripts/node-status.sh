@@ -1,6 +1,14 @@
 #!/bin/bash
 
 set -o pipefail
+
+# These chains are enabled by default in config/default.yaml. Keep an unset
+# deployment variable consistent with that default.
+BIFROST_CHAINS_XEC_DISABLED="${BIFROST_CHAINS_XEC_DISABLED:-false}"
+BIFROST_CHAINS_XRP_DISABLED="${BIFROST_CHAINS_XRP_DISABLED:-false}"
+BIFROST_CHAINS_SOL_DISABLED="${BIFROST_CHAINS_SOL_DISABLED:-false}"
+BIFROST_CHAINS_TRON_DISABLED="${BIFROST_CHAINS_TRON_DISABLED:-false}"
+
 format_1e8() {
   printf "%.2f\n" "$(jq -n "$1"/100000000 2>/dev/null)" 2>/dev/null | sed ':a;s/\B[0-9]\{3\}\>/,&/;ta'
 }

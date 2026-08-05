@@ -344,15 +344,9 @@ func Init() {
 
 func InitBifrost() {
 	for _, chain := range config.Bifrost.GetChains() {
-		// validate chain configurations
-		if err := chain.ChainID.Valid(); err != nil {
+		if err := chain.Validate(); err != nil {
 			log.Fatal().Err(err).
 				Stringer("chain_id", chain.ChainID).
-				Msg("chain failed validation")
-		}
-		if err := chain.BlockScanner.ChainID.Valid(); err != nil {
-			log.Fatal().Err(err).
-				Stringer("chain_id", chain.BlockScanner.ChainID).
 				Msg("chain failed validation")
 		}
 	}
@@ -1031,42 +1025,52 @@ type BifrostChainConfiguration struct {
 		// itself, so set this to 25 (not 24). Additionally, UTXOs are excluded if the combined
 		// chain length (ancestorcount + descendantcount - 1) would exceed the limit when adding
 		// our transaction, since Bitcoin Core validates the entire transaction package.
-		// Bitcoin Cash removed ancestor/descendant limits in May 2021, so BCH should set this
-		// to 0 (no limit). Set to 0 to disable checking.
+		// BCH and XEC do not use Bitcoin Core's 25-transaction ancestor/descendant
+		// limit. A positive value enables a client-side limit; set to 0 to disable it.
 		MaxMempoolAncestors int64 `mapstructure:"max_mempool_ancestors"`
 	} `mapstructure:"utxo"`
 }
 
-func (b *BifrostChainConfiguration) Validate() {
-	switch b.ChainID {
-	case common.TRONChain:
-		if b.APIHost == "" {
-			log.Fatal().
-				Str("chain", b.ChainID.String()).
-				Msg("api host is required")
-		}
-	default:
-		if b.RPCHost == "" {
-			log.Fatal().
-				Str("chain", b.ChainID.String()).
-				Msg("rpc host is required")
-		}
+func (b *BifrostChainConfiguration) Validate() error {
+	if err := b.ChainID.Valid(); err != nil {
+		return fmt.Errorf("invalid chain ID %q: %w", b.ChainID, err)
+	}
+	if err := b.BlockScanner.ChainID.Valid(); err != nil {
+		return fmt.Errorf("invalid block scanner chain ID %q for %s: %w", b.BlockScanner.ChainID, b.ChainID, err)
 	}
 
 	// Validate MaxMempoolAncestors for UTXO chains
+	if b.ChainID.IsUTXO() && b.UTXO.MaxMempoolAncestors < 0 {
+		return fmt.Errorf("max_mempool_ancestors cannot be negative for %s: %d", b.ChainID, b.UTXO.MaxMempoolAncestors)
+	}
 	switch b.ChainID {
 	case common.BTCChain, common.LTCChain, common.DOGEChain:
 		// Bitcoin, Litecoin, and Dogecoin have a mempool ancestor/descendant limit of 25
 		// Config value should be <= 25 (GetMempoolEntry counts include the tx itself)
 		if b.UTXO.MaxMempoolAncestors > 25 {
-			log.Fatal().
-				Str("chain", b.ChainID.String()).
-				Int64("max_mempool_ancestors", b.UTXO.MaxMempoolAncestors).
-				Msg("max_mempool_ancestors exceeds chain limit of 25")
+			return fmt.Errorf("max_mempool_ancestors exceeds %s chain limit of 25: %d", b.ChainID, b.UTXO.MaxMempoolAncestors)
 		}
 	case common.BCHChain, common.XECChain:
-		// BCH removed ancestor limits in May 2021, so any value (including 0) is valid
+		// BCH and XEC have no chain-enforced count limit, so any non-negative
+		// client-side limit is valid. Zero disables the client-side check.
 	}
+
+	if b.Disabled {
+		return nil
+	}
+
+	switch b.ChainID {
+	case common.TRONChain:
+		if b.APIHost == "" {
+			return fmt.Errorf("api host is required for %s", b.ChainID)
+		}
+	default:
+		if b.RPCHost == "" {
+			return fmt.Errorf("rpc host is required for %s", b.ChainID)
+		}
+	}
+
+	return nil
 }
 
 type BifrostBlockScannerConfiguration struct {
