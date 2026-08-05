@@ -59,7 +59,11 @@ wait_for_solana_rpc() {
 }
 
 wait_for_tss_bootstrap_peer "${PEER-}"
-wait_for_solana_rpc "${BIFROST_CHAINS_SOL_RPC_HOST-}"
+# Solana readiness is a mocknet simulation concern. On deployed networks a
+# dead chain RPC must not prevent Bifrost and every other chain from starting.
+if [ "${NET-}" = "mocknet" ]; then
+  wait_for_solana_rpc "${BIFROST_CHAINS_SOL_RPC_HOST-}"
+fi
 
 create_thor_user "$SIGNER_NAME" "$SIGNER_PASSWD" "$SIGNER_SEED_PHRASE"
 
