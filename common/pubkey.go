@@ -223,9 +223,6 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 			return NoAddress, fmt.Errorf("fail to encode the address, err: %w", err)
 		}
 		addressString = addr.String()
-		if chain == XECChain {
-			addressString = net.CashAddressPrefix + ":" + addressString
-		}
 	case SOLChain:
 		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, p.String())
 		if err != nil {

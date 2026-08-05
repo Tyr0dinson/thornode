@@ -24,10 +24,11 @@ func (s *ECashSuite) TestMainnetAddressAndSignerPaths(c *C) {
 	pubkey := common.PubKey("thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy2cr8a2")
 	vaultAddress, err := pubkey.GetAddress(common.XECChain)
 	c.Assert(err, IsNil)
-	c.Assert(strings.HasPrefix(vaultAddress.String(), "ecash:"), Equals, true)
+	c.Assert(strings.Contains(vaultAddress.String(), ":"), Equals, false)
 
-	bareAddress := strings.TrimPrefix(vaultAddress.String(), "ecash:")
-	c.Check(client.normalizeCashAddress(bareAddress), Equals, vaultAddress.String())
+	bareAddress := vaultAddress.String()
+	prefixedAddress := "ecash:" + bareAddress
+	c.Check(client.normalizeCashAddress(prefixedAddress), Equals, vaultAddress.String())
 	c.Check(client.normalizeCashAddress(vaultAddress.String()), Equals, vaultAddress.String())
 
 	decoded, err := bchutil.DecodeAddress(vaultAddress.String(), params)

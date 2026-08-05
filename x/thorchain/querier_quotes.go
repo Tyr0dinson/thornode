@@ -1318,7 +1318,7 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 			if err != nil {
 				return nil, err
 			}
-			address = params.CashAddressPrefix + ":" + hash.String()
+			address = hash.String()
 		case common.ZECChain:
 			params := "mainnet"
 			if network == common.MockNet {

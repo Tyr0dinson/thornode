@@ -36,7 +36,7 @@ const (
 	xecFixtureBlockHash = "0a0d997aeaf94c89379fbf9de688ecaeded81c37774f6680f83703a17e32b438"
 	xecFixtureInbound   = "05aa81ee89142a6358263ee87e34fea77534bfd0e4c5ba9def56b6ea0d729cb4"
 	xecFixtureInput     = "d86cbb3662b3ef30dc2b1648963d2b33433a3a3e045159230fb1ad558cc8d7ff"
-	xecFixtureVault     = "ecregtest:qpxh73huzlhjfzcccr03zkpd9nd3wsaseg5aean4r2"
+	xecFixtureVault     = "qpxh73huzlhjfzcccr03zkpd9nd3wsaseg5aean4r2"
 )
 
 type xecFixtureBridge struct {
@@ -290,6 +290,7 @@ func (s *ECashClientSuite) TestSignAndBroadcastOneXEC(c *C) {
 	c.Assert(payload, NotNil)
 	c.Check(checkpointBytes, HasLen, 0)
 	c.Assert(observation, NotNil)
+	c.Check(observation.To, Equals, xecFixtureVault)
 	c.Assert(observation.Coins, HasLen, 1)
 	c.Check(observation.Coins[0].Amount.Equal(cosmos.NewUint(common.One)), Equals, true)
 	c.Check(observation.Coins[0].Decimals, Equals, int64(2))

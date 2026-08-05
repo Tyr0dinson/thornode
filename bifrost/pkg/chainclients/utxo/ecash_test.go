@@ -1,6 +1,7 @@
 package utxo
 
 import (
+	"strings"
 	"time"
 
 	"github.com/btcsuite/btcd/btcjson"
@@ -46,16 +47,18 @@ func (s *ECashSuite) TestNormalizeCashAddressMatchesXECVaultDerivation(c *C) {
 	vaultAddr, err := pk.GetAddress(common.XECChain)
 	c.Assert(err, IsNil)
 
-	// THORChain's canonical XEC form includes its network-specific prefix.
+	// THORChain's canonical XEC form omits its network-specific prefix.
 	c.Check(common.IsValidXECAddress(vaultAddr.String()), Equals, true)
+	c.Check(strings.Contains(vaultAddr.String(), ":"), Equals, false)
 
 	params := common.GetXECAddressParams(common.CurrentChainNetwork)
 	c.Assert(params, NotNil)
-	bare := vaultAddr.String()[len(params.CashAddressPrefix)+1:]
-	c.Check(common.IsValidXECAddress(bare), Equals, false)
+	bare := vaultAddr.String()
+	prefixed := params.CashAddressPrefix + ":" + bare
+	c.Check(common.IsValidXECAddress(prefixed), Equals, true)
 
 	// Daemon output must use the same form as the vault address comparison.
-	c.Check(client.normalizeCashAddress(bare), Equals, vaultAddr.String())
+	c.Check(client.normalizeCashAddress(prefixed), Equals, vaultAddr.String())
 
 	// Canonical input remains stable across repeated normalization.
 	c.Check(client.normalizeCashAddress(vaultAddr.String()), Equals, vaultAddr.String())

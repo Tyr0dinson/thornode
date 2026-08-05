@@ -221,7 +221,7 @@
       "liquidity_providers": [
         {
           "asset": "XEC.XEC",
-          "asset_address": "ecregtest:qrn3kqu954gzwvpl34euv9p7qg9rzrlq5y2r3f3krc",
+          "asset_address": "qrn3kqu954gzwvpl34euv9p7qg9rzrlq5y2r3f3krc",
           "asset_deposit_value": "1000000000000",
           "last_add_height": "1",
           "pending_asset": "0",

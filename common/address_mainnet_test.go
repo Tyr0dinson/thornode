@@ -80,7 +80,7 @@ func (s *AddressSuite) TestConvertToNewBCHAddressFormat(c *C) {
 	c.Assert(addr7Result.String(), Equals, "prkhwf3etusv88eu7fekcxgce7pj0vuf4sys9u2mns")
 }
 
-func (s *AddressSuite) TestPrefixlessCashAddrIsNotXEC(c *C) {
+func (s *AddressSuite) TestBareBCHCashAddrIsNotXEC(c *C) {
 	addr, err := NewAddress("qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cswjhml4x")
 	c.Assert(err, IsNil)
 	c.Assert(addr.IsChain(BCHChain), Equals, true)
@@ -96,19 +96,36 @@ func (s *AddressSuite) TestWrongCashAddrPrefixIsNotXEC(c *C) {
 
 func (s *AddressSuite) TestXECCashAddrCasing(c *C) {
 	lower := "ecash:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cfrxuq9n3"
+	bare := "qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cfrxuq9n3"
 	upper := strings.ToUpper(lower)
 	mixedPrefix := "eCash:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cfrxuq9n3"
 	mixedPayload := "ecash:qzFuujzhpd2ugtp2lqt2a2aqdnlwzgj04cfrxuq9n3"
 
 	c.Assert(IsValidXECAddress(lower), Equals, true)
+	c.Assert(IsValidXECAddress(bare), Equals, true)
 	c.Assert(IsValidXECAddress(upper), Equals, true)
 	c.Assert(IsValidXECAddress(mixedPrefix), Equals, false)
 	c.Assert(IsValidXECAddress(mixedPayload), Equals, false)
 
 	c.Assert(XECChain.IsValidAddress(Address(lower)), Equals, true)
+	c.Assert(XECChain.IsValidAddress(Address(bare)), Equals, true)
 	c.Assert(XECChain.IsValidAddress(Address(upper)), Equals, true)
 	c.Assert(XECChain.IsValidAddress(Address(mixedPrefix)), Equals, false)
 	c.Assert(XECChain.IsValidAddress(Address("ecash:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cfrxuq9n4")), Equals, false)
 	c.Assert(XECChain.IsValidAddress(Address("ecashgarbage")), Equals, false)
 	c.Assert(XECChain.IsValidAddress(Address("ecregtest:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cp764s9vu")), Equals, false)
+
+	for _, input := range []string{lower, bare, upper, strings.ToUpper(bare)} {
+		normalized, err := NormalizeXECAddress(input)
+		c.Assert(err, IsNil)
+		c.Check(normalized.String(), Equals, bare)
+
+		addr, err := NewAddress(input)
+		c.Assert(err, IsNil)
+		c.Check(addr.String(), Equals, bare)
+		c.Check(addr.GetChain(), Equals, XECChain)
+		c.Check(addr.GetNetwork(XECChain), Equals, CurrentChainNetwork)
+	}
+
+	c.Check(Address(bare).IsValidBCHAddress(), Equals, false)
 }

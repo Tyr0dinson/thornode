@@ -39,6 +39,24 @@ func (m *recordingEventMgr) securityEvents() []*ttypes.EventSecurity {
 	return events
 }
 
+func (s TxOutStoreSuite) TestNormalizeXECTxOutAddress(c *C) {
+	prefixed := "ecash:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cfrxuq9n3"
+	bare := "qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cfrxuq9n3"
+	if common.CurrentChainNetwork == common.MockNet {
+		prefixed = "ecregtest:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cp764s9vu"
+		bare = "qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cp764s9vu"
+	}
+
+	for _, input := range []string{prefixed, bare} {
+		item := TxOutItem{Chain: common.XECChain, ToAddress: common.Address(input)}
+		c.Assert(normalizeTxOutAddress(&item), IsNil)
+		c.Check(item.ToAddress.String(), Equals, bare)
+	}
+
+	item := TxOutItem{Chain: common.XECChain, ToAddress: common.Address("ecash:invalid")}
+	c.Check(normalizeTxOutAddress(&item), NotNil)
+}
+
 func (s TxOutStoreSuite) TestTakeAffiliateFee(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 	txOutStore := newTxOutStorage(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())

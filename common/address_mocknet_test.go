@@ -62,24 +62,42 @@ func (s *AddressSuite) TestToTexConversion(c *C) {
 
 func (s *AddressSuite) TestXECCashAddrCasing(c *C) {
 	lower := "ecregtest:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cp764s9vu"
+	bare := "qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cp764s9vu"
 	upper := strings.ToUpper(lower)
 	mixed := "eCregtest:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cp764s9vu"
 
 	c.Assert(IsValidXECAddress(lower), Equals, true)
+	c.Assert(IsValidXECAddress(bare), Equals, true)
 	c.Assert(IsValidXECAddress(upper), Equals, true)
 	c.Assert(IsValidXECAddress(mixed), Equals, false)
 
 	c.Assert(XECChain.IsValidAddress(Address(lower)), Equals, true)
+	c.Assert(XECChain.IsValidAddress(Address(bare)), Equals, true)
 	c.Assert(XECChain.IsValidAddress(Address(upper)), Equals, true)
 	c.Assert(XECChain.IsValidAddress(Address(mixed)), Equals, false)
 	c.Assert(XECChain.IsValidAddress(Address("ecregtest:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cp764s9vv")), Equals, false)
 	c.Assert(XECChain.IsValidAddress(Address("ecregtestgarbage")), Equals, false)
 	c.Assert(XECChain.IsValidAddress(Address("ecash:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cfrxuq9n3")), Equals, false)
+
+	for _, input := range []string{lower, bare, upper, strings.ToUpper(bare)} {
+		normalized, err := NormalizeXECAddress(input)
+		c.Assert(err, IsNil)
+		c.Check(normalized.String(), Equals, bare)
+
+		addr, err := NewAddress(input)
+		c.Assert(err, IsNil)
+		c.Check(addr.String(), Equals, bare)
+		c.Check(addr.GetChain(), Equals, XECChain)
+		c.Check(addr.GetNetwork(XECChain), Equals, MockNet)
+	}
+
+	c.Check(Address(bare).IsValidBCHAddress(), Equals, false)
 }
 
 func (s *AddressSuite) TestXECAddressNetwork(c *C) {
 	addr, err := NewAddress("ecregtest:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cp764s9vu")
 	c.Assert(err, IsNil)
+	c.Check(addr.String(), Equals, "qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cp764s9vu")
 	c.Check(addr.GetChain(), Equals, XECChain)
 	c.Check(addr.GetNetwork(XECChain), Equals, MockNet)
 	c.Check(XECChain.IsValidAddress(addr), Equals, true)

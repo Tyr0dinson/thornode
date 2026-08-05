@@ -112,5 +112,6 @@ asserts:
   - .vout|length >= 2
   - .vout[0].type == "op_return"
   - .vout[1].type == "address"
-  - .vout[1].data|startswith("ecregtest:")
+  - .vout[1].data|startswith("q")
+  - .vout[1].data|contains(":")|not
   - .vout[1].amount == 546

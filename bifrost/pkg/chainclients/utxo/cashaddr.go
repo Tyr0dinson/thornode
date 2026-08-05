@@ -7,20 +7,16 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 )
 
-// normalizeCashAddress returns THORChain's canonical representation for
-// CashAddr comparisons: BCH omits the prefix while XEC retains it.
+// normalizeCashAddress returns THORChain's canonical prefixless CashAddr for
+// BCH and XEC comparisons.
 func (c *Client) normalizeCashAddress(addr string) string {
-	var (
-		params     *bchchaincfg.Params
-		withPrefix bool
-	)
+	var params *bchchaincfg.Params
 
 	switch c.cfg.ChainID {
 	case common.BCHChain:
 		params = c.getChainCfgBCH()
 	case common.XECChain:
 		params = c.getChainCfgXEC()
-		withPrefix = true
 	default:
 		return addr
 	}
@@ -36,9 +32,5 @@ func (c *Client) normalizeCashAddress(addr string) string {
 		return addr
 	}
 
-	normalized := decoded.String()
-	if withPrefix {
-		return params.CashAddressPrefix + ":" + normalized
-	}
-	return normalized
+	return decoded.String()
 }

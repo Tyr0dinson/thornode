@@ -28,11 +28,8 @@ func newParser(ctx cosmos.Context, keeper keeper.Keeper, version semver.Version,
 	if len(memo) == 0 {
 		return parser{}, fmt.Errorf("memo can't be empty")
 	}
-	parts, err := SplitMemoParts(memo)
-	if err != nil {
-		return parser{}, err
-	}
-	memo = strings.Join(parts, ":")
+	memo = strings.Split(memo, "|")[0]
+	parts := strings.Split(memo, ":")
 	memoType, err := StringToTxType(parts[0])
 	if err != nil {
 		return parser{}, err
@@ -47,48 +44,6 @@ func newParser(ctx cosmos.Context, keeper keeper.Keeper, version semver.Version,
 		parts:   parts,
 		errs:    make([]error, 0),
 	}, nil
-}
-
-// SplitMemoParts separates memo fields while preserving an XEC CashAddr as one
-// field even though the address itself contains the memo separator. It rejects
-// an invalid current-network XEC refund when its payload is ambiguous with the
-// following memo field. Other invalid addresses keep the existing grammar.
-func SplitMemoParts(memo string) ([]string, error) {
-	memo = strings.Split(memo, "|")[0]
-	var parts []string
-	var token string
-	var isValidPrefix bool
-	var isRefundPrefix bool
-
-	prefix := common.XECChain.AddressPrefix(common.CurrentChainNetwork)
-	txType, err := StringToTxType(strings.Split(memo, ":")[0])
-	isSwap := err == nil && (txType == TxSwap || txType == TxLimitSwap)
-
-	for part := range strings.SplitSeq(memo, ":") {
-		tokens := strings.Split(part, "/")
-		joined := false
-
-		if isValidPrefix && len(parts) > 0 {
-			address := token + ":" + tokens[0]
-
-			if common.IsValidXECAddress(address) {
-				parts[len(parts)-1] += ":" + part
-				joined = true
-			} else if isSwap && len(parts) == 3 && isRefundPrefix {
-				return nil, fmt.Errorf("invalid XEC refund address %q: payload is ambiguous with the following memo field", address)
-			}
-		}
-
-		if !joined {
-			parts = append(parts, part)
-		}
-
-		token = tokens[len(tokens)-1]
-		isValidPrefix = strings.EqualFold(token, prefix)
-		isRefundPrefix = len(tokens) == 2 && isValidPrefix
-	}
-
-	return parts, nil
 }
 
 func (p *parser) getType() TxType {

@@ -264,6 +264,20 @@ func (s *MemoSuite) TestParseWithAbbreviated(c *C) {
 	c.Check(swapMemo.GetStreamInterval(), Equals, uint64(10))
 	c.Check(swapMemo.String(), Equals, "=:THOR.RUNE:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a:1200/10/20")
 
+	// XEC's canonical bare address must leave the following streaming fields in
+	// their normal memo positions.
+	xecAddress := "qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cfrxuq9n3"
+	if common.CurrentChainNetwork == common.MockNet {
+		xecAddress = "qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cp764s9vu"
+	}
+	memo, err = ParseMemoWithTHORNames(ctx, k, "=:XEC.XEC:"+xecAddress+":0/10/20")
+	c.Assert(err, IsNil)
+	swapMemo, ok = memo.(SwapMemo)
+	c.Assert(ok, Equals, true)
+	c.Check(swapMemo.GetDestination().String(), Equals, xecAddress)
+	c.Check(swapMemo.GetStreamInterval(), Equals, uint64(10))
+	c.Check(swapMemo.GetStreamQuantity(), Equals, uint64(20))
+
 	memo, err = ParseMemoWithTHORNames(ctx, k, "=:"+common.RuneAsset().String()+":0x90f2b1ae50e6018230e90a33f98c7844a0ab635a://")
 	c.Assert(err, IsNil)
 	c.Check(memo.GetSlipLimit().String(), Equals, "0")
@@ -720,6 +734,30 @@ func (s *MemoSuite) TestParse(c *C) {
 	c.Assert(err, NotNil)
 	_, err = ParseMemoWithTHORNames(ctx, k, "tcy-") // emptu bps
 	c.Assert(err, NotNil)
+}
+
+func (s *MemoSuite) TestXECAddressPrefixRemainsAvailableAsTHORName(c *C) {
+	prefix := common.XECChain.AddressPrefix(common.CurrentChainNetwork)
+	prefixedAddress := "ecash:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cfrxuq9n3"
+	if common.CurrentChainNetwork == common.MockNet {
+		prefixedAddress = "ecregtest:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cp764s9vu"
+	}
+
+	xecAddress, err := common.NewAddress(prefixedAddress)
+	c.Assert(err, IsNil)
+	c.Assert(strings.Contains(xecAddress.String(), ":"), Equals, false)
+
+	s.k.SetTHORName(s.ctx, types.NewTHORName(prefix, 50, []types.THORNameAlias{
+		{Chain: common.XECChain, Address: xecAddress},
+	}))
+
+	resolved, err := FetchAddress(s.ctx, s.k, prefix, common.XECChain)
+	c.Assert(err, IsNil)
+	c.Check(resolved, Equals, xecAddress)
+
+	parsed, err := ParseMemoWithTHORNames(s.ctx, s.k, "=:XEC.XEC:"+prefix+":0")
+	c.Assert(err, IsNil)
+	c.Check(parsed.GetDestination(), Equals, xecAddress)
 }
 
 func (s *MemoSuite) TestParseTHORNameMemo(c *C) {

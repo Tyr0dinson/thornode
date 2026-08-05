@@ -137,9 +137,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		if !ok {
 			return nil, nil, nil, fmt.Errorf("decoded xec address has unexpected type %T", outputAddr)
 		}
-		// bchutil omits the CashAddr prefix; normalize before comparing with
-		// THORChain's canonical XEC destination.
-		outputAddrStr = c.normalizeCashAddress(xecAddr.String())
+		outputAddrStr = xecAddr.String()
 	case common.LTCChain:
 		outputAddr, err = ltctxscript.DecodeAddress(tx.ToAddress.String(), c.getChainCfgLTC())
 		if err != nil {

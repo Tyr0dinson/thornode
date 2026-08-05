@@ -57,8 +57,8 @@ func (s *PubKeyTestSuite) SetUpSuite(_ *C) {
 				mocknet: "qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cwqq36m3u",
 			},
 			addrXEC: KeyDataAddr{
-				mainnet: "ecash:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cfrxuq9n3",
-				mocknet: "ecregtest:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cp764s9vu",
+				mainnet: "qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cfrxuq9n3",
+				mocknet: "qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cp764s9vu",
 			},
 			addrDOGE: KeyDataAddr{
 				mainnet: "DJcczDr7oNvfj5qP17Qa7p9ZUNTfnYYDJC",
@@ -89,8 +89,8 @@ func (s *PubKeyTestSuite) SetUpSuite(_ *C) {
 				mocknet: "qqtsx6nl0q75dfkl6yl54zy2rr4nkwwgjyuxu04wwa",
 			},
 			addrXEC: KeyDataAddr{
-				mainnet: "ecash:qqtsx6nl0q75dfkl6yl54zy2rr4nkwwgjym96z0svs",
-				mocknet: "ecregtest:qqtsx6nl0q75dfkl6yl54zy2rr4nkwwgjyncxtlsna",
+				mainnet: "qqtsx6nl0q75dfkl6yl54zy2rr4nkwwgjym96z0svs",
+				mocknet: "qqtsx6nl0q75dfkl6yl54zy2rr4nkwwgjyncxtlsna",
 			},
 			addrDOGE: KeyDataAddr{
 				mainnet: "D7EnB23qxiWTBGD1z9N6Ui7VXonCgY9eeE",
@@ -121,8 +121,8 @@ func (s *PubKeyTestSuite) SetUpSuite(_ *C) {
 				mocknet: "qqqzdh86crxjpyh2tgfy7gyfcwk4k74ze55ympqehp",
 			},
 			addrXEC: KeyDataAddr{
-				mainnet: "ecash:qqqzdh86crxjpyh2tgfy7gyfcwk4k74ze5n8av684v",
-				mocknet: "ecregtest:qqqzdh86crxjpyh2tgfy7gyfcwk4k74ze5m6p9282p",
+				mainnet: "qqqzdh86crxjpyh2tgfy7gyfcwk4k74ze5n8av684v",
+				mocknet: "qqqzdh86crxjpyh2tgfy7gyfcwk4k74ze5m6p9282p",
 			},
 			addrDOGE: KeyDataAddr{
 				mainnet: "D59u6XAtQCybdvFB4ZLWH4h8cK5SY8show",
@@ -153,8 +153,8 @@ func (s *PubKeyTestSuite) SetUpSuite(_ *C) {
 				mocknet: "qp7zhdp230nf0y0vwcl9radyn0x5r6pzxu7z9q4g5t",
 			},
 			addrXEC: KeyDataAddr{
-				mainnet: "ecash:qp7zhdp230nf0y0vwcl9radyn0x5r6pzxueprd0kkx",
-				mocknet: "ecregtest:qp7zhdp230nf0y0vwcl9radyn0x5r6pzxu3ulylkft",
+				mainnet: "qp7zhdp230nf0y0vwcl9radyn0x5r6pzxueprd0kkx",
+				mocknet: "qp7zhdp230nf0y0vwcl9radyn0x5r6pzxu3ulylkft",
 			},
 			addrDOGE: KeyDataAddr{
 				mainnet: "DGTegdtiJ6Y9fteiWtHNS5bpjCJSrY4Kiz",
@@ -185,8 +185,8 @@ func (s *PubKeyTestSuite) SetUpSuite(_ *C) {
 				mocknet: "qzfc77h794v2scmrmsj7sjreuzmy2q9p8sc74ea43r",
 			},
 			addrXEC: KeyDataAddr{
-				mainnet: "ecash:qzfc77h794v2scmrmsj7sjreuzmy2q9p8slan58tnw",
-				mocknet: "ecregtest:qzfc77h794v2scmrmsj7sjreuzmy2q9p8shq0ahtvr",
+				mainnet: "qzfc77h794v2scmrmsj7sjreuzmy2q9p8slan58tnw",
+				mocknet: "qzfc77h794v2scmrmsj7sjreuzmy2q9p8shq0ahtvr",
 			},
 			addrDOGE: KeyDataAddr{
 				mainnet: "DJbKker23xfz3ufxAbqUuQwp1EBibGJJHu",

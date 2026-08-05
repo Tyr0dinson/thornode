@@ -85,9 +85,13 @@ func NewAddress(address string) (Address, error) {
 		return Address(address), nil
 	}
 
-	if IsValidXECAddress(address) {
-		return Address(address), nil
+	xecAddress, xecErr := NormalizeXECAddress(address)
+	if xecErr == nil {
+		return xecAddress, nil
 	}
+	// TODO: Align BCH by canonicalizing prefixed and legacy BCH inputs here as
+	// well. BCH currently normalizes only at Bifrost and txout boundaries, so
+	// changing its constructor behavior should be handled separately.
 
 	if IsValidZECAddress(address) {
 		return Address(address), nil
@@ -199,35 +203,30 @@ func IsValidADAAddress(address string) bool {
 	return err == nil
 }
 
-func hasCashAddrPrefix(address, prefix string) bool {
-	if len(address) == 0 || len(prefix) == 0 {
-		return false
-	}
-	return strings.HasPrefix(strings.ToLower(address), strings.ToLower(prefix)+":")
-}
-
-func IsValidXECAddress(address string) bool {
+// NormalizeXECAddress validates an XEC CashAddr for the current network and
+// returns THORChain's canonical prefixless representation.
+func NormalizeXECAddress(address string) (Address, error) {
 	params := GetXECAddressParams(CurrentChainNetwork)
 	if params == nil {
-		return false
-	}
-
-	if !hasCashAddrPrefix(address, params.CashAddressPrefix) {
-		return false
+		return NoAddress, fmt.Errorf("XEC address parameters are not configured for network %v", CurrentChainNetwork)
 	}
 
 	bchAddr, err := bchutil.DecodeAddress(address, params)
 	if err != nil {
-		return false
+		return NoAddress, fmt.Errorf("invalid XEC address: %w", err)
 	}
 
 	switch bchAddr.(type) {
-	case *bchutil.LegacyAddressPubKeyHash, *bchutil.LegacyAddressScriptHash,
-		*bchutil.AddressPubKey:
-		return false
+	case *bchutil.AddressPubKeyHash, *bchutil.AddressScriptHash:
+		return Address(bchAddr.String()), nil
 	default:
-		return true
+		return NoAddress, fmt.Errorf("unsupported XEC address type %T", bchAddr)
 	}
+}
+
+func IsValidXECAddress(address string) bool {
+	_, err := NormalizeXECAddress(address)
+	return err == nil
 }
 
 // IsValidBCHAddress determinate whether the address is a valid new BCH address format

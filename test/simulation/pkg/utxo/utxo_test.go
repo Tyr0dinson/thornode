@@ -243,7 +243,7 @@ func TestZECSpentUtxosOnlyFinalizedAfterSuccessfulBroadcast(t *testing.T) {
 	}
 }
 
-func TestXECMocknetAddressUsesECRegtestPrefix(t *testing.T) {
+func TestXECMocknetAddressUsesBareCanonicalForm(t *testing.T) {
 	params := common.GetXECAddressParams(common.MockNet)
 	if params == nil {
 		t.Fatal("expected mocknet XEC params")
@@ -252,9 +252,21 @@ func TestXECMocknetAddressUsesECRegtestPrefix(t *testing.T) {
 		t.Fatalf("unexpected XEC mocknet prefix: %s", params.CashAddressPrefix)
 	}
 
-	addr := "ecregtest:qpxh73huzlhjfzcccr03zkpd9nd3wsaseg5aean4r2"
-	if _, err := bchutil.DecodeAddress(addr, params); err != nil {
+	prefixed := "ecregtest:qpxh73huzlhjfzcccr03zkpd9nd3wsaseg5aean4r2"
+	bare := "qpxh73huzlhjfzcccr03zkpd9nd3wsaseg5aean4r2"
+	if _, err := bchutil.DecodeAddress(prefixed, params); err != nil {
 		t.Fatalf("expected mocknet XEC address to decode, got %v", err)
+	}
+	if _, err := bchutil.DecodeAddress(bare, params); err != nil {
+		t.Fatalf("expected bare mocknet XEC address to decode, got %v", err)
+	}
+
+	normalized, err := common.NewAddress(prefixed)
+	if err != nil {
+		t.Fatalf("normalize prefixed mocknet XEC address: %v", err)
+	}
+	if normalized.String() != bare {
+		t.Fatalf("normalized address = %q, want %q", normalized, bare)
 	}
 }
 

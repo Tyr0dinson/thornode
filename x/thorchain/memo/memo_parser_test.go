@@ -49,9 +49,11 @@ func (s *MemoParserSuite) TestTxTypeIsInbound(c *C) {
 }
 
 func (s *MemoParserSuite) TestParseAddLiquidityMemoWithXECAddress(c *C) {
-	xecAddress := "ecash:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cfrxuq9n3"
+	xecAddress := "qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cfrxuq9n3"
+	prefixedAddress := "ecash:" + xecAddress
 	if common.CurrentChainNetwork == common.MockNet {
-		xecAddress = "ecregtest:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cp764s9vu"
+		xecAddress = "qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cp764s9vu"
+		prefixedAddress = "ecregtest:" + xecAddress
 	}
 
 	memo, err := ParseMemo(common.LatestVersion, "+:XEC.XEC:"+xecAddress)
@@ -61,18 +63,16 @@ func (s *MemoParserSuite) TestParseAddLiquidityMemoWithXECAddress(c *C) {
 	c.Assert(ok, Equals, true)
 	c.Check(add.GetDestination().String(), Equals, xecAddress)
 
-	// A non-address field named after an XEC prefix must not consume the next
-	// memo field.
-	parts, err := SplitMemoParts("+:BTC.BTC:ecash:100")
-	c.Assert(err, IsNil)
-	c.Check(parts, DeepEquals,
-		[]string{"+", "BTC.BTC", "ecash", "100"})
+	// Prefixed CashAddr is accepted at address/API boundaries, but not inside a
+	// colon-delimited memo. Memo builders must use the canonical bare address.
+	_, err = ParseMemo(common.LatestVersion, "+:XEC.XEC:"+prefixedAddress)
+	c.Check(err, NotNil)
 }
 
 func (s *MemoParserSuite) TestParseSwapMemoWithXECAddress(c *C) {
-	xecAddress := "ecash:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cfrxuq9n3"
+	xecAddress := "qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cfrxuq9n3"
 	if common.CurrentChainNetwork == common.MockNet {
-		xecAddress = "ecregtest:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cp764s9vu"
+		xecAddress = "qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cp764s9vu"
 	}
 
 	memo, err := ParseMemo(common.LatestVersion, "=:XEC.XEC:"+xecAddress)
@@ -83,11 +83,6 @@ func (s *MemoParserSuite) TestParseSwapMemoWithXECAddress(c *C) {
 	c.Check(swap.GetDestination().String(), Equals, xecAddress)
 
 	compound := "=:XEC.XEC:" + xecAddress + "/" + xecAddress
-	parts, err := SplitMemoParts(compound)
-	c.Assert(err, IsNil)
-	c.Check(parts, DeepEquals,
-		[]string{"=", "XEC.XEC", xecAddress + "/" + xecAddress})
-
 	memo, err = ParseMemo(common.LatestVersion, compound)
 	c.Assert(err, IsNil)
 	swap, ok = memo.(SwapMemo)
@@ -102,62 +97,22 @@ func (s *MemoParserSuite) TestParseSwapMemoWithXECAddress(c *C) {
 	c.Assert(ok, Equals, true)
 	c.Check(swap.GetDestination().String(), Equals, btcAddress)
 	c.Check(swap.GetRefundAddress().String(), Equals, xecAddress)
-
-	streaming := "=:XEC.XEC:" + xecAddress + ":0/10/20:affiliate:10"
-	parts, err = SplitMemoParts(streaming)
-	c.Assert(err, IsNil)
-	c.Check(parts, DeepEquals,
-		[]string{"=", "XEC.XEC", xecAddress, "0/10/20", "affiliate", "10"})
 }
 
-func (s *MemoParserSuite) TestInvalidXECRefundIsRejectedWithoutGuessingFields(c *C) {
+func (s *MemoParserSuite) TestInvalidOptionalXECRefundKeepsMemoFields(c *C) {
 	destination := "bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej"
 	prefix := common.XECChain.AddressPrefix(common.CurrentChainNetwork)
 
 	for _, memoType := range []string{TxSwap.String(), TxLimitSwap.String()} {
-		for _, invalidPayload := range []string{"qqtypo", "123"} {
-			memoText := fmt.Sprintf("%s:BTC.BTC:%s/%s:%s:100", memoType, destination, prefix, invalidPayload)
-			parts, err := SplitMemoParts(memoText)
-			c.Check(parts, IsNil)
-			c.Check(err, NotNil)
-
-			_, err = ParseMemo(common.LatestVersion, memoText)
-			c.Check(err, NotNil)
-		}
+		memoText := fmt.Sprintf("%s:BTC.BTC:%s/%s:100", memoType, destination, prefix)
+		parsed, err := ParseMemo(common.LatestVersion, memoText)
+		c.Assert(err, IsNil)
+		swap, ok := parsed.(SwapMemo)
+		c.Assert(ok, Equals, true)
+		c.Check(swap.GetDestination().String(), Equals, destination)
+		c.Check(swap.GetRefundAddress(), Equals, common.NoAddress)
+		c.Check(swap.GetSlipLimit().Equal(cosmos.NewUint(100)), Equals, true)
 	}
-
-	// Without a following ':' there is no field-boundary ambiguity, so keep
-	// the established behavior of treating the invalid refund as absent.
-	memoText := fmt.Sprintf("=:BTC.BTC:%s/%s", destination, prefix)
-	parts, err := SplitMemoParts(memoText)
-	c.Assert(err, IsNil)
-	c.Check(parts, DeepEquals, []string{"=", "BTC.BTC", destination + "/" + prefix})
-
-	parsed, err := ParseMemo(common.LatestVersion, memoText)
-	c.Assert(err, IsNil)
-	swap, ok := parsed.(SwapMemo)
-	c.Assert(ok, Equals, true)
-	c.Check(swap.GetDestination().String(), Equals, destination)
-	c.Check(swap.GetRefundAddress(), Equals, common.NoAddress)
-
-	// A prefix-like ordinary field must retain the existing memo grammar.
-	parts, err = SplitMemoParts("+:BTC.BTC:" + prefix + ":100")
-	c.Assert(err, IsNil)
-	c.Check(parts, DeepEquals,
-		[]string{"+", "BTC.BTC", prefix, "100"})
-
-	// A different network's prefix is not a supported address prefix on the
-	// current network and therefore keeps the established memo grammar.
-	otherNetwork := common.MockNet
-	if common.CurrentChainNetwork == common.MockNet {
-		otherNetwork = common.MainNet
-	}
-	otherPrefix := common.XECChain.AddressPrefix(otherNetwork)
-	otherMemo := fmt.Sprintf("=:BTC.BTC:%s/%s:123:100", destination, otherPrefix)
-	parts, err = SplitMemoParts(otherMemo)
-	c.Assert(err, IsNil)
-	c.Check(parts, DeepEquals,
-		[]string{"=", "BTC.BTC", destination + "/" + otherPrefix, "123", "100"})
 }
 
 func (s *MemoParserSuite) TestTxTypeIsOutbound(c *C) {

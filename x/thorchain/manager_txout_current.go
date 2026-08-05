@@ -388,19 +388,33 @@ func (tos *TxOutStorage) UnSafeAddTxOutItem(ctx cosmos.Context, mgr Manager, toi
 		return nil
 	}
 
-	// BCH chain will convert legacy address to new format automatically , thus when observe it back can't be associated with the original inbound
-	// so here convert the legacy address to new format
-	if toi.Chain.Equals(common.BCHChain) {
-		newBCHAddress, err := common.ConvertToNewBCHAddressFormat(toi.ToAddress)
+	if err := normalizeTxOutAddress(&toi); err != nil {
+		return err
+	}
+	return tos.addToBlockOut(ctx, mgr, toi, height)
+}
+
+// normalizeTxOutAddress converts CashAddr destinations to the representation
+// observers report, so intended and observed outbounds compare identically.
+func normalizeTxOutAddress(toi *TxOutItem) error {
+	switch toi.Chain {
+	case common.BCHChain:
+		address, err := common.ConvertToNewBCHAddressFormat(toi.ToAddress)
 		if err != nil {
 			return fmt.Errorf("fail to convert BCH address to new format: %w", err)
 		}
-		if newBCHAddress.IsEmpty() {
-			return fmt.Errorf("empty to address , can't send out")
+		if address.IsEmpty() {
+			return fmt.Errorf("empty to address, can't send out")
 		}
-		toi.ToAddress = newBCHAddress
+		toi.ToAddress = address
+	case common.XECChain:
+		address, err := common.NormalizeXECAddress(toi.ToAddress.String())
+		if err != nil {
+			return fmt.Errorf("fail to normalize XEC address: %w", err)
+		}
+		toi.ToAddress = address
 	}
-	return tos.addToBlockOut(ctx, mgr, toi, height)
+	return nil
 }
 
 // selectFallbackVault selects a vault to assign an outbound to when no vault has sufficient
@@ -722,19 +736,8 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 		return outputs, cosmos.ZeroUint(), fmt.Errorf("to address(%s), is not of chain(%s)", toi.ToAddress, toi.Chain)
 	}
 
-	// BCH chain will convert legacy address to new format automatically , thus when observe it back can't be associated with the original inbound
-	// so here convert the legacy address to new format
-	var newBCHAddress common.Address
-	var err error
-	if toi.Chain.Equals(common.BCHChain) {
-		newBCHAddress, err = common.ConvertToNewBCHAddressFormat(toi.ToAddress)
-		if err != nil {
-			return outputs, cosmos.ZeroUint(), fmt.Errorf("fail to convert BCH address to new format: %w", err)
-		}
-		if newBCHAddress.IsEmpty() {
-			return outputs, cosmos.ZeroUint(), fmt.Errorf("empty to address , can't send out")
-		}
-		toi.ToAddress = newBCHAddress
+	if err := normalizeTxOutAddress(&toi); err != nil {
+		return outputs, cosmos.ZeroUint(), err
 	}
 
 	// ensure amount is rounded to appropriate decimals
