@@ -623,7 +623,10 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 
 	// maxFee in sats
 	maxFeeSats := totalSize * c.cfg.UTXO.MaxSatsPerVByte
-	gasAmtSats := gasCoin.Amount.Uint64()
+	gasAmtSats, conversionErr := toUint64(gasCoin.Amount)
+	if conversionErr != nil {
+		return nil, nil, fmt.Errorf("convert gas amount to uint64: %w", conversionErr)
+	}
 
 	// make sure the transaction fee is not more than the max, otherwise it might reject the transaction
 	if gasAmtSats > uint64(maxFeeSats) {

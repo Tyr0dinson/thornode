@@ -957,6 +957,56 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityV1(c *C) {
 	c.Check(p.LPUnits.Equal(cosmos.NewUint(100*common.One)), Equals, true, Commentf("%d", p.LPUnits.Uint64()))
 }
 
+func (s *HandlerAddLiquiditySuite) TestAddXECLiquidityAboveUint64(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	assetDepth := cosmos.NewUintFromString("2000000000000000000000")
+	runeDepth := cosmos.NewUintFromString("10000000000000000")
+	pool := NewPool()
+	pool.Asset = common.XECAsset
+	pool.Decimals = 2
+	pool.BalanceRune = runeDepth
+	pool.BalanceAsset = assetDepth
+	pool.LPUnits = runeDepth
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	// addLiquidity calculates pool units with synth supply, so keep both the
+	// pool depth and supply beyond uint64.
+	synthSupply := cosmos.NewUintFromString("2000000000000000000000")
+	c.Assert(mgr.Keeper().MintToModule(
+		ctx,
+		ModuleName,
+		common.NewCoin(common.XECAsset.GetSyntheticAsset(), synthSupply),
+	), IsNil)
+
+	addRune := cosmos.NewUintFromString("100000000000000")
+	addAsset := cosmos.NewUintFromString("20000000000000000000")
+	runeAddress := GetRandomRUNEAddress()
+	assetAddress := common.Address("xec-address")
+	handler := NewAddLiquidityHandler(mgr)
+	err := handler.addLiquidity(
+		ctx,
+		common.XECAsset,
+		addRune,
+		addAsset,
+		runeAddress,
+		assetAddress,
+		GetRandomTxHash(),
+		false,
+		constants.GetConstantValues(GetCurrentVersion()),
+	)
+	c.Assert(err, IsNil)
+
+	updatedPool, err := mgr.Keeper().GetPool(ctx, common.XECAsset)
+	c.Assert(err, IsNil)
+	c.Assert(updatedPool.BalanceRune.Equal(runeDepth.Add(addRune)), Equals, true)
+	c.Assert(updatedPool.BalanceAsset.Equal(assetDepth.Add(addAsset)), Equals, true)
+	lp, err := mgr.Keeper().GetLiquidityProvider(ctx, common.XECAsset, runeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(lp.Units.IsZero(), Equals, false)
+	c.Assert(lp.AssetDepositValue.BigInt().IsUint64(), Equals, false)
+}
+
 func (s *HandlerAddLiquiditySuite) TestAddLiquidityXMRUnknownSender(c *C) {
 	constAccessor := constants.GetConstantValues(GetCurrentVersion())
 

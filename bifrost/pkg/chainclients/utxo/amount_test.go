@@ -17,13 +17,13 @@ func TestToUint64(t *testing.T) {
 		want       uint64
 		wantErrSub string
 	}{
-		{name: "nil", amount: cosmos.Uint{}, wantErrSub: "amount is nil"},
+		{name: "nil", amount: cosmos.Uint{}, wantErrSub: "value is nil"},
 		{name: "ordinary", amount: cosmos.NewUint(42), want: 42},
 		{name: "maximum", amount: cosmos.NewUint(math.MaxUint64), want: math.MaxUint64},
 		{
 			name:       "overflow",
 			amount:     cosmos.NewUintFromString("18446744073709551616"),
-			wantErrSub: "amount does not fit uint64",
+			wantErrSub: "does not fit uint64",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

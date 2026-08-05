@@ -421,8 +421,14 @@ func quoteInboundInfo(ctx cosmos.Context, mgr *Mgrs, amount sdkmath.Uint, chain 
 		if confValue.IsZero() {
 			confValue = coinbaseThorchain
 		}
-		confirmations = amount.Quo(confValue).BigInt().Int64()
+		confirmations, err = cosmos.UintToInt64(amount.Quo(confValue))
+		if err != nil {
+			return common.NoAddress, common.NoAddress, 0, fmt.Errorf("inbound confirmation count exceeds int64: %w", err)
+		}
 		if !amount.Mod(confValue).IsZero() {
+			if confirmations == math.MaxInt64 {
+				return common.NoAddress, common.NoAddress, 0, fmt.Errorf("inbound confirmation count exceeds int64")
+			}
 			confirmations++
 		}
 	} else if chain.Equals(common.ETHChain) {
@@ -434,7 +440,10 @@ func quoteInboundInfo(ctx cosmos.Context, mgr *Mgrs, amount sdkmath.Uint, chain 
 		}
 		gasAssetAmountWei := convertThorchainAmountToWei(gasAssetAmount.BigInt())
 		confValue := common.GetUncappedShare(cosmos.NewUint(uint64(confMul)), cosmos.NewUint(constants.MaxBasisPts), cosmos.NewUintFromBigInt(big.NewInt(ethBlockRewardAndFee)))
-		confirmations = int64(cosmos.NewUintFromBigInt(gasAssetAmountWei).MulUint64(2).Quo(confValue).Uint64())
+		confirmations, err = cosmos.UintToInt64(cosmos.NewUintFromBigInt(gasAssetAmountWei).MulUint64(2).Quo(confValue))
+		if err != nil {
+			return common.NoAddress, common.NoAddress, 0, fmt.Errorf("inbound confirmation count exceeds int64: %w", err)
+		}
 	}
 
 	// max confirmation adjustment for btc and eth

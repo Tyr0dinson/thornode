@@ -295,6 +295,57 @@ func (s *QuerierSuite) TestSaverPools(c *C) {
 	c.Assert(len(out), Equals, 1)
 }
 
+func (s *QuerierSuite) TestNewXECSaverAboveInt64(c *C) {
+	depositValue := cosmos.NewUintFromString("1000000000000000000000")
+	lp := LiquidityProvider{
+		Asset:             common.XECAsset.GetSyntheticAsset(),
+		AssetAddress:      common.Address("xec-saver"),
+		Units:             depositValue,
+		AssetDepositValue: depositValue,
+	}
+	pool := NewPool()
+	pool.Asset = common.XECAsset.GetSyntheticAsset()
+	pool.LPUnits = cosmos.NewUintFromString("2000000000000000000000")
+	pool.BalanceAsset = cosmos.NewUintFromString("4000000000000000000000")
+
+	saver := newSaver(lp, pool)
+	c.Assert(saver.AssetDepositValue, Equals, depositValue.String())
+	c.Assert(saver.AssetRedeemValue, Equals, cosmos.NewUintFromString("2000000000000000000000").String())
+	c.Assert(saver.GrowthPct, Equals, "1.000000000000000000")
+}
+
+func (s *QuerierSuite) TestXECLiquidityProviderGrowthAboveInt64(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	address := GetRandomRUNEAddress()
+	pool := NewPool()
+	pool.Asset = common.XECAsset
+	pool.BalanceRune = cosmos.NewUintFromString("2000000000000000000000")
+	pool.BalanceAsset = cosmos.NewUintFromString("2000000000000000000000")
+	pool.LPUnits = cosmos.OneUint()
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	depositValue := cosmos.NewUintFromString("1000000000000000000000")
+	mgr.Keeper().SetLiquidityProvider(ctx, LiquidityProvider{
+		Asset:             common.XECAsset,
+		RuneAddress:       address,
+		AssetAddress:      common.Address("xec-lp"),
+		Units:             cosmos.OneUint(),
+		RuneDepositValue:  depositValue,
+		AssetDepositValue: depositValue,
+	})
+
+	server := queryServer{mgr: mgr}
+	response, err := server.queryLiquidityProvider(ctx, &types.QueryLiquidityProviderRequest{
+		Asset:   common.XECAsset.String(),
+		Address: address.String(),
+	})
+	c.Assert(err, IsNil)
+	c.Assert(response.LuviDepositValue, Equals, "100000000000000000000000000000")
+	c.Assert(response.LuviRedeemValue, Equals, "200000000000000000000000000000")
+	c.Assert(response.LuviGrowthPct, Equals, "1.000000000000000000")
+}
+
 func (s *QuerierSuite) TestQueryNodeAccounts(c *C) {
 	ctx, keeper := setupKeeperForTest(c)
 

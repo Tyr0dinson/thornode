@@ -222,6 +222,19 @@ func UintToInt64(value Uint) (int64, error) {
 	return integer.Int64(), nil
 }
 
+// UintToUint64 converts a Uint to uint64 without silently truncating values
+// that cannot be represented by the destination type.
+func UintToUint64(value Uint) (uint64, error) {
+	if value.IsNil() {
+		return 0, fmt.Errorf("value is nil")
+	}
+	integer := value.BigInt()
+	if !integer.IsUint64() {
+		return 0, fmt.Errorf("value does not fit uint64: %s", value.String())
+	}
+	return integer.Uint64(), nil
+}
+
 // MinUint returns the minimum of two Uints.
 func MinUint(u1, u2 Uint) Uint {
 	if u1.LT(u2) {

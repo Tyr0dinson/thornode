@@ -93,7 +93,7 @@ func (qs queryServer) queryReferenceMemoPreflight(ctx cosmos.Context, req *types
 	}
 
 	// Calculate the reference ID that would be generated from this amount
-	reference, err := ExtractReferenceFromAmount(ctx, qs.mgr, asset, amount.Uint64())
+	reference, err := ExtractReferenceFromAmount(ctx, qs.mgr, asset, amount)
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate reference: %w", err)
 	}

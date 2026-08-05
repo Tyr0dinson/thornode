@@ -743,7 +743,7 @@ func getSynthSupplyRemaining(ctx cosmos.Context, mgr Manager, asset common.Asset
 
 	maxSynthSupply := cosmos.NewUint(uint64(maxSynths)).Mul(pool.BalanceAsset.MulUint64(2)).QuoUint64(MaxWithdrawBasisPoints)
 	if maxSynthSupply.LT(synthSupply) {
-		return cosmos.ZeroUint(), fmt.Errorf("synth supply over target (%d/%d)", synthSupply.Uint64(), maxSynthSupply.Uint64())
+		return cosmos.ZeroUint(), fmt.Errorf("synth supply over target (%s/%s)", synthSupply, maxSynthSupply)
 	}
 
 	return maxSynthSupply.Sub(synthSupply), nil
@@ -772,7 +772,7 @@ func isSynthMintPaused(ctx cosmos.Context, mgr Manager, targetAsset common.Asset
 	}
 
 	if remaining.LT(outputAmt) {
-		return fmt.Errorf("insufficient synth capacity: want=%d have=%d", outputAmt.Uint64(), remaining.Uint64())
+		return fmt.Errorf("insufficient synth capacity: want=%s have=%s", outputAmt, remaining)
 	}
 
 	return nil

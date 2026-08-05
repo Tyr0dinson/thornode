@@ -38,6 +38,27 @@ func (s *QuerierReferenceMemoSuite) TestPreflightGasAssetEligible(c *C) {
 	c.Assert(resp.CanRegister, Equals, true)
 }
 
+func (s *QuerierReferenceMemoSuite) TestPreflightXECAmountAboveUint64(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	qs := &queryServer{mgr: mgr}
+	mgr.Keeper().SetMimir(ctx, constants.MemolessTxnTTL.String(), 100)
+
+	pool := NewPool()
+	pool.Asset = common.XECAsset
+	pool.BalanceAsset = cosmos.NewUintFromString("4000000000000000000000")
+	pool.BalanceRune = cosmos.NewUintFromString("10000000000000000")
+	pool.Decimals = 2
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	resp, err := qs.queryReferenceMemoPreflight(ctx, &types.QueryReferenceMemoPreflightRequest{
+		Asset:  common.XECAsset.String(),
+		Amount: "2000000000000042000000",
+	})
+	c.Assert(err, IsNil)
+	c.Assert(resp.Reference, Equals, "00042")
+	c.Assert(resp.Available, Equals, true)
+}
+
 func (s *QuerierReferenceMemoSuite) TestPreflightNonGasAssetEligible(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	qs := &queryServer{mgr: mgr}

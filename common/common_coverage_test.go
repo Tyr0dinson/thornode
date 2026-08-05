@@ -753,6 +753,10 @@ func (s *CoverageSuite) TestFeeString(c *C) {
 	str := fee.String()
 	c.Assert(len(str) > 0, Equals, true)
 	c.Check(str, Equals, "50: 100 BTC.BTC")
+
+	largeDeduct := cosmos.NewUintFromString("2000000000000000000000")
+	fee = NewFee(Coins{NewCoin(XECAsset, largeDeduct)}, largeDeduct)
+	c.Check(fee.String(), Equals, "2000000000000000000000: 2000000000000000000000 XEC.XEC")
 }
 
 // --- InvariantRoute tests ---

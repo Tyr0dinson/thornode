@@ -13,6 +13,7 @@ import (
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -213,6 +214,11 @@ func (s *ConfAdjustmentSuite) TestMaxConfAdjustment(c *C) {
 	val, err := MaxConfAdjustment(10, "BTC", bridge)
 	c.Assert(err, IsNil)
 	c.Assert(val, Equals, uint64(1))
+
+	large := cosmos.NewUintFromString("2000000000000000000000")
+	adjusted, err := MaxConfAdjustmentUint(large, "XEC", bridge)
+	c.Assert(err, IsNil)
+	c.Assert(adjusted.Equal(cosmos.OneUint()), Equals, true)
 }
 
 // -------------------------------------------------------------------------------------

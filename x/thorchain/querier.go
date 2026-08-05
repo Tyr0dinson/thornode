@@ -1348,8 +1348,8 @@ func newSaver(lp LiquidityProvider, pool Pool) *types.QuerySaverResponse {
 
 	gp := cosmos.NewDec(0)
 	if !lp.AssetDepositValue.IsZero() {
-		adv := cosmos.NewDec(lp.AssetDepositValue.BigInt().Int64())
-		arv := cosmos.NewDec(assetRedeemableValue.BigInt().Int64())
+		adv := cosmos.NewDecFromBigInt(lp.AssetDepositValue.BigInt())
+		arv := cosmos.NewDecFromBigInt(assetRedeemableValue.BigInt())
 		gp = arv.Sub(adv)
 		gp = gp.Quo(adv)
 	}
@@ -1456,8 +1456,8 @@ func (qs queryServer) queryLiquidityProvider(ctx cosmos.Context, req *types.Quer
 
 	lgp := cosmos.NewDec(0)
 	if !luviDepositValue.IsZero() {
-		ldv := cosmos.NewDec(luviDepositValue.BigInt().Int64())
-		lrv := cosmos.NewDec(luviRedeemValue.BigInt().Int64())
+		ldv := cosmos.NewDecFromBigInt(luviDepositValue.BigInt())
+		lrv := cosmos.NewDecFromBigInt(luviRedeemValue.BigInt())
 		lgp = lrv.Sub(ldv)
 		lgp = lgp.Quo(ldv)
 	}

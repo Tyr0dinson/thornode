@@ -82,6 +82,107 @@ func (s *SwapSuite) TestXECPoolDoesNotTruncateRuneEmit(c *C) {
 		Commentf("RUNE emit %s was truncated to XEC's two-decimal precision", emit))
 }
 
+func (s *SwapSuite) TestXECSwapsAboveUint64(c *C) {
+	tests := []struct {
+		name   string
+		source common.Asset
+		target common.Asset
+		amount cosmos.Uint
+	}{
+		{
+			name:   "XEC to RUNE",
+			source: common.XECAsset,
+			target: common.RuneAsset(),
+			amount: cosmos.NewUintFromString("200000000000000000000"),
+		},
+		{
+			name:   "RUNE to XEC",
+			source: common.RuneAsset(),
+			target: common.XECAsset,
+			amount: cosmos.NewUintFromString("1000000000000000"),
+		},
+	}
+
+	for _, tc := range tests {
+		ctx, mgr := setupManagerForTest(c)
+		xecAddress, err := GetRandomPubKey().GetAddress(common.XECChain)
+		c.Assert(err, IsNil, Commentf(tc.name))
+		thorAddress := GetRandomTHORAddress()
+		fromAddress := thorAddress
+		destination := xecAddress
+		if tc.source.Equals(common.XECAsset) {
+			fromAddress = xecAddress
+			destination = thorAddress
+		}
+		assetDepth := cosmos.NewUintFromString("2000000000000000000000")
+		runeDepth := cosmos.NewUintFromString("10000000000000000")
+		pool := NewPool()
+		pool.Asset = common.XECAsset
+		pool.Decimals = 2
+		pool.BalanceRune = runeDepth
+		pool.BalanceAsset = assetDepth
+		pool.LPUnits = runeDepth
+		pool.Status = PoolAvailable
+		c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil, Commentf(tc.name))
+
+		// Every swap reads synth supply while calculating pool units. Keep that
+		// supply above uint64 as part of both the inbound and outbound cases.
+		synthSupply := cosmos.NewUintFromString("2000000000000000000000")
+		c.Assert(mgr.Keeper().MintToModule(
+			ctx,
+			ModuleName,
+			common.NewCoin(common.XECAsset.GetSyntheticAsset(), synthSupply),
+		), IsNil, Commentf(tc.name))
+		FundModule(c, ctx, mgr.Keeper(), AsgardName, uint64(20_000_000*common.One))
+
+		sourceChain := tc.source.GetChain()
+		gas := common.Gas{}
+		if !sourceChain.Equals(common.THORChain) {
+			gas = common.Gas{sourceChain.NativeGasToThorCoin(cosmos.NewUint(100))}
+		}
+		tx := common.NewTx(
+			GetRandomTxHash(),
+			fromAddress,
+			common.Address("vault"),
+			common.NewCoins(common.NewCoin(tc.source, tc.amount)),
+			gas,
+			"swap",
+		)
+		tx.Chain = sourceChain
+		emit, _, err := newSwapper().Swap(
+			ctx,
+			mgr.Keeper(),
+			tx,
+			tc.target,
+			destination,
+			cosmos.ZeroUint(),
+			"",
+			"",
+			nil,
+			StreamingSwap{},
+			20_000,
+			mgr,
+			nil,
+			nil,
+		)
+		c.Assert(err, IsNil, Commentf(tc.name))
+		c.Assert(emit.IsZero(), Equals, false, Commentf(tc.name))
+		c.Assert(mgr.Keeper().GetTotalSupply(ctx, common.XECAsset.GetSyntheticAsset()).Equal(synthSupply), Equals, true,
+			Commentf("%s narrowed synth supply", tc.name))
+
+		updatedPool, err := mgr.Keeper().GetPool(ctx, common.XECAsset)
+		c.Assert(err, IsNil, Commentf(tc.name))
+		if tc.source.Equals(common.XECAsset) {
+			c.Assert(updatedPool.BalanceAsset.Equal(assetDepth.Add(tc.amount)), Equals, true, Commentf(tc.name))
+		} else {
+			c.Assert(emit.BigInt().IsUint64(), Equals, false,
+				Commentf("%s output %s should exercise the above-uint64 path", tc.name, emit))
+			c.Assert(emit.Equal(cosmos.RoundToDecimal(emit, 2)), Equals, true, Commentf(tc.name))
+			c.Assert(updatedPool.BalanceAsset.Equal(assetDepth.Sub(emit)), Equals, true, Commentf(tc.name))
+		}
+	}
+}
+
 func (s *SwapSuite) TestSwap(c *C) {
 	poolStorage := &TestSwapKeeper{}
 	inputs := []struct {

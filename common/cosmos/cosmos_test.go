@@ -226,6 +226,27 @@ func TestPowerOfTen(t *testing.T) {
 	}
 }
 
+func TestUintToUint64(t *testing.T) {
+	max := sdkmath.NewUintFromString("18446744073709551615")
+	got, err := UintToUint64(max)
+	if err != nil {
+		t.Fatalf("convert max uint64: %v", err)
+	}
+	if got != math.MaxUint64 {
+		t.Fatalf("converted max uint64 = %d, want %d", got, uint64(math.MaxUint64))
+	}
+
+	tooLarge := sdkmath.NewUintFromString("18446744073709551616")
+	if _, err := UintToUint64(tooLarge); err == nil {
+		t.Fatal("expected an error for a value larger than uint64")
+	}
+
+	var nilValue Uint
+	if _, err := UintToUint64(nilValue); err == nil {
+		t.Fatal("expected an error for a nil Uint")
+	}
+}
+
 func TestSafeUintFromInt64(t *testing.T) {
 	tests := []struct {
 		name     string

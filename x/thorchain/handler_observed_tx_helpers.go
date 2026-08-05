@@ -3,7 +3,6 @@ package thorchain
 import (
 	"context"
 	"fmt"
-	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -1643,28 +1642,25 @@ func generateReferenceMemoID(ctx cosmos.Context, mgr Manager, asset common.Asset
 		return "", fmt.Errorf("no coins in transaction for reference generation")
 	}
 
-	coinAmount := tx.Tx.Coins[0].Amount
-	if coinAmount.GT(cosmos.NewUint(math.MaxUint64)) {
-		return "", fmt.Errorf("coin amount exceeds uint64 max")
-	}
-	amount := coinAmount.Uint64()
-	return ExtractReferenceFromAmount(ctx, mgr, asset, amount)
+	return ExtractReferenceFromAmount(ctx, mgr, asset, tx.Tx.Coins[0].Amount)
 }
 
 // ExtractReferenceFromAmount extracts the reference ID from a transaction amount.
 // This is the core logic shared by both the handler (generateReferenceMemoID)
 // and the querier (queryReferenceMemoPreflight).
-func ExtractReferenceFromAmount(ctx cosmos.Context, mgr Manager, asset common.Asset, amount uint64) (string, error) {
+func ExtractReferenceFromAmount(ctx cosmos.Context, mgr Manager, asset common.Asset, amount cosmos.Uint) (string, error) {
 	if asset.IsEmpty() {
 		return "", fmt.Errorf("asset is empty for reference generation")
 	}
 
-	if amount == 0 {
+	if amount.IsZero() {
 		return "", fmt.Errorf("zero amount in transaction for reference generation")
 	}
 
 	var decimals int64
-	if asset.IsGasAsset() {
+	if asset.IsNative() {
+		decimals = int64(common.THORChainDecimals)
+	} else if asset.IsGasAsset() {
 		decimals = asset.Chain.GetGasAssetDecimal()
 	} else {
 		pool, err := mgr.Keeper().GetPool(ctx, asset)
@@ -1683,18 +1679,10 @@ func ExtractReferenceFromAmount(ctx cosmos.Context, mgr Manager, asset common.As
 	baseEnd := mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnRefCount)
 	txnRefLength := len(fmt.Sprintf("%d", baseEnd))
 
-	// Prevent overflow: uint64 max is ~1.8e19, so max safe length is 19 digits
-	const maxRefLength = 19
-	if txnRefLength > maxRefLength {
-		return "", fmt.Errorf("reference length %d exceeds maximum %d to prevent overflow", txnRefLength, maxRefLength)
-	}
-
 	// Calculate modulus based on reference length (10^txnRefLength)
-	var modulus uint64 = 1
+	modulus := cosmos.OneUint()
 	if baseEnd > 0 {
-		for i := 0; i < txnRefLength; i++ {
-			modulus *= 10
-		}
+		modulus = cosmos.PowerOfTen(uint64(txnRefLength))
 	}
 
 	// Normalize amount to THORChain decimals.
@@ -1703,23 +1691,20 @@ func ExtractReferenceFromAmount(ctx cosmos.Context, mgr Manager, asset common.As
 	// inbound amounts to 1e8 precision before they reach THORNode, so no scaling is
 	// needed in those cases.
 	if decimals < int64(common.THORChainDecimals) {
-		divisor := int64(1)
-		for i := decimals; i < int64(common.THORChainDecimals); i++ {
-			divisor *= 10
-		}
-		amount /= uint64(divisor)
+		divisor := cosmos.PowerOfTen(uint64(int64(common.THORChainDecimals) - decimals))
+		amount = amount.Quo(divisor)
 	}
 
 	// Extract reference from the amount.
-	refNum := amount % modulus
+	refNum := amount.Mod(modulus)
 
 	// Zero references are not allowed as they would create ambiguous reference IDs.
 	// This occurs when the amount (after decimal normalization) is exactly divisible
 	// by the modulus (e.g., 50000000 sat with modulus 100 → ref 0).
 	// Users should adjust their amount slightly to avoid this edge case.
-	if refNum == 0 {
-		return "", fmt.Errorf("zero reference from amount is invalid: amount %d is divisible by modulus %d", amount, modulus)
+	if refNum.IsZero() {
+		return "", fmt.Errorf("zero reference from amount is invalid: amount %s is divisible by modulus %s", amount, modulus)
 	}
 
-	return leadingZeros(txnRefLength, fmt.Sprintf("%d", refNum)), nil
+	return leadingZeros(txnRefLength, refNum.String()), nil
 }

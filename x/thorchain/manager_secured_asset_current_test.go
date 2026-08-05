@@ -62,6 +62,44 @@ func (s *SecuredAssetMgrSuite) TestDepositAndWithdraw(c *C) {
 	c.Check(bal.String(), Equals, cosmos.NewUint(0).String())
 }
 
+func (s *SecuredAssetMgrSuite) TestXECDepositAndWithdrawAboveUint64(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	eventMgr, err := GetEventManager(GetCurrentVersion())
+	c.Assert(err, IsNil)
+	mgr := newSecuredAssetMgr(k, eventMgr)
+
+	owner := GetRandomBech32Addr()
+	securedAsset := common.XECAsset.GetSecuredAsset()
+	depositAmount := cosmos.NewUintFromString("2000000000000000000000")
+	additionalAmount := cosmos.NewUint(1_000_000)
+	totalAmount := depositAmount.Add(additionalAmount)
+
+	minted, err := mgr.Deposit(ctx, common.XECAsset, depositAmount, owner, common.NoAddress, common.BlankTxID)
+	c.Assert(err, IsNil)
+	c.Assert(cosmos.NewUintFromBigInt(minted.Amount.BigInt()).Equal(depositAmount), Equals, true)
+
+	// A second deposit forces the manager to read and use a share supply that is
+	// already larger than uint64.
+	minted, err = mgr.Deposit(ctx, common.XECAsset, additionalAmount, owner, common.NoAddress, common.BlankTxID)
+	c.Assert(err, IsNil)
+	c.Assert(cosmos.NewUintFromBigInt(minted.Amount.BigInt()).Equal(additionalAmount), Equals, true)
+	c.Assert(mgr.GetShareSupply(ctx, securedAsset).Equal(totalAmount), Equals, true)
+	c.Assert(mgr.BalanceOf(ctx, common.XECAsset, owner).Equal(totalAmount), Equals, true)
+
+	withdrawn, err := mgr.Withdraw(
+		ctx,
+		securedAsset,
+		depositAmount,
+		owner,
+		common.NoAddress,
+		common.BlankTxID,
+	)
+	c.Assert(err, IsNil)
+	c.Assert(withdrawn.Amount.Equal(depositAmount), Equals, true)
+	c.Assert(mgr.GetShareSupply(ctx, securedAsset).Equal(additionalAmount), Equals, true)
+	c.Assert(mgr.BalanceOf(ctx, common.XECAsset, owner).Equal(additionalAmount), Equals, true)
+}
+
 func (s *SecuredAssetMgrSuite) TestRateDecrease(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	eventMgr, err := GetEventManager(GetCurrentVersion())

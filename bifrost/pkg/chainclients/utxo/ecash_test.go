@@ -93,6 +93,10 @@ func (s *ECashSuite) TestXECAmountBoundaries(c *C) {
 	c.Check(coin.Amount.Equal(cosmos.NewUint(common.One)), Equals, true)
 	c.Check(coin.Decimals, Equals, int64(2))
 
+	largeCoin := client.toThorCoin(cosmos.NewUintFromString("2000000000000000"))
+	c.Check(largeCoin.Amount.Equal(cosmos.NewUintFromString("2000000000000000000000")), Equals, true)
+	c.Check(largeCoin.Decimals, Equals, int64(2))
+
 	wireAmount, err := common.XECChain.ThorchainToNativeGasExact(cosmos.NewUint(common.One))
 	c.Assert(err, IsNil)
 	c.Check(wireAmount.Equal(cosmos.NewUint(100)), Equals, true)
@@ -111,6 +115,13 @@ func (s *ECashSuite) TestXECAmountBoundaries(c *C) {
 	tx.Coins[0].Amount = tx.Coins[0].Amount.Add(cosmos.OneUint())
 	_, err = client.getPaymentAmount(tx)
 	c.Check(err, NotNil)
+
+	// 20 trillion XEC exceeds uint64 in THORChain's normalized 1e8 form,
+	// while its native cent amount still fits the transaction wire int64.
+	tx.Coins[0].Amount = cosmos.NewUintFromString("2000000000000000000000")
+	payment, err = client.getPaymentAmount(tx)
+	c.Assert(err, IsNil)
+	c.Check(int64(payment), Equals, int64(2_000_000_000_000_000))
 }
 
 func (s *ECashSuite) TestXECConsolidationNormalizesNativeUTXOs(c *C) {

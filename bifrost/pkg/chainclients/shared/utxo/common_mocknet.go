@@ -15,3 +15,8 @@ func GetConfMulBasisPoint(chain string, bridge thorclient.ThorchainBridge) (cosm
 func MaxConfAdjustment(confirm uint64, chain string, bridge thorclient.ThorchainBridge) (uint64, error) {
 	return 1, nil
 }
+
+// MaxConfAdjustmentUint is the arbitrary-precision form used by UTXO clients.
+func MaxConfAdjustmentUint(confirm cosmos.Uint, chain string, bridge thorclient.ThorchainBridge) (cosmos.Uint, error) {
+	return cosmos.OneUint(), nil
+}

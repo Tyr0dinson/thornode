@@ -2,7 +2,6 @@ package utxo
 
 import (
 	"fmt"
-	"math"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -37,11 +36,9 @@ func (c *Client) dustBaseUnits() cosmos.Uint {
 }
 
 func toUint64(amount cosmos.Uint) (uint64, error) {
-	if amount.IsNil() {
-		return 0, fmt.Errorf("amount is nil")
+	value, err := cosmos.UintToUint64(amount)
+	if err != nil {
+		return 0, fmt.Errorf("amount: %w", err)
 	}
-	if amount.GT(cosmos.NewUint(math.MaxUint64)) {
-		return 0, fmt.Errorf("amount does not fit uint64: %s", amount.String())
-	}
-	return amount.Uint64(), nil
+	return value, nil
 }

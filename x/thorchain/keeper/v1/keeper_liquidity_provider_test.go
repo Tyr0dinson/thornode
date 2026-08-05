@@ -40,3 +40,17 @@ func (s *KeeperLiquidityProviderSuite) TestLiquidityProvider(c *C) {
 	iter.Close()
 	k.RemoveLiquidityProvider(ctx, lp)
 }
+
+func (s *KeeperLiquidityProviderSuite) TestGetTotalSupplyAboveUint64(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	amount := cosmos.NewUintFromString("2000000000000000000000")
+
+	for _, asset := range []common.Asset{
+		common.XECAsset.GetSyntheticAsset(),
+		common.XECAsset.GetSecuredAsset(),
+	} {
+		c.Assert(k.MintToModule(ctx, ModuleName, common.NewCoin(asset, amount)), IsNil)
+		c.Assert(k.GetTotalSupply(ctx, asset).Equal(amount), Equals, true,
+			Commentf("supply for %s was narrowed", asset))
+	}
+}

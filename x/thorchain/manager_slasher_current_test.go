@@ -1054,6 +1054,31 @@ func (s *SlashingSuite) TestUpdatePoolFromSlash(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(pool.BalanceAsset.Uint64(), Equals, uint64(750*common.One))
 	c.Assert(pool.BalanceRune.Uint64(), Equals, uint64(1500*common.One))
+
+	largeAssetDepth := cosmos.NewUintFromString("4000000000000000000000")
+	largeRuneDepth := cosmos.NewUintFromString("2000000000000000000000")
+	largeStolen := cosmos.NewUintFromString("2000000000000000000000")
+	largeCredit := cosmos.NewUintFromString("1000000000000000000000")
+	xecPool := NewPool()
+	xecPool.Asset = common.XECAsset
+	xecPool.BalanceAsset = largeAssetDepth
+	xecPool.BalanceRune = largeRuneDepth
+	xecPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, xecPool), IsNil)
+
+	// Pool accounting must remain exact even though the legacy slash event can
+	// only represent an int64 and therefore saturates its display-only amount.
+	slasher.updatePoolFromSlash(
+		ctx,
+		xecPool,
+		common.NewCoin(common.XECAsset, largeStolen),
+		largeCredit,
+		mgr,
+	)
+	xecPool, err = mgr.Keeper().GetPool(ctx, common.XECAsset)
+	c.Assert(err, IsNil)
+	c.Assert(xecPool.BalanceAsset.Equal(largeAssetDepth.Sub(largeStolen)), Equals, true)
+	c.Assert(xecPool.BalanceRune.Equal(largeRuneDepth.Add(largeCredit)), Equals, true)
 }
 
 func (s *SlashingSuite) TestNetworkShouldNotSlashMorethanVaultAmount(c *C) {

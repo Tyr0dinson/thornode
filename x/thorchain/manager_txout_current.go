@@ -283,7 +283,7 @@ func (tos *TxOutStorage) cachedTryAddTxOutItem(ctx cosmos.Context, mgr Manager, 
 		// **NOTE** this error string is utilized by the adv swap queue manager to
 		// catch the error. DO NOT change this error string without updating
 		// the adv swap queue manager as well
-		return false, fmt.Errorf("outbound amount does not meet requirements (%d/%d)", sumOut.Uint64(), minOut.Uint64())
+		return false, fmt.Errorf("outbound amount does not meet requirements (%s/%s)", sumOut, minOut)
 	}
 
 	// calculate the single block height to send all of these txout items,

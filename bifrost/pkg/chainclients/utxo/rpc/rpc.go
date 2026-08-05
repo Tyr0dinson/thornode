@@ -205,10 +205,11 @@ func (c *Client) GetAverageFeeRate(hash string) (uint64, error) {
 		if err != nil {
 			return 0, fmt.Errorf("convert average fee rate to base units: %w", err)
 		}
-		if !feeBaseUnits.BigInt().IsUint64() {
-			return 0, fmt.Errorf("average fee rate overflows uint64: %s", feeBaseUnits)
+		feeRate, err := cosmos.UintToUint64(feeBaseUnits)
+		if err != nil {
+			return 0, fmt.Errorf("average fee rate: %w", err)
 		}
-		return feeBaseUnits.Uint64(), nil
+		return feeRate, nil
 	default:
 		return 0, fmt.Errorf("average fee rate is unsupported for chain %s", c.chain)
 	}

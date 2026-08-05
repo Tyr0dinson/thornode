@@ -175,10 +175,24 @@ func (s *HandlerObservedTxHelpersSuite) TestExtractReferenceFromNormalizedXECAmo
 	// Bifrost observes 1234.56 XEC as 123456000000 in THORChain's 1e8
 	// amount field. XEC's two-decimal precision normalizes that back to
 	// 123456 native cents before reference extraction.
-	amount := cosmos.NewUint(123_456).MulUint64(1_000_000).Uint64()
+	amount := cosmos.NewUint(123_456).MulUint64(1_000_000)
 	refID, err := ExtractReferenceFromAmount(ctx, mgr, common.XECAsset, amount)
 	c.Assert(err, IsNil)
 	c.Assert(refID, Equals, "23456")
+
+	// 20 trillion XEC plus 0.42 XEC is above uint64 after normalization to
+	// THORChain's 1e8 units. Reference extraction must still use the native
+	// cent value and preserve the reference suffix.
+	largeAmount := cosmos.NewUintFromString("2000000000000042000000")
+	refID, err = ExtractReferenceFromAmount(ctx, mgr, common.XECAsset, largeAmount)
+	c.Assert(err, IsNil)
+	c.Assert(refID, Equals, "00042")
+
+	observedTx := GetRandomObservedTx()
+	observedTx.Tx.Coins = common.NewCoins(common.NewCoin(common.XECAsset, largeAmount))
+	refID, err = generateReferenceMemoID(ctx, mgr, common.XECAsset, observedTx)
+	c.Assert(err, IsNil)
+	c.Assert(refID, Equals, "00042")
 }
 
 // TestExtractReferenceFromAmountERC20 exercises ExtractReferenceFromAmount directly
@@ -207,13 +221,13 @@ func (s *HandlerObservedTxHelpersSuite) TestExtractReferenceFromAmountERC20(c *C
 	// User sends 1.000042 USDC. Native 6-dec = 1_000_042; bifrost normalizes to 1e8
 	// precision = 100_004_200. ExtractReferenceFromAmount divides by 100 (= 10^(8-6))
 	// to recover the native value, then takes amount % 100_000 = 42 → "00042".
-	refID, err := ExtractReferenceFromAmount(ctx, mgr, usdcAsset, 100_004_200)
+	refID, err := ExtractReferenceFromAmount(ctx, mgr, usdcAsset, cosmos.NewUint(100_004_200))
 	c.Assert(err, IsNil)
 	c.Assert(refID, Equals, "00042", Commentf("USDC 1.000042 → ref 00042"))
 
 	// 50.012345 USDC: native 50_012_345, 1e8 = 5_001_234_500, /100 = 50_012_345,
 	// % 100_000 = 12345 → "12345".
-	refID, err = ExtractReferenceFromAmount(ctx, mgr, usdcAsset, 5_001_234_500)
+	refID, err = ExtractReferenceFromAmount(ctx, mgr, usdcAsset, cosmos.NewUint(5_001_234_500))
 	c.Assert(err, IsNil)
 	c.Assert(refID, Equals, "12345", Commentf("USDC 50.012345 → ref 12345"))
 
@@ -233,7 +247,7 @@ func (s *HandlerObservedTxHelpersSuite) TestExtractReferenceFromAmountERC20(c *C
 
 	// 10.099999 USDT: native 10_099_999, 1e8 = 1_009_999_900, /100 = 10_099_999,
 	// % 100_000 = 99999 (max ref) → "99999".
-	refID, err = ExtractReferenceFromAmount(ctx, mgr, usdtAsset, 1_009_999_900)
+	refID, err = ExtractReferenceFromAmount(ctx, mgr, usdtAsset, cosmos.NewUint(1_009_999_900))
 	c.Assert(err, IsNil)
 	c.Assert(refID, Equals, "99999", Commentf("USDT 10.099999 → ref 99999 (max)"))
 
@@ -257,24 +271,24 @@ func (s *HandlerObservedTxHelpersSuite) TestExtractReferenceFromAmountERC20(c *C
 	//
 	// 1.00000000000042 WETH: native 1_000_000_000_000_420_000, 1e8 = 100_000_042,
 	// % 100_000 = 42 → "00042".
-	refID, err = ExtractReferenceFromAmount(ctx, mgr, wethAsset, 100_000_042)
+	refID, err = ExtractReferenceFromAmount(ctx, mgr, wethAsset, cosmos.NewUint(100_000_042))
 	c.Assert(err, IsNil)
 	c.Assert(refID, Equals, "00042", Commentf("WETH 1.00000000000042 → ref 00042"))
 
 	// 2.00012345 WETH: 1e8 = 200_012_345, % 100_000 = 12345 → "12345".
-	refID, err = ExtractReferenceFromAmount(ctx, mgr, wethAsset, 200_012_345)
+	refID, err = ExtractReferenceFromAmount(ctx, mgr, wethAsset, cosmos.NewUint(200_012_345))
 	c.Assert(err, IsNil)
 	c.Assert(refID, Equals, "12345", Commentf("WETH 2.00012345 → ref 12345"))
 
 	// --- zero-ref rejection on both decimal branches ---
 
 	// WETH 1.00000000 → 1e8 = 100_000_000 → 100_000_000 % 100_000 = 0 → error.
-	_, err = ExtractReferenceFromAmount(ctx, mgr, wethAsset, 100_000_000)
+	_, err = ExtractReferenceFromAmount(ctx, mgr, wethAsset, cosmos.NewUint(100_000_000))
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Matches, ".*zero reference.*")
 
 	// USDC 1.000000 → 1e8 = 100_000_000 → /100 = 1_000_000 → % 100_000 = 0 → error.
-	_, err = ExtractReferenceFromAmount(ctx, mgr, usdcAsset, 100_000_000)
+	_, err = ExtractReferenceFromAmount(ctx, mgr, usdcAsset, cosmos.NewUint(100_000_000))
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Matches, ".*zero reference.*")
 
@@ -293,17 +307,17 @@ func (s *HandlerObservedTxHelpersSuite) TestExtractReferenceFromAmountERC20(c *C
 	c.Assert(mgr.Keeper().SetPool(ctx, fakePool), IsNil)
 
 	// decimals=8 → no division → 42_004_242 % 100_000 = 4242 → "04242".
-	refID, err = ExtractReferenceFromAmount(ctx, mgr, fakeAsset, 42_004_242)
+	refID, err = ExtractReferenceFromAmount(ctx, mgr, fakeAsset, cosmos.NewUint(42_004_242))
 	c.Assert(err, IsNil)
 	c.Assert(refID, Equals, "04242", Commentf("Decimals=0 sentinel treated as 8"))
 
 	// --- error cases ---
 
-	_, err = ExtractReferenceFromAmount(ctx, mgr, common.EmptyAsset, 100_004_242)
+	_, err = ExtractReferenceFromAmount(ctx, mgr, common.EmptyAsset, cosmos.NewUint(100_004_242))
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Matches, ".*asset is empty.*")
 
-	_, err = ExtractReferenceFromAmount(ctx, mgr, usdcAsset, 0)
+	_, err = ExtractReferenceFromAmount(ctx, mgr, usdcAsset, cosmos.ZeroUint())
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Matches, ".*zero amount.*")
 }

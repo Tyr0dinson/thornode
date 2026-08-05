@@ -47,7 +47,7 @@ func (k KVStore) GetTotalSupply(ctx cosmos.Context, asset common.Asset) cosmos.U
 	}
 
 	coin := k.coinKeeper.GetSupply(ctx, asset.Native())
-	return cosmos.NewUint(coin.Amount.Uint64())
+	return cosmos.NewUintFromBigInt(coin.Amount.BigInt())
 }
 
 // GetLiquidityProvider retrieve liquidity provider from the data store

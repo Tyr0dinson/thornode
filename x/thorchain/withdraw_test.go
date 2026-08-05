@@ -115,6 +115,32 @@ func (s *WithdrawSuite) SetUpSuite(c *C) {
 	SetupConfigForTest()
 }
 
+func (s WithdrawSuite) TestCalculateXECWithdrawAboveUint64(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	poolUnits := cosmos.NewUintFromString("2000000000000000000000")
+	poolRune := cosmos.NewUintFromString("10000000000000000")
+	poolAsset := cosmos.NewUintFromString("2000000000000000000000")
+	lpUnits := cosmos.NewUintFromString("1000000000000000000000")
+
+	withdrawRune, withdrawAsset, unitsLeft, err := calculateWithdraw(
+		ctx,
+		k,
+		common.XECAsset,
+		poolUnits,
+		poolRune,
+		poolAsset,
+		lpUnits,
+		cosmos.NewUint(MaxWithdrawBasisPoints/2),
+		common.EmptyAsset,
+		common.NoAddress,
+	)
+	c.Assert(err, IsNil)
+	c.Assert(withdrawRune.Equal(cosmos.NewUintFromString("2500000000000000")), Equals, true)
+	c.Assert(withdrawAsset.Equal(cosmos.NewUintFromString("500000000000000000000")), Equals, true)
+	c.Assert(withdrawAsset.BigInt().IsUint64(), Equals, false)
+	c.Assert(unitsLeft.Equal(cosmos.NewUintFromString("500000000000000000000")), Equals, true)
+}
+
 // TestValidateWithdraw is to test validateWithdraw function
 func (s WithdrawSuite) TestValidateWithdraw(c *C) {
 	accountAddr := GetRandomValidatorNode(NodeWhiteListed).NodeAddress

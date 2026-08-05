@@ -398,25 +398,24 @@ func (s *HandlerDepositSuite) TestMemolessNativeDeposit(c *C) {
 func (s *HandlerDepositSuite) TestExtractReferenceFromNativeAmount(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	mgr := NewDummyMgrWithKeeper(k)
-	handler := NewDepositHandler(mgr)
 
 	// Test 1: Extract reference from amount
-	ref, err := handler.extractReferenceFromNativeAmount(ctx, 100000042)
+	ref, err := ExtractReferenceFromAmount(ctx, mgr, common.RuneAsset(), cosmos.NewUint(100000042))
 	c.Assert(err, IsNil)
 	c.Assert(ref, Equals, "00042")
 
 	// Test 2: Extract reference with different value
-	ref, err = handler.extractReferenceFromNativeAmount(ctx, 123456789)
+	ref, err = ExtractReferenceFromAmount(ctx, mgr, common.RuneAsset(), cosmos.NewUint(123456789))
 	c.Assert(err, IsNil)
 	c.Assert(ref, Equals, "56789")
 
 	// Test 3: Zero amount should error
-	_, err = handler.extractReferenceFromNativeAmount(ctx, 0)
+	_, err = ExtractReferenceFromAmount(ctx, mgr, common.RuneAsset(), cosmos.ZeroUint())
 	c.Assert(err, NotNil)
 
 	// Test 4: Amount divisible by modulus should error (zero reference)
 	// With modulus 100000, an amount like 500000000 would give reference 00000
-	_, err = handler.extractReferenceFromNativeAmount(ctx, 500000000)
+	_, err = ExtractReferenceFromAmount(ctx, mgr, common.RuneAsset(), cosmos.NewUint(500000000))
 	c.Assert(err, NotNil)
 	c.Assert(strings.Contains(err.Error(), "zero reference"), Equals, true)
 }

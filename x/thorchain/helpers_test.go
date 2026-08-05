@@ -459,6 +459,41 @@ func (s *HelperSuite) TestIsSynthMintPause(c *C) {
 	c.Assert(isSynthMintPaused(ctx, mgr, common.BTCAsset, cosmos.ZeroUint()), NotNil)
 }
 
+func (s *HelperSuite) TestXECSynthCapacityAboveUint64(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, constants.MaxSynthPerPoolDepth.String(), 1500)
+
+	pool := NewPool()
+	pool.Asset = common.XECAsset
+	pool.BalanceAsset = cosmos.NewUintFromString("4000000000000000000000")
+	pool.BalanceRune = cosmos.NewUintFromString("10000000000000000")
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	synthSupply := cosmos.NewUintFromString("1300000000000000000000")
+	c.Assert(mgr.Keeper().MintToModule(
+		ctx,
+		ModuleName,
+		common.NewCoin(common.XECAsset.GetSyntheticAsset(), synthSupply),
+	), IsNil)
+
+	_, err := getSynthSupplyRemaining(ctx, mgr, common.XECAsset)
+	c.Assert(err, NotNil)
+	c.Assert(strings.Contains(err.Error(), synthSupply.String()), Equals, true)
+	c.Assert(mgr.Keeper().BurnFromModule(
+		ctx,
+		ModuleName,
+		common.NewCoin(common.XECAsset.GetSyntheticAsset(), synthSupply),
+	), IsNil)
+
+	// The requested output is also above uint64. The capacity error should be
+	// returned normally and retain the full value in its message.
+	output := cosmos.NewUintFromString("2000000000000000000000")
+	err = isSynthMintPaused(ctx, mgr, common.XECAsset, output)
+	c.Assert(err, NotNil)
+	c.Assert(strings.Contains(err.Error(), output.String()), Equals, true)
+}
+
 func (s *HelperSuite) TestUpdateTxOutGas(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 

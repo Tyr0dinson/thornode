@@ -1097,13 +1097,15 @@ func (s *SlasherImpl) updatePoolFromSlash(ctx cosmos.Context, pool types.Pool, s
 	if err := s.keeper.SetPool(ctx, pool); err != nil {
 		ctx.Logger().Error("fail to save pool for slash", "asset", pool.Asset, "error", err)
 	}
-	stolenAmtInt64 := int64(math.MaxInt64)
-	if stolenAsset.Amount.Uint64() <= uint64(math.MaxInt64) {
-		stolenAmtInt64 = int64(stolenAsset.Amount.Uint64())
+	// PoolAmt is an older int64 event schema. Keep pool accounting exact, but
+	// saturate event-only values that cannot be represented by that schema.
+	stolenAmtInt64, err := cosmos.UintToInt64(stolenAsset.Amount)
+	if err != nil {
+		stolenAmtInt64 = math.MaxInt64
 	}
-	creditAmtInt64 := int64(math.MaxInt64)
-	if runeCreditAmt.Uint64() <= uint64(math.MaxInt64) {
-		creditAmtInt64 = int64(runeCreditAmt.Uint64())
+	creditAmtInt64, err := cosmos.UintToInt64(runeCreditAmt)
+	if err != nil {
+		creditAmtInt64 = math.MaxInt64
 	}
 	poolSlashAmt := []PoolAmt{
 		{

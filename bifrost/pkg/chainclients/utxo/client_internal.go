@@ -1147,15 +1147,20 @@ func (c *Client) getBlockRequiredConfirmation(txIn types.TxIn, height int64) (in
 		totalFeeAndSubsidy = c.cfg.ChainID.NativeGasToThorchainFloor(subsidyBaseUnits)
 	}
 	confValue := common.GetUncappedShare(confMul, cosmos.NewUint(constants.MaxBasisPts), totalFeeAndSubsidy)
-	confirm := totalTxValue.Quo(confValue).Uint64()
-	confirm, err = utxo.MaxConfAdjustment(confirm, c.GetChain().String(), c.bridge)
+	confirm := totalTxValue.Quo(confValue)
+	confirm, err = utxo.MaxConfAdjustmentUint(confirm, c.GetChain().String(), c.bridge)
 	if err != nil {
 		c.log.Err(err).Msgf("fail to get max conf value adjustment for %s", c.GetChain().String())
 	}
-	if confirm < c.cfg.MinConfirmations {
-		confirm = c.cfg.MinConfirmations
+	minimumConfirmations := cosmos.NewUint(c.cfg.MinConfirmations)
+	if confirm.LT(minimumConfirmations) {
+		confirm = minimumConfirmations
 	}
-	c.log.Info().Msgf("totalTxValue:%s, totalFeeAndSubsidy:%s, confirm:%d", totalTxValue, totalFeeAndSubsidy, confirm)
+	confirmations, conversionErr := cosmos.UintToInt64(confirm)
+	if conversionErr != nil {
+		return 0, fmt.Errorf("confirmation count: %w", conversionErr)
+	}
+	c.log.Info().Msgf("totalTxValue:%s, totalFeeAndSubsidy:%s, confirm:%d", totalTxValue, totalFeeAndSubsidy, confirmations)
 
-	return int64(confirm), nil
+	return confirmations, nil
 }
