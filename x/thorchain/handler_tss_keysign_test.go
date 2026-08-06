@@ -476,7 +476,7 @@ func (h HandlerTssKeysignSuite) TestCompletedKeysignFailureCannotBeReplayed(c *C
 	c.Assert(helper.keeper.SetVault(replayCtx, gotVault), IsNil)
 
 	for i := 0; i < 5; i++ {
-		replay, err := NewMsgTssKeysignFail(
+		replay, replayErr := NewMsgTssKeysignFail(
 			helper.ctx.BlockHeight(),
 			blame,
 			memo,
@@ -484,15 +484,15 @@ func (h HandlerTssKeysignSuite) TestCompletedKeysignFailureCannotBeReplayed(c *C
 			members[i].NodeAddress,
 			vault.PubKey,
 		)
-		c.Assert(err, IsNil)
+		c.Assert(replayErr, IsNil)
 		c.Assert(replay.ID, Equals, voterID)
-		_, err = handler.Run(replayCtx, replay)
-		c.Assert(err, IsNil)
+		_, replayErr = handler.Run(replayCtx, replay)
+		c.Assert(replayErr, IsNil)
 
 		// Assert after every message so a transient observation charge cannot
 		// be hidden by the consensus path refunding it on the fifth replay.
-		points, err := helper.keeper.GetNodeAccountSlashPoints(replayCtx, members[i].NodeAddress)
-		c.Assert(err, IsNil)
+		points, replayErr := helper.keeper.GetNodeAccountSlashPoints(replayCtx, members[i].NodeAddress)
+		c.Assert(replayErr, IsNil)
 		c.Assert(points, Equals, submitterSlashPoints[i])
 	}
 

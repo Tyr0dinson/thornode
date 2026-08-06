@@ -286,7 +286,7 @@ func TestFrostBroadcastSchedulerIsolatesCeremonies(t *testing.T) {
 	if !ok || third.msgID != "stalled-a" {
 		t.Fatalf("third scheduled task=%q, want stalled-a", third.msgID)
 	}
-	if _, ok := scheduler.next(); ok {
+	if _, hasNext := scheduler.next(); hasNext {
 		t.Fatal("stalled ceremony exceeded its per-session active writer cap")
 	}
 

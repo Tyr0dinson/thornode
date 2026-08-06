@@ -109,8 +109,8 @@ func TestFrostEvidenceRejectsNonCanonicalJSONBytes(t *testing.T) {
 	}
 
 	var generic map[string]any
-	if err := json.Unmarshal(canonical, &generic); err != nil {
-		t.Fatalf("decode canonical evidence: %v", err)
+	if decodeErr := json.Unmarshal(canonical, &generic); decodeErr != nil {
+		t.Fatalf("decode canonical evidence: %v", decodeErr)
 	}
 	reordered, err := json.Marshal(map[string]any{
 		"second":           generic["second"],
