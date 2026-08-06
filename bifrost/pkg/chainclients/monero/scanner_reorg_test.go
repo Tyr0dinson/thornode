@@ -165,7 +165,7 @@ func TestScannerFetchTxsDetectsReorgAndEmitsErrata(t *testing.T) {
 	defer frostServer.Close()
 
 	frostSigner, err := sidecar.NewClientWithEndpoint(
-		config.BifrostChainConfiguration{},
+		config.BifrostChainConfiguration{SignerExpectedNetwork: "mocknet"},
 		frostServer.URL,
 	)
 	if err != nil {

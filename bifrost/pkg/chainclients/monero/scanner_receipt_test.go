@@ -671,7 +671,9 @@ func TestAdvanceSidecarCatchupChunksAndRecoversAmbiguousAdvance(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	client, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{
+		SignerExpectedNetwork: "mocknet",
+	}, server.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
