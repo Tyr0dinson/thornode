@@ -32,12 +32,13 @@ import (
 )
 
 type BitcoinCashSuite struct {
-	client *Client
-	server *httptest.Server
-	bridge thorclient.ThorchainBridge
-	cfg    config.BifrostChainConfiguration
-	m      *metrics.Metrics
-	keys   *thorclient.Keys
+	client   *Client
+	server   *httptest.Server
+	bridge   thorclient.ThorchainBridge
+	cfg      config.BifrostChainConfiguration
+	m        *metrics.Metrics
+	keys     *thorclient.Keys
+	feeQueue chan common.NetworkFee
 }
 
 var _ = Suite(&BitcoinCashSuite{})
@@ -53,17 +54,58 @@ func (s *BitcoinCashSuite) SetUpSuite(c *C) {
 	s.keys = thorclient.NewKeysWithKeybase(kb, bob, password)
 }
 
-var bchChainRPCs = map[string]map[string]interface{}{}
+const (
+	bchCapturedFeeHeight    = int64(102)
+	bchCapturedFeeBlockHash = "43159289e4b6d64cf809068056f82de496c117b9fb19fe5557fcf651bb74ff0e"
+)
+
+type bchRPCFixture struct {
+	Result json.RawMessage `json:"result"`
+	Error  json.RawMessage `json:"error"`
+	ID     json.RawMessage `json:"id"`
+}
+
+var bchChainRPCs = map[string]bchRPCFixture{}
+
+func bchRPCFixtureKey(method string, params []interface{}) string {
+	switch method {
+	case "getblockhash":
+		if len(params) > 0 {
+			height, ok := params[0].(float64)
+			if ok && strconv.FormatFloat(height, 'f', -1, 64) == strconv.FormatInt(bchCapturedFeeHeight, 10) {
+				return "getblockhash-captured-fee"
+			}
+		}
+	case "getblockstats":
+		if len(params) > 0 {
+			hash, ok := params[0].(string)
+			if ok && hash == bchCapturedFeeBlockHash {
+				return "getblockstats-captured-fee"
+			}
+		}
+	case "getrawtransaction":
+		if len(params) > 0 {
+			return fmt.Sprintf("%s-%s", method, params[0])
+		}
+	}
+
+	return method
+}
+
+func bchRPCFixtureWithID(fixture bchRPCFixture, id json.RawMessage) bchRPCFixture {
+	fixture.ID = append(json.RawMessage(nil), id...)
+	return fixture
+}
 
 func init() {
 	// map the method and params to the loaded fixture
-	loadFixture := func(path string) map[string]interface{} {
+	loadFixture := func(path string) bchRPCFixture {
 		f, err := os.Open(path)
 		if err != nil {
 			panic(err)
 		}
 		defer f.Close()
-		var data map[string]interface{}
+		var data bchRPCFixture
 		err = json.NewDecoder(f).Decode(&data)
 		if err != nil {
 			panic(err)
@@ -78,7 +120,12 @@ func init() {
 	bchChainRPCs["importaddress"] = loadFixture("../../../../test/fixtures/bch/importaddress.json")
 	bchChainRPCs["listunspent"] = loadFixture("../../../../test/fixtures/bch/listunspent.json")
 	bchChainRPCs["getrawmempool"] = loadFixture("../../../../test/fixtures/bch/getrawmempool.json")
-	bchChainRPCs["getblockstats"] = loadFixture("../../../../test/fixtures/bch/blockstats.json")
+	bchChainRPCs["getblockstats-captured-fee"] = loadFixture("../../../../test/fixtures/bch/blockstats.json")
+	bchChainRPCs["getblockhash-captured-fee"] = bchRPCFixture{
+		Result: json.RawMessage(strconv.Quote(bchCapturedFeeBlockHash)),
+		Error:  json.RawMessage("null"),
+		ID:     json.RawMessage("null"),
+	}
 	bchChainRPCs["getrawtransaction-5b0876dcc027d2f0c671fc250460ee388df39697c3ff082007b6ddd9cb9a7513"] = loadFixture("../../../../test/fixtures/bch/tx-5b08.json")
 	bchChainRPCs["getrawtransaction-54ef2f4679fb90af42e8d963a5d85645d0fd86e5fe8ea4e69dbf2d444cb26528"] = loadFixture("../../../../test/fixtures/bch/tx-54ef.json")
 	bchChainRPCs["getrawtransaction-64ef2f4679fb90af42e8d963a5d85645d0fd86e5fe8ea4e69dbf2d444cb26528"] = loadFixture("../../../../test/fixtures/bch/tx-64ef.json")
@@ -116,47 +163,55 @@ func (s *BitcoinCashSuite) SetUpTest(c *C) {
 
 	handleRPC := func(body []byte, rw http.ResponseWriter) {
 		r := struct {
-			Method string        `json:"method"`
-			Params []interface{} `json:"params"`
+			Method string          `json:"method"`
+			Params []interface{}   `json:"params"`
+			ID     json.RawMessage `json:"id"`
 		}{}
 
 		err := json.Unmarshal(body, &r)
 		c.Assert(err, IsNil)
 
 		rw.Header().Set("Content-Type", "application/json")
-		key := r.Method
-		if r.Method == "getrawtransaction" {
-			key = fmt.Sprintf("%s-%s", r.Method, r.Params[0])
-		}
-		if bchChainRPCs[key] == nil {
+		key := bchRPCFixtureKey(r.Method, r.Params)
+		fixture, ok := bchChainRPCs[key]
+		if !ok {
 			key = r.Method
+			fixture, ok = bchChainRPCs[key]
+		}
+		if !ok {
+			c.Errorf("unexpected BCH RPC request: method=%s params=%v", r.Method, r.Params)
+			http.Error(rw, "unexpected BCH RPC request", http.StatusInternalServerError)
+			return
 		}
 
-		err = json.NewEncoder(rw).Encode(bchChainRPCs[key])
+		err = json.NewEncoder(rw).Encode(bchRPCFixtureWithID(fixture, r.ID))
 		c.Assert(err, IsNil)
 	}
 	handleBatchRPC := func(body []byte, rw http.ResponseWriter) {
 		r := []struct {
-			Method string        `json:"method"`
-			Params []interface{} `json:"params"`
-			ID     int           `json:"id"`
+			Method string          `json:"method"`
+			Params []interface{}   `json:"params"`
+			ID     json.RawMessage `json:"id"`
 		}{}
 
 		err := json.Unmarshal(body, &r)
 		c.Assert(err, IsNil)
 
 		rw.Header().Set("Content-Type", "application/json")
-		result := make([]map[string]interface{}, len(r))
+		result := make([]bchRPCFixture, len(r))
 		for i, v := range r {
-			key := v.Method
-			if v.Method == "getrawtransaction" {
-				key = fmt.Sprintf("%s-%s", v.Method, v.Params[0])
-			}
-			if bchChainRPCs[key] == nil {
+			key := bchRPCFixtureKey(v.Method, v.Params)
+			fixture, ok := bchChainRPCs[key]
+			if !ok {
 				key = v.Method
+				fixture, ok = bchChainRPCs[key]
 			}
-			result[i] = bchChainRPCs[key]
-			result[i]["id"] = v.ID
+			if !ok {
+				c.Errorf("unexpected BCH batch RPC request: method=%s params=%v", v.Method, v.Params)
+				http.Error(rw, "unexpected BCH batch RPC request", http.StatusInternalServerError)
+				return
+			}
+			result[i] = bchRPCFixtureWithID(fixture, v.ID)
 		}
 
 		err = json.NewEncoder(rw).Encode(result)
@@ -200,7 +255,8 @@ func (s *BitcoinCashSuite) SetUpTest(c *C) {
 	c.Assert(err, IsNil)
 	s.cfg.RPCHost = s.server.Listener.Addr().String()
 	s.client, err = NewClient(s.keys, s.cfg, nil, s.bridge, s.m)
-	s.client.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
+	s.feeQueue = make(chan common.NetworkFee, 1)
+	s.client.globalNetworkFeeQueue = s.feeQueue
 	s.client.disableVinZeroBatch = true
 	c.Assert(err, IsNil)
 	c.Assert(s.client, NotNil)
@@ -236,7 +292,10 @@ func (s *BitcoinCashSuite) TestFetchTxs(c *C) {
 	c.Assert(err, IsNil)
 	vaultAddressString := vaultAddress.String()
 
-	txs, err := s.client.FetchTxs(0, 0)
+	// Keep this legacy scanner fixture focused on transaction extraction. Its
+	// block predates the separately captured BCHN 29 fee fixture below.
+	chainHeight := s.cfg.BlockScanner.ObservationFlexibilityBlocks + 1
+	txs, err := s.client.FetchTxs(0, chainHeight)
 	c.Assert(err, IsNil)
 	c.Assert(txs.Chain, Equals, common.BCHChain)
 	c.Assert(txs.TxArray[0].BlockHeight, Equals, int64(1696761))
@@ -246,6 +305,84 @@ func (s *BitcoinCashSuite) TestFetchTxs(c *C) {
 	c.Assert(txs.TxArray[0].Coins.EqualsEx(common.Coins{common.NewCoin(common.BCHAsset, cosmos.NewUint(10000000))}), Equals, true)
 	c.Assert(txs.TxArray[0].Gas.Equals(common.Gas{common.NewCoin(common.BCHAsset, cosmos.NewUint(22705334))}), Equals, true)
 	c.Assert(len(txs.TxArray), Equals, 1)
+}
+
+func (s *BitcoinCashSuite) TestCapturedNetworkFee(c *C) {
+	err := s.client.sendNetworkFee(bchCapturedFeeHeight)
+	c.Assert(err, IsNil)
+
+	select {
+	case fee := <-s.feeQueue:
+		c.Check(fee.Chain, Equals, common.BCHChain)
+		c.Check(fee.Height, Equals, bchCapturedFeeHeight)
+		c.Check(fee.TransactionSize, Equals, uint64(1500))
+		c.Check(fee.TransactionRate, Equals, uint64(1))
+	case <-time.After(time.Second):
+		c.Fatal("expected BCH network fee from captured blockstats fixture")
+	}
+}
+
+func (s *BitcoinCashSuite) TestCapturedFeeFixturesAreLinked(c *C) {
+	type capturedResult struct {
+		Hash           string          `json:"hash"`
+		BlockHash      string          `json:"blockhash"`
+		BestBlockHash  string          `json:"bestblockhash"`
+		TxID           string          `json:"txid"`
+		Chain          string          `json:"chain"`
+		Subversion     string          `json:"subversion"`
+		Height         int64           `json:"height"`
+		Blocks         int64           `json:"blocks"`
+		Version        int64           `json:"version"`
+		Txs            int64           `json:"txs"`
+		AverageFeeRate json.RawMessage `json:"avgfeerate"`
+		TotalFee       json.RawMessage `json:"totalfee"`
+		RelayFee       json.RawMessage `json:"relayfee"`
+		Tx             json.RawMessage `json:"tx"`
+	}
+	type capturedEnvelope struct {
+		Result capturedResult  `json:"result"`
+		Error  json.RawMessage `json:"error"`
+	}
+
+	loadCapture := func(name string) capturedEnvelope {
+		buf, err := os.ReadFile(filepath.Join("../../../../test/fixtures/bch", name))
+		c.Assert(err, IsNil)
+		var envelope capturedEnvelope
+		c.Assert(json.Unmarshal(buf, &envelope), IsNil)
+		c.Check(string(envelope.Error), Equals, "null")
+		return envelope
+	}
+
+	stats := loadCapture("blockstats.json").Result
+	block := loadCapture("blockstats-block.json").Result
+	header := loadCapture("blockstats-header.json").Result
+	tx := loadCapture("blockstats-tx.json").Result
+	chainInfo := loadCapture("getblockchaininfo-capture.json").Result
+	networkInfo := loadCapture("getnetworkinfo-capture.json").Result
+
+	c.Check(stats.BlockHash, Equals, bchCapturedFeeBlockHash)
+	c.Check(stats.Height, Equals, bchCapturedFeeHeight)
+	c.Check(string(stats.AverageFeeRate), Equals, "0.00000001")
+	c.Check(string(stats.TotalFee), Equals, "0.00000225")
+	c.Check(stats.Txs, Equals, int64(2))
+	c.Check(block.Hash, Equals, bchCapturedFeeBlockHash)
+	c.Check(block.Height, Equals, bchCapturedFeeHeight)
+	var blockTxs []struct {
+		TxID string `json:"txid"`
+	}
+	c.Assert(json.Unmarshal(block.Tx, &blockTxs), IsNil)
+	c.Assert(blockTxs, HasLen, 2)
+	c.Check(blockTxs[1].TxID, Equals, "ace2c8eeb7c6a57d5ba18c5db686673dfe5c8cb1204cbf77abbf577e89955620")
+	c.Check(header.Hash, Equals, bchCapturedFeeBlockHash)
+	c.Check(header.Height, Equals, bchCapturedFeeHeight)
+	c.Check(tx.BlockHash, Equals, bchCapturedFeeBlockHash)
+	c.Check(tx.TxID, Equals, "ace2c8eeb7c6a57d5ba18c5db686673dfe5c8cb1204cbf77abbf577e89955620")
+	c.Check(chainInfo.Chain, Equals, "regtest")
+	c.Check(chainInfo.Blocks, Equals, bchCapturedFeeHeight)
+	c.Check(chainInfo.BestBlockHash, Equals, bchCapturedFeeBlockHash)
+	c.Check(networkInfo.Version, Equals, int64(29000000))
+	c.Check(networkInfo.Subversion, Equals, "/Bitcoin Cash Node:29.0.0(EB32.0)/")
+	c.Check(string(networkInfo.RelayFee), Equals, "0.00001000")
 }
 
 func (s *BitcoinCashSuite) TestGetSender(c *C) {
