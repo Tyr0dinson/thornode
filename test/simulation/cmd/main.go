@@ -98,7 +98,6 @@ func simulationStages() []simulationStage {
 		// vault set, per issue #2839 Section B.
 		{name: "memoless-refunds", defaultOn: false, constructor: features.MemolessRefunds},
 		{name: "churn", defaultOn: false, constructor: core.NewChurnActor},
-		{name: "xmr-post-churn", defaultOn: false, constructor: suites.XMRPostChurn},
 		{name: "xmr-keygen-jail", defaultOn: false, constructor: suites.XMRKeygenJail},
 		{name: "xmr-spent-refs", defaultOn: false, constructor: suites.XMRSpentRefTracking},
 		{name: "forced-to-leave-keygen", defaultOn: false, constructor: core.NewForcedToLeaveKeygenActor},

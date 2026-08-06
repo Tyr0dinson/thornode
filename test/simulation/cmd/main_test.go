@@ -735,12 +735,12 @@ func TestWaitForMasterAccountRetriesTransientSOLRPCStartupError(t *testing.T) {
 func TestSimulationTargetsUseExplicitStageDefaults(t *testing.T) {
 	makefile := readRepoFile(t, "Makefile")
 
-	wantSingle := "TEST_SIMULATION_STAGES ?= seed,bootstrap,xmr-coverage,arb,swaps,memoless-swaps,consolidate,inactive-vault-refunds,solvency,ragnarok"
+	wantSingle := "TEST_SIMULATION_STAGES ?= seed,bootstrap,xmr-coverage,arb,swaps,memoless-swaps,consolidate,inactive-vault-refunds,memoless-refunds,solvency,ragnarok"
 	if !strings.Contains(makefile, wantSingle) {
 		t.Fatalf("missing expected single-node simulation stages: %s", wantSingle)
 	}
 
-	wantCluster := "TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,swaps,memoless-swaps,inactive-vault-refunds,solvency,xmr-post-churn,ragnarok"
+	wantCluster := "TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,swaps,memoless-swaps,inactive-vault-refunds,memoless-refunds,solvency,xmr-post-churn,ragnarok"
 	if !strings.Contains(makefile, wantCluster) {
 		t.Fatalf("missing expected cluster simulation stages: %s", wantCluster)
 	}
@@ -788,6 +788,16 @@ func TestSimulationStageOrder(t *testing.T) {
 	assertStageOrder(t, stageNames, "solvency", "xmr-post-churn")
 	assertStageOrder(t, stageNames, "xmr-spent-refs", "jailed-keysign-fallback")
 	assertStageOrder(t, stageNames, "xmr-post-churn", "ragnarok")
+}
+
+func TestSimulationStageNamesUnique(t *testing.T) {
+	seen := make(map[string]struct{}, len(simulationStages()))
+	for _, stage := range simulationStages() {
+		if _, exists := seen[stage.name]; exists {
+			t.Fatalf("simulation stage %q is registered more than once", stage.name)
+		}
+		seen[stage.name] = struct{}{}
+	}
 }
 
 func TestDockerignoreKeepsSimtestBuildContextLean(t *testing.T) {
