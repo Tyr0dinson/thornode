@@ -19,7 +19,7 @@ import (
 const (
 	LengthHeader        = 4 // LengthHeader represent how many bytes we used as header
 	TimeoutReadPayload  = time.Second * 20
-	TimeoutWritePayload = time.Second * 20
+	TimeoutWritePayload = time.Second * 40
 	MaxPayload          = 20000000 // 20M
 	// TSSFramePreflightBytes bounds how much of a framed TSS message is read
 	// before its type, session subscription, and authenticated peer are

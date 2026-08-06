@@ -63,7 +63,7 @@ func NewTssCommon(peerID string, broadcastChannel chan *messages.BroadcastMsgCha
 		unConfirmedMsgLock:          &sync.Mutex{},
 		unConfirmedMessages:         make(map[string]*LocalCacheItem),
 		broadcastChannel:            broadcastChannel,
-		TssMsg:                      make(chan *p2p.Message, msgNum),
+		TssMsg:                      make(chan *p2p.Message, max(msgNum, 4096)),
 		P2PPeersLock:                &sync.RWMutex{},
 		P2PPeers:                    nil,
 		msgID:                       msgID,
@@ -511,28 +511,38 @@ func (t *TssCommon) ProcessOutCh(msg btss.Message, msgType messages.THORChainTSS
 		return fmt.Errorf("fail to get wire bytes: %w", err)
 	}
 
+	// Resolve the round name through GetMsgRound so the cache key and the
+	// wire RoundInfo both use the short canonical name (e.g. "KGRound2Message1")
+	// that blame lookups expect, rather than the proto fully-qualified name
+	// from msg.Type() which differs and breaks GetUnicastBlame/GetByRound.
+	roundInfo, err := GetMsgRound(msgData, msg.GetFrom(), r.IsBroadcast)
+	if err != nil {
+		return fmt.Errorf("fail to get msg round: %w", err)
+	}
+	roundName := roundInfo.RoundMsg
+
 	if r.IsBroadcast {
 		cachedWiredMsg := NewBulkWireMsg(msgData, msg.GetFrom().Moniker, r)
-		// now we store this message in cache
-		dat, ok := t.cachedWireBroadcastMsgLists.Load(msg.Type())
+		dat, ok := t.cachedWireBroadcastMsgLists.Load(roundName)
 		if !ok {
 			l := []BulkWireMsg{cachedWiredMsg}
-			t.cachedWireBroadcastMsgLists.Store(msg.Type(), l)
+			t.cachedWireBroadcastMsgLists.Store(roundName, l)
 		} else {
 			cachedList := dat.([]BulkWireMsg)
 			cachedList = append(cachedList, cachedWiredMsg)
-			t.cachedWireBroadcastMsgLists.Store(msg.Type(), cachedList)
+			t.cachedWireBroadcastMsgLists.Store(roundName, cachedList)
 		}
 	} else {
 		cachedWiredMsg := NewBulkWireMsg(msgData, msg.GetFrom().Moniker, r)
-		dat, ok := t.cachedWireUnicastMsgLists.Load(msg.Type() + ":" + r.To[0].String())
+		cacheKey := roundName + ":" + r.To[0].String()
+		dat, ok := t.cachedWireUnicastMsgLists.Load(cacheKey)
 		if !ok {
 			l := []BulkWireMsg{cachedWiredMsg}
-			t.cachedWireUnicastMsgLists.Store(msg.Type()+":"+r.To[0].String(), l)
+			t.cachedWireUnicastMsgLists.Store(cacheKey, l)
 		} else {
 			cachedList := dat.([]BulkWireMsg)
 			cachedList = append(cachedList, cachedWiredMsg)
-			t.cachedWireUnicastMsgLists.Store(msg.Type()+":"+r.To[0].String(), cachedList)
+			t.cachedWireUnicastMsgLists.Store(cacheKey, cachedList)
 		}
 	}
 	t.cachedWireUnicastMsgLists.Range(func(key, value interface{}) bool {
