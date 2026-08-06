@@ -2756,6 +2756,7 @@ type mempoolRollbackAction struct {
 
 type finalizedMempoolOutbound struct {
 	item            TxOutItem
+	cleanupItem     TxOutItem
 	scheduledHeight int64
 }
 
@@ -2992,6 +2993,7 @@ func finalizeOutboundsCached(ctx cosmos.Context, mgr Manager, voter ObservedTxVo
 		}
 		finalizedOutbounds = append(finalizedOutbounds, finalizedMempoolOutbound{
 			item:            finalItem,
+			cleanupItem:     staged.TxOutItem,
 			scheduledHeight: staged.ScheduledHeight,
 		})
 	}
@@ -2999,6 +3001,13 @@ func finalizeOutboundsCached(ctx cosmos.Context, mgr Manager, voter ObservedTxVo
 	finalizedOutbounds, err = applyDeferredAffiliateFees(ctx, mgr, finalizedOutbounds)
 	if err != nil {
 		return err
+	}
+	for i := range finalizedOutbounds {
+		// Affiliate handling can reduce the user-facing amount. Keep that
+		// adjusted amount for cleanup while preserving the staged asset
+		// representation. In particular, secured targets must clean up their
+		// underlying L1 escrow rather than the restored native secured denom.
+		finalizedOutbounds[i].cleanupItem.Coin.Amount = finalizedOutbounds[i].item.Coin.Amount
 	}
 
 	tos, ok := mgr.TxOutStore().(*TxOutStorage)
@@ -3009,7 +3018,7 @@ func finalizeOutboundsCached(ctx cosmos.Context, mgr Manager, voter ObservedTxVo
 	finalActions := make([]TxOutItem, 0, len(finalizedOutbounds))
 
 	// Move each staged outbound to its final form.
-	for _, finalized := range finalizedOutbounds {
+	for i, finalized := range finalizedOutbounds {
 		finalItem := finalized.item
 		if finalItem.Coin.Amount.IsZero() {
 			continue
@@ -3018,7 +3027,7 @@ func finalizeOutboundsCached(ctx cosmos.Context, mgr Manager, voter ObservedTxVo
 		// Materialize the staged outbound through the finalized txout path so
 		// outbound fees and their accounting side effects are applied only now,
 		// not while the swap was still speculative in the mempool.
-		materializedOutputs, materializeErr := tos.finalizeStagedTxOutItem(ctx, mgr, finalItem, finalized.scheduledHeight)
+		materializedOutputs, materializeErr := tos.finalizeStagedTxOutItem(ctx, mgr, finalItem, finalized.cleanupItem, finalized.scheduledHeight, i)
 		if materializeErr != nil {
 			ctx.Logger().Error("fail to finalize staged outbound", "error", materializeErr, "inhash", finalItem.InHash)
 			return fmt.Errorf("fail to finalize staged outbound: %w", materializeErr)

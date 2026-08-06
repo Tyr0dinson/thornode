@@ -218,7 +218,13 @@ func (tos *TxOutStorage) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi Tx
 		}
 
 		if err = validatePreparedTxOutMinOut(validationOutputs, minOut); err != nil {
-			return false, err
+			// A fee-sized or sub-dust mempool swap output still needs a durable
+			// rollback owner until the inbound finalizes. Keep its gross output
+			// staged and defer the unrefundable cleanup to finalization. A real
+			// nonzero minOut failure remains terminal and must not stage anything.
+			if !errors.Is(err, ErrNotEnoughToPayFee) || !minOut.IsZero() {
+				return false, err
+			}
 		}
 
 		stagedOutputs, _, err := tos.prepareTxOutItem(cacheCtx, toi, txOutPrepareOptions{
@@ -525,14 +531,37 @@ func (tos *TxOutStorage) addPreparedTxOutItemsAtHeight(ctx cosmos.Context, mgr M
 	return nil
 }
 
+func stagedUnrefundableCleanupReason(item TxOutItem) string {
+	if strings.HasPrefix(item.GetMemo(), constants.MemoPrefixRefund) {
+		return "failed_refund"
+	}
+	return "failed_outbound"
+}
+
+func emitUnrefundableStagedSwapOutputEvent(ctx cosmos.Context, mgr Manager, item TxOutItem) {
+	voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, item.InHash)
+	if err != nil {
+		ctx.Logger().Error("fail to load voter for staged swap cleanup event", "error", err, "hash", item.InHash)
+		return
+	}
+	refundReason := fmt.Sprintf("%s; fail to refund (%s): swap output", ErrNotEnoughToPayFee, item.Coin.String())
+	tx := voter.Tx.Tx
+	refundTx := common.NewTx(item.InHash, tx.FromAddress, tx.ToAddress, common.NewCoins(item.Coin), tx.Gas, tx.Memo)
+	if err := mgr.EventMgr().EmitEvent(ctx, NewEventRefund(CodeFailAddOutboundTx, refundReason, refundTx, common.Fee{})); err != nil {
+		ctx.Logger().Error("fail to emit refund event for staged swap cleanup", "error", err, "hash", item.InHash)
+	}
+}
+
 // finalizeStagedTxOutItem turns one staged mempool outbound into its finalized
 // form. This is where deferred outbound-fee accounting becomes real, so staged
 // mempool outputs can stay gross and rollback-safe until the inbound confirms.
-func (tos *TxOutStorage) finalizeStagedTxOutItem(ctx cosmos.Context, mgr Manager, item TxOutItem, scheduledHeight int64) ([]TxOutItem, error) {
-	// Re-run preparation with the full finalized behavior now that the inbound
-	// is confirmed. This applies the real outbound deduction and commits the
-	// associated pool / reserve / fee-event side effects exactly once.
-	outputs, totalOutboundFeeRune, err := tos.prepareTxOutItem(ctx, item, txOutPrepareOptions{
+func (tos *TxOutStorage) finalizeStagedTxOutItem(ctx cosmos.Context, mgr Manager, item, cleanupItem TxOutItem, scheduledHeight int64, stagedIndex int) ([]TxOutItem, error) {
+	// Prepare finalized fees in a nested cache. A staged gross output can
+	// collapse entirely after fee or dust handling. In that case do not commit
+	// the preparation (notably, a full RUNE fee may otherwise already have moved
+	// to Reserve) and clean up the rollback-safe staged coin exactly once.
+	prepareCtx, commitPrepare := ctx.CacheContext()
+	outputs, totalOutboundFeeRune, err := tos.prepareTxOutItem(prepareCtx, item, txOutPrepareOptions{
 		applyOutboundDeduction: true,
 		commitOutboundEffects:  true,
 		recordVoterActions:     false,
@@ -541,10 +570,17 @@ func (tos *TxOutStorage) finalizeStagedTxOutItem(ctx cosmos.Context, mgr Manager
 		return nil, fmt.Errorf("failed to prepare finalized staged tx out item: %w", err)
 	}
 	if len(outputs) == 0 {
-		// A finalized staged outbound can still collapse to nothing after fees
-		// and dust handling. In that case there is nothing left to queue.
+		cleanupReason := stagedUnrefundableCleanupReason(cleanupItem)
+		cleanupKey := stagedRefundCleanupKey(cleanupItem, cleanupReason, stagedIndex)
+		if err := unrefundableCoinCleanupStrictWithKey(ctx, mgr, cleanupItem, cleanupReason, cleanupKey); err != nil {
+			return nil, fmt.Errorf("fail to clean up unrefundable finalized staged outbound: %w", err)
+		}
+		if cleanupReason == "failed_outbound" {
+			emitUnrefundableStagedSwapOutputEvent(ctx, mgr, cleanupItem)
+		}
 		return nil, nil
 	}
+	commitPrepare()
 
 	targetHeight := scheduledHeight
 	if targetHeight < ctx.BlockHeight() {

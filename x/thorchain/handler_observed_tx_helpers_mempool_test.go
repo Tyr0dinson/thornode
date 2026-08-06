@@ -3085,6 +3085,277 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizedAdvQueueSettlementRe
 	c.Check(outItems[0].InHash.Equals(inTxID), Equals, true)
 }
 
+// TestUnfinalizedDustSettlementKeepsRollbackRecord verifies that a completed
+// mempool swap whose gross output is entirely consumed by the outbound fee
+// leaves a staged owner until finality. Before this guard, settlement donated
+// the output, deleted the advanced-queue item, and left the TOR reservation
+// with no index that timeout recovery could discover.
+func (s *HandlerObservedTxHelpersMempoolSuite) TestUnfinalizedDustSettlementKeepsRollbackRecord(c *C) {
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
+
+	for _, asset := range []common.Asset{common.BTCAsset, common.ETHAsset} {
+		pool := NewPool()
+		pool.Asset = asset
+		pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+		pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+		pool.LPUnits = pool.BalanceRune
+		pool.Status = PoolAvailable
+		c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+	}
+
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	activeVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain, common.ETHChain}.Strings(), nil)
+	activeVault.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, activeVault), IsNil)
+
+	outboundFee, err := mgr.GasMgr().GetAssetOutboundFee(ctx, common.ETHAsset, false)
+	c.Assert(err, IsNil)
+	c.Assert(outboundFee.IsZero(), Equals, false)
+
+	toAddr, err := activeVault.PubKey.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+	destination := GetRandomETHAddress()
+	inTxID := GetRandomTxHash()
+	inboundAmount := cosmos.NewUint(1 * common.One)
+	inboundTx := common.NewTx(
+		inTxID,
+		GetRandomBTCAddress(),
+		toAddr,
+		common.Coins{common.NewCoin(common.BTCAsset, inboundAmount)},
+		common.Gas{common.NewCoin(common.BTCAsset, cosmos.OneUint())},
+		"SWAP:ETH.ETH:"+destination.String(),
+	)
+	observedTx := NewObservedTx(inboundTx, 12, activeVault.PubKey, 15)
+
+	reservedTOR := cosmos.NewUint(50 * common.One)
+	voter := NewObservedTxVoter(inTxID, ObservedTxs{observedTx})
+	voter.Tx = observedTx
+	voter.UnfinalizedHeight = ctx.BlockHeight()
+	voter.MempoolSwapTOR = reservedTOR
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, reservedTOR)
+
+	msg := NewMsgSwap(
+		inboundTx,
+		common.ETHAsset,
+		destination,
+		cosmos.ZeroUint(),
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		"",
+		"",
+		nil,
+		MarketSwap,
+		1,
+		0,
+		types.SwapVersion_v2,
+		na.NodeAddress,
+	)
+	msg.State.In = inboundAmount
+	msg.State.Out = outboundFee
+	msg.State.Count = 1
+	msg.State.LastHeight = ctx.BlockHeight()
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, *msg), IsNil)
+
+	targetPoolBeforeSettlement, err := mgr.Keeper().GetPool(ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+	c.Assert(settleSwap(ctx, mgr, *msg, "completed"), IsNil)
+
+	// Terminal settlement may remove its queue item only because the gross dust
+	// output now provides the durable rollback/finalization record.
+	c.Check(mgr.Keeper().HasAdvSwapQueueItem(ctx, inTxID, 0), Equals, false)
+	stagedItems, err := mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Assert(stagedItems, HasLen, 1)
+	c.Check(stagedItems[0].TxOutItem.Coin.Amount.Equal(outboundFee), Equals, true)
+	c.Check(stagedItems[0].StagedHeight, Equals, ctx.BlockHeight(),
+		Commentf("dust output must carry the timeout-recovery clock"))
+
+	settledVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Assert(settledVoter.Actions, HasLen, 1)
+	c.Check(settledVoter.Actions[0].Coin.Amount.Equal(outboundFee), Equals, true)
+	c.Check(settledVoter.HasReservedMempoolSwapTOR(), Equals, true)
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).Equal(reservedTOR), Equals, true)
+
+	cleanupReason := "failed_outbound"
+	cleanupKey := stagedRefundCleanupKey(stagedItems[0].TxOutItem, cleanupReason, 0)
+	c.Check(mgr.Keeper().HasRefundCleanup(ctx, cleanupKey), Equals, false,
+		Commentf("unrefundable cleanup must wait for inbound finality"))
+	targetPoolAfterSettlement, err := mgr.Keeper().GetPool(ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+	c.Check(targetPoolAfterSettlement, DeepEquals, targetPoolBeforeSettlement,
+		Commentf("speculative dust settlement must not donate the output early"))
+	outItems, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Check(outItems, HasLen, 0)
+
+	// Once the inbound finalizes, the gross staged coin is cleaned up exactly
+	// once, the staged owner is deleted, and TOR capacity is released.
+	settledVoter.FinalisedHeight = ctx.BlockHeight()
+	mgr.Keeper().SetObservedTxInVoter(ctx, settledVoter)
+
+	// Cleanup is part of finalization's atomic transition. If its pool write
+	// fails, the staged owner and both TOR markers must remain available for a
+	// later retry.
+	baseKeeper := mgr.Keeper()
+	mgr.K = SettleSwapPostSwapSetPoolFailKeeper{Keeper: baseKeeper}
+	finalizeErr := finalizeOutboundsAtomic(ctx, mgr, settledVoter)
+	c.Assert(finalizeErr, ErrorMatches, ".*fail to clean up unrefundable finalized staged outbound.*")
+	mgr.K = baseKeeper
+
+	failedPool, err := baseKeeper.GetPool(ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+	c.Check(failedPool, DeepEquals, targetPoolBeforeSettlement)
+	failedStaged, err := baseKeeper.GetStagedOutbounds(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(failedStaged, HasLen, 1)
+	failedVoter, err := baseKeeper.GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(failedVoter.HasReservedMempoolSwapTOR(), Equals, true)
+	c.Check(failedVoter.Actions, HasLen, 1)
+	c.Check(baseKeeper.GetMempoolSwapUsageTOR(ctx).Equal(reservedTOR), Equals, true)
+	c.Check(baseKeeper.HasRefundCleanup(ctx, cleanupKey), Equals, false)
+
+	c.Assert(finalizeOutboundsAtomic(ctx, mgr, settledVoter), IsNil)
+
+	finalPool, err := mgr.Keeper().GetPool(ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+	c.Check(finalPool.BalanceAsset.Equal(targetPoolBeforeSettlement.BalanceAsset.Add(outboundFee)), Equals, true,
+		Commentf("finalized dust output must be donated back to its pool exactly once"))
+	c.Check(finalPool.BalanceRune.Equal(targetPoolBeforeSettlement.BalanceRune), Equals, true)
+	c.Check(mgr.Keeper().HasRefundCleanup(ctx, cleanupKey), Equals, true)
+	c.Check(mgr.Keeper().HasStagedOutbound(ctx, inTxID), Equals, false)
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true)
+
+	finalVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(finalVoter.HasReservedMempoolSwapTOR(), Equals, false)
+	c.Check(finalVoter.Actions, HasLen, 0)
+	outItems, err = mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Check(outItems, HasLen, 0)
+
+	// A replay after successful finalization is a no-op.
+	c.Assert(finalizeOutboundsAtomic(ctx, mgr, finalVoter), IsNil)
+	replayedPool, err := mgr.Keeper().GetPool(ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+	c.Check(replayedPool, DeepEquals, finalPool)
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true)
+}
+
+// TestMarkerlessSettlementFallsBackToAtomicRollback covers terminal settlement
+// paths that cannot create even a gross staged output. The settlement cache is
+// discarded and rollback runs against the still-live advanced-queue state; if
+// rollback fails, both ownership records and all speculative state remain.
+func (s *HandlerObservedTxHelpersMempoolSuite) TestMarkerlessSettlementFallsBackToAtomicRollback(c *C) {
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
+
+	sourcePool := NewPool()
+	sourcePool.Asset = common.BTCAsset
+	sourcePool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	sourcePool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	sourcePool.LPUnits = sourcePool.BalanceRune
+	sourcePool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, sourcePool), IsNil)
+
+	targetPool := NewPool()
+	targetPool.Asset = common.ETHAsset
+	targetPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	targetPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	targetPool.LPUnits = targetPool.BalanceRune
+	targetPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, targetPool), IsNil)
+
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	inTxID := GetRandomTxHash()
+	inboundAmount := cosmos.NewUint(common.One)
+	inboundTx := common.NewTx(
+		inTxID,
+		GetRandomBTCAddress(),
+		GetRandomBTCAddress(),
+		common.Coins{common.NewCoin(common.BTCAsset, inboundAmount)},
+		common.Gas{common.NewCoin(common.BTCAsset, cosmos.OneUint())},
+		"SWAP:ETH.ETH:"+GetRandomETHAddress().String(),
+	)
+	observedTx := NewObservedTx(inboundTx, 12, GetRandomPubKey(), 15)
+	reservedTOR := cosmos.NewUint(50 * common.One)
+	voter := NewObservedTxVoter(inTxID, ObservedTxs{observedTx})
+	voter.Tx = observedTx
+	voter.UnfinalizedHeight = ctx.BlockHeight()
+	voter.MempoolSwapTOR = reservedTOR
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, reservedTOR)
+
+	msg := NewMsgSwap(
+		inboundTx,
+		common.ETHAsset,
+		GetRandomETHAddress(),
+		cosmos.ZeroUint(),
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		"",
+		"",
+		nil,
+		MarketSwap,
+		1,
+		0,
+		types.SwapVersion_v2,
+		na.NodeAddress,
+	)
+	msg.State.In = inboundAmount
+	msg.State.Out = cosmos.ZeroUint()
+	msg.State.Count = 1
+	msg.State.LastHeight = ctx.BlockHeight()
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, *msg), IsNil)
+
+	// Model the source-asset credit already applied by speculative swap math.
+	creditedPool := sourcePool
+	creditedPool.BalanceAsset = creditedPool.BalanceAsset.Add(inboundAmount)
+	c.Assert(mgr.Keeper().SetPool(ctx, creditedPool), IsNil)
+
+	baseKeeper := mgr.Keeper()
+	mgr.K = SettleSwapPostSwapSetPoolFailKeeper{Keeper: baseKeeper}
+	err := settleSwap(ctx, mgr, *msg, "completed")
+	c.Assert(err, ErrorMatches, ".*fail to roll back markerless unfinalized mempool settlement.*")
+	mgr.K = baseKeeper
+
+	// Neither the abandoned settlement cache nor the failed rollback cache may
+	// leak. The original queue and reservation still own the speculative credit.
+	c.Check(baseKeeper.HasAdvSwapQueueItem(ctx, inTxID, 0), Equals, true)
+	c.Check(baseKeeper.HasStagedOutbound(ctx, inTxID), Equals, false)
+	failedVoter, err := baseKeeper.GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(failedVoter.HasReservedMempoolSwapTOR(), Equals, true)
+	c.Check(baseKeeper.GetMempoolSwapUsageTOR(ctx).Equal(reservedTOR), Equals, true)
+	failedPool, err := baseKeeper.GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(failedPool, DeepEquals, creditedPool)
+
+	// A healthy retry atomically removes the phantom source credit and clears
+	// every ownership/capacity marker.
+	c.Assert(settleSwap(ctx, mgr, *msg, "completed"), IsNil)
+	c.Check(baseKeeper.HasAdvSwapQueueItem(ctx, inTxID, 0), Equals, false)
+	c.Check(baseKeeper.HasStagedOutbound(ctx, inTxID), Equals, false)
+	rolledBackVoter, err := baseKeeper.GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(rolledBackVoter.HasReservedMempoolSwapTOR(), Equals, false)
+	c.Check(rolledBackVoter.Actions, HasLen, 0)
+	c.Check(baseKeeper.GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true)
+	rolledBackPool, err := baseKeeper.GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(rolledBackPool, DeepEquals, sourcePool)
+}
+
 // TestFinalizedPendingQueueMempoolSwapSkipsRefundChecks verifies that a
 // finalized mempool swap with only queue-backed speculative state does not run
 // the legacy finalized refund path while the advanced queue still owns the

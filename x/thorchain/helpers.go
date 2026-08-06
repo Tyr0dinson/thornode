@@ -294,12 +294,36 @@ func refundCleanupKey(toi TxOutItem, burnReason string) string {
 // native coin besides rune: burn
 // non-native coin: donate to its pool
 func unrefundableCoinCleanup(ctx cosmos.Context, mgr Manager, toi TxOutItem, burnReason string) {
+	if err := unrefundableCoinCleanupStrict(ctx, mgr, toi, burnReason); err != nil {
+		ctx.Logger().Error("fail to clean up unrefundable coin",
+			"error", err,
+			"in_hash", toi.InHash.String(),
+			"coin", toi.Coin.String(),
+			"reason", burnReason)
+	}
+}
+
+// unrefundableCoinCleanupStrict performs the same accounting cleanup as
+// unrefundableCoinCleanup, but reports failures to callers that must retain a
+// durable retry record until cleanup succeeds.
+func unrefundableCoinCleanupStrict(ctx cosmos.Context, mgr Manager, toi TxOutItem, burnReason string) error {
+	return unrefundableCoinCleanupStrictWithKey(ctx, mgr, toi, burnReason, refundCleanupKey(toi, burnReason))
+}
+
+// stagedRefundCleanupKey gives each staged piece a stable identity. The
+// legacy cleanup key intentionally omits vault and action position, so two
+// equal-sized split outbounds would otherwise collide and only one piece
+// would be cleaned up.
+func stagedRefundCleanupKey(toi TxOutItem, burnReason string, index int) string {
+	return refundCleanupKey(toi, fmt.Sprintf("%s|staged|%d", burnReason, index))
+}
+
+func unrefundableCoinCleanupStrictWithKey(ctx cosmos.Context, mgr Manager, toi TxOutItem, burnReason, cleanupKey string) error {
 	coin := toi.Coin
-	cleanupKey := refundCleanupKey(toi, burnReason)
 
 	if mgr.Keeper().HasRefundCleanup(ctx, cleanupKey) {
 		ctx.Logger().Info("skip duplicate unrefundable coin cleanup", "in_hash", toi.InHash.String(), "coin", coin.String(), "reason", burnReason)
-		return
+		return nil
 	}
 
 	// Past this point the network has given up on returning a user's coins. Every
@@ -323,7 +347,7 @@ func unrefundableCoinCleanup(ctx cosmos.Context, mgr Manager, toi TxOutItem, bur
 	if coin.Asset.IsTradeAsset() {
 		mgr.Keeper().SetRefundCleanup(ctx, cleanupKey)
 		disposition = "trade_asset_noop"
-		return
+		return nil
 	}
 
 	sourceModuleName := toi.GetModuleName() // Ensure that non-"".
@@ -332,8 +356,7 @@ func unrefundableCoinCleanup(ctx cosmos.Context, mgr Manager, toi TxOutItem, bur
 	// If there is no retrievable transaction, leave those fields empty.
 	voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, toi.InHash)
 	if err != nil {
-		ctx.Logger().Error("fail to get observed tx in", "error", err, "hash", toi.InHash.String())
-		return
+		return fmt.Errorf("fail to get observed tx in %s: %w", toi.InHash, err)
 	}
 	tx := voter.Tx.Tx
 	// For emitted events' amounts (such as EventDonate), replace the Coins with the coin being cleaned up.
@@ -348,16 +371,15 @@ func unrefundableCoinCleanup(ctx cosmos.Context, mgr Manager, toi TxOutItem, bur
 		// external coins have earlier been established to have existing pools
 		// with non-zero BalanceRune.
 		pool, poolErr := mgr.Keeper().GetPool(ctx, coin.Asset.GetLayer1Asset())
-		if poolErr != nil || pool.BalanceRune.IsZero() {
-			ctx.Logger().Error("fail to refund non-native tx, leaving coins in vault",
-				"toi.InHash", toi.InHash, "toi.Coin", toi.Coin, "pool_err", poolErr)
-			return
+		if poolErr != nil {
+			return fmt.Errorf("fail to get pool while cleaning up non-native coin %s for %s: %w", coin, toi.InHash, poolErr)
+		}
+		if pool.BalanceRune.IsZero() {
+			return fmt.Errorf("fail to clean up non-native coin %s for %s: pool has no RUNE balance", coin, toi.InHash)
 		}
 		pool.BalanceAsset = pool.BalanceAsset.Add(coin.Amount)
 		if poolErr = mgr.Keeper().SetPool(ctx, pool); poolErr != nil {
-			ctx.Logger().Error("fail to add unrefundable coin to pool",
-				"error", poolErr, "toi.InHash", toi.InHash, "toi.Coin", toi.Coin)
-			return
+			return fmt.Errorf("fail to add unrefundable coin %s to pool for %s: %w", coin, toi.InHash, poolErr)
 		}
 		mgr.Keeper().SetRefundCleanup(ctx, cleanupKey)
 		disposition = "pool_donate"
@@ -369,8 +391,7 @@ func unrefundableCoinCleanup(ctx cosmos.Context, mgr Manager, toi TxOutItem, bur
 		// If unable to refund THOR.RUNE, send it to the Reserve.
 		err := mgr.Keeper().SendFromModuleToModule(ctx, sourceModuleName, ReserveName, common.NewCoins(coin))
 		if err != nil {
-			ctx.Logger().Error("fail to send native coin to Reserve during cleanup", "error", err)
-			return
+			return fmt.Errorf("fail to send native coin %s to Reserve during cleanup: %w", coin, err)
 		}
 		mgr.Keeper().SetRefundCleanup(ctx, cleanupKey)
 		disposition = "reserve"
@@ -386,6 +407,8 @@ func unrefundableCoinCleanup(ctx cosmos.Context, mgr Manager, toi TxOutItem, bur
 		mgr.Keeper().SetRefundCleanup(ctx, cleanupKey)
 		disposition = "reserve_noop"
 	}
+
+	return nil
 }
 
 func getMaxSwapQuantity(ctx cosmos.Context, mgr Manager, sourceAsset, targetAsset common.Asset, swp StreamingSwap, affiliates []string, affiliateBps []cosmos.Uint) (uint64, error) {
@@ -1937,6 +1960,8 @@ func getLastChurnHeight(ctx cosmos.Context, k keeper.Keeper) int64 {
 	return lastChurnHeight
 }
 
+var errUnfinalizedMempoolSettlementWithoutRecoveryRecord = errors.New("unfinalized mempool swap settlement produced no durable recovery record")
+
 // settleSwap handles the settlement of any type of swap (market, limit, streaming) from the advanced swap queue, including:
 // - Scheduling the outbound transaction for swapped amounts
 // - Refunding any remaining deposit
@@ -1949,15 +1974,67 @@ func settleSwap(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason strin
 		!mgr.Keeper().HasAdvSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index)) {
 		return nil
 	}
+
+	originalVoter, voterErr := mgr.Keeper().GetObservedTxInVoter(ctx, msg.Tx.ID)
+	canRollbackMarkerlessSettlement := voterErr == nil &&
+		msg.Index == 0 &&
+		originalVoter.HasReservedMempoolSwapTOR() &&
+		originalVoter.FinalisedHeight == 0 &&
+		mgr.Keeper().HasAdvSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index))
+
 	// Settle swap mutates multiple pieces of state (scheduled outbounds, refunds,
 	// queue removal, events). Run it in a cache context so partial failures do not
 	// leave committed side effects that can be duplicated on retry.
 	cacheCtx, commit := ctx.CacheContext()
 	if err := settleSwapCached(cacheCtx, mgr, msg, settleReason); err != nil {
-		return err
+		if !errors.Is(err, errUnfinalizedMempoolSettlementWithoutRecoveryRecord) || !canRollbackMarkerlessSettlement {
+			return err
+		}
+
+		// The settlement cache can contain an unrefundable cleanup donation or
+		// other terminal effects. Do not commit it. Roll back against the parent
+		// context instead, where the queue still owns State.In/State.Out and can
+		// reconstruct the speculative swap exactly.
+		ctx.Logger().Info("rolling back unfinalized mempool swap after markerless settlement",
+			"hash", msg.Tx.ID,
+			"settle_reason", settleReason)
+		if rollbackErr := rollbackMempoolSwapAtomic(ctx, mgr.Keeper(), mgr, originalVoter); rollbackErr != nil {
+			return fmt.Errorf("fail to roll back markerless unfinalized mempool settlement: %w", rollbackErr)
+		}
+		incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "markerless_settlement")})
+		return nil
 	}
 	commit()
 	return nil
+}
+
+func hasUsableStagedMempoolRecoveryRecord(ctx cosmos.Context, k keeper.Keeper, voter ObservedTxVoter, msg MsgSwap) (bool, error) {
+	stagedItems, err := k.GetStagedOutbounds(ctx, msg.Tx.ID)
+	if err != nil {
+		return false, err
+	}
+
+	// If execution produced target output, a source-asset remainder refund by
+	// itself is not enough to reverse that output. Require at least one staged
+	// swap-output action. When State.Out is zero, any nonzero staged refund is a
+	// sufficient terminal owner because there is no target-side swap to unwind.
+	requiresSwapOutput := msg.State != nil && !msg.State.Out.IsNil() && !msg.State.Out.IsZero()
+	if requiresSwapOutput && voter.Tx.Tx.Coins.IsEmpty() {
+		return false, fmt.Errorf("mempool voter has no source coin")
+	}
+	sourceAsset := common.EmptyAsset
+	if requiresSwapOutput {
+		sourceAsset = voter.Tx.Tx.Coins[0].Asset
+	}
+	for _, staged := range stagedItems {
+		if staged.TxOutItem.Coin.Amount.IsZero() {
+			continue
+		}
+		if !requiresSwapOutput || !isStagedMempoolSourceRefund(voter, sourceAsset, staged.TxOutItem) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // releaseMempoolSwapCapacityAndClear is the shared "release exactly once"
@@ -2040,6 +2117,27 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 	// partial refund, post-swap memo handling) in the current cache context.
 	if err := settleSwapResultCached(ctx, mgr, msg, settleReason); err != nil {
 		return err
+	}
+
+	// An unfinalized reserved swap must retain at least one durable owner after
+	// terminal settlement. Normally TryAddTxOutItem creates a staged outbound.
+	// If a future or exceptional path produces none, signal the outer wrapper to
+	// discard this settlement cache and roll back while the queue state is still
+	// available in the parent context.
+	if msg.Index == 0 && mgr.Keeper().HasAdvSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index)) {
+		voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, msg.Tx.ID)
+		if err != nil {
+			return fmt.Errorf("fail to inspect mempool voter after swap settlement: %w", err)
+		}
+		if voter.HasReservedMempoolSwapTOR() && voter.FinalisedHeight == 0 {
+			hasStaged, err := hasUsableStagedMempoolRecoveryRecord(ctx, mgr.Keeper(), voter, msg)
+			if err != nil {
+				return fmt.Errorf("fail to inspect staged outbounds after swap settlement: %w", err)
+			}
+			if !hasStaged {
+				return errUnfinalizedMempoolSettlementWithoutRecoveryRecord
+			}
+		}
 	}
 
 	// A mempool swap can finish after the inbound has already finalized if the
