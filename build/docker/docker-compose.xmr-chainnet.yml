@@ -2,9 +2,12 @@
 # Private THORChain 2-of-3 cluster + real Monero mainnet (chainnet build)
 #
 # Usage:
+#   export XMR_FROST_AUTH_BEARER="$(openssl rand -hex 32)"
 #   docker compose -f docker-compose.xmr-chainnet.yml build --no-cache
 #   docker compose -f docker-compose.xmr-chainnet.yml up -d
 #   bash xmr-chainnet-post-deploy.sh
+# Generate this deployment-specific secret once, store it securely, and reuse
+# it across restarts. Do not reuse a node mnemonic or keystore password.
 #
 # Three validators (dog/cat/fox) with FROST threshold signing against a real
 # monerod syncing Monero mainnet. Dog is genesis, cat and fox join via validator.sh.
@@ -24,9 +27,9 @@
 #   ChurnRetryInterval=10    - retry churn every 10 blocks
 #   MinimumBondInRune=1      - prevent "low bond" churn-out noise
 #
-# Auth: bifrost <-> frost-signer uses a seed-derived bearer token.
-# Both Go and Rust must be built from the same commit. Mismatched auth causes
-# silent scan failure (txs=0 on every block). Always rebuild BOTH together.
+# Auth: bifrost <-> frost-signer uses the explicit XMR_FROST_AUTH_BEARER
+# shared secret. Compose fails if it is unset or empty; no committed fallback
+# is provided.
 ########################################################################################
 
 volumes:
@@ -111,7 +114,7 @@ x-bifrost-env: &bifrost-env
   BIFROST_CHAINS_XMR_RPC_HOST: "http://monero-daemon:18081"
   BIFROST_CHAINS_XMR_CHAIN_NETWORK: "mainnet"
   BIFROST_CHAINS_XMR_DISABLE_TLS: "true"
-  BIFROST_CHAINS_XMR_SIGNER_AUTHORIZATION_BEARER: "${XMR_FROST_AUTH_BEARER:-xmr-frost-chainnet-token}"
+  BIFROST_CHAINS_XMR_SIGNER_AUTHORIZATION_BEARER: "${XMR_FROST_AUTH_BEARER:?set XMR_FROST_AUTH_BEARER to a strong random token}"
   BIFROST_CHAINS_XMR_SIGNER_ALLOW_INSECURE_HTTP: "true"
   BIFROST_CHAINS_XMR_SIGNER_EXPECTED_NETWORK: "chainnet"
 
@@ -120,7 +123,7 @@ x-frost-env: &frost-env
   XMR_FROST_DAEMON_URL: "http://monero-daemon:18081"
   XMR_FROST_DATA_DIR: "/home/serai/xmr-frost"
   XMR_FROST_CHAIN_NETWORK: "chainnet"
-  XMR_FROST_AUTH_BEARER: "${XMR_FROST_AUTH_BEARER:-xmr-frost-chainnet-token}"
+  XMR_FROST_AUTH_BEARER: "${XMR_FROST_AUTH_BEARER:?set XMR_FROST_AUTH_BEARER to a strong random token}"
   SIGNER_SEED_PHRASE_FILE: "/run/thornode/seed_phrase"
   XMR_FROST_MAX_SIGN_SCAN_LAG_BLOCKS: "32"
   XMR_FROST_MAX_REQUESTS_PER_SECOND: "256"

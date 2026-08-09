@@ -2,7 +2,10 @@
 # Private THORChain 2-of-3 cluster + real Monero mainnet
 #
 # Usage:
+#   export XMR_FROST_AUTH_BEARER="$(openssl rand -hex 32)"
 #   docker compose -f docker-compose.xmr-stagenet.yml up --build -d
+# Generate this deployment-specific secret once, store it securely, and reuse
+# it across restarts. Do not reuse a node mnemonic or keystore password.
 #
 # Three validators (dog/cat/fox) with FROST threshold signing against a real
 # monerod syncing Monero mainnet. Dog is genesis, cat and fox join via validator.sh.
@@ -72,7 +75,7 @@ x-bifrost-env: &bifrost-env
   BIFROST_CHAINS_XMR_RPC_HOST: "http://monero-daemon:18081"
   BIFROST_CHAINS_XMR_CHAIN_NETWORK: "mainnet"
   BIFROST_CHAINS_XMR_DISABLE_TLS: "true"
-  BIFROST_CHAINS_XMR_SIGNER_AUTHORIZATION_BEARER: "${XMR_FROST_AUTH_BEARER:-xmr-frost-stagenet-token}"
+  BIFROST_CHAINS_XMR_SIGNER_AUTHORIZATION_BEARER: "${XMR_FROST_AUTH_BEARER:?set XMR_FROST_AUTH_BEARER to a strong random token}"
   BIFROST_CHAINS_XMR_SIGNER_ALLOW_INSECURE_HTTP: "true"
   BIFROST_CHAINS_XMR_SIGNER_EXPECTED_NETWORK: "mocknet"
 
@@ -81,7 +84,7 @@ x-frost-env: &frost-env
   XMR_FROST_DAEMON_URL: "http://monero-daemon:18081"
   XMR_FROST_DATA_DIR: "/home/serai/xmr-frost"
   XMR_FROST_CHAIN_NETWORK: "mocknet"
-  XMR_FROST_AUTH_BEARER: "${XMR_FROST_AUTH_BEARER:-xmr-frost-stagenet-token}"
+  XMR_FROST_AUTH_BEARER: "${XMR_FROST_AUTH_BEARER:?set XMR_FROST_AUTH_BEARER to a strong random token}"
   XMR_FROST_MAX_SIGN_SCAN_LAG_BLOCKS: "32"
   XMR_FROST_MAX_REQUESTS_PER_SECOND: "256"
   XMR_FROST_MAX_REQUESTS_PER_IP_SECOND: "64"

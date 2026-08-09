@@ -263,6 +263,50 @@ func TestXMRSignerEntrypointSupportsRegistryAndLocalImages(t *testing.T) {
 	}
 }
 
+func TestXMRProductionLikeComposeRequiresExplicitSignerBearer(t *testing.T) {
+	const requiredBearer = `${XMR_FROST_AUTH_BEARER:?set XMR_FROST_AUTH_BEARER to a strong random token}`
+
+	for _, path := range []string{
+		"build/docker/docker-compose.xmr-chainnet.yml",
+		"build/docker/docker-compose.xmr-stagenet.yml",
+	} {
+		compose := readRepoFile(t, path)
+		for _, snippet := range []string{
+			`BIFROST_CHAINS_XMR_SIGNER_AUTHORIZATION_BEARER: "` + requiredBearer + `"`,
+			`XMR_FROST_AUTH_BEARER: "` + requiredBearer + `"`,
+		} {
+			if !strings.Contains(compose, snippet) {
+				t.Fatalf("%s must contain %q", path, snippet)
+			}
+		}
+		if count := strings.Count(compose, requiredBearer); count != 2 {
+			t.Fatalf("%s must inject the same required bearer exactly twice, got %d", path, count)
+		}
+		for _, forbidden := range []string{
+			`${XMR_FROST_AUTH_BEARER:-`,
+			"xmr-frost-chainnet-token",
+			"xmr-frost-stagenet-token",
+		} {
+			if strings.Contains(compose, forbidden) {
+				t.Fatalf("%s must not contain predictable signer bearer fallback %q", path, forbidden)
+			}
+		}
+	}
+
+	resetScript := readRepoFile(t, "build/docker/xmr-reset-scanner.sh")
+	for _, snippet := range []string{
+		"XMR_FROST_AUTH_BEARER",
+		"export XMR_FROST_AUTH_BEARER",
+	} {
+		if !strings.Contains(resetScript, snippet) {
+			t.Fatalf("scanner reset helper must contain %q so it reuses the configured signer bearer", snippet)
+		}
+	}
+	if strings.Contains(resetScript, "xmr-frost-auth") {
+		t.Fatal("scanner reset helper must not derive signer authentication from the node mnemonic")
+	}
+}
+
 func TestMocknetClusterPublishesBifrostAndXMRFrostReadinessPorts(t *testing.T) {
 	compose := readRepoFile(t, "build/docker/docker-compose.yml")
 	for _, snippet := range []string{
