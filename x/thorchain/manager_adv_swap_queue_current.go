@@ -575,6 +575,20 @@ func (vm *SwapQueueAdv) getAvailablePools(ctx cosmos.Context) Pools {
 	return pools
 }
 
+func (vm *SwapQueueAdv) getStreamingSwapMaxLength(ctx cosmos.Context, sourceAsset, targetAsset common.Asset) (uint64, error) {
+	key := constants.StreamingSwapMaxLength
+	if sourceAsset.IsNative() && targetAsset.IsNative() {
+		key = constants.StreamingSwapMaxLengthNative
+	}
+
+	maxLength := vm.k.GetConfigInt64(ctx, key)
+	if maxLength <= 0 {
+		return 0, fmt.Errorf("%s must be greater than zero", key)
+	}
+
+	return uint64(maxLength), nil
+}
+
 func (vm *SwapQueueAdv) getMaxSwapQuantity(ctx cosmos.Context, mgr Manager, sourceAsset, targetAsset common.Asset, msg MsgSwap) (uint64, error) {
 	// Pull affiliate context off the memo so sub-swap sizing respects any
 	// dynamic-fee floor the affiliate has earned for this pair.
@@ -647,11 +661,9 @@ func (vm *SwapQueueAdv) getMaxSwapQuantity(ctx cosmos.Context, mgr Manager, sour
 
 	// make sure maxSwapQuantity doesn't infringe on max length that a
 	// streaming swap can exist
-	var maxLength int64
-	if sourceAsset.IsNative() && targetAsset.IsNative() {
-		maxLength = vm.k.GetConfigInt64(ctx, constants.StreamingSwapMaxLengthNative)
-	} else {
-		maxLength = vm.k.GetConfigInt64(ctx, constants.StreamingSwapMaxLength)
+	maxLength, err := vm.getStreamingSwapMaxLength(ctx, sourceAsset, targetAsset)
+	if err != nil {
+		return 0, err
 	}
 	// For limit swaps, State.Interval represents the custom TTL (expiry in blocks),
 	// not the interval between sub-swaps. Limit swaps execute every block (interval=1).
@@ -659,7 +671,7 @@ func (vm *SwapQueueAdv) getMaxSwapQuantity(ctx cosmos.Context, mgr Manager, sour
 	if interval == 0 || msg.IsLimitSwap() {
 		interval = 1
 	}
-	maxSwapInMaxLength := uint64(maxLength) / interval
+	maxSwapInMaxLength := maxLength / interval
 	if maxSwapQuantity.GT(cosmos.NewUint(maxSwapInMaxLength)) {
 		return maxSwapInMaxLength, nil
 	}
@@ -706,6 +718,20 @@ func (vm *SwapQueueAdv) AddSwapQueueItem(ctx cosmos.Context, mgr Manager, msg *M
 	val := vm.k.GetConfigInt64(ctx, constants.EnableAdvSwapQueue)
 	if types.AdvSwapQueueMode(val) == types.AdvSwapQueueModeMarketOnly && msg.IsLimitSwap() {
 		return fmt.Errorf("limit swaps are not allowed in market-only mode")
+	}
+
+	// Market-swap intervals control how long the durable advanced-queue item can
+	// remain live between sub-swaps. Bound the interval before admission so an
+	// untrusted memo cannot outlive the applicable streaming-swap maximum. Limit
+	// swaps reuse State.Interval as a TTL and are capped separately below.
+	if msg.IsMarketSwap() {
+		maxLength, err := vm.getStreamingSwapMaxLength(ctx, msg.Tx.Coins[0].Asset, msg.TargetAsset)
+		if err != nil {
+			return err
+		}
+		if msg.State.Interval > maxLength {
+			msg.State.Interval = maxLength
+		}
 	}
 
 	// Set initial block height when adding the swap

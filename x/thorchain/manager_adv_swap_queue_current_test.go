@@ -496,6 +496,68 @@ func (s AdvSwapQueueSuite) TestNormalModePreservesLimitSwaps(c *C) {
 	c.Check(msg.State.Deposit.Equal(amount), Equals, true)
 }
 
+func (s AdvSwapQueueSuite) TestAddSwapQueueItemBoundsMarketInterval(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	k.SetMimir(ctx, "EnableAdvSwapQueue", int64(AdvSwapQueueModeEnabled))
+	k.SetMimir(ctx, "StreamingSwapMaxLength", 100)
+	k.SetMimir(ctx, "StreamingSwapMaxLengthNative", 250)
+
+	for _, asset := range []common.Asset{common.BTCAsset, common.ETHAsset} {
+		pool := NewPool()
+		pool.Asset = asset
+		pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+		pool.BalanceRune = cosmos.NewUint(10_000 * common.One)
+		pool.Status = PoolAvailable
+		c.Assert(k.SetPool(ctx, pool), IsNil)
+	}
+
+	newMarketSwap := func(txID common.TxID) *MsgSwap {
+		destination := GetRandomETHAddress()
+		return NewMsgSwap(
+			common.NewTx(
+				txID,
+				GetRandomBTCAddress(),
+				GetRandomBTCAddress(),
+				common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One))),
+				common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(10_000))},
+				"swap:ETH.ETH:"+destination.String(),
+			),
+			common.ETHAsset,
+			destination,
+			cosmos.ZeroUint(),
+			common.NoAddress,
+			cosmos.ZeroUint(),
+			"", "", nil,
+			types.SwapType_market,
+			10, 1_000, types.SwapVersion_v2,
+			GetRandomValidatorNode(NodeActive).NodeAddress,
+		)
+	}
+
+	swapQueue := newSwapQueueAdv(k)
+	msg := newMarketSwap(common.TxID("0000000000000000000000000000000000000000000000000000000000000017"))
+	c.Assert(swapQueue.AddSwapQueueItem(ctx, mgr, msg), IsNil)
+	c.Check(msg.State.Interval, Equals, uint64(100))
+
+	stored, err := k.GetAdvSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index))
+	c.Assert(err, IsNil)
+	c.Check(stored.State.Interval, Equals, uint64(100),
+		Commentf("the durable queue item must contain the bounded interval"))
+
+	nativeMax, err := swapQueue.getStreamingSwapMaxLength(ctx, common.RuneAsset(), common.TCY)
+	c.Assert(err, IsNil)
+	c.Check(nativeMax, Equals, uint64(250),
+		Commentf("native-to-native swaps must use StreamingSwapMaxLengthNative"))
+
+	k.SetMimir(ctx, "StreamingSwapMaxLength", 0)
+	invalid := newMarketSwap(common.TxID("0000000000000000000000000000000000000000000000000000000000000018"))
+	err = swapQueue.AddSwapQueueItem(ctx, mgr, invalid)
+	c.Assert(err, ErrorMatches, "StreamingSwapMaxLength must be greater than zero")
+	c.Check(k.HasAdvSwapQueueItem(ctx, invalid.Tx.ID, int(invalid.Index)), Equals, false,
+		Commentf("an invalid maximum must fail before durable admission"))
+}
+
 func (s AdvSwapQueueSuite) TestFetchQueue(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	book := newSwapQueueAdv(mgr.Keeper())
@@ -4093,6 +4155,9 @@ func (s AdvSwapQueueSuite) TestAddSwapQueueItemWithCustomTTL(c *C) {
 	// Set StreamingLimitSwapMaxAge to 1000 blocks
 	maxAge := int64(1000)
 	k.SetMimir(ctx, "StreamingLimitSwapMaxAge", maxAge)
+	// A limit swap's State.Interval is its TTL, so it must remain independent
+	// from the shorter market-stream interval maximum.
+	k.SetMimir(ctx, "StreamingSwapMaxLength", 100)
 
 	// Setup pools
 	pool := NewPool()
