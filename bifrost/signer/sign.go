@@ -493,24 +493,24 @@ func keygenProcessingPriority(keygenType ttypes.KeygenType) int {
 func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 	s.logger.Info().Interface("keygenBlock", keygenBlock).Msg("processing keygen block")
 
+	var (
+		xmrGateChecked bool
+		xmrKeygenOpen  bool
+	)
+
 	// Process XMR/FROST keygens before regular TSS keygens so every node enters
 	// the sidecar ceremony before regular keygen self-checks can delay a leader.
 	for _, keygenReq := range orderedKeygensForProcessing(keygenBlock.Keygens) {
-		// Skip the XMR/FROST monovault keygen network-wide until the keygen
-		// scale/coordination fix ships. The full-active-set (~95-party) sidecar
-		// DKG fails at scale and mass-jails members (judgeLateSigner fires on a
-		// retry-round success). A keygen with zero MsgTssPool reports reaches no
-		// consensus, so no jail/slash fires (x/thorchain/handler_tss.go); and no
-		// XMR monovault exists on mainnet, so skipping strands no funds. Remove
-		// once the FROST keygen reliability fix (or the HaltMonovaultKeygen mimir)
-		// lands. Must be deployed to ALL active + ready nodes before churn
-		// resumes: partial coverage (<1/3 of members) can let the failure-blame
-		// path jail the patched members.
 		if keygenReq.Type == ttypes.KeygenType_XMRMonovaultKeygen {
-			s.logger.Info().
-				Int64("height", keygenBlock.Height).
-				Msg("skipping XMR monovault keygen (network-wide skip pending keygen fix)")
-			continue
+			// Use one live Mimir snapshot for every XMR request in this block. A
+			// retry re-enters processKeygenBlock and checks the emergency halt again.
+			if !xmrGateChecked {
+				xmrKeygenOpen = s.xmrMonovaultKeygenAllowed(keygenBlock.Height)
+				xmrGateChecked = true
+			}
+			if !xmrKeygenOpen {
+				continue
+			}
 		}
 		keygenStart := time.Now()
 		keygenTime := time.Since(keygenStart).Milliseconds()
@@ -618,6 +618,51 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 			observedMoneroHeight: observedMoneroHeight,
 		}})
 	}
+}
+
+// xmrMonovaultKeygenAllowed is the Bifrost half of the operational keygen
+// gate. THORChain checks the same Mimir before scheduling new records; this
+// check also covers records already delivered to Bifrost and local retry
+// re-entry. Lookup failures abandon the local attempt; THORChain can schedule
+// a fresh keygen record, while an unknown gate state never starts a ceremony.
+func (s *Signer) xmrMonovaultKeygenAllowed(keygenHeight int64) bool {
+	halt, err := s.thorchainBridge.GetMimir(constants.MimirKeyHaltMonovaultKeygen)
+	if err != nil {
+		s.logger.Error().
+			Err(err).
+			Int64("keygen_height", keygenHeight).
+			Msg("skipping XMR monovault keygen: unable to verify HaltMonovaultKeygen")
+		return false
+	}
+	if halt <= 0 {
+		return true
+	}
+
+	currentHeight, err := s.thorchainBridge.GetBlockHeight()
+	if err != nil || currentHeight <= 0 {
+		s.logger.Error().
+			Err(err).
+			Int64("keygen_height", keygenHeight).
+			Int64("halt_mimir", halt).
+			Int64("current_height", currentHeight).
+			Msg("skipping XMR monovault keygen: unable to verify halt activation height")
+		return false
+	}
+	if halt <= currentHeight {
+		s.logger.Warn().
+			Int64("keygen_height", keygenHeight).
+			Int64("halt_mimir", halt).
+			Int64("current_height", currentHeight).
+			Msg("skipping XMR monovault keygen due to HaltMonovaultKeygen")
+		return false
+	}
+
+	s.logger.Info().
+		Int64("keygen_height", keygenHeight).
+		Int64("halt_mimir", halt).
+		Int64("current_height", currentHeight).
+		Msg("HaltMonovaultKeygen is scheduled for a future height; allowing XMR monovault keygen")
+	return true
 }
 
 func (s *Signer) flushPendingKeygenBroadcasts(pending []pendingKeygenBroadcast) {
