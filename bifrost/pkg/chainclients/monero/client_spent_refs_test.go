@@ -185,7 +185,7 @@ func TestApplySpentOutputRefsSidecarCall(t *testing.T) {
 	obsTx.SpentOutputRefs = refs
 	obsTx.XmrTxKey = strings.Repeat("3", 64)
 
-	applied, retry := c.applySpentOutputRefsOnce(obsTx)
+	applied, retry := c.applySpentOutputRefsOnce(obsTx, nil)
 	assert.True(t, applied, "idempotent Marked=0 response must count as verified")
 	assert.False(t, retry)
 
@@ -334,7 +334,7 @@ func TestApplySpentOutputRefsAuthenticatesExactOriginBeforeMutation(t *testing.T
 			payload := testStoredSignedTxPayload(t, txHash, "deadbeef")
 			require.NoError(t, store.Set(plan, txHash, payload))
 
-			applied, retry := client.applySpentOutputRefsOnce(obsTx)
+			applied, retry := client.applySpentOutputRefsOnce(obsTx, nil)
 			assert.False(t, applied)
 			assert.False(t, retry)
 			markMu.Lock()
@@ -448,7 +448,7 @@ func TestApplySpentOutputRefsMarksImportedOutboundSignedOnlyAfterFullImport(t *t
 	require.NoError(t, payloadStore.Reserve(claimPlan))
 	require.NoError(t, payloadStore.Set(claimPlan, spendTxHash, payloadBytes))
 
-	applied, retry := c.applySpentOutputRefsOnce(obsTx)
+	applied, retry := c.applySpentOutputRefsOnce(obsTx, nil)
 	require.False(t, applied)
 	require.True(t, retry)
 	assert.False(t, signerCache.HasSigned(cacheHash), "partial import must not suppress a future exact retry")
@@ -456,7 +456,7 @@ func TestApplySpentOutputRefsMarksImportedOutboundSignedOnlyAfterFullImport(t *t
 	require.NoError(t, err)
 	assert.True(t, ok, "partial import must retain the recoverable payload")
 
-	applied, retry = c.applySpentOutputRefsOnce(obsTx)
+	applied, retry = c.applySpentOutputRefsOnce(obsTx, nil)
 	require.True(t, applied)
 	require.False(t, retry)
 	assert.True(t, signerCache.HasSigned(cacheHash))
@@ -1037,6 +1037,71 @@ func testXMRSpentRefsObservedTx(t *testing.T, vaultLabel, txLabel string) common
 	return obsTx
 }
 
+func TestApplySpentOutputRefsWithWireMemoUsesWireMemoAcrossRetry(t *testing.T) {
+	t.Parallel()
+
+	var mu sync.Mutex
+	var requests []sidecar.MarkSpentReq
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req sidecar.MarkSpentReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode mark-spent request: %v", err)
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		mu.Lock()
+		requests = append(requests, req)
+		call := len(requests)
+		mu.Unlock()
+		if call == 1 {
+			http.Error(w, "tx not mined yet", http.StatusNotFound)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(sidecar.MarkSpentResp{Marked: len(req.SpentRefs)})
+	}))
+	defer server.Close()
+
+	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+	c := &Client{
+		chain:                     common.XMRChain,
+		sidecar:                   signer,
+		logger:                    testLogger(),
+		wg:                        &sync.WaitGroup{},
+		stopchan:                  make(chan struct{}),
+		spentRefsRetryInterval:    10 * time.Millisecond,
+		spentRefsRetryMaxAttempts: 2,
+	}
+	defer func() {
+		close(c.stopchan)
+		c.wg.Wait()
+	}()
+
+	obsTx := testXMRSpentRefsObservedTx(t, "test-vault-signed-wire-memo", "signed-wire-memo")
+	obsTx.Tx.Memo = "OUT:" + strings.Repeat("A", 64)
+	expectedCertificateHash, err := xmrSpentRefsCertificateHash(obsTx)
+	require.NoError(t, err)
+	outcome := make(chan bool, 1)
+	c.ApplySpentOutputRefsWithWireMemoAndOutcome(obsTx, "", func(applied bool) { outcome <- applied })
+
+	select {
+	case applied := <-outcome:
+		require.True(t, applied)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for signed spent-ref import retry")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, requests, 2)
+	for _, req := range requests {
+		assert.Empty(t, req.Memo, "sidecar must authenticate the empty wire memo")
+		assert.Equal(t, expectedCertificateHash, req.CertificateHash,
+			"certificate must remain bound to the semantic observation")
+	}
+	assert.Equal(t, "OUT:"+strings.Repeat("A", 64), obsTx.Tx.Memo)
+}
+
 func TestApplySpentOutputRefsOnceRetriesPartialNotFound(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -1049,7 +1114,7 @@ func TestApplySpentOutputRefsOnceRetriesPartialNotFound(t *testing.T) {
 	obsTx := testXMRSpentRefsObservedTx(t, "test-vault-partial-not-found", "partial-not-found")
 	obsTx.SpentOutputRefs = append(obsTx.SpentOutputRefs,
 		*testXMROutputRef("partial-not-found-second", 1, obsTx.Tx.ID.String()))
-	applied, retry := c.applySpentOutputRefsOnce(obsTx)
+	applied, retry := c.applySpentOutputRefsOnce(obsTx, nil)
 	assert.False(t, applied)
 	assert.True(t, retry)
 }

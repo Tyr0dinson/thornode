@@ -77,12 +77,20 @@ type PermanentErrataQuarantiner interface {
 	QuarantinePermanentErrata(errata common.ErrataTx, orphanHeight int64) error
 }
 
-// SpentOutputRefsApplier is the optional XMR durability hook used after a
-// signed outbound exposes its exact consumed outputs. Implementations report
-// the final import outcome exactly once, including after any bounded retries.
-// Callers must retain the outbound until the callback reports success.
+// SpentOutputRefsApplier is the XMR durability hook for observed/certified
+// outbounds. Implementations report the final import outcome exactly once,
+// including after any bounded retries.
 type SpentOutputRefsApplier interface {
 	ApplySpentOutputRefsWithOutcome(tx common.ObservedTx, onOutcome func(applied bool))
+}
+
+// WireMemoSpentOutputRefsApplier is the XMR durability hook for callers which
+// know both memo representations. The observation retains its semantic memo
+// for THORChain attribution and certificate hashing, while wireMemo is the
+// exact value included in the chain transaction and authenticated by the
+// sidecar. Callers must retain the outbound until the callback reports success.
+type WireMemoSpentOutputRefsApplier interface {
+	ApplySpentOutputRefsWithWireMemoAndOutcome(tx common.ObservedTx, wireMemo string, onOutcome func(applied bool))
 }
 
 // CustomKeygenRequest carries common keygen context for chain-specific hooks.

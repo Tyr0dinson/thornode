@@ -182,10 +182,11 @@ type AttestationGossip struct {
 	activeVals map[peer.ID]bool // active val peer IDs
 	avMu       sync.Mutex
 
-	observerHandleObservedTxCommitted func(tx common.ObservedTx, allowFutureObservation bool)
-	observerHandleErrataTxCommitted   func(errata common.ErrataTx) error
-	observerApplySpentOutputRefs      func(tx common.ObservedTx, onOutcome func(applied bool))
-	observerStorage                   *ObserverStorage
+	observerHandleObservedTxCommitted  func(tx common.ObservedTx, allowFutureObservation bool)
+	observerHandleErrataTxCommitted    func(errata common.ErrataTx) error
+	observerApplySpentOutputRefs       func(tx common.ObservedTx, onOutcome func(applied bool))
+	observerApplySpentRefsWithWireMemo func(tx common.ObservedTx, wireMemo string, onOutcome func(applied bool))
+	observerStorage                    *ObserverStorage
 	// xmrErrataAdmissionRequired is immutable for production instances and is
 	// also enabled when tests wire storage explicitly. It makes the short
 	// constructor window before Observer supplies storage fail closed for XMR.
@@ -401,29 +402,77 @@ func (s *AttestationGossip) SetObserverApplySpentOutputRefs(fn func(tx common.Ob
 	s.observerApplySpentOutputRefs = fn
 }
 
+// SetObserverApplySpentOutputRefsWithWireMemo wires the production XMR import
+// contract. The semantic memo remains in tx, while wireMemo is the exact value
+// THORChain scheduled into the chain transaction (including an explicit empty
+// value for memoless OUT/REFUND transactions).
+func (s *AttestationGossip) SetObserverApplySpentOutputRefsWithWireMemo(
+	fn func(tx common.ObservedTx, wireMemo string, onOutcome func(applied bool)),
+) {
+	s.observerApplySpentRefsWithWireMemo = fn
+}
+
+func (s *AttestationGossip) hasObserverSpentOutputRefsApplier() bool {
+	return s.observerApplySpentRefsWithWireMemo != nil || s.observerApplySpentOutputRefs != nil
+}
+
+func (s *AttestationGossip) applyObserverSpentOutputRefs(
+	tx common.ObservedTx,
+	wireMemo string,
+	onOutcome func(applied bool),
+) {
+	if s.observerApplySpentRefsWithWireMemo != nil {
+		s.observerApplySpentRefsWithWireMemo(tx, wireMemo, onOutcome)
+		return
+	}
+	if s.observerApplySpentOutputRefs != nil {
+		s.observerApplySpentOutputRefs(tx, onOutcome)
+		return
+	}
+	if onOutcome != nil {
+		onOutcome(false)
+	}
+}
+
 // applySpentRefsAsync keeps pre-quorum sidecar imports off the attestation hot
 // path while preserving the final outcome callback through the concurrency
 // limiter. Capacity is acquired before spawning so an attacker cannot turn a
 // full limiter into an unbounded population of blocked goroutines. Saturated
 // work is rejected immediately; reconciliation can retry it later.
 func (s *AttestationGossip) applySpentRefsAsync(tx common.ObservedTx, onOutcome func(applied bool)) {
-	s.applySpentRefsAsyncWithLimit(tx, onOutcome, s.applySpentRefsSem, "pre-quorum")
+	if s.observerApplySpentRefsWithWireMemo != nil {
+		// Production wire-aware callers must resolve the authoritative plan even
+		// if this legacy convenience helper is reused in the future.
+		s.applySpentRefsAsyncWithLimit(tx, nil, onOutcome, s.applySpentRefsSem, "pre-quorum")
+		return
+	}
+	wireMemo := tx.Tx.Memo
+	s.applySpentRefsAsyncWithLimit(tx, &wireMemo, onOutcome, s.applySpentRefsSem, "pre-quorum")
+}
+
+func (s *AttestationGossip) applySpentRefsWithWireMemoAsync(
+	tx common.ObservedTx,
+	wireMemo string,
+	onOutcome func(applied bool),
+) {
+	s.applySpentRefsAsyncWithLimit(tx, &wireMemo, onOutcome, s.applySpentRefsSem, "pre-quorum")
 }
 
 // applyCommittedSpentRefsAsync uses capacity reserved for already-committed
 // observations, so pre-quorum imports cannot consume this fast-path reserve.
 // Periodic Thornode catch-up remains the durable fallback after saturation.
 func (s *AttestationGossip) applyCommittedSpentRefsAsync(tx common.ObservedTx, onOutcome func(applied bool)) {
-	s.applySpentRefsAsyncWithLimit(tx, onOutcome, s.applyCommittedSpentRefsSem, "committed")
+	s.applySpentRefsAsyncWithLimit(tx, nil, onOutcome, s.applyCommittedSpentRefsSem, "committed")
 }
 
 func (s *AttestationGossip) applySpentRefsAsyncWithLimit(
 	tx common.ObservedTx,
+	wireMemo *string,
 	onOutcome func(applied bool),
 	sem chan struct{},
 	origin string,
 ) {
-	if s.observerApplySpentOutputRefs == nil {
+	if !s.hasObserverSpentOutputRefsApplier() {
 		if onOutcome != nil {
 			onOutcome(false)
 		}
@@ -448,7 +497,20 @@ func (s *AttestationGossip) applySpentRefsAsyncWithLimit(
 	}
 	go func() {
 		defer func() { <-sem }()
-		s.observerApplySpentOutputRefs(tx, onOutcome)
+		resolvedWireMemo := tx.Tx.Memo
+		if wireMemo != nil {
+			resolvedWireMemo = *wireMemo
+		} else if s.observerApplySpentRefsWithWireMemo != nil {
+			planned, ok := s.findPlannedXMROutbound(tx)
+			if !ok {
+				if onOutcome != nil {
+					onOutcome(false)
+				}
+				return
+			}
+			resolvedWireMemo = planned.wireMemo
+		}
+		s.applyObserverSpentOutputRefs(tx, resolvedWireMemo, onOutcome)
 	}()
 }
 
@@ -474,7 +536,7 @@ func (s *AttestationGossip) handleQuorumTxCommitted(en *ebifrost.EventNotificati
 		}
 	}
 
-	if s.observerApplySpentOutputRefs != nil &&
+	if s.hasObserverSpentOutputRefsApplier() &&
 		!qtx.Inbound &&
 		qtx.ObsTx.Tx.Chain.Equals(common.XMRChain) &&
 		len(qtx.ObsTx.SpentOutputRefs) > 0 &&

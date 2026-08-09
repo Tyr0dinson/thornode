@@ -63,8 +63,10 @@ type plannedXMROutbound struct {
 	vaultPubKey      common.PubKey
 	vaultPubKeyFrost common.PubKey
 	coins            common.Coins
-	memo             string
+	memo             string // semantic memo used for THORChain attribution
+	wireMemo         string // exact transaction memo; empty is a valid value
 	maxGas           common.Gas
+	outHash          common.TxID
 }
 
 // shouldApplyXMRSpentRefsFromAttestations decides whether an exact XMR outbound
@@ -81,13 +83,24 @@ type plannedXMROutbound struct {
 // current active set: a retiring vault must remain able to certify its spend
 // after churn, while one member (including this node) must never get a bypass.
 func (s *AttestationGossip) shouldApplyXMRSpentRefsFromAttestations(obsTx common.ObservedTx, attestations []*common.Attestation) bool {
+	_, ok := s.authorizeXMRSpentRefsFromAttestations(obsTx, attestations)
+	return ok
+}
+
+// authorizeXMRSpentRefsFromAttestations performs the same source-vault and
+// THORChain-plan checks while retaining the plan's exact wire memo for the
+// sidecar import. The semantic observation remains untouched.
+func (s *AttestationGossip) authorizeXMRSpentRefsFromAttestations(
+	obsTx common.ObservedTx,
+	attestations []*common.Attestation,
+) (string, bool) {
 	if len(attestations) == 0 {
-		return false
+		return "", false
 	}
 	// Avoid repeating the vault and plan RPCs after this outbound has already
 	// reserved an import or established authoritative sidecar bindings.
 	if s.hasPendingOrConfirmedXMRSpentRefs(obsTx) {
-		return false
+		return "", false
 	}
 	memberAttestations, membershipSize, ok := s.sourceVaultAttestationQuorum(obsTx.ObservedPubKey, attestations)
 	if !ok {
@@ -97,19 +110,20 @@ func (s *AttestationGossip) shouldApplyXMRSpentRefsFromAttestations(obsTx common
 			Int("source_vault_attestations", memberAttestations).
 			Int("source_vault_members", membershipSize).
 			Msg("skip peer xmr spent refs: source vault quorum not reached")
-		return false
+		return "", false
 	}
-	if !s.observedXMRMatchesPlannedOutbound(obsTx) {
+	planned, ok := s.findPlannedXMROutbound(obsTx)
+	if !ok {
 		s.logger.Debug().
 			Str("tx_id", obsTx.Tx.ID.String()).
 			Str("memo", obsTx.Tx.Memo).
 			Msg("skip peer xmr spent refs: observed outbound does not match planned txout")
-		return false
+		return "", false
 	}
 	if !s.rememberAuthorizedXMRSpentRefs(obsTx) {
-		return false
+		return "", false
 	}
-	return true
+	return planned.wireMemo, true
 }
 
 // hasPendingOrConfirmedXMRSpentRefs is the cheap guard in front of Thornode
@@ -315,13 +329,22 @@ func xmrSpentRefsIdentity(refs []common.OutputRef) string {
 // Bifrost proves the tx was scheduled by THORChain, while the sidecar proves the
 // Monero spend really contains the claimed spent outputs.
 func (s *AttestationGossip) observedXMRMatchesPlannedOutbound(obsTx common.ObservedTx) bool {
+	_, ok := s.findPlannedXMROutbound(obsTx)
+	return ok
+}
+
+// findPlannedXMROutbound returns the exact THORChain plan which authorized the
+// observation. The plan retains both the semantic memo and the actual wire
+// memo so memoless XMR imports can authenticate transaction extra without
+// mutating the application-signed observation.
+func (s *AttestationGossip) findPlannedXMROutbound(obsTx common.ObservedTx) (plannedXMROutbound, bool) {
 	if s.bridge == nil {
-		return false
+		return plannedXMROutbound{}, false
 	}
 	parsed, err := memo.ParseMemo(common.LatestVersion, obsTx.Tx.Memo)
 	if err != nil {
 		s.logger.Debug().Err(err).Str("memo", obsTx.Tx.Memo).Msg("skip peer xmr spent refs: cannot parse memo")
-		return false
+		return plannedXMROutbound{}, false
 	}
 
 	switch {
@@ -329,21 +352,25 @@ func (s *AttestationGossip) observedXMRMatchesPlannedOutbound(obsTx common.Obser
 		// Migration/ragnarok memos carry the keysign height. Load the whole
 		// public txout for that height because a newly churned-in validator may
 		// not have the old vault pubkey in its local signer-key list.
-		return s.observedXMRMatchesKeysignHeight(obsTx, parsed.GetBlockHeight())
+		return s.findPlannedXMROutboundAtKeysignHeight(obsTx, parsed.GetBlockHeight())
 	case parsed.IsType(memo.TxOutbound), parsed.IsType(memo.TxRefund):
 		// Regular outbounds/refunds are tied back to the inbound voter actions,
 		// which are THORChain's planned txouts for that inbound.
-		return s.observedXMRMatchesInboundVoterAction(obsTx, parsed.GetTxID())
+		return s.findPlannedXMROutboundInVoterActions(obsTx, parsed.GetTxID())
 	default:
-		return false
+		return plannedXMROutbound{}, false
 	}
 }
 
-// observedXMRMatchesKeysignHeight matches a migration/ragnarok observation
-// against one of the planned txouts in the keysign block referenced by the memo.
-func (s *AttestationGossip) observedXMRMatchesKeysignHeight(obsTx common.ObservedTx, height int64) bool {
+// findPlannedXMROutboundAtKeysignHeight matches a migration/ragnarok
+// observation against the planned txouts in the keysign block referenced by
+// the memo.
+func (s *AttestationGossip) findPlannedXMROutboundAtKeysignHeight(
+	obsTx common.ObservedTx,
+	height int64,
+) (plannedXMROutbound, bool) {
 	if height <= 0 {
-		return false
+		return plannedXMROutbound{}, false
 	}
 	// Empty pubkey selects /thorchain/keysign/{height}. This is intentionally
 	// broader than /thorchain/keysign/{height}/{pubkey} so validators outside
@@ -351,37 +378,73 @@ func (s *AttestationGossip) observedXMRMatchesKeysignHeight(obsTx common.Observe
 	txOut, err := s.bridge.GetKeysign(height, "")
 	if err != nil {
 		s.logger.Debug().Err(err).Int64("height", height).Msg("skip peer xmr spent refs: cannot load keysign block")
-		return false
+		return plannedXMROutbound{}, false
 	}
+	candidates := make([]plannedXMROutbound, 0, len(txOut.TxArray))
 	for _, item := range txOut.TxArray {
-		planned := plannedXMROutboundFromThorclient(item.TxOutItem(txOut.Height))
-		if xmrObservedTxMatchesPlanned(obsTx, planned) {
-			return true
-		}
+		candidates = append(candidates, plannedXMROutboundFromThorclient(item.TxOutItem(txOut.Height)))
 	}
-	return false
+	return selectPlannedXMROutbound(obsTx, candidates)
 }
 
-// observedXMRMatchesInboundVoterAction matches non-migration XMR outbounds
+// findPlannedXMROutboundInVoterActions matches non-migration XMR outbounds
 // against the actions recorded on the inbound observed-tx voter.
-func (s *AttestationGossip) observedXMRMatchesInboundVoterAction(obsTx common.ObservedTx, inboundID common.TxID) bool {
+func (s *AttestationGossip) findPlannedXMROutboundInVoterActions(
+	obsTx common.ObservedTx,
+	inboundID common.TxID,
+) (plannedXMROutbound, bool) {
 	if inboundID.IsEmpty() {
-		return false
+		return plannedXMROutbound{}, false
 	}
 	voter, err := s.bridge.GetObservedTxVoter(inboundID.String())
 	if err != nil {
 		s.logger.Debug().Err(err).Str("inbound_id", inboundID.String()).Msg("skip peer xmr spent refs: cannot load observed tx voter")
-		return false
+		return plannedXMROutbound{}, false
 	}
 	if voter == nil {
-		return false
+		return plannedXMROutbound{}, false
 	}
+	candidates := make([]plannedXMROutbound, 0, len(voter.GetActions()))
 	for _, item := range voter.GetActions() {
-		if xmrObservedTxMatchesPlanned(obsTx, plannedXMROutboundFromThorchain(item)) {
-			return true
+		candidates = append(candidates, plannedXMROutboundFromThorchain(item))
+	}
+	return selectPlannedXMROutbound(obsTx, candidates)
+}
+
+// selectPlannedXMROutbound fails closed when otherwise matching plans disagree
+// about the exact wire memo. Once THORChain has populated OutHash, an exact
+// hash match safely disambiguates a rescheduled plan.
+func selectPlannedXMROutbound(
+	obsTx common.ObservedTx,
+	candidates []plannedXMROutbound,
+) (plannedXMROutbound, bool) {
+	matches := make([]plannedXMROutbound, 0, len(candidates))
+	exactHashMatches := make([]plannedXMROutbound, 0, 1)
+	for _, candidate := range candidates {
+		if !xmrObservedTxMatchesPlanned(obsTx, candidate) {
+			continue
+		}
+		if !candidate.outHash.IsEmpty() && !candidate.outHash.Equals(obsTx.Tx.ID) {
+			continue
+		}
+		matches = append(matches, candidate)
+		if !candidate.outHash.IsEmpty() && candidate.outHash.Equals(obsTx.Tx.ID) {
+			exactHashMatches = append(exactHashMatches, candidate)
 		}
 	}
-	return false
+	if len(exactHashMatches) > 0 {
+		matches = exactHashMatches
+	}
+	if len(matches) == 0 {
+		return plannedXMROutbound{}, false
+	}
+	selected := matches[0]
+	for _, candidate := range matches[1:] {
+		if candidate.wireMemo != selected.wireMemo {
+			return plannedXMROutbound{}, false
+		}
+	}
+	return selected, true
 }
 
 // plannedXMROutboundFromThorclient normalizes the bifrost thorclient txout
@@ -394,7 +457,9 @@ func plannedXMROutboundFromThorclient(item tctypes.TxOutItem) plannedXMROutbound
 		vaultPubKeyFrost: item.VaultPubKeyFrost,
 		coins:            item.Coins,
 		memo:             item.GetMemo(),
+		wireMemo:         item.Memo,
 		maxGas:           item.MaxGas,
+		outHash:          item.OutHash,
 	}
 }
 
@@ -408,7 +473,9 @@ func plannedXMROutboundFromThorchain(item thortypes.TxOutItem) plannedXMROutboun
 		vaultPubKeyFrost: item.VaultPubKeyFrost,
 		coins:            common.NewCoins(item.Coin),
 		memo:             item.GetMemo(),
+		wireMemo:         item.Memo,
 		maxGas:           item.MaxGas,
+		outHash:          item.OutHash,
 	}
 }
 

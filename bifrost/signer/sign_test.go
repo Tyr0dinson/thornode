@@ -171,6 +171,61 @@ func TestApplySpentOutputRefsFromObsUsesObservationHeight(t *testing.T) {
 	}
 }
 
+// TestApplySpentOutputRefsFromObsUsesWireMemo verifies that the sidecar import
+// authenticates the memo actually signed into the Monero transaction, while
+// the signer-created observation retains OriginalMemo for THORChain matching.
+func TestApplySpentOutputRefsFromObsUsesWireMemo(t *testing.T) {
+	spendTxHash := strings.Repeat("4", 64)
+	originalMemo := "OUT:" + strings.Repeat("A", 64)
+	chain := &spentRefApplyingChainClient{result: true}
+	signer := &Signer{
+		chains: map[common.Chain]chainclients.ChainClient{
+			common.XMRChain: chain,
+		},
+		logger: log.Logger,
+	}
+	txOut := types.TxOutItem{
+		Chain:        common.XMRChain,
+		Memo:         "",
+		OriginalMemo: originalMemo,
+	}
+	observation := &types.TxInItem{
+		BlockHeight:         123,
+		Tx:                  spendTxHash,
+		Sender:              "xmr-vault",
+		To:                  "xmr-recipient",
+		Coins:               common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(1))),
+		Gas:                 common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+		Memo:                txOut.GetMemo(),
+		ObservedVaultPubKey: types2.GetRandomPubKey(),
+		SpentOutputRefs: []*common.OutputRef{{
+			TxHash:      strings.Repeat("5", 64),
+			OutputIndex: 1,
+			KeyImage:    strings.Repeat("6", 64),
+			SpendTxHash: spendTxHash,
+		}},
+	}
+
+	if !signer.applySpentOutputRefsFromObs(context.Background(), txOut, observation) {
+		t.Fatal("expected spent-ref import to succeed")
+	}
+	if observation.Memo != originalMemo {
+		t.Fatalf("expected THORChain observation memo %q, got %q", originalMemo, observation.Memo)
+	}
+
+	chain.mu.Lock()
+	defer chain.mu.Unlock()
+	if len(chain.applied) != 1 {
+		t.Fatalf("expected one spent-ref application, got %d", len(chain.applied))
+	}
+	if chain.applied[0].Tx.Memo != originalMemo {
+		t.Fatalf("expected semantic import memo %q, got %q", originalMemo, chain.applied[0].Tx.Memo)
+	}
+	if len(chain.wireMemos) != 1 || chain.wireMemos[0] != txOut.Memo {
+		t.Fatalf("expected sidecar wire memo %q, got %q", txOut.Memo, chain.wireMemos)
+	}
+}
+
 // TestApplySpentOutputRefsFromObsReturnsImportResult ensures the signer keeps a
 // txout item retryable when the XMR chain client reports spent-ref import is
 // not yet durable.
@@ -560,9 +615,10 @@ func (b *MockChainClient) GetConfirmationCount(txIn types.TxIn) int64 {
 
 type spentRefApplyingChainClient struct {
 	MockChainClient
-	mu      sync.Mutex
-	result  bool
-	applied []common.ObservedTx
+	mu        sync.Mutex
+	result    bool
+	applied   []common.ObservedTx
+	wireMemos []string
 }
 
 func (b *spentRefApplyingChainClient) GetChain() common.Chain {
@@ -572,6 +628,19 @@ func (b *spentRefApplyingChainClient) GetChain() common.Chain {
 func (b *spentRefApplyingChainClient) ApplySpentOutputRefsWithOutcome(tx common.ObservedTx, onOutcome func(bool)) {
 	b.mu.Lock()
 	b.applied = append(b.applied, tx)
+	result := b.result
+	b.mu.Unlock()
+	onOutcome(result)
+}
+
+func (b *spentRefApplyingChainClient) ApplySpentOutputRefsWithWireMemoAndOutcome(
+	tx common.ObservedTx,
+	wireMemo string,
+	onOutcome func(bool),
+) {
+	b.mu.Lock()
+	b.applied = append(b.applied, tx)
+	b.wireMemos = append(b.wireMemos, wireMemo)
 	result := b.result
 	b.mu.Unlock()
 	onOutcome(result)

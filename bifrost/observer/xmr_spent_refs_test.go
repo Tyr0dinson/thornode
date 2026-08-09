@@ -90,7 +90,9 @@ func observerTestXMRPlan(t *testing.T) (common.ObservedTx, plannedXMROutbound) {
 		vaultPubKeyFrost: vaultPubKey,
 		coins:            coins,
 		memo:             memo,
+		wireMemo:         memo,
 		maxGas:           common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(5))},
+		outHash:          txID,
 	}
 
 	return obsTx, planned
@@ -340,6 +342,7 @@ func TestPeerXMRSpentRefsUnauthorizedFirstDoesNotBlockAuthorizedImport(t *testin
 
 	ag, _, _, _, bridge, _ := setupTestGossip(t)
 	obsTx, planned := observerTestXMRPlan(t)
+	planned.wireMemo = ""
 	unauthorized := secp256k1.GenPrivKey()
 	first := secp256k1.GenPrivKey()
 	second := secp256k1.GenPrivKey()
@@ -349,9 +352,13 @@ func TestPeerXMRSpentRefsUnauthorizedFirstDoesNotBlockAuthorizedImport(t *testin
 	bridge.getVaultFunc = observerTestVaultFunc(obsTx.ObservedPubKey, members...)
 	bridge.getKeysignFunc = observerTestKeysignFunc(planned)
 
-	applied := make(chan common.ObservedTx, 1)
-	ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx, onOutcome func(applied bool)) {
-		applied <- tx
+	type appliedImport struct {
+		tx       common.ObservedTx
+		wireMemo string
+	}
+	applied := make(chan appliedImport, 1)
+	ag.SetObserverApplySpentOutputRefsWithWireMemo(func(tx common.ObservedTx, wireMemo string, onOutcome func(applied bool)) {
+		applied <- appliedImport{tx: tx, wireMemo: wireMemo}
 		if onOutcome != nil {
 			onOutcome(true)
 		}
@@ -360,16 +367,26 @@ func TestPeerXMRSpentRefsUnauthorizedFirstDoesNotBlockAuthorizedImport(t *testin
 	// This first peer is neither active nor in the source vault. It should not
 	// set spentRefsApplied, otherwise the authorized peer below would be blocked.
 	ag.handleObservedTxAttestation(context.Background(), observerTestAttestTx(obsTx, unauthorized))
-	assertNoSpentRefImportDuring(t, applied, 100*time.Millisecond)
+	select {
+	case got := <-applied:
+		t.Fatalf("unexpected spent-ref import for %s", got.tx.Tx.ID)
+	case <-time.After(100 * time.Millisecond):
+	}
 
 	ag.handleObservedTxAttestation(context.Background(), observerTestAttestTx(obsTx, first))
-	assertNoSpentRefImportDuring(t, applied, 100*time.Millisecond)
+	select {
+	case got := <-applied:
+		t.Fatalf("unexpected spent-ref import for %s", got.tx.Tx.ID)
+	case <-time.After(100 * time.Millisecond):
+	}
 	ag.handleObservedTxAttestation(context.Background(), observerTestAttestTx(obsTx, second))
 
 	select {
 	case got := <-applied:
-		assert.Equal(t, obsTx.Tx.ID, got.Tx.ID)
-		assert.Equal(t, obsTx.SpentOutputRefs, got.SpentOutputRefs)
+		assert.Equal(t, obsTx.Tx.ID, got.tx.Tx.ID)
+		assert.Equal(t, obsTx.SpentOutputRefs, got.tx.SpentOutputRefs)
+		assert.Equal(t, obsTx.Tx.Memo, got.tx.Tx.Memo, "semantic memo must remain attested")
+		assert.Empty(t, got.wireMemo, "sidecar import must receive the planned memoless wire value")
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for authorized peer spent-ref import")
 	}
@@ -683,9 +700,21 @@ func TestXMRPlannedOutboundMatcherUsesInboundVoterActions(t *testing.T) {
 	inboundID := common.TxID(observerTestHash("xmr-peer-spent-ref-inbound"))
 	obsTx.Tx.Memo = memo.NewOutboundMemo(inboundID).String()
 	planned.memo = obsTx.Tx.Memo
+	planned.wireMemo = ""
 	bridge.getObservedTxVoterFunc = observerTestObservedTxVoterFunc(inboundID, planned)
 
 	assert.True(t, ag.observedXMRMatchesPlannedOutbound(obsTx))
+	matched, ok := ag.findPlannedXMROutbound(obsTx)
+	require.True(t, ok)
+	assert.Empty(t, matched.wireMemo, "memoless plan must retain an explicit empty wire memo")
+	assert.Equal(t, memo.NewOutboundMemo(inboundID).String(), obsTx.Tx.Memo,
+		"wire-memo resolution must not mutate the semantic observation")
+	wrongHashPlan := planned
+	wrongHashPlan.outHash = common.TxID(observerTestHash("different-planned-outbound"))
+	bridge.getObservedTxVoterFunc = observerTestObservedTxVoterFunc(inboundID, wrongHashPlan)
+	assert.False(t, ag.observedXMRMatchesPlannedOutbound(obsTx),
+		"a populated plan hash for another transaction must fail closed")
+	bridge.getObservedTxVoterFunc = observerTestObservedTxVoterFunc(inboundID, planned)
 
 	// Mutating the observed tx after the voter action is fixed should break the
 	// match, proving this path compares the full planned outbound rather than
@@ -704,6 +733,7 @@ func TestXMRPlannedOutboundMatcherUsesKeysignHeightForRagnarok(t *testing.T) {
 	ragnarokMemo := memo.NewRagnarokMemo(123).String()
 	obsTx.Tx.Memo = ragnarokMemo
 	planned.memo = ragnarokMemo
+	planned.wireMemo = ragnarokMemo
 	bridge.getKeysignFunc = observerTestKeysignFunc(planned)
 
 	assert.True(t, ag.observedXMRMatchesPlannedOutbound(obsTx))
@@ -770,8 +800,10 @@ func observerTestKeysignFunc(planned plannedXMROutbound) func(int64, string) (tc
 					VaultPubKey:      planned.vaultPubKey,
 					VaultPubKeyFrost: planned.vaultPubKeyFrost,
 					Coin:             planned.coins.GetCoin(common.XMRAsset),
-					Memo:             planned.memo,
+					Memo:             planned.wireMemo,
+					OriginalMemo:     planned.memo,
 					MaxGas:           planned.maxGas,
+					OutHash:          planned.outHash,
 				},
 			},
 		}, nil
@@ -795,8 +827,10 @@ func observerTestObservedTxVoterFunc(inboundID common.TxID, planned plannedXMROu
 					VaultPubKey:      planned.vaultPubKey,
 					VaultPubKeyFrost: planned.vaultPubKeyFrost,
 					Coin:             planned.coins.GetCoin(common.XMRAsset),
-					Memo:             planned.memo,
+					Memo:             planned.wireMemo,
+					OriginalMemo:     planned.memo,
 					MaxGas:           planned.maxGas,
+					OutHash:          planned.outHash,
 				},
 			},
 		}, nil

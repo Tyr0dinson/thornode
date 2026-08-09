@@ -207,3 +207,46 @@ func TestQuorumTxCommittedAppliesXMRSpentRefs(t *testing.T) {
 		assert.False(t, called, "spent refs callback should NOT fire when no refs present")
 	})
 }
+
+func TestQuorumTxCommittedUsesPlannedXMRWireMemo(t *testing.T) {
+	ag, _, _, _, bridge, _ := setupTestGossip(t)
+	obsTx, planned := observerTestXMRPlan(t)
+	planned.wireMemo = ""
+	bridge.getKeysignFunc = observerTestKeysignFunc(planned)
+
+	type appliedImport struct {
+		tx       common.ObservedTx
+		wireMemo string
+	}
+	applied := make(chan appliedImport, 1)
+	ag.SetObserverApplySpentOutputRefsWithWireMemo(func(tx common.ObservedTx, wireMemo string, onOutcome func(bool)) {
+		applied <- appliedImport{tx: tx, wireMemo: wireMemo}
+		if onOutcome != nil {
+			onOutcome(true)
+		}
+	})
+
+	qtx := common.QuorumTx{
+		ObsTx:   obsTx,
+		Inbound: false,
+		Attestations: []*common.Attestation{
+			{PubKey: []byte("other-node"), Signature: []byte("sig")},
+		},
+	}
+	payload, err := qtx.Marshal()
+	require.NoError(t, err)
+
+	k := observedTxKey(obsTx, false, false)
+	ag.mu.Lock()
+	ag.observedTxs[k] = ag.observedTxsPool.NewAttestationState(&attestableObservedTx{ObservedTx: &obsTx, inbound: false})
+	ag.mu.Unlock()
+
+	ag.handleQuorumTxCommitted(&ebifrost.EventNotification{Payload: payload})
+	select {
+	case got := <-applied:
+		assert.Equal(t, obsTx.Tx.Memo, got.tx.Tx.Memo)
+		assert.Empty(t, got.wireMemo)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for committed XMR spent-ref import")
+	}
+}

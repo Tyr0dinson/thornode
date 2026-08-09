@@ -172,56 +172,60 @@ func (s *AttestationGossip) handleObservedTxAttestationInternal(
 
 	var applySpentRefs *common.ObservedTx
 	var onApplySpentRefsOutcome func(applied bool)
-	if maybeApplySpentRefs != nil && maybeApplySpentRefsPayloadBound && s.observerApplySpentOutputRefs != nil &&
-		s.shouldApplyXMRSpentRefsFromAttestations(*maybeApplySpentRefs, maybeApplySpentRefsAttestations) {
-		s.mu.Lock()
-		liveState, ok := s.observedTxs[k]
-		conflictKey := xmrSpentRefsConflictKeyFor(*maybeApplySpentRefs)
-		identity := xmrSpentRefsIdentity(maybeApplySpentRefs.SpentOutputRefs)
-		if ok {
-			// Re-acquire locks in the normal global-then-state order. The
-			// authorization path above can block on thornode, so the originally
-			// captured state may have been pruned and returned to the pool.
-			liveState.mu.Lock()
-		}
-		s.mu.Unlock()
+	var applySpentRefsWireMemo string
+	if maybeApplySpentRefs != nil && maybeApplySpentRefsPayloadBound && s.hasObserverSpentOutputRefsApplier() {
+		wireMemo, authorized := s.authorizeXMRSpentRefsFromAttestations(*maybeApplySpentRefs, maybeApplySpentRefsAttestations)
+		if authorized {
+			applySpentRefsWireMemo = wireMemo
+			s.mu.Lock()
+			liveState, ok := s.observedTxs[k]
+			conflictKey := xmrSpentRefsConflictKeyFor(*maybeApplySpentRefs)
+			identity := xmrSpentRefsIdentity(maybeApplySpentRefs.SpentOutputRefs)
+			if ok {
+				// Re-acquire locks in the normal global-then-state order. The
+				// authorization path above can block on thornode, so the originally
+				// captured state may have been pruned and returned to the pool.
+				liveState.mu.Lock()
+			}
+			s.mu.Unlock()
 
-		if ok {
-			livePayloadMatches := false
-			if liveState.Item != nil {
-				if livePayload, payloadErr := liveState.Item.GetSignablePayload(); payloadErr == nil {
-					livePayloadMatches = sha256.Sum256(livePayload) == maybeApplySpentRefsPayloadHash
-				}
-			}
-			if livePayloadMatches && !liveState.spentRefsApplied {
-				// Only the currently indexed state bucket may be marked applied,
-				// and only after the sidecar confirms import success. Retryable or
-				// terminal failures must leave the opportunity open for a later
-				// authorized peer attestation, and must release the conflict-map
-				// entry so a differing authorized set is not pinned out.
-				applySpentRefs = maybeApplySpentRefs
-				onApplySpentRefsOutcome = func(applied bool) {
-					if applied {
-						s.markXMRSpentRefsApplied(k, maybeApplySpentRefsPayloadHash)
-						s.markHistoricalXMRSpentRefCertificateApplied(maybeApplySpentRefsPayloadHash)
+			if ok {
+				livePayloadMatches := false
+				if liveState.Item != nil {
+					if livePayload, payloadErr := liveState.Item.GetSignablePayload(); payloadErr == nil {
+						livePayloadMatches = sha256.Sum256(livePayload) == maybeApplySpentRefsPayloadHash
 					}
-					s.resolveAuthorizedXMRSpentRefs(conflictKey, identity, applied)
 				}
+				if livePayloadMatches && !liveState.spentRefsApplied {
+					// Only the currently indexed state bucket may be marked applied,
+					// and only after the sidecar confirms import success. Retryable or
+					// terminal failures must leave the opportunity open for a later
+					// authorized peer attestation, and must release the conflict-map
+					// entry so a differing authorized set is not pinned out.
+					applySpentRefs = maybeApplySpentRefs
+					onApplySpentRefsOutcome = func(applied bool) {
+						if applied {
+							s.markXMRSpentRefsApplied(k, maybeApplySpentRefsPayloadHash)
+							s.markHistoricalXMRSpentRefCertificateApplied(maybeApplySpentRefsPayloadHash)
+						}
+						s.resolveAuthorizedXMRSpentRefs(conflictKey, identity, applied)
+					}
+				}
+				liveState.mu.Unlock()
 			}
-			liveState.mu.Unlock()
-		}
-		if applySpentRefs == nil {
-			// Authorization reserves the exact conflict identity. If the captured
-			// state was pruned/replaced before admission completed, release that
-			// reservation so a later exact certificate can retry.
-			s.resolveAuthorizedXMRSpentRefs(conflictKey, identity, false)
+			if applySpentRefs == nil {
+				// Authorization reserves the exact conflict identity. If the captured
+				// state was pruned/replaced before admission completed, release that
+				// reservation so a later exact certificate can retry.
+				s.resolveAuthorizedXMRSpentRefs(conflictKey, identity, false)
+			}
 		}
 	}
 
 	// Apply XMR spent output refs after all authorization and state bookkeeping.
 	// This seeds the sidecar only; it does not add a local attestation.
-	if applySpentRefs != nil && s.observerApplySpentOutputRefs != nil {
-		s.applySpentRefsAsync(*applySpentRefs, onApplySpentRefsOutcome)
+	if applySpentRefs != nil && s.hasObserverSpentOutputRefsApplier() {
+		s.applySpentRefsWithWireMemoAsync(*applySpentRefs, applySpentRefsWireMemo, onApplySpentRefsOutcome)
 	}
 	return true
 }

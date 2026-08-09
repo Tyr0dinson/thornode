@@ -221,12 +221,11 @@ func main() {
 	// client. NewObserver also does this defensively for non-main call sites.
 	ag.SetObserverHandleObservedTxCommitted(obs)
 	ag.SetObserverHandleErrataTxCommitted(obs)
+	if xmrClient, ok := chains[tcommon.XMRChain].(*monero.Client); ok {
+		ag.SetObserverApplySpentOutputRefsWithWireMemo(xmrClient.ApplySpentOutputRefsWithWireMemoAndOutcome)
+	}
 	if err = obs.Start(ctx); err != nil {
 		log.Fatal().Err(err).Msg("fail to start observer")
-	}
-
-	if xmrClient, ok := chains[tcommon.XMRChain].(*monero.Client); ok {
-		ag.SetObserverApplySpentOutputRefs(xmrClient.ApplySpentOutputRefsWithOutcome)
 	}
 
 	// start signer

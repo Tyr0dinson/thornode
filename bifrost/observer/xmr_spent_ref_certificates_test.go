@@ -156,6 +156,7 @@ func observedXMRPayloadApplied(t *testing.T, ag *AttestationGossip, k txKey) boo
 func TestHistoricalXMRSpentRefCertificateInactiveQuorumIsCertificateOnly(t *testing.T) {
 	ag, _, keys, _, bridge, _ := setupTestGossip(t)
 	obsTx, planned := observerTestXMRPlan(t)
+	planned.wireMemo = ""
 	second := secp256k1.GenPrivKey()
 	third := secp256k1.GenPrivKey()
 	members := common.PubKeys{
@@ -167,18 +168,26 @@ func TestHistoricalXMRSpentRefCertificateInactiveQuorumIsCertificateOnly(t *test
 	bridge.getVaultFunc = observerTestRetiringVaultFunc(obsTx.ObservedPubKey, members...)
 	bridge.getKeysignFunc = observerTestKeysignFunc(planned)
 
-	applied := make(chan common.ObservedTx, 1)
-	ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx, onOutcome func(bool)) {
+	type appliedImport struct {
+		tx       common.ObservedTx
+		wireMemo string
+	}
+	applied := make(chan appliedImport, 1)
+	ag.SetObserverApplySpentOutputRefsWithWireMemo(func(tx common.ObservedTx, wireMemo string, onOutcome func(bool)) {
 		if onOutcome != nil {
 			onOutcome(true)
 		}
-		applied <- tx
+		applied <- appliedImport{tx: tx, wireMemo: wireMemo}
 	})
 
 	// The local process has churned out, but remains a member of the retiring
 	// source vault. Its share is retained only in the certificate store.
 	require.NoError(t, ag.AttestObservedTx(context.Background(), &obsTx, false, false))
-	assertNoSpentRefImportDuring(t, applied, 100*time.Millisecond)
+	select {
+	case got := <-applied:
+		t.Fatalf("unexpected spent-ref import for %s", got.tx.Tx.ID)
+	case <-time.After(100 * time.Millisecond):
+	}
 	ag.mu.Lock()
 	observedCount := len(ag.observedTxs)
 	certificateCount := len(ag.historicalXMRSpentRefCertificates)
@@ -192,8 +201,10 @@ func TestHistoricalXMRSpentRefCertificateInactiveQuorumIsCertificateOnly(t *test
 	require.NoError(t, ag.acceptHistoricalXMRSpentRefCertificate(secondCertificate, secondPeer))
 	select {
 	case got := <-applied:
-		assert.Equal(t, obsTx.Tx.ID, got.Tx.ID)
-		assert.Equal(t, obsTx.SpentOutputRefs, got.SpentOutputRefs)
+		assert.Equal(t, obsTx.Tx.ID, got.tx.Tx.ID)
+		assert.Equal(t, obsTx.SpentOutputRefs, got.tx.SpentOutputRefs)
+		assert.Equal(t, obsTx.Tx.Memo, got.tx.Tx.Memo)
+		assert.Empty(t, got.wireMemo)
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for historical certificate quorum import")
 	}
@@ -477,6 +488,7 @@ func TestHistoricalXMRSpentRefCertificateRejectsUnauthorizedVariants(t *testing.
 			name: "unplanned outbound",
 			configure: func(_ *AttestationGossip, bridge *MockThorchainBridge, obs common.ObservedTx, planned plannedXMROutbound, signer *secp256k1.PrivKey) (common.AttestTx, peer.ID) {
 				planned.memo = "MIGRATE:999"
+				planned.wireMemo = "MIGRATE:999"
 				bridge.getKeysignFunc = observerTestKeysignFunc(planned)
 				return observerTestSignedHistoricalXMRCertificate(t, obs, signer), observerTestPeerID(t, signer)
 			},

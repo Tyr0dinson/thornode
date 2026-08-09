@@ -221,6 +221,7 @@ type Client struct {
 // drifting independently. A missing final-outcome hook must be a build error,
 // not a runtime assertion miss which lets the signer discard the outbound.
 var _ types.SpentOutputRefsApplier = (*Client)(nil)
+var _ types.WireMemoSpentOutputRefsApplier = (*Client)(nil)
 
 // NewClient creates a monero chain client backed by the shared block scanner.
 func NewClient(
@@ -2602,7 +2603,7 @@ func (c *Client) restoreKeyshareContext(ctx context.Context, vaultPubKey common.
 // Callers that do not need the final outcome can use this fire-and-forget
 // wrapper; the bounded retry continues in the background when appropriate.
 func (c *Client) ApplySpentOutputRefs(tx common.ObservedTx) {
-	c.applySpentOutputRefs(tx, nil)
+	c.applySpentOutputRefs(tx, nil, nil)
 }
 
 // ApplySpentOutputRefsWithOutcome reports the import's final outcome exactly
@@ -2611,13 +2612,29 @@ func (c *Client) ApplySpentOutputRefs(tx common.ObservedTx) {
 // retries, or could not be queued. Observer latch/conflict bookkeeping needs
 // the final outcome, not just the first attempt's.
 func (c *Client) ApplySpentOutputRefsWithOutcome(tx common.ObservedTx, onOutcome func(applied bool)) {
-	c.applySpentOutputRefs(tx, onOutcome)
+	c.applySpentOutputRefs(tx, nil, onOutcome)
+}
+
+// ApplySpentOutputRefsWithWireMemoAndOutcome imports refs while preserving the
+// semantic observation memo separately from the exact transaction wire memo.
+// wireMemo is used only for Sidecar transaction-extra authentication and may
+// be explicitly empty.
+func (c *Client) ApplySpentOutputRefsWithWireMemoAndOutcome(
+	tx common.ObservedTx,
+	wireMemo string,
+	onOutcome func(applied bool),
+) {
+	c.applySpentOutputRefs(tx, &wireMemo, onOutcome)
 }
 
 // applySpentOutputRefs centralizes the first attempt and final-outcome callback
 // so observer conflict bookkeeping can wait for retry exhaustion or success.
-func (c *Client) applySpentOutputRefs(tx common.ObservedTx, onOutcome func(applied bool)) bool {
-	applied, retry := c.applySpentOutputRefsOnce(tx)
+func (c *Client) applySpentOutputRefs(
+	tx common.ObservedTx,
+	wireMemo *string,
+	onOutcome func(applied bool),
+) bool {
+	applied, retry := c.applySpentOutputRefsOnce(tx, wireMemo)
 	if !retry {
 		if onOutcome != nil {
 			onOutcome(applied)
@@ -2645,14 +2662,20 @@ func (c *Client) applySpentOutputRefs(tx common.ObservedTx, onOutcome func(appli
 	// callers that still need to broadcast the tx, such as local
 	// sign/consolidation paths, are not blocked waiting for the tx to appear in
 	// the Monero daemon.
-	c.queueSpentOutputRefsRetry(tx, interval, maxAttempts, onOutcome)
+	c.queueSpentOutputRefsRetry(tx, wireMemo, interval, maxAttempts, onOutcome)
 	return applied
 }
 
 // queueSpentOutputRefsRetry owns the async retry goroutine. If the client is
 // stopping, it reports a failed outcome immediately so observer latches are
 // not left pending forever.
-func (c *Client) queueSpentOutputRefsRetry(tx common.ObservedTx, interval time.Duration, maxAttempts int, onOutcome func(applied bool)) {
+func (c *Client) queueSpentOutputRefsRetry(
+	tx common.ObservedTx,
+	wireMemo *string,
+	interval time.Duration,
+	maxAttempts int,
+	onOutcome func(applied bool),
+) {
 	if c.wg == nil || c.stopchan == nil {
 		c.logger.Warn().Str("tx_hash", tx.Tx.ID.String()).Msg("skip xmr spent output refs retry: client lifecycle is not initialized")
 		if onOutcome != nil {
@@ -2679,7 +2702,7 @@ func (c *Client) queueSpentOutputRefsRetry(tx common.ObservedTx, interval time.D
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
-		c.retrySpentOutputRefs(tx, interval, maxAttempts, onOutcome)
+		c.retrySpentOutputRefs(tx, wireMemo, interval, maxAttempts, onOutcome)
 	}()
 }
 
@@ -2687,7 +2710,7 @@ func (c *Client) queueSpentOutputRefsRetry(tx common.ObservedTx, interval time.D
 // result is true only for transient failures where another bounded attempt can
 // still seed the sidecar, such as the spend tx not being indexed yet or the
 // sidecar being temporarily unavailable.
-func (c *Client) applySpentOutputRefsOnce(tx common.ObservedTx) (bool, bool) {
+func (c *Client) applySpentOutputRefsOnce(tx common.ObservedTx, wireMemo *string) (bool, bool) {
 	if err := validateXMRSpentRefsForSidecar(tx); err != nil {
 		c.logger.Warn().
 			Err(err).
@@ -2710,6 +2733,11 @@ func (c *Client) applySpentOutputRefsOnce(tx common.ObservedTx) (bool, bool) {
 		return false, false
 	}
 	outbound := xmrOutboundMeta(tx.Tx, tx.XmrTxKey)
+	if wireMemo != nil {
+		// Keep the certificate and durable claim bound to tx's semantic memo;
+		// only the Sidecar metadata proof is checked against the wire memo.
+		outbound.Memo = *wireMemo
+	}
 	outbound.Origin = sidecar.OutgoingOriginVaultCertified
 	outbound.CertificateHash = certificateHash
 	result, err := c.sidecar.MarkSpent(vaultPubKey, txHash, refs, false, outbound)
@@ -2984,7 +3012,13 @@ func isRetryableSpentRefsSidecarErr(err error) bool {
 // window. This covers peer pre-quorum imports where the XMR spend may not be
 // mined/indexed yet or where the local sidecar is temporarily unavailable, and
 // Thornode catchup cannot help until the refs are committed.
-func (c *Client) retrySpentOutputRefs(tx common.ObservedTx, interval time.Duration, maxAttempts int, onOutcome func(applied bool)) {
+func (c *Client) retrySpentOutputRefs(
+	tx common.ObservedTx,
+	wireMemo *string,
+	interval time.Duration,
+	maxAttempts int,
+	onOutcome func(applied bool),
+) {
 	timer := time.NewTimer(interval)
 	defer timer.Stop()
 
@@ -3000,7 +3034,7 @@ func (c *Client) retrySpentOutputRefs(tx common.ObservedTx, interval time.Durati
 		case <-timer.C:
 		}
 
-		applied, retry := c.applySpentOutputRefsOnce(tx)
+		applied, retry := c.applySpentOutputRefsOnce(tx, wireMemo)
 		if !retry {
 			if onOutcome != nil {
 				onOutcome(applied)
