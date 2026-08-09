@@ -611,6 +611,7 @@ func TestConcurrentStaleRegistrationCannotDowngradeContinuity(t *testing.T) {
 				next := uint64(100)
 				_ = json.NewEncoder(w).Encode(RegisterVaultResp{
 					Registered:         true,
+					EffectiveBirthday:  100,
 					ResetEpoch:         1,
 					ExpectedNextHeight: &next,
 				})
@@ -619,6 +620,7 @@ func TestConcurrentStaleRegistrationCannotDowngradeContinuity(t *testing.T) {
 			next := uint64(40)
 			_ = json.NewEncoder(w).Encode(RegisterVaultResp{
 				Registered:         true,
+				EffectiveBirthday:  40,
 				ResetEpoch:         2,
 				ExpectedNextHeight: &next,
 			})
@@ -777,7 +779,7 @@ func TestRegisterVaultRejectsNilContinuityCursor(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
-		_, _ = w.Write([]byte(`{"registered":true,"reset_epoch":0}`))
+		_, _ = w.Write([]byte(`{"registered":true,"effective_birthday":1,"reset_epoch":0}`))
 	}))
 	defer server.Close()
 
@@ -790,6 +792,161 @@ func TestRegisterVaultRejectsNilContinuityCursor(t *testing.T) {
 	}
 	if _, ok := client.cachedScannerContinuity(); ok {
 		t.Fatal("invalid registration response must not populate continuity cache")
+	}
+}
+
+func TestRegisterVaultAcceptsEarlierEffectiveBirthday(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/monero/vaults/register" {
+			http.NotFound(w, r)
+			return
+		}
+		var req RegisterVaultReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.VaultCreationHeight != 559 {
+			http.Error(w, "unexpected birthday", http.StatusBadRequest)
+			return
+		}
+		_, _ = w.Write([]byte(`{
+			"registered":false,
+			"effective_birthday":504,
+			"reset_epoch":0,
+			"expected_next_height":600
+		}`))
+	}))
+	defer server.Close()
+
+	client, err := NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	resp, err := client.RegisterVault(RegisterVaultReq{
+		VaultPubKey:         "vault",
+		VaultCreationHeight: 559,
+	})
+	if err != nil {
+		t.Fatalf("register later retry against stored birthday: %v", err)
+	}
+	if resp.EffectiveBirthday != 504 {
+		t.Fatalf("effective birthday %d, want 504", resp.EffectiveBirthday)
+	}
+}
+
+func TestRegisterVaultRejectsUnsafeEffectiveBirthday(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		birthday int64
+		body     string
+	}{
+		{
+			name:     "missing",
+			birthday: 559,
+			body:     `{"registered":false,"reset_epoch":0,"expected_next_height":600}`,
+		},
+		{
+			name:     "zero",
+			birthday: 559,
+			body:     `{"registered":false,"effective_birthday":0,"reset_epoch":0,"expected_next_height":600}`,
+		},
+		{
+			name:     "later than candidate",
+			birthday: 559,
+			body:     `{"registered":false,"effective_birthday":560,"reset_epoch":0,"expected_next_height":600}`,
+		},
+		{
+			name:     "outside int64 scanner range",
+			birthday: 559,
+			body:     `{"registered":false,"effective_birthday":9223372036854775808,"reset_epoch":0,"expected_next_height":600}`,
+		},
+		{
+			name:     "recovery response with reset but no cursor",
+			birthday: 0,
+			body:     `{"registered":false,"effective_birthday":0,"reset_epoch":1}`,
+		},
+	}
+
+	for _, test := range tests {
+		testCase := test
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(testCase.body))
+			}))
+			defer server.Close()
+
+			client, err := NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+			if err != nil {
+				t.Fatalf("new client: %v", err)
+			}
+			if _, err = client.RegisterVault(RegisterVaultReq{
+				VaultPubKey:         "vault",
+				VaultCreationHeight: testCase.birthday,
+			}); err == nil {
+				t.Fatal("expected unsafe effective birthday to fail closed")
+			}
+			if _, ok := client.cachedScannerContinuity(); ok {
+				t.Fatal("unsafe registration response must not populate continuity cache")
+			}
+		})
+	}
+}
+
+func TestRegisterVaultAllowsExactRetryBirthdayZero(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"registered":false,
+			"effective_birthday":504,
+			"reset_epoch":0,
+			"expected_next_height":600
+		}`))
+	}))
+	defer server.Close()
+
+	client, err := NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	if _, err = client.RegisterVault(RegisterVaultReq{
+		VaultPubKey:         "vault",
+		VaultCreationHeight: 0,
+	}); err != nil {
+		t.Fatalf("exact retry with omitted birthday: %v", err)
+	}
+}
+
+func TestRegisterVaultAllowsRecoveryOnlyRegistrationWithoutCursor(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"registered":true,
+			"effective_birthday":0,
+			"reset_epoch":0
+		}`))
+	}))
+	defer server.Close()
+
+	client, err := NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	if _, err = client.RegisterVault(RegisterVaultReq{
+		VaultPubKey:         "recovery-vault",
+		VaultCreationHeight: 0,
+	}); err != nil {
+		t.Fatalf("recovery-only registration without cursor: %v", err)
+	}
+	if _, ok := client.cachedScannerContinuity(); ok {
+		t.Fatal("recovery-only registration must not invent scanner continuity")
 	}
 }
 

@@ -531,6 +531,30 @@ func (c *Client) RegisterVaultContext(ctx context.Context, req RegisterVaultReq)
 	if err := c.callContext(ctx, http.MethodPost, c.registerPath, req, &out); err != nil {
 		return RegisterVaultResp{}, fmt.Errorf("fail to call register vault endpoint: %w", err)
 	}
+	if out.EffectiveBirthday > math.MaxInt64 {
+		return RegisterVaultResp{}, fmt.Errorf("register vault endpoint returned effective birthday outside the int64 scanner range")
+	}
+	// A positive birthday is a scanner-enrollment lower bound. The sidecar may
+	// retain an earlier durable birthday on an idempotent retry, but it must not
+	// acknowledge zero or a later height which could skip required history.
+	if req.VaultCreationHeight > 0 {
+		if out.EffectiveBirthday == 0 {
+			return RegisterVaultResp{}, fmt.Errorf("register vault endpoint returned zero effective birthday for requested birthday %d", req.VaultCreationHeight)
+		}
+		if out.EffectiveBirthday > uint64(req.VaultCreationHeight) {
+			return RegisterVaultResp{}, fmt.Errorf(
+				"register vault endpoint returned effective birthday %d after requested birthday %d",
+				out.EffectiveBirthday,
+				req.VaultCreationHeight,
+			)
+		}
+	}
+	// A recovery-only registration has no birthday and does not enroll the
+	// scanner, so there is no cursor to publish yet. Once the sidecar reports a
+	// positive durable birthday, continuity becomes mandatory.
+	if out.ExpectedNextHeight == nil && out.EffectiveBirthday == 0 && out.ResetEpoch == 0 {
+		return out, nil
+	}
 	// New sidecars return their cursor on every registration, including the
 	// idempotent already-registered case. A newly discovered older vault may
 	// have rewound it, so publish that result to the scanner immediately.

@@ -13,6 +13,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
+	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // TestVaultRegistrationFailurePropagatesError validates the bug where a sidecar
@@ -74,27 +75,26 @@ func TestVaultRegistrationFailurePropagatesError(t *testing.T) {
 		"error should indicate registration failure")
 }
 
-// TestRegistrationFailureSkipsOnlyBadVault verifies that a stale or malformed
-// XMR vault registration entry does not wedge scanner refresh for every other
-// vault. The failed vault is skipped; valid vaults remain usable.
-//
-// This test simulates the exact refreshAsgardLookup logic: iterate vaults,
-// call ensureVaultRegistered, and verify the fail-open path.
-func TestRegistrationFailureSkipsOnlyBadVault(t *testing.T) {
+// TestRegistrationFailureFailsAsgardRefreshClosed verifies that a partial
+// address lookup is never published when any nonempty FROST vault cannot be
+// registered. Otherwise Bifrost could advance while silently dropping an
+// inbound addressed to the missing vault.
+func TestRegistrationFailureFailsAsgardRefreshClosed(t *testing.T) {
 	t.Parallel()
 
+	const requestedBirthday = int64(559)
 	frostKey := testVaultPubKey(t, "frost-refresh-fail")
 	badKey := testVaultPubKey(t, "bad-refresh-fail")
+	previousKey := testVaultPubKey(t, "previous-refresh-lookup")
 
-	var registeredKeys []string
+	var registered []sidecar.RegisterVaultReq
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/monero/vaults/register" {
 			var req sidecar.RegisterVaultReq
 			_ = json.NewDecoder(r.Body).Decode(&req)
-			registeredKeys = append(registeredKeys, req.VaultPubKey)
+			registered = append(registered, req)
 
-			// First vault succeeds, second vault fails.
 			if req.VaultPubKey == badKey.String() {
 				http.Error(
 					w,
@@ -105,7 +105,8 @@ func TestRegistrationFailureSkipsOnlyBadVault(t *testing.T) {
 			}
 			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{
 				Registered:         true,
-				ExpectedNextHeight: uint64Ptr(0),
+				EffectiveBirthday:  504,
+				ExpectedNextHeight: uint64Ptr(600),
 			})
 			return
 		}
@@ -116,35 +117,37 @@ func TestRegistrationFailureSkipsOnlyBadVault(t *testing.T) {
 	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 	require.NoError(t, err)
 
-	// Simulate the refreshAsgardLookup logic: register each vault.
-	type testVault struct {
-		pubKey common.PubKey
-	}
-	vaults := []testVault{
-		{pubKey: frostKey},
-		{pubKey: badKey},
-	}
+	scanner := NewScanner(
+		testLogger(),
+		signer,
+		&scannerMemoBridge{asgards: ttypes.Vaults{
+			{
+				PubKey:                 testVaultPubKey(t, "secp-refresh-success"),
+				PubKeyFrost:            frostKey,
+				VaultCreationHeightXmr: requestedBirthday,
+			},
+			{
+				PubKey:                 testVaultPubKey(t, "secp-refresh-fail"),
+				PubKeyFrost:            badKey,
+				VaultCreationHeightXmr: requestedBirthday,
+			},
+		}},
+		common.XMRChain,
+		common.EmptyPubKey,
+		72,
+	)
+	scanner.asgardLookup = map[string]common.PubKey{"previous-address": previousKey}
 
-	var registrationErrors int
-	for _, v := range vaults {
-		_, regErr := ensureVaultRegistered(
-			testLogger(),
-			signer,
-			common.XMRChain,
-			v.pubKey,
-			nil,
-			"test",
-			0,
-		)
-		if regErr != nil {
-			registrationErrors++
-			continue
-		}
-	}
+	refreshErr := scanner.refreshAsgardLookup(requestedBirthday)
+	require.Error(t, refreshErr, "one failed FROST enrollment must fail the whole refresh")
+	assert.Contains(t, refreshErr.Error(), badKey.String())
+	require.Len(t, registered, 2)
+	assert.Equal(t, frostKey.String(), registered[0].VaultPubKey)
+	assert.Equal(t, requestedBirthday, registered[0].VaultCreationHeight)
+	assert.Equal(t, badKey.String(), registered[1].VaultPubKey)
 
-	// Verify: first vault registered successfully, second vault failed.
-	assert.Equal(t, 2, len(registeredKeys))
-	assert.Equal(t, frostKey.String(), registeredKeys[0])
-	assert.Equal(t, badKey.String(), registeredKeys[1])
-	assert.Equal(t, 1, registrationErrors)
+	scanner.asgardMu.RLock()
+	defer scanner.asgardMu.RUnlock()
+	assert.Equal(t, map[string]common.PubKey{"previous-address": previousKey}, scanner.asgardLookup,
+		"failed refresh must not replace the last complete lookup")
 }

@@ -88,6 +88,7 @@ func testVaultPubKeyAndAddress(t *testing.T) (common.PubKey, common.Address) {
 func testRegisterVaultResponse(nextHeight uint64) sidecar.RegisterVaultResp {
 	return sidecar.RegisterVaultResp{
 		Registered:         true,
+		EffectiveBirthday:  nextHeight,
 		ResetEpoch:         0,
 		ExpectedNextHeight: &nextHeight,
 	}

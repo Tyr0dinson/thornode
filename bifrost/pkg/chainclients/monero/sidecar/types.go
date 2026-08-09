@@ -264,6 +264,7 @@ type RegisterVaultReq struct {
 
 type RegisterVaultResp struct {
 	Registered         bool    `json:"registered"`
+	EffectiveBirthday  uint64  `json:"effective_birthday"`
 	ResetEpoch         uint64  `json:"reset_epoch"`
 	ExpectedNextHeight *uint64 `json:"expected_next_height,omitempty"`
 }
@@ -275,6 +276,7 @@ type RegisterVaultResp struct {
 func (r *RegisterVaultResp) UnmarshalJSON(data []byte) error {
 	type wireResponse struct {
 		Registered         *bool   `json:"registered"`
+		EffectiveBirthday  *uint64 `json:"effective_birthday"`
 		ResetEpoch         *uint64 `json:"reset_epoch"`
 		ExpectedNextHeight *uint64 `json:"expected_next_height"`
 	}
@@ -286,12 +288,16 @@ func (r *RegisterVaultResp) UnmarshalJSON(data []byte) error {
 	if wire.Registered == nil {
 		return fmt.Errorf("register vault response omitted registered")
 	}
+	if wire.EffectiveBirthday == nil {
+		return fmt.Errorf("register vault response omitted effective_birthday")
+	}
 	if wire.ResetEpoch == nil {
 		return fmt.Errorf("register vault response omitted reset_epoch")
 	}
 
 	*r = RegisterVaultResp{
 		Registered:         *wire.Registered,
+		EffectiveBirthday:  *wire.EffectiveBirthday,
 		ResetEpoch:         *wire.ResetEpoch,
 		ExpectedNextHeight: wire.ExpectedNextHeight,
 	}

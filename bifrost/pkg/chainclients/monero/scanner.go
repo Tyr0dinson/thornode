@@ -2388,8 +2388,7 @@ func (s *Scanner) refreshAsgardLookup(nextScanHeight int64) error {
 			vault.PubKeyFrost,
 			xmrVaultRegistrationBirthday(vault.VaultCreationHeightXmr, nextScanHeight),
 		); addErr != nil {
-			s.logger.Debug().Err(addErr).Str("vault_pubkey", vault.PubKey.String()).Msg("skip xmr vault during asgard lookup refresh")
-			continue
+			return fmt.Errorf("fail to refresh active xmr vault %s: %w", vault.PubKey.String(), addErr)
 		}
 	}
 
@@ -2406,14 +2405,13 @@ func (s *Scanner) refreshAsgardLookup(nextScanHeight int64) error {
 			s.logger.Debug().Err(vaultErr).Str("vault_pubkey", pair.PubKey.String()).Msg("skip xmr pubkey during asgard lookup refresh")
 			continue
 		}
-		if err := s.addFrostVaultToLookup(
+		if addErr := s.addFrostVaultToLookup(
 			lookup,
 			seenVaults,
 			vault.PubKeyFrost,
 			xmrVaultRegistrationBirthday(vault.VaultCreationHeightXmr, nextScanHeight),
-		); err != nil {
-			s.logger.Debug().Err(err).Str("vault_pubkey", vault.PubKey.String()).Msg("skip xmr vault during pubkey lookup refresh")
-			continue
+		); addErr != nil {
+			return fmt.Errorf("fail to refresh xmr vault %s from pubkey lookup: %w", vault.PubKey.String(), addErr)
 		}
 	}
 
