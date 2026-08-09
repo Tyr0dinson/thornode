@@ -1028,7 +1028,7 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 	defer func() { _ = stagedIter.Close() }()
 	for ; stagedIter.Valid(); stagedIter.Next() {
 		var list types.StagedOutboundList
-		if err := k.Cdc().Unmarshal(stagedIter.Value(), &list); err != nil {
+		if err = k.Cdc().Unmarshal(stagedIter.Value(), &list); err != nil {
 			ctx.Logger().Error("fail to unmarshal staged outbound list", "error", err)
 			continue
 		}
