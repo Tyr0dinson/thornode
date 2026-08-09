@@ -212,6 +212,8 @@ type Client struct {
 
 	spentRefsRetryInterval    time.Duration
 	spentRefsRetryMaxAttempts int
+	committedWireMemoMu       sync.RWMutex
+	committedWireMemoCache    map[string]committedXMRPlanMemo
 
 	recoveryRetryInterval    time.Duration
 	recoveryRetryMaxAttempts int
@@ -333,6 +335,7 @@ func NewClient(
 		stopchan:                  make(chan struct{}),
 		spentRefsRetryInterval:    constants.ThorchainBlockTime,
 		spentRefsRetryMaxAttempts: defaultXMRSpentRefsRetryMaxAttempts,
+		committedWireMemoCache:    make(map[string]committedXMRPlanMemo),
 		recoveryRetryInterval:     constants.ThorchainBlockTime,
 		recoveryRetryMaxAttempts:  defaultXMRRecoveryRetryMaxAttempts,
 	}
@@ -756,9 +759,17 @@ func (c *Client) catchupSpentOutputRefs() {
 		c.logger.Err(err).Msg("xmr catchup: failed to get vault pubkeys")
 		return
 	}
+	seenSpendTxs := make(map[string]struct{})
+	snapshotComplete := true
+	defer func() {
+		if snapshotComplete {
+			c.pruneCommittedXMRPlanCache(seenSpendTxs)
+		}
+	}()
 	for _, vaultPubKey := range vaultKeys {
 		refs, err := c.thorchainBridge.GetXMRSpentOutputRefs(vaultPubKey)
 		if err != nil {
+			snapshotComplete = false
 			c.logger.Warn().
 				Err(err).
 				Str("vault", vaultPubKey.String()).
@@ -780,6 +791,7 @@ func (c *Client) catchupSpentOutputRefs() {
 					Msg("xmr catchup: skipping spent ref without spend tx hash")
 				continue
 			}
+			seenSpendTxs[strings.ToUpper(spendTxHash)] = struct{}{}
 			refsBySpendTx[spendTxHash] = append(refsBySpendTx[spendTxHash], *ref)
 		}
 
@@ -858,9 +870,329 @@ func (c *Client) observedXMROutboundForSpentRefs(txHash string, vaultPubKey comm
 			Msg("xmr catchup: skipping invalid spent output refs")
 		return common.ObservedTx{}, nil, false
 	}
+	consensusHeight := voter.GetHeight()
+	if consensusHeight <= 0 {
+		consensusHeight = voter.GetFinalisedHeight()
+	}
+	wireMemo, ok := c.committedXMRWireMemo(observed, consensusHeight)
+	if !ok {
+		c.logger.Warn().
+			Str("tx_hash", txHash).
+			Str("vault", vaultPubKey.String()).
+			Str("semantic_memo", observed.Tx.Memo).
+			Msg("xmr catchup: exact planned wire memo is unavailable")
+		return common.ObservedTx{}, nil, false
+	}
 	outbound := xmrOutboundMeta(observed.Tx, observed.XmrTxKey)
+	outbound.Memo = wireMemo
 	outbound.Origin = sidecar.OutgoingOriginChainCommitted
 	return observed, outbound, true
+}
+
+type committedXMRPlanMemo struct {
+	chain            common.Chain
+	toAddress        common.Address
+	vaultPubKey      common.PubKey
+	vaultPubKeyFrost common.PubKey
+	inHash           common.TxID
+	outHash          common.TxID
+	coin             common.Coin
+	maxGas           common.Gas
+	semanticMemo     string
+	wireMemo         string
+}
+
+// committedXMRWireMemo resolves the exact memo bytes scheduled into a
+// committed XMR transaction. ObservedTx.Memo may intentionally contain
+// OriginalMemo for THORChain attribution, so it cannot be used as transaction
+// extra for memoless OUT/REFUND transactions.
+func (c *Client) committedXMRWireMemo(observed common.ObservedTx, consensusHeight int64) (string, bool) {
+	if observed.Tx.Memo == "" {
+		return "", true
+	}
+	parsed, err := memo.ParseMemo(common.LatestVersion, observed.Tx.Memo)
+	if err != nil {
+		// Internal transactions such as consolidation carry their actual memo in
+		// the observation and have no THORChain TxOut plan to resolve.
+		return observed.Tx.Memo, true
+	}
+	if c.thorchainBridge == nil {
+		return "", false
+	}
+
+	expectedInHash := common.BlankTxID
+	lowerBound := int64(1)
+	var directCandidates []committedXMRPlanMemo
+	switch {
+	case parsed.IsType(memo.TxMigrate), parsed.IsType(memo.TxRagnarok):
+		// Memoless scheduling only strips OUT/REFUND. Internal protocol memos
+		// remain byte-for-byte on wire, so the authenticated observation already
+		// carries the exact value needed by the Sidecar.
+		return observed.Tx.Memo, true
+	case parsed.IsType(memo.TxOutbound), parsed.IsType(memo.TxRefund):
+		inboundID := parsed.GetTxID()
+		if inboundID.IsEmpty() {
+			return "", false
+		}
+		expectedInHash = inboundID
+		if cached, ok := c.cachedCommittedXMRPlan(observed, expectedInHash); ok {
+			return cached.wireMemo, true
+		}
+		voter, getErr := c.thorchainBridge.GetObservedTxVoter(inboundID.String())
+		if getErr != nil || voter == nil || !queryVoterCommitsOutbound(voter, observed.Tx.ID) {
+			return "", false
+		}
+		lowerBound = voter.GetHeight()
+		directCandidates = make([]committedXMRPlanMemo, 0, len(voter.GetActions()))
+		for _, item := range voter.GetActions() {
+			directCandidates = append(directCandidates, committedXMRPlanMemo{
+				chain:            item.Chain,
+				toAddress:        item.ToAddress,
+				vaultPubKey:      item.VaultPubKey,
+				vaultPubKeyFrost: item.VaultPubKeyFrost,
+				inHash:           item.InHash,
+				outHash:          item.OutHash,
+				coin:             item.Coin,
+				maxGas:           item.MaxGas,
+				semanticMemo:     item.GetMemo(),
+				wireMemo:         item.Memo,
+			})
+		}
+	default:
+		return observed.Tx.Memo, true
+	}
+
+	if cached, ok := c.cachedCommittedXMRPlan(observed, expectedInHash); ok {
+		return cached.wireMemo, true
+	}
+	if direct, ok := selectCommittedXMRPlan(observed, expectedInHash, directCandidates); ok {
+		c.cacheCommittedXMRPlan(direct)
+		return direct.wireMemo, true
+	}
+
+	earliest, latest, ok := c.committedXMRPlanSearchBounds(consensusHeight, lowerBound)
+	if !ok {
+		return "", false
+	}
+	for height := latest; height >= earliest; height-- {
+		txOut, getErr := c.thorchainBridge.GetKeysign(height, "")
+		if getErr != nil || txOut.Height != height {
+			return "", false
+		}
+		var selected committedXMRPlanMemo
+		found := false
+		for _, arrayItem := range txOut.TxArray {
+			if arrayItem.OutHash.IsEmpty() || !arrayItem.OutHash.Equals(observed.Tx.ID) {
+				continue
+			}
+			candidate := committedXMRPlanMemo{
+				chain:            arrayItem.Chain,
+				toAddress:        arrayItem.ToAddress,
+				vaultPubKey:      arrayItem.VaultPubKey,
+				vaultPubKeyFrost: arrayItem.VaultPubKeyFrost,
+				inHash:           arrayItem.InHash,
+				outHash:          arrayItem.OutHash,
+				coin:             arrayItem.Coin,
+				maxGas:           arrayItem.MaxGas,
+				semanticMemo:     arrayItem.TxOutItem(height).GetMemo(),
+				wireMemo:         arrayItem.Memo,
+			}
+			if !committedXMRPlanMatches(observed, expectedInHash, candidate) {
+				return "", false
+			}
+			if found && candidate.wireMemo != selected.wireMemo {
+				return "", false
+			}
+			selected = candidate
+			found = true
+		}
+		if found {
+			// CommonOutbound stamps one exact historical item while searching
+			// newest-to-oldest. Once that authenticated block is validated, older
+			// blocks cannot add authority and need not turn recovery into hundreds
+			// of additional HTTP requests.
+			c.cacheCommittedXMRPlan(selected)
+			return selected.wireMemo, true
+		}
+	}
+	return "", false
+}
+
+func selectCommittedXMRPlan(
+	observed common.ObservedTx,
+	expectedInHash common.TxID,
+	candidates []committedXMRPlanMemo,
+) (committedXMRPlanMemo, bool) {
+	var selected committedXMRPlanMemo
+	found := false
+	for _, candidate := range candidates {
+		if !committedXMRPlanMatches(observed, expectedInHash, candidate) {
+			continue
+		}
+		if found && candidate.wireMemo != selected.wireMemo {
+			return committedXMRPlanMemo{}, false
+		}
+		selected = candidate
+		found = true
+	}
+	return selected, found
+}
+
+func committedXMRPlanMatches(
+	observed common.ObservedTx,
+	expectedInHash common.TxID,
+	candidate committedXMRPlanMemo,
+) bool {
+	plannedVault := candidate.vaultPubKeyFrost
+	if plannedVault.IsEmpty() {
+		plannedVault = candidate.vaultPubKey
+	}
+	if !candidate.chain.Equals(common.XMRChain) ||
+		candidate.outHash.IsEmpty() || !candidate.outHash.Equals(observed.Tx.ID) ||
+		plannedVault.IsEmpty() || !plannedVault.Equals(observed.ObservedPubKey) ||
+		candidate.toAddress.IsEmpty() ||
+		!common.AddressEquals(common.XMRChain, candidate.toAddress, observed.Tx.ToAddress) ||
+		!strings.EqualFold(candidate.semanticMemo, observed.Tx.Memo) ||
+		!common.NewCoins(candidate.coin).EqualsEx(observed.Tx.Coins) ||
+		!observedGasWithinCommittedXMRMax(observed.Tx.Gas, candidate.maxGas) {
+		return false
+	}
+	vaultAddress, err := observed.ObservedPubKey.GetAddress(common.XMRChain)
+	if err != nil || !common.AddressEquals(common.XMRChain, observed.Tx.FromAddress, vaultAddress) {
+		return false
+	}
+	return expectedInHash.IsEmpty() || candidate.inHash.Equals(expectedInHash)
+}
+
+func observedGasWithinCommittedXMRMax(observed, plannedMax common.Gas) bool {
+	observedCoin := observed.ToCoins().GetCoin(common.XMRAsset)
+	if observedCoin.IsEmpty() || observedCoin.Amount.IsZero() {
+		return false
+	}
+	plannedMaxCoin := plannedMax.ToCoins().GetCoin(common.XMRAsset)
+	return plannedMaxCoin.IsEmpty() || !observedCoin.Amount.GT(plannedMaxCoin.Amount)
+}
+
+func queryVoterCommitsOutbound(voter *ttypes.QueryObservedTxVoter, outHash common.TxID) bool {
+	if voter == nil || outHash.IsEmpty() {
+		return false
+	}
+	for _, tx := range voter.GetOutTxs() {
+		if tx.ID.Equals(outHash) {
+			return true
+		}
+	}
+	consensusTx := voter.GetTx()
+	for _, hash := range consensusTx.GetOutHashes() {
+		if strings.EqualFold(hash, outHash.String()) {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Client) cachedCommittedXMRPlan(
+	observed common.ObservedTx,
+	expectedInHash common.TxID,
+) (committedXMRPlanMemo, bool) {
+	key := strings.ToUpper(observed.Tx.ID.String())
+	c.committedWireMemoMu.RLock()
+	candidate, ok := c.committedWireMemoCache[key]
+	c.committedWireMemoMu.RUnlock()
+	if !ok || !committedXMRPlanMatches(observed, expectedInHash, candidate) {
+		return committedXMRPlanMemo{}, false
+	}
+	return candidate, true
+}
+
+func (c *Client) cacheCommittedXMRPlan(candidate committedXMRPlanMemo) {
+	key := strings.ToUpper(candidate.outHash.String())
+	if key == "" {
+		return
+	}
+	c.committedWireMemoMu.Lock()
+	if c.committedWireMemoCache == nil {
+		c.committedWireMemoCache = make(map[string]committedXMRPlanMemo)
+	}
+	c.committedWireMemoCache[key] = candidate
+	c.committedWireMemoMu.Unlock()
+}
+
+func (c *Client) pruneCommittedXMRPlanCache(seen map[string]struct{}) {
+	c.committedWireMemoMu.Lock()
+	for key := range c.committedWireMemoCache {
+		if _, ok := seen[key]; !ok {
+			delete(c.committedWireMemoCache, key)
+		}
+	}
+	c.committedWireMemoMu.Unlock()
+}
+
+func (c *Client) committedXMRPlanSearchBounds(consensusHeight, lowerBound int64) (int64, int64, bool) {
+	if c.thorchainBridge == nil || consensusHeight <= 0 {
+		return 0, 0, false
+	}
+	signingPeriod, coalesceBlocks, ok := c.committedXMRPlanSearchConfig()
+	if !ok || signingPeriod > math.MaxInt64/ttypes.ExtendedOutboundSigningPeriodMultiplier {
+		return 0, 0, false
+	}
+	currentHeight, err := c.thorchainBridge.GetBlockHeight()
+	if err != nil || currentHeight < consensusHeight {
+		return 0, 0, false
+	}
+	lookback := ttypes.MaxTxOutSigningTransactionPeriodForChain(common.XMRChain, signingPeriod)
+	earliest := int64(1)
+	if consensusHeight > lookback {
+		earliest = consensusHeight - lookback
+	}
+	if lowerBound > earliest {
+		earliest = lowerBound
+	}
+	latest := consensusHeight
+	if coalesceBlocks > 1 {
+		remainder := latest % coalesceBlocks
+		if remainder != 0 {
+			delta := coalesceBlocks - remainder
+			if latest > math.MaxInt64-delta {
+				return 0, 0, false
+			}
+			latest += delta
+		}
+	}
+	if latest > currentHeight {
+		latest = currentHeight
+	}
+	return earliest, latest, latest >= earliest
+}
+
+func (c *Client) committedXMRPlanSearchConfig() (int64, int64, bool) {
+	var (
+		defaults     map[string]int64
+		defaultsErr  error
+		defaultsOnce sync.Once
+	)
+	resolve := func(key constants.ConstantName) (int64, bool) {
+		if value, err := c.thorchainBridge.GetMimir(key.String()); err == nil && value >= 0 {
+			return value, true
+		}
+		defaultsOnce.Do(func() {
+			defaults, defaultsErr = c.thorchainBridge.GetConstants()
+		})
+		if defaultsErr != nil {
+			return 0, false
+		}
+		value, ok := defaults[key.String()]
+		return value, ok
+	}
+	signingPeriod, ok := resolve(constants.SigningTransactionPeriod)
+	if !ok || signingPeriod <= 0 {
+		return 0, 0, false
+	}
+	coalesceBlocks, ok := resolve(constants.RescheduleCoalesceBlocks)
+	if !ok || coalesceBlocks < 0 {
+		return 0, 0, false
+	}
+	return signingPeriod, coalesceBlocks, true
 }
 
 func queryObservedXMRTx(voter *ttypes.QueryObservedTxVoter, txID common.TxID) (common.ObservedTx, bool) {

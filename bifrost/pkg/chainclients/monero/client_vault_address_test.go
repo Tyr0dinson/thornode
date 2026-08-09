@@ -3,6 +3,7 @@ package monero
 import (
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 
 	. "gopkg.in/check.v1"
@@ -10,6 +11,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -29,6 +31,16 @@ type mockMoneroBridge struct {
 	pubKeysErr          error
 	keysignPolicy       thorclient.KeysignPolicy
 	keysignPolicyErr    error
+	keysignByHeight     map[int64]stypes.TxOut
+	keysignErr          error
+	keysignCallsMu      sync.Mutex
+	keysignCalls        []int64
+	blockHeight         int64
+	blockHeightErr      error
+	mimirValues         map[string]int64
+	mimirErr            error
+	constantValues      map[string]int64
+	constantsErr        error
 }
 
 func (m *mockMoneroBridge) GetVault(pubkey string) (ttypes.Vault, error) {
@@ -71,6 +83,11 @@ func (m *mockMoneroBridge) GetObservedTxVoter(txID string) (*ttypes.QueryObserve
 		if voter, ok := m.observedByTx[txID]; ok {
 			return voter, nil
 		}
+		for storedID, voter := range m.observedByTx {
+			if strings.EqualFold(storedID, txID) {
+				return voter, nil
+			}
+		}
 	}
 	return nil, errors.New("observed tx voter not found")
 }
@@ -80,6 +97,58 @@ func (m *mockMoneroBridge) GetXMRSpentOutputRefs(vaultPubKey common.PubKey) ([]*
 		return m.spentRefsByVaultKey[vaultPubKey.String()], nil
 	}
 	return nil, nil
+}
+
+func (m *mockMoneroBridge) GetKeysign(blockHeight int64, _ string) (stypes.TxOut, error) {
+	m.keysignCallsMu.Lock()
+	m.keysignCalls = append(m.keysignCalls, blockHeight)
+	m.keysignCallsMu.Unlock()
+	if m.keysignErr != nil {
+		return stypes.TxOut{}, m.keysignErr
+	}
+	if txOut, ok := m.keysignByHeight[blockHeight]; ok {
+		return txOut, nil
+	}
+	return stypes.TxOut{Height: blockHeight}, nil
+}
+
+func (m *mockMoneroBridge) GetBlockHeight() (int64, error) {
+	if m.blockHeightErr != nil {
+		return 0, m.blockHeightErr
+	}
+	if m.blockHeight > 0 {
+		return m.blockHeight, nil
+	}
+	return 10_000, nil
+}
+
+func (m *mockMoneroBridge) GetMimir(key string) (int64, error) {
+	if m.mimirErr != nil {
+		return 0, m.mimirErr
+	}
+	if value, ok := m.mimirValues[key]; ok {
+		return value, nil
+	}
+	return -1, nil
+}
+
+func (m *mockMoneroBridge) GetConstants() (map[string]int64, error) {
+	if m.constantsErr != nil {
+		return nil, m.constantsErr
+	}
+	if m.constantValues != nil {
+		return m.constantValues, nil
+	}
+	return map[string]int64{
+		constants.SigningTransactionPeriod.String(): 300,
+		constants.RescheduleCoalesceBlocks.String(): 0,
+	}, nil
+}
+
+func (m *mockMoneroBridge) capturedKeysignCalls() []int64 {
+	m.keysignCallsMu.Lock()
+	defer m.keysignCallsMu.Unlock()
+	return append([]int64(nil), m.keysignCalls...)
 }
 
 // GetKeysignPolicy returns the injected policy so vault membership tests can
