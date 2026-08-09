@@ -166,7 +166,7 @@ services:
     volumes:
       - xmr-frost-data:/home/serai/xmr-frost
     ports:
-      - "8283:8283"
+      - "127.0.0.1:8283:8283"
     healthcheck: *frost-healthcheck
     logging: *logging
 

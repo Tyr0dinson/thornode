@@ -11,7 +11,7 @@ endif
 # Config
 ########################################################################################
 
-.PHONY: build test test-xmr-frost-e2e tools export healthcheck run-mocknet build-mocknet stop-mocknet halt-mocknet ps-mocknet reset-mocknet logs-mocknet openapi test-performance test-performance-quick test-performance-all test-performance-analyze test-performance-profile-cpu test-performance-profile-mem test-performance-trace test-performance-clean test-xmr-e2e
+.PHONY: build test test-xmr-frost-e2e test-xmr-compose-contract tools export healthcheck run-mocknet build-mocknet stop-mocknet halt-mocknet ps-mocknet reset-mocknet logs-mocknet openapi test-performance test-performance-quick test-performance-all test-performance-analyze test-performance-profile-cpu test-performance-profile-mem test-performance-trace test-performance-clean test-xmr-e2e
 
 # mocknet docker compose files and overrides for macOS
 DOCKER_COMPOSE_FILES ?= -f build/docker/docker-compose.yml
@@ -262,6 +262,9 @@ test-xmr-e2e:
 			exit 1; \
 		fi
 	@go test -count=1 ${TEST_BUILD_FLAGS} ./bifrost/pkg/chainclients/monero -run '${XMR_E2E_RUN}'
+
+test-xmr-compose-contract:
+	@./scripts/test-xmr-compose-contract.sh
 
 test-network-specific:
 	@go test -tags stagenet ${RUN_FLAG} ./common
