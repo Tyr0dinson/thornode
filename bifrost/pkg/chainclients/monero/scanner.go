@@ -1998,6 +1998,17 @@ func (s *Scanner) discoverReorgReplacement(
 				"fail to fetch monero block %d during reorg check: %w", height, err,
 			)
 		}
+		if canonical.Height != height {
+			return sidecar.ChainBlock{}, nil, nil, &btypes.ScannerRecoveryRequiredError{
+				CurrentHeight: previousHeight + 1,
+				NextHeight:    height,
+				Reason: fmt.Sprintf(
+					"monero reorg check requested height %d but the chain query returned height %d",
+					height,
+					canonical.Height,
+				),
+			}
+		}
 		if strings.EqualFold(meta.BlockHash, canonical.Hash) {
 			anchor = canonical
 			foundAnchor = true
@@ -2023,6 +2034,17 @@ func (s *Scanner) discoverReorgReplacement(
 			return sidecar.ChainBlock{}, nil, nil, fmt.Errorf(
 				"fail to fetch monero replacement block %d: %w", height, err,
 			)
+		}
+		if canonical.Height != height {
+			return sidecar.ChainBlock{}, nil, nil, &btypes.ScannerRecoveryRequiredError{
+				CurrentHeight: previousHeight + 1,
+				NextHeight:    anchor.Height + 1,
+				Reason: fmt.Sprintf(
+					"monero reorg replay requested height %d but the chain query returned height %d",
+					height,
+					canonical.Height,
+				),
+			}
 		}
 		meta, err := s.reorgStore.Get(height)
 		if err != nil {

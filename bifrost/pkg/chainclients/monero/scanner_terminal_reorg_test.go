@@ -5,18 +5,120 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/rs/zerolog/log"
 
+	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 )
+
+func TestDiscoverReorgReplacementRejectsWrongBlockHeight(t *testing.T) {
+	tests := []struct {
+		name                 string
+		mismatchDuringReplay bool
+		wantPhase            string
+	}{
+		{
+			name:      "common ancestor search",
+			wantPhase: "reorg check",
+		},
+		{
+			name:                 "replacement replay",
+			mismatchDuringReplay: true,
+			wantPhase:            "reorg replay",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			old99 := testXMRHash("wrong-height-old-99")
+			old100 := testXMRHash("wrong-height-old-100")
+			new100 := testXMRHash("wrong-height-new-100")
+			var height100Calls atomic.Int32
+			var mutationCalls atomic.Int32
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet {
+					mutationCalls.Add(1)
+					http.Error(w, "unexpected mutation", http.StatusMethodNotAllowed)
+					return
+				}
+				const prefix = "/v1/monero/chain/block/"
+				if !strings.HasPrefix(r.URL.Path, prefix) {
+					http.NotFound(w, r)
+					return
+				}
+				height, err := strconv.ParseInt(strings.TrimPrefix(r.URL.Path, prefix), 10, 64)
+				if err != nil {
+					http.Error(w, "invalid height", http.StatusBadRequest)
+					return
+				}
+
+				block := sidecar.ChainBlock{Height: height}
+				switch height {
+				case 99:
+					block.Hash = old99
+				case 100:
+					block.Hash = new100
+					call := height100Calls.Add(1)
+					if !tc.mismatchDuringReplay || call > 1 {
+						block.Height = 101
+					}
+				default:
+					http.NotFound(w, r)
+					return
+				}
+				_ = json.NewEncoder(w).Encode(sidecar.ChainBlockResp(block))
+			}))
+			defer server.Close()
+
+			client, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+			if err != nil {
+				t.Fatalf("new sidecar client: %v", err)
+			}
+			store := newScannerReceiptStore(t)
+			for _, meta := range []*reorgBlockMeta{
+				{Height: 99, BlockHash: old99},
+				{Height: 100, BlockHash: old100},
+			} {
+				if err = store.Set(meta); err != nil {
+					t.Fatalf("seed reorg metadata: %v", err)
+				}
+			}
+
+			scanner := NewScanner(log.Logger, client, nil, common.XMRChain, common.EmptyPubKey, 72)
+			scanner.SetReorgStore(store)
+			_, _, _, err = scanner.discoverReorgReplacement(100)
+
+			var recovery *btypes.ScannerRecoveryRequiredError
+			if !errors.As(err, &recovery) {
+				t.Fatalf("wrong block height must require operator recovery, got %v", err)
+			}
+			if recovery.CurrentHeight != 101 || recovery.NextHeight != 100 {
+				t.Fatalf("unexpected recovery bounds: %+v", recovery)
+			}
+			if !strings.Contains(recovery.Reason, tc.wantPhase) ||
+				!strings.Contains(recovery.Reason, "requested height 100") ||
+				!strings.Contains(recovery.Reason, "returned height 101") {
+				t.Fatalf("unexpected recovery reason: %q", recovery.Reason)
+			}
+			if errors.Is(err, btypes.ErrUnavailableBlock) {
+				t.Fatalf("structural height mismatch must not be retried as transient: %v", err)
+			}
+			if mutationCalls.Load() != 0 {
+				t.Fatalf("height mismatch must fail before scanner mutation, got %d calls", mutationCalls.Load())
+			}
+		})
+	}
+}
 
 func terminalReorgSidecar(t *testing.T, txID string, mined *atomic.Bool, height int64, blockHash, previousHash string) *sidecar.Client {
 	t.Helper()
