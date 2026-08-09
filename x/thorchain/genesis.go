@@ -126,47 +126,74 @@ func ValidateGenesis(data GenesisState) error {
 		collectorNames[name] = true
 	}
 
+	pendingAffiliateKeys := make(map[string]struct{}, len(data.PendingAffiliateLiquidityFees))
+	for _, entry := range data.PendingAffiliateLiquidityFees {
+		txID, err := common.NewTxID(entry.TxId)
+		if err != nil {
+			return fmt.Errorf("invalid pending affiliate liquidity fee txid: %w", err)
+		}
+		if txID.IsEmpty() || txID.Equals(common.BlankTxID) {
+			return fmt.Errorf("invalid pending affiliate liquidity fee txid %q", entry.TxId)
+		}
+		if strings.TrimSpace(entry.Thorname) == "" || strings.Contains(entry.Thorname, "/") {
+			return fmt.Errorf("invalid pending affiliate liquidity fee thorname %q", entry.Thorname)
+		}
+		fee, err := cosmos.ParseUint(entry.Fee)
+		if err != nil || fee.IsZero() || !fee.BigInt().IsUint64() {
+			return fmt.Errorf("invalid pending affiliate liquidity fee amount %q", entry.Fee)
+		}
+		// KVStore.GetKey uppercases the complete suffix, including 87/88-char
+		// SOL transaction IDs. Mirror that physical-key normalization here so
+		// two genesis entries cannot silently import into one KV record.
+		key := fmt.Sprintf("%s/%d/%s", strings.ToUpper(txID.String()), entry.Index, strings.ToUpper(strings.TrimSpace(entry.Thorname)))
+		if _, ok := pendingAffiliateKeys[key]; ok {
+			return fmt.Errorf("duplicate pending affiliate liquidity fee %s", key)
+		}
+		pendingAffiliateKeys[key] = struct{}{}
+	}
+
 	return nil
 }
 
 // DefaultGenesisState the default values THORNode put in the Genesis
 func DefaultGenesisState() GenesisState {
 	return GenesisState{
-		Pools:                   make([]Pool, 0),
-		NodeAccounts:            NodeAccounts{},
-		BondProviders:           make([]BondProviders, 0),
-		TxOuts:                  make([]TxOut, 0),
-		LiquidityProviders:      make(LiquidityProviders, 0),
-		Vaults:                  make(Vaults, 0),
-		ObservedTxInVoters:      make(ObservedTxVoters, 0),
-		ObservedTxOutVoters:     make(ObservedTxVoters, 0),
-		LastSignedHeight:        0,
-		LastChainHeights:        make([]LastChainHeight, 0),
-		Mimirs:                  make([]Mimir, 0),
-		NodeMimirs:              make([]NodeMimir, 0),
-		Network:                 NewNetwork(),
-		OutboundFeeWithheldRune: common.Coins{},
-		OutboundFeeSpentRune:    common.Coins{},
-		POL:                     NewProtocolOwnedLiquidity(),
-		AdvSwapQueueItems:       make([]MsgSwap, 0),
-		SwapQueueItems:          make([]MsgSwap, 0),
-		StreamingSwaps:          make([]StreamingSwap, 0),
-		NetworkFees:             make([]NetworkFee, 0),
-		ChainContracts:          make([]ChainContract, 0),
-		THORNames:               make([]THORName, 0),
-		SwapperClout:            make([]SwapperClout, 0),
-		TradeAccounts:           make([]TradeAccount, 0),
-		TradeUnits:              make([]TradeUnit, 0),
-		SecuredAssets:           make([]SecuredAsset, 0),
-		RuneProviders:           make([]RUNEProvider, 0),
-		RunePool:                NewRUNEPool(),
-		AffiliateCollectors:     []AffiliateFeeCollector{},
-		PolReserveDeposits:      make([]POLReserveDeposit, 0),
-		DynamicFeeRecords:       make([]types.DynamicFeeRecord, 0),
-		DynamicFeeAccumulators:  make([]types.DynamicFeeAccumulator, 0),
-		StableReserveCredits:    make([]StableReserveCredit, 0),
-		SolVaultNonces:          make([]types.SolVaultNonce, 0),
-		StagedOutbounds:         make([]types.StagedOutboundList, 0),
+		Pools:                         make([]Pool, 0),
+		NodeAccounts:                  NodeAccounts{},
+		BondProviders:                 make([]BondProviders, 0),
+		TxOuts:                        make([]TxOut, 0),
+		LiquidityProviders:            make(LiquidityProviders, 0),
+		Vaults:                        make(Vaults, 0),
+		ObservedTxInVoters:            make(ObservedTxVoters, 0),
+		ObservedTxOutVoters:           make(ObservedTxVoters, 0),
+		LastSignedHeight:              0,
+		LastChainHeights:              make([]LastChainHeight, 0),
+		Mimirs:                        make([]Mimir, 0),
+		NodeMimirs:                    make([]NodeMimir, 0),
+		Network:                       NewNetwork(),
+		OutboundFeeWithheldRune:       common.Coins{},
+		OutboundFeeSpentRune:          common.Coins{},
+		POL:                           NewProtocolOwnedLiquidity(),
+		AdvSwapQueueItems:             make([]MsgSwap, 0),
+		SwapQueueItems:                make([]MsgSwap, 0),
+		StreamingSwaps:                make([]StreamingSwap, 0),
+		NetworkFees:                   make([]NetworkFee, 0),
+		ChainContracts:                make([]ChainContract, 0),
+		THORNames:                     make([]THORName, 0),
+		SwapperClout:                  make([]SwapperClout, 0),
+		TradeAccounts:                 make([]TradeAccount, 0),
+		TradeUnits:                    make([]TradeUnit, 0),
+		SecuredAssets:                 make([]SecuredAsset, 0),
+		RuneProviders:                 make([]RUNEProvider, 0),
+		RunePool:                      NewRUNEPool(),
+		AffiliateCollectors:           []AffiliateFeeCollector{},
+		PolReserveDeposits:            make([]POLReserveDeposit, 0),
+		DynamicFeeRecords:             make([]types.DynamicFeeRecord, 0),
+		DynamicFeeAccumulators:        make([]types.DynamicFeeAccumulator, 0),
+		StableReserveCredits:          make([]StableReserveCredit, 0),
+		SolVaultNonces:                make([]types.SolVaultNonce, 0),
+		StagedOutbounds:               make([]types.StagedOutboundList, 0),
+		PendingAffiliateLiquidityFees: make([]PendingAffiliateLiquidityFee, 0),
 	}
 }
 
@@ -440,6 +467,23 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 	for _, list := range data.StagedOutbounds {
 		if err := keeper.RestoreStagedOutboundList(ctx, list); err != nil {
 			panic(fmt.Errorf("fail to restore staged outbound list: %w", err))
+		}
+	}
+
+	// Restore speculative affiliate liquidity-fee attribution. These entries
+	// can span many blocks while a stream waits for inbound finality, so unlike
+	// the ordinary per-block accumulator they must survive state export/import.
+	for _, entry := range data.PendingAffiliateLiquidityFees {
+		txID, err := common.NewTxID(entry.TxId)
+		if err != nil {
+			panic(err)
+		}
+		fee, err := cosmos.ParseUint(entry.Fee)
+		if err != nil {
+			panic(err)
+		}
+		if err = keeper.AddPendingAffiliateLiquidityFee(ctx, txID, entry.Index, entry.Thorname, fee); err != nil {
+			panic(fmt.Errorf("fail to restore pending affiliate liquidity fee: %w", err))
 		}
 	}
 
@@ -991,6 +1035,20 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		stagedOutbounds = append(stagedOutbounds, list)
 	}
 
+	pendingAffiliateLiquidityFees := make([]PendingAffiliateLiquidityFee, 0)
+	pendingFees, err := k.GetAllPendingAffiliateLiquidityFees(ctx)
+	if err != nil {
+		panic(fmt.Errorf("fail to export pending affiliate liquidity fees: %w", err))
+	}
+	for _, entry := range pendingFees {
+		pendingAffiliateLiquidityFees = append(pendingAffiliateLiquidityFees, PendingAffiliateLiquidityFee{
+			TxId:     entry.TxID.String(),
+			Index:    entry.Index,
+			Thorname: entry.Thorname,
+			Fee:      entry.Fee.String(),
+		})
+	}
+
 	// Export voters for staged outbound swaps that weren't already captured
 	// via the TxOut path. These voters carry MempoolSwapTOR which is needed
 	// to recompute usage accounting on import. Internally generated swaps
@@ -1087,5 +1145,6 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		StableReserveCredits:              stableReserveCredits,
 		SolVaultNonces:                    solVaultNonces,
 		StagedOutbounds:                   stagedOutbounds,
+		PendingAffiliateLiquidityFees:     pendingAffiliateLiquidityFees,
 	}
 }

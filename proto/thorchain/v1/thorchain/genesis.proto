@@ -143,4 +143,19 @@ message GenesisState {
       [ (gogoproto.nullable) = false ];
   repeated types.StagedOutboundList staged_outbounds = 51
       [ (gogoproto.nullable) = false ];
+  // Field 52 is intentionally left available for the follow-up full mempool
+  // lifecycle schema.
+  repeated PendingAffiliateLiquidityFee pending_affiliate_liquidity_fees = 53
+      [ (gogoproto.nullable) = false ];
+}
+
+// PendingAffiliateLiquidityFee preserves REVSHARE attribution produced by a
+// mempool swap while its inbound is still unfinalized. The keeper value uses
+// the existing uint64 encoding; genesis uses a decimal string to avoid JSON
+// precision loss.
+message PendingAffiliateLiquidityFee {
+  string tx_id = 1;
+  uint32 index = 2;
+  string thorname = 3;
+  string fee = 4;
 }

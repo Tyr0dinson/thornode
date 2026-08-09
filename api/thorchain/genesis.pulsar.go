@@ -3284,6 +3284,57 @@ func (x *_GenesisState_51_list) IsValid() bool {
 	return x.list != nil
 }
 
+var _ protoreflect.List = (*_GenesisState_53_list)(nil)
+
+type _GenesisState_53_list struct {
+	list *[]*PendingAffiliateLiquidityFee
+}
+
+func (x *_GenesisState_53_list) Len() int {
+	if x.list == nil {
+		return 0
+	}
+	return len(*x.list)
+}
+
+func (x *_GenesisState_53_list) Get(i int) protoreflect.Value {
+	return protoreflect.ValueOfMessage((*x.list)[i].ProtoReflect())
+}
+
+func (x *_GenesisState_53_list) Set(i int, value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*PendingAffiliateLiquidityFee)
+	(*x.list)[i] = concreteValue
+}
+
+func (x *_GenesisState_53_list) Append(value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*PendingAffiliateLiquidityFee)
+	*x.list = append(*x.list, concreteValue)
+}
+
+func (x *_GenesisState_53_list) AppendMutable() protoreflect.Value {
+	v := new(PendingAffiliateLiquidityFee)
+	*x.list = append(*x.list, v)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_GenesisState_53_list) Truncate(n int) {
+	for i := n; i < len(*x.list); i++ {
+		(*x.list)[i] = nil
+	}
+	*x.list = (*x.list)[:n]
+}
+
+func (x *_GenesisState_53_list) NewElement() protoreflect.Value {
+	v := new(PendingAffiliateLiquidityFee)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_GenesisState_53_list) IsValid() bool {
+	return x.list != nil
+}
+
 var (
 	md_GenesisState                                        protoreflect.MessageDescriptor
 	fd_GenesisState_pools                                  protoreflect.FieldDescriptor
@@ -3328,6 +3379,7 @@ var (
 	fd_GenesisState_stable_reserve_credits                 protoreflect.FieldDescriptor
 	fd_GenesisState_sol_vault_nonces                       protoreflect.FieldDescriptor
 	fd_GenesisState_staged_outbounds                       protoreflect.FieldDescriptor
+	fd_GenesisState_pending_affiliate_liquidity_fees       protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -3375,6 +3427,7 @@ func init() {
 	fd_GenesisState_stable_reserve_credits = md_GenesisState.Fields().ByName("stable_reserve_credits")
 	fd_GenesisState_sol_vault_nonces = md_GenesisState.Fields().ByName("sol_vault_nonces")
 	fd_GenesisState_staged_outbounds = md_GenesisState.Fields().ByName("staged_outbounds")
+	fd_GenesisState_pending_affiliate_liquidity_fees = md_GenesisState.Fields().ByName("pending_affiliate_liquidity_fees")
 }
 
 var _ protoreflect.Message = (*fastReflection_GenesisState)(nil)
@@ -3694,6 +3747,12 @@ func (x *fastReflection_GenesisState) Range(f func(protoreflect.FieldDescriptor,
 			return
 		}
 	}
+	if len(x.PendingAffiliateLiquidityFees) != 0 {
+		value := protoreflect.ValueOfList(&_GenesisState_53_list{list: &x.PendingAffiliateLiquidityFees})
+		if !f(fd_GenesisState_pending_affiliate_liquidity_fees, value) {
+			return
+		}
+	}
 }
 
 // Has reports whether a field is populated.
@@ -3793,6 +3852,8 @@ func (x *fastReflection_GenesisState) Has(fd protoreflect.FieldDescriptor) bool 
 		return len(x.SolVaultNonces) != 0
 	case "thorchain.GenesisState.staged_outbounds":
 		return len(x.StagedOutbounds) != 0
+	case "thorchain.GenesisState.pending_affiliate_liquidity_fees":
+		return len(x.PendingAffiliateLiquidityFees) != 0
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: thorchain.GenesisState"))
@@ -3893,6 +3954,8 @@ func (x *fastReflection_GenesisState) Clear(fd protoreflect.FieldDescriptor) {
 		x.SolVaultNonces = nil
 	case "thorchain.GenesisState.staged_outbounds":
 		x.StagedOutbounds = nil
+	case "thorchain.GenesisState.pending_affiliate_liquidity_fees":
+		x.PendingAffiliateLiquidityFees = nil
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: thorchain.GenesisState"))
@@ -4140,6 +4203,12 @@ func (x *fastReflection_GenesisState) Get(descriptor protoreflect.FieldDescripto
 		}
 		listValue := &_GenesisState_51_list{list: &x.StagedOutbounds}
 		return protoreflect.ValueOfList(listValue)
+	case "thorchain.GenesisState.pending_affiliate_liquidity_fees":
+		if len(x.PendingAffiliateLiquidityFees) == 0 {
+			return protoreflect.ValueOfList(&_GenesisState_53_list{})
+		}
+		listValue := &_GenesisState_53_list{list: &x.PendingAffiliateLiquidityFees}
+		return protoreflect.ValueOfList(listValue)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: thorchain.GenesisState"))
@@ -4314,6 +4383,10 @@ func (x *fastReflection_GenesisState) Set(fd protoreflect.FieldDescriptor, value
 		lv := value.List()
 		clv := lv.(*_GenesisState_51_list)
 		x.StagedOutbounds = *clv.list
+	case "thorchain.GenesisState.pending_affiliate_liquidity_fees":
+		lv := value.List()
+		clv := lv.(*_GenesisState_53_list)
+		x.PendingAffiliateLiquidityFees = *clv.list
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: thorchain.GenesisState"))
@@ -4559,6 +4632,12 @@ func (x *fastReflection_GenesisState) Mutable(fd protoreflect.FieldDescriptor) p
 		}
 		value := &_GenesisState_51_list{list: &x.StagedOutbounds}
 		return protoreflect.ValueOfList(value)
+	case "thorchain.GenesisState.pending_affiliate_liquidity_fees":
+		if x.PendingAffiliateLiquidityFees == nil {
+			x.PendingAffiliateLiquidityFees = []*PendingAffiliateLiquidityFee{}
+		}
+		value := &_GenesisState_53_list{list: &x.PendingAffiliateLiquidityFees}
+		return protoreflect.ValueOfList(value)
 	case "thorchain.GenesisState.reserve":
 		panic(fmt.Errorf("field reserve of message thorchain.GenesisState is not mutable"))
 	case "thorchain.GenesisState.last_signed_height":
@@ -4702,6 +4781,9 @@ func (x *fastReflection_GenesisState) NewField(fd protoreflect.FieldDescriptor) 
 	case "thorchain.GenesisState.staged_outbounds":
 		list := []*types.StagedOutboundList{}
 		return protoreflect.ValueOfList(&_GenesisState_51_list{list: &list})
+	case "thorchain.GenesisState.pending_affiliate_liquidity_fees":
+		list := []*PendingAffiliateLiquidityFee{}
+		return protoreflect.ValueOfList(&_GenesisState_53_list{list: &list})
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: thorchain.GenesisState"))
@@ -5005,6 +5087,12 @@ func (x *fastReflection_GenesisState) ProtoMethods() *protoiface.Methods {
 				n += 2 + l + runtime.Sov(uint64(l))
 			}
 		}
+		if len(x.PendingAffiliateLiquidityFees) > 0 {
+			for _, e := range x.PendingAffiliateLiquidityFees {
+				l = options.Size(e)
+				n += 2 + l + runtime.Sov(uint64(l))
+			}
+		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
 		}
@@ -5033,6 +5121,24 @@ func (x *fastReflection_GenesisState) ProtoMethods() *protoiface.Methods {
 		if x.unknownFields != nil {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.PendingAffiliateLiquidityFees) > 0 {
+			for iNdEx := len(x.PendingAffiliateLiquidityFees) - 1; iNdEx >= 0; iNdEx-- {
+				encoded, err := options.Marshal(x.PendingAffiliateLiquidityFees[iNdEx])
+				if err != nil {
+					return protoiface.MarshalOutput{
+						NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+						Buf:               input.Buf,
+					}, err
+				}
+				i -= len(encoded)
+				copy(dAtA[i:], encoded)
+				i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+				i--
+				dAtA[i] = 0x3
+				i--
+				dAtA[i] = 0xaa
+			}
 		}
 		if len(x.StagedOutbounds) > 0 {
 			for iNdEx := len(x.StagedOutbounds) - 1; iNdEx >= 0; iNdEx-- {
@@ -7139,6 +7245,636 @@ func (x *fastReflection_GenesisState) ProtoMethods() *protoiface.Methods {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
 				}
 				iNdEx = postIndex
+			case 53:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field PendingAffiliateLiquidityFees", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.PendingAffiliateLiquidityFees = append(x.PendingAffiliateLiquidityFees, &PendingAffiliateLiquidityFee{})
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.PendingAffiliateLiquidityFees[len(x.PendingAffiliateLiquidityFees)-1]); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
+var (
+	md_PendingAffiliateLiquidityFee          protoreflect.MessageDescriptor
+	fd_PendingAffiliateLiquidityFee_tx_id    protoreflect.FieldDescriptor
+	fd_PendingAffiliateLiquidityFee_index    protoreflect.FieldDescriptor
+	fd_PendingAffiliateLiquidityFee_thorname protoreflect.FieldDescriptor
+	fd_PendingAffiliateLiquidityFee_fee      protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_thorchain_genesis_proto_init()
+	md_PendingAffiliateLiquidityFee = File_thorchain_genesis_proto.Messages().ByName("PendingAffiliateLiquidityFee")
+	fd_PendingAffiliateLiquidityFee_tx_id = md_PendingAffiliateLiquidityFee.Fields().ByName("tx_id")
+	fd_PendingAffiliateLiquidityFee_index = md_PendingAffiliateLiquidityFee.Fields().ByName("index")
+	fd_PendingAffiliateLiquidityFee_thorname = md_PendingAffiliateLiquidityFee.Fields().ByName("thorname")
+	fd_PendingAffiliateLiquidityFee_fee = md_PendingAffiliateLiquidityFee.Fields().ByName("fee")
+}
+
+var _ protoreflect.Message = (*fastReflection_PendingAffiliateLiquidityFee)(nil)
+
+type fastReflection_PendingAffiliateLiquidityFee PendingAffiliateLiquidityFee
+
+func (x *PendingAffiliateLiquidityFee) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_PendingAffiliateLiquidityFee)(x)
+}
+
+func (x *PendingAffiliateLiquidityFee) slowProtoReflect() protoreflect.Message {
+	mi := &file_thorchain_genesis_proto_msgTypes[4]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_PendingAffiliateLiquidityFee_messageType fastReflection_PendingAffiliateLiquidityFee_messageType
+var _ protoreflect.MessageType = fastReflection_PendingAffiliateLiquidityFee_messageType{}
+
+type fastReflection_PendingAffiliateLiquidityFee_messageType struct{}
+
+func (x fastReflection_PendingAffiliateLiquidityFee_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_PendingAffiliateLiquidityFee)(nil)
+}
+func (x fastReflection_PendingAffiliateLiquidityFee_messageType) New() protoreflect.Message {
+	return new(fastReflection_PendingAffiliateLiquidityFee)
+}
+func (x fastReflection_PendingAffiliateLiquidityFee_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_PendingAffiliateLiquidityFee
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_PendingAffiliateLiquidityFee) Descriptor() protoreflect.MessageDescriptor {
+	return md_PendingAffiliateLiquidityFee
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_PendingAffiliateLiquidityFee) Type() protoreflect.MessageType {
+	return _fastReflection_PendingAffiliateLiquidityFee_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_PendingAffiliateLiquidityFee) New() protoreflect.Message {
+	return new(fastReflection_PendingAffiliateLiquidityFee)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_PendingAffiliateLiquidityFee) Interface() protoreflect.ProtoMessage {
+	return (*PendingAffiliateLiquidityFee)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_PendingAffiliateLiquidityFee) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.TxId != "" {
+		value := protoreflect.ValueOfString(x.TxId)
+		if !f(fd_PendingAffiliateLiquidityFee_tx_id, value) {
+			return
+		}
+	}
+	if x.Index != uint32(0) {
+		value := protoreflect.ValueOfUint32(x.Index)
+		if !f(fd_PendingAffiliateLiquidityFee_index, value) {
+			return
+		}
+	}
+	if x.Thorname != "" {
+		value := protoreflect.ValueOfString(x.Thorname)
+		if !f(fd_PendingAffiliateLiquidityFee_thorname, value) {
+			return
+		}
+	}
+	if x.Fee != "" {
+		value := protoreflect.ValueOfString(x.Fee)
+		if !f(fd_PendingAffiliateLiquidityFee_fee, value) {
+			return
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_PendingAffiliateLiquidityFee) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "thorchain.PendingAffiliateLiquidityFee.tx_id":
+		return x.TxId != ""
+	case "thorchain.PendingAffiliateLiquidityFee.index":
+		return x.Index != uint32(0)
+	case "thorchain.PendingAffiliateLiquidityFee.thorname":
+		return x.Thorname != ""
+	case "thorchain.PendingAffiliateLiquidityFee.fee":
+		return x.Fee != ""
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: thorchain.PendingAffiliateLiquidityFee"))
+		}
+		panic(fmt.Errorf("message thorchain.PendingAffiliateLiquidityFee does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_PendingAffiliateLiquidityFee) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "thorchain.PendingAffiliateLiquidityFee.tx_id":
+		x.TxId = ""
+	case "thorchain.PendingAffiliateLiquidityFee.index":
+		x.Index = uint32(0)
+	case "thorchain.PendingAffiliateLiquidityFee.thorname":
+		x.Thorname = ""
+	case "thorchain.PendingAffiliateLiquidityFee.fee":
+		x.Fee = ""
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: thorchain.PendingAffiliateLiquidityFee"))
+		}
+		panic(fmt.Errorf("message thorchain.PendingAffiliateLiquidityFee does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_PendingAffiliateLiquidityFee) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "thorchain.PendingAffiliateLiquidityFee.tx_id":
+		value := x.TxId
+		return protoreflect.ValueOfString(value)
+	case "thorchain.PendingAffiliateLiquidityFee.index":
+		value := x.Index
+		return protoreflect.ValueOfUint32(value)
+	case "thorchain.PendingAffiliateLiquidityFee.thorname":
+		value := x.Thorname
+		return protoreflect.ValueOfString(value)
+	case "thorchain.PendingAffiliateLiquidityFee.fee":
+		value := x.Fee
+		return protoreflect.ValueOfString(value)
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: thorchain.PendingAffiliateLiquidityFee"))
+		}
+		panic(fmt.Errorf("message thorchain.PendingAffiliateLiquidityFee does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_PendingAffiliateLiquidityFee) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "thorchain.PendingAffiliateLiquidityFee.tx_id":
+		x.TxId = value.Interface().(string)
+	case "thorchain.PendingAffiliateLiquidityFee.index":
+		x.Index = uint32(value.Uint())
+	case "thorchain.PendingAffiliateLiquidityFee.thorname":
+		x.Thorname = value.Interface().(string)
+	case "thorchain.PendingAffiliateLiquidityFee.fee":
+		x.Fee = value.Interface().(string)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: thorchain.PendingAffiliateLiquidityFee"))
+		}
+		panic(fmt.Errorf("message thorchain.PendingAffiliateLiquidityFee does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_PendingAffiliateLiquidityFee) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "thorchain.PendingAffiliateLiquidityFee.tx_id":
+		panic(fmt.Errorf("field tx_id of message thorchain.PendingAffiliateLiquidityFee is not mutable"))
+	case "thorchain.PendingAffiliateLiquidityFee.index":
+		panic(fmt.Errorf("field index of message thorchain.PendingAffiliateLiquidityFee is not mutable"))
+	case "thorchain.PendingAffiliateLiquidityFee.thorname":
+		panic(fmt.Errorf("field thorname of message thorchain.PendingAffiliateLiquidityFee is not mutable"))
+	case "thorchain.PendingAffiliateLiquidityFee.fee":
+		panic(fmt.Errorf("field fee of message thorchain.PendingAffiliateLiquidityFee is not mutable"))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: thorchain.PendingAffiliateLiquidityFee"))
+		}
+		panic(fmt.Errorf("message thorchain.PendingAffiliateLiquidityFee does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_PendingAffiliateLiquidityFee) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "thorchain.PendingAffiliateLiquidityFee.tx_id":
+		return protoreflect.ValueOfString("")
+	case "thorchain.PendingAffiliateLiquidityFee.index":
+		return protoreflect.ValueOfUint32(uint32(0))
+	case "thorchain.PendingAffiliateLiquidityFee.thorname":
+		return protoreflect.ValueOfString("")
+	case "thorchain.PendingAffiliateLiquidityFee.fee":
+		return protoreflect.ValueOfString("")
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: thorchain.PendingAffiliateLiquidityFee"))
+		}
+		panic(fmt.Errorf("message thorchain.PendingAffiliateLiquidityFee does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_PendingAffiliateLiquidityFee) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in thorchain.PendingAffiliateLiquidityFee", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_PendingAffiliateLiquidityFee) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_PendingAffiliateLiquidityFee) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_PendingAffiliateLiquidityFee) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_PendingAffiliateLiquidityFee) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*PendingAffiliateLiquidityFee)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		l = len(x.TxId)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.Index != 0 {
+			n += 1 + runtime.Sov(uint64(x.Index))
+		}
+		l = len(x.Thorname)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.Fee)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*PendingAffiliateLiquidityFee)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.Fee) > 0 {
+			i -= len(x.Fee)
+			copy(dAtA[i:], x.Fee)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Fee)))
+			i--
+			dAtA[i] = 0x22
+		}
+		if len(x.Thorname) > 0 {
+			i -= len(x.Thorname)
+			copy(dAtA[i:], x.Thorname)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Thorname)))
+			i--
+			dAtA[i] = 0x1a
+		}
+		if x.Index != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.Index))
+			i--
+			dAtA[i] = 0x10
+		}
+		if len(x.TxId) > 0 {
+			i -= len(x.TxId)
+			copy(dAtA[i:], x.TxId)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.TxId)))
+			i--
+			dAtA[i] = 0xa
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*PendingAffiliateLiquidityFee)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: PendingAffiliateLiquidityFee: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: PendingAffiliateLiquidityFee: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field TxId", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.TxId = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 2:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Index", wireType)
+				}
+				x.Index = 0
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					x.Index |= uint32(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+			case 3:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Thorname", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Thorname = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 4:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Fee", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Fee = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
 				skippy, err := runtime.Skip(dAtA[iNdEx:])
@@ -7374,6 +8110,9 @@ type GenesisState struct {
 	StableReserveCredits              []*StableReserveCredit         `protobuf:"bytes,49,rep,name=stable_reserve_credits,json=stableReserveCredits,proto3" json:"stable_reserve_credits,omitempty"`
 	SolVaultNonces                    []*types.SolVaultNonce         `protobuf:"bytes,50,rep,name=sol_vault_nonces,json=solVaultNonces,proto3" json:"sol_vault_nonces,omitempty"`
 	StagedOutbounds                   []*types.StagedOutboundList    `protobuf:"bytes,51,rep,name=staged_outbounds,json=stagedOutbounds,proto3" json:"staged_outbounds,omitempty"`
+	// Field 52 is intentionally left available for the follow-up full mempool
+	// lifecycle schema.
+	PendingAffiliateLiquidityFees []*PendingAffiliateLiquidityFee `protobuf:"bytes,53,rep,name=pending_affiliate_liquidity_fees,json=pendingAffiliateLiquidityFees,proto3" json:"pending_affiliate_liquidity_fees,omitempty"`
 }
 
 func (x *GenesisState) Reset() {
@@ -7691,6 +8430,76 @@ func (x *GenesisState) GetStagedOutbounds() []*types.StagedOutboundList {
 	return nil
 }
 
+func (x *GenesisState) GetPendingAffiliateLiquidityFees() []*PendingAffiliateLiquidityFee {
+	if x != nil {
+		return x.PendingAffiliateLiquidityFees
+	}
+	return nil
+}
+
+// PendingAffiliateLiquidityFee preserves REVSHARE attribution produced by a
+// mempool swap while its inbound is still unfinalized. The keeper value uses
+// the existing uint64 encoding; genesis uses a decimal string to avoid JSON
+// precision loss.
+type PendingAffiliateLiquidityFee struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	TxId     string `protobuf:"bytes,1,opt,name=tx_id,json=txId,proto3" json:"tx_id,omitempty"`
+	Index    uint32 `protobuf:"varint,2,opt,name=index,proto3" json:"index,omitempty"`
+	Thorname string `protobuf:"bytes,3,opt,name=thorname,proto3" json:"thorname,omitempty"`
+	Fee      string `protobuf:"bytes,4,opt,name=fee,proto3" json:"fee,omitempty"`
+}
+
+func (x *PendingAffiliateLiquidityFee) Reset() {
+	*x = PendingAffiliateLiquidityFee{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_thorchain_genesis_proto_msgTypes[4]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *PendingAffiliateLiquidityFee) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PendingAffiliateLiquidityFee) ProtoMessage() {}
+
+// Deprecated: Use PendingAffiliateLiquidityFee.ProtoReflect.Descriptor instead.
+func (*PendingAffiliateLiquidityFee) Descriptor() ([]byte, []int) {
+	return file_thorchain_genesis_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *PendingAffiliateLiquidityFee) GetTxId() string {
+	if x != nil {
+		return x.TxId
+	}
+	return ""
+}
+
+func (x *PendingAffiliateLiquidityFee) GetIndex() uint32 {
+	if x != nil {
+		return x.Index
+	}
+	return 0
+}
+
+func (x *PendingAffiliateLiquidityFee) GetThorname() string {
+	if x != nil {
+		return x.Thorname
+	}
+	return ""
+}
+
+func (x *PendingAffiliateLiquidityFee) GetFee() string {
+	if x != nil {
+		return x.Fee
+	}
+	return ""
+}
+
 var File_thorchain_genesis_proto protoreflect.FileDescriptor
 
 var file_thorchain_genesis_proto_rawDesc = []byte{
@@ -7762,7 +8571,7 @@ var file_thorchain_genesis_proto_rawDesc = []byte{
 	0x18, 0x0a, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09,
 	0x52, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x12, 0x16, 0x0a, 0x06, 0x61, 0x6d, 0x6f,
 	0x75, 0x6e, 0x74, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x61, 0x6d, 0x6f, 0x75, 0x6e,
-	0x74, 0x22, 0x80, 0x1a, 0x0a, 0x0c, 0x47, 0x65, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x53, 0x74, 0x61,
+	0x74, 0x22, 0xf8, 0x1a, 0x0a, 0x0c, 0x47, 0x65, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x53, 0x74, 0x61,
 	0x74, 0x65, 0x12, 0x27, 0x0a, 0x05, 0x70, 0x6f, 0x6f, 0x6c, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28,
 	0x0b, 0x32, 0x0b, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x50, 0x6f, 0x6f, 0x6c, 0x42, 0x04,
 	0xc8, 0xde, 0x1f, 0x00, 0x52, 0x05, 0x70, 0x6f, 0x6f, 0x6c, 0x73, 0x12, 0x98, 0x01, 0x0a, 0x13,
@@ -7967,19 +8776,35 @@ var file_thorchain_genesis_proto_rawDesc = []byte{
 	0x64, 0x73, 0x18, 0x33, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x19, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73,
 	0x2e, 0x53, 0x74, 0x61, 0x67, 0x65, 0x64, 0x4f, 0x75, 0x74, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x4c,
 	0x69, 0x73, 0x74, 0x42, 0x04, 0xc8, 0xde, 0x1f, 0x00, 0x52, 0x0f, 0x73, 0x74, 0x61, 0x67, 0x65,
-	0x64, 0x4f, 0x75, 0x74, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x73, 0x4a, 0x04, 0x08, 0x09, 0x10, 0x0a,
-	0x4a, 0x04, 0x08, 0x0e, 0x10, 0x0f, 0x4a, 0x04, 0x08, 0x0f, 0x10, 0x10, 0x4a, 0x04, 0x08, 0x10,
-	0x10, 0x11, 0x4a, 0x04, 0x08, 0x11, 0x10, 0x12, 0x4a, 0x04, 0x08, 0x12, 0x10, 0x13, 0x4a, 0x04,
-	0x08, 0x15, 0x10, 0x16, 0x42, 0x91, 0x01, 0x0a, 0x0d, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x68, 0x6f,
-	0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x42, 0x0c, 0x47, 0x65, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x50,
-	0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2e, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63,
-	0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f,
-	0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x68, 0x6f,
-	0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x09, 0x54,
-	0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0xca, 0x02, 0x09, 0x54, 0x68, 0x6f, 0x72, 0x63,
-	0x68, 0x61, 0x69, 0x6e, 0xe2, 0x02, 0x15, 0x54, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e,
-	0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x09, 0x54,
-	0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x64, 0x4f, 0x75, 0x74, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x73, 0x12, 0x76, 0x0a, 0x20, 0x70, 0x65,
+	0x6e, 0x64, 0x69, 0x6e, 0x67, 0x5f, 0x61, 0x66, 0x66, 0x69, 0x6c, 0x69, 0x61, 0x74, 0x65, 0x5f,
+	0x6c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x69, 0x74, 0x79, 0x5f, 0x66, 0x65, 0x65, 0x73, 0x18, 0x35,
+	0x20, 0x03, 0x28, 0x0b, 0x32, 0x27, 0x2e, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e,
+	0x2e, 0x50, 0x65, 0x6e, 0x64, 0x69, 0x6e, 0x67, 0x41, 0x66, 0x66, 0x69, 0x6c, 0x69, 0x61, 0x74,
+	0x65, 0x4c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x69, 0x74, 0x79, 0x46, 0x65, 0x65, 0x42, 0x04, 0xc8,
+	0xde, 0x1f, 0x00, 0x52, 0x1d, 0x70, 0x65, 0x6e, 0x64, 0x69, 0x6e, 0x67, 0x41, 0x66, 0x66, 0x69,
+	0x6c, 0x69, 0x61, 0x74, 0x65, 0x4c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x69, 0x74, 0x79, 0x46, 0x65,
+	0x65, 0x73, 0x4a, 0x04, 0x08, 0x09, 0x10, 0x0a, 0x4a, 0x04, 0x08, 0x0e, 0x10, 0x0f, 0x4a, 0x04,
+	0x08, 0x0f, 0x10, 0x10, 0x4a, 0x04, 0x08, 0x10, 0x10, 0x11, 0x4a, 0x04, 0x08, 0x11, 0x10, 0x12,
+	0x4a, 0x04, 0x08, 0x12, 0x10, 0x13, 0x4a, 0x04, 0x08, 0x15, 0x10, 0x16, 0x22, 0x77, 0x0a, 0x1c,
+	0x50, 0x65, 0x6e, 0x64, 0x69, 0x6e, 0x67, 0x41, 0x66, 0x66, 0x69, 0x6c, 0x69, 0x61, 0x74, 0x65,
+	0x4c, 0x69, 0x71, 0x75, 0x69, 0x64, 0x69, 0x74, 0x79, 0x46, 0x65, 0x65, 0x12, 0x13, 0x0a, 0x05,
+	0x74, 0x78, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x04, 0x74, 0x78, 0x49,
+	0x64, 0x12, 0x14, 0x0a, 0x05, 0x69, 0x6e, 0x64, 0x65, 0x78, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0d,
+	0x52, 0x05, 0x69, 0x6e, 0x64, 0x65, 0x78, 0x12, 0x1a, 0x0a, 0x08, 0x74, 0x68, 0x6f, 0x72, 0x6e,
+	0x61, 0x6d, 0x65, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x74, 0x68, 0x6f, 0x72, 0x6e,
+	0x61, 0x6d, 0x65, 0x12, 0x10, 0x0a, 0x03, 0x66, 0x65, 0x65, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09,
+	0x52, 0x03, 0x66, 0x65, 0x65, 0x42, 0x91, 0x01, 0x0a, 0x0d, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x68,
+	0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x42, 0x0c, 0x47, 0x65, 0x6e, 0x65, 0x73, 0x69, 0x73,
+	0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2e, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e,
+	0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68,
+	0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x68,
+	0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x09,
+	0x54, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0xca, 0x02, 0x09, 0x54, 0x68, 0x6f, 0x72,
+	0x63, 0x68, 0x61, 0x69, 0x6e, 0xe2, 0x02, 0x15, 0x54, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69,
+	0x6e, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x09,
+	0x54, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f,
+	0x33,
 }
 
 var (
@@ -7994,89 +8819,91 @@ func file_thorchain_genesis_proto_rawDescGZIP() []byte {
 	return file_thorchain_genesis_proto_rawDescData
 }
 
-var file_thorchain_genesis_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_thorchain_genesis_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_thorchain_genesis_proto_goTypes = []interface{}{
 	(*LastChainHeight)(nil),              // 0: thorchain.lastChainHeight
 	(*Mimir)(nil),                        // 1: thorchain.mimir
 	(*StableReserveCredit)(nil),          // 2: thorchain.StableReserveCredit
 	(*GenesisState)(nil),                 // 3: thorchain.GenesisState
-	(*types.Pool)(nil),                   // 4: types.Pool
-	(*types.LiquidityProvider)(nil),      // 5: types.LiquidityProvider
-	(*types.ObservedTxVoter)(nil),        // 6: types.ObservedTxVoter
-	(*types.TxOut)(nil),                  // 7: types.TxOut
-	(*types.NodeAccount)(nil),            // 8: types.NodeAccount
-	(*types.Vault)(nil),                  // 9: types.Vault
-	(*types.ReserveContributor)(nil),     // 10: types.ReserveContributor
-	(*types.Network)(nil),                // 11: types.Network
-	(*types.MsgSwap)(nil),                // 12: types.MsgSwap
-	(*types.NetworkFee)(nil),             // 13: types.NetworkFee
-	(*types.ChainContract)(nil),          // 14: types.ChainContract
-	(*types.THORName)(nil),               // 15: types.THORName
-	(*types.BondProviders)(nil),          // 16: types.BondProviders
-	(*types.ProtocolOwnedLiquidity)(nil), // 17: types.ProtocolOwnedLiquidity
-	(*types.StreamingSwap)(nil),          // 18: types.StreamingSwap
-	(*types.SwapperClout)(nil),           // 19: types.SwapperClout
-	(*types.TradeAccount)(nil),           // 20: types.TradeAccount
-	(*types.TradeUnit)(nil),              // 21: types.TradeUnit
-	(*common.Coin)(nil),                  // 22: common.Coin
-	(*types.RUNEProvider)(nil),           // 23: types.RUNEProvider
-	(*types.RUNEPool)(nil),               // 24: types.RUNEPool
-	(*types.NodeMimir)(nil),              // 25: types.NodeMimir
-	(*types.AffiliateFeeCollector)(nil),  // 26: types.AffiliateFeeCollector
-	(*types.SecuredAsset)(nil),           // 27: types.SecuredAsset
-	(*types.TCYClaimer)(nil),             // 28: types.TCYClaimer
-	(*types.TCYStaker)(nil),              // 29: types.TCYStaker
-	(*types.ReferenceMemo)(nil),          // 30: types.ReferenceMemo
-	(*types.POLReserveDeposit)(nil),      // 31: types.POLReserveDeposit
-	(*types.DynamicFeeRecord)(nil),       // 32: types.DynamicFeeRecord
-	(*types.DynamicFeeAccumulator)(nil),  // 33: types.DynamicFeeAccumulator
-	(*types.SolVaultNonce)(nil),          // 34: types.SolVaultNonce
-	(*types.StagedOutboundList)(nil),     // 35: types.StagedOutboundList
+	(*PendingAffiliateLiquidityFee)(nil), // 4: thorchain.PendingAffiliateLiquidityFee
+	(*types.Pool)(nil),                   // 5: types.Pool
+	(*types.LiquidityProvider)(nil),      // 6: types.LiquidityProvider
+	(*types.ObservedTxVoter)(nil),        // 7: types.ObservedTxVoter
+	(*types.TxOut)(nil),                  // 8: types.TxOut
+	(*types.NodeAccount)(nil),            // 9: types.NodeAccount
+	(*types.Vault)(nil),                  // 10: types.Vault
+	(*types.ReserveContributor)(nil),     // 11: types.ReserveContributor
+	(*types.Network)(nil),                // 12: types.Network
+	(*types.MsgSwap)(nil),                // 13: types.MsgSwap
+	(*types.NetworkFee)(nil),             // 14: types.NetworkFee
+	(*types.ChainContract)(nil),          // 15: types.ChainContract
+	(*types.THORName)(nil),               // 16: types.THORName
+	(*types.BondProviders)(nil),          // 17: types.BondProviders
+	(*types.ProtocolOwnedLiquidity)(nil), // 18: types.ProtocolOwnedLiquidity
+	(*types.StreamingSwap)(nil),          // 19: types.StreamingSwap
+	(*types.SwapperClout)(nil),           // 20: types.SwapperClout
+	(*types.TradeAccount)(nil),           // 21: types.TradeAccount
+	(*types.TradeUnit)(nil),              // 22: types.TradeUnit
+	(*common.Coin)(nil),                  // 23: common.Coin
+	(*types.RUNEProvider)(nil),           // 24: types.RUNEProvider
+	(*types.RUNEPool)(nil),               // 25: types.RUNEPool
+	(*types.NodeMimir)(nil),              // 26: types.NodeMimir
+	(*types.AffiliateFeeCollector)(nil),  // 27: types.AffiliateFeeCollector
+	(*types.SecuredAsset)(nil),           // 28: types.SecuredAsset
+	(*types.TCYClaimer)(nil),             // 29: types.TCYClaimer
+	(*types.TCYStaker)(nil),              // 30: types.TCYStaker
+	(*types.ReferenceMemo)(nil),          // 31: types.ReferenceMemo
+	(*types.POLReserveDeposit)(nil),      // 32: types.POLReserveDeposit
+	(*types.DynamicFeeRecord)(nil),       // 33: types.DynamicFeeRecord
+	(*types.DynamicFeeAccumulator)(nil),  // 34: types.DynamicFeeAccumulator
+	(*types.SolVaultNonce)(nil),          // 35: types.SolVaultNonce
+	(*types.StagedOutboundList)(nil),     // 36: types.StagedOutboundList
 }
 var file_thorchain_genesis_proto_depIdxs = []int32{
-	4,  // 0: thorchain.GenesisState.pools:type_name -> types.Pool
-	5,  // 1: thorchain.GenesisState.liquidity_providers:type_name -> types.LiquidityProvider
-	6,  // 2: thorchain.GenesisState.observed_tx_in_voters:type_name -> types.ObservedTxVoter
-	6,  // 3: thorchain.GenesisState.observed_tx_out_voters:type_name -> types.ObservedTxVoter
-	7,  // 4: thorchain.GenesisState.tx_outs:type_name -> types.TxOut
-	8,  // 5: thorchain.GenesisState.node_accounts:type_name -> types.NodeAccount
-	9,  // 6: thorchain.GenesisState.vaults:type_name -> types.Vault
+	5,  // 0: thorchain.GenesisState.pools:type_name -> types.Pool
+	6,  // 1: thorchain.GenesisState.liquidity_providers:type_name -> types.LiquidityProvider
+	7,  // 2: thorchain.GenesisState.observed_tx_in_voters:type_name -> types.ObservedTxVoter
+	7,  // 3: thorchain.GenesisState.observed_tx_out_voters:type_name -> types.ObservedTxVoter
+	8,  // 4: thorchain.GenesisState.tx_outs:type_name -> types.TxOut
+	9,  // 5: thorchain.GenesisState.node_accounts:type_name -> types.NodeAccount
+	10, // 6: thorchain.GenesisState.vaults:type_name -> types.Vault
 	0,  // 7: thorchain.GenesisState.last_chain_heights:type_name -> thorchain.lastChainHeight
-	10, // 8: thorchain.GenesisState.reserve_contributors:type_name -> types.ReserveContributor
-	11, // 9: thorchain.GenesisState.network:type_name -> types.Network
-	12, // 10: thorchain.GenesisState.adv_swap_queue_items:type_name -> types.MsgSwap
-	13, // 11: thorchain.GenesisState.network_fees:type_name -> types.NetworkFee
-	14, // 12: thorchain.GenesisState.chain_contracts:type_name -> types.ChainContract
-	15, // 13: thorchain.GenesisState.THORNames:type_name -> types.THORName
+	11, // 8: thorchain.GenesisState.reserve_contributors:type_name -> types.ReserveContributor
+	12, // 9: thorchain.GenesisState.network:type_name -> types.Network
+	13, // 10: thorchain.GenesisState.adv_swap_queue_items:type_name -> types.MsgSwap
+	14, // 11: thorchain.GenesisState.network_fees:type_name -> types.NetworkFee
+	15, // 12: thorchain.GenesisState.chain_contracts:type_name -> types.ChainContract
+	16, // 13: thorchain.GenesisState.THORNames:type_name -> types.THORName
 	1,  // 14: thorchain.GenesisState.mimirs:type_name -> thorchain.mimir
-	16, // 15: thorchain.GenesisState.bond_providers:type_name -> types.BondProviders
-	17, // 16: thorchain.GenesisState.POL:type_name -> types.ProtocolOwnedLiquidity
-	18, // 17: thorchain.GenesisState.streaming_swaps:type_name -> types.StreamingSwap
-	12, // 18: thorchain.GenesisState.swap_queue_items:type_name -> types.MsgSwap
-	19, // 19: thorchain.GenesisState.swapper_clout:type_name -> types.SwapperClout
-	20, // 20: thorchain.GenesisState.trade_accounts:type_name -> types.TradeAccount
-	21, // 21: thorchain.GenesisState.trade_units:type_name -> types.TradeUnit
-	22, // 22: thorchain.GenesisState.outbound_fee_withheld_rune:type_name -> common.Coin
-	22, // 23: thorchain.GenesisState.outbound_fee_spent_rune:type_name -> common.Coin
-	23, // 24: thorchain.GenesisState.rune_providers:type_name -> types.RUNEProvider
-	24, // 25: thorchain.GenesisState.rune_pool:type_name -> types.RUNEPool
-	25, // 26: thorchain.GenesisState.nodeMimirs:type_name -> types.NodeMimir
-	26, // 27: thorchain.GenesisState.affiliate_collectors:type_name -> types.AffiliateFeeCollector
-	27, // 28: thorchain.GenesisState.secured_assets:type_name -> types.SecuredAsset
-	28, // 29: thorchain.GenesisState.tcy_claimers:type_name -> types.TCYClaimer
-	29, // 30: thorchain.GenesisState.tcy_stakers:type_name -> types.TCYStaker
-	30, // 31: thorchain.GenesisState.reference_memos:type_name -> types.ReferenceMemo
-	31, // 32: thorchain.GenesisState.pol_reserve_deposits:type_name -> types.POLReserveDeposit
-	32, // 33: thorchain.GenesisState.dynamic_fee_records:type_name -> types.DynamicFeeRecord
-	33, // 34: thorchain.GenesisState.dynamic_fee_accumulators:type_name -> types.DynamicFeeAccumulator
+	17, // 15: thorchain.GenesisState.bond_providers:type_name -> types.BondProviders
+	18, // 16: thorchain.GenesisState.POL:type_name -> types.ProtocolOwnedLiquidity
+	19, // 17: thorchain.GenesisState.streaming_swaps:type_name -> types.StreamingSwap
+	13, // 18: thorchain.GenesisState.swap_queue_items:type_name -> types.MsgSwap
+	20, // 19: thorchain.GenesisState.swapper_clout:type_name -> types.SwapperClout
+	21, // 20: thorchain.GenesisState.trade_accounts:type_name -> types.TradeAccount
+	22, // 21: thorchain.GenesisState.trade_units:type_name -> types.TradeUnit
+	23, // 22: thorchain.GenesisState.outbound_fee_withheld_rune:type_name -> common.Coin
+	23, // 23: thorchain.GenesisState.outbound_fee_spent_rune:type_name -> common.Coin
+	24, // 24: thorchain.GenesisState.rune_providers:type_name -> types.RUNEProvider
+	25, // 25: thorchain.GenesisState.rune_pool:type_name -> types.RUNEPool
+	26, // 26: thorchain.GenesisState.nodeMimirs:type_name -> types.NodeMimir
+	27, // 27: thorchain.GenesisState.affiliate_collectors:type_name -> types.AffiliateFeeCollector
+	28, // 28: thorchain.GenesisState.secured_assets:type_name -> types.SecuredAsset
+	29, // 29: thorchain.GenesisState.tcy_claimers:type_name -> types.TCYClaimer
+	30, // 30: thorchain.GenesisState.tcy_stakers:type_name -> types.TCYStaker
+	31, // 31: thorchain.GenesisState.reference_memos:type_name -> types.ReferenceMemo
+	32, // 32: thorchain.GenesisState.pol_reserve_deposits:type_name -> types.POLReserveDeposit
+	33, // 33: thorchain.GenesisState.dynamic_fee_records:type_name -> types.DynamicFeeRecord
+	34, // 34: thorchain.GenesisState.dynamic_fee_accumulators:type_name -> types.DynamicFeeAccumulator
 	2,  // 35: thorchain.GenesisState.stable_reserve_credits:type_name -> thorchain.StableReserveCredit
-	34, // 36: thorchain.GenesisState.sol_vault_nonces:type_name -> types.SolVaultNonce
-	35, // 37: thorchain.GenesisState.staged_outbounds:type_name -> types.StagedOutboundList
-	38, // [38:38] is the sub-list for method output_type
-	38, // [38:38] is the sub-list for method input_type
-	38, // [38:38] is the sub-list for extension type_name
-	38, // [38:38] is the sub-list for extension extendee
-	0,  // [0:38] is the sub-list for field type_name
+	35, // 36: thorchain.GenesisState.sol_vault_nonces:type_name -> types.SolVaultNonce
+	36, // 37: thorchain.GenesisState.staged_outbounds:type_name -> types.StagedOutboundList
+	4,  // 38: thorchain.GenesisState.pending_affiliate_liquidity_fees:type_name -> thorchain.PendingAffiliateLiquidityFee
+	39, // [39:39] is the sub-list for method output_type
+	39, // [39:39] is the sub-list for method input_type
+	39, // [39:39] is the sub-list for extension type_name
+	39, // [39:39] is the sub-list for extension extendee
+	0,  // [0:39] is the sub-list for field type_name
 }
 
 func init() { file_thorchain_genesis_proto_init() }
@@ -8133,6 +8960,18 @@ func file_thorchain_genesis_proto_init() {
 				return nil
 			}
 		}
+		file_thorchain_genesis_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*PendingAffiliateLiquidityFee); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -8140,7 +8979,7 @@ func file_thorchain_genesis_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_thorchain_genesis_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

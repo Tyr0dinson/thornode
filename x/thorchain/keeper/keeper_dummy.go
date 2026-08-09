@@ -536,6 +536,28 @@ func (k KVStoreDummy) GetAffiliateLiquidityFees(ctx cosmos.Context) []AffiliateL
 
 func (k KVStoreDummy) DeleteAffiliateLiquidityFees(ctx cosmos.Context) {}
 
+func (k KVStoreDummy) AddPendingAffiliateLiquidityFee(_ cosmos.Context, _ common.TxID, _ uint32, _ string, _ cosmos.Uint) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) GetPendingAffiliateLiquidityFees(_ cosmos.Context, _ common.TxID) ([]PendingAffiliateLiquidityFee, error) {
+	return nil, kaboom
+}
+
+func (k KVStoreDummy) GetAllPendingAffiliateLiquidityFees(_ cosmos.Context) ([]PendingAffiliateLiquidityFee, error) {
+	return nil, kaboom
+}
+
+func (k KVStoreDummy) HasPendingAffiliateLiquidityFees(_ cosmos.Context, _ common.TxID) bool {
+	return false
+}
+
+func (k KVStoreDummy) DeletePendingAffiliateLiquidityFees(_ cosmos.Context, _ common.TxID) {}
+
+func (k KVStoreDummy) CommitPendingAffiliateLiquidityFees(_ cosmos.Context, _ common.TxID) error {
+	return kaboom
+}
+
 func (k KVStoreDummy) GetChains(_ cosmos.Context) (common.Chains, error) { return nil, kaboom }
 func (k KVStoreDummy) SetChains(_ cosmos.Context, _ common.Chains)       {}
 func (k KVStoreDummy) AddToSwapSlip(ctx cosmos.Context, asset common.Asset, amt cosmos.Int) error {

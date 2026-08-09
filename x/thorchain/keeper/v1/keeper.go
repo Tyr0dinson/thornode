@@ -114,6 +114,7 @@ const (
 	prefixTHORName                  types.DbPrefix = "thorname/"
 	prefixAffiliateCollector        types.DbPrefix = "affcol_name/"
 	prefixAffiliateLiquidityFee     types.DbPrefix = "affiliate_liquidity_fee/"
+	prefixPendingAffiliateLiqFee    types.DbPrefix = "pending_affiliate_liquidity_fee/"
 	prefixReferenceMemo             types.DbPrefix = "refm/"
 	prefixReferenceMemoIndex        types.DbPrefix = "refmi/"
 	prefixReferenceMemoHash         types.DbPrefix = "refmh/"

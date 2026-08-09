@@ -281,6 +281,84 @@ func (GenesisTestSuite) TestGenesisStagedMempoolSwapRoundTrip(c *C) {
 	c.Check(cloutValue.Equal(cloutSpent), Equals, true)
 }
 
+func (GenesisTestSuite) TestGenesisPendingAffiliateLiquidityFeeRoundTrip(c *C) {
+	SetupConfigForTest()
+
+	srcCtx, srcMgr := setupManagerForTest(c)
+	txA := GetRandomTxHash()
+	txB := GetRandomTxHash()
+	c.Assert(srcMgr.Keeper().AddPendingAffiliateLiquidityFee(srcCtx, txA, 0, "alpha", cosmos.NewUint(10)), IsNil)
+	c.Assert(srcMgr.Keeper().AddPendingAffiliateLiquidityFee(srcCtx, txA, 2, "bravo", cosmos.NewUint(20)), IsNil)
+	c.Assert(srcMgr.Keeper().AddPendingAffiliateLiquidityFee(srcCtx, txB, 0, "charlie", cosmos.NewUint(30)), IsNil)
+
+	exported := ExportGenesis(srcCtx, srcMgr.Keeper())
+	c.Assert(exported.PendingAffiliateLiquidityFees, HasLen, 3)
+	c.Assert(ValidateGenesis(exported), IsNil)
+	bz, err := exported.Marshal()
+	c.Assert(err, IsNil)
+	var decoded GenesisState
+	c.Assert(decoded.Unmarshal(bz), IsNil)
+
+	dstCtx, dstMgr := setupManagerForTest(c)
+	InitGenesis(dstCtx, dstMgr.Keeper(), decoded)
+	restoredA, err := dstMgr.Keeper().GetPendingAffiliateLiquidityFees(dstCtx, txA)
+	c.Assert(err, IsNil)
+	c.Assert(restoredA, HasLen, 2)
+	c.Check(restoredA[0].Index, Equals, uint32(0))
+	c.Check(restoredA[0].Thorname, Equals, "ALPHA")
+	c.Check(restoredA[0].Fee.Equal(cosmos.NewUint(10)), Equals, true)
+	c.Check(restoredA[1].Index, Equals, uint32(2))
+	c.Check(restoredA[1].Thorname, Equals, "BRAVO")
+	c.Check(restoredA[1].Fee.Equal(cosmos.NewUint(20)), Equals, true)
+	restoredB, err := dstMgr.Keeper().GetPendingAffiliateLiquidityFees(dstCtx, txB)
+	c.Assert(err, IsNil)
+	c.Assert(restoredB, HasLen, 1)
+	c.Check(restoredB[0].Fee.Equal(cosmos.NewUint(30)), Equals, true)
+}
+
+func (GenesisTestSuite) TestGenesisRejectsInvalidPendingAffiliateLiquidityFee(c *C) {
+	state := DefaultGenesisState()
+	state.PendingAffiliateLiquidityFees = []PendingAffiliateLiquidityFee{{
+		TxId:     "not-a-txid",
+		Thorname: "alpha",
+		Fee:      "10",
+	}}
+	c.Assert(ValidateGenesis(state), NotNil)
+
+	state.PendingAffiliateLiquidityFees[0].TxId = GetRandomTxHash().String()
+	state.PendingAffiliateLiquidityFees[0].Thorname = "bad/name"
+	c.Assert(ValidateGenesis(state), NotNil)
+
+	state.PendingAffiliateLiquidityFees[0].Thorname = "alpha"
+	state.PendingAffiliateLiquidityFees[0].Fee = "not-a-number"
+	c.Assert(ValidateGenesis(state), NotNil)
+
+	state.PendingAffiliateLiquidityFees[0].Fee = "0"
+	c.Assert(ValidateGenesis(state), NotNil)
+
+	state.PendingAffiliateLiquidityFees[0].Fee = "10"
+	state.PendingAffiliateLiquidityFees = append(state.PendingAffiliateLiquidityFees, state.PendingAffiliateLiquidityFees[0])
+	state.PendingAffiliateLiquidityFees[1].Thorname = "ALPHA"
+	c.Assert(ValidateGenesis(state), NotNil)
+
+	// SOL transaction IDs are case-sensitive at the type boundary, while the
+	// physical keeper key is upper-cased by GetKey. Genesis validation must use
+	// that same normalization and reject a physical-key collision.
+	state.PendingAffiliateLiquidityFees = []PendingAffiliateLiquidityFee{
+		{
+			TxId:     strings.Repeat("a", 88),
+			Thorname: "alpha",
+			Fee:      "10",
+		},
+		{
+			TxId:     strings.Repeat("A", 88),
+			Thorname: "ALPHA",
+			Fee:      "20",
+		},
+	}
+	c.Assert(ValidateGenesis(state), NotNil)
+}
+
 // TestGenesisDynamicFeeRoundtrip seeds a DynamicFeeRecord, accumulator, and
 // last-observed-epoch-blocks value into one keeper, exports the state,
 // imports into a fresh keeper, and re-exports. It then asserts the two

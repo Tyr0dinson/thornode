@@ -284,7 +284,19 @@ type AffiliateLiquidityFee struct {
 	Fee      cosmos.Uint
 }
 
-// KeeperAffiliateLiquidityFees is the per-block REVSHARE accumulator surface.
+// PendingAffiliateLiquidityFee is liquidity-fee attribution produced by a
+// mempool swap before its inbound reaches finality. Entries are keyed by the
+// originating swap so they can be committed exactly once on finality or
+// discarded atomically with rollback.
+type PendingAffiliateLiquidityFee struct {
+	TxID     common.TxID
+	Index    uint32
+	Thorname string
+	Fee      cosmos.Uint
+}
+
+// KeeperAffiliateLiquidityFees owns the per-block REVSHARE accumulator and the
+// finality-gated pending attribution produced by speculative mempool swaps.
 //
 // CONSENSUS-CRITICAL: GetAffiliateLiquidityFees MUST return a slice (not a map)
 // sorted by Thorname. The end-of-block payout loop in NetworkMgr.processRevShare
@@ -296,6 +308,12 @@ type KeeperAffiliateLiquidityFees interface {
 	AddAffiliateLiquidityFee(ctx cosmos.Context, thorname string, fee cosmos.Uint) error
 	GetAffiliateLiquidityFees(ctx cosmos.Context) []AffiliateLiquidityFee
 	DeleteAffiliateLiquidityFees(ctx cosmos.Context)
+	AddPendingAffiliateLiquidityFee(ctx cosmos.Context, txID common.TxID, index uint32, thorname string, fee cosmos.Uint) error
+	GetPendingAffiliateLiquidityFees(ctx cosmos.Context, txID common.TxID) ([]PendingAffiliateLiquidityFee, error)
+	GetAllPendingAffiliateLiquidityFees(ctx cosmos.Context) ([]PendingAffiliateLiquidityFee, error)
+	HasPendingAffiliateLiquidityFees(ctx cosmos.Context, txID common.TxID) bool
+	DeletePendingAffiliateLiquidityFees(ctx cosmos.Context, txID common.TxID)
+	CommitPendingAffiliateLiquidityFees(ctx cosmos.Context, txID common.TxID) error
 }
 
 type KeeperOutboundFees interface {
