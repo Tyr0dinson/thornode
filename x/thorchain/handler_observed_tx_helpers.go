@@ -549,6 +549,14 @@ func handleObservedTxInQuorum(
 	// forcing an immediate hard failure here; if retries also fail, LackSigning
 	// force-rolls back the swap after 3x the normal timeout to release TOR capacity.
 	if hasFinalised && voter.HasReservedMempoolSwapTOR() {
+		// Realized REVSHARE from every speculative leg is kept outside the
+		// per-block payout accumulator until this transition. Flush it before
+		// releasing any discoverability or capacity marker; on failure, retain
+		// the complete pending snapshot for a later finalize/timeout retry.
+		if err = commitPendingAffiliateLiquidityFeesAtomic(ctx, k, voter.TxID); err != nil {
+			ctx.Logger().Error("fail to finalize pending affiliate liquidity fees", "error", err, "hash", voter.TxID)
+			return nil
+		}
 		switch {
 		case len(voter.Actions) > 0:
 			if err = finalizeOutboundsAtomic(ctx, mgr, voter); err != nil {
@@ -2951,6 +2959,9 @@ func applyDeferredAffiliateFees(ctx cosmos.Context, mgr Manager, outbounds []fin
 // inbound confirms. Native outbounds run here, and external ones go to TxOut.
 func finalizeOutboundsCached(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter) error {
 	ctx.Logger().Info("finalizing outbounds for inbound", "hash", voter.TxID)
+	if err := mgr.Keeper().CommitPendingAffiliateLiquidityFees(ctx, voter.TxID); err != nil {
+		return fmt.Errorf("fail to finalize pending affiliate liquidity fees: %w", err)
+	}
 
 	// Get staged outbounds for this inbound transaction
 	// Idempotency: if no staged outbounds exist, either they were never staged or already finalized
@@ -3292,6 +3303,7 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 		if err = clearPendingMempoolSwapQueueItems(ctx, keeper, voter.TxID); err != nil {
 			return err
 		}
+		keeper.DeletePendingAffiliateLiquidityFees(ctx, voter.TxID)
 		voter = clearMempoolRollbackState(voter)
 		keeper.SetObservedTxInVoter(ctx, voter)
 		return nil
@@ -3471,6 +3483,7 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 	if err = clearPendingMempoolSwapQueueItems(ctx, keeper, voter.TxID); err != nil {
 		return err
 	}
+	keeper.DeletePendingAffiliateLiquidityFees(ctx, voter.TxID)
 
 	// Reset the voter now that all mempool state has been undone.
 	voter = clearMempoolRollbackState(voter)

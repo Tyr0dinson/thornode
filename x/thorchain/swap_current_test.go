@@ -11,6 +11,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // addAffLiqFeeErrKeeper wraps a real keeper but forces
@@ -887,6 +888,90 @@ func (s *SwapSuite) TestAffiliateAttribution(c *C) {
 	c.Assert(got, HasLen, 1, Commentf("expected accumulator to contain an attribution entry"))
 	c.Assert(got[0].Thorname, Equals, "AFFX")
 	c.Assert(got[0].Fee.IsZero(), Equals, false)
+}
+
+func (s *SwapSuite) TestUnfinalizedMempoolAffiliateAttributionStaysPendingAcrossSlices(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.LPUnits = pool.BalanceRune
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	thorAddr := GetRandomTHORAddress()
+	mgr.Keeper().SetTHORName(ctx, NewTHORName(
+		"affx",
+		ctx.BlockHeight()+1000,
+		[]THORNameAlias{{Chain: common.THORChain, Address: thorAddr}},
+	))
+
+	destination := GetRandomTHORAddress()
+	tx := common.NewTx(
+		GetRandomTxHash(),
+		GetRandomBTCAddress(),
+		GetRandomBTCAddress(),
+		common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One))},
+		common.Gas{common.NewCoin(common.BTCAsset, cosmos.OneUint())},
+		"=:r:"+destination.String()+"::affx:100",
+	)
+	tx.Chain = common.BTCChain
+	observed := ObservedTx{Tx: tx}
+	voter := NewObservedTxVoter(tx.ID, ObservedTxs{observed})
+	voter.Tx = observed
+	voter.MempoolSwapTOR = cosmos.OneUint()
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
+	msg := NewMsgSwap(
+		tx,
+		common.RuneAsset(),
+		destination,
+		cosmos.ZeroUint(),
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		"",
+		"",
+		nil,
+		types.SwapType_market,
+		0,
+		0,
+		types.SwapVersion_v2,
+		GetRandomBech32Addr(),
+	)
+	msg.Index = 7
+
+	// Advanced-queue production execution wraps each slice in a CacheContext
+	// and owns settlement. Suppress direct outbound scheduling here so this
+	// focused test exercises only swap-time fee attribution.
+	swapCtx := ctx.WithValue(constants.CtxSkipSwapOutbounds, true)
+	swapCtx, err := prepareMempoolSwapAffiliateContext(swapCtx, mgr.Keeper(), *msg)
+	c.Assert(err, IsNil)
+	_, _, err = NewSwapHandler(mgr).RunWithEmit(swapCtx, msg)
+	c.Assert(err, IsNil)
+	c.Check(mgr.Keeper().GetAffiliateLiquidityFees(ctx), HasLen, 0,
+		Commentf("unfinalized speculative fee must not enter the payout accumulator"))
+	pending, err := mgr.Keeper().GetPendingAffiliateLiquidityFees(ctx, tx.ID)
+	c.Assert(err, IsNil)
+	c.Assert(pending, HasLen, 1)
+	c.Check(pending[0].Index, Equals, uint32(7))
+	c.Check(pending[0].Thorname, Equals, "AFFX")
+	c.Check(pending[0].Fee.IsZero(), Equals, false)
+	firstSliceFee := pending[0].Fee
+
+	// A later streaming slice for the same queue identity folds into the same
+	// durable record while the ordinary per-block accumulator remains empty.
+	swapCtx = swapCtx.WithBlockHeight(swapCtx.BlockHeight() + 1)
+	swapCtx, err = prepareMempoolSwapAffiliateContext(swapCtx, mgr.Keeper(), *msg)
+	c.Assert(err, IsNil)
+	_, _, err = NewSwapHandler(mgr).RunWithEmit(swapCtx, msg)
+	c.Assert(err, IsNil)
+	pending, err = mgr.Keeper().GetPendingAffiliateLiquidityFees(swapCtx, tx.ID)
+	c.Assert(err, IsNil)
+	c.Assert(pending, HasLen, 1)
+	c.Check(pending[0].Fee.GT(firstSliceFee), Equals, true)
+	c.Check(mgr.Keeper().GetAffiliateLiquidityFees(swapCtx), HasLen, 0)
 }
 
 func (s *SwapSuite) TestAffiliateAttributionSkippedForAffiliateCollectorDestination(c *C) {

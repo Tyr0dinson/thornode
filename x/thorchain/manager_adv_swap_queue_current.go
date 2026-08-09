@@ -962,7 +962,11 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 				handlerTrace{path: pathAdvancedSwapQueue, msg: msg},
 				func() (cosmos.Uint, error) {
 					result := cosmos.ZeroUint()
-					err := runLuviGuarded(ctx, cacheCtx, mgr, msg, func(runCtx cosmos.Context) error {
+					executionCtx, err := prepareMempoolSwapAffiliateContext(cacheCtx, vm.k, *msg)
+					if err != nil {
+						return result, err
+					}
+					err = runLuviGuarded(ctx, executionCtx, mgr, msg, func(runCtx cosmos.Context) error {
 						var runErr error
 						_, result, effectiveInput, runErr = swapHandler.runWithEmitAndInput(runCtx, msg)
 						return runErr

@@ -892,6 +892,8 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwap(c *C) {
 		outboundHeight := ctx.BlockHeight() + 10
 		c.Assert(mgr.Keeper().SetStagedOutbound(ctx, txOutItem, outboundHeight), IsNil)
 		mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+		c.Assert(mgr.Keeper().AddPendingAffiliateLiquidityFee(ctx, inTxID, 0, "PENDING", cosmos.NewUint(77)), IsNil)
+		c.Assert(mgr.Keeper().AddAffiliateLiquidityFee(ctx, "EXISTING", cosmos.NewUint(99)), IsNil)
 
 		expectedReverse, err := buildMempoolRollbackSwapMsg(ctx, mgr, voter, common.BTCAsset, txOutItem, 0, vault)
 		c.Assert(err, IsNil)
@@ -904,6 +906,13 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwap(c *C) {
 		c.Check(updatedVoter.Reverted, Equals, false, Commentf("rollback should normalize the voter"))
 		c.Check(updatedVoter.HasReservedMempoolSwapTOR(), Equals, false, Commentf("rollback should clear the reserved mempool TOR value"))
 		c.Check(updatedVoter.Actions, IsNil, Commentf("rollback should discard speculative actions"))
+		c.Check(mgr.Keeper().HasPendingAffiliateLiquidityFees(ctx, inTxID), Equals, false,
+			Commentf("successful rollback must discard speculative REVSHARE"))
+		committedAffiliateFees := mgr.Keeper().GetAffiliateLiquidityFees(ctx)
+		c.Assert(committedAffiliateFees, HasLen, 1)
+		c.Check(committedAffiliateFees[0].Thorname, Equals, "EXISTING")
+		c.Check(committedAffiliateFees[0].Fee.Equal(cosmos.NewUint(99)), Equals, true,
+			Commentf("rollback must not promote pending REVSHARE or disturb unrelated accumulator state"))
 
 		stagedItems, err := mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
 		c.Assert(err, IsNil)
@@ -1178,6 +1187,8 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapRollbackOnEr
 
 	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, nativeItem, ctx.BlockHeight()+5), IsNil)
 	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, externalItem, ctx.BlockHeight()+5), IsNil)
+	c.Assert(mgr.Keeper().AddPendingAffiliateLiquidityFee(ctx, inTxID, 0, "PENDING", cosmos.NewUint(77)), IsNil)
+	c.Assert(mgr.Keeper().AddAffiliateLiquidityFee(ctx, "EXISTING", cosmos.NewUint(99)), IsNil)
 
 	// The rollback should fail and leave all original state unchanged.
 	err := rollbackMempoolSwapAtomic(ctx, failKeeper, dummyMgr, voter)
@@ -1199,6 +1210,13 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwapRollbackOnEr
 	c.Assert(poolErr, IsNil)
 	c.Check(updatedPool.BalanceRune.Equal(sourcePool.BalanceRune), Equals, true, Commentf("pool rune balance should remain unchanged on rollback failure"))
 	c.Check(updatedPool.BalanceAsset.Equal(sourcePool.BalanceAsset), Equals, true, Commentf("pool asset balance should remain unchanged on rollback failure"))
+	c.Check(mgr.Keeper().HasPendingAffiliateLiquidityFees(ctx, inTxID), Equals, true,
+		Commentf("failed rollback must retain pending REVSHARE for retry"))
+	committedAffiliateFees := mgr.Keeper().GetAffiliateLiquidityFees(ctx)
+	c.Assert(committedAffiliateFees, HasLen, 1)
+	c.Check(committedAffiliateFees[0].Thorname, Equals, "EXISTING")
+	c.Check(committedAffiliateFees[0].Fee.Equal(cosmos.NewUint(99)), Equals, true,
+		Commentf("failed rollback must not leak pending REVSHARE into the payout accumulator"))
 }
 
 // TestMempoolSwapWithMimirEnabled verifies the runtime gate and capacity check
@@ -3061,6 +3079,8 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizedAdvQueueSettlementRe
 	c.Check(partialVoter.HasReservedMempoolSwapTOR(), Equals, true, Commentf("partial execution should still hold mempool swap capacity"))
 	c.Check(partialVoter.Actions, HasLen, 0, Commentf("advanced queue should not have scheduled outbounds before settlement"))
 	c.Check(mgr.Keeper().HasStagedOutbound(ctx, inTxID), Equals, false, Commentf("partial execution should not create staged outbounds"))
+	pendingAffiliateFee := cosmos.NewUint(77)
+	c.Assert(mgr.Keeper().AddPendingAffiliateLiquidityFee(ctx, inTxID, 0, "AFFX", pendingAffiliateFee), IsNil)
 
 	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
 
@@ -3078,6 +3098,12 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizedAdvQueueSettlementRe
 	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true, Commentf("settlement after finalization should release global mempool swap usage"))
 	c.Check(mgr.Keeper().HasAdvSwapQueueItem(ctx, inTxID, 0), Equals, false, Commentf("completed streaming swap should leave the advanced queue"))
 	c.Check(mgr.Keeper().HasStagedOutbound(ctx, inTxID), Equals, false, Commentf("finalized settlement should queue direct outbounds instead of staging"))
+	c.Check(mgr.Keeper().HasPendingAffiliateLiquidityFees(ctx, inTxID), Equals, false,
+		Commentf("finalized stream settlement must not release capacity with pending REVSHARE"))
+	committedAffiliateFees := mgr.Keeper().GetAffiliateLiquidityFees(ctx)
+	c.Assert(committedAffiliateFees, HasLen, 1)
+	c.Check(committedAffiliateFees[0].Thorname, Equals, "AFFX")
+	c.Check(committedAffiliateFees[0].Fee.Equal(pendingAffiliateFee), Equals, true)
 
 	outItems, err := mgr.TxOutStore().GetOutboundItems(ctx)
 	c.Assert(err, IsNil)
@@ -3396,6 +3422,11 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizedPendingQueueMempoolS
 	toAddr, err := activeVault.PubKey.GetAddress(common.BTCChain)
 	c.Assert(err, IsNil)
 	destination := GetRandomETHAddress()
+	mgr.Keeper().SetTHORName(ctx, NewTHORName(
+		"affx",
+		ctx.BlockHeight()+1000,
+		[]THORNameAlias{{Chain: common.THORChain, Address: GetRandomTHORAddress()}},
+	))
 
 	inTxID := GetRandomTxHash()
 	inboundTx := common.NewTx(
@@ -3404,7 +3435,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizedPendingQueueMempoolS
 		toAddr,
 		common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))},
 		common.Gas{common.NewCoin(common.BTCAsset, cosmos.OneUint())},
-		"SWAP:ETH.ETH:"+destination.String(),
+		"SWAP:ETH.ETH:"+destination.String()+"::affx:100",
 	)
 	observedTx := NewObservedTx(inboundTx, 12, activeVault.PubKey, 15)
 
@@ -3437,6 +3468,14 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizedPendingQueueMempoolS
 	c.Check(partialVoter.HasReservedMempoolSwapTOR(), Equals, true, Commentf("partial execution should still hold mempool swap capacity"))
 	c.Check(partialVoter.Actions, HasLen, 0, Commentf("partial execution should not have scheduled finalized actions yet"))
 	c.Check(mgr.Keeper().HasAdvSwapQueueItem(ctx, inTxID, 0), Equals, true, Commentf("partial execution should leave the advanced queue item live"))
+	pendingAffiliateFees, err := mgr.Keeper().GetPendingAffiliateLiquidityFees(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Assert(pendingAffiliateFees, HasLen, 1)
+	pendingAffiliateFee := pendingAffiliateFees[0].Fee
+	c.Check(pendingAffiliateFee.IsZero(), Equals, false,
+		Commentf("the speculative stream slice should journal its realized REVSHARE basis"))
+	c.Check(mgr.Keeper().GetAffiliateLiquidityFees(ctx), HasLen, 0,
+		Commentf("speculative REVSHARE must stay outside the payout accumulator before finality"))
 
 	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
 	mgr.Keeper().SetMimir(ctx, "HaltTrading", 1)
@@ -3454,6 +3493,19 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizedPendingQueueMempoolS
 	c.Check(updatedVoter.HasReservedMempoolSwapTOR(), Equals, true, Commentf("finalized queue-backed mempool swap should keep its reservation while settlement is pending"))
 	c.Check(updatedVoter.Actions, HasLen, 0, Commentf("finalized queue-backed mempool swap should not fabricate finalized actions"))
 	c.Check(mgr.Keeper().HasAdvSwapQueueItem(ctx, inTxID, 0), Equals, true, Commentf("handler should leave the advanced queue item for later settlement or rollback"))
+	c.Check(mgr.Keeper().HasPendingAffiliateLiquidityFees(ctx, inTxID), Equals, false,
+		Commentf("inbound finality must commit pending REVSHARE even while the stream remains queue-backed"))
+	committedAffiliateFees := mgr.Keeper().GetAffiliateLiquidityFees(ctx)
+	c.Assert(committedAffiliateFees, HasLen, 1)
+	c.Check(committedAffiliateFees[0].Thorname, Equals, "AFFX")
+	c.Check(committedAffiliateFees[0].Fee.Equal(pendingAffiliateFee), Equals, true)
+
+	// Replaying the finality-side drain cannot credit the already-consumed
+	// pending record a second time.
+	c.Assert(commitPendingAffiliateLiquidityFeesAtomic(ctx, mgr.Keeper(), inTxID), IsNil)
+	replayedAffiliateFees := mgr.Keeper().GetAffiliateLiquidityFees(ctx)
+	c.Assert(replayedAffiliateFees, HasLen, 1)
+	c.Check(replayedAffiliateFees[0].Fee.Equal(pendingAffiliateFee), Equals, true)
 
 	stagedItems, err := mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
 	c.Assert(err, IsNil)

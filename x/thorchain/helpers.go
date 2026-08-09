@@ -2060,20 +2060,26 @@ func releaseMempoolSwapCapacityAndClear(ctx cosmos.Context, k keeper.Keeper, vot
 // releaseMempoolSwapCapacityAfterFinalizedSettlement frees a mempool-swap
 // reservation once advanced-queue settlement has finished and no staged
 // outbounds remain for the finalized inbound.
-func releaseMempoolSwapCapacityAfterFinalizedSettlement(ctx cosmos.Context, mgr Manager, txID common.TxID) {
+func releaseMempoolSwapCapacityAfterFinalizedSettlement(ctx cosmos.Context, mgr Manager, txID common.TxID) error {
 	if txID.IsEmpty() || txID.Equals(common.BlankTxID) {
-		return
+		return nil
 	}
 
 	voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, txID)
 	if err != nil {
-		return
+		return nil
 	}
 	if voter.FinalisedHeight == 0 {
-		return
+		return nil
 	}
 	if mgr.Keeper().HasStagedOutbound(ctx, txID) {
-		return
+		return nil
+	}
+	// Settlement can be the first finalized path reached by a stream in tests,
+	// recovery, or a future caller. Never clear the last reservation marker
+	// while speculative REVSHARE is still pending.
+	if err = mgr.Keeper().CommitPendingAffiliateLiquidityFees(ctx, txID); err != nil {
+		return fmt.Errorf("fail to commit pending affiliate liquidity fees before finalized settlement release: %w", err)
 	}
 
 	hadReservation := voter.HasReservedMempoolSwapTOR()
@@ -2081,6 +2087,7 @@ func releaseMempoolSwapCapacityAfterFinalizedSettlement(ctx cosmos.Context, mgr 
 	if hadReservation {
 		incrMempoolSwapCounter("completed_total", []metrics.Label{telemetry.NewLabel("path", "finalized_settlement")})
 	}
+	return nil
 }
 
 func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason string) error {
@@ -2146,7 +2153,9 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 	// later finalizeOutbounds step to release the reservation. Release the
 	// mempool TOR accounting here once settlement is complete and no staged
 	// outbounds remain.
-	releaseMempoolSwapCapacityAfterFinalizedSettlement(ctx, mgr, msg.Tx.ID)
+	if err := releaseMempoolSwapCapacityAfterFinalizedSettlement(ctx, mgr, msg.Tx.ID); err != nil {
+		return err
+	}
 
 	// Remove the item and its index entry together, reusing the message already
 	// loaded by EndBlock instead of fetching and decoding it again.

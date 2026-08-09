@@ -512,9 +512,24 @@ func (s *SwapperImpl) swapOne(ctx cosmos.Context,
 						}
 					}
 					if !skip {
-						if err := keeper.AddAffiliateLiquidityFee(ctx, attributeThorname, swapEvt.LiquidityFeeInRune); err != nil {
+						if identity, pending := getPendingMempoolSwapAffiliateIdentity(ctx); pending {
+							// Unlike the ordinary per-block accumulator, failure to
+							// durably journal a speculative fee must fail this cached
+							// swap attempt. Otherwise the pool mutation could commit
+							// while its irreversible REVSHARE effect was lost.
+							if err := keeper.AddPendingAffiliateLiquidityFee(
+								ctx,
+								identity.txID,
+								identity.index,
+								attributeThorname,
+								swapEvt.LiquidityFeeInRune,
+							); err != nil {
+								return cosmos.ZeroUint(), evt, fmt.Errorf("fail to journal pending affiliate liquidity fee: %w", err)
+							}
+						} else if err := keeper.AddAffiliateLiquidityFee(ctx, attributeThorname, swapEvt.LiquidityFeeInRune); err != nil {
 							ctx.Logger().Error("fail to attribute affiliate liquidity fee", "thorname", attributeThorname, "error", err)
-							// non-fatal — attribution failure must not fail the swap
+							// Preserve the existing normal-swap contract: attribution
+							// failure does not fail an otherwise healthy finalized swap.
 						}
 					}
 				}
