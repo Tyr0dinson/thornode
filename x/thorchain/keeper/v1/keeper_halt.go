@@ -87,9 +87,17 @@ func (k KVStore) IsChainHalted(ctx cosmos.Context, chain common.Chain) bool {
 		return true
 	}
 
-	pauseChain, err := k.GetMimir(ctx, "NodePauseChainGlobal")
+	pauseChain, err := k.GetMimir(ctx, constants.MimirKeyNodePauseChainGlobal)
 	if err == nil && pauseChain >= ctx.BlockHeight() {
 		ctx.Logger().Debug("node global is pause")
+		return true
+	}
+
+	// Automated circuit breaker halts use a dedicated key so node
+	// pause/resume messages cannot shorten them.
+	circuitBreakerPause, err := k.GetMimir(ctx, constants.MimirKeyCircuitBreakerPauseGlobal)
+	if err == nil && circuitBreakerPause >= ctx.BlockHeight() {
+		ctx.Logger().Debug("circuit breaker pause")
 		return true
 	}
 

@@ -476,8 +476,18 @@ func IsChainPaused(cfg config.BifrostBlockScannerConfiguration, logger zerolog.L
 	if err != nil {
 		logger.Error().Err(err).Msg("fail to get mimir setting NodePauseChainGlobal")
 	}
+	if nodePauseHeight > 0 && thorHeight <= nodePauseHeight {
+		return true
+	}
 
-	return (nodePauseHeight > 0 && thorHeight <= nodePauseHeight)
+	// Check if the invariant circuit breaker temporarily paused all chains.
+	// This uses pause-until semantics, matching NodePauseChainGlobal.
+	circuitBreakerPauseHeight, err := bridge.GetMimir(constants.MimirKeyCircuitBreakerPauseGlobal)
+	if err != nil {
+		logger.Error().Err(err).Msgf("fail to get mimir setting %s", constants.MimirKeyCircuitBreakerPauseGlobal)
+	}
+
+	return circuitBreakerPauseHeight > 0 && thorHeight <= circuitBreakerPauseHeight
 }
 
 // scanBlocks

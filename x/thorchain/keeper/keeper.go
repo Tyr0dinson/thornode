@@ -44,6 +44,7 @@ type Keeper interface {
 	SendCoins(ctx cosmos.Context, from, to cosmos.AccAddress, coins cosmos.Coins) error
 
 	InvariantRoutes() []common.InvariantRoute
+	CircuitBreakerRoutes() []common.CircuitBreakerRoute
 
 	GetConstants() constants.ConstantValues
 	GetConfigInt64(ctx cosmos.Context, key constants.ConstantName) int64

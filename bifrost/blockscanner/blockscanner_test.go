@@ -317,10 +317,11 @@ func (s *BlockScannerTestSuite) TestBadConnection(c *C) {
 
 func (s *BlockScannerTestSuite) TestIsChainPaused(c *C) {
 	mimirMap := map[string]int{
-		"HaltETHChain":         0,
-		"SolvencyHaltETHChain": 0,
-		"HaltChainGlobal":      0,
-		"NodePauseChainGlobal": 0,
+		"HaltETHChain":                              0,
+		"SolvencyHaltETHChain":                      0,
+		"HaltChainGlobal":                           0,
+		"NodePauseChainGlobal":                      0,
+		constants.MimirKeyCircuitBreakerPauseGlobal: 0,
 	}
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c.Logf("================>:%s", r.RequestURI)
@@ -402,6 +403,15 @@ func (s *BlockScannerTestSuite) TestIsChainPaused(c *C) {
 
 	// Setting NodePauseChainGlobal should pause
 	mimirMap["NodePauseChainGlobal"] = 4 // node pause only halts for an hour, so pause height needs to be larger than thor height
+	// Wait for one block's time so as to replace the cache with an updated query.
+	time.Sleep(constants.ThorchainBlockTime)
+	isHalted = IsChainPaused(cbs.cfg, cbs.logger, cbs.thorchainBridge)
+	c.Assert(isHalted, Equals, true)
+	mimirMap["NodePauseChainGlobal"] = 0
+
+	// CircuitBreakerPauseGlobal uses the same pause-until semantics and must
+	// stop Bifrost scanners, including the signer's THORChain txout scanner.
+	mimirMap[constants.MimirKeyCircuitBreakerPauseGlobal] = 4
 	// Wait for one block's time so as to replace the cache with an updated query.
 	time.Sleep(constants.ThorchainBlockTime)
 	isHalted = IsChainPaused(cbs.cfg, cbs.logger, cbs.thorchainBridge)

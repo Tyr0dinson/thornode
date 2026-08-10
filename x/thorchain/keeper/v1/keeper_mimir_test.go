@@ -157,6 +157,18 @@ func (s *KeeperMimirSuite) TestDisableTSSSignerFilteringIsOperationalMimir(c *C)
 	c.Check(constants.IsOperationalMimir(key+"-BTC"), Equals, false)
 }
 
+func (s *KeeperMimirSuite) TestCircuitBreakerControlsAreEconomicMimirs(c *C) {
+	// Clearing an active automated halt or disabling a route's auto-halt must
+	// require economic supermajority rather than the fixed operational minimum.
+	c.Check(constants.IsOperationalMimir(constants.MimirKeyCircuitBreakerPauseGlobal), Equals, false)
+	c.Check(constants.IsOperationalMimir(strings.ToLower(constants.MimirKeyCircuitBreakerPauseGlobal)), Equals, false)
+	c.Check(constants.IsOperationalMimir("InvAsgardSolvencyAutoHalt"), Equals, false)
+	c.Check(constants.IsOperationalMimir("invbondsolvencyautohalt"), Equals, false)
+
+	// Unrelated halt keys retain their existing operational classification.
+	c.Check(constants.IsOperationalMimir("HaltSigningBTC"), Equals, true)
+}
+
 func (s *KeeperMimirSuite) TestIsOperationalMimirSkipSignerCache(c *C) {
 	// SkipSignerCache<Chain> is the per-chain bifrost gate that authorizes the
 	// expired-cache verification path (and a possible cache clear). Every node

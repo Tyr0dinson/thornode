@@ -69,6 +69,7 @@ const (
 	VaultOverSolvencyEventType      = "vault_over_solvency"
 	POLReserveDeployEventType       = "pol_reserve_deploy"
 	DynamicL1FeeUpdateEventType     = "dynamic_l1_fee_update"
+	CircuitBreakerEventType         = "circuit_breaker"
 )
 
 // PoolMods a list of pool modifications
@@ -1677,5 +1678,45 @@ func (m *EventLuviReward) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("ok", strconv.FormatBool(m.Ok)),
 		cosmos.NewAttribute("reason", m.Reason),
 	)
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventCircuitBreaker create a new circuit breaker event
+func NewEventCircuitBreaker(invariant, asset string, actual, expected cosmos.Uint, deviationBps, toleranceBps int64, halted, broken bool, messages []string) *EventCircuitBreaker {
+	return &EventCircuitBreaker{
+		Invariant:    invariant,
+		Asset:        asset,
+		Actual:       actual,
+		Expected:     expected,
+		DeviationBps: deviationBps,
+		ToleranceBps: toleranceBps,
+		Halted:       halted,
+		Broken:       broken,
+		Messages:     messages,
+	}
+}
+
+// Type return circuit breaker event type
+func (m *EventCircuitBreaker) Type() string {
+	return CircuitBreakerEventType
+}
+
+// Events return events
+func (m *EventCircuitBreaker) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("invariant", m.Invariant),
+		cosmos.NewAttribute("asset", m.Asset),
+		cosmos.NewAttribute("actual", m.Actual.String()),
+		cosmos.NewAttribute("expected", m.Expected.String()),
+		cosmos.NewAttribute("deviation_bps", strconv.FormatInt(m.DeviationBps, 10)),
+		cosmos.NewAttribute("tolerance_bps", strconv.FormatInt(m.ToleranceBps, 10)),
+		cosmos.NewAttribute("halted", strconv.FormatBool(m.Halted)),
+		cosmos.NewAttribute("broken", strconv.FormatBool(m.Broken)),
+	)
+	for i, msg := range m.Messages {
+		evt = evt.AppendAttributes(
+			cosmos.NewAttribute(fmt.Sprintf("message_%d", i), msg),
+		)
+	}
 	return cosmos.Events{evt}, nil
 }

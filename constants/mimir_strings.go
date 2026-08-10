@@ -133,6 +133,21 @@ const (
 	MimirRefSynth        = "Synth"        // Use with SwapSlipBasisPoints
 	MimirRefTradeAccount = "TradeAccount" // Use with SwapSlipBasisPoints
 
+	MimirKeyNodePauseChainGlobal = "NodePauseChainGlobal"
+
+	// MimirKeyCircuitBreakerPauseGlobal is set only by the invariant circuit
+	// breaker. It is deliberately separate from NodePauseChainGlobal so that
+	// node pause/resume messages cannot shorten an automated security halt;
+	// clearing it early requires a supermajority node-vote Mimir change.
+	MimirKeyCircuitBreakerPauseGlobal = "CircuitBreakerPauseGlobal"
+
+	MimirKeyInvCheckInterval  = "InvCheckInterval"
+	MimirTemplateInvInterval  = "Inv%sInterval"
+	MimirTemplateInvTolerance = "Inv%sTolerance"
+	MimirTemplateInvAutoHalt  = "Inv%sAutoHalt"
+
+	CircuitBreakerPauseBlocks int64 = 720
+
 	MimirMaxBatchSize           = "AttestationMaxBatchSize"
 	MimirPeerConcurrentSends    = "AttestationPeerConcurrentSends"
 	MimirPeerConcurrentReceives = "AttestationPeerConcurrentReceives"
@@ -170,6 +185,7 @@ func IsOperationalMimir(key string) bool {
 	exactUnmatches := []string{
 		"NodePauseChainBlocks",
 		"PauseOnSlashThreshold",
+		MimirKeyCircuitBreakerPauseGlobal,
 	}
 	for i := range exactUnmatches {
 		if strings.EqualFold(key, exactUnmatches[i]) {
@@ -179,6 +195,12 @@ func IsOperationalMimir(key string) bool {
 
 	// Past this point, compare only upper-case strings due to case sensitivity.
 	key = strings.ToUpper(key)
+	// Circuit-breaker auto-halt controls are security policy, not emergency
+	// operational toggles. Requiring economic consensus prevents the fixed
+	// operational-vote minority from disarming an automated security response.
+	if strings.HasPrefix(key, "INV") && strings.HasSuffix(key, "AUTOHALT") {
+		return false
+	}
 	if strings.HasPrefix(key, "COMPROMISEDVAULT-") {
 		return true
 	}

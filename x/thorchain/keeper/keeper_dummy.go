@@ -986,6 +986,10 @@ func (k KVStoreDummy) InvariantRoutes() []common.InvariantRoute {
 	return nil
 }
 
+func (k KVStoreDummy) CircuitBreakerRoutes() []common.CircuitBreakerRoute {
+	return nil
+}
+
 func (k KVStoreDummy) GetConstants() constants.ConstantValues {
 	return constants.GetConstantValues(semver.MustParse("9999999.0.0"))
 }

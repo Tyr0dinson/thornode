@@ -874,3 +874,21 @@ message EventLuviReward {
   // why the check failed, empty when ok
   string reason = 10;
 }
+
+message EventCircuitBreaker {
+  string invariant = 1;
+  string asset = 2;
+  string actual = 3 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  string expected = 4 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  int64 deviation_bps = 5;
+  int64 tolerance_bps = 6;
+  bool halted = 7;
+  repeated string messages = 8;
+  bool broken = 9;
+}

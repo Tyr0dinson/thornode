@@ -505,6 +505,9 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 	advanceLuviAccumulators(ctx, am.mgr.Keeper())
 	telemetry.ModuleMeasureSince("luvi_accumulators", start, "thornode", "block", "endblock")
 
+	// Run circuit breaker invariant checks last so they see final block state.
+	runCircuitBreakers(ctx, am.mgr)
+
 	return validators, nil
 }
 
