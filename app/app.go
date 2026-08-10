@@ -133,6 +133,7 @@ var maccPerms = map[string][]string{
 	thorchain.TCYClaimingName:        {},
 	thorchain.TCYStakeName:           {},
 	thorchain.POLReserveName:         {},
+	thorchain.StableReserveName:      {},
 }
 
 var (
@@ -181,6 +182,10 @@ type THORChainApp struct {
 	// module configurator
 	configurator module.Configurator
 	once         sync.Once
+
+	// restQueryViaGRPC routes REST (grpc-gateway) queries through the in-process
+	// gRPC server instead of the comet ABCI query path (app.toml api.query-via-grpc)
+	restQueryViaGRPC bool
 }
 
 // NewChainApp returns a reference to an initialized ChainApp.
@@ -437,6 +442,13 @@ func NewChainApp(
 	// --- Module Options ---
 	telemetryEnabled := cast.ToBool(appOpts.Get("telemetry.enabled"))
 	testApp := cast.ToBool(appOpts.Get(TestApp))
+
+	// default true when the key is absent (e.g. preserved pre-upgrade app.toml);
+	// routing degrades to ABCI on its own if the gRPC server is not running
+	app.restQueryViaGRPC = true
+	if v := appOpts.Get("api.query-via-grpc"); v != nil {
+		app.restQueryViaGRPC = cast.ToBool(v)
+	}
 
 	mgrs := thorchain.NewManagers(app.ThorchainKeeper, app.appCodec, runtime.NewKVStoreService(keys[thorchaintypes.StoreKey]), app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper, app.WasmKeeper)
 	app.msgServiceRouter.AddCustomRoute("cosmos.bank.v1beta1.Msg", thorchain.NewBankSendHandler(thorchain.NewSendHandler(mgrs)))
@@ -835,6 +847,13 @@ func (app *THORChainApp) SimulationManager() *module.SimulationManager {
 // RegisterAPIRoutes registers all application module routes with the provided
 // API server.
 func (app *THORChainApp) RegisterAPIRoutes(apiSvr *api.Server, apiConfig config.APIConfig) {
+	if !app.restQueryViaGRPC {
+		// Strip the gRPC client so client.Context.Invoke falls back to the comet
+		// ABCI query path for every route registered below (legacy behavior).
+		apiSvr.ClientCtx = apiSvr.ClientCtx.WithGRPCClient(nil)
+	}
+	// nil client (flag off, or gRPC server disabled) means legacy ABCI routing
+	app.Logger().Info("REST gateway query routing", "via_grpc", apiSvr.ClientCtx.GRPCClient != nil)
 	clientCtx := apiSvr.ClientCtx
 
 	// Must call this before registering any GRPC gateway routes
@@ -941,6 +960,10 @@ func BlockedAddresses() map[string]bool {
 	// Allow lending and treasury to receive funds
 	delete(modAccAddrs, authtypes.NewModuleAddress(thorchaintypes.LendingName).String())
 	delete(modAccAddrs, authtypes.NewModuleAddress(thorchaintypes.TreasuryName).String())
+	// Allow the Stable Reserve to receive funds: STABLE+ deposits mint secured
+	// assets directly to this module account, and the POL income split and depeg
+	// rescue/deployment cycle credit it RUNE and secured inventory.
+	delete(modAccAddrs, authtypes.NewModuleAddress(thorchaintypes.StableReserveName).String())
 
 	return modAccAddrs
 }

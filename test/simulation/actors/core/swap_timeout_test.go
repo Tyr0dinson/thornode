@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -206,6 +207,8 @@ type memolessBroadcastClient struct {
 	broadcastCalls int
 	lastSigned     []byte
 	signPayload    []byte
+	signErr        error
+	broadcastErr   error
 	txid           string
 }
 
@@ -215,6 +218,9 @@ func (m *memolessBroadcastClient) GetAccount(*common.PubKey) (*common.Account, e
 
 func (m *memolessBroadcastClient) SignTx(simtypes.SimTx) ([]byte, error) {
 	m.signCalls++
+	if m.signErr != nil {
+		return nil, m.signErr
+	}
 	if m.signPayload != nil {
 		return m.signPayload, nil
 	}
@@ -224,10 +230,80 @@ func (m *memolessBroadcastClient) SignTx(simtypes.SimTx) ([]byte, error) {
 func (m *memolessBroadcastClient) BroadcastTx(payload []byte) (string, error) {
 	m.broadcastCalls++
 	m.lastSigned = append([]byte(nil), payload...)
+	if m.broadcastErr != nil {
+		return "", m.broadcastErr
+	}
 	if m.txid == "" {
 		return "ok", nil
 	}
 	return m.txid, nil
+}
+
+func TestSwapMemolessNonFundingErrorIsUnhandled(t *testing.T) {
+	t.Parallel()
+
+	_, handled := (&SwapMemolessActor{}).finishAfterMemolessFundingError(
+		errors.New("temporary RPC failure"),
+	)
+	if handled {
+		t.Fatal("expected non-funding error to remain unhandled")
+	}
+}
+
+func TestSwapMemolessFundingErrorReleasesResources(t *testing.T) {
+	drainXMRSwapSlotForTest()
+	defer drainXMRSwapSlotForTest()
+
+	actor := &SwapMemolessActor{
+		SwapActor: SwapActor{
+			from: common.ZECAsset,
+			to:   common.XMRAsset,
+		},
+	}
+	user := newTestSwapUser(t, "selected", common.ZECAsset, sdkmath.NewUint(100), common.XMRAsset, sdkmath.ZeroUint())
+	if !user.Acquire() {
+		t.Fatal("expected to lock selected user")
+	}
+	actor.user = user
+
+	select {
+	case xmrSwapSlot <- struct{}{}:
+		actor.xmrSwapSlotAcquired = true
+	default:
+		t.Fatal("XMR swap slot was already held")
+	}
+	defer func() {
+		if actor.xmrSwapSlotAcquired {
+			actor.releaseXMRSwapSlot()
+		}
+		if actor.user != nil {
+			actor.releaseUserSelection()
+		}
+	}()
+
+	err := errors.New("fail to get unspent UTXO: insufficient balance: 0.000000 < 0.061000")
+	result, ok := actor.finishAfterMemolessFundingError(err)
+	if !ok {
+		t.Fatal("expected memoless funding error to be handled")
+	}
+	if !result.Finish || result.Continue || result.Error != nil {
+		t.Fatalf("expected non-fatal finish, got %+v", result)
+	}
+	if actor.user != nil {
+		t.Fatal("expected selected user to be cleared")
+	}
+	if user.IsLocked() {
+		t.Fatal("expected selected user to be released")
+	}
+	if actor.xmrSwapSlotAcquired {
+		t.Fatal("expected XMR swap slot to be released")
+	}
+
+	select {
+	case <-xmrSwapSlot:
+		t.Fatal("expected XMR swap slot channel to be empty")
+	default:
+	}
 }
 
 func TestSwapMemolessBroadcastSwapUsesFreshSigningForSol(t *testing.T) {
@@ -265,6 +341,51 @@ func TestSwapMemolessBroadcastSwapUsesFreshSigningForSol(t *testing.T) {
 	}
 	if actor.swapTxID != "sol-tx" {
 		t.Fatalf("expected SOL swap txid to be recorded, got %s", actor.swapTxID)
+	}
+}
+
+func TestSwapMemolessBroadcastSwapSkipsPostSelectionFundingError(t *testing.T) {
+	t.Parallel()
+
+	fundingErr := errors.New("fail to get unspent UTXO: insufficient balance: 0.000000 < 0.061000")
+	client := &memolessBroadcastClient{
+		signErr: fundingErr,
+	}
+	user := newTestSwapUser(t, "selected", common.SOLAsset, sdkmath.NewUint(100), common.BTCAsset, sdkmath.ZeroUint())
+	user.ChainClients[common.SOLChain] = client
+	if !user.Acquire() {
+		t.Fatal("expected to lock selected user")
+	}
+
+	actor := &SwapMemolessActor{
+		SwapActor: SwapActor{
+			user: user,
+			from: common.SOLAsset,
+			to:   common.BTCAsset,
+		},
+		swapTx: simtypes.SimTx{Chain: common.SOLChain},
+	}
+	defer func() {
+		if actor.user != nil {
+			actor.releaseUserSelection()
+		}
+	}()
+
+	result := actor.broadcastSwap(nil)
+	if !result.Finish || result.Continue || result.Error != nil {
+		t.Fatalf("expected memoless broadcast funding failure to finish non-fatally, got %+v", result)
+	}
+	if actor.user != nil {
+		t.Fatal("expected selected user to be cleared")
+	}
+	if user.IsLocked() {
+		t.Fatal("expected selected user to be released")
+	}
+	if client.signCalls != 1 {
+		t.Fatalf("expected one SOL signing attempt, got %d", client.signCalls)
+	}
+	if client.broadcastCalls != 0 {
+		t.Fatalf("expected no SOL broadcast after signing failure, got %d", client.broadcastCalls)
 	}
 }
 

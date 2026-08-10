@@ -126,11 +126,17 @@ func getMsgAddLiquidityFromMemo(ctx cosmos.Context, memo AddLiquidityMemo, tx Ob
 		runeAddr = memo.GetDestination()
 		assetAddr = tx.Tx.FromAddress
 		assetSender := tx.Tx.ObservedSender()
-		if memo.GetAsset().GetLayer1Asset().GetChain().Equals(common.XMRChain) && assetSender.RefundAddressRequired {
-			// Monero inbound observations cannot recover the sender address, so
+		if assetSender.RefundAddressRequired {
+			// Some inbound observations cannot recover the sender address. Use the
+			// asset address explicitly registered in the memo; otherwise
 			// treat the asset-side address as absent and let staged liquidity
 			// resolution reuse the real address supplied on the RUNE-side memo.
-			assetAddr = assetSender.Address
+			memoAssetAddr := memo.GetAssetAddress()
+			if !memoAssetAddr.IsEmpty() && memoAssetAddr.IsChain(memo.GetAsset().GetLayer1Asset().GetChain()) {
+				assetAddr = memoAssetAddr
+			} else {
+				assetAddr = assetSender.Address
+			}
 		}
 	}
 	// in case we are providing native rune and another native asset
@@ -272,6 +278,12 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 	case SecuredAssetWithdrawMemo:
 		coin := tx.Tx.Coins[0]
 		newMsg = NewMsgSecuredAssetWithdraw(coin.Asset, coin.Amount, m.GetAddress(), signer, tx.Tx)
+	case StableReserveDepositMemo:
+		coin := tx.Tx.Coins[0]
+		newMsg = NewMsgSecuredAssetDeposit(coin.Asset, coin.Amount, signer, signer, tx.Tx)
+	case StableReserveWithdrawMemo:
+		coin := tx.Tx.Coins[0]
+		newMsg = NewMsgSecuredAssetWithdraw(coin.Asset.GetSecuredAsset(), m.GetAmount(), tx.Tx.FromAddress, signer, tx.Tx)
 	case RunePoolDepositMemo:
 		newMsg = NewMsgRunePoolDeposit(signer, tx.Tx)
 	case RunePoolWithdrawMemo:

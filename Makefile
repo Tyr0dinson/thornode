@@ -318,6 +318,9 @@ test-performance-clean:
 
 # ------------------------------ Regression Tests ------------------------------
 
+REGTEST_BIN_DIR ?= /regtest
+REGTEST_MNT_DIR ?= /mnt
+
 test-regression: build-test-regression
 	@docker run --rm ${DOCKER_TTY_ARGS} \
 		-e DEBUG -e RUN -e EXPORT -e TIME_FACTOR -e PARALLELISM -e FAIL_FAST \
@@ -344,31 +347,33 @@ test-regression-coverage:
 _build-test-regression:
 	@go install -ldflags '$(ldflags)' -tags=mocknet,regtest ./cmd/thornode
 	@go build -ldflags '$(ldflags) -X gitlab.com/thorchain/thornode/v3/constants.Version=9.999.0' \
-		-cover -tags=mocknet,regtest -o /regtest/cover-thornode ./cmd/thornode
+		-cover -tags=mocknet,regtest -o $(REGTEST_BIN_DIR)/cover-thornode ./cmd/thornode
 	@go build -ldflags '$(ldflags) -X gitlab.com/thorchain/thornode/v3/constants.Version=9.999.0' \
-		-tags mocknet -o /regtest/regtest ./test/regression/cmd
+		-tags mocknet -o $(REGTEST_BIN_DIR)/regtest ./test/regression/cmd
 
 # internal target used in test run
 _test-regression:
-	@rm -rf /mnt/coverage && mkdir -p /mnt/coverage
-	@cd test/regression && /regtest/regtest
-	@go tool covdata textfmt -i /mnt/coverage -o /mnt/coverage/coverage.txt
-	@grep -v -E -e archive.go -e 'v[0-9]+.go' -e openapi/gen /mnt/coverage/coverage.txt > /mnt/coverage/coverage-filtered.txt
-	@go tool cover -func /mnt/coverage/coverage-filtered.txt > /mnt/coverage/func-coverage.txt
-	@awk '/^total:/ {print "Regression Coverage: " $$3}' /mnt/coverage/func-coverage.txt
-	@chown -R ${UID}:${GID} /mnt
+	@rm -rf $(REGTEST_MNT_DIR)/coverage && mkdir -p $(REGTEST_MNT_DIR)/coverage
+	@cd test/regression && REGTEST_BIN_DIR=$(REGTEST_BIN_DIR) REGTEST_MNT_DIR=$(REGTEST_MNT_DIR) $(REGTEST_BIN_DIR)/regtest
+	@go tool covdata textfmt -i $(REGTEST_MNT_DIR)/coverage -o $(REGTEST_MNT_DIR)/coverage/coverage.txt
+	@grep -v -E -e archive.go -e 'v[0-9]+.go' -e openapi/gen $(REGTEST_MNT_DIR)/coverage/coverage.txt > $(REGTEST_MNT_DIR)/coverage/coverage-filtered.txt
+	@go tool cover -func $(REGTEST_MNT_DIR)/coverage/coverage-filtered.txt > $(REGTEST_MNT_DIR)/coverage/func-coverage.txt
+	@awk '/^total:/ {print "Regression Coverage: " $$3}' $(REGTEST_MNT_DIR)/coverage/func-coverage.txt
+	@chown -R ${UID}:${GID} $(REGTEST_MNT_DIR)
 
 # ------------------------------ Simulation Tests ------------------------------
 
 test-simulation: build-mocknet reset-mocknet test-simulation-no-reset
 
-TEST_SIMULATION_STAGES ?= seed,bootstrap,xmr-coverage,arb,swaps,memoless-swaps,consolidate,inactive-vault-refunds,solvency,ragnarok
-TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,swaps,memoless-swaps,inactive-vault-refunds,solvency,xmr-post-churn,ragnarok
+TEST_SIMULATION_STAGES ?= seed,bootstrap,xmr-coverage,arb,swaps,memoless-swaps,consolidate,inactive-vault-refunds,memoless-refunds,solvency,ragnarok
+TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,swaps,memoless-swaps,inactive-vault-refunds,memoless-refunds,solvency,xmr-post-churn,ragnarok
 
 test-simulation-cluster: build-test-simulation build-mocknet-cluster reset-mocknet-cluster
 	@docker stop docker-midgard-1 docker-midgard-db-1 >/dev/null 2>&1 || true
 	@STAGES=$(TEST_SIMULATION_CLUSTER_STAGES) docker run --rm ${DOCKER_TTY_ARGS} \
 		-e PARALLELISM=$(PARALLELISM) -e STAGES \
+		-e RANDOM_SEED_HEX \
+		-e SIMULATION_PPROF_ADDRESS \
 		-e XMR_SIM_HELPER_ENDPOINT -e XMR_SIM_HELPER_AUTH_BEARER \
 		-e XMR_FROST_ENDPOINT -e XMR_FROST_AUTH_BEARER \
 		--network host -w /app \
@@ -424,6 +429,8 @@ test-simulation-no-reset: build-test-simulation
 	@docker stop docker-midgard-1 docker-midgard-db-1 >/dev/null 2>&1 || true
 	@STAGES=$(TEST_SIMULATION_STAGES) docker run --rm ${DOCKER_TTY_ARGS} \
 		-e PARALLELISM=$(PARALLELISM) -e STAGES \
+		-e RANDOM_SEED_HEX \
+		-e SIMULATION_PPROF_ADDRESS \
 		-e XMR_SIM_HELPER_ENDPOINT -e XMR_SIM_HELPER_AUTH_BEARER \
 		-e XMR_FROST_ENDPOINT -e XMR_FROST_AUTH_BEARER \
 		--network host -w /app \

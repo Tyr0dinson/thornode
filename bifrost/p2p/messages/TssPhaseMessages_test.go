@@ -9,19 +9,22 @@ import (
 // must be a deliberate edit that updates both the constants and this test.
 func TestValidTssKeysignRounds_HasExpectedCanonicalSet(t *testing.T) {
 	expected := map[string]bool{
-		KEYSIGN1aUnicast: true,
-		KEYSIGN1b:        true,
-		KEYSIGN2Unicast:  true,
-		KEYSIGN3:         true,
-		KEYSIGN4:         true,
-		KEYSIGN5:         true,
-		KEYSIGN6:         true,
-		KEYSIGN7:         true,
-		KEYSIGN8:         true,
-		KEYSIGN9:         true,
-		EDDSAKEYSIGN1:    true,
-		EDDSAKEYSIGN2:    true,
-		EDDSAKEYSIGN3:    true,
+		KEYSIGN1aUnicast:       true,
+		KEYSIGN1b:              true,
+		KEYSIGN2Unicast:        true,
+		KEYSIGN3:               true,
+		KEYSIGN4:               true,
+		KEYSIGN5:               true,
+		KEYSIGN6:               true,
+		KEYSIGN7:               true,
+		KEYSIGN8:               true,
+		KEYSIGN9:               true,
+		EDDSAKEYSIGN1:          true,
+		EDDSAKEYSIGN2:          true,
+		EDDSAKEYSIGN3:          true,
+		FROSTKEYSIGNPREPROCESS: true,
+		FROSTKEYSIGNSHARE:      true,
+		FROSTKEYSIGNRESULT:     true,
 	}
 
 	if len(ValidTssKeysignRounds) != len(expected) {
@@ -44,19 +47,22 @@ func TestValidTssKeysignRounds_HasExpectedCanonicalSet(t *testing.T) {
 // KEYSIGN8 = "SignRound7Message" would silently corrupt blame round mapping).
 func TestKeysignRoundConstants_AreDistinctAndNonEmpty(t *testing.T) {
 	consts := map[string]string{
-		"KEYSIGN1aUnicast": KEYSIGN1aUnicast,
-		"KEYSIGN1b":        KEYSIGN1b,
-		"KEYSIGN2Unicast":  KEYSIGN2Unicast,
-		"KEYSIGN3":         KEYSIGN3,
-		"KEYSIGN4":         KEYSIGN4,
-		"KEYSIGN5":         KEYSIGN5,
-		"KEYSIGN6":         KEYSIGN6,
-		"KEYSIGN7":         KEYSIGN7,
-		"KEYSIGN8":         KEYSIGN8,
-		"KEYSIGN9":         KEYSIGN9,
-		"EDDSAKEYSIGN1":    EDDSAKEYSIGN1,
-		"EDDSAKEYSIGN2":    EDDSAKEYSIGN2,
-		"EDDSAKEYSIGN3":    EDDSAKEYSIGN3,
+		"KEYSIGN1aUnicast":       KEYSIGN1aUnicast,
+		"KEYSIGN1b":              KEYSIGN1b,
+		"KEYSIGN2Unicast":        KEYSIGN2Unicast,
+		"KEYSIGN3":               KEYSIGN3,
+		"KEYSIGN4":               KEYSIGN4,
+		"KEYSIGN5":               KEYSIGN5,
+		"KEYSIGN6":               KEYSIGN6,
+		"KEYSIGN7":               KEYSIGN7,
+		"KEYSIGN8":               KEYSIGN8,
+		"KEYSIGN9":               KEYSIGN9,
+		"EDDSAKEYSIGN1":          EDDSAKEYSIGN1,
+		"EDDSAKEYSIGN2":          EDDSAKEYSIGN2,
+		"EDDSAKEYSIGN3":          EDDSAKEYSIGN3,
+		"FROSTKEYSIGNPREPROCESS": FROSTKEYSIGNPREPROCESS,
+		"FROSTKEYSIGNSHARE":      FROSTKEYSIGNSHARE,
+		"FROSTKEYSIGNRESULT":     FROSTKEYSIGNRESULT,
 	}
 
 	seen := map[string]string{}
@@ -71,6 +77,17 @@ func TestKeysignRoundConstants_AreDistinctAndNonEmpty(t *testing.T) {
 	}
 }
 
+func TestValidTssKeysignRounds_RejectsUnvalidatedFrostEvidence(t *testing.T) {
+	for _, round := range []string{
+		FrostBlameRoundPreprocessEquivocation,
+		FrostBlameRoundShareEquivocation,
+	} {
+		if ValidTssKeysignRounds[round] {
+			t.Fatalf("unvalidated evidence round %q must not be accepted on-chain", round)
+		}
+	}
+}
+
 // TestTSSKEYSIGNROUNDS_FitsAllKeysignIndices pins TSSKEYSIGNROUNDS to the
 // maximum blame.RoundInfo.Index + 1 across the ECDSA SignRound types defined
 // by tss-lib. tss_helper.go's GetMsgRound emits indices 0..9 for KEYSIGN
@@ -82,33 +99,5 @@ func TestTSSKEYSIGNROUNDS_FitsAllKeysignIndices(t *testing.T) {
 	const maxIndexEmitted = 9
 	if TSSKEYSIGNROUNDS <= maxIndexEmitted {
 		t.Fatalf("TSSKEYSIGNROUNDS=%d must be greater than max ECDSA keysign index=%d (otherwise round arrays sized by this constant would index-out-of-range)", TSSKEYSIGNROUNDS, maxIndexEmitted)
-	}
-}
-
-// TestKeyverifyRoundConstants_AreDistinctFromKeysign is a TEMP test for the
-// keyverify rollout — verifies the four keyverify round names don't collide
-// with any keysign or keygen names. Remove this test alongside the keyverify
-// feature.
-// TEMP: keyverify — remove with the keyverify rollout.
-func TestKeyverifyRoundConstants_AreDistinctFromKeysign(t *testing.T) {
-	kv := []string{KEYVERIFY1, KEYVERIFY2a, KEYVERIFY2b, KEYVERIFY3}
-	keysign := []string{
-		KEYSIGN1aUnicast, KEYSIGN1b, KEYSIGN2Unicast, KEYSIGN3, KEYSIGN4,
-		KEYSIGN5, KEYSIGN6, KEYSIGN7, KEYSIGN8, KEYSIGN9,
-		EDDSAKEYSIGN1, EDDSAKEYSIGN2, EDDSAKEYSIGN3,
-	}
-	keygen := []string{
-		KEYGEN1, KEYGEN2aUnicast, KEYGEN2b, KEYGEN3,
-		EDDSAKEYGEN1, EDDSAKEYGEN2a, EDDSAKEYGEN2b,
-	}
-	for _, v := range kv {
-		if v == "" {
-			t.Errorf("keyverify constant is empty")
-		}
-		for _, k := range append(keysign, keygen...) {
-			if v == k {
-				t.Errorf("keyverify constant %q collides with %q", v, k)
-			}
-		}
 	}
 }

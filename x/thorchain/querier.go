@@ -125,7 +125,7 @@ func (qs queryServer) queryTHORName(ctx cosmos.Context, req *types.QueryThorname
 
 	threshold := cosmos.ZeroUint()
 	if !name.PreferredAsset.IsEmpty() {
-		paOf, err := qs.mgr.gasMgr.GetAssetOutboundFee(ctx, name.PreferredAsset, true)
+		paOf, err := qs.mgr.GasMgr().GetAssetOutboundFee(ctx, name.PreferredAsset, true)
 		if err == nil {
 			multiplier := getEffectiveMultiplier(ctx, qs.mgr, name)
 			threshold = paOf.MulUint64(uint64(multiplier))
@@ -168,6 +168,7 @@ func (qs queryServer) queryVault(ctx cosmos.Context, req *types.QueryVaultReques
 		PubKeyEddsa:            v.PubKeyEddsa.String(),
 		PubKeyFrost:            v.PubKeyFrost.String(),
 		Coins:                  v.Coins,
+		Deficit:                v.Deficit,
 		Type:                   v.Type.String(),
 		Status:                 v.Status.String(),
 		StatusSince:            v.StatusSince,
@@ -413,22 +414,48 @@ func (qs queryServer) queryAsgardVaults(ctx cosmos.Context, _ *types.QueryAsgard
 		return nil, fmt.Errorf("fail to get asgard vaults: %w", err)
 	}
 
+	// Inactive Asgard vaults are removed from the Asgard index, but every vault
+	// carrying an unsettled deficit must remain observable until the deficit is
+	// resolved. Preserve the existing indexed order and append only missing
+	// deficit-bearing Asgard vaults from the canonical vault store.
+	indexed := make(map[string]struct{}, len(vaults))
+	for _, vault := range vaults {
+		indexed[vault.PubKey.String()] = struct{}{}
+	}
+	iter := qs.mgr.Keeper().GetVaultIterator(ctx)
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		var vault Vault
+		if err := qs.mgr.Keeper().Cdc().Unmarshal(iter.Value(), &vault); err != nil {
+			return nil, fmt.Errorf("fail to unmarshal vault: %w", err)
+		}
+		if !vault.IsAsgard() || !vault.HasDeficit() {
+			continue
+		}
+		if _, ok := indexed[vault.PubKey.String()]; ok {
+			continue
+		}
+		vaults = append(vaults, vault)
+		indexed[vault.PubKey.String()] = struct{}{}
+	}
+
 	var vaultsWithFunds []*types.QueryVaultResponse
 	for _, vault := range vaults {
-		if vault.Status == InactiveVault {
+		if vault.Status == InactiveVault && !vault.HasDeficit() {
 			continue
 		}
 		if !vault.IsAsgard() {
 			continue
 		}
 		// Being in a RetiringVault blocks a node from unbonding, so display them even if having no funds.
-		if vault.HasFunds() || vault.Status == ActiveVault || vault.Status == RetiringVault {
+		if vault.HasFunds() || vault.HasDeficit() || vault.Status == ActiveVault || vault.Status == RetiringVault {
 			vaultsWithFunds = append(vaultsWithFunds, &types.QueryVaultResponse{
 				BlockHeight:            vault.BlockHeight,
 				PubKey:                 vault.PubKey.String(),
 				PubKeyEddsa:            vault.PubKeyEddsa.String(),
 				PubKeyFrost:            vault.PubKeyFrost.String(),
 				Coins:                  vault.Coins,
+				Deficit:                vault.Deficit,
 				Type:                   vault.Type.String(),
 				Status:                 vault.Status.String(),
 				StatusSince:            vault.StatusSince,
@@ -776,7 +803,7 @@ func (qs queryServer) queryNetwork(ctx cosmos.Context, _ *types.QueryNetworkRequ
 	targetOutboundFeeSurplus := qs.mgr.Keeper().GetConfigInt64(ctx, constants.TargetOutboundFeeSurplusRune)
 	maxMultiplierBasisPoints := qs.mgr.Keeper().GetConfigInt64(ctx, constants.MaxOutboundFeeMultiplierBasisPoints)
 	minMultiplierBasisPoints := qs.mgr.Keeper().GetConfigInt64(ctx, constants.MinOutboundFeeMultiplierBasisPoints)
-	outboundFeeMultiplier := qs.mgr.gasMgr.CalcOutboundFeeMultiplier(ctx, cosmos.NewUint(uint64(targetOutboundFeeSurplus)), cosmos.NewUint(data.OutboundGasSpentRune), cosmos.NewUint(data.OutboundGasWithheldRune), cosmos.NewUint(uint64(maxMultiplierBasisPoints)), cosmos.NewUint(uint64(minMultiplierBasisPoints)))
+	outboundFeeMultiplier := qs.mgr.GasMgr().CalcOutboundFeeMultiplier(ctx, cosmos.NewUint(uint64(targetOutboundFeeSurplus)), cosmos.NewUint(data.OutboundGasSpentRune), cosmos.NewUint(data.OutboundGasWithheldRune), cosmos.NewUint(uint64(maxMultiplierBasisPoints)), cosmos.NewUint(uint64(minMultiplierBasisPoints)))
 
 	assets := qs.mgr.Keeper().GetAnchors(ctx, common.TOR)
 	median := qs.mgr.Keeper().AnchorMedian(ctx, assets).QuoUint64(constants.DollarMulti)
@@ -849,6 +876,30 @@ func filterCompromisedVaults(ctx cosmos.Context, k keeper.Keeper, active Vaults)
 	return safe
 }
 
+// filterInsolventVaults removes any vault flagged insolvent by the solvency
+// checker (SolvencyHaltVault-<pubkey>-<chain>). Insolvency on one chain is
+// usually the symptom of a compromised key, so the whole vault is dropped from
+// inbound-address election - including its still-solvent, unhalted chains -
+// rather than only the halted chain. On KV error the vault is excluded
+// (fail-closed). Like filterCompromisedVaults, only used for non-WASM paths so
+// WASM contracts keep seeing a deterministic, unfiltered response.
+func filterInsolventVaults(ctx cosmos.Context, k keeper.Keeper, active Vaults) Vaults {
+	safe := make(Vaults, 0, len(active))
+	for _, v := range active {
+		insolvent, err := isVaultInsolvent(ctx, k, v)
+		if err != nil {
+			ctx.Logger().Error("failed to read solvency-halt vault mimir, excluding vault", "pub_key", v.PubKey.String(), "error", err)
+			continue
+		}
+		if insolvent {
+			ctx.Logger().Info("excluding insolvent vault from inbound election", "pub_key", v.PubKey.String())
+			continue
+		}
+		safe = append(safe, v)
+	}
+	return safe
+}
+
 func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryInboundAddressesRequest) (*types.QueryInboundAddressesResponse, error) {
 	active, err := qs.mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
 	if err != nil {
@@ -859,6 +910,7 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 	isWasm, _ := ctx.Value(constants.CtxWASMQuery).(bool)
 	if !isWasm {
 		active = filterCompromisedVaults(ctx, qs.mgr.Keeper(), active)
+		active = filterInsolventVaults(ctx, qs.mgr.Keeper(), active)
 	}
 
 	resp := make([]*types.QueryInboundAddressResponse, 0)
@@ -2301,6 +2353,171 @@ func (qs queryServer) querySecuredAsset(ctx cosmos.Context, req *types.QuerySecu
 		Asset:  a.Asset.String(),
 		Supply: shareSupply.String(),
 		Depth:  a.Depth.String(),
+	}, nil
+}
+
+func (qs queryServer) queryStableReserve(ctx cosmos.Context, _ *types.QueryStableReserveRequest) (*types.QueryStableReserveResponse, error) {
+	moduleAddr := qs.mgr.Keeper().GetModuleAccAddress(StableReserveName)
+	securedMgr := qs.mgr.SecuredAssetManager()
+	assets := make(map[string]common.Asset)
+
+	for _, anchor := range qs.mgr.Keeper().GetAnchors(ctx, common.TOR) {
+		asset := anchor.GetLayer1Asset()
+		assets[asset.String()] = asset
+	}
+
+	iter := qs.mgr.Keeper().GetSecuredAssetIterator(ctx)
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		var secured keeper.SecuredAsset
+		if err := qs.mgr.Keeper().Cdc().Unmarshal(iter.Value(), &secured); err != nil {
+			continue
+		}
+
+		asset := secured.Asset.GetLayer1Asset()
+		if securedMgr.BalanceOf(ctx, asset, moduleAddr).IsZero() {
+			continue
+		}
+		assets[asset.String()] = asset
+	}
+
+	keys := make([]string, 0, len(assets))
+	// analyze-ignore(map-iteration) - extracting keys to sort them immediately after
+	for key := range assets {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	inventory := make([]*types.QueryStableReserveInventory, 0, len(keys))
+	for _, key := range keys {
+		asset := assets[key]
+		healthy, reason := qs.mgr.StableReserveManager().IsEligibleStable(ctx, asset)
+		oraclePrice := ""
+		if price, err := qs.mgr.Keeper().GetPrice(ctx, asset.Ticker.String()); err == nil {
+			oraclePrice = price.Price
+		}
+
+		inventory = append(inventory, &types.QueryStableReserveInventory{
+			Asset:       asset.String(),
+			Amount:      securedMgr.BalanceOf(ctx, asset, moduleAddr).String(),
+			Healthy:     healthy,
+			Reason:      reason,
+			OraclePrice: oraclePrice,
+		})
+	}
+
+	return &types.QueryStableReserveResponse{
+		Enabled:           qs.mgr.StableReserveManager().IsEnabled(ctx),
+		RuneBalance:       qs.mgr.Keeper().GetRuneBalanceOfModule(ctx, StableReserveName).String(),
+		DepegToleranceBps: strconv.FormatInt(qs.mgr.Keeper().GetConfigInt64(ctx, constants.StableReserveDepegToleranceBps), 10),
+		PolShareBps:       strconv.FormatInt(qs.mgr.Keeper().GetConfigInt64(ctx, constants.StableReservePOLShareBps), 10),
+		Inventory:         inventory,
+		// Deployment swaps always use quantity 0 / interval 0 (see
+		// scheduleDeploymentSwap); these are no longer configurable.
+		DeploymentStreamQuantity: "0",
+		DeploymentStreamInterval: "0",
+		ActiveSwaps:              qs.queryStableReserveActiveSwaps(ctx),
+	}, nil
+}
+
+func (qs queryServer) queryStableReserveActiveSwaps(ctx cosmos.Context) []*types.QueryStableReserveStreamingSwap {
+	stableReserveAddress, err := qs.mgr.Keeper().GetModuleAddress(StableReserveName)
+	if err != nil {
+		return nil
+	}
+
+	active := make([]*types.QueryStableReserveStreamingSwap, 0)
+	appendActive := func(iter cosmos.Iterator) {
+		defer iter.Close()
+		for ; iter.Valid(); iter.Next() {
+			var msg MsgSwap
+			if err := qs.mgr.Keeper().Cdc().Unmarshal(iter.Value(), &msg); err != nil {
+				continue
+			}
+			purpose, ok := stableReserveSwapPurpose(msg.Tx.Memo)
+			if !ok {
+				continue
+			}
+			if !msg.Tx.FromAddress.Equals(stableReserveAddress) {
+				continue
+			}
+
+			sourceAsset := ""
+			amount := "0"
+			if len(msg.Tx.Coins) > 0 {
+				sourceAsset = msg.Tx.Coins[0].Asset.String()
+				amount = msg.Tx.Coins[0].Amount.String()
+			}
+			active = append(active, &types.QueryStableReserveStreamingSwap{
+				TxId:           msg.Tx.ID.String(),
+				Memo:           msg.Tx.Memo,
+				Purpose:        purpose,
+				SourceAsset:    sourceAsset,
+				TargetAsset:    msg.TargetAsset.String(),
+				Amount:         amount,
+				StreamQuantity: msg.StreamQuantity,
+				StreamInterval: msg.StreamInterval,
+			})
+		}
+	}
+	appendActive(qs.mgr.Keeper().GetSwapQueueIterator(ctx))
+	appendActive(qs.mgr.Keeper().GetAdvSwapQueueItemIterator(ctx))
+
+	sort.Slice(active, func(i, j int) bool {
+		if active[i].Purpose != active[j].Purpose {
+			return active[i].Purpose < active[j].Purpose
+		}
+		return active[i].Memo < active[j].Memo
+	})
+	return active
+}
+
+func stableReserveSwapPurpose(memo string) (string, bool) {
+	key, ok := types.StableReservePendingSwapKeyFromMemo(memo)
+	if !ok {
+		return "", false
+	}
+	switch {
+	case key == types.StableReservePendingDeploySwapKey:
+		return "deployment", true
+	case strings.HasPrefix(key, types.StableReservePendingRescueSwapPrefix):
+		return "rescue", true
+	default:
+		return "", false
+	}
+}
+
+func (qs queryServer) queryStableReserveContributor(ctx cosmos.Context, req *types.QueryStableReserveContributorRequest) (*types.QueryStableReserveContributorResponse, error) {
+	if len(req.Asset) == 0 {
+		return nil, errors.New("asset not provided")
+	}
+	asset, err := common.NewAsset(req.Asset)
+	if err != nil {
+		ctx.Logger().Error("fail to parse asset", "error", err)
+		return nil, fmt.Errorf("could not parse asset: %w", err)
+	}
+	asset = asset.GetLayer1Asset()
+	if !asset.IsExternalL1Asset() {
+		return nil, fmt.Errorf("invalid stable reserve asset: %s", req.Asset)
+	}
+	if len(req.Address) == 0 {
+		return nil, errors.New("address not provided")
+	}
+	addr, err := common.NewAddress(req.Address)
+	if err != nil {
+		ctx.Logger().Error("fail to parse address", "error", err)
+		return nil, fmt.Errorf("could not parse address: %w", err)
+	}
+
+	credit, err := qs.mgr.Keeper().GetStableReserveCredit(ctx, asset, addr)
+	if err != nil {
+		return nil, fmt.Errorf("could not get stable reserve contributor credit: %w", err)
+	}
+
+	return &types.QueryStableReserveContributorResponse{
+		Asset:   asset.String(),
+		Address: addr.String(),
+		Credit:  credit.String(),
 	}, nil
 }
 
@@ -3760,6 +3977,7 @@ func castTxOutItem(toi TxOutItem, height int64) *types.QueryTxOutItem {
 		Height:                height, // Omitted if 0, for use in openapi.TxDetailsResponse
 		VaultPubKey:           toi.VaultPubKey.String(),
 		VaultPubKeyEddsa:      toi.VaultPubKeyEddsa.String(),
+		VaultPubKeyFrost:      toi.VaultPubKeyFrost.String(),
 		InHash:                toi.InHash.String(),
 		OutHash:               toi.OutHash.String(),
 		Chain:                 toi.Chain.String(),
@@ -3795,6 +4013,7 @@ func castObservedTx(observedTx ObservedTx) types.QueryObservedTx {
 		AggregatorTarget:      observedTx.AggregatorTarget,
 		AggregatorTargetLimit: observedTx.AggregatorTargetLimit,
 		SpentOutputRefs:       castOutputRefs(observedTx.SpentOutputRefs),
+		XmrTxKey:              observedTx.XmrTxKey,
 	}
 }
 

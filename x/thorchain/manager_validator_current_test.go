@@ -62,6 +62,152 @@ func (vts *ValidatorMgrTestSuite) TestChurnWithChainHalt(c *C) {
 	c.Assert(len(ready), Equals, 1) // standby node should be ready if churn started
 }
 
+func (vts *ValidatorMgrTestSuite) TestChurnWithRetiringVaultDust(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	mgr := NewDummyMgr()
+	mgr.K = k
+	networkMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(networkMgr, NotNil)
+	minBond := constants.GetConstantValues(GetCurrentVersion()).GetInt64Value(constants.MinimumBondInRune)
+
+	// 1 standby node
+	standbyNode := GetRandomValidatorNode(NodeStandby)
+	standbyNode.Bond = cosmos.NewUint(uint64(minBond))
+	c.Assert(k.SetNodeAccount(ctx, standbyNode), IsNil)
+
+	// 1 active vault with btc, created at block 1 (so lastChurnHeight=1)
+	vault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	vault.Membership = append(vault.Membership, standbyNode.PubKeySet.Secp256k1.String())
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	// 1 retiring vault still holding XMR above the dust threshold
+	dust := common.XMRChain.DustThreshold()
+	retiringVault := NewVault(1, RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{common.XMRChain}.Strings(), []ChainContract{})
+	retiringVault.Coins = common.Coins{common.NewCoin(common.XMRAsset, dust.Add(cosmos.NewUint(1)))}
+	c.Assert(k.SetVault(ctx, retiringVault), IsNil)
+
+	// Set block height to churn interval after vault creation (1 + 60 = 61)
+	mgr.Keeper().SetMimir(ctx, constants.ChurnInterval.String(), 60)
+	ctx = ctx.WithBlockHeight(61)
+
+	// should not start churn while a retiring vault has funds above dust
+	c.Assert(networkMgr.BeginBlock(ctx, mgr, nil), IsNil)
+	ready, err := k.ListValidatorsByStatus(ctx, NodeReady)
+	c.Assert(err, IsNil)
+	c.Assert(len(ready), Equals, 0)
+
+	// A non-gas balance remains migration work even when its amount is below
+	// that chain's gas-asset dust threshold.
+	tokenAsset := common.Asset{Chain: common.ETHChain, Symbol: "TOKEN", Ticker: "TOKEN"}
+	retiringVault.Coins = common.Coins{common.NewCoin(tokenAsset, cosmos.OneUint())}
+	c.Assert(k.SetVault(ctx, retiringVault), IsNil)
+	c.Assert(networkMgr.BeginBlock(ctx, mgr, nil), IsNil)
+	ready, err = k.ListValidatorsByStatus(ctx, NodeReady)
+	c.Assert(err, IsNil)
+	c.Assert(len(ready), Equals, 0)
+
+	// only a sub-dust remainder left (e.g. the XMR migration buffer awaiting
+	// its post-final-round burn); rotation should no longer be blocked, even
+	// when the vault retains a separate accounting deficit
+	retiringVault.Coins = common.Coins{common.NewCoin(common.XMRAsset, dust)}
+	retiringVault.Deficit = common.Coins{common.NewCoin(common.ETHAsset, cosmos.OneUint())}
+	c.Assert(k.SetVault(ctx, retiringVault), IsNil)
+
+	c.Assert(networkMgr.BeginBlock(ctx, mgr, nil), IsNil)
+	ready, err = k.ListValidatorsByStatus(ctx, NodeReady)
+	c.Assert(err, IsNil)
+	c.Assert(len(ready), Equals, 1)
+}
+
+// TestChurnAfterDeficitOnlyRetiringVaultGoesInactive covers the normal block
+// flow where migration cleanup inactivates a deficit-only retiring vault before
+// the churn gate runs.
+func (vts *ValidatorMgrTestSuite) TestChurnAfterDeficitOnlyRetiringVaultGoesInactive(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	validatorMgr := newValidatorMgr(mgr.Keeper(), mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(validatorMgr, NotNil)
+	c.Assert(networkMgr, NotNil)
+
+	minBond := constants.GetConstantValues(GetCurrentVersion()).GetInt64Value(constants.MinimumBondInRune)
+	standbyNode := GetRandomValidatorNode(NodeStandby)
+	standbyNode.Bond = cosmos.NewUint(uint64(minBond))
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, standbyNode), IsNil)
+
+	activeVault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	activeVault.Membership = append(activeVault.Membership, standbyNode.PubKeySet.Secp256k1.String())
+	c.Assert(mgr.Keeper().SetVault(ctx, activeVault), IsNil)
+
+	// The deficit-bearing vault starts as RetiringVault to mirror the state
+	// created by vault debit underflow during churn settlement.
+	retiringVault := NewVault(1, RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	retiringVault.Deficit = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1)))
+	c.Assert(mgr.Keeper().SetVault(ctx, retiringVault), IsNil)
+
+	mgr.Keeper().SetMimir(ctx, constants.FundMigrationInterval.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.ChurnInterval.String(), 60)
+	ctx = ctx.WithBlockHeight(61)
+
+	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
+	// Migration cleanup should move the vault out of the status set that blocks
+	// rotation, without writing off or deleting the deficit.
+	updatedVault, err := mgr.Keeper().GetVault(ctx, retiringVault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(updatedVault.Status, Equals, InactiveVault)
+	c.Assert(updatedVault.GetDeficit(common.BTCAsset).Amount.Equal(cosmos.NewUint(1)), Equals, true)
+
+	retiringVaults, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, RetiringVault)
+	c.Assert(err, IsNil)
+	c.Assert(retiringVaults, HasLen, 0)
+
+	c.Assert(validatorMgr.BeginBlock(ctx, mgr, nil), IsNil)
+	// A successful churn marks the standby validator as ready for the new vault.
+	ready, err := mgr.Keeper().ListValidatorsByStatus(ctx, NodeReady)
+	c.Assert(err, IsNil)
+	c.Assert(ready, HasLen, 1)
+}
+
+// TestChurnWithDeficitOnlyRetiringVault exercises the churn gate directly with
+// a deficit-bearing RetiringVault still present, proving that deficit alone does
+// not block rotation.
+func (vts *ValidatorMgrTestSuite) TestChurnWithDeficitOnlyRetiringVault(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	validatorMgr := newValidatorMgr(mgr.Keeper(), mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(validatorMgr, NotNil)
+
+	minBond := constants.GetConstantValues(GetCurrentVersion()).GetInt64Value(constants.MinimumBondInRune)
+	standbyNode := GetRandomValidatorNode(NodeStandby)
+	standbyNode.Bond = cosmos.NewUint(uint64(minBond))
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, standbyNode), IsNil)
+
+	activeVault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	activeVault.Membership = append(activeVault.Membership, standbyNode.PubKeySet.Secp256k1.String())
+	c.Assert(mgr.Keeper().SetVault(ctx, activeVault), IsNil)
+
+	// Leave the vault in RetiringVault for this test instead of running
+	// migrateFunds, so BeginBlock must make the funds-vs-deficit distinction.
+	retiringVault := NewVault(1, RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	retiringVault.Deficit = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1)))
+	c.Assert(mgr.Keeper().SetVault(ctx, retiringVault), IsNil)
+
+	mgr.Keeper().SetMimir(ctx, constants.ChurnInterval.String(), 60)
+	ctx = ctx.WithBlockHeight(61)
+
+	c.Assert(validatorMgr.BeginBlock(ctx, mgr, nil), IsNil)
+	// If the churn gate treated any RetiringVault as blocking, this node would
+	// still be standby.
+	ready, err := mgr.Keeper().ListValidatorsByStatus(ctx, NodeReady)
+	c.Assert(err, IsNil)
+	c.Assert(ready, HasLen, 1)
+
+	// BeginBlock only proves the gate allows rotation; lifecycle cleanup is
+	// covered by TestChurnAfterDeficitOnlyRetiringVaultGoesInactive.
+	updatedVault, err := mgr.Keeper().GetVault(ctx, retiringVault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(updatedVault.Status, Equals, RetiringVault)
+	c.Assert(updatedVault.GetDeficit(common.BTCAsset).Amount.Equal(cosmos.NewUint(1)), Equals, true)
+}
+
 func (vts *ValidatorMgrTestSuite) TestSetupValidatorNodes(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	ctx = ctx.WithBlockHeight(1)
@@ -852,6 +998,50 @@ func (vts *ValidatorMgrTestSuite) TestFindNextVaultNodeAccountsBFT(c *C) {
 	c.Assert(nasAfter, HasLen, 4, Commentf("%d", len(nasAfter)))
 }
 
+func (vts *ValidatorMgrTestSuite) TestRegularVaultMembershipNeedsKeygenWhenActiveVaultMembershipStale(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	k.SetMimir(ctx, constants.AsgardSize.String(), 10)
+	mgr := NewDummyMgrWithKeeper(k)
+	validatorMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+
+	active := make(NodeAccounts, 0, 3)
+	expectedMembers := make(common.PubKeys, 0, 3)
+	for i := 0; i < 3; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		active = append(active, na)
+		expectedMembers = append(expectedMembers, na.PubKeySet.Secp256k1)
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+	}
+
+	needsKeygen, err := validatorMgr.regularVaultMembershipNeedsKeygen(ctx, active)
+	c.Assert(err, IsNil)
+	c.Assert(needsKeygen, Equals, false)
+
+	xmr := NewVaultV2(1, ActiveVault, AsgardVault, GetRandomPubKey(), xmrMonovaultChains().Strings(), nil, GetRandomPubKey())
+	xmr.Membership = expectedMembers.Strings()
+	xmr.PubKeyFrost = GetRandomEd25519PubKey()
+	c.Assert(k.SetVault(ctx, xmr), IsNil)
+
+	needsKeygen, err = validatorMgr.regularVaultMembershipNeedsKeygen(ctx, active)
+	c.Assert(err, IsNil)
+	c.Assert(needsKeygen, Equals, true)
+
+	regular := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.THORChain}.Strings(), nil)
+	regular.Membership = expectedMembers[:2].Strings()
+	c.Assert(k.SetVault(ctx, regular), IsNil)
+
+	needsKeygen, err = validatorMgr.regularVaultMembershipNeedsKeygen(ctx, active)
+	c.Assert(err, IsNil)
+	c.Assert(needsKeygen, Equals, true)
+
+	regular.Membership = expectedMembers.Strings()
+	c.Assert(k.SetVault(ctx, regular), IsNil)
+
+	needsKeygen, err = validatorMgr.regularVaultMembershipNeedsKeygen(ctx, active)
+	c.Assert(err, IsNil)
+	c.Assert(needsKeygen, Equals, false)
+}
+
 func (vts *ValidatorMgrTestSuite) TestChurnInnerSchedulesReplacementXMRKeygen(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	mgr := NewDummyMgrWithKeeper(k)
@@ -892,6 +1082,123 @@ func (vts *ValidatorMgrTestSuite) TestChurnInnerSchedulesReplacementXMRKeygen(c 
 	c.Assert(networkDummy.nas, HasLen, 4)
 	c.Assert(networkDummy.xmrNas, HasLen, 4)
 	c.Assert(networkDummy.xmrNas.Contains(ready), Equals, true)
+}
+
+func (vts *ValidatorMgrTestSuite) TestChurnInnerRecoversMissingXMRAtBFTFloor(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	mgr := NewDummyMgrWithKeeper(k)
+	networkDummy, ok := mgr.NetworkMgr().(*NetworkMgrDummy)
+	c.Assert(ok, Equals, true)
+	validatorMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+
+	k.SetMimir(ctx, constants.DesiredValidatorSet.String(), 4)
+	k.SetMimir(ctx, constants.AsgardSize.String(), 10)
+	membership := make([]string, 0, 4)
+	active := make(NodeAccounts, 0, 4)
+	for i := 0; i < 4; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+		membership = append(membership, na.PubKeySet.Secp256k1.String())
+		active = append(active, na)
+	}
+
+	// The ordinary vault already matches the stable four-node set. With no
+	// ready node there is no regular rotation to incidentally trigger XMR.
+	regular := NewVault(
+		1,
+		ActiveVault,
+		AsgardVault,
+		GetRandomPubKey(),
+		common.Chains{common.THORChain, common.BTCChain}.Strings(),
+		nil,
+	)
+	regular.Membership = append(regular.Membership, membership...)
+	c.Assert(k.SetVault(ctx, regular), IsNil)
+
+	c.Assert(validatorMgr.churnInner(ctx), IsNil)
+	c.Assert(networkDummy.nas, HasLen, 0, Commentf("must not schedule an unnecessary regular keygen"))
+	c.Assert(networkDummy.xmrNas, HasLen, 4)
+	for _, member := range active {
+		c.Assert(networkDummy.xmrNas.Contains(member), Equals, true)
+	}
+}
+
+func (vts *ValidatorMgrTestSuite) TestHasPendingCoScheduledKeygenUsesExtendedValidity(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	const retryBlocks int64 = 2
+	k.SetMimir(ctx, constants.ChurnRetryInterval.String(), retryBlocks)
+	mgr := NewDummyMgrWithKeeper(k)
+	validatorMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+
+	const keygenHeight int64 = 2
+	members := common.PubKeys{GetRandomPubKey(), GetRandomPubKey(), GetRandomPubKey()}
+	keygen, err := NewKeygen(keygenHeight, members.Strings(), AsgardKeygen)
+	c.Assert(err, IsNil)
+	xmrKeygen, err := NewKeygen(keygenHeight, members.Strings(), XMRMonovaultKeygen)
+	c.Assert(err, IsNil)
+	keygenBlock := NewKeygenBlock(keygenHeight)
+	keygenBlock.Keygens = []Keygen{keygen, xmrKeygen}
+	k.SetKeygenBlock(ctx, keygenBlock)
+
+	unrelatedVault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.THORChain}.Strings(), nil)
+	unrelatedVault.Membership = common.PubKeys{GetRandomPubKey()}.Strings()
+	c.Assert(k.SetVault(ctx, unrelatedVault), IsNil)
+
+	extendedValidity := keygenResultValidityBlocks(ctx, k, XMRMonovaultKeygen)
+	c.Assert(extendedValidity > retryBlocks, Equals, true)
+
+	// The co-scheduled Asgard keygen remains pending beyond its plain retry
+	// window because the TSS handler still accepts its reports through the XMR
+	// window. The second height also proves the scan lookback was widened.
+	for _, height := range []int64{
+		keygenHeight + retryBlocks,
+		keygenHeight + retryBlocks + 1,
+		keygenHeight + extendedValidity - 1,
+	} {
+		pending, pendingErr := validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(height), AsgardKeygen)
+		c.Assert(pendingErr, IsNil)
+		c.Assert(pending, Equals, true, Commentf("height %d", height))
+	}
+
+	pending, err := validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+extendedValidity), AsgardKeygen)
+	c.Assert(err, IsNil)
+	c.Assert(pending, Equals, true)
+
+	pending, err = validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+extendedValidity), XMRMonovaultKeygen)
+	c.Assert(err, IsNil)
+	c.Assert(pending, Equals, true)
+
+	pending, err = validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+extendedValidity+1), XMRMonovaultKeygen)
+	c.Assert(err, IsNil)
+	c.Assert(pending, Equals, false)
+}
+
+func (vts *ValidatorMgrTestSuite) TestHasPendingStandaloneAsgardExpiresAfterRetryBoundary(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	const retryBlocks int64 = 2
+	k.SetMimir(ctx, constants.ChurnRetryInterval.String(), retryBlocks)
+	mgr := NewDummyMgrWithKeeper(k)
+	validatorMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+
+	const keygenHeight int64 = 2
+	members := common.PubKeys{GetRandomPubKey(), GetRandomPubKey(), GetRandomPubKey()}
+	keygen, err := NewKeygen(keygenHeight, members.Strings(), AsgardKeygen)
+	c.Assert(err, IsNil)
+	keygenBlock := NewKeygenBlock(keygenHeight)
+	keygenBlock.Keygens = []Keygen{keygen}
+	k.SetKeygenBlock(ctx, keygenBlock)
+
+	pending, err := validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+retryBlocks-1), AsgardKeygen)
+	c.Assert(err, IsNil)
+	c.Assert(pending, Equals, true)
+
+	pending, err = validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+retryBlocks), AsgardKeygen)
+	c.Assert(err, IsNil)
+	c.Assert(pending, Equals, true)
+
+	pending, err = validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+retryBlocks+1), AsgardKeygen)
+	c.Assert(err, IsNil)
+	c.Assert(pending, Equals, false)
 }
 
 func (vts *ValidatorMgrTestSuite) TestWeightedBondReward(c *C) {

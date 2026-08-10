@@ -119,6 +119,8 @@ func (k KVStore) IsOperationalMimir(key string) bool {
 		constants.MaxRetiredVaultRecoveryAttempts.String(),
 		constants.P2PGateDisabled.String(),
 		constants.EnableMemolessOutbound.String(),
+		constants.POLReserveSystemIncomeBps.String(),
+		constants.StableReserveOraclePricing.String(),
 	}
 	for i := range exactMatches {
 		if strings.EqualFold(key, exactMatches[i]) {
@@ -151,6 +153,7 @@ func (k KVStore) IsOperationalMimir(key string) bool {
 		"DYNAMICFEE-WHITELIST",
 		"REVSHARE",
 		"EVMDIRECTERC20INBOUND",
+		"SKIPSIGNERCACHE",
 	}
 	for i := range partialMatches {
 		// Contains rather than HasPrefix to include cases like StreamingSwapPause.

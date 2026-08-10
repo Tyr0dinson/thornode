@@ -14,6 +14,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	thortypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // TssKeysignHandler is design to process MsgTssKeysignFail
@@ -101,11 +102,11 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 	}
 	slashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, labels))
 
-	h.mgr.Slasher().IncSlashPoints(slashCtx, observeSlashPoints, msg.Signer)
 	if !voter.Sign(msg.Signer) {
 		ctx.Logger().Info("signer already signed MsgTssKeysignFail", "signer", msg.Signer.String(), "txid", msg.ID)
 		return &cosmos.Result{}, nil
 	}
+	h.mgr.Slasher().IncSlashPoints(slashCtx, observeSlashPoints, msg.Signer)
 
 	vault, err := h.mgr.Keeper().GetVault(ctx, msg.PubKey)
 	if err != nil {
@@ -136,9 +137,14 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 	// so using IsNodeKeys here would undercount final-round reports and could
 	// miss freezing a vault that is still failing at the terminal round.
 	//
-	// The terminal round is the final protocol round, where signature shares
-	// are revealed: KEYSIGN9 for tss-lib v3 secp256k1 (v3 added rounds 8 and 9)
-	// and EDDSAKEYSIGN3 for EdDSA. KEYSIGN7 is deliberately NOT accepted.
+	// The terminal safety boundary is the first round where enough signing
+	// material may have escaped to another participant: KEYSIGN9 for tss-lib v3
+	// secp256k1 (v3 added rounds 8 and 9), EDDSAKEYSIGN3 for EdDSA, and both
+	// FROSTKEYSIGNSHARE and FROSTKEYSIGNRESULT for FROST. FROST's local signature
+	// share is broadcast before frost_share can fail, so a peer may already be
+	// able to aggregate and publish even though the result-propagation phase was
+	// never reached. frost_preprocess remains non-terminal.
+	// KEYSIGN7 is deliberately NOT accepted.
 	// Although round 7 was the terminal round under tss-lib v1, under v3 it is
 	// an interior consistency-check commitment round (the U_i/T_i commitment in
 	// the GG18 phase-5 check) that runs before any share is revealed at round 9.
@@ -158,7 +164,11 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 	// nobody — Blame.IsEmpty() only checks FailReason, so without this
 	// guard an empty-BlameNodes terminal-round report would still bump
 	// LastRoundCount toward the freeze threshold.
-	if (msg.Blame.Round == tssMessages.KEYSIGN9 || msg.Blame.Round == tssMessages.EDDSAKEYSIGN3) && len(msg.Blame.BlameNodes) > 0 {
+	round := thortypes.CanonicalTssRound(msg.Blame.Round, "")
+	if (round == tssMessages.KEYSIGN9 ||
+		round == tssMessages.EDDSAKEYSIGN3 ||
+		round == tssMessages.FROSTKEYSIGNSHARE ||
+		round == tssMessages.FROSTKEYSIGNRESULT) && len(msg.Blame.BlameNodes) > 0 {
 		for _, na := range vaultMemberNodes {
 			if msg.Signer.Equals(na.NodeAddress) {
 				voter.LastRoundCount++

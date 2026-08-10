@@ -172,6 +172,11 @@ const (
 	ModifyLimitSwapMaxIterations
 	POLReserveSystemIncomeBps
 	POLReserveMaxDeployment
+	StableReserveEnabled
+	StableReserveDepegToleranceBps
+	StableReservePOLShareBps
+	StableReserveWithdrawalRequestMax
+	StableReserveOraclePricing
 	WasmArbContract
 	MaxAbsentKeygenReporters
 
@@ -200,6 +205,7 @@ const (
 	L1DynamicFeeStepBPS
 	L1DynamicFeeDeadbandBPS
 	L1DynamicFeeWindowEpochs
+	VaultDeficitGasHaltMaxGasMultiplier
 )
 
 // ConstantValues define methods used to get constant values

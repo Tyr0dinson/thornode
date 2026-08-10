@@ -203,6 +203,36 @@ func TestFrostKeygenRejectsIncompleteParticipantSet(t *testing.T) {
 	}
 }
 
+func TestFrostKeygenExecuteRejectsPartialActiveSet(t *testing.T) {
+	members := []string{testPubKeys[0], testPubKeys[1], testPubKeys[2]}
+	_, _, signerByNormalized, err := buildParticipantIndex(members)
+	if err != nil {
+		t.Fatalf("build participant index: %v", err)
+	}
+	activeSet, err := buildActiveSet([]string{testPubKeys[0], testPubKeys[1]}, signerByNormalized)
+	if err != nil {
+		t.Fatalf("build active set: %v", err)
+	}
+
+	sidecar := &mockFrostSidecarKeygen{}
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", make(chan *p2p.Message, 1), time.Second)
+	coord.sidecar = sidecar
+	resp := coord.Execute(FrostKeygenRequest{
+		VaultPubKey:   "vault",
+		SignerPubKeys: members,
+	}, activeSet, nil)
+
+	if resp.Status != tcommon.Fail {
+		t.Fatalf("expected failure for partial active set, got %+v", resp)
+	}
+	if !strings.Contains(resp.Blame.FailReason, "requires all signers online") {
+		t.Fatalf("unexpected failure reason: %q", resp.Blame.FailReason)
+	}
+	if len(sidecar.round1Reqs) != 0 {
+		t.Fatalf("sidecar should not be called for partial active set")
+	}
+}
+
 func TestFrostKeygenJoinThresholdRequiresFullParticipation(t *testing.T) {
 	if got := frostKeygenJoinThreshold(4); got != 3 {
 		t.Fatalf("expected full participation threshold for 4 signers to be 3, got %d", got)
@@ -372,7 +402,7 @@ func TestFrostKeygenRound3RejectsResultMismatch(t *testing.T) {
 	}
 }
 
-func TestFrostKeygenRound3AcceptsMatchingPayloadsWithoutVerifications(t *testing.T) {
+func TestFrostKeygenRound3RejectsUncertifiedPayloadsOnTimeout(t *testing.T) {
 	ensureBech32Prefix()
 
 	members := []string{testPubKeys[0], testPubKeys[1]}
@@ -401,24 +431,58 @@ func TestFrostKeygenRound3AcceptsMatchingPayloadsWithoutVerifications(t *testing
 	})
 
 	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", msgChan, 30*time.Millisecond)
-	address, gotGroupKey, birthday, failResp := coord.exchangeRound3(activeSet, participantIndexMap, peerIDs, FrostDKGRound3Payload{
+	_, _, _, failResp := coord.exchangeRound3(activeSet, participantIndexMap, peerIDs, FrostDKGRound3Payload{
 		SenderPubKey:         testPubKeys[0],
 		ParticipantIndex:     participantIndexMap[normalizePubKey(testPubKeys[0])],
 		Address:              groupAddress,
 		GroupKey:             groupKey,
 		ObservedMoneroHeight: 456,
 	})
-	if failResp != nil {
-		t.Fatalf("expected round3 timeout fallback success, got %+v", failResp)
+	if failResp == nil {
+		t.Fatal("expected uncertified round3 payloads to fail on timeout")
 	}
-	if address != groupAddress {
-		t.Fatalf("expected address %s, got %s", groupAddress, address)
+	if failResp.Status != tcommon.Fail || failResp.Blame.Round != frostDKGRound3 {
+		t.Fatalf("expected round3 failure, got %+v", failResp)
 	}
-	if gotGroupKey != groupKey {
-		t.Fatalf("expected group key %s, got %s", groupKey, gotGroupKey)
+}
+
+func TestFrostDKGBirthdayUsesLowerMedianAndMargin(t *testing.T) {
+	height, err := frostDKGBirthdayHeight(map[string]int64{
+		"a": 1_000,
+		"b": 1_001,
+		"c": 1_002,
+		"d": 50_000,
+	}, 4)
+	if err != nil {
+		t.Fatalf("derive birthday: %v", err)
 	}
-	if birthday != 123 {
-		t.Fatalf("expected min birthday 123, got %d", birthday)
+	if height != 991 {
+		t.Fatalf("expected lower median 1001 minus margin 10, got %d", height)
+	}
+
+	height, err = frostDKGBirthdayHeight(map[string]int64{
+		"a": 0,
+		"b": 1_000,
+		"c": 1_001,
+		"d": 1_002,
+	}, 4)
+	if err != nil {
+		t.Fatalf("derive birthday with one abstention: %v", err)
+	}
+	if height != 991 {
+		t.Fatalf("expected positive-height median 1001 minus margin 10, got %d", height)
+	}
+
+	if _, err := frostDKGBirthdayHeight(map[string]int64{
+		"a": 0,
+		"b": 0,
+		"c": 1_000,
+		"d": 1_001,
+	}, 4); err == nil {
+		t.Fatal("expected fewer than quorum positive heights to be rejected")
+	}
+	if _, err := frostDKGBirthdayHeight(map[string]int64{"a": -1}, 1); err == nil {
+		t.Fatal("expected a negative height to be rejected")
 	}
 }
 
@@ -661,8 +725,11 @@ func TestFrostTranscriptVerifierRejectsUnanimousHashMismatch(t *testing.T) {
 	if _, failure := verifier.recordVerification(testPubKeys[0], targetPayload.SenderPubKey, targetPayload.ParticipantIndex, badHash); failure != nil {
 		t.Fatalf("first mismatched verification should not fail before quorum: %v", failure)
 	}
-	if _, failure := verifier.recordVerification(testPubKeys[1], targetPayload.SenderPubKey, targetPayload.ParticipantIndex, badHash); failure == nil {
-		t.Fatalf("expected unanimous hash mismatch failure")
+	if _, failure := verifier.recordVerification(testPubKeys[1], targetPayload.SenderPubKey, targetPayload.ParticipantIndex, badHash); failure != nil {
+		t.Fatalf("unsigned hash mismatch must not assign blame: %v", failure)
+	}
+	if verifier.isComplete() {
+		t.Fatalf("mismatched verification quorum must not complete the transcript")
 	}
 }
 
@@ -786,16 +853,18 @@ func TestFrostKeygenExecuteSuccess(t *testing.T) {
 	}
 
 	localRound3 := FrostDKGRound3Payload{
-		SenderPubKey:     testPubKeys[0],
-		ParticipantIndex: localIndex,
-		Address:          groupAddress,
-		GroupKey:         groupKey,
+		SenderPubKey:         testPubKeys[0],
+		ParticipantIndex:     localIndex,
+		Address:              groupAddress,
+		GroupKey:             groupKey,
+		ObservedMoneroHeight: 456,
 	}
 	remoteRound3 := FrostDKGRound3Payload{
-		SenderPubKey:     testPubKeys[1],
-		ParticipantIndex: remoteIndex,
-		Address:          groupAddress,
-		GroupKey:         groupKey,
+		SenderPubKey:         testPubKeys[1],
+		ParticipantIndex:     remoteIndex,
+		Address:              groupAddress,
+		GroupKey:             groupKey,
+		ObservedMoneroHeight: 455,
 	}
 	localRound3Hash, err := FrostTranscriptDKGRound3Hash("msg-id", localRound3)
 	if err != nil {
@@ -879,6 +948,9 @@ func TestFrostKeygenExecuteSuccess(t *testing.T) {
 	}
 	if resp.Address != groupAddress || resp.GroupKey != groupKey {
 		t.Fatalf("unexpected keygen response: %+v", resp)
+	}
+	if resp.ObservedMoneroHeight != 445 {
+		t.Fatalf("expected lower height 455 minus margin 10, got %d", resp.ObservedMoneroHeight)
 	}
 
 	if len(sidecar.round1Reqs) != 1 {
@@ -1320,6 +1392,7 @@ func TestFrostKeygenExecuteSuccessSingleSigner(t *testing.T) {
 	}
 
 	localIndex := participantIndexMap[normalizePubKey(testPubKeys[0])]
+	localIndexKey := strconv.FormatUint(uint64(localIndex), 10)
 	groupAddress := "48xmrsinglesigner"
 	groupKey := strings.Repeat("cd", 32)
 
@@ -1334,7 +1407,14 @@ func TestFrostKeygenExecuteSuccessSingleSigner(t *testing.T) {
 		chainHeight:  123,
 	}
 
-	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id-single", make(chan *p2p.Message, 4), time.Second)
+	msgChan := make(chan *p2p.Message, 4)
+	enqueueRoundMessage(t, msgChan, messages.TSSFrostDKGRound1Msg, "msg-id-single", testPubKeys[0], FrostDKGRound1Payload{
+		SenderPubKey:     testPubKeys[0],
+		ParticipantIndex: localIndex,
+		Commitments:      "stale-self-commitment",
+	})
+
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id-single", msgChan, time.Second)
 	coord.sidecar = sidecar
 	resp := coord.Execute(FrostKeygenRequest{
 		VaultPubKey:   "thorpub-single",
@@ -1346,6 +1426,9 @@ func TestFrostKeygenExecuteSuccessSingleSigner(t *testing.T) {
 	}
 	if resp.Address != groupAddress || resp.GroupKey != groupKey {
 		t.Fatalf("unexpected single-signer keygen response: %+v", resp)
+	}
+	if resp.ObservedMoneroHeight != sidecar.chainHeight-frostDKGReorgMargin {
+		t.Fatalf("expected single-signer birthday %d, got %d", sidecar.chainHeight-frostDKGReorgMargin, resp.ObservedMoneroHeight)
 	}
 	if len(sidecar.round1Reqs) != 1 {
 		t.Fatalf("expected one round1 call, got %d", len(sidecar.round1Reqs))
@@ -1359,8 +1442,14 @@ func TestFrostKeygenExecuteSuccessSingleSigner(t *testing.T) {
 	if len(sidecar.round2Reqs) != 1 {
 		t.Fatalf("expected one round2 call, got %d", len(sidecar.round2Reqs))
 	}
-	if len(sidecar.round2Reqs[0].AllCommitments) != 1 {
+	if len(sidecar.round2Reqs[0].AllCommitments) != 1 || sidecar.round2Reqs[0].AllCommitments[localIndexKey] != "single-commitment" {
 		t.Fatalf("expected only local commitment in single-signer round2, got %+v", sidecar.round2Reqs[0].AllCommitments)
+	}
+	if len(coord.p2pCommunication.BroadcastMsgChan) != 0 {
+		t.Fatalf("expected single-signer keygen to skip p2p transcript exchange, broadcast %d messages", len(coord.p2pCommunication.BroadcastMsgChan))
+	}
+	if len(msgChan) != 1 {
+		t.Fatalf("expected queued p2p noise to remain unread for single-signer keygen, got %d queued messages", len(msgChan))
 	}
 	if len(sidecar.round3Reqs) != 1 {
 		t.Fatalf("expected one round3 call, got %d", len(sidecar.round3Reqs))

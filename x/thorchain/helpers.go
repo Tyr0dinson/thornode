@@ -138,16 +138,28 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 			toAddr := tx.Tx.FromAddress
 			usesSourceSender := true
 			memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), tx.Tx.Memo)
-			if err == nil && memo.IsType(TxSwap) && !memo.GetRefundAddress().IsEmpty() && !coin.Asset.GetChain().IsTHORChain() {
+			hasMemoRefundAddress := false
+			if err == nil {
+				hasMemoRefundAddress = memo.IsType(TxSwap) ||
+					(memo.IsType(TxAdd) && coin.Asset.GetChain().RequiresExplicitRefundAddress())
+			}
+			if err == nil && hasMemoRefundAddress && !memo.GetRefundAddress().IsEmpty() && !coin.Asset.GetChain().IsTHORChain() {
 				// If the memo specifies a refund address, send the refund to that address. If
 				// refund memo can't be parsed or is invalid for the refund chain, it will
-				// default back to the sender address
-				if memo.GetRefundAddress().IsChain(coin.Asset.GetChain()) {
-					toAddr = memo.GetRefundAddress()
+				// default back to the sender address. Add-liquidity memo addresses are used
+				// only on chains that require an explicit refund address.
+				refundAddress := memo.GetRefundAddress()
+				validRefundAddress := refundAddress.IsChain(coin.Asset.GetChain())
+				if coin.Asset.GetChain().RequiresExplicitRefundAddress() {
+					validRefundAddress = validRefundAddress && coin.Asset.GetChain().IsValidAddress(refundAddress)
+				}
+				if validRefundAddress {
+					toAddr = refundAddress
 					usesSourceSender = false
 				}
 			}
 
+			sender := tx.Tx.ObservedSender()
 			var vault Vault
 			if !tx.ObservedPubKey.IsEmpty() {
 				vault, err = mgr.Keeper().GetVault(ctx, tx.ObservedPubKey)
@@ -185,10 +197,9 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 				continue
 			}
 
-			sender := tx.Tx.ObservedSender()
-			if coin.Asset.GetChain().Equals(common.XMRChain) && usesSourceSender && sender.RefundAddressRequired {
-				ctx.Logger().Info("skip xmr refund to unknown sender marker", "in_hash", tx.Tx.ID.String(), "coin", coin.String())
-				refundReason = fmt.Sprintf("%s; fail to refund (%s): unknown xmr sender and no explicit refund address", refundReason, toi.Coin.String())
+			if usesSourceSender && sender.RefundAddressRequired {
+				ctx.Logger().Info("skip refund to unavailable sender", "in_hash", tx.Tx.ID.String(), "coin", coin.String())
+				refundReason = fmt.Sprintf("%s; fail to refund (%s): sender unavailable and no explicit refund address", refundReason, toi.Coin.String())
 				unrefundableCoinCleanup(ctx, mgr, toi, "failed_refund_unknown_sender")
 				continue
 			}
@@ -671,11 +682,11 @@ func addGasFees(ctx cosmos.Context, mgr Manager, tx ObservedTx) error {
 	if err != nil {
 		return err
 	}
-	// Detect SafeSub clamping on the gas debit before it happens silently.
 	// This covers both the cancel/approval tx path and the main non-slash
 	// outbound gas path that go through addGasFees.
-	detectVaultSubFundsClamp(ctx, mgr, mgr.Keeper(), vault, tx, tx.Tx.Gas.ToCoins())
-	vault.SubFunds(tx.Tx.Gas.ToCoins())
+	// If the gas debit underflows, debitVault records deficit instead of
+	// allowing the accounting gap to disappear silently.
+	debitVault(ctx, mgr, &vault, tx, tx.Tx.Gas.ToCoins(), vaultDeficitReasonOutboundGas)
 	if err := mgr.Keeper().SetVault(ctx, vault); err != nil {
 		return err
 	}
@@ -1399,11 +1410,16 @@ func settleSwap(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason strin
 }
 
 func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason string) error {
+	stableReserveInternal, err := isStableReserveInternalSwap(ctx, mgr, msg)
+	if err != nil {
+		return err
+	}
+
 	// Schedule outbound for what was already swapped whenever settlement is the
 	// place materializing the final outbound. The advanced swap queue skips
 	// outbound creation during execution and relies on settlement to create the
 	// completed swap outbound, even after multiple sub-swaps have already run.
-	if !msg.State.Out.IsZero() {
+	if !msg.State.Out.IsZero() && !stableReserveInternal {
 		// Parse memo to check if this is a savers add
 		memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), msg.Tx.Memo)
 		if err != nil {
@@ -1455,6 +1471,27 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 					ctx.Logger().Error("fail to emit refund event", "error", err)
 				}
 			}
+		}
+	}
+
+	// Internal stable-reserve rescues targeting RUNE accumulate their proceeds in
+	// Asgard during the stream (the outbound above is skipped for internal swaps,
+	// and settleStableReserveInternalSwap deliberately leaves the RUNE in Asgard so
+	// the solvency invariant stays satisfied mid-stream). Move the accumulated RUNE
+	// into the module here, at completion — this runs for both a successful and a
+	// failed final sub-swap, so proceeds from earlier sub-swaps are never stranded.
+	// Deploys always target a stable (never RUNE), so a RUNE target is always a rescue.
+	if stableReserveInternal && msg.TargetAsset.IsRune() && !msg.State.Out.IsZero() {
+		coin := common.NewCoin(common.RuneAsset(), msg.State.Out)
+		if err := mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, StableReserveName, common.NewCoins(coin)); err != nil {
+			return err
+		}
+		if err := mgr.EventMgr().EmitEvent(ctx, newStableReserveEvent(
+			"stable_reserve_rescue_rune_settled",
+			"amount", msg.State.Out.String(),
+			"tx_id", msg.Tx.ID.String(),
+		)); err != nil {
+			return err
 		}
 	}
 

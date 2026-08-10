@@ -92,7 +92,6 @@ func (vm *SwapQueueImpl) FetchQueue(ctx cosmos.Context) (swapItems, error) { // 
 			msg:   msg,
 			index: i,
 			fee:   cosmos.ZeroUint(),
-			slip:  cosmos.ZeroUint(),
 		})
 	}
 
@@ -223,22 +222,44 @@ func (vm *SwapQueueImpl) EndBlock(ctx cosmos.Context, mgr Manager) error {
 				vm.k.RemoveSwapQueueItem(ctx, pick.msg.Tx.ID, pick.index)
 				vm.k.RemoveStreamingSwap(ctx, pick.msg.Tx.ID)
 
-				memo, err := ParseMemoWithTHORNames(ctx, vm.k, pick.msg.Tx.Memo)
-				if err != nil {
-					return err
+				// The streaming swap and queue state have now been removed, so this
+				// item will never be retried. Any fallible operation below must
+				// therefore never return without first dispatching the already-swapped
+				// output (swp.Out); otherwise those funds are permanently stranded in
+				// the pool/vault with no outbound and no refund. The memo is only
+				// re-parsed here to detect an add (a savers add skips the outbound).
+				// A full re-parse can now fail even for an originally-valid memo (e.g.
+				// an affiliate/destination THORName expired mid-stream), so on failure
+				// fall back to the memo type, which is derived from the memo prefix and
+				// does not depend on THORName resolution. This keeps the add/non-add
+				// decision identical to a successful parse instead of returning and
+				// stranding the output.
+				isSaversAdd := false
+				if memo, memoErr := ParseMemoWithTHORNames(ctx, vm.k, pick.msg.Tx.Memo); memoErr == nil {
+					isSaversAdd = memo.IsType(TxAdd)
+				} else if txType, typeErr := StringToTxType(strings.Split(strings.Split(pick.msg.Tx.Memo, "|")[0], ":")[0]); typeErr == nil {
+					isSaversAdd = txType == TxAdd
+					ctx.Logger().Error("fail to parse streaming swap memo, using memo type for outbound decision", "error", memoErr, "hash", pick.msg.Tx.ID, "is_add", isSaversAdd)
+				} else {
+					ctx.Logger().Error("fail to parse streaming swap memo and memo type, scheduling outbound as non-add", "error", memoErr, "hash", pick.msg.Tx.ID)
 				}
-				isSaversAdd := memo.IsType(TxAdd)
 
 				// If this is a savers add skip scheduling outbound
 				if !swp.Out.IsZero() && !isSaversAdd {
 					dexAgg := ""
 					if len(pick.msg.Aggregator) > 0 {
-						dexAgg, err = FetchDexAggregator(
+						// A failed aggregator lookup (e.g. the aggregator was removed
+						// from the whitelist across an upgrade while the streaming swap
+						// was in flight) must not strand the already-swapped output;
+						// log and schedule a plain outbound without the aggregator.
+						aggregator, aggErr := FetchDexAggregator(
 							pick.msg.TargetAsset.GetChain(),
 							pick.msg.Aggregator,
 						)
-						if err != nil {
-							return err
+						if aggErr != nil {
+							ctx.Logger().Error("fail to fetch dex aggregator, scheduling outbound without aggregator", "error", aggErr, "hash", pick.msg.Tx.ID)
+						} else {
+							dexAgg = aggregator
 						}
 					}
 					dexAggTargetAsset := pick.msg.AggregatorTargetAddress
@@ -365,6 +386,9 @@ func (vm *SwapQueueImpl) scoreMsgs(ctx cosmos.Context, items swapItems, synthVir
 			}
 		}
 
+		isDoubleSwap := !sourceAsset.IsRune() && !targetAsset.IsRune()
+		stableSwap := isDoubleSwap && isStableToStable(ctx, vm.k, sourceAsset, targetAsset)
+
 		nonRuneAsset := sourceAsset
 		if nonRuneAsset.IsRune() {
 			nonRuneAsset = targetAsset
@@ -381,34 +405,38 @@ func (vm *SwapQueueImpl) scoreMsgs(ctx cosmos.Context, items swapItems, synthVir
 		if nonRuneAsset.IsSyntheticAsset() {
 			virtualDepthMult = synthVirtualDepthMult
 		}
-		vm.getLiquidityFeeAndSlip(ctx, pool, item.msg.Tx.Coins[0], &items[i], virtualDepthMult)
+		// first-leg minSlip asset matches swapOne: non-rune side of this leg.
+		emitRune := vm.addLiquidityFee(ctx, pool, item.msg.Tx.Coins[0], &items[i], virtualDepthMult, nonRuneAsset, stableSwap)
 
-		if sourceAsset.IsRune() || targetAsset.IsRune() {
-			// single swap , stop here
+		if !isDoubleSwap {
 			continue
 		}
-		// double swap , thus need to convert source coin to RUNE and calculate fee and slip again
-		runeCoin := common.NewCoin(common.RuneAsset(), pool.AssetValueInRune(item.msg.Tx.Coins[0].Amount))
+		// double swap , thus use the first leg's emitted RUNE and calculate fee again
+		runeCoin := common.NewCoin(common.RuneAsset(), emitRune)
 		nonRuneAsset = targetAsset
 		pool = pools[nonRuneAsset]
 		if pool.IsEmpty() || !pool.IsAvailable() || pool.BalanceRune.IsZero() || pool.BalanceAsset.IsZero() {
 			// Reset first-leg scoring to prevent inflated priority from partial scoring
 			items[i].fee = cosmos.ZeroUint()
-			items[i].slip = cosmos.ZeroUint()
 			continue
 		}
 		virtualDepthMult = int64(10_000)
 		if targetAsset.IsSyntheticAsset() {
 			virtualDepthMult = synthVirtualDepthMult
 		}
-		vm.getLiquidityFeeAndSlip(ctx, pool, runeCoin, &items[i], virtualDepthMult)
+		vm.addLiquidityFee(ctx, pool, runeCoin, &items[i], virtualDepthMult, nonRuneAsset, stableSwap)
 	}
 
 	return items, nil
 }
 
-// getLiquidityFeeAndSlip calculate liquidity fee and slip, fee is in RUNE
-func (vm *SwapQueueImpl) getLiquidityFeeAndSlip(ctx cosmos.Context, pool Pool, sourceCoin common.Coin, item *swapItem, virtualDepthMult int64) {
+// addLiquidityFee adds the effective liquidity fee (in RUNE) for one swap leg
+// to item.fee and returns the emitted amount for the leg. Uses GetSwapCalc so
+// the score honors the min-slip floor that swapOne actually charges; without
+// it, small swaps whose natural slip is below the floor would score as
+// near-zero fee and get deprioritized even though they pay the floor rate in
+// practice.
+func (vm *SwapQueueImpl) addLiquidityFee(ctx cosmos.Context, pool Pool, sourceCoin common.Coin, item *swapItem, virtualDepthMult int64, nonRuneAsset common.Asset, stableSwap bool) cosmos.Uint {
 	// Get our X, x, Y values
 	var X, x, Y cosmos.Uint
 	x = sourceCoin.Amount
@@ -428,11 +456,13 @@ func (vm *SwapQueueImpl) getLiquidityFeeAndSlip(ctx cosmos.Context, pool Pool, s
 		panic(err)
 	}
 
-	fee := swapper.CalcLiquidityFee(X, x, Y)
+	swapSlipBps := swapper.CalcSwapSlip(X, x)
+	minSlipBps := getMinSlipBps(ctx, vm.k, common.NoAddress, nonRuneAsset, stableSwap, nil, nil, common.EmptyAsset, common.EmptyAsset, nil)
+	emit, fee, _ := swapper.GetSwapCalc(X, x, Y, swapSlipBps, minSlipBps)
+	emit = cosmos.RoundToDecimal(emit, pool.Decimals)
 	if sourceCoin.IsRune() {
 		fee = pool.AssetValueInRune(fee)
 	}
-	slip := swapper.CalcSwapSlip(X, x)
 	item.fee = item.fee.Add(fee)
-	item.slip = item.slip.Add(slip)
+	return emit
 }

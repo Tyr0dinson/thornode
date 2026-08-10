@@ -131,6 +131,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 			types.TCYStakeName:           {},
 			types.TCYClaimingName:        {},
 			types.POLReserveName:         {},
+			types.StableReserveName:      {},
 		},
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32AccountAddrPrefix()),
 		sdk.GetConfig().GetBech32AccountAddrPrefix(),
@@ -253,6 +254,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 			types.TCYStakeName:           {},
 			types.TCYClaimingName:        {},
 			types.POLReserveName:         {},
+			types.StableReserveName:      {},
 		},
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32AccountAddrPrefix()),
 		sdk.GetConfig().GetBech32AccountAddrPrefix(),
@@ -880,4 +882,57 @@ func (s *HandlerSuite) TestExternalAssetMatch(c *C) {
 	c.Check(externalAssetMatch(common.ETHChain, "3"), Equals, "3")
 	c.Check(externalAssetMatch(common.ETHChain, ""), Equals, "")
 	c.Check(externalAssetMatch(common.BTCChain, "foo"), Equals, "foo")
+}
+
+func (HandlerSuite) TestGetMsgAddLiquidityFromMemoXMRAssetAddress(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, false)
+
+	thorAddr := GetRandomTHORAddress()
+	xmrAddr, err := GetRandomEd25519PubKey().GetAddress(common.XMRChain)
+	c.Assert(err, IsNil)
+	unknownSender, err := common.NewAddress(common.XMRUnknownSenderAddress(GetRandomTxHash().String(), xmrAddr.String()))
+	c.Assert(err, IsNil)
+
+	m, err := ParseMemo(GetCurrentVersion(), fmt.Sprintf("+:XMR.XMR:%s/%s", thorAddr, xmrAddr))
+	c.Assert(err, IsNil)
+	lpMemo, ok := m.(AddLiquidityMemo)
+	c.Assert(ok, Equals, true)
+
+	txin := common.NewObservedTx(
+		common.Tx{
+			ID:    GetRandomTxHash(),
+			Chain: common.XMRChain,
+			Coins: common.Coins{
+				common.NewCoin(common.XMRAsset, cosmos.NewUint(100*common.One)),
+			},
+			Memo:        lpMemo.String(),
+			FromAddress: unknownSender,
+			ToAddress:   GetRandomTHORAddress(),
+			Gas: common.Gas{
+				common.NewCoin(common.XMRAsset, cosmos.NewUint(10000)),
+			},
+		},
+		1024,
+		common.EmptyPubKey, 1024,
+	)
+
+	// memo-registered asset address becomes the LP asset address in place of
+	// the unrecoverable XMR sender
+	msg, err := getMsgAddLiquidityFromMemo(w.ctx, lpMemo, txin, GetRandomBech32Addr())
+	c.Assert(err, IsNil)
+	addMsg, ok := msg.(*MsgAddLiquidity)
+	c.Assert(ok, Equals, true)
+	c.Check(addMsg.AssetAddress.String(), Equals, xmrAddr.String())
+	c.Check(addMsg.RuneAddress.String(), Equals, thorAddr.String())
+
+	// without a memo asset address the unknown marker still resolves to absent
+	m, err = ParseMemo(GetCurrentVersion(), fmt.Sprintf("+:XMR.XMR:%s", thorAddr))
+	c.Assert(err, IsNil)
+	lpMemo, ok = m.(AddLiquidityMemo)
+	c.Assert(ok, Equals, true)
+	msg, err = getMsgAddLiquidityFromMemo(w.ctx, lpMemo, txin, GetRandomBech32Addr())
+	c.Assert(err, IsNil)
+	addMsg, ok = msg.(*MsgAddLiquidity)
+	c.Assert(ok, Equals, true)
+	c.Check(addMsg.AssetAddress.IsEmpty(), Equals, true)
 }

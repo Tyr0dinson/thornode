@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"math/big"
 	"net/http/httptest"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/tron/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
 	"gitlab.com/thorchain/thornode/v3/common/tokenlist"
 
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -51,6 +53,12 @@ type TronTestSuite struct {
 // mockBridge is a mock implementation of ThorchainBridge for testing
 type mockBridge struct {
 	thorclient.ThorchainBridge
+	// skipCacheMimir is returned by GetMimir; set >0 to open the SkipSignerCache gate.
+	skipCacheMimir int64
+}
+
+func (m *mockBridge) GetMimir(_ string) (int64, error) {
+	return m.skipCacheMimir, nil
 }
 
 func (m *mockBridge) GetBlockTimestamp(height int64) (time.Time, error) {
@@ -194,6 +202,21 @@ func (s *TronTestSuite) TearDownSuite(c *C) {
 	}
 }
 
+// TestGetGasEstimateForSolvency verifies the TRON scanner fee is converted
+// from sun into THORChain 1e8 units.
+func (s *TronTestSuite) TestGetGasEstimateForSolvency(c *C) {
+	client := &TronClient{
+		config: config.BifrostChainConfiguration{
+			ChainID: common.TRONChain,
+		},
+		tronScanner: &TronBlockScanner{},
+	}
+	client.tronScanner.currentFee.Store(42_000)
+
+	got := client.GetGasEstimateForSolvency()
+	c.Assert(got.Equal(cosmos.NewUint(4_200_000)), Equals, true)
+}
+
 func (s *TronTestSuite) TestGetAddress(c *C) {
 	pubKey := common.PubKey("sthorpub1addwnpepqf72ur2e8zk8r5augtrly40cuy94f7e663zh798tyms6pu2k8qdswf4es66")
 	address := s.client.GetAddress(pubKey)
@@ -301,10 +324,18 @@ func (s *TronTestSuite) TestSignTxReSignsWhenCachedBroadcastIsMissingFromChain(c
 		GasRate:     1,
 	}
 
-	err := s.client.signerCacheManager.SetSigned(
+	// Expired cache entry + operational mimir set: verifyFn checks the recorded
+	// broadcast on chain; "missing-txid" is absent (gettransactionbyid returns {}),
+	// so the cache is cleared and the tx re-signs.
+	mb, ok := s.client.bridge.(*mockBridge)
+	c.Assert(ok, Equals, true)
+	mb.skipCacheMimir = 1
+	defer func() { mb.skipCacheMimir = 0 }()
+	err := s.client.signerCacheManager.SetSignedWithExpiry(
 		txOutItem.CacheHash(),
 		txOutItem.CacheVault(s.client.GetChain()),
 		"missing-txid",
+		time.Now().Add(-time.Hour).UnixMilli(),
 	)
 	c.Assert(err, IsNil)
 
@@ -349,7 +380,7 @@ func (s *TronTestSuite) TestSignTxSkipsWhenCachedBroadcastStillExistsOnChain(c *
 	c.Assert(txIn, IsNil)
 }
 
-func (s *TronTestSuite) TestSignTxReSignsWhenCachedBroadcastIsUnconfirmedAfterExpiration(c *C) {
+func (s *TronTestSuite) TestSignTxRespectsExpiredCacheWhenBroadcastPresent(c *C) {
 	coins := []common.Coin{{
 		Asset:    common.TRXAsset,
 		Amount:   cosmos.NewUint(150_000_000_000),
@@ -371,16 +402,24 @@ func (s *TronTestSuite) TestSignTxReSignsWhenCachedBroadcastIsUnconfirmedAfterEx
 		GasRate:     1,
 	}
 
-	err := s.client.signerCacheManager.SetSigned(
+	// Expired cache entry + mimir set, but the recorded broadcast IS on chain
+	// (gettransactionbyid returns a populated tx) → verifyFn LookupFound → respect
+	// the cache and skip, avoiding a double-spend.
+	mb, ok := s.client.bridge.(*mockBridge)
+	c.Assert(ok, Equals, true)
+	mb.skipCacheMimir = 1
+	defer func() { mb.skipCacheMimir = 0 }()
+	err := s.client.signerCacheManager.SetSignedWithExpiry(
 		txOutItem.CacheHash(),
 		txOutItem.CacheVault(s.client.GetChain()),
-		"deadbeef9034d95770d5704c9898e3414780c5fcbe282350080db8c4cef3e729",
+		"77ddfa7093cc5f745c0d3a54abb89ef070f983343c05e0f89e5a52f3e5401299",
+		time.Now().Add(-time.Hour).UnixMilli(),
 	)
 	c.Assert(err, IsNil)
 
 	signed, _, _, err := s.client.SignTx(txOutItem, 1)
 	c.Assert(err, IsNil)
-	c.Assert(signed, NotNil)
+	c.Assert(signed, IsNil)
 }
 
 func (s *TronTestSuite) TestSignTxUsesOriginalMemoForMemolessOutbounds(c *C) {
@@ -421,6 +460,145 @@ func (s *TronTestSuite) TestSignTxUsesOriginalMemoForMemolessOutbounds(c *C) {
 	err = json.Unmarshal(signed, &tx)
 	c.Assert(err, IsNil)
 	c.Assert(tx.RawData.Data, Equals, hex.EncodeToString([]byte(outboundMemo)))
+}
+
+func (s *TronTestSuite) checkpointTestTxOut(amount uint64) types.TxOutItem {
+	return types.TxOutItem{
+		Chain:       common.TRONChain,
+		ToAddress:   "TWfHpcbBVTcQaakccHt3d1d41iNgzaPwow",
+		VaultPubKey: s.client.localKeyManager.Pubkey(),
+		Coins: common.Coins{{
+			Asset: common.Asset{
+				Chain:  common.TRONChain,
+				Symbol: "USDT-TG3XXYEXBKPP9NZDAJDZSOZEU4BKASJOZS",
+				Ticker: "USDT",
+			},
+			Amount:   cosmos.NewUint(amount),
+			Decimals: 6,
+		}},
+		Memo: "OUT:tron-checkpoint-retry",
+		MaxGas: common.Gas{{
+			Asset:    common.TRXAsset,
+			Amount:   cosmos.NewUint(4_000_000),
+			Decimals: 6,
+		}},
+		GasRate: 1,
+		Height:  1,
+	}
+}
+
+func (s *TronTestSuite) TestSignTxReusesExactCheckpoint(c *C) {
+	txOutItem := s.checkpointTestTxOut(123_456_789)
+
+	signed, _, _, err := s.client.SignTx(txOutItem, 1)
+	c.Assert(err, IsNil)
+	c.Assert(signed, NotNil)
+
+	var original api.Transaction
+	c.Assert(json.Unmarshal(signed, &original), IsNil)
+	original.Signature = nil
+	checkpoint, err := encodeTronSignCheckpoint(original, txOutItem)
+	c.Assert(err, IsNil)
+	c.Assert(checkpoint, NotNil)
+
+	// A checkpoint retry must not depend on the live reference-block window or
+	// call the transaction-construction API again.
+	savedRefBlocks := s.client.tronScanner.refBlocks
+	savedAPI := s.client.api
+	s.client.tronScanner.refBlocks = nil
+	s.client.api = nil
+	defer func() {
+		s.client.tronScanner.refBlocks = savedRefBlocks
+		s.client.api = savedAPI
+	}()
+
+	txOutItem.Checkpoint = checkpoint
+	retried, _, _, err := s.client.SignTx(txOutItem, 2)
+	c.Assert(err, IsNil)
+	c.Assert(retried, NotNil)
+
+	var retry api.Transaction
+	c.Assert(json.Unmarshal(retried, &retry), IsNil)
+	c.Assert(retry.TxId, Equals, original.TxId)
+	c.Assert(retry.RawDataHex, Equals, original.RawDataHex)
+	c.Assert(retry.RawData.FeeLimit, Equals, original.RawData.FeeLimit)
+}
+
+func (s *TronTestSuite) TestSignCheckpointRejectsChangedOrCorruptState(c *C) {
+	txOutItem := s.checkpointTestTxOut(123_456_790)
+	signed, _, _, err := s.client.SignTx(txOutItem, 1)
+	c.Assert(err, IsNil)
+
+	var unsigned api.Transaction
+	c.Assert(json.Unmarshal(signed, &unsigned), IsNil)
+	unsigned.Signature = nil
+	checkpoint, err := encodeTronSignCheckpoint(unsigned, txOutItem)
+	c.Assert(err, IsNil)
+
+	changedTxOut := txOutItem
+	changedTxOut.MaxGas = common.Gas{common.NewCoin(common.TRXAsset, cosmos.NewUint(5_000_000))}
+	_, err = decodeTronSignCheckpoint(checkpoint, changedTxOut)
+	c.Assert(err, NotNil)
+
+	var envelope tronSignCheckpoint
+	c.Assert(json.Unmarshal(checkpoint, &envelope), IsNil)
+	envelope.UnsignedTx.TxId = strings.Repeat("0", 64)
+	envelope.Checksum, err = tronJSONDigest(envelope.UnsignedTx)
+	c.Assert(err, IsNil)
+	tampered, err := json.Marshal(envelope)
+	c.Assert(err, IsNil)
+	_, err = decodeTronSignCheckpoint(tampered, txOutItem)
+	c.Assert(err, NotNil)
+
+	c.Assert(json.Unmarshal(checkpoint, &envelope), IsNil)
+	envelope.UnsignedTx.Signature = []string{"unexpected-signature"}
+	envelope.Checksum, err = tronJSONDigest(envelope.UnsignedTx)
+	c.Assert(err, IsNil)
+	tampered, err = json.Marshal(envelope)
+	c.Assert(err, IsNil)
+	_, err = decodeTronSignCheckpoint(tampered, txOutItem)
+	c.Assert(err, NotNil)
+}
+
+func (s *TronTestSuite) TestSignFailureReturnsExactCheckpoint(c *C) {
+	txOutItem := s.checkpointTestTxOut(123_456_791)
+	signed, _, _, err := s.client.SignTx(txOutItem, 1)
+	c.Assert(err, IsNil)
+
+	var unsigned api.Transaction
+	c.Assert(json.Unmarshal(signed, &unsigned), IsNil)
+	unsigned.Signature = nil
+	checkpoint, err := encodeTronSignCheckpoint(unsigned, txOutItem)
+	c.Assert(err, IsNil)
+
+	signErr := errors.New("terminal signing failure")
+	signed, returnedCheckpoint, observation, err := s.client.signTronTransaction(
+		txOutItem,
+		2,
+		unsigned,
+		checkpoint,
+		func([]byte, types.TxOutItem, int64) ([]byte, error) {
+			return nil, signErr
+		},
+	)
+	c.Assert(errors.Is(err, signErr), Equals, true)
+	c.Assert(signed, IsNil)
+	c.Assert(returnedCheckpoint, DeepEquals, checkpoint)
+	c.Assert(observation, IsNil)
+
+	signed, returnedCheckpoint, observation, err = s.client.signTronTransaction(
+		txOutItem,
+		2,
+		unsigned,
+		checkpoint,
+		func([]byte, types.TxOutItem, int64) ([]byte, error) {
+			return nil, tss.ErrNotSelectedForKeysign
+		},
+	)
+	c.Assert(err, IsNil)
+	c.Assert(signed, IsNil)
+	c.Assert(returnedCheckpoint, IsNil)
+	c.Assert(observation, IsNil)
 }
 
 func (s *TronTestSuite) TestShouldReportSolvency(c *C) {

@@ -772,6 +772,44 @@ func (*NetworkManagerTestSuite) TestMigrateFundsDoesNotStallXMRMonovaultFundingO
 	c.Assert(items[0].ToAddress.Equals(targetAddr), Equals, true)
 }
 
+// TestMigrateFundsInactivatesDeficitOnlyRetiringVault verifies migration cleanup
+// clears RetiringVault status once funds are gone, while preserving deficit state.
+func (*NetworkManagerTestSuite) TestMigrateFundsInactivatesDeficitOnlyRetiringVault(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	mgr.txOutStore = NewTxStoreDummy()
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	mgr.Keeper().SetMimir(ctx, constants.FundMigrationInterval.String(), 1)
+
+	active := GetRandomVault()
+	active.Status = ActiveVault
+	active.Chains = common.Chains{common.ETHChain}.Strings()
+	c.Assert(mgr.Keeper().SetVault(ctx, active), IsNil)
+
+	// The retiring vault has no coins left to migrate, but it still carries a
+	// deficit that must remain recorded after status cleanup.
+	retiring := GetRandomVault()
+	retiring.Status = RetiringVault
+	retiring.StatusSince = 0
+	retiring.Chains = common.Chains{common.ETHChain}.Strings()
+	retiring.Deficit = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(10)))
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+
+	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
+
+	// Deficit alone should not keep the vault in RetiringVault, but it should
+	// continue to protect the vault from deletion.
+	updated, err := mgr.Keeper().GetVault(ctx, retiring.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(updated.Status, Equals, InactiveVault)
+	c.Assert(updated.GetDeficit(common.ETHAsset).Amount.Equal(cosmos.NewUint(10)), Equals, true)
+	c.Assert(mgr.Keeper().DeleteVault(ctx, retiring.PubKey), NotNil)
+
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 0)
+}
+
 func (*NetworkManagerTestSuite) TestMigrateFundsSkipsVaultWithPendingMigrateTx(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.txOutStore = NewTxStoreDummy()
@@ -2189,6 +2227,114 @@ func (s *NetworkManagerTestSuite) TestCalculateNetworkSolvency(c *C) {
 	}
 }
 
+func (s *NetworkManagerTestSuite) TestCalculateNetworkSolvencySubtractsActiveVaultDeficit(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	fundedVault := GetRandomVault()
+	fundedVault.Type = AsgardVault
+	fundedVault.Status = ActiveVault
+	fundedVault.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(150*common.One)))
+	c.Assert(mgr.Keeper().SetVault(ctx, fundedVault), IsNil)
+
+	deficitVault := GetRandomVault()
+	deficitVault.Type = AsgardVault
+	deficitVault.Status = ActiveVault
+	deficitVault.Deficit = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(20*common.One)))
+	c.Assert(mgr.Keeper().SetVault(ctx, deficitVault), IsNil)
+
+	solvency, err := nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	c.Assert(solvency, HasLen, 1)
+	c.Assert(solvency[0].Asset.Equals(common.BTCAsset), Equals, true)
+	c.Assert(solvency[0].Amount.Equal(math.NewInt(30*common.One)), Equals, true)
+}
+
+func (s *NetworkManagerTestSuite) TestCalculateNetworkSolvencyIncludesInactiveDeficitAfterIndexCleanup(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	fundedVault := GetRandomVault()
+	fundedVault.Type = AsgardVault
+	fundedVault.Status = ActiveVault
+	fundedVault.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(150*common.One)))
+	c.Assert(mgr.Keeper().SetVault(ctx, fundedVault), IsNil)
+
+	inactiveVault := GetRandomVault()
+	inactiveVault.Type = AsgardVault
+	inactiveVault.Status = InactiveVault
+	inactiveVault.Deficit = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(20*common.One)))
+	c.Assert(mgr.Keeper().SetVault(ctx, inactiveVault), IsNil)
+	c.Assert(nmgr.cleanupAsgardIndex(ctx), IsNil)
+
+	indexedVaults, err := mgr.Keeper().GetAsgardVaults(ctx)
+	c.Assert(err, IsNil)
+	for _, vault := range indexedVaults {
+		c.Assert(vault.PubKey.Equals(inactiveVault.PubKey), Equals, false)
+	}
+
+	persistedVault, err := mgr.Keeper().GetVault(ctx, inactiveVault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(persistedVault.GetDeficit(common.BTCAsset).Amount.Equal(cosmos.NewUint(20*common.One)), Equals, true)
+
+	solvency, err := nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	c.Assert(solvency, HasLen, 1)
+	c.Assert(solvency[0].Asset.Equals(common.BTCAsset), Equals, true)
+	c.Assert(solvency[0].Amount.Equal(math.NewInt(30*common.One)), Equals, true)
+}
+
+func (s *NetworkManagerTestSuite) TestProcessOverSolvencyDoesNotSweepInactiveVaultDeficit(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+
+	ctx = ctx.WithBlockHeight(432000)
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.OverSolvencyCheckInterval.String(), 432000)
+	mgr.Keeper().SetMimir(ctx, constants.OverSolvencyToTreasuryBps.String(), int64(constants.MaxBasisPts))
+	c.Assert(mgr.Keeper().AdvSwapQueueEnabled(ctx), Equals, true)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	fundedVault := GetRandomVault()
+	fundedVault.Type = AsgardVault
+	fundedVault.Status = ActiveVault
+	fundedVault.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(110*common.One)))
+	c.Assert(mgr.Keeper().SetVault(ctx, fundedVault), IsNil)
+
+	deficitVault := GetRandomVault()
+	deficitVault.Type = AsgardVault
+	deficitVault.Status = InactiveVault
+	deficitVault.Deficit = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(20*common.One)))
+	c.Assert(mgr.Keeper().SetVault(ctx, deficitVault), IsNil)
+	c.Assert(nmgr.cleanupAsgardIndex(ctx), IsNil)
+
+	c.Assert(nmgr.processOverSolvency(ctx, mgr), IsNil)
+
+	iterator := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
+	defer iterator.Close()
+	c.Assert(iterator.Valid(), Equals, false)
+}
+
 func (s *NetworkManagerTestSuite) TestCalculateNetworkSolvencyWithStreamingSwaps(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
@@ -2665,6 +2811,71 @@ func (s *NetworkManagerTestSuite) TestSolvencyStreamingSwapSynthTargetNotSubtrac
 		Commentf("BTC solvency: expected 0 (synth output NOT subtracted), got %s", btcSolvency))
 }
 
+// TestSolvencyStreamingSwapTradeTargetSubtracted verifies that the in-flight
+// output of a streaming swap targeting a TRADE asset is treated as a liability.
+// Trade (and secured) targets, unlike synths, DO reduce the underlying L1 pool
+// balance per sub-swap, while the trade/secured depth is not credited until
+// settlement. The accumulated output must therefore be subtracted so the lowered
+// pool balance does not appear as excess vault funds (issue #3069).
+func (s *NetworkManagerTestSuite) TestSolvencyStreamingSwapTradeTargetSubtracted(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+
+	// BTC pool has already emitted 20 BTC to the in-flight stream (BalanceAsset
+	// reduced), but the vault still holds the coins and no trade depth is credited
+	// until settlement.
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceAsset = cosmos.NewUint(80 * common.One)
+	btcPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	btcPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = ActiveVault
+	vault.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// V2 streaming swap: RUNE -> BTC~BTC (trade target)
+	streamingTxID := GetRandomTxHash()
+	streamingSwapMsg := types.MsgSwap{
+		Tx: common.Tx{
+			ID:    streamingTxID,
+			Chain: common.THORChain,
+			Coins: common.Coins{common.NewCoin(common.RuneNative, cosmos.NewUint(50*common.One))},
+		},
+		TargetAsset: common.BTCAsset.GetTradeAsset(),
+		Version:     types.SwapVersion_v2,
+		State: &types.SwapState{
+			Quantity: 10,
+			Count:    6,
+			Interval: 5,
+			Deposit:  cosmos.NewUint(50 * common.One),
+			In:       cosmos.NewUint(30 * common.One),
+			Out:      cosmos.NewUint(20 * common.One), // 20 BTC emitted from pool, owed to trade acct
+		},
+	}
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, streamingSwapMsg), IsNil)
+
+	solvency, err := nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+
+	var btcSolvency math.Int
+	for _, sol := range solvency {
+		if sol.Asset.Equals(common.BTCAsset) {
+			btcSolvency = sol.Amount
+		}
+	}
+
+	// BTC: Vault 100 - Pool 80 - StreamingOutput 20 = 0
+	// Without the fix, it would be: Vault 100 - Pool 80 = 20 (phantom over-solvency)
+	c.Assert(btcSolvency.Equal(math.NewInt(0)), Equals, true,
+		Commentf("BTC solvency: expected 0 (trade streaming output subtracted), got %s", btcSolvency))
+}
+
 func (s *NetworkManagerTestSuite) TestProcessPostChurnSolvency(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
@@ -3041,12 +3252,12 @@ func (s *NetworkManagerTestSuite) TestSolvencyWithPendingOutboundsAtPastHeight(c
 		Commentf("expected %s, got %s", expectedSolvency.String(), solvency[0].Amount.String()))
 
 	// Now simulate the outbound being signed (OutHash set).
-	// When OutHash is set, vault.SubFunds has already been called in the same block,
+	// When OutHash is set, vault.SubFundsWithClamping has already been called in the same block,
 	// so the item should NOT be deducted anymore.
 	txOut.TxArray[0].OutHash = GetRandomTxHash()
 	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
 
-	// Also decrement vault coins (as vault.SubFunds would do on observation)
+	// Also decrement vault coins (as vault.SubFundsWithClamping would do on observation)
 	vault.Coins = common.Coins{
 		common.NewCoin(common.BTCAsset, cosmos.NewUint(130*common.One)),
 	}
@@ -3059,6 +3270,118 @@ func (s *NetworkManagerTestSuite) TestSolvencyWithPendingOutboundsAtPastHeight(c
 	c.Assert(len(solvency2), Equals, 1)
 	c.Assert(solvency2[0].Amount.Equal(expectedSolvency), Equals, true,
 		Commentf("expected %s, got %s", expectedSolvency.String(), solvency2[0].Amount.String()))
+}
+
+// TestSolvencyXMRExtendedBackwardScan verifies that XMR pending outbounds older
+// than the base SigningTransactionPeriod but within the extended XMR window
+// (xmrSigningPeriodMultiplier x period) are still subtracted, while non-XMR
+// outbounds past the base window are not (issue #3071).
+func (s *NetworkManagerTestSuite) TestSolvencyXMRExtendedBackwardScan(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+
+	signingPeriod := mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod) // 300
+	// Block height must exceed the extended XMR window so the scan reaches back far enough.
+	ctx = ctx.WithBlockHeight(signingPeriod*xmrSigningPeriodMultiplier + 100)
+
+	// XMR pool + vault.
+	xmrPool := NewPool()
+	xmrPool.Asset = common.XMRAsset
+	xmrPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	xmrPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	xmrPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, xmrPool), IsNil)
+
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = ActiveVault
+	vault.Coins = common.Coins{
+		common.NewCoin(common.XMRAsset, cosmos.NewUint(150*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// Pending XMR outbound at a height older than the base window (300) but within
+	// the extended XMR window (900). Unsigned (OutHash empty) -> still a liability.
+	xmrHeight := ctx.BlockHeight() - signingPeriod - 100 // ~400 back, > base 300, < 900
+	txOut := &TxOut{
+		Height: xmrHeight,
+		TxArray: []TxOutItem{
+			{
+				Chain:       common.XMRChain,
+				Coin:        common.NewCoin(common.XMRAsset, cosmos.NewUint(20*common.One)),
+				ToAddress:   GetRandomTHORAddress(), // address value irrelevant for solvency math
+				VaultPubKey: vault.PubKey,
+			},
+		},
+	}
+	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+
+	solvency, err := nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+
+	var xmrSolvency math.Int
+	for _, sol := range solvency {
+		if sol.Asset.Equals(common.XMRAsset) {
+			xmrSolvency = sol.Amount
+		}
+	}
+
+	// XMR: Vault 150 - Pool 100 - PendingOutbound 20 = 30
+	// Without the fix (base 300 window only), the outbound is missed: 150 - 100 = 50.
+	c.Assert(xmrSolvency.Equal(math.NewInt(30*common.One)), Equals, true,
+		Commentf("XMR solvency: expected 30 (extended-window pending outbound subtracted), got %s", xmrSolvency))
+}
+
+// TestSolvencyForwardScanBeyondMaxOffset verifies that scheduled outbounds placed
+// beyond MaxTxOutOffset (up to TxOutDelayMax, as CalcTxOutHeight does under
+// congestion) are still subtracted from solvency (issue #3070).
+func (s *NetworkManagerTestSuite) TestSolvencyForwardScanBeyondMaxOffset(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = ActiveVault
+	vault.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(150*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	maxOffset := mgr.Keeper().GetConfigInt64(ctx, constants.MaxTxOutOffset) // 720
+	// Schedule a congested outbound just beyond MaxTxOutOffset (within TxOutDelayMax).
+	// CalcTxOutHeight only advances past a block once it is full, so scheduled items are
+	// contiguous with no gap; the scan continues until the first empty block past the
+	// offset. Place the item at the first block beyond the offset to exercise the
+	// extended forward scan without an intervening empty block.
+	scheduledHeight := ctx.BlockHeight() + maxOffset + 1
+	txOut := &TxOut{
+		Height: scheduledHeight,
+		TxArray: []TxOutItem{
+			{
+				Chain:       common.BTCChain,
+				Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(20*common.One)),
+				ToAddress:   GetRandomBTCAddress(),
+				VaultPubKey: vault.PubKey,
+			},
+		},
+	}
+	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+
+	solvency, err := nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	c.Assert(len(solvency), Equals, 1)
+
+	// Vault 150 - Pool 100 - ScheduledOutbound 20 = 30
+	// Without the fix (scan stops at MaxTxOutOffset), the outbound is missed: 150 - 100 = 50.
+	c.Assert(solvency[0].Amount.Equal(math.NewInt(30*common.One)), Equals, true,
+		Commentf("expected 30 (outbound beyond MaxTxOutOffset subtracted), got %s", solvency[0].Amount))
 }
 
 func (s *NetworkManagerTestSuite) TestSolvencyWithTradeAndSecuredAssets(c *C) {
@@ -3383,6 +3706,53 @@ func (s *NetworkManagerTestSuite) TestCalcBlockRewardsPOLReserveDeduct(c *C) {
 	c.Check(polReserveDeduct.IsZero(), Equals, false)
 	// The deducted amount plus remaining should equal original
 	c.Check(totalWith.Add(polReserveDeduct).String(), Equals, totalWithout.String())
+}
+
+func (s *NetworkManagerTestSuite) TestPOLSystemIncomeShareFundsStableReserve(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(k.SetNetwork(ctx, NewNetwork()), IsNil)
+
+	pool := NewPool()
+	pool.Asset = common.ETHAsset
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.LPUnits = cosmos.NewUint(100)
+	pool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	vault := NewVault(0, ActiveVault, AsgardVault, GetRandomPubKey(), []string{pool.Asset.GetChain().String()}, []ChainContract{})
+	vault.Coins = common.NewCoins(common.NewCoin(pool.Asset, pool.BalanceAsset))
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	c.Assert(k.SetNodeAccount(ctx, GetRandomValidatorNode(NodeActive)), IsNil)
+	c.Assert(k.SetNodeAccount(ctx, GetRandomValidatorNode(NodeActive)), IsNil)
+	c.Assert(k.AddToLiquidityFees(ctx, pool.Asset, cosmos.NewUint(50*common.One)), IsNil)
+
+	k.SetMimir(ctx, constants.DevFundSystemIncomeBps.String(), 0)
+	k.SetMimir(ctx, constants.SystemIncomeBurnRateBps.String(), 0)
+	k.SetMimir(ctx, constants.TCYStakeSystemIncomeBps.String(), 0)
+	k.SetMimir(ctx, constants.MarketingFundSystemIncomeBps.String(), 0)
+	k.SetMimir(ctx, constants.POLReserveSystemIncomeBps.String(), 10_000)
+	k.SetMimir(ctx, constants.StableReserveEnabled.String(), 1)
+	k.SetMimir(ctx, constants.StableReservePOLShareBps.String(), 2_500)
+
+	polBefore := k.GetRuneBalanceOfModule(ctx, POLReserveName)
+	stableBefore := k.GetRuneBalanceOfModule(ctx, StableReserveName)
+
+	c.Assert(networkMgr.UpdateNetwork(ctx, mgr), IsNil)
+
+	polDelta := common.SafeSub(k.GetRuneBalanceOfModule(ctx, POLReserveName), polBefore)
+	stableDelta := common.SafeSub(k.GetRuneBalanceOfModule(ctx, StableReserveName), stableBefore)
+	totalPOLIncome := polDelta.Add(stableDelta)
+	c.Assert(totalPOLIncome.IsZero(), Equals, false)
+
+	expectedStable := common.GetSafeShare(cosmos.NewUint(2_500), cosmos.NewUint(10_000), totalPOLIncome)
+	c.Check(stableDelta.Equal(expectedStable), Equals, true,
+		Commentf("stable reserve delta %s should be 25%% of combined POL-system-income transfer %s", stableDelta, totalPOLIncome))
+	c.Check(polDelta.Equal(common.SafeSub(totalPOLIncome, expectedStable)), Equals, true,
+		Commentf("POL reserve delta %s should receive the remainder after stable reserve share %s", polDelta, expectedStable))
 }
 
 func (s *NetworkManagerTestSuite) TestPOLReserveCycleDisabled(c *C) {
