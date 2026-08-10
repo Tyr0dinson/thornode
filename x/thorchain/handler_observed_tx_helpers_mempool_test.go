@@ -254,6 +254,11 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsRollbackOnEr
 		Coin:   common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One)),
 	}
 
+	// Align the voter action with the staged outbound so finalization gets past
+	// validateStagedOutboundActionAlignment and actually reaches the cached
+	// mutations this test asserts are rolled back.
+	voter.Actions = []TxOutItem{stagedItem}
+
 	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, stagedItem, ctx.BlockHeight()+5), IsNil)
 	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, cosmos.NewUint(999*common.One))
 
