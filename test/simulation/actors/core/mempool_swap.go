@@ -150,6 +150,7 @@ func (a *MempoolSwapSimulationActor) runScenarios(config *OpConfig) (err error) 
 
 	return nil
 }
+
 func (a *MempoolSwapSimulationActor) setMimirs(config *OpConfig, values []mempoolMimirValue) error {
 	for _, value := range values {
 		if err := a.setMimir(config, value.key, value.value); err != nil {
