@@ -1025,10 +1025,6 @@ func (a *MempoolSwapSimulationActor) waitForL1Completion(swap *mempoolLiveSwap, 
 	return a.waitForL1CompletionWithVaultMode(swap, expectedUsage, true)
 }
 
-func (a *MempoolSwapSimulationActor) waitForL1CompletionAllowAdditionalVault(swap *mempoolLiveSwap, expectedUsage cosmos.Uint) error {
-	return a.waitForL1CompletionWithVaultMode(swap, expectedUsage, false)
-}
-
 func (a *MempoolSwapSimulationActor) waitForL1CompletionWithVaultMode(swap *mempoolLiveSwap, expectedUsage cosmos.Uint, exactVault bool) error {
 	return waitForMempoolCondition("final swap completion "+swap.txID, mempoolCompletionTimeout, func() (bool, error) {
 		stages, err := thornode.GetTxStages(swap.txID)
@@ -1399,21 +1395,6 @@ func mempoolSwapQueueExists(txID string) (bool, error) {
 		return false, nil
 	}
 	return false, err
-}
-
-func mempoolSwapQueueStateIsZero(txID string) (bool, error) {
-	details, err := thornode.GetSwapDetails(txID)
-	if err != nil {
-		return false, err
-	}
-	if details.Swap == nil || details.Swap.State == nil {
-		return false, nil
-	}
-	state := details.Swap.State
-	return state.GetCount() == 0 &&
-		(state.In == nil || state.GetIn() == "0") &&
-		(state.Out == nil || state.GetOut() == "0") &&
-		len(state.FailedSwaps) == 0 && len(state.FailedSwapReasons) == 0, nil
 }
 
 func mempoolQueueNotFound(err error) bool {
