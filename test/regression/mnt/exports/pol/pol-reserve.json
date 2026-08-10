@@ -358,6 +358,7 @@
       "observed_tx_out_voters": null,
       "outbound_fee_spent_rune": [],
       "outbound_fee_withheld_rune": [],
+      "pending_affiliate_liquidity_fees": [],
       "pol_reserve_deposits": [
         {
           "asset": "BTC.BTC",

@@ -366,6 +366,7 @@
           "asset": "XMR.XMR"
         }
       ],
+      "pending_affiliate_liquidity_fees": [],
       "pools": [
         {
           "LP_units": "100000000000",

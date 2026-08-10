@@ -294,6 +294,7 @@
         }
       ],
       "outbound_fee_withheld_rune": [],
+      "pending_affiliate_liquidity_fees": [],
       "pools": [
         {
           "LP_units": "100000000000",

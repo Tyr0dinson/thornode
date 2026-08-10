@@ -355,6 +355,7 @@
           "asset": "SOL.SOL"
         }
       ],
+      "pending_affiliate_liquidity_fees": [],
       "pools": [
         {
           "LP_units": "100000000000",
