@@ -192,8 +192,11 @@ func NewCosmosClient(
 	}
 
 	// Reused by the SignTx verifyFn mempool fallback (mempoolLookup) so it doesn't
-	// construct a CometBFT client per call.
-	c.cometRPC, err = rpcclienthttp.New(c.cfg.RPCHost, "/websocket")
+	// construct a CometBFT client per call. Built from scannerHost, not the flat
+	// RPCHost, so the mempool consulted is the same backend the tx was broadcast
+	// to via gRPC; a different node's mempool could miss the tx and trigger a
+	// wrongful cache-clear and re-sign.
+	c.cometRPC, err = rpcclienthttp.New(scannerHost, "/websocket")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cometbft rpc client: %w", err)
 	}
