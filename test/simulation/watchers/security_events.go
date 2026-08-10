@@ -10,7 +10,13 @@ import (
 
 func NewSecurityEvents() *Watcher {
 	thorscan.SetAPIEndpoint(thornodeURL)
-	scanner := thorscan.Scan(1, 0)
+	// Establish the current tip as a baseline, then watch subsequent blocks.
+	// Starting at genesis makes a no-reset profile replay old security events;
+	// starting at (and processing) the current tip can replay an event from the
+	// immediately preceding run. Actors have not started when watchers are
+	// constructed, so discarding this one baseline block cannot miss a run event.
+	scanner := thorscan.Scan(0, 0)
+	<-scanner
 
 	return &Watcher{
 		Name:     "SecurityEvents",
@@ -26,8 +32,8 @@ func NewSecurityEvents() *Watcher {
 						events = append(events, tx.Result.Events...)
 					}
 					for _, event := range events {
-						if event["type"] == "security" {
-							return fmt.Errorf("security event detected at height %d: %v", block.Header.Height, event)
+						if err := checkSecurityEvent(config, block.Header.Height, event); err != nil {
+							return err
 						}
 					}
 				case <-time.After(10 * time.Millisecond):
@@ -36,4 +42,14 @@ func NewSecurityEvents() *Watcher {
 			}
 		},
 	}
+}
+
+func checkSecurityEvent(config *OpConfig, height int64, event map[string]string) error {
+	if event["type"] != "security" {
+		return nil
+	}
+	if config.ConsumeExpectedSecurityEvent(event["id"], event["msg"]) {
+		return nil
+	}
+	return fmt.Errorf("security event detected at height %d: %v", height, event)
 }

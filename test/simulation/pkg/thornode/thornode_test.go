@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -64,11 +65,200 @@ func TestGetSwapQuoteOmitsExtendedQueryForNonUTXOSources(t *testing.T) {
 	}
 }
 
+func TestGetMempoolSwapUsageTOR(t *testing.T) {
+	newThornodeTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/thorchain/network" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(`{"mempool_swap_usage_tor":"12345678901234567890"}`))
+	}))
+
+	usage, err := GetMempoolSwapUsageTOR()
+	if err != nil {
+		t.Fatalf("expected mempool swap usage request to succeed, got %v", err)
+	}
+	if got, want := usage.String(), "12345678901234567890"; got != want {
+		t.Fatalf("unexpected mempool swap usage: got %s, want %s", got, want)
+	}
+}
+
+func TestGetMempoolSwapUsageTORRejectsInvalidValue(t *testing.T) {
+	newThornodeTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"mempool_swap_usage_tor":"not-a-number"}`))
+	}))
+
+	usage, err := GetMempoolSwapUsageTOR()
+	if err == nil {
+		t.Fatal("expected invalid mempool swap usage to fail")
+	}
+	if !usage.IsZero() {
+		t.Fatalf("expected invalid mempool swap usage to return zero, got %s", usage)
+	}
+}
+
+func TestGetMimirUsesEffectiveKeyEndpoint(t *testing.T) {
+	paths := make(chan string, 1)
+	newThornodeTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths <- r.URL.EscapedPath()
+		_, _ = w.Write([]byte(`120`))
+	}))
+
+	value, err := GetMimir("SigningTransactionPeriod")
+	if err != nil {
+		t.Fatalf("expected effective Mimir request to succeed, got %v", err)
+	}
+	if value != 120 {
+		t.Fatalf("unexpected effective Mimir value: got %d, want 120", value)
+	}
+	if got, want := <-paths, "/thorchain/mimir/key/SigningTransactionPeriod"; got != want {
+		t.Fatalf("unexpected Mimir path: got %q, want %q", got, want)
+	}
+}
+
+func TestGetTHORName(t *testing.T) {
+	paths := make(chan string, 1)
+	newThornodeTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths <- r.URL.EscapedPath()
+		_, _ = w.Write([]byte(`{
+			"name":"sim affiliate",
+			"preferred_asset":"THOR.RUNE",
+			"affiliate_collector_rune":"123456789",
+			"aliases":[]
+		}`))
+	}))
+
+	thorname, err := GetTHORName("sim affiliate")
+	if err != nil {
+		t.Fatalf("expected THORName request to succeed, got %v", err)
+	}
+	if got, want := <-paths, "/thorchain/thorname/sim%20affiliate"; got != want {
+		t.Fatalf("unexpected THORName path: got %q, want %q", got, want)
+	}
+	if got, want := thorname.GetName(), "sim affiliate"; got != want {
+		t.Fatalf("unexpected THORName: got %q, want %q", got, want)
+	}
+	if got, want := thorname.GetAffiliateCollectorRune(), "123456789"; got != want {
+		t.Fatalf("unexpected affiliate collector: got %q, want %q", got, want)
+	}
+}
+
+func TestGetMempoolSwapQueueState(t *testing.T) {
+	newThornodeTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/thorchain/queue/staged":
+			_, _ = w.Write([]byte(`{
+				"staged_outbound_items":[{
+					"tx_out_item":{
+						"height":"45",
+						"in_hash":"STAGED-TX",
+						"chain":"BTC",
+						"to_address":"bc1-staged",
+						"coin":{"asset":"BTC.BTC","amount":"123","decimals":"8"},
+						"max_gas":[{"asset":"BTC.BTC","amount":"7","decimals":"8"}],
+						"gas_rate":"17"
+					},
+					"scheduled_height":"45",
+					"staged_height":40
+				}]
+			}`))
+		case "/thorchain/queue/outbound":
+			_, _ = w.Write([]byte(`[{
+				"in_hash":"OUTBOUND-TX",
+				"chain":"BTC",
+				"to_address":"bc1-outbound",
+				"coin":{"asset":"BTC.BTC","amount":"456","decimals":8},
+				"max_gas":[]
+			}]`))
+		case "/thorchain/queue/scheduled":
+			_, _ = w.Write([]byte(`[{
+				"height":99,
+				"in_hash":"SCHEDULED-TX",
+				"chain":"BTC",
+				"to_address":"bc1-scheduled",
+				"coin":{"asset":"BTC.BTC","amount":"789","decimals":8},
+				"max_gas":[]
+			}]`))
+		case "/thorchain/queue/swap/details/SWAP-TX":
+			_, _ = w.Write([]byte(`{
+				"swap":{
+					"target_asset":"BTC.BTC",
+					"state":{"count":0,"in":"0","out":"0","failed_swaps":[]}
+				},
+				"status":"queued",
+				"queue_type":"advanced"
+			}`))
+		case "/thorchain/block":
+			_, _ = w.Write([]byte(`{"header":{"height":9876}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+
+	staged, err := GetStagedOutbounds()
+	if err != nil {
+		t.Fatalf("expected staged outbound request to succeed, got %v", err)
+	}
+	if len(staged.StagedOutboundItems) != 1 {
+		t.Fatalf("expected one staged outbound, got %d", len(staged.StagedOutboundItems))
+	}
+	stagedItem := staged.StagedOutboundItems[0]
+	if stagedItem.TxOutItem == nil || stagedItem.TxOutItem.GetInHash() != "STAGED-TX" {
+		t.Fatalf("unexpected staged outbound item: %#v", stagedItem.TxOutItem)
+	}
+	if stagedItem.TxOutItem.GetHeight() != 45 || stagedItem.TxOutItem.GetGasRate() != 17 {
+		t.Fatalf("unexpected staged tx numeric fields: %#v", stagedItem.TxOutItem)
+	}
+	if stagedItem.TxOutItem.Coin.GetDecimals() != 8 || len(stagedItem.TxOutItem.MaxGas) != 1 || stagedItem.TxOutItem.MaxGas[0].GetDecimals() != 8 {
+		t.Fatalf("unexpected staged coin numeric fields: %#v", stagedItem.TxOutItem)
+	}
+	if stagedItem.GetScheduledHeight() != 45 || stagedItem.GetStagedHeight() != 40 {
+		t.Fatalf("unexpected staged outbound heights: %#v", stagedItem)
+	}
+
+	outbounds, err := GetOutboundQueue()
+	if err != nil {
+		t.Fatalf("expected outbound queue request to succeed, got %v", err)
+	}
+	if len(outbounds) != 1 || outbounds[0].GetInHash() != "OUTBOUND-TX" {
+		t.Fatalf("unexpected outbound queue: %#v", outbounds)
+	}
+
+	scheduled, err := GetScheduledOutboundQueue()
+	if err != nil {
+		t.Fatalf("expected scheduled outbound queue request to succeed, got %v", err)
+	}
+	if len(scheduled) != 1 || scheduled[0].GetInHash() != "SCHEDULED-TX" || scheduled[0].GetHeight() != 99 {
+		t.Fatalf("unexpected scheduled outbound queue: %#v", scheduled)
+	}
+
+	details, err := GetSwapDetails("SWAP-TX")
+	if err != nil {
+		t.Fatalf("expected swap details request to succeed, got %v", err)
+	}
+	if details.GetStatus() != "queued" || details.GetQueueType() != "advanced" {
+		t.Fatalf("unexpected swap details status: %#v", details)
+	}
+	if details.Swap == nil || details.Swap.State == nil {
+		t.Fatalf("expected swap execution state, got %#v", details.Swap)
+	}
+	if details.Swap.State.GetCount() != 0 || details.Swap.State.GetIn() != "0" || details.Swap.State.GetOut() != "0" {
+		t.Fatalf("unexpected swap execution progress: %#v", details.Swap.State)
+	}
+
+	height, err := GetBlockHeight()
+	if err != nil {
+		t.Fatalf("expected block height request to succeed, got %v", err)
+	}
+	if height != 9876 {
+		t.Fatalf("unexpected block height: got %d, want 9876", height)
+	}
+}
+
 func TestGetRetriesRetryableTimeout(t *testing.T) {
-	attempts := 0
+	var attempts atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		attempts++
-		if attempts == 1 {
+		if attempts.Add(1) == 1 {
 			time.Sleep(50 * time.Millisecond)
 		}
 		_, _ = w.Write([]byte(`{"ok":"true"}`))
@@ -97,8 +287,8 @@ func TestGetRetriesRetryableTimeout(t *testing.T) {
 	if err := Get(server.URL, &got); err != nil {
 		t.Fatalf("expected retryable timeout to recover, got %v", err)
 	}
-	if attempts != 2 {
-		t.Fatalf("expected 2 attempts, got %d", attempts)
+	if gotAttempts := attempts.Load(); gotAttempts != 2 {
+		t.Fatalf("expected 2 attempts, got %d", gotAttempts)
 	}
 	if got["ok"] != "true" {
 		t.Fatalf("expected decoded response after retry, got %#v", got)
@@ -369,4 +559,20 @@ func TestGetTxSpentRefsUsesStoredOutboundVoter(t *testing.T) {
 			}
 		})
 	}
+}
+
+func newThornodeTestServer(t *testing.T, handler http.Handler) *httptest.Server {
+	t.Helper()
+
+	server := httptest.NewServer(handler)
+	originalURL := thornodeURL
+	originalClient := httpClient
+	thornodeURL = server.URL
+	httpClient = server.Client()
+	t.Cleanup(func() {
+		server.Close()
+		thornodeURL = originalURL
+		httpClient = originalClient
+	})
+	return server
 }

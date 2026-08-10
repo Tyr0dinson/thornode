@@ -17,6 +17,11 @@ type OpConfig struct {
 
 	// Users is a slice of clients for simulation user keys.
 	Users []*User
+
+	// ExpectedSecurityEvents contains the security events deliberately triggered by
+	// simulation actors. The zero value is ready for use. The security-event watcher
+	// consumes an expectation before allowing the corresponding event.
+	ExpectedSecurityEvents ExpectedSecurityEventRegistry
 }
 
 // OpResult is the result of an operation.

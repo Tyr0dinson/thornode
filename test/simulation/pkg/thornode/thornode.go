@@ -204,6 +204,25 @@ func GetNetwork() (openapi.NetworkResponse, error) {
 	return network, err
 }
 
+// GetMempoolSwapUsageTOR returns the aggregate TOR reserved by active mempool
+// swaps. The generated OpenAPI NetworkResponse does not currently expose this
+// field, so decode the narrow raw network response here instead.
+func GetMempoolSwapUsageTOR() (sdk.Uint, error) {
+	url := fmt.Sprintf("%s/thorchain/network", thornodeURL)
+	var network struct {
+		MempoolSwapUsageTOR string `json:"mempool_swap_usage_tor"`
+	}
+	if err := Get(url, &network); err != nil {
+		return sdk.ZeroUint(), err
+	}
+
+	usage, err := sdk.ParseUint(network.MempoolSwapUsageTOR)
+	if err != nil {
+		return sdk.ZeroUint(), fmt.Errorf("invalid mempool_swap_usage_tor %q: %w", network.MempoolSwapUsageTOR, err)
+	}
+	return usage, nil
+}
+
 func GetNodes() ([]openapi.Node, error) {
 	return GetNodesAtHeight(0)
 }
@@ -218,6 +237,13 @@ func GetNodesAtHeight(height int64) ([]openapi.Node, error) {
 	var nodes []openapi.Node
 	err := Get(url, &nodes)
 	return nodes, err
+}
+
+func GetTHORName(name string) (openapi.Thorname, error) {
+	endpoint := fmt.Sprintf("%s/thorchain/thorname/%s", thornodeURL, url.PathEscape(name))
+	var thorname openapi.Thorname
+	err := Get(endpoint, &thorname)
+	return thorname, err
 }
 
 func GetPool(asset common.Asset) (openapi.Pool, error) {
@@ -291,6 +317,140 @@ func GetTxDetails(txid string) (openapi.TxDetailsResponse, error) {
 	return details, err
 }
 
+func GetStagedOutbounds() (openapi.StagedOutboundResponse, error) {
+	url := fmt.Sprintf("%s/thorchain/queue/staged", thornodeURL)
+	var wire stagedOutboundResponseWire
+	if err := Get(url, &wire); err != nil {
+		return openapi.StagedOutboundResponse{}, err
+	}
+
+	staged := openapi.StagedOutboundResponse{
+		StagedOutboundItems: make([]openapi.StagedOutboundItem, 0, len(wire.StagedOutboundItems)),
+	}
+	for _, item := range wire.StagedOutboundItems {
+		staged.StagedOutboundItems = append(staged.StagedOutboundItems, openapi.StagedOutboundItem{
+			TxOutItem:       item.TxOutItem.openAPI(),
+			ScheduledHeight: flexibleInt64Pointer(item.ScheduledHeight),
+			StagedHeight:    flexibleInt64Pointer(item.StagedHeight),
+		})
+	}
+	return staged, nil
+}
+
+// Protobuf JSON encodes int64 values as strings, while the generated OpenAPI
+// model expects JSON numbers. These wire types deliberately accept either so
+// the simulation remains compatible with both gateway representations.
+type flexibleInt64 int64
+
+func (v *flexibleInt64) UnmarshalJSON(data []byte) error {
+	raw := strings.Trim(strings.TrimSpace(string(data)), `"`)
+	parsed, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return fmt.Errorf("parse flexible int64 %q: %w", raw, err)
+	}
+	*v = flexibleInt64(parsed)
+	return nil
+}
+
+func flexibleInt64Pointer(value *flexibleInt64) *int64 {
+	if value == nil {
+		return nil
+	}
+	result := int64(*value)
+	return &result
+}
+
+type stagedOutboundResponseWire struct {
+	StagedOutboundItems []stagedOutboundItemWire `json:"staged_outbound_items"`
+}
+
+type stagedOutboundItemWire struct {
+	TxOutItem       stagedTxOutItemWire `json:"tx_out_item"`
+	ScheduledHeight *flexibleInt64      `json:"scheduled_height"`
+	StagedHeight    *flexibleInt64      `json:"staged_height"`
+}
+
+type stagedTxOutItemWire struct {
+	Height                *flexibleInt64   `json:"height"`
+	InHash                *string          `json:"in_hash"`
+	OutHash               *string          `json:"out_hash"`
+	Chain                 string           `json:"chain"`
+	ToAddress             string           `json:"to_address"`
+	VaultPubKey           *string          `json:"vault_pub_key"`
+	VaultPubKeyEddsa      *string          `json:"vault_pub_key_eddsa"`
+	VaultPubKeyFrost      *string          `json:"vault_pub_key_frost"`
+	Coin                  stagedCoinWire   `json:"coin"`
+	MaxGas                []stagedCoinWire `json:"max_gas"`
+	GasRate               *flexibleInt64   `json:"gas_rate"`
+	Memo                  *string          `json:"memo"`
+	OriginalMemo          *string          `json:"original_memo"`
+	Aggregator            *string          `json:"aggregator"`
+	AggregatorTargetAsset *string          `json:"aggregator_target_asset"`
+	AggregatorTargetLimit *string          `json:"aggregator_target_limit"`
+	CloutSpent            *string          `json:"clout_spent"`
+}
+
+func (item stagedTxOutItemWire) openAPI() *openapi.TxOutItem {
+	maxGas := make([]openapi.Coin, 0, len(item.MaxGas))
+	for _, coin := range item.MaxGas {
+		maxGas = append(maxGas, coin.openAPI())
+	}
+	return &openapi.TxOutItem{
+		Height:                flexibleInt64Pointer(item.Height),
+		InHash:                item.InHash,
+		OutHash:               item.OutHash,
+		Chain:                 item.Chain,
+		ToAddress:             item.ToAddress,
+		VaultPubKey:           item.VaultPubKey,
+		VaultPubKeyEddsa:      item.VaultPubKeyEddsa,
+		VaultPubKeyFrost:      item.VaultPubKeyFrost,
+		Coin:                  item.Coin.openAPI(),
+		MaxGas:                maxGas,
+		GasRate:               flexibleInt64Pointer(item.GasRate),
+		Memo:                  item.Memo,
+		OriginalMemo:          item.OriginalMemo,
+		Aggregator:            item.Aggregator,
+		AggregatorTargetAsset: item.AggregatorTargetAsset,
+		AggregatorTargetLimit: item.AggregatorTargetLimit,
+		CloutSpent:            item.CloutSpent,
+	}
+}
+
+type stagedCoinWire struct {
+	Asset    string         `json:"asset"`
+	Amount   string         `json:"amount"`
+	Decimals *flexibleInt64 `json:"decimals"`
+}
+
+func (coin stagedCoinWire) openAPI() openapi.Coin {
+	return openapi.Coin{
+		Asset:    coin.Asset,
+		Amount:   coin.Amount,
+		Decimals: flexibleInt64Pointer(coin.Decimals),
+	}
+}
+
+func GetOutboundQueue() ([]openapi.TxOutItem, error) {
+	url := fmt.Sprintf("%s/thorchain/queue/outbound", thornodeURL)
+	var outbounds []openapi.TxOutItem
+	err := Get(url, &outbounds)
+	return outbounds, err
+}
+
+func GetScheduledOutboundQueue() ([]openapi.TxOutItem, error) {
+	url := fmt.Sprintf("%s/thorchain/queue/scheduled", thornodeURL)
+	var outbounds []openapi.TxOutItem
+	err := Get(url, &outbounds)
+	return outbounds, err
+}
+
+func GetSwapDetails(txid string) (openapi.SwapDetailsResponse, error) {
+	url := fmt.Sprintf("%s/thorchain/queue/swap/details/%s", thornodeURL, txid)
+	var details openapi.SwapDetailsResponse
+	err := Get(url, &details)
+	return details, err
+}
+
 type VaultXMRState struct {
 	VaultCreationHeightXmr int64  `json:"vault_creation_height_xmr"`
 	PubKeyFrost            string `json:"pub_key_frost"`
@@ -344,6 +504,16 @@ func GetMimirs() (map[string]int64, error) {
 	return mimirs, err
 }
 
+// GetMimir returns the effective value for a key. Unlike GetMimirs, this
+// endpoint also observes mocknet environment fallbacks that are not persisted
+// as on-chain Mimir entries.
+func GetMimir(key string) (int64, error) {
+	endpoint := fmt.Sprintf("%s/thorchain/mimir/key/%s", thornodeURL, url.PathEscape(key))
+	var value int64
+	err := Get(endpoint, &value)
+	return value, err
+}
+
 func GetBlock(height int64) (openapi.BlockResponse, error) {
 	url := fmt.Sprintf("%s/thorchain/block", thornodeURL)
 	if height > 0 {
@@ -352,6 +522,14 @@ func GetBlock(height int64) (openapi.BlockResponse, error) {
 	var block openapi.BlockResponse
 	err := Get(url, &block)
 	return block, err
+}
+
+func GetBlockHeight() (int64, error) {
+	block, err := GetBlock(0)
+	if err != nil {
+		return 0, err
+	}
+	return block.Header.Height, nil
 }
 
 func GetMemoHash(txid string) (openapi.ReferenceMemoResponse, error) {
