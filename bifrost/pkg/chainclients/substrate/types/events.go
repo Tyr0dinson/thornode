@@ -3,545 +3,248 @@ package types
 import (
 	"encoding/binary"
 	"fmt"
-	"math"
+	"strconv"
 
-	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	scalecodec "github.com/itering/scale.go"
+	scaleTypes "github.com/itering/scale.go/types"
+	"github.com/itering/scale.go/types/scaleBytes"
 )
 
-// Known event data sizes for Substrate runtimes.
-// Balance event field sizes depend on the pallet's configured Balance type,
-// (u64 = 8 bytes on TAO, u128 = 16 bytes on DOT), passed via EventPalletConfig.BalanceSize.
-// AccountId = 32 bytes, Hash = 32 bytes.
 const (
-	sizeAccountID = 32
-	sizeHash      = 32
+	systemExtrinsicSuccessEvent = "ExtrinsicSuccess"
+	systemExtrinsicFailedEvent  = "ExtrinsicFailed"
+	txPaymentFeePaidEvent       = "TransactionFeePaid"
+	actualFeeParam              = "actual_fee"
 )
 
-// dispatchErrorSize returns the byte size of a SCALE-encoded DispatchError
-// given the first (variant) byte.
-func dispatchErrorSize(variant byte) (int, error) {
-	switch variant {
-	case 0, 1, 2, 4, 5, 6, 10, 11, 12, 13:
-		return 1, nil // just the variant byte, no extra data
-	case 3:
-		return 1 + 1 + 4, nil // Module { index: u8, error: [u8; 4] }
-	case 7, 8, 9:
-		return 1 + 1, nil // Token/Arithmetic/Transactional(sub-enum: 1 byte)
-	default:
-		return 0, fmt.Errorf("unknown DispatchError variant %d", variant)
-	}
-}
-
-// dispatchErrorSizeEstimates returns a pessimistic size estimate for unknown
-// DispatchError variants. Used by the scan fallback to match ExtrinsicFailed
-// events even when new variants are added in runtime upgrades. Tries all known
-// sizes (1, 2, 6 bytes) and returns them for the caller to attempt each.
-func dispatchErrorSizeEstimates(variant byte) []int {
-	known, err := dispatchErrorSize(variant)
-	if err == nil {
-		return []int{known}
-	}
-	// Unknown variant — return all plausible sizes to try.
-	// Known sizes: 1 (unit), 2 (sub-enum), 6 (Module). Try each.
-	return []int{1, 2, 6}
-}
-
-// EventPalletConfig holds pallet indices for event parsing.
+// EventPalletConfig identifies the pallets whose events affect transaction
+// observation. Metadata supplies event names, indexes, and SCALE payload types.
 type EventPalletConfig struct {
+	Metadata                      *Metadata
 	SystemPalletIndex             byte
-	BalancesPalletIndex           byte
-	BalancesTransferEventIndex    byte
-	UtilityPalletIndex            byte
 	TransactionPaymentPalletIndex byte
-	BalanceSize                   int
 }
 
-// ParseExtrinsicResults parses SCALE-encoded System::Events and returns a map of
-// extrinsic index → success (true) or failure (false). Extrinsics not present in
-// the map could not be determined (parsing stopped at an unknown event).
-func ParseExtrinsicResults(data []byte, pallets EventPalletConfig) (map[uint32]bool, map[uint32]uint64, error) {
+// DecodedEventParam is a metadata-typed event parameter returned by scalecodec.
+type DecodedEventParam struct {
+	Name     string
+	Type     string
+	TypeName string
+	Value    interface{}
+}
+
+// DecodedEvent is the stable internal representation of one runtime event.
+// Keeping this type independent of scalecodec limits the dependency boundary.
+type DecodedEvent struct {
+	Phase          byte
+	ExtrinsicIndex uint32
+	PalletIndex    byte
+	EventIndex     byte
+	Pallet         string
+	Name           string
+	Params         []DecodedEventParam
+	Topics         []string
+}
+
+// DecodeEvents decodes a complete SCALE Vec<EventRecord> using the runtime
+// metadata that produced it. It wraps scalecodec's panic-based API, validates
+// framing itself, and rejects truncated or trailing input.
+func DecodeEvents(data []byte, metadata *Metadata) ([]DecodedEvent, error) {
 	if len(data) == 0 {
-		return nil, nil, nil
+		return nil, nil
+	}
+	if metadata == nil || metadata.codec == nil {
+		return nil, fmt.Errorf("runtime metadata required for event decoding")
 	}
 
 	numEvents, consumed, err := DecodeCompactToInt(data)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to decode events count: %w", err)
+		return nil, fmt.Errorf("failed to decode events count: %w", err)
 	}
+	// The smallest record is phase + event ID + empty topics. This also keeps a
+	// malformed count from causing a large allocation or decode loop.
+	if numEvents > (len(data)-consumed)/4 {
+		return nil, fmt.Errorf("event count %d exceeds remaining data", numEvents)
+	}
+
+	// scale.go's ScaleBytes truncates reads at EOF instead of reporting them.
+	// One guard byte makes any attempted read beyond the real input observable
+	// as a final offset greater than dataLen.
+	guarded := make([]byte, len(data)+1)
+	copy(guarded, data)
+
+	events := make([]DecodedEvent, 0, numEvents)
 	pos := consumed
+
+	// Metadata decoding registers portable types in scale.go's package-global
+	// registry. Hold the read lock for the complete event stream so a runtime
+	// metadata refresh cannot change that registry midway through decoding.
+	scaleCodecRegistryMu.RLock()
+	defer scaleCodecRegistryMu.RUnlock()
+
+	for i := 0; i < numEvents; i++ {
+		event, next, decodeErr := decodeEventRecord(guarded, len(data), pos, metadata)
+		if decodeErr != nil {
+			return nil, fmt.Errorf("failed to decode event %d: %w", i, decodeErr)
+		}
+		events = append(events, event)
+		pos = next
+	}
+
+	if pos != len(data) {
+		return nil, fmt.Errorf("events data has %d trailing bytes", len(data)-pos)
+	}
+
+	return events, nil
+}
+
+func decodeEventRecord(data []byte, dataLen, pos int, metadata *Metadata) (DecodedEvent, int, error) {
+	if pos >= dataLen {
+		return DecodedEvent{}, pos, fmt.Errorf("missing phase")
+	}
+
+	phase := data[pos]
+	eventIDPos := pos + 1
+	var extrinsicIndex uint32
+	switch phase {
+	case 0:
+		if eventIDPos+4 > dataLen {
+			return DecodedEvent{}, pos, fmt.Errorf("missing extrinsic index")
+		}
+		extrinsicIndex = binary.LittleEndian.Uint32(data[eventIDPos : eventIDPos+4])
+		eventIDPos += 4
+	case 1, 2:
+		// Finalization and Initialization carry no extrinsic index.
+	default:
+		return DecodedEvent{}, pos, fmt.Errorf("invalid phase %d", phase)
+	}
+	if eventIDPos+2 > dataLen {
+		return DecodedEvent{}, pos, fmt.Errorf("missing event ID")
+	}
+
+	record := scalecodec.EventRecord{Metadata: metadata.codec}
+	record.Init(
+		scaleBytes.ScaleBytes{Data: data, Offset: pos},
+		&scaleTypes.ScaleDecoderOption{Metadata: metadata.codec, Spec: metadata.codecSpec},
+	)
+	if err := processEventRecord(&record); err != nil {
+		return DecodedEvent{}, pos, err
+	}
+
+	next := record.GetData().Offset
+	if next <= pos {
+		return DecodedEvent{}, pos, fmt.Errorf("decoder made no progress")
+	}
+	if next > dataLen {
+		return DecodedEvent{}, pos, fmt.Errorf("truncated event data")
+	}
+	if record.Phase != int(phase) || uint32(record.ExtrinsicIdx) != extrinsicIndex {
+		return DecodedEvent{}, pos, fmt.Errorf("decoder returned inconsistent phase data")
+	}
+
+	params := make([]DecodedEventParam, len(record.Params))
+	for i, param := range record.Params {
+		params[i] = DecodedEventParam{
+			Name:     param.Name,
+			Type:     param.Type,
+			TypeName: param.TypeName,
+			Value:    param.Value,
+		}
+	}
+
+	return DecodedEvent{
+		Phase:          phase,
+		ExtrinsicIndex: extrinsicIndex,
+		PalletIndex:    data[eventIDPos],
+		EventIndex:     data[eventIDPos+1],
+		Pallet:         record.Module,
+		Name:           record.Event.Name,
+		Params:         params,
+		Topics:         append([]string(nil), record.Topic...),
+	}, next, nil
+}
+
+func processEventRecord(record *scalecodec.EventRecord) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("scalecodec panicked: %v", recovered)
+		}
+	}()
+	record.Process()
+	return nil
+}
+
+// ParseExtrinsicResults returns extrinsic success and fee information from a
+// fully metadata-decoded event stream.
+func ParseExtrinsicResults(data []byte, pallets EventPalletConfig) (map[uint32]bool, map[uint32]uint64, error) {
+	events, err := DecodeEvents(data, pallets.Metadata)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	results := make(map[uint32]bool)
 	fees := make(map[uint32]uint64)
-
-	for i := 0; i < numEvents; i++ {
-		if pos >= len(data) {
-			break
+	for _, event := range events {
+		if event.Phase != 0 {
+			continue
 		}
 
-		// Phase
-		phaseVariant := data[pos]
-		pos++
-		var extrinsicIdx uint32
-		isApplyExtrinsic := phaseVariant == 0x00
-
-		switch phaseVariant {
-		case 0x00:
-			if pos+4 > len(data) {
-				return results, fees, fmt.Errorf("events data too short for extrinsic index at event %d", i)
+		if event.PalletIndex == pallets.SystemPalletIndex {
+			var succeeded bool
+			switch event.Name {
+			case systemExtrinsicSuccessEvent:
+				succeeded = true
+			case systemExtrinsicFailedEvent:
+				succeeded = false
+			default:
+				continue
 			}
-			extrinsicIdx = binary.LittleEndian.Uint32(data[pos : pos+4])
-			pos += 4
-		case 0x01, 0x02:
-			// Phase::Finalization (0x01) and Phase::Initialization (0x02) have no extra data
-		default:
-			// Unknown phase variant — stop parsing and return what we have, matching
-			// the "unknown event" behavior below.
-			return results, fees, nil
-		}
-
-		// Event ID: pallet_index + event_index
-		if pos+2 > len(data) {
-			return results, fees, fmt.Errorf("events data too short for event ID at event %d", i)
-		}
-		palletIdx := data[pos]
-		eventIdx := data[pos+1]
-		pos += 2
-
-		// Determine event data size based on pallet and event
-		var dataSize int
-		dataSize, err = eventDataSize(palletIdx, eventIdx, data[pos:], pallets)
-		if err != nil {
-			// Unknown event — stop parsing. Return what we have.
-			return results, fees, nil
-		}
-
-		if pos+dataSize > len(data) {
-			return results, fees, fmt.Errorf("events data too short for event data at event %d (need %d, have %d)", i, dataSize, len(data)-pos)
-		}
-
-		// Record ExtrinsicSuccess / ExtrinsicFailed
-		if isApplyExtrinsic && palletIdx == pallets.SystemPalletIndex {
-			if eventIdx == 0x00 { // ExtrinsicSuccess
-				results[extrinsicIdx] = true
-			} else if eventIdx == 0x01 { // ExtrinsicFailed
-				results[extrinsicIdx] = false
+			if _, duplicate := results[event.ExtrinsicIndex]; duplicate {
+				return nil, nil, fmt.Errorf("duplicate result event for extrinsic %d", event.ExtrinsicIndex)
 			}
+			results[event.ExtrinsicIndex] = succeeded
+			continue
 		}
 
-		sizeBalance := pallets.BalanceSize
-
-		// TransactionFeePaid event layout: who(AccountId32) + actual_fee(Balance) + tip(Balance).
-		// We extract actual_fee (first balance after AccountId) and store as u64.
-		if isApplyExtrinsic && palletIdx == pallets.TransactionPaymentPalletIndex && eventIdx == 0x00 {
-			// Technically just storing u64 which is fine for fee amounts
-			if dataSize >= sizeAccountID+sizeBalance {
-				part := data[pos+sizeAccountID : pos+sizeAccountID+sizeBalance]
-
-				switch sizeBalance {
-				case 8:
-					fees[extrinsicIdx] = binary.LittleEndian.Uint64(part)
-				case 16:
-					amount, parseErr := cosmos.ParseUint128(part)
-					switch {
-					case parseErr != nil:
-						// skip, ParseUint128 failed
-					case amount.GT(cosmos.NewUint(math.MaxUint64)):
-						// skip, exceeds uint64
-					default:
-						fees[extrinsicIdx] = amount.Uint64()
-					}
-				default:
-					return results, fees, fmt.Errorf("unsupported BalanceSize: %d", sizeBalance)
-				}
+		if event.PalletIndex == pallets.TransactionPaymentPalletIndex && event.Name == txPaymentFeePaidEvent {
+			fee, parseErr := uint64EventParam(event, actualFeeParam)
+			if parseErr != nil {
+				return nil, nil, parseErr
 			}
+			if _, duplicate := fees[event.ExtrinsicIndex]; duplicate {
+				return nil, nil, fmt.Errorf("duplicate fee event for extrinsic %d", event.ExtrinsicIndex)
+			}
+			fees[event.ExtrinsicIndex] = fee
 		}
-
-		pos += dataSize
-
-		// Topics: Vec<H256>
-		if pos >= len(data) {
-			return results, fees, fmt.Errorf("events data too short for topics at event %d", i)
-		}
-
-		var topicCount int
-		topicCount, consumed, err = DecodeCompactToInt(data[pos:])
-		if err != nil {
-			return results, fees, nil
-		}
-		pos += consumed
-		if topicCount > (len(data)-pos)/sizeHash {
-			return results, fees, fmt.Errorf("events data too short for topic data at event %d", i)
-		}
-		pos += topicCount * sizeHash
 	}
 
 	return results, fees, nil
 }
 
-// eventDataSize returns the byte size of event data for a given pallet/event.
-// The remaining slice is provided for variable-size events (e.g., DispatchError).
-func eventDataSize(palletIdx, eventIdx byte, remaining []byte, pallets EventPalletConfig) (int, error) {
-	switch palletIdx {
-	case pallets.SystemPalletIndex:
-		return systemEventDataSize(eventIdx, remaining)
-	case pallets.BalancesPalletIndex:
-		return balancesEventDataSize(eventIdx, pallets.BalanceSize)
-	case pallets.UtilityPalletIndex:
-		return utilityEventDataSize(eventIdx, remaining)
-	case pallets.TransactionPaymentPalletIndex:
-		return txPaymentEventDataSize(eventIdx, pallets.BalanceSize)
-	default:
-		return 0, fmt.Errorf("unknown pallet %d", palletIdx)
-	}
-}
-
-// decodeDispatchInfoSize reads the DispatchInfo from remaining bytes and returns
-// the total byte size consumed. Substrate Weight v2 uses compact-encoded fields:
-//
-//	Weight { ref_time: Compact<u64>, proof_size: Compact<u64> }
-func decodeDispatchInfoSize(remaining []byte) (int, error) {
-	if len(remaining) < 4 {
-		return 0, fmt.Errorf("insufficient data for DispatchInfo")
-	}
-	pos := 0
-
-	// Compact ref_time
-	_, n, err := DecodeCompact(remaining[pos:])
-	if err != nil {
-		return 0, fmt.Errorf("failed to decode ref_time: %w", err)
-	}
-	pos += n
-
-	// Compact proof_size
-	if pos >= len(remaining) {
-		return 0, fmt.Errorf("insufficient data for proof_size")
-	}
-	_, n, err = DecodeCompact(remaining[pos:])
-	if err != nil {
-		return 0, fmt.Errorf("failed to decode proof_size: %w", err)
-	}
-	pos += n
-
-	// DispatchClass (1 byte) + Pays (1 byte)
-	if pos+2 > len(remaining) {
-		return 0, fmt.Errorf("insufficient data for DispatchClass/Pays")
-	}
-	if remaining[pos] > 2 {
-		return 0, fmt.Errorf("invalid DispatchClass: %d", remaining[pos])
-	}
-	if remaining[pos+1] > 1 {
-		return 0, fmt.Errorf("invalid Pays: %d", remaining[pos+1])
-	}
-	pos += 2
-
-	return pos, nil
-}
-
-// systemEventDataSize returns event data size for System pallet events.
-func systemEventDataSize(eventIdx byte, remaining []byte) (int, error) {
-	switch eventIdx {
-	case 0x00: // ExtrinsicSuccess(DispatchInfo)
-		return decodeDispatchInfoSize(remaining)
-	case 0x01: // ExtrinsicFailed(DispatchError, DispatchInfo)
-		if len(remaining) == 0 {
-			return 0, fmt.Errorf("no data for ExtrinsicFailed")
-		}
-		deSize, err := dispatchErrorSize(remaining[0])
-		if err != nil {
-			return 0, err
-		}
-		if deSize > len(remaining) {
-			return 0, fmt.Errorf("insufficient data for DispatchError")
-		}
-		diSize, err := decodeDispatchInfoSize(remaining[deSize:])
-		if err != nil {
-			return 0, err
-		}
-		return deSize + diSize, nil
-	case 0x02: // CodeUpdated
-		return 0, nil
-	case 0x03: // NewAccount(AccountId)
-		return sizeAccountID, nil
-	case 0x04: // KilledAccount(AccountId)
-		return sizeAccountID, nil
-	case 0x05: // Remarked(AccountId, Hash)
-		return sizeAccountID + sizeHash, nil
-	case 0x06: // UpgradeAuthorized { code_hash: Hash, check_version: bool }
-		return sizeHash + 1, nil
-	default:
-		return 0, fmt.Errorf("unknown System event %d", eventIdx)
-	}
-}
-
-// balancesEventDataSize returns event data size for Balances pallet events.
-// sizeBalance reflects the chain's Balance type (8 for u64, 16 for u128).
-func balancesEventDataSize(eventIdx byte, sizeBalance int) (int, error) {
-	switch eventIdx {
-	case 0: // Endowed { account, free_balance }
-		return sizeAccountID + sizeBalance, nil
-	case 1: // DustLost { account, amount }
-		return sizeAccountID + sizeBalance, nil
-	case 2: // Transfer { from, to, amount }
-		return sizeAccountID + sizeAccountID + sizeBalance, nil
-	case 3: // BalanceSet { who, free }
-		return sizeAccountID + sizeBalance, nil
-	case 4: // Reserved { who, amount }
-		return sizeAccountID + sizeBalance, nil
-	case 5: // Unreserved { who, amount }
-		return sizeAccountID + sizeBalance, nil
-	case 6: // ReserveRepatriated { from, to, amount, destination_status }
-		return sizeAccountID + sizeAccountID + sizeBalance + 1, nil
-	case 7: // Deposit { who, amount }
-		return sizeAccountID + sizeBalance, nil
-	case 8: // Withdraw { who, amount }
-		return sizeAccountID + sizeBalance, nil
-	case 9: // Slashed { who, amount }
-		return sizeAccountID + sizeBalance, nil
-	case 10: // Minted { who, amount }
-		return sizeAccountID + sizeBalance, nil
-	case 11: // Burned { who, amount }
-		return sizeAccountID + sizeBalance, nil
-	case 12: // Suspended { who, amount }
-		return sizeAccountID + sizeBalance, nil
-	case 13: // Restored { who, amount }
-		return sizeAccountID + sizeBalance, nil
-	case 14: // Upgraded { who }
-		return sizeAccountID, nil
-	case 15: // Issued { amount }
-		return sizeBalance, nil
-	case 16: // Rescinded { amount }
-		return sizeBalance, nil
-	case 17: // Locked { who, amount }
-		return sizeAccountID + sizeBalance, nil
-	case 18: // Unlocked { who, amount }
-		return sizeAccountID + sizeBalance, nil
-	case 19: // Frozen { who, amount }
-		return sizeAccountID + sizeBalance, nil
-	case 20: // Thawed { who, amount }
-		return sizeAccountID + sizeBalance, nil
-	default:
-		return 0, fmt.Errorf("unknown Balances event %d", eventIdx)
-	}
-}
-
-// utilityEventDataSize returns event data size for Utility pallet events.
-func utilityEventDataSize(eventIdx byte, remaining []byte) (int, error) {
-	switch eventIdx {
-	case 0: // BatchInterrupted { index: u32, error: DispatchError }
-		if len(remaining) < 5 { // 4 bytes u32 + at least 1 byte DispatchError
-			return 0, fmt.Errorf("insufficient data for BatchInterrupted")
-		}
-		deSize, err := dispatchErrorSize(remaining[4])
-		if err != nil {
-			return 0, err
-		}
-		return 4 + deSize, nil
-	case 1: // BatchCompleted
-		return 0, nil
-	case 2: // BatchCompletedWithErrors
-		return 0, nil
-	case 3: // ItemCompleted
-		return 0, nil
-	case 4: // ItemFailed { error: DispatchError }
-		if len(remaining) == 0 {
-			return 0, fmt.Errorf("insufficient data for ItemFailed")
-		}
-		return dispatchErrorSize(remaining[0])
-	case 5: // DispatchedAs { result: DispatchResult }
-		// DispatchResult = Result<(), DispatchError>
-		// Ok = 0x00 (1 byte), Err = 0x01 + DispatchError
-		if len(remaining) == 0 {
-			return 0, fmt.Errorf("insufficient data for DispatchedAs")
-		}
-		if remaining[0] == 0x00 {
-			return 1, nil // Ok
-		}
-		if len(remaining) < 2 {
-			return 0, fmt.Errorf("insufficient data for DispatchedAs error")
-		}
-		deSize, err := dispatchErrorSize(remaining[1])
-		if err != nil {
-			return 0, err
-		}
-		return 1 + deSize, nil
-	default:
-		return 0, fmt.Errorf("unknown Utility event %d", eventIdx)
-	}
-}
-
-// txPaymentEventDataSize returns event data size for TransactionPayment pallet events.
-func txPaymentEventDataSize(eventIdx byte, sizeBalance int) (int, error) {
-	switch eventIdx {
-	case 0: // TransactionFeePaid { who: AccountId, actual_fee: Balance, tip: Balance }
-		return sizeAccountID + sizeBalance + sizeBalance, nil
-	default:
-		return 0, fmt.Errorf("unknown TransactionPayment event %d", eventIdx)
-	}
-}
-
-// ScanExtrinsicResults performs a pattern-based scan of raw event data to find
-// System::ExtrinsicSuccess, System::ExtrinsicFailed, Balances::Transfer, and
-// TransactionPayment::TransactionFeePaid events. This is a fallback for when
-// the linear parser stops at unknown events from unrecognized pallets (e.g.,
-// chain-specific pallets like SubtensorModule on TAO, or Staking on DOT).
-// It searches for byte patterns matching these events and validates them by
-// decoding compact DispatchInfo fields and pinning trailing-topics terminators.
-// A scan-matched ExtrinsicSuccess is only reported when the same extIdx also
-// has a scan-matched Balances::Transfer event.
-// Call-data decode alone is never sufficient to credit a transfer.
-//
-// Returns (results, fees). The fees map carries actual_fee per extrinsic when
-// a TransactionFeePaid event was located by the scan; callers merge it with
-// the linear parser's feeMap so vault gas accounting is correct on outbounds
-// whose fee event sits after an unknown event (the linear parser would
-// otherwise have stopped before reaching it).
-func ScanExtrinsicResults(data []byte, pallets EventPalletConfig, numExtrinsics int) (map[uint32]bool, map[uint32]uint64) {
-	results := make(map[uint32]bool)
-	fees := make(map[uint32]uint64)
-	if len(data) == 0 || numExtrinsics <= 0 {
-		return results, fees
-	}
-
-	// Track success and failure matches separately. If both patterns match for
-	// the same extrinsic, the match is ambiguous (likely a false positive from
-	// unknown pallet event data) — we exclude it rather than risk a false credit.
-	successes := make(map[uint32]bool)
-	failures := make(map[uint32]bool)
-
-	// Track transfer events independently. If no transfer event is found, the
-	// decoded ApplyExtrinsic is a false positive
-	transfers := make(map[uint32]bool)
-
-	// Minimum match: phase(1) + extIdx(4) + palletIdx(1) + eventIdx(1) + DispatchInfo(min 4) + topics(1)
-	minMatch := 12
-
-	for pos := 0; pos+minMatch <= len(data); pos++ {
-		// Phase must be ApplyExtrinsic (0x00)
-		if data[pos] != 0x00 {
+func uint64EventParam(event DecodedEvent, name string) (uint64, error) {
+	for _, param := range event.Params {
+		if param.Name != name {
 			continue
 		}
-
-		extIdx := binary.LittleEndian.Uint32(data[pos+1 : pos+5])
-		if int(extIdx) >= numExtrinsics {
-			continue
-		}
-
-		palletIdx := data[pos+5]
-		eventIdx := data[pos+6]
-
-		if palletIdx == pallets.BalancesPalletIndex && eventIdx == pallets.BalancesTransferEventIndex {
-			// layout: phase(1) + extIdx(4) + pallet(1) + event(1) + from(32) + to(32) + amount(BalanceSize) + topics(1)
-			totalLen := 7 + 32 + 32 + pallets.BalanceSize
-			if pos+totalLen < len(data) && data[pos+totalLen] == 0x00 {
-				transfers[extIdx] = true
+		switch value := param.Value.(type) {
+		case uint64:
+			return value, nil
+		case uint32:
+			return uint64(value), nil
+		case uint16:
+			return uint64(value), nil
+		case int:
+			if value < 0 {
+				break
 			}
-			continue
-		}
-
-		// TxPayment pallet idx is non-zero on every Substrate runtime we support
-		// (TAO=6, DOT=33). Treat 0 as "unconfigured" so the branch doesn't
-		// collide with System::ExtrinsicSuccess (always pallet=0, event=0) in
-		// callers/tests that omit the pallet index.
-		if pallets.TransactionPaymentPalletIndex != 0 &&
-			palletIdx == pallets.TransactionPaymentPalletIndex && eventIdx == 0x00 {
-			// layout: phase(1) + extIdx(4) + pallet(1) + event(1) + who(AccountId32) + actual_fee(BalanceSize) + tip(BalanceSize) + topics(1)
-			// Require empty topics (0x00 terminator) so we don't pick up false
-			// positives buried in unknown pallet event payloads — the same guard
-			// the success/failure branches use.
-			totalLen := 1 + 4 + 1 + 1 + sizeAccountID + pallets.BalanceSize + pallets.BalanceSize + 1
-			if pos+totalLen > len(data) || data[pos+totalLen-1] != 0x00 {
-				continue
-			}
-			feeStart := pos + 7 + sizeAccountID
-			feePart := data[feeStart : feeStart+pallets.BalanceSize]
-
-			var fee uint64
-			switch pallets.BalanceSize {
-			case 8:
-				fee = binary.LittleEndian.Uint64(feePart)
-			case 16:
-				amount, err := cosmos.ParseUint128(feePart)
-				if err != nil {
-					continue
-				}
-				if amount.GT(cosmos.NewUint(math.MaxUint64)) {
-					continue
-				}
-				fee = amount.Uint64()
-			default:
-				continue
-			}
-
-			// First match wins, mirroring ParseExtrinsicResults' single-write
-			// semantics — chains emit one TransactionFeePaid per extrinsic.
-			if _, ok := fees[extIdx]; !ok {
-				fees[extIdx] = fee
-			}
-			continue
-		}
-
-		// Must be System pallet
-		if palletIdx != pallets.SystemPalletIndex {
-			continue
-		}
-
-		diStart := pos + 7
-
-		switch eventIdx {
-		case 0x00: // ExtrinsicSuccess(DispatchInfo)
-			diSize, err := decodeDispatchInfoSize(data[diStart:])
-			if err != nil {
-				continue
-			}
-			endPos := diStart + diSize
-			if endPos >= len(data) || data[endPos] != 0x00 {
-				continue
-			}
-			successes[extIdx] = true
-
-		case 0x01: // ExtrinsicFailed(DispatchError, DispatchInfo)
-			if diStart >= len(data) {
-				continue
-			}
-			// Try all plausible DispatchError sizes. For known variants this
-			// returns the exact size; for unknown variants it tries all known
-			// sizes (1, 2, 6) to match ExtrinsicFailed even after runtime upgrades.
-			for _, deSize := range dispatchErrorSizeEstimates(data[diStart]) {
-				diOffset := diStart + deSize
-				if diOffset >= len(data) {
-					continue
-				}
-				diSize, err := decodeDispatchInfoSize(data[diOffset:])
-				if err != nil {
-					continue
-				}
-				endPos := diOffset + diSize
-				if endPos >= len(data) || data[endPos] != 0x00 {
-					continue
-				}
-				failures[extIdx] = true
-				break // matched, no need to try other sizes
+			return uint64(value), nil
+		case string:
+			parsed, err := strconv.ParseUint(value, 10, 64)
+			if err == nil {
+				return parsed, nil
 			}
 		}
+		return 0, fmt.Errorf("event %s:%s parameter %s is not a uint64: %v", event.Pallet, event.Name, name, param.Value)
 	}
-
-	// Build results only for non-conflicting matches. If both success and failure
-	// patterns matched for the same extIdx, exclude it (treat as undetermined).
-	for extIdx := range successes {
-		if failures[extIdx] {
-			continue
-		}
-		if !transfers[extIdx] {
-			// No transfer event found
-			continue
-		}
-		results[extIdx] = true
-	}
-	for extIdx := range failures {
-		if !successes[extIdx] {
-			results[extIdx] = false
-		}
-	}
-
-	return results, fees
+	return 0, fmt.Errorf("event %s:%s has no %s parameter", event.Pallet, event.Name, name)
 }

@@ -48,6 +48,7 @@ type Scanner struct {
 	mu                sync.RWMutex
 	specVersion       uint32
 	txVersion         uint32
+	metadata          *stypes.Metadata
 	latestBlockHash   string
 	latestBlockHeight int64
 	feeCache          []uint64
@@ -96,6 +97,8 @@ func NewScanner(
 	if err != nil {
 		return nil, fmt.Errorf("failed to verify metadata: %w", err)
 	}
+	s.specVersion = rv.SpecVersion
+	s.txVersion = rv.TransactionVersion
 
 	s.genesisHash, err = rpcClient.GetGenesisHash()
 	if err != nil {
@@ -149,7 +152,7 @@ func (s *Scanner) FetchTxs(fetchHeight, _ int64) (ttypes.TxIn, error) {
 	}
 
 	// Check and refresh runtime version before parsing the block
-	err = s.checkRuntimeVersion(blockHash)
+	metadata, err := s.checkRuntimeVersion(blockHash)
 	if err != nil {
 		return txIn, fmt.Errorf("failed to refresh runtime version: %w", err)
 	}
@@ -162,7 +165,7 @@ func (s *Scanner) FetchTxs(fetchHeight, _ int64) (ttypes.TxIn, error) {
 	txIn.TxArray = make([]*ttypes.TxInItem, 0, len(block.Extrinsics))
 
 	// Fetch events and determine which extrinsics succeeded
-	successMap, feeMap, err := s.getExtrinsicResults(blockHash, len(block.Extrinsics))
+	successMap, feeMap, err := s.getExtrinsicResults(blockHash, len(block.Extrinsics), metadata)
 	if err != nil {
 		return txIn, fmt.Errorf("failed to get extrinsic results at height %d: %w", fetchHeight, err)
 	}
@@ -238,8 +241,8 @@ func (s *Scanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
 }
 
 // getExtrinsicResults queries System::Events and determines which extrinsics succeeded.
-// numExtrinsics is the number of extrinsics in the block, used to validate scan results.
-func (s *Scanner) getExtrinsicResults(blockHash string, numExtrinsics int) (map[uint32]bool, map[uint32]uint64, error) {
+// numExtrinsics is the number of extrinsics in the block, used to validate decoded results.
+func (s *Scanner) getExtrinsicResults(blockHash string, numExtrinsics int, metadata *stypes.Metadata) (map[uint32]bool, map[uint32]uint64, error) {
 	eventsHex, err := s.rpcClient.GetEventsStorage(blockHash)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get events storage: %w", err)
@@ -251,61 +254,24 @@ func (s *Scanner) getExtrinsicResults(blockHash string, numExtrinsics int) (map[
 	}
 
 	palletConfig := stypes.EventPalletConfig{
+		Metadata:                      metadata,
 		SystemPalletIndex:             s.params.Index(SystemPallet),
-		BalancesPalletIndex:           s.params.Index(BalancesPallet),
-		BalancesTransferEventIndex:    s.params.Index(BalancesTransferEvent),
-		UtilityPalletIndex:            s.params.Index(UtilityPallet),
 		TransactionPaymentPalletIndex: s.params.Index(TransactionPaymentPallet),
-		BalanceSize:                   s.params.BalanceSize,
 	}
 
 	results, fees, err := stypes.ParseExtrinsicResults(eventsData, palletConfig)
 	if err != nil {
-		s.logger.Warn().Err(err).Msg("events parsing encountered error, using partial results")
+		return nil, nil, fmt.Errorf("failed to parse runtime events: %w", err)
 	}
 
-	// Check if all extrinsics have determined results
-	allDetermined := true
+	for idx := range results {
+		if int(idx) >= numExtrinsics {
+			return nil, nil, fmt.Errorf("event references out-of-range extrinsic %d", idx)
+		}
+	}
 	for i := 0; i < numExtrinsics; i++ {
 		if _, ok := results[uint32(i)]; !ok {
-			allDetermined = false
-			break
-		}
-	}
-
-	// If some extrinsics are missing results, use scan-based fallback
-	if !allDetermined && len(eventsData) > 0 {
-		s.logger.Info().
-			Int("num_extrinsics", numExtrinsics).
-			Int("determined", len(results)).
-			Int("events_data_len", len(eventsData)).
-			Str("events_hex_head", stypes.HexEncodeHead(eventsData, 200)).
-			Msg("using scan-based event fallback for undetermined extrinsics")
-		scanResults, scanFees := stypes.ScanExtrinsicResults(eventsData, palletConfig, numExtrinsics)
-		for idx, success := range scanResults {
-			if _, ok := results[idx]; ok {
-				continue
-			}
-			results[idx] = success
-			s.logger.Warn().
-				Uint32("ext_idx", idx).
-				Str("block_hash", blockHash).
-				Msg("extrinsic success determined solely by scan fallback")
-		}
-		// Back-fill fees the linear parser missed because it stopped at an
-		// unknown event before reaching the TransactionFeePaid event for a
-		// later extrinsic. Without this, outbound observations report gas of
-		// 1 unit and thornode under-debits the vault.
-		for idx, fee := range scanFees {
-			if _, ok := fees[idx]; ok {
-				continue
-			}
-			fees[idx] = fee
-			s.logger.Warn().
-				Uint32("ext_idx", idx).
-				Uint64("fee", fee).
-				Str("block_hash", blockHash).
-				Msg("extrinsic fee recovered solely by scan fallback")
+			return nil, nil, fmt.Errorf("missing result event for extrinsic %d", i)
 		}
 	}
 
@@ -314,10 +280,10 @@ func (s *Scanner) getExtrinsicResults(blockHash string, numExtrinsics int) (map[
 
 // checkRuntimeVersion re-fetches the runtime version from the node and
 // verifies index validity on a version change
-func (s *Scanner) checkRuntimeVersion(blockHash string) error {
+func (s *Scanner) checkRuntimeVersion(blockHash string) (*stypes.Metadata, error) {
 	rv, err := s.rpcClient.GetRuntimeVersion(blockHash)
 	if err != nil {
-		return fmt.Errorf("failed to refresh runtime version: %w", err)
+		return nil, fmt.Errorf("failed to refresh runtime version: %w", err)
 	}
 
 	s.mu.Lock()
@@ -330,14 +296,14 @@ func (s *Scanner) checkRuntimeVersion(blockHash string) error {
 
 		err = s.verifyMetadata(blockHash)
 		if err != nil {
-			return fmt.Errorf("failed to verify metadata: %w", err)
+			return nil, fmt.Errorf("failed to verify metadata: %w", err)
 		}
 
 		s.specVersion = rv.SpecVersion
 		s.txVersion = rv.TransactionVersion
 	}
 
-	return nil
+	return s.metadata, nil
 }
 
 // updateFeeCache adds a fee to the rolling window, truncating if over feeCacheSize.
@@ -720,7 +686,13 @@ func (s *Scanner) verifyMetadata(blockHash string) error {
 		return fmt.Errorf("failed to parse metadata: %w", err)
 	}
 
-	return s.params.ValidateMetadata(metadata)
+	if err := s.params.ValidateMetadata(metadata); err != nil {
+		return err
+	}
+
+	// Metadata is immutable after publication.
+	s.metadata = metadata
+	return nil
 }
 
 // --------------------------------- helpers ---------------------------------

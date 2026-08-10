@@ -107,6 +107,8 @@ func (s ChainSuite) TestChain(c *C) {
 	c.Assert(DOTChain.AddressPrefix(MockNet), Equals, "5")
 	c.Assert(DOTChain.AddressPrefix(MainNet), Equals, "1")
 	c.Assert(DOTChain.AddressPrefix(StageNet), Equals, "1")
+	c.Assert(DOTChain.ExistentialDeposit().Uint64(), Equals, uint64(1_000_000))
+	c.Assert(DOTChain.ThorchainToNativeGas(DOTChain.ExistentialDeposit()).Uint64(), Equals, uint64(100_000_000))
 
 	// XMR chain tests
 	xmrGasUnits, _ := XMRChain.GetGasUnits()

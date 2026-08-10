@@ -12,7 +12,6 @@ const (
 	BalancesPallet                 = "Balances"
 	BalancesTransferAllowDeathCall = "Balances:transfer_allow_death"
 	BalancesTransferKeepAliveCall  = "Balances:transfer_keep_alive"
-	BalancesTransferEvent          = "Balances:Transfer"
 	UtilityPallet                  = "Utility"
 	UtilityBatchAllCall            = "Utility:batch_all"
 	TransactionPaymentPallet       = "TransactionPayment"
@@ -32,6 +31,10 @@ type Params struct {
 }
 
 func (p Params) ValidateMetadata(metadata *types.Metadata) error {
+	if metadata == nil {
+		return fmt.Errorf("nil metadata")
+	}
+
 	// for validating call/event/pallet string consts
 	keys := map[string]struct{}{}
 
@@ -66,11 +69,6 @@ func (p Params) ValidateMetadata(metadata *types.Metadata) error {
 			keys[key] = struct{}{}
 		}
 
-		// only configured event is Balances::TransferEvent
-		if module.Name != BalancesPallet {
-			continue
-		}
-
 		for _, event := range module.Events {
 			key := module.Name + ":" + event.Name
 			configured, valid := p.isValidIndex(key, event.LookupIndex)
@@ -97,7 +95,66 @@ func (p Params) ValidateMetadata(metadata *types.Metadata) error {
 		}
 	}
 
+	if err := validateSystemResultEvents(metadata); err != nil {
+		return err
+	}
+	if err := validateTransactionFeeEvent(metadata); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func validateSystemResultEvents(metadata *types.Metadata) error {
+	expected := map[string]struct{}{
+		"ExtrinsicSuccess": {},
+		"ExtrinsicFailed":  {},
+	}
+
+	for _, module := range metadata.Modules {
+		if module.Name != SystemPallet {
+			continue
+		}
+
+		found := make(map[string]struct{}, len(expected))
+		for _, event := range module.Events {
+			_, required := expected[event.Name]
+			if !required {
+				continue
+			}
+			found[event.Name] = struct{}{}
+		}
+
+		for name := range expected {
+			if _, ok := found[name]; !ok {
+				return fmt.Errorf("required event %s:%s not found in metadata", SystemPallet, name)
+			}
+		}
+		return nil
+	}
+
+	return fmt.Errorf("required pallet %s not found in metadata", SystemPallet)
+}
+
+func validateTransactionFeeEvent(metadata *types.Metadata) error {
+	for _, module := range metadata.Modules {
+		if module.Name != TransactionPaymentPallet {
+			continue
+		}
+		for _, event := range module.Events {
+			if event.Name != "TransactionFeePaid" {
+				continue
+			}
+			for _, name := range event.ArgsName {
+				if name == "actual_fee" {
+					return nil
+				}
+			}
+			return fmt.Errorf("required parameter actual_fee not found in %s:%s metadata", module.Name, event.Name)
+		}
+		return fmt.Errorf("required event %s:TransactionFeePaid not found in metadata", TransactionPaymentPallet)
+	}
+	return fmt.Errorf("required pallet %s not found in metadata", TransactionPaymentPallet)
 }
 
 func (p Params) isValidIndex(key string, index int) (configured, valid bool) {

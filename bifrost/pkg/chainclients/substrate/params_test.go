@@ -25,14 +25,19 @@ func buildTAOMetadata() *stypes.Metadata {
 		Modules: []scaletypes.MetadataModules{
 			{Name: "System", Index: 0, Calls: []scaletypes.MetadataCalls{
 				{Name: "remark", LookupIndex: 0},
+			}, Events: []scaletypes.MetadataEvents{
+				{Name: "ExtrinsicSuccess", LookupIndex: 0, Args: []string{"frame_system:DispatchEventInfo"}},
+				{Name: "ExtrinsicFailed", LookupIndex: 1, Args: []string{"sp_runtime:DispatchError", "frame_system:DispatchEventInfo"}},
 			}},
 			{Name: "Balances", Index: 5, Calls: []scaletypes.MetadataCalls{
 				{Name: "transfer_allow_death", LookupIndex: 0},
 				{Name: "transfer_keep_alive", LookupIndex: 3},
 			}, Events: []scaletypes.MetadataEvents{
-				{Name: "Transfer", LookupIndex: 2},
+				{Name: "Transfer", LookupIndex: 2, Args: []string{"AccountId", "AccountId", "U64"}},
 			}},
-			{Name: "TransactionPayment", Index: 6},
+			{Name: "TransactionPayment", Index: 6, Events: []scaletypes.MetadataEvents{
+				{Name: "TransactionFeePaid", LookupIndex: 0, Args: []string{"AccountId", "U64", "U64"}, ArgsName: []string{"who", "actual_fee", "tip"}},
+			}},
 			{Name: "Utility", Index: 11, Calls: []scaletypes.MetadataCalls{
 				{Name: "batch_all", LookupIndex: 2},
 			}},
@@ -79,14 +84,18 @@ func (s *ParamsSuite) TestValidateMetadata(c *C) {
 			wantErrIn: "transfer_keep_alive",
 		},
 		{
-			// A configured event's on-chain LookupIndex drifts from Indexes.
-			// Pins the events branch specifically — it is gated by the
-			// BalancesPallet name check and runs separately from the call walk.
-			name: "Transfer event moved",
+			name: "System success event missing",
 			mutate: func(m *stypes.Metadata) {
-				m.Modules[1].Events[0].LookupIndex = 3
+				m.Modules[0].Events[0].Name = "RenamedSuccess"
 			},
-			wantErrIn: "Transfer",
+			wantErrIn: "ExtrinsicSuccess",
+		},
+		{
+			name: "fee parameter missing",
+			mutate: func(m *stypes.Metadata) {
+				m.Modules[2].Events[0].ArgsName[1] = "renamed_fee"
+			},
+			wantErrIn: "actual_fee",
 		},
 		{
 			// A pallet present on-chain but not in Indexes is silently
