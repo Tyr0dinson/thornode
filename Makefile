@@ -591,7 +591,7 @@ endif
 test-simulation: build-mocknet reset-mocknet test-simulation-no-reset
 
 TEST_SIMULATION_STAGES ?= seed,bootstrap,xmr-coverage,arb,swaps,memoless-swaps,consolidate,memoless-refunds,solvency,ragnarok
-TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,xmr-coverage,xmr-spent-refs,swaps,memoless-swaps,inactive-vault-refunds,memoless-refunds,cluster-churn,tron-solvency-fragmentation,solvency,xmr-post-churn,ragnarok
+TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,mempool-swaps,xmr-coverage,xmr-spent-refs,swaps,memoless-swaps,inactive-vault-refunds,memoless-refunds,cluster-churn,tron-solvency-fragmentation,solvency,xmr-post-churn,ragnarok
 # A full cluster run must fail rather than silently omit unavailable XMR coverage.
 TEST_SIMULATION_REQUIRE_XMR ?= 1
 
