@@ -222,8 +222,10 @@ type Client struct {
 // Keep the production Monero client and the signer durability contract from
 // drifting independently. A missing final-outcome hook must be a build error,
 // not a runtime assertion miss which lets the signer discard the outbound.
-var _ types.SpentOutputRefsApplier = (*Client)(nil)
-var _ types.WireMemoSpentOutputRefsApplier = (*Client)(nil)
+var (
+	_ types.SpentOutputRefsApplier         = (*Client)(nil)
+	_ types.WireMemoSpentOutputRefsApplier = (*Client)(nil)
+)
 
 // NewClient creates a monero chain client backed by the shared block scanner.
 func NewClient(
@@ -920,8 +922,8 @@ func (c *Client) committedXMRWireMemo(observed common.ObservedTx, consensusHeigh
 		return "", false
 	}
 
-	expectedInHash := common.BlankTxID
-	lowerBound := int64(1)
+	var expectedInHash common.TxID
+	var lowerBound int64
 	var directCandidates []committedXMRPlanMemo
 	switch {
 	case parsed.IsType(memo.TxMigrate), parsed.IsType(memo.TxRagnarok):

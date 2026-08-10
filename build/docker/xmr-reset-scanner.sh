@@ -234,7 +234,7 @@ fi
 
 signer_auth_bearer="$(docker exec "$SIGNER_CONTAINER" sh -c 'printf "%s" "${XMR_FROST_AUTH_BEARER:-}"')"
 [ -n "$signer_auth_bearer" ] || fail "XMR_FROST_AUTH_BEARER is not configured in $SIGNER_CONTAINER"
-if [ -n "${XMR_FROST_AUTH_BEARER:-}" ] && [ "$XMR_FROST_AUTH_BEARER" != "$signer_auth_bearer" ]; then
+if [ -n "${XMR_FROST_AUTH_BEARER-}" ] && [ "$XMR_FROST_AUTH_BEARER" != "$signer_auth_bearer" ]; then
   fail "host XMR_FROST_AUTH_BEARER does not match $SIGNER_CONTAINER"
 fi
 XMR_FROST_AUTH_BEARER="$signer_auth_bearer"
