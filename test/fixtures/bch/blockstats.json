@@ -1,1 +1,33 @@
-{"result":{"avgfee":0.00000225,"avgfeerate":0.00000001,"avgtxsize":225,"blockhash":"43159289e4b6d64cf809068056f82de496c117b9fb19fe5557fcf651bb74ff0e","feerate_percentiles":[0.00000001,0.00000001,0.00000001,0.00000001,0.00000001],"height":102,"ins":1,"maxfee":0.00000225,"maxfeerate":0.00000001,"maxtxsize":225,"medianfee":0.00000225,"mediantime":1786000516,"mediantxsize":225,"minfee":0.00000225,"minfeerate":0.00000001,"mintxsize":225,"outs":3,"subsidy":50.00000000,"time":1786000517,"total_out":49.99999775,"total_size":225,"totalfee":0.00000225,"txs":2,"utxo_increase":2,"utxo_size_inc":150},"error":null,"id":"blockstats"}
+{
+  "result": {
+    "avgfee": 0.00000225,
+    "avgfeerate": 0.00000001,
+    "avgtxsize": 225,
+    "blockhash": "43159289e4b6d64cf809068056f82de496c117b9fb19fe5557fcf651bb74ff0e",
+    "feerate_percentiles": [
+      0.00000001, 0.00000001, 0.00000001, 0.00000001, 0.00000001
+    ],
+    "height": 102,
+    "ins": 1,
+    "maxfee": 0.00000225,
+    "maxfeerate": 0.00000001,
+    "maxtxsize": 225,
+    "medianfee": 0.00000225,
+    "mediantime": 1786000516,
+    "mediantxsize": 225,
+    "minfee": 0.00000225,
+    "minfeerate": 0.00000001,
+    "mintxsize": 225,
+    "outs": 3,
+    "subsidy": 50.0,
+    "time": 1786000517,
+    "total_out": 49.99999775,
+    "total_size": 225,
+    "totalfee": 0.00000225,
+    "txs": 2,
+    "utxo_increase": 2,
+    "utxo_size_inc": 150
+  },
+  "error": null,
+  "id": "blockstats"
+}

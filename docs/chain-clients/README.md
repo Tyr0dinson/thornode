@@ -17,15 +17,15 @@ Chain clients are located in:
 
 Each chain lives in its own folder and typically inherits logic from a shared implementation:
 
-| Client Folder | Purpose                 | Used For             |
-| ------------- | ----------------------- | -------------------- |
-| `evm/`        | Shared EVM logic        | ETH, BSC, AVAX, BASE |
+| Client Folder | Purpose                 | Used For                 |
+| ------------- | ----------------------- | ------------------------ |
+| `evm/`        | Shared EVM logic        | ETH, BSC, AVAX, BASE     |
 | `utxo/`       | Shared UTXO logic       | BTC, LTC, BCH, XEC, DOGE |
-| `xrp/`        | XRP-specific logic      | XRP                  |
-| `tron/`       | Tron-specific logic     | TRON                 |
-| `solana/`     | Solana-specific logic   | SOL                  |
-| `gaia/`       | Cosmos SDK-based chains | ATOM                 |
-| `monero/`     | Monero-specific logic   | XMR                  |
+| `xrp/`        | XRP-specific logic      | XRP                      |
+| `tron/`       | Tron-specific logic     | TRON                     |
+| `solana/`     | Solana-specific logic   | SOL                      |
+| `gaia/`       | Cosmos SDK-based chains | ATOM                     |
+| `monero/`     | Monero-specific logic   | XMR                      |
 
 Chains that do not fit a shared model can implement their own logic from scratch. For UTXO-based chains, the actual `Client` is constructed using the shared implementation in `utxo/client.go`, which handles block scanning, mempool fetches, reorg tracking, and solvency reporting.
 

@@ -1,1 +1,27 @@
-{"result":{"hash":"43159289e4b6d64cf809068056f82de496c117b9fb19fe5557fcf651bb74ff0e","confirmations":1,"height":102,"version":536870912,"versionHex":"20000000","merkleroot":"c987373d3c8bd7e1dda4a0ff0cf6d5945f319cabb09f19df9353a8d56e627a6e","time":1786000517,"mediantime":1786000516,"nonce":0,"bits":"207fffff","difficulty":4.656542373906925e-10,"chainwork":"00000000000000000000000000000000000000000000000000000000000000ce","nTx":2,"previousblockhash":"0cc1d732abff869baa77bac429a7ebe8497451bb8be8239d3ef8a3d67726be33","ablastate":{"epsilon":16000000,"beta":16000000,"blocksize":404,"blocksizelimit":32000000,"nextblocksizelimit":32000000}},"error":null,"id":"blockstats-header"}
+{
+  "result": {
+    "hash": "43159289e4b6d64cf809068056f82de496c117b9fb19fe5557fcf651bb74ff0e",
+    "confirmations": 1,
+    "height": 102,
+    "version": 536870912,
+    "versionHex": "20000000",
+    "merkleroot": "c987373d3c8bd7e1dda4a0ff0cf6d5945f319cabb09f19df9353a8d56e627a6e",
+    "time": 1786000517,
+    "mediantime": 1786000516,
+    "nonce": 0,
+    "bits": "207fffff",
+    "difficulty": 4.656542373906925e-10,
+    "chainwork": "00000000000000000000000000000000000000000000000000000000000000ce",
+    "nTx": 2,
+    "previousblockhash": "0cc1d732abff869baa77bac429a7ebe8497451bb8be8239d3ef8a3d67726be33",
+    "ablastate": {
+      "epsilon": 16000000,
+      "beta": 16000000,
+      "blocksize": 404,
+      "blocksizelimit": 32000000,
+      "nextblocksizelimit": 32000000
+    }
+  },
+  "error": null,
+  "id": "blockstats-header"
+}
