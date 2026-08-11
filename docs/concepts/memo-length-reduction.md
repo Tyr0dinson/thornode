@@ -41,6 +41,7 @@ Native asset names can be shortened to reduce the length of the memo. The exact 
 | s             | BSC.BNB        |
 | tr            | TRON.TRX       |
 | x             | XRP.XRP        |
+| xe            | XEC.XEC        |
 
 **Example Swaps**:
 

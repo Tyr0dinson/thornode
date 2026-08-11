@@ -140,6 +140,12 @@ func (a *DualLPActor) acquireUser(config *OpConfig) OpResult {
 			user.Release()
 			continue
 		}
+		runeAmount := thorBalances.GetCoin(common.RuneAsset()).Amount.QuoUint64(4)
+		l1Amount := FloorAmount(a.asset, l1Acct.Coins.GetCoin(a.asset).Amount.QuoUint64(4))
+		if runeAmount.IsZero() || l1Amount.IsZero() {
+			user.Release()
+			continue
+		}
 		userMaxRune = thorBalances.GetCoin(common.RuneAsset()).Amount
 
 		// release the previous candidate before overwriting
@@ -154,8 +160,8 @@ func (a *DualLPActor) acquireUser(config *OpConfig) OpResult {
 			Msg("acquired user")
 		a.thorAddress = thorAddress
 		a.l1Address = l1Address
-		a.runeAmount = thorBalances.GetCoin(common.RuneAsset()).Amount.QuoUint64(4)
-		a.l1Amount = l1Acct.Coins.GetCoin(a.asset).Amount.QuoUint64(4)
+		a.runeAmount = runeAmount
+		a.l1Amount = l1Amount
 		a.account = user
 	}
 

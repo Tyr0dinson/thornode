@@ -1,10 +1,15 @@
 package util
 
 import (
+	"math"
+	"math/big"
 	"testing"
 	"time"
 
 	. "gopkg.in/check.v1"
+
+	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 func TestPackage(t *testing.T) { TestingT(t) }
@@ -57,6 +62,26 @@ func (t *Test) TestStripMarkdownLinks(c *C) {
 
 	// also handle spaces in title
 	c.Check(StripMarkdownLinks("[Foo Bar](http://example.com) | [Bar Baz](http://example1.com)"), Equals, "http://example.com | http://example1.com")
+}
+
+func (t *Test) TestAmountToFloat64(c *C) {
+	c.Check(AmountToFloat64(cosmos.NewUint(100_000_000)), Equals, float64(1))
+
+	maxUint64 := new(big.Int).SetUint64(math.MaxUint64)
+	aboveUint64 := new(big.Int).Add(new(big.Int).Set(maxUint64), big.NewInt(1))
+	maxValue := AmountToFloat64(cosmos.NewUintFromBigInt(maxUint64))
+	aboveValue := AmountToFloat64(cosmos.NewUintFromBigInt(aboveUint64))
+	c.Check(math.IsInf(maxValue, 0), Equals, false)
+	c.Check(math.IsInf(aboveValue, 0), Equals, false)
+	c.Check(aboveValue >= maxValue, Equals, true)
+
+	// 20 trillion whole XEC in THORChain's 1e8 representation exceeds uint64.
+	xecAmount := cosmos.NewUintFromString("2000000000000000000000")
+	c.Check(AmountToFloat64(xecAmount), Equals, float64(20_000_000_000_000))
+	c.Check(USDValue(0, common.NewCoin(common.TOR, xecAmount)), Equals, float64(20_000_000_000_000))
+
+	maxUint256 := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
+	c.Check(math.IsInf(AmountToFloat64(cosmos.NewUintFromBigInt(maxUint256)), 0), Equals, false)
 }
 
 func (t *Test) TestFormatLocale(c *C) {

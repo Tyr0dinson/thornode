@@ -79,7 +79,11 @@ func (a *InactiveVaultRefundActor) acquireUser(config *OpConfig) OpResult {
 	}
 
 	// amount is 1% of the pool asset depth
-	a.amount = cosmos.NewUintFromString(pool.BalanceAsset).QuoUint64(100)
+	a.amount = acommon.FloorAmount(a.asset, cosmos.NewUintFromString(pool.BalanceAsset).QuoUint64(100))
+	if a.amount.IsZero() {
+		a.Log().Error().Msg("inactive vault refund amount is below the asset precision")
+		return OpResult{Finish: true}
+	}
 
 	for _, user := range config.Users {
 		a.SetLogger(a.Log().With().Str("user", user.Name()).Logger())

@@ -190,11 +190,14 @@ Always convert human-readable amounts (e.g., `1 BTC`, `1 ETH`) into base units w
 | DOGE  | 100,000,000 sats (1 DOGE)      |
 | ETH   | 1 gwei                         |
 | GAIA  | 1 uatom                        |
-| LTC   | 10,000 sats                    |
+| LTC   | 100,000 litoshis               |
 | SOL   | 1,000,000 lamports (0.001 SOL) |
+| XEC   | 10,000 native units (100 XEC)  |
 | XRP   | 1,000,000 drops (1 XRP)        |
 
 These values are currently hardcoded within the code ([chain.go->DustThreshold()](https://gitlab.com/thorchain/thornode/-/blob/develop/common/chain.go)) and not configurable via Mimir.
+
+THORChain and the Inbound Addresses endpoint represent XEC amounts with eight decimals. Therefore, the XEC threshold is returned as `10,000,000,000`, which is `10,000` native eCash units (cents) or `100 XEC`.
 
 **Warning**: Transactions at or below the dust threshold will be silently ignored. Always verify current thresholds before broadcasting.
 

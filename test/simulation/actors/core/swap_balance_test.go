@@ -265,6 +265,25 @@ func TestAcquireUserForAmountTracksSpendableGasBalance(t *testing.T) {
 	}
 }
 
+func TestUpdateSwapAmountFloorsXECToWholeCents(t *testing.T) {
+	t.Parallel()
+
+	actor := newSwapBalanceTestActor(common.XECAsset, common.BTCAsset, 11, 12)
+	actor.fromBalance = sdkmath.NewUint(200_000_000)
+
+	err := actor.updateSwapAmount(sdkmath.NewUint(123_456_789), "selected amount")
+	if err != nil {
+		t.Fatalf("expected XEC amount alignment to succeed: %v", err)
+	}
+	want := sdkmath.NewUint(123_000_000)
+	if !actor.swapAmount.Equal(want) {
+		t.Fatalf("expected aligned XEC amount %s, got %s", want, actor.swapAmount)
+	}
+	if _, err := common.XECChain.ThorchainToNativeGasExact(actor.swapAmount); err != nil {
+		t.Fatalf("aligned XEC swap amount is not externally representable: %v", err)
+	}
+}
+
 // TestFinishAfterPostSelectionFundingErrorReleasesResources verifies a late
 // funding failure releases both the selected user and the XMR slot.
 func (s *SwapBalanceSuite) TestFinishAfterPostSelectionFundingErrorReleasesResources(c *C) {

@@ -31,6 +31,31 @@ func CoinToCommon(coin openapi.Coin) common.Coin {
 	return common.NewCoin(asset, amount)
 }
 
+// AmountToFloat64 converts a THORChain 1e8 amount to a whole-asset value for
+// display and approximate price calculations. It reads the full Uint value so
+// amounts larger than uint64 do not panic or truncate.
+func AmountToFloat64(amount cosmos.Uint) float64 {
+	value, _ := new(big.Float).Quo(
+		new(big.Float).SetInt(amount.BigInt()),
+		big.NewFloat(common.One),
+	).Float64()
+	return value
+}
+
+// BelowUSDThreshold reports whether an approximate USD value is below a
+// configured threshold.
+func BelowUSDThreshold(value, threshold float64) bool {
+	// analyze-ignore(float-comparison)
+	return value < threshold
+}
+
+// AboveUSDThreshold reports whether an approximate USD value is above a
+// configured threshold.
+func AboveUSDThreshold(value, threshold float64) bool {
+	// analyze-ignore(float-comparison)
+	return value > threshold
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////
 // Format
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -139,11 +164,7 @@ func Moneybags(usdValue uint64) string {
 
 func RuneValue(height int64, coin common.Coin) float64 {
 	if coin.IsRune() {
-		amt, _ := new(big.Float).Quo(
-			new(big.Float).SetInt(coin.Amount.BigInt()),
-			big.NewFloat(common.One),
-		).Float64()
-		return amt
+		return AmountToFloat64(coin.Amount)
 
 	}
 
@@ -159,10 +180,7 @@ func RuneValue(height int64, coin common.Coin) float64 {
 			log.Panic().Err(err).Msg("failed to parse network rune price")
 		}
 
-		amt, _ := new(big.Float).Quo(
-			new(big.Float).SetInt(coin.Amount.BigInt()),
-			big.NewFloat(common.One),
-		).Float64()
+		amt := AmountToFloat64(coin.Amount)
 		pr, _ := new(big.Float).Quo(
 			big.NewFloat(price),
 			big.NewFloat(common.One),
@@ -211,7 +229,7 @@ func RuneValue(height int64, coin common.Coin) float64 {
 
 func USDValue(height int64, coin common.Coin) float64 {
 	if coin.Asset.Equals(common.TOR) {
-		return float64(coin.Amount.Uint64()) / common.One
+		return AmountToFloat64(coin.Amount)
 	}
 
 	if coin.IsRune() {
@@ -225,7 +243,7 @@ func USDValue(height int64, coin common.Coin) float64 {
 		if err != nil {
 			log.Panic().Err(err).Msg("failed to parse network rune price")
 		}
-		return float64(coin.Amount.Uint64()) / common.One * price / common.One
+		return AmountToFloat64(coin.Amount) * price / common.One
 	}
 
 	// get pools response
@@ -248,7 +266,7 @@ func USDValue(height int64, coin common.Coin) float64 {
 			return 0
 		}
 		price := cosmos.NewUintFromString(pool.AssetTorPrice)
-		return float64(coin.Amount.Uint64()) / common.One * float64(price.Uint64()) / common.One
+		return AmountToFloat64(coin.Amount) * AmountToFloat64(price)
 	}
 
 	log.Error().Str("asset", asset.String()).Msg("failed to find pool")
@@ -281,7 +299,7 @@ func ExternalUSDValue(coin common.Coin) float64 {
 		return 0
 	}
 
-	return float64(coin.Amount.Uint64()) * price.USD / common.One
+	return AmountToFloat64(coin.Amount) * price.USD
 }
 
 func USDValueString(height int64, coin common.Coin) string {

@@ -175,7 +175,9 @@ func (s *ECashClientSuite) SetUpTest(c *C) {
 	chainCfg.BlockScanner.StartBlockHeight = 1
 	chainCfg.UTXO.BlockCacheCount = 1_000
 	chainCfg.UTXO.EstimatedAverageTxSize = 264
+	chainCfg.UTXO.DefaultSatsPerVByte = 25
 	chainCfg.UTXO.MaxSatsPerVByte = 9_765
+	chainCfg.UTXO.MinSatsPerVByte = 2
 	chainCfg.UTXO.MaxUTXOsToSpend = 10
 	chainCfg.UTXO.TransactionBatchSize = 100
 
@@ -245,7 +247,9 @@ func (s *ECashClientSuite) TestFetchTxsNormalizesXECAndReportsNativeFee(c *C) {
 	case fee := <-s.feeQueue:
 		c.Check(fee.Chain, Equals, common.XECChain)
 		c.Check(fee.TransactionSize, Equals, uint64(264))
-		c.Check(fee.TransactionRate, Equals, uint64(1))
+		// The captured block reports 1 native unit/vbyte. Publishing applies
+		// XEC's configured minimum of 2 native units/vbyte.
+		c.Check(fee.TransactionRate, Equals, uint64(2))
 	case <-time.After(time.Second):
 		c.Fatal("expected XEC network fee")
 	}

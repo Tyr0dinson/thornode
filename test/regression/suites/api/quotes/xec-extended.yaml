@@ -107,9 +107,11 @@ params:
   destination: {{ addr_xmr_fox }}
   extended: true
 asserts:
-  - .expected_amount_out|tonumber > 0
+  - .expected_amount_out == "41501765999"
+  - .fees.outbound == "15000"
+  - .recommended_min_amount_in == "57000000000"
   - .memo|startswith("=:")
-  - .vout|length >= 2
+  - .vout|length == 2
   - .vout[0].type == "op_return"
   - .vout[1].type == "address"
   - .vout[1].data|startswith("q")

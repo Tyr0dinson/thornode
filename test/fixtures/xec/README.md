@@ -3,6 +3,14 @@
 These responses were captured from the official Bitcoin ABC 0.33.8 x86_64
 release on regtest with eCash denomination enabled (the release default).
 
+Bitcoin ABC 0.33.8 does not expose Bitcoin Core's count-based
+`-limitancestorcount` or `-limitdescendantcount` policy settings. Its tagged
+[initialization](https://github.com/Bitcoin-ABC/bitcoin-abc/blob/v0.33.8/src/init.cpp)
+and [policy](https://github.com/Bitcoin-ABC/bitcoin-abc/blob/v0.33.8/src/policy/policy.h)
+sources contain no corresponding option or default. Bifrost therefore uses
+`max_mempool_ancestors: 0` for XEC, which disables its own client-side count
+guard.
+
 The daemon was started with:
 
 ```text

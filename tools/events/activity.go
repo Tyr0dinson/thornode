@@ -103,14 +103,14 @@ func LargeUnconfirmedInbounds(block *thorscan.BlockResponse) {
 
 			// skip if below usd threshold
 			usdValue := util.USDValue(priceHeight, tx.Tx.Coins[0])
-			if uint64(usdValue) < config.Get().Thresholds.USDValue {
+			if util.BelowUSDThreshold(usdValue, float64(config.Get().Thresholds.USDValue)) {
 				continue
 			}
 
 			// check threshold with clout
 			fromClout := util.Clout(priceHeight, tx.Tx.FromAddress.String())
 			fromCloutUSD := util.USDValue(priceHeight, fromClout)
-			if uint64(usdValue) < config.Get().Thresholds.USDValue+uint64(fromCloutUSD) {
+			if util.BelowUSDThreshold(usdValue, float64(config.Get().Thresholds.USDValue)+fromCloutUSD) {
 				continue
 			}
 
@@ -158,13 +158,13 @@ func LargeUnconfirmedInbounds(block *thorscan.BlockResponse) {
 				}
 
 				// normalize the amount to extract the reference
-				amount := tx.Tx.Coins[0].Amount.Uint64()
+				amount := tx.Tx.Coins[0].Amount
 				if decimals < int64(common.THORChainDecimals) {
 					divisor := int64(1)
 					for i := decimals; i < int64(common.THORChainDecimals); i++ {
 						divisor *= 10
 					}
-					amount /= uint64(divisor)
+					amount = amount.QuoUint64(uint64(divisor))
 				}
 
 				refCount := util.GetConfigInt64(block.Header.Height, constants.MemolessTxnRefCount)
@@ -175,7 +175,7 @@ func LargeUnconfirmedInbounds(block *thorscan.BlockResponse) {
 				}
 
 				// extract reference from amount
-				refNum := amount % modulus
+				refNum := amount.Mod(cosmos.NewUint(modulus)).Uint64()
 
 				if refNum > 0 && refCount > 0 {
 					registration := openapi.ReferenceMemoResponse{}
@@ -203,7 +203,7 @@ func LargeUnconfirmedInbounds(block *thorscan.BlockResponse) {
 			fields.Set(
 				"Amount", fmt.Sprintf(
 					"%f %s (%s)",
-					float64(tx.Tx.Coins[0].Amount.Uint64())/common.One,
+					util.AmountToFloat64(tx.Tx.Coins[0].Amount),
 					tx.Tx.Coins[0].Asset,
 					util.USDValueString(priceHeight, tx.Tx.Coins[0]),
 				),
@@ -212,14 +212,14 @@ func LargeUnconfirmedInbounds(block *thorscan.BlockResponse) {
 				fmt.Sprintf("Clout (%s)", tx.Tx.FromAddress),
 				fmt.Sprintf(
 					"%f RUNE (%s)",
-					float64(fromClout.Amount.Uint64())/common.One,
+					util.AmountToFloat64(fromClout.Amount),
 					util.FormatUSD(fromCloutUSD),
 				),
 			)
 
 			// notify
 			level := notify.Warning
-			if uint64(usdValue) > config.Get().Thresholds.Security.USDValue {
+			if util.AboveUSDThreshold(usdValue, float64(config.Get().Thresholds.Security.USDValue)) {
 				level = notify.Danger
 			}
 			notify.Notify(config.Get().Notifications.Activity, title, block.Header.Height, nil, level, fields)
@@ -265,7 +265,7 @@ func LargeStreamingSwaps(block *thorscan.BlockResponse) {
 			log.Panic().Str("coin", event["coin"]).Err(err).Msg("unable to parse streaming swap coin")
 		}
 		usdValue := util.USDValue(block.Header.Height, coin)
-		if uint64(usdValue*float64(quantity)) < config.Get().Thresholds.USDValue {
+		if util.BelowUSDThreshold(usdValue*float64(quantity), float64(config.Get().Thresholds.USDValue)) {
 			continue
 		}
 
@@ -293,12 +293,12 @@ func LargeStreamingSwaps(block *thorscan.BlockResponse) {
 		cloutFields := util.NewOrderedMap()
 		fromClout := util.Clout(block.Header.Height, event["from"])
 		fromCloutUSD := util.USDValue(block.Header.Height, fromClout)
-		totalCloutUSD := uint64(fromCloutUSD)
+		totalCloutUSD := fromCloutUSD
 		cloutFields.Set(
 			fmt.Sprintf("Clout (%s)", event["from"]),
 			fmt.Sprintf(
 				"%f RUNE (%s)",
-				float64(fromClout.Amount.Uint64())/common.One,
+				util.AmountToFloat64(fromClout.Amount),
 				util.FormatUSD(fromCloutUSD),
 			),
 		)
@@ -312,12 +312,12 @@ func LargeStreamingSwaps(block *thorscan.BlockResponse) {
 				toAddress := memoParts[2]
 				toClout := util.Clout(block.Header.Height, toAddress)
 				toCloutUSD := util.USDValue(block.Header.Height, toClout)
-				totalCloutUSD += uint64(toCloutUSD)
+				totalCloutUSD += toCloutUSD
 				cloutFields.Set(
 					fmt.Sprintf("Clout (%s)", toAddress),
 					fmt.Sprintf(
 						"%f RUNE (%s)",
-						float64(toClout.Amount.Uint64())/common.One,
+						util.AmountToFloat64(toClout.Amount),
 						util.FormatUSD(toCloutUSD),
 					),
 				)
@@ -331,7 +331,7 @@ func LargeStreamingSwaps(block *thorscan.BlockResponse) {
 			log.Panic().Str("coin", coinStr).Err(err).Msg("unable to parse coin")
 		}
 		usdValue = util.USDValue(block.Header.Height, coin)
-		if uint64(usdValue) < config.Get().Thresholds.USDValue+totalCloutUSD {
+		if util.BelowUSDThreshold(usdValue, float64(config.Get().Thresholds.USDValue)+totalCloutUSD) {
 			continue
 		}
 
@@ -344,7 +344,7 @@ func LargeStreamingSwaps(block *thorscan.BlockResponse) {
 		// build notification
 		title := "Streaming Swap"
 		lines := []string{}
-		if uint64(usdValue) > config.Get().Styles.USDPerMoneyBag {
+		if util.AboveUSDThreshold(usdValue, float64(config.Get().Styles.USDPerMoneyBag)) {
 			lines = append(lines, util.Moneybags(uint64(usdValue)))
 		}
 		fields := util.NewOrderedMap()
@@ -352,7 +352,7 @@ func LargeStreamingSwaps(block *thorscan.BlockResponse) {
 		fields.Set("Hash", event["id"])
 		fields.Set("Amount", fmt.Sprintf(
 			"%f %s (%s)",
-			float64(coin.Amount.Uint64())/common.One,
+			util.AmountToFloat64(coin.Amount),
 			coin.Asset,
 			util.USDValueString(block.Header.Height, coin),
 		))
@@ -448,12 +448,12 @@ func rescheduledOutbounds(height int64, event map[string]string) bool {
 	amount := cosmos.NewUintFromString(event["coin_amount"])
 	coin := common.NewCoin(asset, amount)
 	usdValue := util.USDValue(height, coin)
-	if uint64(usdValue) > config.Get().Styles.USDPerMoneyBag {
+	if util.AboveUSDThreshold(usdValue, float64(config.Get().Styles.USDPerMoneyBag)) {
 		lines = append(lines, util.Moneybags(uint64(usdValue)))
 	}
 	fields.Set("Coin", fmt.Sprintf(
 		"%f %s (%s)",
-		float64(coin.Amount.Uint64())/common.One, coin.Asset, util.FormatUSD(usdValue),
+		util.AmountToFloat64(coin.Amount), coin.Asset, util.FormatUSD(usdValue),
 	))
 
 	// get the transaction status if this was not a ragnarok outbound
@@ -563,33 +563,35 @@ func scheduledOutbound(height int64, events []map[string]string) {
 	for _, coin := range coins {
 		usdValue += util.USDValue(height, coin)
 	}
-	if uint64(usdValue) < config.Get().Thresholds.USDValue && uint64(usdValue) < config.Get().Thresholds.SwapDelta.USDValue {
+	if util.BelowUSDThreshold(usdValue, float64(config.Get().Thresholds.USDValue)) &&
+		util.BelowUSDThreshold(usdValue, float64(config.Get().Thresholds.SwapDelta.USDValue)) {
 		return
 	}
 
 	// get to address clout and skip if below threshold with clout
 	cloutFields := util.NewOrderedMap()
-	totalCloutUSD := uint64(0)
+	totalCloutUSD := 0.0
 	for _, addr := range toAddresses {
 		clout := util.Clout(height, addr)
 		cloutUSD := util.USDValue(height, clout)
-		totalCloutUSD += uint64(cloutUSD)
+		totalCloutUSD += cloutUSD
 		cloutFields.Set(
 			fmt.Sprintf("Clout (%s)", addr),
 			fmt.Sprintf(
 				"%f RUNE (%s)",
-				float64(clout.Amount.Uint64())/common.One,
+				util.AmountToFloat64(clout.Amount),
 				util.FormatUSD(cloutUSD),
 			),
 		)
 	}
-	if uint64(usdValue) < config.Get().Thresholds.USDValue+totalCloutUSD && uint64(usdValue) < config.Get().Thresholds.SwapDelta.USDValue {
+	if util.BelowUSDThreshold(usdValue, float64(config.Get().Thresholds.USDValue)+totalCloutUSD) &&
+		util.BelowUSDThreshold(usdValue, float64(config.Get().Thresholds.SwapDelta.USDValue)) {
 		return
 	}
 
 	// determine if the outbound value is a security alert
 	level := notify.Warning
-	if uint64(usdValue) > config.Get().Thresholds.Security.USDValue {
+	if util.AboveUSDThreshold(usdValue, float64(config.Get().Thresholds.Security.USDValue)) {
 		level = notify.Danger
 	}
 
@@ -628,18 +630,19 @@ func scheduledOutbound(height int64, events []map[string]string) {
 		if status.Tx != nil && status.Tx.FromAddress != nil {
 			clout := util.Clout(height, *status.Tx.FromAddress)
 			cloutUSD := util.USDValue(height, clout)
-			totalCloutUSD += uint64(cloutUSD)
+			totalCloutUSD += cloutUSD
 			cloutFields.Set(
 				fmt.Sprintf("Clout (%s)", *status.Tx.FromAddress),
 				fmt.Sprintf(
 					"%f RUNE (%s)",
-					float64(clout.Amount.Uint64())/common.One,
+					util.AmountToFloat64(clout.Amount),
 					util.FormatUSD(cloutUSD),
 				),
 			)
 		}
 	}
-	if uint64(usdValue) < config.Get().Thresholds.USDValue+totalCloutUSD && uint64(usdValue) < config.Get().Thresholds.SwapDelta.USDValue {
+	if util.BelowUSDThreshold(usdValue, float64(config.Get().Thresholds.USDValue)+totalCloutUSD) &&
+		util.BelowUSDThreshold(usdValue, float64(config.Get().Thresholds.SwapDelta.USDValue)) {
 		return
 	}
 
@@ -656,7 +659,7 @@ func scheduledOutbound(height int64, events []map[string]string) {
 	}
 
 	lines := []string{}
-	if uint64(usdValue) > config.Get().Styles.USDPerMoneyBag {
+	if util.AboveUSDThreshold(usdValue, float64(config.Get().Styles.USDPerMoneyBag)) {
 		lines = append(lines, util.Moneybags(uint64(usdValue)))
 	}
 	fields := util.NewOrderedMap()
@@ -675,7 +678,7 @@ func scheduledOutbound(height int64, events []map[string]string) {
 		inboundUSDValue := util.USDValue(height, inboundCoin)
 		fields.Set("Inbound Amount", fmt.Sprintf(
 			"%f %s (%s)",
-			float64(inboundCoin.Amount.Uint64())/common.One,
+			util.AmountToFloat64(inboundCoin.Amount),
 			inboundCoin.Asset,
 			util.USDValueString(height, inboundCoin),
 		))
@@ -691,7 +694,7 @@ func scheduledOutbound(height int64, events []map[string]string) {
 
 		// skip if delta below threshold and below the broader usd value threshold
 		if deltaBasisPoints < config.Get().Thresholds.SwapDelta.BasisPoints &&
-			uint64(inboundUSDValue) < config.Get().Thresholds.USDValue+totalCloutUSD {
+			util.BelowUSDThreshold(inboundUSDValue, float64(config.Get().Thresholds.USDValue)+totalCloutUSD) {
 			return
 		}
 
@@ -701,7 +704,7 @@ func scheduledOutbound(height int64, events []map[string]string) {
 			level = notify.Danger
 		}
 		fields.Set("Delta", deltaStr)
-	} else if uint64(usdValue) < config.Get().Thresholds.USDValue+totalCloutUSD {
+	} else if util.BelowUSDThreshold(usdValue, float64(config.Get().Thresholds.USDValue)+totalCloutUSD) {
 		// skip when no delta and below the broader usd value threshold
 		return
 	}
@@ -755,7 +758,7 @@ func scheduledOutbound(height int64, events []map[string]string) {
 		}
 		fields.Set(amountField, fmt.Sprintf(
 			"%f %s (%s)",
-			float64(coin.Amount.Uint64())/common.One,
+			util.AmountToFloat64(coin.Amount),
 			coin.Asset,
 			util.USDValueString(height, coin),
 		))
@@ -838,13 +841,13 @@ func LargeTransfers(block *thorscan.BlockResponse) {
 		}
 
 		for _, msg := range tx.Tx.GetMsgs() {
-			amount := uint64(0)
+			amount := cosmos.ZeroUint()
 			var fromAddr, toAddr string
 			switch m := msg.(type) {
 			case *thorchain.MsgSend:
 				for _, coin := range m.Amount {
 					if coin.Denom == "rune" {
-						amount = coin.Amount.Uint64()
+						amount = cosmos.NewUintFromBigInt(coin.Amount.BigInt())
 					}
 				}
 				fromAddr = m.FromAddress.String()
@@ -852,7 +855,7 @@ func LargeTransfers(block *thorscan.BlockResponse) {
 			case *bank.MsgSend:
 				for _, coin := range m.Amount {
 					if coin.Denom == "rune" {
-						amount = coin.Amount.Uint64()
+						amount = cosmos.NewUintFromBigInt(coin.Amount.BigInt())
 					}
 				}
 				fromAddr = m.FromAddress
@@ -862,7 +865,8 @@ func LargeTransfers(block *thorscan.BlockResponse) {
 			}
 
 			// skip small transfers
-			if amount < config.Get().Thresholds.RuneTransferValue*common.One {
+			threshold := cosmos.NewUint(config.Get().Thresholds.RuneTransferValue).MulUint64(common.One)
+			if amount.LT(threshold) {
 				continue
 			}
 
@@ -877,7 +881,7 @@ func LargeTransfers(block *thorscan.BlockResponse) {
 			if len(matches) > 0 {
 				title := fmt.Sprintf(
 					"External Migration `%s` (%s RUNE)",
-					txWithMemo.GetMemo(), util.FormatLocale(amount/common.One),
+					txWithMemo.GetMemo(), util.FormatLocale(util.AmountToFloat64(amount)),
 				)
 				fields.Set(
 					"Links",
@@ -890,8 +894,8 @@ func LargeTransfers(block *thorscan.BlockResponse) {
 			// otherwise this is just a large transfer
 			title := fmt.Sprintf(
 				"Large Transfer >> %s RUNE (%s)",
-				util.FormatLocale(amount/common.One),
-				util.USDValueString(block.Header.Height, common.NewCoin(common.RuneAsset(), cosmos.NewUint(amount))),
+				util.FormatLocale(util.AmountToFloat64(amount)),
+				util.USDValueString(block.Header.Height, common.NewCoin(common.RuneAsset(), amount)),
 			)
 
 			// use known address labels in alert
@@ -1076,13 +1080,13 @@ func NewNode(block *thorscan.BlockResponse) {
 			}
 
 			for _, msg := range tx.Tx.GetMsgs() {
-				amount := uint64(0)
+				amount := cosmos.ZeroUint()
 				operator := ""
 				switch msg := msg.(type) {
 				case *thorchain.MsgDeposit:
 					for _, coin := range msg.Coins {
 						if coin.Asset.Equals(common.RuneAsset()) {
-							amount = coin.Amount.Uint64()
+							amount = coin.Amount
 						}
 					}
 					operator = msg.Signer.String()
@@ -1093,7 +1097,7 @@ func NewNode(block *thorscan.BlockResponse) {
 
 					for _, coin := range msg.Amount {
 						if coin.Denom == "rune" {
-							amount = coin.Amount.Uint64()
+							amount = cosmos.NewUintFromBigInt(coin.Amount.BigInt())
 						}
 					}
 					operator = msg.FromAddress.String()
@@ -1105,7 +1109,7 @@ func NewNode(block *thorscan.BlockResponse) {
 
 					for _, coin := range msg.Amount {
 						if coin.Denom == "rune" {
-							amount = coin.Amount.Uint64()
+							amount = cosmos.NewUintFromBigInt(coin.Amount.BigInt())
 						}
 					}
 					operator = msg.FromAddress
@@ -1119,7 +1123,7 @@ func NewNode(block *thorscan.BlockResponse) {
 				fields.Set("Hash", tx.Hash)
 				fields.Set("Operator", fmt.Sprintf("`%s`", operator))
 				fields.Set("Node", fmt.Sprintf("`%s`", event["address"][len(event["address"])-4:]))
-				fields.Set("Amount", fmt.Sprintf("%s RUNE", util.FormatLocale(float64(amount)/common.One)))
+				fields.Set("Amount", fmt.Sprintf("%s RUNE", util.FormatLocale(util.AmountToFloat64(amount))))
 				notify.Notify(config.Get().Notifications.Activity, title, block.Header.Height, nil, notify.Info, fields)
 			}
 		}
@@ -1144,14 +1148,14 @@ txs:
 			}
 
 			for _, msg := range tx.Tx.GetMsgs() {
-				amount := uint64(0)
+				amount := cosmos.ZeroUint()
 				provider := ""
 				memo := ""
 				switch msg := msg.(type) {
 				case *thorchain.MsgDeposit:
 					for _, coin := range msg.Coins {
 						if coin.Asset.Equals(common.RuneAsset()) {
-							amount = coin.Amount.Uint64()
+							amount = coin.Amount
 						}
 					}
 					provider = msg.Signer.String()
@@ -1163,7 +1167,7 @@ txs:
 
 					for _, coin := range msg.Amount {
 						if coin.Denom == "rune" {
-							amount = coin.Amount.Uint64()
+							amount = cosmos.NewUintFromBigInt(coin.Amount.BigInt())
 						}
 					}
 					provider = msg.FromAddress.String()
@@ -1179,7 +1183,7 @@ txs:
 
 					for _, coin := range msg.Amount {
 						if coin.Denom == "rune" {
-							amount = coin.Amount.Uint64()
+							amount = cosmos.NewUintFromBigInt(coin.Amount.BigInt())
 						}
 					}
 					provider = msg.FromAddress
@@ -1198,7 +1202,7 @@ txs:
 				fields.Set("Hash", tx.Hash)
 				fields.Set("Provider", fmt.Sprintf("`%s`", provider))
 				fields.Set("Memo", fmt.Sprintf("`%s`", memo))
-				fields.Set("Amount", util.FormatLocale(float64(amount)/common.One))
+				fields.Set("Amount", util.FormatLocale(util.AmountToFloat64(amount)))
 
 				// extract node address from memo
 				m, err := thorchain.ParseMemo(common.LatestVersion, memo)
@@ -1228,8 +1232,8 @@ txs:
 					addNodeInfo(memo.NodeAddress.String())
 				case thorchain.UnbondMemo:
 					addNodeInfo(memo.NodeAddress.String())
-					unbondAmount := cosmos.NewUintFromString(event["amount"]).Uint64()
-					fields.Set("Unbond Amount", util.FormatLocale(float64(unbondAmount)/common.One))
+					unbondAmount := cosmos.NewUintFromString(event["amount"])
+					fields.Set("Unbond Amount", util.FormatLocale(util.AmountToFloat64(unbondAmount)))
 				}
 
 				notify.Notify(config.Get().Notifications.Activity, title, block.Header.Height, nil, notify.Info, fields)
@@ -1332,7 +1336,7 @@ func FailedRefunds(block *thorscan.BlockResponse) {
 		fields.Set("Inbound Memo", fmt.Sprintf("`%s`", event["memo"]))
 		fields.Set("Amount", fmt.Sprintf(
 			"%f %s (%s)",
-			float64(coin.Amount.Uint64())/common.One,
+			util.AmountToFloat64(coin.Amount),
 			coin.Asset,
 			util.USDValueString(block.Header.Height, coin),
 		))
@@ -1363,8 +1367,8 @@ func THORNameRegistrations(block *thorscan.BlockResponse) {
 			}
 
 			// extract values
-			registrationFee := cosmos.NewUintFromString(event["registration_fee"]).Uint64()
-			fundAmount := cosmos.NewUintFromString(event["fund_amount"]).Uint64()
+			registrationFee := cosmos.NewUintFromString(event["registration_fee"])
+			fundAmount := cosmos.NewUintFromString(event["fund_amount"])
 			expire := cosmos.NewUintFromString(event["expire"]).Uint64()
 			expireDuration := time.Duration(expire-uint64(block.Header.Height)) * constants.ThorchainBlockTime
 
@@ -1372,8 +1376,8 @@ func THORNameRegistrations(block *thorscan.BlockResponse) {
 			fields := util.NewOrderedMap()
 			fields.Set("THORName", fmt.Sprintf("`%s`", event["name"]))
 			fields.Set("Expiration", fmt.Sprintf("`%d` (%s)", expire, util.FormatDuration(expireDuration)))
-			fields.Set("Registration Fee", util.FormatLocale(float64(registrationFee)/common.One))
-			fields.Set("Fund Amount", util.FormatLocale(float64(fundAmount)/common.One))
+			fields.Set("Registration Fee", util.FormatLocale(util.AmountToFloat64(registrationFee)))
+			fields.Set("Fund Amount", util.FormatLocale(util.AmountToFloat64(fundAmount)))
 
 			for _, msg := range tx.Tx.GetMsgs() {
 				switch m := msg.(type) {
@@ -1437,14 +1441,14 @@ func LargeHighSlipSwaps(block *thorscan.BlockResponse) {
 			log.Panic().Str("coin", event["coin"]).Err(err).Msg("unable to parse streaming swap coin")
 		}
 		usdValue := util.USDValue(block.Header.Height, coin)
-		if uint64(usdValue) < config.Get().Thresholds.USDValue {
+		if util.BelowUSDThreshold(usdValue, float64(config.Get().Thresholds.USDValue)) {
 			continue
 		}
 
 		// build notification
 		title := "High Slip Swap"
 		lines := []string{}
-		if uint64(usdValue) > config.Get().Styles.USDPerMoneyBag {
+		if util.AboveUSDThreshold(usdValue, float64(config.Get().Styles.USDPerMoneyBag)) {
 			lines = append(lines, util.Moneybags(uint64(usdValue)))
 		}
 		fields := util.NewOrderedMap()
@@ -1452,7 +1456,7 @@ func LargeHighSlipSwaps(block *thorscan.BlockResponse) {
 		fields.Set("Hash", event["id"])
 		fields.Set("Amount", fmt.Sprintf(
 			"%f %s (%s)",
-			float64(coin.Amount.Uint64())/common.One,
+			util.AmountToFloat64(coin.Amount),
 			coin.Asset,
 			util.USDValueString(block.Header.Height, coin),
 		))

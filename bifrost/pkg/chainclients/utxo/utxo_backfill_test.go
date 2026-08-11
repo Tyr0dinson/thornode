@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -1590,6 +1591,20 @@ func (s *CoverageBackfillSuite) TestGetGas(c *C) {
 	// For inbound (gas), vout sum is 0.1
 	// Both should be positive gas values
 	c.Assert(gas2[0].Amount.GT(cosmos.ZeroUint()), Equals, true)
+
+	// Transparent UTXO chains cannot produce more outputs than inputs. Keep
+	// rejecting this for non-ZEC inbounds rather than applying ZEC's unshielding
+	// fallback to every chain.
+	tx3 := &btcjson.TxRawResult{
+		Vin: []btcjson.Vin{
+			{Txid: "5b0876dcc027d2f0c671fc250460ee388df39697c3ff082007b6ddd9cb9a7513", Vout: 0},
+		},
+		Vout: []btcjson.Vout{
+			{Value: 1},
+		},
+	}
+	_, err = s.client.getGas(tx3, true)
+	c.Assert(err, ErrorMatches, "transaction outputs exceed inputs")
 }
 
 func (s *CoverageBackfillSuite) TestIsBlockScannerHealthy(c *C) {
@@ -1711,6 +1726,39 @@ func (s *SignerInternalSuite) TestGetGasCoinWithStoredFee(c *C) {
 	gas := s.client.getGasCoin(tx, 100)
 	c.Assert(gas.Asset, Equals, common.BTCAsset)
 	c.Assert(gas.Amount.Uint64() > 0, Equals, true)
+}
+
+func (s *SignerInternalSuite) TestFeeLimits(c *C) {
+	maxFee, minRelayFee, err := feeLimits(250, 100, 1000)
+	c.Assert(err, IsNil)
+	c.Check(maxFee, Equals, uint64(25_000))
+	c.Check(minRelayFee, Equals, uint64(250))
+
+	// Relay fees round up to a whole native base unit.
+	maxFee, minRelayFee, err = feeLimits(251, 100, 1)
+	c.Assert(err, IsNil)
+	c.Check(maxFee, Equals, uint64(25_100))
+	c.Check(minRelayFee, Equals, uint64(1))
+
+	_, _, err = feeLimits(0, 100, 1000)
+	c.Check(err, ErrorMatches, "transaction size must be positive.*")
+
+	_, _, err = feeLimits(250, 0, 1000)
+	c.Check(err, ErrorMatches, "max sats per vbyte must be positive.*")
+	_, _, err = feeLimits(250, -1, 1000)
+	c.Check(err, ErrorMatches, "max sats per vbyte must be positive.*")
+
+	_, _, err = feeLimits(math.MaxInt64, math.MaxInt64, 0)
+	c.Check(err, ErrorMatches, "maximum fee does not fit uint64.*")
+	_, _, err = feeLimits(2000, 1, math.MaxUint64)
+	c.Check(err, ErrorMatches, "minimum relay fee does not fit uint64.*")
+
+	_, _, err = feeLimits(1000, 1, 2000)
+	c.Check(err, ErrorMatches, "minimum relay fee exceeds configured maximum fee.*")
+
+	c.Check(clampFeeSats(500, 250, 1000), Equals, uint64(500))
+	c.Check(clampFeeSats(100, 250, 1000), Equals, uint64(250))
+	c.Check(clampFeeSats(1500, 250, 1000), Equals, uint64(1000))
 }
 
 func (s *SignerInternalSuite) TestIsSelfTransactionWithBlockMeta(c *C) {

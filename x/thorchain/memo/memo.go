@@ -343,6 +343,15 @@ func FetchAddress(ctx cosmos.Context, keeper keeper.Keeper, name string, chain c
 	}
 
 	parts := strings.SplitN(name, ".", 2)
+	xecPrefix := common.XECChain.AddressPrefix(common.CurrentChainNetwork)
+	if strings.EqualFold(parts[0], xecPrefix) {
+		// A prefixed CashAddr is split at ':' by the memo grammar. Never let
+		// its prefix resolve as a THORName and silently redirect the address.
+		return common.NoAddress, fmt.Errorf(
+			"%s is a reserved XEC address prefix; use a prefixless XEC address in memos",
+			parts[0],
+		)
+	}
 	if len(parts) > 1 {
 		chain, err = common.NewChain(parts[1])
 		if err != nil {

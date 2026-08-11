@@ -243,6 +243,7 @@ services:
       BIFROST_CHAINS_GAIA_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
       BIFROST_CHAINS_LTC_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
       BIFROST_CHAINS_BASE_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
+      BIFROST_CHAINS_XEC_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
       BIFROST_CHAINS_XRP_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
 
       # maintain historical gas behavior for hard-coded smoke test values
@@ -465,6 +466,7 @@ services:
     depends_on:
       - bitcoin
       - bitcoin-cash
+      - xec
       - dogecoin
       - gaia
       - litecoin
@@ -500,6 +502,7 @@ services:
     depends_on:
       - bitcoin
       - bitcoin-cash
+      - xec
       - dogecoin
       - gaia
       - litecoin
@@ -535,6 +538,7 @@ services:
     depends_on:
       - bitcoin
       - bitcoin-cash
+      - xec
       - dogecoin
       - gaia
       - litecoin

@@ -17,12 +17,14 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/mock"
+	sharedutxo "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/cmd"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -97,6 +99,65 @@ func (s *ZcashSuite) SetUpTest(c *C) {
 func (s *ZcashSuite) TearDownTest(_ *C) {
 	s.chainRpc.Close()
 	s.thorApi.Close()
+}
+
+func unshieldedZECInbound() btcjson.TxRawResult {
+	const txID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	return btcjson.TxRawResult{
+		Txid: txID,
+		Hash: txID,
+		Vin: []btcjson.Vin{
+			{
+				Txid: "500468e8f504eaeee3c53f826dac132dbff2abf824b5361d10d712a199917d65",
+				Vout: 0,
+			},
+		},
+		Vout: []btcjson.Vout{
+			{
+				Value: 0.3,
+				ScriptPubKey: btcjson.ScriptPubKeyResult{
+					Hex:       "76a914440d7ad35e8b509a2c09e6b910af478cc56b288388ac",
+					Type:      "pubkeyhash",
+					ReqSigs:   1,
+					Addresses: []string{"t1Q5S6yLTcazp18rkfzi9wSNF4HD6W9k1zH"},
+				},
+			},
+		},
+	}
+}
+
+func (s *ZcashSuite) TestGetGasAllowsUnshieldedInbound(c *C) {
+	tx := unshieldedZECInbound()
+
+	gas, err := s.client.getGas(&tx, true)
+	c.Assert(err, IsNil)
+	c.Assert(gas, HasLen, 1)
+	c.Assert(gas[0].Asset, Equals, common.ZECAsset)
+	c.Assert(gas[0].Amount.Equal(cosmos.OneUint()), Equals, true)
+
+	_, err = s.client.getGas(&tx, false)
+	c.Assert(err, ErrorMatches, "transaction outputs exceed inputs")
+}
+
+func (s *ZcashSuite) TestExtractTxsObservesUnshieldedInbound(c *C) {
+	const vaultAddress = "t1Q5S6yLTcazp18rkfzi9wSNF4HD6W9k1zH"
+	s.client.asgardCache.Store(&sharedutxo.AsgardCache{
+		Addresses: []common.Address{common.Address(vaultAddress)},
+		FetchedAt: time.Now(),
+	})
+	tx := unshieldedZECInbound()
+	block := &btcjson.GetBlockVerboseTxResult{
+		Height: 3203735,
+		Tx:     []btcjson.TxRawResult{tx},
+	}
+
+	txIn, err := s.client.extractTxs(block)
+	c.Assert(err, IsNil)
+	c.Assert(txIn.TxArray, HasLen, 1)
+	c.Assert(txIn.TxArray[0].Tx, Equals, tx.Txid)
+	c.Assert(txIn.TxArray[0].To, Equals, vaultAddress)
+	c.Assert(txIn.TxArray[0].Gas, HasLen, 1)
+	c.Assert(txIn.TxArray[0].Gas[0].Amount.Equal(cosmos.OneUint()), Equals, true)
 }
 
 func (s *ZcashSuite) TestGetMemo(c *C) {

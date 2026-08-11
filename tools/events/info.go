@@ -773,7 +773,7 @@ func TORAnchorDrift(block *thorscan.BlockResponse) {
 		if len(shortAsset) < maxFieldLenth {
 			shortAsset = strings.Repeat(" ", maxFieldLenth-len(shortAsset)) + shortAsset
 		}
-		price := float64(cosmos.NewUintFromString(pool.AssetTorPrice).Uint64()) / common.One
+		price := util.AmountToFloat64(cosmos.NewUintFromString(pool.AssetTorPrice))
 		fields.Set(shortAsset, util.FormatUSD(price))
 	}
 

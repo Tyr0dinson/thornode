@@ -16,6 +16,40 @@ import (
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 )
 
+// amountPrecisionUnit returns the smallest THORChain-unit amount representable
+// by the asset's external chain. The simulation only knows chain-level
+// precision for gas assets; other assets retain THORChain's full precision.
+func amountPrecisionUnit(asset common.Asset) cosmos.Uint {
+	if !asset.IsGasAsset() {
+		return cosmos.OneUint()
+	}
+
+	decimals := asset.Chain.GetGasAssetDecimal()
+	if decimals >= common.THORChainDecimals {
+		return cosmos.OneUint()
+	}
+
+	return cosmos.PowerOfTen(uint64(common.THORChainDecimals - decimals))
+}
+
+// FloorAmount rounds a simulated amount down to the asset's external-chain
+// precision. This keeps balance-derived amounts within the available balance.
+func FloorAmount(asset common.Asset, amount cosmos.Uint) cosmos.Uint {
+	unit := amountPrecisionUnit(asset)
+	return amount.Sub(amount.Mod(unit))
+}
+
+// CeilAmount rounds a simulated amount up to the asset's external-chain
+// precision. This keeps quote minimums at or above the requested minimum.
+func CeilAmount(asset common.Asset, amount cosmos.Uint) cosmos.Uint {
+	unit := amountPrecisionUnit(asset)
+	remainder := amount.Mod(unit)
+	if remainder.IsZero() {
+		return amount
+	}
+	return amount.Add(unit.Sub(remainder))
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////
 // Deposit L1
 ////////////////////////////////////////////////////////////////////////////////////////

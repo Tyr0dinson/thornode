@@ -15,6 +15,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	openapi "gitlab.com/thorchain/thornode/v3/openapi/gen"
+	simcommon "gitlab.com/thorchain/thornode/v3/test/simulation/actors/common"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/evm"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/thornode"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
@@ -132,13 +133,13 @@ func retryAmountAtRecommendedMin(currentAmount, minAmount sdkmath.Uint) sdkmath.
 }
 
 func getSwapQuoteWithRecommendedMin(from, to common.Asset, amount, maxAmount sdkmath.Uint, destination common.Address, extended bool) (openapi.QuoteSwapResponse, sdkmath.Uint, error) {
-	currentAmount := amount
+	currentAmount := simcommon.FloorAmount(from, amount)
 	for attempt := 0; attempt < swapQuoteRecommendedMinAttempts(from, to); attempt++ {
 		quote, err := thornode.GetSwapQuote(from, to, currentAmount, destination, extended)
 		if err != nil {
 			minAmount, ok := getRecommendedMinAmountInFromError(err)
 			if ok {
-				nextAmount := retryAmountAtRecommendedMin(currentAmount, minAmount)
+				nextAmount := simcommon.CeilAmount(from, retryAmountAtRecommendedMin(currentAmount, minAmount))
 				if !maxAmount.IsZero() && nextAmount.GT(maxAmount) {
 					return openapi.QuoteSwapResponse{}, nextAmount, fmt.Errorf("recommended minimum swap amount exceeds spendable balance")
 				}
@@ -150,10 +151,11 @@ func getSwapQuoteWithRecommendedMin(from, to common.Asset, amount, maxAmount sdk
 
 		minAmount, ok := getRecommendedMinAmountIn(quote)
 		if ok && currentAmount.LT(minAmount) {
-			if !maxAmount.IsZero() && minAmount.GT(maxAmount) {
-				return openapi.QuoteSwapResponse{}, minAmount, fmt.Errorf("recommended minimum swap amount exceeds spendable balance")
+			nextAmount := simcommon.CeilAmount(from, minAmount)
+			if !maxAmount.IsZero() && nextAmount.GT(maxAmount) {
+				return openapi.QuoteSwapResponse{}, nextAmount, fmt.Errorf("recommended minimum swap amount exceeds spendable balance")
 			}
-			currentAmount = minAmount
+			currentAmount = nextAmount
 			continue
 		}
 
@@ -281,6 +283,11 @@ func outboundAmountPlusGas(out openapi.Tx, action openapi.TxOutItem, to common.A
 }
 
 func (a *SwapActor) updateSwapAmount(next sdkmath.Uint, reason string) error {
+	original := next
+	next = simcommon.FloorAmount(a.from, next)
+	if !original.IsZero() && next.IsZero() {
+		return fmt.Errorf("%s is below the minimum precision for %s", reason, a.from)
+	}
 	if next.GT(a.fromBalance) {
 		return fmt.Errorf("%s %s exceeds user balance %s", reason, next, a.fromBalance)
 	}

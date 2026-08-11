@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"fmt"
+	"math/big"
 	"strings"
 
 	"cosmossdk.io/math"
@@ -164,6 +165,48 @@ func (s *HelperSuite) TestTelem(c *C) {
 	value := cosmos.NewUint(12047733)
 	c.Assert(value.Uint64(), Equals, uint64(12047733))
 	c.Assert(telem(value), Equals, float32(0.12047733))
+	c.Assert(telemUnits(value), Equals, float32(12047733))
+
+	maxUint64 := new(big.Int).SetUint64(^uint64(0))
+	aboveUint64 := new(big.Int).Add(new(big.Int).Set(maxUint64), big.NewInt(1))
+	c.Check(telem(cosmos.NewUintFromBigInt(maxUint64)) > 0, Equals, true)
+	c.Check(telem(cosmos.NewUintFromBigInt(aboveUint64)), Equals, float32(0))
+	c.Check(telemUnits(cosmos.NewUintFromBigInt(aboveUint64)), Equals, float32(0))
+
+	maxInt64 := new(big.Int).Rsh(new(big.Int).Set(maxUint64), 1)
+	aboveInt64 := new(big.Int).Add(maxInt64, big.NewInt(1))
+	c.Check(telemInt(cosmos.NewIntFromBigInt(aboveInt64)), Equals, float32(0))
+}
+
+type telemetryKeeperHelper struct {
+	keeper.Keeper
+	balance              cosmos.Coins
+	listValidatorsCalled bool
+}
+
+func (h *telemetryKeeperHelper) GetBalance(_ cosmos.Context, _ cosmos.AccAddress) cosmos.Coins {
+	return h.balance
+}
+
+func (h *telemetryKeeperHelper) ListValidatorsWithBond(_ cosmos.Context) (NodeAccounts, error) {
+	h.listValidatorsCalled = true
+	return nil, nil
+}
+
+func (s *HelperSuite) TestEndBlockTelemetryContinuesAfterLargeModuleBalance(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	aboveUint64 := new(big.Int).Lsh(big.NewInt(1), 64)
+	h := &telemetryKeeperHelper{
+		Keeper: k,
+		balance: cosmos.NewCoins(cosmos.NewCoin(
+			common.RuneNative.Native(),
+			cosmos.NewIntFromBigInt(aboveUint64),
+		)),
+	}
+
+	err := emitEndBlockTelemetry(ctx, NewDummyMgrWithKeeper(h))
+	c.Check(err, IsNil)
+	c.Check(h.listValidatorsCalled, Equals, true)
 }
 
 type addGasFeesKeeperHelper struct {

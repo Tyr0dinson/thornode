@@ -57,6 +57,7 @@ func (s *BitcoinCashSuite) SetUpSuite(c *C) {
 const (
 	bchCapturedFeeHeight    = int64(102)
 	bchCapturedFeeBlockHash = "43159289e4b6d64cf809068056f82de496c117b9fb19fe5557fcf651bb74ff0e"
+	bchCapturedFeeTxID      = "ace2c8eeb7c6a57d5ba18c5db686673dfe5c8cb1204cbf77abbf577e89955620"
 )
 
 type bchRPCFixture struct {
@@ -81,6 +82,13 @@ func bchRPCFixtureKey(method string, params []interface{}) string {
 			hash, ok := params[0].(string)
 			if ok && hash == bchCapturedFeeBlockHash {
 				return "getblockstats-captured-fee"
+			}
+		}
+	case "getblock":
+		if len(params) > 0 {
+			hash, ok := params[0].(string)
+			if ok && hash == bchCapturedFeeBlockHash {
+				return "getblock-captured-fee"
 			}
 		}
 	case "getrawtransaction":
@@ -113,9 +121,10 @@ func init() {
 		return data
 	}
 
-	bchChainRPCs["getnetworkinfo"] = loadFixture("../../../../test/fixtures/bch/getnetworkinfo.json")
+	bchChainRPCs["getnetworkinfo"] = loadFixture("../../../../test/fixtures/bch/getnetworkinfo-capture.json")
 	bchChainRPCs["getblockhash"] = loadFixture("../../../../test/fixtures/bch/blockhash.json")
 	bchChainRPCs["getblock"] = loadFixture("../../../../test/fixtures/bch/block_verbose.json")
+	bchChainRPCs["getblock-captured-fee"] = loadFixture("../../../../test/fixtures/bch/blockstats-block.json")
 	bchChainRPCs["getblockcount"] = loadFixture("../../../../test/fixtures/bch/blockcount.json")
 	bchChainRPCs["importaddress"] = loadFixture("../../../../test/fixtures/bch/importaddress.json")
 	bchChainRPCs["listunspent"] = loadFixture("../../../../test/fixtures/bch/listunspent.json")
@@ -131,6 +140,7 @@ func init() {
 	bchChainRPCs["getrawtransaction-64ef2f4679fb90af42e8d963a5d85645d0fd86e5fe8ea4e69dbf2d444cb26528"] = loadFixture("../../../../test/fixtures/bch/tx-64ef.json")
 	bchChainRPCs["getrawtransaction-74ef2f4679fb90af42e8d963a5d85645d0fd86e5fe8ea4e69dbf2d444cb26528"] = loadFixture("../../../../test/fixtures/bch/tx-74ef.json")
 	bchChainRPCs["getrawtransaction-27de3e1865c098cd4fded71bae1e8236fd27ce5dce6e524a9ac5cd1a17b5c241"] = loadFixture("../../../../test/fixtures/bch/tx-c241.json")
+	bchChainRPCs["getrawtransaction-"+bchCapturedFeeTxID] = loadFixture("../../../../test/fixtures/bch/blockstats-tx.json")
 	bchChainRPCs["getrawtransaction"] = loadFixture("../../../../test/fixtures/bch/tx.json")
 }
 
@@ -322,67 +332,31 @@ func (s *BitcoinCashSuite) TestCapturedNetworkFee(c *C) {
 	}
 }
 
-func (s *BitcoinCashSuite) TestCapturedFeeFixturesAreLinked(c *C) {
-	type capturedResult struct {
-		Hash           string          `json:"hash"`
-		BlockHash      string          `json:"blockhash"`
-		BestBlockHash  string          `json:"bestblockhash"`
-		TxID           string          `json:"txid"`
-		Chain          string          `json:"chain"`
-		Subversion     string          `json:"subversion"`
-		Height         int64           `json:"height"`
-		Blocks         int64           `json:"blocks"`
-		Version        int64           `json:"version"`
-		Txs            int64           `json:"txs"`
-		AverageFeeRate json.RawMessage `json:"avgfeerate"`
-		TotalFee       json.RawMessage `json:"totalfee"`
-		RelayFee       json.RawMessage `json:"relayfee"`
-		Tx             json.RawMessage `json:"tx"`
-	}
-	type capturedEnvelope struct {
-		Result capturedResult  `json:"result"`
-		Error  json.RawMessage `json:"error"`
-	}
+func (s *BitcoinCashSuite) TestCapturedRPCFixturesDecode(c *C) {
+	// NewClient calls updateNetworkInfo, so this assertion proves the BCHN 29
+	// getnetworkinfo capture passed through the production amount converter.
+	c.Check(s.client.minRelayFeeSats.Load(), Equals, uint64(1_000))
 
-	loadCapture := func(name string) capturedEnvelope {
-		buf, err := os.ReadFile(filepath.Join("../../../../test/fixtures/bch", name))
-		c.Assert(err, IsNil)
-		var envelope capturedEnvelope
-		c.Assert(json.Unmarshal(buf, &envelope), IsNil)
-		c.Check(string(envelope.Error), Equals, "null")
-		return envelope
-	}
+	networkInfo, err := s.client.rpc.GetNetworkInfo()
+	c.Assert(err, IsNil)
+	c.Check(networkInfo.Version, Equals, int32(29_000_000))
+	c.Check(networkInfo.SubVersion, Equals, "/Bitcoin Cash Node:29.0.0(EB32.0)/")
 
-	stats := loadCapture("blockstats.json").Result
-	block := loadCapture("blockstats-block.json").Result
-	header := loadCapture("blockstats-header.json").Result
-	tx := loadCapture("blockstats-tx.json").Result
-	chainInfo := loadCapture("getblockchaininfo-capture.json").Result
-	networkInfo := loadCapture("getnetworkinfo-capture.json").Result
-
-	c.Check(stats.BlockHash, Equals, bchCapturedFeeBlockHash)
-	c.Check(stats.Height, Equals, bchCapturedFeeHeight)
-	c.Check(string(stats.AverageFeeRate), Equals, "0.00000001")
-	c.Check(string(stats.TotalFee), Equals, "0.00000225")
-	c.Check(stats.Txs, Equals, int64(2))
+	block, err := s.client.rpc.GetBlockVerboseTxs(bchCapturedFeeBlockHash)
+	c.Assert(err, IsNil)
 	c.Check(block.Hash, Equals, bchCapturedFeeBlockHash)
 	c.Check(block.Height, Equals, bchCapturedFeeHeight)
-	var blockTxs []struct {
-		TxID string `json:"txid"`
-	}
-	c.Assert(json.Unmarshal(block.Tx, &blockTxs), IsNil)
-	c.Assert(blockTxs, HasLen, 2)
-	c.Check(blockTxs[1].TxID, Equals, "ace2c8eeb7c6a57d5ba18c5db686673dfe5c8cb1204cbf77abbf577e89955620")
-	c.Check(header.Hash, Equals, bchCapturedFeeBlockHash)
-	c.Check(header.Height, Equals, bchCapturedFeeHeight)
+	c.Assert(block.Tx, HasLen, 2)
+	c.Check(block.Tx[1].Txid, Equals, bchCapturedFeeTxID)
+
+	tx, err := s.client.rpc.GetRawTransactionVerbose(bchCapturedFeeTxID)
+	c.Assert(err, IsNil)
+	c.Check(tx.Txid, Equals, bchCapturedFeeTxID)
 	c.Check(tx.BlockHash, Equals, bchCapturedFeeBlockHash)
-	c.Check(tx.TxID, Equals, "ace2c8eeb7c6a57d5ba18c5db686673dfe5c8cb1204cbf77abbf577e89955620")
-	c.Check(chainInfo.Chain, Equals, "regtest")
-	c.Check(chainInfo.Blocks, Equals, bchCapturedFeeHeight)
-	c.Check(chainInfo.BestBlockHash, Equals, bchCapturedFeeBlockHash)
-	c.Check(networkInfo.Version, Equals, int64(29000000))
-	c.Check(networkInfo.Subversion, Equals, "/Bitcoin Cash Node:29.0.0(EB32.0)/")
-	c.Check(string(networkInfo.RelayFee), Equals, "0.00001000")
+	c.Assert(tx.Vout, HasLen, 2)
+	outputAmount, err := s.client.rpc.ToBaseUnits(tx.Vout[0].Value)
+	c.Assert(err, IsNil)
+	c.Check(outputAmount.Equal(cosmos.NewUint(common.One)), Equals, true)
 }
 
 func (s *BitcoinCashSuite) TestGetSender(c *C) {

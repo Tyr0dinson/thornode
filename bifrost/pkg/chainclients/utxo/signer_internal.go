@@ -621,34 +621,27 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 		gasCoin = c.getGasCoin(tx, totalSize)
 	}
 
-	// maxFee in sats
-	maxFeeSats := totalSize * c.cfg.UTXO.MaxSatsPerVByte
+	maxFeeSats, minRelayFeeSats, err := feeLimits(
+		totalSize,
+		c.cfg.UTXO.MaxSatsPerVByte,
+		c.minRelayFeeSats.Load(),
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("calculate transaction fee limits: %w", err)
+	}
 	gasAmtSats, err := toUint64(gasCoin.Amount)
 	if err != nil {
 		return nil, nil, fmt.Errorf("convert gas amount to uint64: %w", err)
 	}
 
-	// make sure the transaction fee is not more than the max, otherwise it might reject the transaction
-	if gasAmtSats > uint64(maxFeeSats) {
-		diffSats := gasAmtSats - uint64(maxFeeSats) // in sats
-		c.log.Info().Msgf("gas amount: %d is larger than maximum fee: %d, diff: %d", gasAmtSats, uint64(maxFeeSats), diffSats)
-		gasAmtSats = uint64(maxFeeSats)
-	} else {
-		// getnetworkinfo.relayfee is a native amount per 1,000 vbytes.
-		minRelayFee := cosmos.NewUint(c.minRelayFeeSats.Load()).
-			MulUint64(uint64(totalSize)).
-			AddUint64(999).
-			QuoUint64(1000)
-		var minRelayFeeSats uint64
-		minRelayFeeSats, err = toUint64(minRelayFee)
-		if err != nil {
-			return nil, nil, fmt.Errorf("minimum relay fee does not fit uint64: %w", err)
-		}
-		if gasAmtSats < minRelayFeeSats {
-			diffStats := minRelayFeeSats - gasAmtSats
-			c.log.Info().Msgf("gas amount: %d is less than min relay fee: %d, diff remove from customer: %d", gasAmtSats, minRelayFeeSats, diffStats)
-			gasAmtSats = minRelayFeeSats
-		}
+	originalGasAmtSats := gasAmtSats
+	gasAmtSats = clampFeeSats(gasAmtSats, minRelayFeeSats, maxFeeSats)
+	if originalGasAmtSats > maxFeeSats {
+		diffSats := originalGasAmtSats - maxFeeSats
+		c.log.Info().Msgf("gas amount: %d is larger than maximum fee: %d, diff: %d", originalGasAmtSats, maxFeeSats, diffSats)
+	} else if originalGasAmtSats < minRelayFeeSats {
+		diffSats := minRelayFeeSats - originalGasAmtSats
+		c.log.Info().Msgf("gas amount: %d is less than min relay fee: %d, diff remove from customer: %d", originalGasAmtSats, minRelayFeeSats, diffSats)
 	}
 
 	// if the total gas spend is more than max gas , then we have to take away some from the amount pay to customer
@@ -737,6 +730,53 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 	}
 
 	return redeemTx, individualAmounts, nil
+}
+
+// feeLimits returns the configured maximum fee and the daemon relay minimum in
+// native base units. The relay fee is reported per 1,000 vbytes.
+func feeLimits(totalSize, maxSatsPerVByte int64, relayFeePerKvB uint64) (uint64, uint64, error) {
+	if totalSize <= 0 {
+		return 0, 0, fmt.Errorf("transaction size must be positive: %d", totalSize)
+	}
+	if maxSatsPerVByte <= 0 {
+		return 0, 0, fmt.Errorf("max sats per vbyte must be positive: %d", maxSatsPerVByte)
+	}
+
+	maxFee, err := toUint64(
+		cosmos.NewUint(uint64(totalSize)).MulUint64(uint64(maxSatsPerVByte)),
+	)
+	if err != nil {
+		return 0, 0, fmt.Errorf("maximum fee does not fit uint64: %w", err)
+	}
+
+	minRelayFee, err := toUint64(
+		cosmos.NewUint(relayFeePerKvB).
+			MulUint64(uint64(totalSize)).
+			AddUint64(vbytesPerKvB - 1).
+			QuoUint64(vbytesPerKvB),
+	)
+	if err != nil {
+		return 0, 0, fmt.Errorf("minimum relay fee does not fit uint64: %w", err)
+	}
+	if minRelayFee > maxFee {
+		return 0, 0, fmt.Errorf(
+			"minimum relay fee exceeds configured maximum fee: %d > %d",
+			minRelayFee,
+			maxFee,
+		)
+	}
+
+	return maxFee, minRelayFee, nil
+}
+
+func clampFeeSats(fee, minimum, maximum uint64) uint64 {
+	if fee > maximum {
+		return maximum
+	}
+	if fee < minimum {
+		return minimum
+	}
+	return fee
 }
 
 // MemoToScripts converts a memo to UTXO scripts.

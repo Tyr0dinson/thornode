@@ -1025,8 +1025,9 @@ type BifrostChainConfiguration struct {
 		// itself, so set this to 25 (not 24). Additionally, UTXOs are excluded if the combined
 		// chain length (ancestorcount + descendantcount - 1) would exceed the limit when adding
 		// our transaction, since Bitcoin Core validates the entire transaction package.
-		// BCH and XEC do not use Bitcoin Core's 25-transaction ancestor/descendant
-		// limit. A positive value enables a client-side limit; set to 0 to disable it.
+		// BCH and Bitcoin ABC 0.33.8, the pinned XEC daemon, do not use Bitcoin
+		// Core's 25-transaction ancestor/descendant count limit. A positive value
+		// enables a client-side limit; set to 0 to disable it.
 		MaxMempoolAncestors int64 `mapstructure:"max_mempool_ancestors"`
 	} `mapstructure:"utxo"`
 }
@@ -1039,9 +1040,35 @@ func (b *BifrostChainConfiguration) Validate() error {
 		return fmt.Errorf("invalid block scanner chain ID %q for %s: %w", b.BlockScanner.ChainID, b.ChainID, err)
 	}
 
-	// Validate MaxMempoolAncestors for UTXO chains
-	if b.ChainID.IsUTXO() && b.UTXO.MaxMempoolAncestors < 0 {
-		return fmt.Errorf("max_mempool_ancestors cannot be negative for %s: %d", b.ChainID, b.UTXO.MaxMempoolAncestors)
+	if b.ChainID.IsUTXO() {
+		if b.UTXO.MinSatsPerVByte < 0 {
+			return fmt.Errorf("min_sats_per_vbyte cannot be negative for %s: %d", b.ChainID, b.UTXO.MinSatsPerVByte)
+		}
+		if b.UTXO.DefaultSatsPerVByte <= 0 {
+			return fmt.Errorf("default_sats_per_vbyte must be positive for %s: %d", b.ChainID, b.UTXO.DefaultSatsPerVByte)
+		}
+		if b.UTXO.MaxSatsPerVByte <= 0 {
+			return fmt.Errorf("max_sats_per_vbyte must be positive for %s: %d", b.ChainID, b.UTXO.MaxSatsPerVByte)
+		}
+		if b.UTXO.MinSatsPerVByte > b.UTXO.DefaultSatsPerVByte {
+			return fmt.Errorf(
+				"min_sats_per_vbyte cannot exceed default_sats_per_vbyte for %s: %d > %d",
+				b.ChainID,
+				b.UTXO.MinSatsPerVByte,
+				b.UTXO.DefaultSatsPerVByte,
+			)
+		}
+		if b.UTXO.DefaultSatsPerVByte > b.UTXO.MaxSatsPerVByte {
+			return fmt.Errorf(
+				"default_sats_per_vbyte cannot exceed max_sats_per_vbyte for %s: %d > %d",
+				b.ChainID,
+				b.UTXO.DefaultSatsPerVByte,
+				b.UTXO.MaxSatsPerVByte,
+			)
+		}
+		if b.UTXO.MaxMempoolAncestors < 0 {
+			return fmt.Errorf("max_mempool_ancestors cannot be negative for %s: %d", b.ChainID, b.UTXO.MaxMempoolAncestors)
+		}
 	}
 	switch b.ChainID {
 	case common.BTCChain, common.LTCChain, common.DOGEChain:
@@ -1051,8 +1078,10 @@ func (b *BifrostChainConfiguration) Validate() error {
 			return fmt.Errorf("max_mempool_ancestors exceeds %s chain limit of 25: %d", b.ChainID, b.UTXO.MaxMempoolAncestors)
 		}
 	case common.BCHChain, common.XECChain:
-		// BCH and XEC have no chain-enforced count limit, so any non-negative
-		// client-side limit is valid. Zero disables the client-side check.
+		// BCH and Bitcoin ABC 0.33.8 have no chain-enforced ancestor/descendant
+		// count limit, so any non-negative client-side limit is valid. Zero
+		// disables the client-side check. Bitcoin ABC policy source:
+		// https://github.com/Bitcoin-ABC/bitcoin-abc/tree/v0.33.8/src/policy
 	}
 
 	if b.Disabled {

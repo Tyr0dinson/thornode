@@ -26,6 +26,8 @@ import (
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
 
+const vbytesPerKvB = 1000
+
 ////////////////////////////////////////////////////////////////////////////////////////
 // Address Checks
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -291,8 +293,8 @@ func (c *Client) floorFeeRate(feeRate uint64) uint64 {
 	minRelayFeeSats := c.minRelayFeeSats.Load()
 	if minRelayFeeSats > 0 {
 		// getnetworkinfo.relayfee is denominated per 1,000 virtual bytes.
-		relayFeeRate := minRelayFeeSats / 1000
-		if minRelayFeeSats%1000 != 0 {
+		relayFeeRate := minRelayFeeSats / vbytesPerKvB
+		if minRelayFeeSats%vbytesPerKvB != 0 {
 			relayFeeRate++
 		}
 		if feeRate < relayFeeRate {
@@ -1096,6 +1098,14 @@ func (c *Client) getGas(tx *btcjson.TxRawResult, isInbound bool) (common.Gas, er
 		sumVout += amount
 	}
 	if sumVout > sumVin {
+		if isInbound && c.cfg.ChainID.Equals(common.ZECChain) {
+			// A ZEC inbound can fund transparent outputs by unshielding value. The
+			// decoded transaction does not expose enough shielded-pool data to derive
+			// its actual fee here; ZEC network fee reporting uses ZIP-317 separately.
+			// Observed transactions require a non-zero gas coin, so use one zatoshi,
+			// the smallest deterministic valid placeholder.
+			return common.Gas{c.toThorCoin(cosmos.OneUint())}, nil
+		}
 		return nil, fmt.Errorf("transaction outputs exceed inputs")
 	}
 	totalGas := sumVin - sumVout

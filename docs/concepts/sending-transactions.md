@@ -13,7 +13,7 @@ You are ready to make the transaction and swap via THORChain.
 
 ### Memo less or equal 80 characters
 
-For UTXO-based chains (e.g., BTC, BCH, LTC, DOGE), transactions must follow a specific structure to be processed by THORChain. Ensure the following steps are completed to avoid transaction failures or loss of funds.
+For UTXO-based chains (e.g., BTC, BCH, XEC, LTC, DOGE), transactions must follow a specific structure to be processed by THORChain. Ensure the following steps are completed to avoid transaction failures or loss of funds.
 
 #### Checklist for UTXO Transactions
 
@@ -37,7 +37,7 @@ For UTXO-based chains (e.g., BTC, BCH, LTC, DOGE), transactions must follow a sp
   - [ ] split the resulting string into chunks of 40 characters each, append "00" to the last chunk until its length also matches 40 characters
   - [ ] for each hex encoded chunk, create a VOUT sending the [minimum allowed amount of sats](../../x/thorchain/querier_quotes.go#L39) for the specific chain to the script pub key: '0014' + `<chunk>`
 - [ ] Use a high enough `gas_rate` to be included
-- [ ] Do not send below the dust threshold (10k Sats BTC, BCH, LTC, 1m DOGE), exhaustive values can be found on the [Inbound Addresses](https://gateway.liquify.com/chain/thorchain_api/thorchain/inbound_addresses) endpoint
+- [ ] Do not send below the chain's dust threshold. For XEC, the threshold is 100 XEC (10,000 native units, or cents, on eCash and `10,000,000,000` in THORChain's 1e8 representation). Current values for every chain are available from the [Inbound Addresses](https://gateway.liquify.com/chain/thorchain_api/thorchain/inbound_addresses) endpoint.
 
 ### Examples using dummy txs
 

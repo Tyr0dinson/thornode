@@ -280,9 +280,6 @@ func (tos *TxOutStorage) cachedTryAddTxOutItem(ctx cosmos.Context, mgr Manager, 
 		sumOut = sumOut.Add(o.Coin.Amount)
 	}
 	if sumOut.LT(minOut) {
-		// **NOTE** this error string is utilized by the adv swap queue manager to
-		// catch the error. DO NOT change this error string without updating
-		// the adv swap queue manager as well
 		return false, fmt.Errorf("outbound amount does not meet requirements (%s/%s)", sumOut, minOut)
 	}
 

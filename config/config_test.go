@@ -479,10 +479,58 @@ func validChainConfig(chain common.Chain) BifrostChainConfiguration {
 		RPCHost: "localhost",
 	}
 	cfg.BlockScanner.ChainID = chain
+	if chain.IsUTXO() {
+		cfg.UTXO.MinSatsPerVByte = 1
+		cfg.UTXO.DefaultSatsPerVByte = 25
+		cfg.UTXO.MaxSatsPerVByte = 1000
+	}
 	if chain == common.TRONChain {
 		cfg.APIHost = "localhost"
 	}
 	return cfg
+}
+
+func (Test) TestValidateUTXOFeeRates(c *C) {
+	testCases := []struct {
+		name        string
+		minRate     int64
+		defaultRate int64
+		maxRate     int64
+		errPattern  string
+	}{
+		{"valid", 0, 1, 1, ""},
+		{"negative minimum", -1, 25, 1000, "min_sats_per_vbyte cannot be negative.*"},
+		{"zero default", 0, 0, 1000, "default_sats_per_vbyte must be positive.*"},
+		{"negative default", 0, -1, 1000, "default_sats_per_vbyte must be positive.*"},
+		{"zero maximum", 0, 25, 0, "max_sats_per_vbyte must be positive.*"},
+		{"negative maximum", 0, 25, -1, "max_sats_per_vbyte must be positive.*"},
+		{"minimum above default", 26, 25, 1000, "min_sats_per_vbyte cannot exceed default_sats_per_vbyte.*"},
+		{"default above maximum", 0, 1001, 1000, "default_sats_per_vbyte cannot exceed max_sats_per_vbyte.*"},
+	}
+
+	for _, tc := range testCases {
+		cfg := validChainConfig(common.XECChain)
+		cfg.UTXO.MinSatsPerVByte = tc.minRate
+		cfg.UTXO.DefaultSatsPerVByte = tc.defaultRate
+		cfg.UTXO.MaxSatsPerVByte = tc.maxRate
+		err := cfg.Validate()
+		if tc.errPattern == "" {
+			c.Check(err, IsNil, Commentf(tc.name))
+			continue
+		}
+		c.Check(err, ErrorMatches, tc.errPattern, Commentf(tc.name))
+	}
+
+	// Disabled chains still validate structural UTXO settings, just like the
+	// existing mempool-ancestor validation.
+	disabled := validChainConfig(common.XECChain)
+	disabled.Disabled = true
+	disabled.UTXO.MaxSatsPerVByte = 0
+	c.Check(disabled.Validate(), ErrorMatches, "max_sats_per_vbyte must be positive.*")
+
+	// Fee-rate validation is only meaningful for UTXO clients.
+	eth := validChainConfig(common.ETHChain)
+	c.Check(eth.Validate(), IsNil)
 }
 
 func (Test) TestValidateBTC(c *C) {

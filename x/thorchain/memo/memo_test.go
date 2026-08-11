@@ -736,7 +736,7 @@ func (s *MemoSuite) TestParse(c *C) {
 	c.Assert(err, NotNil)
 }
 
-func (s *MemoSuite) TestXECAddressPrefixRemainsAvailableAsTHORName(c *C) {
+func (s *MemoSuite) TestXECAddressPrefixCannotResolveAsTHORName(c *C) {
 	prefix := common.XECChain.AddressPrefix(common.CurrentChainNetwork)
 	prefixedAddress := "ecash:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cfrxuq9n3"
 	if common.CurrentChainNetwork == common.MockNet {
@@ -746,18 +746,26 @@ func (s *MemoSuite) TestXECAddressPrefixRemainsAvailableAsTHORName(c *C) {
 	xecAddress, err := common.NewAddress(prefixedAddress)
 	c.Assert(err, IsNil)
 	c.Assert(strings.Contains(xecAddress.String(), ":"), Equals, false)
+	resolved, err := FetchAddress(s.ctx, s.k, prefixedAddress, common.XECChain)
+	c.Assert(err, IsNil)
+	c.Check(resolved, Equals, xecAddress)
 
 	s.k.SetTHORName(s.ctx, types.NewTHORName(prefix, 50, []types.THORNameAlias{
 		{Chain: common.XECChain, Address: xecAddress},
 	}))
 
-	resolved, err := FetchAddress(s.ctx, s.k, prefix, common.XECChain)
-	c.Assert(err, IsNil)
-	c.Check(resolved, Equals, xecAddress)
+	resolved, err = FetchAddress(s.ctx, s.k, prefix, common.XECChain)
+	c.Check(err, ErrorMatches, ".*reserved XEC address prefix.*")
+	c.Check(resolved, Equals, common.NoAddress)
 
-	parsed, err := ParseMemoWithTHORNames(s.ctx, s.k, "=:XEC.XEC:"+prefix+":0")
-	c.Assert(err, IsNil)
-	c.Check(parsed.GetDestination(), Equals, xecAddress)
+	resolved, err = FetchAddress(s.ctx, s.k, strings.ToUpper(prefix)+".XEC", common.BTCChain)
+	c.Check(err, ErrorMatches, ".*reserved XEC address prefix.*")
+	c.Check(resolved, Equals, common.NoAddress)
+
+	// The official prefixed CashAddr form is still accepted outside memos, but
+	// its ':' separator makes it invalid inside the colon-delimited grammar.
+	_, err = ParseMemoWithTHORNames(s.ctx, s.k, "+:XEC.XEC:"+prefixedAddress)
+	c.Check(err, ErrorMatches, "(?s).*reserved XEC address prefix.*")
 }
 
 func (s *MemoSuite) TestParseTHORNameMemo(c *C) {
@@ -1210,9 +1218,15 @@ func (s *MemoSuite) TestReferenceWriteMemoValidation(c *C) {
 	c.Assert(err, Not(IsNil))
 	c.Assert(strings.Contains(err.Error(), "embedded memo is invalid"), Equals, true)
 
-	// Test invalid embedded memo - completely malformed
-	invalidMemo3 := "reference:ETH:NOTAMEMO"
+	// Test invalid embedded memo - all fields empty
+	invalidMemo3 := "reference:ETH:=:::"
 	_, err = ParseMemoWithTHORNames(ctx, k, invalidMemo3)
+	c.Assert(err, Not(IsNil))
+	c.Assert(strings.Contains(err.Error(), "embedded memo is invalid"), Equals, true)
+
+	// Test invalid embedded memo - completely malformed
+	invalidMemo4 := "reference:ETH:NOTAMEMO"
+	_, err = ParseMemoWithTHORNames(ctx, k, invalidMemo4)
 	c.Assert(err, Not(IsNil))
 	c.Assert(strings.Contains(err.Error(), "embedded memo is invalid"), Equals, true)
 }

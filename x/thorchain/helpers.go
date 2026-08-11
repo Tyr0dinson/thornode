@@ -786,6 +786,13 @@ func telem(input cosmos.Uint) float32 {
 	return float32(i) / 100000000
 }
 
+func telemUnits(input cosmos.Uint) float32 {
+	if !input.BigInt().IsUint64() {
+		return 0
+	}
+	return float32(input.Uint64())
+}
+
 func telemInt(input cosmos.Int) float32 {
 	if !input.BigInt().IsInt64() {
 		return 0
@@ -809,7 +816,7 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 	}
 
 	telemetry.SetGauge(telem(network.BondRewardRune), "thornode", "network", "bond_reward_rune")
-	telemetry.SetGauge(float32(network.TotalBondUnits.Uint64()), "thornode", "network", "total_bond_units")
+	telemetry.SetGauge(telemUnits(network.TotalBondUnits), "thornode", "network", "total_bond_units")
 
 	// emit protocol owned liquidity data
 	pol, err := mgr.Keeper().GetPOL(ctx)
@@ -834,7 +841,7 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 			denom := telemetry.NewLabel("denom", coin.Denom)
 			telemetry.SetGaugeWithLabels(
 				[]string{"thornode", "module", "balance"},
-				telem(cosmos.NewUint(coin.Amount.Uint64())),
+				telem(cosmos.NewUintFromBigInt(coin.Amount.BigInt())),
 				[]metrics.Label{modLabel, denom},
 			)
 		}
@@ -848,7 +855,7 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 	for _, node := range nodes {
 		telemetry.SetGaugeWithLabels(
 			[]string{"thornode", "node", "bond"},
-			telem(cosmos.NewUint(node.Bond.Uint64())),
+			telem(node.Bond),
 			[]metrics.Label{telemetry.NewLabel("node_address", node.NodeAddress.String()), telemetry.NewLabel("status", node.Status.String())},
 		)
 		var pts int64

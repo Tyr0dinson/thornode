@@ -85,6 +85,9 @@ func (s *ZcashSignerSuite) SetUpTest(c *C) {
 			StartBlockHeight: 1, // avoids querying thorchain for block height
 		},
 	}
+	s.cfg.UTXO.DefaultSatsPerVByte = 25
+	s.cfg.UTXO.MaxSatsPerVByte = 9_765
+	s.cfg.UTXO.MinSatsPerVByte = 2
 
 	ns := strconv.Itoa(time.Now().Nanosecond())
 	thordir := filepath.Join(os.TempDir(), ns, ".thorcli")

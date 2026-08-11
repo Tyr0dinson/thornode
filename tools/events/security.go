@@ -316,7 +316,7 @@ func lastRoundFailures(block *thorscan.BlockResponse, deps keysignFailureDepende
 				fields := util.NewOrderedMap()
 				fields.Set("Amount", fmt.Sprintf(
 					"%f %s (%s)",
-					float64(msgKeysignFail.Coins[0].Amount.Uint64())/common.One,
+					util.AmountToFloat64(msgKeysignFail.Coins[0].Amount),
 					msgKeysignFail.Coins[0].Asset,
 					deps.usdValueString(block.Header.Height, msgKeysignFail.Coins[0]),
 				))
