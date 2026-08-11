@@ -64,13 +64,6 @@ func (s *StableReserveMgr) IsEligibleStable(ctx cosmos.Context, asset common.Ass
 	if !stableReserveOracleHealthy(price.Price, toleranceBps) {
 		return false, "unhealthy oracle price"
 	}
-	poolPrice, ok := s.stableReservePoolPrice(ctx, asset)
-	if !ok {
-		return false, "missing pool price"
-	}
-	if !stableReserveOracleHealthy(poolPrice, toleranceBps) {
-		return false, "unhealthy pool price"
-	}
 	return true, ""
 }
 
@@ -96,6 +89,14 @@ func (s *StableReserveMgr) Deposit(ctx cosmos.Context, asset common.Asset, amoun
 		return err
 	}
 	if err = s.keeper.SetStableReserveCredit(ctx, asset, contributor, credit.Add(amount)); err != nil {
+		return err
+	}
+
+	// Track the aggregate USD value of deposits (1e8 = $1) so swaps know the
+	// principal floor. IsEligibleStable above already validated a healthy oracle
+	// price, so this fetch succeeds in practice; on the impossible error, skip the
+	// increment with a log rather than revert an otherwise-valid deposit.
+	if err = s.addDepositValue(ctx, asset, amount); err != nil {
 		return err
 	}
 
@@ -160,6 +161,15 @@ func (s *StableReserveMgr) Withdraw(ctx cosmos.Context, asset common.Asset, amou
 		return common.NoCoin, false, err
 	}
 	if err = s.keeper.SetStableReserveCredit(ctx, asset, contributor, common.SafeSub(credit, withdrawAmount)); err != nil {
+		return common.NoCoin, false, err
+	}
+
+	// Decrement the aggregate deposit value by the filled amount's current USD
+	// value (SafeSub floors at zero). Withdraw does NOT run IsEligibleStable, so
+	// the oracle price may be missing if the asset depegged since deposit; on a
+	// missing/invalid price, skip the decrement and log rather than block the
+	// withdrawal or assume $1.
+	if err = s.subDepositValue(ctx, asset, withdrawAmount); err != nil {
 		return common.NoCoin, false, err
 	}
 
@@ -231,49 +241,56 @@ func (s *StableReserveMgr) TrySwap(ctx cosmos.Context, mgr Manager, msg MsgSwap)
 	}
 
 	grossIn := msg.Tx.Coins[0].Amount
-	grossTarget := grossIn
-	if s.keeper.GetConfigInt64(ctx, constants.StableReserveOraclePricing) > 0 {
-		// Oracle pricing: scale the output by the enshrined oracle's per-ticker USD
-		// prices — quorum-signed and swap-independent, unlike pool ratios an attacker
-		// can dislocate within the band. The price-feed batch is injected at the front
-		// of every block (~1s cadence), so a healthy oracle has both legs priced before
-		// swaps run. If either price is missing (oracle halted or unattested) decline
-		// the fill so the swap falls through to the regular AMM pools. IsEligibleStable
-		// already fetched and range-checked both, so this is normally guaranteed.
-		srcOracle, err := s.keeper.GetPrice(ctx, source.Ticker.String())
-		if err != nil {
-			return false, cosmos.ZeroUint(), nil
-		}
-		tgtOracle, err := s.keeper.GetPrice(ctx, target.Ticker.String())
-		if err != nil {
-			return false, cosmos.ZeroUint(), nil
-		}
-		var ok bool
-		grossTarget, ok = stableReserveOracleRatioOutput(grossIn, srcOracle.Price, tgtOracle.Price)
-		if !ok || grossTarget.IsZero() {
-			return false, cosmos.ZeroUint(), nil
-		}
-		// Value-neutral pricing must never shrink the reserve's token count: oracle
-		// prices can still straddle the eligibility band, so cap the payout at what
-		// came in and let the surplus accrue to the reserve.
-		grossTarget = cosmos.MinUint(grossTarget, grossIn)
-	} else {
-		// Default 1:1 fill. Both legs pass IsEligibleStable against $1 ± tolerance
-		// independently, so two healthy stables can still sit on opposite band edges;
-		// guard against that arbitrage drain with per-asset pool prices (ticker oracle
-		// prices would collapse same-ticker assets across chains).
-		srcPrice, ok := s.stableReservePoolPrice(ctx, source)
-		if !ok {
-			return false, cosmos.ZeroUint(), nil
-		}
-		tgtPrice, ok := s.stableReservePoolPrice(ctx, target)
-		if !ok {
-			return false, cosmos.ZeroUint(), nil
-		}
-		if !stableReserveSourceWorthAtLeastTarget(srcPrice, tgtPrice) {
-			return false, cosmos.ZeroUint(), nil
+
+	// Oracle pricing (the only pricing mode): scale the output by the enshrined
+	// oracle's per-ticker USD prices — quorum-signed and swap-independent, unlike
+	// pool ratios an attacker can dislocate within the band. The price-feed batch is
+	// injected at the front of every block (~1s cadence), so a healthy oracle has
+	// both legs priced before swaps run. If either price is missing (oracle halted
+	// or unattested) decline the fill so the swap falls through to the regular AMM
+	// pools. IsEligibleStable already fetched and range-checked both, so this is
+	// normally guaranteed.
+	srcOracle, err := s.keeper.GetPrice(ctx, source.Ticker.String())
+	if err != nil {
+		return false, cosmos.ZeroUint(), nil
+	}
+	tgtOracle, err := s.keeper.GetPrice(ctx, target.Ticker.String())
+	if err != nil {
+		return false, cosmos.ZeroUint(), nil
+	}
+	grossTarget, ratioOK := stableReserveOracleRatioOutput(grossIn, srcOracle.Price, tgtOracle.Price)
+	if !ratioOK || grossTarget.IsZero() {
+		return false, cosmos.ZeroUint(), nil
+	}
+	// Value-neutral pricing must never shrink the reserve's token count: oracle
+	// prices can still straddle the eligibility band, so cap the payout at what
+	// came in and let the surplus accrue to the reserve.
+	grossTarget = cosmos.MinUint(grossTarget, grossIn)
+
+	securedMgr := newSecuredAssetMgr(s.keeper, s.eventMgr)
+	moduleAddr := s.keeper.GetModuleAccAddress(StableReserveName)
+
+	// Underwater fee: when the reserve's current USD value has fallen below the
+	// aggregate USD value of deposits, charge a small fee on the fill so the reserve
+	// rebuilds toward its deposit floor; while fully backed, charge nothing. The
+	// withheld portion stays in the reserve automatically — the full grossIn is
+	// deposited while only the reduced grossTarget is paid out. Applied AFTER the
+	// MinUint cap so it can only ever reduce the payout. The fee is a fraction of 1e8
+	// (default 10_000 = 1 bps, sub-bps configurable); clamp it to 1e8 so a
+	// misconfigured value can never zero the payout.
+	depositUSD, err := s.keeper.GetStableReserveDepositValue(ctx)
+	if err != nil {
+		return false, cosmos.ZeroUint(), err
+	}
+	if s.currentReserveUSD(ctx, moduleAddr).LT(depositUSD) {
+		if feeFraction := s.keeper.GetConfigInt64(ctx, constants.StableReserveUnderwaterFee); feeFraction > 0 {
+			one := cosmos.NewUint(uint64(common.One))
+			feeUint := cosmos.MinUint(cosmos.NewUint(uint64(feeFraction)), one)
+			underwaterFee := common.GetSafeShare(feeUint, one, grossTarget)
+			grossTarget = common.SafeSub(grossTarget, underwaterFee)
 		}
 	}
+
 	fee, err := mgr.GasMgr().GetAssetOutboundFee(ctx, target, false)
 	if err != nil {
 		return false, cosmos.ZeroUint(), nil
@@ -282,8 +299,6 @@ func (s *StableReserveMgr) TrySwap(ctx cosmos.Context, mgr Manager, msg MsgSwap)
 		return false, cosmos.ZeroUint(), nil
 	}
 
-	securedMgr := newSecuredAssetMgr(s.keeper, s.eventMgr)
-	moduleAddr := s.keeper.GetModuleAccAddress(StableReserveName)
 	availableTarget := securedMgr.BalanceOf(ctx, target, moduleAddr)
 	if availableTarget.LT(grossTarget) {
 		return false, cosmos.ZeroUint(), nil
@@ -337,62 +352,74 @@ func (s *StableReserveMgr) isTORAnchor(ctx cosmos.Context, asset common.Asset) b
 	return isTORAnchorAsset(ctx, s.keeper, asset.GetLayer1Asset())
 }
 
-func (s *StableReserveMgr) stableReservePoolPrice(ctx cosmos.Context, asset common.Asset) (string, bool) {
-	pool, err := s.keeper.GetPool(ctx, asset.GetLayer1Asset())
-	if err != nil || !pool.IsAvailable() || pool.BalanceAsset.IsZero() || pool.BalanceRune.IsZero() {
-		return "", false
+// addDepositValue increases the aggregate USD deposit value (1e8 = $1) by the
+// current oracle value of amount. Called on STABLE+ after eligibility has
+// already validated a healthy oracle price, so a missing price here is not
+// expected; skip-with-log rather than revert a valid deposit.
+func (s *StableReserveMgr) addDepositValue(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint) error {
+	price, err := s.keeper.GetPrice(ctx, asset.Ticker.String())
+	if err != nil {
+		ctx.Logger().Error("stable reserve: missing oracle price for deposit value tracking", "asset", asset.String(), "error", err)
+		return nil
 	}
-	dollarsPerRune := s.stableReserveDollarsPerRune(ctx, asset)
-	if dollarsPerRune.IsZero() {
-		return "", false
+	usd, ok := stableReserveUSDValue(amount, price.Price)
+	if !ok || usd.IsZero() {
+		return nil
 	}
-
-	numerator := new(big.Int).Mul(dollarsPerRune.BigInt(), pool.BalanceRune.BigInt())
-	denominator := new(big.Int).Mul(big.NewInt(int64(common.One)), pool.BalanceAsset.BigInt())
-	price := new(big.Rat).SetFrac(numerator, denominator)
-	return price.FloatString(18), true
+	depositValue, err := s.keeper.GetStableReserveDepositValue(ctx)
+	if err != nil {
+		return err
+	}
+	return s.keeper.SetStableReserveDepositValue(ctx, depositValue.Add(usd))
 }
 
-func (s *StableReserveMgr) stableReserveDollarsPerRune(ctx cosmos.Context, asset common.Asset) cosmos.Uint {
-	dollarsPerRune, err := s.keeper.GetMimir(ctx, "DollarsPerRune")
-	if err == nil && dollarsPerRune > 0 {
-		return cosmos.NewUint(uint64(dollarsPerRune))
+// subDepositValue decreases the aggregate USD deposit value by the current
+// oracle value of amount (SafeSub floors at zero). Withdraw does not run the
+// eligibility check, so the oracle price may be missing if the asset depegged
+// since deposit; on a missing/invalid price, skip the decrement and log rather
+// than block the withdrawal or assume $1.
+func (s *StableReserveMgr) subDepositValue(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint) error {
+	price, err := s.keeper.GetPrice(ctx, asset.Ticker.String())
+	if err != nil {
+		ctx.Logger().Error("stable reserve: missing oracle price for withdrawal value tracking", "asset", asset.String(), "error", err)
+		return nil
 	}
+	usd, ok := stableReserveUSDValue(amount, price.Price)
+	if !ok || usd.IsZero() {
+		return nil
+	}
+	depositValue, err := s.keeper.GetStableReserveDepositValue(ctx)
+	if err != nil {
+		return err
+	}
+	return s.keeper.SetStableReserveDepositValue(ctx, common.SafeSub(depositValue, usd))
+}
 
-	l1 := asset.GetLayer1Asset()
-	anchors := s.keeper.GetAnchors(ctx, common.TOR)
-	ignoreHalt := true
-	for _, anchor := range anchors {
-		anchor = anchor.GetLayer1Asset()
-		if anchor.Equals(l1) {
+// currentReserveUSD sums the module's held stable inventory valued at the
+// enshrined oracle price, in 1e8 fixed-point (1e8 = $1). It iterates only the
+// TOR anchors (bounded — this runs on the swap hot path) rather than the whole
+// secured-asset store; anchors whose oracle price is missing are skipped. That
+// omits any inventory no longer an anchor (mid-depeg) and transient RUNE, both
+// of which undercount the total and bias toward charging the underwater fee —
+// the deposit-protecting direction.
+func (s *StableReserveMgr) currentReserveUSD(ctx cosmos.Context, moduleAddr cosmos.AccAddress) cosmos.Uint {
+	securedMgr := newSecuredAssetMgr(s.keeper, s.eventMgr)
+	total := cosmos.ZeroUint()
+	for _, anchor := range s.keeper.GetAnchors(ctx, common.TOR) {
+		asset := anchor.GetLayer1Asset()
+		balance := securedMgr.BalanceOf(ctx, asset, moduleAddr)
+		if balance.IsZero() {
 			continue
 		}
-		if !s.keeper.IsChainTradingHalted(ctx, anchor.Chain) {
-			ignoreHalt = false
-			break
-		}
-	}
-
-	prices := make([]cosmos.Uint, 0, len(anchors))
-	for _, anchor := range anchors {
-		anchor = anchor.GetLayer1Asset()
-		if anchor.Equals(l1) || (!ignoreHalt && s.keeper.IsChainTradingHalted(ctx, anchor.Chain)) {
-			continue
-		}
-		pool, err := s.keeper.GetPool(ctx, anchor)
+		price, err := s.keeper.GetPrice(ctx, asset.Ticker.String())
 		if err != nil {
-			ctx.Logger().Error("fail to get stable reserve usd pool", "asset", anchor.String(), "error", err)
 			continue
 		}
-		if !pool.IsAvailable() {
-			continue
-		}
-		value := pool.RuneValueInAsset(cosmos.NewUint(constants.DollarMulti * common.One))
-		if !value.IsZero() {
-			prices = append(prices, value)
+		if usd, ok := stableReserveUSDValue(balance, price.Price); ok {
+			total = total.Add(usd)
 		}
 	}
-	return common.GetMedianUint(prices).QuoUint64(constants.DollarMulti)
+	return total
 }
 
 func (s *StableReserveMgr) scheduleDepegRescue(ctx cosmos.Context, mgr Manager) error {
@@ -711,13 +738,13 @@ func stableReserveSyntheticTxID(ctx cosmos.Context, purpose string, asset common
 }
 
 // stableReserveOracleRatioOutput scales a stable-reserve fill by the oracle
-// price ratio: out = floor(grossIn * srcPrice / tgtPrice). Only used when the
-// StableReserveOraclePricing mimir is on; the default fill is 1:1. Both prices
-// are USD-per-unit strings from stableReservePoolPrice. The result is floored so
-// any rounding favors the reserve. All arithmetic uses big.Rat (no float math).
-// Returns false if either price is unparsable, the source price is negative, or
-// the target price is non-positive — those sign guards also keep the result
-// non-negative so cosmos.NewUintFromBigInt can never panic.
+// price ratio: out = floor(grossIn * srcPrice / tgtPrice). Both prices are
+// USD-per-unit decimal strings from the enshrined oracle (keeper.GetPrice). The
+// result is floored so any rounding favors the reserve. All arithmetic uses
+// big.Rat (no float math). Returns false if either price is unparsable, the
+// source price is negative, or the target price is non-positive — those sign
+// guards also keep the result non-negative so cosmos.NewUintFromBigInt can never
+// panic.
 func stableReserveOracleRatioOutput(grossIn cosmos.Uint, srcPrice, tgtPrice string) (cosmos.Uint, bool) {
 	// Bound input length to mitigate G113 (CVE-2022-23772), mirroring
 	// stableReserveOracleHealthy.
@@ -739,25 +766,26 @@ func stableReserveOracleRatioOutput(grossIn cosmos.Uint, srcPrice, tgtPrice stri
 	return cosmos.NewUintFromBigInt(floored), true
 }
 
-// stableReserveSourceWorthAtLeastTarget reports whether the source stable's
-// price is >= the target's, so a 1:1 reserve fill never pays out more value
-// than it takes in. Inputs are decimal price strings; comparison uses big.Rat
-// for determinism (no float math).
-func stableReserveSourceWorthAtLeastTarget(srcPrice, tgtPrice string) bool {
+// stableReserveUSDValue returns the USD value of amount at the given oracle
+// price, in 1e8 fixed-point (1e8 = $1): floor(amount * price). amount is in 1e8
+// base units and price is a USD-per-unit decimal string, so amount*price is
+// already in 1e8-USD. Floored so any rounding favors the reserve. Uses big.Rat
+// (no float math). Returns false if the price is unparsable or negative — the
+// sign guard also keeps the result non-negative so NewUintFromBigInt can't panic.
+func stableReserveUSDValue(amount cosmos.Uint, price string) (cosmos.Uint, bool) {
 	// Bound input length to mitigate G113 (CVE-2022-23772), mirroring
 	// stableReserveOracleHealthy.
-	if len(srcPrice) > 64 || len(tgtPrice) > 64 {
-		return false
+	if len(price) > 64 {
+		return cosmos.ZeroUint(), false
 	}
-	src, ok := new(big.Rat).SetString(srcPrice) // nolint:gosec // G113 mitigated by length bound above
-	if !ok {
-		return false
+	p, ok := new(big.Rat).SetString(price) // nolint:gosec // G113 mitigated by length bound above
+	if !ok || p.Sign() < 0 {
+		return cosmos.ZeroUint(), false
 	}
-	tgt, ok := new(big.Rat).SetString(tgtPrice) // nolint:gosec // G113 mitigated by length bound above
-	if !ok {
-		return false
-	}
-	return src.Cmp(tgt) >= 0
+	out := new(big.Rat).SetInt(amount.BigInt())
+	out.Mul(out, p)
+	floored := new(big.Int).Quo(out.Num(), out.Denom())
+	return cosmos.NewUintFromBigInt(floored), true
 }
 
 func stableReserveOracleHealthy(price string, toleranceBps int64) bool {

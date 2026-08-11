@@ -129,6 +129,7 @@ Mimirs have a maximum length of 128 bytes (see MaxMimirLength in THORNode code).
 - `StableReservePOLShareBps`: Share of `POLReserveSystemIncomeBps` routed to the Stable Reserve module while `StableReserveEnabled > 0`.
 - `StableReserveWithdrawalRequestMax`: Maximum request-coin amount accepted for `STABLE-` withdrawals.
 - `StableReserveOraclePricing`\*: `0` fills Stable Reserve swaps 1:1, `1` scales the fill by the oracle price ratio.
+- `StableReserveUnderwaterFee`: Stable-reserve swap fee as a fraction of `1e8` (`10_000` = `0.0001` = 1 bps), supporting sub-1-bps values. Charged on a stable-reserve fill only while the reserve's current USD value is below the aggregate USD value of deposits (underwater), so the reserve rebuilds toward its deposit floor. Operational mimir. Defaults to `10_000`.
 - `POLReserveSystemIncomeBps`\*: Share of system income routed to the POL reserve, in basis points. `0` disables.
 - `POLReserveMaxDeployment`\*: Maximum RUNE the POL reserve deploys per pool per block (1e8 notation).
 - `POLReserveBlacklist-<Asset>`#: Excludes a pool from POL reserve deployment. Takes precedence over the whitelist.

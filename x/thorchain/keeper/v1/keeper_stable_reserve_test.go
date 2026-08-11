@@ -119,3 +119,29 @@ func (s *KeeperStableReserveSuite) TestStableReserveCredit_CollapsesToLayer1(c *
 	c.Assert(err, IsNil)
 	c.Check(securedCredit.Equal(amount), Equals, true)
 }
+
+// TestStableReserveDepositValue_RoundTrip covers the aggregate deposit-value
+// store: unset reads zero, a set round-trips, an overwrite replaces, and zero
+// deletes so a later read still returns zero.
+func (s *KeeperStableReserveSuite) TestStableReserveDepositValue_RoundTrip(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	value, err := k.GetStableReserveDepositValue(ctx)
+	c.Assert(err, IsNil)
+	c.Check(value.IsZero(), Equals, true)
+
+	c.Assert(k.SetStableReserveDepositValue(ctx, cosmos.NewUint(1234*common.One)), IsNil)
+	value, err = k.GetStableReserveDepositValue(ctx)
+	c.Assert(err, IsNil)
+	c.Check(value.Equal(cosmos.NewUint(1234*common.One)), Equals, true)
+
+	c.Assert(k.SetStableReserveDepositValue(ctx, cosmos.NewUint(42)), IsNil)
+	value, err = k.GetStableReserveDepositValue(ctx)
+	c.Assert(err, IsNil)
+	c.Check(value.Equal(cosmos.NewUint(42)), Equals, true)
+
+	c.Assert(k.SetStableReserveDepositValue(ctx, cosmos.ZeroUint()), IsNil)
+	value, err = k.GetStableReserveDepositValue(ctx)
+	c.Assert(err, IsNil)
+	c.Check(value.IsZero(), Equals, true)
+}

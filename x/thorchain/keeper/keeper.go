@@ -403,6 +403,8 @@ type KeeperStableReserve interface {
 	GetStableReserveCredit(ctx cosmos.Context, asset common.Asset, addr common.Address) (cosmos.Uint, error)
 	SetStableReserveCredit(ctx cosmos.Context, asset common.Asset, addr common.Address, amount cosmos.Uint) error
 	GetStableReserveCreditIterator(ctx cosmos.Context) cosmos.Iterator
+	GetStableReserveDepositValue(ctx cosmos.Context) (cosmos.Uint, error)
+	SetStableReserveDepositValue(ctx cosmos.Context, value cosmos.Uint) error
 }
 
 type KeeperTss interface {

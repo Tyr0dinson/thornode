@@ -178,7 +178,7 @@ const (
 	StableReserveDepegToleranceBps
 	StableReservePOLShareBps
 	StableReserveWithdrawalRequestMax
-	StableReserveOraclePricing
+	StableReserveUnderwaterFee
 	WasmArbContract
 	MaxAbsentKeygenReporters
 

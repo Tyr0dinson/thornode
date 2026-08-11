@@ -648,6 +648,14 @@ func (k KVStoreDummy) GetStableReserveCreditIterator(_ cosmos.Context) cosmos.It
 	return nil
 }
 
+func (k KVStoreDummy) GetStableReserveDepositValue(_ cosmos.Context) (cosmos.Uint, error) {
+	return cosmos.ZeroUint(), kaboom
+}
+
+func (k KVStoreDummy) SetStableReserveDepositValue(_ cosmos.Context, _ cosmos.Uint) error {
+	return kaboom
+}
+
 func (k KVStoreDummy) SetTssKeysignFailVoter(_ cosmos.Context, _ TssKeysignFailVoter) error {
 	return nil
 }

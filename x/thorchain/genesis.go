@@ -432,6 +432,19 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 		keeper.SetSolVaultNonce(ctx, record)
 	}
 
+	// Restore the aggregate USD value of stable reserve deposits (1e8 = $1).
+	// This is not derivable from the per-asset credits (it needs the oracle
+	// prices at each deposit/withdrawal), so it must round-trip explicitly. The
+	// field is empty on genesis states written before it existed; treat that as
+	// zero rather than passing "" to NewUintFromString, which panics.
+	depositValue := cosmos.ZeroUint()
+	if data.StableReserveDepositValue != "" {
+		depositValue = cosmos.NewUintFromString(data.StableReserveDepositValue)
+	}
+	if err := keeper.SetStableReserveDepositValue(ctx, depositValue); err != nil {
+		panic(err)
+	}
+
 	reserveAddr, _ := keeper.GetModuleAddress(ReserveName)
 	ctx.Logger().Info("Reserve Module", "address", reserveAddr.String())
 	bondAddr, _ := keeper.GetModuleAddress(BondName)
@@ -933,6 +946,11 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		solVaultNonces = append(solVaultNonces, record)
 	}
 
+	stableReserveDepositValue, err := k.GetStableReserveDepositValue(ctx)
+	if err != nil {
+		panic(err)
+	}
+
 	return GenesisState{
 		Pools:                             pools,
 		LiquidityProviders:                liquidityProviders,
@@ -971,5 +989,6 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		LastObservedDynamicFeeEpochBlocks: lastObservedDynamicFeeEpochBlocks,
 		StableReserveCredits:              stableReserveCredits,
 		SolVaultNonces:                    solVaultNonces,
+		StableReserveDepositValue:         stableReserveDepositValue.String(),
 	}
 }

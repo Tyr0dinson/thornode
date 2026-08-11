@@ -141,4 +141,5 @@ message GenesisState {
       [ (gogoproto.nullable) = false ];
   repeated types.SolVaultNonce sol_vault_nonces = 50
       [ (gogoproto.nullable) = false ];
+  string stable_reserve_deposit_value = 51;
 }

@@ -31,13 +31,6 @@ func setupStableReserveAsset(c *C, ctx cosmos.Context, mgr *Mgrs, asset common.A
 	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: asset.Ticker.String(), Price: price}), IsNil)
 }
 
-func setStableReservePoolPriceBps(c *C, ctx cosmos.Context, mgr *Mgrs, asset common.Asset, bps uint64) {
-	pool, err := mgr.Keeper().GetPool(ctx, asset)
-	c.Assert(err, IsNil)
-	pool.BalanceRune = pool.BalanceAsset.MulUint64(bps).QuoUint64(constants.MaxBasisPts)
-	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
-}
-
 func setupStableReserveSuite(c *C) (cosmos.Context, *Mgrs, common.Asset, common.Asset) {
 	ctx, mgr := setupManagerForTest(c)
 	primeStableReserveModule(c, ctx, mgr)
@@ -124,39 +117,6 @@ func (s *StableReserveMgrSuite) TestStableEligibilityRequiresTorAnchorAndHealthy
 	eligible, reason = stableReserveMgr.IsEligibleStable(ctx, usdc)
 	c.Check(eligible, Equals, false)
 	c.Check(reason, Equals, "missing oracle price")
-}
-
-func (s *StableReserveMgrSuite) TestStableEligibilityRejectsChainSpecificPoolDepeg(c *C) {
-	ctx, mgr, ethUSDC, _ := setupStableReserveSuite(c)
-	stableReserveMgr := mgr.StableReserveManager()
-	mgr.Keeper().SetMimir(ctx, "DollarsPerRune", int64(common.One))
-
-	avaxUSDC, err := common.NewAsset("AVAX.USDC-0XB97EF9EF8734C71904D8002F8B6BC66DD9C48A6E")
-	c.Assert(err, IsNil)
-	setupStableReserveAsset(c, ctx, mgr, avaxUSDC, "1.00")
-	setStableReservePoolPriceBps(c, ctx, mgr, avaxUSDC, 9_800)
-
-	eligible, reason := stableReserveMgr.IsEligibleStable(ctx, avaxUSDC)
-	c.Check(eligible, Equals, false)
-	c.Check(reason, Equals, "unhealthy pool price")
-
-	eligible, reason = stableReserveMgr.IsEligibleStable(ctx, ethUSDC)
-	c.Check(eligible, Equals, true)
-	c.Check(reason, Equals, "")
-}
-
-func (s *StableReserveMgrSuite) TestStableEligibilityRejectsSelfNormalizedPoolDepeg(c *C) {
-	ctx, mgr := setupManagerForTest(c)
-	stableReserveMgr := mgr.StableReserveManager()
-	usdc, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
-	c.Assert(err, IsNil)
-	setupStableReserveAsset(c, ctx, mgr, usdc, "1.00")
-	setStableReservePoolPriceBps(c, ctx, mgr, usdc, 9_800)
-	mgr.Keeper().SetMimir(ctx, constants.StableReserveDepegToleranceBps.String(), 100)
-
-	eligible, reason := stableReserveMgr.IsEligibleStable(ctx, usdc)
-	c.Check(eligible, Equals, false)
-	c.Check(reason, Equals, "missing pool price")
 }
 
 func (s *StableReserveMgrSuite) TestContributorDepositAndWithdrawalCredits(c *C) {
@@ -687,52 +647,14 @@ func (s *StableReserveMgrSuite) TestFreeStableSwapSkipsLegacyStreaming(c *C) {
 	c.Check(credit.Equal(cosmos.NewUint(150*common.One)), Equals, true)
 }
 
-func (s *StableReserveMgrSuite) TestFreeStableSwapRefusesValueLosingFill(c *C) {
-	ctx, mgr, usdc, usdt := setupStableReserveSuite(c)
-	stableReserveMgr := mgr.StableReserveManager()
-	fundStableReserveSurplus(c, ctx, mgr, usdt, cosmos.NewUint(150*common.One))
-
-	// Both stables stay inside the depeg tolerance band ($1 ± 1%) and so pass
-	// eligibility, but they sit on opposite edges: filling usdc -> usdt 1:1 would
-	// pay out ~2% of free reserve value. The value guard must refuse the fill.
-	mgr.Keeper().SetMimir(ctx, "DollarsPerRune", int64(common.One))
-	setStableReservePoolPriceBps(c, ctx, mgr, usdc, 9_900)
-	setStableReservePoolPriceBps(c, ctx, mgr, usdt, 10_100)
-
-	tx := common.NewTx(
-		GetRandomTxHash(),
-		GetRandomETHAddress(),
-		GetRandomETHAddress(),
-		common.NewCoins(common.NewCoin(usdc, cosmos.NewUint(100*common.One))),
-		common.Gas{common.NewCoin(common.ETHAsset, cosmos.OneUint())},
-		"=:ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7",
-	)
-	msg := NewMsgSwap(tx, usdt, common.NoopAddress, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketSwap, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr())
-
-	filled, emit, err := stableReserveMgr.TrySwap(ctx, mgr, *msg)
-	c.Assert(err, IsNil)
-	c.Check(filled, Equals, false)
-	c.Check(emit.IsZero(), Equals, true)
-
-	// Reserve inventory untouched by the refused fill.
-	moduleAddr := mgr.Keeper().GetModuleAccAddress(StableReserveName)
-	c.Check(mgr.SecuredAssetManager().BalanceOf(ctx, usdt, moduleAddr).Equal(cosmos.NewUint(150*common.One)), Equals, true)
-	c.Check(mgr.SecuredAssetManager().BalanceOf(ctx, usdc, moduleAddr).IsZero(), Equals, true)
-}
-
 func (s *StableReserveMgrSuite) TestFreeStableSwapOraclePricingFillsBandEdges(c *C) {
 	ctx, mgr, usdc, usdt := setupStableReserveSuite(c)
 	stableReserveMgr := mgr.StableReserveManager()
 	fundStableReserveSurplus(c, ctx, mgr, usdt, cosmos.NewUint(150*common.One))
 
-	// Same opposite-band-edge pair the 1:1 path refuses above. With
-	// StableReserveOraclePricing on, the fill goes through but the output is
-	// scaled by the oracle srcPrice/tgtPrice instead of paying out 1:1. Pool prices
-	// only need to stay in-band so IsEligibleStable still passes.
-	mgr.Keeper().SetMimir(ctx, constants.StableReserveOraclePricing.String(), 1)
-	mgr.Keeper().SetMimir(ctx, "DollarsPerRune", int64(common.One))
-	setStableReservePoolPriceBps(c, ctx, mgr, usdc, 9_900)
-	setStableReservePoolPriceBps(c, ctx, mgr, usdt, 10_100)
+	// Opposite-band-edge pair: oracle pricing (the only mode) scales the output by
+	// the oracle srcPrice/tgtPrice rather than paying out 1:1, so the reserve never
+	// overpays value.
 	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "0.99"}), IsNil)
 	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdt.Ticker.String(), Price: "1.01"}), IsNil)
 
@@ -763,10 +685,6 @@ func (s *StableReserveMgrSuite) TestFreeStableSwapOraclePricingNeverPaysOutMoreU
 	moduleAddr := mgr.Keeper().GetModuleAccAddress(StableReserveName)
 	fundStableReserveSurplus(c, ctx, mgr, usdt, cosmos.NewUint(150*common.One))
 
-	mgr.Keeper().SetMimir(ctx, constants.StableReserveOraclePricing.String(), 1)
-	mgr.Keeper().SetMimir(ctx, "DollarsPerRune", int64(common.One))
-	setStableReservePoolPriceBps(c, ctx, mgr, usdc, 10_100)                                               // source dearer
-	setStableReservePoolPriceBps(c, ctx, mgr, usdt, 9_900)                                                // target cheaper
 	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "1.01"}), IsNil) // source dearer
 	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdt.Ticker.String(), Price: "0.99"}), IsNil) // target cheaper
 
@@ -797,12 +715,9 @@ func (s *StableReserveMgrSuite) TestFreeStableSwapOraclePricingFallsBackWhenPric
 	stableReserveMgr := mgr.StableReserveManager()
 	fundStableReserveSurplus(c, ctx, mgr, usdt, cosmos.NewUint(150*common.One))
 
-	mgr.Keeper().SetMimir(ctx, constants.StableReserveOraclePricing.String(), 1)
-	mgr.Keeper().SetMimir(ctx, "DollarsPerRune", int64(common.One))
-	setStableReservePoolPriceBps(c, ctx, mgr, usdc, 10_000)
-	setStableReservePoolPriceBps(c, ctx, mgr, usdt, 10_000)
-	// Oracle halted/unattested: the target leg has no price. The reserve declines
-	// the fill so the swap falls through to the regular AMM pools.
+	// Oracle halted/unattested: the target leg has no price. The target fails
+	// eligibility, so the reserve declines the fill and the swap falls through to
+	// the regular AMM pools.
 	mgr.Keeper().DelPrice(ctx, usdt.Ticker.String())
 
 	tx := common.NewTx(
@@ -819,37 +734,6 @@ func (s *StableReserveMgrSuite) TestFreeStableSwapOraclePricingFallsBackWhenPric
 	c.Assert(err, IsNil)
 	c.Check(filled, Equals, false)
 	c.Check(emit.IsZero(), Equals, true)
-}
-
-func (s *StableReserveMgrSuite) TestFreeStableSwapRefusesSameTickerPoolDepeg(c *C) {
-	ctx, mgr, ethUSDC, _ := setupStableReserveSuite(c)
-	stableReserveMgr := mgr.StableReserveManager()
-	mgr.Keeper().SetMimir(ctx, "DollarsPerRune", int64(common.One))
-
-	avaxUSDC, err := common.NewAsset("AVAX.USDC-0XB97EF9EF8734C71904D8002F8B6BC66DD9C48A6E")
-	c.Assert(err, IsNil)
-	setupStableReserveAsset(c, ctx, mgr, avaxUSDC, "1.00")
-	setStableReservePoolPriceBps(c, ctx, mgr, avaxUSDC, 9_800)
-	fundStableReserveSurplus(c, ctx, mgr, ethUSDC, cosmos.NewUint(150*common.One))
-
-	tx := common.NewTx(
-		GetRandomTxHash(),
-		GetRandomETHAddress(),
-		GetRandomETHAddress(),
-		common.NewCoins(common.NewCoin(avaxUSDC, cosmos.NewUint(100*common.One))),
-		common.Gas{common.NewCoin(common.AVAXAsset, cosmos.OneUint())},
-		"=:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48",
-	)
-	msg := NewMsgSwap(tx, ethUSDC, common.NoopAddress, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketSwap, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr())
-
-	filled, emit, err := stableReserveMgr.TrySwap(ctx, mgr, *msg)
-	c.Assert(err, IsNil)
-	c.Check(filled, Equals, false)
-	c.Check(emit.IsZero(), Equals, true)
-
-	moduleAddr := mgr.Keeper().GetModuleAccAddress(StableReserveName)
-	c.Check(mgr.SecuredAssetManager().BalanceOf(ctx, ethUSDC, moduleAddr).Equal(cosmos.NewUint(150*common.One)), Equals, true)
-	c.Check(mgr.SecuredAssetManager().BalanceOf(ctx, avaxUSDC, moduleAddr).IsZero(), Equals, true)
 }
 
 func (s *StableReserveMgrSuite) TestFreeStableSwapFallbackDoesNotMutateReserve(c *C) {
@@ -997,8 +881,8 @@ func (s *StableReserveMgrSuite) TestStableReserveInternalSwapSettlementUsesPreSw
 	)
 
 	c.Assert(NewSwapHandler(mgr).validate(ctx, *msg), IsNil)
-	setStableReservePoolPriceBps(c, ctx, mgr, usdc, 8_000)
-	c.Assert(NewSwapHandler(mgr).validate(ctx, *msg), ErrorMatches, "stable reserve deployment target no longer eligible: unhealthy pool price")
+	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "0.80"}), IsNil)
+	c.Assert(NewSwapHandler(mgr).validate(ctx, *msg), ErrorMatches, "stable reserve deployment target no longer eligible: unhealthy oracle price")
 	settled, err := settleStableReserveInternalSwap(ctx, mgr, *msg, cosmos.NewUint(9*common.One))
 	c.Assert(err, IsNil)
 	c.Check(settled, Equals, true)
@@ -1227,4 +1111,116 @@ func (s *StableReserveMgrSuite) TestStableReserveOracleRatioOutput(c *C) {
 		_, ok = stableReserveOracleRatioOutput(in, tc.src, tc.tgt)
 		c.Check(ok, Equals, false, Commentf("src=%s tgt=%s", tc.src, tc.tgt))
 	}
+}
+
+func (s *StableReserveMgrSuite) TestStableReserveUSDValue(c *C) {
+	// amount is in 1e8 units and price is USD/unit, so amount*price is 1e8-USD.
+	v, ok := stableReserveUSDValue(cosmos.NewUint(100*common.One), "1.00")
+	c.Check(ok, Equals, true)
+	c.Check(v.Equal(cosmos.NewUint(100*common.One)), Equals, true)
+
+	// floor(100e8 * 0.985) = 9_850_000_000.
+	v, ok = stableReserveUSDValue(cosmos.NewUint(100*common.One), "0.985")
+	c.Check(ok, Equals, true)
+	c.Check(v.Equal(cosmos.NewUint(9_850_000_000)), Equals, true)
+
+	// Unparsable or negative prices are rejected, not panicked on.
+	for _, price := range []string{"-1.00", "abc"} {
+		_, ok = stableReserveUSDValue(cosmos.NewUint(100*common.One), price)
+		c.Check(ok, Equals, false, Commentf("price=%s", price))
+	}
+}
+
+func (s *StableReserveMgrSuite) TestDepositValueTrackedAndDecrementedOnWithdraw(c *C) {
+	ctx, mgr, usdc, _ := setupStableReserveSuite(c)
+	stableReserveMgr := mgr.StableReserveManager()
+	contributor := GetRandomETHAddress()
+
+	c.Assert(stableReserveMgr.Deposit(ctx, usdc, cosmos.NewUint(100*common.One), contributor, common.BlankTxID), IsNil)
+	depositValue, err := mgr.Keeper().GetStableReserveDepositValue(ctx)
+	c.Assert(err, IsNil)
+	c.Check(depositValue.Equal(cosmos.NewUint(100*common.One)), Equals, true) // floor(100e8 * 1.00)
+
+	_, filled, err := stableReserveMgr.Withdraw(ctx, usdc, cosmos.NewUint(40*common.One), contributor, common.BlankTxID)
+	c.Assert(err, IsNil)
+	c.Check(filled, Equals, true)
+	depositValue, err = mgr.Keeper().GetStableReserveDepositValue(ctx)
+	c.Assert(err, IsNil)
+	c.Check(depositValue.Equal(cosmos.NewUint(60*common.One)), Equals, true)
+
+	// Oracle price missing at withdraw time (asset depegged since deposit): the
+	// decrement is skipped rather than assuming $1 or blocking, and the withdrawal
+	// still fills.
+	mgr.Keeper().DelPrice(ctx, usdc.Ticker.String())
+	_, filled, err = stableReserveMgr.Withdraw(ctx, usdc, cosmos.NewUint(10*common.One), contributor, common.BlankTxID)
+	c.Assert(err, IsNil)
+	c.Check(filled, Equals, true)
+	depositValue, err = mgr.Keeper().GetStableReserveDepositValue(ctx)
+	c.Assert(err, IsNil)
+	c.Check(depositValue.Equal(cosmos.NewUint(60*common.One)), Equals, true) // unchanged
+}
+
+func (s *StableReserveMgrSuite) TestFreeStableSwapNoFeeWhenFullyBacked(c *C) {
+	ctx, mgr, usdc, usdt := setupStableReserveSuite(c)
+	stableReserveMgr := mgr.StableReserveManager()
+
+	// Deposit 150 usdt (150 USD deposit floor + 150 usdt inventory) and add 50 usdt
+	// of untracked surplus: current value 200 USD >= 150 USD floor, so no fee.
+	c.Assert(stableReserveMgr.Deposit(ctx, usdt, cosmos.NewUint(150*common.One), GetRandomETHAddress(), common.BlankTxID), IsNil)
+	fundStableReserveSurplus(c, ctx, mgr, usdt, cosmos.NewUint(50*common.One))
+
+	filled, emit, err := stableReserveMgr.TrySwap(ctx, mgr, *stableSwapMsg(usdc, usdt, cosmos.NewUint(40*common.One)))
+	c.Assert(err, IsNil)
+	c.Check(filled, Equals, true)
+	c.Check(emit.Equal(cosmos.NewUint(40*common.One)), Equals, true)
+}
+
+func (s *StableReserveMgrSuite) TestFreeStableSwapChargesUnderwaterFee(c *C) {
+	ctx, mgr, usdc, usdt := setupStableReserveSuite(c)
+	stableReserveMgr := mgr.StableReserveManager()
+	moduleAddr := mgr.Keeper().GetModuleAccAddress(StableReserveName)
+
+	// Deposit 200 usdt (200 USD deposit floor + 200 usdt inventory), then drain 150
+	// usdt directly so current value (50 USD) drops below the floor — underwater.
+	c.Assert(stableReserveMgr.Deposit(ctx, usdt, cosmos.NewUint(200*common.One), GetRandomETHAddress(), common.BlankTxID), IsNil)
+	_, err := mgr.SecuredAssetManager().Withdraw(ctx, usdt.GetSecuredAsset(), cosmos.NewUint(150*common.One), moduleAddr, GetRandomETHAddress(), common.BlankTxID)
+	c.Assert(err, IsNil)
+
+	filled, emit, err := stableReserveMgr.TrySwap(ctx, mgr, *stableSwapMsg(usdc, usdt, cosmos.NewUint(40*common.One)))
+	c.Assert(err, IsNil)
+	c.Check(filled, Equals, true)
+	// Default fee 10_000/1e8 = 1 bps: underwaterFee = floor(40e8 * 1e-4) = 400_000.
+	c.Check(emit.Equal(cosmos.NewUint(40*common.One-400_000)), Equals, true)
+}
+
+func (s *StableReserveMgrSuite) TestFreeStableSwapUnderwaterFeeSupportsSubBps(c *C) {
+	ctx, mgr, usdc, usdt := setupStableReserveSuite(c)
+	stableReserveMgr := mgr.StableReserveManager()
+	moduleAddr := mgr.Keeper().GetModuleAccAddress(StableReserveName)
+	// 1/1e8 fraction — two orders of magnitude below 1 bps.
+	mgr.Keeper().SetMimir(ctx, constants.StableReserveUnderwaterFee.String(), 1)
+
+	c.Assert(stableReserveMgr.Deposit(ctx, usdt, cosmos.NewUint(200*common.One), GetRandomETHAddress(), common.BlankTxID), IsNil)
+	_, err := mgr.SecuredAssetManager().Withdraw(ctx, usdt.GetSecuredAsset(), cosmos.NewUint(150*common.One), moduleAddr, GetRandomETHAddress(), common.BlankTxID)
+	c.Assert(err, IsNil)
+
+	filled, emit, err := stableReserveMgr.TrySwap(ctx, mgr, *stableSwapMsg(usdc, usdt, cosmos.NewUint(40*common.One)))
+	c.Assert(err, IsNil)
+	c.Check(filled, Equals, true)
+	// Sub-1-bps: fee = floor(40e8 * 1/1e8) = 40 base units.
+	c.Check(emit.Equal(cosmos.NewUint(40*common.One-40)), Equals, true)
+}
+
+// stableSwapMsg builds a single non-streaming market swap of amount source -> the
+// ETH.USDT target used across the underwater-fee tests.
+func stableSwapMsg(source, target common.Asset, amount cosmos.Uint) *MsgSwap {
+	tx := common.NewTx(
+		GetRandomTxHash(),
+		GetRandomETHAddress(),
+		GetRandomETHAddress(),
+		common.NewCoins(common.NewCoin(source, amount)),
+		common.Gas{common.NewCoin(common.ETHAsset, cosmos.OneUint())},
+		"=:ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7",
+	)
+	return NewMsgSwap(tx, target, common.NoopAddress, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketSwap, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr())
 }

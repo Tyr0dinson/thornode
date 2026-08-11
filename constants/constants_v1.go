@@ -166,7 +166,7 @@ func NewConstantValue() *ConstantVals {
 			StableReserveDepegToleranceBps:      100,                // maximum stable oracle deviation from $1 in basis points
 			StableReservePOLShareBps:            0,                  // share of POLReserveSystemIncomeBps routed to Stable Reserve
 			StableReserveWithdrawalRequestMax:   10_000,             // maximum request coin amount accepted for Stable Reserve withdrawals
-			StableReserveOraclePricing:          0,                  // 0 = fill stable reserve swaps 1:1, 1 = scale the fill by the oracle price ratio
+			StableReserveUnderwaterFee:          10_000,             // stable reserve swap fee as a fraction of 1e8 (10_000 = 0.0001 = 1 bps), charged only while the reserve is underwater vs deposits; supports sub-1-bps values
 			L1DynamicFeeEnabled:                 0,                  // enable/disable dynamic L1 min fee
 			L1DynamicFeeEpochBlocks:             14400,              // number of blocks per dynamic fee epoch
 			L1DynamicFeeFloorBPS:                1,                  // floor basis points for dynamic L1 min fee

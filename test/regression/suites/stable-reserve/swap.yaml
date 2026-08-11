@@ -3,11 +3,13 @@
 #
 # Asserts the direct-fill market swap logic. When the Stable Reserve is enabled
 # and holds inventory of the target asset, a market swap between two eligible
-# stables (USDC <-> USDT) is intercepted and filled 1:1 from module inventory,
-# bypassing the pools. Contributor credits remain recorded but do not reserve
-# inventory from direct fills. Band membership of both legs (each within the
-# depeg tolerance of $1) is the sole price condition, so two eligible stables
-# fill 1:1 even when they sit on opposite edges of the band.
+# stables (USDC <-> USDT) is intercepted and filled from module inventory,
+# bypassing the pools. The payout is priced by the enshrined oracle ratio
+# (src/tgt USD price), capped so the reserve's token count never shrinks; when
+# equal-priced this is a 1:1 fill. Contributor credits remain recorded but do not
+# reserve inventory from direct fills. While the reserve's current USD value sits
+# below the tracked deposit value (underwater), an additional 1 bps fee is
+# withheld from the payout (see scenario 3).
 ########################################################################################
 {{ template "default-state.yaml" }}
 ---
@@ -209,8 +211,12 @@ asserts:
 ########################################################################################
 # SCENARIO 3: Opposite edges of the tolerance band still fill (USDC=0.99, USDT=1.01)
 # Both stables sit inside the depeg tolerance band ($1 ± 1%), just on opposite
-# edges. Band membership of both legs is the sole price condition, so the direct
-# fill proceeds 1:1 — there is no relative source-vs-target value guard.
+# edges. The fill is priced by the enshrined oracle ratio, not 1:1:
+#   oracle out = floor(100000000 * 0.99 / 1.01) = 98019801 (capped at the 100000000 in).
+# At this point the reserve is marginally underwater vs the tracked deposit value
+# (current 1_895_000_000 < deposit 1_900_000_000 in 1e8-USD), so the 1 bps
+# underwater fee applies: floor/round(98019801 * 10_000 / 1e8) = 9802, leaving a
+# payout of 98009999. USDT inventory therefore drops by 98009999, not 100000000.
 ########################################################################################
 type: tx-price-feed
 prices:
@@ -254,7 +260,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/stable_reserve
 asserts:
   - '[.inventory[]|select(.asset == "ETH.USDC-0X9999999999999999999999999999999999999999")][0].amount == "1300000000"'
-  - '[.inventory[]|select(.asset == "ETH.USDT-0X9999999999999999999999999999999999999999")][0].amount == "600000000"'
+  - '[.inventory[]|select(.asset == "ETH.USDT-0X9999999999999999999999999999999999999999")][0].amount == "601990001"'
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/stable_reserve/contributor/ETH.USDT-0X9999999999999999999999999999999999999999/{{ addr_eth_fox }}

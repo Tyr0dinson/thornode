@@ -63,3 +63,32 @@ func (k KVStore) SetStableReserveCredit(ctx cosmos.Context, asset common.Asset, 
 func (k KVStore) GetStableReserveCreditIterator(ctx cosmos.Context) cosmos.Iterator {
 	return k.getIterator(ctx, prefixStableReserveCredit)
 }
+
+// stableReserveDepositValueKey is the single fixed sub-key under the deposit
+// prefix: the deposit value is one aggregate reserve-wide total, not per-asset
+// or per-contributor.
+const stableReserveDepositValueKey = "total"
+
+// GetStableReserveDepositValue returns the aggregate USD value of all stable
+// reserve deposits, in 1e8 fixed-point (1e8 = $1). Returns zero when unset.
+func (k KVStore) GetStableReserveDepositValue(ctx cosmos.Context) (cosmos.Uint, error) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	key := k.GetKey(prefixStableReserveDeposit, stableReserveDepositValueKey)
+	if !store.Has(key) {
+		return cosmos.ZeroUint(), nil
+	}
+	return cosmos.NewUintFromString(string(store.Get(key))), nil
+}
+
+// SetStableReserveDepositValue stores the aggregate USD deposit value. A zero
+// value deletes the key so Get round-trips back to zero.
+func (k KVStore) SetStableReserveDepositValue(ctx cosmos.Context, value cosmos.Uint) error {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	key := k.GetKey(prefixStableReserveDeposit, stableReserveDepositValueKey)
+	if value.IsZero() {
+		store.Delete(key)
+		return nil
+	}
+	store.Set(key, []byte(value.String()))
+	return nil
+}

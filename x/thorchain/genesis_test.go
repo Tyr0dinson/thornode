@@ -223,6 +223,41 @@ func (GenesisTestSuite) TestGenesisStableReserveCreditRoundTrip(c *C) {
 	c.Check(gotTRON.String(), Equals, cosmos.NewUint(9012).String())
 }
 
+// TestGenesisStableReserveDepositValueRoundTrip covers the aggregate deposit
+// value (1e8 = $1), which is not derivable from the per-asset credits and so
+// must round-trip explicitly. It also asserts an empty field imports as zero (an
+// export written before the field existed) rather than panicking on "".
+func (GenesisTestSuite) TestGenesisStableReserveDepositValueRoundTrip(c *C) {
+	SetupConfigForTest()
+
+	srcCtx, srcMgr := setupManagerForTest(c)
+	c.Assert(srcMgr.Keeper().SetStableReserveDepositValue(srcCtx, cosmos.NewUint(4242*common.One)), IsNil)
+
+	exported := ExportGenesis(srcCtx, srcMgr.Keeper())
+	c.Check(exported.StableReserveDepositValue, Equals, cosmos.NewUint(4242*common.One).String())
+
+	bz, err := exported.Marshal()
+	c.Assert(err, IsNil)
+	var decoded GenesisState
+	c.Assert(decoded.Unmarshal(bz), IsNil)
+
+	dstCtx, dstMgr := setupManagerForTest(c)
+	InitGenesis(dstCtx, dstMgr.Keeper(), decoded)
+	got, err := dstMgr.Keeper().GetStableReserveDepositValue(dstCtx)
+	c.Assert(err, IsNil)
+	c.Check(got.Equal(cosmos.NewUint(4242*common.One)), Equals, true)
+
+	// A genesis written before the field existed carries "" — it must import as
+	// zero, not panic in NewUintFromString.
+	emptyCtx, emptyMgr := setupManagerForTest(c)
+	legacy := DefaultGenesisState()
+	legacy.StableReserveDepositValue = ""
+	InitGenesis(emptyCtx, emptyMgr.Keeper(), legacy)
+	got, err = emptyMgr.Keeper().GetStableReserveDepositValue(emptyCtx)
+	c.Assert(err, IsNil)
+	c.Check(got.IsZero(), Equals, true)
+}
+
 // exportedAddress returns the exported stable-reserve credit address for a given
 // layer-1 asset, or "" if absent.
 func exportedAddress(g GenesisState, asset common.Asset) string {
