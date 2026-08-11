@@ -3522,11 +3522,11 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestMarkerlessSettlementFallsBack
 	c.Check(rolledBackPool, DeepEquals, sourcePool)
 }
 
-// TestFinalizedPendingQueueMempoolSwapSkipsRefundChecks verifies that a
-// finalized mempool swap with only queue-backed speculative state does not run
-// the legacy finalized refund path while the advanced queue still owns the
-// swap.
-func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizedPendingQueueMempoolSwapSkipsRefundChecks(c *C) {
+// TestFinalizedPendingQueueMempoolSwapReleasesCapacityAndSkipsRefundChecks
+// verifies that a finalized mempool swap with only queue-backed work releases
+// its speculative capacity without running the legacy finalized refund path or
+// removing the advanced-queue item.
+func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizedPendingQueueMempoolSwapReleasesCapacityAndSkipsRefundChecks(c *C) {
 	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
 	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
@@ -3606,6 +3606,8 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizedPendingQueueMempoolS
 	partialVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
 	c.Assert(err, IsNil)
 	c.Check(partialVoter.HasReservedMempoolSwapTOR(), Equals, true, Commentf("partial execution should still hold mempool swap capacity"))
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).Equal(partialVoter.MempoolSwapTOR), Equals, true,
+		Commentf("the global usage precondition should contain this swap's reservation"))
 	c.Check(partialVoter.Actions, HasLen, 0, Commentf("partial execution should not have scheduled finalized actions yet"))
 	c.Check(mgr.Keeper().HasAdvSwapQueueItem(ctx, inTxID, 0), Equals, true, Commentf("partial execution should leave the advanced queue item live"))
 	pendingAffiliateFees, err := mgr.Keeper().GetPendingAffiliateLiquidityFees(ctx, inTxID)
@@ -3630,9 +3632,12 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizedPendingQueueMempoolS
 
 	updatedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
 	c.Assert(err, IsNil)
-	c.Check(updatedVoter.HasReservedMempoolSwapTOR(), Equals, true, Commentf("finalized queue-backed mempool swap should keep its reservation while settlement is pending"))
+	c.Check(updatedVoter.HasReservedMempoolSwapTOR(), Equals, false,
+		Commentf("inbound finality should release the queue-backed mempool reservation"))
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true,
+		Commentf("inbound finality should release global mempool swap usage"))
 	c.Check(updatedVoter.Actions, HasLen, 0, Commentf("finalized queue-backed mempool swap should not fabricate finalized actions"))
-	c.Check(mgr.Keeper().HasAdvSwapQueueItem(ctx, inTxID, 0), Equals, true, Commentf("handler should leave the advanced queue item for later settlement or rollback"))
+	c.Check(mgr.Keeper().HasAdvSwapQueueItem(ctx, inTxID, 0), Equals, true, Commentf("handler should leave the advanced queue item for later settlement"))
 	c.Check(mgr.Keeper().HasPendingAffiliateLiquidityFees(ctx, inTxID), Equals, false,
 		Commentf("inbound finality must commit pending REVSHARE even while the stream remains queue-backed"))
 	committedAffiliateFees := mgr.Keeper().GetAffiliateLiquidityFees(ctx)
@@ -3654,4 +3659,21 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizedPendingQueueMempoolS
 	outItems, err := mgr.TxOutStore().GetOutboundItems(ctx)
 	c.Assert(err, IsNil)
 	c.Check(outItems, HasLen, 0, Commentf("queue-backed finalized mempool swap should not schedule a refund while queue state is still live"))
+
+	// Clearing the capacity marker must not disturb ordinary post-finality queue
+	// settlement. Resume trading and finish the remaining stream slice.
+	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+	mgr.Keeper().SetMimir(ctx, "HaltTrading", 0)
+	c.Assert(mgr.AdvSwapQueueMgr().EndBlock(ctx, mgr, false), IsNil)
+	c.Check(mgr.Keeper().HasAdvSwapQueueItem(ctx, inTxID, 0), Equals, false,
+		Commentf("the finalized queue item should settle normally after capacity release"))
+	settledVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(settledVoter.HasReservedMempoolSwapTOR(), Equals, false)
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true)
+	c.Check(mgr.Keeper().HasPendingAffiliateLiquidityFees(ctx, inTxID), Equals, false)
+	outItems, err = mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Check(outItems, HasLen, 1,
+		Commentf("post-finality settlement should materialize its outbound normally"))
 }

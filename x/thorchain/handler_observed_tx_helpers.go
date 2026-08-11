@@ -573,6 +573,8 @@ func handleObservedTxInQuorum(
 				return nil
 			}
 			if k.HasAdvSwapQueueItem(ctx, voter.TxID, 0) {
+				releaseMempoolSwapCapacityAndClear(ctx, k, voter, "released queue-backed mempool swap capacity at inbound finality")
+				incrMempoolSwapCounter("completed_total", []metrics.Label{telemetry.NewLabel("path", "queue_finality")})
 				ctx.Logger().Info("finalized mempool swap still pending advanced-queue settlement", "hash", voter.TxID)
 				return nil
 			}
