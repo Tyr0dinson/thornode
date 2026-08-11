@@ -3212,6 +3212,34 @@ func clearMempoolRollbackState(voter ObservedTxVoter) ObservedTxVoter {
 	return voter
 }
 
+// emitMempoolSwapRollbackEvents reports a successfully completed rollback to
+// both ordinary event consumers and THORSec. Callers invoke it only after all
+// fallible rollback state transitions have succeeded.
+func emitMempoolSwapRollbackEvents(
+	ctx cosmos.Context,
+	mgr Manager,
+	voter ObservedTxVoter,
+	sourceAsset common.Asset,
+	sourceAmount cosmos.Uint,
+	donatedAmount cosmos.Uint,
+) {
+	mempoolRollbackEvent := NewEventMempoolSwapReverted(
+		voter.TxID,
+		ctx.BlockHeight(),
+		sourceAsset,
+		sourceAmount,
+		donatedAmount,
+	)
+	if err := mgr.EventMgr().EmitEvent(ctx, mempoolRollbackEvent); err != nil {
+		ctx.Logger().Error("fail to emit mempool rollback event", "error", err)
+	}
+
+	securityEvent := NewEventSecurity(voter.Tx.Tx, "mempool swap rolled back")
+	if err := mgr.EventMgr().EmitEvent(ctx, securityEvent); err != nil {
+		ctx.Logger().Error("fail to emit security event for mempool rollback", "error", err)
+	}
+}
+
 // rollbackMempoolSwapCached performs the inline mempool rollback itself.
 // It gathers the staged or partially-executed outputs that need to be unwound,
 // executes any required reverse swaps inline, then clears staged state and
@@ -3319,6 +3347,7 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 		keeper.DeletePendingAffiliateLiquidityFees(ctx, voter.TxID)
 		voter = clearMempoolRollbackState(voter)
 		keeper.SetObservedTxInVoter(ctx, voter)
+		emitMempoolSwapRollbackEvents(ctx, mgr, voter, sourceAsset, voter.Tx.Tx.Coins[0].Amount, cosmos.ZeroUint())
 		return nil
 	}
 
@@ -3501,22 +3530,7 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 	// Reset the voter now that all mempool state has been undone.
 	voter = clearMempoolRollbackState(voter)
 	keeper.SetObservedTxInVoter(ctx, voter)
-	mempoolRollbackEvent := NewEventMempoolSwapReverted(
-		voter.TxID,
-		ctx.BlockHeight(),
-		sourceAsset,
-		sourceAmount,
-		aggregateDonatedAmount,
-	)
-	if err = mgr.EventMgr().EmitEvent(ctx, mempoolRollbackEvent); err != nil {
-		ctx.Logger().Error("fail to emit mempool rollback event", "error", err)
-	}
-
-	// Emit a security event so THORSec is notified of the rollback.
-	securityEvent := NewEventSecurity(voter.Tx.Tx, "mempool swap rolled back")
-	if err = mgr.EventMgr().EmitEvent(ctx, securityEvent); err != nil {
-		ctx.Logger().Error("fail to emit security event for mempool rollback", "error", err)
-	}
+	emitMempoolSwapRollbackEvents(ctx, mgr, voter, sourceAsset, sourceAmount, aggregateDonatedAmount)
 
 	return nil
 }

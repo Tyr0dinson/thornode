@@ -1869,6 +1869,8 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestCompletedPartialMempoolRollba
 // finalization pass can pay it out a second time.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestRefundOnlyStagedMempoolRollbackClearsStagedRecords(c *C) {
 	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
+	eventMgr := newRecordingEventMgr()
+	mgr.eventMgr = eventMgr
 
 	deposit := cosmos.NewUint(100 * common.One)
 	reservedTOR := cosmos.NewUint(5 * common.One)
@@ -1918,6 +1920,23 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRefundOnlyStagedMempoolRollba
 	voterAfter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
 	c.Assert(err, IsNil)
 	c.Check(voterAfter.HasReservedMempoolSwapTOR(), Equals, false)
+
+	rollbackEvents := make([]*types.EventMempoolSwapReverted, 0, 1)
+	for _, evt := range eventMgr.events {
+		if rollbackEvent, ok := evt.(*types.EventMempoolSwapReverted); ok {
+			rollbackEvents = append(rollbackEvents, rollbackEvent)
+		}
+	}
+	c.Assert(rollbackEvents, HasLen, 1)
+	c.Check(rollbackEvents[0].TxID.Equals(inTxID), Equals, true)
+	c.Check(rollbackEvents[0].SourceAsset.Equals(common.BTCAsset), Equals, true)
+	c.Check(rollbackEvents[0].SourceAmount.Equal(deposit), Equals, true)
+	c.Check(rollbackEvents[0].DonatedAmount.IsZero(), Equals, true)
+
+	securityEvents := eventMgr.securityEvents()
+	c.Assert(securityEvents, HasLen, 1)
+	c.Check(securityEvents[0].Msg, Equals, "mempool swap rolled back")
+	c.Check(securityEvents[0].Tx.ID.Equals(inTxID), Equals, true)
 }
 
 // TestEmptyRollbackDeductsMidFlightCreditedSource covers the fund-loss gap where
