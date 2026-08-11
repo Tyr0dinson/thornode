@@ -221,6 +221,7 @@ const (
 
 	LUVIOverhangGuard
 	LUVIGuard
+	RequiredVotingEnabled
 )
 
 // ConstantValues define methods used to get constant values

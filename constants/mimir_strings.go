@@ -141,6 +141,14 @@ const (
 // IsOperationalMimir determines if a given mimir key represents an operational mimir
 // (as opposed to an economic mimir). Operational mimirs have different voting requirements.
 func IsOperationalMimir(key string) bool {
+	// ADR mimirs always require a supermajority and their votes must survive churn, so
+	// they are never operational regardless of what else the key name contains. This has
+	// to precede the partial matches below, or e.g. ADR123-HALTSOMETHING would match
+	// "HALT", get plurality semantics, and be wiped by PurgeOperationalNodeMimirs.
+	if strings.HasPrefix(strings.ToUpper(key), "ADR") {
+		return false
+	}
+
 	exactMatches := []string{
 		"MintSynths",
 		"TradeAccountsEnabled",
@@ -160,6 +168,7 @@ func IsOperationalMimir(key string) bool {
 		POLReserveSystemIncomeBps.String(),
 		StableReserveOraclePricing.String(),
 		MimirKeyPreflightChainSetDisabled,
+		RequiredVotingEnabled.String(),
 	}
 	for i := range exactMatches {
 		if strings.EqualFold(key, exactMatches[i]) {

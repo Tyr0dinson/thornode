@@ -1,10 +1,13 @@
 package thorchain
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"net"
 	"sort"
+	"strings"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
@@ -333,6 +336,11 @@ func (vm *ValidatorMgr) churnInner(ctx cosmos.Context) error {
 
 	// mark someone(s) for missing observations on a chain
 	if err = vm.markMissingObservationActors(ctx); err != nil {
+		return err
+	}
+
+	// mark someone for not voting on a required ADR mimir
+	if err = vm.markNonVotingActors(ctx); err != nil {
 		return err
 	}
 
@@ -1747,6 +1755,63 @@ func (vm *ValidatorMgr) markActor(ctx cosmos.Context, na NodeAccount, reason str
 	return nil
 }
 
+// markNonVotingActors marks one active node per pending ADR mimir for churn out, chosen
+// pseudo-randomly from the last app hash. Nodes cannot predict the pick before the block
+// commits, so every non-voter has to assume it is them.
+func (vm *ValidatorMgr) markNonVotingActors(ctx cosmos.Context) error {
+	pending, err := pendingADRVotes(ctx, vm.k)
+	if err != nil {
+		return err
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+
+	active, err := vm.k.ListActiveValidators(ctx)
+	if err != nil {
+		return err
+	}
+
+	// AppHash is app.LastCommitID().Hash, identical on every node for this block.
+	appHash := ctx.BlockHeader().AppHash
+
+	for _, vote := range pending {
+		nonVoters := NodeAccounts{}
+		for _, na := range active {
+			if !vote.Mimirs.Has(vote.Key, na.NodeAddress) {
+				nonVoters = append(nonVoters, na)
+			}
+		}
+		if len(nonVoters) == 0 {
+			continue
+		}
+		// Sort by address for a total order; keeper iteration order alone is not enough
+		// of a guarantee to seed a selection from.
+		sort.SliceStable(nonVoters, func(i, j int) bool {
+			return nonVoters[i].NodeAddress.String() < nonVoters[j].NodeAddress.String()
+		})
+
+		// Salt with the key so two pending ADRs don't select the same node.
+		seed := sha256.Sum256([]byte(fmt.Sprintf("%x/%s", appHash, strings.ToUpper(vote.Key))))
+		idx := binary.BigEndian.Uint64(seed[:8]) % uint64(len(nonVoters))
+
+		// Re-fetch: an earlier key in this loop may have marked the same node, and
+		// markActor decides whether to skip from the LeaveScore on the struct it's given.
+		selected, err := vm.k.GetNodeAccount(ctx, nonVoters[idx].NodeAddress)
+		if err != nil {
+			return fmt.Errorf("fail to get node account(%s): %w", nonVoters[idx].NodeAddress, err)
+		}
+
+		// One selection per ADR per churn. markActor no-ops when the node is already
+		// marked for another reason, which deliberately consumes this churn's slot.
+		if err := vm.markActor(ctx, selected, "for not voting on "+vote.Key); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // Mark an old actor to be churned out
 func (vm *ValidatorMgr) markOldActor(ctx cosmos.Context) error {
 	na, err := vm.findOldActor(ctx)
@@ -1937,6 +2002,11 @@ func (vm *ValidatorMgr) NodeAccountPreflightCheck(ctx cosmos.Context, na NodeAcc
 	}
 	if jail.IsJailed(ctx) {
 		return NodeStandby, fmt.Errorf("node account is jailed until block %d: %s", jail.ReleaseHeight, jail.Reason)
+	}
+
+	// A node cannot churn in while an ADR mimir it hasn't voted on requires voting.
+	if key, ok := nodeHasPendingADRVote(ctx, vm.k, na.NodeAddress); ok {
+		return NodeStandby, fmt.Errorf("node account has not voted on required mimir: %s", key)
 	}
 
 	if vm.k.RagnarokInProgress(ctx) {

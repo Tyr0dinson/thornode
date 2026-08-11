@@ -308,6 +308,29 @@ Operational notes:
 - `ChurnOutForLowVersionBlocks`\*: Number of blocks after `MinJoinVersion` changes before nodes can be churned out for low version
 - `MissingBlockChurnOut`\*: Number of missed blocks between churns that marks a validator for churn out (0 = disabled)
 - `MaxMissingBlockChurnOut`\*: Maximum number of validators churned out for missing blocks (0 = disabled)
+- `RequiredVotingEnabled`: Enable/disable required voting on ADR mimirs (see below). Operational mimir; set to 0 to disable enforcement without a release
+
+### Required voting on ADR mimirs
+
+Mimir keys prefixed `ADR` (e.g. `ADR42Enabled`) carry an extra rule: once **1/3+1** of the
+active node set has voted on the key, voting becomes required for everyone else. The
+requirement clears as soon as a 2/3 supermajority forms on a single value, or once every
+active node has voted.
+
+While a key is in the required state:
+
+- One active node that hasn't voted is marked for churn out each churn, per pending ADR key.
+  The node is picked pseudo-randomly using the last app hash, so nobody can tell in advance
+  whether it is them. This is a graceful churn out — no slash and no ban — and the BFT churn
+  caps still apply.
+- A standby node that hasn't voted cannot churn in. This shows up in the node preflight status
+  (`/thorchain/node/{address}`) as `node account has not voted on required mimir: <KEY>`.
+
+Standby and ready nodes may vote on ADR mimirs (they cannot vote on any other mimir), so a node
+can clear the gate before churning in. Their votes are stored but do not count toward the
+turnout or the supermajority until they become active. ADR keys are always economic mimirs, so
+their votes survive churn and always require a supermajority, regardless of what else the key
+name contains.
 
 ## Economics
 

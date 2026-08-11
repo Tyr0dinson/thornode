@@ -6,6 +6,7 @@ import (
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -367,4 +368,44 @@ func (s *HandlerMimirSuite) TestXMRConsolidationOperationalVoting(c *C) {
 		c.Assert(err, IsNil)
 		c.Assert(actual, Equals, value, Commentf("key=%s", key))
 	}
+}
+
+// Standby and ready nodes may vote on ADR mimirs (so the churn-in gate is fair) but not
+// on anything else.
+func (HandlerMimirSuite) TestADRMimirStandbyVoting(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	h := NewMimirHandler(mgr)
+
+	active := GetRandomValidatorNode(NodeActive)
+	standby := GetRandomValidatorNode(NodeStandby)
+	ready := GetRandomValidatorNode(NodeReady)
+	disabled := GetRandomValidatorNode(NodeDisabled)
+	for _, na := range []NodeAccount{active, standby, ready, disabled} {
+		na.Bond = cosmos.NewUint(100 * common.One)
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+	}
+
+	// non-ADR key: only active nodes may vote
+	c.Assert(h.validate(ctx, *NewMsgMimir("SOMEKEY", 1, active.NodeAddress)), IsNil)
+	c.Assert(h.validate(ctx, *NewMsgMimir("SOMEKEY", 1, standby.NodeAddress)), NotNil)
+	c.Assert(h.validate(ctx, *NewMsgMimir("SOMEKEY", 1, ready.NodeAddress)), NotNil)
+
+	// ADR key: active, standby and ready may vote; disabled and non-nodes may not
+	c.Assert(h.validate(ctx, *NewMsgMimir("ADR42TEST", 1, active.NodeAddress)), IsNil)
+	c.Assert(h.validate(ctx, *NewMsgMimir("ADR42TEST", 1, standby.NodeAddress)), IsNil)
+	c.Assert(h.validate(ctx, *NewMsgMimir("adr42test", 1, ready.NodeAddress)), IsNil)
+	c.Assert(h.validate(ctx, *NewMsgMimir("ADR42TEST", 1, disabled.NodeAddress)), NotNil)
+	c.Assert(h.validate(ctx, *NewMsgMimir("ADR42TEST", 1, GetRandomBech32Addr())), NotNil)
+
+	// a standby vote is stored, but must not set the mimir on its own
+	FundModule(c, ctx, k, BondName, 100*common.One)
+	_, err := h.Run(ctx, NewMsgMimir("ADR42TEST", 7, standby.NodeAddress))
+	c.Assert(err, IsNil)
+	mimirs, err := k.GetNodeMimirs(ctx, "ADR42TEST")
+	c.Assert(err, IsNil)
+	c.Check(mimirs.Has("ADR42TEST", standby.NodeAddress), Equals, true)
+	v, err := k.GetMimir(ctx, "ADR42TEST")
+	c.Assert(err, IsNil)
+	c.Check(v, Equals, int64(-1))
 }

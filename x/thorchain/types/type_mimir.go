@@ -95,6 +95,29 @@ func (m NodeMimirs) countActive(key string, active []cosmos.AccAddress, maj func
 	return majorityValue, foundMajority
 }
 
+// VotersOf counts the distinct active signers that have voted on a key, regardless of
+// which value they voted for. countActive tallies per-value, which can't answer "how
+// many nodes have participated at all".
+func (m NodeMimirs) VotersOf(key string, active []cosmos.AccAddress) int {
+	voted := make(map[string]bool) // track signers that have already voted
+	for _, mimir := range m.Mimirs {
+		if !strings.EqualFold(mimir.Key, key) {
+			continue
+		}
+		if voted[mimir.Signer.String()] {
+			continue
+		}
+		for _, acc := range active {
+			if !acc.Equals(mimir.Signer) {
+				continue
+			}
+			voted[mimir.Signer.String()] = true
+			break
+		}
+	}
+	return len(voted)
+}
+
 func (m NodeMimirs) HasSuperMajority(key string, nas []cosmos.AccAddress) (int64, bool) {
 	return m.countActive(key, nas, HasSuperMajority)
 }

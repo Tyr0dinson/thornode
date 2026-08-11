@@ -208,7 +208,36 @@ func (h MimirHandler) handle(ctx cosmos.Context, msg MsgMimir) error {
 }
 
 func validateMimirAuth(ctx cosmos.Context, k keeper.Keeper, msg MsgMimir) (cosmos.Context, error) {
+	// ADR mimirs are votable by standby and ready nodes too, since a standby node must
+	// have voted before it is allowed to churn in. Their votes are stored but excluded
+	// from consensus by NodeMimirs.countActive until they become active.
+	if isADRMimir(msg.Key) {
+		return adrMimirSignerPriority(ctx, k, msg.GetSigners())
+	}
 	return activeNodeAccountsSignerPriority(ctx, k, msg.GetSigners())
+}
+
+func adrMimirSignerPriority(ctx cosmos.Context, k keeper.Keeper, signers []cosmos.AccAddress) (cosmos.Context, error) {
+	unauthorized := cosmos.ErrUnauthorized(fmt.Sprintf("%+v are not authorized", signers))
+	if len(signers) == 0 {
+		return ctx, unauthorized
+	}
+	for _, signer := range signers {
+		na, err := k.GetNodeAccount(ctx, signer)
+		if err != nil {
+			ctx.Logger().Error("fail to get node account", "error", err, "address", signer.String())
+			return ctx, unauthorized
+		}
+		if na.IsEmpty() || na.Type != NodeTypeValidator {
+			return ctx, unauthorized
+		}
+		switch na.Status {
+		case NodeActive, NodeStandby, NodeReady:
+		default:
+			return ctx, unauthorized
+		}
+	}
+	return ctx.WithPriority(ActiveNodePriority), nil
 }
 
 // MimirAnteHandler called by the ante handler to gate mempool entry
