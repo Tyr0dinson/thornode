@@ -549,20 +549,33 @@ func handleObservedTxInQuorum(
 	// forcing an immediate hard failure here; if retries also fail, LackSigning
 	// force-rolls back the swap after 3x the normal timeout to release TOR capacity.
 	if hasFinalised && voter.HasReservedMempoolSwapTOR() {
-		// Realized REVSHARE from every speculative leg is kept outside the
-		// per-block payout accumulator until this transition. Flush it before
-		// releasing any discoverability or capacity marker; on failure, retain
-		// the complete pending snapshot for a later finalize/timeout retry.
-		if err = commitPendingAffiliateLiquidityFeesAtomic(ctx, k, voter.TxID); err != nil {
-			ctx.Logger().Error("fail to finalize pending affiliate liquidity fees", "error", err, "hash", voter.TxID)
-			return nil
-		}
 		switch {
 		case len(voter.Actions) > 0:
+			// finalizeOutboundsCached commits pending REVSHARE inside the same
+			// cache as staged-outbound materialization. Do not pre-commit it here:
+			// a later finalization error must retain the journal so timeout rollback
+			// cannot leave an affiliate accrual behind for a refunded swap.
 			if err = finalizeOutboundsAtomic(ctx, mgr, voter); err != nil {
 				ctx.Logger().Error("fail to finalize outbounds", "error", err, "hash", voter.TxID)
 			}
-		case !k.HasAdvSwapQueueItem(ctx, voter.TxID, 0) && !k.HasStagedOutbound(ctx, voter.TxID):
+		case k.HasStagedOutbound(ctx, voter.TxID):
+			// Staged outbounds without matching voter Actions cannot be finalized
+			// safely. Keep both the staged owner and pending REVSHARE discoverable
+			// for LackSigning retry/rollback instead of committing either side of
+			// an inconsistent snapshot.
+			ctx.Logger().Error("finalized mempool swap has staged outbounds without voter actions", "hash", voter.TxID)
+		default:
+			// Queue-backed and orphan paths have no staged outbound transaction in
+			// which to commit prior speculative slices. Finality makes those slices
+			// durable, so flush them before releasing the remaining marker.
+			if err = commitPendingAffiliateLiquidityFeesAtomic(ctx, k, voter.TxID); err != nil {
+				ctx.Logger().Error("fail to finalize pending affiliate liquidity fees", "error", err, "hash", voter.TxID)
+				return nil
+			}
+			if k.HasAdvSwapQueueItem(ctx, voter.TxID, 0) {
+				ctx.Logger().Info("finalized mempool swap still pending advanced-queue settlement", "hash", voter.TxID)
+				return nil
+			}
 			// A finalized mempool swap with no Actions is normally still
 			// mid-settlement in the advanced queue. But if settlement already ran
 			// while the inbound was unfinalized, it removed the queue item (and,
@@ -579,8 +592,6 @@ func handleObservedTxInQuorum(
 			// releaseMempoolSwapCapacityAndClear persists the cleared voter.
 			releaseMempoolSwapCapacityAndClear(ctx, k, voter, "released mempool swap capacity for settled-but-orphaned finalized swap")
 			incrMempoolSwapCounter("completed_total", []metrics.Label{telemetry.NewLabel("path", "finalized_orphan_recovery")})
-		default:
-			ctx.Logger().Info("finalized mempool swap still pending advanced-queue settlement", "hash", voter.TxID)
 		}
 		return nil
 	}

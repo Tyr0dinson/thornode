@@ -275,6 +275,141 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsRollbackOnEr
 	c.Check(stagedItems, HasLen, 1, Commentf("staged outbounds should remain after finalize failure"))
 }
 
+// TestFinalizedHandlerKeepsPendingRevShareOnFinalizeError verifies that the
+// finalized observation path does not commit speculative REVSHARE outside the
+// same cache as action-backed outbound finalization. The handler deliberately
+// swallows a finalize error so voter/vault observation state can persist; the
+// transaction journal must nevertheless remain available for retry or rollback.
+func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizedHandlerKeepsPendingRevShareOnFinalizeError(c *C) {
+	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
+
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	activeVault := NewVault(
+		ctx.BlockHeight(),
+		ActiveVault,
+		AsgardVault,
+		GetRandomPubKey(),
+		common.Chains{common.BTCChain, common.ETHChain}.Strings(),
+		nil,
+	)
+	activeVault.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One)),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(10*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, activeVault), IsNil)
+
+	vaultAddress, err := activeVault.PubKey.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+	inTxID := GetRandomTxHash()
+	inboundTx := common.NewTx(
+		inTxID,
+		GetRandomBTCAddress(),
+		vaultAddress,
+		common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One))},
+		common.Gas{common.NewCoin(common.BTCAsset, cosmos.OneUint())},
+		"SWAP:ETH.ETH:"+GetRandomETHAddress().String(),
+	)
+	finalizedTx := NewObservedTx(inboundTx, ctx.BlockHeight(), activeVault.PubKey, ctx.BlockHeight())
+
+	stagedItem := TxOutItem{
+		Chain:       common.ETHChain,
+		InHash:      inTxID,
+		VaultPubKey: activeVault.PubKey,
+		ToAddress:   GetRandomETHAddress(),
+		Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)),
+		Memo:        NewOutboundMemo(inTxID).String(),
+	}
+	voter := NewObservedTxVoter(inTxID, ObservedTxs{finalizedTx})
+	voter.Tx = finalizedTx
+	voter.Height = ctx.BlockHeight()
+	voter.UnfinalizedHeight = ctx.BlockHeight()
+	voter.FinalisedHeight = ctx.BlockHeight()
+	voter.MempoolSwapTOR = cosmos.NewUint(123 * common.One)
+	voter.Actions = []TxOutItem{stagedItem}
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
+	usageBefore := cosmos.NewUint(999 * common.One)
+	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, usageBefore)
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, stagedItem, ctx.BlockHeight()+5), IsNil)
+
+	pendingFee := cosmos.NewUint(77)
+	c.Assert(mgr.Keeper().AddPendingAffiliateLiquidityFee(ctx, inTxID, 0, "AFFX", pendingFee), IsNil)
+	baselineFee := cosmos.NewUint(11)
+	c.Assert(mgr.Keeper().AddAffiliateLiquidityFee(ctx, "BASE", baselineFee), IsNil)
+
+	// The dummy manager's TxOutStore is intentionally not *TxOutStorage, so the
+	// cached finalizer fails after committing pending REVSHARE in its child cache.
+	// A direct probe confirms the fixture reaches that late failure without
+	// changing the parent state.
+	dummyMgr := NewDummyMgrWithKeeper(mgr.Keeper())
+	err = finalizeOutboundsAtomic(ctx, dummyMgr, voter)
+	c.Assert(err, ErrorMatches, "fail to cast TxOutStore to TxOutStorage")
+	c.Check(mgr.Keeper().HasPendingAffiliateLiquidityFees(ctx, inTxID), Equals, true)
+
+	err = handleObservedTxInQuorum(
+		ctx,
+		dummyMgr,
+		na.NodeAddress,
+		NodeAccounts{na},
+		NewInternalHandler(dummyMgr),
+		finalizedTx,
+		voter,
+		[]cosmos.AccAddress{na.NodeAddress},
+		true,
+	)
+	c.Assert(err, IsNil)
+
+	pending, err := mgr.Keeper().GetPendingAffiliateLiquidityFees(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Assert(pending, HasLen, 1, Commentf("failed finalization must retain pending REVSHARE for retry or rollback"))
+	c.Check(pending[0].Thorname, Equals, "AFFX")
+	c.Check(pending[0].Fee.Equal(pendingFee), Equals, true)
+
+	accrued := mgr.Keeper().GetAffiliateLiquidityFees(ctx)
+	c.Assert(accrued, HasLen, 1, Commentf("failed finalization must not leak pending REVSHARE into the payout accumulator"))
+	c.Check(accrued[0].Thorname, Equals, "BASE")
+	c.Check(accrued[0].Fee.Equal(baselineFee), Equals, true)
+
+	staged, err := mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(staged, HasLen, 1, Commentf("failed finalization must retain staged outbound ownership"))
+	updatedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(updatedVoter.HasReservedMempoolSwapTOR(), Equals, true)
+	c.Check(updatedVoter.Actions, HasLen, 1)
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).Equal(usageBefore), Equals, true)
+
+	// A corrupted snapshot with staged ownership but no matching Actions cannot
+	// be action-finalized. It must likewise retain the transaction-scoped journal
+	// rather than promote REVSHARE that a later forced rollback cannot identify.
+	updatedVoter.Actions = nil
+	mgr.Keeper().SetObservedTxInVoter(ctx, updatedVoter)
+	err = handleObservedTxInQuorum(
+		ctx,
+		dummyMgr,
+		na.NodeAddress,
+		NodeAccounts{na},
+		NewInternalHandler(dummyMgr),
+		finalizedTx,
+		updatedVoter,
+		[]cosmos.AccAddress{na.NodeAddress},
+		true,
+	)
+	c.Assert(err, IsNil)
+	c.Check(mgr.Keeper().HasPendingAffiliateLiquidityFees(ctx, inTxID), Equals, true)
+	c.Check(mgr.Keeper().GetAffiliateLiquidityFees(ctx), DeepEquals, accrued)
+	staged, err = mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(staged, HasLen, 1)
+	updatedVoter, err = mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(updatedVoter.HasReservedMempoolSwapTOR(), Equals, true)
+	c.Check(updatedVoter.Actions, HasLen, 0)
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).Equal(usageBefore), Equals, true)
+}
+
 // TestFinalizeOutboundsRollbackOnDeferredAffiliateFeeError verifies that a
 // deferred affiliate-fee failure aborts finalization instead of silently
 // materializing the gross outbound amount.
