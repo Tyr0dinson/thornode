@@ -687,7 +687,6 @@ func (a *MempoolSwapSimulationActor) scenarioStreamFinalityBeforeSettlement(conf
 	}
 	defer swap.release()
 
-	var reservedUsage cosmos.Uint
 	if err = waitForMempoolCondition("partial unfinalized streaming swap "+swap.txID, mempoolObservationTimeout, func() (bool, error) {
 		if err := requireMempoolSwapUnfinalized(swap.txID); err != nil {
 			return false, err
@@ -714,22 +713,22 @@ func (a *MempoolSwapSimulationActor) scenarioStreamFinalityBeforeSettlement(conf
 		if queryErr != nil || !balance.Equal(swap.destinationStart) {
 			return false, queryErr
 		}
-		reservedUsage = usage
 		return true, requireMempoolSwapUnfinalized(swap.txID)
 	}); err != nil {
 		return err
 	}
 
-	// v1 has no standalone lifecycle record. The voter reservation therefore
-	// remains the durable ownership marker after finality until the final stream
-	// leg settles and releases it together with the terminal queue state.
-	if err = waitForMempoolCondition("finalized streaming reservation "+swap.txID, mempoolCompletionTimeout, func() (bool, error) {
+	// Inbound finality retires the speculative exposure even though the advanced
+	// queue still owns the remaining stream: the credited source is now backed by
+	// a finalized deposit, so the capacity reservation is released immediately and
+	// the leftover queue item settles as an ordinary streaming swap.
+	if err = waitForMempoolCondition("released streaming reservation at finality "+swap.txID, mempoolCompletionTimeout, func() (bool, error) {
 		details, queryErr := thornode.GetTxDetails(swap.txID)
 		if queryErr != nil || details.GetFinalisedHeight() == 0 {
 			return false, queryErr
 		}
 		usage, queryErr := thornode.GetMempoolSwapUsageTOR()
-		if queryErr != nil || reservedUsage.IsNil() || !usage.Equal(reservedUsage) {
+		if queryErr != nil || !usage.IsZero() {
 			return false, queryErr
 		}
 		queued, queryErr := thornode.GetSwapDetails(swap.txID)
