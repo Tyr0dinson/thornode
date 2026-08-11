@@ -117,7 +117,8 @@ func (c *Client) call(method string, params []interface{}) (json.RawMessage, err
 	}
 
 	var rpcResp jsonRPCResponse
-	if err := json.Unmarshal(respBody, &rpcResp); err != nil {
+	err = json.Unmarshal(respBody, &rpcResp)
+	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
@@ -142,7 +143,8 @@ func (c *Client) GetBlockHash(blockNumber *uint64) (string, error) {
 	}
 
 	var hash string
-	if err := json.Unmarshal(result, &hash); err != nil {
+	err = json.Unmarshal(result, &hash)
+	if err != nil {
 		return "", fmt.Errorf("failed to unmarshal block hash: %w", err)
 	}
 
@@ -157,7 +159,8 @@ func (c *Client) GetFinalizedHead() (string, error) {
 	}
 
 	var hash string
-	if err := json.Unmarshal(result, &hash); err != nil {
+	err = json.Unmarshal(result, &hash)
+	if err != nil {
 		return "", fmt.Errorf("failed to unmarshal finalized head: %w", err)
 	}
 
@@ -172,7 +175,8 @@ func (c *Client) GetBlock(hash string) (*Block, error) {
 	}
 
 	var signedBlock SignedBlock
-	if err := json.Unmarshal(result, &signedBlock); err != nil {
+	err = json.Unmarshal(result, &signedBlock)
+	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal block: %w", err)
 	}
 
@@ -187,7 +191,8 @@ func (c *Client) GetHeader(hash string) (*Header, error) {
 	}
 
 	var header Header
-	if err := json.Unmarshal(result, &header); err != nil {
+	err = json.Unmarshal(result, &header)
+	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal header: %w", err)
 	}
 
@@ -198,9 +203,17 @@ func (c *Client) GetHeader(hash string) (*Header, error) {
 // It queries System::Account storage directly via state_getStorage and SCALE-decodes
 // the AccountInfo struct to extract the free balance.
 func (c *Client) GetBalance(address, blockHash string, balanceSize int) (cosmos.Uint, error) {
+	_, balance, err := c.GetAccountInfo(address, blockHash, balanceSize)
+	return balance, err
+}
+
+// GetAccountInfo returns the account nonce and free balance from one
+// System::Account storage value at the requested block hash. An empty hash uses
+// the node's latest state.
+func (c *Client) GetAccountInfo(address, blockHash string, balanceSize int) (uint32, cosmos.Uint, error) {
 	accountID, err := ss58DecodeAccountID(address)
 	if err != nil {
-		return cosmos.ZeroUint(), fmt.Errorf("failed to decode SS58 address: %w", err)
+		return 0, cosmos.ZeroUint(), fmt.Errorf("failed to decode SS58 address: %w", err)
 	}
 
 	storageKey := systemAccountStorageKey(accountID)
@@ -212,28 +225,29 @@ func (c *Client) GetBalance(address, blockHash string, balanceSize int) (cosmos.
 
 	result, err := c.call("state_getStorage", params)
 	if err != nil {
-		return cosmos.ZeroUint(), fmt.Errorf("failed to get account storage: %w", err)
+		return 0, cosmos.ZeroUint(), fmt.Errorf("failed to get account storage: %w", err)
 	}
 
 	var hexData string
-	if err = json.Unmarshal(result, &hexData); err != nil {
-		return cosmos.ZeroUint(), fmt.Errorf("failed to unmarshal storage result: %w", err)
+	err = json.Unmarshal(result, &hexData)
+	if err != nil {
+		return 0, cosmos.ZeroUint(), fmt.Errorf("failed to unmarshal storage result: %w", err)
 	}
 	if hexData == "" {
-		return cosmos.ZeroUint(), nil // account not found, zero balance
+		return 0, cosmos.ZeroUint(), nil // account not found
 	}
 
 	data, err := hex.DecodeString(strings.TrimPrefix(hexData, "0x"))
 	if err != nil {
-		return cosmos.ZeroUint(), fmt.Errorf("failed to decode storage hex: %w", err)
+		return 0, cosmos.ZeroUint(), fmt.Errorf("failed to decode storage hex: %w", err)
 	}
 
-	free, err := decodeAccountInfoFreeBalance(data, balanceSize)
+	nonce, free, err := decodeAccountInfo(data, balanceSize)
 	if err != nil {
-		return cosmos.ZeroUint(), fmt.Errorf("failed to decode AccountInfo: %w", err)
+		return 0, cosmos.ZeroUint(), fmt.Errorf("failed to decode AccountInfo: %w", err)
 	}
 
-	return free, nil
+	return nonce, free, nil
 }
 
 // systemAccountStorageKey computes the storage key for System::Account(account_id).
@@ -252,30 +266,31 @@ func systemAccountStorageKey(accountID []byte) string {
 		hex.EncodeToString(hash) + hex.EncodeToString(accountID)
 }
 
-// decodeAccountInfoFreeBalance extracts the free balance from a SCALE-encoded
+// decodeAccountInfo extracts the nonce and free balance from a SCALE-encoded
 // Substrate AccountInfo struct. The free balance starts at a fixed offset:
 //
-//   nonce(4) + consumers(4) + providers(4) + sufficients(4) = 16 bytes header
+//	nonce(4) + consumers(4) + providers(4) + sufficients(4) = 16 bytes header
 //
 // AccountData.free is stored as either u64 (8 bytes) or u128 LE (16 bytes).
 // We read the amount specified via balanceSize and return it as cosmos.Uint.
 // This layout is stable across both old (misc_frozen/fee_frozen) and new
 // (frozen/flags) AccountData variants.
-
-func decodeAccountInfoFreeBalance(data []byte, balanceSize int) (cosmos.Uint, error) {
+func decodeAccountInfo(data []byte, balanceSize int) (uint32, cosmos.Uint, error) {
 	offset := 16 // 4 × u32 fields before AccountData.free
 
 	if len(data) < offset+balanceSize {
-		return cosmos.ZeroUint(), fmt.Errorf("AccountInfo data too short: %d bytes (need %d)", len(data), offset+balanceSize)
+		return 0, cosmos.ZeroUint(), fmt.Errorf("AccountInfo data too short: %d bytes (need %d)", len(data), offset+balanceSize)
 	}
+	nonce := binary.LittleEndian.Uint32(data[:4])
 
 	switch balanceSize {
 	case 8:
-		return cosmos.NewUint(binary.LittleEndian.Uint64(data[offset : offset+8])), nil
+		return nonce, cosmos.NewUint(binary.LittleEndian.Uint64(data[offset : offset+8])), nil
 	case 16:
-		return cosmos.ParseUint128(data[offset : offset+16])
+		free, err := cosmos.ParseUint128(data[offset : offset+16])
+		return nonce, free, err
 	default:
-		return cosmos.ZeroUint(), fmt.Errorf("unsupported balance size: %d", balanceSize)
+		return 0, cosmos.ZeroUint(), fmt.Errorf("unsupported balance size: %d", balanceSize)
 	}
 }
 
@@ -297,7 +312,8 @@ func (c *Client) GetNonce(address string) (uint32, error) {
 	}
 
 	var nonce uint32
-	if err := json.Unmarshal(result, &nonce); err != nil {
+	err = json.Unmarshal(result, &nonce)
+	if err != nil {
 		return 0, fmt.Errorf("failed to unmarshal nonce: %w", err)
 	}
 
@@ -317,7 +333,8 @@ func (c *Client) GetRuntimeVersion(blockHash string) (*RuntimeVersion, error) {
 	}
 
 	var rv RuntimeVersion
-	if err := json.Unmarshal(result, &rv); err != nil {
+	err = json.Unmarshal(result, &rv)
+	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal runtime version: %w", err)
 	}
 
@@ -338,7 +355,8 @@ func (c *Client) SubmitExtrinsic(hexEncoded string) (string, error) {
 	}
 
 	var hash string
-	if err := json.Unmarshal(result, &hash); err != nil {
+	err = json.Unmarshal(result, &hash)
+	if err != nil {
 		return "", fmt.Errorf("failed to unmarshal extrinsic hash: %w", err)
 	}
 
@@ -355,7 +373,8 @@ func (c *Client) GetEventsStorage(blockHash string) (string, error) {
 	}
 
 	var hexData string
-	if err := json.Unmarshal(result, &hexData); err != nil {
+	err = json.Unmarshal(result, &hexData)
+	if err != nil {
 		return "", fmt.Errorf("failed to unmarshal events storage: %w", err)
 	}
 
@@ -374,7 +393,8 @@ func (c *Client) GetMetadata(blockHash string) (string, error) {
 	}
 
 	var hexData string
-	if err := json.Unmarshal(result, &hexData); err != nil {
+	err = json.Unmarshal(result, &hexData)
+	if err != nil {
 		return "", fmt.Errorf("failed to unmarshal metadata: %w", err)
 	}
 

@@ -436,8 +436,11 @@ func (s *ClientSuite) TestSignerCache(c *C) {
 
 	c.Assert(client.HasSigned(txOutItem), Equals, false)
 
-	client.SetSigned(txOutItem, "TXID123")
+	c.Assert(client.SetSigned(txOutItem, "TXID123"), IsNil)
 	c.Assert(client.HasSigned(txOutItem), Equals, true)
+	txHash, err := client.GetSignedTransactionHash(txOutItem)
+	c.Assert(err, IsNil)
+	c.Assert(txHash, Equals, "TXID123")
 
 	// Populate inbound cache, needed for GetLatestTxForVault
 	txInItem := types.TxInItem{
@@ -452,6 +455,10 @@ func (s *ClientSuite) TestSignerCache(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(observed, Equals, txInItem.Tx)
 	c.Assert(broadcast, Equals, "TXID123")
+	c.Assert(client.RemoveSigned("TXID123"), IsNil)
+	c.Assert(client.HasSigned(txOutItem), Equals, false)
+	_, err = client.GetSignedTransactionHash(txOutItem)
+	c.Assert(err, NotNil)
 }
 
 func (s *ClientSuite) TestShouldReportSolvency(c *C) {

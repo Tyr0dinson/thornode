@@ -42,20 +42,21 @@ func NewSignerCacheManager(db *leveldb.DB) (*CacheManager, error) {
 
 // SetSigned mark a tx out item has been signed with no expiry. The cache entry persists
 // until RemoveSigned is called by a chain-specific observation or unstuck routine.
-func (cm *CacheManager) SetSigned(txOutItemHash, vaultKey, transactionHash string) error {
-	if err := cm.storageAccessor.SetSigned(txOutItemHash); err != nil {
+func (cm *CacheManager) SetSigned(txOutItemHash, vaultKey, txHash string) error {
+	err := cm.storageAccessor.SetSigned(txOutItemHash)
+	if err != nil {
 		cm.logger.Err(err).
 			Str("txout_hash", txOutItemHash).
-			Str("transaction_hash", transactionHash).
+			Str("transaction_hash", txHash).
 			Msg("fail to set signed cache")
 		return fmt.Errorf("fail to set signed cache %w", err)
 	}
-	err := cm.storageAccessor.SetTransactionHashMap(txOutItemHash, transactionHash)
+	err = cm.storageAccessor.SetTransactionHashMap(txOutItemHash, txHash)
 	if err != nil {
 		return err
 	}
 
-	return cm.storageAccessor.SetLatestRecordedTx(vaultKey, transactionHash)
+	return cm.storageAccessor.SetLatestRecordedTx(vaultKey, txHash)
 }
 
 // SetSignedWithExpiry marks a tx out item as signed with an absolute expiry and the
@@ -64,18 +65,20 @@ func (cm *CacheManager) SetSigned(txOutItemHash, vaultKey, transactionHash strin
 // before clearing the entry. The entry is never removed on read — only by explicit
 // RemoveSigned after chain-side verification — because deleting on expiry alone
 // can double-spend if thorchain observation consensus lags actual inclusion.
-func (cm *CacheManager) SetSignedWithExpiry(txOutItemHash, vaultKey, transactionHash string, expiryUnixMs int64) error {
-	if err := cm.storageAccessor.SetSignedWithExpiry(txOutItemHash, expiryUnixMs, transactionHash); err != nil {
+func (cm *CacheManager) SetSignedWithExpiry(txOutItemHash, vaultKey, txHash string, expiryUnixMs int64) error {
+	err := cm.storageAccessor.SetSignedWithExpiry(txOutItemHash, expiryUnixMs, txHash)
+	if err != nil {
 		cm.logger.Err(err).
 			Str("txout_hash", txOutItemHash).
-			Str("transaction_hash", transactionHash).
+			Str("transaction_hash", txHash).
 			Msg("fail to set signed cache with expiry")
 		return fmt.Errorf("fail to set signed cache with expiry: %w", err)
 	}
-	if err := cm.storageAccessor.SetTransactionHashMap(txOutItemHash, transactionHash); err != nil {
+	err = cm.storageAccessor.SetTransactionHashMap(txOutItemHash, txHash)
+	if err != nil {
 		return err
 	}
-	return cm.storageAccessor.SetLatestRecordedTx(vaultKey, transactionHash)
+	return cm.storageAccessor.SetLatestRecordedTx(vaultKey, txHash)
 }
 
 // HasSigned check whether the given tx out item has been signed before
@@ -109,8 +112,11 @@ func (cm *CacheManager) GetTransactionHash(txOutItemHash string) (string, error)
 // RemoveSigned removes the corresponding TxOutItem from the signer cache. The provided
 // transaction hash should be for the broadcast transaction - it is internally mapped to
 // the cache key for the TxOutItem.
-func (cm *CacheManager) RemoveSigned(transactionHash string) {
-	if err := cm.storageAccessor.RemoveSigned(transactionHash); err != nil {
-		cm.logger.Err(err).Msgf("fail to remove signed transaction hash: %s", transactionHash)
+func (cm *CacheManager) RemoveSigned(txHash string) error {
+	err := cm.storageAccessor.RemoveSigned(txHash)
+	if err != nil {
+		cm.logger.Err(err).Msgf("fail to remove signed transaction hash: %s", txHash)
+		return fmt.Errorf("fail to remove signed transaction hash %s: %w", txHash, err)
 	}
+	return nil
 }

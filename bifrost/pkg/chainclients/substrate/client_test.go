@@ -2,6 +2,8 @@ package substrate
 
 import (
 	"bytes"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -119,7 +121,8 @@ func (h *rpcHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Params json.RawMessage `json:"params"`
 		ID     int             `json:"id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
@@ -243,18 +246,77 @@ func newTestClient(rpcClient *rpc.Client, opts ...testClientOpt) *Client {
 	if err != nil {
 		logger.Fatal().Err(err).Msg("could not create generic client")
 	}
+	stateStore, err := newStateStore(genericClient.StateStore())
+	if err != nil {
+		logger.Fatal().Err(err).Msg("could not create substrate state store")
+	}
 
 	return &Client{
 		Client:           genericClient,
 		logger:           log.Logger,
+		storage:          storage,
 		rpcClient:        rpcClient,
 		nonces:           make(map[string]nonceMetadata),
 		migrationTxCache: newMigrationTxCache(),
+		stateStore:       stateStore,
 		chainScanner: &Scanner{
 			params:     ChainParams[common.TAOChain],
 			nonceCache: newNonceCache(),
 		},
 	}
+}
+
+func makeBroadcastTestTx(c *C, nonce uint64) (stypes.TxOutItem, []byte) {
+	signer := defaultTestSigner()
+	cmtPub := cmted25519.PubKey(signer)
+	cosmosPubAny, err := cryptocodec.FromCmtPubKeyInterface(cmtPub)
+	c.Assert(err, IsNil)
+	bech32, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, cosmosPubAny)
+	c.Assert(err, IsNil)
+	vaultPubKey, err := common.NewPubKey(bech32)
+	c.Assert(err, IsNil)
+
+	params := ChainParams[common.TAOChain]
+	ext := &subtypes.Extrinsic{
+		Signer:            signer,
+		SignatureType:     subtypes.SignatureTypeEd25519,
+		Signature:         make([]byte, 64),
+		Era:               subtypes.MortalEra(uint64(params.MortalEraPeriod), 100),
+		Nonce:             nonce,
+		Tip:               0,
+		MetadataMode:      subtypes.MetadataModeDisabled,
+		CheckMetadataHash: params.CheckMetadataHash,
+		CallData: subtypes.BalanceTransferKeepAlive(
+			params.Index(BalancesPallet),
+			params.Index(BalancesTransferKeepAliveCall),
+			bytes.Repeat([]byte{0x01}, 32),
+			cosmos.NewUint(100),
+		),
+	}
+	return stypes.TxOutItem{
+		Chain:            common.TAOChain,
+		VaultPubKeyEddsa: vaultPubKey,
+		Memo:             "OUT:hash",
+	}, subtypes.EncodeSignedExtrinsic(ext)
+}
+
+func seedSignedExtrinsic(
+	c *C,
+	cl *Client,
+	nonce uint32,
+	recheckHeight int64,
+) (stypes.TxOutItem, string, string) {
+	txOutItem, rawTx := makeBroadcastTestTx(c, uint64(nonce))
+	txHash := subtypes.ExtrinsicHash(rawTx)
+	vaultAddr := cl.GetAddress(txOutItem.GetVaultPubKey())
+	c.Assert(cl.SetSigned(txOutItem, txHash), IsNil)
+	c.Assert(cl.stateStore.PutExtrinsic(signedExtrinsicRecord{
+		TxHash:        txHash,
+		VaultAddress:  vaultAddr,
+		Nonce:         nonce,
+		RecheckHeight: recheckHeight,
+	}), IsNil)
+	return txOutItem, txHash, vaultAddr
 }
 
 // ---------------------------------------------------------------------------
@@ -317,7 +379,8 @@ func (s *ClientSuite) TestReserveNonce_Checkpoint(c *C) {
 	c.Check(string(cp), Equals, string(checkpointData), Commentf("checkpoint mismatch"))
 
 	// The nonce map should NOT have been incremented (checkpoint bypasses increment)
-	if meta, ok := cl.nonces[vault]; ok {
+	meta, ok := cl.nonces[vault]
+	if ok {
 		c.Check(meta.Nonce, Equals, uint32(0),
 			Commentf("nonce map should not be modified by checkpoint path, got nonce=%d", meta.Nonce))
 	}
@@ -470,12 +533,35 @@ func (s *ClientSuite) TestBroadcastTx_Success(c *C) {
 
 	cl := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
 
-	txOutItem := stypes.TxOutItem{Chain: common.TAOChain, Memo: "OUT:hash"}
-	rawTx := []byte{0x01, 0x02, 0x03}
+	txOutItem, rawTx := makeBroadcastTestTx(c, 1)
 
 	txHash, err := cl.BroadcastTx(txOutItem, rawTx)
 	c.Assert(err, IsNil)
 	c.Check(txHash, Not(Equals), "", Commentf("expected non-empty tx hash"))
+	record, found, err := cl.stateStore.GetExtrinsic(txHash)
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, true)
+	c.Check(record.Nonce, Equals, uint32(1))
+}
+
+func (s *ClientSuite) TestBroadcastTx_PersistenceFailurePreventsSubmission(c *C) {
+	h := newRPCHandler()
+	called := false
+	h.on("author_submitExtrinsic", func(_ json.RawMessage) (interface{}, error) {
+		called = true
+		return "unused", nil
+	})
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	cl := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
+	state := &memoryStateStore{putErr: errors.New("disk unavailable")}
+	cl.stateStore, _ = newStateStore(state)
+	txOutItem, rawTx := makeBroadcastTestTx(c, 1)
+
+	_, err := cl.BroadcastTx(txOutItem, rawTx)
+	c.Assert(err, NotNil)
+	c.Check(called, Equals, false)
 }
 
 func (s *ClientSuite) TestBroadcastTx_AlreadyImported(c *C) {
@@ -492,8 +578,7 @@ func (s *ClientSuite) TestBroadcastTx_AlreadyImported(c *C) {
 
 	cl := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
 
-	txOutItem := stypes.TxOutItem{Chain: common.TAOChain, Memo: "OUT:hash"}
-	rawTx := []byte{0x01, 0x02, 0x03}
+	txOutItem, rawTx := makeBroadcastTestTx(c, 1)
 
 	// Should succeed — AlreadyImported is treated as success
 	txHash, err := cl.BroadcastTx(txOutItem, rawTx)
@@ -566,7 +651,7 @@ func (s *ClientSuite) TestBroadcastTx_Stale(c *C) {
 			Signer:            signerPubkey,
 			SignatureType:     subtypes.SignatureTypeEd25519,
 			Signature:         make([]byte, 64),
-			Era:               subtypes.ImmortalEra(),
+			Era:               subtypes.MortalEra(uint64(params.MortalEraPeriod), 100),
 			Nonce:             1,
 			Tip:               0,
 			MetadataMode:      subtypes.MetadataModeDisabled,
@@ -624,11 +709,141 @@ func (s *ClientSuite) TestBroadcastTx_OtherError(c *C) {
 
 	cl := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
 
-	txOutItem := stypes.TxOutItem{Chain: common.TAOChain, Memo: "OUT:hash"}
-	rawTx := []byte{0x01, 0x02, 0x03}
+	txOutItem, rawTx := makeBroadcastTestTx(c, 1)
 
 	_, err := cl.BroadcastTx(txOutItem, rawTx)
 	c.Check(err, NotNil, Commentf("BroadcastTx should fail for unknown errors"))
+}
+
+func accountInfoHex(nonce uint32) string {
+	data := make([]byte, 24) // four u32 fields followed by one u64 free balance
+	binary.LittleEndian.PutUint32(data[:4], nonce)
+	return "0x" + hex.EncodeToString(data)
+}
+
+func (s *ClientSuite) TestExpiredSignedExtrinsicRecovery(c *C) {
+	tests := []struct {
+		name          string
+		finalized     int64
+		nonce         uint32
+		expectRPC     bool
+		expectRetry   bool
+		expectRemoved bool
+	}{
+		{
+			name:      "before recheck height",
+			finalized: 99,
+		},
+		{
+			name:          "nonce unchanged after expiry",
+			finalized:     100,
+			nonce:         7,
+			expectRPC:     true,
+			expectRetry:   true,
+			expectRemoved: true,
+		},
+		{
+			name:        "nonce advanced after expiry",
+			finalized:   100,
+			nonce:       8,
+			expectRPC:   true,
+			expectRetry: false,
+		},
+	}
+
+	for _, tt := range tests {
+		h := newRPCHandler()
+		called := false
+		h.on("state_getStorage", func(params json.RawMessage) (interface{}, error) {
+			called = true
+			if !strings.Contains(string(params), "0xfinalized") {
+				return nil, fmt.Errorf("query was not anchored to finalized block: %s", params)
+			}
+			return accountInfoHex(tt.nonce), nil
+		})
+		srv := httptest.NewServer(h)
+		cl := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
+		txOutItem, txHash, vaultAddr := seedSignedExtrinsic(c, cl, 7, 100)
+
+		canRetry, err := cl.canRetrySignedTx(txHash, vaultAddr, "0xfinalized", tt.finalized)
+		c.Assert(err, IsNil, Commentf("%s", tt.name))
+		c.Check(canRetry, Equals, tt.expectRetry, Commentf("%s", tt.name))
+		c.Check(called, Equals, tt.expectRPC, Commentf("%s", tt.name))
+		c.Check(cl.HasSigned(txOutItem), Equals, true, Commentf("%s: check must not mutate state", tt.name))
+		if canRetry {
+			c.Assert(cl.releaseExpiredSignedTx(txHash), IsNil, Commentf("%s", tt.name))
+		}
+		c.Check(cl.HasSigned(txOutItem), Equals, !tt.expectRemoved, Commentf("%s", tt.name))
+		srv.Close()
+	}
+}
+
+func (s *ClientSuite) TestExpiredSignedExtrinsicKeepsCacheOnMissingState(c *C) {
+	cl := newTestClient(nil)
+	txOutItem, rawTx := makeBroadcastTestTx(c, 7)
+	txHash := subtypes.ExtrinsicHash(rawTx)
+	vaultAddr := cl.GetAddress(txOutItem.GetVaultPubKey())
+	c.Assert(cl.SetSigned(txOutItem, txHash), IsNil)
+
+	canRetry, err := cl.canRetrySignedTx(txHash, vaultAddr, "0xfinalized", 100)
+	c.Assert(err, NotNil)
+	c.Check(canRetry, Equals, false)
+	c.Check(cl.HasSigned(txOutItem), Equals, true)
+}
+
+func (s *ClientSuite) TestExpiredSignedExtrinsicKeepsCacheOnRPCError(c *C) {
+	h := newRPCHandler()
+	h.on("state_getStorage", func(json.RawMessage) (interface{}, error) {
+		return nil, errors.New("node unavailable")
+	})
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	cl := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
+	txOutItem, txHash, vaultAddr := seedSignedExtrinsic(c, cl, 7, 100)
+
+	canRetry, err := cl.canRetrySignedTx(txHash, vaultAddr, "0xfinalized", 100)
+	c.Assert(err, NotNil)
+	c.Check(canRetry, Equals, false)
+	c.Check(cl.HasSigned(txOutItem), Equals, true)
+}
+
+func (s *ClientSuite) TestFinalizedFailureRemovesBothStores(c *C) {
+	cl := newTestClient(nil)
+	txOutItem, txHash, _ := seedSignedExtrinsic(c, cl, 7, 100)
+
+	c.Assert(cl.handleFinalizedFailure(txHash), IsNil)
+	c.Check(cl.HasSigned(txOutItem), Equals, false)
+	_, found, err := cl.stateStore.GetExtrinsic(txHash)
+	c.Assert(err, IsNil)
+	c.Check(found, Equals, false)
+}
+
+func (s *ClientSuite) TestFailedOutboundObservationDoesNotRecreateSignerCache(c *C) {
+	cl := newTestClient(nil)
+	cl.chainScanner.pubkeyMgr = pubkeymanager.NewMockPoolAddressValidator()
+	txHash := "0x" + strings.Repeat("a", 64)
+	txID, err := common.NewTxID(txHash)
+	c.Assert(err, IsNil)
+	item := stypes.TxInItem{
+		Tx:     txHash,
+		Memo:   "OUT:" + txID.String(),
+		Sender: "sender",
+		To:     "destination",
+		Coins: common.NewCoins(common.NewCoin(
+			common.TAOChain.GetGasAsset(), cosmos.OneUint(),
+		)),
+	}
+	cacheItem := stypes.TxOutItem{
+		Chain:     common.TAOChain,
+		ToAddress: common.Address(item.To),
+		Coins:     item.Coins,
+		Memo:      item.Memo,
+		InHash:    txID,
+	}
+
+	cl.OnObservedTxIn(item, 100)
+	c.Check(cl.HasSigned(cacheItem), Equals, false)
 }
 
 // ---------------------------------------------------------------------------

@@ -417,15 +417,16 @@ func (s *SignerCacheSuite) TestCacheManagerRemoveSigned(c *C) {
 
 	txOutItemHash := "txout-hash-1"
 	vaultKey := "vault-key-1"
-	transactionHash := "tx-hash-1"
+	txHash := "tx-hash-1"
 
 	// Set signed
-	err = mgr.SetSigned(txOutItemHash, vaultKey, transactionHash)
+	err = mgr.SetSigned(txOutItemHash, vaultKey, txHash)
 	c.Assert(err, IsNil)
 	c.Assert(mgr.HasSigned(txOutItemHash), Equals, true)
 
 	// Remove signed
-	mgr.RemoveSigned(transactionHash)
+	err = mgr.RemoveSigned(txHash)
+	c.Assert(err, IsNil)
 
 	// Should no longer be signed
 	c.Assert(mgr.HasSigned(txOutItemHash), Equals, false)
@@ -439,7 +440,7 @@ func (s *SignerCacheSuite) TestCacheManagerRemoveSignedNonExistent(c *C) {
 	c.Assert(err, IsNil)
 
 	// Remove non-existent - should not panic or error
-	mgr.RemoveSigned("non-existent-hash")
+	c.Assert(mgr.RemoveSigned("non-existent-hash"), IsNil)
 }
 
 func (s *SignerCacheSuite) TestCacheManagerMultipleTxOutItems(c *C) {
@@ -531,8 +532,8 @@ func (s *SignerCacheSuite) TestCacheManagerRemoveSignedError(c *C) {
 		storageAccessor: mock,
 	}
 
-	// RemoveSigned logs the error but doesn't return it - should not panic
-	mgr.RemoveSigned("tx-hash")
+	err := mgr.RemoveSigned("tx-hash")
+	c.Assert(err, NotNil)
 }
 
 func (s *SignerCacheSuite) TestCacheStoreRemoveSignedDBError(c *C) {

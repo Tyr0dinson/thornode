@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"sync"
 	"time"
@@ -51,6 +52,7 @@ type Client struct {
 	signMu              sync.Mutex               // protects nonce reservation in SignTx
 	nonces              map[string]nonceMetadata // vault address → nonce state (guarded by signMu)
 	migrationTxCache    *migrationTxCache
+	stateStore          *stateStore
 }
 
 // nonceMetadata holds nonce and block height for a vault.
@@ -107,6 +109,10 @@ func NewClient(
 	if err != nil {
 		return nil, fmt.Errorf("failed to create client: %w", err)
 	}
+	c.stateStore, err = newStateStore(c.Client.StateStore())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create substrate state store: %w", err)
+	}
 
 	c.rpcClient = rpc.NewClient(
 		config.RPCHost,
@@ -118,6 +124,7 @@ func NewClient(
 		c.reportSolvencyFromScanner,
 		c.rpcClient,
 		pubkeyMgr,
+		c.handleFinalizedFailure,
 	)
 	if err != nil {
 		return c, fmt.Errorf("failed to create chain scanner: %w", err)
@@ -329,11 +336,6 @@ func (c *Client) SignTx(tx ttypes.TxOutItem, thorchainHeight int64) (signedTx, c
 		return nil, nil, nil, fmt.Errorf("substrate clients only support the native gas asset %s, got %s", gasAsset, tx.Coins[0].Asset)
 	}
 
-	if c.HasSigned(tx) {
-		c.logger.Info().Interface("tx", tx).Msg("transaction already signed, ignoring...")
-		return nil, nil, nil, nil
-	}
-
 	// Get memo for parsing
 	memoForParsing := tx.GetMemo()
 	var memoObj mem.Memo
@@ -356,6 +358,38 @@ func (c *Client) SignTx(tx ttypes.TxOutItem, thorchainHeight int64) (signedTx, c
 	// Read block hash + height atomically — used for both nonce management and
 	// mortal era construction (era phase must match the block hash).
 	latestBlockHash, currentHeight := c.chainScanner.getLatestBlock()
+	if c.HasSigned(tx) {
+		var txHash string
+		txHash, err = c.GetSignedTransactionHash(tx)
+		if err != nil {
+			c.logger.Err(err).
+				Interface("tx", tx).
+				Msg("failed to get signed transaction hash, keeping signer cache entry")
+			return nil, nil, nil, nil
+		}
+		var canRetry bool
+		canRetry, err = c.canRetrySignedTx(txHash, vaultAddr.String(), latestBlockHash, currentHeight)
+		if err != nil {
+			c.logger.Err(err).
+				Interface("tx", tx).
+				Msg("failed to verify signed transaction expiry, keeping signer cache entry")
+			return nil, nil, nil, nil
+		}
+		if !canRetry {
+			c.logger.Info().
+				Interface("tx", tx).
+				Msg("transaction already signed, ignoring...")
+			return nil, nil, nil, nil
+		}
+		err = c.releaseExpiredSignedTx(txHash)
+		if err != nil {
+			c.logger.Err(err).Interface("tx", tx).
+				Msg("failed to release expired signed transaction")
+			return nil, nil, nil, nil
+		}
+		c.logger.Info().Str("txid", txHash).Int64("height", currentHeight).
+			Msg("released expired transaction for re-signing")
+	}
 
 	// Reserve nonce under lock to prevent concurrent SignTx calls from getting the same nonce
 	reservedNonce, checkpointBytes, err := c.reserveNonce(tx, vaultAddr.String(), currentHeight)
@@ -548,9 +582,28 @@ func (c *Client) createAndSignExtrinsic(
 func (c *Client) BroadcastTx(txOutItem ttypes.TxOutItem, rawTx []byte) (string, error) {
 	// Compute hash locally for consistency with the scanner's extrinsicHash.
 	txHash := stypes.ExtrinsicHash(rawTx)
+	extrinsic, err := stypes.ParseSignedExtrinsic(rawTx, c.chainScanner.params.CheckMetadataHash, c.chainScanner.params.ChargeAssetTxPayment)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse extrinsic before broadcast: %w", err)
+	}
+	if extrinsic.Nonce > math.MaxUint32 {
+		return "", fmt.Errorf("extrinsic nonce exceeds uint32: %d", extrinsic.Nonce)
+	}
+	vaultAddr := c.GetAddress(txOutItem.GetVaultPubKey())
+	_, height := c.chainScanner.getLatestBlock()
+	record := signedExtrinsicRecord{
+		TxHash:        txHash,
+		VaultAddress:  vaultAddr,
+		Nonce:         uint32(extrinsic.Nonce),
+		RecheckHeight: height + int64(c.chainScanner.params.MortalEraPeriod),
+	}
 
-	hexTx := stypes.HexEncode(rawTx)
-	nodeHash, err := c.rpcClient.SubmitExtrinsic(hexTx)
+	err = c.stateStore.PutExtrinsic(record)
+	if err != nil {
+		return "", fmt.Errorf("failed to persist extrinsic recovery state: %w", err)
+	}
+
+	nodeHash, err := c.rpcClient.SubmitExtrinsic(stypes.HexEncode(rawTx))
 	if err != nil {
 		switch {
 		// Tx already in the pool — another bifrost instance submitted first.
@@ -563,16 +616,14 @@ func (c *Client) BroadcastTx(txOutItem ttypes.TxOutItem, rawTx []byte) (string, 
 			// The migration cache tells us which: a hit means the scanner saw the
 			// tx land — treat as success; a miss means abandon, since re-broad-
 			// casting risks a double-spend.
-			extrinsic, parseErr := stypes.ParseSignedExtrinsic(rawTx, c.chainScanner.params.CheckMetadataHash, c.chainScanner.params.ChargeAssetTxPayment)
-			if parseErr != nil {
-				return "", fmt.Errorf("failed to parse extrinsic: %w", parseErr)
-			}
-			cacheKey := migrationTxCacheKey(
-				c.GetAddress(txOutItem.GetVaultPubKey()),
-				extrinsic.Nonce,
-			)
+			cacheKey := migrationTxCacheKey(vaultAddr, extrinsic.Nonce)
 			if !c.migrationTxCache.Has(cacheKey) {
 				c.logger.Err(err).Str("txid", txHash).Msg("stale nonce, no scanner observation")
+
+				err = c.stateStore.DeleteExtrinsic(txHash)
+				if err != nil {
+					c.logger.Err(err).Str("txid", txHash).Msg("failed to delete abandoned extrinsic recovery state")
+				}
 				return "", types.ErrAbandonTxOut
 			}
 			c.logger.Info().Str("txid", txHash).Msg("stale nonce but already observed by scanner")
@@ -586,7 +637,10 @@ func (c *Client) BroadcastTx(txOutItem ttypes.TxOutItem, rawTx []byte) (string, 
 	}
 	c.logger.Info().Str("memo", txOutItem.Memo).Str("txid", txHash).Msg("broadcast tx")
 
-	c.SetSigned(txOutItem, txHash)
+	err = c.SetSigned(txOutItem, txHash)
+	if err != nil {
+		return "", fmt.Errorf("failed to record broadcast transaction in signer cache: %w", err)
+	}
 
 	return txHash, nil
 }
@@ -609,7 +663,9 @@ func (c *Client) ConfirmationCountReady(txIn ttypes.TxIn) bool {
 // "abandon" for internal flows whose memos carry no OUT:txid anchor.
 func (c *Client) OnObservedTxIn(txIn ttypes.TxInItem, height int64) {
 	// use generic client for signer cache
-	c.Client.OnObservedTxIn(txIn, height)
+	if !c.isFailedOutboundObservation(txIn) {
+		c.Client.OnObservedTxIn(txIn, height)
+	}
 
 	// substrate specific migration cache
 	ok, _ := c.chainScanner.pubkeyMgr.IsValidPoolAddress(txIn.Sender, c.GetChain())
@@ -633,6 +689,86 @@ func (c *Client) OnObservedTxIn(txIn ttypes.TxInItem, height int64) {
 	c.migrationTxCache.Purge(height - migrationTxCacheBlocks)
 }
 
+// handleFinalizedFailure removes signer and recovery state for a finalized failed extrinsic.
+func (c *Client) handleFinalizedFailure(txHash string) error {
+	err := c.RemoveSigned(txHash)
+	if err != nil {
+		return fmt.Errorf("failed to remove finalized failed transaction from signer cache: %w", err)
+	}
+	err = c.stateStore.DeleteExtrinsic(txHash)
+	if err != nil {
+		return fmt.Errorf("failed to remove finalized failed transaction recovery state: %w", err)
+	}
+	return nil
+}
+
+// canRetrySignedTx reports whether an expired signed transaction can be retried from finalized account state.
+func (c *Client) canRetrySignedTx(
+	txHash string,
+	vaultAddr, finalizedHash string,
+	finalizedHeight int64,
+) (bool, error) {
+	if txHash == "" {
+		return false, fmt.Errorf("signed transaction hash is missing")
+	}
+	record, found, err := c.stateStore.GetExtrinsic(txHash)
+	if err != nil {
+		return false, err
+	}
+	if !found {
+		return false, fmt.Errorf("signed extrinsic recovery record is missing")
+	}
+	if record.VaultAddress != vaultAddr {
+		return false, fmt.Errorf("signed extrinsic vault mismatch")
+	}
+	if finalizedHeight < record.RecheckHeight {
+		return false, nil
+	}
+	if finalizedHash == "" {
+		return false, fmt.Errorf("finalized scanner block hash is empty")
+	}
+	nonce, _, err := c.rpcClient.GetAccountInfo(
+		vaultAddr,
+		finalizedHash,
+		c.chainScanner.params.BalanceSize,
+	)
+	if err != nil {
+		return false, fmt.Errorf("failed to get finalized account nonce: %w", err)
+	}
+	if nonce > record.Nonce {
+		return false, nil
+	}
+	return true, nil
+}
+
+// releaseExpiredSignedTx removes signer state and then best-effort recovery state after an expiry check.
+func (c *Client) releaseExpiredSignedTx(txHash string) error {
+	err := c.RemoveSigned(txHash)
+	if err != nil {
+		return fmt.Errorf("failed to remove expired transaction from signer cache: %w", err)
+	}
+	err = c.stateStore.DeleteExtrinsic(txHash)
+	if err != nil {
+		c.logger.Error().Err(err).Str("txid", txHash).
+			Msg("failed to delete expired extrinsic recovery state")
+	}
+	return nil
+}
+
+// isFailedOutboundObservation identifies the synthetic self-referencing observation emitted for a failed outbound.
+func (c *Client) isFailedOutboundObservation(txIn ttypes.TxInItem) bool {
+	if len(txIn.Coins) != 1 || !txIn.Coins[0].Asset.Equals(c.GetGasAsset()) ||
+		!txIn.Coins[0].Amount.Equal(cosmos.OneUint()) {
+		return false
+	}
+	memoObj, err := mem.ParseMemo(common.LatestVersion, txIn.Memo)
+	if err != nil || !memoObj.IsOutbound() {
+		return false
+	}
+	txID, err := common.NewTxID(txIn.Tx)
+	return err == nil && memoObj.GetTxID().Equals(txID)
+}
+
 // --------------------------------- helpers ---------------------------------
 
 // reserveNonce atomically reads, reserves, and pre-increments a nonce for the
@@ -642,7 +778,8 @@ func (c *Client) reserveNonce(tx ttypes.TxOutItem, vaultAddr string, currentHeig
 	// without pre-incrementing — the nonce was already incremented on the first attempt.
 	if tx.Checkpoint != nil {
 		var meta nonceMetadata
-		if err := json.Unmarshal(tx.Checkpoint, &meta); err != nil {
+		err := json.Unmarshal(tx.Checkpoint, &meta)
+		if err != nil {
 			return 0, nil, fmt.Errorf("failed to unmarshal checkpoint: %w", err)
 		}
 		c.logger.Debug().

@@ -36,6 +36,7 @@ type Client struct {
 	tssKeyManager      tss.ThorchainKeyManager
 	localKeyManager    LocalKeyManager
 	signerCacheManager *signercache.CacheManager
+	stateStore         StateStore
 }
 
 // NewClient wires up the TSS and local key managers and the signer cache
@@ -72,7 +73,18 @@ func NewClient(
 		return nil, fmt.Errorf("fail to create signer cache: %w", err)
 	}
 
+	c.stateStore, err = newStateStore(db, config.ChainID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create state store: %w", err)
+	}
+
 	return c, nil
+}
+
+// StateStore returns the byte store isolated to this client chain.
+// The database is borrowed from block-scanner storage and remains owned by it.
+func (c *Client) StateStore() StateStore {
+	return c.stateStore
 }
 
 // Start launches the TSS key manager. Not idempotent — call exactly once
@@ -251,8 +263,8 @@ func (c *Client) ShouldReportSolvency(height int64) bool {
 }
 
 // SetSigned records that txOutItem has been broadcast with the given
-// txId, preventing re-signs. Logs and swallows cache errors.
-func (c *Client) SetSigned(txOutItem types.TxOutItem, txId string) {
+// txId, preventing re-signs.
+func (c *Client) SetSigned(txOutItem types.TxOutItem, txId string) error {
 	err := c.signerCacheManager.SetSigned(
 		txOutItem.CacheHash(),
 		txOutItem.CacheVault(c.GetChain()),
@@ -262,13 +274,26 @@ func (c *Client) SetSigned(txOutItem types.TxOutItem, txId string) {
 		c.logger.Err(err).
 			Interface("tx_out_item", txOutItem).
 			Msg("failed to mark tx out item as signed")
+		return err
 	}
+	return nil
 }
 
 // HasSigned reports whether txOutItem has already been broadcast by this
 // node, per the signer cache.
 func (c *Client) HasSigned(txOutItem types.TxOutItem) bool {
 	return c.signerCacheManager.HasSigned(txOutItem.CacheHash())
+}
+
+// GetSignedTransactionHash returns the broadcast transaction hash mapped to a
+// signed TxOutItem.
+func (c *Client) GetSignedTransactionHash(txOutItem types.TxOutItem) (string, error) {
+	return c.signerCacheManager.GetTransactionHash(txOutItem.CacheHash())
+}
+
+// RemoveSigned removes a signed TxOutItem using its broadcast transaction hash.
+func (c *Client) RemoveSigned(txHash string) error {
+	return c.signerCacheManager.RemoveSigned(txHash)
 }
 
 // GetLatestTxForVault returns the last observed inbound tx id and the

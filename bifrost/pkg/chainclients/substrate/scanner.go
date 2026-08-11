@@ -20,6 +20,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/crypto/ss58"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
 
 const (
@@ -28,6 +29,12 @@ const (
 	NonceHashBlocks = 100
 )
 
+var errFinalizedFailureCleanup = errors.New("finalized failed extrinsic cleanup failed")
+
+// FinalizedFailureHandler clears client-owned state after the scanner proves an
+// extrinsic from one of our vaults failed in a finalized block.
+type FinalizedFailureHandler func(txHash string) error
+
 // Scanner is a generic block scanner for Substrate chains.
 type Scanner struct {
 	cfg              config.BifrostBlockScannerConfiguration
@@ -35,6 +42,7 @@ type Scanner struct {
 	rpcClient        *rpc.Client
 	solvencyReporter types.SolvencyReporter
 	pubkeyMgr        pubkeymanager.PubKeyValidator
+	failHandler      FinalizedFailureHandler
 
 	globalNetworkFeeQueue chan common.NetworkFee
 
@@ -61,6 +69,7 @@ func NewScanner(
 	solvencyReporter types.SolvencyReporter,
 	rpcClient *rpc.Client,
 	pubkeyMgr pubkeymanager.PubKeyValidator,
+	failHandler FinalizedFailureHandler,
 ) (*Scanner, error) {
 	params, found := ChainParams[cfg.ChainID]
 	if !found {
@@ -74,6 +83,7 @@ func NewScanner(
 		rpcClient:        rpcClient,
 		solvencyReporter: solvencyReporter,
 		pubkeyMgr:        pubkeyMgr,
+		failHandler:      failHandler,
 		nonceCache:       newNonceCache(),
 	}
 
@@ -193,6 +203,9 @@ func (s *Scanner) FetchTxs(fetchHeight, _ int64) (ttypes.TxIn, error) {
 		}
 
 		if err != nil {
+			if errors.Is(err, errFinalizedFailureCleanup) {
+				return txIn, err
+			}
 			s.logger.Debug().Err(err).Int("index", i).Msg("skip extrinsic")
 			continue
 		}
@@ -270,7 +283,8 @@ func (s *Scanner) getExtrinsicResults(blockHash string, numExtrinsics int, metad
 		}
 	}
 	for i := 0; i < numExtrinsics; i++ {
-		if _, ok := results[uint32(i)]; !ok {
+		_, ok := results[uint32(i)]
+		if !ok {
 			return nil, nil, fmt.Errorf("missing result event for extrinsic %d", i)
 		}
 	}
@@ -317,10 +331,6 @@ func (s *Scanner) updateFeeCache(fee uint64) {
 }
 
 func (s *Scanner) processFailedExtrinsic(extHex string, blockHeight int64, actualFee uint64) (*ttypes.TxInItem, error) {
-	if actualFee == 0 {
-		return nil, nil
-	}
-
 	item, err := s.processExtrinsic(extHex, blockHeight, actualFee)
 	if err != nil {
 		return nil, err
@@ -334,15 +344,33 @@ func (s *Scanner) processFailedExtrinsic(extHex string, blockHeight int64, actua
 	if !fromVault {
 		return nil, nil
 	}
+	if s.failHandler != nil {
+		err = s.failHandler(item.Tx)
+		if err != nil {
+			return nil, fmt.Errorf("%w for %s: %w", errFinalizedFailureCleanup, item.Tx, err)
+		}
+	}
+	if actualFee == 0 {
+		return nil, nil
+	}
+	txID, err := common.NewTxID(item.Tx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse failed extrinsic hash: %w", err)
+	}
 
-	// Return gas-only TxInItem for failed extrinsics
+	// Match the established failed-outbound observation shape: a dust coin makes
+	// the item observable, while the self-referencing memo prevents it from
+	// matching and completing the original outbound.
 	return &ttypes.TxInItem{
 		BlockHeight: item.BlockHeight,
 		Tx:          item.Tx,
-		Memo:        item.Memo,
+		Memo:        mem.NewOutboundMemo(txID).String(),
 		Sender:      item.Sender,
 		To:          item.To,
-		Gas:         item.Gas,
+		Coins: common.NewCoins(common.NewCoin(
+			s.cfg.ChainID.GetGasAsset(), cosmos.OneUint(),
+		)),
+		Gas: item.Gas,
 	}, nil
 }
 
@@ -686,7 +714,8 @@ func (s *Scanner) verifyMetadata(blockHash string) error {
 		return fmt.Errorf("failed to parse metadata: %w", err)
 	}
 
-	if err := s.params.ValidateMetadata(metadata); err != nil {
+	err = s.params.ValidateMetadata(metadata)
+	if err != nil {
 		return err
 	}
 

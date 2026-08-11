@@ -1,6 +1,8 @@
 package substrate
 
 import (
+	"bytes"
+	"errors"
 	"strings"
 	"testing"
 
@@ -871,19 +873,20 @@ func (s *ScannerSuite) TestProcessFailedExtrinsic(c *C) {
 	c.Assert(err, IsNil, Commentf("failed to derive vault SS58 address"))
 
 	tests := []struct {
-		name       string
-		actualFee  uint64
-		signer     []byte
-		callData   []byte
-		expectKept bool
-		expectMemo string
+		name          string
+		actualFee     uint64
+		signer        []byte
+		callData      []byte
+		expectKept    bool
+		expectCleanup bool
 	}{
 		{
-			name:       "actualFee zero — short-circuits before parsing",
-			actualFee:  0,
-			signer:     vaultSigner,
-			callData:   simpleTransfer,
-			expectKept: false,
+			name:          "actualFee zero — cleans cache without observation",
+			actualFee:     0,
+			signer:        vaultSigner,
+			callData:      simpleTransfer,
+			expectKept:    false,
+			expectCleanup: true,
 		},
 		{
 			name:       "non-vault sender — dropped (not our outbound to account for)",
@@ -893,20 +896,20 @@ func (s *ScannerSuite) TestProcessFailedExtrinsic(c *C) {
 			expectKept: false,
 		},
 		{
-			name:       "vault sender, simple transfer — gas-only emitted",
-			actualFee:  150_000,
-			signer:     vaultSigner,
-			callData:   simpleTransfer,
-			expectKept: true,
-			expectMemo: "",
+			name:          "vault sender, simple transfer — fake gas emitted",
+			actualFee:     150_000,
+			signer:        vaultSigner,
+			callData:      simpleTransfer,
+			expectKept:    true,
+			expectCleanup: true,
 		},
 		{
-			name:       "vault sender, batch with memo — gas-only with memo preserved",
-			actualFee:  150_000,
-			signer:     vaultSigner,
-			callData:   batchWithMemo,
-			expectKept: true,
-			expectMemo: "OUT:DEAD",
+			name:          "vault sender, batch with memo — fake gas replaces memo",
+			actualFee:     150_000,
+			signer:        vaultSigner,
+			callData:      batchWithMemo,
+			expectKept:    true,
+			expectCleanup: true,
 		},
 		{
 			name:       "vault sender, unknown pallet — dropped (parser yields nil)",
@@ -918,31 +921,59 @@ func (s *ScannerSuite) TestProcessFailedExtrinsic(c *C) {
 	}
 
 	for _, tt := range tests {
+		var cleanedHash string
 		sc := newTestScanner()
 		sc.pubkeyMgr = &vaultPubKeyStub{
 			MockPoolAddressValidator: pubkeymanager.NewMockPoolAddressValidator(),
 			vaults:                   map[string]bool{vaultAddr: true},
+		}
+		sc.failHandler = func(txHash string) error {
+			cleanedHash = txHash
+			return nil
 		}
 
 		extHex := buildTestExtrinsicFromSigner(tt.signer, tt.callData)
 
 		got, err := sc.processFailedExtrinsic(extHex, 100, tt.actualFee)
 		c.Assert(err, IsNil, Commentf("%s: unexpected error", tt.name))
+		c.Check(cleanedHash != "", Equals, tt.expectCleanup,
+			Commentf("%s: cleanup callback mismatch", tt.name))
 
 		if !tt.expectKept {
 			c.Check(got, IsNil, Commentf("%s: expected nil", tt.name))
 			continue
 		}
 		c.Assert(got, NotNil, Commentf("%s: expected non-nil TxInItem", tt.name))
-		c.Check(got.Coins, HasLen, 0,
-			Commentf("%s: expected empty Coins (gas-only), got %s", tt.name, got.Coins))
+		c.Assert(got.Coins, HasLen, 1)
+		c.Check(got.Coins[0].Asset.Equals(common.TAOChain.GetGasAsset()), Equals, true)
+		c.Check(got.Coins[0].Amount.Equal(cosmos.OneUint()), Equals, true)
 		c.Check(len(got.Gas) > 0, Equals, true,
 			Commentf("%s: Gas should be preserved for accounting", tt.name))
-		c.Check(got.Memo, Equals, tt.expectMemo,
-			Commentf("%s: memo mismatch — got %q, want %q", tt.name, got.Memo, tt.expectMemo))
+		txID, err := common.NewTxID(got.Tx)
+		c.Assert(err, IsNil)
+		c.Check(got.Memo, Equals, "OUT:"+txID.String(),
+			Commentf("%s: memo must self-reference the failed extrinsic", tt.name))
 		c.Check(got.Sender, Equals, vaultAddr,
 			Commentf("%s: sender preserved", tt.name))
 		c.Check(got.Tx, Not(Equals), "",
 			Commentf("%s: tx hash preserved", tt.name))
 	}
+}
+
+func (s *ScannerSuite) TestProcessFailedExtrinsicCleanupError(c *C) {
+	sc := newTestScanner()
+	vaultSigner := defaultTestSigner()
+	vaultAddr, err := ss58.Encode(common.TAOChain.SS58Prefix(), vaultSigner)
+	c.Assert(err, IsNil)
+	sc.pubkeyMgr = &vaultPubKeyStub{
+		MockPoolAddressValidator: pubkeymanager.NewMockPoolAddressValidator(),
+		vaults:                   map[string]bool{vaultAddr: true},
+	}
+	sc.failHandler = func(string) error { return errors.New("database unavailable") }
+	call := stypes.BalanceTransferKeepAlive(5, 3, bytes.Repeat([]byte{0x01}, 32), cosmos.NewUint(100))
+
+	item, err := sc.processFailedExtrinsic(buildTestExtrinsic(call), 100, 1)
+	c.Check(item, IsNil)
+	c.Assert(err, NotNil)
+	c.Check(errors.Is(err, errFinalizedFailureCleanup), Equals, true)
 }
