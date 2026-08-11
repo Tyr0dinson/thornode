@@ -3413,18 +3413,26 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 		}
 		for _, staged := range stagedList.Items {
 			item := staged.TxOutItem
-			// Skip native (THORChain) outbounds - they don't affect external vault solvency
-			if item.Chain.IsTHORChain() {
+			// Native secured targets are staged on THORChain with their external
+			// layer1 coin until inbound finalization. The target pool balance has
+			// already decreased, while secured depth has not yet been credited, so
+			// this escrow remains an external solvency liability. Genuine native
+			// outputs do not affect external vault solvency and remain excluded.
+			isSecuredEscrow := item.Chain.IsTHORChain() && !item.Coin.IsEmpty() && !item.Coin.Asset.IsNative()
+			if item.Chain.IsTHORChain() && !isSecuredEscrow {
 				continue
 			}
-			// Skip outbounds from inactive vaults
-			vault, err := getVault(item.VaultPubKey)
-			if err != nil {
-				ctx.Logger().Error("fail to get vault for staged outbound", "pubkey", item.VaultPubKey, "error", err)
-				continue
-			}
-			if vault.Status == InactiveVault {
-				continue
+			// Secured escrow is a native-prepared item and has no external vault
+			// pubkey. Apply the vault-status filter only to real L1 outbounds.
+			if !isSecuredEscrow {
+				vault, err := getVault(item.VaultPubKey)
+				if err != nil {
+					ctx.Logger().Error("fail to get vault for staged outbound", "pubkey", item.VaultPubKey, "error", err)
+					continue
+				}
+				if vault.Status == InactiveVault {
+					continue
+				}
 			}
 
 			if !item.Coin.IsEmpty() {

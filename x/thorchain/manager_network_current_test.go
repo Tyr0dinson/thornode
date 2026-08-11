@@ -4828,6 +4828,58 @@ func (s *NetworkManagerTestSuite) TestSolvencyWithStagedOutbounds(c *C) {
 		Commentf("native staged outbound should be skipped: expected %s, got %s", expectedSolvency, solvency[0].Amount))
 }
 
+func (s *NetworkManagerTestSuite) TestSolvencyCountsStagedSecuredTargetEscrow(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+
+	// The speculative secured swap has already reduced the external pool, but
+	// secured depth is not credited until inbound finalization.
+	pool := NewPool()
+	pool.Asset = common.ETHAsset
+	pool.BalanceAsset = cosmos.NewUint(75 * common.One)
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = ActiveVault
+	vault.Coins = common.Coins{
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	securedOutput := TxOutItem{
+		Chain:     common.THORChain,
+		Coin:      common.NewCoin(common.ETHAsset.GetSecuredAsset(), cosmos.NewUint(25*common.One)),
+		ToAddress: GetRandomTHORAddress(),
+		InHash:    GetRandomTxHash(),
+	}
+	escrow := escrowMempoolSecuredTarget(securedOutput)
+	c.Check(escrow.Chain, Equals, common.THORChain)
+	c.Check(escrow.Coin.Asset.Equals(common.ETHAsset), Equals, true)
+	c.Check(escrow.VaultPubKey.IsEmpty(), Equals, true)
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, escrow, ctx.BlockHeight()+10), IsNil)
+
+	solvency, err := nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	c.Assert(solvency, HasLen, 1)
+	c.Check(solvency[0].Asset.Equals(common.ETHAsset), Equals, true)
+	c.Check(solvency[0].Amount.IsZero(), Equals, true,
+		Commentf("vault 100 - post-swap pool 75 - staged secured escrow 25 should be zero, got %s", solvency[0].Amount))
+
+	// With a full over-solvency sweep enabled, the escrowed liability must not
+	// create a system-income swap from funds still backing the secured target.
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
+	mgr.Keeper().SetMimir(ctx, constants.OverSolvencyCheckInterval.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.OverSolvencyToTreasuryBps.String(), int64(constants.MaxBasisPts))
+	c.Assert(nmgr.processOverSolvency(ctx, mgr), IsNil)
+	queueIter := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
+	defer queueIter.Close()
+	c.Check(queueIter.Valid(), Equals, false,
+		Commentf("secured escrow must not be swept as over-solvent system income"))
+}
+
 func (s *NetworkManagerTestSuite) TestSolvencyWithTradeAndSecuredAssets(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
