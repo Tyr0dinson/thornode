@@ -451,7 +451,7 @@ func (s *StableReserveMgr) scheduleDepegRescue(ctx cosmos.Context, mgr Manager) 
 		if inventory.IsZero() {
 			continue
 		}
-		if ok, _ := s.IsEligibleStable(ctx, asset); ok {
+		if !s.isDepegged(ctx, asset) {
 			continue
 		}
 		if pending[types.StableReservePendingRescueSwapKey(asset.String())] {
@@ -489,6 +489,33 @@ func (s *StableReserveMgr) scheduleDepegRescue(ctx cosmos.Context, mgr Manager) 
 		}
 	}
 	return nil
+}
+
+// isDepegged reports whether the enshrined oracle is actively pricing this asset
+// OUTSIDE the tolerance band. It is deliberately narrower than !IsEligibleStable:
+// a rescue fires only on a bad price, never on a missing one.
+//
+// An oracle outage — halted feed, unattested ticker, a rename across an upgrade —
+// says nothing about the asset's value, and a rescue cannot be cancelled once
+// scheduled (the per-sub-swap revalidation in handler_swap.go checks the target,
+// not the source). Treating a transient gap as a depeg would therefore commit the
+// module's entire position in that asset to an irreversible AMM liquidation, at
+// slip, on no evidence. Holding through the outage is the recoverable failure:
+// fills already decline while the price is missing, so the inventory just sits
+// idle until the feed returns.
+//
+// The L1/anchor guard is kept so a non-stable secured balance can never be priced
+// by ticker and mistaken for a depeg.
+func (s *StableReserveMgr) isDepegged(ctx cosmos.Context, asset common.Asset) bool {
+	if !asset.IsExternalL1Asset() || !s.isTORAnchor(ctx, asset) {
+		return false
+	}
+	price, err := s.keeper.GetPrice(ctx, asset.Ticker.String())
+	if err != nil {
+		return false
+	}
+	toleranceBps := s.keeper.GetConfigInt64(ctx, constants.StableReserveDepegToleranceBps)
+	return !stableReserveOracleHealthy(price.Price, toleranceBps)
 }
 
 func (s *StableReserveMgr) healthyStableTargets(ctx cosmos.Context) []common.Asset {

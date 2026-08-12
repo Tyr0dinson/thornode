@@ -973,6 +973,32 @@ func (s *StableReserveMgrSuite) TestDepegRescueSchedulesCreditedInventory(c *C) 
 	c.Check(credit.Equal(amount), Equals, true)
 }
 
+func (s *StableReserveMgrSuite) TestDepegRescueIgnoresOracleOutage(c *C) {
+	ctx, mgr, usdc, _ := setupStableReserveSuite(c)
+	stableReserveMgr := mgr.StableReserveManager()
+	amount := cosmos.NewUint(100 * common.One)
+	fundStableReserveSurplus(c, ctx, mgr, usdc, amount)
+
+	// The asset is perfectly pegged; the oracle simply stops reporting it. A
+	// missing price is not a depeg, and a rescue cannot be cancelled once
+	// scheduled, so an outage must not force-sell the position.
+	mgr.Keeper().DelPrice(ctx, usdc.Ticker.String())
+
+	c.Assert(stableReserveMgr.EndBlock(ctx, mgr), IsNil)
+
+	_, err := firstQueuedSwapWithMemoPrefix(ctx, mgr, types.StableReserveRescueMemoPrefix)
+	c.Check(err, NotNil)
+	moduleAddr := mgr.Keeper().GetModuleAccAddress(StableReserveName)
+	c.Check(mgr.SecuredAssetManager().BalanceOf(ctx, usdc, moduleAddr).Equal(amount), Equals, true)
+
+	// Once the feed returns with a genuinely bad price, the rescue does fire.
+	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "0.98"}), IsNil)
+	c.Assert(stableReserveMgr.EndBlock(ctx, mgr), IsNil)
+	rescue, err := firstQueuedSwapWithMemoPrefix(ctx, mgr, types.StableReserveRescueMemoPrefix)
+	c.Assert(err, IsNil)
+	c.Check(rescue.Tx.Coins[0].Equals(common.NewCoin(usdc.GetSecuredAsset(), amount)), Equals, true)
+}
+
 func (s *StableReserveMgrSuite) TestDepegRescueQueueScanLifecycle(c *C) {
 	ctx, mgr, usdc, _ := setupStableReserveSuite(c)
 	stableReserveMgr := mgr.StableReserveManager()
