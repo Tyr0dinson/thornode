@@ -73,6 +73,26 @@ func (s *MetadataSuite) TestParseMetadataGoldenVectors(c *C) {
 	}
 }
 
+func (s *MetadataSuite) TestDecodeChargeAssetTxPayment(c *C) {
+	metadata := loadAssetHubTestMetadata(c)
+
+	none := []byte{0x00, 0x00} // compact tip 0, Option<Location>::None
+	_, consumed, err := metadata.DecodeSignedExtension(chargeAssetTxPaymentExtensionID, none)
+	c.Assert(err, IsNil)
+	c.Check(consumed, Equals, len(none))
+
+	// compact tip 0, Some(Location::new(0, [PalletInstance(50), GeneralIndex(1984)]))
+	some := []byte{0x00, 0x01, 0x00, 0x02, 0x04, 50, 0x05}
+	some = append(some, EncodeCompact(1984)...)
+	_, consumed, err = metadata.DecodeSignedExtension(chargeAssetTxPaymentExtensionID, some)
+	c.Assert(err, IsNil)
+	c.Check(consumed, Equals, len(some))
+
+	_, _, err = metadata.DecodeSignedExtension(chargeAssetTxPaymentExtensionID, some[:len(some)-1])
+	c.Assert(err, NotNil)
+	c.Check(strings.Contains(err.Error(), "truncated"), Equals, true, Commentf("got: %v", err))
+}
+
 // ---------------------------------------------------------------------------
 // ParseMetadata — defensive input handling (incl. panic-recovery path)
 // ---------------------------------------------------------------------------

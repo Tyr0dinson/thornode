@@ -582,7 +582,12 @@ func (c *Client) createAndSignExtrinsic(
 func (c *Client) BroadcastTx(txOutItem ttypes.TxOutItem, rawTx []byte) (string, error) {
 	// Compute hash locally for consistency with the scanner's extrinsicHash.
 	txHash := stypes.ExtrinsicHash(rawTx)
-	extrinsic, err := stypes.ParseSignedExtrinsic(rawTx, c.chainScanner.params.CheckMetadataHash, c.chainScanner.params.ChargeAssetTxPayment)
+	extrinsic, err := stypes.ParseSignedExtrinsic(
+		rawTx,
+		c.chainScanner.getMetadata(),
+		c.chainScanner.params.CheckMetadataHash,
+		c.chainScanner.params.ChargeAssetTxPayment,
+	)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse extrinsic before broadcast: %w", err)
 	}

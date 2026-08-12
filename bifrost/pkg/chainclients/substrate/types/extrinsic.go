@@ -24,6 +24,8 @@ const (
 	// hash verification is disabled. This is encoded both in the extrinsic
 	// body (as part of the signed extensions) and in the signing payload.
 	MetadataModeDisabled = 0x00
+
+	chargeAssetTxPaymentExtensionID = "ChargeAssetTxPayment"
 )
 
 // Extrinsic represents a Substrate extrinsic.
@@ -252,7 +254,7 @@ func HexEncodeHead(data []byte, n int) string {
 	return hex.EncodeToString(data[:n])
 }
 
-func ParseSignedExtrinsic(data []byte, checkMetadataHash, chargeAssetTxPayment bool) (*Extrinsic, error) {
+func ParseSignedExtrinsic(data []byte, metadata *Metadata, checkMetadataHash, chargeAssetTxPayment bool) (*Extrinsic, error) {
 	// Decode the length prefix
 	_, consumed, err := DecodeCompact(data)
 	if err != nil {
@@ -339,7 +341,10 @@ func ParseSignedExtrinsic(data []byte, checkMetadataHash, chargeAssetTxPayment b
 	}
 	pos += nonceLen
 
-	// Tip (compact)
+	// Tip (compact). ChargeAssetTxPayment metadata describes both the tip and
+	// Option<AssetId>, so keep the starting position for decoding that complete
+	// extension below.
+	paymentStart := pos
 	tipVal, tipLen, err := DecodeCompact(body[pos:])
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode tip: %w", err)
@@ -347,20 +352,24 @@ func ParseSignedExtrinsic(data []byte, checkMetadataHash, chargeAssetTxPayment b
 	if !tipVal.BigInt().IsUint64() {
 		return nil, fmt.Errorf("tip exceeds uint64")
 	}
-	pos += tipLen
 
-	// ChargeAssetTxPayment (Asset Hub): Option<AssetId> follows the tip.
-	// Only None (0x00, native-asset fees) is supported — a Some variant is
-	// followed by a variable-length AssetId which cannot be skipped safely,
-	// and the vault never signs one.
+	// ChargeAssetTxPayment (Asset Hub) contains the compact tip followed by an
+	// Option<AssetId>. AssetId is a runtime-defined type, so use metadata to
+	// consume the complete extension instead of assuming a fixed width.
 	if chargeAssetTxPayment {
-		if pos >= len(body) {
-			return nil, fmt.Errorf("extrinsic too short for asset id option byte")
+		var paymentLen int
+		_, paymentLen, err = metadata.DecodeSignedExtension(
+			chargeAssetTxPaymentExtensionID, body[paymentStart:],
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode asset transaction payment: %w", err)
 		}
-		if body[pos] != 0x00 {
-			return nil, fmt.Errorf("unsupported non-native fee asset id option: %d", body[pos])
+		if paymentLen <= tipLen {
+			return nil, fmt.Errorf("asset transaction payment omitted asset id option")
 		}
-		pos++ // skip Option<AssetId>::None byte
+		pos = paymentStart + paymentLen
+	} else {
+		pos += tipLen
 	}
 
 	// CheckMetadataHash mode byte (RFC-0078, present in DOT/KSM/TAO runtimes).

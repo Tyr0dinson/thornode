@@ -9,6 +9,7 @@ import (
 
 	scalecodec "github.com/itering/scale.go"
 	scaleTypes "github.com/itering/scale.go/types"
+	"github.com/itering/scale.go/types/scaleBytes"
 )
 
 type Metadata struct {
@@ -65,4 +66,58 @@ func ParseMetadata(raw string) (_ *Metadata, err error) {
 		codec:     &decoder.Metadata,
 		codecSpec: decoder.Spec,
 	}, nil
+}
+
+// DecodeSignedExtension decodes one signed extension using its runtime metadata
+// and returns the decoded value and number of bytes consumed.
+func (m *Metadata) DecodeSignedExtension(name string, data []byte) (_ interface{}, consumed int, err error) {
+	defer func() {
+		recovered := recover()
+		if recovered != nil {
+			err = fmt.Errorf("signed extension %s decode panicked: %v", name, recovered)
+		}
+	}()
+
+	if m == nil || m.codec == nil || m.codec.Extrinsic == nil {
+		return nil, 0, fmt.Errorf("runtime metadata required to decode signed extension %s", name)
+	}
+	if len(data) == 0 {
+		return nil, 0, fmt.Errorf("empty signed extension %s data", name)
+	}
+
+	var typeString string
+	for _, extension := range m.codec.Extrinsic.SignedExtensions {
+		if extension.Identifier != name {
+			continue
+		}
+		typeString = extension.TypeString
+		break
+	}
+	if typeString == "" {
+		return nil, 0, fmt.Errorf("signed extension %s not found in runtime metadata", name)
+	}
+
+	// scale.go's ScaleBytes truncates reads at EOF instead of reporting them.
+	// A guard byte makes a one-byte overread visible in the final offset.
+	guarded := make([]byte, len(data)+1)
+	copy(guarded, data)
+
+	decoder := scaleTypes.ScaleDecoder{}
+	decoder.Init(
+		scaleBytes.ScaleBytes{Data: guarded},
+		&scaleTypes.ScaleDecoderOption{Metadata: m.codec, Spec: m.codecSpec},
+	)
+
+	scaleCodecRegistryMu.RLock()
+	defer scaleCodecRegistryMu.RUnlock()
+	value := decoder.ProcessAndUpdateData(typeString)
+	consumed = decoder.GetData().Offset
+	if consumed <= 0 {
+		return nil, 0, fmt.Errorf("signed extension %s decoder made no progress", name)
+	}
+	if consumed > len(data) {
+		return nil, 0, fmt.Errorf("truncated signed extension %s data", name)
+	}
+
+	return value, consumed, nil
 }

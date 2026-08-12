@@ -2,6 +2,7 @@ package types
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 
@@ -14,6 +15,35 @@ func TestExtrinsicSuite(t *testing.T) { TestingT(t) }
 type ExtrinsicSuite struct{}
 
 var _ = Suite(&ExtrinsicSuite{})
+
+func loadAssetHubTestMetadata(c *C) *Metadata {
+	raw, err := os.ReadFile("testdata/metadata-dot-assethub-2003001.hex")
+	c.Assert(err, IsNil)
+	metadata, err := ParseMetadata(strings.TrimSpace(string(raw)))
+	c.Assert(err, IsNil)
+	return metadata
+}
+
+func encodeTestExtrinsicWithAssetPayment(ext *Extrinsic, payment []byte) []byte {
+	encoded := EncodeSignedExtrinsic(ext)
+	_, prefixLen, _ := DecodeCompact(encoded)
+	body := encoded[prefixLen:]
+
+	tailLen := len(ext.CallData)
+	if ext.CheckMetadataHash {
+		tailLen++
+	}
+	optionPos := len(body) - tailLen - 1
+	tipStart := optionPos - len(EncodeCompact(ext.Tip))
+
+	replaced := make([]byte, 0, len(body)+len(payment)-2)
+	replaced = append(replaced, body[:tipStart]...)
+	replaced = append(replaced, payment...)
+	replaced = append(replaced, body[optionPos+1:]...)
+
+	result := EncodeCompact(uint64(len(replaced)))
+	return append(result, replaced...)
+}
 
 func (s *ExtrinsicSuite) TestHexEncodeDecodeRoundTrip(c *C) {
 	tests := []struct {
@@ -267,6 +297,7 @@ func (s *ExtrinsicSuite) TestSigningPayloadChargeAssetTxPayment(c *C) {
 }
 
 func (s *ExtrinsicSuite) TestEncodeParseRoundTripChargeAssetTxPayment(c *C) {
+	metadata := loadAssetHubTestMetadata(c)
 	signer := make([]byte, 32)
 	signer[0] = 0x01
 	sig := make([]byte, 64)
@@ -288,7 +319,7 @@ func (s *ExtrinsicSuite) TestEncodeParseRoundTripChargeAssetTxPayment(c *C) {
 	encoded := EncodeSignedExtrinsic(ext)
 
 	// Round trip with matching flags recovers all fields
-	parsed, err := ParseSignedExtrinsic(encoded, true, true)
+	parsed, err := ParseSignedExtrinsic(encoded, metadata, true, true)
 	c.Assert(err, IsNil)
 	c.Check(bytes.Equal(parsed.Signer, signer), Equals, true)
 	c.Check(parsed.Nonce, Equals, uint64(5))
@@ -304,7 +335,7 @@ func (s *ExtrinsicSuite) TestEncodeParseRoundTripChargeAssetTxPayment(c *C) {
 	// Parsing without the flag misaligns by one byte: the option byte is
 	// consumed as the metadata mode byte and the call data shifts. Pin the
 	// shift so a params/codec mismatch cannot go unnoticed.
-	misparsed, err := ParseSignedExtrinsic(encoded, true, false)
+	misparsed, err := ParseSignedExtrinsic(encoded, nil, true, false)
 	c.Assert(err, IsNil)
 	c.Check(bytes.Equal(misparsed.CallData, callData), Equals, false)
 
@@ -315,8 +346,35 @@ func (s *ExtrinsicSuite) TestEncodeParseRoundTripChargeAssetTxPayment(c *C) {
 	optionPos := len(mutated) - len(callData) - 1 /* mode byte */ - 1 /* option byte */
 	c.Assert(mutated[optionPos], Equals, byte(0x00))
 	mutated[optionPos] = 0x01
-	_, err = ParseSignedExtrinsic(mutated, true, true)
+	_, err = ParseSignedExtrinsic(mutated, metadata, true, true)
 	c.Assert(err, NotNil)
-	c.Check(strings.Contains(err.Error(), "non-native fee asset"), Equals, true,
+	c.Check(strings.Contains(err.Error(), "asset transaction payment"), Equals, true,
 		Commentf("got: %v", err))
+}
+
+func (s *ExtrinsicSuite) TestParseChargeAssetTxPaymentWithLocation(c *C) {
+	metadata := loadAssetHubTestMetadata(c)
+	callData := []byte{10, 3, 0x00, 0xAA}
+	ext := &Extrinsic{
+		Signer:               make([]byte, 32),
+		SignatureType:        SignatureTypeEd25519,
+		Signature:            make([]byte, 64),
+		Era:                  MortalEra(128, 10),
+		Nonce:                7,
+		Tip:                  0,
+		MetadataMode:         MetadataModeDisabled,
+		CheckMetadataHash:    true,
+		ChargeAssetTxPayment: true,
+		CallData:             callData,
+	}
+
+	payment := []byte{0x00, 0x01, 0x00, 0x02, 0x04, 50, 0x05}
+	payment = append(payment, EncodeCompact(1984)...)
+	encoded := encodeTestExtrinsicWithAssetPayment(ext, payment)
+
+	parsed, err := ParseSignedExtrinsic(encoded, metadata, true, true)
+	c.Assert(err, IsNil)
+	c.Check(parsed.Nonce, Equals, uint64(7))
+	c.Check(parsed.Tip, Equals, uint64(0))
+	c.Check(bytes.Equal(parsed.CallData, callData), Equals, true)
 }

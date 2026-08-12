@@ -199,19 +199,24 @@ func ParseExtrinsicResults(data []byte, pallets EventPalletConfig) (map[uint32]b
 			default:
 				continue
 			}
-			if _, duplicate := results[event.ExtrinsicIndex]; duplicate {
+			_, duplicate := results[event.ExtrinsicIndex]
+			if duplicate {
 				return nil, nil, fmt.Errorf("duplicate result event for extrinsic %d", event.ExtrinsicIndex)
 			}
 			results[event.ExtrinsicIndex] = succeeded
 			continue
 		}
 
+		// Only TransactionPayment fees are denominated in the native gas asset.
+		// AssetTxPayment:AssetTxFeePaid uses the selected token's units and must
+		// not enter native fee reporting.
 		if event.PalletIndex == pallets.TransactionPaymentPalletIndex && event.Name == txPaymentFeePaidEvent {
 			fee, parseErr := uint64EventParam(event, actualFeeParam)
 			if parseErr != nil {
 				return nil, nil, parseErr
 			}
-			if _, duplicate := fees[event.ExtrinsicIndex]; duplicate {
+			_, duplicate := fees[event.ExtrinsicIndex]
+			if duplicate {
 				return nil, nil, fmt.Errorf("duplicate fee event for extrinsic %d", event.ExtrinsicIndex)
 			}
 			fees[event.ExtrinsicIndex] = fee

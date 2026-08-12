@@ -29,7 +29,10 @@ const (
 	NonceHashBlocks = 100
 )
 
-var errFinalizedFailureCleanup = errors.New("finalized failed extrinsic cleanup failed")
+var (
+	errFinalizedFailureCleanup = errors.New("finalized failed extrinsic cleanup failed")
+	errUnsupportedObservation  = errors.New("unsupported observation shape")
+)
 
 // FinalizedFailureHandler clears client-owned state after the scanner proves an
 // extrinsic from one of our vaults failed in a finalized block.
@@ -192,22 +195,22 @@ func (s *Scanner) FetchTxs(fetchHeight, _ int64) (ttypes.TxIn, error) {
 			continue
 		}
 
-		actualFee := feeMap[uint32(i)]
+		fee := feeMap[uint32(i)]
 
 		var txItem *ttypes.TxInItem
 
 		if succeeded {
-			txItem, err = s.processExtrinsic(extHex, fetchHeight, actualFee)
+			txItem, err = s.processExtrinsicWithMetadata(extHex, fetchHeight, fee, metadata)
 		} else {
-			txItem, err = s.processFailedExtrinsic(extHex, fetchHeight, actualFee)
+			txItem, err = s.processFailedExtrinsicWithMetadata(extHex, fetchHeight, fee, metadata)
 		}
 
 		if err != nil {
-			if errors.Is(err, errFinalizedFailureCleanup) {
-				return txIn, err
+			if errors.Is(err, errUnsupportedObservation) {
+				s.logger.Debug().Err(err).Int("index", i).Msg("skip extrinsic")
+				continue
 			}
-			s.logger.Debug().Err(err).Int("index", i).Msg("skip extrinsic")
-			continue
+			return txIn, fmt.Errorf("failed to process extrinsic %d: %w", i, err)
 		}
 
 		if txItem == nil {
@@ -218,8 +221,8 @@ func (s *Scanner) FetchTxs(fetchHeight, _ int64) (ttypes.TxIn, error) {
 
 		// Collect actual fee from events for the rolling cache.
 		// These are the most representative since they match our tx type.
-		if actualFee > 0 {
-			s.updateFeeCache(actualFee)
+		if fee > 0 {
+			s.updateFeeCache(fee)
 		}
 	}
 
@@ -330,8 +333,14 @@ func (s *Scanner) updateFeeCache(fee uint64) {
 	}
 }
 
-func (s *Scanner) processFailedExtrinsic(extHex string, blockHeight int64, actualFee uint64) (*ttypes.TxInItem, error) {
-	item, err := s.processExtrinsic(extHex, blockHeight, actualFee)
+func (s *Scanner) processFailedExtrinsic(extHex string, blockHeight int64, fee uint64) (*ttypes.TxInItem, error) {
+	return s.processFailedExtrinsicWithMetadata(extHex, blockHeight, fee, s.getMetadata())
+}
+
+// processFailedExtrinsicWithMetadata parses a failed extrinsic using the
+// metadata snapshot for its block and emits gas-only vault observations.
+func (s *Scanner) processFailedExtrinsicWithMetadata(extHex string, blockHeight int64, fee uint64, metadata *stypes.Metadata) (*ttypes.TxInItem, error) {
+	item, err := s.processExtrinsicWithMetadata(extHex, blockHeight, fee, metadata)
 	if err != nil {
 		return nil, err
 	}
@@ -350,7 +359,7 @@ func (s *Scanner) processFailedExtrinsic(extHex string, blockHeight int64, actua
 			return nil, fmt.Errorf("%w for %s: %w", errFinalizedFailureCleanup, item.Tx, err)
 		}
 	}
-	if actualFee == 0 {
+	if fee == 0 {
 		return nil, nil
 	}
 	txID, err := common.NewTxID(item.Tx)
@@ -376,7 +385,13 @@ func (s *Scanner) processFailedExtrinsic(extHex string, blockHeight int64, actua
 
 // processExtrinsic parses a hex-encoded extrinsic and returns a TxInItem if it's
 // a relevant transfer to a vault address.
-func (s *Scanner) processExtrinsic(extHex string, blockHeight int64, actualFee uint64) (*ttypes.TxInItem, error) {
+func (s *Scanner) processExtrinsic(extHex string, blockHeight int64, fee uint64) (*ttypes.TxInItem, error) {
+	return s.processExtrinsicWithMetadata(extHex, blockHeight, fee, s.getMetadata())
+}
+
+// processExtrinsicWithMetadata parses an extrinsic using the metadata snapshot
+// for the block that contains it.
+func (s *Scanner) processExtrinsicWithMetadata(extHex string, blockHeight int64, fee uint64, metadata *stypes.Metadata) (*ttypes.TxInItem, error) {
 	raw, err := stypes.HexDecode(extHex)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode extrinsic hex: %w", err)
@@ -386,7 +401,9 @@ func (s *Scanner) processExtrinsic(extHex string, blockHeight int64, actualFee u
 	txHash := stypes.ExtrinsicHash(raw)
 
 	var extrinsic *stypes.Extrinsic
-	extrinsic, err = stypes.ParseSignedExtrinsic(raw, s.params.CheckMetadataHash, s.params.ChargeAssetTxPayment)
+	extrinsic, err = stypes.ParseSignedExtrinsic(
+		raw, metadata, s.params.CheckMetadataHash, s.params.ChargeAssetTxPayment,
+	)
 	if err != nil {
 		if errors.Is(err, stypes.ErrUnsignedExtrinsic) {
 			return nil, nil
@@ -410,10 +427,10 @@ func (s *Scanner) processExtrinsic(extHex string, blockHeight int64, actualFee u
 	var txItem *ttypes.TxInItem
 	switch {
 	case palletIdx == s.params.Index(BalancesPallet) && s.isTransferCall(callIdx):
-		txItem, err = s.parseTransfer(extrinsic.CallData[2:], senderAddr, txHash, blockHeight, "", actualFee)
+		txItem, err = s.parseTransfer(extrinsic.CallData[2:], senderAddr, txHash, blockHeight, "", fee)
 
 	case palletIdx == s.params.Index(UtilityPallet) && callIdx == s.params.Index(UtilityBatchAllCall):
-		txItem, err = s.parseBatchAll(extrinsic.CallData[2:], senderAddr, txHash, blockHeight, actualFee)
+		txItem, err = s.parseBatchAll(extrinsic.CallData[2:], senderAddr, txHash, blockHeight, fee)
 
 	default:
 		return nil, nil
@@ -433,7 +450,7 @@ func (s *Scanner) processExtrinsic(extHex string, blockHeight int64, actualFee u
 }
 
 // parseTransfer parses a balance transfer call and returns a TxInItem.
-func (s *Scanner) parseTransfer(data []byte, sender, txHash string, blockHeight int64, memo string, actualFee uint64) (*ttypes.TxInItem, error) {
+func (s *Scanner) parseTransfer(data []byte, sender, txHash string, blockHeight int64, memo string, fee uint64) (*ttypes.TxInItem, error) {
 	if len(data) == 0 {
 		return nil, fmt.Errorf("empty transfer data")
 	}
@@ -474,7 +491,7 @@ func (s *Scanner) parseTransfer(data []byte, sender, txHash string, blockHeight 
 	}
 
 	// Report +1
-	gasCoin := s.cfg.ChainID.NativeGasToThorCoinCeil(cosmos.NewUint(actualFee))
+	gasCoin := s.cfg.ChainID.NativeGasToThorCoinCeil(cosmos.NewUint(fee))
 	if gasCoin.Amount.IsZero() {
 		// Gas is not used for inbound observation but cannot be empty.
 		gasCoin.Amount = cosmos.OneUint()
@@ -492,7 +509,7 @@ func (s *Scanner) parseTransfer(data []byte, sender, txHash string, blockHeight 
 }
 
 // parseBatchAll parses a batch_all call looking for transfer + remark.
-func (s *Scanner) parseBatchAll(data []byte, sender, txHash string, blockHeight int64, actualFee uint64) (*ttypes.TxInItem, error) {
+func (s *Scanner) parseBatchAll(data []byte, sender, txHash string, blockHeight int64, fee uint64) (*ttypes.TxInItem, error) {
 	if len(data) == 0 {
 		return nil, fmt.Errorf("empty batch data")
 	}
@@ -526,7 +543,7 @@ func (s *Scanner) parseBatchAll(data []byte, sender, txHash string, blockHeight 
 			// call that would otherwise let a `[remark(""), transfer, remark(...)]`
 			// batch slip past the guard.
 			if hasRemark {
-				return nil, fmt.Errorf("batch_all contains multiple remark calls")
+				return nil, fmt.Errorf("%w: batch_all contains multiple remark calls", errUnsupportedObservation)
 			}
 			hasRemark = true
 
@@ -549,7 +566,7 @@ func (s *Scanner) parseBatchAll(data []byte, sender, txHash string, blockHeight 
 			// Reject batches with multiple transfers to prevent ambiguity about
 			// which transfer the memo applies to.
 			if hasTransfer {
-				return nil, fmt.Errorf("batch_all contains multiple transfer calls")
+				return nil, fmt.Errorf("%w: batch_all contains multiple transfer calls", errUnsupportedObservation)
 			}
 			start := pos
 
@@ -596,7 +613,7 @@ func (s *Scanner) parseBatchAll(data []byte, sender, txHash string, blockHeight 
 		return nil, nil
 	}
 
-	return s.parseTransfer(transferData, sender, txHash, blockHeight, memo, actualFee)
+	return s.parseTransfer(transferData, sender, txHash, blockHeight, memo, fee)
 }
 
 // updateNetworkFee sends a network fee update to THORChain.
@@ -701,6 +718,13 @@ func (s *Scanner) getRuntimeVersion() (specVersion, txVersion uint32) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.specVersion, s.txVersion
+}
+
+// getMetadata returns the currently verified runtime metadata.
+func (s *Scanner) getMetadata() *stypes.Metadata {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.metadata
 }
 
 func (s *Scanner) verifyMetadata(blockHash string) error {

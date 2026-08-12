@@ -62,6 +62,19 @@ func assetHubEvents(actualFee uint64) []byte {
 	return append(EncodeCompact(6), events...)
 }
 
+func assetHubAssetFeeEvents(actualFee uint64) []byte {
+	feePayload := make([]byte, 32+16+16)
+	binary.LittleEndian.PutUint64(feePayload[32:40], actualFee)
+	location := []byte{0x00, 0x02, 0x04, 50, 0x05}
+	location = append(location, EncodeCompact(1984)...)
+	feePayload = append(feePayload, location...)
+
+	var events []byte
+	events = append(events, buildEvent(0, 0, 13, 0, feePayload, 0)...) // AssetTxFeePaid
+	events = append(events, buildEvent(0, 0, 0, 0, testDispatchInfo(), 0)...)
+	return append(EncodeCompact(2), events...)
+}
+
 func taoEvents(actualFee uint64) []byte {
 	feePayload := make([]byte, 32+8+8)
 	binary.LittleEndian.PutUint64(feePayload[32:40], actualFee)
@@ -165,6 +178,25 @@ func TestDecodeEventsUsesMetadataNamesAndTypes(t *testing.T) {
 	}
 	if got := events[3].Params[2].Type; got != "U128" {
 		t.Errorf("Transfer amount type = %q, want U128", got)
+	}
+}
+
+func TestParseExtrinsicResultsIgnoresNonNativeFee(t *testing.T) {
+	metadata := testMetadata(t, "testdata/metadata-dot-assethub-2003001.hex")
+	config := EventPalletConfig{
+		Metadata:                      metadata,
+		SystemPalletIndex:             0,
+		TransactionPaymentPalletIndex: 11,
+	}
+	results, fees, err := ParseExtrinsicResults(assetHubAssetFeeEvents(2_500_000), config)
+	if err != nil {
+		t.Fatalf("parse events: %v", err)
+	}
+	if !results[0] {
+		t.Fatal("expected successful extrinsic result")
+	}
+	if len(fees) != 0 {
+		t.Fatalf("native fees = %v, want none", fees)
 	}
 }
 

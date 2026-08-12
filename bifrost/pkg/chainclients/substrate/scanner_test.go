@@ -3,6 +3,7 @@ package substrate
 import (
 	"bytes"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -39,6 +40,24 @@ func newTestScanner() *Scanner {
 		nonceCache: newNonceCache(),
 	}
 	return s
+}
+
+func newAssetHubTestScanner(c *C) *Scanner {
+	raw, err := os.ReadFile("types/testdata/metadata-dot-assethub-2003001.hex")
+	c.Assert(err, IsNil)
+	metadata, err := stypes.ParseMetadata(strings.TrimSpace(string(raw)))
+	c.Assert(err, IsNil)
+
+	return &Scanner{
+		logger: log.Logger,
+		params: ChainParams[common.DOTChain],
+		cfg: config.BifrostBlockScannerConfiguration{
+			ChainID: common.DOTChain,
+		},
+		pubkeyMgr:  pubkeymanager.NewMockPoolAddressValidator(),
+		nonceCache: newNonceCache(),
+		metadata:   metadata,
+	}
 }
 
 // vaultPubKeyStub recognizes a fixed set of addresses as valid vaults.
@@ -87,6 +106,37 @@ func buildTestExtrinsicFromSigner(signer, callData []byte) string {
 	}
 
 	return stypes.HexEncode(stypes.EncodeSignedExtrinsic(ext))
+}
+
+func buildAssetHubTestExtrinsic(callData []byte) string {
+	ext := &stypes.Extrinsic{
+		Signer:               defaultTestSigner(),
+		SignatureType:        stypes.SignatureTypeEd25519,
+		Signature:            make([]byte, 64),
+		Era:                  stypes.ImmortalEra(),
+		Nonce:                0,
+		Tip:                  0,
+		MetadataMode:         stypes.MetadataModeDisabled,
+		CheckMetadataHash:    true,
+		ChargeAssetTxPayment: true,
+		CallData:             callData,
+	}
+	encoded := stypes.EncodeSignedExtrinsic(ext)
+	_, prefixLen, _ := stypes.DecodeCompact(encoded)
+	body := encoded[prefixLen:]
+	optionPos := len(body) - len(callData) - 2
+	tipStart := optionPos - len(stypes.EncodeCompact(ext.Tip))
+
+	payment := []byte{0x00, 0x01, 0x00, 0x02, 0x04, 50, 0x05}
+	payment = append(payment, stypes.EncodeCompact(1984)...)
+	replaced := make([]byte, 0, len(body)+len(payment)-2)
+	replaced = append(replaced, body[:tipStart]...)
+	replaced = append(replaced, payment...)
+	replaced = append(replaced, body[optionPos+1:]...)
+
+	result := stypes.EncodeCompact(uint64(len(replaced)))
+	result = append(result, replaced...)
+	return stypes.HexEncode(result)
 }
 
 // ---------------------------------------------------------------------------
@@ -224,6 +274,30 @@ func (s *ScannerSuite) TestProcessExtrinsic_LargeAmount(c *C) {
 	expectedAmount := common.TAOChain.NativeGasToThorchain(amount)
 	c.Check(txItem.Coins[0].Amount.Equal(expectedAmount), Equals, true,
 		Commentf("amount: got %s, want %s", txItem.Coins[0].Amount, expectedAmount))
+}
+
+func (s *ScannerSuite) TestProcessExtrinsic_AssetHubNonNativeFee(c *C) {
+	sc := newAssetHubTestScanner(c)
+	dest := bytes.Repeat([]byte{0xAB}, 32)
+	amount := cosmos.NewUint(2_000_000_000_000)
+	transfer := stypes.BalanceTransferKeepAlive(10, 3, dest, amount)
+
+	txItem, err := sc.processExtrinsic(buildAssetHubTestExtrinsic(transfer), 100, 0)
+	c.Assert(err, IsNil)
+	c.Assert(txItem, NotNil)
+	c.Check(txItem.Coins[0].Amount.Equal(common.DOTChain.NativeGasToThorchain(amount)), Equals, true)
+	c.Check(txItem.Gas[0].Amount.Equal(cosmos.OneUint()), Equals, true)
+
+	memo := "=:BTC.BTC:bc1qexample"
+	batch := stypes.BatchAll(40, 2, [][]byte{
+		transfer,
+		stypes.SystemRemark(0, 0, []byte(memo)),
+	})
+	txItem, err = sc.processExtrinsic(buildAssetHubTestExtrinsic(batch), 101, 0)
+	c.Assert(err, IsNil)
+	c.Assert(txItem, NotNil)
+	c.Check(txItem.Memo, Equals, memo)
+	c.Check(txItem.Coins[0].Amount.Equal(common.DOTChain.NativeGasToThorchain(amount)), Equals, true)
 }
 
 // ---------------------------------------------------------------------------
