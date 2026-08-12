@@ -683,6 +683,66 @@ func (s *AttestationGossip) handleQuorumErrataTxCommitted(en *ebifrost.EventNoti
 	as.MarkAttestationsCommitted(qe.Attestations)
 }
 
+// reconcileXMRObservedTxs reconciles each XMR observation in a separate errata
+// read-side critical section. Snapshot keys rather than state pointers so a
+// writer can remove an entry between states and the live map can be revalidated
+// before any later submission.
+func (s *AttestationGossip) reconcileXMRObservedTxs(ctx context.Context) {
+	s.mu.Lock()
+	keys := make([]txKey, 0, len(s.observedTxs))
+	for k := range s.observedTxs {
+		if k.Chain.Equals(common.XMRChain) {
+			keys = append(keys, k)
+		}
+	}
+	s.mu.Unlock()
+
+	for _, k := range keys {
+		if ctx.Err() != nil {
+			return
+		}
+		s.reconcileXMRObservedTx(ctx, k)
+	}
+}
+
+func (s *AttestationGossip) reconcileXMRObservedTx(ctx context.Context, k txKey) {
+	// Preserve the global lock order used by XMR observation admission:
+	// xmrErrataBarrier -> mu -> state.mu. A queued errata writer gets an
+	// opportunity to run before this lock is reacquired for the next key.
+	s.xmrErrataBarrier.RLock()
+	s.mu.Lock()
+	state, ok := s.observedTxs[k]
+	if !ok {
+		s.mu.Unlock()
+		s.xmrErrataBarrier.RUnlock()
+		return
+	}
+	state.mu.Lock()
+
+	if state.ExpiredAfterQuorum(s.config.LateObserveTimeout, s.config.NonQuorumTimeout) {
+		delete(s.observedTxs, k)
+		// Keep mu held until the pooled state is fully reset and unlocked. All
+		// production pool gets occur while mu is held, so it cannot be reused
+		// while its previous state mutex is still locked.
+		s.observedTxsPool.PutAttestationState(state)
+		state.mu.Unlock()
+		s.mu.Unlock()
+		s.xmrErrataBarrier.RUnlock()
+		return
+	}
+
+	// The map entry cannot be removed or returned to the pool while state.mu
+	// and the errata read barrier remain held, so the global map mutex is not
+	// needed across the bounded Thornode RPC.
+	s.mu.Unlock()
+	if state.ShouldSendLate(s.config.MinTimeBetweenAttestations) {
+		s.logger.Debug().Msg("sending late observed tx attestations")
+		s.sendObservedTxAttestationsToThornode(ctx, *state.Item.ObservedTx, state, k.Inbound, k.AllowFutureObservation, false)
+	}
+	state.mu.Unlock()
+	s.xmrErrataBarrier.RUnlock()
+}
+
 // Start the attestation gossip service
 func (s *AttestationGossip) Start(ctx context.Context) {
 	ticker := time.NewTicker(s.config.ObserveReconcileInterval)
@@ -706,31 +766,7 @@ func (s *AttestationGossip) Start(ctx context.Context) {
 		case <-ticker.C:
 			// prune old attestations and check for late ones to send
 			now := time.Now()
-			// The observation portion holds mu while issuing late submissions.
-			// Acquire the errata reader first, then release both before any
-			// unrelated network-fee/solvency bridge call. A stalled non-XMR RPC
-			// must not hold XMR's durable cleanup writer hostage.
-			s.xmrErrataBarrier.RLock()
-			s.mu.Lock()
-
-			// Prune observed transactions
-			for k, state := range s.observedTxs {
-				if !k.Chain.Equals(common.XMRChain) {
-					continue
-				}
-				state.mu.Lock()
-				if state.ExpiredAfterQuorum(s.config.LateObserveTimeout, s.config.NonQuorumTimeout) {
-					delete(s.observedTxs, k)
-					s.observedTxsPool.PutAttestationState(state)
-				} else if state.ShouldSendLate(s.config.MinTimeBetweenAttestations) {
-					s.logger.Debug().Msg("sending late observed tx attestations")
-
-					s.sendObservedTxAttestationsToThornode(ctx, *state.Item.ObservedTx, state, k.Inbound, k.AllowFutureObservation, false)
-				}
-				state.mu.Unlock()
-			}
-			s.mu.Unlock()
-			s.xmrErrataBarrier.RUnlock()
+			s.reconcileXMRObservedTxs(ctx)
 
 			s.mu.Lock()
 			for k, state := range s.observedTxs {

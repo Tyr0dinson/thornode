@@ -615,6 +615,182 @@ func TestStart(t *testing.T) {
 	})
 }
 
+func TestXMRReconcileReleasesErrataBarrierBetweenStates(t *testing.T) {
+	ag, _, _, grpcClient, _, _ := setupTestGossip(t)
+	ag.config.MinTimeBetweenAttestations = time.Millisecond
+
+	type testObservation struct {
+		id     common.TxID
+		height int64
+		key    txKey
+	}
+	observations := make([]testObservation, 0, 3)
+
+	ag.mu.Lock()
+	for i := 0; i < 3; i++ {
+		obsTx := &common.ObservedTx{
+			Tx: common.Tx{
+				ID:    common.TxID(fmt.Sprintf("%064x", i+1)),
+				Chain: common.XMRChain,
+			},
+			BlockHeight: int64(100 + i),
+		}
+		key := observedTxKey(*obsTx, false, false)
+		state := ag.observedTxsPool.NewAttestationState(&attestableObservedTx{ObservedTx: obsTx})
+		state.attestations = append(state.attestations, attestationSentState{
+			attestation: &common.Attestation{
+				PubKey:    []byte(fmt.Sprintf("pubkey-%d", i)),
+				Signature: []byte(fmt.Sprintf("signature-%d", i)),
+			},
+		})
+		state.firstAttestationObserved = time.Now().Add(-time.Second)
+		ag.observedTxs[key] = state
+		observations = append(observations, testObservation{
+			id:     obsTx.Tx.ID,
+			height: obsTx.BlockHeight,
+			key:    key,
+		})
+	}
+	ag.mu.Unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	releaseFirst := make(chan struct{})
+	releaseWriter := make(chan struct{})
+	var releaseFirstOnce, releaseWriterOnce sync.Once
+	releaseFirstRPC := func() { releaseFirstOnce.Do(func() { close(releaseFirst) }) }
+	releaseErrataWriter := func() { releaseWriterOnce.Do(func() { close(releaseWriter) }) }
+	t.Cleanup(releaseFirstRPC)
+	t.Cleanup(releaseErrataWriter)
+
+	rpcStarted := make(chan common.TxID, len(observations))
+	var rpcMu sync.Mutex
+	rpcCount := 0
+	grpcClient.sendQuorumTxFunc = func(ctx context.Context, quorumTx *common.QuorumTx, opts ...grpc.CallOption) (*ebifrost.SendQuorumTxResult, error) {
+		rpcMu.Lock()
+		rpcCount++
+		call := rpcCount
+		rpcMu.Unlock()
+
+		rpcStarted <- quorumTx.ObsTx.Tx.ID
+		if call == 1 {
+			select {
+			case <-releaseFirst:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		return &ebifrost.SendQuorumTxResult{}, nil
+	}
+
+	reconcileDone := make(chan struct{})
+	go func() {
+		defer close(reconcileDone)
+		ag.reconcileXMRObservedTxs(ctx)
+	}()
+
+	var firstID common.TxID
+	select {
+	case firstID = <-rpcStarted:
+	case <-time.After(time.Second):
+		t.Fatal("first XMR reconciliation RPC did not start")
+	}
+
+	remaining := make([]testObservation, 0, 2)
+	for _, observation := range observations {
+		if !observation.id.Equals(firstID) {
+			remaining = append(remaining, observation)
+		}
+	}
+	require.Len(t, remaining, 2)
+	cleanupTarget := remaining[0]
+	survivor := remaining[1]
+
+	writerAttempting := make(chan struct{})
+	writerAcquired := make(chan struct{})
+	cleanupApplied := make(chan struct{})
+	writerDone := make(chan struct{})
+	go func() {
+		defer close(writerDone)
+		close(writerAttempting)
+		ag.xmrErrataBarrier.Lock()
+		close(writerAcquired)
+		ag.removeObservedTxsForErrata(common.ErrataTx{
+			Chain: common.XMRChain,
+			Id:    cleanupTarget.id,
+		}, cleanupTarget.height)
+		close(cleanupApplied)
+		select {
+		case <-releaseWriter:
+		case <-ctx.Done():
+		}
+		ag.xmrErrataBarrier.Unlock()
+	}()
+	<-writerAttempting
+
+	// TryRLock succeeds alongside the first RPC's reader until a writer is
+	// queued. Once it fails, releasing that RPC must hand the barrier to the
+	// errata writer rather than starting the next XMR reconciliation RPC.
+	require.Eventually(t, func() bool {
+		if ag.xmrErrataBarrier.TryRLock() {
+			ag.xmrErrataBarrier.RUnlock()
+			return false
+		}
+		return true
+	}, time.Second, time.Millisecond, "errata writer did not queue behind the first XMR RPC")
+
+	releaseFirstRPC()
+	select {
+	case nextID := <-rpcStarted:
+		t.Fatalf("XMR reconciliation RPC %s started before the queued errata writer acquired the barrier", nextID)
+	case <-writerAcquired:
+	case <-time.After(time.Second):
+		t.Fatal("queued errata writer did not acquire the barrier after the first RPC")
+	}
+
+	select {
+	case <-cleanupApplied:
+	case <-time.After(time.Second):
+		t.Fatal("errata writer did not remove the snapshotted XMR state")
+	}
+	ag.mu.Lock()
+	_, cleanupTargetStillPresent := ag.observedTxs[cleanupTarget.key]
+	ag.mu.Unlock()
+	assert.False(t, cleanupTargetStillPresent)
+
+	select {
+	case nextID := <-rpcStarted:
+		t.Fatalf("XMR reconciliation RPC %s started while the errata writer held the barrier", nextID)
+	case <-time.After(25 * time.Millisecond):
+	}
+
+	releaseErrataWriter()
+	select {
+	case secondID := <-rpcStarted:
+		assert.True(t, secondID.Equals(survivor.id), "expected surviving XMR state %s, got %s", survivor.id, secondID)
+		assert.False(t, secondID.Equals(cleanupTarget.id), "reconciled an XMR state removed by errata cleanup")
+	case <-time.After(time.Second):
+		t.Fatal("surviving XMR state was not reconciled")
+	}
+
+	select {
+	case <-reconcileDone:
+	case <-time.After(time.Second):
+		t.Fatal("XMR reconciliation did not complete")
+	}
+	select {
+	case extraID := <-rpcStarted:
+		t.Fatalf("unexpected extra XMR reconciliation RPC for %s", extraID)
+	default:
+	}
+	select {
+	case <-writerDone:
+	case <-time.After(time.Second):
+		t.Fatal("errata writer did not complete")
+	}
+}
+
 // TestPruningLogic tests pruning of old attestation states
 func TestPruningLogic(t *testing.T) {
 	ag, _, _, _, _, _ := setupTestGossip(t)
