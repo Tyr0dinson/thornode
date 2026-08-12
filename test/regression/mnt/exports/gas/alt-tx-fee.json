@@ -65,6 +65,17 @@
           "permissions": []
         },
         {
+          "@type": "/cosmos.auth.v1beta1.ModuleAccount",
+          "base_account": {
+            "account_number": "9",
+            "address": "tthor102ae04vpk6v2tvjgzdsc2s7ncnptj6pwz0pg2k",
+            "pub_key": null,
+            "sequence": "0"
+          },
+          "name": "stable_reserve",
+          "permissions": []
+        },
+        {
           "@type": "/cosmos.auth.v1beta1.BaseAccount",
           "account_number": "8",
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
@@ -130,11 +141,11 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "10199698402589",
+              "amount": "10199698362497",
               "denom": "rune"
             },
             {
-              "amount": "1000030800",
+              "amount": "1000030804",
               "denom": "thor.nami"
             }
           ]
@@ -143,7 +154,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35000011256075",
+              "amount": "35000007295967",
               "denom": "rune"
             }
           ]
@@ -152,7 +163,7 @@
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "coins": [
             {
-              "amount": "354200",
+              "amount": "354196",
               "denom": "thor.nami"
             }
           ]
@@ -161,7 +172,7 @@
           "address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
           "coins": [
             {
-              "amount": "5000293986000",
+              "amount": "5000297986200",
               "denom": "rune"
             },
             {
@@ -203,6 +214,9 @@
     "genutil": {
       "gen_txs": []
     },
+    "scheduler": {
+      "schedules": []
+    },
     "thorchain": {
       "POL": {
         "rune_deposited": "0",
@@ -219,6 +233,8 @@
         }
       ],
       "chain_contracts": [],
+      "dynamic_fee_accumulators": [],
+      "dynamic_fee_records": [],
       "last_chain_heights": [],
       "liquidity_providers": [
         {
@@ -244,8 +260,6 @@
           "units": "100000000000"
         }
       ],
-      "loan_total_collateral": [],
-      "loans": [],
       "mimirs": [
         {
           "key": "ALTNATIVETXFEEADDEDBPS",
@@ -301,7 +315,7 @@
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
           "balance_asset": "100000000",
-          "balance_rune": "100003196344",
+          "balance_rune": "100003196348",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -312,7 +326,7 @@
           "LP_units": "100000000000",
           "asset": "ETH.ETH",
           "balance_asset": "1000000000",
-          "balance_rune": "100003196344",
+          "balance_rune": "100003196348",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -322,8 +336,8 @@
         {
           "LP_units": "100000000000",
           "asset": "THOR.NAMI",
-          "balance_asset": "1000030800",
-          "balance_rune": "9999692009901",
+          "balance_asset": "1000030804",
+          "balance_rune": "9999691969801",
           "decimals": "6",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -331,6 +345,7 @@
           "synth_units": "0"
         }
       ],
+      "reference_memos": [],
       "reserve_contributors": null,
       "rune_pool": {
         "pool_units": "0",
@@ -347,6 +362,12 @@
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "reclaimed": "0",
           "score": "2248",
+          "spent": "0"
+        },
+        {
+          "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+          "reclaimed": "0",
+          "score": "0",
           "spent": "0"
         },
         {
