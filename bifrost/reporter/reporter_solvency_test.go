@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -86,6 +87,7 @@ type mockChainClient struct {
 	blockScannerHeight    int64
 	blockScannerIsHealthy bool
 	chainHeight           int64
+	getHeightCalls        atomic.Int64
 	vaultAccountHeights   []int64
 }
 
@@ -125,8 +127,11 @@ func (m *mockChainClient) GetBlockScannerHeight() (int64, error) { return m.bloc
 func (m *mockChainClient) IsBlockScannerHealthy() bool           { return m.blockScannerIsHealthy }
 func (m *mockChainClient) Start(globalTxsQueue chan types.TxIn, globalErrataQueue chan types.ErrataBlock, reportDispatcher Dispatcher) {
 }
-func (m *mockChainClient) Stop()                                                 {}
-func (m *mockChainClient) GetHeight() (int64, error)                             { return m.chainHeight, nil }
+func (m *mockChainClient) Stop() {}
+func (m *mockChainClient) GetHeight() (int64, error) {
+	m.getHeightCalls.Add(1)
+	return m.chainHeight, nil
+}
 func (m *mockChainClient) OnObservedTxIn(txIn types.TxInItem, blockHeight int64) {}
 func (m *mockChainClient) GetAccountByAddress(address string, _ *big.Int) (common.Account, error) {
 	return m.account, nil
@@ -798,6 +803,38 @@ func (s *SolvencySuite) TestShouldReportFromRunnerRequiresActiveHalt(c *C) {
 
 	bridge.mimir.set("SolvencyHaltETHChain", 100)
 	c.Assert(reporter.shouldReportFromRunner(), Equals, true)
+}
+
+func (s *SolvencySuite) TestDispatcherGatesRunnerBeforeResolvingChainHeight(c *C) {
+	client := &mockChainClient{
+		chain:       common.ETHChain,
+		chainHeight: 100,
+		cfg: config.BifrostChainConfiguration{
+			SolvencyBlocks: 20,
+		},
+	}
+	bridge := &thorMockBridge{thorchainHeight: 100}
+	reporter := newSolvencyReporter(client, bridge)
+	// Keep the active-halt pass from collecting; this test is concerned only
+	// with whether the dispatcher resolves the external chain height.
+	reporter.setLastSolvencyCheckHeight(client.chainHeight)
+
+	d := &dispatcher{
+		logger:      log.Logger,
+		reportQueue: make(chan ReportBatch, 1),
+		stopper:     make(chan struct{}),
+		chains:      map[common.Chain]ChainClient{common.ETHChain: client},
+		reporters: map[common.Chain]Reporters{
+			common.ETHChain: {reporter},
+		},
+	}
+
+	d.processInternal(common.ETHChain, fromRunner, 0)
+	c.Assert(client.getHeightCalls.Load(), Equals, int64(0))
+
+	bridge.mimir.set("HaltETHChain", bridge.thorchainHeight)
+	d.processInternal(common.ETHChain, fromRunner, 0)
+	c.Assert(client.getHeightCalls.Load(), Equals, int64(1))
 }
 
 // TestCollectSkipsSolventVaultsWhenInsolventPresent ensures a runner collect only reports

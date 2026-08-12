@@ -65,6 +65,9 @@ func (from triggeredFrom) String() string {
 type Reporter interface {
 	String() string
 	Collect(from triggeredFrom, height int64) (collectedMsgs ReportBatch, err error)
+	// ShouldResolveHeight performs any trigger-only checks that can reject a
+	// task before the dispatcher pays the cost of resolving a missing height.
+	ShouldResolveHeight(from triggeredFrom) bool
 	ShouldReport(from triggeredFrom, height int64) bool
 }
 

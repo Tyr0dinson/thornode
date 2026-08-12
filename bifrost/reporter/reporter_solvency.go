@@ -181,6 +181,12 @@ func (r *solvencyReporter) reportHeight(height int64) (int64, bool) {
 	return reportHeight, reportHeight > 0
 }
 
+// ShouldResolveHeight gates runner tasks on the halt state before the dispatcher
+// calls the external chain node to resolve their missing height.
+func (r *solvencyReporter) ShouldResolveHeight(from triggeredFrom) bool {
+	return from != fromRunner || r.shouldReportFromRunner()
+}
+
 // ShouldReport decides whether a solvency collection/report cycle should run for
 // a given trigger source and raw (unnormalized) height.
 func (r *solvencyReporter) ShouldReport(from triggeredFrom, height int64) bool {

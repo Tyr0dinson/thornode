@@ -226,17 +226,32 @@ func (d *dispatcher) processInternal(chain common.Chain, from triggeredFrom, hei
 	logger := d.logger.With().Stringer("chain", chain).Stringer("from", from).Int64("height", height).Logger()
 
 	var allMsgs ReportBatch
-	taskHeight, err := d.resolveTaskHeight(chain, from, height)
-	if err != nil {
-		logger.Err(err).Msg("failed to resolve report height")
-		return
-	}
 	reporters, ok := d.reporters[chain]
 	if !ok {
 		logger.Error().Msg("internal error: reporters not found for chain")
 		return
 	}
+	if height <= 0 {
+		eligibleReporters := make(Reporters, 0, len(reporters))
+		for _, rep := range reporters {
+			if rep.ShouldResolveHeight(from) {
+				eligibleReporters = append(eligibleReporters, rep)
+			}
+		}
+		if len(eligibleReporters) == 0 {
+			return
+		}
+		reporters = eligibleReporters
+	}
+
+	taskHeight, err := d.resolveTaskHeight(chain, from, height)
+	if err != nil {
+		logger.Err(err).Msg("failed to resolve report height")
+		return
+	}
 	for _, rep := range reporters {
+		// Re-evaluate the full predicate after resolving the height so a halt
+		// cleared while this task was queued or resolving is respected.
 		if !rep.ShouldReport(from, taskHeight) {
 			continue
 		}
