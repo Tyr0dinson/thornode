@@ -418,22 +418,27 @@ func selectPlannedXMROutbound(
 	obsTx common.ObservedTx,
 	candidates []plannedXMROutbound,
 ) (plannedXMROutbound, bool) {
-	matches := make([]plannedXMROutbound, 0, len(candidates))
-	exactHashMatches := make([]plannedXMROutbound, 0, 1)
+	hasExactHash := false
 	for _, candidate := range candidates {
+		if !candidate.outHash.IsEmpty() && candidate.outHash.Equals(obsTx.Tx.ID) {
+			hasExactHash = true
+			break
+		}
+	}
+
+	matches := make([]plannedXMROutbound, 0, len(candidates))
+	for _, candidate := range candidates {
+		if hasExactHash {
+			if candidate.outHash.IsEmpty() || !candidate.outHash.Equals(obsTx.Tx.ID) {
+				continue
+			}
+		} else if !candidate.outHash.IsEmpty() {
+			continue
+		}
 		if !xmrObservedTxMatchesPlanned(obsTx, candidate) {
 			continue
 		}
-		if !candidate.outHash.IsEmpty() && !candidate.outHash.Equals(obsTx.Tx.ID) {
-			continue
-		}
 		matches = append(matches, candidate)
-		if !candidate.outHash.IsEmpty() && candidate.outHash.Equals(obsTx.Tx.ID) {
-			exactHashMatches = append(exactHashMatches, candidate)
-		}
-	}
-	if len(exactHashMatches) > 0 {
-		matches = exactHashMatches
 	}
 	if len(matches) == 0 {
 		return plannedXMROutbound{}, false

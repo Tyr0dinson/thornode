@@ -196,6 +196,55 @@ func TestXMRPlannedOutboundMatcherRejectsMismatches(t *testing.T) {
 	})
 }
 
+func TestSelectPlannedXMROutboundExactHashPrecedence(t *testing.T) {
+	obsTx, planned := observerTestXMRPlan(t)
+
+	t.Run("exact hash mismatch fails closed instead of falling back", func(t *testing.T) {
+		mismatchedExact := planned
+		mismatchedExact.toAddress = common.Address(common.XMRSeededDummyAddress('8', []byte("wrong-exact-hash-dest")))
+		matchingUnhashed := planned
+		matchingUnhashed.outHash = common.TxID("")
+
+		for _, candidates := range [][]plannedXMROutbound{
+			{mismatchedExact, matchingUnhashed},
+			{matchingUnhashed, mismatchedExact},
+		} {
+			_, ok := selectPlannedXMROutbound(obsTx, candidates)
+			assert.False(t, ok)
+		}
+	})
+
+	t.Run("exact hash disambiguates matching plans", func(t *testing.T) {
+		matchingUnhashed := planned
+		matchingUnhashed.outHash = common.TxID("")
+		matchingUnhashed.wireMemo = "unhashed-wire-memo"
+		matchingExact := planned
+		matchingExact.wireMemo = "exact-wire-memo"
+
+		selected, ok := selectPlannedXMROutbound(obsTx, []plannedXMROutbound{
+			matchingUnhashed,
+			matchingExact,
+		})
+		require.True(t, ok)
+		assert.Equal(t, matchingExact.wireMemo, selected.wireMemo)
+	})
+
+	t.Run("unhashed plan is used only when no exact hash exists", func(t *testing.T) {
+		matchingUnhashed := planned
+		matchingUnhashed.outHash = common.TxID("")
+		matchingUnhashed.wireMemo = "unhashed-wire-memo"
+		matchingWrongHash := planned
+		matchingWrongHash.outHash = common.TxID(observerTestHash("other-outbound"))
+
+		selected, ok := selectPlannedXMROutbound(obsTx, []plannedXMROutbound{
+			matchingWrongHash,
+			matchingUnhashed,
+		})
+		require.True(t, ok)
+		assert.Equal(t, matchingUnhashed.wireMemo, selected.wireMemo)
+	})
+}
+
 // TestPeerXMRSpentRefsRequirePlannedOutboundAndSourceVaultQuorum verifies that
 // pre-chain peer refs are importable only when the exact observation has a
 // historical source-vault quorum and matches THORChain's plan.
