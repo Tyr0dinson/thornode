@@ -5,9 +5,22 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
+
+// isXMRMonovaultKeygenHalted is the shared consensus-side gate. A read failure
+// is reported as halted so an unknown emergency-control state cannot schedule
+// an XMR ceremony. Callers log the error; if an active XMR custody vault exists,
+// the same fail-closed state also pauses ordinary churn to protect membership.
+func isXMRMonovaultKeygenHalted(ctx cosmos.Context, k keeper.Keeper) (bool, error) {
+	halt, err := k.GetMimir(ctx, constants.MimirKeyHaltMonovaultKeygen)
+	if err != nil {
+		return true, err
+	}
+	return halt > 0 && halt <= ctx.BlockHeight(), nil
+}
 
 func xmrMonovaultChains() common.Chains {
 	return common.Chains{common.THORChain, common.XMRChain}

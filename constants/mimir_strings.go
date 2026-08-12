@@ -19,8 +19,10 @@ const (
 	// MimirKeyHaltMonovaultKeygen gates ONLY the XMR monovault FROST keygen,
 	// decoupled from HaltChurning (which halts all keygen scheduling). The "Halt"
 	// prefix makes IsOperationalMimir classify it node-votable (operational quorum).
-	// Default 0 (off); set > 0 (and <= current height) to stop scheduling the XMR
-	// monovault keygen while leaving normal Asgard churn running.
+	// Unset/0 is off; set > 0 (and <= current height) to stop scheduling the XMR
+	// monovault keygen. Ordinary Asgard churn remains independent until an XMR
+	// vault exists; then it pauses too, preserving active-vault membership safety.
+	// Activate before deployment/keygen; it cannot abort a ceremony in progress.
 	MimirKeyHaltMonovaultKeygen = "HaltMonovaultKeygen"
 
 	MimirTemplateEVMAllowanceCheck         = "EVMAllowanceCheck-%s"         // Use with Chain

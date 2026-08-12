@@ -1084,6 +1084,80 @@ func (vts *ValidatorMgrTestSuite) TestChurnInnerSchedulesReplacementXMRKeygen(c 
 	c.Assert(networkDummy.xmrNas.Contains(ready), Equals, true)
 }
 
+func (vts *ValidatorMgrTestSuite) TestChurnInnerHaltMonovaultKeygenPreservesAsgardChurnWithoutXMRVault(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+	mgr := NewDummyMgrWithKeeper(k)
+	networkDummy, ok := mgr.NetworkMgr().(*NetworkMgrDummy)
+	c.Assert(ok, Equals, true)
+	validatorMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	minBond := constants.GetConstantValues(GetCurrentVersion()).GetInt64Value(constants.MinimumBondInRune)
+
+	k.SetMimir(ctx, constants.DesiredValidatorSet.String(), 4)
+	k.SetMimir(ctx, constants.AsgardSize.String(), 10)
+	k.SetMimir(ctx, constants.MimirKeyHaltMonovaultKeygen, ctx.BlockHeight())
+
+	membership := make([]string, 0, 4)
+	for i := 0; i < 4; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		if i == 0 {
+			na.RequestedToLeave = true
+		}
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+		membership = append(membership, na.PubKeySet.Secp256k1.String())
+	}
+	ready := GetRandomValidatorNode(NodeReady)
+	ready.Bond = cosmos.NewUint(uint64(minBond))
+	ready.Version = constants.SWVersion.String()
+	c.Assert(k.SetNodeAccount(ctx, ready), IsNil)
+
+	regular := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.THORChain, common.BTCChain}.Strings(), nil)
+	regular.Membership = append(regular.Membership, membership...)
+	c.Assert(k.SetVault(ctx, regular), IsNil)
+	c.Assert(validatorMgr.churnInner(ctx), IsNil)
+	c.Assert(networkDummy.nas, HasLen, 4)
+	c.Assert(networkDummy.nas.Contains(ready), Equals, true)
+	c.Assert(networkDummy.xmrNas, HasLen, 0)
+}
+
+func (vts *ValidatorMgrTestSuite) TestChurnInnerHaltMonovaultKeygenPausesChurnWithActiveXMRVault(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+	mgr := NewDummyMgrWithKeeper(k)
+	networkDummy, ok := mgr.NetworkMgr().(*NetworkMgrDummy)
+	c.Assert(ok, Equals, true)
+	validatorMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	minBond := constants.GetConstantValues(GetCurrentVersion()).GetInt64Value(constants.MinimumBondInRune)
+
+	k.SetMimir(ctx, constants.DesiredValidatorSet.String(), 4)
+	k.SetMimir(ctx, constants.AsgardSize.String(), 10)
+	k.SetMimir(ctx, constants.MimirKeyHaltMonovaultKeygen, ctx.BlockHeight())
+	membership := make([]string, 0, 4)
+	for i := 0; i < 4; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		if i == 0 {
+			na.RequestedToLeave = true
+		}
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+		membership = append(membership, na.PubKeySet.Secp256k1.String())
+	}
+	ready := GetRandomValidatorNode(NodeReady)
+	ready.Bond = cosmos.NewUint(uint64(minBond))
+	ready.Version = constants.SWVersion.String()
+	c.Assert(k.SetNodeAccount(ctx, ready), IsNil)
+	regular := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.THORChain, common.BTCChain}.Strings(), nil)
+	regular.Membership = append(regular.Membership, membership...)
+	c.Assert(k.SetVault(ctx, regular), IsNil)
+	xmr := NewVaultV2(1, ActiveVault, AsgardVault, GetRandomPubKey(), xmrMonovaultChains().Strings(), nil, GetRandomPubKey())
+	xmr.Membership = append(xmr.Membership, membership...)
+	xmr.PubKeyFrost = GetRandomEd25519PubKey()
+	c.Assert(k.SetVault(ctx, xmr), IsNil)
+
+	c.Assert(validatorMgr.churnInner(ctx), IsNil)
+	c.Assert(networkDummy.nas, HasLen, 0)
+	c.Assert(networkDummy.xmrNas, HasLen, 0)
+}
+
 func (vts *ValidatorMgrTestSuite) TestChurnInnerRecoversMissingXMRAtBFTFloor(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	mgr := NewDummyMgrWithKeeper(k)
