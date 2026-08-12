@@ -109,7 +109,11 @@ const (
 	// Terminal results have a dedicated ingress so scheduler backpressure from
 	// obsolete round traffic cannot prevent keyless/standby members receiving
 	// the completed DKG or keysign outcome.
-	FrostMaxPendingResults       = 32
+	FrostMaxPendingResults = 32
+	// A small local holding queue preserves terminal priority and cancellation
+	// ordering while the main scheduler is full. It is a separate hard bound;
+	// once full, the dedicated result channel supplies producer backpressure.
+	FrostMaxDeferredBroadcasts   = FrostMaxPendingResults
 	FrostBroadcastEnqueueTimeout = 250 * time.Millisecond
 )
 
@@ -1173,10 +1177,19 @@ func (c *Communication) ProcessBroadcast() {
 	completed := make(chan frostBroadcastCompletion, FrostMaxConcurrentBroadcasts)
 	cancelWaiters := make(map[string][]chan struct{})
 	deferredFrost := make([]frostBroadcastTask, 0, FrostMaxConcurrentBroadcasts)
-	deferTask := func(task frostBroadcastTask) {
+	hasDeferredCapacity := func() bool {
+		return len(deferredFrost) < FrostMaxDeferredBroadcasts
+	}
+	deferTask := func(task frostBroadcastTask) bool {
+		// Cancellation and legacy routing may need to retain work while the
+		// scheduler is full. Never turn that small holding queue into another
+		// unbounded ingress.
+		if !hasDeferredCapacity() {
+			return false
+		}
 		if !task.terminal {
 			deferredFrost = append(deferredFrost, task)
-			return
+			return true
 		}
 		// Terminal results retain FIFO relative to each other, but are admitted
 		// before deferred round traffic as soon as the scheduler has capacity.
@@ -1187,6 +1200,7 @@ func (c *Communication) ProcessBroadcast() {
 		deferredFrost = append(deferredFrost, frostBroadcastTask{})
 		copy(deferredFrost[insertAt+1:], deferredFrost[insertAt:])
 		deferredFrost[insertAt] = task
+		return true
 	}
 	for {
 		for {
@@ -1226,13 +1240,25 @@ func (c *Communication) ProcessBroadcast() {
 			continue
 		}
 
+		schedulerCapacity := scheduler.maxPending <= 0 || scheduler.pending < scheduler.maxPending
+		resultInput := (<-chan *messages.BroadcastMsgChan)(c.FrostResultBroadcastMsgChan)
+		if !schedulerCapacity && !hasDeferredCapacity() {
+			// Do not drain the bounded result channel into local memory while
+			// both fixed pending budgets are full. QueueFrostBroadcast will then
+			// apply its bounded enqueue timeout.
+			resultInput = nil
+		}
 		frostInput := (<-chan *messages.BroadcastMsgChan)(c.FrostBroadcastMsgChan)
-		if len(deferredFrost) > 0 ||
-			(scheduler.maxPending > 0 && scheduler.pending >= scheduler.maxPending) {
+		if len(deferredFrost) > 0 || !schedulerCapacity {
+			frostInput = nil
+		}
+		// Once pending capacity opens, give a queued terminal result the next
+		// scheduler slot instead of racing it against more ordinary round work.
+		if resultInput != nil && len(c.FrostResultBroadcastMsgChan) > 0 {
 			frostInput = nil
 		}
 		select {
-		case msg := <-c.FrostResultBroadcastMsgChan:
+		case msg := <-resultInput:
 			task, err := frostBroadcastTaskFromMessage(msg)
 			if err != nil {
 				c.logger.Error().Err(err).Msg("invalid message on FROST result broadcast channel")
@@ -1245,7 +1271,13 @@ func (c *Communication) ProcessBroadcast() {
 				continue
 			}
 			if !scheduler.enqueue(task) {
-				deferTask(task)
+				if !deferTask(task) {
+					// resultInput is disabled when both bounded destinations are
+					// full, so this indicates an invariant bug.
+					c.logger.Error().
+						Str("msg_id", task.msgID).
+						Msg("failed to admit terminal FROST result despite bounded backlog capacity")
+				}
 			}
 		case msg := <-frostInput:
 			task, err := frostBroadcastTaskFromMessage(msg)
@@ -1273,7 +1305,11 @@ func (c *Communication) ProcessBroadcast() {
 				}
 				if !scheduler.enqueue(task) {
 					if task.terminal {
-						deferTask(task)
+						if !deferTask(task) {
+							c.logger.Error().
+								Str("msg_id", task.msgID).
+								Msg("bounded FROST backlog rejected terminal result from legacy channel")
+						}
 						continue
 					}
 					c.logger.Error().
@@ -1308,24 +1344,29 @@ func (c *Communication) ProcessBroadcast() {
 				}
 				filteredDeferred = append(filteredDeferred, task)
 			}
+			clear(deferredFrost[len(filteredDeferred):])
 			deferredFrost = filteredDeferred
 
-		drainFrost:
-			for c.FrostBroadcastMsgChan != nil {
-				select {
-				case msg := <-c.FrostBroadcastMsgChan:
-					task, err := frostBroadcastTaskFromMessage(msg)
-					if err != nil {
-						c.logger.Error().Err(err).Msg("invalid message on FROST broadcast channel")
-						continue
-					}
-					if task.msgID == request.msgID && !task.terminal {
-						dropped++
-						continue
-					}
-					deferTask(task)
-				default:
-					break drainFrost
+			// Snapshot the queued prefix so concurrent producers cannot extend the
+			// cancellation barrier indefinitely. The coordinator enqueues all of its
+			// messages before requesting cancellation, so its stale prefix is covered.
+			drainCount := len(c.FrostBroadcastMsgChan)
+			for range drainCount {
+				msg := <-c.FrostBroadcastMsgChan
+				task, err := frostBroadcastTaskFromMessage(msg)
+				if err != nil {
+					c.logger.Error().Err(err).Msg("invalid message on FROST broadcast channel")
+					continue
+				}
+				if task.msgID == request.msgID && !task.terminal {
+					dropped++
+					continue
+				}
+				if !deferTask(task) {
+					c.logger.Error().
+						Str("msg_id", task.msgID).
+						Bool("terminal", task.terminal).
+						Msg("bounded FROST backlog rejected preserved cancellation traffic")
 				}
 			}
 			if dropped > 0 {

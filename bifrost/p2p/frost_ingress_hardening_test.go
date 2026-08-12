@@ -539,7 +539,10 @@ func TestTerminalResultProgressesAfterGloballySaturatedProductionIngress(t *test
 				terminalSent <- struct{}{}
 				return
 			}
-			started <- struct{}{}
+			select {
+			case started <- struct{}{}:
+			default:
+			}
 			<-releaseWriters
 		},
 	}
@@ -612,6 +615,111 @@ func TestTerminalResultProgressesAfterGloballySaturatedProductionIngress(t *test
 	}
 	close(stop)
 	comm.wg.Wait()
+}
+
+func TestTerminalResultBacklogRemainsBoundedWhileWritersAreStalled(t *testing.T) {
+	stop := make(chan struct{})
+	releaseWriters := make(chan struct{})
+	started := make(chan struct{}, FrostMaxConcurrentBroadcasts)
+	comm := &Communication{
+		logger:                      zerolog.Nop(),
+		wg:                          &sync.WaitGroup{},
+		stopChan:                    stop,
+		BroadcastMsgChan:            make(chan *messages.BroadcastMsgChan, 1),
+		FrostBroadcastMsgChan:       make(chan *messages.BroadcastMsgChan, FrostMaxConcurrentBroadcasts),
+		FrostResultBroadcastMsgChan: make(chan *messages.BroadcastMsgChan, FrostMaxPendingResults),
+		cancelFrostBroadcastChan:    make(chan frostBroadcastCancelRequest, 1),
+		broadcastToPeersFn: func(_ []peer.ID, _ []byte, _ string, closeAfterWrite bool) {
+			if !closeAfterWrite {
+				return
+			}
+			select {
+			case started <- struct{}{}:
+			default:
+			}
+			<-releaseWriters
+		},
+	}
+	comm.wg.Add(1)
+	go comm.ProcessBroadcast()
+	t.Cleanup(func() {
+		close(stop)
+		close(releaseWriters)
+		comm.wg.Wait()
+	})
+
+	// Occupy every writer with ordinary work from distinct sessions. Two tasks
+	// per session match the production per-ceremony concurrency ceiling.
+	for i := uint32(0); i < FrostMaxConcurrentBroadcasts; i++ {
+		comm.FrostBroadcastMsgChan <- &messages.BroadcastMsgChan{
+			WrappedMessage: messages.WrappedMessage{
+				MessageType: messages.TSSFrostShareMsg,
+				MsgID:       fmt.Sprintf("stalled-session-%d", i/FrostMaxConcurrentBroadcastsPerSession),
+			},
+		}
+	}
+	for i := uint32(0); i < FrostMaxConcurrentBroadcasts; i++ {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("failed to saturate the global FROST writer pool")
+		}
+	}
+
+	// Fill the scheduler and leave the ordinary ingress channel full. No writer
+	// can complete, so the processor has exactly its fixed pending capacity.
+	ordinary := &messages.BroadcastMsgChan{
+		WrappedMessage: messages.WrappedMessage{
+			MessageType: messages.TSSFrostShareMsg,
+			MsgID:       "pending-rounds",
+		},
+	}
+	fillDone := make(chan struct{})
+	go func() {
+		for i := 0; i < FrostMaxPendingBroadcasts+cap(comm.FrostBroadcastMsgChan); i++ {
+			select {
+			case comm.FrostBroadcastMsgChan <- ordinary:
+			case <-stop:
+				return
+			}
+		}
+		close(fillDone)
+	}()
+	select {
+	case <-fillDone:
+	case <-time.After(time.Second):
+		t.Fatal("failed to fill the bounded FROST scheduler and ingress")
+	}
+
+	result := &messages.BroadcastMsgChan{
+		WrappedMessage: messages.WrappedMessage{
+			MessageType: messages.TSSFrostResultMsg,
+			MsgID:       "completed-session",
+		},
+	}
+	fillResultsDone := make(chan struct{})
+	go func() {
+		for i := 0; i < FrostMaxDeferredBroadcasts+FrostMaxPendingResults; i++ {
+			select {
+			case comm.FrostResultBroadcastMsgChan <- result:
+			case <-stop:
+				return
+			}
+		}
+		close(fillResultsDone)
+	}()
+	select {
+	case <-fillResultsDone:
+	case <-time.After(time.Second):
+		t.Fatal("failed to fill the bounded deferred and ingress result queues")
+	}
+
+	// The processor may retain only the fixed local allowance and channel
+	// capacity while the scheduler is full. Previously it kept draining into an
+	// unbounded deferredFrost, so this extra enqueue always succeeded.
+	if err := comm.QueueFrostBroadcast(result); err == nil {
+		t.Fatal("stalled writers admitted terminal work beyond the fixed backlog")
+	}
 }
 
 func TestMalformedTerminalResultDoesNotWedgeFrostScheduler(t *testing.T) {
