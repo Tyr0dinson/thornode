@@ -116,20 +116,20 @@ func (s *HandlerMimirSuite) TestMimirHandle(c *C) {
 	// With OperationalVotesMin 3, Operational Mimir should not be set until at least three nodes agree.
 	keeper.SetMimir(ctx, constants.OperationalVotesMin.String(), 3)
 
-	result, err = handler.Run(ctx, NewMsgMimir("HaltSigning", 1, na1.NodeAddress))
+	result, err = handler.Run(ctx, NewMsgMimir(constants.MimirKeyHaltMonovaultKeygen, 1, na1.NodeAddress))
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
-	result, err = handler.Run(ctx, NewMsgMimir("HaltSigning", 1, na2.NodeAddress))
+	result, err = handler.Run(ctx, NewMsgMimir(constants.MimirKeyHaltMonovaultKeygen, 1, na2.NodeAddress))
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
-	val, err := keeper.GetMimir(ctx, "HaltSigning")
+	val, err := keeper.GetMimir(ctx, constants.MimirKeyHaltMonovaultKeygen)
 	c.Assert(err, IsNil)
 	c.Assert(val, Equals, int64(-1))
 	// Now the third.
-	result, err = handler.Run(ctx, NewMsgMimir("HaltSigning", 1, na3.NodeAddress))
+	result, err = handler.Run(ctx, NewMsgMimir(constants.MimirKeyHaltMonovaultKeygen, 1, na3.NodeAddress))
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
-	val, err = keeper.GetMimir(ctx, "HaltSigning")
+	val, err = keeper.GetMimir(ctx, constants.MimirKeyHaltMonovaultKeygen)
 	c.Assert(err, IsNil)
 	c.Assert(val, Equals, int64(1))
 }

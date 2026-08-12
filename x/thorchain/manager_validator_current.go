@@ -284,6 +284,26 @@ func (vm *ValidatorMgr) churn(ctx cosmos.Context) error {
 }
 
 func (vm *ValidatorMgr) churnInner(ctx cosmos.Context) error {
+	// While no XMR vault exists, the dedicated halt only suppresses its keygen
+	// and regular Asgard churn remains independent. Once an XMR vault is Active,
+	// however, rotating its members without a replacement would leave an active
+	// custody vault controlled by departed validators. Preserve the validator /
+	// active-vault membership invariant by pausing this churn as a whole.
+	monovaultHalted, haltErr := isXMRMonovaultKeygenHalted(ctx, vm.k)
+	if haltErr != nil {
+		ctx.Logger().Error("unable to verify HaltMonovaultKeygen; skipping XMR monovault maintenance", "error", haltErr)
+	}
+	if monovaultHalted {
+		activeVaults, vaultErr := vm.k.GetAsgardVaultsByStatus(ctx, ActiveVault)
+		if vaultErr != nil {
+			return vaultErr
+		}
+		if hasDedicatedXMRMonovault(activeVaults) {
+			ctx.Logger().Info("churn skipped while HaltMonovaultKeygen protects an active XMR monovault")
+			return nil
+		}
+	}
+
 	desiredValidatorSet := vm.k.GetConfigInt64(ctx, constants.DesiredValidatorSet)
 	asgardSize := vm.k.GetConfigInt64(ctx, constants.AsgardSize)
 	redline := vm.k.GetConfigInt64(ctx, constants.BadValidatorRedline)
@@ -362,14 +382,14 @@ func (vm *ValidatorMgr) churnInner(ctx cosmos.Context) error {
 		}
 	}
 
-	// XMR monovault maintenance is independent from ordinary vault rotation.
+	// XMR monovault maintenance is independent from ordinary vault rotation when
+	// no XMR vault exists (the early guard pauses the whole churn once one does).
 	// Check the dedicated halt before any XMR-specific vault or pending-keygen
 	// reads so a halted XMR path cannot roll back regular Asgard scheduling.
-	monovaultHalt, haltErr := vm.k.GetMimir(ctx, constants.MimirKeyHaltMonovaultKeygen)
 	switch {
 	case haltErr != nil:
 		ctx.Logger().Error("unable to verify HaltMonovaultKeygen; skipping XMR monovault maintenance", "error", haltErr)
-	case monovaultHalt > 0 && monovaultHalt <= ctx.BlockHeight():
+	case monovaultHalted:
 		ctx.Logger().Info("xmr monovault keygen skipped due to HaltMonovaultKeygen mimir")
 	default:
 		// At the BFT floor the validator membership can be stable (ok == false)

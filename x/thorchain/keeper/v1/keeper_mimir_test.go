@@ -87,6 +87,14 @@ func (s *KeeperMimirSuite) TestScopedMimirCacheDisabledByWrite(c *C) {
 	c.Assert(value, Equals, int64(-1))
 }
 
+func (s *KeeperMimirSuite) TestIsOperationalMimirHaltMonovaultKeygen(c *C) {
+	_, k := setupKeeperForTest(c)
+	key := constants.MimirKeyHaltMonovaultKeygen
+	c.Check(k.IsOperationalMimir(key), Equals, true)
+	c.Check(k.IsOperationalMimir(strings.ToUpper(key)), Equals, true)
+	c.Check(k.IsOperationalMimir(strings.ToLower(key)), Equals, true)
+}
+
 func (s *KeeperMimirSuite) TestIsOperationalMimirPOLReserveBlackList(c *C) {
 	_, k := setupKeeperForTest(c)
 
