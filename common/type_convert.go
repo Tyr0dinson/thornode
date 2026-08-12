@@ -30,9 +30,10 @@ func GetSafeShare(part, total, allocation cosmos.Uint) cosmos.Uint {
 // GetSafeShareInverse returns the smallest part whose GetSafeShare(part, total,
 // allocation) is at least target. It preserves the existing round-half-up
 // forward mapping while avoiding under-collection when converting from an asset
-// amount back into discrete shares/units.
+// amount back into discrete shares/units. It returns zero when the inputs are
+// zero or target exceeds allocation and therefore cannot be reached.
 func GetSafeShareInverse(target, total, allocation cosmos.Uint) cosmos.Uint {
-	if target.IsZero() || total.IsZero() || allocation.IsZero() {
+	if target.IsZero() || total.IsZero() || allocation.IsZero() || target.GT(allocation) {
 		return cosmos.ZeroUint()
 	}
 
@@ -56,9 +57,6 @@ func GetSafeShareInverse(target, total, allocation cosmos.Uint) cosmos.Uint {
 
 	var res big.Int
 	res.Quo(&num, &alloc)
-	if res.Cmp(total.BigInt()) > 0 {
-		return total
-	}
 	return cosmos.NewUintFromBigInt(&res)
 }
 

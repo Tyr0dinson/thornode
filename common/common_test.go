@@ -182,18 +182,22 @@ func (s CommonSuite) TestXMRObservedTxPayloadIsNetworkBound(c *C) {
 	c.Assert(chainnet, DeepEquals, mainnet)
 }
 
-func (s CommonSuite) TestGetSafeShareInverseMirror(c *C) {
-	part := cosmos.NewUint(14950659000000000)
+func (s CommonSuite) TestGetSafeShareInverseUnreachable(c *C) {
+	target := cosmos.NewUint(14950659000000000)
 	total := cosmos.NewUint(50165561086)
 	alloc := cosmos.NewUint(50000000)
-	share := GetSafeShareInverse(part, total, alloc)
-	c.Assert(share.Equal(cosmos.NewUint(50165561086)), Equals, true)
+	share := GetSafeShareInverse(target, total, alloc)
+	c.Assert(share.IsZero(), Equals, true)
 }
 
 func (s CommonSuite) TestGetSafeShareInverse(c *C) {
 	// Hand-picked regressions from the alt-native fee secured/trade paths.
 	c.Assert(GetSafeShareInverse(cosmos.NewUint(4), cosmos.NewUint(2), cosmos.NewUint(6)).Equal(cosmos.NewUint(2)), Equals, true)
 	c.Assert(GetSafeShareInverse(cosmos.NewUint(2), cosmos.NewUint(2), cosmos.NewUint(3)).Equal(cosmos.NewUint(1)), Equals, true)
+
+	// A target above the full allocation is unreachable. Return the zero
+	// sentinel instead of a capped part that does not satisfy the target.
+	c.Assert(GetSafeShareInverse(cosmos.NewUint(7), cosmos.NewUint(2), cosmos.NewUint(6)).IsZero(), Equals, true)
 }
 
 // TestGetSafeShareInverseRoundTrip verifies the inverse helper picks the
