@@ -267,6 +267,27 @@ func (s *StableReserveMgr) TrySwap(ctx cosmos.Context, mgr Manager, msg MsgSwap)
 	// came in and let the surplus accrue to the reserve.
 	grossTarget = cosmos.MinUint(grossTarget, grossIn)
 
+	// Chain-local dislocation cap. Oracle prices are keyed by TICKER, but assets
+	// are per-chain: ETH.USDC and AVAX.USDC both resolve to "USDC" and price
+	// identically, so a chain-local failure (bridge compromise, halted chain,
+	// wrapper depeg) is invisible to the oracle and the fill would hand out good
+	// inventory 1:1 for an asset the market has marked down. The pair need not
+	// share a ticker — AVAX.USDT against ETH.USDC leaks the same way.
+	//
+	// The pools are the only chain-qualified price the network has, so cap the
+	// payout at what a slip-free AMM double-swap would return. Note this does NOT
+	// reintroduce the manipulable pool pricing the comment above rejects: the cap
+	// only ever LOWERS the payout, and the oracle and grossIn terms still bind
+	// above it, so the fill can never pay more than it does today. Raising the cap
+	// means pushing a dislocated pool back toward par, which costs capital in
+	// proportion to the dislocation; pushing a healthy pool down only suppresses
+	// fills at the attacker's own slip cost — griefing, not extraction.
+	poolCapped, capOK := s.poolImpliedOutput(ctx, source, target, grossIn)
+	if !capOK {
+		return false, cosmos.ZeroUint(), nil
+	}
+	grossTarget = cosmos.MinUint(grossTarget, poolCapped)
+
 	securedMgr := newSecuredAssetMgr(s.keeper, s.eventMgr)
 	moduleAddr := s.keeper.GetModuleAccAddress(StableReserveName)
 
@@ -489,6 +510,31 @@ func (s *StableReserveMgr) scheduleDepegRescue(ctx cosmos.Context, mgr Manager) 
 		}
 	}
 	return nil
+}
+
+// poolImpliedOutput returns what a slip-free AMM double-swap of grossIn source
+// would return in target, using each asset's own RUNE pool. Unlike the enshrined
+// oracle (keyed by ticker) this is chain-qualified, so it prices ETH.USDC and
+// AVAX.USDC independently. Returns false when either pool is missing or has no
+// depth — an undepthed pool yields a zero cap, and declining the fill (leaving it
+// to the regular AMM path) is correct rather than paying out zero.
+func (s *StableReserveMgr) poolImpliedOutput(ctx cosmos.Context, source, target common.Asset, grossIn cosmos.Uint) (cosmos.Uint, bool) {
+	srcPool, err := s.keeper.GetPool(ctx, source.GetLayer1Asset())
+	if err != nil {
+		return cosmos.ZeroUint(), false
+	}
+	tgtPool, err := s.keeper.GetPool(ctx, target.GetLayer1Asset())
+	if err != nil {
+		return cosmos.ZeroUint(), false
+	}
+	// RuneValueInAsset rounds to the target pool's decimals, so a 6-decimal
+	// stable loses dust against the 8-decimal oracle output. That shortfall
+	// favors the reserve, which is the safe direction for a cap.
+	out := tgtPool.RuneValueInAsset(srcPool.AssetValueInRune(grossIn))
+	if out.IsZero() {
+		return cosmos.ZeroUint(), false
+	}
+	return out, true
 }
 
 // isDepegged reports whether the enshrined oracle is actively pricing this asset
