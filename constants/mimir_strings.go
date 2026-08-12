@@ -169,6 +169,7 @@ func IsOperationalMimir(key string) bool {
 		StableReserveOraclePricing.String(),
 		MimirKeyPreflightChainSetDisabled,
 		RequiredVotingEnabled.String(),
+		StandbyMimirCost.String(),
 	}
 	for i := range exactMatches {
 		if strings.EqualFold(key, exactMatches[i]) {

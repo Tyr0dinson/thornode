@@ -391,21 +391,47 @@ func (HandlerMimirSuite) TestADRMimirStandbyVoting(c *C) {
 	c.Assert(h.validate(ctx, *NewMsgMimir("SOMEKEY", 1, standby.NodeAddress)), NotNil)
 	c.Assert(h.validate(ctx, *NewMsgMimir("SOMEKEY", 1, ready.NodeAddress)), NotNil)
 
-	// ADR key: active, standby and ready may vote; disabled and non-nodes may not
+	// ADR key nobody active has voted on yet: only active nodes may open it
+	c.Assert(h.validate(ctx, *NewMsgMimir("ADR42TEST", 1, standby.NodeAddress)), NotNil)
+	c.Assert(h.validate(ctx, *NewMsgMimir("ADR42TEST", 1, ready.NodeAddress)), NotNil)
 	c.Assert(h.validate(ctx, *NewMsgMimir("ADR42TEST", 1, active.NodeAddress)), IsNil)
+
+	FundModule(c, ctx, k, BondName, 100*common.One)
+	_, err := h.Run(ctx, NewMsgMimir("ADR42TEST", 1, active.NodeAddress))
+	c.Assert(err, IsNil)
+
+	// now that an active node has voted, standby and ready may join; disabled and
+	// non-nodes still may not
 	c.Assert(h.validate(ctx, *NewMsgMimir("ADR42TEST", 1, standby.NodeAddress)), IsNil)
 	c.Assert(h.validate(ctx, *NewMsgMimir("adr42test", 1, ready.NodeAddress)), IsNil)
 	c.Assert(h.validate(ctx, *NewMsgMimir("ADR42TEST", 1, disabled.NodeAddress)), NotNil)
 	c.Assert(h.validate(ctx, *NewMsgMimir("ADR42TEST", 1, GetRandomBech32Addr())), NotNil)
 
-	// a standby vote is stored, but must not set the mimir on its own
-	FundModule(c, ctx, k, BondName, 100*common.One)
-	_, err := h.Run(ctx, NewMsgMimir("ADR42TEST", 7, standby.NodeAddress))
+	// a standby vote is stored and costs StandbyMimirCost, but does not move the value:
+	// the mimir stays on 1 from the sole active node, not the standby node's 7
+	_, err = h.Run(ctx, NewMsgMimir("ADR42TEST", 7, standby.NodeAddress))
 	c.Assert(err, IsNil)
 	mimirs, err := k.GetNodeMimirs(ctx, "ADR42TEST")
 	c.Assert(err, IsNil)
 	c.Check(mimirs.Has("ADR42TEST", standby.NodeAddress), Equals, true)
 	v, err := k.GetMimir(ctx, "ADR42TEST")
 	c.Assert(err, IsNil)
-	c.Check(v, Equals, int64(-1))
+	c.Check(v, Equals, int64(1))
+
+	cost := cosmos.NewUint(uint64(k.GetConfigInt64(ctx, constants.StandbyMimirCost)))
+	na, err := k.GetNodeAccount(ctx, standby.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(na.Bond.String(), Equals, cosmos.NewUint(100*common.One).Sub(cost).String())
+
+	// an active node still pays only the native tx fee
+	na, err = k.GetNodeAccount(ctx, active.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(na.Bond.String(), Equals, cosmos.NewUint(100*common.One).Sub(k.GetNativeTxFee(ctx)).String())
+
+	// a standby node that cannot cover the cost is rejected outright, so votes never
+	// become free once bond is exhausted
+	broke := GetRandomValidatorNode(NodeStandby)
+	broke.Bond = cost.SubUint64(1)
+	c.Assert(k.SetNodeAccount(ctx, broke), IsNil)
+	c.Assert(h.validate(ctx, *NewMsgMimir("ADR42TEST", 1, broke.NodeAddress)), NotNil)
 }

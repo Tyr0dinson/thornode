@@ -47,6 +47,24 @@ asserts:
   - .status == "Standby"
   - .preflight_status.status == "Ready"
   - .preflight_status.reason == "OK"
+  - .total_bond == "9994000000"
+---
+########################################################################################
+# a standby node cannot open an ADR key no active node has voted on, so cheap standby
+# accounts cannot mint unbounded ADR state
+########################################################################################
+type: tx-mimir
+key: ADR99Spam
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/nodes_all
+asserts:
+  - .mimirs == null
 ---
 ########################################################################################
 # 1/5 is below the 1/3+1 trigger, voting is not required yet
@@ -103,6 +121,8 @@ endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
 asserts:
   - .preflight_status.status == "Ready"
   - .preflight_status.reason == "OK"
+  # StandbyMimirCost (10 RUNE) deducted from bond, not the 0.02 RUNE native tx fee
+  - .total_bond == "8994000000"
 ---
 # the standby vote is recorded but does not count toward the supermajority
 type: check

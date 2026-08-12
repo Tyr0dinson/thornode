@@ -116,7 +116,15 @@ func (h MimirHandler) handle(ctx cosmos.Context, msg MsgMimir) error {
 		return cosmos.ErrUnauthorized(fmt.Sprintf("%s is not authorized", msg.Signer))
 	}
 	cost := h.mgr.Keeper().GetNativeTxFee(ctx)
-	if cost.GT(nodeAccount.Bond) {
+	if nodeAccount.Status != NodeActive {
+		// Non-active nodes pay a flat, deliberately higher cost per vote. validate()
+		// has already rejected signers that cannot cover it, so it is never capped —
+		// capping is what made repeat votes free once bond reached zero.
+		cost = standbyMimirCost(ctx, h.mgr.Keeper())
+		if cost.GT(nodeAccount.Bond) {
+			return cosmos.ErrUnauthorized(fmt.Sprintf("%s has insufficient bond to vote on a mimir", msg.Signer))
+		}
+	} else if cost.GT(nodeAccount.Bond) {
 		cost = nodeAccount.Bond
 	}
 	nodeAccount.Bond = common.SafeSub(nodeAccount.Bond, cost)
@@ -212,16 +220,18 @@ func validateMimirAuth(ctx cosmos.Context, k keeper.Keeper, msg MsgMimir) (cosmo
 	// have voted before it is allowed to churn in. Their votes are stored but excluded
 	// from consensus by NodeMimirs.countActive until they become active.
 	if isADRMimir(msg.Key) {
-		return adrMimirSignerPriority(ctx, k, msg.GetSigners())
+		return adrMimirSignerPriority(ctx, k, msg)
 	}
 	return activeNodeAccountsSignerPriority(ctx, k, msg.GetSigners())
 }
 
-func adrMimirSignerPriority(ctx cosmos.Context, k keeper.Keeper, signers []cosmos.AccAddress) (cosmos.Context, error) {
+func adrMimirSignerPriority(ctx cosmos.Context, k keeper.Keeper, msg MsgMimir) (cosmos.Context, error) {
+	signers := msg.GetSigners()
 	unauthorized := cosmos.ErrUnauthorized(fmt.Sprintf("%+v are not authorized", signers))
 	if len(signers) == 0 {
 		return ctx, unauthorized
 	}
+	allActive := true
 	for _, signer := range signers {
 		na, err := k.GetNodeAccount(ctx, signer)
 		if err != nil {
@@ -232,10 +242,30 @@ func adrMimirSignerPriority(ctx cosmos.Context, k keeper.Keeper, signers []cosmo
 			return ctx, unauthorized
 		}
 		switch na.Status {
-		case NodeActive, NodeStandby, NodeReady:
+		case NodeActive:
+			continue
+		case NodeStandby, NodeReady:
+			allActive = false
 		default:
 			return ctx, unauthorized
 		}
+		// A non-active node must be able to pay the full standby vote cost up front.
+		// handle() otherwise caps the charge at the remaining bond, which would make
+		// votes free once bond hits zero.
+		if na.Bond.LT(standbyMimirCost(ctx, k)) {
+			return ctx, cosmos.ErrUnauthorized(fmt.Sprintf("%s has insufficient bond to vote on a mimir", signer))
+		}
+	}
+	if !allActive {
+		// Non-active nodes may only join a vote the active set has already started. A
+		// proposal always originates from an active node, and a key with no active
+		// voter can never become pending anyway, so this costs nothing legitimate while
+		// keeping cheap standby accounts from minting unbounded ADR keys.
+		if !adrKeyHasActiveVote(ctx, k, msg.Key) {
+			return ctx, cosmos.ErrUnauthorized(fmt.Sprintf("no active node has voted on %s yet", msg.Key))
+		}
+		// Only active nodes get validator priority.
+		return ctx, nil
 	}
 	return ctx.WithPriority(ActiveNodePriority), nil
 }

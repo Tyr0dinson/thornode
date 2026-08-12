@@ -309,6 +309,7 @@ Operational notes:
 - `MissingBlockChurnOut`\*: Number of missed blocks between churns that marks a validator for churn out (0 = disabled)
 - `MaxMissingBlockChurnOut`\*: Maximum number of validators churned out for missing blocks (0 = disabled)
 - `RequiredVotingEnabled`: Enable/disable required voting on ADR mimirs (see below). Operational mimir; set to 0 to disable enforcement without a release
+- `StandbyMimirCost`: Bond (1e8 notation) charged to a non-active node for each ADR mimir vote. Operational mimir
 
 ### Required voting on ADR mimirs
 
@@ -328,7 +329,14 @@ While a key is in the required state:
 
 Standby and ready nodes may vote on ADR mimirs (they cannot vote on any other mimir), so a node
 can clear the gate before churning in. Their votes are stored but do not count toward the
-turnout or the supermajority until they become active. ADR keys are always economic mimirs, so
+turnout or the supermajority until they become active. Two limits apply to them:
+
+- The key must already carry at least one vote from an active node. A proposal always starts
+  from the active set, so this only blocks non-active nodes from minting ADR keys of their own.
+- Each vote costs `StandbyMimirCost` (10 RUNE by default, an operational mimir) deducted from
+  bond, and a node that cannot cover it in full is rejected rather than charged what is left.
+
+ADR keys are always economic mimirs, so
 their votes survive churn and always require a supermajority, regardless of what else the key
 name contains.
 

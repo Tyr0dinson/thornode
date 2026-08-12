@@ -186,6 +186,7 @@ func NewConstantValue() *ConstantVals {
 			LUVIOverhangGuard:                   1,                  // reject liquidity adds (user and POL) into pools whose synth supply is at least twice the asset depth (<= 0 = off)
 			LUVIGuard:                           1,                  // 1 = reject user swaps/LP flows that lower a pool's LP value (G) beyond the allowance, and emit LUVI loss events; 0 = off (the per-pool G accumulator always runs)
 			RequiredVotingEnabled:               1,                  // enforce required voting on ADR-prefixed mimirs (churn-out non-voters, block churn-in of non-voters)
+			StandbyMimirCost:                    10_00000000,        // bond charged to a non-active node for each ADR mimir vote
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

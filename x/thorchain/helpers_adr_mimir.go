@@ -23,6 +23,28 @@ func isADRMimir(key string) bool {
 	return strings.HasPrefix(strings.ToUpper(key), adrMimirPrefix)
 }
 
+// standbyMimirCost is the bond charged to a non-active node for each ADR mimir vote.
+func standbyMimirCost(ctx cosmos.Context, k keeper.Keeper) cosmos.Uint {
+	return cosmos.NewUint(uint64(k.GetConfigInt64(ctx, constants.StandbyMimirCost)))
+}
+
+// adrKeyHasActiveVote reports whether any currently active node has voted on the key.
+// Non-active nodes may only vote on keys that pass this, so they cannot create new ADR
+// keys of their own.
+func adrKeyHasActiveVote(ctx cosmos.Context, k keeper.Keeper, key string) bool {
+	activeNodes, err := k.ListActiveValidators(ctx)
+	if err != nil {
+		ctx.Logger().Error("fail to list active validators", "error", err)
+		return false
+	}
+	mimirs, err := k.GetNodeMimirs(ctx, key)
+	if err != nil {
+		ctx.Logger().Error("fail to get node mimirs", "error", err, "key", key)
+		return false
+	}
+	return mimirs.VotersOf(key, activeNodes.GetNodeAddresses()) > 0
+}
+
 // adrVote is an ADR mimir key together with the votes cast on it.
 type adrVote struct {
 	Key    string
