@@ -254,14 +254,8 @@ func (s *AttestationGossip) handleStreamAttestationState(stream network.Stream) 
 	logger.Debug().Msg("reading attestation state message")
 
 	defer closeStream(logger, stream)
-	timeout := s.config.PeerTimeout
-	if timeout <= 0 {
-		timeout = defaultPeerTimeout
-	}
-	if err := stream.SetDeadline(time.Now().Add(timeout)); err != nil {
-		logger.Error().Err(err).Msg("fail to bound attestation state stream")
-		return
-	}
+	stateCtx, cancel := s.attestationStateContext(context.Background(), stream)
+	defer cancel()
 
 	// Read and process the message
 	data, err := p2p.ReadStreamWithBuffer(stream)
@@ -316,7 +310,7 @@ func (s *AttestationGossip) handleStreamAttestationState(stream network.Stream) 
 
 		// Batched state transmission
 		logger.Debug().Msg("handling batched attestation state")
-		err := s.receiveBatchedAttestationState(stream, data[1:])
+		err := s.receiveBatchedAttestationState(stateCtx, stream, data[1:])
 		if err != nil {
 			logger.Error().Err(err).Msg("failed to receive batched attestation state")
 		}

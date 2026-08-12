@@ -60,6 +60,11 @@ const (
 	streamAckBegin  = "ack_begin"
 	streamAckHeader = "ack_header"
 	streamAckData   = "ack_data"
+
+	// A normal state batch contains up to 100 entries of each state type. This
+	// cap is deliberately generous while preventing a peer from advertising an
+	// effectively unbounded transfer.
+	maxAttestationStateBatches uint32 = 1000
 )
 
 var (

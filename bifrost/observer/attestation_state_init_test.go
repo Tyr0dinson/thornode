@@ -2,6 +2,7 @@ package observer
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -11,13 +12,16 @@ import (
 	"time"
 
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
+	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	stypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // TestSendAttestationStateEmpty tests sending an empty attestation state
@@ -644,7 +648,7 @@ func TestReceiveBatchedAttestationState(t *testing.T) {
 	beginHeader := make([]byte, 4)
 	binary.LittleEndian.PutUint32(beginHeader, uint32(expectedBatches))
 
-	err := ag.receiveBatchedAttestationState(peerStream, beginHeader)
+	err := ag.receiveBatchedAttestationState(context.Background(), peerStream, beginHeader)
 	require.NoError(t, err)
 
 	// Wait for the sending goroutine to finish
@@ -836,7 +840,7 @@ func TestSendReceiveBatchedAttestationState(t *testing.T) {
 
 	go func() {
 		defer wg.Done()
-		agReceiver.askStreamForState(receiverStream)
+		agReceiver.askStreamForState(context.Background(), receiverStream)
 	}()
 
 	// Wait for both goroutines to finish
@@ -1271,6 +1275,260 @@ func TestSendAttestationStateUsesTotalTransferTimeout(t *testing.T) {
 	}
 }
 
+type scriptedAttestationStateStream struct {
+	MockStream
+	frames    chan []byte
+	reset     chan struct{}
+	resetOnce sync.Once
+	closed    chan struct{}
+	closeOnce sync.Once
+}
+
+func newScriptedAttestationStateStream(messages ...[]byte) *scriptedAttestationStateStream {
+	stream := &scriptedAttestationStateStream{
+		MockStream: MockStream{
+			peer: peer.ID("scripted-state-peer"),
+			mu:   new(sync.Mutex),
+		},
+		frames: make(chan []byte, len(messages)),
+		reset:  make(chan struct{}),
+		closed: make(chan struct{}),
+	}
+	for _, message := range messages {
+		framed := make([]byte, p2p.LengthHeader+len(message))
+		binary.LittleEndian.PutUint32(framed, uint32(len(message)))
+		copy(framed[p2p.LengthHeader:], message)
+		stream.frames <- framed
+	}
+	return stream
+}
+
+func (s *scriptedAttestationStateStream) Read(p []byte) (int, error) {
+	select {
+	case frame := <-s.frames:
+		return copy(p, frame), nil
+	case <-s.reset:
+		return 0, io.ErrClosedPipe
+	}
+}
+
+func (s *scriptedAttestationStateStream) Write(p []byte) (int, error) {
+	return len(p), nil
+}
+
+func (s *scriptedAttestationStateStream) Reset() error {
+	s.resetOnce.Do(func() { close(s.reset) })
+	return nil
+}
+
+func (s *scriptedAttestationStateStream) Close() error {
+	s.closeOnce.Do(func() { close(s.closed) })
+	return nil
+}
+
+func stateBatchHeader(batchNum, dataSize uint32) []byte {
+	header := make([]byte, 9)
+	copy(header, prefixBatchHeader)
+	binary.LittleEndian.PutUint32(header[1:5], batchNum)
+	binary.LittleEndian.PutUint32(header[5:9], dataSize)
+	return header
+}
+
+func stateBatchCount(total uint32) []byte {
+	begin := make([]byte, 4)
+	binary.LittleEndian.PutUint32(begin, total)
+	return begin
+}
+
+func TestAskStreamForStateTimesOutStalledTransfer(t *testing.T) {
+	ag, _, _, _, _, _ := setupTestGossip(t)
+	ag.config.PeerTimeout = 100 * time.Millisecond
+	stream := newScriptedAttestationStateStream(
+		append(append([]byte(nil), prefixBatchBegin...), stateBatchCount(1)...),
+		stateBatchHeader(0, 0),
+		append([]byte(nil), prefixBatchData...),
+	)
+	t.Cleanup(func() { _ = stream.Reset() })
+
+	done := make(chan struct{})
+	go func() {
+		ag.askStreamForState(context.Background(), stream)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("stalled attestation state request exceeded its total timeout")
+	}
+	select {
+	case <-stream.reset:
+	default:
+		t.Fatal("timed-out attestation state stream was not reset")
+	}
+}
+
+func TestAskForAttestationStateStopsWaitingForBlockedProcessing(t *testing.T) {
+	ag, host, _, _, bridge, _ := setupTestGossip(t)
+	ag.config.AskPeers = 1
+	ag.config.PeerTimeout = 100 * time.Millisecond
+
+	remotePeer := host.peers[1]
+	ag.avMu.Lock()
+	ag.activeVals = map[peer.ID]bool{
+		host.ID():  true,
+		remotePeer: true,
+	}
+	ag.avMu.Unlock()
+	ag.SetObserverApplySpentOutputRefs(func(common.ObservedTx, func(bool)) {})
+
+	bridgeQueryStarted := make(chan struct{})
+	releaseBridgeQuery := make(chan struct{})
+	var releaseBridgeQueryOnce sync.Once
+	releaseQuery := func() { releaseBridgeQueryOnce.Do(func() { close(releaseBridgeQuery) }) }
+	t.Cleanup(releaseQuery)
+	bridge.getVaultFunc = func(string) (stypes.Vault, error) {
+		close(bridgeQueryStarted)
+		<-releaseBridgeQuery
+		return stypes.Vault{}, nil
+	}
+
+	attesterKey := secp256k1.GenPrivKey()
+	vaultPubKeyString, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, attesterKey.PubKey())
+	require.NoError(t, err)
+	vaultPubKey, err := common.NewPubKey(vaultPubKeyString)
+	require.NoError(t, err)
+	obsTx := common.ObservedTx{
+		Tx: common.Tx{
+			ID:    common.TxID("blocked-state-processing"),
+			Chain: common.XMRChain,
+		},
+		ObservedPubKey: vaultPubKey,
+		SpentOutputRefs: []common.OutputRef{
+			{TxHash: "source", OutputIndex: 0, KeyImage: "key-image", SpendTxHash: "blocked-state-processing"},
+		},
+	}
+	signPayload, err := obsTx.GetSignablePayloadWithInbound(false)
+	require.NoError(t, err)
+	signature, err := attesterKey.Sign(signPayload)
+	require.NoError(t, err)
+	attestation := &common.Attestation{
+		PubKey:    attesterKey.PubKey().Bytes(),
+		Signature: signature,
+	}
+	batchData, err := (&common.QuorumState{
+		QuoTxs: []*common.QuorumTx{
+			{
+				ObsTx:        obsTx,
+				Attestations: []*common.Attestation{attestation},
+			},
+		},
+	}).Marshal()
+	require.NoError(t, err)
+	stream := newScriptedAttestationStateStream(
+		append(append([]byte(nil), prefixBatchBegin...), stateBatchCount(1)...),
+		stateBatchHeader(0, uint32(len(batchData))),
+		append(append([]byte(nil), prefixBatchData...), batchData...),
+		prefixBatchEnd,
+	)
+	stream.peer = remotePeer
+	host.streamFunc = func(context.Context, peer.ID, ...protocol.ID) (network.Stream, error) {
+		return stream, nil
+	}
+	t.Cleanup(func() { _ = stream.Reset() })
+
+	done := make(chan struct{})
+	go func() {
+		ag.askForAttestationState(context.Background())
+		close(done)
+	}()
+
+	select {
+	case <-bridgeQueryStarted:
+	case <-time.After(time.Second):
+		t.Fatal("state-sync processing did not reach the blocked Thornode query")
+	}
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("churn-in remained blocked after the state-sync budget expired")
+	}
+
+	ag.stateInitMu.Lock()
+	stateInitPeersCleared := ag.stateInitPeers == nil
+	ag.stateInitMu.Unlock()
+	assert.True(t, stateInitPeersCleared)
+	releaseQuery()
+	select {
+	case <-stream.closed:
+	case <-time.After(time.Second):
+		t.Fatal("timed-out state-sync worker did not finish after its blocked query was released")
+	}
+}
+
+func TestReceiveBatchedAttestationStateRejectsInvalidBatchSequence(t *testing.T) {
+	tests := []struct {
+		name         string
+		totalBatches uint32
+		messages     [][]byte
+		errContains  string
+	}{
+		{
+			name:         "excessive advertised count",
+			totalBatches: maxAttestationStateBatches + 1,
+			messages:     [][]byte{prefixBatchEnd},
+			errContains:  "exceeds maximum",
+		},
+		{
+			name:         "non-sequential first batch",
+			totalBatches: 1,
+			messages: [][]byte{
+				stateBatchHeader(1, 0),
+				prefixBatchData,
+				prefixBatchEnd,
+			},
+			errContains: "unexpected batch number",
+		},
+		{
+			name:         "more batches than declared",
+			totalBatches: 1,
+			messages: [][]byte{
+				stateBatchHeader(0, 0),
+				prefixBatchData,
+				stateBatchHeader(1, 0),
+				prefixBatchData,
+				prefixBatchEnd,
+			},
+			errContains: "expected batch end",
+		},
+		{
+			name:         "end before declared count",
+			totalBatches: 2,
+			messages: [][]byte{
+				stateBatchHeader(0, 0),
+				prefixBatchData,
+				prefixBatchEnd,
+			},
+			errContains: "invalid batch header",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ag, _, _, _, _, _ := setupTestGossip(t)
+			stream := newScriptedAttestationStateStream(tt.messages...)
+			t.Cleanup(func() { _ = stream.Reset() })
+
+			err := ag.receiveBatchedAttestationState(
+				context.Background(),
+				stream,
+				stateBatchCount(tt.totalBatches),
+			)
+			require.ErrorContains(t, err, tt.errContains)
+		})
+	}
+}
+
 // TestAskStreamForStateEmptyState is a regression test for the prefix-strip
 // bug in askStreamForState.
 //
@@ -1329,7 +1587,7 @@ func TestAskStreamForStateEmptyState(t *testing.T) {
 		}()
 		go func() {
 			defer wg.Done()
-			agReceiver.askStreamForState(receiverStream)
+			agReceiver.askStreamForState(context.Background(), receiverStream)
 		}()
 		wg.Wait()
 		close(done)

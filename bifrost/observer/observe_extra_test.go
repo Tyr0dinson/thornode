@@ -2534,7 +2534,7 @@ func (s *ObserveExtraSuite) TestProcessAttestationStateBatch(c *C) {
 		},
 	}
 
-	ag.processAttestationStateBatch(log.Logger, batch)
+	c.Assert(ag.processAttestationStateBatch(context.Background(), log.Logger, batch), IsNil)
 
 	// Give goroutine a moment to process
 	time.Sleep(50 * time.Millisecond)
@@ -3478,7 +3478,7 @@ func (s *ObserveExtraSuite) TestGetOracleMimirsInterval(c *C) {
 func (s *ObserveExtraSuite) TestProcessAttestationStateBatchEmpty(c *C) {
 	ag, _ := newTestAttestationGossip(c, []peer.ID{"self"})
 	// Empty batch should not panic
-	ag.processAttestationStateBatch(log.Logger, common.QuorumState{})
+	c.Assert(ag.processAttestationStateBatch(context.Background(), log.Logger, common.QuorumState{}), IsNil)
 }
 
 // ---------------------------------------------------------------------------
