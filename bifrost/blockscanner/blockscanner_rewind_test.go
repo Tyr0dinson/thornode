@@ -469,7 +469,7 @@ func (s *BlockScannerExtraSuite) TestTypedCursorRewindClearsStalePrefetch(c *C) 
 	}, storage, m, bridge, fetcher)
 	c.Assert(err, IsNil)
 
-	scanner.Start(make(chan stypes.TxIn, 4), make(chan common.NetworkFee, 4))
+	scanner.Start(make(chan stypes.TxIn, 4), make(chan common.NetworkFee, 4), nil)
 	defer scanner.Stop()
 
 	// Height 12 was fetched on the abandoned 10->11 cursor lineage. It must be
@@ -501,7 +501,7 @@ func (s *BlockScannerExtraSuite) TestRollbackChannelClearsStalePrefetch(c *C) {
 	// clearing stale prefetch after a queued rollback is consumed.
 	scanner.rollbackChan = make(chan int64, 1)
 
-	scanner.Start(make(chan stypes.TxIn, 4), make(chan common.NetworkFee, 4))
+	scanner.Start(make(chan stypes.TxIn, 4), make(chan common.NetworkFee, 4), nil)
 	defer scanner.Stop()
 	c.Assert(waitForFetchCalls(fetcher.callCount, 12, 1), Equals, true)
 
@@ -575,7 +575,7 @@ func (s *BlockScannerExtraSuite) TestEmptyTxInPersistenceIsDeliveredAndAcknowled
 	c.Assert(err, IsNil)
 
 	txQueue := make(chan stypes.TxIn, 1)
-	scanner.Start(txQueue, make(chan common.NetworkFee, 1))
+	scanner.Start(txQueue, make(chan common.NetworkFee, 1), nil)
 	defer scanner.Stop()
 
 	select {
@@ -659,7 +659,7 @@ func (s *BlockScannerExtraSuite) TestPersistenceFailuresBackOffAndReportUnhealth
 		}, scannerStorage, m, bridge, fetcher)
 		c.Assert(err, IsNil, Commentf("mode %s", mode))
 
-		scanner.Start(make(chan stypes.TxIn, 4), make(chan common.NetworkFee, 4))
+		scanner.Start(make(chan stypes.TxIn, 4), make(chan common.NetworkFee, 4), nil)
 		select {
 		case <-fetcher.failureObserved:
 		case <-time.After(time.Second):
@@ -718,7 +718,7 @@ func (s *BlockScannerExtraSuite) TestOperatorRecoveryErrorStopsRetryLoop(c *C) {
 		}, NewMockScannerStorage(), m, bridge, fetcher)
 		c.Assert(err, IsNil)
 
-		scanner.Start(make(chan stypes.TxIn, 1), make(chan common.NetworkFee, 1))
+		scanner.Start(make(chan stypes.TxIn, 1), make(chan common.NetworkFee, 1), nil)
 		deadline := time.Now().Add(time.Second)
 		for time.Now().Before(deadline) && fetcher.calls.Load() == 0 {
 			time.Sleep(time.Millisecond)
@@ -762,7 +762,7 @@ func (s *BlockScannerExtraSuite) TestFetchErrorAbortsPersistenceReservation(c *C
 	}, NewMockScannerStorage(), m, bridge, fetcher)
 	c.Assert(err, IsNil)
 
-	scanner.Start(make(chan stypes.TxIn, 1), make(chan common.NetworkFee, 1))
+	scanner.Start(make(chan stypes.TxIn, 1), make(chan common.NetworkFee, 1), nil)
 	defer scanner.Stop()
 
 	deadline := time.Now().Add(3 * time.Second)
