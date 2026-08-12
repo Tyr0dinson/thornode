@@ -260,7 +260,7 @@ func NewEVMClient(
 		c.bridge,
 		m,
 		pubkeyMgr,
-		c.ReportSolvency,
+		nil,
 		signerCacheManager,
 	)
 	if err != nil {
@@ -516,8 +516,6 @@ func (c *EVMClient) Start(
 	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue, reporterDispatcher)
 	c.wg.Add(1)
 	go c.unstuck()
-	c.wg.Add(1)
-	go runners.SolvencyCheckRunner(c.GetChain(), c, c.bridge, c.stopchan, c.wg, c.solvencyRunnerBackoff())
 	c.wg.Add(1)
 	go c.reconstructLiabilities()
 }
