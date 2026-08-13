@@ -1562,7 +1562,7 @@ func findOriginalMemoForOutbound(ctx cosmos.Context, mgr Manager, tx common.Obse
 			if !item.Chain.Equals(tx.Tx.Chain) {
 				continue
 			}
-			if !item.ToAddress.Equals(tx.Tx.ToAddress) {
+			if !common.EquivalentAddresses(item.Chain, item.ToAddress, tx.Tx.ToAddress) {
 				continue
 			}
 			if !txOutPubKeyMatchesObserved(tx.Tx.Chain, tx.ObservedPubKey, item) {

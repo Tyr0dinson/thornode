@@ -162,7 +162,7 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 			if txOutItem.InHash.Equals(inTxID) &&
 				txOutItem.OutHash.IsEmpty() &&
 				tx.Tx.Chain.Equals(txOutItem.Chain) &&
-				tx.Tx.ToAddress.Equals(txOutItem.ToAddress) &&
+				common.EquivalentAddresses(txOutItem.Chain, tx.Tx.ToAddress, txOutItem.ToAddress) &&
 				strings.ToLower(tx.Aggregator) == strings.ToLower(txOutItem.Aggregator) &&
 				strings.ToLower(tx.AggregatorTarget) == strings.ToLower(txOutItem.AggregatorTargetAsset) &&
 				txOutPubKeyMatchesObserved(tx.Tx.Chain, tx.ObservedPubKey, txOutItem) {

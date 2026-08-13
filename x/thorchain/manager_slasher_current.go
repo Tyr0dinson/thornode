@@ -1339,6 +1339,18 @@ func logStaleOutboundObservation(ctx cosmos.Context, status staleOutboundObserva
 	ctx.Logger().Debug(msg, keyvals...)
 }
 
+// outboundObservationFulfils reports whether an observed outbound plausibly
+// fulfils toi, disregarding which vault sent it. The destination is matched
+// alongside the asset - with the same comparator CommonOutboundTxHandler and
+// matchActionItem use - so an unrelated transaction cannot stand in for the
+// scheduled outbound, and the slasher's notion of "in progress" cannot diverge
+// from the handlers' notion of "done".
+func outboundObservationFulfils(tx ObservedTx, toi TxOutItem) bool {
+	return len(tx.Tx.Coins) == 1 &&
+		tx.Tx.Coins[0].Asset.Equals(toi.Coin.Asset) &&
+		common.EquivalentAddresses(toi.Chain, tx.Tx.ToAddress, toi.ToAddress)
+}
+
 func (s *SlasherImpl) needsNewVault(ctx cosmos.Context, mgr Manager, vault Vault, signingTransPeriod, startHeight int64, toi TxOutItem) bool {
 	outhashes := mgr.Keeper().GetObservedLink(ctx, toi.InHash)
 	if len(outhashes) == 0 {
@@ -1358,12 +1370,13 @@ func (s *SlasherImpl) needsNewVault(ctx cosmos.Context, mgr Manager, vault Vault
 			continue
 		}
 		// in the event there are multiple observed txouts for a given inhash, we
-		// focus on the matching pubkey and asset
+		// focus on the observations that could actually be this outbound: the
+		// matching pubkey, and a payload the handlers would accept as fulfilling
+		// the item.
 		signers := make(map[string]bool)
 		for _, tx1 := range voter.Txs {
 			if !txOutPubKeyMatchesObserved(toi.Chain, tx1.ObservedPubKey, toi) ||
-				len(tx1.Tx.Coins) != 1 ||
-				!tx1.Tx.Coins[0].Asset.Equals(toi.Coin.Asset) {
+				!outboundObservationFulfils(tx1, toi) {
 				continue
 			}
 

@@ -1215,6 +1215,7 @@ func (s *SlashingSuite) TestNeedsNewVault(c *C) {
 	toi := TxOutItem{
 		InHash:      inhash,
 		Coin:        tx.Coins[0],
+		ToAddress:   tx.ToAddress,
 		VaultPubKey: pk,
 	}
 
@@ -1267,6 +1268,7 @@ func (s *SlashingSuite) TestNeedsNewVaultEdDSA(c *C) {
 	toi := TxOutItem{
 		InHash:           inhash,
 		Coin:             tx.Coins[0],
+		ToAddress:        tx.ToAddress,
 		VaultPubKey:      ecdsaPK, // ECDSA key on the toi
 		VaultPubKeyEddsa: eddsaPK, // EdDSA key on the toi
 	}
@@ -1322,6 +1324,7 @@ func (s *SlashingSuite) TestNeedsNewVaultFrost(c *C) {
 		Chain:            common.XMRChain,
 		InHash:           inhash,
 		Coin:             tx.Coins[0],
+		ToAddress:        tx.ToAddress,
 		VaultPubKey:      secpPK,
 		VaultPubKeyFrost: frostPK,
 	}
@@ -2057,4 +2060,90 @@ func (s *SlashingSuite) TestReverseSwapXMRUnknownSenderFallsBackToTreasury(c *C)
 		Commentf("XMR unknown sender should skip reverse swap and fall back to treasury recovery"))
 	c.Assert(queuedSwap.Destination.Equals(common.TreasuryAddress), Equals, true,
 		Commentf("Treasury recovery should send to treasury address when XMR sender is unknown"))
+}
+
+// The reassignment guard must read the destination through the same comparator
+// the outbound handlers use: an observation to an unrelated address is not this
+// outbound and must not pin the item, while a Zcash outbound scheduled to a tex
+// address and observed in its P2PKH form is.
+func (s *SlashingSuite) TestNeedsNewVaultMatchesDestination(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	newVoterFor := func(toi TxOutItem, observedTo common.Address, pk common.PubKey) common.TxID {
+		inhash := toi.InHash
+		outhash := GetRandomTxHash()
+		pk1 := GetRandomPubKey()
+		pk2 := GetRandomPubKey()
+		pk3 := GetRandomPubKey()
+		sig1, _ := pk1.GetThorAddress()
+		sig2, _ := pk2.GetThorAddress()
+		sig3, _ := pk3.GetThorAddress()
+
+		tx := GetRandomTx()
+		tx.ID = outhash
+		tx.Chain = toi.Chain
+		tx.ToAddress = observedTo
+		tx.Coins = common.NewCoins(toi.Coin)
+		obs := NewObservedTx(tx, 0, pk, 0)
+		obs.ObservedPubKey = pk
+		obs.Signers = []string{sig1.String(), sig2.String(), sig3.String()}
+
+		voter := NewObservedTxVoter(outhash, []common.ObservedTx{obs})
+		mgr.Keeper().SetObservedTxOutVoter(ctx, voter)
+		mgr.Keeper().SetObservedLink(ctx, inhash, outhash)
+		return outhash
+	}
+
+	// The signers below are not this vault's members, so a match must be the
+	// only thing that could ever open the grace window.
+	vaultOf := func(members ...common.PubKey) Vault {
+		vault := GetRandomVault()
+		vault.Membership = nil
+		for _, m := range members {
+			vault.Membership = append(vault.Membership, m.String())
+		}
+		return vault
+	}
+
+	// An unrelated destination is not this outbound.
+	pk := GetRandomPubKey()
+	strangerToi := TxOutItem{
+		Chain:       common.BTCChain,
+		InHash:      GetRandomTxHash(),
+		Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One)),
+		ToAddress:   GetRandomBTCAddress(),
+		VaultPubKey: pk,
+	}
+	_ = newVoterFor(strangerToi, GetRandomBTCAddress(), pk)
+	c.Check(slasherNeedsNewVault(c, mgr, ctx, vaultOf(GetRandomPubKey()), strangerToi), Equals, true)
+
+	// The very same observation, reported to the scheduled destination, pins it.
+	matchedToi := strangerToi
+	matchedToi.InHash = GetRandomTxHash()
+	_ = newVoterFor(matchedToi, matchedToi.ToAddress, pk)
+	c.Check(slasherNeedsNewVault(c, mgr, ctx, vaultOf(GetRandomPubKey()), matchedToi), Equals, false)
+
+	// A Zcash tex destination and its P2PKH form are one address.
+	p2pkhAddress, err := common.NewAddress("tmEp4k7dSU8eGj32uJPi2wBSGuiNaVFBLN7")
+	c.Assert(err, IsNil)
+	texAddress, err := p2pkhAddress.ToTexAddress()
+	c.Assert(err, IsNil)
+	c.Assert(p2pkhAddress.Equals(texAddress), Equals, false)
+
+	zecToi := TxOutItem{
+		Chain:       common.ZECChain,
+		InHash:      GetRandomTxHash(),
+		Coin:        common.NewCoin(common.ZECAsset, cosmos.NewUint(common.One)),
+		ToAddress:   texAddress,
+		VaultPubKey: pk,
+	}
+	_ = newVoterFor(zecToi, p2pkhAddress, pk)
+	c.Check(slasherNeedsNewVault(c, mgr, ctx, vaultOf(GetRandomPubKey()), zecToi), Equals, false)
+}
+
+// slasherNeedsNewVault runs needsNewVault with the fixture's signing period and
+// start height, keeping the destination assertions above readable.
+func slasherNeedsNewVault(c *C, mgr Manager, ctx cosmos.Context, vault Vault, toi TxOutItem) bool {
+	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+	return slasher.needsNewVault(ctx, mgr, vault, 300, 1, toi)
 }
