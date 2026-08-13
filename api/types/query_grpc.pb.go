@@ -59,6 +59,7 @@ const (
 	Query_MimirNodesAllValues_FullMethodName      = "/types.Query/MimirNodesAllValues"
 	Query_MimirNodesValues_FullMethodName         = "/types.Query/MimirNodesValues"
 	Query_MimirNodeValues_FullMethodName          = "/types.Query/MimirNodeValues"
+	Query_MimirVotesRequired_FullMethodName       = "/types.Query/MimirVotesRequired"
 	Query_InboundAddresses_FullMethodName         = "/types.Query/InboundAddresses"
 	Query_Version_FullMethodName                  = "/types.Query/Version"
 	Query_Thorname_FullMethodName                 = "/types.Query/Thorname"
@@ -173,6 +174,7 @@ type QueryClient interface {
 	MimirNodesAllValues(ctx context.Context, in *QueryMimirNodesAllValuesRequest, opts ...grpc.CallOption) (*QueryMimirNodesAllValuesResponse, error)
 	MimirNodesValues(ctx context.Context, in *QueryMimirNodesValuesRequest, opts ...grpc.CallOption) (*QueryMimirNodesValuesResponse, error)
 	MimirNodeValues(ctx context.Context, in *QueryMimirNodeValuesRequest, opts ...grpc.CallOption) (*QueryMimirNodeValuesResponse, error)
+	MimirVotesRequired(ctx context.Context, in *QueryMimirVotesRequiredRequest, opts ...grpc.CallOption) (*QueryMimirVotesRequiredResponse, error)
 	InboundAddresses(ctx context.Context, in *QueryInboundAddressesRequest, opts ...grpc.CallOption) (*QueryInboundAddressesResponse, error)
 	Version(ctx context.Context, in *QueryVersionRequest, opts ...grpc.CallOption) (*QueryVersionResponse, error)
 	Thorname(ctx context.Context, in *QueryThornameRequest, opts ...grpc.CallOption) (*QueryThornameResponse, error)
@@ -596,6 +598,15 @@ func (c *queryClient) MimirNodesValues(ctx context.Context, in *QueryMimirNodesV
 func (c *queryClient) MimirNodeValues(ctx context.Context, in *QueryMimirNodeValuesRequest, opts ...grpc.CallOption) (*QueryMimirNodeValuesResponse, error) {
 	out := new(QueryMimirNodeValuesResponse)
 	err := c.cc.Invoke(ctx, Query_MimirNodeValues_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) MimirVotesRequired(ctx context.Context, in *QueryMimirVotesRequiredRequest, opts ...grpc.CallOption) (*QueryMimirVotesRequiredResponse, error) {
+	out := new(QueryMimirVotesRequiredResponse)
+	err := c.cc.Invoke(ctx, Query_MimirVotesRequired_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1186,6 +1197,7 @@ type QueryServer interface {
 	MimirNodesAllValues(context.Context, *QueryMimirNodesAllValuesRequest) (*QueryMimirNodesAllValuesResponse, error)
 	MimirNodesValues(context.Context, *QueryMimirNodesValuesRequest) (*QueryMimirNodesValuesResponse, error)
 	MimirNodeValues(context.Context, *QueryMimirNodeValuesRequest) (*QueryMimirNodeValuesResponse, error)
+	MimirVotesRequired(context.Context, *QueryMimirVotesRequiredRequest) (*QueryMimirVotesRequiredResponse, error)
 	InboundAddresses(context.Context, *QueryInboundAddressesRequest) (*QueryInboundAddressesResponse, error)
 	Version(context.Context, *QueryVersionRequest) (*QueryVersionResponse, error)
 	Thorname(context.Context, *QueryThornameRequest) (*QueryThornameResponse, error)
@@ -1371,6 +1383,9 @@ func (UnimplementedQueryServer) MimirNodesValues(context.Context, *QueryMimirNod
 }
 func (UnimplementedQueryServer) MimirNodeValues(context.Context, *QueryMimirNodeValuesRequest) (*QueryMimirNodeValuesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MimirNodeValues not implemented")
+}
+func (UnimplementedQueryServer) MimirVotesRequired(context.Context, *QueryMimirVotesRequiredRequest) (*QueryMimirVotesRequiredResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MimirVotesRequired not implemented")
 }
 func (UnimplementedQueryServer) InboundAddresses(context.Context, *QueryInboundAddressesRequest) (*QueryInboundAddressesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method InboundAddresses not implemented")
@@ -2278,6 +2293,24 @@ func _Query_MimirNodeValues_Handler(srv interface{}, ctx context.Context, dec fu
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(QueryServer).MimirNodeValues(ctx, req.(*QueryMimirNodeValuesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_MimirVotesRequired_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryMimirVotesRequiredRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).MimirVotesRequired(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_MimirVotesRequired_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).MimirVotesRequired(ctx, req.(*QueryMimirVotesRequiredRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3510,6 +3543,10 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "MimirNodeValues",
 			Handler:    _Query_MimirNodeValues_Handler,
+		},
+		{
+			MethodName: "MimirVotesRequired",
+			Handler:    _Query_MimirVotesRequired_Handler,
 		},
 		{
 			MethodName: "InboundAddresses",

@@ -257,6 +257,11 @@ service Query {
     option (google.api.http).get = "/thorchain/mimir/node/{address}";
   }
 
+  rpc MimirVotesRequired(QueryMimirVotesRequiredRequest)
+      returns (QueryMimirVotesRequiredResponse) {
+    option (google.api.http).get = "/thorchain/mimir/votes_required";
+  }
+
   rpc InboundAddresses(QueryInboundAddressesRequest)
       returns (QueryInboundAddressesResponse) {
     option (google.api.http).get = "/thorchain/inbound_addresses";

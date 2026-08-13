@@ -1571,6 +1571,22 @@ paths:
               schema:
                 $ref: "#/components/schemas/MimirNodesResponse"
 
+  /thorchain/mimir/votes_required:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+    get:
+      description: Returns the mimir keys currently in the required-voting state, where enough of the active set has voted that the remaining nodes must vote or risk being churned out, and nodes that have not voted cannot churn in.
+      operationId: mimirVotesRequired
+      tags:
+        - Mimir
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MimirVotesRequiredResponse"
+
   /thorchain/mimir/node/{address}:
     parameters:
       - $ref: "#/components/parameters/queryHeight"
@@ -5189,6 +5205,32 @@ components:
                 format: int64
               signer:
                 type: string
+
+    MimirVotesRequiredResponse:
+      type: object
+      required:
+        - "mimirs"
+        - "active_node_count"
+      properties:
+        mimirs:
+          type: array
+          items:
+            type: object
+            title: MimirVoteRequired
+            required:
+              - "key"
+              - "votes"
+            properties:
+              key:
+                type: string
+              votes:
+                description: active nodes that have voted on this key
+                type: integer
+                format: int64
+        active_node_count:
+          description: number of active nodes the vote counts are measured against
+          type: integer
+          format: int64
 
     ExportResponse:
       type: object

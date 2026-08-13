@@ -2535,6 +2535,32 @@ paths:
           description: OK
       tags:
       - Mimir
+  /thorchain/mimir/votes_required:
+    get:
+      description: "Returns the mimir keys currently in the required-voting state,\
+        \ where enough of the active set has voted that the remaining nodes must vote\
+        \ or risk being churned out, and nodes that have not voted cannot churn in."
+      operationId: mimirVotesRequired
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MimirVotesRequiredResponse'
+          description: OK
+      tags:
+      - Mimir
   /thorchain/mimir/node/{address}:
     get:
       description: Returns current node mimir configuration for the provided node
@@ -8024,6 +8050,27 @@ components:
             $ref: '#/components/schemas/MimirVote'
           type: array
       type: object
+    MimirVotesRequiredResponse:
+      example:
+        mimirs:
+        - votes: 0
+          key: key
+        - votes: 0
+          key: key
+        active_node_count: 6
+      properties:
+        mimirs:
+          items:
+            $ref: '#/components/schemas/MimirVoteRequired'
+          type: array
+        active_node_count:
+          description: number of active nodes the vote counts are measured against
+          format: int64
+          type: integer
+      required:
+      - active_node_count
+      - mimirs
+      type: object
     ExportResponse:
       type: object
     BlockResponse:
@@ -9730,6 +9777,22 @@ components:
         signer:
           type: string
       title: MimirVote
+      type: object
+    MimirVoteRequired:
+      example:
+        votes: 0
+        key: key
+      properties:
+        key:
+          type: string
+        votes:
+          description: active nodes that have voted on this key
+          format: int64
+          type: integer
+      required:
+      - key
+      - votes
+      title: MimirVoteRequired
       type: object
     BlockResponse_id_parts:
       example:

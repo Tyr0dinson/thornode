@@ -111,6 +111,8 @@ docs/MetricsResponse.md
 docs/MimirApi.md
 docs/MimirNodesResponse.md
 docs/MimirVote.md
+docs/MimirVoteRequired.md
+docs/MimirVotesRequiredResponse.md
 docs/MsgSwap.md
 docs/NetworkApi.md
 docs/NetworkResponse.md
@@ -277,6 +279,8 @@ model_log_entry.go
 model_metrics_response.go
 model_mimir_nodes_response.go
 model_mimir_vote.go
+model_mimir_vote_required.go
+model_mimir_votes_required_response.go
 model_msg_swap.go
 model_network_response.go
 model_node.go

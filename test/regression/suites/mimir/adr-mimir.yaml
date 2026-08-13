@@ -49,6 +49,14 @@ asserts:
   - .preflight_status.reason == "OK"
   - .total_bond == "9994000000"
 ---
+# the operator-facing endpoint agrees: nothing is pending yet
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/votes_required
+asserts:
+  - .mimirs|length == 0
+  # the gogo gateway marshals int64 as a JSON string
+  - .active_node_count == "5"
+---
 ########################################################################################
 # a standby node cannot open an ADR key no active node has voted on, so cheap standby
 # accounts cannot mint unbounded ADR state
@@ -98,6 +106,16 @@ endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
 asserts:
   - .preflight_status.status == "Standby"
   - '.preflight_status.reason == "node account has not voted on required mimir: ADR42TEST"'
+---
+# the same pending set is what operators are shown, so node-status.sh cannot display a
+# set that differs from the one being enforced
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/votes_required
+asserts:
+  - .mimirs|length == 1
+  - .mimirs[0].key == "ADR42TEST"
+  - .mimirs[0].votes == "2"
+  - .active_node_count == "5"
 ---
 # the mimir itself is not set without a supermajority
 type: check
@@ -156,6 +174,12 @@ type: check
 endpoint: http://localhost:1317/thorchain/mimir
 asserts:
   - .ADR42TEST == 2
+---
+# supermajority formed, so the requirement clears and operators stop being nagged
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/votes_required
+asserts:
+  - .mimirs|length == 0
 ---
 ########################################################################################
 # ADR mimirs are economic, not operational: all five votes are retained

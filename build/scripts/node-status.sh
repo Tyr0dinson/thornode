@@ -472,6 +472,28 @@ if [ "$VALIDATOR" = "true" ]; then
   echo "REWARDS     $(format_1e8 "$REWARDS")"
   echo "SLASH       $(format_int "$SLASH")"
   echo "PREFLIGHT   $PREFLIGHT"
+
+  # Mimir keys in the required-voting state that this node has not voted on. Not voting
+  # risks being churned out while active, and blocks churning in while standby.
+  REQUIRED=$(curl -sL --fail -m 10 "$API/thorchain/mimir/votes_required")
+  MY_VOTES=$(curl -sL --fail -m 10 "$API/thorchain/mimir/node/$ADDRESS" |
+    jq -c '[.node_mimirs[]?.key | ascii_upcase]')
+  UNVOTED=$(echo "$REQUIRED" | jq -r --argjson mine "${MY_VOTES:-[]}" '
+    .active_node_count as $n
+    | .mimirs[]?
+    | .key as $k
+    | select($mine | index($k | ascii_upcase) | not)
+    | "\($k) (\(.votes)/\($n) voted)"')
+
+  if [ -n "$UNVOTED" ]; then
+    echo
+    if [ "$STATUS" = "Active" ]; then
+      echo "REQUIRED VOTES - not voting risks being churned out at the next churn"
+    else
+      echo "REQUIRED VOTES - you cannot churn in until you vote on these"
+    fi
+    echo "$UNVOTED" | sed 's/^/    /'
+  fi
 fi
 
 echo

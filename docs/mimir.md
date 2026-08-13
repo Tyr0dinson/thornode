@@ -327,6 +327,11 @@ While a key is in the required state:
 - A standby node that hasn't voted cannot churn in. This shows up in the node preflight status
   (`/thorchain/node/{address}`) as `node account has not voted on required mimir: <KEY>`.
 
+`/thorchain/mimir/votes_required` lists the keys currently in this state along with their
+turnout, so operators can see what is being enforced without inferring it from vote counts.
+`make status` in node-launcher shows the subset a node has not voted on, with whether it means
+churn-out risk (active) or a blocked churn in (standby).
+
 Standby and ready nodes may vote on ADR mimirs (they cannot vote on any other mimir), so a node
 can clear the gate before churning in. Their votes are stored but do not count toward the
 turnout or the supermajority until they become active. Two limits apply to them:

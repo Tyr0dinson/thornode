@@ -3701,6 +3701,38 @@ func (qs queryServer) queryMimirNodeValues(ctx cosmos.Context, req *types.QueryM
 	return &resp, nil
 }
 
+// queryMimirVotesRequired lists the mimir keys currently in the required-voting state.
+// It delegates to pendingADRVotes, the same source of truth the churn-out marking and
+// the churn-in preflight gate use, so operators cannot be shown a set that differs from
+// the one being enforced. Returns empty when required voting is disabled.
+func (qs queryServer) queryMimirVotesRequired(ctx cosmos.Context, _ *types.QueryMimirVotesRequiredRequest) (*types.QueryMimirVotesRequiredResponse, error) {
+	pending, err := pendingADRVotes(ctx, qs.mgr.Keeper())
+	if err != nil {
+		ctx.Logger().Error("fail to get pending required mimir votes", "error", err)
+		return nil, fmt.Errorf("fail to get pending required mimir votes: %w", err)
+	}
+
+	activeNodes, err := qs.mgr.Keeper().ListActiveValidators(ctx)
+	if err != nil {
+		ctx.Logger().Error("fail to fetch active node accounts", "error", err)
+		return nil, fmt.Errorf("fail to fetch active node accounts: %w", err)
+	}
+	active := activeNodes.GetNodeAddresses()
+
+	resp := types.QueryMimirVotesRequiredResponse{
+		Mimirs:          make([]types.MimirVoteRequired, 0, len(pending)),
+		ActiveNodeCount: int64(len(active)),
+	}
+	for _, v := range pending {
+		resp.Mimirs = append(resp.Mimirs, types.MimirVoteRequired{
+			Key:   v.Key,
+			Votes: int64(v.Mimirs.VotersOf(v.Key, active)),
+		})
+	}
+
+	return &resp, nil
+}
+
 func (qs queryServer) queryOutboundFees(ctx cosmos.Context, asset string) (*types.QueryOutboundFeesResponse, error) {
 	var assets []common.Asset
 

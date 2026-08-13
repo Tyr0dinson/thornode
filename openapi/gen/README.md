@@ -97,6 +97,7 @@ Class | Method | HTTP request | Description
 *MimirApi* | [**MimirKey**](docs/MimirApi.md#mimirkey) | **Get** /thorchain/mimir/key/{key} | 
 *MimirApi* | [**MimirNode**](docs/MimirApi.md#mimirnode) | **Get** /thorchain/mimir/node/{address} | 
 *MimirApi* | [**MimirNodes**](docs/MimirApi.md#mimirnodes) | **Get** /thorchain/mimir/nodes_all | 
+*MimirApi* | [**MimirVotesRequired**](docs/MimirApi.md#mimirvotesrequired) | **Get** /thorchain/mimir/votes_required | 
 *NetworkApi* | [**Ban**](docs/NetworkApi.md#ban) | **Get** /thorchain/ban/{address} | 
 *NetworkApi* | [**Constants**](docs/NetworkApi.md#constants) | **Get** /thorchain/constants | 
 *NetworkApi* | [**InboundAddresses**](docs/NetworkApi.md#inboundaddresses) | **Get** /thorchain/inbound_addresses | 
@@ -236,6 +237,8 @@ Class | Method | HTTP request | Description
  - [MetricsResponse](docs/MetricsResponse.md)
  - [MimirNodesResponse](docs/MimirNodesResponse.md)
  - [MimirVote](docs/MimirVote.md)
+ - [MimirVoteRequired](docs/MimirVoteRequired.md)
+ - [MimirVotesRequiredResponse](docs/MimirVotesRequiredResponse.md)
  - [MsgSwap](docs/MsgSwap.md)
  - [NetworkResponse](docs/NetworkResponse.md)
  - [Node](docs/Node.md)

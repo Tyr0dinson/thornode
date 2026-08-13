@@ -5536,6 +5536,1436 @@ func (x *fastReflection_QueryMimirNodeValuesResponse) ProtoMethods() *protoiface
 }
 
 var (
+	md_QueryMimirVotesRequiredRequest        protoreflect.MessageDescriptor
+	fd_QueryMimirVotesRequiredRequest_height protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_types_query_mimir_proto_init()
+	md_QueryMimirVotesRequiredRequest = File_types_query_mimir_proto.Messages().ByName("QueryMimirVotesRequiredRequest")
+	fd_QueryMimirVotesRequiredRequest_height = md_QueryMimirVotesRequiredRequest.Fields().ByName("height")
+}
+
+var _ protoreflect.Message = (*fastReflection_QueryMimirVotesRequiredRequest)(nil)
+
+type fastReflection_QueryMimirVotesRequiredRequest QueryMimirVotesRequiredRequest
+
+func (x *QueryMimirVotesRequiredRequest) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_QueryMimirVotesRequiredRequest)(x)
+}
+
+func (x *QueryMimirVotesRequiredRequest) slowProtoReflect() protoreflect.Message {
+	mi := &file_types_query_mimir_proto_msgTypes[12]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_QueryMimirVotesRequiredRequest_messageType fastReflection_QueryMimirVotesRequiredRequest_messageType
+var _ protoreflect.MessageType = fastReflection_QueryMimirVotesRequiredRequest_messageType{}
+
+type fastReflection_QueryMimirVotesRequiredRequest_messageType struct{}
+
+func (x fastReflection_QueryMimirVotesRequiredRequest_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_QueryMimirVotesRequiredRequest)(nil)
+}
+func (x fastReflection_QueryMimirVotesRequiredRequest_messageType) New() protoreflect.Message {
+	return new(fastReflection_QueryMimirVotesRequiredRequest)
+}
+func (x fastReflection_QueryMimirVotesRequiredRequest_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_QueryMimirVotesRequiredRequest
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_QueryMimirVotesRequiredRequest) Descriptor() protoreflect.MessageDescriptor {
+	return md_QueryMimirVotesRequiredRequest
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_QueryMimirVotesRequiredRequest) Type() protoreflect.MessageType {
+	return _fastReflection_QueryMimirVotesRequiredRequest_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_QueryMimirVotesRequiredRequest) New() protoreflect.Message {
+	return new(fastReflection_QueryMimirVotesRequiredRequest)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_QueryMimirVotesRequiredRequest) Interface() protoreflect.ProtoMessage {
+	return (*QueryMimirVotesRequiredRequest)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_QueryMimirVotesRequiredRequest) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.Height != "" {
+		value := protoreflect.ValueOfString(x.Height)
+		if !f(fd_QueryMimirVotesRequiredRequest_height, value) {
+			return
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_QueryMimirVotesRequiredRequest) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "types.QueryMimirVotesRequiredRequest.height":
+		return x.Height != ""
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryMimirVotesRequiredRequest"))
+		}
+		panic(fmt.Errorf("message types.QueryMimirVotesRequiredRequest does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QueryMimirVotesRequiredRequest) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "types.QueryMimirVotesRequiredRequest.height":
+		x.Height = ""
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryMimirVotesRequiredRequest"))
+		}
+		panic(fmt.Errorf("message types.QueryMimirVotesRequiredRequest does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_QueryMimirVotesRequiredRequest) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "types.QueryMimirVotesRequiredRequest.height":
+		value := x.Height
+		return protoreflect.ValueOfString(value)
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryMimirVotesRequiredRequest"))
+		}
+		panic(fmt.Errorf("message types.QueryMimirVotesRequiredRequest does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QueryMimirVotesRequiredRequest) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "types.QueryMimirVotesRequiredRequest.height":
+		x.Height = value.Interface().(string)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryMimirVotesRequiredRequest"))
+		}
+		panic(fmt.Errorf("message types.QueryMimirVotesRequiredRequest does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QueryMimirVotesRequiredRequest) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.QueryMimirVotesRequiredRequest.height":
+		panic(fmt.Errorf("field height of message types.QueryMimirVotesRequiredRequest is not mutable"))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryMimirVotesRequiredRequest"))
+		}
+		panic(fmt.Errorf("message types.QueryMimirVotesRequiredRequest does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_QueryMimirVotesRequiredRequest) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.QueryMimirVotesRequiredRequest.height":
+		return protoreflect.ValueOfString("")
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryMimirVotesRequiredRequest"))
+		}
+		panic(fmt.Errorf("message types.QueryMimirVotesRequiredRequest does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_QueryMimirVotesRequiredRequest) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in types.QueryMimirVotesRequiredRequest", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_QueryMimirVotesRequiredRequest) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QueryMimirVotesRequiredRequest) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_QueryMimirVotesRequiredRequest) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_QueryMimirVotesRequiredRequest) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*QueryMimirVotesRequiredRequest)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		l = len(x.Height)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*QueryMimirVotesRequiredRequest)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.Height) > 0 {
+			i -= len(x.Height)
+			copy(dAtA[i:], x.Height)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Height)))
+			i--
+			dAtA[i] = 0xa
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*QueryMimirVotesRequiredRequest)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: QueryMimirVotesRequiredRequest: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: QueryMimirVotesRequiredRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Height", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Height = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
+var _ protoreflect.List = (*_QueryMimirVotesRequiredResponse_1_list)(nil)
+
+type _QueryMimirVotesRequiredResponse_1_list struct {
+	list *[]*MimirVoteRequired
+}
+
+func (x *_QueryMimirVotesRequiredResponse_1_list) Len() int {
+	if x.list == nil {
+		return 0
+	}
+	return len(*x.list)
+}
+
+func (x *_QueryMimirVotesRequiredResponse_1_list) Get(i int) protoreflect.Value {
+	return protoreflect.ValueOfMessage((*x.list)[i].ProtoReflect())
+}
+
+func (x *_QueryMimirVotesRequiredResponse_1_list) Set(i int, value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*MimirVoteRequired)
+	(*x.list)[i] = concreteValue
+}
+
+func (x *_QueryMimirVotesRequiredResponse_1_list) Append(value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*MimirVoteRequired)
+	*x.list = append(*x.list, concreteValue)
+}
+
+func (x *_QueryMimirVotesRequiredResponse_1_list) AppendMutable() protoreflect.Value {
+	v := new(MimirVoteRequired)
+	*x.list = append(*x.list, v)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_QueryMimirVotesRequiredResponse_1_list) Truncate(n int) {
+	for i := n; i < len(*x.list); i++ {
+		(*x.list)[i] = nil
+	}
+	*x.list = (*x.list)[:n]
+}
+
+func (x *_QueryMimirVotesRequiredResponse_1_list) NewElement() protoreflect.Value {
+	v := new(MimirVoteRequired)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_QueryMimirVotesRequiredResponse_1_list) IsValid() bool {
+	return x.list != nil
+}
+
+var (
+	md_QueryMimirVotesRequiredResponse                   protoreflect.MessageDescriptor
+	fd_QueryMimirVotesRequiredResponse_mimirs            protoreflect.FieldDescriptor
+	fd_QueryMimirVotesRequiredResponse_active_node_count protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_types_query_mimir_proto_init()
+	md_QueryMimirVotesRequiredResponse = File_types_query_mimir_proto.Messages().ByName("QueryMimirVotesRequiredResponse")
+	fd_QueryMimirVotesRequiredResponse_mimirs = md_QueryMimirVotesRequiredResponse.Fields().ByName("mimirs")
+	fd_QueryMimirVotesRequiredResponse_active_node_count = md_QueryMimirVotesRequiredResponse.Fields().ByName("active_node_count")
+}
+
+var _ protoreflect.Message = (*fastReflection_QueryMimirVotesRequiredResponse)(nil)
+
+type fastReflection_QueryMimirVotesRequiredResponse QueryMimirVotesRequiredResponse
+
+func (x *QueryMimirVotesRequiredResponse) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_QueryMimirVotesRequiredResponse)(x)
+}
+
+func (x *QueryMimirVotesRequiredResponse) slowProtoReflect() protoreflect.Message {
+	mi := &file_types_query_mimir_proto_msgTypes[13]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_QueryMimirVotesRequiredResponse_messageType fastReflection_QueryMimirVotesRequiredResponse_messageType
+var _ protoreflect.MessageType = fastReflection_QueryMimirVotesRequiredResponse_messageType{}
+
+type fastReflection_QueryMimirVotesRequiredResponse_messageType struct{}
+
+func (x fastReflection_QueryMimirVotesRequiredResponse_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_QueryMimirVotesRequiredResponse)(nil)
+}
+func (x fastReflection_QueryMimirVotesRequiredResponse_messageType) New() protoreflect.Message {
+	return new(fastReflection_QueryMimirVotesRequiredResponse)
+}
+func (x fastReflection_QueryMimirVotesRequiredResponse_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_QueryMimirVotesRequiredResponse
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_QueryMimirVotesRequiredResponse) Descriptor() protoreflect.MessageDescriptor {
+	return md_QueryMimirVotesRequiredResponse
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_QueryMimirVotesRequiredResponse) Type() protoreflect.MessageType {
+	return _fastReflection_QueryMimirVotesRequiredResponse_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_QueryMimirVotesRequiredResponse) New() protoreflect.Message {
+	return new(fastReflection_QueryMimirVotesRequiredResponse)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_QueryMimirVotesRequiredResponse) Interface() protoreflect.ProtoMessage {
+	return (*QueryMimirVotesRequiredResponse)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_QueryMimirVotesRequiredResponse) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if len(x.Mimirs) != 0 {
+		value := protoreflect.ValueOfList(&_QueryMimirVotesRequiredResponse_1_list{list: &x.Mimirs})
+		if !f(fd_QueryMimirVotesRequiredResponse_mimirs, value) {
+			return
+		}
+	}
+	if x.ActiveNodeCount != int64(0) {
+		value := protoreflect.ValueOfInt64(x.ActiveNodeCount)
+		if !f(fd_QueryMimirVotesRequiredResponse_active_node_count, value) {
+			return
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_QueryMimirVotesRequiredResponse) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "types.QueryMimirVotesRequiredResponse.mimirs":
+		return len(x.Mimirs) != 0
+	case "types.QueryMimirVotesRequiredResponse.active_node_count":
+		return x.ActiveNodeCount != int64(0)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryMimirVotesRequiredResponse"))
+		}
+		panic(fmt.Errorf("message types.QueryMimirVotesRequiredResponse does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QueryMimirVotesRequiredResponse) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "types.QueryMimirVotesRequiredResponse.mimirs":
+		x.Mimirs = nil
+	case "types.QueryMimirVotesRequiredResponse.active_node_count":
+		x.ActiveNodeCount = int64(0)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryMimirVotesRequiredResponse"))
+		}
+		panic(fmt.Errorf("message types.QueryMimirVotesRequiredResponse does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_QueryMimirVotesRequiredResponse) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "types.QueryMimirVotesRequiredResponse.mimirs":
+		if len(x.Mimirs) == 0 {
+			return protoreflect.ValueOfList(&_QueryMimirVotesRequiredResponse_1_list{})
+		}
+		listValue := &_QueryMimirVotesRequiredResponse_1_list{list: &x.Mimirs}
+		return protoreflect.ValueOfList(listValue)
+	case "types.QueryMimirVotesRequiredResponse.active_node_count":
+		value := x.ActiveNodeCount
+		return protoreflect.ValueOfInt64(value)
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryMimirVotesRequiredResponse"))
+		}
+		panic(fmt.Errorf("message types.QueryMimirVotesRequiredResponse does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QueryMimirVotesRequiredResponse) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "types.QueryMimirVotesRequiredResponse.mimirs":
+		lv := value.List()
+		clv := lv.(*_QueryMimirVotesRequiredResponse_1_list)
+		x.Mimirs = *clv.list
+	case "types.QueryMimirVotesRequiredResponse.active_node_count":
+		x.ActiveNodeCount = value.Int()
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryMimirVotesRequiredResponse"))
+		}
+		panic(fmt.Errorf("message types.QueryMimirVotesRequiredResponse does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QueryMimirVotesRequiredResponse) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.QueryMimirVotesRequiredResponse.mimirs":
+		if x.Mimirs == nil {
+			x.Mimirs = []*MimirVoteRequired{}
+		}
+		value := &_QueryMimirVotesRequiredResponse_1_list{list: &x.Mimirs}
+		return protoreflect.ValueOfList(value)
+	case "types.QueryMimirVotesRequiredResponse.active_node_count":
+		panic(fmt.Errorf("field active_node_count of message types.QueryMimirVotesRequiredResponse is not mutable"))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryMimirVotesRequiredResponse"))
+		}
+		panic(fmt.Errorf("message types.QueryMimirVotesRequiredResponse does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_QueryMimirVotesRequiredResponse) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.QueryMimirVotesRequiredResponse.mimirs":
+		list := []*MimirVoteRequired{}
+		return protoreflect.ValueOfList(&_QueryMimirVotesRequiredResponse_1_list{list: &list})
+	case "types.QueryMimirVotesRequiredResponse.active_node_count":
+		return protoreflect.ValueOfInt64(int64(0))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryMimirVotesRequiredResponse"))
+		}
+		panic(fmt.Errorf("message types.QueryMimirVotesRequiredResponse does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_QueryMimirVotesRequiredResponse) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in types.QueryMimirVotesRequiredResponse", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_QueryMimirVotesRequiredResponse) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QueryMimirVotesRequiredResponse) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_QueryMimirVotesRequiredResponse) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_QueryMimirVotesRequiredResponse) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*QueryMimirVotesRequiredResponse)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		if len(x.Mimirs) > 0 {
+			for _, e := range x.Mimirs {
+				l = options.Size(e)
+				n += 1 + l + runtime.Sov(uint64(l))
+			}
+		}
+		if x.ActiveNodeCount != 0 {
+			n += 1 + runtime.Sov(uint64(x.ActiveNodeCount))
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*QueryMimirVotesRequiredResponse)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if x.ActiveNodeCount != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.ActiveNodeCount))
+			i--
+			dAtA[i] = 0x10
+		}
+		if len(x.Mimirs) > 0 {
+			for iNdEx := len(x.Mimirs) - 1; iNdEx >= 0; iNdEx-- {
+				encoded, err := options.Marshal(x.Mimirs[iNdEx])
+				if err != nil {
+					return protoiface.MarshalOutput{
+						NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+						Buf:               input.Buf,
+					}, err
+				}
+				i -= len(encoded)
+				copy(dAtA[i:], encoded)
+				i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+				i--
+				dAtA[i] = 0xa
+			}
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*QueryMimirVotesRequiredResponse)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: QueryMimirVotesRequiredResponse: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: QueryMimirVotesRequiredResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Mimirs", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Mimirs = append(x.Mimirs, &MimirVoteRequired{})
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.Mimirs[len(x.Mimirs)-1]); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
+			case 2:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field ActiveNodeCount", wireType)
+				}
+				x.ActiveNodeCount = 0
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					x.ActiveNodeCount |= int64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
+var (
+	md_MimirVoteRequired       protoreflect.MessageDescriptor
+	fd_MimirVoteRequired_key   protoreflect.FieldDescriptor
+	fd_MimirVoteRequired_votes protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_types_query_mimir_proto_init()
+	md_MimirVoteRequired = File_types_query_mimir_proto.Messages().ByName("MimirVoteRequired")
+	fd_MimirVoteRequired_key = md_MimirVoteRequired.Fields().ByName("key")
+	fd_MimirVoteRequired_votes = md_MimirVoteRequired.Fields().ByName("votes")
+}
+
+var _ protoreflect.Message = (*fastReflection_MimirVoteRequired)(nil)
+
+type fastReflection_MimirVoteRequired MimirVoteRequired
+
+func (x *MimirVoteRequired) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_MimirVoteRequired)(x)
+}
+
+func (x *MimirVoteRequired) slowProtoReflect() protoreflect.Message {
+	mi := &file_types_query_mimir_proto_msgTypes[14]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_MimirVoteRequired_messageType fastReflection_MimirVoteRequired_messageType
+var _ protoreflect.MessageType = fastReflection_MimirVoteRequired_messageType{}
+
+type fastReflection_MimirVoteRequired_messageType struct{}
+
+func (x fastReflection_MimirVoteRequired_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_MimirVoteRequired)(nil)
+}
+func (x fastReflection_MimirVoteRequired_messageType) New() protoreflect.Message {
+	return new(fastReflection_MimirVoteRequired)
+}
+func (x fastReflection_MimirVoteRequired_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_MimirVoteRequired
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_MimirVoteRequired) Descriptor() protoreflect.MessageDescriptor {
+	return md_MimirVoteRequired
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_MimirVoteRequired) Type() protoreflect.MessageType {
+	return _fastReflection_MimirVoteRequired_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_MimirVoteRequired) New() protoreflect.Message {
+	return new(fastReflection_MimirVoteRequired)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_MimirVoteRequired) Interface() protoreflect.ProtoMessage {
+	return (*MimirVoteRequired)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_MimirVoteRequired) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.Key != "" {
+		value := protoreflect.ValueOfString(x.Key)
+		if !f(fd_MimirVoteRequired_key, value) {
+			return
+		}
+	}
+	if x.Votes != int64(0) {
+		value := protoreflect.ValueOfInt64(x.Votes)
+		if !f(fd_MimirVoteRequired_votes, value) {
+			return
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_MimirVoteRequired) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "types.MimirVoteRequired.key":
+		return x.Key != ""
+	case "types.MimirVoteRequired.votes":
+		return x.Votes != int64(0)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.MimirVoteRequired"))
+		}
+		panic(fmt.Errorf("message types.MimirVoteRequired does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_MimirVoteRequired) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "types.MimirVoteRequired.key":
+		x.Key = ""
+	case "types.MimirVoteRequired.votes":
+		x.Votes = int64(0)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.MimirVoteRequired"))
+		}
+		panic(fmt.Errorf("message types.MimirVoteRequired does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_MimirVoteRequired) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "types.MimirVoteRequired.key":
+		value := x.Key
+		return protoreflect.ValueOfString(value)
+	case "types.MimirVoteRequired.votes":
+		value := x.Votes
+		return protoreflect.ValueOfInt64(value)
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.MimirVoteRequired"))
+		}
+		panic(fmt.Errorf("message types.MimirVoteRequired does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_MimirVoteRequired) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "types.MimirVoteRequired.key":
+		x.Key = value.Interface().(string)
+	case "types.MimirVoteRequired.votes":
+		x.Votes = value.Int()
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.MimirVoteRequired"))
+		}
+		panic(fmt.Errorf("message types.MimirVoteRequired does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_MimirVoteRequired) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.MimirVoteRequired.key":
+		panic(fmt.Errorf("field key of message types.MimirVoteRequired is not mutable"))
+	case "types.MimirVoteRequired.votes":
+		panic(fmt.Errorf("field votes of message types.MimirVoteRequired is not mutable"))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.MimirVoteRequired"))
+		}
+		panic(fmt.Errorf("message types.MimirVoteRequired does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_MimirVoteRequired) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.MimirVoteRequired.key":
+		return protoreflect.ValueOfString("")
+	case "types.MimirVoteRequired.votes":
+		return protoreflect.ValueOfInt64(int64(0))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.MimirVoteRequired"))
+		}
+		panic(fmt.Errorf("message types.MimirVoteRequired does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_MimirVoteRequired) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in types.MimirVoteRequired", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_MimirVoteRequired) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_MimirVoteRequired) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_MimirVoteRequired) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_MimirVoteRequired) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*MimirVoteRequired)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		l = len(x.Key)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.Votes != 0 {
+			n += 1 + runtime.Sov(uint64(x.Votes))
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*MimirVoteRequired)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if x.Votes != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.Votes))
+			i--
+			dAtA[i] = 0x10
+		}
+		if len(x.Key) > 0 {
+			i -= len(x.Key)
+			copy(dAtA[i:], x.Key)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Key)))
+			i--
+			dAtA[i] = 0xa
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*MimirVoteRequired)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: MimirVoteRequired: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: MimirVoteRequired: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Key", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Key = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 2:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Votes", wireType)
+				}
+				x.Votes = 0
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					x.Votes |= int64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
+var (
 	md_Mimir       protoreflect.MessageDescriptor
 	fd_Mimir_key   protoreflect.FieldDescriptor
 	fd_Mimir_value protoreflect.FieldDescriptor
@@ -5557,7 +6987,7 @@ func (x *Mimir) ProtoReflect() protoreflect.Message {
 }
 
 func (x *Mimir) slowProtoReflect() protoreflect.Message {
-	mi := &file_types_query_mimir_proto_msgTypes[12]
+	mi := &file_types_query_mimir_proto_msgTypes[15]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6452,6 +7882,129 @@ func (x *QueryMimirNodeValuesResponse) GetNodeMimirs() []*Mimir {
 	return nil
 }
 
+type QueryMimirVotesRequiredRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Height string `protobuf:"bytes,1,opt,name=height,proto3" json:"height,omitempty"`
+}
+
+func (x *QueryMimirVotesRequiredRequest) Reset() {
+	*x = QueryMimirVotesRequiredRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_types_query_mimir_proto_msgTypes[12]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *QueryMimirVotesRequiredRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QueryMimirVotesRequiredRequest) ProtoMessage() {}
+
+// Deprecated: Use QueryMimirVotesRequiredRequest.ProtoReflect.Descriptor instead.
+func (*QueryMimirVotesRequiredRequest) Descriptor() ([]byte, []int) {
+	return file_types_query_mimir_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *QueryMimirVotesRequiredRequest) GetHeight() string {
+	if x != nil {
+		return x.Height
+	}
+	return ""
+}
+
+type QueryMimirVotesRequiredResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Mimirs []*MimirVoteRequired `protobuf:"bytes,1,rep,name=mimirs,proto3" json:"mimirs,omitempty"`
+	// number of active nodes the vote counts below are measured against
+	ActiveNodeCount int64 `protobuf:"varint,2,opt,name=active_node_count,json=activeNodeCount,proto3" json:"active_node_count,omitempty"`
+}
+
+func (x *QueryMimirVotesRequiredResponse) Reset() {
+	*x = QueryMimirVotesRequiredResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_types_query_mimir_proto_msgTypes[13]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *QueryMimirVotesRequiredResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QueryMimirVotesRequiredResponse) ProtoMessage() {}
+
+// Deprecated: Use QueryMimirVotesRequiredResponse.ProtoReflect.Descriptor instead.
+func (*QueryMimirVotesRequiredResponse) Descriptor() ([]byte, []int) {
+	return file_types_query_mimir_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *QueryMimirVotesRequiredResponse) GetMimirs() []*MimirVoteRequired {
+	if x != nil {
+		return x.Mimirs
+	}
+	return nil
+}
+
+func (x *QueryMimirVotesRequiredResponse) GetActiveNodeCount() int64 {
+	if x != nil {
+		return x.ActiveNodeCount
+	}
+	return 0
+}
+
+type MimirVoteRequired struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Key string `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	// active nodes that have voted on this key
+	Votes int64 `protobuf:"varint,2,opt,name=votes,proto3" json:"votes,omitempty"`
+}
+
+func (x *MimirVoteRequired) Reset() {
+	*x = MimirVoteRequired{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_types_query_mimir_proto_msgTypes[14]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *MimirVoteRequired) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MimirVoteRequired) ProtoMessage() {}
+
+// Deprecated: Use MimirVoteRequired.ProtoReflect.Descriptor instead.
+func (*MimirVoteRequired) Descriptor() ([]byte, []int) {
+	return file_types_query_mimir_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *MimirVoteRequired) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *MimirVoteRequired) GetVotes() int64 {
+	if x != nil {
+		return x.Votes
+	}
+	return 0
+}
+
 type Mimir struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -6464,7 +8017,7 @@ type Mimir struct {
 func (x *Mimir) Reset() {
 	*x = Mimir{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_types_query_mimir_proto_msgTypes[12]
+		mi := &file_types_query_mimir_proto_msgTypes[15]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -6478,7 +8031,7 @@ func (*Mimir) ProtoMessage() {}
 
 // Deprecated: Use Mimir.ProtoReflect.Descriptor instead.
 func (*Mimir) Descriptor() ([]byte, []int) {
-	return file_types_query_mimir_proto_rawDescGZIP(), []int{12}
+	return file_types_query_mimir_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *Mimir) GetKey() string {
@@ -6553,19 +8106,36 @@ var file_types_query_mimir_proto_rawDesc = []byte{
 	0x65, 0x56, 0x61, 0x6c, 0x75, 0x65, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12,
 	0x2d, 0x0a, 0x0b, 0x6e, 0x6f, 0x64, 0x65, 0x5f, 0x6d, 0x69, 0x6d, 0x69, 0x72, 0x73, 0x18, 0x01,
 	0x20, 0x03, 0x28, 0x0b, 0x32, 0x0c, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x4d, 0x69, 0x6d,
-	0x69, 0x72, 0x52, 0x0a, 0x6e, 0x6f, 0x64, 0x65, 0x4d, 0x69, 0x6d, 0x69, 0x72, 0x73, 0x22, 0x2f,
-	0x0a, 0x05, 0x4d, 0x69, 0x6d, 0x69, 0x72, 0x12, 0x10, 0x0a, 0x03, 0x6b, 0x65, 0x79, 0x18, 0x01,
-	0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x6b, 0x65, 0x79, 0x12, 0x14, 0x0a, 0x05, 0x76, 0x61, 0x6c,
-	0x75, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x03, 0x52, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x42,
-	0x80, 0x01, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x0f, 0x51,
-	0x75, 0x65, 0x72, 0x79, 0x4d, 0x69, 0x6d, 0x69, 0x72, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01,
-	0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f,
-	0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f,
-	0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54,
-	0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70,
-	0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65,
-	0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xc8, 0xe2,
-	0x1e, 0x01, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x69, 0x72, 0x52, 0x0a, 0x6e, 0x6f, 0x64, 0x65, 0x4d, 0x69, 0x6d, 0x69, 0x72, 0x73, 0x22, 0x38,
+	0x0a, 0x1e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x4d, 0x69, 0x6d, 0x69, 0x72, 0x56, 0x6f, 0x74, 0x65,
+	0x73, 0x52, 0x65, 0x71, 0x75, 0x69, 0x72, 0x65, 0x64, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74,
+	0x12, 0x16, 0x0a, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09,
+	0x52, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x22, 0x8f, 0x01, 0x0a, 0x1f, 0x51, 0x75, 0x65,
+	0x72, 0x79, 0x4d, 0x69, 0x6d, 0x69, 0x72, 0x56, 0x6f, 0x74, 0x65, 0x73, 0x52, 0x65, 0x71, 0x75,
+	0x69, 0x72, 0x65, 0x64, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x40, 0x0a, 0x06,
+	0x6d, 0x69, 0x6d, 0x69, 0x72, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x18, 0x2e, 0x74,
+	0x79, 0x70, 0x65, 0x73, 0x2e, 0x4d, 0x69, 0x6d, 0x69, 0x72, 0x56, 0x6f, 0x74, 0x65, 0x52, 0x65,
+	0x71, 0x75, 0x69, 0x72, 0x65, 0x64, 0x42, 0x0e, 0xc8, 0xde, 0x1f, 0x00, 0xea, 0xde, 0x1f, 0x06,
+	0x6d, 0x69, 0x6d, 0x69, 0x72, 0x73, 0x52, 0x06, 0x6d, 0x69, 0x6d, 0x69, 0x72, 0x73, 0x12, 0x2a,
+	0x0a, 0x11, 0x61, 0x63, 0x74, 0x69, 0x76, 0x65, 0x5f, 0x6e, 0x6f, 0x64, 0x65, 0x5f, 0x63, 0x6f,
+	0x75, 0x6e, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x03, 0x52, 0x0f, 0x61, 0x63, 0x74, 0x69, 0x76,
+	0x65, 0x4e, 0x6f, 0x64, 0x65, 0x43, 0x6f, 0x75, 0x6e, 0x74, 0x22, 0x3b, 0x0a, 0x11, 0x4d, 0x69,
+	0x6d, 0x69, 0x72, 0x56, 0x6f, 0x74, 0x65, 0x52, 0x65, 0x71, 0x75, 0x69, 0x72, 0x65, 0x64, 0x12,
+	0x10, 0x0a, 0x03, 0x6b, 0x65, 0x79, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x6b, 0x65,
+	0x79, 0x12, 0x14, 0x0a, 0x05, 0x76, 0x6f, 0x74, 0x65, 0x73, 0x18, 0x02, 0x20, 0x01, 0x28, 0x03,
+	0x52, 0x05, 0x76, 0x6f, 0x74, 0x65, 0x73, 0x22, 0x2f, 0x0a, 0x05, 0x4d, 0x69, 0x6d, 0x69, 0x72,
+	0x12, 0x10, 0x0a, 0x03, 0x6b, 0x65, 0x79, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x6b,
+	0x65, 0x79, 0x12, 0x14, 0x0a, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28,
+	0x03, 0x52, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x42, 0x80, 0x01, 0x0a, 0x09, 0x63, 0x6f, 0x6d,
+	0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x0f, 0x51, 0x75, 0x65, 0x72, 0x79, 0x4d, 0x69, 0x6d,
+	0x69, 0x72, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61,
+	0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f,
+	0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f,
+	0x74, 0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79,
+	0x70, 0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79,
+	0x70, 0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea,
+	0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xc8, 0xe2, 0x1e, 0x01, 0x62, 0x06, 0x70, 0x72, 0x6f,
+	0x74, 0x6f, 0x33,
 }
 
 var (
@@ -6580,7 +8150,7 @@ func file_types_query_mimir_proto_rawDescGZIP() []byte {
 	return file_types_query_mimir_proto_rawDescData
 }
 
-var file_types_query_mimir_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_types_query_mimir_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_types_query_mimir_proto_goTypes = []interface{}{
 	(*QueryMimirValuesRequest)(nil),          // 0: types.QueryMimirValuesRequest
 	(*QueryMimirValuesResponse)(nil),         // 1: types.QueryMimirValuesResponse
@@ -6594,20 +8164,24 @@ var file_types_query_mimir_proto_goTypes = []interface{}{
 	(*QueryMimirNodesValuesResponse)(nil),    // 9: types.QueryMimirNodesValuesResponse
 	(*QueryMimirNodeValuesRequest)(nil),      // 10: types.QueryMimirNodeValuesRequest
 	(*QueryMimirNodeValuesResponse)(nil),     // 11: types.QueryMimirNodeValuesResponse
-	(*Mimir)(nil),                            // 12: types.Mimir
-	(*NodeMimir)(nil),                        // 13: types.NodeMimir
+	(*QueryMimirVotesRequiredRequest)(nil),   // 12: types.QueryMimirVotesRequiredRequest
+	(*QueryMimirVotesRequiredResponse)(nil),  // 13: types.QueryMimirVotesRequiredResponse
+	(*MimirVoteRequired)(nil),                // 14: types.MimirVoteRequired
+	(*Mimir)(nil),                            // 15: types.Mimir
+	(*NodeMimir)(nil),                        // 16: types.NodeMimir
 }
 var file_types_query_mimir_proto_depIdxs = []int32{
-	12, // 0: types.QueryMimirValuesResponse.mimirs:type_name -> types.Mimir
-	12, // 1: types.QueryMimirAdminValuesResponse.admin_mimirs:type_name -> types.Mimir
-	13, // 2: types.QueryMimirNodesAllValuesResponse.mimirs:type_name -> types.NodeMimir
-	12, // 3: types.QueryMimirNodesValuesResponse.mimirs:type_name -> types.Mimir
-	12, // 4: types.QueryMimirNodeValuesResponse.node_mimirs:type_name -> types.Mimir
-	5,  // [5:5] is the sub-list for method output_type
-	5,  // [5:5] is the sub-list for method input_type
-	5,  // [5:5] is the sub-list for extension type_name
-	5,  // [5:5] is the sub-list for extension extendee
-	0,  // [0:5] is the sub-list for field type_name
+	15, // 0: types.QueryMimirValuesResponse.mimirs:type_name -> types.Mimir
+	15, // 1: types.QueryMimirAdminValuesResponse.admin_mimirs:type_name -> types.Mimir
+	16, // 2: types.QueryMimirNodesAllValuesResponse.mimirs:type_name -> types.NodeMimir
+	15, // 3: types.QueryMimirNodesValuesResponse.mimirs:type_name -> types.Mimir
+	15, // 4: types.QueryMimirNodeValuesResponse.node_mimirs:type_name -> types.Mimir
+	14, // 5: types.QueryMimirVotesRequiredResponse.mimirs:type_name -> types.MimirVoteRequired
+	6,  // [6:6] is the sub-list for method output_type
+	6,  // [6:6] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_types_query_mimir_proto_init() }
@@ -6762,6 +8336,42 @@ func file_types_query_mimir_proto_init() {
 			}
 		}
 		file_types_query_mimir_proto_msgTypes[12].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*QueryMimirVotesRequiredRequest); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_types_query_mimir_proto_msgTypes[13].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*QueryMimirVotesRequiredResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_types_query_mimir_proto_msgTypes[14].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*MimirVoteRequired); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_types_query_mimir_proto_msgTypes[15].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*Mimir); i {
 			case 0:
 				return &v.state
@@ -6780,7 +8390,7 @@ func file_types_query_mimir_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_types_query_mimir_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   13,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

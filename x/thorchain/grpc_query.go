@@ -333,6 +333,14 @@ func (s *queryServer) MimirNodeValues(c context.Context, req *types.QueryMimirNo
 	return s.queryMimirNodeValues(ctx, req)
 }
 
+func (s *queryServer) MimirVotesRequired(c context.Context, req *types.QueryMimirVotesRequiredRequest) (*types.QueryMimirVotesRequiredResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.queryMimirVotesRequired(ctx, req)
+}
+
 func (s *queryServer) InboundAddresses(c context.Context, req *types.QueryInboundAddressesRequest) (*types.QueryInboundAddressesResponse, error) {
 	if err := checkHeightParam(req.Height); err != nil {
 		return nil, err
