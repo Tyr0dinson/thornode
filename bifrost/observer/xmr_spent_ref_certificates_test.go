@@ -1011,12 +1011,13 @@ func TestCommittedXMRSpentRefsLatchExactPayload(t *testing.T) {
 		state, ok := observerTestConflictState(ag, exact)
 		return ok && state == xmrSpentRefsImportConfirmed
 	}, time.Second, 10*time.Millisecond)
-	// The committed callback marks the historical bucket after the live state
-	// and conflict entry, so wait for that final write rather than racing it.
+	// The certificate latch is set after the conflict entry and the live states,
+	// so poll for it rather than assuming the earlier waits imply it landed.
 	require.Eventually(t, func() bool {
 		ag.mu.Lock()
 		defer ag.mu.Unlock()
-		return ag.historicalXMRSpentRefCertificates[exactPayloadHash].applied
+		bucket := ag.historicalXMRSpentRefCertificates[exactPayloadHash]
+		return bucket != nil && bucket.applied
 	}, time.Second, 10*time.Millisecond)
 
 	var vaultCalls atomic.Int32
