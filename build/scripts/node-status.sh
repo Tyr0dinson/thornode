@@ -308,7 +308,7 @@ BOND=$(echo "$JSON" | jq -r ".total_bond")
 REWARDS=$(echo "$JSON" | jq -r ".current_award")
 SLASH=$(echo "$JSON" | jq -r ".slash_points")
 STATUS=$(echo "$JSON" | jq -r ".status")
-PREFLIGHT=$(echo "$JSON" | jq -r ".preflight_status")
+PREFLIGHT=$(echo "$JSON" | jq -r '.preflight_status | "\(.status) - \(.reason)"')
 PUB_KEY=$(echo "$JSON" | jq -r ".pub_key_set.secp256k1")
 [ "$VALIDATOR" = "false" ] && IP=$EXTERNAL_IP
 
@@ -475,6 +475,9 @@ if [ "$VALIDATOR" = "true" ]; then
 
   # Mimir keys in the required-voting state that this node has not voted on. Not voting
   # risks being churned out while active, and blocks churning in while standby.
+  # ponytail: a failed votes_required call shows nothing rather than a false alarm, so a
+  # flaky API hides the warning. Standby nodes still get it via PREFLIGHT above; add a
+  # fetch error line here if actives report missing warnings.
   REQUIRED=$(curl -sL --fail -m 10 "$API/thorchain/mimir/votes_required")
   MY_VOTES=$(curl -sL --fail -m 10 "$API/thorchain/mimir/node/$ADDRESS" |
     jq -c '[.node_mimirs[]?.key | ascii_upcase]')
