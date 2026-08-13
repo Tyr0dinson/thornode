@@ -29,6 +29,72 @@ func roundUpToSigningPeriod(height, signingTransPeriod int64) int64 {
 	return height
 }
 
+func seedMempoolSwapRecoveryRecord(
+	c *C,
+	ctx cosmos.Context,
+	mgr Manager,
+	voter ObservedTxVoter,
+	vaultPubKey common.PubKey,
+	targetAsset common.Asset,
+	destination common.Address,
+	executedOutput cosmos.Uint,
+	nextRecoveryHeight int64,
+	status types2.MempoolSwapStatus,
+) ObservedTxVoter {
+	c.Assert(voter.Tx.Tx.Coins.IsEmpty(), Equals, false)
+	sourceCoin := voter.Tx.Tx.Coins[0]
+	sourceChain := sourceCoin.Asset.GetChain()
+	fromAddress, err := GetRandomPubKey().GetAddress(sourceChain)
+	c.Assert(err, IsNil)
+	toAddress, err := vaultPubKey.GetAddress(sourceChain)
+	c.Assert(err, IsNil)
+
+	gas := voter.Tx.Tx.Gas
+	if !sourceChain.IsTHORChain() && gas.IsEmpty() {
+		gas = common.Gas{common.NewCoin(sourceChain.GetGasAsset(), cosmos.OneUint())}
+	}
+	tx := common.NewTx(
+		voter.TxID,
+		fromAddress,
+		toAddress,
+		common.Coins{sourceCoin},
+		gas,
+		"SWAP:"+targetAsset.String()+":"+destination.String(),
+	)
+	msg := NewMsgSwap(
+		tx,
+		targetAsset,
+		destination,
+		cosmos.ZeroUint(),
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		"",
+		"",
+		nil,
+		MarketSwap,
+		1,
+		0,
+		types2.SwapVersion_v2,
+		GetRandomBech32Addr(),
+	)
+	if !executedOutput.IsZero() {
+		msg.State.In = sourceCoin.Amount
+		msg.State.Out = executedOutput
+	}
+	msg.InitialBlockHeight = ctx.BlockHeight()
+
+	voter.Tx.ObservedPubKey = vaultPubKey
+	if voter.MempoolSwapTOR.IsZero() {
+		voter.MempoolSwapTOR = cosmos.OneUint()
+	}
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	record := newMempoolSwapLifecycle(ctx, mgr.Keeper(), voter, *msg, voter.MempoolSwapTOR)
+	record.Status = status
+	record.NextRecoveryHeight = nextRecoveryHeight
+	c.Assert(mgr.Keeper().SetMempoolSwap(ctx, record), IsNil)
+	return voter
+}
+
 func (s *SlashingSuite) TestNodeSignSlashErrors(c *C) {
 	testCases := []struct {
 		name        string
@@ -2616,7 +2682,8 @@ func (s *SlashingSuite) TestLackSigningWithMempoolSwaps(c *C) {
 	ethPool.Status = PoolAvailable
 	c.Assert(mgr.Keeper().SetPool(ctx, ethPool), IsNil)
 
-	// Test 1: Mempool swap that never finalized should be rolled back after MaxOutboundAttempts
+	// Test 1: An unfinalized mempool swap is recovered from the lifecycle due
+	// index, without relying on a TxOut/staged/queue collection scan.
 	inTxID := GetRandomTxHash()
 
 	// Create mempool voter (unfinalized)
@@ -2640,26 +2707,12 @@ func (s *SlashingSuite) TestLackSigningWithMempoolSwaps(c *C) {
 	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, voter.MempoolSwapTOR)
 
-	// Create unsigned outbound (mempool swap output).
-	// OutHash must be empty (not BlankTxID) for LackSigning to process it,
-	// and the outbound must be at height = lackSigningHeight - signingTransPeriod
-	// since LackSigning checks TxOut at (currentBlockHeight - signingTransPeriod).
 	voterHeight := ctx.BlockHeight()
-	lackSigningHeight := roundUpToSigningPeriod(voterHeight+(maxOutboundAttempts*signingTransPeriod)+10, signingTransPeriod)
-	outboundHeight := lackSigningHeight - signingTransPeriod
-
-	txOutItem := TxOutItem{
-		Chain:       common.ETHChain,
-		InHash:      inTxID,
-		VaultPubKey: vault.PubKey,
-		ToAddress:   GetRandomETHAddress(),
-		Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(5*common.One)),
-		Memo:        "OUT:" + inTxID.String(),
-	}
-
-	txOut := NewTxOut(outboundHeight)
-	txOut.TxArray = append(txOut.TxArray, txOutItem)
-	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+	lackSigningHeight := voterHeight + maxOutboundAttempts*signingTransPeriod
+	voter = seedMempoolSwapRecoveryRecord(
+		c, ctx, mgr, voter, vault.PubKey, common.ETHAsset, GetRandomETHAddress(),
+		cosmos.ZeroUint(), lackSigningHeight, types2.MempoolSwapStatus_RESERVED,
+	)
 
 	ctx = ctx.WithBlockHeight(lackSigningHeight)
 
@@ -2668,15 +2721,14 @@ func (s *SlashingSuite) TestLackSigningWithMempoolSwaps(c *C) {
 	err := slasher.LackSigning(ctx, mgr)
 	c.Assert(err, IsNil)
 
-	// Verify the mempool swap was rolled back
-	updatedTxOut, err := mgr.Keeper().GetTxOut(ctx, outboundHeight)
-	c.Assert(err, IsNil)
-	c.Check(updatedTxOut.TxArray[0].OutHash, Equals, common.BlankTxID,
-		Commentf("Outbound should be marked as handled after rolling back the mempool swap"))
+	// Verify the lifecycle-owned mempool swap was rolled back.
+	c.Check(mgr.Keeper().HasMempoolSwap(ctx, inTxID, 0), Equals, false)
 	updatedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
 	c.Assert(err, IsNil)
 	c.Check(updatedVoter.Reverted, Equals, false, Commentf("timeout rollback should leave voter.Reverted false"))
 	c.Check(updatedVoter.Actions, IsNil, Commentf("timeout rollback should clear actions"))
+	c.Check(updatedVoter.HasReservedMempoolSwapTOR(), Equals, false)
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true)
 
 	// Test 2: Finalized inbound (traditional flow) should NOT be rolled back
 	finalizedTxID := GetRandomTxHash()
@@ -2768,23 +2820,23 @@ func (s *SlashingSuite) TestLackSigningRecoversMempoolSwapWhenOutboundRetriesDis
 	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, reservedTOR)
 	stagedHeight := ctx.BlockHeight() + 10
 	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, stagedOutbound, stagedHeight), IsNil)
+	voter = seedMempoolSwapRecoveryRecord(
+		c, ctx, mgr, voter, GetRandomPubKey(), common.RuneAsset(), stagedOutbound.ToAddress,
+		runeOutput, stagedHeight+defaultMempoolSwapTimeoutAttempts*signingTransPeriod, types2.MempoolSwapStatus_STAGED,
+	)
 
-	// MaxOutboundAttempts=0 must not disable mempool cleanup. The fallback is
-	// three signing periods, independent of traditional outbound rescheduling.
-	// Recovery waits for the next signing-period boundary instead of scanning
-	// the staged store on every block.
+	// MaxOutboundAttempts=0 must not disable mempool cleanup. The lifecycle due
+	// height uses a fallback of three signing periods, independent of traditional
+	// outbound rescheduling, and is checked with a bounded index read every block.
 	timeoutHeight := stagedHeight + defaultMempoolSwapTimeoutAttempts*signingTransPeriod
-	if timeoutHeight%signingTransPeriod == 0 {
-		timeoutHeight++
-	}
 	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
-	ctx = ctx.WithBlockHeight(timeoutHeight)
+	ctx = ctx.WithBlockHeight(timeoutHeight - 1)
 	c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
 	stagedItems, err := mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
 	c.Assert(err, IsNil)
-	c.Check(stagedItems, HasLen, 1, Commentf("off-cadence blocks should not run staged timeout recovery"))
+	c.Check(stagedItems, HasLen, 1, Commentf("records must not recover before their lifecycle due height"))
 
-	ctx = ctx.WithBlockHeight(roundUpToSigningPeriod(timeoutHeight, signingTransPeriod))
+	ctx = ctx.WithBlockHeight(timeoutHeight)
 	c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
 
 	stagedItems, err = mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
@@ -2851,6 +2903,10 @@ func (s *SlashingSuite) TestLackSigningRetriesFinalizedStagedMempoolSwap(c *C) {
 	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, nativeOutbound, ctx.BlockHeight()+10), IsNil)
 
 	timeoutHeight := roundUpToSigningPeriod(ctx.BlockHeight()+(signingTransPeriod*maxOutboundAttempts)+10, signingTransPeriod)
+	voter = seedMempoolSwapRecoveryRecord(
+		c, ctx, mgr, voter, vault.PubKey, common.RuneAsset(), recipient,
+		stagedAmount, timeoutHeight, types2.MempoolSwapStatus_STAGED,
+	)
 	ctx = ctx.WithBlockHeight(timeoutHeight)
 
 	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
@@ -2906,13 +2962,21 @@ func (s *SlashingSuite) TestLackSigningStartsFinalizedRetryTimeoutAtFinalization
 	firstRecoveryHeight := roundUpToSigningPeriod(ctx.BlockHeight()+(2*timeoutAge), signingTransPeriod)
 	finalizedHeight := firstRecoveryHeight - 1
 	voter := NewObservedTxVoter(inTxID, ObservedTxs{})
-	voter.Tx = ObservedTx{Tx: common.Tx{ID: inTxID, Chain: common.BTCChain}}
+	voter.Tx = ObservedTx{Tx: common.Tx{
+		ID:    inTxID,
+		Chain: common.BTCChain,
+		Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One))},
+	}}
 	voter.FinalisedHeight = finalizedHeight
 	voter.Actions = []TxOutItem{stagedOutbound}
 	voter.MempoolSwapTOR = cosmos.NewUint(5 * common.One)
 	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, voter.MempoolSwapTOR)
 	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, stagedOutbound, ctx.BlockHeight()+5), IsNil)
+	voter = seedMempoolSwapRecoveryRecord(
+		c, ctx, mgr, voter, vault.PubKey, common.RuneAsset(), recipient,
+		stagedAmount, finalizedHeight+timeoutAge, types2.MempoolSwapStatus_STAGED,
+	)
 
 	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
 	ctx = ctx.WithBlockHeight(firstRecoveryHeight)
@@ -3008,6 +3072,10 @@ func (s *SlashingSuite) TestLackSigningForceRollbackStuckFinalizedMempoolSwap(c 
 	// Advance to 3x the normal timeout (force-rollback threshold)
 	timeoutAge := signingTransPeriod * maxOutboundAttempts
 	forceRollbackHeight := roundUpToSigningPeriod(ctx.BlockHeight()+(3*timeoutAge)+10, signingTransPeriod)
+	voter = seedMempoolSwapRecoveryRecord(
+		c, ctx, mgr, voter, vault.PubKey, common.RuneAsset(), stagedOutbound.ToAddress,
+		stagedOutbound.Coin.Amount, ctx.BlockHeight()+timeoutAge, types2.MempoolSwapStatus_STAGED,
+	)
 	ctx = ctx.WithBlockHeight(forceRollbackHeight)
 
 	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
@@ -3116,6 +3184,10 @@ func (s *SlashingSuite) TestLackSigningRetriesInactiveVaultFinalizedMempoolSwapR
 	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, stagedOutbound, ctx.BlockHeight()+10), IsNil)
 
 	timeoutHeight := roundUpToSigningPeriod(ctx.BlockHeight()+(signingTransPeriod*maxOutboundAttempts)+10, signingTransPeriod)
+	voter = seedMempoolSwapRecoveryRecord(
+		c, ctx, mgr, voter, inactiveVault.PubKey, common.ETHAsset, stagedOutbound.ToAddress,
+		stagedOutbound.Coin.Amount, timeoutHeight, types2.MempoolSwapStatus_STAGED,
+	)
 	ctx = ctx.WithBlockHeight(timeoutHeight)
 
 	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
@@ -3240,6 +3312,10 @@ func (s *SlashingSuite) TestLackSigningRetriesInactiveVaultFinalizedQueuedMempoo
 	c.Check(mgr.Keeper().HasStagedOutbound(ctx, inTxID), Equals, false, Commentf("queued recovery fixture should not rely on staged outbounds"))
 
 	timeoutHeight := roundUpToSigningPeriod(ctx.BlockHeight()+(signingTransPeriod*maxOutboundAttempts)+10, signingTransPeriod)
+	voter = seedMempoolSwapRecoveryRecord(
+		c, ctx, mgr, voter, inactiveVault.PubKey, common.ETHAsset, queuedSwap.Destination,
+		queuedSwap.State.Out, timeoutHeight, types2.MempoolSwapStatus_EXECUTING,
+	)
 	ctx = ctx.WithBlockHeight(timeoutHeight)
 
 	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
@@ -3269,10 +3345,9 @@ func (s *SlashingSuite) TestLackSigningRetriesInactiveVaultFinalizedQueuedMempoo
 	c.Check(updatedVoter.Actions[0].GetMemo(), Equals, NewRefundMemo(inTxID).String())
 }
 
-// TestCollectTimedOutInactiveVaultMempoolQueueHashesDedupesSameInbound verifies
-// the queued-timeout collector only returns one retry hash even if multiple
-// advanced-queue rows share the same inbound txid.
-func (s *SlashingSuite) TestCollectTimedOutInactiveVaultMempoolQueueHashesDedupesSameInbound(c *C) {
+// TestDueRecoveryIgnoresQueuesWithoutLifecycle verifies recovery ownership is
+// the canonical lifecycle record, not incidental advanced-queue rows.
+func (s *SlashingSuite) TestDueRecoveryIgnoresQueuesWithoutLifecycle(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
 	timeoutAge := int64(50)
@@ -3351,19 +3426,273 @@ func (s *SlashingSuite) TestCollectTimedOutInactiveVaultMempoolQueueHashesDedupe
 	ctx = ctx.WithBlockHeight(voter.FinalisedHeight + timeoutAge + 1)
 
 	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
-	seen := make(map[string]struct{})
-	var hashes []common.TxID
-	slasher.collectTimedOutInactiveVaultMempoolQueueHashes(ctx, mgr.Keeper().GetAdvSwapQueueItemIterator(ctx), timeoutAge, seen, &hashes)
-	c.Assert(hashes, HasLen, 0, Commentf("ordinary queued swaps must not enter mempool timeout recovery"))
+	c.Assert(slasher.recoverDueMempoolSwaps(ctx, mgr, 10, 3*timeoutAge), IsNil)
+	_, err = mgr.Keeper().GetAdvSwapQueueItem(ctx, inTxID, 0)
+	c.Check(err, IsNil, Commentf("ordinary queued swaps must not enter lifecycle timeout recovery"))
+	_, err = mgr.Keeper().GetAdvSwapQueueItem(ctx, inTxID, 1)
+	c.Check(err, IsNil, Commentf("all ordinary queue rows must remain untouched"))
+}
 
-	voter.MempoolSwapTOR = cosmos.NewUint(50 * common.One)
+func (s *SlashingSuite) TestInactiveVaultRecoveryUsesBoundedCursorBatches(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	vault := NewVault(ctx.BlockHeight(), InactiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), nil)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	const recordCount = mempoolSwapRecoveryBatchSize + 1
+	records := make([]types2.MempoolSwap, 0, recordCount)
+	for i := 0; i < recordCount; i++ {
+		txID := common.TxID(fmt.Sprintf("%064X", i+1))
+		voter := NewObservedTxVoter(txID, ObservedTxs{})
+		voter.Tx = ObservedTx{Tx: common.Tx{
+			ID:    txID,
+			Chain: common.BTCChain,
+			Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.OneUint())},
+		}}
+		voter.UnfinalizedHeight = ctx.BlockHeight()
+		voter.MempoolSwapTOR = cosmos.OneUint()
+		voter = seedMempoolSwapRecoveryRecord(
+			c, ctx, mgr, voter, vault.PubKey, common.RuneAsset(), GetRandomTHORAddress(),
+			cosmos.ZeroUint(), ctx.BlockHeight()+100, types2.MempoolSwapStatus_RESERVED,
+		)
+		record, _, err := mgr.Keeper().GetMempoolSwap(ctx, txID, 0)
+		c.Assert(err, IsNil)
+		records = append(records, record)
+	}
+	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, cosmos.NewUint(recordCount))
+
+	startMempoolSwapVaultRecovery(ctx, mgr.Keeper(), vault)
+	for _, record := range records {
+		c.Check(mgr.Keeper().HasMempoolSwap(ctx, record.TxId, record.Index), Equals, true,
+			Commentf("the vault transition must only persist work, not execute rollback inline"))
+	}
+	jobs, err := mgr.Keeper().GetMempoolSwapVaultRecoveries(ctx, 10)
+	c.Assert(err, IsNil)
+	c.Assert(jobs, HasLen, 1)
+	cursor, err := mgr.Keeper().GetMempoolSwapVaultRecovery(ctx, vault.PubKey)
+	c.Assert(err, IsNil)
+	c.Check(cursor, Equals, "")
+
+	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+	c.Assert(slasher.recoverMempoolSwapVaultJobs(ctx, mgr), IsNil)
+	for _, record := range records[:mempoolSwapRecoveryBatchSize] {
+		c.Check(mgr.Keeper().HasMempoolSwap(ctx, record.TxId, record.Index), Equals, false)
+	}
+	c.Check(mgr.Keeper().HasMempoolSwap(ctx, records[recordCount-1].TxId, 0), Equals, true)
+	cursor, err = mgr.Keeper().GetMempoolSwapVaultRecovery(ctx, vault.PubKey)
+	c.Assert(err, IsNil)
+	c.Check(cursor, Equals, records[mempoolSwapRecoveryBatchSize-1].Cursor())
+
+	c.Assert(slasher.recoverMempoolSwapVaultJobs(ctx, mgr), IsNil)
+	c.Check(mgr.Keeper().HasMempoolSwap(ctx, records[recordCount-1].TxId, 0), Equals, false)
+	jobs, err = mgr.Keeper().GetMempoolSwapVaultRecoveries(ctx, 10)
+	c.Assert(err, IsNil)
+	c.Check(jobs, HasLen, 0, Commentf("cursor job must be deleted at end of the vault index"))
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true)
+}
+
+func (s *SlashingSuite) TestLackSigningUsesIndependentRecoveryWorkerBudgets(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+	mgr.Keeper().SetMimir(ctx, constants.SigningTransactionPeriod.String(), 10)
+	mgr.Keeper().SetMimir(ctx, constants.MaxOutboundAttempts.String(), 3)
+
+	inactiveVault := NewVault(
+		ctx.BlockHeight(),
+		InactiveVault,
+		AsgardVault,
+		GetRandomPubKey(),
+		common.Chains{common.BTCChain}.Strings(),
+		nil,
+	)
+	activeVault := NewVault(
+		ctx.BlockHeight(),
+		ActiveVault,
+		AsgardVault,
+		GetRandomPubKey(),
+		common.Chains{common.BTCChain}.Strings(),
+		nil,
+	)
+	c.Assert(mgr.Keeper().SetVault(ctx, inactiveVault), IsNil)
+	c.Assert(mgr.Keeper().SetVault(ctx, activeVault), IsNil)
+
+	const recordsPerWorker = mempoolSwapRecoveryBatchSize + 1
+	seedRecords := func(vault Vault, firstID int, nextRecoveryHeight int64) []types2.MempoolSwap {
+		records := make([]types2.MempoolSwap, 0, recordsPerWorker)
+		for i := 0; i < recordsPerWorker; i++ {
+			txID := common.TxID(fmt.Sprintf("%064X", firstID+i))
+			voter := NewObservedTxVoter(txID, ObservedTxs{})
+			voter.Tx = ObservedTx{Tx: common.Tx{
+				ID:    txID,
+				Chain: common.BTCChain,
+				Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.OneUint())},
+			}}
+			voter.UnfinalizedHeight = ctx.BlockHeight()
+			voter.MempoolSwapTOR = cosmos.OneUint()
+			seedMempoolSwapRecoveryRecord(
+				c, ctx, mgr, voter, vault.PubKey, common.RuneAsset(), GetRandomTHORAddress(),
+				cosmos.ZeroUint(), nextRecoveryHeight, types2.MempoolSwapStatus_RESERVED,
+			)
+			record, _, err := mgr.Keeper().GetMempoolSwap(ctx, txID, 0)
+			c.Assert(err, IsNil)
+			records = append(records, record)
+		}
+		return records
+	}
+
+	// Keep the vault-cursor records out of the due index for this pass. The two
+	// workers must therefore spend independent budgets on disjoint identities.
+	vaultRecords := seedRecords(inactiveVault, 1, ctx.BlockHeight()+100)
+	dueRecords := seedRecords(activeVault, 1001, ctx.BlockHeight())
+	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, cosmos.NewUint(2*recordsPerWorker))
+	startMempoolSwapVaultRecovery(ctx, mgr.Keeper(), inactiveVault)
+
+	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+	c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
+
+	for _, record := range vaultRecords[:mempoolSwapRecoveryBatchSize] {
+		c.Check(mgr.Keeper().HasMempoolSwap(ctx, record.TxId, record.Index), Equals, false)
+	}
+	for _, record := range dueRecords[:mempoolSwapRecoveryBatchSize] {
+		c.Check(mgr.Keeper().HasMempoolSwap(ctx, record.TxId, record.Index), Equals, false)
+	}
+	c.Check(mgr.Keeper().HasMempoolSwap(ctx, vaultRecords[recordsPerWorker-1].TxId, 0), Equals, true,
+		Commentf("the vault worker must stop after its 20-record budget"))
+	c.Check(mgr.Keeper().HasMempoolSwap(ctx, dueRecords[recordsPerWorker-1].TxId, 0), Equals, true,
+		Commentf("the due worker must stop after its independent 20-record budget"))
+	c.Check(mgr.Keeper().GetMempoolSwapCount(ctx).Equal(cosmos.NewUint(2)), Equals, true,
+		Commentf("one LackSigning pass may recover at most 40 records across both workers"))
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).Equal(cosmos.NewUint(2)), Equals, true)
+
+	// Both continuations remain live and complete on the next pass.
+	c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
+	c.Check(mgr.Keeper().GetMempoolSwapCount(ctx).IsZero(), Equals, true)
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true)
+	jobs, err := mgr.Keeper().GetMempoolSwapVaultRecoveries(ctx, 10)
+	c.Assert(err, IsNil)
+	c.Check(jobs, HasLen, 0)
+}
+
+func (s *SlashingSuite) TestFinalizedOrphanRecoveryAppliesJournalBeforeDelete(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	vault := NewVault(
+		ctx.BlockHeight(),
+		ActiveVault,
+		AsgardVault,
+		GetRandomPubKey(),
+		common.Chains{common.BTCChain, common.THORChain}.Strings(),
+		nil,
+	)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+	vaultAddress, err := vault.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+
+	tx := common.NewTx(
+		GetRandomTxHash(),
+		GetRandomBTCAddress(),
+		vaultAddress,
+		common.Coins{common.NewCoin(common.BTCAsset, cosmos.OneUint())},
+		common.Gas{common.NewCoin(common.BTCAsset, cosmos.OneUint())},
+		"=:THOR.RUNE:"+GetRandomTHORAddress().String(),
+	)
+	msg := NewMsgSwap(
+		tx,
+		common.RuneAsset(),
+		GetRandomTHORAddress(),
+		cosmos.ZeroUint(),
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		"",
+		"",
+		nil,
+		MarketSwap,
+		1,
+		0,
+		types2.SwapVersion_v2,
+		GetRandomBech32Addr(),
+	)
+	observed := NewObservedTx(tx, ctx.BlockHeight(), vault.PubKey, ctx.BlockHeight())
+	voter := NewObservedTxVoter(tx.ID, ObservedTxs{observed})
+	voter.Tx = observed
+	voter.FinalisedHeight = ctx.BlockHeight()
 	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
-	seen = make(map[string]struct{})
-	hashes = nil
-	slasher.collectTimedOutInactiveVaultMempoolQueueHashes(ctx, mgr.Keeper().GetAdvSwapQueueItemIterator(ctx), timeoutAge, seen, &hashes)
 
-	c.Assert(hashes, HasLen, 1)
-	c.Check(hashes[0].Equals(inTxID), Equals, true)
+	feeRune := cosmos.NewUint(23)
+	record := newMempoolSwapLifecycle(ctx, mgr.Keeper(), voter, *msg, cosmos.OneUint())
+	record.ReservedTor = cosmos.ZeroUint()
+	record.Status = types2.MempoolSwapStatus_FINALIZED
+	record.NextRecoveryHeight = ctx.BlockHeight()
+	record.PendingEffects.Affiliates = []types2.MempoolSwapAffiliateEffect{{
+		Thorname: "finalized-orphan-recovery",
+		FeeRune:  feeRune,
+	}}
+	c.Assert(mgr.Keeper().SetMempoolSwap(ctx, record), IsNil)
+
+	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+	c.Assert(slasher.recoverDueMempoolSwaps(ctx, mgr, 10, 30), IsNil)
+	c.Check(mgr.Keeper().HasMempoolSwap(ctx, tx.ID, 0), Equals, false)
+	c.Check(mgr.Keeper().GetMempoolSwapCount(ctx).IsZero(), Equals, true)
+	fees := mgr.Keeper().GetAffiliateLiquidityFees(ctx)
+	c.Assert(fees, HasLen, 1)
+	c.Check(fees[0].Fee.Equal(feeRune), Equals, true)
+
+	c.Assert(slasher.recoverDueMempoolSwaps(ctx, mgr, 10, 30), IsNil)
+	fees = mgr.Keeper().GetAffiliateLiquidityFees(ctx)
+	c.Assert(fees, HasLen, 1)
+	c.Check(fees[0].Fee.Equal(feeRune), Equals, true)
+}
+
+func (s *SlashingSuite) TestInactiveVaultRecoveryFailureDoesNotStarveLaterRecords(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	vault := NewVault(ctx.BlockHeight(), InactiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), nil)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	var voters []ObservedTxVoter
+	var txIDs []common.TxID
+	for i := 0; i < 3; i++ {
+		txID := common.TxID(fmt.Sprintf("%064X", i+1))
+		txIDs = append(txIDs, txID)
+		voter := NewObservedTxVoter(txID, ObservedTxs{})
+		voter.Tx = ObservedTx{Tx: common.Tx{
+			ID:    txID,
+			Chain: common.BTCChain,
+			Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.OneUint())},
+		}}
+		voter.UnfinalizedHeight = ctx.BlockHeight()
+		voter.MempoolSwapTOR = cosmos.OneUint()
+		voters = append(voters, seedMempoolSwapRecoveryRecord(
+			c, ctx, mgr, voter, vault.PubKey, common.RuneAsset(), GetRandomTHORAddress(),
+			cosmos.ZeroUint(), ctx.BlockHeight()+100, types2.MempoolSwapStatus_RESERVED,
+		))
+	}
+	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, cosmos.NewUint(3))
+
+	// Make the first rollback fail after its lifecycle record has been loaded.
+	// Its cursor must still advance, while the record remains pending in the due
+	// index for an independent retry.
+	voters[0].Tx.Tx.Coins = nil
+	mgr.Keeper().SetObservedTxInVoter(ctx, voters[0])
+	mgr.Keeper().SetMempoolSwapVaultRecovery(ctx, vault.PubKey, "")
+	c.Assert(processMempoolSwapVaultRecoveryBatch(ctx, mgr.Keeper(), mgr, vault.PubKey, 2), IsNil)
+
+	failed, _, err := mgr.Keeper().GetMempoolSwap(ctx, txIDs[0], 0)
+	c.Assert(err, IsNil)
+	c.Check(failed.Status, Equals, types2.MempoolSwapStatus_ROLLBACK_PENDING)
+	c.Check(failed.NextRecoveryHeight > ctx.BlockHeight(), Equals, true)
+	c.Check(mgr.Keeper().HasMempoolSwap(ctx, txIDs[1], 0), Equals, false,
+		Commentf("a failed first identity must not prevent the next identity from rolling back"))
+	c.Check(mgr.Keeper().HasMempoolSwap(ctx, txIDs[2], 0), Equals, true)
+	cursor, err := mgr.Keeper().GetMempoolSwapVaultRecovery(ctx, vault.PubKey)
+	c.Assert(err, IsNil)
+	c.Check(cursor, Equals, (types2.MempoolSwap{TxId: txIDs[1]}).Cursor())
+
+	c.Assert(processMempoolSwapVaultRecoveryBatch(ctx, mgr.Keeper(), mgr, vault.PubKey, 2), IsNil)
+	c.Check(mgr.Keeper().HasMempoolSwap(ctx, txIDs[2], 0), Equals, false,
+		Commentf("continuation must resume strictly after the attempted cursor"))
+	jobs, err := mgr.Keeper().GetMempoolSwapVaultRecoveries(ctx, 10)
+	c.Assert(err, IsNil)
+	c.Check(jobs, HasLen, 0)
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).Equal(cosmos.OneUint()), Equals, true,
+		Commentf("only the failed record's reservation should remain"))
 }
 
 

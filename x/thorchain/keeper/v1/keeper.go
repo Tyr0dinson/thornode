@@ -114,7 +114,6 @@ const (
 	prefixTHORName                  types.DbPrefix = "thorname/"
 	prefixAffiliateCollector        types.DbPrefix = "affcol_name/"
 	prefixAffiliateLiquidityFee     types.DbPrefix = "affiliate_liquidity_fee/"
-	prefixPendingAffiliateLiqFee    types.DbPrefix = "pending_affiliate_liquidity_fee/"
 	prefixReferenceMemo             types.DbPrefix = "refm/"
 	prefixReferenceMemoIndex        types.DbPrefix = "refmi/"
 	prefixReferenceMemoHash         types.DbPrefix = "refmh/"
@@ -133,6 +132,13 @@ const (
 	prefixDynamicFeeAcc             types.DbPrefix = "dynfeeacc/"
 	prefixDynamicFeeEpochBlocks     types.DbPrefix = "dynfeeebo/"
 	prefixMempoolSwapUsage          types.DbPrefix = "mempool_swap_usage/"
+	prefixMempoolSwap               types.DbPrefix = "mempool_swap/"
+	prefixMempoolSwapPoolOwner      types.DbPrefix = "mempool_swap_pool_owner/"
+	prefixMempoolSwapPoolOverlay    types.DbPrefix = "mempool_swap_pool_overlay/"
+	prefixMempoolSwapSupplyOverlay  types.DbPrefix = "mempool_swap_supply_overlay/"
+	prefixMempoolSwapVault          types.DbPrefix = "mempool_swap_vault/"
+	prefixMempoolSwapTimeout        types.DbPrefix = "mempool_swap_timeout/"
+	prefixMempoolSwapVaultRecovery  types.DbPrefix = "mempool_swap_vault_recovery/"
 	prefixStagedOutbound            types.DbPrefix = "staged_outbound/"
 	prefixStagedOutboundCoinTotal   types.DbPrefix = "staged_outbound_coin_total/"
 	prefixStagedOutboundCloutTotal  types.DbPrefix = "staged_outbound_clout_total/"
@@ -540,7 +546,18 @@ func (k KVStore) MintToModule(ctx cosmos.Context, module string, coin common.Coi
 	// from the reserve instead of minting new tokens
 	maxAmt, _ := k.GetMimir(ctx, constants.MaxRuneSupply.String())
 	if coin.IsRune() && maxAmt > 0 {
-		currentSupply := k.GetTotalSupply(ctx, common.RuneAsset())  // current circulating supply of rune
+		// A speculative derived-asset swap may have already burned RUNE which
+		// can still be restored by rollback. Do not let any intervening mint use
+		// that temporary headroom. Unlike finalized economic views, the hard cap
+		// is deliberately conservative: active supply increases remain in live
+		// supply, while active decreases are added back. Subtracting increases
+		// here could allow physical bank supply to exceed MaxRuneSupply.
+		currentSupply := k.GetBankSupply(ctx, common.RuneAsset())
+		overlay, err := k.GetMempoolSwapNativeSupplyOverlay(ctx, common.RuneAsset())
+		if err != nil {
+			return fmt.Errorf("fail to get mempool swap RUNE supply overlay for mint cap: %w", err)
+		}
+		currentSupply = currentSupply.Add(overlay.SupplyDecrease)
 		maxSupply := cosmos.NewUint(uint64(maxAmt))                 // max supply of rune (ie 500m)
 		availableSupply := common.SafeSub(maxSupply, currentSupply) // available supply to be mint
 		// if available supply is less than the coin.Amount, we need to

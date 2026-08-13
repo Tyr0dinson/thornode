@@ -250,6 +250,7 @@
           "units": "200000000"
         }
       ],
+      "mempool_swaps": [],
       "mimirs": [
         {
           "key": "ENABLESWITCH-GAIA-KUJI",
@@ -390,7 +391,6 @@
           "asset": "GAIA.KUJI"
         }
       ],
-      "pending_affiliate_liquidity_fees": [],
       "pools": [
         {
           "LP_units": "200000000",

@@ -268,7 +268,7 @@ func (k KVStore) GetTxOutValue(ctx cosmos.Context, height int64) (cosmos.Uint, c
 func (k KVStore) GetTOIsValue(ctx cosmos.Context, tois ...TxOutItem) (cosmos.Uint, cosmos.Uint) {
 	runeValue := cosmos.ZeroUint()
 	cloutValue := cosmos.ZeroUint()
-	poolCache := map[common.Asset]Pool{} // Cache the pools to avoid duplicated GetPool calls
+	poolCache := map[common.Asset]Pool{} // Cache finalized pool copies to avoid duplicated keeper reads
 	for i := range tois {
 		for _, coin := range append(common.Coins{tois[i].Coin}, tois[i].MaxGas...) {
 			if coin.IsRune() {
@@ -276,15 +276,22 @@ func (k KVStore) GetTOIsValue(ctx cosmos.Context, tois ...TxOutItem) (cosmos.Uin
 				continue
 			}
 
-			pool, ok := poolCache[coin.Asset]
+			poolAsset := coin.Asset.GetLayer1Asset()
+			pool, ok := poolCache[poolAsset]
 			if !ok {
 				var err error
-				pool, err = k.GetPool(ctx, coin.Asset.GetLayer1Asset())
+				pool, err = k.GetPool(ctx, poolAsset)
 				if err != nil {
 					_ = dbError(ctx, fmt.Sprintf("unable to get pool : %s", coin.Asset), err)
 					continue
 				}
-				poolCache[coin.Asset] = pool
+				rawPool := pool
+				pool, err = k.finalityAdjustedPool(ctx, pool)
+				if err != nil {
+					ctx.Logger().Error("unable to remove active mempool swap balances from txout valuation", "asset", poolAsset, "error", err)
+					pool = rawPool
+				}
+				poolCache[poolAsset] = pool
 			}
 			runeValue = runeValue.Add(pool.AssetValueInRune(coin.Amount))
 		}

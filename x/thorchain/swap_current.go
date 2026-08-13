@@ -62,6 +62,7 @@ func (s *SwapperImpl) Swap(ctx cosmos.Context,
 	}
 	source := tx.Coins[0].Asset
 	effectiveInput := tx.Coins[0].Amount
+	executionMode := getMempoolSwapExecutionMode(ctx)
 
 	if source.IsSyntheticAsset() {
 		burnHeight := mgr.Keeper().GetConfigInt64(ctx, constants.BurnSynths)
@@ -141,6 +142,12 @@ func (s *SwapperImpl) Swap(ctx cosmos.Context,
 	// Thanks to CacheContext, the swap event can be emitted before handling outbounds,
 	// since if there's a later error the event emission will not take place.
 	for _, evt := range swapEvents {
+		// Reverse swaps are an implementation detail of mempool rollback, not
+		// user swaps. Publishing canonical swap events (and matching telemetry)
+		// for them would create a second, misleading economic operation.
+		if executionMode == mempoolSwapExecutionRollback {
+			continue
+		}
 		if swp.Quantity > evt.StreamingSwapQuantity {
 			evt.StreamingSwapQuantity = swp.Quantity
 			evt.StreamingSwapCount = swp.Count + 1 // first swap count is "zero"
@@ -167,26 +174,29 @@ func (s *SwapperImpl) Swap(ctx cosmos.Context,
 			[]metrics.Label{telemetry.NewLabel("pool", evt.Pool.String())},
 		)
 
-		if !isBaseLayerPool(evt.Pool) {
-			continue
-		}
+		if executionMode == mempoolSwapExecutionNormal && isBaseLayerPool(evt.Pool) {
+			volume, err := keeper.GetVolume(ctx, evt.Pool)
+			if err != nil {
+				volume = types.NewVolume(evt.Pool)
+			}
 
-		volume, err := keeper.GetVolume(ctx, evt.Pool)
-		if err != nil {
-			volume = types.NewVolume(evt.Pool)
-		}
+			if evt.EmitAsset.Asset.GetLayer1Asset().Equals(evt.Pool) {
+				volume.ChangeAsset = volume.ChangeAsset.Add(evt.EmitAsset.Amount)
+				volume.ChangeRune = volume.ChangeRune.Add(evt.InTx.Coins[0].Amount)
+			} else {
+				volume.ChangeAsset = volume.ChangeAsset.Add(evt.InTx.Coins[0].Amount)
+				volume.ChangeRune = volume.ChangeRune.Add(evt.EmitAsset.Amount)
+			}
 
-		if evt.EmitAsset.Asset.GetLayer1Asset().Equals(evt.Pool) {
-			volume.ChangeAsset = volume.ChangeAsset.Add(evt.EmitAsset.Amount)
-			volume.ChangeRune = volume.ChangeRune.Add(evt.InTx.Coins[0].Amount)
-		} else {
-			volume.ChangeAsset = volume.ChangeAsset.Add(evt.InTx.Coins[0].Amount)
-			volume.ChangeRune = volume.ChangeRune.Add(evt.EmitAsset.Amount)
+			err = keeper.SetVolume(ctx, volume)
+			if err != nil {
+				ctx.Logger().Error("fail to save volume", "error", err)
+			}
 		}
-
-		err = keeper.SetVolume(ctx, volume)
-		if err != nil {
-			ctx.Logger().Error("fail to save volume", "error", err)
+	}
+	if executionMode == mempoolSwapExecutionSpeculative {
+		if err := captureMempoolSwapVolumeEffects(ctx, mgr, swapEvents); err != nil {
+			return cosmos.ZeroUint(), effectiveInput, swapEvents, fmt.Errorf("fail to capture speculative swap volume: %w", err)
 		}
 	}
 
@@ -242,6 +252,45 @@ func (s *SwapperImpl) Swap(ctx cosmos.Context,
 	return assetAmount, effectiveInput, swapEvents, nil
 }
 
+// ensureNonNormalRuneMintWithinSupplyCap keeps speculative execution and its
+// inverse rollback from entering MintToModule's Reserve-borrow fallback. That
+// fallback is valid for finalized economic operations, but a reversible swap
+// has no durable ownership record for the resulting Reserve -> Asgard custody
+// transfer. Check the same conservative headroom used by MintToModule before
+// any bank mutation; active speculative RUNE burns remain reserved for their
+// own rollback through the aggregate supply-decrease overlay.
+func ensureNonNormalRuneMintWithinSupplyCap(
+	ctx cosmos.Context,
+	mgr Manager,
+	coin common.Coin,
+	executionMode mempoolSwapExecutionMode,
+) error {
+	if executionMode == mempoolSwapExecutionNormal || !coin.IsRune() || coin.Amount.IsZero() {
+		return nil
+	}
+
+	maxAmount, _ := mgr.Keeper().GetMimir(ctx, constants.MaxRuneSupply.String())
+	if maxAmount <= 0 {
+		return nil
+	}
+
+	currentSupply := mgr.Keeper().GetBankSupply(ctx, common.RuneAsset())
+	overlay, err := mgr.Keeper().GetMempoolSwapNativeSupplyOverlay(ctx, common.RuneAsset())
+	if err != nil {
+		return fmt.Errorf("fail to get mempool swap RUNE supply overlay before mint: %w", err)
+	}
+	currentSupply = currentSupply.Add(overlay.SupplyDecrease)
+	maxSupply := cosmos.NewUint(uint64(maxAmount))
+	availableSupply := common.SafeSub(maxSupply, currentSupply)
+	if coin.Amount.GT(availableSupply) {
+		return fmt.Errorf(
+			"non-normal RUNE mint would borrow Reserve: requested %s, available supply %s",
+			coin.Amount, availableSupply,
+		)
+	}
+	return nil
+}
+
 func (s *SwapperImpl) swapOne(ctx cosmos.Context,
 	mgr Manager, tx common.Tx,
 	target common.Asset,
@@ -253,6 +302,7 @@ func (s *SwapperImpl) swapOne(ctx cosmos.Context,
 ) (amt cosmos.Uint, input cosmos.Uint, evt *EventSwap, swapErr error) {
 	tradeAccountsEnabled := mgr.Keeper().GetConfigInt64(ctx, constants.TradeAccountsEnabled)
 	tradeAccountsDepositEnabled := mgr.Keeper().GetConfigInt64(ctx, constants.TradeAccountsDepositEnabled)
+	executionMode := getMempoolSwapExecutionMode(ctx)
 
 	source := tx.Coins[0].Asset
 	amount := tx.Coins[0].Amount
@@ -317,8 +367,11 @@ func (s *SwapperImpl) swapOne(ctx cosmos.Context,
 	// For streaming swaps, InTx already only represents the sub-swap amount, not the original inbound.
 	swapEvt.InTx.Coins = common.NewCoins(common.NewCoin(source, amount))
 
-	if poolAsset.IsDerivedAsset() {
-		// regenerate derived virtual pool
+	if poolAsset.IsDerivedAsset() && executionMode != mempoolSwapExecutionRollback {
+		// Regenerate the derived virtual pool for forward execution. Rollback must
+		// use the live post-forward depths: its lifecycle overlay is cleared just
+		// before the inverse swap so RUNE cap headroom can be restored safely.
+		// Regenerating at that point would erase the mutation being unwound.
 		mgr.NetworkMgr().SpawnDerivedAsset(ctx, poolAsset, mgr)
 	}
 
@@ -333,6 +386,8 @@ func (s *SwapperImpl) swapOne(ctx cosmos.Context,
 	if err != nil {
 		return cosmos.ZeroUint(), input, evt, ErrInternal(err, fmt.Sprintf("fail to get pool(%s)", poolAsset))
 	}
+	poolBalanceRuneBefore := pool.BalanceRune
+	poolBalanceAssetBefore := pool.BalanceAsset
 	// sanity check: ensure we're never swapping with the vault
 	// (technically is actually the yield bearing synth vault)
 	if pool.Asset.IsSyntheticAsset() {
@@ -341,9 +396,10 @@ func (s *SwapperImpl) swapOne(ctx cosmos.Context,
 	synthSupply := keeper.GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
 	pool.CalcUnits(synthSupply)
 
-	// pool must be available unless source is synthetic
-	// synths may be redeemed regardless of pool status
-	if !source.IsSyntheticAsset() && !pool.IsAvailable() {
+	// Pool must be available unless source is synthetic. An internal mempool
+	// rollback must likewise be able to unwind the recorded live transition if
+	// governance or anchor loss suspended its pool after forward execution.
+	if executionMode != mempoolSwapExecutionRollback && !source.IsSyntheticAsset() && !pool.IsAvailable() {
 		return cosmos.ZeroUint(), input, evt, fmt.Errorf("pool(%s) is not available", pool.Asset)
 	}
 
@@ -405,6 +461,17 @@ func (s *SwapperImpl) swapOne(ctx cosmos.Context,
 		} else if err := mgr.Keeper().BurnFromModule(ctx, ModuleName, burnCoin); err != nil {
 			ctx.Logger().Error("fail to burn coins during swap", "error", err)
 		} else {
+			if executionMode == mempoolSwapExecutionSpeculative {
+				if err := captureMempoolSwapSupplyEffect(
+					ctx,
+					mgr,
+					burnCoin.Asset,
+					burnCoin.Amount,
+					false,
+				); err != nil {
+					return cosmos.ZeroUint(), input, evt, fmt.Errorf("fail to capture speculative native supply burn: %w", err)
+				}
+			}
 			burnEvt := NewEventMintBurn(BurnSupplyType, burnCoin.Asset.Native(), burnCoin.Amount, "swap")
 			if err := mgr.EventMgr().EmitEvent(ctx, burnEvt); err != nil {
 				ctx.Logger().Error("fail to emit burn event", "error", err)
@@ -417,10 +484,48 @@ func (s *SwapperImpl) swapOne(ctx cosmos.Context,
 		!emitAssets.IsZero() {
 		// If the source isn't RUNE, the target should be RUNE.
 		mintCoin := common.NewCoin(target, emitAssets)
+		// Synth and derived mints change bank supply by exactly coin.Amount.
+		// RUNE minting may instead borrow some or all of the requested amount
+		// from Reserve at MaxRuneSupply, so measure and validate that delta.
+		if err := ensureNonNormalRuneMintWithinSupplyCap(ctx, mgr, mintCoin, executionMode); err != nil {
+			return cosmos.ZeroUint(), input, evt, err
+		}
+		supplyBeforeMint := cosmos.ZeroUint()
+		if executionMode == mempoolSwapExecutionSpeculative && mintCoin.IsRune() {
+			supplyBeforeMint = keeper.GetBankSupply(ctx, mintCoin.Asset)
+		}
 		if err := mgr.Keeper().MintToModule(ctx, ModuleName, mintCoin); err != nil {
 			ctx.Logger().Error("fail to mint coins during swap", "error", err)
 			return cosmos.ZeroUint(), input, evt, err
 		} else {
+			if executionMode == mempoolSwapExecutionSpeculative {
+				mintedSupply := mintCoin.Amount
+				if mintCoin.IsRune() {
+					supplyAfterMint := keeper.GetBankSupply(ctx, mintCoin.Asset)
+					if supplyAfterMint.LT(supplyBeforeMint) {
+						return cosmos.ZeroUint(), input, evt, fmt.Errorf(
+							"RUNE supply decreased during speculative mint: before %s, after %s",
+							supplyBeforeMint, supplyAfterMint,
+						)
+					}
+					mintedSupply = supplyAfterMint.Sub(supplyBeforeMint)
+					if mintedSupply.GT(mintCoin.Amount) {
+						return cosmos.ZeroUint(), input, evt, fmt.Errorf(
+							"RUNE supply mint exceeded requested amount: minted %s, requested %s",
+							mintedSupply, mintCoin.Amount,
+						)
+					}
+				}
+				if err := captureMempoolSwapSupplyEffect(
+					ctx,
+					mgr,
+					mintCoin.Asset,
+					mintedSupply,
+					true,
+				); err != nil {
+					return cosmos.ZeroUint(), input, evt, fmt.Errorf("fail to capture speculative native supply mint: %w", err)
+				}
+			}
 			mintEvt := NewEventMintBurn(MintSupplyType, mintCoin.Asset.Native(), mintCoin.Amount, "swap")
 			if err := mgr.EventMgr().EmitEvent(ctx, mintEvt); err != nil {
 				ctx.Logger().Error("fail to emit mint event", "error", err)
@@ -465,84 +570,97 @@ func (s *SwapperImpl) swapOne(ctx cosmos.Context,
 	}
 
 	if !pool.Asset.IsDerivedAsset() {
-		// Deduct LiquidityFeeInRune from the pool's RUNE depth and send it to the Reserve Module to be system income.
-		// (So that the liquidity fee isn't used for later swaps in the same block.)
-		if !swapEvt.LiquidityFeeInRune.IsZero() {
+		pendingLiquidityFee := cosmos.ZeroUint()
+		pendingReserveRune := cosmos.ZeroUint()
+		pendingTCYRune := cosmos.ZeroUint()
+
+		// A normal or speculative forward swap removes system income from pool
+		// depth immediately so subsequent swaps see the same price. Speculative
+		// execution deliberately leaves the corresponding RUNE in Asgard and
+		// journals its eventual module destination. A rollback-internal reverse
+		// swap performs neither this extra system-fee extraction nor its effects.
+		if !swapEvt.LiquidityFeeInRune.IsZero() && executionMode != mempoolSwapExecutionRollback {
 			pool.BalanceRune = common.SafeSub(pool.BalanceRune, swapEvt.LiquidityFeeInRune)
-			liqFeeCoin := common.NewCoin(common.RuneAsset(), swapEvt.LiquidityFeeInRune)
 
-			targetModule := ReserveName
-			if pool.Asset.IsTCY() {
-				targetModule = TCYClaimingName
-			}
-
-			if err := mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, targetModule, common.NewCoins(liqFeeCoin)); err != nil {
-				ctx.Logger().Error("fail to move liquidity fee RUNE during swap", "module", targetModule, "error", err)
-				return cosmos.ZeroUint(), input, evt, err
-			}
-
-			// Only add to liquidity fees if not TCY
-			if !pool.Asset.IsTCY() {
-				if err := keeper.AddToLiquidityFees(ctx, pool.Asset, swapEvt.LiquidityFeeInRune); err != nil {
-					return cosmos.ZeroUint(), input, evt, fmt.Errorf("fail to add to liquidity fees: %w", err)
+			if executionMode == mempoolSwapExecutionSpeculative {
+				if pool.Asset.IsTCY() {
+					pendingTCYRune = swapEvt.LiquidityFeeInRune
+				} else {
+					pendingReserveRune = swapEvt.LiquidityFeeInRune
+					pendingLiquidityFee = swapEvt.LiquidityFeeInRune
 				}
-				// Skip REVSHARE attribution for protocol-internal affiliate-fee
-				// conversion swaps. affiliateSwapToRune schedules these to
-				// convert a user-side affiliate cut into RUNE, routing to one
-				// of two destinations:
-				//   - the AffiliateCollector module address (preferred-asset case), or
-				//   - the resolved thorname's THORChain alias, or owner if no
-				//     alias is set (non-PA case).
-				// Their fees come from a fee-bearing user-issued swap and
-				// should not double-credit the affiliate. The non-PA case is
-				// further gated by `target == RUNE` so a user-issued swap to
-				// RUNE with affiliate=X and destination=X.alias|X.owner (a rare
-				// and effectively self-payment scenario) is the only false-
-				// negative; normal user-to-RUNE swaps stay attributable.
-				if attributeThorname, ok := resolveFirstAffiliateTHORName(ctx, keeper, tx.Memo); ok {
-					skip := false
-					if affColAddr, err := keeper.GetModuleAddress(AffiliateCollectorName); err == nil && destination.Equals(affColAddr) {
-						skip = true
+			} else {
+				liqFeeCoin := common.NewCoin(common.RuneAsset(), swapEvt.LiquidityFeeInRune)
+				targetModule := ReserveName
+				if pool.Asset.IsTCY() {
+					targetModule = TCYClaimingName
+				}
+				if err := mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, targetModule, common.NewCoins(liqFeeCoin)); err != nil {
+					ctx.Logger().Error("fail to move liquidity fee RUNE during swap", "module", targetModule, "error", err)
+					return cosmos.ZeroUint(), input, evt, err
+				}
+			}
+
+			// TCY liquidity fees are routed to claiming rather than the network's
+			// normal fee accounting and REVSHARE paths.
+			if !pool.Asset.IsTCY() {
+				if executionMode == mempoolSwapExecutionNormal {
+					if err := keeper.AddToLiquidityFees(ctx, pool.Asset, swapEvt.LiquidityFeeInRune); err != nil {
+						return cosmos.ZeroUint(), input, evt, fmt.Errorf("fail to add to liquidity fees: %w", err)
 					}
-					if !skip && target.Equals(common.RuneAsset()) {
-						if tn, tnErr := keeper.GetTHORName(ctx, attributeThorname); tnErr == nil && !tn.Owner.Empty() {
-							if destination.String() == tn.Owner.String() || destination.Equals(tn.GetAlias(common.THORChain)) {
-								skip = true
-							}
+				}
+				if attributeThorname, ok := resolveAffiliateLiquidityFeeThorname(ctx, keeper, tx, target, destination); ok {
+					switch executionMode {
+					case mempoolSwapExecutionSpeculative:
+						if err := captureMempoolSwapAffiliateEffect(ctx, mgr, attributeThorname, swapEvt.LiquidityFeeInRune); err != nil {
+							return cosmos.ZeroUint(), input, evt, fmt.Errorf("fail to capture affiliate liquidity fee: %w", err)
 						}
-					}
-					if !skip {
-						if identity, pending := getPendingMempoolSwapAffiliateIdentity(ctx); pending {
-							// Unlike the ordinary per-block accumulator, failure to
-							// durably journal a speculative fee must fail this cached
-							// swap attempt. Otherwise the pool mutation could commit
-							// while its irreversible REVSHARE effect was lost.
-							if err := keeper.AddPendingAffiliateLiquidityFee(
-								ctx,
-								identity.txID,
-								identity.index,
-								attributeThorname,
-								swapEvt.LiquidityFeeInRune,
-							); err != nil {
-								return cosmos.ZeroUint(), evt, fmt.Errorf("fail to journal pending affiliate liquidity fee: %w", err)
-							}
-						} else if err := keeper.AddAffiliateLiquidityFee(ctx, attributeThorname, swapEvt.LiquidityFeeInRune); err != nil {
+					case mempoolSwapExecutionNormal:
+						if err := keeper.AddAffiliateLiquidityFee(ctx, attributeThorname, swapEvt.LiquidityFeeInRune); err != nil {
 							ctx.Logger().Error("fail to attribute affiliate liquidity fee", "thorname", attributeThorname, "error", err)
-							// Preserve the existing normal-swap contract: attribution
-							// failure does not fail an otherwise healthy finalized swap.
+							// Non-fatal for normal swaps, preserving the existing contract.
 						}
 					}
 				}
 			}
 		}
 
-		// use calculated floor
-		if err := keeper.AddToSwapSlip(ctx, pool.Asset, cosmos.NewInt(int64(swapEvt.PoolSlip.Uint64()))); err != nil {
-			return cosmos.ZeroUint(), input, evt, fmt.Errorf("fail to add to swap slip: %w", err)
+		switch executionMode {
+		case mempoolSwapExecutionNormal:
+			// Use calculated floor.
+			if err := keeper.AddToSwapSlip(ctx, pool.Asset, cosmos.NewInt(int64(swapEvt.PoolSlip.Uint64()))); err != nil {
+				return cosmos.ZeroUint(), input, evt, fmt.Errorf("fail to add to swap slip: %w", err)
+			}
+		case mempoolSwapExecutionSpeculative:
+			if err := captureMempoolSwapPoolEffect(
+				ctx,
+				mgr,
+				pool.Asset,
+				pendingLiquidityFee,
+				swapEvt.PoolSlip,
+				pendingReserveRune,
+				pendingTCYRune,
+			); err != nil {
+				return cosmos.ZeroUint(), input, evt, fmt.Errorf("fail to capture speculative pool effects: %w", err)
+			}
 		}
 	}
 
 	ctx.Logger().Info("post swap", "pool", pool.Asset, "rune", pool.BalanceRune, "asset", pool.BalanceAsset, "lp units", pool.LPUnits, "synth units", pool.SynthUnits, "emit asset", emitAssets)
+
+	if executionMode == mempoolSwapExecutionSpeculative {
+		if err := captureMempoolSwapPoolBalanceEffect(
+			ctx,
+			mgr,
+			pool.Asset,
+			poolBalanceRuneBefore,
+			pool.BalanceRune,
+			poolBalanceAssetBefore,
+			pool.BalanceAsset,
+		); err != nil {
+			return cosmos.ZeroUint(), input, evt, fmt.Errorf("fail to capture speculative pool balance effect: %w", err)
+		}
+	}
 
 	// Even for a Derived Asset pool, set the pool so the txout manager's GetFee for toi.Coin.Asset uses updated balances.
 	if err := keeper.SetPool(ctx, pool); err != nil {
@@ -563,26 +681,40 @@ func (s *SwapperImpl) swapOne(ctx cosmos.Context,
 		}
 	}
 
-	// apply swapper clout
-	availableClout := swapEvt.LiquidityFeeInRune
-	for i, addr := range []common.Address{tx.FromAddress, destination} {
-		if addr.IsEmpty() {
-			ctx.Logger().Error("dev error: address is empty for clout calculation")
-			continue
-		}
-		clout, err := keeper.GetSwapperClout(ctx, addr)
-		if err != nil {
-			ctx.Logger().Error("fail to get swapper clout destination address", "error", err)
-			continue
-		}
-		if i == 0 {
-			clout.Score = clout.Score.Add(availableClout.QuoUint64(2))
-			availableClout = common.SafeSub(availableClout, availableClout.QuoUint64(2))
-		} else {
-			clout.Score = clout.Score.Add(availableClout)
-		}
-		if err := keeper.SetSwapperClout(ctx, clout); err != nil {
-			ctx.Logger().Error("fail to save swapper clout", "error", err)
+	// Apply or journal swapper clout. Rollback-internal swaps never create
+	// reputation for the synthetic reverse transaction.
+	if executionMode != mempoolSwapExecutionRollback {
+		availableClout := swapEvt.LiquidityFeeInRune
+		for i, addr := range []common.Address{tx.FromAddress, destination} {
+			if addr.IsEmpty() {
+				ctx.Logger().Error("dev error: address is empty for clout calculation")
+				continue
+			}
+			if executionMode == mempoolSwapExecutionSpeculative {
+				score := availableClout
+				if i == 0 {
+					score = availableClout.QuoUint64(2)
+					availableClout = common.SafeSub(availableClout, score)
+				}
+				if err := captureMempoolSwapCloutEffect(ctx, mgr, addr, score); err != nil {
+					return cosmos.ZeroUint(), input, evt, fmt.Errorf("fail to capture speculative swapper clout: %w", err)
+				}
+				continue
+			}
+			clout, err := keeper.GetSwapperClout(ctx, addr)
+			if err != nil {
+				ctx.Logger().Error("fail to get swapper clout destination address", "error", err)
+				continue
+			}
+			score := availableClout
+			if i == 0 {
+				score = availableClout.QuoUint64(2)
+				availableClout = common.SafeSub(availableClout, score)
+			}
+			clout.Score = clout.Score.Add(score)
+			if err := keeper.SetSwapperClout(ctx, clout); err != nil {
+				ctx.Logger().Error("fail to save swapper clout", "error", err)
+			}
 		}
 	}
 

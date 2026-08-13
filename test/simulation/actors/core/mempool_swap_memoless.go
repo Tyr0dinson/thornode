@@ -23,6 +23,7 @@ const (
 	mempoolMemolessSetupDollarsPerRune int64 = common.One
 	mempoolMemolessSetupCapTOR         int64 = 100_000_000_000_000
 	mempoolMemolessSetupPoolCapBPS     int64 = 0
+	mempoolMemolessSetupMaxCount       int64 = 20
 	mempoolMemolessSetupAdvQueue       int64 = 1
 
 	mempoolMemolessPreFinalitySamples = 3
@@ -38,6 +39,7 @@ var mempoolMemolessMimirSettings = []mempoolMemolessMimirSetting{
 	{key: "DollarsPerRune", enabledValue: mempoolMemolessSetupDollarsPerRune, fallback: 0},
 	{key: constants.MempoolSwapCapTOR.String(), enabledValue: mempoolMemolessSetupCapTOR, fallback: 0},
 	{key: constants.MempoolSwapPoolCapBPS.String(), enabledValue: mempoolMemolessSetupPoolCapBPS, fallback: 50},
+	{key: constants.MempoolSwapMaxCount.String(), enabledValue: mempoolMemolessSetupMaxCount, fallback: 1000},
 	// Mocknet sets this operational Mimir to one through its environment when no
 	// on-chain value exists, so one is also the correct absent-key fallback.
 	{key: constants.EnableAdvSwapQueue.String(), enabledValue: mempoolMemolessSetupAdvQueue, fallback: 1},

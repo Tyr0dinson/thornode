@@ -157,16 +157,15 @@ endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
 asserts:
   - .balance_asset|tonumber < ${ETH_ASSET_DEPTH}
 ---
-# The staged item is now nine blocks old, but height 17 is not a signing-period
-# boundary. Recovery must therefore leave it untouched for this block.
+# The lifecycle record is not due until height 17. Verify that the staged
+# outbound and TOR reservation are still present one block before that height.
 type: create-blocks
-count: 9
+count: 8
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/lastblock
 asserts:
-  - .[0].thorchain == 17
-  - .[0].thorchain % 3 == 2
+  - .[0].thorchain == 16
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/staged
@@ -180,16 +179,17 @@ endpoint: http://localhost:1317/thorchain/network
 asserts:
   - .mempool_swap_usage_tor|tonumber > 0
 ---
-# Height 18 is the next signing-period boundary. LackSigning must atomically
-# unwind the speculative swap and release all associated state there.
+# The durable timeout index is checked every block. Height 17 is the exact due
+# height (staged height 8 plus three signing periods) and is intentionally not a
+# signing-period boundary. Recovery must still atomically unwind the swap there.
 type: create-blocks
 count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/lastblock
 asserts:
-  - .[0].thorchain == 18
-  - .[0].thorchain % 3 == 0
+  - .[0].thorchain == 17
+  - .[0].thorchain % 3 == 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/staged
@@ -228,12 +228,12 @@ endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
 asserts:
   - .balance_asset == "${ETH_ASSET_DEPTH}"
 ---
-# Verify that recovery occurred on the boundary itself and used the timeout path.
+# Verify that recovery occurred at the exact indexed due height and used the timeout path.
 type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
   - '[.end_block_events[]|select(.type == "mempool_swap_reverted" and .tx_id == "{{ observe_txid 1 }}")]|length == 1'
-  - .end_block_events[]|select(.type == "mempool_swap_reverted")|.block_height == "18"
-  - .end_block_events[]|select(.type == "mempool_swap_reverted")|.source_asset == "BTC.BTC"
-  - .end_block_events[]|select(.type == "mempool_swap_reverted")|.source_amount == "100000000"
+  - .end_block_events[]|select(.type == "mempool_swap_reverted" and .tx_id == "{{ observe_txid 1 }}")|.block_height == "17"
+  - .end_block_events[]|select(.type == "mempool_swap_reverted" and .tx_id == "{{ observe_txid 1 }}")|.source_asset == "BTC.BTC"
+  - .end_block_events[]|select(.type == "mempool_swap_reverted" and .tx_id == "{{ observe_txid 1 }}")|.source_amount == "100000000"
   - '[.end_block_events[]|select(.type == "security" and .msg == "mempool swap rolled back")]|length == 1'

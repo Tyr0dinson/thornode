@@ -146,6 +146,57 @@ func (s *NetworkManagerTestSuite) TestTriggerKeygenIgnoresXMRMonovaultMembership
 	c.Assert(keygenBlock.Keygens[0].Type, Equals, AsgardKeygen)
 }
 
+func (s *NetworkManagerTestSuite) TestTriggerKeygenSchedulesInitVaultMempoolRecovery(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	initVault := NewVault(
+		ctx.BlockHeight(),
+		InitVault,
+		AsgardVault,
+		GetRandomPubKey(),
+		common.Chains{common.BTCChain}.Strings(),
+		nil,
+	)
+	c.Assert(mgr.Keeper().SetVault(ctx, initVault), IsNil)
+
+	txID := GetRandomTxHash()
+	voter := NewObservedTxVoter(txID, ObservedTxs{})
+	voter.Tx = ObservedTx{Tx: common.Tx{
+		ID:    txID,
+		Chain: common.BTCChain,
+		Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.OneUint())},
+	}}
+	voter.UnfinalizedHeight = ctx.BlockHeight()
+	voter.MempoolSwapTOR = cosmos.OneUint()
+	seedMempoolSwapRecoveryRecord(
+		c,
+		ctx,
+		mgr,
+		voter,
+		initVault.PubKey,
+		common.RuneAsset(),
+		GetRandomTHORAddress(),
+		cosmos.ZeroUint(),
+		ctx.BlockHeight()+100,
+		types.MempoolSwapStatus_RESERVED,
+	)
+	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, cosmos.OneUint())
+
+	nas := NodeAccounts{GetRandomValidatorNode(NodeActive), GetRandomValidatorNode(NodeActive)}
+	c.Assert(networkMgr.TriggerKeygen(ctx, nas), IsNil)
+
+	updated, err := mgr.Keeper().GetVault(ctx, initVault.PubKey)
+	c.Assert(err, IsNil)
+	c.Check(updated.Status, Equals, InactiveVault)
+	jobs, err := mgr.Keeper().GetMempoolSwapVaultRecoveries(ctx, 10)
+	c.Assert(err, IsNil)
+	c.Assert(jobs, HasLen, 1)
+	c.Check(jobs[0].Equals(initVault.PubKey), Equals, true)
+	c.Check(mgr.Keeper().HasMempoolSwap(ctx, txID, 0), Equals, true,
+		Commentf("the keygen handler must schedule bounded work, not roll back inline"))
+}
+
 func (s *NetworkManagerTestSuite) TestTriggerXMRKeygenIgnoresRegularVaultMembershipCollision(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
@@ -1705,6 +1756,10 @@ func (*NetworkManagerTestSuite) TestMigrateFundsRollsBackUnfinalizedMempoolSwaps
 	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 	mgr.Keeper().SetMempoolSwapUsageTOR(ctx, voter.MempoolSwapTOR)
 	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, stagedOutbound, ctx.BlockHeight()+10), IsNil)
+	voter = seedMempoolSwapRecoveryRecord(
+		c, ctx, mgr, voter, retiringVault.PubKey, common.ETHAsset, stagedOutbound.ToAddress,
+		stagedOutbound.Coin.Amount, ctx.BlockHeight()+100, types.MempoolSwapStatus_STAGED,
+	)
 
 	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
 	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
@@ -1712,10 +1767,18 @@ func (*NetworkManagerTestSuite) TestMigrateFundsRollsBackUnfinalizedMempoolSwaps
 	updatedVault, err := mgr.Keeper().GetVault(ctx, retiringVault.PubKey)
 	c.Assert(err, IsNil)
 	c.Check(updatedVault.Status, Equals, InactiveVault)
+	jobs, err := mgr.Keeper().GetMempoolSwapVaultRecoveries(ctx, 10)
+	c.Assert(err, IsNil)
+	c.Assert(jobs, HasLen, 1, Commentf("vault transition should persist recovery for the bounded worker"))
+	c.Check(mgr.Keeper().HasStagedOutbound(ctx, inTxID), Equals, true,
+		Commentf("vault migration must not execute rollback inline"))
+
+	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+	c.Assert(slasher.recoverMempoolSwapVaultJobs(ctx, mgr), IsNil)
 
 	stagedItems, err := mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
 	c.Assert(err, IsNil)
-	c.Check(stagedItems, HasLen, 0, Commentf("inactive-vault transition should immediately clear staged mempool outbounds"))
+	c.Check(stagedItems, HasLen, 0, Commentf("bounded inactive-vault worker should clear staged mempool outbounds"))
 
 	updatedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
 	c.Assert(err, IsNil)

@@ -87,9 +87,9 @@ type StableReserveManager interface {
 // GasManager define all the methods required to manage gas
 type GasManager interface {
 	BeginBlock()
-	EndBlock(ctx cosmos.Context, keeper keeper.Keeper, eventManager EventManager)
+	EndBlock(ctx cosmos.Context, mgr Manager)
 	AddGasAsset(outAsset common.Asset, gas common.Gas, increaseTxCount bool)
-	ProcessGas(ctx cosmos.Context, keeper keeper.Keeper)
+	ProcessGas(ctx cosmos.Context, mgr Manager)
 	GetGas() common.Gas
 	GetAssetOutboundFee(ctx cosmos.Context, asset common.Asset, inRune bool) (cosmos.Uint, error)
 	GetGasDetails(ctx cosmos.Context, chain common.Chain) (common.Coin, int64, error)
@@ -273,6 +273,8 @@ type VolumeManager interface {
 
 type DynamicFeeManager interface {
 	CreditSwap(ctx cosmos.Context, affiliates []string, affiliateBps []cosmos.Uint, sourceAsset, targetAsset common.Asset, volumeTor, feesTor cosmos.Uint)
+	ResolveSwapCredit(ctx cosmos.Context, affiliates []string, affiliateBps []cosmos.Uint, sourceAsset, targetAsset common.Asset) (string, common.Asset, common.Asset, bool)
+	CreditSwapResolved(ctx cosmos.Context, thorname string, pairAssetA, pairAssetB common.Asset, volumeTor, feesTor cosmos.Uint) error
 	GetDynamicBps(ctx cosmos.Context, affiliates []string, affiliateBps []cosmos.Uint, sourceAsset, targetAsset common.Asset) uint64
 	EndBlock(ctx cosmos.Context) error
 }

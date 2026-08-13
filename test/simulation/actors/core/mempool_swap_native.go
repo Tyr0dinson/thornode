@@ -68,6 +68,7 @@ var nativeMempoolMimirs = []nativeMempoolMimir{
 	{key: "DollarsPerRune", setupValue: 100_000_000, mocknetValue: 0},
 	{key: constants.MempoolSwapCapTOR.String(), setupValue: 100_000_000_000_000, mocknetValue: 0},
 	{key: constants.MempoolSwapPoolCapBPS.String(), setupValue: 0, mocknetValue: 50},
+	{key: constants.MempoolSwapMaxCount.String(), setupValue: 20, mocknetValue: 1_000},
 	{key: constants.EnableAdvSwapQueue.String(), setupValue: 1, mocknetValue: 1},
 	{key: constants.MaxSynthPerPoolDepth.String(), setupValue: 6_000, mocknetValue: 3_500},
 	{key: constants.SynthSlipMinBps.String(), setupValue: 0, mocknetValue: 0},

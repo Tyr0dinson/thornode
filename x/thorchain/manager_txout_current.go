@@ -351,7 +351,8 @@ func (tos *TxOutStorage) getAffiliateFeeAdjustedTxOutItem(ctx cosmos.Context, mg
 
 // shouldStageForMempoolSwap reports whether an outbound belongs to an inbound
 // that has only been observed in the mempool so far. Only inbounds with a live
-// mempool TOR reservation stage here.
+// canonical lifecycle owner stage here. The voter marker remains a
+// compatibility fallback, but cannot be the only source of ownership.
 func (tos *TxOutStorage) shouldStageForMempoolSwap(ctx cosmos.Context, item TxOutItem) bool {
 	inHash := item.InHash
 	if inHash.IsEmpty() || inHash.Equals(common.BlankTxID) {
@@ -365,7 +366,7 @@ func (tos *TxOutStorage) shouldStageForMempoolSwap(ctx cosmos.Context, item TxOu
 	if voter.IsEmpty() {
 		return false
 	}
-	if !voter.HasReservedMempoolSwapTOR() {
+	if !tos.keeper.HasMempoolSwap(ctx, inHash, 0) && !voter.HasReservedMempoolSwapTOR() {
 		return false
 	}
 	if voter.FinalisedHeight != 0 {

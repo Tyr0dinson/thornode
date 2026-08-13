@@ -223,6 +223,9 @@ const (
 
 	LUVIOverhangGuard
 	LUVIGuard
+
+	// Appended to preserve the numeric values of every existing constant.
+	MempoolSwapMaxCount
 )
 
 // ConstantValues define methods used to get constant values

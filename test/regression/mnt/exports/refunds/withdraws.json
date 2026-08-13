@@ -333,6 +333,7 @@
           "units": "734693877"
         }
       ],
+      "mempool_swaps": [],
       "mimirs": [],
       "network": {
         "LPIncomeSplit": "9602",
@@ -382,7 +383,6 @@
           "asset": "ETH.ETH"
         }
       ],
-      "pending_affiliate_liquidity_fees": [],
       "pools": [
         {
           "LP_units": "133333333333",

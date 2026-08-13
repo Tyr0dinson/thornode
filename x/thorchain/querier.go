@@ -2798,7 +2798,10 @@ func checkPending(ctx cosmos.Context, keeper keeper.Keeper, voter ObservedTxVote
 		return
 	}
 
-	pending = keeper.HasSwapQueueItem(ctx, voter.TxID, 0) || keeper.HasAdvSwapQueueItem(ctx, voter.TxID, 0) || keeper.HasStagedOutbound(ctx, voter.TxID)
+	pending = keeper.HasSwapQueueItem(ctx, voter.TxID, 0) ||
+		keeper.HasAdvSwapQueueItem(ctx, voter.TxID, 0) ||
+		keeper.HasStagedOutbound(ctx, voter.TxID) ||
+		keeper.HasMempoolSwap(ctx, voter.TxID, 0)
 
 	// Only look for streaming information when a swap is pending.
 	if pending {

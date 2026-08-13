@@ -7,24 +7,29 @@ import (
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 )
 
-// MempoolSwaps runs 14 scenarios in this fixed fail-fast order:
+// MempoolSwaps runs this fixed fail-fast order:
 //
-// base (7):
+// base (10):
 //   - happy-market - speculatively stages a regular `POL.POL -> BTC.BTC`
 //     market swap and releases it after finality.
-//   - affiliate-revshare-finality - with ordinary affiliate bps set to zero,
-//     leaves the THORName REVSHARE collector unchanged during speculation and
-//     applies the configured share only after finality.
+//   - affiliate-revshare-finality - keeps affiliate REVSHARE pending while
+//     speculative and commits it only after inbound finality.
 //   - stream-settle-before-finality - completes and stages a short three-part
 //     `POL.POL -> BTC.BTC` stream before finality.
 //   - stream-finality-before-settlement - keeps a slower six-part
 //     `POL.POL -> BTC.BTC` stream queued across finality and finishes it afterward.
+//   - pool-serialization - makes a finalized `AVAX.AVAX -> BTC.BTC` swap wait
+//     without attempts while a speculative swap owns the BTC pool.
+//   - max-count-fallback - fills the lifecycle count with one speculative swap
+//     and routes a second swap through ordinary finalized processing.
 //   - tor-cap-fallback - uses a low network TOR cap to exclude pre-finality
 //     speculation, then completes the swap after finality.
 //   - pool-cap-fallback - uses a low per-pool TOR cap to exclude pre-finality
 //     speculation, then completes the swap after finality.
-//   - timeout-rollback - rolls a staged swap back at v1's recovery cadence
+//   - timeout-rollback - rolls a staged swap back at its exact recovery height
 //     before a later valid final observation completes normally.
+//   - errata-rollback - rolls a speculative swap back through validator errata
+//     quorum and proves finality cannot revive the reverted swap.
 //
 // native (6):
 //   - native-rune-nonstream - excludes a plain `POL.POL -> THOR.RUNE` swap

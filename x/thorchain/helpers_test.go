@@ -3108,6 +3108,116 @@ func (s *HelperSuite) TestCheckMempoolSwapCapacityPoolDepthBPS(c *C) {
 	c.Check(hasCapacity, Equals, true, Commentf("with BPS disabled, global cap should apply (swap fits)"))
 }
 
+func (s *HelperSuite) TestCheckMempoolSwapCapacityUsesFinalizedPoolView(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// Fix the RUNE price at $1 so this test isolates source-pool valuation and
+	// the pool-depth cap from canonical anchor-price behavior.
+	k.SetMimir(ctx, "DollarsPerRune", common.One)
+	k.SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 10_000*common.One)
+	k.SetMimir(ctx, constants.MempoolSwapPoolCapBPS.String(), 1_000) // 10%
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceRune = cosmos.NewUint(1_000 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(10 * common.One)
+	pool.Decimals = 8
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	amount := cosmos.NewUint(9 * common.One / 10) // 0.9 BTC
+	baselineTOR, baselineCapacity, err := checkMempoolSwapCapacity(
+		ctx, k, common.BTCAsset, common.RuneAsset(), amount,
+	)
+	c.Assert(err, IsNil)
+	c.Check(baselineTOR.Equal(cosmos.NewUint(90*common.One)), Equals, true)
+	c.Check(baselineCapacity, Equals, true)
+	baselineCap, err := poolDepthMempoolSwapCap(
+		ctx, k, cosmos.NewUint(10_000*common.One), common.BTCAsset, common.RuneAsset(),
+	)
+	c.Assert(err, IsNil)
+	c.Check(baselineCap.Equal(cosmos.NewUint(100*common.One)), Equals, true)
+
+	// Model the BTC target leg of an earlier speculative ETH->BTC swap already
+	// applied to the live pool: +200 RUNE and -2 BTC. The external-L1 source is
+	// a required lifecycle invariant; only the target-pool effect matters to
+	// this capacity test. Without finality isolation this would value the later
+	// 0.9 BTC admission at $135 and raise its depth cap to $120.
+	pool.BalanceRune = cosmos.NewUint(1_200 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(8 * common.One)
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	destination := GetRandomBTCAddress()
+	tx := common.NewTx(
+		GetRandomTxHash(),
+		GetRandomETHAddress(),
+		GetRandomETHAddress(),
+		common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(200*common.One))},
+		common.Gas{common.NewCoin(common.ETHAsset, cosmos.OneUint())},
+		"=:BTC.BTC:"+destination.String(),
+	)
+	tx.Chain = common.ETHChain
+	msg := types.NewMsgSwap(
+		tx,
+		common.BTCAsset,
+		destination,
+		cosmos.ZeroUint(),
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		"", "", nil,
+		types.SwapType_market,
+		1, 0,
+		types.SwapVersion_v2,
+		GetRandomBech32Addr(),
+	)
+	effect := newMempoolSwapPoolEffect(common.BTCAsset)
+	effect.BalanceRuneIncrease = cosmos.NewUint(200 * common.One)
+	effect.BalanceAssetDecrease = cosmos.NewUint(2 * common.One)
+	record := types.MempoolSwap{
+		TxId:               tx.ID,
+		VaultPubKey:        GetRandomPubKey(),
+		ReservedTor:        cosmos.OneUint(),
+		AdmittedHeight:     ctx.BlockHeight(),
+		UpdatedHeight:      ctx.BlockHeight(),
+		NextRecoveryHeight: ctx.BlockHeight() + 100,
+		Status:             types.MempoolSwapStatus_EXECUTING,
+		LatestSwap:         *msg,
+		PendingEffects: types.MempoolSwapPendingEffects{
+			Pools: []types.MempoolSwapPoolEffect{effect},
+		},
+	}
+	c.Assert(k.SetMempoolSwap(ctx, record), IsNil)
+
+	activeTOR, activeCapacity, err := checkMempoolSwapCapacity(
+		ctx, k, common.BTCAsset, common.RuneAsset(), amount,
+	)
+	c.Assert(err, IsNil)
+	activeCap, err := poolDepthMempoolSwapCap(
+		ctx, k, cosmos.NewUint(10_000*common.One), common.BTCAsset, common.RuneAsset(),
+	)
+	c.Assert(err, IsNil)
+	c.Check(activeTOR.Equal(baselineTOR), Equals, true)
+	c.Check(activeCap.Equal(baselineCap), Equals, true)
+	c.Check(activeCapacity, Equals, baselineCapacity)
+
+	// Once finalized, the live pool is authoritative for both the amount
+	// reserved in TOR and the per-pool admission cap.
+	record.Status = types.MempoolSwapStatus_FINALIZED
+	record.ReservedTor = cosmos.ZeroUint()
+	record.UpdatedHeight++
+	c.Assert(k.SetMempoolSwap(ctx, record), IsNil)
+	finalizedTOR, finalizedCapacity, err := checkMempoolSwapCapacity(
+		ctx, k, common.BTCAsset, common.RuneAsset(), amount,
+	)
+	c.Assert(err, IsNil)
+	finalizedCap, err := poolDepthMempoolSwapCap(
+		ctx, k, cosmos.NewUint(10_000*common.One), common.BTCAsset, common.RuneAsset(),
+	)
+	c.Assert(err, IsNil)
+	c.Check(finalizedTOR.Equal(cosmos.NewUint(135*common.One)), Equals, true)
+	c.Check(finalizedCap.Equal(cosmos.NewUint(120*common.One)), Equals, true)
+	c.Check(finalizedCapacity, Equals, false)
+}
+
 func (s *HelperSuite) TestCheckMempoolSwapCapacityErrorCases(c *C) {
 	ctx, k := setupKeeperForTest(c)
 

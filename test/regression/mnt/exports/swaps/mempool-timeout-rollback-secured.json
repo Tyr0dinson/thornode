@@ -138,7 +138,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "200028435769",
+              "amount": "200027701610",
               "denom": "rune"
             }
           ]
@@ -147,7 +147,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "34999974265350",
+              "amount": "34999983144075",
               "denom": "rune"
             }
           ]
@@ -174,7 +174,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "4999997298881",
+              "amount": "4999989154315",
               "denom": "rune"
             }
           ]
@@ -245,6 +245,7 @@
           "units": "100000000000"
         }
       ],
+      "mempool_swaps": [],
       "mimirs": [
         {
           "key": "DOLLARSPERRUNE",
@@ -272,8 +273,8 @@
       "network": {
         "LPIncomeSplit": "9600",
         "NodeIncomeSplit": "400",
-        "bond_reward_rune": "9298881",
-        "total_bond_units": "34"
+        "bond_reward_rune": "1154315",
+        "total_bond_units": "26"
       },
       "network_fees": [
         {
@@ -336,13 +337,12 @@
       "observed_tx_out_voters": null,
       "outbound_fee_spent_rune": [],
       "outbound_fee_withheld_rune": [],
-      "pending_affiliate_liquidity_fees": [],
       "pools": [
         {
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
           "balance_asset": "100000000",
-          "balance_rune": "100015650553",
+          "balance_rune": "100013850805",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -353,7 +353,7 @@
           "LP_units": "100000000000",
           "asset": "ETH.ETH",
           "balance_asset": "1000000000",
-          "balance_rune": "100012785216",
+          "balance_rune": "100013850805",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -374,20 +374,7 @@
       "staged_outbounds": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
-      "swapper_clout": [
-        {
-          "address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
-          "reclaimed": "0",
-          "score": "97372984",
-          "spent": "0"
-        },
-        {
-          "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
-          "reclaimed": "0",
-          "score": "97372998",
-          "spent": "0"
-        }
-      ],
+      "swapper_clout": [],
       "tcy_claimers": [],
       "tcy_stakers": [],
       "trade_accounts": [],
@@ -477,5 +464,5 @@
       }
     }
   },
-  "initial_height": 35
+  "initial_height": 27
 }

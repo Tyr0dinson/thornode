@@ -322,7 +322,7 @@ func (s *StableReserveMgr) isTORAnchor(ctx cosmos.Context, asset common.Asset) b
 }
 
 func (s *StableReserveMgr) stableReservePoolPrice(ctx cosmos.Context, asset common.Asset) (string, bool) {
-	pool, err := s.keeper.GetPool(ctx, asset.GetLayer1Asset())
+	pool, _, err := newFinalityPoolView(s.keeper).getPool(ctx, asset.GetLayer1Asset())
 	if err != nil || !pool.IsAvailable() || pool.BalanceAsset.IsZero() || pool.BalanceRune.IsZero() {
 		return "", false
 	}
@@ -358,12 +358,13 @@ func (s *StableReserveMgr) stableReserveDollarsPerRune(ctx cosmos.Context, asset
 	}
 
 	prices := make([]cosmos.Uint, 0, len(anchors))
+	poolView := newFinalityPoolView(s.keeper)
 	for _, anchor := range anchors {
 		anchor = anchor.GetLayer1Asset()
 		if anchor.Equals(l1) || (!ignoreHalt && s.keeper.IsChainTradingHalted(ctx, anchor.Chain)) {
 			continue
 		}
-		pool, err := s.keeper.GetPool(ctx, anchor)
+		pool, _, err := poolView.getPool(ctx, anchor)
 		if err != nil {
 			ctx.Logger().Error("fail to get stable reserve usd pool", "asset", anchor.String(), "error", err)
 			continue

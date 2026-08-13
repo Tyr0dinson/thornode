@@ -436,7 +436,7 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 	start = telemetry.Now()
 	luviCtx, luviStep = beginLuviScope(ctx, am.mgr.Keeper(), "endblock/gas", "", false)
 	_ = runTracedManager(tracer, managerGas, operationEndBlock, func() error {
-		am.mgr.GasMgr().EndBlock(luviCtx, am.mgr.Keeper(), am.mgr.EventMgr())
+		am.mgr.GasMgr().EndBlock(luviCtx, am.mgr)
 		return nil
 	})
 	luviStep.end(luviCtx, am.mgr)

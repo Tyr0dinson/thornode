@@ -1,0 +1,224 @@
+syntax = "proto3";
+package types;
+
+option go_package = "gitlab.com/thorchain/thornode/v3/x/thorchain/types";
+
+import "common/common.proto";
+import "gogoproto/gogo.proto";
+import "types/msg_swap.proto";
+import "types/type_tx_out.proto";
+
+// MempoolSwapStatus describes the durable lifecycle of a swap which was
+// allowed to execute before its inbound reached finality.
+enum MempoolSwapStatus {
+  UNKNOWN = 0;
+  RESERVED = 1;
+  EXECUTING = 2;
+  STAGED = 3;
+  SETTLED = 4;
+  ROLLBACK_PENDING = 5;
+  // The inbound finalized while advanced-queue work remained. TOR capacity is
+  // released, while deferred effects and the rollback snapshot stay on the
+  // reorg/errata tombstone until terminal queue settlement.
+  FINALIZED = 6;
+}
+
+// MempoolSwapPoolEffect accumulates accounting deltas for one pool. The pool
+// balances themselves are changed by speculative swap math. The balance
+// increase/decrease pairs retain that already-applied mutation as a finality
+// overlay, allowing irreversible end-block decisions to use finalized depths.
+// The remaining ancillary effects are held until finality so a rollback can
+// discard them exactly once.
+message MempoolSwapPoolEffect {
+  common.Asset asset = 1 [
+    (gogoproto.customtype) = "gitlab.com/thorchain/thornode/v3/common.Asset",
+    (gogoproto.nullable) = false
+  ];
+  string liquidity_fee_rune = 2 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  string swap_slip = 3 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  string volume_rune = 4 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  string volume_asset = 5 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  string reserve_rune = 6 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  string tcy_rune = 7 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  string balance_rune_increase = 8 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  string balance_rune_decrease = 9 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  string balance_asset_increase = 10 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  string balance_asset_decrease = 11 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+}
+
+// MempoolSwapPoolBalanceOverlay is the per-pool aggregate of every active
+// lifecycle balance effect. It is maintained atomically with canonical
+// lifecycle writes, so consensus-critical pool readers need one bounded key
+// lookup instead of scanning the lifecycle collection in Begin/EndBlock.
+message MempoolSwapPoolBalanceOverlay {
+  common.Asset asset = 1 [
+    (gogoproto.customtype) = "gitlab.com/thorchain/thornode/v3/common.Asset",
+    (gogoproto.nullable) = false
+  ];
+  string balance_rune_increase = 2 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  string balance_rune_decrease = 3 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  string balance_asset_increase = 4 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  string balance_asset_decrease = 5 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+}
+
+// MempoolSwapSupplyEffect retains an already-applied bank-denom supply
+// mutation made by speculative synth or derived-asset execution. The gross
+// increase/decrease pair is intentionally not netted: rollback and finality
+// transitions must move the exact lifecycle contribution in and out of the
+// aggregate without inferring direction from current supply.
+message MempoolSwapSupplyEffect {
+  common.Asset asset = 1 [
+    (gogoproto.customtype) = "gitlab.com/thorchain/thornode/v3/common.Asset",
+    (gogoproto.nullable) = false
+  ];
+  string supply_increase = 2 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  string supply_decrease = 3 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+}
+
+// MempoolSwapNativeSupplyOverlay is the O(1) per-bank-denom aggregate of
+// active lifecycle supply effects. It is a derived index rebuilt from
+// canonical records at genesis and verified by the lifecycle invariant.
+message MempoolSwapNativeSupplyOverlay {
+  common.Asset asset = 1 [
+    (gogoproto.customtype) = "gitlab.com/thorchain/thornode/v3/common.Asset",
+    (gogoproto.nullable) = false
+  ];
+  string supply_increase = 2 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  string supply_decrease = 3 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+}
+
+message MempoolSwapCloutEffect {
+  string address = 1 [ (gogoproto.casttype) =
+                           "gitlab.com/thorchain/thornode/v3/common.Address" ];
+  string score = 2 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+}
+
+message MempoolSwapAffiliateEffect {
+  string thorname = 1;
+  string fee_rune = 2 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+}
+
+message MempoolSwapDynamicFeeEffect {
+  string thorname = 1;
+  common.Asset pair_asset_a = 2 [
+    (gogoproto.customtype) = "gitlab.com/thorchain/thornode/v3/common.Asset",
+    (gogoproto.nullable) = false
+  ];
+  common.Asset pair_asset_b = 3 [
+    (gogoproto.customtype) = "gitlab.com/thorchain/thornode/v3/common.Asset",
+    (gogoproto.nullable) = false
+  ];
+  string volume_tor = 4 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  string fees_tor = 5 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+}
+
+// MempoolSwapCleanupEffect defers failed-outbound/refund disposal until the
+// inbound is final. The stable cleanup key makes the eventual mutation
+// idempotent across completion retries.
+message MempoolSwapCleanupEffect {
+  TxOutItem item = 1 [ (gogoproto.nullable) = false ];
+  string burn_reason = 2;
+  string cleanup_key = 3;
+}
+
+message MempoolSwapPendingEffects {
+  repeated MempoolSwapPoolEffect pools = 1 [ (gogoproto.nullable) = false ];
+  repeated MempoolSwapCloutEffect clout = 2 [ (gogoproto.nullable) = false ];
+  repeated MempoolSwapAffiliateEffect affiliates = 3
+      [ (gogoproto.nullable) = false ];
+  repeated MempoolSwapDynamicFeeEffect dynamic_fees = 4
+      [ (gogoproto.nullable) = false ];
+  repeated MempoolSwapCleanupEffect cleanups = 5
+      [ (gogoproto.nullable) = false ];
+  repeated MempoolSwapSupplyEffect supplies = 6
+      [ (gogoproto.nullable) = false ];
+}
+
+// MempoolSwap is the canonical discoverability record for a speculative swap.
+// It outlives queue and staged-outbound entries; a finalized stream retains a
+// zero-TOR tombstone until terminal settlement applies its deferred effects.
+message MempoolSwap {
+  string tx_id = 1
+      [ (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID" ];
+  uint32 index = 2;
+  string vault_pub_key = 3
+      [ (gogoproto.casttype) =
+            "gitlab.com/thorchain/thornode/v3/common.PubKey" ];
+  string reserved_tor = 4 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  int64 admitted_height = 5;
+  int64 updated_height = 6;
+  int64 next_recovery_height = 7;
+  MempoolSwapStatus status = 8;
+  MsgSwap latest_swap = 9 [ (gogoproto.nullable) = false ];
+  MempoolSwapPendingEffects pending_effects = 10
+      [ (gogoproto.nullable) = false ];
+}

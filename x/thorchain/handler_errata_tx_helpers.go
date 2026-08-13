@@ -11,6 +11,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 func processErrataTxAttestation(
@@ -140,6 +141,50 @@ func processErrataTx(ctx cosmos.Context, mgr Manager, er *common.ErrataTx) (comm
 		}
 	}
 
+	// A speculative swap must stop and unwind as part of the errata decision.
+	// This also covers a finalized voter whose atomic lifecycle completion has
+	// not succeeded yet; falling through to ordinary errata there would deduct
+	// the inbound asset without reversing the speculative swap output.
+	// Run the happy path atomically with Reverted. If rollback itself fails,
+	// persist Reverted plus ROLLBACK_PENDING as a fail-closed stop marker; the
+	// bounded lifecycle recovery worker will retry without allowing another leg.
+	record, found, lifecycleErr := k.GetMempoolSwap(ctx, observedVoter.TxID, 0)
+	if lifecycleErr != nil {
+		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, fmt.Errorf("fail to get errata mempool swap lifecycle: %w", lifecycleErr)
+	}
+	if found {
+		errataCtx, commitErrata := ctx.CacheContext()
+		record.Status = types.MempoolSwapStatus_ROLLBACK_PENDING
+		record.UpdatedHeight = ctx.BlockHeight()
+		record.NextRecoveryHeight = ctx.BlockHeight()
+		if lifecycleErr = k.SetMempoolSwap(errataCtx, record); lifecycleErr != nil {
+			return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, fmt.Errorf("fail to stop errata mempool swap: %w", lifecycleErr)
+		}
+		observedVoter.SetReverted()
+		k.SetObservedTxInVoter(errataCtx, observedVoter)
+		if lifecycleErr = rollbackMempoolSwapCached(errataCtx, k, mgr, observedVoter); lifecycleErr == nil {
+			commitErrata()
+			incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "errata")})
+			return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED, nil
+		}
+
+		ctx.Logger().Error("fail to roll back errata mempool swap; scheduling retry",
+			"error", lifecycleErr,
+			"hash", observedVoter.TxID)
+		// The nested cache was discarded. Persist only the terminal stop state
+		// in the parent context, leaving every economic mutation available for
+		// a clean retry.
+		record.Status = types.MempoolSwapStatus_ROLLBACK_PENDING
+		record.UpdatedHeight = ctx.BlockHeight()
+		record.NextRecoveryHeight = ctx.BlockHeight() + 1
+		if setErr := k.SetMempoolSwap(ctx, record); setErr != nil {
+			return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, fmt.Errorf("fail to persist errata rollback retry: %w", setErr)
+		}
+		observedVoter.SetReverted()
+		k.SetObservedTxInVoter(ctx, observedVoter)
+		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED, nil
+	}
+
 	// set the observed Tx to reverted only after chain validation passes
 	observedVoter.SetReverted()
 	telemetry.IncrCounterWithLabels(
@@ -198,8 +243,16 @@ func processErrataTx(ctx cosmos.Context, mgr Manager, er *common.ErrataTx) (comm
 		}
 	}
 
+	// Ordinary errata is an irreversible pool mutation. Keep it atomic with
+	// removal of any unrelated speculative owner so the debit cannot consume
+	// balances still needed by a later lifecycle rollback.
+	errataCtx, commitErrata := ctx.CacheContext()
+	if err = preemptMempoolSwapPoolOwnerCached(errataCtx, mgr, assetCoin.Asset); err != nil {
+		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, fmt.Errorf("fail to preempt mempool swap owner for errata: %w", err)
+	}
+
 	// fetch pool from memo
-	pool, err := k.GetPool(ctx, assetCoin.Asset)
+	pool, err := k.GetPool(errataCtx, assetCoin.Asset)
 	if err != nil {
 		ctx.Logger().Error("fail to get pool for errata tx", "error", err)
 		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, err
@@ -215,7 +268,7 @@ func processErrataTx(ctx cosmos.Context, mgr Manager, er *common.ErrataTx) (comm
 	pool.BalanceRune = common.SafeSub(pool.BalanceRune, runeCoin.Amount)
 	pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, assetCoin.Amount)
 	if memo.IsType(TxAdd) {
-		lp, err := k.GetLiquidityProvider(ctx, pool.Asset, tx.FromAddress)
+		lp, err := k.GetLiquidityProvider(errataCtx, pool.Asset, tx.FromAddress)
 		if err != nil {
 			return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, fmt.Errorf("fail to get liquidity provider: %w", err)
 		}
@@ -225,10 +278,10 @@ func processErrataTx(ctx cosmos.Context, mgr Manager, er *common.ErrataTx) (comm
 		lp.Units = cosmos.ZeroUint()
 		lp.LastAddHeight = ctx.BlockHeight()
 
-		k.SetLiquidityProvider(ctx, lp)
+		k.SetLiquidityProvider(errataCtx, lp)
 	}
 
-	if err := k.SetPool(ctx, pool); err != nil {
+	if err := k.SetPool(errataCtx, pool); err != nil {
 		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, fmt.Errorf("fail to save pool: %w", err)
 	}
 
@@ -250,9 +303,10 @@ func processErrataTx(ctx cosmos.Context, mgr Manager, er *common.ErrataTx) (comm
 	}
 
 	eventErrata := NewEventErrata(er.Id, mods)
-	if err := mgr.EventMgr().EmitEvent(ctx, eventErrata); err != nil {
+	if err := mgr.EventMgr().EmitEvent(errataCtx, eventErrata); err != nil {
 		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, ErrInternal(err, "fail to emit errata event")
 	}
+	commitErrata()
 	return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED, nil
 }
 

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/btcsuite/btcutil/bech32"
+	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/cmd"
 	. "gopkg.in/check.v1"
 
@@ -234,7 +235,7 @@ func exportedAddress(g GenesisState, asset common.Asset) string {
 	return ""
 }
 
-func (GenesisTestSuite) TestGenesisStagedMempoolSwapRoundTrip(c *C) {
+func (GenesisTestSuite) TestGenesisStagedOutboundDoesNotInferMempoolReservation(c *C) {
 	SetupConfigForTest()
 
 	srcCtx, srcMgr := setupManagerForTest(c)
@@ -273,7 +274,9 @@ func (GenesisTestSuite) TestGenesisStagedMempoolSwapRoundTrip(c *C) {
 	c.Assert(restored, HasLen, 1)
 	c.Check(restored[0].StagedHeight, Equals, int64(42))
 	c.Check(restored[0].ScheduledHeight, Equals, int64(100))
-	c.Check(dstMgr.Keeper().GetMempoolSwapUsageTOR(dstCtx).Equal(reservedTOR), Equals, true)
+	c.Check(dstMgr.Keeper().GetMempoolSwapUsageTOR(dstCtx).IsZero(), Equals, true,
+		Commentf("v3.21 derives reservations only from canonical lifecycle records"))
+	c.Check(dstMgr.Keeper().GetMempoolSwapCount(dstCtx).IsZero(), Equals, true)
 
 	runeValue, cloutValue, err := dstMgr.Keeper().GetStagedOutboundValue(dstCtx)
 	c.Assert(err, IsNil)
@@ -281,82 +284,381 @@ func (GenesisTestSuite) TestGenesisStagedMempoolSwapRoundTrip(c *C) {
 	c.Check(cloutValue.Equal(cloutSpent), Equals, true)
 }
 
-func (GenesisTestSuite) TestGenesisPendingAffiliateLiquidityFeeRoundTrip(c *C) {
+func newGenesisMempoolSwap(vault common.PubKey) types.MempoolSwap {
+	tx := GetRandomTx()
+	msg := NewMsgSwap(
+		tx,
+		common.BTCAsset,
+		GetRandomBTCAddress(),
+		cosmos.ZeroUint(),
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		"", "", nil,
+		types.SwapType_market,
+		1, 0,
+		types.SwapVersion_v2,
+		GetRandomBech32Addr(),
+	)
+	msg.Index = 0
+	return types.MempoolSwap{
+		TxId:               tx.ID,
+		Index:              msg.Index,
+		VaultPubKey:        vault,
+		ReservedTor:        cosmos.NewUint(1234),
+		AdmittedHeight:     40,
+		UpdatedHeight:      42,
+		NextRecoveryHeight: 90,
+		Status:             types.MempoolSwapStatus_EXECUTING,
+		LatestSwap:         *msg,
+		PendingEffects: types.MempoolSwapPendingEffects{
+			Pools: []types.MempoolSwapPoolEffect{{
+				Asset:                common.ETHAsset,
+				LiquidityFeeRune:     cosmos.NewUint(10),
+				SwapSlip:             cosmos.NewUint(11),
+				VolumeRune:           cosmos.NewUint(12),
+				VolumeAsset:          cosmos.NewUint(13),
+				ReserveRune:          cosmos.NewUint(14),
+				TcyRune:              cosmos.NewUint(15),
+				BalanceRuneIncrease:  cosmos.NewUint(21),
+				BalanceRuneDecrease:  cosmos.NewUint(22),
+				BalanceAssetIncrease: cosmos.NewUint(23),
+				BalanceAssetDecrease: cosmos.NewUint(24),
+			}},
+			Clout: []types.MempoolSwapCloutEffect{{
+				Address: GetRandomTHORAddress(),
+				Score:   cosmos.NewUint(16),
+			}},
+			Affiliates: []types.MempoolSwapAffiliateEffect{{
+				Thorname: "affiliate",
+				FeeRune:  cosmos.NewUint(17),
+			}},
+			DynamicFees: []types.MempoolSwapDynamicFeeEffect{{
+				Thorname:   "affiliate",
+				PairAssetA: common.ETHAsset,
+				PairAssetB: common.BTCAsset,
+				VolumeTor:  cosmos.NewUint(18),
+				FeesTor:    cosmos.NewUint(19),
+			}},
+			Cleanups: []types.MempoolSwapCleanupEffect{{
+				Item: TxOutItem{
+					Chain:     common.ETHChain,
+					InHash:    tx.ID,
+					ToAddress: GetRandomETHAddress(),
+					Coin:      common.NewCoin(common.ETHAsset, cosmos.NewUint(20)),
+				},
+				BurnReason: "failed_outbound",
+				CleanupKey: "genesis-cleanup-test",
+			}},
+			Supplies: []types.MempoolSwapSupplyEffect{{
+				Asset:          common.BTCAsset.GetSyntheticAsset(),
+				SupplyIncrease: cosmos.NewUint(25),
+				SupplyDecrease: cosmos.NewUint(26),
+			}},
+		},
+	}
+}
+
+func rawGenesisMempoolSwapKey(record types.MempoolSwap) []byte {
+	return []byte(fmt.Sprintf("mempool_swap//%s", canonicalGenesisMempoolSwapIdentity(record)))
+}
+
+func rawGenesisObservedTxInKey(txID common.TxID) []byte {
+	return []byte(fmt.Sprintf("observed_tx_in//%s", canonicalGenesisTxID(txID)))
+}
+
+func (GenesisTestSuite) TestGenesisMempoolSwapLifecycleRoundTrip(c *C) {
 	SetupConfigForTest()
 
 	srcCtx, srcMgr := setupManagerForTest(c)
-	txA := GetRandomTxHash()
-	txB := GetRandomTxHash()
-	c.Assert(srcMgr.Keeper().AddPendingAffiliateLiquidityFee(srcCtx, txA, 0, "alpha", cosmos.NewUint(10)), IsNil)
-	c.Assert(srcMgr.Keeper().AddPendingAffiliateLiquidityFee(srcCtx, txA, 2, "bravo", cosmos.NewUint(20)), IsNil)
-	c.Assert(srcMgr.Keeper().AddPendingAffiliateLiquidityFee(srcCtx, txB, 0, "charlie", cosmos.NewUint(30)), IsNil)
+	srcCtx = srcCtx.WithBlockHeight(42)
+	vault := GetRandomVault()
+	c.Assert(srcMgr.Keeper().SetVault(srcCtx, vault), IsNil)
+	record := newGenesisMempoolSwap(vault.PubKey)
+	c.Assert(srcMgr.Keeper().SetMempoolSwap(srcCtx, record), IsNil)
+
+	// The lifecycle record is discoverable even after queue/staged ownership is
+	// gone. Its voter must still be included by ExportGenesis.
+	voter := NewObservedTxVoter(record.TxId, ObservedTxs{})
+	voter.MempoolSwapTOR = record.ReservedTor
+	srcMgr.Keeper().SetObservedTxInVoter(srcCtx, voter)
+	srcMgr.Keeper().SetMempoolSwapUsageTOR(srcCtx, cosmos.NewUint(1))
 
 	exported := ExportGenesis(srcCtx, srcMgr.Keeper())
-	c.Assert(exported.PendingAffiliateLiquidityFees, HasLen, 3)
+	c.Assert(exported.MempoolSwaps, HasLen, 1)
+	c.Check(exported.MempoolSwaps[0].Cursor(), Equals, record.Cursor())
+	foundVoter := false
+	for _, exportedVoter := range exported.ObservedTxInVoters {
+		if exportedVoter.TxID.Equals(record.TxId) {
+			foundVoter = true
+			break
+		}
+	}
+	c.Check(foundVoter, Equals, true)
 	c.Assert(ValidateGenesis(exported), IsNil)
+
+	// Exercise the generated binary field as well as in-memory export/import.
 	bz, err := exported.Marshal()
 	c.Assert(err, IsNil)
 	var decoded GenesisState
 	c.Assert(decoded.Unmarshal(bz), IsNil)
+	c.Assert(decoded.MempoolSwaps, HasLen, 1)
 
 	dstCtx, dstMgr := setupManagerForTest(c)
 	InitGenesis(dstCtx, dstMgr.Keeper(), decoded)
-	restoredA, err := dstMgr.Keeper().GetPendingAffiliateLiquidityFees(dstCtx, txA)
+	restored, found, err := dstMgr.Keeper().GetMempoolSwap(dstCtx, record.TxId, record.Index)
 	c.Assert(err, IsNil)
-	c.Assert(restoredA, HasLen, 2)
-	c.Check(restoredA[0].Index, Equals, uint32(0))
-	c.Check(restoredA[0].Thorname, Equals, "ALPHA")
-	c.Check(restoredA[0].Fee.Equal(cosmos.NewUint(10)), Equals, true)
-	c.Check(restoredA[1].Index, Equals, uint32(2))
-	c.Check(restoredA[1].Thorname, Equals, "BRAVO")
-	c.Check(restoredA[1].Fee.Equal(cosmos.NewUint(20)), Equals, true)
-	restoredB, err := dstMgr.Keeper().GetPendingAffiliateLiquidityFees(dstCtx, txB)
+	c.Assert(found, Equals, true)
+	c.Check(restored.Status, Equals, types.MempoolSwapStatus_EXECUTING)
+	c.Check(restored.PendingEffects.Affiliates[0].FeeRune.Equal(cosmos.NewUint(17)), Equals, true)
+	c.Check(restored.PendingEffects.DynamicFees[0].VolumeTor.Equal(cosmos.NewUint(18)), Equals, true)
+	c.Check(restored.PendingEffects.Cleanups[0].CleanupKey, Equals, "genesis-cleanup-test")
+	c.Check(restored.PendingEffects.Supplies[0].SupplyIncrease.Equal(cosmos.NewUint(25)), Equals, true)
+	c.Check(dstMgr.Keeper().GetMempoolSwapUsageTOR(dstCtx).Equal(record.ReservedTor), Equals, true,
+		Commentf("usage must be derived from authoritative lifecycle records, not voter markers"))
+	c.Check(dstMgr.Keeper().GetMempoolSwapCount(dstCtx).Equal(cosmos.OneUint()), Equals, true)
+	restoredVoter, err := dstMgr.Keeper().GetObservedTxInVoter(dstCtx, record.TxId)
 	c.Assert(err, IsNil)
-	c.Assert(restoredB, HasLen, 1)
-	c.Check(restoredB[0].Fee.Equal(cosmos.NewUint(30)), Equals, true)
+	c.Check(restoredVoter.MempoolSwapTOR.Equal(record.ReservedTor), Equals, true)
+	overlay, err := dstMgr.Keeper().GetMempoolSwapPoolBalanceOverlay(dstCtx, common.ETHAsset)
+	c.Assert(err, IsNil)
+	c.Check(overlay.BalanceRuneIncrease.Equal(cosmos.NewUint(21)), Equals, true)
+	c.Check(overlay.BalanceRuneDecrease.Equal(cosmos.NewUint(22)), Equals, true)
+	c.Check(overlay.BalanceAssetIncrease.Equal(cosmos.NewUint(23)), Equals, true)
+	c.Check(overlay.BalanceAssetDecrease.Equal(cosmos.NewUint(24)), Equals, true)
+	supplyOverlay, err := dstMgr.Keeper().GetMempoolSwapNativeSupplyOverlay(dstCtx, common.BTCAsset.GetSyntheticAsset())
+	c.Assert(err, IsNil)
+	c.Check(supplyOverlay.SupplyIncrease.Equal(cosmos.NewUint(25)), Equals, true)
+	c.Check(supplyOverlay.SupplyDecrease.Equal(cosmos.NewUint(26)), Equals, true)
+
+	byVault, err := dstMgr.Keeper().GetMempoolSwapsByVault(dstCtx, vault.PubKey, 10)
+	c.Assert(err, IsNil)
+	c.Assert(byVault, HasLen, 1)
+	due, err := dstMgr.Keeper().GetMempoolSwapsDue(dstCtx, record.NextRecoveryHeight, 10)
+	c.Assert(err, IsNil)
+	c.Assert(due, HasLen, 1)
+
+	reExported := ExportGenesis(dstCtx, dstMgr.Keeper())
+	c.Assert(reExported.MempoolSwaps, HasLen, 1)
+	c.Check(reExported.MempoolSwaps[0].Cursor(), Equals, record.Cursor())
 }
 
-func (GenesisTestSuite) TestGenesisRejectsInvalidPendingAffiliateLiquidityFee(c *C) {
+func (GenesisTestSuite) TestGenesisRejectsDuplicateMempoolSwapLifecycle(c *C) {
 	state := DefaultGenesisState()
-	state.PendingAffiliateLiquidityFees = []PendingAffiliateLiquidityFee{{
-		TxId:     "not-a-txid",
-		Thorname: "alpha",
-		Fee:      "10",
-	}}
-	c.Assert(ValidateGenesis(state), NotNil)
+	record := newGenesisMempoolSwap(GetRandomPubKey())
+	duplicate := record
+	duplicate.TxId = common.TxID(strings.ToLower(record.TxId.String()))
+	duplicate.LatestSwap.Tx.ID = duplicate.TxId
+	state.MempoolSwaps = []types.MempoolSwap{record, duplicate}
+	err := ValidateGenesis(state)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, "duplicate mempool swap identity:.*")
+}
 
-	state.PendingAffiliateLiquidityFees[0].TxId = GetRandomTxHash().String()
-	state.PendingAffiliateLiquidityFees[0].Thorname = "bad/name"
-	c.Assert(ValidateGenesis(state), NotNil)
+func (GenesisTestSuite) TestGenesisRejectsMultipleMempoolSwapPoolOwners(c *C) {
+	recordA := newGenesisMempoolSwap(GetRandomPubKey())
+	recordB := newGenesisMempoolSwap(GetRandomPubKey())
+	voterA := NewObservedTxVoter(recordA.TxId, nil)
+	voterA.UnfinalizedHeight = recordA.AdmittedHeight
+	voterA.MempoolSwapTOR = recordA.ReservedTor
+	voterB := NewObservedTxVoter(recordB.TxId, nil)
+	voterB.UnfinalizedHeight = recordB.AdmittedHeight
+	voterB.MempoolSwapTOR = recordB.ReservedTor
 
-	state.PendingAffiliateLiquidityFees[0].Thorname = "alpha"
-	state.PendingAffiliateLiquidityFees[0].Fee = "not-a-number"
-	c.Assert(ValidateGenesis(state), NotNil)
+	state := DefaultGenesisState()
+	state.MempoolSwaps = []types.MempoolSwap{recordA, recordB}
+	state.ObservedTxInVoters = ObservedTxVoters{voterA, voterB}
+	err := ValidateGenesis(state)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, "mempool swap pool .* has multiple lifecycle owners:.*")
+}
 
-	state.PendingAffiliateLiquidityFees[0].Fee = "0"
-	c.Assert(ValidateGenesis(state), NotNil)
+func (GenesisTestSuite) TestGenesisRejectsFinalizedTombstonePoolOwnerConflict(c *C) {
+	tombstone := newGenesisMempoolSwap(GetRandomPubKey())
+	tombstone.Status = types.MempoolSwapStatus_FINALIZED
+	tombstone.ReservedTor = cosmos.ZeroUint()
+	active := newGenesisMempoolSwap(GetRandomPubKey())
 
-	state.PendingAffiliateLiquidityFees[0].Fee = "10"
-	state.PendingAffiliateLiquidityFees = append(state.PendingAffiliateLiquidityFees, state.PendingAffiliateLiquidityFees[0])
-	state.PendingAffiliateLiquidityFees[1].Thorname = "ALPHA"
-	c.Assert(ValidateGenesis(state), NotNil)
+	tombstoneVoter := NewObservedTxVoter(tombstone.TxId, nil)
+	tombstoneVoter.FinalisedHeight = tombstone.UpdatedHeight
+	tombstoneVoter.MempoolSwapTOR = cosmos.ZeroUint()
+	activeVoter := NewObservedTxVoter(active.TxId, nil)
+	activeVoter.UnfinalizedHeight = active.AdmittedHeight
+	activeVoter.MempoolSwapTOR = active.ReservedTor
 
-	// SOL transaction IDs are case-sensitive at the type boundary, while the
-	// physical keeper key is upper-cased by GetKey. Genesis validation must use
-	// that same normalization and reject a physical-key collision.
-	state.PendingAffiliateLiquidityFees = []PendingAffiliateLiquidityFee{
-		{
-			TxId:     strings.Repeat("a", 88),
-			Thorname: "alpha",
-			Fee:      "10",
-		},
-		{
-			TxId:     strings.Repeat("A", 88),
-			Thorname: "ALPHA",
-			Fee:      "20",
-		},
-	}
-	c.Assert(ValidateGenesis(state), NotNil)
+	state := DefaultGenesisState()
+	state.MempoolSwaps = []types.MempoolSwap{tombstone, active}
+	state.ObservedTxInVoters = ObservedTxVoters{tombstoneVoter, activeVoter}
+	err := ValidateGenesis(state)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, "mempool swap pool .* has multiple lifecycle owners:.*")
+}
+
+func (GenesisTestSuite) TestGenesisRestoresFinalizedTombstonePoolOwner(c *C) {
+	tombstone := newGenesisMempoolSwap(GetRandomPubKey())
+	tombstone.Status = types.MempoolSwapStatus_FINALIZED
+	tombstone.ReservedTor = cosmos.ZeroUint()
+	voter := NewObservedTxVoter(tombstone.TxId, nil)
+	voter.FinalisedHeight = tombstone.UpdatedHeight
+	voter.MempoolSwapTOR = cosmos.ZeroUint()
+
+	state := DefaultGenesisState()
+	state.MempoolSwaps = []types.MempoolSwap{tombstone}
+	state.ObservedTxInVoters = ObservedTxVoters{voter}
+	c.Assert(ValidateGenesis(state), IsNil)
+
+	ctx, mgr := setupManagerForTest(c)
+	InitGenesis(ctx, mgr.Keeper(), state)
+	poolOverlay, err := mgr.Keeper().GetMempoolSwapPoolBalanceOverlay(ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+	c.Check(mempoolSwapPoolBalanceOverlayIsZero(poolOverlay), Equals, true)
+	supplyOverlay, err := mgr.Keeper().GetMempoolSwapNativeSupplyOverlay(ctx, common.BTCAsset.GetSyntheticAsset())
+	c.Assert(err, IsNil)
+	c.Check(mempoolSwapNativeSupplyOverlayIsZero(supplyOverlay), Equals, true)
+
+	owner, found, err := mgr.Keeper().GetMempoolSwapPoolOwner(ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, true)
+	c.Check(owner.Cursor(), Equals, tombstone.Cursor())
+	owner, found, err = mgr.Keeper().GetMempoolSwapPoolOwner(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, true)
+	c.Check(owner.Cursor(), Equals, tombstone.Cursor())
+}
+
+func (GenesisTestSuite) TestGenesisValidatesMempoolSwapVoterMirror(c *C) {
+	record := newGenesisMempoolSwap(GetRandomPubKey())
+	state := DefaultGenesisState()
+	state.MempoolSwaps = []types.MempoolSwap{record}
+
+	err := ValidateGenesis(state)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, ".*missing its inbound voter")
+
+	voter := NewObservedTxVoter(record.TxId, nil)
+	voter.UnfinalizedHeight = record.AdmittedHeight
+	state.ObservedTxInVoters = ObservedTxVoters{voter}
+	err = ValidateGenesis(state)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, ".*voter TOR is nil")
+
+	voter.MempoolSwapTOR = record.ReservedTor.Add(cosmos.OneUint())
+	state.ObservedTxInVoters = ObservedTxVoters{voter}
+	err = ValidateGenesis(state)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, ".*voter TOR .* does not match lifecycle TOR.*")
+
+	voter.MempoolSwapTOR = record.ReservedTor
+	state.ObservedTxInVoters = ObservedTxVoters{voter}
+	c.Check(ValidateGenesis(state), IsNil)
+}
+
+func (GenesisTestSuite) TestInitGenesisNormalizesMempoolSwapVoterMirror(c *C) {
+	record := newGenesisMempoolSwap(GetRandomPubKey())
+	voter := NewObservedTxVoter(record.TxId, nil)
+	voter.UnfinalizedHeight = record.AdmittedHeight
+	voter.MempoolSwapTOR = record.ReservedTor.Add(cosmos.OneUint())
+
+	state := DefaultGenesisState()
+	state.MempoolSwaps = []types.MempoolSwap{record}
+	state.ObservedTxInVoters = ObservedTxVoters{voter}
+	c.Assert(ValidateGenesis(state), NotNil,
+		Commentf("validation should reject the bad compatibility mirror"))
+
+	ctx, mgr := setupManagerForTest(c)
+	InitGenesis(ctx, mgr.Keeper(), state)
+	restored, err := mgr.Keeper().GetObservedTxInVoter(ctx, record.TxId)
+	c.Assert(err, IsNil)
+	c.Check(restored.MempoolSwapTOR.Equal(record.ReservedTor), Equals, true,
+		Commentf("direct InitGenesis callers must still restore the canonical lifecycle value"))
+}
+
+func (GenesisTestSuite) TestExportGenesisFailsClosedOnInvalidMempoolSwapLifecycle(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	store := runtime.KVStoreAdapter(serviceThorchain.OpenKVStore(ctx))
+	record := newGenesisMempoolSwap(GetRandomPubKey())
+	key := rawGenesisMempoolSwapKey(record)
+
+	invalid := record
+	invalid.Status = types.MempoolSwapStatus_UNKNOWN
+	bz, err := mgr.Keeper().Cdc().Marshal(&invalid)
+	c.Assert(err, IsNil)
+	store.Set(key, bz)
+	c.Assert(func() { ExportGenesis(ctx, mgr.Keeper()) }, PanicMatches,
+		"invalid mempool swap lifecycle record:.*")
+
+	store.Set(key, []byte{0xff})
+	c.Assert(func() { ExportGenesis(ctx, mgr.Keeper()) }, PanicMatches,
+		"fail to unmarshal mempool swap lifecycle record:.*")
+}
+
+func (GenesisTestSuite) TestExportGenesisFailsClosedOnNonCanonicalMempoolSwapKey(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	store := runtime.KVStoreAdapter(serviceThorchain.OpenKVStore(ctx))
+	record := newGenesisMempoolSwap(GetRandomPubKey())
+	bz, err := mgr.Keeper().Cdc().Marshal(&record)
+	c.Assert(err, IsNil)
+	store.Set([]byte("mempool_swap//WRONG"), bz)
+
+	c.Assert(func() { ExportGenesis(ctx, mgr.Keeper()) }, PanicMatches,
+		"mempool swap lifecycle record .* is stored under a non-canonical physical key")
+}
+
+func (GenesisTestSuite) TestExportGenesisFailsClosedOnSwappedMempoolSwapKeys(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	store := runtime.KVStoreAdapter(serviceThorchain.OpenKVStore(ctx))
+	recordA := newGenesisMempoolSwap(GetRandomPubKey())
+	recordB := newGenesisMempoolSwap(GetRandomPubKey())
+	recordB.TxId = GetRandomTxHash()
+	recordB.LatestSwap.Tx.ID = recordB.TxId
+
+	bzA, err := mgr.Keeper().Cdc().Marshal(&recordA)
+	c.Assert(err, IsNil)
+	bzB, err := mgr.Keeper().Cdc().Marshal(&recordB)
+	c.Assert(err, IsNil)
+	store.Set(mgr.Keeper().GetMempoolSwapCanonicalKey(recordB.TxId, recordB.Index), bzA)
+	store.Set(mgr.Keeper().GetMempoolSwapCanonicalKey(recordA.TxId, recordA.Index), bzB)
+
+	c.Assert(func() { ExportGenesis(ctx, mgr.Keeper()) }, PanicMatches,
+		"mempool swap lifecycle record .* is stored under a non-canonical physical key")
+}
+
+func (GenesisTestSuite) TestExportGenesisFailsClosedOnDuplicatePhysicalMempoolSwapIdentity(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	store := runtime.KVStoreAdapter(serviceThorchain.OpenKVStore(ctx))
+	record := newGenesisMempoolSwap(GetRandomPubKey())
+	c.Assert(mgr.Keeper().SetMempoolSwap(ctx, record), IsNil)
+	bz, err := mgr.Keeper().Cdc().Marshal(&record)
+	c.Assert(err, IsNil)
+	store.Set([]byte("mempool_swap//WRONG"), bz)
+
+	c.Assert(func() { ExportGenesis(ctx, mgr.Keeper()) }, PanicMatches,
+		"duplicate mempool swap lifecycle identity in store:.*")
+}
+
+func (GenesisTestSuite) TestExportGenesisFailsClosedOnMissingOrCorruptLifecycleVoter(c *C) {
+	missingCtx, missingMgr := setupManagerForTest(c)
+	missingRecord := newGenesisMempoolSwap(GetRandomPubKey())
+	c.Assert(missingMgr.Keeper().SetMempoolSwap(missingCtx, missingRecord), IsNil)
+	c.Assert(func() { ExportGenesis(missingCtx, missingMgr.Keeper()) }, PanicMatches,
+		"mempool swap lifecycle record .* is missing its inbound voter")
+
+	corruptCtx, corruptMgr := setupManagerForTest(c)
+	corruptRecord := newGenesisMempoolSwap(GetRandomPubKey())
+	c.Assert(corruptMgr.Keeper().SetMempoolSwap(corruptCtx, corruptRecord), IsNil)
+	corruptStore := runtime.KVStoreAdapter(serviceThorchain.OpenKVStore(corruptCtx))
+	corruptStore.Set(rawGenesisObservedTxInKey(corruptRecord.TxId), []byte{0xff})
+	c.Assert(func() { ExportGenesis(corruptCtx, corruptMgr.Keeper()) }, PanicMatches,
+		"fail to get voter for mempool swap lifecycle record .*:.*")
+
+	mismatchCtx, mismatchMgr := setupManagerForTest(c)
+	mismatchRecord := newGenesisMempoolSwap(GetRandomPubKey())
+	c.Assert(mismatchMgr.Keeper().SetMempoolSwap(mismatchCtx, mismatchRecord), IsNil)
+	mismatchVoter := NewObservedTxVoter(mismatchRecord.TxId, nil)
+	mismatchVoter.UnfinalizedHeight = mismatchRecord.AdmittedHeight
+	mismatchVoter.MempoolSwapTOR = mismatchRecord.ReservedTor.Add(cosmos.OneUint())
+	mismatchMgr.Keeper().SetObservedTxInVoter(mismatchCtx, mismatchVoter)
+	c.Assert(func() { ExportGenesis(mismatchCtx, mismatchMgr.Keeper()) }, PanicMatches,
+		"mempool swap lifecycle record .* voter TOR .* does not match reserved TOR.*")
 }
 
 // TestGenesisDynamicFeeRoundtrip seeds a DynamicFeeRecord, accumulator, and

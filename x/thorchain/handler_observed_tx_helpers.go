@@ -19,6 +19,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // CreateMempoolRollbackTxID creates a deterministic synthetic TxID for an
@@ -510,7 +511,7 @@ func handleObservedTxInQuorum(
 
 		// A live TOR reservation means this voter actually entered the
 		// mempool swap path, so it must roll back before refunding.
-		if voter.HasReservedMempoolSwapTOR() {
+		if k.HasMempoolSwap(ctx, voter.TxID, 0) || voter.HasReservedMempoolSwapTOR() {
 			if err = rollbackAndRefundInactiveVaultMempoolSwap(ctx, mgr, tx, voter); err != nil {
 				ctx.Logger().Error("fail to clean up mempool swap for inactive vault", "error", err, "hash", voter.TxID)
 			}
@@ -548,36 +549,48 @@ func handleObservedTxInQuorum(
 	// LackSigning's timeout reconciler provides that retry path instead of
 	// forcing an immediate hard failure here; if retries also fail, LackSigning
 	// force-rolls back the swap after 3x the normal timeout to release TOR capacity.
+	if hasFinalised {
+		// Start a fresh retry window at finality. If applying deferred effects or
+		// materializing an outbound fails, the lifecycle record remains indexed
+		// and the bounded recovery worker can retry the whole atomic completion.
+		record, found, lifecycleErr := k.GetMempoolSwap(ctx, voter.TxID, 0)
+		if lifecycleErr != nil {
+			ctx.Logger().Error("fail to load finalized mempool swap lifecycle", "error", lifecycleErr, "hash", voter.TxID)
+			return nil
+		}
+		if found {
+			record.UpdatedHeight = ctx.BlockHeight()
+			record.NextRecoveryHeight = mempoolSwapRecoveryHeight(ctx, k, record.LatestSwap)
+			if lifecycleErr = k.SetMempoolSwap(ctx, record); lifecycleErr != nil {
+				ctx.Logger().Error("fail to schedule finalized mempool swap recovery", "error", lifecycleErr, "hash", voter.TxID)
+				return nil
+			}
+			if lifecycleErr = completeMempoolSwapAtomic(ctx, mgr, voter); lifecycleErr != nil {
+				ctx.Logger().Error("fail to complete finalized mempool swap", "error", lifecycleErr, "hash", voter.TxID)
+			}
+			return nil
+		}
+	}
+
+	// Compatibility path for pre-schema fixtures and any impossible upgrade
+	// residue. New admissions always have a lifecycle record before reserving.
 	if hasFinalised && voter.HasReservedMempoolSwapTOR() {
 		switch {
 		case len(voter.Actions) > 0:
-			// finalizeOutboundsCached commits pending REVSHARE inside the same
-			// cache as staged-outbound materialization. Do not pre-commit it here:
-			// a later finalization error must retain the journal so timeout rollback
-			// cannot leave an affiliate accrual behind for a refunded swap.
 			if err = finalizeOutboundsAtomic(ctx, mgr, voter); err != nil {
 				ctx.Logger().Error("fail to finalize outbounds", "error", err, "hash", voter.TxID)
 			}
 		case k.HasStagedOutbound(ctx, voter.TxID):
 			// Staged outbounds without matching voter Actions cannot be finalized
-			// safely. Keep both the staged owner and pending REVSHARE discoverable
-			// for LackSigning retry/rollback instead of committing either side of
-			// an inconsistent snapshot.
+			// safely. Keep the staged owner and reservation discoverable for
+			// LackSigning retry/rollback instead of releasing an inconsistent
+			// snapshot.
 			ctx.Logger().Error("finalized mempool swap has staged outbounds without voter actions", "hash", voter.TxID)
+		case k.HasAdvSwapQueueItem(ctx, voter.TxID, 0):
+			releaseMempoolSwapCapacityAndClear(ctx, k, voter, "released queue-backed mempool swap capacity at inbound finality")
+			incrMempoolSwapCounter("completed_total", []metrics.Label{telemetry.NewLabel("path", "queue_finality")})
+			ctx.Logger().Info("finalized mempool swap still pending advanced-queue settlement", "hash", voter.TxID)
 		default:
-			// Queue-backed and orphan paths have no staged outbound transaction in
-			// which to commit prior speculative slices. Finality makes those slices
-			// durable, so flush them before releasing the remaining marker.
-			if err = commitPendingAffiliateLiquidityFeesAtomic(ctx, k, voter.TxID); err != nil {
-				ctx.Logger().Error("fail to finalize pending affiliate liquidity fees", "error", err, "hash", voter.TxID)
-				return nil
-			}
-			if k.HasAdvSwapQueueItem(ctx, voter.TxID, 0) {
-				releaseMempoolSwapCapacityAndClear(ctx, k, voter, "released queue-backed mempool swap capacity at inbound finality")
-				incrMempoolSwapCounter("completed_total", []metrics.Label{telemetry.NewLabel("path", "queue_finality")})
-				ctx.Logger().Info("finalized mempool swap still pending advanced-queue settlement", "hash", voter.TxID)
-				return nil
-			}
 			// A finalized mempool swap with no Actions is normally still
 			// mid-settlement in the advanced queue. But if settlement already ran
 			// while the inbound was unfinalized, it removed the queue item (and,
@@ -660,8 +673,23 @@ func handleObservedTxInQuorum(
 
 	// if its a swap, send it to our queue for processing later
 	if isSwap {
-		reservedMempoolSwapCapacity := false
+		if shouldHandleMempoolSwap && k.HasMempoolSwap(ctx, voter.TxID, swapMsg.Index) {
+			// Replayed observations must not reserve TOR or enqueue the same
+			// speculative swap twice. Queue/staged/settled ownership is already
+			// represented by the canonical lifecycle record.
+			return nil
+		}
 		if shouldHandleMempoolSwap && !voter.HasReservedMempoolSwapTOR() {
+			maxLifecycleCount := k.GetConfigInt64(ctx, constants.MempoolSwapMaxCount)
+			lifecycleCount := k.GetMempoolSwapCount(ctx)
+			if maxLifecycleCount <= 0 || lifecycleCount.GTE(cosmos.NewUint(uint64(maxLifecycleCount))) {
+				incrMempoolSwapCounter("blocked_total", []metrics.Label{telemetry.NewLabel("reason", "count")})
+				ctx.Logger().Info("mempool swap lifecycle limit reached, waiting for finalization",
+					"current_count", lifecycleCount,
+					"max_count", maxLifecycleCount,
+					"hash", voter.TxID)
+				return nil
+			}
 			sourceAsset := voter.Tx.Tx.Coins[0].Asset
 			sourceAmount := voter.Tx.Tx.Coins[0].Amount
 			mempoolSwapCap := cosmos.NewUint(uint64(k.GetConfigInt64(ctx, constants.MempoolSwapCapTOR)))
@@ -682,9 +710,35 @@ func handleObservedTxInQuorum(
 				return nil
 			}
 
-			newUsage := k.AddMempoolSwapUsageTOR(ctx, torValue)
+			// Admission owns four correlated writes: the canonical lifecycle,
+			// aggregate capacity, voter mirror, and advanced-queue item. Commit
+			// all four together so neither a queue nor a reservation can exist
+			// without the durable rollback record.
+			admissionCtx, commitAdmission := ctx.CacheContext()
+			if err = addSwap(admissionCtx, mgr, *swapMsg); err != nil {
+				ctx.Logger().Info("deferring swap queue rejection until inbound finalization",
+					"hash", voter.TxID,
+					"reason", err.Error())
+				return nil
+			}
+			// AddSwapQueueItem normalizes the initial height, limit-order TTL,
+			// and streaming quantity. Persist that canonical queued message rather
+			// than the pre-admission MsgSwap so recovery observes the same timing
+			// and progress contract as queue execution from the very first block.
+			admittedSwap, queueErr := k.GetAdvSwapQueueItem(admissionCtx, swapMsg.Tx.ID, int(swapMsg.Index))
+			if queueErr != nil {
+				ctx.Logger().Error("fail to load normalized mempool swap after queue admission", "error", queueErr, "hash", voter.TxID)
+				return nil
+			}
+			newUsage := k.AddMempoolSwapUsageTOR(admissionCtx, torValue)
 			voter.MempoolSwapTOR = torValue
-			k.SetObservedTxInVoter(ctx, voter)
+			k.SetObservedTxInVoter(admissionCtx, voter)
+			record := newMempoolSwapLifecycle(admissionCtx, k, voter, admittedSwap, torValue)
+			if err = k.SetMempoolSwap(admissionCtx, record); err != nil {
+				ctx.Logger().Error("fail to persist mempool swap lifecycle", "error", err, "hash", voter.TxID)
+				return nil
+			}
+			commitAdmission()
 			ctx.Logger().Info("reserved mempool swap capacity at admission",
 				"hash", voter.TxID,
 				"tor_value", voter.MempoolSwapTOR,
@@ -692,14 +746,14 @@ func handleObservedTxInQuorum(
 				"cap", mempoolSwapCap,
 				"memo", voter.Tx.Tx.Memo)
 			incrMempoolSwapCounter("admitted_total", nil)
-			reservedMempoolSwapCapacity = true
+			if referenceResolved {
+				trackReferenceMemoUsage(ctx, mgr, referenceAsset, referenceMemo, tx.Tx.ID)
+			}
+			return nil
 		}
 
 		if err = addSwap(ctx, mgr, *swapMsg); err != nil {
 			if shouldHandleMempoolSwap {
-				if reservedMempoolSwapCapacity {
-					voter = releaseMempoolSwapCapacityAndClear(ctx, k, voter, "released mempool swap capacity after queue admission failure")
-				}
 				ctx.Logger().Info("deferring swap queue rejection until inbound finalization",
 					"hash", voter.TxID,
 					"reason", err.Error())
@@ -873,34 +927,33 @@ func xmrMigrateInboundMatchesTxOut(tx common.Tx, item TxOutItem) bool {
 
 // rollbackAndRefundInactiveVaultMempoolSwap centralizes the inactive-vault
 // recovery sequence used in both the quorum handler and the timeout
-// reconciler. The observed-tx path intentionally keeps its existing
-// log-and-continue behavior, so refund scheduling failures are logged here
-// while rollback/inspection failures are returned to the caller for context.
+// reconciler. Rollback and refund scheduling commit together so a hard refund
+// failure cannot delete the lifecycle record and strand the finalized inbound.
 //
 // Callers should route only mempool-aware inactive-vault inbounds here.
 //
 // Design note: refund scheduling is intentionally gated on successful rollback.
-// rollbackMempoolSwapAtomic owns staged outbounds, queue cleanup, pool/accounting
-// reversal, and TOR-capacity release inside one CacheContext. If that atomic
-// cleanup fails, we must not schedule the user refund or release the reservation
-// out-of-band because speculative mempool-swap state is still live. Leaving that
-// state untouched preserves a consistent snapshot for LackSigning's timeout
-// reconciler to retry instead of risking double effects or undercounted in-flight
-// mempool work.
+// The shared outer CacheContext owns staged outbounds, queue cleanup,
+// pool/accounting reversal, TOR release, and the refund. Any failure leaves the
+// lifecycle snapshot intact for deterministic recovery.
 func rollbackAndRefundInactiveVaultMempoolSwap(ctx cosmos.Context, mgr Manager, tx common.ObservedTx, voter ObservedTxVoter) error {
 	k := mgr.Keeper()
+	cacheCtx, commit := ctx.CacheContext()
 
-	hasCleanupState, cleanupStateErr := needsMempoolSwapRollback(ctx, k, voter)
+	hasCleanupState, cleanupStateErr := needsMempoolSwapRollback(cacheCtx, k, voter)
 	if cleanupStateErr != nil {
 		return fmt.Errorf("fail to inspect mempool swap rollback state: %w", cleanupStateErr)
 	}
 	if hasCleanupState {
-		if err := rollbackMempoolSwapAtomic(ctx, k, mgr, voter); err != nil {
+		if err := rollbackMempoolSwapCached(cacheCtx, k, mgr, voter); err != nil {
 			return fmt.Errorf("fail to roll back mempool swap for inactive vault: %w", err)
 		}
-		incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "inactive_vault")})
 	}
 
+	if err := refundTx(cacheCtx, tx, mgr, CodeInvalidVault, "observed inbound tx to an inactive vault", ""); err != nil {
+		return fmt.Errorf("fail to refund inactive-vault mempool swap: %w", err)
+	}
+	commit()
 	telemetry.IncrCounterWithLabels(
 		[]string{"thornode", "inbound", "refund"}, 1,
 		[]metrics.Label{
@@ -908,106 +961,95 @@ func rollbackAndRefundInactiveVaultMempoolSwap(ctx cosmos.Context, mgr Manager, 
 			telemetry.NewLabel("reason", "inactive_vault"),
 		},
 	)
-
-	// Keep refund scheduling best-effort here, matching the wider refundTx
-	// contract used throughout the handler paths. This best-effort behavior
-	// starts only after rollback succeeds; otherwise the speculative mempool
-	// state remains intact for a clean retry. If we ever want refund scheduling
-	// failure to become fatal, that change should be made in the shared refund
-	// machinery rather than only in this inactive-vault branch.
-	if newErr := refundTx(ctx, tx, mgr, CodeInvalidVault, "observed inbound tx to an inactive vault", ""); newErr != nil {
-		ctx.Logger().Error("fail to refund", "error", newErr)
+	if hasCleanupState {
+		incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "inactive_vault")})
 	}
 
 	return nil
 }
 
-// rollbackUnfinalizedMempoolSwapsForInactiveVault rolls back speculative
-// mempool-swap state as soon as a vault becomes inactive. The inbound has not
-// finalized yet, so this intentionally does not schedule a refund; if the
-// inbound later finalizes to the inactive vault, the finalized observed-tx path
-// will handle the normal inactive-vault refund.
-func rollbackUnfinalizedMempoolSwapsForInactiveVault(ctx cosmos.Context, k keeper.Keeper, mgr Manager, vault Vault) {
-	voters := collectUnfinalizedMempoolSwapsForInactiveVault(ctx, k, vault.PubKey)
-	for _, voter := range voters {
-		ctx.Logger().Info("rolling back unfinalized mempool swap for inactive vault",
-			"hash", voter.TxID,
-			"vault", vault.PubKey)
-
-		if err := rollbackMempoolSwapAtomic(ctx, k, mgr, voter); err != nil {
-			// Leave the state intact for the LackSigning timeout fallback to retry.
-			ctx.Logger().Error("fail to roll back unfinalized inactive-vault mempool swap", "error", err, "hash", voter.TxID)
-			continue
-		}
-
-		incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "inactive_vault")})
-	}
+// startMempoolSwapVaultRecovery schedules an indexed recovery job. The vault
+// transition itself performs no collection walk or rollback; LackSigning owns
+// the bounded worker and persisted continuation. Queue readiness independently
+// rejects lifecycle records whose source vault is inactive, so no speculative
+// leg can run while the job waits for its deterministic turn.
+func startMempoolSwapVaultRecovery(ctx cosmos.Context, k keeper.Keeper, vault Vault) {
+	k.SetMempoolSwapVaultRecovery(ctx, vault.PubKey, "")
 }
 
-// collectUnfinalizedMempoolSwapsForInactiveVault finds unfinalized
-// mempool-swap inbounds observed to the vault that is transitioning inactive.
-// Staged outbounds are a definitive mempool-swap marker; queued-only advanced
-// swaps additionally require a live TOR reservation so normal queued swaps are
-// not rolled back. Returning the voter loaded during matching avoids fetching
-// every candidate a second time before rollback.
-func collectUnfinalizedMempoolSwapsForInactiveVault(ctx cosmos.Context, k keeper.Keeper, vaultPubKey common.PubKey) []ObservedTxVoter {
-	voters := make([]ObservedTxVoter, 0)
-	seen := make(map[common.TxID]struct{})
-
-	addIfMatch := func(inHash common.TxID, requireReservation bool) {
-		if inHash.IsEmpty() {
-			return
-		}
-		if _, ok := seen[inHash]; ok {
-			return
-		}
-
-		voter, err := k.GetObservedTxInVoter(ctx, inHash)
-		if err != nil {
-			ctx.Logger().Error("fail to get observed tx voter for inactive-vault mempool scan", "error", err, "hash", inHash)
-			return
-		}
-		// Only unfinalized inbounds observed to the newly inactive vault need this rollback.
-		if voter.FinalisedHeight > 0 || !voter.Tx.ObservedPubKey.Equals(vaultPubKey) {
-			return
-		}
-		// Queue-only candidates need the reservation marker to distinguish mempool swaps.
-		if requireReservation && !voter.HasReservedMempoolSwapTOR() {
-			return
-		}
-
-		seen[inHash] = struct{}{}
-		voters = append(voters, voter)
+// processMempoolSwapVaultRecoveryBatch advances one persisted inactive-vault
+// cursor by at most limit records. limit+1 records are read only to determine
+// whether the job is complete; consensus mutations remain capped at limit.
+func processMempoolSwapVaultRecoveryBatch(ctx cosmos.Context, k keeper.Keeper, mgr Manager, vaultPubKey common.PubKey, limit int) error {
+	if limit <= 0 {
+		return fmt.Errorf("inactive-vault recovery batch limit must be positive")
+	}
+	cursor, err := k.GetMempoolSwapVaultRecovery(ctx, vaultPubKey)
+	if err != nil {
+		return fmt.Errorf("fail to get inactive-vault recovery cursor: %w", err)
+	}
+	records, err := k.GetMempoolSwapsByVaultAfter(ctx, vaultPubKey, cursor, limit+1)
+	if err != nil {
+		return fmt.Errorf("fail to list inactive-vault mempool swaps: %w", err)
+	}
+	if len(records) == 0 {
+		k.DeleteMempoolSwapVaultRecovery(ctx, vaultPubKey)
+		return nil
 	}
 
-	// Staged outbound entries are keyed by inbound hash and exist only for
-	// mempool-swap state, so the TOR reservation is not required as a marker.
-	stagedIter := k.GetStagedOutboundIterator(ctx)
-	defer stagedIter.Close()
-	for ; stagedIter.Valid(); stagedIter.Next() {
-		var stagedList keeper.StagedOutboundList
-		if err := k.Cdc().Unmarshal(stagedIter.Value(), &stagedList); err != nil {
-			ctx.Logger().Error("fail to unmarshal staged outbound list for inactive-vault cleanup", "error", err)
-			continue
-		}
-		addIfMatch(stagedList.InHash, false)
+	hasMore := len(records) > limit
+	if hasMore {
+		records = records[:limit]
+	}
+	signingPeriod := k.GetConfigInt64(ctx, constants.SigningTransactionPeriod)
+	if signingPeriod <= 0 {
+		signingPeriod = k.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	}
+	if signingPeriod <= 0 {
+		signingPeriod = 1
 	}
 
-	// Queue-backed mempool swaps can be stranded before any staged outbound is
-	// written. Require a TOR reservation here so ordinary advanced-queue swaps
-	// are not mistaken for speculative mempool work.
-	advIter := k.GetAdvSwapQueueItemIterator(ctx)
-	defer advIter.Close()
-	for ; advIter.Valid(); advIter.Next() {
-		var msg MsgSwap
-		if err := k.Cdc().Unmarshal(advIter.Value(), &msg); err != nil {
-			ctx.Logger().Error("fail to unmarshal advanced swap queue item for inactive-vault cleanup", "error", err)
-			continue
+	for _, record := range records {
+		// Persist the stop marker before attempting rollback. If rollback fails,
+		// queue execution remains disabled and the due worker retries after one
+		// signing period. UpdatedHeight intentionally remains the last real swap
+		// progress height rather than becoming a recovery-attempt timestamp.
+		record.Status = types.MempoolSwapStatus_ROLLBACK_PENDING
+		record.NextRecoveryHeight = ctx.BlockHeight() + signingPeriod
+		if setErr := k.SetMempoolSwap(ctx, record); setErr != nil {
+			ctx.Logger().Error("fail to mark inactive-vault mempool swap for rollback", "error", setErr, "hash", record.TxId)
+		} else {
+			voter, voterErr := k.GetObservedTxInVoter(ctx, record.TxId)
+			switch {
+			case voterErr != nil || voter.IsEmpty():
+				if voterErr == nil {
+					voterErr = fmt.Errorf("observed tx voter is empty")
+				}
+				ctx.Logger().Error("fail to load inactive-vault mempool swap voter", "error", voterErr, "hash", record.TxId)
+			case voter.FinalisedHeight > 0 && !voter.Reverted:
+				if rollbackErr := rollbackAndRefundInactiveVaultMempoolSwap(ctx, mgr, voter.Tx, voter); rollbackErr != nil {
+					ctx.Logger().Error("fail to roll back finalized inactive-vault mempool swap", "error", rollbackErr, "hash", record.TxId)
+				}
+			default:
+				ctx.Logger().Info("rolling back unfinalized mempool swap for inactive vault", "hash", record.TxId, "vault", vaultPubKey)
+				if rollbackErr := rollbackMempoolSwapAtomic(ctx, k, mgr, voter); rollbackErr != nil {
+					ctx.Logger().Error("fail to roll back unfinalized inactive-vault mempool swap", "error", rollbackErr, "hash", record.TxId)
+				} else {
+					incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "inactive_vault")})
+				}
+			}
 		}
-		addIfMatch(msg.Tx.ID, true)
+
+		// Advance after every attempted identity, including failures. Those
+		// failures remain discoverable through their rescheduled due index.
+		cursor = record.Cursor()
+		k.SetMempoolSwapVaultRecovery(ctx, vaultPubKey, cursor)
 	}
 
-	return voters
+	if !hasMore {
+		k.DeleteMempoolSwapVaultRecovery(ctx, vaultPubKey)
+	}
+	return nil
 }
 
 // processTxOutAttestation applies a single attestation for an observed tx and saves
@@ -1764,7 +1806,7 @@ func handleObservedTxOutQuorum(
 			}
 			if becameInactive {
 				// Clean up speculative mempool-swap state tied to this vault transition.
-				rollbackUnfinalizedMempoolSwapsForInactiveVault(ctx, k, mgr, vault)
+				startMempoolSwapVaultRecovery(ctx, k, vault)
 			}
 		}
 	}
@@ -2621,6 +2663,9 @@ func finalizeOutboundsAtomic(ctx cosmos.Context, mgr Manager, voter ObservedTxVo
 // continue. This includes staged outbounds, queued swap work, emitted actions,
 // and reserved mempool capacity.
 func needsMempoolSwapRollback(ctx cosmos.Context, k keeper.Keeper, voter ObservedTxVoter) (bool, error) {
+	if k.HasMempoolSwap(ctx, voter.TxID, 0) {
+		return true, nil
+	}
 	if len(voter.Actions) > 0 {
 		return true, nil
 	}
@@ -2680,14 +2725,25 @@ func restoreFinalNativeMempoolTxOutItem(voter ObservedTxVoter, index int, staged
 // advanced-swap queue state when part of the swap already ran but nothing
 // has been staged yet.
 func buildPendingMempoolRollbackAction(ctx cosmos.Context, k keeper.Keeper, voter ObservedTxVoter) (*TxOutItem, error) {
-	if !k.HasAdvSwapQueueItem(ctx, voter.TxID, 0) {
-		ctx.Logger().Debug("no partial advanced-queue output available for mempool rollback", "hash", voter.TxID)
-		return nil, nil
-	}
-
-	msg, err := k.GetAdvSwapQueueItem(ctx, voter.TxID, 0)
-	if err != nil {
-		return nil, fmt.Errorf("fail to get pending adv swap item: %w", err)
+	var (
+		msg MsgSwap
+		err error
+	)
+	if k.HasAdvSwapQueueItem(ctx, voter.TxID, 0) {
+		msg, err = k.GetAdvSwapQueueItem(ctx, voter.TxID, 0)
+		if err != nil {
+			return nil, fmt.Errorf("fail to get pending adv swap item: %w", err)
+		}
+	} else {
+		var found bool
+		msg, found, err = getLifecycleRollbackSwap(ctx, k, voter.TxID, 0)
+		if err != nil {
+			return nil, fmt.Errorf("fail to get lifecycle rollback snapshot: %w", err)
+		}
+		if !found {
+			ctx.Logger().Debug("no partial swap output available for mempool rollback", "hash", voter.TxID)
+			return nil, nil
+		}
 	}
 	if msg.State == nil {
 		return nil, fmt.Errorf("pending adv swap item missing state")
@@ -2972,9 +3028,6 @@ func applyDeferredAffiliateFees(ctx cosmos.Context, mgr Manager, outbounds []fin
 // inbound confirms. Native outbounds run here, and external ones go to TxOut.
 func finalizeOutboundsCached(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter) error {
 	ctx.Logger().Info("finalizing outbounds for inbound", "hash", voter.TxID)
-	if err := mgr.Keeper().CommitPendingAffiliateLiquidityFees(ctx, voter.TxID); err != nil {
-		return fmt.Errorf("fail to finalize pending affiliate liquidity fees: %w", err)
-	}
 
 	// Get staged outbounds for this inbound transaction
 	// Idempotency: if no staged outbounds exist, either they were never staged or already finalized
@@ -2991,8 +3044,13 @@ func finalizeOutboundsCached(ctx cosmos.Context, mgr Manager, voter ObservedTxVo
 		return err
 	}
 
-	// Release mempool swap capacity if this was a mempool swap
-	voter = releaseMempoolSwapCapacityAndClear(ctx, mgr.Keeper(), voter, "released mempool swap capacity")
+	// Schema-backed swaps release capacity only after deferred effects and
+	// staged materialization have both succeeded. completeMempoolSwapCached
+	// owns that final atomic transition. Keep the legacy release for old test
+	// fixtures or impossible upgrade residue without a lifecycle record.
+	if !mgr.Keeper().HasMempoolSwap(ctx, voter.TxID, 0) {
+		voter = releaseMempoolSwapCapacityAndClear(ctx, mgr.Keeper(), voter, "released mempool swap capacity")
+	}
 
 	ctx.Logger().Info("found staged outbounds to finalize",
 		"hash", voter.TxID,
@@ -3108,6 +3166,18 @@ func mempoolRollbackCreditedSourceAmount(
 	deposit,
 	stagedSourceRefund cosmos.Uint,
 ) (cosmos.Uint, error) {
+	record, found, err := k.GetMempoolSwap(ctx, voter.TxID, 0)
+	if err != nil {
+		return cosmos.ZeroUint(), fmt.Errorf("fail to get mempool lifecycle rollback input: %w", err)
+	}
+	if found {
+		if record.LatestSwap.State != nil && !record.LatestSwap.State.In.IsNil() {
+			if record.LatestSwap.State.In.GT(deposit) {
+				return deposit, nil
+			}
+			return record.LatestSwap.State.In, nil
+		}
+	}
 	if !k.HasAdvSwapQueueItem(ctx, voter.TxID, 0) {
 		// A completed partial stream removes its advanced-queue item after
 		// staging the unconsumed input as a source-asset refund. Only the
@@ -3240,6 +3310,36 @@ func emitMempoolSwapRollbackEvents(
 	}
 }
 
+// rollbackRevertedMempoolVaultCreditCached removes a finalized inbound from
+// its observed vault when errata arrives before lifecycle completion. The
+// speculative pool transition is already unwound by rollbackMempoolSwapCached;
+// running the ordinary finalized errata pool deduction afterwards would remove
+// the inbound asset twice. UpdatedVault remains the exact durable marker for
+// whether this additional vault-side reversal is required on a retry.
+func rollbackRevertedMempoolVaultCreditCached(
+	ctx cosmos.Context,
+	mgr Manager,
+	voter ObservedTxVoter,
+) (ObservedTxVoter, error) {
+	if !voter.Reverted || !voter.UpdatedVault {
+		return voter, nil
+	}
+	vaultPubKey := voter.Tx.ObservedPubKey
+	if vaultPubKey.IsEmpty() {
+		return voter, fmt.Errorf("reverted finalized mempool swap %s has no observed vault", voter.TxID)
+	}
+	vault, err := mgr.Keeper().GetVault(ctx, vaultPubKey)
+	if err != nil {
+		return voter, fmt.Errorf("fail to get vault for reverted mempool swap %s: %w", voter.TxID, err)
+	}
+	debitVault(ctx, mgr, &vault, voter.Tx, voter.Tx.Tx.Coins, vaultDeficitReasonInboundErrataReversal)
+	if err = mgr.Keeper().SetVault(ctx, vault); err != nil {
+		return voter, fmt.Errorf("fail to save vault for reverted mempool swap %s: %w", voter.TxID, err)
+	}
+	voter.UpdatedVault = false
+	return voter, nil
+}
+
 // rollbackMempoolSwapCached performs the inline mempool rollback itself.
 // It gathers the staged or partially-executed outputs that need to be unwound,
 // executes any required reverse swaps inline, then clears staged state and
@@ -3248,8 +3348,36 @@ func emitMempoolSwapRollbackEvents(
 func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Manager, voter ObservedTxVoter) error {
 	ctx.Logger().Info("rolling back mempool swap", "hash", voter.TxID)
 
-	// Release mempool swap capacity if this was a mempool swap
-	voter = releaseMempoolSwapCapacityAndClear(ctx, keeper, voter, "released mempool swap capacity on rollback")
+	lifecycleRecord, hasLifecycle, err := keeper.GetMempoolSwap(ctx, voter.TxID, 0)
+	if err != nil {
+		return fmt.Errorf("fail to get mempool swap lifecycle for rollback: %w", err)
+	}
+	var rollbackSupplyTargets []mempoolSwapRollbackSupplyTarget
+	if hasLifecycle {
+		rollbackSupplyTargets, err = getMempoolSwapRollbackSupplyTargets(ctx, keeper, lifecycleRecord)
+		if err != nil {
+			return fmt.Errorf("fail to derive mempool swap rollback supply targets: %w", err)
+		}
+		lifecycleRecord.Status = types.MempoolSwapStatus_ROLLBACK_PENDING
+		lifecycleRecord.UpdatedHeight = ctx.BlockHeight()
+		lifecycleRecord.NextRecoveryHeight = ctx.BlockHeight()
+		if err = keeper.SetMempoolSwap(ctx, lifecycleRecord); err != nil {
+			return fmt.Errorf("fail to mark mempool swap rollback pending: %w", err)
+		}
+		// Forward fee RUNE stayed in Asgard but was excluded from pool depth.
+		// Restore that depth before executing the accounting-neutral reverse
+		// operation. Every other pending effect is simply discarded on delete.
+		if err = prepareMempoolSwapRollbackEffectsCached(ctx, mgr, lifecycleRecord); err != nil {
+			return fmt.Errorf("fail to prepare mempool swap rollback effects: %w", err)
+		}
+		voter, err = releaseMempoolSwapLifecycleCached(ctx, keeper, lifecycleRecord, voter, "released mempool swap lifecycle reservation on rollback")
+		if err != nil {
+			return err
+		}
+	} else {
+		// Compatibility path for fixtures and any pre-schema residue.
+		voter = releaseMempoolSwapCapacityAndClear(ctx, keeper, voter, "released mempool swap capacity on rollback")
+	}
 
 	// Determine the original source asset from the inbound transaction
 	if voter.Tx.Tx.Coins.IsEmpty() {
@@ -3313,7 +3441,7 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 		// staged — i.e. nothing executed, nothing credited — so gate the
 		// deduction on a queue item or a staged record existing. Must run before
 		// the queue item and staged records are cleared below.
-		if keeper.HasAdvSwapQueueItem(ctx, voter.TxID, 0) || len(stagedItems) > 0 {
+		if hasLifecycle || keeper.HasAdvSwapQueueItem(ctx, voter.TxID, 0) || len(stagedItems) > 0 {
 			creditedSourceAmount, cErr := mempoolRollbackCreditedSourceAmount(ctx, keeper, voter, voter.Tx.Tx.Coins[0].Amount, stagedSourceRefund)
 			if cErr != nil {
 				return cErr
@@ -3331,12 +3459,18 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 		// outlive the rollback and can be finalized again as a duplicate payout.
 		if len(stagedItems) > 0 {
 			if err = reclaimStagedClout(ctx, keeper, voter, stagedItems); err != nil {
-				ctx.Logger().Error("fail to reclaim staged clout on refund-only rollback", "error", err, "hash", voter.TxID)
-				// Non-fatal: clout auto-restores after CloutReset blocks.
+				return fmt.Errorf("fail to reclaim staged clout on refund-only rollback: %w", err)
 			}
 			if err = keeper.DeleteStagedOutbounds(ctx, voter.TxID); err != nil {
 				return fmt.Errorf("fail to delete refund-only staged outbounds on rollback: %w", err)
 			}
+		}
+		// Markerless/dust settlement can remove the last outbound action while a
+		// speculative synth/derived mint or burn remains in bank state. Supply
+		// ownership must be reconciled on this terminal path just as it is after
+		// an ordinary inverse swap.
+		if err = reconcileMempoolSwapRollbackSupplies(ctx, mgr, rollbackSupplyTargets); err != nil {
+			return err
 		}
 		// Even without staged outbounds, the primary swap item at queue index 0
 		// can still be hanging around. Clear it so a later queue pass cannot
@@ -3344,9 +3478,19 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 		if err = clearPendingMempoolSwapQueueItems(ctx, keeper, voter.TxID); err != nil {
 			return err
 		}
-		keeper.DeletePendingAffiliateLiquidityFees(ctx, voter.TxID)
+		if hasLifecycle {
+			voter, err = rollbackRevertedMempoolVaultCreditCached(ctx, mgr, voter)
+			if err != nil {
+				return err
+			}
+		}
 		voter = clearMempoolRollbackState(voter)
 		keeper.SetObservedTxInVoter(ctx, voter)
+		if hasLifecycle {
+			if err = keeper.DeleteMempoolSwap(ctx, lifecycleRecord.TxId, lifecycleRecord.Index); err != nil {
+				return fmt.Errorf("fail to delete rolled-back mempool swap lifecycle: %w", err)
+			}
+		}
 		emitMempoolSwapRollbackEvents(ctx, mgr, voter, sourceAsset, voter.Tx.Tx.Coins[0].Amount, cosmos.ZeroUint())
 		return nil
 	}
@@ -3480,7 +3624,8 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 		if buildErr != nil {
 			return buildErr
 		}
-		if err = executeSwapWithoutOutboundsCached(ctx, mgr, &rollbackSwap); err != nil {
+		rollbackCtx := withMempoolSwapExecutionMode(ctx, mempoolSwapExecutionRollback)
+		if err = executeSwapWithoutOutboundsCached(rollbackCtx, mgr, &rollbackSwap); err != nil {
 			return fmt.Errorf("fail to execute inline rollback swap: %w", err)
 		}
 		if !assetRemovedFromPool {
@@ -3498,6 +3643,9 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 			}
 		}
 	}
+	if err = reconcileMempoolSwapRollbackSupplies(ctx, mgr, rollbackSupplyTargets); err != nil {
+		return err
+	}
 
 	// Roll back any clout spent during outbound scheduling for the staged
 	// mempool outbounds. Without this the swapper addresses would have
@@ -3508,9 +3656,7 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 	// advanced-queue output from queue state before TryAddTxOutItem runs, so
 	// there is no outbound scheduling or clout spend to reclaim in that case.
 	if err = reclaimStagedClout(ctx, keeper, voter, stagedItems); err != nil {
-		ctx.Logger().Error("fail to reclaim staged clout on rollback", "error", err, "hash", voter.TxID)
-		// Non-fatal: clout auto-restores after CloutReset blocks, so a
-		// failure here should not abort the entire rollback.
+		return fmt.Errorf("fail to reclaim staged clout on rollback: %w", err)
 	}
 
 	// Delete all staged outbounds AFTER processing succeeds.
@@ -3525,11 +3671,21 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 	if err = clearPendingMempoolSwapQueueItems(ctx, keeper, voter.TxID); err != nil {
 		return err
 	}
-	keeper.DeletePendingAffiliateLiquidityFees(ctx, voter.TxID)
+	if hasLifecycle {
+		voter, err = rollbackRevertedMempoolVaultCreditCached(ctx, mgr, voter)
+		if err != nil {
+			return err
+		}
+	}
 
 	// Reset the voter now that all mempool state has been undone.
 	voter = clearMempoolRollbackState(voter)
 	keeper.SetObservedTxInVoter(ctx, voter)
+	if hasLifecycle {
+		if err = keeper.DeleteMempoolSwap(ctx, lifecycleRecord.TxId, lifecycleRecord.Index); err != nil {
+			return fmt.Errorf("fail to delete rolled-back mempool swap lifecycle: %w", err)
+		}
+	}
 	emitMempoolSwapRollbackEvents(ctx, mgr, voter, sourceAsset, sourceAmount, aggregateDonatedAmount)
 
 	return nil

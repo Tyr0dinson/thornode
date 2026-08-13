@@ -70,7 +70,8 @@ func (GasManagerTestSuite) TestGasManager(c *C) {
 	}, true)
 	c.Assert(gasMgr.GetGas(), HasLen, 3)
 	eventMgr := NewDummyEventMgr()
-	gasMgr.EndBlock(ctx, k, eventMgr)
+	mgr.eventMgr = eventMgr
+	gasMgr.EndBlock(ctx, mgr)
 }
 
 func (GasManagerTestSuite) TestProcessGasReserveExactMatch(c *C) {
@@ -101,7 +102,7 @@ func (GasManagerTestSuite) TestProcessGasReserveExactMatch(c *C) {
 		common.NewCoin(common.BTCAsset, reserveRune),
 	}, true)
 
-	gasMgr.ProcessGas(ctx, k)
+	gasMgr.ProcessGas(ctx, mgr)
 
 	// The exact-match gas coin must still be reimbursed, not skipped: the reserve
 	// had exactly enough RUNE to cover it.
@@ -296,10 +297,12 @@ func (GasManagerTestSuite) TestDifferentValidations(c *C) {
 	gasMgr.BeginBlock()
 	helper := newGasManagerTestHelper(k)
 	eventMgr := NewDummyEventMgr()
-	gasMgr.EndBlock(ctx, helper, eventMgr)
+	testMgr := NewDummyMgrWithKeeper(helper)
+	testMgr.eventMgr = eventMgr
+	gasMgr.EndBlock(ctx, testMgr)
 
 	helper.failGetNetwork = true
-	gasMgr.EndBlock(ctx, helper, eventMgr)
+	gasMgr.EndBlock(ctx, testMgr)
 	helper.failGetNetwork = false
 
 	helper.failGetPool = true
@@ -308,7 +311,7 @@ func (GasManagerTestSuite) TestDifferentValidations(c *C) {
 		common.NewCoin(common.BTCAsset, cosmos.NewUint(1000)),
 		common.NewCoin(common.ETHAsset, cosmos.ZeroUint()),
 	}, true)
-	gasMgr.EndBlock(ctx, helper, eventMgr)
+	gasMgr.EndBlock(ctx, testMgr)
 	helper.failGetPool = false
 	helper.failSetPool = true
 	p := NewPool()
@@ -320,7 +323,7 @@ func (GasManagerTestSuite) TestDifferentValidations(c *C) {
 	gasMgr.AddGasAsset(common.EmptyAsset, common.Gas{
 		common.NewCoin(common.ATOMAsset, cosmos.NewUint(37500)),
 	}, true)
-	gasMgr.EndBlock(ctx, helper, eventMgr)
+	gasMgr.EndBlock(ctx, testMgr)
 }
 
 func (GasManagerTestSuite) TestGetMaxGas(c *C) {

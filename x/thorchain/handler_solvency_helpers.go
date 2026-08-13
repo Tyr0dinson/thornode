@@ -385,6 +385,7 @@ func insolvencyCheck(ctx cosmos.Context, mgr Manager, vault Vault, coins common.
 	}
 	// Get the permitted solvency gap in RUNE (converted from USD)
 	permittedGapInRune := mgr.Keeper().DollarConfigInRune(ctx, constants.PermittedSolvencyGapUSD)
+	poolView := newFinalityPoolView(mgr.Keeper())
 	// Use the coin in vault as baseline , wallet can have more coins than vault
 	for _, c := range adjustVault.Coins {
 		if !c.Asset.Chain.Equals(chain) {
@@ -441,7 +442,7 @@ func insolvencyCheck(ctx cosmos.Context, mgr Manager, vault Vault, coins common.
 		}
 
 		// Convert the gap to RUNE value using the pool
-		pool, err := mgr.Keeper().GetPool(ctx, c.Asset.GetLayer1Asset())
+		pool, _, err := poolView.getPool(ctx, c.Asset.GetLayer1Asset())
 		if err != nil {
 			if pendingRagnarokOutboundsExplainGap(ctx, mgr, nil, c.Asset, originalAmount, walletCoin.Amount, pendingAmount) {
 				ctx.Logger().Error(

@@ -165,6 +165,12 @@ func (vm *NetworkMgr) suspendVirtualPool(ctx cosmos.Context, mgr Manager, derive
 func (vm *NetworkMgr) GetAvailableAnchorsAndDepths(
 	ctx cosmos.Context, mgr Manager, asset common.Asset,
 ) ([]common.Asset, []cosmos.Uint) {
+	return vm.getAvailableAnchorsAndDepths(ctx, mgr, asset, newFinalityPoolView(mgr.Keeper()))
+}
+
+func (vm *NetworkMgr) getAvailableAnchorsAndDepths(
+	ctx cosmos.Context, mgr Manager, asset common.Asset, poolView *finalityPoolView,
+) ([]common.Asset, []cosmos.Uint) {
 	// gather anchor assets with available pools and their rune depths
 	availableAnchors := make([]common.Asset, 0)
 	runeDepths := make([]cosmos.Uint, 0)
@@ -176,9 +182,9 @@ func (vm *NetworkMgr) GetAvailableAnchorsAndDepths(
 		if !mgr.Keeper().PoolExist(ctx, anchorAsset) {
 			continue
 		}
-		p, err := mgr.Keeper().GetPool(ctx, anchorAsset)
+		p, _, err := poolView.getPool(ctx, anchorAsset)
 		if err != nil {
-			ctx.Logger().Error("failed to get anchor pool", "asset", anchorAsset, "error", err)
+			ctx.Logger().Error("failed to get finality-adjusted anchor pool", "asset", anchorAsset, "error", err)
 			continue
 		}
 		// skip assets that aren't available (hence price isn't likely to be correct)
@@ -197,7 +203,13 @@ func (vm *NetworkMgr) GetAvailableAnchorsAndDepths(
 }
 
 func (vm *NetworkMgr) CalcAnchor(ctx cosmos.Context, mgr Manager, asset common.Asset) (cosmos.Uint, cosmos.Uint, cosmos.Uint) {
-	availableAnchors, depths := vm.GetAvailableAnchorsAndDepths(ctx, mgr, asset)
+	return vm.calcAnchor(ctx, mgr, asset, newFinalityPoolView(mgr.Keeper()))
+}
+
+func (vm *NetworkMgr) calcAnchor(
+	ctx cosmos.Context, mgr Manager, asset common.Asset, poolView *finalityPoolView,
+) (cosmos.Uint, cosmos.Uint, cosmos.Uint) {
+	availableAnchors, depths := vm.getAvailableAnchorsAndDepths(ctx, mgr, asset, poolView)
 
 	// track slips used and their corresponding depths for weighted mean
 	slips := make([]cosmos.Uint, 0)
@@ -219,7 +231,19 @@ func (vm *NetworkMgr) CalcAnchor(ctx cosmos.Context, mgr Manager, asset common.A
 		slipsDepths = append(slipsDepths, depths[i])
 	}
 
-	price := mgr.Keeper().AnchorMedian(ctx, availableAnchors)
+	prices := make([]cosmos.Uint, 0, len(availableAnchors))
+	for _, anchorAsset := range availableAnchors {
+		pool, _, err := poolView.getPool(ctx, anchorAsset)
+		if err != nil {
+			ctx.Logger().Error("failed to get finality-adjusted anchor price pool", "asset", anchorAsset, "error", err)
+			continue
+		}
+		value := pool.RuneValueInAsset(cosmos.NewUint(constants.DollarMulti * common.One))
+		if !value.IsZero() {
+			prices = append(prices, value)
+		}
+	}
+	price := common.GetMedianUint(prices)
 
 	// calculate the weighted mean slip
 	totalRuneDepth := cosmos.Sum(slipsDepths)
@@ -264,7 +288,9 @@ func (vm *NetworkMgr) spawnDerivedAssets(ctx cosmos.Context, mgr Manager) error 
 		layer1Assets = append(layer1Assets, chain.GetGasAsset())
 	}
 
-	// Update anchor swap slip rollups and spawn assets.
+	// Update anchor swap slip rollups and spawn assets. Reuse one finality view
+	// for the complete BeginBlock pass; every distinct pool overlay is read once.
+	poolView := newFinalityPoolView(mgr.Keeper())
 	anchorMap := map[common.Asset]bool{}
 	maxAnchorBlocks := vm.k.GetConfigInt64(ctx, constants.MaxAnchorBlocks)
 	for _, asset := range layer1Assets {
@@ -281,13 +307,17 @@ func (vm *NetworkMgr) spawnDerivedAssets(ctx cosmos.Context, mgr Manager) error 
 				ctx.Logger().Error("failed to rollup swap slip", "asset", anchorAsset, "err", err)
 			}
 		}
-		vm.SpawnDerivedAsset(ctx, asset, mgr)
+		vm.spawnDerivedAsset(ctx, asset, mgr, poolView)
 	}
 
 	return nil
 }
 
 func (vm *NetworkMgr) SpawnDerivedAsset(ctx cosmos.Context, asset common.Asset, mgr Manager) {
+	vm.spawnDerivedAsset(ctx, asset, mgr, newFinalityPoolView(mgr.Keeper()))
+}
+
+func (vm *NetworkMgr) spawnDerivedAsset(ctx cosmos.Context, asset common.Asset, mgr Manager, poolView *finalityPoolView) {
 	var err error
 	layer1Asset := asset
 	if layer1Asset.IsDerivedAsset() && !asset.Equals(common.TOR) {
@@ -308,14 +338,14 @@ func (vm *NetworkMgr) SpawnDerivedAsset(ctx cosmos.Context, asset common.Asset, 
 	dynamicMaxAnchorTarget := mgr.Keeper().GetConfigInt64(ctx, constants.DynamicMaxAnchorTarget)
 
 	// dynamically calculate the maxAnchorSlip
-	weightedMeanSlip := vm.fetchWeightedMeanSlip(ctx, layer1Asset, mgr)
+	weightedMeanSlip := vm.fetchWeightedMeanSlipWithView(ctx, layer1Asset, mgr, poolView)
 	maxBps := int64(10_000)
 	if weightedMeanSlip > 0 && dynamicMaxAnchorTarget > 0 && dynamicMaxAnchorTarget < maxBps {
 		maxAnchorSlip = (weightedMeanSlip * maxBps) / (maxBps - dynamicMaxAnchorTarget)
 	}
 
 	derivedAsset := asset.GetDerivedAsset()
-	layer1Pool, err := mgr.Keeper().GetPool(ctx, layer1Asset)
+	layer1Pool, _, err := poolView.getPool(ctx, layer1Asset)
 	if err != nil {
 		vm.suspendVirtualPool(ctx, mgr, derivedAsset, err)
 		ctx.Logger().Error("failed to fetch pool", "asset", asset, "err", err)
@@ -331,7 +361,7 @@ func (vm *NetworkMgr) SpawnDerivedAsset(ctx cosmos.Context, asset common.Asset, 
 		return
 	}
 
-	totalRuneDepth, price, slippage := vm.CalcAnchor(ctx, mgr, layer1Asset)
+	totalRuneDepth, price, slippage := vm.calcAnchor(ctx, mgr, layer1Asset, poolView)
 	if totalRuneDepth.IsZero() {
 		vm.suspendVirtualPool(ctx, mgr, derivedAsset, fmt.Errorf("no anchor pools available"))
 		return
@@ -357,8 +387,8 @@ func (vm *NetworkMgr) SpawnDerivedAsset(ctx cosmos.Context, asset common.Asset, 
 		derivedPool.Asset = derivedAsset
 
 		poolEvt := NewEventPool(derivedPool.Asset, PoolAvailable)
-		if err := mgr.EventMgr().EmitEvent(ctx, poolEvt); err != nil {
-			ctx.Logger().Error("fail to emit pool event", "asset", asset, "err", err)
+		if emitErr := mgr.EventMgr().EmitEvent(ctx, poolEvt); emitErr != nil {
+			ctx.Logger().Error("fail to emit pool event", "asset", asset, "err", emitErr)
 			return
 		}
 		telemetry.IncrCounterWithLabels(
@@ -379,6 +409,21 @@ func (vm *NetworkMgr) SpawnDerivedAsset(ctx cosmos.Context, asset common.Asset, 
 		runeDepth = minRuneDepth
 	}
 	assetDepth := runeDepth.Mul(price).QuoUint64(uint64(constants.DollarMulti * common.One))
+
+	// Derived pool depths are regenerated from finalized anchor state every
+	// block. Preserve any active speculative mutations on top of that new base;
+	// otherwise this write would silently erase live swap state while the
+	// lifecycle journal still owns (and may later roll back) the same deltas.
+	regeneratedPool := derivedPool
+	regeneratedPool.BalanceRune = runeDepth
+	regeneratedPool.BalanceAsset = assetDepth
+	regeneratedPool, _, err = poolView.apply(ctx, regeneratedPool)
+	if err != nil {
+		ctx.Logger().Error("failed to reapply mempool swap overlay to regenerated derived pool", "asset", derivedAsset, "err", err)
+		return
+	}
+	runeDepth = regeneratedPool.BalanceRune
+	assetDepth = regeneratedPool.BalanceAsset
 
 	// emit an event for midgard
 	runeAmt := common.SafeSub(runeDepth, derivedPool.BalanceRune)
@@ -418,6 +463,12 @@ func (vm *NetworkMgr) SpawnDerivedAsset(ctx cosmos.Context, asset common.Asset, 
 }
 
 func (vm *NetworkMgr) fetchWeightedMeanSlip(ctx cosmos.Context, asset common.Asset, mgr Manager) (slip int64) {
+	return vm.fetchWeightedMeanSlipWithView(ctx, asset, mgr, newFinalityPoolView(mgr.Keeper()))
+}
+
+func (vm *NetworkMgr) fetchWeightedMeanSlipWithView(
+	ctx cosmos.Context, asset common.Asset, mgr Manager, poolView *finalityPoolView,
+) (slip int64) {
 	slip, err := mgr.Keeper().GetLongRollup(ctx, asset)
 	if err != nil {
 		ctx.Logger().Error("fail to get long rollup", "error", err)
@@ -425,16 +476,18 @@ func (vm *NetworkMgr) fetchWeightedMeanSlip(ctx cosmos.Context, asset common.Ass
 
 	dynamicMaxAnchorCalcInterval := mgr.Keeper().GetConfigInt64(ctx, constants.DynamicMaxAnchorCalcInterval)
 	if (dynamicMaxAnchorCalcInterval > 0 && ctx.BlockHeight()%dynamicMaxAnchorCalcInterval == 0) || slip <= 0 {
-		slip = vm.calculateWeightedMeanSlip(ctx, asset, mgr)
+		slip = vm.calculateWeightedMeanSlipWithView(ctx, asset, mgr, poolView)
 		mgr.Keeper().SetLongRollup(ctx, asset, slip)
 	}
 
 	return slip
 }
 
-func (vm *NetworkMgr) calculateWeightedMeanSlip(ctx cosmos.Context, asset common.Asset, mgr Manager) int64 {
+func (vm *NetworkMgr) calculateWeightedMeanSlipWithView(
+	ctx cosmos.Context, asset common.Asset, mgr Manager, poolView *finalityPoolView,
+) int64 {
 	dynamicMaxAnchorSlipBlocks := mgr.Keeper().GetConfigInt64(ctx, constants.DynamicMaxAnchorSlipBlocks)
-	availableAnchors, depths := vm.GetAvailableAnchorsAndDepths(ctx, mgr, asset)
+	availableAnchors, depths := vm.getAvailableAnchorsAndDepths(ctx, mgr, asset, poolView)
 
 	// track median slips used and their corresponding depths for weighted mean
 	medianSlips := make([]cosmos.Uint, 0)
@@ -566,6 +619,7 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 	if len(retiring) == 0 {
 		return nil
 	}
+	poolView := newFinalityPoolView(vm.k)
 
 	vaultsAvailableCoins := map[common.PubKey]common.Coins{}
 	// Chains with a migrate still pending from each RetiringVault. Only those
@@ -749,7 +803,7 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 			if err = vm.k.SetVault(ctx, vault); err != nil {
 				ctx.Logger().Error("fail to set vault to inactive", "error", err)
 			} else {
-				rollbackUnfinalizedMempoolSwapsForInactiveVault(ctx, vm.k, mgr, vault)
+				startMempoolSwapVaultRecovery(ctx, vm.k, vault)
 			}
 			continue
 		}
@@ -928,6 +982,17 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 							continue
 						}
 
+						// Dust settlement consumes Reserve funds and permanently changes
+						// the pool. Wait until this pool has no reversible overlay.
+						overlay, overlayErr := poolView.overlay(ctx, coin.Asset)
+						if overlayErr != nil {
+							return fmt.Errorf("fail to get mempool swap overlay for dust asset %s: %w", coin.Asset, overlayErr)
+						}
+						if !mempoolSwapPoolBalanceOverlayIsZero(overlay) {
+							ctx.Logger().Info("skipping migration dust settlement for active mempool swap", "asset", coin.Asset)
+							continue
+						}
+
 						if chain.Equals(common.XRPChain) || chain.Equals(common.SOLChain) {
 							ctx.Logger().Info("left coin is account reserve, thus burn it", "coin", coin, "gas", gasAmount)
 						} else {
@@ -1015,14 +1080,22 @@ func (vm *NetworkMgr) paySaverYield(ctx cosmos.Context, asset common.Asset, rune
 	if err != nil {
 		return err
 	}
+	poolView := newFinalityPoolView(vm.k)
+	pool, _, err = poolView.adjust(ctx, pool)
+	if err != nil {
+		return fmt.Errorf("fail to get finality-adjusted saver yield pool %s: %w", pool.Asset, err)
+	}
+	return vm.paySaverYieldForPool(ctx, pool, runeAmt, poolView)
+}
 
+func (vm *NetworkMgr) paySaverYieldForPool(ctx cosmos.Context, pool Pool, runeAmt cosmos.Uint, poolView *finalityPoolView) error {
 	// if saver's layer 1 pool is empty, skip
 	// if the pool is not active, no need to pay synths for yield
 	if pool.BalanceAsset.IsZero() || pool.Status != PoolAvailable {
 		return nil
 	}
 
-	saver, err := vm.k.GetPool(ctx, asset.GetSyntheticAsset())
+	saver, err := vm.k.GetPool(ctx, pool.Asset.GetSyntheticAsset())
 	if err != nil {
 		return err
 	}
@@ -1045,7 +1118,10 @@ func (vm *NetworkMgr) paySaverYield(ctx cosmos.Context, asset common.Asset, rune
 	max := vm.k.GetConfigInt64(ctx, constants.MaxSynthsForSaversYield)
 	if max > 0 {
 		maxSaversForSynthYield := cosmos.NewUint(uint64(max))
-		synthSupply := vm.k.GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
+		synthSupply, _, totalSupplyErr := poolView.getTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
+		if totalSupplyErr != nil {
+			return fmt.Errorf("fail to get finality-adjusted synth supply for saver yield pool %s: %w", pool.Asset, totalSupplyErr)
+		}
 		pool.CalcUnits(synthSupply)
 		synthPerPoolDepth := common.GetUncappedShare(pool.SynthUnits, pool.GetPoolUnits(), cosmos.NewUint(10_000))
 		lostYield := common.GetUncappedShare(synthPerPoolDepth, maxSaversForSynthYield, cosmos.NewUint(uint64(basisPts)))
@@ -1144,7 +1220,8 @@ func (vm *NetworkMgr) POLCycle(ctx cosmos.Context, mgr Manager) error {
 		return err
 	}
 
-	pools, mimirVals := vm.fetchPOLPools(ctx, mgr)
+	poolView := newFinalityPoolView(mgr.Keeper())
+	pools, mimirVals, affectedPools := vm.fetchPOLPoolsWithView(ctx, mgr, poolView)
 
 	if len(pools) == 0 {
 		return fmt.Errorf("no POL pools")
@@ -1155,11 +1232,21 @@ func (vm *NetworkMgr) POLCycle(ctx cosmos.Context, mgr Manager) error {
 	polValue := &polValueMemo{}
 	for idx, pool := range pools {
 		val := mimirVals[idx]
+		synthSupply, supplyAffected, err := poolView.getTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
+		if err != nil {
+			return fmt.Errorf("fail to get finality-adjusted synth supply for POL pool %s: %w", pool.Asset, err)
+		}
+		// POL mutations change LP ownership and cannot be cleanly separated from
+		// reversible swap depth. Delay this pool until its inbound finalizes or
+		// rolls back; other pools continue normally.
+		if affectedPools[idx] || supplyAffected {
+			ctx.Logger().Info("skipping POL movement for pool with unfinalized mempool swap", "pool", pool.Asset)
+			continue
+		}
 
 		// use a local copy so forced-withdraw mutation doesn't leak to subsequent iterations
 		loopTarget := targetSynthPerPoolDepth
 
-		synthSupply := mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
 		pool.CalcUnits(synthSupply)
 		synthPerPoolDepth := common.GetUncappedShare(pool.SynthUnits, pool.GetPoolUnits(), cosmos.NewUint(10_000))
 
@@ -1216,11 +1303,13 @@ func (vm *NetworkMgr) POLReserveCycle(ctx cosmos.Context, mgr Manager) error {
 	}
 
 	// Find the best L1 pool by rolling fees / pool depth
+	poolView := newFinalityPoolView(mgr.Keeper())
 	iterator := mgr.Keeper().GetPoolIterator(ctx)
 	defer iterator.Close()
 
 	var bestPool Pool
 	var bestScore cosmos.Uint
+	bestPoolAffected := false
 	bestFound := false
 
 	for ; iterator.Valid(); iterator.Next() {
@@ -1229,6 +1318,11 @@ func (vm *NetworkMgr) POLReserveCycle(ctx cosmos.Context, mgr Manager) error {
 			ctx.Logger().Error("fail to unmarshal pool", "error", err)
 			continue
 		}
+		adjustedPool, affected, adjustErr := poolView.adjust(ctx, pool)
+		if adjustErr != nil {
+			return fmt.Errorf("fail to get finality-adjusted POL Reserve pool %s: %w", pool.Asset, adjustErr)
+		}
+		pool = adjustedPool
 
 		if !pool.Asset.IsExternalL1Asset() {
 			continue
@@ -1269,11 +1363,19 @@ func (vm *NetworkMgr) POLReserveCycle(ctx cosmos.Context, mgr Manager) error {
 		if !bestFound || score.GT(bestScore) {
 			bestPool = pool
 			bestScore = score
+			bestPoolAffected = affected
 			bestFound = true
 		}
 	}
 
 	if !bestFound {
+		return nil
+	}
+	// Adding protocol liquidity to a pool with a reversible swap would compute
+	// LP units against speculative depth. Defer only the selected pool rather
+	// than allowing an unfinalized swap to redirect deployment elsewhere.
+	if bestPoolAffected {
+		ctx.Logger().Info("skipping POL Reserve deployment for pool with unfinalized mempool swap", "pool", bestPool.Asset)
 		return nil
 	}
 
@@ -1344,10 +1446,14 @@ func (vm *NetworkMgr) POLReserveCycle(ctx cosmos.Context, mgr Manager) error {
 	return nil
 }
 
-// generated a filtered list of pools that the POL is active with
-func (mv *NetworkMgr) fetchPOLPools(ctx cosmos.Context, mgr Manager) (Pools, []int64) {
+func (mv *NetworkMgr) fetchPOLPoolsWithView(
+	ctx cosmos.Context,
+	mgr Manager,
+	poolView *finalityPoolView,
+) (Pools, []int64, []bool) {
 	var pools Pools
 	mimirVals := make([]int64, 0)
+	affectedPools := make([]bool, 0)
 	iterator := mgr.Keeper().GetPoolIterator(ctx)
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
@@ -1357,6 +1463,12 @@ func (mv *NetworkMgr) fetchPOLPools(ctx cosmos.Context, mgr Manager) (Pools, []i
 			ctx.Logger().Error("fail to unmarshal pool", "pool", pool.Asset.String(), "error", err)
 			continue
 		}
+		adjustedPool, affected, adjustErr := poolView.adjust(ctx, pool)
+		if adjustErr != nil {
+			ctx.Logger().Error("fail to get finality-adjusted POL pool", "pool", pool.Asset.String(), "error", adjustErr)
+			continue
+		}
+		pool = adjustedPool
 
 		if pool.Asset.IsSyntheticAsset() {
 			continue
@@ -1397,9 +1509,10 @@ func (mv *NetworkMgr) fetchPOLPools(ctx cosmos.Context, mgr Manager) (Pools, []i
 
 		pools = append(pools, pool)
 		mimirVals = append(mimirVals, val)
+		affectedPools = append(affectedPools, affected)
 	}
 
-	return pools, mimirVals
+	return pools, mimirVals, affectedPools
 }
 
 func (vm *NetworkMgr) addPOLLiquidity(
@@ -1693,6 +1806,8 @@ func (vm *NetworkMgr) scheduleKeygen(ctx cosmos.Context, nas NodeAccounts, keyge
 		v.UpdateStatus(InactiveVault, ctx.BlockHeight())
 		if err := vm.k.SetVault(ctx, v); err != nil {
 			ctx.Logger().Error("fail to save vault", "error", err)
+		} else {
+			startMempoolSwapVaultRecovery(ctx, vm.k, v)
 		}
 	}
 	return nil
@@ -2196,11 +2311,12 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 		)
 		return nil
 	}
-	availablePools, availablePoolsRune, err := getAvailablePoolsRune(ctx, vm.k)
+	poolView := newFinalityPoolView(vm.k)
+	availablePools, availablePoolsRune, err := getAvailablePoolsRuneWithFinalityView(ctx, vm.k, poolView)
 	if err != nil {
 		return fmt.Errorf("fail to get available pools and their rune: %w", err)
 	}
-	vaultsLiquidityRune, err := getVaultsLiquidityRune(ctx, vm.k)
+	vaultsLiquidityRune, err := getVaultsLiquidityRuneWithFinalityView(ctx, vm.k, poolView)
 	if err != nil {
 		return fmt.Errorf("fail to get vaults liquidity rune: %w", err)
 	}
@@ -2373,7 +2489,7 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 				}
 				amt = common.GetSafeShare(fees, totalLiquidityFees, totalPoolRewards)
 			}
-			if err = vm.paySaverYield(cacheCtx, pool.Asset, amt.Add(fees)); err != nil {
+			if err = vm.paySaverYieldForPool(cacheCtx, pool, amt.Add(fees), poolView); err != nil {
 				return fmt.Errorf("fail to pay saver yield: %w", err)
 			}
 			// when pool reward is zero, don't emit it
@@ -2521,12 +2637,19 @@ func (vm *NetworkMgr) payPoolRewards(ctx cosmos.Context, poolRewards []cosmos.Ui
 		if reward.IsZero() {
 			continue
 		}
+		// Reward allocation may use a finality-adjusted pool copy. Add the
+		// reward to the live pool instead of writing that copy back, otherwise
+		// the write would erase the reversible speculative balance overlay.
+		livePool, err := vm.k.GetPool(ctx, pools[i].Asset)
+		if err != nil {
+			return fmt.Errorf("fail to get live pool for reward: %w", err)
+		}
 		coin := common.NewCoin(common.RuneNative, reward)
 		if err := vm.k.SendFromModuleToModule(ctx, ReserveName, AsgardName, common.NewCoins(coin)); err != nil {
 			return fmt.Errorf("fail to transfer funds from reserve to asgard: %w", err)
 		}
-		pools[i].BalanceRune = pools[i].BalanceRune.Add(reward)
-		if err := vm.k.SetPool(ctx, pools[i]); err != nil {
+		livePool.BalanceRune = livePool.BalanceRune.Add(reward)
+		if err := vm.k.SetPool(ctx, livePool); err != nil {
 			return fmt.Errorf("fail to set pool: %w", err)
 		}
 	}
@@ -2746,6 +2869,7 @@ func (vm *NetworkMgr) checkPoolRagnarok(ctx cosmos.Context, mgr Manager) error {
 	if err != nil {
 		return err
 	}
+	poolView := newFinalityPoolView(vm.k)
 
 	for _, pool := range pools {
 		// skip synth and derived pool records
@@ -2756,6 +2880,20 @@ func (vm *NetworkMgr) checkPoolRagnarok(ctx cosmos.Context, mgr Manager) error {
 		if !vm.k.IsRagnarok(ctx, []common.Asset{pool.Asset}) {
 			continue
 		}
+
+		adjustedPool, poolAffected, err := poolView.adjust(ctx, pool)
+		if err != nil {
+			return fmt.Errorf("fail to get finality-adjusted ragnarok pool %s: %w", pool.Asset, err)
+		}
+		_, supplyAffected, err := poolView.getTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
+		if err != nil {
+			return fmt.Errorf("fail to get finality-adjusted ragnarok synth supply for %s: %w", pool.Asset, err)
+		}
+		if poolAffected || supplyAffected {
+			ctx.Logger().Info("skipping pool ragnarok with unfinalized mempool swap", "pool", pool.Asset)
+			continue
+		}
+		pool = adjustedPool
 
 		if pool.Asset.IsGasAsset() && !vm.canRagnarokGasPool(ctx, pool.Asset.GetChain(), pools) {
 			continue
@@ -2789,7 +2927,19 @@ func (vm *NetworkMgr) canRagnarokGasPool(ctx cosmos.Context, c common.Chain, all
 }
 
 func (vm *NetworkMgr) redeemSynthAssetToReserve(ctx cosmos.Context, p Pool) error {
-	totalSupply := vm.k.GetTotalSupply(ctx, p.Asset.GetSyntheticAsset())
+	poolView := newFinalityPoolView(vm.k)
+	adjustedPool, poolAffected, err := poolView.adjust(ctx, p)
+	if err != nil {
+		return fmt.Errorf("fail to get finality-adjusted pool for synth redemption %s: %w", p.Asset, err)
+	}
+	totalSupply, supplyAffected, err := poolView.getTotalSupply(ctx, p.Asset.GetSyntheticAsset())
+	if err != nil {
+		return fmt.Errorf("fail to get finality-adjusted synth supply for redemption %s: %w", p.Asset, err)
+	}
+	if poolAffected || supplyAffected {
+		return fmt.Errorf("cannot redeem synths for pool %s while an unfinalized mempool swap is active", p.Asset)
+	}
+	p = adjustedPool
 	if totalSupply.IsZero() {
 		return nil
 	}
@@ -2992,6 +3142,16 @@ func (vm *NetworkMgr) claimingSwapRuneToTCY(ctx cosmos.Context, mgr Manager) err
 		return nil
 	}
 
+	// This internal swap immediately moves module balances and pool depths. Do
+	// not price or execute it against a pool containing reversible mutations.
+	overlay, err := newFinalityPoolView(mgr.Keeper()).overlay(ctx, common.TCY)
+	if err != nil {
+		return err
+	}
+	if !mempoolSwapPoolBalanceOverlayIsZero(overlay) {
+		ctx.Logger().Info("deferring claiming module tcy swap for active mempool swap")
+		return nil
+	}
 	pool, err := mgr.Keeper().GetPool(ctx, common.TCY)
 	if err != nil {
 		return err

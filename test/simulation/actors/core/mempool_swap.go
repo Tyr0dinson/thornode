@@ -24,6 +24,7 @@ const (
 
 	mempoolCapHigh              = int64(100_000_000_000_000)
 	mempoolAffiliateRevShareBPS = int64(2_500)
+	mempoolMaxCount             = int64(20)
 	mempoolTimeoutSigningPeriod = int64(3)
 	mempoolTimeoutAttempts      = int64(3)
 
@@ -43,23 +44,24 @@ var (
 		{key: "EnableAdvSwapQueue", value: 1},
 		{key: "MempoolSwapCapTOR", value: mempoolCapHigh},
 		{key: "MempoolSwapPoolCapBPS", value: 0},
+		{key: "MempoolSwapMaxCount", value: mempoolMaxCount},
 	}
 	// Fresh mocknet omits these Mimirs from storage and reports -1. Ordinary
 	// voting cannot restore an absent key, so cleanup intentionally normalizes
 	// that state to the explicit effective mocknet/default value below.
 	mempoolSimulationUnsetMimirDefaults = map[string]int64{
-		"DollarsPerRune":           0,
-		"EnableAdvSwapQueue":       1,
-		"MaxOutboundAttempts":      0,
-		"MempoolSwapCapTOR":        0,
-		"MempoolSwapPoolCapBPS":    50,
-		"SigningTransactionPeriod": 300,
+		"DollarsPerRune":        0,
+		"EnableAdvSwapQueue":    1,
+		"MempoolSwapCapTOR":     0,
+		"MempoolSwapPoolCapBPS": 50,
+		"MempoolSwapMaxCount":   1_000,
 	}
 
 	// Keep early lifecycle coverage on BTC, then use AVAX's lower outbound fee
 	// for the cumulative-profile cases that otherwise repeat the same target.
 	mempoolEarlyLifecycleTarget    = common.BTCAsset
 	mempoolCumulativeProfileTarget = common.AVAXAsset
+	mempoolMaxCountFallbackTarget  = common.ETHAsset
 )
 
 // MempoolSwapSimulationActor exercises the real L1 -> Bifrost -> Thornode
@@ -96,9 +98,12 @@ func (a *MempoolSwapSimulationActor) runScenarios(config *OpConfig) (err error) 
 		{name: "affiliate-revshare-finality", run: a.scenarioAffiliateRevShareFinality},
 		{name: "stream-settle-before-finality", run: a.scenarioStreamSettleBeforeFinality},
 		{name: "stream-finality-before-settlement", run: a.scenarioStreamFinalityBeforeSettlement},
+		{name: "pool-serialization", run: a.scenarioPoolSerialization},
+		{name: "max-count-fallback", run: a.scenarioMaxCountFallback},
 		{name: "tor-cap-fallback", run: a.scenarioTORCapFallback},
 		{name: "pool-cap-fallback", run: a.scenarioPoolCapFallback},
 		{name: "timeout-rollback", run: a.scenarioTimeoutRollback},
+		{name: "errata-rollback", run: a.scenarioErrataRollback},
 	}
 	scenarioNames := make([]string, 0, len(scenarios))
 	for _, scenario := range scenarios {
@@ -718,11 +723,10 @@ func (a *MempoolSwapSimulationActor) scenarioStreamFinalityBeforeSettlement(conf
 		return err
 	}
 
-	// Inbound finality retires the speculative exposure even though the advanced
-	// queue still owns the remaining stream: the credited source is now backed by
-	// a finalized deposit, so the capacity reservation is released immediately and
-	// the leftover queue item settles as an ordinary streaming swap.
-	if err = waitForMempoolCondition("released streaming reservation at finality "+swap.txID, mempoolCompletionTimeout, func() (bool, error) {
+	// Inbound finality releases the TOR reservation immediately, while the
+	// lifecycle record remains as a zero-reservation tombstone until the advanced
+	// queue settles its final stream leg.
+	if err = waitForMempoolCondition("finalized streaming tombstone "+swap.txID, mempoolCompletionTimeout, func() (bool, error) {
 		details, queryErr := thornode.GetTxDetails(swap.txID)
 		if queryErr != nil || details.GetFinalisedHeight() == 0 {
 			return false, queryErr
@@ -756,6 +760,167 @@ func (a *MempoolSwapSimulationActor) scenarioStreamFinalityBeforeSettlement(conf
 	}
 
 	return a.waitForL1Completion(swap, cosmos.ZeroUint())
+}
+
+func (a *MempoolSwapSimulationActor) scenarioPoolSerialization(config *OpConfig) error {
+	owner, err := a.prepareSwap(config, "pool-serialization-owner", common.POLAsset, mempoolEarlyLifecycleTarget, 2_000, "")
+	if err != nil {
+		return err
+	}
+	defer owner.release()
+	blocked, err := a.prepareSwap(config, "pool-serialization-blocked", common.AVAXAsset, mempoolEarlyLifecycleTarget, 2_000, "")
+	if err != nil {
+		return err
+	}
+	defer blocked.release()
+	if err = a.broadcastPreparedSwap(owner); err != nil {
+		return err
+	}
+	if err = a.waitForSpeculativeSettlement(owner, cosmos.ZeroUint()); err != nil {
+		return err
+	}
+	ownerUsage, err := thornode.GetMempoolSwapUsageTOR()
+	if err != nil {
+		return err
+	}
+	polBalance, err := mempoolPoolAssetBalance(common.POLAsset)
+	if err != nil {
+		return err
+	}
+	btcBalance, err := mempoolPoolAssetBalance(common.BTCAsset)
+	if err != nil {
+		return err
+	}
+	avaxBalance, err := mempoolPoolAssetBalance(common.AVAXAsset)
+	if err != nil {
+		return err
+	}
+
+	if err = a.broadcastPreparedSwap(blocked); err != nil {
+		return err
+	}
+
+	if err = waitForMempoolCondition("serialized finalized swap "+blocked.txID, 30*time.Second, func() (bool, error) {
+		details, queryErr := thornode.GetTxDetails(blocked.txID)
+		if queryErr != nil || details.GetFinalisedHeight() == 0 {
+			return false, queryErr
+		}
+		return mempoolSwapQueueStateIsZero(blocked.txID)
+	}); err != nil {
+		return err
+	}
+	startHeight, err := thornode.GetBlockHeight()
+	if err != nil {
+		return err
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timed out proving swap %s remained serialized for three blocks", blocked.txID)
+		}
+		if err = requireMempoolSwapUnfinalized(owner.txID); err != nil {
+			return err
+		}
+		zero, queryErr := mempoolSwapQueueStateIsZero(blocked.txID)
+		if queryErr != nil {
+			return queryErr
+		}
+		if !zero {
+			return fmt.Errorf("blocked swap %s consumed an execution attempt while pool was owned", blocked.txID)
+		}
+		usage, queryErr := thornode.GetMempoolSwapUsageTOR()
+		if queryErr != nil {
+			return queryErr
+		}
+		if !usage.Equal(ownerUsage) {
+			return fmt.Errorf("pool serialization changed TOR usage: expected %s, got %s", ownerUsage, usage)
+		}
+		if err = requireMempoolPoolBalances(map[common.Asset]cosmos.Uint{
+			common.POLAsset:  polBalance,
+			common.BTCAsset:  btcBalance,
+			common.AVAXAsset: avaxBalance,
+		}); err != nil {
+			return err
+		}
+		height, queryErr := thornode.GetBlockHeight()
+		if queryErr != nil {
+			return queryErr
+		}
+		if height >= startHeight+3 {
+			break
+		}
+		time.Sleep(mempoolWaitInterval)
+	}
+
+	if err = a.waitForL1Completion(owner, cosmos.ZeroUint()); err != nil {
+		return err
+	}
+	return a.waitForL1Completion(blocked, cosmos.ZeroUint())
+}
+
+func (a *MempoolSwapSimulationActor) scenarioMaxCountFallback(config *OpConfig) (err error) {
+	if err = a.setMimir(config, "MempoolSwapMaxCount", 1); err != nil {
+		return err
+	}
+	defer func() {
+		if restoreErr := a.setMimir(config, "MempoolSwapMaxCount", mempoolMaxCount); restoreErr != nil {
+			err = errors.Join(err, fmt.Errorf("restore MempoolSwapMaxCount: %w", restoreErr))
+		}
+	}()
+
+	owner, err := a.prepareSwap(config, "max-count-owner", common.POLAsset, mempoolCumulativeProfileTarget, 2_000, "")
+	if err != nil {
+		return err
+	}
+	defer owner.release()
+	fallback, err := a.prepareSwap(config, "max-count-fallback", common.POLAsset, mempoolMaxCountFallbackTarget, 2_000, "")
+	if err != nil {
+		return err
+	}
+	defer fallback.release()
+	if !fallback.vaultStart.Equal(owner.vaultStart) {
+		return fmt.Errorf("max-count swaps did not share a stable source-vault baseline: owner %s, fallback %s", owner.vaultStart, fallback.vaultStart)
+	}
+	if err = a.broadcastPreparedSwap(owner); err != nil {
+		return err
+	}
+	if err = a.waitForSpeculativeSettlement(owner, cosmos.ZeroUint()); err != nil {
+		return err
+	}
+	ownerUsage, err := thornode.GetMempoolSwapUsageTOR()
+	if err != nil {
+		return err
+	}
+
+	fallback.fromPoolStart, err = mempoolPoolAssetBalance(fallback.from)
+	if err != nil {
+		return err
+	}
+	fallback.toPoolStart, err = mempoolPoolAssetBalance(fallback.to)
+	if err != nil {
+		return err
+	}
+	if err = a.broadcastPreparedSwap(fallback); err != nil {
+		return err
+	}
+	if err = a.assertNoSpeculativeWindow(fallback, ownerUsage, 2); err != nil {
+		return err
+	}
+	if err = a.waitForL1CompletionAllowAdditionalVault(owner, cosmos.ZeroUint()); err != nil {
+		return err
+	}
+	if err = a.waitForL1CompletionAllowAdditionalVault(fallback, cosmos.ZeroUint()); err != nil {
+		return err
+	}
+	vault, err := mempoolVaultAssetBalance(owner.vaultPubKey, owner.from)
+	if err != nil {
+		return err
+	}
+	expectedVault := owner.vaultStart.Add(owner.amount).Add(fallback.amount)
+	if !vault.Equal(expectedVault) {
+		return fmt.Errorf("max-count swaps credited source vault incorrectly: expected %s, got %s", expectedVault, vault)
+	}
+	return nil
 }
 
 func (a *MempoolSwapSimulationActor) scenarioTORCapFallback(config *OpConfig) (err error) {
@@ -801,14 +966,14 @@ func (a *MempoolSwapSimulationActor) scenarioPoolCapFallback(config *OpConfig) (
 }
 
 func (a *MempoolSwapSimulationActor) scenarioTimeoutRollback(config *OpConfig) (err error) {
-	originalSigningPeriod, err := getEffectiveMempoolSimulationMimir("SigningTransactionPeriod")
+	originalSigningPeriod, err := thornode.GetMimir("SigningTransactionPeriod")
 	if err != nil {
 		return fmt.Errorf("snapshot SigningTransactionPeriod: %w", err)
 	}
 	if originalSigningPeriod <= 0 {
 		return fmt.Errorf("invalid effective SigningTransactionPeriod %d", originalSigningPeriod)
 	}
-	originalMaxOutboundAttempts, err := getEffectiveMempoolSimulationMimir("MaxOutboundAttempts")
+	originalMaxOutboundAttempts, err := thornode.GetMimir("MaxOutboundAttempts")
 	if err != nil {
 		return fmt.Errorf("snapshot MaxOutboundAttempts: %w", err)
 	}
@@ -861,15 +1026,7 @@ func (a *MempoolSwapSimulationActor) scenarioTimeoutRollback(config *OpConfig) (
 	if err != nil {
 		return err
 	}
-	// v1 performs the staged-outbound scan only on SigningTransactionPeriod
-	// cadence blocks. A timeout threshold between cadence blocks is recovered on
-	// the next cadence, rather than at the exact age threshold used by v2's due
-	// lifecycle index.
-	expectedRecoveryHeight := mempoolTimeoutRecoveryHeight(
-		stagedHeight,
-		mempoolTimeoutSigningPeriod,
-		mempoolTimeoutAttempts,
-	)
+	expectedRecoveryHeight := stagedHeight + mempoolTimeoutSigningPeriod*mempoolTimeoutAttempts
 	if err = requireMempoolTimeoutPending(swap.txID, expectedRecoveryHeight); err != nil {
 		return err
 	}
@@ -914,6 +1071,72 @@ func (a *MempoolSwapSimulationActor) scenarioTimeoutRollback(config *OpConfig) (
 	expectation.finalisedHeight = details.GetFinalisedHeight()
 	expectation.requireOutboundHistory = true
 	return requireRollbackEvents(startHeight, swap.txID, expectation)
+}
+
+func (a *MempoolSwapSimulationActor) scenarioErrataRollback(config *OpConfig) error {
+	startHeight, err := thornode.GetBlockHeight()
+	if err != nil {
+		return err
+	}
+	swap, err := a.startSwap(config, "errata-rollback", common.POLAsset, mempoolCumulativeProfileTarget, 2_000, "")
+	if err != nil {
+		return err
+	}
+	defer swap.release()
+	if err = a.waitForSpeculativeSettlement(swap, cosmos.ZeroUint()); err != nil {
+		return err
+	}
+	if err = config.RegisterExpectedSecurityEvent(swap.txID, mempoolRollbackSecurityMsg, 1); err != nil {
+		return err
+	}
+
+	lateNodes, err := a.broadcastErrataConsensus(config, swap.txID)
+	if err != nil {
+		return err
+	}
+	if err = a.waitForRollbackCleanup(swap, true); err != nil {
+		return err
+	}
+	if err = waitForExpectedSecurityEvent(config, swap.txID); err != nil {
+		return err
+	}
+	if err = requireRollbackEvents(startHeight, swap.txID, mempoolRollbackEventExpectation{}); err != nil {
+		return err
+	}
+
+	// A previously unused signer may attest after consensus. This is safe and
+	// proves the already-processed errata voter cannot apply rollback twice.
+	if len(lateNodes) > 0 {
+		if _, err = broadcastErrataFromNode(lateNodes[0], swap.txID); err != nil {
+			return err
+		}
+		if err = a.requireRolledBackState(swap, true); err != nil {
+			return err
+		}
+		if err = requireRollbackEvents(startHeight, swap.txID, mempoolRollbackEventExpectation{}); err != nil {
+			return err
+		}
+	}
+
+	// Let Bifrost deliver the later final observation. Reverted is monotonic: no
+	// vault credit, queue entry, pool mutation, or outbound may reappear.
+	if err = waitForMempoolCondition("final POL observation after errata "+swap.txID, 75*time.Second, func() (bool, error) {
+		stages, queryErr := thornode.GetTxStages(swap.txID)
+		if queryErr != nil {
+			return false, queryErr
+		}
+		if !mempoolInboundFinalised(stages) {
+			return false, nil
+		}
+		details, queryErr := thornode.GetTxDetails(swap.txID)
+		return queryErr == nil && details.GetFinalisedHeight() > 0, queryErr
+	}); err != nil {
+		return err
+	}
+	if err = a.requireRolledBackState(swap, true); err != nil {
+		return err
+	}
+	return requireRollbackEvents(startHeight, swap.txID, mempoolRollbackEventExpectation{})
 }
 
 func (a *MempoolSwapSimulationActor) waitForSpeculativeSettlement(swap *mempoolLiveSwap, baselineUsage cosmos.Uint) error {
@@ -1024,6 +1247,10 @@ func (a *MempoolSwapSimulationActor) waitForL1Completion(swap *mempoolLiveSwap, 
 	return a.waitForL1CompletionWithVaultMode(swap, expectedUsage, true)
 }
 
+func (a *MempoolSwapSimulationActor) waitForL1CompletionAllowAdditionalVault(swap *mempoolLiveSwap, expectedUsage cosmos.Uint) error {
+	return a.waitForL1CompletionWithVaultMode(swap, expectedUsage, false)
+}
+
 func (a *MempoolSwapSimulationActor) waitForL1CompletionWithVaultMode(swap *mempoolLiveSwap, expectedUsage cosmos.Uint, exactVault bool) error {
 	return waitForMempoolCondition("final swap completion "+swap.txID, mempoolCompletionTimeout, func() (bool, error) {
 		stages, err := thornode.GetTxStages(swap.txID)
@@ -1129,6 +1356,134 @@ func (a *MempoolSwapSimulationActor) requireRolledBackState(swap *mempoolLiveSwa
 		return fmt.Errorf("rollback %s changed destination balance", swap.txID)
 	}
 	return nil
+}
+
+func (a *MempoolSwapSimulationActor) broadcastErrataConsensus(config *OpConfig, txID string) ([]*User, error) {
+	nodes, err := activeSimulationNodeUsers(config)
+	if err != nil {
+		return nil, err
+	}
+	threshold := mempoolErrataConsensusThreshold(len(nodes))
+	if threshold > len(nodes) || threshold == 0 {
+		return nil, fmt.Errorf("cannot form errata consensus with %d active nodes", len(nodes))
+	}
+	submissions := make([]mempoolThorTxSubmission, 0, threshold)
+	for _, node := range nodes[:threshold] {
+		submission, broadcastErr := broadcastErrataCheckTxFromNode(node, txID)
+		if broadcastErr != nil {
+			return nil, broadcastErr
+		}
+		submissions = append(submissions, submission)
+	}
+	// Submit every quorum vote before waiting for blocks. This keeps the errata
+	// quorum inside the POL pre-finality window while still proving each vote's
+	// individual DeliverTx result.
+	for _, submission := range submissions {
+		if err = waitForThorTxCommit(submission.startHeight, submission.txID, 30*time.Second); err != nil {
+			return nil, fmt.Errorf("commit errata vote %s from %s: %w", submission.txID, submission.nodeName, err)
+		}
+	}
+	return nodes[threshold:], nil
+}
+
+type mempoolThorTxSubmission struct {
+	txID        common.TxID
+	startHeight int64
+	nodeName    string
+}
+
+func broadcastErrataCheckTxFromNode(node *User, txID string) (mempoolThorTxSubmission, error) {
+	var submission mempoolThorTxSubmission
+	parsed, err := common.NewTxID(txID)
+	if err != nil {
+		return submission, err
+	}
+	if !node.Acquire() {
+		return submission, fmt.Errorf("node %s is busy while broadcasting errata", node.Name())
+	}
+	defer node.Release()
+	addr, err := node.PubKey(common.THORChain).GetThorAddress()
+	if err != nil {
+		return submission, err
+	}
+	strict, ok := node.Thorchain.(strictThorchainBroadcaster)
+	if !ok {
+		return submission, fmt.Errorf("node %s Thorchain bridge does not support strict CheckTx broadcasting", node.Name())
+	}
+	submission.startHeight, err = thornode.GetBlockHeight()
+	if err != nil {
+		return submission, err
+	}
+	submission.txID, err = strict.BroadcastStrict(thortypes.NewMsgErrataTx(parsed, common.POLChain, addr))
+	if err != nil {
+		return submission, fmt.Errorf("strict errata CheckTx from %s: %w", node.Name(), err)
+	}
+	submission.nodeName = node.Name()
+	return submission, nil
+}
+
+func mempoolErrataConsensusThreshold(total int) int {
+	if total <= 0 {
+		return 0
+	}
+	return (2*total + 2) / 3
+}
+
+type strictThorchainBroadcaster interface {
+	BroadcastStrict(...cosmos.Msg) (common.TxID, error)
+}
+
+func broadcastErrataFromNode(node *User, txID string) (common.TxID, error) {
+	submission, err := broadcastErrataCheckTxFromNode(node, txID)
+	if err != nil {
+		return submission.txID, err
+	}
+	if err = waitForThorTxCommit(submission.startHeight, submission.txID, 30*time.Second); err != nil {
+		return submission.txID, fmt.Errorf("commit errata vote %s from %s: %w", submission.txID, submission.nodeName, err)
+	}
+	return submission.txID, nil
+}
+
+func waitForThorTxCommit(startHeight int64, txID common.TxID, timeout time.Duration) error {
+	nextHeight := startHeight
+	return waitForMempoolCondition("THORChain transaction commitment "+txID.String(), timeout, func() (bool, error) {
+		endHeight, err := thornode.GetBlockHeight()
+		if err != nil {
+			return false, err
+		}
+		for nextHeight <= endHeight {
+			block, queryErr := thornode.GetBlock(nextHeight)
+			if queryErr != nil {
+				return false, queryErr
+			}
+			nextHeight++
+			found, commitErr := thorTxCommitResult(block, txID.String())
+			if commitErr != nil {
+				return false, stopMempoolWait(commitErr)
+			}
+			if found {
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+}
+
+func thorTxCommitResult(block openapi.BlockResponse, txID string) (bool, error) {
+	for _, tx := range block.Txs {
+		if !mempoolTxIDsEqual(tx.Hash, txID) {
+			continue
+		}
+		code, ok := tx.Result.GetCodeOk()
+		if !ok {
+			return true, fmt.Errorf("THORChain transaction %s at height %d has no DeliverTx result code", txID, block.Header.Height)
+		}
+		if *code != 0 {
+			return true, fmt.Errorf("THORChain transaction %s failed DeliverTx at height %d with code %d: %s", txID, block.Header.Height, *code, tx.Result.GetLog())
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 func waitForExpectedSecurityEvent(config *OpConfig, txID string) error {
@@ -1332,16 +1687,6 @@ func mempoolStagedOutboundHeight(txID string) (int64, error) {
 	return height, nil
 }
 
-// mempoolTimeoutRecoveryHeight returns the first LackSigning recovery cadence
-// at or after the staged outbound reaches its configured timeout age.
-func mempoolTimeoutRecoveryHeight(stagedHeight, signingPeriod, attempts int64) int64 {
-	threshold := stagedHeight + signingPeriod*attempts
-	if remainder := threshold % signingPeriod; remainder != 0 {
-		threshold += signingPeriod - remainder
-	}
-	return threshold
-}
-
 func requireMempoolTimeoutPending(txID string, expectedRecoveryHeight int64) error {
 	height, err := thornode.GetBlockHeight()
 	if err != nil {
@@ -1394,6 +1739,21 @@ func mempoolSwapQueueExists(txID string) (bool, error) {
 		return false, nil
 	}
 	return false, err
+}
+
+func mempoolSwapQueueStateIsZero(txID string) (bool, error) {
+	details, err := thornode.GetSwapDetails(txID)
+	if err != nil {
+		return false, err
+	}
+	if details.Swap == nil || details.Swap.State == nil {
+		return false, nil
+	}
+	state := details.Swap.State
+	return state.GetCount() == 0 &&
+		(state.In == nil || state.GetIn() == "0") &&
+		(state.Out == nil || state.GetOut() == "0") &&
+		len(state.FailedSwaps) == 0 && len(state.FailedSwapReasons) == 0, nil
 }
 
 func mempoolQueueNotFound(err error) bool {

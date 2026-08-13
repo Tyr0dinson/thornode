@@ -41,6 +41,28 @@ func (k failStageCostPoolSaveKeeper) SetPool(ctx cosmos.Context, pool Pool) erro
 	return k.Keeper.SetPool(ctx, pool)
 }
 
+type failPoolPromotionKeeper struct {
+	keeper.Keeper
+	asset common.Asset
+}
+
+func (k failPoolPromotionKeeper) SetPool(ctx cosmos.Context, pool Pool) error {
+	if pool.Asset.Equals(k.asset) && pool.Status == PoolAvailable {
+		return fmt.Errorf("fail pool promotion")
+	}
+	return k.Keeper.SetPool(ctx, pool)
+}
+
+type poolIteratorCountingKeeper struct {
+	keeper.Keeper
+	reads int
+}
+
+func (k *poolIteratorCountingKeeper) GetPoolIterator(ctx cosmos.Context) cosmos.Iterator {
+	k.reads++
+	return k.Keeper.GetPoolIterator(ctx)
+}
+
 func (s *PoolMgrSuite) TestEnableNextPool(c *C) {
 	var err error
 	ctx, k := setupKeeperForTest(c)
@@ -1205,6 +1227,122 @@ func (s *PoolMgrSuite) TestStageCostSaveFailureDoesNotCommitReserveOrBurnPool(c 
 
 	reserveRuneAfter := k.GetRuneBalanceOfModule(ctx, ReserveName)
 	c.Assert(reserveRuneAfter.Equal(reserveRuneBefore), Equals, true)
+}
+
+// TestPoolCycleFailureRollsBackAndRetries verifies that a late cycle failure
+// discards earlier fee, pool, rolling-fee, and event effects while retaining
+// the durable retry marker. The next block must apply those effects once.
+func (s *PoolMgrSuite) TestPoolCycleFailureRollsBackAndRetries(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(20)
+	baseKeeper := mgr.Keeper()
+
+	baseKeeper.SetMimir(ctx, constants.PoolCycle.String(), 10)
+	baseKeeper.SetMimir(ctx, constants.MaxAvailablePools.String(), 100)
+	baseKeeper.SetMimir(ctx, constants.MinRunePoolDepth.String(), 1)
+	baseKeeper.SetMimir(ctx, constants.StagedPoolCost.String(), 10*common.One)
+	baseKeeper.SetMimir(ctx, constants.MinimumPoolLiquidityFee.String(), 0)
+
+	gasPool := NewPool()
+	gasPool.Asset = common.BTCAsset
+	gasPool.Status = PoolAvailable
+	gasPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	gasPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	c.Assert(baseKeeper.SetPool(ctx, gasPool), IsNil)
+	c.Assert(baseKeeper.AddToLiquidityFees(ctx, gasPool.Asset, cosmos.NewUint(17)), IsNil)
+
+	asset, err := common.NewAsset("ETH.USDC-0X9999999999999999999999999999999999999999")
+	c.Assert(err, IsNil)
+	candidate := NewPool()
+	candidate.Asset = asset
+	candidate.Status = PoolStaged
+	candidate.BalanceRune = cosmos.NewUint(100 * common.One)
+	candidate.BalanceAsset = cosmos.NewUint(100 * common.One)
+	c.Assert(baseKeeper.SetPool(ctx, candidate), IsNil)
+
+	asgardBefore := baseKeeper.GetRuneBalanceOfModule(ctx, AsgardName)
+	reserveBefore := baseKeeper.GetRuneBalanceOfModule(ctx, ReserveName)
+	ctx = ctx.WithEventManager(cosmos.NewEventManager())
+	mgr.eventMgr = newEventMgr()
+	mgr.K = failPoolPromotionKeeper{Keeper: baseKeeper, asset: asset}
+
+	poolMgr := newPoolMgr()
+	c.Assert(poolMgr.EndBlock(ctx, mgr), IsNil)
+
+	afterFailure, err := baseKeeper.GetPool(ctx, asset)
+	c.Assert(err, IsNil)
+	c.Check(afterFailure, DeepEquals, candidate)
+	c.Check(baseKeeper.GetRuneBalanceOfModule(ctx, AsgardName).Equal(asgardBefore), Equals, true)
+	c.Check(baseKeeper.GetRuneBalanceOfModule(ctx, ReserveName).Equal(reserveBefore), Equals, true)
+	rollingFee, err := baseKeeper.GetRollingPoolLiquidityFee(ctx, gasPool.Asset)
+	c.Assert(err, IsNil)
+	c.Check(rollingFee, Equals, uint64(17))
+	previousFee, err := baseKeeper.GetPrevCyclePoolLiquidityFee(ctx, gasPool.Asset)
+	c.Assert(err, IsNil)
+	c.Check(previousFee, Equals, uint64(0))
+	c.Check(getPoolCycleRetryHeight(ctx, mgr), Equals, int64(20))
+	for _, event := range ctx.EventManager().Events() {
+		c.Check(event.Type == types.PoolEventType || event.Type == types.PoolBalanceChangeEventType, Equals, false)
+	}
+
+	mgr.K = baseKeeper
+	retryCtx := ctx.WithBlockHeight(21)
+	c.Assert(poolMgr.EndBlock(retryCtx, mgr), IsNil)
+
+	afterRetry, err := baseKeeper.GetPool(retryCtx, asset)
+	c.Assert(err, IsNil)
+	c.Check(afterRetry.Status, Equals, PoolAvailable)
+	c.Check(afterRetry.BalanceRune.Equal(candidate.BalanceRune.Sub(cosmos.NewUint(10*common.One))), Equals, true)
+	c.Check(baseKeeper.GetRuneBalanceOfModule(retryCtx, AsgardName).Equal(asgardBefore.Sub(cosmos.NewUint(10*common.One))), Equals, true)
+	c.Check(baseKeeper.GetRuneBalanceOfModule(retryCtx, ReserveName).Equal(reserveBefore.Add(cosmos.NewUint(10*common.One))), Equals, true)
+	rollingFee, err = baseKeeper.GetRollingPoolLiquidityFee(retryCtx, gasPool.Asset)
+	c.Assert(err, IsNil)
+	c.Check(rollingFee, Equals, uint64(0))
+	previousFee, err = baseKeeper.GetPrevCyclePoolLiquidityFee(retryCtx, gasPool.Asset)
+	c.Assert(err, IsNil)
+	c.Check(previousFee, Equals, uint64(17))
+	c.Check(getPoolCycleRetryHeight(retryCtx, mgr), Equals, int64(0))
+
+	poolEvents := 0
+	poolBalanceEvents := 0
+	for _, event := range retryCtx.EventManager().Events() {
+		switch event.Type {
+		case types.PoolEventType:
+			poolEvents++
+		case types.PoolBalanceChangeEventType:
+			poolBalanceEvents++
+		}
+	}
+	c.Check(poolEvents, Equals, 1)
+	c.Check(poolBalanceEvents, Equals, 1)
+}
+
+func (s *PoolMgrSuite) TestEndBlockRunsPoolCyclePreflightOnce(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(20)
+	baseKeeper := mgr.Keeper()
+
+	baseKeeper.SetMimir(ctx, constants.PoolCycle.String(), 10)
+	baseKeeper.SetMimir(ctx, constants.MaxAvailablePools.String(), 100)
+	baseKeeper.SetMimir(ctx, constants.MinRunePoolDepth.String(), 1)
+	baseKeeper.SetMimir(ctx, constants.StagedPoolCost.String(), 0)
+	baseKeeper.SetMimir(ctx, constants.PendingLiquidityAgeLimit.String(), 0)
+	baseKeeper.SetMimir(ctx, constants.SaversEjectInterval.String(), 0)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.Status = PoolAvailable
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	c.Assert(baseKeeper.SetPool(ctx, pool), IsNil)
+
+	countingKeeper := &poolIteratorCountingKeeper{Keeper: baseKeeper}
+	mgr.K = countingKeeper
+
+	c.Assert(newPoolMgr().EndBlock(ctx, mgr), IsNil)
+	// One iterator is the finality preflight and one is the cycle body. The
+	// guarded cyclePools wrapper must not repeat the preflight for EndBlock.
+	c.Check(countingKeeper.reads, Equals, 2)
 }
 
 func (s *PoolMgrSuite) TestPoolMeetTradingVolumeCriteria(c *C) {

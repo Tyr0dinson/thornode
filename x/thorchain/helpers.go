@@ -207,7 +207,12 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 			if usesSourceSender && sender.RefundAddressRequired {
 				ctx.Logger().Info("skip refund to unavailable sender", "in_hash", tx.Tx.ID.String(), "coin", coin.String())
 				refundReason = fmt.Sprintf("%s; fail to refund (%s): sender unavailable and no explicit refund address", refundReason, toi.Coin.String())
-				unrefundableCoinCleanup(ctx, mgr, toi, "failed_refund_unknown_sender")
+				if cleanupErr := unrefundableCoinCleanupStrict(ctx, mgr, toi, "failed_refund_unknown_sender"); cleanupErr != nil {
+					if mgr.Keeper().HasMempoolSwap(ctx, toi.InHash, 0) {
+						return fmt.Errorf("fail to retain mempool refund cleanup: %w", cleanupErr)
+					}
+					ctx.Logger().Error("fail to clean up unavailable-sender refund", "error", cleanupErr, "hash", toi.InHash)
+				}
 				continue
 			}
 
@@ -217,7 +222,12 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 				// concatenate the refund failure to refundReason
 				refundReason = fmt.Sprintf("%s; fail to refund (%s): %s", refundReason, toi.Coin.String(), err)
 
-				unrefundableCoinCleanup(ctx, mgr, toi, "failed_refund")
+				if cleanupErr := unrefundableCoinCleanupStrict(ctx, mgr, toi, "failed_refund"); cleanupErr != nil {
+					if mgr.Keeper().HasMempoolSwap(ctx, toi.InHash, 0) {
+						return fmt.Errorf("fail to retain mempool refund cleanup: %w", cleanupErr)
+					}
+					ctx.Logger().Error("fail to clean up failed refund", "error", cleanupErr, "hash", toi.InHash)
+				}
 			}
 			if success {
 				refundCoins = append(refundCoins, toi.Coin)
@@ -319,6 +329,64 @@ func stagedRefundCleanupKey(toi TxOutItem, burnReason string, index int) string 
 }
 
 func unrefundableCoinCleanupStrictWithKey(ctx cosmos.Context, mgr Manager, toi TxOutItem, burnReason, cleanupKey string) error {
+	deferred, err := deferUnrefundableMempoolCleanup(ctx, mgr, toi, burnReason, cleanupKey)
+	if err != nil || deferred {
+		return err
+	}
+	return applyUnrefundableCoinCleanupStrictWithKey(ctx, mgr, toi, burnReason, cleanupKey)
+}
+
+// deferUnrefundableMempoolCleanup journals disposal of an output whose inbound
+// is still unfinalized. Donating, burning, or transferring that coin now would
+// survive a later rollback; finality applies the stable cleanup identity once,
+// while rollback discards it with the rest of the pending effects.
+func deferUnrefundableMempoolCleanup(
+	ctx cosmos.Context,
+	mgr Manager,
+	toi TxOutItem,
+	burnReason,
+	cleanupKey string,
+) (bool, error) {
+	if toi.InHash.IsEmpty() {
+		return false, nil
+	}
+	record, found, err := mgr.Keeper().GetMempoolSwap(ctx, toi.InHash, 0)
+	if err != nil {
+		return false, fmt.Errorf("fail to load mempool cleanup lifecycle: %w", err)
+	}
+	if !found {
+		return false, nil
+	}
+	voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, toi.InHash)
+	if err != nil {
+		return false, fmt.Errorf("fail to inspect mempool cleanup voter: %w", err)
+	}
+	if voter.FinalisedHeight > 0 {
+		return false, nil
+	}
+	if record.Status == types.MempoolSwapStatus_ROLLBACK_PENDING || record.Status == types.MempoolSwapStatus_FINALIZED {
+		return false, fmt.Errorf("cannot defer cleanup for mempool swap in status %s", record.Status)
+	}
+	for _, effect := range record.PendingEffects.Cleanups {
+		if effect.CleanupKey == cleanupKey {
+			return true, nil
+		}
+	}
+	record.PendingEffects.Cleanups = append(record.PendingEffects.Cleanups, types.MempoolSwapCleanupEffect{
+		Item:       toi,
+		BurnReason: burnReason,
+		CleanupKey: cleanupKey,
+	})
+	if err = mgr.Keeper().SetMempoolSwap(ctx, record); err != nil {
+		return false, fmt.Errorf("fail to defer unrefundable mempool cleanup: %w", err)
+	}
+	return true, nil
+}
+
+// applyUnrefundableCoinCleanupStrictWithKey performs the economic cleanup
+// immediately. Deferred finality deliberately calls this lower-level helper so
+// a still-present lifecycle tombstone cannot journal the same effect again.
+func applyUnrefundableCoinCleanupStrictWithKey(ctx cosmos.Context, mgr Manager, toi TxOutItem, burnReason, cleanupKey string) error {
 	coin := toi.Coin
 
 	if mgr.Keeper().HasRefundCleanup(ctx, cleanupKey) {
@@ -1823,6 +1891,7 @@ func atTVLCap(ctx cosmos.Context, coins common.Coins, mgr Manager) bool {
 
 	runeCoin := coins.GetCoin(common.RuneAsset())
 	totalRuneValue := runeCoin.Amount
+	poolView := newFinalityPoolView(mgr.Keeper())
 	for _, coin := range coins {
 		if coin.IsEmpty() {
 			continue
@@ -1834,10 +1903,10 @@ func atTVLCap(ctx cosmos.Context, coins common.Coins, mgr Manager) bool {
 			asset = asset.GetLayer1Asset()
 		}
 		var pool Pool
-		pool, err = mgr.Keeper().GetPool(ctx, asset)
+		pool, _, err = poolView.getPool(ctx, asset)
 		if err != nil {
-			ctx.Logger().Error("fail to get pool for atTVLCap", "asset", coin.Asset, "error", err)
-			continue
+			ctx.Logger().Error("fail to get finality-adjusted pool for atTVLCap", "asset", coin.Asset, "error", err)
+			return true
 		}
 		if !pool.IsAvailable() && !pool.IsStaged() {
 			continue
@@ -1980,6 +2049,7 @@ func settleSwap(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason strin
 		msg.Index == 0 &&
 		originalVoter.HasReservedMempoolSwapTOR() &&
 		originalVoter.FinalisedHeight == 0 &&
+		!mgr.Keeper().HasMempoolSwap(ctx, msg.Tx.ID, msg.Index) &&
 		mgr.Keeper().HasAdvSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index))
 
 	// Settle swap mutates multiple pieces of state (scheduled outbounds, refunds,
@@ -2060,26 +2130,26 @@ func releaseMempoolSwapCapacityAndClear(ctx cosmos.Context, k keeper.Keeper, vot
 // releaseMempoolSwapCapacityAfterFinalizedSettlement frees a mempool-swap
 // reservation once advanced-queue settlement has finished and no staged
 // outbounds remain for the finalized inbound.
-func releaseMempoolSwapCapacityAfterFinalizedSettlement(ctx cosmos.Context, mgr Manager, txID common.TxID) error {
+func releaseMempoolSwapCapacityAfterFinalizedSettlement(ctx cosmos.Context, mgr Manager, txID common.TxID) {
 	if txID.IsEmpty() || txID.Equals(common.BlankTxID) {
-		return nil
+		return
+	}
+	// The lifecycle completion path owns deferred effects and reservation
+	// release. Releasing here would delete its capacity before those effects
+	// have atomically committed.
+	if mgr.Keeper().HasMempoolSwap(ctx, txID, 0) {
+		return
 	}
 
 	voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, txID)
 	if err != nil {
-		return nil
+		return
 	}
 	if voter.FinalisedHeight == 0 {
-		return nil
+		return
 	}
 	if mgr.Keeper().HasStagedOutbound(ctx, txID) {
-		return nil
-	}
-	// Settlement can be the first finalized path reached by a stream in tests,
-	// recovery, or a future caller. Never clear the last reservation marker
-	// while speculative REVSHARE is still pending.
-	if err = mgr.Keeper().CommitPendingAffiliateLiquidityFees(ctx, txID); err != nil {
-		return fmt.Errorf("fail to commit pending affiliate liquidity fees before finalized settlement release: %w", err)
+		return
 	}
 
 	hadReservation := voter.HasReservedMempoolSwapTOR()
@@ -2087,7 +2157,6 @@ func releaseMempoolSwapCapacityAfterFinalizedSettlement(ctx cosmos.Context, mgr 
 	if hadReservation {
 		incrMempoolSwapCounter("completed_total", []metrics.Label{telemetry.NewLabel("path", "finalized_settlement")})
 	}
-	return nil
 }
 
 func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason string) error {
@@ -2126,12 +2195,28 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 		return err
 	}
 
+	// Persist the terminal rollback snapshot before deleting the queue item.
+	// A staged record remains a corroborating outbound projection; when no
+	// staged item exists, SETTLED explicitly means the lifecycle record itself
+	// is the sole durable owner.
+	if mgr.Keeper().HasMempoolSwap(ctx, msg.Tx.ID, msg.Index) {
+		status := types.MempoolSwapStatus_SETTLED
+		if mgr.Keeper().HasStagedOutbound(ctx, msg.Tx.ID) {
+			status = types.MempoolSwapStatus_STAGED
+		}
+		if err := updateMempoolSwapProgressCached(ctx, mgr.Keeper(), msg, status); err != nil {
+			return err
+		}
+	}
+
 	// An unfinalized reserved swap must retain at least one durable owner after
 	// terminal settlement. Normally TryAddTxOutItem creates a staged outbound.
 	// If a future or exceptional path produces none, signal the outer wrapper to
 	// discard this settlement cache and roll back while the queue state is still
 	// available in the parent context.
-	if msg.Index == 0 && mgr.Keeper().HasAdvSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index)) {
+	if msg.Index == 0 &&
+		!mgr.Keeper().HasMempoolSwap(ctx, msg.Tx.ID, msg.Index) &&
+		mgr.Keeper().HasAdvSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index)) {
 		voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, msg.Tx.ID)
 		if err != nil {
 			return fmt.Errorf("fail to inspect mempool voter after swap settlement: %w", err)
@@ -2153,15 +2238,16 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 	// later finalizeOutbounds step to release the reservation. Release the
 	// mempool TOR accounting here once settlement is complete and no staged
 	// outbounds remain.
-	if err := releaseMempoolSwapCapacityAfterFinalizedSettlement(ctx, mgr, msg.Tx.ID); err != nil {
-		return err
-	}
+	releaseMempoolSwapCapacityAfterFinalizedSettlement(ctx, mgr, msg.Tx.ID)
 
 	// Remove the item and its index entry together, reusing the message already
 	// loaded by EndBlock instead of fetching and decoding it again.
 	if err := mgr.Keeper().RemoveAdvSwapQueueItemMsg(ctx, msg); err != nil {
 		// Log but don't fail
 		ctx.Logger().Debug("fail to remove swap from adv queue", "error", err)
+	}
+	if err := finishFinalizedMempoolSwapSettlementCached(ctx, mgr, msg.Tx.ID, msg.Index); err != nil {
+		return err
 	}
 
 	// Emit streaming swap event if this was a streaming swap
@@ -2313,7 +2399,12 @@ func settleSwapResultCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settle
 
 			if _, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint()); err != nil {
 				ctx.Logger().Error("fail to schedule swap outbound", "error", err)
-				unrefundableCoinCleanup(ctx, mgr, toi, "failed_outbound")
+				if cleanupErr := unrefundableCoinCleanupStrict(ctx, mgr, toi, "failed_outbound"); cleanupErr != nil {
+					if mgr.Keeper().HasMempoolSwap(ctx, toi.InHash, 0) {
+						return fmt.Errorf("fail to retain mempool outbound cleanup: %w", cleanupErr)
+					}
+					ctx.Logger().Error("fail to clean up failed swap outbound", "error", cleanupErr, "hash", toi.InHash)
+				}
 
 				// Emit a "fail to refund" refund event
 				refundReasonFull := fmt.Sprintf("%s; fail to refund (%s): swap output", err, toi.Coin.String())
@@ -2323,7 +2414,7 @@ func settleSwapResultCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settle
 					ctx.Logger().Error("fail to emit refund event", "error", err)
 				}
 			}
-		} else if shouldProcessPostSwapMemo {
+		} else if shouldProcessPostSwapMemo && !deferMempoolPostSwapMemo(ctx, mgr.Keeper(), msg) {
 			if err := executePostSwapMemoCached(ctx, mgr, msg); err != nil {
 				return err
 			}
@@ -2560,6 +2651,7 @@ func (m *polValueMemo) runePoolValue(ctx cosmos.Context, mgr Manager) (cosmos.Ui
 // polPoolValue - calculates how much the POL is worth in rune
 func polPoolValue(ctx cosmos.Context, mgr Manager) (cosmos.Uint, error) {
 	total := cosmos.ZeroUint()
+	poolView := newFinalityPoolView(mgr.Keeper())
 
 	polAddress, err := mgr.Keeper().GetModuleAddress(ReserveName)
 	if err != nil {
@@ -2571,13 +2663,23 @@ func polPoolValue(ctx cosmos.Context, mgr Manager) (cosmos.Uint, error) {
 		return total, err
 	}
 	for _, pool := range pools {
+		// POL positions exist only in external L1 pools. Filtering native
+		// synth/derived pools first is essential: finality adjustment normalizes
+		// its lookup asset to L1 and must not apply that overlay to a virtual pool.
 		if pool.Asset.IsNative() {
 			continue
+		}
+		pool, _, err = poolView.adjust(ctx, pool)
+		if err != nil {
+			return total, fmt.Errorf("fail to get finality-adjusted POL value pool %s: %w", pool.Asset, err)
 		}
 		if pool.BalanceRune.IsZero() {
 			continue
 		}
-		synthSupply := mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
+		synthSupply, _, err := poolView.getTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
+		if err != nil {
+			return total, fmt.Errorf("fail to get finality-adjusted synth supply for POL value pool %s: %w", pool.Asset, err)
+		}
 		pool.CalcUnits(synthSupply)
 		lp, err := mgr.Keeper().GetLiquidityProvider(ctx, pool.Asset, polAddress)
 		if err != nil {
@@ -2796,14 +2898,24 @@ func applyMemolessOutboundLogic(version semver.Version, toi *TxOutItem, enableMe
 // getAssetValueInTOR converts an asset amount to its TOR (dollar) value.
 // Returns the TOR value and an error if the conversion fails.
 func getAssetValueInTOR(ctx cosmos.Context, k keeper.Keeper, asset common.Asset, amount cosmos.Uint) (cosmos.Uint, error) {
+	return getAssetValueInTORWithFinalityView(ctx, k, newFinalityPoolView(k), asset, amount)
+}
+
+func getAssetValueInTORWithFinalityView(
+	ctx cosmos.Context,
+	k keeper.Keeper,
+	poolView *finalityPoolView,
+	asset common.Asset,
+	amount cosmos.Uint,
+) (cosmos.Uint, error) {
 	var runeValue cosmos.Uint
 
 	if asset.IsRune() {
 		runeValue = amount
 	} else {
-		pool, err := k.GetPool(ctx, asset.GetLayer1Asset())
+		pool, _, err := poolView.getPool(ctx, asset.GetLayer1Asset())
 		if err != nil {
-			return cosmos.ZeroUint(), fmt.Errorf("fail to get pool for asset %s: %w", asset, err)
+			return cosmos.ZeroUint(), fmt.Errorf("fail to get finality-adjusted pool for asset %s: %w", asset, err)
 		}
 		if pool.IsEmpty() {
 			return cosmos.ZeroUint(), fmt.Errorf("pool is empty for asset %s", asset)
@@ -2832,7 +2944,8 @@ func checkMempoolSwapCapacity(ctx cosmos.Context, k keeper.Keeper, sourceAsset, 
 		return cosmos.ZeroUint(), false, nil
 	}
 
-	torValue, err = getAssetValueInTOR(ctx, k, sourceAsset, amount)
+	poolView := newFinalityPoolView(k)
+	torValue, err = getAssetValueInTORWithFinalityView(ctx, k, poolView, sourceAsset, amount)
 	if err != nil {
 		return cosmos.ZeroUint(), false, err
 	}
@@ -2840,7 +2953,7 @@ func checkMempoolSwapCapacity(ctx cosmos.Context, k keeper.Keeper, sourceAsset, 
 		return cosmos.ZeroUint(), false, nil
 	}
 
-	effectiveCap, capErr := poolDepthMempoolSwapCap(ctx, k, globalCap, sourceAsset, targetAsset)
+	effectiveCap, capErr := poolDepthMempoolSwapCapWithFinalityView(ctx, k, poolView, globalCap, sourceAsset, targetAsset)
 	if capErr != nil {
 		return cosmos.ZeroUint(), false, fmt.Errorf("fail to compute pool-depth mempool swap cap: %w", capErr)
 	}
@@ -2862,6 +2975,17 @@ func checkMempoolSwapCapacity(ctx cosmos.Context, k keeper.Keeper, sourceAsset, 
 // If MempoolSwapPoolCapBPS is zero the per-pool cap is skipped and the global
 // cap is returned as-is.
 func poolDepthMempoolSwapCap(ctx cosmos.Context, k keeper.Keeper, globalCap cosmos.Uint, sourceAsset, targetAsset common.Asset) (cosmos.Uint, error) {
+	return poolDepthMempoolSwapCapWithFinalityView(ctx, k, newFinalityPoolView(k), globalCap, sourceAsset, targetAsset)
+}
+
+func poolDepthMempoolSwapCapWithFinalityView(
+	ctx cosmos.Context,
+	k keeper.Keeper,
+	poolView *finalityPoolView,
+	globalCap cosmos.Uint,
+	sourceAsset,
+	targetAsset common.Asset,
+) (cosmos.Uint, error) {
 	bps := k.GetConfigInt64(ctx, constants.MempoolSwapPoolCapBPS)
 	if bps <= 0 {
 		return globalCap, nil
@@ -2886,9 +3010,9 @@ func poolDepthMempoolSwapCap(ctx cosmos.Context, k keeper.Keeper, globalCap cosm
 	}
 
 	for _, poolAsset := range swapPoolAssets {
-		pool, poolErr := k.GetPool(ctx, poolAsset)
+		pool, _, poolErr := poolView.getPool(ctx, poolAsset)
 		if poolErr != nil {
-			return cosmos.ZeroUint(), fmt.Errorf("fail to get pool %s: %w", poolAsset, poolErr)
+			return cosmos.ZeroUint(), fmt.Errorf("fail to get finality-adjusted pool %s: %w", poolAsset, poolErr)
 		}
 		if pool.IsEmpty() || pool.BalanceRune.IsZero() {
 			return cosmos.ZeroUint(), fmt.Errorf("pool %s has no depth", poolAsset)
@@ -2970,6 +3094,9 @@ func canUseMempoolSwap(ctx cosmos.Context, mgr Manager, tx common.Tx, memo mem.M
 //     exclude a swap from starting early just because the advanced queue
 //     derived its streaming quantity implicitly instead of the memo setting it
 //     explicitly.
+//   - Non-streaming market swaps between stable-reserve eligible assets wait
+//     for finality. A direct reserve fill mutates inventory which cannot be
+//     reconstructed by an AMM reverse swap.
 //   - For THOR-native targets, only streaming swaps get material value from the
 //     mempool path. Non-streaming THOR-target swaps gain at most marginal queue
 //     overlap, so they are excluded.
@@ -2986,6 +3113,12 @@ func isMempoolSwapEligible(
 	swapType types.SwapType,
 	streamInterval, streamQuantity uint64,
 ) bool {
+	// Emergency shutdown must not admit a new reversible owner while the
+	// validator manager is priority-rolling back existing mempool swaps.
+	if mgr.Keeper().RagnarokInProgress(ctx) {
+		return false
+	}
+
 	// Mempool swaps are only enabled for the advanced swap queue.
 	if !mgr.Keeper().AdvSwapQueueEnabled(ctx) {
 		return false
@@ -3001,16 +3134,7 @@ func isMempoolSwapEligible(
 		return false
 	}
 
-	// L1 targets still benefit from overlapping inbound confirmation
-	// with outbound scheduling/signing even when the swap is not streaming.
-	if !targetAsset.IsNative() {
-		return true
-	}
-
-	// THOR-native targets only keep the mempool path when the swap will execute
-	// as a real stream, whether requested explicitly or derived implicitly by the
-	// advanced queue from current pool depth and max-length rules.
-	return willSwapExecuteAsStreaming(
+	willStream := willSwapExecuteAsStreaming(
 		ctx,
 		mgr,
 		sourceAsset,
@@ -3020,6 +3144,30 @@ func isMempoolSwapEligible(
 		streamInterval,
 		streamQuantity,
 	)
+
+	// TrySwap can directly fill only non-streaming MARKET swaps between two
+	// currently eligible L1 stables. Such a fill changes stable-reserve secured
+	// inventory, not pool state, and therefore cannot be undone by the mempool
+	// reverse-swap path. Re-evaluate this policy at admission and also guard the
+	// execution mode in SwapHandler in case eligibility changes later.
+	if swapType == types.SwapType_market && !willStream && mgr.StableReserveManager().IsEnabled(ctx) {
+		sourceEligible, _ := mgr.StableReserveManager().IsEligibleStable(ctx, sourceAsset)
+		targetEligible, _ := mgr.StableReserveManager().IsEligibleStable(ctx, targetAsset)
+		if sourceEligible && targetEligible {
+			return false
+		}
+	}
+
+	// L1 targets still benefit from overlapping inbound confirmation
+	// with outbound scheduling/signing even when the swap is not streaming.
+	if !targetAsset.IsNative() {
+		return true
+	}
+
+	// THOR-native targets only keep the mempool path when the swap will execute
+	// as a real stream, whether requested explicitly or derived implicitly by the
+	// advanced queue from current pool depth and max-length rules.
+	return willStream
 }
 
 // willSwapExecuteAsStreaming reports whether the swap will actually execute as

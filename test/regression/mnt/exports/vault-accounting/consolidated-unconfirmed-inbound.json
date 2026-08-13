@@ -250,6 +250,7 @@
           "units": "100000000000"
         }
       ],
+      "mempool_swaps": [],
       "mimirs": [],
       "network": {
         "LPIncomeSplit": "9609",
@@ -294,7 +295,6 @@
         }
       ],
       "outbound_fee_withheld_rune": [],
-      "pending_affiliate_liquidity_fees": [],
       "pools": [
         {
           "LP_units": "100000000000",

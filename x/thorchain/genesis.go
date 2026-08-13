@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"sort"
@@ -14,6 +15,54 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
+
+// Genesis is restored through keeper keys, which are case-normalized by
+// KVStore.GetKey. Use the same identity semantics while validating and
+// de-duplicating exported state so two textual spellings cannot overwrite one
+// another during InitGenesis.
+func canonicalGenesisTxID(txID common.TxID) string {
+	return strings.ToUpper(txID.String())
+}
+
+func canonicalGenesisMempoolSwapIdentity(record types.MempoolSwap) string {
+	return strings.ToUpper(record.Cursor())
+}
+
+// canonicalGenesisMempoolSwapOwnerAssets mirrors the keeper's derived
+// pool-owner index. Gross balance and synth-supply effects must have one
+// lifecycle owner per L1 pool, including FINALIZED tombstones retained for
+// deep-reorg isolation; otherwise import order would decide which record
+// RestoreMempoolSwap rejects.
+func canonicalGenesisMempoolSwapOwnerAssets(record types.MempoolSwap) []string {
+	assets := make(map[string]struct{})
+	result := make([]string, 0, len(record.PendingEffects.Pools)+len(record.PendingEffects.Supplies))
+	for _, effect := range record.PendingEffects.Pools {
+		if effect.BalanceRuneIncrease.IsZero() &&
+			effect.BalanceRuneDecrease.IsZero() &&
+			effect.BalanceAssetIncrease.IsZero() &&
+			effect.BalanceAssetDecrease.IsZero() {
+			continue
+		}
+		asset := strings.ToUpper(effect.Asset.GetLayer1Asset().String())
+		if _, ok := assets[asset]; !ok {
+			assets[asset] = struct{}{}
+			result = append(result, asset)
+		}
+	}
+	for _, effect := range record.PendingEffects.Supplies {
+		if !effect.Asset.IsSyntheticAsset() ||
+			(effect.SupplyIncrease.IsZero() && effect.SupplyDecrease.IsZero()) {
+			continue
+		}
+		asset := strings.ToUpper(effect.Asset.GetLayer1Asset().String())
+		if _, ok := assets[asset]; !ok {
+			assets[asset] = struct{}{}
+			result = append(result, asset)
+		}
+	}
+	sort.Strings(result)
+	return result
+}
 
 // ValidateGenesis validate genesis is valid or not
 func ValidateGenesis(data GenesisState) error {
@@ -35,10 +84,14 @@ func ValidateGenesis(data GenesisState) error {
 		}
 	}
 
+	mempoolSwapVoters := make(map[string]ObservedTxVoter, len(data.ObservedTxInVoters))
 	for _, voter := range data.ObservedTxInVoters {
 		if err := voter.Valid(); err != nil {
 			return err
 		}
+		// SetObservedTxInVoter is last-write-wins for duplicate normalized keys,
+		// so mirror that behavior here when checking lifecycle ownership.
+		mempoolSwapVoters[canonicalGenesisTxID(voter.TxID)] = voter
 	}
 
 	for _, voter := range data.ObservedTxOutVoters {
@@ -126,30 +179,38 @@ func ValidateGenesis(data GenesisState) error {
 		collectorNames[name] = true
 	}
 
-	pendingAffiliateKeys := make(map[string]struct{}, len(data.PendingAffiliateLiquidityFees))
-	for _, entry := range data.PendingAffiliateLiquidityFees {
-		txID, err := common.NewTxID(entry.TxId)
-		if err != nil {
-			return fmt.Errorf("invalid pending affiliate liquidity fee txid: %w", err)
+	mempoolSwapIDs := make(map[string]struct{}, len(data.MempoolSwaps))
+	mempoolSwapPoolOwners := make(map[string]string)
+	for i, record := range data.MempoolSwaps {
+		if err := record.Valid(); err != nil {
+			return fmt.Errorf("invalid mempool swap %d: %w", i, err)
 		}
-		if txID.IsEmpty() || txID.Equals(common.BlankTxID) {
-			return fmt.Errorf("invalid pending affiliate liquidity fee txid %q", entry.TxId)
+		identity := canonicalGenesisMempoolSwapIdentity(record)
+		if _, ok := mempoolSwapIDs[identity]; ok {
+			return fmt.Errorf("duplicate mempool swap identity: %s", identity)
 		}
-		if strings.TrimSpace(entry.Thorname) == "" || strings.Contains(entry.Thorname, "/") {
-			return fmt.Errorf("invalid pending affiliate liquidity fee thorname %q", entry.Thorname)
+		mempoolSwapIDs[identity] = struct{}{}
+		for _, asset := range canonicalGenesisMempoolSwapOwnerAssets(record) {
+			if owner, ok := mempoolSwapPoolOwners[asset]; ok && owner != identity {
+				return fmt.Errorf("mempool swap pool %s has multiple lifecycle owners: %s and %s", asset, owner, identity)
+			}
+			mempoolSwapPoolOwners[asset] = identity
 		}
-		fee, err := cosmos.ParseUint(entry.Fee)
-		if err != nil || fee.IsZero() || !fee.BigInt().IsUint64() {
-			return fmt.Errorf("invalid pending affiliate liquidity fee amount %q", entry.Fee)
+	}
+	for _, record := range data.MempoolSwaps {
+		voter, ok := mempoolSwapVoters[canonicalGenesisTxID(record.TxId)]
+		if !ok || voter.IsEmpty() {
+			return fmt.Errorf("mempool swap %s is missing its inbound voter", record.Cursor())
 		}
-		// KVStore.GetKey uppercases the complete suffix, including 87/88-char
-		// SOL transaction IDs. Mirror that physical-key normalization here so
-		// two genesis entries cannot silently import into one KV record.
-		key := fmt.Sprintf("%s/%d/%s", strings.ToUpper(txID.String()), entry.Index, strings.ToUpper(strings.TrimSpace(entry.Thorname)))
-		if _, ok := pendingAffiliateKeys[key]; ok {
-			return fmt.Errorf("duplicate pending affiliate liquidity fee %s", key)
+		if voter.MempoolSwapTOR.IsNil() {
+			return fmt.Errorf("mempool swap %s voter TOR is nil", record.Cursor())
 		}
-		pendingAffiliateKeys[key] = struct{}{}
+		if !voter.MempoolSwapTOR.Equal(record.ReservedTor) {
+			return fmt.Errorf(
+				"mempool swap %s voter TOR %s does not match lifecycle TOR %s",
+				record.Cursor(), voter.MempoolSwapTOR, record.ReservedTor,
+			)
+		}
 	}
 
 	return nil
@@ -158,42 +219,42 @@ func ValidateGenesis(data GenesisState) error {
 // DefaultGenesisState the default values THORNode put in the Genesis
 func DefaultGenesisState() GenesisState {
 	return GenesisState{
-		Pools:                         make([]Pool, 0),
-		NodeAccounts:                  NodeAccounts{},
-		BondProviders:                 make([]BondProviders, 0),
-		TxOuts:                        make([]TxOut, 0),
-		LiquidityProviders:            make(LiquidityProviders, 0),
-		Vaults:                        make(Vaults, 0),
-		ObservedTxInVoters:            make(ObservedTxVoters, 0),
-		ObservedTxOutVoters:           make(ObservedTxVoters, 0),
-		LastSignedHeight:              0,
-		LastChainHeights:              make([]LastChainHeight, 0),
-		Mimirs:                        make([]Mimir, 0),
-		NodeMimirs:                    make([]NodeMimir, 0),
-		Network:                       NewNetwork(),
-		OutboundFeeWithheldRune:       common.Coins{},
-		OutboundFeeSpentRune:          common.Coins{},
-		POL:                           NewProtocolOwnedLiquidity(),
-		AdvSwapQueueItems:             make([]MsgSwap, 0),
-		SwapQueueItems:                make([]MsgSwap, 0),
-		StreamingSwaps:                make([]StreamingSwap, 0),
-		NetworkFees:                   make([]NetworkFee, 0),
-		ChainContracts:                make([]ChainContract, 0),
-		THORNames:                     make([]THORName, 0),
-		SwapperClout:                  make([]SwapperClout, 0),
-		TradeAccounts:                 make([]TradeAccount, 0),
-		TradeUnits:                    make([]TradeUnit, 0),
-		SecuredAssets:                 make([]SecuredAsset, 0),
-		RuneProviders:                 make([]RUNEProvider, 0),
-		RunePool:                      NewRUNEPool(),
-		AffiliateCollectors:           []AffiliateFeeCollector{},
-		PolReserveDeposits:            make([]POLReserveDeposit, 0),
-		DynamicFeeRecords:             make([]types.DynamicFeeRecord, 0),
-		DynamicFeeAccumulators:        make([]types.DynamicFeeAccumulator, 0),
-		StableReserveCredits:          make([]StableReserveCredit, 0),
-		SolVaultNonces:                make([]types.SolVaultNonce, 0),
-		StagedOutbounds:               make([]types.StagedOutboundList, 0),
-		PendingAffiliateLiquidityFees: make([]PendingAffiliateLiquidityFee, 0),
+		Pools:                   make([]Pool, 0),
+		NodeAccounts:            NodeAccounts{},
+		BondProviders:           make([]BondProviders, 0),
+		TxOuts:                  make([]TxOut, 0),
+		LiquidityProviders:      make(LiquidityProviders, 0),
+		Vaults:                  make(Vaults, 0),
+		ObservedTxInVoters:      make(ObservedTxVoters, 0),
+		ObservedTxOutVoters:     make(ObservedTxVoters, 0),
+		LastSignedHeight:        0,
+		LastChainHeights:        make([]LastChainHeight, 0),
+		Mimirs:                  make([]Mimir, 0),
+		NodeMimirs:              make([]NodeMimir, 0),
+		Network:                 NewNetwork(),
+		OutboundFeeWithheldRune: common.Coins{},
+		OutboundFeeSpentRune:    common.Coins{},
+		POL:                     NewProtocolOwnedLiquidity(),
+		AdvSwapQueueItems:       make([]MsgSwap, 0),
+		SwapQueueItems:          make([]MsgSwap, 0),
+		StreamingSwaps:          make([]StreamingSwap, 0),
+		NetworkFees:             make([]NetworkFee, 0),
+		ChainContracts:          make([]ChainContract, 0),
+		THORNames:               make([]THORName, 0),
+		SwapperClout:            make([]SwapperClout, 0),
+		TradeAccounts:           make([]TradeAccount, 0),
+		TradeUnits:              make([]TradeUnit, 0),
+		SecuredAssets:           make([]SecuredAsset, 0),
+		RuneProviders:           make([]RUNEProvider, 0),
+		RunePool:                NewRUNEPool(),
+		AffiliateCollectors:     []AffiliateFeeCollector{},
+		PolReserveDeposits:      make([]POLReserveDeposit, 0),
+		DynamicFeeRecords:       make([]types.DynamicFeeRecord, 0),
+		DynamicFeeAccumulators:  make([]types.DynamicFeeAccumulator, 0),
+		StableReserveCredits:    make([]StableReserveCredit, 0),
+		SolVaultNonces:          make([]types.SolVaultNonce, 0),
+		StagedOutbounds:         make([]types.StagedOutboundList, 0),
+		MempoolSwaps:            make([]types.MempoolSwap, 0),
 	}
 }
 
@@ -452,14 +513,6 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 		}
 	}
 
-	// Restore committed SOL durable nonces. Without them a vault that signs durable
-	// outbounds would look legacy after import: signers could fall back to recent
-	// blockhashes and LackSigning could reassign an outbound whose durable copy can
-	// still land (double pay).
-	for _, record := range data.SolVaultNonces {
-		keeper.SetSolVaultNonce(ctx, record)
-	}
-
 	// Restore staged outbounds (mempool swaps waiting for inbound finalization).
 	// Use RestoreStagedOutboundList to preserve the original StagedHeight from
 	// the exported state, rather than SetStagedOutbound which would overwrite it
@@ -470,50 +523,50 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 		}
 	}
 
-	// Restore speculative affiliate liquidity-fee attribution. These entries
-	// can span many blocks while a stream waits for inbound finality, so unlike
-	// the ordinary per-block accumulator they must survive state export/import.
-	for _, entry := range data.PendingAffiliateLiquidityFees {
-		txID, err := common.NewTxID(entry.TxId)
+	// Restore canonical mempool-swap lifecycle records and reconstruct their
+	// vault and timeout indexes. v3.21 introduces the lifecycle schema before
+	// speculative swaps are enabled, so there is no legacy in-flight state to
+	// infer from voter/queue heuristics. Both aggregates are derived only from
+	// these authoritative records.
+	keeper.SetMempoolSwapCount(ctx, cosmos.ZeroUint())
+	for _, record := range data.MempoolSwaps {
+		// The lifecycle record is authoritative. ValidateGenesis rejects a bad
+		// mirror, but normalize again here so direct InitGenesis callers cannot
+		// start with reservation accounting that disagrees with the durable owner.
+		voter, err := keeper.GetObservedTxInVoter(ctx, record.TxId)
 		if err != nil {
-			panic(err)
+			panic(fmt.Errorf("fail to restore voter for mempool swap %s: %w", record.Cursor(), err))
 		}
-		fee, err := cosmos.ParseUint(entry.Fee)
-		if err != nil {
-			panic(err)
+		if voter.IsEmpty() {
+			panic(fmt.Errorf("fail to restore mempool swap %s: inbound voter is missing", record.Cursor()))
 		}
-		if err = keeper.AddPendingAffiliateLiquidityFee(ctx, txID, entry.Index, entry.Thorname, fee); err != nil {
-			panic(fmt.Errorf("fail to restore pending affiliate liquidity fee: %w", err))
+		voter.MempoolSwapTOR = record.ReservedTor
+		keeper.SetObservedTxInVoter(ctx, voter)
+
+		if err = keeper.RestoreMempoolSwap(ctx, record); err != nil {
+			panic(fmt.Errorf("fail to restore mempool swap lifecycle record: %w", err))
+		}
+		vault, err := keeper.GetVault(ctx, record.VaultPubKey)
+		if err == nil && vault.Status == InactiveVault {
+			keeper.SetMempoolSwapVaultRecovery(ctx, record.VaultPubKey, "")
 		}
 	}
 
-	// Recompute mempool swap usage from voters that still have active exported
-	// mempool state. Cross-check against staged outbounds and queued swaps so
-	// stale voter records alone do not inflate the usage counter.
-	stagedInHashes := make(map[common.TxID]bool, len(data.StagedOutbounds))
-	for _, list := range data.StagedOutbounds {
-		stagedInHashes[list.InHash] = true
-	}
-	queuedInHashes := make(map[common.TxID]bool, len(data.AdvSwapQueueItems)+len(data.SwapQueueItems))
-	for _, msg := range data.AdvSwapQueueItems {
-		queuedInHashes[msg.Tx.ID] = true
-	}
-	for _, msg := range data.SwapQueueItems {
-		queuedInHashes[msg.Tx.ID] = true
-	}
 	totalUsage := cosmos.ZeroUint()
-	for _, voter := range data.ObservedTxInVoters {
-		if !voter.HasReservedMempoolSwapTOR() {
-			continue
-		}
-		if !stagedInHashes[voter.TxID] && !queuedInHashes[voter.TxID] {
-			continue
-		}
-		totalUsage = totalUsage.Add(voter.MempoolSwapTOR)
+	for _, record := range data.MempoolSwaps {
+		totalUsage = totalUsage.Add(record.ReservedTor)
 	}
+	keeper.SetMempoolSwapUsageTOR(ctx, totalUsage)
 	if !totalUsage.IsZero() {
-		keeper.SetMempoolSwapUsageTOR(ctx, totalUsage)
 		ctx.Logger().Info("restored mempool swap usage from genesis", "total_tor", totalUsage)
+	}
+
+	// Restore committed SOL durable nonces. Without them a vault that signs durable
+	// outbounds would look legacy after import: signers could fall back to recent
+	// blockhashes and LackSigning could reassign an outbound whose durable copy can
+	// still land (double pay).
+	for _, record := range data.SolVaultNonces {
+		keeper.SetSolVaultNonce(ctx, record)
 	}
 
 	reserveAddr, _ := keeper.GetModuleAddress(ReserveName)
@@ -662,7 +715,7 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 	}
 
 	var observedTxInVoters ObservedTxVoters
-	voterSeen := make(map[common.TxID]bool)
+	voterSeen := make(map[string]bool)
 	var outs []TxOut
 	startBlockHeight := ctx.BlockHeight() - k.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
 	if startBlockHeight < 1 {
@@ -705,7 +758,8 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 			if item.InHash.IsEmpty() || item.InHash.Equals(common.BlankTxID) {
 				continue
 			}
-			if voterSeen[item.InHash] {
+			voterKey := canonicalGenesisTxID(item.InHash)
+			if voterSeen[voterKey] {
 				continue
 			}
 			var txInVoter ObservedTxVoter
@@ -715,7 +769,7 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 				continue
 			}
 			observedTxInVoters = append(observedTxInVoters, txInVoter)
-			voterSeen[item.InHash] = true
+			voterSeen[voterKey] = true
 		}
 		if includeTxOut {
 			outs = append(outs, *txOut)
@@ -1013,15 +1067,6 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		})
 	}
 
-	solVaultNonces := make([]types.SolVaultNonce, 0)
-	iterSolVaultNonce := k.GetSolVaultNonceIterator(ctx)
-	defer iterSolVaultNonce.Close()
-	for ; iterSolVaultNonce.Valid(); iterSolVaultNonce.Next() {
-		var record types.SolVaultNonce
-		k.Cdc().MustUnmarshal(iterSolVaultNonce.Value(), &record)
-		solVaultNonces = append(solVaultNonces, record)
-	}
-
 	// Export staged outbounds (mempool swaps waiting for inbound finalization)
 	stagedOutbounds := make([]types.StagedOutboundList, 0)
 	stagedIter := k.GetStagedOutboundIterator(ctx)
@@ -1035,18 +1080,28 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		stagedOutbounds = append(stagedOutbounds, list)
 	}
 
-	pendingAffiliateLiquidityFees := make([]PendingAffiliateLiquidityFee, 0)
-	pendingFees, err := k.GetAllPendingAffiliateLiquidityFees(ctx)
-	if err != nil {
-		panic(fmt.Errorf("fail to export pending affiliate liquidity fees: %w", err))
-	}
-	for _, entry := range pendingFees {
-		pendingAffiliateLiquidityFees = append(pendingAffiliateLiquidityFees, PendingAffiliateLiquidityFee{
-			TxId:     entry.TxID.String(),
-			Index:    entry.Index,
-			Thorname: entry.Thorname,
-			Fee:      entry.Fee.String(),
-		})
+	mempoolSwaps := make([]types.MempoolSwap, 0)
+	exportedMempoolSwapIDs := make(map[string]struct{})
+	mempoolSwapIter := k.GetMempoolSwapIterator(ctx)
+	defer func() { _ = mempoolSwapIter.Close() }()
+	for ; mempoolSwapIter.Valid(); mempoolSwapIter.Next() {
+		var record types.MempoolSwap
+		if err := k.Cdc().Unmarshal(mempoolSwapIter.Value(), &record); err != nil {
+			panic(fmt.Errorf("fail to unmarshal mempool swap lifecycle record: %w", err))
+		}
+		if err := record.Valid(); err != nil {
+			panic(fmt.Errorf("invalid mempool swap lifecycle record: %w", err))
+		}
+		identity := canonicalGenesisMempoolSwapIdentity(record)
+		if _, ok := exportedMempoolSwapIDs[identity]; ok {
+			panic(fmt.Errorf("duplicate mempool swap lifecycle identity in store: %s", identity))
+		}
+		canonicalKey := k.GetMempoolSwapCanonicalKey(record.TxId, record.Index)
+		if !bytes.Equal(mempoolSwapIter.Key(), canonicalKey) {
+			panic(fmt.Errorf("mempool swap lifecycle record %s is stored under a non-canonical physical key", record.Cursor()))
+		}
+		exportedMempoolSwapIDs[identity] = struct{}{}
+		mempoolSwaps = append(mempoolSwaps, record)
 	}
 
 	// Export voters for staged outbound swaps that weren't already captured
@@ -1056,7 +1111,8 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 	// returns a key-only record for those - skip them rather than export a
 	// phantom voter that import would then persist.
 	for _, list := range stagedOutbounds {
-		if list.InHash.IsEmpty() || voterSeen[list.InHash] {
+		voterKey := canonicalGenesisTxID(list.InHash)
+		if list.InHash.IsEmpty() || voterSeen[voterKey] {
 			continue
 		}
 		txInVoter, voterErr := k.GetObservedTxInVoter(ctx, list.InHash)
@@ -1068,7 +1124,7 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 			continue
 		}
 		observedTxInVoters = append(observedTxInVoters, txInVoter)
-		voterSeen[list.InHash] = true
+		voterSeen[voterKey] = true
 	}
 
 	// Export voters for queued swaps that are still in flight but have not yet
@@ -1076,7 +1132,8 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 	// mempool advanced/legacy queue state attributable during export checks and
 	// later import.
 	for _, msg := range swapMsgs {
-		if msg.Tx.ID.IsEmpty() || voterSeen[msg.Tx.ID] {
+		voterKey := canonicalGenesisTxID(msg.Tx.ID)
+		if msg.Tx.ID.IsEmpty() || voterSeen[voterKey] {
 			continue
 		}
 		txInVoter, voterErr := k.GetObservedTxInVoter(ctx, msg.Tx.ID)
@@ -1088,10 +1145,11 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 			continue
 		}
 		observedTxInVoters = append(observedTxInVoters, txInVoter)
-		voterSeen[msg.Tx.ID] = true
+		voterSeen[voterKey] = true
 	}
 	for _, msg := range swapQ {
-		if msg.Tx.ID.IsEmpty() || voterSeen[msg.Tx.ID] {
+		voterKey := canonicalGenesisTxID(msg.Tx.ID)
+		if msg.Tx.ID.IsEmpty() || voterSeen[voterKey] {
 			continue
 		}
 		txInVoter, voterErr := k.GetObservedTxInVoter(ctx, msg.Tx.ID)
@@ -1103,7 +1161,43 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 			continue
 		}
 		observedTxInVoters = append(observedTxInVoters, txInVoter)
-		voterSeen[msg.Tx.ID] = true
+		voterSeen[voterKey] = true
+	}
+
+	// Lifecycle records survive queue/staged settlement and are therefore the
+	// final source for finding voters whose reservation must round-trip.
+	for _, record := range mempoolSwaps {
+		txInVoter, voterErr := k.GetObservedTxInVoter(ctx, record.TxId)
+		if voterErr != nil {
+			panic(fmt.Errorf("fail to get voter for mempool swap lifecycle record %s: %w", record.Cursor(), voterErr))
+		}
+		if txInVoter.IsEmpty() {
+			panic(fmt.Errorf("mempool swap lifecycle record %s is missing its inbound voter", record.Cursor()))
+		}
+		if txInVoter.MempoolSwapTOR.IsNil() {
+			panic(fmt.Errorf("mempool swap lifecycle record %s voter TOR is nil", record.Cursor()))
+		}
+		if !txInVoter.MempoolSwapTOR.Equal(record.ReservedTor) {
+			panic(fmt.Errorf(
+				"mempool swap lifecycle record %s voter TOR %s does not match reserved TOR %s",
+				record.Cursor(), txInVoter.MempoolSwapTOR, record.ReservedTor,
+			))
+		}
+		voterKey := canonicalGenesisTxID(record.TxId)
+		if voterSeen[voterKey] {
+			continue
+		}
+		observedTxInVoters = append(observedTxInVoters, txInVoter)
+		voterSeen[voterKey] = true
+	}
+
+	solVaultNonces := make([]types.SolVaultNonce, 0)
+	iterSolVaultNonce := k.GetSolVaultNonceIterator(ctx)
+	defer iterSolVaultNonce.Close()
+	for ; iterSolVaultNonce.Valid(); iterSolVaultNonce.Next() {
+		var record types.SolVaultNonce
+		k.Cdc().MustUnmarshal(iterSolVaultNonce.Value(), &record)
+		solVaultNonces = append(solVaultNonces, record)
 	}
 
 	return GenesisState{
@@ -1145,6 +1239,6 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		StableReserveCredits:              stableReserveCredits,
 		SolVaultNonces:                    solVaultNonces,
 		StagedOutbounds:                   stagedOutbounds,
-		PendingAffiliateLiquidityFees:     pendingAffiliateLiquidityFees,
+		MempoolSwaps:                      mempoolSwaps,
 	}
 }

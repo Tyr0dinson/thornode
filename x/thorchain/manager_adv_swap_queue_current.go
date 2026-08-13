@@ -91,6 +91,54 @@ func newSwapQueueAdv(k keeper.Keeper) *SwapQueueAdv {
 	return &SwapQueueAdv{k: k}
 }
 
+// mempoolSwapOwnsPoolCycleOverlay reports whether a lifecycle already owns
+// reversible pool or synth-supply state which is blocking a deferred pool
+// cycle. A retry may let only these established owners advance: admitting an
+// unrelated swap would either observe reversible depth or create another
+// overlay and let ordinary queue traffic postpone the cycle indefinitely.
+func mempoolSwapOwnsPoolCycleOverlay(record types.MempoolSwap) bool {
+	if record.Status == types.MempoolSwapStatus_FINALIZED ||
+		record.Status == types.MempoolSwapStatus_ROLLBACK_PENDING {
+		return false
+	}
+	for _, effect := range record.PendingEffects.Pools {
+		if !effect.BalanceRuneIncrease.IsZero() ||
+			!effect.BalanceRuneDecrease.IsZero() ||
+			!effect.BalanceAssetIncrease.IsZero() ||
+			!effect.BalanceAssetDecrease.IsZero() {
+			return true
+		}
+	}
+	for _, effect := range record.PendingEffects.Supplies {
+		if effect.Asset.IsSyntheticAsset() &&
+			(!effect.SupplyIncrease.IsZero() || !effect.SupplyDecrease.IsZero()) {
+			return true
+		}
+	}
+	return false
+}
+
+func (vm *SwapQueueAdv) filterPoolCycleRetryOwners(ctx cosmos.Context, items swapItems) swapItems {
+	owners := make(swapItems, 0, len(items))
+	for _, item := range items {
+		record, found, err := vm.k.GetMempoolSwap(ctx, item.msg.Tx.ID, item.msg.Index)
+		if err != nil {
+			ctx.Logger().Error("fail to inspect deferred pool-cycle swap owner",
+				"error", err,
+				"tx", item.msg.Tx.ID,
+				"index", item.msg.Index)
+			continue
+		}
+		if !found {
+			continue
+		}
+		if mempoolSwapOwnsPoolCycleOverlay(record) {
+			owners = append(owners, item)
+		}
+	}
+	return owners
+}
+
 // FetchQueue - grabs all swap queue items from the kvstore and returns them
 func (vm *SwapQueueAdv) FetchQueue(ctx cosmos.Context, mgr Manager, pairs tradePairs, pools Pools, todo tradePairs) (swapItems, error) { // nolint
 	return vm.fetchQueue(ctx, mgr, pairs, pools, todo, nil)
@@ -105,6 +153,7 @@ func (vm *SwapQueueAdv) fetchQueue(ctx cosmos.Context, mgr Manager, pairs tradeP
 	if poolCycle > 0 && ctx.BlockHeight()%poolCycle == 0 {
 		return nil, nil
 	}
+	retryOwnersOnly := poolCycle > 0 && poolCycleRetryPending(ctx, mgr)
 
 	// If todo is empty, set it to every pair
 	if len(todo) == 0 {
@@ -146,6 +195,14 @@ func (vm *SwapQueueAdv) fetchQueue(ctx cosmos.Context, mgr Manager, pairs tradeP
 		}
 		newItems := vm.discoverLimitSwaps(ctx, mgr, pair, pools)
 		items = append(items, newItems...)
+	}
+	if retryOwnersOnly {
+		// PoolMgr runs after AdvSwapQueue and repeats its read-only finality
+		// preflight before any cycle write. Advancing an existing owner cannot
+		// remove its unfinalized lifecycle overlay; finality or rollback clears it
+		// before a later queue pass, which then returns no owner and gives the
+		// cycle a clean retry block.
+		items = vm.filterPoolCycleRetryOwners(ctx, items)
 	}
 
 	return items, nil
@@ -192,17 +249,16 @@ func (vm *SwapQueueAdv) getActiveLimitPairs(ctx cosmos.Context, maxBuckets int) 
 }
 
 func (vm *SwapQueueAdv) isSwapReady(ctx cosmos.Context, msg MsgSwap) bool {
-	// skip processing limit swaps if EnableAdvSwapQueue is set to market only mode
-	val := vm.k.GetConfigInt64(ctx, constants.EnableAdvSwapQueue)
-	if types.AdvSwapQueueMode(val) == types.AdvSwapQueueModeMarketOnly && msg.IsLimitSwap() {
+	// Queue records are persisted data. Reject malformed entries before the
+	// scheduling checks below dereference swap state or the source coin.
+	if msg.State == nil || len(msg.Tx.Coins) != 1 {
 		return false
 	}
 
-	pausedStreaming := vm.k.GetConfigInt64(ctx, constants.StreamingSwapPause)
-	if pausedStreaming > 0 && msg.IsStreaming() {
-		return false
-	}
-
+	// Apply cheap eligibility gates before loading voter, lifecycle, vault, and
+	// pool-isolation state. Ineligible candidates cannot mutate state; candidates
+	// that pass these gates still receive every finality and ownership check
+	// below, with lifecycle and ownership rechecked at the mutation boundary.
 	// Check if it's the right interval for the next sub-swap
 	if msg.IsMarketSwap() && msg.State.Interval > 0 && (ctx.BlockHeight()-msg.State.LastHeight)%int64(msg.State.Interval) != 0 {
 		return false
@@ -212,6 +268,17 @@ func (vm *SwapQueueAdv) isSwapReady(ctx cosmos.Context, msg MsgSwap) bool {
 	// if interval is 1 or greater, then only swap one time per block
 	if msg.State.Interval > 0 && msg.State.LastHeight >= ctx.BlockHeight() {
 		return false // skip
+	}
+
+	// skip processing limit swaps if EnableAdvSwapQueue is set to market only mode
+	val := vm.k.GetConfigInt64(ctx, constants.EnableAdvSwapQueue)
+	if types.AdvSwapQueueMode(val) == types.AdvSwapQueueModeMarketOnly && msg.IsLimitSwap() {
+		return false
+	}
+
+	pausedStreaming := vm.k.GetConfigInt64(ctx, constants.StreamingSwapPause)
+	if pausedStreaming > 0 && msg.IsStreaming() {
+		return false
 	}
 
 	if vm.k.IsTradingHalt(ctx, &msg) {
@@ -242,7 +309,55 @@ func (vm *SwapQueueAdv) isSwapReady(ctx cosmos.Context, msg MsgSwap) bool {
 		}
 	}
 
+	// A known-reverted inbound must never execute another queue leg. Keep this
+	// guard independent of lifecycle presence as defense in depth for ordinary
+	// finalized swaps and any repaired/corrupt lifecycle state.
+	voter, voterErr := vm.k.GetObservedTxInVoter(ctx, msg.Tx.ID)
+	if voterErr == nil && !voter.IsEmpty() && voter.Reverted {
+		return false
+	}
+	record, hasLifecycle, err := vm.k.GetMempoolSwap(ctx, msg.Tx.ID, msg.Index)
+	if err != nil {
+		return false
+	}
+	var owner *types.MempoolSwap
+	if hasLifecycle {
+		owner = &record
+		if record.Status == types.MempoolSwapStatus_ROLLBACK_PENDING {
+			return false
+		}
+		vault, err := vm.k.GetVault(ctx, record.VaultPubKey)
+		if err != nil || vault.Status == InactiveVault {
+			return false
+		}
+		if voterErr != nil || voter.IsEmpty() || voter.Reverted {
+			return false
+		}
+		if record.Status == types.MempoolSwapStatus_FINALIZED {
+			if voter.FinalisedHeight == 0 {
+				return false
+			}
+		} else if voter.FinalisedHeight > 0 {
+			return false
+		}
+	}
+	if err := ensureMempoolSwapExecutionPoolsAvailable(ctx, vm.k, msg, owner); err != nil {
+		return false
+	}
+
 	return true
+}
+
+func (vm *SwapQueueAdv) ensureExecutionPoolsAvailable(ctx cosmos.Context, msg MsgSwap) error {
+	var owner *types.MempoolSwap
+	record, found, err := vm.k.GetMempoolSwap(ctx, msg.Tx.ID, msg.Index)
+	if err != nil {
+		return err
+	}
+	if found {
+		owner = &record
+	}
+	return ensureMempoolSwapExecutionPoolsAvailable(ctx, vm.k, msg, owner)
 }
 
 func (vm *SwapQueueAdv) discoverLimitSwaps(ctx cosmos.Context, mgr Manager, pair tradePair, pools Pools) swapItems {
@@ -770,7 +885,7 @@ func (vm *SwapQueueAdv) AddSwapQueueItem(ctx cosmos.Context, mgr Manager, msg *M
 	}
 
 	swapHandler := NewSwapHandler(mgr)
-	if err := swapHandler.validate(ctx, *msg); err != nil {
+	if err := swapHandler.validate(withMempoolSwapQueueAdmission(ctx), *msg); err != nil {
 		ctx.Logger().Error("MsgSwap failed validation", "error", err)
 		return err
 	}
@@ -954,6 +1069,59 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 				continue
 			}
 
+			// Errata and recovery mark a lifecycle rollback-pending before doing
+			// potentially fallible cleanup. Never execute another speculative leg
+			// after that durable stop marker (or after the voter is reverted).
+			record, hasLifecycle, lifecycleErr := vm.k.GetMempoolSwap(ctx, msg.Tx.ID, msg.Index)
+			if lifecycleErr != nil {
+				ctx.Logger().Error("fail to load mempool swap lifecycle", "error", lifecycleErr, "tx", msg.Tx.ID)
+				continue
+			}
+			if hasLifecycle {
+				voter, voterErr := vm.k.GetObservedTxInVoter(ctx, msg.Tx.ID)
+				if voterErr != nil || voter.IsEmpty() {
+					if voterErr == nil {
+						voterErr = fmt.Errorf("observed tx voter is empty")
+					}
+					ctx.Logger().Error("fail to load mempool swap voter", "error", voterErr, "tx", msg.Tx.ID)
+					continue
+				}
+				if voter.Reverted || record.Status == types.MempoolSwapStatus_ROLLBACK_PENDING {
+					if record.Status != types.MempoolSwapStatus_ROLLBACK_PENDING {
+						record.Status = types.MempoolSwapStatus_ROLLBACK_PENDING
+						record.UpdatedHeight = ctx.BlockHeight()
+						record.NextRecoveryHeight = ctx.BlockHeight()
+						if lifecycleErr = vm.k.SetMempoolSwap(ctx, record); lifecycleErr != nil {
+							ctx.Logger().Error("fail to stop reverted mempool swap", "error", lifecycleErr, "tx", msg.Tx.ID)
+						}
+					}
+					continue
+				}
+				// A finality transition that failed to atomically apply deferred
+				// effects must retry completion before executing another queue leg.
+				if record.Status == types.MempoolSwapStatus_FINALIZED {
+					if voter.FinalisedHeight == 0 {
+						continue
+					}
+				} else if voter.FinalisedHeight > 0 {
+					continue
+				}
+			}
+			// FetchQueue evaluates readiness before any item in this batch runs.
+			// Re-check pool ownership here so the first speculative item can claim
+			// its pools and later items from the same fetched batch defer cleanly
+			// instead of becoming failed swap attempts.
+			var owner *types.MempoolSwap
+			if hasLifecycle {
+				owner = &record
+			}
+			if poolErr := ensureMempoolSwapExecutionPoolsAvailable(ctx, vm.k, *msg, owner); poolErr != nil {
+				ctx.Logger().Debug("deferring swap behind unfinalized mempool pool owner",
+					"tx", msg.Tx.ID,
+					"error", poolErr)
+				continue
+			}
+
 			// Preserve original values before modification
 			originalAmount := msg.Tx.Coins[0].Amount
 			originalTradeTarget := msg.TradeTarget
@@ -981,18 +1149,23 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 
 			// make the primary swap using the cached context
 			var settleMsg string
+			// The advanced queue always owns settlement of accumulated State.Out.
+			// Make that contract explicit instead of depending on the runtime Mimir
+			// also reporting the queue as enabled; otherwise direct swap scheduling
+			// and terminal settlement can materialize the same outbound twice.
+			executionCtx := cacheCtx.WithValue(constants.CtxSkipSwapOutbounds, true)
+			if hasLifecycle {
+				executionCtx = withMempoolSwapExecutionMode(executionCtx, mempoolSwapExecutionSpeculative)
+				executionCtx = withMempoolSwapExecutionIdentity(executionCtx, msg.Tx.ID, msg.Index)
+			}
 			effectiveInput := cosmos.ZeroUint()
 			emit, handleErr := runTracedHandler(
-				cacheCtx,
+				executionCtx,
 				mgr.Tracer(),
 				handlerTrace{path: pathAdvancedSwapQueue, msg: msg},
 				func() (cosmos.Uint, error) {
 					result := cosmos.ZeroUint()
-					executionCtx, err := prepareMempoolSwapAffiliateContext(cacheCtx, vm.k, *msg)
-					if err != nil {
-						return result, err
-					}
-					err = runLuviGuarded(ctx, executionCtx, mgr, msg, func(runCtx cosmos.Context) error {
+					err := runLuviGuarded(ctx, executionCtx, mgr, msg, func(runCtx cosmos.Context) error {
 						var runErr error
 						_, result, effectiveInput, runErr = swapHandler.runWithEmitAndInput(runCtx, msg)
 						return runErr
@@ -1049,6 +1222,12 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 					ctx.Logger().Error("fail to save swap item in cache context, discarding swap", "error", err)
 					continue
 				}
+				if hasLifecycle {
+					if err := updateMempoolSwapProgressCached(cacheCtx, vm.k, *msg, types.MempoolSwapStatus_EXECUTING); err != nil {
+						ctx.Logger().Error("fail to save mempool swap lifecycle progress, discarding swap", "error", err, "tx", msg.Tx.ID)
+						continue
+					}
+				}
 
 				// Commit pool changes and swap state atomically
 				commit()
@@ -1098,6 +1277,20 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 			capFailedSwapReasons(msg)
 			if err := vm.k.SetAdvSwapQueueItemState(ctx, *msg); err != nil {
 				ctx.Logger().Error("fail to save swap item", "error", err)
+			}
+			if hasLifecycle {
+				record, found, lifecycleErr := vm.k.GetMempoolSwap(ctx, msg.Tx.ID, msg.Index)
+				if lifecycleErr != nil {
+					ctx.Logger().Error("fail to load failed mempool swap lifecycle", "error", lifecycleErr, "tx", msg.Tx.ID)
+				} else if found {
+					record.LatestSwap = *msg
+					record.UpdatedHeight = ctx.BlockHeight()
+					// A failed attempt is not progress: retain the previous recovery
+					// deadline so a permanently failing stream cannot postpone cleanup.
+					if lifecycleErr = vm.k.SetMempoolSwap(ctx, record); lifecycleErr != nil {
+						ctx.Logger().Error("fail to save failed mempool swap lifecycle", "error", lifecycleErr, "tx", msg.Tx.ID)
+					}
+				}
 			}
 			if vm.IsDone(ctx, *msg) {
 				if err := settleSwap(ctx, mgr, *msg, settleMsg); err != nil {

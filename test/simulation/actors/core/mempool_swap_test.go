@@ -14,12 +14,11 @@ func TestMempoolSimulationEffectiveMimirValue(t *testing.T) {
 	t.Parallel()
 
 	wantDefaults := map[string]int64{
-		"DollarsPerRune":           0,
-		"EnableAdvSwapQueue":       1,
-		"MaxOutboundAttempts":      0,
-		"MempoolSwapCapTOR":        0,
-		"MempoolSwapPoolCapBPS":    50,
-		"SigningTransactionPeriod": 300,
+		"DollarsPerRune":        0,
+		"EnableAdvSwapQueue":    1,
+		"MempoolSwapCapTOR":     0,
+		"MempoolSwapPoolCapBPS": 50,
+		"MempoolSwapMaxCount":   1_000,
 	}
 	if !reflect.DeepEqual(mempoolSimulationUnsetMimirDefaults, wantDefaults) {
 		t.Fatalf("unexpected fresh-cluster Mimir defaults: got %v, want %v", mempoolSimulationUnsetMimirDefaults, wantDefaults)
@@ -39,6 +38,35 @@ func TestMempoolSimulationEffectiveMimirValue(t *testing.T) {
 	}
 	if _, err := mempoolSimulationEffectiveMimirValue("DollarsPerRune", -2); err == nil {
 		t.Fatal("unexpected negative Mimir value must remain invalid")
+	}
+}
+
+func TestMempoolAffiliateTHORName(t *testing.T) {
+	t.Parallel()
+
+	first := mempoolAffiliateTHORName("thor1owner")
+	if first != mempoolAffiliateTHORName(" THOR1OWNER ") {
+		t.Fatal("affiliate THORName derivation must normalize owner casing and whitespace")
+	}
+	if first == mempoolAffiliateTHORName("thor1different") {
+		t.Fatal("different owners must not derive the same test THORName")
+	}
+	if !strings.HasPrefix(first, "mpsim") || len(first) != 15 {
+		t.Fatalf("unexpected derived affiliate THORName %q", first)
+	}
+}
+
+func TestParseMempoolAffiliateCollectorBalance(t *testing.T) {
+	t.Parallel()
+
+	amount, err := parseMempoolAffiliateCollectorBalance("123")
+	if err != nil || !amount.Equal(cosmos.NewUint(123)) {
+		t.Fatalf("got amount %s error %v, want 123", amount, err)
+	}
+	for _, raw := range []string{"", " ", "not-rune"} {
+		if _, err = parseMempoolAffiliateCollectorBalance(raw); err == nil {
+			t.Fatalf("invalid collector balance %q must fail", raw)
+		}
 	}
 }
 
@@ -91,61 +119,6 @@ func TestMempoolSwapQuoteNeedsRicherUser(t *testing.T) {
 	}
 }
 
-func TestMempoolAffiliateTHORName(t *testing.T) {
-	t.Parallel()
-
-	first := mempoolAffiliateTHORName("thor1owner")
-	if first != mempoolAffiliateTHORName(" THOR1OWNER ") {
-		t.Fatal("affiliate THORName derivation must normalize owner casing and whitespace")
-	}
-	if first == mempoolAffiliateTHORName("thor1different") {
-		t.Fatal("different owners must not derive the same test THORName")
-	}
-	if !strings.HasPrefix(first, "mpsim") || len(first) != 15 {
-		t.Fatalf("unexpected derived affiliate THORName %q", first)
-	}
-}
-
-func TestParseMempoolAffiliateCollectorBalance(t *testing.T) {
-	t.Parallel()
-
-	amount, err := parseMempoolAffiliateCollectorBalance("123")
-	if err != nil || !amount.Equal(cosmos.NewUint(123)) {
-		t.Fatalf("got amount %s error %v, want 123", amount, err)
-	}
-	for _, raw := range []string{"", " ", "not-rune"} {
-		if _, err = parseMempoolAffiliateCollectorBalance(raw); err == nil {
-			t.Fatalf("invalid collector balance %q must fail", raw)
-		}
-	}
-}
-
-func TestMempoolTimeoutRecoveryHeight(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name          string
-		stagedHeight  int64
-		signingPeriod int64
-		attempts      int64
-		want          int64
-	}{
-		{name: "already on recovery cadence", stagedHeight: 105, signingPeriod: 3, attempts: 3, want: 114},
-		{name: "round up to next cadence", stagedHeight: 104, signingPeriod: 3, attempts: 3, want: 114},
-		{name: "different cadence", stagedHeight: 101, signingPeriod: 5, attempts: 2, want: 115},
-	}
-	for _, test := range tests {
-		test := test
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			got := mempoolTimeoutRecoveryHeight(test.stagedHeight, test.signingPeriod, test.attempts)
-			if got != test.want {
-				t.Fatalf("got recovery height %d, want %d", got, test.want)
-			}
-		})
-	}
-}
-
 func TestMempoolInboundFinalisedRequiresFinalityStage(t *testing.T) {
 	t.Parallel()
 
@@ -156,6 +129,84 @@ func TestMempoolInboundFinalisedRequiresFinalityStage(t *testing.T) {
 	finalised := openapi.InboundFinalisedStage{Completed: true}
 	if !mempoolInboundFinalised(openapi.TxStagesResponse{InboundFinalised: &finalised}) {
 		t.Fatal("completed inbound_finalised stage must satisfy finality")
+	}
+}
+
+func TestThorTxCommitResult(t *testing.T) {
+	t.Parallel()
+
+	txID := strings.Repeat("AB", 32)
+	successCode := int64(0)
+	failedCode := int64(7)
+	failedLog := "errata handler rejected vote"
+	tests := []struct {
+		name      string
+		block     openapi.BlockResponse
+		wantFound bool
+		wantErr   bool
+	}{
+		{
+			name:  "absent",
+			block: openapi.BlockResponse{Header: openapi.BlockResponseHeader{Height: 10}},
+		},
+		{
+			name: "successful normalized hash",
+			block: openapi.BlockResponse{
+				Header: openapi.BlockResponseHeader{Height: 11},
+				Txs: []openapi.BlockTx{{
+					Hash:   "0x" + strings.ToLower(txID),
+					Result: openapi.BlockTxResult{Code: &successCode},
+				}},
+			},
+			wantFound: true,
+		},
+		{
+			name: "missing deliver tx code",
+			block: openapi.BlockResponse{
+				Header: openapi.BlockResponseHeader{Height: 12},
+				Txs:    []openapi.BlockTx{{Hash: txID}},
+			},
+			wantFound: true,
+			wantErr:   true,
+		},
+		{
+			name: "failed deliver tx",
+			block: openapi.BlockResponse{
+				Header: openapi.BlockResponseHeader{Height: 13},
+				Txs: []openapi.BlockTx{{
+					Hash: txID,
+					Result: openapi.BlockTxResult{
+						Code: &failedCode,
+						Log:  &failedLog,
+					},
+				}},
+			},
+			wantFound: true,
+			wantErr:   true,
+		},
+		{
+			name: "unrelated failed transaction",
+			block: openapi.BlockResponse{
+				Header: openapi.BlockResponseHeader{Height: 14},
+				Txs: []openapi.BlockTx{{
+					Hash: strings.Repeat("CD", 32),
+					Result: openapi.BlockTxResult{
+						Code: &failedCode,
+						Log:  &failedLog,
+					},
+				}},
+			},
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			found, err := thorTxCommitResult(test.block, txID)
+			if found != test.wantFound || (err != nil) != test.wantErr {
+				t.Fatalf("got found=%t err=%v, want found=%t err=%t", found, err, test.wantFound, test.wantErr)
+			}
+		})
 	}
 }
 
@@ -231,5 +282,17 @@ func TestValidateMempoolRollbackEventSummary(t *testing.T) {
 	postFinality.scheduledOutboundAt[0] = 29
 	if err := validateMempoolRollbackEventSummary(txID, expectation, postFinality); err == nil {
 		t.Fatal("outbound history before actual finality must fail")
+	}
+}
+
+func TestMempoolErrataConsensusThreshold(t *testing.T) {
+	t.Parallel()
+
+	// Keep the zero/single-validator edges and both sides of a 2/3 rounding boundary.
+	tests := map[int]int{0: 0, 1: 1, 3: 2, 4: 3}
+	for total, expected := range tests {
+		if actual := mempoolErrataConsensusThreshold(total); actual != expected {
+			t.Fatalf("validator count %d: expected threshold %d, got %d", total, expected, actual)
+		}
 	}
 }

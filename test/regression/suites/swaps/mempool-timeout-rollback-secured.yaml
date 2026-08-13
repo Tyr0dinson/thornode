@@ -157,10 +157,36 @@ endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - ([.balances[]|select(.denom == "btc-btc")]|length) == 0
 ---
-# Run well past the nine-block timeout age so LackSigning reaches a signing-period
-# boundary and unwinds the speculative swap.
+# The final stream slice refreshed the lifecycle due height to 26. Verify that
+# the staged outbound and reservation survive through height 25.
 type: create-blocks
-count: 15
+count: 6
+---
+type: check
+endpoint: http://localhost:1317/thorchain/lastblock
+asserts:
+  - .[0].thorchain == 25
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/staged
+asserts:
+  - .staged_outbound_items|length == 1
+  - .staged_outbound_items[0].tx_out_item.in_hash == "{{ observe_txid 1 }}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .mempool_swap_usage_tor|tonumber > 0
+---
+# The bounded timeout index is checked every block. At the exact due height,
+# recovery must unwind the same-underlying secured swap atomically.
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/lastblock
+asserts:
+  - .[0].thorchain == 26
 ---
 # The staged outbound is gone. Before the same-asset fix the rollback aborted on
 # "swap Source and Target cannot be the same" and this item stayed here forever.
@@ -204,3 +230,14 @@ type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
 asserts:
   - .balance_asset == "${BTC_ASSET_DEPTH}"
+---
+# Recovery must happen exactly once through the timeout path.
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.end_block_events[]|select(.type == "mempool_swap_reverted" and .tx_id == "{{ observe_txid 1 }}")]|length == 1'
+  - .end_block_events[]|select(.type == "mempool_swap_reverted" and .tx_id == "{{ observe_txid 1 }}")|.block_height == "26"
+  - .end_block_events[]|select(.type == "mempool_swap_reverted" and .tx_id == "{{ observe_txid 1 }}")|.source_asset == "BTC.BTC"
+  - .end_block_events[]|select(.type == "mempool_swap_reverted" and .tx_id == "{{ observe_txid 1 }}")|.source_amount == "10000000"
+  - .end_block_events[]|select(.type == "mempool_swap_reverted" and .tx_id == "{{ observe_txid 1 }}")|.donated_amount|tonumber > 0
+  - '[.end_block_events[]|select(.type == "security" and .msg == "mempool swap rolled back")]|length == 1'

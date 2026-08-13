@@ -17,6 +17,9 @@ func withdraw(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cosmos
 		ctx.Logger().Error("msg withdraw failed validation", "error", err)
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), err
 	}
+	if err := ensureMempoolSwapPoolFinalized(ctx, mgr.Keeper(), msg.Asset); err != nil {
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("cannot withdraw liquidity until pool finality is resolved: %w", err)
+	}
 
 	pool, err := mgr.Keeper().GetPool(ctx, msg.Asset)
 	if err != nil {

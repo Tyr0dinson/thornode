@@ -37,6 +37,11 @@ func (k KVStore) GetLiquidityProviderIterator(ctx cosmos.Context, asset common.A
 	return k.getIterator(ctx, types.DbPrefix(key))
 }
 
+func (k KVStore) GetBankSupply(ctx cosmos.Context, asset common.Asset) cosmos.Uint {
+	coin := k.coinKeeper.GetSupply(ctx, asset.Native())
+	return cosmos.NewUint(coin.Amount.Uint64())
+}
+
 func (k KVStore) GetTotalSupply(ctx cosmos.Context, asset common.Asset) cosmos.Uint {
 	// A pool Ragnarok redeems the pool's synth backing to the Reserve without
 	// burning the synths, so their supply reads zero from then on. Only synths
@@ -48,8 +53,7 @@ func (k KVStore) GetTotalSupply(ctx cosmos.Context, asset common.Asset) cosmos.U
 		}
 	}
 
-	coin := k.coinKeeper.GetSupply(ctx, asset.Native())
-	return cosmos.NewUint(coin.Amount.Uint64())
+	return k.GetBankSupply(ctx, asset)
 }
 
 // GetLiquidityProvider retrieve liquidity provider from the data store

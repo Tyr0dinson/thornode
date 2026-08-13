@@ -172,7 +172,7 @@
               "denom": "btc-btc"
             },
             {
-              "amount": "2509602061630",
+              "amount": "2509582962586",
               "denom": "rune"
             }
           ]
@@ -181,7 +181,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "151367580995",
+              "amount": "151451799755",
               "denom": "rune"
             }
           ]
@@ -190,7 +190,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "34999973165894",
+              "amount": "34999973165896",
               "denom": "rune"
             }
           ]
@@ -208,7 +208,7 @@
           "address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
           "coins": [
             {
-              "amount": "2513101071641",
+              "amount": "2513037325497",
               "denom": "rune"
             }
           ]
@@ -217,7 +217,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "5000954788029",
+              "amount": "5000953414455",
               "denom": "rune"
             }
           ]
@@ -266,7 +266,7 @@
             "deposit": "1000000000",
             "in": "335009",
             "last_height": "44",
-            "out": "51254429",
+            "out": "51326829",
             "quantity": "2985",
             "withdrawn": "0"
           },
@@ -337,6 +337,87 @@
           "units": "100000000000"
         }
       ],
+      "mempool_swaps": [
+        {
+          "admitted_height": "44",
+          "latest_swap": {
+            "affiliate_basis_points": "0",
+            "destination": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
+            "initial_block_height": "44",
+            "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+            "state": {
+              "count": "1",
+              "deposit": "1000000000",
+              "in": "335009",
+              "last_height": "44",
+              "out": "51326829",
+              "quantity": "2985",
+              "withdrawn": "0"
+            },
+            "target_asset": "THOR.RUNE",
+            "trade_target": "0",
+            "tx": {
+              "chain": "BTC",
+              "coins": [
+                {
+                  "amount": "1000000000",
+                  "asset": "BTC.BTC",
+                  "decimals": "8"
+                }
+              ],
+              "from_address": "bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33",
+              "gas": [
+                {
+                  "amount": "10000",
+                  "asset": "BTC.BTC",
+                  "decimals": "8"
+                }
+              ],
+              "id": "0000000000000000000000000000000000000000000000000000000000000028",
+              "memo": "=:THOR.RUNE:tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
+              "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
+            },
+            "version": 1
+          },
+          "next_recovery_height": "53",
+          "pending_effects": {
+            "affiliates": null,
+            "cleanups": null,
+            "clout": [
+              {
+                "address": "bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33",
+                "score": "25664"
+              },
+              {
+                "address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
+                "score": "25665"
+              }
+            ],
+            "dynamic_fees": null,
+            "pools": [
+              {
+                "asset": "BTC.BTC",
+                "balance_asset_decrease": "0",
+                "balance_asset_increase": "335009",
+                "balance_rune_decrease": "51378158",
+                "balance_rune_increase": "0",
+                "liquidity_fee_rune": "51329",
+                "reserve_rune": "51329",
+                "swap_slip": "10",
+                "tcy_rune": "0",
+                "volume_asset": "335009",
+                "volume_rune": "51326829"
+              }
+            ],
+            "supplies": null
+          },
+          "reserved_tor": "153516890603",
+          "status": 2,
+          "tx_id": "0000000000000000000000000000000000000000000000000000000000000028",
+          "updated_height": "44",
+          "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
+        }
+      ],
       "mimirs": [
         {
           "key": "DOLLARSPERRUNE",
@@ -349,10 +430,6 @@
         {
           "key": "L1SLIPMINBPS",
           "value": "10"
-        },
-        {
-          "key": "MAXOUTBOUNDATTEMPTS",
-          "value": "2"
         },
         {
           "key": "MEMPOOLSWAPCAPTOR",
@@ -379,7 +456,7 @@
       "network": {
         "LPIncomeSplit": "9697",
         "NodeIncomeSplit": "303",
-        "bond_reward_rune": "974788029",
+        "bond_reward_rune": "973414455",
         "total_bond_units": "44"
       },
       "network_fees": [
@@ -409,11 +486,6 @@
           "key": "L1SLIPMINBPS",
           "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "value": "10"
-        },
-        {
-          "key": "MAXOUTBOUNDATTEMPTS",
-          "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-          "value": "2"
         },
         {
           "key": "MEMPOOLSWAPCAPTOR",
@@ -462,7 +534,7 @@
         {
           "actions": null,
           "height": "44",
-          "mempool_swap_tor": "153300355436",
+          "mempool_swap_tor": "153516890603",
           "out_txs": null,
           "tx": {
             "block_height": "80",
@@ -531,13 +603,12 @@
       "observed_tx_out_voters": null,
       "outbound_fee_spent_rune": [],
       "outbound_fee_withheld_rune": [],
-      "pending_affiliate_liquidity_fees": [],
       "pools": [
         {
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
-          "balance_asset": "335315605",
-          "balance_rune": "51302464705",
+          "balance_asset": "335324796",
+          "balance_rune": "51375577769",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -548,7 +619,7 @@
           "LP_units": "100000000000",
           "asset": "ETH.ETH",
           "balance_asset": "1000000000",
-          "balance_rune": "100013861861",
+          "balance_rune": "100024843828",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -584,19 +655,19 @@
         {
           "address": "bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33",
           "reclaimed": "0",
-          "score": "2706405307",
+          "score": "2710690954",
           "spent": "0"
         },
         {
           "address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal",
           "reclaimed": "0",
-          "score": "407655198",
+          "score": "405904818",
           "spent": "0"
         },
         {
           "address": "bcrt1qxkz88t875m7ms7wa6220estwwdlc86pqvavagk",
           "reclaimed": "0",
-          "score": "633623365",
+          "score": "630941526",
           "spent": "0"
         },
         {
@@ -608,19 +679,19 @@
         {
           "address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
           "reclaimed": "0",
-          "score": "2706405308",
+          "score": "2710690956",
           "spent": "0"
         },
         {
           "address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
           "reclaimed": "0",
-          "score": "427507897",
+          "score": "425728451",
           "spent": "0"
         },
         {
           "address": "tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm",
           "reclaimed": "0",
-          "score": "633623376",
+          "score": "630941538",
           "spent": "0"
         }
       ],
@@ -631,14 +702,14 @@
           "asset": "BTC~BTC",
           "last_add_height": "41",
           "owner": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
-          "units": "6520773"
+          "units": "6511582"
         }
       ],
       "trade_units": [
         {
           "asset": "BTC~BTC",
-          "depth": "6520773",
-          "units": "6520773"
+          "depth": "6511582",
+          "units": "6511582"
         }
       ],
       "tx_outs": null,

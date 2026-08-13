@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/hashicorp/go-metrics"
@@ -113,7 +114,10 @@ func (gm *GasMgr) GetAssetOutboundFee(ctx cosmos.Context, asset common.Asset, in
 		return cosmos.ZeroUint(), nil
 	}
 
-	gasPool, err := gm.keeper.GetPool(ctx, asset.GetChain().GetGasAsset())
+	// Outbound fees are committed immediately, so price them without pool
+	// mutations owned by still-reversible mempool swaps.
+	poolView := newFinalityPoolView(gm.keeper)
+	gasPool, _, err := poolView.getPool(ctx, asset.GetChain().GetGasAsset())
 	if err != nil {
 		return cosmos.ZeroUint(), err
 	}
@@ -181,7 +185,7 @@ func (gm *GasMgr) GetAssetOutboundFee(ctx cosmos.Context, asset common.Asset, in
 	}
 
 	// convert rune value into non-gas asset value
-	assetPool, err := gm.keeper.GetPool(ctx, asset)
+	assetPool, _, err := poolView.getPool(ctx, asset)
 	if err != nil {
 		return cosmos.ZeroUint(), err
 	}
@@ -268,8 +272,8 @@ func (gm *GasMgr) GetMaxGas(ctx cosmos.Context, chain common.Chain) (common.Coin
 }
 
 // EndBlock emit the events
-func (gm *GasMgr) EndBlock(ctx cosmos.Context, keeper keeper.Keeper, eventManager EventManager) {
-	gm.ProcessGas(ctx, keeper)
+func (gm *GasMgr) EndBlock(ctx cosmos.Context, mgr Manager) {
+	gm.ProcessGas(ctx, mgr)
 
 	// Per-block native gas burn and outbound count, per gas asset. Emitted before
 	// the empty-pools early return below so the loop is always reached.
@@ -284,21 +288,103 @@ func (gm *GasMgr) EndBlock(ctx cosmos.Context, keeper keeper.Keeper, eventManage
 	if len(gm.gasEvent.Pools) == 0 {
 		return
 	}
-	if err := eventManager.EmitGasEvent(ctx, gm.gasEvent); nil != err {
+	if err := mgr.EventMgr().EmitGasEvent(ctx, gm.gasEvent); nil != err {
 		ctx.Logger().Error("fail to emit gas event", "error", err)
 	}
 	gm.reset() // do not remove, will cause consensus failures
 }
 
+// resolveConflictingMempoolSwapGasOwners resolves reversible pool state only
+// when the block's aggregate gas cannot be debited from both the finalized and
+// live balances. Below that boundary, subtracting gas commutes with removing or
+// applying the overlay, so the speculative swap can remain active.
+func (gm *GasMgr) resolveConflictingMempoolSwapGasOwners(ctx cosmos.Context, mgr Manager) map[common.Asset]bool {
+	k := mgr.Keeper()
+	totals := make(map[common.Asset]cosmos.Uint)
+	for i := range gm.outAssetGas {
+		for _, coin := range gm.outAssetGas[i].gas {
+			if coin.IsEmpty() {
+				continue
+			}
+			total, ok := totals[coin.Asset]
+			if !ok {
+				total = cosmos.ZeroUint()
+			}
+			totals[coin.Asset] = total.Add(coin.Amount)
+		}
+	}
+
+	assets := make([]common.Asset, 0, len(totals))
+	// analyze-ignore(map-iteration) - extracting keys to sort them immediately after
+	for asset := range totals {
+		assets = append(assets, asset)
+	}
+	sort.Slice(assets, func(i, j int) bool {
+		return assets[i].String() < assets[j].String()
+	})
+
+	blocked := make(map[common.Asset]bool)
+	for _, asset := range assets {
+		livePool, err := k.GetPool(ctx, asset)
+		if err != nil {
+			ctx.Logger().Error("fail to get live gas pool before resolving mempool swap owner", "asset", asset, "error", err)
+			blocked[asset] = true
+			continue
+		}
+		if err = livePool.Valid(); err != nil {
+			ctx.Logger().Error("invalid gas pool before resolving mempool swap owner", "asset", asset, "error", err)
+			blocked[asset] = true
+			continue
+		}
+
+		finalizedPool, affected, adjustErr := newFinalityPoolView(k).adjust(ctx, livePool)
+		if !affected {
+			if adjustErr != nil {
+				ctx.Logger().Error("fail to inspect mempool swap gas pool overlay", "asset", asset, "error", adjustErr)
+				blocked[asset] = true
+			}
+			continue
+		}
+		if adjustErr == nil &&
+			!totals[asset].GT(finalizedPool.BalanceAsset) &&
+			!totals[asset].GT(livePool.BalanceAsset) {
+			continue
+		}
+
+		preemptCtx, commit := ctx.CacheContext()
+		if err := preemptMempoolSwapPoolOwnerCached(preemptCtx, mgr, asset); err != nil {
+			ctx.Logger().Error(
+				"fail to resolve mempool swap owner before gas accounting",
+				"asset", asset,
+				"gas amount", totals[asset],
+				"error", err,
+			)
+			blocked[asset] = true
+			continue
+		}
+		// Resolution is safe to commit independently of best-effort gas
+		// settlement: rollback sends an unfinalized inbound through its ordinary
+		// finalized path, while completion only accepts an already-finalized one.
+		commit()
+	}
+	return blocked
+}
+
 // ProcessGas to subsidise the gas asset pools with RUNE for the gas they have spent
-func (gm *GasMgr) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper) {
-	if keeper.RagnarokInProgress(ctx) {
+func (gm *GasMgr) ProcessGas(ctx cosmos.Context, mgr Manager) {
+	k := mgr.Keeper()
+	if k.RagnarokInProgress(ctx) {
 		// ragnarok is in progress , stop
 		return
 	}
 
-	reserveRune := keeper.GetRuneBalanceOfModule(ctx, ReserveName)
-	poolCache := map[common.Asset]Pool{}
+	blockedGasAssets := gm.resolveConflictingMempoolSwapGasOwners(ctx, mgr)
+	reserveRune := k.GetRuneBalanceOfModule(ctx, ReserveName)
+	// Gas reimbursements are irreversible end-block accounting. Use finalized
+	// pool depths for valuation and mutation, then reapply active overlays
+	// before writing the resulting live pool.
+	poolView := newFinalityPoolView(k)
+	valuationPoolCache := map[common.Asset]Pool{}
 	for i := range gm.outAssetGas {
 		feeSpentRune := cosmos.ZeroUint()
 		for _, coin := range gm.outAssetGas[i].gas {
@@ -306,11 +392,14 @@ func (gm *GasMgr) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper) {
 			if coin.IsEmpty() {
 				continue
 			}
+			if blockedGasAssets[coin.Asset] {
+				continue
+			}
 
-			pool, ok := poolCache[coin.Asset]
+			pool, ok := valuationPoolCache[coin.Asset]
 			if !ok {
 				var err error // Declare error variable to prevent 'pool' shadowing
-				pool, err = keeper.GetPool(ctx, coin.Asset)
+				pool, _, err = poolView.getPool(ctx, coin.Asset)
 				if err != nil {
 					ctx.Logger().Error("fail to get pool", "pool", coin.Asset, "error", err)
 					continue
@@ -319,7 +408,7 @@ func (gm *GasMgr) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper) {
 					// Cache the invalid pool, logging only when added to the cache.
 					ctx.Logger().Error("invalid pool", "pool", coin.Asset, "error", err)
 				}
-				poolCache[coin.Asset] = pool
+				valuationPoolCache[coin.Asset] = pool
 			}
 			if err := pool.Valid(); err != nil {
 				continue
@@ -364,30 +453,48 @@ func (gm *GasMgr) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper) {
 			feeSpentRune = feeSpentRune.Add(runeGas)
 		}
 		// Add RUNE spent on gas by the reserve
-		if err := keeper.AddToOutboundFeeSpentRune(ctx, gm.outAssetGas[i].outAsset, feeSpentRune); err != nil {
+		if err := k.AddToOutboundFeeSpentRune(ctx, gm.outAssetGas[i].outAsset, feeSpentRune); err != nil {
 			ctx.Logger().Error("fail to add to outbound fee spent rune", "outbound asset", gm.outAssetGas[i].outAsset, "error", err)
 		}
 	}
 
 	// Carry out the actual reimbursement and Set the pools.
 	for i := range gm.gasEvent.Pools {
-		pool, ok := poolCache[gm.gasEvent.Pools[i].Asset]
+		pool, ok := valuationPoolCache[gm.gasEvent.Pools[i].Asset]
 		if !ok {
-			// This should never happen.
-			ctx.Logger().Error("pool asset in gas event for which no cached pool", "asset", gm.gasEvent.Pools[i].Asset)
+			ctx.Logger().Error("pool asset in gas event for which no finalized pool was cached", "asset", gm.gasEvent.Pools[i].Asset)
+			continue
+		}
+		// Conflicting owners were resolved before valuation. For an overlay that
+		// remains active, the aggregate debit fits both views and therefore
+		// commutes with later finalization or rollback.
+		pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, gm.gasEvent.Pools[i].AssetAmt)
+
+		// First validate the complete finalized mutation with the active overlay
+		// reapplied. Directly subtracting from the live pool is not equivalent
+		// when an active overlay already decreases this balance and can underflow.
+		poolWithCredit := pool
+		poolWithCredit.BalanceRune = poolWithCredit.BalanceRune.Add(gm.gasEvent.Pools[i].RuneAmt)
+		livePool, _, err := poolView.apply(ctx, poolWithCredit)
+		if err != nil {
+			ctx.Logger().Error("fail to reapply mempool swap overlay to gas pool", "asset", pool.Asset, "error", err)
 			continue
 		}
 		if !gm.gasEvent.Pools[i].RuneAmt.IsZero() {
 			coin := common.NewCoin(common.RuneNative, gm.gasEvent.Pools[i].RuneAmt)
-			if err := keeper.SendFromModuleToModule(ctx, ReserveName, AsgardName, common.NewCoins(coin)); err != nil {
+			if err := k.SendFromModuleToModule(ctx, ReserveName, AsgardName, common.NewCoins(coin)); err != nil {
 				ctx.Logger().Error("fail to transfer funds from reserve to asgard", "pool", gm.gasEvent.Pools[i].Asset, "error", err)
-			} else {
-				pool.BalanceRune = pool.BalanceRune.Add(gm.gasEvent.Pools[i].RuneAmt)
+				// Preserve the historical asset debit when reimbursement transfer
+				// fails, but do not credit RUNE the pool did not receive.
+				livePool, _, err = poolView.apply(ctx, pool)
+				if err != nil {
+					ctx.Logger().Error("fail to reapply mempool swap overlay to unreimbursed gas pool", "asset", pool.Asset, "error", err)
+					continue
+				}
 			}
 		}
-		pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, gm.gasEvent.Pools[i].AssetAmt)
-		if err := keeper.SetPool(ctx, pool); err != nil {
-			ctx.Logger().Error("fail to set pool", "pool", pool.Asset, "error", err)
+		if err := k.SetPool(ctx, livePool); err != nil {
+			ctx.Logger().Error("fail to set pool", "pool", livePool.Asset, "error", err)
 		}
 	}
 }

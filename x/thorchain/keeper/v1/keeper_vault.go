@@ -200,6 +200,31 @@ func (k KVStore) getPoolMemo(ctx cosmos.Context, store storetypes.KVStore, asset
 
 func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signingTransPeriod int64) []VaultSecurity {
 	vaultSecurity := make([]VaultSecurity, len(vaults))
+	// the vaults hold, and the pending window pays out, the same few dozen
+	// pools many times over: build each pool key and decode each stored pool
+	// once, and remove its active mempool swap overlay once per asset
+	pools := make(map[common.Asset]*poolMemo)
+	// every member and pool read below goes through one opening of the store
+	store := k.kvStore(ctx)
+	poolCache := make(map[common.Asset]Pool)
+	getFinalityPool := func(asset common.Asset) (Pool, error) {
+		asset = asset.GetLayer1Asset()
+		if pool, ok := poolCache[asset]; ok {
+			return pool, nil
+		}
+		pool, err := k.getPoolMemo(ctx, store, asset, pools)
+		if err != nil {
+			return Pool{}, err
+		}
+		rawPool := pool
+		pool, err = k.finalityAdjustedPool(ctx, pool)
+		if err != nil {
+			ctx.Logger().Error("failed to remove active mempool swap balances from vault valuation", "asset", asset, "error", err)
+			pool = rawPool
+		}
+		poolCache[asset] = pool
+		return pool, nil
+	}
 
 	// recent unsent txout items count towards each vault's value
 	h := ctx.BlockHeight() - signingTransPeriod
@@ -227,13 +252,6 @@ func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signi
 		txOuts[height] = txOutMemo{bz: bz, txOut: record}
 		return record.TxArray, nil
 	}
-
-	// the vaults hold, and the pending window pays out, the same few dozen
-	// pools many times over: build each pool key and decode each stored pool
-	// once
-	pools := make(map[common.Asset]*poolMemo)
-	// every member and pool read below goes through one opening of the store
-	store := k.kvStore(ctx)
 
 	// With a live TxOutCache (API quotes only) every vault after the first
 	// reads the window from the cache, touching no store, so one walk for all
@@ -272,9 +290,9 @@ func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signi
 			if coin.IsRune() {
 				continue
 			} else {
-				pool, err := k.getPoolMemo(ctx, store, coin.Asset, pools)
+				pool, err := getFinalityPool(coin.Asset)
 				if err != nil {
-					ctx.Logger().Error("failed to get pool", "error", err)
+					ctx.Logger().Error("failed to get finalized pool for vault security", "asset", coin.Asset, "error", err)
 					continue
 				}
 				totalValue = totalValue.Add(pool.AssetValueInRune(coin.Amount))
@@ -292,9 +310,9 @@ func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signi
 					totalValue = common.SafeSub(totalValue, item.Coin.Amount)
 				} else {
 					var pool Pool
-					pool, err = k.getPoolMemo(ctx, store, item.Coin.Asset, pools)
+					pool, err = getFinalityPool(item.Coin.Asset)
 					if err != nil {
-						ctx.Logger().Error("failed to get pool", "error", err)
+						ctx.Logger().Error("failed to get finalized pool for vault security outbound", "asset", item.Coin.Asset, "error", err)
 						return
 					}
 					totalValue = common.SafeSub(totalValue, pool.AssetValueInRune(item.Coin.Amount))
@@ -304,9 +322,9 @@ func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signi
 					totalValue = totalValue.Add(item.Coin.Amount)
 				} else {
 					var pool Pool
-					pool, err = k.getPoolMemo(ctx, store, item.Coin.Asset, pools)
+					pool, err = getFinalityPool(item.Coin.Asset)
 					if err != nil {
-						ctx.Logger().Error("failed to get pool", "error", err)
+						ctx.Logger().Error("failed to get finalized pool for vault security inbound", "asset", item.Coin.Asset, "error", err)
 						return
 					}
 					totalValue = totalValue.Add(pool.AssetValueInRune(item.Coin.Amount))

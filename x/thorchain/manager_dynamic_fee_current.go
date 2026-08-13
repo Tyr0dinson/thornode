@@ -88,19 +88,24 @@ func (m *DynamicFeeMgr) dominantEligibleAffiliate(ctx cosmos.Context, affiliates
 	return affiliates[bestIdx], true
 }
 
-// CreditSwap accumulates volume and fees for a (thorname, pair) into the
-// current-epoch accumulator. volumeTor and feesTor are denominated in TOR
-// (1e8-precision USD value) so that the gradient signal does not drift with
-// the RUNE/USD price.
-func (m *DynamicFeeMgr) CreditSwap(ctx cosmos.Context, affiliates []string, affiliateBps []cosmos.Uint, sourceAsset, targetAsset common.Asset, volumeTor, feesTor cosmos.Uint) {
+// ResolveSwapCredit resolves every governance- and THORName-dependent part of
+// a dynamic-fee attribution at swap execution time. A speculative swap stores
+// this result so finalization never reinterprets it under later whitelist or
+// ownership state.
+func (m *DynamicFeeMgr) ResolveSwapCredit(
+	ctx cosmos.Context,
+	affiliates []string,
+	affiliateBps []cosmos.Uint,
+	sourceAsset, targetAsset common.Asset,
+) (string, common.Asset, common.Asset, bool) {
 	enabled := m.keeper.GetConfigInt64(ctx, constants.L1DynamicFeeEnabled)
 	if enabled != 1 {
-		return
+		return "", common.EmptyAsset, common.EmptyAsset, false
 	}
 
 	pairA, pairB, ok := dynamicFeePairKey(sourceAsset, targetAsset)
 	if !ok {
-		return
+		return "", common.EmptyAsset, common.EmptyAsset, false
 	}
 
 	// Allow whitelist state 1 (active) or 2 (monitor) so monitor-mode
@@ -108,8 +113,35 @@ func (m *DynamicFeeMgr) CreditSwap(ctx cosmos.Context, affiliates []string, affi
 	// live fee charging.
 	aff, ok := m.dominantEligibleAffiliate(ctx, affiliates, affiliateBps, 1, 2)
 	if !ok {
-		return
+		return "", common.EmptyAsset, common.EmptyAsset, false
 	}
+	pairAssetA, err := common.NewAsset(pairA)
+	if err != nil {
+		ctx.Logger().Error("fail to parse resolved dynamic fee pair asset", "asset", pairA, "error", err)
+		return "", common.EmptyAsset, common.EmptyAsset, false
+	}
+	pairAssetB, err := common.NewAsset(pairB)
+	if err != nil {
+		ctx.Logger().Error("fail to parse resolved dynamic fee pair asset", "asset", pairB, "error", err)
+		return "", common.EmptyAsset, common.EmptyAsset, false
+	}
+	return aff, pairAssetA, pairAssetB, true
+}
+
+// CreditSwapResolved applies an attribution whose affiliate and pair were
+// fixed at execution time. It intentionally does not re-check the feature
+// switch, whitelist, or THORName existence: doing so at finality would make a
+// speculative swap's accounting depend on governance changes after execution.
+func (m *DynamicFeeMgr) CreditSwapResolved(
+	ctx cosmos.Context,
+	aff string,
+	pairAssetA, pairAssetB common.Asset,
+	volumeTor, feesTor cosmos.Uint,
+) error {
+	if aff == "" || pairAssetA.IsEmpty() || pairAssetB.IsEmpty() {
+		return fmt.Errorf("invalid resolved dynamic fee attribution")
+	}
+	pairA, pairB := types.NormalizePairAssets(pairAssetA.String(), pairAssetB.String())
 
 	// Lazily create DynamicFeeRecord first, then write the accumulator —
 	// DeleteAllDynamicFeeStateForThorname iterates records only and relies
@@ -118,8 +150,7 @@ func (m *DynamicFeeMgr) CreditSwap(ctx cosmos.Context, affiliates []string, affi
 	// accumulator behind.
 	rec, err := m.keeper.GetDynamicFeeRecord(ctx, aff, pairA, pairB)
 	if err != nil {
-		ctx.Logger().Error("fail to get dynamic fee record", "error", err)
-		return
+		return fmt.Errorf("fail to get dynamic fee record: %w", err)
 	}
 	if rec.DynamicBps == 0 && len(rec.History) == 0 {
 		rec.DynamicBps = nonNegUint64(m.keeper.GetConfigInt64(ctx, constants.L1DynamicFeeFloorBPS))
@@ -127,20 +158,33 @@ func (m *DynamicFeeMgr) CreditSwap(ctx cosmos.Context, affiliates []string, affi
 		rec.PairAssetA = pairA
 		rec.PairAssetB = pairB
 		if setErr := m.keeper.SetDynamicFeeRecord(ctx, rec); setErr != nil {
-			ctx.Logger().Error("fail to create dynamic fee record", "error", setErr)
-			return
+			return fmt.Errorf("fail to create dynamic fee record: %w", setErr)
 		}
 	}
 
 	affAcc, err := m.keeper.GetDynamicFeeAccumulator(ctx, aff, pairA, pairB)
 	if err != nil {
-		ctx.Logger().Error("fail to get thorname accumulator", "error", err)
-		return
+		return fmt.Errorf("fail to get thorname accumulator: %w", err)
 	}
 	affAcc.VolumeTor = affAcc.VolumeTor.Add(volumeTor)
 	affAcc.FeesTor = affAcc.FeesTor.Add(feesTor)
 	if setErr := m.keeper.SetDynamicFeeAccumulator(ctx, affAcc); setErr != nil {
-		ctx.Logger().Error("fail to set thorname accumulator", "error", setErr)
+		return fmt.Errorf("fail to set thorname accumulator: %w", setErr)
+	}
+	return nil
+}
+
+// CreditSwap accumulates volume and fees for a (thorname, pair) into the
+// current-epoch accumulator. volumeTor and feesTor are denominated in TOR
+// (1e8-precision USD value) so that the gradient signal does not drift with
+// the RUNE/USD price.
+func (m *DynamicFeeMgr) CreditSwap(ctx cosmos.Context, affiliates []string, affiliateBps []cosmos.Uint, sourceAsset, targetAsset common.Asset, volumeTor, feesTor cosmos.Uint) {
+	aff, pairA, pairB, ok := m.ResolveSwapCredit(ctx, affiliates, affiliateBps, sourceAsset, targetAsset)
+	if !ok {
+		return
+	}
+	if err := m.CreditSwapResolved(ctx, aff, pairA, pairB, volumeTor, feesTor); err != nil {
+		ctx.Logger().Error("fail to credit dynamic fee swap", "error", err)
 	}
 }
 
@@ -153,13 +197,17 @@ func (m *DynamicFeeMgr) CreditSwap(ctx cosmos.Context, affiliates []string, affi
 // entire credit is skipped: recording zeros would drag the window-mean fee
 // signal toward zero and trigger spurious controller reversals on the next
 // epoch boundary.
-func creditDynamicFeeForLegs(ctx cosmos.Context, mgr Manager, swapEvents []*EventSwap, affiliates []string, affiliateBps []cosmos.Uint) {
+func creditDynamicFeeForLegs(ctx cosmos.Context, mgr Manager, swapEvents []*EventSwap, affiliates []string, affiliateBps []cosmos.Uint) error {
+	mode := getMempoolSwapExecutionMode(ctx)
+	if mode == mempoolSwapExecutionRollback {
+		return nil
+	}
 	if len(affiliates) == 0 {
-		return
+		return nil
 	}
 	dollarsPerRune := mgr.Keeper().DollarsPerRune(ctx)
 	if dollarsPerRune.IsZero() {
-		return
+		return nil
 	}
 	one := cosmos.NewUint(common.One)
 	for _, evt := range swapEvents {
@@ -181,9 +229,21 @@ func creditDynamicFeeForLegs(ctx cosmos.Context, mgr Manager, swapEvents []*Even
 		}
 		legVolumeTor := legVolumeRune.Mul(dollarsPerRune).Quo(one)
 		legFeesTor := evt.LiquidityFeeInRune.Mul(dollarsPerRune).Quo(one)
-		mgr.DynamicFeeMgr().CreditSwap(ctx, affiliates, affiliateBps,
-			legSource, legTarget, legVolumeTor, legFeesTor)
+		if mode == mempoolSwapExecutionSpeculative {
+			thorname, pairA, pairB, ok := mgr.DynamicFeeMgr().ResolveSwapCredit(
+				ctx, affiliates, affiliateBps, legSource, legTarget,
+			)
+			if !ok {
+				continue
+			}
+			if err := captureMempoolSwapDynamicFeeEffect(ctx, mgr, thorname, pairA, pairB, legVolumeTor, legFeesTor); err != nil {
+				return fmt.Errorf("fail to capture speculative dynamic fee effect: %w", err)
+			}
+			continue
+		}
+		mgr.DynamicFeeMgr().CreditSwap(ctx, affiliates, affiliateBps, legSource, legTarget, legVolumeTor, legFeesTor)
 	}
+	return nil
 }
 
 func (m *DynamicFeeMgr) GetDynamicBps(ctx cosmos.Context, affiliates []string, affiliateBps []cosmos.Uint, sourceAsset, targetAsset common.Asset) uint64 {

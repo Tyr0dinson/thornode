@@ -254,7 +254,7 @@ func (s *HandlerObservedTxOutSuite) TestHandle(c *C) {
 	// As this was a valid transaction, the Amount is treated as having already been subtracted in an earlier block.
 	c.Check(int(keeper.pool.BalanceAsset.Uint64()), Equals, 300_000)
 	// No decrease in pool balance before processGas.
-	mgr.GasMgr().EndBlock(ctx, keeper, eventMgr)
+	mgr.GasMgr().EndBlock(ctx, mgr)
 	c.Check(int(keeper.pool.BalanceAsset.Uint64()), Equals, 262_500)
 	// Gas 37500 has been subtracted from the 300,000 pool depth.
 
@@ -355,7 +355,7 @@ func (s *HandlerObservedTxOutSuite) TestHandleFailedTransaction(c *C) {
 	// No pool deductions yet (pool stays at 300,000)
 	c.Check(int(keeper.pool.BalanceAsset.Uint64()), Equals, 300_000)
 
-	mgr.GasMgr().EndBlock(ctx, keeper, eventMgr)
+	mgr.GasMgr().EndBlock(ctx, mgr)
 	// After gas manager processes, gas is handled correctly (single addGasFees call):
 	// - handleObservedTxOutQuorum (line 590) calls addGasFees once
 	// - handler_common_outbound does NOT call it again (no double deduction)
@@ -427,7 +427,7 @@ func (s *HandlerObservedTxOutSuite) TestHandleStolenFundsInvalidMemo(c *C) {
 	// (via SlashVault), rather than routing gas through the fee manager. The
 	// offending node's bond covers the equivalent RUNE value.
 	gasAmount := obTx.Tx.Gas.ToCoins().GetCoin(common.ETHAsset).Amount
-	mgr.GasMgr().EndBlock(ctx, keeper, eventMgr)
+	mgr.GasMgr().EndBlock(ctx, mgr)
 	expectedPool := cosmos.NewUint(300 * common.One).Sub(cosmos.NewUint(100 * common.One)).Sub(gasAmount)
 	c.Check(keeper.pool.BalanceAsset.Equal(expectedPool), Equals, true,
 		Commentf("pool: %d", keeper.pool.BalanceAsset.Uint64()))

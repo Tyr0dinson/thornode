@@ -13,15 +13,41 @@ import (
 
 type PoolMgr struct{}
 
+// poolCycleRetryMimir is protocol-owned persisted scheduling state, not a
+// governance setting. A deferred cycle must survive process restarts and be
+// retried before the next configured PoolCycle boundary.
+const poolCycleRetryMimir = "MempoolSwapPoolCycleRetryHeight"
+
 func newPoolMgr() *PoolMgr {
 	return &PoolMgr{}
+}
+
+func getPoolCycleRetryHeight(ctx cosmos.Context, mgr Manager) int64 {
+	height, err := mgr.Keeper().GetMimir(ctx, poolCycleRetryMimir)
+	if err != nil || height <= 0 {
+		return 0
+	}
+	return height
+}
+
+func poolCycleRetryPending(ctx cosmos.Context, mgr Manager) bool {
+	return getPoolCycleRetryHeight(ctx, mgr) > 0
 }
 
 // EndBlock cycle pools if required and if ragnarok is not in progress
 func (pm *PoolMgr) EndBlock(ctx cosmos.Context, mgr Manager) error {
 	poolCycle := mgr.Keeper().GetConfigInt64(ctx, constants.PoolCycle)
-	// Enable a pool every poolCycle
-	if poolCycle > 0 && ctx.BlockHeight()%poolCycle == 0 && !mgr.Keeper().RagnarokInProgress(ctx) {
+	cycleBoundary := poolCycle > 0 && ctx.BlockHeight()%poolCycle == 0
+	retryHeight := getPoolCycleRetryHeight(ctx, mgr)
+	// Enable a pool every poolCycle. Once a scheduled attempt starts, persist
+	// its height and retry every subsequent block until the complete cycle
+	// succeeds. Otherwise a short-lived overlay at the exact cycle boundary
+	// would silently postpone the operation for a whole additional cycle.
+	if poolCycle > 0 && (cycleBoundary || retryHeight > 0) && !mgr.Keeper().RagnarokInProgress(ctx) {
+		if retryHeight == 0 {
+			retryHeight = ctx.BlockHeight()
+			mgr.Keeper().SetMimir(ctx, poolCycleRetryMimir, retryHeight)
+		}
 		var maxAvailablePools, minRunePoolDepth, stagedPoolCost int64
 		var err error
 		maxAvailablePools, err = mgr.Keeper().GetMimir(ctx, constants.MaxAvailablePools.String())
@@ -36,8 +62,26 @@ func (pm *PoolMgr) EndBlock(ctx cosmos.Context, mgr Manager) error {
 		if stagedPoolCost < 0 || err != nil {
 			stagedPoolCost = mgr.GetConstants().GetInt64Value(constants.StagedPoolCost)
 		}
-		if err = pm.cyclePools(ctx, maxAvailablePools, minRunePoolDepth, stagedPoolCost, mgr); err != nil {
-			ctx.Logger().Error("Unable to enable a pool", "error", err)
+		affectedAsset, deferCycle, finalityErr := pm.mempoolSwapAffectedPool(ctx, mgr)
+		switch {
+		case finalityErr != nil:
+			ctx.Logger().Error("Unable to check pool-cycle finality; retaining retry", "error", finalityErr, "scheduled_height", retryHeight)
+		case deferCycle:
+			ctx.Logger().Info(
+				"deferring pool cycle while an unfinalized mempool swap affects a pool",
+				"pool", affectedAsset,
+				"scheduled_height", retryHeight,
+			)
+		default:
+			// Discard every partial cycle effect on failure, but retain the retry
+			// marker written to the parent context above.
+			cycleCtx, commitCycle := ctx.CacheContext()
+			if err = pm.cyclePoolsAfterPreflight(cycleCtx, maxAvailablePools, minRunePoolDepth, stagedPoolCost, mgr); err != nil {
+				ctx.Logger().Error("Unable to enable a pool", "error", err)
+			} else {
+				mgr.Keeper().SetMimir(cycleCtx, poolCycleRetryMimir, 0)
+				commitCycle()
+			}
 		}
 	}
 	pm.cleanupPendingLiquidity(ctx, mgr)
@@ -58,6 +102,20 @@ func (pm *PoolMgr) EndBlock(ctx cosmos.Context, mgr Manager) error {
 // If there are more than the maximum available pools, the Available pool with
 // with the lowest rune depth is demoted to Staged
 func (pm *PoolMgr) cyclePools(ctx cosmos.Context, maxAvailablePools, minRunePoolDepth, stagedPoolCost int64, mgr Manager) error {
+	affectedAsset, deferCycle, err := pm.mempoolSwapAffectedPool(ctx, mgr)
+	if err != nil {
+		return fmt.Errorf("fail to check pool-cycle finality: %w", err)
+	}
+	if deferCycle {
+		ctx.Logger().Info("deferring pool cycle while an unfinalized mempool swap affects a pool", "pool", affectedAsset)
+		return nil
+	}
+	return pm.cyclePoolsAfterPreflight(ctx, maxAvailablePools, minRunePoolDepth, stagedPoolCost, mgr)
+}
+
+// cyclePoolsAfterPreflight executes the pool cycle after its caller has
+// established that no unfinalized mempool swap affects a pool.
+func (pm *PoolMgr) cyclePoolsAfterPreflight(ctx cosmos.Context, maxAvailablePools, minRunePoolDepth, stagedPoolCost int64, mgr Manager) error {
 	var availblePoolCount int64
 	onDeck := NewPool()        // currently staged pool that could get promoted
 	choppingBlock := NewPool() // currently available pool that is on the chopping block to being demoted
@@ -287,6 +345,33 @@ func (pm *PoolMgr) cyclePools(ctx cosmos.Context, maxAvailablePools, minRunePool
 	return nil
 }
 
+// mempoolSwapAffectedPool performs a read-only preflight before cyclePools
+// makes its first write. Deferring the complete, infrequent cycle preserves a
+// coherent available-pool count and prevents a speculative balance from
+// choosing a promotion/demotion candidate. It also avoids demoting a pool that
+// a later mempool rollback still needs to swap through.
+func (pm *PoolMgr) mempoolSwapAffectedPool(ctx cosmos.Context, mgr Manager) (common.Asset, bool, error) {
+	iterator := mgr.Keeper().GetPoolIterator(ctx)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		var pool Pool
+		if err := mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &pool); err != nil {
+			return common.EmptyAsset, false, err
+		}
+		if pool.Asset.IsSyntheticAsset() || pool.Asset.IsDerivedAsset() {
+			continue
+		}
+		balanceAffected, supplyAffected, err := mempoolSwapPoolFinalityAffected(ctx, mgr.Keeper(), pool.Asset)
+		if err != nil {
+			return common.EmptyAsset, false, err
+		}
+		if balanceAffected || supplyAffected {
+			return pool.Asset, true, nil
+		}
+	}
+	return common.EmptyAsset, false, nil
+}
+
 // poolMeetTradingVolumeCriteria check if pool generated the minimum amount of fees since last cycle
 func (pm *PoolMgr) poolMeetTradingVolumeCriteria(ctx cosmos.Context, mgr Manager, pool Pool, minPoolLiquidityFee cosmos.Uint) bool {
 	if minPoolLiquidityFee.IsZero() {
@@ -397,7 +482,15 @@ func (pm *PoolMgr) getRelatedAssetLiabilityReason(ctx cosmos.Context, asset comm
 	if pm.hasPendingOutboundLiability(ctx, synthAsset, mgr) {
 		return "pending synth outbound liabilities remain", nil
 	}
-	if !mgr.Keeper().GetTotalSupply(ctx, synthAsset).IsZero() {
+	poolView := newFinalityPoolView(mgr.Keeper())
+	synthSupply, supplyAffected, err := poolView.getTotalSupply(ctx, synthAsset)
+	if err != nil {
+		return "", fmt.Errorf("fail to get finality-adjusted synth supply %s: %w", synthAsset, err)
+	}
+	if supplyAffected {
+		return "unfinalized synth supply mutation remains", nil
+	}
+	if !synthSupply.IsZero() {
 		return "synth supply remains", nil
 	}
 	if pm.hasLiquidityProviders(ctx, synthAsset, mgr) {
@@ -620,6 +713,15 @@ func (pm *PoolMgr) cleanupPendingLiquidity(ctx cosmos.Context, mgr Manager) {
 		if pool.PendingInboundRune.IsZero() && pool.PendingInboundAsset.IsZero() {
 			continue
 		}
+		balanceAffected, supplyAffected, finalityErr := mempoolSwapPoolFinalityAffected(ctx, mgr.Keeper(), pool.Asset)
+		if finalityErr != nil {
+			ctx.Logger().Error("fail to check pending-liquidity pool finality, skipping cleanup", "pool", pool.Asset, "error", finalityErr)
+			continue
+		}
+		if balanceAffected || supplyAffected {
+			ctx.Logger().Info("skipping pending-liquidity cleanup for pool with unfinalized mempool swap", "pool", pool.Asset)
+			continue
+		}
 		if mgr.Keeper().IsChainHalted(ctx, pool.Asset.GetChain()) || mgr.Keeper().IsLPPaused(ctx, pool.Asset.GetChain()) {
 			continue
 		}
@@ -692,6 +794,7 @@ func (pm *PoolMgr) checkSaversUtilization(ctx cosmos.Context, mgr Manager) error
 	)
 	iterator := mgr.Keeper().GetPoolIterator(ctx)
 	defer iterator.Close()
+	poolView := newFinalityPoolView(mgr.Keeper())
 
 	// Find the pool with the highest utilization ratio above the cap
 	for ; iterator.Valid(); iterator.Next() {
@@ -720,10 +823,21 @@ func (pm *PoolMgr) checkSaversUtilization(ctx cosmos.Context, mgr Manager) error
 			continue
 		}
 
-		synthSupply := mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
+		synthSupply, supplyAffected, supplyErr := poolView.getTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
+		if supplyErr != nil {
+			return fmt.Errorf("fail to get finality-adjusted synth supply for saver utilization pool %s: %w", pool.Asset, supplyErr)
+		}
 		var l1Pool Pool
-		l1Pool, err = mgr.Keeper().GetPool(ctx, pool.Asset.GetLayer1Asset())
+		var poolAffected bool
+		l1Pool, poolAffected, err = poolView.getPool(ctx, pool.Asset.GetLayer1Asset())
 		if err != nil {
+			return fmt.Errorf("fail to get finality-adjusted L1 pool for saver utilization pool %s: %w", pool.Asset, err)
+		}
+		// Ejection executes an internal withdraw against live state. Even when
+		// finalized utilization is already over cap, do not entangle that
+		// irreversible withdrawal with a still-reversible pool/supply mutation.
+		if supplyAffected || poolAffected {
+			ctx.Logger().Info("skipping saver utilization ejection for pool with unfinalized mempool swap", "pool", pool.Asset)
 			continue
 		}
 

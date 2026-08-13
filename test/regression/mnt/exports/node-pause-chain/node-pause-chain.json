@@ -213,6 +213,7 @@
       "dynamic_fee_records": [],
       "last_chain_heights": [],
       "liquidity_providers": null,
+      "mempool_swaps": [],
       "mimirs": [
         {
           "key": "NODEPAUSECHAINGLOBAL",
@@ -244,7 +245,6 @@
       "observed_tx_out_voters": null,
       "outbound_fee_spent_rune": [],
       "outbound_fee_withheld_rune": [],
-      "pending_affiliate_liquidity_fees": [],
       "pools": null,
       "reference_memos": [],
       "reserve_contributors": null,

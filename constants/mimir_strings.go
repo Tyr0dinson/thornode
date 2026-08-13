@@ -162,6 +162,7 @@ func IsOperationalMimir(key string) bool {
 		MimirKeyPreflightChainSetDisabled,
 		MempoolSwapCapTOR.String(),
 		MempoolSwapPoolCapBPS.String(),
+		MempoolSwapMaxCount.String(),
 	}
 	for i := range exactMatches {
 		if strings.EqualFold(key, exactMatches[i]) {

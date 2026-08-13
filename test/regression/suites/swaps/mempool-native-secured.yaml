@@ -79,7 +79,8 @@ signer: {{ addr_thor_dog }}
 type: create-blocks
 count: 1
 ---
-# Shorten outbound timing so the streaming swap scenarios finish inside the test.
+# Keep recovery deadlines short enough that a stranded lifecycle would fail this
+# regression promptly. This does not control streaming-swap settlement speed.
 type: tx-mimir
 key: SigningTransactionPeriod
 value: 3
@@ -88,14 +89,25 @@ signer: {{ addr_thor_dog }}
 type: create-blocks
 count: 1
 ---
-# Keep retries low so finalized streaming swaps settle quickly in regression.
+# Mempool swaps are supported only by the advanced queue. Set this explicitly
+# rather than relying on the mocknet default.
 type: tx-mimir
-key: MaxOutboundAttempts
-value: 2
+key: EnableAdvSwapQueue
+value: 1
 signer: {{ addr_thor_dog }}
 ---
 type: create-blocks
 count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .DOLLARSPERRUNE == 100000000
+  - .MEMPOOLSWAPCAPTOR == 100000000000000
+  - .MEMPOOLSWAPPOOLCAPBPS == 0
+  - .SECUREDASSETSLIPMINBPS == 0
+  - .SIGNINGTRANSACTIONPERIOD == 3
+  - .ENABLEADVSWAPQUEUE == 1
 ---
 ########################################################################################
 # Scenario 1: a non-streaming swap from BTC to ETH-ETH should NOT use the mempool path.
@@ -154,6 +166,11 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/swap
 asserts:
   - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .mempool_swap_usage_tor == "0"
 ---
 # The recipient should still have no secured balance before finalization.
 type: check
@@ -259,6 +276,19 @@ endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ observe_txid 10 
 asserts:
   - .status == "queued"
   - .queue_type == "advanced"
+  - .swap.state.count == 1
+  - .swap.state.quantity == 4
+  - .swap.state.in|tonumber > 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .mempool_swap_usage_tor|tonumber > 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/mempool_swaps
+asserts:
+  - .broken == false
 ---
 # The recipient should still have no secured balance before finalization.
 type: check
@@ -290,6 +320,16 @@ asserts:
   - .staged_outbound_items[0].tx_out_item.coin.asset == "ETH.ETH"
   - .staged_outbound_items[0].scheduled_height|tonumber > 0
   - .staged_outbound_items[0].staged_height|tonumber > 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .mempool_swap_usage_tor|tonumber > 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/mempool_swaps
+asserts:
+  - .broken == false
 ---
 # Nothing should reach the real outbound queue before finalization.
 type: check
@@ -334,6 +374,16 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/staged
 asserts:
   - (.staged_outbound_items // [])|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .mempool_swap_usage_tor == "0"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/mempool_swaps
+asserts:
+  - .broken == false
 ---
 # Verify the secured asset has NOW been deposited via the completed streaming swap.
 type: check
@@ -396,6 +446,19 @@ endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ observe_txid 11 
 asserts:
   - .status == "queued"
   - .queue_type == "advanced"
+  - .swap.state.count == 1
+  - .swap.state.quantity == 4
+  - .swap.state.in|tonumber > 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .mempool_swap_usage_tor|tonumber > 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/mempool_swaps
+asserts:
+  - .broken == false
 ---
 # The recipient should still have no secured balance before finalization.
 type: check
@@ -452,6 +515,21 @@ endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ observe_txid 11 
 asserts:
   - .status == "queued"
   - .queue_type == "advanced"
+  - .swap.state.count == 3
+  - .swap.state.quantity == 4
+  - .swap.state.in|tonumber > 0
+---
+# Finality releases TOR immediately while the remaining queue slices continue;
+# lifecycle indexes must remain internally consistent throughout that state.
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .mempool_swap_usage_tor == "0"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/mempool_swaps
+asserts:
+  - .broken == false
 ---
 # The recipient should still have no secured balance until the last sub-swap completes.
 type: check
@@ -475,6 +553,16 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/staged
 asserts:
   - (.staged_outbound_items // [])|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .mempool_swap_usage_tor == "0"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/mempool_swaps
+asserts:
+  - .broken == false
 ---
 # Nothing should reach the real outbound queue for a THOR-native secured target.
 type: check

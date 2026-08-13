@@ -6,6 +6,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 type KeeperTxOutSuite struct{}
@@ -208,4 +209,76 @@ func (KeeperTxOutSuite) TestKeeperTxOutCacheChunkFill(c *C) {
 	c.Check(present, Equals, true)
 	c.Check(len(bz) > 0, Equals, true)
 	c.Check(keeper.TxOutCacheFromContext(disabled).ClaimChunk(1), Equals, false)
+}
+
+func (KeeperTxOutSuite) TestTxOutValuationUsesFinalizedPoolBalances(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	pool := NewPool()
+	pool.Asset = common.ETHAsset
+	pool.BalanceRune = cosmos.NewUint(1_000 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	item := TxOutItem{
+		Chain: common.ETHChain,
+		Coin:  common.NewCoin(common.ETHAsset, cosmos.NewUint(10*common.One)),
+	}
+	baseline, _ := k.GetTOIsValue(ctx, item)
+	c.Assert(baseline.IsZero(), Equals, false)
+
+	pool.BalanceRune = cosmos.NewUint(800 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(125 * common.One)
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+	liveSpeculative, _ := k.GetTOIsValue(ctx, item)
+	c.Assert(liveSpeculative.Equal(baseline), Equals, false)
+
+	record := newKeeperMempoolSwap(0, GetRandomPubKey(), 30)
+	effect := &record.PendingEffects.Pools[0]
+	effect.Asset = common.ETHAsset
+	effect.BalanceRuneIncrease = cosmos.ZeroUint()
+	effect.BalanceRuneDecrease = cosmos.NewUint(200 * common.One)
+	effect.BalanceAssetIncrease = cosmos.NewUint(25 * common.One)
+	effect.BalanceAssetDecrease = cosmos.ZeroUint()
+	c.Assert(k.SetMempoolSwap(ctx, record), IsNil)
+
+	finalizedValue, _ := k.GetTOIsValue(ctx, item)
+	c.Check(finalizedValue.Equal(baseline), Equals, true)
+	storedPool, err := k.GetPool(ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+	c.Check(storedPool.BalanceRune.Equal(pool.BalanceRune), Equals, true,
+		Commentf("valuation must not rewrite the speculative live pool"))
+	c.Check(storedPool.BalanceAsset.Equal(pool.BalanceAsset), Equals, true)
+
+	record.Status = types.MempoolSwapStatus_FINALIZED
+	record.ReservedTor = cosmos.ZeroUint()
+	record.UpdatedHeight++
+	c.Assert(k.SetMempoolSwap(ctx, record), IsNil)
+	afterFinality, _ := k.GetTOIsValue(ctx, item)
+	c.Check(afterFinality.Equal(liveSpeculative), Equals, true)
+}
+
+func (KeeperTxOutSuite) TestTxOutValuationFallsBackToRawPool(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	pool := NewPool()
+	pool.Asset = common.ETHAsset
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(5 * common.One)
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	record := newKeeperMempoolSwap(0, GetRandomPubKey(), 30)
+	effect := &record.PendingEffects.Pools[0]
+	effect.Asset = common.ETHAsset
+	effect.BalanceRuneIncrease = cosmos.ZeroUint()
+	effect.BalanceRuneDecrease = cosmos.ZeroUint()
+	effect.BalanceAssetIncrease = cosmos.NewUint(10 * common.One)
+	effect.BalanceAssetDecrease = cosmos.ZeroUint()
+	c.Assert(k.SetMempoolSwap(ctx, record), IsNil)
+
+	item := TxOutItem{
+		Chain: common.ETHChain,
+		Coin:  common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)),
+	}
+	value, _ := k.GetTOIsValue(ctx, item)
+	c.Check(value.Equal(pool.AssetValueInRune(item.Coin.Amount)), Equals, true)
+	c.Check(value.IsZero(), Equals, false)
 }

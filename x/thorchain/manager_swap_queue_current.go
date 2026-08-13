@@ -168,8 +168,35 @@ func (vm *SwapQueueImpl) EndBlock(ctx cosmos.Context, mgr Manager) error {
 	}
 	swaps = swaps.Sort()
 
-	for i := int64(0); i < vm.getTodoNum(int64(len(swaps)), minSwapsPerBlock, maxSwapsPerBlock); i++ {
-		pick := swaps[i]
+	budget := vm.getTodoNum(int64(len(swaps)), minSwapsPerBlock, maxSwapsPerBlock)
+	attempted := int64(0)
+	// Lifecycle ownership is stable while this normal-mode legacy loop runs.
+	// Recreate the cache every pass so lifecycle work elsewhere is visible in
+	// the next EndBlock.
+	poolGateCache := newMempoolSwapLegacyPoolGateCache()
+	for _, pick := range swaps {
+		if attempted >= budget {
+			break
+		}
+		// The legacy queue predates lifecycle-owned speculative pool state. A
+		// finalized legacy swap that reaches SwapHandler while another inbound
+		// owns either pool would otherwise treat the isolation error as a swap
+		// failure, refund the user, and remove the queue item. This condition is
+		// temporary rather than an execution failure, so leave the item untouched
+		// until the lifecycle owner finalizes or rolls back.
+		if poolErr := poolGateCache.ensureExecutionPoolsAvailable(ctx, vm.k, pick.msg); poolErr != nil {
+			if errors.Is(poolErr, errMempoolSwapPoolExecutionPending) {
+				ctx.Logger().Debug("deferring legacy swap behind unfinalized mempool pool owner",
+					"tx", pick.msg.Tx.ID,
+					"error", poolErr)
+				continue
+			}
+			ctx.Logger().Error("skipping legacy swap with inconsistent mempool pool state",
+				"tx", pick.msg.Tx.ID,
+				"error", poolErr)
+			continue
+		}
+		attempted++
 		isActualLegacyStreaming := pick.msg.IsActualLegacyStreaming()
 		// grab swp BEFORE a streaming swap modified the msg.Tx.Coins[0].Amount
 		// value. This is used later to refund the correct amount

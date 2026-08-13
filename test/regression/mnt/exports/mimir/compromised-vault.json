@@ -256,6 +256,7 @@
           "units": "100000000000"
         }
       ],
+      "mempool_swaps": [],
       "mimirs": [
         {
           "key": "COMPROMISEDVAULT-TTHORPUB1ADDWNPEPQFSHSQ2Y6EJY2YSXMQ4GJ8N8MZUZYULK9WH4N946JV5W2VPWDN2YUYP6SP4"
@@ -312,7 +313,6 @@
       "observed_tx_out_voters": null,
       "outbound_fee_spent_rune": [],
       "outbound_fee_withheld_rune": [],
-      "pending_affiliate_liquidity_fees": [],
       "pools": [
         {
           "LP_units": "100000000000",

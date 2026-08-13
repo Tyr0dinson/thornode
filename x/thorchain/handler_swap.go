@@ -40,6 +40,11 @@ func (h SwapHandler) runWithEmitAndInput(ctx cosmos.Context, m cosmos.Msg) (*cos
 	if !ok {
 		return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), errInvalidMessage
 	}
+	// The execution mode is selected by the queue/rollback caller. Bind the
+	// concrete swap identity here so every leg can update the one canonical
+	// lifecycle effects journal without threading tx-id/index through the
+	// versioned Swapper interface.
+	ctx = withMempoolSwapExecutionIdentity(ctx, msg.Tx.ID, msg.Index)
 	if err := h.validate(ctx, *msg); err != nil {
 		ctx.Logger().Error("MsgSwap failed validation", "error", err)
 		return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), err
@@ -59,6 +64,9 @@ func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 	if msg.Destination.Equals(common.Address(h.mgr.Keeper().GetModuleAccAddress(AffiliateCollectorName).String())) &&
 		affiliateCollectorConversionName(h.mgr.Keeper(), msg) == "" {
 		return fmt.Errorf("external swap cannot target the affiliate collector module")
+	}
+	if err := ensureSwapExecutionFinalityIsolation(ctx, h.mgr, msg); err != nil {
+		return err
 	}
 
 	stableReserveInternal, err := isStableReserveInternalSwap(ctx, h.mgr, msg)
@@ -378,10 +386,17 @@ func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cos
 		swapAffiliateBps = mem.GetAffiliatesBasisPoints()
 	}
 
-	if filled, emit, swapErr := h.mgr.StableReserveManager().TrySwap(ctx, h.mgr, msg); swapErr != nil {
-		return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), swapErr
-	} else if filled {
-		return &cosmos.Result{}, emit, msg.Tx.Coins[0].Amount, nil
+	// Stable-reserve direct fills mutate reserve inventory instead of AMM pool
+	// state, so they cannot be reconstructed by a reverse swap. Mempool
+	// admission excludes swaps which are currently eligible for that path, and
+	// this mode guard is the defense in depth for eligibility changes between
+	// admission and execution (and for reverse rollback execution).
+	if getMempoolSwapExecutionMode(ctx) == mempoolSwapExecutionNormal {
+		if filled, emit, swapErr := h.mgr.StableReserveManager().TrySwap(ctx, h.mgr, msg); swapErr != nil {
+			return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), swapErr
+		} else if filled {
+			return &cosmos.Result{}, emit, msg.Tx.Coins[0].Amount, nil
+		}
 	}
 
 	// Only create streaming swap records for actual legacy streaming swaps.
@@ -461,7 +476,9 @@ func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cos
 	// Credit dynamic fee tracking for eligible affiliates. Per-leg, with
 	// RUNE→TOR conversion so the closed-loop gradient signal is not corrupted
 	// by RUNE price moves.
-	creditDynamicFeeForLegs(ctx, h.mgr, swapEvents, swapAffiliates, swapAffiliateBps)
+	if err = creditDynamicFeeForLegs(ctx, h.mgr, swapEvents, swapAffiliates, swapAffiliateBps); err != nil {
+		return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), err
+	}
 
 	stableReserveInternalSettled := false
 	if settled, settleErr := settleStableReserveInternalSwap(ctx, h.mgr, msg, emit); settleErr != nil {
@@ -551,6 +568,7 @@ func (h SwapHandler) getTotalLiquidityRUNE(ctx cosmos.Context) (cosmos.Uint, err
 		return cosmos.ZeroUint(), fmt.Errorf("fail to get pools from data store: %w", err)
 	}
 	total := cosmos.ZeroUint()
+	poolView := newFinalityPoolView(h.mgr.Keeper())
 	for _, p := range pools {
 		// ignore suspended pools
 		if p.Status == PoolSuspended {
@@ -561,6 +579,11 @@ func (h SwapHandler) getTotalLiquidityRUNE(ctx cosmos.Context) (cosmos.Uint, err
 		}
 		if p.Asset.IsDerivedAsset() {
 			continue
+		}
+		asset := p.Asset
+		p, _, err = poolView.adjust(ctx, p)
+		if err != nil {
+			return cosmos.ZeroUint(), fmt.Errorf("fail to get finality-adjusted pool %s: %w", asset, err)
 		}
 		total = total.Add(p.BalanceRune)
 	}

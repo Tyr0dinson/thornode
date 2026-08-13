@@ -1,10 +1,16 @@
 package keeperv1
 
 import (
+	"bytes"
 	"fmt"
+	"maps"
+	"slices"
+
+	"github.com/cosmos/cosmos-sdk/runtime"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	keepertypes "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
 )
 
 // InvariantRoutes return the keeper's invariant routes
@@ -16,6 +22,7 @@ func (k KVStore) InvariantRoutes() []common.InvariantRoute {
 		common.NewInvariantRoute("affiliate_collector", AffilliateCollectorInvariant(k)),
 		common.NewInvariantRoute("pools", PoolsInvariant(k)),
 		common.NewInvariantRoute("streaming_swaps", StreamingSwapsInvariant(k)),
+		common.NewInvariantRoute("mempool_swaps", MempoolSwapsInvariant(k)),
 		common.NewInvariantRoute("runepool", RUNEPoolInvariant(k)),
 		common.NewInvariantRoute("tcy_claim", TCYClaimInvariant(k)),
 		common.NewInvariantRoute("tcy_stake", TCYStakeInvariant(k)),
@@ -81,6 +88,33 @@ func AsgardInvariant(k KVStore) common.Invariant {
 					poolCoins = poolCoins.Add(whitelistedCoin)
 				}
 			}
+		}
+
+		// Speculative swaps remove system liquidity fees from pool depth so
+		// later swaps see the same price as a finalized execution, but retain the
+		// corresponding RUNE in Asgard until inbound finality. The lifecycle
+		// journal is the temporary accounting owner of that escrowed RUNE.
+		pendingSystemFeeRune := cosmos.ZeroUint()
+		mempoolIter := k.GetMempoolSwapIterator(ctx)
+		for ; mempoolIter.Valid(); mempoolIter.Next() {
+			var record MempoolSwap
+			if err := k.Cdc().Unmarshal(mempoolIter.Value(), &record); err != nil {
+				broken = true
+				msg = append(msg, fmt.Sprintf("fail to unmarshal mempool swap lifecycle: %s", err))
+				continue
+			}
+			for _, effect := range record.PendingEffects.Pools {
+				if !effect.ReserveRune.IsNil() {
+					pendingSystemFeeRune = pendingSystemFeeRune.Add(effect.ReserveRune)
+				}
+				if !effect.TcyRune.IsNil() {
+					pendingSystemFeeRune = pendingSystemFeeRune.Add(effect.TcyRune)
+				}
+			}
+		}
+		mempoolIter.Close()
+		if !pendingSystemFeeRune.IsZero() {
+			poolCoins = poolCoins.Add(common.NewCoin(common.RuneAsset(), pendingSystemFeeRune))
 		}
 
 		// Sum native coins in staged outbounds (mempool swaps waiting for inbound finalization)
@@ -195,6 +229,237 @@ func AsgardInvariant(k KVStore) common.Invariant {
 					msg = append(msg, fmt.Sprintf("insolvent: %s", coin))
 				}
 			}
+		}
+
+		return msg, broken
+	}
+}
+
+// MempoolSwapsInvariant verifies that every live speculative reservation has
+// one canonical lifecycle owner, both recovery indexes, a voter compatibility
+// mirror, an aggregate TOR reservation matching the canonical sum, and a
+// lifecycle count matching the bounded indexed population, and one exact
+// owner pointer for each pool with reversible balance or synth-supply state.
+func MempoolSwapsInvariant(k KVStore) common.Invariant {
+	return func(ctx cosmos.Context) (msg []string, broken bool) {
+		reservedTOR := cosmos.ZeroUint()
+		recordCount := cosmos.ZeroUint()
+		expectedPoolOverlays := make(map[string]MempoolSwapPoolBalanceOverlay)
+		expectedSupplyOverlays := make(map[string]MempoolSwapNativeSupplyOverlay)
+		expectedPoolOwners := make(map[string][]byte)
+		iterator := k.GetMempoolSwapIterator(ctx)
+		defer iterator.Close()
+
+		for ; iterator.Valid(); iterator.Next() {
+			var record MempoolSwap
+			if err := k.Cdc().Unmarshal(iterator.Value(), &record); err != nil {
+				broken = true
+				msg = append(msg, fmt.Sprintf("fail to unmarshal mempool swap lifecycle: %s", err))
+				continue
+			}
+			identity := record.Cursor()
+			if !bytes.Equal(iterator.Key(), k.mempoolSwapKey(record.TxId, record.Index)) {
+				broken = true
+				msg = append(msg, fmt.Sprintf("mempool swap %s is stored under a non-canonical key", identity))
+			}
+			if err := record.Valid(); err != nil {
+				broken = true
+				msg = append(msg, fmt.Sprintf("invalid mempool swap %s: %s", identity, err))
+				continue
+			}
+
+			recordCount = recordCount.Add(cosmos.OneUint())
+			reservedTOR = reservedTOR.Add(record.ReservedTor)
+			poolOverlays := mempoolSwapRecordPoolBalanceOverlays(&record)
+			for _, key := range slices.Sorted(maps.Keys(poolOverlays)) {
+				contribution := poolOverlays[key]
+				expected, ok := expectedPoolOverlays[key]
+				if !ok {
+					expected = newMempoolSwapPoolBalanceOverlay(contribution.Asset)
+				}
+				expected.BalanceRuneIncrease = expected.BalanceRuneIncrease.Add(contribution.BalanceRuneIncrease)
+				expected.BalanceRuneDecrease = expected.BalanceRuneDecrease.Add(contribution.BalanceRuneDecrease)
+				expected.BalanceAssetIncrease = expected.BalanceAssetIncrease.Add(contribution.BalanceAssetIncrease)
+				expected.BalanceAssetDecrease = expected.BalanceAssetDecrease.Add(contribution.BalanceAssetDecrease)
+				expectedPoolOverlays[key] = expected
+			}
+			supplyOverlays := mempoolSwapRecordNativeSupplyOverlays(&record)
+			for _, key := range slices.Sorted(maps.Keys(supplyOverlays)) {
+				contribution := supplyOverlays[key]
+				expected, ok := expectedSupplyOverlays[key]
+				if !ok {
+					expected = newMempoolSwapNativeSupplyOverlay(contribution.Asset)
+				}
+				expected.SupplyIncrease = expected.SupplyIncrease.Add(contribution.SupplyIncrease)
+				expected.SupplyDecrease = expected.SupplyDecrease.Add(contribution.SupplyDecrease)
+				expectedSupplyOverlays[key] = expected
+			}
+			// Owner indexes outlive active overlays for FINALIZED tombstones so a
+			// deep reorg can reclaim the same pool without racing a successor.
+			poolOwnerAssets := mempoolSwapRecordPoolOwnerAssets(&record)
+			for _, key := range slices.Sorted(maps.Keys(poolOwnerAssets)) {
+				asset := poolOwnerAssets[key]
+				ownerKey := k.mempoolSwapPoolOwnerKey(asset)
+				canonicalKey := k.mempoolSwapKey(record.TxId, record.Index)
+				mapKey := string(ownerKey)
+				if prior, ok := expectedPoolOwners[mapKey]; ok && !bytes.Equal(prior, canonicalKey) {
+					broken = true
+					msg = append(msg, fmt.Sprintf("mempool swap pool %s has multiple lifecycle owners", asset))
+					continue
+				}
+				expectedPoolOwners[mapKey] = canonicalKey
+				store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+				if !store.Has(ownerKey) || !bytes.Equal(store.Get(ownerKey), canonicalKey) {
+					broken = true
+					msg = append(msg, fmt.Sprintf("mempool swap %s is missing its pool owner index for %s", identity, asset))
+				}
+			}
+			if !k.has(ctx, k.mempoolSwapVaultIndexKey(record)) {
+				broken = true
+				msg = append(msg, fmt.Sprintf("mempool swap %s is missing its vault index", identity))
+			}
+			if !k.has(ctx, k.mempoolSwapTimeoutIndexKey(record)) {
+				broken = true
+				msg = append(msg, fmt.Sprintf("mempool swap %s is missing its timeout index", identity))
+			}
+
+			voter, err := k.GetObservedTxInVoter(ctx, record.TxId)
+			if err != nil {
+				broken = true
+				msg = append(msg, fmt.Sprintf("fail to get voter for mempool swap %s: %s", identity, err))
+				continue
+			}
+			if voter.IsEmpty() {
+				broken = true
+				msg = append(msg, fmt.Sprintf("mempool swap %s is missing its voter", identity))
+				continue
+			}
+			if voter.MempoolSwapTOR.IsNil() {
+				broken = true
+				msg = append(msg, fmt.Sprintf(
+					"mempool swap %s voter TOR <nil> does not match lifecycle TOR %s",
+					identity, record.ReservedTor,
+				))
+			} else if !voter.MempoolSwapTOR.Equal(record.ReservedTor) {
+				broken = true
+				msg = append(msg, fmt.Sprintf(
+					"mempool swap %s voter TOR %s does not match lifecycle TOR %s",
+					identity, voter.MempoolSwapTOR, record.ReservedTor,
+				))
+			}
+		}
+
+		usage := k.GetMempoolSwapUsageTOR(ctx)
+		if !usage.Equal(reservedTOR) {
+			broken = true
+			msg = append(msg, fmt.Sprintf(
+				"mempool swap TOR usage %s does not match lifecycle total %s",
+				usage, reservedTOR,
+			))
+		}
+		storedCount := k.GetMempoolSwapCount(ctx)
+		if !storedCount.Equal(recordCount) {
+			broken = true
+			msg = append(msg, fmt.Sprintf(
+				"mempool swap count %s does not match lifecycle total %s",
+				storedCount, recordCount,
+			))
+		}
+
+		for _, key := range slices.Sorted(maps.Keys(expectedPoolOverlays)) {
+			expected := expectedPoolOverlays[key]
+			stored, err := k.GetMempoolSwapPoolBalanceOverlay(ctx, expected.Asset)
+			if err != nil {
+				broken = true
+				msg = append(msg, fmt.Sprintf("fail to get mempool swap pool overlay %s: %s", key, err))
+				continue
+			}
+			if !mempoolSwapPoolBalanceOverlayEqual(stored, expected) {
+				broken = true
+				msg = append(msg, fmt.Sprintf("mempool swap pool overlay %s does not match lifecycle aggregate", key))
+			}
+		}
+		overlayIter := k.getIterator(ctx, prefixMempoolSwapPoolOverlay)
+		for ; overlayIter.Valid(); overlayIter.Next() {
+			var stored MempoolSwapPoolBalanceOverlay
+			if err := k.Cdc().Unmarshal(overlayIter.Value(), &stored); err != nil {
+				broken = true
+				msg = append(msg, fmt.Sprintf("fail to unmarshal mempool swap pool overlay: %s", err))
+				continue
+			}
+			expected, ok := expectedPoolOverlays[mempoolSwapPoolBalanceOverlayMapKey(stored.Asset)]
+			if !bytes.Equal(overlayIter.Key(), k.mempoolSwapPoolBalanceOverlayKey(stored.Asset)) ||
+				!ok || !mempoolSwapPoolBalanceOverlayEqual(stored, expected) {
+				broken = true
+				msg = append(msg, fmt.Sprintf("stale or corrupt mempool swap pool overlay for %s", stored.Asset))
+			}
+		}
+		overlayIter.Close()
+
+		for _, key := range slices.Sorted(maps.Keys(expectedSupplyOverlays)) {
+			expected := expectedSupplyOverlays[key]
+			stored, err := k.GetMempoolSwapNativeSupplyOverlay(ctx, expected.Asset)
+			if err != nil {
+				broken = true
+				msg = append(msg, fmt.Sprintf("fail to get mempool swap native supply overlay %s: %s", key, err))
+				continue
+			}
+			if !mempoolSwapNativeSupplyOverlayEqual(stored, expected) {
+				broken = true
+				msg = append(msg, fmt.Sprintf("mempool swap native supply overlay %s does not match lifecycle aggregate", key))
+			}
+		}
+		supplyOverlayIter := k.getIterator(ctx, prefixMempoolSwapSupplyOverlay)
+		for ; supplyOverlayIter.Valid(); supplyOverlayIter.Next() {
+			var stored MempoolSwapNativeSupplyOverlay
+			if err := k.Cdc().Unmarshal(supplyOverlayIter.Value(), &stored); err != nil {
+				broken = true
+				msg = append(msg, fmt.Sprintf("fail to unmarshal mempool swap native supply overlay: %s", err))
+				continue
+			}
+			expected, ok := expectedSupplyOverlays[mempoolSwapNativeSupplyOverlayMapKey(stored.Asset)]
+			if !bytes.Equal(supplyOverlayIter.Key(), k.mempoolSwapNativeSupplyOverlayKey(stored.Asset)) ||
+				!ok || !mempoolSwapNativeSupplyOverlayEqual(stored, expected) {
+				broken = true
+				msg = append(msg, fmt.Sprintf("stale or corrupt mempool swap native supply overlay for %s", stored.Asset))
+			}
+		}
+		supplyOverlayIter.Close()
+
+		ownerIter := k.getIterator(ctx, prefixMempoolSwapPoolOwner)
+		for ; ownerIter.Valid(); ownerIter.Next() {
+			expected, ok := expectedPoolOwners[string(ownerIter.Key())]
+			if !ok || !bytes.Equal(ownerIter.Value(), expected) {
+				broken = true
+				msg = append(msg, "stale or corrupt mempool swap pool owner index")
+			}
+		}
+		ownerIter.Close()
+
+		// Also walk each secondary index so stale or corrupt index entries that
+		// no longer have a matching canonical record are visible.
+		for _, index := range []struct {
+			name     string
+			prefix   keepertypes.DbPrefix
+			expected func(MempoolSwap) []byte
+		}{
+			{"vault", prefixMempoolSwapVault, k.mempoolSwapVaultIndexKey},
+			{"timeout", prefixMempoolSwapTimeout, k.mempoolSwapTimeoutIndexKey},
+		} {
+			indexIter := k.getIterator(ctx, index.prefix)
+			for ; indexIter.Valid(); indexIter.Next() {
+				record, err := k.getMempoolSwapFromIndex(ctx, indexIter.Value())
+				if err != nil {
+					broken = true
+					msg = append(msg, fmt.Sprintf("invalid mempool swap %s index: %s", index.name, err))
+					continue
+				}
+				if !bytes.Equal(indexIter.Key(), index.expected(record)) {
+					broken = true
+					msg = append(msg, fmt.Sprintf("stale mempool swap %s index for %s", index.name, record.Cursor()))
+				}
+			}
+			indexIter.Close()
 		}
 
 		return msg, broken

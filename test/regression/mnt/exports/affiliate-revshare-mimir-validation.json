@@ -261,6 +261,7 @@
           "units": "100000000000"
         }
       ],
+      "mempool_swaps": [],
       "mimirs": [
         {
           "key": "REVSHARE-T"
@@ -309,7 +310,6 @@
       "observed_tx_out_voters": null,
       "outbound_fee_spent_rune": [],
       "outbound_fee_withheld_rune": [],
-      "pending_affiliate_liquidity_fees": [],
       "pools": [
         {
           "LP_units": "100000000000",

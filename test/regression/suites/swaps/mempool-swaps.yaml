@@ -45,8 +45,8 @@ signer: {{ addr_thor_dog }}
 type: create-blocks
 count: 1
 ---
-# Enable the mempool swaps feature with a 2000 TOR cap (enough for ~2 BTC worth of swaps)
-# With 1 BTC ~ 1000 RUNE and DollarsPerRune = 1, 1 BTC = 1000 TOR
+# Enable the mempool swaps feature with a 3,000 TOR cap (enough for about 3 BTC).
+# With 1 BTC ~ 1,000 RUNE and DollarsPerRune = 1, 1 BTC = 1,000 TOR.
 type: tx-mimir
 key: MempoolSwapCapTOR
 value: 300000000000
@@ -91,8 +91,7 @@ asserts:
 ########################################################################################
 # Scenario 1: Mempool Swap Execution with Usage Tracking
 ########################################################################################
-# Send a swap transaction that will finalize 3 blocks later
-# Current block: 4, Transaction block: 4, Finalize at: 7
+# Submit an inbound with BTC inclusion height 4 and finality height 7.
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
 txs:
@@ -117,15 +116,14 @@ txs:
 type: create-blocks
 count: 1
 ---
-# Verify mempool swap usage increased immediately (capacity reserved at observation).
+# Verify the exact TOR reservation made at speculative admission.
 type: check
 endpoint: http://localhost:1317/thorchain/network
 asserts:
-  - .mempool_swap_usage_tor|tonumber > 0
+  - .mempool_swap_usage_tor == "${MEMPOOL_USAGE=100002663624}"
 ---
-# Allow one more block for the advanced swap queue to settle the swap and
-# stage the outbound.  The observation block reserves TOR and queues the swap;
-# the next EndBlock processes the sub-swap and settles the outbound.
+# Allow an extra block after advanced-queue execution so the staged settlement
+# is stable before it is inspected.
 type: create-blocks
 count: 1
 ---
@@ -144,7 +142,42 @@ asserts:
   - .staged_outbound_items[0].tx_out_item.chain == "ETH"
   - .staged_outbound_items[0].tx_out_item.to_address == "{{ addr_eth_fox }}"
   - .staged_outbound_items[0].tx_out_item.in_hash == "{{ observe_txid 1 }}"
+  - .staged_outbound_items[0].tx_out_item.coin.asset == "ETH.ETH"
+  # Speculative settlement stages the gross output. The outbound fee is applied
+  # only when finality materializes the real outbound.
+  - .staged_outbound_items[0].tx_out_item.coin.amount == "${STAGED_AMOUNT_1=160000000}"
   - .staged_outbound_items[0].scheduled_height|tonumber > 0
+  - .staged_outbound_items[0].staged_height|tonumber > 0
+---
+# Irreversible accounting and clout remain deferred while the inbound is not final.
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .volume_rune == "0"
+  - .volume_asset == "0"
+  - .rolling_pool_liquidity_fee_rune == "0"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
+asserts:
+  - .volume_rune == "0"
+  - .volume_asset == "0"
+  - .rolling_pool_liquidity_fee_rune == "0"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/clout/swap/{{ addr_btc_fox }}
+asserts:
+  - .score == "0"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/clout/swap/{{ addr_eth_fox }}
+asserts:
+  - .score == "0"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/mempool_swaps
+asserts:
+  - .broken == false
 ---
 ########################################################################################
 # Scenario 2: Cap Enforcement - Second Swap Should Wait When Cap Exceeded
@@ -189,12 +222,33 @@ txs:
 type: create-blocks
 count: 1
 ---
-# Verify second swap did NOT create an outbound (waiting for finalization due to cap)
-# Both outbounds should be staged (queue is empty)
+# The second swap was rejected from speculative admission and waits for finality.
+# It must not create an outbound, staged item, advanced-queue item, or reservation.
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/staged
+asserts:
+  - .staged_outbound_items|length == 1
+  - .staged_outbound_items[0].tx_out_item.in_hash == "{{ observe_txid 1 }}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - '.|map(select(.tx.id == "{{ observe_txid 10 }}"))|length == 0'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .mempool_swap_usage_tor == "${MEMPOOL_USAGE}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/mempool_swaps
+asserts:
+  - .broken == false
 ---
 ########################################################################################
 # Scenario 3: Finalization Releases Capacity
@@ -241,6 +295,8 @@ asserts:
   - .[0].in_hash == "{{ observe_txid 1 }}"
   - .[0].chain == "ETH"
   - .[0].to_address == "{{ addr_eth_fox }}"
+  - .[0].coin.asset == "ETH.ETH"
+  - .[0].coin.amount == "${OUT_AMOUNT_1=159360000}"
 ---
 # Verify staged queue is empty (item was moved to real queue)
 type: check
@@ -248,11 +304,41 @@ endpoint: http://localhost:1317/thorchain/queue/staged
 asserts:
   - (.staged_outbound_items // [])|length == 0
 ---
-# Verify mempool swap usage was released (should be back to 0 or lower)
+# Verify mempool swap usage was released back to zero.
 type: check
 endpoint: http://localhost:1317/thorchain/network
 asserts:
   - .mempool_swap_usage_tor == "0"
+---
+# Finality applies the previously deferred accounting and clout.
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .volume_rune|tonumber > 0
+  - .volume_asset|tonumber > 0
+  - .rolling_pool_liquidity_fee_rune|tonumber > 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
+asserts:
+  - .volume_rune|tonumber > 0
+  - .volume_asset|tonumber > 0
+  - .rolling_pool_liquidity_fee_rune|tonumber > 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/clout/swap/{{ addr_btc_fox }}
+asserts:
+  - .score|tonumber > 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/clout/swap/{{ addr_eth_fox }}
+asserts:
+  - .score|tonumber > 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/mempool_swaps
+asserts:
+  - .broken == false
 ---
 # Clean up - observe the first outbound
 type: tx-observed-out
@@ -264,7 +350,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "159360000"  # Actual swap output
+        - amount: "${OUT_AMOUNT_1}"
           asset: "ETH.ETH"
           decimals: 8
       gas:
@@ -286,9 +372,10 @@ asserts:
   - .|length == 0
 ---
 ########################################################################################
-# Scenario 4: Second Swap Now Processes After Capacity Available
+# Scenario 4: Finalized Fallback Executes the Cap-Blocked Swap
 ########################################################################################
-# Re-observe the second swap as finalized (it was waiting for finalization)
+# Re-observe the second swap as finalized. It was never admitted speculatively,
+# so it now follows the ordinary finalized execution path.
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
 txs:
@@ -321,6 +408,18 @@ asserts:
   - .[0].chain == "ETH"
   - .[0].to_address == "{{ addr_eth_cat }}"
   - .[0].in_hash == "{{ observe_txid 10 }}"
+  - .[0].coin.asset == "ETH.ETH"
+  - .[0].coin.amount == "${OUT_AMOUNT_2=85851813}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/staged
+asserts:
+  - (.staged_outbound_items // [])|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .mempool_swap_usage_tor == "0"
 ---
 # Clean up - observe the second outbound
 type: tx-observed-out
@@ -332,7 +431,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_cat }}
       coins:
-        - amount: "85852912"  # Actual swap output
+        - amount: "${OUT_AMOUNT_2}"
           asset: "ETH.ETH"
           decimals: 8
       gas:
@@ -352,3 +451,13 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/mempool_swaps
+asserts:
+  - .broken == false
+---
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/asgard
+asserts:
+  - .broken == false

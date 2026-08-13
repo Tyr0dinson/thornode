@@ -281,6 +281,7 @@
           "units": "100000000000"
         }
       ],
+      "mempool_swaps": [],
       "mimirs": [
         {
           "key": "HALTETHTRADING",
@@ -417,7 +418,6 @@
           "asset": "ETH.USDX-0X9999999999999999999999999999999999999999"
         }
       ],
-      "pending_affiliate_liquidity_fees": [],
       "pools": [
         {
           "LP_units": "100000000000",

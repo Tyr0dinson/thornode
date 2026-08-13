@@ -34,6 +34,18 @@ const mempoolSwapForceRollbackTimeoutMultiplier int64 = 3
 // periods matches the timeout previously used by the common configured value.
 const defaultMempoolSwapTimeoutAttempts int64 = 3
 
+// mempoolSwapRecoveryBatchSize is the independent per-worker record budget in
+// one LackSigning pass. The vault-cursor worker can process 20 records and the
+// due-index worker can process another 20, for a combined maximum of 40.
+// Lifecycle timeout keys are ordered by recovery height, transaction ID, and
+// swap index, so every node processes the same due batch.
+const mempoolSwapRecoveryBatchSize = 20
+
+// Only one vault cursor batch is advanced per recovery pass. This caps that
+// worker at 20 attempted records, independent of the number of inactive vaults
+// or swaps; the due-index worker has its own independent 20-record budget.
+const mempoolSwapVaultRecoveryJobBatchSize = 1
+
 // Slasher is current implementation of slasher
 type SlasherImpl struct {
 	keeper   keeper.Keeper
@@ -600,22 +612,6 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 							continue
 						}
 
-						// Mempool swaps normally recover through the staged-outbound or
-						// queue-timeout paths, not through standard TxOut retry logic.
-						// If one still reaches LackSigning with no finalized height, treat
-						// it as queued mempool cleanup and roll it back instead of sending
-						// it through treasury recovery / normal outbound handling.
-						if voter.FinalisedHeight == 0 && voter.HasReservedMempoolSwapTOR() {
-							ctx.Logger().Info("rolling back queued mempool swap during LackSigning cleanup", "hash", toi.InHash, "attempts", attempts)
-							if err = rollbackMempoolSwapAtomic(ctx, s.keeper, mgr, voter); err != nil {
-								ctx.Logger().Error("failed to roll back mempool swap", "error", err, "hash", toi.InHash)
-							} else {
-								incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "max_outbound_attempts")})
-								txs.TxArray[i].OutHash = common.BlankTxID
-							}
-							continue
-						}
-
 						// For user-facing outbounds (refund, outbound, ragnarok), send to treasury recovery
 						if memo.IsOutbound() {
 							treasuryErr := s.sendFailedOutboundToTreasury(ctx, mgr, toi, vault, memo)
@@ -872,221 +868,202 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 		}
 	}
 
-	// Handle timeout for staged outbounds (mempool swaps waiting for inbound finalization).
-	// Staged outbounds are not in the TxOut queue, so they need separate timeout handling.
+	// Recover speculative swaps from their canonical lifecycle records. Staged
+	// outbounds and queue entries are transient execution details and cannot be
+	// used as the recovery index: settlement is allowed to remove both before an
+	// inbound reaches finality.
 	mempoolSwapTimeoutAttempts := maxOutboundAttempts
 	if mempoolSwapTimeoutAttempts <= 0 {
 		mempoolSwapTimeoutAttempts = defaultMempoolSwapTimeoutAttempts
 	}
-	mempoolSwapEnabled := mgr.Keeper().GetConfigInt64(ctx, constants.MempoolSwapCapTOR) > 0
-	hasMempoolSwapReservations := !mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero()
-	isMempoolSwapRecoveryBlock := ctx.BlockHeight()%signingTransPeriod == 0
-	if (mempoolSwapEnabled || hasMempoolSwapReservations) && isMempoolSwapRecoveryBlock {
-		timeoutAge := signingTransPeriod * mempoolSwapTimeoutAttempts
-		forceRollbackAge := mempoolSwapForceRollbackTimeoutMultiplier * timeoutAge
-
-		// Collect timed-out inHashes first, then process after closing iterator
-		// to avoid iterator invalidation when rollbackMempoolSwapAtomic deletes from store
-		type timedOutEntry struct {
-			inHash    common.TxID
-			stagedAge int64
+	timeoutAge := signingTransPeriod * mempoolSwapTimeoutAttempts
+	forceRollbackAge := mempoolSwapForceRollbackTimeoutMultiplier * timeoutAge
+	// Advance inactive-vault jobs before timeout recovery. A failed vault
+	// rollback is moved to the next due height, so the due worker below does
+	// not immediately retry the same record in this block. Both indexed reads
+	// are bounded and their persisted heights/cursors provide the cadence, so
+	// recovery can make prompt progress every block without collection scans.
+	// Run this even when the feature cap and aggregate TOR usage are zero:
+	// finalized in-flight tombstones intentionally reserve no capacity but still
+	// need errata and inactive-vault recovery.
+	if err := s.recoverMempoolSwapVaultJobs(ctx, mgr); err != nil {
+		ctx.Logger().Error("fail to continue inactive-vault mempool swap recovery", "error", err)
+		if resultErr == nil {
+			resultErr = err
 		}
-		var timedOutEntries []timedOutEntry
-		stagedIter := s.keeper.GetStagedOutboundIterator(ctx)
-		for ; stagedIter.Valid(); stagedIter.Next() {
-			var stagedList keeper.StagedOutboundList
-			if err := s.keeper.Cdc().Unmarshal(stagedIter.Value(), &stagedList); err != nil {
-				ctx.Logger().Error("fail to unmarshal staged outbound list", "error", err)
-				continue
-			}
-			// Check timeout based on staged height
-			// Timeout if staged for longer than the configured number of signing periods.
-			var oldest int64
-			for _, staged := range stagedList.Items {
-				if staged.StagedHeight <= 0 || staged.StagedHeight > ctx.BlockHeight() {
-					continue
-				}
-				age := ctx.BlockHeight() - staged.StagedHeight
-				if age > oldest {
-					oldest = age
-				}
-			}
-			if oldest >= timeoutAge {
-				timedOutEntries = append(timedOutEntries, timedOutEntry{inHash: stagedList.InHash, stagedAge: oldest})
-			}
+	}
+	if err := s.recoverDueMempoolSwaps(ctx, mgr, signingTransPeriod, forceRollbackAge); err != nil {
+		ctx.Logger().Error("fail to recover due mempool swaps", "error", err)
+		if resultErr == nil {
+			resultErr = err
 		}
-		stagedIter.Close()
-
-		// Now process timed-out staged outbounds
-		for _, entry := range timedOutEntries {
-			inHash := entry.inHash
-			voter, err := s.keeper.GetObservedTxInVoter(ctx, inHash)
-			if err != nil {
-				ctx.Logger().Error("fail to get observed tx voter for staged outbound", "error", err)
-				continue
-			}
-
-			// If the inbound already finalized, the staged outbounds should be
-			// finalized on retry instead of being rolled back.
-			if voter.FinalisedHeight > 0 {
-				// Confirmation time must not consume the finalization retry window.
-				// StagedHeight remains the timeout clock for an inbound that never
-				// finalizes, while finalized swaps get a fresh clock starting at the
-				// consensus finalization height.
-				if voter.FinalisedHeight > ctx.BlockHeight() {
-					continue
-				}
-				finalizedAge := ctx.BlockHeight() - voter.FinalisedHeight
-				if finalizedAge < timeoutAge {
-					continue
-				}
-
-				// Finalized staged mempool swaps normally retry finalization here.
-				// The exception is an inbound that finalized on an inactive vault:
-				// those staged outputs are speculative state that must be unwound
-				// and refunded, not finalized. This also gives LackSigning a
-				// periodic recovery path for any earlier best-effort cleanup that
-				// failed, logged and continued in the observed-tx flow.
-				if !voter.Tx.ObservedPubKey.IsEmpty() {
-					observedVault, vaultErr := s.keeper.GetVault(ctx, voter.Tx.ObservedPubKey)
-					if vaultErr != nil {
-						ctx.Logger().Error("fail to get observed vault for finalized staged mempool swap", "error", vaultErr, "hash", inHash)
-						continue
-					} else if observedVault.Status == InactiveVault {
-						ctx.Logger().Info("retrying inactive-vault mempool rollback due to timeout", "hash", inHash)
-						if err := rollbackAndRefundInactiveVaultMempoolSwap(ctx, mgr, voter.Tx, voter); err != nil {
-							ctx.Logger().Error("fail to roll back inactive-vault mempool swap on timeout retry", "error", err, "hash", inHash)
-						}
-						continue
-					}
-				}
-
-				// If finalization has been retried beyond the force-rollback
-				// threshold, the failure is likely deterministic. Force-rollback
-				// to release the TOR capacity reservation.
-				if finalizedAge >= forceRollbackAge {
-					ctx.Logger().Error("force-rolling back stuck finalized mempool swap",
-						"hash", inHash, "finalized_age", finalizedAge, "force_rollback_age", forceRollbackAge)
-					if err := rollbackAndRefundFinalizedMempoolSwapAtomic(ctx, mgr, voter); err != nil {
-						ctx.Logger().Error("fail to force roll back and refund stuck mempool swap", "error", err, "hash", inHash)
-					} else {
-						incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "force_rollback")})
-					}
-					continue
-				}
-
-				ctx.Logger().Info("retrying staged mempool swap finalization due to timeout", "hash", inHash)
-				incrMempoolSwapCounter("finalize_retry_total", nil)
-				// A finalize failure here is not terminal: staged outbounds stay in
-				// place because finalizeOutboundsAtomic is transactional, so the next
-				// LackSigning pass can retry the same inbound again.
-				if err := finalizeOutboundsAtomic(ctx, mgr, voter); err != nil {
-					ctx.Logger().Error("fail to finalize staged mempool swap on timeout retry", "error", err, "hash", inHash)
-				}
-				continue
-			}
-
-			// Inactive-vault unfinalized swaps are normally rolled back when the vault
-			// transitions inactive. This timeout rollback remains a fallback for missed
-			// transition cleanup, rollback errors, and active-vault swaps whose inbound
-			// never finalizes.
-			ctx.Logger().Info("rolling back staged mempool swap due to timeout", "hash", inHash, "staged_age", entry.stagedAge)
-			if err := rollbackMempoolSwapAtomic(ctx, s.keeper, mgr, voter); err != nil {
-				ctx.Logger().Error("fail to roll back staged mempool swap", "error", err, "hash", inHash)
-			} else {
-				incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "timeout")})
-			}
-		}
-
-		// Some finalized inactive-vault mempool swaps can still be stranded only
-		// in swap-queue state if cleanup previously failed before any staged
-		// outbound was written. Reconcile those queue-backed leftovers on the same
-		// timeout cadence as staged mempool recovery. The enclosing recovery-block
-		// gate keeps both store walks off the per-block path.
-		s.retryTimedOutInactiveVaultQueueBackedMempoolSwaps(ctx, mgr, timeoutAge)
 	}
 
 	return resultErr
 }
 
-// collectTimedOutInactiveVaultMempoolQueueHashes finds finalized inactive-vault
-// mempool swaps that are stranded only in swap-queue state. Those entries have
-// no staged outbounds left, so the normal staged timeout sweep cannot discover
-// them even though they still need rollback/refund cleanup.
-func (s *SlasherImpl) collectTimedOutInactiveVaultMempoolQueueHashes(ctx cosmos.Context, iter cosmos.Iterator, timeoutAge int64, seen map[string]struct{}, hashes *[]common.TxID) {
-	defer iter.Close()
-
-	for ; iter.Valid(); iter.Next() {
-		var msg MsgSwap
-		if err := s.keeper.Cdc().Unmarshal(iter.Value(), &msg); err != nil {
-			ctx.Logger().Error("fail to unmarshal mempool swap queue item during timeout recovery", "error", err)
-			continue
-		}
-
-		inHash := msg.Tx.ID
-		if inHash.IsEmpty() {
-			continue
-		}
-
-		voter, err := s.keeper.GetObservedTxInVoter(ctx, inHash)
-		if err != nil {
-			ctx.Logger().Error("fail to get observed tx voter for queued mempool swap", "error", err, "hash", inHash)
-			continue
-		}
-		// The reservation is the queue-only marker that distinguishes mempool
-		// work from ordinary queued swaps. Check it before any additional reads.
-		if !voter.HasReservedMempoolSwapTOR() || voter.UnfinalizedHeight == 0 || voter.FinalisedHeight == 0 || voter.Tx.ObservedPubKey.IsEmpty() {
-			continue
-		}
-		// If staged outbounds still exist, the normal staged timeout recovery
-		// path above will handle this inbound, so skip it here.
-		if s.keeper.HasStagedOutbound(ctx, inHash) {
-			continue
-		}
-
-		age := ctx.BlockHeight() - max(voter.UnfinalizedHeight, voter.FinalisedHeight)
-		if age < timeoutAge {
-			continue
-		}
-
-		observedVault, err := s.keeper.GetVault(ctx, voter.Tx.ObservedPubKey)
-		if err != nil {
-			ctx.Logger().Error("fail to get observed vault for queued mempool swap", "error", err, "hash", inHash)
-			continue
-		}
-		if observedVault.Status != InactiveVault {
-			continue
-		}
-
-		if _, ok := seen[inHash.String()]; ok {
-			continue
-		}
-		seen[inHash.String()] = struct{}{}
-		*hashes = append(*hashes, inHash)
+// recoverMempoolSwapVaultJobs advances a deterministic number of persisted
+// inactive-vault cursors. Each job itself processes a bounded record batch and
+// remains stored until its cursor reaches the end of that vault's index.
+func (s *SlasherImpl) recoverMempoolSwapVaultJobs(ctx cosmos.Context, mgr Manager) error {
+	vaultPubKeys, err := s.keeper.GetMempoolSwapVaultRecoveries(ctx, mempoolSwapVaultRecoveryJobBatchSize)
+	if err != nil {
+		return fmt.Errorf("fail to list inactive-vault mempool recovery jobs: %w", err)
 	}
+
+	for _, vaultPubKey := range vaultPubKeys {
+		vault, vaultErr := s.keeper.GetVault(ctx, vaultPubKey)
+		if vaultErr != nil {
+			return fmt.Errorf("fail to get vault for mempool recovery job %s: %w", vaultPubKey, vaultErr)
+		}
+		if vault.Status != InactiveVault {
+			ctx.Logger().Error("dropping stale mempool recovery job for non-inactive vault", "vault", vaultPubKey, "status", vault.Status)
+			s.keeper.DeleteMempoolSwapVaultRecovery(ctx, vaultPubKey)
+			continue
+		}
+		if err = processMempoolSwapVaultRecoveryBatch(ctx, s.keeper, mgr, vaultPubKey, mempoolSwapRecoveryBatchSize); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-// retryTimedOutInactiveVaultQueueBackedMempoolSwaps runs the queued-only retry
-// pass after the staged timeout sweep. It deduplicates hashes across the basic
-// and advanced swap queues, then reuses the same rollback+refund helper as the
-// observed-tx path so recovery behavior stays consistent.
-func (s *SlasherImpl) retryTimedOutInactiveVaultQueueBackedMempoolSwaps(ctx cosmos.Context, mgr Manager, timeoutAge int64) {
-	seen := make(map[string]struct{})
-	var hashes []common.TxID
-	s.collectTimedOutInactiveVaultMempoolQueueHashes(ctx, s.keeper.GetSwapQueueIterator(ctx), timeoutAge, seen, &hashes)
-	s.collectTimedOutInactiveVaultMempoolQueueHashes(ctx, s.keeper.GetAdvSwapQueueItemIterator(ctx), timeoutAge, seen, &hashes)
+// recoverDueMempoolSwaps processes one deterministic, bounded timeout batch.
+// Failed work is moved to the next signing period so a single bad record cannot
+// permanently starve later due entries.
+func (s *SlasherImpl) recoverDueMempoolSwaps(ctx cosmos.Context, mgr Manager, signingTransPeriod, forceRollbackAge int64) error {
+	records, err := s.keeper.GetMempoolSwapsDue(ctx, ctx.BlockHeight(), mempoolSwapRecoveryBatchSize)
+	if err != nil {
+		return fmt.Errorf("fail to list due mempool swaps: %w", err)
+	}
 
-	for _, inHash := range hashes {
-		voter, err := s.keeper.GetObservedTxInVoter(ctx, inHash)
-		if err != nil {
-			ctx.Logger().Error("fail to get observed tx voter for queued mempool retry", "error", err, "hash", inHash)
+	for _, record := range records {
+		voter, voterErr := s.keeper.GetObservedTxInVoter(ctx, record.TxId)
+		if voterErr != nil || voter.IsEmpty() {
+			if voterErr == nil {
+				voterErr = fmt.Errorf("observed tx voter is empty")
+			}
+			ctx.Logger().Error("fail to load voter for mempool swap recovery", "error", voterErr, "hash", record.TxId)
+			// A due record whose voter cannot be inspected must stop making
+			// forward queue progress until the durable inconsistency is repaired.
+			s.rescheduleMempoolSwapRecovery(ctx, record, signingTransPeriod, true)
 			continue
 		}
 
-		ctx.Logger().Info("retrying inactive-vault mempool rollback due to queued-timeout", "hash", inHash)
-		if err := rollbackAndRefundInactiveVaultMempoolSwap(ctx, mgr, voter.Tx, voter); err != nil {
-			ctx.Logger().Error("fail to roll back inactive-vault mempool swap from queued-timeout retry", "error", err, "hash", inHash)
+		// Errata and any earlier failed rollback own the record once it enters
+		// ROLLBACK_PENDING. An unfinalized due record also cannot make forward
+		// progress safely: its inbound exceeded the deadline calculated from the
+		// latest stream/limit-order progress.
+		if voter.Reverted || record.Status == types.MempoolSwapStatus_ROLLBACK_PENDING || voter.FinalisedHeight == 0 {
+			if voter.FinalisedHeight > 0 && !voter.Reverted {
+				if err = s.rollbackFinalizedMempoolSwapRecovery(ctx, mgr, voter, record); err != nil {
+					s.rescheduleMempoolSwapRecovery(ctx, record, signingTransPeriod, true)
+				}
+				continue
+			}
+
+			ctx.Logger().Info("rolling back due mempool swap", "hash", record.TxId, "status", record.Status)
+			if err = rollbackMempoolSwapAtomic(ctx, s.keeper, mgr, voter); err != nil {
+				ctx.Logger().Error("fail to roll back due mempool swap", "error", err, "hash", record.TxId)
+				s.rescheduleMempoolSwapRecovery(ctx, record, signingTransPeriod, true)
+			} else {
+				reason := "timeout"
+				if voter.Reverted || record.Status == types.MempoolSwapStatus_ROLLBACK_PENDING {
+					reason = "rollback_pending"
+				}
+				incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", reason)})
+			}
+			continue
 		}
+
+		observedVault, vaultErr := s.keeper.GetVault(ctx, record.VaultPubKey)
+		if vaultErr != nil {
+			ctx.Logger().Error("fail to get observed vault for mempool swap recovery", "error", vaultErr, "hash", record.TxId)
+			s.rescheduleMempoolSwapRecovery(ctx, record, signingTransPeriod, false)
+			continue
+		}
+		if observedVault.Status == InactiveVault {
+			if err = s.rollbackFinalizedMempoolSwapRecovery(ctx, mgr, voter, record); err != nil {
+				s.rescheduleMempoolSwapRecovery(ctx, record, signingTransPeriod, true)
+			}
+			continue
+		}
+
+		if record.Status == types.MempoolSwapStatus_FINALIZED {
+			if s.keeper.HasAdvSwapQueueItem(ctx, record.TxId, int(record.Index)) {
+				// Healthy finalized queue work is governed by the queue's own
+				// interval/TTL rules. Retain the tombstone and periodically verify it
+				// without force-rolling back a merely paused stream.
+				record.NextRecoveryHeight = mempoolSwapRecoveryHeight(ctx, s.keeper, record.LatestSwap)
+				if err = s.keeper.SetMempoolSwap(ctx, record); err != nil {
+					ctx.Logger().Error("fail to reschedule finalized mempool swap tombstone", "error", err, "hash", record.TxId)
+				}
+				continue
+			}
+			// Terminal settlement normally applies the journal and deletes the
+			// tombstone in one transaction. Repair an orphan through that same
+			// finisher: raw deletion could silently discard deferred accounting.
+			if err = finishFinalizedMempoolSwapSettlementAtomic(ctx, mgr, record.TxId, record.Index); err != nil {
+				ctx.Logger().Error("fail to finish orphaned finalized mempool swap tombstone", "error", err, "hash", record.TxId)
+				s.rescheduleMempoolSwapRecovery(ctx, record, signingTransPeriod, false)
+			}
+			continue
+		}
+
+		finalizedAge := ctx.BlockHeight() - voter.FinalisedHeight
+		if finalizedAge >= forceRollbackAge {
+			ctx.Logger().Error("force-rolling back stuck finalized mempool swap",
+				"hash", record.TxId, "finalized_age", finalizedAge, "force_rollback_age", forceRollbackAge)
+			if err = rollbackAndRefundFinalizedMempoolSwapAtomic(ctx, mgr, voter); err != nil {
+				ctx.Logger().Error("fail to force roll back and refund stuck mempool swap", "error", err, "hash", record.TxId)
+				s.rescheduleMempoolSwapRecovery(ctx, record, signingTransPeriod, true)
+			} else {
+				incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "force_rollback")})
+			}
+			continue
+		}
+
+		ctx.Logger().Info("retrying mempool swap finalization", "hash", record.TxId)
+		incrMempoolSwapCounter("finalize_retry_total", nil)
+		if err = completeMempoolSwapAtomic(ctx, mgr, voter); err != nil {
+			ctx.Logger().Error("fail to finalize mempool swap on recovery retry", "error", err, "hash", record.TxId)
+			s.rescheduleMempoolSwapRecovery(ctx, record, signingTransPeriod, false)
+		}
+	}
+
+	return nil
+}
+
+func (s *SlasherImpl) rollbackFinalizedMempoolSwapRecovery(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter, record types.MempoolSwap) error {
+	observedVault, err := s.keeper.GetVault(ctx, record.VaultPubKey)
+	if err != nil {
+		ctx.Logger().Error("fail to get observed vault for finalized mempool rollback", "error", err, "hash", record.TxId)
+		return err
+	}
+	if observedVault.Status == InactiveVault {
+		ctx.Logger().Info("retrying inactive-vault mempool rollback", "hash", record.TxId)
+		if err = rollbackAndRefundInactiveVaultMempoolSwap(ctx, mgr, voter.Tx, voter); err != nil {
+			ctx.Logger().Error("fail to roll back inactive-vault mempool swap", "error", err, "hash", record.TxId)
+			return err
+		}
+		return nil
+	}
+
+	if err = rollbackAndRefundFinalizedMempoolSwapAtomic(ctx, mgr, voter); err != nil {
+		ctx.Logger().Error("fail to roll back finalized mempool swap", "error", err, "hash", record.TxId)
+		return err
+	}
+	incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "rollback_pending")})
+	return nil
+}
+
+func (s *SlasherImpl) rescheduleMempoolSwapRecovery(ctx cosmos.Context, record types.MempoolSwap, signingTransPeriod int64, rollbackPending bool) {
+	if rollbackPending {
+		record.Status = types.MempoolSwapStatus_ROLLBACK_PENDING
+	}
+	record.NextRecoveryHeight = ctx.BlockHeight() + signingTransPeriod
+	if err := s.keeper.SetMempoolSwap(ctx, record); err != nil {
+		ctx.Logger().Error("fail to reschedule mempool swap recovery", "error", err, "hash", record.TxId)
 	}
 }
 
@@ -1395,6 +1372,7 @@ func (s *SlasherImpl) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coin
 		return fmt.Errorf("fail to get slash vault (pubkey %s), %w", vaultPK, err)
 	}
 	membership := vault.GetMembership()
+	poolView := newFinalityPoolView(s.keeper)
 
 	// sum the total bond of membership of the vault
 	totalBond := cosmos.ZeroUint()
@@ -1411,7 +1389,9 @@ func (s *SlasherImpl) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coin
 		if coin.IsEmpty() {
 			continue
 		}
-		pool, err := s.keeper.GetPool(ctx, coin.Asset)
+		// Slashing is irreversible. Value the loss against finalized pool
+		// depths, excluding mutations still owned by mempool swaps.
+		pool, _, err := poolView.getPool(ctx, coin.Asset)
 		if err != nil {
 			ctx.Logger().Error("fail to get pool for slash", "asset", coin.Asset, "error", err)
 			continue
@@ -1419,6 +1399,11 @@ func (s *SlasherImpl) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coin
 		// THORChain doesn't even have a pool for the asset
 		if pool.IsEmpty() {
 			ctx.Logger().Error("cannot slash for an empty pool", "asset", coin.Asset)
+			continue
+		}
+		livePool, err := s.keeper.GetPool(ctx, coin.Asset)
+		if err != nil {
+			ctx.Logger().Error("fail to get live pool for slash", "asset", coin.Asset, "error", err)
 			continue
 		}
 
@@ -1429,6 +1414,12 @@ func (s *SlasherImpl) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coin
 		}
 		if stolenAssetValue.GT(pool.BalanceAsset) {
 			stolenAssetValue = pool.BalanceAsset
+		}
+		// The irreversible debit must also fit on top of the current live pool.
+		// This preserves the complete speculative overlay even when an active
+		// swap has temporarily reduced the asset side below finalized depth.
+		if stolenAssetValue.GT(livePool.BalanceAsset) {
+			stolenAssetValue = livePool.BalanceAsset
 		}
 
 		// stolenRuneValue is the value in RUNE of the missing funds
@@ -1524,7 +1515,7 @@ func (s *SlasherImpl) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coin
 			if err := s.keeper.SendFromModuleToModule(ctx, BondName, AsgardName, common.NewCoins(common.NewCoin(common.RuneAsset(), runeToAsgard))); err != nil {
 				ctx.Logger().Error("fail to send slash fund to asgard module", "pk", vaultPK, "error", err)
 			}
-			s.updatePoolFromSlash(ctx, pool, common.NewCoin(coin.Asset, stolenAssetValue), runeToAsgard, mgr)
+			s.updatePoolFromSlashWithView(ctx, poolView, pool, common.NewCoin(coin.Asset, stolenAssetValue), runeToAsgard, mgr)
 		}
 	}
 
@@ -1588,11 +1579,35 @@ func (s *SlasherImpl) DecSlashPoints(ctx cosmos.Context, point int64, addresses 
 	}
 }
 
-// updatePoolFromSlash updates a pool's depths and emits appropriate events after a slash
-func (s *SlasherImpl) updatePoolFromSlash(ctx cosmos.Context, pool types.Pool, stolenAsset common.Coin, runeCreditAmt cosmos.Uint, mgr Manager) {
+// updatePoolFromSlash updates a pool's depths and emits appropriate events after a slash.
+// The wrapper obtains a finalized base and reapplies any active overlay after
+// the irreversible mutation so direct callers cannot overwrite swap state.
+func (s *SlasherImpl) updatePoolFromSlash(ctx cosmos.Context, _ types.Pool, stolenAsset common.Coin, runeCreditAmt cosmos.Uint, mgr Manager) {
+	poolView := newFinalityPoolView(s.keeper)
+	pool, _, err := poolView.getPool(ctx, stolenAsset.Asset)
+	if err != nil {
+		ctx.Logger().Error("fail to get finalized pool for slash update", "asset", stolenAsset.Asset, "error", err)
+		return
+	}
+	s.updatePoolFromSlashWithView(ctx, poolView, pool, stolenAsset, runeCreditAmt, mgr)
+}
+
+func (s *SlasherImpl) updatePoolFromSlashWithView(
+	ctx cosmos.Context,
+	poolView *finalityPoolView,
+	pool types.Pool,
+	stolenAsset common.Coin,
+	runeCreditAmt cosmos.Uint,
+	mgr Manager,
+) {
 	pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, stolenAsset.Amount)
 	pool.BalanceRune = pool.BalanceRune.Add(runeCreditAmt)
-	if err := s.keeper.SetPool(ctx, pool); err != nil {
+	livePool, _, err := poolView.apply(ctx, pool)
+	if err != nil {
+		ctx.Logger().Error("fail to reapply mempool swap overlay to slashed pool", "asset", pool.Asset, "error", err)
+		return
+	}
+	if err := s.keeper.SetPool(ctx, livePool); err != nil {
 		ctx.Logger().Error("fail to save pool for slash", "asset", pool.Asset, "error", err)
 	}
 	stolenAmtInt64 := int64(math.MaxInt64)

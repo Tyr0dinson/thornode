@@ -1443,7 +1443,8 @@ func (s *DynamicFeeMgrSuite) TestCreditDynamicFeeForLegsTORConversion(c *C) {
 		),
 	}}
 
-	creditDynamicFeeForLegs(ctx, mgr, swapEvents, affiliates, affiliateBps)
+	err := creditDynamicFeeForLegs(ctx, mgr, swapEvents, affiliates, affiliateBps)
+	c.Assert(err, IsNil)
 
 	pairA, pairB, ok := dynamicFeePairKey(common.RuneAsset(), common.BTCAsset)
 	c.Assert(ok, Equals, true)
@@ -1487,7 +1488,8 @@ func (s *DynamicFeeMgrSuite) TestCreditDynamicFeeForLegsZeroPriceSkipped(c *C) {
 		),
 	}}
 
-	creditDynamicFeeForLegs(ctx, mgr, swapEvents, affiliates, affiliateBps)
+	err := creditDynamicFeeForLegs(ctx, mgr, swapEvents, affiliates, affiliateBps)
+	c.Assert(err, IsNil)
 
 	pairA, pairB, ok := dynamicFeePairKey(common.RuneAsset(), common.BTCAsset)
 	c.Assert(ok, Equals, true)

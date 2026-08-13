@@ -323,6 +323,10 @@ func (k KVStoreDummy) GetLiquidityProvider(_ cosmos.Context, _ common.Asset, _ c
 }
 func (k KVStoreDummy) SetLiquidityProvider(_ cosmos.Context, _ LiquidityProvider)    {}
 func (k KVStoreDummy) RemoveLiquidityProvider(_ cosmos.Context, _ LiquidityProvider) {}
+func (k KVStoreDummy) GetBankSupply(ctx cosmos.Context, asset common.Asset) cosmos.Uint {
+	return cosmos.ZeroUint()
+}
+
 func (k KVStoreDummy) GetTotalSupply(ctx cosmos.Context, asset common.Asset) cosmos.Uint {
 	return cosmos.ZeroUint()
 }
@@ -535,28 +539,6 @@ func (k KVStoreDummy) GetAffiliateLiquidityFees(ctx cosmos.Context) []AffiliateL
 }
 
 func (k KVStoreDummy) DeleteAffiliateLiquidityFees(ctx cosmos.Context) {}
-
-func (k KVStoreDummy) AddPendingAffiliateLiquidityFee(_ cosmos.Context, _ common.TxID, _ uint32, _ string, _ cosmos.Uint) error {
-	return kaboom
-}
-
-func (k KVStoreDummy) GetPendingAffiliateLiquidityFees(_ cosmos.Context, _ common.TxID) ([]PendingAffiliateLiquidityFee, error) {
-	return nil, kaboom
-}
-
-func (k KVStoreDummy) GetAllPendingAffiliateLiquidityFees(_ cosmos.Context) ([]PendingAffiliateLiquidityFee, error) {
-	return nil, kaboom
-}
-
-func (k KVStoreDummy) HasPendingAffiliateLiquidityFees(_ cosmos.Context, _ common.TxID) bool {
-	return false
-}
-
-func (k KVStoreDummy) DeletePendingAffiliateLiquidityFees(_ cosmos.Context, _ common.TxID) {}
-
-func (k KVStoreDummy) CommitPendingAffiliateLiquidityFees(_ cosmos.Context, _ common.TxID) error {
-	return kaboom
-}
 
 func (k KVStoreDummy) GetChains(_ cosmos.Context) (common.Chains, error) { return nil, kaboom }
 func (k KVStoreDummy) SetChains(_ cosmos.Context, _ common.Chains)       {}
@@ -1210,6 +1192,77 @@ func (k KVStoreDummy) AddMempoolSwapUsageTOR(_ cosmos.Context, tor cosmos.Uint) 
 
 func (k KVStoreDummy) SubMempoolSwapUsageTOR(_ cosmos.Context, _ cosmos.Uint) cosmos.Uint {
 	return cosmos.ZeroUint()
+}
+
+func (k KVStoreDummy) GetMempoolSwapCount(_ cosmos.Context) cosmos.Uint {
+	return cosmos.ZeroUint()
+}
+func (k KVStoreDummy) SetMempoolSwapCount(_ cosmos.Context, _ cosmos.Uint) {}
+
+func (k KVStoreDummy) SetMempoolSwap(_ cosmos.Context, _ MempoolSwap) error { return kaboom }
+func (k KVStoreDummy) RestoreMempoolSwap(_ cosmos.Context, _ MempoolSwap) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) GetMempoolSwap(_ cosmos.Context, txID common.TxID, index uint32) (MempoolSwap, bool, error) {
+	return MempoolSwap{TxId: txID, Index: index, ReservedTor: cosmos.ZeroUint()}, false, nil
+}
+
+func (k KVStoreDummy) GetMempoolSwapPoolOwner(_ cosmos.Context, _ common.Asset) (MempoolSwap, bool, error) {
+	return MempoolSwap{}, false, nil
+}
+
+func (k KVStoreDummy) GetMempoolSwapPoolBalanceOverlay(_ cosmos.Context, asset common.Asset) (MempoolSwapPoolBalanceOverlay, error) {
+	return MempoolSwapPoolBalanceOverlay{
+		Asset:                asset.GetLayer1Asset(),
+		BalanceRuneIncrease:  cosmos.ZeroUint(),
+		BalanceRuneDecrease:  cosmos.ZeroUint(),
+		BalanceAssetIncrease: cosmos.ZeroUint(),
+		BalanceAssetDecrease: cosmos.ZeroUint(),
+	}, nil
+}
+
+func (k KVStoreDummy) GetMempoolSwapNativeSupplyOverlay(_ cosmos.Context, asset common.Asset) (MempoolSwapNativeSupplyOverlay, error) {
+	return MempoolSwapNativeSupplyOverlay{
+		Asset:          asset,
+		SupplyIncrease: cosmos.ZeroUint(),
+		SupplyDecrease: cosmos.ZeroUint(),
+	}, nil
+}
+
+func (k KVStoreDummy) GetMempoolSwapCanonicalKey(_ common.TxID, _ uint32) []byte {
+	return nil
+}
+
+func (k KVStoreDummy) HasMempoolSwap(_ cosmos.Context, _ common.TxID, _ uint32) bool {
+	return false
+}
+
+func (k KVStoreDummy) DeleteMempoolSwap(_ cosmos.Context, _ common.TxID, _ uint32) error {
+	return kaboom
+}
+func (k KVStoreDummy) GetMempoolSwapIterator(_ cosmos.Context) cosmos.Iterator { return nil }
+func (k KVStoreDummy) GetMempoolSwapsByVault(_ cosmos.Context, _ common.PubKey, _ int) ([]MempoolSwap, error) {
+	return nil, kaboom
+}
+
+func (k KVStoreDummy) GetMempoolSwapsByVaultAfter(_ cosmos.Context, _ common.PubKey, _ string, _ int) ([]MempoolSwap, error) {
+	return nil, kaboom
+}
+
+func (k KVStoreDummy) GetMempoolSwapsDue(_ cosmos.Context, _ int64, _ int) ([]MempoolSwap, error) {
+	return []MempoolSwap{}, nil
+}
+
+func (k KVStoreDummy) SetMempoolSwapVaultRecovery(_ cosmos.Context, _ common.PubKey, _ string) {
+}
+
+func (k KVStoreDummy) GetMempoolSwapVaultRecovery(_ cosmos.Context, _ common.PubKey) (string, error) {
+	return "", kaboom
+}
+func (k KVStoreDummy) DeleteMempoolSwapVaultRecovery(_ cosmos.Context, _ common.PubKey) {}
+func (k KVStoreDummy) GetMempoolSwapVaultRecoveries(_ cosmos.Context, _ int) ([]common.PubKey, error) {
+	return []common.PubKey{}, nil
 }
 
 func (k KVStoreDummy) SetStagedOutbound(_ cosmos.Context, _ TxOutItem, _ int64) error {

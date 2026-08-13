@@ -8,6 +8,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 type KeeperVaultSuite struct{}
@@ -376,6 +377,100 @@ func (s *KeeperVaultSuite) TestVaultSorBySecurity(c *C) {
 	c.Assert(sorted[0].PubKey.Equals(vault2.PubKey), Equals, true)
 	c.Assert(sorted[1].PubKey.Equals(vault3.PubKey), Equals, true)
 	c.Assert(sorted[2].PubKey.Equals(vault1.PubKey), Equals, true)
+}
+
+func (s *KeeperVaultSuite) TestVaultSecurityUsesFinalizedPoolBalances(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.BalanceRune = cosmos.NewUint(1_000 * common.One)
+	ethPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	c.Assert(k.SetPool(ctx, ethPool), IsNil)
+
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	btcPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	c.Assert(k.SetPool(ctx, btcPool), IsNil)
+
+	ethNode := GetRandomValidatorNode(NodeActive)
+	ethNode.Bond = cosmos.NewUint(80 * common.One)
+	c.Assert(k.SetNodeAccount(ctx, ethNode), IsNil)
+	btcNode := GetRandomValidatorNode(NodeActive)
+	btcNode.Bond = cosmos.NewUint(80 * common.One)
+	c.Assert(k.SetNodeAccount(ctx, btcNode), IsNil)
+
+	ethVault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.ETHChain}.Strings(), nil)
+	ethVault.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(10*common.One)))
+	ethVault.Membership = []string{ethNode.PubKeySet.Secp256k1.String()}
+	btcVault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), nil)
+	btcVault.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(80*common.One)))
+	btcVault.Membership = []string{btcNode.PubKeySet.Secp256k1.String()}
+
+	baseline := k.getSortedVaultSecurity(ctx, Vaults{ethVault, btcVault}, 300)
+	c.Assert(baseline, HasLen, 2)
+	c.Check(baseline[0].Vault.PubKey.Equals(ethVault.PubKey), Equals, true)
+	c.Check(baseline[0].TotalValue.Equal(cosmos.NewUint(100*common.One)), Equals, true)
+
+	ethPool.BalanceRune = cosmos.NewUint(800 * common.One)
+	ethPool.BalanceAsset = cosmos.NewUint(125 * common.One)
+	c.Assert(k.SetPool(ctx, ethPool), IsNil)
+	liveSpeculative := k.getSortedVaultSecurity(ctx, Vaults{ethVault, btcVault}, 300)
+	c.Check(liveSpeculative[0].Vault.PubKey.Equals(btcVault.PubKey), Equals, true)
+
+	record := newKeeperMempoolSwap(0, GetRandomPubKey(), 30)
+	effect := &record.PendingEffects.Pools[0]
+	effect.Asset = common.ETHAsset
+	effect.BalanceRuneIncrease = cosmos.ZeroUint()
+	effect.BalanceRuneDecrease = cosmos.NewUint(200 * common.One)
+	effect.BalanceAssetIncrease = cosmos.NewUint(25 * common.One)
+	effect.BalanceAssetDecrease = cosmos.ZeroUint()
+	c.Assert(k.SetMempoolSwap(ctx, record), IsNil)
+
+	active := k.getSortedVaultSecurity(ctx, Vaults{ethVault, btcVault}, 300)
+	c.Assert(active, HasLen, 2)
+	c.Check(active[0].Vault.PubKey.Equals(ethVault.PubKey), Equals, true,
+		Commentf("active zero-confirmation pricing must not change security ordering"))
+	c.Check(active[0].TotalValue.Equal(cosmos.NewUint(100*common.One)), Equals, true)
+
+	record.Status = types.MempoolSwapStatus_FINALIZED
+	record.ReservedTor = cosmos.ZeroUint()
+	record.UpdatedHeight++
+	c.Assert(k.SetMempoolSwap(ctx, record), IsNil)
+	afterFinality := k.getSortedVaultSecurity(ctx, Vaults{ethVault, btcVault}, 300)
+	c.Assert(afterFinality, HasLen, 2)
+	c.Check(afterFinality[0].Vault.PubKey.Equals(btcVault.PubKey), Equals, true)
+	c.Check(afterFinality[1].TotalValue.Equal(cosmos.NewUint(64*common.One)), Equals, true)
+}
+
+func (s *KeeperVaultSuite) TestVaultSecurityFallsBackToRawPool(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	pool := NewPool()
+	pool.Asset = common.ETHAsset
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(5 * common.One)
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	node := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(ctx, node), IsNil)
+	vault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.ETHChain}.Strings(), nil)
+	vault.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)))
+	vault.Membership = []string{node.PubKeySet.Secp256k1.String()}
+
+	record := newKeeperMempoolSwap(0, GetRandomPubKey(), 30)
+	effect := &record.PendingEffects.Pools[0]
+	effect.Asset = common.ETHAsset
+	effect.BalanceRuneIncrease = cosmos.ZeroUint()
+	effect.BalanceRuneDecrease = cosmos.ZeroUint()
+	effect.BalanceAssetIncrease = cosmos.NewUint(10 * common.One)
+	effect.BalanceAssetDecrease = cosmos.ZeroUint()
+	c.Assert(k.SetMempoolSwap(ctx, record), IsNil)
+
+	security := k.getSortedVaultSecurity(ctx, Vaults{vault}, 300)
+	c.Assert(security, HasLen, 1)
+	c.Check(security[0].TotalValue.Equal(pool.AssetValueInRune(vault.Coins[0].Amount)), Equals, true)
+	c.Check(security[0].TotalValue.IsZero(), Equals, false)
 }
 
 func (s *KeeperVaultSuite) TestSortBySecurityExcludesStagedOutbounds(c *C) {

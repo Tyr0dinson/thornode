@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/cosmos/cosmos-sdk/telemetry"
@@ -33,6 +34,24 @@ func (h WithdrawLiquidityHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos
 	}
 	ctx.Logger().Info("receive MsgWithdrawLiquidity", "withdraw address", msg.WithdrawAddress, "withdraw basis points", msg.BasisPoints)
 	if err := h.validate(ctx, *msg); err != nil {
+		if errors.Is(err, errMempoolSwapPoolFinalityPending) {
+			// Keep owner preemption and withdrawal atomic. A later validation,
+			// accounting, or outbound error discards the speculative rollback.
+			cacheCtx, commit := ctx.CacheContext()
+			if err = preemptMempoolSwapPoolOwnerCached(cacheCtx, h.mgr, msg.Asset); err == nil {
+				err = h.validate(cacheCtx, *msg)
+			}
+			var result *cosmos.Result
+			if err == nil {
+				result, err = h.handle(cacheCtx, *msg)
+			}
+			if err != nil {
+				ctx.Logger().Error("fail to preempt mempool swap for withdraw", "error", err)
+				return nil, err
+			}
+			commit()
+			return result, nil
+		}
 		ctx.Logger().Error("MsgWithdrawLiquidity failed validation", "error", err)
 		return nil, err
 	}
@@ -65,6 +84,9 @@ func (h WithdrawLiquidityHandler) validate(ctx cosmos.Context, msg MsgWithdrawLi
 
 	if msg.Asset.IsDerivedAsset() {
 		return fmt.Errorf("cannot withdraw from a derived asset virtual pool")
+	}
+	if err := ensureMempoolSwapPoolFinalized(ctx, h.mgr.Keeper(), msg.Asset); err != nil {
+		return fmt.Errorf("cannot withdraw liquidity until pool finality is resolved: %w", err)
 	}
 
 	pool, err := h.mgr.Keeper().GetPool(ctx, msg.Asset)

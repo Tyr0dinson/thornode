@@ -284,6 +284,7 @@
           "units": "100000000000"
         }
       ],
+      "mempool_swaps": [],
       "mimirs": [
         {
           "key": "PREFERREDASSETOUTBOUNDFEEMULTIPLIER",
@@ -476,7 +477,6 @@
           "asset": "BTC.BTC"
         }
       ],
-      "pending_affiliate_liquidity_fees": [],
       "pools": [
         {
           "LP_units": "100000000000",

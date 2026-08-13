@@ -2,7 +2,9 @@ package keeperv1
 
 import (
 	"fmt"
+	"strings"
 
+	"github.com/cosmos/cosmos-sdk/runtime"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -94,6 +96,25 @@ func (s *InvariantsSuite) TestAsgardInvariant(c *C) {
 	c.Assert(broken, Equals, false)
 	c.Assert(msg, IsNil)
 
+	// System liquidity fees from a speculative swap remain physically in
+	// Asgard while their lifecycle journal, rather than the pool, owns them.
+	// The invariant must recognize that escrow until finality or rollback.
+	record := newKeeperMempoolSwap(0, GetRandomPubKey(), ctx.BlockHeight()+100)
+	escrowedRune := record.PendingEffects.Pools[0].ReserveRune.Add(record.PendingEffects.Pools[0].TcyRune)
+	c.Assert(k.SetMempoolSwap(ctx, record), IsNil)
+	escrowedCoin := common.NewCoin(common.RuneAsset(), escrowedRune)
+	c.Assert(k.SendFromModuleToModule(ctx, ReserveName, AsgardName, common.NewCoins(escrowedCoin)), IsNil)
+
+	msg, broken = invariant(ctx)
+	c.Assert(broken, Equals, false)
+	c.Assert(msg, IsNil)
+
+	c.Assert(k.DeleteMempoolSwap(ctx, record.TxId, record.Index), IsNil)
+	msg, broken = invariant(ctx)
+	c.Assert(broken, Equals, true)
+	c.Assert(msg, DeepEquals, []string{fmt.Sprintf("oversolvent: %srune", escrowedRune)})
+	c.Assert(k.SendFromModuleToModule(ctx, AsgardName, ReserveName, common.NewCoins(escrowedCoin)), IsNil)
+
 	// Escrowed mempool secured targets stage the underlying L1 asset on THORChain.
 	// That bookkeeping entry should not break native Asgard accounting.
 	stagedEscrow := TxOutItem{
@@ -117,6 +138,207 @@ func (s *InvariantsSuite) TestAsgardInvariant(c *C) {
 	c.Assert(broken, Equals, true)
 	c.Assert(len(msg), Equals, 1)
 	c.Assert(msg[0], Equals, "oversolvent: 1rune")
+}
+
+func (s *InvariantsSuite) TestMempoolSwapsInvariant(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	record := newKeeperMempoolSwap(0, GetRandomPubKey(), ctx.BlockHeight()+100)
+	voter := NewObservedTxVoter(record.TxId, nil)
+	voter.UnfinalizedHeight = ctx.BlockHeight()
+	voter.MempoolSwapTOR = record.ReservedTor
+	k.SetObservedTxInVoter(ctx, voter)
+	c.Assert(k.SetMempoolSwap(ctx, record), IsNil)
+	k.SetMempoolSwapUsageTOR(ctx, record.ReservedTor)
+
+	invariant := MempoolSwapsInvariant(k)
+	msg, broken := invariant(ctx)
+	c.Assert(broken, Equals, false)
+	c.Assert(msg, IsNil)
+
+	k.SetMempoolSwapUsageTOR(ctx, record.ReservedTor.Add(cosmos.OneUint()))
+	msg, broken = invariant(ctx)
+	c.Assert(broken, Equals, true)
+	c.Assert(msg, DeepEquals, []string{fmt.Sprintf(
+		"mempool swap TOR usage %s does not match lifecycle total %s",
+		record.ReservedTor.Add(cosmos.OneUint()), record.ReservedTor,
+	)})
+	k.SetMempoolSwapUsageTOR(ctx, record.ReservedTor)
+	k.SetMempoolSwapCount(ctx, cosmos.NewUint(2))
+	msg, broken = invariant(ctx)
+	c.Assert(broken, Equals, true)
+	c.Assert(msg, DeepEquals, []string{"mempool swap count 2 does not match lifecycle total 1"})
+	k.SetMempoolSwapCount(ctx, cosmos.OneUint())
+
+	voter.MempoolSwapTOR = record.ReservedTor.Add(cosmos.OneUint())
+	k.SetObservedTxInVoter(ctx, voter)
+	msg, broken = invariant(ctx)
+	c.Assert(broken, Equals, true)
+	c.Assert(msg, DeepEquals, []string{fmt.Sprintf(
+		"mempool swap %s voter TOR %s does not match lifecycle TOR %s",
+		record.Cursor(), voter.MempoolSwapTOR, record.ReservedTor,
+	)})
+	voter.MempoolSwapTOR = record.ReservedTor
+	k.SetObservedTxInVoter(ctx, voter)
+
+	// The derived overlay is consensus input for finalized pool views. Missing
+	// and stale keys must both be visible instead of silently skewing rewards.
+	k.del(ctx, k.mempoolSwapPoolBalanceOverlayKey(common.ETHAsset))
+	msg, broken = invariant(ctx)
+	c.Assert(broken, Equals, true)
+	c.Assert(msg, DeepEquals, []string{"mempool swap pool overlay ETH.ETH does not match lifecycle aggregate"})
+	c.Assert(k.updateMempoolSwapPoolBalanceOverlays(ctx, nil, &record), IsNil)
+
+	stale := record
+	stale.TxId = GetRandomTxHash()
+	stale.LatestSwap.Tx.ID = stale.TxId
+	stale.PendingEffects.Pools[0].Asset = common.BTCAsset
+	c.Assert(k.updateMempoolSwapPoolBalanceOverlays(ctx, nil, &stale), IsNil)
+	msg, broken = invariant(ctx)
+	c.Assert(broken, Equals, true)
+	c.Assert(msg, DeepEquals, []string{"stale or corrupt mempool swap pool overlay for BTC.BTC"})
+	c.Assert(k.updateMempoolSwapPoolBalanceOverlays(ctx, &stale, nil), IsNil)
+	c.Check(mempoolSwapPoolBalanceOverlayEqual(MempoolSwapPoolBalanceOverlay{}, newMempoolSwapPoolBalanceOverlay(common.BTCAsset)), Equals, false,
+		Commentf("a malformed overlay with nil amounts must be reported, not panic the invariant"))
+
+	// Native supply aggregates are independently derived consensus inputs.
+	synthAsset := common.BTCAsset.GetSyntheticAsset()
+	k.del(ctx, k.mempoolSwapNativeSupplyOverlayKey(synthAsset))
+	msg, broken = invariant(ctx)
+	c.Assert(broken, Equals, true)
+	c.Assert(msg, DeepEquals, []string{fmt.Sprintf(
+		"mempool swap native supply overlay %s does not match lifecycle aggregate",
+		mempoolSwapNativeSupplyOverlayMapKey(synthAsset),
+	)})
+	c.Assert(k.updateMempoolSwapNativeSupplyOverlays(ctx, nil, &record), IsNil)
+
+	staleSupply := record
+	staleSupply.TxId = GetRandomTxHash()
+	staleSupply.LatestSwap.Tx.ID = staleSupply.TxId
+	staleSupply.PendingEffects.Supplies[0].Asset = common.ETHAsset.GetSyntheticAsset()
+	c.Assert(k.updateMempoolSwapNativeSupplyOverlays(ctx, nil, &staleSupply), IsNil)
+	msg, broken = invariant(ctx)
+	c.Assert(broken, Equals, true)
+	c.Assert(msg, DeepEquals, []string{fmt.Sprintf(
+		"stale or corrupt mempool swap native supply overlay for %s",
+		common.ETHAsset.GetSyntheticAsset(),
+	)})
+	c.Assert(k.updateMempoolSwapNativeSupplyOverlays(ctx, &staleSupply, nil), IsNil)
+	c.Check(mempoolSwapNativeSupplyOverlayEqual(MempoolSwapNativeSupplyOverlay{}, newMempoolSwapNativeSupplyOverlay(synthAsset)), Equals, false,
+		Commentf("a malformed native supply overlay with nil amounts must be reported, not panic the invariant"))
+
+	k.del(ctx, k.mempoolSwapVaultIndexKey(record))
+	msg, broken = invariant(ctx)
+	c.Assert(broken, Equals, true)
+	c.Assert(msg, DeepEquals, []string{fmt.Sprintf(
+		"mempool swap %s is missing its vault index",
+		record.Cursor(),
+	)})
+}
+
+func setupValidMempoolSwapInvariant(c *C) (cosmos.Context, KVStore, MempoolSwap) {
+	ctx, k := setupKeeperForTest(c)
+	record := newKeeperMempoolSwap(0, GetRandomPubKey(), ctx.BlockHeight()+100)
+	voter := NewObservedTxVoter(record.TxId, nil)
+	voter.UnfinalizedHeight = ctx.BlockHeight()
+	voter.MempoolSwapTOR = record.ReservedTor
+	k.SetObservedTxInVoter(ctx, voter)
+	c.Assert(k.SetMempoolSwap(ctx, record), IsNil)
+	k.SetMempoolSwapUsageTOR(ctx, record.ReservedTor)
+	return ctx, k, record
+}
+
+func (s *InvariantsSuite) TestMempoolSwapsInvariantChecksCanonicalPhysicalKey(c *C) {
+	ctx, k, record := setupValidMempoolSwapInvariant(c)
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	canonicalKey := k.mempoolSwapKey(record.TxId, record.Index)
+	bz := append([]byte(nil), store.Get(canonicalKey)...)
+	store.Delete(canonicalKey)
+	store.Set(k.GetKey(prefixMempoolSwap, "WRONG"), bz)
+
+	msg, broken := MempoolSwapsInvariant(k)(ctx)
+	c.Assert(broken, Equals, true)
+	c.Assert(len(msg) > 0, Equals, true)
+	c.Check(msg[0], Equals, fmt.Sprintf(
+		"mempool swap %s is stored under a non-canonical key", record.Cursor(),
+	))
+}
+
+func (s *InvariantsSuite) TestMempoolSwapsInvariantChecksOverlayPhysicalKeys(c *C) {
+	ctx, k, record := setupValidMempoolSwapInvariant(c)
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+
+	poolKey := k.mempoolSwapPoolBalanceOverlayKey(record.PendingEffects.Pools[0].Asset)
+	poolBz := append([]byte(nil), store.Get(poolKey)...)
+	store.Delete(poolKey)
+	store.Set(k.GetKey(prefixMempoolSwapPoolOverlay, "WRONG"), poolBz)
+
+	supplyKey := k.mempoolSwapNativeSupplyOverlayKey(record.PendingEffects.Supplies[0].Asset)
+	supplyBz := append([]byte(nil), store.Get(supplyKey)...)
+	store.Delete(supplyKey)
+	store.Set(k.GetKey(prefixMempoolSwapSupplyOverlay, "WRONG"), supplyBz)
+
+	msg, broken := MempoolSwapsInvariant(k)(ctx)
+	c.Assert(broken, Equals, true)
+	joined := strings.Join(msg, "\n")
+	c.Check(strings.Contains(joined, "stale or corrupt mempool swap pool overlay for ETH.ETH"), Equals, true)
+	c.Check(strings.Contains(joined, "stale or corrupt mempool swap native supply overlay for BTC/BTC"), Equals, true)
+}
+
+func (s *InvariantsSuite) TestMempoolSwapsInvariantRetainsFinalizedTombstoneOwners(c *C) {
+	ctx, k, record := setupValidMempoolSwapInvariant(c)
+	record.Status = types.MempoolSwapStatus_FINALIZED
+	record.ReservedTor = cosmos.ZeroUint()
+	record.UpdatedHeight++
+	c.Assert(k.SetMempoolSwap(ctx, record), IsNil)
+	k.SetMempoolSwapUsageTOR(ctx, cosmos.ZeroUint())
+	voter, err := k.GetObservedTxInVoter(ctx, record.TxId)
+	c.Assert(err, IsNil)
+	voter.MempoolSwapTOR = cosmos.ZeroUint()
+	voter.FinalisedHeight = record.UpdatedHeight
+	k.SetObservedTxInVoter(ctx, voter)
+
+	msg, broken := MempoolSwapsInvariant(k)(ctx)
+	c.Check(broken, Equals, false, Commentf("unexpected invariant errors: %v", msg))
+	owner, found, err := k.GetMempoolSwapPoolOwner(ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, true)
+	c.Check(owner.Cursor(), Equals, record.Cursor())
+	poolOverlay, err := k.GetMempoolSwapPoolBalanceOverlay(ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+	c.Check(mempoolSwapPoolBalanceOverlayEmpty(poolOverlay), Equals, true)
+
+	// A tombstone owner index is not stale merely because its active aggregate
+	// is zero; removing it must be reported as lifecycle corruption.
+	k.del(ctx, k.mempoolSwapPoolOwnerKey(common.ETHAsset))
+	msg, broken = MempoolSwapsInvariant(k)(ctx)
+	c.Assert(broken, Equals, true)
+	c.Check(strings.Contains(strings.Join(msg, "\n"), fmt.Sprintf(
+		"mempool swap %s is missing its pool owner index for ETH.ETH", record.Cursor(),
+	)), Equals, true)
+}
+
+func (s *InvariantsSuite) TestMempoolSwapsInvariantReportsNilVoterTORWithoutPanic(c *C) {
+	ctx, k, record := setupValidMempoolSwapInvariant(c)
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	txID := record.TxId.String()
+	c.Assert(len(txID) < 128, Equals, true)
+
+	// Encode tx_id (field 1) and unfinalized_height (field 11), deliberately
+	// omitting the custom Uint field 12 so protobuf leaves it nil.
+	voterBz := append([]byte{0x0a, byte(len(txID))}, []byte(txID)...)
+	voterBz = append(voterBz, 0x58, 0x01)
+	store.Set(k.GetKey(prefixObservedTxIn, txID), voterBz)
+
+	var msg []string
+	var broken bool
+	c.Assert(func() {
+		msg, broken = MempoolSwapsInvariant(k)(ctx)
+	}, Not(Panics), nil)
+	c.Assert(broken, Equals, true)
+	c.Assert(msg, DeepEquals, []string{fmt.Sprintf(
+		"mempool swap %s voter TOR <nil> does not match lifecycle TOR %s",
+		record.Cursor(), record.ReservedTor,
+	)})
 }
 
 // TestVaultDeficitInvariant verifies same-asset coins and deficit break the invariant.

@@ -945,6 +945,113 @@ func (vm *ValidatorMgr) payNodeAccountBondAward(ctx cosmos.Context, lastChurnHei
 	return nil
 }
 
+// mempoolSwapAffectedRagnarokPool reports whether Ragnarok would touch pool
+// state still owned by an unfinalized mempool swap. Ragnarok is a global,
+// irreversible pass, so one affected L1 pool defers the whole iteration. Saver
+// and derived records do not own independent L1 swap overlays and must not be
+// aliased to their backing pools during this scan.
+func (vm *ValidatorMgr) mempoolSwapAffectedRagnarokPool(ctx cosmos.Context) (common.Asset, bool, error) {
+	pools, err := vm.k.GetPools(ctx)
+	if err != nil {
+		return common.EmptyAsset, false, fmt.Errorf("fail to get pools: %w", err)
+	}
+	for _, pool := range pools {
+		if pool.Asset.IsSyntheticAsset() || pool.Asset.IsDerivedAsset() {
+			continue
+		}
+		balanceAffected, synthSupplyAffected, err := mempoolSwapPoolFinalityAffected(ctx, vm.k, pool.Asset)
+		if err != nil {
+			return common.EmptyAsset, false, err
+		}
+		if balanceAffected || synthSupplyAffected {
+			return pool.Asset, true, nil
+		}
+	}
+	return common.EmptyAsset, false, nil
+}
+
+// drainMempoolSwapsForRagnarok gives emergency shutdown priority over every
+// durable lifecycle, including queue-only swaps which have not produced a pool
+// overlay yet. It selects at most the normal recovery batch size per block.
+// The canonical collection scan is itself capped by MempoolSwapMaxCount, while
+// successful records disappear and failed ROLLBACK_PENDING records are retried
+// by LackSigning before the next ValidatorMgr pass.
+func (vm *ValidatorMgr) drainMempoolSwapsForRagnarok(ctx cosmos.Context, mgr Manager) (bool, error) {
+	count := vm.k.GetMempoolSwapCount(ctx)
+	if count.IsZero() {
+		return false, nil
+	}
+
+	scanLimit := vm.k.GetConfigInt64(ctx, constants.MempoolSwapMaxCount)
+	if scanLimit <= 0 {
+		scanLimit = vm.k.GetConstants().GetInt64Value(constants.MempoolSwapMaxCount)
+	}
+	if scanLimit <= 0 {
+		return true, fmt.Errorf("%s must be positive while ragnarok drains mempool swaps", constants.MempoolSwapMaxCount)
+	}
+
+	records := make([]thortypes.MempoolSwap, 0, mempoolSwapRecoveryBatchSize)
+	iterator := vm.k.GetMempoolSwapIterator(ctx)
+	for scanned := int64(0); iterator.Valid() && scanned < scanLimit; iterator.Next() {
+		scanned++
+		var record thortypes.MempoolSwap
+		if err := vm.k.Cdc().Unmarshal(iterator.Value(), &record); err != nil {
+			_ = iterator.Close()
+			return true, fmt.Errorf("fail to decode ragnarok mempool swap lifecycle: %w", err)
+		}
+		if record.Status == thortypes.MempoolSwapStatus_ROLLBACK_PENDING {
+			continue
+		}
+		records = append(records, record)
+		if len(records) == mempoolSwapRecoveryBatchSize {
+			break
+		}
+	}
+	_ = iterator.Close()
+
+	var resultErr error
+	for _, record := range records {
+		// Persist the stop marker outside the economic rollback transaction. If
+		// rollback/refund fails, queue execution remains disabled and the due
+		// recovery index can retry without losing discoverability.
+		record.Status = thortypes.MempoolSwapStatus_ROLLBACK_PENDING
+		record.UpdatedHeight = ctx.BlockHeight()
+		record.NextRecoveryHeight = ctx.BlockHeight()
+		if err := vm.k.SetMempoolSwap(ctx, record); err != nil {
+			if resultErr == nil {
+				resultErr = fmt.Errorf("fail to stop ragnarok mempool swap %s: %w", record.Cursor(), err)
+			}
+			continue
+		}
+
+		voter, err := vm.k.GetObservedTxInVoter(ctx, record.TxId)
+		if err != nil || voter.IsEmpty() {
+			if err == nil {
+				err = fmt.Errorf("observed tx voter is empty")
+			}
+			if resultErr == nil {
+				resultErr = fmt.Errorf("fail to load ragnarok mempool swap %s: %w", record.Cursor(), err)
+			}
+			continue
+		}
+
+		if voter.FinalisedHeight > 0 && !voter.Reverted {
+			err = rollbackAndRefundFinalizedMempoolSwapAtomic(ctx, mgr, voter)
+		} else {
+			err = rollbackMempoolSwapAtomic(ctx, vm.k, mgr, voter)
+		}
+		if err != nil {
+			if resultErr == nil {
+				resultErr = fmt.Errorf("fail to drain ragnarok mempool swap %s: %w", record.Cursor(), err)
+			}
+			continue
+		}
+		incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "ragnarok")})
+	}
+
+	return true, resultErr
+}
+
 // determines when/if to run each part of the ragnarok process
 func (vm *ValidatorMgr) processRagnarok(ctx cosmos.Context, mgr Manager) error {
 	// execute Ragnarok protocol, no going back
@@ -967,6 +1074,33 @@ func (vm *ValidatorMgr) processRagnarok(ctx cosmos.Context, mgr Manager) error {
 		}
 		vm.k.SetRagnarokBlockHeight(cacheCtx, ragnarokHeight)
 		commit()
+		return nil
+	}
+
+	// Halt and unwind all lifecycle work before considering Stage2. Checking
+	// the durable record count (rather than only pool overlays) also covers a
+	// queued swap whose first slice has not executed yet and a finalized stream
+	// which trading halt can no longer advance.
+	drainingMempoolSwaps, drainErr := vm.drainMempoolSwapsForRagnarok(ctx, mgr)
+	if drainErr != nil {
+		return drainErr
+	}
+	if drainingMempoolSwaps {
+		return nil
+	}
+
+	// Preflight before reading/advancing the withdrawal cursor, returning bond,
+	// staging pools, or incrementing RagnarokNth. ragnarokPools also retains the
+	// same guard for direct and resumed calls, but checking here prevents Stage2
+	// from committing unrelated irreversible mutations before that guard runs.
+	affectedAsset, deferRagnarok, err := vm.mempoolSwapAffectedRagnarokPool(ctx)
+	if err != nil {
+		return fmt.Errorf("fail to check ragnarok pool finality: %w", err)
+	}
+	if deferRagnarok {
+		// Lifecycle count is already zero, so any remaining aggregate is corrupt
+		// or orphaned state. Fail closed rather than mutating Ragnarok pools.
+		ctx.Logger().Error("deferring ragnarok for orphaned mempool swap overlay", "asset", affectedAsset)
 		return nil
 	}
 
@@ -1214,6 +1348,16 @@ func (vm *ValidatorMgr) ragnarokPools(ctx cosmos.Context, nth int64, mgr Manager
 	pools, err := vm.k.GetPools(ctx)
 	if err != nil {
 		return fmt.Errorf("fail to get pools: %w", err)
+	}
+	// Keep a local guard for direct calls and resumed withdrawal passes. The
+	// process-level preflight is what protects Stage2 and RagnarokNth atomically.
+	affectedAsset, deferRagnarok, err := vm.mempoolSwapAffectedRagnarokPool(ctx)
+	if err != nil {
+		return fmt.Errorf("fail to check ragnarok pool finality: %w", err)
+	}
+	if deferRagnarok {
+		ctx.Logger().Info("deferring ragnarok pool pass for active mempool swap", "asset", affectedAsset)
+		return nil
 	}
 	// set all pools to staged status
 	for _, pool := range pools {

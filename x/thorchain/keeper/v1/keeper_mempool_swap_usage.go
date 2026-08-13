@@ -47,3 +47,23 @@ func (k KVStore) SubMempoolSwapUsageTOR(ctx cosmos.Context, tor cosmos.Uint) cos
 	k.SetMempoolSwapUsageTOR(ctx, newTotal)
 	return newTotal
 }
+
+// GetMempoolSwapCount returns the number of durable lifecycle records. The
+// count includes zero-reservation finality tombstones until terminal
+// settlement so the total indexed recovery population has a hard bound.
+func (k KVStore) GetMempoolSwapCount(ctx cosmos.Context) cosmos.Uint {
+	key := k.GetKey(prefixMempoolSwapUsage, "count")
+	var record cosmos.Uint
+	found, _ := k.getUint(ctx, key, &record)
+	if !found {
+		return cosmos.ZeroUint()
+	}
+	return record
+}
+
+// SetMempoolSwapCount sets the derived lifecycle-record count. Normal writes
+// maintain it automatically; this setter is used by genesis and invariants.
+func (k KVStore) SetMempoolSwapCount(ctx cosmos.Context, count cosmos.Uint) {
+	key := k.GetKey(prefixMempoolSwapUsage, "count")
+	k.setUint(ctx, key, count)
+}

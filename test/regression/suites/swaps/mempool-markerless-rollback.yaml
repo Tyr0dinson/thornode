@@ -1,0 +1,256 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Enable deterministic mempool-swap admission and advanced-queue execution.
+########################################################################################
+type: tx-mimir
+key: DollarsPerRune
+value: 100000000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: MempoolSwapCapTOR
+value: 100000000000000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: MempoolSwapPoolCapBPS
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .DOLLARSPERRUNE == 100000000
+  - .MEMPOOLSWAPCAPTOR == 100000000000000
+  - .MEMPOOLSWAPPOOLCAPBPS == 0
+  - .ENABLEADVSWAPQUEUE == 1
+---
+# Pin the economic state which errata must restore. RUNE pool depths move with
+# block rewards, so the exact rollback assertions use asset-side depths.
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .balance_asset == "${BTC_ASSET_DEPTH=100000000}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
+asserts:
+  - .balance_asset == "${ETH_ASSET_DEPTH=1000000000}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .[]|.coins[]|select(.asset == "BTC.BTC")|.amount == "${ASGARD_BTC=100000000}"
+  - .[]|.coins[]|select(.asset == "ETH.ETH")|.amount == "${ASGARD_ETH=1000000000}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .mempool_swap_usage_tor == "0"
+---
+########################################################################################
+# An EVM-null outbound is deliberately discarded by TxOutStorage after the
+# speculative swap has executed. The advanced item is settled and there is no
+# staged, scheduled, or outbound record. The durable lifecycle record is therefore
+# the only remaining owner from which errata can discover and reverse the swap.
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "100000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+          decimals: 8
+      memo: "=:ETH.ETH:0x0000000000000000000000000000000000000000"
+    block_height: 6
+    finalise_height: 100
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Settlement removed every legacy recovery marker.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ observe_txid 1 }}
+status: 400
+asserts:
+  - .message|contains("not found in any queue")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/staged
+asserts:
+  - (.staged_outbound_items // [])|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/scheduled
+asserts:
+  - .|length == 0
+---
+# The voter must not retain an outbound action that errata could use as a
+# fallback recovery marker.
+type: check
+endpoint: http://localhost:1317/thorchain/tx/details/{{ observe_txid 1 }}
+asserts:
+  - (.actions // [])|length == 0
+  - (.reverted // false) == false
+---
+# The lifecycle reservation and speculative pool transition remain live even
+# though no queue or outbound record can identify the transaction.
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .mempool_swap_usage_tor|tonumber > 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/mempool_swaps
+asserts:
+  - .broken == false
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .balance_asset|tonumber > ${BTC_ASSET_DEPTH}
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
+asserts:
+  - .balance_asset|tonumber < ${ETH_ASSET_DEPTH}
+---
+# The inbound is still unfinalized, so neither side of the physical vault moved.
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .[]|.coins[]|select(.asset == "BTC.BTC")|.amount == "${ASGARD_BTC}"
+  - .[]|.coins[]|select(.asset == "ETH.ETH")|.amount == "${ASGARD_ETH}"
+---
+# The null-address guard, rather than a staged outbound, handled settlement.
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.end_block_events[]|select(.type == "security" and .msg == "evm outbound to null address")]|length == 1'
+  - '[.end_block_events[]|select(.type == "scheduled_outbound" or .type == "outbound")]|length == 0'
+---
+########################################################################################
+# Errata must find the markerless swap through its lifecycle record, reverse both
+# pools atomically, release TOR, and leave the unfinalized Asgard balances alone.
+########################################################################################
+type: tx-errata-tx
+signer: {{ addr_thor_dog }}
+tx_id: "{{ observe_txid 1 }}"
+chain: BTC
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/tx/details/{{ observe_txid 1 }}
+asserts:
+  - .reverted == true
+  - (.updated_vault // false) == false
+  - (.actions // [])|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ observe_txid 1 }}
+status: 400
+asserts:
+  - .message|contains("not found in any queue")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/staged
+asserts:
+  - (.staged_outbound_items // [])|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/scheduled
+asserts:
+  - .|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .mempool_swap_usage_tor == "0"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/invariant/mempool_swaps
+asserts:
+  - .broken == false
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .balance_asset == "${BTC_ASSET_DEPTH}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
+asserts:
+  - .balance_asset == "${ETH_ASSET_DEPTH}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .[]|.coins[]|select(.asset == "BTC.BTC")|.amount == "${ASGARD_BTC}"
+  - .[]|.coins[]|select(.asset == "ETH.ETH")|.amount == "${ASGARD_ETH}"
+---
+# Rollback belongs to the errata DeliverTx and must happen exactly once without
+# falling through to the ordinary errata pool-accounting path.
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[].result.events[]|select(.type == "mempool_swap_reverted" and .tx_id == "{{ observe_txid 1 }}")]|length == 1'
+  - .txs[].result.events[]|select(.type == "mempool_swap_reverted" and .tx_id == "{{ observe_txid 1 }}")|.block_height == "7"
+  - .txs[].result.events[]|select(.type == "mempool_swap_reverted" and .tx_id == "{{ observe_txid 1 }}")|.source_asset == "BTC.BTC"
+  - .txs[].result.events[]|select(.type == "mempool_swap_reverted" and .tx_id == "{{ observe_txid 1 }}")|.source_amount == "100000000"
+  - '[.txs[].result.events[]|select(.type == "security" and .msg == "mempool swap rolled back")]|length == 1'
+  - '[.txs[].result.events[]|select(.type == "errata")]|length == 0'

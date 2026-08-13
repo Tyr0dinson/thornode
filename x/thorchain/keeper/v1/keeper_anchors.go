@@ -101,6 +101,12 @@ func (k KVStore) AnchorMedian(ctx cosmos.Context, assets []common.Asset) cosmos.
 		if !pool.IsAvailable() {
 			continue
 		}
+		rawPool := pool
+		pool, err = k.finalityAdjustedPool(ctx, pool)
+		if err != nil {
+			ctx.Logger().Error("fail to remove active mempool swap balances from anchor pool", "asset", asset.String(), "error", err)
+			pool = rawPool
+		}
 		// value := common.GetUncappedShare(pool.BalanceAsset, pool.BalanceRune, cosmos.NewUint(common.One))
 		value := pool.RuneValueInAsset(cosmos.NewUint(constants.DollarMulti * common.One))
 

@@ -143,7 +143,7 @@
           "address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
           "coins": [
             {
-              "amount": "47907865",
+              "amount": "48041349",
               "denom": "eth/eth"
             },
             {
@@ -165,7 +165,7 @@
           "address": "tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm",
           "coins": [
             {
-              "amount": "135836061",
+              "amount": "135028196",
               "denom": "eth/eth"
             },
             {
@@ -178,7 +178,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "199026524066",
+              "amount": "199026887477",
               "denom": "rune"
             }
           ]
@@ -187,7 +187,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "34999975154988",
+              "amount": "34999975154991",
               "denom": "rune"
             }
           ]
@@ -196,11 +196,11 @@
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "coins": [
             {
-              "amount": "76357777",
+              "amount": "76285308",
               "denom": "eth/eth"
             },
             {
-              "amount": "2500400769289",
+              "amount": "2500401490933",
               "denom": "rune"
             }
           ]
@@ -222,7 +222,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "5000597551657",
+              "amount": "5000596466599",
               "denom": "rune"
             }
           ]
@@ -236,7 +236,7 @@
       "send_enabled": [],
       "supply": [
         {
-          "amount": "440101702",
+          "amount": "439354852",
           "denom": "eth/eth"
         },
         {
@@ -302,14 +302,15 @@
           "units": "100000000000"
         }
       ],
+      "mempool_swaps": [],
       "mimirs": [
         {
           "key": "DOLLARSPERRUNE",
           "value": "100000000"
         },
         {
-          "key": "MAXOUTBOUNDATTEMPTS",
-          "value": "2"
+          "key": "ENABLEADVSWAPQUEUE",
+          "value": "1"
         },
         {
           "key": "MAXSYNTHPERPOOLDEPTH",
@@ -333,7 +334,7 @@
       "network": {
         "LPIncomeSplit": "9602",
         "NodeIncomeSplit": "398",
-        "bond_reward_rune": "611551657",
+        "bond_reward_rune": "610466599",
         "total_bond_units": "35"
       },
       "network_fees": [
@@ -355,9 +356,9 @@
           "value": "100000000"
         },
         {
-          "key": "MAXOUTBOUNDATTEMPTS",
+          "key": "ENABLEADVSWAPQUEUE",
           "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-          "value": "2"
+          "value": "1"
         },
         {
           "key": "MAXSYNTHPERPOOLDEPTH",
@@ -402,13 +403,12 @@
       "observed_tx_out_voters": null,
       "outbound_fee_spent_rune": [],
       "outbound_fee_withheld_rune": [],
-      "pending_affiliate_liquidity_fees": [],
       "pools": [
         {
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
           "balance_asset": "300000000",
-          "balance_rune": "40082321070",
+          "balance_rune": "40220365579",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -419,12 +419,12 @@
           "LP_units": "100000000000",
           "asset": "ETH.ETH",
           "balance_asset": "1000000000",
-          "balance_rune": "158944202996",
+          "balance_rune": "158806521898",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
           "status": "Available",
-          "synth_units": "28213486902"
+          "synth_units": "28152130070"
         }
       ],
       "reference_memos": [],
@@ -444,13 +444,13 @@
         {
           "address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
           "reclaimed": "0",
-          "score": "380621192",
+          "score": "379841133",
           "spent": "0"
         },
         {
           "address": "bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33",
           "reclaimed": "0",
-          "score": "82994354",
+          "score": "83177524",
           "spent": "0"
         },
         {
@@ -462,19 +462,19 @@
         {
           "address": "bcrt1qxkz88t875m7ms7wa6220estwwdlc86pqvavagk",
           "reclaimed": "0",
-          "score": "848083014",
+          "score": "841412393",
           "spent": "0"
         },
         {
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "reclaimed": "0",
-          "score": "380873829",
+          "score": "380094931",
           "spent": "0"
         },
         {
           "address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
           "reclaimed": "0",
-          "score": "82741734",
+          "score": "82923745",
           "spent": "0"
         },
         {
@@ -486,7 +486,7 @@
         {
           "address": "tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm",
           "reclaimed": "0",
-          "score": "848083020",
+          "score": "841412399",
           "spent": "0"
         }
       ],

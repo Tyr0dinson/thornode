@@ -106,6 +106,7 @@ type Keeper interface {
 	KeeperDynamicFee
 	KeeperObservationTally
 	KeeperMempoolSwapUsage
+	KeeperMempoolSwap
 	KeeperStagedOutbound
 }
 
@@ -175,6 +176,9 @@ type KeeperLiquidityProvider interface {
 	GetLiquidityProvider(ctx cosmos.Context, asset common.Asset, addr common.Address) (LiquidityProvider, error)
 	SetLiquidityProvider(ctx cosmos.Context, lp LiquidityProvider)
 	RemoveLiquidityProvider(ctx cosmos.Context, lp LiquidityProvider)
+	// GetBankSupply returns the raw bank-module supply without the pool-ragnarok
+	// compatibility masking applied by GetTotalSupply.
+	GetBankSupply(ctx cosmos.Context, asset common.Asset) cosmos.Uint
 	GetTotalSupply(ctx cosmos.Context, asset common.Asset) cosmos.Uint
 }
 
@@ -284,19 +288,7 @@ type AffiliateLiquidityFee struct {
 	Fee      cosmos.Uint
 }
 
-// PendingAffiliateLiquidityFee is liquidity-fee attribution produced by a
-// mempool swap before its inbound reaches finality. Entries are keyed by the
-// originating swap so they can be committed exactly once on finality or
-// discarded atomically with rollback.
-type PendingAffiliateLiquidityFee struct {
-	TxID     common.TxID
-	Index    uint32
-	Thorname string
-	Fee      cosmos.Uint
-}
-
-// KeeperAffiliateLiquidityFees owns the per-block REVSHARE accumulator and the
-// finality-gated pending attribution produced by speculative mempool swaps.
+// KeeperAffiliateLiquidityFees is the per-block REVSHARE accumulator surface.
 //
 // CONSENSUS-CRITICAL: GetAffiliateLiquidityFees MUST return a slice (not a map)
 // sorted by Thorname. The end-of-block payout loop in NetworkMgr.processRevShare
@@ -308,12 +300,6 @@ type KeeperAffiliateLiquidityFees interface {
 	AddAffiliateLiquidityFee(ctx cosmos.Context, thorname string, fee cosmos.Uint) error
 	GetAffiliateLiquidityFees(ctx cosmos.Context) []AffiliateLiquidityFee
 	DeleteAffiliateLiquidityFees(ctx cosmos.Context)
-	AddPendingAffiliateLiquidityFee(ctx cosmos.Context, txID common.TxID, index uint32, thorname string, fee cosmos.Uint) error
-	GetPendingAffiliateLiquidityFees(ctx cosmos.Context, txID common.TxID) ([]PendingAffiliateLiquidityFee, error)
-	GetAllPendingAffiliateLiquidityFees(ctx cosmos.Context) ([]PendingAffiliateLiquidityFee, error)
-	HasPendingAffiliateLiquidityFees(ctx cosmos.Context, txID common.TxID) bool
-	DeletePendingAffiliateLiquidityFees(ctx cosmos.Context, txID common.TxID)
-	CommitPendingAffiliateLiquidityFees(ctx cosmos.Context, txID common.TxID) error
 }
 
 type KeeperOutboundFees interface {
@@ -652,6 +638,31 @@ type KeeperMempoolSwapUsage interface {
 	SetMempoolSwapUsageTOR(ctx cosmos.Context, tor cosmos.Uint)
 	AddMempoolSwapUsageTOR(ctx cosmos.Context, tor cosmos.Uint) cosmos.Uint
 	SubMempoolSwapUsageTOR(ctx cosmos.Context, tor cosmos.Uint) cosmos.Uint
+	GetMempoolSwapCount(ctx cosmos.Context) cosmos.Uint
+	SetMempoolSwapCount(ctx cosmos.Context, count cosmos.Uint)
+}
+
+// KeeperMempoolSwap is the durable lifecycle store for speculative swaps.
+// Its secondary indexes make vault and timeout recovery bounded; aggregate TOR
+// usage remains an explicit part of the surrounding lifecycle transaction.
+type KeeperMempoolSwap interface {
+	SetMempoolSwap(ctx cosmos.Context, record MempoolSwap) error
+	RestoreMempoolSwap(ctx cosmos.Context, record MempoolSwap) error
+	GetMempoolSwap(ctx cosmos.Context, txID common.TxID, index uint32) (MempoolSwap, bool, error)
+	GetMempoolSwapPoolOwner(ctx cosmos.Context, asset common.Asset) (MempoolSwap, bool, error)
+	GetMempoolSwapPoolBalanceOverlay(ctx cosmos.Context, asset common.Asset) (MempoolSwapPoolBalanceOverlay, error)
+	GetMempoolSwapNativeSupplyOverlay(ctx cosmos.Context, asset common.Asset) (MempoolSwapNativeSupplyOverlay, error)
+	GetMempoolSwapCanonicalKey(txID common.TxID, index uint32) []byte
+	HasMempoolSwap(ctx cosmos.Context, txID common.TxID, index uint32) bool
+	DeleteMempoolSwap(ctx cosmos.Context, txID common.TxID, index uint32) error
+	GetMempoolSwapIterator(ctx cosmos.Context) cosmos.Iterator
+	GetMempoolSwapsByVault(ctx cosmos.Context, vaultPubKey common.PubKey, limit int) ([]MempoolSwap, error)
+	GetMempoolSwapsByVaultAfter(ctx cosmos.Context, vaultPubKey common.PubKey, cursor string, limit int) ([]MempoolSwap, error)
+	GetMempoolSwapsDue(ctx cosmos.Context, maxHeight int64, limit int) ([]MempoolSwap, error)
+	SetMempoolSwapVaultRecovery(ctx cosmos.Context, vaultPubKey common.PubKey, cursor string)
+	GetMempoolSwapVaultRecovery(ctx cosmos.Context, vaultPubKey common.PubKey) (string, error)
+	DeleteMempoolSwapVaultRecovery(ctx cosmos.Context, vaultPubKey common.PubKey)
+	GetMempoolSwapVaultRecoveries(ctx cosmos.Context, limit int) ([]common.PubKey, error)
 }
 
 type StagedOutboundSummary struct {

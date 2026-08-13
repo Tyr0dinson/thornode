@@ -39,6 +39,24 @@ func (h AddLiquidityHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Resu
 		"asset", msg.Asset.String(),
 		"tx", msg.Tx)
 	if err := h.validate(ctx, *msg); err != nil {
+		if errors.Is(err, errMempoolSwapPoolFinalityPending) {
+			// Preemption and the LP mutation are one transaction. If validation
+			// or handling fails after rollback, discarding this cache preserves
+			// the speculative owner and the ordinary error path remains intact.
+			cacheCtx, commit := ctx.CacheContext()
+			if err = preemptMempoolSwapPoolOwnerCached(cacheCtx, h.mgr, msg.Asset); err == nil {
+				err = h.validate(cacheCtx, *msg)
+			}
+			if err == nil {
+				err = h.handle(cacheCtx, *msg)
+			}
+			if err != nil {
+				ctx.Logger().Error("fail to preempt mempool swap for add liquidity", "error", err)
+				return nil, err
+			}
+			commit()
+			return &cosmos.Result{}, nil
+		}
 		ctx.Logger().Error("msg add liquidity fail validation", "error", err)
 		return nil, err
 	}
@@ -96,6 +114,9 @@ func (h AddLiquidityHandler) validate(ctx cosmos.Context, msg MsgAddLiquidity) e
 
 	if msg.Asset.IsDerivedAsset() {
 		return fmt.Errorf("asset cannot be a derived asset")
+	}
+	if err := ensureMempoolSwapPoolFinalized(ctx, h.mgr.Keeper(), msg.Asset); err != nil {
+		return fmt.Errorf("cannot add liquidity until pool finality is resolved: %w", err)
 	}
 
 	// Check if user is trying to deposit into savers
@@ -600,6 +621,13 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 	stage bool,
 	constAccessor constants.ConstantValues,
 ) (err error) {
+	// Keep this guard at the mutation boundary as well as in Run validation.
+	// Internal callers and staged-liquidity cleanup must never allocate units
+	// from reversible pool balances or synth supply.
+	if err = ensureMempoolSwapPoolFinalized(ctx, h.mgr.Keeper(), asset); err != nil {
+		return fmt.Errorf("cannot add liquidity until pool finality is resolved: %w", err)
+	}
+
 	if asset.IsSecuredAsset() {
 		if !addAssetAmount.IsZero() {
 			var accAddr cosmos.AccAddress
@@ -932,6 +960,7 @@ func (h AddLiquidityHandler) getTotalLiquidityRUNE(ctx cosmos.Context) (cosmos.U
 		return cosmos.ZeroUint(), fmt.Errorf("fail to get pools from data store: %w", err)
 	}
 	total := cosmos.ZeroUint()
+	poolView := newFinalityPoolView(h.mgr.Keeper())
 	for _, p := range pools {
 		// ignore suspended pools
 		if p.Status == PoolSuspended {
@@ -942,6 +971,10 @@ func (h AddLiquidityHandler) getTotalLiquidityRUNE(ctx cosmos.Context) (cosmos.U
 		}
 		if p.Asset.IsDerivedAsset() {
 			continue
+		}
+		p, _, err = poolView.adjust(ctx, p)
+		if err != nil {
+			return cosmos.ZeroUint(), fmt.Errorf("fail to get finality-adjusted pool %s: %w", p.Asset, err)
 		}
 		total = total.Add(p.BalanceRune)
 	}

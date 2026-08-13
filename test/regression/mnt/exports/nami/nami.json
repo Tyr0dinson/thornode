@@ -266,6 +266,7 @@
           "units": "125000000000"
         }
       ],
+      "mempool_swaps": [],
       "mimirs": [
         {
           "key": "ENABLESWITCH-GAIA-NAMI",
@@ -406,7 +407,6 @@
           "asset": "GAIA.NAMI"
         }
       ],
-      "pending_affiliate_liquidity_fees": [],
       "pools": [
         {
           "LP_units": "200000000",

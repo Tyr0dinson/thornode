@@ -48,12 +48,186 @@ func (k *haltOnFirstSwapKeeper) SetAdvSwapQueueItemState(ctx cosmos.Context, msg
 	return k.Keeper.SetAdvSwapQueueItemState(ctx, msg)
 }
 
+type advSwapQueueReadCountingKeeper struct {
+	keeper.Keeper
+	voterReads             int
+	lifecycleReads         int
+	lifecyclePresenceReads int
+	vaultReads             int
+	poolOwnerReads         int
+	poolOverlayReads       int
+	supplyOverlayReads     int
+	configReads            int
+}
+
+type advSwapQueueEmptyVoterOnReadKeeper struct {
+	keeper.Keeper
+	emptyOnRead int
+	voterReads  int
+}
+
+func (k *advSwapQueueEmptyVoterOnReadKeeper) GetObservedTxInVoter(ctx cosmos.Context, txID common.TxID) (ObservedTxVoter, error) {
+	k.voterReads++
+	if k.voterReads >= k.emptyOnRead {
+		return ObservedTxVoter{TxID: txID}, nil
+	}
+	return k.Keeper.GetObservedTxInVoter(ctx, txID)
+}
+
+func (k *advSwapQueueReadCountingKeeper) GetObservedTxInVoter(ctx cosmos.Context, txID common.TxID) (ObservedTxVoter, error) {
+	k.voterReads++
+	return k.Keeper.GetObservedTxInVoter(ctx, txID)
+}
+
+func (k *advSwapQueueReadCountingKeeper) GetMempoolSwap(ctx cosmos.Context, txID common.TxID, index uint32) (types.MempoolSwap, bool, error) {
+	k.lifecycleReads++
+	return k.Keeper.GetMempoolSwap(ctx, txID, index)
+}
+
+func (k *advSwapQueueReadCountingKeeper) HasMempoolSwap(ctx cosmos.Context, txID common.TxID, index uint32) bool {
+	k.lifecyclePresenceReads++
+	return k.Keeper.HasMempoolSwap(ctx, txID, index)
+}
+
+func (k *advSwapQueueReadCountingKeeper) GetConfigInt64(ctx cosmos.Context, key constants.ConstantName) int64 {
+	k.configReads++
+	return k.Keeper.GetConfigInt64(ctx, key)
+}
+
+func (k *advSwapQueueReadCountingKeeper) GetVault(ctx cosmos.Context, pubKey common.PubKey) (Vault, error) {
+	k.vaultReads++
+	return k.Keeper.GetVault(ctx, pubKey)
+}
+
+func (k *advSwapQueueReadCountingKeeper) GetMempoolSwapPoolOwner(
+	ctx cosmos.Context,
+	asset common.Asset,
+) (types.MempoolSwap, bool, error) {
+	k.poolOwnerReads++
+	return k.Keeper.GetMempoolSwapPoolOwner(ctx, asset)
+}
+
+func (k *advSwapQueueReadCountingKeeper) GetMempoolSwapPoolBalanceOverlay(
+	ctx cosmos.Context,
+	asset common.Asset,
+) (types.MempoolSwapPoolBalanceOverlay, error) {
+	k.poolOverlayReads++
+	return k.Keeper.GetMempoolSwapPoolBalanceOverlay(ctx, asset)
+}
+
+func (k *advSwapQueueReadCountingKeeper) GetMempoolSwapNativeSupplyOverlay(
+	ctx cosmos.Context,
+	asset common.Asset,
+) (types.MempoolSwapNativeSupplyOverlay, error) {
+	k.supplyOverlayReads++
+	return k.Keeper.GetMempoolSwapNativeSupplyOverlay(ctx, asset)
+}
+
+func checkAdvSwapQueueFinalityReads(c *C, k *advSwapQueueReadCountingKeeper, expected int) {
+	c.Check(k.voterReads, Equals, expected)
+	c.Check(k.lifecycleReads, Equals, expected)
+	c.Check(k.vaultReads, Equals, expected)
+	c.Check(k.poolOwnerReads, Equals, expected)
+	c.Check(k.poolOverlayReads, Equals, expected)
+	c.Check(k.supplyOverlayReads, Equals, expected)
+	c.Check(k.lifecyclePresenceReads, Equals, 0)
+}
+
 type ExpiredLimitSwapRetryTestKeeper struct {
 	keeper.Keeper
 }
 
 func (k *ExpiredLimitSwapRetryTestKeeper) GetVault(_ cosmos.Context, _ common.PubKey) (Vault, error) {
 	return Vault{}, fmt.Errorf("vault not found")
+}
+
+func (s *AdvSwapQueueSuite) TestIsSwapReadyLoadsMempoolStateOnce(c *C) {
+	ctx, mgr, fixture := setupMempoolSwapLifecycleFixture(c)
+	countingKeeper := &advSwapQueueReadCountingKeeper{Keeper: mgr.Keeper()}
+	queue := newSwapQueueAdv(countingKeeper)
+
+	c.Check(queue.isSwapReady(ctx, fixture.msg), Equals, true)
+	c.Check(countingKeeper.configReads, Equals, 2)
+	checkAdvSwapQueueFinalityReads(c, countingKeeper, 1)
+}
+
+func (s *AdvSwapQueueSuite) TestIsSwapReadySkipsFinalityReadsWhenNotDue(c *C) {
+	ctx, mgr, fixture := setupMempoolSwapLifecycleFixture(c)
+	countingKeeper := &advSwapQueueReadCountingKeeper{Keeper: mgr.Keeper()}
+	queue := newSwapQueueAdv(countingKeeper)
+	msg := fixture.msg
+	state := *msg.State
+	msg.State = &state
+	msg.State.Interval = 2
+	msg.State.LastHeight = ctx.BlockHeight() - 1
+
+	c.Check(queue.isSwapReady(ctx, msg), Equals, false)
+	c.Check(countingKeeper.configReads, Equals, 0)
+	checkAdvSwapQueueFinalityReads(c, countingKeeper, 0)
+}
+
+func (s *AdvSwapQueueSuite) TestIsSwapReadySkipsFinalityReadsWhenStreamingPaused(c *C) {
+	ctx, mgr, fixture := setupMempoolSwapLifecycleFixture(c)
+	mgr.Keeper().SetMimir(ctx, constants.StreamingSwapPause.String(), 1)
+	countingKeeper := &advSwapQueueReadCountingKeeper{Keeper: mgr.Keeper()}
+	queue := newSwapQueueAdv(countingKeeper)
+
+	c.Check(fixture.msg.IsStreaming(), Equals, true)
+	c.Check(queue.isSwapReady(ctx, fixture.msg), Equals, false)
+	c.Check(countingKeeper.configReads, Equals, 2)
+	checkAdvSwapQueueFinalityReads(c, countingKeeper, 0)
+}
+
+func (s *AdvSwapQueueSuite) TestMempoolLifecycleWithEmptyVoterIsNotReady(c *C) {
+	ctx, mgr, fixture := setupMempoolSwapLifecycleFixture(c)
+	mgr.Keeper().SetObservedTxInVoter(ctx, ObservedTxVoter{TxID: fixture.voter.TxID})
+	queue := newSwapQueueAdv(mgr.Keeper())
+
+	c.Check(queue.isSwapReady(ctx, fixture.msg), Equals, false)
+	c.Assert(queue.EndBlock(ctx, mgr, false), IsNil)
+
+	queued, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, fixture.voter.TxID, 0)
+	c.Assert(err, IsNil)
+	c.Assert(queued.State, NotNil)
+	c.Check(queued.State.Count, Equals, uint64(0))
+	record, found, err := mgr.Keeper().GetMempoolSwap(ctx, fixture.voter.TxID, 0)
+	c.Assert(err, IsNil)
+	c.Check(found, Equals, true)
+	c.Check(record.Status, Equals, types.MempoolSwapStatus_RESERVED)
+	c.Check(record.ReservedTor.Equal(fixture.reservedTOR), Equals, true)
+	c.Check(record.PendingEffects.Pools, HasLen, 0)
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).Equal(fixture.reservedTOR), Equals, true)
+	pool, err := mgr.Keeper().GetPool(ctx, fixture.sourcePool.Asset)
+	c.Assert(err, IsNil)
+	c.Check(pool, DeepEquals, fixture.sourcePool)
+}
+
+func (s *AdvSwapQueueSuite) TestMempoolLifecycleVoterIsRecheckedBeforeExecution(c *C) {
+	ctx, mgr, fixture := setupMempoolSwapLifecycleFixture(c)
+	sequenceKeeper := &advSwapQueueEmptyVoterOnReadKeeper{
+		Keeper:      mgr.Keeper(),
+		emptyOnRead: 2,
+	}
+	queue := newSwapQueueAdv(sequenceKeeper)
+
+	c.Assert(queue.EndBlock(ctx, mgr, false), IsNil)
+	c.Check(sequenceKeeper.voterReads, Equals, 2,
+		Commentf("the queue should observe a valid voter during readiness and an empty voter at the mutation boundary"))
+
+	queued, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, fixture.voter.TxID, 0)
+	c.Assert(err, IsNil)
+	c.Assert(queued.State, NotNil)
+	c.Check(queued.State.Count, Equals, uint64(0))
+	record, found, err := mgr.Keeper().GetMempoolSwap(ctx, fixture.voter.TxID, 0)
+	c.Assert(err, IsNil)
+	c.Check(found, Equals, true)
+	c.Check(record.Status, Equals, types.MempoolSwapStatus_RESERVED)
+	c.Check(record.ReservedTor.Equal(fixture.reservedTOR), Equals, true)
+	c.Check(record.PendingEffects.Pools, HasLen, 0)
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).Equal(fixture.reservedTOR), Equals, true)
+	pool, err := mgr.Keeper().GetPool(ctx, fixture.sourcePool.Asset)
+	c.Assert(err, IsNil)
+	c.Check(pool, DeepEquals, fixture.sourcePool)
 }
 
 func seedActiveAdvSwapVault(c *C, ctx cosmos.Context, mgr *Mgrs) {
@@ -2495,6 +2669,35 @@ func (s AdvSwapQueueSuite) TestRapidSwapIterationCountLogging(c *C) {
 	// The actual log message "advanced swap iterations completed" with count
 	// is produced but cannot be easily captured in unit tests
 	// The log verification would require integration testing or log capture mechanisms
+}
+
+func (s AdvSwapQueueSuite) TestPoolCycleRetryOwnerRequiresExistingOverlay(c *C) {
+	record := types.MempoolSwap{
+		Status:         types.MempoolSwapStatus_EXECUTING,
+		ReservedTor:    cosmos.ZeroUint(),
+		PendingEffects: types.MempoolSwapPendingEffects{},
+	}
+	c.Check(mempoolSwapOwnsPoolCycleOverlay(record), Equals, false)
+
+	poolEffect := newMempoolSwapPoolEffect(common.BTCAsset)
+	poolEffect.BalanceRuneIncrease = cosmos.OneUint()
+	record.PendingEffects.Pools = []types.MempoolSwapPoolEffect{poolEffect}
+	c.Check(mempoolSwapOwnsPoolCycleOverlay(record), Equals, true)
+
+	record.Status = types.MempoolSwapStatus_FINALIZED
+	c.Check(mempoolSwapOwnsPoolCycleOverlay(record), Equals, false)
+
+	record.Status = types.MempoolSwapStatus_EXECUTING
+	record.PendingEffects.Pools = nil
+	record.PendingEffects.Supplies = []types.MempoolSwapSupplyEffect{{
+		Asset:          common.BTCAsset.GetSyntheticAsset(),
+		SupplyIncrease: cosmos.OneUint(),
+		SupplyDecrease: cosmos.ZeroUint(),
+	}}
+	c.Check(mempoolSwapOwnsPoolCycleOverlay(record), Equals, true)
+
+	record.Status = types.MempoolSwapStatus_ROLLBACK_PENDING
+	c.Check(mempoolSwapOwnsPoolCycleOverlay(record), Equals, false)
 }
 
 func (s AdvSwapQueueSuite) TestRapidSwapWithPoolCycleInteraction(c *C) {

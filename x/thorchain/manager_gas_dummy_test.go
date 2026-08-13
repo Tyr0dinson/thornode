@@ -3,7 +3,6 @@ package thorchain
 import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
-	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -13,13 +12,12 @@ func NewDummyGasManager() *DummyGasManager {
 	return &DummyGasManager{}
 }
 
-func (m *DummyGasManager) BeginBlock() {}
-func (m *DummyGasManager) EndBlock(ctx cosmos.Context, keeper keeper.Keeper, eventManager EventManager) {
-}
+func (m *DummyGasManager) BeginBlock()                                                      {}
+func (m *DummyGasManager) EndBlock(ctx cosmos.Context, mgr Manager)                         {}
 func (m *DummyGasManager) AddGasAsset(_ common.Asset, gas common.Gas, increaseTxCount bool) {}
 func (m *DummyGasManager) AddGas(gas common.Gas)                                            {}
 func (m *DummyGasManager) GetGas() common.Gas                                               { return nil }
-func (m *DummyGasManager) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper)              {}
+func (m *DummyGasManager) ProcessGas(ctx cosmos.Context, mgr Manager)                       {}
 func (m *DummyGasManager) GetAssetOutboundFee(ctx cosmos.Context, asset common.Asset, inRune bool) (cosmos.Uint, error) {
 	return cosmos.ZeroUint(), nil
 }
