@@ -221,6 +221,7 @@ const (
 
 	LUVIOverhangGuard
 	LUVIGuard
+	WasmMaxGasPerTx
 )
 
 // ConstantValues define methods used to get constant values
