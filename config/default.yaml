@@ -627,7 +627,7 @@ bifrost:
         block_height_discover_back_off: 0.2s
         max_reorg_rescan_blocks: 0 # solana has guaranteed finality
         chain_id: SOL
-        observation_flexibility_blocks: 0
+        observation_flexibility_blocks: 50 # ~20s at 400ms slots to cover scan-pass latency
         gas_cache_blocks: 100
         gas_price_resolution: 100 # 100 lamports
         max_gas_limit: 0

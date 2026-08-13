@@ -590,6 +590,59 @@ func (t *errorTransport) RoundTrip(_ *http.Request) (*http.Response, error) {
 // Validate
 // -------------------------------------------------------------------------------------
 
+func (Test) TestValidateObservationFlexibility(c *C) {
+	testCases := []struct {
+		name       string
+		disabled   bool
+		blocks     int64
+		errPattern string
+	}{
+		{
+			name:     "enabled chain with positive flexibility",
+			blocks:   1,
+			disabled: false,
+		},
+		{
+			name:       "enabled chain with zero flexibility",
+			blocks:     0,
+			disabled:   false,
+			errPattern: `chain SOL: observation_flexibility_blocks must be positive when enabled \(got 0\)`,
+		},
+		{
+			name:       "enabled chain with negative flexibility",
+			blocks:     -1,
+			disabled:   false,
+			errPattern: `chain SOL: observation_flexibility_blocks must be positive when enabled \(got -1\)`,
+		},
+		{
+			name:     "disabled chain with zero flexibility",
+			blocks:   0,
+			disabled: true,
+		},
+		{
+			name:     "disabled chain with negative flexibility",
+			blocks:   -1,
+			disabled: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		chain := BifrostChainConfiguration{
+			ChainID:  common.SOLChain,
+			Disabled: tc.disabled,
+			BlockScanner: BifrostBlockScannerConfiguration{
+				ObservationFlexibilityBlocks: tc.blocks,
+			},
+		}
+		err := validateObservationFlexibility(chain)
+		if tc.errPattern == "" {
+			c.Check(err, IsNil, Commentf(tc.name))
+			continue
+		}
+		c.Check(err, ErrorMatches, tc.errPattern, Commentf(tc.name))
+	}
+}
+
 func (Test) TestValidateBTC(c *C) {
 	cfg := BifrostChainConfiguration{
 		ChainID: common.BTCChain,

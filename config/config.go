@@ -364,6 +364,11 @@ func InitBifrost() {
 				Stringer("chain_id", chain.BlockScanner.ChainID).
 				Msg("chain failed validation")
 		}
+		if err := validateObservationFlexibility(chain); err != nil {
+			log.Fatal().Err(err).
+				Stringer("chain_id", chain.ChainID).
+				Msg("chain failed validation")
+		}
 	}
 
 	// create observer db paths
@@ -389,6 +394,18 @@ func InitBifrost() {
 	if len(config.Bifrost.TSS.BootstrapPeers) == 0 {
 		config.Bifrost.TSS.BootstrapPeers = resolveAddrs(getSeedAddrs())
 	}
+}
+
+func validateObservationFlexibility(chain BifrostChainConfiguration) error {
+	blocks := chain.BlockScanner.ObservationFlexibilityBlocks
+	if !chain.Disabled && blocks <= 0 {
+		return fmt.Errorf(
+			"chain %s: observation_flexibility_blocks must be positive when enabled (got %d)",
+			chain.ChainID,
+			blocks,
+		)
+	}
+	return nil
 }
 
 func InitThornode(ctx context.Context) {
@@ -1170,7 +1187,7 @@ type BifrostBlockScannerConfiguration struct {
 	GasPriceResolution int64 `mapstructure:"gas_price_resolution"`
 
 	// ObservationFlexibilityBlocks is the number of blocks behind the current tip we will
-	// submit network fee and solvency observations.
+	// submit network fee and solvency observations. It must be positive for enabled chains.
 	ObservationFlexibilityBlocks int64 `mapstructure:"observation_flexibility_blocks"`
 
 	// MaxGasLimit is the maximum gas allowed for non-aggregator outbounds. This is used
