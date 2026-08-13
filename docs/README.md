@@ -16,6 +16,11 @@ For wallets/interfaces to interact with THORChain, they need to:
 2. Construct transactions with the correct memos.
 3. Send the transactions to THORChain Inbound Vaults.
 
+```admonish tip
+**Try it now** — interactive API docs:
+[THORNode](https://gateway.liquify.com/chain/thorchain_api/thorchain/doc) (swaps, quotes, vaults) and [Midgard](https://gateway.liquify.com/chain/thorchain_midgard/v2/doc) (analytics, history). See [Connecting to THORChain](concepts/connecting-to-thorchain.md) for the full list.
+```
+
 See this [THORChain Development Guide](https://youtu.be/Qowrasst2UQ) video for more information or check out the [Front-end](./#front-end-development-guides) guides below for fast and simple implementation.
 
 ## Front-end Development Guides
@@ -54,7 +59,7 @@ THORChain has several APIs with Swagger documentation.
 
 - Midgard - [https://gateway.liquify.com/chain/thorchain_midgard/v2/doc](https://gateway.liquify.com/chain/thorchain_midgard/v2/doc)
 - THORNode - [https://gateway.liquify.com/chain/thorchain_api/thorchain/doc](https://gateway.liquify.com/chain/thorchain_api/thorchain/doc)
-- Cosmos RPC - [https://docs.cosmos.network/v0.50/learn/advanced/grpc_rest](https://docs.cosmos.network/v0.50/learn/advanced/grpc_rest)
+- Cosmos RPC - [https://docs.cosmos.network/sdk/v0.53/learn/advanced/grpc_rest](https://docs.cosmos.network/sdk/v0.53/learn/advanced/grpc_rest)
 - CometBFT RPC - [https://docs.cometbft.com/v0.38/rpc/](https://docs.cometbft.com/v0.38/rpc/)
 
 See [Connecting to THORChain](concepts/connecting-to-thorchain.md "mention") for a full list of public endpoints and more information.
