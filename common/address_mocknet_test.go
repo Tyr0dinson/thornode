@@ -96,7 +96,7 @@ func (s *AddressSuite) TestEquivalentAddressesZecWithoutTexForm(c *C) {
 
 	c.Check(EquivalentAddresses(ZECChain, p2shAddr, p2shAddr), Equals, true)
 
-	// Unparseable input reaches this comparison from observed transactions, so
+	// Unparsable input reaches this comparison from observed transactions, so
 	// it must be handled rather than trusted.
 	for _, malformed := range []Address{"", "t", "tm", "not-an-address", "t1"} {
 		c.Check(EquivalentAddresses(ZECChain, malformed, malformed), Equals, true)
