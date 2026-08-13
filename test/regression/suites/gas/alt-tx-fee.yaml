@@ -40,11 +40,13 @@ type: tx-mimir
 key: AltNativeTxFeeAddedBps
 value: 0
 signer: {{ addr_thor_dog }}
+sequence: 0
 ---
 type: tx-mimir
 key: AltNativeTxFeeSwapThresholdBps
 value: 0
 signer: {{ addr_thor_dog }}
+sequence: 1
 ---
 type: create-blocks
 count: 1
@@ -78,7 +80,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_reserve }}
 asserts:
-  - .balances[]|select(.denom=="rune")|.amount|tonumber == ${RES_BAL=35000000670468}
+  - .balances[]|select(.denom=="rune")|.amount|tonumber == ${RES_BAL=35000002670468}
 ---
 type: create-blocks
 count: 1

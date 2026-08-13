@@ -10,11 +10,13 @@ type: tx-mimir
 key: AltNativeTxFeeAddedBps
 value: 0
 signer: {{ addr_thor_dog }}
+sequence: 0
 ---
 type: tx-mimir
 key: AltNativeTxFeeSwapThresholdBps
 value: 0
 signer: {{ addr_thor_dog }}
+sequence: 1
 ---
 type: create-blocks
 count: 1

@@ -12,7 +12,7 @@
             "@type": "/cosmos.crypto.secp256k1.PubKey",
             "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
           },
-          "sequence": "2"
+          "sequence": "3"
         },
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
@@ -154,7 +154,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35000007295967",
+              "amount": "35000009295967",
               "denom": "rune"
             }
           ]
@@ -185,7 +185,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "4999996355336",
+              "amount": "4999994355336",
               "denom": "rune"
             }
           ]
@@ -264,6 +264,9 @@
         {
           "key": "ALTNATIVETXFEEADDEDBPS",
           "value": "10000"
+        },
+        {
+          "key": "ALTNATIVETXFEESWAPTHRESHOLDBPS"
         }
       ],
       "network": {
@@ -289,12 +292,16 @@
           "key": "ALTNATIVETXFEEADDEDBPS",
           "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "value": "10000"
+        },
+        {
+          "key": "ALTNATIVETXFEESWAPTHRESHOLDBPS",
+          "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
         }
       ],
       "node_accounts": [
         {
           "active_block_height": "1",
-          "bond": "4999996000000",
+          "bond": "4999994000000",
           "bond_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "ip_address": "1.1.1.1",
           "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",

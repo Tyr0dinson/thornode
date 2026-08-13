@@ -146,7 +146,7 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "49D9400E7835535425048F4F3C59E1E79FBD49182E51D682349102CE604DE4D9",
+      "data_hash": "61A6C93FF01D29B88F2844865DD9D346DF7F4B08D06158592E64A3153892FEF7",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
@@ -357,6 +357,126 @@
             },
             {
               "key": "ALTNATIVETXFEEADDEDBPS",
+              "msg_index": "0",
+              "type": "set_mimir",
+              "value": "0"
+            }
+          ]
+        }
+      },
+      {
+        "hash": "F6712A58A4FF2A969C459A11D829F8EA76C37FA624ABB60C596DDA89CC7B0A37",
+        "tx": {
+          "auth_info": {
+            "fee": {
+              "amount": [],
+              "gas_limit": "0",
+              "granter": "",
+              "payer": ""
+            },
+            "signer_infos": [
+              {
+                "mode_info": {
+                  "single": {
+                    "mode": "SIGN_MODE_DIRECT"
+                  }
+                },
+                "public_key": {
+                  "@type": "/cosmos.crypto.secp256k1.PubKey",
+                  "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
+                },
+                "sequence": "1"
+              }
+            ],
+            "tip": null
+          },
+          "body": {
+            "extension_options": [],
+            "memo": "",
+            "messages": [
+              {
+                "@type": "/types.MsgMimir",
+                "key": "AltNativeTxFeeSwapThresholdBps",
+                "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+                "value": "0"
+              }
+            ],
+            "non_critical_extension_options": [],
+            "timeout_height": "0",
+            "timeout_timestamp": null,
+            "unordered": false
+          },
+          "signatures": [
+            "4C9ln7ifv9BZo7uEDt6X6vbNDxBwuatQcIbOZ5Cde9hiZx70DYEbGa1LSAZ/sGSf6xBpkfQiIoda0YuRl4tU1A=="
+          ]
+        },
+        "result": {
+          "code": 0,
+          "gas_wanted": "-1",
+          "gas_used": "0",
+          "events": [
+            {
+              "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/1",
+              "type": "tx"
+            },
+            {
+              "signature": "4C9ln7ifv9BZo7uEDt6X6vbNDxBwuatQcIbOZ5Cde9hiZx70DYEbGa1LSAZ/sGSf6xBpkfQiIoda0YuRl4tU1A==",
+              "type": "tx"
+            },
+            {
+              "action": "/types.MsgMimir",
+              "module": "MsgMimir",
+              "msg_index": "0",
+              "sender": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+              "type": "message"
+            },
+            {
+              "amount": "2000000rune",
+              "msg_index": "0",
+              "spender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
+              "type": "coin_spent"
+            },
+            {
+              "amount": "2000000rune",
+              "msg_index": "0",
+              "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+              "type": "coin_received"
+            },
+            {
+              "amount": "2000000rune",
+              "msg_index": "0",
+              "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+              "sender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
+              "type": "transfer"
+            },
+            {
+              "msg_index": "0",
+              "sender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
+              "type": "message"
+            },
+            {
+              "address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+              "key": "ALTNATIVETXFEESWAPTHRESHOLDBPS",
+              "msg_index": "0",
+              "type": "set_node_mimir",
+              "value": "0"
+            },
+            {
+              "amount": "2000000",
+              "bond_address": "",
+              "bond_type": "bond_cost",
+              "chain": "",
+              "coin": "",
+              "from": "",
+              "id": "",
+              "memo": "",
+              "msg_index": "0",
+              "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+              "to": "",
+              "type": "bond"
+            },
+            {
+              "key": "ALTNATIVETXFEESWAPTHRESHOLDBPS",
               "msg_index": "0",
               "type": "set_mimir",
               "value": "0"
@@ -1372,7 +1492,7 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "E85C2B010A08B85DD066B5419B8CACE9DAC6FDF4C4B4C7BDF56D3DF54E3AFC3A",
+      "data_hash": "9CBD8B237D54802189849A0594E9A2FAD9AECFA0D0DE78E037053286172F6B98",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
@@ -1471,7 +1591,7 @@
     ],
     "txs": [
       {
-        "hash": "AD6085C7EC3A998C4EAABA2ECE670F2132FE6A200FF49B6408ADFDB791B82A51",
+        "hash": "20DC32072B389054E53362FD67C43AB55AD05274AFEC580174A15DD9D3943A9F",
         "tx": {
           "auth_info": {
             "fee": {
@@ -1491,7 +1611,7 @@
                   "@type": "/cosmos.crypto.secp256k1.PubKey",
                   "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
                 },
-                "sequence": "1"
+                "sequence": "2"
               }
             ],
             "tip": null
@@ -1513,7 +1633,7 @@
             "unordered": false
           },
           "signatures": [
-            "+hpa/7yPVIKLspV1s7ypDvVqUtUlOyKUbm343GqLswYTV5I7vzKgaw47gmQ/mkODmvCKVdm7eUptmt5lsGPkqA=="
+            "vnhVHfYOKKDLkjVhhNPa+8RKQPRKe2n0oX+LL8GgTGZyZCcK6WsOty0HwjzFLgiQPK74ScrJP69t42lUPVkDqA=="
           ]
         },
         "result": {
@@ -1522,11 +1642,11 @@
           "gas_used": "0",
           "events": [
             {
-              "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/1",
+              "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/2",
               "type": "tx"
             },
             {
-              "signature": "+hpa/7yPVIKLspV1s7ypDvVqUtUlOyKUbm343GqLswYTV5I7vzKgaw47gmQ/mkODmvCKVdm7eUptmt5lsGPkqA==",
+              "signature": "vnhVHfYOKKDLkjVhhNPa+8RKQPRKe2n0oX+LL8GgTGZyZCcK6WsOty0HwjzFLgiQPK74ScrJP69t42lUPVkDqA==",
               "type": "tx"
             },
             {
