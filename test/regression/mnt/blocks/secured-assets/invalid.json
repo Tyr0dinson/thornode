@@ -4681,7 +4681,7 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+      "data_hash": "9A120AB0B6D9CCA853ECA64A45AF98B1B2AF346961984C4F4A360706CF0CC75C",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
@@ -4776,8 +4776,184 @@
         "pol_reserve_reward": "0",
         "tcy_stake_reward": "0",
         "type": "rewards"
+      },
+      {
+        "amount": "90rune",
+        "mode": "EndBlock",
+        "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+        "type": "coin_spent"
+      },
+      {
+        "amount": "90rune",
+        "mode": "EndBlock",
+        "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+        "type": "coin_received"
+      },
+      {
+        "amount": "90rune",
+        "mode": "EndBlock",
+        "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+        "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+        "type": "transfer"
+      },
+      {
+        "mode": "EndBlock",
+        "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+        "type": "message"
+      },
+      {
+        "chain": "THOR",
+        "coin": "3001 BTC.BTC",
+        "emit_asset": "3000073 THOR.RUNE",
+        "from": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+        "id": "29C887F4B4369BDD086AB85B6E028BAEC4AB5942247E2C28C9BE835EA3C70460",
+        "liquidity_fee": "90",
+        "liquidity_fee_in_rune": "90",
+        "memo": "ALT-NATIVE-FEE-SWAP",
+        "mode": "EndBlock",
+        "pool": "BTC.BTC",
+        "pool_slip": "0",
+        "stable_reserve": "false",
+        "streaming_swap_count": "1",
+        "streaming_swap_quantity": "1",
+        "swap_slip": "0",
+        "swap_target": "0",
+        "to": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+        "type": "swap"
+      },
+      {
+        "amount": "3000073rune",
+        "mode": "EndBlock",
+        "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+        "type": "coin_spent"
+      },
+      {
+        "amount": "3000073rune",
+        "mode": "EndBlock",
+        "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+        "type": "coin_received"
+      },
+      {
+        "amount": "3000073rune",
+        "mode": "EndBlock",
+        "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+        "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+        "type": "transfer"
+      },
+      {
+        "mode": "EndBlock",
+        "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+        "type": "message"
+      },
+      {
+        "coins": "3000073 THOR.RUNE",
+        "mode": "EndBlock",
+        "pool_deduct": "0",
+        "tx_id": "29C887F4B4369BDD086AB85B6E028BAEC4AB5942247E2C28C9BE835EA3C70460",
+        "type": "fee"
       }
     ],
-    "txs": []
+    "txs": [
+      {
+        "hash": "7CF093F412550A98728CF52EB5E3368ED9FAC55D6B0AD0837C6973FCD1BC7A88",
+        "tx": {
+          "auth_info": {
+            "fee": {
+              "amount": [],
+              "gas_limit": "0",
+              "granter": "",
+              "payer": ""
+            },
+            "signer_infos": [
+              {
+                "mode_info": {
+                  "single": {
+                    "mode": "SIGN_MODE_DIRECT"
+                  }
+                },
+                "public_key": {
+                  "@type": "/cosmos.crypto.secp256k1.PubKey",
+                  "key": "Ah4wzGUnsQ7oYiei732pv9NLLvufvGFkBtH3zNyhzBZW"
+                },
+                "sequence": "0"
+              }
+            ],
+            "tip": null
+          },
+          "body": {
+            "extension_options": [],
+            "memo": "",
+            "messages": [
+              {
+                "@type": "/types.MsgDeposit",
+                "coins": [
+                  {
+                    "amount": "50000000",
+                    "asset": "BTC-BTC",
+                    "decimals": "0"
+                  }
+                ],
+                "memo": "secure-:bc1pywlmh5y7rml8qley0pgjrczqdtfxh09d99kgykk4cqcvg6rudjws3cfspm",
+                "salt": null,
+                "signer": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u"
+              }
+            ],
+            "non_critical_extension_options": [],
+            "timeout_height": "0",
+            "timeout_timestamp": null,
+            "unordered": false
+          },
+          "signatures": [
+            "1ocTkSAwemdJ2KP3sEAgt441uatYjNumtHMxoSjq2ws5q15ta/8hVrBHLHaFQAw1u9J/s7VpK0heLFgawMf6vg=="
+          ]
+        },
+        "result": {
+          "code": 99,
+          "log": "failed to execute message; message index: 0: address(bc1pywlmh5y7rml8qley0pgjrczqdtfxh09d99kgykk4cqcvg6rudjws3cfspm) is not same network: internal error",
+          "gas_wanted": "-1",
+          "gas_used": "0",
+          "events": [
+            {
+              "amount": "3001btc-btc",
+              "spender": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
+              "type": "coin_spent"
+            },
+            {
+              "amount": "3001btc-btc",
+              "receiver": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
+              "type": "coin_received"
+            },
+            {
+              "amount": "3001btc-btc",
+              "recipient": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
+              "sender": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
+              "type": "transfer"
+            },
+            {
+              "sender": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
+              "type": "message"
+            },
+            {
+              "amount": "3001btc-btc",
+              "spender": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
+              "type": "coin_spent"
+            },
+            {
+              "amount": "3001btc-btc",
+              "burner": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
+              "type": "burn"
+            },
+            {
+              "acc_seq": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u/0",
+              "type": "tx"
+            },
+            {
+              "signature": "1ocTkSAwemdJ2KP3sEAgt441uatYjNumtHMxoSjq2ws5q15ta/8hVrBHLHaFQAw1u9J/s7VpK0heLFgawMf6vg==",
+              "type": "tx"
+            }
+          ]
+        }
+      }
+    ]
   }
 ]
