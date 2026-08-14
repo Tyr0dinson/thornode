@@ -166,6 +166,7 @@ func DefaultGenesisState() GenesisState {
 		DynamicFeeAccumulators:  make([]types.DynamicFeeAccumulator, 0),
 		StableReserveCredits:    make([]StableReserveCredit, 0),
 		SolVaultNonces:          make([]types.SolVaultNonce, 0),
+		AltNativeFeeEscrows:     make([]types.AltNativeFeeEscrow, 0),
 	}
 }
 
@@ -315,6 +316,17 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 
 	for _, a := range data.SecuredAssets {
 		keeper.SetSecuredAsset(ctx, a)
+	}
+
+	// Restore pending fee claims after their backing module and vault balances
+	// have been imported by the application-level genesis setup.
+	for _, escrow := range data.AltNativeFeeEscrows {
+		if escrow.Balance.IsEmpty() || escrow.Balance.Amount.IsZero() {
+			continue
+		}
+		if err := keeper.AddAltNativeFeeEscrowBalance(ctx, escrow.Balance.Asset, escrow.Balance.Amount); err != nil {
+			panic(err)
+		}
 	}
 
 	// The reference memo occupancy window is derived state rather than a genesis
@@ -933,6 +945,18 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		solVaultNonces = append(solVaultNonces, record)
 	}
 
+	altNativeFeeEscrows := make([]types.AltNativeFeeEscrow, 0)
+	iterAltNativeFeeEscrows := k.GetAltNativeFeeEscrowIterator(ctx)
+	defer iterAltNativeFeeEscrows.Close()
+	for ; iterAltNativeFeeEscrows.Valid(); iterAltNativeFeeEscrows.Next() {
+		var escrow types.AltNativeFeeEscrow
+		k.Cdc().MustUnmarshal(iterAltNativeFeeEscrows.Value(), &escrow)
+		if escrow.Balance.IsEmpty() || escrow.Balance.Amount.IsZero() {
+			continue
+		}
+		altNativeFeeEscrows = append(altNativeFeeEscrows, escrow)
+	}
+
 	return GenesisState{
 		Pools:                             pools,
 		LiquidityProviders:                liquidityProviders,
@@ -971,5 +995,6 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		LastObservedDynamicFeeEpochBlocks: lastObservedDynamicFeeEpochBlocks,
 		StableReserveCredits:              stableReserveCredits,
 		SolVaultNonces:                    solVaultNonces,
+		AltNativeFeeEscrows:               altNativeFeeEscrows,
 	}
 }

@@ -31,6 +31,7 @@ import "types/type_secured_asset.proto";
 import "types/type_tcy_claimer.proto";
 import "types/type_tcy_staker.proto";
 import "types/type_dynamic_fee.proto";
+import "types/type_alt_native_fee_escrow.proto";
 import "gogoproto/gogo.proto";
 
 message lastChainHeight {
@@ -140,5 +141,7 @@ message GenesisState {
   repeated StableReserveCredit stable_reserve_credits = 49
       [ (gogoproto.nullable) = false ];
   repeated types.SolVaultNonce sol_vault_nonces = 50
+      [ (gogoproto.nullable) = false ];
+  repeated types.AltNativeFeeEscrow alt_native_fee_escrows = 51
       [ (gogoproto.nullable) = false ];
 }

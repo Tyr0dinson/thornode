@@ -105,6 +105,38 @@ func (GenesisTestSuite) TestGenesisPOLReserveDepositRoundTrip(c *C) {
 	c.Check(gotUSDC.RuneDeposited.String(), Equals, usdcDeposit.RuneDeposited.String())
 }
 
+// TestGenesisAltNativeFeeEscrowRoundTrip verifies export and import preserve
+// pending fee claims while the application preserves their backing balances.
+func (GenesisTestSuite) TestGenesisAltNativeFeeEscrowRoundTrip(c *C) {
+	SetupConfigForTest()
+
+	srcCtx, srcMgr := setupManagerForTest(c)
+	c.Assert(srcMgr.Keeper().AddAltNativeFeeEscrowBalance(srcCtx, common.BTCAsset, cosmos.NewUint(12345)), IsNil)
+	c.Assert(srcMgr.Keeper().AddAltNativeFeeEscrowBalance(srcCtx, common.NAMI, cosmos.NewUint(67890)), IsNil)
+
+	exported := ExportGenesis(srcCtx, srcMgr.Keeper())
+	c.Assert(exported.AltNativeFeeEscrows, HasLen, 2)
+
+	bz, err := exported.Marshal()
+	c.Assert(err, IsNil)
+	var decoded GenesisState
+	c.Assert(decoded.Unmarshal(bz), IsNil)
+	c.Assert(decoded.AltNativeFeeEscrows, HasLen, 2)
+
+	dstCtx, dstMgr := setupManagerForTest(c)
+	InitGenesis(dstCtx, dstMgr.Keeper(), decoded)
+
+	for asset, expected := range map[common.Asset]cosmos.Uint{
+		common.BTCAsset: cosmos.NewUint(12345),
+		common.NAMI:     cosmos.NewUint(67890),
+	} {
+		escrow, exists := dstMgr.Keeper().GetAltNativeFeeEscrow(dstCtx, asset)
+		c.Assert(exists, Equals, true)
+		c.Check(escrow.Balance.Asset.Equals(asset), Equals, true)
+		c.Check(escrow.Balance.Amount.Equal(expected), Equals, true)
+	}
+}
+
 func (GenesisTestSuite) TestGenesisInactiveAsgardDeficitRoundTrip(c *C) {
 	SetupConfigForTest()
 
