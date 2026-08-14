@@ -2812,6 +2812,100 @@ func (s *HelperSuite) TestFetchAltNativeTxFeeCoinRejectsSynthAndDerived(c *C) {
 	}
 }
 
+// TestCalculateAltNativeTxFeeHonorsGates verifies that fee quoting cannot
+// bypass trading or product-specific withdrawal controls.
+func (s *HelperSuite) TestCalculateAltNativeTxFeeHonorsGates(c *C) {
+	tests := []struct {
+		name      string
+		asset     common.Asset
+		configure func(cosmos.Context, keeper.Keeper)
+		errMatch  string
+	}{
+		{
+			name:  "global trading halt",
+			asset: common.BTCAsset,
+			configure: func(ctx cosmos.Context, k keeper.Keeper) {
+				k.SetMimir(ctx, constants.MimirKeyHaltTradingGlobal, 1)
+			},
+			errMatch: "trading is halted for alt-native fee asset BTC.BTC",
+		},
+		{
+			name:  "trade accounts disabled",
+			asset: common.BTCAsset.GetTradeAsset(),
+			configure: func(ctx cosmos.Context, k keeper.Keeper) {
+				k.SetMimir(ctx, constants.TradeAccountsEnabled.String(), 0)
+			},
+			errMatch: "trade accounts are disabled",
+		},
+		{
+			name:  "trade withdrawals halted",
+			asset: common.BTCAsset.GetTradeAsset(),
+			configure: func(ctx cosmos.Context, k keeper.Keeper) {
+				k.SetMimir(ctx, constants.TradeAccountsEnabled.String(), 1)
+				k.SetMimir(ctx, fmt.Sprintf(constants.MimirTemplateTradeAssetHaltWithdraw, common.BTCChain), 1)
+			},
+			errMatch: "BTC trade asset withdrawals are disabled",
+		},
+		{
+			name:  "secured assets halted",
+			asset: common.BTCAsset.GetSecuredAsset(),
+			configure: func(ctx cosmos.Context, k keeper.Keeper) {
+				k.SetMimir(ctx, constants.MimirKeySecuredAssetHaltGlobal, 1)
+			},
+			errMatch: "secured assets are disabled",
+		},
+		{
+			name:  "secured withdrawals halted",
+			asset: common.BTCAsset.GetSecuredAsset(),
+			configure: func(ctx cosmos.Context, k keeper.Keeper) {
+				k.SetMimir(ctx, fmt.Sprintf(constants.MimirTemplateSecuredAssetHaltWithdraw, common.BTCChain), 1)
+			},
+			errMatch: "BTC secured asset withdrawals are disabled",
+		},
+	}
+
+	for _, test := range tests {
+		ctx, mgr := setupManagerForTest(c)
+		ctx = ctx.WithBlockHeight(10)
+		pool := NewPool()
+		pool.Asset = common.BTCAsset
+		pool.Status = PoolAvailable
+		pool.BalanceRune = cosmos.NewUint(1_000_000 * common.One)
+		pool.BalanceAsset = cosmos.NewUint(1_000 * common.One)
+		c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil, Commentf(test.name))
+		test.configure(ctx, mgr.Keeper())
+
+		fee, err := calculateAltNativeTxFee(ctx, mgr.Keeper(), test.asset)
+		c.Assert(err, ErrorMatches, test.errMatch, Commentf(test.name))
+		c.Assert(fee.IsZero(), Equals, true, Commentf(test.name))
+	}
+}
+
+// TestCollectAltNativeTxFeeHonorsTradeGate verifies the collector's defensive
+// gate check runs before trade-account state is changed.
+func (s *HelperSuite) TestCollectAltNativeTxFeeHonorsTradeGate(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(10)
+	k := mgr.Keeper()
+	signer := GetRandomBech32Addr()
+	asset := common.BTCAsset.GetTradeAsset()
+	k.SetMimir(ctx, constants.TradeAccountsEnabled.String(), 1)
+	k.SetMimir(ctx, fmt.Sprintf(constants.MimirTemplateTradeAssetHaltWithdraw, common.BTCChain), 1)
+	k.SetTradeUnit(ctx, TradeUnit{Asset: asset, Units: cosmos.NewUint(10), Depth: cosmos.NewUint(10)})
+	k.SetTradeAccount(ctx, TradeAccount{Asset: asset, Units: cosmos.NewUint(10), Owner: signer})
+
+	collected, err := collectAltNativeTxFee(ctx, k, signer, common.NewCoin(asset, cosmos.OneUint()))
+	c.Assert(err, ErrorMatches, "BTC trade asset withdrawals are disabled")
+	c.Assert(collected.IsZero(), Equals, true)
+	tu, err := k.GetTradeUnit(ctx, asset)
+	c.Assert(err, IsNil)
+	c.Assert(tu.Units.Equal(cosmos.NewUint(10)), Equals, true)
+	c.Assert(tu.Depth.Equal(cosmos.NewUint(10)), Equals, true)
+	account, err := k.GetTradeAccount(ctx, signer, asset)
+	c.Assert(err, IsNil)
+	c.Assert(account.Units.Equal(cosmos.NewUint(10)), Equals, true)
+}
+
 type altNativeEscrowKeeperHelper struct {
 	keeper.Keeper
 	failReserveTransferAbove cosmos.Uint
@@ -2882,6 +2976,7 @@ func (s *HelperSuite) TestCollectAltNativeTxFeeFromTradeRejectsExcessRounding(c 
 	k := mgr.Keeper()
 	signer := GetRandomBech32Addr()
 	asset := common.BTCAsset.GetTradeAsset()
+	k.SetMimir(ctx, constants.TradeAccountsEnabled.String(), 1)
 
 	// Seed a minimal trade account where each unit represents a coarse slice of
 	// the underlying depth.
@@ -2973,6 +3068,38 @@ func (s *HelperSuite) TestProcessAltNativeFeeEscrowsHonorsThreshold(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(poolAfter.BalanceAsset.Equal(poolBefore.BalanceAsset), Equals, true)
 	c.Assert(poolAfter.BalanceRune.Equal(poolBefore.BalanceRune), Equals, true)
+	c.Assert(mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName).Equal(reserveBefore), Equals, true)
+}
+
+// TestProcessAltNativeFeeEscrowsHonorsTradingHalt verifies that an existing
+// escrow remains pending without pool or Reserve mutations during a halt.
+func (s *HelperSuite) TestProcessAltNativeFeeEscrowsHonorsTradingHalt(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(10)
+	asset := common.NAMI
+	escrowAmount := cosmos.NewUint(1_000 * common.One)
+
+	mgr.Keeper().SetMimir(ctx, constants.AltNativeTxFeeSwapThresholdBps.String(), 0)
+	mgr.Keeper().SetMimir(ctx, constants.MimirKeyHaltTradingGlobal, 1)
+
+	pool := NewPool()
+	pool.Asset = asset
+	pool.BalanceAsset = cosmos.NewUint(1_000_000 * common.One)
+	pool.BalanceRune = cosmos.NewUint(200_000_000 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+	c.Assert(mgr.Keeper().AddAltNativeFeeEscrowBalance(ctx, asset, escrowAmount), IsNil)
+	reserveBefore := mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName)
+
+	processAltNativeFeeEscrows(ctx, mgr)
+
+	escrow, exists := mgr.Keeper().GetAltNativeFeeEscrow(ctx, asset)
+	c.Assert(exists, Equals, true)
+	c.Assert(escrow.Balance.Amount.Equal(escrowAmount), Equals, true)
+	poolAfter, err := mgr.Keeper().GetPool(ctx, asset)
+	c.Assert(err, IsNil)
+	c.Assert(poolAfter.BalanceAsset.Equal(pool.BalanceAsset), Equals, true)
+	c.Assert(poolAfter.BalanceRune.Equal(pool.BalanceRune), Equals, true)
 	c.Assert(mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName).Equal(reserveBefore), Equals, true)
 }
 

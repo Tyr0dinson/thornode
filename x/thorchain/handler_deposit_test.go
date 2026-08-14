@@ -591,6 +591,7 @@ func (s *HandlerDepositSuite) TestAltNativeTxFeeDeposit(c *C) {
 		k = mgr.Keeper()
 		k.SetMimir(ctx, constants.AltNativeTxFeeEnabled.String(), 1)
 		k.SetMimir(ctx, constants.AltNativeTxFeeAddedBps.String(), 5000)
+		k.SetMimir(ctx, constants.TradeAccountsEnabled.String(), 1)
 		signer = GetRandomBech32Addr()
 		ad = AnteDecorator{keeper: k}
 		handler = NewDepositHandler(mgr)

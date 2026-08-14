@@ -2515,6 +2515,53 @@ func getTradeAssetBalanceOf(ctx cosmos.Context, k keeper.Keeper, asset common.As
 	return common.GetSafeShare(tr.Units, tu.Units, tu.Depth)
 }
 
+// ensureAltNativeTxFeeGatesOpen applies the same trading and withdrawal gates
+// that protect the accounting operations used to collect and settle a fee.
+func ensureAltNativeTxFeeGatesOpen(ctx cosmos.Context, k keeper.Keeper, asset common.Asset) error {
+	layer1Asset := asset.GetLayer1Asset()
+	swapMsg := &MsgSwap{
+		Tx: common.Tx{
+			Coins: common.NewCoins(common.NewCoin(layer1Asset, cosmos.OneUint())),
+		},
+		TargetAsset: common.RuneNative,
+	}
+	if k.IsTradingHalt(ctx, swapMsg) {
+		return fmt.Errorf("trading is halted for alt-native fee asset %s", layer1Asset)
+	}
+
+	chain := layer1Asset.Chain.String()
+	switch {
+	case asset.IsTradeAsset():
+		if k.GetConfigInt64(ctx, constants.TradeAccountsEnabled) <= 0 {
+			return fmt.Errorf("trade accounts are disabled")
+		}
+		halt, err := k.GetMimirWithRef(ctx, constants.MimirTemplateTradeAssetHaltWithdraw, chain)
+		if err != nil {
+			return fmt.Errorf("fail to get %s trade withdrawal halt: %w", chain, err)
+		}
+		if halt > 0 && halt <= ctx.BlockHeight() {
+			return fmt.Errorf("%s trade asset withdrawals are disabled", chain)
+		}
+	case asset.IsSecuredAsset():
+		halt, err := k.GetMimir(ctx, constants.MimirKeySecuredAssetHaltGlobal)
+		if err != nil {
+			return fmt.Errorf("fail to get secured asset halt: %w", err)
+		}
+		if halt > 0 && halt <= ctx.BlockHeight() {
+			return fmt.Errorf("secured assets are disabled")
+		}
+		halt, err = k.GetMimirWithRef(ctx, constants.MimirTemplateSecuredAssetHaltWithdraw, chain)
+		if err != nil {
+			return fmt.Errorf("fail to get %s secured withdrawal halt: %w", chain, err)
+		}
+		if halt > 0 && halt <= ctx.BlockHeight() {
+			return fmt.Errorf("%s secured asset withdrawals are disabled", chain)
+		}
+	}
+
+	return nil
+}
+
 // calculateAltNativeTxFee returns the native transaction fee (in RUNE),
 // converted into the provided asset's units using the current pool price.
 // It applies AltNativeTxFeeAddedBps to the base native fee, requires the
@@ -2523,6 +2570,9 @@ func getTradeAssetBalanceOf(ctx cosmos.Context, k keeper.Keeper, asset common.As
 // back to the native fee within one smallest asset unit at the current
 // pool ratio.
 func calculateAltNativeTxFee(ctx cosmos.Context, k keeper.Keeper, asset common.Asset) (cosmos.Uint, error) {
+	if err := ensureAltNativeTxFeeGatesOpen(ctx, k, asset); err != nil {
+		return cosmos.ZeroUint(), err
+	}
 	nativeFee := k.GetNativeTxFee(ctx)
 
 	// Disable alt native tx fee for invalid or unavailable pool asset
@@ -2621,6 +2671,9 @@ func fetchAltNativeTxFeeCoin(ctx cosmos.Context, k keeper.Keeper, coins common.C
 // corresponding amount into the escrow ledger. Returns the underlying L1 amount
 // actually collected.
 func collectAltNativeTxFee(ctx cosmos.Context, k keeper.Keeper, signer cosmos.AccAddress, fee common.Coin) (cosmos.Uint, error) {
+	if err := ensureAltNativeTxFeeGatesOpen(ctx, k, fee.Asset); err != nil {
+		return cosmos.ZeroUint(), err
+	}
 	switch {
 	case fee.Asset.IsTradeAsset():
 		return collectAltNativeTxFeeFromTrade(ctx, k, signer, fee)
@@ -2809,6 +2862,9 @@ func processAltNativeFeeEscrows(ctx cosmos.Context, mgr Manager) {
 func swapAltNativeFeeEscrowBalance(ctx cosmos.Context, mgr Manager, asset common.Asset, amount cosmos.Uint) (cosmos.Uint, error) {
 	if amount.IsZero() {
 		return cosmos.ZeroUint(), nil
+	}
+	if err := ensureAltNativeTxFeeGatesOpen(ctx, mgr.Keeper(), asset); err != nil {
+		return cosmos.ZeroUint(), err
 	}
 	swapper, err := GetSwapper(mgr.GetVersion())
 	if err != nil {
