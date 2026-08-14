@@ -3008,6 +3008,60 @@ func (s *HelperSuite) TestCollectAltNativeTxFeeFromTradeRejectsExcessRounding(c 
 	c.Assert(exists, Equals, false)
 }
 
+// TestCalculateAltNativeFeeSwapThreshold verifies zero-value semantics and
+// that the smaller of the pool-relative and USD thresholds is selected.
+func (s *HelperSuite) TestCalculateAltNativeFeeSwapThreshold(c *C) {
+	pool := NewPool()
+	pool.BalanceAsset = cosmos.NewUint(1_000_000 * common.One)
+	pool.BalanceRune = cosmos.NewUint(1_000_000 * common.One)
+	pool.Decimals = 8
+	thresholdUSD := cosmos.NewUint(10 * common.One)
+	dollarsPerRune := cosmos.NewUint(common.One)
+
+	c.Assert(calculateAltNativeFeeSwapThreshold(pool, 0, thresholdUSD, dollarsPerRune).IsZero(), Equals, true)
+	c.Assert(calculateAltNativeFeeSwapThreshold(pool, 1, cosmos.ZeroUint(), dollarsPerRune).Equal(cosmos.NewUint(100*common.One)), Equals, true)
+	c.Assert(calculateAltNativeFeeSwapThreshold(pool, 1, thresholdUSD, cosmos.ZeroUint()).Equal(cosmos.NewUint(100*common.One)), Equals, true)
+	c.Assert(calculateAltNativeFeeSwapThreshold(pool, 1, thresholdUSD, dollarsPerRune).Equal(cosmos.NewUint(10*common.One)), Equals, true)
+
+	pool.BalanceAsset = cosmos.NewUint(10_000 * common.One)
+	pool.BalanceRune = cosmos.NewUint(10_000 * common.One)
+	c.Assert(calculateAltNativeFeeSwapThreshold(pool, 1, thresholdUSD, dollarsPerRune).Equal(cosmos.NewUint(common.One)), Equals, true)
+}
+
+// TestProcessAltNativeFeeEscrowsHonorsUSDThreshold verifies the USD-denominated
+// trigger settles escrow before the larger pool-depth threshold is reached.
+func (s *HelperSuite) TestProcessAltNativeFeeEscrowsHonorsUSDThreshold(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	asset := common.NAMI
+	escrowAmount := cosmos.NewUint(10*common.One - 1)
+
+	mgr.Keeper().SetMimir(ctx, constants.AltNativeTxFeeSwapThresholdBps.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.AltNativeTxFeeSwapThresholdUSD.String(), 10*common.One)
+	mgr.Keeper().SetMimir(ctx, "DollarsPerRune", common.One)
+
+	pool := NewPool()
+	pool.Asset = asset
+	pool.BalanceAsset = cosmos.NewUint(1_000_000 * common.One)
+	pool.BalanceRune = cosmos.NewUint(1_000_000 * common.One)
+	pool.Decimals = 8
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+	c.Assert(mgr.Keeper().AddAltNativeFeeEscrowBalance(ctx, asset, escrowAmount), IsNil)
+
+	processAltNativeFeeEscrows(ctx, mgr)
+	escrow, exists := mgr.Keeper().GetAltNativeFeeEscrow(ctx, asset)
+	c.Assert(exists, Equals, true)
+	c.Assert(escrow.Balance.Amount.Equal(escrowAmount), Equals, true)
+
+	// Equality reaches the threshold and settles the full accumulated escrow.
+	c.Assert(mgr.Keeper().AddAltNativeFeeEscrowBalance(ctx, asset, cosmos.OneUint()), IsNil)
+	reserveBefore := mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName)
+	processAltNativeFeeEscrows(ctx, mgr)
+	_, exists = mgr.Keeper().GetAltNativeFeeEscrow(ctx, asset)
+	c.Assert(exists, Equals, false)
+	c.Assert(mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName).GT(reserveBefore), Equals, true)
+}
+
 func (s *HelperSuite) TestProcessAltNativeFeeEscrowsCreditsReserveAndClearsEscrow(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	asset := common.NAMI
@@ -3045,6 +3099,7 @@ func (s *HelperSuite) TestProcessAltNativeFeeEscrowsHonorsThreshold(c *C) {
 	escrowAmount := cosmos.NewUint(1_000 * common.One)
 
 	mgr.Keeper().SetMimir(ctx, constants.AltNativeTxFeeSwapThresholdBps.String(), 100)
+	mgr.Keeper().SetMimir(ctx, constants.AltNativeTxFeeSwapThresholdUSD.String(), 0)
 
 	pool := NewPool()
 	pool.Asset = asset
@@ -3079,6 +3134,7 @@ func (s *HelperSuite) TestProcessAltNativeFeeEscrowsCapsThreshold(c *C) {
 	escrowAmount := cosmos.NewUint(1_000 * common.One)
 
 	mgr.Keeper().SetMimir(ctx, constants.AltNativeTxFeeSwapThresholdBps.String(), 20_000)
+	mgr.Keeper().SetMimir(ctx, constants.AltNativeTxFeeSwapThresholdUSD.String(), 0)
 
 	pool := NewPool()
 	pool.Asset = asset

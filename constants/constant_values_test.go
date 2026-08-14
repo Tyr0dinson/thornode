@@ -37,6 +37,13 @@ func (ConstantsTestSuite) TestGetConstantValues(c *C) {
 	c.Assert(GetConstantValues(SWVersion), NotNil)
 }
 
+// TestAltNativeTxFeeSwapThresholdDefaults locks down both settlement defaults.
+func (ConstantsTestSuite) TestAltNativeTxFeeSwapThresholdDefaults(c *C) {
+	values := NewConstantValue()
+	c.Assert(values.int64values[AltNativeTxFeeSwapThresholdBps], Equals, int64(1))
+	c.Assert(values.int64values[AltNativeTxFeeSwapThresholdUSD], Equals, int64(10_00000000))
+}
+
 func (ConstantsTestSuite) TestAllConstantName(c *C) {
 	keyRegex := regexp.MustCompile(MimirKeyRegex).MatchString
 	for i := 0; i < len(_ConstantName_index)-1; i++ {

@@ -187,7 +187,8 @@ func NewConstantValue() *ConstantVals {
 			LUVIGuard:                           1,                  // 1 = reject user swaps/LP flows that lower a pool's LP value (G) beyond the allowance, and emit LUVI loss events; 0 = off (the per-pool G accumulator always runs)
 			AltNativeTxFeeEnabled:               0,                  // enable/disable gas fee payment in native assets
 			AltNativeTxFeeAddedBps:              0,                  // Additional premium basis points added to the base network fee when paying with a native asset instead of RUNE; eg. 0 = no premium (gas = 0.02 RUNE in asset), 5000 = 50% premium (0.03 RUNE)
-			AltNativeTxFeeSwapThresholdBps:      100,                // Percentage of pool depth (basis points) to accumulate before swapping collected alt-native fees to RUNE; 100 = 1%
+			AltNativeTxFeeSwapThresholdBps:      1,                  // Percentage of pool depth (basis points) to accumulate before swapping collected alt-native fees to RUNE; 1 = 0.01%
+			AltNativeTxFeeSwapThresholdUSD:      10_00000000,        // USD-denominated settlement trigger in 1e8 notation; the smaller of this and the pool-depth threshold applies, 0 disables
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

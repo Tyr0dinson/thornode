@@ -2816,8 +2816,26 @@ func collectAltNativeTxFeeFromTrade(ctx cosmos.Context, k keeper.Keeper, signer 
 	return tokensToConfiscate, err
 }
 
+// calculateAltNativeFeeSwapThreshold returns the smaller enabled pool-depth
+// and USD-denominated settlement thresholds in asset units.
+func calculateAltNativeFeeSwapThreshold(pool types.Pool, thresholdBps uint64, thresholdUSD, dollarsPerRune cosmos.Uint) cosmos.Uint {
+	if thresholdBps == 0 {
+		return cosmos.ZeroUint()
+	}
+
+	threshold := pool.BalanceAsset.MulUint64(thresholdBps).QuoUint64(constants.MaxBasisPts)
+	// A zero USD value disables the USD threshold. If USD pricing is
+	// unavailable, retain the deterministic pool-depth threshold.
+	if thresholdUSD.IsZero() || dollarsPerRune.IsZero() {
+		return threshold
+	}
+
+	thresholdRune := thresholdUSD.MulUint64(common.One).Quo(dollarsPerRune)
+	return cosmos.MinUint(threshold, pool.RuneValueInAsset(thresholdRune))
+}
+
 // processAltNativeFeeEscrows swaps any escrowed alt-native balances that meet
-// the configured pool-depth threshold into RUNE and credits the Reserve.
+// the configured effective threshold into RUNE and credits the Reserve.
 func processAltNativeFeeEscrows(ctx cosmos.Context, mgr Manager) {
 	iter := mgr.Keeper().GetAltNativeFeeEscrowIterator(ctx)
 	defer iter.Close()
@@ -2826,6 +2844,7 @@ func processAltNativeFeeEscrows(ctx cosmos.Context, mgr Manager) {
 	// Cap defensively in case an out-of-range value predates validation or is
 	// supplied through an administrative path that does not use MsgMimir.
 	thresholdBps = min(thresholdBps, constants.MaxBasisPts)
+	thresholdUSD := cosmos.SafeUintFromInt64(mgr.Keeper().GetConfigInt64(ctx, constants.AltNativeTxFeeSwapThresholdUSD))
 	type escrowBalance struct {
 		asset  common.Asset
 		amount cosmos.Uint
@@ -2843,6 +2862,15 @@ func processAltNativeFeeEscrows(ctx cosmos.Context, mgr Manager) {
 			amount: escrow.Balance.Amount,
 		})
 	}
+	if len(escrows) == 0 {
+		return
+	}
+
+	// Resolve the shared RUNE/USD price once, and only when an escrow may need it.
+	dollarsPerRune := cosmos.ZeroUint()
+	if thresholdBps > 0 && !thresholdUSD.IsZero() {
+		dollarsPerRune = mgr.Keeper().DollarsPerRune(ctx)
+	}
 
 	for _, escrow := range escrows {
 		if escrow.amount.IsZero() {
@@ -2859,12 +2887,9 @@ func processAltNativeFeeEscrows(ctx cosmos.Context, mgr Manager) {
 			continue
 		}
 
-		if thresholdBps > 0 {
-			// Only act once the escrow exceeds the configured fraction of the pool depth.
-			threshold := pool.BalanceAsset.MulUint64(thresholdBps).QuoUint64(10000)
-			if escrow.amount.LT(threshold) {
-				continue
-			}
+		threshold := calculateAltNativeFeeSwapThreshold(pool, thresholdBps, thresholdUSD, dollarsPerRune)
+		if escrow.amount.LT(threshold) {
+			continue
 		}
 
 		// Cache the full settlement so partial swap mutations do not leak if any
