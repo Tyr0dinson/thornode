@@ -209,31 +209,12 @@ func deductNativeTxFeeFromAccount(ctx cosmos.Context, k keeper.Keeper, signer co
 		return se.ErrInsufficientFunds
 	}
 
-	feeCoin, err := fetchAltNativeTxFeeCoin(ctx, k, coins)
+	feeCoin, err := fetchAltNativeTxFeeCoin(ctx, k, signer, coins)
 	if err != nil {
 		return fmt.Errorf("fail to fetch native coin to pay tx fee: %w", err)
 	}
 
 	asset := feeCoin.Asset
-
-	var balanceFeeCoin cosmos.Uint
-	switch {
-	case asset.IsTradeAsset():
-		balanceFeeCoin = getTradeAssetBalanceOf(ctx, k, asset, signer)
-	case asset.IsSecuredAsset():
-		balanceFeeCoin = getSecuredAssetBalanceOf(ctx, k, asset, signer)
-	default:
-		balanceCsCoins := k.GetBalance(ctx, signer)
-		amt := balanceCsCoins.AmountOf(asset.Native())
-		balanceFeeCoin = cosmos.NewUintFromBigInt(amt.BigInt())
-	}
-	if balanceFeeCoin.IsZero() {
-		return se.ErrInsufficientFunds
-	}
-
-	if balanceFeeCoin.LT(feeCoin.Amount) {
-		return se.ErrInsufficientFunds
-	}
 
 	collected, err := collectAltNativeTxFee(ctx, k, signer, feeCoin)
 	if err != nil {

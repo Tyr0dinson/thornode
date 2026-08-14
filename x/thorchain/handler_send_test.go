@@ -462,3 +462,49 @@ func (s *HandlerSendSuiteV87) TestAltNativeTxFeeSend(c *C) {
 		c.Assert(getAccBal(signer, feeAsset).String(), Equals, fromBefore.String())
 	}
 }
+
+// TestAltNativeTxFeeFallsBackToFundedAsset verifies a multi-asset send skips a
+// priceable but underfunded first asset and charges the next funded candidate.
+func (s *HandlerSendSuiteV87) TestAltNativeTxFeeFallsBackToFundedAsset(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	k.SetMimir(ctx, constants.AltNativeTxFeeEnabled.String(), 1)
+	signer := GetRandomBech32Addr()
+
+	seedPool := func(asset common.Asset) {
+		pool := NewPool()
+		pool.Asset = asset
+		pool.Status = PoolAvailable
+		pool.BalanceAsset = cosmos.NewUint(1_000_000 * common.One)
+		pool.BalanceRune = cosmos.NewUint(200_000_000 * common.One)
+		c.Assert(k.SetPool(ctx, pool), IsNil)
+	}
+	seedPool(common.NAMI)
+	seedPool(common.RUJI)
+
+	namiFee, err := calculateAltNativeTxFee(ctx, k, common.NAMI)
+	c.Assert(err, IsNil)
+	rujiFee, err := calculateAltNativeTxFee(ctx, k, common.RUJI)
+	c.Assert(err, IsNil)
+	c.Assert(namiFee.GT(cosmos.OneUint()), Equals, true)
+	fundAccountWith(c, ctx, k, signer, common.NAMI, namiFee.Sub(cosmos.OneUint()))
+	fundAccountWith(c, ctx, k, signer, common.RUJI, rujiFee.Add(cosmos.NewUint(10)))
+
+	coins, err := common.NewCoins(
+		common.NewCoin(common.NAMI, cosmos.OneUint()),
+		common.NewCoin(common.RUJI, cosmos.OneUint()),
+	).Native()
+	c.Assert(err, IsNil)
+	msg := &MsgSend{FromAddress: signer, ToAddress: GetRandomBech32Addr(), Amount: coins}
+	namiBefore := getAltNativeTxFeeBalance(ctx, k, signer, common.NAMI)
+	rujiBefore := getAltNativeTxFeeBalance(ctx, k, signer, common.RUJI)
+
+	c.Assert(deductNativeTxFeeFromAccount(ctx, k, signer, msg), IsNil)
+
+	c.Assert(getAltNativeTxFeeBalance(ctx, k, signer, common.NAMI).Equal(namiBefore), Equals, true)
+	c.Assert(getAltNativeTxFeeBalance(ctx, k, signer, common.RUJI).Equal(rujiBefore.Sub(rujiFee)), Equals, true)
+	_, namiEscrowExists := k.GetAltNativeFeeEscrow(ctx, common.NAMI)
+	c.Assert(namiEscrowExists, Equals, false)
+	rujiEscrow, rujiEscrowExists := k.GetAltNativeFeeEscrow(ctx, common.RUJI)
+	c.Assert(rujiEscrowExists, Equals, true)
+	c.Assert(rujiEscrow.Balance.Amount.Equal(rujiFee), Equals, true)
+}

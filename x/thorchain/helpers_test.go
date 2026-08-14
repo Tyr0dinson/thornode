@@ -2806,7 +2806,7 @@ func (s *HelperSuite) TestFetchAltNativeTxFeeCoinRejectsSynthAndDerived(c *C) {
 		common.BTCAsset.GetSyntheticAsset(),
 		derivedBTC,
 	} {
-		coin, err := fetchAltNativeTxFeeCoin(ctx, k, common.NewCoins(common.NewCoin(asset, cosmos.NewUint(common.One))))
+		coin, err := fetchAltNativeTxFeeCoin(ctx, k, GetRandomBech32Addr(), common.NewCoins(common.NewCoin(asset, cosmos.NewUint(common.One))))
 		c.Assert(err, NotNil)
 		c.Assert(coin.IsEmpty(), Equals, true)
 	}

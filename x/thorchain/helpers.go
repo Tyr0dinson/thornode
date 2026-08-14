@@ -2640,11 +2640,23 @@ func calculateAltNativeTxFee(ctx cosmos.Context, k keeper.Keeper, asset common.A
 	return feeInAssetWithPremium, nil
 }
 
-// fetchAltNativeTxFeeCoin returns a common.Coin representing the alt-native
-// tx fee to be charged, selecting the first eligible non-RUNE native (or
-// Secured/Trade) asset from the provided coins and pricing the fee in that
-// asset via calculateAltNativeTxFee.
-func fetchAltNativeTxFeeCoin(ctx cosmos.Context, k keeper.Keeper, coins common.Coins) (common.Coin, error) {
+// getAltNativeTxFeeBalance returns the signer's spendable fee value using the
+// balance representation appropriate for native, trade, or secured assets.
+func getAltNativeTxFeeBalance(ctx cosmos.Context, k keeper.Keeper, signer cosmos.AccAddress, asset common.Asset) cosmos.Uint {
+	switch {
+	case asset.IsTradeAsset():
+		return getTradeAssetBalanceOf(ctx, k, asset, signer)
+	case asset.IsSecuredAsset():
+		return getSecuredAssetBalanceOf(ctx, k, asset, signer)
+	default:
+		return cosmos.Uint(k.GetBalanceOf(ctx, signer, asset).Amount)
+	}
+}
+
+// fetchAltNativeTxFeeCoin returns the first eligible and sufficiently funded
+// non-RUNE native, secured, or trade asset from the provided coins.
+func fetchAltNativeTxFeeCoin(ctx cosmos.Context, k keeper.Keeper, signer cosmos.AccAddress, coins common.Coins) (common.Coin, error) {
+	insufficientBalance := false
 	for _, c := range coins {
 		// Synth and derived assets require different burn and settlement accounting,
 		// so they cannot safely back an L1 escrow balance.
@@ -2659,9 +2671,16 @@ func fetchAltNativeTxFeeCoin(ctx cosmos.Context, k keeper.Keeper, coins common.C
 			ctx.Logger().Error("fail to get alt native tx fee for", "asset", c.Asset, "error", err)
 			continue
 		}
+		if getAltNativeTxFeeBalance(ctx, k, signer, c.Asset).LT(altNativeTxFee) {
+			insufficientBalance = true
+			continue
+		}
 		// found the coin to pay tx fee
 		c.Amount = altNativeTxFee
 		return c, nil
+	}
+	if insufficientBalance {
+		return common.Coin{}, fmt.Errorf("insufficient funds to pay alt-native tx fee")
 	}
 	return common.Coin{}, fmt.Errorf("fail to find coins to pay tx fee")
 }
