@@ -64,7 +64,7 @@ const (
 
 	// Bound both the complete transfer and each state type within one batch.
 	maxAttestationStateBatches      uint32 = 1000
-	maxAttestationStateItemsPerType        = 100
+	maxAttestationStateItemsPerType int    = 100
 )
 
 var (

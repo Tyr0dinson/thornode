@@ -282,7 +282,7 @@ func (s *AttestationGossip) sendAttestationState(ctx context.Context, stream net
 	// Send batch begin signal with total number of batches
 	beginInfo := make([]byte, 4)
 	binary.LittleEndian.PutUint32(beginInfo, uint32(totalBatches))
-	if err := p2p.WriteStreamWithBuffer(append(prefixBatchBegin, beginInfo...), stream); err != nil {
+	if err = p2p.WriteStreamWithBuffer(append(prefixBatchBegin, beginInfo...), stream); err != nil {
 		s.logger.Error().Err(err).Msg("failed to send batch begin signal")
 		return
 	}
