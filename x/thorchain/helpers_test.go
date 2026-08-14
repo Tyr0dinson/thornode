@@ -2783,6 +2783,35 @@ func (s *HelperSuite) TestIsStableToStableMatchesGetAnchors(c *C) {
 	c.Check(isStableToStable(ctx, k, usdc, usdt), Equals, true)
 }
 
+// TestFetchAltNativeTxFeeCoinRejectsSynthAndDerived ensures assets with
+// specialized mint and burn accounting cannot be normalized into L1 escrow.
+func (s *HelperSuite) TestFetchAltNativeTxFeeCoinRejectsSynthAndDerived(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.Status = PoolAvailable
+	btcPool.BalanceRune = cosmos.NewUint(1_000 * common.One)
+	btcPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	c.Assert(k.SetPool(ctx, btcPool), IsNil)
+
+	derivedBTC, err := common.NewAsset("THOR.BTC")
+	c.Assert(err, IsNil)
+	derivedPool := btcPool
+	derivedPool.Asset = derivedBTC
+	c.Assert(k.SetPool(ctx, derivedPool), IsNil)
+
+	for _, asset := range []common.Asset{
+		common.BTCAsset.GetSyntheticAsset(),
+		derivedBTC,
+	} {
+		coin, err := fetchAltNativeTxFeeCoin(ctx, k, common.NewCoins(common.NewCoin(asset, cosmos.NewUint(common.One))))
+		c.Assert(err, NotNil)
+		c.Assert(coin.IsEmpty(), Equals, true)
+	}
+}
+
 type altNativeEscrowKeeperHelper struct {
 	keeper.Keeper
 	failReserveTransferAbove cosmos.Uint

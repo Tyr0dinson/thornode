@@ -2596,8 +2596,9 @@ func calculateAltNativeTxFee(ctx cosmos.Context, k keeper.Keeper, asset common.A
 // asset via calculateAltNativeTxFee.
 func fetchAltNativeTxFeeCoin(ctx cosmos.Context, k keeper.Keeper, coins common.Coins) (common.Coin, error) {
 	for _, c := range coins {
-		// skip non-native & rune
-		if !c.Asset.IsNative() || c.Asset.IsRune() {
+		// Synth and derived assets require different burn and settlement accounting,
+		// so they cannot safely back an L1 escrow balance.
+		if !c.Asset.IsNative() || c.Asset.IsRune() || c.Asset.IsSyntheticAsset() || c.Asset.IsDerivedAsset() {
 			continue
 		}
 		altNativeTxFee, err := calculateAltNativeTxFee(ctx, k, c.Asset)
