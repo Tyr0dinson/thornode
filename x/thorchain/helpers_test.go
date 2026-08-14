@@ -3071,6 +3071,31 @@ func (s *HelperSuite) TestProcessAltNativeFeeEscrowsHonorsThreshold(c *C) {
 	c.Assert(mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName).Equal(reserveBefore), Equals, true)
 }
 
+// TestProcessAltNativeFeeEscrowsCapsThreshold verifies runtime settlement does
+// not wait for more than the pool's full asset depth, even with stale Mimir.
+func (s *HelperSuite) TestProcessAltNativeFeeEscrowsCapsThreshold(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	asset := common.NAMI
+	escrowAmount := cosmos.NewUint(1_000 * common.One)
+
+	mgr.Keeper().SetMimir(ctx, constants.AltNativeTxFeeSwapThresholdBps.String(), 20_000)
+
+	pool := NewPool()
+	pool.Asset = asset
+	pool.BalanceAsset = escrowAmount
+	pool.BalanceRune = cosmos.NewUint(200_000_000 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+	c.Assert(mgr.Keeper().AddAltNativeFeeEscrowBalance(ctx, asset, escrowAmount), IsNil)
+	reserveBefore := mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName)
+
+	processAltNativeFeeEscrows(ctx, mgr)
+
+	_, exists := mgr.Keeper().GetAltNativeFeeEscrow(ctx, asset)
+	c.Assert(exists, Equals, false)
+	c.Assert(mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName).GT(reserveBefore), Equals, true)
+}
+
 // TestProcessAltNativeFeeEscrowsHonorsTradingHalt verifies that an existing
 // escrow remains pending without pool or Reserve mutations during a halt.
 func (s *HelperSuite) TestProcessAltNativeFeeEscrowsHonorsTradingHalt(c *C) {

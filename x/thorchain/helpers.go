@@ -2804,6 +2804,9 @@ func processAltNativeFeeEscrows(ctx cosmos.Context, mgr Manager) {
 	defer iter.Close()
 
 	thresholdBps := uint64(max(0, mgr.Keeper().GetConfigInt64(ctx, constants.AltNativeTxFeeSwapThresholdBps)))
+	// Cap defensively in case an out-of-range value predates validation or is
+	// supplied through an administrative path that does not use MsgMimir.
+	thresholdBps = min(thresholdBps, constants.MaxBasisPts)
 	type escrowBalance struct {
 		asset  common.Asset
 		amount cosmos.Uint

@@ -88,6 +88,12 @@ func (h MimirHandler) validate(ctx cosmos.Context, msg MsgMimir) error {
 		return nil
 	}
 
+	// A settlement threshold is a fraction of pool depth and cannot exceed
+	// the full pool. Negative values remain valid for removing a Mimir vote.
+	if upperKey == strings.ToUpper(constants.AltNativeTxFeeSwapThresholdBps.String()) && msg.Value > int64(constants.MaxBasisPts) {
+		return cosmos.ErrUnknownRequest("AltNativeTxFeeSwapThresholdBps cannot exceed 10000 bps")
+	}
+
 	// nothing else to verify if this is not a min slip mimir
 	if !strings.HasSuffix(strings.ToUpper(msg.Key), "SLIPMINBPS") {
 		return nil

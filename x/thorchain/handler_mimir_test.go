@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"fmt"
+	"strings"
 
 	. "gopkg.in/check.v1"
 
@@ -27,6 +28,19 @@ func (s *HandlerMimirSuite) TestValidate(c *C) {
 	msg := &MsgMimir{}
 	err := handler.validate(ctx, *msg)
 	c.Assert(err, NotNil)
+}
+
+// TestAltNativeTxFeeSwapThresholdValidation verifies the threshold accepts a
+// full-pool bound and vote removal but rejects larger values case-insensitively.
+func (s *HandlerMimirSuite) TestAltNativeTxFeeSwapThresholdValidation(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+	handler := NewMimirHandler(mgr)
+
+	c.Assert(handler.validate(ctx, *NewMsgMimir(constants.AltNativeTxFeeSwapThresholdBps.String(), int64(constants.MaxBasisPts), na.NodeAddress)), IsNil)
+	c.Assert(handler.validate(ctx, *NewMsgMimir(strings.ToLower(constants.AltNativeTxFeeSwapThresholdBps.String()), -1, na.NodeAddress)), IsNil)
+	c.Assert(handler.validate(ctx, *NewMsgMimir(strings.ToLower(constants.AltNativeTxFeeSwapThresholdBps.String()), int64(constants.MaxBasisPts)+1, na.NodeAddress)), ErrorMatches, "AltNativeTxFeeSwapThresholdBps cannot exceed 10000 bps.*")
 }
 
 func (s *HandlerMimirSuite) TestMimirHandle(c *C) {
