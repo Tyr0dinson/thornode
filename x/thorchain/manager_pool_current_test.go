@@ -719,6 +719,54 @@ func (s *PoolMgrSuite) TestAbandonPoolSkipsBurnWithPendingOutboundLiability(c *C
 	c.Assert(len(k.GetPendingOutbounds(ctx, usdAsset)), Equals, 1)
 }
 
+// TestAbandonPoolSettlesAltNativeFeeEscrowBeforeBurn verifies a pool settles
+// its fee liability before demotion and can subsequently be removed.
+func (s *PoolMgrSuite) TestAbandonPoolSettlesAltNativeFeeEscrowBeforeBurn(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	mgr := NewDummyMgrWithKeeper(k)
+
+	asset, err := common.NewAsset("ETH.TUSDB")
+	c.Assert(err, IsNil)
+
+	pool := NewPool()
+	pool.Asset = asset
+	pool.Status = PoolAvailable
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+	FundModule(c, ctx, k, AsgardName, 1_000*common.One)
+
+	vault := GetRandomVault()
+	vault.Coins = common.NewCoins(common.NewCoin(asset, pool.BalanceAsset.Add(cosmos.NewUint(common.One))))
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+	c.Assert(k.AddAltNativeFeeEscrowBalance(ctx, asset, cosmos.NewUint(common.One)), IsNil)
+	reserveBefore := k.GetRuneBalanceOfModule(ctx, ReserveName)
+
+	poolMgr := newPoolMgr()
+	c.Assert(poolMgr.cyclePools(ctx, 100, 200*common.One, 0, mgr), IsNil)
+
+	afterPool, err := k.GetPool(ctx, asset)
+	c.Assert(err, IsNil)
+	c.Assert(afterPool.IsEmpty(), Equals, false)
+	c.Assert(afterPool.Status, Equals, PoolStaged)
+	c.Assert(afterPool.BalanceAsset.GT(pool.BalanceAsset), Equals, true)
+	c.Assert(afterPool.BalanceRune.LT(pool.BalanceRune), Equals, true)
+	_, exists := k.GetAltNativeFeeEscrow(ctx, asset)
+	c.Assert(exists, Equals, false)
+	c.Assert(k.GetRuneBalanceOfModule(ctx, ReserveName).GT(reserveBefore), Equals, true)
+
+	// Once staged costs consume the remaining RUNE, no escrow remains to
+	// prevent safe removal of the pool and its vault asset.
+	c.Assert(poolMgr.cyclePools(ctx, 100, 1, 1_000*common.One, mgr), IsNil)
+	afterPool, err = k.GetPool(ctx, asset)
+	c.Assert(err, IsNil)
+	c.Assert(afterPool.IsEmpty(), Equals, true)
+
+	afterVault, err := k.GetVault(ctx, vault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(afterVault.GetCoin(asset).Amount.IsZero(), Equals, true)
+}
+
 // TestAbandonPoolSkipsBurnWithRelatedAssetSynthSupply verifies that a staged L1
 // pool is not removed while related synth supply still exists.
 func (s *PoolMgrSuite) TestAbandonPoolSkipsBurnWithRelatedAssetSynthSupply(c *C) {

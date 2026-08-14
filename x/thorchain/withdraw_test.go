@@ -833,6 +833,54 @@ func getWithdrawTestKeeper(c *C, ctx cosmos.Context, k keeper.Keeper, runeAddres
 	return store
 }
 
+// TestFinalWithdrawSettlesAltNativeFeeEscrow verifies the final LP withdrawal
+// recalculates against post-settlement depths instead of staging the pool with
+// an outstanding fee liability.
+func (WithdrawSuite) TestFinalWithdrawSettlesAltNativeFeeEscrow(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	asset, err := common.NewAsset("ETH.TUSDB")
+	c.Assert(err, IsNil)
+	address := GetRandomRUNEAddress()
+
+	pool := NewPool()
+	pool.Asset = asset
+	pool.Status = PoolAvailable
+	pool.Decimals = 8
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.LPUnits = cosmos.NewUint(100 * common.One)
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+	mgr.Keeper().SetLiquidityProvider(ctx, LiquidityProvider{
+		Asset:        asset,
+		RuneAddress:  address,
+		AssetAddress: address,
+		Units:        pool.LPUnits,
+	})
+	FundModule(c, ctx, mgr.Keeper(), AsgardName, 1_000*common.One)
+	c.Assert(mgr.Keeper().AddAltNativeFeeEscrowBalance(ctx, asset, cosmos.NewUint(common.One)), IsNil)
+	reserveBefore := mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName)
+
+	msg := MsgWithdrawLiquidity{
+		WithdrawAddress: address,
+		BasisPoints:     cosmos.NewUint(MaxWithdrawBasisPoints),
+		Asset:           asset,
+		Tx:              common.Tx{ID: GetRandomTxHash()},
+		Signer:          GetRandomValidatorNode(NodeActive).NodeAddress,
+	}
+	runeAmt, assetAmt, units, _, err := withdraw(ctx, msg, mgr)
+	c.Assert(err, IsNil)
+	c.Assert(runeAmt.IsZero(), Equals, false)
+	c.Assert(assetAmt.IsZero(), Equals, false)
+	c.Assert(units.Equal(pool.LPUnits), Equals, true)
+
+	afterPool, err := mgr.Keeper().GetPool(ctx, asset)
+	c.Assert(err, IsNil)
+	c.Assert(afterPool.Status, Equals, PoolStaged)
+	_, exists := mgr.Keeper().GetAltNativeFeeEscrow(ctx, asset)
+	c.Assert(exists, Equals, false)
+	c.Assert(mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName).GT(reserveBefore), Equals, true)
+}
+
 func (WithdrawSuite) TestWithdrawSynth(c *C) {
 	accountAddr := GetRandomValidatorNode(NodeActive).NodeAddress
 	ctx, mgr := setupManagerForTest(c)

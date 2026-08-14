@@ -2834,6 +2834,64 @@ func calculateAltNativeFeeSwapThreshold(pool types.Pool, thresholdBps uint64, th
 	return cosmos.MinUint(threshold, pool.RuneValueInAsset(thresholdRune))
 }
 
+// settleAltNativeFeeEscrowForLifecycle settles an existing escrow in full
+// before its backing pool is staged, suspended, or removed. This deliberately
+// bypasses trading gates because collection has already happened and leaving
+// the liability behind would make the pool transition unsafe.
+func settleAltNativeFeeEscrowForLifecycle(ctx cosmos.Context, mgr Manager, asset common.Asset) error {
+	escrow, exists := mgr.Keeper().GetAltNativeFeeEscrow(ctx, asset)
+	if !exists {
+		return nil
+	}
+
+	cacheCtx, commit := ctx.CacheContext()
+	if escrow.Balance.Amount.IsZero() {
+		mgr.Keeper().RemoveAltNativeFeeEscrow(cacheCtx, asset)
+		commit()
+		return nil
+	}
+
+	pool, err := mgr.Keeper().GetPool(cacheCtx, asset)
+	if err != nil {
+		return fmt.Errorf("fail to get pool for alt-native fee lifecycle settlement: %w", err)
+	}
+	if pool.BalanceAsset.IsZero() || pool.BalanceRune.IsZero() {
+		return fmt.Errorf("cannot settle alt-native fee escrow for empty pool %s", pool.Asset)
+	}
+
+	// A staged pool may be encountered during a retry or after importing older
+	// state. Make it available only inside the cache so the internal swap can
+	// run, then restore its lifecycle status before committing.
+	originalStatus := pool.Status
+	if !pool.IsAvailable() {
+		if pool.Status != PoolStaged {
+			return fmt.Errorf("cannot settle alt-native fee escrow for %s pool %s", pool.Status, pool.Asset)
+		}
+		pool.Status = PoolAvailable
+		if err = mgr.Keeper().SetPool(cacheCtx, pool); err != nil {
+			return fmt.Errorf("fail to make pool available for alt-native fee lifecycle settlement: %w", err)
+		}
+	}
+
+	if _, err = swapAltNativeFeeEscrowBalanceUnchecked(cacheCtx, mgr, pool.Asset, escrow.Balance.Amount); err != nil {
+		return err
+	}
+	if originalStatus != PoolAvailable {
+		pool, err = mgr.Keeper().GetPool(cacheCtx, pool.Asset)
+		if err != nil {
+			return fmt.Errorf("fail to reload pool after alt-native fee lifecycle settlement: %w", err)
+		}
+		pool.Status = originalStatus
+		if err = mgr.Keeper().SetPool(cacheCtx, pool); err != nil {
+			return fmt.Errorf("fail to restore pool after alt-native fee lifecycle settlement: %w", err)
+		}
+	}
+
+	mgr.Keeper().RemoveAltNativeFeeEscrow(cacheCtx, pool.Asset)
+	commit()
+	return nil
+}
+
 // processAltNativeFeeEscrows swaps any escrowed alt-native balances that meet
 // the configured effective threshold into RUNE and credits the Reserve.
 func processAltNativeFeeEscrows(ctx cosmos.Context, mgr Manager) {
@@ -2913,6 +2971,13 @@ func swapAltNativeFeeEscrowBalance(ctx cosmos.Context, mgr Manager, asset common
 	if err := ensureAltNativeTxFeeGatesOpen(ctx, mgr.Keeper(), asset); err != nil {
 		return cosmos.ZeroUint(), err
 	}
+	return swapAltNativeFeeEscrowBalanceUnchecked(ctx, mgr, asset, amount)
+}
+
+// swapAltNativeFeeEscrowBalanceUnchecked performs the accounting swap after
+// the caller has either enforced normal gates or established a lifecycle-only
+// settlement that must precede removal of the backing pool.
+func swapAltNativeFeeEscrowBalanceUnchecked(ctx cosmos.Context, mgr Manager, asset common.Asset, amount cosmos.Uint) (cosmos.Uint, error) {
 	swapper, err := GetSwapper(mgr.GetVersion())
 	if err != nil {
 		return cosmos.ZeroUint(), fmt.Errorf("fail to get swapper: %w", err)

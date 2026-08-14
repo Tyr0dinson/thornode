@@ -2048,6 +2048,14 @@ func (vm *NetworkMgr) withdrawLiquidity(ctx cosmos.Context, pool Pool, na NodeAc
 		ctx.Logger().Info("cannot further withdraw liquidity from a suspended pool", "pool", pool.Asset)
 		return nil
 	}
+	if err := settleAltNativeFeeEscrowForLifecycle(ctx, mgr, pool.Asset); err != nil {
+		return fmt.Errorf("fail to settle alt-native fee escrow before ragnarok pool %s: %w", pool.Asset, err)
+	}
+	var err error
+	pool, err = vm.k.GetPool(ctx, pool.Asset)
+	if err != nil {
+		return fmt.Errorf("fail to reload pool before ragnarok: %w", err)
+	}
 
 	// withdraw savers first
 	done, err := vm.withdrawSavers(ctx, pool, na, mgr)

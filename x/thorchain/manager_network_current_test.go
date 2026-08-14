@@ -2424,6 +2424,37 @@ func (s *NetworkManagerTestSuite) TestRagnarokDualSidedLPDustAssetLegPausedAsymR
 		Commentf("the retained claim should be paid once the pause lifts"))
 }
 
+// TestRagnarokPoolSettlesAltNativeFeeEscrow verifies that Ragnarok clears an
+// existing fee liability before staging and draining its backing pool.
+func (s *NetworkManagerTestSuite) TestRagnarokPoolSettlesAltNativeFeeEscrow(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(10)
+	mgr := NewDummyMgrWithKeeper(k)
+	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.Status = PoolAvailable
+	pool.BalanceRune = cosmos.NewUint(1_000 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(10 * common.One)
+	pool.LPUnits = cosmos.NewUint(1_000)
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+	c.Assert(k.AddAltNativeFeeEscrowBalance(ctx, pool.Asset, cosmos.NewUint(common.One)), IsNil)
+	k.SetMimir(ctx, "RAGNAROK-BTC-BTC", 1)
+	FundModule(c, ctx, k, AsgardName, 2_000*common.One)
+	reserveBefore := k.GetRuneBalanceOfModule(ctx, ReserveName)
+
+	err := networkMgr.withdrawLiquidity(ctx, pool, GetRandomValidatorNode(NodeActive), mgr)
+	c.Assert(err, IsNil)
+
+	afterPool, err := k.GetPool(ctx, pool.Asset)
+	c.Assert(err, IsNil)
+	c.Assert(afterPool.Status, Equals, PoolSuspended)
+	_, exists := k.GetAltNativeFeeEscrow(ctx, pool.Asset)
+	c.Assert(exists, Equals, false)
+	c.Assert(k.GetRuneBalanceOfModule(ctx, ReserveName).GT(reserveBefore), Equals, true)
+}
+
 func (s *NetworkManagerTestSuite) TestCleanupAsgardIndex(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	vault1 := NewVault(1024, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.ETHChain}.Strings(), []ChainContract{})

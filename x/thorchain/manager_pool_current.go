@@ -78,8 +78,22 @@ func (pm *PoolMgr) cyclePools(ctx cosmos.Context, maxAvailablePools, minRunePool
 
 	// quick func to save a pool status and emit event
 	setPool := func(pool Pool) error {
-		poolEvt := NewEventPool(pool.Asset, pool.Status)
-		if err := mgr.EventMgr().EmitEvent(ctx, poolEvt); err != nil {
+		cacheCtx, commit := ctx.CacheContext()
+		targetStatus := pool.Status
+		if targetStatus == PoolStaged {
+			if err := settleAltNativeFeeEscrowForLifecycle(cacheCtx, mgr, pool.Asset); err != nil {
+				return fmt.Errorf("fail to settle alt-native fee escrow before staging pool %s: %w", pool.Asset, err)
+			}
+			var err error
+			pool, err = mgr.Keeper().GetPool(cacheCtx, pool.Asset)
+			if err != nil {
+				return fmt.Errorf("fail to reload pool before staging: %w", err)
+			}
+			pool.Status = targetStatus
+		}
+
+		poolEvt := NewEventPool(pool.Asset, targetStatus)
+		if err := mgr.EventMgr().EmitEvent(cacheCtx, poolEvt); err != nil {
 			return fmt.Errorf("fail to emit pool event: %w", err)
 		}
 
@@ -100,7 +114,11 @@ func (pm *PoolMgr) cyclePools(ctx cosmos.Context, maxAvailablePools, minRunePool
 			},
 		)
 		pool.StatusSince = ctx.BlockHeight()
-		return mgr.Keeper().SetPool(ctx, pool)
+		if err := mgr.Keeper().SetPool(cacheCtx, pool); err != nil {
+			return err
+		}
+		commit()
+		return nil
 	}
 
 	iterator := mgr.Keeper().GetPoolIterator(ctx)
@@ -146,6 +164,17 @@ func (pm *PoolMgr) cyclePools(ctx cosmos.Context, maxAvailablePools, minRunePool
 			}
 			mgr.Keeper().ResetRollingPoolLiquidityFee(ctx, pool.Asset)
 		case PoolStaged:
+			// Clear any escrow imported from older state before staged fees can
+			// consume the RUNE depth needed to settle it.
+			if err := settleAltNativeFeeEscrowForLifecycle(ctx, mgr, pool.Asset); err != nil {
+				ctx.Logger().Error("fail to settle alt-native fee escrow for staged pool", "pool", pool.Asset, "err", err)
+				continue
+			}
+			pool, err = mgr.Keeper().GetPool(ctx, pool.Asset)
+			if err != nil {
+				return fmt.Errorf("fail to reload staged pool after alt-native fee settlement: %w", err)
+			}
+
 			// deduct staged pool rune fee
 			fee := cosmos.NewUint(uint64(stagedPoolCost))
 			if fee.GT(pool.BalanceRune) {
@@ -456,24 +485,31 @@ func (pm *PoolMgr) getRelatedAssetLiabilityReason(ctx cosmos.Context, asset comm
 
 // burnStagedPool atomically removes a staged pool and its backing funds.
 func (pm *PoolMgr) burnStagedPool(ctx cosmos.Context, pool Pool, mgr Manager, queuedSwapLiabilityAssets map[string]struct{}) error {
+	cacheCtx, commit := ctx.CacheContext()
+	if err := settleAltNativeFeeEscrowForLifecycle(cacheCtx, mgr, pool.Asset); err != nil {
+		return fmt.Errorf("fail to settle alt-native fee escrow before burning pool %s: %w", pool.Asset, err)
+	}
+	var err error
+	pool, err = mgr.Keeper().GetPool(cacheCtx, pool.Asset)
+	if err != nil {
+		return fmt.Errorf("fail to reload staged pool before burning: %w", err)
+	}
 	if !pool.PendingInboundRune.IsZero() || !pool.PendingInboundAsset.IsZero() {
 		return fmt.Errorf("cannot burn staged pool %s with pending inbound liquidity", pool.Asset)
 	}
 	if _, ok := queuedSwapLiabilityAssets[pool.Asset.String()]; ok {
 		return fmt.Errorf("cannot burn staged pool %s with queued swap liabilities", pool.Asset)
 	}
-	if pm.hasPendingOutboundLiability(ctx, pool.Asset, mgr) {
+	if pm.hasPendingOutboundLiability(cacheCtx, pool.Asset, mgr) {
 		return fmt.Errorf("cannot burn staged pool %s with pending outbound liabilities", pool.Asset)
 	}
-	relatedAssetLiabilityReason, err := pm.getRelatedAssetLiabilityReason(ctx, pool.Asset, mgr, queuedSwapLiabilityAssets)
+	relatedAssetLiabilityReason, err := pm.getRelatedAssetLiabilityReason(cacheCtx, pool.Asset, mgr, queuedSwapLiabilityAssets)
 	if err != nil {
 		return err
 	}
 	if relatedAssetLiabilityReason != "" {
 		return fmt.Errorf("cannot burn staged pool %s while related asset liabilities remain: %s", pool.Asset, relatedAssetLiabilityReason)
 	}
-
-	cacheCtx, commit := ctx.CacheContext()
 
 	if pool.Asset.IsNative() {
 		// Native pool assets live in module balances rather than vaults, so
