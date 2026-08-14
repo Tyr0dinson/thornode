@@ -62,10 +62,9 @@ const (
 	streamAckHeader = "ack_header"
 	streamAckData   = "ack_data"
 
-	// A normal state batch contains up to 100 entries of each state type. This
-	// cap is deliberately generous while preventing a peer from advertising an
-	// effectively unbounded transfer.
-	maxAttestationStateBatches uint32 = 1000
+	// Bound both the complete transfer and each state type within one batch.
+	maxAttestationStateBatches      uint32 = 1000
+	maxAttestationStateItemsPerType        = 100
 )
 
 var (
@@ -81,8 +80,8 @@ var (
 	prefixBatchData   = []byte{0x04} // data of a batch
 	prefixBatchEnd    = []byte{0x05} // end of a batch
 
-	// Maximum number of QuorumTxs to send in a single batch when sending attestation state.
-	maxQuorumTxsPerBatch = 100
+	// Maximum number of entries to send in a single attestation state batch.
+	maxQuorumTxsPerBatch = maxAttestationStateItemsPerType
 )
 
 // txKey contains the properties that are required to uniquely identify an observed tx

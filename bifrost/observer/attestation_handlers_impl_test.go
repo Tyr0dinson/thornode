@@ -103,6 +103,26 @@ func TestAttestMessageInterface(t *testing.T) {
 	})
 }
 
+func TestAttestationHandlersRejectMissingRequiredPointers(t *testing.T) {
+	ag, _, _, _, _, _ := setupTestGossip(t)
+
+	assert.False(t, ag.handleObservedTxAttestation(context.Background(), common.AttestTx{}))
+	ag.handleNetworkFeeAttestation(context.Background(), common.AttestNetworkFee{})
+	ag.handleSolvencyAttestation(context.Background(), common.AttestSolvency{})
+	ag.handleErrataAttestation(context.Background(), common.AttestErrataTx{})
+	ag.handlePriceFeedAttestation(context.Background(), common.AttestPriceFeed{})
+	ag.handlePriceFeedAttestation(context.Background(), common.AttestPriceFeed{
+		PriceFeed:   &common.PriceFeed{Rates: []*common.OraclePrice{nil}},
+		Attestation: &common.Attestation{},
+	})
+
+	require.Empty(t, ag.observedTxs)
+	require.Empty(t, ag.networkFees)
+	require.Empty(t, ag.solvencies)
+	require.Empty(t, ag.errataTxs)
+	require.Empty(t, ag.priceFeeds)
+}
+
 // TestProcessAttestation tests the generic attestation processing function
 func TestProcessAttestation(t *testing.T) {
 	// Override verifySignature for testing

@@ -592,7 +592,129 @@ func (s *AttestationGossip) receiveBatchedAttestationState(ctx context.Context, 
 	return nil
 }
 
+// validateAttestationStateBatch preflights structural bounds and required
+// pointers in an untrusted decoded batch before any handler runs. This avoids
+// panics and partial dispatch; handlers retain semantic and signature checks.
+func validateAttestationStateBatch(ctx context.Context, batch common.QuorumState) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	checkCount := func(name string, count int) error {
+		if count > maxAttestationStateItemsPerType {
+			return fmt.Errorf("%s count %d exceeds maximum %d", name, count, maxAttestationStateItemsPerType)
+		}
+		return nil
+	}
+	for _, field := range []struct {
+		name  string
+		count int
+	}{
+		{name: "quoTxs", count: len(batch.QuoTxs)},
+		{name: "quoNetworkFees", count: len(batch.QuoNetworkFees)},
+		{name: "quoSolvencies", count: len(batch.QuoSolvencies)},
+		{name: "quoErrataTxs", count: len(batch.QuoErrataTxs)},
+		{name: "quoPriceFeeds", count: len(batch.QuoPriceFeeds)},
+	} {
+		if err := checkCount(field.name, field.count); err != nil {
+			return err
+		}
+	}
+	checkAttestations := func(name string, item int, attestations []*common.Attestation) error {
+		for i, attestation := range attestations {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if attestation == nil {
+				return fmt.Errorf("%s[%d].attestations[%d] is nil", name, item, i)
+			}
+		}
+		return nil
+	}
+
+	for i, tx := range batch.QuoTxs {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if tx == nil {
+			return fmt.Errorf("quoTxs[%d] is nil", i)
+		}
+		if err := checkAttestations("quoTxs", i, tx.Attestations); err != nil {
+			return err
+		}
+	}
+	for i, networkFee := range batch.QuoNetworkFees {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if networkFee == nil {
+			return fmt.Errorf("quoNetworkFees[%d] is nil", i)
+		}
+		if networkFee.NetworkFee == nil {
+			return fmt.Errorf("quoNetworkFees[%d].networkFee is nil", i)
+		}
+		if err := checkAttestations("quoNetworkFees", i, networkFee.Attestations); err != nil {
+			return err
+		}
+	}
+	for i, solvency := range batch.QuoSolvencies {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if solvency == nil {
+			return fmt.Errorf("quoSolvencies[%d] is nil", i)
+		}
+		if solvency.Solvency == nil {
+			return fmt.Errorf("quoSolvencies[%d].solvency is nil", i)
+		}
+		if err := checkAttestations("quoSolvencies", i, solvency.Attestations); err != nil {
+			return err
+		}
+	}
+	for i, errata := range batch.QuoErrataTxs {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if errata == nil {
+			return fmt.Errorf("quoErrataTxs[%d] is nil", i)
+		}
+		if errata.ErrataTx == nil {
+			return fmt.Errorf("quoErrataTxs[%d].errataTx is nil", i)
+		}
+		if err := checkAttestations("quoErrataTxs", i, errata.Attestations); err != nil {
+			return err
+		}
+	}
+	for i, priceFeed := range batch.QuoPriceFeeds {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if priceFeed == nil {
+			return fmt.Errorf("quoPriceFeeds[%d] is nil", i)
+		}
+		if priceFeed.PriceFeed == nil {
+			return fmt.Errorf("quoPriceFeeds[%d].priceFeed is nil", i)
+		}
+		for rateIndex, rate := range priceFeed.PriceFeed.Rates {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if rate == nil {
+				return fmt.Errorf("quoPriceFeeds[%d].priceFeed.rates[%d] is nil", i, rateIndex)
+			}
+		}
+		if err := checkAttestations("quoPriceFeeds", i, priceFeed.Attestations); err != nil {
+			return err
+		}
+	}
+	return ctx.Err()
+}
+
 func (s *AttestationGossip) processAttestationStateBatch(ctx context.Context, logger zerolog.Logger, batch common.QuorumState) error {
+	// Preflight the whole batch before mutating any pool so a malformed later
+	// record cannot leave a partially applied snapshot.
+	if err := validateAttestationStateBatch(ctx, batch); err != nil {
+		return err
+	}
 	for _, qt := range batch.QuoTxs {
 		for _, att := range qt.Attestations {
 			if err := ctx.Err(); err != nil {

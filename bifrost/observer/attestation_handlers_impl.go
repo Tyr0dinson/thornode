@@ -28,6 +28,11 @@ func (s *AttestationGossip) handleObservedTxAttestationInternal(
 	tx common.AttestTx,
 	queueForBroadcast bool,
 ) bool {
+	// State-batch preflight does not cover ordinary gossip or direct callers.
+	if tx.Attestation == nil {
+		s.logger.Error().Msg("skip observed tx with nil attestation")
+		return false
+	}
 	obsTx := tx.ObsTx
 	isXMR := obsTx.Tx.Chain.Equals(common.XMRChain)
 	xmrErrataReadLocked := isXMR
@@ -303,6 +308,11 @@ func (s *AttestationGossip) sendObservedTxAttestationsToThornode(
 
 // handleNetworkFeeAttestation processes attestations for network fees
 func (s *AttestationGossip) handleNetworkFeeAttestation(ctx context.Context, anf common.AttestNetworkFee) {
+	// State-batch preflight does not cover ordinary gossip or direct callers.
+	if anf.NetworkFee == nil || anf.Attestation == nil {
+		s.logger.Error().Msg("skip network fee with missing payload or attestation")
+		return
+	}
 	// Use the network fee as the map key
 	k := *anf.NetworkFee
 
@@ -368,6 +378,11 @@ func (s *AttestationGossip) sendNetworkFeeAttestationsToThornode(ctx context.Con
 
 // handleSolvencyAttestation processes attestations for solvency proofs
 func (s *AttestationGossip) handleSolvencyAttestation(ctx context.Context, ats common.AttestSolvency) {
+	// State-batch preflight does not cover ordinary gossip or direct callers.
+	if ats.Solvency == nil || ats.Attestation == nil {
+		s.logger.Error().Msg("skip solvency with missing payload or attestation")
+		return
+	}
 	// Calculate the hash for the solvency to use as key
 	k, err := ats.Solvency.Hash()
 	if err != nil {
@@ -452,6 +467,11 @@ func (s *AttestationGossip) handleErrataAttestationWithRetry(
 	aet common.AttestErrataTx,
 	retryPending bool,
 ) {
+	// State-batch preflight does not cover ordinary gossip or direct callers.
+	if aet.ErrataTx == nil || aet.Attestation == nil {
+		s.logger.Error().Msg("skip errata with missing payload or attestation")
+		return
+	}
 	// Use the errata tx as the map key
 	k := *aet.ErrataTx
 
@@ -545,6 +565,18 @@ func (s *AttestationGossip) sendErrataAttestationsToThornode(ctx context.Context
 
 // handlePriceFeedAttestation processes attestations for price feeds
 func (s *AttestationGossip) handlePriceFeedAttestation(ctx context.Context, apf common.AttestPriceFeed) {
+	// State-batch preflight does not cover ordinary gossip or direct callers.
+	if apf.PriceFeed == nil || apf.Attestation == nil {
+		s.logger.Error().Msg("skip price feed with missing payload or attestation")
+		return
+	}
+	// Direct callers may also supply nil entries inside the repeated rate field.
+	for _, rate := range apf.PriceFeed.Rates {
+		if rate == nil {
+			s.logger.Error().Msg("skip price feed with nil rate")
+			return
+		}
+	}
 	// Use the pubkey as key
 	k := hex.EncodeToString(apf.Attestation.PubKey)
 

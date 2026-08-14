@@ -1609,6 +1609,166 @@ func TestReceiveBatchedAttestationStateRejectsInvalidBatchSequence(t *testing.T)
 	}
 }
 
+func TestReceiveBatchedAttestationStateRejectsMissingRequiredPayload(t *testing.T) {
+	tests := []struct {
+		name        string
+		batch       common.QuorumState
+		errContains string
+		checkDecode func(*testing.T, common.QuorumState)
+	}{
+		{
+			name: "network fee",
+			batch: common.QuorumState{QuoNetworkFees: []*common.QuorumNetworkFee{{
+				Attestations: []*common.Attestation{{}},
+			}}},
+			errContains: "networkFee is nil",
+			checkDecode: func(t *testing.T, batch common.QuorumState) {
+				require.NotNil(t, batch.QuoNetworkFees[0])
+				require.NotNil(t, batch.QuoNetworkFees[0].Attestations[0])
+				require.Nil(t, batch.QuoNetworkFees[0].NetworkFee)
+			},
+		},
+		{
+			name: "solvency",
+			batch: common.QuorumState{QuoSolvencies: []*common.QuorumSolvency{{
+				Attestations: []*common.Attestation{{}},
+			}}},
+			errContains: "solvency is nil",
+			checkDecode: func(t *testing.T, batch common.QuorumState) {
+				require.NotNil(t, batch.QuoSolvencies[0])
+				require.NotNil(t, batch.QuoSolvencies[0].Attestations[0])
+				require.Nil(t, batch.QuoSolvencies[0].Solvency)
+			},
+		},
+		{
+			name: "errata",
+			batch: common.QuorumState{QuoErrataTxs: []*common.QuorumErrataTx{{
+				Attestations: []*common.Attestation{{}},
+			}}},
+			errContains: "errataTx is nil",
+			checkDecode: func(t *testing.T, batch common.QuorumState) {
+				require.NotNil(t, batch.QuoErrataTxs[0])
+				require.NotNil(t, batch.QuoErrataTxs[0].Attestations[0])
+				require.Nil(t, batch.QuoErrataTxs[0].ErrataTx)
+			},
+		},
+		{
+			name: "price feed",
+			batch: common.QuorumState{QuoPriceFeeds: []*common.QuorumPriceFeed{{
+				Attestations: []*common.Attestation{{}},
+			}}},
+			errContains: "priceFeed is nil",
+			checkDecode: func(t *testing.T, batch common.QuorumState) {
+				require.NotNil(t, batch.QuoPriceFeeds[0])
+				require.NotNil(t, batch.QuoPriceFeeds[0].Attestations[0])
+				require.Nil(t, batch.QuoPriceFeeds[0].PriceFeed)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Exercise generated-protobuf behavior: omitted nested messages remain
+			// nil while their containing record and attestations decode non-nil.
+			batchData, err := tt.batch.Marshal()
+			require.NoError(t, err)
+			var decoded common.QuorumState
+			require.NoError(t, decoded.Unmarshal(batchData))
+			tt.checkDecode(t, decoded)
+
+			ag, _, _, _, _, _ := setupTestGossip(t)
+			stream := newScriptedAttestationStateStream(
+				stateBatchHeader(0, uint32(len(batchData))),
+				append(append([]byte(nil), prefixBatchData...), batchData...),
+			)
+			t.Cleanup(func() { _ = stream.Reset() })
+			err = ag.receiveBatchedAttestationState(context.Background(), stream, stateBatchCount(1))
+			require.ErrorContains(t, err, tt.errContains)
+			require.Empty(t, ag.networkFees)
+			require.Empty(t, ag.solvencies)
+			require.Empty(t, ag.errataTxs)
+			require.Empty(t, ag.priceFeeds)
+		})
+	}
+}
+
+func TestValidateAttestationStateBatchRejectsNilPointersAndOversize(t *testing.T) {
+	tests := []struct {
+		name        string
+		batch       common.QuorumState
+		errContains string
+	}{
+		{
+			name:        "nil quorum tx",
+			batch:       common.QuorumState{QuoTxs: []*common.QuorumTx{nil}},
+			errContains: "quoTxs[0] is nil",
+		},
+		{
+			name: "nil attestation",
+			batch: common.QuorumState{QuoTxs: []*common.QuorumTx{{
+				Attestations: []*common.Attestation{nil},
+			}}},
+			errContains: "attestations[0] is nil",
+		},
+		{
+			name: "nil price rate",
+			batch: common.QuorumState{QuoPriceFeeds: []*common.QuorumPriceFeed{{
+				PriceFeed: &common.PriceFeed{Rates: []*common.OraclePrice{nil}},
+			}}},
+			errContains: "rates[0] is nil",
+		},
+		{
+			name:        "too many transactions",
+			batch:       common.QuorumState{QuoTxs: make([]*common.QuorumTx, maxAttestationStateItemsPerType+1)},
+			errContains: "quoTxs count",
+		},
+		{
+			name:        "too many network fees",
+			batch:       common.QuorumState{QuoNetworkFees: make([]*common.QuorumNetworkFee, maxAttestationStateItemsPerType+1)},
+			errContains: "quoNetworkFees count",
+		},
+		{
+			name:        "too many solvencies",
+			batch:       common.QuorumState{QuoSolvencies: make([]*common.QuorumSolvency, maxAttestationStateItemsPerType+1)},
+			errContains: "quoSolvencies count",
+		},
+		{
+			name:        "too many errata",
+			batch:       common.QuorumState{QuoErrataTxs: make([]*common.QuorumErrataTx, maxAttestationStateItemsPerType+1)},
+			errContains: "quoErrataTxs count",
+		},
+		{
+			name:        "too many price feeds",
+			batch:       common.QuorumState{QuoPriceFeeds: make([]*common.QuorumPriceFeed, maxAttestationStateItemsPerType+1)},
+			errContains: "quoPriceFeeds count",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateAttestationStateBatch(context.Background(), tt.batch)
+			require.ErrorContains(t, err, tt.errContains)
+		})
+	}
+}
+
+func TestProcessAttestationStateBatchPreflightsBeforeDispatch(t *testing.T) {
+	ag, _, _, _, _, _ := setupTestGossip(t)
+	err := ag.processAttestationStateBatch(context.Background(), ag.logger, common.QuorumState{
+		QuoNetworkFees: []*common.QuorumNetworkFee{
+			{
+				NetworkFee:   &common.NetworkFee{},
+				Attestations: []*common.Attestation{{}},
+			},
+			{
+				Attestations: []*common.Attestation{{}},
+			},
+		},
+	})
+	require.ErrorContains(t, err, "quoNetworkFees[1].networkFee is nil")
+	require.Empty(t, ag.networkFees, "a valid earlier record was dispatched before batch validation completed")
+}
+
 // TestAskStreamForStateEmptyState is a regression test for the prefix-strip
 // bug in askStreamForState.
 //
