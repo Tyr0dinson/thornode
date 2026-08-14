@@ -1102,6 +1102,63 @@ func TestApplySpentOutputRefsWithWireMemoUsesWireMemoAcrossRetry(t *testing.T) {
 	assert.Equal(t, "OUT:"+strings.Repeat("A", 64), obsTx.Tx.Memo)
 }
 
+func TestGuardedSpentOutputRefsRetryStopsBeforeSidecarMutation(t *testing.T) {
+	t.Parallel()
+
+	var mu sync.Mutex
+	sidecarCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		sidecarCalls++
+		mu.Unlock()
+		http.Error(w, "tx not mined yet", http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+	c := &Client{
+		chain:                     common.XMRChain,
+		sidecar:                   signer,
+		logger:                    testLogger(),
+		wg:                        &sync.WaitGroup{},
+		stopchan:                  make(chan struct{}),
+		spentRefsRetryInterval:    10 * time.Millisecond,
+		spentRefsRetryMaxAttempts: 3,
+	}
+	defer func() {
+		close(c.stopchan)
+		c.wg.Wait()
+	}()
+
+	guardCalls := 0
+	guard := func() (func(), bool) {
+		guardCalls++
+		if guardCalls > 1 {
+			return nil, false
+		}
+		return func() {}, true
+	}
+	outcome := make(chan bool, 1)
+	c.ApplySpentOutputRefsWithWireMemoAndOutcomeGuarded(
+		testXMRSpentRefsObservedTx(t, "test-vault-guarded-retry", "guarded-retry"),
+		"",
+		guard,
+		func(applied bool) { outcome <- applied },
+	)
+
+	select {
+	case applied := <-outcome:
+		require.False(t, applied)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for guarded retry outcome")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, 2, guardCalls)
+	require.Equal(t, 1, sidecarCalls, "rejected retry reached the sidecar")
+}
+
 func TestApplySpentOutputRefsOnceRetriesPartialNotFound(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

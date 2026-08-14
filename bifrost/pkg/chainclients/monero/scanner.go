@@ -37,6 +37,8 @@ const (
 	maxSidecarScannerRewindBlocks int64 = 256
 )
 
+var errXMRSpentRefsAdmissionRejected = errors.New("xmr spent-ref replay admission rejected")
+
 // Scanner adapts monero daemon/wallet RPC to the generic block scanner fetcher interface.
 type Scanner struct {
 	logger              zerolog.Logger
@@ -454,6 +456,16 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, error) 
 // deliberately not enrolled; their normal future scan sees the MarkSpent
 // metadata directly.
 func (s *Scanner) EnqueueAuthenticatedInternalInboundReplay(tx common.ObservedTx) (bool, error) {
+	return s.enqueueAuthenticatedInternalInboundReplayGuarded(tx, nil)
+}
+
+// enqueueAuthenticatedInternalInboundReplayGuarded validates and durably
+// enrolls a canonical migration replay. It takes scanMu before the optional
+// admission guard to match the lock order used by reorg cleanup.
+func (s *Scanner) enqueueAuthenticatedInternalInboundReplayGuarded(
+	tx common.ObservedTx,
+	guard func() (func(), bool),
+) (bool, error) {
 	if s.internalReplayStore == nil || s.reorgStore == nil || s.sidecar == nil || !isXMRTxMigrateMemo(tx.Tx.Memo) {
 		return false, nil
 	}
@@ -490,6 +502,16 @@ func (s *Scanner) EnqueueAuthenticatedInternalInboundReplay(tx common.ObservedTx
 	// Re-check after acquiring the canonical scan lock.
 	if s.CurrentHeight() < location.Height {
 		return false, fmt.Errorf("authenticated xmr migration replay %s scanner height moved behind %d", tx.Tx.ID, location.Height)
+	}
+	// Reorg delivery already uses scanMu before waiting for Observer cleanup.
+	// Keep that order here so replay enrollment cannot hold Observer's reader
+	// barrier while waiting for the scanner lock.
+	if guard != nil {
+		release, ok := guard()
+		if !ok || release == nil {
+			return false, errXMRSpentRefsAdmissionRejected
+		}
+		defer release()
 	}
 	reverted, err := s.reorgStore.IsRevertedTx(tx.Tx.ID.String())
 	if err != nil {

@@ -192,6 +192,7 @@ type AttestationGossip struct {
 	observerHandleErrataTxCommitted    func(errata common.ErrataTx) error
 	observerApplySpentOutputRefs       func(tx common.ObservedTx, onOutcome func(applied bool))
 	observerApplySpentRefsWithWireMemo func(tx common.ObservedTx, wireMemo string, onOutcome func(applied bool))
+	observerApplySpentRefsGuarded      func(tx common.ObservedTx, wireMemo string, guard func() (func(), bool), onOutcome func(applied bool))
 	observerStorage                    *ObserverStorage
 	// xmrErrataAdmissionRequired is immutable for production instances and is
 	// also enabled when tests wire storage explicitly. It makes the short
@@ -419,8 +420,63 @@ func (s *AttestationGossip) SetObserverApplySpentOutputRefsWithWireMemo(
 	s.observerApplySpentRefsWithWireMemo = fn
 }
 
+// SetObserverApplySpentOutputRefsGuarded wires the production XMR import. The
+// client must enter guard around each sidecar attempt, including retries.
+func (s *AttestationGossip) SetObserverApplySpentOutputRefsGuarded(
+	fn func(
+		tx common.ObservedTx,
+		wireMemo string,
+		guard func() (func(), bool),
+		onOutcome func(applied bool),
+	),
+) {
+	s.observerApplySpentRefsGuarded = fn
+}
+
 func (s *AttestationGossip) hasObserverSpentOutputRefsApplier() bool {
-	return s.observerApplySpentRefsWithWireMemo != nil || s.observerApplySpentOutputRefs != nil
+	return s.observerApplySpentRefsGuarded != nil ||
+		s.observerApplySpentRefsWithWireMemo != nil ||
+		s.observerApplySpentOutputRefs != nil
+}
+
+// hasWireMemoSpentOutputRefsApplier reports whether the configured import path
+// preserves the exact transaction wire memo separately from its semantic memo.
+func (s *AttestationGossip) hasWireMemoSpentOutputRefsApplier() bool {
+	return s.observerApplySpentRefsGuarded != nil || s.observerApplySpentRefsWithWireMemo != nil
+}
+
+// acquireXMRSpentRefsAttempt orders one sidecar mutation before or after
+// height-scoped errata cleanup. Retry delays happen outside this guard.
+func (s *AttestationGossip) acquireXMRSpentRefsAttempt(tx common.ObservedTx) (func(), bool) {
+	s.xmrErrataBarrier.RLock()
+	release := s.xmrErrataBarrier.RUnlock
+
+	// Production must not admit a mutation before durable tombstones are wired.
+	// Legacy and test instances retain prior behavior unless admission was
+	// explicitly required.
+	if s.observerStorage == nil {
+		if s.xmrErrataAdmissionRequired {
+			release()
+			s.logger.Error().Str("tx_id", tx.Tx.ID.String()).
+				Msg("reject xmr spent-ref import: durable errata storage is not ready")
+			return nil, false
+		}
+		return release, true
+	}
+	tombstone, err := s.observerStorage.getErrataTombstone(tx.Tx.Chain, tx.Tx.ID.String())
+	if err != nil {
+		release()
+		s.logger.Error().Err(err).Str("tx_id", tx.Tx.ID.String()).
+			Msg("reject xmr spent-ref import: errata admission check failed")
+		return nil, false
+	}
+	if tombstone != nil && tombstone.blocksHeight(tx.BlockHeight) {
+		release()
+		s.logger.Warn().Str("tx_id", tx.Tx.ID.String()).Int64("height", tx.BlockHeight).
+			Msg("reject xmr spent-ref import at tombstoned height")
+		return nil, false
+	}
+	return release, true
 }
 
 func (s *AttestationGossip) applyObserverSpentOutputRefs(
@@ -428,6 +484,24 @@ func (s *AttestationGossip) applyObserverSpentOutputRefs(
 	wireMemo string,
 	onOutcome func(applied bool),
 ) {
+	guard := func() (func(), bool) {
+		return s.acquireXMRSpentRefsAttempt(tx)
+	}
+	// Production delegates the guard so every retry is admitted independently.
+	// Compatibility callbacks cannot accept it, so protect only their
+	// synchronous entry call.
+	if s.observerApplySpentRefsGuarded != nil {
+		s.observerApplySpentRefsGuarded(tx, wireMemo, guard, onOutcome)
+		return
+	}
+	release, ok := guard()
+	if !ok {
+		if onOutcome != nil {
+			onOutcome(false)
+		}
+		return
+	}
+	defer release()
 	if s.observerApplySpentRefsWithWireMemo != nil {
 		s.observerApplySpentRefsWithWireMemo(tx, wireMemo, onOutcome)
 		return
@@ -447,7 +521,7 @@ func (s *AttestationGossip) applyObserverSpentOutputRefs(
 // full limiter into an unbounded population of blocked goroutines. Saturated
 // work is rejected immediately; reconciliation can retry it later.
 func (s *AttestationGossip) applySpentRefsAsync(tx common.ObservedTx, onOutcome func(applied bool)) {
-	if s.observerApplySpentRefsWithWireMemo != nil {
+	if s.hasWireMemoSpentOutputRefsApplier() {
 		// Production wire-aware callers must resolve the authoritative plan even
 		// if this legacy convenience helper is reused in the future.
 		s.applySpentRefsAsyncWithLimit(tx, nil, onOutcome, s.applySpentRefsSem, "pre-quorum")
@@ -507,7 +581,7 @@ func (s *AttestationGossip) applySpentRefsAsyncWithLimit(
 		resolvedWireMemo := tx.Tx.Memo
 		if wireMemo != nil {
 			resolvedWireMemo = *wireMemo
-		} else if s.observerApplySpentRefsWithWireMemo != nil {
+		} else if s.hasWireMemoSpentOutputRefsApplier() {
 			planned, ok := s.findPlannedXMROutbound(tx)
 			if !ok {
 				if onOutcome != nil {

@@ -2937,7 +2937,7 @@ func (c *Client) restoreKeyshareContext(ctx context.Context, vaultPubKey common.
 // Callers that do not need the final outcome can use this fire-and-forget
 // wrapper; the bounded retry continues in the background when appropriate.
 func (c *Client) ApplySpentOutputRefs(tx common.ObservedTx) {
-	c.applySpentOutputRefs(tx, nil, nil)
+	c.applySpentOutputRefs(tx, nil, nil, nil)
 }
 
 // ApplySpentOutputRefsWithOutcome reports the import's final outcome exactly
@@ -2946,7 +2946,7 @@ func (c *Client) ApplySpentOutputRefs(tx common.ObservedTx) {
 // retries, or could not be queued. Observer latch/conflict bookkeeping needs
 // the final outcome, not just the first attempt's.
 func (c *Client) ApplySpentOutputRefsWithOutcome(tx common.ObservedTx, onOutcome func(applied bool)) {
-	c.applySpentOutputRefs(tx, nil, onOutcome)
+	c.applySpentOutputRefs(tx, nil, nil, onOutcome)
 }
 
 // ApplySpentOutputRefsWithWireMemoAndOutcome imports refs while preserving the
@@ -2958,7 +2958,19 @@ func (c *Client) ApplySpentOutputRefsWithWireMemoAndOutcome(
 	wireMemo string,
 	onOutcome func(applied bool),
 ) {
-	c.applySpentOutputRefs(tx, &wireMemo, onOutcome)
+	c.applySpentOutputRefs(tx, &wireMemo, nil, onOutcome)
+}
+
+// ApplySpentOutputRefsWithWireMemoAndOutcomeGuarded lets Observer serialize
+// each sidecar attempt against durable errata cleanup without holding the
+// barrier during retry delays.
+func (c *Client) ApplySpentOutputRefsWithWireMemoAndOutcomeGuarded(
+	tx common.ObservedTx,
+	wireMemo string,
+	guard func() (func(), bool),
+	onOutcome func(applied bool),
+) {
+	c.applySpentOutputRefs(tx, &wireMemo, guard, onOutcome)
 }
 
 // applySpentOutputRefs centralizes the first attempt and final-outcome callback
@@ -2966,9 +2978,10 @@ func (c *Client) ApplySpentOutputRefsWithWireMemoAndOutcome(
 func (c *Client) applySpentOutputRefs(
 	tx common.ObservedTx,
 	wireMemo *string,
+	guard func() (func(), bool),
 	onOutcome func(applied bool),
 ) bool {
-	applied, retry := c.applySpentOutputRefsOnce(tx, wireMemo)
+	applied, retry := c.applySpentOutputRefsOnceGuarded(tx, wireMemo, guard)
 	if !retry {
 		if onOutcome != nil {
 			onOutcome(applied)
@@ -2996,7 +3009,7 @@ func (c *Client) applySpentOutputRefs(
 	// callers that still need to broadcast the tx, such as local
 	// sign/consolidation paths, are not blocked waiting for the tx to appear in
 	// the Monero daemon.
-	c.queueSpentOutputRefsRetry(tx, wireMemo, interval, maxAttempts, onOutcome)
+	c.queueSpentOutputRefsRetry(tx, wireMemo, guard, interval, maxAttempts, onOutcome)
 	return applied
 }
 
@@ -3006,6 +3019,7 @@ func (c *Client) applySpentOutputRefs(
 func (c *Client) queueSpentOutputRefsRetry(
 	tx common.ObservedTx,
 	wireMemo *string,
+	guard func() (func(), bool),
 	interval time.Duration,
 	maxAttempts int,
 	onOutcome func(applied bool),
@@ -3036,7 +3050,7 @@ func (c *Client) queueSpentOutputRefsRetry(
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
-		c.retrySpentOutputRefs(tx, wireMemo, interval, maxAttempts, onOutcome)
+		c.retrySpentOutputRefs(tx, wireMemo, guard, interval, maxAttempts, onOutcome)
 	}()
 }
 
@@ -3045,6 +3059,17 @@ func (c *Client) queueSpentOutputRefsRetry(
 // still seed the sidecar, such as the spend tx not being indexed yet or the
 // sidecar being temporarily unavailable.
 func (c *Client) applySpentOutputRefsOnce(tx common.ObservedTx, wireMemo *string) (bool, bool) {
+	return c.applySpentOutputRefsOnceGuarded(tx, wireMemo, nil)
+}
+
+// applySpentOutputRefsOnceGuarded performs one verified import while the
+// optional guard orders sidecar and local signed-state mutations against
+// errata cleanup. Replay enrollment reacquires the guard after taking scanMu.
+func (c *Client) applySpentOutputRefsOnceGuarded(
+	tx common.ObservedTx,
+	wireMemo *string,
+	guard func() (func(), bool),
+) (bool, bool) {
 	if err := validateXMRSpentRefsForSidecar(tx); err != nil {
 		c.logger.Warn().
 			Err(err).
@@ -3074,6 +3099,23 @@ func (c *Client) applySpentOutputRefsOnce(tx common.ObservedTx, wireMemo *string
 	}
 	outbound.Origin = sidecar.OutgoingOriginVaultCertified
 	outbound.CertificateHash = certificateHash
+	// Keep pure validation and certificate construction outside the errata
+	// barrier; acquire it only for sidecar and signed-state mutations.
+	var release func()
+	guarded := false
+	if guard != nil {
+		var ok bool
+		release, ok = guard()
+		if !ok || release == nil {
+			return false, false
+		}
+		guarded = true
+		defer func() {
+			if guarded {
+				release()
+			}
+		}()
+	}
 	result, err := c.sidecar.MarkSpent(vaultPubKey, txHash, refs, false, outbound)
 	if err != nil {
 		// Peer pre-quorum imports cannot rely on Thornode catchup until the refs
@@ -3118,9 +3160,21 @@ func (c *Client) applySpentOutputRefsOnce(tx common.ObservedTx, wireMemo *string
 		c.logger.Warn().Err(err).Str("tx_hash", txHash).Msg("refuse to commit unauthenticated xmr spent-ref import")
 		return false, false
 	}
+	// Replay enrollment takes scanMu. Release the Observer barrier first because
+	// reorg scanning holds scanMu while waiting for errata cleanup to take the
+	// corresponding writer. Enrollment rechecks admission after taking scanMu.
+	if guarded {
+		release()
+		guarded = false
+	}
 	if c.scanner != nil {
-		queued, replayErr := c.scanner.EnqueueAuthenticatedInternalInboundReplay(tx)
+		queued, replayErr := c.scanner.enqueueAuthenticatedInternalInboundReplayGuarded(tx, guard)
 		if replayErr != nil {
+			// Cleanup won admission at this observed height. Retrying the same
+			// replay would cross the durable tombstone again.
+			if errors.Is(replayErr, errXMRSpentRefsAdmissionRejected) {
+				return false, false
+			}
 			c.logger.Error().Err(replayErr).Str("tx_hash", txHash).
 				Msg("failed to queue authenticated xmr migration replay")
 			// MarkSpent is idempotent. Retry the complete import so a transient
@@ -3349,6 +3403,7 @@ func isRetryableSpentRefsSidecarErr(err error) bool {
 func (c *Client) retrySpentOutputRefs(
 	tx common.ObservedTx,
 	wireMemo *string,
+	guard func() (func(), bool),
 	interval time.Duration,
 	maxAttempts int,
 	onOutcome func(applied bool),
@@ -3368,7 +3423,9 @@ func (c *Client) retrySpentOutputRefs(
 		case <-timer.C:
 		}
 
-		applied, retry := c.applySpentOutputRefsOnce(tx, wireMemo)
+		// Reacquire admission for every mutation attempt; retry delays remain
+		// outside the errata reader critical section.
+		applied, retry := c.applySpentOutputRefsOnceGuarded(tx, wireMemo, guard)
 		if !retry {
 			if onOutcome != nil {
 				onOutcome(applied)

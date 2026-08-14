@@ -40,6 +40,49 @@ func observerTestPubKey(t *testing.T, priv *secp256k1.PrivKey) common.PubKey {
 	return pubKey
 }
 
+func TestXMRSpentRefsAttemptGuardOrdersErrataCleanup(t *testing.T) {
+	ag, _, _, _, _, _ := setupTestGossip(t)
+	storage, tempDir := setupTestDB(t)
+	defer cleanupTestDB(t, storage, tempDir)
+	ag.SetObserverStorage(storage)
+
+	obsTx, _ := observerTestXMRPlan(t)
+	obsTx.BlockHeight = 100
+	obsTx.FinaliseHeight = 100
+	release, ok := ag.acquireXMRSpentRefsAttempt(obsTx)
+	require.True(t, ok)
+	require.NotNil(t, release)
+
+	cleanupDone := make(chan error, 1)
+	go func() {
+		ag.xmrErrataBarrier.Lock()
+		defer ag.xmrErrataBarrier.Unlock()
+		cleanupDone <- storage.applyErrata(tctypes.ErrataBlock{
+			Height: 100,
+			Txs: []tctypes.ErrataTx{{
+				Chain: common.XMRChain,
+				TxID:  obsTx.Tx.ID,
+			}},
+		}, nil)
+	}()
+
+	select {
+	case err := <-cleanupDone:
+		t.Fatalf("errata cleanup crossed an active spent-ref attempt: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	release()
+	require.NoError(t, <-cleanupDone)
+
+	_, ok = ag.acquireXMRSpentRefsAttempt(obsTx)
+	require.False(t, ok, "orphan-height retry must stop after cleanup")
+	obsTx.BlockHeight++
+	obsTx.FinaliseHeight++
+	release, ok = ag.acquireXMRSpentRefsAttempt(obsTx)
+	require.True(t, ok, "same transaction re-mined at another height must remain admissible")
+	release()
+}
+
 // observerTestOutputRef builds a self-consistent spent ref whose SpendTxHash
 // matches the observed XMR tx. The sidecar import gate rejects mismatched spend
 // hashes before it ever reaches sidecar verification.

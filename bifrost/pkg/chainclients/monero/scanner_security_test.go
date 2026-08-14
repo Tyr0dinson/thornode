@@ -633,8 +633,17 @@ func TestAuthenticatedMigrationReplayObserverAckRejectAndReorg(t *testing.T) {
 	}, 100, sourceVault, 100)
 	observed.XmrTxKey = strings.Repeat("1", 64)
 	observed.SpentOutputRefs = []common.OutputRef{*spentRef}
+	queued, err := scanner.enqueueAuthenticatedInternalInboundReplayGuarded(observed, func() (func(), bool) {
+		return nil, false
+	})
+	if !errors.Is(err, errXMRSpentRefsAdmissionRejected) || queued {
+		t.Fatalf("rejected replay admission mutated scanner state: queued=%v err=%v", queued, err)
+	}
+	if count, countErr := store.Count(); countErr != nil || count != 0 {
+		t.Fatalf("rejected replay admission persisted work: count=%d err=%v", count, countErr)
+	}
 	scanner.setCurrentHeight(99)
-	queued, err := scanner.EnqueueAuthenticatedInternalInboundReplay(observed)
+	queued, err = scanner.EnqueueAuthenticatedInternalInboundReplay(observed)
 	if err == nil || queued {
 		t.Fatalf("expected replay enrollment to retry while scanner is behind: queued=%v err=%v", queued, err)
 	}

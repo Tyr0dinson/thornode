@@ -222,7 +222,7 @@ func main() {
 	ag.SetObserverHandleObservedTxCommitted(obs)
 	ag.SetObserverHandleErrataTxCommitted(obs)
 	if xmrClient, ok := chains[tcommon.XMRChain].(*monero.Client); ok {
-		ag.SetObserverApplySpentOutputRefsWithWireMemo(xmrClient.ApplySpentOutputRefsWithWireMemoAndOutcome)
+		ag.SetObserverApplySpentOutputRefsGuarded(xmrClient.ApplySpentOutputRefsWithWireMemoAndOutcomeGuarded)
 	}
 	if err = obs.Start(ctx); err != nil {
 		log.Fatal().Err(err).Msg("fail to start observer")
