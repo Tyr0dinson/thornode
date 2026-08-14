@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"errors"
 	"strings"
 
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
@@ -16,6 +17,16 @@ import (
 type HandlerSendSuiteV87 struct{}
 
 var _ = Suite(&HandlerSendSuiteV87{})
+
+type altNativeFeeCollectionFailKeeper struct {
+	keeper.Keeper
+}
+
+// SendFromAccountToModule forces the native fee collector's bank transfer to
+// fail so ante error propagation can be verified.
+func (k *altNativeFeeCollectionFailKeeper) SendFromAccountToModule(_ cosmos.Context, _ cosmos.AccAddress, _ string, _ common.Coins) error {
+	return errKaboom
+}
 
 func (s *HandlerSendSuiteV87) TestValidate(c *C) {
 	ctx, k := setupKeeperForTest(c)
@@ -507,4 +518,37 @@ func (s *HandlerSendSuiteV87) TestAltNativeTxFeeFallsBackToFundedAsset(c *C) {
 	rujiEscrow, rujiEscrowExists := k.GetAltNativeFeeEscrow(ctx, common.RUJI)
 	c.Assert(rujiEscrowExists, Equals, true)
 	c.Assert(rujiEscrow.Balance.Amount.Equal(rujiFee), Equals, true)
+}
+
+// TestAltNativeTxFeePreservesCollectionError verifies operational collection
+// failures are returned to callers instead of being mislabeled insufficient funds.
+func (s *HandlerSendSuiteV87) TestAltNativeTxFeePreservesCollectionError(c *C) {
+	ctx, baseKeeper := setupKeeperForTest(c)
+	baseKeeper.SetMimir(ctx, constants.AltNativeTxFeeEnabled.String(), 1)
+	asset := common.NAMI
+	pool := NewPool()
+	pool.Asset = asset
+	pool.Status = PoolAvailable
+	pool.BalanceAsset = cosmos.NewUint(1_000_000 * common.One)
+	pool.BalanceRune = cosmos.NewUint(200_000_000 * common.One)
+	c.Assert(baseKeeper.SetPool(ctx, pool), IsNil)
+
+	signer := GetRandomBech32Addr()
+	fee, err := calculateAltNativeTxFee(ctx, baseKeeper, asset)
+	c.Assert(err, IsNil)
+	fundAccountWith(c, ctx, baseKeeper, signer, asset, fee.Add(cosmos.OneUint()))
+	balanceBefore := getAltNativeTxFeeBalance(ctx, baseKeeper, signer, asset)
+	coins, err := common.NewCoins(common.NewCoin(asset, cosmos.OneUint())).Native()
+	c.Assert(err, IsNil)
+	msg := &MsgSend{FromAddress: signer, ToAddress: GetRandomBech32Addr(), Amount: coins}
+	failingKeeper := &altNativeFeeCollectionFailKeeper{Keeper: baseKeeper}
+
+	err = deductNativeTxFeeFromAccount(ctx, failingKeeper, signer, msg)
+	c.Assert(err, NotNil)
+	c.Assert(errors.Is(err, errKaboom), Equals, true)
+	c.Assert(strings.Contains(err.Error(), "kaboom"), Equals, true)
+	c.Assert(strings.Contains(err.Error(), "insufficient funds"), Equals, false)
+	c.Assert(getAltNativeTxFeeBalance(ctx, baseKeeper, signer, asset).Equal(balanceBefore), Equals, true)
+	_, exists := baseKeeper.GetAltNativeFeeEscrow(ctx, asset)
+	c.Assert(exists, Equals, false)
 }

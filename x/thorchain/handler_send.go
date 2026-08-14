@@ -218,8 +218,7 @@ func deductNativeTxFeeFromAccount(ctx cosmos.Context, k keeper.Keeper, signer co
 
 	collected, err := collectAltNativeTxFee(ctx, k, signer, feeCoin)
 	if err != nil {
-		ctx.Logger().Error("failed to collect alt-native tx fee", "asset", asset, "error", err)
-		return se.ErrInsufficientFunds
+		return fmt.Errorf("fail to collect alt-native tx fee using %s: %w", asset, err)
 	}
 	// A non-zero collection is required, and the collector must report that it
 	// confiscated at least the fee amount selected above.

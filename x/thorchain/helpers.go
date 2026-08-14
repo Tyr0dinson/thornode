@@ -2609,7 +2609,7 @@ func calculateAltNativeTxFee(ctx cosmos.Context, k keeper.Keeper, asset common.A
 	}
 
 	if diff.GT(maxDiff) {
-		ctx.Logger().Error("calculated alt native tx fee is outside acceptable precision",
+		ctx.Logger().Debug("calculated alt native tx fee is outside acceptable precision",
 			"asset", pool.Asset,
 			"target_fee", nativeFee,
 			"emitted_fee", emit,
@@ -2626,7 +2626,7 @@ func calculateAltNativeTxFee(ctx cosmos.Context, k keeper.Keeper, asset common.A
 
 	const maxNativeGasAssetFractionDenominator = 1000 // cap gas swaps at 0.1% of pool asset depth
 	if feeInAssetWithPremium.MulUint64(maxNativeGasAssetFractionDenominator).GT(pool.BalanceAsset) {
-		ctx.Logger().Error("pool too shallow for native gas",
+		ctx.Logger().Debug("pool too shallow for native gas",
 			"asset", pool.Asset,
 			"base_fee", feeInAsset,
 			"fee_with_premium", feeInAssetWithPremium,
@@ -2635,7 +2635,7 @@ func calculateAltNativeTxFee(ctx cosmos.Context, k keeper.Keeper, asset common.A
 		return cosmos.ZeroUint(), fmt.Errorf("native gas request %s %s exceeds 0.1%% of pool asset depth %s", feeInAssetWithPremium, pool.Asset, pool.BalanceAsset)
 	}
 
-	ctx.Logger().Info("calculated native asset gas fee", "base_fee", feeInAsset, "fee_with_premium", feeInAssetWithPremium, "asset", pool.Asset)
+	ctx.Logger().Debug("calculated native asset gas fee", "base_fee", feeInAsset, "fee_with_premium", feeInAssetWithPremium, "asset", pool.Asset)
 
 	return feeInAssetWithPremium, nil
 }
@@ -2668,7 +2668,7 @@ func fetchAltNativeTxFeeCoin(ctx cosmos.Context, k keeper.Keeper, signer cosmos.
 			if err == nil {
 				err = fmt.Errorf("alt native tx fee can't be zero")
 			}
-			ctx.Logger().Error("fail to get alt native tx fee for", "asset", c.Asset, "error", err)
+			ctx.Logger().Debug("fail to get alt native tx fee for", "asset", c.Asset, "error", err)
 			continue
 		}
 		if getAltNativeTxFeeBalance(ctx, k, signer, c.Asset).LT(altNativeTxFee) {
