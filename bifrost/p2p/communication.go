@@ -286,13 +286,16 @@ type Communication struct {
 	// legacy keygen/keysign traffic from being discovered and dispatched.
 	FrostBroadcastMsgChan       chan *messages.BroadcastMsgChan
 	FrostResultBroadcastMsgChan chan *messages.BroadcastMsgChan
-	cancelFrostBroadcastChan    chan frostBroadcastCancelRequest
-	externalAddr                maddr.Multiaddr
-	streamMgr                   *StreamMgr
-	nodeGater                   *NodeGater // gater to restrict connections to allowed nodes only
-	peerFinder                  peerFinder
-	frostBudget                 *frostIngressBudget
-	tssReaders                  *tssReaderLimiter
+	// frostBroadcastIngressMu lets ordinary producers enqueue concurrently while
+	// cancellation takes exclusive ownership of the queued prefix.
+	frostBroadcastIngressMu  sync.RWMutex
+	cancelFrostBroadcastChan chan frostBroadcastCancelRequest
+	externalAddr             maddr.Multiaddr
+	streamMgr                *StreamMgr
+	nodeGater                *NodeGater // gater to restrict connections to allowed nodes only
+	peerFinder               peerFinder
+	frostBudget              *frostIngressBudget
+	tssReaders               *tssReaderLimiter
 
 	// broadcastToPeersFn is a deterministic test seam. Production leaves it
 	// nil and uses broadcastToPeers.
@@ -1347,28 +1350,7 @@ func (c *Communication) ProcessBroadcast() {
 			clear(deferredFrost[len(filteredDeferred):])
 			deferredFrost = filteredDeferred
 
-			// Snapshot the queued prefix so concurrent producers cannot extend the
-			// cancellation barrier indefinitely. The coordinator enqueues all of its
-			// messages before requesting cancellation, so its stale prefix is covered.
-			drainCount := len(c.FrostBroadcastMsgChan)
-			for range drainCount {
-				msg := <-c.FrostBroadcastMsgChan
-				task, err := frostBroadcastTaskFromMessage(msg)
-				if err != nil {
-					c.logger.Error().Err(err).Msg("invalid message on FROST broadcast channel")
-					continue
-				}
-				if task.msgID == request.msgID && !task.terminal {
-					dropped++
-					continue
-				}
-				if !deferTask(task) {
-					c.logger.Error().
-						Str("msg_id", task.msgID).
-						Bool("terminal", task.terminal).
-						Msg("bounded FROST backlog rejected preserved cancellation traffic")
-				}
-			}
+			dropped += c.drainCanceledFrostIngress(request.msgID, deferTask)
 			if dropped > 0 {
 				c.logger.Info().
 					Str("msg_id", request.msgID).
@@ -1399,6 +1381,43 @@ func (c *Communication) ProcessBroadcast() {
 			return
 		}
 	}
+}
+
+// drainCanceledFrostIngress removes queued non-terminal work for msgID. Other
+// valid tasks are handed to preserve or requeued in FIFO order while the
+// ingress lock keeps producers from taking the reclaimed slots.
+func (c *Communication) drainCanceledFrostIngress(
+	msgID string,
+	preserve func(frostBroadcastTask) bool,
+) int {
+	c.frostBroadcastIngressMu.Lock()
+	defer c.frostBroadcastIngressMu.Unlock()
+
+	// ProcessBroadcast is the sole consumer. With producers excluded, len is a
+	// stable prefix and every receive reserves a slot for lossless requeue.
+	drainCount := len(c.FrostBroadcastMsgChan)
+	requeue := make([]*messages.BroadcastMsgChan, 0, drainCount)
+	dropped := 0
+	for range drainCount {
+		msg := <-c.FrostBroadcastMsgChan
+		task, err := frostBroadcastTaskFromMessage(msg)
+		if err != nil {
+			c.logger.Error().Err(err).Msg("invalid message on FROST broadcast channel")
+			continue
+		}
+		if task.msgID == msgID && !task.terminal {
+			dropped++
+			continue
+		}
+		if preserve(task) {
+			continue
+		}
+		requeue = append(requeue, msg)
+	}
+	for _, msg := range requeue {
+		c.FrostBroadcastMsgChan <- msg
+	}
+	return dropped
 }
 
 // CancelFrostBroadcasts removes pending fanout work when a coordinator exits.
@@ -1487,6 +1506,13 @@ func (c *Communication) QueueFrostBroadcast(msg *messages.BroadcastMsgChan) erro
 	}
 	if out == nil {
 		return errors.New("FROST broadcast channel is not configured")
+	}
+	// Hold the ordinary ingress read lock through the bounded send so
+	// cancellation cannot drain while admission is in flight. Terminal and
+	// legacy queues are never selectively drained.
+	if out == c.FrostBroadcastMsgChan {
+		c.frostBroadcastIngressMu.RLock()
+		defer c.frostBroadcastIngressMu.RUnlock()
 	}
 	select {
 	case out <- queued:

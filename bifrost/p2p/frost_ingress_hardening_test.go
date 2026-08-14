@@ -361,6 +361,56 @@ func TestCancelFrostBroadcastsPreservesAndPrioritizesTerminalResult(t *testing.T
 	scheduler.complete("completed-keysign", true)
 }
 
+func TestDrainCanceledFrostIngressRequeuesWhenDeferredFull(t *testing.T) {
+	comm := &Communication{
+		logger:                zerolog.Nop(),
+		stopChan:              make(chan struct{}),
+		FrostBroadcastMsgChan: make(chan *messages.BroadcastMsgChan, 4),
+	}
+	fixtures := []struct {
+		msgID   string
+		msgType messages.THORChainTSSMessageType
+	}{
+		{msgID: "cancel-me", msgType: messages.TSSFrostShareMsg},
+		{msgID: "keep-one", msgType: messages.TSSFrostShareMsg},
+		{msgID: "cancel-me", msgType: messages.TSSFrostResultMsg},
+		{msgID: "keep-two", msgType: messages.TSSFrostDKGRound1Msg},
+	}
+	for _, fixture := range fixtures {
+		if err := comm.QueueFrostBroadcast(&messages.BroadcastMsgChan{
+			WrappedMessage: messages.WrappedMessage{
+				MessageType: fixture.msgType,
+				MsgID:       fixture.msgID,
+			},
+		}); err != nil {
+			t.Fatalf("queue %s: %v", fixture.msgID, err)
+		}
+	}
+
+	dropped := comm.drainCanceledFrostIngress("cancel-me", func(frostBroadcastTask) bool {
+		return false // model a full deferred result reserve
+	})
+	if dropped != 1 {
+		t.Fatalf("dropped %d canceled messages, want 1", dropped)
+	}
+	want := fixtures[1:]
+	if len(comm.FrostBroadcastMsgChan) != len(want) {
+		t.Fatalf("preserved queue length=%d, want %d", len(comm.FrostBroadcastMsgChan), len(want))
+	}
+	for i, expected := range want {
+		got := <-comm.FrostBroadcastMsgChan
+		if got.WrappedMessage.MsgID != expected.msgID || got.WrappedMessage.MessageType != expected.msgType {
+			t.Fatalf("preserved message %d=%s/%s, want %s/%s",
+				i,
+				got.WrappedMessage.MsgID,
+				got.WrappedMessage.MessageType,
+				expected.msgID,
+				expected.msgType,
+			)
+		}
+	}
+}
+
 func TestCancelFrostBroadcastsDrainsIngressButDeliversTerminalResult(t *testing.T) {
 	stop := make(chan struct{})
 	releaseRoundWriters := make(chan struct{})
