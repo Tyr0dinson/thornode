@@ -1,6 +1,7 @@
 package observer
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -140,6 +141,23 @@ func TestPeerManager(t *testing.T) {
 		sem, exists := pm.semaphores[peerID]
 		assert.True(t, exists)
 		assert.Equal(t, 0, sem.refCount)
+	})
+
+	t.Run("canceled acquisition releases its reference", func(t *testing.T) {
+		pm := newPeerManager(logger, 1)
+		peerID := peer.ID("context-peer")
+		sem, err := pm.acquire(peerID)
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		_, err = pm.acquireContext(ctx, peerID)
+		require.ErrorIs(t, err, context.Canceled)
+
+		pm.mu.Lock()
+		assert.Equal(t, 1, pm.semaphores[peerID].refCount)
+		pm.mu.Unlock()
+		pm.release(sem)
 	})
 }
 

@@ -2833,11 +2833,30 @@ func (s *ObserveExtraSuite) TestHandleStreamAttestationStateUnknown(c *C) {
 
 func (s *ObserveExtraSuite) TestHandleStreamAttestationStateSendState(c *C) {
 	ag, _ := newTestAttestationGossip(c, []peer.ID{"self"})
+	ag.avMu.Lock()
+	ag.activeVals[peer.ID("peer1")] = true
+	ag.avMu.Unlock()
 	// prefixSendState is 0x01, single byte
 	stream := NewMockStreamWithData([]byte{0x01}, "peer1")
 	// This triggers sendAttestationState which will collect empty state,
 	// write batch begin with 0 batches, then try to read ack (EOF), return
 	ag.handleStreamAttestationState(stream)
+}
+
+func (s *ObserveExtraSuite) TestHandleStreamAttestationStateRejectsBusySender(c *C) {
+	ag, _ := newTestAttestationGossip(c, []peer.ID{"self"})
+	ag.avMu.Lock()
+	ag.activeVals[peer.ID("peer1")] = true
+	ag.avMu.Unlock()
+	ag.stateSendActive.Store(true)
+	defer ag.stateSendActive.Store(false)
+
+	stream := NewMockStreamWithData([]byte{0x01}, "peer1")
+	ag.handleStreamAttestationState(stream)
+
+	ag.peerMgr.mu.Lock()
+	defer ag.peerMgr.mu.Unlock()
+	c.Assert(ag.peerMgr.semaphores, HasLen, 0)
 }
 
 // ---------------------------------------------------------------------------
@@ -3038,7 +3057,7 @@ func (s *ObserveExtraSuite) TestSendAttestationStateWithData(c *C) {
 
 	// sendAttestationState will write batch begin, then try to read ack.
 	// Since readBuf is empty, it'll get EOF and return early.
-	ag.sendAttestationState(stream)
+	ag.sendAttestationState(context.Background(), stream)
 }
 
 // ---------------------------------------------------------------------------

@@ -280,8 +280,26 @@ func (s *AttestationGossip) handleStreamAttestationState(stream network.Stream) 
 			logger.Error().Msg("unexpected payload length for send state request")
 			return
 		}
+		// A state snapshot may retain the XMR errata barrier for the whole
+		// transfer. Serve one active-validator request globally and charge its
+		// per-peer slot instead of letting requests queue behind shared locks.
+		if !s.isActiveValidator(remotePeer) {
+			logger.Warn().Msg("skipping attestation state request from non-active validator")
+			return
+		}
+		if !s.stateSendActive.CompareAndSwap(false, true) {
+			logger.Warn().Msg("skipping concurrent attestation state request")
+			return
+		}
+		defer s.stateSendActive.Store(false)
+		sem, err := s.peerMgr.acquireContext(stateCtx, remotePeer)
+		if err != nil {
+			logger.Warn().Err(err).Msg("skipping busy attestation state requester")
+			return
+		}
+		defer s.peerMgr.release(sem)
 		logger.Debug().Msg("handling send state request")
-		s.sendAttestationState(stream)
+		s.sendAttestationState(stateCtx, stream)
 
 	case data[0] == prefixBatchBegin[0]:
 

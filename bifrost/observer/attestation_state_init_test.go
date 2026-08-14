@@ -40,7 +40,7 @@ func TestSendAttestationStateEmpty(t *testing.T) {
 	// Call the method with a timeout
 	done := make(chan struct{})
 	go func() {
-		ag.sendAttestationState(stream)
+		ag.sendAttestationState(context.Background(), stream)
 		close(done)
 	}()
 
@@ -169,7 +169,7 @@ func TestSendAttestationStateSingleBatch(t *testing.T) {
 	// Call the method with a timeout
 	done := make(chan struct{})
 	go func() {
-		ag.sendAttestationState(stream)
+		ag.sendAttestationState(context.Background(), stream)
 		close(done)
 	}()
 
@@ -327,7 +327,7 @@ func TestSendAttestationStateMultipleBatches(t *testing.T) {
 	// Call the method with a timeout
 	done := make(chan struct{})
 	go func() {
-		ag.sendAttestationState(stream)
+		ag.sendAttestationState(context.Background(), stream)
 		close(done)
 	}()
 
@@ -722,6 +722,9 @@ func TestSendReceiveBatchedAttestationState(t *testing.T) {
 	// Set active validators
 	agSender.setActiveValidators(valPubs)
 	agReceiver.setActiveValidators(valPubs)
+	agSender.avMu.Lock()
+	agSender.activeVals[agReceiver.host.ID()] = true
+	agSender.avMu.Unlock()
 
 	// Set attestation state on sender
 	for i := 0; i < numTxs; i++ {
@@ -1032,7 +1035,7 @@ func TestSendAttestationStateEmptyProtocolCorrect(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		ag.sendAttestationState(stream)
+		ag.sendAttestationState(context.Background(), stream)
 		close(done)
 	}()
 
@@ -1248,10 +1251,12 @@ func TestSendAttestationStateUsesTotalTransferTimeout(t *testing.T) {
 	// rolling deadlines would therefore let this transfer run for roughly
 	// 60ms; the total watchdog must reset it around 35ms instead.
 	stream := newSlowAttestationStateStream(15 * time.Millisecond)
+	stateCtx, cancel := ag.attestationStateContext(context.Background(), stream)
+	defer cancel()
 	done := make(chan struct{})
 	started := time.Now()
 	go func() {
-		ag.sendAttestationState(stream)
+		ag.sendAttestationState(stateCtx, stream)
 		close(done)
 	}()
 	select {
@@ -1272,6 +1277,81 @@ func TestSendAttestationStateUsesTotalTransferTimeout(t *testing.T) {
 	case <-writerAcquired:
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("XMR errata writer remained blocked after state transfer timeout")
+	}
+}
+
+func TestSendAttestationStateReleasesBarrierWhileSnapshotIsBusy(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		lock func(*AttestationGossip, *AttestationState[*attestableObservedTx]) func()
+	}{
+		{
+			name: "global state lock",
+			lock: func(ag *AttestationGossip, _ *AttestationState[*attestableObservedTx]) func() {
+				ag.mu.Lock()
+				return ag.mu.Unlock
+			},
+		},
+		{
+			name: "observation state lock",
+			lock: func(_ *AttestationGossip, state *AttestationState[*attestableObservedTx]) func() {
+				state.mu.Lock()
+				return state.mu.Unlock
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ag, _, _, _, _, _ := setupTestGossip(t)
+			ag.config.PeerTimeout = 35 * time.Millisecond
+			observed := &common.ObservedTx{
+				Tx: common.Tx{
+					ID:    common.TxID("xmr-state-busy-snapshot"),
+					Chain: common.XMRChain,
+				},
+				BlockHeight:    200,
+				FinaliseHeight: 200,
+			}
+			state := ag.observedTxsPool.NewAttestationState(&attestableObservedTx{
+				ObservedTx: observed,
+				inbound:    true,
+			})
+			ag.observedTxs[observedTxKey(*observed, true, false)] = state
+
+			unlockBusyState := tc.lock(ag, state)
+			defer unlockBusyState()
+
+			stream := newSlowAttestationStateStream(0)
+			stateCtx, cancel := ag.attestationStateContext(context.Background(), stream)
+			defer cancel()
+			done := make(chan struct{})
+			go func() {
+				ag.sendAttestationState(stateCtx, stream)
+				close(done)
+			}()
+
+			select {
+			case <-stream.reset:
+			case <-time.After(500 * time.Millisecond):
+				t.Fatal("state snapshot timeout did not reset the stream")
+			}
+
+			writerAcquired := make(chan struct{})
+			go func() {
+				ag.xmrErrataBarrier.Lock()
+				close(writerAcquired)
+				ag.xmrErrataBarrier.Unlock()
+			}()
+			select {
+			case <-writerAcquired:
+			case <-time.After(200 * time.Millisecond):
+				t.Fatal("busy state snapshot kept the XMR errata reader lock after timeout")
+			}
+			select {
+			case <-done:
+			case <-time.After(200 * time.Millisecond):
+				t.Fatal("state snapshot did not stop after its total timeout")
+			}
+		})
 	}
 }
 
@@ -1552,10 +1632,10 @@ func TestAskStreamForStateEmptyState(t *testing.T) {
 	agSender, _, _, _, _, _ := setupTestGossip(t)
 	agReceiver, _, _, _, _, _ := setupTestGossip(t)
 
-	// Authorize the receiver to ask agSender for state.
-	agSender.stateInitMu.Lock()
-	agSender.stateInitPeers = map[peer.ID]bool{agReceiver.host.ID(): true}
-	agSender.stateInitMu.Unlock()
+	// Authorize the active receiver to ask agSender for state.
+	agSender.avMu.Lock()
+	agSender.activeVals[agReceiver.host.ID()] = true
+	agSender.avMu.Unlock()
 
 	// Buffered stream pair: what one writes the other reads.
 	senderReader := bytes.NewBuffer(nil)

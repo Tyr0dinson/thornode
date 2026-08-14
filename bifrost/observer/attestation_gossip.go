@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
@@ -204,8 +205,9 @@ type AttestationGossip struct {
 	// peerManager is used to limit the number of concurrent receives from a peer
 	peerMgr *peerManager
 
-	stateInitPeers map[peer.ID]bool // peers that we have asked for their attestation state
-	stateInitMu    sync.Mutex
+	stateInitPeers  map[peer.ID]bool // peers that we have asked for their attestation state
+	stateInitMu     sync.Mutex
+	stateSendActive atomic.Bool
 }
 
 // NewAttestationGossip create a new instance of AttestationGossip

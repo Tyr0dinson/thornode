@@ -106,122 +106,144 @@ func (s *AttestationGossip) attestationStateContext(
 	}
 }
 
-func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
+type attestationStateSnapshot struct {
+	quorumTxs   []*common.QuorumTx
+	networkFees []*common.QuorumNetworkFee
+	solvencies  []*common.QuorumSolvency
+	errataTxs   []*common.QuorumErrataTx
+	priceFeeds  []*common.QuorumPriceFeed
+	containsXMR bool
+}
+
+// snapshotAttestationState copies the current state without blocking while it
+// holds the global state locks. Its release function keeps XMR errata cleanup
+// ordered after any returned XMR snapshot until the caller finishes using it.
+func (s *AttestationGossip) snapshotAttestationState(ctx context.Context) (attestationStateSnapshot, func(), error) {
+	retry := time.NewTicker(5 * time.Millisecond)
+	defer retry.Stop()
+
+	// Never block on a downstream lock while holding an upstream one. On
+	// contention, release all acquired locks before retrying so cancellation
+	// remains effective.
+	for {
+		if err := ctx.Err(); err != nil {
+			return attestationStateSnapshot{}, nil, err
+		}
+		if s.xmrErrataBarrier.TryRLock() {
+			if s.mu.TryLock() {
+				snapshot, ok := s.copyAttestationState(ctx)
+				s.mu.Unlock()
+				if ok {
+					if snapshot.containsXMR {
+						return snapshot, s.xmrErrataBarrier.RUnlock, nil
+					}
+					s.xmrErrataBarrier.RUnlock()
+					return snapshot, func() {}, nil
+				}
+			}
+			s.xmrErrataBarrier.RUnlock()
+		}
+
+		select {
+		case <-ctx.Done():
+			return attestationStateSnapshot{}, nil, ctx.Err()
+		case <-retry.C:
+		}
+	}
+}
+
+// copyAttestationState is called with the global state mutex and XMR reader
+// barrier held. A busy item aborts the partial copy so those upstream locks are
+// released before retrying.
+func (s *AttestationGossip) copyAttestationState(ctx context.Context) (attestationStateSnapshot, bool) {
+	snapshot := attestationStateSnapshot{
+		quorumTxs:   make([]*common.QuorumTx, 0, len(s.observedTxs)),
+		networkFees: make([]*common.QuorumNetworkFee, 0, len(s.networkFees)),
+		solvencies:  make([]*common.QuorumSolvency, 0, len(s.solvencies)),
+		errataTxs:   make([]*common.QuorumErrataTx, 0, len(s.errataTxs)),
+		priceFeeds:  make([]*common.QuorumPriceFeed, 0, len(s.priceFeeds)),
+	}
+
+	for k, state := range s.observedTxs {
+		if ctx.Err() != nil || !state.mu.TryLock() {
+			return attestationStateSnapshot{}, false
+		}
+		quorumTx := &common.QuorumTx{
+			ObsTx:                  *state.Item.ObservedTx,
+			Inbound:                k.Inbound,
+			AllowFutureObservation: k.AllowFutureObservation,
+			Attestations:           state.AttestationsCopy(),
+		}
+		state.mu.Unlock()
+		snapshot.quorumTxs = append(snapshot.quorumTxs, quorumTx)
+		snapshot.containsXMR = snapshot.containsXMR || quorumTx.ObsTx.Tx.Chain.Equals(common.XMRChain)
+	}
+	for _, state := range s.networkFees {
+		if ctx.Err() != nil || !state.mu.TryLock() {
+			return attestationStateSnapshot{}, false
+		}
+		item := *state.Item
+		snapshot.networkFees = append(snapshot.networkFees, &common.QuorumNetworkFee{
+			NetworkFee:   &item,
+			Attestations: state.AttestationsCopy(),
+		})
+		state.mu.Unlock()
+	}
+	for _, state := range s.solvencies {
+		if ctx.Err() != nil || !state.mu.TryLock() {
+			return attestationStateSnapshot{}, false
+		}
+		item := *state.Item
+		item.Coins = state.Item.Coins.Copy()
+		snapshot.solvencies = append(snapshot.solvencies, &common.QuorumSolvency{
+			Solvency:     &item,
+			Attestations: state.AttestationsCopy(),
+		})
+		state.mu.Unlock()
+	}
+	for _, state := range s.errataTxs {
+		if ctx.Err() != nil || !state.mu.TryLock() {
+			return attestationStateSnapshot{}, false
+		}
+		item := *state.Item
+		snapshot.errataTxs = append(snapshot.errataTxs, &common.QuorumErrataTx{
+			ErrataTx:     &item,
+			Attestations: state.AttestationsCopy(),
+		})
+		state.mu.Unlock()
+	}
+	for _, state := range s.priceFeeds {
+		if ctx.Err() != nil || !state.mu.TryLock() {
+			return attestationStateSnapshot{}, false
+		}
+		item := *state.Item
+		snapshot.priceFeeds = append(snapshot.priceFeeds, &common.QuorumPriceFeed{
+			PriceFeed:    &item,
+			Attestations: state.AttestationsCopy(),
+		})
+		state.mu.Unlock()
+	}
+	return snapshot, true
+}
+
+// sendAttestationState streams one context-bounded state snapshot to a peer.
+// An XMR snapshot retains the errata reader barrier through the transfer.
+func (s *AttestationGossip) sendAttestationState(ctx context.Context, stream network.Stream) {
 	remotePeer := stream.Conn().RemotePeer()
 	logger := s.logger.With().Str("peer", remotePeer.String()).Logger()
 	logger.Debug().Msg("sending attestation state")
 
-	// This is a total transfer budget, not a rolling per-frame timeout. State
-	// containing XMR observations holds xmrErrataBarrier.RLock until the peer has
-	// acknowledged the final frame, so a peer which acknowledges just often
-	// enough must not postpone durable errata cleanup indefinitely. The handler
-	// also applies the stream deadline before parsing the request; this watchdog
-	// makes direct callers and the complete send phase independently bounded.
-	timeout := s.config.PeerTimeout
-	if timeout <= 0 {
-		timeout = defaultPeerTimeout
+	snapshot, releaseXMRBarrier, err := s.snapshotAttestationState(ctx)
+	if err != nil {
+		logger.Warn().Err(err).Msg("failed to snapshot attestation state")
+		return
 	}
-	transferTimeout := time.AfterFunc(timeout, func() {
-		logger.Warn().Dur("timeout", timeout).Msg("resetting timed-out attestation state transfer")
-		if err := stream.Reset(); err != nil {
-			logger.Debug().Err(err).Msg("failed to reset timed-out attestation state stream")
-		}
-	})
-	defer transferTimeout.Stop()
-
-	s.xmrErrataBarrier.RLock()
-	xmrBarrierHeld := true
-	defer func() {
-		if xmrBarrierHeld {
-			s.xmrErrataBarrier.RUnlock()
-		}
-	}()
-	s.mu.Lock()
-
-	// Collect all QuorumTxs
-	allQuorumTxs := make([]*common.QuorumTx, 0, len(s.observedTxs))
-	containsXMR := false
-	for k, ots := range s.observedTxs {
-		ots.mu.Lock()
-
-		quorumTxs := &common.QuorumTx{
-			ObsTx:                  *ots.Item.ObservedTx,
-			Inbound:                k.Inbound,
-			AllowFutureObservation: k.AllowFutureObservation,
-			Attestations:           ots.AttestationsCopy(),
-		}
-		allQuorumTxs = append(allQuorumTxs, quorumTxs)
-		containsXMR = containsXMR || quorumTxs.ObsTx.Tx.Chain.Equals(common.XMRChain)
-
-		ots.mu.Unlock()
-	}
-
-	allNetworkFees := make([]*common.QuorumNetworkFee, 0, len(s.networkFees))
-	for _, nf := range s.networkFees {
-		nf.mu.Lock()
-		nfCopy := &common.NetworkFee{
-			Chain:           nf.Item.Chain,
-			Height:          nf.Item.Height,
-			TransactionSize: nf.Item.TransactionSize,
-			TransactionRate: nf.Item.TransactionRate,
-		}
-		allNetworkFees = append(allNetworkFees, &common.QuorumNetworkFee{
-			NetworkFee:   nfCopy,
-			Attestations: nf.AttestationsCopy(),
-		})
-		nf.mu.Unlock()
-	}
-
-	allSolvencies := make([]*common.QuorumSolvency, 0, len(s.solvencies))
-	for _, solvency := range s.solvencies {
-		solvency.mu.Lock()
-		sCopy := &common.Solvency{
-			Id:     solvency.Item.Id,
-			Chain:  solvency.Item.Chain,
-			Height: solvency.Item.Height,
-			PubKey: solvency.Item.PubKey,
-			Coins:  solvency.Item.Coins.Copy(),
-		}
-		allSolvencies = append(allSolvencies, &common.QuorumSolvency{
-			Solvency:     sCopy,
-			Attestations: solvency.AttestationsCopy(),
-		})
-		solvency.mu.Unlock()
-	}
-
-	allErrataTxs := make([]*common.QuorumErrataTx, 0, len(s.errataTxs))
-	for _, errataTx := range s.errataTxs {
-		errataTx.mu.Lock()
-		eTxCopy := &common.ErrataTx{
-			Chain: errataTx.Item.Chain,
-			Id:    errataTx.Item.Id,
-		}
-		allErrataTxs = append(allErrataTxs, &common.QuorumErrataTx{
-			ErrataTx:     eTxCopy,
-			Attestations: errataTx.AttestationsCopy(),
-		})
-		errataTx.mu.Unlock()
-	}
-
-	allPriceFeeds := make([]*common.QuorumPriceFeed, 0, len(s.priceFeeds))
-	for _, priceFeed := range s.priceFeeds {
-		priceFeed.mu.Lock()
-		pfCopy := &common.PriceFeed{
-			Time:  priceFeed.Item.Time,
-			Rates: priceFeed.Item.Rates,
-		}
-		allPriceFeeds = append(allPriceFeeds, &common.QuorumPriceFeed{
-			PriceFeed:    pfCopy,
-			Attestations: priceFeed.AttestationsCopy(),
-		})
-		priceFeed.mu.Unlock()
-	}
-
-	s.mu.Unlock()
-	if !containsXMR {
-		s.xmrErrataBarrier.RUnlock()
-		xmrBarrierHeld = false
-	}
+	defer releaseXMRBarrier()
+	allQuorumTxs := snapshot.quorumTxs
+	allNetworkFees := snapshot.networkFees
+	allSolvencies := snapshot.solvencies
+	allErrataTxs := snapshot.errataTxs
+	allPriceFeeds := snapshot.priceFeeds
 
 	// Calculate total number of batches
 	totalTxs := len(allQuorumTxs)
