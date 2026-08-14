@@ -3389,6 +3389,34 @@ func (s *NetworkManagerTestSuite) TestCalculateNetworkSolvency(c *C) {
 	}
 }
 
+// TestSolvencyWithAltNativeFeeEscrow ensures released trade or secured backing
+// remains a liability until its escrow is settled into RUNE.
+func (s *NetworkManagerTestSuite) TestSolvencyWithAltNativeFeeEscrow(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceAsset = cosmos.NewUint(80 * common.One)
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = ActiveVault
+	vault.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)))
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	c.Assert(mgr.Keeper().AddAltNativeFeeEscrowBalance(ctx, common.BTCAsset, cosmos.NewUint(20*common.One)), IsNil)
+
+	solvency, err := nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	c.Assert(solvency, HasLen, 1)
+	c.Check(solvency[0].Asset.Equals(common.BTCAsset), Equals, true)
+	c.Check(solvency[0].Amount.Equal(math.ZeroInt()), Equals, true)
+}
+
 func (s *NetworkManagerTestSuite) TestCalculateNetworkSolvencySubtractsActiveVaultDeficit(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())

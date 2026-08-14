@@ -3264,6 +3264,12 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 			securedAmount := math.NewIntFromBigInt(securedPool.Depth.BigInt())
 			assetAmounts[asset] = assetAmounts[asset].Sub(securedAmount)
 		}
+
+		// Released L1 backing remains a liability until its fee escrow settles.
+		if escrow, exists := mgr.Keeper().GetAltNativeFeeEscrow(ctx, asset); exists && !escrow.Balance.Amount.IsZero() {
+			escrowAmount := math.NewIntFromBigInt(escrow.Balance.Amount.BigInt())
+			assetAmounts[asset] = assetAmounts[asset].Sub(escrowAmount)
+		}
 	}
 
 	// Step 6: Subtract pending and scheduled outbounds (skip inactive vaults)
