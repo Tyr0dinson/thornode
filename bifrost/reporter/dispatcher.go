@@ -97,22 +97,13 @@ func (d *dispatcher) start() {
 		d.wg.Add(1)
 		go d.processChainQueue(chain, taskQueue)
 	}
-	// Account for all goroutines synchronously before launching them. The runner
-	// creates one ticker goroutine per chain, so include those here rather than
-	// calling Add from inside the runner goroutine.
-	d.wg.Add(2 + len(d.chains))
-	go d.runner(
-		// Get chain-specific timing
-		func(chain common.Chain) time.Duration {
-			// Use the chain block time for fast chains so the periodic runner does not skip
-			// modulo-based solvency report heights. Fall back to THORChain block time.
-			dur := time.Duration(chain.ApproximateBlockMilliseconds()) * time.Millisecond
-			if dur <= 0 || dur > constants.ThorchainBlockTime {
-				return constants.ThorchainBlockTime
-			}
-			return dur
-		},
-	)
+	// Account for background processors before launching them. A runner is only
+	// needed when at least one chain can receive periodic work.
+	d.wg.Add(1)
+	if len(d.chains) > 0 {
+		d.wg.Add(1)
+		go d.runner()
+	}
 	go d.processReportQueue()
 }
 

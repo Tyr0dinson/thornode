@@ -34,17 +34,6 @@ type SolvencySuite struct{}
 
 var _ = Suite(&SolvencySuite{})
 
-func runnerIntervalForTest(chain common.Chain) time.Duration {
-	switch {
-	case chain.Equals(common.TRONChain):
-		return 3 * time.Second
-	case chain.Equals(common.AVAXChain):
-		return time.Second
-	default:
-		return constants.ThorchainBlockTime
-	}
-}
-
 func expectedReportHeightForTest(chain common.Chain, cfg config.BifrostChainConfiguration, height int64) int64 {
 	blocks := cfg.SolvencyBlocks
 	if blocks <= 0 {
@@ -658,11 +647,7 @@ func (s *SolvencySuite) TestReportSolvencyReporter(c *C) {
 		}
 		var attester *mockSolvencyAttester
 		verifyResults := func(from triggeredFrom, expectReport bool) {
-			waitFor := constants.ThorchainBlockTime
-			if from == fromRunner {
-				// Runner checks use chain-specific intervals, so allow enough time for the first tick.
-				waitFor = runnerIntervalForTest(tc.client.GetChain()) + constants.ThorchainBlockTime
-			}
+			waitFor := constants.ThorchainBlockTime * 2
 			deadline := time.Now().Add(waitFor)
 			for time.Now().Before(deadline) {
 				time.Sleep(constants.ThorchainBlockTime / 15)
