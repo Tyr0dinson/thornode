@@ -514,6 +514,57 @@ func TestFrostQueueFailsFastUnderRoundSaturationButAdmitsTerminalResult(t *testi
 	}
 }
 
+func TestQueueFrostBroadcastRejectsOversizedEncodedFrame(t *testing.T) {
+	// Base64 expansion keeps the raw payload below the limit while pushing the
+	// encoded outer frame above it.
+	payload := bytes.Repeat([]byte{0x42}, 3*FrostMaxSessionPayload/4)
+	if len(payload) >= FrostMaxSessionPayload {
+		t.Fatalf("raw test payload is %d bytes, want less than %d", len(payload), FrostMaxSessionPayload)
+	}
+
+	for _, tc := range []struct {
+		name    string
+		msgType messages.THORChainTSSMessageType
+	}{
+		{name: "ordinary", msgType: messages.TSSFrostShareMsg},
+		{name: "terminal", msgType: messages.TSSFrostResultMsg},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			msg := &messages.BroadcastMsgChan{
+				WrappedMessage: messages.WrappedMessage{
+					MessageType: tc.msgType,
+					MsgID:       "oversized-frame",
+					Payload:     payload,
+				},
+			}
+			encoded, err := json.Marshal(msg.WrappedMessage)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(encoded) <= FrostMaxSessionPayload {
+				t.Fatalf("encoded test frame is %d bytes, want more than %d", len(encoded), FrostMaxSessionPayload)
+			}
+			if _, err = frostBroadcastTaskFromMessage(msg); err == nil {
+				t.Fatal("oversized encoded FROST frame was converted")
+			}
+
+			comm := &Communication{
+				stopChan:                    make(chan struct{}),
+				BroadcastMsgChan:            make(chan *messages.BroadcastMsgChan, 1),
+				FrostBroadcastMsgChan:       make(chan *messages.BroadcastMsgChan, 1),
+				FrostResultBroadcastMsgChan: make(chan *messages.BroadcastMsgChan, 1),
+			}
+			if err = comm.QueueFrostBroadcast(msg); err == nil {
+				t.Fatal("oversized encoded FROST frame was queued")
+			}
+			if len(comm.BroadcastMsgChan) != 0 || len(comm.FrostBroadcastMsgChan) != 0 ||
+				len(comm.FrostResultBroadcastMsgChan) != 0 {
+				t.Fatal("rejected FROST frame changed an ingress queue")
+			}
+		})
+	}
+}
+
 func TestTerminalResultProgressesAfterGloballySaturatedProductionIngress(t *testing.T) {
 	stop := make(chan struct{})
 	releaseWriters := make(chan struct{})

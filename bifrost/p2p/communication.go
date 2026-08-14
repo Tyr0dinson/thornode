@@ -1441,6 +1441,15 @@ func frostBroadcastTaskFromMessage(msg *messages.BroadcastMsgChan) (frostBroadca
 	if err != nil {
 		return frostBroadcastTask{}, fmt.Errorf("marshal FROST wrapped message: %w", err)
 	}
+	// The receiver applies this limit to the encoded outer frame. JSON base64
+	// expansion means checking Payload itself would undercount.
+	if len(wrappedMsgBytes) > FrostMaxSessionPayload {
+		return frostBroadcastTask{}, fmt.Errorf(
+			"encoded FROST frame is %d bytes, maximum is %d",
+			len(wrappedMsgBytes),
+			FrostMaxSessionPayload,
+		)
+	}
 	return frostBroadcastTask{
 		peers:    append([]peer.ID(nil), msg.PeersID...),
 		msg:      wrappedMsgBytes,
@@ -1457,8 +1466,19 @@ func (c *Communication) QueueFrostBroadcast(msg *messages.BroadcastMsgChan) erro
 	if c == nil || msg == nil {
 		return errors.New("FROST broadcast is not configured")
 	}
+	// Queue an owned snapshot so caller mutations after return cannot change
+	// the frame or peer set that passed synchronous validation.
+	queued := &messages.BroadcastMsgChan{
+		WrappedMessage: msg.WrappedMessage,
+		PeersID:        append([]peer.ID(nil), msg.PeersID...),
+	}
+	queued.WrappedMessage.Payload = bytes.Clone(msg.WrappedMessage.Payload)
+	task, err := frostBroadcastTaskFromMessage(queued)
+	if err != nil {
+		return err
+	}
 	out := c.FrostBroadcastMsgChan
-	if isFrostTerminalResult(msg.WrappedMessage.MessageType) &&
+	if task.terminal &&
 		c.FrostResultBroadcastMsgChan != nil {
 		out = c.FrostResultBroadcastMsgChan
 	}
@@ -1469,7 +1489,7 @@ func (c *Communication) QueueFrostBroadcast(msg *messages.BroadcastMsgChan) erro
 		return errors.New("FROST broadcast channel is not configured")
 	}
 	select {
-	case out <- msg:
+	case out <- queued:
 		return nil
 	case <-c.stopChan:
 		return errors.New("P2P communication stopped before FROST broadcast was queued")
@@ -1481,7 +1501,7 @@ func (c *Communication) QueueFrostBroadcast(msg *messages.BroadcastMsgChan) erro
 	timer := time.NewTimer(FrostBroadcastEnqueueTimeout)
 	defer timer.Stop()
 	select {
-	case out <- msg:
+	case out <- queued:
 		return nil
 	case <-c.stopChan:
 		return errors.New("P2P communication stopped before FROST broadcast was queued")
