@@ -1,0 +1,158 @@
+########################################################################################
+# Stable Reserve - Rescue During an Oracle Outage
+#
+# A depeg observed while another stable is healthy schedules a cross-stable
+# rescue. If the oracle stops reporting before that stream executes, the target
+# becomes ineligible and every sub-swap fails. A missing source price is not new
+# evidence of a depeg, so completion of the failed stream must not automatically
+# schedule a second rescue into RUNE. Once a genuinely bad source price returns,
+# a new rescue may be scheduled normally.
+########################################################################################
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-usdc-usdt-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Enable the Stable Reserve, configure both TOR anchors, and keep rescue streams
+# short so the failed-stream lifecycle is deterministic.
+########################################################################################
+type: tx-mimir
+key: TorAnchor-ETH-USDC-0X9999999999999999999999999999999999999999
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: tx-mimir
+key: TorAnchor-ETH-USDT-0X9999999999999999999999999999999999999999
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 1
+---
+type: tx-mimir
+key: StableReserveEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 2
+---
+type: tx-mimir
+key: StreamingSwapMaxLength
+value: 3
+signer: {{ addr_thor_dog }}
+sequence: 3
+---
+type: tx-mimir
+key: StreamingSwapMaxLengthNative
+value: 3
+signer: {{ addr_thor_dog }}
+sequence: 4
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Seed healthy prices and deposit 1000 USDC.
+########################################################################################
+type: tx-price-feed
+prices:
+  USDC: "1.00"
+  USDT: "1.00"
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+sequence: 5
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "1000000000"
+          asset: "ETH.USDC-0X9999999999999999999999999999999999999999"
+          decimals: 6
+      gas:
+        - amount: "10000"
+          asset: "ETH.ETH"
+      memo: "stable+"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Report a real USDC depeg while USDT remains healthy. This schedules USDC->USDT
+# at EndBlock, after the swap queues have already run.
+########################################################################################
+type: tx-price-feed
+prices:
+  USDC: "0.50"
+  USDT: "1.00"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[..|select(.type? == "stable_reserve_rescue_scheduled")|select(.target == "ETH.USDT-0X9999999999999999999999999999999999999999")]|length == 1'
+---
+########################################################################################
+# Do not send another feed. The confirmed batch is gone and prices are cleared
+# at the next BeginBlock, so all three USDT-target sub-swaps fail validation.
+# When the stream is removed on its third failure, the missing USDC price must
+# not be treated as another depeg and must not schedule a RUNE fallback.
+########################################################################################
+type: create-blocks
+count: 3
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[..|select(.type? == "refund")|select(.reason|contains("stable reserve rescue target no longer eligible: missing oracle price"))]|length == 1'
+  - '[..|select(.type? == "streaming_swap")|select(.count == "3")|select(.in == "0 ETH-USDC-0X9999999999999999999999999999999999999999")|select(.out == "0 ETH.USDT-0X9999999999999999999999999999999999999999")|select(.failed_swap_reasons|contains("stable reserve rescue target no longer eligible: missing oracle price"))]|length == 1'
+  - '[..|select(.type? == "stable_reserve_rescue_scheduled")]|length == 0'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/stable_reserve
+asserts:
+  - '.active_swaps|length == 0'
+  - '[.inventory[]|select(.asset == "ETH.USDC-0X9999999999999999999999999999999999999999")][0].amount == "1000000000"'
+  - '[.inventory[]|select(.asset == "ETH.USDC-0X9999999999999999999999999999999999999999")][0].reason == "missing oracle price"'
+  - '.rune_balance == "0"'
+---
+type: check
+endpoint: http://localhost:1317/thorchain/stable_reserve/contributor/ETH.USDC-0X9999999999999999999999999999999999999999/{{ addr_eth_fox }}
+asserts:
+  - '.credit == "1000000000"'
+---
+########################################################################################
+# Restore an explicitly bad USDC price without a healthy stable target. This is
+# fresh evidence of a depeg, so isDepegged should now schedule the RUNE fallback.
+########################################################################################
+type: tx-price-feed
+prices:
+  USDC: "0.50"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[..|select(.type? == "stable_reserve_depeg_detected")]|length == 1'
+  - '[..|select(.type? == "stable_reserve_rescue_scheduled")|select(.target == "THOR.RUNE")]|length == 1'
+---
+type: create-blocks
+count: 3
+---
+type: check
+endpoint: http://localhost:1317/thorchain/stable_reserve
+asserts:
+  - '.active_swaps|length == 0'
+  - '[.inventory[]|select(.asset == "ETH.USDC-0X9999999999999999999999999999999999999999")][0].amount == "0"'
+  - '.rune_balance|tonumber > 0'

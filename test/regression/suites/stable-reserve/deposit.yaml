@@ -45,7 +45,8 @@ asserts:
   - ."TORANCHOR-ETH-USDT-0X9999999999999999999999999999999999999999" == 1
 ---
 ########################################################################################
-# seed oracle prices (ebifrost injects the feed first in every subsequent block)
+# Seed oracle prices for the next block. The injected feed runs before the
+# deposit transaction, then its confirmed batch is removed rather than replayed.
 ########################################################################################
 type: tx-price-feed
 prices:

@@ -489,6 +489,7 @@
       "rune_providers": [],
       "secured_assets": [],
       "sol_vault_nonces": [],
+      "stable_reserve_deposit_value": "0",
       "streaming_swaps": [],
       "swap_queue_items": [],
       "swapper_clout": [

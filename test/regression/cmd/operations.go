@@ -854,13 +854,15 @@ const priceFeedTime int64 = 4102444800000
 // the node's Enshrined Bifrost (ebifrost) over its localhost gRPC interface, the
 // same path bifrost uses in production. MsgPriceFeedQuorumBatch cannot be
 // broadcast as a normal tx (the InjectedTxDecorator ante rejects it) - it is only
-// admitted when the proposer injects it during PrepareProposal. ebifrost caches
-// the batch (30m TTL) and re-injects it every block, so a suite sends this once
-// and oracle prices stay live for the remainder of the run (they are otherwise
-// wiped every BeginBlock by OracleMgr). The injected tx is processed before
-// mempool txs in the block. Only symbols in the RequiredPriceFeeds constant can
-// be priced (e.g. USDC, USDT); unlisted symbols default to a zero rate, which the
-// handler discards.
+// admitted when the proposer injects it during PrepareProposal. The cache keeps
+// an unconfirmed batch available for retry, but the post handler removes it once
+// included successfully. OracleMgr then clears the resulting prices at the next
+// BeginBlock, so this operation supplies prices for one block only. Suites that
+// need live prices in consecutive blocks must send a fresh batch before each
+// block, mirroring production Bifrost's continuous submissions. The injected tx
+// is processed before mempool txs in the block. Only symbols in the
+// RequiredPriceFeeds constant can be priced (e.g. USDC, USDT); unlisted symbols
+// default to a zero rate, which the handler discards.
 type OpTxPriceFeed struct {
 	OpBase `yaml:",inline"`
 	Prices map[string]string `json:"prices"` // symbol -> decimal price, e.g. {"USDC": "1.00"}

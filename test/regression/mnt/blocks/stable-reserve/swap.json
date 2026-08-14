@@ -2420,19 +2420,19 @@
         "type": "secured_asset_deposit"
       },
       {
-        "amount": "100000000eth-usdt-0x9999999999999999999999999999999999999999",
+        "amount": "98009999eth-usdt-0x9999999999999999999999999999999999999999",
         "mode": "EndBlock",
         "spender": "tthor102ae04vpk6v2tvjgzdsc2s7ncnptj6pwz0pg2k",
         "type": "coin_spent"
       },
       {
-        "amount": "100000000eth-usdt-0x9999999999999999999999999999999999999999",
+        "amount": "98009999eth-usdt-0x9999999999999999999999999999999999999999",
         "mode": "EndBlock",
         "receiver": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
         "type": "coin_received"
       },
       {
-        "amount": "100000000eth-usdt-0x9999999999999999999999999999999999999999",
+        "amount": "98009999eth-usdt-0x9999999999999999999999999999999999999999",
         "mode": "EndBlock",
         "recipient": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
         "sender": "tthor102ae04vpk6v2tvjgzdsc2s7ncnptj6pwz0pg2k",
@@ -2444,19 +2444,19 @@
         "type": "message"
       },
       {
-        "amount": "100000000eth-usdt-0x9999999999999999999999999999999999999999",
+        "amount": "98009999eth-usdt-0x9999999999999999999999999999999999999999",
         "mode": "EndBlock",
         "spender": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
         "type": "coin_spent"
       },
       {
-        "amount": "100000000eth-usdt-0x9999999999999999999999999999999999999999",
+        "amount": "98009999eth-usdt-0x9999999999999999999999999999999999999999",
         "burner": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
         "mode": "EndBlock",
         "type": "burn"
       },
       {
-        "amount": "100000000",
+        "amount": "98009999",
         "asset": "ETH-USDT-0X9999999999999999999999999999999999999999",
         "asset_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
         "mode": "EndBlock",
@@ -2467,7 +2467,7 @@
       {
         "chain": "ETH",
         "coin": "100000000 ETH.USDC-0X9999999999999999999999999999999999999999",
-        "emit_asset": "100000000 ETH.USDT-0X9999999999999999999999999999999999999999",
+        "emit_asset": "98009999 ETH.USDT-0X9999999999999999999999999999999999999999",
         "from": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
         "id": "0000000000000000000000000000000000000000000000000000000000000005",
         "liquidity_fee": "0",
@@ -2517,7 +2517,7 @@
       },
       {
         "chain": "ETH",
-        "coin_amount": "99000000",
+        "coin_amount": "97009900",
         "coin_asset": "ETH.USDT-0X9999999999999999999999999999999999999999",
         "coin_decimals": "0",
         "gas_rate": "1",

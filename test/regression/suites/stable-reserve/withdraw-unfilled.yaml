@@ -22,9 +22,10 @@ value: 1
 signer: {{ addr_thor_dog }}
 sequence: 0
 ---
-# A second healthy TOR anchor (USDT) is required so the module can derive
-# dollars-per-rune and price the USDC pool: eligibility is gated on that pool
-# price, and the depeg is detected relative to this healthy reference.
+# Keep a second TOR anchor in the realistic inventory set. During the rescue
+# below both anchors are deliberately unhealthy, forcing the manager to use its
+# RUNE fallback instead of relying on a cross-stable stream that needs a fresh
+# target oracle price in every execution block.
 type: tx-mimir
 key: TorAnchor-ETH-USDT-0X9999999999999999999999999999999999999999
 value: 1
@@ -38,8 +39,8 @@ signer: {{ addr_thor_dog }}
 sequence: 2
 ---
 # Rescue swaps are slip-sized (quantity 0, interval 1) by the swap manager. Bound
-# the native streaming length to 10 so the rescue resolves in a deterministic,
-# short number of sub-swaps before the oracle price feed goes stale.
+# the native streaming length to 10 so the RUNE rescue resolves in a
+# deterministic, short number of sub-swaps.
 type: tx-mimir
 key: StreamingSwapMaxLength
 value: 10
@@ -90,44 +91,36 @@ asserts:
   - .credit == "1000000000"
 ---
 ########################################################################################
-# TRIGGER RESCUE: drop USDC price to 0.50
+# TRIGGER RESCUE: drop both anchors to 0.50. With no healthy stable target, the
+# manager must rescue USDC into RUNE.
 ########################################################################################
 type: tx-price-feed
 prices:
   USDC: "0.50"
-  USDT: "1.00"
+  USDT: "0.50"
 ---
 type: create-blocks
 count: 1
 ---
 ########################################################################################
-# step through rescue settlement, re-feeding the depeg price so the slip-sized
-# rescue stream keeps running and fully drains USDC inventory to the reserve.
+# Assert that the intended RUNE fallback was scheduled, then step through its
+# ten sub-swaps. RUNE targets do not require an oracle price during execution.
 ########################################################################################
-type: create-blocks
-count: 12
----
-type: tx-price-feed
-prices:
-  USDC: "0.50"
-  USDT: "1.00"
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[..|select(.type? == "stable_reserve_rescue_scheduled")|select(.target == "THOR.RUNE")]|length == 1'
 ---
 type: create-blocks
-count: 12
----
-type: tx-price-feed
-prices:
-  USDC: "0.50"
-  USDT: "1.00"
----
-type: create-blocks
-count: 12
+count: 10
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/stable_reserve
 asserts:
   # USDC inventory rescued away
+  - '.active_swaps|length == 0'
   - '[.inventory[]|select(.asset == "ETH.USDC-0X9999999999999999999999999999999999999999")][0].amount == "0"'
+  - '.rune_balance|tonumber > 0'
 ---
 ########################################################################################
 # attempt to withdraw 500 USDC. It should remain unfilled because inventory is 0.
