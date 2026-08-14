@@ -2644,6 +2644,18 @@ func collectAltNativeTxFeeFromNative(ctx cosmos.Context, k keeper.Keeper, signer
 	return fee.Amount, err
 }
 
+// validateAltNativeFeeCollectionAmount limits unavoidable share-conversion
+// rounding to at most one base unit beyond the quoted fee.
+func validateAltNativeFeeCollectionAmount(requested, collected cosmos.Uint) error {
+	if collected.IsZero() || collected.LT(requested) {
+		return fmt.Errorf("alt-native fee collection does not cover requested amount: requested %s, collected %s", requested, collected)
+	}
+	if collected.GT(requested.Add(cosmos.OneUint())) {
+		return fmt.Errorf("alt-native fee collection exceeds rounding allowance: requested %s, collected %s", requested, collected)
+	}
+	return nil
+}
+
 // collectAltNativeTxFeeFromSecured burns the signer’s secured share tokens and
 // reduces the secured pool depth, recording the released L1 collateral in the
 // escrow ledger.
@@ -2669,6 +2681,12 @@ func collectAltNativeTxFeeFromSecured(ctx cosmos.Context, k keeper.Keeper, signe
 	if burnAmt.IsZero() {
 		return cosmos.ZeroUint(), fmt.Errorf("secured asset fee below precision")
 	}
+	// Calculate and validate the collateral claim before changing supply or
+	// balances so a coarse share cannot confiscate a disproportionate amount.
+	tokensToConfiscate := common.GetSafeShare(burnAmt, shareBalance, assetAvailable)
+	if err = validateAltNativeFeeCollectionAmount(fee.Amount, tokensToConfiscate); err != nil {
+		return cosmos.ZeroUint(), err
+	}
 	shareCoin := common.NewCoin(asset, burnAmt)
 	// Move the share tokens into the module and burn them to reduce the signer’s entitlement.
 	if err = k.SendFromAccountToModule(ctx, signer, ModuleName, common.NewCoins(shareCoin)); err != nil {
@@ -2676,13 +2694,6 @@ func collectAltNativeTxFeeFromSecured(ctx cosmos.Context, k keeper.Keeper, signe
 	}
 	if err = k.BurnFromModule(ctx, ModuleName, shareCoin); err != nil {
 		return cosmos.ZeroUint(), fmt.Errorf("failed to burn secured asset shares: %w", err)
-	}
-	// Translate the burned shares back into underlying collateral using the
-	// pre-burn share snapshot above; the burn changes on-chain balances, but
-	// the proportional claim we are confiscating is defined by that snapshot.
-	tokensToConfiscate := common.GetSafeShare(burnAmt, shareBalance, assetAvailable)
-	if tokensToConfiscate.IsZero() {
-		return cosmos.ZeroUint(), fmt.Errorf("secured asset produced zero underlying amount")
 	}
 	pool.Depth = common.SafeSub(pool.Depth, tokensToConfiscate)
 	k.SetSecuredAsset(ctx, pool)
@@ -2718,6 +2729,9 @@ func collectAltNativeTxFeeFromTrade(ctx cosmos.Context, k keeper.Keeper, signer 
 	tokensToConfiscate := common.GetSafeShare(unitsToClaim, tr.Units, assetAvailable)
 	if tokensToConfiscate.IsZero() {
 		return cosmos.ZeroUint(), fmt.Errorf("trade asset produced zero underlying amount")
+	}
+	if err = validateAltNativeFeeCollectionAmount(fee.Amount, tokensToConfiscate); err != nil {
+		return cosmos.ZeroUint(), err
 	}
 	tu.Units = common.SafeSub(tu.Units, unitsToClaim)
 	tr.Units = common.SafeSub(tr.Units, unitsToClaim)

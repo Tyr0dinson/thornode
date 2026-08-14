@@ -2838,11 +2838,16 @@ func (s *HelperSuite) TestCsCoinsToCoinsNormalizesXPrefixedNativeDenoms(c *C) {
 	c.Assert(coins[0].Amount.Equal(cosmos.NewUint(123)), Equals, true)
 }
 
-// TestCollectAltNativeTxFeeFromSecuredRoundsInverseStepUp exercises the
-// coarse-grained secured-share case that used to under-collect. With 2 shares
-// backed by depth 6, a fee target of 4 must round the inverse step up to burn
-// both shares so the collected collateral still covers the fee.
-func (s *HelperSuite) TestCollectAltNativeTxFeeFromSecuredRoundsInverseStepUp(c *C) {
+func (s *HelperSuite) TestValidateAltNativeFeeCollectionAmount(c *C) {
+	c.Assert(validateAltNativeFeeCollectionAmount(cosmos.NewUint(4), cosmos.NewUint(4)), IsNil)
+	c.Assert(validateAltNativeFeeCollectionAmount(cosmos.NewUint(4), cosmos.NewUint(5)), IsNil)
+	c.Assert(validateAltNativeFeeCollectionAmount(cosmos.NewUint(4), cosmos.NewUint(3)), ErrorMatches, "alt-native fee collection does not cover requested amount: requested 4, collected 3")
+	c.Assert(validateAltNativeFeeCollectionAmount(cosmos.NewUint(4), cosmos.NewUint(6)), ErrorMatches, "alt-native fee collection exceeds rounding allowance: requested 4, collected 6")
+}
+
+// TestCollectAltNativeTxFeeFromSecuredRejectsExcessRounding verifies that a
+// coarse secured share cannot confiscate substantially more than the fee.
+func (s *HelperSuite) TestCollectAltNativeTxFeeFromSecuredRejectsExcessRounding(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
 	signer := GetRandomBech32Addr()
@@ -2854,25 +2859,25 @@ func (s *HelperSuite) TestCollectAltNativeTxFeeFromSecuredRoundsInverseStepUp(c 
 	k.SetSecuredAsset(ctx, pool)
 	fundAccountWith(c, ctx, k, signer, asset, cosmos.NewUint(2))
 
-	// Request a fee of 4 units. The inverse step must round up to both shares,
-	// which then map back to the full 6 units of backing collateral.
+	// A fee of 4 would require both shares and confiscate all 6 units, which is
+	// more than the permitted one-base-unit rounding allowance.
 	collected, err := collectAltNativeTxFee(ctx, k, signer, common.NewCoin(asset, cosmos.NewUint(4)))
-	c.Assert(err, IsNil)
-	c.Assert(collected.Equal(cosmos.NewUint(6)), Equals, true)
+	c.Assert(err, ErrorMatches, "alt-native fee collection exceeds rounding allowance: requested 4, collected 6")
+	c.Assert(collected.IsZero(), Equals, true)
 
-	// The entire secured position should be consumed and escrowed as the
-	// corresponding L1 asset.
+	// Rejection occurs before shares, depth, or escrow are changed.
 	remainingShares := cosmos.NewUint(k.GetBalanceOf(ctx, signer, asset).Amount.Uint64())
-	c.Assert(remainingShares.IsZero(), Equals, true)
-	escrow, exists := k.GetAltNativeFeeEscrow(ctx, common.BTCAsset)
-	c.Assert(exists, Equals, true)
-	c.Assert(escrow.Balance.Amount.Equal(cosmos.NewUint(6)), Equals, true)
+	c.Assert(remainingShares.Equal(cosmos.NewUint(2)), Equals, true)
+	afterPool, err := k.GetSecuredAsset(ctx, asset)
+	c.Assert(err, IsNil)
+	c.Assert(afterPool.Depth.Equal(cosmos.NewUint(6)), Equals, true)
+	_, exists := k.GetAltNativeFeeEscrow(ctx, common.BTCAsset)
+	c.Assert(exists, Equals, false)
 }
 
-// TestCollectAltNativeTxFeeFromTradeRoundsInverseStepUp covers the analogous
-// trade-account case: 2 units over depth 6 with a fee target of 4 must round
-// the inverse step up to claim both units, avoiding under-collection.
-func (s *HelperSuite) TestCollectAltNativeTxFeeFromTradeRoundsInverseStepUp(c *C) {
+// TestCollectAltNativeTxFeeFromTradeRejectsExcessRounding covers the analogous
+// coarse trade-unit conversion and verifies that it is rejected atomically.
+func (s *HelperSuite) TestCollectAltNativeTxFeeFromTradeRejectsExcessRounding(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
 	signer := GetRandomBech32Addr()
@@ -2891,24 +2896,21 @@ func (s *HelperSuite) TestCollectAltNativeTxFeeFromTradeRoundsInverseStepUp(c *C
 		Owner: signer,
 	})
 
-	// A fee target of 4 should force the inverse step to consume both units,
-	// which then map back to the full 6 units of depth.
+	// A target of 4 would consume both units and claim all 6 units of depth.
 	collected, err := collectAltNativeTxFee(ctx, k, signer, common.NewCoin(asset, cosmos.NewUint(4)))
-	c.Assert(err, IsNil)
-	c.Assert(collected.Equal(cosmos.NewUint(6)), Equals, true)
+	c.Assert(err, ErrorMatches, "alt-native fee collection exceeds rounding allowance: requested 4, collected 6")
+	c.Assert(collected.IsZero(), Equals, true)
 
-	// The trade account and aggregate unit record should both be drained, and
-	// the collected depth should be reflected in the L1 escrow ledger.
+	// Rejection occurs before either the account or aggregate depth changes.
 	tr, err := k.GetTradeAccount(ctx, signer, asset)
 	c.Assert(err, IsNil)
-	c.Assert(tr.Units.IsZero(), Equals, true)
+	c.Assert(tr.Units.Equal(cosmos.NewUint(2)), Equals, true)
 	tu, err := k.GetTradeUnit(ctx, asset)
 	c.Assert(err, IsNil)
-	c.Assert(tu.Units.IsZero(), Equals, true)
-	c.Assert(tu.Depth.IsZero(), Equals, true)
-	escrow, exists := k.GetAltNativeFeeEscrow(ctx, common.BTCAsset)
-	c.Assert(exists, Equals, true)
-	c.Assert(escrow.Balance.Amount.Equal(cosmos.NewUint(6)), Equals, true)
+	c.Assert(tu.Units.Equal(cosmos.NewUint(2)), Equals, true)
+	c.Assert(tu.Depth.Equal(cosmos.NewUint(6)), Equals, true)
+	_, exists := k.GetAltNativeFeeEscrow(ctx, common.BTCAsset)
+	c.Assert(exists, Equals, false)
 }
 
 func (s *HelperSuite) TestProcessAltNativeFeeEscrowsCreditsReserveAndClearsEscrow(c *C) {
