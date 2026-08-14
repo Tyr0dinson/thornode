@@ -178,6 +178,10 @@ func SendAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, m sd
 // later fails.
 func deductNativeTxFeeFromAccount(ctx cosmos.Context, k keeper.Keeper, signer cosmos.AccAddress, m sdk.Msg) error {
 	nativeTxFee := k.GetNativeTxFee(ctx)
+	// A zero base fee disables both RUNE and alternative-native fee collection.
+	if nativeTxFee.IsZero() {
+		return nil
+	}
 	nativeTxFeeCoin := common.NewCoin(common.RuneNative, nativeTxFee)
 	nativeTxFeeCommonCoins := common.NewCoins(nativeTxFeeCoin)
 	nativeTxFeeCoins, err := nativeTxFeeCommonCoins.Native()
@@ -186,9 +190,6 @@ func deductNativeTxFeeFromAccount(ctx cosmos.Context, k keeper.Keeper, signer co
 	}
 	// Prefer the standard RUNE fee path when the signer can pay it directly.
 	if k.HasCoins(ctx, signer, nativeTxFeeCoins) {
-		if nativeTxFee.IsZero() {
-			return nil
-		}
 		return k.SendFromAccountToModule(ctx, signer, ReserveName, nativeTxFeeCommonCoins)
 	}
 

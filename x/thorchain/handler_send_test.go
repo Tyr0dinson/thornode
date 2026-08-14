@@ -28,6 +28,23 @@ func (k *altNativeFeeCollectionFailKeeper) SendFromAccountToModule(_ cosmos.Cont
 	return errKaboom
 }
 
+// TestZeroNativeTxFeeSkipsCollection verifies a zero base fee succeeds without
+// consulting RUNE balances or falling back to alternative-native collection.
+func (s *HandlerSendSuiteV87) TestZeroNativeTxFeeSkipsCollection(c *C) {
+	ctx, _ := setupKeeperForTest(c)
+	signer := GetRandomBech32Addr()
+	msg := &MsgSend{
+		FromAddress: signer,
+		ToAddress:   GetRandomBech32Addr(),
+		Amount: cosmos.NewCoins(
+			cosmos.NewCoin(common.NAMI.Native(), cosmos.NewInt(1)),
+		),
+	}
+
+	err := deductNativeTxFeeFromAccount(ctx, keeper.KVStoreDummy{}, signer, msg)
+	c.Assert(err, IsNil)
+}
+
 func (s *HandlerSendSuiteV87) TestValidate(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
