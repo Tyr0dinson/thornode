@@ -81,10 +81,9 @@ func (pm *PoolMgr) cyclePools(ctx cosmos.Context, maxAvailablePools, minRunePool
 		cacheCtx, commit := ctx.CacheContext()
 		targetStatus := pool.Status
 		if targetStatus == PoolStaged {
-			if err := settleAltNativeFeeEscrowForLifecycle(cacheCtx, mgr, pool.Asset); err != nil {
+			if err = settleAltNativeFeeEscrowForLifecycle(cacheCtx, mgr, pool.Asset); err != nil {
 				return fmt.Errorf("fail to settle alt-native fee escrow before staging pool %s: %w", pool.Asset, err)
 			}
-			var err error
 			pool, err = mgr.Keeper().GetPool(cacheCtx, pool.Asset)
 			if err != nil {
 				return fmt.Errorf("fail to reload pool before staging: %w", err)
@@ -93,7 +92,7 @@ func (pm *PoolMgr) cyclePools(ctx cosmos.Context, maxAvailablePools, minRunePool
 		}
 
 		poolEvt := NewEventPool(pool.Asset, targetStatus)
-		if err := mgr.EventMgr().EmitEvent(cacheCtx, poolEvt); err != nil {
+		if err = mgr.EventMgr().EmitEvent(cacheCtx, poolEvt); err != nil {
 			return fmt.Errorf("fail to emit pool event: %w", err)
 		}
 
@@ -114,7 +113,7 @@ func (pm *PoolMgr) cyclePools(ctx cosmos.Context, maxAvailablePools, minRunePool
 			},
 		)
 		pool.StatusSince = ctx.BlockHeight()
-		if err := mgr.Keeper().SetPool(cacheCtx, pool); err != nil {
+		if err = mgr.Keeper().SetPool(cacheCtx, pool); err != nil {
 			return err
 		}
 		commit()
@@ -125,7 +124,7 @@ func (pm *PoolMgr) cyclePools(ctx cosmos.Context, maxAvailablePools, minRunePool
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
 		var pool Pool
-		if err := mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &pool); err != nil {
+		if err = mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &pool); err != nil {
 			return err
 		}
 		// skip all cycling on saver and derived pools
@@ -133,7 +132,7 @@ func (pm *PoolMgr) cyclePools(ctx cosmos.Context, maxAvailablePools, minRunePool
 			continue
 		}
 		if pool.Asset.IsGasAsset() {
-			if fee, err := mgr.Keeper().GetRollingPoolLiquidityFee(ctx, pool.Asset); err != nil {
+			if fee, feeErr := mgr.Keeper().GetRollingPoolLiquidityFee(ctx, pool.Asset); feeErr != nil {
 				ctx.Logger().Error("fail to get rolling pool liquidity fee", "asset", pool.Asset, "error", err)
 			} else {
 				mgr.Keeper().SavePrevCyclePoolLiquidityFee(ctx, pool.Asset, fee)
@@ -153,7 +152,7 @@ func (pm *PoolMgr) cyclePools(ctx cosmos.Context, maxAvailablePools, minRunePool
 				}
 			} else {
 				pool.Status = PoolStaged
-				if err := setPool(pool); err != nil {
+				if err = setPool(pool); err != nil {
 					return err
 				}
 			}
@@ -166,7 +165,7 @@ func (pm *PoolMgr) cyclePools(ctx cosmos.Context, maxAvailablePools, minRunePool
 		case PoolStaged:
 			// Clear any escrow imported from older state before staged fees can
 			// consume the RUNE depth needed to settle it.
-			if err := settleAltNativeFeeEscrowForLifecycle(ctx, mgr, pool.Asset); err != nil {
+			if err = settleAltNativeFeeEscrowForLifecycle(ctx, mgr, pool.Asset); err != nil {
 				ctx.Logger().Error("fail to settle alt-native fee escrow for staged pool", "pool", pool.Asset, "err", err)
 				continue
 			}

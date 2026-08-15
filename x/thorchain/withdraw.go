@@ -147,7 +147,8 @@ func withdraw(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cosmos
 			if err = settleAltNativeFeeEscrowForLifecycle(cacheCtx, mgr, pool.Asset); err != nil {
 				return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("fail to settle alt-native fee escrow before final withdrawal: %w", err)
 			}
-			withdrawRune, withDrawAsset, units, gasAsset, err := withdraw(cacheCtx, msg, mgr)
+			var units cosmos.Uint
+			withdrawRune, withDrawAsset, units, gasAsset, err = withdraw(cacheCtx, msg, mgr)
 			if err != nil {
 				return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), err
 			}
