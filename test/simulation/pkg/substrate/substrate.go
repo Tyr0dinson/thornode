@@ -180,6 +180,7 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 	payload, err := types.SigningPayload(
 		callData, era, uint64(nonce), 0,
 		c.params.CheckMetadataHash, types.MetadataModeDisabled,
+		c.params.ChargeAssetTxPayment,
 		rv.SpecVersion, rv.TransactionVersion,
 		genesisHash, genesisHash,
 	)
@@ -200,15 +201,16 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 
 	// Encode signed extrinsic
 	ext := &types.Extrinsic{
-		Signer:            signerPub,
-		SignatureType:     types.SignatureTypeEd25519,
-		Signature:         signature,
-		Era:               era,
-		Nonce:             uint64(nonce),
-		Tip:               0,
-		MetadataMode:      types.MetadataModeDisabled,
-		CheckMetadataHash: c.params.CheckMetadataHash,
-		CallData:          callData,
+		Signer:               signerPub,
+		SignatureType:        types.SignatureTypeEd25519,
+		Signature:            signature,
+		Era:                  era,
+		Nonce:                uint64(nonce),
+		Tip:                  0,
+		MetadataMode:         types.MetadataModeDisabled,
+		CheckMetadataHash:    c.params.CheckMetadataHash,
+		ChargeAssetTxPayment: c.params.ChargeAssetTxPayment,
+		CallData:             callData,
 	}
 
 	return types.EncodeSignedExtrinsic(ext), nil
