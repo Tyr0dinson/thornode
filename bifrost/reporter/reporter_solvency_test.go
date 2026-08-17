@@ -1855,29 +1855,10 @@ func (s *SolvencySuite) TestDispatcherUsesConfiguredSolanaMsgHeightFloor(c *C) {
 	c.Assert(msg.Height, Equals, int64(100))
 }
 
-func (s *SolvencySuite) TestSendCollectedToThorchainLogsInactiveNode(c *C) {
-	var logBuf bytes.Buffer
-
+func (s *SolvencySuite) TestSendCollectedToThorchainContinuesWhenNodeStatusUnavailable(c *C) {
 	bridge := &thorMockBridge{
 		fetchNodeStatusFunc: func() (ctypes.NodeStatus, error) {
-			return ctypes.NodeStatus_Standby, nil
-		},
-	}
-	d := &dispatcher{
-		logger:          zerolog.New(&logBuf),
-		thorchainBridge: bridge,
-	}
-
-	err := d.sendCollectedToThorchain(ReportBatch{nil})
-	c.Assert(err, IsNil)
-	c.Assert(bridge.getMsgs(), HasLen, 0)
-	c.Assert(logBuf.String(), Matches, `(?s).*"node_status":"Standby".*"report_count":1.*skipping broadcast of collected reports to thorchain: local node is not active.*`)
-}
-
-func (s *SolvencySuite) TestSendCollectedToThorchainUsesSolvencyAttester(c *C) {
-	bridge := &thorMockBridge{
-		fetchNodeStatusFunc: func() (ctypes.NodeStatus, error) {
-			return ctypes.NodeStatus_Active, nil
+			return ctypes.NodeStatus_Unknown, fmt.Errorf("status unavailable")
 		},
 	}
 	attester := &mockSolvencyAttester{}
@@ -1889,8 +1870,7 @@ func (s *SolvencySuite) TestSendCollectedToThorchainUsesSolvencyAttester(c *C) {
 	}
 
 	msg := bridge.GetSolvencyMsg(123, common.BCHChain, ctypes.GetRandomPubKey(), common.NewCoins(common.NewCoin(common.BCHAsset, cosmos.NewUint(42))))
-	err := d.sendCollectedToThorchain(ReportBatch{msg})
-	c.Assert(err, IsNil)
+	d.sendCollectedToThorchain(ReportBatch{msg})
 
 	attested := attester.getMsgs()
 	c.Assert(attested, HasLen, 1)
@@ -1968,24 +1948,18 @@ func (s *SolvencySuite) TestDispatcherShutdownCancelsBlockedAttestation(c *C) {
 func (s *SolvencySuite) TestSendCollectedToThorchainRequiresSolvencyAttester(c *C) {
 	var logBuf bytes.Buffer
 
-	bridge := &thorMockBridge{
-		fetchNodeStatusFunc: func() (ctypes.NodeStatus, error) {
-			return ctypes.NodeStatus_Active, nil
-		},
-	}
+	bridge := &thorMockBridge{}
 	errCounter := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "report_failures_total",
 		Help: "test counter",
 	}, []string{"type", "chain"})
 	d := &dispatcher{
-		logger:          zerolog.New(&logBuf),
-		thorchainBridge: bridge,
-		errCounter:      errCounter,
+		logger:     zerolog.New(&logBuf),
+		errCounter: errCounter,
 	}
 
 	msg := bridge.GetSolvencyMsg(123, common.BCHChain, ctypes.GetRandomPubKey(), common.NewCoins(common.NewCoin(common.BCHAsset, cosmos.NewUint(42))))
-	err := d.sendCollectedToThorchain(ReportBatch{msg})
-	c.Assert(err, IsNil)
+	d.sendCollectedToThorchain(ReportBatch{msg})
 	c.Assert(bridge.getMsgs(), HasLen, 0)
 	c.Assert(logBuf.String(), Matches, `(?s).*missing solvency attester for report message.*fail to attest solvency.*`)
 	c.Assert(testutil.ToFloat64(errCounter.WithLabelValues("fail_to_broadcast_solvency", "")), Equals, float64(1))

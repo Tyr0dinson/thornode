@@ -126,9 +126,7 @@ func (d *dispatcher) processReportQueue() {
 				return
 			}
 			// send all collected reporter messages to thorchain
-			if err := d.sendCollectedToThorchain(reportBatch); err != nil {
-				d.logger.Err(err).Msg("fail to send reports to thorchain")
-			}
+			d.sendCollectedToThorchain(reportBatch)
 		}
 	}
 }
@@ -315,22 +313,9 @@ func (d *dispatcher) resolveTaskHeight(chain common.Chain, from triggeredFrom, h
 	}
 }
 
-// sendCollectedToThorchain broadcasts each collected reporter message
-// if the local THORNode is active.
-func (d *dispatcher) sendCollectedToThorchain(allMsgs ReportBatch) error {
-	nodeStatus, err := d.thorchainBridge.FetchNodeStatus()
-	if err != nil {
-		return fmt.Errorf("failed to get node status: %w", err)
-	}
-
-	if nodeStatus != types.NodeStatus_Active {
-		d.logger.Info().
-			Stringer("node_status", nodeStatus).
-			Int("report_count", len(allMsgs)).
-			Msg("skipping broadcast of collected reports to thorchain: local node is not active")
-		return nil
-	}
-
+// sendCollectedToThorchain routes each collected reporter message through the
+// observer attestation path, which owns active-validator eligibility checks.
+func (d *dispatcher) sendCollectedToThorchain(allMsgs ReportBatch) {
 	for _, msg := range allMsgs {
 		if msg == nil {
 			d.logger.Error().Msg("skip nil report message")
@@ -345,7 +330,6 @@ func (d *dispatcher) sendCollectedToThorchain(allMsgs ReportBatch) error {
 		}
 		d.logger.Info().Str("msg_type", sdk.MsgTypeURL(msg)).Msg("report message sent to thorchain")
 	}
-	return nil
 }
 
 // sendMsg routes reporter messages through the observer attestation path.
