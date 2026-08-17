@@ -75,6 +75,21 @@ func (s *CircuitBreakerSuite) TestBondSolvencyCircuitBreaker(c *C) {
 	c.Assert(check.Actual.GTE(check.Expected), Equals, true)
 }
 
+func (s *CircuitBreakerSuite) TestRecordInsolvencySubBps(c *C) {
+	result := common.CircuitBreakerCheck{}
+	worstBps := cosmos.ZeroUint()
+
+	// a sub-BPS shortfall must still populate the worst-insolvency fields —
+	// with floor rounding it computed 0 BPS and the fields stayed empty, so
+	// the runner had nothing to compare against tolerance
+	recordInsolvency(&result, &worstBps, common.RuneAsset().Native(), cosmos.NewUint(19999), cosmos.NewUint(20000))
+
+	c.Assert(worstBps.Equal(cosmos.NewUint(1)), Equals, true)
+	c.Assert(result.Asset, Equals, common.RuneAsset().Native())
+	c.Assert(result.Actual.Equal(cosmos.NewUint(19999)), Equals, true)
+	c.Assert(result.Expected.Equal(cosmos.NewUint(20000)), Equals, true)
+}
+
 func (s *CircuitBreakerSuite) TestRecordInsolvencyMaxUint(c *C) {
 	result := common.CircuitBreakerCheck{}
 	worstBps := cosmos.ZeroUint()

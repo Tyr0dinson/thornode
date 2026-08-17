@@ -64,6 +64,17 @@ func (s *CircuitBreakerRunSuite) TestCalculateInsolvencyBps(c *C) {
 	// result is bounded to 10000 BPS and must not panic.
 	maxUint := cosmos.NewUintFromString("115792089237316195423570985008687907853269984665640564039457584007913129639935")
 	c.Assert(common.CalculateInsolvencyBps(cosmos.ZeroUint(), maxUint).Equal(cosmos.NewUint(10000)), Equals, true)
+
+	// Fractional shortfalls round up so they cannot floor below a zero
+	// tolerance: a 0.5 BPS shortage registers as 1 BPS.
+	c.Assert(common.CalculateInsolvencyBps(cosmos.NewUint(19999), cosmos.NewUint(20000)).Equal(cosmos.NewUint(1)), Equals, true)
+
+	// A one-unit shortage in a billion (0.00001 BPS) still registers.
+	c.Assert(common.CalculateInsolvencyBps(cosmos.NewUint(999999999), cosmos.NewUint(1000000000)).Equal(cosmos.NewUint(1)), Equals, true)
+
+	// Fractional excess above a whole-BPS threshold rounds up rather than
+	// being forgiven: 5.33... BPS reads as 6.
+	c.Assert(common.CalculateInsolvencyBps(cosmos.NewUint(29984), cosmos.NewUint(30000)).Equal(cosmos.NewUint(6)), Equals, true)
 }
 
 func (s *CircuitBreakerRunSuite) TestSaturateInt64(c *C) {
@@ -336,6 +347,42 @@ func (s *CircuitBreakerRunSuite) TestRunCircuitBreakersToleranceBoundary(c *C) {
 	pause, err = mgr.Keeper().GetMimir(ctx, constants.MimirKeyCircuitBreakerPauseGlobal)
 	c.Assert(err, IsNil)
 	c.Assert(pause, Equals, ctx.BlockHeight()+constants.CircuitBreakerPauseBlocks)
+}
+
+func (s *CircuitBreakerRunSuite) TestRunCircuitBreakersSubBpsShortfallTriggers(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+
+	// pool expects 20000 rune in asgard
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceRune = cosmos.NewUint(20000)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	// asgard holds 19999 — a real 0.5 BPS shortage that must not floor
+	// below the zero tolerance
+	asgardBal := mgr.Keeper().GetRuneBalanceOfModule(ctx, AsgardName)
+	if !asgardBal.IsZero() {
+		coins := common.NewCoins(common.NewCoin(common.RuneAsset(), asgardBal))
+		c.Assert(mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ReserveName, coins), IsNil)
+	}
+	restock := common.NewCoin(common.RuneAsset(), cosmos.NewUint(19999))
+	c.Assert(mgr.Keeper().MintToModule(ctx, ModuleName, restock), IsNil)
+	c.Assert(mgr.Keeper().SendFromModuleToModule(ctx, ModuleName, AsgardName, common.NewCoins(restock)), IsNil)
+
+	mgr.Keeper().SetMimir(ctx, constants.MimirKeyInvCheckInterval, 1)
+	mgr.Keeper().SetMimir(ctx, "InvAsgardSolvencyAutoHalt", 1)
+
+	runCircuitBreakers(ctx, mgr)
+
+	pause, err := mgr.Keeper().GetMimir(ctx, constants.MimirKeyCircuitBreakerPauseGlobal)
+	c.Assert(err, IsNil)
+	c.Assert(pause, Equals, ctx.BlockHeight()+constants.CircuitBreakerPauseBlocks)
+	attributes := circuitBreakerEventAttributes(ctx, "AsgardSolvency")
+	c.Assert(attributes, NotNil)
+	c.Assert(attributes["deviation_bps"], Equals, "1")
+	c.Assert(attributes["halted"], Equals, "true")
 }
 
 func (s *CircuitBreakerRunSuite) TestRunCircuitBreakersIntervalSkip(c *C) {

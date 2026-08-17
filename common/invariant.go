@@ -50,9 +50,14 @@ type CircuitBreakerCheck struct {
 // actual vs expected values rather than a simple broken bool.
 type CircuitBreakerInvariant func(ctx cosmos.Context) CircuitBreakerCheck
 
-// CalculateInsolvencyBps returns underfunding in basis points of expected.
-// Solvent and overfunded balances return zero. The intermediate calculation
-// uses big.Int so valid 256-bit Uint values cannot overflow before division.
+// CalculateInsolvencyBps returns underfunding in basis points of expected,
+// rounded up. Solvent and overfunded balances return zero. Rounding up makes
+// the strict tolerance comparison exact for integer tolerances — for any
+// integer T, ceil(x) > T if and only if x > T — so a sub-BPS shortfall
+// registers as one basis point instead of flooring to zero and escaping a
+// zero tolerance, and fractional excess above a whole-BPS threshold is not
+// forgiven. The intermediate calculation uses big.Int so valid 256-bit Uint
+// values cannot overflow before division.
 func CalculateInsolvencyBps(actual, expected cosmos.Uint) cosmos.Uint {
 	if expected.IsZero() || actual.GTE(expected) {
 		return cosmos.ZeroUint()
@@ -60,7 +65,11 @@ func CalculateInsolvencyBps(actual, expected cosmos.Uint) cosmos.Uint {
 
 	deficit := new(big.Int).Sub(expected.BigInt(), actual.BigInt())
 	numerator := new(big.Int).Mul(deficit, big.NewInt(10000))
-	return cosmos.NewUintFromBigInt(numerator.Quo(numerator, expected.BigInt()))
+	quotient, remainder := new(big.Int).QuoRem(numerator, expected.BigInt(), new(big.Int))
+	if remainder.Sign() != 0 {
+		quotient.Add(quotient, big.NewInt(1))
+	}
+	return cosmos.NewUintFromBigInt(quotient)
 }
 
 // CircuitBreakerRoute pairs a halt-worthy route name with its invariant.
