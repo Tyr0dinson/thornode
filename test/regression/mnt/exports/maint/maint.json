@@ -201,6 +201,7 @@
       "THORNames": [],
       "adv_swap_queue_items": [],
       "affiliate_collectors": null,
+      "alt_native_fee_escrows": [],
       "bond_providers": [
         {
           "node_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",

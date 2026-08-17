@@ -454,15 +454,55 @@ asserts:
   - .end_block_events[]|select(.type=="refund")|.reason|match("secured assets are disabled")
 ---
 ########################################################################################
-# withdraw with wrong network address (mainnet address on mocknet)
+# withdrawal while secured assets are globally halted
 ########################################################################################
-# Verify balance before withdrawal attempt (2 deposits of 50000000 each = 100000000)
+# The signer has no RUNE, so it attempts to pay the native tx fee with BTC-BTC.
+# That alternative fee path is disabled by HaltSecuredGlobal, so CheckTx rejects
+# the transaction before the SECURE- memo is handled.
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
 asserts:
   - .balances[]|select(.denom == "btc-btc")|.amount|tonumber == 100000000
 ---
-# Attempt withdrawal to mainnet address (bc1) - should be rejected on mocknet (tb1)
+type: tx-deposit
+signer: {{ addr_thor_pig }}
+coins:
+  - amount: "50000000"
+    asset: "BTC-BTC"
+memo: "secure-:bc1pywlmh5y7rml8qley0pgjrczqdtfxh09d99kgykk4cqcvg6rudjws3cfspm"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs|length == 0
+---
+# CheckTx failures do not persist an alternative-native fee deduction.
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+asserts:
+  - .balances[]|select(.denom == "btc-btc")|.amount|tonumber == 100000000
+---
+# Re-enable secured assets so the fee can be collected and the withdrawal
+# reaches its own validation.
+type: tx-mimir
+key: HaltSecuredGlobal
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# withdrawal with wrong network address (mainnet address on mocknet)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+asserts:
+  - .balances[]|select(.denom == "btc-btc")|.amount|tonumber == 100000000
+---
 type: tx-deposit
 signer: {{ addr_thor_pig }}
 coins:
@@ -479,19 +519,8 @@ asserts:
   - '.txs[]|select(.hash == "{{ native_txid -1 }}")|.result.code == 99'
   - '.txs[]|select(.hash == "{{ native_txid -1 }}")|.result.log|match("address\\(bc1pywlmh5y7rml8qley0pgjrczqdtfxh09d99kgykk4cqcvg6rudjws3cfspm\\) is not same network")'
 ---
-# Verify the secured withdraw was rejected due to wrong network, but the
-# alt-native tx fee was still charged in ante from BTC-BTC.
-# Note: before alt-native tx fee was introduced, this case did not actually
-# exercise the wrong-address secured withdrawal path. addr_thor_pig had no
-# RUNE, so the tx failed in ante ("spendable balance 0rune is smaller than 2000000rune: insufficient funds")
-# and never reached secured withdraw validation.
+# DeliverTx rejects the wrong-network address, but the ante fee remains paid.
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
 asserts:
   - .balances[]|select(.denom == "btc-btc")|.amount|tonumber == 99996999
----
-type: check
-endpoint: http://localhost:1317/thorchain/block
-asserts:
-  - '.txs[]|select(.hash == "{{ native_txid -1 }}")|.result.code == 99'
-  - '.txs[]|select(.hash == "{{ native_txid -1 }}")|.result.log|match("address\\(bc1pywlmh5y7rml8qley0pgjrczqdtfxh09d99kgykk4cqcvg6rudjws3cfspm\\) is not same network")'
