@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sync"
 	"sync/atomic"
 
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -14,8 +16,25 @@ import (
 
 type solvencyReporter struct {
 	baseReporter
+	// lastSolvencyCheckHeight is diagnostic state recording the most recent
+	// canonical bucket with a sufficiently complete check. Cadence eligibility
+	// uses lastSolvencyAttemptHeight, while auto-unhalt is gated locally by
+	// allVaultsProcessed in Collect.
 	lastSolvencyCheckHeight atomic.Int64
+	// lastSolvencyAttemptHeight gates cadence independently from completeness.
+	// This prevents a deferred vault from causing already-checked siblings to be
+	// rebuilt and gossiped repeatedly within the same canonical height bucket.
+	lastSolvencyAttemptHeight atomic.Int64
+
+	// Deferral streaks belong to the reporter because it defines the generic
+	// SolvencyDeferred contract and owns the successful-account reset point.
+	solvencyDeferralMu     sync.Mutex
+	solvencyDeferralRounds map[common.PubKey]int
 }
+
+// The XMR sidecar's verified expiry should resolve a dead spend well before
+// this many solvency cadence rounds. A longer streak warrants operator action.
+const xmrSolvencyDeferralEscalationRounds = 6
 
 // newSolvencyReporter creates a solvency reporter bound to a specific chain client
 func newSolvencyReporter(client ChainClient, thorchainBridge ThorchainBridge) *solvencyReporter {
@@ -26,6 +45,7 @@ func newSolvencyReporter(client ChainClient, thorchainBridge ThorchainBridge) *s
 			client:          client,
 			thorchainBridge: thorchainBridge,
 		},
+		solvencyDeferralRounds: make(map[common.PubKey]int),
 	}
 }
 
@@ -40,6 +60,17 @@ func (r *solvencyReporter) getLastSolvencyCheckHeight() int64 {
 
 func (r *solvencyReporter) setLastSolvencyCheckHeight(height int64) {
 	r.lastSolvencyCheckHeight.Store(height)
+	// Every completed check is also an attempted check. Keeping this invariant
+	// here also makes restored/test completion cursors safe cadence cursors.
+	r.setLastSolvencyAttemptHeight(height)
+}
+
+func (r *solvencyReporter) getLastSolvencyAttemptHeight() int64 {
+	return r.lastSolvencyAttemptHeight.Load()
+}
+
+func (r *solvencyReporter) setLastSolvencyAttemptHeight(height int64) {
+	r.lastSolvencyAttemptHeight.Store(height)
 }
 
 // Collect gathers solvency messages for all Asgard vaults on this chain.
@@ -82,10 +113,20 @@ func (r *solvencyReporter) Collect(from triggeredFrom, height int64) (ReportBatc
 		if err != nil {
 			if isSolvencyDeferred(err) {
 				hasDeferredVault = true
-				r.logger.Info().
+				rounds := r.noteSolvencyDeferral(asgard.PubKey)
+				level := zerolog.InfoLevel
+				if escalationRounds := r.solvencyDeferralEscalationRounds(); escalationRounds > 0 {
+					level = zerolog.WarnLevel
+					if rounds >= escalationRounds {
+						level = zerolog.ErrorLevel
+					}
+				}
+				r.logger.WithLevel(level).
 					Err(err).
 					Stringer("vault", asgard.PubKey).
 					Int64("query_height", reportHeight).
+					Int64("last_complete_height", r.getLastSolvencyCheckHeight()).
+					Int("consecutive_rounds", rounds).
 					Msg("defer vault solvency while balance reconciliation is pending")
 				continue
 			}
@@ -96,6 +137,7 @@ func (r *solvencyReporter) Collect(from triggeredFrom, height int64) (ReportBatc
 				Msg("fail to get vault-scoped account balance")
 			continue
 		}
+		r.clearSolvencyDeferral(asgard.PubKey)
 		var msg *types.MsgSolvency
 		msg, err = r.createSolvencyMsg(asgard.PubKey, acct.Coins, reportHeight)
 		if err != nil {
@@ -110,6 +152,7 @@ func (r *solvencyReporter) Collect(from triggeredFrom, height int64) (ReportBatc
 			msgs = append(msgs, msg) // Insolvent-vault message
 		}
 	}
+	r.pruneSolvencyDeferrals(chainVaults)
 
 	// Only if the runner is checking while the block scanner is unhealthy (e.g. solvency-halted)
 	// and all vaults are solvent,
@@ -147,11 +190,19 @@ func (r *solvencyReporter) Collect(from triggeredFrom, height int64) (ReportBatc
 			Msg("reporting solvency")
 	}
 
-	// Advance cadence for complete checks. For generic partial failures, advance
-	// once at least one vault was successfully checked so a persistent vault error
-	// does not hammer the same healthy vaults every eligible block. Explicit
-	// solvency deferrals keep cadence strict because reconciliation state is
-	// intentionally incomplete.
+	// A processed or explicitly deferred vault means this canonical bucket was
+	// attempted. Consume that bucket even when the round remains incomplete so
+	// the runner cannot repeatedly re-report successful sibling vaults (or hammer
+	// a deferred sidecar) while the external tip is unchanged. Empty vault sets
+	// and rounds made solely of ordinary failures retain their immediate retry.
+	if processedVaults > 0 || hasDeferredVault {
+		r.setLastSolvencyAttemptHeight(reportHeight)
+	}
+
+	// Record completion separately. Deferred rounds deliberately leave the
+	// completion cursor unchanged for diagnostics. Auto-unhalt remains guarded
+	// by allVaultsProcessed above. Generic partial failures with progress still
+	// back off as before.
 	partialFailureWithProgress := processedVaults > 0 && hasNonDeferredFailure && !hasDeferredVault
 	if allVaultsProcessed || partialFailureWithProgress {
 		r.setLastSolvencyCheckHeight(reportHeight)
@@ -239,14 +290,64 @@ func (r *solvencyReporter) requiresNonZeroGas() bool {
 	}
 }
 
+// solvencyDeferralEscalationRounds returns the chain-specific number of
+// consecutive cadence rounds after which a deferral warrants an error log.
+// Zero means the chain has no escalation policy.
+func (r *solvencyReporter) solvencyDeferralEscalationRounds() int {
+	switch r.client.GetChain() {
+	case common.XMRChain:
+		return xmrSolvencyDeferralEscalationRounds
+	default:
+		return 0
+	}
+}
+
+func (r *solvencyReporter) noteSolvencyDeferral(pubKey common.PubKey) int {
+	r.solvencyDeferralMu.Lock()
+	defer r.solvencyDeferralMu.Unlock()
+	if r.solvencyDeferralRounds == nil {
+		r.solvencyDeferralRounds = make(map[common.PubKey]int)
+	}
+	r.solvencyDeferralRounds[pubKey]++
+	return r.solvencyDeferralRounds[pubKey]
+}
+
+func (r *solvencyReporter) clearSolvencyDeferral(pubKey common.PubKey) {
+	r.solvencyDeferralMu.Lock()
+	defer r.solvencyDeferralMu.Unlock()
+	delete(r.solvencyDeferralRounds, pubKey)
+}
+
+func (r *solvencyReporter) pruneSolvencyDeferrals(vaults types.Vaults) {
+	// An empty chain-specific set is treated as untrustworthy elsewhere in
+	// Collect and must not erase escalation history during a transient bridge
+	// glitch or churn window.
+	if len(vaults) == 0 {
+		return
+	}
+
+	active := make(map[common.PubKey]struct{}, len(vaults))
+	for _, vault := range vaults {
+		active[vault.PubKey] = struct{}{}
+	}
+
+	r.solvencyDeferralMu.Lock()
+	defer r.solvencyDeferralMu.Unlock()
+	for pubKey := range r.solvencyDeferralRounds {
+		if _, ok := active[pubKey]; !ok {
+			delete(r.solvencyDeferralRounds, pubKey)
+		}
+	}
+}
+
 // shouldReportAtHeight reports once a raw trigger height maps to a later
-// canonical solvency height than the last completed report.
+// canonical solvency height than the last attempted report.
 func (r *solvencyReporter) shouldReportAtHeight(height int64) bool {
 	reportHeight, ok := r.reportHeight(height)
 	if !ok {
 		return false
 	}
-	return reportHeight > r.getLastSolvencyCheckHeight()
+	return reportHeight > r.getLastSolvencyAttemptHeight()
 }
 
 // solvencyBlocks returns the effective cadence interval for the current chain.

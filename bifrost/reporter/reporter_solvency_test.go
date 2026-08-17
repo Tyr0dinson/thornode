@@ -1445,7 +1445,7 @@ func (s *SolvencySuite) TestCollectDefersOnlyPendingReconciliationVault(c *C) {
 		blockScannerIsHealthy: true,
 		gas:                   cosmos.NewUint(10),
 		cfg: config.BifrostChainConfiguration{
-			SolvencyBlocks: 1,
+			SolvencyBlocks: 10,
 			BlockScanner: config.BifrostBlockScannerConfiguration{
 				ObservationFlexibilityBlocks: 10,
 			},
@@ -1458,19 +1458,157 @@ func (s *SolvencySuite) TestCollectDefersOnlyPendingReconciliationVault(c *C) {
 		accountErrors: map[string]error{
 			deferredVault.PubKey.String(): solvencyDeferredTestError{},
 		},
-		chainHeight: 3,
+		chainHeight: 30,
 	}
 
 	reporter := newSolvencyReporter(client, bridge)
-	batch, err := reporter.Collect(fromBlockScanner, 2)
+	batch, err := reporter.Collect(fromBlockScanner, 20)
 	c.Assert(err, IsNil)
 	c.Assert(batch, HasLen, 1)
 	c.Assert(reporter.getLastSolvencyCheckHeight(), Equals, int64(0))
+	c.Assert(reporter.getLastSolvencyAttemptHeight(), Equals, int64(20))
 
 	msg, ok := batch[0].(*ctypes.MsgSolvency)
 	c.Assert(ok, Equals, true)
 	c.Assert(msg.PubKey.Equals(insolventVault.PubKey), Equals, true)
-	c.Assert(reporter.ShouldReport(fromBlockScanner, 3), Equals, true)
+	delete(client.accountErrors, deferredVault.PubKey.String())
+	// Even after reconciliation succeeds, the incomplete round remains
+	// ineligible within the same canonical bucket. Recovery intentionally waits
+	// until the next cadence bucket so the insolvent sibling is not recreated and
+	// gossiped on every runner tick.
+	c.Assert(reporter.ShouldReport(fromBlockScanner, 29), Equals, false)
+	c.Assert(reporter.ShouldReport(fromBlockScanner, 30), Equals, true)
+}
+
+func (s *SolvencySuite) TestCollectPreservesPerVaultDeferralTracking(c *C) {
+	deferredVault := ctypes.Vault{
+		PubKey: ctypes.GetRandomPubKey(),
+		Coins:  common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(1_000_000_000))),
+	}
+	deferredVault.PubKeyFrost = deferredVault.PubKey
+	solventVault := ctypes.Vault{
+		PubKey: ctypes.GetRandomPubKey(),
+		Coins:  common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(2_000_000_000))),
+	}
+	solventVault.PubKeyFrost = solventVault.PubKey
+
+	bridge := &thorMockBridge{}
+	bridge.getAsgardsFunc = func() (ctypes.Vaults, error) {
+		return ctypes.Vaults{deferredVault, solventVault}, nil
+	}
+
+	baseClient := &mockChainClient{
+		chain:                 common.XMRChain,
+		blockScannerIsHealthy: true,
+		gas:                   cosmos.NewUint(10),
+		cfg: config.BifrostChainConfiguration{
+			SolvencyBlocks: 10,
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				ObservationFlexibilityBlocks: 10,
+			},
+		},
+		accounts: map[string]common.Account{
+			deferredVault.PubKey.String(): {Coins: deferredVault.Coins},
+			solventVault.PubKey.String():  {Coins: solventVault.Coins},
+		},
+		accountErrors: map[string]error{
+			deferredVault.PubKey.String(): solvencyDeferredTestError{},
+		},
+		chainHeight: 80,
+	}
+	reporter := newSolvencyReporter(baseClient, bridge)
+	var logBuf bytes.Buffer
+	reporter.logger = zerolog.New(&logBuf)
+	deferralRounds := func(pubKey common.PubKey) int {
+		reporter.solvencyDeferralMu.Lock()
+		defer reporter.solvencyDeferralMu.Unlock()
+		return reporter.solvencyDeferralRounds[pubKey]
+	}
+
+	for i := 1; i <= xmrSolvencyDeferralEscalationRounds; i++ {
+		logBuf.Reset()
+		height := int64(i * 10)
+		batch, err := reporter.Collect(fromBlockScanner, height)
+		c.Assert(err, IsNil)
+		c.Assert(batch, HasLen, 0)
+		c.Assert(deferralRounds(deferredVault.PubKey), Equals, i)
+		c.Assert(deferralRounds(solventVault.PubKey), Equals, 0)
+		c.Assert(strings.Contains(logBuf.String(), `"consecutive_rounds":`+fmt.Sprint(i)), Equals, true)
+		c.Assert(strings.Contains(logBuf.String(), `"last_complete_height":0`), Equals, true)
+		c.Assert(strings.Contains(logBuf.String(), `"level":"error"`), Equals, i >= xmrSolvencyDeferralEscalationRounds)
+		c.Assert(strings.Contains(logBuf.String(), `"level":"warn"`), Equals, i < xmrSolvencyDeferralEscalationRounds)
+	}
+
+	delete(baseClient.accountErrors, deferredVault.PubKey.String())
+	batch, err := reporter.Collect(fromBlockScanner, 70)
+	c.Assert(err, IsNil)
+	c.Assert(batch, HasLen, 0)
+	c.Assert(deferralRounds(deferredVault.PubKey), Equals, 0)
+}
+
+func (s *SolvencySuite) TestCollectPrunesDeferralsForChurnedVaults(c *C) {
+	deferredVault := ctypes.Vault{
+		PubKey: ctypes.GetRandomPubKey(),
+		Coins:  common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(1_000_000_000))),
+	}
+	deferredVault.PubKeyFrost = deferredVault.PubKey
+	activeVault := ctypes.Vault{
+		PubKey: ctypes.GetRandomPubKey(),
+		Coins:  common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(2_000_000_000))),
+	}
+	activeVault.PubKeyFrost = activeVault.PubKey
+
+	chainVaults := ctypes.Vaults{deferredVault, activeVault}
+	bridge := &thorMockBridge{getAsgardsFunc: func() (ctypes.Vaults, error) {
+		return chainVaults, nil
+	}}
+	client := &mockChainClient{
+		chain:                 common.XMRChain,
+		blockScannerIsHealthy: true,
+		gas:                   cosmos.NewUint(10),
+		cfg: config.BifrostChainConfiguration{
+			SolvencyBlocks: 10,
+		},
+		accounts: map[string]common.Account{
+			activeVault.PubKey.String(): {Coins: activeVault.Coins},
+		},
+		accountErrors: map[string]error{
+			deferredVault.PubKey.String(): solvencyDeferredTestError{},
+		},
+	}
+	reporter := newSolvencyReporter(client, bridge)
+
+	_, err := reporter.Collect(fromBlockScanner, 10)
+	c.Assert(err, IsNil)
+	reporter.solvencyDeferralMu.Lock()
+	c.Assert(reporter.solvencyDeferralRounds[deferredVault.PubKey], Equals, 1)
+	reporter.solvencyDeferralMu.Unlock()
+
+	// An empty chain-vault response is incomplete rather than authoritative and
+	// must not reset a streak that is close to escalation.
+	chainVaults = nil
+	_, err = reporter.Collect(fromBlockScanner, 20)
+	c.Assert(err, IsNil)
+	reporter.solvencyDeferralMu.Lock()
+	c.Assert(reporter.solvencyDeferralRounds[deferredVault.PubKey], Equals, 1)
+	reporter.solvencyDeferralMu.Unlock()
+
+	// Once a non-empty authoritative set excludes the deferred vault, prune it.
+	chainVaults = ctypes.Vaults{activeVault}
+	_, err = reporter.Collect(fromBlockScanner, 30)
+	c.Assert(err, IsNil)
+	reporter.solvencyDeferralMu.Lock()
+	_, retained := reporter.solvencyDeferralRounds[deferredVault.PubKey]
+	reporter.solvencyDeferralMu.Unlock()
+	c.Assert(retained, Equals, false)
+}
+
+func (s *SolvencySuite) TestSolvencyDeferralEscalationRoundsAreChainSpecific(c *C) {
+	xmrReporter := newSolvencyReporter(&mockChainClient{chain: common.XMRChain}, &thorMockBridge{})
+	c.Assert(xmrReporter.solvencyDeferralEscalationRounds(), Equals, xmrSolvencyDeferralEscalationRounds)
+
+	btcReporter := newSolvencyReporter(&mockChainClient{chain: common.BTCChain}, &thorMockBridge{})
+	c.Assert(btcReporter.solvencyDeferralEscalationRounds(), Equals, 0)
 }
 
 func (s *SolvencySuite) TestCollectDoesNotAutoUnhaltWithPendingReconciliation(c *C) {
