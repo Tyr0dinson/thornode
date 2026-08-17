@@ -525,18 +525,68 @@ func newForcedToLeaveNode(node openapi.Node) (forcedToLeaveNode, error) {
 // getActiveVaultForChain resolves the current inbound vault for a chain and
 // returns only after it is an active vault.
 func getActiveVaultForChain(chain common.Chain) (openapi.Vault, common.PubKey, error) {
-	pubKey, err := thornode.GetInboundAddressPubKey(chain)
+	inboundPubKey, err := thornode.GetInboundAddressPubKey(chain)
 	if err != nil {
 		return openapi.Vault{}, common.EmptyPubKey, err
 	}
-	vault, err := thornode.GetVault(pubKey.String())
+	vaults, err := thornode.GetVaults()
 	if err != nil {
 		return openapi.Vault{}, common.EmptyPubKey, err
 	}
-	if vault.Status != thorchain.ActiveVault.String() {
-		return openapi.Vault{}, common.EmptyPubKey, fmt.Errorf("vault %s status is %s", pubKey, vault.Status)
+	return findActiveVaultForChain(vaults, chain, inboundPubKey)
+}
+
+// findActiveVaultForChain matches the chain-specific inbound signer against
+// active Asgard vaults and returns the vault's canonical secp256k1 pubkey.
+// Inbound pubkeys are algorithm-specific, so they cannot be used directly with
+// the canonical /thorchain/vault/{pubkey} lookup for EdDSA or XMR FROST vaults.
+func findActiveVaultForChain(vaults []openapi.Vault, chain common.Chain, inboundPubKey common.PubKey) (openapi.Vault, common.PubKey, error) {
+	if inboundPubKey.IsEmpty() {
+		return openapi.Vault{}, common.EmptyPubKey, fmt.Errorf("inbound pubkey is empty for chain %s", chain)
 	}
-	return vault, pubKey, nil
+
+	for _, vault := range vaults {
+		if vault.Status != thorchain.ActiveVault.String() || !vaultHasChain(vault, chain) {
+			continue
+		}
+		signerPubKey, err := vaultSigningPubKey(vault, chain)
+		if err != nil || !signerPubKey.Equals(inboundPubKey) {
+			continue
+		}
+		canonicalPubKey, ok := vaultPubKey(vault)
+		if !ok {
+			return openapi.Vault{}, common.EmptyPubKey, fmt.Errorf("active vault for chain %s has no canonical pubkey", chain)
+		}
+		return vault, canonicalPubKey, nil
+	}
+
+	return openapi.Vault{}, common.EmptyPubKey, fmt.Errorf("no active vault for chain %s matches inbound signer %s", chain, inboundPubKey)
+}
+
+// vaultSigningPubKey returns the key that controls a vault on the requested
+// chain. XMR uses its FROST group key rather than the regular EdDSA key.
+func vaultSigningPubKey(vault openapi.Vault, chain common.Chain) (common.PubKey, error) {
+	var value string
+	switch chain.GetSigningAlgo() {
+	case common.SigningAlgoSecp256k1:
+		value = vault.GetPubKey()
+	case common.SigningAlgoEd25519:
+		if chain.Equals(common.XMRChain) {
+			value = vault.GetPubKeyFrost()
+		} else {
+			value = vault.GetPubKeyEddsa()
+		}
+	default:
+		return common.EmptyPubKey, fmt.Errorf("unsupported signing algorithm for chain %s", chain)
+	}
+	if value == "" {
+		return common.EmptyPubKey, fmt.Errorf("active vault has no signing pubkey for chain %s", chain)
+	}
+	pubKey, err := common.NewPubKey(value)
+	if err != nil {
+		return common.EmptyPubKey, fmt.Errorf("invalid vault signing pubkey for chain %s: %w", chain, err)
+	}
+	return pubKey, nil
 }
 
 // vaultPubKey extracts the secp256k1 vault pubkey from an OpenAPI vault record.

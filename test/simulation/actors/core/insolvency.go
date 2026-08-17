@@ -47,6 +47,7 @@ type InsolvencyActor struct {
 	userClient               LiteChainClient
 	nodeUser                 *User
 	userAccount              *User
+	asgardVaultPubKey        common.PubKey
 	nodeVaultPubKey          common.PubKey
 	nodeL1Address            common.Address
 	stolenAmount             cosmos.Uint
@@ -157,6 +158,7 @@ func (a *InsolvencyActor) setup(config *OpConfig) OpResult {
 		}
 		a.userClient = nil
 		a.nodeClient = nil
+		a.asgardVaultPubKey = ""
 		a.nodeVaultPubKey = ""
 	}
 
@@ -176,36 +178,25 @@ func (a *InsolvencyActor) setup(config *OpConfig) OpResult {
 		return failSetup(fmt.Errorf("first node user is nil"))
 	}
 
-	// Resolve the active Asgard vault signer for this chain's signer type
-	// (secp256k1 vs ed25519) and ensure it matches NodeUsers[0].
-	// On mocknet-cluster this is expected to fail (TSS vault).
-	asgards, err := thornode.GetVaults()
-	if err != nil || len(asgards) == 0 {
-		return failSetup(fmt.Errorf("failed to get asgard vaults: %w", err))
+	// Resolve the chain's elected inbound vault instead of relying on Asgard
+	// response ordering, then verify this single-node scenario controls its
+	// chain-specific signing key. An unsupported topology is a failed scenario,
+	// not a successful skip; cluster runs exclude this suite explicitly.
+	asgardVault, asgardVaultPubKey, err := getActiveVaultForChain(a.chain)
+	if err != nil {
+		return failSetup(fmt.Errorf("failed to resolve active asgard vault for chain %s: %w", a.chain, err))
 	}
-	asgardVault := asgards[0]
-	if asgardVault.PubKey == nil {
-		return failSetup(fmt.Errorf("active asgard vault pubkey is nil"))
+	asgardSignerPubKey, err := vaultSigningPubKey(asgardVault, a.chain)
+	if err != nil {
+		return failSetup(err)
 	}
-	asgardSignerPubKey := *asgardVault.PubKey
-	if a.chain.GetSigningAlgo() == common.SigningAlgoEd25519 {
-		if asgardVault.PubKeyEddsa == nil {
-			a.Log().Info().
-				Stringer("chain", a.chain).
-				Msg("skipping actor: active Asgard vault has no eddsa signer pubkey")
-			releaseSetupLocks()
-			return OpResult{Finish: true}
-		}
-		asgardSignerPubKey = *asgardVault.PubKeyEddsa
-	}
-	if nodeUser.PubKey(a.chain).String() != asgardSignerPubKey {
-		a.Log().Info().
-			Str("asgard_signer_pubkey", asgardSignerPubKey).
-			Stringer("node_user_pubkey", nodeUser.PubKey(a.chain)).
-			Stringer("chain", a.chain).
-			Msg("skipping actor: nodeUser does not match active Asgard signer pubkey")
-		releaseSetupLocks()
-		return OpResult{Finish: true}
+	if !nodeUser.PubKey(a.chain).Equals(asgardSignerPubKey) {
+		return failSetup(fmt.Errorf(
+			"node user pubkey %s does not match active Asgard signer %s for chain %s",
+			nodeUser.PubKey(a.chain),
+			asgardSignerPubKey,
+			a.chain,
+		))
 	}
 
 	if !nodeUser.Acquire() {
@@ -238,12 +229,13 @@ func (a *InsolvencyActor) setup(config *OpConfig) OpResult {
 		return failSetup(fmt.Errorf("failed to get user chain client for chain %s", a.chain))
 	}
 
-	a.nodeVaultPubKey, err = common.NewPubKey(asgardSignerPubKey)
-	if err != nil {
-		return failSetup(fmt.Errorf("failed to parse active Asgard signer pubkey for chain %s: %w", a.chain, err))
-	}
+	a.asgardVaultPubKey = asgardVaultPubKey
+	a.nodeVaultPubKey = asgardSignerPubKey
 
-	a.Log().Info().Msg("node pubkey matches active Asgard signer pubkey, insolvency test can proceed")
+	a.Log().Info().
+		Stringer("vault_pubkey", a.asgardVaultPubKey).
+		Stringer("signer_pubkey", a.nodeVaultPubKey).
+		Msg("node pubkey matches active Asgard signer pubkey, insolvency test can proceed")
 
 	a.nodeL1Address, err = a.nodeVaultPubKey.GetAddress(a.asset.Chain)
 	if err != nil {
@@ -595,17 +587,21 @@ func (a *InsolvencyActor) getHeight() int64 {
 // wallet-reported balance for quick operator diagnostics.
 func (a *InsolvencyActor) getBalancesStr() string {
 	var asgardStr, accountStr string
-	asgards, err := thornode.GetVaults()
-	if err != nil || len(asgards) == 0 {
-		asgardStr = fmt.Sprintf("failed to get vaults: %v", err)
+	if a.asgardVaultPubKey.IsEmpty() {
+		asgardStr = "active vault pubkey is empty"
 	} else {
-		for _, coin := range asgards[0].Coins {
-			asset, err := common.NewAsset(coin.Asset)
-			if err != nil {
-				continue
-			}
-			if a.asset.Equals(asset) {
-				asgardStr = fmt.Sprintf("%s %s", coin.Amount, a.asset)
+		asgard, err := thornode.GetVault(a.asgardVaultPubKey.String())
+		if err != nil {
+			asgardStr = fmt.Sprintf("failed to get vault %s: %v", a.asgardVaultPubKey, err)
+		} else {
+			for _, coin := range asgard.Coins {
+				asset, err := common.NewAsset(coin.Asset)
+				if err != nil {
+					continue
+				}
+				if a.asset.Equals(asset) {
+					asgardStr = fmt.Sprintf("%s %s", coin.Amount, a.asset)
+				}
 			}
 		}
 	}

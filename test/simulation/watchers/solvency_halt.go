@@ -212,6 +212,18 @@ func NewSolvencyHalt() *Watcher {
 			if len(activeHalts) == 0 {
 				return nil
 			}
+			// Suites that intentionally induce insolvency own the halt assertion.
+			// Log and return before transient/Ragnarok/XMR retries so an expected
+			// XMR halt cannot block this watcher for five minutes.
+			if config != nil && config.SolvencyHaltLogOnly() {
+				for _, key := range sortedHaltKeys(activeHalts) {
+					cl.Warn().
+						Str("mimir", key).
+						Int64("value", activeHalts[key]).
+						Msg("solvency halt detected (log-only mode)")
+				}
+				return nil
+			}
 
 			// Give the network a chance to clear short-lived halt mimirs before
 			// treating the condition as persistent.
@@ -303,24 +315,7 @@ func NewSolvencyHalt() *Watcher {
 			}
 
 			// Sort keys so log-only output and fatal errors are deterministic.
-			keys := make([]string, 0, len(activeHalts))
-			for k := range activeHalts {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-
-			// Some suites intentionally trigger insolvency and assert on the halt
-			// themselves. Log-only mode records the condition without stopping the
-			// simulation runner.
-			if config != nil && config.SolvencyHaltLogOnly() {
-				for _, key := range keys {
-					cl.Warn().
-						Str("mimir", key).
-						Int64("value", activeHalts[key]).
-						Msg("solvency halt detected (log-only mode)")
-				}
-				return nil
-			}
+			keys := sortedHaltKeys(activeHalts)
 
 			// Fatal mode returns the first sorted halt to keep the error stable
 			// when multiple chains are halted at once.
@@ -330,4 +325,13 @@ func NewSolvencyHalt() *Watcher {
 			return fmt.Errorf("solvency halt detected: %s=%d", key, value)
 		},
 	}
+}
+
+func sortedHaltKeys(activeHalts map[string]int64) []string {
+	keys := make([]string, 0, len(activeHalts))
+	for key := range activeHalts {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }

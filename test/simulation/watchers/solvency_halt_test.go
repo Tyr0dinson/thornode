@@ -4,7 +4,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+
+	stypes "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 )
 
 func TestSolvencyWatcherIgnoresZeroValueHalts(t *testing.T) {
@@ -17,6 +20,37 @@ func TestSolvencyWatcherIgnoresZeroValueHalts(t *testing.T) {
 	watcher := NewSolvencyHalt()
 	if err := watcher.Fn(nil); err != nil {
 		t.Fatalf("expected zero-valued halt to be ignored, got %v", err)
+	}
+}
+
+func TestSolvencyWatcherLogOnlyReturnsBeforeRetries(t *testing.T) {
+	var mimirRequests atomic.Int32
+	var otherRequests atomic.Int32
+	server, restore := setupSolvencyWatcherHTTPServer(
+		t,
+		func(path string, _ int) string {
+			if path == "/thorchain/mimir" {
+				mimirRequests.Add(1)
+				return `{"SOLVENCYHALTXMRCHAIN":1735}`
+			}
+			otherRequests.Add(1)
+			return `[]`
+		},
+	)
+	defer server.Close()
+	defer restore()
+
+	config := &stypes.OpConfig{}
+	config.SetSolvencyHaltLogOnly(true)
+	watcher := NewSolvencyHalt()
+	if err := watcher.Fn(config); err != nil {
+		t.Fatalf("expected log-only solvency halt to be ignored, got %v", err)
+	}
+	if got := mimirRequests.Load(); got != 1 {
+		t.Fatalf("expected one mimir request without retries, got %d", got)
+	}
+	if got := otherRequests.Load(); got != 0 {
+		t.Fatalf("expected log-only mode to skip ancillary requests, got %d", got)
 	}
 }
 

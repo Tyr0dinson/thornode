@@ -439,7 +439,7 @@ func (o *Observer) Start(ctx context.Context) error {
 	if err := o.restoreDeck(); err != nil {
 		return fmt.Errorf("restore observer deck: %w", err)
 	}
-	// The reporter dispatcher is the active solvency path.
+	// The reporter dispatcher is the active solvency path for every chain.
 	o.reporterDispatcher = reporter.NewDispatcher(o.getReporterChains(), o.thorchainBridge, o.attestationGossip, o.errCounter, o.stopChan, o.reporterWG)
 	deferXMR, err := o.startRestoredChainClients()
 	if err != nil {
