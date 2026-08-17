@@ -314,6 +314,27 @@ func (m *mockSolvencyAttester) msgCount() int {
 	return len(m.msgs)
 }
 
+type blockingSolvencyAttester struct {
+	started     chan struct{}
+	done        chan error
+	startedOnce sync.Once
+}
+
+func newBlockingSolvencyAttester() *blockingSolvencyAttester {
+	return &blockingSolvencyAttester{
+		started: make(chan struct{}),
+		done:    make(chan error, 1),
+	}
+}
+
+func (m *blockingSolvencyAttester) AttestSolvency(ctx context.Context, _ common.Solvency) error {
+	m.startedOnce.Do(func() { close(m.started) })
+	<-ctx.Done()
+	err := ctx.Err()
+	m.done <- err
+	return err
+}
+
 // ------- Tests
 func (s *SolvencySuite) SetUpSuite(c *C) {
 	ctypes.SetupConfigForTest()
@@ -1861,6 +1882,7 @@ func (s *SolvencySuite) TestSendCollectedToThorchainUsesSolvencyAttester(c *C) {
 	}
 	attester := &mockSolvencyAttester{}
 	d := &dispatcher{
+		ctx:              context.Background(),
 		logger:           log.Logger,
 		thorchainBridge:  bridge,
 		solvencyAttester: attester,
@@ -1876,6 +1898,71 @@ func (s *SolvencySuite) TestSendCollectedToThorchainUsesSolvencyAttester(c *C) {
 	c.Assert(attested[0].Height, Equals, int64(123))
 	c.Assert(attested[0].Id.IsEmpty(), Equals, true)
 	c.Assert(bridge.getMsgs(), HasLen, 0)
+}
+
+func (s *SolvencySuite) TestSendMsgTimesOutBlockedAttestation(c *C) {
+	origBlockTime := constants.ThorchainBlockTime
+	defer func() { constants.ThorchainBlockTime = origBlockTime }()
+	constants.ThorchainBlockTime = 25 * time.Millisecond
+
+	bridge := &thorMockBridge{}
+	attester := newBlockingSolvencyAttester()
+	d := &dispatcher{
+		ctx:              context.Background(),
+		solvencyAttester: attester,
+	}
+
+	msg := bridge.GetSolvencyMsg(123, common.BCHChain, ctypes.GetRandomPubKey(), common.NewCoins(common.NewCoin(common.BCHAsset, cosmos.NewUint(42))))
+	err := d.sendMsg(msg)
+	c.Assert(err, Equals, context.DeadlineExceeded)
+	c.Assert(<-attester.done, Equals, context.DeadlineExceeded)
+}
+
+func (s *SolvencySuite) TestDispatcherShutdownCancelsBlockedAttestation(c *C) {
+	origBlockTime := constants.ThorchainBlockTime
+	defer func() { constants.ThorchainBlockTime = origBlockTime }()
+	constants.ThorchainBlockTime = 2 * time.Second
+
+	stopper := make(chan struct{})
+	wg := &sync.WaitGroup{}
+	attester := newBlockingSolvencyAttester()
+	bridge := &thorMockBridge{}
+
+	disp, ok := NewDispatcher(nil, bridge, attester, nil, stopper, wg).(*dispatcher)
+	c.Assert(ok, Equals, true)
+
+	stopped := false
+	defer func() {
+		if !stopped {
+			close(stopper)
+		}
+		wg.Wait()
+	}()
+
+	msg := bridge.GetSolvencyMsg(123, common.BCHChain, ctypes.GetRandomPubKey(), common.NewCoins(common.NewCoin(common.BCHAsset, cosmos.NewUint(42))))
+	disp.reportQueue <- ReportBatch{msg}
+
+	select {
+	case <-attester.started:
+	case <-time.After(time.Second):
+		c.Fatal("report dispatcher did not start the solvency attestation")
+	}
+
+	close(stopper)
+	stopped = true
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		c.Fatal("report dispatcher did not stop after its context was cancelled")
+	}
+	c.Assert(<-attester.done, Equals, context.Canceled)
 }
 
 func (s *SolvencySuite) TestSendCollectedToThorchainRequiresSolvencyAttester(c *C) {

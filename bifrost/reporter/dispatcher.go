@@ -39,6 +39,7 @@ const (
 )
 
 type dispatcher struct {
+	ctx              context.Context
 	logger           zerolog.Logger
 	reportQueue      chan ReportBatch
 	stopper          chan struct{}
@@ -55,10 +56,8 @@ type dispatcher struct {
 // It initializes per-chain reporters and async workers.
 func NewDispatcher(chains map[common.Chain]ChainClient, thorchainBridge ThorchainBridge, solvencyAttester SolvencyAttester, errCounter *prometheus.CounterVec, stopper chan struct{}, wg *sync.WaitGroup) Dispatcher {
 	logger := log.Logger.With().Str("module", "reporter_dispatcher").Logger()
-	reportQueueSize := len(chains)
-	if reportQueueSize < 1 {
-		reportQueueSize = 1
-	}
+	ctx, cancel := context.WithCancel(context.Background())
+	reportQueueSize := max(len(chains), 1)
 	// Keep one batch slot per configured chain so collectors are less coupled to
 	// THORChain RPC latency while still keeping the queue tightly bounded.
 	reportQueue := make(chan ReportBatch, reportQueueSize)
@@ -71,6 +70,7 @@ func NewDispatcher(chains map[common.Chain]ChainClient, thorchainBridge Thorchai
 	}
 
 	d := &dispatcher{
+		ctx:              ctx,
 		logger:           logger,
 		stopper:          stopper,
 		wg:               wg,
@@ -82,6 +82,11 @@ func NewDispatcher(chains map[common.Chain]ChainClient, thorchainBridge Thorchai
 		reporters:        reporters,
 		chainTaskQueues:  chainTaskQueues,
 	}
+
+	d.wg.Go(func() {
+		<-d.stopper
+		cancel()
+	})
 
 	d.start()
 
@@ -362,7 +367,10 @@ func (d *dispatcher) sendMsg(msg sdk.Msg) error {
 		return fmt.Errorf("missing solvency attester for report message: %s", sdk.MsgTypeURL(msg))
 	}
 
-	return d.solvencyAttester.AttestSolvency(context.Background(), common.Solvency{
+	ctx, cancel := context.WithTimeout(d.ctx, constants.ThorchainBlockTime)
+	defer cancel()
+
+	return d.solvencyAttester.AttestSolvency(ctx, common.Solvency{
 		Chain:  solvencyMsg.Chain,
 		PubKey: solvencyMsg.PubKey,
 		Coins:  solvencyMsg.Coins,
