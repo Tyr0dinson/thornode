@@ -1632,7 +1632,7 @@ func (s *SolvencySuite) TestSolvencyDeferralEscalationRoundsAreChainSpecific(c *
 	c.Assert(btcReporter.solvencyDeferralEscalationRounds(), Equals, 0)
 }
 
-func (s *SolvencySuite) TestCollectDoesNotAutoUnhaltWithPendingReconciliation(c *C) {
+func (s *SolvencySuite) TestCollectDefersAutoUnhaltUntilNextCadenceBucket(c *C) {
 	deferredVault := ctypes.Vault{
 		PubKey: ctypes.GetRandomPubKey(),
 		Coins:  common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(1_000_000_000))),
@@ -1644,35 +1644,58 @@ func (s *SolvencySuite) TestCollectDoesNotAutoUnhaltWithPendingReconciliation(c 
 	}
 	solventVault.PubKeyFrost = solventVault.PubKey
 
-	bridge := &thorMockBridge{}
+	bridge := &thorMockBridge{thorchainHeight: 100}
 	bridge.getAsgardsFunc = func() (ctypes.Vaults, error) {
 		return ctypes.Vaults{deferredVault, solventVault}, nil
 	}
+	bridge.mimir.set("SolvencyHaltXMRChain", bridge.thorchainHeight)
 
 	client := &mockChainClient{
 		chain:                 common.XMRChain,
 		blockScannerIsHealthy: false,
 		gas:                   cosmos.NewUint(10),
 		cfg: config.BifrostChainConfiguration{
-			SolvencyBlocks: 1,
+			SolvencyBlocks: 10,
 			BlockScanner: config.BifrostBlockScannerConfiguration{
 				ObservationFlexibilityBlocks: 10,
 			},
 		},
 		accounts: map[string]common.Account{
-			solventVault.PubKey.String(): {Coins: solventVault.Coins},
+			deferredVault.PubKey.String(): {Coins: deferredVault.Coins},
+			solventVault.PubKey.String():  {Coins: solventVault.Coins},
 		},
 		accountErrors: map[string]error{
 			deferredVault.PubKey.String(): solvencyDeferredTestError{},
 		},
-		chainHeight: 3,
+		chainHeight: 30,
 	}
 
 	reporter := newSolvencyReporter(client, bridge)
-	batch, err := reporter.Collect(fromRunner, 2)
+	c.Assert(reporter.ShouldReport(fromRunner, 20), Equals, true)
+	batch, err := reporter.Collect(fromRunner, 20)
 	c.Assert(err, IsNil)
 	c.Assert(batch, HasLen, 0)
+	c.Assert(reporter.getLastSolvencyAttemptHeight(), Equals, int64(20))
 	c.Assert(reporter.getLastSolvencyCheckHeight(), Equals, int64(0))
+
+	delete(client.accountErrors, deferredVault.PubKey.String())
+	c.Assert(reporter.ShouldReport(fromRunner, 29), Equals, false)
+	c.Assert(reporter.ShouldReport(fromRunner, 30), Equals, true)
+
+	batch, err = reporter.Collect(fromRunner, 30)
+	c.Assert(err, IsNil)
+	c.Assert(batch, HasLen, 2)
+	c.Assert(reporter.getLastSolvencyAttemptHeight(), Equals, int64(30))
+	c.Assert(reporter.getLastSolvencyCheckHeight(), Equals, int64(30))
+
+	reported := make(map[common.PubKey]bool, len(batch))
+	for _, reportMsg := range batch {
+		msg, ok := reportMsg.(*ctypes.MsgSolvency)
+		c.Assert(ok, Equals, true)
+		reported[msg.PubKey] = true
+	}
+	c.Assert(reported[deferredVault.PubKey], Equals, true)
+	c.Assert(reported[solventVault.PubKey], Equals, true)
 }
 
 // TestCollectDoesNotAdvanceCadenceOnEmptyAsgards verifies an empty Asgard list
