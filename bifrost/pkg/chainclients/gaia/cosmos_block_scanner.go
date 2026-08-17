@@ -60,9 +60,6 @@ import (
 	memo "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
 
-// SolvencyReporter is to report solvency info to THORNode
-type SolvencyReporter func(int64) error
-
 const (
 	// GasUpdatePeriodBlocks is the block interval at which we report gas fee changes.
 	GasUpdatePeriodBlocks = 10
@@ -98,7 +95,6 @@ type CosmosBlockScanner struct {
 	rpc                   TendermintRPC
 	bridge                thorclient.ThorchainBridge
 	pubkeyMgr             pubkeymanager.PubKeyValidator
-	solvencyReporter      SolvencyReporter
 	globalNetworkFeeQueue chan common.NetworkFee
 
 	// feeCache contains a rolling window of suggested gas fees which are computed as the
@@ -136,7 +132,6 @@ func NewCosmosBlockScanner(
 	scanStorage blockscanner.ScannerStorage,
 	bridge thorclient.ThorchainBridge,
 	m *metrics.Metrics,
-	solvencyReporter SolvencyReporter,
 	pubkeyMgr pubkeymanager.PubKeyValidator,
 ) (*CosmosBlockScanner, error) {
 	if scanStorage == nil {
@@ -171,7 +166,6 @@ func NewCosmosBlockScanner(
 		feeCache:             make([]sdkmath.Uint, 0, gasCacheTransactions),
 		bridge:               bridge,
 		pubkeyMgr:            pubkeyMgr,
-		solvencyReporter:     solvencyReporter,
 		gasCacheTransactions: gasCacheTransactions,
 	}, nil
 }
@@ -205,10 +199,6 @@ func (c *CosmosBlockScanner) getLastFee() sdkmath.Uint {
 
 func (c *CosmosBlockScanner) setLastFee(fee sdkmath.Uint) {
 	c.lastFee.Store(fee.Uint64())
-}
-
-func (c *CosmosBlockScanner) lastFeeIsZero() bool {
-	return c.lastFee.Load() == 0
 }
 
 // FetchMemPool returns nothing since we are only concerned about finalized transactions in Cosmos

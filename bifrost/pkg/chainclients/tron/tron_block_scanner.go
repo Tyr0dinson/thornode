@@ -40,8 +40,6 @@ var updateGasInterval int64 = 30
 // in one block).
 const batchReceiptMinTxs = 3
 
-type ReportSolvency func(int64) error
-
 type RefBlock struct {
 	Timestamp int64
 	Height    int64
@@ -62,7 +60,6 @@ type TronBlockScanner struct {
 	// Serializes FetchTxs/prefetch network-fee compare and currentFee update.
 	networkFeeMu          sync.Mutex
 	currentFee            stdatomic.Uint64
-	reportSolvency        ReportSolvency
 	globalNetworkFeeQueue chan common.NetworkFee
 }
 
@@ -70,7 +67,6 @@ func NewTronBlockScanner(
 	cfg config.BifrostChainConfiguration,
 	bridge thorclient.ThorchainBridge,
 	pubkeyMgr pubkeymanager.PubKeyValidator,
-	reportSolvency ReportSolvency,
 ) (*TronBlockScanner, error) {
 	logger := log.Logger.With().
 		Str("module", "blockscanner").
@@ -95,15 +91,14 @@ func NewTronBlockScanner(
 	}
 
 	scanner := TronBlockScanner{
-		config:         cfg.BlockScanner,
-		logger:         logger,
-		whitelist:      whitelist,
-		api:            api.NewTronApi(cfg.APIHost, cfg.BlockScanner.HTTPRequestTimeout),
-		bridge:         bridge,
-		pubkeyMgr:      pubkeyMgr,
-		refBlocks:      []RefBlock{},
-		refAddress:     refAddress,
-		reportSolvency: reportSolvency,
+		config:     cfg.BlockScanner,
+		logger:     logger,
+		whitelist:  whitelist,
+		api:        api.NewTronApi(cfg.APIHost, cfg.BlockScanner.HTTPRequestTimeout),
+		bridge:     bridge,
+		pubkeyMgr:  pubkeyMgr,
+		refBlocks:  []RefBlock{},
+		refAddress: refAddress,
 	}
 
 	var err error
@@ -175,15 +170,6 @@ func (s *TronBlockScanner) FetchTxs(
 	})
 
 	return txIn, nil
-}
-
-// ReportSolvency runs after the shared scanner has recomputed health. TRON
-// retains its existing tip-height reporting cadence while scanning near the tip.
-func (s *TronBlockScanner) ReportSolvency(fetchHeight, chainHeight int64) error {
-	if chainHeight-fetchHeight > s.config.ObservationFlexibilityBlocks || s.reportSolvency == nil {
-		return nil
-	}
-	return s.reportSolvency(chainHeight)
 }
 
 func (s *TronBlockScanner) addRefBlock(refBlock RefBlock) {

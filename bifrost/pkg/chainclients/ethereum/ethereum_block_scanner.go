@@ -38,9 +38,6 @@ import (
 	memo "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
 
-// SolvencyReporter is to report solvency info to THORNode
-type SolvencyReporter func(int64) error
-
 const (
 	ethToken        = "0x0000000000000000000000000000000000000000"
 	symbolMethod    = "symbol"
@@ -80,7 +77,6 @@ type ETHScanner struct {
 	eipSigner             etypes.Signer
 	currentBlockHeight    stdatomic.Int64
 	gasCache              []*big.Int
-	solvencyReporter      SolvencyReporter
 	whitelistTokens       []tokenlist.ERC20Token
 	signerCacheManager    *signercache.CacheManager
 }
@@ -93,7 +89,6 @@ func NewETHScanner(cfg config.BifrostBlockScannerConfiguration,
 	bridge thorclient.ThorchainBridge,
 	m *metrics.Metrics,
 	pubkeyMgr pubkeymanager.PubKeyValidator,
-	solvencyReporter SolvencyReporter,
 	signerCacheManager *signercache.CacheManager,
 ) (*ETHScanner, error) {
 	if storage == nil {
@@ -141,7 +136,6 @@ func NewETHScanner(cfg config.BifrostBlockScannerConfiguration,
 		eipSigner:          etypes.NewPragueSigner(chainID),
 		pubkeyMgr:          pubkeyMgr,
 		gasCache:           make([]*big.Int, 0),
-		solvencyReporter:   solvencyReporter,
 		whitelistTokens:    tokenlist.GetETHTokenList().Tokens,
 		signerCacheManager: signerCacheManager,
 	}
@@ -257,14 +251,6 @@ func (e *ETHScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 	}
 
 	return txIn, nil
-}
-
-// ReportSolvency runs after the shared scanner has recomputed health.
-func (e *ETHScanner) ReportSolvency(height, chainHeight int64) error {
-	if chainHeight-height > e.cfg.ObservationFlexibilityBlocks || e.solvencyReporter == nil {
-		return nil
-	}
-	return e.solvencyReporter(height)
 }
 
 func (e *ETHScanner) getCurrentBlockHeight() int64 {

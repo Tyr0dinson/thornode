@@ -20,7 +20,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
-	shtypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
@@ -55,7 +54,6 @@ type SOLScanner struct {
 	solRpc             *rpc.SolRPC
 	pubKeyMgr          pubkeymanager.PubKeyValidator
 	bridge             thorclient.ThorchainBridge
-	solvencyReporter   shtypes.SolvencyReporter
 	signerCacheManager *signercache.CacheManager
 	reporterDispatcher reporter.Dispatcher
 
@@ -70,14 +68,6 @@ type SOLScanner struct {
 
 	healthy *atomic.Bool
 
-	// currentScanSlot holds the slot the scan loop is currently processing. It is
-	// stored immediately before invoking the solvency reporter so ReportSolvency
-	// can tell a scan-driven call (height == currentScanSlot) apart from a
-	// SolvencyCheckRunner call (height == live chain tip). Mirrors EVM's
-	// evmScanner.currentBlockHeight, and is kept separate from lastHeight (the
-	// persisted resume cursor, which is only advanced after a scan completes).
-	currentScanSlot atomic.Int64
-
 	// network fee state
 	netFeeSlotMultiple uint64
 	netFeeInit         bool
@@ -91,7 +81,7 @@ type SOLScanner struct {
 	// state for if we've successfully processed the initial height
 	initialHeight map[string]struct{}
 	lastHeight    uint64
-	// Guards lastHeight between scan progress writes and height/solvency runner reads.
+	// Guards lastHeight between scan progress writes and reporter reads.
 	lastHeightMu      sync.RWMutex
 	vaultScanStatuses map[string]vaultScanStatus
 
@@ -113,7 +103,6 @@ func NewSOLScanner(
 	m *metrics.Metrics,
 	rpc *rpc.SolRPC,
 	pubkeyMgr pubkeymanager.PubKeyValidator,
-	solvencyReporter shtypes.SolvencyReporter,
 	signerCacheManager *signercache.CacheManager,
 ) (*SOLScanner, error) {
 	// check required arguments
@@ -136,7 +125,6 @@ func NewSOLScanner(
 		solRpc:             rpc,
 		pubKeyMgr:          pubkeyMgr,
 		bridge:             bridge,
-		solvencyReporter:   solvencyReporter,
 		signerCacheManager: signerCacheManager,
 		feeRateCache:       make([]uint64, 0),
 		stopChan:           stopChan,
@@ -392,12 +380,6 @@ func (s *SOLScanner) scan() {
 		s.reporterDispatcher.Process(common.SOLChain, int64(currentSlot))
 	}
 
-	// Record the slot being scanned before reporting so ReportSolvency can
-	// distinguish this scan-driven call from a SolvencyCheckRunner call (which
-	// passes the live chain tip). Without this, the unhealthy-scanner guard in
-	// ReportSolvency never matches and a lagging/unhealthy scanner keeps
-	// reporting where it should defer to the runner.
-	s.currentScanSlot.Store(int64(currentSlot))
 	if (time.Since(s.lastLog) > (5 * time.Second)) || !healthy {
 		s.lastLog = time.Now()
 		s.logger.Info().
@@ -587,13 +569,6 @@ func (s *SOLScanner) GetHeight() (int64, error) {
 		return -1, err
 	}
 	return int64(height), nil
-}
-
-// CurrentScanSlot returns the slot the scan loop is currently processing, set
-// just before the solvency reporter is invoked. ReportSolvency uses it to tell
-// a scan-driven solvency call apart from a SolvencyCheckRunner call.
-func (s *SOLScanner) CurrentScanSlot() int64 {
-	return s.currentScanSlot.Load()
 }
 
 func (s *SOLScanner) getLastHeight() uint64 {

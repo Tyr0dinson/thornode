@@ -93,26 +93,6 @@ func (s *ExtraTestSuite) TestGetConfirmationCount(c *C) {
 	c.Check(cc.GetConfirmationCount(stypes.TxIn{}), Equals, int64(0))
 }
 
-func (s *ExtraTestSuite) TestShouldReportSolvency(c *C) {
-	scannerCfg := config.BifrostBlockScannerConfiguration{ChainID: common.GAIAChain}
-	scanner := &CosmosBlockScanner{
-		cfg: scannerCfg,
-	}
-	cc := CosmosClient{cosmosScanner: scanner}
-
-	// height not divisible by 10
-	c.Check(cc.ShouldReportSolvency(11), Equals, false)
-
-	// height divisible by 10 but lastFee is zero
-	c.Check(cc.ShouldReportSolvency(10), Equals, false)
-
-	// height divisible by 10 and lastFee non-zero
-	scanner.setLastFee(sdkmath.NewUint(100))
-	c.Check(cc.ShouldReportSolvency(10), Equals, true)
-	c.Check(cc.ShouldReportSolvency(20), Equals, true)
-	c.Check(cc.ShouldReportSolvency(21), Equals, false)
-}
-
 // -------------------------------------------------------------------------------------
 // Block Scanner simple methods
 // -------------------------------------------------------------------------------------
@@ -841,7 +821,7 @@ func (s *ExtraTestSuite) TestGetLatestTxForVault(c *C) {
 // -------------------------------------------------------------------------------------
 
 func (s *ExtraTestSuite) TestNewCosmosBlockScannerNilStorage(c *C) {
-	_, err := NewCosmosBlockScanner("http://localhost:26657", config.BifrostBlockScannerConfiguration{}, nil, nil, nil, nil, nil)
+	_, err := NewCosmosBlockScanner("http://localhost:26657", config.BifrostBlockScannerConfiguration{}, nil, nil, nil, nil)
 	c.Assert(err, NotNil)
 	c.Check(err.Error(), Matches, ".*nil.*")
 }
@@ -849,7 +829,7 @@ func (s *ExtraTestSuite) TestNewCosmosBlockScannerNilStorage(c *C) {
 func (s *ExtraTestSuite) TestNewCosmosBlockScannerNilMetrics(c *C) {
 	storage, err := blockscanner.NewBlockScannerStorage("", config.LevelDBOptions{})
 	c.Assert(err, IsNil)
-	_, err = NewCosmosBlockScanner("http://localhost:26657", config.BifrostBlockScannerConfiguration{}, storage, nil, nil, nil, nil)
+	_, err = NewCosmosBlockScanner("http://localhost:26657", config.BifrostBlockScannerConfiguration{}, storage, nil, nil, nil)
 	c.Assert(err, NotNil)
 	c.Check(err.Error(), Matches, ".*nil.*")
 }
@@ -1334,59 +1314,6 @@ func (s *ExtraTestSuite) TestSignTxBadCheckpoint(c *C) {
 }
 
 // -------------------------------------------------------------------------------------
-// ReportSolvency
-// -------------------------------------------------------------------------------------
-
-func (s *ExtraTestSuite) TestReportSolvencyNotReporting(c *C) {
-	scanner := &CosmosBlockScanner{
-		cfg: config.BifrostBlockScannerConfiguration{ChainID: common.GAIAChain},
-	}
-	cc := CosmosClient{
-		cfg:           config.BifrostChainConfiguration{ChainID: common.GAIAChain},
-		cosmosScanner: scanner,
-	}
-
-	// ShouldReportSolvency returns false -> ReportSolvency exits early
-	err := cc.ReportSolvency(11)
-	c.Assert(err, IsNil)
-}
-
-// -------------------------------------------------------------------------------------
-// FetchTxs with solvency error
-// -------------------------------------------------------------------------------------
-
-func (s *ExtraTestSuite) TestFetchTxsSolvencyError(c *C) {
-	cfg := config.BifrostBlockScannerConfiguration{
-		ChainID:                      common.GAIAChain,
-		GasPriceResolution:           1_000,
-		ObservationFlexibilityBlocks: 100,
-		WhitelistCosmosAssets: []config.WhitelistCosmosAsset{
-			{Denom: "uatom", Decimals: 6, THORChainSymbol: "ATOM"},
-		},
-	}
-
-	registry := codectypes.NewInterfaceRegistry()
-	btypes.RegisterInterfaces(registry)
-	cdc := codec.NewProtoCodec(registry)
-
-	scanner := &CosmosBlockScanner{
-		cfg:      cfg,
-		rpc:      &mockTendermintRPC{},
-		cdc:      cdc,
-		feeCache: make([]sdkmath.Uint, 0),
-		solvencyReporter: func(height int64) error {
-			return fmt.Errorf("solvency error")
-		},
-		globalNetworkFeeQueue: make(chan common.NetworkFee, 10),
-	}
-
-	// Solvency error should not prevent returning txIn
-	txIn, err := scanner.FetchTxs(1, 10)
-	c.Assert(err, IsNil)
-	c.Check(txIn.Chain, Equals, common.GAIAChain)
-}
-
-// -------------------------------------------------------------------------------------
 // FetchTxs nil block
 // -------------------------------------------------------------------------------------
 
@@ -1521,27 +1448,6 @@ func (s *ExtraTestSuite) TestSignMsgBadPubkey(c *C) {
 	// signMsg with invalid pubkey should fail
 	_, err = cc.signMsg(txBuilder, common.PubKey("invalid"), 0, 0, 0)
 	c.Assert(err, NotNil)
-}
-
-// -------------------------------------------------------------------------------------
-// ReportSolvency - block scanner not healthy path
-// -------------------------------------------------------------------------------------
-
-func (s *ExtraTestSuite) TestReportSolvencyBlockScannerNotHealthy(c *C) {
-	scanner := testCosmosScannerWithLastFee(&CosmosBlockScanner{
-		cfg: config.BifrostBlockScannerConfiguration{ChainID: common.GAIAChain},
-	}, sdkmath.NewUint(100))
-
-	// When block scanner is not healthy and height = previous + 1, skip
-	cc := CosmosClient{
-		cfg:           config.BifrostChainConfiguration{ChainID: common.GAIAChain},
-		cosmosScanner: scanner,
-		blockScanner:  nil, // can't test fully without real block scanner
-	}
-
-	// Not divisible by 10 - early return
-	err := cc.ReportSolvency(11)
-	c.Assert(err, IsNil)
 }
 
 // -------------------------------------------------------------------------------------
@@ -2002,13 +1908,10 @@ func (s *ExtraTestSuite) TestFetchTxsProcessTxsError(c *C) {
 	cdc := codec.NewProtoCodec(registry)
 
 	scanner := &CosmosBlockScanner{
-		cfg:      cfg,
-		rpc:      &mockTendermintRPCBlockResultsError{},
-		cdc:      cdc,
-		feeCache: make([]sdkmath.Uint, 0),
-		solvencyReporter: func(height int64) error {
-			return nil
-		},
+		cfg:                   cfg,
+		rpc:                   &mockTendermintRPCBlockResultsError{},
+		cdc:                   cdc,
+		feeCache:              make([]sdkmath.Uint, 0),
 		globalNetworkFeeQueue: make(chan common.NetworkFee, 10),
 	}
 
@@ -2042,13 +1945,10 @@ func (s *ExtraTestSuite) TestFetchTxsUpdateGasFeesError(c *C) {
 	}
 
 	scanner := &CosmosBlockScanner{
-		cfg:      cfg,
-		rpc:      &mockTendermintRPC{},
-		cdc:      cdc,
-		feeCache: feeCache,
-		solvencyReporter: func(height int64) error {
-			return nil
-		},
+		cfg:                   cfg,
+		rpc:                   &mockTendermintRPC{},
+		cdc:                   cdc,
+		feeCache:              feeCache,
 		globalNetworkFeeQueue: make(chan common.NetworkFee, 10),
 	}
 

@@ -1,6 +1,8 @@
 package tron
 
 import (
+	"context"
+	"sync"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -14,6 +16,8 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	"gitlab.com/thorchain/thornode/v3/bifrost/reporter"
+	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/tron/api"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -23,11 +27,27 @@ import (
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
-type recoverySolvencyBridge struct{ mockTronSolvencyBridge }
+type recoverySolvencyBridge struct {
+	thorclient.ThorchainBridge
+	asgards ttypes.Vaults
+}
 
 func (*recoverySolvencyBridge) GetMimir(string) (int64, error)                     { return -1, nil }
 func (*recoverySolvencyBridge) GetBlockHeight() (int64, error)                     { return 1000, nil }
 func (*recoverySolvencyBridge) GetNetworkFee(common.Chain) (uint64, uint64, error) { return 1, 1, nil }
+
+
+func (b *recoverySolvencyBridge) GetAsgards() (ttypes.Vaults, error) { return b.asgards, nil }
+func (*recoverySolvencyBridge) FetchNodeStatus() (ttypes.NodeStatus, error) { return ttypes.NodeStatus_Active, nil }
+func (*recoverySolvencyBridge) GetSolvencyMsg(height int64, chain common.Chain, pubKey common.PubKey, coins common.Coins) *ttypes.MsgSolvency {
+	return &ttypes.MsgSolvency{Height: height, Chain: chain, PubKey: pubKey, Coins: coins}
+}
+
+type recoverySolvencyAttester chan common.Solvency
+func (a recoverySolvencyAttester) AttestSolvency(_ context.Context, solvency common.Solvency) error {
+	a <- solvency
+	return nil
+}
 
 func TestTRONSolvencyAfterReceiptRecovery(t *testing.T) {
 	const height int64 = 100
@@ -72,18 +92,17 @@ func TestTRONSolvencyAfterReceiptRecovery(t *testing.T) {
 	}))
 	defer server.Close()
 	vault := ttypes.Vault{PubKey: ttypes.GetRandomPubKey(), Coins: common.NewCoins(common.NewCoin(common.TRXAsset, cosmos.NewUint(common.One)))}
-	bridge := &recoverySolvencyBridge{mockTronSolvencyBridge{asgards: ttypes.Vaults{vault}}}
+	bridge := &recoverySolvencyBridge{asgards: ttypes.Vaults{vault}}
 	scanner := &TronBlockScanner{
 		config: config.BifrostBlockScannerConfiguration{ChainID: common.TRONChain, ObservationFlexibilityBlocks: 3},
 		logger: zerolog.Nop(), api: api.NewTronApi(server.URL, time.Second),
 		pubkeyMgr: receiptRetryVaultValidator{MockPoolAddressValidator: pubkeymanager.NewMockPoolAddressValidator(), address: vaultAddress},
 	}
-	reports := make(chan stypes.Solvency, 4)
+	reports := make(recoverySolvencyAttester, 4)
 	client := &TronClient{
 		logger: zerolog.Nop(), config: config.BifrostChainConfiguration{ChainID: common.TRONChain}, chainId: common.TRONChain.String(),
-		tronScanner: scanner, bridge: bridge, api: scanner.api, globalSolvencyQueue: reports,
+		tronScanner: scanner, bridge: bridge, api: scanner.api,
 	}
-	scanner.reportSolvency = client.ReportSolvency
 	shared, err := blockscanner.NewBlockScanner(config.BifrostBlockScannerConfiguration{
 		ChainID: common.TRONChain, StartBlockHeight: height - 2, BlockHeightDiscoverBackoff: time.Millisecond,
 	}, blockscanner.NewMockScannerStorage(), &metrics.Metrics{}, bridge, scanner)
@@ -91,8 +110,11 @@ func TestTRONSolvencyAfterReceiptRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	client.blockScanner = shared
-	shared.Start(make(chan stypes.TxIn, 4), make(chan common.NetworkFee, 4))
-	defer shared.Stop()
+	stopper := make(chan struct{})
+	var wg sync.WaitGroup
+	dispatcher := reporter.NewDispatcher(map[common.Chain]reporter.ChainClient{common.TRONChain: client}, bridge, reports, nil, stopper, &wg)
+	shared.Start(make(chan stypes.TxIn, 4), make(chan common.NetworkFee, 4), dispatcher)
+	defer func() { shared.Stop(); close(stopper); wg.Wait() }()
 	wait := func(ready func() bool) {
 		t.Helper()
 		deadline := time.Now().Add(3 * time.Second)
@@ -113,13 +135,13 @@ func TestTRONSolvencyAfterReceiptRecovery(t *testing.T) {
 	wait(func() bool { return shared.PreviousHeight() == height && shared.IsHealthy() })
 	select {
 	case report := <-reports:
-		if report.Height != height-FinalityBlocks || !report.PubKey.Equals(vault.PubKey) || !report.Chain.Equals(common.TRONChain) {
+		if report.Height != height-19 || !report.PubKey.Equals(vault.PubKey) || !report.Chain.Equals(common.TRONChain) {
 			t.Fatalf("unexpected insolvency report: %+v", report)
 		}
 		if !report.Coins.GetCoin(common.TRXAsset).Amount.LT(vault.Coins.GetCoin(common.TRXAsset).Amount) {
 			t.Fatal("fixture must be insolvent")
 		}
-	default:
+	case <-time.After(3 * time.Second):
 		t.Fatal("successful receipt retry skipped insolvency report")
 	}
 	if len(reports) != 0 {
@@ -134,24 +156,3 @@ func TestTRONSolvencyAfterReceiptRecovery(t *testing.T) {
 	}
 }
 
-func TestTRONSolvencyHookUsesTipAndFlexibility(t *testing.T) {
-	client := &TronClient{}
-	var reported []int64
-	scanner := &TronBlockScanner{
-		config: config.BifrostBlockScannerConfiguration{ObservationFlexibilityBlocks: 2},
-		reportSolvency: func(height int64) error {
-			if client.ShouldReportSolvency(height) {
-				reported = append(reported, height)
-			}
-			return nil
-		},
-	}
-	for _, pair := range [][2]int64{{97, 100}, {99, 101}, {98, 100}} {
-		if err := scanner.ReportSolvency(pair[0], pair[1]); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if len(reported) != 1 || reported[0] != 100 {
-		t.Fatalf("unexpected tip-based solvency heights: %v", reported)
-	}
-}

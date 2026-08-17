@@ -22,7 +22,6 @@ import (
 	cosmoscryptoed25519 "github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/runners"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/types"
@@ -35,7 +34,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
-	"gitlab.com/thorchain/thornode/v3/constants"
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -70,21 +68,20 @@ var broadcastLookupDelay = 3 * time.Second
 
 // SOLClient is a client for the Solana blockchain
 type SOLClient struct {
-	logger              zerolog.Logger
-	cfg                 config.BifrostChainConfiguration
-	localPubKey         string
-	k                   *cosmoscryptoed25519.PrivKey
-	solScanner          *SOLScanner
-	bridge              thorclient.ThorchainBridge
-	poolMgr             thorclient.PoolManager
-	tssKeyManager       tss.ThorchainKeyManager
-	pubkeyMgr           pubkeymanager.PubKeyValidator
-	wg                  *sync.WaitGroup
-	stopchan            chan struct{}
-	globalSolvencyQueue chan stypes.Solvency
-	signerCacheManager  *signercache.CacheManager
-	rpcClient           *rpc.SolRPC
-	m                   *metrics.Metrics
+	logger             zerolog.Logger
+	cfg                config.BifrostChainConfiguration
+	localPubKey        string
+	k                  *cosmoscryptoed25519.PrivKey
+	solScanner         *SOLScanner
+	bridge             thorclient.ThorchainBridge
+	poolMgr            thorclient.PoolManager
+	tssKeyManager      tss.ThorchainKeyManager
+	pubkeyMgr          pubkeymanager.PubKeyValidator
+	wg                 *sync.WaitGroup
+	stopchan           chan struct{}
+	signerCacheManager *signercache.CacheManager
+	rpcClient          *rpc.SolRPC
+	m                  *metrics.Metrics
 
 	// keepAliveThorMultiple is the last keep-alive cadence boundary this node acted
 	// on. The trigger + keysign anchor are driven off the shared THORChain block
@@ -114,20 +111,6 @@ type SOLClient struct {
 	// nonceReader overrides the chain reads of durable-nonce re-attestation (tests);
 	// nil uses rpcClient.
 	nonceReader solNonceAccountReader
-
-	// solvencySlotMultiple is the last reported solvency cadence boundary. It is
-	// read and written from two goroutines — the block scanner's solvency reporter
-	// and the SolvencyCheckRunner, both of which reach ReportSolvency — so every
-	// access goes through solvencySlotMultipleMu.
-	solvencySlotMultipleMu sync.Mutex
-	solvencySlotMultiple   int64
-
-	// reportInFlight gates ReportSolvency so only one report runs at a time. The
-	// two callers can otherwise both pass the boundary guard and either emit a
-	// duplicate solvency Id (self-slashed on chain) or redundantly fetch balances.
-	// The loser TryLocks, fails, and returns immediately (no stall); the winner
-	// still writes the counter at the end, preserving retry-on-failure.
-	reportInFlight sync.Mutex
 
 	// consensusHashes memoizes successful consensusBlockHash derivations by keysign
 	// height. A successful height -> (blockhash, slot) mapping is immutable (CometBFT
@@ -245,7 +228,6 @@ func NewSOLClient(
 		m,
 		rpcClient,
 		pubkeyMgr,
-		c.ReportSolvency,
 		signerCacheManager,
 	)
 	if err != nil {
@@ -397,177 +379,6 @@ func (c *SOLClient) GetGasEstimateForSolvency() cosmos.Uint {
 	txSize, feeRate := c.solScanner.GetNetworkFee()
 	nativeCurrentFee := cosmos.NewUint(3).MulUint64(txSize).MulUint64(feeRate)
 	return c.cfg.ChainID.NativeGasToThorchain(nativeCurrentFee)
-}
-
-// ReportSolvency is the legacy solvency flow retained for reviewer comparison.
-//
-//nolint:unused
-func (c *SOLClient) ReportSolvency(height int64) error {
-	reportSlotMultiple := c.nextSolvencyReportSlotMultiple(height)
-	if !c.reportInFlight.TryLock() {
-		return nil
-	}
-	defer c.reportInFlight.Unlock()
-	if reportSlotMultiple <= c.getSolvencySlotMultiple() {
-		return nil
-	}
-	reportHeight := reportSlotMultiple * c.cfg.SolvencyBlocks
-
-	// When the block scanner is unhealthy, only report from the auto-unhalt
-	// SolvencyCheckRunner. The scan loop stores the slot it is processing in
-	// currentScanSlot just before calling here, while the runner passes the live
-	// chain tip (GetHeight); so a scan-driven call matches currentScanSlot and is
-	// skipped, deferring to the runner's up-to-date report.
-	if !c.IsBlockScannerHealthy() && height == c.solScanner.CurrentScanSlot() {
-		return nil
-	}
-
-	// fetch all asgard vaults
-	asgardVaults, err := c.bridge.GetAsgards()
-	if err != nil {
-		return fmt.Errorf("fail to get asgards, err: %w", err)
-	}
-
-	// leaving the legacy gas fee estimate calculation for comparison
-	nativeCurrentFee := cosmos.NewUint(3).MulUint64(c.cfg.BlockScanner.MaxGasLimit).MulUint64(c.solScanner.lastFeeRate.Load())
-	currentFeeRate := c.cfg.ChainID.NativeGasToThorchain(nativeCurrentFee)
-
-	// report insolvent asgard vaults,
-	// or else all if the chain is halted and all are solvent
-	chainVaults := asgardVaults[:0]
-	for _, asgard := range asgardVaults {
-		if asgard.HasFundsForChain(c.cfg.ChainID) {
-			chainVaults = append(chainVaults, asgard)
-		}
-	}
-
-	msgs := make([]stypes.Solvency, 0, len(chainVaults))
-	solventMsgs := make([]stypes.Solvency, 0, len(chainVaults))
-	processedVaults := 0
-	for _, v := range chainVaults {
-		if v.PubKeyEddsa.IsEmpty() {
-			c.logger.Error().Msg("asgard vault pubkey is empty, skipping solvency check")
-			continue
-		}
-		acct, err := c.GetAccount(v.PubKeyEddsa, nil)
-		if err != nil {
-			c.logger.Err(err).Msg("fail to get account balance")
-			continue
-		}
-		msg := stypes.Solvency{
-			Height: reportHeight,
-			Chain:  c.cfg.ChainID,
-			PubKey: v.PubKey, // or v.PubKeyEddsa
-			Coins:  acct.Coins,
-		}
-		processedVaults++
-
-		if runners.IsVaultSolvent(c.cfg.ChainID, acct, v, currentFeeRate) {
-			solventMsgs = append(solventMsgs, msg) // Solvent-vault message
-			continue
-		}
-		msgs = append(msgs, msg) // Insolvent-vault message
-	}
-
-	// Only if THORChain itself has this chain halted or solvency-halted, this node's block scanner
-	// is paused for it (unhealthy), and all chain-specific vaults are solvent, report that all the
-	// chain-specific vaults are solvent. That "all clear" exists to lift a network SolvencyHalt
-	// (see SolvencyCheckRunner), so the network's halt state is the gate, not this node's own
-	// block-scanner health: a scanner that is unhealthy for a local reason (RPC trouble, a stalled
-	// fetch) must stay silent here, because an all-clear only one node sends can never reach
-	// consensus and each one costs that node an unrefunded observation slash point. The paused
-	// scanner is still required alongside the halt: the scanner re-reads the pause mimirs only once
-	// per THORChain block, and reads a mimir error as not paused, so just after a halt takes effect
-	// a healthy scanner can still reach here from the scan path. Its all-clear would carry the
-	// scanned height rather than the runner's, a different voter, and so would be a lone vote too.
-	// On a bridge error stay silent; the runner retries.
-	// If there are any insolvent vaults, report only them.
-	// Not reporting both solvent and insolvent vaults is to avoid noise (spam):
-	// Reporting both could halt-and-unhalt SolvencyHalt in the same THOR block
-	// (resetting its height), plus making it harder to know at a glance from solvency reports which vaults were insolvent.
-	solvent := false
-	allVaultsProcessed := len(chainVaults) > 0 && processedVaults == len(chainVaults)
-	halted, haltErr := runners.IsHaltedOnChain(c.bridge, c.cfg.ChainID)
-	if haltErr != nil {
-		c.logger.Err(haltErr).Msg("fail to read chain halt state, skipping solvency all-clear")
-	}
-	if halted && !c.IsBlockScannerHealthy() && allVaultsProcessed && len(solventMsgs) == processedVaults {
-		msgs = solventMsgs
-		solvent = true
-	}
-
-	for i := range msgs {
-		c.logger.Info().
-			Stringer("asgard", msgs[i].PubKey).
-			Interface("coins", msgs[i].Coins).
-			Bool("solvent", solvent).
-			Msg("reporting solvency")
-
-		// send solvency to thorchain via global queue consumed by the observer
-		select {
-		case c.globalSolvencyQueue <- msgs[i]:
-		case <-time.After(constants.ThorchainBlockTime):
-			c.logger.Info().Msg("fail to send solvency info to thorchain, timeout")
-		}
-	}
-	c.advanceSolvencySlotMultiple(reportSlotMultiple)
-	return nil
-}
-
-// ShouldReportSolvency returns true if the given height is a solvency report height.
-// ShouldReportSolvency is the legacy solvency flow retained for reviewer comparison.
-//
-//nolint:unused
-func (c *SOLClient) ShouldReportSolvency(height int64) bool {
-	return c.nextSolvencyReportSlotMultiple(height) > c.getSolvencySlotMultiple()
-}
-
-func (c *SOLClient) nextSolvencyReportSlotMultiple(height int64) int64 {
-	current := c.getSolvencySlotMultiple()
-	if c.cfg.SolvencyBlocks <= 0 {
-		return current
-	}
-	if c.solScanner.lastFeeRate.Load() == 0 {
-		return current
-	}
-
-	crossedMultiple := height / c.cfg.SolvencyBlocks
-	if height%c.cfg.SolvencyBlocks == 0 {
-		crossedMultiple--
-	}
-	if crossedMultiple <= current {
-		return current
-	}
-
-	// Fresh nodes should not replay historical SOL solvency windows from zero.
-	// After initialization, advance one cadence boundary at a time so nodes with
-	// different tips still report the same next solvency height.
-	if current == 0 && crossedMultiple > 1 {
-		return crossedMultiple
-	}
-	return current + 1
-}
-
-// getSolvencySlotMultiple returns the last reported solvency cadence boundary,
-// guarded by solvencySlotMultipleMu.
-func (c *SOLClient) getSolvencySlotMultiple() int64 {
-	c.solvencySlotMultipleMu.Lock()
-	defer c.solvencySlotMultipleMu.Unlock()
-	return c.solvencySlotMultiple
-}
-
-// advanceSolvencySlotMultiple records v as the last reported solvency cadence
-// boundary, but only ever moves the counter forward. The check-then-set in
-// ReportSolvency is not atomic, so two reporters racing on the fresh-node
-// catch-up path (current == 0) can compute different boundaries from their own
-// heights; a plain write would let the lower one regress the counter and
-// re-report already-reported boundaries. Guarded by solvencySlotMultipleMu.
-func (c *SOLClient) advanceSolvencySlotMultiple(v int64) {
-	c.solvencySlotMultipleMu.Lock()
-	defer c.solvencySlotMultipleMu.Unlock()
-	if v > c.solvencySlotMultiple {
-		c.solvencySlotMultiple = v
-	}
 }
 
 // --------------------------------- sign ---------------------------------

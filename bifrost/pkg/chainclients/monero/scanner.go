@@ -56,12 +56,6 @@ type Scanner struct {
 	// The generic scanner can prefetch heights concurrently; a single lock keeps
 	// reorg journaling and outbox claims ordered without trusting fetch order.
 	scanMu sync.Mutex
-	// solvencyReporter is invoked after each healthy scan so that wallet vs
-	// thornode vault accounting drift is reported to thornode promptly.
-	// Without this hook, Client.ReportSolvency only fires from the
-	// auto-unhalt SolvencyCheckRunner which is gated on the chain being
-	// already halted — meaning vaults can drift indefinitely undetected.
-	solvencyReporter func(int64) error
 
 	currentBlockHeight     *atomic.Int64
 	daemonTipHeight        *atomic.Int64
@@ -115,12 +109,6 @@ func NewScanner(
 		manualPKByAddr:         make(map[string]common.PubKey),
 		observedOutgoingByTxID: make(map[string]observedOutgoingTx),
 	}
-}
-
-// SetSolvencyReporter wires the solvency reporter callback used by the
-// ordered post-fetch hook. Pass Client.ReportSolvency from the chain client.
-func (s *Scanner) SetSolvencyReporter(fn func(int64) error) {
-	s.solvencyReporter = fn
 }
 
 func (s *Scanner) SetManualVaultAddress(vaultPubKey common.PubKey, address string) {
@@ -411,15 +399,6 @@ func (s *Scanner) fetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, error) 
 
 	replayHandedOff = true
 	return txIn, nil
-}
-
-// ReportSolvency runs after FetchTxs has released scanMu and the shared scanner
-// has recomputed health. XMR retains its per-height reporting eligibility.
-func (s *Scanner) ReportSolvency(height, _ int64) error {
-	if s.solvencyReporter == nil {
-		return nil
-	}
-	return s.solvencyReporter(height)
 }
 
 // ReconcileCommittedOutbound closes the scan-before-import gap for a payout

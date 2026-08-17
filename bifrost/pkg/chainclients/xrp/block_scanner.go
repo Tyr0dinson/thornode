@@ -30,9 +30,6 @@ import (
 	txtypes "github.com/Peersyst/xrpl-go/xrpl/transaction/types"
 )
 
-// SolvencyReporter is to report solvency info to THORNode
-type SolvencyReporter func(int64) error
-
 const (
 	// FeeUpdatePeriodBlocks is the block interval at which we report fee changes.
 	FeeUpdatePeriodBlocks = 20
@@ -60,12 +57,11 @@ var (
 
 // XrpBlockScanner is to scan the blocks
 type XrpBlockScanner struct {
-	cfg              config.BifrostBlockScannerConfiguration
-	logger           zerolog.Logger
-	db               blockscanner.ScannerStorage
-	bridge           thorclient.ThorchainBridge
-	solvencyReporter SolvencyReporter
-	rpcClient        *rpc.Client
+	cfg       config.BifrostBlockScannerConfiguration
+	logger    zerolog.Logger
+	db        blockscanner.ScannerStorage
+	bridge    thorclient.ThorchainBridge
+	rpcClient *rpc.Client
 
 	globalNetworkFeeQueue chan common.NetworkFee
 
@@ -90,7 +86,6 @@ func NewXrpBlockScanner(rpcHost string,
 	scanStorage blockscanner.ScannerStorage,
 	bridge thorclient.ThorchainBridge,
 	m *metrics.Metrics,
-	solvencyReporter SolvencyReporter,
 ) (*XrpBlockScanner, error) {
 	if scanStorage == nil {
 		return nil, errors.New("scanStorage is nil")
@@ -111,13 +106,12 @@ func NewXrpBlockScanner(rpcHost string,
 	}
 	rpcClient := rpc.NewClient(rpcConfig)
 	return &XrpBlockScanner{
-		cfg:              cfg,
-		logger:           logger,
-		db:               scanStorage,
-		rpcClient:        rpcClient,
-		feeCache:         make([]sdkmath.Uint, 0),
-		bridge:           bridge,
-		solvencyReporter: solvencyReporter,
+		cfg:       cfg,
+		logger:    logger,
+		db:        scanStorage,
+		rpcClient: rpcClient,
+		feeCache:  make([]sdkmath.Uint, 0),
+		bridge:    bridge,
 	}, nil
 }
 
@@ -147,10 +141,6 @@ func (c *XrpBlockScanner) getLastFee() sdkmath.Uint {
 
 func (c *XrpBlockScanner) setLastFee(fee sdkmath.Uint) {
 	c.lastFee.Store(fee.Uint64())
-}
-
-func (c *XrpBlockScanner) lastFeeIsZero() bool {
-	return c.lastFee.Load() == 0
 }
 
 func (c *XrpBlockScanner) updateFeeCache(fee common.Coin) {
@@ -503,14 +493,6 @@ func (c *XrpBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, error
 	}
 
 	return txIn, nil
-}
-
-// ReportSolvency runs after the shared scanner has recomputed health.
-func (c *XrpBlockScanner) ReportSolvency(height, chainHeight int64) error {
-	if chainHeight-height > c.cfg.ObservationFlexibilityBlocks || c.solvencyReporter == nil {
-		return nil
-	}
-	return c.solvencyReporter(height)
 }
 
 const (

@@ -419,7 +419,7 @@ func (s *BlockScannerExtraSuite) TestNetworkFeeAfterAvailabilityRetries(c *C) {
 }
 
 // Prefetched blocks may complete out of order. Solvency must run only when the
-// ordered consumer accepts a healthy block, even if the reporter returns an error.
+// ordered consumer persists a block and recomputes scanner health.
 type orderedSolvencyFetcher struct {
 	configFetcher
 	scanner    *BlockScanner
@@ -439,12 +439,13 @@ func (f *orderedSolvencyFetcher) FetchTxs(height, _ int64) (types.TxIn, error) {
 	return types.TxIn{}, nil
 }
 
-func (f *orderedSolvencyFetcher) ReportSolvency(height, chainHeight int64) error {
-	if !f.scanner.IsHealthy() || f.scanner.PreviousHeight() != height-1 || chainHeight != 104 {
+func (f *orderedSolvencyFetcher) Process(chain common.Chain, height int64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.scanner.IsHealthy() != (height >= 101) || f.scanner.PreviousHeight() != height || !chain.Equals(common.ETHChain) {
 		f.wrongState = true
 	}
 	f.reported = append(f.reported, height)
-	return errors.New("solvency RPC unavailable")
 }
 
 func (s *BlockScannerExtraSuite) TestSolvencyHookOrderedAfterHealthRecovery(c *C) {
@@ -464,16 +465,25 @@ func (s *BlockScannerExtraSuite) TestSolvencyHookOrderedAfterHealthRecovery(c *C
 			}, NewMockScannerStorage(), m, s.makeBridge(c, server), fetcher)
 			c.Assert(err, IsNil)
 			fetcher.scanner = scanner
-			scanner.Start(make(chan types.TxIn, 8), make(chan common.NetworkFee, 8))
+			scanner.Start(make(chan types.TxIn, 8), make(chan common.NetworkFee, 8), fetcher)
 			defer scanner.Stop()
 			deadline := time.Now().Add(3 * time.Second)
 			for scanner.PreviousHeight() != 104 && time.Now().Before(deadline) {
 				time.Sleep(time.Millisecond)
 			}
 			c.Assert(scanner.PreviousHeight(), Equals, int64(104))
-			// The final cursor store follows the hook; no further block can be fetched.
+			// Join the final dispatcher call; the persisted cursor precedes it.
+			for time.Now().Before(deadline) {
+				fetcher.mu.Lock()
+				complete := len(fetcher.reported) == 5
+				fetcher.mu.Unlock()
+				if complete { break }
+				time.Sleep(time.Millisecond)
+			}
+			fetcher.mu.Lock()
+			defer fetcher.mu.Unlock()
 			c.Check(fetcher.wrongState, Equals, false)
-			c.Check(fetcher.reported, DeepEquals, []int64{101, 102, 103, 104}, Commentf("prefetch=%d", prefetch))
+			c.Check(fetcher.reported, DeepEquals, []int64{100, 101, 102, 103, 104}, Commentf("prefetch=%d", prefetch))
 		}()
 	}
 }

@@ -26,7 +26,6 @@ import (
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	tcmetrics "gitlab.com/thorchain/thornode/v3/bifrost/metrics"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/runners"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	chainclienttypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/tron/api"
@@ -52,7 +51,6 @@ const (
 	TimestampValidity = 20 * time.Minute
 
 	ConfirmationBlocks int64 = 1
-	FinalityBlocks     int64 = 19
 
 	tronSignCheckpointVersion = 1
 	maxTronCheckpointSize     = 256 * 1024
@@ -188,13 +186,10 @@ type TronClient struct {
 	rpc                *rpc.TronRpc
 	abi                abi.ABI
 
-	whitelist           map[string]tokenlist.ERC20Token
-	bridge              thorclient.ThorchainBridge
-	globalSolvencyQueue chan types.Solvency
-	// Serializes ReportSolvency when ordered scan callbacks and SolvencyCheckRunner can both enter.
-	solvencyLock sync.Mutex
-	wg           *sync.WaitGroup
-	stopchan     chan struct{}
+	whitelist map[string]tokenlist.ERC20Token
+	bridge    thorclient.ThorchainBridge
+	wg        *sync.WaitGroup
+	stopchan  chan struct{}
 }
 
 // Compile-time check that the TRON client still satisfies reporter.ChainClient.
@@ -273,7 +268,6 @@ func NewTronClient(
 		config,
 		client.bridge,
 		pubkeyMgr,
-		client.ReportSolvency,
 	)
 	if err != nil {
 		logger.Err(err).Msg("failed to create tron block scanner")
@@ -819,124 +813,6 @@ func validateTronRecoveryAttempt(tx api.Transaction, check signercache.CacheChec
 func (c *TronClient) GetGasEstimateForSolvency() cosmos.Uint {
 	fee := math.NewUint(c.tronScanner.currentFee.Load())
 	return c.config.ChainID.NativeGasToThorchain(fee)
-}
-
-// ShouldReportSolvency is the legacy solvency flow retained for reviewer comparison.
-//
-//nolint:unused
-func (c *TronClient) ShouldReportSolvency(height int64) bool {
-	return height%10 == 0
-}
-
-// ReportSolvency is the legacy solvency flow retained for reviewer comparison.
-//
-//nolint:unused
-func (c *TronClient) ReportSolvency(height int64) error {
-	// The ordered scan loop and SolvencyCheckRunner can both call this.
-	c.solvencyLock.Lock()
-	defer c.solvencyLock.Unlock()
-
-	if !c.ShouldReportSolvency(height) {
-		return nil
-	}
-
-	// when block scanner is not healthy, only report from auto-unhalt SolvencyCheckRunner
-	// TRON passes chainHeight from both callers; at the tip this is PreviousHeight + 1.
-	if !c.IsBlockScannerHealthy() && height == c.blockScanner.PreviousHeight()+1 {
-		return nil
-	}
-
-	asgardVaults, err := c.bridge.GetAsgards()
-	if err != nil {
-		c.logger.Err(err).Msg("failed to get asgard vaults")
-		return err
-	}
-
-	currentGasFee := c.GetGasEstimateForSolvency()
-
-	// report insolvent asgard vaults,
-	// or else all if the chain is halted and all are solvent
-	chainVaults := asgardVaults[:0]
-	for _, asgard := range asgardVaults {
-		if asgard.HasFundsForChain(c.config.ChainID) {
-			chainVaults = append(chainVaults, asgard)
-		}
-	}
-
-	solventMsgs := make([]types.Solvency, 0, len(chainVaults))
-	insolventMsgs := make([]types.Solvency, 0, len(chainVaults))
-	processedVaults := 0
-	for i, vault := range chainVaults {
-		acc, err := c.GetAccount(vault.PubKey, big.NewInt(height))
-		if err != nil {
-			c.logger.Err(err).Msgf("failed to get account balance")
-			continue
-		}
-
-		msg := types.Solvency{
-			// Token balances reported from the RPC appear to be based on finalized state and
-			// lagging the observations themselves. We report the finalized height with the
-			// solvency message so the handler in thornode will disregard if there is a more
-			// recent observation.
-			Height: height - FinalityBlocks,
-			Chain:  c.config.ChainID,
-			PubKey: chainVaults[i].PubKey,
-			Coins:  acc.Coins,
-		}
-		processedVaults++
-
-		if runners.IsVaultSolvent(c.config.ChainID, acc, chainVaults[i], currentGasFee) {
-			solventMsgs = append(solventMsgs, msg)
-			continue
-		}
-
-		insolventMsgs = append(insolventMsgs, msg)
-	}
-
-	msgs := insolventMsgs
-	solvent := false
-
-	// Only if THORChain itself has this chain halted or solvency-halted, this node's block scanner
-	// is paused for it (unhealthy), and all chain-specific vaults are solvent, report that all the
-	// chain-specific vaults are solvent. That "all clear" exists to lift a network SolvencyHalt
-	// (see SolvencyCheckRunner), so the network's halt state is the gate, not this node's own
-	// block-scanner health: a scanner that is unhealthy for a local reason (RPC trouble, a stalled
-	// fetch) must stay silent here, because an all-clear only one node sends can never reach
-	// consensus and each one costs that node an unrefunded observation slash point. The paused
-	// scanner is still required alongside the halt: the scanner re-reads the pause mimirs only once
-	// per THORChain block, and reads a mimir error as not paused, so just after a halt takes effect
-	// a healthy scanner can still reach here from the scan path. Its all-clear would carry the
-	// scanned height rather than the runner's, a different voter, and so would be a lone vote too.
-	// On a bridge error stay silent; the runner retries.
-	// If there are any insolvent vaults, report only them.
-	// Not reporting both solvent and insolvent vaults is to avoid noise (spam):
-	// Reporting both could halt-and-unhalt SolvencyHalt in the same THOR block
-	// (resetting its height), plus making it harder to know at a glance from solvency reports which vaults were insolvent.
-	allVaultsProcessed := len(chainVaults) > 0 && processedVaults == len(chainVaults)
-	halted, haltErr := runners.IsHaltedOnChain(c.bridge, c.config.ChainID)
-	if haltErr != nil {
-		c.logger.Err(haltErr).Msg("fail to read chain halt state, skipping solvency all-clear")
-	}
-	if halted && !c.IsBlockScannerHealthy() && allVaultsProcessed && len(solventMsgs) == processedVaults {
-		msgs = solventMsgs
-		solvent = true
-	}
-
-	for _, msg := range msgs {
-		c.logger.Info().
-			Str("asgard", msg.PubKey.String()).
-			Interface("coins", msg.Coins).
-			Bool("solvent", solvent).
-			Msg("reporting solvency")
-		// send solvency to thorchain via global queue consumed by the observer
-		select {
-		case c.globalSolvencyQueue <- msg:
-		case <-time.After(constants.ThorchainBlockTime):
-			c.logger.Info().Msg("failed to send solvency info to THORChain")
-		}
-	}
-
-	return nil
 }
 
 func (c *TronClient) sign(

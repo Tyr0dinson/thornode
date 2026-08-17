@@ -140,7 +140,7 @@ func (s *BlockScannerTestSuite) TestGetBlock(c *C) {
 	cfg := getConfigForTest("http://" + server.Listener.Addr().String())
 
 	rpcClient := rpc.NewSolRPC("http://"+server.Listener.Addr().String(), cfg.HTTPRequestTimeout)
-	_, err = NewSOLScanner(make(chan struct{}), cfg, storage, s.bridge, s.m, rpcClient, pubKeyManager, nil, signerCacheManager)
+	_, err = NewSOLScanner(make(chan struct{}), cfg, storage, s.bridge, s.m, rpcClient, pubKeyManager, signerCacheManager)
 	c.Assert(err, IsNil)
 
 	// TODO
@@ -184,7 +184,7 @@ func (s *BlockScannerTestSuite) TestScanVaultOmitsMinContextSlotWithUntilCursor(
 	c.Assert(err, IsNil)
 	cfg := getConfigForTest("http://" + server.Listener.Addr().String())
 	rpcClient := rpc.NewSolRPC("http://"+server.Listener.Addr().String(), cfg.HTTPRequestTimeout)
-	scanner, err := NewSOLScanner(make(chan struct{}), cfg, storage, s.bridge, s.m, rpcClient, pubKeyManager, nil, signerCacheManager)
+	scanner, err := NewSOLScanner(make(chan struct{}), cfg, storage, s.bridge, s.m, rpcClient, pubKeyManager, signerCacheManager)
 	c.Assert(err, IsNil)
 
 	const minCtx = uint64(428_000_000)

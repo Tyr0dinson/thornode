@@ -33,13 +33,6 @@ type BlockScannerFetcher interface {
 	GetNetworkFee() (transactionSize, transactionFeeRate uint64)
 }
 
-// BlockScannerSolvencyReporter is an optional post-fetch hook. The ordered scan
-// loop calls it only after a successful fetch has restored scanner health, never
-// from prefetch workers. Reporting failures do not discard the fetched block.
-type BlockScannerSolvencyReporter interface {
-	ReportSolvency(fetchHeight, chainHeight int64) error
-}
-
 type Block struct {
 	Height int64
 	Txs    []string
@@ -711,14 +704,6 @@ func (b *BlockScanner) scanBlocks() {
 				b.healthy.Store(true)
 			} else {
 				b.healthy.Store(false)
-			}
-
-			if b.healthy.Load() {
-				if reporter, ok := b.chainScanner.(BlockScannerSolvencyReporter); ok {
-					if solvencyErr := reporter.ReportSolvency(currentBlock, chainHeight); solvencyErr != nil {
-						b.logger.Error().Err(solvencyErr).Int64("height", currentBlock).Msg("fail to report solvency after scan")
-					}
-				}
 			}
 
 			// determine how often we compare THORNode network fee to Bifrost network fee.

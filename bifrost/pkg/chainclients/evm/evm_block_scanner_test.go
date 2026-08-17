@@ -248,26 +248,23 @@ func (s *BlockScannerTestSuite) TestNewBlockScanner(c *C) {
 	c.Assert(err, IsNil)
 	pubKeyManager, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
-	solvencyReporter := func(height int64) error {
-		return nil
-	}
-	bs, err := NewEVMScanner(getConfigForTest(), nil, big.NewInt(int64(Mainnet)), ethClient, rpcClient, s.bridge, s.m, pubKeyManager, solvencyReporter, nil)
+	bs, err := NewEVMScanner(getConfigForTest(), nil, big.NewInt(int64(Mainnet)), ethClient, rpcClient, s.bridge, s.m, pubKeyManager, nil)
 	c.Assert(err, NotNil)
 	c.Assert(bs, IsNil)
 
-	bs, err = NewEVMScanner(getConfigForTest(), storage, big.NewInt(int64(Mainnet)), ethClient, rpcClient, s.bridge, nil, pubKeyManager, solvencyReporter, nil)
+	bs, err = NewEVMScanner(getConfigForTest(), storage, big.NewInt(int64(Mainnet)), ethClient, rpcClient, s.bridge, nil, pubKeyManager, nil)
 	c.Assert(err, NotNil)
 	c.Assert(bs, IsNil)
 
-	bs, err = NewEVMScanner(getConfigForTest(), storage, big.NewInt(int64(Mainnet)), nil, rpcClient, s.bridge, s.m, pubKeyManager, solvencyReporter, nil)
+	bs, err = NewEVMScanner(getConfigForTest(), storage, big.NewInt(int64(Mainnet)), nil, rpcClient, s.bridge, s.m, pubKeyManager, nil)
 	c.Assert(err, NotNil)
 	c.Assert(bs, IsNil)
 
-	bs, err = NewEVMScanner(getConfigForTest(), storage, big.NewInt(int64(Mainnet)), ethClient, rpcClient, s.bridge, s.m, nil, solvencyReporter, nil)
+	bs, err = NewEVMScanner(getConfigForTest(), storage, big.NewInt(int64(Mainnet)), ethClient, rpcClient, s.bridge, s.m, nil, nil)
 	c.Assert(err, NotNil)
 	c.Assert(bs, IsNil)
 
-	bs, err = NewEVMScanner(getConfigForTest(), storage, big.NewInt(int64(Mainnet)), ethClient, rpcClient, s.bridge, s.m, pubKeyManager, solvencyReporter, nil)
+	bs, err = NewEVMScanner(getConfigForTest(), storage, big.NewInt(int64(Mainnet)), ethClient, rpcClient, s.bridge, s.m, pubKeyManager, nil)
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
 }
@@ -392,9 +389,7 @@ func (s *BlockScannerTestSuite) TestProcessBlock(c *C) {
 	}()
 
 	config := getConfigForTest()
-	bs, err := NewEVMScanner(config, storage, big.NewInt(43112), ethClient, rpcClient, bridge, s.m, pubKeyMgr, func(height int64) error {
-		return nil
-	}, nil)
+	bs, err := NewEVMScanner(config, storage, big.NewInt(43112), ethClient, rpcClient, bridge, s.m, pubKeyMgr, nil)
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
 	bs.whitelistContracts = append(bs.whitelistContracts, "0x40bcd4dB8889a8Bf0b1391d0c819dcd9627f9d0a")
@@ -549,9 +544,7 @@ func (s *BlockScannerTestSuite) TestGetTxInItem(c *C) {
 	c.Assert(err, IsNil)
 	config := getConfigForTest()
 	// Use AVAX chainID 43112 to match the transaction signature
-	bs, err := NewEVMScanner(config, storage, big.NewInt(43112), ethClient, rpcClient, bridge, s.m, pkeyMgr, func(height int64) error {
-		return nil
-	}, nil)
+	bs, err := NewEVMScanner(config, storage, big.NewInt(43112), ethClient, rpcClient, bridge, s.m, pkeyMgr, nil)
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
 
@@ -596,9 +589,7 @@ func (s *BlockScannerTestSuite) TestGetTxInItem(c *C) {
 		true,
 	)
 
-	bs, err = NewEVMScanner(config, storage, big.NewInt(43112), ethClient, rpcClient, bridge, s.m, pkeyMgr, func(height int64) error {
-		return nil
-	}, nil)
+	bs, err = NewEVMScanner(config, storage, big.NewInt(43112), ethClient, rpcClient, bridge, s.m, pkeyMgr, nil)
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
 	tx = etypes.NewTransaction(0, common.HexToAddress(evm.NativeTokenAddr), nil, 0, nil, nil)
@@ -1021,9 +1012,7 @@ func (s *BlockScannerTestSuite) TestRouterValidation(c *C) {
 	c.Assert(err, IsNil)
 
 	// Use chainID=1337 to match the aggregator tx signature
-	bs, err := NewEVMScanner(getConfigForTest(), storage, big.NewInt(1337), ethClient, rpcClient, bridge, s.m, pkeyMgr, func(height int64) error {
-		return nil
-	}, nil)
+	bs, err := NewEVMScanner(getConfigForTest(), storage, big.NewInt(1337), ethClient, rpcClient, bridge, s.m, pkeyMgr, nil)
 	c.Assert(err, IsNil)
 
 	tx := &etypes.Transaction{}
@@ -1131,9 +1120,7 @@ func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 	c.Assert(err, IsNil)
 	cfg := getConfigForTest()
 	cfg.ChainID = thorcommon.BSCChain // re-org on BSC only
-	bs, err := NewEVMScanner(cfg, storage, big.NewInt(int64(Mainnet)), ethClient, rpcClient, s.bridge, s.m, pkeyMgr, func(height int64) error {
-		return nil
-	}, nil)
+	bs, err := NewEVMScanner(cfg, storage, big.NewInt(int64(Mainnet)), ethClient, rpcClient, s.bridge, s.m, pkeyMgr, nil)
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
 	block, err := CreateBlock(0)
@@ -1190,11 +1177,8 @@ func (s *BlockScannerTestSuite) TestUpdateGasPrice(c *C) {
 	c.Assert(err, IsNil)
 	pubKeyManager, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
-	solvencyReporter := func(height int64) error {
-		return nil
-	}
 	conf := getConfigForTest()
-	bs, err := NewEVMScanner(conf, storage, big.NewInt(int64(Mainnet)), ethClient, rpcClient, s.bridge, s.m, pubKeyManager, solvencyReporter, nil)
+	bs, err := NewEVMScanner(conf, storage, big.NewInt(int64(Mainnet)), ethClient, rpcClient, s.bridge, s.m, pubKeyManager, nil)
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
 

@@ -30,7 +30,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/runners"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/reporter"
@@ -53,25 +52,21 @@ import (
 
 // EVMClient is a generic client for interacting with EVM chains.
 type EVMClient struct {
-	logger              zerolog.Logger
-	cfg                 config.BifrostChainConfiguration
-	localPubKey         common.PubKey
-	kw                  *evm.KeySignWrapper
-	ethClient           *ethclient.Client
-	evmScanner          *EVMScanner
-	bridge              thorclient.ThorchainBridge
-	blockScanner        *blockscanner.BlockScanner
-	vaultABI            *abi.ABI
-	pubkeyMgr           pubkeymanager.PubKeyValidator
-	poolMgr             thorclient.PoolManager
-	tssKeySigner        *tss.KeySign
-	wg                  *sync.WaitGroup
-	stopchan            chan struct{}
-	globalSolvencyQueue chan stypes.Solvency
-	signerCacheManager  *signercache.CacheManager
-	// Serializes ReportSolvency when FetchTxs prefetch callbacks and SolvencyCheckRunner can both enter.
-	solvencyLock            sync.Mutex
-	lastSolvencyCheckHeight atomic.Int64
+	logger             zerolog.Logger
+	cfg                config.BifrostChainConfiguration
+	localPubKey        common.PubKey
+	kw                 *evm.KeySignWrapper
+	ethClient          *ethclient.Client
+	evmScanner         *EVMScanner
+	bridge             thorclient.ThorchainBridge
+	blockScanner       *blockscanner.BlockScanner
+	vaultABI           *abi.ABI
+	pubkeyMgr          pubkeymanager.PubKeyValidator
+	poolMgr            thorclient.PoolManager
+	tssKeySigner       *tss.KeySign
+	wg                 *sync.WaitGroup
+	stopchan           chan struct{}
+	signerCacheManager *signercache.CacheManager
 
 	// pendingLiabilities tracks signed but unconfirmed transaction amounts (value + maxGas)
 	// keyed by vault address -> nonce -> amount in Wei.
@@ -260,7 +255,6 @@ func NewEVMClient(
 		c.bridge,
 		m,
 		pubkeyMgr,
-		nil,
 		signerCacheManager,
 	)
 	if err != nil {
@@ -518,16 +512,6 @@ func (c *EVMClient) Start(
 	go c.unstuck()
 	c.wg.Add(1)
 	go c.reconstructLiabilities()
-}
-
-func (c *EVMClient) solvencyRunnerBackoff() time.Duration {
-	// Use the chain block time for fast chains so the periodic runner does not skip
-	// modulo-based solvency report heights. Fall back to THORChain block time.
-	dur := time.Duration(c.cfg.ApproximateBlockMilliseconds()) * time.Millisecond
-	if dur <= 0 || dur > constants.ThorchainBlockTime {
-		return constants.ThorchainBlockTime
-	}
-	return dur
 }
 
 // Stop stops the chain client.
@@ -1544,122 +1528,6 @@ func (c *EVMClient) ConfirmationCountReady(txIn stypes.TxIn) bool {
 func (c *EVMClient) GetGasEstimateForSolvency() cosmos.Uint {
 	_, gasRateUnitsPerOne := c.cfg.ChainID.GetGasUnits()
 	return cosmos.NewUint(c.cfg.BlockScanner.MaxGasLimit).MulUint64(3).MulUint64(c.evmScanner.lastReportedGasPrice.Load()).MulUint64(common.One).Quo(gasRateUnitsPerOne)
-}
-
-// ReportSolvency reports solvency once per configured solvency blocks.
-// ReportSolvency is the legacy solvency flow retained for reviewer comparison.
-//
-//nolint:unused
-func (c *EVMClient) ReportSolvency(height int64) error {
-	// FetchTxs may call this from prefetch goroutines; SolvencyCheckRunner also calls it while halted.
-	c.solvencyLock.Lock()
-	defer c.solvencyLock.Unlock()
-
-	if !c.ShouldReportSolvency(height) {
-		return nil
-	}
-
-	// when block scanner is not healthy, only report from auto-unhalt SolvencyCheckRunner
-	// (FetchTxs passes currentBlockHeight, while SolvencyCheckRunner passes chainHeight)
-	if !c.IsBlockScannerHealthy() && height == c.evmScanner.getCurrentBlockHeight() {
-		return nil
-	}
-
-	// fetch all asgard vaults
-	asgardVaults, err := c.bridge.GetAsgards()
-	if err != nil {
-		return fmt.Errorf("fail to get asgards, err: %w", err)
-	}
-
-	// 3x MaxGas breathing room, from gas rate units gas price to THORChain (1e8) format
-	currentGasFee := c.GetGasEstimateForSolvency()
-
-	// report insolvent asgard vaults,
-	// or else all if the chain is halted and all are solvent
-	chainVaults := asgardVaults[:0]
-	for _, asgard := range asgardVaults {
-		if asgard.HasFundsForChain(c.cfg.ChainID) {
-			chainVaults = append(chainVaults, asgard)
-		}
-	}
-
-	msgs := make([]stypes.Solvency, 0, len(chainVaults))
-	solventMsgs := make([]stypes.Solvency, 0, len(chainVaults))
-	processedVaults := 0
-	for i := range chainVaults {
-		var acct common.Account
-		acct, err = c.GetVaultAccount(chainVaults[i], new(big.Int).SetInt64(height))
-		if err != nil {
-			c.logger.Err(err).Msg("fail to get account balance")
-			continue
-		}
-
-		msg := stypes.Solvency{
-			Height: height,
-			Chain:  c.cfg.ChainID,
-			PubKey: chainVaults[i].PubKey,
-			Coins:  acct.Coins,
-		}
-		processedVaults++
-
-		if runners.IsVaultSolvent(c.cfg.ChainID, acct, chainVaults[i], currentGasFee) {
-			solventMsgs = append(solventMsgs, msg) // Solvent-vault message
-			continue
-		}
-		msgs = append(msgs, msg) // Insolvent-vault message
-	}
-
-	// Only if THORChain itself has this chain halted or solvency-halted, this node's block scanner
-	// is paused for it (unhealthy), and all chain-specific vaults are solvent, report that all the
-	// chain-specific vaults are solvent. That "all clear" exists to lift a network SolvencyHalt
-	// (see SolvencyCheckRunner), so the network's halt state is the gate, not this node's own
-	// block-scanner health: a scanner that is unhealthy for a local reason (RPC trouble, a stalled
-	// fetch) must stay silent here, because an all-clear only one node sends can never reach
-	// consensus and each one costs that node an unrefunded observation slash point. The paused
-	// scanner is still required alongside the halt: the scanner re-reads the pause mimirs only once
-	// per THORChain block, and reads a mimir error as not paused, so just after a halt takes effect
-	// a healthy scanner can still reach here from the scan path. Its all-clear would carry the
-	// scanned height rather than the runner's, a different voter, and so would be a lone vote too.
-	// On a bridge error stay silent; the runner retries.
-	// If there are any insolvent vaults, report only them.
-	// Not reporting both solvent and insolvent vaults is to avoid noise (spam):
-	// Reporting both could halt-and-unhalt SolvencyHalt in the same THOR block
-	// (resetting its height), plus making it harder to know at a glance from solvency reports which vaults were insolvent.
-	solvent := false
-	allVaultsProcessed := len(chainVaults) > 0 && processedVaults == len(chainVaults)
-	halted, haltErr := runners.IsHaltedOnChain(c.bridge, c.cfg.ChainID)
-	if haltErr != nil {
-		c.logger.Err(haltErr).Msg("fail to read chain halt state, skipping solvency all-clear")
-	}
-	if halted && !c.IsBlockScannerHealthy() && allVaultsProcessed && len(solventMsgs) == processedVaults {
-		msgs = solventMsgs
-		solvent = true
-	}
-
-	for i := range msgs {
-		c.logger.Info().
-			Stringer("asgard", msgs[i].PubKey).
-			Interface("coins", msgs[i].Coins).
-			Bool("solvent", solvent).
-			Msg("reporting solvency")
-
-		// send solvency to thorchain via global queue consumed by the observer
-		select {
-		case c.globalSolvencyQueue <- msgs[i]:
-		case <-time.After(constants.ThorchainBlockTime):
-			c.logger.Info().Msg("fail to send solvency info to thorchain, timeout")
-		}
-	}
-	c.lastSolvencyCheckHeight.Store(height)
-	return nil
-}
-
-// ShouldReportSolvency returns true if the given height is a solvency report height.
-// ShouldReportSolvency is the legacy solvency flow retained for reviewer comparison.
-//
-//nolint:unused
-func (c *EVMClient) ShouldReportSolvency(height int64) bool {
-	return height%c.cfg.SolvencyBlocks == 0
 }
 
 // --------------------------------- helpers ---------------------------------

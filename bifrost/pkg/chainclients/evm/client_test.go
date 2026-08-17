@@ -322,21 +322,6 @@ func (s *EVMSuite) TearDownTest(c *C) {
 	}
 }
 
-func (s *EVMSuite) TestSolvencyRunnerBackoff(c *C) {
-	client := &EVMClient{
-		cfg: config.BifrostChainConfiguration{
-			ChainID: common.AVAXChain,
-		},
-	}
-
-	c.Assert(client.solvencyRunnerBackoff(), Equals, time.Duration(common.AVAXChain.ApproximateBlockMilliseconds())*time.Millisecond)
-
-	// ETH is above THORChain block time in both mocknet and non-mocknet builds,
-	// so this consistently exercises the fallback path.
-	client.cfg.ChainID = common.ETHChain
-	c.Assert(client.solvencyRunnerBackoff(), Equals, constants.ThorchainBlockTime)
-}
-
 // TestGetGasEstimateForSolvency verifies the generic EVM solvency buffer formula:
 // 3 * MaxGasLimit * lastReportedGasPrice, converted from the chain gas-rate unit
 // (BASE uses mwei here) into THORChain 1e8 units.

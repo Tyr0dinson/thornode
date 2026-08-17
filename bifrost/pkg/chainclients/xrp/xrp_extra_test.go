@@ -27,12 +27,10 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
-	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
-	stypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 
 	. "gopkg.in/check.v1"
 )
@@ -150,7 +148,7 @@ func TestFromThorchainToXrpErrorPaths(t *testing.T) {
 
 func TestNewXrpBlockScanner(t *testing.T) {
 	t.Run("nil scan storage", func(t *testing.T) {
-		_, err := NewXrpBlockScanner("http://localhost", config.BifrostBlockScannerConfiguration{}, nil, nil, nil, nil)
+		_, err := NewXrpBlockScanner("http://localhost", config.BifrostBlockScannerConfiguration{}, nil, nil, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "scanStorage is nil")
 	})
@@ -280,24 +278,6 @@ func (s *ClientMethodsTestSuite) TestConfirmationCountReady(c *C) {
 func (s *ClientMethodsTestSuite) TestGetConfirmationCount(c *C) {
 	client := &Client{}
 	c.Check(client.GetConfirmationCount(types.TxIn{}), Equals, int64(0))
-}
-
-func (s *ClientMethodsTestSuite) TestShouldReportSolvency(c *C) {
-	client := &Client{
-		cfg:        config.BifrostChainConfiguration{SolvencyBlocks: 10},
-		xrpScanner: testXrpScannerWithLastFee(&XrpBlockScanner{}, sdkmath.NewUint(100)),
-	}
-
-	// height divisible by SolvencyBlocks and non-zero lastFee
-	c.Check(client.ShouldReportSolvency(10), Equals, true)
-	c.Check(client.ShouldReportSolvency(20), Equals, true)
-
-	// height not divisible
-	c.Check(client.ShouldReportSolvency(11), Equals, false)
-
-	// zero lastFee
-	client.xrpScanner.setLastFee(sdkmath.NewUint(0))
-	c.Check(client.ShouldReportSolvency(10), Equals, false)
 }
 
 func (s *ClientMethodsTestSuite) TestGetAddressError(c *C) {
@@ -754,7 +734,6 @@ func (s *XrpTestSuite) TestFetchTxsValidated(c *C) {
 		rpcClient:             rpc.NewClient(rpcCfg),
 		feeCache:              make([]sdkmath.Uint, 0),
 		globalNetworkFeeQueue: feeQueue,
-		solvencyReporter:      func(int64) error { return nil },
 	}
 
 	txIn, err := scanner.FetchTxs(100, 100)
@@ -785,7 +764,7 @@ func (s *XrpTestSuite) TestFetchTxsNotValidated(c *C) {
 }
 
 // -------------------------------------------------------------------------------------
-// FetchTxs skip network fee/solvency when far from tip
+// FetchTxs skip network fee when far from tip
 // -------------------------------------------------------------------------------------
 
 func (s *XrpTestSuite) TestFetchTxsSkipFeeUpdateWhenFarFromTip(c *C) {
@@ -802,7 +781,6 @@ func (s *XrpTestSuite) TestFetchTxsSkipFeeUpdateWhenFarFromTip(c *C) {
 	c.Assert(err, IsNil)
 
 	feeQueue := make(chan common.NetworkFee, 1)
-	solvencyReported := false
 	scanner := &XrpBlockScanner{
 		cfg: config.BifrostBlockScannerConfiguration{
 			ChainID:                      common.XRPChain,
@@ -811,17 +789,12 @@ func (s *XrpTestSuite) TestFetchTxsSkipFeeUpdateWhenFarFromTip(c *C) {
 		rpcClient:             rpc.NewClient(rpcCfg),
 		feeCache:              make([]sdkmath.Uint, 0),
 		globalNetworkFeeQueue: feeQueue,
-		solvencyReporter: func(int64) error {
-			solvencyReported = true
-			return nil
-		},
 	}
 
 	// chainHeight 200, fetchHeight 50, diff > ObservationFlexibilityBlocks
 	txIn, err := scanner.FetchTxs(50, 200)
 	c.Assert(err, IsNil)
 	c.Check(txIn.Chain, Equals, common.XRPChain)
-	c.Check(solvencyReported, Equals, false) // should not report solvency
 }
 
 // -------------------------------------------------------------------------------------
@@ -1150,21 +1123,6 @@ func (s *XrpTestSuite) TestGetAccountByAddressWithHeight(c *C) {
 	acc, err := client.GetAccountByAddress("rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ", nil)
 	c.Assert(err, IsNil)
 	c.Check(acc.Sequence, Equals, int64(10))
-}
-
-// -------------------------------------------------------------------------------------
-// ReportSolvency should not report when solvency block check fails
-// -------------------------------------------------------------------------------------
-
-func (s *ClientMethodsTestSuite) TestReportSolvencySkippedBySolvencyBlocks(c *C) {
-	client := &Client{
-		cfg:        config.BifrostChainConfiguration{ChainID: common.XRPChain, SolvencyBlocks: 10},
-		xrpScanner: &XrpBlockScanner{}, // zero lastFee
-	}
-
-	// ShouldReportSolvency returns false (lastFee is zero), so ReportSolvency should return nil
-	err := client.ReportSolvency(10)
-	c.Assert(err, IsNil)
 }
 
 // -------------------------------------------------------------------------------------
@@ -2017,220 +1975,6 @@ func (s *XrpTestSuite) TestSignMsgLocalKeyManager(c *C) {
 }
 
 // -------------------------------------------------------------------------------------
-// Mock ThorchainBridge for testing
-// -------------------------------------------------------------------------------------
-
-type mockXrpBridge struct {
-	thorclient.ThorchainBridge
-	// solvencyHalted makes the mock report the chain as solvency-halted on-chain,
-	// the only state in which ReportSolvency sends an all-solvent report.
-	solvencyHalted bool
-	asgards        stypes.Vaults
-	asgardErr      error
-}
-
-func (m *mockXrpBridge) GetAsgards() (stypes.Vaults, error) {
-	return m.asgards, m.asgardErr
-}
-
-func (m *mockXrpBridge) GetMimir(key string) (int64, error) {
-	if m.solvencyHalted && key == "SolvencyHaltXRPChain" {
-		return 1, nil
-	}
-	return 0, nil
-}
-
-func (m *mockXrpBridge) GetBlockHeight() (int64, error) {
-	return 100, nil
-}
-
-// -------------------------------------------------------------------------------------
-// ReportSolvency full path
-// -------------------------------------------------------------------------------------
-
-func (s *XrpTestSuite) TestReportSolvencyFullPath(c *C) {
-	priv, err := s.thorKeys.GetPrivateKey()
-	c.Assert(err, IsNil)
-	temp, err := cryptocodec.ToCmtPubKeyInterface(priv.PubKey())
-	c.Assert(err, IsNil)
-	vaultPubKey, err := common.NewPubKeyFromCrypto(temp)
-	c.Assert(err, IsNil)
-
-	// Set up mock RPC for GetAccountByAddress
-	accountResp := `{
-		"result": {
-			"account_data": {
-				"Flags": 0,
-				"LedgerEntryType": "AccountRoot",
-				"Account": "rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ",
-				"Balance": "5000000000",
-				"OwnerCount": 0,
-				"Sequence": 10
-			},
-			"ledger_current_index": 100,
-			"validated": false
-		}
-	}`
-
-	mc := &testutil.JSONRPCMockClient{}
-	mc.DoFunc = testutil.MockResponse(accountResp, 200, mc)
-	rpcCfg, err := rpc.NewClientConfig("http://testnode/", rpc.WithHTTPClient(mc))
-	c.Assert(err, IsNil)
-
-	vault := stypes.Vault{
-		PubKey: vaultPubKey,
-		Coins:  common.Coins{common.NewCoin(common.XRPAsset, cosmos.NewUint(5000000000))},
-	}
-
-	mockBridge := &mockXrpBridge{
-		solvencyHalted: true, // all-solvent report is only sent while the chain is solvency-halted on-chain
-		asgards:        stypes.Vaults{vault},
-	}
-
-	solvencyQueue := make(chan types.Solvency, 10)
-
-	storage, err := blockscanner.NewBlockScannerStorage("", config.LevelDBOptions{})
-	c.Assert(err, IsNil)
-
-	client := &Client{
-		cfg:                 config.BifrostChainConfiguration{ChainID: common.XRPChain, SolvencyBlocks: 10},
-		rpcClient:           rpc.NewClient(rpcCfg),
-		xrpScanner:          testXrpScannerWithLastFee(&XrpBlockScanner{}, sdkmath.NewUint(12)),
-		thorchainBridge:     mockBridge,
-		globalSolvencyQueue: solvencyQueue,
-		logger:              log.Logger,
-		blockScanner:        nil,
-	}
-
-	// Need a block scanner for IsBlockScannerHealthy check
-	scannerCfg := config.BifrostBlockScannerConfiguration{
-		ChainID:          common.XRPChain,
-		StartBlockHeight: 1,
-	}
-	xrpScanner, err := NewXrpBlockScanner("http://testnode/", scannerCfg, storage, s.bridge, s.m, client.ReportSolvency)
-	c.Assert(err, IsNil)
-	client.xrpScanner = xrpScanner
-	client.xrpScanner.setLastFee(sdkmath.NewUint(12)) // non-zero
-
-	bs, err := blockscanner.NewBlockScanner(scannerCfg, storage, s.m, s.bridge, xrpScanner)
-	c.Assert(err, IsNil)
-	client.blockScanner = bs
-
-	err = client.ReportSolvency(10)
-	c.Assert(err, IsNil)
-
-	// Check that a solvency message was sent
-	select {
-	case msg := <-solvencyQueue:
-		c.Check(msg.Height, Equals, int64(10))
-		c.Check(msg.Chain, Equals, common.XRPChain)
-	case <-time.After(time.Second):
-		c.Fatal("expected solvency message")
-	}
-}
-
-// Test ReportSolvency when GetAsgards returns error
-func (s *XrpTestSuite) TestReportSolvencyGetAsgardsError(c *C) {
-	storage, err := blockscanner.NewBlockScannerStorage("", config.LevelDBOptions{})
-	c.Assert(err, IsNil)
-
-	scannerCfg := config.BifrostBlockScannerConfiguration{
-		ChainID:          common.XRPChain,
-		StartBlockHeight: 1,
-	}
-	xrpScanner, err := NewXrpBlockScanner("http://testnode/", scannerCfg, storage, s.bridge, s.m, nil)
-	c.Assert(err, IsNil)
-	xrpScanner.setLastFee(sdkmath.NewUint(12))
-
-	bs, err := blockscanner.NewBlockScanner(scannerCfg, storage, s.m, s.bridge, xrpScanner)
-	c.Assert(err, IsNil)
-
-	mockBridge := &mockXrpBridge{
-		asgardErr: fmt.Errorf("bridge error"),
-	}
-
-	client := &Client{
-		cfg:             config.BifrostChainConfiguration{ChainID: common.XRPChain, SolvencyBlocks: 10},
-		xrpScanner:      xrpScanner,
-		thorchainBridge: mockBridge,
-		blockScanner:    bs,
-		logger:          log.Logger,
-	}
-
-	err = client.ReportSolvency(10)
-	c.Assert(err, NotNil)
-	c.Check(err.Error(), Matches, ".*bridge error.*")
-}
-
-// Test ReportSolvency when unhealthy scanner and only solvent vaults
-func (s *XrpTestSuite) TestReportSolvencyUnhealthyScannerSolvent(c *C) {
-	priv, err := s.thorKeys.GetPrivateKey()
-	c.Assert(err, IsNil)
-	temp, err := cryptocodec.ToCmtPubKeyInterface(priv.PubKey())
-	c.Assert(err, IsNil)
-	vaultPubKey, err := common.NewPubKeyFromCrypto(temp)
-	c.Assert(err, IsNil)
-
-	accountResp := `{
-		"result": {
-			"account_data": {
-				"Flags": 0,
-				"LedgerEntryType": "AccountRoot",
-				"Account": "rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ",
-				"Balance": "5000000000",
-				"OwnerCount": 0,
-				"Sequence": 10
-			},
-			"ledger_current_index": 100,
-			"validated": false
-		}
-	}`
-
-	mc := &testutil.JSONRPCMockClient{}
-	mc.DoFunc = testutil.MockResponse(accountResp, 200, mc)
-	rpcCfg, err := rpc.NewClientConfig("http://testnode/", rpc.WithHTTPClient(mc))
-	c.Assert(err, IsNil)
-
-	vault := stypes.Vault{
-		PubKey: vaultPubKey,
-		Coins:  common.Coins{common.NewCoin(common.XRPAsset, cosmos.NewUint(5000000000))},
-	}
-
-	mockBridge := &mockXrpBridge{
-		asgards: stypes.Vaults{vault},
-	}
-
-	solvencyQueue := make(chan types.Solvency, 10)
-
-	storage, err := blockscanner.NewBlockScannerStorage("", config.LevelDBOptions{})
-	c.Assert(err, IsNil)
-	scannerCfg := config.BifrostBlockScannerConfiguration{
-		ChainID:          common.XRPChain,
-		StartBlockHeight: 1,
-	}
-	xrpScanner, err := NewXrpBlockScanner("http://testnode/", scannerCfg, storage, s.bridge, s.m, nil)
-	c.Assert(err, IsNil)
-	xrpScanner.setLastFee(sdkmath.NewUint(12))
-
-	bs, err := blockscanner.NewBlockScanner(scannerCfg, storage, s.m, s.bridge, xrpScanner)
-	c.Assert(err, IsNil)
-
-	client := &Client{
-		cfg:                 config.BifrostChainConfiguration{ChainID: common.XRPChain, SolvencyBlocks: 10},
-		rpcClient:           rpc.NewClient(rpcCfg),
-		xrpScanner:          xrpScanner,
-		thorchainBridge:     mockBridge,
-		globalSolvencyQueue: solvencyQueue,
-		blockScanner:        bs,
-		logger:              log.Logger,
-	}
-
-	// Report from a height that's healthy
-	err = client.ReportSolvency(10)
-	c.Assert(err, IsNil)
-}
-
-// -------------------------------------------------------------------------------------
 // BroadcastTx test
 // -------------------------------------------------------------------------------------
 
@@ -2459,7 +2203,6 @@ func TestFetchTxsWithMockServer(t *testing.T) {
 		cfg: config.BifrostBlockScannerConfiguration{
 			ChainID: common.XRPChain,
 		},
-		solvencyReporter:      func(height int64) error { return nil },
 		globalNetworkFeeQueue: make(chan common.NetworkFee, 10),
 	}, sdkmath.NewUint(12))
 
@@ -2508,39 +2251,6 @@ func TestTxNeedsBroadcastNotFound(t *testing.T) {
 
 	// A definite txnNotFound must be distinguished from a transport error.
 	assert.Equal(t, xrpTxNotFound, client.xrpTxStatusOf("HASH1"))
-}
-
-// -------------------------------------------------------------------------------------
-// ReportSolvency - unhealthy scanner at PreviousHeight+1 should skip
-// -------------------------------------------------------------------------------------
-
-func (s *XrpTestSuite) TestReportSolvencyUnhealthyAtPrevHeight(c *C) {
-	storage, err := blockscanner.NewBlockScannerStorage("", config.LevelDBOptions{})
-	c.Assert(err, IsNil)
-
-	scannerCfg := config.BifrostBlockScannerConfiguration{
-		ChainID:          common.XRPChain,
-		StartBlockHeight: 1,
-	}
-	xrpScanner, err := NewXrpBlockScanner("http://testnode/", scannerCfg, storage, s.bridge, s.m, nil)
-	c.Assert(err, IsNil)
-	xrpScanner.setLastFee(sdkmath.NewUint(12))
-
-	bs, err := blockscanner.NewBlockScanner(scannerCfg, storage, s.m, s.bridge, xrpScanner)
-	c.Assert(err, IsNil)
-
-	client := &Client{
-		cfg:          config.BifrostChainConfiguration{ChainID: common.XRPChain, SolvencyBlocks: 1},
-		xrpScanner:   xrpScanner,
-		blockScanner: bs,
-		logger:       log.Logger,
-	}
-
-	// blockScanner starts unhealthy, PreviousHeight is start block height (1)
-	// Call with PreviousHeight+1 should skip
-	prevHeight := client.blockScanner.PreviousHeight()
-	err = client.ReportSolvency(prevHeight + 1)
-	c.Assert(err, IsNil)
 }
 
 // -------------------------------------------------------------------------------------
@@ -2617,7 +2327,6 @@ func TestNewXrpBlockScannerBadRPCHost(t *testing.T) {
 			StartBlockHeight: 1,
 		},
 		storage,
-		nil,
 		nil,
 		nil,
 	)

@@ -30,7 +30,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm/types"
 	evmtypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
-	. "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -71,7 +70,6 @@ type EVMScanner struct {
 	eipSigner             etypes.Signer
 	currentBlockHeight    stdatomic.Int64
 	gasCache              []*big.Int
-	solvencyReporter      SolvencyReporter
 	whitelistTokens       []tokenlist.ERC20Token
 	whitelistContracts    []common.Address
 	signerCacheManager    *signercache.CacheManager
@@ -90,7 +88,6 @@ func NewEVMScanner(cfg config.BifrostBlockScannerConfiguration,
 	bridge thorclient.ThorchainBridge,
 	m *metrics.Metrics,
 	pubkeyMgr pubkeymanager.PubKeyValidator,
-	solvencyReporter SolvencyReporter,
 	signerCacheManager *signercache.CacheManager,
 ) (*EVMScanner, error) {
 	// check required arguments
@@ -194,7 +191,6 @@ func NewEVMScanner(cfg config.BifrostBlockScannerConfiguration,
 		eipSigner:          etypes.NewPragueSigner(chainID),
 		pubkeyMgr:          pubkeyMgr,
 		gasCache:           make([]*big.Int, 0),
-		solvencyReporter:   solvencyReporter,
 		whitelistTokens:    whitelistTokens,
 		whitelistContracts: whitelistContracts,
 		signerCacheManager: signerCacheManager,
@@ -279,7 +275,7 @@ func (e *EVMScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 		}
 	}
 
-	// skip reporting network fee and solvency if block more than flexibility blocks from tip
+	// skip reporting network fee if block more than flexibility blocks from tip
 	if chainHeight-height > e.cfg.ObservationFlexibilityBlocks {
 		return txIn, nil
 	}

@@ -164,7 +164,7 @@ func (s *TronTestSuite) SetUpSuite(c *C) {
 	pubkeyMgr := &pubkeymanager.MockPoolAddressValidator{}
 
 	scanner, err := NewTronBlockScanner(
-		chainConfig, bridge, pubkeyMgr, func(int64) error { return nil },
+		chainConfig, bridge, pubkeyMgr,
 	)
 	c.Assert(err, IsNil)
 
@@ -604,11 +604,6 @@ func (s *TronTestSuite) TestSignFailureReturnsExactCheckpoint(c *C) {
 	c.Assert(signed, IsNil)
 	c.Assert(returnedCheckpoint, IsNil)
 	c.Assert(observation, IsNil)
-}
-
-func (s *TronTestSuite) TestShouldReportSolvency(c *C) {
-	c.Assert(s.client.ShouldReportSolvency(1), Equals, false)
-	c.Assert(s.client.ShouldReportSolvency(9570), Equals, true)
 }
 
 func (s *TronTestSuite) TestCreateTrc20Transaction(c *C) {

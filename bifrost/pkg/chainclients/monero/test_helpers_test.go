@@ -58,6 +58,8 @@ func withProductionFsync(t *testing.T) {
 	})
 }
 
+func intPtr(v int) *int { return &v }
+
 func testVaultPubKey(t *testing.T, seed string) common.PubKey {
 	t.Helper()
 	hasher := sha512.New()

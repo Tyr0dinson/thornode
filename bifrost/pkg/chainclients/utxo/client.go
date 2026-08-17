@@ -8,7 +8,6 @@ import (
 	"regexp"
 	"sync"
 	stdatomic "sync/atomic"
-	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -21,7 +20,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/runners"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
@@ -33,7 +31,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
-	"gitlab.com/thorchain/thornode/v3/constants"
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -69,7 +66,6 @@ type Client struct {
 	signerLock            *sync.Mutex
 	vaultLocks            map[string]*sync.Mutex
 	networkFeeLock        sync.Mutex
-	solvencyLock          sync.Mutex
 	consolidateInProgress stdatomic.Bool
 
 	// ---------- scanner ----------
@@ -78,7 +74,6 @@ type Client struct {
 
 	// ---------- control ----------
 	globalErrataQueue     chan<- types.ErrataBlock
-	globalSolvencyQueue   chan<- types.Solvency
 	globalNetworkFeeQueue chan<- common.NetworkFee
 	stopchan              chan struct{}
 	currentBlockHeight    stdatomic.Int64
@@ -88,10 +83,9 @@ type Client struct {
 	asgardCache stdatomic.Pointer[utxo.AsgardCache]
 
 	// ---------- fees / solvency ----------
-	minRelayFeeSats         stdatomic.Uint64
-	lastFeeRate             stdatomic.Uint64
-	feeRateCache            []uint64
-	lastSolvencyCheckHeight stdatomic.Int64
+	minRelayFeeSats stdatomic.Uint64
+	lastFeeRate     stdatomic.Uint64
+	feeRateCache    []uint64
 
 	// ---------- testing ----------
 	disableVinZeroBatch bool
@@ -279,7 +273,7 @@ func (c *Client) GetAddress(pubkey common.PubKey) string {
 // Client - Control
 ////////////////////////////////////////////////////////////////////////////////////////
 
-// Start starts the scanner, signer, and solvency check.
+// Start starts the scanner and signer.
 func (c *Client) Start(
 	globalTxsQueue chan types.TxIn,
 	globalErrataQueue chan types.ErrataBlock,
@@ -292,7 +286,7 @@ func (c *Client) Start(
 	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue, reporterDispatcher)
 }
 
-// Stop stops the scanner, signer, and solvency check.
+// Stop stops the scanner and signer.
 func (c *Client) Stop() {
 	c.blockScanner.Stop()
 	c.tssKeySigner.Stop()
@@ -511,7 +505,7 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 
 	c.updateNetworkInfo()
 
-	// report network fee and solvency if within flexibility blocks of tip
+	// report network fee if within flexibility blocks of tip
 	if chainHeight-height <= c.cfg.BlockScanner.ObservationFlexibilityBlocks {
 		switch c.cfg.ChainID {
 		case common.DOGEChain, common.ZECChain:
@@ -524,7 +518,6 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 		if err != nil {
 			c.log.Err(err).Msg("fail to send network fee")
 		}
-		// solvency reporting handled by reporter dispatcher
 	}
 
 	// consolidate UTXOs if there is not one in progress
@@ -741,135 +734,4 @@ func (c *Client) GetGasEstimateForSolvency() cosmos.Uint {
 		txSize = 1 // ZEC lastFeeRate is already the full ZIP-317 fee, not a per-byte rate
 	}
 	return cosmos.NewUint(3 * txSize * c.lastFeeRate.Load())
-}
-
-// ShouldReportSolvency is the legacy solvency flow retained for reviewer comparison.
-//
-//nolint:unused
-func (c *Client) ShouldReportSolvency(height int64) bool {
-	return c.shouldReportSolvency(height)
-}
-
-func (c *Client) shouldReportSolvency(height int64) bool {
-	lastHeight := c.lastSolvencyCheckHeight.Load()
-	if height-lastHeight <= 1 {
-		return false
-	}
-
-	switch c.cfg.ChainID {
-	case common.DOGEChain, common.ZECChain:
-		return height%10 == 0
-	case common.BCHChain, common.BTCChain:
-		return true
-	case common.LTCChain:
-		return height-lastHeight > 5 && height%5 == 0
-	default:
-		c.log.Fatal().Msg("unsupported chain")
-		return false
-	}
-}
-
-// ReportSolvency reports solvency for all asgard vaults.
-// ReportSolvency is the legacy solvency flow retained for reviewer comparison.
-//
-//nolint:unused
-func (c *Client) ReportSolvency(height int64) error {
-	c.solvencyLock.Lock()
-	defer c.solvencyLock.Unlock()
-
-	if !c.shouldReportSolvency(height) {
-		return nil
-	}
-
-	// fetch all asgard vaults
-	asgardVaults, err := c.bridge.GetAsgards()
-	if err != nil {
-		return fmt.Errorf("fail to get asgards: %w", err)
-	}
-
-	txSize := c.cfg.UTXO.EstimatedAverageTxSize
-	if c.GetChain() == common.ZECChain {
-		txSize = 1 // ZEC lastFeeRate is already the full ZIP-317 fee, not a per-byte rate
-	}
-	currentGasFee := cosmos.NewUint(3 * txSize * c.lastFeeRate.Load())
-
-	// report insolvent asgard vaults,
-	// or else all if the chain is halted and all are solvent
-	chainVaults := asgardVaults[:0]
-	for _, asgard := range asgardVaults {
-		if asgard.HasFundsForChain(c.cfg.ChainID) {
-			chainVaults = append(chainVaults, asgard)
-		}
-	}
-
-	msgs := make([]types.Solvency, 0, len(chainVaults))
-	solventMsgs := make([]types.Solvency, 0, len(chainVaults))
-	processedVaults := 0
-	for i := range chainVaults {
-		var acct common.Account
-		acct, err = c.GetAccount(chainVaults[i].PubKey, nil)
-		if err != nil {
-			c.log.Err(err).Msgf("fail to get account balance")
-			continue
-		}
-
-		msg := types.Solvency{
-			Height: height,
-			Chain:  c.cfg.ChainID,
-			PubKey: chainVaults[i].PubKey,
-			Coins:  acct.Coins,
-		}
-		processedVaults++
-
-		if runners.IsVaultSolvent(c.cfg.ChainID, acct, chainVaults[i], currentGasFee) {
-			solventMsgs = append(solventMsgs, msg) // Solvent-vault message
-			continue
-		}
-		msgs = append(msgs, msg) // Insolvent-vault message
-	}
-
-	// Only if THORChain itself has this chain halted or solvency-halted, this node's block scanner
-	// is paused for it (unhealthy), and all chain-specific vaults are solvent, report that all the
-	// chain-specific vaults are solvent. That "all clear" exists to lift a network SolvencyHalt
-	// (see SolvencyCheckRunner), so the network's halt state is the gate, not this node's own
-	// block-scanner health: a scanner that is unhealthy for a local reason (RPC trouble, a stalled
-	// fetch) must stay silent here, because an all-clear only one node sends can never reach
-	// consensus and each one costs that node an unrefunded observation slash point. The paused
-	// scanner is still required alongside the halt: the scanner re-reads the pause mimirs only once
-	// per THORChain block, and reads a mimir error as not paused, so just after a halt takes effect
-	// a healthy scanner can still reach here from the scan path. Its all-clear would carry the
-	// scanned height rather than the runner's, a different voter, and so would be a lone vote too.
-	// On a bridge error stay silent; the runner retries.
-	// If there are any insolvent vaults, report only them.
-	// Not reporting both solvent and insolvent vaults is to avoid noise (spam):
-	// Reporting both could halt-and-unhalt SolvencyHalt in the same THOR block
-	// (resetting its height), plus making it harder to know at a glance from solvency reports which vaults were insolvent.
-	solvent := false
-	allVaultsProcessed := len(chainVaults) > 0 && processedVaults == len(chainVaults)
-	halted, haltErr := runners.IsHaltedOnChain(c.bridge, c.cfg.ChainID)
-	if haltErr != nil {
-		c.log.Err(haltErr).Msg("fail to read chain halt state, skipping solvency all-clear")
-	}
-	if halted && !c.IsBlockScannerHealthy() && allVaultsProcessed && len(solventMsgs) == processedVaults {
-		msgs = solventMsgs
-		solvent = true
-	}
-
-	for i := range msgs {
-		c.log.Info().
-			Stringer("asgard", msgs[i].PubKey).
-			Interface("coins", msgs[i].Coins).
-			Bool("solvent", solvent).
-			Msg("reporting solvency")
-
-		// send solvency to thorchain via global queue consumed by the observer
-		select {
-		case c.globalSolvencyQueue <- msgs[i]:
-		case <-time.After(constants.ThorchainBlockTime):
-			c.log.Warn().Msgf("timeout sending solvency to thorchain")
-		}
-	}
-
-	c.lastSolvencyCheckHeight.Store(height)
-	return nil
 }

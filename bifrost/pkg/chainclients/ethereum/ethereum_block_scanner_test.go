@@ -214,26 +214,23 @@ func (s *BlockScannerTestSuite) TestNewBlockScanner(c *C) {
 	defer ethClient.Close()
 	pubKeyManager, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
-	solvencyReporter := func(height int64) error {
-		return nil
-	}
-	bs, err := NewETHScanner(getConfigForTest(), nil, big.NewInt(int64(Mainnet)), ethClient, s.bridge, s.m, pubKeyManager, solvencyReporter, nil)
+	bs, err := NewETHScanner(getConfigForTest(), nil, big.NewInt(int64(Mainnet)), ethClient, s.bridge, s.m, pubKeyManager, nil)
 	c.Assert(err, NotNil)
 	c.Assert(bs, IsNil)
 
-	bs, err = NewETHScanner(getConfigForTest(), storage, big.NewInt(int64(Mainnet)), ethClient, s.bridge, nil, pubKeyManager, solvencyReporter, nil)
+	bs, err = NewETHScanner(getConfigForTest(), storage, big.NewInt(int64(Mainnet)), ethClient, s.bridge, nil, pubKeyManager, nil)
 	c.Assert(err, NotNil)
 	c.Assert(bs, IsNil)
 
-	bs, err = NewETHScanner(getConfigForTest(), storage, big.NewInt(int64(Mainnet)), nil, s.bridge, s.m, pubKeyManager, solvencyReporter, nil)
+	bs, err = NewETHScanner(getConfigForTest(), storage, big.NewInt(int64(Mainnet)), nil, s.bridge, s.m, pubKeyManager, nil)
 	c.Assert(err, NotNil)
 	c.Assert(bs, IsNil)
 
-	bs, err = NewETHScanner(getConfigForTest(), storage, big.NewInt(int64(Mainnet)), ethClient, s.bridge, s.m, nil, solvencyReporter, nil)
+	bs, err = NewETHScanner(getConfigForTest(), storage, big.NewInt(int64(Mainnet)), ethClient, s.bridge, s.m, nil, nil)
 	c.Assert(err, NotNil)
 	c.Assert(bs, IsNil)
 
-	bs, err = NewETHScanner(getConfigForTest(), storage, big.NewInt(int64(Mainnet)), ethClient, s.bridge, s.m, pubKeyManager, solvencyReporter, nil)
+	bs, err = NewETHScanner(getConfigForTest(), storage, big.NewInt(int64(Mainnet)), ethClient, s.bridge, s.m, pubKeyManager, nil)
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
 }
@@ -320,9 +317,7 @@ func (s *BlockScannerTestSuite) TestProcessBlock(c *C) {
 		c.Assert(pubKeyMgr.Stop(), IsNil)
 	}()
 
-	bs, err := NewETHScanner(getConfigForTest(), storage, big.NewInt(1337), ethClient, bridge, s.m, pubKeyMgr, func(height int64) error {
-		return nil
-	}, nil)
+	bs, err := NewETHScanner(getConfigForTest(), storage, big.NewInt(1337), ethClient, bridge, s.m, pubKeyMgr, nil)
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
 	bs.globalNetworkFeeQueue = make(chan thorcommon.NetworkFee, 1)
@@ -485,9 +480,7 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 		c.Assert(pkeyMgr.Stop(), IsNil)
 	}()
 	c.Assert(err, IsNil)
-	bs, err := NewETHScanner(getConfigForTest(), storage, big.NewInt(int64(Mainnet)), ethClient, bridge, s.m, pkeyMgr, func(height int64) error {
-		return nil
-	}, nil)
+	bs, err := NewETHScanner(getConfigForTest(), storage, big.NewInt(int64(Mainnet)), ethClient, bridge, s.m, pkeyMgr, nil)
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
 	bs.globalNetworkFeeQueue = make(chan thorcommon.NetworkFee, 1)
@@ -534,9 +527,7 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 		true,
 	)
 
-	bs, err = NewETHScanner(getConfigForTest(), storage, big.NewInt(1337), ethClient, bridge, s.m, pkeyMgr, func(height int64) error {
-		return nil
-	}, nil)
+	bs, err = NewETHScanner(getConfigForTest(), storage, big.NewInt(1337), ethClient, bridge, s.m, pkeyMgr, nil)
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
 	bs.globalNetworkFeeQueue = make(chan thorcommon.NetworkFee, 1)
@@ -559,9 +550,7 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 	c.Assert(txInItem.Coins[0].Asset.String(), Equals, "ETH.TKN-0X3B7FA4DD21C6F9BA3CA375217EAD7CAB9D6BF483")
 	c.Assert(txInItem.Coins[0].Amount.Equal(cosmos.NewUint(500000000)), Equals, true)
 
-	bs, err = NewETHScanner(getConfigForTest(), storage, big.NewInt(1337), ethClient, bridge, s.m, pkeyMgr, func(height int64) error {
-		return nil
-	}, nil)
+	bs, err = NewETHScanner(getConfigForTest(), storage, big.NewInt(1337), ethClient, bridge, s.m, pkeyMgr, nil)
 	// whitelist the address for test
 	whitelistSmartContractAddress = append(whitelistSmartContractAddress,
 		"0xe65e9d372f8cacc7b6dfcd4af6507851ed31bb44",
@@ -626,9 +615,7 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 	c.Logf("======> %+v \n", txInItem)
 	c.Assert(txInItem.Coins[0].Amount.Equal(cosmos.NewUint(124950975)), Equals, true)
 
-	bs, err = NewETHScanner(getConfigForTest(), storage, big.NewInt(int64(Mainnet)), ethClient, bridge, s.m, pkeyMgr, func(height int64) error {
-		return nil
-	}, nil)
+	bs, err = NewETHScanner(getConfigForTest(), storage, big.NewInt(int64(Mainnet)), ethClient, bridge, s.m, pkeyMgr, nil)
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
 
@@ -982,9 +969,7 @@ func (s *BlockScannerTestSuite) TestRouterValidation(c *C) {
 	defer func() { c.Assert(pkeyMgr.Stop(), IsNil) }()
 	c.Assert(err, IsNil)
 
-	bs, err := NewETHScanner(getConfigForTest(), storage, big.NewInt(1337), ethClient, bridge, s.m, pkeyMgr, func(height int64) error {
-		return nil
-	}, nil)
+	bs, err := NewETHScanner(getConfigForTest(), storage, big.NewInt(1337), ethClient, bridge, s.m, pkeyMgr, nil)
 	c.Assert(err, IsNil)
 
 	// Ensure both router addresses pass the log parser's address validator.
@@ -1121,9 +1106,7 @@ func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 	defer func() {
 		c.Assert(pkeyMgr.Stop(), IsNil)
 	}()
-	bs, err := NewETHScanner(getConfigForTest(), storage, big.NewInt(int64(Mainnet)), ethClient, s.bridge, s.m, pkeyMgr, func(height int64) error {
-		return nil
-	}, nil)
+	bs, err := NewETHScanner(getConfigForTest(), storage, big.NewInt(int64(Mainnet)), ethClient, s.bridge, s.m, pkeyMgr, nil)
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
 	bs.globalNetworkFeeQueue = make(chan thorcommon.NetworkFee, 1)
@@ -1182,11 +1165,8 @@ func (s *BlockScannerTestSuite) TestGasPrice(c *C) {
 	defer ethClient.Close()
 	pubKeyManager, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
-	solvencyReporter := func(height int64) error {
-		return nil
-	}
 	conf := getConfigForTest()
-	bs, err := NewETHScanner(conf, storage, big.NewInt(int64(Mainnet)), ethClient, s.bridge, s.m, pubKeyManager, solvencyReporter, nil)
+	bs, err := NewETHScanner(conf, storage, big.NewInt(int64(Mainnet)), ethClient, s.bridge, s.m, pubKeyManager, nil)
 	c.Assert(err, IsNil)
 	c.Assert(bs, NotNil)
 	bs.globalNetworkFeeQueue = make(chan thorcommon.NetworkFee, 1)

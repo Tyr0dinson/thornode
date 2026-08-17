@@ -474,9 +474,6 @@ func TestEnsureConsolidationStateInitializesZeroValueClient(t *testing.T) {
 	if client.lastConsolidationHeight == nil {
 		t.Fatal("expected lastConsolidationHeight to be initialized")
 	}
-	if client.lastSolvencyCheckHeight == nil {
-		t.Fatal("expected lastSolvencyCheckHeight to be initialized")
-	}
 	if client.vaultLocks == nil {
 		t.Fatal("expected vaultLocks to be initialized")
 	}

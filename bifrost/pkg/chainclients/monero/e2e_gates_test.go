@@ -10,13 +10,10 @@ import (
 	"testing"
 
 	"github.com/rs/zerolog/log"
-	"go.uber.org/atomic"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
-	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
-	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -70,29 +67,6 @@ func (b *scannerMemoBridge) GetReferenceMemoByTxHash(hash string) (string, error
 		return "", err
 	}
 	return b.memoByTx[hash], nil
-}
-
-type solvencyBridge struct {
-	thorclient.ThorchainBridge
-	// solvencyHalted makes the mock report XMR as solvency-halted on-chain, the
-	// only state in which ReportSolvency sends an all-solvent report.
-	solvencyHalted bool
-	asgards        ttypes.Vaults
-}
-
-func (b *solvencyBridge) GetAsgards() (ttypes.Vaults, error) {
-	return b.asgards, nil
-}
-
-func (b *solvencyBridge) GetMimir(key string) (int64, error) {
-	if b.solvencyHalted && key == "SolvencyHaltXMRChain" {
-		return 1, nil
-	}
-	return 0, nil
-}
-
-func (b *solvencyBridge) GetBlockHeight() (int64, error) {
-	return 100, nil
 }
 
 // newFrostTransfersServer creates a mock frost signer server that returns
@@ -335,87 +309,5 @@ func TestXMRScannerOutgoingMemolessDeferredAttribution(t *testing.T) {
 	}
 	if !item.ObservedVaultPubKey.Equals(vaultPubKey) {
 		t.Fatalf("expected observed vault pubkey %s, got %s", vaultPubKey, item.ObservedVaultPubKey)
-	}
-}
-
-func TestXMRReportSolvencyMultiVaultAccounting(t *testing.T) {
-	t.Parallel()
-
-	pkA, addrA := testVaultPubKeyAndAddress(t)
-	pkB, addrB := testVaultPubKeyAndAddress(t)
-	addrAString := addrA.String()
-	addrBString := addrB.String()
-	addrA, err := common.NewAddress(addrAString)
-	if err != nil {
-		t.Fatalf("new address A: %v", err)
-	}
-	addrB, err = common.NewAddress(addrBString)
-	if err != nil {
-		t.Fatalf("new address B: %v", err)
-	}
-
-	asgardVaults := ttypes.Vaults{
-		{
-			PubKeyEddsa: pkA,
-			PubKey:      pkA,
-			PubKeyFrost: pkA,
-			Coins: common.NewCoins(
-				common.NewCoin(common.XMRAsset, cosmos.NewUint(100)),
-			),
-		},
-		{
-			PubKeyEddsa: pkB,
-			PubKey:      pkB,
-			PubKeyFrost: pkB,
-			Coins: common.NewCoins(
-				common.NewCoin(common.XMRAsset, cosmos.NewUint(500)),
-			),
-		},
-	}
-
-	// Mock frost signer that returns balance by vault pub key
-	balanceByPK := map[string]sidecar.Balance{
-		pkA.String(): {Balance: 100 * moneroAtomicToThorchain, UnlockedBalance: 100 * moneroAtomicToThorchain, ReconciliationState: "reconciled", PendingOutgoingCount: intPtr(0)},
-		pkB.String(): {Balance: 10 * moneroAtomicToThorchain, UnlockedBalance: 10 * moneroAtomicToThorchain, ReconciliationState: "reconciled", PendingOutgoingCount: intPtr(0)},
-	}
-	balanceServer := newFrostBalanceServer(t, balanceByPK)
-	defer balanceServer.Close()
-
-	cfg := config.BifrostChainConfiguration{}
-	frostSigner, err := sidecar.NewClientWithEndpoint(cfg, balanceServer.URL)
-	if err != nil {
-		t.Fatalf("new frost signer: %v", err)
-	}
-
-	queue := make(chan stypes.Solvency, 4)
-	c := &Client{
-		logger:                  log.Logger,
-		cfg:                     config.BifrostChainConfiguration{SolvencyBlocks: 10},
-		chain:                   common.XMRChain,
-		thorchainBridge:         &solvencyBridge{asgards: asgardVaults},
-		scanner:                 &Scanner{lastFee: atomic.NewUint64(10)},
-		sidecar:                 frostSigner,
-		globalSolvencyQueue:     queue,
-		vaultAddressMap:         map[string]common.Address{pkA.String(): addrA, pkB.String(): addrB},
-		lastSolvencyCheckHeight: atomic.NewInt64(0),
-	}
-
-	if err := c.ReportSolvency(10); err != nil {
-		t.Fatalf("report solvency: %v", err)
-	}
-	if len(queue) != 1 {
-		t.Fatalf("expected one insolvency message, got %d", len(queue))
-	}
-
-	msg := <-queue
-	if !msg.PubKey.Equals(pkB) {
-		t.Fatalf("expected insolvent vault pubkey %s, got %s", pkB, msg.PubKey)
-	}
-	xmrCoin := msg.Coins.GetCoin(common.XMRAsset)
-	if xmrCoin.Amount.Uint64() != 10 {
-		t.Fatalf("expected insolvent vault accounting amount 10 XMR, got %s", xmrCoin.Amount.String())
-	}
-	if c.lastSolvencyCheckHeight.Load() != 10 {
-		t.Fatalf("expected last solvency check height 10, got %d", c.lastSolvencyCheckHeight.Load())
 	}
 }

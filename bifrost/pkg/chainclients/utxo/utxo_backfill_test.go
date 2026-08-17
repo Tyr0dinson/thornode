@@ -199,7 +199,8 @@ func (s *CoverageBackfillSuite) SetUpTest(c *C) {
 	netFeeQueue := make(chan common.NetworkFee, 100)
 	s.client.globalNetworkFeeQueue = netFeeQueue
 	s.client.globalErrataQueue = make(chan stypes.ErrataBlock, 10)
-	s.client.globalSolvencyQueue = make(chan stypes.Solvency, 10)
+	c.Assert(err, IsNil)
+	c.Assert(s.client, NotNil)
 }
 
 func (s *CoverageBackfillSuite) TearDownTest(_ *C) {
@@ -350,38 +351,6 @@ func (s *CoverageBackfillSuite) TestGetLatestTxForVault(c *C) {
 		c.Assert(lastObserved, Equals, "")
 		c.Assert(lastBroadcast, Equals, "")
 	}
-}
-
-func (s *CoverageBackfillSuite) TestShouldReportSolvency(c *C) {
-	// Same height should return false
-	s.client.lastSolvencyCheckHeight.Store(100)
-	c.Assert(s.client.ShouldReportSolvency(101), Equals, false)
-
-	// BTC chain: always true if height is past 1
-	s.client.lastSolvencyCheckHeight.Store(98)
-	c.Assert(s.client.ShouldReportSolvency(100), Equals, true)
-
-	// DOGE chain: only on height % 10 == 0
-	s.client.cfg.ChainID = common.DOGEChain
-	s.client.lastSolvencyCheckHeight.Store(8)
-	c.Assert(s.client.ShouldReportSolvency(10), Equals, true)
-	c.Assert(s.client.ShouldReportSolvency(11), Equals, false)
-
-	// LTC chain: height difference > 5 and height % 5 == 0
-	s.client.cfg.ChainID = common.LTCChain
-	s.client.lastSolvencyCheckHeight.Store(0)
-	c.Assert(s.client.ShouldReportSolvency(10), Equals, true)
-	c.Assert(s.client.ShouldReportSolvency(11), Equals, false)
-	s.client.lastSolvencyCheckHeight.Store(9)
-	c.Assert(s.client.ShouldReportSolvency(10), Equals, false) // diff <= 1 (early return)
-
-	// BCH chain
-	s.client.cfg.ChainID = common.BCHChain
-	s.client.lastSolvencyCheckHeight.Store(8)
-	c.Assert(s.client.ShouldReportSolvency(10), Equals, true)
-
-	// Restore
-	s.client.cfg.ChainID = common.BTCChain
 }
 
 func (s *CoverageBackfillSuite) TestConfirmationCountReady(c *C) {
@@ -1153,91 +1122,6 @@ func (s *CoverageBackfillSuite) TestGetOutput(c *C) {
 	}
 	_, err := s.client.getOutput("sender", tx, false)
 	c.Assert(err, NotNil)
-}
-
-func (s *CoverageBackfillSuite) TestReportSolvency(c *C) {
-	s.client.lastSolvencyCheckHeight.Store(0)
-	// The asgard fixture uses tthorpub1 (testnet) keys which only work on mocknet.
-	// On mainnet builds, GetAsgards will fail to unmarshal the keys.
-	err := s.client.ReportSolvency(100)
-	if common.CurrentChainNetwork == common.MockNet {
-		c.Assert(err, IsNil)
-	} else {
-		c.Assert(err, NotNil)
-	}
-}
-
-// solvencyGateBridge serves a fixed asgard list and the chain's on-chain halt
-// state, delegating everything else to the suite's bridge.
-type solvencyGateBridge struct {
-	thorclient.ThorchainBridge
-	asgards        ttypes.Vaults
-	solvencyHalted bool
-	mimirErr       error
-}
-
-func (b *solvencyGateBridge) GetAsgards() (ttypes.Vaults, error) {
-	return b.asgards, nil
-}
-
-func (b *solvencyGateBridge) GetMimir(key string) (int64, error) {
-	if b.mimirErr != nil {
-		return 0, b.mimirErr
-	}
-	if b.solvencyHalted && key == "SolvencyHaltBTCChain" {
-		return 1, nil
-	}
-	return 0, nil
-}
-
-func (b *solvencyGateBridge) GetBlockHeight() (int64, error) {
-	return 100, nil
-}
-
-// reportSolventVault runs ReportSolvency against one BTC vault the listunspent
-// fixture (25.02 BTC) covers, with the client's block scanner unhealthy as it
-// is when not yet started, and returns what was queued.
-func (s *CoverageBackfillSuite) reportSolventVault(c *C, bridge *solvencyGateBridge) (ttypes.Vault, []stypes.Solvency) {
-	vault := ttypes.Vault{
-		PubKey: ttypes.GetRandomPubKey(),
-		Coins:  common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(100_000_000))),
-	}
-	bridge.ThorchainBridge = s.bridge
-	bridge.asgards = ttypes.Vaults{vault}
-	s.client.bridge = bridge
-	queue := make(chan stypes.Solvency, 10)
-	s.client.globalSolvencyQueue = queue
-	s.client.lastSolvencyCheckHeight.Store(0)
-	c.Assert(s.client.IsBlockScannerHealthy(), Equals, false)
-
-	c.Assert(s.client.ReportSolvency(100), IsNil)
-	close(queue)
-	var queued []stypes.Solvency
-	for msg := range queue {
-		queued = append(queued, msg)
-	}
-	return vault, queued
-}
-
-// The halted, paused case sends the all-clear; the cases below differ from it
-// only in the halt state, so their silence is the gate's doing.
-func (s *CoverageBackfillSuite) TestReportSolvencyAllClearWhenHaltedOnChain(c *C) {
-	vault, queued := s.reportSolventVault(c, &solvencyGateBridge{solvencyHalted: true})
-	c.Assert(queued, HasLen, 1)
-	c.Assert(queued[0].PubKey.Equals(vault.PubKey), Equals, true)
-}
-
-// An unhealthy scanner on a chain THORChain has not halted is a local fault:
-// no other node would send the all-clear, so this one must not.
-func (s *CoverageBackfillSuite) TestReportSolvencyNoAllClearWhenNotHaltedOnChain(c *C) {
-	_, queued := s.reportSolventVault(c, &solvencyGateBridge{})
-	c.Assert(queued, HasLen, 0)
-}
-
-// When the halt state cannot be read, stay silent rather than guess.
-func (s *CoverageBackfillSuite) TestReportSolvencyNoAllClearWhenHaltStateUnreadable(c *C) {
-	_, queued := s.reportSolventVault(c, &solvencyGateBridge{solvencyHalted: true, mimirErr: fmt.Errorf("bridge unavailable")})
-	c.Assert(queued, HasLen, 0)
 }
 
 func (s *CoverageBackfillSuite) TestRegisterPublicKey(c *C) {

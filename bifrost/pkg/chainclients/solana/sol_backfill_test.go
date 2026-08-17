@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -81,7 +80,7 @@ func (s *BackfillSuite) newScannerWithServer(c *C, serverURL string) (*SOLScanne
 
 	cfg := getConfigForTest(serverURL)
 	rpcClient := rpc.NewSolRPC(serverURL, cfg.HTTPRequestTimeout)
-	scanner, err := NewSOLScanner(make(chan struct{}), cfg, storage, s.bridge, s.m, rpcClient, pubKeyMgr, nil, scm)
+	scanner, err := NewSOLScanner(make(chan struct{}), cfg, storage, s.bridge, s.m, rpcClient, pubKeyMgr, scm)
 	c.Assert(err, IsNil)
 	return scanner, scm
 }
@@ -114,38 +113,6 @@ func makeSolRPCServer(c *C, handlers map[string]string) *httptest.Server {
 	}))
 }
 
-type mockSOLSolvencyBridge struct {
-	thorclient.ThorchainBridge
-	// solvencyHalted makes the mock report the chain as solvency-halted on-chain,
-	// the only state in which ReportSolvency sends an all-solvent report.
-	solvencyHalted bool
-	// mimirErr makes every mimir read fail, as when the bridge is unavailable.
-	mimirErr error
-	asgards  types2.Vaults
-}
-
-func (m *mockSOLSolvencyBridge) GetAsgards() (types2.Vaults, error) {
-	// Return a fresh copy per call, matching production (GetAsgards deserializes a
-	// new slice each time). ReportSolvency filters asgards in place via asgards[:0],
-	// so handing one shared backing array to concurrent callers would race in tests
-	// even though production never does.
-	return append(types2.Vaults(nil), m.asgards...), nil
-}
-
-func (m *mockSOLSolvencyBridge) GetMimir(key string) (int64, error) {
-	if m.mimirErr != nil {
-		return 0, m.mimirErr
-	}
-	if m.solvencyHalted && key == "SolvencyHaltSOLChain" {
-		return 1, nil
-	}
-	return 0, nil
-}
-
-func (m *mockSOLSolvencyBridge) GetBlockHeight() (int64, error) {
-	return 100, nil
-}
-
 // -------------------------------------------------------------------------
 // NewSOLScanner error paths
 // -------------------------------------------------------------------------
@@ -154,7 +121,7 @@ func (s *BackfillSuite) TestNewSOLScannerNilStorage(c *C) {
 	rpcClient := rpc.NewSolRPC("http://localhost", time.Second)
 	pubKeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
-	_, err = NewSOLScanner(make(chan struct{}), config.BifrostBlockScannerConfiguration{}, nil, s.bridge, s.m, rpcClient, pubKeyMgr, nil, nil)
+	_, err = NewSOLScanner(make(chan struct{}), config.BifrostBlockScannerConfiguration{}, nil, s.bridge, s.m, rpcClient, pubKeyMgr, nil)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, "storage is nil")
 }
@@ -165,7 +132,7 @@ func (s *BackfillSuite) TestNewSOLScannerNilMetrics(c *C) {
 	pubKeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
 	rpcClient := rpc.NewSolRPC("http://localhost", time.Second)
-	_, err = NewSOLScanner(make(chan struct{}), config.BifrostBlockScannerConfiguration{}, storage, s.bridge, nil, rpcClient, pubKeyMgr, nil, nil)
+	_, err = NewSOLScanner(make(chan struct{}), config.BifrostBlockScannerConfiguration{}, storage, s.bridge, nil, rpcClient, pubKeyMgr, nil)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, "metrics manager is nil")
 }
@@ -174,7 +141,7 @@ func (s *BackfillSuite) TestNewSOLScannerNilPubKeyMgr(c *C) {
 	storage, err := blockscanner.NewBlockScannerStorageSolana("", config.LevelDBOptions{})
 	c.Assert(err, IsNil)
 	rpcClient := rpc.NewSolRPC("http://localhost", time.Second)
-	_, err = NewSOLScanner(make(chan struct{}), config.BifrostBlockScannerConfiguration{}, storage, s.bridge, s.m, rpcClient, nil, nil, nil)
+	_, err = NewSOLScanner(make(chan struct{}), config.BifrostBlockScannerConfiguration{}, storage, s.bridge, s.m, rpcClient, nil, nil)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, "pubkey manager is nil")
 }
@@ -204,7 +171,7 @@ func (s *BackfillSuite) TestScannerGetHeightError(c *C) {
 	pubKeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
 	cfg := getConfigForTest("http://localhost:1")
-	scanner, err := NewSOLScanner(make(chan struct{}), cfg, storage, s.bridge, s.m, rpcClient, pubKeyMgr, nil, scm)
+	scanner, err := NewSOLScanner(make(chan struct{}), cfg, storage, s.bridge, s.m, rpcClient, pubKeyMgr, scm)
 	c.Assert(err, IsNil)
 
 	_, err = scanner.GetHeight()
@@ -853,56 +820,6 @@ func (s *ClientBackfillSuite) TestGetLatestTxForVault(c *C) {
 }
 
 // -------------------------------------------------------------------------
-// ShouldReportSolvency
-// -------------------------------------------------------------------------
-
-func (s *ClientBackfillSuite) TestShouldReportSolvency(c *C) {
-	server := makeSolRPCServer(c, map[string]string{
-		"getSlot": `{"jsonrpc":"2.0","result":1,"id":1}`,
-	})
-	defer server.Close()
-	client := s.makeClient(c, server)
-
-	// SolvencyBlocks = 10
-	c.Assert(client.ShouldReportSolvency(0), Equals, false)
-
-	// fee must be initialized before solvency reports are meaningful
-	c.Assert(client.ShouldReportSolvency(11), Equals, false)
-	client.solScanner.lastFeeRate.Store(5_000)
-
-	// solvencySlotMultiple is 0, so threshold is (0+1)*10 = 10
-	c.Assert(client.ShouldReportSolvency(11), Equals, true)
-	c.Assert(client.ShouldReportSolvency(10), Equals, false)
-
-	// test with SolvencyBlocks = 0
-	client.cfg.SolvencyBlocks = 0
-	c.Assert(client.ShouldReportSolvency(100), Equals, false)
-
-	// negative
-	client.cfg.SolvencyBlocks = -1
-	c.Assert(client.ShouldReportSolvency(100), Equals, false)
-}
-
-func (s *ClientBackfillSuite) TestNextSolvencyReportSlotMultiple(c *C) {
-	server := makeSolRPCServer(c, map[string]string{
-		"getSlot": `{"jsonrpc":"2.0","result":1,"id":1}`,
-	})
-	defer server.Close()
-	client := s.makeClient(c, server)
-	client.cfg.SolvencyBlocks = 50
-	client.solScanner.lastFeeRate.Store(1)
-
-	c.Assert(client.nextSolvencyReportSlotMultiple(50), Equals, int64(0))
-	c.Assert(client.nextSolvencyReportSlotMultiple(51), Equals, int64(1))
-	c.Assert(client.nextSolvencyReportSlotMultiple(260), Equals, int64(5))
-
-	client.solvencySlotMultiple = 2
-	c.Assert(client.nextSolvencyReportSlotMultiple(150), Equals, int64(2))
-	c.Assert(client.nextSolvencyReportSlotMultiple(151), Equals, int64(3))
-	c.Assert(client.nextSolvencyReportSlotMultiple(260), Equals, int64(3))
-}
-
-// -------------------------------------------------------------------------
 // BroadcastTx
 // -------------------------------------------------------------------------
 
@@ -1160,320 +1077,6 @@ func (s *ClientBackfillSuite) TestCreateTxDeterministicForFixedBlockhash(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(fmt.Sprintf("%x", b1) == fmt.Sprintf("%x", b3), Equals, false)
 }
-
-// -------------------------------------------------------------------------
-// ReportSolvency
-// -------------------------------------------------------------------------
-
-func (s *ClientBackfillSuite) TestReportSolvencyNotTime(c *C) {
-	server := makeSolRPCServer(c, map[string]string{
-		"getSlot": `{"jsonrpc":"2.0","result":1,"id":1}`,
-	})
-	defer server.Close()
-	client := s.makeClient(c, server)
-
-	// height 0 should not report
-	err := client.ReportSolvency(0)
-	c.Assert(err, IsNil)
-}
-
-func (s *ClientBackfillSuite) TestReportSolvencyUnhealthyScannerSameHeight(c *C) {
-	server := makeSolRPCServer(c, map[string]string{
-		"getSlot":    `{"jsonrpc":"2.0","result":1,"id":1}`,
-		"getBalance": `{"jsonrpc":"2.0","result":{"context":{"slot":1},"value":1000000000},"id":1}`,
-	})
-	defer server.Close()
-	client := s.makeClient(c, server)
-	client.globalSolvencyQueue = make(chan stypes.Solvency, 10)
-
-	// Unhealthy scanner with the scan loop currently processing slot 100
-	// (recorded in currentScanSlot just before it calls ReportSolvency).
-	client.solScanner.healthy = &atomic.Bool{}
-	client.solScanner.healthy.Store(false)
-	client.solScanner.currentScanSlot.Store(100)
-
-	// height = 100 (same as currentScanSlot) => this is the scan-driven call, so
-	// while unhealthy it must be skipped (defer to the SolvencyCheckRunner).
-	// Nothing should be queued.
-	err := client.ReportSolvency(100)
-	c.Assert(err, IsNil)
-	c.Assert(len(client.globalSolvencyQueue), Equals, 0)
-}
-
-// TestReportSolvencyUnhealthyScannerRunnerHeight verifies the other half of the
-// guard: an unhealthy scanner does NOT suppress a call whose height differs from
-// currentScanSlot — i.e. the SolvencyCheckRunner calling with the live chain tip
-// while the scan loop is frozen (paused because the chain is halted). The
-// runner's report must still go through so auto-unhalt can fire.
-func (s *ClientBackfillSuite) TestReportSolvencyUnhealthyScannerRunnerHeight(c *C) {
-	server := makeSolRPCServer(c, map[string]string{
-		"getSlot":    `{"jsonrpc":"2.0","result":11,"id":1}`,
-		"getBalance": `{"jsonrpc":"2.0","result":{"context":{"slot":11},"value":10000000000},"id":1}`,
-	})
-	defer server.Close()
-	client := s.makeClient(c, server)
-	client.globalSolvencyQueue = make(chan stypes.Solvency, 10)
-	client.solScanner.healthy.Store(false)
-	client.solScanner.lastFeeRate.Store(1)
-
-	// Scan loop is frozen at slot 10 (chain halted => scanner paused); the runner
-	// calls with the live tip (11) != currentScanSlot, so the unhealthy guard must
-	// NOT fire and the report must still be queued.
-	client.solScanner.currentScanSlot.Store(10)
-
-	solVault := types2.Vault{
-		PubKey:      types2.GetRandomPubKey(),
-		PubKeyEddsa: types2.GetRandomEd25519PubKey(),
-		Coins:       common.NewCoins(common.NewCoin(common.SOLAsset, cosmos.NewUint(1_000_000_000))),
-	}
-	client.bridge = &mockSOLSolvencyBridge{solvencyHalted: true, asgards: types2.Vaults{solVault}}
-
-	err := client.ReportSolvency(11)
-	c.Assert(err, IsNil)
-
-	select {
-	case msg := <-client.globalSolvencyQueue:
-		c.Assert(msg.Chain, Equals, common.SOLChain)
-		c.Assert(msg.PubKey.Equals(solVault.PubKey), Equals, true)
-	case <-time.After(time.Second):
-		c.Fatal("runner-path call (height != currentScanSlot) must NOT be suppressed by the unhealthy guard")
-	}
-}
-
-// reportSolventSOLVaultFromRunner repeats the runner-path call of
-// TestReportSolvencyUnhealthyScannerRunnerHeight (live tip 11, scan loop frozen
-// at 10, one solvent vault) with the given scanner health and bridge, and
-// returns how many reports were queued. That test is the positive case: with
-// the scanner unhealthy and the chain solvency-halted, the all-clear is queued.
-func (s *ClientBackfillSuite) reportSolventSOLVaultFromRunner(c *C, healthy bool, bridge *mockSOLSolvencyBridge) int {
-	server := makeSolRPCServer(c, map[string]string{
-		"getSlot":    `{"jsonrpc":"2.0","result":11,"id":1}`,
-		"getBalance": `{"jsonrpc":"2.0","result":{"context":{"slot":11},"value":10000000000},"id":1}`,
-	})
-	defer server.Close()
-	client := s.makeClient(c, server)
-	client.globalSolvencyQueue = make(chan stypes.Solvency, 10)
-	client.solScanner.healthy.Store(healthy)
-	client.solScanner.lastFeeRate.Store(1)
-	client.solScanner.currentScanSlot.Store(10)
-
-	bridge.asgards = types2.Vaults{{
-		PubKey:      types2.GetRandomPubKey(),
-		PubKeyEddsa: types2.GetRandomEd25519PubKey(),
-		Coins:       common.NewCoins(common.NewCoin(common.SOLAsset, cosmos.NewUint(1_000_000_000))),
-	}}
-	client.bridge = bridge
-
-	c.Assert(client.ReportSolvency(11), IsNil)
-	return len(client.globalSolvencyQueue) // enqueued synchronously before return
-}
-
-// An unhealthy scanner on a chain THORChain has not halted is a local fault: no
-// other node would send the all-clear, so this one must not.
-func (s *ClientBackfillSuite) TestReportSolvencyNoAllClearWhenNotHaltedOnChain(c *C) {
-	c.Assert(s.reportSolventSOLVaultFromRunner(c, false, &mockSOLSolvencyBridge{}), Equals, 0)
-}
-
-// When the halt state cannot be read, stay silent rather than guess.
-func (s *ClientBackfillSuite) TestReportSolvencyNoAllClearWhenHaltStateUnreadable(c *C) {
-	bridge := &mockSOLSolvencyBridge{solvencyHalted: true, mimirErr: fmt.Errorf("bridge unavailable")}
-	c.Assert(s.reportSolventSOLVaultFromRunner(c, false, bridge), Equals, 0)
-}
-
-// Just after a halt takes effect the scanner may not have paused yet. A healthy
-// scanner must not send the all-clear even though the chain reads as halted.
-func (s *ClientBackfillSuite) TestReportSolvencyNoAllClearFromHealthyScanner(c *C) {
-	c.Assert(s.reportSolventSOLVaultFromRunner(c, true, &mockSOLSolvencyBridge{solvencyHalted: true}), Equals, 0)
-}
-
-// TestReportSolvencyIgnoresNonceAccount: the durable-nonce account rent is booked as
-// vault gas on-chain when its create tx is observed, so ReportSolvency reads only the
-// vault balance. A failing getAccountInfo (the nonce account RPC) must not drop the
-// vault from solvency reporting.
-func (s *ClientBackfillSuite) TestReportSolvencyIgnoresNonceAccount(c *C) {
-	server := makeSolRPCServer(c, map[string]string{
-		"getSlot":        `{"jsonrpc":"2.0","result":111,"id":1}`,
-		"getBalance":     `{"jsonrpc":"2.0","result":{"context":{"slot":111},"value":10000000000},"id":1}`,
-		"getAccountInfo": `{"jsonrpc":"2.0","error":{"code":-32005,"message":"node is behind"},"id":1}`,
-	})
-	defer server.Close()
-	client := s.makeClient(c, server)
-	client.cfg.SolvencyBlocks = 50
-	client.globalSolvencyQueue = make(chan stypes.Solvency, 10)
-	client.solScanner.healthy.Store(false)
-	client.solScanner.lastFeeRate.Store(1)
-	client.bridge = &mockSOLSolvencyBridge{solvencyHalted: true, asgards: types2.Vaults{{
-		PubKey:      types2.GetRandomPubKey(),
-		PubKeyEddsa: types2.GetRandomEd25519PubKey(),
-		Coins:       common.NewCoins(common.NewCoin(common.SOLAsset, cosmos.NewUint(1_000_000_000))),
-	}}}
-	c.Assert(client.ReportSolvency(111), IsNil)
-	c.Assert(len(client.globalSolvencyQueue), Equals, 1) // enqueued synchronously before return
-}
-
-func (s *ClientBackfillSuite) TestReportSolvencyAllSolventIgnoresUnrelatedVaults(c *C) {
-	server := makeSolRPCServer(c, map[string]string{
-		"getSlot":    `{"jsonrpc":"2.0","result":111,"id":1}`,
-		"getBalance": `{"jsonrpc":"2.0","result":{"context":{"slot":111},"value":10000000000},"id":1}`,
-	})
-	defer server.Close()
-	client := s.makeClient(c, server)
-	client.cfg.SolvencyBlocks = 50
-	client.globalSolvencyQueue = make(chan stypes.Solvency, 10)
-	client.solScanner.healthy.Store(false)
-	client.solScanner.lastFeeRate.Store(1)
-
-	solVault := types2.Vault{
-		PubKey:      types2.GetRandomPubKey(),
-		PubKeyEddsa: types2.GetRandomEd25519PubKey(),
-		Coins:       common.NewCoins(common.NewCoin(common.SOLAsset, cosmos.NewUint(1_000_000_000))),
-	}
-	unrelatedBTCVault := types2.Vault{
-		PubKey: types2.GetRandomPubKey(),
-		Coins:  common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1_000_000))),
-	}
-	client.bridge = &mockSOLSolvencyBridge{
-		solvencyHalted: true, // all-solvent report is only sent while the chain is solvency-halted on-chain
-		asgards:        types2.Vaults{solVault, unrelatedBTCVault},
-	}
-
-	err := client.ReportSolvency(111)
-	c.Assert(err, IsNil)
-
-	select {
-	case msg := <-client.globalSolvencyQueue:
-		c.Assert(msg.Height, Equals, int64(100))
-		c.Assert(msg.Chain, Equals, common.SOLChain)
-		c.Assert(msg.PubKey.Equals(solVault.PubKey), Equals, true)
-	case <-time.After(time.Second):
-		c.Fatal("expected all-solvent report for the SOL vault")
-	}
-
-	select {
-	case msg := <-client.globalSolvencyQueue:
-		c.Fatalf("unexpected extra solvency report for %s", msg.PubKey)
-	default:
-	}
-}
-
-func (s *ClientBackfillSuite) TestReportSolvencyConvertsLamportFeeToThorchainUnits(c *C) {
-	server := makeSolRPCServer(c, map[string]string{
-		"getSlot":    `{"jsonrpc":"2.0","result":111,"id":1}`,
-		"getBalance": `{"jsonrpc":"2.0","result":{"context":{"slot":111},"value":10000000000},"id":1}`,
-	})
-	defer server.Close()
-
-	client := s.makeClient(c, server)
-	client.cfg.SolvencyBlocks = 50
-	client.globalSolvencyQueue = make(chan stypes.Solvency, 10)
-	client.solScanner.lastFeeRate.Store(1)
-
-	solVault := types2.Vault{
-		PubKey:      types2.GetRandomPubKey(),
-		PubKeyEddsa: types2.GetRandomEd25519PubKey(),
-		Coins:       common.NewCoins(common.NewCoin(common.SOLAsset, cosmos.NewUint(1_000_100_000))),
-	}
-	client.bridge = &mockSOLSolvencyBridge{
-		asgards: types2.Vaults{solVault},
-	}
-
-	err := client.ReportSolvency(111)
-	c.Assert(err, IsNil)
-
-	select {
-	case msg := <-client.globalSolvencyQueue:
-		c.Assert(msg.Height, Equals, int64(100))
-		c.Assert(msg.Chain, Equals, common.SOLChain)
-		c.Assert(msg.PubKey.Equals(solVault.PubKey), Equals, true)
-	case <-time.After(time.Second):
-		c.Fatal("expected insolvency report when SOL fee buffer is converted to THORChain units")
-	}
-}
-
-// TestReportSolvencyConcurrentNoRace exercises the data race that motivated
-// solvencySlotMultipleMu: on a healthy scanner BOTH the block-scanner solvency
-// reporter and the SolvencyCheckRunner reach ReportSolvency and read/write
-// solvencySlotMultiple. Several goroutines hammer the solvency path with
-// advancing heights; under `go test -race` this fails on the unguarded field and
-// passes once access is serialized. The counter must also end monotonic at the
-// highest crossed boundary (no torn/lost write).
-func (s *ClientBackfillSuite) TestReportSolvencyConcurrentNoRace(c *C) {
-	server := makeSolRPCServer(c, map[string]string{
-		"getSlot":    `{"jsonrpc":"2.0","result":1,"id":1}`,
-		"getBalance": `{"jsonrpc":"2.0","result":{"context":{"slot":1},"value":10000000000},"id":1}`,
-	})
-	defer server.Close()
-	client := s.makeClient(c, server)
-	client.cfg.SolvencyBlocks = 50
-	client.globalSolvencyQueue = make(chan stypes.Solvency, 1024)
-	// Healthy => the unhealthy dedup guard does not fire, so both goroutines run
-	// the full path and contend on solvencySlotMultiple — the production race.
-	client.solScanner.healthy.Store(true)
-	client.solScanner.lastFeeRate.Store(1)
-
-	solVault := types2.Vault{
-		PubKey:      types2.GetRandomPubKey(),
-		PubKeyEddsa: types2.GetRandomEd25519PubKey(),
-		Coins:       common.NewCoins(common.NewCoin(common.SOLAsset, cosmos.NewUint(1_000_000_000))),
-	}
-	client.bridge = &mockSOLSolvencyBridge{asgards: types2.Vaults{solVault}}
-
-	const goroutines, steps = 4, 100
-	var wg sync.WaitGroup
-	wg.Add(goroutines)
-	for range goroutines {
-		go func() {
-			defer wg.Done()
-			for i := 1; i <= steps; i++ {
-				h := int64(i) * client.cfg.SolvencyBlocks // height on/just past boundary i
-				if client.ShouldReportSolvency(h) {
-					_ = client.ReportSolvency(h)
-				}
-			}
-		}()
-	}
-	wg.Wait()
-
-	// TryLock intentionally drops overlapping report attempts, so the concurrent
-	// burst need not visit every cadence boundary. Once contention ends, repeated
-	// scanner passes at the same height must catch up without regressing.
-	last := client.getSolvencySlotMultiple()
-	c.Assert(last >= 1 && last <= steps-1, Equals, true)
-	for last < steps-1 {
-		c.Assert(client.ReportSolvency(int64(steps)*client.cfg.SolvencyBlocks), IsNil)
-		next := client.getSolvencySlotMultiple()
-		c.Assert(next > last, Equals, true)
-		last = next
-	}
-	// height == steps*SolvencyBlocks sits exactly on boundary `steps`, which is
-	// not yet crossed, so the highest reportable multiple is steps-1.
-	c.Assert(client.getSolvencySlotMultiple(), Equals, int64(steps-1))
-}
-
-// TestAdvanceSolvencySlotMultipleNeverRegresses pins the monotonic compare-and-set.
-// The check-then-set in ReportSolvency is not atomic, so a reporter racing on the
-// fresh-node catch-up path can hand back a lower boundary than one already
-// recorded. advanceSolvencySlotMultiple must drop the stale lower value rather than
-// regress the counter (which would re-report already-reported boundaries).
-func (s *ClientBackfillSuite) TestAdvanceSolvencySlotMultipleNeverRegresses(c *C) {
-	server := makeSolRPCServer(c, map[string]string{
-		"getSlot": `{"jsonrpc":"2.0","result":1,"id":1}`,
-	})
-	defer server.Close()
-	client := s.makeClient(c, server)
-
-	client.advanceSolvencySlotMultiple(5)
-	c.Assert(client.getSolvencySlotMultiple(), Equals, int64(5))
-
-	client.advanceSolvencySlotMultiple(2) // stale lower boundary from a racing reporter
-	c.Assert(client.getSolvencySlotMultiple(), Equals, int64(5))
-
-	client.advanceSolvencySlotMultiple(7) // a genuine advance still moves forward
-	c.Assert(client.getSolvencySlotMultiple(), Equals, int64(7))
-}
-
-// Note: Full ReportSolvency with vault fetching requires bridge to be pointed at test server.
-// The bridge is created once in SetUpSuite and can't be easily repointed. We test the simpler paths above.
 
 // -------------------------------------------------------------------------
 // checkRecentBlocksAndUpdateNetworkFee
@@ -1794,12 +1397,3 @@ func (s *BackfillSuite) TestGetTxInItemNonTransferSystemInstruction(c *C) {
 	item := scanner.getTxInItem(txn, 100)
 	c.Assert(item, IsNil) // not a transfer instruction
 }
-
-// -------------------------------------------------------------------------
-// ReportSolvency with asgard vaults
-// -------------------------------------------------------------------------
-
-// Note: TestReportSolvencyWithVaults and TestReportSolvencyEmptyPubKey require
-// bridge.GetAsgards() to reach our test server. The bridge is constructed once in
-// SetUpSuite pointing to localhost, so these deep solvency paths aren't testable
-// without modifying the bridge or production code.

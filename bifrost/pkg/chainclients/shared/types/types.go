@@ -144,6 +144,3 @@ type CustomKeygenChainClient interface {
 	CustomKeygen() bool
 	Keygen(req CustomKeygenRequest) (CustomKeygenResult, error)
 }
-
-// SolvencyReporter reports the solvency of the chain at the given height.
-type SolvencyReporter func(height int64) error

@@ -53,7 +53,6 @@ func (s *BlockScannerTestSuite) SetUpSuite(c *C) {
 		chainConfig,
 		bridge,
 		pubkeyMgr,
-		func(h int64) error { return nil },
 	)
 	c.Assert(err, IsNil)
 

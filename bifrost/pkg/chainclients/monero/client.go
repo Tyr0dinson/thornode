@@ -34,7 +34,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	tssMessages "gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/runners"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signing"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
@@ -85,12 +84,6 @@ const (
 	defaultXMRRecoveryRetryMaxAttempts         = 0                  // zero means retry for the process lifetime
 	maxXMRRecoveryFileBytes                    = int64(1024 * 1024) // encrypted keyshare envelopes are expected to be far smaller
 	xmrSpendableConfirmations                  = uint64(10)
-
-	// xmrSolvencyDeferralEscalationRounds is the number of consecutive deferred
-	// solvency rounds (one per SolvencyBlocks interval) after which the deferral
-	// log escalates from Warn to Error. The sidecar's verified expiry should
-	// resolve a dead spend well within this window.
-	xmrSolvencyDeferralEscalationRounds = 6
 )
 
 var (
@@ -206,7 +199,6 @@ type Client struct {
 	vaultAddressMap       map[string]common.Address
 	vaultAddrToKey        map[string]string
 	vaultAddressMu        sync.RWMutex
-	globalSolvencyQueue   chan stypes.Solvency
 	globalNetworkFeeQueue chan common.NetworkFee
 
 	asgardMu                sync.RWMutex
@@ -225,13 +217,9 @@ type Client struct {
 	consolidationState      map[string]consolidationVaultState
 	consolidateInProgress   *atomic.Bool
 	lastConsolidationHeight *atomic.Int64
-	lastSolvencyCheckHeight *atomic.Int64
 	wg                      *sync.WaitGroup
 	stopchan                chan struct{}
 	lifecycleMu             sync.Mutex
-
-	solvencyDeferralMu     sync.Mutex
-	solvencyDeferralRounds map[string]int
 
 	spentRefsRetryInterval    time.Duration
 	spentRefsRetryMaxAttempts int
@@ -377,7 +365,6 @@ func NewClient(
 		signerCacheManager:        nil,
 		vaultAddressMap:           make(map[string]common.Address),
 		vaultAddrToKey:            make(map[string]string),
-		lastSolvencyCheckHeight:   atomic.NewInt64(0),
 		wg:                        &sync.WaitGroup{},
 		stopchan:                  make(chan struct{}),
 		spentRefsRetryInterval:    constants.ThorchainBlockTime,
@@ -1162,9 +1149,6 @@ func (c *Client) ensureConsolidationState() {
 		}
 		if c.lastConsolidationHeight == nil {
 			c.lastConsolidationHeight = atomic.NewInt64(0)
-		}
-		if c.lastSolvencyCheckHeight == nil {
-			c.lastSolvencyCheckHeight = atomic.NewInt64(0)
 		}
 		if c.vaultLocks == nil {
 			c.vaultLocks = make(map[string]*sync.Mutex)
@@ -3681,10 +3665,6 @@ func (c *Client) GetAccountByAddress(address string, height *big.Int) (common.Ac
 	return c.getAccountByAddress(address, height, false)
 }
 
-func (c *Client) getSolvencyAccountByAddress(address string) (common.Account, error) {
-	return c.getAccountByAddress(address, nil, true)
-}
-
 func (c *Client) getAccountByAddress(address string, _ *big.Int, requireReconciled bool) (common.Account, error) {
 	if c.sidecar == nil {
 		return common.Account{}, fmt.Errorf("xmr account query requires sidecar")
@@ -4234,129 +4214,6 @@ func (c *Client) GetLatestTxForVault(vault string) (string, string, error) {
 
 func (c *Client) RollbackBlockScanner() error {
 	return c.blockScanner.RollbackToLastObserved()
-}
-
-func (c *Client) ShouldReportSolvency(height int64) bool {
-	if c.lastSolvencyCheckHeight == nil || c.scanner == nil {
-		return false
-	}
-	if height <= c.lastSolvencyCheckHeight.Load() {
-		return false
-	}
-	solvencyBlocks := c.cfg.SolvencyBlocks
-	if solvencyBlocks <= 0 {
-		solvencyBlocks = 10
-	}
-	return height%solvencyBlocks == 0 && c.scanner.lastFee.Load() > 0
-}
-
-// noteSolvencyDeferral counts consecutive deferred solvency rounds for a vault
-// address and returns the updated count.
-func (c *Client) noteSolvencyDeferral(address string) int {
-	c.solvencyDeferralMu.Lock()
-	defer c.solvencyDeferralMu.Unlock()
-	if c.solvencyDeferralRounds == nil {
-		c.solvencyDeferralRounds = make(map[string]int)
-	}
-	c.solvencyDeferralRounds[address]++
-	return c.solvencyDeferralRounds[address]
-}
-
-func (c *Client) clearSolvencyDeferral(address string) {
-	c.solvencyDeferralMu.Lock()
-	defer c.solvencyDeferralMu.Unlock()
-	delete(c.solvencyDeferralRounds, address)
-}
-
-func (c *Client) ReportSolvency(height int64) error {
-	if !c.ShouldReportSolvency(height) {
-		return nil
-	}
-	// when block scanner is not healthy, only report from auto-unhalt SolvencyCheckRunner
-	if !c.IsBlockScannerHealthy() {
-		if c.blockScanner != nil && height == c.blockScanner.PreviousHeight()+1 {
-			return nil
-		}
-	}
-
-	asgardVaults, err := c.thorchainBridge.GetAsgards()
-	if err != nil {
-		return fmt.Errorf("fail to get asgards: %w", err)
-	}
-
-	currentGasFee := cosmos.NewUint(3).MulUint64(totalFeeAtomicToThorchain(c.scanner.lastFee.Load()))
-	msgs := make([]stypes.Solvency, 0, len(asgardVaults))
-	solventMsgs := make([]stypes.Solvency, 0, len(asgardVaults))
-	checkedVaults := 0
-	deferredForReconciliation := false
-	for i := range asgardVaults {
-		address := c.resolveVaultAddress(asgardVaults[i])
-		if address.IsEmpty() {
-			continue
-		}
-
-		acct, acctErr := c.getSolvencyAccountByAddress(address.String())
-		if acctErr != nil {
-			if errors.Is(acctErr, errXMRBalanceUnreconciled) {
-				deferredForReconciliation = true
-				rounds := c.noteSolvencyDeferral(address.String())
-				logEvent := c.logger.Warn()
-				if rounds >= xmrSolvencyDeferralEscalationRounds {
-					// Verified absence should move a dead spend into balance-counted,
-					// non-spendable quarantine. A deferral running this long means
-					// the pending spend is neither landing nor reaching that evidence
-					// threshold, so operator attention is required.
-					logEvent = c.logger.Error()
-				}
-				logEvent.Err(acctErr).Str("address", address.String()).Int64("height", height).Int("consecutive_rounds", rounds).Msg("defer monero solvency while sidecar balance reconciles")
-				continue
-			}
-			c.logger.Err(acctErr).Str("address", address.String()).Msg("fail to get monero account balance for solvency")
-			continue
-		}
-		c.clearSolvencyDeferral(address.String())
-		checkedVaults++
-
-		msg := stypes.Solvency{
-			Height: height,
-			Chain:  c.chain,
-			PubKey: asgardVaults[i].PubKey,
-			Coins:  acct.Coins,
-		}
-
-		if runners.IsVaultSolvent(c.chain, acct, asgardVaults[i], currentGasFee) {
-			solventMsgs = append(solventMsgs, msg)
-			continue
-		}
-		msgs = append(msgs, msg)
-	}
-
-	if deferredForReconciliation && checkedVaults == 0 {
-		return nil
-	}
-
-	// Report all vaults solvent only while THORChain itself has XMR halted or solvency-halted and
-	// this node's scanner is paused for it: the same gate as the other chain clients. A scanner
-	// that is unhealthy for a local reason (daemon or sidecar lag) must stay silent, because an
-	// all-clear only one node sends can never reach consensus and each one costs that node an
-	// unrefunded observation slash point. On a bridge error stay silent; the runner retries.
-	halted, haltErr := runners.IsHaltedOnChain(c.thorchainBridge, c.chain)
-	if haltErr != nil {
-		c.logger.Err(haltErr).Msg("fail to read chain halt state, skipping solvency all-clear")
-	}
-	if halted && !c.IsBlockScannerHealthy() && !deferredForReconciliation && checkedVaults > 0 && len(solventMsgs) == checkedVaults {
-		msgs = solventMsgs
-	}
-
-	for i := range msgs {
-		select {
-		case c.globalSolvencyQueue <- msgs[i]:
-		case <-time.After(constants.ThorchainBlockTime):
-			c.logger.Info().Msg("fail to send monero solvency info to THORChain: timeout")
-		}
-	}
-	c.lastSolvencyCheckHeight.Store(height)
-	return nil
 }
 
 func (c *Client) logFailClosedCoordination(path string, err error) {

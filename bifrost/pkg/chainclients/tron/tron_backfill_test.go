@@ -33,7 +33,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/common/tokenlist"
 	"gitlab.com/thorchain/thornode/v3/config"
-	stypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 
 	. "gopkg.in/check.v1"
 )
@@ -121,7 +120,7 @@ func (s *BackfillSuite) SetUpSuite(c *C) {
 	pubkeyMgr := &pubkeymanager.MockPoolAddressValidator{}
 
 	scanner, err := NewTronBlockScanner(
-		chainConfig, bridge, pubkeyMgr, func(int64) error { return nil },
+		chainConfig, bridge, pubkeyMgr,
 	)
 	c.Assert(err, IsNil)
 
@@ -488,104 +487,6 @@ func (s *BackfillSuite) TestBroadcastTxFailedBroadcast(c *C) {
 	s.client.api = savedApi
 }
 
-// ---- ShouldReportSolvency (additional cases) ----
-
-func (s *BackfillSuite) TestShouldReportSolvencyAdditional(c *C) {
-	c.Assert(s.client.ShouldReportSolvency(0), Equals, true)
-	c.Assert(s.client.ShouldReportSolvency(10), Equals, true)
-	c.Assert(s.client.ShouldReportSolvency(20), Equals, true)
-	c.Assert(s.client.ShouldReportSolvency(5), Equals, false)
-	c.Assert(s.client.ShouldReportSolvency(15), Equals, false)
-}
-
-type mockTronSolvencyBridge struct {
-	thorclient.ThorchainBridge
-	// solvencyHalted makes the mock report the chain as solvency-halted on-chain,
-	// the only state in which ReportSolvency sends an all-solvent report.
-	solvencyHalted bool
-	asgards        stypes.Vaults
-}
-
-func (m *mockTronSolvencyBridge) GetAsgards() (stypes.Vaults, error) {
-	return m.asgards, nil
-}
-
-func (m *mockTronSolvencyBridge) GetMimir(key string) (int64, error) {
-	if m.solvencyHalted && key == "SolvencyHaltTRONChain" {
-		return 1, nil
-	}
-	return 0, nil
-}
-
-func (m *mockTronSolvencyBridge) GetBlockHeight() (int64, error) {
-	return 100, nil
-}
-
-func (s *BackfillSuite) TestReportSolvencyAllSolventIgnoresUnrelatedVaults(c *C) {
-	accountSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/wallet/getaccount" {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"balance":100000000000}`))
-	}))
-	defer accountSrv.Close()
-
-	tronVault := stypes.Vault{
-		PubKey: stypes.GetRandomPubKey(),
-		Coins:  common.NewCoins(common.NewCoin(common.TRXAsset, cosmos.NewUint(1_000_000_000))),
-	}
-	unrelatedBTCVault := stypes.Vault{
-		PubKey: stypes.GetRandomPubKey(),
-		Coins:  common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1_000_000))),
-	}
-	bridge := &mockTronSolvencyBridge{
-		solvencyHalted: true, // all-solvent report is only sent while the chain is solvency-halted on-chain
-		asgards:        stypes.Vaults{tronVault, unrelatedBTCVault},
-	}
-
-	storage, err := blockscanner.NewBlockScannerStorage(filepath.Join(s.tmpdir, "tron-solvency"), config.LevelDBOptions{})
-	c.Assert(err, IsNil)
-
-	clientConfig := s.client.config
-	clientConfig.BlockScanner.ChainID = common.TRONChain
-	clientConfig.BlockScanner.StartBlockHeight = 100
-
-	client := &TronClient{
-		logger:      s.client.logger,
-		config:      clientConfig,
-		chainId:     s.client.chainId,
-		tronScanner: s.client.tronScanner,
-		bridge:      bridge,
-		api:         api.NewTronApi(accountSrv.URL, time.Second),
-	}
-
-	client.blockScanner, err = blockscanner.NewBlockScanner(clientConfig.BlockScanner, storage, GetMetricForTest(c), bridge, s.scanner)
-	c.Assert(err, IsNil)
-	client.whitelist = nil
-	client.globalSolvencyQueue = make(chan types.Solvency, 10)
-
-	err = client.ReportSolvency(120)
-	c.Assert(err, IsNil)
-
-	select {
-	case msg := <-client.globalSolvencyQueue:
-		c.Assert(msg.Height, Equals, 120-FinalityBlocks)
-		c.Assert(msg.Chain, Equals, common.TRONChain)
-		c.Assert(msg.PubKey.Equals(tronVault.PubKey), Equals, true)
-	case <-time.After(time.Second):
-		c.Fatal("expected all-solvent report for the TRON vault")
-	}
-
-	select {
-	case msg := <-client.globalSolvencyQueue:
-		c.Fatalf("unexpected extra solvency report for %s", msg.PubKey)
-	default:
-	}
-}
-
 // ---- getTokenBalance ----
 
 func (s *BackfillSuite) TestGetTokenBalance(c *C) {
@@ -660,7 +561,6 @@ func (s *ScannerBackfillSuite) SetUpSuite(c *C) {
 		chainConfig,
 		bridge,
 		pubkeyMgr,
-		func(h int64) error { return nil },
 	)
 	c.Assert(err, IsNil)
 }
@@ -701,7 +601,7 @@ func (s *ScannerBackfillSuite) TestNewTronBlockScannerNoWhitelist(c *C) {
 	pubkeyMgr := &pubkeymanager.MockPoolAddressValidator{}
 
 	scanner, err := NewTronBlockScanner(
-		chainConfig, bridge, pubkeyMgr, func(int64) error { return nil },
+		chainConfig, bridge, pubkeyMgr,
 	)
 	c.Assert(err, IsNil)
 	c.Assert(scanner, NotNil)
@@ -1238,7 +1138,7 @@ func (s *ScannerBackfillSuite) TestFetchTxsRefBlockUpdate(c *C) {
 	c.Assert(txIn.Chain, Equals, common.TRONChain)
 }
 
-// ---- FetchTxs far behind tip (skip solvency) ----
+// ---- FetchTxs far behind tip ----
 
 func (s *ScannerBackfillSuite) TestFetchTxsFarBehindTip(c *C) {
 	feeChan := make(chan common.NetworkFee, 10)
@@ -1246,7 +1146,7 @@ func (s *ScannerBackfillSuite) TestFetchTxsFarBehindTip(c *C) {
 	s.scanner.config.ChainID = common.TRONChain
 	s.scanner.config.ObservationFlexibilityBlocks = 5
 
-	// fetchHeight is very far from chainHeight, so solvency/refBlock update are skipped
+	// fetchHeight is very far from chainHeight, so the refBlock update is skipped
 	chainHeight := int64(69351239 + 1000)
 	txIn, err := s.scanner.FetchTxs(69351239, chainHeight)
 	c.Assert(err, IsNil)
@@ -1491,7 +1391,6 @@ func (s *ScannerBackfillSuite) TestRefBlockMaxTrimming(c *C) {
 func (s *ScannerBackfillSuite) TestConstants(c *C) {
 	c.Assert(TimestampValidity, Equals, 20*time.Minute)
 	c.Assert(ConfirmationBlocks, Equals, int64(1))
-	c.Assert(FinalityBlocks, Equals, int64(19))
 }
 
 // ---- GetAccountByAddress with no whitelist ----
