@@ -100,11 +100,12 @@ func AsgardSolvencyCircuitBreaker(k KVStore) common.CircuitBreakerInvariant {
 					continue
 				}
 
-				// The two streaming state models are mutually exclusive:
-				// legacy V1 swaps track progress in a separate StreamingSwap
+				// Legacy V1 swaps track progress in a separate StreamingSwap
 				// record (NewMsgSwap embeds State for them too, but V1
-				// execution never updates it), while V2 swaps track progress
-				// in the embedded State.
+				// execution never updates it). V2 swaps track progress in the
+				// embedded State — except old-format V2 records, whose
+				// embedded deposit is unset and whose progress lives in the
+				// separate record, handled by the fallback below.
 				swapIn := cosmos.ZeroUint()
 				swapOut := cosmos.ZeroUint()
 				deposit := cosmos.ZeroUint()
@@ -126,6 +127,31 @@ func AsgardSolvencyCircuitBreaker(k KVStore) common.CircuitBreakerInvariant {
 					hasStream = swap.IsStreaming()
 					swapIn, swapOut, deposit = swap.State.In, swap.State.Out, swap.State.Deposit
 					stateLabel = "swap state for"
+					if hasStream && deposit.IsZero() && swapIn.IsZero() && swapOut.IsZero() {
+						// Old-format V2 fallback, matching
+						// calculateNetworkSolvency: without it a valid record
+						// reads as an inconsistent stream (false Broken) and
+						// its produced output is dropped from expected
+						// balances. Gated on IsStreaming so a non-streaming
+						// swap sharing a TxID with a V1 main swap cannot
+						// borrow the wrong record, and on the embedded
+						// progress being entirely zero — genuine old-format
+						// records carry none, while a deposit-less record
+						// with nonzero In or Out is contradictory and must
+						// fall through to report Broken rather than be
+						// misread as a not-yet-started stream.
+						ss, ssErr := k.GetStreamingSwap(ctx, swap.Tx.ID)
+						if ssErr != nil {
+							// skipping would silently understate expected balances
+							result.Broken = true
+							result.Msgs = append(result.Msgs, fmt.Sprintf("fail to get streaming swap %s: %s", swap.Tx.ID, ssErr))
+							continue
+						}
+						// a missing record loads as zero deposit and zero in
+						hasStream = !ss.Deposit.IsZero() || !ss.In.IsZero()
+						swapIn, swapOut, deposit = ss.In, ss.Out, ss.Deposit
+						stateLabel = "streaming state for swap"
+					}
 				}
 
 				if coin.IsNative() && !coin.Asset.IsTradeAsset() && !coin.Asset.IsSecuredAsset() {

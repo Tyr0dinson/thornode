@@ -421,6 +421,246 @@ func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerZeroInDepositMisma
 	c.Assert(check.Msgs[0], Matches, "inconsistent swap state for .*")
 }
 
+func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerOldFormatV2RuneInput(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// empty the starting balance of asgard
+	runeBal := k.GetRuneBalanceOfModule(ctx, AsgardName)
+	coins := common.NewCoins(common.NewCoin(common.RuneAsset(), runeBal))
+	c.Assert(k.SendFromModuleToModule(ctx, AsgardName, ReserveName, coins), IsNil)
+
+	// old-format V2 streaming swap: the embedded state carries quantity but
+	// no deposit, progress lives in the separate StreamingSwap record
+	// (mirrors the fallback in calculateNetworkSolvency)
+	tx := GetRandomTx()
+	tx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(500)))
+	swap := MsgSwap{
+		Tx:          tx,
+		TargetAsset: common.BTCAsset,
+		Version:     types.SwapVersion_v2,
+		State: &types.SwapState{
+			Quantity:  10,
+			Deposit:   cosmos.ZeroUint(),
+			Withdrawn: cosmos.ZeroUint(),
+			In:        cosmos.ZeroUint(),
+			Out:       cosmos.ZeroUint(),
+		},
+	}
+	c.Assert(k.SetAdvSwapQueueItem(ctx, swap), IsNil)
+
+	stream := StreamingSwap{
+		TxID:     tx.ID,
+		Deposit:  cosmos.NewUint(500),
+		Quantity: 10,
+		Interval: 10,
+		Count:    2,
+		In:       cosmos.NewUint(100),
+		Out:      cosmos.ZeroUint(),
+	}
+	k.SetStreamingSwap(ctx, stream)
+
+	// asgard holds exactly the unswapped remainder — healthy mid-stream
+	// state must not read as an inconsistent stream
+	fund := common.NewCoin(common.RuneAsset(), cosmos.NewUint(400))
+	c.Assert(k.MintToModule(ctx, ModuleName, fund), IsNil)
+	c.Assert(k.SendFromModuleToModule(ctx, ModuleName, AsgardName, common.NewCoins(fund)), IsNil)
+
+	check := AsgardSolvencyCircuitBreaker(k)(ctx)
+	c.Assert(check.Broken, Equals, false)
+	c.Assert(check.Msgs, HasLen, 0)
+	c.Assert(check.Expected.IsZero(), Equals, true)
+}
+
+func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerOldFormatV2ExternalInput(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// empty the starting balance of asgard
+	runeBal := k.GetRuneBalanceOfModule(ctx, AsgardName)
+	coins := common.NewCoins(common.NewCoin(common.RuneAsset(), runeBal))
+	c.Assert(k.SendFromModuleToModule(ctx, AsgardName, ReserveName, coins), IsNil)
+
+	// old-format V2 BTC->RUNE streaming swap: the produced RUNE exists only
+	// in the separate record's Out — dropping it would understate expected
+	// balances and mask insolvency
+	tx := GetRandomTx()
+	tx.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(500)))
+	swap := MsgSwap{
+		Tx:          tx,
+		TargetAsset: common.RuneAsset(),
+		Version:     types.SwapVersion_v2,
+		State: &types.SwapState{
+			Quantity:  10,
+			Deposit:   cosmos.ZeroUint(),
+			Withdrawn: cosmos.ZeroUint(),
+			In:        cosmos.ZeroUint(),
+			Out:       cosmos.ZeroUint(),
+		},
+	}
+	c.Assert(k.SetAdvSwapQueueItem(ctx, swap), IsNil)
+
+	stream := StreamingSwap{
+		TxID:     tx.ID,
+		Deposit:  cosmos.NewUint(500),
+		Quantity: 10,
+		Interval: 10,
+		Count:    2,
+		In:       cosmos.NewUint(100),
+		Out:      cosmos.NewUint(250),
+	}
+	k.SetStreamingSwap(ctx, stream)
+
+	// asgard is missing the produced RUNE — insolvent by 250, not broken
+	check := AsgardSolvencyCircuitBreaker(k)(ctx)
+	c.Assert(check.Broken, Equals, false)
+	c.Assert(check.Asset, Equals, common.RuneAsset().Native())
+	c.Assert(check.Expected.Equal(cosmos.NewUint(250)), Equals, true)
+	c.Assert(check.Actual.IsZero(), Equals, true)
+
+	// funding the produced RUNE restores solvency
+	fund := common.NewCoin(common.RuneAsset(), cosmos.NewUint(250))
+	c.Assert(k.MintToModule(ctx, ModuleName, fund), IsNil)
+	c.Assert(k.SendFromModuleToModule(ctx, ModuleName, AsgardName, common.NewCoins(fund)), IsNil)
+
+	check = AsgardSolvencyCircuitBreaker(k)(ctx)
+	c.Assert(check.Broken, Equals, false)
+	c.Assert(check.Msgs, HasLen, 0)
+	c.Assert(check.Expected.IsZero(), Equals, true)
+}
+
+func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerOldFormatV2ContradictoryEmbedded(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// empty the starting balance of asgard
+	runeBal := k.GetRuneBalanceOfModule(ctx, AsgardName)
+	coins := common.NewCoins(common.NewCoin(common.RuneAsset(), runeBal))
+	c.Assert(k.SendFromModuleToModule(ctx, AsgardName, ReserveName, coins), IsNil)
+
+	// a deposit-less embedded state with nonzero progress is contradictory:
+	// it must not take the old-format fallback and read as a not-yet-started
+	// stream, silently dropping the embedded Out from expected balances
+	tx := GetRandomTx()
+	tx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(500)))
+	swap := MsgSwap{
+		Tx:          tx,
+		TargetAsset: common.BTCAsset,
+		Version:     types.SwapVersion_v2,
+		State: &types.SwapState{
+			Quantity:  10,
+			Deposit:   cosmos.ZeroUint(),
+			Withdrawn: cosmos.ZeroUint(),
+			In:        cosmos.ZeroUint(),
+			Out:       cosmos.NewUint(250),
+		},
+	}
+	c.Assert(k.SetAdvSwapQueueItem(ctx, swap), IsNil)
+
+	check := AsgardSolvencyCircuitBreaker(k)(ctx)
+	c.Assert(check.Broken, Equals, true)
+	c.Assert(check.Msgs, HasLen, 1)
+	c.Assert(check.Msgs[0], Matches, "inconsistent swap state for .*")
+}
+
+func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerOldFormatV2RecordMismatch(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// empty the starting balance of asgard
+	runeBal := k.GetRuneBalanceOfModule(ctx, AsgardName)
+	coins := common.NewCoins(common.NewCoin(common.RuneAsset(), runeBal))
+	c.Assert(k.SendFromModuleToModule(ctx, AsgardName, ReserveName, coins), IsNil)
+
+	// old-format V2 swap whose fallback record disagrees with the queued
+	// coin — the consistency check must fire on the fallback path too
+	tx := GetRandomTx()
+	tx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(500)))
+	swap := MsgSwap{
+		Tx:          tx,
+		TargetAsset: common.BTCAsset,
+		Version:     types.SwapVersion_v2,
+		State: &types.SwapState{
+			Quantity:  10,
+			Deposit:   cosmos.ZeroUint(),
+			Withdrawn: cosmos.ZeroUint(),
+			In:        cosmos.ZeroUint(),
+			Out:       cosmos.ZeroUint(),
+		},
+	}
+	c.Assert(k.SetAdvSwapQueueItem(ctx, swap), IsNil)
+
+	stream := StreamingSwap{
+		TxID:     tx.ID,
+		Deposit:  cosmos.NewUint(400),
+		Quantity: 10,
+		Interval: 10,
+		In:       cosmos.ZeroUint(),
+		Out:      cosmos.ZeroUint(),
+	}
+	k.SetStreamingSwap(ctx, stream)
+
+	check := AsgardSolvencyCircuitBreaker(k)(ctx)
+	c.Assert(check.Broken, Equals, true)
+	c.Assert(check.Msgs, HasLen, 1)
+	c.Assert(check.Msgs[0], Matches, "inconsistent streaming state for swap .*")
+}
+
+func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerNonStreamingV2SharedTxID(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// empty the starting balance of asgard
+	runeBal := k.GetRuneBalanceOfModule(ctx, AsgardName)
+	coins := common.NewCoins(common.NewCoin(common.RuneAsset(), runeBal))
+	c.Assert(k.SendFromModuleToModule(ctx, AsgardName, ReserveName, coins), IsNil)
+
+	// V1 main streaming swap mid-stream with its record
+	tx := GetRandomTx()
+	tx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(500)))
+	main := MsgSwap{
+		Tx:             tx,
+		TargetAsset:    common.BTCAsset,
+		StreamInterval: 1,
+		Version:        types.SwapVersion_v1,
+	}
+	c.Assert(k.SetSwapQueueItem(ctx, main, 0), IsNil)
+
+	stream := StreamingSwap{
+		TxID:     tx.ID,
+		Deposit:  cosmos.NewUint(500),
+		Quantity: 10,
+		Interval: 10,
+		Count:    2,
+		In:       cosmos.NewUint(100),
+		Out:      cosmos.ZeroUint(),
+	}
+	k.SetStreamingSwap(ctx, stream)
+
+	// a non-streaming V2 swap sharing the TxID with a zero deposit must not
+	// borrow the main swap's streaming record via the old-format fallback
+	affTx := tx
+	affTx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(50)))
+	aff := MsgSwap{
+		Tx:          affTx,
+		TargetAsset: common.RuneAsset(),
+		Version:     types.SwapVersion_v2,
+		State: &types.SwapState{
+			Quantity:  1,
+			Deposit:   cosmos.ZeroUint(),
+			Withdrawn: cosmos.ZeroUint(),
+			In:        cosmos.ZeroUint(),
+			Out:       cosmos.ZeroUint(),
+		},
+	}
+	c.Assert(k.SetAdvSwapQueueItem(ctx, aff), IsNil)
+
+	// main remainder (400) + full non-streaming swap coin (50)
+	fund := common.NewCoin(common.RuneAsset(), cosmos.NewUint(450))
+	c.Assert(k.MintToModule(ctx, ModuleName, fund), IsNil)
+	c.Assert(k.SendFromModuleToModule(ctx, ModuleName, AsgardName, common.NewCoins(fund)), IsNil)
+
+	check := AsgardSolvencyCircuitBreaker(k)(ctx)
+	c.Assert(check.Broken, Equals, false)
+	c.Assert(check.Msgs, HasLen, 0)
+	c.Assert(check.Expected.IsZero(), Equals, true)
+}
+
 func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerCorruptSwapRecord(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
