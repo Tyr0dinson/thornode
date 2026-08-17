@@ -154,23 +154,28 @@ func AsgardSolvencyCircuitBreaker(k KVStore) common.CircuitBreakerInvariant {
 					}
 				}
 
+				// Validate streaming accounting for every swap before
+				// branching on the source asset. On the native-input side a
+				// corrupted queue coin or an In beyond bounds would
+				// understate the subtraction; for external inputs with a
+				// native target the record's Out is credited to expected
+				// balances below; and for trade or secured targets nothing
+				// is credited, but provably impossible state still fails
+				// closed. A present stream must match the queued coin even
+				// when nothing has been swapped in yet.
+				if hasStream && !coin.Amount.Equal(deposit) {
+					result.Broken = true
+					result.Msgs = append(result.Msgs, fmt.Sprintf("inconsistent %s %s: coin=%s deposit=%s in=%s", stateLabel, swap.Tx.ID, coin.Amount, deposit, swapIn))
+					continue
+				}
+				if !swapIn.IsZero() && (swapIn.GT(deposit) || swapIn.GT(coin.Amount)) {
+					result.Broken = true
+					result.Msgs = append(result.Msgs, fmt.Sprintf("inconsistent %s %s: coin=%s deposit=%s in=%s", stateLabel, swap.Tx.ID, coin.Amount, deposit, swapIn))
+					continue
+				}
+
 				if coin.IsNative() && !coin.Asset.IsTradeAsset() && !coin.Asset.IsSecuredAsset() {
-					// Validate streaming accounting before subtracting — a
-					// silent clamp or a corrupted queue coin would understate
-					// expected balances so an insolvent module could still
-					// read as solvent. A present stream must match the queued
-					// coin even when nothing has been swapped in yet.
-					if hasStream && !coin.Amount.Equal(deposit) {
-						result.Broken = true
-						result.Msgs = append(result.Msgs, fmt.Sprintf("inconsistent %s %s: coin=%s deposit=%s in=%s", stateLabel, swap.Tx.ID, coin.Amount, deposit, swapIn))
-						continue
-					}
 					if !swapIn.IsZero() {
-						if swapIn.GT(deposit) || swapIn.GT(coin.Amount) {
-							result.Broken = true
-							result.Msgs = append(result.Msgs, fmt.Sprintf("inconsistent %s %s: coin=%s deposit=%s in=%s", stateLabel, swap.Tx.ID, coin.Amount, deposit, swapIn))
-							continue
-						}
 						coin.Amount = coin.Amount.Sub(swapIn)
 					}
 					swapCoins = swapCoins.Add(coin)
