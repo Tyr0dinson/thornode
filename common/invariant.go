@@ -72,6 +72,21 @@ func CalculateInsolvencyBps(actual, expected cosmos.Uint) cosmos.Uint {
 	return cosmos.NewUintFromBigInt(quotient)
 }
 
+// maxUint256 is the largest value representable by cosmos.Uint.
+var maxUint256 = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
+
+// SaturatingAddUint returns a+b, saturating at the maximum 256-bit value
+// instead of panicking on overflow. Circuit breaker routes report corrupt
+// state whose magnitudes may already be beyond arithmetic bounds; reported
+// values must saturate rather than halt block production.
+func SaturatingAddUint(a, b cosmos.Uint) cosmos.Uint {
+	sum := new(big.Int).Add(a.BigInt(), b.BigInt())
+	if sum.Cmp(maxUint256) > 0 {
+		sum.Set(maxUint256)
+	}
+	return cosmos.NewUintFromBigInt(sum)
+}
+
 // CircuitBreakerRoute pairs a halt-worthy route name with its invariant.
 type CircuitBreakerRoute struct {
 	Route     string

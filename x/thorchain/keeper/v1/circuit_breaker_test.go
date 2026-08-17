@@ -157,6 +157,26 @@ func (s *CircuitBreakerSuite) TestVaultDeficitCircuitBreakerCorruptVault(c *C) {
 	c.Assert(check.Msgs[0], Matches, "fail to unmarshal vault:.*")
 }
 
+func (s *CircuitBreakerSuite) TestVaultDeficitCircuitBreakerOverflowingAmounts(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// a vault recording a maximum-Uint balance plus a deficit for the same
+	// asset is corrupt twice over — reporting it must saturate the summed
+	// Expected instead of panicking EndBlock
+	maxUint := cosmos.NewUintFromString("115792089237316195423570985008687907853269984665640564039457584007913129639935")
+	vault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.ETHChain}.Strings(), nil)
+	vault.Coins = common.Coins{common.NewCoin(common.ETHAsset, maxUint)}
+	vault.Deficit = common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(1))}
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	check := VaultDeficitCircuitBreaker(k)(ctx)
+	c.Assert(check.Broken, Equals, true)
+	c.Assert(check.Msgs, HasLen, 1)
+	c.Assert(check.Asset, Equals, common.ETHAsset.String())
+	c.Assert(check.Actual.Equal(maxUint), Equals, true)
+	c.Assert(check.Expected.Equal(maxUint), Equals, true)
+}
+
 func (s *CircuitBreakerSuite) TestAsgardSolvencyWithSwapQueue(c *C) {
 	ctx, k := setupKeeperForTest(c)
 

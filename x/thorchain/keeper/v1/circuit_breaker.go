@@ -256,14 +256,17 @@ func VaultDeficitCircuitBreaker(k KVStore) common.CircuitBreakerInvariant {
 			if result.Asset != "" {
 				continue
 			}
-			for _, coin := range (common.Coins{}).Add(vault.Coins...).NoneEmpty() {
+			for _, coin := range vault.Coins.NoneEmpty() {
 				deficit := vault.GetDeficit(coin.Asset)
 				if deficit.Amount.IsZero() {
 					continue
 				}
 				result.Asset = coin.Asset.String()
 				result.Actual = coin.Amount
-				result.Expected = coin.Amount.Add(deficit.Amount)
+				// The sum of corrupt magnitudes can exceed 256 bits — the
+				// very state this route reports — so saturate rather than
+				// panic EndBlock.
+				result.Expected = common.SaturatingAddUint(coin.Amount, deficit.Amount)
 				break
 			}
 		}

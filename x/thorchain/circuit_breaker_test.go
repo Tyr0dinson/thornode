@@ -77,6 +77,18 @@ func (s *CircuitBreakerRunSuite) TestCalculateInsolvencyBps(c *C) {
 	c.Assert(common.CalculateInsolvencyBps(cosmos.NewUint(29984), cosmos.NewUint(30000)).Equal(cosmos.NewUint(6)), Equals, true)
 }
 
+func (s *CircuitBreakerRunSuite) TestSaturatingAddUint(c *C) {
+	c.Assert(common.SaturatingAddUint(cosmos.NewUint(2), cosmos.NewUint(3)).Equal(cosmos.NewUint(5)), Equals, true)
+	c.Assert(common.SaturatingAddUint(cosmos.ZeroUint(), cosmos.ZeroUint()).IsZero(), Equals, true)
+
+	// at and beyond the 256-bit ceiling the sum saturates instead of
+	// panicking, so corrupt magnitudes cannot halt block production
+	maxUint := cosmos.NewUintFromString("115792089237316195423570985008687907853269984665640564039457584007913129639935")
+	c.Assert(common.SaturatingAddUint(maxUint, cosmos.ZeroUint()).Equal(maxUint), Equals, true)
+	c.Assert(common.SaturatingAddUint(maxUint, cosmos.NewUint(1)).Equal(maxUint), Equals, true)
+	c.Assert(common.SaturatingAddUint(maxUint, maxUint).Equal(maxUint), Equals, true)
+}
+
 func (s *CircuitBreakerRunSuite) TestSaturateInt64(c *C) {
 	c.Assert(saturateInt64(cosmos.NewUint(100)), Equals, int64(100))
 	c.Assert(saturateInt64(cosmos.NewUint(uint64(math.MaxInt64))), Equals, int64(math.MaxInt64))
