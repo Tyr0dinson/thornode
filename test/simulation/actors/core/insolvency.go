@@ -23,12 +23,14 @@ import (
 //  1. Find the active Asgard vault and lock one node user + one normal user.
 //  2. "Steal" funds - create a temporary gap between vault accounting and the
 //     real wallet balance using a mocknet-only ignore memo.
-//  3. Wait until Mimir key SolvencyHalt<Chain>Chain is set (> 1).
+//  3. Wait until Mimir key SolvencyHalt<Chain>Chain is set (> 0).
 //  4. Keep checking for a few blocks to confirm the halt stays active.
 //  5. Return funds to the vault with the same ignore memo.
 //  6. Wait until Mimir key SolvencyHalt<Chain>Chain returns to 0.
 //  7. Keep checking for a few blocks to confirm the unhalt stays active.
-//  8. Release all locked users.
+//  8. Repeat the steal, halt, restore, and unhalt sequence, asserting that the
+//     second halt height is newer so reporter cadence has demonstrably re-armed.
+//  9. Release all locked users.
 //
 // The observer drops any vault-adjacent tx whose memo is an exact match for the
 // simulation ignore marker. The steal path therefore reduces the wallet balance
@@ -54,6 +56,8 @@ type InsolvencyActor struct {
 	insolvencyDurationBlocks int64
 	solvencyDurationBlocks   int64
 	solvencyStartAt          int64
+	insolvencyCycle          int
+	firstHaltHeight          int64
 }
 
 const simulationIgnoreMemo = "MOCKNET_SIMULATION_ONLY_SKIP_OBSERVATION"
@@ -112,8 +116,9 @@ func NewInsolvencyActor(chain common.Chain, rng *rand.Rand) *Actor {
 		asset:                    chain.GetGasAsset(),
 		insolvencyDurationBlocks: 3,
 		solvencyDurationBlocks:   20,
+		insolvencyCycle:          1,
 	}
-	a.Timeout = 10 * time.Minute
+	a.Timeout = 15 * time.Minute
 	a.Interval = time.Second
 
 	a.SetLogger(a.Log().With().Stringer("asset", a.asset).Logger())
@@ -139,7 +144,18 @@ func NewInsolvencyActor(chain common.Chain, rng *rand.Rand) *Actor {
 	// 7. Verify it stays unhalted for a few blocks
 	a.Ops = append(a.Ops, a.verifySolvencyDuration)
 
-	// 8. Cleanup
+	// 8. Start a second cycle after the first recovery has remained stable.
+	a.Ops = append(a.Ops, a.startCadenceRearmCycle)
+
+	// 9. Recreate insolvency and require a newly-heighted halt report.
+	a.Ops = append(a.Ops, a.stealFunds)
+	a.Ops = append(a.Ops, a.verifyInsolvencyHalt)
+
+	// 10. Restore again and require a second automatic unhalt.
+	a.Ops = append(a.Ops, a.restoreFunds)
+	a.Ops = append(a.Ops, a.verifySolvencyUnhalt)
+
+	// 11. Cleanup
 	a.Ops = append(a.Ops, a.cleanup)
 
 	return &a.Actor
@@ -254,7 +270,9 @@ func (a *InsolvencyActor) setup(config *OpConfig) OpResult {
 // The tx is intentionally ignored by the mocknet biforst observer, so vault accounting
 // stays unchanged while the on-chain vault wallet balance decreases.
 func (a *InsolvencyActor) stealFunds(config *OpConfig) OpResult {
-	a.Log().Info().Msg("attempting to steal funds from Asgard vault to create insolvency")
+	a.Log().Info().
+		Int("cycle", a.insolvencyCycle).
+		Msg("attempting to steal funds from Asgard vault to create insolvency")
 
 	startBalance, err := a.getNodeBalance()
 	if err != nil {
@@ -300,6 +318,7 @@ func (a *InsolvencyActor) stealFunds(config *OpConfig) OpResult {
 	a.stolenAmount = actualDelta
 
 	a.Log().Info().
+		Int("cycle", a.insolvencyCycle).
 		Str("txid", txid).
 		Str("memo", simulationIgnoreMemo).
 		Stringer("target_stolen_amount", targetAmount).
@@ -313,7 +332,9 @@ func (a *InsolvencyActor) stealFunds(config *OpConfig) OpResult {
 // restoreFunds closes the induced insolvency gap by sending funds back to the
 // vault with the same ignore memo, so wallet balance rises without observation.
 func (a *InsolvencyActor) restoreFunds(config *OpConfig) OpResult {
-	a.Log().Info().Msg("attempting to restore solvency after induced insolvency")
+	a.Log().Info().
+		Int("cycle", a.insolvencyCycle).
+		Msg("attempting to restore solvency after induced insolvency")
 
 	if a.stolenAmount.IsZero() {
 		return OpResult{
@@ -331,6 +352,7 @@ func (a *InsolvencyActor) restoreFunds(config *OpConfig) OpResult {
 	}
 
 	a.Log().Info().
+		Int("cycle", a.insolvencyCycle).
 		Str("txid", txid).
 		Str("memo", simulationIgnoreMemo).
 		Stringer("stolen_amount", a.stolenAmount).
@@ -353,7 +375,20 @@ func (a *InsolvencyActor) verifyInsolvencyHalt(config *OpConfig) OpResult {
 	}
 	insolvent := mimir > 0
 	if insolvent {
+		if a.insolvencyCycle == 1 {
+			a.firstHaltHeight = mimir
+		} else if mimir <= a.firstHaltHeight {
+			return OpResult{
+				Error: fmt.Errorf(
+					"second insolvency halt height %d must be newer than first halt height %d",
+					mimir,
+					a.firstHaltHeight,
+				),
+				Finish: true,
+			}
+		}
 		a.Log().Info().
+			Int("cycle", a.insolvencyCycle).
 			Bool("insolvent", insolvent).
 			Str("balances", a.getBalancesStr()).
 			Int64(key, mimir).
@@ -429,6 +464,7 @@ func (a *InsolvencyActor) verifySolvencyUnhalt(config *OpConfig) OpResult {
 	solvent := mimir <= 0
 	if solvent {
 		a.Log().Info().
+			Int("cycle", a.insolvencyCycle).
 			Bool("solvent", solvent).
 			Str("balances", a.getBalancesStr()).
 			Int64(key, mimir).
@@ -498,6 +534,26 @@ func (a *InsolvencyActor) verifySolvencyDuration(config *OpConfig) OpResult {
 	}
 
 	return OpResult{Continue: finished}
+}
+
+// startCadenceRearmCycle starts a second end-to-end halt/unhalt pass. The
+// second pass proves the completed first cadence did not suppress later
+// insolvency reports or automatic recovery.
+func (a *InsolvencyActor) startCadenceRearmCycle(config *OpConfig) OpResult {
+	if a.firstHaltHeight <= 0 {
+		return OpResult{
+			Error:  fmt.Errorf("cannot start second insolvency cycle without a recorded first halt height"),
+			Finish: true,
+		}
+	}
+
+	a.insolvencyCycle = 2
+	a.stolenAmount = cosmos.ZeroUint()
+	a.solvencyStartAt = 0
+	a.Log().Info().
+		Int64("first_halt_height", a.firstHaltHeight).
+		Msg("starting second insolvency cycle to verify reporter cadence re-arms")
+	return OpResult{Continue: true}
 }
 
 // cleanup releases all actor-held user locks and marks execution complete.

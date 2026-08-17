@@ -277,9 +277,12 @@ services:
       BIFROST_CHAINS_NOBLE_SOLVENCY_BLOCKS: "10"
       BIFROST_CHAINS_LTC_SOLVENCY_BLOCKS: "10"
       BIFROST_CHAINS_BASE_SOLVENCY_BLOCKS: "10"
+      BIFROST_CHAINS_POL_SOLVENCY_BLOCKS: "10"
       BIFROST_CHAINS_TRON_SOLVENCY_BLOCKS: "10"
       BIFROST_CHAINS_XRP_SOLVENCY_BLOCKS: "10"
       BIFROST_CHAINS_SOL_SOLVENCY_BLOCKS: "10"
+      BIFROST_CHAINS_XMR_SOLVENCY_BLOCKS: "10"
+      BIFROST_CHAINS_ZEC_SOLVENCY_BLOCKS: "10"
 
       # mocknet/simulation: keep this low so Cosmos (GAIA/NOBLE) fee reporting
       # initializes quickly without requiring many observed txs; not a mainnet setting

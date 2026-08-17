@@ -19,11 +19,12 @@ import (
 // Insolvency configures suite-level solvency-halt simulations.
 //
 // The suite:
-// 1) enables log-only mode for the solvency-halt watcher,
-// 2) applies deterministic USD config mimirs used by solvency threshold logic,
-// 3) runs one insolvency actor per simulation chain sequentially,
-// 4) waits for all solvency halts to clear,
-// 5) restores watcher behavior to fatal mode.
+//  1. enables log-only mode for the solvency-halt watcher,
+//  2. applies deterministic USD config mimirs used by solvency threshold logic,
+//  3. runs one insolvency actor per simulation chain sequentially, with each
+//     actor proving two distinct halt/unhalt cycles,
+//  4. waits for all solvency halts to clear,
+//  5. restores watcher behavior to fatal mode.
 func Insolvency(rng *rand.Rand) *Actor {
 	a := NewActor("Insolvency", rng)
 	a.Ops = append(a.Ops, func(config *OpConfig) OpResult {
