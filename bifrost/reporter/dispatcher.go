@@ -99,24 +99,21 @@ func NewDispatcher(chains map[common.Chain]ChainClient, thorchainBridge Thorchai
 // - per-chain workers that serialize reporter work for each chain
 func (d *dispatcher) start() {
 	for chain, taskQueue := range d.chainTaskQueues {
-		d.wg.Add(1)
-		go d.processChainQueue(chain, taskQueue)
+		d.wg.Go(func() {
+			d.processChainQueue(chain, taskQueue)
+		})
 	}
-	// Account for background processors before launching them. A runner is only
-	// needed when at least one chain can receive periodic work.
-	d.wg.Add(1)
+	// A runner is only needed when at least one chain can receive periodic work.
 	if len(d.chains) > 0 {
-		d.wg.Add(1)
-		go d.runner()
+		d.wg.Go(d.runner)
 	}
-	go d.processReportQueue()
+	d.wg.Go(d.processReportQueue)
 }
 
 // processReportQueue reads collected report batches and broadcasts them to THORChain.
 func (d *dispatcher) processReportQueue() {
 	d.logger.Info().Msg("reporter dispatcher (processReportQueue) started")
 	defer func() {
-		d.wg.Done()
 		d.logger.Info().Msg("reporter dispatcher (processReportQueue) stopped")
 	}()
 
@@ -142,8 +139,6 @@ func (d *dispatcher) Process(chain common.Chain, height int64) {
 }
 
 func (d *dispatcher) processChainQueue(chain common.Chain, taskQueue <-chan reportTask) {
-	defer d.wg.Done()
-
 	logger := d.logger.With().Stringer("chain", chain).Logger()
 	logger.Debug().Msg("chain reporter worker started")
 	defer logger.Debug().Msg("chain reporter worker stopped")

@@ -43,8 +43,7 @@ func (s *SolvencySuite) TestSharedRunnerStopsCleanly(c *C) {
 		wg:      wg,
 	}
 
-	wg.Add(1)
-	go d.runner()
+	wg.Go(d.runner)
 	close(stopper)
 	done := make(chan struct{})
 	go func() {

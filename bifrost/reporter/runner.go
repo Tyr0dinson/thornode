@@ -14,7 +14,6 @@ func (d *dispatcher) runner() {
 	logger := log.Logger.With().Str("module", "reporter_runner").Logger()
 	logger.Info().Msg("runner started")
 	defer func() {
-		d.wg.Done()
 		logger.Info().Msg("runner stopped")
 	}()
 
