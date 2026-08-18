@@ -120,8 +120,9 @@ func (s *ChainHaltChurnTestSuite) TestTHORChainFundsCheckIsAlwaysEmpty(c *C) {
 	c.Assert(chainHasVaultFunds(ctx, mgr.Keeper(), common.THORChain), Equals, false)
 }
 
-// End-to-end through the rotation gate: a halted chain with no funds must not stop
-// BeginBlock from proceeding past the halt check.
+// The two conditions BeginBlock's halt gate ANDs together, pinned on a chain the vault
+// serves but holds nothing on. The end-to-end assertion that rotation actually proceeds
+// (and that funds on the chain still stop it) is TestChurnWithHaltedEmptyChain.
 func (s *ChainHaltChurnTestSuite) TestHaltedEmptyChainDoesNotStopRotation(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	vault := newFundsCheckVault(ActiveVault, nil)

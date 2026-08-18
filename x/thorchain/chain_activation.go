@@ -295,9 +295,10 @@ func chainActivationReady(ctx cosmos.Context, k keeper.Keeper, chain common.Chai
 	// bifrost, say. Re-stamping it from the historical attester union would silently
 	// override that fresh vote and publish an inbound address nobody is scanning.
 	//
-	// This is what supplies currency to the proof; the active-set filter in chainAttesters
-	// cannot, since it establishes who the attesters are rather than that they still run
-	// the client. The signal is deliberately drawn from the vaults rather than from the
+	// This is what supplies currency to the proof - but only for a clean drop, see the
+	// funds carve-out below. The active-set filter in chainAttesters cannot supply it at
+	// all, since it establishes who the attesters are rather than that they still run the
+	// client. The signal is deliberately drawn from the vaults rather than from the
 	// mimir's effective height: that value is routinely backdated to 1 to mean "now", so
 	// it cannot date the operator's intent.
 	//
@@ -309,20 +310,30 @@ func chainActivationReady(ctx cosmos.Context, k keeper.Keeper, chain common.Chai
 		if isChainActivationExempt(retired) || !retired.HasChain(chain) {
 			continue
 		}
-		// ...unless the drop stranded funds. migrateFunds has no target vault for a
-		// chain no active vault carries, so it stalls; the retiring-vault funds check
-		// in ValidatorMgr.BeginBlock then holds the churn, and with the veto below in
-		// force there is no way out - stamping the chain back on is the only thing that
-		// unblocks migration. The veto protects a clean drop; a drop with funds still
-		// in flight is not one, and the operator setting the mimir is the explicit
-		// override. Every other gate still applies.
+		// ...unless the drop stranded funds, in which case the veto stands down.
+		//
+		// An orderly chain removal is ragnarok first, which drains the pools and empties
+		// the vaults, so the veto still holds there - it sees no funds. Funds still on
+		// the chain mean the drop was NOT orderly: migrateFunds has no target vault for a
+		// chain no active vault carries, so it stalls; the retiring-vault funds check in
+		// ValidatorMgr.BeginBlock then holds the churn; and with the veto in force there
+		// is no way out at all, since stamping the chain back on is the only thing that
+		// unblocks migration. A permanent network-wide churn halt is the worse outcome,
+		// and the operator setting the mimir is the explicit override. Every other gate
+		// still applies.
+		//
+		// Residual risk, stated plainly: if the chain really has been abandoned by every
+		// bifrost and funds were left behind anyway, this lets an operator re-stamp it
+		// and publish an inbound address nobody scans. Nothing in state distinguishes
+		// that from the accidental drop - a per-node freshness bar would, but
+		// SetLastObserveHeight is only written when a node observes an actual tx, so on
+		// a quiet stranded chain it is unsatisfiable for the same reason a fee-voter
+		// freshness window is (see chainAttesters).
 		//
 		// Deliberately looser than the churn blocker, which is HasFundsAboveDust over
 		// the whole vault: any non-zero balance on this chain disarms the veto, so a
 		// sub-dust remainder does too even though it would not have stalled anything.
-		// The exact predicate would be per-chain-above-dust, which no helper offers,
-		// and erring toward recovery is the right side to err on when the alternative
-		// is a network-wide churn halt.
+		// The exact predicate would be per-chain-above-dust, which no helper offers.
 		if retired.HasFundsForChain(chain) {
 			continue
 		}
