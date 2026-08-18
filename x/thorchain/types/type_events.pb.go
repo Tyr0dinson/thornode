@@ -3709,15 +3709,16 @@ func (m *EventLuviReward) GetReason() string {
 }
 
 type EventCircuitBreaker struct {
-	Invariant    string                 `protobuf:"bytes,1,opt,name=invariant,proto3" json:"invariant,omitempty"`
-	Asset        string                 `protobuf:"bytes,2,opt,name=asset,proto3" json:"asset,omitempty"`
-	Actual       cosmossdk_io_math.Uint `protobuf:"bytes,3,opt,name=actual,proto3,customtype=cosmossdk.io/math.Uint" json:"actual"`
-	Expected     cosmossdk_io_math.Uint `protobuf:"bytes,4,opt,name=expected,proto3,customtype=cosmossdk.io/math.Uint" json:"expected"`
-	DeviationBps int64                  `protobuf:"varint,5,opt,name=deviation_bps,json=deviationBps,proto3" json:"deviation_bps,omitempty"`
-	ToleranceBps int64                  `protobuf:"varint,6,opt,name=tolerance_bps,json=toleranceBps,proto3" json:"tolerance_bps,omitempty"`
-	Halted       bool                   `protobuf:"varint,7,opt,name=halted,proto3" json:"halted,omitempty"`
-	Messages     []string               `protobuf:"bytes,8,rep,name=messages,proto3" json:"messages,omitempty"`
-	Broken       bool                   `protobuf:"varint,9,opt,name=broken,proto3" json:"broken,omitempty"`
+	Invariant     string                 `protobuf:"bytes,1,opt,name=invariant,proto3" json:"invariant,omitempty"`
+	Asset         string                 `protobuf:"bytes,2,opt,name=asset,proto3" json:"asset,omitempty"`
+	Actual        cosmossdk_io_math.Uint `protobuf:"bytes,3,opt,name=actual,proto3,customtype=cosmossdk.io/math.Uint" json:"actual"`
+	Expected      cosmossdk_io_math.Uint `protobuf:"bytes,4,opt,name=expected,proto3,customtype=cosmossdk.io/math.Uint" json:"expected"`
+	DeviationBps  int64                  `protobuf:"varint,5,opt,name=deviation_bps,json=deviationBps,proto3" json:"deviation_bps,omitempty"`
+	ToleranceBps  int64                  `protobuf:"varint,6,opt,name=tolerance_bps,json=toleranceBps,proto3" json:"tolerance_bps,omitempty"`
+	Halted        bool                   `protobuf:"varint,7,opt,name=halted,proto3" json:"halted,omitempty"`
+	Messages      []string               `protobuf:"bytes,8,rep,name=messages,proto3" json:"messages,omitempty"`
+	Broken        bool                   `protobuf:"varint,9,opt,name=broken,proto3" json:"broken,omitempty"`
+	Indeterminate bool                   `protobuf:"varint,10,opt,name=indeterminate,proto3" json:"indeterminate,omitempty"`
 }
 
 func (m *EventCircuitBreaker) Reset()         { *m = EventCircuitBreaker{} }
@@ -3798,6 +3799,13 @@ func (m *EventCircuitBreaker) GetMessages() []string {
 func (m *EventCircuitBreaker) GetBroken() bool {
 	if m != nil {
 		return m.Broken
+	}
+	return false
+}
+
+func (m *EventCircuitBreaker) GetIndeterminate() bool {
+	if m != nil {
+		return m.Indeterminate
 	}
 	return false
 }
@@ -7613,6 +7621,16 @@ func (m *EventCircuitBreaker) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if m.Indeterminate {
+		i--
+		if m.Indeterminate {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x50
+	}
 	if m.Broken {
 		i--
 		if m.Broken {
@@ -9042,6 +9060,9 @@ func (m *EventCircuitBreaker) Size() (n int) {
 		}
 	}
 	if m.Broken {
+		n += 2
+	}
+	if m.Indeterminate {
 		n += 2
 	}
 	return n
@@ -20178,6 +20199,26 @@ func (m *EventCircuitBreaker) Unmarshal(dAtA []byte) error {
 				}
 			}
 			m.Broken = bool(v != 0)
+		case 10:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Indeterminate", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypeEvents
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.Indeterminate = bool(v != 0)
 		default:
 			iNdEx = preIndex
 			skippy, err := skipTypeEvents(dAtA[iNdEx:])

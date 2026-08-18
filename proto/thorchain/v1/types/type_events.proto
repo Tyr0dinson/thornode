@@ -891,4 +891,5 @@ message EventCircuitBreaker {
   bool halted = 7;
   repeated string messages = 8;
   bool broken = 9;
+  bool indeterminate = 10;
 }

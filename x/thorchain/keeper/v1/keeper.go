@@ -93,6 +93,7 @@ const (
 	prefixNodeJail                  types.DbPrefix = "jail/"
 	prefixNodeBlameRecord           types.DbPrefix = "node_blame/"
 	prefixSwapQueueItem             types.DbPrefix = "swapitem/"
+	prefixMalformedSwapPurge        types.DbPrefix = "malformed_swap_purge/"
 	prefixAdvSwapQueueItem          types.DbPrefix = "aq/"
 	prefixAdvSwapQueueLimitIndex    types.DbPrefix = "aqlim/"
 	prefixAdvSwapQueueMarketIndex   types.DbPrefix = "aqmark/"

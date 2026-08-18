@@ -35,8 +35,9 @@ func recordInsolvency(result *common.CircuitBreakerCheck, worstBps *cosmos.Uint,
 }
 
 // AsgardSolvencyCircuitBreaker checks the asgard module balance against expected
-// pool and swap queue coins. It reports the worst underfunding; indeterminate
-// reads fail closed via Broken.
+// pool and swap queue coins. It reports the worst underfunding; provable
+// violations set Broken (halt-eligible), while unreadable or unevaluable
+// state sets Indeterminate (reported, never halts).
 func AsgardSolvencyCircuitBreaker(k KVStore) common.CircuitBreakerInvariant {
 	return func(ctx cosmos.Context) common.CircuitBreakerCheck {
 		result := common.CircuitBreakerCheck{
@@ -44,12 +45,21 @@ func AsgardSolvencyCircuitBreaker(k KVStore) common.CircuitBreakerInvariant {
 			Expected: cosmos.ZeroUint(),
 		}
 
+		// Malformed queue records are deleted by FetchQueue earlier in the
+		// same EndBlock, before this route can observe them. Consume the
+		// purge signal so the deletion is still surfaced on-chain.
+		if purged := k.ConsumeMalformedSwapPurge(ctx); purged > 0 {
+			result.Indeterminate = true
+			result.Msgs = append(result.Msgs, fmt.Sprintf("%d malformed swap queue records deleted since last check", purged))
+		}
+
 		// sum all rune liquidity on pools, including pending
 		var poolCoins common.Coins
 		pools, err := k.GetPools(ctx)
 		if err != nil {
-			// solvency cannot be determined — fail closed
-			result.Broken = true
+			// solvency cannot be determined — report without asserting a
+			// violated invariant
+			result.Indeterminate = true
 			result.Msgs = append(result.Msgs, fmt.Sprintf("fail to get pools: %s", err))
 			return result
 		}
@@ -81,9 +91,10 @@ func AsgardSolvencyCircuitBreaker(k KVStore) common.CircuitBreakerInvariant {
 			for ; swapIter.Valid(); swapIter.Next() {
 				var swap MsgSwap
 				if unmarshalErr := k.Cdc().Unmarshal(swapIter.Value(), &swap); unmarshalErr != nil {
-					// corrupt record — panicking here would stop block
-					// production before the breaker can act
-					result.Broken = true
+					// unreadable record — no invariant is evaluated, and the
+					// system itself tolerates undecodable records, so this
+					// is reported without being halt-eligible
+					result.Indeterminate = true
 					result.Msgs = append(result.Msgs, fmt.Sprintf("fail to unmarshal swap record: %s", unmarshalErr))
 					continue
 				}
@@ -114,8 +125,9 @@ func AsgardSolvencyCircuitBreaker(k KVStore) common.CircuitBreakerInvariant {
 				if swap.IsLegacyStreaming() {
 					ss, ssErr := k.GetStreamingSwap(ctx, swap.Tx.ID)
 					if ssErr != nil {
-						// skipping would silently understate expected balances
-						result.Broken = true
+						// unreadable stream state — expected balances are
+						// unknowable, reported without a proven violation
+						result.Indeterminate = true
 						result.Msgs = append(result.Msgs, fmt.Sprintf("fail to get streaming swap %s: %s", swap.Tx.ID, ssErr))
 						continue
 					}
@@ -142,8 +154,9 @@ func AsgardSolvencyCircuitBreaker(k KVStore) common.CircuitBreakerInvariant {
 						// misread as a not-yet-started stream.
 						ss, ssErr := k.GetStreamingSwap(ctx, swap.Tx.ID)
 						if ssErr != nil {
-							// skipping would silently understate expected balances
-							result.Broken = true
+							// unreadable stream state — expected balances are
+							// unknowable, reported without a proven violation
+							result.Indeterminate = true
 							result.Msgs = append(result.Msgs, fmt.Sprintf("fail to get streaming swap %s: %s", swap.Tx.ID, ssErr))
 							continue
 						}
@@ -198,8 +211,9 @@ func AsgardSolvencyCircuitBreaker(k KVStore) common.CircuitBreakerInvariant {
 
 		expNative, err := poolCoins.Add(append(swapCoins, advSwapCoins...)...).Native()
 		if err != nil {
-			// solvency cannot be determined — fail closed
-			result.Broken = true
+			// solvency cannot be determined — report without asserting a
+			// violated invariant
+			result.Indeterminate = true
 			result.Msgs = append(result.Msgs, fmt.Sprintf("fail to convert expected coins to native: %s", err))
 			return result
 		}
@@ -239,7 +253,8 @@ func VaultDeficitCircuitBreaker(k KVStore) common.CircuitBreakerInvariant {
 		for ; iterator.Valid(); iterator.Next() {
 			var vault Vault
 			if err := k.Cdc().Unmarshal(iterator.Value(), &vault); err != nil {
-				result.Broken = true
+				// unreadable record — reported without a proven violation
+				result.Indeterminate = true
 				result.Msgs = append(result.Msgs, fmt.Sprintf("fail to unmarshal vault: %s", err))
 				continue
 			}
@@ -290,9 +305,8 @@ func BondSolvencyCircuitBreaker(k KVStore) common.CircuitBreakerInvariant {
 		for ; naIter.Valid(); naIter.Next() {
 			var na NodeAccount
 			if err := k.Cdc().Unmarshal(naIter.Value(), &na); err != nil {
-				// corrupt record — panicking here would stop block
-				// production before the breaker can act
-				result.Broken = true
+				// unreadable record — reported without a proven violation
+				result.Indeterminate = true
 				result.Msgs = append(result.Msgs, fmt.Sprintf("fail to unmarshal node account: %s", err))
 				continue
 			}
@@ -301,8 +315,9 @@ func BondSolvencyCircuitBreaker(k KVStore) common.CircuitBreakerInvariant {
 
 		network, err := k.GetNetwork(ctx)
 		if err != nil {
-			// pending bond rewards unknown — fail closed
-			result.Broken = true
+			// pending bond rewards unknown — report without asserting a
+			// violated invariant
+			result.Indeterminate = true
 			result.Msgs = append(result.Msgs, fmt.Sprintf("fail to get network: %s", err))
 			return result
 		}

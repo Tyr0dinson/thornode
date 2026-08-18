@@ -990,6 +990,10 @@ func (k KVStoreDummy) CircuitBreakerRoutes() []common.CircuitBreakerRoute {
 	return nil
 }
 
+func (k KVStoreDummy) AddMalformedSwapPurge(_ cosmos.Context, _ int64) {}
+
+func (k KVStoreDummy) ConsumeMalformedSwapPurge(_ cosmos.Context) int64 { return 0 }
+
 func (k KVStoreDummy) GetConstants() constants.ConstantValues {
 	return constants.GetConstantValues(semver.MustParse("9999999.0.0"))
 }

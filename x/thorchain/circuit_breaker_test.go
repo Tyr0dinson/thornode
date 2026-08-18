@@ -8,6 +8,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -102,6 +103,124 @@ func (s *CircuitBreakerRunSuite) TestCalculateCircuitBreakerPauseUntil(c *C) {
 	c.Assert(calculateCircuitBreakerPauseUntil(100, 1), Equals, int64(100)+constants.CircuitBreakerPauseBlocks)
 	c.Assert(calculateCircuitBreakerPauseUntil(100, 1000), Equals, int64(1100))
 	c.Assert(calculateCircuitBreakerPauseUntil(math.MaxInt64-10, 1000), Equals, int64(math.MaxInt64))
+}
+
+func (s *CircuitBreakerRunSuite) TestCircuitBreakerAction(c *C) {
+	clean := common.CircuitBreakerCheck{}
+	broken := common.CircuitBreakerCheck{Broken: true}
+	indeterminate := common.CircuitBreakerCheck{Indeterminate: true}
+	both := common.CircuitBreakerCheck{Broken: true, Indeterminate: true}
+
+	// within tolerance, nothing wrong: no finding
+	trigger, halt := circuitBreakerAction(clean, cosmos.NewUint(5), 5, 1)
+	c.Check(trigger, Equals, false)
+	c.Check(halt, Equals, false)
+
+	// beyond tolerance: finding, halts when armed
+	trigger, halt = circuitBreakerAction(clean, cosmos.NewUint(6), 5, 1)
+	c.Check(trigger, Equals, true)
+	c.Check(halt, Equals, true)
+	trigger, halt = circuitBreakerAction(clean, cosmos.NewUint(6), 5, 0)
+	c.Check(trigger, Equals, true)
+	c.Check(halt, Equals, false)
+
+	// a proven violation bypasses tolerance and halts when armed
+	trigger, halt = circuitBreakerAction(broken, cosmos.ZeroUint(), 9999, 1)
+	c.Check(trigger, Equals, true)
+	c.Check(halt, Equals, true)
+	trigger, halt = circuitBreakerAction(broken, cosmos.ZeroUint(), 9999, 0)
+	c.Check(trigger, Equals, true)
+	c.Check(halt, Equals, false)
+
+	// indeterminate state always reports but never halts, even when armed —
+	// the breaker must not be stricter than the system it protects
+	trigger, halt = circuitBreakerAction(indeterminate, cosmos.ZeroUint(), 0, 1)
+	c.Check(trigger, Equals, true)
+	c.Check(halt, Equals, false)
+
+	// indeterminate does not mask a coexisting proven violation
+	trigger, halt = circuitBreakerAction(both, cosmos.ZeroUint(), 0, 1)
+	c.Check(trigger, Equals, true)
+	c.Check(halt, Equals, true)
+
+	// indeterminate does not mask coexisting beyond-tolerance insolvency
+	trigger, halt = circuitBreakerAction(indeterminate, cosmos.NewUint(6), 5, 1)
+	c.Check(trigger, Equals, true)
+	c.Check(halt, Equals, true)
+}
+
+// indeterminateRouteKeeper overrides the registered routes with one that
+// reports indeterminate state, so the runner's halt decision can be
+// exercised end to end.
+type indeterminateRouteKeeper struct {
+	keeper.Keeper
+}
+
+func (k indeterminateRouteKeeper) CircuitBreakerRoutes() []common.CircuitBreakerRoute {
+	return []common.CircuitBreakerRoute{
+		common.NewCircuitBreakerRoute("AsgardSolvency", func(ctx cosmos.Context) common.CircuitBreakerCheck {
+			return common.CircuitBreakerCheck{
+				Actual:        cosmos.ZeroUint(),
+				Expected:      cosmos.ZeroUint(),
+				Indeterminate: true,
+				Msgs:          []string{"unreadable state"},
+			}
+		}),
+	}
+}
+
+func (s *CircuitBreakerRunSuite) TestRunCircuitBreakersIndeterminateNeverHalts(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+
+	// an armed route reporting indeterminate state must alert without
+	// halting — the breaker is not stricter than the system it protects
+	mgr.K = indeterminateRouteKeeper{Keeper: mgr.K}
+	mgr.Keeper().SetMimir(ctx, constants.MimirKeyInvCheckInterval, 1)
+	mgr.Keeper().SetMimir(ctx, "InvAsgardSolvencyAutoHalt", 1)
+
+	runCircuitBreakers(ctx, mgr)
+
+	pause, err := mgr.Keeper().GetMimir(ctx, constants.MimirKeyCircuitBreakerPauseGlobal)
+	c.Assert(err, IsNil)
+	c.Assert(pause, Equals, int64(-1))
+	attributes := circuitBreakerEventAttributes(ctx, "AsgardSolvency")
+	c.Assert(attributes, NotNil)
+	c.Assert(attributes["indeterminate"], Equals, "true")
+	c.Assert(attributes["broken"], Equals, "false")
+	c.Assert(attributes["halted"], Equals, "false")
+}
+
+func (s *CircuitBreakerRunSuite) TestRunCircuitBreakersMalformedQueueRecordPurge(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+
+	// plant an undecodable standard-queue record
+	c.Assert(mgr.storeService.OpenKVStore(ctx).Set([]byte("swapitem/CORRUPT-0"), []byte("garbage")), IsNil)
+
+	mgr.Keeper().SetMimir(ctx, constants.MimirKeyInvCheckInterval, 1)
+	mgr.Keeper().SetMimir(ctx, "InvAsgardSolvencyAutoHalt", 1)
+
+	// mirror the EndBlock order: the swap queue deletes the record before
+	// the breaker runs, and the purge must still be surfaced on-chain
+	c.Assert(mgr.SwapQ().EndBlock(ctx, mgr), IsNil)
+	runCircuitBreakers(ctx, mgr)
+
+	// alert-only: event fires with the purge message, no halt even armed
+	pause, err := mgr.Keeper().GetMimir(ctx, constants.MimirKeyCircuitBreakerPauseGlobal)
+	c.Assert(err, IsNil)
+	c.Assert(pause, Equals, int64(-1))
+	attributes := circuitBreakerEventAttributes(ctx, "AsgardSolvency")
+	c.Assert(attributes, NotNil)
+	c.Assert(attributes["indeterminate"], Equals, "true")
+	c.Assert(attributes["broken"], Equals, "false")
+	c.Assert(attributes["halted"], Equals, "false")
+	c.Assert(attributes["message_0"], Matches, "1 malformed swap queue records deleted.*")
+
+	// the record is gone and the signal consumed: the next check is clean
+	ctx = ctx.WithBlockHeight(101).WithEventManager(cosmos.NewEventManager())
+	runCircuitBreakers(ctx, mgr)
+	c.Assert(circuitBreakerEventAttributes(ctx, "AsgardSolvency"), IsNil)
 }
 
 func (s *CircuitBreakerRunSuite) TestRunCircuitBreakersDisabled(c *C) {
@@ -277,6 +396,7 @@ func (s *CircuitBreakerRunSuite) TestRunCircuitBreakersBrokenVaultDeficitAutoHal
 	c.Assert(attributes, NotNil)
 	c.Assert(attributes["halted"], Equals, "true")
 	c.Assert(attributes["broken"], Equals, "true")
+	c.Assert(attributes["indeterminate"], Equals, "false")
 }
 
 func (s *CircuitBreakerRunSuite) TestRunCircuitBreakersWithTolerance(c *C) {

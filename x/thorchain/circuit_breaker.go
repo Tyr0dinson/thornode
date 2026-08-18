@@ -68,11 +68,12 @@ func runCircuitBreakers(ctx cosmos.Context, mgr Manager) {
 		// ratio are signalled via Broken instead.
 		deviationBps := common.CalculateInsolvencyBps(check.Actual, check.Expected)
 
-		// Broken bypasses tolerance: binary, corrupt, or indeterminate
-		// results must always trigger. Otherwise trigger only on divergence
-		// beyond tolerance. The comparison stays in arbitrary precision so
+		// Broken and Indeterminate bypass tolerance so the finding is always
+		// reported; only Broken and beyond-tolerance insolvency are
+		// halt-eligible. The comparison stays in arbitrary precision so
 		// extreme divergence cannot overflow into a silent skip.
-		if !check.Broken && deviationBps.LTE(cosmos.NewUint(uint64(toleranceBps))) {
+		trigger, halt := circuitBreakerAction(check, deviationBps, toleranceBps, autoHalt)
+		if !trigger {
 			continue
 		}
 
@@ -80,8 +81,7 @@ func runCircuitBreakers(ctx cosmos.Context, mgr Manager) {
 		// negative or panic on conversion.
 		deviationBpsInt := saturateInt64(deviationBps)
 
-		// Determine if we should halt
-		halted := autoHalt > 0
+		halted := halt
 
 		// Emit circuit breaker event
 		evt := NewEventCircuitBreaker(
@@ -93,6 +93,7 @@ func runCircuitBreakers(ctx cosmos.Context, mgr Manager) {
 			toleranceBps,
 			halted,
 			check.Broken,
+			check.Indeterminate,
 			check.Msgs,
 		)
 		if err := mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
@@ -107,6 +108,7 @@ func runCircuitBreakers(ctx cosmos.Context, mgr Manager) {
 			"deviation_bps", deviationBpsInt,
 			"tolerance_bps", toleranceBps,
 			"broken", check.Broken,
+			"indeterminate", check.Indeterminate,
 			"halted", halted,
 		)
 
@@ -143,6 +145,22 @@ func runCircuitBreakers(ctx cosmos.Context, mgr Manager) {
 			)
 		}
 	}
+}
+
+// circuitBreakerAction decides whether a check result produces a finding
+// and whether that finding halts the chain. Broken (a provably violated
+// invariant) and Indeterminate (state the check could not read or evaluate)
+// both bypass tolerance and always produce a finding. Only Broken and
+// beyond-tolerance insolvency are halt-eligible: the system itself
+// tolerates unreadable records, so halting on Indeterminate alone would
+// make the breaker stricter than the system it protects.
+// toleranceBps must be non-negative (the caller clamps it): a negative value
+// would convert to a huge unsigned tolerance and disable numeric halts.
+func circuitBreakerAction(check common.CircuitBreakerCheck, deviationBps cosmos.Uint, toleranceBps, autoHalt int64) (trigger, halt bool) {
+	deviationExceeds := deviationBps.GT(cosmos.NewUint(uint64(toleranceBps)))
+	trigger = check.Broken || check.Indeterminate || deviationExceeds
+	halt = autoHalt > 0 && (check.Broken || deviationExceeds)
+	return trigger, halt
 }
 
 // saturateInt64 converts an unsigned BPS value for int64 event fields,

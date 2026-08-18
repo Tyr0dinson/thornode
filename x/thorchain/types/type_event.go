@@ -1682,17 +1682,18 @@ func (m *EventLuviReward) Events() (cosmos.Events, error) {
 }
 
 // NewEventCircuitBreaker create a new circuit breaker event
-func NewEventCircuitBreaker(invariant, asset string, actual, expected cosmos.Uint, deviationBps, toleranceBps int64, halted, broken bool, messages []string) *EventCircuitBreaker {
+func NewEventCircuitBreaker(invariant, asset string, actual, expected cosmos.Uint, deviationBps, toleranceBps int64, halted, broken, indeterminate bool, messages []string) *EventCircuitBreaker {
 	return &EventCircuitBreaker{
-		Invariant:    invariant,
-		Asset:        asset,
-		Actual:       actual,
-		Expected:     expected,
-		DeviationBps: deviationBps,
-		ToleranceBps: toleranceBps,
-		Halted:       halted,
-		Broken:       broken,
-		Messages:     messages,
+		Invariant:     invariant,
+		Asset:         asset,
+		Actual:        actual,
+		Expected:      expected,
+		DeviationBps:  deviationBps,
+		ToleranceBps:  toleranceBps,
+		Halted:        halted,
+		Broken:        broken,
+		Indeterminate: indeterminate,
+		Messages:      messages,
 	}
 }
 
@@ -1712,6 +1713,7 @@ func (m *EventCircuitBreaker) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("tolerance_bps", strconv.FormatInt(m.ToleranceBps, 10)),
 		cosmos.NewAttribute("halted", strconv.FormatBool(m.Halted)),
 		cosmos.NewAttribute("broken", strconv.FormatBool(m.Broken)),
+		cosmos.NewAttribute("indeterminate", strconv.FormatBool(m.Indeterminate)),
 	)
 	for i, msg := range m.Messages {
 		evt = evt.AppendAttributes(

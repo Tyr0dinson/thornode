@@ -139,6 +139,7 @@ func (s *CircuitBreakerSuite) TestVaultDeficitCircuitBreakerBrokenInvariant(c *C
 
 	check := VaultDeficitCircuitBreaker(k)(ctx)
 	c.Assert(check.Broken, Equals, true)
+	c.Assert(check.Indeterminate, Equals, false)
 	c.Assert(check.Actual.Equal(cosmos.NewUint(10)), Equals, true)
 	c.Assert(check.Expected.Equal(cosmos.NewUint(11)), Equals, true)
 	c.Assert(check.Asset, Equals, common.ETHAsset.String())
@@ -151,8 +152,10 @@ func (s *CircuitBreakerSuite) TestVaultDeficitCircuitBreakerCorruptVault(c *C) {
 
 	c.Assert(k.storeService.OpenKVStore(ctx).Set(k.GetKey(prefixVault, "corrupt"), []byte("garbage")), IsNil)
 
+	// unreadable records are indeterminate, not proven violations
 	check := VaultDeficitCircuitBreaker(k)(ctx)
-	c.Assert(check.Broken, Equals, true)
+	c.Assert(check.Broken, Equals, false)
+	c.Assert(check.Indeterminate, Equals, true)
 	c.Assert(check.Msgs, HasLen, 1)
 	c.Assert(check.Msgs[0], Matches, "fail to unmarshal vault:.*")
 }
@@ -171,6 +174,7 @@ func (s *CircuitBreakerSuite) TestVaultDeficitCircuitBreakerOverflowingAmounts(c
 
 	check := VaultDeficitCircuitBreaker(k)(ctx)
 	c.Assert(check.Broken, Equals, true)
+	c.Assert(check.Indeterminate, Equals, false)
 	c.Assert(check.Msgs, HasLen, 1)
 	c.Assert(check.Asset, Equals, common.ETHAsset.String())
 	c.Assert(check.Actual.Equal(maxUint), Equals, true)
@@ -257,6 +261,7 @@ func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerMalformedSwap(c *C
 
 	check := AsgardSolvencyCircuitBreaker(k)(ctx)
 	c.Assert(check.Broken, Equals, true)
+	c.Assert(check.Indeterminate, Equals, false)
 	c.Assert(check.Msgs, HasLen, 1)
 	c.Assert(check.Msgs[0], Matches, "wrong number of coins for swap:.*")
 }
@@ -314,6 +319,7 @@ func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerInconsistentLegacy
 
 	check := AsgardSolvencyCircuitBreaker(k)(ctx)
 	c.Assert(check.Broken, Equals, true)
+	c.Assert(check.Indeterminate, Equals, false)
 	c.Assert(check.Msgs, HasLen, 1)
 	c.Assert(check.Msgs[0], Matches, "inconsistent streaming state for swap .*")
 }
@@ -345,6 +351,7 @@ func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerInconsistentSwapSt
 
 	check := AsgardSolvencyCircuitBreaker(k)(ctx)
 	c.Assert(check.Broken, Equals, true)
+	c.Assert(check.Indeterminate, Equals, false)
 	c.Assert(check.Msgs, HasLen, 1)
 	c.Assert(check.Msgs[0], Matches, "inconsistent swap state for .*")
 }
@@ -420,6 +427,7 @@ func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerZeroInDepositMisma
 
 	check := AsgardSolvencyCircuitBreaker(k)(ctx)
 	c.Assert(check.Broken, Equals, true)
+	c.Assert(check.Indeterminate, Equals, false)
 	c.Assert(check.Msgs, HasLen, 1)
 	c.Assert(check.Msgs[0], Matches, "inconsistent streaming state for swap .*")
 }
@@ -452,6 +460,7 @@ func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerZeroInDepositMisma
 
 	check := AsgardSolvencyCircuitBreaker(k)(ctx)
 	c.Assert(check.Broken, Equals, true)
+	c.Assert(check.Indeterminate, Equals, false)
 	c.Assert(check.Msgs, HasLen, 1)
 	c.Assert(check.Msgs[0], Matches, "inconsistent swap state for .*")
 }
@@ -591,6 +600,7 @@ func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerOldFormatV2Contrad
 
 	check := AsgardSolvencyCircuitBreaker(k)(ctx)
 	c.Assert(check.Broken, Equals, true)
+	c.Assert(check.Indeterminate, Equals, false)
 	c.Assert(check.Msgs, HasLen, 1)
 	c.Assert(check.Msgs[0], Matches, "inconsistent swap state for .*")
 }
@@ -633,6 +643,7 @@ func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerOldFormatV2RecordM
 
 	check := AsgardSolvencyCircuitBreaker(k)(ctx)
 	c.Assert(check.Broken, Equals, true)
+	c.Assert(check.Indeterminate, Equals, false)
 	c.Assert(check.Msgs, HasLen, 1)
 	c.Assert(check.Msgs[0], Matches, "inconsistent streaming state for swap .*")
 }
@@ -728,6 +739,7 @@ func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerExternalInputIncon
 
 	check := AsgardSolvencyCircuitBreaker(k)(ctx)
 	c.Assert(check.Broken, Equals, true)
+	c.Assert(check.Indeterminate, Equals, false)
 	c.Assert(check.Msgs, HasLen, 1)
 	c.Assert(check.Msgs[0], Matches, "inconsistent streaming state for swap .*")
 }
@@ -761,6 +773,7 @@ func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerExternalInputDepos
 
 	check := AsgardSolvencyCircuitBreaker(k)(ctx)
 	c.Assert(check.Broken, Equals, true)
+	c.Assert(check.Indeterminate, Equals, false)
 	c.Assert(check.Msgs, HasLen, 1)
 	c.Assert(check.Msgs[0], Matches, "inconsistent swap state for .*")
 }
@@ -850,6 +863,7 @@ func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerSecuredInputStream
 
 	check = AsgardSolvencyCircuitBreaker(k)(ctx)
 	c.Assert(check.Broken, Equals, true)
+	c.Assert(check.Indeterminate, Equals, false)
 	c.Assert(check.Msgs, HasLen, 1)
 	c.Assert(check.Msgs[0], Matches, "inconsistent streaming state for swap .*")
 }
@@ -864,8 +878,10 @@ func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerCorruptSwapRecord(
 
 	c.Assert(k.storeService.OpenKVStore(ctx).Set(k.GetKey(prefixSwapQueueItem, "corrupt"), []byte("garbage")), IsNil)
 
+	// unreadable records are indeterminate, not proven violations
 	check := AsgardSolvencyCircuitBreaker(k)(ctx)
-	c.Assert(check.Broken, Equals, true)
+	c.Assert(check.Broken, Equals, false)
+	c.Assert(check.Indeterminate, Equals, true)
 	c.Assert(check.Msgs, HasLen, 1)
 	c.Assert(check.Msgs[0], Matches, "fail to unmarshal swap record:.*")
 }
@@ -875,10 +891,102 @@ func (s *CircuitBreakerSuite) TestBondSolvencyCircuitBreakerCorruptNodeAccount(c
 
 	c.Assert(k.storeService.OpenKVStore(ctx).Set(k.GetKey(prefixNodeAccount, "corrupt"), []byte("garbage")), IsNil)
 
+	// unreadable records are indeterminate, not proven violations
 	check := BondSolvencyCircuitBreaker(k)(ctx)
-	c.Assert(check.Broken, Equals, true)
+	c.Assert(check.Broken, Equals, false)
+	c.Assert(check.Indeterminate, Equals, true)
 	c.Assert(check.Msgs, HasLen, 1)
 	c.Assert(check.Msgs[0], Matches, "fail to unmarshal node account:.*")
+}
+
+func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerCorruptPool(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	c.Assert(k.storeService.OpenKVStore(ctx).Set(k.GetKey(prefixPool, "corrupt"), []byte("garbage")), IsNil)
+
+	// an unreadable pool aborts the whole route as indeterminate — no
+	// invariant is proven violated
+	check := AsgardSolvencyCircuitBreaker(k)(ctx)
+	c.Assert(check.Broken, Equals, false)
+	c.Assert(check.Indeterminate, Equals, true)
+	c.Assert(check.Msgs, HasLen, 1)
+	c.Assert(check.Msgs[0], Matches, "fail to get pools:.*")
+}
+
+func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerCorruptStreamingRecord(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// empty the starting balance of asgard
+	runeBal := k.GetRuneBalanceOfModule(ctx, AsgardName)
+	coins := common.NewCoins(common.NewCoin(common.RuneAsset(), runeBal))
+	c.Assert(k.SendFromModuleToModule(ctx, AsgardName, ReserveName, coins), IsNil)
+
+	// V1 streaming swap whose separate record bytes are unreadable
+	tx := GetRandomTx()
+	tx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(500)))
+	swap := MsgSwap{
+		Tx:             tx,
+		TargetAsset:    common.BTCAsset,
+		StreamInterval: 1,
+		Version:        types.SwapVersion_v1,
+	}
+	c.Assert(k.SetSwapQueueItem(ctx, swap, 0), IsNil)
+	c.Assert(k.storeService.OpenKVStore(ctx).Set(k.GetKey(prefixStreamingSwap, tx.ID.String()), []byte("garbage")), IsNil)
+
+	check := AsgardSolvencyCircuitBreaker(k)(ctx)
+	c.Assert(check.Broken, Equals, false)
+	c.Assert(check.Indeterminate, Equals, true)
+	c.Assert(check.Msgs, HasLen, 1)
+	c.Assert(check.Msgs[0], Matches, "fail to get streaming swap .*")
+}
+
+func (s *CircuitBreakerSuite) TestBondSolvencyCircuitBreakerCorruptNetwork(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	c.Assert(k.storeService.OpenKVStore(ctx).Set(k.GetKey(prefixNetwork, ""), []byte("garbage")), IsNil)
+
+	// an unreadable network singleton aborts the route as indeterminate
+	check := BondSolvencyCircuitBreaker(k)(ctx)
+	c.Assert(check.Broken, Equals, false)
+	c.Assert(check.Indeterminate, Equals, true)
+	c.Assert(check.Msgs, HasLen, 1)
+	c.Assert(check.Msgs[0], Matches, "fail to get network:.*")
+}
+
+func (s *CircuitBreakerSuite) TestMalformedSwapPurgeSignal(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// nothing recorded: consume returns zero
+	c.Assert(k.ConsumeMalformedSwapPurge(ctx), Equals, int64(0))
+
+	// purges accumulate until consumed, then reset
+	k.AddMalformedSwapPurge(ctx, 2)
+	k.AddMalformedSwapPurge(ctx, 3)
+	k.AddMalformedSwapPurge(ctx, 0)
+	c.Assert(k.ConsumeMalformedSwapPurge(ctx), Equals, int64(5))
+	c.Assert(k.ConsumeMalformedSwapPurge(ctx), Equals, int64(0))
+}
+
+func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerConsumesPurgeSignal(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// empty asgard so the purge signal is the only finding
+	runeBal := k.GetRuneBalanceOfModule(ctx, AsgardName)
+	coins := common.NewCoins(common.NewCoin(common.RuneAsset(), runeBal))
+	c.Assert(k.SendFromModuleToModule(ctx, AsgardName, ReserveName, coins), IsNil)
+
+	k.AddMalformedSwapPurge(ctx, 3)
+
+	check := AsgardSolvencyCircuitBreaker(k)(ctx)
+	c.Assert(check.Broken, Equals, false)
+	c.Assert(check.Indeterminate, Equals, true)
+	c.Assert(check.Msgs, HasLen, 1)
+	c.Assert(check.Msgs[0], Equals, "3 malformed swap queue records deleted since last check")
+
+	// consumed: the next check is clean
+	check = AsgardSolvencyCircuitBreaker(k)(ctx)
+	c.Assert(check.Indeterminate, Equals, false)
+	c.Assert(check.Msgs, HasLen, 0)
 }
 
 func (s *CircuitBreakerSuite) TestCircuitBreakerRoutes(c *C) {

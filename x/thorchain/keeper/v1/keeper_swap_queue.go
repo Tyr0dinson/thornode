@@ -64,3 +64,27 @@ func (k KVStore) HasSwapQueueItem(ctx cosmos.Context, txID common.TxID, i int) b
 func (k KVStore) RemoveSwapQueueItem(ctx cosmos.Context, txID common.TxID, i int) {
 	k.del(ctx, k.GetKey(prefixSwapQueueItem, formatSwapQueueItemKey(txID, i)))
 }
+
+// AddMalformedSwapPurge records that malformed swap queue records were
+// deleted, so the circuit breaker can surface the purge at its next check —
+// the records themselves are gone before it runs. The counter is an
+// operational signal and is deliberately not exported in genesis.
+func (k KVStore) AddMalformedSwapPurge(ctx cosmos.Context, count int64) {
+	if count <= 0 {
+		return
+	}
+	key := k.GetKey(prefixMalformedSwapPurge, "count")
+	var current int64
+	_, _ = k.getInt64(ctx, key, &current)
+	k.setInt64(ctx, key, current+count)
+}
+
+// ConsumeMalformedSwapPurge returns the number of malformed swap queue
+// records deleted since the last call and clears the counter.
+func (k KVStore) ConsumeMalformedSwapPurge(ctx cosmos.Context) int64 {
+	key := k.GetKey(prefixMalformedSwapPurge, "count")
+	var count int64
+	_, _ = k.getInt64(ctx, key, &count)
+	k.del(ctx, key)
+	return count
+}

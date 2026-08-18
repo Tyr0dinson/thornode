@@ -102,6 +102,9 @@ func (vm *SwapQueueImpl) FetchQueue(ctx cosmos.Context) (swapItems, error) { // 
 	for _, key := range malformedKeys {
 		vm.k.DeleteKey(ctx, key)
 	}
+	// Signal the deletions so the circuit breaker can surface them at its
+	// next check — by the time it scans the queue the records are gone.
+	vm.k.AddMalformedSwapPurge(ctx, int64(len(malformedKeys)))
 
 	return items, nil
 }

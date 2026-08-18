@@ -45,6 +45,8 @@ type Keeper interface {
 
 	InvariantRoutes() []common.InvariantRoute
 	CircuitBreakerRoutes() []common.CircuitBreakerRoute
+	AddMalformedSwapPurge(ctx cosmos.Context, count int64)
+	ConsumeMalformedSwapPurge(ctx cosmos.Context) int64
 
 	GetConstants() constants.ConstantValues
 	GetConfigInt64(ctx cosmos.Context, key constants.ConstantName) int64

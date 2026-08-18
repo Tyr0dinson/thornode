@@ -40,10 +40,18 @@ type CircuitBreakerCheck struct {
 	Expected cosmos.Uint
 	Asset    string
 	Msgs     []string
-	// Broken marks conditions where a tolerance comparison is meaningless and
-	// the circuit breaker must trigger: binary checks, state corruption, and
-	// indeterminate results.
+	// Broken marks a provably violated invariant: a condition a defined
+	// invariant recognizes as impossible (inconsistent streaming accounting,
+	// malformed queue records, vault coins coexisting with deficit). Broken
+	// bypasses tolerance and is halt-eligible when auto-halt is armed.
 	Broken bool
+	// Indeterminate marks state the check could not read or evaluate:
+	// decode failures, store read errors, conversion failures. No invariant
+	// is proven violated — the check simply could not run to completion.
+	// Indeterminate bypasses tolerance so the finding is always reported,
+	// but it never halts: the system itself tolerates unreadable records,
+	// and the breaker must not be stricter than the system it protects.
+	Indeterminate bool
 }
 
 // CircuitBreakerInvariant is a function that checks solvency and returns
