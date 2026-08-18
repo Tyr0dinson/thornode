@@ -439,6 +439,15 @@ func calculatePoolUnits(oldPoolUnits, poolRune, poolAsset, addRune, addAsset cos
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), errors.New("total asset in the pool is zero")
 	}
 
+	// Adding to an existing pool (units already issued) whose asset balance is
+	// zero would mint units decoupled from the pool's (possibly inflated) RUNE
+	// depth — a dilution/drain primitive. Refuse it, mirroring the synthetic
+	// path's guard. A brand-new pool (oldPoolUnits == 0) is unaffected and still
+	// seeds normally.
+	if poolAsset.IsZero() && !oldPoolUnits.IsZero() {
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), errors.New("cannot add liquidity: pool has non-zero units with zero asset balance")
+	}
+
 	if poolRune.IsZero() || poolAsset.IsZero() || oldPoolUnits.IsZero() {
 		sUnits := addRune
 		if addRune.IsZero() {

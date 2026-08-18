@@ -800,6 +800,20 @@ func (s *HandlerAddLiquiditySuite) TestCalculateLPUnits(c *C) {
 			liquidityUnits: cosmos.NewUint(100 * common.One),
 			expectedErr:    nil,
 		},
+		{
+			// Bug-6 guard: an existing pool (units already issued) with its asset
+			// drained to zero but RUNE depth intact must reject an asset-only add,
+			// which would otherwise mint units decoupled from the inflated RUNE.
+			name:           "existing-pool-zero-asset-rejected",
+			oldLPUnits:     cosmos.NewUint(789500 * common.One),
+			poolRune:       cosmos.NewUint(500 * common.One),
+			poolAsset:      cosmos.ZeroUint(),
+			addRune:        cosmos.ZeroUint(),
+			addAsset:       cosmos.NewUint(1 * common.One),
+			poolUnits:      cosmos.ZeroUint(),
+			liquidityUnits: cosmos.ZeroUint(),
+			expectedErr:    errors.New("cannot add liquidity: pool has non-zero units with zero asset balance"),
+		},
 	}
 
 	for _, item := range inputs {
