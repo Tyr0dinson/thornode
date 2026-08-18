@@ -155,18 +155,25 @@ func (s *frostBroadcastScheduler) cancel(msgID string) int {
 	if len(queue) == 0 {
 		return 0
 	}
-	kept := make([]frostBroadcastTask, 0, len(queue))
 	dropped := 0
+	for _, task := range queue {
+		if !task.terminal {
+			dropped++
+		}
+	}
+	// Do not touch an all-terminal queue. Clearing it before discovering that
+	// there is no ordinary work to drop corrupts the live pending tasks while
+	// leaving the scheduler counters unchanged.
+	if dropped == 0 {
+		return 0
+	}
+
+	kept := make([]frostBroadcastTask, 0, len(queue)-dropped)
 	for i := range queue {
 		if queue[i].terminal {
 			kept = append(kept, queue[i])
-		} else {
-			dropped++
 		}
 		queue[i] = frostBroadcastTask{}
-	}
-	if dropped == 0 {
-		return 0
 	}
 	s.pending -= dropped
 	if len(kept) == 0 {

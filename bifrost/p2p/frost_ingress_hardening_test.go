@@ -348,17 +348,88 @@ func TestCancelFrostBroadcastsPreservesAndPrioritizesTerminalResult(t *testing.T
 		t.Fatal("enqueue terminal result")
 	}
 
-	first, ok := scheduler.next()
-	if !ok || !first.terminal {
-		t.Fatal("terminal result was not prioritized ahead of obsolete round traffic")
-	}
 	if dropped := scheduler.cancel("completed-keysign"); dropped != 10 {
 		t.Fatalf("canceled %d round tasks, want 10", dropped)
 	}
-	if scheduler.pending != 0 {
-		t.Fatalf("scheduler retained %d tasks after terminal dispatch and cancellation", scheduler.pending)
+	if scheduler.pending != 1 {
+		t.Fatalf("scheduler retained %d tasks after cancellation, want terminal result only", scheduler.pending)
+	}
+	first, ok := scheduler.next()
+	if !ok || !first.terminal || first.msgID != "completed-keysign" {
+		t.Fatal("terminal result was not preserved and prioritized after cancellation")
 	}
 	scheduler.complete("completed-keysign", true)
+	if scheduler.pending != 0 || scheduler.active != 0 {
+		t.Fatalf("terminal completion left pending=%d active=%d", scheduler.pending, scheduler.active)
+	}
+}
+
+func TestCancelFrostBroadcastsPreservesAllTerminalQueue(t *testing.T) {
+	scheduler := newFrostBroadcastScheduler(4, 2, FrostMaxPendingBroadcasts)
+	expected := []frostBroadcastTask{
+		{
+			msgID:    "completed-keysign",
+			msg:      []byte("keysign-result"),
+			msgType:  messages.TSSFrostResultMsg,
+			terminal: true,
+		},
+		{
+			msgID:    "completed-keysign",
+			msg:      []byte("dkg-result"),
+			msgType:  messages.TSSFrostDKGResultMsg,
+			terminal: true,
+		},
+	}
+	for i, task := range expected {
+		if !scheduler.enqueue(task) {
+			t.Fatalf("enqueue terminal task %d", i+1)
+		}
+	}
+
+	// Repeated cancellation used to clear the live backing array on the first
+	// call while leaving pending and ready bookkeeping unchanged.
+	for iteration := 0; iteration < 8; iteration++ {
+		if dropped := scheduler.cancel("completed-keysign"); dropped != 0 {
+			t.Fatalf("iteration %d canceled %d terminal tasks", iteration, dropped)
+		}
+		if scheduler.pending != len(expected) {
+			t.Fatalf("iteration %d pending=%d, want %d", iteration, scheduler.pending, len(expected))
+		}
+		queue := scheduler.pendingByID["completed-keysign"]
+		if len(queue) != len(expected) {
+			t.Fatalf("iteration %d queue length=%d, want %d", iteration, len(queue), len(expected))
+		}
+		for i := range expected {
+			if queue[i].msgID != expected[i].msgID ||
+				queue[i].msgType != expected[i].msgType ||
+				queue[i].terminal != expected[i].terminal ||
+				string(queue[i].msg) != string(expected[i].msg) {
+				t.Fatalf("iteration %d terminal task %d changed: %+v", iteration, i, queue[i])
+			}
+		}
+	}
+
+	for i := range expected {
+		task, ok := scheduler.next()
+		if !ok {
+			t.Fatalf("terminal task %d was lost", i)
+		}
+		if task.msgID != expected[i].msgID || task.msgType != expected[i].msgType ||
+			!task.terminal || string(task.msg) != string(expected[i].msg) {
+			t.Fatalf("terminal task %d changed during dispatch: %+v", i, task)
+		}
+		scheduler.complete(task.msgID, task.terminal)
+	}
+	if scheduler.pending != 0 || scheduler.active != 0 ||
+		len(scheduler.pendingByID) != 0 || len(scheduler.activeByMsgID) != 0 {
+		t.Fatalf(
+			"terminal dispatch leaked scheduler state: pending=%d active=%d pending_ids=%d active_ids=%d",
+			scheduler.pending,
+			scheduler.active,
+			len(scheduler.pendingByID),
+			len(scheduler.activeByMsgID),
+		)
+	}
 }
 
 func TestDrainCanceledFrostIngressRequeuesWhenDeferredFull(t *testing.T) {
