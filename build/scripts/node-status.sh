@@ -496,6 +496,7 @@ if [ "$VALIDATOR" = "true" ]; then
       echo "REQUIRED VOTES - you cannot churn in until you vote on these"
     fi
     echo "$UNVOTED" | sed 's/^/    /'
+    echo "    (vote -2 to abstain if you have no preference)"
   fi
 fi
 

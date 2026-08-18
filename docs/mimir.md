@@ -332,6 +332,23 @@ turnout, so operators can see what is being enforced without inferring it from v
 `make status` in node-launcher shows the subset a node has not voted on, with whether it means
 churn-out risk (active) or a blocked churn in (standby).
 
+#### Abstaining
+
+A node that does not want to take a side can vote `-2` to abstain. Do not confuse it with `-1`:
+
+- `-1` **removes** the vote entirely. The node is back to not having voted, so it is again at
+  risk of churn out (or blocked from churning in).
+- `-2` **abstains**. The vote is stored, so it counts toward the turnout and clears the
+  requirement for that node, but it is excluded from every tally and can never become the
+  mimir value.
+
+The supermajority is still measured against the whole active set, so abstaining makes
+consensus harder to reach rather than easier — that is deliberate, otherwise a handful of
+nodes could set a value once everyone else stepped aside. Abstains also count toward the
+1/3+1 that puts a key into the required state in the first place.
+
+Abstain is only accepted on ADR keys, since nowhere else is voting required.
+
 Standby and ready nodes may vote on ADR mimirs (they cannot vote on any other mimir), so a node
 can clear the gate before churning in. Their votes are stored but do not count toward the
 turnout or the supermajority until they become active. Two limits apply to them:

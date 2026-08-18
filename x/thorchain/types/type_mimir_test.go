@@ -3,6 +3,7 @@ package types
 import (
 	types "github.com/cosmos/cosmos-sdk/types"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	. "gopkg.in/check.v1"
 )
 
@@ -172,4 +173,60 @@ func (s *MimirTestSuite) TestValueOfEconomic(c *C) {
 
 	// Test for key not present
 	c.Assert(m.ValueOfEconomic("testKey2", []types.AccAddress{addr1, addr2, addr3, addr4}), Equals, int64(-1))
+}
+
+// Abstain (-2) is a stored vote that counts as turnout but must never be tallied as a
+// candidate value, or a bloc of abstainers could "win" and be written as the mimir value.
+func (s *MimirTestSuite) TestAbstain(c *C) {
+	abstain := constants.MimirAbstainValue
+	addr1 := types.AccAddress([]byte("addr1"))
+	addr2 := types.AccAddress([]byte("addr2"))
+	addr3 := types.AccAddress([]byte("addr3"))
+	addr4 := types.AccAddress([]byte("addr4"))
+	// 4 active means the supermajority bar is 3, so 2 real votes is short of it.
+	active := []types.AccAddress{addr1, addr2, addr3, addr4}
+	key := "ADR42TEST"
+
+	// Everyone abstains: no winner anywhere, and -2 is never returned as the value.
+	m := NodeMimirs{Mimirs: []NodeMimir{
+		{Key: key, Value: abstain, Signer: addr1},
+		{Key: key, Value: abstain, Signer: addr2},
+		{Key: key, Value: abstain, Signer: addr3},
+		{Key: key, Value: abstain, Signer: addr4},
+	}}
+	val, ok := m.HasSuperMajority(key, active)
+	c.Check(ok, Equals, false)
+	c.Check(val, Not(Equals), abstain)
+	val, ok = m.HasSimpleMajority(key, active)
+	c.Check(ok, Equals, false)
+	c.Check(val, Not(Equals), abstain)
+	c.Check(m.ValueOfEconomic(key, active), Equals, int64(-1))
+	c.Check(m.ValueOfOperational(key, 1, active), Equals, int64(-1))
+
+	// but they all count as having participated
+	c.Check(m.VotersOf(key, active), Equals, 4)
+
+	// Abstains don't lower the supermajority bar: 2 real votes out of 4 active is short,
+	// even though it is everyone who expressed a preference.
+	m.Set(key, 7, addr1)
+	m.Set(key, 7, addr2)
+	_, ok = m.HasSuperMajority(key, active)
+	c.Check(ok, Equals, false)
+	c.Check(m.ValueOfEconomic(key, active), Equals, int64(-1))
+	c.Check(m.VotersOf(key, active), Equals, 4)
+
+	// Operational plurality ignores the abstains and picks the real value.
+	c.Check(m.ValueOfOperational(key, 2, active), Equals, int64(7))
+
+	// A third real vote makes the supermajority.
+	m.Set(key, 7, addr3)
+	val, ok = m.HasSuperMajority(key, active)
+	c.Check(ok, Equals, true)
+	c.Check(val, Equals, int64(7))
+
+	// Switching back to abstain drops that vote from the tally but keeps the turnout.
+	m.Set(key, abstain, addr3)
+	_, ok = m.HasSuperMajority(key, active)
+	c.Check(ok, Equals, false)
+	c.Check(m.VotersOf(key, active), Equals, 4)
 }

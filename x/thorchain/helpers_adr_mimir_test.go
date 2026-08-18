@@ -300,3 +300,73 @@ func (s *ADRMimirSuite) TestMarkNonVotingActors(c *C) {
 	c.Assert(vm.markNonVotingActors(ctx), IsNil)
 	c.Check(markedCount(), Equals, 0)
 }
+
+// Abstaining is how a node clears the requirement without taking a side: the vote is stored
+// (unlike -1, which removes it) and counts as turnout, but never toward a value.
+func (s *ADRMimirSuite) TestAbstainClearsRequirement(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	nas := addActiveNodes(c, ctx, k, 9)
+	const key = "ADR42ABSTAIN"
+
+	for i := 0; i < 4; i++ {
+		c.Assert(k.SetNodeMimir(ctx, key, 1, nas[i].NodeAddress), IsNil)
+	}
+	pending, err := pendingADRVotes(ctx, k)
+	c.Assert(err, IsNil)
+	c.Assert(pending, HasLen, 1)
+
+	// abstaining stores the vote, so this node is no longer required to vote
+	c.Assert(k.SetNodeMimir(ctx, key, constants.MimirAbstainValue, nas[4].NodeAddress), IsNil)
+	_, ok := nodeHasPendingADRVote(ctx, k, nas[4].NodeAddress)
+	c.Check(ok, Equals, false)
+
+	// ...but it does not help form consensus - 4 of 9 is still short of the 6 needed
+	pending, err = pendingADRVotes(ctx, k)
+	c.Assert(err, IsNil)
+	c.Check(pending, HasLen, 1)
+
+	// once the rest abstain too, everyone has voted and nothing is pending
+	for i := 5; i < 9; i++ {
+		c.Assert(k.SetNodeMimir(ctx, key, constants.MimirAbstainValue, nas[i].NodeAddress), IsNil)
+	}
+	pending, err = pendingADRVotes(ctx, k)
+	c.Assert(err, IsNil)
+	c.Check(pending, HasLen, 0)
+
+	// and no value was ever chosen
+	mimirs, err := k.GetNodeMimirs(ctx, key)
+	c.Assert(err, IsNil)
+	_, ok = mimirs.HasSuperMajority(key, nas.GetNodeAddresses())
+	c.Check(ok, Equals, false)
+
+	// unvoting with -1 removes the record and puts the node back on the hook
+	c.Assert(k.SetNodeMimir(ctx, key, -1, nas[4].NodeAddress), IsNil)
+	mimirs, err = k.GetNodeMimirs(ctx, key)
+	c.Assert(err, IsNil)
+	c.Check(mimirs.Has(key, nas[4].NodeAddress), Equals, false)
+	got, ok := nodeHasPendingADRVote(ctx, k, nas[4].NodeAddress)
+	c.Check(ok, Equals, true)
+	c.Check(got, Equals, key)
+}
+
+// Abstains count toward the 1/3+1 turnout, so they can open the required-voting window for
+// everyone else. One notion of participation - deliberate, see docs/mimir.md.
+func (s *ADRMimirSuite) TestAbstainOpensWindow(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	nas := addActiveNodes(c, ctx, k, 9)
+	const key = "ADR42OPEN"
+
+	c.Assert(k.SetNodeMimir(ctx, key, 1, nas[0].NodeAddress), IsNil)
+	for i := 1; i < 4; i++ {
+		c.Assert(k.SetNodeMimir(ctx, key, constants.MimirAbstainValue, nas[i].NodeAddress), IsNil)
+	}
+
+	pending, err := pendingADRVotes(ctx, k)
+	c.Assert(err, IsNil)
+	c.Assert(pending, HasLen, 1)
+	c.Check(pending[0].Key, Equals, key)
+
+	got, ok := nodeHasPendingADRVote(ctx, k, nas[8].NodeAddress)
+	c.Check(ok, Equals, true)
+	c.Check(got, Equals, key)
+}

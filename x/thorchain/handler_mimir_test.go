@@ -435,3 +435,56 @@ func (HandlerMimirSuite) TestADRMimirStandbyVoting(c *C) {
 	c.Assert(k.SetNodeAccount(ctx, broke), IsNil)
 	c.Assert(h.validate(ctx, *NewMsgMimir("ADR42TEST", 1, broke.NodeAddress)), NotNil)
 }
+
+// -2 abstains: the vote is stored so it satisfies the ADR required-voting gate, but it can
+// never become the mimir value. Only ADR keys accept it.
+func (HandlerMimirSuite) TestADRMimirAbstain(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	h := NewMimirHandler(mgr)
+	FundModule(c, ctx, k, BondName, 1000*common.One)
+
+	const key = "ADR42ABSTAIN"
+	nas := NodeAccounts{}
+	for i := 0; i < 3; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		na.Bond = cosmos.NewUint(100 * common.One)
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+		nas = append(nas, na)
+	}
+
+	// abstain is only valid on ADR keys
+	c.Assert(h.validate(ctx, *NewMsgMimir("SOMEKEY", constants.MimirAbstainValue, nas[0].NodeAddress)), NotNil)
+	c.Assert(h.validate(ctx, *NewMsgMimir(key, constants.MimirAbstainValue, nas[0].NodeAddress)), IsNil)
+
+	// an abstain is stored (unlike -1, which deletes) and sets no value
+	_, err := h.Run(ctx, NewMsgMimir(key, constants.MimirAbstainValue, nas[0].NodeAddress))
+	c.Assert(err, IsNil)
+	mimirs, err := k.GetNodeMimirs(ctx, key)
+	c.Assert(err, IsNil)
+	c.Check(mimirs.Has(key, nas[0].NodeAddress), Equals, true)
+	v, err := k.GetMimir(ctx, key)
+	c.Assert(err, IsNil)
+	c.Check(v, Equals, int64(-1)) // still unset
+
+	// two real votes out of three form the supermajority and set the value
+	for i := 1; i < 3; i++ {
+		_, err = h.Run(ctx, NewMsgMimir(key, 5, nas[i].NodeAddress))
+		c.Assert(err, IsNil)
+	}
+	v, err = k.GetMimir(ctx, key)
+	c.Assert(err, IsNil)
+	c.Check(v, Equals, int64(5))
+
+	// switching a real vote to abstain drops it from the tally but leaves the already-set
+	// value in place, same as unvoting with -1
+	_, err = h.Run(ctx, NewMsgMimir(key, constants.MimirAbstainValue, nas[2].NodeAddress))
+	c.Assert(err, IsNil)
+	mimirs, err = k.GetNodeMimirs(ctx, key)
+	c.Assert(err, IsNil)
+	_, ok := mimirs.HasSuperMajority(key, nas.GetNodeAddresses())
+	c.Check(ok, Equals, false)
+	v, err = k.GetMimir(ctx, key)
+	c.Assert(err, IsNil)
+	c.Check(v, Equals, int64(5))
+}

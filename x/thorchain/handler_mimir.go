@@ -73,6 +73,12 @@ func (h MimirHandler) validate(ctx cosmos.Context, msg MsgMimir) error {
 		return err
 	}
 
+	// Abstain only means something where voting is required, which is ADR keys. Elsewhere
+	// it would just be an inert record that never counts and never purges.
+	if msg.Value == constants.MimirAbstainValue && !isADRMimir(msg.Key) {
+		return cosmos.ErrUnknownRequest("abstain is only valid on ADR mimirs")
+	}
+
 	// REVSHARE-<thorname> operational mimir validation.
 	if isRevShare {
 		// Resolve any Mimir-safe alias (e.g. SWAPKIT -> "-_") back to the real

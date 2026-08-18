@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 func (m NodeMimirs) Has(key string, acc cosmos.AccAddress) bool {
@@ -58,6 +59,11 @@ func (m NodeMimirs) countActive(key string, active []cosmos.AccAddress, maj func
 
 		// skip signers we've already seend (no duplicates allowed)
 		if v, ok := voted[mimir.Signer.String()]; v && ok {
+			continue
+		}
+
+		// abstain counts as turnout (see VotersOf) but never as a candidate value
+		if mimir.Value == constants.MimirAbstainValue {
 			continue
 		}
 
@@ -147,6 +153,11 @@ func (m NodeMimirs) ValueOfEconomic(key string, active []cosmos.AccAddress) int6
 			continue // Skip this vote since the node already voted
 		}
 
+		// abstain counts as turnout (see VotersOf) but never as a candidate value
+		if mimir.Value == constants.MimirAbstainValue {
+			continue
+		}
+
 		// Ensure that the vote is only from active nodes
 		for _, addr := range active {
 			if addr.Equals(mimir.Signer) {
@@ -188,6 +199,11 @@ func (m NodeMimirs) ValueOfOperational(key string, minVotes int64, active []cosm
 
 		if hasVoted[mimir.Signer.String()] {
 			continue // Skip this vote since the node already voted
+		}
+
+		// abstain counts as turnout (see VotersOf) but never as a candidate value
+		if mimir.Value == constants.MimirAbstainValue {
+			continue
 		}
 
 		// Ensure that the vote is only from active nodes

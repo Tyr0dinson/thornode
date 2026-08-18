@@ -196,3 +196,117 @@ type: check
 endpoint: http://localhost:1317/thorchain/mimir/nodes_all
 asserts:
   - .mimirs|length == 5
+---
+########################################################################################
+# -2 abstains: stored like a real vote, but never tallied. cat picks a value, fox
+# abstains - that is 2/5, enough to open the required-voting window.
+########################################################################################
+type: tx-mimir
+key: ADR43Abstain
+value: 2
+signer: {{ addr_thor_cat }}
+---
+type: tx-mimir
+key: ADR43Abstain
+value: -2
+signer: {{ addr_thor_fox }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/votes_required
+asserts:
+  - .mimirs|length == 1
+  - .mimirs[0].key == "ADR43ABSTAIN"
+  # the abstain counts toward turnout
+  - .mimirs[0].votes == "2"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - '.preflight_status.reason == "node account has not voted on required mimir: ADR43ABSTAIN"'
+---
+########################################################################################
+# abstaining clears the churn-in gate, and costs the same as any other standby vote
+########################################################################################
+type: tx-mimir
+key: ADR43Abstain
+value: -2
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .preflight_status.status == "Ready"
+  - .preflight_status.reason == "OK"
+  - .total_bond == "7994000000"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/node/{{ addr_thor_dog }}
+asserts:
+  - .node_mimirs|length == 2
+---
+########################################################################################
+# once everyone has abstained nothing is pending, but no value was ever chosen
+########################################################################################
+type: tx-mimir
+key: ADR43Abstain
+value: -2
+signer: {{ addr_thor_pig }}
+---
+type: tx-mimir
+key: ADR43Abstain
+value: -2
+signer: {{ addr_thor_frog }}
+---
+type: tx-mimir
+key: ADR43Abstain
+value: -2
+signer: {{ addr_thor_goat }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/votes_required
+asserts:
+  - .mimirs|length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .ADR43ABSTAIN == null
+---
+# abstains are stored verbatim, unlike -1 which deletes
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/nodes_all
+asserts:
+  - .mimirs|length == 11
+  - '[.mimirs[]|select(.key == "ADR43ABSTAIN" and .value == -2)]|length == 5'
+---
+########################################################################################
+# -1 still removes the vote, which puts that node back on the hook
+########################################################################################
+type: tx-mimir
+key: ADR43Abstain
+value: -1
+signer: {{ addr_thor_cat }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/nodes_all
+asserts:
+  - .mimirs|length == 10
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir/votes_required
+asserts:
+  - .mimirs|length == 1
+  - .mimirs[0].key == "ADR43ABSTAIN"
+  - .mimirs[0].votes == "4"

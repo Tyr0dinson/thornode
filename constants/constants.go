@@ -94,6 +94,12 @@ const MimirKeyRegex = `^[a-zA-Z0-9-]+$`
 // If increasing this value, be sure to adjust test/regression/suites/mimir/mimir.yaml
 const MaxMimirLength = 128
 
+// MimirAbstainValue is a node mimir vote of "present, no preference". It is stored so it
+// satisfies the ADR required-voting gate, but is excluded from every tally so it can never
+// become the mimir value. -1 already means "remove my vote", so abstain needs its own
+// sentinel.
+const MimirAbstainValue = int64(-2)
+
 // ConstantVals implement ConstantValues interface
 type ConstantVals struct {
 	int64values  map[ConstantName]int64

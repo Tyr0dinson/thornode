@@ -49,8 +49,9 @@ func (k KVStore) SetNodeMimir(ctx cosmos.Context, key string, value int64, acc c
 	}
 	record.Set(key, value, acc)
 
-	// delete the node mimir if value is negative
-	if value < 0 {
+	// delete the node mimir if value is negative, except the abstain sentinel which is a
+	// real vote and must persist to satisfy the ADR required-voting gate
+	if value < 0 && value != constants.MimirAbstainValue {
 		record.Delete(key, acc)
 	}
 
