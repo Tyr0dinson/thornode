@@ -420,10 +420,6 @@ func TestGetVaultAccountDefersUnreconciledBalance(t *testing.T) {
 	t.Parallel()
 
 	vaultPubKey := testVaultPubKey(t, "account-query-defers-unreconciled-balance")
-	address, err := vaultPubKey.GetAddress(common.XMRChain)
-	if err != nil {
-		t.Fatalf("derive address: %v", err)
-	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -449,12 +445,10 @@ func TestGetVaultAccountDefersUnreconciledBalance(t *testing.T) {
 	}
 
 	client := &Client{
-		logger:          log.Logger,
-		chain:           common.XMRChain,
-		sidecar:         signer,
-		vaultAddressMap: make(map[string]common.Address),
+		logger:  log.Logger,
+		chain:   common.XMRChain,
+		sidecar: signer,
 	}
-	client.setVaultAddressMapping(vaultPubKey, address)
 
 	_, err = client.GetVaultAccount(ttypes.Vault{PubKeyFrost: vaultPubKey}, nil)
 	if err == nil {

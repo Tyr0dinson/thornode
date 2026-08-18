@@ -3654,11 +3654,11 @@ func (c *Client) getAccount(poolPubKey common.PubKey, height *big.Int, requireRe
 
 // GetVaultAccount resolves the chain-specific vault pubkey before querying balances.
 func (c *Client) GetVaultAccount(vault ttypes.Vault, height *big.Int) (common.Account, error) {
-	accountPubKey, err := vault.AlgoPubKey(c.GetChain())
-	if err != nil {
-		return common.Account{}, err
+	address := c.resolveVaultAddress(vault)
+	if address.IsEmpty() {
+		return common.Account{}, fmt.Errorf("fail to resolve monero vault address for %s", vault.PubKeyFrost.String())
 	}
-	return c.getAccount(accountPubKey, height, true)
+	return c.getAccountByAddress(address.String(), height, true)
 }
 
 func (c *Client) GetAccountByAddress(address string, height *big.Int) (common.Account, error) {
