@@ -31,6 +31,41 @@ asserts:
   - .|length == 15
 ---
 ########################################################################################
+# a DOT inbound before activation is no-oped, not credited. The vault's DOT address is
+# derivable from its pubkey and reachable long before the chain is advertised, so
+# without this an attacker could stamp DOT onto every live vault with one dust tx -
+# AddFunds appends the chain as a side effect of crediting.
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: DOT
+      from_address: {{ addr_dot_fox }}
+      to_address: {{ addr_dot_dog }}
+      coins:
+        - amount: "5000000"
+          asset: "DOT.DOT"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "DOT.DOT"
+      memo: "noop"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog_eddsa }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  - '[(.coins // [])[]|select(.asset=="DOT.DOT")]|length == 0'
+  - '[.chains[]|select(. == "DOT")]|length == 0'
+---
+########################################################################################
 # a network fee reaching consensus is the readiness proof: it means a supermajority
 # of active nodes independently scanned DOT and agreed a rate
 ########################################################################################
@@ -77,3 +112,35 @@ type: check
 endpoint: http://localhost:1317/thorchain/lastblock/DOT
 asserts:
   - '.[0].chain == "DOT"'
+---
+########################################################################################
+# end to end: the same inbound that was no-oped before activation is now credited, so
+# the chain is actually live and not merely advertised
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: DOT
+      from_address: {{ addr_dot_fox }}
+      to_address: {{ addr_dot_dog }}
+      coins:
+        - amount: "5000000"
+          asset: "DOT.DOT"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "DOT.DOT"
+      memo: "noop"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog_eddsa }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  - .coins[]|select(.asset=="DOT.DOT")|.amount|tonumber == 5000000

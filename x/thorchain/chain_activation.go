@@ -309,6 +309,23 @@ func chainActivationReady(ctx cosmos.Context, k keeper.Keeper, chain common.Chai
 		if isChainActivationExempt(retired) || !retired.HasChain(chain) {
 			continue
 		}
+		// ...unless the drop stranded funds. migrateFunds has no target vault for a
+		// chain no active vault carries, so it stalls; the retiring-vault funds check
+		// in ValidatorMgr.BeginBlock then holds the churn, and with the veto below in
+		// force there is no way out - stamping the chain back on is the only thing that
+		// unblocks migration. The veto protects a clean drop; a drop with funds still
+		// in flight is not one, and the operator setting the mimir is the explicit
+		// override. Every other gate still applies.
+		//
+		// Deliberately looser than the churn blocker, which is HasFundsAboveDust over
+		// the whole vault: any non-zero balance on this chain disarms the veto, so a
+		// sub-dust remainder does too even though it would not have stalled anything.
+		// The exact predicate would be per-chain-above-dust, which no helper offers,
+		// and erring toward recovery is the right side to err on when the alternative
+		// is a network-wide churn halt.
+		if retired.HasFundsForChain(chain) {
+			continue
+		}
 		for _, vault := range active {
 			if isChainActivationExempt(vault) || vault.HasChain(chain) {
 				continue

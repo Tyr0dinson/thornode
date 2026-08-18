@@ -98,7 +98,20 @@ Steps performed by the dev team:
 2. **Daemon Install**: Node operators sync the new chain daemon (`make install`)
 3. **Enable Scanning**: Final `node-launcher` PR merged and deployed
 4. **Admin Mimir**: Unhalt to enable scanning
-5. **Admin Mimir**: Enable trading once scanning reaches chain tip
+5. **Admin Mimir**: `Enable<Chain>Chain = 1` to stamp the chain onto the live vaults
+6. **Admin Mimir**: Enable trading once scanning reaches chain tip
+
+Step 5 replaces waiting for a churn. Historically `vault.Chains` was written only at
+keygen, so a new chain went live no earlier than the next churn. `Enable<Chain>Chain`
+adds it to the vaults already active, once the network has proven it can observe the
+chain — a network fee must have reached consensus, and a supermajority of today's
+active nodes (and of every Asgard's own membership, so TSS keysign can be assembled)
+must be among the nodes that attested it. EVM chains additionally need their router
+contract installed first. The chain must be unhalted, so step 4 comes before step 5.
+
+If the gates are not met nothing is stamped and the reason is logged each block
+(`chain activation not ready`). Leave the mimir set until the chain is live; unset it
+afterwards, since it is only re-read while a chain is still awaiting activation.
 
 ## Technical Requirements
 

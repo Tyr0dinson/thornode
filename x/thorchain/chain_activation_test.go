@@ -765,6 +765,30 @@ func (s *ChainActivationTestSuite) TestNoRestampWhenNewerKeygenDroppedChain(c *C
 	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), fresh.PubKey), activationChain.String()), Equals, false)
 }
 
+// ...but the veto must not survive stranded funds. With the chain off every active
+// vault, migrateFunds has no target and stalls, the retiring-vault funds check holds
+// the churn, and re-stamping the chain is the only way out. Same setup as the test
+// above plus a balance on the chain.
+func (s *ChainActivationTestSuite) TestRestampAllowedWhenDroppedChainStrandedFunds(c *C) {
+	ctx, mgr, nodes := setupActivation(c, 4)
+
+	retiring := newActivationVault(c, RetiringVault, nodes)
+	retiring.BlockHeight = 100
+	retiring.Chains = append(retiring.Chains, activationChain.String())
+	retiring.AddFunds(common.NewCoins(common.NewCoin(activationChain.GetGasAsset(), cosmos.NewUint(100*common.One))))
+	fresh := newActivationVault(c, ActiveVault, nodes)
+	fresh.BlockHeight = 200
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+	c.Assert(mgr.Keeper().SetVault(ctx, fresh), IsNil)
+
+	satisfyActivationGates(ctx, c, mgr.Keeper(), activationChain, nodes)
+	mgr.Keeper().SetMimir(ctx, activationMimirKey(activationChain), 1)
+
+	runActivation(ctx, c, mgr)
+
+	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), fresh.PubKey), activationChain.String()), Equals, true)
+}
+
 // The same evidence must not block an ordinary first activation: a retiring vault that
 // predates the active one and never held the chain says nothing about the keygen vote.
 func (s *ChainActivationTestSuite) TestOlderRetiringVaultDoesNotBlockFirstActivation(c *C) {

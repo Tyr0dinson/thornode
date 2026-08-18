@@ -12,7 +12,7 @@
             "@type": "/cosmos.crypto.secp256k1.PubKey",
             "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
           },
-          "sequence": "2"
+          "sequence": "4"
         },
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
@@ -214,7 +214,7 @@
       "last_chain_heights": [
         {
           "chain": "DOT",
-          "height": "1"
+          "height": "2"
         }
       ],
       "liquidity_providers": null,
@@ -302,7 +302,14 @@
             "XRP",
             "ZEC"
           ],
-          "coins": null,
+          "coins": [
+            {
+              "amount": "5000000",
+              "asset": "DOT.DOT",
+              "decimals": "8"
+            }
+          ],
+          "inbound_tx_count": "1",
           "membership": [
             "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
           ],
@@ -362,5 +369,5 @@
       }
     }
   },
-  "initial_height": 6
+  "initial_height": 8
 }
