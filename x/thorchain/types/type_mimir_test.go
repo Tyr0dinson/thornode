@@ -176,7 +176,7 @@ func (s *MimirTestSuite) TestValueOfEconomic(c *C) {
 }
 
 // Abstain (-2) is a stored vote that counts as turnout but must never be tallied as a
-// candidate value, or a bloc of abstainers could "win" and be written as the mimir value.
+// candidate value, or a group of abstainers could "win" and be written as the mimir value.
 func (s *MimirTestSuite) TestAbstain(c *C) {
 	abstain := constants.MimirAbstainValue
 	addr1 := types.AccAddress([]byte("addr1"))
