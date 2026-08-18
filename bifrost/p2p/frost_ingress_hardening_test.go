@@ -1421,8 +1421,12 @@ func TestPartyNarrowingRevokesQueuedAndBlockedFrames(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("party narrowing did not wake blocked delivery")
 	}
-	if len(channel) != 0 {
-		t.Fatalf("revoked queued frame survived party narrowing: queue=%d", len(channel))
+	if len(channel) != 1 {
+		t.Fatalf("expected one bounded queued frame after revocation: queue=%d", len(channel))
+	}
+	revokedMessage := <-channel
+	if revokedMessage.Accept() {
+		t.Fatal("revoked queued frame passed the coordinator acceptance check")
 	}
 	if !queued.resetCalled.Load() || !blocked.resetCalled.Load() {
 		t.Fatal("party narrowing did not reset every revoked stream")
@@ -1458,6 +1462,130 @@ func TestPartyNarrowingRevokesQueuedAndBlockedFrames(t *testing.T) {
 			comm.frostBudget.nodeBytes,
 			comm.frostBudget.inFlightFrames,
 		)
+	}
+}
+
+func TestPartyNarrowingDoesNotWaitForBlockedRetainedPeer(t *testing.T) {
+	ApplyDeadline.Store(false)
+	t.Cleanup(func() { ApplyDeadline.Store(true) })
+
+	topic := messages.TSSFrostShareMsg
+	msgID := "party-narrowing-blocked-retained"
+	retained := peer.ID("retained-peer")
+	removed := peer.ID("removed-peer")
+	channel := make(chan *Message, 1)
+	comm := newTestCommunication()
+	comm.streamMgr = NewStreamMgr()
+	comm.stopChan = make(chan struct{})
+	comm.frostBudget = newFrostIngressBudget(4096, 4096, 4096, 8, 8, 1)
+	comm.SetSubscribeWithPeers(
+		topic,
+		msgID,
+		channel,
+		[]peer.ID{retained, removed},
+		FrostMaxSessionPayload,
+		8,
+	)
+
+	frame, err := json.Marshal(messages.WrappedMessage{
+		MessageType: topic,
+		MsgID:       msgID,
+		Payload:     []byte("retained-before-final-party"),
+	})
+	if err != nil {
+		t.Fatalf("marshal frame: %v", err)
+	}
+
+	first := newHandlerStream(retained, frame)
+	comm.handleStreamTss(first)
+	if len(channel) != 1 {
+		t.Fatal("first retained-peer frame was not queued")
+	}
+
+	second := newHandlerStream(retained, frame)
+	blockedDone := make(chan struct{})
+	var stopOnce sync.Once
+	t.Cleanup(func() {
+		stopOnce.Do(func() { close(comm.stopChan) })
+		comm.CancelSubscribe(topic, msgID)
+		select {
+		case <-blockedDone:
+		case <-time.After(time.Second):
+		}
+	})
+	go func() {
+		defer close(blockedDone)
+		comm.handleStreamTss(second)
+	}()
+	deadline := time.Now().Add(time.Second)
+	for snapshotFrostBudget(comm.frostBudget).inFlightFrames != 2 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if state := snapshotFrostBudget(comm.frostBudget); state.inFlightFrames != 2 {
+		t.Fatalf("second frame did not reach blocked delivery: frames=%d", state.inFlightFrames)
+	}
+	select {
+	case <-blockedDone:
+		t.Fatal("second retained-peer frame did not block on the full queue")
+	default:
+	}
+
+	updated := make(chan bool, 1)
+	go func() {
+		updated <- comm.UpdateSubscribePeers(topic, msgID, []peer.ID{retained})
+	}()
+	returnedBeforeDrain := false
+	select {
+	case ok := <-updated:
+		if !ok {
+			t.Fatal("failed to narrow party")
+		}
+		returnedBeforeDrain = true
+	case <-time.After(time.Second):
+	}
+
+	firstMessage := <-channel
+	if !returnedBeforeDrain {
+		select {
+		case ok := <-updated:
+			if !ok {
+				t.Fatal("failed to narrow party after queue capacity became available")
+			}
+		case <-time.After(time.Second):
+			stopOnce.Do(func() { close(comm.stopChan) })
+			t.Fatal("party narrowing remained blocked after queue capacity became available")
+		}
+	}
+	select {
+	case <-blockedDone:
+	case <-time.After(time.Second):
+		stopOnce.Do(func() { close(comm.stopChan) })
+		t.Fatal("second retained-peer delivery did not finish")
+	}
+	var secondMessage *Message
+	select {
+	case secondMessage = <-channel:
+	case <-time.After(time.Second):
+		t.Fatal("second retained-peer frame was not queued")
+	}
+
+	if !firstMessage.Accept() || !secondMessage.Accept() {
+		t.Fatal("retained-peer frame was rejected after party narrowing")
+	}
+	if first.resetCalled.Load() || second.resetCalled.Load() ||
+		!first.closeCalled.Load() || !second.closeCalled.Load() {
+		t.Fatal("retained-peer streams were not accepted and gracefully closed")
+	}
+	state := snapshotFrostBudget(comm.frostBudget)
+	if state.inFlightFrames != 0 || state.nodeBytes != 2*uint64(len(frame)) {
+		t.Fatalf(
+			"retained frame accounting mismatch: bytes=%d frames=%d",
+			state.nodeBytes,
+			state.inFlightFrames,
+		)
+	}
+	if !returnedBeforeDrain {
+		t.Fatal("party narrowing waited for retained-peer queue capacity")
 	}
 }
 
@@ -1502,15 +1630,22 @@ func TestPartyNarrowingPreservesQueuedFramesFromRetainedPeers(t *testing.T) {
 	if !comm.UpdateSubscribePeers(topic, msgID, []peer.ID{retained}) {
 		t.Fatal("failed to narrow party")
 	}
-	if len(channel) != 1 {
-		t.Fatalf("party narrowing did not preserve exactly the retained frame: queue=%d", len(channel))
+	if len(channel) != 2 {
+		t.Fatalf("party narrowing changed the bounded queue: queue=%d", len(channel))
 	}
-	message := <-channel
-	if message.PeerID != retained {
-		t.Fatalf("queued frame from wrong peer survived narrowing: %s", message.PeerID)
+	retainedMessage := <-channel
+	if retainedMessage.PeerID != retained {
+		t.Fatalf("first queued frame came from the wrong peer: %s", retainedMessage.PeerID)
 	}
-	if !message.Accept() {
+	if !retainedMessage.Accept() {
 		t.Fatal("queued retained-peer reservation did not advance to the final-party epoch")
+	}
+	removedMessage := <-channel
+	if removedMessage.PeerID != removed {
+		t.Fatalf("second queued frame came from the wrong peer: %s", removedMessage.PeerID)
+	}
+	if removedMessage.Accept() {
+		t.Fatal("queued removed-peer frame passed the coordinator acceptance check")
 	}
 	if retainedStream.resetCalled.Load() || !retainedStream.closeCalled.Load() {
 		t.Fatal("retained peer stream was not accepted and gracefully closed")

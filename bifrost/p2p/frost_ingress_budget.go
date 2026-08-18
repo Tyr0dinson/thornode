@@ -27,14 +27,10 @@ type frostIngressBudget struct {
 }
 
 // frostCeremonyBudget is shared by every type+msgID subscription for one
-// FROST ceremony. deliveryLock serializes channel delivery with party
-// narrowing, allowing queued frames from the old authorization epoch to be
-// removed without racing a new send.
+// FROST ceremony.
 type frostCeremonyBudget struct {
 	manager *frostIngressBudget
 	msgID   string
-
-	deliveryLock sync.Mutex
 
 	refs           uint32
 	active         bool

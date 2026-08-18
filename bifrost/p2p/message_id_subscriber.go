@@ -26,7 +26,6 @@ type MessageSubscription struct {
 	authEpoch          uint64
 	sessionBudget      *frostCeremonyBudget
 	stopped            bool
-	deliveryLock       sync.Mutex
 
 	lock         sync.Mutex
 	peerCounts   map[peer.ID]uint32
@@ -204,11 +203,12 @@ func (s *MessageSubscription) setAllowedPeers(allowedPeers []peer.ID) bool {
 	s.lock.Unlock()
 
 	// Removed peers are revoked and refunded; retained peers keep their exact
-	// reservation, accounting, and queued message under the new epoch.
+	// reservation, accounting, and queued message under the new epoch. Queued
+	// revoked frames remain bounded by the channel and fail the coordinator's
+	// mandatory Accept recheck instead of making narrowing wait for delivery.
 	for _, reservation := range revoked {
 		reservation.reject()
 	}
-	s.purgeRevokedQueuedMessages()
 	return true
 }
 
@@ -238,19 +238,12 @@ func (s *MessageSubscription) deliver(message *Message, stop <-chan struct{}) bo
 			return false
 		}
 	}
-	session := s.sessionBudget
-	deliveryLock := &s.deliveryLock
-	if session != nil {
-		deliveryLock = &session.deliveryLock
-	}
-	deliveryLock.Lock()
-	defer deliveryLock.Unlock()
 	if !message.reservation.current() {
 		return false
 	}
 	select {
 	case s.channel <- message:
-		if session == nil {
+		if s.sessionBudget == nil {
 			// Legacy TSS subscriptions do not narrow parties or share a FROST
 			// budget, so enqueue is their final authorization boundary.
 			return message.reservation.accept()
@@ -306,39 +299,6 @@ func (s *MessageSubscription) stop() {
 			reservation.resetStream()
 		}
 	})
-}
-
-func (s *MessageSubscription) purgeRevokedQueuedMessages() {
-	if s == nil || s.channel == nil {
-		return
-	}
-	session := s.sessionBudget
-	deliveryLock := &s.deliveryLock
-	if session != nil {
-		deliveryLock = &session.deliveryLock
-	}
-	deliveryLock.Lock()
-	defer deliveryLock.Unlock()
-
-	kept := make([]*Message, 0, len(s.channel))
-	for {
-		select {
-		case message := <-s.channel:
-			if message != nil &&
-				message.reservation != nil &&
-				message.reservation.subscription == s &&
-				!message.reservation.current() {
-				message.Reject()
-				continue
-			}
-			kept = append(kept, message)
-		default:
-			for _, message := range kept {
-				s.channel <- message
-			}
-			return
-		}
-	}
 }
 
 func peerSetsEqual(left, right map[peer.ID]struct{}) bool {
@@ -412,18 +372,12 @@ func (r *messageReservation) accept() bool {
 	}
 	s := r.subscription
 	session := s.sessionBudget
-	if session != nil {
-		session.deliveryLock.Lock()
-	}
 	s.lock.Lock()
 	if r.settled ||
 		s.stopped ||
 		r.authEpoch != s.authEpoch ||
 		!s.authorizedLocked(r.peerID, int(r.payloadBytes)) {
 		s.lock.Unlock()
-		if session != nil {
-			session.deliveryLock.Unlock()
-		}
 		r.reject()
 		return false
 	}
@@ -432,7 +386,6 @@ func (r *messageReservation) accept() bool {
 	s.lock.Unlock()
 	if session != nil {
 		session.manager.commitFrame(session)
-		session.deliveryLock.Unlock()
 		r.closeStream()
 	}
 	return true
