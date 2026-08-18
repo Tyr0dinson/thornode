@@ -74,6 +74,23 @@ func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 			return fmt.Errorf("stable reserve %s target no longer eligible: %s", purpose, reason)
 		}
 	}
+	// A depeg rescue liquidates the module's entire position in the source asset
+	// and, once its stream is queued, nothing re-evaluates whether it should still
+	// run — the check above validates only the swap's TARGET. Abort the stream as
+	// soon as the SOURCE has recovered, so a transient dip does not commit the
+	// reserve to selling the whole position through the AMM at slip.
+	//
+	// IsEligibleStable is the right predicate: it requires a price the oracle is
+	// ACTIVELY reporting inside the band, plus a healthy per-asset pool price.
+	// A missing price is deliberately NOT treated as recovery — OracleMgr.BeginBlock
+	// deletes every price each block, so any block without a price-feed batch would
+	// otherwise abort a legitimate rescue.
+	if stableReserveInternal && strings.HasPrefix(msg.Tx.Memo, types.StableReserveRescueMemoPrefix) && len(msg.Tx.Coins) == 1 {
+		source := msg.Tx.Coins[0].Asset.GetLayer1Asset()
+		if ok, _ := h.mgr.StableReserveManager().IsEligibleStable(ctx, source); ok {
+			return fmt.Errorf("stable reserve rescue source %s has recovered", source)
+		}
+	}
 
 	// For external-origin (here valid) memos, do not allow a network module as the final destination.
 	// If unable to parse the memo, here assume it to be internal.

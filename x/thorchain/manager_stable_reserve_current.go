@@ -415,19 +415,29 @@ func (s *StableReserveMgr) addDepositValue(ctx cosmos.Context, asset common.Asse
 	return s.keeper.SetStableReserveDepositValue(ctx, depositValue.Add(usd))
 }
 
-// subDepositValue decreases the aggregate USD deposit value by the current
-// oracle value of amount (SafeSub floors at zero). Withdraw does not run the
-// eligibility check, so the oracle price may be missing if the asset depegged
-// since deposit; on a missing/invalid price, skip the decrement and log rather
-// than block the withdrawal or assume $1.
+// subDepositValue decreases the aggregate USD deposit value by the withdrawn
+// amount's USD value (SafeSub floors at zero).
+//
+// Withdraw does not run the eligibility check, and oracle prices are deleted
+// every block by OracleMgr.BeginBlock — they exist only in blocks where the
+// price-feed batch landed. A withdrawal in any other block therefore sees no
+// price at all, which makes "skip the decrement" the common case rather than a
+// rare one: the floor would stay permanently inflated and the reserve would
+// read as underwater forever, charging the fee indefinitely.
+//
+// Fall back to valuing the amount at $1 instead. Deposit is gated by
+// IsEligibleStable, which admits an asset only inside $1 ± depeg tolerance, so
+// the credited floor was itself within that band of the unit count; unwinding
+// at $1 is bounded by the same tolerance (100 bps by default) instead of being
+// unbounded and permanent.
 func (s *StableReserveMgr) subDepositValue(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint) error {
-	price, err := s.keeper.GetPrice(ctx, asset.Ticker.String())
-	if err != nil {
-		ctx.Logger().Error("stable reserve: missing oracle price for withdrawal value tracking", "asset", asset.String(), "error", err)
-		return nil
+	usd := amount
+	if price, err := s.keeper.GetPrice(ctx, asset.Ticker.String()); err == nil {
+		if v, ok := stableReserveUSDValue(amount, price.Price); ok {
+			usd = v
+		}
 	}
-	usd, ok := stableReserveUSDValue(amount, price.Price)
-	if !ok || usd.IsZero() {
+	if usd.IsZero() {
 		return nil
 	}
 	depositValue, err := s.keeper.GetStableReserveDepositValue(ctx)

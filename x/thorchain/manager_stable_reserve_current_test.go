@@ -1120,6 +1120,54 @@ func (s *StableReserveMgrSuite) TestDepegRescueIgnoresOracleOutage(c *C) {
 	c.Check(rescue.Tx.Coins[0].Equals(common.NewCoin(usdc.GetSecuredAsset(), amount)), Equals, true)
 }
 
+func (s *StableReserveMgrSuite) TestDepositFloorUnwindsWithoutALivePrice(c *C) {
+	ctx, mgr, usdc, _ := setupStableReserveSuite(c)
+	stableReserveMgr := mgr.StableReserveManager()
+	contributor := GetRandomETHAddress()
+
+	c.Assert(stableReserveMgr.Deposit(ctx, usdc, cosmos.NewUint(100*common.One), contributor, common.BlankTxID), IsNil)
+
+	// OracleMgr.BeginBlock wipes prices every block, so a withdrawal usually
+	// lands with no price at all. Skipping the decrement would strand the floor
+	// permanently and hold the reserve underwater forever.
+	mgr.Keeper().DelPrice(ctx, usdc.Ticker.String())
+
+	_, filled, err := stableReserveMgr.Withdraw(ctx, usdc, cosmos.NewUint(40*common.One), contributor, common.BlankTxID)
+	c.Assert(err, IsNil)
+	c.Check(filled, Equals, true)
+	depositValue, err := mgr.Keeper().GetStableReserveDepositValue(ctx)
+	c.Assert(err, IsNil)
+	c.Check(depositValue.Equal(cosmos.NewUint(60*common.One)), Equals, true) // unwound at $1, not skipped
+}
+
+// A rescue must stop once its source recovers — but only on a price actively
+// reported inside the band, never on a missing one.
+func (s *StableReserveMgrSuite) TestRescueAbortsOnlyWhenSourceActuallyRecovers(c *C) {
+	ctx, mgr, usdc, usdt := setupStableReserveSuite(c)
+	fundStableReserveSurplus(c, ctx, mgr, usdc, cosmos.NewUint(100*common.One))
+	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "0.98"}), IsNil)
+	c.Assert(mgr.StableReserveManager().EndBlock(ctx, mgr), IsNil)
+
+	rescue, err := firstQueuedSwapWithMemoPrefix(ctx, mgr, types.StableReserveRescueMemoPrefix)
+	c.Assert(err, IsNil)
+	c.Check(rescue.TargetAsset.Equals(usdt), Equals, true)
+	handler := NewSwapHandler(mgr)
+
+	// Still depegged: the stream keeps running.
+	c.Check(handler.validate(ctx, rescue), IsNil)
+
+	// Oracle goes quiet. A missing price is NOT recovery — aborting here would
+	// strand a genuinely depegged position on any unfed block.
+	mgr.Keeper().DelPrice(ctx, usdc.Ticker.String())
+	c.Check(handler.validate(ctx, rescue), IsNil)
+
+	// Genuinely repegged: abort so the reserve stops selling into the AMM.
+	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "1.00"}), IsNil)
+	err = handler.validate(ctx, rescue)
+	c.Assert(err, NotNil)
+	c.Check(strings.Contains(err.Error(), "has recovered"), Equals, true)
+}
+
 func (s *StableReserveMgrSuite) TestDepegRescueQueueScanLifecycle(c *C) {
 	ctx, mgr, usdc, _ := setupStableReserveSuite(c)
 	stableReserveMgr := mgr.StableReserveManager()
@@ -1295,16 +1343,17 @@ func (s *StableReserveMgrSuite) TestDepositValueTrackedAndDecrementedOnWithdraw(
 	c.Assert(err, IsNil)
 	c.Check(depositValue.Equal(cosmos.NewUint(60*common.One)), Equals, true)
 
-	// Oracle price missing at withdraw time (asset depegged since deposit): the
-	// decrement is skipped rather than assuming $1 or blocking, and the withdrawal
-	// still fills.
+	// Oracle price missing at withdraw time. Prices are wiped every block by
+	// OracleMgr.BeginBlock, so this is the ordinary case, not an exotic one: the
+	// decrement falls back to valuing the amount at $1 (bounded by the deposit
+	// eligibility band) rather than being skipped, which would strand the floor.
 	mgr.Keeper().DelPrice(ctx, usdc.Ticker.String())
 	_, filled, err = stableReserveMgr.Withdraw(ctx, usdc, cosmos.NewUint(10*common.One), contributor, common.BlankTxID)
 	c.Assert(err, IsNil)
 	c.Check(filled, Equals, true)
 	depositValue, err = mgr.Keeper().GetStableReserveDepositValue(ctx)
 	c.Assert(err, IsNil)
-	c.Check(depositValue.Equal(cosmos.NewUint(60*common.One)), Equals, true) // unchanged
+	c.Check(depositValue.Equal(cosmos.NewUint(50*common.One)), Equals, true)
 }
 
 func (s *StableReserveMgrSuite) TestFreeStableSwapNoFeeWhenFullyBacked(c *C) {
