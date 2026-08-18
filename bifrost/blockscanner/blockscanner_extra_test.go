@@ -98,6 +98,19 @@ func (f *configFetcher) GetNetworkFee() (uint64, uint64) {
 	return f.networkFeeSize, f.networkFeeRate
 }
 
+type reporterDispatchCall struct {
+	chain  common.Chain
+	height int64
+}
+
+type recordingReporterDispatcher struct {
+	calls []reporterDispatchCall
+}
+
+func (d *recordingReporterDispatcher) Process(chain common.Chain, height int64) {
+	d.calls = append(d.calls, reporterDispatchCall{chain: chain, height: height})
+}
+
 // ---------------------------------------------------------------------------
 // LevelDB storage tests
 // ---------------------------------------------------------------------------
@@ -385,6 +398,26 @@ func (s *BlockScannerExtraSuite) TestIsHealthy(c *C) {
 	c.Check(scanner.PreviousHeight(), Equals, int64(1))
 	atomic.StoreInt64(&scanner.previousBlock, 42)
 	c.Check(scanner.PreviousHeight(), Equals, int64(42))
+}
+
+func (s *BlockScannerExtraSuite) TestDispatchReporterOnlyNearChainTip(c *C) {
+	dispatcher := &recordingReporterDispatcher{}
+	scanner := &BlockScanner{
+		cfg: config.BifrostBlockScannerConfiguration{
+			ChainID:                      common.ETHChain,
+			ObservationFlexibilityBlocks: 10,
+		},
+		reporterDispatcher: dispatcher,
+	}
+
+	scanner.dispatchReporter(89, 100)
+	scanner.dispatchReporter(90, 100)
+	scanner.dispatchReporter(100, 100)
+
+	c.Assert(dispatcher.calls, DeepEquals, []reporterDispatchCall{
+		{chain: common.ETHChain, height: 90},
+		{chain: common.ETHChain, height: 100},
+	})
 }
 
 func (s *BlockScannerExtraSuite) TestNewBlockScannerValidation(c *C) {

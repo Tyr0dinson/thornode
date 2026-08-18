@@ -766,11 +766,17 @@ func (b *BlockScanner) scanBlocks() {
 				continue
 			}
 			atomic.StoreInt64(&b.previousBlock, currentBlock)
-			if b.reporterDispatcher != nil {
-				b.reporterDispatcher.Process(b.cfg.ChainID, currentBlock)
-			}
+			b.dispatchReporter(currentBlock, chainHeight)
 		}
 	}
+}
+
+// dispatchReporter skips known stale blocks; the reporter rechecks the tip when the task runs.
+func (b *BlockScanner) dispatchReporter(currentBlock, chainHeight int64) {
+	if b.reporterDispatcher == nil || chainHeight-currentBlock > b.cfg.ObservationFlexibilityBlocks {
+		return
+	}
+	b.reporterDispatcher.Process(b.cfg.ChainID, currentBlock)
 }
 
 // backoffAfterPersistenceFailure makes a durable-progress failure visible and
