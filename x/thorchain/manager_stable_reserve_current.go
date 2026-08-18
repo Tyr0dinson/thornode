@@ -64,6 +64,27 @@ func (s *StableReserveMgr) IsEligibleStable(ctx cosmos.Context, asset common.Ass
 	if !stableReserveOracleHealthy(price.Price, toleranceBps) {
 		return false, "unhealthy oracle price"
 	}
+	// Chain-qualified sanity gate. The enshrined oracle keys prices by TICKER, so
+	// ETH.USDC and AVAX.USDC share one price and a chain-local failure (bridge
+	// compromise, halted chain, wrapper depeg) is invisible to the check above.
+	// The asset's own pool, valued against the median of the OTHER anchors, is the
+	// only per-chain price signal the network has. Restored after being dropped in
+	// the move to oracle pricing: without it a dislocated asset is depositable at
+	// its ticker price (crediting a deposit floor at twice its real value) and is
+	// selectable as a depeg-rescue target (liquidating into the compromised chain).
+	//
+	// This is a gate, not a price: it can only ever REJECT, so a manipulated pool
+	// denies fills at the attacker's own slip cost rather than extracting value.
+	// It bounds absolute deviation from $1 only — two assets can both pass while
+	// their pools imply a materially different ratio to each other, which is what
+	// the poolImpliedOutput cap in TrySwap prices.
+	poolPrice, ok := s.stableReservePoolPrice(ctx, asset)
+	if !ok {
+		return false, "missing pool price"
+	}
+	if !stableReserveOracleHealthy(poolPrice, toleranceBps) {
+		return false, "unhealthy pool price"
+	}
 	return true, ""
 }
 
@@ -510,6 +531,63 @@ func (s *StableReserveMgr) scheduleDepegRescue(ctx cosmos.Context, mgr Manager) 
 		}
 	}
 	return nil
+}
+
+func (s *StableReserveMgr) stableReservePoolPrice(ctx cosmos.Context, asset common.Asset) (string, bool) {
+	pool, err := s.keeper.GetPool(ctx, asset.GetLayer1Asset())
+	if err != nil || !pool.IsAvailable() || pool.BalanceAsset.IsZero() || pool.BalanceRune.IsZero() {
+		return "", false
+	}
+	dollarsPerRune := s.stableReserveDollarsPerRune(ctx, asset)
+	if dollarsPerRune.IsZero() {
+		return "", false
+	}
+
+	numerator := new(big.Int).Mul(dollarsPerRune.BigInt(), pool.BalanceRune.BigInt())
+	denominator := new(big.Int).Mul(big.NewInt(int64(common.One)), pool.BalanceAsset.BigInt())
+	price := new(big.Rat).SetFrac(numerator, denominator)
+	return price.FloatString(18), true
+}
+func (s *StableReserveMgr) stableReserveDollarsPerRune(ctx cosmos.Context, asset common.Asset) cosmos.Uint {
+	dollarsPerRune, err := s.keeper.GetMimir(ctx, "DollarsPerRune")
+	if err == nil && dollarsPerRune > 0 {
+		return cosmos.NewUint(uint64(dollarsPerRune))
+	}
+
+	l1 := asset.GetLayer1Asset()
+	anchors := s.keeper.GetAnchors(ctx, common.TOR)
+	ignoreHalt := true
+	for _, anchor := range anchors {
+		anchor = anchor.GetLayer1Asset()
+		if anchor.Equals(l1) {
+			continue
+		}
+		if !s.keeper.IsChainTradingHalted(ctx, anchor.Chain) {
+			ignoreHalt = false
+			break
+		}
+	}
+
+	prices := make([]cosmos.Uint, 0, len(anchors))
+	for _, anchor := range anchors {
+		anchor = anchor.GetLayer1Asset()
+		if anchor.Equals(l1) || (!ignoreHalt && s.keeper.IsChainTradingHalted(ctx, anchor.Chain)) {
+			continue
+		}
+		pool, err := s.keeper.GetPool(ctx, anchor)
+		if err != nil {
+			ctx.Logger().Error("fail to get stable reserve usd pool", "asset", anchor.String(), "error", err)
+			continue
+		}
+		if !pool.IsAvailable() {
+			continue
+		}
+		value := pool.RuneValueInAsset(cosmos.NewUint(constants.DollarMulti * common.One))
+		if !value.IsZero() {
+			prices = append(prices, value)
+		}
+	}
+	return common.GetMedianUint(prices).QuoUint64(constants.DollarMulti)
 }
 
 // poolImpliedOutput returns what a slip-free AMM double-swap of grossIn source

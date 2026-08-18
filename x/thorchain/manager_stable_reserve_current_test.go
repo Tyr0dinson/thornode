@@ -710,20 +710,26 @@ func (s *StableReserveMgrSuite) TestFreeStableSwapOraclePricingNeverPaysOutMoreU
 	c.Check(mgr.SecuredAssetManager().BalanceOf(ctx, usdt, moduleAddr).Equal(cosmos.NewUint(50*common.One)), Equals, true)
 }
 
-// dislocateChainPool halves the pool price of asset, simulating a chain-local
-// failure (bridge compromise, halted chain) that the ticker-keyed oracle cannot
-// see because it still reports one healthy price for that ticker.
-func dislocateChainPool(c *C, ctx cosmos.Context, mgr *Mgrs, asset common.Asset) {
+// scalePoolAsset multiplies a pool's asset balance, moving its RUNE-per-asset
+// price down by the same proportion. numer/denom = 2/1 halves the price.
+func scalePoolAsset(c *C, ctx cosmos.Context, mgr *Mgrs, asset common.Asset, numer, denom uint64) {
 	pool, err := mgr.Keeper().GetPool(ctx, asset)
 	c.Assert(err, IsNil)
-	pool.BalanceAsset = pool.BalanceAsset.MulUint64(2)
+	pool.BalanceAsset = pool.BalanceAsset.MulUint64(numer).QuoUint64(denom)
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 }
 
-// Oracle prices are keyed by ticker, so ETH.USDC and AVAX.USDC price identically
-// and the oracle ratio is always exactly 1:1 — the unit clamp never binds. Only
-// the pool cap prices the dislocated chain.
-func (s *StableReserveMgrSuite) TestFreeStableSwapCapsCrossChainSameTicker(c *C) {
+// dislocateChainPool halves the pool price, simulating a chain-local failure
+// (bridge compromise, halted chain) that the ticker-keyed oracle cannot see
+// because it still reports one healthy price for that ticker.
+func dislocateChainPool(c *C, ctx cosmos.Context, mgr *Mgrs, asset common.Asset) {
+	scalePoolAsset(c, ctx, mgr, asset, 2, 1)
+}
+
+// LAYER 1 — the eligibility gate. Oracle prices are keyed by ticker, so
+// ETH.USDC and AVAX.USDC share one price and a collapsed AVAX pool is invisible
+// to the oracle check. The per-asset pool-price gate must reject it outright.
+func (s *StableReserveMgrSuite) TestEligibilityRejectsChainDislocatedPool(c *C) {
 	ctx, mgr, ethUSDC, _ := setupStableReserveSuite(c)
 	avaxUSDC, err := common.NewAsset("AVAX.USDC-0XB97EF9EF8734C71904D8002F8B6BC66DD9C48A6E")
 	c.Assert(err, IsNil)
@@ -733,23 +739,36 @@ func (s *StableReserveMgrSuite) TestFreeStableSwapCapsCrossChainSameTicker(c *C)
 	fundStableReserveSurplus(c, ctx, mgr, ethUSDC, cosmos.NewUint(100_000*common.One))
 	dislocateChainPool(c, ctx, mgr, avaxUSDC)
 
-	// The oracle still calls it a healthy $1.00 USDC, so eligibility passes.
-	ok, _ := mgr.StableReserveManager().IsEligibleStable(ctx, avaxUSDC)
-	c.Assert(ok, Equals, true)
+	// The oracle still calls it a healthy $1.00 USDC; only the pool disagrees.
+	ok, reason := mgr.StableReserveManager().IsEligibleStable(ctx, avaxUSDC)
+	c.Check(ok, Equals, false)
+	c.Check(reason, Equals, "unhealthy pool price")
 
-	in := cosmos.NewUint(50_000 * common.One)
-	filled, emit, err := mgr.StableReserveManager().TrySwap(ctx, mgr, *stableSwapMsg(avaxUSDC, ethUSDC, in))
+	// It is therefore not a valid deposit...
+	depErr := mgr.StableReserveManager().Deposit(ctx, avaxUSDC, cosmos.NewUint(50_000*common.One), GetRandomETHAddress(), common.BlankTxID)
+	c.Check(depErr, NotNil)
+	floor, err := mgr.Keeper().GetStableReserveDepositValue(ctx)
 	c.Assert(err, IsNil)
-	c.Check(filled, Equals, true)
-	// Unclamped by the pool this paid out 50,000 ETH.USDC for 50,000 AVAX.USDC
-	// worth half that. The cap prices the dump at its chain-local value.
-	c.Check(emit.Equal(in), Equals, false)
-	c.Check(emit.Equal(in.QuoUint64(2)), Equals, true)
+	c.Check(floor.IsZero(), Equals, true)
+
+	// ...nor a rescue target...
+	for _, t := range mgr.StableReserveManager().(*StableReserveMgr).healthyStableTargets(ctx) {
+		c.Check(t.Equals(avaxUSDC), Equals, false)
+	}
+
+	// ...nor fillable. Unprotected this paid out 50,000 good ETH.USDC for
+	// 50,000 AVAX.USDC worth half that.
+	in := cosmos.NewUint(50_000 * common.One)
+	filled, _, err := mgr.StableReserveManager().TrySwap(ctx, mgr, *stableSwapMsg(avaxUSDC, ethUSDC, in))
+	c.Assert(err, IsNil)
+	c.Check(filled, Equals, false)
+	moduleAddr := mgr.Keeper().GetModuleAccAddress(StableReserveName)
+	c.Check(mgr.SecuredAssetManager().BalanceOf(ctx, ethUSDC, moduleAddr).Equal(cosmos.NewUint(100_000*common.One)), Equals, true)
 }
 
-// The leak does not require a shared ticker: any asset on the dislocated chain
-// prices 1:1 through the oracle, so the pool cap must be pair-agnostic.
-func (s *StableReserveMgrSuite) TestFreeStableSwapCapsCrossChainDifferentTicker(c *C) {
+// The leak never required a shared ticker — any asset on the dislocated chain
+// prices 1:1 through the ticker oracle.
+func (s *StableReserveMgrSuite) TestEligibilityRejectsChainDislocatedPoolDifferentTicker(c *C) {
 	ctx, mgr, ethUSDC, _ := setupStableReserveSuite(c)
 	avaxUSDT, err := common.NewAsset("AVAX.USDT-0X9702230A8EA53601F5CD2DC00FDBC13D4DF4A8C7")
 	c.Assert(err, IsNil)
@@ -758,31 +777,58 @@ func (s *StableReserveMgrSuite) TestFreeStableSwapCapsCrossChainDifferentTicker(
 	fundStableReserveSurplus(c, ctx, mgr, ethUSDC, cosmos.NewUint(100_000*common.One))
 	dislocateChainPool(c, ctx, mgr, avaxUSDT)
 
-	in := cosmos.NewUint(50_000 * common.One)
-	filled, emit, err := mgr.StableReserveManager().TrySwap(ctx, mgr, *stableSwapMsg(avaxUSDT, ethUSDC, in))
+	ok, reason := mgr.StableReserveManager().IsEligibleStable(ctx, avaxUSDT)
+	c.Check(ok, Equals, false)
+	c.Check(reason, Equals, "unhealthy pool price")
+
+	filled, _, err := mgr.StableReserveManager().TrySwap(ctx, mgr, *stableSwapMsg(avaxUSDT, ethUSDC, cosmos.NewUint(50_000*common.One)))
 	c.Assert(err, IsNil)
-	c.Check(filled, Equals, true)
-	c.Check(emit.Equal(in.QuoUint64(2)), Equals, true)
+	c.Check(filled, Equals, false)
 }
 
-// The cap must only ever reduce the payout. A source pool dislocated UPWARD
-// cannot lift the fill above the oracle ratio and the 1:1 unit clamp.
-func (s *StableReserveMgrSuite) TestFreeStableSwapPoolCapNeverRaisesPayout(c *C) {
+// LAYER 2 — the pool-implied cap. The gate bounds each asset's absolute
+// deviation from $1, so two assets can BOTH pass it while their pools imply a
+// materially different ratio to each other. Only the cap prices that.
+func (s *StableReserveMgrSuite) TestFillCapsWithinBandRelativeDivergence(c *C) {
 	ctx, mgr, usdc, usdt := setupStableReserveSuite(c)
 	fundStableReserveSurplus(c, ctx, mgr, usdt, cosmos.NewUint(100_000*common.One))
 
-	// Source pool pushed to 2x — an attacker manipulating in the "favourable"
-	// direction. grossIn stays the ceiling.
-	pool, err := mgr.Keeper().GetPool(ctx, usdc)
+	// Source pool 0.5% cheap — comfortably inside the 100 bps gate.
+	scalePoolAsset(c, ctx, mgr, usdc, 1005, 1000)
+	ok, _ := mgr.StableReserveManager().IsEligibleStable(ctx, usdc)
+	c.Assert(ok, Equals, true) // gate passes, so only the cap can catch this
+	ok, _ = mgr.StableReserveManager().IsEligibleStable(ctx, usdt)
+	c.Assert(ok, Equals, true)
+
+	in := cosmos.NewUint(10_000 * common.One)
+	filled, emit, err := mgr.StableReserveManager().TrySwap(ctx, mgr, *stableSwapMsg(usdc, usdt, in))
 	c.Assert(err, IsNil)
-	pool.BalanceRune = pool.BalanceRune.MulUint64(2)
-	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+	c.Check(filled, Equals, true)
+	// Oracle says 1:1 (both $1.00) so the unit clamp would pay `in`. The pools
+	// imply ~0.995, and the cap holds the payout there.
+	c.Check(emit.LT(in), Equals, true)
+	// AssetValueInRune then RuneValueInAsset, each rounding independently:
+	// floor-ish of 10_000e8 * 1000/1005 = 995_024_875_622.
+	c.Check(emit.Equal(cosmos.NewUint(995_024_875_622)), Equals, true)
+}
+
+// The cap must only ever REDUCE the payout: a source pool dislocated in the
+// favourable direction cannot lift the fill above the oracle ratio or the 1:1
+// unit clamp.
+func (s *StableReserveMgrSuite) TestFillPoolCapNeverRaisesPayout(c *C) {
+	ctx, mgr, usdc, usdt := setupStableReserveSuite(c)
+	fundStableReserveSurplus(c, ctx, mgr, usdt, cosmos.NewUint(100_000*common.One))
+
+	// Source pool 0.5% rich — pool-implied output exceeds grossIn.
+	scalePoolAsset(c, ctx, mgr, usdc, 1000, 1005)
+	ok, _ := mgr.StableReserveManager().IsEligibleStable(ctx, usdc)
+	c.Assert(ok, Equals, true)
 
 	in := cosmos.NewUint(1_000 * common.One)
 	filled, emit, err := mgr.StableReserveManager().TrySwap(ctx, mgr, *stableSwapMsg(usdc, usdt, in))
 	c.Assert(err, IsNil)
 	c.Check(filled, Equals, true)
-	c.Check(emit.Equal(in), Equals, true)
+	c.Check(emit.Equal(in), Equals, true) // capped by grossIn, not raised by the pool
 }
 
 func (s *StableReserveMgrSuite) TestFreeStableSwapOraclePricingFallsBackWhenPriceMissing(c *C) {
