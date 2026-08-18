@@ -1024,9 +1024,14 @@ func (s *SlasherImpl) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coin
 		}
 		if !runeToAsgard.IsZero() {
 			if err := s.keeper.SendFromModuleToModule(ctx, BondName, AsgardName, common.NewCoins(common.NewCoin(common.RuneAsset(), runeToAsgard))); err != nil {
-				ctx.Logger().Error("fail to send slash fund to asgard module", "pk", vaultPK, "error", err)
+				// The BondName->Asgard transfer failed (e.g. an underfunded Bond
+				// module), so no RUNE actually reached Asgard. Do NOT credit the
+				// pool via updatePoolFromSlash, or its RUNE depth would be inflated
+				// with no backing (a phantom credit / pool-solvency discrepancy).
+				ctx.Logger().Error("fail to send slash fund to asgard module; skipping pool credit", "pk", vaultPK, "error", err)
+			} else {
+				s.updatePoolFromSlash(ctx, pool, common.NewCoin(coin.Asset, stolenAssetValue), runeToAsgard, mgr)
 			}
-			s.updatePoolFromSlash(ctx, pool, common.NewCoin(coin.Asset, stolenAssetValue), runeToAsgard, mgr)
 		}
 	}
 

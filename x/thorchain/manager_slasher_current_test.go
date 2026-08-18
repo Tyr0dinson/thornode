@@ -1056,6 +1056,45 @@ func (s *SlashingSuite) TestUpdatePoolFromSlash(c *C) {
 	c.Assert(pool.BalanceRune.Uint64(), Equals, uint64(1500*common.One))
 }
 
+// Bug-4 hardening: when the BondName->Asgard slash transfer fails (e.g. an
+// underfunded Bond module), the pool must NOT be credited — otherwise its RUNE
+// depth would be inflated with no backing (a phantom credit).
+func (s *SlashingSuite) TestSlashVaultSkipsPoolCreditOnFailedTransfer(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+
+	node := GetRandomValidatorNode(NodeActive)
+	node.Bond = cosmos.NewUint(100 * common.One)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, node), IsNil)
+	// Deliberately do NOT FundModule(BondName): the bond ledger says the node is
+	// bonded, but the Bond module holds no RUNE, so the slash transfer will fail.
+
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = types2.VaultStatus_ActiveVault
+	vault.PubKey = node.PubKeySet.Secp256k1
+	vault.Membership = []string{node.PubKeySet.Secp256k1.String()}
+	vault.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One)))
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	poolRuneBefore := pool.BalanceRune
+
+	err := slasher.SlashVault(ctx, vault.PubKey, common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One))), mgr)
+	c.Assert(err, IsNil)
+
+	poolAfter, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(poolAfter.BalanceRune.Uint64(), Equals, poolRuneBefore.Uint64(),
+		Commentf("pool RUNE must be unchanged when the slash transfer fails; got %d want %d", poolAfter.BalanceRune.Uint64(), poolRuneBefore.Uint64()))
+}
+
 func (s *SlashingSuite) TestNetworkShouldNotSlashMorethanVaultAmount(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
