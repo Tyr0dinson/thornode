@@ -1338,6 +1338,31 @@ func (s *SolvencySuite) TestShouldReportRejectsNonPositiveHeight(c *C) {
 	c.Assert(reporter.ShouldReport(fromRunner, -1), Equals, false)
 }
 
+func (s *SolvencySuite) TestCollectRejectsMissingRequiredGasEstimate(c *C) {
+	client := &mockChainClient{
+		chain:                 common.XRPChain,
+		blockScannerIsHealthy: true,
+		gas:                   cosmos.NewUint(10),
+		chainHeight:           20,
+		cfg: config.BifrostChainConfiguration{
+			SolvencyBlocks: 10,
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				ObservationFlexibilityBlocks: 10,
+			},
+		},
+	}
+	reporter := newSolvencyReporter(client, &thorMockBridge{})
+
+	c.Assert(reporter.ShouldReport(fromBlockScanner, 20), Equals, true)
+	client.gas = cosmos.ZeroUint()
+
+	batch, err := reporter.Collect(fromBlockScanner, 20)
+	c.Assert(err, ErrorMatches, "solvency gas estimate is unavailable for XRP")
+	c.Assert(batch, IsNil)
+	c.Assert(reporter.getLastSolvencyAttemptHeight(), Equals, int64(0))
+	c.Assert(reporter.getLastSolvencyCheckHeight(), Equals, int64(0))
+}
+
 // TestShouldReportSkipsTronHeightsBeforeFinalityFloor verifies the added TRON
 // low-height guard prevents non-positive solvency message heights.
 func (s *SolvencySuite) TestShouldReportSkipsTronHeightsBeforeFinalityFloor(c *C) {

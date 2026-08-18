@@ -80,6 +80,9 @@ func (r *solvencyReporter) Collect(from triggeredFrom, height int64) (ReportBatc
 	// report insolvent asgard vaults,
 	// or else all if the chain is halted and all are solvent
 	currentGasFee := r.client.GetGasEstimateForSolvency()
+	if r.requiresNonZeroGas() && currentGasFee.IsZero() {
+		return nil, fmt.Errorf("solvency gas estimate is unavailable for %s", r.client.GetChain())
+	}
 	asgardVaults, err := r.thorchainBridge.GetAsgards()
 	if err != nil {
 		return nil, fmt.Errorf("fail to get asgards: %w", err)
