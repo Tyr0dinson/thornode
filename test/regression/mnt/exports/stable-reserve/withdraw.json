@@ -504,7 +504,7 @@
           "asset": "ETH.USDC-0X9999999999999999999999999999999999999999"
         }
       ],
-      "stable_reserve_deposit_value": "10000000000",
+      "stable_reserve_deposit_value": "6000000000",
       "streaming_swaps": [],
       "swap_queue_items": [],
       "swapper_clout": [],

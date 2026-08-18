@@ -67,10 +67,127 @@ count: 1
 ########################################################################################
 # The EndBlock manager deploys the module's RUNE into stable inventory via a
 # slip-sized market swap. Assert the *outcome* — the module's RUNE is deployed out
-# and converted into stable inventory, with no deployment swap left pending —
-# after the execution block. Per-block scheduling/settlement events are not
-# asserted directly.
+# and converted into stable inventory, with no deployment swap left pending.
+# Per-block scheduling/settlement events are not asserted directly.
+#
+# Deployment is capped per block at StableReserveDeployMaxPoolBps of the target
+# pool's RUNE depth, so 100 RUNE against this 1000 RUNE pool drains over several
+# blocks rather than in one. Each block needs its own price feed: OracleMgr wipes
+# every price at BeginBlock, and with no priced anchor there is no healthy target
+# to deploy into, so an unfed block deploys nothing.
 ########################################################################################
+type: tx-price-feed
+prices:
+  USDC: "1.00"
+  USDT: "1.00"
+---
+type: create-blocks
+count: 1
+---
+type: tx-price-feed
+prices:
+  USDC: "1.00"
+  USDT: "1.00"
+---
+type: create-blocks
+count: 1
+---
+type: tx-price-feed
+prices:
+  USDC: "1.00"
+  USDT: "1.00"
+---
+type: create-blocks
+count: 1
+---
+type: tx-price-feed
+prices:
+  USDC: "1.00"
+  USDT: "1.00"
+---
+type: create-blocks
+count: 1
+---
+type: tx-price-feed
+prices:
+  USDC: "1.00"
+  USDT: "1.00"
+---
+type: create-blocks
+count: 1
+---
+type: tx-price-feed
+prices:
+  USDC: "1.00"
+  USDT: "1.00"
+---
+type: create-blocks
+count: 1
+---
+type: tx-price-feed
+prices:
+  USDC: "1.00"
+  USDT: "1.00"
+---
+type: create-blocks
+count: 1
+---
+type: tx-price-feed
+prices:
+  USDC: "1.00"
+  USDT: "1.00"
+---
+type: create-blocks
+count: 1
+---
+type: tx-price-feed
+prices:
+  USDC: "1.00"
+  USDT: "1.00"
+---
+type: create-blocks
+count: 1
+---
+type: tx-price-feed
+prices:
+  USDC: "1.00"
+  USDT: "1.00"
+---
+type: create-blocks
+count: 1
+---
+type: tx-price-feed
+prices:
+  USDC: "1.00"
+  USDT: "1.00"
+---
+type: create-blocks
+count: 1
+---
+type: tx-price-feed
+prices:
+  USDC: "1.00"
+  USDT: "1.00"
+---
+type: create-blocks
+count: 1
+---
+type: tx-price-feed
+prices:
+  USDC: "1.00"
+  USDT: "1.00"
+---
+type: create-blocks
+count: 1
+---
+type: tx-price-feed
+prices:
+  USDC: "1.00"
+  USDT: "1.00"
+---
+type: create-blocks
+count: 1
+---
 type: tx-price-feed
 prices:
   USDC: "1.00"
@@ -127,13 +244,20 @@ type: create-blocks
 count: 1
 ---
 ########################################################################################
-# assert rescue scheduled: event emitted
+# assert rescue scheduled: event emitted for the asset this scenario is about.
+#
+# Asserted per-asset rather than as a raw event count. RUNE deployment is now
+# chunked per block (StableReserveDeployMaxPoolBps) and selectDeploymentTarget
+# picks the lowest-inventory anchor each block, so scenario 1 leaves inventory
+# spread across BOTH anchors instead of concentrated in one. With both dropped to
+# 0.50 here, both are legitimately detected and rescued, so a bare "== 1" count
+# no longer describes correct behaviour.
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
-  - '[..|select(.type? == "stable_reserve_depeg_detected")]|length == 1'
-  - '[..|select(.type? == "stable_reserve_rescue_scheduled")]|length == 1'
+  - '[..|select(.type? == "stable_reserve_depeg_detected" and .asset? == "ETH.USDC-0X9999999999999999999999999999999999999999")]|length == 1'
+  - '[..|select(.type? == "stable_reserve_rescue_scheduled" and .asset? == "ETH.USDC-0X9999999999999999999999999999999999999999")]|length == 1'
 ---
 ########################################################################################
 # step through the rescue stream, re-feeding the depeg price so the slip-sized
