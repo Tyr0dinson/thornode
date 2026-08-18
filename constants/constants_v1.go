@@ -167,6 +167,8 @@ func NewConstantValue() *ConstantVals {
 			StableReservePOLShareBps:            0,                  // share of POLReserveSystemIncomeBps routed to Stable Reserve
 			StableReserveWithdrawalRequestMax:   10_000,             // maximum request coin amount accepted for Stable Reserve withdrawals
 			StableReserveUnderwaterFee:          10_000,             // stable reserve swap fee as a fraction of 1e8 (10_000 = 0.0001 = 1 bps), charged only while the reserve is underwater vs deposits; supports sub-1-bps values
+			StableReserveRescueToleranceBps:     300,                // oracle deviation from $1 at which a Stable Reserve depeg rescue triggers; must exceed StableReserveDepegToleranceBps so there is a hold band between "stop filling" and "liquidate"
+			StableReserveDeployMaxPoolBps:       100,                // max share of the target pool's RUNE depth a single Stable Reserve RUNE deployment may swap per block (0 = uncapped)
 			L1DynamicFeeEnabled:                 0,                  // enable/disable dynamic L1 min fee
 			L1DynamicFeeEpochBlocks:             14400,              // number of blocks per dynamic fee epoch
 			L1DynamicFeeFloorBPS:                1,                  // floor basis points for dynamic L1 min fee

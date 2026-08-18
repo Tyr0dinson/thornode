@@ -221,6 +221,8 @@ const (
 
 	LUVIOverhangGuard
 	LUVIGuard
+	StableReserveRescueToleranceBps
+	StableReserveDeployMaxPoolBps
 )
 
 // ConstantValues define methods used to get constant values

@@ -648,7 +648,18 @@ func (s *StableReserveMgr) isDepegged(ctx cosmos.Context, asset common.Asset) bo
 	if err != nil {
 		return false
 	}
-	toleranceBps := s.keeper.GetConfigInt64(ctx, constants.StableReserveDepegToleranceBps)
+	// Hysteresis: rescue on a WIDER band than fills. With one shared threshold the
+	// reserve accumulates the weak asset at fair value right up to the edge and
+	// then liquidates the whole position through the AMM at slip one basis point
+	// later — buying all the way down and selling at the bottom. The gap between
+	// StableReserveDepegToleranceBps and this value is a hold band: fills have
+	// already stopped, but the position is not dumped while the asset may recover.
+	toleranceBps := s.keeper.GetConfigInt64(ctx, constants.StableReserveRescueToleranceBps)
+	if fillBps := s.keeper.GetConfigInt64(ctx, constants.StableReserveDepegToleranceBps); toleranceBps < fillBps {
+		// A misconfigured rescue band narrower than the fill band would rescue
+		// assets that are still fillable. Never rescue inside the fill band.
+		toleranceBps = fillBps
+	}
 	return !stableReserveOracleHealthy(price.Price, toleranceBps)
 }
 
@@ -716,7 +727,29 @@ func (s *StableReserveMgr) scheduleRuneDeployment(ctx cosmos.Context, mgr Manage
 
 	moduleAddr := s.keeper.GetModuleAccAddress(StableReserveName)
 	target := s.selectDeploymentTarget(ctx, healthyTargets, moduleAddr)
-	return s.scheduleDeploymentSwap(ctx, mgr, target, runeBalance, moduleAddr)
+
+	// Cap the per-block deployment at a share of the target pool's RUNE depth.
+	// Deployment swaps are queued with quantity 0 / interval 0, and the streaming
+	// auto-sizer degenerates to a quantity of 1 for this leg pair (the RUNE source
+	// is skipped and an L1 target carries L1SlipMinBps, which defaults to 0), so
+	// without this the module's whole RUNE balance is swapped into a single pool in
+	// a single block at whatever slip that costs. That balance is normally a
+	// per-block trickle from the POL share, but a depeg rescue that falls back to
+	// RUNE accumulates the entire reserve before deploying it.
+	//
+	// Any remainder stays in the module and is deployed by the next block, since
+	// this runs every EndBlock. A zero mimir, or a pool with no depth, leaves the
+	// deployment uncapped rather than stranding the balance forever.
+	amount := runeBalance
+	if maxPoolBps := s.keeper.GetConfigInt64(ctx, constants.StableReserveDeployMaxPoolBps); maxPoolBps > 0 {
+		if pool, err := s.keeper.GetPool(ctx, target.GetLayer1Asset()); err == nil && !pool.BalanceRune.IsZero() {
+			chunk := common.GetSafeShare(cosmos.SafeUintFromInt64(maxPoolBps), cosmos.NewUint(constants.MaxBasisPts), pool.BalanceRune)
+			if !chunk.IsZero() {
+				amount = cosmos.MinUint(amount, chunk)
+			}
+		}
+	}
+	return s.scheduleDeploymentSwap(ctx, mgr, target, amount, moduleAddr)
 }
 
 func (s *StableReserveMgr) selectDeploymentTarget(ctx cosmos.Context, targets []common.Asset, moduleAddr cosmos.AccAddress) common.Asset {

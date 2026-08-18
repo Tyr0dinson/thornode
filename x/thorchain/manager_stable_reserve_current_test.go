@@ -1054,7 +1054,7 @@ func (s *StableReserveMgrSuite) TestDepegRescueSchedulesStreamingSwapToHealthySt
 	totalInventory := creditAmount.Add(rescueAmount)
 	c.Assert(stableReserveMgr.Deposit(ctx, usdc, creditAmount, contributor, common.BlankTxID), IsNil)
 	fundStableReserveSurplus(c, ctx, mgr, usdc, rescueAmount)
-	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "0.98"}), IsNil)
+	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "0.95"}), IsNil)
 
 	c.Assert(stableReserveMgr.EndBlock(ctx, mgr), IsNil)
 
@@ -1079,7 +1079,7 @@ func (s *StableReserveMgrSuite) TestDepegRescueSchedulesCreditedInventory(c *C) 
 	contributor := GetRandomETHAddress()
 	amount := cosmos.NewUint(100 * common.One)
 	c.Assert(stableReserveMgr.Deposit(ctx, usdc, amount, contributor, common.BlankTxID), IsNil)
-	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "0.98"}), IsNil)
+	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "0.95"}), IsNil)
 
 	c.Assert(stableReserveMgr.EndBlock(ctx, mgr), IsNil)
 
@@ -1113,7 +1113,7 @@ func (s *StableReserveMgrSuite) TestDepegRescueIgnoresOracleOutage(c *C) {
 	c.Check(mgr.SecuredAssetManager().BalanceOf(ctx, usdc, moduleAddr).Equal(amount), Equals, true)
 
 	// Once the feed returns with a genuinely bad price, the rescue does fire.
-	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "0.98"}), IsNil)
+	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "0.95"}), IsNil)
 	c.Assert(stableReserveMgr.EndBlock(ctx, mgr), IsNil)
 	rescue, err := firstQueuedSwapWithMemoPrefix(ctx, mgr, types.StableReserveRescueMemoPrefix)
 	c.Assert(err, IsNil)
@@ -1145,7 +1145,7 @@ func (s *StableReserveMgrSuite) TestDepositFloorUnwindsWithoutALivePrice(c *C) {
 func (s *StableReserveMgrSuite) TestRescueAbortsOnlyWhenSourceActuallyRecovers(c *C) {
 	ctx, mgr, usdc, usdt := setupStableReserveSuite(c)
 	fundStableReserveSurplus(c, ctx, mgr, usdc, cosmos.NewUint(100*common.One))
-	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "0.98"}), IsNil)
+	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "0.95"}), IsNil)
 	c.Assert(mgr.StableReserveManager().EndBlock(ctx, mgr), IsNil)
 
 	rescue, err := firstQueuedSwapWithMemoPrefix(ctx, mgr, types.StableReserveRescueMemoPrefix)
@@ -1168,12 +1168,59 @@ func (s *StableReserveMgrSuite) TestRescueAbortsOnlyWhenSourceActuallyRecovers(c
 	c.Check(strings.Contains(err.Error(), "has recovered"), Equals, true)
 }
 
+// Hold band: past the fill tolerance the reserve stops filling, but it must not
+// liquidate until the wider rescue tolerance is breached.
+func (s *StableReserveMgrSuite) TestDepegRescueHoldsBetweenFillAndRescueBands(c *C) {
+	ctx, mgr, usdc, _ := setupStableReserveSuite(c)
+	fundStableReserveSurplus(c, ctx, mgr, usdc, cosmos.NewUint(100*common.One))
+
+	// 200 bps off: outside the 100 bps fill band, inside the 300 bps rescue band.
+	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "0.98"}), IsNil)
+	ok, reason := mgr.StableReserveManager().IsEligibleStable(ctx, usdc)
+	c.Check(ok, Equals, false)
+	c.Check(reason, Equals, "unhealthy oracle price") // fills already stopped
+
+	c.Assert(mgr.StableReserveManager().EndBlock(ctx, mgr), IsNil)
+	_, err := firstQueuedSwapWithMemoPrefix(ctx, mgr, types.StableReserveRescueMemoPrefix)
+	c.Check(err, NotNil) // held, not dumped
+	moduleAddr := mgr.Keeper().GetModuleAccAddress(StableReserveName)
+	c.Check(mgr.SecuredAssetManager().BalanceOf(ctx, usdc, moduleAddr).Equal(cosmos.NewUint(100*common.One)), Equals, true)
+
+	// Past the rescue band, the position is liquidated.
+	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "0.95"}), IsNil)
+	c.Assert(mgr.StableReserveManager().EndBlock(ctx, mgr), IsNil)
+	rescue, err := firstQueuedSwapWithMemoPrefix(ctx, mgr, types.StableReserveRescueMemoPrefix)
+	c.Assert(err, IsNil)
+	c.Check(rescue.Tx.Coins[0].Amount.Equal(cosmos.NewUint(100*common.One)), Equals, true)
+}
+
+// A RUNE deployment must not swap the module's whole balance into one pool in a
+// single block; it is capped at a share of the target pool's RUNE depth.
+func (s *StableReserveMgrSuite) TestRuneDeploymentCapsPerBlockPoolShare(c *C) {
+	ctx, mgr, usdc, _ := setupStableReserveSuite(c)
+	// Pool RUNE depth is 1_000_000e8; the 100 bps default caps a block at 10_000e8.
+	coin := common.NewCoin(common.RuneNative, cosmos.NewUint(500_000*common.One))
+	c.Assert(mgr.Keeper().MintToModule(ctx, ModuleName, coin), IsNil)
+	c.Assert(mgr.Keeper().SendFromModuleToModule(ctx, ModuleName, StableReserveName, common.NewCoins(coin)), IsNil)
+
+	c.Assert(mgr.StableReserveManager().EndBlock(ctx, mgr), IsNil)
+	deploy, err := firstQueuedSwapWithMemoPrefix(ctx, mgr, types.StableReserveDeployMemoPrefix)
+	c.Assert(err, IsNil)
+	// Both stables hold zero inventory, so selectDeploymentTarget tie-breaks
+	// alphabetically onto USDC. Its pool has the same depth, so the cap is the same.
+	c.Check(deploy.TargetAsset.Equals(usdc), Equals, true)
+	c.Check(deploy.Tx.Coins[0].Amount.Equal(cosmos.NewUint(10_000*common.One)), Equals, true)
+
+	// The remainder stays in the module for later blocks rather than being dumped.
+	c.Check(mgr.Keeper().GetRuneBalanceOfModule(ctx, StableReserveName).Equal(cosmos.NewUint(490_000*common.One)), Equals, true)
+}
+
 func (s *StableReserveMgrSuite) TestDepegRescueQueueScanLifecycle(c *C) {
 	ctx, mgr, usdc, _ := setupStableReserveSuite(c)
 	stableReserveMgr := mgr.StableReserveManager()
 	amount := cosmos.NewUint(100 * common.One)
 	fundStableReserveSurplus(c, ctx, mgr, usdc, amount)
-	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "0.98"}), IsNil)
+	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "0.95"}), IsNil)
 
 	c.Assert(stableReserveMgr.EndBlock(ctx, mgr), IsNil)
 
@@ -1195,8 +1242,8 @@ func (s *StableReserveMgrSuite) TestDepegRescueSchedulesRuneFallbackWhenAllStabl
 	stableReserveMgr := mgr.StableReserveManager()
 	amount := cosmos.NewUint(100 * common.One)
 	fundStableReserveSurplus(c, ctx, mgr, usdc, amount)
-	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "0.98"}), IsNil)
-	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdt.Ticker.String(), Price: "0.98"}), IsNil)
+	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "0.95"}), IsNil)
+	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdt.Ticker.String(), Price: "0.95"}), IsNil)
 
 	c.Assert(stableReserveMgr.EndBlock(ctx, mgr), IsNil)
 
@@ -1212,8 +1259,8 @@ func (s *StableReserveMgrSuite) TestDepegRescueRuneFallbackSettlesFromActiveQueu
 	stableReserveMgr := mgr.StableReserveManager()
 	amount := cosmos.NewUint(100 * common.One)
 	fundStableReserveSurplus(c, ctx, mgr, usdc, amount)
-	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "0.98"}), IsNil)
-	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdt.Ticker.String(), Price: "0.98"}), IsNil)
+	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "0.95"}), IsNil)
+	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdt.Ticker.String(), Price: "0.95"}), IsNil)
 
 	c.Assert(stableReserveMgr.EndBlock(ctx, mgr), IsNil)
 	rescue, err := firstQueuedSwapWithMemoPrefix(ctx, mgr, types.StableReserveRescueMemoPrefix)
