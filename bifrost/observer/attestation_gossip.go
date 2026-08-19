@@ -469,11 +469,24 @@ func (s *AttestationGossip) acquireXMRSpentRefsAttempt(tx common.ObservedTx) (fu
 			Msg("reject xmr spent-ref import: errata admission check failed")
 		return nil, false
 	}
-	if tombstone != nil && tombstone.blocksHeight(tx.BlockHeight) {
-		release()
-		s.logger.Warn().Str("tx_id", tx.Tx.ID.String()).Int64("height", tx.BlockHeight).
-			Msg("reject xmr spent-ref import at tombstoned height")
-		return nil, false
+	if tombstone != nil {
+		blocked, minedHeight, heightErr := tombstone.blocksObservedTx(tx)
+		if heightErr != nil {
+			release()
+			s.logger.Warn().Err(heightErr).Str("tx_id", tx.Tx.ID.String()).
+				Int64("reported_height", tx.BlockHeight).
+				Int64("xmr_mined_height", tx.XmrMinedHeight).
+				Msg("reject xmr spent-ref import without a canonical mined height")
+			return nil, false
+		}
+		if blocked {
+			release()
+			s.logger.Warn().Str("tx_id", tx.Tx.ID.String()).
+				Int64("reported_height", tx.BlockHeight).
+				Int64("mined_height", minedHeight).
+				Msg("reject xmr spent-ref import at tombstoned mined height")
+			return nil, false
+		}
 	}
 	return release, true
 }

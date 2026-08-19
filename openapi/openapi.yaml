@@ -2948,6 +2948,11 @@ components:
           type: string
           description: XMR outbound tx private key used by third parties to verify recipient outputs.
           example: "1111111111111111111111111111111111111111111111111111111111111111"
+        xmr_mined_height:
+          type: integer
+          format: int64
+          description: canonical external-chain height where the XMR transaction was mined, retained when the reported observation height is rewritten at finalization
+          example: 7581328
         status:
           type: string
           enum: ["done", "incomplete"]

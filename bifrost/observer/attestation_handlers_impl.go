@@ -77,14 +77,28 @@ func (s *AttestationGossip) handleObservedTxAttestationInternal(
 				Msg("reject xmr observation: durable errata admission check failed")
 			return false
 		}
-		if tombstone != nil && tombstone.blocksHeight(obsTx.BlockHeight) {
-			s.mu.Unlock()
-			s.logger.Warn().
-				Str("chain", obsTx.Tx.Chain.String()).
-				Str("txid", obsTx.Tx.ID.String()).
-				Int64("height", obsTx.BlockHeight).
-				Msg("reject xmr observation at a tombstoned height")
-			return false
+		if tombstone != nil {
+			blocked, minedHeight, heightErr := tombstone.blocksObservedTx(obsTx)
+			if heightErr != nil {
+				s.mu.Unlock()
+				s.logger.Warn().Err(heightErr).
+					Str("chain", obsTx.Tx.Chain.String()).
+					Str("txid", obsTx.Tx.ID.String()).
+					Int64("reported_height", obsTx.BlockHeight).
+					Int64("xmr_mined_height", obsTx.XmrMinedHeight).
+					Msg("reject xmr observation without a canonical mined height")
+				return false
+			}
+			if blocked {
+				s.mu.Unlock()
+				s.logger.Warn().
+					Str("chain", obsTx.Tx.Chain.String()).
+					Str("txid", obsTx.Tx.ID.String()).
+					Int64("reported_height", obsTx.BlockHeight).
+					Int64("mined_height", minedHeight).
+					Msg("reject xmr observation at a tombstoned mined height")
+				return false
+			}
 		}
 	}
 	state, ok := s.observedTxs[k]

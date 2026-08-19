@@ -319,9 +319,11 @@ func (b *AttestationBatcher) removeObservedTxsForErrata(errata common.ErrataTx, 
 			filtered = append(filtered, tx)
 			continue
 		}
-		if errata.Chain.Equals(common.XMRChain) && orphanHeight > 0 &&
-			tx.ObsTx.BlockHeight != orphanHeight {
-			filtered = append(filtered, tx)
+		if errata.Chain.Equals(common.XMRChain) && orphanHeight > 0 {
+			minedHeight, err := tx.ObsTx.CanonicalMinedHeight()
+			if err == nil && minedHeight != orphanHeight {
+				filtered = append(filtered, tx)
+			}
 		}
 	}
 	b.observedTxBatch = filtered

@@ -635,6 +635,7 @@ func TestXMRPermanentErrataUpgradeWaitsForInFlightQuorumSubmission(t *testing.T)
 		},
 		BlockHeight:    250,
 		FinaliseHeight: 250,
+		XmrMinedHeight: 250,
 	}
 	key := observedTxKey(observed, true, false)
 	quorumEntered := make(chan struct{})

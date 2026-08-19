@@ -4013,6 +4013,7 @@ func castObservedTx(observedTx ObservedTx) types.QueryObservedTx {
 		AggregatorTargetLimit: observedTx.AggregatorTargetLimit,
 		SpentOutputRefs:       castOutputRefs(observedTx.SpentOutputRefs),
 		XmrTxKey:              observedTx.XmrTxKey,
+		XmrMinedHeight:        observedTx.XmrMinedHeight,
 	}
 }
 

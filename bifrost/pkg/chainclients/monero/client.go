@@ -1218,6 +1218,7 @@ func queryObservedXMRTx(voter *ttypes.QueryObservedTxVoter, txID common.TxID) (c
 			AggregatorTargetLimit: candidate.AggregatorTargetLimit,
 			SpentOutputRefs:       xmrOutputRefsFromPointers(candidate.GetSpentOutputRefs()),
 			XmrTxKey:              candidate.GetXmrTxKey(),
+			XmrMinedHeight:        candidate.GetXmrMinedHeight(),
 		}, true
 	}
 	return common.ObservedTx{}, false

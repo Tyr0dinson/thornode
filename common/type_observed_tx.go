@@ -51,7 +51,43 @@ func (m *ObservedTx) Valid() error {
 	if err := ValidateXMRTxKey(m.Tx.Chain, m.XmrTxKey); err != nil {
 		return err
 	}
+	if m.XmrMinedHeight != 0 {
+		if _, err := m.CanonicalMinedHeight(); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// CanonicalMinedHeight returns the external-chain location used to scope
+// height-specific errata. Final observations rewrite BlockHeight to the
+// finalization height, so XMR carries its original mined location explicitly.
+// A zero XmrMinedHeight means the observation is pre-mining (for example an
+// AllowFutureObservation) or came from an incompatible peer and is therefore
+// not safe for a height-scoped tombstone decision.
+func (m ObservedTx) CanonicalMinedHeight() (int64, error) {
+	if !m.Tx.Chain.Equals(XMRChain) {
+		if m.XmrMinedHeight != 0 {
+			return 0, errors.New("xmr mined height is only valid for XMR observed txs")
+		}
+		if m.BlockHeight <= 0 {
+			return 0, errors.New("canonical mined height must be positive")
+		}
+		return m.BlockHeight, nil
+	}
+	if m.XmrMinedHeight <= 0 {
+		return 0, errors.New("xmr canonical mined height is unavailable")
+	}
+	if m.BlockHeight <= 0 || m.FinaliseHeight <= 0 || m.BlockHeight > m.FinaliseHeight {
+		return 0, errors.New("xmr observed and finalization heights are invalid")
+	}
+	if m.XmrMinedHeight > m.BlockHeight {
+		return 0, errors.New("xmr mined height exceeds the reported observation height")
+	}
+	if !m.IsFinal() && m.XmrMinedHeight != m.BlockHeight {
+		return 0, errors.New("non-final xmr observation must report its block height as the mined height")
+	}
+	return m.XmrMinedHeight, nil
 }
 
 func ValidateXMRTxKey(chain Chain, txKey string) error {
@@ -142,6 +178,9 @@ func (m ObservedTx) Equals(tx2 ObservedTx) bool {
 	if m.FinaliseHeight != tx2.FinaliseHeight {
 		return false
 	}
+	if m.XmrMinedHeight != tx2.XmrMinedHeight {
+		return false
+	}
 	if !strings.EqualFold(m.Aggregator, tx2.Aggregator) {
 		return false
 	}
@@ -203,7 +242,13 @@ func (m ObservedTx) EqualsConsensusIgnoreGas(tx2 ObservedTx) bool {
 }
 
 func (m ObservedTx) AttestationUniqueHash() string {
-	return observedTxXMRMetadataUniqueHash(m.Tx.Hash(m.BlockHeight), m.Tx.Chain, m.XmrTxKey, m.SpentOutputRefs)
+	return observedTxXMRMetadataUniqueHash(
+		m.Tx.Hash(m.BlockHeight),
+		m.Tx.Chain,
+		m.XmrTxKey,
+		m.SpentOutputRefs,
+		m.XmrMinedHeight,
+	)
 }
 
 // IsFinal indicates whether ObserveTx is final.

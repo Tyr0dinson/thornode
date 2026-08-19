@@ -86,10 +86,10 @@ func (t errataTombstone) isPermanentlyReverted() bool {
 	return t.Chain.Equals(common.XMRChain) && t.VoterReverted != nil && *t.VoterReverted
 }
 
-// blocksHeight keeps ordinary errata barriers scoped to the exact orphaned
+// blocksMinedHeight keeps ordinary errata barriers scoped to the exact orphaned
 // location. Only an explicit XMR ObservedTxVoter.Reverted result is a permanent
 // TxID-wide terminal.
-func (t errataTombstone) blocksHeight(height int64) bool {
+func (t errataTombstone) blocksMinedHeight(height int64) bool {
 	if t.isPermanentlyReverted() {
 		return true
 	}
@@ -97,6 +97,45 @@ func (t errataTombstone) blocksHeight(height int64) bool {
 		return true
 	}
 	return slices.Contains(t.OrphanHeights, height)
+}
+
+// blocksObservedTx resolves the canonical mined location before consulting a
+// height-scoped tombstone. A permanent tombstone is TxID-wide and needs no
+// location. Missing or malformed XMR location data is returned as blocked so
+// callers fail closed instead of comparing the rewritten finalization height.
+func (t errataTombstone) blocksObservedTx(tx common.ObservedTx) (bool, int64, error) {
+	if t.isPermanentlyReverted() {
+		return true, 0, nil
+	}
+	minedHeight, err := tx.CanonicalMinedHeight()
+	if err != nil {
+		return true, 0, err
+	}
+	return t.blocksMinedHeight(minedHeight), minedHeight, nil
+}
+
+// canonicalTxInMinedHeight reports the scanner-owned location of an on-deck
+// item. XMR mempool/future observations are deliberately pre-mining and cannot
+// make a height-scoped tombstone decision until the scanner reports a block.
+func canonicalTxInMinedHeight(txIn *types.TxIn, item *types.TxInItem) (int64, bool) {
+	if txIn == nil || item == nil || item.BlockHeight <= 0 {
+		return 0, false
+	}
+	if txIn.Chain.Equals(common.XMRChain) && (txIn.MemPool || txIn.AllowFutureObservation) {
+		return 0, false
+	}
+	return item.BlockHeight, true
+}
+
+func (t errataTombstone) blocksTxInItem(txIn *types.TxIn, item *types.TxInItem) bool {
+	if t.isPermanentlyReverted() {
+		return true
+	}
+	minedHeight, ok := canonicalTxInMinedHeight(txIn, item)
+	if !ok {
+		return txIn != nil && txIn.Chain.Equals(common.XMRChain)
+	}
+	return t.blocksMinedHeight(minedHeight)
 }
 
 func appendUniqueErrataHeight(heights []int64, height int64) []int64 {
@@ -271,7 +310,7 @@ func (s *ObserverStorage) applyErrataBatch(
 		} else if existing != nil {
 			hadLocalDelivery = existing.OrphanHeight > 0 || len(existing.OrphanHeights) > 0
 			tombstone = *existing
-			if block.Height <= 0 || tombstone.blocksHeight(block.Height) {
+			if block.Height <= 0 || tombstone.blocksMinedHeight(block.Height) {
 				// The scanner can crash after this batch is fsynced but before it
 				// consumes OnStored. Its restart replay is the same handoff, not a
 				// new generation: preserve a committed receipt so an already-final
@@ -498,7 +537,7 @@ func (s *ObserverStorage) filterTombstonedOnDeck(txIns []*types.TxIn) ([]*types.
 			if err != nil {
 				return nil, err
 			}
-			if tombstone != nil && tombstone.blocksHeight(item.BlockHeight) {
+			if tombstone != nil && tombstone.blocksTxInItem(txIn, item) {
 				continue
 			}
 			kept = append(kept, item)

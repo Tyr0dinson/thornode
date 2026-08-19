@@ -47,8 +47,9 @@ func TestXMRSpentRefsAttemptGuardOrdersErrataCleanup(t *testing.T) {
 	ag.SetObserverStorage(storage)
 
 	obsTx, _ := observerTestXMRPlan(t)
-	obsTx.BlockHeight = 100
-	obsTx.FinaliseHeight = 100
+	obsTx.BlockHeight = 106
+	obsTx.FinaliseHeight = 106
+	obsTx.XmrMinedHeight = 100
 	release, ok := ag.acquireXMRSpentRefsAttempt(obsTx)
 	require.True(t, ok)
 	require.NotNil(t, release)
@@ -78,6 +79,7 @@ func TestXMRSpentRefsAttemptGuardOrdersErrataCleanup(t *testing.T) {
 	require.False(t, ok, "orphan-height retry must stop after cleanup")
 	obsTx.BlockHeight++
 	obsTx.FinaliseHeight++
+	obsTx.XmrMinedHeight++
 	release, ok = ag.acquireXMRSpentRefsAttempt(obsTx)
 	require.True(t, ok, "same transaction re-mined at another height must remain admissible")
 	release()
@@ -126,6 +128,7 @@ func observerTestXMRPlan(t *testing.T) (common.ObservedTx, plannedXMROutbound) {
 		8,
 	)
 	obsTx.SpentOutputRefs = []common.OutputRef{observerTestOutputRef("xmr-peer-spent-ref", txID.String())}
+	obsTx.XmrMinedHeight = 7
 
 	planned := plannedXMROutbound{
 		chain:            common.XMRChain,

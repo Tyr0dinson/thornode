@@ -76,6 +76,7 @@ func TestCatchupSpentOutputRefsReadsFromQueryAndCallsSidecar(t *testing.T) {
 			ObservedPubKey: frostKey,
 			FinaliseHeight: 100,
 			XmrTxKey:       strings.Repeat("5", 64),
+			XmrMinedHeight: 94,
 		},
 	}
 
@@ -137,6 +138,7 @@ func TestCommittedXMRWireMemoUsesExactMemolessPlan(t *testing.T) {
 			ObservedPubKey: frostKey,
 			FinaliseHeight: 100,
 			XmrTxKey:       strings.Repeat("5", 64),
+			XmrMinedHeight: 94,
 		},
 	}
 	inboundVoter := &ttypes.QueryObservedTxVoter{
@@ -189,6 +191,7 @@ func TestCommittedXMRWireMemoUsesExactMemolessPlan(t *testing.T) {
 	refs := []common.OutputRef{*testXMROutputRef("catchup-wire-ref", 0, spendTxHash)}
 	queried, found := queryObservedXMRTx(outboundVoter, common.TxID(spendTxHash))
 	require.True(t, found)
+	assert.Equal(t, int64(94), queried.XmrMinedHeight)
 	queried.SpentOutputRefs = refs
 	require.NoError(t, validateXMRSpentRefsForSidecar(queried))
 	wireMemo, found := c.committedXMRWireMemo(queried, outboundVoter.Height)

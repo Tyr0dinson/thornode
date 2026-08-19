@@ -4361,6 +4361,7 @@ components:
         - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
         - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
         external_observed_height: 7581334
+        xmr_mined_height: 7581328
         status: done
       properties:
         tx:
@@ -4419,6 +4420,13 @@ components:
             recipient outputs.
           example: "1111111111111111111111111111111111111111111111111111111111111111"
           type: string
+        xmr_mined_height:
+          description: "canonical external-chain height where the XMR transaction\
+            \ was mined, retained when the reported observation height is rewritten\
+            \ at finalization"
+          example: 7581328
+          format: int64
+          type: integer
         status:
           enum:
           - done
@@ -5415,6 +5423,7 @@ components:
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           external_observed_height: 7581334
+          xmr_mined_height: 7581328
           status: done
         keysign_metric:
           tx_id: tx_id
@@ -5494,6 +5503,7 @@ components:
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           external_observed_height: 7581334
+          xmr_mined_height: 7581328
           status: done
         out_txs:
         - chain: BTC
@@ -5636,6 +5646,7 @@ components:
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           external_observed_height: 7581334
+          xmr_mined_height: 7581328
           status: done
         - tx:
             chain: BTC
@@ -5681,6 +5692,7 @@ components:
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           external_observed_height: 7581334
+          xmr_mined_height: 7581328
           status: done
         finalised_height: 7581334
         reverted: false
@@ -5776,6 +5788,7 @@ components:
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           external_observed_height: 7581334
+          xmr_mined_height: 7581328
           status: done
         out_txs:
         - chain: BTC
@@ -5918,6 +5931,7 @@ components:
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           external_observed_height: 7581334
+          xmr_mined_height: 7581328
           status: done
         - tx:
             chain: BTC
@@ -5963,6 +5977,7 @@ components:
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           external_observed_height: 7581334
+          xmr_mined_height: 7581328
           status: done
         finalised_height: 7581334
         reverted: false

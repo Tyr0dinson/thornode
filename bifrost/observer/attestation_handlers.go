@@ -201,9 +201,11 @@ func (s *AttestationGossip) removeObservedTxsForErrata(errata common.ErrataTx, o
 			continue
 		}
 		if errata.Chain.Equals(common.XMRChain) && orphanHeight > 0 &&
-			state != nil && state.Item != nil && state.Item.ObservedTx != nil &&
-			state.Item.ObservedTx.BlockHeight != orphanHeight {
-			continue
+			state != nil && state.Item != nil && state.Item.ObservedTx != nil {
+			minedHeight, err := state.Item.ObservedTx.CanonicalMinedHeight()
+			if err == nil && minedHeight != orphanHeight {
+				continue
+			}
 		}
 		delete(s.observedTxs, k)
 	}

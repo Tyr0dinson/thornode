@@ -1151,7 +1151,7 @@ func (o *Observer) enforceErrataTombstones(txIn *types.TxIn) (
 		if err != nil {
 			return nil, nil, fmt.Errorf("check observer errata tombstone: %w", err)
 		}
-		if tombstone == nil || !tombstone.blocksHeight(item.BlockHeight) {
+		if tombstone == nil || !tombstone.blocksTxInItem(txIn, item) {
 			accepted = append(accepted, item)
 			continue
 		}
@@ -1893,7 +1893,7 @@ func (o *Observer) applyErrataTxWithOutbox(
 					o.lock.Unlock()
 					return nil, err
 				}
-				alreadyCleaned = tombstone != nil && block.Height > 0 && tombstone.blocksHeight(block.Height)
+				alreadyCleaned = tombstone != nil && block.Height > 0 && tombstone.blocksMinedHeight(block.Height)
 			}
 		}
 		if alreadyCleaned {
@@ -1963,7 +1963,8 @@ func (o *Observer) collectErrataDeckMutations(
 			// observer re-attesting a view of a reverted TxID. Those chains keep
 			// the TxID-wide removal.
 			heightScoped := !allHeights && txIn.Chain.Equals(common.XMRChain)
-			if !matchingErrata || (heightScoped && item.BlockHeight != orphanHeight) {
+			minedHeight, hasMinedHeight := canonicalTxInMinedHeight(txIn, item)
+			if !matchingErrata || (heightScoped && hasMinedHeight && minedHeight != orphanHeight) {
 				kept = append(kept, item)
 				continue
 			}
@@ -2094,6 +2095,11 @@ func (o *Observer) getThorchainTxIns(txIn *types.TxIn, finalized bool, finaliseH
 		obsTx.AggregatorTargetLimit = item.AggregatorTargetLimit
 		obsTx.SpentOutputRefs = common.OutputRefsFromPointers(item.SpentOutputRefs)
 		obsTx.XmrTxKey = item.TxKey
+		if txIn.Chain.Equals(common.XMRChain) {
+			if minedHeight, ok := canonicalTxInMinedHeight(txIn, item); ok {
+				obsTx.XmrMinedHeight = minedHeight
+			}
+		}
 		obsTxs = append(obsTxs, obsTx)
 	}
 	return obsTxs, invalidIndices, nil

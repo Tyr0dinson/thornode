@@ -158,6 +158,7 @@ func TestCallbackErrataRetryPreservesCanonicalXMRRemine(t *testing.T) {
 		},
 		BlockHeight:    600,
 		FinaliseHeight: 600,
+		XmrMinedHeight: 600,
 	}
 	require.NoError(t, gossip.AttestObservedTx(
 		context.Background(),
@@ -224,6 +225,7 @@ func TestCallbackErrataRetryPreservesCanonicalXMRRemine(t *testing.T) {
 		},
 		BlockHeight:    601,
 		FinaliseHeight: 601,
+		XmrMinedHeight: 601,
 	}
 	canonicalGossipKey := observedTxKey(canonicalObserved, true, false)
 	require.NoError(t, gossip.AttestObservedTx(
@@ -865,6 +867,7 @@ func TestProcessErrataReturnsAttestationFailureWithoutDroppingOutbox(t *testing.
 		},
 		BlockHeight:    458,
 		FinaliseHeight: 458,
+		XmrMinedHeight: 458,
 	}
 	canonicalKey := observedTxKey(canonicalObserved, true, false)
 	gossip.mu.Lock()

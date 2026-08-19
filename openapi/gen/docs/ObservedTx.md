@@ -17,6 +17,7 @@ Name | Type | Description | Notes
 **OutHashes** | Pointer to **[]string** |  | [optional] 
 **SpentOutputRefs** | Pointer to [**[]OutputRef**](OutputRef.md) | XMR outbound spent outputs and key images committed by observers. | [optional] 
 **XmrTxKey** | Pointer to **string** | XMR outbound tx private key used by third parties to verify recipient outputs. | [optional] 
+**XmrMinedHeight** | Pointer to **int64** | canonical external-chain height where the XMR transaction was mined, retained when the reported observation height is rewritten at finalization | [optional]
 **Status** | Pointer to **string** |  | [optional] 
 
 ## Methods
@@ -358,6 +359,31 @@ SetXmrTxKey sets XmrTxKey field to given value.
 
 HasXmrTxKey returns a boolean if a field has been set.
 
+### GetXmrMinedHeight
+
+`func (o *ObservedTx) GetXmrMinedHeight() int64`
+
+GetXmrMinedHeight returns the XmrMinedHeight field if non-nil, zero value otherwise.
+
+### GetXmrMinedHeightOk
+
+`func (o *ObservedTx) GetXmrMinedHeightOk() (*int64, bool)`
+
+GetXmrMinedHeightOk returns a tuple with the XmrMinedHeight field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetXmrMinedHeight
+
+`func (o *ObservedTx) SetXmrMinedHeight(v int64)`
+
+SetXmrMinedHeight sets XmrMinedHeight field to given value.
+
+### HasXmrMinedHeight
+
+`func (o *ObservedTx) HasXmrMinedHeight() bool`
+
+HasXmrMinedHeight returns a boolean if a field has been set.
+
 ### GetStatus
 
 `func (o *ObservedTx) GetStatus() string`
@@ -385,5 +411,4 @@ HasStatus returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
-
 

@@ -116,6 +116,41 @@ func (s ObservedTxSuite) TestValidateXMRTxKey(c *C) {
 	c.Assert(err, ErrorMatches, "xmr tx key must be hex")
 }
 
+func (s ObservedTxSuite) TestCanonicalMinedHeight(c *C) {
+	nonFinal := makeXMRObservedTx(c, nil)
+	nonFinal.FinaliseHeight = 106
+	nonFinal.XmrMinedHeight = 100
+	height, err := nonFinal.CanonicalMinedHeight()
+	c.Assert(err, IsNil)
+	c.Assert(height, Equals, int64(100))
+
+	final := nonFinal
+	final.BlockHeight = 106
+	height, err = final.CanonicalMinedHeight()
+	c.Assert(err, IsNil)
+	c.Assert(height, Equals, int64(100))
+
+	missing := final
+	missing.XmrMinedHeight = 0
+	_, err = missing.CanonicalMinedHeight()
+	c.Assert(err, ErrorMatches, "xmr canonical mined height is unavailable")
+
+	wrongNonFinal := nonFinal
+	wrongNonFinal.XmrMinedHeight = 99
+	_, err = wrongNonFinal.CanonicalMinedHeight()
+	c.Assert(err, ErrorMatches, "non-final xmr observation must report its block height as the mined height")
+
+	ahead := final
+	ahead.XmrMinedHeight = 107
+	_, err = ahead.CanonicalMinedHeight()
+	c.Assert(err, ErrorMatches, "xmr mined height exceeds the reported observation height")
+
+	nonXMR := final
+	nonXMR.Tx.Chain = BTCChain
+	_, err = nonXMR.CanonicalMinedHeight()
+	c.Assert(err, ErrorMatches, "xmr mined height is only valid for XMR observed txs")
+}
+
 func (s ObservedTxSuite) TestGetSignablePayloadXMRTxKeyMetadata(c *C) {
 	txKeyUpper := strings.ToUpper(testXMRTxKey)
 	txKeyLower := strings.ToLower(testXMRTxKey)
