@@ -13,6 +13,7 @@ import (
 	tcrypto "github.com/cometbft/cometbft/crypto"
 	libp2p "github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p-core/crypto"
+	"github.com/libp2p/go-libp2p-core/helpers"
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -600,9 +601,8 @@ func (c *Communication) writeToStream(pID peer.ID, msg []byte, msgID string, clo
 
 func (c *Communication) finishWrittenTSSStream(stream network.Stream, msgID string, closeAfterWrite bool) error {
 	if closeAfterWrite {
-		if err := stream.Close(); err != nil {
-			_ = stream.Reset()
-			return fmt.Errorf("fail to gracefully close FROST stream: %w", err)
+		if err := helpers.FullClose(stream); err != nil {
+			return fmt.Errorf("fail to fully close FROST stream: %w", err)
 		}
 		return nil
 	}

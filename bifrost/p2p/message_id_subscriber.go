@@ -3,6 +3,7 @@ package p2p
 import (
 	"sync"
 
+	"github.com/libp2p/go-libp2p-core/helpers"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 )
@@ -441,10 +442,9 @@ func (r *messageReservation) resetStream() {
 	_ = stream.Reset()
 }
 
-// closeStream gracefully closes a fully read FROST stream and removes the
-// handler's retained reference. FROST senders also close their write side after
-// a successful frame write, completing the libp2p half-close handshake without
-// aborting bytes that the receiver has not yet consumed.
+// closeStream fully closes a successfully read FROST stream and removes the
+// handler's retained reference. FullClose observes the sender's EOF after
+// closing our write side, allowing libp2p to release its own stream reference.
 func (r *messageReservation) closeStream() {
 	if r == nil || r.subscription == nil {
 		return
@@ -459,9 +459,7 @@ func (r *messageReservation) closeStream() {
 	if streamMgr != nil {
 		streamMgr.RemoveStream(msgID, stream)
 	}
-	if err := stream.Close(); err != nil {
-		_ = stream.Reset()
-	}
+	_ = helpers.FullClose(stream)
 }
 
 // takeStreamLocked transfers ownership of the reservation's stream reference
