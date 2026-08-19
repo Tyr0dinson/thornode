@@ -799,7 +799,8 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-    image: ${XMR_FROST_SIGNER_IMAGE:-registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:b1a1859e@sha256:183d9a00308504fe3e66239aa147a1a23cc502b9881ddf30064cd738799fc220}
+    # Temporary local build of draft Serai MR !70 for mocknet testing only.
+    image: ${XMR_FROST_SIGNER_IMAGE:-registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:mr70-cc6db7ff-localtest@sha256:8f8768e6f68352b3407bb939050e323dba61c603cc2ff2010810a992f3354251}
     restart: unless-stopped
     user: root
     entrypoint:
