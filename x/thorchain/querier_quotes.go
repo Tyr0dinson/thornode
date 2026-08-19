@@ -43,6 +43,18 @@ const (
 
 var nullLogger = log.NewNopLogger()
 
+// quoteSimPubkey returns a deterministic pubkey for the given chain, used in
+// quote simulation to generate valid from/to addresses. This MUST NOT use
+// random seeds (time, rand) — nondeterministic pubkeys cause divergent gas
+// metering across nodes when wasm contracts call queryQuoteSwap, leading to
+// apphash mismatches (#562 / #3271-class).
+func quoteSimPubkey(chain common.Chain) common.PubKey {
+	if chain.GetSigningAlgo() == common.SigningAlgoEd25519 {
+		return common.PubKey("thorpub1zcjduepq449r02feakn3sy733sz0yz6z7mrjfu2g9tf7v4772fvwkny50f2qewuq0k")
+	}
+	return common.PubKey("thorpub1addwnpepq05qexnkd22lhm53w8lnmrldsdj5fry9auk3sx66jht5u4yx7jfdwkfdzrk")
+}
+
 // -------------------------------------------------------------------------------------
 // Helpers
 // -------------------------------------------------------------------------------------
@@ -868,7 +880,7 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 	if fromAsset.IsSyntheticAsset() || fromAsset.IsDerivedAsset() || fromAsset.IsTradeAsset() || fromAsset.IsSecuredAsset() {
 		fromChain = common.THORChain
 	}
-	fromPubkey := types.GetRandomPubkeyForChain(fromChain)
+	fromPubkey := quoteSimPubkey(fromChain)
 	fromAddress, err := fromPubkey.GetAddress(fromChain)
 	if err != nil {
 		return nil, fmt.Errorf("bad from address: %w", err)
@@ -902,7 +914,7 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 			chain = toAsset.Chain
 		}
 
-		destination, err = types.GetRandomPubkeyForChain(chain).GetAddress(chain)
+		destination, err = quoteSimPubkey(chain).GetAddress(chain)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate address: %w", err)
 		}
