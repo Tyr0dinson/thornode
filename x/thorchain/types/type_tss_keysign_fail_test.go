@@ -24,6 +24,7 @@ func (s *TypeTssKeysignFailTestSuite) TestVoter(c *C) {
 	tss := NewTssKeysignFailVoter(m.ID, 1)
 	c.Check(tss.Empty(), Equals, false)
 	c.Check(tss.String(), Equals, tss.ID)
+	c.Check(tss.SchemaVersion, Equals, CurrentTssKeysignFailVoterSchemaVersion)
 
 	addr := GetRandomBech32Addr()
 	c.Check(tss.HasSigned(addr), Equals, false)

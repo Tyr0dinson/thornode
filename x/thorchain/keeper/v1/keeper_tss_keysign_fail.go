@@ -5,6 +5,7 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 func (k KVStore) setTssKeysignFailVoter(ctx cosmos.Context, key []byte, record TssKeysignFailVoter) {
@@ -30,14 +31,39 @@ func (k KVStore) getTssKeysignFailVoter(ctx cosmos.Context, key []byte, record *
 	return true, nil
 }
 
-// SetTssKeysignFailVoter - save a tss keysign fail voter object
-func (k KVStore) SetTssKeysignFailVoter(ctx cosmos.Context, tss TssKeysignFailVoter) {
-	k.setTssKeysignFailVoter(ctx, k.GetKey(prefixTssKeysignFailure, tss.String()), tss)
+func normalizeTssKeysignFailVoter(record TssKeysignFailVoter, found bool) (TssKeysignFailVoter, error) {
+	if !found {
+		record.SchemaVersion = types.CurrentTssKeysignFailVoterSchemaVersion
+		return record, nil
+	}
+
+	switch record.SchemaVersion {
+	case 0:
+		// Version zero is every record written before schema versioning. Its
+		// Completed default is ambiguous, so the scheduled upgrade deliberately
+		// seals all such voters instead of guessing from Height or signer state.
+		record.SchemaVersion = types.CurrentTssKeysignFailVoterSchemaVersion
+		record.Completed = true
+		return record, nil
+	case types.CurrentTssKeysignFailVoterSchemaVersion:
+		return record, nil
+	default:
+		return record, fmt.Errorf("unsupported TSS keysign fail voter schema version: %d", record.SchemaVersion)
+	}
 }
 
-// GetTssKeysignFailVoterIterator iterate tx in voters
-func (k KVStore) GetTssKeysignFailVoterIterator(ctx cosmos.Context) cosmos.Iterator {
-	return k.getIterator(ctx, prefixTssKeysignFailure)
+// SetTssKeysignFailVoter - save a tss keysign fail voter object
+func (k KVStore) SetTssKeysignFailVoter(ctx cosmos.Context, tss TssKeysignFailVoter) {
+	switch tss.SchemaVersion {
+	case 0:
+		// Every post-upgrade writer emits the explicit schema. A zero-valued
+		// struct is a new version-1 voter, never a newly written legacy record.
+		tss.SchemaVersion = types.CurrentTssKeysignFailVoterSchemaVersion
+	case types.CurrentTssKeysignFailVoterSchemaVersion:
+	default:
+		panic(fmt.Sprintf("refusing to persist unsupported TSS keysign fail voter schema version: %d", tss.SchemaVersion))
+	}
+	k.setTssKeysignFailVoter(ctx, k.GetKey(prefixTssKeysignFailure, tss.String()), tss)
 }
 
 // GetTssKeysignFailVoter - gets information of a tss keysign failure voter object
@@ -47,22 +73,27 @@ func (k KVStore) GetTssKeysignFailVoter(ctx cosmos.Context, id string) (TssKeysi
 	if err != nil {
 		return record, err
 	}
-	// Before the explicit Completed field existed, the earliest handler marked
-	// consensus by setting Height and retained Signers. Later handlers stopped
-	// setting Height and cleared both Signers and LastRoundCount. Current
-	// production code never sets Height on an in-progress voter and never
-	// persists a genuinely new voter before its first signer is recorded.
-	// Therefore either historical terminal shape is unambiguous:
-	//   1. positive Height, with or without retained Signers; or
-	//   2. a stored empty consensus state.
-	//
-	// A missing voter is initialized identically in memory, which is why found
-	// is required here.
-	// Normalize legacy terminal voters on read; the handler persists the
-	// explicit marker if a replay reaches it.
-	if found && !record.Completed &&
-		(record.Height > 0 || (len(record.Signers) == 0 && record.LastRoundCount == 0)) {
-		record.Completed = true
+	return normalizeTssKeysignFailVoter(record, found)
+}
+
+// WalkTssKeysignFailVoters visits normalized voters in store order. Returning
+// true from visit stops the walk. Callers never receive raw schema-zero bytes.
+func (k KVStore) WalkTssKeysignFailVoters(ctx cosmos.Context, visit func(TssKeysignFailVoter) bool) error {
+	iterator := k.getIterator(ctx, prefixTssKeysignFailure)
+	defer iterator.Close()
+
+	for ; iterator.Valid(); iterator.Next() {
+		var record TssKeysignFailVoter
+		if err := k.cdc.Unmarshal(iterator.Value(), &record); err != nil {
+			return dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, iterator.Key()), err)
+		}
+		normalized, err := normalizeTssKeysignFailVoter(record, true)
+		if err != nil {
+			return err
+		}
+		if visit(normalized) {
+			return nil
+		}
 	}
-	return record, err
+	return nil
 }

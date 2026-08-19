@@ -573,12 +573,12 @@ func (k KVStoreDummy) GetStableReserveCreditIterator(_ cosmos.Context) cosmos.It
 func (k KVStoreDummy) SetTssKeysignFailVoter(_ cosmos.Context, tss TssKeysignFailVoter) {
 }
 
-func (k KVStoreDummy) GetTssKeysignFailVoterIterator(_ cosmos.Context) cosmos.Iterator {
-	return nil
-}
-
 func (k KVStoreDummy) GetTssKeysignFailVoter(_ cosmos.Context, _ string) (TssKeysignFailVoter, error) {
 	return TssKeysignFailVoter{}, kaboom
+}
+
+func (k KVStoreDummy) WalkTssKeysignFailVoters(_ cosmos.Context, _ func(TssKeysignFailVoter) bool) error {
+	return kaboom
 }
 
 func (k KVStoreDummy) GetGas(_ cosmos.Context, _ common.Asset) ([]cosmos.Uint, error) {

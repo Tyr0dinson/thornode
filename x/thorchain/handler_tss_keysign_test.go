@@ -42,6 +42,7 @@ type tssKeysignKeeperHelper struct {
 	errGetTssVoter                  bool
 	errFailToGetNodeAccountByPubKey bool
 	errFailSetNodeAccount           bool
+	nextTssKeysignFailVoter         *TssKeysignFailVoter
 }
 
 func newTssKeysignFailKeeperHelper(keeper keeper.Keeper) *tssKeysignKeeperHelper {
@@ -67,6 +68,11 @@ func (k *tssKeysignKeeperHelper) SetNodeAccount(ctx cosmos.Context, na NodeAccou
 func (k *tssKeysignKeeperHelper) GetTssKeysignFailVoter(ctx cosmos.Context, id string) (TssKeysignFailVoter, error) {
 	if k.errGetTssVoter {
 		return TssKeysignFailVoter{}, errKaboom
+	}
+	if k.nextTssKeysignFailVoter != nil {
+		voter := *k.nextTssKeysignFailVoter
+		k.nextTssKeysignFailVoter = nil
+		return voter, nil
 	}
 	return k.Keeper.GetTssKeysignFailVoter(ctx, id)
 }
@@ -521,9 +527,14 @@ func (h HandlerTssKeysignSuite) TestLegacyCompletedKeysignFailureCannotBeReplaye
 	)
 	c.Assert(err, IsNil)
 
-	// Persist the pre-Completed terminal representation. It must not be
-	// confused with the absent voter returned for a genuinely new ID.
-	helper.keeper.SetTssKeysignFailVoter(helper.ctx, TssKeysignFailVoter{ID: msg.ID})
+	// Model the normalized result returned by the real keeper for a persisted
+	// schema-zero record. Keeper tests cover the raw-byte conversion itself;
+	// this test covers the handler's side-effect-free completed-voter path.
+	helper.keeper.nextTssKeysignFailVoter = &TssKeysignFailVoter{
+		ID:            msg.ID,
+		Completed:     true,
+		SchemaVersion: types.CurrentTssKeysignFailVoterSchemaVersion,
+	}
 	before, err := helper.keeper.GetNodeAccountSlashPoints(helper.ctx, msg.Signer)
 	c.Assert(err, IsNil)
 	_, err = handler.Run(helper.ctx, msg)
@@ -551,11 +562,13 @@ func (h HandlerTssKeysignSuite) TestPositiveHeightLegacyCompletedKeysignFailureC
 	)
 	c.Assert(err, IsNil)
 
-	helper.keeper.SetTssKeysignFailVoter(helper.ctx, TssKeysignFailVoter{
-		ID:      msg.ID,
-		Height:  helper.ctx.BlockHeight() - 1,
-		Signers: []string{GetRandomBech32Addr().String(), GetRandomBech32Addr().String()},
-	})
+	helper.keeper.nextTssKeysignFailVoter = &TssKeysignFailVoter{
+		ID:            msg.ID,
+		Height:        helper.ctx.BlockHeight() - 1,
+		Signers:       []string{GetRandomBech32Addr().String(), GetRandomBech32Addr().String()},
+		Completed:     true,
+		SchemaVersion: types.CurrentTssKeysignFailVoterSchemaVersion,
+	}
 	before, err := helper.keeper.GetNodeAccountSlashPoints(helper.ctx, msg.Signer)
 	c.Assert(err, IsNil)
 

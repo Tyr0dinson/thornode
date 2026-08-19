@@ -4,11 +4,17 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
+// CurrentTssKeysignFailVoterSchemaVersion identifies the explicit one-shot
+// Completed representation. Version zero is permanently reserved for records
+// written before voter schema versioning was introduced.
+const CurrentTssKeysignFailVoterSchemaVersion uint32 = 1
+
 // NewTssKeysignFailVoter create a new instance of TssKeysignFailVoter
 func NewTssKeysignFailVoter(id string, height int64) TssKeysignFailVoter {
 	return TssKeysignFailVoter{
-		ID:     id,
-		Height: height,
+		ID:            id,
+		Height:        height,
+		SchemaVersion: CurrentTssKeysignFailVoterSchemaVersion,
 	}
 }
 

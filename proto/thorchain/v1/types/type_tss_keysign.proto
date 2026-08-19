@@ -14,4 +14,7 @@ message TssKeysignFailVoter {
   repeated string signers = 6;
   int64 last_round_count = 7;
   bool completed = 8;
+  // Version 0 is reserved for records written before explicit schema
+  // versioning.
+  uint32 schema_version = 9;
 }

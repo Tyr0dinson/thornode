@@ -374,8 +374,8 @@ type KeeperTss interface {
 
 type KeeperTssKeysignFail interface {
 	SetTssKeysignFailVoter(_ cosmos.Context, tss TssKeysignFailVoter)
-	GetTssKeysignFailVoterIterator(_ cosmos.Context) cosmos.Iterator
 	GetTssKeysignFailVoter(_ cosmos.Context, _ string) (TssKeysignFailVoter, error)
+	WalkTssKeysignFailVoters(_ cosmos.Context, _ func(TssKeysignFailVoter) bool) error
 }
 
 type KeeperKeygen interface {
