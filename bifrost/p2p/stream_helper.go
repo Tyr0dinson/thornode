@@ -55,22 +55,23 @@ func NewStreamMgr() *StreamMgr {
 }
 
 func (sm *StreamMgr) ReleaseStream(msgID string) {
-	sm.streamLocker.RLock()
-	usedStreams, okStream := sm.unusedStreams[msgID]
-	unknownStreams, okUnknown := sm.unusedStreams[StreamUnknown]
-	sm.streamLocker.RUnlock()
-	streams := append(usedStreams, unknownStreams...) // nolint:gocritic
-	if okStream || okUnknown {
-		for _, el := range streams {
-			err := el.Reset()
-			if err != nil {
-				sm.logger.Error().Err(err).Msg("fail to reset the stream,skip it")
-			}
-		}
-		sm.streamLocker.Lock()
-		delete(sm.unusedStreams, msgID)
+	if sm == nil {
+		return
+	}
+
+	sm.streamLocker.Lock()
+	streams := sm.unusedStreams[msgID]
+	delete(sm.unusedStreams, msgID)
+	if msgID != StreamUnknown {
+		streams = append(streams, sm.unusedStreams[StreamUnknown]...)
 		delete(sm.unusedStreams, StreamUnknown)
-		sm.streamLocker.Unlock()
+	}
+	sm.streamLocker.Unlock()
+
+	for _, stream := range streams {
+		if err := stream.Reset(); err != nil {
+			sm.logger.Error().Err(err).Msg("fail to reset the stream,skip it")
+		}
 	}
 }
 
@@ -90,12 +91,12 @@ func (sm *StreamMgr) AddStream(msgID string, stream network.Stream) {
 	}
 }
 
-// RemoveStream forgets one stream without touching other frames in the
-// ceremony. Revoked or failed inbound frames use this before Reset so they do
-// not remain retained until the entire ceremony is released.
-func (sm *StreamMgr) RemoveStream(msgID string, stream network.Stream) {
+// RemoveStream claims one parked stream for terminal handling without touching
+// other frames in the ceremony. For a known parked stream, a false return means
+// ReleaseStream already detached it and owns the terminal action.
+func (sm *StreamMgr) RemoveStream(msgID string, stream network.Stream) bool {
 	if sm == nil || stream == nil {
-		return
+		return false
 	}
 	sm.streamLocker.Lock()
 	defer sm.streamLocker.Unlock()
@@ -111,8 +112,9 @@ func (sm *StreamMgr) RemoveStream(msgID string, stream network.Stream) {
 		} else {
 			sm.unusedStreams[msgID] = streams
 		}
-		return
+		return true
 	}
+	return false
 }
 
 // ReadStreamWithBuffer read data from the given stream

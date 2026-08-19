@@ -80,6 +80,7 @@ type messageReservation struct {
 	stream    network.Stream
 	streamMgr *StreamMgr
 	msgID     string
+	parked    bool
 }
 
 // reserve authorizes a frame and atomically reserves exactly one per-peer
@@ -351,6 +352,7 @@ func (r *messageReservation) parkStream() bool {
 		return false
 	}
 	r.streamMgr.AddStream(r.msgID, r.stream)
+	r.parked = true
 	return true
 }
 
@@ -431,13 +433,13 @@ func (r *messageReservation) resetStream() {
 	}
 	s := r.subscription
 	s.lock.Lock()
-	stream, streamMgr, msgID := r.takeStreamLocked()
+	stream, streamMgr, msgID, parked := r.takeStreamLocked()
 	s.lock.Unlock()
 	if stream == nil {
 		return
 	}
-	if streamMgr != nil {
-		streamMgr.RemoveStream(msgID, stream)
+	if parked && streamMgr != nil && !streamMgr.RemoveStream(msgID, stream) {
+		return
 	}
 	_ = stream.Reset()
 }
@@ -451,13 +453,13 @@ func (r *messageReservation) closeStream() {
 	}
 	s := r.subscription
 	s.lock.Lock()
-	stream, streamMgr, msgID := r.takeStreamLocked()
+	stream, streamMgr, msgID, parked := r.takeStreamLocked()
 	s.lock.Unlock()
 	if stream == nil {
 		return
 	}
-	if streamMgr != nil {
-		streamMgr.RemoveStream(msgID, stream)
+	if parked && streamMgr != nil && !streamMgr.RemoveStream(msgID, stream) {
+		return
 	}
 	_ = helpers.FullClose(stream)
 }
@@ -465,14 +467,16 @@ func (r *messageReservation) closeStream() {
 // takeStreamLocked transfers ownership of the reservation's stream reference
 // to the caller. Every stream-field read and clear is serialized by the
 // subscription lock; network Close/Reset happens only after that lock releases.
-func (r *messageReservation) takeStreamLocked() (network.Stream, *StreamMgr, string) {
+func (r *messageReservation) takeStreamLocked() (network.Stream, *StreamMgr, string, bool) {
 	stream := r.stream
 	streamMgr := r.streamMgr
 	msgID := r.msgID
+	parked := r.parked
 	r.stream = nil
 	r.streamMgr = nil
 	r.msgID = ""
-	return stream, streamMgr, msgID
+	r.parked = false
+	return stream, streamMgr, msgID, parked
 }
 
 // MessageIDSubscriber
