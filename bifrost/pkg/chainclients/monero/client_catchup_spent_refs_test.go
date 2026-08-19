@@ -2,6 +2,7 @@ package monero
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -24,9 +25,92 @@ import (
 )
 
 func allowSpentOutputRefsCatchup(c *Client) {
+	clearSpentOutputRefsCatchupScannerHalt(c)
 	c.SetSpentOutputRefsCatchupGuard(func(common.ObservedTx) (func(), bool) {
 		return func() {}, true
 	})
+}
+
+func clearSpentOutputRefsCatchupScannerHalt(c *Client) {
+	bridge, ok := c.thorchainBridge.(*mockMoneroBridge)
+	if !ok {
+		panic("spent-reference catch-up test requires mockMoneroBridge")
+	}
+	if bridge.mimirValues == nil {
+		bridge.mimirValues = make(map[string]int64)
+	}
+	bridge.mimirValues["HaltScannerXMR"] = 0
+}
+
+type spentRefsScannerGateBridge struct {
+	thorclient.ThorchainBridge
+	mimirValue  int64
+	mimirErr    error
+	mimirCalls  atomic.Int32
+	pubKeyCalls atomic.Int32
+	mimirKey    string
+}
+
+func (b *spentRefsScannerGateBridge) GetMimir(key string) (int64, error) {
+	b.mimirCalls.Add(1)
+	b.mimirKey = key
+	return b.mimirValue, b.mimirErr
+}
+
+func (b *spentRefsScannerGateBridge) GetPubKeys() ([]thorclient.PubKeyContractAddressPair, error) {
+	b.pubKeyCalls.Add(1)
+	return nil, nil
+}
+
+func TestCatchupSpentOutputRefsScannerHaltFailsClosedBeforeStateWork(t *testing.T) {
+	tests := []struct {
+		name       string
+		mimirValue int64
+		mimirErr   error
+	}{
+		{name: "enabled", mimirValue: 1},
+		{name: "missing", mimirValue: -1},
+		{name: "lookup error", mimirErr: errors.New("mimir unavailable")},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var sidecarCalls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				sidecarCalls.Add(1)
+				_ = json.NewEncoder(w).Encode(sidecar.MarkSpentResp{Marked: 1})
+			}))
+			t.Cleanup(server.Close)
+			signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+			require.NoError(t, err)
+
+			bridge := &spentRefsScannerGateBridge{
+				mimirValue: test.mimirValue,
+				mimirErr:   test.mimirErr,
+			}
+			client := &Client{
+				chain:                  common.XMRChain,
+				sidecar:                signer,
+				logger:                 testLogger(),
+				thorchainBridge:        bridge,
+				committedWireMemoCache: map[string]committedXMRPlanMemo{"keep": {}},
+			}
+			var guardCalls atomic.Int32
+			client.SetSpentOutputRefsCatchupGuard(func(common.ObservedTx) (func(), bool) {
+				guardCalls.Add(1)
+				return func() {}, true
+			})
+
+			client.catchupSpentOutputRefs()
+
+			assert.Equal(t, int32(1), bridge.mimirCalls.Load())
+			assert.Equal(t, "HaltScannerXMR", bridge.mimirKey)
+			assert.Zero(t, bridge.pubKeyCalls.Load(), "halted catch-up must not query vaults")
+			assert.Zero(t, sidecarCalls.Load(), "halted catch-up must not call the sidecar")
+			assert.Zero(t, guardCalls.Load(), "halted catch-up must not enter errata admission")
+			assert.Contains(t, client.committedWireMemoCache, "keep", "halted catch-up must not prune cache state")
+		})
+	}
 }
 
 func spentOutputRefsCatchupVoter(
@@ -76,6 +160,7 @@ func spentOutputRefsCatchupClient(
 			spentRefsByVaultKey: map[string][]*common.OutputRef{vault.String(): refs},
 			observedByTx:        voters,
 			pubKeys:             []thorclient.PubKeyContractAddressPair{{PubKey: vault, Algo: common.SigningAlgoEd25519}},
+			mimirValues:         map[string]int64{"HaltScannerXMR": 0},
 		},
 	}
 }
@@ -661,6 +746,7 @@ func TestCatchupSpentOutputRefsSkipsVaultsWithoutFrost(t *testing.T) {
 			pubKeys: []thorclient.PubKeyContractAddressPair{{PubKey: testVaultPubKey(t, "secp-only-catchup"), Algo: common.SigningAlgoSecp256k1}},
 		},
 	}
+	clearSpentOutputRefsCatchupScannerHalt(c)
 
 	c.catchupSpentOutputRefs()
 
@@ -688,6 +774,7 @@ func TestCatchupSpentOutputRefsSkipsVaultsWithNoRefs(t *testing.T) {
 			pubKeys: []thorclient.PubKeyContractAddressPair{{PubKey: testVaultPubKey(t, "frost-norefs"), Algo: common.SigningAlgoEd25519}},
 		},
 	}
+	clearSpentOutputRefsCatchupScannerHalt(c)
 
 	c.catchupSpentOutputRefs()
 

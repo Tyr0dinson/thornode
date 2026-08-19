@@ -780,6 +780,9 @@ func (c *Client) catchupSpentOutputRefs() {
 	if c.thorchainBridge == nil || c.sidecar == nil {
 		return
 	}
+	if blockscanner.IsChainScannerPaused(c.chain, c.logger, c.thorchainBridge) {
+		return
+	}
 	vaultKeys, err := c.getSpentOutputCatchupVaultKeys()
 	if err != nil {
 		c.logger.Err(err).Msg("xmr catchup: failed to get vault pubkeys")

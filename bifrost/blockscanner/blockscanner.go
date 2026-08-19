@@ -361,9 +361,34 @@ func (b *BlockScanner) scanMempool() {
 	}
 }
 
+// IsChainScannerPaused checks the Bifrost-only HaltScanner<Chain> switch. XMR
+// fails closed when the switch is unavailable so a keygen-only rollout cannot
+// accidentally start observation. Other chains retain their existing behavior
+// unless their scanner-only switch is explicitly enabled.
+func IsChainScannerPaused(chain common.Chain, logger zerolog.Logger, bridge thorclient.ThorchainBridge) bool {
+	key := fmt.Sprintf("HaltScanner%s", chain)
+	halted, err := bridge.GetMimir(key)
+	if err != nil {
+		logger.Error().Err(err).Str("mimir", key).Msg("fail to get scanner halt")
+		return chain.Equals(common.XMRChain)
+	}
+	if halted < 0 {
+		if chain.Equals(common.XMRChain) {
+			logger.Error().Str("mimir", key).Msg("scanner halt is unavailable")
+			return true
+		}
+		return false
+	}
+	return halted > 0
+}
+
 // Checks current mimir settings to determine if the current chain is paused
 // either globally or specifically
 func IsChainPaused(cfg config.BifrostBlockScannerConfiguration, logger zerolog.Logger, bridge thorclient.ThorchainBridge) bool {
+	if IsChainScannerPaused(cfg.ChainID, logger, bridge) {
+		return true
+	}
+
 	thorHeight, err := bridge.GetBlockHeight()
 	if err != nil {
 		logger.Error().Err(err).Msg("fail to get THORChain block height")
