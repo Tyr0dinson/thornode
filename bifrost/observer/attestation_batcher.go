@@ -14,6 +14,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 // we have one semaphore per peer (per active validator node), so we don't need to prune that often
@@ -50,6 +51,9 @@ type AttestationBatcher struct {
 	// transmission take its reader so durable XMR errata cleanup can purge a
 	// queued stale observation without racing an already-dequeued broadcast.
 	xmrErrataBarrier *sync.RWMutex
+	// beforeXMRBarrierRLock is a deterministic revalidation-test hook.
+	// Production leaves it nil.
+	beforeXMRBarrierRLock func()
 
 	peerMgr           *peerManager
 	broadcastToPeerFn func(context.Context, peer.ID, []byte)
@@ -173,94 +177,59 @@ func (b *AttestationBatcher) Start(ctx context.Context) {
 	}
 }
 
-func (b *AttestationBatcher) sendBatches(ctx context.Context, force bool) {
-	if b.xmrErrataBarrier != nil {
-		b.xmrErrataBarrier.RLock()
-		defer b.xmrErrataBarrier.RUnlock()
-	}
+type attestationBatchSelection struct {
+	max         int64
+	txCount     int64
+	containsXMR bool
+}
 
-	b.mu.Lock()
+type preparedAttestationBatch struct {
+	batch             *common.AttestationBatch
+	clear             bool
+	containsXMR       bool
+	startedAt         time.Time
+	releaseXMRBarrier func()
+}
 
-	// Only send if we have messages to send or enough time has passed
-	hasMessages := len(b.observedTxBatch) > 0 ||
-		len(b.networkFeeBatch) > 0 ||
-		len(b.solvencyBatch) > 0 ||
-		len(b.errataTxBatch) > 0 ||
-		len(b.priceFeedBatch) > 0
-	timeThresholdMet := time.Since(b.lastBatchSent) >= b.batchInterval
-
-	if !hasMessages || (!timeThresholdMet && !force) {
-		b.mu.Unlock()
+func (p *preparedAttestationBatch) releaseBarrier() {
+	if p.releaseXMRBarrier == nil {
 		return
 	}
+	p.releaseXMRBarrier()
+	p.releaseXMRBarrier = nil
+}
 
-	max := b.getMaxBatchSize()
-
-	start := time.Now()
-	// Get a batched message from the pool
-	batch, ok := b.batchPool.Get().(*common.AttestationBatch)
+func (b *AttestationBatcher) sendBatches(ctx context.Context, force bool) {
+	prepared, ok := b.prepareNextBatch(force)
 	if !ok {
-		batch = &common.AttestationBatch{
-			AttestTxs:         make([]*common.AttestTx, 0, max),
-			AttestNetworkFees: make([]*common.AttestNetworkFee, 0, max),
-			AttestSolvencies:  make([]*common.AttestSolvency, 0, max),
-			AttestErrataTxs:   make([]*common.AttestErrataTx, 0, max),
-			AttestPriceFeeds:  make([]*common.AttestPriceFeed, 0, max),
-		}
+		return
 	}
+	defer prepared.releaseBarrier()
 
-	clear := true
-	batchSizeTx := int64(len(b.observedTxBatch))
-	if batchSizeTx > max {
-		clear = false
-		batchSizeTx = max
-	}
-	batchSizeNF := int64(len(b.networkFeeBatch))
-	if batchSizeNF > max {
-		clear = false
-		batchSizeNF = max
-	}
-	batchSizeSolvency := int64(len(b.solvencyBatch))
-	if batchSizeSolvency > max {
-		clear = false
-		batchSizeSolvency = max
-	}
-	batchSizeErrata := int64(len(b.errataTxBatch))
-	if batchSizeErrata > max {
-		clear = false
-		batchSizeErrata = max
-	}
-	batchSizePriceFeed := int64(len(b.priceFeedBatch))
-	if batchSizePriceFeed > max {
-		clear = false
-		batchSizePriceFeed = max
-	}
-
-	// Populate the batch
-	batch.AttestTxs = append(batch.AttestTxs[:0], b.observedTxBatch[:batchSizeTx]...)
-	batch.AttestNetworkFees = append(batch.AttestNetworkFees[:0], b.networkFeeBatch[:batchSizeNF]...)
-	batch.AttestSolvencies = append(batch.AttestSolvencies[:0], b.solvencyBatch[:batchSizeSolvency]...)
-	batch.AttestErrataTxs = append(batch.AttestErrataTxs[:0], b.errataTxBatch[:batchSizeErrata]...)
-	batch.AttestPriceFeeds = append(batch.AttestPriceFeeds[:0], b.priceFeedBatch[:batchSizePriceFeed]...)
-
+	batch := prepared.batch
 	txCount := len(batch.AttestTxs)
 	nfCount := len(batch.AttestNetworkFees)
 	solvencyCount := len(batch.AttestSolvencies)
 	errataCount := len(batch.AttestErrataTxs)
 	priceFeedCount := len(batch.AttestPriceFeeds)
 
-	b.observedTxBatch = b.observedTxBatch[batchSizeTx:]
-	b.networkFeeBatch = b.networkFeeBatch[batchSizeNF:]
-	b.solvencyBatch = b.solvencyBatch[batchSizeSolvency:]
-	b.errataTxBatch = b.errataTxBatch[batchSizeErrata:]
-	b.priceFeedBatch = b.priceFeedBatch[batchSizePriceFeed:]
+	if prepared.containsXMR {
+		// The scanner's default durable errata handoff budget is two
+		// THORChain blocks. Give every peer one shared deadline capped at one
+		// block so cleanup still has time to acquire the writer barrier.
+		timeout := constants.ThorchainBlockTime
+		if b.peerTimeout > 0 {
+			timeout = min(b.peerTimeout, timeout)
+		}
+		broadcastCtx, cancelBroadcast := context.WithTimeout(ctx, timeout)
+		b.broadcastToAllPeers(broadcastCtx, *batch)
+		cancelBroadcast()
+	} else {
+		b.broadcastToAllPeers(ctx, *batch)
+	}
+	prepared.releaseBarrier()
 
-	b.mu.Unlock()
-
-	// Send to all peers
-	b.broadcastToAllPeers(ctx, *batch)
-
-	// Return the batch to the pool after clearing it
+	// Return the batch to the pool after clearing it.
 	batch.AttestTxs = batch.AttestTxs[:0]
 	batch.AttestNetworkFees = batch.AttestNetworkFees[:0]
 	batch.AttestSolvencies = batch.AttestSolvencies[:0]
@@ -268,7 +237,7 @@ func (b *AttestationBatcher) sendBatches(ctx context.Context, force bool) {
 	batch.AttestPriceFeeds = batch.AttestPriceFeeds[:0]
 	b.batchPool.Put(batch)
 
-	batchDuration := time.Since(start)
+	batchDuration := time.Since(prepared.startedAt)
 	b.metrics.MessagesBatched.WithLabelValues("observed_tx").Add(float64(txCount))
 	b.metrics.MessagesBatched.WithLabelValues("network_fee").Add(float64(nfCount))
 	b.metrics.MessagesBatched.WithLabelValues("solvency").Add(float64(solvencyCount))
@@ -277,16 +246,134 @@ func (b *AttestationBatcher) sendBatches(ctx context.Context, force bool) {
 	b.metrics.BatchSendTime.Observe(batchDuration.Seconds())
 	b.metrics.BatchSends.Inc()
 
-	if clear {
-		// Log batch clear
+	if prepared.clear {
 		b.logger.Debug().Msg("attestation batches cleared")
-
-		// Update metrics
 		b.metrics.BatchClears.Inc()
-
 		return
 	}
 	b.lastBatchSent = time.Now()
+}
+
+// prepareNextBatch owns the two-phase batch lock transition. It returns with
+// b.mu released and, for XMR batches, a reader-barrier lease held until the
+// caller completes the bounded network fan-out.
+func (b *AttestationBatcher) prepareNextBatch(force bool) (*preparedAttestationBatch, bool) {
+	b.mu.Lock()
+	selection, ok := b.nextBatchSelectionLocked(force)
+	if !ok {
+		b.mu.Unlock()
+		return nil, false
+	}
+
+	var releaseXMRBarrier func()
+	if selection.containsXMR && b.xmrErrataBarrier != nil {
+		// Preserve the global lock order (barrier -> batch mutex), then
+		// re-check after any writer that won this race purged tombstones.
+		b.mu.Unlock()
+		if b.beforeXMRBarrierRLock != nil {
+			b.beforeXMRBarrierRLock()
+		}
+		b.xmrErrataBarrier.RLock()
+		b.mu.Lock()
+
+		selection, ok = b.nextBatchSelectionLocked(force)
+		if !ok {
+			b.mu.Unlock()
+			b.xmrErrataBarrier.RUnlock()
+			return nil, false
+		}
+		if selection.containsXMR {
+			releaseXMRBarrier = b.xmrErrataBarrier.RUnlock
+		} else {
+			// Cleanup removed the XMR item before dequeue. The surviving batch
+			// is independent from the barrier while b.mu keeps it stable.
+			b.xmrErrataBarrier.RUnlock()
+		}
+	}
+
+	startedAt := time.Now()
+	prepared := b.dequeueSelectedBatchLocked(selection)
+	prepared.startedAt = startedAt
+	prepared.releaseXMRBarrier = releaseXMRBarrier
+	b.mu.Unlock()
+	return prepared, true
+}
+
+// nextBatchSelectionLocked inspects the exact bounded tx slice that the next
+// dequeue will consume. The caller must hold b.mu.
+func (b *AttestationBatcher) nextBatchSelectionLocked(force bool) (attestationBatchSelection, bool) {
+	hasMessages := len(b.observedTxBatch) > 0 ||
+		len(b.networkFeeBatch) > 0 ||
+		len(b.solvencyBatch) > 0 ||
+		len(b.errataTxBatch) > 0 ||
+		len(b.priceFeedBatch) > 0
+	timeThresholdMet := time.Since(b.lastBatchSent) >= b.batchInterval
+	if !hasMessages || (!timeThresholdMet && !force) {
+		return attestationBatchSelection{}, false
+	}
+
+	maxBatchSize := b.getMaxBatchSize()
+	txCount := min(int64(len(b.observedTxBatch)), maxBatchSize)
+	return attestationBatchSelection{
+		max:         maxBatchSize,
+		txCount:     txCount,
+		containsXMR: containsXMRObservedTx(b.observedTxBatch[:txCount]),
+	}, true
+}
+
+// dequeueSelectedBatchLocked copies and removes one selected batch. The caller
+// must hold b.mu and must have selected from the current queue state.
+func (b *AttestationBatcher) dequeueSelectedBatchLocked(
+	selection attestationBatchSelection,
+) *preparedAttestationBatch {
+	maxBatchSize := selection.max
+	networkFeeCount := min(int64(len(b.networkFeeBatch)), maxBatchSize)
+	solvencyCount := min(int64(len(b.solvencyBatch)), maxBatchSize)
+	errataCount := min(int64(len(b.errataTxBatch)), maxBatchSize)
+	priceFeedCount := min(int64(len(b.priceFeedBatch)), maxBatchSize)
+	clear := int64(len(b.observedTxBatch)) <= maxBatchSize &&
+		int64(len(b.networkFeeBatch)) <= maxBatchSize &&
+		int64(len(b.solvencyBatch)) <= maxBatchSize &&
+		int64(len(b.errataTxBatch)) <= maxBatchSize &&
+		int64(len(b.priceFeedBatch)) <= maxBatchSize
+
+	batch, ok := b.batchPool.Get().(*common.AttestationBatch)
+	if !ok {
+		batch = &common.AttestationBatch{
+			AttestTxs:         make([]*common.AttestTx, 0, maxBatchSize),
+			AttestNetworkFees: make([]*common.AttestNetworkFee, 0, maxBatchSize),
+			AttestSolvencies:  make([]*common.AttestSolvency, 0, maxBatchSize),
+			AttestErrataTxs:   make([]*common.AttestErrataTx, 0, maxBatchSize),
+			AttestPriceFeeds:  make([]*common.AttestPriceFeed, 0, maxBatchSize),
+		}
+	}
+
+	batch.AttestTxs = append(batch.AttestTxs[:0], b.observedTxBatch[:selection.txCount]...)
+	batch.AttestNetworkFees = append(batch.AttestNetworkFees[:0], b.networkFeeBatch[:networkFeeCount]...)
+	batch.AttestSolvencies = append(batch.AttestSolvencies[:0], b.solvencyBatch[:solvencyCount]...)
+	batch.AttestErrataTxs = append(batch.AttestErrataTxs[:0], b.errataTxBatch[:errataCount]...)
+	batch.AttestPriceFeeds = append(batch.AttestPriceFeeds[:0], b.priceFeedBatch[:priceFeedCount]...)
+
+	b.observedTxBatch = b.observedTxBatch[selection.txCount:]
+	b.networkFeeBatch = b.networkFeeBatch[networkFeeCount:]
+	b.solvencyBatch = b.solvencyBatch[solvencyCount:]
+	b.errataTxBatch = b.errataTxBatch[errataCount:]
+	b.priceFeedBatch = b.priceFeedBatch[priceFeedCount:]
+
+	return &preparedAttestationBatch{
+		batch:       batch,
+		clear:       clear,
+		containsXMR: selection.containsXMR,
+	}
+}
+
+func containsXMRObservedTx(txs []*common.AttestTx) bool {
+	for _, tx := range txs {
+		if tx != nil && tx.ObsTx.Tx.Chain.Equals(common.XMRChain) {
+			return true
+		}
+	}
+	return false
 }
 
 // AddObservedTx adds an observed transaction attestation to the batch
@@ -500,7 +587,7 @@ func (b *AttestationBatcher) broadcastToAllPeers(ctx context.Context, batch comm
 
 func (b *AttestationBatcher) broadcastToPeer(ctx context.Context, peer peer.ID, payload []byte) {
 	// Limit the number of concurrent sends to this peer
-	sem, err := b.peerMgr.acquire(peer)
+	sem, err := b.peerMgr.acquireContext(ctx, peer)
 	if err != nil {
 		b.logger.Error().Err(err).Msgf("fail to acquire semaphore for peer: %s", peer)
 		return
