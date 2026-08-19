@@ -212,6 +212,8 @@ type Client struct {
 
 	spentRefsRetryInterval    time.Duration
 	spentRefsRetryMaxAttempts int
+	spentRefsCatchupGuardMu   sync.RWMutex
+	spentRefsCatchupGuard     types.SpentOutputRefsGuard
 	committedWireMemoMu       sync.RWMutex
 	committedWireMemoCache    map[string]committedXMRPlanMemo
 
@@ -223,8 +225,9 @@ type Client struct {
 // drifting independently. A missing final-outcome hook must be a build error,
 // not a runtime assertion miss which lets the signer discard the outbound.
 var (
-	_ types.SpentOutputRefsApplier         = (*Client)(nil)
-	_ types.WireMemoSpentOutputRefsApplier = (*Client)(nil)
+	_ types.SpentOutputRefsApplier            = (*Client)(nil)
+	_ types.WireMemoSpentOutputRefsApplier    = (*Client)(nil)
+	_ types.SpentOutputRefsCatchupGuardSetter = (*Client)(nil)
 )
 
 // NewClient creates a monero chain client backed by the shared block scanner.
@@ -734,6 +737,27 @@ func syncDirectory(path string) error {
 	return nil
 }
 
+// SetSpentOutputRefsCatchupGuard wires the same durable errata admission used
+// by ordinary gossip and historical certificates into periodic committed-state
+// catch-up. Observer calls this before starting the XMR client.
+func (c *Client) SetSpentOutputRefsCatchupGuard(guard types.SpentOutputRefsGuard) {
+	c.spentRefsCatchupGuardMu.Lock()
+	defer c.spentRefsCatchupGuardMu.Unlock()
+	c.spentRefsCatchupGuard = guard
+}
+
+func (c *Client) spentOutputRefsCatchupAttemptGuard(tx common.ObservedTx) func() (func(), bool) {
+	c.spentRefsCatchupGuardMu.RLock()
+	guard := c.spentRefsCatchupGuard
+	c.spentRefsCatchupGuardMu.RUnlock()
+	if guard == nil {
+		return nil
+	}
+	return func() (func(), bool) {
+		return guard(tx)
+	}
+}
+
 func (c *Client) spentOutputRefsSyncRunner() {
 	defer c.wg.Done()
 
@@ -802,40 +826,20 @@ func (c *Client) catchupSpentOutputRefs() {
 			if !ok {
 				continue
 			}
-			result, markErr := c.sidecar.MarkSpent(vaultPubKey.String(), spendTxHash, xmrSpentRefsToSidecar(refs), false, outbound)
-			if markErr != nil {
-				c.logger.Err(markErr).
+			guard := c.spentOutputRefsCatchupAttemptGuard(obsTx)
+			if guard == nil {
+				c.logger.Error().
 					Str("vault", vaultPubKey.String()).
 					Str("spend_tx_hash", spendTxHash).
-					Int("refs", len(refs)).
-					Msg("xmr catchup: failed to apply spent output refs")
+					Msg("xmr catchup: durable errata admission is not configured")
 				continue
 			}
-			c.logger.Info().
-				Str("vault", vaultPubKey.String()).
-				Str("spend_tx_hash", obsTx.Tx.ID.String()).
-				Int("marked", result.Marked).
-				Int("not_found", result.NotFound).
-				Msg("xmr catchup: applied spent output refs from thorchain")
-			if !verifiedXMRMarkSpentResult(result, len(refs)) {
-				c.logger.Warn().
-					Str("tx_hash", obsTx.Tx.ID.String()).
-					Int("marked", result.Marked).
-					Int("not_found", result.NotFound).
-					Msg("xmr catchup: mark-spent did not verify every referenced output")
-				continue
-			}
-			if markSignedErr := c.markImportedXMROutboundSigned(obsTx); markSignedErr != nil {
-				c.logger.Error().Err(markSignedErr).
-					Str("tx_hash", obsTx.Tx.ID.String()).
-					Msg("xmr catchup: failed to update signer cache")
-			}
-			if c.scanner != nil {
-				if _, replayErr := c.scanner.EnqueueAuthenticatedInternalInboundReplay(obsTx); replayErr != nil {
-					c.logger.Error().Err(replayErr).
-						Str("tx_hash", obsTx.Tx.ID.String()).
-						Msg("xmr catchup: failed to queue authenticated migration replay")
-				}
+			applied, _ := c.applySpentOutputRefsOnceWithOutboundGuarded(obsTx, outbound, guard)
+			if applied {
+				c.logger.Info().
+					Str("vault", vaultPubKey.String()).
+					Str("spend_tx_hash", obsTx.Tx.ID.String()).
+					Msg("xmr catchup: applied spent output refs from thorchain")
 			}
 		}
 	}
@@ -848,6 +852,10 @@ func (c *Client) observedXMROutboundForSpentRefs(txHash string, vaultPubKey comm
 	voter, err := c.thorchainBridge.GetObservedTxVoter(txHash)
 	if err != nil {
 		c.logger.Warn().Err(err).Str("tx_hash", txHash).Msg("xmr catchup: failed to load observed tx metadata")
+		return common.ObservedTx{}, nil, false
+	}
+	if voter.GetReverted() {
+		c.logger.Warn().Str("tx_hash", txHash).Msg("xmr catchup: skip permanently reverted observed tx voter")
 		return common.ObservedTx{}, nil, false
 	}
 	observed, ok := queryObservedXMRTx(voter, common.TxID(txHash))
@@ -3079,17 +3087,9 @@ func (c *Client) applySpentOutputRefsOnceGuarded(
 			Msg("skip invalid xmr spent output refs")
 		return false, false
 	}
-	vaultPubKey := tx.ObservedPubKey.String()
-	txHash := tx.Tx.ID.String()
-	if c.sidecar == nil {
-		c.logger.Warn().Str("tx_hash", txHash).Str("vault", vaultPubKey).Msg("skip xmr spent output refs: sidecar is not initialized")
-		return false, false
-	}
-
-	refs := xmrSpentRefsToSidecar(tx.SpentOutputRefs)
 	certificateHash, hashErr := xmrSpentRefsCertificateHash(tx)
 	if hashErr != nil {
-		c.logger.Warn().Err(hashErr).Str("tx_hash", txHash).Msg("skip xmr spent refs with unhashable source-vault certificate")
+		c.logger.Warn().Err(hashErr).Str("tx_hash", tx.Tx.ID.String()).Msg("skip xmr spent refs with unhashable source-vault certificate")
 		return false, false
 	}
 	outbound := xmrOutboundMeta(tx.Tx, tx.XmrTxKey)
@@ -3100,6 +3100,38 @@ func (c *Client) applySpentOutputRefsOnceGuarded(
 	}
 	outbound.Origin = sidecar.OutgoingOriginVaultCertified
 	outbound.CertificateHash = certificateHash
+	return c.applySpentOutputRefsOnceWithOutboundGuarded(tx, outbound, guard)
+}
+
+// applySpentOutputRefsOnceWithOutboundGuarded is the common mutation boundary
+// for pre-quorum imports and periodic committed-state catch-up. Pure metadata
+// validation and plan resolution happen before this call; when supplied, the
+// guard orders every sidecar and local durable mutation against errata cleanup.
+func (c *Client) applySpentOutputRefsOnceWithOutboundGuarded(
+	tx common.ObservedTx,
+	outbound *sidecar.OutboundMeta,
+	guard func() (func(), bool),
+) (bool, bool) {
+	if err := validateXMRSpentRefsForSidecar(tx); err != nil {
+		c.logger.Warn().
+			Err(err).
+			Str("tx_hash", tx.Tx.ID.String()).
+			Str("vault", tx.ObservedPubKey.String()).
+			Msg("skip invalid xmr spent output refs")
+		return false, false
+	}
+	if outbound == nil {
+		c.logger.Warn().Str("tx_hash", tx.Tx.ID.String()).Msg("skip xmr spent output refs without authenticated outbound metadata")
+		return false, false
+	}
+	vaultPubKey := tx.ObservedPubKey.String()
+	txHash := tx.Tx.ID.String()
+	if c.sidecar == nil {
+		c.logger.Warn().Str("tx_hash", txHash).Str("vault", vaultPubKey).Msg("skip xmr spent output refs: sidecar is not initialized")
+		return false, false
+	}
+
+	refs := xmrSpentRefsToSidecar(tx.SpentOutputRefs)
 	// Keep pure validation and certificate construction outside the errata
 	// barrier; acquire it only for sidecar and signed-state mutations.
 	var release func()
@@ -3119,10 +3151,9 @@ func (c *Client) applySpentOutputRefsOnceGuarded(
 	}
 	result, err := c.sidecar.MarkSpent(vaultPubKey, txHash, refs, false, outbound)
 	if err != nil {
-		// Peer pre-quorum imports cannot rely on Thornode catchup until the refs
-		// are committed, so retry sidecar-local transient failures. Validation
-		// failures remain terminal and a later committed catchup can still
-		// reconcile successfully applied refs independently.
+		// Pre-quorum imports use the bounded local retry loop, while committed
+		// catch-up retries on its next periodic pass. Validation failures remain
+		// terminal for this attempt.
 		if isRetryableSpentRefsSidecarErr(err) {
 			c.logger.Warn().
 				Err(err).
@@ -3136,7 +3167,7 @@ func (c *Client) applySpentOutputRefsOnceGuarded(
 			Str("tx_hash", txHash).
 			Str("vault", vaultPubKey).
 			Int("refs", len(refs)).
-			Msg("failed to apply spent output refs from attestation")
+			Msg("failed to apply spent output refs")
 		return false, false
 	}
 	c.logger.Info().
@@ -3144,7 +3175,7 @@ func (c *Client) applySpentOutputRefsOnceGuarded(
 		Str("vault", vaultPubKey).
 		Int("marked", result.Marked).
 		Int("not_found", result.NotFound).
-		Msg("applied spent output refs from attestation")
+		Msg("applied spent output refs")
 	// A ref the sidecar could not find is the same transient state as a 404:
 	// this peer's scanner may simply not have reached the funding output yet.
 	// Keep the bounded retry window open and replay the complete ref set. The

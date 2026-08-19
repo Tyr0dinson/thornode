@@ -10,10 +10,26 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
+
+type spentOutputRefsCatchupGuardCaptureChain struct {
+	chainclients.ChainClient
+	guard chainclients.SpentOutputRefsGuard
+}
+
+type spentOutputRefsCatchupWithoutGuardChain struct {
+	chainclients.ChainClient
+}
+
+func (c *spentOutputRefsCatchupGuardCaptureChain) SetSpentOutputRefsCatchupGuard(
+	guard chainclients.SpentOutputRefsGuard,
+) {
+	c.guard = guard
+}
 
 func finalizedXMRObservation(txID common.TxID, minedHeight, finaliseHeight int64) common.ObservedTx {
 	return common.ObservedTx{
@@ -63,6 +79,61 @@ func TestFinalizedXMRAdmissionUsesCanonicalMinedHeight(t *testing.T) {
 	_, admitted = gossip.observedTxs[observedTxKey(missingLocation, true, false)]
 	gossip.mu.Unlock()
 	require.False(t, admitted, "an XMR observation without a mined location must fail closed once a tombstone exists")
+}
+
+func TestNewObserverWiresCatchupThroughXMRErrataGuard(t *testing.T) {
+	gossip, _, _, _, bridge, _ := setupTestGossip(t)
+	chain := &spentOutputRefsCatchupGuardCaptureChain{}
+	observer, err := NewObserver(
+		nil,
+		map[common.Chain]chainclients.ChainClient{common.XMRChain: chain},
+		bridge,
+		nil,
+		t.TempDir(),
+		metrics.NewTssKeysignMetricMgr(),
+		gossip,
+		"",
+	)
+	require.NoError(t, err)
+	require.NotNil(t, observer)
+	t.Cleanup(func() { require.NoError(t, observer.storage.Close()) })
+	require.NotNil(t, chain.guard, "XMR catch-up guard must be wired before the chain client starts")
+
+	txID := common.TxID("catchup-shared-errata-guard")
+	require.NoError(t, observer.storage.applyErrata(types.ErrataBlock{
+		Height: 100,
+		Txs: []types.ErrataTx{{
+			Chain: common.XMRChain,
+			TxID:  txID,
+		}},
+	}, nil))
+
+	release, ok := chain.guard(finalizedXMRObservation(txID, 100, 106))
+	require.False(t, ok)
+	require.Nil(t, release)
+
+	release, ok = chain.guard(finalizedXMRObservation(txID, 101, 107))
+	require.True(t, ok, "a different-height canonical re-mine must remain admissible")
+	require.NotNil(t, release)
+	release()
+}
+
+func TestNewObserverRejectsXMRCatchupWithoutErrataGuard(t *testing.T) {
+	gossip, _, _, _, bridge, _ := setupTestGossip(t)
+	observer, err := NewObserver(
+		nil,
+		map[common.Chain]chainclients.ChainClient{
+			common.XMRChain: &spentOutputRefsCatchupWithoutGuardChain{},
+		},
+		bridge,
+		nil,
+		t.TempDir(),
+		metrics.NewTssKeysignMetricMgr(),
+		gossip,
+		"",
+	)
+	require.ErrorContains(t, err, "XMR chain client does not support spent-reference catch-up errata admission")
+	require.Nil(t, observer)
 }
 
 func TestPermanentXMRTombstoneRejectsEveryMinedHeight(t *testing.T) {

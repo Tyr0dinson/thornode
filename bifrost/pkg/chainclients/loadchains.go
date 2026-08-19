@@ -24,11 +24,13 @@ import (
 
 // ChainClient exports the shared type.
 type (
-	ChainClient                    = types.ChainClient
-	CustomKeygenChainClient        = types.CustomKeygenChainClient
-	PermanentErrataQuarantiner     = types.PermanentErrataQuarantiner
-	SpentOutputRefsApplier         = types.SpentOutputRefsApplier
-	WireMemoSpentOutputRefsApplier = types.WireMemoSpentOutputRefsApplier
+	ChainClient                       = types.ChainClient
+	CustomKeygenChainClient           = types.CustomKeygenChainClient
+	PermanentErrataQuarantiner        = types.PermanentErrataQuarantiner
+	SpentOutputRefsApplier            = types.SpentOutputRefsApplier
+	WireMemoSpentOutputRefsApplier    = types.WireMemoSpentOutputRefsApplier
+	SpentOutputRefsGuard              = types.SpentOutputRefsGuard
+	SpentOutputRefsCatchupGuardSetter = types.SpentOutputRefsCatchupGuardSetter
 )
 
 // LoadChains returns chain clients from chain configuration

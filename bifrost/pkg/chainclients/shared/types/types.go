@@ -93,6 +93,18 @@ type WireMemoSpentOutputRefsApplier interface {
 	ApplySpentOutputRefsWithWireMemoAndOutcome(tx common.ObservedTx, wireMemo string, onOutcome func(applied bool))
 }
 
+// SpentOutputRefsGuard serializes one XMR sidecar mutation and its local
+// durable effects against Observer errata cleanup. A rejected acquisition is
+// terminal for that attempt; callers must never mutate before it succeeds.
+type SpentOutputRefsGuard func(tx common.ObservedTx) (release func(), ok bool)
+
+// SpentOutputRefsCatchupGuardSetter wires Observer's durable errata admission
+// into an XMR client's periodic committed-state reconciliation before the
+// chain client starts.
+type SpentOutputRefsCatchupGuardSetter interface {
+	SetSpentOutputRefsCatchupGuard(guard SpentOutputRefsGuard)
+}
+
 // CustomKeygenRequest carries common keygen context for chain-specific hooks.
 type CustomKeygenRequest struct {
 	Members          []string
