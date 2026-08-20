@@ -76,6 +76,11 @@ func processErrataTxAttestation(
 	if err != nil {
 		return err
 	}
+	if er.Chain.Equals(common.XMRChain) && observedVoter.Reverted {
+		// Reverted is a monotonic TxID-wide terminal. A later height-specific
+		// errata voter must never apply the same economic reversal twice.
+		return nil
+	}
 
 	if len(observedVoter.Txs) == 0 {
 		return processErrataOutboundTx(ctx, k, eventMgr, er)
@@ -89,6 +94,17 @@ func processErrataTxAttestation(
 	if !tx.Chain.Equals(er.Chain) {
 		// does not match chain
 		return nil
+	}
+	if er.Chain.Equals(common.XMRChain) && er.Height > 0 {
+		minedHeight, minedErr := observedVoter.Tx.CanonicalMinedHeight()
+		if minedErr != nil {
+			return fmt.Errorf("resolve XMR errata mined height: %w", minedErr)
+		}
+		if minedHeight != er.Height {
+			// This vote belongs to another canonical mining generation. It may
+			// complete its own no-op voter, but cannot mutate the current remine.
+			return nil
+		}
 	}
 
 	// set the observed Tx to reverted only after chain validation passes
@@ -196,9 +212,21 @@ func processErrataOutboundTx(ctx cosmos.Context, k keeper.Keeper, eventMgr Event
 	if txOutVoter.Tx.IsEmpty() {
 		return fmt.Errorf("tx out voter is not finalised")
 	}
+	if er.Chain.Equals(common.XMRChain) && txOutVoter.Reverted {
+		return nil
+	}
 	tx := txOutVoter.Tx.Tx
 	if !tx.Chain.Equals(er.Chain) || tx.Coins.IsEmpty() {
 		return nil
+	}
+	if er.Chain.Equals(common.XMRChain) && er.Height > 0 {
+		minedHeight, minedErr := txOutVoter.Tx.CanonicalMinedHeight()
+		if minedErr != nil {
+			return fmt.Errorf("resolve XMR outbound errata mined height: %w", minedErr)
+		}
+		if minedHeight != er.Height {
+			return nil
+		}
 	}
 	// parse the outbound tx memo, so we can figure out which inbound tx triggered the outbound
 	m, err := ParseMemoWithTHORNames(ctx, k, tx.Memo)

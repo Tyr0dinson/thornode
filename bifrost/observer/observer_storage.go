@@ -24,7 +24,8 @@ import (
 type ObserverStorage struct {
 	db *leveldb.DB
 
-	// errataMu serializes read-modify-write access to the durable errata outbox.
+	// errataMu serializes read-modify-write access to durable errata tombstones
+	// and the retry outbox.
 	errataMu sync.Mutex
 
 	// beforeSyncTxWrite is a deterministic failure hook used only by durable
@@ -254,6 +255,8 @@ func (s *ObserverStorage) applyLegacyErrata(
 	block types.ErrataBlock,
 	mutations []errataDeckMutation,
 ) error {
+	s.errataMu.Lock()
+	defer s.errataMu.Unlock()
 	return s.applyErrataBatch(block, errataTombstoneUpdate{}, mutations)
 }
 
@@ -267,8 +270,11 @@ func (s *ObserverStorage) applyCommittedErrata(
 	if errata.Chain.IsEmpty() || errata.Id.IsEmpty() {
 		return errors.New("committed observer errata is invalid")
 	}
+	s.errataMu.Lock()
+	defer s.errataMu.Unlock()
 	return s.applyErrataBatch(types.ErrataBlock{
-		Txs: []types.ErrataTx{{Chain: errata.Chain, TxID: errata.Id}},
+		Height: errata.Height,
+		Txs:    []types.ErrataTx{{Chain: errata.Chain, TxID: errata.Id}},
 	}, errataTombstoneUpdate{forceCommitted: true}, mutations)
 }
 
@@ -305,28 +311,54 @@ func (s *ObserverStorage) applyErrataBatch(
 			tombstone.OrphanHeights = []int64{block.Height}
 		}
 		hadLocalDelivery := false
+		refinedPlaceholder := false
+		staleGeneration := false
 		if existing, err := s.getErrataTombstone(tx.Chain, tx.TxID.String()); err != nil {
 			return err
 		} else if existing != nil {
 			hadLocalDelivery = existing.OrphanHeight > 0 || len(existing.OrphanHeights) > 0
 			tombstone = *existing
-			if block.Height <= 0 || tombstone.blocksMinedHeight(block.Height) {
+			switch {
+			case tombstone.isPermanentlyReverted() || block.Height == existing.OrphanHeight:
 				// The scanner can crash after this batch is fsynced but before it
 				// consumes OnStored. Its restart replay is the same handoff, not a
 				// new generation: preserve a committed receipt so an already-final
 				// THOR reversal cannot become permanently pending again.
-			} else {
+			case block.Height <= 0:
+				// A TxID-only legacy event cannot complete a height-identified XMR
+				// generation. It is current only while the tombstone itself still
+				// has no scanner-owned height.
+				staleGeneration = existing.OrphanHeight > 0
+			case existing.OrphanHeight == 0 && len(existing.OrphanHeights) == 0:
+				// Refine a commit-before-delivery placeholder with the scanner's
+				// canonical height without manufacturing another generation.
+				refinedPlaceholder = true
+				tombstone.OrphanHeight = block.Height
+				tombstone.OrphanHeights = appendUniqueErrataHeight(tombstone.OrphanHeights, block.Height)
+				hadLocalDelivery = false
+			case slices.Contains(existing.OrphanHeights, block.Height):
+				// A delayed callback or committed event for an older orphan height
+				// must not mutate the current generation.
+				staleGeneration = true
+			default:
 				if existing.Generation == math.MaxUint64 {
 					return fmt.Errorf("observer errata tombstone generation exhausted for %s", tx.TxID)
 				}
+				hadLocalDelivery = false
 				tombstone.Generation++
 				tombstone.OrphanHeight = block.Height
 				tombstone.OrphanHeights = appendUniqueErrataHeight(tombstone.OrphanHeights, existing.OrphanHeight)
 				tombstone.OrphanHeights = appendUniqueErrataHeight(tombstone.OrphanHeights, block.Height)
-				// Delivery and an explicit voter result are TxID-scoped. A later
-				// scanner height refines the exact local barrier without reopening
-				// an already-delivered errata outbox entry.
+				// Delivery, commit acknowledgement, reconciliation result, and
+				// retry state all belong to the old generation. Only a permanent
+				// Reverted result is TxID-wide, and that case returned above.
+				tombstone.Committed = false
+				tombstone.VoterReverted = nil
+				tombstone.VerifyAfterHeight = 0
 			}
+		}
+		if staleGeneration {
+			continue
 		}
 		if update.forceCommitted {
 			tombstone.Committed = true
@@ -368,12 +400,18 @@ func (s *ObserverStorage) applyErrataBatch(
 			// is a duplicate committed event after completion; do not resurrect
 			// a commit-only retry record. A commit before scanner handoff has no
 			// delivered height and still needs the placeholder.
+			if found && record.Height != tombstone.OrphanHeight &&
+				!(refinedPlaceholder && record.Height == 0) {
+				record = persistedErrata{Tx: tx, Height: tombstone.OrphanHeight}
+				found = true
+			}
 			if !found && !hadLocalDelivery {
-				record = persistedErrata{Tx: tx}
+				record = persistedErrata{Tx: tx, Height: tombstone.OrphanHeight}
 				found = true
 			}
 			if found {
 				record.Tx = tx
+				record.Height = tombstone.OrphanHeight
 				record.Committed = true
 				if record.CommittedAtUnixNano == 0 {
 					record.CommittedAtUnixNano = time.Now().UnixNano()
@@ -396,8 +434,9 @@ func (s *ObserverStorage) applyErrataBatch(
 			if getErr != nil {
 				return getErr
 			}
-			if !found {
-				record = persistedErrata{Tx: tx}
+			if !found || (record.Height != tombstone.OrphanHeight &&
+				!(refinedPlaceholder && record.Height == 0)) {
+				record = persistedErrata{Tx: tx, Height: tombstone.OrphanHeight}
 			}
 			record.Height = block.Height
 			record.DeliveryID = block.DeliveryID
@@ -611,8 +650,11 @@ func (s *ObserverStorage) recordErrataCommitted(errata common.ErrataTx, verifyAf
 	if errata.Chain.IsEmpty() || errata.Id.IsEmpty() {
 		return errors.New("committed observer errata is invalid")
 	}
+	s.errataMu.Lock()
+	defer s.errataMu.Unlock()
 	return s.applyErrataBatch(types.ErrataBlock{
-		Txs: []types.ErrataTx{{Chain: errata.Chain, TxID: errata.Id}},
+		Height: errata.Height,
+		Txs:    []types.ErrataTx{{Chain: errata.Chain, TxID: errata.Id}},
 	}, errataTombstoneUpdate{
 		forceCommitted:    true,
 		verifyAfterHeight: verifyAfterHeight,
@@ -629,7 +671,8 @@ func (s *ObserverStorage) recordLocalErrataCommitted(errata common.ErrataTx) err
 	s.errataMu.Lock()
 	defer s.errataMu.Unlock()
 	return s.applyErrataBatch(types.ErrataBlock{
-		Txs: []types.ErrataTx{{Chain: errata.Chain, TxID: errata.Id}},
+		Height: errata.Height,
+		Txs:    []types.ErrataTx{{Chain: errata.Chain, TxID: errata.Id}},
 	}, errataTombstoneUpdate{
 		forceCommitted: true,
 		completeOutbox: true,
@@ -658,6 +701,8 @@ func (s *ObserverStorage) recordErrataVoterResult(
 	if !errata.Chain.Equals(common.XMRChain) || errata.Id.IsEmpty() {
 		return errors.New("observer errata voter result is invalid")
 	}
+	s.errataMu.Lock()
+	defer s.errataMu.Unlock()
 	tombstone, err := s.getErrataTombstone(errata.Chain, errata.Id.String())
 	if err != nil {
 		return err
@@ -665,8 +710,16 @@ func (s *ObserverStorage) recordErrataVoterResult(
 	if tombstone == nil || !tombstone.Committed {
 		return errors.New("observer errata voter result has no committed delivery")
 	}
+	if errata.Height != tombstone.OrphanHeight {
+		return fmt.Errorf(
+			"observer errata voter result height %d does not match current generation height %d",
+			errata.Height,
+			tombstone.OrphanHeight,
+		)
+	}
 	return s.applyErrataBatch(types.ErrataBlock{
-		Txs: []types.ErrataTx{{Chain: errata.Chain, TxID: errata.Id}},
+		Height: errata.Height,
+		Txs:    []types.ErrataTx{{Chain: errata.Chain, TxID: errata.Id}},
 	}, errataTombstoneUpdate{voterReverted: &reverted}, mutations)
 }
 
@@ -804,7 +857,11 @@ func (s *ObserverStorage) MarkErrataCommitted(tx types.ErrataTx) error {
 // RecordErrataAttestationAttempt durably advances the retry schedule before an
 // attestation is emitted. It never creates or resurrects a record: a concurrent
 // commit notification that removed the outbox item wins.
-func (s *ObserverStorage) RecordErrataAttestationAttempt(tx types.ErrataTx, at time.Time) (persistedErrata, bool, error) {
+func (s *ObserverStorage) RecordErrataAttestationAttempt(
+	tx types.ErrataTx,
+	expectedHeight int64,
+	at time.Time,
+) (persistedErrata, bool, error) {
 	if s == nil || s.db == nil {
 		return persistedErrata{}, false, fmt.Errorf("observer storage is not configured")
 	}
@@ -817,6 +874,9 @@ func (s *ObserverStorage) RecordErrataAttestationAttempt(tx types.ErrataTx, at t
 	record, found, err := s.getPersistedErrataLocked(tx)
 	if err != nil || !found {
 		return record, false, err
+	}
+	if expectedHeight <= 0 || record.Height != expectedHeight {
+		return record, false, nil
 	}
 	if record.Committed || record.AttestationRetryExhausted || !record.CleanupComplete {
 		return record, false, nil
@@ -836,7 +896,11 @@ func (s *ObserverStorage) RecordErrataAttestationAttempt(tx types.ErrataTx, at t
 // MarkErrataAttestationRetryExhausted places an unconfirmed errata record in a
 // durable terminal quarantine. A later commit event still completes and
 // removes it, but the observer will no longer gossip it indefinitely.
-func (s *ObserverStorage) MarkErrataAttestationRetryExhausted(tx types.ErrataTx, at time.Time) (bool, error) {
+func (s *ObserverStorage) MarkErrataAttestationRetryExhausted(
+	tx types.ErrataTx,
+	expectedHeight int64,
+	at time.Time,
+) (bool, error) {
 	if s == nil || s.db == nil {
 		return false, fmt.Errorf("observer storage is not configured")
 	}
@@ -849,6 +913,9 @@ func (s *ObserverStorage) MarkErrataAttestationRetryExhausted(tx types.ErrataTx,
 	record, found, err := s.getPersistedErrataLocked(tx)
 	if err != nil || !found {
 		return false, err
+	}
+	if expectedHeight <= 0 || record.Height != expectedHeight {
+		return false, nil
 	}
 	if record.Committed || record.AttestationRetryExhausted || !record.CleanupComplete {
 		return false, nil

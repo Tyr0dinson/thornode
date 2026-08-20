@@ -46,6 +46,15 @@ func (m *MsgErrataTxQuorum) ValidateBasic() error {
 	if tx.Chain.IsEmpty() {
 		return cosmos.ErrUnknownRequest("chain cannot be empty")
 	}
+	if tx.Height < 0 {
+		return cosmos.ErrUnknownRequest("errata height cannot be negative")
+	}
+	if tx.Chain.Equals(common.XMRChain) && tx.Height == 0 {
+		return cosmos.ErrUnknownRequest("XMR errata requires a canonical mined height")
+	}
+	if !tx.Chain.Equals(common.XMRChain) && tx.Height != 0 {
+		return cosmos.ErrUnknownRequest("canonical mined height is only valid for XMR errata")
+	}
 
 	return nil
 }

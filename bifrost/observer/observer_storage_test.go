@@ -174,7 +174,7 @@ func TestErrataAttestationRetryStatePersistsWithoutResurrection(t *testing.T) {
 	require.NoError(t, storage.CompleteErrataCleanup([]types.ErrataTx{tx}, nil))
 
 	firstAttempt := time.Unix(1_750_000_000, 123)
-	record, recorded, err := storage.RecordErrataAttestationAttempt(tx, firstAttempt)
+	record, recorded, err := storage.RecordErrataAttestationAttempt(tx, 321, firstAttempt)
 	require.NoError(t, err)
 	require.True(t, recorded)
 	assert.Equal(t, uint32(1), record.AttestationAttempts)
@@ -193,7 +193,7 @@ func TestErrataAttestationRetryStatePersistsWithoutResurrection(t *testing.T) {
 	assert.Equal(t, firstAttempt.UnixNano(), record.FirstAttemptAtUnixNano)
 
 	exhaustedAt := firstAttempt.Add(errataAttestationRetryHorizon)
-	marked, err := reopened.MarkErrataAttestationRetryExhausted(tx, exhaustedAt)
+	marked, err := reopened.MarkErrataAttestationRetryExhausted(tx, 321, exhaustedAt)
 	require.NoError(t, err)
 	require.True(t, marked)
 	record, found, err = reopened.GetPendingErrataTx(tx)
@@ -202,7 +202,7 @@ func TestErrataAttestationRetryStatePersistsWithoutResurrection(t *testing.T) {
 	assert.True(t, record.AttestationRetryExhausted)
 	assert.Equal(t, exhaustedAt.UnixNano(), record.RetryExhaustedAtUnixNano)
 
-	_, recorded, err = reopened.RecordErrataAttestationAttempt(tx, exhaustedAt.Add(time.Hour))
+	_, recorded, err = reopened.RecordErrataAttestationAttempt(tx, 321, exhaustedAt.Add(time.Hour))
 	require.NoError(t, err)
 	assert.False(t, recorded)
 
@@ -212,7 +212,7 @@ func TestErrataAttestationRetryStatePersistsWithoutResurrection(t *testing.T) {
 	_, found, err = reopened.GetPendingErrataTx(tx)
 	require.NoError(t, err)
 	assert.False(t, found)
-	_, recorded, err = reopened.RecordErrataAttestationAttempt(tx, exhaustedAt.Add(2*time.Hour))
+	_, recorded, err = reopened.RecordErrataAttestationAttempt(tx, 321, exhaustedAt.Add(2*time.Hour))
 	require.NoError(t, err)
 	assert.False(t, recorded)
 }

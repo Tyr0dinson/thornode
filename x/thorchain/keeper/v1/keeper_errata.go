@@ -43,7 +43,18 @@ func (k KVStore) GetErrataTxVoterIterator(ctx cosmos.Context) cosmos.Iterator {
 
 // GetErrataTxVoter - gets information of errata tx voter
 func (k KVStore) GetErrataTxVoter(ctx cosmos.Context, txID common.TxID, chain common.Chain) (ErrataTxVoter, error) {
-	record := NewErrataTxVoter(txID, chain)
+	return k.GetErrataTxVoterAtHeight(ctx, txID, chain, 0)
+}
+
+// GetErrataTxVoterAtHeight gets the voter for one external-chain errata
+// generation. Height zero addresses the legacy TxID-only voter.
+func (k KVStore) GetErrataTxVoterAtHeight(
+	ctx cosmos.Context,
+	txID common.TxID,
+	chain common.Chain,
+	externalHeight int64,
+) (ErrataTxVoter, error) {
+	record := NewErrataTxVoterAtHeight(txID, chain, externalHeight)
 	_, err := k.getErrataTxVoter(ctx, k.GetKey(prefixErrataTx, record.String()), &record)
 	return record, err
 }

@@ -114,6 +114,7 @@ var (
 	NewTssVoter                    = types.NewTssVoter
 	NewBanVoter                    = types.NewBanVoter
 	NewErrataTxVoter               = types.NewErrataTxVoter
+	NewErrataTxVoterAtHeight       = types.NewErrataTxVoterAtHeight
 	NewObservedTxVoter             = types.NewObservedTxVoter
 	NewMsgRunePoolDeposit          = types.NewMsgRunePoolDeposit
 	NewMsgRunePoolWithdraw         = types.NewMsgRunePoolWithdraw

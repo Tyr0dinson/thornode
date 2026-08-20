@@ -203,6 +203,10 @@ message ErrataTx {
 
   string id = 1 [ (gogoproto.casttype) = "TxID" ];
   string chain = 2 [ (gogoproto.casttype) = "Chain" ];
+  // Canonical external-chain height of the orphaned transaction. XMR uses
+  // this as the deterministic errata-generation identity; zero preserves the
+  // legacy TxID-only identity for other chains.
+  int64 height = 3;
 }
 
 message AttestErrataTx {

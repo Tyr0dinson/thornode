@@ -208,7 +208,7 @@ func TestPendingErrataRejectsOnlyOrphanHeight(t *testing.T) {
 
 func TestPendingErrataRetriesAcrossObserverRestartUntilCommittedEvent(t *testing.T) {
 	observer, storage := newErrataOrderingObserver(t)
-	errata := common.ErrataTx{Chain: common.XMRChain, Id: common.TxID("pending-restart")}
+	errata := common.ErrataTx{Chain: common.XMRChain, Id: common.TxID("pending-restart"), Height: 77}
 	require.NoError(t, observer.filterErrataTx(types.ErrataBlock{
 		Height: 77,
 		Txs:    []types.ErrataTx{{Chain: errata.Chain, TxID: errata.Id}},
@@ -295,7 +295,7 @@ func TestCallbackErrataUsesDurableRetryBackoffAndExhaustion(t *testing.T) {
 
 func TestCrashAfterLocalErrataEnqueueReplaysOutboxAfterRestart(t *testing.T) {
 	observer, storage := newErrataOrderingObserver(t)
-	errata := common.ErrataTx{Chain: common.XMRChain, Id: common.TxID("crash-before-batch-send")}
+	errata := common.ErrataTx{Chain: common.XMRChain, Id: common.TxID("crash-before-batch-send"), Height: 78}
 	require.NoError(t, observer.filterErrataTx(types.ErrataBlock{
 		Height: 78,
 		Txs:    []types.ErrataTx{{Chain: errata.Chain, TxID: errata.Id}},
@@ -342,7 +342,7 @@ func TestCrashAfterLocalErrataEnqueueReplaysOutboxAfterRestart(t *testing.T) {
 
 func TestDuplicateErrataHandoffPreservesCommittedGeneration(t *testing.T) {
 	observer, storage := newErrataOrderingObserver(t)
-	errata := common.ErrataTx{Chain: common.XMRChain, Id: common.TxID("duplicate-handoff")}
+	errata := common.ErrataTx{Chain: common.XMRChain, Id: common.TxID("duplicate-handoff"), Height: 88}
 	block := types.ErrataBlock{
 		Height: 88,
 		Txs:    []types.ErrataTx{{Chain: errata.Chain, TxID: errata.Id}},
@@ -368,9 +368,195 @@ func TestDuplicateErrataHandoffPreservesCommittedGeneration(t *testing.T) {
 	require.False(t, found, "a duplicate callback must not reopen an already committed outbox entry")
 }
 
+func TestRepeatedXMRErrataGenerationResetsLifecycleAndRejectsStaleCompletion(t *testing.T) {
+	_, storage := newErrataOrderingObserver(t)
+	tx := types.ErrataTx{Chain: common.XMRChain, TxID: common.TxID("repeated-errata-generation")}
+	firstBlock := types.ErrataBlock{
+		Height:     100,
+		DeliveryID: "generation-1",
+		Txs:        []types.ErrataTx{tx},
+	}
+	require.NoError(t, storage.applyErrata(firstBlock, nil))
+
+	first, found, err := storage.GetPendingErrataTx(tx)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, firstBlock.Height, first.Height)
+	firstAttempt := time.Unix(1_750_000_000, 0)
+	_, recorded, err := storage.RecordErrataAttestationAttempt(tx, first.Height, firstAttempt)
+	require.NoError(t, err)
+	require.True(t, recorded)
+	exhausted, err := storage.MarkErrataAttestationRetryExhausted(
+		tx,
+		first.Height,
+		firstAttempt.Add(errataAttestationRetryHorizon),
+	)
+	require.NoError(t, err)
+	require.True(t, exhausted)
+
+	firstErrata := errataAttestationPayload(tx, firstBlock.Height)
+	require.NoError(t, storage.recordLocalErrataCommitted(firstErrata))
+	require.NoError(t, storage.recordErrataVoterResult(firstErrata, false, nil))
+	_, found, err = storage.GetPendingErrataTx(tx)
+	require.NoError(t, err)
+	require.False(t, found)
+
+	secondBlock := types.ErrataBlock{
+		Height:     120,
+		DeliveryID: "generation-2",
+		Txs:        []types.ErrataTx{tx},
+	}
+	require.NoError(t, storage.applyErrata(secondBlock, nil))
+	second, found, err := storage.GetPendingErrataTx(tx)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, int64(120), second.Height)
+	require.Zero(t, second.AttestationAttempts)
+	require.Zero(t, second.FirstAttemptAtUnixNano)
+	require.Zero(t, second.LastAttemptAtUnixNano)
+	require.False(t, second.AttestationRetryExhausted)
+	require.Zero(t, second.RetryExhaustedAtUnixNano)
+	require.False(t, second.Committed)
+
+	// A same-height scanner replay stays in generation 2 and preserves its
+	// already-recorded retry state.
+	_, recorded, err = storage.RecordErrataAttestationAttempt(tx, second.Height, firstAttempt.Add(time.Hour))
+	require.NoError(t, err)
+	require.True(t, recorded)
+	require.NoError(t, storage.applyErrata(secondBlock, nil))
+	replayed, found, err := storage.GetPendingErrataTx(tx)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, secondBlock.Height, replayed.Height)
+	require.Equal(t, uint32(1), replayed.AttestationAttempts)
+
+	// Delayed generation-1 work cannot alter or complete generation 2.
+	require.NoError(t, storage.recordLocalErrataCommitted(firstErrata))
+	_, recorded, err = storage.RecordErrataAttestationAttempt(tx, first.Height, firstAttempt.Add(2*time.Hour))
+	require.NoError(t, err)
+	require.False(t, recorded)
+	afterStale, found, err := storage.GetPendingErrataTx(tx)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, secondBlock.Height, afterStale.Height)
+	require.False(t, afterStale.Committed)
+	require.Equal(t, uint32(1), afterStale.AttestationAttempts)
+	afterStaleTombstone, err := storage.getErrataTombstone(tx.Chain, tx.TxID.String())
+	require.NoError(t, err)
+	require.Equal(t, secondBlock.Height, afterStaleTombstone.OrphanHeight)
+	require.Equal(t, uint64(2), afterStaleTombstone.Generation)
+	require.False(t, afterStaleTombstone.Committed)
+	require.Nil(t, afterStaleTombstone.VoterReverted)
+
+	secondErrata := errataAttestationPayload(tx, secondBlock.Height)
+	require.NoError(t, storage.recordLocalErrataCommitted(secondErrata))
+	require.NoError(t, storage.recordErrataVoterResult(secondErrata, true, nil))
+	_, found, err = storage.GetPendingErrataTx(tx)
+	require.NoError(t, err)
+	require.False(t, found)
+
+	// An explicit Reverted result is the only TxID-wide terminal and cannot be
+	// reopened by a later scanner height.
+	require.NoError(t, storage.applyErrata(types.ErrataBlock{
+		Height:     140,
+		DeliveryID: "generation-3",
+		Txs:        []types.ErrataTx{tx},
+	}, nil))
+	tombstone, err := storage.getErrataTombstone(tx.Chain, tx.TxID.String())
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), tombstone.Generation)
+	require.True(t, tombstone.isPermanentlyReverted())
+	_, found, err = storage.GetPendingErrataTx(tx)
+	require.NoError(t, err)
+	require.False(t, found)
+}
+
+func TestHeightScopedXMRErrataIgnoresLegacyCommitAfterScannerHandoff(t *testing.T) {
+	_, storage := newErrataOrderingObserver(t)
+	tx := types.ErrataTx{Chain: common.XMRChain, TxID: common.TxID("height-scoped-legacy-commit")}
+	block := types.ErrataBlock{
+		Height:     100,
+		DeliveryID: "height-scoped",
+		Txs:        []types.ErrataTx{tx},
+	}
+	require.NoError(t, storage.applyErrata(block, nil))
+	_, recorded, err := storage.RecordErrataAttestationAttempt(tx, block.Height, time.Unix(1_750_000_000, 0))
+	require.NoError(t, err)
+	require.True(t, recorded)
+
+	beforeRecord, found, err := storage.GetPendingErrataTx(tx)
+	require.NoError(t, err)
+	require.True(t, found)
+	beforeTombstone, err := storage.getErrataTombstone(tx.Chain, tx.TxID.String())
+	require.NoError(t, err)
+
+	// A delayed pre-upgrade TxID-only event cannot commit or otherwise mutate
+	// the scanner-owned height-scoped generation.
+	require.NoError(t, storage.recordLocalErrataCommitted(common.ErrataTx{
+		Chain: tx.Chain,
+		Id:    tx.TxID,
+	}))
+
+	afterRecord, found, err := storage.GetPendingErrataTx(tx)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, beforeRecord, afterRecord)
+	afterTombstone, err := storage.getErrataTombstone(tx.Chain, tx.TxID.String())
+	require.NoError(t, err)
+	require.Equal(t, beforeTombstone, afterTombstone)
+}
+
+func TestErrataStateWritersHoldStorageLock(t *testing.T) {
+	_, storage := newErrataOrderingObserver(t)
+	tx := types.ErrataTx{Chain: common.XMRChain, TxID: common.TxID("serialized-errata-state")}
+	block := types.ErrataBlock{Height: 100, Txs: []types.ErrataTx{tx}}
+	require.NoError(t, storage.applyErrata(block, nil))
+	errata := errataAttestationPayload(tx, block.Height)
+
+	assertSerialized := func(name string, write func() error) {
+		t.Helper()
+		enteredWrite := make(chan struct{})
+		releaseWrite := make(chan struct{})
+		var releaseOnce sync.Once
+		release := func() { releaseOnce.Do(func() { close(releaseWrite) }) }
+		defer release()
+		storage.beforeErrataWrite = func() error {
+			close(enteredWrite)
+			<-releaseWrite
+			return nil
+		}
+		writeDone := make(chan error, 1)
+		go func() { writeDone <- write() }()
+
+		select {
+		case <-enteredWrite:
+		case err := <-writeDone:
+			require.NoError(t, err)
+			t.Fatalf("%s returned before reaching the durable write", name)
+		case <-time.After(time.Second):
+			t.Fatalf("%s did not reach the durable write", name)
+		}
+		locked := !storage.errataMu.TryLock()
+		if !locked {
+			storage.errataMu.Unlock()
+		}
+		release()
+		require.NoError(t, <-writeDone)
+		storage.beforeErrataWrite = nil
+		require.True(t, locked, "%s must hold errataMu across its read-modify-write", name)
+	}
+
+	assertSerialized("record committed event", func() error {
+		return storage.recordErrataCommitted(errata, 1)
+	})
+	assertSerialized("record voter result", func() error {
+		return storage.recordErrataVoterResult(errata, false, nil)
+	})
+}
+
 func TestQuorumErrataCommittedEventClearsOutboxWithoutVolatileState(t *testing.T) {
 	observer, storage := newErrataOrderingObserver(t)
-	errata := common.ErrataTx{Chain: common.XMRChain, Id: common.TxID("committed-event")}
+	errata := common.ErrataTx{Chain: common.XMRChain, Id: common.TxID("committed-event"), Height: 91}
 	require.NoError(t, observer.filterErrataTx(types.ErrataBlock{
 		Height: 91,
 		Txs:    []types.ErrataTx{{Chain: errata.Chain, TxID: errata.Id}},
@@ -398,7 +584,7 @@ func TestQuorumErrataCommittedEventClearsOutboxWithoutVolatileState(t *testing.T
 
 func TestQuorumErrataCommittedEventRetainsOutboxWithoutLocalAttestation(t *testing.T) {
 	observer, storage := newErrataOrderingObserver(t)
-	errata := common.ErrataTx{Chain: common.XMRChain, Id: common.TxID("other-validator-event")}
+	errata := common.ErrataTx{Chain: common.XMRChain, Id: common.TxID("other-validator-event"), Height: 92}
 	require.NoError(t, observer.filterErrataTx(types.ErrataBlock{
 		Height: 92,
 		Txs:    []types.ErrataTx{{Chain: errata.Chain, TxID: errata.Id}},
@@ -767,8 +953,9 @@ func TestXMRCommittedErrataQuarantineFailureRetriesOutcomeAfterRestart(t *testin
 func TestXMRCommittedErrataVoterQueryFailureRetainsOutcomeRetry(t *testing.T) {
 	observer, storage := newErrataOrderingObserver(t)
 	errata := common.ErrataTx{
-		Chain: common.XMRChain,
-		Id:    common.TxID("abababababababababababababababababababababababababababababababab"),
+		Chain:  common.XMRChain,
+		Id:     common.TxID("abababababababababababababababababababababababababababababababab"),
+		Height: 75,
 	}
 	require.NoError(t, observer.filterErrataTx(types.ErrataBlock{
 		Height: 75,
@@ -1079,7 +1266,7 @@ func TestPendingErrataResubmitsAfterThrottleUntilCommittedEvent(t *testing.T) {
 	ag, _, _, grpcClient, _, _ := setupTestGossip(t)
 	observer.attestationGossip = ag
 	ag.SetObserverHandleErrataTxCommitted(observer)
-	errata := common.ErrataTx{Chain: common.XMRChain, Id: common.TxID("durable-resubmit")}
+	errata := common.ErrataTx{Chain: common.XMRChain, Id: common.TxID("durable-resubmit"), Height: 101}
 	require.NoError(t, observer.filterErrataTx(types.ErrataBlock{
 		Height: 101,
 		Txs:    []types.ErrataTx{{Chain: errata.Chain, TxID: errata.Id}},
@@ -1218,7 +1405,7 @@ func TestErrataBatcherDeduplicatesDurableOutboxRetries(t *testing.T) {
 		forceSendChan: make(chan struct{}, 1),
 		logger:        log.Logger,
 	}
-	errata := common.ErrataTx{Chain: common.XMRChain, Id: common.TxID("dedupe")}
+	errata := common.ErrataTx{Chain: common.XMRChain, Id: common.TxID("dedupe"), Height: 100}
 	message := common.AttestErrataTx{
 		ErrataTx: &errata,
 		Attestation: &common.Attestation{
@@ -1229,6 +1416,13 @@ func TestErrataBatcherDeduplicatesDurableOutboxRetries(t *testing.T) {
 	batcher.AddErrataTx(message)
 	batcher.AddErrataTx(message)
 	require.Len(t, batcher.errataTxBatch, 1)
+
+	secondGeneration := message
+	secondErrata := errata
+	secondErrata.Height = 120
+	secondGeneration.ErrataTx = &secondErrata
+	batcher.AddErrataTx(secondGeneration)
+	require.Len(t, batcher.errataTxBatch, 2, "different canonical heights are distinct errata generations")
 }
 
 func TestRestoreDropsOnlyExactOrphanDeckRowWhenTombstoneAlreadyDurable(t *testing.T) {

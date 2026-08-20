@@ -9,9 +9,16 @@ import (
 
 // NewErrataTxVoter create a new instance of ErrataTxVoter
 func NewErrataTxVoter(txID common.TxID, chain common.Chain) ErrataTxVoter {
+	return NewErrataTxVoterAtHeight(txID, chain, 0)
+}
+
+// NewErrataTxVoterAtHeight creates an errata voter for one deterministic
+// external-chain generation. Height zero retains the legacy TxID-only voter.
+func NewErrataTxVoterAtHeight(txID common.TxID, chain common.Chain, externalHeight int64) ErrataTxVoter {
 	return ErrataTxVoter{
-		TxID:  txID,
-		Chain: chain,
+		TxID:           txID,
+		Chain:          chain,
+		ExternalHeight: externalHeight,
 	}
 }
 
@@ -65,5 +72,8 @@ func (m *ErrataTxVoter) Empty() bool {
 
 // String implement fmt.Stinger , return a string representation of errata tx voter
 func (m *ErrataTxVoter) String() string {
+	if m.ExternalHeight > 0 {
+		return fmt.Sprintf("%s-%s-%d", m.Chain.String(), m.TxID.String(), m.ExternalHeight)
+	}
 	return fmt.Sprintf("%s-%s", m.Chain.String(), m.TxID.String())
 }

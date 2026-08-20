@@ -138,6 +138,26 @@ func (s *HandlerErrataTxQuorumSuite) TestValidateValidMsg(c *C) {
 	c.Assert(err, IsNil)
 }
 
+func (s *HandlerErrataTxQuorumSuite) TestValidateXMRRequiresCanonicalMinedHeight(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	handler := NewErrataTxQuorumHandler(mgr)
+
+	er := makeErrataTx(GetRandomTxHash(), common.XMRChain)
+	msg := types.NewMsgErrataTxQuorum(
+		&common.QuorumErrataTx{ErrataTx: er},
+		GetRandomBech32Addr(),
+	)
+	c.Check(handler.validate(ctx, *msg), NotNil)
+
+	er.Height = 100
+	c.Check(handler.validate(ctx, *msg), IsNil)
+
+	er.Chain = common.BTCChain
+	c.Check(handler.validate(ctx, *msg), NotNil)
+	er.Height = 0
+	c.Check(handler.validate(ctx, *msg), IsNil)
+}
+
 // --- handle tests ---
 
 func (s *HandlerErrataTxQuorumSuite) TestHandleFailListActiveValidators(c *C) {
@@ -421,6 +441,67 @@ func (s *HandlerErrataTxQuorumSuite) TestHandleEmptyVoterCreatesNew(c *C) {
 	c.Assert(len(voter.Signers) > 0, Equals, true)
 }
 
+func (s *HandlerErrataTxQuorumSuite) TestRepeatedXMRErrataUsesCanonicalHeightGeneration(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	handler := NewErrataTxQuorumHandler(mgr)
+	na, privKey := nodeWithPrivKey(c, mgr.Keeper(), ctx)
+	txID := GetRandomTxHash()
+
+	// Generation 1 reaches errata consensus before the original observation
+	// has selected a transaction, so it commits as an economic no-op.
+	partial := NewObservedTx(GetRandomTx(), 100, GetRandomPubKey(), 100)
+	partial.Tx.ID = txID
+	partial.Tx.Chain = common.XMRChain
+	partial.XmrMinedHeight = 100
+	partialVoter := NewObservedTxVoter(txID, ObservedTxs{partial})
+	mgr.Keeper().SetObservedTxInVoter(ctx, partialVoter)
+
+	first := &common.ErrataTx{Id: txID, Chain: common.XMRChain, Height: 100}
+	firstMsg := types.NewMsgErrataTxQuorum(&common.QuorumErrataTx{
+		ErrataTx:     first,
+		Attestations: []*common.Attestation{attestErrataTx(c, privKey, first)},
+	}, na.NodeAddress)
+	result, err := handler.Run(ctx, firstMsg)
+	c.Assert(err, IsNil)
+	c.Assert(result, NotNil)
+
+	firstVoter, err := mgr.Keeper().GetErrataTxVoterAtHeight(ctx, txID, common.XMRChain, 100)
+	c.Assert(err, IsNil)
+	c.Check(firstVoter.BlockHeight, Equals, ctx.BlockHeight())
+	stored, err := mgr.Keeper().GetObservedTxInVoter(ctx, txID)
+	c.Assert(err, IsNil)
+	c.Check(stored.Reverted, Equals, false)
+
+	// The same immutable transaction is then canonically mined at a different
+	// height. Generation 1 must not preempt this new observation.
+	remined := partial
+	remined.BlockHeight = 120
+	remined.FinaliseHeight = 121
+	remined.XmrMinedHeight = 120
+	reminedVoter := NewObservedTxVoter(txID, ObservedTxs{remined})
+	reminedVoter.Tx = remined
+	mgr.Keeper().SetObservedTxInVoter(ctx, reminedVoter)
+	c.Assert(applyCommittedXMRErrataToInboundConsensus(ctx, mgr.Keeper(), &reminedVoter), IsNil)
+	c.Check(reminedVoter.Reverted, Equals, false)
+
+	second := &common.ErrataTx{Id: txID, Chain: common.XMRChain, Height: 120}
+	secondMsg := types.NewMsgErrataTxQuorum(&common.QuorumErrataTx{
+		ErrataTx:     second,
+		Attestations: []*common.Attestation{attestErrataTx(c, privKey, second)},
+	}, na.NodeAddress)
+	result, err = handler.Run(ctx, secondMsg)
+	c.Assert(err, IsNil)
+	c.Assert(result, NotNil)
+
+	secondVoter, err := mgr.Keeper().GetErrataTxVoterAtHeight(ctx, txID, common.XMRChain, 120)
+	c.Assert(err, IsNil)
+	c.Check(secondVoter.BlockHeight, Equals, ctx.BlockHeight())
+	c.Check(secondVoter.String() == firstVoter.String(), Equals, false)
+	stored, err = mgr.Keeper().GetObservedTxInVoter(ctx, txID)
+	c.Assert(err, IsNil)
+	c.Check(stored.Reverted, Equals, true)
+}
+
 // --- Test keeper for failure injection ---
 
 type TestErrataTxQuorumKeeper struct {
@@ -441,4 +522,11 @@ func (k *TestErrataTxQuorumKeeper) GetErrataTxVoter(ctx cosmos.Context, txID com
 		return keeper.ErrataTxVoter{}, errKaboom
 	}
 	return k.Keeper.GetErrataTxVoter(ctx, txID, chain)
+}
+
+func (k *TestErrataTxQuorumKeeper) GetErrataTxVoterAtHeight(ctx cosmos.Context, txID common.TxID, chain common.Chain, height int64) (keeper.ErrataTxVoter, error) {
+	if k.failGetErrataTxVoter {
+		return keeper.ErrataTxVoter{}, errKaboom
+	}
+	return k.Keeper.GetErrataTxVoterAtHeight(ctx, txID, chain, height)
 }

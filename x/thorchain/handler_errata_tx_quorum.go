@@ -48,7 +48,7 @@ func (h ErrataTxQuorumHandler) handle(ctx cosmos.Context, msg types.MsgErrataTxQ
 
 	er := msg.QuoErrata.ErrataTx
 
-	voter, err := h.mgr.Keeper().GetErrataTxVoter(ctx, er.Id, er.Chain)
+	voter, err := h.mgr.Keeper().GetErrataTxVoterAtHeight(ctx, er.Id, er.Chain, er.Height)
 	if err != nil {
 		return nil, err
 	}

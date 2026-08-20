@@ -27,3 +27,29 @@ func (s *KeeperErrataTxSuite) TestErrataTxVoter(c *C) {
 	c.Check(err, IsNil)
 	c.Check(errtaVoter.Empty(), Equals, false)
 }
+
+func (s *KeeperErrataTxSuite) TestErrataTxVotersAreScopedByExternalHeight(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	txID := GetRandomTxHash()
+
+	first := NewErrataTxVoterAtHeight(txID, common.XMRChain, 100)
+	first.BlockHeight = 10
+	second := NewErrataTxVoterAtHeight(txID, common.XMRChain, 120)
+	second.BlockHeight = 20
+	k.SetErrataTxVoter(ctx, first)
+	k.SetErrataTxVoter(ctx, second)
+
+	gotFirst, err := k.GetErrataTxVoterAtHeight(ctx, txID, common.XMRChain, 100)
+	c.Assert(err, IsNil)
+	c.Check(gotFirst.BlockHeight, Equals, int64(10))
+	c.Check(gotFirst.ExternalHeight, Equals, int64(100))
+
+	gotSecond, err := k.GetErrataTxVoterAtHeight(ctx, txID, common.XMRChain, 120)
+	c.Assert(err, IsNil)
+	c.Check(gotSecond.BlockHeight, Equals, int64(20))
+	c.Check(gotSecond.ExternalHeight, Equals, int64(120))
+
+	legacy, err := k.GetErrataTxVoter(ctx, txID, common.XMRChain)
+	c.Assert(err, IsNil)
+	c.Check(legacy.BlockHeight, Equals, int64(0))
+}

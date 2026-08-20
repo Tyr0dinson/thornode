@@ -410,6 +410,7 @@ type KeeperErrataTx interface {
 	SetErrataTxVoter(_ cosmos.Context, _ ErrataTxVoter)
 	GetErrataTxVoterIterator(_ cosmos.Context) cosmos.Iterator
 	GetErrataTxVoter(_ cosmos.Context, _ common.TxID, _ common.Chain) (ErrataTxVoter, error)
+	GetErrataTxVoterAtHeight(_ cosmos.Context, _ common.TxID, _ common.Chain, _ int64) (ErrataTxVoter, error)
 }
 
 type KeeperSwapQueue interface {

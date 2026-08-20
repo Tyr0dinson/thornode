@@ -592,6 +592,10 @@ func (k KVStoreDummy) GetErrataTxVoterIterator(_ cosmos.Context) cosmos.Iterator
 func (k KVStoreDummy) GetErrataTxVoter(_ cosmos.Context, _ common.TxID, _ common.Chain) (ErrataTxVoter, error) {
 	return ErrataTxVoter{}, kaboom
 }
+
+func (k KVStoreDummy) GetErrataTxVoterAtHeight(_ cosmos.Context, _ common.TxID, _ common.Chain, _ int64) (ErrataTxVoter, error) {
+	return ErrataTxVoter{}, kaboom
+}
 func (k KVStoreDummy) SetBanVoter(_ cosmos.Context, _ BanVoter) {}
 func (k KVStoreDummy) GetBanVoter(_ cosmos.Context, _ cosmos.AccAddress) (BanVoter, error) {
 	return BanVoter{}, kaboom

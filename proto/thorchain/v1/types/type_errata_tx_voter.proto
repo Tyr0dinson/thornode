@@ -17,4 +17,7 @@ message ErrataTxVoter {
                          "gitlab.com/thorchain/thornode/v3/common.Chain" ];
   int64 block_height = 3;
   repeated string signers = 4;
+  // ExternalHeight is the signed external-chain generation identity. It is
+  // distinct from block_height, which records THORChain consensus height.
+  int64 external_height = 5;
 }

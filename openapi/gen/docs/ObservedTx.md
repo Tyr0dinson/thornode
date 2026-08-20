@@ -17,7 +17,7 @@ Name | Type | Description | Notes
 **OutHashes** | Pointer to **[]string** |  | [optional] 
 **SpentOutputRefs** | Pointer to [**[]OutputRef**](OutputRef.md) | XMR outbound spent outputs and key images committed by observers. | [optional] 
 **XmrTxKey** | Pointer to **string** | XMR outbound tx private key used by third parties to verify recipient outputs. | [optional] 
-**XmrMinedHeight** | Pointer to **int64** | canonical external-chain height where the XMR transaction was mined, retained when the reported observation height is rewritten at finalization | [optional]
+**XmrMinedHeight** | Pointer to **int64** | canonical external-chain height where the XMR transaction was mined, retained when the reported observation height is rewritten at finalization | [optional] 
 **Status** | Pointer to **string** |  | [optional] 
 
 ## Methods
@@ -411,4 +411,5 @@ HasStatus returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
+
 

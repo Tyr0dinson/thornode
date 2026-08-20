@@ -60,6 +60,7 @@ var (
 	NewTssVoter                = types.NewTssVoter
 	NewBanVoter                = types.NewBanVoter
 	NewErrataTxVoter           = types.NewErrataTxVoter
+	NewErrataTxVoterAtHeight   = types.NewErrataTxVoterAtHeight
 	NewObservedTxVoter         = types.NewObservedTxVoter
 	NewKeygen                  = types.NewKeygen
 	NewKeygenBlock             = types.NewKeygenBlock

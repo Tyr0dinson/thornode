@@ -43,6 +43,18 @@ func (s CommonSuite) TestQuorumTxEqualsIncludesAllowFutureObservation(c *C) {
 	c.Assert(qtx.Equals(futureQtx), Equals, false)
 }
 
+func (s CommonSuite) TestErrataTxSignablePayloadIncludesCanonicalHeight(c *C) {
+	first := ErrataTx{Id: "same-tx", Chain: XMRChain, Height: 100}
+	second := ErrataTx{Id: first.Id, Chain: first.Chain, Height: 120}
+
+	firstPayload, err := first.GetSignablePayload()
+	c.Assert(err, IsNil)
+	secondPayload, err := second.GetSignablePayload()
+	c.Assert(err, IsNil)
+	c.Check(firstPayload, Not(DeepEquals), secondPayload)
+	c.Check(first.Equals(&second), Equals, false)
+}
+
 // TestObservedTxSignablePayloadFieldCoverage verifies that GetSignablePayload
 // covers exactly the fields we expect. For every field on ObservedTx, the test
 // either mutates it and asserts the payload changes (signature-covered) or

@@ -480,12 +480,25 @@ func applyCommittedXMRErrataToInboundConsensus(ctx cosmos.Context, k keeper.Keep
 	if voter == nil || voter.Reverted || voter.Tx.IsEmpty() || !voter.Tx.Tx.Chain.Equals(common.XMRChain) {
 		return nil
 	}
-	errataVoter, err := k.GetErrataTxVoter(ctx, voter.TxID, voter.Tx.Tx.Chain)
+	minedHeight, err := voter.Tx.CanonicalMinedHeight()
+	if err != nil {
+		return fmt.Errorf("resolve XMR inbound mined height for errata: %w", err)
+	}
+	errataVoter, err := k.GetErrataTxVoterAtHeight(ctx, voter.TxID, voter.Tx.Tx.Chain, minedHeight)
 	if err != nil {
 		return fmt.Errorf("fail to get errata voter for inbound %s: %w", voter.TxID, err)
 	}
 	if errataVoter.BlockHeight <= 0 {
-		return nil
+		// Preserve the conservative pre-height behavior for any legacy voter
+		// which survived the scheduled boundary. New XMR voters are keyed by
+		// canonical mined height and cannot cross generations.
+		errataVoter, err = k.GetErrataTxVoter(ctx, voter.TxID, voter.Tx.Tx.Chain)
+		if err != nil {
+			return fmt.Errorf("fail to get legacy errata voter for inbound %s: %w", voter.TxID, err)
+		}
+		if errataVoter.BlockHeight <= 0 {
+			return nil
+		}
 	}
 	voter.SetReverted()
 	k.SetObservedTxInVoter(ctx, *voter)

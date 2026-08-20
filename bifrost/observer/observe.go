@@ -537,7 +537,10 @@ func (o *Observer) handleErrataTxCommitted(errata common.ErrataTx) error {
 }
 
 func (o *Observer) quarantinePermanentErrata(tombstone errataTombstone) error {
-	errata := common.ErrataTx{Chain: tombstone.Chain, Id: tombstone.TxID}
+	errata := errataAttestationPayload(
+		types.ErrataTx{Chain: tombstone.Chain, TxID: tombstone.TxID},
+		tombstone.OrphanHeight,
+	)
 	if o.permanentErrataQuarantineFn != nil {
 		return o.permanentErrataQuarantineFn(errata, tombstone.OrphanHeight)
 	}
@@ -1457,10 +1460,10 @@ func (o *Observer) processLegacyErrataBlock(ctx context.Context, errataBlock typ
 
 	var broadcastErr error
 	for _, errataTx := range errataBlock.Txs {
-		if err := o.attestationGossip.AttestErrata(ctx, common.ErrataTx{
-			Chain: errataTx.Chain,
-			Id:    errataTx.TxID,
-		}); err != nil {
+		if err := o.attestationGossip.AttestErrata(
+			ctx,
+			errataAttestationPayload(errataTx, errataBlock.Height),
+		); err != nil {
 			if broadcastErr == nil {
 				broadcastErr = fmt.Errorf("failed to broadcast one-shot errata attestation for %s/%s: %w", errataTx.Chain, errataTx.TxID, err)
 			}
@@ -1474,6 +1477,16 @@ func (o *Observer) processLegacyErrataBlock(ctx context.Context, errataBlock typ
 		}
 	}
 	return broadcastErr
+}
+
+// errataAttestationPayload keeps existing chains on the legacy TxID-only wire
+// identity while XMR signs the canonical orphaned height as its generation.
+func errataAttestationPayload(tx types.ErrataTx, orphanHeight int64) common.ErrataTx {
+	errata := common.ErrataTx{Chain: tx.Chain, Id: tx.TxID}
+	if tx.Chain.Equals(common.XMRChain) {
+		errata.Height = orphanHeight
+	}
+	return errata
 }
 
 func ackErrataPersistence(block types.ErrataBlock, err error) {
@@ -1586,7 +1599,7 @@ func (o *Observer) broadcastErrataBlock(ctx context.Context, errataBlock types.E
 			o.attestationGossip.removeObservedTxsForErrata(common.ErrataTx{
 				Chain: errataTx.Chain,
 				Id:    errataTx.TxID,
-			}, errataBlock.Height)
+			}, record.Height)
 		}
 		if record.AttestationRetryExhausted {
 			if forceAttempt && broadcastErr == nil {
@@ -1597,7 +1610,11 @@ func (o *Observer) broadcastErrataBlock(ctx context.Context, errataBlock types.E
 		if record.FirstAttemptAtUnixNano != 0 {
 			firstAttempt := time.Unix(0, record.FirstAttemptAtUnixNano)
 			if !now.Before(firstAttempt.Add(errataAttestationRetryHorizon)) {
-				exhausted, exhaustErr := o.storage.MarkErrataAttestationRetryExhausted(errataTx, now)
+				exhausted, exhaustErr := o.storage.MarkErrataAttestationRetryExhausted(
+					errataTx,
+					record.Height,
+					now,
+				)
 				if exhaustErr != nil {
 					return exhaustErr
 				}
@@ -1624,17 +1641,18 @@ func (o *Observer) broadcastErrataBlock(ctx context.Context, errataBlock types.E
 			}
 		}
 
-		attempt, recorded, attemptErr := o.storage.RecordErrataAttestationAttempt(errataTx, now)
+		attempt, recorded, attemptErr := o.storage.RecordErrataAttestationAttempt(
+			errataTx,
+			record.Height,
+			now,
+		)
 		if attemptErr != nil {
 			return attemptErr
 		}
 		if !recorded {
 			continue
 		}
-		if err := o.attestErrata(ctx, common.ErrataTx{
-			Chain: errataTx.Chain,
-			Id:    errataTx.TxID,
-		}); err != nil {
+		if err := o.attestErrata(ctx, errataAttestationPayload(errataTx, record.Height)); err != nil {
 			if broadcastErr == nil {
 				broadcastErr = fmt.Errorf("failed to accept local errata attestation for %s/%s: %w", errataTx.Chain, errataTx.TxID, err)
 			}
@@ -1733,7 +1751,10 @@ func (o *Observer) reconcileCommittedXMRErrata() (int, error) {
 	unresolved := 0
 	reconcileErrors := make([]error, 0)
 	for _, tombstone := range pending {
-		errata := common.ErrataTx{Chain: tombstone.Chain, Id: tombstone.TxID}
+		errata := errataAttestationPayload(
+			types.ErrataTx{Chain: tombstone.Chain, TxID: tombstone.TxID},
+			tombstone.OrphanHeight,
+		)
 		if tombstone.VerifyAfterHeight == 0 && heightErr == nil {
 			verifyAfterHeight := currentHeight + 1
 			o.lock.Lock()

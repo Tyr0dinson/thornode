@@ -38,4 +38,9 @@ func (MsgErrataTxSuite) TestMsgErrataTxSuite(c *C) {
 	err3 := msg3.ValidateBasic()
 	c.Assert(err3, NotNil)
 	c.Assert(errors.Is(err3, se.ErrUnknownRequest), Equals, true)
+
+	msg4 := NewMsgErrataTx(txID, common.XMRChain, acc1)
+	err4 := msg4.ValidateBasic()
+	c.Assert(err4, NotNil)
+	c.Assert(errors.Is(err4, se.ErrUnknownRequest), Equals, true)
 }

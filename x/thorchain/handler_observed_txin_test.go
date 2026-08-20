@@ -70,6 +70,7 @@ func (s *HandlerObservedTxInSuite) TestCommittedXMRErrataIsAppliedWhenInboundLat
 	tx := NewObservedTx(GetRandomTx(), 10, GetRandomPubKey(), 10)
 	tx.Tx.Chain = common.XMRChain
 	tx.Tx.Coins = common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One)))
+	tx.XmrMinedHeight = 10
 
 	// Partial inbound state exists when the errata reaches consensus, so the
 	// errata handler cannot mark the selected transaction yet.
@@ -139,6 +140,7 @@ func (s *HandlerObservedTxInSuite) TestUncommittedOrForeignErrataDoesNotRevertXM
 		tx := NewObservedTx(GetRandomTx(), 10, GetRandomPubKey(), 10)
 		tx.Tx.Chain = common.XMRChain
 		tx.Tx.Coins = common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One)))
+		tx.XmrMinedHeight = 10
 		voter := NewObservedTxVoter(tx.Tx.ID, ObservedTxs{tx})
 		voter.Tx = tx
 		voter.Height = w.ctx.BlockHeight()
@@ -383,6 +385,7 @@ func (s *HandlerObservedTxInSuite) TestInactiveVaultReferenceRefundUsesResolvedA
 
 	tx := NewObservedTx(GetRandomTx(), 15, sourceVault.PubKey, 15)
 	tx.Tx.Chain = common.XMRChain
+	tx.XmrMinedHeight = 15
 	tx.Tx.Coins = common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(20000*common.One)))
 	tx.Tx.Gas = common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))}
 	tx.Tx.Memo = "r:40005"
@@ -465,6 +468,7 @@ func (s *HandlerObservedTxInSuite) TestHaltedReferenceRefundUsesResolvedAddress(
 
 	tx := NewObservedTx(GetRandomTx(), 15, sourceVault.PubKey, 15)
 	tx.Tx.Chain = common.XMRChain
+	tx.XmrMinedHeight = 15
 	tx.Tx.Coins = common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(20000*common.One)))
 	tx.Tx.Gas = common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))}
 	tx.Tx.Memo = "r:40007"
@@ -767,6 +771,10 @@ func (k *TestObservedTxInHandleKeeper) ListActiveValidators(_ cosmos.Context) (N
 
 func (k *TestObservedTxInHandleKeeper) GetErrataTxVoter(_ cosmos.Context, txID common.TxID, chain common.Chain) (ErrataTxVoter, error) {
 	return NewErrataTxVoter(txID, chain), nil
+}
+
+func (k *TestObservedTxInHandleKeeper) GetErrataTxVoterAtHeight(_ cosmos.Context, txID common.TxID, chain common.Chain, height int64) (ErrataTxVoter, error) {
+	return NewErrataTxVoterAtHeight(txID, chain, height), nil
 }
 
 func (k *TestObservedTxInHandleKeeper) GetObservedTxInVoter(_ cosmos.Context, _ common.TxID) (ObservedTxVoter, error) {
@@ -1301,6 +1309,7 @@ func (s *HandlerObservedTxInSuite) runXMRMigrateInbound(c *C, testCase xmrMigrat
 		ToAddress:   targetAddr,
 		Gas:         common.Gas{common.NewCoin(common.XMRAsset, testCase.observedGas)},
 	}, 13, targetPubKey, 13)
+	tx.XmrMinedHeight = 13
 
 	keeper := &TestObservedTxInHandleKeeper{
 		nas:         NodeAccounts{GetRandomValidatorNode(NodeActive)},

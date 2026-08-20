@@ -270,7 +270,7 @@ func (s *Solvency) Equals(other *Solvency) bool {
 }
 
 func (e *ErrataTx) IsValid() bool {
-	return e != nil
+	return e != nil && e.Height >= 0
 }
 
 // GetSignablePayload returns the data that is signed for verification
@@ -285,7 +285,7 @@ func (e *ErrataTx) Equals(other *ErrataTx) bool {
 	if e.Id != other.Id {
 		return false
 	}
-	return true
+	return e.Height == other.Height
 }
 
 func (pf *PriceFeed) Valid() error {

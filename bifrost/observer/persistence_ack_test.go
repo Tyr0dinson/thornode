@@ -929,7 +929,7 @@ func TestQuorumErrataCommitCompletesDurableOutbox(t *testing.T) {
 	}
 	gossip.SetObserverHandleErrataTxCommitted(observer)
 	quorumErrata := common.QuorumErrataTx{
-		ErrataTx: &common.ErrataTx{Chain: tx.Chain, Id: tx.TxID},
+		ErrataTx: &common.ErrataTx{Chain: tx.Chain, Id: tx.TxID, Height: 789},
 		Attestations: []*common.Attestation{{
 			PubKey: gossip.pubKey,
 		}},
@@ -953,7 +953,7 @@ func TestErrataAttestationRetryIsBackedOffAndTerminal(t *testing.T) {
 	require.NoError(t, storage.CompleteErrataCleanup([]types.ErrataTx{tx}, nil))
 
 	now := time.Unix(1_750_000_000, 0)
-	_, recorded, err := storage.RecordErrataAttestationAttempt(tx, now.Add(-errataAttestationRetryHorizon))
+	_, recorded, err := storage.RecordErrataAttestationAttempt(tx, block.Height, now.Add(-errataAttestationRetryHorizon))
 	require.NoError(t, err)
 	require.True(t, recorded)
 
