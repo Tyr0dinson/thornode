@@ -558,6 +558,7 @@ func (s *StableReserveMgr) stableReservePoolPrice(ctx cosmos.Context, asset comm
 	price := new(big.Rat).SetFrac(numerator, denominator)
 	return price.FloatString(18), true
 }
+
 func (s *StableReserveMgr) stableReserveDollarsPerRune(ctx cosmos.Context, asset common.Asset) cosmos.Uint {
 	dollarsPerRune, err := s.keeper.GetMimir(ctx, "DollarsPerRune")
 	if err == nil && dollarsPerRune > 0 {
