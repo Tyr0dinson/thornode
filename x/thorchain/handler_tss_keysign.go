@@ -194,6 +194,23 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 		"blame", strings.Join(violaters, ", "),
 	)
 
+	// Emit the keysign failure with round and blame granularity so off-chain
+	// consumers can track failures per vault, round and blamed node without
+	// decoding the tx. Blame.Round is already canonical — ValidateBasic
+	// rejects non-canonical round names.
+	keysignFailEvent := thortypes.NewEventTssKeysignFailure(
+		msg.Blame.FailReason,
+		msg.Blame.Round,
+		msg.Blame.IsUnicast,
+		msg.Height,
+		violaters,
+		msg.ID,
+		msg.PubKey,
+	)
+	if err := h.mgr.EventMgr().EmitEvent(ctx, keysignFailEvent); err != nil {
+		ctx.Logger().Error("fail to emit tss keysign failure event", "error", err)
+	}
+
 	telemetry.IncrCounterWithLabels(
 		[]string{"thornode", "tss", "keysign", "failure"},
 		float32(1),

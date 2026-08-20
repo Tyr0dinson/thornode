@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/blang/semver"
@@ -17,6 +18,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 type HandlerTssKeysignSuite struct{}
@@ -635,4 +637,93 @@ func (h HandlerTssKeysignSuite) TestTssKeysignFailHandler_frost_preprocess_does_
 		},
 	)
 	c.Assert(got.Frozen, HasLen, 0)
+}
+
+// TestTssKeysignFailHandler_emits_failure_event_on_consensus asserts the
+// tss_keysign_failure event fires exactly once — when the vault's signing
+// committee reaches simple-majority consensus, and not before — and carries
+// full round and blame granularity (canonical round name, blamed pubkeys,
+// failure id, vault pubkey, txout height) for off-chain failure detection.
+func (h HandlerTssKeysignSuite) TestTssKeysignFailHandler_emits_failure_event_on_consensus(c *C) {
+	cases := []struct {
+		name       string
+		round      string
+		emptyBlame bool
+	}{
+		{"interior ecdsa round with blame", tssMessages.KEYSIGN1aUnicast, false},
+		{"terminal ecdsa round with blame", tssMessages.KEYSIGN9, false},
+		{"eddsa round with blame", tssMessages.EDDSAKEYSIGN2, false},
+		{"frost round with empty blame", tssMessages.FROSTKEYSIGNPREPROCESS, true},
+	}
+	for _, tc := range cases {
+		c.Logf(">Name: %s", tc.name)
+		helper := newTssKeysignHandlerTestHelper(c)
+		handler := NewTssKeysignHandler(NewDummyMgrWithKeeper(helper.keeper))
+		coins := common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100))}
+
+		vault := NewVault(helper.ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+		accounts := NodeAccounts{}
+		for i := 0; i < 8; i++ {
+			na := GetRandomValidatorNode(NodeActive)
+			c.Assert(helper.keeper.SetNodeAccount(helper.ctx, na), IsNil)
+			vault.Membership = append(vault.Membership, na.PubKeySet.Secp256k1.String())
+			accounts = append(accounts, na)
+		}
+		c.Assert(helper.keeper.SetVault(helper.ctx, vault), IsNil)
+
+		blame := Blame{
+			FailReason: "tss timeout",
+			Round:      tc.round,
+			BlameNodes: []Node{{Pubkey: accounts[7].PubKeySet.Secp256k1.String()}},
+		}
+		if tc.emptyBlame {
+			blame.BlameNodes = []Node{}
+		}
+
+		failureEvents := func() []cosmos.Event {
+			found := []cosmos.Event{}
+			for _, e := range helper.ctx.EventManager().Events() {
+				if e.Type == types.TSSKeysignFailure {
+					found = append(found, e)
+				}
+			}
+			return found
+		}
+
+		// submit from 3 of 8 members — one short of the simple majority of 4
+		var msgID string
+		for i := 0; i < 3; i++ {
+			msg, err := NewMsgTssKeysignFail(helper.ctx.BlockHeight(), blame, "hello", coins, accounts[i].NodeAddress, vault.PubKey)
+			c.Assert(err, IsNil)
+			msgID = msg.ID
+			_, err = handler.Run(helper.ctx, msg)
+			c.Assert(err, IsNil)
+		}
+		c.Assert(failureEvents(), HasLen, 0, Commentf("%s: no event before consensus", tc.name))
+
+		// the 4th member report reaches consensus and must emit the event
+		msg, err := NewMsgTssKeysignFail(helper.ctx.BlockHeight(), blame, "hello", coins, accounts[3].NodeAddress, vault.PubKey)
+		c.Assert(err, IsNil)
+		c.Assert(msg.ID, Equals, msgID)
+		_, err = handler.Run(helper.ctx, msg)
+		c.Assert(err, IsNil)
+
+		evts := failureEvents()
+		c.Assert(evts, HasLen, 1, Commentf("%s: exactly one event on consensus", tc.name))
+		attrs := make(map[string]string)
+		for _, attr := range evts[0].Attributes {
+			attrs[attr.Key] = attr.Value
+		}
+		c.Assert(attrs["reason"], Equals, blame.FailReason)
+		c.Assert(attrs["round"], Equals, tc.round)
+		c.Assert(attrs["is_unicast"], Equals, "false")
+		c.Assert(attrs["height"], Equals, strconv.FormatInt(helper.ctx.BlockHeight(), 10))
+		c.Assert(attrs["id"], Equals, msg.ID)
+		c.Assert(attrs["pubkey"], Equals, vault.PubKey.String())
+		if tc.emptyBlame {
+			c.Assert(attrs["blame"], Equals, "")
+		} else {
+			c.Assert(attrs["blame"], Equals, accounts[7].PubKeySet.Secp256k1.String())
+		}
+	}
 }

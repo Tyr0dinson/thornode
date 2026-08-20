@@ -767,6 +767,17 @@
               "type": "message"
             },
             {
+              "blame": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
+              "height": "100",
+              "id": "9de8ffc4a9249e7e54666e1a507c81cb0f09ff42bc8f2304c3835cb18dae9e40",
+              "is_unicast": "false",
+              "msg_index": "0",
+              "pubkey": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
+              "reason": "yolo",
+              "round": "SignRound9Message",
+              "type": "tss_keysign_failure"
+            },
+            {
               "msg_index": "0",
               "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
               "reason": "fail keysign",
