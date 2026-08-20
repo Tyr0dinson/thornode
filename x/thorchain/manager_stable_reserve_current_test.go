@@ -711,11 +711,11 @@ func (s *StableReserveMgrSuite) TestFreeStableSwapOraclePricingNeverPaysOutMoreU
 }
 
 // scalePoolAsset multiplies a pool's asset balance, moving its RUNE-per-asset
-// price down by the same proportion. numer/denom = 2/1 halves the price.
-func scalePoolAsset(c *C, ctx cosmos.Context, mgr *Mgrs, asset common.Asset, numer, denom uint64) {
+// price down by the same proportion. numerator/denominator = 2/1 halves the price.
+func scalePoolAsset(c *C, ctx cosmos.Context, mgr *Mgrs, asset common.Asset, numerator, denominator uint64) {
 	pool, err := mgr.Keeper().GetPool(ctx, asset)
 	c.Assert(err, IsNil)
-	pool.BalanceAsset = pool.BalanceAsset.MulUint64(numer).QuoUint64(denom)
+	pool.BalanceAsset = pool.BalanceAsset.MulUint64(numerator).QuoUint64(denominator)
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 }
 
@@ -752,7 +752,9 @@ func (s *StableReserveMgrSuite) TestEligibilityRejectsChainDislocatedPool(c *C) 
 	c.Check(floor.IsZero(), Equals, true)
 
 	// ...nor a rescue target...
-	for _, t := range mgr.StableReserveManager().(*StableReserveMgr).healthyStableTargets(ctx) {
+	srMgr, isCurrent := mgr.StableReserveManager().(*StableReserveMgr)
+	c.Assert(isCurrent, Equals, true)
+	for _, t := range srMgr.healthyStableTargets(ctx) {
 		c.Check(t.Equals(avaxUSDC), Equals, false)
 	}
 
