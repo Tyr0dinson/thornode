@@ -736,7 +736,7 @@ func (s *MemoSuite) TestParse(c *C) {
 	c.Assert(err, NotNil)
 }
 
-func (s *MemoSuite) TestXECAddressPrefixCannotResolveAsTHORName(c *C) {
+func (s *MemoSuite) TestCashAddrPrefixResolutionIsChainAware(c *C) {
 	prefix := common.XECChain.AddressPrefix(common.CurrentChainNetwork)
 	prefixedAddress := "ecash:qzfuujzhpd2ugtp2lqt2a2aqdnlwzgj04cfrxuq9n3"
 	if common.CurrentChainNetwork == common.MockNet {
@@ -750,8 +750,10 @@ func (s *MemoSuite) TestXECAddressPrefixCannotResolveAsTHORName(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(resolved, Equals, xecAddress)
 
+	btcAddress := types.GetRandomBTCAddress()
 	s.k.SetTHORName(s.ctx, types.NewTHORName(prefix, 50, []types.THORNameAlias{
 		{Chain: common.XECChain, Address: xecAddress},
+		{Chain: common.BTCChain, Address: btcAddress},
 	}))
 
 	resolved, err = FetchAddress(s.ctx, s.k, prefix, common.XECChain)
@@ -762,10 +764,32 @@ func (s *MemoSuite) TestXECAddressPrefixCannotResolveAsTHORName(c *C) {
 	c.Check(err, ErrorMatches, ".*reserved XEC address prefix.*")
 	c.Check(resolved, Equals, common.NoAddress)
 
+	resolved, err = FetchAddress(s.ctx, s.k, prefix, common.BTCChain)
+	c.Assert(err, IsNil)
+	c.Check(resolved, Equals, btcAddress)
+
+	resolved, err = FetchAddress(s.ctx, s.k, prefix+".BTC", common.XECChain)
+	c.Assert(err, IsNil)
+	c.Check(resolved, Equals, btcAddress)
+
 	// The official prefixed CashAddr form is still accepted outside memos, but
 	// its ':' separator makes it invalid inside the colon-delimited grammar.
 	_, err = ParseMemoWithTHORNames(s.ctx, s.k, "+:XEC.XEC:"+prefixedAddress)
 	c.Check(err, ErrorMatches, "(?s).*reserved XEC address prefix.*")
+
+	bchAddress := types.GetRandomBCHAddress()
+	for _, bchPrefix := range common.CashAddrPrefixes(common.BCHChain, common.CurrentChainNetwork) {
+		s.k.SetTHORName(s.ctx, types.NewTHORName(bchPrefix, 50, []types.THORNameAlias{
+			{Chain: common.BCHChain, Address: bchAddress},
+		}))
+
+		resolved, err = FetchAddress(s.ctx, s.k, bchPrefix, common.BCHChain)
+		c.Check(err, ErrorMatches, ".*reserved BCH address prefix.*")
+		c.Check(resolved, Equals, common.NoAddress)
+
+		_, err = ParseMemoWithTHORNames(s.ctx, s.k, "+:BCH.BCH:"+bchPrefix+":"+bchAddress.String())
+		c.Check(err, ErrorMatches, "(?s).*reserved BCH address prefix.*")
+	}
 }
 
 func (s *MemoSuite) TestParseTHORNameMemo(c *C) {

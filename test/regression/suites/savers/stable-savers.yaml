@@ -131,7 +131,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
 asserts:
-  # Secured assets are native to THORChain and retain its full 8-decimal precision.
+  # The ETH/USDC synth is native to THORChain and retains its full 8-decimal precision.
   - .supply[]|select(.denom == "eth/usdc-0x9999999999999999999999999999999999999999")|.amount|tonumber == 990250401
 ---
 type: check

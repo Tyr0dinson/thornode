@@ -3,6 +3,7 @@ package common
 import (
 	"github.com/btcsuite/btcd/chaincfg"
 	dogchaincfg "github.com/eager7/dogd/chaincfg"
+	bchchaincfg "github.com/gcash/bchd/chaincfg"
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	. "gopkg.in/check.v1"
@@ -11,6 +12,20 @@ import (
 type ChainSuite struct{}
 
 var _ = Suite(&ChainSuite{})
+
+func (s ChainSuite) TestCashAddrPrefixes(c *C) {
+	c.Check(CashAddrPrefixes(XECChain, MainNet), DeepEquals, []string{"ecash"})
+	c.Check(CashAddrPrefixes(XECChain, TestNet), DeepEquals, []string{"ectest"})
+	c.Check(CashAddrPrefixes(XECChain, MockNet), DeepEquals, []string{"ecregtest"})
+	c.Check(CashAddrPrefixes(BCHChain, MainNet), DeepEquals, []string{
+		bchchaincfg.MainNetParams.CashAddressPrefix,
+	})
+	c.Check(CashAddrPrefixes(BCHChain, MockNet), DeepEquals, []string{
+		bchchaincfg.TestNet3Params.CashAddressPrefix,
+		bchchaincfg.RegressionNetParams.CashAddressPrefix,
+	})
+	c.Check(CashAddrPrefixes(BTCChain, MainNet), HasLen, 0)
+}
 
 func (s ChainSuite) TestChain(c *C) {
 	ethChain, err := NewChain("eth")

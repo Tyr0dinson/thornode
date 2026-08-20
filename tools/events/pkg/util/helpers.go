@@ -98,14 +98,19 @@ func FormatLocale[T int | uint | int64 | uint64 | float64](n T) string {
 		n = -n
 	}
 
-	// extract decimals from float
+	// Extract decimals from floats without formatting the integer portion in
+	// scientific notation. FormatFloat also avoids narrowing large values to
+	// int64 before formatting them for display.
+	var s string
 	var decimals string
 	if x, ok := any(n).(float64); ok {
-		n = T(int64(x))
-		decimals = fmt.Sprintf("%.8f", x)[len(fmt.Sprintf("%v", n)):]
+		formatted := strconv.FormatFloat(x, 'f', 8, 64)
+		s, decimals, _ = strings.Cut(formatted, ".")
+		decimals = "." + decimals
+	} else {
+		s = fmt.Sprintf("%v", n)
 	}
 
-	s := fmt.Sprintf("%v", n)
 	if len(s) <= 3 {
 		if negative {
 			return "-" + s + decimals
@@ -165,7 +170,6 @@ func Moneybags(usdValue uint64) string {
 func RuneValue(height int64, coin common.Coin) float64 {
 	if coin.IsRune() {
 		return AmountToFloat64(coin.Amount)
-
 	}
 
 	if coin.Asset.Equals(common.TOR) {
