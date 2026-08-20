@@ -933,6 +933,7 @@ func TestQuorumErrataCommitCompletesDurableOutbox(t *testing.T) {
 		Attestations: []*common.Attestation{{
 			PubKey: gossip.pubKey,
 		}},
+		Outcome: common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION,
 	}
 	payload, err := quorumErrata.Marshal()
 	require.NoError(t, err)
@@ -941,6 +942,12 @@ func TestQuorumErrataCommitCompletesDurableOutbox(t *testing.T) {
 	pending, err := storage.GetPendingErrata()
 	require.NoError(t, err)
 	assert.Empty(t, pending)
+	tombstone, err := storage.getErrataTombstone(tx.Chain, tx.TxID.String())
+	require.NoError(t, err)
+	require.NotNil(t, tombstone)
+	require.Equal(t, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION, tombstone.Outcome)
+	require.NotNil(t, tombstone.VoterReverted)
+	require.False(t, *tombstone.VoterReverted)
 }
 
 func TestErrataAttestationRetryIsBackedOffAndTerminal(t *testing.T) {

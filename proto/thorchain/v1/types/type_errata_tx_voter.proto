@@ -7,6 +7,7 @@ option (gogoproto.stringer_all) = false;
 option (gogoproto.goproto_getters_all) = false;
 
 import "gogoproto/gogo.proto";
+import "common/common.proto";
 
 message ErrataTxVoter {
   string tx_id = 1 [
@@ -20,4 +21,7 @@ message ErrataTxVoter {
   // ExternalHeight is the signed external-chain generation identity. It is
   // distinct from block_height, which records THORChain consensus height.
   int64 external_height = 5;
+  // Outcome is set exactly once when an XMR errata voter reaches a terminal
+  // handler path. Zero is retained for legacy and pre-consensus voters.
+  common.ErrataTxOutcome outcome = 6;
 }

@@ -188,7 +188,7 @@ type AttestationGossip struct {
 	avMu       sync.Mutex
 
 	observerHandleObservedTxCommitted  func(tx common.ObservedTx, allowFutureObservation bool)
-	observerHandleErrataTxCommitted    func(errata common.ErrataTx) error
+	observerHandleErrataTxCommitted    func(errata common.ErrataTx, outcome common.ErrataTxOutcome) error
 	observerApplySpentOutputRefs       func(tx common.ObservedTx, onOutcome func(applied bool))
 	observerApplySpentRefsWithWireMemo func(tx common.ObservedTx, wireMemo string, onOutcome func(applied bool))
 	observerApplySpentRefsGuarded      func(tx common.ObservedTx, wireMemo string, guard func() (func(), bool), onOutcome func(applied bool))
@@ -390,7 +390,7 @@ func (s *AttestationGossip) SetObserverHandleObservedTxCommitted(o *Observer) {
 }
 
 func (s *AttestationGossip) SetObserverHandleErrataTxCommitted(o *Observer) {
-	s.observerHandleErrataTxCommitted = o.handleErrataTxCommitted
+	s.observerHandleErrataTxCommitted = o.handleErrataTxCommittedOutcome
 }
 
 // SetObserverStorage wires the durable XMR errata admission barrier before the
@@ -751,7 +751,7 @@ func (s *AttestationGossip) handleQuorumErrataTxCommitted(en *ebifrost.EventNoti
 		}
 	}
 	if localAttestationCommitted && s.observerHandleErrataTxCommitted != nil {
-		if err := s.observerHandleErrataTxCommitted(*qe.ErrataTx); err != nil {
+		if err := s.observerHandleErrataTxCommitted(*qe.ErrataTx, qe.Outcome); err != nil {
 			s.logger.Error().Err(err).
 				Str("chain", qe.ErrataTx.Chain.String()).
 				Str("txid", qe.ErrataTx.Id.String()).

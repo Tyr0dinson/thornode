@@ -905,12 +905,16 @@ func TestXMRCommittedErrataQuarantineFailureRetriesOutcomeAfterRestart(t *testin
 	}
 	injected := errors.New("injected XMR quarantine failure")
 	observer.permanentErrataQuarantineFn = func(common.ErrataTx, int64) error { return injected }
-	require.NoError(t, observer.handleErrataTxCommitted(errata))
+	require.NoError(t, observer.handleErrataTxCommittedOutcome(
+		errata,
+		common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED,
+	))
 
 	tombstone, err := storage.getErrataTombstone(errata.Chain, errata.Id.String())
 	require.NoError(t, err)
 	require.NotNil(t, tombstone)
 	require.True(t, tombstone.Committed, "DeliverTx receipt must stop duplicate errata votes")
+	require.Equal(t, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED, tombstone.Outcome)
 	require.Nil(t, tombstone.VoterReverted, "failed local quarantine must leave outcome retryable")
 	pending, err := storage.getPendingErrata()
 	require.NoError(t, err)
@@ -919,16 +923,11 @@ func TestXMRCommittedErrataQuarantineFailureRetriesOutcomeAfterRestart(t *testin
 	// A fresh Observer must not replay unresolved state as permanent. It retries
 	// the explicit voter outcome and performs the idempotent local quarantine.
 	restarted := &Observer{
-		logger:  log.Logger,
-		storage: storage,
-		onDeck:  make(map[txInKey]*types.TxIn),
-		lock:    &sync.Mutex{},
-		thorchainBridge: &MockThorchainBridge{
-			getBlockHeightFunc: func() (int64, error) { return 1_000, nil },
-			getObservedTxVoterFunc: func(txID string) (*stypes.QueryObservedTxVoter, error) {
-				return &stypes.QueryObservedTxVoter{TxID: common.TxID(txID), Reverted: true}, nil
-			},
-		},
+		logger:          log.Logger,
+		storage:         storage,
+		onDeck:          make(map[txInKey]*types.TxIn),
+		lock:            &sync.Mutex{},
+		thorchainBridge: &MockThorchainBridge{},
 	}
 	replayed := 0
 	restarted.permanentErrataQuarantineFn = func(got common.ErrataTx, height int64) error {
@@ -948,6 +947,55 @@ func TestXMRCommittedErrataQuarantineFailureRetriesOutcomeAfterRestart(t *testin
 	require.True(t, tombstone.Committed)
 	require.NotNil(t, tombstone.VoterReverted)
 	require.True(t, *tombstone.VoterReverted)
+	require.True(t, tombstone.blocksMinedHeight(10_000), "reverted remains a TxID-wide terminal")
+
+	err = restarted.handleErrataTxCommittedOutcome(
+		errata,
+		common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION,
+	)
+	require.ErrorContains(t, err, "conflicts")
+	tombstone, err = storage.getErrataTombstone(errata.Chain, errata.Id.String())
+	require.NoError(t, err)
+	require.Equal(t, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED, tombstone.Outcome)
+	require.NotNil(t, tombstone.VoterReverted)
+	require.True(t, *tombstone.VoterReverted)
+}
+
+func TestXMRNoApplicableObservationOutcomeIsTerminalAcrossRestart(t *testing.T) {
+	observer, storage := newErrataOrderingObserver(t)
+	errata := common.ErrataTx{
+		Chain:  common.XMRChain,
+		Id:     common.TxID("bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc"),
+		Height: 321,
+	}
+	require.NoError(t, observer.filterErrataTx(types.ErrataBlock{
+		Height: 321,
+		Txs:    []types.ErrataTx{{Chain: errata.Chain, TxID: errata.Id}},
+	}))
+
+	require.NoError(t, observer.handleErrataTxCommittedOutcome(
+		errata,
+		common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION,
+	))
+	tombstone, err := storage.getErrataTombstone(errata.Chain, errata.Id.String())
+	require.NoError(t, err)
+	require.NotNil(t, tombstone)
+	require.True(t, tombstone.Committed)
+	require.Equal(t, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION, tombstone.Outcome)
+	require.NotNil(t, tombstone.VoterReverted)
+	require.False(t, *tombstone.VoterReverted)
+	require.True(t, tombstone.blocksMinedHeight(321))
+	require.False(t, tombstone.blocksMinedHeight(322))
+
+	restarted := &Observer{
+		logger:  log.Logger,
+		storage: storage,
+		onDeck:  make(map[txInKey]*types.TxIn),
+		lock:    &sync.Mutex{},
+	}
+	unresolved, err := restarted.reconcileCommittedXMRErrata()
+	require.NoError(t, err)
+	require.Zero(t, unresolved)
 }
 
 func TestXMRCommittedErrataVoterQueryFailureRetainsOutcomeRetry(t *testing.T) {

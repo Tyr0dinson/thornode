@@ -499,7 +499,7 @@ func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx(c *C) {
 	}
 	k := mgr.Keeper()
 	eventMgr := mgr.EventMgr()
-	err := processErrataOutboundTx(ctx, k, eventMgr, er)
+	_, err := processErrataOutboundTx(ctx, k, eventMgr, er)
 	c.Assert(err, NotNil)
 
 	observedPubKey := GetRandomPubKey()
@@ -519,7 +519,7 @@ func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx(c *C) {
 	txOutVoter := NewObservedTxVoter(txID, observedTx)
 	helper.Keeper.SetObservedTxOutVoter(ctx, txOutVoter)
 	// Tx is empty , it should fail
-	err = processErrataOutboundTx(ctx, k, eventMgr, er)
+	_, err = processErrataOutboundTx(ctx, k, eventMgr, er)
 	c.Assert(err, NotNil)
 	txOutVoter.Add(observedTx[0], node2.NodeAddress)
 	txOutVoter.Add(observedTx[0], node3.NodeAddress)
@@ -533,14 +533,14 @@ func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx(c *C) {
 	helper.Keeper.SetObservedTxOutVoter(ctx, txOutVoter)
 
 	// not outbound tx , it should fail
-	err = processErrataOutboundTx(ctx, k, eventMgr, er)
+	_, err = processErrataOutboundTx(ctx, k, eventMgr, er)
 	c.Assert(err, NotNil)
 
 	// fail to get vault
 	txInID := GetRandomTxHash()
 	txOutVoter.Tx.Tx.Memo = "OUT:" + txInID.String()
 	helper.Keeper.SetObservedTxOutVoter(ctx, txOutVoter)
-	err = processErrataOutboundTx(ctx, k, eventMgr, er)
+	_, err = processErrataOutboundTx(ctx, k, eventMgr, er)
 	c.Assert(err, NotNil)
 
 	// Active Asgard vault, TxInVoter not exist
@@ -550,14 +550,14 @@ func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx(c *C) {
 		common.ETHChain.String(),
 	}, []ChainContract{})
 	c.Assert(helper.Keeper.SetVault(ctx, asgardVault), IsNil)
-	err = processErrataOutboundTx(ctx, k, eventMgr, er)
+	_, err = processErrataOutboundTx(ctx, k, eventMgr, er)
 	c.Assert(err, IsNil)
 
 	// inactive vault - funds are credited but vault stays InactiveVault
 	// (no resurrection to RetiringVault to avoid side effects)
 	asgardVault.UpdateStatus(types.VaultStatus_InactiveVault, 1024)
 	c.Assert(helper.Keeper.SetVault(ctx, asgardVault), IsNil)
-	err = processErrataOutboundTx(ctx, k, eventMgr, er)
+	_, err = processErrataOutboundTx(ctx, k, eventMgr, er)
 	c.Assert(err, IsNil)
 	// vault should remain inactive (recovery via migration)
 	v, err := helper.Keeper.GetVault(ctx, asgardVault.PubKey)
@@ -571,7 +571,7 @@ func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx(c *C) {
 	pool.BalanceRune = cosmos.NewUint(1024 * common.One)
 	pool.Status = PoolAvailable
 	c.Assert(helper.Keeper.SetPool(ctx, pool), IsNil)
-	err = processErrataOutboundTx(ctx, k, eventMgr, er)
+	_, err = processErrataOutboundTx(ctx, k, eventMgr, er)
 	c.Assert(err, IsNil)
 
 	txInbound := common.NewTx(txInID, GetRandomLTCAddress(), GetRandomLTCAddress(),
@@ -607,7 +607,7 @@ func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx(c *C) {
 	// clear events
 	ctx = ctx.WithEventManager(cosmos.NewEventManager())
 
-	err = processErrataOutboundTx(ctx, k, eventMgr, er)
+	_, err = processErrataOutboundTx(ctx, k, eventMgr, er)
 	c.Assert(err, IsNil)
 	txOut, err := helper.Keeper.GetTxOut(ctx, ctx.BlockHeight())
 	c.Assert(err, IsNil)
@@ -710,7 +710,7 @@ func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx_EnsureFundsAreCreditedT
 	txInVoter.Tx = *finalisedTx
 	helper.Keeper.SetObservedTxInVoter(ctx, txInVoter)
 
-	err := processErrataOutboundTx(ctx, k, eventMgr, internalErrata)
+	_, err := processErrataOutboundTx(ctx, k, eventMgr, internalErrata)
 	c.Assert(err, IsNil)
 	v, err := helper.Keeper.GetVault(ctx, retiredPubKey)
 	c.Assert(err, IsNil)
@@ -738,6 +738,50 @@ func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx_EnsureFundsAreCreditedT
 	c.Assert(v.HasFunds(), Equals, true)
 	ltcCoin = v.GetCoin(common.LTCAsset)
 	c.Assert(ltcCoin.Equals(common.NewCoin(common.LTCAsset, cosmos.NewUint(102400000))), Equals, true)
+}
+
+func (*HandlerErrataTxSuite) TestProcessXMRErrataOutboundTxOutcome(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	txID := GetRandomTxHash()
+	observedPubKey := GetRandomPubKey()
+	tx := common.NewTx(
+		txID,
+		GetRandomLTCAddress(),
+		GetRandomLTCAddress(),
+		common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One))),
+		common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+		"OUT:"+GetRandomTxHash().String(),
+	)
+	observed := NewObservedTx(tx, 200, observedPubKey, 200)
+	observed.XmrMinedHeight = 200
+	voter := NewObservedTxVoter(txID, ObservedTxs{observed})
+	voter.Tx = observed
+	mgr.Keeper().SetObservedTxOutVoter(ctx, voter)
+	vault := NewVault(
+		1,
+		ActiveVault,
+		AsgardVault,
+		observedPubKey,
+		common.Chains{common.XMRChain}.Strings(),
+		nil,
+	)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	errata := &common.ErrataTx{Id: txID, Chain: common.XMRChain, Height: 201}
+	outcome, err := processErrataOutboundTx(ctx, mgr.Keeper(), mgr.EventMgr(), errata)
+	c.Assert(err, IsNil)
+	c.Check(outcome, Equals, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION)
+	stored, err := mgr.Keeper().GetObservedTxOutVoter(ctx, txID)
+	c.Assert(err, IsNil)
+	c.Check(stored.Reverted, Equals, false)
+
+	errata.Height = 200
+	outcome, err = processErrataOutboundTx(ctx, mgr.Keeper(), mgr.EventMgr(), errata)
+	c.Assert(err, IsNil)
+	c.Check(outcome, Equals, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED)
+	stored, err = mgr.Keeper().GetObservedTxOutVoter(ctx, txID)
+	c.Assert(err, IsNil)
+	c.Check(stored.Reverted, Equals, true)
 }
 
 func (s *HandlerErrataTxSuite) TestObservingSlashing(c *C) {

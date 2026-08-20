@@ -209,6 +209,23 @@ message ErrataTx {
   int64 height = 3;
 }
 
+// ErrataTxOutcome is the deterministic result of processing an XMR errata
+// voter after it reaches consensus. UNSPECIFIED means the voter has not
+// reached a terminal handler path yet (or predates this field).
+enum ErrataTxOutcome {
+  // The voter has no terminal result yet, or was stored by legacy code which
+  // did not record one.
+  ERRATA_TX_OUTCOME_UNSPECIFIED = 0;
+  // The matching observed inbound or outbound was marked Reverted, or was
+  // already in that monotonic terminal state.
+  ERRATA_TX_OUTCOME_REVERTED = 1;
+  // Errata quorum processing completed without reverting an observation
+  // because none was applicable to this chain and external-height generation
+  // at that time. This records the handler result, not a promise that a later
+  // observation can never become reverted.
+  ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION = 2;
+}
+
 message AttestErrataTx {
   option (gogoproto.stringer) = true;
 
@@ -221,6 +238,9 @@ message QuorumErrataTx {
 
   ErrataTx errata_tx = 1;
   repeated Attestation attestations = 2;
+  // Set by THORNode after processing. It is not part of the signed ErrataTx
+  // payload and lets Bifrost finish committed XMR no-op generations.
+  ErrataTxOutcome outcome = 3;
 }
 
 message PriceFeed {

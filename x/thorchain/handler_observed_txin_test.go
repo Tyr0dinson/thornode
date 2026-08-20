@@ -126,6 +126,68 @@ func (s *HandlerObservedTxInSuite) TestCommittedXMRErrataIsAppliedWhenInboundLat
 	c.Check(stored.Reverted, Equals, true)
 }
 
+// TestHeightScopedCommittedXMRErrataIsAppliedWhenInboundLaterReachesQuorum
+// covers the post-6A ordering where the exact-height errata handler completes
+// before an inbound transaction is selected. NO_APPLICABLE_OBSERVATION describes
+// that handler invocation; it does not prevent the later inbound quorum from
+// applying the already-committed errata before accounting.
+func (s *HandlerObservedTxInSuite) TestHeightScopedCommittedXMRErrataIsAppliedWhenInboundLaterReachesQuorum(c *C) {
+	w := getHandlerTestWrapper(c, 20, true, false)
+	tx := NewObservedTx(GetRandomTx(), 10, GetRandomPubKey(), 10)
+	tx.Tx.Chain = common.XMRChain
+	tx.Tx.Coins = common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One)))
+	tx.XmrMinedHeight = 10
+
+	voter := NewObservedTxVoter(tx.Tx.ID, ObservedTxs{tx})
+	w.keeper.SetObservedTxInVoter(w.ctx, voter)
+	errataVoter := NewErrataTxVoterAtHeight(tx.Tx.ID, common.XMRChain, 10)
+	err := processErrataTxAttestation(
+		w.ctx,
+		w.mgr,
+		&errataVoter,
+		w.activeNodeAccount.NodeAddress,
+		NodeAccounts{w.activeNodeAccount},
+		&common.ErrataTx{Id: tx.Tx.ID, Chain: common.XMRChain, Height: 10},
+		true,
+	)
+	c.Assert(err, IsNil)
+	c.Check(errataVoter.BlockHeight, Equals, w.ctx.BlockHeight())
+	c.Check(errataVoter.Outcome, Equals, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION)
+	w.keeper.SetErrataTxVoter(w.ctx, errataVoter)
+
+	// Model processTxInAttestation selecting the same mined generation when its
+	// independently collected observations reach quorum later.
+	voter.Tx = tx
+	voter.Height = w.ctx.BlockHeight()
+	voter.FinalisedHeight = w.ctx.BlockHeight()
+	w.keeper.SetObservedTxInVoter(w.ctx, voter)
+
+	err = handleObservedTxInQuorum(
+		w.ctx,
+		w.mgr,
+		w.activeNodeAccount.NodeAddress,
+		NodeAccounts{w.activeNodeAccount},
+		nil,
+		tx,
+		voter,
+		nil,
+		true,
+	)
+	c.Assert(err, IsNil)
+
+	stored, err := w.keeper.GetObservedTxInVoter(w.ctx, tx.Tx.ID)
+	c.Assert(err, IsNil)
+	c.Check(stored.Reverted, Equals, true)
+	c.Check(stored.UpdatedVault, Equals, false)
+	c.Assert(stored.Actions, HasLen, 0)
+
+	// Outcome remains the point-in-time result of the errata handler. The
+	// ObservedTxInVoter is the authoritative, monotonic accounting guard.
+	storedErrata, err := w.keeper.GetErrataTxVoterAtHeight(w.ctx, tx.Tx.ID, common.XMRChain, 10)
+	c.Assert(err, IsNil)
+	c.Check(storedErrata.Outcome, Equals, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION)
+}
+
 func (s *HandlerObservedTxInSuite) TestUncommittedOrForeignErrataDoesNotRevertXMRInbound(c *C) {
 	for _, tc := range []struct {
 		name   string

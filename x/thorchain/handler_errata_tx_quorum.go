@@ -3,6 +3,7 @@ package thorchain
 import (
 	"fmt"
 
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -47,6 +48,9 @@ func (h ErrataTxQuorumHandler) handle(ctx cosmos.Context, msg types.MsgErrataTxQ
 	}
 
 	er := msg.QuoErrata.ErrataTx
+	// Outcome is produced by THORNode, never accepted from the submitting
+	// Bifrost. Reset it before processing in case a caller supplied a value.
+	msg.QuoErrata.Outcome = common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED
 
 	voter, err := h.mgr.Keeper().GetErrataTxVoterAtHeight(ctx, er.Id, er.Chain, er.Height)
 	if err != nil {
@@ -75,6 +79,7 @@ func (h ErrataTxQuorumHandler) handle(ctx cosmos.Context, msg types.MsgErrataTxQ
 			return nil, fmt.Errorf("fail to process errata tx attestation: %w", err)
 		}
 	}
+	msg.QuoErrata.Outcome = voter.Outcome
 
 	return &cosmos.Result{}, nil
 }

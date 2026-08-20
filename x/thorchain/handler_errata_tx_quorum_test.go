@@ -448,7 +448,7 @@ func (s *HandlerErrataTxQuorumSuite) TestRepeatedXMRErrataUsesCanonicalHeightGen
 	txID := GetRandomTxHash()
 
 	// Generation 1 reaches errata consensus before the original observation
-	// has selected a transaction, so it commits as an economic no-op.
+	// has selected a transaction, so it completes without a reversal.
 	partial := NewObservedTx(GetRandomTx(), 100, GetRandomPubKey(), 100)
 	partial.Tx.ID = txID
 	partial.Tx.Chain = common.XMRChain
@@ -460,6 +460,7 @@ func (s *HandlerErrataTxQuorumSuite) TestRepeatedXMRErrataUsesCanonicalHeightGen
 	firstMsg := types.NewMsgErrataTxQuorum(&common.QuorumErrataTx{
 		ErrataTx:     first,
 		Attestations: []*common.Attestation{attestErrataTx(c, privKey, first)},
+		Outcome:      common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED,
 	}, na.NodeAddress)
 	result, err := handler.Run(ctx, firstMsg)
 	c.Assert(err, IsNil)
@@ -468,6 +469,8 @@ func (s *HandlerErrataTxQuorumSuite) TestRepeatedXMRErrataUsesCanonicalHeightGen
 	firstVoter, err := mgr.Keeper().GetErrataTxVoterAtHeight(ctx, txID, common.XMRChain, 100)
 	c.Assert(err, IsNil)
 	c.Check(firstVoter.BlockHeight, Equals, ctx.BlockHeight())
+	c.Check(firstVoter.Outcome, Equals, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION)
+	c.Check(firstMsg.QuoErrata.Outcome, Equals, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION)
 	stored, err := mgr.Keeper().GetObservedTxInVoter(ctx, txID)
 	c.Assert(err, IsNil)
 	c.Check(stored.Reverted, Equals, false)
@@ -496,8 +499,61 @@ func (s *HandlerErrataTxQuorumSuite) TestRepeatedXMRErrataUsesCanonicalHeightGen
 	secondVoter, err := mgr.Keeper().GetErrataTxVoterAtHeight(ctx, txID, common.XMRChain, 120)
 	c.Assert(err, IsNil)
 	c.Check(secondVoter.BlockHeight, Equals, ctx.BlockHeight())
+	c.Check(secondVoter.Outcome, Equals, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED)
+	c.Check(secondMsg.QuoErrata.Outcome, Equals, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED)
 	c.Check(secondVoter.String() == firstVoter.String(), Equals, false)
 	stored, err = mgr.Keeper().GetObservedTxInVoter(ctx, txID)
+	c.Assert(err, IsNil)
+	c.Check(stored.Reverted, Equals, true)
+}
+
+func (s *HandlerErrataTxQuorumSuite) TestXMRErrataChainMismatchHasNoApplicableObservation(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	handler := NewErrataTxQuorumHandler(mgr)
+	na, privKey := nodeWithPrivKey(c, mgr.Keeper(), ctx)
+	observed := GetRandomObservedTx()
+	observed.Tx.Chain = common.ETHChain
+	voter := NewObservedTxVoter(observed.Tx.ID, ObservedTxs{observed})
+	voter.Tx = observed
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
+	errata := &common.ErrataTx{Id: observed.Tx.ID, Chain: common.XMRChain, Height: 100}
+	msg := types.NewMsgErrataTxQuorum(&common.QuorumErrataTx{
+		ErrataTx:     errata,
+		Attestations: []*common.Attestation{attestErrataTx(c, privKey, errata)},
+	}, na.NodeAddress)
+	result, err := handler.Run(ctx, msg)
+	c.Assert(err, IsNil)
+	c.Assert(result, NotNil)
+	c.Check(msg.QuoErrata.Outcome, Equals, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION)
+	stored, err := mgr.Keeper().GetObservedTxInVoter(ctx, observed.Tx.ID)
+	c.Assert(err, IsNil)
+	c.Check(stored.Reverted, Equals, false)
+}
+
+func (s *HandlerErrataTxQuorumSuite) TestXMRErrataUnfinalizedInboundIsTerminalReverted(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	handler := NewErrataTxQuorumHandler(mgr)
+	na, privKey := nodeWithPrivKey(c, mgr.Keeper(), ctx)
+	observed := GetRandomObservedTx()
+	observed.Tx.Chain = common.XMRChain
+	observed.BlockHeight = 100
+	observed.XmrMinedHeight = 100
+	observed.FinaliseHeight = ctx.BlockHeight() + 100
+	voter := NewObservedTxVoter(observed.Tx.ID, ObservedTxs{observed})
+	voter.Tx = observed
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
+	errata := &common.ErrataTx{Id: observed.Tx.ID, Chain: common.XMRChain, Height: 100}
+	msg := types.NewMsgErrataTxQuorum(&common.QuorumErrataTx{
+		ErrataTx:     errata,
+		Attestations: []*common.Attestation{attestErrataTx(c, privKey, errata)},
+	}, na.NodeAddress)
+	result, err := handler.Run(ctx, msg)
+	c.Assert(err, IsNil)
+	c.Assert(result, NotNil)
+	c.Check(msg.QuoErrata.Outcome, Equals, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED)
+	stored, err := mgr.Keeper().GetObservedTxInVoter(ctx, observed.Tx.ID)
 	c.Assert(err, IsNil)
 	c.Check(stored.Reverted, Equals, true)
 }

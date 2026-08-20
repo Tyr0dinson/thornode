@@ -79,20 +79,31 @@ func processErrataTxAttestation(
 	if er.Chain.Equals(common.XMRChain) && observedVoter.Reverted {
 		// Reverted is a monotonic TxID-wide terminal. A later height-specific
 		// errata voter must never apply the same economic reversal twice.
+		voter.Outcome = common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED
 		return nil
 	}
 
 	if len(observedVoter.Txs) == 0 {
-		return processErrataOutboundTx(ctx, k, eventMgr, er)
+		outcome, processErr := processErrataOutboundTx(ctx, k, eventMgr, er)
+		if processErr == nil && er.Chain.Equals(common.XMRChain) {
+			voter.Outcome = outcome
+		}
+		return processErr
 	}
 	if observedVoter.Tx.IsEmpty() {
 		ctx.Logger().Info("tx has not reach consensus yet, so nothing need to be done", "tx_id", er.Id)
+		if er.Chain.Equals(common.XMRChain) {
+			voter.Outcome = common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION
+		}
 		return nil
 	}
 
 	tx := observedVoter.Tx.Tx
 	if !tx.Chain.Equals(er.Chain) {
 		// does not match chain
+		if er.Chain.Equals(common.XMRChain) {
+			voter.Outcome = common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION
+		}
 		return nil
 	}
 	if er.Chain.Equals(common.XMRChain) && er.Height > 0 {
@@ -102,7 +113,8 @@ func processErrataTxAttestation(
 		}
 		if minedHeight != er.Height {
 			// This vote belongs to another canonical mining generation. It may
-			// complete its own no-op voter, but cannot mutate the current remine.
+			// complete without a reversal, but cannot mutate the current remine.
+			voter.Outcome = common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION
 			return nil
 		}
 	}
@@ -110,6 +122,9 @@ func processErrataTxAttestation(
 	// set the observed Tx to reverted only after chain validation passes
 	observedVoter.SetReverted()
 	k.SetObservedTxInVoter(ctx, observedVoter)
+	if er.Chain.Equals(common.XMRChain) {
+		voter.Outcome = common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED
+	}
 	if observedVoter.UpdatedVault {
 		vaultPubKey := observedVoter.Tx.ObservedPubKey
 		if !vaultPubKey.IsEmpty() {
@@ -134,7 +149,8 @@ func processErrataTxAttestation(
 	memo, _ := ParseMemoWithTHORNames(ctx, k, tx.Memo)
 	// if the tx is a migration , from old valut to new vault , then the inbound tx must have a related outbound tx as well
 	if memo.IsInternal() {
-		return processErrataOutboundTx(ctx, k, eventMgr, er)
+		_, err = processErrataOutboundTx(ctx, k, eventMgr, er)
+		return err
 	}
 
 	if !memo.IsType(TxSwap) && !memo.IsType(TxAdd) {
@@ -201,46 +217,56 @@ func processErrataTxAttestation(
 // processErrataOutboundTx handles an errata for an outbound tx that was sent but later reorged out.
 // It re-credits funds to the vault so they are not abandoned.
 // The tx is marked as reverted rather than rescheduled.
-func processErrataOutboundTx(ctx cosmos.Context, k keeper.Keeper, eventMgr EventManager, er *common.ErrataTx) error {
+func processErrataOutboundTx(
+	ctx cosmos.Context,
+	k keeper.Keeper,
+	eventMgr EventManager,
+	er *common.ErrataTx,
+) (common.ErrataTxOutcome, error) {
 	txOutVoter, err := k.GetObservedTxOutVoter(ctx, er.Id)
 	if err != nil {
-		return fmt.Errorf("fail to get observed tx out voter for tx (%s) : %w", er.Id, err)
+		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED,
+			fmt.Errorf("fail to get observed tx out voter for tx (%s) : %w", er.Id, err)
 	}
 	if len(txOutVoter.Txs) == 0 {
-		return fmt.Errorf("cannot find tx: %s", er.Id)
+		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, fmt.Errorf("cannot find tx: %s", er.Id)
 	}
 	if txOutVoter.Tx.IsEmpty() {
-		return fmt.Errorf("tx out voter is not finalised")
+		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, fmt.Errorf("tx out voter is not finalised")
 	}
 	if er.Chain.Equals(common.XMRChain) && txOutVoter.Reverted {
-		return nil
+		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED, nil
 	}
 	tx := txOutVoter.Tx.Tx
 	if !tx.Chain.Equals(er.Chain) || tx.Coins.IsEmpty() {
-		return nil
+		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION, nil
 	}
 	if er.Chain.Equals(common.XMRChain) && er.Height > 0 {
 		minedHeight, minedErr := txOutVoter.Tx.CanonicalMinedHeight()
 		if minedErr != nil {
-			return fmt.Errorf("resolve XMR outbound errata mined height: %w", minedErr)
+			return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED,
+				fmt.Errorf("resolve XMR outbound errata mined height: %w", minedErr)
 		}
 		if minedHeight != er.Height {
-			return nil
+			return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION, nil
 		}
 	}
 	// parse the outbound tx memo, so we can figure out which inbound tx triggered the outbound
 	m, err := ParseMemoWithTHORNames(ctx, k, tx.Memo)
 	if err != nil {
-		return fmt.Errorf("fail to parse memo(%s): %w", tx.Memo, err)
+		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED,
+			fmt.Errorf("fail to parse memo(%s): %w", tx.Memo, err)
 	}
 	if !m.IsOutbound() && !m.IsInternal() {
-		return fmt.Errorf("%s is not outbound or internal tx", m)
+		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED,
+			fmt.Errorf("%s is not outbound or internal tx", m)
 	}
 	vaultPubKey := txOutVoter.Tx.ObservedPubKey
 	if !vaultPubKey.IsEmpty() {
 		v, err := k.GetVault(ctx, vaultPubKey)
 		if err != nil {
-			return fmt.Errorf("fail to get vault with pubkey %s: %w", vaultPubKey, err)
+			return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED,
+				fmt.Errorf("fail to get vault with pubkey %s: %w", vaultPubKey, err)
 		}
 		// Credit funds back to the vault so they are not lost.
 		// Note: We intentionally do NOT change InactiveVault back to RetiringVault
@@ -253,7 +279,8 @@ func processErrataOutboundTx(ctx cosmos.Context, k keeper.Keeper, eventMgr Event
 
 		if !v.IsEmpty() {
 			if err := k.SetVault(ctx, v); err != nil {
-				return fmt.Errorf("fail to save vault: %w", err)
+				return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED,
+					fmt.Errorf("fail to save vault: %w", err)
 			}
 		}
 	}
@@ -261,10 +288,11 @@ func processErrataOutboundTx(ctx cosmos.Context, k keeper.Keeper, eventMgr Event
 	// emit security event
 	event := NewEventSecurity(tx, "outbound errata")
 	if err := eventMgr.EmitEvent(ctx, event); err != nil {
-		return ErrInternal(err, "fail to emit security event")
+		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED,
+			ErrInternal(err, "fail to emit security event")
 	}
 
 	txOutVoter.SetReverted()
 	k.SetObservedTxOutVoter(ctx, txOutVoter)
-	return nil
+	return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED, nil
 }
