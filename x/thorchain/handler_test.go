@@ -90,7 +90,7 @@ var (
 	serviceThorchain = runtime.NewKVStoreService(keyThorchain)
 )
 
-func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
+func setupManagerForTest(c *C, wasmOpts ...wasmkeeper.Option) (cosmos.Context, *Mgrs) {
 	SetupConfigForTest()
 	keyAcc := cosmos.NewKVStoreKey(authtypes.StoreKey)
 	keyBank := cosmos.NewKVStoreKey(banktypes.StoreKey)
@@ -154,6 +154,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 		nil, nil, nil, nil, nil, nil, nil, nil, nil, wasmDir,
 		wasmtypes.DefaultNodeConfig(), wasmtypes.VMConfig{}, wasmkeeper.BuiltInCapabilities(),
 		authtypes.NewModuleAddress(ModuleName).String(),
+		wasmOpts...,
 	)
 
 	err = wk.SetParams(ctx, wasmtypes.Params{
