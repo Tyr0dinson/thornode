@@ -507,21 +507,23 @@ func (b *thorchainBridge) GetInboundOutbound(txIns common.ObservedTxs) (common.O
 	return inbound, outbound, nil
 }
 
-// EnsureNodeWhitelistedWithTimeout check node is whitelisted with timeout retry
+// EnsureNodeWhitelistedWithTimeout loops until the node is whitelisted (any
+// status other than Unknown). Unknown means no node account exists for this
+// signer address: never bonded, fully unbonded, or the signer key does not
+// match the bonded address. Any non-zero bond creates the account as
+// Whitelisted; a below-minimum bond only prevents churning in (Standby),
+// and both pass this check. Bonding happens on a human timescale, so retry
+// indefinitely. (The prior 1-hour timeout was never enforced: time.After
+// was re-evaluated each iteration, so the wait was already indefinite. The
+// behavioral change here is the retry interval, 5s to 30s.)
 func (b *thorchainBridge) EnsureNodeWhitelistedWithTimeout() error {
 	for {
-		select {
-		case <-time.After(time.Hour):
-			return errors.New("Observer is not whitelisted yet")
-		default:
-			err := b.EnsureNodeWhitelisted()
-			if err == nil {
-				// node had been whitelisted
-				return nil
-			}
-			b.logger.Error().Err(err).Msg("observer is not whitelisted , will retry a bit later")
-			time.Sleep(time.Second * 5)
+		err := b.EnsureNodeWhitelisted()
+		if err == nil {
+			return nil
 		}
+		b.logger.Error().Err(err).Msg("observer is not whitelisted, will retry in 30s")
+		time.Sleep(time.Second * 30)
 	}
 }
 
