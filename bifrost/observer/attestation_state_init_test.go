@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1357,11 +1358,16 @@ func TestSendAttestationStateReleasesBarrierWhileSnapshotIsBusy(t *testing.T) {
 
 type scriptedAttestationStateStream struct {
 	MockStream
-	frames    chan []byte
-	reset     chan struct{}
-	resetOnce sync.Once
-	closed    chan struct{}
-	closeOnce sync.Once
+	frames          chan []byte
+	readMu          sync.Mutex
+	current         []byte
+	reset           chan struct{}
+	resetOnce       sync.Once
+	resetCalls      atomic.Int32
+	secondReset     chan struct{}
+	secondResetOnce sync.Once
+	closed          chan struct{}
+	closeOnce       sync.Once
 }
 
 func newScriptedAttestationStateStream(messages ...[]byte) *scriptedAttestationStateStream {
@@ -1370,9 +1376,10 @@ func newScriptedAttestationStateStream(messages ...[]byte) *scriptedAttestationS
 			peer: peer.ID("scripted-state-peer"),
 			mu:   new(sync.Mutex),
 		},
-		frames: make(chan []byte, len(messages)),
-		reset:  make(chan struct{}),
-		closed: make(chan struct{}),
+		frames:      make(chan []byte, len(messages)),
+		reset:       make(chan struct{}),
+		secondReset: make(chan struct{}),
+		closed:      make(chan struct{}),
 	}
 	for _, message := range messages {
 		framed := make([]byte, p2p.LengthHeader+len(message))
@@ -1384,12 +1391,21 @@ func newScriptedAttestationStateStream(messages ...[]byte) *scriptedAttestationS
 }
 
 func (s *scriptedAttestationStateStream) Read(p []byte) (int, error) {
-	select {
-	case frame := <-s.frames:
-		return copy(p, frame), nil
-	case <-s.reset:
-		return 0, io.ErrClosedPipe
+	s.readMu.Lock()
+	defer s.readMu.Unlock()
+	for len(s.current) == 0 {
+		s.readMu.Unlock()
+		select {
+		case s.current = <-s.frames:
+		case <-s.reset:
+			s.readMu.Lock()
+			return 0, io.ErrClosedPipe
+		}
+		s.readMu.Lock()
 	}
+	n := copy(p, s.current)
+	s.current = s.current[n:]
+	return n, nil
 }
 
 func (s *scriptedAttestationStateStream) Write(p []byte) (int, error) {
@@ -1397,6 +1413,9 @@ func (s *scriptedAttestationStateStream) Write(p []byte) (int, error) {
 }
 
 func (s *scriptedAttestationStateStream) Reset() error {
+	if s.resetCalls.Add(1) >= 2 {
+		s.secondResetOnce.Do(func() { close(s.secondReset) })
+	}
 	s.resetOnce.Do(func() { close(s.reset) })
 	return nil
 }
@@ -1534,13 +1553,9 @@ func TestAskForAttestationStateStopsWaitingForBlockedProcessing(t *testing.T) {
 		t.Fatal("churn-in remained blocked after the state-sync budget expired")
 	}
 
-	ag.stateInitMu.Lock()
-	stateInitPeersCleared := ag.stateInitPeers == nil
-	ag.stateInitMu.Unlock()
-	assert.True(t, stateInitPeersCleared)
 	releaseQuery()
 	select {
-	case <-stream.closed:
+	case <-stream.secondReset:
 	case <-time.After(time.Second):
 		t.Fatal("timed-out state-sync worker did not finish after its blocked query was released")
 	}
@@ -1564,6 +1579,18 @@ func TestReceiveBatchedAttestationStateRejectsInvalidBatchSequence(t *testing.T)
 			totalBatches: 1,
 			messages: [][]byte{
 				stateBatchHeader(1, 0),
+				prefixBatchData,
+				prefixBatchEnd,
+			},
+			errContains: "unexpected batch number",
+		},
+		{
+			name:         "repeated batch number",
+			totalBatches: 2,
+			messages: [][]byte{
+				stateBatchHeader(0, 0),
+				prefixBatchData,
+				stateBatchHeader(0, 0),
 				prefixBatchData,
 				prefixBatchEnd,
 			},

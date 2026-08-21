@@ -2806,6 +2806,9 @@ func (s *ObserveExtraSuite) TestHandleStreamBatchedAttestationsNonActive(c *C) {
 
 func (s *ObserveExtraSuite) TestHandleStreamAttestationStateEmpty(c *C) {
 	ag, _ := newTestAttestationGossip(c, []peer.ID{"self"})
+	ag.avMu.Lock()
+	ag.activeVals[peer.ID("peer1")] = true
+	ag.avMu.Unlock()
 
 	// Write empty data to stream
 	var buf zerolog.LevelWriter // not needed, just need a non-nil stream
@@ -2822,6 +2825,9 @@ func (s *ObserveExtraSuite) TestHandleStreamAttestationStateEmpty(c *C) {
 
 func (s *ObserveExtraSuite) TestHandleStreamAttestationStateUnknown(c *C) {
 	ag, _ := newTestAttestationGossip(c, []peer.ID{"self"})
+	ag.avMu.Lock()
+	ag.activeVals[peer.ID("peer1")] = true
+	ag.avMu.Unlock()
 
 	stream := NewMockStreamWithData([]byte{0xFF}, "peer1")
 	ag.handleStreamAttestationState(stream)
@@ -2865,18 +2871,23 @@ func (s *ObserveExtraSuite) TestHandleStreamAttestationStateRejectsBusySender(c 
 
 func (s *ObserveExtraSuite) TestHandleStreamAttestationStateSendStateWrongLen(c *C) {
 	ag, _ := newTestAttestationGossip(c, []peer.ID{"self"})
+	ag.avMu.Lock()
+	ag.activeVals[peer.ID("peer1")] = true
+	ag.avMu.Unlock()
 	// prefixSendState byte + extra data -> unexpected payload length
 	stream := NewMockStreamWithData([]byte{0x01, 0x00}, "peer1")
 	ag.handleStreamAttestationState(stream)
 }
 
 // ---------------------------------------------------------------------------
-// handleStreamAttestationState - prefixBatchBegin with nil stateInitPeers
+// handleStreamAttestationState - unsolicited prefixBatchBegin from active peer
 // ---------------------------------------------------------------------------
 
-func (s *ObserveExtraSuite) TestHandleStreamAttestationStateBatchBeginNoInit(c *C) {
+func (s *ObserveExtraSuite) TestHandleStreamAttestationStateBatchBeginRejected(c *C) {
 	ag, _ := newTestAttestationGossip(c, []peer.ID{"self"})
-	// stateInitPeers is nil by default, so this should hit "not asking for attestation state"
+	ag.avMu.Lock()
+	ag.activeVals[peer.ID("peer1")] = true
+	ag.avMu.Unlock()
 	data := make([]byte, 5)
 	data[0] = 0x02 // prefixBatchBegin
 	binary.LittleEndian.PutUint32(data[1:], 1)
@@ -2890,31 +2901,11 @@ func (s *ObserveExtraSuite) TestHandleStreamAttestationStateBatchBeginNoInit(c *
 
 func (s *ObserveExtraSuite) TestHandleStreamAttestationStateBatchBeginUnauthorized(c *C) {
 	ag, _ := newTestAttestationGossip(c, []peer.ID{"self"})
-	ag.stateInitMu.Lock()
-	ag.stateInitPeers = map[peer.ID]bool{"authorized_peer": true}
-	ag.stateInitMu.Unlock()
 
 	data := make([]byte, 5)
 	data[0] = 0x02 // prefixBatchBegin
 	binary.LittleEndian.PutUint32(data[1:], 1)
-	// "peer1" is not in stateInitPeers
-	stream := NewMockStreamWithData(data, "peer1")
-	ag.handleStreamAttestationState(stream)
-}
-
-// ---------------------------------------------------------------------------
-// handleStreamAttestationState - prefixBatchBegin with authorized peer (0 batches)
-// ---------------------------------------------------------------------------
-
-func (s *ObserveExtraSuite) TestHandleStreamAttestationStateBatchBeginAuthorized(c *C) {
-	ag, _ := newTestAttestationGossip(c, []peer.ID{"self"})
-	ag.stateInitMu.Lock()
-	ag.stateInitPeers = map[peer.ID]bool{"peer1": true}
-	ag.stateInitMu.Unlock()
-
-	data := make([]byte, 5)
-	data[0] = 0x02                             // prefixBatchBegin
-	binary.LittleEndian.PutUint32(data[1:], 0) // 0 batches
+	// "peer1" is not an active validator.
 	stream := NewMockStreamWithData(data, "peer1")
 	ag.handleStreamAttestationState(stream)
 }

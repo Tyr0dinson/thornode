@@ -65,6 +65,10 @@ const (
 	// Bound both the complete transfer and each state type within one batch.
 	maxAttestationStateBatches      uint32 = 1000
 	maxAttestationStateItemsPerType int    = 100
+	maxAttestationStateControlBytes uint32 = 5
+
+	maxConcurrentAttestationStateReceives        = 10
+	maxConcurrentAttestationStateReceivesPerPeer = 1
 )
 
 var (
@@ -205,9 +209,10 @@ type AttestationGossip struct {
 	// peerManager is used to limit the number of concurrent receives from a peer
 	peerMgr *peerManager
 
-	stateInitPeers  map[peer.ID]bool // peers that we have asked for their attestation state
-	stateInitMu     sync.Mutex
-	stateSendActive atomic.Bool
+	stateReceiveMu     sync.Mutex
+	stateReceiveActive int
+	stateReceiveByPeer map[peer.ID]int
+	stateSendActive    atomic.Bool
 }
 
 // NewAttestationGossip create a new instance of AttestationGossip

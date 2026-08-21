@@ -50,12 +50,6 @@ func (s *AttestationGossip) askForAttestationState(ctx context.Context) {
 	}
 	peers := peersWithoutMe[:numPeers]
 
-	s.stateInitMu.Lock()
-	s.stateInitPeers = make(map[peer.ID]bool, len(peers))
-	for _, peer := range peers {
-		s.stateInitPeers[peer] = true
-	}
-	s.stateInitMu.Unlock()
 	timeout := s.config.PeerTimeout
 	if timeout <= 0 {
 		timeout = defaultPeerTimeout
@@ -78,10 +72,6 @@ func (s *AttestationGossip) askForAttestationState(ctx context.Context) {
 	case <-stateCtx.Done():
 		s.logger.Warn().Err(stateCtx.Err()).Dur("timeout", timeout).Msg("stop waiting for attestation state peers")
 	}
-	// Reset the state init peers
-	s.stateInitMu.Lock()
-	s.stateInitPeers = nil
-	s.stateInitMu.Unlock()
 }
 
 // attestationStateContext applies one absolute budget to a complete state
@@ -104,6 +94,61 @@ func (s *AttestationGossip) attestationStateContext(
 		stopReset()
 		cancel()
 	}
+}
+
+type attestationStateAdmission struct {
+	gossip *AttestationGossip
+	peer   peer.ID
+}
+
+// acquireAttestationStateAdmission authorizes and reserves one inbound state
+// request before its framed body is read. Active-validator eligibility and
+// receive accounting are checked atomically under one lock scope.
+func (s *AttestationGossip) acquireAttestationStateAdmission(
+	ctx context.Context,
+	remotePeer peer.ID,
+) (*attestationStateAdmission, bool) {
+	if err := ctx.Err(); err != nil {
+		return nil, false
+	}
+
+	s.avMu.Lock()
+	s.stateReceiveMu.Lock()
+	activeValidator := s.activeVals[remotePeer]
+	if !activeValidator ||
+		s.stateReceiveActive >= maxConcurrentAttestationStateReceives ||
+		s.stateReceiveByPeer[remotePeer] >= maxConcurrentAttestationStateReceivesPerPeer {
+		s.stateReceiveMu.Unlock()
+		s.avMu.Unlock()
+		return nil, false
+	}
+	if s.stateReceiveByPeer == nil {
+		s.stateReceiveByPeer = make(map[peer.ID]int)
+	}
+	s.stateReceiveActive++
+	s.stateReceiveByPeer[remotePeer]++
+	s.stateReceiveMu.Unlock()
+	s.avMu.Unlock()
+
+	return &attestationStateAdmission{
+		gossip: s,
+		peer:   remotePeer,
+	}, true
+}
+
+func (a *attestationStateAdmission) release() {
+	if a == nil || a.gossip == nil {
+		return
+	}
+	a.gossip.stateReceiveMu.Lock()
+	defer a.gossip.stateReceiveMu.Unlock()
+	a.gossip.stateReceiveActive--
+	remaining := a.gossip.stateReceiveByPeer[a.peer] - 1
+	if remaining <= 0 {
+		delete(a.gossip.stateReceiveByPeer, a.peer)
+		return
+	}
+	a.gossip.stateReceiveByPeer[a.peer] = remaining
 }
 
 type attestationStateSnapshot struct {
@@ -806,9 +851,18 @@ func (s *AttestationGossip) askPeerForState(ctx context.Context, peer peer.ID, w
 func (s *AttestationGossip) askStreamForState(ctx context.Context, stream network.Stream) {
 	peer := stream.Conn().RemotePeer()
 
-	defer closeStream(s.logger, stream)
 	stateCtx, cancel := s.attestationStateContext(ctx, stream)
 	defer cancel()
+	success := false
+	defer func() {
+		if success {
+			closeStream(s.logger, stream)
+			return
+		}
+		if err := stream.Reset(); err != nil {
+			s.logger.Debug().Err(err).Msgf("fail to reset failed attestation state request to peer: %s", peer)
+		}
+	}()
 
 	if err := p2p.WriteStreamWithBuffer(prefixSendState, stream); err != nil {
 		s.logger.Error().Err(err).Msgf("fail to write payload to peer: %s", peer)
@@ -816,14 +870,18 @@ func (s *AttestationGossip) askStreamForState(ctx context.Context, stream networ
 	}
 
 	// Read initial response from peer
-	initialData, err := p2p.ReadStreamWithBuffer(stream)
+	initialData, err := p2p.ReadStreamWithBufferLimitWithContext(
+		stateCtx,
+		stream,
+		maxAttestationStateControlBytes,
+	)
 	if err != nil {
 		s.logger.Error().Err(err).Msgf("fail to read reply from peer: %s", peer)
 		return
 	}
 
 	// If it's not the batch begin prefix, it's an error
-	if !bytes.HasPrefix(initialData, prefixBatchBegin) {
+	if len(initialData) != int(maxAttestationStateControlBytes) || !bytes.HasPrefix(initialData, prefixBatchBegin) {
 		s.logger.Error().Msgf("unexpected attestation state format from peer: %s", peer)
 		return
 	}
@@ -836,5 +894,7 @@ func (s *AttestationGossip) askStreamForState(ctx context.Context, stream networ
 	// breaking the handshake on every state-init exchange after a restart.
 	if err := s.receiveBatchedAttestationState(stateCtx, stream, initialData[len(prefixBatchBegin):]); err != nil {
 		s.logger.Error().Err(err).Msgf("fail to receive batched attestation state from peer: %s", peer)
+		return
 	}
+	success = true
 }

@@ -305,6 +305,88 @@ func ReadStreamWithBufferWithContext(ctx context.Context, stream network.Stream)
 	}
 }
 
+// ReadStreamWithBufferLimitWithContext reads one framed message while applying
+// the caller's cancellation and absolute deadline, and a protocol-specific size
+// limit before any body allocation. It is intended for small control frames
+// whose real maximum is much lower than MaxPayload.
+func ReadStreamWithBufferLimitWithContext(
+	ctx context.Context,
+	stream network.Stream,
+	maxPayload uint32,
+) ([]byte, error) {
+	if ctx == nil {
+		return nil, errors.New("stream read context is nil")
+	}
+	if stream == nil {
+		return nil, errors.New("stream is nil")
+	}
+	if maxPayload == 0 || maxPayload > MaxPayload {
+		return nil, fmt.Errorf("invalid stream payload limit: %d", maxPayload)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	deadline := time.Now().Add(TimeoutReadPayload)
+	if contextDeadline, ok := ctx.Deadline(); ok && contextDeadline.Before(deadline) {
+		deadline = contextDeadline
+	}
+	if ApplyDeadline.Load() {
+		if err := stream.SetReadDeadline(deadline); err != nil {
+			_ = stream.Reset()
+			return nil, err
+		}
+	}
+
+	type readResult struct {
+		data []byte
+		err  error
+	}
+	readDone := make(chan readResult, 1)
+	go func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				readDone <- readResult{err: fmt.Errorf("panic while reading stream: %v", recovered)}
+			}
+		}()
+		lengthBytes := make([]byte, LengthHeader)
+		n, err := io.ReadFull(stream, lengthBytes)
+		if n != LengthHeader || err != nil {
+			readDone <- readResult{err: fmt.Errorf("error in read the message head: %w", err)}
+			return
+		}
+		length := binary.LittleEndian.Uint32(lengthBytes)
+		if length > maxPayload {
+			readDone <- readResult{err: fmt.Errorf(
+				"payload length:%d exceed protocol payload limit:%d",
+				length,
+				maxPayload,
+			)}
+			return
+		}
+		data := make([]byte, length)
+		n, err = io.ReadFull(stream, data)
+		if uint32(n) != length || err != nil {
+			readDone <- readResult{err: fmt.Errorf(
+				"short read err(%w), we would like to read: %d, however we only read: %d",
+				err,
+				length,
+				n,
+			)}
+			return
+		}
+		readDone <- readResult{data: data}
+	}()
+
+	select {
+	case result := <-readDone:
+		return result.data, result.err
+	case <-ctx.Done():
+		_ = stream.Reset()
+		return nil, ctx.Err()
+	}
+}
+
 // WriteStreamWithBufferWithContext writes the message to stream with context awareness
 func WriteStreamWithBufferWithContext(ctx context.Context, msg []byte, stream network.Stream) error {
 	// Determine deadline from context or use default

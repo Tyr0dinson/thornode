@@ -255,12 +255,35 @@ func (s *AttestationGossip) handleStreamAttestationState(stream network.Stream) 
 	logger := s.logger.With().Str("remote_peer", remotePeer.String()).Logger()
 	logger.Debug().Msg("reading attestation state message")
 
-	defer closeStream(logger, stream)
 	stateCtx, cancel := s.attestationStateContext(context.Background(), stream)
 	defer cancel()
 
+	admission, admitted := s.acquireAttestationStateAdmission(stateCtx, remotePeer)
+	if !admitted {
+		logger.Warn().Msg("rejecting unauthorized or saturated attestation state stream")
+		if err := stream.Reset(); err != nil {
+			logger.Debug().Err(err).Msg("fail to reset rejected attestation state stream")
+		}
+		return
+	}
+	success := false
+	defer func() {
+		admission.release()
+		if success {
+			closeStream(logger, stream)
+			return
+		}
+		if err := stream.Reset(); err != nil {
+			logger.Debug().Err(err).Msg("fail to reset rejected attestation state stream")
+		}
+	}()
+
 	// Read and process the message
-	data, err := p2p.ReadStreamWithBuffer(stream)
+	data, err := p2p.ReadStreamWithBufferLimitWithContext(
+		stateCtx,
+		stream,
+		maxAttestationStateControlBytes,
+	)
 	if err != nil {
 		if err != io.EOF {
 			logger.Error().Err(err).Msg("fail to read payload from stream")
@@ -302,45 +325,16 @@ func (s *AttestationGossip) handleStreamAttestationState(stream network.Stream) 
 		defer s.peerMgr.release(sem)
 		logger.Debug().Msg("handling send state request")
 		s.sendAttestationState(stateCtx, stream)
+		success = true
 
 	case data[0] == prefixBatchBegin[0]:
-
-		s.stateInitMu.Lock()
-		if s.stateInitPeers == nil {
-			// we are not asking for attestation state
-			s.stateInitMu.Unlock()
-			s.logger.Warn().Msg("skipping attestation state stream, not asking for it")
-			err := p2p.WriteStreamWithBuffer([]byte("error: not asking for attestation state"), stream)
-			if err != nil {
-				logger.Error().Err(err).Msgf("fail to write error reply to peer: %s", remotePeer)
-			}
-			return
-		}
-		_, ok := s.stateInitPeers[remotePeer]
-		s.stateInitMu.Unlock()
-		if !ok {
-			// unauthorized peer
-			s.logger.Warn().Msg("skipping attestation state stream from unexpected peer")
-			err := p2p.WriteStreamWithBuffer([]byte("error: unauthorized peer for attestation state"), stream)
-			if err != nil {
-				logger.Error().Err(err).Msgf("fail to write error reply to peer: %s", remotePeer)
-			}
-			return
-		}
-
-		// Batched state transmission
-		logger.Debug().Msg("handling batched attestation state")
-		err := s.receiveBatchedAttestationState(stateCtx, stream, data[1:])
-		if err != nil {
-			logger.Error().Err(err).Msg("failed to receive batched attestation state")
-		}
+		// Honest responses continue on the stream opened by askPeerForState
+		// and are read directly by askStreamForState. A batch begin on a fresh
+		// inbound stream is unsolicited and must not start another receiver.
+		logger.Warn().Msg("rejecting unsolicited attestation state batch stream")
 
 	default:
 		logger.Error().Msgf("unknown message type: %d", data[0])
-		err := p2p.WriteStreamWithBuffer([]byte("error: unknown message type"), stream)
-		if err != nil {
-			logger.Error().Err(err).Msgf("fail to write error reply to peer: %s", remotePeer)
-		}
 	}
 }
 

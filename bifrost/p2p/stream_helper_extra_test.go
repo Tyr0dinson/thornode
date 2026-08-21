@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"io"
+	"sync"
 	"testing"
 	"time"
 
@@ -386,6 +388,90 @@ func TestReadStreamWithBufferWithContextDeadlineBeforeDefault(t *testing.T) {
 	data, err := ReadStreamWithBufferWithContext(ctx, s)
 	assert.NoError(t, err)
 	assert.Equal(t, input, data)
+}
+
+func TestReadStreamWithBufferLimitWithContextRejectsBeforeBodyRead(t *testing.T) {
+	ApplyDeadline.Store(false)
+	s := NewMockNetworkStream()
+	header := make([]byte, LengthHeader)
+	binary.LittleEndian.PutUint32(header, 6)
+	s.Buffer.Write(header)
+	s.Buffer.Write(bytes.Repeat([]byte{1}, 6))
+
+	_, err := ReadStreamWithBufferLimitWithContext(context.Background(), s, 5)
+
+	assert.ErrorContains(t, err, "exceed protocol payload limit")
+	assert.Equal(t, 6, s.Buffer.Len(), "the rejected control body must remain unread")
+}
+
+func TestReadStreamWithBufferLimitWithContextAcceptsBoundedControl(t *testing.T) {
+	ApplyDeadline.Store(false)
+	s := NewMockNetworkStream()
+	input := []byte{1, 2, 3, 4, 5}
+	header := make([]byte, LengthHeader)
+	binary.LittleEndian.PutUint32(header, uint32(len(input)))
+	s.Buffer.Write(header)
+	s.Buffer.Write(input)
+
+	data, err := ReadStreamWithBufferLimitWithContext(context.Background(), s, uint32(len(input)))
+
+	assert.NoError(t, err)
+	assert.Equal(t, input, data)
+}
+
+type cancelableBoundedReadStream struct {
+	*MockNetworkStream
+	readStarted chan struct{}
+	reset       chan struct{}
+	readOnce    sync.Once
+	resetOnce   sync.Once
+}
+
+func newCancelableBoundedReadStream() *cancelableBoundedReadStream {
+	return &cancelableBoundedReadStream{
+		MockNetworkStream: NewMockNetworkStream(),
+		readStarted:       make(chan struct{}),
+		reset:             make(chan struct{}),
+	}
+}
+
+func (s *cancelableBoundedReadStream) Read([]byte) (int, error) {
+	s.readOnce.Do(func() { close(s.readStarted) })
+	<-s.reset
+	return 0, io.ErrClosedPipe
+}
+
+func (s *cancelableBoundedReadStream) Reset() error {
+	s.resetOnce.Do(func() { close(s.reset) })
+	return nil
+}
+
+func TestReadStreamWithBufferLimitWithContextHonorsCancellation(t *testing.T) {
+	originalApplyDeadline := ApplyDeadline.Load()
+	ApplyDeadline.Store(false)
+	t.Cleanup(func() { ApplyDeadline.Store(originalApplyDeadline) })
+
+	stream := newCancelableBoundedReadStream()
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() {
+		_, err := ReadStreamWithBufferLimitWithContext(ctx, stream, 5)
+		result <- err
+	}()
+
+	select {
+	case <-stream.readStarted:
+	case <-time.After(time.Second):
+		t.Fatal("bounded stream read did not start")
+	}
+	cancel()
+
+	select {
+	case err := <-result:
+		assert.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("bounded stream read ignored context cancellation")
+	}
 }
 
 func TestWriteStreamWithBufferWithContextDeadlineNotBeforeDefault(t *testing.T) {
