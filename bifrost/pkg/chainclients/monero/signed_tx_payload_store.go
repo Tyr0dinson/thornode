@@ -742,11 +742,35 @@ func (s *signedTxPayloadStore) planQuarantinedLocked(plan signedTxPayloadClaimPl
 	return false, nil
 }
 
+// BlockRevertedTxHash durably closes the exact signed-transaction broadcast
+// path without scanning the historical claim and broadcast-attempt indexes.
+// Full alias and logical-owner quarantine is completed separately.
+func (s *signedTxPayloadStore) BlockRevertedTxHash(rawTxHash string) error {
+	if s == nil || s.db == nil {
+		return errors.New("xmr signed tx payload store is not initialized")
+	}
+	txHash := normalizeSignedTxClaimHash(rawTxHash)
+	if txHash == "" {
+		return errors.New("xmr reverted signing transaction hash is empty")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.db.Put(
+		[]byte(signedTxQuarantinedTxKey(txHash)),
+		[]byte(txHash),
+		signedTxPayloadWriteOptions,
+	); err != nil {
+		return fmt.Errorf("block reverted xmr signing transaction: %w", err)
+	}
+	return nil
+}
+
 // QuarantineReverted makes an errata'd transaction a one-way terminal state.
 // The exact payload is deliberately retained as forensic evidence, but a
 // synced batch blocks its transaction hash, logical owner, and every known
 // observation alias before Observer can persist the permanent THOR voter
-// transition. Scanning the bounded local indexes also covers a transaction
+// transition. Scanning the local indexes also covers a transaction
 // committed immediately before the Observer/errata barrier.
 func (s *signedTxPayloadStore) QuarantineReverted(rawTxHash string) error {
 	if s == nil || s.db == nil {

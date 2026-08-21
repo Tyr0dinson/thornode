@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"runtime"
 	"slices"
@@ -53,14 +52,6 @@ const (
 )
 
 const errataRetryInterval = 1 * time.Second
-
-// errataOutcomeBridge deliberately bypasses the normal one-block HTTP cache.
-// A cached pre-handler voter response cannot safely decide whether an XMR
-// transaction reached Thornode's permanent Reverted state.
-type errataOutcomeBridge interface {
-	GetBlockHeightUncached() (int64, error)
-	GetObservedTxVoterUncached(string) (*stypes.QueryObservedTxVoter, bool, error)
-}
 
 // Producers intentionally publish network-fee updates without blocking. A
 // bounded queue absorbs short Observer scheduling gaps while preventing
@@ -129,12 +120,14 @@ type Observer struct {
 
 	// beforeObservedTxDeckLock is a deterministic race-test hook. Production
 	// leaves it nil.
-	beforeObservedTxDeckLock    func()
-	errataAttestFn              func(context.Context, common.ErrataTx) error
-	permanentErrataQuarantineFn func(common.ErrataTx, int64) error
-	errataAttestMu              sync.Mutex
-	errataOutcomeMu             sync.Mutex
-	sendDeckFn                  func(deck *types.TxIn, finalised bool, finaliseHeight int64) []int
+	beforeObservedTxDeckLock        func()
+	errataAttestFn                  func(context.Context, common.ErrataTx) error
+	permanentErrataBroadcastBlockFn func(common.ErrataTx) error
+	permanentErrataQuarantineFn     func(common.ErrataTx, int64) error
+	errataAttestMu                  sync.Mutex
+	errataOutcomeMu                 sync.Mutex
+	errataMaintenanceWake           chan struct{}
+	sendDeckFn                      func(deck *types.TxIn, finalised bool, finaliseHeight int64) []int
 }
 
 // NewObserver create a new instance of Observer for chain
@@ -210,6 +203,7 @@ func NewObserver(pubkeyMgr *pubkeymanager.PubKeyManager,
 		attestationGossip:     attestationGossip,
 		observerWorkers:       observerWorkers,
 		deckDumpFile:          deckDumpFile,
+		errataMaintenanceWake: make(chan struct{}, 1),
 	}
 	if attestationGossip != nil {
 		// Register committed-event callbacks before Start launches the gossip
@@ -291,11 +285,54 @@ func (o *Observer) stopStartedChainClients() {
 	}
 }
 
+// requestErrataMaintenance coalesces any number of delivery or timer wakeups.
+// The single worker keeps broad signed-payload/scanner quarantine and retry
+// submission off the committed-event callback and global errata consumer.
+func (o *Observer) requestErrataMaintenance() {
+	if o.errataMaintenanceWake == nil {
+		return
+	}
+	select {
+	case o.errataMaintenanceWake <- struct{}{}:
+	default:
+	}
+}
+
+func (o *Observer) startErrataMaintenance(ctx context.Context) {
+	if o.errataMaintenanceWake == nil || o.wg == nil {
+		return
+	}
+	o.wg.Add(1)
+	go func() {
+		defer o.wg.Done()
+		for {
+			select {
+			case <-o.stopChan:
+				return
+			case <-ctx.Done():
+				return
+			case <-o.errataMaintenanceWake:
+			}
+
+			if _, err := o.reconcileCommittedXMRErrata(); err != nil {
+				o.logger.Warn().Err(err).Msg("committed XMR errata outcomes remain unresolved")
+			}
+			select {
+			case <-o.stopChan:
+				return
+			case <-ctx.Done():
+				return
+			default:
+			}
+			o.retryPendingErrata(ctx)
+		}
+	}()
+}
+
 // startDeferredXMRChain keeps an unresolved committed errata scoped to XMR.
 // Other chain clients remain operational while the durable voter outcome is
 // retried. Only an explicit Reverted result creates the permanent quarantine;
-// an explicit no-applicable-observation result never enters this loop, while
-// a legacy false voter is not converted into an unsafe timeout-based terminal.
+// an explicit no-applicable-observation result never enters this loop.
 func (o *Observer) startDeferredXMRChain(ctx context.Context) {
 	chain, ok := o.chains[common.XMRChain]
 	if !ok || chain == nil {
@@ -356,6 +393,7 @@ func (o *Observer) Start(ctx context.Context) error {
 	}
 	o.startConfiguredChainClients(deferXMR)
 	o.oracle.Start()
+	o.startErrataMaintenance(ctx)
 	go o.processOracle()
 	go o.processTxIns()
 	go o.processErrataTx(ctx)
@@ -365,7 +403,11 @@ func (o *Observer) Start(ctx context.Context) error {
 	go o.attestationGossip.Start(ctx)
 	go o.processPriceFeedQueue(ctx)
 	if deferXMR {
-		go o.startDeferredXMRChain(ctx)
+		o.wg.Add(1)
+		go func() {
+			defer o.wg.Done()
+			o.startDeferredXMRChain(ctx)
+		}()
 	}
 	return nil
 }
@@ -510,15 +552,6 @@ func (o *Observer) handleObservedTxCommitted(tx common.ObservedTx, allowFutureOb
 		Msg("observed tx committed to thorchain")
 }
 
-// handleErrataTxCommitted retains the legacy event behavior for callers and
-// stored events which predate explicit XMR outcomes.
-func (o *Observer) handleErrataTxCommitted(errata common.ErrataTx) error {
-	return o.handleErrataTxCommittedOutcome(
-		errata,
-		common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED,
-	)
-}
-
 // handleErrataTxCommittedOutcome durably acknowledges this node's exact
 // attestation together with THORNode's terminal XMR handler result. A result
 // with no applicable observation is immediately final; a reverted result
@@ -539,6 +572,16 @@ func (o *Observer) handleErrataTxCommittedOutcome(
 		outcome = common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED
 	}
 
+	if errata.Chain.Equals(common.XMRChain) &&
+		outcome == common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED {
+		if err := o.blockPermanentErrataBroadcast(errata); err != nil {
+			o.logger.Error().Err(err).
+				Str("chain", errata.Chain.String()).Str("txid", errata.Id.String()).
+				Msg("fail to block permanently reverted XMR broadcast; outbox will remain pending")
+			return err
+		}
+	}
+
 	o.lock.Lock()
 	err := o.storage.recordLocalErrataCommittedOutcome(errata, outcome)
 	o.lock.Unlock()
@@ -556,16 +599,27 @@ func (o *Observer) handleErrataTxCommittedOutcome(
 	// locally, while THORChain's monotonic Reverted flag protects accounting.
 	if errata.Chain.Equals(common.XMRChain) &&
 		outcome != common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION {
-		// Delivery durability must not depend on REST availability. Reconciliation
-		// initializes the post-event height barrier and confirms the voter through
-		// uncached reads; any transient failure remains a durable retry.
-		if _, reconcileErr := o.reconcileCommittedXMRErrata(); reconcileErr != nil {
-			o.logger.Warn().Err(reconcileErr).
-				Str("txid", errata.Id.String()).
-				Msg("XMR errata outcome is not confirmable yet; will retry")
-		}
+		// The exact-hash block and receipt above are the delivery critical path.
+		// Broader signed-payload identity fan-out and scanner quarantine run on
+		// the coalescing worker; durable unresolved state makes wakeups idempotent.
+		o.requestErrataMaintenance()
 	}
 	return nil
+}
+
+func (o *Observer) blockPermanentErrataBroadcast(errata common.ErrataTx) error {
+	if o.permanentErrataBroadcastBlockFn != nil {
+		return o.permanentErrataBroadcastBlockFn(errata)
+	}
+	chain, ok := o.chains[errata.Chain]
+	if !ok || chain == nil {
+		return fmt.Errorf("%s chain client is unavailable for permanent errata broadcast blocking", errata.Chain)
+	}
+	quarantiner, ok := chain.(chainclients.PermanentErrataQuarantiner)
+	if !ok {
+		return fmt.Errorf("%s chain client lacks permanent errata broadcast blocking support", errata.Chain)
+	}
+	return quarantiner.BlockPermanentErrataBroadcast(errata)
 }
 
 func (o *Observer) quarantinePermanentErrata(tombstone errataTombstone) error {
@@ -1416,7 +1470,7 @@ func (o *Observer) processErrataTx(ctx context.Context) {
 		case <-o.stopChan:
 			return
 		case <-retryTicker.C:
-			o.retryPendingErrata(ctx)
+			o.requestErrataMaintenance()
 		case <-pruneTicker.C:
 			o.pruneCommittedOnlyErrata()
 		case errataBlock, more := <-o.globalErrataQueue:
@@ -1444,7 +1498,7 @@ func (o *Observer) processErrataTx(ctx context.Context) {
 					errataBlock.OnStored()
 				}
 				o.logger.Info().Msgf("Received a errata block %+v from the Thorchain", errataBlock.Height)
-				o.retryPendingErrata(ctx)
+				o.requestErrataMaintenance()
 				continue
 			}
 
@@ -1473,7 +1527,7 @@ func (o *Observer) processErrataTx(ctx context.Context) {
 				errataBlock.OnStored()
 			}
 			o.logger.Info().Msgf("Received a errata block %+v from the Thorchain", errataBlock.Height)
-			o.retryPendingErrata(ctx)
+			o.requestErrataMaintenance()
 		}
 	}
 }
@@ -1606,21 +1660,66 @@ func (o *Observer) removeInitialErrataObservations(orphanHeight int64, errataTxs
 	}
 }
 
+type claimedErrataAttestation struct {
+	errata  common.ErrataTx
+	attempt uint32
+}
+
 func (o *Observer) broadcastErrataBlock(ctx context.Context, errataBlock types.ErrataBlock, now time.Time, forceAttempt bool) error {
+	// Serialize only the durable admission decision. The LevelDB update is the
+	// duplicate-send guard, so the mutex does not need to cover signing or the
+	// handoff to attestation gossip.
+	o.errataAttestMu.Lock()
+	claimed, claimErr := o.claimErrataAttestations(errataBlock, now, forceAttempt)
+	o.errataAttestMu.Unlock()
+
+	broadcastErr := claimErr
+	for _, attempt := range claimed {
+		if err := o.attestErrata(ctx, attempt.errata); err != nil {
+			if broadcastErr == nil {
+				broadcastErr = fmt.Errorf(
+					"failed to accept local errata attestation for %s/%s: %w",
+					attempt.errata.Chain,
+					attempt.errata.Id,
+					err,
+				)
+			}
+			if o.errCounter != nil {
+				o.errCounter.WithLabelValues("fail_to_broadcast_errata_tx", "").Inc()
+			}
+			o.logger.Error().Err(err).
+				Str("chain", attempt.errata.Chain.String()).
+				Str("txid", attempt.errata.Id.String()).
+				Uint32("attempt", attempt.attempt).
+				Msg("fail to broadcast durable errata tx")
+		}
+	}
+	return broadcastErr
+}
+
+func (o *Observer) claimErrataAttestations(
+	errataBlock types.ErrataBlock,
+	now time.Time,
+	forceAttempt bool,
+) ([]claimedErrataAttestation, error) {
 	o.logger.Info().Int64("height", errataBlock.Height).
 		Str("delivery_id", errataBlock.DeliveryID).
 		Msg("processing durable errata block")
-	var broadcastErr error
+	claimed := make([]claimedErrataAttestation, 0, len(errataBlock.Txs))
+	var claimErr error
 	for _, errataTx := range errataBlock.Txs {
 		record, found, err := o.storage.GetPendingErrataTx(errataTx)
 		if err != nil {
-			return err
+			return claimed, errors.Join(claimErr, err)
 		}
 		if !found || record.Committed {
 			continue
 		}
 		if !record.CleanupComplete {
-			return fmt.Errorf("local cleanup is not durable for errata %s/%s", errataTx.Chain, errataTx.TxID)
+			return claimed, errors.Join(
+				claimErr,
+				fmt.Errorf("local cleanup is not durable for errata %s/%s", errataTx.Chain, errataTx.TxID),
+			)
 		}
 		// A lagging peer or state sync can reintroduce the orphaned observation
 		// after the initial local cleanup. Re-apply only the volatile,
@@ -1634,8 +1733,8 @@ func (o *Observer) broadcastErrataBlock(ctx context.Context, errataBlock types.E
 			}, record.Height)
 		}
 		if record.AttestationRetryExhausted {
-			if forceAttempt && broadcastErr == nil {
-				broadcastErr = fmt.Errorf("errata attestation retry horizon exhausted for %s/%s; operator recovery required", errataTx.Chain, errataTx.TxID)
+			if forceAttempt && claimErr == nil {
+				claimErr = fmt.Errorf("errata attestation retry horizon exhausted for %s/%s; operator recovery required", errataTx.Chain, errataTx.TxID)
 			}
 			continue
 		}
@@ -1648,7 +1747,7 @@ func (o *Observer) broadcastErrataBlock(ctx context.Context, errataBlock types.E
 					now,
 				)
 				if exhaustErr != nil {
-					return exhaustErr
+					return claimed, errors.Join(claimErr, exhaustErr)
 				}
 				if exhausted {
 					o.logger.Error().
@@ -1660,8 +1759,8 @@ func (o *Observer) broadcastErrataBlock(ctx context.Context, errataBlock types.E
 						o.errCounter.WithLabelValues("errata_retry_exhausted", errataTx.Chain.String()).Inc()
 					}
 				}
-				if forceAttempt && broadcastErr == nil {
-					broadcastErr = fmt.Errorf("errata attestation retry horizon exhausted for %s/%s; operator recovery required", errataTx.Chain, errataTx.TxID)
+				if forceAttempt && claimErr == nil {
+					claimErr = fmt.Errorf("errata attestation retry horizon exhausted for %s/%s; operator recovery required", errataTx.Chain, errataTx.TxID)
 				}
 				continue
 			}
@@ -1679,26 +1778,17 @@ func (o *Observer) broadcastErrataBlock(ctx context.Context, errataBlock types.E
 			now,
 		)
 		if attemptErr != nil {
-			return attemptErr
+			return claimed, errors.Join(claimErr, attemptErr)
 		}
 		if !recorded {
 			continue
 		}
-		if err := o.attestErrata(ctx, errataAttestationPayload(errataTx, record.Height)); err != nil {
-			if broadcastErr == nil {
-				broadcastErr = fmt.Errorf("failed to accept local errata attestation for %s/%s: %w", errataTx.Chain, errataTx.TxID, err)
-			}
-			if o.errCounter != nil {
-				o.errCounter.WithLabelValues("fail_to_broadcast_errata_tx", "").Inc()
-			}
-			o.logger.Error().Err(err).
-				Str("chain", errataTx.Chain.String()).
-				Str("txid", errataTx.TxID.String()).
-				Uint32("attempt", attempt.AttestationAttempts).
-				Msg("fail to broadcast durable errata tx")
-		}
+		claimed = append(claimed, claimedErrataAttestation{
+			errata:  errataAttestationPayload(errataTx, record.Height),
+			attempt: attempt.AttestationAttempts,
+		})
 	}
-	return broadcastErr
+	return claimed, claimErr
 }
 
 func errataAttestationRetryDelay(attempts uint32) time.Duration {
@@ -1723,8 +1813,6 @@ func (o *Observer) retryPendingErrata(ctx context.Context) {
 }
 
 func (o *Observer) retryPendingErrataAt(ctx context.Context, now time.Time) {
-	o.errataAttestMu.Lock()
-	defer o.errataAttestMu.Unlock()
 	pending, err := o.storage.GetPendingErrata()
 	if err != nil {
 		o.logger.Error().Err(err).Msg("fail to load pending errata attestations")
@@ -1751,9 +1839,6 @@ func (o *Observer) retryPendingErrataAt(ctx context.Context, now time.Time) {
 				Msg("fail to broadcast durable pending errata; will retry")
 		}
 	}
-	if _, err = o.reconcileCommittedXMRErrata(); err != nil {
-		o.logger.Warn().Err(err).Msg("committed XMR errata outcomes remain unresolved")
-	}
 }
 
 // reconcileCommittedXMRErrata promotes only an explicit on-chain Reverted
@@ -1771,93 +1856,24 @@ func (o *Observer) reconcileCommittedXMRErrata() (int, error) {
 	if len(pending) == 0 {
 		return 0, nil
 	}
-	needsLegacyQuery := false
-	for _, tombstone := range pending {
-		if tombstone.Outcome == common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED {
-			needsLegacyQuery = true
-			break
-		}
-	}
-	var bridge errataOutcomeBridge
-	var currentHeight int64
-	var heightErr error
-	if needsLegacyQuery {
-		var ok bool
-		bridge, ok = o.thorchainBridge.(errataOutcomeBridge)
-		if !ok || bridge == nil {
-			return len(pending), errors.New("thorchain bridge lacks uncached XMR errata confirmation support")
-		}
-		currentHeight, heightErr = bridge.GetBlockHeightUncached()
-		if heightErr == nil && (currentHeight < 0 || currentHeight == math.MaxInt64) {
-			heightErr = fmt.Errorf("thornode returned invalid height %d for XMR errata confirmation", currentHeight)
-		}
-	}
 
 	unresolved := 0
 	reconcileErrors := make([]error, 0)
 	for _, tombstone := range pending {
+		if tombstone.Outcome != common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED {
+			unresolved++
+			outcomeErr := fmt.Errorf(
+				"committed XMR errata %s has no explicit reverted outcome", tombstone.TxID,
+			)
+			reconcileErrors = append(reconcileErrors, outcomeErr)
+			o.logger.Error().Err(outcomeErr).Str("txid", tombstone.TxID.String()).
+				Msg("cannot reconcile legacy XMR errata without an explicit terminal outcome")
+			continue
+		}
 		errata := errataAttestationPayload(
 			types.ErrataTx{Chain: tombstone.Chain, TxID: tombstone.TxID},
 			tombstone.OrphanHeight,
 		)
-		if tombstone.Outcome == common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED {
-			if tombstone.VerifyAfterHeight == 0 && heightErr == nil {
-				verifyAfterHeight := currentHeight + 1
-				o.lock.Lock()
-				err = o.storage.recordErrataCommitted(errata, verifyAfterHeight)
-				o.lock.Unlock()
-				if err != nil {
-					unresolved++
-					reconcileErrors = append(reconcileErrors, fmt.Errorf(
-						"persist XMR errata verification barrier for %s: %w", tombstone.TxID, err,
-					))
-					continue
-				}
-				tombstone.VerifyAfterHeight = verifyAfterHeight
-			}
-
-			voter, found, voterErr := bridge.GetObservedTxVoterUncached(tombstone.TxID.String())
-			if voterErr != nil {
-				unresolved++
-				reconcileErrors = append(reconcileErrors, fmt.Errorf(
-					"query uncached XMR errata voter %s: %w", tombstone.TxID, voterErr,
-				))
-				o.logger.Warn().Err(voterErr).
-					Str("txid", tombstone.TxID.String()).
-					Msg("XMR errata voter outcome is not queryable yet; will retry")
-				continue
-			}
-			if found && (voter == nil || voter.TxID.IsEmpty() || !voter.TxID.Equals(tombstone.TxID)) {
-				unresolved++
-				mismatchErr := errors.New("uncached XMR errata voter response does not match the requested transaction")
-				reconcileErrors = append(reconcileErrors, fmt.Errorf("%s: %w", tombstone.TxID, mismatchErr))
-				actualTxID := ""
-				if voter != nil {
-					actualTxID = voter.TxID.String()
-				}
-				o.logger.Error().
-					Str("expected_txid", tombstone.TxID.String()).
-					Str("actual_txid", actualTxID).
-					Msg("ignore mismatched XMR errata voter response")
-				continue
-			}
-
-			// Legacy committed events carried no handler outcome. Keep their false
-			// or absent observed voter re-checkable after the height barrier.
-			if !found || !voter.Reverted {
-				if heightErr != nil || currentHeight < tombstone.VerifyAfterHeight {
-					unresolved++
-					if heightErr != nil {
-						reconcileErrors = append(reconcileErrors, fmt.Errorf(
-							"query uncached Thornode height for %s: %w", tombstone.TxID, heightErr,
-						))
-					}
-					continue
-				}
-				unresolved++
-				continue
-			}
-		}
 
 		// Quarantine the exact signed artifact and scanner state before making
 		// the Observer's TxID-wide barrier visible. If the process crashes after
@@ -1971,7 +1987,7 @@ func (o *Observer) applyErrataTxWithOutbox(
 					o.lock.Unlock()
 					return nil, err
 				}
-				alreadyCleaned = tombstone != nil && block.Height > 0 && tombstone.blocksMinedHeight(block.Height)
+				alreadyCleaned = tombstone != nil && tombstone.hasOrphanHeight(block.Height)
 			}
 		}
 		if alreadyCleaned {
@@ -2251,6 +2267,9 @@ func (o *Observer) Stop() error {
 	defer o.logger.Debug().Msg("observer stopped")
 
 	o.stopStartedChainClients()
+	if o.wg != nil {
+		o.wg.Wait()
+	}
 	o.oracle.Stop()
 	if err := o.pubkeyMgr.Stop(); err != nil {
 		o.logger.Error().Err(err).Msg("fail to stop pool address manager")

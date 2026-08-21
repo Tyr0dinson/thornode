@@ -20,6 +20,13 @@ func TestClientPermanentErrataQuarantinesSignedArtifactThenScannerTxID(t *testin
 
 	errata := common.ErrataTx{Chain: common.XMRChain, Id: common.TxID(txID)}
 	client := &Client{signedTxPayloadStore: store}
+	if err := client.BlockPermanentErrataBroadcast(errata); err != nil {
+		t.Fatalf("block exact permanent errata transaction: %v", err)
+	}
+	if _, found, lookupErr := store.GetOwned(plan.CacheVault, plan.CacheHash, plan.LogicalHash); !errors.Is(lookupErr, errXMRSigningClaimQuarantined) || found {
+		t.Fatalf("exact phase left signed transaction broadcastable: found=%t err=%v", found, lookupErr)
+	}
+
 	if err := client.QuarantinePermanentErrata(errata, 77); err == nil {
 		t.Fatal("missing scanner quarantine did not fail closed")
 	}
@@ -37,8 +44,8 @@ func TestClientPermanentErrataQuarantinesSignedArtifactThenScannerTxID(t *testin
 		t.Fatalf("scanner transaction was not permanently quarantined: reverted=%t err=%v", reverted, err)
 	}
 
-	// Both phases are durable and idempotent, which is required for Observer's
-	// unconditional startup replay of old and partially applied tombstones.
+	// Both phases are durable and idempotent, so unresolved reconciliation can
+	// safely retry a partially applied quarantine after restart.
 	restartedSignedStore := newSignedTxPayloadStore(store.db)
 	restartedReorgStore := NewReorgStore(store.db)
 	restarted := &Client{

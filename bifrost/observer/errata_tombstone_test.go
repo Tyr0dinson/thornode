@@ -66,10 +66,21 @@ func TestPruneCommittedOnlyErrata(t *testing.T) {
 
 	old := types.ErrataTx{Chain: common.XMRChain, TxID: "oldtombstone"}
 	recent := types.ErrataTx{Chain: common.XMRChain, TxID: "recenttombstone"}
+	terminal := types.ErrataTx{Chain: common.XMRChain, TxID: "terminaltombstone"}
 	delivered := types.ErrataTx{Chain: common.XMRChain, TxID: "deliverederrata"}
 
 	require.NoError(t, storage.MarkErrataCommitted(old))
 	require.NoError(t, storage.MarkErrataCommitted(recent))
+	require.NoError(t, storage.MarkErrataCommitted(terminal))
+	require.NoError(t, storage.recordLocalErrataCommittedOutcome(
+		common.ErrataTx{Chain: terminal.Chain, Id: terminal.TxID},
+		common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED,
+	))
+	require.NoError(t, storage.recordErrataVoterResult(
+		common.ErrataTx{Chain: terminal.Chain, Id: terminal.TxID},
+		true,
+		nil,
+	))
 
 	// A record whose local delivery has begun is NOT a commit-only tombstone
 	// and must survive pruning regardless of age.
@@ -91,14 +102,28 @@ func TestPruneCommittedOnlyErrata(t *testing.T) {
 	require.True(t, found)
 	record.CommittedAtUnixNano = time.Now().Add(-48 * time.Hour).UnixNano()
 	agePersistedErrata(t, storage, record)
+	terminalRecord, found, err := storage.GetPendingErrataTx(terminal)
+	require.NoError(t, err)
+	require.True(t, found)
+	terminalRecord.CommittedAtUnixNano = time.Now().Add(-48 * time.Hour).UnixNano()
+	agePersistedErrata(t, storage, terminalRecord)
 
 	pruned, err = storage.PruneCommittedOnlyErrata(time.Now().Add(-24 * time.Hour))
 	require.NoError(t, err)
-	assert.Equal(t, 1, pruned, "exactly the aged commit-only tombstone must be pruned")
+	assert.Equal(t, 2, pruned, "both aged commit-only outbox records must be pruned")
 
 	_, found, err = storage.GetPendingErrataTx(old)
 	require.NoError(t, err)
 	assert.False(t, found, "aged commit-only tombstone must be gone")
+
+	_, found, err = storage.GetPendingErrataTx(terminal)
+	require.NoError(t, err)
+	assert.False(t, found, "the aged terminal outbox placeholder may be pruned")
+	terminalTombstone, err := storage.getErrataTombstone(terminal.Chain, terminal.TxID.String())
+	require.NoError(t, err)
+	require.NotNil(t, terminalTombstone)
+	assert.True(t, terminalTombstone.isPermanentlyReverted(), "explicit terminal tombstones must remain durable")
+	assert.True(t, terminalTombstone.blocksMinedHeight(12345), "a permanent terminal must remain TxID-wide")
 
 	_, found, err = storage.GetPendingErrataTx(recent)
 	require.NoError(t, err)
@@ -107,6 +132,44 @@ func TestPruneCommittedOnlyErrata(t *testing.T) {
 	_, found, err = storage.GetPendingErrataTx(delivered)
 	require.NoError(t, err)
 	assert.True(t, found, "a record with DeliverySeen must never be pruned as a tombstone")
+}
+
+func TestUnresolvedXMRErrataScanIsChainScoped(t *testing.T) {
+	storage, tempDir := setupTestDB(t)
+	defer cleanupTestDB(t, storage, tempDir)
+
+	xmr := common.ErrataTx{
+		Chain: common.XMRChain,
+		Id:    common.TxID("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+	}
+	require.NoError(t, storage.recordLocalErrataCommittedOutcome(
+		xmr,
+		common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED,
+	))
+
+	// Corruption in another chain's namespace must not prevent XMR recovery.
+	require.NoError(t, storage.db.Put(
+		[]byte(errataTombstoneKey(common.BTCChain, "malformed")),
+		[]byte("not-json"),
+		nil,
+	))
+	pending, err := storage.getUnresolvedCommittedXMRErrata()
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	require.Equal(t, xmr.Id, pending[0].TxID)
+}
+
+func TestUnresolvedXMRErrataScanFailsClosedOnMalformedXMRState(t *testing.T) {
+	storage, tempDir := setupTestDB(t)
+	defer cleanupTestDB(t, storage, tempDir)
+
+	require.NoError(t, storage.db.Put(
+		[]byte(errataTombstoneKey(common.XMRChain, "malformed")),
+		[]byte("not-json"),
+		nil,
+	))
+	_, err := storage.getUnresolvedCommittedXMRErrata()
+	require.ErrorContains(t, err, "decode XMR errata tombstone")
 }
 
 // agePersistedErrata rewrites a record in place so a test can push its commit

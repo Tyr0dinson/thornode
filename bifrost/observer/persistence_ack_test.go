@@ -169,18 +169,26 @@ func TestCallbackErrataRetryPreservesCanonicalXMRRemine(t *testing.T) {
 
 	attestationAttempts := make(chan common.ErrataTx, 2)
 	observer := &Observer{
-		logger:            log.Logger,
-		stopChan:          stop,
-		lock:              &sync.Mutex{},
-		onDeck:            map[txInKey]*types.TxIn{orphanedKey: orphaned},
-		globalErrataQueue: make(chan types.ErrataBlock, 1),
-		storage:           storage,
-		attestationGossip: gossip,
+		logger:                log.Logger,
+		stopChan:              stop,
+		lock:                  &sync.Mutex{},
+		onDeck:                map[txInKey]*types.TxIn{orphanedKey: orphaned},
+		globalErrataQueue:     make(chan types.ErrataBlock, 1),
+		storage:               storage,
+		attestationGossip:     gossip,
+		errataMaintenanceWake: make(chan struct{}, 1),
+		wg:                    &sync.WaitGroup{},
 		errataAttestFn: func(_ context.Context, errata common.ErrataTx) error {
 			attestationAttempts <- errata
 			return nil
 		},
 	}
+	maintenanceCtx, cancelMaintenance := context.WithCancel(context.Background())
+	observer.startErrataMaintenance(maintenanceCtx)
+	defer func() {
+		cancelMaintenance()
+		observer.wg.Wait()
+	}()
 	go func() {
 		observer.processErrataTx(context.Background())
 		close(done)

@@ -1,7 +1,6 @@
 package thorclient
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -224,13 +223,6 @@ func (b *thorchainBridge) getWithPath(path string) ([]byte, int, error) {
 	return b.get(b.getThorChainURL(path))
 }
 
-// getWithPathUncached performs a fresh request without consulting or updating
-// the shared one-block response cache. It is reserved for queries whose answer
-// is used to make an irreversible local security decision.
-func (b *thorchainBridge) getWithPathUncached(path string) ([]byte, int, error) {
-	return b.getUncached(b.getThorChainURL(path))
-}
-
 // get handle all the low level http GET calls using retryablehttp.ThorchainBridge
 func (b *thorchainBridge) get(url string) ([]byte, int, error) {
 	// To reduce querying time and chance of "429 Too Many Requests",
@@ -267,21 +259,6 @@ func (b *thorchainBridge) get(url string) ([]byte, int, error) {
 
 func (b *thorchainBridge) getRetryable(url string) ([]byte, int, error) {
 	resp, err := b.httpClient.Get(url)
-	return b.readThorchainResponse(resp, err)
-}
-
-// getUncached handles one low-level HTTP GET without consulting or updating
-// the shared response cache. Outcome reconciliation owns durable retries, so a
-// single raw request is preferable here: it preserves the body of Cosmos query
-// errors, which is needed to distinguish an absent voter from a server outage.
-func (b *thorchainBridge) getUncached(url string) ([]byte, int, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), constants.ThorchainBlockTime)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, 0, fmt.Errorf("create uncached thornode request: %w", err)
-	}
-	resp, err := b.httpClient.HTTPClient.Do(req)
 	return b.readThorchainResponse(resp, err)
 }
 
@@ -859,40 +836,6 @@ func (b *thorchainBridge) GetObservedTxVoter(txID string) (*stypes.QueryObserved
 		return nil, fmt.Errorf("fail to unmarshal observed tx voter: %w", err)
 	}
 	return &voter, nil
-}
-
-// GetObservedTxVoterUncached returns the current on-chain voter state from a
-// fresh HTTP response. A missing voter is not an endpoint failure and is
-// reported as found=false; transport and server failures remain errors.
-func (b *thorchainBridge) GetObservedTxVoterUncached(txID string) (*stypes.QueryObservedTxVoter, bool, error) {
-	buf, status, err := b.getWithPathUncached(fmt.Sprintf(TxDetailEndpoint, txID))
-	if missingObservedTxVoterResponse(buf, status, txID) {
-		return nil, false, nil
-	}
-	if err != nil {
-		return nil, false, fmt.Errorf("fail to get observed tx voter: %w", err)
-	}
-	if status != http.StatusOK {
-		return nil, false, fmt.Errorf("unexpected status code %d for tx %s", status, txID)
-	}
-
-	var voter stypes.QueryObservedTxVoter
-	if err = json.Unmarshal(buf, &voter); err != nil {
-		return nil, false, fmt.Errorf("fail to unmarshal observed tx voter: %w", err)
-	}
-	return &voter, true, nil
-}
-
-func missingObservedTxVoterResponse(body []byte, status int, txID string) bool {
-	if status < http.StatusBadRequest || status >= http.StatusInternalServerError+100 {
-		return false
-	}
-	// The tx-details query currently surfaces a missing voter as a Cosmos query
-	// error rather than consistently mapping it to HTTP 404. Match only the
-	// endpoint's exact transaction-specific error so genuine 4xx/5xx failures
-	// remain retryable and cannot be mistaken for an authoritative absence.
-	want := fmt.Sprintf("tx: %s doesn't exist", strings.ToLower(strings.TrimSpace(txID)))
-	return strings.Contains(strings.ToLower(string(body)), want)
 }
 
 func (b *thorchainBridge) getVaultPubkeys() ([]byte, error) {

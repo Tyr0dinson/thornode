@@ -25,11 +25,12 @@ func newErrataOrderingObserver(t *testing.T) (*Observer, *ObserverStorage) {
 	t.Cleanup(func() { cleanupTestDB(t, storage, tempDir) })
 	thornodeHeight := int64(100)
 	return &Observer{
-		logger:                      log.Logger,
-		storage:                     storage,
-		onDeck:                      make(map[txInKey]*types.TxIn),
-		lock:                        &sync.Mutex{},
-		permanentErrataQuarantineFn: func(common.ErrataTx, int64) error { return nil },
+		logger:                          log.Logger,
+		storage:                         storage,
+		onDeck:                          make(map[txInKey]*types.TxIn),
+		lock:                            &sync.Mutex{},
+		permanentErrataBroadcastBlockFn: func(common.ErrataTx) error { return nil },
+		permanentErrataQuarantineFn:     func(common.ErrataTx, int64) error { return nil },
 		thorchainBridge: &MockThorchainBridge{
 			getBlockHeightFunc: func() (int64, error) {
 				thornodeHeight++
@@ -547,10 +548,13 @@ func TestErrataStateWritersHoldStorageLock(t *testing.T) {
 	}
 
 	assertSerialized("record committed event", func() error {
-		return storage.recordErrataCommitted(errata, 1)
+		return storage.recordLocalErrataCommittedOutcome(
+			errata,
+			common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED,
+		)
 	})
 	assertSerialized("record voter result", func() error {
-		return storage.recordErrataVoterResult(errata, false, nil)
+		return storage.recordErrataVoterResult(errata, true, nil)
 	})
 }
 
@@ -614,18 +618,6 @@ func TestQuorumErrataCommittedEventRetainsOutboxWithoutLocalAttestation(t *testi
 func TestCommittedErrataEventBeforeScannerHandoffDoesNotReopenOutbox(t *testing.T) {
 	observer, storage := newErrataOrderingObserver(t)
 	errata := common.ErrataTx{Chain: common.XMRChain, Id: common.TxID("event-before-scanner")}
-	bridge, bridgeOK := observer.thorchainBridge.(*MockThorchainBridge)
-	require.True(t, bridgeOK)
-	thornodeHeight := int64(100)
-	bridge.getBlockHeightFreshFunc = func() (int64, error) { return thornodeHeight, nil }
-	bridge.getObservedTxVoterFreshFunc = func(txID string) (*stypes.QueryObservedTxVoter, bool, error) {
-		return &stypes.QueryObservedTxVoter{TxID: common.TxID(txID), Reverted: false}, true, nil
-	}
-	quarantineCalls := 0
-	observer.permanentErrataQuarantineFn = func(common.ErrataTx, int64) error {
-		quarantineCalls++
-		return nil
-	}
 
 	// A matching observation can already be durably on deck when a peer's
 	// committed event wins the race. The event has no orphan location and must
@@ -638,7 +630,13 @@ func TestCommittedErrataEventBeforeScannerHandoffDoesNotReopenOutbox(t *testing.
 	observer.onDeck[deckKey] = deckTx
 	require.NoError(t, storage.AddOrUpdateTx(deckTx))
 
-	require.NoError(t, observer.handleErrataTxCommitted(errata))
+	require.NoError(t, observer.handleErrataTxCommittedOutcome(
+		errata,
+		common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION,
+	))
+	unresolved, err := observer.reconcileCommittedXMRErrata()
+	require.NoError(t, err)
+	require.Zero(t, unresolved)
 	require.NoError(t, deckRejected)
 	require.Contains(t, observer.onDeck, deckKey)
 	restored, err := storage.GetOnDeckTxs()
@@ -649,18 +647,9 @@ func TestCommittedErrataEventBeforeScannerHandoffDoesNotReopenOutbox(t *testing.
 	require.NotNil(t, tombstone)
 	require.True(t, tombstone.Committed)
 	require.Zero(t, tombstone.OrphanHeight)
-	require.Equal(t, int64(101), tombstone.VerifyAfterHeight)
-	require.Nil(t, tombstone.VoterReverted, "false is not authoritative at the event height")
-	require.Zero(t, quarantineCalls)
-
-	thornodeHeight = 101
-	unresolved, err := observer.reconcileCommittedXMRErrata()
-	require.NoError(t, err)
-	require.Equal(t, 1, unresolved)
-	tombstone, err = storage.getErrataTombstone(errata.Chain, errata.Id.String())
-	require.NoError(t, err)
-	require.Nil(t, tombstone.VoterReverted)
-	require.Zero(t, quarantineCalls)
+	require.Equal(t, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION, tombstone.Outcome)
+	require.NotNil(t, tombstone.VoterReverted)
+	require.False(t, *tombstone.VoterReverted)
 
 	// Once the local scanner supplies the orphan height, only that exact deck
 	// location is removed and acknowledged as orphaned.
@@ -750,7 +739,13 @@ func TestXMRCommittedErrataQuarantinesAfterPendingBarrierBeforeTerminalReceipt(t
 		return nil
 	}
 
-	require.NoError(t, observer.handleErrataTxCommitted(errata))
+	require.NoError(t, observer.handleErrataTxCommittedOutcome(
+		errata,
+		common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED,
+	))
+	unresolved, reconcileErr := observer.reconcileCommittedXMRErrata()
+	require.NoError(t, reconcileErr)
+	require.Zero(t, unresolved)
 	require.Equal(t, 1, hookCalls)
 	require.True(t, rejected)
 	tombstone, err := storage.getErrataTombstone(errata.Chain, errata.Id.String())
@@ -800,8 +795,6 @@ func TestXMRPermanentErrataUpgradeWaitsForInFlightQuorumSubmission(t *testing.T)
 		Chain: common.XMRChain,
 		Id:    common.TxID("1212121212121212121212121212121212121212121212121212121212121212"),
 	}
-	require.NoError(t, storage.applyCommittedErrata(errata, nil))
-	require.NoError(t, storage.recordErrataCommitted(errata, 1))
 
 	gossip, _, _, grpcClient, _, _ := setupTestGossip(t)
 	gossip.SetObserverStorage(storage)
@@ -844,6 +837,10 @@ func TestXMRPermanentErrataUpgradeWaitsForInFlightQuorumSubmission(t *testing.T)
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for in-flight quorum submission")
 	}
+	require.NoError(t, observer.handleErrataTxCommittedOutcome(
+		errata,
+		common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED,
+	))
 
 	beforePermanentWrite := make(chan struct{})
 	storage.beforeErrataWrite = func() error {
@@ -909,6 +906,9 @@ func TestXMRCommittedErrataQuarantineFailureRetriesOutcomeAfterRestart(t *testin
 		errata,
 		common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED,
 	))
+	unresolved, reconcileErr := observer.reconcileCommittedXMRErrata()
+	require.ErrorContains(t, reconcileErr, injected.Error())
+	require.Equal(t, 1, unresolved)
 
 	tombstone, err := storage.getErrataTombstone(errata.Chain, errata.Id.String())
 	require.NoError(t, err)
@@ -938,7 +938,7 @@ func TestXMRCommittedErrataQuarantineFailureRetriesOutcomeAfterRestart(t *testin
 	}
 	require.NoError(t, restarted.replayPermanentErrataQuarantines())
 	require.Zero(t, replayed)
-	unresolved, reconcileErr := restarted.reconcileCommittedXMRErrata()
+	unresolved, reconcileErr = restarted.reconcileCommittedXMRErrata()
 	require.NoError(t, reconcileErr)
 	require.Zero(t, unresolved)
 	require.Equal(t, 1, replayed)
@@ -959,6 +959,123 @@ func TestXMRCommittedErrataQuarantineFailureRetriesOutcomeAfterRestart(t *testin
 	require.Equal(t, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED, tombstone.Outcome)
 	require.NotNil(t, tombstone.VoterReverted)
 	require.True(t, *tombstone.VoterReverted)
+}
+
+func TestXMRCommittedRevertedOutcomeBlocksRemineBeforeAsyncQuarantine(t *testing.T) {
+	observer, storage := newErrataOrderingObserver(t)
+	errata := common.ErrataTx{
+		Chain:  common.XMRChain,
+		Id:     common.TxID("bdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbd"),
+		Height: 120,
+	}
+	require.NoError(t, observer.filterErrataTx(types.ErrataBlock{
+		Height: 120,
+		Txs:    []types.ErrataTx{{Chain: errata.Chain, TxID: errata.Id}},
+	}))
+	secondGeneration := errataOrderingItem(errata.Id.String(), 250, "before-reverted-outcome")
+	require.NoError(t, observer.processObservedTx(*errataOrderingTxIn(
+		common.XMRChain,
+		250,
+		0,
+		secondGeneration,
+	)))
+	require.Len(t, observer.onDeck, 1)
+
+	quarantineCalls := 0
+	observer.permanentErrataQuarantineFn = func(common.ErrataTx, int64) error {
+		quarantineCalls++
+		return nil
+	}
+	require.NoError(t, observer.handleErrataTxCommittedOutcome(
+		errata,
+		common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED,
+	))
+	require.Zero(t, quarantineCalls, "committed delivery must not run quarantine inline")
+
+	tombstone, err := storage.getErrataTombstone(errata.Chain, errata.Id.String())
+	require.NoError(t, err)
+	require.True(t, tombstone.hasCommittedRevertedOutcome())
+	require.Nil(t, tombstone.VoterReverted, "the maintenance worker has not completed quarantine yet")
+	require.True(t, tombstone.blocksMinedHeight(250), "pending quarantine must fail closed for a re-mine")
+
+	var admissionRejected error
+	thirdGeneration := errataOrderingItem(errata.Id.String(), 300, "during-async-quarantine")
+	thirdGeneration.OnObservedTxRejected = func(err error) { admissionRejected = err }
+	require.NoError(t, observer.processObservedTx(*errataOrderingTxIn(common.XMRChain, 300, 0, thirdGeneration)))
+	require.ErrorIs(t, admissionRejected, errObservedTxErrata)
+	require.Len(t, observer.onDeck, 1, "the pre-existing re-mine remains until its own errata delivery")
+
+	cleaned, err := observer.applyErrataTxWithOutbox(types.ErrataBlock{
+		Height:     250,
+		DeliveryID: "second-generation-while-quarantine-pending",
+		Txs:        []types.ErrataTx{{Chain: errata.Chain, TxID: errata.Id}},
+	}, true)
+	require.NoError(t, err)
+	require.Len(t, cleaned, 1)
+	require.Empty(t, observer.onDeck)
+	stored, err := storage.GetOnDeckTxs()
+	require.NoError(t, err)
+	require.Empty(t, stored)
+	tombstone, err = storage.getErrataTombstone(errata.Chain, errata.Id.String())
+	require.NoError(t, err)
+	require.True(t, tombstone.hasCommittedRevertedOutcome(), "later errata must preserve the committed result")
+	require.Nil(t, tombstone.VoterReverted)
+	require.True(t, tombstone.hasOrphanHeight(250), "the later-height cleanup must be durable")
+
+	unresolved, reconcileErr := observer.reconcileCommittedXMRErrata()
+	require.NoError(t, reconcileErr)
+	require.Zero(t, unresolved)
+	require.Equal(t, 1, quarantineCalls)
+	tombstone, err = storage.getErrataTombstone(errata.Chain, errata.Id.String())
+	require.NoError(t, err)
+	require.True(t, tombstone.isPermanentlyReverted())
+}
+
+func TestXMRCommittedRevertedOutcomeBlocksBroadcastBeforeAcknowledgement(t *testing.T) {
+	observer, storage := newErrataOrderingObserver(t)
+	errata := common.ErrataTx{
+		Chain:  common.XMRChain,
+		Id:     common.TxID("cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"),
+		Height: 121,
+	}
+	require.NoError(t, observer.filterErrataTx(types.ErrataBlock{
+		Height: 121,
+		Txs:    []types.ErrataTx{{Chain: errata.Chain, TxID: errata.Id}},
+	}))
+
+	observer.permanentErrataBroadcastBlockFn = func(got common.ErrataTx) error {
+		require.Equal(t, errata, got)
+		tombstone, err := storage.getErrataTombstone(errata.Chain, errata.Id.String())
+		require.NoError(t, err)
+		require.NotNil(t, tombstone)
+		require.False(t, tombstone.Committed, "broadcast block must precede committed receipt")
+		return nil
+	}
+	require.NoError(t, observer.handleErrataTxCommittedOutcome(
+		errata,
+		common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED,
+	))
+	tombstone, err := storage.getErrataTombstone(errata.Chain, errata.Id.String())
+	require.NoError(t, err)
+	require.True(t, tombstone.Committed)
+	require.Nil(t, tombstone.VoterReverted)
+}
+
+func TestXMRCommittedRevertedOutcomeDoesNotAcknowledgeFailedBroadcastBlock(t *testing.T) {
+	observer, storage := newErrataOrderingObserver(t)
+	errata := common.ErrataTx{
+		Chain: common.XMRChain,
+		Id:    common.TxID("cececececececececececececececececececececececececececececececece"),
+	}
+	injected := errors.New("injected exact block failure")
+	observer.permanentErrataBroadcastBlockFn = func(common.ErrataTx) error { return injected }
+	require.ErrorIs(t, observer.handleErrataTxCommittedOutcome(
+		errata,
+		common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED,
+	), injected)
+	tombstone, err := storage.getErrataTombstone(errata.Chain, errata.Id.String())
+	require.NoError(t, err)
+	require.Nil(t, tombstone)
 }
 
 func TestXMRNoApplicableObservationOutcomeIsTerminalAcrossRestart(t *testing.T) {
@@ -998,120 +1115,187 @@ func TestXMRNoApplicableObservationOutcomeIsTerminalAcrossRestart(t *testing.T) 
 	require.Zero(t, unresolved)
 }
 
-func TestXMRCommittedErrataVoterQueryFailureRetainsOutcomeRetry(t *testing.T) {
+func TestLegacyXMRCommittedErrataWithoutOutcomeFailsClosed(t *testing.T) {
 	observer, storage := newErrataOrderingObserver(t)
 	errata := common.ErrataTx{
 		Chain:  common.XMRChain,
 		Id:     common.TxID("abababababababababababababababababababababababababababababababab"),
 		Height: 75,
 	}
-	require.NoError(t, observer.filterErrataTx(types.ErrataBlock{
-		Height: 75,
-		Txs:    []types.ErrataTx{{Chain: errata.Chain, TxID: errata.Id}},
-	}))
-
-	queries := 0
-	bridge, bridgeOK := observer.thorchainBridge.(*MockThorchainBridge)
-	require.True(t, bridgeOK)
-	bridge.getObservedTxVoterFreshFunc = func(txID string) (*stypes.QueryObservedTxVoter, bool, error) {
-		queries++
-		if queries == 1 {
-			return nil, false, errors.New("voter block is not query-visible yet")
-		}
-		return &stypes.QueryObservedTxVoter{TxID: common.TxID(txID), Reverted: true}, true, nil
-	}
-	quarantines := 0
+	quarantineCalls := 0
 	observer.permanentErrataQuarantineFn = func(common.ErrataTx, int64) error {
-		quarantines++
+		quarantineCalls++
 		return nil
 	}
 
 	require.NoError(t, observer.handleErrataTxCommitted(errata))
-	pending, err := storage.getPendingErrata()
-	require.NoError(t, err)
-	require.Empty(t, pending, "committed delivery must stop duplicate errata votes")
-
+	unresolved, reconcileErr := observer.reconcileCommittedXMRErrata()
+	require.ErrorContains(t, reconcileErr, "has no explicit reverted outcome")
+	require.Equal(t, 1, unresolved)
 	tombstone, err := storage.getErrataTombstone(errata.Chain, errata.Id.String())
 	require.NoError(t, err)
 	require.True(t, tombstone.Committed)
+	require.Equal(t, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, tombstone.Outcome)
 	require.Nil(t, tombstone.VoterReverted)
-	require.Zero(t, quarantines)
-
-	unresolved, reconcileErr := observer.reconcileCommittedXMRErrata()
-	require.NoError(t, reconcileErr)
-	require.Zero(t, unresolved)
-	tombstone, err = storage.getErrataTombstone(errata.Chain, errata.Id.String())
-	require.NoError(t, err)
-	require.NotNil(t, tombstone.VoterReverted)
-	require.True(t, *tombstone.VoterReverted)
-	require.Equal(t, 1, quarantines)
+	require.Zero(t, quarantineCalls)
 }
 
-func TestXMRCommittedErrataReceiptSurvivesConfirmationRPCOutage(t *testing.T) {
+func TestCommittedErrataDeliveryDoesNotWaitForReconciliation(t *testing.T) {
 	observer, storage := newErrataOrderingObserver(t)
-	errata := common.ErrataTx{
-		Chain: common.XMRChain,
-		Id:    common.TxID("cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"),
+	observer.stopChan = make(chan struct{})
+	observer.globalErrataQueue = make(chan types.ErrataBlock)
+	observer.errataMaintenanceWake = make(chan struct{}, 1)
+	observer.wg = &sync.WaitGroup{}
+	observer.errataAttestFn = func(context.Context, common.ErrataTx) error { return nil }
+
+	first := common.ErrataTx{
+		Chain:  common.XMRChain,
+		Id:     common.TxID("dededededededededededededededededededededededededededededededede"),
+		Height: 100,
 	}
-	bridge, bridgeOK := observer.thorchainBridge.(*MockThorchainBridge)
-	require.True(t, bridgeOK)
-	bridge.getBlockHeightFreshFunc = func() (int64, error) {
-		return 0, errors.New("thornode height unavailable")
-	}
-	bridge.getObservedTxVoterFreshFunc = func(string) (*stypes.QueryObservedTxVoter, bool, error) {
-		return nil, false, errors.New("thornode voter unavailable")
+	require.NoError(t, observer.filterErrataTx(types.ErrataBlock{
+		Height: 100,
+		Txs:    []types.ErrataTx{{Chain: first.Chain, TxID: first.Id}},
+	}))
+
+	quarantineStarted := make(chan struct{})
+	releaseQuarantine := make(chan struct{})
+	var quarantineStartOnce sync.Once
+	quarantineCalls := 0
+	observer.permanentErrataQuarantineFn = func(common.ErrataTx, int64) error {
+		quarantineCalls++
+		quarantineStartOnce.Do(func() { close(quarantineStarted) })
+		<-releaseQuarantine
+		return nil
 	}
 
-	require.NoError(t, observer.handleErrataTxCommitted(errata))
-	tombstone, err := storage.getErrataTombstone(errata.Chain, errata.Id.String())
+	ctx, cancel := context.WithCancel(context.Background())
+	var releaseOnce sync.Once
+	var stopOnce sync.Once
+	processDone := make(chan struct{})
+	observer.startErrataMaintenance(ctx)
+	go func() {
+		defer close(processDone)
+		observer.processErrataTx(ctx)
+	}()
+	t.Cleanup(func() {
+		stopOnce.Do(func() { close(observer.stopChan) })
+		releaseOnce.Do(func() { close(releaseQuarantine) })
+		cancel()
+		observer.wg.Wait()
+		waitObserverLoop(t, processDone)
+	})
+
+	committed := make(chan error, 1)
+	go func() {
+		committed <- observer.handleErrataTxCommittedOutcome(
+			first,
+			common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED,
+		)
+	}()
+	select {
+	case err := <-committed:
+		require.NoError(t, err)
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("committed errata delivery waited for reconciliation")
+	}
+	select {
+	case <-quarantineStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("background reconciliation did not start")
+	}
+
+	for range 100 {
+		observer.requestErrataMaintenance()
+	}
+	second := types.ErrataBlock{
+		Height:     200,
+		DeliveryID: "delivery-during-stalled-reconciliation",
+		Txs: []types.ErrataTx{{
+			Chain: common.XMRChain,
+			TxID:  common.TxID("efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef"),
+		}},
+		Persisted: make(chan error, 1),
+	}
+	select {
+	case observer.globalErrataQueue <- second:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("global errata consumer was blocked by reconciliation")
+	}
+	select {
+	case err := <-second.Persisted:
+		require.NoError(t, err)
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("scanner persistence acknowledgement waited for reconciliation")
+	}
+	record, found, err := storage.GetPendingErrataTx(second.Txs[0])
 	require.NoError(t, err)
-	require.NotNil(t, tombstone)
-	require.True(t, tombstone.Committed, "the one-shot event must be durable before REST confirmation")
-	require.Zero(t, tombstone.VerifyAfterHeight)
-	require.Nil(t, tombstone.VoterReverted)
-	pending, err := storage.getPendingErrata()
-	require.NoError(t, err)
-	require.Empty(t, pending, "an RPC outage must not reopen an already delivered vote")
+	require.True(t, found)
+	require.True(t, record.DeliverySeen)
+	require.True(t, record.CleanupComplete)
+
+	stopOnce.Do(func() { close(observer.stopChan) })
+	releaseOnce.Do(func() { close(releaseQuarantine) })
+	cancel()
+	observer.wg.Wait()
+	waitObserverLoop(t, processDone)
+	require.Equal(t, 1, quarantineCalls, "coalesced wakeups must not start overlapping reconciliation passes")
 }
 
-func TestXMRMissingVoterRemainsRecheckableAfterFreshHeightBarrier(t *testing.T) {
+func TestErrataRetryMutexIsReleasedBeforeAttestationHandoff(t *testing.T) {
 	observer, storage := newErrataOrderingObserver(t)
-	errata := common.ErrataTx{
+	errata := types.ErrataTx{
 		Chain: common.XMRChain,
-		Id:    common.TxID("edededededededededededededededededededededededededededededededed"),
+		TxID:  common.TxID("fafafafafafafafafafafafafafafafafafafafafafafafafafafafafafafafa"),
 	}
-	bridge, bridgeOK := observer.thorchainBridge.(*MockThorchainBridge)
-	require.True(t, bridgeOK)
-	height := int64(700)
-	bridge.getBlockHeightFreshFunc = func() (int64, error) { return height, nil }
-	bridge.getObservedTxVoterFreshFunc = func(string) (*stypes.QueryObservedTxVoter, bool, error) {
-		return nil, false, nil
+	require.NoError(t, observer.filterErrataTx(types.ErrataBlock{
+		Height: 300,
+		Txs:    []types.ErrataTx{errata},
+	}))
+
+	attestationStarted := make(chan struct{})
+	releaseAttestation := make(chan struct{})
+	var releaseOnce sync.Once
+	observer.errataAttestFn = func(context.Context, common.ErrataTx) error {
+		close(attestationStarted)
+		<-releaseAttestation
+		return nil
+	}
+	t.Cleanup(func() { releaseOnce.Do(func() { close(releaseAttestation) }) })
+
+	now := time.Now()
+	firstDone := make(chan struct{})
+	go func() {
+		defer close(firstDone)
+		observer.retryPendingErrataAt(context.Background(), now)
+	}()
+	select {
+	case <-attestationStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first errata attestation did not start")
 	}
 
-	require.NoError(t, observer.handleErrataTxCommitted(errata))
-	tombstone, err := storage.getErrataTombstone(errata.Chain, errata.Id.String())
-	require.NoError(t, err)
-	require.Equal(t, int64(701), tombstone.VerifyAfterHeight)
-	require.Nil(t, tombstone.VoterReverted)
-
-	height = 701
-	unresolved, err := observer.reconcileCommittedXMRErrata()
-	require.NoError(t, err)
-	require.Equal(t, 1, unresolved)
-	tombstone, err = storage.getErrataTombstone(errata.Chain, errata.Id.String())
-	require.NoError(t, err)
-	require.Nil(t, tombstone.VoterReverted)
-
-	bridge.getObservedTxVoterFreshFunc = func(txID string) (*stypes.QueryObservedTxVoter, bool, error) {
-		return &stypes.QueryObservedTxVoter{TxID: common.TxID(txID), Reverted: true}, true, nil
+	secondDone := make(chan struct{})
+	go func() {
+		defer close(secondDone)
+		observer.retryPendingErrataAt(context.Background(), now)
+	}()
+	select {
+	case <-secondDone:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("errata retry mutex was held across attestation handoff")
 	}
-	unresolved, err = observer.reconcileCommittedXMRErrata()
+	record, found, err := storage.GetPendingErrataTx(errata)
 	require.NoError(t, err)
-	require.Zero(t, unresolved)
-	tombstone, err = storage.getErrataTombstone(errata.Chain, errata.Id.String())
-	require.NoError(t, err)
-	require.NotNil(t, tombstone.VoterReverted)
-	require.True(t, *tombstone.VoterReverted)
+	require.True(t, found)
+	require.Equal(t, uint32(1), record.AttestationAttempts)
+
+	releaseOnce.Do(func() { close(releaseAttestation) })
+	select {
+	case <-firstDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first errata retry did not finish")
+	}
 }
 
 func TestUnresolvedCommittedErrataDefersOnlyXMRChainStart(t *testing.T) {
@@ -1120,13 +1304,14 @@ func TestUnresolvedCommittedErrataDefersOnlyXMRChainStart(t *testing.T) {
 		Chain: common.XMRChain,
 		Id:    common.TxID("fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe"),
 	}
-	require.NoError(t, storage.applyCommittedErrata(errata, nil))
-	bridge, bridgeOK := observer.thorchainBridge.(*MockThorchainBridge)
-	require.True(t, bridgeOK)
-	bridge.getBlockHeightFreshFunc = func() (int64, error) { return 900, nil }
-	bridge.getObservedTxVoterFreshFunc = func(string) (*stypes.QueryObservedTxVoter, bool, error) {
-		return &stypes.QueryObservedTxVoter{TxID: errata.Id, Reverted: false}, true, nil
+	quarantineErr := errors.New("XMR quarantine temporarily unavailable")
+	observer.permanentErrataQuarantineFn = func(common.ErrataTx, int64) error {
+		return quarantineErr
 	}
+	require.NoError(t, observer.handleErrataTxCommittedOutcome(
+		errata,
+		common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED,
+	))
 	xmrChain := &errataStartOrderChain{}
 	btcChain := &errataStartOrderChain{}
 	observer.chains = map[common.Chain]chainclients.ChainClient{
@@ -1136,7 +1321,7 @@ func TestUnresolvedCommittedErrataDefersOnlyXMRChainStart(t *testing.T) {
 	observer.stopChan = make(chan struct{})
 
 	unresolved, err := observer.reconcileCommittedXMRErrata()
-	require.NoError(t, err)
+	require.ErrorIs(t, err, quarantineErr)
 	require.Equal(t, 1, unresolved)
 	observer.startConfiguredChainClients(true)
 	require.Equal(t, 1, btcChain.starts, "unrelated chain clients must remain operational")
@@ -1151,12 +1336,9 @@ func TestUnresolvedCommittedErrataDefersOnlyXMRChainStart(t *testing.T) {
 	require.Zero(t, xmrChain.rollbacks, "a deferred scanner has no rollback receiver")
 	tombstone, getErr := storage.getErrataTombstone(errata.Chain, errata.Id.String())
 	require.NoError(t, getErr)
-	require.Equal(t, int64(901), tombstone.VerifyAfterHeight)
-	require.Nil(t, tombstone.VoterReverted, "a false voter is not a permanent terminal")
+	require.Nil(t, tombstone.VoterReverted, "XMR must remain deferred until quarantine succeeds")
 
-	bridge.getObservedTxVoterFreshFunc = func(string) (*stypes.QueryObservedTxVoter, bool, error) {
-		return &stypes.QueryObservedTxVoter{TxID: errata.Id, Reverted: true}, true, nil
-	}
+	observer.permanentErrataQuarantineFn = func(common.ErrataTx, int64) error { return nil }
 	observer.startDeferredXMRChain(context.Background())
 	require.Equal(t, 1, xmrChain.starts)
 	observer.stopStartedChainClients()
@@ -1165,18 +1347,19 @@ func TestUnresolvedCommittedErrataDefersOnlyXMRChainStart(t *testing.T) {
 }
 
 func TestDeferredXMRChainCannotStartAfterObserverStop(t *testing.T) {
-	observer, storage := newErrataOrderingObserver(t)
+	observer, _ := newErrataOrderingObserver(t)
 	errata := common.ErrataTx{
 		Chain: common.XMRChain,
 		Id:    common.TxID("abababababababababababababababababababababababababababababababab"),
 	}
-	require.NoError(t, storage.applyCommittedErrata(errata, nil))
-	bridge, bridgeOK := observer.thorchainBridge.(*MockThorchainBridge)
-	require.True(t, bridgeOK)
-	bridge.getBlockHeightFreshFunc = func() (int64, error) { return 900, nil }
-	bridge.getObservedTxVoterFreshFunc = func(string) (*stypes.QueryObservedTxVoter, bool, error) {
-		return &stypes.QueryObservedTxVoter{TxID: errata.Id, Reverted: false}, true, nil
+	quarantineErr := errors.New("XMR quarantine temporarily unavailable")
+	observer.permanentErrataQuarantineFn = func(common.ErrataTx, int64) error {
+		return quarantineErr
 	}
+	require.NoError(t, observer.handleErrataTxCommittedOutcome(
+		errata,
+		common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED,
+	))
 	xmrChain := &errataStartOrderChain{}
 	btcChain := &errataStartOrderChain{}
 	observer.chains = map[common.Chain]chainclients.ChainClient{
@@ -1191,9 +1374,7 @@ func TestDeferredXMRChainCannotStartAfterObserverStop(t *testing.T) {
 	require.Equal(t, 1, btcChain.stops)
 	require.Zero(t, xmrChain.stops)
 
-	bridge.getObservedTxVoterFreshFunc = func(string) (*stypes.QueryObservedTxVoter, bool, error) {
-		return &stypes.QueryObservedTxVoter{TxID: errata.Id, Reverted: true}, true, nil
-	}
+	observer.permanentErrataQuarantineFn = func(common.ErrataTx, int64) error { return nil }
 	observer.startDeferredXMRChain(context.Background())
 	require.Zero(t, xmrChain.starts, "shutdown must win over late errata reconciliation")
 }

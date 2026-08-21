@@ -141,7 +141,10 @@ func TestPermanentXMRTombstoneRejectsEveryMinedHeight(t *testing.T) {
 	defer cleanupTestDB(t, storage, tempDir)
 
 	errata := common.ErrataTx{Chain: common.XMRChain, Id: "permanent-xmr-canonical-height"}
-	require.NoError(t, storage.applyCommittedErrata(errata, nil))
+	require.NoError(t, storage.recordLocalErrataCommittedOutcome(
+		errata,
+		common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED,
+	))
 	require.NoError(t, storage.recordErrataVoterResult(errata, true, nil))
 
 	gossip, _, _, _, _, _ := setupTestGossip(t)
