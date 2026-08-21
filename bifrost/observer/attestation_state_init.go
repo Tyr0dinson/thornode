@@ -530,7 +530,7 @@ func (s *AttestationGossip) receiveBatchedAttestationState(ctx context.Context, 
 		return fmt.Errorf("failed to acknowledge batch begin: %w", err)
 	}
 
-	total := 0
+	totalItems := 0
 	// Receive exactly the declared batches in order. Processing inline keeps
 	// per-stream work bounded without a worker pool or per-batch goroutines.
 	for expectedBatchNum := range totalBatches {
@@ -604,17 +604,19 @@ func (s *AttestationGossip) receiveBatchedAttestationState(ctx context.Context, 
 			return fmt.Errorf("failed to unmarshal batch: %w", err)
 		}
 
+		totalItems, err = validateAttestationStateTransferCount(totalItems, batch)
+		if err != nil {
+			return err
+		}
 		if err := s.processAttestationStateBatch(ctx, logger, batch); err != nil {
 			return fmt.Errorf("failed to process batch %d: %w", batchNum, err)
 		}
 
-		total += len(batch.QuoTxs)
-
 		logger.Debug().
 			Int("batch", batchNum+1).
 			Int("total_batches", totalBatches).
-			Int("batch_size", len(batch.QuoTxs)).
-			Int("total_collected", total).
+			Int("batch_size", attestationStateBatchItemCount(batch)).
+			Int("total_collected", totalItems).
 			Msg("batch received")
 	}
 
@@ -632,9 +634,29 @@ func (s *AttestationGossip) receiveBatchedAttestationState(ctx context.Context, 
 		return fmt.Errorf("failed to send final ack: %w", err)
 	}
 
-	logger.Debug().Int("total_txs", total).Msg("finished receiving attestation state")
+	logger.Debug().Int("total_items", totalItems).Msg("finished receiving attestation state")
 
 	return nil
+}
+
+func attestationStateBatchItemCount(batch common.QuorumState) int {
+	return len(batch.QuoTxs) +
+		len(batch.QuoNetworkFees) +
+		len(batch.QuoSolvencies) +
+		len(batch.QuoErrataTxs) +
+		len(batch.QuoPriceFeeds)
+}
+
+func validateAttestationStateTransferCount(current int, batch common.QuorumState) (int, error) {
+	next := current + attestationStateBatchItemCount(batch)
+	if next > maxAttestationStateItemsPerTransfer {
+		return current, fmt.Errorf(
+			"attestation state item count %d exceeds transfer maximum %d",
+			next,
+			maxAttestationStateItemsPerTransfer,
+		)
+	}
+	return next, nil
 }
 
 // validateAttestationStateBatch preflights structural bounds and required
@@ -665,6 +687,15 @@ func validateAttestationStateBatch(ctx context.Context, batch common.QuorumState
 		}
 	}
 	checkAttestations := func(name string, item int, attestations []*common.Attestation) error {
+		if len(attestations) > maxAttestationStateAttestationsPerItem {
+			return fmt.Errorf(
+				"%s[%d].attestations count %d exceeds maximum %d",
+				name,
+				item,
+				len(attestations),
+				maxAttestationStateAttestationsPerItem,
+			)
+		}
 		for i, attestation := range attestations {
 			if err := ctx.Err(); err != nil {
 				return err

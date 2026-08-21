@@ -442,30 +442,45 @@ func TestExpiredAfterQuorum(t *testing.T) {
 		name            string
 		quorumAttsSent  time.Time
 		lastAttsSent    time.Time
+		firstObserved   time.Time
 		expectedExpired bool
 	}{
 		{
 			name:            "Quorum not reached",
 			quorumAttsSent:  time.Time{},
 			lastAttsSent:    time.Now().Add(-10 * time.Minute),
+			firstObserved:   time.Now().Add(-10 * time.Minute),
+			expectedExpired: false,
+		},
+		{
+			name:            "Never sent non-quorum state expired",
+			firstObserved:   time.Now().Add(-40 * time.Minute),
+			expectedExpired: true,
+		},
+		{
+			name:            "Never sent recent state retained",
+			firstObserved:   time.Now().Add(-10 * time.Minute),
 			expectedExpired: false,
 		},
 		{
 			name:            "Quorum reached, not expired",
 			quorumAttsSent:  time.Now().Add(-10 * time.Minute),
 			lastAttsSent:    time.Now().Add(-10 * time.Minute),
+			firstObserved:   time.Now().Add(-10 * time.Minute),
 			expectedExpired: false,
 		},
 		{
 			name:            "Quorum reached, expired",
 			quorumAttsSent:  time.Now().Add(-20 * time.Minute),
 			lastAttsSent:    time.Now().Add(-10 * time.Minute),
+			firstObserved:   time.Now().Add(-20 * time.Minute),
 			expectedExpired: true,
 		},
 		{
 			name:            "Quorum not reached, but last sent expired",
 			quorumAttsSent:  time.Time{},
 			lastAttsSent:    time.Now().Add(-40 * time.Minute),
+			firstObserved:   time.Now().Add(-40 * time.Minute),
 			expectedExpired: true,
 		},
 	}
@@ -485,7 +500,7 @@ func TestExpiredAfterQuorum(t *testing.T) {
 			// Create a new attestation state
 			state := AttestationState[*attestableObservedTx]{
 				Item:                     &attestableObservedTx{ObservedTx: obsTx},
-				firstAttestationObserved: time.Now(),
+				firstAttestationObserved: tt.firstObserved,
 			}
 			state.quorumAttestationsSent = tt.quorumAttsSent
 			state.lastAttestationsSent = tt.lastAttsSent

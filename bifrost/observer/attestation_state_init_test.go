@@ -18,10 +18,12 @@ import (
 	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
 	stypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -1636,6 +1638,36 @@ func TestReceiveBatchedAttestationStateRejectsInvalidBatchSequence(t *testing.T)
 	}
 }
 
+func TestValidateAttestationStateTransferCount(t *testing.T) {
+	batch := common.QuorumState{
+		QuoTxs:         make([]*common.QuorumTx, 100),
+		QuoNetworkFees: make([]*common.QuorumNetworkFee, 100),
+		QuoSolvencies:  make([]*common.QuorumSolvency, 100),
+		QuoErrataTxs:   make([]*common.QuorumErrataTx, 100),
+		QuoPriceFeeds:  make([]*common.QuorumPriceFeed, 100),
+	}
+	require.Equal(t, 500, attestationStateBatchItemCount(batch))
+
+	total, err := validateAttestationStateTransferCount(
+		maxAttestationStateItemsPerTransfer-500,
+		batch,
+	)
+	require.NoError(t, err)
+	require.Equal(t, maxAttestationStateItemsPerTransfer, total)
+
+	total, err = validateAttestationStateTransferCount(
+		maxAttestationStateItemsPerTransfer-499,
+		batch,
+	)
+	require.ErrorContains(t, err, "exceeds transfer maximum")
+	require.Equal(
+		t,
+		maxAttestationStateItemsPerTransfer-499,
+		total,
+		"a rejected batch must not advance the accepted item count",
+	)
+}
+
 func TestReceiveBatchedAttestationStateRejectsMissingRequiredPayload(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -1777,6 +1809,166 @@ func TestValidateAttestationStateBatchRejectsNilPointersAndOversize(t *testing.T
 			require.ErrorContains(t, err, tt.errContains)
 		})
 	}
+}
+
+func TestValidateAttestationStateBatchBoundsNestedAttestations(t *testing.T) {
+	tests := []struct {
+		name  string
+		batch func([]*common.Attestation) common.QuorumState
+	}{
+		{
+			name: "transactions",
+			batch: func(attestations []*common.Attestation) common.QuorumState {
+				return common.QuorumState{QuoTxs: []*common.QuorumTx{{Attestations: attestations}}}
+			},
+		},
+		{
+			name: "network fees",
+			batch: func(attestations []*common.Attestation) common.QuorumState {
+				return common.QuorumState{QuoNetworkFees: []*common.QuorumNetworkFee{{
+					NetworkFee:   &common.NetworkFee{},
+					Attestations: attestations,
+				}}}
+			},
+		},
+		{
+			name: "solvencies",
+			batch: func(attestations []*common.Attestation) common.QuorumState {
+				return common.QuorumState{QuoSolvencies: []*common.QuorumSolvency{{
+					Solvency:     &common.Solvency{},
+					Attestations: attestations,
+				}}}
+			},
+		},
+		{
+			name: "errata",
+			batch: func(attestations []*common.Attestation) common.QuorumState {
+				return common.QuorumState{QuoErrataTxs: []*common.QuorumErrataTx{{
+					ErrataTx:     &common.ErrataTx{},
+					Attestations: attestations,
+				}}}
+			},
+		},
+		{
+			name: "price feeds",
+			batch: func(attestations []*common.Attestation) common.QuorumState {
+				return common.QuorumState{QuoPriceFeeds: []*common.QuorumPriceFeed{{
+					PriceFeed:    &common.PriceFeed{},
+					Attestations: attestations,
+				}}}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			atLimit := tt.batch(makeAttestationsForStateTest(maxAttestationStateAttestationsPerItem))
+			require.NoError(t, validateAttestationStateBatch(context.Background(), atLimit))
+
+			overLimit := tt.batch(makeAttestationsForStateTest(maxAttestationStateAttestationsPerItem + 1))
+			err := validateAttestationStateBatch(context.Background(), overLimit)
+			require.ErrorContains(t, err, fmt.Sprintf(
+				"attestations count %d exceeds maximum %d",
+				maxAttestationStateAttestationsPerItem+1,
+				maxAttestationStateAttestationsPerItem,
+			))
+		})
+	}
+}
+
+func signedNetworkFeeAttestations(
+	t *testing.T,
+	networkFee *common.NetworkFee,
+	count int,
+) []*common.Attestation {
+	t.Helper()
+	payload, err := networkFee.GetSignablePayload()
+	require.NoError(t, err)
+	attestations := make([]*common.Attestation, count)
+	for i := range attestations {
+		key := secp256k1.GenPrivKey()
+		signature, err := key.Sign(payload)
+		require.NoError(t, err)
+		attestations[i] = &common.Attestation{
+			PubKey:    key.PubKey().Bytes(),
+			Signature: signature,
+		}
+	}
+	return attestations
+}
+
+func TestValidateAttestationStateBatchRejectsTooManyValidDistinctSigners(t *testing.T) {
+	networkFee := &common.NetworkFee{
+		Chain:           common.BTCChain,
+		Height:          1,
+		TransactionSize: 1,
+		TransactionRate: 1,
+	}
+	attestations := signedNetworkFeeAttestations(
+		t,
+		networkFee,
+		maxAttestationStateAttestationsPerItem+1,
+	)
+	err := validateAttestationStateBatch(context.Background(), common.QuorumState{
+		QuoNetworkFees: []*common.QuorumNetworkFee{{
+			NetworkFee:   networkFee,
+			Attestations: attestations,
+		}},
+	})
+	require.ErrorContains(t, err, fmt.Sprintf(
+		"attestations count %d exceeds maximum %d",
+		maxAttestationStateAttestationsPerItem+1,
+		maxAttestationStateAttestationsPerItem,
+	))
+}
+
+func TestProcessAttestationStateBatchRejectsNestedOversizeBeforeDispatch(t *testing.T) {
+	ag, _, _, grpcClient, _, _ := setupTestGossip(t)
+	var thornodeRPCs atomic.Int32
+	grpcClient.sendQuorumNetworkFeeFunc = func(
+		context.Context,
+		*common.QuorumNetworkFee,
+		...grpc.CallOption,
+	) (*ebifrost.SendQuorumNetworkFeeResult, error) {
+		thornodeRPCs.Add(1)
+		return &ebifrost.SendQuorumNetworkFeeResult{}, nil
+	}
+
+	networkFee := &common.NetworkFee{
+		Chain:           common.BTCChain,
+		Height:          1,
+		TransactionSize: 1,
+		TransactionRate: 1,
+	}
+	err := ag.processAttestationStateBatch(context.Background(), ag.logger, common.QuorumState{
+		QuoNetworkFees: []*common.QuorumNetworkFee{{
+			NetworkFee:   networkFee,
+			Attestations: signedNetworkFeeAttestations(t, networkFee, 3),
+		}},
+		QuoSolvencies: []*common.QuorumSolvency{{
+			Solvency:     &common.Solvency{},
+			Attestations: makeAttestationsForStateTest(maxAttestationStateAttestationsPerItem + 1),
+		}},
+	})
+	require.ErrorContains(t, err, fmt.Sprintf(
+		"quoSolvencies[0].attestations count %d exceeds maximum %d",
+		maxAttestationStateAttestationsPerItem+1,
+		maxAttestationStateAttestationsPerItem,
+	))
+	require.Empty(t, ag.observedTxs)
+	require.Empty(t, ag.networkFees)
+	require.Empty(t, ag.solvencies)
+	require.Empty(t, ag.errataTxs)
+	require.Empty(t, ag.priceFeeds)
+	require.Zero(t, thornodeRPCs.Load(), "oversized preflight must not call Thornode")
+}
+
+func makeAttestationsForStateTest(count int) []*common.Attestation {
+	attestations := make([]*common.Attestation, count)
+	for i := range attestations {
+		attestations[i] = &common.Attestation{}
+	}
+	return attestations
 }
 
 func TestProcessAttestationStateBatchPreflightsBeforeDispatch(t *testing.T) {

@@ -62,10 +62,25 @@ const (
 	streamAckHeader = "ack_header"
 	streamAckData   = "ack_data"
 
-	// Bound both the complete transfer and each state type within one batch.
+	// Bound framing, decoded batches, and the complete imported snapshot.
 	maxAttestationStateBatches      uint32 = 1000
 	maxAttestationStateItemsPerType int    = 100
 	maxAttestationStateControlBytes uint32 = 5
+
+	// Ten thousand retained states is well above a normal churn snapshot while
+	// preventing valid small batches from accumulating into a 500,000-item
+	// transfer across all five categories.
+	maxAttestationStateItemsPerTransfer = 10_000
+
+	// The default desired validator set is 100 and chain/stagenet churn adds
+	// four nodes at a time. Allow 28 extra signers for overlapping membership
+	// views while keeping duplicate detection bounded. At 100 items in each of
+	// five categories, one batch can contain at most 64,000 attestations. Adding
+	// 128 unique attestations to initially empty states performs at most
+	// 4,064,000 prior-entry scans across that batch (8,128,000 signature/pubkey
+	// equality checks), so replacing the small linear lists with maps is not
+	// warranted.
+	maxAttestationStateAttestationsPerItem = 128
 
 	maxConcurrentAttestationStateReceives        = 10
 	maxConcurrentAttestationStateReceivesPerPeer = 1

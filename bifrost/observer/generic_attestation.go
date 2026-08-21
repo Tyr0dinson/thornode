@@ -259,6 +259,14 @@ func (s *AttestationState[T]) ShouldSendLate(minTimeBetweenAttestations time.Dur
 
 // ExpiredAfterQuorum determines if the attestation state can be pruned
 func (s *AttestationState[T]) ExpiredAfterQuorum(lateObserveTimeout, nonQuorumTimeout time.Duration) bool {
+	if s.lastAttestationsSent.IsZero() &&
+		!s.firstAttestationObserved.IsZero() &&
+		time.Since(s.firstAttestationObserved) > nonQuorumTimeout {
+		// Imported or locally-created non-quorum state must not live forever
+		// merely because no attestation was ever sent.
+		return true
+	}
+
 	if !s.lastAttestationsSent.IsZero() && time.Since(s.lastAttestationsSent) > nonQuorumTimeout {
 		// we haven't received a new attestation in a long time, stop tracking this item
 		return true
