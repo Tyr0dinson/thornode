@@ -3,6 +3,7 @@ package thorchain
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	. "gopkg.in/check.v1"
 
@@ -6995,6 +6996,71 @@ func (s AdvSwapQueueSuite) TestRapidSwapCacheContextRollbackOnFailure(c *C) {
 	// State.Count is still incremented (unconditional, outside if/else)
 	c.Assert(result.State.Count, Equals, uint64(1),
 		Commentf("State.Count should be 1 (incremented unconditionally), got %d", result.State.Count))
+}
+
+// TestAdvSwapFailureHistoryIsBounded reproduces the state-growth bug where a
+// persistently failing advanced swap rewrites every prior failure index and
+// reason on every attempt. Existing oversized histories must be compacted on
+// the next state update, and newly recorded diagnostics must remain bounded.
+func (s AdvSwapQueueSuite) TestAdvSwapFailureHistoryIsBounded(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	book := newSwapQueueAdv(mgr.Keeper())
+
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	ethPool.BalanceRune = cosmos.NewUint(10000 * common.One)
+	ethPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, ethPool), IsNil)
+
+	mgr.Keeper().SetMimir(ctx, "AdvSwapQueueRapidSwapMax", 1)
+
+	const existingFailures = 65
+	failedSwaps := make([]uint64, existingFailures)
+	failedReasons := make([]string, existingFailures)
+	for i := 0; i < existingFailures; i++ {
+		failedSwaps[i] = uint64(i)
+		failedReasons[i] = strings.Repeat("x", 1024)
+	}
+
+	tx := GetRandomTx()
+	ethAddr := GetRandomETHAddress()
+	tx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(1000*common.One)))
+	tx.Memo = fmt.Sprintf("=:%s:%s", common.ETHAsset, ethAddr)
+	swap := NewMsgSwap(
+		tx, common.ETHAsset, ethAddr,
+		cosmos.NewUint(999999*common.One), // impossible target: execution always fails
+		"", cosmos.ZeroUint(),
+		"", "", nil,
+		types.SwapType_market,
+		0, 0, types.SwapVersion_v2, GetRandomBech32Addr(),
+	)
+	swap.State = &types.SwapState{
+		Quantity:          1000,
+		Count:             existingFailures,
+		Interval:          0,
+		Deposit:           cosmos.NewUint(1000 * common.One),
+		In:                cosmos.ZeroUint(),
+		Out:               cosmos.ZeroUint(),
+		LastHeight:        ctx.BlockHeight() - 1,
+		FailedSwaps:       failedSwaps,
+		FailedSwapReasons: failedReasons,
+	}
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, *swap), IsNil)
+
+	c.Assert(book.EndBlock(ctx, mgr, false), IsNil)
+
+	result, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, swap.Tx.ID, 0)
+	c.Assert(err, IsNil)
+	c.Assert(result.State.Count, Equals, uint64(existingFailures+1))
+	c.Assert(len(result.State.FailedSwaps) <= 64, Equals, true,
+		Commentf("failure indexes grew to %d entries", len(result.State.FailedSwaps)))
+	c.Assert(len(result.State.FailedSwapReasons) <= 64, Equals, true,
+		Commentf("failure reasons grew to %d entries", len(result.State.FailedSwapReasons)))
+	for _, reason := range result.State.FailedSwapReasons {
+		c.Assert(len(reason) <= 256, Equals, true,
+			Commentf("failure reason grew to %d bytes", len(reason)))
+	}
 }
 
 // TestRapidSwapCacheContextCommitOnSuccess verifies that when a swap succeeds,
