@@ -353,4 +353,16 @@ func (s *InvariantsSuite) TestStreamingSwapsInvariant(c *C) {
 	c.Assert(broken, Equals, true)
 	c.Assert(len(msg), Equals, 1)
 	c.Assert(msg[0], Equals, fmt.Sprintf("%s: state.success_count 3 > state.quantity 2", limitTx.ID))
+
+	// Broken path: authoritative failures cannot exceed total attempts. Safe
+	// subtraction prevents this malformed state from wrapping SuccessCount.
+	limitSwap.State.Count = 2
+	limitSwap.State.FailedSwapCount = 3
+	limitSwap.State.FailedSwaps = []uint64{1, 2}
+	c.Assert(k.SetAdvSwapQueueItem(ctx, limitSwap), IsNil)
+
+	msg, broken = invariant(ctx)
+	c.Assert(broken, Equals, true)
+	c.Assert(len(msg), Equals, 1)
+	c.Assert(msg[0], Equals, fmt.Sprintf("%s: state.failure_count 3 > state.count 2", limitTx.ID))
 }

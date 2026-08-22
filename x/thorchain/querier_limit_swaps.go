@@ -59,6 +59,9 @@ func (qs queryServer) queryLimitSwaps(ctx cosmos.Context, req *types.QueryLimitS
 		if err := qs.mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &msg); err != nil {
 			continue
 		}
+		if msg.State != nil {
+			msg.State.CompactFailureHistory()
+		}
 
 		// Filter only limit swaps
 		if !msg.IsLimitSwap() {

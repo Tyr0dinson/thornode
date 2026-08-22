@@ -206,6 +206,7 @@ func (m *EventSwap) Events() (cosmos.Events, error) {
 
 // NewEventStreamingSwap create a new streaming swap event
 func NewEventStreamingSwap(inAsset, outAsset common.Asset, swp StreamingSwap) *EventStreamingSwap {
+	swp.CompactFailureHistory()
 	return &EventStreamingSwap{
 		TxID:              swp.TxID,
 		Interval:          swp.Interval,

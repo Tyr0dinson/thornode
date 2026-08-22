@@ -338,33 +338,65 @@ func (m *SwapperClout) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
 	return jsonify(m)
 }
 
-// Use openapi type since its swaptype is a string (i.e. "market", "limit") and not the int representation ("0", "1")
+func openAPISwapState(state *SwapState) *openapi.SwapState {
+	if state == nil {
+		return nil
+	}
+
+	// Marshal a bounded copy even when a caller supplies raw pre-upgrade state.
+	// This does not mutate the caller or persist the lazy migration.
+	compacted := *state
+	compacted.CompactFailureHistory()
+	return &openapi.SwapState{
+		Interval:          wrapInt64(int64(compacted.Interval)),
+		Quantity:          wrapInt64(int64(compacted.Quantity)),
+		Ttl:               wrapInt64(int64(compacted.Ttl)),
+		Count:             wrapInt64(int64(compacted.Count)),
+		LastHeight:        wrapInt64(compacted.LastHeight),
+		Deposit:           wrapString(compacted.Deposit.String()),
+		Withdrawn:         wrapString(compacted.Withdrawn.String()),
+		In:                wrapString(compacted.In.String()),
+		Out:               wrapString(compacted.Out.String()),
+		FailedSwaps:       convertUint64SliceToInt64(compacted.FailedSwaps),
+		FailedSwapReasons: compacted.FailedSwapReasons,
+		FailedSwapCount:   wrapInt64(int64(compacted.FailureCount())),
+	}
+}
+
+// Use the OpenAPI type since its swap type is a string (i.e. "market", "limit")
+// and not the protobuf integer representation ("0", "1").
+func openAPIMsgSwap(msg *MsgSwap) openapi.MsgSwap {
+	// Only display the SwapType if it is "limit", not if "market".
+	var swapType *string
+	if msg.SwapType != SwapType_market {
+		swapType = wrapString(msg.SwapType.String())
+	}
+	// TODO: After adv swap queue implementation,
+	// always display the SwapType?
+
+	return openapi.MsgSwap{
+		Tx:                      castTx(msg.Tx),
+		TargetAsset:             msg.TargetAsset.String(),
+		Destination:             wrapString(msg.Destination.String()),
+		TradeTarget:             msg.TradeTarget.String(),
+		AffiliateAddress:        wrapString(msg.AffiliateAddress.String()),
+		AffiliateBasisPoints:    msg.AffiliateBasisPoints.String(),
+		Signer:                  wrapString(msg.Signer.String()),
+		Aggregator:              wrapString(msg.Aggregator),
+		AggregatorTargetAddress: wrapString(msg.AggregatorTargetAddress),
+		AggregatorTargetLimit:   wrapUintPtr(msg.AggregatorTargetLimit),
+		SwapType:                swapType,
+		StreamQuantity:          wrapInt64(int64(msg.StreamQuantity)),
+		StreamInterval:          wrapInt64(int64(msg.StreamInterval)),
+		InitialBlockHeight:      wrapInt64(msg.InitialBlockHeight),
+		State:                   openAPISwapState(msg.State),
+	}
+}
+
 func openAPISwapQueue(swaps []*MsgSwap) []openapi.MsgSwap {
 	result := make([]openapi.MsgSwap, 0, len(swaps))
 	for _, msg := range swaps {
-		// Only display the SwapType if it is "limit", not if "market".
-		var swapType *string
-		if msg.SwapType != SwapType_market {
-			swapType = wrapString(msg.SwapType.String())
-		}
-		// TODO: After adv swap queue implementation,
-		// always display the SwapType?
-
-		result = append(result, openapi.MsgSwap{
-			Tx:                      castTx(msg.Tx),
-			TargetAsset:             msg.TargetAsset.String(),
-			Destination:             wrapString(msg.Destination.String()),
-			TradeTarget:             msg.TradeTarget.String(),
-			AffiliateAddress:        wrapString(msg.AffiliateAddress.String()),
-			AffiliateBasisPoints:    msg.AffiliateBasisPoints.String(),
-			Signer:                  wrapString(msg.Signer.String()),
-			Aggregator:              wrapString(msg.Aggregator),
-			AggregatorTargetAddress: wrapString(msg.AggregatorTargetAddress),
-			AggregatorTargetLimit:   wrapUintPtr(msg.AggregatorTargetLimit),
-			SwapType:                swapType,
-			StreamQuantity:          wrapInt64(int64(msg.StreamQuantity)),
-			StreamInterval:          wrapInt64(int64(msg.StreamInterval)),
-		})
+		result = append(result, openAPIMsgSwap(msg))
 	}
 	return result
 }
@@ -412,49 +444,9 @@ func (m *QuerySwapDetailsResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, e
 		})
 	}
 
-	// Only display the SwapType if it is "limit", not if "market".
-	var swapType *string
-	if m.Swap.SwapType != SwapType_market {
-		swapType = wrapString(m.Swap.SwapType.String())
-	}
-
-	// Convert SwapState if present
-	var state *openapi.SwapState
-	if m.Swap.State != nil {
-		state = &openapi.SwapState{
-			Interval:          wrapInt64(int64(m.Swap.State.Interval)),
-			Quantity:          wrapInt64(int64(m.Swap.State.Quantity)),
-			Ttl:               wrapInt64(int64(m.Swap.State.Ttl)),
-			Count:             wrapInt64(int64(m.Swap.State.Count)),
-			LastHeight:        wrapInt64(m.Swap.State.LastHeight),
-			Deposit:           wrapString(m.Swap.State.Deposit.String()),
-			Withdrawn:         wrapString(m.Swap.State.Withdrawn.String()),
-			In:                wrapString(m.Swap.State.In.String()),
-			Out:               wrapString(m.Swap.State.Out.String()),
-			FailedSwaps:       convertUint64SliceToInt64(m.Swap.State.FailedSwaps),
-			FailedSwapReasons: m.Swap.State.FailedSwapReasons,
-			FailedSwapCount:   wrapInt64(int64(m.Swap.State.FailureCount())),
-		}
-	}
-
+	swap := openAPIMsgSwap(m.Swap)
 	result := openapi.SwapDetailsResponse{
-		Swap: &openapi.MsgSwap{
-			Tx:                      castTx(m.Swap.Tx),
-			TargetAsset:             m.Swap.TargetAsset.String(),
-			Destination:             wrapString(m.Swap.Destination.String()),
-			TradeTarget:             m.Swap.TradeTarget.String(),
-			AffiliateAddress:        wrapString(m.Swap.AffiliateAddress.String()),
-			AffiliateBasisPoints:    m.Swap.AffiliateBasisPoints.String(),
-			Signer:                  wrapString(m.Swap.Signer.String()),
-			Aggregator:              wrapString(m.Swap.Aggregator),
-			AggregatorTargetAddress: wrapString(m.Swap.AggregatorTargetAddress),
-			AggregatorTargetLimit:   wrapUintPtr(m.Swap.AggregatorTargetLimit),
-			SwapType:                swapType,
-			StreamQuantity:          wrapInt64(int64(m.Swap.StreamQuantity)),
-			StreamInterval:          wrapInt64(int64(m.Swap.StreamInterval)),
-			InitialBlockHeight:      wrapInt64(m.Swap.InitialBlockHeight),
-			State:                   state,
-		},
+		Swap:      &swap,
 		Status:    wrapString(m.Status),
 		QueueType: wrapString(m.QueueType),
 	}

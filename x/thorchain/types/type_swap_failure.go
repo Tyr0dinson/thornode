@@ -1,6 +1,9 @@
 package types
 
-import "strings"
+import (
+	"strings"
+	"unicode/utf8"
+)
 
 const (
 	// MaxSwapFailureHistory bounds the diagnostic tail persisted for a swap.
@@ -76,6 +79,8 @@ func recordSwapFailure(stored uint64, failedSwaps []uint64, failedReasons []stri
 		stored++
 	}
 
+	// Repair any malformed legacy mismatch before adding the new aligned pair.
+	failedSwaps, failedReasons = compactSwapFailureHistory(failedSwaps, failedReasons)
 	failedSwaps = append(failedSwaps, index)
 	failedReasons = append(failedReasons, compactSwapFailureReason(reason))
 	failedSwaps, failedReasons = compactSwapFailureHistory(failedSwaps, failedReasons)
@@ -83,26 +88,58 @@ func recordSwapFailure(stored uint64, failedSwaps []uint64, failedReasons []stri
 }
 
 func compactSwapFailureHistory(failedSwaps []uint64, failedReasons []string) ([]uint64, []string) {
-	if len(failedSwaps) > MaxSwapFailureHistory {
-		failedSwaps = append([]uint64(nil), failedSwaps[len(failedSwaps)-MaxSwapFailureHistory:]...)
+	if len(failedSwaps) == len(failedReasons) && len(failedSwaps) <= MaxSwapFailureHistory {
+		valid := true
+		for _, reason := range failedReasons {
+			if len(reason) > MaxSwapFailureReasonBytes || !utf8.ValidString(reason) {
+				valid = false
+				break
+			}
+		}
+		if valid {
+			return failedSwaps, failedReasons
+		}
 	}
 
-	if len(failedReasons) > MaxSwapFailureHistory {
-		failedReasons = append([]string(nil), failedReasons[len(failedReasons)-MaxSwapFailureHistory:]...)
+	pairCount := len(failedSwaps)
+	if len(failedReasons) < pairCount {
+		pairCount = len(failedReasons)
 	}
-	for i := range failedReasons {
-		failedReasons[i] = compactSwapFailureReason(failedReasons[i])
+	if pairCount > MaxSwapFailureHistory {
+		pairCount = MaxSwapFailureHistory
+	}
+	if pairCount == 0 {
+		if failedSwaps == nil && failedReasons == nil {
+			return nil, nil
+		}
+		return []uint64{}, []string{}
 	}
 
-	return failedSwaps, failedReasons
+	// A shared suffix keeps indexes and reasons aligned even if a malformed
+	// legacy record contains different slice lengths. Always allocate fresh
+	// tails so compaction releases oversized backing arrays and never mutates a
+	// caller-owned slice.
+	compactedSwaps := append([]uint64(nil), failedSwaps[len(failedSwaps)-pairCount:]...)
+	compactedReasons := make([]string, pairCount)
+	start := len(failedReasons) - pairCount
+	for i := range compactedReasons {
+		compactedReasons[i] = compactSwapFailureReason(failedReasons[start+i])
+	}
+
+	return compactedSwaps, compactedReasons
 }
 
 func compactSwapFailureReason(reason string) string {
-	if len(reason) <= MaxSwapFailureReasonBytes {
-		return reason
+	// Handler errors should already be valid UTF-8, but imported or legacy
+	// state may not be. Normalize every value before applying the byte cap.
+	reason = strings.ToValidUTF8(reason, "")
+	if len(reason) > MaxSwapFailureReasonBytes {
+		reason = reason[:MaxSwapFailureReasonBytes]
+		for !utf8.ValidString(reason) {
+			reason = reason[:len(reason)-1]
+		}
 	}
 
-	// ToValidUTF8 removes a partial or invalid rune if the byte boundary cuts
-	// through UTF-8. Clone releases the potentially much larger backing string.
-	return strings.Clone(strings.ToValidUTF8(reason[:MaxSwapFailureReasonBytes], ""))
+	// Clone releases a potentially much larger backing string.
+	return strings.Clone(reason)
 }

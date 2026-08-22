@@ -1410,6 +1410,15 @@ func settleSwap(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason strin
 }
 
 func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason string) error {
+	if msg.State != nil {
+		// Settlement can be reached without a preceding queue write (for example,
+		// TTL expiry). Bound legacy diagnostics before they are copied into an
+		// event, without mutating the caller's State pointer.
+		state := *msg.State
+		state.CompactFailureHistory()
+		msg.State = &state
+	}
+
 	stableReserveInternal, err := isStableReserveInternalSwap(ctx, mgr, msg)
 	if err != nil {
 		return err

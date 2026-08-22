@@ -358,6 +358,16 @@ func StreamingSwapsInvariant(k KVStore) common.Invariant {
 
 			// Check count doesn't exceed quantity
 			// For limit swaps, check successful count; for market streaming swaps, check total count
+			if swap.FailCount() > swap.State.Count {
+				broken = true
+				msg = append(msg, fmt.Sprintf(
+					"%s: state.failure_count %d > state.count %d",
+					swap.Tx.ID.String(),
+					swap.FailCount(),
+					swap.State.Count,
+				))
+			}
+
 			var countToCheck uint64
 			var countLabel string
 			if swap.IsLimitSwap() {

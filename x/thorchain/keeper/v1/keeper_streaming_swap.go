@@ -42,6 +42,9 @@ func (k KVStore) GetStreamingSwapIterator(ctx cosmos.Context) cosmos.Iterator {
 func (k KVStore) GetStreamingSwap(ctx cosmos.Context, hash common.TxID) (StreamingSwap, error) {
 	record := NewStreamingSwap(hash, 0, 0, cosmos.ZeroUint(), cosmos.ZeroUint())
 	_, err := k.getStreamingSwap(ctx, k.GetKey(prefixStreamingSwap, hash.String()), &record)
+	if err == nil {
+		record.CompactFailureHistory()
+	}
 	return record, err
 }
 

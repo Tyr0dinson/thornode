@@ -126,7 +126,11 @@ func (m *MsgSwap) NextSize() (cosmos.Uint, cosmos.Uint) {
 }
 
 func (m *MsgSwap) SuccessCount() uint64 {
-	return m.State.Count - m.FailCount()
+	failures := m.FailCount()
+	if failures >= m.State.Count {
+		return 0
+	}
+	return m.State.Count - failures
 }
 
 func (m *MsgSwap) FailCount() uint64 {

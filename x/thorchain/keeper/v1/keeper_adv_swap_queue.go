@@ -45,7 +45,11 @@ func (k KVStore) SetAdvSwapQueueItem(ctx cosmos.Context, msg MsgSwap) error {
 		return fmt.Errorf("invalid tx hash")
 	}
 	if msg.State != nil {
-		msg.State.CompactFailureHistory()
+		// MsgSwap is passed by value, but State is a pointer. Clone it before
+		// normalization so a failed keeper write cannot mutate the caller.
+		state := *msg.State
+		state.CompactFailureHistory()
+		msg.State = &state
 	}
 	if err := k.SetAdvSwapQueueIndex(ctx, msg); err != nil {
 		return err
@@ -66,6 +70,12 @@ func (k KVStore) GetAdvSwapQueueItem(ctx cosmos.Context, txID common.TxID, index
 	ok, err := k.getMsgSwap(ctx, k.GetKey(prefixAdvSwapQueueItem, formatSwapQueueItemKey(txID, index)), &record)
 	if !ok {
 		return record, errors.New("not found")
+	}
+	if err == nil && record.State != nil {
+		// Compact the in-memory value immediately so the first post-upgrade queue
+		// pass does not clone or emit an oversized legacy diagnostic history. The
+		// next normal write persists this lazy migration.
+		record.State.CompactFailureHistory()
 	}
 	return record, err
 }

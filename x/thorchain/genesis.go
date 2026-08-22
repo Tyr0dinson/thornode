@@ -71,6 +71,9 @@ func ValidateGenesis(data GenesisState) error {
 		if err := item.ValidateBasic(); err != nil {
 			return fmt.Errorf("invalid swap msg: %w", err)
 		}
+		if item.State != nil && item.FailCount() > item.State.Count {
+			return fmt.Errorf("invalid swap msg: failure count %d exceeds attempt count %d", item.FailCount(), item.State.Count)
+		}
 	}
 
 	for _, item := range data.SwapQueueItems {
@@ -82,6 +85,9 @@ func ValidateGenesis(data GenesisState) error {
 	for _, item := range data.StreamingSwaps {
 		if err := item.Valid(); err != nil {
 			return fmt.Errorf("invalid streaming swap: %w", err)
+		}
+		if item.FailureCount() > item.Count {
+			return fmt.Errorf("invalid streaming swap: failure count %d exceeds attempt count %d", item.FailureCount(), item.Count)
 		}
 	}
 
@@ -645,6 +651,9 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 	for ; iterMsgSwap.Valid(); iterMsgSwap.Next() {
 		var m MsgSwap
 		k.Cdc().MustUnmarshal(iterMsgSwap.Value(), &m)
+		if m.State != nil {
+			m.State.CompactFailureHistory()
+		}
 		swapMsgs = append(swapMsgs, m)
 	}
 
@@ -663,6 +672,7 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 	for ; iterStreamingSwap.Valid(); iterStreamingSwap.Next() {
 		var s StreamingSwap
 		k.Cdc().MustUnmarshal(iterStreamingSwap.Value(), &s)
+		s.CompactFailureHistory()
 		streamSwaps = append(streamSwaps, s)
 	}
 

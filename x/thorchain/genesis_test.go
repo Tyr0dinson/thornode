@@ -65,6 +65,38 @@ func (GenesisTestSuite) TestGenesis(c *C) {
 	c.Assert(len(gs1.Pools) > 0, Equals, true)
 }
 
+func (GenesisTestSuite) TestValidateGenesisRejectsFailureCountBeyondAttempts(c *C) {
+	advSwap := types.NewMsgSwap(
+		GetRandomTx(),
+		common.BTCAsset,
+		GetRandomBTCAddress(),
+		cosmos.ZeroUint(),
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		"",
+		"",
+		nil,
+		types.SwapType_limit,
+		1,
+		0,
+		types.SwapVersion_v2,
+		GetRandomBech32Addr(),
+	)
+	advSwap.State.Count = 2
+	advSwap.State.FailedSwapCount = 3
+
+	state := DefaultGenesisState()
+	state.AdvSwapQueueItems = append(state.AdvSwapQueueItems, *advSwap)
+	c.Assert(ValidateGenesis(state), ErrorMatches, "invalid swap msg: failure count 3 exceeds attempt count 2")
+
+	stream := NewStreamingSwap(GetRandomTxHash(), 3, 1, cosmos.NewUint(100), cosmos.NewUint(100))
+	stream.Count = 2
+	stream.FailedSwapCount = 3
+	state.AdvSwapQueueItems = nil
+	state.StreamingSwaps = append(state.StreamingSwaps, stream)
+	c.Assert(ValidateGenesis(state), ErrorMatches, "invalid streaming swap: failure count 3 exceeds attempt count 2")
+}
+
 func (GenesisTestSuite) TestGenesisPOLReserveDepositRoundTrip(c *C) {
 	SetupConfigForTest()
 

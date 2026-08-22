@@ -1647,6 +1647,7 @@ func (qs queryServer) queryStreamingSwaps(ctx cosmos.Context, _ *types.QueryStre
 	for ; iter.Valid(); iter.Next() {
 		var stream StreamingSwap
 		qs.mgr.Keeper().Cdc().MustUnmarshal(iter.Value(), &stream)
+		stream.CompactFailureHistory()
 
 		var msgSwap MsgSwap
 		// Check up to the first two indices (0 through 1) for the MsgSwap; if not found, leave the fields blank.
@@ -1679,6 +1680,10 @@ func (qs queryServer) queryStreamingSwaps(ctx cosmos.Context, _ *types.QueryStre
 			ctx.Logger().Error("failed to unmarshal advanced swap queue item", "error", err)
 			continue
 		}
+		if msgSwap.State == nil {
+			continue
+		}
+		msgSwap.State.CompactFailureHistory()
 
 		// Only include streaming swaps (quantity > 1)
 		if !msgSwap.IsStreaming() {
@@ -3723,6 +3728,9 @@ func (qs queryServer) iterSwapQueue(ctx cosmos.Context, handle func(*MsgSwap)) {
 			msg := &MsgSwap{}
 			if err := qs.mgr.Keeper().Cdc().Unmarshal(advIterator.Value(), msg); err != nil {
 				continue
+			}
+			if msg.State != nil {
+				msg.State.CompactFailureHistory()
 			}
 			handle(msg)
 		}

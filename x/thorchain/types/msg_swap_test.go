@@ -447,9 +447,9 @@ func (MsgSwapSuite) TestSwapState_SuccessCount(c *C) {
 			FailedSwaps: []uint64{0, 1, 2, 3, 4},
 		},
 	}
-	// SuccessCount would be negative if using signed int, but uint64 wraps around
-	// This is an edge case that shouldn't happen in practice
+	// Corrupt imported state must not underflow the unsigned success count.
 	c.Assert(edgeSwap.FailCount(), Equals, uint64(5))
+	c.Assert(edgeSwap.SuccessCount(), Equals, uint64(0))
 
 	// Test with single swap
 	singleSwap := &MsgSwap{
