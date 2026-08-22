@@ -160,6 +160,29 @@ type attestationStateSnapshot struct {
 	containsXMR bool
 }
 
+func (s attestationStateSnapshot) batch(batchNum, batchSize int) common.QuorumState {
+	start := batchNum * batchSize
+	batch := common.QuorumState{}
+
+	if start < len(s.quorumTxs) {
+		batch.QuoTxs = s.quorumTxs[start:min(start+batchSize, len(s.quorumTxs))]
+	}
+	if start < len(s.networkFees) {
+		batch.QuoNetworkFees = s.networkFees[start:min(start+batchSize, len(s.networkFees))]
+	}
+	if start < len(s.solvencies) {
+		batch.QuoSolvencies = s.solvencies[start:min(start+batchSize, len(s.solvencies))]
+	}
+	if start < len(s.errataTxs) {
+		batch.QuoErrataTxs = s.errataTxs[start:min(start+batchSize, len(s.errataTxs))]
+	}
+	if start < len(s.priceFeeds) {
+		batch.QuoPriceFeeds = s.priceFeeds[start:min(start+batchSize, len(s.priceFeeds))]
+	}
+
+	return batch
+}
+
 // snapshotAttestationState copies the current state without blocking while it
 // holds the global state locks. Its release function keeps XMR errata cleanup
 // ordered after any returned XMR snapshot until the caller finishes using it.
@@ -357,70 +380,11 @@ func (s *AttestationGossip) sendAttestationState(ctx context.Context, stream net
 
 	// Send batches
 	for batchNum := 0; batchNum < totalBatches; batchNum++ {
-		startIdx := batchNum * maxQuorumTxsPerBatch
-		endIdx := startIdx + maxQuorumTxsPerBatch
-
-		var batchTxs []*common.QuorumTx
-		var batchNfs []*common.QuorumNetworkFee
-		var batchSolvencies []*common.QuorumSolvency
-		var batchErrataTxs []*common.QuorumErrataTx
-		var batchPriceFeeds []*common.QuorumPriceFeed
-
-		if totalTxs > 0 && startIdx < totalTxs {
-			if endIdx > totalTxs {
-				endIdx = totalTxs
-			}
-			batchTxs = allQuorumTxs[startIdx:endIdx]
-		}
-
-		if totalNfs > 0 && startIdx < totalNfs {
-			if endIdx > totalNfs {
-				endIdx = totalNfs
-			}
-			batchNfs = allNetworkFees[startIdx:endIdx]
-		}
-
-		if totalSolvencies > 0 && startIdx < totalSolvencies {
-			if endIdx > totalSolvencies {
-				endIdx = totalSolvencies
-			}
-			batchSolvencies = allSolvencies[startIdx:endIdx]
-		}
-
-		if totalErrataTxs > 0 && startIdx < totalErrataTxs {
-			if endIdx > totalErrataTxs {
-				endIdx = totalErrataTxs
-			}
-			batchErrataTxs = allErrataTxs[startIdx:endIdx]
-		}
-
-		if totalPriceFeeds > 0 && startIdx < totalPriceFeeds {
-			if endIdx > totalPriceFeeds {
-				endIdx = totalPriceFeeds
-			}
-			batchPriceFeeds = allPriceFeeds[startIdx:endIdx]
-		}
-
-		// Create batch with current set of QuorumTxs
-		batch := common.QuorumState{
-			QuoTxs:         batchTxs,
-			QuoNetworkFees: batchNfs,
-			QuoSolvencies:  batchSolvencies,
-			QuoErrataTxs:   batchErrataTxs,
-			QuoPriceFeeds:  batchPriceFeeds,
-		}
-
-		// Marshal the batch (handle empty batches specially)
-		var batchData []byte
-		if len(batch.QuoTxs) == 0 {
-			// For empty batches, use an empty buffer rather than marshaling an empty struct
-			batchData = []byte{}
-		} else {
-			batchData, err = batch.Marshal()
-			if err != nil {
-				s.logger.Error().Err(err).Int("batch", batchNum+1).Msg("failed to marshal batch")
-				return
-			}
+		batch := snapshot.batch(batchNum, maxQuorumTxsPerBatch)
+		batchData, marshalErr := batch.Marshal()
+		if marshalErr != nil {
+			s.logger.Error().Err(marshalErr).Int("batch", batchNum+1).Msg("failed to marshal batch")
+			return
 		}
 
 		// Send batch info (batch number and data size)

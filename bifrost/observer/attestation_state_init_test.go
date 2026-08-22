@@ -249,6 +249,130 @@ func TestSendAttestationStateSingleBatch(t *testing.T) {
 	}
 }
 
+func TestSendAttestationStateWithoutTransactions(t *testing.T) {
+	originalApplyDeadline := p2p.ApplyDeadline.Load()
+	p2p.ApplyDeadline.Store(false)
+	defer func() { p2p.ApplyDeadline.Store(originalApplyDeadline) }()
+
+	ag, _, _, _, _, _ := setupTestGossip(t)
+	ag.priceFeeds = make(map[string]*AttestationState[*common.PriceFeed])
+	ag.priceFeedsPool = NewAttestationStatePool[*common.PriceFeed]()
+
+	networkFee := common.NetworkFee{Chain: common.BTCChain, Height: 1}
+	solvency := common.Solvency{Id: "solvency", Chain: common.BTCChain, Height: 2}
+	errata := common.ErrataTx{Id: "errata", Chain: common.BTCChain, Height: 3}
+	priceFeed := common.PriceFeed{Time: 4}
+
+	ag.mu.Lock()
+	ag.networkFees[networkFee] = ag.networkFeesPool.NewAttestationState(&networkFee)
+	ag.solvencies[solvency.Id] = ag.solvenciesPool.NewAttestationState(&solvency)
+	ag.errataTxs[errata] = ag.errataTxsPool.NewAttestationState(&errata)
+	ag.priceFeeds["price-feed"] = ag.priceFeedsPool.NewAttestationState(&priceFeed)
+	ag.mu.Unlock()
+
+	stream := NewAutoResponderStream("test-peer")
+	done := make(chan struct{})
+	go func() {
+		ag.sendAttestationState(context.Background(), stream)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("sendAttestationState timed out")
+	}
+
+	var decoded common.QuorumState
+	for _, msg := range ParseMessages(stream.GetWrittenData()) {
+		if bytes.HasPrefix(msg, prefixBatchData) {
+			require.NoError(t, decoded.Unmarshal(msg[len(prefixBatchData):]))
+		}
+	}
+
+	require.Empty(t, decoded.QuoTxs)
+	require.Len(t, decoded.QuoNetworkFees, 1)
+	require.Len(t, decoded.QuoSolvencies, 1)
+	require.Len(t, decoded.QuoErrataTxs, 1)
+	require.Len(t, decoded.QuoPriceFeeds, 1)
+}
+
+func TestAttestationStateSnapshotBatchesUnevenCategories(t *testing.T) {
+	const batchSize = 2
+
+	tests := []struct {
+		name   string
+		counts [5]int
+	}{
+		{
+			name:   "empty transactions with every other category populated",
+			counts: [5]int{0, 3, 4, 5, 6},
+		},
+		{
+			name:   "every category spans multiple uneven batches",
+			counts: [5]int{3, 9, 5, 7, 4},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			snapshot := attestationStateSnapshot{}
+			for i := range tt.counts[0] {
+				snapshot.quorumTxs = append(snapshot.quorumTxs, &common.QuorumTx{
+					ObsTx: common.ObservedTx{Tx: common.Tx{ID: common.TxID(fmt.Sprintf("tx-%d", i))}},
+				})
+			}
+			for i := range tt.counts[1] {
+				snapshot.networkFees = append(snapshot.networkFees, &common.QuorumNetworkFee{
+					NetworkFee: &common.NetworkFee{Height: int64(i + 1)},
+				})
+			}
+			for i := range tt.counts[2] {
+				snapshot.solvencies = append(snapshot.solvencies, &common.QuorumSolvency{
+					Solvency: &common.Solvency{Id: common.TxID(fmt.Sprintf("solvency-%d", i))},
+				})
+			}
+			for i := range tt.counts[3] {
+				snapshot.errataTxs = append(snapshot.errataTxs, &common.QuorumErrataTx{
+					ErrataTx: &common.ErrataTx{Id: common.TxID(fmt.Sprintf("errata-%d", i))},
+				})
+			}
+			for i := range tt.counts[4] {
+				snapshot.priceFeeds = append(snapshot.priceFeeds, &common.QuorumPriceFeed{
+					PriceFeed: &common.PriceFeed{Time: int64(i + 1)},
+				})
+			}
+
+			totalBatches := 0
+			for _, count := range tt.counts {
+				totalBatches = max(totalBatches, (count+batchSize-1)/batchSize)
+			}
+
+			reconstructed := attestationStateSnapshot{}
+			for batchNum := range totalBatches {
+				batch := snapshot.batch(batchNum, batchSize)
+				data, err := batch.Marshal()
+				require.NoError(t, err)
+				require.NotEmpty(t, data)
+
+				var decoded common.QuorumState
+				require.NoError(t, decoded.Unmarshal(data))
+				reconstructed.quorumTxs = append(reconstructed.quorumTxs, decoded.QuoTxs...)
+				reconstructed.networkFees = append(reconstructed.networkFees, decoded.QuoNetworkFees...)
+				reconstructed.solvencies = append(reconstructed.solvencies, decoded.QuoSolvencies...)
+				reconstructed.errataTxs = append(reconstructed.errataTxs, decoded.QuoErrataTxs...)
+				reconstructed.priceFeeds = append(reconstructed.priceFeeds, decoded.QuoPriceFeeds...)
+			}
+
+			require.Equal(t, snapshot.quorumTxs, reconstructed.quorumTxs)
+			require.Equal(t, snapshot.networkFees, reconstructed.networkFees)
+			require.Equal(t, snapshot.solvencies, reconstructed.solvencies)
+			require.Equal(t, snapshot.errataTxs, reconstructed.errataTxs)
+			require.Equal(t, snapshot.priceFeeds, reconstructed.priceFeeds)
+		})
+	}
+}
+
 // TestSendAttestationStateMultipleBatches tests sending a large attestation state in multiple batches
 func TestSendAttestationStateMultipleBatches(t *testing.T) {
 	// Disable deadline application during tests
