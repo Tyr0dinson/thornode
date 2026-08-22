@@ -27,8 +27,6 @@ type (
 	ChainClient                       = types.ChainClient
 	CustomKeygenChainClient           = types.CustomKeygenChainClient
 	PermanentErrataQuarantiner        = types.PermanentErrataQuarantiner
-	SpentOutputRefsApplier            = types.SpentOutputRefsApplier
-	WireMemoSpentOutputRefsApplier    = types.WireMemoSpentOutputRefsApplier
 	SpentOutputRefsGuard              = types.SpentOutputRefsGuard
 	SpentOutputRefsCatchupGuardSetter = types.SpentOutputRefsCatchupGuardSetter
 )

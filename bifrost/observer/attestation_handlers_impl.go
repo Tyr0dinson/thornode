@@ -14,20 +14,30 @@ const priceFeedsUpdateDelay = time.Millisecond * 100
 
 // handleObservedTxAttestation processes attestations for observed transactions
 func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx common.AttestTx) bool {
-	return s.handleObservedTxAttestationInternal(ctx, tx, false)
+	return s.handleObservedTxAttestationInternal(ctx, tx, false, false)
 }
 
 // handleObservedTxAttestationAndQueue processes a locally-created attestation
 // and queues it for peer broadcast before releasing the XMR errata barrier.
 func (s *AttestationGossip) handleObservedTxAttestationAndQueue(ctx context.Context, tx common.AttestTx) bool {
-	return s.handleObservedTxAttestationInternal(ctx, tx, true)
+	return s.handleObservedTxAttestationInternal(ctx, tx, true, false)
+}
+
+// handleObservedTxAttestationFromStateSync keeps Thornode authorization
+// queries within the state-transfer deadline.
+func (s *AttestationGossip) handleObservedTxAttestationFromStateSync(ctx context.Context, tx common.AttestTx) bool {
+	return s.handleObservedTxAttestationInternal(ctx, tx, false, true)
 }
 
 func (s *AttestationGossip) handleObservedTxAttestationInternal(
 	ctx context.Context,
 	tx common.AttestTx,
 	queueForBroadcast bool,
+	stateSync bool,
 ) bool {
+	if ctx.Err() != nil {
+		return false
+	}
 	// State-batch preflight does not cover ordinary gossip or direct callers.
 	if tx.Attestation == nil {
 		s.logger.Error().Msg("skip observed tx with nil attestation")
@@ -48,10 +58,17 @@ func (s *AttestationGossip) handleObservedTxAttestationInternal(
 			}
 		}()
 	}
+	if ctx.Err() != nil {
+		return false
+	}
 
 	k := observedTxKey(obsTx, tx.Inbound, tx.AllowFutureObservation)
 
 	s.mu.Lock()
+	if ctx.Err() != nil {
+		s.mu.Unlock()
+		return false
+	}
 	// Serialize the tombstone check with observedTxs lookup/insertion. Errata
 	// cleanup commits its durable tombstone before taking this same mutex to
 	// remove volatile state, so every interleaving is safe: an observation
@@ -114,6 +131,10 @@ func (s *AttestationGossip) handleObservedTxAttestationInternal(
 	// This order must be maintained everywhere to avoid deadlock.
 	state.mu.Lock()
 	s.mu.Unlock()
+	if ctx.Err() != nil {
+		state.mu.Unlock()
+		return false
+	}
 
 	// Add the attestation
 	if err := state.AddAttestation(tx.Attestation); err != nil {
@@ -191,15 +212,39 @@ func (s *AttestationGossip) handleObservedTxAttestationInternal(
 
 	var applySpentRefs *common.ObservedTx
 	var onApplySpentRefsOutcome func(applied bool)
+	var releaseSpentRefsReservation func()
 	var applySpentRefsWireMemo string
 	if maybeApplySpentRefs != nil && maybeApplySpentRefsPayloadBound && s.hasObserverSpentOutputRefsApplier() {
-		wireMemo, authorized := s.authorizeXMRSpentRefsFromAttestations(*maybeApplySpentRefs, maybeApplySpentRefsAttestations)
+		var wireMemo string
+		var authorized bool
+		if stateSync {
+			wireMemo, authorized = s.authorizeXMRSpentRefsFromAttestationsWithContext(
+				ctx,
+				*maybeApplySpentRefs,
+				maybeApplySpentRefsAttestations,
+			)
+		} else {
+			wireMemo, authorized = s.authorizeXMRSpentRefsFromAttestations(
+				*maybeApplySpentRefs,
+				maybeApplySpentRefsAttestations,
+			)
+		}
+		if authorized && ctx.Err() != nil {
+			s.releaseAuthorizedXMRSpentRefs(
+				xmrSpentRefsConflictKeyFor(*maybeApplySpentRefs),
+				xmrSpentRefsIdentity(maybeApplySpentRefs.SpentOutputRefs),
+			)
+			authorized = false
+		}
 		if authorized {
 			applySpentRefsWireMemo = wireMemo
 			s.mu.Lock()
 			liveState, ok := s.observedTxs[k]
 			conflictKey := xmrSpentRefsConflictKeyFor(*maybeApplySpentRefs)
 			identity := xmrSpentRefsIdentity(maybeApplySpentRefs.SpentOutputRefs)
+			releaseSpentRefsReservation = func() {
+				s.releaseAuthorizedXMRSpentRefs(conflictKey, identity)
+			}
 			if ok {
 				// Re-acquire locks in the normal global-then-state order. The
 				// authorization path above can block on thornode, so the originally
@@ -236,13 +281,19 @@ func (s *AttestationGossip) handleObservedTxAttestationInternal(
 				// Authorization reserves the exact conflict identity. If the captured
 				// state was pruned/replaced before admission completed, release that
 				// reservation so a later exact certificate can retry.
-				s.resolveAuthorizedXMRSpentRefs(conflictKey, identity, false)
+				releaseSpentRefsReservation()
 			}
 		}
 	}
 
 	// Apply XMR spent output refs after all authorization and state bookkeeping.
 	// This seeds the sidecar only; it does not add a local attestation.
+	if applySpentRefs != nil && ctx.Err() != nil {
+		if releaseSpentRefsReservation != nil {
+			releaseSpentRefsReservation()
+		}
+		applySpentRefs = nil
+	}
 	if applySpentRefs != nil && s.hasObserverSpentOutputRefsApplier() {
 		s.applySpentRefsWithWireMemoAsync(*applySpentRefs, applySpentRefsWireMemo, onApplySpentRefsOutcome)
 	}

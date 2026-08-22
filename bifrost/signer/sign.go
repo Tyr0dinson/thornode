@@ -1442,21 +1442,16 @@ func (s *Signer) applySpentOutputRefsFromObs(ctx context.Context, tx types.TxOut
 		default:
 		}
 	}
-	if tx.Chain.Equals(common.XMRChain) {
-		applier, ok := chain.(chainclienttypes.WireMemoSpentOutputRefsApplier)
-		if !ok {
-			// Exact spent refs and wire-memo authentication are XMR signing
-			// invariants. Never discard the TxOut without the production hook.
-			return false
-		}
-		applier.ApplySpentOutputRefsWithWireMemoAndOutcome(obsTx, tx.Memo, onOutcome)
-	} else {
-		applier, ok := chain.(chainclienttypes.SpentOutputRefsApplier)
-		if !ok {
-			return true
-		}
-		applier.ApplySpentOutputRefsWithOutcome(obsTx, onOutcome)
+	if !tx.Chain.Equals(common.XMRChain) {
+		return true
 	}
+	applier, ok := chain.(chainclienttypes.WireMemoSpentOutputRefsApplier)
+	if !ok {
+		// Exact spent refs and wire-memo authentication are XMR signing
+		// invariants. Never discard the TxOut without the production hook.
+		return false
+	}
+	applier.ApplySpentOutputRefsWithWireMemoAndOutcome(obsTx, tx.Memo, onOutcome)
 	select {
 	case applied := <-outcome:
 		return applied

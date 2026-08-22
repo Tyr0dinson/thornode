@@ -225,12 +225,15 @@ func (m *MockGRPCClient) SendQuorumPriceFeedBatch(ctx context.Context, batch *co
 
 type MockThorchainBridge struct {
 	thorclient.ThorchainBridge
-	getKeysignPartyFunc         func(common.PubKey, int64) (common.PubKeys, error)
-	getKeysignPolicyFunc        func(common.PubKey, int64) (thorclient.KeysignPolicy, error)
-	getVaultFunc                func(string) (stypes.Vault, error)
-	getKeysignFunc              func(int64, string) (tctypes.TxOut, error)
-	getBlockHeightFunc          func() (int64, error)
-	getObservedTxVoterFunc      func(string) (*stypes.QueryObservedTxVoter, error)
+	getKeysignPartyFunc               func(common.PubKey, int64) (common.PubKeys, error)
+	getKeysignPolicyFunc              func(common.PubKey, int64) (thorclient.KeysignPolicy, error)
+	getVaultFunc                      func(string) (stypes.Vault, error)
+	getVaultWithContextFunc           func(context.Context, string) (stypes.Vault, error)
+	getKeysignFunc                    func(int64, string) (tctypes.TxOut, error)
+	getKeysignWithContextFunc         func(context.Context, int64, string) (tctypes.TxOut, error)
+	getBlockHeightFunc                func() (int64, error)
+	getObservedTxVoterFunc            func(string) (*stypes.QueryObservedTxVoter, error)
+	getObservedTxVoterWithContextFunc func(context.Context, string) (*stypes.QueryObservedTxVoter, error)
 }
 
 func (m *MockThorchainBridge) GetMimir(key string) (int64, error) {
@@ -278,6 +281,16 @@ func (m *MockThorchainBridge) GetVault(pubkey string) (stypes.Vault, error) {
 	return stypes.Vault{}, nil
 }
 
+func (m *MockThorchainBridge) GetVaultWithContext(ctx context.Context, pubkey string) (stypes.Vault, error) {
+	if m.getVaultWithContextFunc != nil {
+		return m.getVaultWithContextFunc(ctx, pubkey)
+	}
+	if err := ctx.Err(); err != nil {
+		return stypes.Vault{}, err
+	}
+	return m.GetVault(pubkey)
+}
+
 func (m *MockThorchainBridge) GetKeysign(blockHeight int64, pk string) (tctypes.TxOut, error) {
 	if m.getKeysignFunc != nil {
 		return m.getKeysignFunc(blockHeight, pk)
@@ -285,11 +298,31 @@ func (m *MockThorchainBridge) GetKeysign(blockHeight int64, pk string) (tctypes.
 	return tctypes.TxOut{}, nil
 }
 
+func (m *MockThorchainBridge) GetKeysignWithContext(ctx context.Context, blockHeight int64, pk string) (tctypes.TxOut, error) {
+	if m.getKeysignWithContextFunc != nil {
+		return m.getKeysignWithContextFunc(ctx, blockHeight, pk)
+	}
+	if err := ctx.Err(); err != nil {
+		return tctypes.TxOut{}, err
+	}
+	return m.GetKeysign(blockHeight, pk)
+}
+
 func (m *MockThorchainBridge) GetObservedTxVoter(txID string) (*stypes.QueryObservedTxVoter, error) {
 	if m.getObservedTxVoterFunc != nil {
 		return m.getObservedTxVoterFunc(txID)
 	}
 	return nil, nil
+}
+
+func (m *MockThorchainBridge) GetObservedTxVoterWithContext(ctx context.Context, txID string) (*stypes.QueryObservedTxVoter, error) {
+	if m.getObservedTxVoterWithContextFunc != nil {
+		return m.getObservedTxVoterWithContextFunc(ctx, txID)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return m.GetObservedTxVoter(txID)
 }
 
 type MockStream struct {
@@ -394,14 +427,14 @@ func NewMockEventClient() *MockEventClient {
 // MockThorchainBridge2 implements a broader set of ThorchainBridge methods for observer tests
 type MockThorchainBridge2 struct {
 	thorclient.ThorchainBridge
-	nodeStatus                  stypes.NodeStatus
-	activeNodes                 common.PubKeys
-	getMimirFunc                func(key string) (int64, error)
-	getKeysignPartyFunc         func(common.PubKey, int64) (common.PubKeys, error)
-	getKeysignPolicyFunc        func(common.PubKey, int64) (thorclient.KeysignPolicy, error)
-	getVaultFunc                func(string) (stypes.Vault, error)
-	getKeysignFunc              func(int64, string) (tctypes.TxOut, error)
-	getObservedTxVoterFunc      func(string) (*stypes.QueryObservedTxVoter, error)
+	nodeStatus             stypes.NodeStatus
+	activeNodes            common.PubKeys
+	getMimirFunc           func(key string) (int64, error)
+	getKeysignPartyFunc    func(common.PubKey, int64) (common.PubKeys, error)
+	getKeysignPolicyFunc   func(common.PubKey, int64) (thorclient.KeysignPolicy, error)
+	getVaultFunc           func(string) (stypes.Vault, error)
+	getKeysignFunc         func(int64, string) (tctypes.TxOut, error)
+	getObservedTxVoterFunc func(string) (*stypes.QueryObservedTxVoter, error)
 }
 
 func (m *MockThorchainBridge2) FetchNodeStatus() (stypes.NodeStatus, error) {

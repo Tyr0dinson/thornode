@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
+	tctypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
@@ -1469,7 +1470,7 @@ func TestAskStreamForStateTimesOutStalledTransfer(t *testing.T) {
 	}
 }
 
-func TestAskForAttestationStateStopsWaitingForBlockedProcessing(t *testing.T) {
+func TestAskForAttestationStateCancelsBlockedVaultQuery(t *testing.T) {
 	ag, host, _, _, bridge, _ := setupTestGossip(t)
 	ag.config.AskPeers = 1
 	ag.config.PeerTimeout = 100 * time.Millisecond
@@ -1484,14 +1485,12 @@ func TestAskForAttestationStateStopsWaitingForBlockedProcessing(t *testing.T) {
 	ag.SetObserverApplySpentOutputRefs(func(common.ObservedTx, func(bool)) {})
 
 	bridgeQueryStarted := make(chan struct{})
-	releaseBridgeQuery := make(chan struct{})
-	var releaseBridgeQueryOnce sync.Once
-	releaseQuery := func() { releaseBridgeQueryOnce.Do(func() { close(releaseBridgeQuery) }) }
-	t.Cleanup(releaseQuery)
-	bridge.getVaultFunc = func(string) (stypes.Vault, error) {
+	bridgeQueryExited := make(chan struct{})
+	bridge.getVaultWithContextFunc = func(ctx context.Context, _ string) (stypes.Vault, error) {
 		close(bridgeQueryStarted)
-		<-releaseBridgeQuery
-		return stypes.Vault{}, nil
+		<-ctx.Done()
+		close(bridgeQueryExited)
+		return stypes.Vault{}, ctx.Err()
 	}
 
 	attesterKey := secp256k1.GenPrivKey()
@@ -1554,13 +1553,81 @@ func TestAskForAttestationStateStopsWaitingForBlockedProcessing(t *testing.T) {
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("churn-in remained blocked after the state-sync budget expired")
 	}
-
-	releaseQuery()
+	select {
+	case <-bridgeQueryExited:
+	case <-time.After(time.Second):
+		t.Fatal("timed-out state-sync worker left the Thornode query running")
+	}
 	select {
 	case <-stream.secondReset:
 	case <-time.After(time.Second):
-		t.Fatal("timed-out state-sync worker did not finish after its blocked query was released")
+		t.Fatal("timed-out state-sync worker did not exit and reset its stream")
 	}
+}
+
+func TestProcessAttestationStateBatchDoesNotApplyAfterCanceledKeysignQuery(t *testing.T) {
+	ag, _, _, _, bridge, _ := setupTestGossip(t)
+	obsTx, planned := observerTestXMRPlan(t)
+	attester := secp256k1.GenPrivKey()
+	attesterPubKey := observerTestPubKey(t, attester)
+	bridge.getVaultWithContextFunc = func(ctx context.Context, pubKey string) (stypes.Vault, error) {
+		return observerTestVaultFunc(obsTx.ObservedPubKey, attesterPubKey)(pubKey)
+	}
+
+	queryStarted := make(chan struct{})
+	queryExited := make(chan struct{})
+	bridge.getKeysignWithContextFunc = func(ctx context.Context, height int64, pubKey string) (tctypes.TxOut, error) {
+		close(queryStarted)
+		<-ctx.Done()
+		close(queryExited)
+		// Simulate a bridge which races cancellation with a successful response.
+		// The state-sync worker must still reject the late result.
+		return observerTestKeysignFunc(planned)(height, pubKey)
+	}
+
+	var sidecarCalls atomic.Int32
+	ag.SetObserverApplySpentOutputRefs(func(common.ObservedTx, func(bool)) {
+		sidecarCalls.Add(1)
+	})
+	payload, err := obsTx.GetSignablePayloadWithInbound(false)
+	require.NoError(t, err)
+	signature, err := attester.Sign(payload)
+	require.NoError(t, err)
+	batch := common.QuorumState{QuoTxs: []*common.QuorumTx{{
+		ObsTx: obsTx,
+		Attestations: []*common.Attestation{{
+			PubKey:    attester.PubKey().Bytes(),
+			Signature: signature,
+		}},
+	}}}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- ag.processAttestationStateBatch(ctx, ag.logger, batch)
+	}()
+
+	select {
+	case <-queryStarted:
+	case <-time.After(time.Second):
+		t.Fatal("state-sync processing did not reach the keysign query")
+	}
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+	case <-time.After(time.Second):
+		t.Fatal("state-sync processing ignored cancellation during keysign lookup")
+	}
+	select {
+	case <-queryExited:
+	case <-time.After(time.Second):
+		t.Fatal("canceled keysign query left a worker running")
+	}
+	require.Zero(t, sidecarCalls.Load(), "a late keysign result must not reach the sidecar")
+	ag.mu.Lock()
+	require.Empty(t, ag.authorizedXMRSpentRefs, "a late keysign result must not reserve spent refs")
+	ag.mu.Unlock()
 }
 
 func TestReceiveBatchedAttestationStateRejectsInvalidBatchSequence(t *testing.T) {

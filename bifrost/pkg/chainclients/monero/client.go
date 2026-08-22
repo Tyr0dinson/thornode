@@ -225,7 +225,6 @@ type Client struct {
 // drifting independently. A missing final-outcome hook must be a build error,
 // not a runtime assertion miss which lets the signer discard the outbound.
 var (
-	_ types.SpentOutputRefsApplier            = (*Client)(nil)
 	_ types.WireMemoSpentOutputRefsApplier    = (*Client)(nil)
 	_ types.SpentOutputRefsCatchupGuardSetter = (*Client)(nil)
 )
@@ -2968,19 +2967,9 @@ func (c *Client) ApplySpentOutputRefs(tx common.ObservedTx) {
 	c.applySpentOutputRefs(tx, nil, nil, nil)
 }
 
-// ApplySpentOutputRefsWithOutcome reports the import's final outcome exactly
-// once: true when the sidecar confirmed the refs, immediately or on a later
-// bounded retry; false when the import failed terminally, exhausted its
-// retries, or could not be queued. Observer latch/conflict bookkeeping needs
-// the final outcome, not just the first attempt's.
-func (c *Client) ApplySpentOutputRefsWithOutcome(tx common.ObservedTx, onOutcome func(applied bool)) {
-	c.applySpentOutputRefs(tx, nil, nil, onOutcome)
-}
-
 // ApplySpentOutputRefsWithWireMemoAndOutcome imports refs while preserving the
 // semantic observation memo separately from the exact transaction wire memo.
-// wireMemo is used only for Sidecar transaction-extra authentication and may
-// be explicitly empty.
+// Signer uses this path before Observer has supplied its retry guard.
 func (c *Client) ApplySpentOutputRefsWithWireMemoAndOutcome(
 	tx common.ObservedTx,
 	wireMemo string,

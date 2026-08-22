@@ -771,11 +771,15 @@ func TestXMRSpentRefImportRetriesAfterBoundedSaturation(t *testing.T) {
 			onOutcome(true)
 		}
 	})
+	apply := func(tx common.ObservedTx, onOutcome func(bool)) {
+		wireMemo := tx.Tx.Memo
+		ag.applySpentRefsAsyncWithLimit(tx, &wireMemo, onOutcome, ag.applySpentRefsSem, "pre-quorum")
+	}
 
-	ag.applySpentRefsAsync(first, nil)
+	apply(first, nil)
 	require.Equal(t, first.Tx.ID, <-started)
 	rejected := make(chan bool, 1)
-	ag.applySpentRefsAsync(second, func(applied bool) { rejected <- applied })
+	apply(second, func(applied bool) { rejected <- applied })
 	require.False(t, <-rejected, "saturation must resolve the callback without leaking a waiter")
 
 	close(releases[first.Tx.ID])
@@ -784,7 +788,7 @@ func TestXMRSpentRefImportRetriesAfterBoundedSaturation(t *testing.T) {
 	// The same exact work can be resubmitted after the overload callback. This
 	// is the path used by a duplicate attestation/reconciliation tick.
 	retried := make(chan bool, 1)
-	ag.applySpentRefsAsync(second, func(applied bool) { retried <- applied })
+	apply(second, func(applied bool) { retried <- applied })
 	require.Equal(t, second.Tx.ID, <-started)
 	close(releases[second.Tx.ID])
 	require.True(t, <-retried)
@@ -837,7 +841,8 @@ func TestObservedXMRSpentRefsReconcileAfterCapacityRejection(t *testing.T) {
 // entry before reconciliation can issue Thornode RPCs.
 func TestCommittedXMRSpentRefsLatchExactPayload(t *testing.T) {
 	ag, _, _, _, bridge, _ := setupTestGossip(t)
-	exact, _ := observerTestXMRPlan(t)
+	exact, planned := observerTestXMRPlan(t)
+	bridge.getKeysignFunc = observerTestKeysignFunc(planned)
 	differing := exact
 	differing.SpentOutputRefs = []common.OutputRef{
 		observerTestOutputRef("committed-differing", exact.Tx.ID.String()),

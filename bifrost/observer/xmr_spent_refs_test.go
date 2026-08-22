@@ -772,7 +772,14 @@ func TestXMRSpentRefImportCapacityIsAcquiredBeforeSpawn(t *testing.T) {
 	}
 	require.Len(t, ag.applySpentRefsSem, 1)
 
-	ag.applyCommittedSpentRefsAsync(committed, nil)
+	committedWireMemo := committed.Tx.Memo
+	ag.applySpentRefsAsyncWithLimit(
+		committed,
+		&committedWireMemo,
+		nil,
+		ag.applyCommittedSpentRefsSem,
+		"committed",
+	)
 	select {
 	case got := <-started:
 		require.Equal(t, committed.Tx.ID, got)
@@ -1105,6 +1112,14 @@ func TestAuthorizedXMRSpentRefsLifecycle(t *testing.T) {
 	require.True(t, ag.rememberAuthorizedXMRSpentRefs(obsTx))
 	require.False(t, ag.rememberAuthorizedXMRSpentRefs(differing))
 	require.False(t, ag.rememberAuthorizedXMRSpentRefs(obsTx))
+
+	// Canceling before an import starts removes only the matching pending
+	// reservation. A mismatched release cannot disturb it.
+	ag.releaseAuthorizedXMRSpentRefs(key, identityB)
+	require.False(t, ag.rememberAuthorizedXMRSpentRefs(differing))
+	ag.releaseAuthorizedXMRSpentRefs(key, identityA)
+	require.Empty(t, ag.authorizedXMRSpentRefs)
+	require.True(t, ag.rememberAuthorizedXMRSpentRefs(obsTx))
 
 	// A terminal failure releases the entry for a differing authorized set.
 	ag.resolveAuthorizedXMRSpentRefs(key, identityA, false)

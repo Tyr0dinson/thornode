@@ -206,12 +206,10 @@ type AttestationGossip struct {
 	activeVals map[peer.ID]bool // active val peer IDs
 	avMu       sync.Mutex
 
-	observerHandleObservedTxCommitted  func(tx common.ObservedTx, allowFutureObservation bool)
-	observerHandleErrataTxCommitted    func(errata common.ErrataTx, outcome common.ErrataTxOutcome) error
-	observerApplySpentOutputRefs       func(tx common.ObservedTx, onOutcome func(applied bool))
-	observerApplySpentRefsWithWireMemo func(tx common.ObservedTx, wireMemo string, onOutcome func(applied bool))
-	observerApplySpentRefsGuarded      func(tx common.ObservedTx, wireMemo string, guard func() (func(), bool), onOutcome func(applied bool))
-	observerStorage                    *ObserverStorage
+	observerHandleObservedTxCommitted func(tx common.ObservedTx, allowFutureObservation bool)
+	observerHandleErrataTxCommitted   func(errata common.ErrataTx, outcome common.ErrataTxOutcome) error
+	observerApplySpentRefs            func(tx common.ObservedTx, wireMemo string, guard func() (func(), bool), onOutcome func(applied bool))
+	observerStorage                   *ObserverStorage
 	// xmrErrataAdmissionRequired is immutable for production instances and is
 	// also enabled when tests wire storage explicitly. It makes the short
 	// constructor window before Observer supplies storage fail closed for XMR.
@@ -422,23 +420,6 @@ func (s *AttestationGossip) SetObserverStorage(storage *ObserverStorage) {
 	s.xmrErrataAdmissionRequired = true
 }
 
-// SetObserverApplySpentOutputRefs wires the XMR sidecar import. The import
-// reports its final outcome through onOutcome exactly once, which may happen
-// after the call returns when the client retries transient failures.
-func (s *AttestationGossip) SetObserverApplySpentOutputRefs(fn func(tx common.ObservedTx, onOutcome func(applied bool))) {
-	s.observerApplySpentOutputRefs = fn
-}
-
-// SetObserverApplySpentOutputRefsWithWireMemo wires the production XMR import
-// contract. The semantic memo remains in tx, while wireMemo is the exact value
-// THORChain scheduled into the chain transaction (including an explicit empty
-// value for memoless OUT/REFUND transactions).
-func (s *AttestationGossip) SetObserverApplySpentOutputRefsWithWireMemo(
-	fn func(tx common.ObservedTx, wireMemo string, onOutcome func(applied bool)),
-) {
-	s.observerApplySpentRefsWithWireMemo = fn
-}
-
 // SetObserverApplySpentOutputRefsGuarded wires the production XMR import. The
 // client must enter guard around each sidecar attempt, including retries.
 func (s *AttestationGossip) SetObserverApplySpentOutputRefsGuarded(
@@ -449,19 +430,11 @@ func (s *AttestationGossip) SetObserverApplySpentOutputRefsGuarded(
 		onOutcome func(applied bool),
 	),
 ) {
-	s.observerApplySpentRefsGuarded = fn
+	s.observerApplySpentRefs = fn
 }
 
 func (s *AttestationGossip) hasObserverSpentOutputRefsApplier() bool {
-	return s.observerApplySpentRefsGuarded != nil ||
-		s.observerApplySpentRefsWithWireMemo != nil ||
-		s.observerApplySpentOutputRefs != nil
-}
-
-// hasWireMemoSpentOutputRefsApplier reports whether the configured import path
-// preserves the exact transaction wire memo separately from its semantic memo.
-func (s *AttestationGossip) hasWireMemoSpentOutputRefsApplier() bool {
-	return s.observerApplySpentRefsGuarded != nil || s.observerApplySpentRefsWithWireMemo != nil
+	return s.observerApplySpentRefs != nil
 }
 
 // acquireXMRSpentRefsAttempt orders one sidecar mutation before or after
@@ -519,32 +492,15 @@ func (s *AttestationGossip) applyObserverSpentOutputRefs(
 	guard := func() (func(), bool) {
 		return s.acquireXMRSpentRefsAttempt(tx)
 	}
-	// Production delegates the guard so every retry is admitted independently.
-	// Compatibility callbacks cannot accept it, so protect only their
-	// synchronous entry call.
-	if s.observerApplySpentRefsGuarded != nil {
-		s.observerApplySpentRefsGuarded(tx, wireMemo, guard, onOutcome)
-		return
-	}
-	release, ok := guard()
-	if !ok {
+	if s.observerApplySpentRefs == nil {
 		if onOutcome != nil {
 			onOutcome(false)
 		}
 		return
 	}
-	defer release()
-	if s.observerApplySpentRefsWithWireMemo != nil {
-		s.observerApplySpentRefsWithWireMemo(tx, wireMemo, onOutcome)
-		return
-	}
-	if s.observerApplySpentOutputRefs != nil {
-		s.observerApplySpentOutputRefs(tx, onOutcome)
-		return
-	}
-	if onOutcome != nil {
-		onOutcome(false)
-	}
+	// Production owns the guard for every sidecar attempt, including retries.
+	// Compatibility adapters above retain their former synchronous guard scope.
+	s.observerApplySpentRefs(tx, wireMemo, guard, onOutcome)
 }
 
 // applySpentRefsAsync keeps pre-quorum sidecar imports off the attestation hot
@@ -552,17 +508,6 @@ func (s *AttestationGossip) applyObserverSpentOutputRefs(
 // limiter. Capacity is acquired before spawning so an attacker cannot turn a
 // full limiter into an unbounded population of blocked goroutines. Saturated
 // work is rejected immediately; reconciliation can retry it later.
-func (s *AttestationGossip) applySpentRefsAsync(tx common.ObservedTx, onOutcome func(applied bool)) {
-	if s.hasWireMemoSpentOutputRefsApplier() {
-		// Production wire-aware callers must resolve the authoritative plan even
-		// if this legacy convenience helper is reused in the future.
-		s.applySpentRefsAsyncWithLimit(tx, nil, onOutcome, s.applySpentRefsSem, "pre-quorum")
-		return
-	}
-	wireMemo := tx.Tx.Memo
-	s.applySpentRefsAsyncWithLimit(tx, &wireMemo, onOutcome, s.applySpentRefsSem, "pre-quorum")
-}
-
 func (s *AttestationGossip) applySpentRefsWithWireMemoAsync(
 	tx common.ObservedTx,
 	wireMemo string,
@@ -613,7 +558,7 @@ func (s *AttestationGossip) applySpentRefsAsyncWithLimit(
 		resolvedWireMemo := tx.Tx.Memo
 		if wireMemo != nil {
 			resolvedWireMemo = *wireMemo
-		} else if s.hasWireMemoSpentOutputRefsApplier() {
+		} else {
 			planned, ok := s.findPlannedXMROutbound(tx)
 			if !ok {
 				if onOutcome != nil {

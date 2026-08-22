@@ -14,7 +14,7 @@ import (
 // Test 3 (partial): handleQuorumTxCommitted applies spent output refs for
 // XMR outbounds regardless of whether this node attested.
 func TestQuorumTxCommittedAppliesXMRSpentRefs(t *testing.T) {
-	ag, _, _, _, _, _ := setupTestGossip(t)
+	ag, _, _, _, bridge, _ := setupTestGossip(t)
 
 	t.Run("applies spent refs for XMR outbound on committed event", func(t *testing.T) {
 		var callbackTx *common.ObservedTx
@@ -25,17 +25,11 @@ func TestQuorumTxCommittedAppliesXMRSpentRefs(t *testing.T) {
 			}
 		})
 
-		refs := []common.OutputRef{
-			{TxHash: "spent1", OutputIndex: 0, KeyImage: "ki_spent1", SpendTxHash: "xmr-committed-1"},
-			{TxHash: "spent2", OutputIndex: 1, KeyImage: "ki_spent2", SpendTxHash: "xmr-committed-1"},
-		}
-		tx := common.ObservedTx{
-			Tx: common.Tx{
-				ID:    "xmr-committed-1",
-				Chain: common.XMRChain,
-			},
-			ObservedPubKey:  "pk-frost",
-			SpentOutputRefs: refs,
+		tx, planned := observerTestXMRPlan(t)
+		bridge.getKeysignFunc = observerTestKeysignFunc(planned)
+		tx.SpentOutputRefs = []common.OutputRef{
+			observerTestOutputRef("spent1", tx.Tx.ID.String()),
+			observerTestOutputRef("spent2", tx.Tx.ID.String()),
 		}
 
 		qtx := common.QuorumTx{
@@ -53,7 +47,7 @@ func TestQuorumTxCommittedAppliesXMRSpentRefs(t *testing.T) {
 		// return early at the "!ok" check. We need a matching txKey.
 		k := txKey{
 			Chain:     common.XMRChain,
-			ID:        "xmr-committed-1",
+			ID:        tx.Tx.ID,
 			Finalized: tx.IsFinal(),
 		}
 		ag.mu.Lock()
@@ -67,9 +61,7 @@ func TestQuorumTxCommittedAppliesXMRSpentRefs(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 
 		require.NotNil(t, callbackTx, "spent refs callback should fire for XMR outbound committed event")
-		assert.Equal(t, 2, len(callbackTx.SpentOutputRefs))
-		assert.Equal(t, "spent1", callbackTx.SpentOutputRefs[0].TxHash)
-		assert.Equal(t, "spent2", callbackTx.SpentOutputRefs[1].TxHash)
+		assert.Equal(t, tx.SpentOutputRefs, callbackTx.SpentOutputRefs)
 	})
 
 	t.Run("does not apply spent refs for non-XMR committed event", func(t *testing.T) {

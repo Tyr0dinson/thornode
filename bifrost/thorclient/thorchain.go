@@ -1,6 +1,7 @@
 package thorclient
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -140,11 +141,23 @@ type ThorchainBridge interface {
 	GetObservedTxVoter(txID string) (*stypes.QueryObservedTxVoter, error)
 }
 
+// ContextQueryBridge contains the cancellation-aware Thornode reads required
+// by synchronous attestation state import. It is separate from the broad
+// bridge contract so unrelated clients and test doubles do not need methods
+// used only by this security-sensitive path.
+type ContextQueryBridge interface {
+	GetVaultWithContext(ctx context.Context, pubkey string) (stypes.Vault, error)
+	GetKeysignWithContext(ctx context.Context, blockHeight int64, pk string) (types.TxOut, error)
+	GetObservedTxVoterWithContext(ctx context.Context, txID string) (*stypes.QueryObservedTxVoter, error)
+}
+
+var _ ContextQueryBridge = (*thorchainBridge)(nil)
+
 // httpResponseCache used for caching HTTP responses for less frequent querying
 type httpResponseCache struct {
 	httpResponse        []byte
 	httpResponseChecked time.Time
-	httpResponseMu      *sync.Mutex
+	httpResponseLock    chan struct{}
 }
 
 var (
@@ -223,30 +236,58 @@ func (b *thorchainBridge) getWithPath(path string) ([]byte, int, error) {
 	return b.get(b.getThorChainURL(path))
 }
 
+// getWithPathWithContext performs a cached retryable request whose cache wait,
+// request, and retries are all bounded by ctx.
+func (b *thorchainBridge) getWithPathWithContext(ctx context.Context, path string) ([]byte, int, error) {
+	return b.getWithContext(ctx, b.getThorChainURL(path))
+}
+
 // get handle all the low level http GET calls using retryablehttp.ThorchainBridge
 func (b *thorchainBridge) get(url string) ([]byte, int, error) {
+	return b.getCached(context.Background(), url, func() ([]byte, int, error) {
+		return b.getRetryable(url)
+	})
+}
+
+func (b *thorchainBridge) getWithContext(ctx context.Context, url string) ([]byte, int, error) {
+	return b.getCached(ctx, url, func() ([]byte, int, error) {
+		return b.getRetryableWithContext(ctx, url)
+	})
+}
+
+func (b *thorchainBridge) getCached(
+	ctx context.Context,
+	url string,
+	get func() ([]byte, int, error),
+) ([]byte, int, error) {
 	// To reduce querying time and chance of "429 Too Many Requests",
 	// do not query the same endpoint more than once per block time.
 	httpResponseCachesMu.Lock()
 	respCachePointer := httpResponseCaches[url]
 	if respCachePointer == nil {
-		// Since this is the first time using this endpoint, prepare a Mutex for it.
-		respCachePointer = &httpResponseCache{httpResponseMu: &sync.Mutex{}}
+		respCachePointer = &httpResponseCache{httpResponseLock: make(chan struct{}, 1)}
 		httpResponseCaches[url] = respCachePointer
 	}
 	httpResponseCachesMu.Unlock()
 
-	// So lengthy queries don't hold up short queries, use query-specific mutexes.
-	respCachePointer.httpResponseMu.Lock()
-	defer respCachePointer.httpResponseMu.Unlock()
+	// So lengthy queries don't hold up unrelated queries, serialize only callers
+	// for this URL. Context-aware callers can stop waiting with their transfer.
+	if err := respCachePointer.lock(ctx); err != nil {
+		return nil, 0, err
+	}
+	defer respCachePointer.unlock()
 
 	// When the same endpoint has been checked within the span of a single block, return the cached response.
 	if time.Since(respCachePointer.httpResponseChecked) < constants.ThorchainBlockTime && respCachePointer.httpResponse != nil {
 		return respCachePointer.httpResponse, http.StatusOK, nil
 	}
 
-	buf, status, err := b.getRetryable(url)
+	buf, status, err := get()
 	if err != nil {
+		return buf, status, err
+	}
+	if err := ctx.Err(); err != nil {
+		// A request which races its deadline must not populate the shared cache.
 		return buf, status, err
 	}
 
@@ -257,8 +298,39 @@ func (b *thorchainBridge) get(url string) ([]byte, int, error) {
 	return buf, status, nil
 }
 
+func (c *httpResponseCache) lock(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	select {
+	case c.httpResponseLock <- struct{}{}:
+		// If cancellation raced acquisition, prefer cancellation and release the
+		// lock before returning.
+		if err := ctx.Err(); err != nil {
+			<-c.httpResponseLock
+			return err
+		}
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (c *httpResponseCache) unlock() {
+	<-c.httpResponseLock
+}
+
 func (b *thorchainBridge) getRetryable(url string) ([]byte, int, error) {
 	resp, err := b.httpClient.Get(url)
+	return b.readThorchainResponse(resp, err)
+}
+
+func (b *thorchainBridge) getRetryableWithContext(ctx context.Context, url string) ([]byte, int, error) {
+	req, err := retryablehttp.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, 0, fmt.Errorf("create thornode request: %w", err)
+	}
+	resp, err := b.httpClient.Do(req)
 	return b.readThorchainResponse(resp, err)
 }
 
@@ -791,7 +863,22 @@ func (b *thorchainBridge) GetAsgards() (stypes.Vaults, error) {
 
 // GetVault retrieves a specific vault from thorchain.
 func (b *thorchainBridge) GetVault(pubkey string) (stypes.Vault, error) {
-	buf, s, err := b.getWithPath(fmt.Sprintf(VaultEndpoint, pubkey))
+	return b.getVault(pubkey, b.getWithPath)
+}
+
+// GetVaultWithContext retrieves a vault without allowing the request or its
+// retries to outlive ctx.
+func (b *thorchainBridge) GetVaultWithContext(ctx context.Context, pubkey string) (stypes.Vault, error) {
+	return b.getVault(pubkey, func(path string) ([]byte, int, error) {
+		return b.getWithPathWithContext(ctx, path)
+	})
+}
+
+func (b *thorchainBridge) getVault(
+	pubkey string,
+	get func(string) ([]byte, int, error),
+) (stypes.Vault, error) {
+	buf, s, err := get(fmt.Sprintf(VaultEndpoint, pubkey))
 	if err != nil {
 		return stypes.Vault{}, fmt.Errorf("fail to get vault: %w", err)
 	}
@@ -823,7 +910,22 @@ func (b *thorchainBridge) GetXMRSpentOutputRefs(vaultPubKey common.PubKey) ([]*c
 }
 
 func (b *thorchainBridge) GetObservedTxVoter(txID string) (*stypes.QueryObservedTxVoter, error) {
-	buf, s, err := b.getWithPath(fmt.Sprintf(TxDetailEndpoint, txID))
+	return b.getObservedTxVoter(txID, b.getWithPath)
+}
+
+// GetObservedTxVoterWithContext retrieves a voter without allowing the request
+// or its retries to outlive ctx.
+func (b *thorchainBridge) GetObservedTxVoterWithContext(ctx context.Context, txID string) (*stypes.QueryObservedTxVoter, error) {
+	return b.getObservedTxVoter(txID, func(path string) ([]byte, int, error) {
+		return b.getWithPathWithContext(ctx, path)
+	})
+}
+
+func (b *thorchainBridge) getObservedTxVoter(
+	txID string,
+	get func(string) ([]byte, int, error),
+) (*stypes.QueryObservedTxVoter, error) {
+	buf, s, err := get(fmt.Sprintf(TxDetailEndpoint, txID))
 	if err != nil {
 		return nil, fmt.Errorf("fail to get observed tx voter: %w", err)
 	}

@@ -797,7 +797,7 @@ func (s *AttestationGossip) processAttestationStateBatch(ctx context.Context, lo
 				return err
 			}
 			logger.Debug().Msg("handling attestation from peer state dump")
-			s.handleObservedTxAttestation(ctx, common.AttestTx{
+			s.handleObservedTxAttestationFromStateSync(ctx, common.AttestTx{
 				ObsTx:                  qt.ObsTx,
 				Inbound:                qt.Inbound,
 				Attestation:            att,

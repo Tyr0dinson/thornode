@@ -1,10 +1,12 @@
 package observer
 
 import (
+	"context"
 	"sort"
 	"strings"
 	"time"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	tctypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -94,6 +96,46 @@ func (s *AttestationGossip) authorizeXMRSpentRefsFromAttestations(
 	obsTx common.ObservedTx,
 	attestations []*common.Attestation,
 ) (string, bool) {
+	return s.authorizeXMRSpentRefsFromAttestationsWithQueries(
+		context.Background(),
+		obsTx,
+		attestations,
+		s.sourceVaultAttestationQuorum,
+		s.findPlannedXMROutbound,
+	)
+}
+
+// authorizeXMRSpentRefsFromAttestationsWithContext uses cancellation-aware
+// Thornode queries for synchronous state import. Raw responses remain cached,
+// while quorum is recomputed from the growing attestation set on every call.
+func (s *AttestationGossip) authorizeXMRSpentRefsFromAttestationsWithContext(
+	ctx context.Context,
+	obsTx common.ObservedTx,
+	attestations []*common.Attestation,
+) (string, bool) {
+	return s.authorizeXMRSpentRefsFromAttestationsWithQueries(
+		ctx,
+		obsTx,
+		attestations,
+		func(vaultPubKey common.PubKey, attestations []*common.Attestation) (int, int, bool) {
+			return s.sourceVaultAttestationQuorumWithContext(ctx, vaultPubKey, attestations)
+		},
+		func(obsTx common.ObservedTx) (plannedXMROutbound, bool) {
+			return s.findPlannedXMROutboundWithContext(ctx, obsTx)
+		},
+	)
+}
+
+func (s *AttestationGossip) authorizeXMRSpentRefsFromAttestationsWithQueries(
+	ctx context.Context,
+	obsTx common.ObservedTx,
+	attestations []*common.Attestation,
+	sourceVaultQuorum func(common.PubKey, []*common.Attestation) (int, int, bool),
+	findPlanned func(common.ObservedTx) (plannedXMROutbound, bool),
+) (string, bool) {
+	if ctx.Err() != nil {
+		return "", false
+	}
 	if len(attestations) == 0 {
 		return "", false
 	}
@@ -102,7 +144,10 @@ func (s *AttestationGossip) authorizeXMRSpentRefsFromAttestations(
 	if s.hasPendingOrConfirmedXMRSpentRefs(obsTx) {
 		return "", false
 	}
-	memberAttestations, membershipSize, ok := s.sourceVaultAttestationQuorum(obsTx.ObservedPubKey, attestations)
+	memberAttestations, membershipSize, ok := sourceVaultQuorum(obsTx.ObservedPubKey, attestations)
+	if ctx.Err() != nil {
+		return "", false
+	}
 	if !ok {
 		s.logger.Debug().
 			Str("tx_id", obsTx.Tx.ID.String()).
@@ -112,7 +157,10 @@ func (s *AttestationGossip) authorizeXMRSpentRefsFromAttestations(
 			Msg("skip peer xmr spent refs: source vault quorum not reached")
 		return "", false
 	}
-	planned, ok := s.findPlannedXMROutbound(obsTx)
+	planned, ok := findPlanned(obsTx)
+	if ctx.Err() != nil {
+		return "", false
+	}
 	if !ok {
 		s.logger.Debug().
 			Str("tx_id", obsTx.Tx.ID.String()).
@@ -144,7 +192,37 @@ func (s *AttestationGossip) sourceVaultAttestationQuorum(vaultPubKey common.PubK
 	if s.bridge == nil || vaultPubKey.IsEmpty() {
 		return 0, 0, false
 	}
-	vault, err := s.bridge.GetVault(vaultPubKey.String())
+	return s.sourceVaultAttestationQuorumWithLoader(vaultPubKey, attestations, s.bridge.GetVault)
+}
+
+func (s *AttestationGossip) sourceVaultAttestationQuorumWithContext(
+	ctx context.Context,
+	vaultPubKey common.PubKey,
+	attestations []*common.Attestation,
+) (int, int, bool) {
+	if s.bridge == nil || vaultPubKey.IsEmpty() || ctx.Err() != nil {
+		return 0, 0, false
+	}
+	contextBridge, ok := s.bridge.(thorclient.ContextQueryBridge)
+	if !ok {
+		s.logger.Error().Msg("skip peer xmr spent refs: Thornode bridge does not support context-aware queries")
+		return 0, 0, false
+	}
+	return s.sourceVaultAttestationQuorumWithLoader(
+		vaultPubKey,
+		attestations,
+		func(pubKey string) (thortypes.Vault, error) {
+			return contextBridge.GetVaultWithContext(ctx, pubKey)
+		},
+	)
+}
+
+func (s *AttestationGossip) sourceVaultAttestationQuorumWithLoader(
+	vaultPubKey common.PubKey,
+	attestations []*common.Attestation,
+	getVault func(string) (thortypes.Vault, error),
+) (int, int, bool) {
+	vault, err := getVault(vaultPubKey.String())
 	if err != nil {
 		s.logger.Debug().Err(err).Str("vault", vaultPubKey.String()).Msg("skip peer xmr spent refs: cannot load source vault")
 		return 0, 0, false
@@ -278,6 +356,19 @@ func (s *AttestationGossip) resolveAuthorizedXMRSpentRefs(key xmrSpentRefsConfli
 	entry.updatedAt = time.Now()
 }
 
+// releaseAuthorizedXMRSpentRefs removes a reservation which was canceled
+// before an import started. Actual import failures remain recorded through
+// resolveAuthorizedXMRSpentRefs so late outcomes retain their identity guard.
+func (s *AttestationGossip) releaseAuthorizedXMRSpentRefs(key xmrSpentRefsConflictKey, identity string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entry, ok := s.authorizedXMRSpentRefs[key]
+	if !ok || entry.identity != identity || entry.state != xmrSpentRefsImportPending {
+		return
+	}
+	delete(s.authorizedXMRSpentRefs, key)
+}
+
 // recordCommittedXMRSpentRefs stores a thornode-committed quorum ref set that
 // the local sidecar accepted. Committed refs outrank pre-quorum gossip, so this
 // overwrites whatever conflict memory an earlier attestation left behind.
@@ -341,6 +432,47 @@ func (s *AttestationGossip) findPlannedXMROutbound(obsTx common.ObservedTx) (pla
 	if s.bridge == nil {
 		return plannedXMROutbound{}, false
 	}
+	return s.findPlannedXMROutboundWithQueries(
+		context.Background(),
+		obsTx,
+		s.bridge.GetKeysign,
+		s.bridge.GetObservedTxVoter,
+	)
+}
+
+func (s *AttestationGossip) findPlannedXMROutboundWithContext(
+	ctx context.Context,
+	obsTx common.ObservedTx,
+) (plannedXMROutbound, bool) {
+	if s.bridge == nil || ctx.Err() != nil {
+		return plannedXMROutbound{}, false
+	}
+	contextBridge, ok := s.bridge.(thorclient.ContextQueryBridge)
+	if !ok {
+		s.logger.Error().Msg("skip peer xmr spent refs: Thornode bridge does not support context-aware queries")
+		return plannedXMROutbound{}, false
+	}
+	return s.findPlannedXMROutboundWithQueries(
+		ctx,
+		obsTx,
+		func(height int64, pubKey string) (tctypes.TxOut, error) {
+			return contextBridge.GetKeysignWithContext(ctx, height, pubKey)
+		},
+		func(txID string) (*thortypes.QueryObservedTxVoter, error) {
+			return contextBridge.GetObservedTxVoterWithContext(ctx, txID)
+		},
+	)
+}
+
+func (s *AttestationGossip) findPlannedXMROutboundWithQueries(
+	ctx context.Context,
+	obsTx common.ObservedTx,
+	getKeysign func(int64, string) (tctypes.TxOut, error),
+	getObservedTxVoter func(string) (*thortypes.QueryObservedTxVoter, error),
+) (plannedXMROutbound, bool) {
+	if ctx.Err() != nil {
+		return plannedXMROutbound{}, false
+	}
 	parsed, err := memo.ParseMemo(common.LatestVersion, obsTx.Tx.Memo)
 	if err != nil {
 		s.logger.Debug().Err(err).Str("memo", obsTx.Tx.Memo).Msg("skip peer xmr spent refs: cannot parse memo")
@@ -352,11 +484,11 @@ func (s *AttestationGossip) findPlannedXMROutbound(obsTx common.ObservedTx) (pla
 		// Migration/ragnarok memos carry the keysign height. Load the whole
 		// public txout for that height because a newly churned-in validator may
 		// not have the old vault pubkey in its local signer-key list.
-		return s.findPlannedXMROutboundAtKeysignHeight(obsTx, parsed.GetBlockHeight())
+		return s.findPlannedXMROutboundAtKeysignHeightWithGetter(obsTx, parsed.GetBlockHeight(), getKeysign)
 	case parsed.IsType(memo.TxOutbound), parsed.IsType(memo.TxRefund):
 		// Regular outbounds/refunds are tied back to the inbound voter actions,
 		// which are THORChain's planned txouts for that inbound.
-		return s.findPlannedXMROutboundInVoterActions(obsTx, parsed.GetTxID())
+		return s.findPlannedXMROutboundInVoterActionsWithGetter(obsTx, parsed.GetTxID(), getObservedTxVoter)
 	default:
 		return plannedXMROutbound{}, false
 	}
@@ -365,9 +497,10 @@ func (s *AttestationGossip) findPlannedXMROutbound(obsTx common.ObservedTx) (pla
 // findPlannedXMROutboundAtKeysignHeight matches a migration/ragnarok
 // observation against the planned txouts in the keysign block referenced by
 // the memo.
-func (s *AttestationGossip) findPlannedXMROutboundAtKeysignHeight(
+func (s *AttestationGossip) findPlannedXMROutboundAtKeysignHeightWithGetter(
 	obsTx common.ObservedTx,
 	height int64,
+	getKeysign func(int64, string) (tctypes.TxOut, error),
 ) (plannedXMROutbound, bool) {
 	if height <= 0 {
 		return plannedXMROutbound{}, false
@@ -375,7 +508,7 @@ func (s *AttestationGossip) findPlannedXMROutboundAtKeysignHeight(
 	// Empty pubkey selects /thorchain/keysign/{height}. This is intentionally
 	// broader than /thorchain/keysign/{height}/{pubkey} so validators outside
 	// the old source vault can still verify a planned migration before import.
-	txOut, err := s.bridge.GetKeysign(height, "")
+	txOut, err := getKeysign(height, "")
 	if err != nil {
 		s.logger.Debug().Err(err).Int64("height", height).Msg("skip peer xmr spent refs: cannot load keysign block")
 		return plannedXMROutbound{}, false
@@ -389,14 +522,15 @@ func (s *AttestationGossip) findPlannedXMROutboundAtKeysignHeight(
 
 // findPlannedXMROutboundInVoterActions matches non-migration XMR outbounds
 // against the actions recorded on the inbound observed-tx voter.
-func (s *AttestationGossip) findPlannedXMROutboundInVoterActions(
+func (s *AttestationGossip) findPlannedXMROutboundInVoterActionsWithGetter(
 	obsTx common.ObservedTx,
 	inboundID common.TxID,
+	getObservedTxVoter func(string) (*thortypes.QueryObservedTxVoter, error),
 ) (plannedXMROutbound, bool) {
 	if inboundID.IsEmpty() {
 		return plannedXMROutbound{}, false
 	}
-	voter, err := s.bridge.GetObservedTxVoter(inboundID.String())
+	voter, err := getObservedTxVoter(inboundID.String())
 	if err != nil {
 		s.logger.Debug().Err(err).Str("inbound_id", inboundID.String()).Msg("skip peer xmr spent refs: cannot load observed tx voter")
 		return plannedXMROutbound{}, false
