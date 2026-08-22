@@ -595,6 +595,52 @@ func (s *BlockScannerExtraSuite) TestEmptyTxInPersistenceIsDeliveredAndAcknowled
 	c.Check(fetcher.finalized.Load(), Equals, true)
 }
 
+func (s *BlockScannerExtraSuite) TestScanLoopDispatchesReporterAfterDurableScanPosition(c *C) {
+	server, bridge := s.newRewindTestBridge(c)
+	defer server.Close()
+
+	fetcher := &emptyPersistenceFetcher{persisted: make(chan error, 1)}
+	storage := NewMockScannerStorage()
+	dispatched := make(chan reporterDispatchCall, 1)
+	var persistedAtDispatch int64
+	var persistErr error
+	dispatcher := &recordingReporterDispatcher{
+		onProcess: func(chain common.Chain, height int64) {
+			persistedAtDispatch, persistErr = storage.GetScanPos()
+			dispatched <- reporterDispatchCall{chain: chain, height: height}
+		},
+	}
+	scanner, err := NewBlockScanner(config.BifrostBlockScannerConfiguration{
+		StartBlockHeight:           1,
+		BlockHeightDiscoverBackoff: time.Millisecond,
+		ChainID:                    common.ETHChain,
+		MaxHealthyLag:              time.Hour,
+	}, storage, m, bridge, fetcher)
+	c.Assert(err, IsNil)
+
+	txQueue := make(chan stypes.TxIn, 1)
+	scanner.Start(txQueue, make(chan common.NetworkFee, 1), dispatcher)
+	defer scanner.Stop()
+
+	select {
+	case txIn := <-txQueue:
+		txIn.Persisted <- nil
+	case <-time.After(time.Second):
+		c.Fatal("persistence handshake was not enqueued")
+	}
+
+	select {
+	case call := <-dispatched:
+		c.Check(call, DeepEquals, reporterDispatchCall{chain: common.ETHChain, height: 2})
+	case <-time.After(time.Second):
+		c.Fatal("reporter was not dispatched after persisted block")
+	}
+	c.Assert(persistErr, IsNil)
+	c.Check(fetcher.finalized.Load(), Equals, true)
+	c.Check(persistedAtDispatch, Equals, int64(2))
+	c.Check(dispatcher.Calls(), DeepEquals, []reporterDispatchCall{{chain: common.ETHChain, height: 2}})
+}
+
 func (f *persistenceFailureFetcher) signalFailure() {
 	f.failureOnce.Do(func() { close(f.failureObserved) })
 }
@@ -637,12 +683,13 @@ func (f *persistenceFailureFetcher) GetNetworkFee() (uint64, uint64) {
 	return 250, 30
 }
 
-func (s *BlockScannerExtraSuite) TestPersistenceFailuresBackOffAndReportUnhealthy(c *C) {
+func (s *BlockScannerExtraSuite) TestPersistenceFailuresBackOffAndSkipReporterDispatch(c *C) {
 	server, bridge := s.newRewindTestBridge(c)
 	defer server.Close()
 
 	for _, mode := range []string{"observer_ack", "finalize", "scan_pos"} {
 		fetcher := &persistenceFailureFetcher{mode: mode, failureObserved: make(chan struct{})}
+		dispatcher := &recordingReporterDispatcher{}
 		var scannerStorage ScannerStorage = NewMockScannerStorage()
 		if mode == "scan_pos" {
 			scannerStorage = &failingRewindStorage{
@@ -659,7 +706,7 @@ func (s *BlockScannerExtraSuite) TestPersistenceFailuresBackOffAndReportUnhealth
 		}, scannerStorage, m, bridge, fetcher)
 		c.Assert(err, IsNil, Commentf("mode %s", mode))
 
-		scanner.Start(make(chan stypes.TxIn, 4), make(chan common.NetworkFee, 4), nil)
+		scanner.Start(make(chan stypes.TxIn, 4), make(chan common.NetworkFee, 4), dispatcher)
 		select {
 		case <-fetcher.failureObserved:
 		case <-time.After(time.Second):
@@ -670,6 +717,7 @@ func (s *BlockScannerExtraSuite) TestPersistenceFailuresBackOffAndReportUnhealth
 		c.Check(waitForUnhealthy(scanner), Equals, true, Commentf("mode %s reported healthy", mode))
 		time.Sleep(30 * time.Millisecond)
 		c.Check(fetcher.calls.Load(), Equals, int64(1), Commentf("mode %s retried without backoff", mode))
+		c.Check(dispatcher.Calls(), HasLen, 0, Commentf("mode %s dispatched an uncommitted block", mode))
 		scanner.Stop()
 	}
 }

@@ -104,11 +104,24 @@ type reporterDispatchCall struct {
 }
 
 type recordingReporterDispatcher struct {
-	calls []reporterDispatchCall
+	mu        sync.Mutex
+	calls     []reporterDispatchCall
+	onProcess func(common.Chain, int64)
 }
 
 func (d *recordingReporterDispatcher) Process(chain common.Chain, height int64) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	d.calls = append(d.calls, reporterDispatchCall{chain: chain, height: height})
+	if d.onProcess != nil {
+		d.onProcess(chain, height)
+	}
+}
+
+func (d *recordingReporterDispatcher) Calls() []reporterDispatchCall {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return append([]reporterDispatchCall(nil), d.calls...)
 }
 
 // ---------------------------------------------------------------------------
@@ -414,7 +427,7 @@ func (s *BlockScannerExtraSuite) TestDispatchReporterOnlyNearChainTip(c *C) {
 	scanner.dispatchReporter(90, 100)
 	scanner.dispatchReporter(100, 100)
 
-	c.Assert(dispatcher.calls, DeepEquals, []reporterDispatchCall{
+	c.Assert(dispatcher.Calls(), DeepEquals, []reporterDispatchCall{
 		{chain: common.ETHChain, height: 90},
 		{chain: common.ETHChain, height: 100},
 	})
