@@ -40,6 +40,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
+	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	. "gopkg.in/check.v1"
 )
 
@@ -284,6 +285,38 @@ func (s *CosmosTestSuite) TestGetGasEstimateForSolvency(c *C) {
 
 	got := client.GetGasEstimateForSolvency()
 	c.Assert(got.Equal(cosmos.NewUint(2_500_000)), Equals, true)
+}
+
+type recordingBankServiceClient struct {
+	MockBankServiceClient
+	address string
+}
+
+func (c *recordingBankServiceClient) AllBalances(ctx context.Context, in *btypes.QueryAllBalancesRequest, opts ...grpc.CallOption) (*btypes.QueryAllBalancesResponse, error) {
+	c.address = in.Address
+	return c.MockBankServiceClient.AllBalances(ctx, in, opts...)
+}
+
+func (s *CosmosTestSuite) TestGetVaultAccountUsesSecp256k1VaultKey(c *C) {
+	bankClient := &recordingBankServiceClient{MockBankServiceClient: NewMockBankServiceClient()}
+	client := &CosmosClient{
+		cfg:           config.BifrostChainConfiguration{ChainID: common.GAIAChain},
+		bankClient:    bankClient,
+		accountClient: NewMockAccountServiceClient(),
+		cosmosScanner: &CosmosBlockScanner{cfg: config.BifrostBlockScannerConfiguration{
+			ChainID: common.GAIAChain,
+			WhitelistCosmosAssets: []config.WhitelistCosmosAsset{
+				{Denom: "uatom", Decimals: 6, THORChainSymbol: "ATOM"},
+			},
+		}},
+	}
+	vaultPubKey := common.PubKey("sthorpub1addwnpepqf72ur2e8zk8r5augtrly40cuy94f7e663zh798tyms6pu2k8qdswf4es66")
+	expectedAddress, err := vaultPubKey.GetAddress(common.GAIAChain)
+	c.Assert(err, IsNil)
+
+	_, err = client.GetVaultAccount(ttypes.Vault{PubKey: vaultPubKey}, big.NewInt(123))
+	c.Assert(err, IsNil)
+	c.Check(bankClient.address, Equals, expectedAddress.String())
 }
 
 func (s *CosmosTestSuite) TestGetAddress(c *C) {

@@ -341,7 +341,7 @@ func (GasManagerTestSuite) TestGetMaxGas(c *C) {
 	gasCoin, err = gasMgr.GetMaxGas(ctx, common.GAIAChain)
 	c.Assert(err, IsNil)
 	c.Assert(gasCoin.Decimals, Equals, common.GAIAChain.GetGasAssetDecimal())
-	c.Assert(gasCoin.Amount.Uint64(), Equals, uint64(1000*(127*3/2)*1e2))
+	c.Assert(gasCoin.Amount.Uint64(), Equals, uint64(1000*(127*3/2)*100))
 	// GAIA max gas is converted from uatom to THORChain 1e8 accounting units.
 
 	networkFee = NewNetworkFee(common.ETHChain, 123, 127) // 127 gwei gas rate

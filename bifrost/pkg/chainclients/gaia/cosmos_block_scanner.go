@@ -101,7 +101,7 @@ type CosmosBlockScanner struct {
 	// gas price paid in each observed transaction multiplied by the default GasLimit.
 	// Fees are stored at 100x the values on the observed chain due to compensate for the
 	// difference in base chain decimals (thorchain:1e8, gaia:1e6).
-	// Guards feeCache/lastFee between FetchTxs prefetch updates and solvency/network-fee readers.
+	// Guards feeCache and compound average/compare/update operations in updateGasFees.
 	networkFeeMu sync.Mutex
 	feeCache     []sdkmath.Uint
 	lastFee      stdatomic.Uint64
