@@ -433,6 +433,7 @@ func (m *QuerySwapDetailsResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, e
 			Out:               wrapString(m.Swap.State.Out.String()),
 			FailedSwaps:       convertUint64SliceToInt64(m.Swap.State.FailedSwaps),
 			FailedSwapReasons: m.Swap.State.FailedSwapReasons,
+			FailedSwapCount:   wrapInt64(int64(m.Swap.State.FailureCount())),
 		}
 	}
 

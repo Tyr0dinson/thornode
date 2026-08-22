@@ -751,8 +751,7 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 				attempted++
 				// Don't commit - this discards all state changes
 				ctx.Logger().Error("fail to execute streaming swap interval", "error", handleErr)
-				msg.State.FailedSwaps = append(msg.State.FailedSwaps, msg.State.Count)
-				msg.State.FailedSwapReasons = append(msg.State.FailedSwapReasons, handleErr.Error())
+				msg.State.RecordFailure(msg.State.Count, handleErr.Error())
 				settleMsg = handleErr.Error()
 			} else {
 				attempted++

@@ -1542,6 +1542,7 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 			Out:               msg.State.Out,
 			FailedSwaps:       msg.State.FailedSwaps,
 			FailedSwapReasons: msg.State.FailedSwapReasons,
+			FailedSwapCount:   msg.State.FailureCount(),
 		}
 
 		evt := NewEventStreamingSwap(msg.Tx.Coins[0].Asset, msg.TargetAsset, swp)

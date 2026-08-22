@@ -217,6 +217,7 @@ func NewEventStreamingSwap(inAsset, outAsset common.Asset, swp StreamingSwap) *E
 		Out:               common.NewCoin(outAsset, swp.Out),
 		FailedSwaps:       swp.FailedSwaps,
 		FailedSwapReasons: swp.FailedSwapReasons,
+		FailedSwapCount:   swp.FailureCount(),
 	}
 }
 
@@ -244,6 +245,7 @@ func (m *EventStreamingSwap) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("out", m.Out.String()),
 		cosmos.NewAttribute("failed_swaps", strings.Join(failedSwaps, ", ")),
 		cosmos.NewAttribute("failed_swap_reasons", strings.Join(m.FailedSwapReasons, "\n ")),
+		cosmos.NewAttribute("failed_swap_count", strconv.FormatUint(m.FailedSwapCount, 10)),
 	)
 	return cosmos.Events{evt}, nil
 }

@@ -17,8 +17,9 @@ Name | Type | Description | Notes
 **Deposit** | **string** | the number of input tokens the swapper has deposited | 
 **In** | **string** | the amount of input tokens that have been swapped so far | 
 **Out** | **string** | the amount of output tokens that have been swapped so far | 
-**FailedSwaps** | Pointer to **[]int64** | the list of swap indexes that failed | [optional] 
-**FailedSwapReasons** | Pointer to **[]string** | the list of reasons that sub-swaps have failed | [optional] 
+**FailedSwaps** | Pointer to **[]int64** | the retained recent list of swap indexes that failed | [optional] 
+**FailedSwapReasons** | Pointer to **[]string** | the retained recent list of reasons that sub-swaps have failed | [optional] 
+**FailedSwapCount** | Pointer to **int64** | the total number of failed swap attempts, including failures omitted from the retained recent lists | [optional] 
 
 ## Methods
 
@@ -393,6 +394,31 @@ SetFailedSwapReasons sets FailedSwapReasons field to given value.
 `func (o *StreamingSwap) HasFailedSwapReasons() bool`
 
 HasFailedSwapReasons returns a boolean if a field has been set.
+
+### GetFailedSwapCount
+
+`func (o *StreamingSwap) GetFailedSwapCount() int64`
+
+GetFailedSwapCount returns the FailedSwapCount field if non-nil, zero value otherwise.
+
+### GetFailedSwapCountOk
+
+`func (o *StreamingSwap) GetFailedSwapCountOk() (*int64, bool)`
+
+GetFailedSwapCountOk returns a tuple with the FailedSwapCount field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetFailedSwapCount
+
+`func (o *StreamingSwap) SetFailedSwapCount(v int64)`
+
+SetFailedSwapCount sets FailedSwapCount field to given value.
+
+### HasFailedSwapCount
+
+`func (o *StreamingSwap) HasFailedSwapCount() bool`
+
+HasFailedSwapCount returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

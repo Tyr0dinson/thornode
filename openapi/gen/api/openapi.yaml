@@ -4080,6 +4080,7 @@ components:
         tx_id: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
         last_height: 5
         out: "100"
+        failed_swap_count: 7
         target_asset: ETH.ETH
         initial_height: 5
         deposit: "100"
@@ -4140,16 +4141,21 @@ components:
           example: "100"
           type: string
         failed_swaps:
-          description: the list of swap indexes that failed
+          description: the retained recent list of swap indexes that failed
           items:
             format: int64
             type: integer
           type: array
         failed_swap_reasons:
-          description: the list of reasons that sub-swaps have failed
+          description: the retained recent list of reasons that sub-swaps have failed
           items:
             type: string
           type: array
+        failed_swap_count:
+          description: "the total number of failed swap attempts, including failures\
+            \ omitted from the retained recent lists"
+          format: int64
+          type: integer
       required:
       - deposit
       - in
@@ -4520,7 +4526,7 @@ components:
         aggregator: aggregator
         destination: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
         affiliate_basis_points: affiliate_basis_points
-        index: 2
+        index: 4
         aggregator_target_limit: aggregator_target_limit
         initial_block_height: 1
         version: version
@@ -4530,6 +4536,7 @@ components:
         stream_interval: 6
         affiliate_address: thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
         state:
+          failed_swap_count: 2
           failed_swaps:
           - 3
           - 3
@@ -4617,6 +4624,7 @@ components:
     SwapState:
       description: State tracking for swap execution
       example:
+        failed_swap_count: 2
         failed_swaps:
         - 3
         - 3
@@ -4666,16 +4674,21 @@ components:
           description: total amount swapped out
           type: string
         failed_swaps:
-          description: list of failed swap indices
+          description: retained recent list of failed swap indices
           items:
             format: int64
             type: integer
           type: array
         failed_swap_reasons:
-          description: reasons for failed swaps
+          description: retained recent reasons for failed swaps
           items:
             type: string
           type: array
+        failed_swap_count:
+          description: "total failed swap attempts, including failures omitted from\
+            \ the retained recent lists"
+          format: int64
+          type: integer
       type: object
     TxOutItem:
       example:
@@ -6670,7 +6683,7 @@ components:
           aggregator: aggregator
           destination: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
           affiliate_basis_points: affiliate_basis_points
-          index: 2
+          index: 4
           aggregator_target_limit: aggregator_target_limit
           initial_block_height: 1
           version: version
@@ -6680,6 +6693,7 @@ components:
           stream_interval: 6
           affiliate_address: thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
           state:
+            failed_swap_count: 2
             failed_swaps:
             - 3
             - 3
@@ -6721,7 +6735,7 @@ components:
           aggregator: aggregator
           destination: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
           affiliate_basis_points: affiliate_basis_points
-          index: 2
+          index: 4
           aggregator_target_limit: aggregator_target_limit
           initial_block_height: 1
           version: version
@@ -6731,6 +6745,7 @@ components:
           stream_interval: 6
           affiliate_address: thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
           state:
+            failed_swap_count: 2
             failed_swaps:
             - 3
             - 3
@@ -6791,7 +6806,7 @@ components:
           aggregator: aggregator
           destination: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
           affiliate_basis_points: affiliate_basis_points
-          index: 2
+          index: 4
           aggregator_target_limit: aggregator_target_limit
           initial_block_height: 1
           version: version
@@ -6801,6 +6816,7 @@ components:
           stream_interval: 6
           affiliate_address: thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
           state:
+            failed_swap_count: 2
             failed_swaps:
             - 3
             - 3
@@ -6858,7 +6874,7 @@ components:
           aggregator: aggregator
           destination: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
           affiliate_basis_points: affiliate_basis_points
-          index: 2
+          index: 4
           aggregator_target_limit: aggregator_target_limit
           initial_block_height: 1
           version: version
@@ -6868,6 +6884,7 @@ components:
           stream_interval: 6
           affiliate_address: thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
           state:
+            failed_swap_count: 2
             failed_swaps:
             - 3
             - 3
@@ -6978,7 +6995,7 @@ components:
             aggregator: aggregator
             destination: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
             affiliate_basis_points: affiliate_basis_points
-            index: 2
+            index: 4
             aggregator_target_limit: aggregator_target_limit
             initial_block_height: 1
             version: version
@@ -6988,6 +7005,7 @@ components:
             stream_interval: 6
             affiliate_address: thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
             state:
+              failed_swap_count: 2
               failed_swaps:
               - 3
               - 3
@@ -7034,7 +7052,7 @@ components:
             aggregator: aggregator
             destination: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
             affiliate_basis_points: affiliate_basis_points
-            index: 2
+            index: 4
             aggregator_target_limit: aggregator_target_limit
             initial_block_height: 1
             version: version
@@ -7044,6 +7062,7 @@ components:
             stream_interval: 6
             affiliate_address: thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
             state:
+              failed_swap_count: 2
               failed_swaps:
               - 3
               - 3

@@ -37,12 +37,15 @@ message QueryStreamingSwapResponse {
   string in = 11 [ (gogoproto.jsontag) = "in" ];
   // the amount of output tokens that have been swapped so far
   string out = 12 [ (gogoproto.jsontag) = "out" ];
-  // the list of swap indexes that failed
+  // the retained recent list of swap indexes that failed
   repeated int64 failed_swaps = 13;
-  // the list of reasons that sub-swaps have failed
+  // the retained recent list of reasons that sub-swaps have failed
   repeated string failed_swap_reasons = 14;
   // the block height when the swap first entered the queue
   int64 initial_height = 15;
+  // the total number of failed swap attempts, including failures omitted from
+  // the retained recent lists
+  int64 failed_swap_count = 16;
 }
 
 message QueryStreamingSwapsRequest { string height = 1; }

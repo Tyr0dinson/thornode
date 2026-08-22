@@ -491,6 +491,17 @@ func (MsgSwapSuite) TestSwapState_SuccessCount(c *C) {
 	}
 	c.Assert(dupSwap.SuccessCount(), Equals, uint64(6))
 	c.Assert(dupSwap.FailCount(), Equals, uint64(4)) // Still counts as 4 failures
+
+	// A bounded diagnostic tail must not change consensus success accounting.
+	boundedSwap := &MsgSwap{
+		State: &SwapState{
+			Count:           100,
+			FailedSwapCount: 80,
+			FailedSwaps:     make([]uint64, MaxSwapFailureHistory),
+		},
+	}
+	c.Assert(boundedSwap.FailCount(), Equals, uint64(80))
+	c.Assert(boundedSwap.SuccessCount(), Equals, uint64(20))
 }
 
 func (MsgSwapSuite) TestSwapVersioning(c *C) {

@@ -40,6 +40,7 @@ message SwapState {
   ];
   repeated uint64 failed_swaps = 10;
   repeated string failed_swap_reasons = 11;
+  uint64 failed_swap_count = 12;
 }
 
 message MsgSwap {

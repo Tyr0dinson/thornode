@@ -1,6 +1,9 @@
 package types
 
 import (
+	"strings"
+	"unicode/utf8"
+
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -92,4 +95,30 @@ func (s *StreamingSwapSuite) TestIsDone(c *C) {
 	c.Check(swp.IsDone(), Equals, true)
 	swp.Count = 20
 	c.Check(swp.IsDone(), Equals, true)
+}
+
+func (s *StreamingSwapSuite) TestFailureHistoryIsBounded(c *C) {
+	failedSwaps := make([]uint64, MaxSwapFailureHistory+1)
+	failedReasons := make([]string, MaxSwapFailureHistory+1)
+	for i := range failedSwaps {
+		failedSwaps[i] = uint64(i)
+		failedReasons[i] = strings.Repeat("界", MaxSwapFailureReasonBytes)
+	}
+
+	swp := StreamingSwap{
+		FailedSwaps:       failedSwaps,
+		FailedSwapReasons: failedReasons,
+	}
+	swp.RecordFailure(uint64(MaxSwapFailureHistory+1), strings.Repeat("界", MaxSwapFailureReasonBytes))
+
+	c.Assert(swp.FailedSwapCount, Equals, uint64(MaxSwapFailureHistory+2))
+	c.Assert(swp.FailureCount(), Equals, uint64(MaxSwapFailureHistory+2))
+	c.Assert(len(swp.FailedSwaps), Equals, MaxSwapFailureHistory)
+	c.Assert(len(swp.FailedSwapReasons), Equals, MaxSwapFailureHistory)
+	c.Assert(swp.FailedSwaps[0], Equals, uint64(2))
+	c.Assert(swp.FailedSwaps[len(swp.FailedSwaps)-1], Equals, uint64(MaxSwapFailureHistory+1))
+	for _, reason := range swp.FailedSwapReasons {
+		c.Assert(len(reason) <= MaxSwapFailureReasonBytes, Equals, true)
+		c.Assert(utf8.ValidString(reason), Equals, true)
+	}
 }

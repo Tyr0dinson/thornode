@@ -34,10 +34,12 @@ type SwapState struct {
 	In *string `json:"in,omitempty"`
 	// total amount swapped out
 	Out *string `json:"out,omitempty"`
-	// list of failed swap indices
+	// retained recent list of failed swap indices
 	FailedSwaps []int64 `json:"failed_swaps,omitempty"`
-	// reasons for failed swaps
+	// retained recent reasons for failed swaps
 	FailedSwapReasons []string `json:"failed_swap_reasons,omitempty"`
+	// total failed swap attempts, including failures omitted from the retained recent lists
+	FailedSwapCount *int64 `json:"failed_swap_count,omitempty"`
 }
 
 // NewSwapState instantiates a new SwapState object
@@ -409,6 +411,38 @@ func (o *SwapState) SetFailedSwapReasons(v []string) {
 	o.FailedSwapReasons = v
 }
 
+// GetFailedSwapCount returns the FailedSwapCount field value if set, zero value otherwise.
+func (o *SwapState) GetFailedSwapCount() int64 {
+	if o == nil || o.FailedSwapCount == nil {
+		var ret int64
+		return ret
+	}
+	return *o.FailedSwapCount
+}
+
+// GetFailedSwapCountOk returns a tuple with the FailedSwapCount field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *SwapState) GetFailedSwapCountOk() (*int64, bool) {
+	if o == nil || o.FailedSwapCount == nil {
+		return nil, false
+	}
+	return o.FailedSwapCount, true
+}
+
+// HasFailedSwapCount returns a boolean if a field has been set.
+func (o *SwapState) HasFailedSwapCount() bool {
+	if o != nil && o.FailedSwapCount != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetFailedSwapCount gets a reference to the given int64 and assigns it to the FailedSwapCount field.
+func (o *SwapState) SetFailedSwapCount(v int64) {
+	o.FailedSwapCount = &v
+}
+
 func (o SwapState) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.Interval != nil {
@@ -443,6 +477,9 @@ func (o SwapState) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if o.FailedSwapReasons != nil {
 		toSerialize["failed_swap_reasons"] = o.FailedSwapReasons
+	}
+	if o.FailedSwapCount != nil {
+		toSerialize["failed_swap_count"] = o.FailedSwapCount
 	}
 	return json.Marshal(toSerialize)
 }

@@ -42,10 +42,12 @@ type StreamingSwap struct {
 	In string `json:"in"`
 	// the amount of output tokens that have been swapped so far
 	Out string `json:"out"`
-	// the list of swap indexes that failed
+	// the retained recent list of swap indexes that failed
 	FailedSwaps []int64 `json:"failed_swaps,omitempty"`
-	// the list of reasons that sub-swaps have failed
+	// the retained recent list of reasons that sub-swaps have failed
 	FailedSwapReasons []string `json:"failed_swap_reasons,omitempty"`
+	// the total number of failed swap attempts, including failures omitted from the retained recent lists
+	FailedSwapCount *int64 `json:"failed_swap_count,omitempty"`
 }
 
 // NewStreamingSwap instantiates a new StreamingSwap object
@@ -517,6 +519,38 @@ func (o *StreamingSwap) SetFailedSwapReasons(v []string) {
 	o.FailedSwapReasons = v
 }
 
+// GetFailedSwapCount returns the FailedSwapCount field value if set, zero value otherwise.
+func (o *StreamingSwap) GetFailedSwapCount() int64 {
+	if o == nil || o.FailedSwapCount == nil {
+		var ret int64
+		return ret
+	}
+	return *o.FailedSwapCount
+}
+
+// GetFailedSwapCountOk returns a tuple with the FailedSwapCount field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *StreamingSwap) GetFailedSwapCountOk() (*int64, bool) {
+	if o == nil || o.FailedSwapCount == nil {
+		return nil, false
+	}
+	return o.FailedSwapCount, true
+}
+
+// HasFailedSwapCount returns a boolean if a field has been set.
+func (o *StreamingSwap) HasFailedSwapCount() bool {
+	if o != nil && o.FailedSwapCount != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetFailedSwapCount gets a reference to the given int64 and assigns it to the FailedSwapCount field.
+func (o *StreamingSwap) SetFailedSwapCount(v int64) {
+	o.FailedSwapCount = &v
+}
+
 func (o StreamingSwap) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.TxId != nil {
@@ -563,6 +597,9 @@ func (o StreamingSwap) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if o.FailedSwapReasons != nil {
 		toSerialize["failed_swap_reasons"] = o.FailedSwapReasons
+	}
+	if o.FailedSwapCount != nil {
+		toSerialize["failed_swap_count"] = o.FailedSwapCount
 	}
 	return json.Marshal(toSerialize)
 }

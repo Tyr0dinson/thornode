@@ -13,8 +13,9 @@ Name | Type | Description | Notes
 **Withdrawn** | Pointer to **string** | amount withdrawn | [optional] 
 **In** | Pointer to **string** | total amount swapped in | [optional] 
 **Out** | Pointer to **string** | total amount swapped out | [optional] 
-**FailedSwaps** | Pointer to **[]int64** | list of failed swap indices | [optional] 
-**FailedSwapReasons** | Pointer to **[]string** | reasons for failed swaps | [optional] 
+**FailedSwaps** | Pointer to **[]int64** | retained recent list of failed swap indices | [optional] 
+**FailedSwapReasons** | Pointer to **[]string** | retained recent reasons for failed swaps | [optional] 
+**FailedSwapCount** | Pointer to **int64** | total failed swap attempts, including failures omitted from the retained recent lists | [optional] 
 
 ## Methods
 
@@ -309,6 +310,31 @@ SetFailedSwapReasons sets FailedSwapReasons field to given value.
 `func (o *SwapState) HasFailedSwapReasons() bool`
 
 HasFailedSwapReasons returns a boolean if a field has been set.
+
+### GetFailedSwapCount
+
+`func (o *SwapState) GetFailedSwapCount() int64`
+
+GetFailedSwapCount returns the FailedSwapCount field if non-nil, zero value otherwise.
+
+### GetFailedSwapCountOk
+
+`func (o *SwapState) GetFailedSwapCountOk() (*int64, bool)`
+
+GetFailedSwapCountOk returns a tuple with the FailedSwapCount field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetFailedSwapCount
+
+`func (o *SwapState) SetFailedSwapCount(v int64)`
+
+SetFailedSwapCount sets FailedSwapCount field to given value.
+
+### HasFailedSwapCount
+
+`func (o *SwapState) HasFailedSwapCount() bool`
+
+HasFailedSwapCount returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

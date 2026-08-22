@@ -73,6 +73,7 @@ message EventStreamingSwap {
   common.Coin out = 9 [ (gogoproto.nullable) = false ];
   repeated uint64 failed_swaps = 10;
   repeated string failed_swap_reasons = 11;
+  uint64 failed_swap_count = 12;
 }
 
 message EventSwap {

@@ -28,6 +28,25 @@ func (s EventSuite) TestSwapEvent(c *C) {
 	c.Check(events, NotNil)
 }
 
+func (s EventSuite) TestStreamingSwapEventFailureCount(c *C) {
+	swp := NewStreamingSwap(GetRandomTxHash(), 100, 1, cosmos.NewUint(100), cosmos.NewUint(100))
+	swp.Count = 90
+	swp.FailedSwapCount = 80
+	swp.FailedSwaps = make([]uint64, MaxSwapFailureHistory)
+
+	evt := NewEventStreamingSwap(common.RuneAsset(), common.ETHAsset, swp)
+	c.Assert(evt.FailedSwapCount, Equals, uint64(80))
+	events, err := evt.Events()
+	c.Assert(err, IsNil)
+	c.Assert(events, HasLen, 1)
+
+	attributeMap := make(map[string]string)
+	for _, attr := range events[0].Attributes {
+		attributeMap[attr.Key] = attr.Value
+	}
+	c.Assert(attributeMap["failed_swap_count"], Equals, "80")
+}
+
 func (s EventSuite) TestAddLiqudityEvent(c *C) {
 	evt := NewEventAddLiquidity(
 		common.ETHAsset,

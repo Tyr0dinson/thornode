@@ -2769,15 +2769,19 @@ components:
           description: the amount of output tokens that have been swapped so far
         failed_swaps:
           type: array
-          description: the list of swap indexes that failed
+          description: the retained recent list of swap indexes that failed
           items:
             type: integer
             format: int64 # OpenAPI cannot generate a uint64 or int128 field, so using int64 instead.
         failed_swap_reasons:
           type: array
-          description: the list of reasons that sub-swaps have failed
+          description: the retained recent list of reasons that sub-swaps have failed
           items:
             type: string
+        failed_swap_count:
+          type: integer
+          format: int64
+          description: the total number of failed swap attempts, including failures omitted from the retained recent lists
 
     Tx:
       type: object
@@ -3111,12 +3115,16 @@ components:
           items:
             type: integer
             format: int64
-          description: list of failed swap indices
+          description: retained recent list of failed swap indices
         failed_swap_reasons:
           type: array
           items:
             type: string
-          description: reasons for failed swaps
+          description: retained recent reasons for failed swaps
+        failed_swap_count:
+          type: integer
+          format: int64
+          description: total failed swap attempts, including failures omitted from the retained recent lists
 
     TxOutItem:
       type: object

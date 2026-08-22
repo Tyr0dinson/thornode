@@ -58,6 +58,7 @@ func (k KVStore) SetStreamingSwap(ctx cosmos.Context, swp StreamingSwap) {
 		ctx.Logger().Error("attempt to save invalid streaming swap", "txid", swp.TxID, "error", err)
 		return
 	}
+	swp.CompactFailureHistory()
 	k.setStreamingSwap(ctx, k.GetKey(prefixStreamingSwap, swp.TxID.String()), swp)
 }
 

@@ -44,6 +44,9 @@ func (k KVStore) SetAdvSwapQueueItem(ctx cosmos.Context, msg MsgSwap) error {
 	if msg.Tx.ID.IsEmpty() {
 		return fmt.Errorf("invalid tx hash")
 	}
+	if msg.State != nil {
+		msg.State.CompactFailureHistory()
+	}
 	if err := k.SetAdvSwapQueueIndex(ctx, msg); err != nil {
 		return err
 	}

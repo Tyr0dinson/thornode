@@ -211,8 +211,7 @@ func (vm *SwapQueueImpl) EndBlock(ctx cosmos.Context, mgr Manager) error {
 			}
 			swp.Count += 1
 			if handleErr != nil {
-				swp.FailedSwaps = append(swp.FailedSwaps, swp.Count)
-				swp.FailedSwapReasons = append(swp.FailedSwapReasons, handleErr.Error())
+				swp.RecordFailure(swp.Count, handleErr.Error())
 			}
 			swp.LastHeight = ctx.BlockHeight()
 			if !triggerRefund {

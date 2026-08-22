@@ -1597,6 +1597,7 @@ func newStreamingSwap(streamingSwap StreamingSwap, msgSwap MsgSwap) *types.Query
 		Out:               streamingSwap.Out.String(),
 		FailedSwaps:       failedSwaps,
 		FailedSwapReasons: streamingSwap.FailedSwapReasons,
+		FailedSwapCount:   int64(streamingSwap.FailureCount()),
 	}
 }
 
@@ -1633,6 +1634,7 @@ func newStreamingSwapFromAdvQueue(msgSwap MsgSwap) *types.QueryStreamingSwapResp
 		Out:               msgSwap.State.Out.String(),
 		FailedSwaps:       failedSwaps,
 		FailedSwapReasons: msgSwap.State.FailedSwapReasons,
+		FailedSwapCount:   int64(msgSwap.State.FailureCount()),
 	}
 }
 

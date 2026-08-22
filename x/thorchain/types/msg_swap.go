@@ -130,7 +130,7 @@ func (m *MsgSwap) SuccessCount() uint64 {
 }
 
 func (m *MsgSwap) FailCount() uint64 {
-	return uint64(len(m.State.FailedSwaps))
+	return m.State.FailureCount()
 }
 
 func (m *MsgSwap) GetStreamingSwap() StreamingSwap {

@@ -7053,6 +7053,9 @@ func (s AdvSwapQueueSuite) TestAdvSwapFailureHistoryIsBounded(c *C) {
 	result, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, swap.Tx.ID, 0)
 	c.Assert(err, IsNil)
 	c.Assert(result.State.Count, Equals, uint64(existingFailures+1))
+	c.Assert(result.State.FailedSwapCount, Equals, uint64(existingFailures+1))
+	c.Assert(result.FailCount(), Equals, uint64(existingFailures+1))
+	c.Assert(result.SuccessCount(), Equals, uint64(0))
 	c.Assert(len(result.State.FailedSwaps) <= 64, Equals, true,
 		Commentf("failure indexes grew to %d entries", len(result.State.FailedSwaps)))
 	c.Assert(len(result.State.FailedSwapReasons) <= 64, Equals, true,
@@ -7061,6 +7064,11 @@ func (s AdvSwapQueueSuite) TestAdvSwapFailureHistoryIsBounded(c *C) {
 		c.Assert(len(reason) <= 256, Equals, true,
 			Commentf("failure reason grew to %d bytes", len(reason)))
 	}
+	c.Assert(result.State.FailedSwaps[0], Equals, uint64(2))
+	c.Assert(result.State.FailedSwaps[len(result.State.FailedSwaps)-1], Equals, uint64(existingFailures))
+	queryResult := newStreamingSwapFromAdvQueue(result)
+	c.Assert(queryResult.FailedSwapCount, Equals, int64(existingFailures+1))
+	c.Assert(len(queryResult.FailedSwaps), Equals, types.MaxSwapFailureHistory)
 }
 
 // TestRapidSwapCacheContextCommitOnSuccess verifies that when a swap succeeds,
