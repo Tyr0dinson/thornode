@@ -52,6 +52,7 @@ var (
 	_ jsonpb.JSONPBMarshaler = &QueryRuneProvidersResponse{}
 	_ jsonpb.JSONPBMarshaler = &QuerySaverResponse{}
 	_ jsonpb.JSONPBMarshaler = &QuerySaversResponse{}
+	_ jsonpb.JSONPBMarshaler = &QueryLimitSwapsResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryStreamingSwapResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryStreamingSwapsResponse{}
 	_ jsonpb.JSONPBMarshaler = &SwapperClout{}
@@ -431,6 +432,46 @@ func (m *QuerySwapQueuePaginatedResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]
 
 	return jsonify(swapQueueResponse{
 		SwapQueue:  openAPISwapQueue(m.SwapQueue),
+		Pagination: pagination,
+	})
+}
+
+func (m *QueryLimitSwapsResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	limitSwaps := make([]openapi.LimitSwapWithDetails, 0, len(m.LimitSwaps))
+	for _, item := range m.LimitSwaps {
+		var swap *openapi.MsgSwap
+		if item.Swap != nil {
+			converted := openAPIMsgSwap(item.Swap)
+			swap = &converted
+		}
+
+		limitSwaps = append(limitSwaps, openapi.LimitSwapWithDetails{
+			Swap:               swap,
+			Ratio:              wrapString(item.Ratio),
+			BlocksSinceCreated: wrapInt64(item.BlocksSinceCreated),
+			TimeToExpiryBlocks: wrapInt64(item.TimeToExpiryBlocks),
+			CreatedTimestamp:   wrapInt64(item.CreatedTimestamp),
+		})
+	}
+
+	var pagination *openapi.PaginationMeta
+	if m.Pagination != nil {
+		offset := int64(m.Pagination.Offset)
+		limit := int64(m.Pagination.Limit)
+		total := int64(m.Pagination.Total)
+		hasNext := m.Pagination.HasNext
+		hasPrev := m.Pagination.HasPrev
+		pagination = &openapi.PaginationMeta{
+			Offset:  &offset,
+			Limit:   &limit,
+			Total:   &total,
+			HasNext: &hasNext,
+			HasPrev: &hasPrev,
+		}
+	}
+
+	return jsonify(openapi.LimitSwapsResponse{
+		LimitSwaps: limitSwaps,
 		Pagination: pagination,
 	})
 }
