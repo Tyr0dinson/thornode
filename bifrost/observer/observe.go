@@ -253,16 +253,16 @@ func (o *Observer) getChain(chainID common.Chain) (chainclients.ChainClient, err
 func (o *Observer) getReporterChains() map[common.Chain]reporter.ChainClient {
 	reporterChains := make(map[common.Chain]reporter.ChainClient, len(o.chains))
 	for chain, client := range o.chains {
-		rc, ok := client.(reporter.ChainClient)
-		if !ok {
-			o.logger.Error().
-				Stringer("chain", chain).
-				Msg("chain client does not implement reporter ChainClient")
-			continue
-		}
-		reporterChains[chain] = rc
+		reporterChains[chain] = client
 	}
 	return reporterChains
+}
+
+func (o *Observer) isChainStarted(chain common.Chain) bool {
+	o.chainLifecycleMu.Lock()
+	defer o.chainLifecycleMu.Unlock()
+	_, started := o.startedChains[chain]
+	return started
 }
 
 func (o *Observer) startChainClient(chainID common.Chain, chain chainclients.ChainClient) bool {
@@ -440,7 +440,15 @@ func (o *Observer) Start(ctx context.Context) error {
 		return fmt.Errorf("restore observer deck: %w", err)
 	}
 	// The reporter dispatcher is the active solvency path for every chain.
-	o.reporterDispatcher = reporter.NewDispatcher(o.getReporterChains(), o.thorchainBridge, o.attestationGossip, o.errCounter, o.stopChan, o.reporterWG)
+	o.reporterDispatcher = reporter.NewDispatcher(
+		o.getReporterChains(),
+		o.isChainStarted,
+		o.thorchainBridge,
+		o.attestationGossip,
+		o.errCounter,
+		o.stopChan,
+		o.reporterWG,
+	)
 	deferXMR, err := o.startRestoredChainClients()
 	if err != nil {
 		return err

@@ -733,7 +733,7 @@ func (s *SolvencySuite) TestReportSolvencyReporter(c *C) {
 			}()
 
 			// prepare dispatcher
-			disp := NewDispatcher(chains, mockBridge, attester, nil, stopper, &wg)
+			disp := NewDispatcher(chains, nil, mockBridge, attester, nil, stopper, &wg)
 
 			// now trigger reporter checks
 			disp.Process(chain, 0)
@@ -1956,7 +1956,7 @@ func (s *SolvencySuite) TestDispatcherShutdownCancelsBlockedAttestation(c *C) {
 	attester := newBlockingSolvencyAttester()
 	bridge := &thorMockBridge{}
 
-	disp, ok := NewDispatcher(nil, bridge, attester, nil, stopper, wg).(*dispatcher)
+	disp, ok := NewDispatcher(nil, nil, bridge, attester, nil, stopper, wg).(*dispatcher)
 	c.Assert(ok, Equals, true)
 
 	stopped := false
@@ -2023,7 +2023,7 @@ func (s *SolvencySuite) TestNewDispatcherBuffersReportQueuePerChain(c *C) {
 		common.BTCChain: &mockChainClient{chain: common.BTCChain},
 	}
 
-	disp, ok := NewDispatcher(chains, &thorMockBridge{}, nil, nil, stopper, wg).(*dispatcher)
+	disp, ok := NewDispatcher(chains, nil, &thorMockBridge{}, nil, nil, stopper, wg).(*dispatcher)
 	c.Assert(ok, Equals, true)
 	c.Assert(cap(disp.reportQueue), Equals, len(chains))
 

@@ -42,6 +42,9 @@ type ChainClient interface {
 	// GetAccount returns the account for the given public key.
 	GetAccount(poolPubKey common.PubKey, height *big.Int) (common.Account, error)
 
+	// GetVaultAccount returns the chain-specific account for the given vault.
+	GetVaultAccount(vault ttypes.Vault, height *big.Int) (common.Account, error)
+
 	// GetAccountByAddress returns the account for the given address.
 	GetAccountByAddress(address string, height *big.Int) (common.Account, error)
 

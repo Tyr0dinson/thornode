@@ -635,6 +635,10 @@ func (b *MockChainClient) GetAccount(poolPubKey common.PubKey, _ *big.Int) (comm
 	return b.account, nil
 }
 
+func (b *MockChainClient) GetVaultAccount(types2.Vault, *big.Int) (common.Account, error) {
+	return b.account, nil
+}
+
 func (b *MockChainClient) GetAccountByAddress(address string, _ *big.Int) (common.Account, error) {
 	return b.account, nil
 }

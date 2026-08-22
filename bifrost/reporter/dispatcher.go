@@ -50,11 +50,12 @@ type dispatcher struct {
 	errCounter       *prometheus.CounterVec
 	reporters        map[common.Chain]Reporters
 	chainTaskQueues  map[common.Chain]chan reportTask
+	chainActiveCheck func(common.Chain) bool
 }
 
 // NewDispatcher creates and starts a reporter dispatcher for all configured chains.
 // It initializes per-chain reporters and async workers.
-func NewDispatcher(chains map[common.Chain]ChainClient, thorchainBridge ThorchainBridge, solvencyAttester SolvencyAttester, errCounter *prometheus.CounterVec, stopper chan struct{}, wg *sync.WaitGroup) Dispatcher {
+func NewDispatcher(chains map[common.Chain]ChainClient, chainActiveCheck func(common.Chain) bool, thorchainBridge ThorchainBridge, solvencyAttester SolvencyAttester, errCounter *prometheus.CounterVec, stopper chan struct{}, wg *sync.WaitGroup) Dispatcher {
 	logger := log.Logger.With().Str("module", "reporter_dispatcher").Logger()
 	ctx, cancel := context.WithCancel(context.Background())
 	reportQueueSize := max(len(chains), 1)
@@ -81,6 +82,7 @@ func NewDispatcher(chains map[common.Chain]ChainClient, thorchainBridge Thorchai
 		reportQueue:      reportQueue,
 		reporters:        reporters,
 		chainTaskQueues:  chainTaskQueues,
+		chainActiveCheck: chainActiveCheck,
 	}
 
 	d.wg.Go(func() {

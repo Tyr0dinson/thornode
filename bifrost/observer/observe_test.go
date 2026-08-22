@@ -59,6 +59,14 @@ type blockingConfirmationChainClient struct {
 	once    sync.Once
 }
 
+type deferredXMRChainClient struct {
+	*mockChainClient
+}
+
+func (c *deferredXMRChainClient) GetChain() common.Chain {
+	return common.XMRChain
+}
+
 func (c *blockingConfirmationChainClient) ConfirmationCountReady(types.TxIn) bool {
 	c.once.Do(func() { close(c.started) })
 	<-c.release
@@ -67,6 +75,24 @@ func (c *blockingConfirmationChainClient) ConfirmationCountReady(types.TxIn) boo
 
 func (c *blockingConfirmationChainClient) GetConfirmationCount(types.TxIn) int64 {
 	return 0
+}
+
+func TestDeferredXMRRemainsInactiveUntilClientStarts(t *testing.T) {
+	client := &deferredXMRChainClient{mockChainClient: &mockChainClient{}}
+	o := &Observer{
+		chains:        map[common.Chain]chainclients.ChainClient{common.XMRChain: client},
+		startedChains: make(map[common.Chain]chainclients.ChainClient),
+	}
+
+	if o.isChainStarted(common.XMRChain) {
+		t.Fatal("deferred XMR client unexpectedly active before Start")
+	}
+	if !o.startChainClient(common.XMRChain, client) {
+		t.Fatal("failed to start deferred XMR client")
+	}
+	if !o.isChainStarted(common.XMRChain) {
+		t.Fatal("XMR client remained inactive after Start")
+	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////

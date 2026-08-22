@@ -34,6 +34,30 @@ func (s *SolvencySuite) TestRunnerTickQueuesEveryConfiguredChain(c *C) {
 	}
 }
 
+func (s *SolvencySuite) TestRunnerTickSkipsInactiveChainClients(c *C) {
+	chains := map[common.Chain]ChainClient{
+		common.BTCChain: &mockChainClient{chain: common.BTCChain},
+		common.XMRChain: &mockChainClient{chain: common.XMRChain},
+	}
+	d := &dispatcher{
+		logger:  log.Logger,
+		stopper: make(chan struct{}),
+		chains:  chains,
+		chainTaskQueues: map[common.Chain]chan reportTask{
+			common.BTCChain: make(chan reportTask, 1),
+			common.XMRChain: make(chan reportTask, 1),
+		},
+		chainActiveCheck: func(chain common.Chain) bool {
+			return chain != common.XMRChain
+		},
+	}
+
+	d.processRunnerTick()
+
+	c.Assert(d.chainTaskQueues[common.BTCChain], HasLen, 1)
+	c.Assert(d.chainTaskQueues[common.XMRChain], HasLen, 0)
+}
+
 func (s *SolvencySuite) TestSharedRunnerStopsCleanly(c *C) {
 	stopper := make(chan struct{})
 	wg := &sync.WaitGroup{}

@@ -496,6 +496,10 @@ func (m *mockChainClient) GetAccount(common.PubKey, *big.Int) (common.Account, e
 	return common.Account{}, nil
 }
 
+func (m *mockChainClient) GetVaultAccount(stypes.Vault, *big.Int) (common.Account, error) {
+	return common.Account{}, nil
+}
+
 func (m *mockChainClient) GetGasEstimateForSolvency() cosmos.Uint {
 	return cosmos.ZeroUint()
 }

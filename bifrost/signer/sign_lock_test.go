@@ -11,6 +11,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
+	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 type mockChainNoVaultLock struct{}
@@ -28,6 +29,10 @@ func (m *mockChainNoVaultLock) BroadcastTx(thtypes.TxOutItem, []byte) (string, e
 func (m *mockChainNoVaultLock) GetHeight() (int64, error)       { return 0, nil }
 func (m *mockChainNoVaultLock) GetAddress(common.PubKey) string { return "" }
 func (m *mockChainNoVaultLock) GetAccount(common.PubKey, *big.Int) (common.Account, error) {
+	return common.Account{}, nil
+}
+
+func (m *mockChainNoVaultLock) GetVaultAccount(ttypes.Vault, *big.Int) (common.Account, error) {
 	return common.Account{}, nil
 }
 

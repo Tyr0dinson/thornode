@@ -39,6 +39,10 @@ func (d *dispatcher) runner() {
 func (d *dispatcher) processRunnerTick() {
 	for _, client := range d.chains {
 		chain := client.GetChain()
+		if d.chainActiveCheck != nil && !d.chainActiveCheck(chain) {
+			d.logger.Debug().Stringer("chain", chain).Msg("skip runner check for inactive chain client")
+			continue
+		}
 		d.logger.Debug().Stringer("chain", chain).Msg("runner triggered check for chain")
 		d.enqueueProcess(chain, fromRunner, 0)
 	}
