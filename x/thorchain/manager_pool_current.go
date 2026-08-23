@@ -116,7 +116,7 @@ func (pm *PoolMgr) cyclePools(ctx cosmos.Context, maxAvailablePools, minRunePool
 		}
 		if pool.Asset.IsGasAsset() {
 			if fee, feeErr := mgr.Keeper().GetRollingPoolLiquidityFee(ctx, pool.Asset); feeErr != nil {
-				ctx.Logger().Error("fail to get rolling pool liquidity fee", "asset", pool.Asset, "error", err)
+				ctx.Logger().Error("fail to get rolling pool liquidity fee", "asset", pool.Asset, "error", feeErr)
 			} else {
 				mgr.Keeper().SavePrevCyclePoolLiquidityFee(ctx, pool.Asset, fee)
 			}

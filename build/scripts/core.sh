@@ -92,37 +92,30 @@ add_account() {
   mv /tmp/genesis.json ~/.thornode/config/genesis.json
 }
 
-# add_balance upserts a bank balance entry for an existing address, incrementing
-# the denom if it is already present or appending a fresh coin otherwise.
+# add_balance appends a new denom to an existing bank balance entry. Missing
+# addresses and duplicate denoms are configuration errors and abort startup.
 add_balance() {
-  jq --arg ADDRESS "$1" --arg ASSET "$2" --arg AMOUNT "$3" '
+  if ! jq --arg ADDRESS "$1" --arg ASSET "$2" --arg AMOUNT "$3" '
     .app_state.bank.balances |=
       if any(.[]; .address == $ADDRESS) then
         map(
           if .address == $ADDRESS then
-            .coins |=
-              if any(.[]; .denom == $ASSET) then
-                map(
-                  if .denom == $ASSET then
-                    .amount = (((.amount | tonumber) + ($AMOUNT | tonumber)) | tostring)
-                  else
-                    .
-                  end
-                )
-              else
-                . + [{ "denom": $ASSET, "amount": $AMOUNT }]
-              end
+            if any(.coins[]; .denom == $ASSET) then
+              error("add_balance: denom \($ASSET) already exists for address \($ADDRESS)")
+            else
+              .coins = ((.coins + [{ "denom": $ASSET, "amount": $AMOUNT }]) | sort_by(.denom))
+            end
           else
             .
           end
         )
       else
-        . + [{
-          "address": $ADDRESS,
-          "coins": [{ "denom": $ASSET, "amount": $AMOUNT }]
-        }]
+        error("add_balance: address \($ADDRESS) does not exist")
       end
-  ' <~/.thornode/config/genesis.json >/tmp/genesis.json
+  ' <~/.thornode/config/genesis.json >/tmp/genesis.json; then
+    echo "Failed to add $2 balance for $1" >&2
+    exit 1
+  fi
   mv /tmp/genesis.json ~/.thornode/config/genesis.json
 }
 
