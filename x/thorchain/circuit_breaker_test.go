@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"math"
+	"math/big"
 
 	. "gopkg.in/check.v1"
 
@@ -88,6 +89,10 @@ func (s *CircuitBreakerRunSuite) TestSaturatingAddUint(c *C) {
 	c.Assert(common.SaturatingAddUint(maxUint, cosmos.ZeroUint()).Equal(maxUint), Equals, true)
 	c.Assert(common.SaturatingAddUint(maxUint, cosmos.NewUint(1)).Equal(maxUint), Equals, true)
 	c.Assert(common.SaturatingAddUint(maxUint, maxUint).Equal(maxUint), Equals, true)
+
+	// direct big.Int clamping used by aggregated accumulation
+	c.Assert(common.SaturatingUintFromBig(big.NewInt(7)).Equal(cosmos.NewUint(7)), Equals, true)
+	c.Assert(common.SaturatingUintFromBig(new(big.Int).Lsh(big.NewInt(1), 300)).Equal(maxUint), Equals, true)
 }
 
 func (s *CircuitBreakerRunSuite) TestSaturateInt64(c *C) {

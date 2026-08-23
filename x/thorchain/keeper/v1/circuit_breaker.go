@@ -2,6 +2,8 @@ package keeperv1
 
 import (
 	"fmt"
+	"math/big"
+	"sort"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -53,8 +55,24 @@ func AsgardSolvencyCircuitBreaker(k KVStore) common.CircuitBreakerInvariant {
 			result.Msgs = append(result.Msgs, fmt.Sprintf("%d malformed swap queue records deleted since last check", purged))
 		}
 
+		// Accumulate expected balances per native denom in arbitrary
+		// precision — stored magnitudes may be corrupt, and checked Uint
+		// arithmetic would panic EndBlock instead of producing a finding.
+		// The map is used only for accumulation; results are materialized
+		// in sorted denom order below, preserving consensus determinism.
+		expectedTotals := make(map[string]*big.Int)
+		addExpected := func(denom string, amounts ...cosmos.Uint) {
+			total, ok := expectedTotals[denom]
+			if !ok {
+				total = new(big.Int)
+				expectedTotals[denom] = total
+			}
+			for _, amount := range amounts {
+				total.Add(total, amount.BigInt())
+			}
+		}
+
 		// sum all rune liquidity on pools, including pending
-		var poolCoins common.Coins
 		pools, err := k.GetPools(ctx)
 		if err != nil {
 			// solvency cannot be determined — report without asserting a
@@ -66,26 +84,21 @@ func AsgardSolvencyCircuitBreaker(k KVStore) common.CircuitBreakerInvariant {
 		for _, pool := range pools {
 			switch {
 			case pool.Asset.IsSyntheticAsset():
-				coin := common.NewCoin(pool.Asset, pool.BalanceAsset)
-				poolCoins = poolCoins.Add(coin)
+				addExpected(pool.Asset.Native(), pool.BalanceAsset)
 			case !pool.Asset.IsDerivedAsset():
-				coin := common.NewCoin(common.RuneAsset(), pool.BalanceRune.Add(pool.PendingInboundRune))
-				poolCoins = poolCoins.Add(coin)
+				addExpected(common.RuneAsset().Native(), pool.BalanceRune, pool.PendingInboundRune)
 
 				if pool.Asset.IsTCY() {
-					tcyCoin := common.NewCoin(common.TCY, pool.BalanceAsset.Add(pool.PendingInboundAsset))
-					poolCoins = poolCoins.Add(tcyCoin)
+					addExpected(common.TCY.Native(), pool.BalanceAsset, pool.PendingInboundAsset)
 				}
 
 				if pool.Asset.IsWhitelisted() {
-					whitelistedCoin := common.NewCoin(pool.Asset, pool.BalanceAsset.Add(pool.PendingInboundAsset))
-					poolCoins = poolCoins.Add(whitelistedCoin)
+					addExpected(pool.Asset.Native(), pool.BalanceAsset, pool.PendingInboundAsset)
 				}
 			}
 		}
 
-		processSwaps := func(ctx cosmos.Context, k KVStore, swapIter cosmos.Iterator) common.Coins {
-			var swapCoins common.Coins
+		processSwaps := func(ctx cosmos.Context, k KVStore, swapIter cosmos.Iterator) {
 			defer swapIter.Close()
 
 			for ; swapIter.Valid(); swapIter.Next() {
@@ -191,46 +204,44 @@ func AsgardSolvencyCircuitBreaker(k KVStore) common.CircuitBreakerInvariant {
 					if !swapIn.IsZero() {
 						coin.Amount = coin.Amount.Sub(swapIn)
 					}
-					swapCoins = swapCoins.Add(coin)
+					addExpected(coin.Asset.Native(), coin.Amount)
 				}
 
 				if swap.TargetAsset.IsNative() && !swap.TargetAsset.IsTradeAsset() && !swap.TargetAsset.IsSecuredAsset() {
 					if !swapOut.IsZero() {
-						swapCoins = swapCoins.Add(common.NewCoin(swap.TargetAsset, swapOut))
+						addExpected(swap.TargetAsset.Native(), swapOut)
 					}
 				}
 			}
-			return swapCoins
 		}
 
-		swapCoins := processSwaps(ctx, k, k.GetSwapQueueIterator(ctx))
-		advSwapCoins := processSwaps(ctx, k, k.GetAdvSwapQueueItemIterator(ctx))
+		processSwaps(ctx, k, k.GetSwapQueueIterator(ctx))
+		processSwaps(ctx, k, k.GetAdvSwapQueueItemIterator(ctx))
 
 		asgardAddr := k.GetModuleAccAddress(AsgardName)
 		asgardCoins := k.GetBalance(ctx, asgardAddr)
 
-		expNative, err := poolCoins.Add(append(swapCoins, advSwapCoins...)...).Native()
-		if err != nil {
-			// solvency cannot be determined — report without asserting a
-			// violated invariant
-			result.Indeterminate = true
-			result.Msgs = append(result.Msgs, fmt.Sprintf("fail to convert expected coins to native: %s", err))
-			return result
+		// Compare expected denoms in sorted order and track the worst
+		// insolvency, saturating aggregated totals at the 256-bit ceiling.
+		// Extra module balances are overfunding and do not trigger the
+		// circuit breaker.
+		denoms := make([]string, 0, len(expectedTotals))
+		for denom := range expectedTotals {
+			denoms = append(denoms, denom)
 		}
+		sort.Strings(denoms)
 
-		// Compare expected denoms and track the worst insolvency. Extra module
-		// balances are overfunding and do not trigger the circuit breaker.
 		worstBps := cosmos.ZeroUint()
-		for _, expCoin := range expNative.Sort() {
+		for _, denom := range denoms {
 			actual := cosmos.ZeroUint()
 			for _, ac := range asgardCoins {
-				if ac.Denom == expCoin.Denom {
+				if ac.Denom == denom {
 					actual = cosmos.NewUintFromBigInt(ac.Amount.BigInt())
 					break
 				}
 			}
-			expected := cosmos.NewUintFromBigInt(expCoin.Amount.BigInt())
-			recordInsolvency(&result, &worstBps, expCoin.Denom, actual, expected)
+			expected := common.SaturatingUintFromBig(expectedTotals[denom])
+			recordInsolvency(&result, &worstBps, denom, actual, expected)
 		}
 
 		return result
@@ -310,7 +321,9 @@ func BondSolvencyCircuitBreaker(k KVStore) common.CircuitBreakerInvariant {
 				result.Msgs = append(result.Msgs, fmt.Sprintf("fail to unmarshal node account: %s", err))
 				continue
 			}
-			bondedRune = bondedRune.Add(na.Bond)
+			// saturating: a corrupt bond magnitude must produce a finding,
+			// not an EndBlock panic
+			bondedRune = common.SaturatingAddUint(bondedRune, na.Bond)
 		}
 
 		network, err := k.GetNetwork(ctx)
@@ -325,7 +338,7 @@ func BondSolvencyCircuitBreaker(k KVStore) common.CircuitBreakerInvariant {
 
 		bondModuleRune := k.GetBalanceOfModule(ctx, BondName, common.RuneAsset().Native())
 
-		expectedRune := bondedRune.Add(bondRewardRune)
+		expectedRune := common.SaturatingAddUint(bondedRune, bondRewardRune)
 		worstBps := cosmos.ZeroUint()
 		recordInsolvency(&result, &worstBps, common.RuneAsset().Native(), bondModuleRune, expectedRune)
 

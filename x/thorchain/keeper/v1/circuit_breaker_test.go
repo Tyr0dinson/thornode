@@ -953,6 +953,67 @@ func (s *CircuitBreakerSuite) TestBondSolvencyCircuitBreakerCorruptNetwork(c *C)
 	c.Assert(check.Msgs[0], Matches, "fail to get network:.*")
 }
 
+func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerOverflowingState(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// empty the starting balance of asgard
+	runeBal := k.GetRuneBalanceOfModule(ctx, AsgardName)
+	coins := common.NewCoins(common.NewCoin(common.RuneAsset(), runeBal))
+	c.Assert(k.SendFromModuleToModule(ctx, AsgardName, ReserveName, coins), IsNil)
+
+	// pools and a queued swap whose rune totals overflow 256 bits in
+	// aggregate — reporting must saturate, not panic EndBlock
+	maxUint := cosmos.NewUintFromString("115792089237316195423570985008687907853269984665640564039457584007913129639935")
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceRune = maxUint
+	pool.PendingInboundRune = maxUint
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+	pool2 := NewPool()
+	pool2.Asset = common.ETHAsset
+	pool2.BalanceRune = maxUint
+	c.Assert(k.SetPool(ctx, pool2), IsNil)
+
+	tx := GetRandomTx()
+	tx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), maxUint))
+	swap := MsgSwap{
+		Tx:          tx,
+		TargetAsset: common.BTCAsset,
+	}
+	c.Assert(k.SetSwapQueueItem(ctx, swap, 0), IsNil)
+
+	check := AsgardSolvencyCircuitBreaker(k)(ctx)
+	c.Assert(check.Broken, Equals, false)
+	c.Assert(check.Indeterminate, Equals, false)
+	c.Assert(check.Asset, Equals, common.RuneAsset().Native())
+	c.Assert(check.Expected.Equal(maxUint), Equals, true)
+	c.Assert(check.Actual.IsZero(), Equals, true)
+}
+
+func (s *CircuitBreakerSuite) TestBondSolvencyCircuitBreakerOverflowingBonds(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// two bonds plus rewards whose sum exceeds 256 bits — reporting must
+	// saturate, not panic EndBlock
+	maxUint := cosmos.NewUintFromString("115792089237316195423570985008687907853269984665640564039457584007913129639935")
+	node := GetRandomValidatorNode(NodeActive)
+	node.Bond = maxUint
+	c.Assert(k.SetNodeAccount(ctx, node), IsNil)
+	node2 := GetRandomValidatorNode(NodeActive)
+	node2.Bond = maxUint
+	c.Assert(k.SetNodeAccount(ctx, node2), IsNil)
+
+	network := NewNetwork()
+	network.BondRewardRune = maxUint
+	c.Assert(k.SetNetwork(ctx, network), IsNil)
+
+	check := BondSolvencyCircuitBreaker(k)(ctx)
+	c.Assert(check.Broken, Equals, false)
+	c.Assert(check.Indeterminate, Equals, false)
+	c.Assert(check.Asset, Equals, common.RuneAsset().Native())
+	c.Assert(check.Expected.Equal(maxUint), Equals, true)
+}
+
 func (s *CircuitBreakerSuite) TestMalformedSwapPurgeSignal(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
