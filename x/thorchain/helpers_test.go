@@ -3126,6 +3126,44 @@ func (s *HelperSuite) TestProcessAltNativeFeeEscrowsHonorsThreshold(c *C) {
 	c.Assert(mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName).Equal(reserveBefore), Equals, true)
 }
 
+// TestProcessAltNativeFeeEscrowsRetainsUnsettleableBalances verifies expected
+// lifecycle states and an orphaned record are both retained without mutation.
+func (s *HelperSuite) TestProcessAltNativeFeeEscrowsRetainsUnsettleableBalances(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	stagedAsset, err := common.NewAsset("ETH.TSTAGED")
+	c.Assert(err, IsNil)
+	orphanedAsset, err := common.NewAsset("ETH.TORPHANED")
+	c.Assert(err, IsNil)
+	escrowAmount := cosmos.NewUint(common.One)
+
+	mgr.Keeper().SetMimir(ctx, constants.AltNativeTxFeeSwapThresholdBps.String(), 0)
+	stagedPool := NewPool()
+	stagedPool.Asset = stagedAsset
+	stagedPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	stagedPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	stagedPool.Status = PoolStaged
+	c.Assert(mgr.Keeper().SetPool(ctx, stagedPool), IsNil)
+	c.Assert(mgr.Keeper().AddAltNativeFeeEscrowBalance(ctx, stagedAsset, escrowAmount), IsNil)
+	c.Assert(mgr.Keeper().AddAltNativeFeeEscrowBalance(ctx, orphanedAsset, escrowAmount), IsNil)
+	reserveBefore := mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName)
+
+	processAltNativeFeeEscrows(ctx, mgr)
+
+	for _, asset := range []common.Asset{stagedAsset, orphanedAsset} {
+		escrow, exists := mgr.Keeper().GetAltNativeFeeEscrow(ctx, asset)
+		c.Assert(exists, Equals, true)
+		c.Assert(escrow.Balance.Amount.Equal(escrowAmount), Equals, true)
+	}
+	stagedPoolAfter, err := mgr.Keeper().GetPool(ctx, stagedAsset)
+	c.Assert(err, IsNil)
+	c.Assert(stagedPoolAfter.BalanceAsset.Equal(stagedPool.BalanceAsset), Equals, true)
+	c.Assert(stagedPoolAfter.BalanceRune.Equal(stagedPool.BalanceRune), Equals, true)
+	orphanedPool, err := mgr.Keeper().GetPool(ctx, orphanedAsset)
+	c.Assert(err, IsNil)
+	c.Assert(orphanedPool.IsEmpty(), Equals, true)
+	c.Assert(mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName).Equal(reserveBefore), Equals, true)
+}
+
 // TestProcessAltNativeFeeEscrowsCapsThreshold verifies runtime settlement does
 // not wait for more than the pool's full asset depth, even with stale Mimir.
 func (s *HelperSuite) TestProcessAltNativeFeeEscrowsCapsThreshold(c *C) {

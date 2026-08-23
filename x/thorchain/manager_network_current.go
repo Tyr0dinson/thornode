@@ -2048,14 +2048,6 @@ func (vm *NetworkMgr) withdrawLiquidity(ctx cosmos.Context, pool Pool, na NodeAc
 		ctx.Logger().Info("cannot further withdraw liquidity from a suspended pool", "pool", pool.Asset)
 		return nil
 	}
-	if err := settleAltNativeFeeEscrowForLifecycle(ctx, mgr, pool.Asset); err != nil {
-		return fmt.Errorf("fail to settle alt-native fee escrow before ragnarok pool %s: %w", pool.Asset, err)
-	}
-	var err error
-	pool, err = vm.k.GetPool(ctx, pool.Asset)
-	if err != nil {
-		return fmt.Errorf("fail to reload pool before ragnarok: %w", err)
-	}
 
 	// withdraw savers first
 	done, err := vm.withdrawSavers(ctx, pool, na, mgr)
@@ -2149,6 +2141,7 @@ func (vm *NetworkMgr) withdrawLiquidity(ctx cosmos.Context, pool Pool, na NodeAc
 	} else {
 		vm.k.RemovePool(ctx, pool.Asset)
 	}
+	vm.forfeitAltNativeFeeEscrow(ctx, pool.Asset)
 
 	// Now that the pool has been suspended or removed, clear PoolRagnarokStart
 	// (used to treat synth supply as 0)
@@ -2176,6 +2169,35 @@ func (vm *NetworkMgr) withdrawLiquidity(ctx cosmos.Context, pool Pool, na NodeAc
 	vm.k.RemovePool(ctx, pool.Asset.GetDerivedAsset())
 
 	return nil
+}
+
+// forfeitAltNativeFeeEscrow reconciles best-effort fee bookkeeping when a pool
+// reaches a terminal lifecycle state. Native balances must leave Asgard before
+// their record is removed; L1 balances become ordinary vault surplus. If a
+// native transfer fails, retaining the record preserves the pre-transfer
+// accounting state while Ragnarok proceeds. EndBlock cannot settle the escrow
+// again unless a backing pool exists.
+func (vm *NetworkMgr) forfeitAltNativeFeeEscrow(ctx cosmos.Context, asset common.Asset) {
+	escrow, exists := vm.k.GetAltNativeFeeEscrow(ctx, asset)
+	if !exists {
+		return
+	}
+	if escrow.Balance.Amount.IsZero() {
+		vm.k.RemoveAltNativeFeeEscrow(ctx, asset)
+		return
+	}
+	if escrow.Balance.Asset.IsNative() {
+		if err := vm.k.SendFromModuleToModule(ctx, AsgardName, TreasuryName, common.NewCoins(escrow.Balance)); err != nil {
+			ctx.Logger().Error(
+				"fail to forfeit native alt-native fee escrow during pool ragnarok",
+				"asset", asset,
+				"amount", escrow.Balance.Amount,
+				"error", err,
+			)
+			return
+		}
+	}
+	vm.k.RemoveAltNativeFeeEscrow(ctx, asset)
 }
 
 // UpdateNetwork Update the network data to reflect changing in this block

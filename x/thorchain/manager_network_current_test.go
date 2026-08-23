@@ -10,12 +10,24 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	kv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 type NetworkManagerTestSuite struct{}
 
 var _ = Suite(&NetworkManagerTestSuite{})
+
+type failNativeEscrowForfeitKeeper struct {
+	keeper.Keeper
+}
+
+func (k failNativeEscrowForfeitKeeper) SendFromModuleToModule(ctx cosmos.Context, from, to string, coins common.Coins) error {
+	if from == AsgardName && to == TreasuryName {
+		return errKaboom
+	}
+	return k.Keeper.SendFromModuleToModule(ctx, from, to, coins)
+}
 
 func (s *NetworkManagerTestSuite) SetUpSuite(c *C) {
 	SetupConfigForTest()
@@ -2424,9 +2436,9 @@ func (s *NetworkManagerTestSuite) TestRagnarokDualSidedLPDustAssetLegPausedAsymR
 		Commentf("the retained claim should be paid once the pause lifts"))
 }
 
-// TestRagnarokPoolSettlesAltNativeFeeEscrow verifies that Ragnarok clears an
-// existing fee liability before staging and draining its backing pool.
-func (s *NetworkManagerTestSuite) TestRagnarokPoolSettlesAltNativeFeeEscrow(c *C) {
+// TestRagnarokPoolForfeitsL1AltNativeFeeEscrow verifies a terminal L1 pool
+// drops its accounting record without requiring a settlement swap.
+func (s *NetworkManagerTestSuite) TestRagnarokPoolForfeitsL1AltNativeFeeEscrow(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	ctx = ctx.WithBlockHeight(10)
 	mgr := NewDummyMgrWithKeeper(k)
@@ -2450,9 +2462,93 @@ func (s *NetworkManagerTestSuite) TestRagnarokPoolSettlesAltNativeFeeEscrow(c *C
 	afterPool, err := k.GetPool(ctx, pool.Asset)
 	c.Assert(err, IsNil)
 	c.Assert(afterPool.Status, Equals, PoolSuspended)
+	c.Assert(afterPool.BalanceRune.IsZero(), Equals, true)
+	c.Assert(afterPool.BalanceAsset.Equal(pool.BalanceAsset), Equals, true)
 	_, exists := k.GetAltNativeFeeEscrow(ctx, pool.Asset)
 	c.Assert(exists, Equals, false)
-	c.Assert(k.GetRuneBalanceOfModule(ctx, ReserveName).GT(reserveBefore), Equals, true)
+	c.Assert(k.GetRuneBalanceOfModule(ctx, ReserveName).Equal(reserveBefore.Add(pool.BalanceRune)), Equals, true)
+}
+
+// TestRagnarokPoolReconcilesNativeAltNativeFeeEscrow verifies terminal native
+// cleanup moves the accounted balance out of Asgard before removing its record.
+func (s *NetworkManagerTestSuite) TestRagnarokPoolReconcilesNativeAltNativeFeeEscrow(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	mgr := NewDummyMgrWithKeeper(k)
+	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+
+	pool := NewPool()
+	pool.Asset = common.TCY
+	pool.Status = PoolStaged
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	// Leave Asgard holding only the native escrow balance so the strict
+	// invariant checks the cleanup itself, not unrelated pool funds.
+	asgardRune := k.GetRuneBalanceOfModule(ctx, AsgardName)
+	c.Assert(k.SendFromModuleToModule(ctx, AsgardName, ReserveName, common.NewCoins(common.NewCoin(common.RuneAsset(), asgardRune))), IsNil)
+	escrowAmount := cosmos.NewUint(common.One)
+	escrowCoin := common.NewCoin(pool.Asset, escrowAmount)
+	c.Assert(k.MintToModule(ctx, ModuleName, escrowCoin), IsNil)
+	c.Assert(k.SendFromModuleToModule(ctx, ModuleName, AsgardName, common.NewCoins(escrowCoin)), IsNil)
+	c.Assert(k.AddAltNativeFeeEscrowBalance(ctx, pool.Asset, escrowAmount), IsNil)
+
+	concreteKeeper, ok := k.(*kv1.KVStore)
+	c.Assert(ok, Equals, true)
+	msg, broken := kv1.AsgardInvariant(*concreteKeeper)(ctx)
+	c.Assert(broken, Equals, false, Commentf("%v", msg))
+	treasuryBefore := k.GetBalanceOfModule(ctx, TreasuryName, pool.Asset.Native())
+
+	err := networkMgr.withdrawLiquidity(ctx, pool, GetRandomValidatorNode(NodeActive), mgr)
+	c.Assert(err, IsNil)
+
+	afterPool, err := k.GetPool(ctx, pool.Asset)
+	c.Assert(err, IsNil)
+	c.Assert(afterPool.IsEmpty(), Equals, true)
+	_, exists := k.GetAltNativeFeeEscrow(ctx, pool.Asset)
+	c.Assert(exists, Equals, false)
+	c.Assert(k.GetBalanceOfModule(ctx, AsgardName, pool.Asset.Native()).IsZero(), Equals, true)
+	c.Assert(k.GetBalanceOfModule(ctx, TreasuryName, pool.Asset.Native()).Equal(treasuryBefore.Add(escrowAmount)), Equals, true)
+	msg, broken = kv1.AsgardInvariant(*concreteKeeper)(ctx)
+	c.Assert(broken, Equals, false, Commentf("%v", msg))
+}
+
+// TestRagnarokPoolRetainsNativeAltNativeFeeEscrowOnTransferFailure verifies a
+// failed reconciliation keeps the durable record but does not block Ragnarok.
+func (s *NetworkManagerTestSuite) TestRagnarokPoolRetainsNativeAltNativeFeeEscrowOnTransferFailure(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	failingKeeper := failNativeEscrowForfeitKeeper{Keeper: k}
+	mgr := NewDummyMgrWithKeeper(failingKeeper)
+	networkMgr := newNetworkMgr(failingKeeper, mgr.TxOutStore(), mgr.EventMgr())
+
+	pool := NewPool()
+	pool.Asset = common.TCY
+	pool.Status = PoolStaged
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	asgardRune := k.GetRuneBalanceOfModule(ctx, AsgardName)
+	c.Assert(k.SendFromModuleToModule(ctx, AsgardName, ReserveName, common.NewCoins(common.NewCoin(common.RuneAsset(), asgardRune))), IsNil)
+	escrowAmount := cosmos.NewUint(common.One)
+	escrowCoin := common.NewCoin(pool.Asset, escrowAmount)
+	c.Assert(k.MintToModule(ctx, ModuleName, escrowCoin), IsNil)
+	c.Assert(k.SendFromModuleToModule(ctx, ModuleName, AsgardName, common.NewCoins(escrowCoin)), IsNil)
+	c.Assert(k.AddAltNativeFeeEscrowBalance(ctx, pool.Asset, escrowAmount), IsNil)
+	asgardBefore := k.GetBalanceOfModule(ctx, AsgardName, pool.Asset.Native())
+	treasuryBefore := k.GetBalanceOfModule(ctx, TreasuryName, pool.Asset.Native())
+
+	err := networkMgr.withdrawLiquidity(ctx, pool, GetRandomValidatorNode(NodeActive), mgr)
+	c.Assert(err, IsNil)
+
+	afterPool, err := k.GetPool(ctx, pool.Asset)
+	c.Assert(err, IsNil)
+	c.Assert(afterPool.IsEmpty(), Equals, true)
+	escrow, exists := k.GetAltNativeFeeEscrow(ctx, pool.Asset)
+	c.Assert(exists, Equals, true)
+	c.Assert(escrow.Balance.Amount.Equal(escrowAmount), Equals, true)
+	c.Assert(k.GetBalanceOfModule(ctx, AsgardName, pool.Asset.Native()).Equal(asgardBefore), Equals, true)
+	c.Assert(k.GetBalanceOfModule(ctx, TreasuryName, pool.Asset.Native()).Equal(treasuryBefore), Equals, true)
+	concreteKeeper, ok := k.(*kv1.KVStore)
+	c.Assert(ok, Equals, true)
+	msg, broken := kv1.AsgardInvariant(*concreteKeeper)(ctx)
+	c.Assert(broken, Equals, false, Commentf("%v", msg))
 }
 
 func (s *NetworkManagerTestSuite) TestCleanupAsgardIndex(c *C) {

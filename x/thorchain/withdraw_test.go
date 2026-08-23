@@ -833,10 +833,9 @@ func getWithdrawTestKeeper(c *C, ctx cosmos.Context, k keeper.Keeper, runeAddres
 	return store
 }
 
-// TestFinalWithdrawSettlesAltNativeFeeEscrow verifies the final LP withdrawal
-// recalculates against post-settlement depths instead of staging the pool with
-// an outstanding fee liability.
-func (WithdrawSuite) TestFinalWithdrawSettlesAltNativeFeeEscrow(c *C) {
+// TestFinalWithdrawLeavesAltNativeFeeEscrowAccounted verifies an LP can empty
+// and stage a pool without making best-effort fee settlement a prerequisite.
+func (WithdrawSuite) TestFinalWithdrawLeavesAltNativeFeeEscrowAccounted(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	asset, err := common.NewAsset("ETH.TUSDB")
 	c.Assert(err, IsNil)
@@ -869,16 +868,19 @@ func (WithdrawSuite) TestFinalWithdrawSettlesAltNativeFeeEscrow(c *C) {
 	}
 	runeAmt, assetAmt, units, _, err := withdraw(ctx, msg, mgr)
 	c.Assert(err, IsNil)
-	c.Assert(runeAmt.IsZero(), Equals, false)
-	c.Assert(assetAmt.IsZero(), Equals, false)
+	c.Assert(runeAmt.Equal(pool.BalanceRune), Equals, true)
+	c.Assert(assetAmt.Equal(pool.BalanceAsset), Equals, true)
 	c.Assert(units.Equal(pool.LPUnits), Equals, true)
 
 	afterPool, err := mgr.Keeper().GetPool(ctx, asset)
 	c.Assert(err, IsNil)
 	c.Assert(afterPool.Status, Equals, PoolStaged)
-	_, exists := mgr.Keeper().GetAltNativeFeeEscrow(ctx, asset)
-	c.Assert(exists, Equals, false)
-	c.Assert(mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName).GT(reserveBefore), Equals, true)
+	c.Assert(afterPool.BalanceRune.IsZero(), Equals, true)
+	c.Assert(afterPool.BalanceAsset.IsZero(), Equals, true)
+	escrow, exists := mgr.Keeper().GetAltNativeFeeEscrow(ctx, asset)
+	c.Assert(exists, Equals, true)
+	c.Assert(escrow.Balance.Amount.Equal(cosmos.NewUint(common.One)), Equals, true)
+	c.Assert(mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName).Equal(reserveBefore), Equals, true)
 }
 
 func (WithdrawSuite) TestWithdrawSynth(c *C) {

@@ -546,9 +546,9 @@ func (vts *ValidatorMgrTestSuite) TestMarkLowBondActorOnlyAtCapacity(c *C) {
 	c.Assert(higherBondAfter.LeaveScore, Equals, uint64(0))
 }
 
-// TestGlobalRagnarokSettlesAltNativeFeeEscrow verifies global pool staging
-// first resolves fee liabilities even though Ragnarok has halted trading.
-func (vts *ValidatorMgrTestSuite) TestGlobalRagnarokSettlesAltNativeFeeEscrow(c *C) {
+// TestGlobalRagnarokLeavesAltNativeFeeEscrowAccounted verifies pool staging
+// does not depend on fee settlement and retains the accounting record.
+func (vts *ValidatorMgrTestSuite) TestGlobalRagnarokLeavesAltNativeFeeEscrowAccounted(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	ctx = ctx.WithBlockHeight(10)
 	mgr := NewDummyMgrWithKeeper(k)
@@ -573,11 +573,12 @@ func (vts *ValidatorMgrTestSuite) TestGlobalRagnarokSettlesAltNativeFeeEscrow(c 
 	afterPool, err := k.GetPool(ctx, asset)
 	c.Assert(err, IsNil)
 	c.Assert(afterPool.Status, Equals, PoolStaged)
-	c.Assert(afterPool.BalanceAsset.GT(pool.BalanceAsset), Equals, true)
-	c.Assert(afterPool.BalanceRune.LT(pool.BalanceRune), Equals, true)
-	_, exists := k.GetAltNativeFeeEscrow(ctx, asset)
-	c.Assert(exists, Equals, false)
-	c.Assert(k.GetRuneBalanceOfModule(ctx, ReserveName).GT(reserveBefore), Equals, true)
+	c.Assert(afterPool.BalanceAsset.Equal(pool.BalanceAsset), Equals, true)
+	c.Assert(afterPool.BalanceRune.Equal(pool.BalanceRune), Equals, true)
+	escrow, exists := k.GetAltNativeFeeEscrow(ctx, asset)
+	c.Assert(exists, Equals, true)
+	c.Assert(escrow.Balance.Amount.Equal(cosmos.NewUint(common.One)), Equals, true)
+	c.Assert(k.GetRuneBalanceOfModule(ctx, ReserveName).Equal(reserveBefore), Equals, true)
 }
 
 func (vts *ValidatorMgrTestSuite) TestRagnarokBond(c *C) {

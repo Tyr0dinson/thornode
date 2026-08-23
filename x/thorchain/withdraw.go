@@ -136,27 +136,6 @@ func withdraw(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cosmos
 		}
 	}
 
-	// Settle the fee escrow before a final withdrawal can empty and stage the
-	// backing pool. Re-run the calculation against the post-settlement depths,
-	// and commit both operations together.
-	remainingPoolRune := common.SafeSub(poolRune, withdrawRune)
-	remainingPoolAsset := common.SafeSub(poolAsset, withDrawAsset)
-	if !pool.Asset.IsSyntheticAsset() && (remainingPoolRune.IsZero() || remainingPoolAsset.IsZero()) {
-		if escrow, exists := mgr.Keeper().GetAltNativeFeeEscrow(ctx, pool.Asset); exists && !escrow.Balance.Amount.IsZero() {
-			cacheCtx, commit := ctx.CacheContext()
-			if err = settleAltNativeFeeEscrowForLifecycle(cacheCtx, mgr, pool.Asset); err != nil {
-				return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), fmt.Errorf("fail to settle alt-native fee escrow before final withdrawal: %w", err)
-			}
-			var units cosmos.Uint
-			withdrawRune, withDrawAsset, units, gasAsset, err = withdraw(cacheCtx, msg, mgr)
-			if err != nil {
-				return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), err
-			}
-			commit()
-			return withdrawRune, withDrawAsset, units, gasAsset, nil
-		}
-	}
-
 	ctx.Logger().Info("client withdraw", "RUNE", withdrawRune, "asset", withDrawAsset, "units left", unitAfter)
 	// update pool
 	pool.LPUnits = common.SafeSub(pool.LPUnits, common.SafeSub(fLiquidityProviderUnit, unitAfter))

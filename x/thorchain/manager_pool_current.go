@@ -78,21 +78,8 @@ func (pm *PoolMgr) cyclePools(ctx cosmos.Context, maxAvailablePools, minRunePool
 
 	// quick func to save a pool status and emit event
 	setPool := func(pool Pool) error {
-		cacheCtx, commit := ctx.CacheContext()
-		targetStatus := pool.Status
-		if targetStatus == PoolStaged {
-			if err = settleAltNativeFeeEscrowForLifecycle(cacheCtx, mgr, pool.Asset); err != nil {
-				return fmt.Errorf("fail to settle alt-native fee escrow before staging pool %s: %w", pool.Asset, err)
-			}
-			pool, err = mgr.Keeper().GetPool(cacheCtx, pool.Asset)
-			if err != nil {
-				return fmt.Errorf("fail to reload pool before staging: %w", err)
-			}
-			pool.Status = targetStatus
-		}
-
-		poolEvt := NewEventPool(pool.Asset, targetStatus)
-		if err = mgr.EventMgr().EmitEvent(cacheCtx, poolEvt); err != nil {
+		poolEvt := NewEventPool(pool.Asset, pool.Status)
+		if err = mgr.EventMgr().EmitEvent(ctx, poolEvt); err != nil {
 			return fmt.Errorf("fail to emit pool event: %w", err)
 		}
 
@@ -113,11 +100,7 @@ func (pm *PoolMgr) cyclePools(ctx cosmos.Context, maxAvailablePools, minRunePool
 			},
 		)
 		pool.StatusSince = ctx.BlockHeight()
-		if err = mgr.Keeper().SetPool(cacheCtx, pool); err != nil {
-			return err
-		}
-		commit()
-		return nil
+		return mgr.Keeper().SetPool(ctx, pool)
 	}
 
 	iterator := mgr.Keeper().GetPoolIterator(ctx)
@@ -163,17 +146,6 @@ func (pm *PoolMgr) cyclePools(ctx cosmos.Context, maxAvailablePools, minRunePool
 			}
 			mgr.Keeper().ResetRollingPoolLiquidityFee(ctx, pool.Asset)
 		case PoolStaged:
-			// Clear any escrow imported from older state before staged fees can
-			// consume the RUNE depth needed to settle it.
-			if err = settleAltNativeFeeEscrowForLifecycle(ctx, mgr, pool.Asset); err != nil {
-				ctx.Logger().Error("fail to settle alt-native fee escrow for staged pool", "pool", pool.Asset, "err", err)
-				continue
-			}
-			pool, err = mgr.Keeper().GetPool(ctx, pool.Asset)
-			if err != nil {
-				return fmt.Errorf("fail to reload staged pool after alt-native fee settlement: %w", err)
-			}
-
 			// deduct staged pool rune fee
 			fee := cosmos.NewUint(uint64(stagedPoolCost))
 			if fee.GT(pool.BalanceRune) {
@@ -485,14 +457,6 @@ func (pm *PoolMgr) getRelatedAssetLiabilityReason(ctx cosmos.Context, asset comm
 // burnStagedPool atomically removes a staged pool and its backing funds.
 func (pm *PoolMgr) burnStagedPool(ctx cosmos.Context, pool Pool, mgr Manager, queuedSwapLiabilityAssets map[string]struct{}) error {
 	cacheCtx, commit := ctx.CacheContext()
-	if err := settleAltNativeFeeEscrowForLifecycle(cacheCtx, mgr, pool.Asset); err != nil {
-		return fmt.Errorf("fail to settle alt-native fee escrow before burning pool %s: %w", pool.Asset, err)
-	}
-	var err error
-	pool, err = mgr.Keeper().GetPool(cacheCtx, pool.Asset)
-	if err != nil {
-		return fmt.Errorf("fail to reload staged pool before burning: %w", err)
-	}
 	if !pool.PendingInboundRune.IsZero() || !pool.PendingInboundAsset.IsZero() {
 		return fmt.Errorf("cannot burn staged pool %s with pending inbound liquidity", pool.Asset)
 	}
@@ -535,6 +499,10 @@ func (pm *PoolMgr) burnStagedPool(ctx cosmos.Context, pool Pool, mgr Manager, qu
 			return fmt.Errorf("fail to remove asset from vault during pool burning: %w", err)
 		}
 	}
+
+	// The backing asset has now been disposed of in the same cached operation,
+	// so its best-effort fee accounting record must disappear with the pool.
+	mgr.Keeper().RemoveAltNativeFeeEscrow(cacheCtx, pool.Asset)
 
 	commit()
 	return nil

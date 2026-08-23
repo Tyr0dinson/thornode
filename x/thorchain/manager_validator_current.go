@@ -1216,23 +1216,6 @@ func (vm *ValidatorMgr) ragnarokPools(ctx cosmos.Context, nth int64, mgr Manager
 		return fmt.Errorf("fail to get pools: %w", err)
 	}
 
-	// Resolve already-collected fees before global Ragnarok stages every pool.
-	// Use one cache so failure in any pool leaves all lifecycle state unchanged.
-	settlementCtx, commitSettlements := ctx.CacheContext()
-	for _, pool := range pools {
-		if pool.Asset.IsSyntheticAsset() || pool.Asset.IsDerivedAsset() {
-			continue
-		}
-		if err = settleAltNativeFeeEscrowForLifecycle(settlementCtx, mgr, pool.Asset); err != nil {
-			return fmt.Errorf("fail to settle alt-native fee escrow before global ragnarok for %s: %w", pool.Asset, err)
-		}
-	}
-	commitSettlements()
-	pools, err = vm.k.GetPools(ctx)
-	if err != nil {
-		return fmt.Errorf("fail to reload pools after alt-native fee settlement: %w", err)
-	}
-
 	// set all pools to staged status
 	for _, pool := range pools {
 		if pool.Status != PoolStaged {

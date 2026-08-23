@@ -388,6 +388,40 @@ func (s *PoolMgrSuite) TestBurnStagedPoolSkipsPendingLiquidity(c *C) {
 	c.Assert(reserveRuneAfter.Equal(reserveRuneBefore), Equals, true)
 }
 
+// TestAbandonNativePoolForfeitsAltNativeFeeEscrowOnBurn verifies native pool
+// burning moves the entire Asgard balance and removes its escrow record in the
+// same cached operation.
+func (s *PoolMgrSuite) TestAbandonNativePoolForfeitsAltNativeFeeEscrowOnBurn(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	mgr := NewDummyMgrWithKeeper(k)
+
+	pool := NewPool()
+	pool.Asset = common.TCY
+	pool.Status = PoolStaged
+	pool.BalanceRune = cosmos.ZeroUint()
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	escrowAmount := cosmos.NewUint(common.One)
+	totalNative := pool.BalanceAsset.Add(escrowAmount)
+	coin := common.NewCoin(pool.Asset, totalNative)
+	c.Assert(k.MintToModule(ctx, ModuleName, coin), IsNil)
+	c.Assert(k.SendFromModuleToModule(ctx, ModuleName, AsgardName, common.NewCoins(coin)), IsNil)
+	c.Assert(k.AddAltNativeFeeEscrowBalance(ctx, pool.Asset, escrowAmount), IsNil)
+	treasuryBefore := k.GetBalanceOfModule(ctx, TreasuryName, pool.Asset.Native())
+
+	poolMgr := newPoolMgr()
+	c.Assert(poolMgr.cyclePools(ctx, 100, 1, 0, mgr), IsNil)
+
+	afterPool, err := k.GetPool(ctx, pool.Asset)
+	c.Assert(err, IsNil)
+	c.Assert(afterPool.IsEmpty(), Equals, true)
+	_, exists := k.GetAltNativeFeeEscrow(ctx, pool.Asset)
+	c.Assert(exists, Equals, false)
+	c.Assert(k.GetBalanceOfModule(ctx, AsgardName, pool.Asset.Native()).IsZero(), Equals, true)
+	c.Assert(k.GetBalanceOfModule(ctx, TreasuryName, pool.Asset.Native()).Equal(treasuryBefore.Add(totalNative)), Equals, true)
+}
+
 // TestAbandonNativePoolSkipsBurnOnTreasuryTransferFailure verifies that a
 // failed native Asgard -> Treasury transfer aborts pool burning before pool
 // deletion or LP cleanup.
@@ -719,9 +753,54 @@ func (s *PoolMgrSuite) TestAbandonPoolSkipsBurnWithPendingOutboundLiability(c *C
 	c.Assert(len(k.GetPendingOutbounds(ctx, usdAsset)), Equals, 1)
 }
 
-// TestAbandonPoolSettlesAltNativeFeeEscrowBeforeBurn verifies a pool settles
-// its fee liability before demotion and can subsequently be removed.
-func (s *PoolMgrSuite) TestAbandonPoolSettlesAltNativeFeeEscrowBeforeBurn(c *C) {
+// TestDustPoolLifecycleDoesNotDependOnAltNativeFeeSettlement directly seeds a
+// zero-emit settlement state and verifies demotion and burn still complete.
+func (s *PoolMgrSuite) TestDustPoolLifecycleDoesNotDependOnAltNativeFeeSettlement(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	mgr := NewDummyMgrWithKeeper(k)
+	asset, err := common.NewAsset("ETH.TDUST")
+	c.Assert(err, IsNil)
+
+	pool := NewPool()
+	pool.Asset = asset
+	pool.Status = PoolAvailable
+	pool.BalanceRune = cosmos.OneUint()
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+	FundModule(c, ctx, k, AsgardName, 10*common.One)
+
+	escrowAmount := cosmos.NewUint(common.One)
+	vault := GetRandomVault()
+	vault.Coins = common.NewCoins(common.NewCoin(asset, pool.BalanceAsset.Add(escrowAmount)))
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+	c.Assert(k.AddAltNativeFeeEscrowBalance(ctx, asset, escrowAmount), IsNil)
+
+	poolMgr := newPoolMgr()
+	c.Assert(poolMgr.cyclePools(ctx, 100, 2, 0, mgr), IsNil)
+	afterPool, err := k.GetPool(ctx, asset)
+	c.Assert(err, IsNil)
+	c.Assert(afterPool.Status, Equals, PoolStaged)
+	c.Assert(afterPool.BalanceRune.Equal(pool.BalanceRune), Equals, true)
+	c.Assert(afterPool.BalanceAsset.Equal(pool.BalanceAsset), Equals, true)
+	_, exists := k.GetAltNativeFeeEscrow(ctx, asset)
+	c.Assert(exists, Equals, true)
+
+	// One base unit of staged cost drains the remaining RUNE and reaches the
+	// terminal cleanup path without attempting to settle the escrow.
+	c.Assert(poolMgr.cyclePools(ctx, 100, 1, 1, mgr), IsNil)
+	afterPool, err = k.GetPool(ctx, asset)
+	c.Assert(err, IsNil)
+	c.Assert(afterPool.IsEmpty(), Equals, true)
+	_, exists = k.GetAltNativeFeeEscrow(ctx, asset)
+	c.Assert(exists, Equals, false)
+	afterVault, err := k.GetVault(ctx, vault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(afterVault.GetCoin(asset).Amount.IsZero(), Equals, true)
+}
+
+// TestAbandonPoolForfeitsAltNativeFeeEscrowOnBurn verifies lifecycle changes
+// retain escrow accounting until the backing pool is actually removed.
+func (s *PoolMgrSuite) TestAbandonPoolForfeitsAltNativeFeeEscrowOnBurn(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	mgr := NewDummyMgrWithKeeper(k)
 
@@ -734,6 +813,16 @@ func (s *PoolMgrSuite) TestAbandonPoolSettlesAltNativeFeeEscrowBeforeBurn(c *C) 
 	pool.BalanceRune = cosmos.NewUint(100 * common.One)
 	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
 	c.Assert(k.SetPool(ctx, pool), IsNil)
+	// Occupy the sole Available slot so the target remains staged long enough
+	// to exercise staged fees before it is burned.
+	anchorAsset, err := common.NewAsset("ETH.TUSDC")
+	c.Assert(err, IsNil)
+	anchorPool := NewPool()
+	anchorPool.Asset = anchorAsset
+	anchorPool.Status = PoolAvailable
+	anchorPool.BalanceRune = cosmos.NewUint(1_000 * common.One)
+	anchorPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	c.Assert(k.SetPool(ctx, anchorPool), IsNil)
 	FundModule(c, ctx, k, AsgardName, 1_000*common.One)
 
 	vault := GetRandomVault()
@@ -743,24 +832,38 @@ func (s *PoolMgrSuite) TestAbandonPoolSettlesAltNativeFeeEscrowBeforeBurn(c *C) 
 	reserveBefore := k.GetRuneBalanceOfModule(ctx, ReserveName)
 
 	poolMgr := newPoolMgr()
-	c.Assert(poolMgr.cyclePools(ctx, 100, 200*common.One, 0, mgr), IsNil)
+	c.Assert(poolMgr.cyclePools(ctx, 1, 200*common.One, 0, mgr), IsNil)
 
 	afterPool, err := k.GetPool(ctx, asset)
 	c.Assert(err, IsNil)
 	c.Assert(afterPool.IsEmpty(), Equals, false)
 	c.Assert(afterPool.Status, Equals, PoolStaged)
-	c.Assert(afterPool.BalanceAsset.GT(pool.BalanceAsset), Equals, true)
-	c.Assert(afterPool.BalanceRune.LT(pool.BalanceRune), Equals, true)
-	_, exists := k.GetAltNativeFeeEscrow(ctx, asset)
-	c.Assert(exists, Equals, false)
-	c.Assert(k.GetRuneBalanceOfModule(ctx, ReserveName).GT(reserveBefore), Equals, true)
+	c.Assert(afterPool.BalanceAsset.Equal(pool.BalanceAsset), Equals, true)
+	c.Assert(afterPool.BalanceRune.Equal(pool.BalanceRune), Equals, true)
+	escrow, exists := k.GetAltNativeFeeEscrow(ctx, asset)
+	c.Assert(exists, Equals, true)
+	c.Assert(escrow.Balance.Amount.Equal(cosmos.NewUint(common.One)), Equals, true)
+	c.Assert(k.GetRuneBalanceOfModule(ctx, ReserveName).Equal(reserveBefore), Equals, true)
 
-	// Once staged costs consume the remaining RUNE, no escrow remains to
-	// prevent safe removal of the pool and its vault asset.
-	c.Assert(poolMgr.cyclePools(ctx, 100, 1, 1_000*common.One, mgr), IsNil)
+	// Staged fees may change pool depth, but they do not need escrow settlement
+	// to make progress.
+	c.Assert(poolMgr.cyclePools(ctx, 1, 1, 10*common.One, mgr), IsNil)
+	afterPool, err = k.GetPool(ctx, asset)
+	c.Assert(err, IsNil)
+	c.Assert(afterPool.Status, Equals, PoolStaged)
+	c.Assert(afterPool.BalanceRune.Equal(cosmos.NewUint(90*common.One)), Equals, true)
+	c.Assert(afterPool.BalanceAsset.Equal(pool.BalanceAsset), Equals, true)
+	_, exists = k.GetAltNativeFeeEscrow(ctx, asset)
+	c.Assert(exists, Equals, true)
+
+	// Once staged costs consume the remaining RUNE, pool and escrow bookkeeping
+	// are removed together with the vault asset.
+	c.Assert(poolMgr.cyclePools(ctx, 1, 1, 1_000*common.One, mgr), IsNil)
 	afterPool, err = k.GetPool(ctx, asset)
 	c.Assert(err, IsNil)
 	c.Assert(afterPool.IsEmpty(), Equals, true)
+	_, exists = k.GetAltNativeFeeEscrow(ctx, asset)
+	c.Assert(exists, Equals, false)
 
 	afterVault, err := k.GetVault(ctx, vault.PubKey)
 	c.Assert(err, IsNil)
