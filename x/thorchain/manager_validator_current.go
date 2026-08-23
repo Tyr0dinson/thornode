@@ -304,16 +304,8 @@ func (vm *ValidatorMgr) churnInner(ctx cosmos.Context) error {
 		}
 		if pendingXMR {
 			ctx.Logger().Info("Skipping XMR FROST keygen due to pending keygen")
-		} else {
-			// Avoid entering the XMR scheduling path while the dedicated operational
-			// halt is active. scheduleKeygen repeats this check so genesis and any
-			// future direct scheduling path remain covered as well.
-			monovaultHalt, mErr := vm.k.GetMimir(ctx, constants.MimirKeyHaltMonovaultKeygen)
-			if mErr == nil && monovaultHalt > 0 && monovaultHalt <= ctx.BlockHeight() {
-				ctx.Logger().Info("xmr monovault keygen skipped due to HaltMonovaultKeygen mimir")
-			} else if err := vm.networkMgr.TriggerXMRKeygen(ctx, next); err != nil {
-				return err
-			}
+		} else if err := vm.networkMgr.TriggerXMRKeygen(ctx, next); err != nil {
+			return err
 		}
 	}
 	return nil
