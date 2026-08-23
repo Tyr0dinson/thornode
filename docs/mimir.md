@@ -247,6 +247,21 @@ Operational notes:
 - `OverSolvencyAddress`: Over-solvency sweep destination address
 - `VaultDeficitGasHaltMaxGasMultiplier`\*: Multiple of the chain's current max gas at which a gas-related vault deficit halts signing and trading on the chain (0 = disabled)
 
+### Invariant Circuit Breaker
+
+Runs selected solvency and structural invariant checks at the end of each block and can automatically pause all chains. Every key below requires economic supermajority — not the operational vote minimum — so a small group of operators cannot disarm detection or shorten an automated halt.
+
+- `InvCheckInterval`#: Global check interval in blocks. Unset or non-positive disables the circuit breaker entirely.
+- `Inv<Route>Interval`#: Per-route interval override (routes: `AsgardSolvency`, `BondSolvency`, `VaultDeficit`). Zero disables that route; unset falls back to `InvCheckInterval`.
+- `Inv<Route>Tolerance`#: Permitted underfunding in basis points (rounded up) before the route triggers. Does not apply to broken or indeterminate findings. Defaults to 0, where any 1-unit shortfall produces a finding — set to at least 1 before arming auto-halt if dust-level accounting drift is normal.
+- `Inv<Route>AutoHalt`#: Arms automatic chain pause for the route. Only provably violated invariants and beyond-tolerance insolvency halt; unreadable (indeterminate) state emits events but never halts.
+- `CircuitBreakerPauseGlobal`#: Pause-until block height written by the circuit breaker as `max(current pause, height + max(720, interval))`. Deliberately separate from `NodePauseChainGlobal` so node pause/resume messages cannot shorten an automated halt. Each new automated pause clears stored node votes on this key, so clearing it always requires fresh consensus.
+
+Recovery from an automated halt:
+
+1. If the finding has cleared, do nothing — the pause is not extended at the next check and expires on its own.
+2. If the finding persists but operators judge the halt unnecessary, the order is mandatory: first reach economic consensus on `Inv<Route>AutoHalt = 0`, **then** on `CircuitBreakerPauseGlobal = 0`. Reversing the order lets the breaker immediately re-extend the pause — and each re-extension wipes accumulated votes on the pause key. Mimir voting remains available while the chain is paused.
+
 ## Node Management
 
 - `MinimumBondInRune`\*: Sets a lower bound on bond for a node to be considered to be churned in
