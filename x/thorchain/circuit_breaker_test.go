@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"fmt"
 	"math"
 	"math/big"
 
@@ -154,6 +155,84 @@ func (s *CircuitBreakerRunSuite) TestCircuitBreakerAction(c *C) {
 	c.Check(halt, Equals, true)
 }
 
+func (s *CircuitBreakerRunSuite) TestCapMessages(c *C) {
+	c.Assert(capMessages(nil, 3), HasLen, 0)
+	c.Assert(capMessages([]string{"a", "b", "c"}, 3), DeepEquals, []string{"a", "b", "c"})
+	// at max+1 a summary would replace exactly one message — pass through
+	c.Assert(capMessages([]string{"a", "b", "c", "d"}, 3), DeepEquals, []string{"a", "b", "c", "d"})
+	c.Assert(capMessages([]string{"a", "b", "c", "d", "e"}, 3), DeepEquals, []string{"a", "b", "c", "2 more messages omitted"})
+}
+
+// manyMessagesRouteKeeper reports a finding with more messages than the
+// event cap, so the truncation can be exercised end to end.
+type manyMessagesRouteKeeper struct {
+	keeper.Keeper
+}
+
+func (k manyMessagesRouteKeeper) CircuitBreakerRoutes() []common.CircuitBreakerRoute {
+	return []common.CircuitBreakerRoute{
+		common.NewCircuitBreakerRoute("AsgardSolvency", func(ctx cosmos.Context) common.CircuitBreakerCheck {
+			msgs := make([]string, 100)
+			for i := range msgs {
+				msgs[i] = fmt.Sprintf("finding %d", i)
+			}
+			return common.CircuitBreakerCheck{
+				Actual:        cosmos.ZeroUint(),
+				Expected:      cosmos.ZeroUint(),
+				Indeterminate: true,
+				Msgs:          msgs,
+			}
+		}),
+	}
+}
+
+func (s *CircuitBreakerRunSuite) TestRunCircuitBreakersMessageCap(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+
+	mgr.K = manyMessagesRouteKeeper{Keeper: mgr.K}
+	mgr.Keeper().SetMimir(ctx, constants.MimirKeyInvCheckInterval, 1)
+
+	runCircuitBreakers(ctx, mgr)
+
+	attributes := circuitBreakerEventAttributes(ctx, "AsgardSolvency")
+	c.Assert(attributes, NotNil)
+	c.Assert(attributes["message_0"], Equals, "finding 0")
+	c.Assert(attributes["message_19"], Equals, "finding 19")
+	c.Assert(attributes["message_20"], Equals, "80 more messages omitted")
+	_, over := attributes["message_21"]
+	c.Assert(over, Equals, false)
+}
+
+func (s *CircuitBreakerRunSuite) TestRunCircuitBreakersRouteIntervalZeroDisables(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+
+	// known-insolvent state with auto-halt armed
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+	asgardBal := mgr.Keeper().GetRuneBalanceOfModule(ctx, AsgardName)
+	if !asgardBal.IsZero() {
+		coins := common.NewCoins(common.NewCoin(common.RuneAsset(), asgardBal))
+		c.Assert(mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ReserveName, coins), IsNil)
+	}
+
+	mgr.Keeper().SetMimir(ctx, constants.MimirKeyInvCheckInterval, 1)
+	mgr.Keeper().SetMimir(ctx, "InvAsgardSolvencyAutoHalt", 1)
+	// the per-route kill switch must win over the global interval
+	mgr.Keeper().SetMimir(ctx, "InvAsgardSolvencyInterval", 0)
+
+	runCircuitBreakers(ctx, mgr)
+
+	pause, err := mgr.Keeper().GetMimir(ctx, constants.MimirKeyCircuitBreakerPauseGlobal)
+	c.Assert(err, IsNil)
+	c.Assert(pause, Equals, int64(-1))
+	c.Assert(circuitBreakerEventAttributes(ctx, "AsgardSolvency"), IsNil)
+}
+
 // indeterminateRouteKeeper overrides the registered routes with one that
 // reports indeterminate state, so the runner's halt decision can be
 // exercised end to end.
@@ -234,7 +313,7 @@ func (s *CircuitBreakerRunSuite) TestRunCircuitBreakersDisabled(c *C) {
 	// By default InvCheckInterval is not set (-1), so circuit breakers should be disabled
 	runCircuitBreakers(ctx, mgr)
 
-	// Should not panic and should not set NodePauseChainGlobal
+	// Should not panic and should not set CircuitBreakerPauseGlobal
 	pause, err := mgr.Keeper().GetMimir(ctx, constants.MimirKeyCircuitBreakerPauseGlobal)
 	c.Assert(err, IsNil)
 	c.Assert(pause, Equals, int64(-1))

@@ -83,7 +83,9 @@ func runCircuitBreakers(ctx cosmos.Context, mgr Manager) {
 
 		halted := halt
 
-		// Emit circuit breaker event
+		// Emit circuit breaker event. Messages are capped so systemic
+		// corruption cannot bloat block results with one attribute per
+		// offending record.
 		evt := NewEventCircuitBreaker(
 			route.Route,
 			check.Asset,
@@ -94,7 +96,7 @@ func runCircuitBreakers(ctx cosmos.Context, mgr Manager) {
 			halted,
 			check.Broken,
 			check.Indeterminate,
-			check.Msgs,
+			capMessages(check.Msgs, maxCircuitBreakerEventMessages),
 		)
 		if err := mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
 			ctx.Logger().Error("fail to emit circuit breaker event", "error", err)
@@ -110,6 +112,7 @@ func runCircuitBreakers(ctx cosmos.Context, mgr Manager) {
 			"broken", check.Broken,
 			"indeterminate", check.Indeterminate,
 			"halted", halted,
+			"message_count", len(check.Msgs),
 		)
 
 		if halted {
@@ -161,6 +164,26 @@ func circuitBreakerAction(check common.CircuitBreakerCheck, deviationBps cosmos.
 	trigger = check.Broken || check.Indeterminate || deviationExceeds
 	halt = autoHalt > 0 && (check.Broken || deviationExceeds)
 	return trigger, halt
+}
+
+// maxCircuitBreakerEventMessages bounds how many finding messages a single
+// circuit_breaker event carries; the full count is logged separately.
+const maxCircuitBreakerEventMessages = 20
+
+// capMessages truncates msgs to at most max entries, appending a summary of
+// how many were omitted, so mass corruption cannot bloat block results with
+// one event attribute per offending record.
+func capMessages(msgs []string, max int) []string {
+	// at max+1 the summary line would replace exactly one message, losing
+	// information while saving nothing — pass through instead, which also
+	// keeps the omitted count always plural
+	if len(msgs) <= max+1 {
+		return msgs
+	}
+	capped := make([]string, 0, max+1)
+	capped = append(capped, msgs[:max]...)
+	capped = append(capped, fmt.Sprintf("%d more messages omitted", len(msgs)-max))
+	return capped
 }
 
 // saturateInt64 converts an unsigned BPS value for int64 event fields,

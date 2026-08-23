@@ -67,24 +67,36 @@ func (k KVStore) RemoveSwapQueueItem(ctx cosmos.Context, txID common.TxID, i int
 
 // AddMalformedSwapPurge records that malformed swap queue records were
 // deleted, so the circuit breaker can surface the purge at its next check —
-// the records themselves are gone before it runs. The counter is an
-// operational signal and is deliberately not exported in genesis.
+// the records themselves are gone before it runs. The counter and height
+// are an operational signal and are deliberately not exported in genesis.
+// A corrupt counter is overwritten (self-healing); the consume side reports
+// unreadable state before clearing anything.
 func (k KVStore) AddMalformedSwapPurge(ctx cosmos.Context, count int64) {
 	if count <= 0 {
 		return
 	}
-	key := k.GetKey(prefixMalformedSwapPurge, "count")
+	countKey := k.GetKey(prefixMalformedSwapPurge, "count")
 	var current int64
-	_, _ = k.getInt64(ctx, key, &current)
-	k.setInt64(ctx, key, current+count)
+	_, _ = k.getInt64(ctx, countKey, &current)
+	k.setInt64(ctx, countKey, current+count)
+	k.setInt64(ctx, k.GetKey(prefixMalformedSwapPurge, "height"), ctx.BlockHeight())
 }
 
 // ConsumeMalformedSwapPurge returns the number of malformed swap queue
-// records deleted since the last call and clears the counter.
-func (k KVStore) ConsumeMalformedSwapPurge(ctx cosmos.Context) int64 {
-	key := k.GetKey(prefixMalformedSwapPurge, "count")
-	var count int64
-	_, _ = k.getInt64(ctx, key, &count)
-	k.del(ctx, key)
-	return count
+// records deleted since the last call and the height of the most recent
+// deletion, clearing both. A read failure preserves the record and returns
+// the error so the caller can report the unreadable state instead of
+// silently destroying the only evidence.
+func (k KVStore) ConsumeMalformedSwapPurge(ctx cosmos.Context) (count, lastHeight int64, err error) {
+	countKey := k.GetKey(prefixMalformedSwapPurge, "count")
+	heightKey := k.GetKey(prefixMalformedSwapPurge, "height")
+	if _, err := k.getInt64(ctx, countKey, &count); err != nil {
+		return 0, 0, err
+	}
+	if _, err := k.getInt64(ctx, heightKey, &lastHeight); err != nil {
+		return 0, 0, err
+	}
+	k.del(ctx, countKey)
+	k.del(ctx, heightKey)
+	return count, lastHeight, nil
 }

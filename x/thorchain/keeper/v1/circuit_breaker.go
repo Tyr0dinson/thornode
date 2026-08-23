@@ -49,10 +49,15 @@ func AsgardSolvencyCircuitBreaker(k KVStore) common.CircuitBreakerInvariant {
 
 		// Malformed queue records are deleted by FetchQueue earlier in the
 		// same EndBlock, before this route can observe them. Consume the
-		// purge signal so the deletion is still surfaced on-chain.
-		if purged := k.ConsumeMalformedSwapPurge(ctx); purged > 0 {
+		// purge signal so the deletion is still surfaced on-chain. An
+		// unreadable counter is itself indeterminate state and is preserved
+		// rather than cleared.
+		if purged, lastHeight, purgeErr := k.ConsumeMalformedSwapPurge(ctx); purgeErr != nil {
 			result.Indeterminate = true
-			result.Msgs = append(result.Msgs, fmt.Sprintf("%d malformed swap queue records deleted since last check", purged))
+			result.Msgs = append(result.Msgs, fmt.Sprintf("fail to read malformed swap purge counter: %s", purgeErr))
+		} else if purged > 0 {
+			result.Indeterminate = true
+			result.Msgs = append(result.Msgs, fmt.Sprintf("%d malformed swap queue records deleted, most recently at height %d", purged, lastHeight))
 		}
 
 		// Accumulate expected balances per native denom in arbitrary

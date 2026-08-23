@@ -1018,14 +1018,82 @@ func (s *CircuitBreakerSuite) TestMalformedSwapPurgeSignal(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
 	// nothing recorded: consume returns zero
-	c.Assert(k.ConsumeMalformedSwapPurge(ctx), Equals, int64(0))
+	count, lastHeight, err := k.ConsumeMalformedSwapPurge(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(count, Equals, int64(0))
+	c.Assert(lastHeight, Equals, int64(0))
 
-	// purges accumulate until consumed, then reset
-	k.AddMalformedSwapPurge(ctx, 2)
-	k.AddMalformedSwapPurge(ctx, 3)
-	k.AddMalformedSwapPurge(ctx, 0)
-	c.Assert(k.ConsumeMalformedSwapPurge(ctx), Equals, int64(5))
-	c.Assert(k.ConsumeMalformedSwapPurge(ctx), Equals, int64(0))
+	// purges accumulate until consumed, then reset; the height tracks the
+	// most recent deletion
+	k.AddMalformedSwapPurge(ctx.WithBlockHeight(40), 2)
+	k.AddMalformedSwapPurge(ctx.WithBlockHeight(50), 3)
+	k.AddMalformedSwapPurge(ctx.WithBlockHeight(60), 0)
+	count, lastHeight, err = k.ConsumeMalformedSwapPurge(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(count, Equals, int64(5))
+	c.Assert(lastHeight, Equals, int64(50))
+	count, _, err = k.ConsumeMalformedSwapPurge(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(count, Equals, int64(0))
+}
+
+func (s *CircuitBreakerSuite) TestMalformedSwapPurgeSignalCorruptCounter(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// an unreadable counter must be reported, not silently cleared
+	c.Assert(k.storeService.OpenKVStore(ctx).Set(k.GetKey(prefixMalformedSwapPurge, "count"), []byte("garbage")), IsNil)
+
+	_, _, err := k.ConsumeMalformedSwapPurge(ctx)
+	c.Assert(err, NotNil)
+
+	// the record is preserved: a second consume still errors
+	_, _, err = k.ConsumeMalformedSwapPurge(ctx)
+	c.Assert(err, NotNil)
+
+	// and the route reports it as indeterminate
+	runeBal := k.GetRuneBalanceOfModule(ctx, AsgardName)
+	coins := common.NewCoins(common.NewCoin(common.RuneAsset(), runeBal))
+	c.Assert(k.SendFromModuleToModule(ctx, AsgardName, ReserveName, coins), IsNil)
+
+	check := AsgardSolvencyCircuitBreaker(k)(ctx)
+	c.Assert(check.Broken, Equals, false)
+	c.Assert(check.Indeterminate, Equals, true)
+	c.Assert(check.Msgs, HasLen, 1)
+	c.Assert(check.Msgs[0], Matches, "fail to read malformed swap purge counter:.*")
+}
+
+func (s *CircuitBreakerSuite) TestMalformedSwapPurgeSignalCorruptHeight(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	k.AddMalformedSwapPurge(ctx.WithBlockHeight(70), 4)
+	c.Assert(k.storeService.OpenKVStore(ctx).Set(k.GetKey(prefixMalformedSwapPurge, "height"), []byte("garbage")), IsNil)
+
+	// the height read fails after the count read succeeded — nothing is
+	// cleared
+	_, _, err := k.ConsumeMalformedSwapPurge(ctx)
+	c.Assert(err, NotNil)
+
+	// repairing the height key shows the count survived the failed consume
+	k.setInt64(ctx, k.GetKey(prefixMalformedSwapPurge, "height"), 70)
+	count, lastHeight, err := k.ConsumeMalformedSwapPurge(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(count, Equals, int64(4))
+	c.Assert(lastHeight, Equals, int64(70))
+}
+
+func (s *CircuitBreakerSuite) TestMalformedSwapPurgeSignalSelfHeals(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	c.Assert(k.storeService.OpenKVStore(ctx).Set(k.GetKey(prefixMalformedSwapPurge, "count"), []byte("garbage")), IsNil)
+	_, _, err := k.ConsumeMalformedSwapPurge(ctx)
+	c.Assert(err, NotNil)
+
+	// a later purge overwrites the corrupt counter and the signal clears
+	k.AddMalformedSwapPurge(ctx.WithBlockHeight(80), 2)
+	count, lastHeight, err := k.ConsumeMalformedSwapPurge(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(count, Equals, int64(2))
+	c.Assert(lastHeight, Equals, int64(80))
 }
 
 func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerConsumesPurgeSignal(c *C) {
@@ -1036,13 +1104,13 @@ func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerConsumesPurgeSigna
 	coins := common.NewCoins(common.NewCoin(common.RuneAsset(), runeBal))
 	c.Assert(k.SendFromModuleToModule(ctx, AsgardName, ReserveName, coins), IsNil)
 
-	k.AddMalformedSwapPurge(ctx, 3)
+	k.AddMalformedSwapPurge(ctx.WithBlockHeight(42), 3)
 
 	check := AsgardSolvencyCircuitBreaker(k)(ctx)
 	c.Assert(check.Broken, Equals, false)
 	c.Assert(check.Indeterminate, Equals, true)
 	c.Assert(check.Msgs, HasLen, 1)
-	c.Assert(check.Msgs[0], Equals, "3 malformed swap queue records deleted since last check")
+	c.Assert(check.Msgs[0], Equals, "3 malformed swap queue records deleted, most recently at height 42")
 
 	// consumed: the next check is clean
 	check = AsgardSolvencyCircuitBreaker(k)(ctx)

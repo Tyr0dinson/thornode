@@ -165,6 +165,17 @@ func (s *KeeperMimirSuite) TestCircuitBreakerControlsAreEconomicMimirs(c *C) {
 	c.Check(constants.IsOperationalMimir("InvAsgardSolvencyAutoHalt"), Equals, false)
 	c.Check(constants.IsOperationalMimir("invbondsolvencyautohalt"), Equals, false)
 
+	// The tuning keys are deliberately economic as well: an operational
+	// minority must not be able to disarm detection by zeroing an interval
+	// or raising a tolerance.
+	c.Check(constants.IsOperationalMimir(constants.MimirKeyInvCheckInterval), Equals, false)
+	c.Check(constants.IsOperationalMimir("InvAsgardSolvencyInterval"), Equals, false)
+	c.Check(constants.IsOperationalMimir("InvBondSolvencyInterval"), Equals, false)
+	c.Check(constants.IsOperationalMimir("InvVaultDeficitInterval"), Equals, false)
+	c.Check(constants.IsOperationalMimir("InvAsgardSolvencyTolerance"), Equals, false)
+	c.Check(constants.IsOperationalMimir("InvBondSolvencyTolerance"), Equals, false)
+	c.Check(constants.IsOperationalMimir("InvVaultDeficitTolerance"), Equals, false)
+
 	// Unrelated halt keys retain their existing operational classification.
 	c.Check(constants.IsOperationalMimir("HaltSigningBTC"), Equals, true)
 }

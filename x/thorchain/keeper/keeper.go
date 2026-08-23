@@ -44,9 +44,13 @@ type Keeper interface {
 	SendCoins(ctx cosmos.Context, from, to cosmos.AccAddress, coins cosmos.Coins) error
 
 	InvariantRoutes() []common.InvariantRoute
+	// CircuitBreakerRoutes returns the circuit breaker invariants. Unlike
+	// InvariantRoutes, these routes may write state (the Asgard route
+	// consumes the malformed-purge signal) and must only be invoked from
+	// EndBlock, never from a query path.
 	CircuitBreakerRoutes() []common.CircuitBreakerRoute
 	AddMalformedSwapPurge(ctx cosmos.Context, count int64)
-	ConsumeMalformedSwapPurge(ctx cosmos.Context) int64
+	ConsumeMalformedSwapPurge(ctx cosmos.Context) (count, lastHeight int64, err error)
 
 	GetConstants() constants.ConstantValues
 	GetConfigInt64(ctx cosmos.Context, key constants.ConstantName) int64
