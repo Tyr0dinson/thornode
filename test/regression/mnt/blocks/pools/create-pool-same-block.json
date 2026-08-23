@@ -199,7 +199,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "+:BTC.BTC:tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }

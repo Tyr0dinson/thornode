@@ -880,6 +880,7 @@
                       "memo": "OUT:C4F1DC7636E39B56271D90687A4C20AD753F466F4EB432ABD26B842876FE247F",
                       "to_address": "46QDeeLcyrEGkn7NyaJCsD3NJbDgjJk1BXiopzvU6aejKB4XKtcf1e86oAXAxDJXbPbGME2xWBgFdSUzrxhiKLiqGdtinVR"
                     },
+                    "xmr_mined_height": "0",
                     "xmr_tx_key": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
                   }
                 ]

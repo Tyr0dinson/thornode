@@ -309,7 +309,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "TEST",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -411,7 +412,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "TEST",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -513,7 +515,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "TEST",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -739,7 +742,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "TEST",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -965,7 +969,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "TEST",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -1191,7 +1196,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "TEST",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -1417,7 +1423,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "TEST",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -1643,7 +1650,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "TEST",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -1745,7 +1753,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "TEST",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -1847,7 +1856,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "TEST",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -2073,7 +2083,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "TEST",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -2360,7 +2371,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "TEST",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -2586,7 +2598,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "TEST",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -2812,7 +2825,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "TEST",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -3038,7 +3052,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000001",
                       "to_address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -3140,7 +3155,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000001",
                       "to_address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -3242,7 +3258,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000001",
                       "to_address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -3500,7 +3517,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000001",
                       "to_address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -3737,7 +3755,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000001",
                       "to_address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -3963,7 +3982,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000001",
                       "to_address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -4189,7 +4209,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000001",
                       "to_address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -4415,7 +4436,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000001",
                       "to_address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -4517,7 +4539,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000001",
                       "to_address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -4619,7 +4642,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000001",
                       "to_address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -4845,7 +4869,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000001",
                       "to_address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -5071,7 +5096,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000001",
                       "to_address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -5173,7 +5199,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000001",
                       "to_address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -5399,7 +5426,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000001",
                       "to_address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -5625,7 +5653,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000001",
                       "to_address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }

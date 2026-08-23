@@ -403,7 +403,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "secure+:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
                       "to_address": "0xd58610f89265a2fb637ac40edf59141ff873b266"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }

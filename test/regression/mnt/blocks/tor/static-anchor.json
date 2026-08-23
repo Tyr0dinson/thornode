@@ -3224,7 +3224,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "OUT:4C0CA037FA8C659BEBEF5F51DA62E4F4F421DA551DA5AA9ABDFB21E6BC3BACA0",
                       "to_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   },
                   {
                     "aggregator": "",
@@ -3257,7 +3258,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
                       "memo": "OUT:527EBC24FA226A6885E0B9BFD88FBC9F576B1FB90E8723A792E8E7DA5E89989E",
                       "to_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   },
                   {
                     "aggregator": "",
@@ -3290,7 +3292,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000003",
                       "memo": "OUT:DB495C4375F914882AADBB42B8C6F87D77C3FBEA0228ED2D56FAF15DA8C29502",
                       "to_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }

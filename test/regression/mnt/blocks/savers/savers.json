@@ -674,7 +674,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "+:BTC/BTC",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -1001,7 +1002,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
                       "memo": "=:THOR.RUNE:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -1430,7 +1432,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000003",
                       "memo": "-:BTC/BTC:5000",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -1726,7 +1729,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000004",
                       "memo": "OUT:0000000000000000000000000000000000000000000000000000000000000003",
                       "to_address": "bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -2119,7 +2123,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000005",
                       "memo": "-:BTC/BTC:10000",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -2368,7 +2373,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000006",
                       "memo": "OUT:0000000000000000000000000000000000000000000000000000000000000005",
                       "to_address": "bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -2931,7 +2937,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000007",
                       "memo": "+:BTC/BTC",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -4486,7 +4493,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000008",
                       "memo": "=:THOR.RUNE:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -4819,7 +4827,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000009",
                       "memo": "-:BTC/BTC:10000",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -5821,7 +5830,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000009",
                       "memo": "OUT:0000000000000000000000000000000000000000000000000000000000000009",
                       "to_address": "bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -6165,7 +6175,8 @@
                       "id": "000000000000000000000000000000000000000000000000000000000000000a",
                       "memo": "+:BTC/BTC",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -7534,7 +7545,8 @@
                       "id": "000000000000000000000000000000000000000000000000000000000000000a",
                       "memo": "+:BTC/BTC",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -8205,7 +8217,8 @@
                       "id": "000000000000000000000000000000000000000000000000000000000000000b",
                       "memo": "+:BTC/BTC",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -9032,7 +9045,8 @@
                       "id": "000000000000000000000000000000000000000000000000000000000000000c",
                       "memo": "-:BTC/BTC:10000",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
