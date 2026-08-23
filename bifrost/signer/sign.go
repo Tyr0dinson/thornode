@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -60,8 +61,16 @@ type Signer struct {
 	localPubKeyECDSA      common.PubKey
 	localPubKeyEDDSA      common.PubKey
 	tssKeysignMetricMgr   *metrics.TssKeysignMetricMgr
-	observer              *observer.Observer
+	observer              signerObserver
 	pipeline              *pipeline
+}
+
+// signerObserver is the narrow Observer surface used by Signer. NewSigner
+// still accepts the concrete Observer in production. This interface keeps
+// readiness gating testable without constructing or mutating a full Observer.
+type signerObserver interface {
+	ObserveSigned(types.TxIn)
+	IsChainClientStarted(common.Chain) bool
 }
 
 type pendingKeygenBroadcast struct {
@@ -1308,7 +1317,15 @@ func (s *Signer) isStopped() bool {
 }
 
 func (s *Signer) storageList() []TxOutStoreItem {
-	return s.storage.List()
+	items := s.storage.List()
+	if s.observer == nil || s.observer.IsChainClientStarted(common.XMRChain) {
+		return items
+	}
+	// Keep deferred XMR items durable in storage; only hide them from the
+	// signing pipeline until Observer has safely started the XMR client.
+	return slices.DeleteFunc(items, func(item TxOutStoreItem) bool {
+		return item.TxOutItem.Chain.Equals(common.XMRChain)
+	})
 }
 
 func (s *Signer) processTransaction(item TxOutStoreItem) {

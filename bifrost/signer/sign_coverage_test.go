@@ -32,6 +32,16 @@ type SignCoverageSuite struct{}
 
 var _ = Suite(&SignCoverageSuite{})
 
+type storageListObserver struct {
+	xmrStarted bool
+}
+
+func (*storageListObserver) ObserveSigned(types.TxIn) {}
+
+func (o *storageListObserver) IsChainClientStarted(chain common.Chain) bool {
+	return !chain.Equals(common.XMRChain) || o.xmrStarted
+}
+
 func (s *SignCoverageSuite) SetUpSuite(c *C) {
 	thorchain.SetupConfigForTest()
 }
@@ -338,6 +348,35 @@ func (s *SignCoverageSuite) TestStorageList(c *C) {
 	err = storage.Set(NewTxOutStoreItem(10, types.TxOutItem{Memo: "test"}, 0))
 	c.Assert(err, IsNil)
 	c.Assert(sign.storageList(), HasLen, 1)
+}
+
+func (s *SignCoverageSuite) TestStorageListDefersXMRUntilObserverStarts(c *C) {
+	storage, err := NewSignerStore("", config.LevelDBOptions{}, "")
+	c.Assert(err, IsNil)
+	defer storage.Close()
+
+	btc := NewTxOutStoreItem(10, types.TxOutItem{Chain: common.BTCChain, Memo: "btc"}, 0)
+	xmr := NewTxOutStoreItem(10, types.TxOutItem{Chain: common.XMRChain, Memo: "xmr"}, 1)
+	c.Assert(storage.Set(btc), IsNil)
+	c.Assert(storage.Set(xmr), IsNil)
+
+	obs := &storageListObserver{}
+	sign := &Signer{storage: storage, observer: obs}
+	for range 2 {
+		ready := sign.storageList()
+		c.Assert(ready, HasLen, 1)
+		c.Assert(ready[0].TxOutItem.Chain.Equals(common.BTCChain), Equals, true)
+		c.Assert(storage.List(), HasLen, 2, Commentf("deferred XMR item was removed from durable storage"))
+	}
+
+	obs.xmrStarted = true
+	ready := sign.storageList()
+	c.Assert(ready, HasLen, 2)
+	foundXMR := false
+	for _, item := range ready {
+		foundXMR = foundXMR || item.TxOutItem.Chain.Equals(common.XMRChain)
+	}
+	c.Assert(foundXMR, Equals, true)
 }
 
 func (s *SignCoverageSuite) TestSignAndBroadcast_BlockHeightError(c *C) {

@@ -245,6 +245,21 @@ func (o *Observer) startChainClient(chainID common.Chain, chain chainclients.Cha
 	return true
 }
 
+// IsChainClientStarted reports whether a chain client completed startup and is
+// still available for work.
+func (o *Observer) IsChainClientStarted(chainID common.Chain) bool {
+	if o == nil {
+		return false
+	}
+	o.chainLifecycleMu.Lock()
+	defer o.chainLifecycleMu.Unlock()
+	if o.stopping {
+		return false
+	}
+	_, started := o.startedChains[chainID]
+	return started
+}
+
 func (o *Observer) startConfiguredChainClients(deferXMR bool) {
 	for chainID, chain := range o.chains {
 		if deferXMR && chainID.Equals(common.XMRChain) {
@@ -374,13 +389,9 @@ func (o *Observer) Start(ctx context.Context) error {
 	if err := o.restoreDeck(); err != nil {
 		return fmt.Errorf("restore observer deck: %w", err)
 	}
-	// Reconcile every historical XMR tombstone before the chain client can scan
-	// or broadcast. This heals crashes between Observer's durable barrier and
-	// the chain client's two local quarantine stores, including tombstones
-	// written by older versions which were already marked committed.
-	if err := o.replayPermanentErrataQuarantines(); err != nil {
-		return fmt.Errorf("replay permanent observer errata quarantines: %w", err)
-	}
+	// Completed XMR tombstones need no startup replay: reconciliation records
+	// the terminal state only after local quarantine succeeds. Any interrupted
+	// attempt remains unresolved and is retried below.
 	// Resolve every delivered-but-unclassified XMR errata before XMR can scan or
 	// rebroadcast. An unresolved result defers only XMR; stopping every unrelated
 	// chain client would turn one partial errata vote into a global outage.
@@ -639,22 +650,6 @@ func (o *Observer) quarantinePermanentErrata(tombstone errataTombstone) error {
 		return fmt.Errorf("%s chain client lacks permanent errata quarantine support", tombstone.Chain)
 	}
 	return quarantiner.QuarantinePermanentErrata(errata, tombstone.OrphanHeight)
-}
-
-func (o *Observer) replayPermanentErrataQuarantines() error {
-	tombstones, err := o.storage.getErrataTombstones()
-	if err != nil {
-		return err
-	}
-	for _, tombstone := range tombstones {
-		if !tombstone.isPermanentlyReverted() {
-			continue
-		}
-		if err = o.quarantinePermanentErrata(tombstone); err != nil {
-			return fmt.Errorf("quarantine %s transaction %s: %w", tombstone.Chain, tombstone.TxID, err)
-		}
-	}
-	return nil
 }
 
 func (o *Observer) sendDeck(ctx context.Context) {
