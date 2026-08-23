@@ -1319,7 +1319,7 @@ func (c *Client) ChainBlock(height int64) (ChainBlock, error) {
 	if c.hasDaemonRPC() {
 		block, err := c.daemonBlock(height)
 		if err == nil {
-			return block, nil
+			return validateChainBlockHeight(height, block)
 		}
 		if isUnavailableBlock(err) {
 			return ChainBlock{}, err
@@ -1338,7 +1338,14 @@ func (c *Client) ChainBlock(height int64) (ChainBlock, error) {
 		}
 		return ChainBlock{}, fmt.Errorf("fail to call sidecar chain-block endpoint: %w", err)
 	}
-	return ChainBlock(out), nil
+	return validateChainBlockHeight(height, ChainBlock(out))
+}
+
+func validateChainBlockHeight(requested int64, block ChainBlock) (ChainBlock, error) {
+	if block.Height != requested {
+		return ChainBlock{}, &BlockHeightMismatchError{Requested: requested, Returned: block.Height}
+	}
+	return block, nil
 }
 
 func (c *Client) TxExists(txHash string) (bool, error) {

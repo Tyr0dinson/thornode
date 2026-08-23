@@ -2,6 +2,7 @@ package monero
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -233,6 +234,37 @@ func TestRefreshAsgardAcceptsVaultBirthdayRewind(t *testing.T) {
 	scanner.asgardMu.RLock()
 	assert.Equal(t, frostKey, scanner.asgardLookup[frostAddress.String()])
 	scanner.asgardMu.RUnlock()
+}
+
+func TestRefreshAsgardPreservesLookupWhenVaultQueryFails(t *testing.T) {
+	t.Parallel()
+
+	previousKey := testVaultPubKey(t, "previous-complete-lookup")
+	secpKey := testVaultPubKey(t, "unavailable-vault")
+	queryErr := errors.New("vault query unavailable")
+	scanner := NewScanner(
+		testLogger(),
+		nil,
+		&scannerMemoBridge{
+			pubkeyVaults: ttypes.Vaults{{PubKey: secpKey}},
+			getVaultErr:  queryErr,
+		},
+		common.XMRChain,
+		common.EmptyPubKey,
+		72,
+	)
+	scanner.asgardLookup = map[string]common.PubKey{"previous-address": previousKey}
+
+	err := scanner.refreshAsgardLookup(100)
+	require.ErrorIs(t, err, queryErr)
+
+	scanner.asgardMu.RLock()
+	defer scanner.asgardMu.RUnlock()
+	require.Equal(
+		t,
+		map[string]common.PubKey{"previous-address": previousKey},
+		scanner.asgardLookup,
+	)
 }
 
 func TestRefreshAsgardSkipsVaultWithoutPubKeyFrost(t *testing.T) {

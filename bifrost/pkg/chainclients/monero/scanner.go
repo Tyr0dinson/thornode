@@ -2016,20 +2016,21 @@ func (s *Scanner) discoverReorgReplacement(
 		}
 		canonical, err := s.sidecar.ChainBlock(height)
 		if err != nil {
+			var mismatch *sidecar.BlockHeightMismatchError
+			if errors.As(err, &mismatch) {
+				return sidecar.ChainBlock{}, nil, nil, &btypes.ScannerRecoveryRequiredError{
+					CurrentHeight: previousHeight + 1,
+					NextHeight:    height,
+					Reason: fmt.Sprintf(
+						"monero reorg check requested height %d but the chain query returned height %d",
+						mismatch.Requested,
+						mismatch.Returned,
+					),
+				}
+			}
 			return sidecar.ChainBlock{}, nil, nil, fmt.Errorf(
 				"fail to fetch monero block %d during reorg check: %w", height, err,
 			)
-		}
-		if canonical.Height != height {
-			return sidecar.ChainBlock{}, nil, nil, &btypes.ScannerRecoveryRequiredError{
-				CurrentHeight: previousHeight + 1,
-				NextHeight:    height,
-				Reason: fmt.Sprintf(
-					"monero reorg check requested height %d but the chain query returned height %d",
-					height,
-					canonical.Height,
-				),
-			}
 		}
 		if strings.EqualFold(meta.BlockHash, canonical.Hash) {
 			anchor = canonical
@@ -2053,20 +2054,21 @@ func (s *Scanner) discoverReorgReplacement(
 	for height := anchor.Height + 1; height <= previousHeight; height++ {
 		canonical, err := s.sidecar.ChainBlock(height)
 		if err != nil {
+			var mismatch *sidecar.BlockHeightMismatchError
+			if errors.As(err, &mismatch) {
+				return sidecar.ChainBlock{}, nil, nil, &btypes.ScannerRecoveryRequiredError{
+					CurrentHeight: previousHeight + 1,
+					NextHeight:    anchor.Height + 1,
+					Reason: fmt.Sprintf(
+						"monero reorg replay requested height %d but the chain query returned height %d",
+						mismatch.Requested,
+						mismatch.Returned,
+					),
+				}
+			}
 			return sidecar.ChainBlock{}, nil, nil, fmt.Errorf(
 				"fail to fetch monero replacement block %d: %w", height, err,
 			)
-		}
-		if canonical.Height != height {
-			return sidecar.ChainBlock{}, nil, nil, &btypes.ScannerRecoveryRequiredError{
-				CurrentHeight: previousHeight + 1,
-				NextHeight:    anchor.Height + 1,
-				Reason: fmt.Sprintf(
-					"monero reorg replay requested height %d but the chain query returned height %d",
-					height,
-					canonical.Height,
-				),
-			}
 		}
 		meta, err := s.reorgStore.Get(height)
 		if err != nil {
@@ -2446,8 +2448,7 @@ func (s *Scanner) refreshAsgardLookup(nextScanHeight int64) error {
 		}
 		vault, vaultErr := s.bridge.GetVault(pair.PubKey.String())
 		if vaultErr != nil {
-			s.logger.Debug().Err(vaultErr).Str("vault_pubkey", pair.PubKey.String()).Msg("skip xmr pubkey during asgard lookup refresh")
-			continue
+			return fmt.Errorf("fail to refresh xmr vault %s from pubkey lookup: %w", pair.PubKey, vaultErr)
 		}
 		if addErr := s.addFrostVaultToLookup(
 			lookup,

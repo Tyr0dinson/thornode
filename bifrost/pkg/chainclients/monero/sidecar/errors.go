@@ -11,6 +11,25 @@ import (
 // ErrUnavailableBlock indicates the requested block height is above the canonical chain tip.
 var ErrUnavailableBlock = errors.New("sidecar chain block unavailable")
 
+// ErrBlockHeightMismatch identifies a structurally invalid successful response.
+var ErrBlockHeightMismatch = errors.New("sidecar chain block height mismatch")
+
+type BlockHeightMismatchError struct {
+	Requested int64
+	Returned  int64
+}
+
+func (e *BlockHeightMismatchError) Error() string {
+	return fmt.Sprintf(
+		"%s: requested height %d, returned height %d",
+		ErrBlockHeightMismatch,
+		e.Requested,
+		e.Returned,
+	)
+}
+
+func (e *BlockHeightMismatchError) Unwrap() error { return ErrBlockHeightMismatch }
+
 // maxResponseBytes caps the size of any response body the sidecar (or the
 // monerod fallback) is allowed to return, to keep a misbehaving peer from
 // exhausting memory.

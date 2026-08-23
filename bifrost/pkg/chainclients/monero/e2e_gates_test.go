@@ -27,6 +27,7 @@ type scannerMemoBridge struct {
 	errByTx      map[string]error
 	asgards      ttypes.Vaults
 	pubkeyVaults ttypes.Vaults
+	getVaultErr  error
 }
 
 func (b *scannerMemoBridge) GetAsgards() (ttypes.Vaults, error) {
@@ -52,6 +53,9 @@ func (b *scannerMemoBridge) GetPubKeys() ([]thorclient.PubKeyContractAddressPair
 }
 
 func (b *scannerMemoBridge) GetVault(pubkey string) (ttypes.Vault, error) {
+	if b.getVaultErr != nil {
+		return ttypes.Vault{}, b.getVaultErr
+	}
 	for _, vault := range b.asgards {
 		if vault.PubKey.String() == pubkey {
 			return vault, nil
