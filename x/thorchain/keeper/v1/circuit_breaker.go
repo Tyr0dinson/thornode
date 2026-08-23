@@ -66,11 +66,14 @@ func AsgardSolvencyCircuitBreaker(k KVStore) common.CircuitBreakerInvariant {
 		// The map is used only for accumulation; results are materialized
 		// in sorted denom order below, preserving consensus determinism.
 		expectedTotals := make(map[string]*big.Int)
+		denoms := make([]string, 0, 8)
 		addExpected := func(denom string, amounts ...cosmos.Uint) {
 			total, ok := expectedTotals[denom]
 			if !ok {
 				total = new(big.Int)
 				expectedTotals[denom] = total
+				// track denoms at insertion so the map is never iterated
+				denoms = append(denoms, denom)
 			}
 			for _, amount := range amounts {
 				total.Add(total, amount.BigInt())
@@ -230,10 +233,6 @@ func AsgardSolvencyCircuitBreaker(k KVStore) common.CircuitBreakerInvariant {
 		// insolvency, saturating aggregated totals at the 256-bit ceiling.
 		// Extra module balances are overfunding and do not trigger the
 		// circuit breaker.
-		denoms := make([]string, 0, len(expectedTotals))
-		for denom := range expectedTotals {
-			denoms = append(denoms, denom)
-		}
 		sort.Strings(denoms)
 
 		worstBps := cosmos.ZeroUint()
