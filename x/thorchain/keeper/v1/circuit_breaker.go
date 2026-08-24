@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math/big"
 	"sort"
+	"strings"
+	"unicode"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -16,6 +18,49 @@ func (k KVStore) CircuitBreakerRoutes() []common.CircuitBreakerRoute {
 		common.NewCircuitBreakerRoute("BondSolvency", BondSolvencyCircuitBreaker(k)),
 		common.NewCircuitBreakerRoute("VaultDeficit", VaultDeficitCircuitBreaker(k)),
 	}
+}
+
+// foldKey maps every rune to the smallest rune in its unicode simple-fold
+// orbit — the equivalence strings.EqualFold uses — so grouping by foldKey
+// merges at least everything Asset.Equals merges, even for fold-orbit runes
+// that ToUpper would keep distinct.
+func foldKey(s string) string {
+	return strings.Map(func(r rune) rune {
+		folded := r
+		for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+			if f < folded {
+				folded = f
+			}
+		}
+		return folded
+	}, s)
+}
+
+// vaultAggregationOverflows reports whether summing any asset's duplicate
+// coin or deficit entries would exceed the 256-bit Uint range, which would
+// panic the checked arithmetic inside ValidateDeficitInvariant. Grouping by
+// foldKey over Asset.String() is at least as coarse as Asset.Equals (which
+// folds case and ignores nothing String() omits beyond Ticker), so every
+// sum the shared helpers attempt is bounded by a guard group; over-grouping
+// can at worst produce an alert-only indeterminate finding. The map is only
+// used for lookup, never iterated.
+func vaultAggregationOverflows(vault Vault) (string, bool) {
+	for _, coins := range []common.Coins{vault.Coins, vault.Deficit} {
+		totals := make(map[string]*big.Int)
+		for _, coin := range coins {
+			asset := foldKey(coin.Asset.String())
+			total, ok := totals[asset]
+			if !ok {
+				total = new(big.Int)
+				totals[asset] = total
+			}
+			total.Add(total, coin.Amount.BigInt())
+			if total.BitLen() > 256 {
+				return coin.Asset.String(), true
+			}
+		}
+	}
+	return "", false
 }
 
 // recordInsolvency compares actual against expected for one asset and tracks
@@ -271,6 +316,16 @@ func VaultDeficitCircuitBreaker(k KVStore) common.CircuitBreakerInvariant {
 				// unreadable record — reported without a proven violation
 				result.Indeterminate = true
 				result.Msgs = append(result.Msgs, fmt.Sprintf("fail to unmarshal vault: %s", err))
+				continue
+			}
+
+			// ValidateDeficitInvariant aggregates duplicate same-asset
+			// entries with checked arithmetic; guard the aggregation here so
+			// corrupt magnitudes report a finding instead of panicking
+			// EndBlock.
+			if asset, overflows := vaultAggregationOverflows(vault); overflows {
+				result.Indeterminate = true
+				result.Msgs = append(result.Msgs, fmt.Sprintf("vault %s aggregation overflows for %s", vault.PubKey, asset))
 				continue
 			}
 

@@ -160,6 +160,65 @@ func (s *CircuitBreakerSuite) TestVaultDeficitCircuitBreakerCorruptVault(c *C) {
 	c.Assert(check.Msgs[0], Matches, "fail to unmarshal vault:.*")
 }
 
+func (s *CircuitBreakerSuite) TestVaultDeficitCircuitBreakerDuplicateAggregationOverflow(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// duplicate same-asset entries whose totals exceed 256 bits would panic
+	// ValidateDeficitInvariant's checked aggregation — the route must report
+	// indeterminate instead
+	maxUint := cosmos.NewUintFromString("115792089237316195423570985008687907853269984665640564039457584007913129639935")
+
+	coinsVault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.ETHChain}.Strings(), nil)
+	coinsVault.Coins = common.Coins{
+		common.NewCoin(common.ETHAsset, maxUint),
+		common.NewCoin(common.ETHAsset, maxUint),
+	}
+	coinsVault.Deficit = common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(1))}
+	c.Assert(k.SetVault(ctx, coinsVault), IsNil)
+
+	deficitVault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.ETHChain}.Strings(), nil)
+	deficitVault.Coins = common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(1))}
+	deficitVault.Deficit = common.Coins{
+		common.NewCoin(common.ETHAsset, maxUint),
+		common.NewCoin(common.ETHAsset, maxUint),
+	}
+	c.Assert(k.SetVault(ctx, deficitVault), IsNil)
+
+	check := VaultDeficitCircuitBreaker(k)(ctx)
+	c.Assert(check.Broken, Equals, false)
+	c.Assert(check.Indeterminate, Equals, true)
+	c.Assert(check.Msgs, HasLen, 2)
+	c.Assert(check.Msgs[0], Matches, "vault .* aggregation overflows for ETH.ETH")
+	c.Assert(check.Msgs[1], Matches, "vault .* aggregation overflows for ETH.ETH")
+}
+
+func (s *CircuitBreakerSuite) TestVaultDeficitCircuitBreakerFoldedSymbolOverflow(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// Asset.Equals folds case via EqualFold, which merges fold-orbit runes
+	// (Kelvin sign vs ASCII K) that ToUpper keeps distinct — the guard must
+	// group them the same way Equals does, or the merged sum still panics
+	// the shared helpers
+	maxUint := cosmos.NewUintFromString("115792089237316195423570985008687907853269984665640564039457584007913129639935")
+	kelvin := common.Asset{Chain: "ETH", Symbol: "KAVA", Ticker: "KAVA"}
+	ascii := common.Asset{Chain: "ETH", Symbol: "KAVA", Ticker: "KAVA"}
+	c.Assert(kelvin.Equals(ascii), Equals, true)
+
+	vault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.ETHChain}.Strings(), nil)
+	vault.Coins = common.Coins{
+		common.NewCoin(kelvin, maxUint),
+		common.NewCoin(ascii, maxUint),
+	}
+	vault.Deficit = common.Coins{common.NewCoin(ascii, cosmos.NewUint(1))}
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	check := VaultDeficitCircuitBreaker(k)(ctx)
+	c.Assert(check.Broken, Equals, false)
+	c.Assert(check.Indeterminate, Equals, true)
+	c.Assert(check.Msgs, HasLen, 1)
+	c.Assert(check.Msgs[0], Matches, "vault .* aggregation overflows for .*")
+}
+
 func (s *CircuitBreakerSuite) TestVaultDeficitCircuitBreakerOverflowingAmounts(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
