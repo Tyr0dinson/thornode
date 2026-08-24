@@ -172,10 +172,11 @@ func AsgardSolvencyCircuitBreaker(k KVStore) common.CircuitBreakerInvariant {
 					continue
 				}
 
+				// L1-to-L1 swaps contribute nothing to module balances (the
+				// accumulation below is native-gated), but their streaming
+				// state is still validated — corrupt accounting is a proven
+				// violation regardless of which balances it touches.
 				coin := swap.Tx.Coins[0]
-				if !coin.IsNative() && !swap.TargetAsset.IsNative() {
-					continue
-				}
 
 				// Legacy V1 swaps track progress in a separate StreamingSwap
 				// record (NewMsgSwap embeds State for them too, but V1

@@ -927,6 +927,115 @@ func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerSecuredInputStream
 	c.Assert(check.Msgs[0], Matches, "inconsistent streaming state for swap .*")
 }
 
+func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerL1ToL1InconsistentV1(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// empty asgard so the inconsistent stream is the only finding
+	runeBal := k.GetRuneBalanceOfModule(ctx, AsgardName)
+	coins := common.NewCoins(common.NewCoin(common.RuneAsset(), runeBal))
+	c.Assert(k.SendFromModuleToModule(ctx, AsgardName, ReserveName, coins), IsNil)
+
+	// BTC->ETH V1 streaming swap: neither side touches module balances, but
+	// a record claiming more swapped in than deposited is still proven
+	// corruption and must not be skipped
+	tx := GetRandomTx()
+	tx.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(500)))
+	swap := MsgSwap{
+		Tx:             tx,
+		TargetAsset:    common.ETHAsset,
+		StreamInterval: 1,
+		Version:        types.SwapVersion_v1,
+	}
+	c.Assert(k.SetSwapQueueItem(ctx, swap, 0), IsNil)
+
+	stream := StreamingSwap{
+		TxID:     tx.ID,
+		Deposit:  cosmos.NewUint(500),
+		Quantity: 10,
+		Interval: 10,
+		In:       cosmos.NewUint(600),
+		Out:      cosmos.NewUint(100),
+	}
+	k.SetStreamingSwap(ctx, stream)
+
+	check := AsgardSolvencyCircuitBreaker(k)(ctx)
+	c.Assert(check.Broken, Equals, true)
+	c.Assert(check.Indeterminate, Equals, false)
+	c.Assert(check.Msgs, HasLen, 1)
+	c.Assert(check.Msgs[0], Matches, "inconsistent streaming state for swap .*")
+}
+
+func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerL1ToL1InconsistentV2(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// empty asgard so the inconsistent state is the only finding
+	runeBal := k.GetRuneBalanceOfModule(ctx, AsgardName)
+	coins := common.NewCoins(common.NewCoin(common.RuneAsset(), runeBal))
+	c.Assert(k.SendFromModuleToModule(ctx, AsgardName, ReserveName, coins), IsNil)
+
+	// BTC->ETH V2 streaming swap whose queued coin disagrees with the
+	// embedded deposit
+	tx := GetRandomTx()
+	tx.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(500)))
+	swap := MsgSwap{
+		Tx:          tx,
+		TargetAsset: common.ETHAsset,
+		Version:     types.SwapVersion_v2,
+		State: &types.SwapState{
+			Quantity:  10,
+			Deposit:   cosmos.NewUint(400),
+			Withdrawn: cosmos.ZeroUint(),
+			In:        cosmos.ZeroUint(),
+			Out:       cosmos.ZeroUint(),
+		},
+	}
+	c.Assert(k.SetAdvSwapQueueItem(ctx, swap), IsNil)
+
+	check := AsgardSolvencyCircuitBreaker(k)(ctx)
+	c.Assert(check.Broken, Equals, true)
+	c.Assert(check.Indeterminate, Equals, false)
+	c.Assert(check.Msgs, HasLen, 1)
+	c.Assert(check.Msgs[0], Matches, "inconsistent swap state for .*")
+}
+
+func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerL1ToL1Healthy(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// empty the starting balance of asgard
+	runeBal := k.GetRuneBalanceOfModule(ctx, AsgardName)
+	coins := common.NewCoins(common.NewCoin(common.RuneAsset(), runeBal))
+	c.Assert(k.SendFromModuleToModule(ctx, AsgardName, ReserveName, coins), IsNil)
+
+	// healthy BTC->ETH mid-stream swap: validated but contributing nothing
+	// to expected balances — must produce no finding
+	tx := GetRandomTx()
+	tx.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(500)))
+	swap := MsgSwap{
+		Tx:             tx,
+		TargetAsset:    common.ETHAsset,
+		StreamInterval: 1,
+		Version:        types.SwapVersion_v1,
+	}
+	c.Assert(k.SetSwapQueueItem(ctx, swap, 0), IsNil)
+
+	stream := StreamingSwap{
+		TxID:     tx.ID,
+		Deposit:  cosmos.NewUint(500),
+		Quantity: 10,
+		Interval: 10,
+		Count:    2,
+		In:       cosmos.NewUint(100),
+		Out:      cosmos.NewUint(40),
+	}
+	k.SetStreamingSwap(ctx, stream)
+
+	check := AsgardSolvencyCircuitBreaker(k)(ctx)
+	c.Assert(check.Broken, Equals, false)
+	c.Assert(check.Indeterminate, Equals, false)
+	c.Assert(check.Msgs, HasLen, 0)
+	c.Assert(check.Expected.IsZero(), Equals, true)
+}
+
 func (s *CircuitBreakerSuite) TestAsgardSolvencyCircuitBreakerCorruptSwapRecord(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
