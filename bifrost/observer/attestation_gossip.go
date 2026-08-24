@@ -444,8 +444,8 @@ func (s *AttestationGossip) acquireXMRSpentRefsAttempt(tx common.ObservedTx) (fu
 	release := s.xmrErrataBarrier.RUnlock
 
 	// Production must not admit a mutation before durable tombstones are wired.
-	// Legacy and test instances retain prior behavior unless admission was
-	// explicitly required.
+	// Tests and explicitly optional-storage instances retain prior behavior
+	// unless admission was explicitly required.
 	if s.observerStorage == nil {
 		if s.xmrErrataAdmissionRequired {
 			release()

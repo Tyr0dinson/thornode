@@ -472,9 +472,9 @@ func TestRepeatedXMRErrataGenerationResetsLifecycleAndRejectsStaleCompletion(t *
 	require.False(t, found)
 }
 
-func TestHeightScopedXMRErrataIgnoresLegacyCommitAfterScannerHandoff(t *testing.T) {
+func TestHeightScopedXMRErrataIgnoresTxIDOnlyCommitAfterScannerHandoff(t *testing.T) {
 	_, storage := newErrataOrderingObserver(t)
-	tx := types.ErrataTx{Chain: common.XMRChain, TxID: common.TxID("height-scoped-legacy-commit")}
+	tx := types.ErrataTx{Chain: common.XMRChain, TxID: common.TxID("height-scoped-txid-only-commit")}
 	block := types.ErrataBlock{
 		Height:     100,
 		DeliveryID: "height-scoped",
@@ -1104,7 +1104,7 @@ func TestXMRNoApplicableObservationOutcomeIsTerminalAcrossRestart(t *testing.T) 
 	require.Zero(t, unresolved)
 }
 
-func TestLegacyXMRCommittedErrataWithoutOutcomeFailsClosed(t *testing.T) {
+func TestOutcomeLessXMRCommittedErrataFailsClosed(t *testing.T) {
 	observer, storage := newErrataOrderingObserver(t)
 	errata := common.ErrataTx{
 		Chain:  common.XMRChain,
@@ -1703,7 +1703,7 @@ func TestSendDeckUnlocksOnlyXMRNetworkSubmission(t *testing.T) {
 		common.BTCChain,
 		100,
 		0,
-		errataOrderingItem("serialized-btc", 100, "legacy"),
+		errataOrderingItem("serialized-btc", 100, "one-shot"),
 	)
 	xmrDeck := errataOrderingTxIn(
 		common.XMRChain,
@@ -1722,7 +1722,7 @@ func TestSendDeckUnlocksOnlyXMRNetworkSubmission(t *testing.T) {
 			require.True(t, acquired, "XMR send must not hold Observer lock before taking the errata reader")
 			observer.lock.Unlock()
 		} else {
-			require.False(t, acquired, "legacy chain send must preserve serialized on-deck behavior")
+			require.False(t, acquired, "non-XMR chain send must preserve serialized on-deck behavior")
 		}
 		return nil
 	}

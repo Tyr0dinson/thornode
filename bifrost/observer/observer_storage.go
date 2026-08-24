@@ -275,10 +275,10 @@ func (s *ObserverStorage) applyErrata(
 	return s.applyErrataBatch(block, errataTombstoneUpdate{recordDelivery: true}, mutations)
 }
 
-// applyLegacyErrata writes only the TxID tombstone and deck cleanup. Producers
+// applyOneShotErrata writes only the TxID tombstone and deck cleanup. Producers
 // without an acknowledgement callback retain their original one-shot gossip
 // behavior and must not silently enter XMR's durable retry outbox.
-func (s *ObserverStorage) applyLegacyErrata(
+func (s *ObserverStorage) applyOneShotErrata(
 	block types.ErrataBlock,
 	mutations []errataDeckMutation,
 ) error {
@@ -333,8 +333,8 @@ func (s *ObserverStorage) applyErrataBatch(
 				// atomic batch removes any local view which predated that result.
 				tombstone.OrphanHeights = appendUniqueErrataHeight(tombstone.OrphanHeights, block.Height)
 			case block.Height <= 0:
-				// A TxID-only legacy event cannot complete a height-identified XMR
-				// generation. It is current only while the tombstone itself still
+				// A pre-height TxID-only XMR event cannot complete a height-identified
+				// XMR generation. It is current only while the tombstone itself still
 				// has no scanner-owned height.
 				staleGeneration = existing.OrphanHeight > 0
 			case existing.OrphanHeight == 0 && len(existing.OrphanHeights) == 0:

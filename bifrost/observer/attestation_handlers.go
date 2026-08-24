@@ -190,8 +190,8 @@ func (s *AttestationGossip) AttestErrata(ctx context.Context, errata common.Erra
 // its durable outbox may retransmit the same vote until Thornode confirms it,
 // and a retransmission must never delete an observation re-mined in the
 // meantime. XMR cleanup is scoped to the orphaned height so the same immutable
-// transaction can be observed at a new canonical location; legacy chains keep
-// their historical TxID-wide behavior.
+// transaction can be observed at a new canonical location; non-XMR chains keep
+// their current TxID-wide behavior.
 func (s *AttestationGossip) removeObservedTxsForErrata(errata common.ErrataTx, orphanHeight int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

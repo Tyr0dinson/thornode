@@ -2214,6 +2214,8 @@ func (s *Scanner) deliverReorgErrata(height int64, errataTxs []stypes.ErrataTx) 
 	terminal := make(chan error, 1)
 	var once sync.Once
 	block := stypes.ErrataBlock{Height: height, Txs: errataTxs}
+	// Set both callbacks as one acknowledged-delivery contract. Supplying only
+	// one would not select either Observer's durable or one-shot queue path.
 	block.OnStored = func() { once.Do(func() { terminal <- nil }) }
 	block.OnRejected = func(err error) { once.Do(func() { terminal <- err }) }
 	// The queue is unbuffered and this runs with scanMu held, so an observer

@@ -10,7 +10,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 )
 
-// handleErrataTxCommitted preserves the legacy outcome-less event shape for
+// handleErrataTxCommitted preserves the pre-terminal-outcome XMR event shape for
 // tests which exercise delivery and retry behavior independently of THORChain's
 // committed outcome.
 func (o *Observer) handleErrataTxCommitted(errata common.ErrataTx) error {

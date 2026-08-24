@@ -249,7 +249,7 @@ func TestErrataCleanupPersistsAcrossRestart(t *testing.T) {
 	}
 	// Non-XMR clients retain the production one-shot path: the deck mutation is
 	// durable, but no XMR-specific retry outbox record is created.
-	require.NoError(t, observer.cleanupLegacyErrataBlock(block))
+	require.NoError(t, observer.cleanupOneShotErrataBlock(block))
 	require.Len(t, observer.onDeck[key].TxArray, 1)
 	assert.Equal(t, "retained", observer.onDeck[key].TxArray[0].Tx)
 

@@ -717,8 +717,8 @@ func (o *Observer) sendDeck(ctx context.Context) {
 			return
 		}
 
-		// Preserve the historical serialized on-deck behavior for every legacy
-		// chain. Their errata cleanup is TxID-wide and does not use XMR's writer
+		// Preserve the serialized on-deck behavior for every non-XMR chain. Their
+		// errata cleanup is TxID-wide and does not use XMR's writer
 		// barrier, so releasing o.lock here would only create a stale
 		// re-admission window without solving a lock inversion.
 		slices.Sort(invalidIndices)
@@ -1501,7 +1501,7 @@ func (o *Observer) processErrataTx(ctx context.Context) {
 			// original one-shot behavior: clean local state and attest once,
 			// without entering the durable retry outbox.
 			if errataBlock.OnStored == nil && errataBlock.OnRejected == nil {
-				if processErr := o.processLegacyErrataBlock(ctx, errataBlock); processErr != nil {
+				if processErr := o.processOneShotErrataBlock(ctx, errataBlock); processErr != nil {
 					o.logger.Error().Err(processErr).
 						Int64("height", errataBlock.Height).
 						Msg("failed to process one-shot errata block")
@@ -1527,12 +1527,12 @@ func (o *Observer) processErrataTx(ctx context.Context) {
 	}
 }
 
-// processLegacyErrataBlock preserves the one-shot behavior used by chain
+// processOneShotErrataBlock preserves the current one-shot behavior used by chain
 // clients that do not opt into the acknowledged XMR delivery contract. These
 // events clean local observer state and attest once without entering the
 // durable retry outbox.
-func (o *Observer) processLegacyErrataBlock(ctx context.Context, errataBlock types.ErrataBlock) error {
-	if err := o.cleanupLegacyErrataBlock(errataBlock); err != nil {
+func (o *Observer) processOneShotErrataBlock(ctx context.Context, errataBlock types.ErrataBlock) error {
+	if err := o.cleanupOneShotErrataBlock(errataBlock); err != nil {
 		return err
 	}
 	if o.attestationGossip == nil {
@@ -1560,8 +1560,8 @@ func (o *Observer) processLegacyErrataBlock(ctx context.Context, errataBlock typ
 	return broadcastErr
 }
 
-// errataAttestationPayload keeps existing chains on the legacy TxID-only wire
-// identity while XMR signs the canonical orphaned height as its generation.
+// errataAttestationPayload keeps non-XMR chains on their current TxID-only
+// wire identity while XMR signs the canonical orphaned height as its generation.
 func errataAttestationPayload(tx types.ErrataTx, orphanHeight int64) common.ErrataTx {
 	errata := common.ErrataTx{Chain: tx.Chain, Id: tx.TxID}
 	if tx.Chain.Equals(common.XMRChain) {
@@ -1614,7 +1614,7 @@ func (o *Observer) cleanupErrataBlock(errataBlock types.ErrataBlock) error {
 	return nil
 }
 
-func (o *Observer) cleanupLegacyErrataBlock(errataBlock types.ErrataBlock) error {
+func (o *Observer) cleanupOneShotErrataBlock(errataBlock types.ErrataBlock) error {
 	unlock := o.lockXMRErrataCleanup(errataBlock)
 	defer unlock()
 
@@ -1862,7 +1862,7 @@ func (o *Observer) reconcileCommittedXMRErrata() (int, error) {
 			)
 			reconcileErrors = append(reconcileErrors, outcomeErr)
 			o.logger.Error().Err(outcomeErr).Str("txid", tombstone.TxID.String()).
-				Msg("cannot reconcile legacy XMR errata without an explicit terminal outcome")
+				Msg("cannot reconcile pre-outcome XMR errata without an explicit terminal outcome")
 			continue
 		}
 		errata := errataAttestationPayload(
@@ -1999,7 +1999,7 @@ func (o *Observer) applyErrataTxWithOutbox(
 	if durableOutbox {
 		persistErr = o.storage.applyErrata(block, mutations)
 	} else {
-		persistErr = o.storage.applyLegacyErrata(block, mutations)
+		persistErr = o.storage.applyOneShotErrata(block, mutations)
 	}
 	if persistErr != nil {
 		o.lock.Unlock()

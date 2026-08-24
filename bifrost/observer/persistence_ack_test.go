@@ -748,7 +748,7 @@ func TestCallbackErrataInitialPersistenceFailureHasNoPartialCleanup(t *testing.T
 	waitObserverLoop(t, done)
 }
 
-func TestProcessErrataWithoutAckPreservesLegacyOneShotPath(t *testing.T) {
+func TestProcessErrataWithoutAckPreservesOneShotPath(t *testing.T) {
 	storage, tempDir := setupTestDB(t)
 	defer cleanupTestDB(t, storage, tempDir)
 
@@ -809,7 +809,7 @@ func TestProcessErrataWithoutAckPreservesLegacyOneShotPath(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, stored)
 	gossip.mu.Lock()
-	assert.Empty(t, gossip.observedTxs, "legacy one-shot delivery must retain its TxID-wide cleanup")
+	assert.Empty(t, gossip.observedTxs, "non-XMR one-shot delivery must retain its TxID-wide cleanup")
 	gossip.mu.Unlock()
 
 	close(stop)
