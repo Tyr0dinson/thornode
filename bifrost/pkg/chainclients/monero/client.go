@@ -83,6 +83,7 @@ const (
 	defaultXMRRecoveryRetryMaxAttempts         = 0                  // zero means retry for the process lifetime
 	maxXMRRecoveryFileBytes                    = int64(1024 * 1024) // encrypted keyshare envelopes are expected to be far smaller
 	xmrSpendableConfirmations                  = uint64(10)
+	xmrSignerCompatibilityTTL                  = 30 * time.Second
 
 	// xmrSolvencyDeferralEscalationRounds is the number of consecutive deferred
 	// solvency rounds (one per SolvencyBlocks interval) after which the deferral
@@ -261,7 +262,8 @@ func NewClient(
 	if expectedSignerNetwork == "" {
 		return nil, fmt.Errorf("xmr signer_expected_network is required")
 	}
-	info, compatibilityErr := sc.RequireCompatibility(
+	info, compatibilityErr := sc.EnableRuntimeCompatibility(
+		xmrSignerCompatibilityTTL,
 		sidecar.CapabilityAtomicOutgoingV2,
 		sidecar.CapabilityBalanceReconciliation,
 		sidecar.CapabilityBoundRecovery,

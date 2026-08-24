@@ -68,6 +68,13 @@ Returns the authenticated compatibility contract. `network` is the configured TH
 deployment identity. `monero_nettype` and `monero_genesis_hash` are queried from the
 connected daemon and cannot be supplied by the deployment label.
 
+Bifrost validates this contract at startup and revalidates it before a new DKG or
+keysign after a short success-cache interval. An ambiguous combine response bypasses
+the cached result and waits for completion of a current compatibility refresh before
+retrying. It may share an already in-flight refresh. The resulting contract must
+still advertise `durable-sign-result-recovery-v1`. A failed refresh blocks only the
+new XMR cryptographic operation.
+
 ```json
 {
   "protocol": "thorchain-xmr-frost",

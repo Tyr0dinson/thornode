@@ -16,6 +16,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -49,6 +50,12 @@ type scannerContinuityCache struct {
 	lastHeight      uint64
 	lastBlockHash   string
 	lastParentHash  string
+}
+
+type runtimeCompatibilityCall struct {
+	done chan struct{}
+	info Info
+	err  error
 }
 
 // Client is the HTTP client for the xmr-frost-signer sidecar.
@@ -91,6 +98,13 @@ type Client struct {
 	expectedNetwork           string
 	expectedMoneroNettype     string
 	expectedMoneroGenesisHash string
+
+	runtimeCompatibilityMu           sync.Mutex
+	runtimeCompatibilityTTL          time.Duration
+	runtimeCompatibilityRequired     []string
+	runtimeCompatibilityInfo         Info
+	runtimeCompatibilityCheckedAt    time.Time
+	runtimeCompatibilityInFlightCall *runtimeCompatibilityCall
 
 	// Sync calls remain serialized, while registration/reset responses may
 	// update the continuity cache as soon as they arrive. Keeping those locks
@@ -300,6 +314,9 @@ func AllowInsecureHTTP(cfg config.BifrostChainConfiguration) bool {
 // --- FROST DKG ---
 
 func (c *Client) DKGRound1(req DKGRound1Req) (DKGRound1Resp, error) {
+	if _, _, err := c.requireRuntimeCompatibility(context.Background(), false); err != nil {
+		return DKGRound1Resp{}, fmt.Errorf("xmr dkg blocked by signer compatibility check: %w", err)
+	}
 	var out DKGRound1Resp
 	if err := c.call(http.MethodPost, c.dkgRound1Path, req, &out); err != nil {
 		return DKGRound1Resp{}, fmt.Errorf("fail to call dkg round1 endpoint: %w", err)
@@ -348,6 +365,9 @@ func (c *Client) DKGFinalize(req DKGFinalizeReq) (DKGFinalizeResp, error) {
 // --- FROST signing ---
 
 func (c *Client) SignPrepare(req SignPrepareReq) (SignPrepareResp, error) {
+	if _, _, err := c.requireRuntimeCompatibility(context.Background(), false); err != nil {
+		return SignPrepareResp{}, fmt.Errorf("xmr keysign blocked by signer compatibility check: %w", err)
+	}
 	var out SignPrepareResp
 	if err := c.call(http.MethodPost, c.signPreparePath, req, &out); err != nil {
 		return SignPrepareResp{}, fmt.Errorf("fail to call sign prepare endpoint: %w", err)
@@ -402,6 +422,16 @@ func (c *Client) SignCombineContext(ctx context.Context, req SignCombineReq) (Si
 		}
 		if attempt == maxAttempts || !isRetryableSignCombineError(ctx, err) {
 			return SignCombineResp{}, fmt.Errorf("fail to call sign combine endpoint: %w", err)
+		}
+		info, checked, compatibilityErr := c.requireRuntimeCompatibility(ctx, true)
+		if compatibilityErr != nil {
+			return SignCombineResp{}, fmt.Errorf("xmr sign combine retry blocked by signer compatibility check: %w", compatibilityErr)
+		}
+		if checked && !info.HasCapability(CapabilityIdempotentCombine) {
+			return SignCombineResp{}, fmt.Errorf(
+				"xmr sign combine retry blocked: signer no longer advertises %q",
+				CapabilityIdempotentCombine,
+			)
 		}
 		if waitErr := waitForSignCombineRetry(ctx, backoff); waitErr != nil {
 			return SignCombineResp{}, fmt.Errorf("sign combine retry canceled: %w", waitErr)
@@ -1524,8 +1554,17 @@ func (c *Client) VaultsContext(ctx context.Context) ([]VaultKey, error) {
 
 // Info returns the signer's authenticated compatibility contract.
 func (c *Client) Info() (Info, error) {
+	return c.InfoContext(context.Background())
+}
+
+// InfoContext returns the signer's authenticated compatibility contract and
+// lets lifecycle-aware callers cancel a runtime refresh.
+func (c *Client) InfoContext(ctx context.Context) (Info, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	var out Info
-	if err := c.callGet("/v1/monero/info", &out); err != nil {
+	if err := c.callGetContext(ctx, "/v1/monero/info", &out); err != nil {
 		return Info{}, fmt.Errorf("fail to get sidecar compatibility info: %w", err)
 	}
 	return out, nil
@@ -1535,7 +1574,13 @@ func (c *Client) Info() (Info, error) {
 // protocol/schema/capability shape. The immutable image digest and provenance
 // are still verified by deployment tooling rather than this self-report.
 func (c *Client) RequireCompatibility(requiredCapabilities ...string) (Info, error) {
-	info, err := c.Info()
+	return c.RequireCompatibilityContext(context.Background(), requiredCapabilities...)
+}
+
+// RequireCompatibilityContext validates a fresh signer response using the
+// caller's lifecycle context.
+func (c *Client) RequireCompatibilityContext(ctx context.Context, requiredCapabilities ...string) (Info, error) {
+	info, err := c.InfoContext(ctx)
 	if err != nil {
 		return Info{}, err
 	}
@@ -1588,6 +1633,85 @@ func (c *Client) RequireCompatibility(requiredCapabilities ...string) (Info, err
 		}
 	}
 	return info, nil
+}
+
+// EnableRuntimeCompatibility performs the startup check and retains that same
+// contract for lightweight checks at cryptographic boundaries. Successful
+// checks are cached for ttl; concurrent refreshes share one /info request.
+func (c *Client) EnableRuntimeCompatibility(ttl time.Duration, requiredCapabilities ...string) (Info, error) {
+	if ttl <= 0 {
+		return Info{}, fmt.Errorf("runtime signer compatibility ttl must be positive")
+	}
+	info, err := c.RequireCompatibility(requiredCapabilities...)
+	if err != nil {
+		return Info{}, err
+	}
+
+	c.runtimeCompatibilityMu.Lock()
+	c.runtimeCompatibilityTTL = ttl
+	c.runtimeCompatibilityRequired = slices.Clone(requiredCapabilities)
+	c.runtimeCompatibilityInfo = cloneCompatibilityInfo(info)
+	c.runtimeCompatibilityCheckedAt = time.Now()
+	c.runtimeCompatibilityMu.Unlock()
+	return info, nil
+}
+
+// requireRuntimeCompatibility returns checked=false for standalone sidecar
+// clients that have not enabled the production runtime contract. This keeps
+// low-level endpoint tests usable while monero.NewClient always enables it
+// before exposing the client to DKG or keysign code.
+func (c *Client) requireRuntimeCompatibility(ctx context.Context, force bool) (Info, bool, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	c.runtimeCompatibilityMu.Lock()
+	if c.runtimeCompatibilityTTL <= 0 {
+		c.runtimeCompatibilityMu.Unlock()
+		return Info{}, false, nil
+	}
+	if !force && time.Now().Before(c.runtimeCompatibilityCheckedAt.Add(c.runtimeCompatibilityTTL)) {
+		info := cloneCompatibilityInfo(c.runtimeCompatibilityInfo)
+		c.runtimeCompatibilityMu.Unlock()
+		return info, true, nil
+	}
+	if inFlight := c.runtimeCompatibilityInFlightCall; inFlight != nil {
+		c.runtimeCompatibilityMu.Unlock()
+		select {
+		case <-ctx.Done():
+			return Info{}, true, fmt.Errorf("wait for signer compatibility refresh: %w", ctx.Err())
+		case <-inFlight.done:
+			return cloneCompatibilityInfo(inFlight.info), true, inFlight.err
+		}
+	}
+
+	inFlight := &runtimeCompatibilityCall{done: make(chan struct{})}
+	requiredCapabilities := slices.Clone(c.runtimeCompatibilityRequired)
+	c.runtimeCompatibilityInFlightCall = inFlight
+	c.runtimeCompatibilityMu.Unlock()
+
+	info, err := c.RequireCompatibilityContext(ctx, requiredCapabilities...)
+	if err != nil {
+		err = fmt.Errorf("runtime signer compatibility refresh failed: %w", err)
+	}
+
+	c.runtimeCompatibilityMu.Lock()
+	if err == nil {
+		c.runtimeCompatibilityInfo = cloneCompatibilityInfo(info)
+		c.runtimeCompatibilityCheckedAt = time.Now()
+	}
+	inFlight.info = cloneCompatibilityInfo(info)
+	inFlight.err = err
+	c.runtimeCompatibilityInFlightCall = nil
+	close(inFlight.done)
+	c.runtimeCompatibilityMu.Unlock()
+
+	return cloneCompatibilityInfo(info), true, err
+}
+
+func cloneCompatibilityInfo(info Info) Info {
+	info.Capabilities = slices.Clone(info.Capabilities)
+	return info
 }
 
 // ExportKeys returns a recovery blob for the given vault's threshold share.

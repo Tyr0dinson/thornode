@@ -286,6 +286,14 @@ required capability) over `/v1/monero/info`. An old or partially-featured signer
 is rejected at construction rather than at first use, so the signer image must be
 upgraded in lockstep with Bifrost.
 
+The same contract is revalidated during operation before new DKG and keysign work. A
+successful response is cached for 30 seconds and concurrent ceremonies share one
+refresh. Combine retries bypass the cached result and wait for completion of a current
+compatibility refresh. They may share an already in-flight refresh. The resulting
+contract must still advertise `durable-sign-result-recovery-v1`; otherwise the
+ambiguous request is not sent again. A refresh failure stops only that XMR
+cryptographic operation.
+
 The deployment label above is not the Monero daemon identity. Bifrost separately maps
 the XMR chain's `chain_network` to the canonical daemon nettype and genesis block:
 `mocknet` expects `fakechain`, `chainnet`/`mainnet` expect `mainnet`, and `stagenet`
