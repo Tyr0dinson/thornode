@@ -138,6 +138,7 @@ services:
 
       # mimir default overrides
       HALT_CHURNING: 1
+      HALT_SCANNER_XMR: "${HALT_SCANNER_XMR:-0}"
       EVM_ALLOWANCE_CHECK_AVAX: 1
       EVM_ALLOWANCE_CHECK_BASE: 1
       EVM_ALLOWANCE_CHECK_BSC: 1
@@ -288,7 +289,7 @@ services:
       BIFROST_CHAINS_XMR_CHAIN_NETWORK: "mocknet"
       BIFROST_CHAINS_XMR_DISABLE_TLS: "true"
       BIFROST_CHAINS_XMR_SIGNER_ENDPOINT: "http://xmr-frost-signer:8283"
-      BIFROST_CHAINS_XMR_SIGNER_AUTHORIZATION_BEARER: "${XMR_FROST_AUTH_BEARER:?set XMR_FROST_AUTH_BEARER to a strong random token}"
+      BIFROST_CHAINS_XMR_SIGNER_AUTHORIZATION_BEARER: "${XMR_FROST_AUTH_BEARER:-xmr-frost-mocknet-token}"
       BIFROST_CHAINS_XMR_SIGNER_ALLOW_INSECURE_HTTP: "true"
       BIFROST_CHAINS_XMR_SIGNER_EXPECTED_NETWORK: "mocknet"
 
@@ -824,7 +825,7 @@ services:
       XMR_FROST_MAX_REQUESTS_PER_SECOND: "256"
       XMR_FROST_MAX_REQUESTS_PER_IP_SECOND: "64"
       SIGNER_SEED_PHRASE: "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
-      XMR_FROST_AUTH_BEARER: "${XMR_FROST_AUTH_BEARER:?set XMR_FROST_AUTH_BEARER to a strong random token}"
+      XMR_FROST_AUTH_BEARER: "${XMR_FROST_AUTH_BEARER:-xmr-frost-mocknet-token}"
     volumes:
       - xmr-frost-data:/home/serai/xmr-frost
     ports:
@@ -902,7 +903,7 @@ services:
       XMR_FROST_MAX_REQUESTS_PER_SECOND: "256"
       XMR_FROST_MAX_REQUESTS_PER_IP_SECOND: "64"
       SIGNER_SEED_PHRASE: "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
-      XMR_FROST_AUTH_BEARER: "${XMR_SIM_HELPER_AUTH_BEARER:?set XMR_SIM_HELPER_AUTH_BEARER to a random mocknet token}"
+      XMR_FROST_AUTH_BEARER: "${XMR_SIM_HELPER_AUTH_BEARER:-xmr-sim-helper-mocknet-token}"
       XMR_SIM_HELPER_ENABLED: "true"
       XMR_SIM_HELPER_WALLET_RPC_URL: "http://monero-wallet-rpc:18082"
     volumes:

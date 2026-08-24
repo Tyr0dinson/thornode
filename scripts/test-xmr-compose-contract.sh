@@ -8,6 +8,12 @@ SEED_TARGET="/run/thornode/seed_phrase"
 EXPECTED_SIGNER_IMAGE="registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:mr70-6844c817-20260824-post15@sha256:ba4d243d6f129dda8ca127f1f95e71344b97c6dca02efb3ca9e453ecf1572978"
 # shellcheck disable=SC2016
 REQUIRED_BEARER_EXPANSION='${XMR_FROST_AUTH_BEARER:?set XMR_FROST_AUTH_BEARER to a strong random token}'
+# Mocknet uses fixed local-only credentials so Compose lifecycle commands do not
+# require operator-provided secrets. Production-like profiles remain fail-closed.
+# shellcheck disable=SC2016
+MOCKNET_FROST_BEARER_EXPANSION='${XMR_FROST_AUTH_BEARER:-xmr-frost-mocknet-token}'
+# shellcheck disable=SC2016
+MOCKNET_HELPER_BEARER_EXPANSION='${XMR_SIM_HELPER_AUTH_BEARER:-xmr-sim-helper-mocknet-token}'
 
 fail() {
   echo "XMR Compose contract failed: $*" >&2
@@ -78,6 +84,31 @@ assert_source_bearer_contract() {
   # shellcheck disable=SC2016
   if grep -Fq '${XMR_FROST_AUTH_BEARER:-' "$compose_file"; then
     fail "$compose_file must not provide a fallback bearer"
+  fi
+  if grep -Fq BIFROST_CHAINS_XMR_AUTHORIZATION_BEARER "$compose_file"; then
+    fail "$compose_file contains the obsolete BIFROST_CHAINS_XMR_AUTHORIZATION_BEARER"
+  fi
+}
+
+assert_mocknet_bearer_contract() {
+  local compose_file="$1"
+  local count
+
+  for assignment in \
+    "BIFROST_CHAINS_XMR_SIGNER_AUTHORIZATION_BEARER: \"$MOCKNET_FROST_BEARER_EXPANSION\"" \
+    "XMR_FROST_AUTH_BEARER: \"$MOCKNET_FROST_BEARER_EXPANSION\"" \
+    "XMR_FROST_AUTH_BEARER: \"$MOCKNET_HELPER_BEARER_EXPANSION\""; do
+    grep -Fq "$assignment" "$compose_file" ||
+      fail "$compose_file must contain $assignment"
+  done
+
+  count="$(grep -Fo "$MOCKNET_FROST_BEARER_EXPANSION" "$compose_file" | wc -l | tr -d ' ')"
+  [ "$count" = 2 ] || fail "$compose_file must use the mocknet signer bearer default exactly twice"
+  count="$(grep -Fo "$MOCKNET_HELPER_BEARER_EXPANSION" "$compose_file" | wc -l | tr -d ' ')"
+  [ "$count" = 1 ] || fail "$compose_file must use the mocknet helper bearer default exactly once"
+
+  if grep -Fq "$REQUIRED_BEARER_EXPANSION" "$compose_file"; then
+    fail "$compose_file must not require operator-provided XMR bearer credentials"
   fi
   if grep -Fq BIFROST_CHAINS_XMR_AUTHORIZATION_BEARER "$compose_file"; then
     fail "$compose_file contains the obsolete BIFROST_CHAINS_XMR_AUTHORIZATION_BEARER"
@@ -387,15 +418,7 @@ mocknet_compose="$COMPOSE_DIR/docker-compose.yml"
 
 assert_required_bearer "$chainnet_compose"
 assert_required_bearer "$stagenet_compose"
-assert_source_bearer_contract "$mocknet_compose"
-# These literal checks ensure the mocknet helper also has no committed secret.
-# shellcheck disable=SC2016
-grep -Fq '${XMR_SIM_HELPER_AUTH_BEARER:?set XMR_SIM_HELPER_AUTH_BEARER to a random mocknet token}' \
-  "$mocknet_compose" || fail "$mocknet_compose must require XMR_SIM_HELPER_AUTH_BEARER"
-# shellcheck disable=SC2016
-if grep -Eq '\$\{XMR_(FROST|SIM_HELPER)_AUTH_BEARER:-' "$mocknet_compose"; then
-  fail "$mocknet_compose must not provide a fallback XMR bearer"
-fi
+assert_mocknet_bearer_contract "$mocknet_compose"
 
 render_compose "$chainnet_compose" "$tmp_dir/chainnet.json"
 render_compose "$stagenet_compose" "$tmp_dir/stagenet.json"
