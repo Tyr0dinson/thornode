@@ -148,7 +148,7 @@ services:
       - 26656:26656
       - 1317:1317
       - 6060:6060
-      - 50051:50051
+      - 127.0.0.1:50051:50051
       - 9090:9090
     volumes:
       - "../scripts:/docker/scripts"
@@ -288,7 +288,7 @@ services:
       BIFROST_CHAINS_XMR_CHAIN_NETWORK: "mocknet"
       BIFROST_CHAINS_XMR_DISABLE_TLS: "true"
       BIFROST_CHAINS_XMR_SIGNER_ENDPOINT: "http://xmr-frost-signer:8283"
-      BIFROST_CHAINS_XMR_SIGNER_AUTHORIZATION_BEARER: "${XMR_FROST_AUTH_BEARER:-xmr-frost-mocknet-token}"
+      BIFROST_CHAINS_XMR_SIGNER_AUTHORIZATION_BEARER: "${XMR_FROST_AUTH_BEARER:?set XMR_FROST_AUTH_BEARER to a strong random token}"
       BIFROST_CHAINS_XMR_SIGNER_ALLOW_INSECURE_HTTP: "true"
       BIFROST_CHAINS_XMR_SIGNER_EXPECTED_NETWORK: "mocknet"
 
@@ -738,7 +738,7 @@ services:
     volumes:
       - monero-daemon:/var/lib/monero
     ports:
-      - 18081:18081
+      - 127.0.0.1:18081:18081
       - 18080:18080
     healthcheck:
       test:
@@ -800,7 +800,7 @@ services:
       - mocknet
       - mocknet-cluster
     # Temporary local build of draft Serai MR !70 for mocknet testing only.
-    image: ${XMR_FROST_SIGNER_IMAGE:-registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:mr70-cc6db7ff-20260820-localtest@sha256:8f8768e6f68352b3407bb939050e323dba61c603cc2ff2010810a992f3354251}
+    image: ${XMR_FROST_SIGNER_IMAGE:-registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:mr70-6844c817-20260824-post15@sha256:ba4d243d6f129dda8ca127f1f95e71344b97c6dca02efb3ca9e453ecf1572978}
     restart: unless-stopped
     user: root
     entrypoint:
@@ -824,11 +824,11 @@ services:
       XMR_FROST_MAX_REQUESTS_PER_SECOND: "256"
       XMR_FROST_MAX_REQUESTS_PER_IP_SECOND: "64"
       SIGNER_SEED_PHRASE: "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
-      XMR_FROST_AUTH_BEARER: "${XMR_FROST_AUTH_BEARER:-xmr-frost-mocknet-token}"
+      XMR_FROST_AUTH_BEARER: "${XMR_FROST_AUTH_BEARER:?set XMR_FROST_AUTH_BEARER to a strong random token}"
     volumes:
       - xmr-frost-data:/home/serai/xmr-frost
     ports:
-      - 8283:8283
+      - 127.0.0.1:8283:8283
     healthcheck:
       test:
         [
@@ -847,7 +847,7 @@ services:
     volumes:
       - xmr-frost-data-cat:/home/serai/xmr-frost
     ports:
-      - 8285:8283 # host-side simulation readiness probe
+      - 127.0.0.1:8285:8283 # host-side simulation readiness probe
 
   xmr-frost-signer-fox:
     <<: *xmr-frost-signer
@@ -856,7 +856,7 @@ services:
     volumes:
       - xmr-frost-data-fox:/home/serai/xmr-frost
     ports:
-      - 8286:8283 # host-side simulation readiness probe
+      - 127.0.0.1:8286:8283 # host-side simulation readiness probe
 
   xmr-frost-signer-pig:
     <<: *xmr-frost-signer
@@ -865,7 +865,7 @@ services:
     volumes:
       - xmr-frost-data-pig:/home/serai/xmr-frost
     ports:
-      - 8287:8283 # host-side simulation readiness probe
+      - 127.0.0.1:8287:8283 # host-side simulation readiness probe
 
   xmr-sim-helper:
     profiles:
@@ -902,13 +902,13 @@ services:
       XMR_FROST_MAX_REQUESTS_PER_SECOND: "256"
       XMR_FROST_MAX_REQUESTS_PER_IP_SECOND: "64"
       SIGNER_SEED_PHRASE: "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
-      XMR_FROST_AUTH_BEARER: "${XMR_SIM_HELPER_AUTH_BEARER:-xmr-sim-helper-mocknet-token}"
+      XMR_FROST_AUTH_BEARER: "${XMR_SIM_HELPER_AUTH_BEARER:?set XMR_SIM_HELPER_AUTH_BEARER to a random mocknet token}"
       XMR_SIM_HELPER_ENABLED: "true"
       XMR_SIM_HELPER_WALLET_RPC_URL: "http://monero-wallet-rpc:18082"
     volumes:
       - xmr-sim-data:/home/serai/xmr-sim
     ports:
-      - 8284:8284
+      - 127.0.0.1:8284:8284
     healthcheck:
       test:
         [

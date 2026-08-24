@@ -35,6 +35,7 @@ var failClosedRequiredCapabilities = []string{
 	sidecar.CapabilityVerifiedAbsenceBalance,
 	sidecar.CapabilityCanonicalObservation,
 	sidecar.CapabilityCanonicalTxLocation,
+	sidecar.CapabilityMoneroNetworkIdentity,
 }
 
 // failClosedSignerNetwork is the network both the config and a well-behaved
@@ -102,13 +103,15 @@ func newFailClosedSignerServer(t *testing.T, info sidecar.Info) *httptest.Server
 // reports. Cases mutate a copy of it to model a bad signer.
 func failClosedSignerInfo() sidecar.Info {
 	return sidecar.Info{
-		Protocol:        sidecar.ProtocolName,
-		APIMajor:        sidecar.APIMajorV2,
-		SoftwareVersion: "0.0.0-test",
-		GitCommit:       strings.Repeat("a", 40),
-		Network:         failClosedSignerNetwork,
-		StateSchema:     sidecar.StateSchemaV4,
-		Capabilities:    append([]string(nil), failClosedRequiredCapabilities...),
+		Protocol:          sidecar.ProtocolName,
+		APIMajor:          sidecar.APIMajorV2,
+		SoftwareVersion:   "0.0.0-test",
+		GitCommit:         strings.Repeat("a", 40),
+		Network:           failClosedSignerNetwork,
+		MoneroNettype:     "fakechain",
+		MoneroGenesisHash: sidecar.MoneroMainnetGenesisHash,
+		StateSchema:       sidecar.StateSchemaV4,
+		Capabilities:      append([]string(nil), failClosedRequiredCapabilities...),
 	}
 }
 
@@ -119,6 +122,7 @@ func failClosedChainConfig(endpoint, expectedNetwork string) config.BifrostChain
 		ChainID:               common.XMRChain,
 		SignerEndpoint:        endpoint,
 		SignerExpectedNetwork: expectedNetwork,
+		ChainNetwork:          "mocknet",
 		BlockScanner: config.BifrostBlockScannerConfiguration{
 			ChainID:            common.XMRChain,
 			StartBlockHeight:   1,
@@ -164,6 +168,24 @@ func TestNewClientFailsClosedOnSignerContract(t *testing.T) {
 			},
 			expectedNetwork: failClosedSignerNetwork,
 			wantErrContains: "does not match expected",
+		},
+		{
+			name: "matching deployment label with wrong daemon nettype is rejected",
+			signerInfo: func(info sidecar.Info) sidecar.Info {
+				info.MoneroNettype = "mainnet"
+				return info
+			},
+			expectedNetwork: failClosedSignerNetwork,
+			wantErrContains: "Monero nettype",
+		},
+		{
+			name: "matching deployment label with wrong daemon genesis is rejected",
+			signerInfo: func(info sidecar.Info) sidecar.Info {
+				info.MoneroGenesisHash = sidecar.MoneroStagenetGenesisHash
+				return info
+			},
+			expectedNetwork: failClosedSignerNetwork,
+			wantErrContains: "Monero genesis hash",
 		},
 		{
 			name: "signer with an incomplete capability set is rejected",

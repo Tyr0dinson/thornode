@@ -555,7 +555,7 @@ func (s *AttestationGossip) applySpentRefsAsyncWithLimit(
 	}
 	go func() {
 		defer func() { <-sem }()
-		resolvedWireMemo := tx.Tx.Memo
+		var resolvedWireMemo string
 		if wireMemo != nil {
 			resolvedWireMemo = *wireMemo
 		} else {

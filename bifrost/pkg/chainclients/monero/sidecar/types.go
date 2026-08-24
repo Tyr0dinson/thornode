@@ -23,6 +23,11 @@ const (
 	CapabilityVerifiedAbsenceBalance = "verified-absence-balance-quarantine-v1"
 	CapabilityCanonicalObservation   = "canonical-outgoing-observation-v1"
 	CapabilityCanonicalTxLocation    = "canonical-tx-location-v1"
+	CapabilityMoneroNetworkIdentity  = "monero-network-identity-v1"
+
+	MoneroMainnetGenesisHash  = "418015bb9ae982a1975da7d79277c2705727a56894ba0fb246adaabb1f4632e3"
+	MoneroTestnetGenesisHash  = "48ca7cd3c8de5b6a4d53d2861fbdaedca141553559f9be9520068053cda8430b"
+	MoneroStagenetGenesisHash = "76ee3cc98646292206cd3e86f74d88b4dcc1d937088645e9b0cbca84b7ce74eb"
 
 	// CapabilityIdempotentCombine asserts that the signer durably replays combine
 	// by (msg_id, session_id, all_shares), so a retried combine cannot produce a
@@ -39,13 +44,15 @@ const (
 // It is not an artifact-authentication mechanism; the configured image digest
 // and release provenance remain the trust root.
 type Info struct {
-	Protocol        string   `json:"protocol"`
-	APIMajor        int      `json:"api_major"`
-	SoftwareVersion string   `json:"software_version"`
-	GitCommit       string   `json:"git_commit"`
-	Network         string   `json:"network"`
-	StateSchema     int      `json:"state_schema"`
-	Capabilities    []string `json:"capabilities"`
+	Protocol          string   `json:"protocol"`
+	APIMajor          int      `json:"api_major"`
+	SoftwareVersion   string   `json:"software_version"`
+	GitCommit         string   `json:"git_commit"`
+	Network           string   `json:"network"`
+	MoneroNettype     string   `json:"monero_nettype"`
+	MoneroGenesisHash string   `json:"monero_genesis_hash"`
+	StateSchema       int      `json:"state_schema"`
+	Capabilities      []string `json:"capabilities"`
 }
 
 func (i Info) HasCapability(required string) bool {

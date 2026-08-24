@@ -150,15 +150,18 @@ func TestRequireCompatibilityFailsClosed(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(Info{
-			Protocol:    ProtocolName,
-			APIMajor:    APIMajorV2,
-			GitCommit:   strings.Repeat("b", 40),
-			Network:     "chainnet",
-			StateSchema: StateSchemaV4,
+			Protocol:          ProtocolName,
+			APIMajor:          APIMajorV2,
+			GitCommit:         strings.Repeat("b", 40),
+			Network:           "chainnet",
+			MoneroNettype:     "mainnet",
+			MoneroGenesisHash: MoneroMainnetGenesisHash,
+			StateSchema:       StateSchemaV4,
 			Capabilities: []string{
 				CapabilityBalanceReconciliation,
 				CapabilityScannerBoundedRewind,
 				CapabilitySharePlanQuarantine,
+				CapabilityMoneroNetworkIdentity,
 			},
 		})
 	}))
@@ -167,6 +170,7 @@ func TestRequireCompatibilityFailsClosed(t *testing.T) {
 	client, err := NewClientWithEndpoint(config.BifrostChainConfiguration{
 		SignerExpectedNetwork: "chainnet",
 		SignerExpectedCommit:  strings.Repeat("b", 40),
+		ChainNetwork:          "mainnet",
 	}, server.URL)
 	if err != nil {
 		t.Fatalf("new client: %v", err)
@@ -188,7 +192,8 @@ func TestRequireCompatibilityTreatsRevisionAsMetadataAndRejectsSchemaMismatch(t 
 
 	info := Info{
 		Protocol: ProtocolName, APIMajor: APIMajorV2, GitCommit: strings.Repeat("c", 40),
-		Network: "chainnet", StateSchema: StateSchemaV4,
+		Network: "chainnet", MoneroNettype: "mainnet", MoneroGenesisHash: MoneroMainnetGenesisHash,
+		StateSchema:  StateSchemaV4,
 		Capabilities: []string{CapabilityBalanceReconciliation},
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -199,6 +204,7 @@ func TestRequireCompatibilityTreatsRevisionAsMetadataAndRejectsSchemaMismatch(t 
 	client, err := NewClientWithEndpoint(config.BifrostChainConfiguration{
 		SignerExpectedNetwork: "chainnet",
 		SignerExpectedCommit:  strings.Repeat("d", 40),
+		ChainNetwork:          "mainnet",
 	}, server.URL)
 	if err != nil {
 		t.Fatalf("new client: %v", err)
@@ -210,6 +216,89 @@ func TestRequireCompatibilityTreatsRevisionAsMetadataAndRejectsSchemaMismatch(t 
 	info.StateSchema = 2
 	if _, err = client.RequireCompatibility(CapabilityBalanceReconciliation); err == nil {
 		t.Fatal("expected unreviewed state schema rejection")
+	}
+}
+
+func TestRequireCompatibilityRejectsDaemonIdentityMismatch(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name        string
+		nettype     string
+		genesisHash string
+		want        string
+	}{
+		{
+			name:        "wrong nettype",
+			nettype:     "stagenet",
+			genesisHash: MoneroStagenetGenesisHash,
+			want:        "Monero nettype",
+		},
+		{
+			name:        "wrong genesis",
+			nettype:     "mainnet",
+			genesisHash: MoneroStagenetGenesisHash,
+			want:        "Monero genesis hash",
+		},
+		{
+			name:        "malformed genesis",
+			nettype:     "mainnet",
+			genesisHash: "not-a-hash",
+			want:        "64 hex characters",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			info := Info{
+				Protocol:          ProtocolName,
+				APIMajor:          APIMajorV2,
+				GitCommit:         strings.Repeat("e", 40),
+				Network:           "chainnet",
+				MoneroNettype:     tc.nettype,
+				MoneroGenesisHash: tc.genesisHash,
+				StateSchema:       StateSchemaV4,
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_ = json.NewEncoder(w).Encode(info)
+			}))
+			defer server.Close()
+
+			client, err := NewClientWithEndpoint(config.BifrostChainConfiguration{
+				SignerExpectedNetwork: "chainnet",
+				ChainNetwork:          "mainnet",
+			}, server.URL)
+			if err != nil {
+				t.Fatalf("new client: %v", err)
+			}
+			if _, err = client.RequireCompatibility(); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected %q identity rejection, got %v", tc.want, err)
+			}
+		})
+	}
+}
+
+func TestExpectedMoneroIdentity(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		configured string
+		nettype    string
+		genesis    string
+	}{
+		{configured: "mocknet", nettype: "fakechain", genesis: MoneroMainnetGenesisHash},
+		{configured: "chainnet", nettype: "mainnet", genesis: MoneroMainnetGenesisHash},
+		{configured: "mainnet", nettype: "mainnet", genesis: MoneroMainnetGenesisHash},
+		{configured: "stagenet", nettype: "stagenet", genesis: MoneroStagenetGenesisHash},
+		{configured: "testnet", nettype: "testnet", genesis: MoneroTestnetGenesisHash},
+	} {
+		t.Run(tc.configured, func(t *testing.T) {
+			nettype, genesis, err := expectedMoneroIdentity(tc.configured)
+			if err != nil {
+				t.Fatalf("expected identity: %v", err)
+			}
+			if nettype != tc.nettype || genesis != tc.genesis {
+				t.Fatalf("identity = (%q, %q), want (%q, %q)", nettype, genesis, tc.nettype, tc.genesis)
+			}
+		})
 	}
 }
 

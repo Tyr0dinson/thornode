@@ -8,6 +8,8 @@ Bifrost (`bifrost.chains.xmr`):
 
 - `signer_backend`: `tss`
 - `signer_endpoint`: base URL for the signer service
+- `chain_network`: expected Monero daemon identity (`mocknet`, `mainnet`, `stagenet`, or `testnet`)
+- `signer_expected_network`: expected THOR deployment/HRP identity reported by the signer
 - Auth credentials used by Bifrost when calling sidecar:
   - `authorization_bearer` (Bearer token), or
   - `username` + `password` (HTTP Basic auth)
@@ -59,6 +61,29 @@ its local sidecar round endpoints while exchanging round payloads over p2p:
 4. `POST /v1/monero/dkg/finalize`
 
 ## Endpoints
+
+### `GET /v1/monero/info`
+
+Returns the authenticated compatibility contract. `network` is the configured THOR
+deployment identity. `monero_nettype` and `monero_genesis_hash` are queried from the
+connected daemon and cannot be supplied by the deployment label.
+
+```json
+{
+  "protocol": "thorchain-xmr-frost",
+  "api_major": 2,
+  "software_version": "3.21.0",
+  "git_commit": "0123456789abcdef0123456789abcdef01234567",
+  "network": "stagenet",
+  "monero_nettype": "stagenet",
+  "monero_genesis_hash": "76ee3cc98646292206cd3e86f74d88b4dcc1d937088645e9b0cbca84b7ce74eb",
+  "state_schema": 4,
+  "capabilities": ["monero-network-identity-v1"]
+}
+```
+
+Bifrost rejects a missing capability, unsupported nettype, malformed hash, or mismatch
+against the canonical identity selected by `chain_network`.
 
 ### `POST /v1/monero/dkg/round1`
 

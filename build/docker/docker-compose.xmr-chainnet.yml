@@ -164,7 +164,7 @@ services:
     volumes:
       - monero-daemon:/home/monero/.bitmonero
     ports:
-      - "18081:18081"
+      - "127.0.0.1:18081:18081"
     healthcheck:
       test:
         [
@@ -186,7 +186,7 @@ services:
 
   xmr-frost-signer:
     &frost-signer # Temporary draft MR !70 test image; replace with a reviewed release before activation.
-    image: ${XMR_FROST_SIGNER_IMAGE:-registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:mr70-cc6db7ff-20260820-localtest@sha256:8f8768e6f68352b3407bb939050e323dba61c603cc2ff2010810a992f3354251}
+    image: ${XMR_FROST_SIGNER_IMAGE:-registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:mr70-6844c817-20260824-post15@sha256:ba4d243d6f129dda8ca127f1f95e71344b97c6dca02efb3ca9e453ecf1572978}
     restart: unless-stopped
     user: root
     entrypoint:
@@ -255,7 +255,7 @@ services:
     ports:
       - "27147:27147"
       - "1317:1317"
-      - "50051:50051"
+      - "127.0.0.1:50051:50051"
       - "9090:9090"
     volumes:
       - "../scripts:/docker/scripts"

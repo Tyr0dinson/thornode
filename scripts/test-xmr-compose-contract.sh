@@ -5,7 +5,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_DIR="$REPO_ROOT/build/docker"
 BEARER_SENTINEL="xmr-compose-contract-test-bearer"
 SEED_TARGET="/run/thornode/seed_phrase"
-EXPECTED_SIGNER_IMAGE=""
+EXPECTED_SIGNER_IMAGE="registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:mr70-6844c817-20260824-post15@sha256:ba4d243d6f129dda8ca127f1f95e71344b97c6dca02efb3ca9e453ecf1572978"
 # shellcheck disable=SC2016
 REQUIRED_BEARER_EXPANSION='${XMR_FROST_AUTH_BEARER:?set XMR_FROST_AUTH_BEARER to a strong random token}'
 
@@ -40,6 +40,26 @@ assert_env_absent() {
   jq -e --arg service "$service" --arg key "$key" \
     '(.services[$service].environment // {}) | has($key) | not' \
     "$rendered" >/dev/null || fail "$service must not set obsolete or disallowed $key"
+}
+
+assert_command_has() {
+  local rendered="$1"
+  local service="$2"
+  local argument="$3"
+
+  jq -e --arg service "$service" --arg argument "$argument" \
+    '.services[$service].command | index($argument) != null' \
+    "$rendered" >/dev/null || fail "$service command must contain $argument"
+}
+
+assert_command_lacks_prefix() {
+  local rendered="$1"
+  local service="$2"
+  local prefix="$3"
+
+  jq -e --arg service "$service" --arg prefix "$prefix" \
+    '[.services[$service].command[] | startswith($prefix)] | any | not' \
+    "$rendered" >/dev/null || fail "$service command must not contain an argument starting with $prefix"
 }
 
 assert_source_bearer_contract() {
@@ -106,11 +126,8 @@ assert_signer_image() {
   [[ $image =~ ^registry\.gitlab\.com/thorchain/devops/serai/xmr-frost-signer:[^@[:space:]]+@sha256:[0-9a-f]{64}$ ]] ||
     fail "$service image must be an immutable registry tag@sha256 reference"
   [[ $image != *":latest@"* ]] || fail "$service image must not use a latest tag"
-  if [ -z "$EXPECTED_SIGNER_IMAGE" ]; then
-    EXPECTED_SIGNER_IMAGE="$image"
-  elif [ "$image" != "$EXPECTED_SIGNER_IMAGE" ]; then
-    fail "$service image differs from the other signer image pins"
-  fi
+  [ "$image" = "$EXPECTED_SIGNER_IMAGE" ] ||
+    fail "$service image is $image, expected $EXPECTED_SIGNER_IMAGE"
 }
 
 assert_loopback_publication() {
@@ -130,6 +147,18 @@ assert_loopback_publication() {
       '(.services[$service].ports // [] | length) == 0' \
       "$rendered" >/dev/null || fail "$service must not publish signer ports"
   fi
+}
+
+assert_single_target_loopback_publication() {
+  local rendered="$1"
+  local service="$2"
+  local target="$3"
+
+  jq -e --arg service "$service" --argjson target "$target" \
+    '.services[$service].ports as $ports |
+      [$ports[] | select(.target == $target)] as $matching |
+      ($matching | length) == 1 and $matching[0].host_ip == "127.0.0.1"' \
+    "$rendered" >/dev/null || fail "$service must publish target port $target only on 127.0.0.1"
 }
 
 assert_delayed_bearer_healthcheck() {
@@ -180,6 +209,17 @@ render_compose() {
 
   env -u XMR_FROST_SIGNER_IMAGE XMR_FROST_AUTH_BEARER="$BEARER_SENTINEL" \
     docker compose --env-file /dev/null -f "$compose_file" config --format json >"$rendered"
+}
+
+render_mocknet_compose() {
+  local compose_file="$1"
+  local rendered="$2"
+
+  env -u XMR_FROST_SIGNER_IMAGE \
+    XMR_FROST_AUTH_BEARER="$BEARER_SENTINEL" \
+    XMR_SIM_HELPER_AUTH_BEARER="$BEARER_SENTINEL" \
+    docker compose --env-file /dev/null --profile mocknet-cluster \
+    -f "$compose_file" config --format json >"$rendered"
 }
 
 validate_chainnet_seed_files() {
@@ -243,7 +283,9 @@ validate_rendered_contract() {
   local rendered="$1"
   local node_network="$2"
   local signer_network="$3"
-  local seed_mode="$4"
+  local monero_network="$4"
+  local seed_mode="$5"
+  local signer_publication_mode="$6"
   local suffixes=("" -cat -fox)
   local suffix bifrost signer endpoint
 
@@ -262,9 +304,11 @@ validate_rendered_contract() {
     signer="xmr-frost-signer$suffix"
     endpoint="http://$signer:8283"
 
-    assert_env "$rendered" "thornode$suffix" NET "$node_network"
-    assert_env "$rendered" "$bifrost" NET "$node_network"
-    assert_env "$rendered" "$bifrost" BIFROST_CHAINS_XMR_CHAIN_NETWORK mainnet
+    if [ "$signer_publication_mode" != all-loopback ]; then
+      assert_env "$rendered" "thornode$suffix" NET "$node_network"
+      assert_env "$rendered" "$bifrost" NET "$node_network"
+    fi
+    assert_env "$rendered" "$bifrost" BIFROST_CHAINS_XMR_CHAIN_NETWORK "$monero_network"
     assert_env "$rendered" "$bifrost" BIFROST_CHAINS_XMR_RPC_HOST http://monero-daemon:18081
     assert_env "$rendered" "$bifrost" BIFROST_CHAINS_XMR_SIGNER_ENDPOINT "$endpoint"
     assert_env "$rendered" "$bifrost" BIFROST_CHAINS_XMR_SIGNER_EXPECTED_NETWORK "$signer_network"
@@ -284,8 +328,12 @@ validate_rendered_contract() {
     assert_default_network "$rendered" "thornode$suffix"
     assert_default_network "$rendered" "$bifrost"
     assert_default_network "$rendered" "$signer"
-    assert_healthy_dependency "$rendered" "$bifrost" "$signer"
-    if [ -z "$suffix" ]; then
+    if [ "$signer_publication_mode" != all-loopback ]; then
+      assert_healthy_dependency "$rendered" "$bifrost" "$signer"
+    fi
+    if [ "$signer_publication_mode" = all-loopback ]; then
+      assert_single_target_loopback_publication "$rendered" "$signer" 8283
+    elif [ -z "$suffix" ]; then
       assert_loopback_publication "$rendered" "$signer" true
     else
       assert_loopback_publication "$rendered" "$signer" false
@@ -294,6 +342,20 @@ validate_rendered_contract() {
     assert_signer_image "$rendered" "$signer"
   done
 
+  case "$monero_network" in
+  mainnet)
+    assert_command_lacks_prefix "$rendered" monero-daemon --stagenet
+    ;;
+  stagenet)
+    assert_command_has "$rendered" monero-daemon --stagenet
+    assert_command_lacks_prefix "$rendered" monero-daemon --bootstrap-daemon-address=
+    ;;
+  mocknet) ;;
+  *)
+    fail "unsupported Monero network in production-like Compose contract: $monero_network"
+    ;;
+  esac
+
   case "$seed_mode" in
   file)
     validate_chainnet_seed_files "$rendered"
@@ -301,6 +363,7 @@ validate_rendered_contract() {
   mocknet-env)
     validate_mocknet_seed_consistency "$rendered"
     ;;
+  existing-mocknet) ;;
   *)
     fail "unknown seed mode: $seed_mode"
     ;;
@@ -320,14 +383,33 @@ trap 'rm -rf "$tmp_dir"' EXIT
 
 chainnet_compose="$COMPOSE_DIR/docker-compose.xmr-chainnet.yml"
 stagenet_compose="$COMPOSE_DIR/docker-compose.xmr-stagenet.yml"
+mocknet_compose="$COMPOSE_DIR/docker-compose.yml"
 
 assert_required_bearer "$chainnet_compose"
 assert_required_bearer "$stagenet_compose"
+assert_source_bearer_contract "$mocknet_compose"
+# These literal checks ensure the mocknet helper also has no committed secret.
+# shellcheck disable=SC2016
+grep -Fq '${XMR_SIM_HELPER_AUTH_BEARER:?set XMR_SIM_HELPER_AUTH_BEARER to a random mocknet token}' \
+  "$mocknet_compose" || fail "$mocknet_compose must require XMR_SIM_HELPER_AUTH_BEARER"
+# shellcheck disable=SC2016
+if grep -Eq '\$\{XMR_(FROST|SIM_HELPER)_AUTH_BEARER:-' "$mocknet_compose"; then
+  fail "$mocknet_compose must not provide a fallback XMR bearer"
+fi
 
 render_compose "$chainnet_compose" "$tmp_dir/chainnet.json"
 render_compose "$stagenet_compose" "$tmp_dir/stagenet.json"
+render_mocknet_compose "$mocknet_compose" "$tmp_dir/mocknet.json"
 
-validate_rendered_contract "$tmp_dir/chainnet.json" chainnet chainnet file
-validate_rendered_contract "$tmp_dir/stagenet.json" mocknet mocknet mocknet-env
+validate_rendered_contract "$tmp_dir/chainnet.json" chainnet chainnet mainnet file primary-only
+validate_rendered_contract "$tmp_dir/stagenet.json" mocknet mocknet stagenet mocknet-env primary-only
+validate_rendered_contract "$tmp_dir/mocknet.json" mocknet mocknet mocknet existing-mocknet all-loopback
+
+for rendered in "$tmp_dir/chainnet.json" "$tmp_dir/stagenet.json" "$tmp_dir/mocknet.json"; do
+  assert_single_target_loopback_publication "$rendered" monero-daemon 18081
+  assert_single_target_loopback_publication "$rendered" thornode 50051
+done
+assert_single_target_loopback_publication "$tmp_dir/mocknet.json" xmr-frost-signer-pig 8283
+assert_single_target_loopback_publication "$tmp_dir/mocknet.json" xmr-sim-helper 8284
 
 echo "XMR Compose security contract passed"

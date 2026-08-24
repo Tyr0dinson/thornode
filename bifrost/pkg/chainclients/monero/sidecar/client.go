@@ -80,15 +80,17 @@ type Client struct {
 	chainBlockPath    string
 	chainTxPath       string
 
-	client          *http.Client
-	daemonClient    *http.Client
-	signClient      *http.Client
-	signerUsername  string
-	signerPassword  string
-	signerBearer    string
-	daemonUsername  string
-	daemonPassword  string
-	expectedNetwork string
+	client                    *http.Client
+	daemonClient              *http.Client
+	signClient                *http.Client
+	signerUsername            string
+	signerPassword            string
+	signerBearer              string
+	daemonUsername            string
+	daemonPassword            string
+	expectedNetwork           string
+	expectedMoneroNettype     string
+	expectedMoneroGenesisHash string
 
 	// Sync calls remain serialized, while registration/reset responses may
 	// update the continuity cache as soon as they arrive. Keeping those locks
@@ -155,9 +157,9 @@ func NewClientWithEndpoint(cfg config.BifrostChainConfiguration, endpoint string
 	endpoint = strings.TrimSuffix(parsedEndpoint.String(), "/")
 	daemonEndpoint := ""
 	if strings.TrimSpace(cfg.RPCHost) != "" {
-		parsedDaemon, err := parseDaemonEndpointURL(cfg.RPCHost)
-		if err != nil {
-			return nil, err
+		parsedDaemon, parseErr := parseDaemonEndpointURL(cfg.RPCHost)
+		if parseErr != nil {
+			return nil, parseErr
 		}
 		daemonEndpoint = normalizeDaemonEndpoint(parsedDaemon)
 	}
@@ -169,6 +171,14 @@ func NewClientWithEndpoint(cfg config.BifrostChainConfiguration, endpoint string
 	signTimeout := timeout
 	if signTimeout < 120*time.Second {
 		signTimeout = 120 * time.Second
+	}
+	expectedMoneroNettype := ""
+	expectedMoneroGenesisHash := ""
+	if strings.TrimSpace(cfg.ChainNetwork) != "" {
+		expectedMoneroNettype, expectedMoneroGenesisHash, err = expectedMoneroIdentity(cfg.ChainNetwork)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &Client{
@@ -198,20 +208,38 @@ func NewClientWithEndpoint(cfg config.BifrostChainConfiguration, endpoint string
 		chainBlockPath:    "/v1/monero/chain/block",
 		chainTxPath:       "/v1/monero/chain/tx",
 
-		client:          &http.Client{Timeout: timeout},
-		daemonClient:    &http.Client{Timeout: timeout},
-		signClient:      &http.Client{Timeout: signTimeout},
-		signerUsername:  signerUsername,
-		signerPassword:  signerPassword,
-		signerBearer:    signerBearer,
-		daemonUsername:  daemonUsername,
-		daemonPassword:  daemonPassword,
-		expectedNetwork: strings.TrimSpace(cfg.SignerExpectedNetwork),
+		client:                    &http.Client{Timeout: timeout},
+		daemonClient:              &http.Client{Timeout: timeout},
+		signClient:                &http.Client{Timeout: signTimeout},
+		signerUsername:            signerUsername,
+		signerPassword:            signerPassword,
+		signerBearer:              signerBearer,
+		daemonUsername:            daemonUsername,
+		daemonPassword:            daemonPassword,
+		expectedNetwork:           strings.TrimSpace(cfg.SignerExpectedNetwork),
+		expectedMoneroNettype:     expectedMoneroNettype,
+		expectedMoneroGenesisHash: expectedMoneroGenesisHash,
 
 		signCombineMaxAttempts:    defaultSignCombineMaxAttempts,
 		signCombineInitialBackoff: defaultSignCombineInitialBackoff,
 		signCombineMaxBackoff:     defaultSignCombineMaxBackoff,
 	}, nil
+}
+
+func expectedMoneroIdentity(chainNetwork string) (string, string, error) {
+	switch strings.ToLower(strings.TrimSpace(chainNetwork)) {
+	case "mocknet", "fakechain", "regtest":
+		// Monero's FAKECHAIN mode deliberately reuses the mainnet genesis block.
+		return "fakechain", MoneroMainnetGenesisHash, nil
+	case "chainnet", "mainnet":
+		return "mainnet", MoneroMainnetGenesisHash, nil
+	case "stagenet":
+		return "stagenet", MoneroStagenetGenesisHash, nil
+	case "testnet":
+		return "testnet", MoneroTestnetGenesisHash, nil
+	default:
+		return "", "", fmt.Errorf("unsupported xmr chain_network %q", strings.TrimSpace(chainNetwork))
+	}
 }
 
 func parseSidecarEndpointURL(endpoint string) (*url.URL, error) {
@@ -1525,6 +1553,29 @@ func (c *Client) RequireCompatibility(requiredCapabilities ...string) (Info, err
 	}
 	if info.Network != c.expectedNetwork {
 		return Info{}, fmt.Errorf("sidecar network %q does not match expected %q", info.Network, c.expectedNetwork)
+	}
+	if c.expectedMoneroNettype == "" || c.expectedMoneroGenesisHash == "" {
+		return Info{}, fmt.Errorf("expected Monero chain network is not configured")
+	}
+	actualNettype := strings.ToLower(strings.TrimSpace(info.MoneroNettype))
+	if actualNettype != c.expectedMoneroNettype {
+		return Info{}, fmt.Errorf(
+			"sidecar Monero nettype %q does not match expected %q",
+			actualNettype,
+			c.expectedMoneroNettype,
+		)
+	}
+	actualGenesisHash := strings.ToLower(strings.TrimSpace(info.MoneroGenesisHash))
+	decodedGenesisHash, decodeGenesisErr := hex.DecodeString(actualGenesisHash)
+	if decodeGenesisErr != nil || len(decodedGenesisHash) != 32 {
+		return Info{}, fmt.Errorf("sidecar Monero genesis hash must be 64 hex characters")
+	}
+	if actualGenesisHash != c.expectedMoneroGenesisHash {
+		return Info{}, fmt.Errorf(
+			"sidecar Monero genesis hash %q does not match expected %q",
+			actualGenesisHash,
+			c.expectedMoneroGenesisHash,
+		)
 	}
 	commit := strings.TrimSpace(info.GitCommit)
 	decodedCommit, decodeErr := hex.DecodeString(commit)

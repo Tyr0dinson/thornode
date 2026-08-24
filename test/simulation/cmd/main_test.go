@@ -215,6 +215,34 @@ func TestMocknetBifrostDeclaresXMRChainNetwork(t *testing.T) {
 	}
 }
 
+func TestXMRComposeProfilesDeclareActualMoneroNetwork(t *testing.T) {
+	for _, tc := range []struct {
+		path     string
+		network  string
+		stagenet bool
+	}{
+		{path: "build/docker/docker-compose.yml", network: "mocknet"},
+		{path: "build/docker/docker-compose.xmr-chainnet.yml", network: "mainnet"},
+		{path: "build/docker/docker-compose.xmr-stagenet.yml", network: "stagenet", stagenet: true},
+	} {
+		t.Run(tc.network, func(t *testing.T) {
+			compose := readRepoFile(t, tc.path)
+			expected := `BIFROST_CHAINS_XMR_CHAIN_NETWORK: "` + tc.network + `"`
+			if !strings.Contains(compose, expected) {
+				t.Fatalf("%s must contain %q", tc.path, expected)
+			}
+			if tc.stagenet {
+				if !strings.Contains(compose, "- --stagenet") {
+					t.Fatal("XMR stagenet Compose must start monerod with --stagenet")
+				}
+				if strings.Contains(compose, "--bootstrap-daemon-address=nodes.hashvault.pro:18081") {
+					t.Fatal("XMR stagenet Compose must not bootstrap from a mainnet daemon")
+				}
+			}
+		})
+	}
+}
+
 func TestMocknetBifrostWaitsForSolanaRPC(t *testing.T) {
 	entrypoint := readRepoFile(t, "build/scripts/bifrost.sh")
 	for _, snippet := range []string{
@@ -313,9 +341,9 @@ func TestMocknetClusterPublishesBifrostAndXMRFrostReadinessPorts(t *testing.T) {
 		"- 6041:6040",
 		"- 6042:6040",
 		"- 6043:6040",
-		"- 8285:8283",
-		"- 8286:8283",
-		"- 8287:8283",
+		"- 127.0.0.1:8285:8283",
+		"- 127.0.0.1:8286:8283",
+		"- 127.0.0.1:8287:8283",
 	} {
 		if !strings.Contains(compose, snippet) {
 			t.Fatalf("mocknet cluster compose must publish %q so simulation can gate churn on all Bifrost and XMR FROST readiness endpoints", snippet)

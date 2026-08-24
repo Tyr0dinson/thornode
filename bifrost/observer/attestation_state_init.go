@@ -552,8 +552,8 @@ func (s *AttestationGossip) receiveBatchedAttestationState(ctx context.Context, 
 		}
 
 		// Acknowledge the batch data
-		if err := p2p.WriteStreamWithBuffer([]byte(streamAckData), stream); err != nil {
-			return fmt.Errorf("failed to acknowledge batch data: %w", err)
+		if writeErr := p2p.WriteStreamWithBuffer([]byte(streamAckData), stream); writeErr != nil {
+			return fmt.Errorf("failed to acknowledge batch data: %w", writeErr)
 		}
 
 		// In receiveBatchedAttestationState function
@@ -564,8 +564,8 @@ func (s *AttestationGossip) receiveBatchedAttestationState(ctx context.Context, 
 
 		// Unmarshal the batch
 		var batch common.QuorumState
-		if err := batch.Unmarshal(batchData); err != nil {
-			return fmt.Errorf("failed to unmarshal batch: %w", err)
+		if unmarshalErr := batch.Unmarshal(batchData); unmarshalErr != nil {
+			return fmt.Errorf("failed to unmarshal batch: %w", unmarshalErr)
 		}
 
 		totalItems, err = validateAttestationStateTransferCount(totalItems, batch)

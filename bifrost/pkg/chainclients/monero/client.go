@@ -275,6 +275,7 @@ func NewClient(
 		sidecar.CapabilityVerifiedAbsenceBalance,
 		sidecar.CapabilityCanonicalObservation,
 		sidecar.CapabilityCanonicalTxLocation,
+		sidecar.CapabilityMoneroNetworkIdentity,
 	)
 	if compatibilityErr != nil {
 		return nil, fmt.Errorf("xmr signer compatibility check failed: %w", compatibilityErr)
@@ -287,6 +288,8 @@ func NewClient(
 	logger.Info().
 		Str("signer_revision", info.GitCommit).
 		Str("signer_network", info.Network).
+		Str("monero_nettype", info.MoneroNettype).
+		Str("monero_genesis_hash", info.MoneroGenesisHash).
 		Int("signer_state_schema", info.StateSchema).
 		Bool("idempotent_combine", idempotentCombine).
 		Msg("verified xmr signer compatibility contract")
