@@ -361,23 +361,26 @@ func (b *BlockScanner) scanMempool() {
 	}
 }
 
-// IsChainScannerPaused checks the Bifrost-only HaltScanner<Chain> switch. XMR
-// fails closed when the switch is unavailable so a keygen-only rollout cannot
-// accidentally start observation. Other chains retain their existing behavior
-// unless their scanner-only switch is explicitly enabled.
+// IsChainScannerPaused checks the Bifrost-only HaltScannerXMR switch. XMR fails
+// closed when the switch is unavailable so a keygen-only rollout cannot
+// accidentally start observation. Other chains do not support a scanner-only
+// halt.
 func IsChainScannerPaused(chain common.Chain, logger zerolog.Logger, bridge thorclient.ThorchainBridge) bool {
-	key := fmt.Sprintf("HaltScanner%s", chain)
+	// XMR is currently the only chain with a scanner-only halt. Avoid adding an
+	// unused Mimir RPC to every other chain's scan loop.
+	if !chain.Equals(common.XMRChain) {
+		return false
+	}
+
+	const key = "HaltScannerXMR"
 	halted, err := bridge.GetMimir(key)
 	if err != nil {
 		logger.Error().Err(err).Str("mimir", key).Msg("fail to get scanner halt")
-		return chain.Equals(common.XMRChain)
+		return true
 	}
 	if halted < 0 {
-		if chain.Equals(common.XMRChain) {
-			logger.Error().Str("mimir", key).Msg("scanner halt is unavailable")
-			return true
-		}
-		return false
+		logger.Error().Str("mimir", key).Msg("scanner halt is unavailable")
+		return true
 	}
 	return halted > 0
 }

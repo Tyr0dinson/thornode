@@ -62,55 +62,25 @@ func TestXMRScannerHaltFailsClosed(t *testing.T) {
 	}
 }
 
-func TestScannerHaltDoesNotFailClosedOtherChains(t *testing.T) {
-	tests := []struct {
-		name  string
-		value int64
-		err   error
-	}{
-		{name: "missing", value: -1},
-		{name: "lookup error", err: errors.New("mimir unavailable")},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			bridge := &scannerHaltTestBridge{
-				getMimir: func(key string) (int64, error) {
-					switch key {
-					case "HaltScannerXMR":
-						return 1, nil
-					case "HaltScannerETH":
-						return test.value, test.err
-					default:
-						return 0, nil
-					}
-				},
-			}
-			cfg := config.BifrostBlockScannerConfiguration{ChainID: common.ETHChain}
-			if IsChainPaused(cfg, zerolog.Nop(), bridge) {
-				t.Fatal("an unavailable HaltScannerETH paused the ETH scanner")
-			}
-			if got := bridge.blockHeightCalls.Load(); got != 1 {
-				t.Fatalf("GetBlockHeight calls = %d, want 1", got)
-			}
-		})
-	}
-}
-
-func TestScannerHaltCanPauseAnotherChainExplicitly(t *testing.T) {
+func TestScannerHaltSkipsChainsWithoutOptIn(t *testing.T) {
+	var scannerHaltCalls atomic.Int32
 	bridge := &scannerHaltTestBridge{
 		getMimir: func(key string) (int64, error) {
 			if key == "HaltScannerETH" {
+				scannerHaltCalls.Add(1)
 				return 1, nil
 			}
 			return 0, nil
 		},
 	}
 	cfg := config.BifrostBlockScannerConfiguration{ChainID: common.ETHChain}
-	if !IsChainPaused(cfg, zerolog.Nop(), bridge) {
-		t.Fatal("positive HaltScannerETH did not pause the ETH scanner")
+	if IsChainPaused(cfg, zerolog.Nop(), bridge) {
+		t.Fatal("HaltScannerETH paused a chain which has not opted in")
 	}
-	if got := bridge.blockHeightCalls.Load(); got != 0 {
-		t.Fatalf("GetBlockHeight calls = %d, want 0", got)
+	if got := scannerHaltCalls.Load(); got != 0 {
+		t.Fatalf("HaltScannerETH lookups = %d, want 0", got)
+	}
+	if got := bridge.blockHeightCalls.Load(); got != 1 {
+		t.Fatalf("GetBlockHeight calls = %d, want 1", got)
 	}
 }
