@@ -94,7 +94,7 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 		// Sign alone cannot distinguish a fresh Cosmos message from a new vote.
 		// Persist here as well to lazily upgrade legacy completed voters whose
 		// empty state was normalized by the keeper.
-		if err := h.mgr.Keeper().SetTssKeysignFailVoter(ctx, voter); err != nil {
+		if err = h.mgr.Keeper().SetTssKeysignFailVoter(ctx, voter); err != nil {
 			return nil, wrapError(ctx, err, "fail to save tss keysign fail voter")
 		}
 		ctx.Logger().Info("MsgTssKeysignFail voter already completed", "ID", msg.ID)
@@ -126,7 +126,7 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 		return nil, wrapError(ctx, err, "fail to get vault")
 	}
 	if vault.IsEmpty() {
-		if err := h.mgr.Keeper().SetTssKeysignFailVoter(ctx, voter); err != nil {
+		if err = h.mgr.Keeper().SetTssKeysignFailVoter(ctx, voter); err != nil {
 			return nil, wrapError(ctx, err, "fail to save tss keysign fail voter")
 		}
 		return &cosmos.Result{}, nil

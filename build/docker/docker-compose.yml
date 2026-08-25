@@ -800,7 +800,7 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-    # Temporary local build of draft Serai MR !70 for mocknet testing only.
+    # Temporary Serai MR !70 integration-test image; replace with a reviewed release before merge or production activation.
     image: ${XMR_FROST_SIGNER_IMAGE:-registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:mr70-6844c817-20260824-post15@sha256:ba4d243d6f129dda8ca127f1f95e71344b97c6dca02efb3ca9e453ecf1572978}
     restart: unless-stopped
     user: root
