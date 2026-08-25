@@ -704,6 +704,17 @@ func (s *AttestationGossip) handleQuorumErrataTxCommitted(en *ebifrost.EventNoti
 		s.logger.Error().Msg("committed quorum errata is missing chain or transaction id")
 		return
 	}
+	if qe.ErrataTx.Chain.RequiresTerminalErrataOutcome() &&
+		qe.Outcome == common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED {
+		// THORNode accepted the batch but did not reach consensus under its
+		// current active set. Keep both the Observer outbox and every included
+		// attestation retryable so a later active-set change can complete it.
+		s.logger.Debug().
+			Str("chain", qe.ErrataTx.Chain.String()).
+			Str("txid", qe.ErrataTx.Id.String()).
+			Msg("errata quorum outcome remains pending")
+		return
+	}
 
 	// A committed batch can contain only another node's vote. Clear this
 	// observer's durable outbox only when Thornode confirms that this node's

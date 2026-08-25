@@ -36,13 +36,22 @@ func processErrataTxAttestation(
 
 	slasher := mgr.Slasher()
 
-	if !voter.Sign(attester) {
+	newSigner := voter.Sign(attester)
+	if !newSigner {
 		// Slash for the network having to handle the extra message/s.
 		if shouldSlashForDuplicate {
 			slasher.IncSlashPoints(slashCtx, observeSlashPoints, attester)
 		}
 		ctx.Logger().Info("signer already signed MsgErrataTx", "signer", attester.String(), "txid", er.Id)
-		return nil
+		// A durable quorum retry can contain only signatures already stored by
+		// THORNode. Explicit-outcome errata must re-evaluate those signatures after
+		// churn; otherwise an active-set change can leave an UNSPECIFIED voter
+		// pending forever. Direct duplicate messages retain their existing slash
+		// and early-return behavior.
+		if shouldSlashForDuplicate || voter.BlockHeight > 0 ||
+			!er.Chain.RequiresTerminalErrataOutcome() || !voter.HasConsensus(active) {
+			return nil
+		}
 	}
 
 	// doesn't have consensus yet
@@ -64,9 +73,12 @@ func processErrataTxAttestation(
 
 	voter.BlockHeight = ctx.BlockHeight()
 
-	// This signer brings the voter to consensus; increment the signer's slash points like the before-consensus signers,
-	// then decrement all the signers' slash points and increment the non-signers' slash points.
-	slasher.IncSlashPoints(slashCtx, observeSlashPoints, attester)
+	// A new signer which brings the voter to consensus is charged like the
+	// before-consensus signers. A duplicate-only retry was already charged when
+	// its signature was first stored, so do not charge it again.
+	if newSigner {
+		slasher.IncSlashPoints(slashCtx, observeSlashPoints, attester)
+	}
 	signers := voter.GetSigners()
 	nonSigners := getNonSigners(active, signers)
 	slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)

@@ -248,8 +248,12 @@ func TestPendingErrataRetriesAcrossObserverRestartUntilCommittedEvent(t *testing
 	require.True(t, found)
 	require.Equal(t, uint32(2), record.AttestationAttempts)
 
-	// Only the committed-quorum event is a strong enough terminal receipt.
-	require.NoError(t, restarted.handleErrataTxCommitted(errata))
+	// Only an explicit terminal committed-quorum outcome is a strong enough
+	// receipt to complete the durable retry.
+	require.NoError(t, restarted.handleErrataTxCommittedOutcome(
+		errata,
+		common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION,
+	))
 	pending, err = storage.getPendingErrata()
 	require.NoError(t, err)
 	require.Empty(t, pending)
@@ -335,7 +339,10 @@ func TestCrashAfterLocalErrataEnqueueReplaysOutboxAfterRestart(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, pending, 1)
 
-	require.NoError(t, restarted.handleErrataTxCommitted(errata))
+	require.NoError(t, restarted.handleErrataTxCommittedOutcome(
+		errata,
+		common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION,
+	))
 	pending, err = storage.getPendingErrata()
 	require.NoError(t, err)
 	require.Empty(t, pending)
@@ -349,7 +356,10 @@ func TestDuplicateErrataHandoffPreservesCommittedGeneration(t *testing.T) {
 		Txs:    []types.ErrataTx{{Chain: errata.Chain, TxID: errata.Id}},
 	}
 	require.NoError(t, observer.filterErrataTx(block))
-	require.NoError(t, observer.handleErrataTxCommitted(errata))
+	require.NoError(t, observer.handleErrataTxCommittedOutcome(
+		errata,
+		common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION,
+	))
 	before, err := storage.getErrataTombstone(errata.Chain, errata.Id.String())
 	require.NoError(t, err)
 	require.True(t, before.Committed)
@@ -577,6 +587,7 @@ func TestQuorumErrataCommittedEventClearsOutboxWithoutVolatileState(t *testing.T
 		Attestations: []*common.Attestation{{
 			PubKey: gossip.pubKey,
 		}},
+		Outcome: common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION,
 	}).Marshal()
 	require.NoError(t, err)
 	gossip.handleQuorumErrataTxCommitted(&ebifrost.EventNotification{Payload: payload})
@@ -1104,7 +1115,7 @@ func TestXMRNoApplicableObservationOutcomeIsTerminalAcrossRestart(t *testing.T) 
 	require.Zero(t, unresolved)
 }
 
-func TestOutcomeLessXMRCommittedErrataFailsClosed(t *testing.T) {
+func TestOutcomeLessXMRErrataRemainsPending(t *testing.T) {
 	observer, storage := newErrataOrderingObserver(t)
 	errata := common.ErrataTx{
 		Chain:  common.XMRChain,
@@ -1116,14 +1127,22 @@ func TestOutcomeLessXMRCommittedErrataFailsClosed(t *testing.T) {
 		quarantineCalls++
 		return nil
 	}
+	require.NoError(t, observer.filterErrataTx(types.ErrataBlock{
+		Height: errata.Height,
+		Txs:    []types.ErrataTx{{Chain: errata.Chain, TxID: errata.Id}},
+	}))
 
 	require.NoError(t, observer.handleErrataTxCommitted(errata))
+	pending, err := storage.getPendingErrata()
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	require.False(t, pending[0].Committed)
 	unresolved, reconcileErr := observer.reconcileCommittedXMRErrata()
-	require.ErrorContains(t, reconcileErr, "has no explicit reverted outcome")
-	require.Equal(t, 1, unresolved)
+	require.NoError(t, reconcileErr)
+	require.Zero(t, unresolved)
 	tombstone, err := storage.getErrataTombstone(errata.Chain, errata.Id.String())
 	require.NoError(t, err)
-	require.True(t, tombstone.Committed)
+	require.False(t, tombstone.Committed)
 	require.Equal(t, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, tombstone.Outcome)
 	require.Nil(t, tombstone.VoterReverted)
 	require.Zero(t, quarantineCalls)
@@ -1483,11 +1502,41 @@ func TestPendingErrataResubmitsAfterThrottleUntilCommittedEvent(t *testing.T) {
 	require.Equal(t, 2, submissions)
 
 	state.mu.Lock()
-	committedAttestations := state.AttestationsCopy()
+	pendingAttestations := state.AttestationsCopy()
 	state.mu.Unlock()
-	payload, err := (&common.QuorumErrataTx{
+	pendingPayload, err := (&common.QuorumErrataTx{
 		ErrataTx:     &errata,
-		Attestations: committedAttestations,
+		Attestations: pendingAttestations,
+	}).Marshal()
+	require.NoError(t, err)
+
+	// A successful handler event without an explicit XMR outcome means that
+	// THORNode has accepted the batch but still lacks consensus. It must leave
+	// both the durable outbox and the in-memory attestations retryable.
+	ag.handleQuorumErrataTxCommitted(&ebifrost.EventNotification{Payload: pendingPayload})
+	pending, err := storage.getPendingErrata()
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	require.False(t, pending[0].Committed)
+	tombstone, err := storage.getErrataTombstone(errata.Chain, errata.Id.String())
+	require.NoError(t, err)
+	require.NotNil(t, tombstone)
+	require.False(t, tombstone.Committed)
+	require.Equal(t, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, tombstone.Outcome)
+	state.mu.Lock()
+	for _, attestation := range state.attestations {
+		require.False(t, attestation.committed)
+	}
+	state.lastAttestationsSent = time.Now().Add(-ag.config.MinTimeBetweenAttestations - time.Second)
+	state.mu.Unlock()
+	thirdAttempt := secondAttempt.Add(errataAttestationRetryDelay(2))
+	observer.retryPendingErrataAt(context.Background(), thirdAttempt)
+	require.Equal(t, 3, submissions)
+
+	terminalPayload, err := (&common.QuorumErrataTx{
+		ErrataTx:     &errata,
+		Attestations: pendingAttestations,
+		Outcome:      common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION,
 	}).Marshal()
 	require.NoError(t, err)
 
@@ -1502,8 +1551,8 @@ func TestPendingErrataResubmitsAfterThrottleUntilCommittedEvent(t *testing.T) {
 		}
 		return nil
 	}
-	ag.handleQuorumErrataTxCommitted(&ebifrost.EventNotification{Payload: payload})
-	pending, err := storage.getPendingErrata()
+	ag.handleQuorumErrataTxCommitted(&ebifrost.EventNotification{Payload: terminalPayload})
+	pending, err = storage.getPendingErrata()
 	require.NoError(t, err)
 	require.Len(t, pending, 1)
 	state.mu.Lock()
@@ -1512,13 +1561,13 @@ func TestPendingErrataResubmitsAfterThrottleUntilCommittedEvent(t *testing.T) {
 	}
 	state.lastAttestationsSent = time.Now().Add(-ag.config.MinTimeBetweenAttestations - time.Second)
 	state.mu.Unlock()
-	thirdAttempt := secondAttempt.Add(errataAttestationRetryDelay(2))
-	observer.retryPendingErrataAt(context.Background(), thirdAttempt)
-	require.Equal(t, 3, submissions)
+	fourthAttempt := thirdAttempt.Add(errataAttestationRetryDelay(3))
+	observer.retryPendingErrataAt(context.Background(), fourthAttempt)
+	require.Equal(t, 4, submissions)
 
 	// The replayed committed event can now fsync the barrier and only then mark
 	// the in-memory votes committed.
-	ag.handleQuorumErrataTxCommitted(&ebifrost.EventNotification{Payload: payload})
+	ag.handleQuorumErrataTxCommitted(&ebifrost.EventNotification{Payload: terminalPayload})
 	pending, err = storage.getPendingErrata()
 	require.NoError(t, err)
 	require.Empty(t, pending)
@@ -1533,8 +1582,8 @@ func TestPendingErrataResubmitsAfterThrottleUntilCommittedEvent(t *testing.T) {
 	state.mu.Lock()
 	state.lastAttestationsSent = time.Now().Add(-ag.config.MinTimeBetweenAttestations - time.Second)
 	state.mu.Unlock()
-	observer.retryPendingErrataAt(context.Background(), thirdAttempt.Add(errataAttestationRetryDelay(3)))
-	require.Equal(t, 3, submissions)
+	observer.retryPendingErrataAt(context.Background(), fourthAttempt.Add(errataAttestationRetryDelay(4)))
+	require.Equal(t, 4, submissions)
 }
 
 func TestCommittedErrataWithoutObserverHandlerStillMarksGossipState(t *testing.T) {

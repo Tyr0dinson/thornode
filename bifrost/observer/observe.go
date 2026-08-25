@@ -564,17 +564,24 @@ func (o *Observer) handleObservedTxCommitted(tx common.ObservedTx, allowFutureOb
 }
 
 // handleErrataTxCommittedOutcome durably acknowledges this node's exact
-// attestation together with THORNode's terminal XMR handler result. A result
-// with no applicable observation is immediately final; a reverted result
-// remains pending until the existing sidecar quarantine has completed.
+// attestation only together with THORNode's terminal XMR handler result. An
+// unspecified result remains retryable because the active validator set may
+// later make the stored signatures a supermajority. A result with no applicable
+// observation is immediately final; a reverted result remains pending until the
+// existing sidecar quarantine has completed.
 func (o *Observer) handleErrataTxCommittedOutcome(
 	errata common.ErrataTx,
 	outcome common.ErrataTxOutcome,
 ) error {
-	if errata.Chain.Equals(common.XMRChain) {
+	if errata.Chain.RequiresTerminalErrataOutcome() {
+		if outcome == common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED {
+			o.logger.Debug().
+				Str("chain", errata.Chain.String()).Str("txid", errata.Id.String()).
+				Msg("errata quorum outcome remains pending; retain durable retry")
+			return nil
+		}
 		switch outcome {
-		case common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED,
-			common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED,
+		case common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED,
 			common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION:
 		default:
 			return fmt.Errorf("unknown committed XMR errata outcome %d", outcome)

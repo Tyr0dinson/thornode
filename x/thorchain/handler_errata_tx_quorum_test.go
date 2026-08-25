@@ -6,6 +6,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -530,6 +531,83 @@ func (s *HandlerErrataTxQuorumSuite) TestUnknownXMRErrataPersistsTerminalOutcome
 	c.Check(voter.BlockHeight, Equals, ctx.BlockHeight())
 	c.Check(voter.Outcome, Equals, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION)
 	c.Check(voter.GetSigners(), DeepEquals, []cosmos.AccAddress{na.NodeAddress})
+}
+
+func (s *HandlerErrataTxQuorumSuite) TestXMRErrataDuplicateRetryReevaluatesConsensusAfterChurn(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	handler := NewErrataTxQuorumHandler(mgr)
+	na1, privKey1 := nodeWithPrivKey(c, mgr.Keeper(), ctx)
+	na2, privKey2 := nodeWithPrivKey(c, mgr.Keeper(), ctx)
+	na3, _ := nodeWithPrivKey(c, mgr.Keeper(), ctx)
+	na4, _ := nodeWithPrivKey(c, mgr.Keeper(), ctx)
+
+	errata := &common.ErrataTx{
+		Id:     GetRandomTxHash(),
+		Chain:  common.XMRChain,
+		Height: 100,
+	}
+	attestations := []*common.Attestation{
+		attestErrataTx(c, privKey1, errata),
+		attestErrataTx(c, privKey2, errata),
+	}
+	msg := types.NewMsgErrataTxQuorum(&common.QuorumErrataTx{
+		ErrataTx:     errata,
+		Attestations: attestations,
+	}, na1.NodeAddress)
+
+	result, err := handler.Run(ctx, msg)
+	c.Assert(err, IsNil)
+	c.Assert(result, NotNil)
+	c.Check(msg.QuoErrata.Outcome, Equals, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED)
+
+	voter, err := mgr.Keeper().GetErrataTxVoterAtHeight(ctx, errata.Id, errata.Chain, errata.Height)
+	c.Assert(err, IsNil)
+	c.Check(voter.BlockHeight, Equals, int64(0))
+	c.Check(voter.GetSigners(), DeepEquals, []cosmos.AccAddress{na1.NodeAddress, na2.NodeAddress})
+	observeSlashPoints := mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
+	for _, signer := range []cosmos.AccAddress{na1.NodeAddress, na2.NodeAddress} {
+		points, err := mgr.Keeper().GetNodeAccountSlashPoints(ctx, signer)
+		c.Assert(err, IsNil)
+		c.Check(points, Equals, observeSlashPoints)
+	}
+
+	// The stored signatures become a supermajority after churn. The durable
+	// Bifrost retry contains only duplicates, so THORNode must re-evaluate the
+	// voter without charging either signer for a second observation.
+	na3.UpdateStatus(NodeStandby, ctx.BlockHeight())
+	na4.UpdateStatus(NodeStandby, ctx.BlockHeight())
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na3), IsNil)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na4), IsNil)
+
+	retry := types.NewMsgErrataTxQuorum(&common.QuorumErrataTx{
+		ErrataTx:     errata,
+		Attestations: attestations,
+	}, na1.NodeAddress)
+	result, err = handler.Run(ctx, retry)
+	c.Assert(err, IsNil)
+	c.Assert(result, NotNil)
+	c.Check(retry.QuoErrata.Outcome, Equals, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION)
+
+	voter, err = mgr.Keeper().GetErrataTxVoterAtHeight(ctx, errata.Id, errata.Chain, errata.Height)
+	c.Assert(err, IsNil)
+	c.Check(voter.BlockHeight, Equals, ctx.BlockHeight())
+	c.Check(voter.Outcome, Equals, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION)
+	for _, signer := range []cosmos.AccAddress{na1.NodeAddress, na2.NodeAddress} {
+		points, err := mgr.Keeper().GetNodeAccountSlashPoints(ctx, signer)
+		c.Assert(err, IsNil)
+		c.Check(points, Equals, int64(0))
+	}
+
+	// Replaying the already-terminal batch is a no-op for both state and slash
+	// accounting.
+	result, err = handler.Run(ctx, retry)
+	c.Assert(err, IsNil)
+	c.Assert(result, NotNil)
+	for _, signer := range []cosmos.AccAddress{na1.NodeAddress, na2.NodeAddress} {
+		points, err := mgr.Keeper().GetNodeAccountSlashPoints(ctx, signer)
+		c.Assert(err, IsNil)
+		c.Check(points, Equals, int64(0))
+	}
 }
 
 func (s *HandlerErrataTxQuorumSuite) TestXMRErrataChainMismatchHasNoApplicableObservation(c *C) {
