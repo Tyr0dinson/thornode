@@ -45,6 +45,10 @@ var frostKeygenMsgTypes = []messages.THORChainTSSMessageType{
 // frostKeygenInbox keeps phase skew from turning into message loss. Payloads
 // and terminal results remain on bounded per-topic channels until their phase;
 // verification echoes are routed into the verifier for their tagged round.
+// In particular, a round-3 payload cannot be consumed early because its address
+// and group key must be checked against the local round-3 sidecar result. Its
+// echoes can be recorded early: the verifier cannot complete that target until
+// the in-phase payload has been validated and recorded.
 type frostKeygenInbox struct {
 	round1 chan *p2p.Message
 	round2 chan *p2p.Message
