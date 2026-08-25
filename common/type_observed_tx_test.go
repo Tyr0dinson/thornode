@@ -273,6 +273,21 @@ func (s ObservedTxSuite) TestEqualsConsensus_OneXMRTxKeyDiffers(c *C) {
 	c.Assert(tx1.HasEquivalentXMRTxKey(tx2), Equals, false)
 }
 
+func (s ObservedTxSuite) TestEqualsConsensus_XMRMinedHeightSeparatesGenerations(c *C) {
+	zeroHeight := makeXMRObservedTx(c, nil)
+	minedHeight := zeroHeight
+	minedHeight.XmrMinedHeight = minedHeight.BlockHeight
+
+	c.Assert(zeroHeight.EqualsConsensus(minedHeight), Equals, false)
+	c.Assert(zeroHeight.EqualsConsensusIgnoreGas(minedHeight), Equals, false)
+	c.Assert(zeroHeight.HasEquivalentCanonicalMinedHeight(minedHeight), Equals, false)
+
+	sameHeight := minedHeight
+	c.Assert(minedHeight.EqualsConsensus(sameHeight), Equals, true)
+	c.Assert(minedHeight.EqualsConsensusIgnoreGas(sameHeight), Equals, true)
+	c.Assert(minedHeight.HasEquivalentCanonicalMinedHeight(sameHeight), Equals, true)
+}
+
 func (s ObservedTxSuite) TestEqualsConsensus_BothNonXMREmpty(c *C) {
 	id, err := NewTxID(testSpendTxHash)
 	c.Assert(err, IsNil)

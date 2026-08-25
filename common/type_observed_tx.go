@@ -227,18 +227,30 @@ func (m ObservedTx) HasEquivalentXMRTxKey(tx2 ObservedTx) bool {
 	return normalizeString(m.XmrTxKey) == normalizeString(tx2.XmrTxKey)
 }
 
+// HasEquivalentCanonicalMinedHeight keeps height-scoped errata generations
+// from sharing observation quorum. A zero height remains a separate,
+// fail-closed variant so a later valid height must independently reach quorum.
+func (m ObservedTx) HasEquivalentCanonicalMinedHeight(tx2 ObservedTx) bool {
+	if !m.Tx.Chain.UsesHeightScopedErrata() && !tx2.Tx.Chain.UsesHeightScopedErrata() {
+		return true
+	}
+	return m.XmrMinedHeight == tx2.XmrMinedHeight
+}
+
 func (m ObservedTx) EqualsConsensus(tx2 ObservedTx) bool {
 	return m.ObservedPubKey.Equals(tx2.ObservedPubKey) &&
 		m.Tx.EqualsEx(tx2.Tx) &&
 		m.HasEquivalentSpentOutputRefs(tx2) &&
-		m.HasEquivalentXMRTxKey(tx2)
+		m.HasEquivalentXMRTxKey(tx2) &&
+		m.HasEquivalentCanonicalMinedHeight(tx2)
 }
 
 func (m ObservedTx) EqualsConsensusIgnoreGas(tx2 ObservedTx) bool {
 	return m.ObservedPubKey.Equals(tx2.ObservedPubKey) &&
 		m.Tx.EqualsExIgnoreGas(tx2.Tx) &&
 		m.HasEquivalentSpentOutputRefs(tx2) &&
-		m.HasEquivalentXMRTxKey(tx2)
+		m.HasEquivalentXMRTxKey(tx2) &&
+		m.HasEquivalentCanonicalMinedHeight(tx2)
 }
 
 func (m ObservedTx) AttestationUniqueHash() string {

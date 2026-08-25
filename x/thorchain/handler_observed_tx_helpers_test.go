@@ -1246,6 +1246,110 @@ func observeSlashSetup(c *C, ctx cosmos.Context, mgr *Mgrs) (NodeAccounts, commo
 	return nas, vaultPubKey
 }
 
+// TestXMRZeroMinedHeightFailsClosedAndValidHeightRecovers pins both sides of
+// the canonical-height boundary. A zero-height variant must fail closed, but
+// its partial votes must not combine with or preempt a later valid-height
+// quorum for the same transaction.
+func (s *HandlerObservedTxHelpersSuite) TestXMRZeroMinedHeightFailsClosedAndValidHeightRecovers(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+	nas, vaultPubKey := observeSlashSetup(c, ctx, mgr)
+
+	zeroHeight := common.NewObservedTx(GetRandomTx(), 100, vaultPubKey, 100)
+	zeroHeight.Tx.Chain = common.XMRChain
+	zeroHeight.Tx.Coins = common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One)))
+	validHeight := zeroHeight
+	validHeight.XmrMinedHeight = 100
+
+	voter := NewObservedTxVoter(zeroHeight.Tx.ID, nil)
+	voter, _ = processTxInAttestation(ctx, mgr, voter, nas, zeroHeight, nas[0].NodeAddress, false)
+	voter, _ = processTxInAttestation(ctx, mgr, voter, nas, zeroHeight, nas[1].NodeAddress, false)
+
+	errataVoter := NewErrataTxVoterAtHeight(zeroHeight.Tx.ID, common.XMRChain, validHeight.XmrMinedHeight)
+	errataVoter.BlockHeight = ctx.BlockHeight()
+	mgr.Keeper().SetErrataTxVoter(ctx, errataVoter)
+
+	// The third zero-height vote would cross quorum, but the shared quorum path
+	// rejects it. Discard the cache to model Cosmos transaction rollback.
+	failedCtx, _ := ctx.CacheContext()
+	failedVoter, crossed := processTxInAttestation(
+		failedCtx,
+		mgr,
+		voter,
+		nas,
+		zeroHeight,
+		nas[2].NodeAddress,
+		false,
+	)
+	c.Assert(crossed, Equals, true)
+	err := handleObservedTxInQuorum(
+		failedCtx,
+		mgr,
+		nas[2].NodeAddress,
+		nas,
+		nil,
+		zeroHeight,
+		failedVoter,
+		nil,
+		true,
+	)
+	c.Assert(err, ErrorMatches, ".*xmr canonical mined height is unavailable.*")
+
+	stored, err := mgr.Keeper().GetObservedTxInVoter(ctx, zeroHeight.Tx.ID)
+	c.Assert(err, IsNil)
+	c.Assert(stored.Tx.IsEmpty(), Equals, true)
+	c.Assert(stored.FinalisedHeight, Equals, int64(0))
+
+	// A later canonical-height variant must form its own quorum. Its votes cannot
+	// borrow the two stale zero-height votes retained from before the failed tx.
+	recoveryCtx, commit := ctx.CacheContext()
+	recoveryVoter, err := mgr.Keeper().GetObservedTxInVoter(recoveryCtx, zeroHeight.Tx.ID)
+	c.Assert(err, IsNil)
+	for i := 0; i < 2; i++ {
+		var recovered bool
+		recoveryVoter, recovered = processTxInAttestation(
+			recoveryCtx,
+			mgr,
+			recoveryVoter,
+			nas,
+			validHeight,
+			nas[i].NodeAddress,
+			false,
+		)
+		c.Assert(recovered, Equals, false)
+	}
+	recoveryVoter, crossed = processTxInAttestation(
+		recoveryCtx,
+		mgr,
+		recoveryVoter,
+		nas,
+		validHeight,
+		nas[2].NodeAddress,
+		false,
+	)
+	c.Assert(crossed, Equals, true)
+	c.Assert(recoveryVoter.Tx.XmrMinedHeight, Equals, int64(100))
+
+	err = handleObservedTxInQuorum(
+		recoveryCtx,
+		mgr,
+		nas[2].NodeAddress,
+		nas,
+		nil,
+		validHeight,
+		recoveryVoter,
+		nil,
+		true,
+	)
+	c.Assert(err, IsNil)
+	commit()
+
+	stored, err = mgr.Keeper().GetObservedTxInVoter(ctx, zeroHeight.Tx.ID)
+	c.Assert(err, IsNil)
+	c.Assert(stored.Reverted, Equals, true)
+	c.Assert(stored.Tx.XmrMinedHeight, Equals, int64(100))
+}
+
 // TestObserveSlashExcessRefundGasSplit (#3081-B + #3104): a member's pre-broadcast
 // gas-limit observation is credited gas-agnostically at consensus; its later
 // gas-used scanner observation must net zero (redundant observe refunded at
