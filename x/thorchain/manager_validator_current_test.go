@@ -1825,7 +1825,7 @@ func (vts *ValidatorMgrTestSuite) TestNodeAccountPreflightCheckMaintenance(c *C)
 	k.SetMimir(ctx, constants.MinimumBondInRune.String(), 1000000)
 
 	// Test normal operation first (should be Ready)
-	status, err := validatorMgr.NodeAccountPreflightCheck(ctx, nodeAccount, k.GetConstants())
+	status, err := validatorMgr.NodeAccountPreflightCheck(ctx, nodeAccount, nil)
 	c.Assert(err, IsNil)
 	c.Assert(status, Equals, NodeReady)
 
@@ -1833,7 +1833,7 @@ func (vts *ValidatorMgrTestSuite) TestNodeAccountPreflightCheckMaintenance(c *C)
 	nodeAccount.Maintenance = true
 	c.Assert(k.SetNodeAccount(ctx, nodeAccount), IsNil)
 
-	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, nodeAccount, k.GetConstants())
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, nodeAccount, nil)
 	c.Assert(status, Equals, NodeStandby)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, "node account is in maintenance mode")
@@ -1842,7 +1842,7 @@ func (vts *ValidatorMgrTestSuite) TestNodeAccountPreflightCheckMaintenance(c *C)
 	nodeAccount.Maintenance = false
 	c.Assert(k.SetNodeAccount(ctx, nodeAccount), IsNil)
 
-	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, nodeAccount, k.GetConstants())
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, nodeAccount, nil)
 	c.Assert(err, IsNil)
 	c.Assert(status, Equals, NodeReady)
 
@@ -1853,7 +1853,7 @@ func (vts *ValidatorMgrTestSuite) TestNodeAccountPreflightCheckMaintenance(c *C)
 	nodeAccount.ForcedToLeave = true
 	c.Assert(k.SetNodeAccount(ctx, nodeAccount), IsNil)
 
-	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, nodeAccount, k.GetConstants())
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, nodeAccount, nil)
 	c.Assert(status, Equals, NodeDisabled)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, "node account has been banned")
@@ -1866,7 +1866,7 @@ func (vts *ValidatorMgrTestSuite) TestNodeAccountPreflightCheckMaintenance(c *C)
 	nodeAccount.RequestedToLeave = true
 	c.Assert(k.SetNodeAccount(ctx, nodeAccount), IsNil)
 
-	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, nodeAccount, k.GetConstants())
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, nodeAccount, nil)
 	c.Assert(status, Equals, NodeStandby)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, "node account has requested to leave")

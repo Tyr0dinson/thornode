@@ -159,17 +159,22 @@ func (s *ADRMimirSuite) TestNodeHasPendingADRVote(c *C) {
 		c.Assert(k.SetNodeMimir(ctx, key, 1, nas[i].NodeAddress), IsNil)
 	}
 
-	got, ok := nodeHasPendingADRVote(ctx, k, standby.NodeAddress)
+	pending, err := pendingADRVotes(ctx, k)
+	c.Assert(err, IsNil)
+
+	got, ok := nodeHasPendingADRVote(pending, standby.NodeAddress)
 	c.Check(ok, Equals, true)
 	c.Check(got, Equals, key)
 
 	// a node that has voted is clear
-	_, ok = nodeHasPendingADRVote(ctx, k, nas[0].NodeAddress)
+	_, ok = nodeHasPendingADRVote(pending, nas[0].NodeAddress)
 	c.Check(ok, Equals, false)
 
 	// once it votes, the standby node is clear too
 	c.Assert(k.SetNodeMimir(ctx, key, 1, standby.NodeAddress), IsNil)
-	_, ok = nodeHasPendingADRVote(ctx, k, standby.NodeAddress)
+	pending, err = pendingADRVotes(ctx, k)
+	c.Assert(err, IsNil)
+	_, ok = nodeHasPendingADRVote(pending, standby.NodeAddress)
 	c.Check(ok, Equals, false)
 }
 
@@ -188,8 +193,15 @@ func (s *ADRMimirSuite) TestPreflightBlocksNonVotingStandby(c *C) {
 	standby.Version = GetCurrentVersion().String()
 	c.Assert(k.SetNodeAccount(ctx, standby), IsNil)
 
+	// the pending set is recomputed each time, as the real callers do once per loop
+	preflight := func() (NodeStatus, error) {
+		pending, err := pendingADRVotes(ctx, k)
+		c.Assert(err, IsNil)
+		return vm.NodeAccountPreflightCheck(ctx, standby, pending)
+	}
+
 	// no pending ADR - the node is ready
-	status, err := vm.NodeAccountPreflightCheck(ctx, standby, nil)
+	status, err := preflight()
 	c.Assert(err, IsNil)
 	c.Check(status, Equals, NodeReady)
 
@@ -197,14 +209,14 @@ func (s *ADRMimirSuite) TestPreflightBlocksNonVotingStandby(c *C) {
 		c.Assert(k.SetNodeMimir(ctx, key, 1, nas[i].NodeAddress), IsNil)
 	}
 
-	status, err = vm.NodeAccountPreflightCheck(ctx, standby, nil)
+	status, err = preflight()
 	c.Assert(err, NotNil)
 	c.Check(status, Equals, NodeStandby)
 	c.Check(err.Error(), Equals, "node account has not voted on required mimir: "+key)
 
 	// voting clears it
 	c.Assert(k.SetNodeMimir(ctx, key, 1, standby.NodeAddress), IsNil)
-	status, err = vm.NodeAccountPreflightCheck(ctx, standby, nil)
+	status, err = preflight()
 	c.Assert(err, IsNil)
 	c.Check(status, Equals, NodeReady)
 }
@@ -317,7 +329,9 @@ func (s *ADRMimirSuite) TestAbstainClearsRequirement(c *C) {
 
 	// abstaining stores the vote, so this node is no longer required to vote
 	c.Assert(k.SetNodeMimir(ctx, key, constants.MimirAbstainValue, nas[4].NodeAddress), IsNil)
-	_, ok := nodeHasPendingADRVote(ctx, k, nas[4].NodeAddress)
+	pending, err = pendingADRVotes(ctx, k)
+	c.Assert(err, IsNil)
+	_, ok := nodeHasPendingADRVote(pending, nas[4].NodeAddress)
 	c.Check(ok, Equals, false)
 
 	// ...but it does not help form consensus - 4 of 9 is still short of the 6 needed
@@ -344,7 +358,9 @@ func (s *ADRMimirSuite) TestAbstainClearsRequirement(c *C) {
 	mimirs, err = k.GetNodeMimirs(ctx, key)
 	c.Assert(err, IsNil)
 	c.Check(mimirs.Has(key, nas[4].NodeAddress), Equals, false)
-	got, ok := nodeHasPendingADRVote(ctx, k, nas[4].NodeAddress)
+	pending, err = pendingADRVotes(ctx, k)
+	c.Assert(err, IsNil)
+	got, ok := nodeHasPendingADRVote(pending, nas[4].NodeAddress)
 	c.Check(ok, Equals, true)
 	c.Check(got, Equals, key)
 }
@@ -366,7 +382,7 @@ func (s *ADRMimirSuite) TestAbstainOpensWindow(c *C) {
 	c.Assert(pending, HasLen, 1)
 	c.Check(pending[0].Key, Equals, key)
 
-	got, ok := nodeHasPendingADRVote(ctx, k, nas[8].NodeAddress)
+	got, ok := nodeHasPendingADRVote(pending, nas[8].NodeAddress)
 	c.Check(ok, Equals, true)
 	c.Check(got, Equals, key)
 }

@@ -1189,7 +1189,11 @@ func (qs queryServer) queryNode(ctx cosmos.Context, req *types.QueryNodeRequest)
 	}
 	result.ObserveChains = observeChainsFromHeights(chainHeights)
 
-	preflightCheckResult, err := getNodePreflightResult(ctx, qs.mgr, nodeAcc)
+	pendingADR, err := pendingADRVotes(ctx, qs.mgr.Keeper())
+	if err != nil {
+		ctx.Logger().Error("fail to get pending ADR votes", "error", err)
+	}
+	preflightCheckResult, err := getNodePreflightResult(ctx, qs.mgr, nodeAcc, pendingADR)
 	if err != nil {
 		ctx.Logger().Error("fail to get node preflight result", "error", err)
 	} else {
@@ -1198,10 +1202,11 @@ func (qs queryServer) queryNode(ctx cosmos.Context, req *types.QueryNodeRequest)
 	return &result, nil
 }
 
-func getNodePreflightResult(ctx cosmos.Context, mgr *Mgrs, nodeAcc NodeAccount) (types.NodePreflightStatus, error) {
-	constAccessor := mgr.GetConstants()
+// getNodePreflightResult takes the pending ADR set rather than deriving it, so callers with
+// more than one node account pay for it once. See NodeAccountPreflightCheck.
+func getNodePreflightResult(ctx cosmos.Context, mgr *Mgrs, nodeAcc NodeAccount, pendingADR []adrVote) (types.NodePreflightStatus, error) {
 	preflightResult := types.NodePreflightStatus{}
-	status, err := mgr.ValidatorMgr().NodeAccountPreflightCheck(ctx, nodeAcc, constAccessor)
+	status, err := mgr.ValidatorMgr().NodeAccountPreflightCheck(ctx, nodeAcc, pendingADR)
 	preflightResult.Status = status.String()
 	if err != nil {
 		preflightResult.Reason = err.Error()
@@ -1267,6 +1272,12 @@ func (qs queryServer) queryNodes(ctx cosmos.Context, _ *types.QueryNodesRequest)
 	}
 
 	totalEffectiveBond, bondHardCap := getTotalEffectiveBond(active)
+
+	// The pending set is the same for every node, so pay for it once rather than per node.
+	pendingADR, err := pendingADRVotes(ctx, qs.mgr.Keeper())
+	if err != nil {
+		ctx.Logger().Error("fail to get pending ADR votes", "error", err)
+	}
 
 	lastChurnHeight := vaults[0].StatusSince
 	result := make([]*types.QueryNodeResponse, len(nodeAccounts))
@@ -1341,7 +1352,7 @@ func (qs queryServer) queryNodes(ctx cosmos.Context, _ *types.QueryNodesRequest)
 		}
 		result[i].ObserveChains = observeChainsFromHeights(chainHeights)
 
-		preflightCheckResult, err := getNodePreflightResult(ctx, qs.mgr, na)
+		preflightCheckResult, err := getNodePreflightResult(ctx, qs.mgr, na, pendingADR)
 		if err != nil {
 			ctx.Logger().Error("fail to get node preflight result", "error", err)
 		} else {

@@ -1944,9 +1944,16 @@ func (vm *ValidatorMgr) markReadyActors(ctx cosmos.Context) error {
 		return err
 	}
 
+	// The pending set is the same for every node, so pay for it once rather than per node.
+	pending, err := pendingADRVotes(ctx, vm.k)
+	if err != nil {
+		// Fail open, as the per-node lookup used to: a store error must not block every churn in.
+		ctx.Logger().Error("fail to get pending ADR votes", "error", err)
+	}
+
 	// check all ready and standby nodes are in "ready" state (upgrade/downgrade as needed)
 	for _, na := range append(standby, ready...) {
-		status, _ := vm.NodeAccountPreflightCheck(ctx, na, vm.k.GetConstants())
+		status, _ := vm.NodeAccountPreflightCheck(ctx, na, pending)
 		na.UpdateStatus(status, ctx.BlockHeight())
 
 		if err := vm.k.SetNodeAccount(ctx, na); err != nil {
@@ -1957,8 +1964,11 @@ func (vm *ValidatorMgr) markReadyActors(ctx cosmos.Context) error {
 	return nil
 }
 
-// NodeAccountPreflightCheck preflight check to find out what the node account's next status will be
-func (vm *ValidatorMgr) NodeAccountPreflightCheck(ctx cosmos.Context, na NodeAccount, _ constants.ConstantValues) (NodeStatus, error) {
+// NodeAccountPreflightCheck preflight check to find out what the node account's next status will be.
+// pendingADR is the required-voting set from pendingADRVotes; it is the same for every node, so
+// callers checking more than one node compute it once instead of per node (it costs a node account
+// and a node mimir store sweep). A nil set means nothing is pending.
+func (vm *ValidatorMgr) NodeAccountPreflightCheck(ctx cosmos.Context, na NodeAccount, pendingADR []adrVote) (NodeStatus, error) {
 	// ensure banned nodes can't get churned in again
 	if na.ForcedToLeave {
 		return NodeDisabled, fmt.Errorf("node account has been banned")
@@ -2005,7 +2015,7 @@ func (vm *ValidatorMgr) NodeAccountPreflightCheck(ctx cosmos.Context, na NodeAcc
 	}
 
 	// A node cannot churn in while an ADR mimir it hasn't voted on requires voting.
-	if key, ok := nodeHasPendingADRVote(ctx, vm.k, na.NodeAddress); ok {
+	if key, ok := nodeHasPendingADRVote(pendingADR, na.NodeAddress); ok {
 		return NodeStandby, fmt.Errorf("node account has not voted on required mimir: %s", key)
 	}
 

@@ -4,7 +4,6 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	cosmos "gitlab.com/thorchain/thornode/v3/common/cosmos"
-	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 type ValidatorDummyMgr struct{}
@@ -26,6 +25,6 @@ func (vm *ValidatorDummyMgr) processRagnarok(_ cosmos.Context, _ Manager) error 
 	return errKaboom
 }
 
-func (vm *ValidatorDummyMgr) NodeAccountPreflightCheck(ctx cosmos.Context, na NodeAccount, constAccessor constants.ConstantValues) (NodeStatus, error) {
+func (vm *ValidatorDummyMgr) NodeAccountPreflightCheck(ctx cosmos.Context, na NodeAccount, pendingADR []adrVote) (NodeStatus, error) {
 	return NodeDisabled, errKaboom
 }

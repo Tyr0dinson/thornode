@@ -103,13 +103,10 @@ func pendingADRVotes(ctx cosmos.Context, k keeper.Keeper) ([]adrVote, error) {
 }
 
 // nodeHasPendingADRVote returns the first pending ADR mimir key this node has not voted
-// on. Used to keep non-voting standby nodes out of the next churn.
-func nodeHasPendingADRVote(ctx cosmos.Context, k keeper.Keeper, addr cosmos.AccAddress) (string, bool) {
-	pending, err := pendingADRVotes(ctx, k)
-	if err != nil {
-		ctx.Logger().Error("fail to get pending ADR votes", "error", err)
-		return "", false
-	}
+// on. Used to keep non-voting standby nodes out of the next churn. The pending set comes
+// from pendingADRVotes and is identical for every node, so callers looping over nodes
+// compute it once rather than per node.
+func nodeHasPendingADRVote(pending []adrVote, addr cosmos.AccAddress) (string, bool) {
 	for _, v := range pending {
 		if !v.Mimirs.Has(v.Key, addr) {
 			return v.Key, true
