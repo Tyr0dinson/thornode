@@ -21,7 +21,9 @@ func NewAttestationStatePool[T AttestableItem]() *AttestationStatePool[T] {
 		Pool: &sync.Pool{
 			New: func() interface{} {
 				return &AttestationState[T]{
-					attestations: make([]attestationSentState, 0, 10), // Preallocate with small capacity
+					attestations:          make([]attestationSentState, 0, 10), // Preallocate with small capacity
+					attestationPubKeys:    make(map[string]struct{}),
+					attestationSignatures: make(map[string]struct{}),
 				}
 			},
 		},
@@ -33,13 +35,17 @@ func (p *AttestationStatePool[T]) NewAttestationState(initialItem T) *Attestatio
 	state, ok := pooled.(*AttestationState[T])
 	if !ok || pooled == nil || state == nil {
 		state = &AttestationState[T]{
-			attestations: make([]attestationSentState, 0, 10),
+			attestations:          make([]attestationSentState, 0, 10),
+			attestationPubKeys:    make(map[string]struct{}),
+			attestationSignatures: make(map[string]struct{}),
 		}
 	}
 
 	// reset / initialise fields
 	state.Item = initialItem
 	state.attestations = state.attestations[:0]
+	clear(state.attestationPubKeys)
+	clear(state.attestationSignatures)
 	state.firstAttestationObserved = time.Now()
 	state.initialAttestationsSent = time.Time{}
 	state.quorumAttestationsSent = time.Time{}
@@ -53,8 +59,10 @@ func (p *AttestationStatePool[T]) NewAttestationState(initialItem T) *Attestatio
 }
 
 func (p *AttestationStatePool[T]) PutAttestationState(state *AttestationState[T]) {
-	state.Item = *new(T)                         // Clear item
-	state.attestations = state.attestations[:0]  // Clear attestations
+	state.Item = *new(T)                        // Clear item
+	state.attestations = state.attestations[:0] // Clear attestations
+	clear(state.attestationPubKeys)
+	clear(state.attestationSignatures)
 	state.firstAttestationObserved = time.Time{} // Reset timestamps
 	state.initialAttestationsSent = time.Time{}
 	state.quorumAttestationsSent = time.Time{}
@@ -141,6 +149,11 @@ type AttestationState[T AttestableItem] struct {
 
 	// List of attestations that have been collected
 	attestations []attestationSentState
+	// These indexes mirror attestations so duplicate signatures and pubkey
+	// equivocation can be checked in constant time. This matters for bounded
+	// state-sync imports, where a single item can contain many attestations.
+	attestationPubKeys    map[string]struct{}
+	attestationSignatures map[string]struct{}
 
 	// Timing information
 	firstAttestationObserved time.Time
@@ -161,21 +174,47 @@ type AttestationState[T AttestableItem] struct {
 	mu sync.Mutex
 }
 
+func (s *AttestationState[T]) ensureAttestationIndexes() {
+	// Production mutations either update both indexes with the slice or call
+	// setAttestations, so equal cardinality is sufficient to prove they are in sync.
+	if s.attestationPubKeys != nil && s.attestationSignatures != nil &&
+		len(s.attestationPubKeys) == len(s.attestations) &&
+		len(s.attestationSignatures) == len(s.attestations) {
+		return
+	}
+
+	s.attestationPubKeys = make(map[string]struct{}, len(s.attestations))
+	s.attestationSignatures = make(map[string]struct{}, len(s.attestations))
+	for _, item := range s.attestations {
+		if item.attestation == nil {
+			continue
+		}
+		s.attestationPubKeys[string(item.attestation.PubKey)] = struct{}{}
+		s.attestationSignatures[string(item.attestation.Signature)] = struct{}{}
+	}
+}
+
+func (s *AttestationState[T]) setAttestations(attestations []attestationSentState) {
+	s.attestations = attestations
+	s.attestationPubKeys = nil
+	s.attestationSignatures = nil
+	s.ensureAttestationIndexes()
+}
+
 // AddAttestation adds a new attestation to the state
 func (s *AttestationState[T]) AddAttestation(attestation *common.Attestation) error {
 	if !s.Item.IsValid() {
 		return fmt.Errorf("item is not valid")
 	}
 
-	for _, item := range s.attestations {
-		if bytes.Equal(item.attestation.Signature, attestation.Signature) {
-			// already have the signature, ignore
-			return nil
-		}
-		if bytes.Equal(item.attestation.PubKey, attestation.PubKey) {
-			// Unexpected: we should never have a different signature from the same pubkey for the same item
-			return fmt.Errorf("signature already present for %s", attestation.PubKey)
-		}
+	s.ensureAttestationIndexes()
+	if _, ok := s.attestationSignatures[string(attestation.Signature)]; ok {
+		// already have the signature, ignore
+		return nil
+	}
+	if _, ok := s.attestationPubKeys[string(attestation.PubKey)]; ok {
+		// Unexpected: we should never have a different signature from the same pubkey for the same item
+		return fmt.Errorf("signature already present for %s", attestation.PubKey)
 	}
 
 	// Get the marshaled data for signature verification
@@ -191,6 +230,8 @@ func (s *AttestationState[T]) AddAttestation(attestation *common.Attestation) er
 
 	// Add the attestation
 	s.attestations = append(s.attestations, attestationSentState{attestation: attestation, sent: false})
+	s.attestationPubKeys[string(attestation.PubKey)] = struct{}{}
+	s.attestationSignatures[string(attestation.Signature)] = struct{}{}
 	return nil
 }
 

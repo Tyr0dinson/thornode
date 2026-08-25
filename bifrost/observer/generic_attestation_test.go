@@ -54,6 +54,29 @@ func TestAttestationStatePoolResetsSpentRefsRetryState(t *testing.T) {
 	assert.Zero(t, second.spentRefsRetryDelay)
 }
 
+func TestAttestationStatePoolResetsAttestationIndexes(t *testing.T) {
+	origVerifySignature := verifySignature
+	t.Cleanup(func() { verifySignature = origVerifySignature })
+	verifySignature = func(_, _, _ []byte) error { return nil }
+
+	pool := NewAttestationStatePool[*attestableObservedTx]()
+	item := &attestableObservedTx{ObservedTx: &common.ObservedTx{
+		Tx: common.Tx{ID: "test-tx", Chain: common.BTCChain},
+	}}
+	attestation := &common.Attestation{
+		PubKey:    []byte("pubkey"),
+		Signature: []byte("signature"),
+	}
+
+	first := pool.NewAttestationState(item)
+	require.NoError(t, first.AddAttestation(attestation))
+	pool.PutAttestationState(first)
+
+	second := pool.NewAttestationState(item)
+	require.NoError(t, second.AddAttestation(attestation))
+	assert.Equal(t, 1, second.AttestationCount())
+}
+
 // TestAddAttestation tests adding attestations to the state
 func TestAddAttestation(t *testing.T) {
 	// Create a test tx

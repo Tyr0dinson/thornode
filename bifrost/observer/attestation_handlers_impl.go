@@ -669,9 +669,9 @@ func (s *AttestationGossip) handlePriceFeedAttestation(ctx context.Context, apf 
 	if !ok || state.Item.Time < apf.PriceFeed.Time {
 		// Set new attestation state
 		state = s.priceFeedsPool.NewAttestationState(apf.PriceFeed)
-		state.attestations = []attestationSentState{
+		state.setAttestations([]attestationSentState{
 			{attestation: apf.Attestation, sent: false},
-		}
+		})
 		s.priceFeeds[k] = state
 
 		// we received an updated price feed, start delay to maybe collect

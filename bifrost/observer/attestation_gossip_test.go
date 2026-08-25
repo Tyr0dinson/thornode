@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -33,6 +34,16 @@ type TestLogWriter struct {
 	t *testing.T
 }
 
+type attestationStateCapacityBridge struct {
+	*MockThorchainBridge
+	desiredValidatorSet int64
+	err                 error
+}
+
+func (b *attestationStateCapacityBridge) GetMimir(string) (int64, error) {
+	return b.desiredValidatorSet, b.err
+}
+
 // Write implements the io.Writer interface
 func (w TestLogWriter) Write(p []byte) (n int, err error) {
 	w.t.Log(string(p))
@@ -56,6 +67,67 @@ func getTestLogger(t *testing.T) zerolog.Logger {
 		Timestamp().
 		Caller(). // Include caller information
 		Logger()
+}
+
+func TestWarnAttestationStateCapacity(t *testing.T) {
+	tests := []struct {
+		name                string
+		desiredValidatorSet int64
+		mimirErr            error
+		wantCapacityWarning bool
+		wantCheckError      bool
+	}{
+		{
+			name:                "below warning threshold",
+			desiredValidatorSet: int64(attestationStateCapacityWarnAt - 1),
+		},
+		{
+			name:                "at warning threshold",
+			desiredValidatorSet: int64(attestationStateCapacityWarnAt),
+			wantCapacityWarning: true,
+		},
+		{
+			name:                "at hard limit",
+			desiredValidatorSet: maxAttestationStateAttestationsPerItem,
+			wantCapacityWarning: true,
+		},
+		{
+			name:                "unset uses compiled default",
+			desiredValidatorSet: -1,
+		},
+		{
+			name:           "query failure is visible",
+			mimirErr:       errors.New("mimir unavailable"),
+			wantCheckError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			gossip := &AttestationGossip{
+				logger: zerolog.New(&logs),
+				bridge: &attestationStateCapacityBridge{
+					MockThorchainBridge: &MockThorchainBridge{},
+					desiredValidatorSet: tt.desiredValidatorSet,
+					err:                 tt.mimirErr,
+				},
+			}
+
+			gossip.warnAttestationStateCapacity()
+
+			assert.Equal(
+				t,
+				tt.wantCapacityWarning,
+				strings.Contains(logs.String(), "desired validator set approaches attestation state limit"),
+			)
+			assert.Equal(
+				t,
+				tt.wantCheckError,
+				strings.Contains(logs.String(), "unable to check desired validator set against attestation state limit"),
+			)
+		})
+	}
 }
 
 // setupTestGossip sets up a test instance of AttestationGossip with mocked dependencies

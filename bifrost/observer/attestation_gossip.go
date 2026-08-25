@@ -69,18 +69,17 @@ const (
 
 	// Ten thousand retained states is well above a normal churn snapshot while
 	// preventing valid small batches from accumulating into a 500,000-item
-	// transfer across all five categories.
+	// transfer across all five categories. Revisit this limit if normal retained
+	// attestation-state volume or churn overlap approaches it.
 	maxAttestationStateItemsPerTransfer = 10_000
 
-	// The default desired validator set is 100 and chain/stagenet churn adds
-	// four nodes at a time. Allow 28 extra signers for overlapping membership
-	// views while keeping duplicate detection bounded. At 100 items in each of
-	// five categories, one batch can contain at most 64,000 attestations. Adding
-	// 128 unique attestations to initially empty states performs at most
-	// 4,064,000 prior-entry scans across that batch (8,128,000 signature/pubkey
-	// equality checks), so replacing the small linear lists with maps is not
-	// warranted.
-	maxAttestationStateAttestationsPerItem = 128
+	// Keep a fixed absolute bound independent of live membership views while
+	// leaving substantial room for validator-set growth and churn overlap.
+	// AttestationState indexes duplicate signatures and pubkeys, so admission is
+	// linear in signature verification rather than quadratic in prior entries;
+	// the 20 MB frame and batch/transfer limits retain the outer resource bound.
+	maxAttestationStateAttestationsPerItem = 1024
+	attestationStateCapacityWarnAt         = maxAttestationStateAttestationsPerItem * 4 / 5
 
 	maxConcurrentAttestationStateReceives        = 10
 	maxConcurrentAttestationStateReceivesPerPeer = 1
@@ -826,6 +825,7 @@ func (s *AttestationGossip) Start(ctx context.Context) {
 		semPruneTicker.Stop()
 	}()
 
+	s.warnAttestationStateCapacity()
 	s.reconcileMimirConfigs()
 
 	go s.batcher.Start(ctx)
@@ -916,6 +916,31 @@ func (s *AttestationGossip) Start(ctx context.Context) {
 			return
 		}
 	}
+}
+
+func (s *AttestationGossip) warnAttestationStateCapacity() {
+	desiredValidatorSet, err := s.bridge.GetMimir(constants.DesiredValidatorSet.String())
+	if err != nil {
+		s.logger.Error().
+			Err(err).
+			Str("mimir", constants.DesiredValidatorSet.String()).
+			Int("attestations_per_item_limit", maxAttestationStateAttestationsPerItem).
+			Msg("unable to check desired validator set against attestation state limit")
+		return
+	}
+	if desiredValidatorSet < 0 {
+		desiredValidatorSet = constants.GetConstantValues(constants.SWVersion).
+			GetInt64Value(constants.DesiredValidatorSet)
+	}
+	if desiredValidatorSet < int64(attestationStateCapacityWarnAt) {
+		return
+	}
+
+	s.logger.Error().
+		Int64("desired_validator_set", desiredValidatorSet).
+		Int("warning_threshold", attestationStateCapacityWarnAt).
+		Int("attestations_per_item_limit", maxAttestationStateAttestationsPerItem).
+		Msg("desired validator set approaches attestation state limit; review the hard cap before increasing the validator target")
 }
 
 func (s *AttestationGossip) reconcileMimirConfigs() {
