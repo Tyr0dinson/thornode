@@ -249,6 +249,8 @@ func processErrataOutboundTx(
 		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, fmt.Errorf("cannot find tx: %s", er.Id)
 	}
 	if txOutVoter.Tx.IsEmpty() {
+		// A later outbound observation may finalise this voter. Keep the errata
+		// retryable rather than closing it without restoring the vault.
 		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, fmt.Errorf("tx out voter is not finalised")
 	}
 	if er.Chain.RequiresTerminalErrataOutcome() && txOutVoter.Reverted {
@@ -261,6 +263,8 @@ func processErrataOutboundTx(
 	if er.Chain.UsesHeightScopedErrata() && er.Height > 0 {
 		minedHeight, minedErr := txOutVoter.Tx.CanonicalMinedHeight()
 		if minedErr != nil {
+			// Fail closed until a canonical-height observation can safely match
+			// this errata generation.
 			return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED,
 				fmt.Errorf("resolve canonical mined height for outbound errata: %w", minedErr)
 		}
@@ -268,15 +272,20 @@ func processErrataOutboundTx(
 			return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION, nil
 		}
 	}
-	// parse the outbound tx memo, so we can figure out which inbound tx triggered the outbound
-	m, err := ParseMemoWithTHORNames(ctx, k, tx.Memo)
-	if err != nil {
-		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED,
-			fmt.Errorf("fail to parse memo(%s): %w", tx.Memo, err)
-	}
-	if !m.IsOutbound() && !m.IsInternal() {
-		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED,
-			fmt.Errorf("%s is not outbound or internal tx", m)
+	if !er.Chain.RequiresTerminalErrataOutcome() {
+		// Retain the legacy memo gate for chains without explicit terminal
+		// outcomes. Explicit-terminal errata is already bound to a finalised
+		// outbound voter and, where required, its canonical mined height. The
+		// memo is not used to restore vault accounting and must not strand it.
+		m, parseErr := ParseMemoWithTHORNames(ctx, k, tx.Memo)
+		if parseErr != nil {
+			return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED,
+				fmt.Errorf("fail to parse memo(%s): %w", tx.Memo, parseErr)
+		}
+		if !m.IsOutbound() && !m.IsInternal() {
+			return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED,
+				fmt.Errorf("%s is not outbound or internal tx", m)
+		}
 	}
 	vaultPubKey := txOutVoter.Tx.ObservedPubKey
 	if !vaultPubKey.IsEmpty() {

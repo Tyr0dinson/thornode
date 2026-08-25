@@ -533,6 +533,70 @@ func (s *HandlerErrataTxQuorumSuite) TestUnknownXMRErrataPersistsTerminalOutcome
 	c.Check(voter.GetSigners(), DeepEquals, []cosmos.AccAddress{na.NodeAddress})
 }
 
+func (s *HandlerErrataTxQuorumSuite) TestXMRErrataFinalizesDespiteNonstandardMemo(c *C) {
+	testCases := []struct {
+		name string
+		memo string
+	}{
+		{name: "malformed memo", memo: "not-a-valid-memo"},
+		{name: "non-outbound memo", memo: "SWAP:XMR.XMR"},
+	}
+
+	for _, tc := range testCases {
+		ctx, mgr := setupManagerForTest(c)
+		handler := NewErrataTxQuorumHandler(mgr)
+		na, privKey := nodeWithPrivKey(c, mgr.Keeper(), ctx)
+		txID := GetRandomTxHash()
+		vaultPubKey := GetRandomPubKey()
+		coin := common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One))
+		tx := common.NewTx(
+			txID,
+			GetRandomLTCAddress(),
+			GetRandomLTCAddress(),
+			common.NewCoins(coin),
+			common.Gas{common.NewCoin(common.XMRAsset, cosmos.NewUint(1))},
+			tc.memo,
+		)
+		observed := NewObservedTx(tx, 100, vaultPubKey, 100)
+		observed.XmrMinedHeight = 100
+		outboundVoter := NewObservedTxVoter(txID, ObservedTxs{observed})
+		outboundVoter.Tx = observed
+		mgr.Keeper().SetObservedTxOutVoter(ctx, outboundVoter)
+
+		vault := NewVault(
+			1,
+			ActiveVault,
+			AsgardVault,
+			vaultPubKey,
+			common.Chains{common.XMRChain}.Strings(),
+			nil,
+		)
+		c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil, Commentf(tc.name))
+
+		errata := &common.ErrataTx{Id: txID, Chain: common.XMRChain, Height: 100}
+		msg := types.NewMsgErrataTxQuorum(&common.QuorumErrataTx{
+			ErrataTx:     errata,
+			Attestations: []*common.Attestation{attestErrataTx(c, privKey, errata)},
+		}, na.NodeAddress)
+		result, err := handler.Run(ctx, msg)
+		c.Assert(err, IsNil, Commentf(tc.name))
+		c.Assert(result, NotNil, Commentf(tc.name))
+		c.Check(msg.QuoErrata.Outcome, Equals, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED, Commentf(tc.name))
+
+		errataVoter, err := mgr.Keeper().GetErrataTxVoterAtHeight(ctx, txID, common.XMRChain, errata.Height)
+		c.Assert(err, IsNil, Commentf(tc.name))
+		c.Check(errataVoter.BlockHeight, Equals, ctx.BlockHeight(), Commentf(tc.name))
+		c.Check(errataVoter.Outcome, Equals, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED, Commentf(tc.name))
+
+		storedOutbound, err := mgr.Keeper().GetObservedTxOutVoter(ctx, txID)
+		c.Assert(err, IsNil, Commentf(tc.name))
+		c.Check(storedOutbound.Reverted, Equals, true, Commentf(tc.name))
+		storedVault, err := mgr.Keeper().GetVault(ctx, vaultPubKey)
+		c.Assert(err, IsNil, Commentf(tc.name))
+		c.Check(storedVault.GetCoin(common.XMRAsset).Equals(coin), Equals, true, Commentf(tc.name))
+	}
+}
+
 func (s *HandlerErrataTxQuorumSuite) TestXMRErrataDuplicateRetryReevaluatesConsensusAfterChurn(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	handler := NewErrataTxQuorumHandler(mgr)
