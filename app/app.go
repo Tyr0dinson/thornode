@@ -53,9 +53,6 @@ import (
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 	txmodule "github.com/cosmos/cosmos-sdk/x/auth/tx/config"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
-	authz "github.com/cosmos/cosmos-sdk/x/authz"
-	authzkeeper "github.com/cosmos/cosmos-sdk/x/authz/keeper"
-	authzmodule "github.com/cosmos/cosmos-sdk/x/authz/module"
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
@@ -155,7 +152,6 @@ type THORChainApp struct {
 
 	// keepers
 	AccountKeeper authkeeper.AccountKeeper
-	AuthzKeeper   authzkeeper.Keeper
 	BankKeeper    bankkeeper.BaseKeeper
 	StakingKeeper *stakingkeeper.Keeper
 	MintKeeper    mintkeeper.Keeper
@@ -254,7 +250,6 @@ func NewChainApp(
 
 	keys := storetypes.NewKVStoreKeys(
 		authtypes.StoreKey,
-		authzkeeper.StoreKey,
 		banktypes.StoreKey,
 		stakingtypes.StoreKey,
 		minttypes.StoreKey,
@@ -313,12 +308,6 @@ func NewChainApp(
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32AccountAddrPrefix()),
 		sdk.GetConfig().GetBech32AccountAddrPrefix(),
 		authtypes.NewModuleAddress(thorchain.ModuleName).String(),
-	)
-	app.AuthzKeeper = authzkeeper.NewKeeper(
-		runtime.NewKVStoreService(keys[authzkeeper.StoreKey]),
-		app.appCodec,
-		app.MsgServiceRouter(),
-		app.AccountKeeper,
 	)
 	app.BankKeeper = bankkeeper.NewBaseKeeper(
 		app.appCodec,
@@ -472,7 +461,6 @@ func NewChainApp(
 	// NOTE: Any module instantiated in the module manager that is later modified
 	// must be passed by reference here.
 	authModule := auth.NewAppModule(app.appCodec, app.AccountKeeper, authsims.RandomGenesisAccounts, app.GetSubspace(authtypes.ModuleName))
-	authzModule := authzmodule.NewAppModule(app.appCodec, app.AuthzKeeper, app.AccountKeeper, app.BankKeeper, app.InterfaceRegistry())
 	bankModule := bank.NewAppModule(app.appCodec, app.BankKeeper, app.AccountKeeper, app.GetSubspace(banktypes.ModuleName))
 	consensusModule := consensus.NewAppModule(app.appCodec, app.ConsensusParamsKeeper)
 	genutilModule := genutil.NewAppModule(app.AccountKeeper, app.StakingKeeper, app, txConfig)
@@ -495,7 +483,6 @@ func NewChainApp(
 	app.ModuleManager = module.NewManager(
 		genutilModule,
 		authModule,
-		authzModule,
 		bankModule,
 		upgradeModule,
 		paramsModule,
@@ -514,7 +501,6 @@ func NewChainApp(
 	app.BasicModuleManager = module.NewBasicManager(
 		genutil.NewAppModuleBasic(genutiltypes.DefaultMessageValidator),
 		authModule,
-		authzModule,
 		bankModule,
 		upgradeModule,
 		paramsModule,
@@ -537,7 +523,6 @@ func NewChainApp(
 	// NOTE: staking module is required if HistoricalEntries param > 0
 	app.ModuleManager.SetOrderBeginBlockers(
 		genutiltypes.ModuleName,
-		authz.ModuleName,
 
 		// additional non simd modules
 		thorchaintypes.ModuleName,
@@ -546,7 +531,6 @@ func NewChainApp(
 
 	app.ModuleManager.SetOrderEndBlockers(
 		genutiltypes.ModuleName,
-		authz.ModuleName,
 
 		// additional non simd modules
 		schedulertypes.ModuleName,
@@ -565,7 +549,6 @@ func NewChainApp(
 	genesisModuleOrder := []string{
 		// simd modules
 		authtypes.ModuleName,
-		authz.ModuleName,
 		banktypes.ModuleName,
 		genutiltypes.ModuleName,
 		paramstypes.ModuleName,

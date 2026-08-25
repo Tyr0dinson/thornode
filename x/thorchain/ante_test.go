@@ -7,6 +7,7 @@ import (
 
 	. "gopkg.in/check.v1"
 
+	"github.com/cosmos/cosmos-sdk/x/authz"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 
@@ -158,6 +159,14 @@ func (s *AnteTestSuite) TestAnteHandleMessage(c *C) {
 	badMsg := banktypes.MsgMultiSend{}
 	_, err = ad.anteHandleMessage(ctx, version, &badMsg)
 	c.Assert(err, NotNil)
+
+	// authz msgs must be rejected - the module is unwired, and MsgExec in
+	// particular would dispatch its inner msgs straight to the msg service
+	// router, bypassing every ante check in this switch
+	for _, m := range []cosmos.Msg{&authz.MsgGrant{}, &authz.MsgRevoke{}, &authz.MsgExec{}} {
+		_, err = ad.anteHandleMessage(ctx, version, m)
+		c.Assert(err, NotNil)
+	}
 
 	activeNodeAccount := GetRandomValidatorNode(NodeActive)
 	c.Assert(k.SetNodeAccount(ctx, activeNodeAccount), IsNil)
