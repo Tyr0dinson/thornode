@@ -502,6 +502,17 @@ func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx(c *C) {
 	_, err := processErrataOutboundTx(ctx, k, eventMgr, er)
 	c.Assert(err, NotNil)
 
+	// An unknown XMR transaction is a terminal no-op: there is no inbound or
+	// outbound observation to reverse. Other chains retain the legacy error.
+	xmrErrata := &common.ErrataTx{
+		Id:     GetRandomTxHash(),
+		Chain:  common.XMRChain,
+		Height: 100,
+	}
+	outcome, err := processErrataOutboundTx(ctx, k, eventMgr, xmrErrata)
+	c.Assert(err, IsNil)
+	c.Check(outcome, Equals, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION)
+
 	observedPubKey := GetRandomPubKey()
 	tx := common.NewTx(txID, GetRandomLTCAddress(), GetRandomLTCAddress(),
 		common.Coins{

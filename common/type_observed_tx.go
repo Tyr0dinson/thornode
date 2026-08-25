@@ -66,7 +66,7 @@ func (m *ObservedTx) Valid() error {
 // AllowFutureObservation) or came from an incompatible peer and is therefore
 // not safe for a height-scoped tombstone decision.
 func (m ObservedTx) CanonicalMinedHeight() (int64, error) {
-	if !m.Tx.Chain.Equals(XMRChain) {
+	if !m.Tx.Chain.UsesHeightScopedErrata() {
 		if m.XmrMinedHeight != 0 {
 			return 0, errors.New("xmr mined height is only valid for XMR observed txs")
 		}

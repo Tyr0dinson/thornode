@@ -76,7 +76,7 @@ func processErrataTxAttestation(
 	if err != nil {
 		return err
 	}
-	if er.Chain.Equals(common.XMRChain) && observedVoter.Reverted {
+	if er.Chain.UsesHeightScopedErrata() && observedVoter.Reverted {
 		// Reverted is a monotonic TxID-wide terminal. A later height-specific
 		// errata voter must never apply the same economic reversal twice.
 		voter.Outcome = common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED
@@ -85,14 +85,14 @@ func processErrataTxAttestation(
 
 	if len(observedVoter.Txs) == 0 {
 		outcome, processErr := processErrataOutboundTx(ctx, k, eventMgr, er)
-		if processErr == nil && er.Chain.Equals(common.XMRChain) {
+		if processErr == nil && er.Chain.RequiresTerminalErrataOutcome() {
 			voter.Outcome = outcome
 		}
 		return processErr
 	}
 	if observedVoter.Tx.IsEmpty() {
 		ctx.Logger().Info("tx has not reach consensus yet, so nothing need to be done", "tx_id", er.Id)
-		if er.Chain.Equals(common.XMRChain) {
+		if er.Chain.RequiresTerminalErrataOutcome() {
 			voter.Outcome = common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION
 		}
 		return nil
@@ -101,15 +101,15 @@ func processErrataTxAttestation(
 	tx := observedVoter.Tx.Tx
 	if !tx.Chain.Equals(er.Chain) {
 		// does not match chain
-		if er.Chain.Equals(common.XMRChain) {
+		if er.Chain.RequiresTerminalErrataOutcome() {
 			voter.Outcome = common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION
 		}
 		return nil
 	}
-	if er.Chain.Equals(common.XMRChain) && er.Height > 0 {
+	if er.Chain.UsesHeightScopedErrata() && er.Height > 0 {
 		minedHeight, minedErr := observedVoter.Tx.CanonicalMinedHeight()
 		if minedErr != nil {
-			return fmt.Errorf("resolve XMR errata mined height: %w", minedErr)
+			return fmt.Errorf("resolve canonical mined height for inbound errata: %w", minedErr)
 		}
 		if minedHeight != er.Height {
 			// This vote belongs to another canonical mining generation. It may
@@ -122,7 +122,7 @@ func processErrataTxAttestation(
 	// set the observed Tx to reverted only after chain validation passes
 	observedVoter.SetReverted()
 	k.SetObservedTxInVoter(ctx, observedVoter)
-	if er.Chain.Equals(common.XMRChain) {
+	if er.Chain.RequiresTerminalErrataOutcome() {
 		voter.Outcome = common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED
 	}
 	if observedVoter.UpdatedVault {
@@ -229,23 +229,28 @@ func processErrataOutboundTx(
 			fmt.Errorf("fail to get observed tx out voter for tx (%s) : %w", er.Id, err)
 	}
 	if len(txOutVoter.Txs) == 0 {
+		if er.Chain.RequiresTerminalErrataOutcome() {
+			// A committed errata for these chains must have a terminal outcome even when
+			// THORChain never observed this transaction on either side.
+			return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION, nil
+		}
 		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, fmt.Errorf("cannot find tx: %s", er.Id)
 	}
 	if txOutVoter.Tx.IsEmpty() {
 		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, fmt.Errorf("tx out voter is not finalised")
 	}
-	if er.Chain.Equals(common.XMRChain) && txOutVoter.Reverted {
+	if er.Chain.RequiresTerminalErrataOutcome() && txOutVoter.Reverted {
 		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED, nil
 	}
 	tx := txOutVoter.Tx.Tx
 	if !tx.Chain.Equals(er.Chain) || tx.Coins.IsEmpty() {
 		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION, nil
 	}
-	if er.Chain.Equals(common.XMRChain) && er.Height > 0 {
+	if er.Chain.UsesHeightScopedErrata() && er.Height > 0 {
 		minedHeight, minedErr := txOutVoter.Tx.CanonicalMinedHeight()
 		if minedErr != nil {
 			return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED,
-				fmt.Errorf("resolve XMR outbound errata mined height: %w", minedErr)
+				fmt.Errorf("resolve canonical mined height for outbound errata: %w", minedErr)
 		}
 		if minedHeight != er.Height {
 			return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION, nil

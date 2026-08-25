@@ -49,11 +49,11 @@ func (m *MsgErrataTxQuorum) ValidateBasic() error {
 	if tx.Height < 0 {
 		return cosmos.ErrUnknownRequest("errata height cannot be negative")
 	}
-	if tx.Chain.Equals(common.XMRChain) && tx.Height == 0 {
-		return cosmos.ErrUnknownRequest("XMR errata requires a canonical mined height")
+	if tx.Chain.UsesHeightScopedErrata() && tx.Height == 0 {
+		return cosmos.ErrUnknownRequest("height-scoped errata requires a canonical mined height")
 	}
-	if !tx.Chain.Equals(common.XMRChain) && tx.Height != 0 {
-		return cosmos.ErrUnknownRequest("canonical mined height is only valid for XMR errata")
+	if !tx.Chain.UsesHeightScopedErrata() && tx.Height != 0 {
+		return cosmos.ErrUnknownRequest("canonical mined height is only valid for height-scoped errata")
 	}
 
 	return nil

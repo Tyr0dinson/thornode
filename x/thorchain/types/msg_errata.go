@@ -41,8 +41,8 @@ func (m *MsgErrataTx) ValidateBasic() error {
 	if m.Chain.IsEmpty() {
 		return cosmos.ErrUnknownRequest("chain cannot be empty")
 	}
-	if m.Chain.Equals(common.XMRChain) {
-		return cosmos.ErrUnknownRequest("XMR errata requires the height-scoped quorum message")
+	if m.Chain.UsesHeightScopedErrata() {
+		return cosmos.ErrUnknownRequest("height-scoped errata requires the quorum message")
 	}
 	return nil
 }

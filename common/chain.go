@@ -353,6 +353,18 @@ func (c Chain) RequiresExplicitRefundAddress() bool {
 	return c.Equals(XMRChain)
 }
 
+// RequiresTerminalErrataOutcome reports whether a committed errata must have
+// a terminal outcome even when THORChain has no matching observation.
+func (c Chain) RequiresTerminalErrataOutcome() bool {
+	return c.Equals(XMRChain)
+}
+
+// UsesHeightScopedErrata reports whether errata generations are identified by
+// the transaction's canonical mined height rather than TxID alone.
+func (c Chain) UsesHeightScopedErrata() bool {
+	return c.Equals(XMRChain)
+}
+
 // IsValidAddress make sure the address is correct for the chain
 // And this also make sure mocknet doesn't use mainnet address vice versa
 func (c Chain) IsValidAddress(addr Address) bool {

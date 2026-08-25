@@ -507,6 +507,31 @@ func (s *HandlerErrataTxQuorumSuite) TestRepeatedXMRErrataUsesCanonicalHeightGen
 	c.Check(stored.Reverted, Equals, true)
 }
 
+func (s *HandlerErrataTxQuorumSuite) TestUnknownXMRErrataPersistsTerminalOutcome(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	handler := NewErrataTxQuorumHandler(mgr)
+	na, privKey := nodeWithPrivKey(c, mgr.Keeper(), ctx)
+	txID := GetRandomTxHash()
+	errata := &common.ErrataTx{Id: txID, Chain: common.XMRChain, Height: 100}
+	msg := types.NewMsgErrataTxQuorum(&common.QuorumErrataTx{
+		ErrataTx:     errata,
+		Attestations: []*common.Attestation{attestErrataTx(c, privKey, errata)},
+		// The handler must ignore a submitter-supplied result.
+		Outcome: common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED,
+	}, na.NodeAddress)
+
+	result, err := handler.Run(ctx, msg)
+	c.Assert(err, IsNil)
+	c.Assert(result, NotNil)
+	c.Check(msg.QuoErrata.Outcome, Equals, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION)
+
+	voter, err := mgr.Keeper().GetErrataTxVoterAtHeight(ctx, txID, common.XMRChain, errata.Height)
+	c.Assert(err, IsNil)
+	c.Check(voter.BlockHeight, Equals, ctx.BlockHeight())
+	c.Check(voter.Outcome, Equals, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION)
+	c.Check(voter.GetSigners(), DeepEquals, []cosmos.AccAddress{na.NodeAddress})
+}
+
 func (s *HandlerErrataTxQuorumSuite) TestXMRErrataChainMismatchHasNoApplicableObservation(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	handler := NewErrataTxQuorumHandler(mgr)

@@ -115,6 +115,10 @@ func (s ChainSuite) TestChain(c *C) {
 	c.Assert(XMRChain.ApproximateBlockMilliseconds(), Equals, int64(120000))
 	c.Assert(XMRChain.RequiresExplicitRefundAddress(), Equals, true)
 	c.Assert(BTCChain.RequiresExplicitRefundAddress(), Equals, false)
+	c.Assert(XMRChain.RequiresTerminalErrataOutcome(), Equals, true)
+	c.Assert(BTCChain.RequiresTerminalErrataOutcome(), Equals, false)
+	c.Assert(XMRChain.UsesHeightScopedErrata(), Equals, true)
+	c.Assert(BTCChain.UsesHeightScopedErrata(), Equals, false)
 }
 
 // NativeGasToThorCoinCeil rounds up when the gas asset has more decimals
