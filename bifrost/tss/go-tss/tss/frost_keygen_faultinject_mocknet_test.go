@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 	tcommon "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/common"
 )
@@ -39,7 +38,8 @@ func TestFrostKeygenRound3TestTimeoutOverrideShrinksOnlyRound3Wait(t *testing.T)
 
 	// Coordinator timeout is far beyond the test budget; only the override can
 	// end the round-3 wait this quickly.
-	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", make(chan *p2p.Message, 2), time.Hour)
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", newFrostKeygenInbox(), time.Hour)
+	initTestFrostKeygenRoundState(t, coord, activeSet, participantIndexMap)
 	start := time.Now()
 	_, _, _, failResp := coord.exchangeRound3(activeSet, participantIndexMap, peerIDs, FrostDKGRound3Payload{
 		SenderPubKey:     testPubKeys[0],

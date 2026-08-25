@@ -58,9 +58,9 @@ const (
 	// keeping a distinct limit prevents the 20 MiB legacy TSS frame allowance
 	// from becoming the FROST session allowance.
 	FrostMaxSessionPayload = 1 * 1024 * 1024
-	// FrostSessionQueueSize bounds the shared coordinator queue. Together with
-	// the per-frame limit, at most 64 MiB can be retained while the coordinator
-	// is stalled.
+	// FrostSessionQueueSize bounds each coordinator topic queue. The aggregate
+	// per-ceremony frame budget below remains the hard bound across all topic
+	// queues and blocked deliveries.
 	FrostSessionQueueSize = 64
 	// FrostMaxMessagesPerPeer is the baseline retained/processed traffic bound
 	// per peer for one message type and session. Shared FROST verification topics
@@ -89,8 +89,8 @@ const (
 	FrostMaxSessionBytes = uint64(128 * 1024 * 1024)
 	FrostMaxNodeBytes    = uint64(256 * 1024 * 1024)
 
-	// A ceremony may retain one full 64-frame coordinator queue plus an equal
-	// amount of bounded delivery backpressure. The node-wide count admits that
+	// A ceremony may retain at most this aggregate across its phase-specific
+	// queues and bounded delivery backpressure. The node-wide count admits that
 	// full allowance for each of the default ten concurrent signers; byte and
 	// reader limits remain the hard live-memory bounds.
 	FrostMaxConcurrentFramesPerSession = uint32(2 * FrostSessionQueueSize)
