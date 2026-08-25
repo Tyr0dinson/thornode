@@ -52,8 +52,9 @@ func normalizeTssKeysignFailVoter(record TssKeysignFailVoter, found bool) (TssKe
 	}
 }
 
-// SetTssKeysignFailVoter - save a tss keysign fail voter object
-func (k KVStore) SetTssKeysignFailVoter(ctx cosmos.Context, tss TssKeysignFailVoter) {
+// SetTssKeysignFailVoter saves a supported voter schema. Unsupported future
+// schemas return an error before any state is written.
+func (k KVStore) SetTssKeysignFailVoter(ctx cosmos.Context, tss TssKeysignFailVoter) error {
 	switch tss.SchemaVersion {
 	case 0:
 		// Every post-upgrade writer emits the explicit schema. A zero-valued
@@ -61,9 +62,10 @@ func (k KVStore) SetTssKeysignFailVoter(ctx cosmos.Context, tss TssKeysignFailVo
 		tss.SchemaVersion = types.CurrentTssKeysignFailVoterSchemaVersion
 	case types.CurrentTssKeysignFailVoterSchemaVersion:
 	default:
-		panic(fmt.Sprintf("refusing to persist unsupported TSS keysign fail voter schema version: %d", tss.SchemaVersion))
+		return fmt.Errorf("refusing to persist unsupported TSS keysign fail voter schema version: %d", tss.SchemaVersion)
 	}
 	k.setTssKeysignFailVoter(ctx, k.GetKey(prefixTssKeysignFailure, tss.String()), tss)
+	return nil
 }
 
 // GetTssKeysignFailVoter - gets information of a tss keysign failure voter object

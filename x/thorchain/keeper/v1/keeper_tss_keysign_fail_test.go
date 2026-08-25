@@ -37,7 +37,7 @@ func (KeeperTssKeysignFailureSuite) TestTssKeysignFailVoter(c *C) {
 
 	live := NewTssKeysignFailVoter(id, 0)
 	live.Signers = []string{GetRandomBech32Addr().String()}
-	k.SetTssKeysignFailVoter(ctx, live)
+	c.Assert(k.SetTssKeysignFailVoter(ctx, live), IsNil)
 
 	stored := getRawTssKeysignFailVoter(c, ctx, k, id)
 	c.Check(stored.SchemaVersion, Equals, types.CurrentTssKeysignFailVoterSchemaVersion)
@@ -84,7 +84,7 @@ func (KeeperTssKeysignFailureSuite) TestAllLegacyVoterShapesAreSealed(c *C) {
 		// when a late message reaches its completed-voter early return.
 		raw = getRawTssKeysignFailVoter(c, ctx, k, id)
 		c.Check(raw.SchemaVersion, Equals, uint32(0))
-		k.SetTssKeysignFailVoter(ctx, normalized)
+		c.Assert(k.SetTssKeysignFailVoter(ctx, normalized), IsNil)
 		raw = getRawTssKeysignFailVoter(c, ctx, k, id)
 		c.Check(raw.SchemaVersion, Equals, types.CurrentTssKeysignFailVoterSchemaVersion)
 		c.Check(raw.Completed, Equals, true)
@@ -114,14 +114,13 @@ func (KeeperTssKeysignFailureSuite) TestVersionOneInProgressVoterSurvivesReads(c
 func (KeeperTssKeysignFailureSuite) TestSetterAlwaysWritesCurrentSchema(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	id := GetRandomTxHash().String()
-	k.SetTssKeysignFailVoter(ctx, TssKeysignFailVoter{ID: id})
+	c.Assert(k.SetTssKeysignFailVoter(ctx, TssKeysignFailVoter{ID: id}), IsNil)
 	stored := getRawTssKeysignFailVoter(c, ctx, k, id)
 	c.Check(stored.SchemaVersion, Equals, types.CurrentTssKeysignFailVoterSchemaVersion)
 
 	unsupported := types.CurrentTssKeysignFailVoterSchemaVersion + 1
-	c.Assert(func() {
-		k.SetTssKeysignFailVoter(ctx, TssKeysignFailVoter{ID: id, SchemaVersion: unsupported})
-	}, Panics, fmt.Sprintf("refusing to persist unsupported TSS keysign fail voter schema version: %d", unsupported))
+	err := k.SetTssKeysignFailVoter(ctx, TssKeysignFailVoter{ID: id, SchemaVersion: unsupported})
+	c.Assert(err, ErrorMatches, fmt.Sprintf("refusing to persist unsupported TSS keysign fail voter schema version: %d", unsupported))
 	stored = getRawTssKeysignFailVoter(c, ctx, k, id)
 	c.Check(stored.SchemaVersion, Equals, types.CurrentTssKeysignFailVoterSchemaVersion)
 }

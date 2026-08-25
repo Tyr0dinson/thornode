@@ -94,7 +94,9 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 		// Sign alone cannot distinguish a fresh Cosmos message from a new vote.
 		// Persist here as well to lazily upgrade legacy completed voters whose
 		// empty state was normalized by the keeper.
-		h.mgr.Keeper().SetTssKeysignFailVoter(ctx, voter)
+		if err := h.mgr.Keeper().SetTssKeysignFailVoter(ctx, voter); err != nil {
+			return nil, wrapError(ctx, err, "fail to save tss keysign fail voter")
+		}
 		ctx.Logger().Info("MsgTssKeysignFail voter already completed", "ID", msg.ID)
 		return &cosmos.Result{}, nil
 	}
@@ -124,7 +126,9 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 		return nil, wrapError(ctx, err, "fail to get vault")
 	}
 	if vault.IsEmpty() {
-		h.mgr.Keeper().SetTssKeysignFailVoter(ctx, voter)
+		if err := h.mgr.Keeper().SetTssKeysignFailVoter(ctx, voter); err != nil {
+			return nil, wrapError(ctx, err, "fail to save tss keysign fail voter")
+		}
 		return &cosmos.Result{}, nil
 	}
 	var vaultMemberNodes NodeAccounts
@@ -187,7 +191,9 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 			}
 		}
 	}
-	h.mgr.Keeper().SetTssKeysignFailVoter(ctx, voter)
+	if err := h.mgr.Keeper().SetTssKeysignFailVoter(ctx, voter); err != nil {
+		return nil, wrapError(ctx, err, "fail to save tss keysign fail voter")
+	}
 
 	// doesn't have consensus yet
 	if !voter.HasConsensus(vaultMemberNodes) {
@@ -257,7 +263,9 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 	voter.Signers = nil
 	voter.LastRoundCount = 0
 	voter.Completed = true
-	h.mgr.Keeper().SetTssKeysignFailVoter(ctx, voter)
+	if err := h.mgr.Keeper().SetTssKeysignFailVoter(ctx, voter); err != nil {
+		return nil, wrapError(ctx, err, "fail to save tss keysign fail voter")
+	}
 
 	slashPoints := h.mgr.GetConstants().GetInt64Value(constants.FailKeysignSlashPoints)
 	// fail to generate a new tss key let's slash the node account

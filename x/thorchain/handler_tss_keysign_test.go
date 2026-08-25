@@ -42,6 +42,9 @@ type tssKeysignKeeperHelper struct {
 	errGetTssVoter                  bool
 	errFailToGetNodeAccountByPubKey bool
 	errFailSetNodeAccount           bool
+	returnEmptyVault                bool
+	failSetTssKeysignFailVoterAt    int
+	setTssKeysignFailVoterCalls     int
 	nextTssKeysignFailVoter         *TssKeysignFailVoter
 }
 
@@ -65,6 +68,13 @@ func (k *tssKeysignKeeperHelper) SetNodeAccount(ctx cosmos.Context, na NodeAccou
 	return k.Keeper.SetNodeAccount(ctx, na)
 }
 
+func (k *tssKeysignKeeperHelper) GetVault(ctx cosmos.Context, pubKey common.PubKey) (Vault, error) {
+	if k.returnEmptyVault {
+		return Vault{}, nil
+	}
+	return k.Keeper.GetVault(ctx, pubKey)
+}
+
 func (k *tssKeysignKeeperHelper) GetTssKeysignFailVoter(ctx cosmos.Context, id string) (TssKeysignFailVoter, error) {
 	if k.errGetTssVoter {
 		return TssKeysignFailVoter{}, errKaboom
@@ -75,6 +85,14 @@ func (k *tssKeysignKeeperHelper) GetTssKeysignFailVoter(ctx cosmos.Context, id s
 		return voter, nil
 	}
 	return k.Keeper.GetTssKeysignFailVoter(ctx, id)
+}
+
+func (k *tssKeysignKeeperHelper) SetTssKeysignFailVoter(ctx cosmos.Context, voter TssKeysignFailVoter) error {
+	k.setTssKeysignFailVoterCalls++
+	if k.setTssKeysignFailVoterCalls == k.failSetTssKeysignFailVoterAt {
+		return errKaboom
+	}
+	return k.Keeper.SetTssKeysignFailVoter(ctx, voter)
 }
 
 func (k *tssKeysignKeeperHelper) ListActiveValidators(ctx cosmos.Context) (NodeAccounts, error) {
@@ -252,7 +270,7 @@ func (h HandlerTssKeysignSuite) TestTssKeysignFailHandler(c *C) {
 				c.Assert(err, IsNil)
 				voter, _ := helper.keeper.Keeper.GetTssKeysignFailVoter(helper.ctx, msg.ID)
 				voter.Sign(msg.Signer)
-				helper.keeper.Keeper.SetTssKeysignFailVoter(helper.ctx, voter)
+				c.Assert(helper.keeper.Keeper.SetTssKeysignFailVoter(helper.ctx, voter), IsNil)
 				return msg
 			},
 			runner: func(handler TssKeysignHandler, msg cosmos.Msg, helper tssKeysignFailHandlerTestHelper) (*cosmos.Result, error) {
@@ -303,7 +321,7 @@ func (h HandlerTssKeysignSuite) TestTssKeysignFailHandler(c *C) {
 				for i, sign := range signers {
 					voter.Signers[i] = sign.String()
 				}
-				helper.keeper.SetTssKeysignFailVoter(helper.ctx, voter)
+				c.Assert(helper.keeper.SetTssKeysignFailVoter(helper.ctx, voter), IsNil)
 				helper.keeper.errFailToGetNodeAccountByPubKey = true
 				return handler.Run(helper.ctx, msg)
 			},
@@ -372,6 +390,91 @@ func (h HandlerTssKeysignSuite) TestTssKeysignFailHandler(c *C) {
 	}
 }
 
+func (h HandlerTssKeysignSuite) TestKeysignFailVoterSetterErrorsPropagate(c *C) {
+	newMessage := func(helper *tssKeysignFailHandlerTestHelper, signer cosmos.AccAddress, pubKey common.PubKey) *MsgTssKeysignFail {
+		msg, err := NewMsgTssKeysignFail(
+			helper.ctx.BlockHeight(),
+			helper.blame,
+			"setter-error",
+			common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100))},
+			signer,
+			pubKey,
+		)
+		c.Assert(err, IsNil)
+		return msg
+	}
+
+	tests := []struct {
+		name    string
+		failAt  int
+		prepare func(*tssKeysignFailHandlerTestHelper) *MsgTssKeysignFail
+	}{
+		{
+			name:   "completed voter normalization",
+			failAt: 1,
+			prepare: func(helper *tssKeysignFailHandlerTestHelper) *MsgTssKeysignFail {
+				msg := newMessage(helper, helper.nodeAccount.NodeAddress, GetRandomPubKey())
+				helper.keeper.nextTssKeysignFailVoter = &TssKeysignFailVoter{
+					ID:            msg.ID,
+					Completed:     true,
+					SchemaVersion: types.CurrentTssKeysignFailVoterSchemaVersion,
+				}
+				return msg
+			},
+		},
+		{
+			name:   "empty vault voter",
+			failAt: 1,
+			prepare: func(helper *tssKeysignFailHandlerTestHelper) *MsgTssKeysignFail {
+				helper.keeper.returnEmptyVault = true
+				return newMessage(helper, helper.nodeAccount.NodeAddress, GetRandomPubKey())
+			},
+		},
+		{
+			name:   "pending voter",
+			failAt: 1,
+			prepare: func(helper *tssKeysignFailHandlerTestHelper) *MsgTssKeysignFail {
+				return newMessage(helper, helper.nodeAccount.NodeAddress, helper.retiringVault.PubKey)
+			},
+		},
+		{
+			name:   "completed consensus voter",
+			failAt: 2,
+			prepare: func(helper *tssKeysignFailHandlerTestHelper) *MsgTssKeysignFail {
+				signerPubKey, err := common.NewPubKey(helper.retiringVault.Membership[0])
+				c.Assert(err, IsNil)
+				signer, err := signerPubKey.GetThorAddress()
+				c.Assert(err, IsNil)
+				msg := newMessage(helper, signer, helper.retiringVault.PubKey)
+
+				voter := types.NewTssKeysignFailVoter(msg.ID, helper.ctx.BlockHeight())
+				for _, member := range helper.retiringVault.Membership[1:] {
+					memberPubKey, err := common.NewPubKey(member)
+					c.Assert(err, IsNil)
+					memberAddress, err := memberPubKey.GetThorAddress()
+					c.Assert(err, IsNil)
+					c.Assert(voter.Sign(memberAddress), Equals, true)
+				}
+				c.Assert(helper.keeper.Keeper.SetTssKeysignFailVoter(helper.ctx, voter), IsNil)
+				return msg
+			},
+		},
+	}
+
+	for _, test := range tests {
+		c.Logf("case: %s", test.name)
+		helper := newTssKeysignHandlerTestHelper(c)
+		msg := test.prepare(&helper)
+		helper.keeper.setTssKeysignFailVoterCalls = 0
+		helper.keeper.failSetTssKeysignFailVoterAt = test.failAt
+
+		handler := NewTssKeysignHandler(NewDummyMgrWithKeeper(helper.keeper))
+		_, err := handler.Run(helper.ctx, msg)
+		c.Assert(errors.Is(err, errKaboom), Equals, true, Commentf("case: %s, error: %v", test.name, err))
+		c.Check(helper.keeper.setTssKeysignFailVoterCalls, Equals, test.failAt)
+	}
+}
+
 func (h HandlerTssKeysignSuite) TestDuplicateKeysignFailureVoteDoesNotSlashAgain(c *C) {
 	helper := newTssKeysignHandlerTestHelper(c)
 	handler := NewTssKeysignHandler(NewDummyMgrWithKeeper(helper.keeper))
@@ -387,7 +490,7 @@ func (h HandlerTssKeysignSuite) TestDuplicateKeysignFailureVoteDoesNotSlashAgain
 	voter, err := helper.keeper.GetTssKeysignFailVoter(helper.ctx, msg.ID)
 	c.Assert(err, IsNil)
 	c.Assert(voter.Sign(msg.Signer), Equals, true)
-	helper.keeper.SetTssKeysignFailVoter(helper.ctx, voter)
+	c.Assert(helper.keeper.SetTssKeysignFailVoter(helper.ctx, voter), IsNil)
 
 	before, err := helper.keeper.GetNodeAccountSlashPoints(helper.ctx, msg.Signer)
 	c.Assert(err, IsNil)

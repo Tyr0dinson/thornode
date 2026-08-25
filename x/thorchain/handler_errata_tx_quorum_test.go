@@ -566,8 +566,8 @@ func (s *HandlerErrataTxQuorumSuite) TestXMRErrataDuplicateRetryReevaluatesConse
 	c.Check(voter.GetSigners(), DeepEquals, []cosmos.AccAddress{na1.NodeAddress, na2.NodeAddress})
 	observeSlashPoints := mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
 	for _, signer := range []cosmos.AccAddress{na1.NodeAddress, na2.NodeAddress} {
-		points, err := mgr.Keeper().GetNodeAccountSlashPoints(ctx, signer)
-		c.Assert(err, IsNil)
+		points, slashPointsErr := mgr.Keeper().GetNodeAccountSlashPoints(ctx, signer)
+		c.Assert(slashPointsErr, IsNil)
 		c.Check(points, Equals, observeSlashPoints)
 	}
 
@@ -593,8 +593,8 @@ func (s *HandlerErrataTxQuorumSuite) TestXMRErrataDuplicateRetryReevaluatesConse
 	c.Check(voter.BlockHeight, Equals, ctx.BlockHeight())
 	c.Check(voter.Outcome, Equals, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION)
 	for _, signer := range []cosmos.AccAddress{na1.NodeAddress, na2.NodeAddress} {
-		points, err := mgr.Keeper().GetNodeAccountSlashPoints(ctx, signer)
-		c.Assert(err, IsNil)
+		points, slashPointsErr := mgr.Keeper().GetNodeAccountSlashPoints(ctx, signer)
+		c.Assert(slashPointsErr, IsNil)
 		c.Check(points, Equals, int64(0))
 	}
 
