@@ -1,6 +1,8 @@
 # THORChain Monero (XMR) Integration — Updated Security Audit Scope
 
-Prepared and verified 2026-08-24 for the Least Authority audit engagement.
+Prepared and verified 2026-08-25 for the Least Authority audit engagement.
+
+**Status:** Working draft for review.
 
 This document defines the audit target as the exact pair of post-3.20 MR heads below. The two
 revisions are a paired Thornode/Sidecar target and must be reviewed and deployed together.
@@ -9,18 +11,18 @@ revisions are a paired Thornode/Sidecar target and must be reviewed and deployed
 
 | Repository | Source branch | Frozen audit commit | Commit date |
 |---|---|---|---|
-| thornode | `boonew/xmr-post-3.20-defense-in-depth-2026-07-23` ([!4983](https://gitlab.com/thorchain/thornode/-/merge_requests/4983)) | [`e28deea3c972a76174d06b13fc65b7182b4a235f`](https://gitlab.com/thorchain/thornode/-/commit/e28deea3c972a76174d06b13fc65b7182b4a235f) | 2026-08-24 |
+| thornode | `boonew/xmr-post-3.20-defense-in-depth-2026-07-23` ([!4983](https://gitlab.com/thorchain/thornode/-/merge_requests/4983)) | [`f398fd844931244470d520dee9827b99a3ac2c98`](https://gitlab.com/thorchain/thornode/-/commit/f398fd844931244470d520dee9827b99a3ac2c98) | 2026-08-25 |
 | serai fork | `zly/xmr-post-3.20-recovery-contracts` ([!70](https://gitlab.com/thorchain/devops/serai/-/merge_requests/70)) | [`6844c8179b822309c174c25bd03bcdc0847bf6b1`](https://gitlab.com/thorchain/devops/serai/-/commit/6844c8179b822309c174c25bd03bcdc0847bf6b1) | 2026-08-24 |
 
 The commit hashes, not moving branch names, MR status or container tags, define the audit target.
-Both MRs were open and no longer Draft when checked on 2026-08-24. Any rebase, merge-time change
+Both MRs were open and no longer Draft when checked on 2026-08-25. Any rebase, merge-time change
 or later commit requires a reviewed delta or a newly frozen target.
 
 ### Changes from the previously shared scope
 
 Relative to the official v1, this version:
 
-- freezes the paired post-3.20 targets at `thornode@e28deea3c972a76174d06b13fc65b7182b4a235f`
+- freezes the paired post-3.20 targets at `thornode@f398fd844931244470d520dee9827b99a3ac2c98`
   and `serai@6844c8179b822309c174c25bd03bcdc0847bf6b1`;
 - includes the merged thornode !4811 and !4931 work, the current signer hardening, and the
   additional defense-in-depth and recovery-contract changes in thornode !4983 and serai !70;
@@ -78,8 +80,8 @@ All production `.go` files in this directory are in scope.
 
 | File | Code LOC | Security-relevant responsibility |
 |---|---:|---|
-| `bifrost/tss/go-tss/tss/frost_keygen.go` | 1,292 | distributed key generation orchestration, result consensus and recovery |
-| `bifrost/tss/go-tss/tss/frost_keysign.go` | 1,967 | signing sessions, canonical plans, party/result consensus and recovery |
+| `bifrost/tss/go-tss/tss/frost_keygen.go` | 1,394 | distributed key generation orchestration, early-phase traffic retention, result consensus and recovery |
+| `bifrost/tss/go-tss/tss/frost_keysign.go` | 2,065 | signing sessions, canonical plans, early-phase traffic retention, party/result consensus and recovery |
 | `bifrost/tss/go-tss/tss/frost_signed_transcript.go` | 142 | authenticated signed-transcript representation |
 | `bifrost/tss/go-tss/tss/frost_transcript_verify.go` | 311 | transcript/session binding and equivocation validation |
 | `bifrost/tss/go-tss/tss/frost_types.go` | 353 | FROST message and state types |
@@ -88,7 +90,7 @@ All production `.go` files in this directory are in scope.
 | `bifrost/p2p/frost_broadcast_scheduler.go` | 163 | bounded and fair FROST broadcast scheduling |
 | `bifrost/p2p/frost_ingress_budget.go` | 218 | ceremony, node and frame resource budgets |
 | `bifrost/p2p/tss_reader_limiter.go` | 60 | per-peer TSS stream reader limits |
-| **Subtotal** | **4,759** | |
+| **Subtotal** | **4,959** | |
 
 ### 1.5 Consensus and common dedicated files
 
@@ -99,7 +101,7 @@ All production `.go` files in this directory are in scope.
 | `common/xmr_address.go` | 434 | XMR address parsing, base58 encoding, network prefixes and subaddresses |
 | **Subtotal** | **684** | |
 
-**Dedicated thornode production total: 19,887 LOC.**
+**Dedicated thornode production total: 20,087 LOC.**
 
 ### 1.6 XMR/FROST logic in shared production files
 
@@ -162,15 +164,15 @@ The primary review should trace these invariants across Go, Rust and consensus b
 1. XMR address/network validation, amount conversion, transaction identity, tx-key disclosure,
    and the distinction between wire memos and THORChain semantic memos.
 2. Scanner canonicality, receipt identity, bounded rewind and effective-birthday behavior,
-   durable/ordered errata cleanup, mempool behavior, output ownership and key-image/spent-ref
-   coverage.
+   durable/ordered errata cleanup including nonstandard memos, independent mined-height
+   observation quorum, mempool behavior, output ownership and key-image/spent-ref coverage.
 3. Crash consistency and idempotency of pending inbound, signed payload, scanner, DKG, signing,
    attestation and spent-ref state across restart and replay.
 4. Sidecar authentication, schema/capability negotiation, network identity, timeout/error
    classification and fail-closed behavior at the Go/Rust HTTP boundary.
 5. FROST party membership, session/plan binding, transcript verification, P2P framing and resource
-   budgets, fair/bounded queues, cancellation, result quorum, evidence/blame and recovery from
-   missing or keyless members.
+   budgets, fair/bounded queues, early-phase message retention, cancellation, result quorum,
+   evidence/blame and recovery from missing or keyless members.
 6. Consensus handling of monovault keygen, churn/rotation, spent refs, outbound attribution,
    slashing/jailing, terminal keysign-failure voters and repeated success/failure votes.
 
@@ -260,12 +262,12 @@ reviewers but are not included in the total.
 | Go — Monero client directory | 13,537 |
 | Go — Monero sidecar boundary directory | 3,946 |
 | Go — observer spent-ref/certificate, XMR barrier and filter tests | 2,972 |
-| Go — go-tss FROST tests | 2,969 |
+| Go — go-tss FROST tests | 3,572 |
 | Go — P2P FROST evidence/frame/budget/ingress/lifecycle tests | 3,307 |
 | Go — explicitly named x/thorchain and common XMR/spent-ref tests | 810 |
-| **Go subtotal** | **27,541** |
+| **Go subtotal** | **28,144** |
 | Rust — inline `#[cfg(test)]` modules in `xmr-frost-signer` | **8,367** |
-| **Named/dedicated test total** | **35,908** |
+| **Named/dedicated test total** | **36,511** |
 
 Relevant executable context includes:
 
@@ -282,13 +284,13 @@ Relevant executable context includes:
 
 | Bucket | Production LOC |
 |---|---:|
-| thornode — dedicated XMR/FROST files (§1.1–§1.5) | 19,887 |
+| thornode — dedicated XMR/FROST files (§1.1–§1.5) | 20,087 |
 | Rust — `xmr-frost-signer` (§2) | 11,550 |
-| **Primary dedicated-code floor** | **31,437** |
-| Primary floor excluding mocknet-only `sim.rs` | 30,883 |
+| **Primary dedicated-code floor** | **31,637** |
+| Primary floor excluding mocknet-only `sim.rs` | 31,083 |
 | thornode — XMR/FROST branches in shared files (§1.6) | included; no separate LOC assigned |
 | Optional in-repo Serai cryptography (§3.1) | 5,241 |
-| Named/dedicated tests (§4, context) | 35,908 test LOC |
+| Named/dedicated tests (§4, context) | 36,511 test LOC |
 
 The commit pair and path/function inventory define the scope; LOC is only a reproducible sizing
 aid. The primary floor does not assign separate LOC to the shared-file branches in §1.6.
@@ -316,7 +318,7 @@ aid. The primary floor does not assign separate LOC to the shared-file branches 
 
 ## 7. Open MR, merge and activation status
 
-Status and heads in this section were checked 2026-08-24. The exact !4983 and !70 heads below are
+Status and heads in this section were checked 2026-08-25. The exact !4983 and !70 heads below are
 included in the audit target. Both MRs are open and no longer Draft. They form a paired
 cross-repository contract and must not be reviewed or deployed independently.
 
@@ -325,16 +327,18 @@ cross-repository contract and must not be reviewed or deployed independently.
 [thornode !4983](https://gitlab.com/thorchain/thornode/-/merge_requests/4983) is open, mergeable
 and awaiting approval.
 
-- Head: [`e28deea3c972a76174d06b13fc65b7182b4a235f`](https://gitlab.com/thorchain/thornode/-/commit/e28deea3c972a76174d06b13fc65b7182b4a235f)
+- Head: [`f398fd844931244470d520dee9827b99a3ac2c98`](https://gitlab.com/thorchain/thornode/-/commit/f398fd844931244470d520dee9827b99a3ac2c98)
 - Current role: included post-3.20 defense-in-depth audit target; not part of release 3.20.
 
 Security-relevant changes include:
 
 - replay-safe terminal TSS keysign-failure voters, a persisted-consensus-state change requiring a
-  coordinated future version boundary;
-- durable and ordered XMR errata cleanup, attestation/spent-ref replay, bounded state-sync and peer
-  calls;
+  coordinated future version boundary, with persistence errors propagated to callers;
+- durable and ordered XMR errata cleanup, explicit handling of unknown outcomes and nonstandard
+  memos, independent mined-height quorum, churn-safe retry, attestation/spent-ref replay, scalable
+  bounded state-sync and peer calls;
 - FROST P2P resource, frame, queue, cancellation, party and result-lifecycle controls;
+- retention of valid early FROST keygen and keysign phase traffic;
 - sidecar schema/capability and network-identity checks, exact outbound-hash precedence,
   effective scan birthdays, wire-memo preservation/recovery and stronger fail-closed behavior;
 - end-to-end verification that Thornode and the Sidecar agree on the Monero daemon network;
@@ -342,8 +346,9 @@ Security-relevant changes include:
 - `HaltMonovaultKeygen`, an independent operational control intended to replace the hard-coded
   network-wide keygen skip.
 
-The MR had no reported conflicts and its pipeline was running at the checked head. The pinned head
-remains the source under audit; any subsequent change requires a delta review and updated pin.
+The MR had no reported conflicts or unresolved discussions. Its current merge-result pipeline was
+running when checked. The pinned head remains the source under audit; any subsequent change
+requires a delta review and updated pin.
 Release additionally requires a matching versioned sidecar, immutable image digest, fresh Sidecar
 state at the schema-4 cutover, and coordinated activation of the persisted-consensus-state change.
 
