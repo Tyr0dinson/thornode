@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math/big"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -2380,12 +2382,7 @@ func (qs queryServer) queryStableReserve(ctx cosmos.Context, _ *types.QueryStabl
 		assets[asset.String()] = asset
 	}
 
-	keys := make([]string, 0, len(assets))
-	// analyze-ignore(map-iteration) - extracting keys to sort them immediately after
-	for key := range assets {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(assets))
 
 	inventory := make([]*types.QueryStableReserveInventory, 0, len(keys))
 	for _, key := range keys {
@@ -3138,25 +3135,22 @@ func (qs queryServer) queryConstantValues(_ cosmos.Context, _ *types.QueryConsta
 	cv := constAccessor.GetConstantValsByKeyname()
 
 	proto := types.QueryConstantValuesResponse{}
-	// analyze-ignore(map-iteration)
-	for k, v := range cv.Int64Values {
+	for _, k := range slices.Sorted(maps.Keys(cv.Int64Values)) {
 		proto.Int_64Values = append(proto.Int_64Values, &types.Int64Constants{
 			Name:  k,
-			Value: v,
+			Value: cv.Int64Values[k],
 		})
 	}
-	// analyze-ignore(map-iteration)
-	for k, v := range cv.BoolValues {
+	for _, k := range slices.Sorted(maps.Keys(cv.BoolValues)) {
 		proto.BoolValues = append(proto.BoolValues, &types.BoolConstants{
 			Name:  k,
-			Value: v,
+			Value: cv.BoolValues[k],
 		})
 	}
-	// analyze-ignore(map-iteration)
-	for k, v := range cv.StringValues {
+	for _, k := range slices.Sorted(maps.Keys(cv.StringValues)) {
 		proto.StringValues = append(proto.StringValues, &types.StringConstants{
 			Name:  k,
-			Value: v,
+			Value: cv.StringValues[k],
 		})
 	}
 

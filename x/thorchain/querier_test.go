@@ -831,6 +831,29 @@ func (s *QuerierSuite) TestQueryConstantValues(c *C) {
 	queryConstantValResp, err := s.queryServer.ConstantValues(s.ctx, &types.QueryConstantValuesRequest{})
 	c.Assert(queryConstantValResp, NotNil)
 	c.Assert(err, IsNil)
+	c.Assert(sort.SliceIsSorted(queryConstantValResp.Int_64Values, func(i, j int) bool {
+		return queryConstantValResp.Int_64Values[i].Name < queryConstantValResp.Int_64Values[j].Name
+	}), Equals, true)
+	c.Assert(sort.SliceIsSorted(queryConstantValResp.BoolValues, func(i, j int) bool {
+		return queryConstantValResp.BoolValues[i].Name < queryConstantValResp.BoolValues[j].Name
+	}), Equals, true)
+	c.Assert(sort.SliceIsSorted(queryConstantValResp.StringValues, func(i, j int) bool {
+		return queryConstantValResp.StringValues[i].Name < queryConstantValResp.StringValues[j].Name
+	}), Equals, true)
+
+	cv := s.mgr.GetConstants().GetConstantValsByKeyname()
+	c.Assert(queryConstantValResp.Int_64Values, HasLen, len(cv.Int64Values))
+	c.Assert(queryConstantValResp.BoolValues, HasLen, len(cv.BoolValues))
+	c.Assert(queryConstantValResp.StringValues, HasLen, len(cv.StringValues))
+	for _, kv := range queryConstantValResp.Int_64Values {
+		c.Assert(kv.Value, Equals, cv.Int64Values[kv.Name])
+	}
+	for _, kv := range queryConstantValResp.BoolValues {
+		c.Assert(kv.Value, Equals, cv.BoolValues[kv.Name])
+	}
+	for _, kv := range queryConstantValResp.StringValues {
+		c.Assert(kv.Value, Equals, cv.StringValues[kv.Name])
+	}
 
 	_, err = queryConstantValResp.MarshalJSONPB(nil)
 	c.Assert(err, IsNil)
