@@ -1,7 +1,10 @@
 package thorchain
 
 import (
+	"maps"
+	"slices"
 	"sort"
+	"strings"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	cosmos "gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -53,10 +56,10 @@ func (om *ObserverMgr) List() []cosmos.AccAddress {
 	result := make([]cosmos.AccAddress, 0)
 	tracker := make(map[string]int)
 
-	// analyze-ignore(map-iteration)
-	for _, addrs := range om.chains {
-		for _, addr := range addrs {
-			// check if we need to init this key for the tracker
+	for _, chain := range slices.SortedFunc(maps.Keys(om.chains), func(a, b common.Chain) int {
+		return strings.Compare(string(a), string(b))
+	}) {
+		for _, addr := range om.chains[chain] {
 			if _, ok := tracker[addr.String()]; !ok {
 				tracker[addr.String()] = 0
 			}
@@ -64,9 +67,8 @@ func (om *ObserverMgr) List() []cosmos.AccAddress {
 		}
 	}
 
-	// analyze-ignore(map-iteration)
-	for key, count := range tracker {
-		if count >= len(om.chains) {
+	for _, key := range slices.Sorted(maps.Keys(tracker)) {
+		if tracker[key] >= len(om.chains) {
 			addr, _ := cosmos.AccAddressFromBech32(key)
 			result = append(result, addr)
 		}
