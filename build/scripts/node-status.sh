@@ -476,17 +476,27 @@ if [ "$VALIDATOR" = "true" ]; then
   # Mimir keys in the required-voting state that this node has not voted on. Not voting
   # risks being churned out while active, and blocks churning in while standby.
   # ponytail: a failed votes_required call shows nothing rather than a false alarm, so a
-  # flaky API hides the warning. Standby nodes still get it via PREFLIGHT above; add a
-  # fetch error line here if actives report missing warnings.
+  # flaky API hides the warning. Standby nodes still get it via PREFLIGHT above.
   REQUIRED=$(curl -sL --fail -m 10 "$API/thorchain/mimir/votes_required")
   MY_VOTES=$(curl -sL --fail -m 10 "$API/thorchain/mimir/node/$ADDRESS" |
     jq -c '[.node_mimirs[]?.key | ascii_upcase]')
-  UNVOTED=$(echo "$REQUIRED" | jq -r --argjson mine "${MY_VOTES:-[]}" '
-    .active_node_count as $n
-    | .mimirs[]?
-    | .key as $k
-    | select($mine | index($k | ascii_upcase) | not)
-    | "\($k) (\(.votes)/\($n) voted)"')
+
+  UNVOTED=""
+  if [ -z "$MY_VOTES" ]; then
+    # jq prints [] for a node that has voted on nothing, so an empty MY_VOTES is a failed
+    # fetch. Treating it as "voted on nothing" would warn every operator who has voted.
+    if [ -n "$REQUIRED" ]; then
+      echo
+      echo "REQUIRED VOTES - could not read this node's votes, warning suppressed"
+    fi
+  else
+    UNVOTED=$(echo "$REQUIRED" | jq -r --argjson mine "$MY_VOTES" '
+      .active_node_count as $n
+      | .mimirs[]?
+      | .key as $k
+      | select($mine | index($k | ascii_upcase) | not)
+      | "\($k) (\(.votes)/\($n) voted)"')
+  fi
 
   if [ -n "$UNVOTED" ]; then
     echo

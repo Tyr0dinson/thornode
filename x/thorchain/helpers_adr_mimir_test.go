@@ -386,3 +386,151 @@ func (s *ADRMimirSuite) TestAbstainOpensWindow(c *C) {
 	c.Check(ok, Equals, true)
 	c.Check(got, Equals, key)
 }
+
+// adrFailKeeper fails the two store reads markNonVotingActors depends on, so the churn
+// abort path can be exercised.
+type adrFailKeeper struct {
+	keeper.Keeper
+	failListActiveValidators bool
+	failGetNodeAccount       cosmos.AccAddress
+}
+
+func (k *adrFailKeeper) ListActiveValidators(ctx cosmos.Context) (NodeAccounts, error) {
+	if k.failListActiveValidators {
+		return nil, errKaboom
+	}
+	return k.Keeper.ListActiveValidators(ctx)
+}
+
+func (k *adrFailKeeper) GetNodeAccount(ctx cosmos.Context, addr cosmos.AccAddress) (NodeAccount, error) {
+	if !k.failGetNodeAccount.Empty() && addr.Equals(k.failGetNodeAccount) {
+		return NodeAccount{}, errKaboom
+	}
+	return k.Keeper.GetNodeAccount(ctx, addr)
+}
+
+// A store failure in markNonVotingActors aborts the whole churn - churnInner unwinds and
+// churn() drops the CacheContext without committing - rather than churning out a node on
+// half-read state. module.go logs the BeginBlock error and carries on, so the blast radius
+// is one skipped churn, not a halt.
+func (s *ADRMimirSuite) TestMarkNonVotingActorsAbortsChurn(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	fk := &adrFailKeeper{Keeper: mgr.Keeper()}
+	vm := newValidatorMgr(fk, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	nas := addActiveNodes(c, ctx, fk, 9)
+	const key = "ADR42FAIL"
+
+	header := ctx.BlockHeader()
+	header.AppHash = []byte{0x01, 0x02, 0x03, 0x04}
+	ctx = ctx.WithBlockHeight(100).WithBlockHeader(header)
+
+	for i := 0; i < 4; i++ {
+		c.Assert(fk.SetNodeMimir(ctx, key, 1, nas[i].NodeAddress), IsNil)
+	}
+
+	marked := func() int {
+		active, err := mgr.Keeper().ListActiveValidators(ctx)
+		c.Assert(err, IsNil)
+		n := 0
+		for _, na := range active {
+			if na.LeaveScore > 0 {
+				n++
+			}
+		}
+		return n
+	}
+
+	// reading the pending set fails
+	fk.failListActiveValidators = true
+	c.Assert(vm.markNonVotingActors(ctx), NotNil)
+	c.Check(marked(), Equals, 0)
+	fk.failListActiveValidators = false
+
+	// re-fetching the selected node fails. Find who that is first: the pick is deterministic
+	// for a given app hash, so marking, reading, and clearing gives us the address.
+	c.Assert(vm.markNonVotingActors(ctx), IsNil)
+	var picked NodeAccount
+	active, err := mgr.Keeper().ListActiveValidators(ctx)
+	c.Assert(err, IsNil)
+	for _, na := range active {
+		if na.LeaveScore > 0 {
+			picked = na
+		}
+		na.LeaveScore = 0
+		c.Assert(fk.SetNodeAccount(ctx, na), IsNil)
+	}
+	c.Assert(picked.IsEmpty(), Equals, false)
+
+	fk.failGetNodeAccount = picked.NodeAddress
+	err = vm.markNonVotingActors(ctx)
+	c.Assert(err, NotNil)
+	c.Check(err, ErrorMatches, "fail to get node account.*")
+	c.Check(marked(), Equals, 0)
+
+	// the error reaches churn(), which discards its cache: the earlier marks churnInner made
+	// (age, low version, missing blocks) must not survive an aborted churn either.
+	err = vm.churn(ctx)
+	c.Assert(err, NotNil)
+	c.Check(err, ErrorMatches, "fail to get node account.*")
+	c.Check(marked(), Equals, 0)
+}
+
+// The pick can land on a node that is already marked - by an earlier pending key in the same
+// loop, or by another churn-out reason - and the slot is consumed by design: markActor no-ops
+// rather than restamping LeaveScore, and no second node is marked in its place.
+func (s *ADRMimirSuite) TestMarkNonVotingActorsPickCollision(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	vm := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	nas := addActiveNodes(c, ctx, k, 9)
+
+	header := ctx.BlockHeader()
+	header.AppHash = []byte{0x0A, 0x0B}
+	ctx = ctx.WithBlockHeight(100).WithBlockHeader(header)
+
+	// Two pending keys sharing a single non-voter, so both picks must land on nas[8]: 8 of 9
+	// vote, split 4/4 so turnout is past the trigger but no supermajority forms.
+	for _, key := range []string{"ADR42ONE", "ADR42TWO"} {
+		for i := 0; i < 8; i++ {
+			value := int64(1)
+			if i >= 4 {
+				value = 2
+			}
+			c.Assert(k.SetNodeMimir(ctx, key, value, nas[i].NodeAddress), IsNil)
+		}
+	}
+	pending, err := pendingADRVotes(ctx, k)
+	c.Assert(err, IsNil)
+	c.Assert(pending, HasLen, 2)
+
+	marks := func() map[string]uint64 {
+		active, err := k.ListActiveValidators(ctx)
+		c.Assert(err, IsNil)
+		out := map[string]uint64{}
+		for _, na := range active {
+			if na.LeaveScore > 0 {
+				out[na.NodeAddress.String()] = na.LeaveScore
+			}
+		}
+		return out
+	}
+
+	// already marked for another reason: the score is left alone and nobody else is marked
+	target, err := k.GetNodeAccount(ctx, nas[8].NodeAddress)
+	c.Assert(err, IsNil)
+	target.LeaveScore = 42
+	c.Assert(k.SetNodeAccount(ctx, target), IsNil)
+
+	c.Assert(vm.markNonVotingActors(ctx), IsNil)
+	c.Check(marks(), DeepEquals, map[string]uint64{nas[8].NodeAddress.String(): 42})
+
+	// unmarked: the first key marks it, and the second key's pick no-ops on the re-fetched
+	// node rather than marking a second one.
+	target.LeaveScore = 0
+	c.Assert(k.SetNodeAccount(ctx, target), IsNil)
+
+	c.Assert(vm.markNonVotingActors(ctx), IsNil)
+	got := marks()
+	c.Assert(got, HasLen, 1)
+	c.Check(got[nas[8].NodeAddress.String()] > 0, Equals, true)
+}
