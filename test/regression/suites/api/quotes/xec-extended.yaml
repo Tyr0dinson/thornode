@@ -10,6 +10,13 @@ genesis:
             - amount: "200000000000"
               denom: rune
     thorchain:
+      # Keep this extended-output fixture independent of changes to the dynamic
+      # outbound-fee multiplier. The assertions below test XEC/XMR unit handling.
+      mimirs:
+        - key: MaxOutboundFeeMultiplierBasisPoints
+          value: "10000"
+        - key: MinOutboundFeeMultiplierBasisPoints
+          value: "10000"
       liquidity_providers:
         - asset: XEC.XEC
           asset_address: {{ addr_xec_cat }}
@@ -107,9 +114,9 @@ params:
   destination: {{ addr_xmr_fox }}
   extended: true
 asserts:
-  - .expected_amount_out == "41501765999"
-  - .fees.outbound == "15000"
-  - .recommended_min_amount_in == "57000000000"
+  - .expected_amount_out == "41501775999"
+  - .fees.outbound == "5000"
+  - .recommended_min_amount_in == "39000000000"
   - .memo|startswith("=:")
   - .vout|length == 2
   - .vout[0].type == "op_return"

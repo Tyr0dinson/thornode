@@ -242,7 +242,16 @@
           "units": "100000000000"
         }
       ],
-      "mimirs": [],
+      "mimirs": [
+        {
+          "key": "MAXOUTBOUNDFEEMULTIPLIERBASISPOINTS",
+          "value": "10000"
+        },
+        {
+          "key": "MINOUTBOUNDFEEMULTIPLIERBASISPOINTS",
+          "value": "10000"
+        }
+      ],
       "network": {
         "LPIncomeSplit": "9600",
         "NodeIncomeSplit": "400",
