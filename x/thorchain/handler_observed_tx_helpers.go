@@ -234,6 +234,18 @@ func isVaultCompromised(ctx cosmos.Context, k keeper.Keeper, vaultPubKey common.
 // no-oping funds sent there is the same treatment the protocol already gives an
 // unsupported asset.
 //
+// No-oped inbounds are not revisited if the chain is later activated: the voter is
+// marked done, nothing is credited and nothing is refunded, so the deposit becomes vault
+// over-solvency rather than a user balance. This diverges deliberately from what an
+// unsupported *asset* gets - there the tx reaches a handler that can refund - and from
+// what would be technically possible here, since the receiving vault does hold a usable
+// key for the chain. Automating the refund would mean signing an outbound on a chain the
+// network has not yet proved it can observe, which is what every gate in
+// chain_activation.go exists to prevent. Each no-op emits an EventSecurity carrying the
+// external tx and the vault pubkey, so operators can enumerate the affected deposits and
+// credit them case by case in a migration handler; the recovery procedure is written up
+// in docs/new-chains/new-chain-process.md.
+//
 // THORChain is exempt, and the exemption is unreachable rather than load-bearing:
 // bifrost ships no THORChain client (bifrost/pkg/chainclients), so no observed tx
 // carries Chain == THOR - native RUNE arrives by MsgDeposit. It is kept because

@@ -789,6 +789,62 @@ func (s *ChainActivationTestSuite) TestRestampAllowedWhenDroppedChainStrandedFun
 	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), fresh.PubKey), activationChain.String()), Equals, true)
 }
 
+// Mainnet churns several Asgards out together, so the carve-out has to be measured over
+// the retiring set rather than per vault. Two retiring vaults with the same BlockHeight
+// and the same Chains, one still holding a balance on the chain and one already drained:
+// the drained sibling must not re-arm the veto, or the funded one stays stranded and the
+// churn stays halted forever - the exact deadlock the carve-out exists to break.
+func (s *ChainActivationTestSuite) TestRestampAllowedWhenOneOfSeveralRetiringVaultsHoldsFunds(c *C) {
+	ctx, mgr, nodes := setupActivation(c, 4)
+
+	drained := newActivationVault(c, RetiringVault, nodes)
+	drained.BlockHeight = 100
+	drained.Chains = append(drained.Chains, activationChain.String())
+
+	funded := newActivationVault(c, RetiringVault, nodes)
+	funded.BlockHeight = 100
+	funded.Chains = append(funded.Chains, activationChain.String())
+	funded.AddFunds(common.NewCoins(common.NewCoin(activationChain.GetGasAsset(), cosmos.NewUint(100*common.One))))
+
+	fresh := newActivationVault(c, ActiveVault, nodes)
+	fresh.BlockHeight = 200
+
+	for _, v := range []Vault{drained, funded, fresh} {
+		c.Assert(mgr.Keeper().SetVault(ctx, v), IsNil)
+	}
+
+	satisfyActivationGates(ctx, c, mgr.Keeper(), activationChain, nodes)
+	mgr.Keeper().SetMimir(ctx, activationMimirKey(activationChain), 1)
+
+	runActivation(ctx, c, mgr)
+
+	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), fresh.PubKey), activationChain.String()), Equals, true)
+}
+
+// The converse: several retiring vaults, none holding anything on the chain, is a clean
+// drop however many of them there are, so the veto still holds.
+func (s *ChainActivationTestSuite) TestNoRestampWhenAllRetiringVaultsDrained(c *C) {
+	ctx, mgr, nodes := setupActivation(c, 4)
+
+	for range 2 {
+		retiring := newActivationVault(c, RetiringVault, nodes)
+		retiring.BlockHeight = 100
+		retiring.Chains = append(retiring.Chains, activationChain.String())
+		c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+	}
+
+	fresh := newActivationVault(c, ActiveVault, nodes)
+	fresh.BlockHeight = 200
+	c.Assert(mgr.Keeper().SetVault(ctx, fresh), IsNil)
+
+	satisfyActivationGates(ctx, c, mgr.Keeper(), activationChain, nodes)
+	mgr.Keeper().SetMimir(ctx, activationMimirKey(activationChain), 1)
+
+	runActivation(ctx, c, mgr)
+
+	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), fresh.PubKey), activationChain.String()), Equals, false)
+}
+
 // The same evidence must not block an ordinary first activation: a retiring vault that
 // predates the active one and never held the chain says nothing about the keygen vote.
 func (s *ChainActivationTestSuite) TestOlderRetiringVaultDoesNotBlockFirstActivation(c *C) {

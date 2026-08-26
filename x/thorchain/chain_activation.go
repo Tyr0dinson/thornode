@@ -81,6 +81,15 @@ func (vm *NetworkMgr) activateEnabledChains(ctx cosmos.Context, mgr Manager) err
 	// reached again. Including them costs at most until they churn out, and only for
 	// those that can address the chain at all, so a permanently unaddressable vault
 	// still cannot hold the path open.
+	//
+	// Known cost, named rather than optimised: a retiring vault that can address the
+	// chain but can never assemble its keysign quorum keeps the full gate - including the
+	// chainAttesters scan - running once per block for the rest of the migration window,
+	// even though the active set is already stamped. The scan is bounded to that one
+	// chain's fee voters and the window ends when the vault churns out, so the ceiling is
+	// a handful of KV reads per block for at most a migration period. Bounding it properly
+	// would mean predicting the keysign outcome before computing the attester set the
+	// prediction needs, which is the scan itself.
 	pending := make(common.Chains, 0, len(requested))
 	for _, chain := range requested {
 		if chainNeedsStamping(ctx, k, chain, active) || retiringNeedsStamping(ctx, k, chain, retiring) {
@@ -198,6 +207,16 @@ func retiringNeedsStamping(ctx cosmos.Context, k keeper.Keeper, chain common.Cha
 // one scanning it now. G6b is what supplies currency, by deferring to the most recent
 // keygen vote; this function deliberately supplies only identity.
 //
+// Known limit - the attester set cannot be refreshed on demand. Since a stable-fee chain
+// posts a fee only when the rate changes and lastFee is per-process, the set is in
+// practice frozen at the validators active when the fee last reached consensus: nodes
+// churning in afterwards never join it (a standby node's MsgNetworkFee is rejected by
+// isSignedByActiveNodeAccounts), so G6b and G7 decay monotonically across churns. Fine
+// for the primary flow, where activation follows the first fee consensus immediately,
+// but the funds carve-out in G6a may find the proof already unsatisfiable by the time it
+// is needed. The operator recovery is a coordinated bifrost restart, which clears lastFee
+// and produces a fresh voter - see docs/new-chains/new-chain-process.md.
+//
 // Scoped to the chain's own keys: the voter store is never pruned, and this runs every
 // block for as long as a chain sits unconverged, so the unscoped iterator would make
 // EndBlock cost scale with every fee voter the network has ever recorded.
@@ -306,45 +325,62 @@ func chainActivationReady(ctx cosmos.Context, k keeper.Keeper, chain common.Chai
 	// around, i.e. the migration window after the churn that dropped it. Beyond that the
 	// evidence is gone from state and the operator is expected to unset the mimir. That
 	// window is exactly when the re-stamp would otherwise happen.
+	//
+	// The funds carve-out: the veto stands down when the drop stranded funds.
+	//
+	// An orderly chain removal is ragnarok first, which drains the pools and empties the
+	// vaults, so the veto still holds there - it sees no funds. Funds still on the chain
+	// mean the drop was NOT orderly: migrateFunds has no target vault for a chain no
+	// active vault carries, so it stalls; the retiring-vault funds check in
+	// ValidatorMgr.BeginBlock then holds the churn; and with the veto in force there is
+	// no way out at all, since stamping the chain back on is the only thing that unblocks
+	// migration. A permanent network-wide churn halt is the worse outcome, and the
+	// operator setting the mimir is the explicit override. Every other gate still applies.
+	//
+	// The carve-out is measured over the retiring SET, not per vault, because the deadlock
+	// it escapes is a property of the set: BeginBlock halts the churn if ANY retiring vault
+	// still holds funds, and migrateFunds can only drain any of them once the chain is back
+	// on the active set. Mainnet runs several Asgards churning out together with the same
+	// BlockHeight and the same Chains, so per-vault evaluation would let a sibling that
+	// happens to be drained re-arm the veto and leave the funded one stuck - the exact
+	// topology the escape hatch exists for.
+	//
+	// Residual risk, stated plainly: if the chain really has been abandoned by every
+	// bifrost and funds were left behind anyway, this lets an operator re-stamp it and
+	// publish an inbound address nobody scans. Nothing in state distinguishes that from
+	// the accidental drop - a per-node freshness bar would, but SetLastObserveHeight is
+	// only written when a node observes an actual tx, so on a quiet stranded chain it is
+	// unsatisfiable for the same reason a fee-voter freshness window is (see
+	// chainAttesters).
+	//
+	// Deliberately looser than the churn blocker, which is HasFundsAboveDust over the
+	// whole vault: any non-zero balance on this chain disarms the veto, so a sub-dust
+	// remainder does too even though it would not have stalled anything. The exact
+	// predicate would be per-chain-above-dust, which no helper offers.
+	stranded := false
 	for _, retired := range retiring {
 		if isChainActivationExempt(retired) || !retired.HasChain(chain) {
 			continue
 		}
-		// ...unless the drop stranded funds, in which case the veto stands down.
-		//
-		// An orderly chain removal is ragnarok first, which drains the pools and empties
-		// the vaults, so the veto still holds there - it sees no funds. Funds still on
-		// the chain mean the drop was NOT orderly: migrateFunds has no target vault for a
-		// chain no active vault carries, so it stalls; the retiring-vault funds check in
-		// ValidatorMgr.BeginBlock then holds the churn; and with the veto in force there
-		// is no way out at all, since stamping the chain back on is the only thing that
-		// unblocks migration. A permanent network-wide churn halt is the worse outcome,
-		// and the operator setting the mimir is the explicit override. Every other gate
-		// still applies.
-		//
-		// Residual risk, stated plainly: if the chain really has been abandoned by every
-		// bifrost and funds were left behind anyway, this lets an operator re-stamp it
-		// and publish an inbound address nobody scans. Nothing in state distinguishes
-		// that from the accidental drop - a per-node freshness bar would, but
-		// SetLastObserveHeight is only written when a node observes an actual tx, so on
-		// a quiet stranded chain it is unsatisfiable for the same reason a fee-voter
-		// freshness window is (see chainAttesters).
-		//
-		// Deliberately looser than the churn blocker, which is HasFundsAboveDust over
-		// the whole vault: any non-zero balance on this chain disarms the veto, so a
-		// sub-dust remainder does too even though it would not have stalled anything.
-		// The exact predicate would be per-chain-above-dust, which no helper offers.
 		if retired.HasFundsForChain(chain) {
-			continue
+			stranded = true
+			break
 		}
-		for _, vault := range active {
-			if isChainActivationExempt(vault) || vault.HasChain(chain) {
+	}
+	if !stranded {
+		for _, retired := range retiring {
+			if isChainActivationExempt(retired) || !retired.HasChain(chain) {
 				continue
 			}
-			if vault.BlockHeight > retired.BlockHeight {
-				return false, nil, fmt.Sprintf(
-					"vault %s was keygen'd at %d without the chain, after retiring vault %s at %d held it",
-					vault.PubKey, vault.BlockHeight, retired.PubKey, retired.BlockHeight)
+			for _, vault := range active {
+				if isChainActivationExempt(vault) || vault.HasChain(chain) {
+					continue
+				}
+				if vault.BlockHeight > retired.BlockHeight {
+					return false, nil, fmt.Sprintf(
+						"vault %s was keygen'd at %d without the chain, after retiring vault %s at %d held it",
+						vault.PubKey, vault.BlockHeight, retired.PubKey, retired.BlockHeight)
+				}
 			}
 		}
 	}
