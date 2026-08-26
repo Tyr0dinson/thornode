@@ -138,11 +138,21 @@ the set is effectively frozen at the validators active when the fee last reached
 consensus. Nodes churning in afterwards never join it — a standby node's `MsgNetworkFee`
 is rejected — so the supermajority requirement decays across churns. If activation is
 being retried long after the first fee consensus and the log reads `readiness proof lacks
-a current supermajority`, have at least two thirds of active nodes restart bifrost within
-the same fee-update window: the restart clears the in-memory last fee, and the nodes post
-again at the same period-aligned chain height, forming a fresh voter that can reach
-consensus. Staggered restarts spread the posts across several voter keys and will not
-converge.
+a current supermajority`, the recovery depends on how the chain's scanner posts:
+
+- **XRP, Cosmos** post only on a period-aligned chain height (`height %
+  GasUpdatePeriodBlocks == 0`). Have at least two thirds of active nodes restart bifrost
+  within the same fee-update window: the restart clears the in-memory last fee, and they
+  all post again at the same aligned height and rate, forming one fresh voter that can
+  reach consensus. Staggered restarts land on different aligned heights, spreading the
+  posts across several voter keys, and will not converge.
+- **TRON** posts at whatever height it is scanning when the fee changes, with no
+  alignment, so restarts do not put the nodes on a common voter key and there is no
+  operator-driven refresh. The attester set there only advances when the fee genuinely
+  changes network-wide.
+
+A voter key is `CHAIN-height-rate-size`, which is why alignment is what decides whether
+independent nodes land on the same one.
 
 ## Technical Requirements
 

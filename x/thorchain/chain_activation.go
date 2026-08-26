@@ -214,8 +214,9 @@ func retiringNeedsStamping(ctx cosmos.Context, k keeper.Keeper, chain common.Cha
 // isSignedByActiveNodeAccounts), so G6b and G7 decay monotonically across churns. Fine
 // for the primary flow, where activation follows the first fee consensus immediately,
 // but the funds carve-out in G6a may find the proof already unsatisfiable by the time it
-// is needed. The operator recovery is a coordinated bifrost restart, which clears lastFee
-// and produces a fresh voter - see docs/new-chains/new-chain-process.md.
+// is needed. Where the scanner posts on a period-aligned height (XRP, Cosmos) a
+// coordinated bifrost restart refreshes it; TRON has no alignment and so no
+// operator-driven refresh at all - see docs/new-chains/new-chain-process.md.
 //
 // Scoped to the chain's own keys: the voter store is never pruned, and this runs every
 // block for as long as a chain sits unconverged, so the unscoped iterator would make
