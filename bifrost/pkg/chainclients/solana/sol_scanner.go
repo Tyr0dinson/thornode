@@ -279,6 +279,7 @@ func (s *SOLScanner) scan() {
 	successfulQueries := make([]bool, len(vaultAddrs))
 	countTxs := make([]int, len(vaultAddrs))
 	vaultLastSigs := make([]string, len(vaultAddrs))
+	floorCleared := make([]bool, len(vaultAddrs))
 	for i, vaultAddr := range vaultAddrs {
 		var lastSig string
 		var vaultLastSlot uint64
@@ -329,6 +330,7 @@ func (s *SOLScanner) scan() {
 				Msg("advancing vault scanner to configured floor block height")
 			minContextSlot = uint64(s.cfg.FloorBlockHeight)
 			queryLastSig = ""
+			floorCleared[i] = true
 		}
 
 		go s.scanVault(vaultAddr, i, queryLastSig, minContextSlot, setUnhealthy, countTxs, successfulQueries, newLastSigs, &wg)
@@ -351,10 +353,17 @@ func (s *SOLScanner) scan() {
 			// can be the current slot for the next call
 
 			// since tx query was successful, we want to update last scanned slot for this vault. We may or may not have queried new txs.
-			// If no txs were queried, we want to retain the last sig from the db.
+			// If no txs were queried, we want to retain the last sig from the db —
+			// UNLESS the floor cleared the cursor this iteration; restoring the old
+			// cursor would undo the floor advance and the next scan would query
+			// with a pruned cursor at currentSlot (one-shot floor bug).
 			var lastSig string
 			if txCount == 0 {
-				lastSig = vaultLastSigs[i]
+				if floorCleared[i] {
+					lastSig = ""
+				} else {
+					lastSig = vaultLastSigs[i]
+				}
 			} else {
 				lastSig = newLastSigs[i]
 			}
