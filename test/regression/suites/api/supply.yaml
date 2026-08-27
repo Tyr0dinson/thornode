@@ -10,6 +10,7 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/supply
+gas_used: 3177
 asserts:
   - .total == ${SUPPLY_TOTAL=501000}
   - .circulating == ${SUPPLY_CIRCULATING=151000}

@@ -118,6 +118,16 @@ func run(out io.Writer, path string, routine int, doneWithRetries func(path stri
 	}
 
 	ops, opLines, env, failExportInvariants := parseOps(localLog, path, tmpls, env)
+	for _, op := range ops {
+		check, ok := op.(*OpCheck)
+		if ok && check.GasUsed != nil {
+			env = append(env,
+				"THOR_COSMOS_GRPC_ENABLE=true",
+				fmt.Sprintf("THOR_COSMOS_GRPC_ADDRESS=0.0.0.0:%d", 9090+routine),
+			)
+			break
+		}
+	}
 
 	// warn if no operations found
 	if len(ops) == 0 {

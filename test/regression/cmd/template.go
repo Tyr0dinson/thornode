@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"sync"
 	"text/template"
 
@@ -103,7 +104,12 @@ func init() {
 	}
 
 	// parse all templates with custom functions
+	pattern := "templates/*.yaml"
+	if matches, _ := filepath.Glob(pattern); len(matches) == 0 {
+		// go test runs the package binary from test/regression/cmd.
+		pattern = "../templates/*.yaml"
+	}
 	templates = template.Must(
-		template.New("").Funcs(funcMap).ParseGlob("templates/*.yaml"),
+		template.New("").Funcs(funcMap).ParseGlob(pattern),
 	)
 }

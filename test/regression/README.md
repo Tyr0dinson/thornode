@@ -103,11 +103,18 @@ The check definition contains an endpoint, optional query parameters, and a set 
 type: check
 endpoint: /thorchain/pools
 params: {}
+gas_used: 12500
 asserts:
   - .|length == 1
   - .[0]|.asset == "BTC.BTC"
   - .[0].LP_units == "428885140806810"
 ```
+
+`gas_used` is an optional exact value for THORChain queries. The check fails if
+the query consumes either more or less gas than the recorded value.
+`AUTO_UPDATE=1` records the current consumption in the YAML alongside the
+existing response assertions. The runner enables the in-process gRPC query path
+automatically for test files containing a gas baseline.
 
 ### Transaction Definitions
 

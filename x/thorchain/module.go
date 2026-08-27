@@ -156,7 +156,7 @@ func (am AppModule) QuerierRoute() string {
 // RegisterServices registers module services.
 func (am AppModule) RegisterServices(cfg module.Configurator) {
 	types.RegisterMsgServer(cfg.MsgServer(), am.msgServer)
-	types.RegisterQueryServer(cfg.QueryServer(), am.queryServer)
+	types.RegisterQueryServer(queryGasServer{Server: cfg.QueryServer()}, am.queryServer)
 	wasmtypes.RegisterQueryServer(cfg.QueryServer(), wasmkeeper.Querier(&am.mgr.wasmKeeper))
 
 	m := NewMigrator(am.mgr)

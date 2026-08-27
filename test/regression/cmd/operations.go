@@ -297,6 +297,7 @@ type OpCheck struct {
 	Endpoint string            `json:"endpoint"`
 	Params   map[string]string `json:"params"`
 	Status   int               `json:"status"`
+	GasUsed  *uint64           `json:"gas_used" yaml:"gas_used,omitempty"`
 	Asserts  []string          `json:"asserts"`
 
 	prefetchResp *http.Response
@@ -340,6 +341,12 @@ func (op *OpCheck) prefetch(routine int) {
 		q.Add(k, v)
 	}
 	req.URL.RawQuery = q.Encode()
+
+	// Query gas is returned only when explicitly requested. Existing checks
+	// without a gas_used baseline continue to work unchanged.
+	if op.GasUsed != nil {
+		req.Header.Set("Grpc-Metadata-"+types.QueryGasRequestMetadata, "true")
+	}
 
 	// Transaction indexing can briefly lag block creation on loaded CI runners.
 	for i := 0; i < 10; i++ {
@@ -394,6 +401,22 @@ func (op *OpCheck) Execute(out io.Writer, path string, line, routine int, _ *os.
 		_ = yaml.NewEncoder(os.Stdout).Encode(op)
 		fmt.Println()
 		return fmt.Errorf("empty response")
+	}
+
+	if op.GasUsed != nil {
+		gasHeader := op.prefetchResp.Header.Get("Grpc-Metadata-" + types.QueryGasUsedMetadata)
+		gasUsed, gasErr := strconv.ParseUint(gasHeader, 10, 64)
+		if gasErr != nil {
+			return fmt.Errorf("invalid or missing query gas metadata %q: %w", gasHeader, gasErr)
+		}
+
+		if os.Getenv("AUTO_UPDATE") != "" && gasUsed != *op.GasUsed {
+			if err = updateCheckGas(path, line, gasUsed, localLog); err != nil {
+				return err
+			}
+		} else if gasUsed != *op.GasUsed {
+			return fmt.Errorf("query gas mismatch: used %d, expected %d", gasUsed, *op.GasUsed)
+		}
 	}
 
 	updates := make(map[string][2]string)
@@ -527,6 +550,27 @@ func (op *OpCheck) Execute(out io.Writer, path string, line, routine int, _ *os.
 	}
 
 	return nil
+}
+
+func updateCheckGas(path string, line int, gasUsed uint64, localLog zerolog.Logger) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+
+	lines := strings.Split(string(data), "\n")
+	for i := line; i < len(lines) && strings.TrimSpace(lines[i]) != "---"; i++ {
+		if !strings.HasPrefix(strings.TrimSpace(lines[i]), "gas_used:") {
+			continue
+		}
+
+		indent := lines[i][:len(lines[i])-len(strings.TrimLeft(lines[i], " \t"))]
+		lines[i] = fmt.Sprintf("%sgas_used: %d", indent, gasUsed)
+		localLog.Info().Int("line", i+1).Uint64("gas_used", gasUsed).Msg("auto updating query gas")
+		return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o600)
+	}
+
+	return fmt.Errorf("failed to find gas_used field to update")
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
