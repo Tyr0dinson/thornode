@@ -86,6 +86,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/stable_reserve/contributor/ETH.USDC-0X9999999999999999999999999999999999999999/{{ addr_eth_fox }}
+gas_used: 2510
 asserts:
   - .credit == "1000000000"
 ---
@@ -125,6 +126,7 @@ count: 12
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/stable_reserve
+gas_used: 40673
 asserts:
   # USDC inventory rescued away
   - '[.inventory[]|select(.asset == "ETH.USDC-0X9999999999999999999999999999999999999999")][0].amount == "0"'
@@ -162,11 +164,13 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '[.txs[]|.result.events[]|select(.type == "refund")|select(.reason|contains("stable reserve withdrawal unfilled"))]|length == 1'
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/stable_reserve/contributor/ETH.USDC-0X9999999999999999999999999999999999999999/{{ addr_eth_fox }}
+gas_used: 2510
 asserts:
   # unfilled withdrawal leaves the contributor credit unchanged
   - .credit == "1000000000"

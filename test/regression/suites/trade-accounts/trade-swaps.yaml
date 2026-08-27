@@ -18,6 +18,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
 ---
@@ -132,6 +133,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/trade/unit/BTC~BTC
+gas_used: 2165
 asserts:
   - .asset == "BTC~BTC"
   - .units|tonumber == 10000000
@@ -139,6 +141,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
+gas_used: 744
 asserts:
   - .|length == 1
   - .[0].asset == "BTC~BTC"
@@ -148,6 +151,7 @@ asserts:
 # Swap trade asset to trade asset, quote should match actual
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 1295262
 params:
   from_asset: "BTC~BTC"
   to_asset: "ETH~ETH"
@@ -164,6 +168,7 @@ asserts:
 # synth swap should be nearly equivalent
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 1110519
 params:
   from_asset: "BTC/BTC"
   to_asset: "ETH/ETH"
@@ -191,6 +196,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
+gas_used: 1122
 asserts:
   - .|length == 2
   - .[0].asset == "BTC~BTC"
@@ -201,6 +207,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/tx/details/{{ native_txid -1 }}
+gas_used: 6140
 asserts:
   - .tx.tx.coins | length == 1
   - .tx.tx.coins[0].amount == "${SWAP_IN}"
@@ -215,12 +222,14 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[.end_block_events[]|select(.type? == "fee")] | length == 0
 ---
 # swap half ETH~ETH to BTC~BTC, quote should match actual
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 1323732
 params:
   from_asset: "ETH~ETH"
   to_asset: "BTC~BTC"
@@ -242,6 +251,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
+gas_used: 1128
 asserts:
   - .|length == 2
   - .[0].asset == "BTC~BTC"
@@ -253,6 +263,7 @@ asserts:
 # stream swap remaining ETH, quote should match actual
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 1321669
 params:
   from_asset: "ETH~ETH"
   to_asset: "BTC~BTC"
@@ -276,6 +287,7 @@ count: 1
 # check for streaming swap
 type: check
 endpoint: http://localhost:1317/thorchain/swaps/streaming
+gas_used: 2910
 asserts:
   - .|length == 1 # streaming swap in progress complete
   - .[0].destination == "{{ addr_thor_fox }}"
@@ -289,6 +301,7 @@ count: 4
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
+gas_used: 1107
 asserts:
   - .|length == 1
   - .[0].asset == "BTC~BTC"
@@ -300,6 +313,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 1046008
 params:
   from_asset: "BTC~BTC"
   to_asset: "ETH~ETH"
@@ -337,6 +351,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 1050467
 params:
   from_asset: "BTC~BTC"
   to_asset: "ETH~ETH"
@@ -352,6 +367,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .result | length == 1
   - .result[0].denom == "rune"
@@ -359,21 +375,25 @@ asserts:
 # Confirming the sequence before two MsgMimirs (per signer) in the same block.
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_cat }}
+gas_used: 1537
 asserts:
   - .result.value.sequence == "3"
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_pig }}
+gas_used: 1537
 asserts:
   - .result.value.sequence == "3"
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+gas_used: 1537
 asserts:
   - .result.value.sequence == "6"
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_goat }}
+gas_used: 1537
 asserts:
   - .result.value.sequence == "3"
 ---
@@ -431,6 +451,7 @@ count: 2 # One block to set the Mimirs by the end, one to spawn the THOR.BTC poo
 # Confirm the Mimir values
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 8948
 asserts:
   - .["DerivedDepthBasisPts" | ascii_upcase] == 10000
   - .["EnableDerivedAssets" | ascii_upcase] == 0
@@ -440,6 +461,7 @@ asserts:
 # Confirm that the THOR.BTC pool exists.
 type: check
 endpoint: http://localhost:1317/thorchain/dpool/THOR.BTC
+gas_used: 334231
 asserts:
   - .asset == "THOR.BTC"
   - .status == "Available"
@@ -458,6 +480,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type? == "refund")] | length == 1
   - ..|select(.type? == "refund").reason | contains("swapping to a trade asset of a native coin is not allowed")
@@ -467,6 +490,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
+gas_used: 1107
 asserts:
   - .|length == 1
   - .[0].asset == "BTC~BTC"
@@ -475,6 +499,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .result | length == 1
   - .result[0].denom == "rune"
@@ -492,6 +517,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
+gas_used: 1107
 asserts:
   - .|length == 1
   - .[0].asset == "BTC~BTC"
@@ -500,6 +526,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .result | length == 1
   - .result[0].denom == "rune"
@@ -510,6 +537,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .result | length == 1
   - .result[0].denom == "rune"
@@ -517,11 +545,13 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/network
+gas_used: 71334
 asserts:
   - .native_tx_fee_rune == "${NATIVE_TX_FEE_RUNE=2000000}"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
+gas_used: 1107
 asserts:
   - .|length == 1
   - .[0].asset == "BTC~BTC"
@@ -540,6 +570,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .result | length == 1
   - .result[0].denom == "rune"
@@ -547,6 +578,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
+gas_used: 1107
 asserts:
   - .|length == 1
   - .[0].asset == "BTC~BTC"

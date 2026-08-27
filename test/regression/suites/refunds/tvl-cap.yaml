@@ -11,6 +11,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 57250
 asserts:
   - .|length == 1
 ---
@@ -42,11 +43,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type? == "refund")][0].reason == "add liquidity rune is more than bond"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 5053
 asserts:
   - .|length == 1
   - .[0]|.coin.amount == "4999993000"

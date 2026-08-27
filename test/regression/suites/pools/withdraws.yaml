@@ -20,6 +20,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.log? and .code != 0)] | length == 1
   - ..|select(.log?).log | contains("pool-ETH.NONSENSE doesn't exist")
@@ -46,11 +47,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.log? and .code != 0)] | length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 6173
 asserts:
   - .|length == 1 # The outbound exists.
   - .[]|.in_hash == "{{ native_txid 2 }}"
@@ -81,5 +84,6 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 7371
 asserts:
   - .|length == 0 # The outbound was resolved.

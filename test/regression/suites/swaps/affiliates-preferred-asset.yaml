@@ -34,6 +34,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
+gas_used: 0
 status: 500
 asserts:
   - .code == 2
@@ -54,6 +55,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
+gas_used: 0
 asserts:
   - .aliases[0].address == "{{ addr_thor_pig }}"
   - .owner == "{{ addr_thor_pig }}"
@@ -74,6 +76,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
+gas_used: 0
 asserts:
   - .aliases[0].address == "{{ addr_thor_pig }}"
   - .aliases[1].address == "{{ addr_btc_pig }}"
@@ -85,11 +88,13 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
+gas_used: 0
 asserts:
   - .affiliate_collector_rune == "0"
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+gas_used: 0
 asserts:
   - .result[]|select(.denom == "rune")|.amount == "4994000000"
 ---
@@ -124,16 +129,19 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
+gas_used: 0
 asserts:
   - .affiliate_collector_rune == "226763410"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
+gas_used: 0
 asserts:
   - .coins[]|select(.denom == "rune")|.amount == "226763410"
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+gas_used: 0
 asserts:
   - .result[]|select(.denom == "rune")|.amount == "4994000000"
 ---
@@ -155,21 +163,25 @@ count: 2
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
+gas_used: 0
 asserts:
   - .affiliate_collector_rune == "474822488"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
+gas_used: 0
 asserts:
   - .coins[]|select(.denom == "rune")|.amount == "474822488"
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+gas_used: 0
 asserts:
   - .result[]|select(.denom == "rune")|.amount == "4994000000"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 0
 asserts:
   - .[0].coin.amount == "${OUT_AMOUNT=4710583}"
 ---
@@ -199,6 +211,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 0
 asserts:
   - .|length == 0
 ---
@@ -217,6 +230,7 @@ count: 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 0
 asserts:
   - length == 1
   - .[0].original_memo == "OUT:{{ native_txid -1 }}"
@@ -248,6 +262,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 0
 asserts:
   - .|length == 0
 ---
@@ -276,21 +291,25 @@ count: 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
+gas_used: 0
 asserts:
   - .affiliate_collector_rune == "0"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
+gas_used: 0
 asserts:
   - .coins|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+gas_used: 0
 asserts:
   - .result[]|select(.denom == "rune")|.amount == "4994000000"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[.end_block_events[]|select(.type == "scheduled_outbound")]|length == 1
   - .end_block_events[]|select(.type == "scheduled_outbound").to_address == "{{ addr_btc_pig }}"
@@ -299,6 +318,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 0
 asserts:
   - length == 1
   - .[0].in_hash == "${IN_HASH=C3ED9A4B91884C692B924E38706085217974753504C756F83FD446CB6CA07313}"
@@ -330,6 +350,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 0
 asserts:
   - .|length == 0
 ---
@@ -361,11 +382,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
+gas_used: 0
 asserts:
   - .affiliate_collector_rune == "${RUNE_AMOUNT=384656939}"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
+gas_used: 0
 asserts:
   - .coins[]|select(.denom == "rune").amount == "${RUNE_AMOUNT}"
 ---
@@ -380,6 +403,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 0
 asserts:
   - .HALTBTCTRADING == 1
 ---
@@ -395,16 +419,19 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
+gas_used: 0
 asserts:
   - .affiliate_collector_rune == "${RUNE_AMOUNT}"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
+gas_used: 0
 asserts:
   - .coins[]|select(.denom == "rune").amount == "${RUNE_AMOUNT}"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 0
 asserts:
   - length == 1
   - .[0].in_hash == "${IN_HASH=F7B3511C55618B34293F9BC879D703152966A25AC8F346506F4017C1F23A39B5}"
@@ -436,6 +463,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 0
 asserts:
   - .|length == 0
 ---
@@ -467,6 +495,7 @@ count: 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
+gas_used: 0
 asserts:
   - .affiliate_collector_rune == "${TEST_THORNAME_RUNE=6546200814}"
   - .preferred_asset_swap_threshold_rune == "${SWAP_THRESHOLD_RUNE=1080794800}"
@@ -493,16 +522,19 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
+gas_used: 0
 asserts:
   - .coins[]|select(.denom == "rune")|.amount == "${TEST_THORNAME_RUNE}"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 0
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[.end_block_events[]|select(.type == "refund")]|length == 0
 ---
@@ -521,6 +553,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
+gas_used: 0
 asserts:
   - .preferred_asset == "BTC.BTC"
   - .preferred_asset_outbound_fee_multiplier == 400
@@ -554,6 +587,7 @@ count: 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
+gas_used: 0
 asserts:
   - .affiliate_collector_rune == "${TEST_THORNAME_RUNE=8025281235}"
   - .preferred_asset_swap_threshold_rune == "${SWAP_THRESHOLD_RUNE=4323219200}"
@@ -581,16 +615,19 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
+gas_used: 0
 asserts:
   - .coins[]|select(.denom == "rune")|.amount == "${TEST_THORNAME_RUNE}"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 0
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[.end_block_events[]|select(.type == "refund")]|length == 0
 ---
@@ -607,6 +644,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 0
 asserts:
   - .HALTBTCTRADING == 0
 ---
@@ -642,12 +680,14 @@ count: 2
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
+gas_used: 0
 asserts:
   - .affiliate_collector_rune == "0"
   - .preferred_asset_outbound_fee_multiplier == 400
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
+gas_used: 0
 asserts:
   - .coins|length == 0
 ---
@@ -656,6 +696,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[.end_block_events[]|select(.type == "scheduled_outbound")]|length == 1
   - .end_block_events[]|select(.type == "scheduled_outbound").to_address == "{{ addr_btc_pig }}"
@@ -664,6 +705,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 0
 asserts:
   - length == 1
   - .[0].coin.asset == "BTC.BTC"
@@ -697,5 +739,6 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 0
 asserts:
   - .|length == 0

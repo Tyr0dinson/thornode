@@ -32,6 +32,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_dog }}
+gas_used: 459
 asserts:
   - .balances|length == 2
   - .balances[0].denom == "rune"
@@ -41,6 +42,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.events[3].action == "/cosmwasm.wasm.v1.MsgInstantiateContract"
   - .txs[0].result.events[5]._contract_address == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
@@ -69,6 +71,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_dog }}
+gas_used: 456
 asserts:
   - .balances|length == 2
   - .balances[0].denom == "rune"
@@ -78,6 +81,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/THOR.RUJI
+gas_used: 60334
 asserts:
   - .status == "Available"
   - .balance_asset == "100000000000000"
@@ -97,6 +101,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_dog }}
+gas_used: 456
 asserts:
   - .balances|length == 2
   - .balances[0].denom == "rune"
@@ -116,6 +121,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_dog }}
+gas_used: 456
 asserts:
   - .balances|length == 2
   - .balances[0].denom == "rune"
@@ -135,6 +141,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_dog }}
+gas_used: 456
 asserts:
   - .balances|length == 2
   - .balances[0].denom == "rune"

@@ -80,6 +80,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 9371
 asserts:
 - .["SOLVENCYHALTBTCCHAIN"] == 3
 ---
@@ -98,5 +99,6 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+gas_used: 1315
 asserts:
   - .result.value.sequence == "0"

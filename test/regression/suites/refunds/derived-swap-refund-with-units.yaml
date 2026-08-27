@@ -43,6 +43,7 @@ sequence: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/dpool/THOR.BTC
+gas_used: 259450
 asserts:
   - .status == "Suspended"
 ---
@@ -51,6 +52,7 @@ count: 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/dpool/THOR.BTC
+gas_used: 291556
 asserts:
   - .status == "Available"
 ---
@@ -66,11 +68,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
+gas_used: 249
 asserts:
   - .supply[]|select(.denom == "thor.btc")|.amount|tonumber == 980264
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 432
 asserts:
   - .balances[]|select(.denom == "thor.btc")|.amount|tonumber == 980264 # same as the total supply
 ---
@@ -87,6 +91,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_asgard }}
+gas_used: 288
 asserts:
   - .|[.balances[]|select(.denom == "thor.btc")]|length == 0 # There isn't, which is ideal.
 # Invariant checks are implicit in the regression test.

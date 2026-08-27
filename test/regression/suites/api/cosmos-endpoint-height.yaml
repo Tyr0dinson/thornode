@@ -7,6 +7,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 57250
 asserts:
   - length == 1
 ---
@@ -15,12 +16,14 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/lastblock
+gas_used: 19257
 asserts:
   - length >= 1
   - .[0].thorchain == ${HEIGHT_1=1}
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_reserve }}/by_denom?denom=rune
+gas_used: 1120
 asserts:
   - length == 1
   - .balance.denom == "rune"
@@ -31,12 +34,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/lastblock
+gas_used: 19263
 asserts:
   - length >= 1
   - .[0].thorchain == ${HEIGHT_2=2}
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_reserve }}/by_denom?denom=rune
+gas_used: 1120
 asserts:
   - length == 1
   - .balance.denom == "rune"
@@ -45,6 +50,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_reserve }}/by_denom?denom=rune&height=${HEIGHT_2}
+gas_used: 1120
 asserts:
   - length == 1
   - .balance.denom == "rune"
@@ -52,6 +58,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_reserve }}/by_denom?denom=rune&height=${HEIGHT_1}
+gas_used: 1120
 asserts:
   - length == 1
   - .balance.denom == "rune"

@@ -5,16 +5,19 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 3060
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
+gas_used: 174
 asserts:
   - .supply[]|select(.denom == "rune")|.amount|tonumber == 500000e8
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/inbound_addresses
+gas_used: 174521
 asserts:
   - .|length == 15
   # all addresses should be for the dog mnemonic
@@ -40,6 +43,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/network?height=1000
+gas_used: 0
 status: 500
 asserts:
   - .message|test("cannot query with height in the future")

@@ -5,6 +5,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmwasm/wasm/v1/code
+gas_used: 30
 asserts:
   - .code_infos|length == 0
 ---
@@ -18,6 +19,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmwasm/wasm/v1/code
+gas_used: 30
 asserts:
   - .code_infos|length == 0
 ---
@@ -39,6 +41,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.events[3].action == "/cosmwasm.wasm.v1.MsgStoreCode"
   - .txs[0].result.events[4].code_checksum == "f9b2efce508ab3594d41ad0d7bd645014b1e145df64083308d37c780de7390b0"
@@ -47,6 +50,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmwasm/wasm/v1/code
+gas_used: 618
 asserts:
   - .code_infos|length == 1
   - .code_infos[0].code_id == "1"

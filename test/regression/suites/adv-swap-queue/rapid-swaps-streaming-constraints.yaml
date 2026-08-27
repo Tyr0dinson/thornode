@@ -63,6 +63,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_1}
+gas_used: 8937
 asserts:
   - (.swap.state.count // 0) == 0
   - .swap.state.in == "0"
@@ -81,6 +82,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_1}
+gas_used: 9039
 asserts:
   - .swap.state.count >= 1
   - .swap.state.in != "0"
@@ -117,6 +119,7 @@ count: 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_2}
+gas_used: 9117
 asserts:
   - .swap.state.count >= 1
   - .swap.state.interval == 2
@@ -128,6 +131,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_2}
+gas_used: 9123
 asserts:
   - .swap.state.count < .swap.state.quantity
 ---
@@ -136,6 +140,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_2}
+gas_used: 9123
 asserts:
   - .swap.state.count < .swap.state.quantity
 ---
@@ -144,10 +149,12 @@ count: 10
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap
+gas_used: 2141
 asserts:
   - .|map(select(.tx.id == "${TXID_2}"))|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/invariant/asgard
+gas_used: 1173
 asserts:
   - .broken == false

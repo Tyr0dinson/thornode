@@ -7,6 +7,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 57250
 asserts:
   - .|length == 1
 ---
@@ -87,6 +88,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 16574
 asserts:
   - .pol.current_deposit == "${POL_DEPOSIT=1719663685}"
   - .pol.rune_deposited == "${POL_DEPOSIT}"
@@ -114,6 +116,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
+gas_used: 10662
 asserts:
   - .rune_address == "{{ addr_thor_fox }}"
   - .deposit_amount == "${POL_VALUE}"
@@ -124,6 +127,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 16601
 asserts:
   - .pol.pnl == "${RESERVE_PNL=-2535083}"
   - .reserve.units == "0" # provider owns all pol
@@ -151,6 +155,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 16589
 asserts:
   - .pol.pnl == "17535609"
   - .pol.rune_withdrawn == "0" # no rune withdrawn
@@ -177,6 +182,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
+gas_used: 10656
 asserts:
   - .deposit_amount == "${POL_VALUE}"
   - .last_deposit_height == 4
@@ -202,6 +208,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
+gas_used: 10689
 asserts:
   - .deposit_amount == "${POL_VALUE}"
   - .last_deposit_height == 4
@@ -211,6 +218,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 16616
 asserts:
   - .pol.pnl == "17535609"
   - .reserve.units == "${POL_DEPOSIT}"

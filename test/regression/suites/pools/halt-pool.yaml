@@ -7,6 +7,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 250946
 asserts:
   - .|length == 5
   - .[0].asset == "BTC.BTC"
@@ -30,6 +31,7 @@ count: 5
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 230502
 asserts:
   - .|length == 5
   - .[0].asset == "BTC.BTC"
@@ -61,6 +63,7 @@ count: 5
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 182760
 asserts:
   - .|length == 5
   - .[0].asset == "BTC.BTC"

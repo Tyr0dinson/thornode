@@ -78,6 +78,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_1}
+gas_used: 8973
 asserts:
   - .swap.state.count >= 1
   - .swap.state.quantity > .swap.state.count
@@ -85,11 +86,13 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_2}
+gas_used: 8991
 asserts:
   - .queue_type == "advanced"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap
+gas_used: 6503
 asserts:
   - any(.tx.id == "${TXID_1}")
   - any(.tx.id == "${TXID_2}")
@@ -100,11 +103,13 @@ count: 12
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap
+gas_used: 2141
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/invariant/asgard
+gas_used: 1176
 asserts:
   - .broken == false
 ---
@@ -123,5 +128,6 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/invariant/asgard
+gas_used: 1176
 asserts:
   - .broken == false

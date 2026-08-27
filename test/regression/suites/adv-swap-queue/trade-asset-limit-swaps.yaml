@@ -42,6 +42,7 @@ count: 1
 # Verify pools are created
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
 ---
@@ -99,6 +100,7 @@ count: 1
 # Verify BTC~BTC trade account balance
 type: check
 endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
+gas_used: 744
 asserts:
   - .|length == 1
   - .[0].asset == "BTC~BTC"
@@ -108,6 +110,7 @@ asserts:
 # Verify ETH~ETH trade account balance
 type: check
 endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_cat }}
+gas_used: 750
 asserts:
   - .|length == 1
   - .[0].asset == "ETH~ETH"
@@ -117,6 +120,7 @@ asserts:
 # Verify BTC~BTC trade unit totals
 type: check
 endpoint: http://localhost:1317/thorchain/trade/unit/BTC~BTC
+gas_used: 2165
 asserts:
   - .asset == "BTC~BTC"
   - .units|tonumber == 20000000
@@ -125,6 +129,7 @@ asserts:
 # Verify ETH~ETH trade unit totals
 type: check
 endpoint: http://localhost:1317/thorchain/trade/unit/ETH~ETH
+gas_used: 2171
 asserts:
   - .asset == "ETH~ETH"
   - .units|tonumber == 100000000
@@ -146,6 +151,7 @@ count: 1
 # Verify swap is in the advanced queue
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -1 }}
+gas_used: 8985
 asserts:
   - .swap.state.count >= 0
   - .swap.state.deposit == "10000000"
@@ -156,6 +162,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap
+gas_used: 5045
 asserts:
   - .|length > 0
   - any(.tx.id == "{{ native_txid -1 }}")
@@ -176,6 +183,7 @@ count: 5
 # Verify modification took effect
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -2 }}
+gas_used: 8997
 asserts:
   - .swap.trade_target == "40000000"  # Target should be updated
   - .queue_type == "advanced"
@@ -211,6 +219,7 @@ count: 15  # Give time for limit swap to execute (needs ~20 iterations)
 # Verify limit swap executed and ETH~ETH credited to trade account
 type: check
 endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
+gas_used: 1131
 asserts:
   - .|length == 2  # Should now have both BTC~BTC (remaining) and ETH~ETH (swapped)
   - any(.asset == "ETH~ETH")
@@ -219,6 +228,7 @@ asserts:
 # Verify swap is removed from queue after execution
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap
+gas_used: 2141
 asserts:
   - .|map(select(.tx.id == "{{ native_txid -3 }}"))|length == 0
 ---
@@ -253,6 +263,7 @@ count: 1
 # Verify outbound queue is empty after observing out
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 35233
 asserts:
   - .|length == 0
 ---
@@ -272,6 +283,7 @@ count: 1
 # Verify new swap is in queue
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -1 }}
+gas_used: 8895
 asserts:
   - .swap.state.deposit == "50000000"
   - .swap.trade_target == "25000000"
@@ -283,6 +295,7 @@ asserts:
 # Note: Trade asset limit swaps don't lock balance until execution
 type: check
 endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_cat }}
+gas_used: 750
 asserts:
   - .|length == 1
   - .[0].asset == "ETH~ETH"
@@ -304,12 +317,14 @@ count: 1
 # Verify swap is removed from queue
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap
+gas_used: 2141
 asserts:
   - .|map(select(.tx.id == "{{ native_txid -2 }}"))|length == 0  # Cancelled swap should be gone
 ---
 # Verify ETH~ETH is refunded to trade account
 type: check
 endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_cat }}
+gas_used: 750
 asserts:
   - .|length == 1
   - .[0].asset == "ETH~ETH"
@@ -321,6 +336,7 @@ asserts:
 # Verify Fox's final trade account state
 type: check
 endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
+gas_used: 1131
 asserts:
   - .|length >= 1  # Should have at least ETH~ETH from executed swap
   - any(.asset == "ETH~ETH")
@@ -329,6 +345,7 @@ asserts:
 # Verify Cat's final trade account state
 type: check
 endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_cat }}
+gas_used: 750
 asserts:
   - .|length == 1
   - .[0].asset == "ETH~ETH"
@@ -337,11 +354,13 @@ asserts:
 # Verify swap queue is clean (no lingering limit swaps)
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap
+gas_used: 2141
 asserts:
   - .|map(select(.tx.from_address == "{{ addr_thor_fox }}" or .tx.from_address == "{{ addr_thor_cat }}"))|length == 0
 ---
 # Verify asgard invariants are not broken
 type: check
 endpoint: http://localhost:1317/thorchain/invariant/asgard
+gas_used: 1170
 asserts:
   - .broken == false

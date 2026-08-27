@@ -94,6 +94,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 5188
 asserts:
   - length == 1
   - .[0].coin.amount == "${OUT_AMOUNT=11291804900}"
@@ -126,11 +127,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 6386
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 30
 asserts:
   - .HALTAVAXCHAIN|not
 ---
@@ -149,6 +152,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 9571
 asserts:
   - .|length == 1
   - .[0].coin.amount == "${OUT_AMOUNT=9019300200}"
@@ -181,11 +185,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 10571
 asserts:
   - .|length == 1 # outbound remains in queue
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '[.txs[]|.result.events[]|select(.type=="slash")]|length >= 1' # slash event
 ---
@@ -194,6 +200,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 4450
 asserts:
   - .HALTSIGNINGAVAX > 0 # signing halted
   - .HALTAVAXTRADING > 0 # trading halted

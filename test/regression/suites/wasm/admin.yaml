@@ -32,6 +32,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.events[3].action == "/cosmwasm.wasm.v1.MsgInstantiateContract"
   - .txs[0].result.events[4].type == "pin_code"
@@ -41,6 +42,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmwasm/wasm/v1/contract/tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f
+gas_used: 1444
 asserts:
   - .contract_info.admin == "{{ addr_thor_dog }}"
 ---
@@ -55,6 +57,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.code == 4
   - .txs[0].result.log|contains("unauthorized")
@@ -70,12 +73,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.code == 0
   - .txs[0].result.events[4].new_admin_address == "{{ addr_thor_cat }}"
 ---
 type: check
 endpoint: http://localhost:1317/cosmwasm/wasm/v1/contract/tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f
+gas_used: 1444
 asserts:
   - .contract_info.admin == "{{ addr_thor_cat }}"
 ---
@@ -89,6 +94,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.code == 4
   - .txs[0].result.log|contains("unauthorized")
@@ -103,12 +109,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.code == 0
   - .txs[0].result.events[4].new_admin_address == ""
 ---
 type: check
 endpoint: http://localhost:1317/cosmwasm/wasm/v1/contract/tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f
+gas_used: 1306
 asserts:
   - .contract_info.admin == ""
 ---
@@ -123,6 +131,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.code == 4
   - .txs[0].result.log|contains("unauthorized")

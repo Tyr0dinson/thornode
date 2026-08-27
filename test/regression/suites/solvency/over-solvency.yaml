@@ -31,6 +31,7 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/solvency
+gas_used: 732162
 asserts:
   - .assets|length >= 0
 ---
@@ -67,6 +68,7 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/solvency
+gas_used: 733162
 asserts:
   - .assets|length > 0
   - .assets[]|select(.asset == "BTC.BTC")|.amount|tonumber == 100000000
@@ -76,6 +78,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_reserve }}
+gas_used: 300
 asserts:
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 34999999560628
 ---
@@ -96,6 +99,7 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap
+gas_used: 3982
 asserts:
   - .|length > 0
   - .[0].tx.coins[0].asset == "BTC.BTC"
@@ -114,5 +118,6 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 282
 asserts:
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 25001359557

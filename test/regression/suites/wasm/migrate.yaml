@@ -50,6 +50,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.events[3].action == "/cosmwasm.wasm.v1.MsgMigrateContract"
   - .txs[0].result.events[4].code_id == "2"

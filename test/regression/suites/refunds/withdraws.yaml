@@ -7,6 +7,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
 ---
@@ -38,6 +39,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_providers
+gas_used: 1704
 asserts:
   - .|length == 2
 ---
@@ -66,6 +68,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/ETH.ETH/liquidity_providers
+gas_used: 1683
 asserts:
   - .|length == 2
 ---
@@ -94,6 +97,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
+gas_used: 3170
 asserts:
   - .|length == 1
 ---
@@ -122,6 +126,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/ETH.ETH/savers
+gas_used: 3164
 asserts:
   - .|length == 1
 ---
@@ -153,6 +158,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 9047
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ observe_txid 5 }}"
@@ -183,6 +189,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 10245
 asserts:
   - .|length == 0
 ---
@@ -214,6 +221,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 13292
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ observe_txid 7 }}"
@@ -244,6 +252,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 14490
 asserts:
   - .|length == 0
 ---
@@ -275,6 +284,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 17540
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ observe_txid 9 }}"
@@ -305,6 +315,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 18738
 asserts:
   - .|length == 0
 ---
@@ -336,6 +347,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 21788
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ observe_txid 11 }}"
@@ -366,6 +378,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 22986
 asserts:
   - .|length == 0
 ---
@@ -397,6 +410,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 26036
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ observe_txid 13 }}"
@@ -427,6 +441,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 27234
 asserts:
   - .|length == 0
 ---
@@ -445,6 +460,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499998000000
@@ -474,6 +490,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 0
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 99998000000
@@ -493,6 +510,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 0
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 99996000000
@@ -502,20 +520,24 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_providers
+gas_used: 0
 asserts:
   - .|length == 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/ETH.ETH/liquidity_providers
+gas_used: 0
 asserts:
   - .|length == 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
+gas_used: 0
 asserts:
   - .|length == 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/ETH.ETH/savers
+gas_used: 0
 asserts:
   - .|length == 1

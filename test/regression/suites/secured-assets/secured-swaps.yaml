@@ -18,6 +18,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
 ---
@@ -112,6 +113,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+gas_used: 4168
 asserts:
   - .asset == "BTC-BTC"
   - .supply|tonumber == 10000000
@@ -119,6 +121,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 429
 asserts:
   - .balances|length == 2
   - .balances[0].denom == "btc-btc"
@@ -127,6 +130,7 @@ asserts:
 # Swap secured asset to secured asset, quote should match actual
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 1406910
 params:
   from_asset: "BTC-BTC"
   to_asset: "ETH-ETH"
@@ -144,6 +148,7 @@ asserts:
 # (but different since Secured Asset swaps change pool Asset depths)
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 1108345
 params:
   from_asset: "BTC/BTC"
   to_asset: "ETH/ETH"
@@ -171,6 +176,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 564
 asserts:
   - .balances|length == 3
   - .balances[0].denom == "btc-btc"
@@ -181,6 +187,7 @@ asserts:
 # swap half ETH-ETH to BTC-BTC, quote should match actual
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 1432624
 params:
   from_asset: "ETH-ETH"
   to_asset: "BTC-BTC"
@@ -202,6 +209,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 564
 asserts:
   - .balances|length == 3
   - .balances[0].denom == "btc-btc"
@@ -212,6 +220,7 @@ asserts:
 # stream swap remaining ETH, quote should match actual
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 1430561
 params:
   from_asset: "ETH-ETH"
   to_asset: "BTC-BTC"
@@ -235,6 +244,7 @@ count: 1
 # check for streaming swap
 type: check
 endpoint: http://localhost:1317/thorchain/swaps/streaming
+gas_used: 2910
 asserts:
   - .|length == 1 # streaming swap in progress complete
   - .[0].destination == "{{ addr_thor_fox }}"
@@ -248,6 +258,7 @@ count: 4
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 423
 asserts:
   - .balances|length == 2
   - .balances[0].denom == "btc-btc"
@@ -258,6 +269,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 1110432
 params:
   from_asset: "BTC-BTC"
   to_asset: "ETH-ETH"
@@ -293,6 +305,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 1114879
 params:
   from_asset: "BTC-BTC"
   to_asset: "ETH-ETH"
@@ -308,6 +321,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+gas_used: 423
 asserts:
   - .result | length == 2
   - .result[0].denom == "btc-btc"
@@ -363,6 +377,7 @@ count: 2 # One block to set the Mimirs by the end, one to spawn the THOR.BTC poo
 # Confirm the Mimir values
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 6738
 asserts:
   - .["DerivedDepthBasisPts" | ascii_upcase] == 10000
   - .["EnableDerivedAssets" | ascii_upcase] == 0
@@ -371,6 +386,7 @@ asserts:
 # Confirm that the THOR.BTC pool exists.
 type: check
 endpoint: http://localhost:1317/thorchain/dpool/THOR.BTC
+gas_used: 334231
 asserts:
   - .asset == "THOR.BTC"
   - .status == "Available"
@@ -389,6 +405,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type? == "refund")] | length == 1
   - .|..|select(.type? == "refund").reason | contains("swapping to a secured asset of a native coin is not allowed")
@@ -398,6 +415,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 423
 asserts:
   - .balances|length == 2
   - .balances[0].denom == "btc-btc"
@@ -417,6 +435,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 423
 asserts:
   - .balances|length == 2
   - .balances[0].denom == "btc-btc"
@@ -429,6 +448,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 423
 asserts:
   - .balances|length == 2
   - .balances[0].denom == "btc-btc"
@@ -438,6 +458,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/network
+gas_used: 71334
 asserts:
   - .native_tx_fee_rune == "${NATIVE_TX_FEE_RUNE=2000000}"
 ---
@@ -453,6 +474,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+gas_used: 423
 asserts:
   - .result | length == 2
   - .result[0].denom == "btc-btc"
@@ -486,11 +508,13 @@ value: 10
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fish }}
+gas_used: 30
 asserts:
   - .result | length == 0 # An empty balance to start with.
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+gas_used: 423
 asserts:
   - .result | length == 2
   - .result[0].denom == "btc-btc"
@@ -510,6 +534,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type? == "swap")] | length == 1
   - ..|select(.type? == "swap").id == "{{ native_txid -1 }}"
@@ -541,6 +566,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type? == "swap")] | length == 1
   - ..|select(.type? == "swap").id == "{{ native_txid -1 }}"
@@ -570,12 +596,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .result | length == 1
   - .result[0].denom == "rune" # All BTC-BTC has been used.
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type? == "swap")] | length == 1
   - ..|select(.type? == "swap").id == "{{ native_txid -2 }}"
@@ -612,6 +640,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fish }}
+gas_used: 276
 asserts:
   - .result | length == 1
   - .result[0].denom == "rune"

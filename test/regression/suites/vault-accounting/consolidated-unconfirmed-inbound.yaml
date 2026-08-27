@@ -7,6 +7,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
 ---
@@ -39,12 +40,14 @@ count: 1
 # inbound should not be finalised
 type: check
 endpoint: http://localhost:1317/thorchain/tx/status/{{ observe_txid 1 }}
+gas_used: 4916
 asserts:
   - .stages.inbound_finalised.completed == false
 ---
 # asgard vault balance should not be updated
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
+gas_used: 7558
 asserts:
   - .[0]|.coins[]|select(.asset == "BTC.BTC")|.amount|tonumber == ${VAULT_AMOUNT=100000000}
   - ${UNCONFIRMED_VAULT_BALANCE=105000000} == ${VAULT_AMOUNT} + ${INBOUND_AMOUNT}
@@ -78,6 +81,7 @@ count: 1
 # asgard vault balance should lose consolidate gas
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
+gas_used: 7549
 asserts:
   - .[0]|.coins[]|select(.asset == "BTC.BTC")|.amount|tonumber == ${VAULT_AMOUNT}-${CONSOLIDATE_GAS}
 ---
@@ -107,6 +111,7 @@ count: 1
 # asgard vault balance should remain the same
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
+gas_used: 7549
 asserts:
   - .[0]|.coins[]|select(.asset == "BTC.BTC")|.amount|tonumber == ${VAULT_AMOUNT}-${CONSOLIDATE_GAS}
 ---
@@ -139,5 +144,6 @@ count: 1
 # asgard vault balance should include finalized inbound
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
+gas_used: 7558
 asserts:
   - .[0]|.coins[]|select(.asset == "BTC.BTC")|.amount|tonumber == ${VAULT_AMOUNT}-${CONSOLIDATE_GAS}+${INBOUND_AMOUNT}

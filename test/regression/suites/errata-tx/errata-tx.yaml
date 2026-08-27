@@ -33,11 +33,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
+gas_used: 7558
 asserts:
   - .[]|.coins[]|select(.asset == "BTC.BTC")|.amount == "105000000"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 5029
 asserts:
   - .|length == 1
 ---
@@ -54,18 +56,21 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/tx/{{ observe_txid 1 }}
+gas_used: 9354
 asserts:
   - .observed_tx.status == "reverted"
 ---
 # vault balance decremented
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
+gas_used: 7558
 asserts:
   - .[]|.coins[]|select(.asset == "BTC.BTC")|.amount == "100000000"
 ---
 # outbound still exists, conf-counting should protect against this in practice
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 6029
 asserts:
   - .|length == 1
 ---
@@ -97,6 +102,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+gas_used: 1315
 asserts:
   - .result.value.sequence == "0"
 ---
@@ -128,16 +134,19 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/tx/{{ observe_txid 1 }}
+gas_used: 9354
 asserts:
   - .observed_tx.status == "reverted"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
+gas_used: 7558
 asserts:
   - .[]|.coins[]|select(.asset == "BTC.BTC")|.amount == "100000000"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 8029
 asserts:
   - .[0].coin.amount == "${OUT_AMOUNT=40861780}"
 ---
@@ -169,11 +178,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 9227
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
+gas_used: 7567
 asserts:
   - .[]|.coins[]|select(.asset == "ETH.ETH")|.amount == "958178220"
 ---
@@ -190,11 +201,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/tx/{{ observe_txid 2 }}
+gas_used: 9439
 asserts:
   - .observed_tx.status == "reverted"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
+gas_used: 7567
 asserts:
   # vault balance should be restored, but we do not know if the gas was spent
   - .[]|.coins[]|select(.asset == "ETH.ETH")|.amount == "999040000"
@@ -202,12 +215,14 @@ asserts:
 # outbound not recreated
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 10227
 asserts:
   - .|length == 0
 ---
 # security event emitted
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[]|.result.events[]|select(.type == "security")|.msg == "outbound errata"
 ---

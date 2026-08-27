@@ -67,6 +67,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.events[3].type == "message"
   - .txs[0].result.events[3].action == "/cosmwasm.wasm.v1.MsgExecuteContract"
@@ -82,6 +83,7 @@ count: 1
 # Check nothing happened
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .end_block_events | length == 0
 ---
@@ -108,6 +110,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.events[5].type == "schedule_add"
   - .txs[0].result.events[5].sender == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
@@ -120,6 +123,7 @@ count: 1
 # Check nothing happened
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .end_block_events | length == 0
 ---
@@ -128,6 +132,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .end_block_events[0].type == "schedule_start"
   - .end_block_events[0].sender == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"

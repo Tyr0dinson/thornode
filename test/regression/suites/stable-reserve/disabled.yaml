@@ -32,6 +32,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/stable_reserve
+gas_used: 21979
 asserts:
   - .enabled == false
 ---
@@ -67,16 +68,19 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '[.txs[]|.result.events[]|select(.type == "refund")]|length == 1'
   - '[.txs[]|.result.events[]|select(.type == "stable_reserve_deposit")]|length == 0'
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/stable_reserve/contributor/ETH.USDC-0X9999999999999999999999999999999999999999/{{ addr_eth_fox }}
+gas_used: 1000
 asserts:
   - .credit == "0"
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_stable_reserve }}
+gas_used: 30
 asserts:
   - '[.balances[]|select(.denom == "eth-usdc-0x9999999999999999999999999999999999999999")]|length == 0'

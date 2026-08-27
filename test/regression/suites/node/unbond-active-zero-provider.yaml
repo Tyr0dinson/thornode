@@ -55,12 +55,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs|length == 1
   - .txs[0]|.result.log|contains("active or ready status")
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+gas_used: 25268
 asserts:
   - .bond_providers.providers | length == 3
   - .bond_providers.providers[] |
@@ -82,12 +84,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs|length == 1
   - .txs[0]|.result.log|contains("active or ready status")
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+gas_used: 25268
 asserts:
   - .bond_providers.providers | length == 3
   - .bond_providers.providers[] |
@@ -108,12 +112,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs|length == 1
   - .txs[0]|.result.code == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+gas_used: 25187
 asserts:
   - .bond_providers.providers | length == 2
   - (.bond_providers.providers | map(select(.bond_address == "{{ addr_thor_fish }}")) | length) == 0

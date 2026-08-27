@@ -9,6 +9,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 1708974
 params:
   from_asset: THOR.RUNE
   to_asset: BTC.BTC
@@ -33,6 +34,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 5023
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ native_txid -1 }}"
@@ -40,6 +42,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .end_block_events[] | select(.type == "swap") | .swap_slip == "3"
   - .end_block_events[] | select(.type == "swap") | .pool_slip == "3"
@@ -132,6 +135,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 6221
 asserts:
   - .|length == 0
 ---
@@ -161,11 +165,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 2258
 asserts:
   - .["L1SlipMinBps" | ascii_upcase] == 500
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 1718204
 params:
   from_asset: THOR.RUNE
   to_asset: BTC.BTC
@@ -179,6 +185,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 1847288
 params:
   from_asset: ETH.ETH
   to_asset: BTC.BTC
@@ -190,6 +197,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 1858380
 params:
   from_asset: ETH/ETH
   to_asset: BTC.BTC
@@ -211,6 +219,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 10244
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ native_txid -1 }}"
@@ -218,6 +227,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .end_block_events[] | select(.type == "swap") | .swap_slip == "500"
   - .end_block_events[] | select(.type == "swap") | .pool_slip == "3"

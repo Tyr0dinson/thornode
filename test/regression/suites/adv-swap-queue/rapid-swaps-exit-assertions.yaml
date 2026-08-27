@@ -30,6 +30,7 @@ count: 1
 # Exit path 1: empty queue with high rapid max
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap
+gas_used: 2141
 asserts:
   - .|length == 0
 ---
@@ -75,12 +76,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_1}
+gas_used: 9039
 asserts:
   - .swap.state.count == 1
   - .swap.state.quantity > .swap.state.count
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_2}
+gas_used: 9039
 asserts:
   - .swap.state.count == 1
   - .swap.state.quantity > .swap.state.count
@@ -91,10 +94,12 @@ count: 10
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap
+gas_used: 2141
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/invariant/asgard
+gas_used: 1173
 asserts:
   - .broken == false

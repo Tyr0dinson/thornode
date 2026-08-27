@@ -15,6 +15,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_cat }}
+gas_used: 8988
 asserts:
 - .total_bond == "10000000000"
 - .pub_key_set|length == 0
@@ -30,6 +31,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_cat }}
+gas_used: 8979
 asserts:
 - .total_bond == "9998000000"
 - .pub_key_set|length == 0
@@ -45,6 +47,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_cat }}
+gas_used: 8979
 asserts:
 - .total_bond == "9996000000"
 - .pub_key_set|length == 0
@@ -60,6 +63,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_cat }}
+gas_used: 11094
 asserts:
 - .total_bond == "9994000000"
 - .pub_key_set|length == 2
@@ -75,6 +79,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+gas_used: 1315
 asserts:
   - .result.value.sequence == "0"
 ---
@@ -90,5 +95,6 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+gas_used: 1537
 asserts:
   - .result.value.sequence == "1"

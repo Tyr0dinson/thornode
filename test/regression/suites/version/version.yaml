@@ -5,6 +5,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2500000000000
@@ -21,17 +22,20 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+gas_used: 1537
 asserts:
   - .result.value.sequence == "1"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+gas_used: 8940
 asserts:
   - .total_bond == "4000001"
   - .version == "0.0.0"
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499993999999
@@ -45,11 +49,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+gas_used: 1537
 asserts:
   - .result.value.sequence == "2"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+gas_used: 9003
 asserts:
   - .total_bond == "2000001"
   - .version == "0.1.2"
@@ -63,11 +69,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+gas_used: 1537
 asserts:
   - .result.value.sequence == "3"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+gas_used: 8949
 asserts:
   - .total_bond == "1"
   - .version == "0.1.2"
@@ -81,11 +89,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+gas_used: 1537
 asserts:
   - .result.value.sequence == "3"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+gas_used: 8949
 asserts:
   - .total_bond == "1"
   - .version == "0.1.2"

@@ -19,6 +19,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir/key/VAULTDEFICITGASHALTMAXGASMULTIPLIER
+gas_used: 2132
 asserts:
   - . == 1
 ---
@@ -51,6 +52,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+gas_used: 3131
 asserts:
   - .coins[]|select(.asset=="ETH.ETH")|.amount == "0"
   - '[.deficit[]|select(.asset=="ETH.ETH")]|length == 1'
@@ -58,12 +60,14 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 2456
 asserts:
   - .HALTSIGNINGETH|not
   - .HALTETHTRADING|not
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '[.txs[]?.result.events[]? | select(.type=="security" and (.msg|contains("vault deficit created")))]|length >= 1'
 ---
@@ -96,6 +100,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+gas_used: 3131
 asserts:
   - .coins[]|select(.asset=="ETH.ETH")|.amount == "0"
   - '[.deficit[]|select(.asset=="ETH.ETH")]|length == 1'
@@ -103,6 +108,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 6729
 asserts:
   - .HALTSIGNINGETH > 0
   - .HALTETHTRADING > 0
@@ -136,11 +142,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+gas_used: 3047
 asserts:
   - .coins[]|select(.asset=="ETH.ETH")|.amount == "0"
   - '[.deficit[]?]|length == 0'
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/eth.eth
+gas_used: 30876
 asserts:
   - .balance_asset == "0"

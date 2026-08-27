@@ -113,6 +113,7 @@ count: 2
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_claim }}
+gas_used: 276
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${BAL_TCY_STAKE}
@@ -120,11 +121,13 @@ asserts:
 # protocol-owned TCY = claim-module balance minus outstanding claimer entitlements
 type: check
 endpoint: http://localhost:1317/thorchain/tcy_protocol_owned
+gas_used: 4888
 asserts:
   - .amount|tonumber == ${BAL_TCY_STAKE}-${PIG_TCY}-${GOAT_TCY}-${FROG_TCY_PART_1}-${FROG_TCY_PART_2}-${WOLF_TCY}-${FISH_TCY}
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/tcy_staker/{{ addr_thor_pig }}
+gas_used: 1000
 status: 400
 asserts:
   - .code == 3
@@ -132,6 +135,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/tcy_staker/{{ addr_thor_goat }}
+gas_used: 1000
 status: 400
 asserts:
   - .code == 3
@@ -139,6 +143,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/tcy_staker/{{ addr_thor_frog }}
+gas_used: 1000
 status: 400
 asserts:
   - .code == 3
@@ -146,6 +151,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/tcy_staker/{{ addr_thor_wolf }}
+gas_used: 1000
 status: 400
 asserts:
   - .code == 3
@@ -153,6 +159,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/tcy_staker/{{ addr_thor_fish }}
+gas_used: 1000
 status: 400
 asserts:
   - .code == 3
@@ -269,6 +276,7 @@ count: 1
 #######################################################################################
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_claim }}
+gas_used: 276
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${BAL_TCY_STAKE}-${PIG_TCY}-${GOAT_TCY}-${FROG_TCY_PART_1}-${FROG_TCY_PART_2}-${WOLF_TCY}-${FISH_TCY}
@@ -277,22 +285,26 @@ asserts:
 # claim-module balance and the outstanding claimer sum by the same amount.
 type: check
 endpoint: http://localhost:1317/thorchain/tcy_protocol_owned
+gas_used: 1138
 asserts:
   - .amount|tonumber == ${BAL_TCY_STAKE}-${PIG_TCY}-${GOAT_TCY}-${FROG_TCY_PART_1}-${FROG_TCY_PART_2}-${WOLF_TCY}-${FISH_TCY}
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_stake }}
+gas_used: 372
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${PIG_TCY}+${GOAT_TCY}+${FROG_TCY_PART_1}+${FROG_TCY_PART_2}+${WOLF_TCY}+${FISH_TCY}
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/tcy_staker/{{ addr_thor_pig }}
+gas_used: 2324
 asserts:
   - .amount|tonumber == ${PIG_TCY}
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/tcy_staker/{{ addr_thor_goat }}
+gas_used: 2324
 asserts:
   - .amount|tonumber == ${GOAT_TCY}
 ---
@@ -301,16 +313,19 @@ asserts:
 #################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/tcy_staker/{{ addr_thor_frog }}
+gas_used: 2324
 asserts:
   - .amount|tonumber == ${FROG_TCY_PART_1}+${FROG_TCY_PART_2}
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/tcy_staker/{{ addr_thor_wolf }}
+gas_used: 2324
 asserts:
   - .amount|tonumber == ${WOLF_TCY}
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/tcy_staker/{{ addr_thor_fish }}
+gas_used: 2324
 asserts:
   - .amount|tonumber == ${FISH_TCY}
 ---
@@ -319,6 +334,7 @@ asserts:
 #################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/tcy_staker/{{ addr_thor_cat }}
+gas_used: 1000
 status: 400
 asserts:
   - .code == 3
@@ -336,17 +352,20 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+gas_used: 270
 asserts:
   - .balances|length == 1
   - .balances[0].denom == "rune"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/tcy_staker/{{ addr_thor_cat }}
+gas_used: 2339
 asserts:
   - .amount|tonumber == ${CAT_TCY}
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_stake }}
+gas_used: 384
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${PIG_TCY}+${GOAT_TCY}+${FROG_TCY_PART_1}+${FROG_TCY_PART_2}+${WOLF_TCY}+${FISH_TCY}+${CAT_TCY}
@@ -364,11 +383,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/tcy_staker/{{ addr_thor_cat }}
+gas_used: 2336
 asserts:
   - .amount|tonumber == ${CAT_TCY}/2
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+gas_used: 399
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${CAT_TCY}/2
@@ -386,6 +407,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/tcy_staker/{{ addr_thor_cat }}
+gas_used: 1000
 status: 400
 asserts:
   - .code == 3
@@ -393,12 +415,14 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+gas_used: 402
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${CAT_TCY}
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_stake }}
+gas_used: 378
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${PIG_TCY}+${GOAT_TCY}+${FROG_TCY_PART_1}+${FROG_TCY_PART_2}+${WOLF_TCY}+${FISH_TCY}

@@ -7,6 +7,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 57250
 asserts:
   - .|length == 1
 ---
@@ -93,6 +94,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 16574
 asserts:
   - .pol.current_deposit == "${POL_DEPOSIT=1719663673}"
   - .pol.rune_deposited == "${POL_DEPOSIT}"
@@ -107,6 +109,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+gas_used: 63718
 asserts:
   # show we are over 25% synth per pool target + 10% buffer
   - (.synth_supply|tonumber)/(.balance_asset|tonumber*2) == ${SYNTH_PER_POOL=0.372447705}
@@ -120,6 +123,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 16574
 asserts:
   - .pol.current_deposit|tonumber == ${POL_DEPOSIT}
   - .pol.rune_deposited|tonumber == ${POL_DEPOSIT}
@@ -135,6 +139,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+gas_used: 63727
 asserts:
   - (.synth_supply|tonumber)/(.balance_asset|tonumber*2) == ${SYNTH_PER_POOL}
   - .balance_rune == "${RUNE_BALANCE}"
@@ -154,6 +159,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
+gas_used: 10662
 asserts:
   - .rune_address == "{{ addr_thor_fox }}"
   - .deposit_amount == "${POL_VALUE}"
@@ -164,6 +170,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 16601
 asserts:
   - .pol.current_deposit|tonumber == ${POL_DEPOSIT}
   - .pol.rune_deposited|tonumber == ${POL_DEPOSIT}
@@ -193,6 +200,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
+gas_used: 10695
 asserts:
   - .rune_address == "{{ addr_thor_fox }}"
   - .deposit_amount == "${POL_VALUE}"
@@ -205,6 +213,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 16628
 asserts:
   - .pol.current_deposit|tonumber == ${POL_DEPOSIT}
   - .pol.rune_deposited|tonumber == ${POL_DEPOSIT}
@@ -242,6 +251,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
+gas_used: 10752
 asserts:
   - .rune_address == "{{ addr_thor_fox }}"
   - .deposit_amount|tonumber == 3*${POL_VALUE}
@@ -252,6 +262,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 16688
 asserts:
   - .pol.current_deposit|tonumber == ${POL_DEPOSIT}
   - .pol.rune_deposited|tonumber == ${POL_DEPOSIT}
@@ -279,6 +290,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
+gas_used: 10746
 asserts:
   - .rune_address == "{{ addr_thor_fox }}"
   - .deposit_amount|tonumber == 3*${POL_VALUE}
@@ -290,6 +302,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 16655
 asserts:
   - .pol.current_deposit|tonumber == ${POL_DEPOSIT}+${POL_DEPOSIT_2=1728261991}
   - .pol.rune_deposited|tonumber == ${POL_DEPOSIT}+${POL_DEPOSIT_2}
@@ -318,6 +331,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
+gas_used: 10752
 asserts:
   - .rune_address == "{{ addr_thor_fox }}"
   - .deposit_amount|tonumber == 3*${POL_VALUE}
@@ -330,6 +344,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 16661
 asserts:
   - .pol.current_deposit|tonumber == ${POL_DEPOSIT}+${POL_DEPOSIT_2}
   - .pol.rune_deposited|tonumber == ${POL_DEPOSIT}+${POL_DEPOSIT_2}
@@ -348,12 +363,14 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+gas_used: 429
 asserts:
   - .|[.result[]|select(.denom=="btc/btc")] | length == 1
   - .result[]|select(.denom=="btc/btc").amount == "${FOX_SYNTH_BALANCE=49999999}"
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_cat }}
+gas_used: 429
 asserts:
   - .|[.result[]|select(.denom=="btc/btc")] | length == 1
   - .result[]|select(.denom=="btc/btc").amount == "${CAT_SYNTH_BALANCE=24489542}"
@@ -377,6 +394,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 16526
 asserts:
   - .pol.current_deposit|tonumber == ${POL_DEPOSIT}+${POL_DEPOSIT_2}-${RUNE_WITHRDAWN=971857921}
   - .pol.rune_deposited|tonumber == ${POL_DEPOSIT}+${POL_DEPOSIT_2}
@@ -398,6 +416,7 @@ count: 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 16541
 asserts:
   - .reserve.units|tonumber == 0
   - .reserve.value|tonumber == 0
@@ -413,6 +432,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 13605
 asserts:
   - .reserve.units|tonumber == 0
   - .reserve.value|tonumber == 0
@@ -424,6 +444,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
+gas_used: 9197
 asserts:
   - .rune_address == "{{ addr_thor_fox }}"
   - .deposit_amount|tonumber == 3*${POL_VALUE}
@@ -449,6 +470,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 13518
 asserts:
   - .pol.value == "0"
   - .pol.pnl == "-384618848"
@@ -463,6 +485,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
+gas_used: 9113
 asserts:
   - .rune_address == "{{ addr_thor_fox }}"
   - .deposit_amount|tonumber == 3*${POL_VALUE}

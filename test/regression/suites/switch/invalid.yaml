@@ -36,6 +36,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '[.txs[]|.result.events[]|select(.type=="refund")]|length == 1'
   - .txs[]|.result.events[]|select(.type=="refund")|.from == "{{ addr_gaia_fox }}"
@@ -43,6 +44,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .balances|length == 1
 ---
@@ -71,6 +73,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '[.txs[]|.result.events[]|select(.type=="refund")]|length == 1'
   - .txs[]|.result.events[]|select(.type=="refund")|.from == "{{ addr_gaia_fox }}"
@@ -78,5 +81,6 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .balances|length == 1

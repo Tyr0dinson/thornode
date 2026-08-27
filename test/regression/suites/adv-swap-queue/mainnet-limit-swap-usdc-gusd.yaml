@@ -65,6 +65,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 107228
 asserts:
   - .|length == 2
   - .|map(select(.asset == "ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"))|length == 1
@@ -73,6 +74,7 @@ asserts:
 # Verify pool depths match mainnet block 23714433
 type: check
 endpoint: http://localhost:1317/thorchain/pool/ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48
+gas_used: 63232
 asserts:
   - .balance_rune == "517731612507150"
   - .balance_asset == "387695133089347"
@@ -80,6 +82,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/ETH.GUSD-0X056FD409E1D7A124BD7017459DFEA2F387B6D5CD
+gas_used: 63157
 asserts:
   - .balance_rune == "15116987235918"
   - .balance_asset == "11325887977642"
@@ -132,11 +135,13 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 6000
 asserts:
   - length == 0
 ---
 # Verify swap is still in queue
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap
+gas_used: 2141
 asserts:
  - .|map(select(.tx.id == "{{ native_txid -1 }}"))|length == 0

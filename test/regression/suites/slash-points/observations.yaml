@@ -75,6 +75,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 61649
 asserts:
   - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 1
   - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 1
@@ -111,6 +112,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 69011
 asserts:
   - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 0
   - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
@@ -147,6 +149,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 69455
 asserts:
   - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 0
   - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
@@ -183,6 +186,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 69911
 asserts:
   - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 0
   - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
@@ -219,6 +223,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 69923
 asserts:
   - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 1
   - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
@@ -295,6 +300,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 69950
 asserts:
   - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 2
   - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 1
@@ -305,6 +311,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 8000
 asserts:
   - length == 0
 ---
@@ -336,6 +343,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 69938
 asserts:
   - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 1
   - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
@@ -346,6 +354,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 11041
 asserts:
   - length == 1
 ---
@@ -377,6 +386,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 69926
 asserts:
   - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 1
   - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
@@ -413,6 +423,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 69926
 asserts:
   - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 1
   - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
@@ -449,6 +460,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 69926
 asserts:
   - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 2
   - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
@@ -462,6 +474,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 14041
 asserts:
   - length == 1
   - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=993000}
@@ -531,6 +544,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 69950
 asserts:
   - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 3
   - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 1
@@ -544,6 +558,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 15041
 asserts:
   - length == 1
   - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=993000}
@@ -575,11 +590,13 @@ count: 1
 # unfinalised consensus is sufficient for internal handler action.
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 16239
 asserts:
   - length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 69941
 asserts:
  - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 2
  - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
@@ -616,6 +633,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 69929
 asserts:
  - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 2
  - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
@@ -652,6 +670,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 69929
 asserts:
  - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 2
  - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
@@ -688,6 +707,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 69929
 asserts:
  - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 3
  - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
@@ -764,6 +784,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 69956
 asserts:
  - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 4
  - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 1
@@ -777,6 +798,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 20239
 asserts:
   - length == 0
 ---
@@ -805,6 +827,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 69944
 asserts:
  - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 3
  - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
@@ -815,6 +838,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 21239
 asserts:
   - length == 0
 ---
@@ -867,6 +891,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 69932
 asserts:
  - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 4
  - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
@@ -903,6 +928,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 69932
 asserts:
  - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 4
  - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0
@@ -939,6 +965,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 69932
 asserts:
  - .[] | select(.node_address == "{{ addr_thor_cat }}") | .slash_points == 5
  - .[] | select(.node_address == "{{ addr_thor_fox }}") | .slash_points == 0

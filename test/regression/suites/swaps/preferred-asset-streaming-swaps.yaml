@@ -20,6 +20,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 6759
 asserts:
   - .PREFERREDASSETOUTBOUNDFEEMULTIPLIER == 10
 ---
@@ -58,6 +59,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
+gas_used: 0
 asserts:
   - .aliases[0].address == "{{ addr_thor_pig }}"
   - .aliases[1].address == "{{ addr_eth_pig }}"
@@ -76,11 +78,13 @@ count: 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
+gas_used: 0
 asserts:
   - .affiliate_collector_rune == "724751541"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 0
 asserts:
   - .|length == 1
   - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=10767967}
@@ -111,6 +115,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 0
 asserts:
   - .|length == 0
 ---
@@ -142,6 +147,7 @@ count: 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
+gas_used: 0
 asserts:
   - .affiliate_collector_rune == "0"
 ---
@@ -150,6 +156,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 0
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == ${FOX_BAL=2498769806132}
@@ -179,6 +186,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/swap/streaming/{{ observe_txid 3 }}
+gas_used: 0
 asserts:
   - .deposit == "30000000"
   - .in == "5000000"
@@ -196,6 +204,7 @@ count: 3
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ observe_txid 3 }}
+gas_used: 0
 asserts:
   - .swap.state.deposit == "30000000"
   - .swap.state.in == "20000000"
@@ -213,17 +222,20 @@ count: 2
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+gas_used: 0
 asserts:
   - .result|length == 1
   - .result[]|select(.denom == "rune").amount|tonumber == ${FOX_BAL} + 2608525254
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
+gas_used: 0
 asserts:
   - .affiliate_collector_rune == "289836139"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/swaps/streaming
+gas_used: 0
 asserts:
   - .|length == 0
 ---
@@ -232,6 +244,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 0
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "${IN_HASH=026ECD3F2BD10125EA1B27C0571B8CA1FC6A69467CB88CA462F4CD1E87D9A6D2}"
@@ -262,5 +275,6 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 0
 asserts:
   - .|length == 0

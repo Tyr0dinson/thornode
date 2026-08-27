@@ -38,6 +38,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_dog }}
+gas_used: 459
 asserts:
   - .balances|length == 2
   - .balances[0].denom == "rune"
@@ -47,6 +48,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.events[3].action == "/cosmwasm.wasm.v1.MsgInstantiateContract"
   - .txs[0].result.events[5]._contract_address == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
@@ -75,16 +77,19 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .header.height == 6
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 48785
 asserts:
   - .[0].status == "Staged"
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2
+gas_used: 351
 asserts:
   - .balances[] | select(.denom == "x/ruji").amount == "100"
 ---
@@ -93,6 +98,7 @@ count: 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 48785
 asserts:
   - . | length  == 1
 ---
@@ -101,10 +107,12 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 3060
 asserts:
   - . | length == 0
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2
+gas_used: 30
 asserts:
   - .balances | length == 0

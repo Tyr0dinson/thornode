@@ -23,12 +23,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 5173
 asserts:
   - length == 1
   - .[0].coin.amount == "${OUT_AMOUNT=11291832900}"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/outbound_fee/${ASSET}
+gas_used: 28849
 asserts:
   - .[0].fee_spent_rune == "0"
 ---
@@ -60,16 +62,19 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 6371
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 4465
 asserts:
   - .HALTETHCHAIN|not
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/outbound_fee/${ASSET}
+gas_used: 31335
 asserts:
   - .[0].fee_spent_rune == "5000019560"
 ---
@@ -88,6 +93,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 9541
 asserts:
   - .|length == 1
   - .[0].coin.amount == "${OUT_AMOUNT=9027342900}"
@@ -120,35 +126,41 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 10541
 asserts:
   - .|length == 1 # outbound remains in queue
 ---
 # outbound fee should be unchanged (was covered by the slash)
 type: check
 endpoint: http://localhost:1317/thorchain/outbound_fee/${ASSET}
+gas_used: 31335
 asserts:
   - .[0].fee_spent_rune == "5000019560"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '[.txs[]|.result.events[]|select(.type=="slash")]|length >= 1' # slash event
 ---
 # outbound fee for gas asset should be unchanged
 type: check
 endpoint: http://localhost:1317/thorchain/outbound_fee/eth.eth
+gas_used: 31194
 asserts:
   - .[0].fee_spent_rune == "0"
 ---
 # eth pool should be deducted by the sum of outbound gas
 type: check
 endpoint: http://localhost:1317/thorchain/pool/eth.eth
+gas_used: 39429
 asserts:
   - .balance_asset == "900000001"
 ---
 # eth vault should be deducted by the sum of outbound gas
 type: check
 endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+gas_used: 3788
 asserts:
   - .coins[]|select(.asset=="ETH.ETH")|.amount == "900000001"
 ---
@@ -157,6 +169,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 8795
 asserts:
   - .HALTSIGNINGETH > 0 # signing halted
   - .HALTETHTRADING > 0 # trading halted

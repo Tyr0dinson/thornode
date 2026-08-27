@@ -11,6 +11,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
 ---
@@ -45,6 +46,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+gas_used: 4168
 asserts:
   - .asset == "BTC-BTC"
   - .supply|tonumber == 10000000
@@ -52,6 +54,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 429
 asserts:
   - .balances|length == 2
   - .balances[0].denom == "btc-btc"
@@ -59,6 +62,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs|length == 1
   - '[.txs[0].result.events[]|select(.type == "secured_asset_deposit")]|length == 1'
@@ -82,6 +86,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+gas_used: 4162
 asserts:
   - .asset == "BTC-BTC"
   - .supply|tonumber == 5000000
@@ -89,6 +94,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 564
 asserts:
   - .balances|length == 3
   - .balances[0].denom == "btc-btc"
@@ -111,6 +117,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+gas_used: 4162
 asserts:
   - .asset == "BTC-BTC"
   - .supply|tonumber == 5000000
@@ -118,6 +125,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 564
 asserts:
   - .balances|length == 3
   - .balances[0].denom == "btc-btc"
@@ -140,6 +148,7 @@ count: 9
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+gas_used: 4162
 asserts:
   - .asset == "BTC-BTC"
   - .supply == "${REMAINING_UNITS=9520493}"
@@ -147,6 +156,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 423
 asserts:
   - .balances|length == 2
   - .balances[0].denom == "btc-btc"
@@ -168,6 +178,7 @@ memo: "secure-:{{ addr_btc_fox }}"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/inbound_addresses
+gas_used: 129501
 asserts:
   - .[]|select(.chain == "BTC").outbound_fee == "${OUT_FEE=7000}"
 ---
@@ -176,6 +187,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs|length == 1
   - '[.txs[0].result.events[]|select(.type == "secured_asset_withdraw")]|length == 1'
@@ -186,6 +198,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+gas_used: 4162
 asserts:
   - .asset == "BTC-BTC"
   - .supply|tonumber == ${NEW_REMAINING_UNITS}
@@ -193,11 +206,13 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 423
 asserts:
   - .|length == 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 18032
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ native_txid -1 }}"
@@ -229,6 +244,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 19230
 asserts:
   - .|length == 0
 ---
@@ -244,6 +260,7 @@ memo: "secure-:{{ addr_btc_fox }}"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/inbound_addresses
+gas_used: 125484
 asserts:
   - .[]|select(.chain == "BTC").outbound_fee == "${OUT_FEE=7000}"
 ---
@@ -252,6 +269,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs|length == 1
   - '[.txs[0].result.events[]|select(.type == "secured_asset_withdraw")]|length == 1'
@@ -262,6 +280,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+gas_used: 4123
 asserts:
   - .asset == "BTC-BTC"
   - .supply == "0"
@@ -269,11 +288,13 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .balances|length == 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 22262
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ native_txid -1 }}"
@@ -305,5 +326,6 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 23460
 asserts:
   - .|length == 0

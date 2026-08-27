@@ -11,6 +11,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
 ---
@@ -50,6 +51,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/trade/unit/BTC~BTC
+gas_used: 2165
 asserts:
   - .asset == "BTC~BTC"
   - .units|tonumber == 10000000
@@ -57,6 +59,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
+gas_used: 744
 asserts:
   - .|length == 1
   - .[0].asset == "BTC~BTC"
@@ -65,6 +68,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs|length == 1
   - '[.txs[0].result.events[]|select(.type == "trade_account_deposit")]|length == 1'
@@ -88,6 +92,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/trade/unit/BTC~BTC
+gas_used: 2159
 asserts:
   - .asset == "BTC~BTC"
   - .units|tonumber == 5000000
@@ -95,6 +100,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
+gas_used: 1122
 asserts:
   - .|length == 2
   - .[0].asset == "BTC~BTC"
@@ -119,6 +125,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/trade/unit/BTC~BTC
+gas_used: 2159
 asserts:
   - .asset == "BTC~BTC"
   - .units|tonumber == 5000000
@@ -126,6 +133,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
+gas_used: 1122
 asserts:
   - .|length == 2
   - .[0].asset == "BTC~BTC"
@@ -150,6 +158,7 @@ count: 9
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/trade/unit/BTC~BTC
+gas_used: 2159
 asserts:
   - .asset == "BTC~BTC"
   - .units == "${REMAINING_UNITS=9520493}"
@@ -157,6 +166,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/trade/accounts/BTC~BTC
+gas_used: 1107
 asserts:
   - .|length == 1
   - .[0].asset == "BTC~BTC"
@@ -165,6 +175,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
+gas_used: 1107
 asserts:
   - .|length == 1
   - .[0].asset == "BTC~BTC"
@@ -187,6 +198,7 @@ memo: "trade-:{{ addr_btc_fox }}"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/inbound_addresses
+gas_used: 129501
 asserts:
   - .[]|select(.chain == "BTC").outbound_fee == "${OUT_FEE=7000}"
 ---
@@ -195,6 +207,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs|length == 1
   - '[.txs[0].result.events[]|select(.type == "trade_account_withdraw")]|length == 1'
@@ -205,6 +218,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/trade/unit/BTC~BTC
+gas_used: 2159
 asserts:
   - .asset == "BTC~BTC"
   - .units|tonumber == ${NEW_REMAINING_UNITS}
@@ -212,16 +226,19 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/trade/accounts/BTC~BTC
+gas_used: 1107
 asserts:
   - .|length == 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
+gas_used: 1107
 asserts:
   - .|length == 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 18032
 asserts:
   - length == 1
   - .[0].in_hash == "{{ native_txid -1 }}"
@@ -253,6 +270,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 19230
 asserts:
   - .|length == 0
 ---
@@ -268,6 +286,7 @@ memo: "trade-:{{ addr_btc_fox }}"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/inbound_addresses
+gas_used: 125484
 asserts:
   - .[]|select(.chain == "BTC").outbound_fee == "${OUT_FEE=7000}"
 ---
@@ -276,6 +295,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs|length == 1
   - '[.txs[0].result.events[]|select(.type == "trade_account_withdraw")]|length == 1'
@@ -286,6 +306,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/trade/unit/BTC~BTC
+gas_used: 2123
 asserts:
   - .asset == "BTC~BTC"
   - .units == "0"
@@ -293,16 +314,19 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/trade/accounts/BTC~BTC
+gas_used: 1071
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
+gas_used: 1071
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 22262
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ native_txid -1 }}"
@@ -334,5 +358,6 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 23460
 asserts:
   - .|length == 0

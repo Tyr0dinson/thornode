@@ -41,12 +41,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
 ---
 # Record initial BTC pool state (balance_rune includes block rewards)
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+gas_used: 60223
 asserts:
   - .balance_rune|tonumber > 100000000000
   - .balance_asset == "100000000"
@@ -102,6 +104,7 @@ count: 1
 # Both swaps go asset-to-rune through BTC pool, so iterations 1 and 2 are skipped.
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_1}
+gas_used: 9039
 asserts:
   - .swap.state.count == 1
   - .swap.state.quantity == 10
@@ -110,6 +113,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_2}
+gas_used: 9039
 asserts:
   - .swap.state.count == 1
   - .swap.state.quantity == 10
@@ -119,6 +123,7 @@ asserts:
 # Swaps should still be in queue (9 sub-swaps remaining each)
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap
+gas_used: 6593
 asserts:
   - .|length == 2
 ---
@@ -129,6 +134,7 @@ count: 9
 # Queue should be empty after completion
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap
+gas_used: 2141
 asserts:
   - .|length == 0
 ---
@@ -187,6 +193,7 @@ count: 1
 # Quantity may differ from Test 1 due to pool balance changes after earlier swaps.
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_3}
+gas_used: 8985
 asserts:
   - .swap.state.count == 3
   - .swap.state.quantity > 3
@@ -194,6 +201,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_4}
+gas_used: 9003
 asserts:
   - .swap.state.count == 3
   - .swap.state.quantity > 3
@@ -202,6 +210,7 @@ asserts:
 # Swaps should still be in queue (7 sub-swaps remaining each)
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap
+gas_used: 6521
 asserts:
   - .|length == 2
 ---
@@ -210,12 +219,14 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+gas_used: 62511
 asserts:
   - .balance_rune|tonumber > 0
   - .balance_asset|tonumber > 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
+gas_used: 62514
 asserts:
   - .balance_rune|tonumber > 0
   - .balance_asset|tonumber > 0
@@ -227,5 +238,6 @@ count: 10
 # Final invariant check
 type: check
 endpoint: http://localhost:1317/thorchain/invariant/asgard
+gas_used: 1170
 asserts:
   - .broken == false

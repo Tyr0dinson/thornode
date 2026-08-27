@@ -71,11 +71,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_1}
+gas_used: 9039
 asserts:
   - .swap.state.count == 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_2}
+gas_used: 9039
 asserts:
   - .swap.state.count == 1
 ---
@@ -127,16 +129,19 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_3}
+gas_used: 9039
 asserts:
   - .swap.state.count == 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_4}
+gas_used: 9039
 asserts:
   - .swap.state.count == 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/invariant/asgard
+gas_used: 5622
 asserts:
   - .broken == false
 ---

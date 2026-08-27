@@ -7,6 +7,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 57250
 asserts:
   - .|length == 1
   - .[0].asset == "BTC.BTC"
@@ -34,6 +35,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_providers
+gas_used: 1776
 asserts:
   - .|length == 1
   - .[0].pending_rune | tonumber == 200000000
@@ -41,6 +43,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+gas_used: 59112
 asserts:
   - .pending_inbound_rune | tonumber == 200000000
   - .LP_units | tonumber == 100000000000
@@ -50,6 +53,7 @@ count: 3
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_providers
+gas_used: 1332
 asserts:
   - .|length == 1
   - .[0].pending_rune | tonumber == 0
@@ -57,6 +61,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+gas_used: 58944
 asserts:
   - .pending_inbound_rune | tonumber == 0
   - .LP_units | tonumber == 100099894672

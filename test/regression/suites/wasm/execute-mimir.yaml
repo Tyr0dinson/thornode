@@ -71,12 +71,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmwasm/wasm/v1/code/1/contracts
+gas_used: 603
 asserts:
   - .contracts[0] == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
   - .contracts[1] == "tthor1suhgf5svhu4usrurvxzlgn54ksxmn8gljarjtxqnapv8kjnp4nrs3ptfdq"
 ---
 type: check
 endpoint: http://localhost:1317/cosmwasm/wasm/v1/code/2/contracts
+gas_used: 603
 asserts:
   - .contracts[0] == "tthor1xr3rq8yvd7qplsw5yx90ftsr2zdhg4e9z60h5duusgxpv72hud3swxdzfd"
   - .contracts[1] == "tthor1aakfpghcanxtc45gpqlx8j3rq0zcpyf49qmhm9mdjrfx036h4z5sc68ary"
@@ -93,6 +95,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.events[5]._contract_address == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
   - .txs[0].result.events[5].new_value == "1"
@@ -108,6 +111,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.events[5]._contract_address == "tthor1suhgf5svhu4usrurvxzlgn54ksxmn8gljarjtxqnapv8kjnp4nrs3ptfdq"
   - .txs[0].result.events[5].new_value == "1"
@@ -123,6 +127,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.events[5]._contract_address == "tthor1xr3rq8yvd7qplsw5yx90ftsr2zdhg4e9z60h5duusgxpv72hud3swxdzfd"
   - .txs[0].result.events[5].new_value == "1"
@@ -138,6 +143,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.events[5]._contract_address == "tthor1aakfpghcanxtc45gpqlx8j3rq0zcpyf49qmhm9mdjrfx036h4z5sc68ary"
   - .txs[0].result.events[5].new_value == "1"
@@ -154,6 +160,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 4540
 asserts:
   - ."HALTWASMCONTRACT-W58U9F" == 1
 ---
@@ -169,6 +176,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '.txs[0].result.log|contains("contract halted: unauthorized")'
 ---
@@ -183,6 +191,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.events[5]._contract_address == "tthor1suhgf5svhu4usrurvxzlgn54ksxmn8gljarjtxqnapv8kjnp4nrs3ptfdq"
   - .txs[0].result.events[5].new_value == "2"
@@ -198,6 +207,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.events[5]._contract_address == "tthor1xr3rq8yvd7qplsw5yx90ftsr2zdhg4e9z60h5duusgxpv72hud3swxdzfd"
   - .txs[0].result.events[5].new_value == "2"
@@ -213,6 +223,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.events[5]._contract_address == "tthor1aakfpghcanxtc45gpqlx8j3rq0zcpyf49qmhm9mdjrfx036h4z5sc68ary"
   - .txs[0].result.events[5].new_value == "2"
@@ -229,6 +240,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 7002
 asserts:
   - ."HALTWASMCS-4UMPB3SYCM6Z5WRT5DINB66N462U5VVQVDOIFKMP5G55WKRR7VDA" == 1
 ---
@@ -244,6 +256,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '.txs[0].result.log|contains("contract halted: unauthorized")'
 ---
@@ -258,6 +271,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.events[5]._contract_address == "tthor1suhgf5svhu4usrurvxzlgn54ksxmn8gljarjtxqnapv8kjnp4nrs3ptfdq"
   - .txs[0].result.events[5].new_value == "3"
@@ -273,6 +287,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '.txs[0].result.log|contains("checksum halted: unauthorized")'
 ---
@@ -287,6 +302,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '.txs[0].result.log|contains("checksum halted: unauthorized")'
 ---
@@ -302,6 +318,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 9170
 asserts:
   - .HALTWASMGLOBAL == 1
 ---
@@ -317,6 +334,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '.txs[0].result.log|contains("wasm halted: unauthorized")'
 ---
@@ -331,6 +349,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '.txs[0].result.log|contains("wasm halted: unauthorized")'
 ---
@@ -345,6 +364,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '.txs[0].result.log|contains("wasm halted: unauthorized")'
 ---
@@ -359,5 +379,6 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '.txs[0].result.log|contains("wasm halted: unauthorized")'

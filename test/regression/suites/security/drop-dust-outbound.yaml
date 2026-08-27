@@ -23,16 +23,19 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap
+gas_used: 1060
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 3000
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/scheduled
+gas_used: 722000
 asserts:
   - .|length == 0
 ---
@@ -54,16 +57,19 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap
+gas_used: 1060
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/scheduled
+gas_used: 722000
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 6032
 asserts:
   - .|length == 1
   # ${DROPPED=7000} is the amount from the "dropping gas asset output below dust threshold" log

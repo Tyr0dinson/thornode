@@ -22,6 +22,7 @@ count: 1
 # Check that maintenance status didn't change
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_cat }}
+gas_used: 6472
 asserts:
   - .maintenance == false
 ---
@@ -39,6 +40,7 @@ count: 1
 # Check that maintenance status didn't change
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_cat }}
+gas_used: 6472
 asserts:
   - .maintenance == false
 ---
@@ -57,6 +59,7 @@ count: 1
 # Check fox node status before maintenance
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+gas_used: 9000
 asserts:
   - .total_bond == "100000000000"
   - .maintenance == false
@@ -75,6 +78,7 @@ count: 1
 # Verify maintenance flag is set to true
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+gas_used: 9027
 asserts:
   - .maintenance == true
 ---
@@ -93,6 +97,7 @@ count: 1
 # Check that leave request was processed but maintenance flag is still true
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+gas_used: 8913
 asserts:
   - .requested_to_leave == true
   - .maintenance == true
@@ -111,6 +116,7 @@ count: 1
 # Verify maintenance flag toggled back to false even for a node that's leaving
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+gas_used: 8886
 asserts:
   - .requested_to_leave == true
   - .maintenance == false
@@ -130,6 +136,7 @@ count: 1
 # First toggle should set it to true
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+gas_used: 8913
 asserts:
   - .maintenance == true
 ---
@@ -147,6 +154,7 @@ count: 1
 # Second toggle should set it back to false
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+gas_used: 8886
 asserts:
   - .maintenance == false
 ---
@@ -164,6 +172,7 @@ count: 1
 # Third toggle should set it to true again
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+gas_used: 8913
 asserts:
   - .maintenance == true
 ---
@@ -182,5 +191,6 @@ count: 1
 # Maintenance status should remain unchanged
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+gas_used: 8913
 asserts:
   - .maintenance == true

@@ -46,6 +46,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '[.txs[]|.result.events[]|select(.type=="tss_keysign_failure")]|length == 1'
   - .txs[]|.result.events[]|select(.type=="tss_keysign_failure")|.round == "SignRound1Message1"
@@ -60,6 +61,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+gas_used: 2864
 asserts:
   - .frozen == null or (.frozen|length == 0)
 ---
@@ -87,6 +89,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '[.txs[]|.result.events[]|select(.type=="tss_keysign_failure")]|length == 1'
   - .txs[]|.result.events[]|select(.type=="tss_keysign_failure")|.round == "SignRound9Message"
@@ -94,6 +97,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+gas_used: 2882
 asserts:
   - .frozen|length == 1
   - .frozen[0] == "BTC"

@@ -5,6 +5,7 @@ count: 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/upgrade_proposals
+gas_used: 30
 asserts:
   - .|length == 0
 ---
@@ -20,11 +21,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+gas_used: 1537
 asserts:
   - .result.value.sequence == "1"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/upgrade_proposals
+gas_used: 9790
 asserts:
   - .|length == 1
   - .[0].name == "1.2.3"
@@ -38,6 +41,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/upgrade_proposal/1.2.3
+gas_used: 9334
 asserts:
   - .name == "1.2.3"
   - .height == 100
@@ -57,6 +61,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/upgrade_proposal/1.2.3
+gas_used: 9622
 asserts:
   - .approved == false
   - .approved_percent == "40.00"
@@ -67,6 +72,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/upgrade/v1beta1/current_plan
+gas_used: 1003
 asserts:
   - .plan == null
 ---
@@ -83,6 +89,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/upgrade_proposal/1.2.3
+gas_used: 10198
 asserts:
   - .approved == true
   - .approved_percent == "80.00"
@@ -102,6 +109,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/upgrade_proposal/1.2.3
+gas_used: 10486
 asserts:
   - .approved == true
   - .approved_percent == "100.00"
@@ -115,6 +123,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/upgrade/v1beta1/current_plan
+gas_used: 1147
 asserts:
   - .plan.name == "1.2.3"
   - .plan.info == "upgrade to version 1.2.3"
@@ -133,16 +142,19 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_pig }}
+gas_used: 1537
 asserts:
   - .result.value.sequence == "2"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/upgrade_proposals
+gas_used: 20684
 asserts:
   - .|length == 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/upgrade_proposal/1.2.3-expedited
+gas_used: 9484
 asserts:
   - .approved == false
   - .approved_percent == "20.00"
@@ -168,6 +180,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/upgrade_proposal/1.2.3-expedited
+gas_used: 10528
 asserts:
   - .approved == true
   - .approved_percent == "80.00"
@@ -181,6 +194,7 @@ asserts:
 # 1.2.3-expedited is approved but not scheduled yet because 1.2.3 is still scheduled
 type: check
 endpoint: http://localhost:1317/cosmos/upgrade/v1beta1/current_plan
+gas_used: 1147
 asserts:
   - .plan.name == "1.2.3"
   - .plan.info == "upgrade to version 1.2.3"
@@ -200,6 +214,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/upgrade_proposal/1.2.3
+gas_used: 10486
 asserts:
   - .approved == false
   - .approved_percent == "60.00"
@@ -215,6 +230,7 @@ asserts:
 # 1.2.3-expedited should be auto-scheduled now that the blocking plan was cleared
 type: check
 endpoint: http://localhost:1317/cosmos/upgrade/v1beta1/current_plan
+gas_used: 1177
 asserts:
   - .plan.name == "1.2.3-expedited"
   - .plan.info == "upgrade to version 1.2.3"

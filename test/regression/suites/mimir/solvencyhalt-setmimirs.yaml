@@ -88,6 +88,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[.txs[].result.events[]|select(.type == "set_mimir")]|length == 0
 ---
@@ -117,10 +118,12 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 7179
 asserts:
   - .SOLVENCYHALTBTCCHAIN != 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[.txs[].result.events[]|select(.type == "set_mimir")]|length == 1

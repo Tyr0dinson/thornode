@@ -11,6 +11,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
 ---
@@ -29,6 +30,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/t
+gas_used: 3300
 asserts:
   - .owner == "{{ addr_thor_cat }}"
   - .preferred_asset == "."
@@ -68,6 +70,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type?=="rev_share")] | length == 1
   - ..|select(.type?=="rev_share").thorname == "T"
@@ -86,6 +89,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type?=="rev_share")] | length == 1
   - ..|select(.type?=="rev_share").thorname == "T"
@@ -101,6 +105,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type?=="rev_share")] | length == 1
   - ..|select(.type?=="rev_share").thorname == "T"
@@ -116,6 +121,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/t
+gas_used: 4552
 asserts:
   - .owner == "{{ addr_thor_cat }}"
   - (.affiliate_collector_rune | tonumber) > 0

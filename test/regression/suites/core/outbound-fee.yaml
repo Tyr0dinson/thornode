@@ -7,6 +7,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/outbound_fees
+gas_used: 50919
 asserts:
   - .|length == 3
   - .[0] == {"asset":"THOR.RUNE","outbound_fee":"0"} # Only those two fields, others omitted.
@@ -37,12 +38,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/outbound_fee/${OUT_ASSET}
+gas_used: 21398
 asserts:
   - .|length == 1
   - .[0].fee_withheld_rune == "${FEE_WITHHELD=689663489892}"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 5029
 asserts:
   - .|length == 1
   - .[0]|.coin.amount == "${OUT_AMOUNT=8257426}"
@@ -72,11 +75,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 6227
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/outbound_fee/${OUT_ASSET}
+gas_used: 23620
 asserts:
   - .[0].fee_withheld_rune == "${FEE_WITHHELD}"
   - .[0].fee_spent_rune == "${FEE_SPENT=12584128}"
@@ -107,12 +112,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2495388197539
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/outbound_fees
+gas_used: 47986
 asserts:
   - .|length == 3
   - .[0] == {"asset":"THOR.RUNE","outbound_fee":"0"}

@@ -17,6 +17,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 204286
 asserts:
   - .|length == 4
 ---
@@ -40,6 +41,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 5140
 asserts:
   - ."TORANCHOR-ETH-USDC-0X9999999999999999999999999999999999999999" == 1
   - ."TORANCHOR-ETH-USDT-0X9999999999999999999999999999999999999999" == 1
@@ -84,11 +86,13 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/securedasset/ETH-USDC-0X9999999999999999999999999999999999999999
+gas_used: 4573
 asserts:
   - .supply|tonumber > 0
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_stable_reserve }}
+gas_used: 552
 asserts:
   - '[.balances[]|select(.denom == "eth-usdc-0x9999999999999999999999999999999999999999")]|length == 1'
   - '[.balances[]|select(.denom == "eth-usdc-0x9999999999999999999999999999999999999999")][0].amount|tonumber > 0'
@@ -98,6 +102,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/stable_reserve/contributor/ETH.USDC-0X9999999999999999999999999999999999999999/{{ addr_eth_fox }}
+gas_used: 2507
 asserts:
   - .asset == "ETH.USDC-0X9999999999999999999999999999999999999999"
   - .credit|tonumber > 0
@@ -107,6 +112,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/stable_reserve
+gas_used: 94888
 asserts:
   - .enabled == true
   - '[.inventory[]|select(.asset == "ETH.USDC-0X9999999999999999999999999999999999999999")]|length == 1'
@@ -117,6 +123,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '[.txs[]|.result.events[]|select(.type == "stable_reserve_deposit")]|length == 1'
   - '[.txs[]|.result.events[]|select(.type == "stable_reserve_deposit")][0].contributor == "{{ addr_eth_fox }}"'

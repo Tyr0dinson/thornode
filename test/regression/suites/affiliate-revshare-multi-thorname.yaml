@@ -11,6 +11,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
 ---
@@ -21,6 +22,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
+gas_used: 30
 asserts:
   - ((.coins // []) | map(select(.denom=="rune").amount | tonumber) | add // 0) == 0
 ---
@@ -116,6 +118,7 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type?=="rev_share")] | length == 2
   # Lex-ordered: first rev_share event is "A".
@@ -139,6 +142,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
+gas_used: 0
 asserts:
   - ((.coins | map(select(.denom=="rune").amount | tonumber) | add // 0)) > 0
 ---
@@ -147,12 +151,14 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/a
+gas_used: 0
 asserts:
   - .owner == "{{ addr_thor_cat }}"
   - (.affiliate_collector_rune | tonumber) > 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/b
+gas_used: 0
 asserts:
   - .owner == "{{ addr_thor_pig }}"
   - (.affiliate_collector_rune | tonumber) > 0

@@ -100,37 +100,44 @@ count: 4
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_stake }}
+gas_used: 474
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "rune")|.amount|tonumber == ${BAL_TCY_STAKE}
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_goat }}
+gas_used: 30
 asserts:
   - .balances|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_frog }}
+gas_used: 30
 asserts:
   - .balances|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_wolf }}
+gas_used: 30
 asserts:
   - .balances|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 30
 asserts:
   - .balances|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fish }}
+gas_used: 30
 asserts:
   - .balances|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 372
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${BAL_FOX_TCY}
@@ -151,30 +158,35 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_stake }}
+gas_used: 312
 asserts:
   - .balances|length == 1
   - .balances[0].denom == "tcy"
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_goat }}
+gas_used: 312
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == ${BAL_GOAT_TCY}
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_frog }}
+gas_used: 312
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == ${BAL_FROG_TCY}
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_wolf }}
+gas_used: 312
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == ${BAL_WOLF_TCY}
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 318
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == ${BAL_PIG_TCY}
@@ -182,11 +194,13 @@ asserts:
 # Fish and fox should not receive rune from distribution, instead claiming module should
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fish }}
+gas_used: 30
 asserts:
   - .balances|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 372
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${BAL_FOX_TCY}
@@ -194,6 +208,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_claim }}
+gas_used: 306
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == ${BAL_FOX_TCY}+${BAL_FISH_TCY}

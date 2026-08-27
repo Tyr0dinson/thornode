@@ -51,6 +51,7 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 22808
 asserts:
   - length == 1 # Only one node, so effective security bond equals  total effective bond equals total active bond.
   - .|[.[].total_bond|tonumber] | add == ${BOND=500000000000}
@@ -61,6 +62,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
   - .|[.[].balance_rune|tonumber] | add == ${TOTAL_POOLED_RUNE=200000066590}
@@ -71,6 +73,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type?=="swap").liquidity_fee_in_rune|tonumber] | length == 0
   # No swap events so no liquidity fees.
@@ -112,12 +115,14 @@ count: 1
 # Update pooled RUNE after the swap.
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 113239
 asserts:
   - .|[.[].balance_rune|tonumber] | add == ${TOTAL_POOLED_RUNE=195376441927}
   - 100 * ${TOTAL_POOLED_RUNE} / ${BOND} | round == ${SECURED_PROPORTION=39} # (%)
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type?=="swap").liquidity_fee_in_rune|tonumber] | add == 226757445
   - .|[..|select(.type?=="rewards")] | length == 1
@@ -139,6 +144,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type?=="swap").liquidity_fee_in_rune|tonumber] | length == 0
   # No swap events so no liquidity fees.
@@ -178,12 +184,14 @@ count: 1
 # Update pooled RUNE after the swap.
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 113254
 asserts:
   - .|[.[].balance_rune|tonumber] | add == ${TOTAL_POOLED_RUNE=191200740012}
   - 100 * ${TOTAL_POOLED_RUNE} / ${BOND} | round == ${SECURED_PROPORTION=38} # (%)
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type?=="swap").liquidity_fee_in_rune|tonumber] | add == 197058785
   - .|[..|select(.type?=="rewards")] | length == 1

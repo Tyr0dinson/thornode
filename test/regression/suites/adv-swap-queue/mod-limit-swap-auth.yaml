@@ -42,12 +42,14 @@ count: 1
 # Verify swap exists in queue
 type: check
 endpoint: http://localhost:1317/thorchain/queue
+gas_used: 1026892
 asserts:
   - .swap == 1
 ---
 # Verify swap details
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid 2 }}
+gas_used: 8913
 asserts:
   - .swap.trade_target == "8998438"
 ---
@@ -68,6 +70,7 @@ count: 1
 # Fox's swap should remain unchanged (Cat's modification was rejected at DeliverTx)
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid 2 }}
+gas_used: 8913
 asserts:
   - .swap.trade_target == "8998438"
 ---
@@ -87,6 +90,7 @@ count: 1
 # Fox's swap should be updated to new target
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid 2 }}
+gas_used: 8913
 asserts:
   - .swap.trade_target == "9500000"
 ---
@@ -120,6 +124,7 @@ count: 1
 # Verify cross-chain swap exists
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ observe_txid 1 }}
+gas_used: 9105
 asserts:
   - .swap.trade_target == "500000000000000000"
 ---
@@ -141,6 +146,7 @@ count: 1
 # Fox's cross-chain swap should remain unchanged
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ observe_txid 1 }}
+gas_used: 9105
 asserts:
   - .swap.trade_target == "500000000000000000"
 ---
@@ -162,6 +168,7 @@ count: 1
 # Fox's cross-chain swap should still be unchanged
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ observe_txid 1 }}
+gas_used: 9105
 asserts:
   - .swap.trade_target == "500000000000000000"
 ---
@@ -195,6 +202,7 @@ count: 1
 # Fox's cross-chain swap should remain unchanged
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ observe_txid 1 }}
+gas_used: 9105
 asserts:
   - .swap.trade_target == "500000000000000000"
 ---
@@ -228,6 +236,7 @@ count: 1
 # Fox's cross-chain swap should now be updated
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ observe_txid 1 }}
+gas_used: 9105
 asserts:
   - .swap.trade_target == "300000000000000000"
 ---
@@ -260,6 +269,7 @@ count: 1
 # Verify limit_swap_close event was emitted for the cancelled BTC swap
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[].result.events|map(select(.type == "limit_swap_close"))|length > 0
 ---
@@ -268,12 +278,14 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/queue
+gas_used: 1030959
 asserts:
   - .swap == 1
 ---
 # Verify the remaining swap is Fox's native RUNE swap with the modified target from Test 2
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid 2 }}
+gas_used: 8913
 asserts:
   - .swap.trade_target == "9500000"
   - .swap.tx.coins[0].asset == "THOR.RUNE"
@@ -283,5 +295,6 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/invariant/asgard
+gas_used: 4005
 asserts:
   - .broken == false

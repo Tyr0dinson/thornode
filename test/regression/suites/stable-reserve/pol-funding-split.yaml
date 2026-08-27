@@ -18,11 +18,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/stable_reserve
+gas_used: 6999
 asserts:
   - .enabled == true
   - .pol_share_bps == "0"
@@ -51,6 +53,7 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type?=="transfer")] | [.[] | select(.recipient == "{{ addr_module_stable_reserve }}")] | length == 1
   - .|[..|select(.type?=="transfer")] | [.[] | select(.recipient == "{{ addr_module_stable_reserve }}")][0].sender == "{{ addr_module_reserve }}"
@@ -61,6 +64,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/stable_reserve
+gas_used: 8116
 asserts:
   - .pol_share_bps == "2500"
   - .rune_balance|tonumber > 0
@@ -79,6 +83,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   # no transfer to the stable_reserve module while disabled
   - .|[..|select(.type?=="transfer")] | [.[] | select(.recipient == "{{ addr_module_stable_reserve }}")] | length == 0
@@ -87,5 +92,6 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/stable_reserve
+gas_used: 9197
 asserts:
   - .enabled == false

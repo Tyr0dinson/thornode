@@ -11,6 +11,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
 ---
@@ -29,6 +30,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/t
+gas_used: 3300
 asserts:
   - .owner == "{{ addr_thor_cat }}"
   - .aliases[0].address == "{{ addr_thor_cat }}"
@@ -49,6 +51,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir/key/REVSHARE-t
+gas_used: 2060
 asserts:
   - . == 2500
 ---
@@ -74,6 +77,7 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type?=="rev_share")] | length == 1
   # store layer uppercases all keys (see KVStore.GetKey), so the accumulator
@@ -91,6 +95,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/t
+gas_used: 4555
 asserts:
   - .owner == "{{ addr_thor_cat }}"
   - (.affiliate_collector_rune | tonumber) > 0
@@ -110,5 +115,6 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir/key/REVSHARE-t
+gas_used: 2051
 asserts:
   - . == 0

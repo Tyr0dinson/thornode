@@ -13,16 +13,19 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_dog }}
+gas_used: 1537
 asserts:
   - .result.value.sequence == "1"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 2267
 asserts:
   - .REGRESSIONTEST == 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir/key/REGRESSIONTEST
+gas_used: 2069
 asserts:
   - . == 1
 ---
@@ -36,11 +39,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+gas_used: 1315
 asserts:
   - .result.value.sequence == "0"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 2267
 asserts:
   - .FOXTEST|length == 0
 ---
@@ -57,6 +62,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.code == 6
   - .txs[0].result.log | contains("invalid mimir key")
@@ -74,11 +80,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir/key/L1SlipMinBps
+gas_used: 1000
 asserts:
   - . == -1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.code == 6
   - .txs[0].result.log | contains("min slip mimir exceeds SlipMinBpsMax")
@@ -94,5 +102,6 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir/key/L1SlipMinBps
+gas_used: 2063
 asserts:
   - . == 100

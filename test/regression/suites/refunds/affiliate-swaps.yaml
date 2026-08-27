@@ -12,6 +12,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
 ---
@@ -30,12 +31,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499998000000
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 30
 asserts:
   - .balances|length == 0 # no affiliate fee for refunds
 ---
@@ -54,12 +57,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499996000000
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 30
 asserts:
   - .balances|length == 0 # no affiliate fee for refunds
 ---
@@ -78,12 +83,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499994000000
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 30
 asserts:
   - .balances|length == 0
 ---
@@ -102,12 +109,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499992000000
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 30
 asserts:
   - .balances|length == 0
 ---
@@ -139,6 +148,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 9038
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ observe_txid 1 }}"
@@ -146,6 +156,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 30
 asserts:
   - .balances|length == 0
 ---
@@ -174,6 +185,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 10236
 asserts:
   - .|length == 0
 ---
@@ -205,6 +217,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 13274
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ observe_txid 3 }}"
@@ -212,6 +225,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 30
 asserts:
   - .balances|length == 0
 ---
@@ -240,6 +254,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 14472
 asserts:
   - .|length == 0
 ---
@@ -271,6 +286,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 17513
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ observe_txid 5 }}"
@@ -278,6 +294,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 30
 asserts:
   - .balances|length == 0
 ---
@@ -306,6 +323,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 18711
 asserts:
   - .|length == 0
 ---
@@ -337,6 +355,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 21752
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ observe_txid 7 }}"
@@ -344,6 +363,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 30
 asserts:
   - .balances|length == 0
 ---
@@ -372,6 +392,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 22950
 asserts:
   - .|length == 0
 ---
@@ -403,6 +424,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 25997
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ observe_txid 9 }}"
@@ -410,6 +432,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 30
 asserts:
   - .balances|length == 0
 ---
@@ -438,6 +461,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 27195
 asserts:
   - .|length == 0
 ---
@@ -456,6 +480,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 423
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9066616
@@ -463,11 +488,13 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 30
 asserts:
   - .balances|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
+gas_used: 237
 asserts:
   - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9066616
 ---
@@ -486,6 +513,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 423
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9066616
@@ -493,11 +521,13 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 30
 asserts:
   - .balances|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
+gas_used: 237
 asserts:
   - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9066616
 ---
@@ -516,6 +546,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 423
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9066616
@@ -523,11 +554,13 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 30
 asserts:
   - .balances|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
+gas_used: 237
 asserts:
   - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9066616
 ---
@@ -546,6 +579,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 423
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9066616
@@ -553,11 +587,13 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 30
 asserts:
   - .balances|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
+gas_used: 237
 asserts:
   - .supply|length == 2
   - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9066616
@@ -578,6 +614,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 423
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9066616
@@ -585,17 +622,20 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 30
 asserts:
   - .balances|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
+gas_used: 237
 asserts:
   - .supply|length == 2
   - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9066616
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type? == "refund")] | length == 0
 ---
@@ -614,6 +654,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 423
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9066616
@@ -621,11 +662,13 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 30
 asserts:
   - .balances|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
+gas_used: 237
 asserts:
   - .supply|length == 2
   - .supply[]|select(.denom=="btc/btc")|.amount|tonumber == 9066616

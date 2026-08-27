@@ -7,11 +7,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/constants
+gas_used: 0
 asserts:
   - .int_64_values.MaxRuneSupply == 50000000000000000
 ---
@@ -43,12 +45,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2504535171552
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type?=="transfer")] | length == 4
   ##
@@ -91,6 +95,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .. | select(.type? == "rewards") | [.[] | tonumber?] | add == ${BLOCK_REWARD_EMISSION_2=1109843} # Slightly different block reward (from rounding?).
   - .|[.. | select(.type? == "swap").liquidity_fee_in_rune | tonumber] | add // 0 | . == ${LIQFEES=0}
@@ -124,11 +129,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/constants
+gas_used: 0
 asserts:
   - .string_values.DevFundAddress == "${DEV_ADDR=tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u}"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type?=="transfer")] | length == 6
   ##
@@ -166,12 +173,14 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 252
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 234745
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 6774
 asserts:
   - .MAXRUNESUPPLY == 49999999999999530
 ---
@@ -201,6 +210,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[.. | select(.type? == "swap").liquidity_fee_in_rune | tonumber] | add // 0 | . == ${LIQFEES=223505325}
   - .. | select(.type? == "rewards") | [.[] | tonumber?] | add - ${LIQFEES} == ${BLOCK_REWARD_EMISSION_1} # Same block reward emission.

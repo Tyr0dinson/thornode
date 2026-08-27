@@ -56,12 +56,14 @@ count: 2
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_claim }}
+gas_used: 294
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == ${INIT_CLAIMING_RUNE}
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_dog }}
+gas_used: 450
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "rune")|.amount|tonumber == ${INIT_DOG_RUNE}
@@ -90,17 +92,20 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_dog }}
+gas_used: 30
 asserts:
   - .balances|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_claim }}
+gas_used: 294
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == ${INIT_CLAIMING_RUNE}
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/THOR.TCY
+gas_used: 60349
 asserts:
   - .status == "Available"
   - .balance_asset == "${INIT_DOG_TCY}"
@@ -114,6 +119,7 @@ count: 2
 # After swap claiming module should only have tcy from swap
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_claim }}
+gas_used: 294
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "tcy")|.amount|tonumber == 36363636363636
@@ -121,6 +127,7 @@ asserts:
 # No claimer records exist in this suite, so all TCY in the claim module is protocol-owned.
 type: check
 endpoint: http://localhost:1317/thorchain/tcy_protocol_owned
+gas_used: 1147
 asserts:
   - .amount|tonumber == 36363636363636
 ---
@@ -130,6 +137,7 @@ count: 5
 # Trigger another distribution that should have the same balance since it doesn't have enough rune to swap
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_claim }}
+gas_used: 294
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${CLAIM_SWAP_TCY_AMT=36363636363636}
@@ -147,6 +155,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_claim }}
+gas_used: 405
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${CLAIM_SWAP_TCY_AMT}
@@ -155,6 +164,7 @@ asserts:
 # RUNE swap fees accumulating in the claim module don't change protocol-owned TCY.
 type: check
 endpoint: http://localhost:1317/thorchain/tcy_protocol_owned
+gas_used: 1147
 asserts:
   - .amount|tonumber == ${CLAIM_SWAP_TCY_AMT}
 ---
@@ -171,6 +181,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_claim }}
+gas_used: 405
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${CLAIM_SWAP_TCY_AMT}
@@ -179,11 +190,13 @@ asserts:
 # Swap RUNE -> TCY with affiliate fees
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 30
 asserts:
   - .balances|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fish }}
+gas_used: 411
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${FISH_INIT_AFF_SWAP_TCY=132135289094}
@@ -201,12 +214,14 @@ count: 2
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 258
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == ${PIG_INIT_AFF_FEE=4999998}
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fish }}
+gas_used: 411
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${FISH_INIT_AFF_SWAP_TCY}+${FISH_SWAPED_TCY=6540496773}
@@ -225,12 +240,14 @@ count: 2
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 258
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == ${PIG_INIT_AFF_FEE}+${PIG_SECOND_AFF_FEE=4949821}
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fish }}
+gas_used: 411
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${FISH_INIT_AFF_SWAP_TCY}

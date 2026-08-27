@@ -7,6 +7,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 157626
 asserts:
   - .|length == 3
 ---
@@ -15,6 +16,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 1700213
 params:
   from_asset: THOR.RUNE
   to_asset: BTC.BTC
@@ -45,12 +47,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2498998000000
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 5026
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ native_txid -1 }}"
@@ -81,6 +85,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 6224
 asserts:
   - .|length == 0
 ---
@@ -89,6 +94,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 212631
 params:
   from_asset: BTC.BTC
   to_asset: THOR.RUNE
@@ -132,6 +138,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2503619850363
@@ -141,6 +148,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 979485
 params:
   from_asset: THOR.RUNE
   to_asset: BTC/BTC
@@ -166,6 +174,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 423
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2502617850363
@@ -176,6 +185,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 982130
 params:
   from_asset: THOR.RUNE
   to_asset: BTC/BTC
@@ -192,6 +202,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 982130
 params:
   from_asset: THOR.RUNE
   to_asset: BTC/BTC
@@ -218,6 +229,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 423
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2502515850363
@@ -228,6 +240,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 4692
 params:
   from_asset: THOR.RUNE
   to_asset: BTC.BTC
@@ -244,6 +257,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 1733145
 params:
   from_asset: THOR.RUNE
   to_asset: BTC.BTC
@@ -266,6 +280,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 1741570
 params:
   from_asset: THOR.RUNE
   to_asset: BTC.BTC
@@ -297,6 +312,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 12250
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ native_txid -1 }}"
@@ -327,11 +343,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 13448
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 264
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 49937641
@@ -341,6 +359,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 1873303
 params:
   from_asset: BTC.BTC
   to_asset: ETH.ETH
@@ -354,6 +373,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 1139179
 params:
   from_asset: BTC/BTC
   to_asset: ETH/ETH
@@ -366,6 +386,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 1876867
 params:
   from_asset: ETH.ETH
   to_asset: BTC.BTC
@@ -410,6 +431,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 16474
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ observe_txid 4 }}"
@@ -440,6 +462,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 17672
 asserts:
   - .|length == 0
 ---
@@ -465,6 +488,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/xx
+gas_used: 0
 asserts:
   - .aliases[0].address == "{{ addr_thor_pig }}"
   - .owner == "{{ addr_thor_pig }}"
@@ -489,6 +513,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 0
 params:
   from_asset: ETH.ETH
   to_asset: THOR.RUNE
@@ -530,6 +555,7 @@ txs:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 0
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 1174942
@@ -537,6 +563,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 0
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 96892553
@@ -546,6 +573,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 0
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 1174942
@@ -553,6 +581,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 0
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 144956222
@@ -562,6 +591,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 0
 params:
   from_asset: BTC/BTC
   from_address: {{ addr_thor_fox }}
@@ -580,6 +610,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 0
 params:
   from_asset: BTC/BTC
   to_asset: THOR.RUNE
@@ -608,6 +639,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 0
 params:
   from_asset: ETH.ETH
   to_asset: BTC.BTC
@@ -629,6 +661,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 0
 params:
   from_asset: ETH.ETH
   to_asset: BTC.BTC
@@ -645,6 +678,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 0
 params:
   from_asset: ETH.ETH
   to_asset: BTC.BTC
@@ -675,6 +709,7 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 0
 params:
   from_asset: ETH.ETH
   to_asset: BTC.BTC
@@ -700,6 +735,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 0
 params:
   from_asset: ETH.ETH
   to_asset: BTC.BTC
@@ -718,6 +754,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 0
 params:
   from_asset: ETH.ETH
   to_asset: THOR.RUNE
@@ -734,6 +771,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 0
 params:
   from_asset: THOR.RUNE
   to_asset: ETH.ETH
@@ -750,6 +788,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 0
 params:
   from_asset: THOR.RUNE
   to_asset: ETH.ETH
@@ -786,6 +825,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 0
 params:
   from_asset: THOR.RUNE
   to_asset: ETH.ETH
@@ -799,6 +839,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 0
 params:
   from_asset: THOR.RUNE
   to_asset: ETH.ETH
@@ -814,6 +855,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 0
 params:
   from_asset: BTC~BTC
   to_asset: THOR.RUNE
@@ -829,6 +871,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 0
 params:
   from_asset: BTC.BTC
   to_asset: THOR.RUNE
@@ -843,6 +886,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 0
 params:
   from_asset: BTC.BTC
   to_asset: THOR.RUNE
@@ -858,6 +902,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 0
 params:
   from_asset: BTC.BTC
   to_asset: THOR.RUNE
@@ -874,6 +919,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 0
 params:
   from_asset: ETH.ETH
   to_asset: THOR.RUNE
@@ -887,6 +933,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 0
 params:
   from_asset: ETH.ETH
   to_asset: THOR.RUNE
@@ -904,6 +951,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 0
 params:
   from_asset: ETH.ETH
   to_asset: ETH.USDC-0X9999999999999999999999999999999999999999
@@ -917,6 +965,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 0
 params:
   from_asset: BTC.BTC
   to_asset: ETH.ETH
@@ -975,6 +1024,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 0
 params:
   from_asset: THOR.RUNE
   to_asset: BTC.BTC

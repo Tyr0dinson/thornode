@@ -21,6 +21,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 5029
 asserts:
   - .[0].in_hash == "D96B553D63BCC6DB749B184F566BF0B37B595B026E9AA7B35B5C7D654237C965"
 ---
@@ -50,6 +51,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/vault/tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
+gas_used: 3086
 asserts:
   - .frozen|length == 1
   - .frozen[0] == "BTC"
@@ -62,6 +64,7 @@ count: 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 7029
 asserts:
   - .[0].in_hash == "D96B553D63BCC6DB749B184F566BF0B37B595B026E9AA7B35B5C7D654237C965"
   - .[0].coin.amount == "${OUT_AMOUNT=8257426}"
@@ -91,10 +94,12 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/vault/tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
+gas_used: 3071
 asserts:
   - has("frozen")|not
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 7227
 asserts:
   - .|length == 0

@@ -7,6 +7,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
 ---
@@ -25,6 +26,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type?=="affiliate_fee")] | length == 1
   - ..|select(.type?=="affiliate_fee").asset == "BTC.BTC"
@@ -38,6 +40,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 6029
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ native_txid -1 }}"
@@ -45,6 +48,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 270
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == ${BAL_PIG=490806795}
@@ -74,6 +78,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 7227
 asserts:
   - .|length == 0
 ---
@@ -105,18 +110,21 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+gas_used: 276
 asserts:
   - .result|length == 1
   - .result[]|select(.denom == "rune").amount|tonumber == ${BAL_PIG} + ${FEE_AMT=1248140094}
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .result|length == 1
   - .result[]|select(.denom == "rune").amount == "2513712661789"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type?=="affiliate_fee")] | length == 1
   - ..|select(.type?=="affiliate_fee").asset == "THOR.RUNE"

@@ -7,6 +7,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 250946
 asserts:
   - .|length == 5
 ---
@@ -48,6 +49,7 @@ count: 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 16214
 asserts:
   - .DERIVEDDEPTHBASISPTS == 10000
   - ."TORANCHOR-ETH-USDX-0X9999999999999999999999999999999999999999" == 1
@@ -56,11 +58,13 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 292749
 asserts:
   - .|length == 5
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/dpool/thor.tor
+gas_used: 528580
 asserts:
   - .derived_depth_bps|tonumber == 10000
   - .balance_asset|tonumber == 299999999999
@@ -69,6 +73,7 @@ asserts:
 # thor.tor should not be available in the pool querier
 type: check
 endpoint: http://localhost:1317/thorchain/pool/thor.tor
+gas_used: 0
 status: 400
 asserts:
   - .message|test("thor.tor is a derived asset")
@@ -76,12 +81,14 @@ asserts:
 # layer 1 assets should not be available in the dpool querier
 type: check
 endpoint: http://localhost:1317/thorchain/dpool/btc.btc
+gas_used: 0
 status: 400
 asserts:
   - .message|test("asset is not a derived asset")
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/dpool/thor.btc
+gas_used: 508348
 asserts:
   - .derived_depth_bps|tonumber == 10000
 ---
@@ -100,6 +107,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/dpool/thor.tor
+gas_used: 543895
 asserts:
   - .derived_depth_bps|tonumber == 8913
   - .balance_asset|tonumber == 271778080233 # median still ~1:1
@@ -121,6 +129,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/dpool/thor.tor
+gas_used: 543979
 asserts:
   - .derived_depth_bps|tonumber == 7853
   - .balance_asset|tonumber == 221540789479 # price shift with affected median
@@ -141,6 +150,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/dpool/thor.tor
+gas_used: 550063
 asserts:
   - .derived_depth_bps|tonumber == 6827
   - .balance_asset|tonumber == 195631521389
@@ -154,6 +164,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/dpool/thor.tor
+gas_used: 591535
 asserts:
   - .derived_depth_bps|tonumber == 7887
 ---
@@ -162,6 +173,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/dpool/thor.tor
+gas_used: 500472
 asserts:
   - .derived_depth_bps|tonumber == 8947
 ---
@@ -170,6 +182,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/dpool/thor.tor
+gas_used: 500349
 asserts:
   - .derived_depth_bps|tonumber == 10000
 ---
@@ -178,6 +191,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 16510
 asserts:
   - length == 3
   - .[0].original_memo == "OUT:{{ native_txid -3 }}"
@@ -244,5 +258,6 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 18104
 asserts:
   - length == 0

@@ -13,6 +13,7 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 22832
 params: {}
 status: 200
 asserts:
@@ -21,6 +22,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/outbound_fee/eth.eth
+gas_used: 26547
 asserts:
   - .[0].fee_spent_rune == "0"
 ---
@@ -56,6 +58,7 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 25594
 params: {}
 status: 200
 asserts:
@@ -67,6 +70,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '[.end_block_events[] | select(.type == "security")]|length == 0'
 ---
@@ -75,6 +79,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/outbound_fee/eth.eth
+gas_used: 28763
 asserts:
   - .[0].fee_spent_rune == "2100034"
 ---
@@ -109,6 +114,7 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 25594
 params: {}
 status: 200
 asserts:
@@ -120,6 +126,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '[.txs[].result.events[] | select(.type == "slash")]|length > 0' # check tx events for slash on non-cancel
 ---
@@ -128,6 +135,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/outbound_fee/eth.eth
+gas_used: 28763
 asserts:
   - .[0].fee_spent_rune == "2100034"
 ---
@@ -136,10 +144,12 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+gas_used: 3065
 asserts:
   - .coins[]|select(.asset=="ETH.ETH")|.amount|tonumber == 1000000000-21000-21000-1000
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/eth.eth
+gas_used: 60220
 asserts:
   - .balance_asset|tonumber == 1000000000-21000-21000-1000

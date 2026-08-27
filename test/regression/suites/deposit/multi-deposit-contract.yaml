@@ -101,12 +101,14 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.events|map(select(.type == "bond"))|length >= 3
 ---
 # Verify the total bond amount from the contract
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+gas_used: 0
 asserts:
   # Should have bonded 1500000000000 (from 3 x 500000000000)
   - .bond_providers.providers|map(select(.bond_address == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"))[0].bond == "1500000000000"

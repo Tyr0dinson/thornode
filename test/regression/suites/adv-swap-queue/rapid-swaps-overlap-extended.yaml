@@ -96,11 +96,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_1}
+gas_used: 9039
 asserts:
   - .swap.state.count >= 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -1 }}
+gas_used: 8901
 asserts:
   - .swap.state.count >= 1
 ---
@@ -140,12 +142,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_2}
+gas_used: 9039
 asserts:
   - .swap.tx.coins[0].asset == "ETH.ETH"
   - .swap.state.count >= 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap
+gas_used: 8036
 asserts:
   - .|length >= 1
 ---
@@ -185,11 +189,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap
+gas_used: 9533
 asserts:
   - .|length >= 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_3}
+gas_used: 9039
 asserts:
   - .swap.tx.coins[0].asset == "BTC.BTC"
   - .swap.state.count >= 1
@@ -199,5 +205,6 @@ count: 10
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/invariant/asgard
+gas_used: 1170
 asserts:
   - .broken == false

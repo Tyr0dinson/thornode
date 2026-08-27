@@ -11,6 +11,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
 ---
@@ -40,6 +41,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir/key/REVSHARE-nonexistent
+gas_used: 1000
 asserts:
   - . == -1
 ---
@@ -56,6 +58,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir/key/REVSHARE-t
+gas_used: 1000
 asserts:
   - . == -1
 ---
@@ -72,6 +75,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir/key/REVSHARE-t
+gas_used: 1000
 asserts:
   - . == -1
 ---
@@ -88,6 +92,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir/key/REVSHARE-t
+gas_used: 2060
 asserts:
   - . == 5000
 ---
@@ -105,5 +110,6 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir/key/REVSHARE-t
+gas_used: 2051
 asserts:
   - . == 0

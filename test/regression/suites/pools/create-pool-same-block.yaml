@@ -5,6 +5,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 3060
 asserts:
   - .|length == 0
 ---
@@ -40,16 +41,19 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/tx/{{ observe_txid 1 }}
+gas_used: 8376
 asserts:
 - .observed_tx.status == "done"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_providers
+gas_used: 1296
 asserts:
   - .|length == 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 57106
 asserts:
   - .|length == 1
   - .[0].LP_units == "200000000"
@@ -58,6 +62,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_providers
+gas_used: 1296
 asserts:
   - .|length == 1
   - .[0].units == "200000000"

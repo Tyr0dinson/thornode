@@ -83,6 +83,7 @@ count: 1
 # Confirm ActiveVault states.
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
+gas_used: 11409
 asserts:
   - .| length == 1
   - .[0].status == "ActiveVault"
@@ -92,6 +93,7 @@ asserts:
 # Confirm InactiveVault state.
 type: check
 endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_fish }}
+gas_used: 2897
 asserts:
   - .status == "InactiveVault"
   - .coins | length == 0 # No coins
@@ -99,6 +101,7 @@ asserts:
 # Confirm pool state.
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+gas_used: 58944
 asserts:
   - .balance_asset == "${ACTIVE_VAULT_AMOUNT}"
   - .balance_rune == "${START_BALANCE_RUNE=100001087646}"
@@ -106,6 +109,7 @@ asserts:
 # Confirm that no outbounds.
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 2000
 asserts:
   - .|length == 0
 ---
@@ -136,6 +140,7 @@ count: 1
 # Confirm unchanged ActiveVault state.
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
+gas_used: 11613
 asserts:
   - .| length == 1
   - .[0].status == "ActiveVault"
@@ -145,6 +150,7 @@ asserts:
 # Check changed InactiveVault state.
 type: check
 endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_fish }}
+gas_used: 2990
 asserts:
   - .status == "InactiveVault"
   - .coins | length == 1 # Coin received
@@ -152,6 +158,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .| [..|select(.type? == "refund")] | length == 1
   - .|..|select(.type? == "refund") | .reason | contains("inactive vault")
@@ -160,12 +167,14 @@ asserts:
 # Check whether pool balance_asset is unchanged and balance_rune is no lower.
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+gas_used: 58944
 asserts:
   - .balance_asset == "${ACTIVE_VAULT_AMOUNT}"
   - .balance_rune | tonumber > ${START_BALANCE_RUNE} # Higher from block rewards
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 5038
 asserts:
   - .|length == 1
   - .[0].original_memo | contains("REFUND:")
@@ -202,12 +211,14 @@ count: 1
 # Confirm that the txout fulfilled the queued TxOutItem.
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 6236
 asserts:
   - .|length == 0
 ---
 # Confirm unchanged ActiveVault state.
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
+gas_used: 11595
 asserts:
   - .| length == 1
   - .[0].status == "ActiveVault"
@@ -217,6 +228,7 @@ asserts:
 # Check emptied InactiveVault state.
 type: check
 endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_fish }}
+gas_used: 2981
 asserts:
   - .status == "InactiveVault"
   - .coins | length == 1
@@ -225,6 +237,7 @@ asserts:
 # Check the pool balances.
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+gas_used: 58944
 asserts:
   - .balance_asset == "${ACTIVE_VAULT_AMOUNT}"
   - .balance_rune | tonumber > ${START_BALANCE_RUNE}

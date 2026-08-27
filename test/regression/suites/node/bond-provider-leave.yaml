@@ -259,6 +259,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 29925
 asserts:
   - .[] |
     select(.node_address == "{{ addr_thor_fox }}") |
@@ -285,11 +286,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[] | select(.result.code == 4) | .result.log | contains("not authorized to manage")
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+gas_used: 23823
 asserts:
   - .requested_to_leave == false
 ---
@@ -305,10 +308,12 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[] | select(.result.code == 0)
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+gas_used: 23898
 asserts:
   - .requested_to_leave == true

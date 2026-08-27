@@ -22,6 +22,7 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/limit
+gas_used: 2075
 params:
   from_asset: BTC.BTC
   to_asset: ETH.ETH
@@ -42,6 +43,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
 ---
@@ -50,6 +52,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/limit
+gas_used: 78178
 params:
   from_asset: BTC.BTC
   to_asset: ETH.ETH
@@ -72,6 +75,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/limit
+gas_used: 78178
 params:
   from_asset: BTC.BTC
   to_asset: ETH.ETH
@@ -94,6 +98,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/limit
+gas_used: 78178
 params:
   from_asset: BTC.BTC
   to_asset: ETH.ETH
@@ -116,6 +121,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/limit
+gas_used: 78178
 params:
   from_asset: BTC.BTC
   to_asset: ETH.ETH
@@ -135,6 +141,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/limit
+gas_used: 78178
 params:
   from_asset: BTC.BTC
   to_asset: ETH.ETH
@@ -155,6 +162,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/limit
+gas_used: 30769
 params:
   from_asset: BTC.BTC
   to_asset: ETH.ETH
@@ -175,6 +183,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/limit
+gas_used: 3081
 params:
   from_asset: BTC.BTC
   to_asset: ETH.ETH
@@ -191,6 +200,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/limit
+gas_used: 3081
 params:
   from_asset: BTC.BTC
   to_asset: ETH.ETH
@@ -207,6 +217,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/limit
+gas_used: 2081
 params:
   from_asset: BTC.BTC
   to_asset: ETH.ETH
@@ -222,6 +233,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/limit
+gas_used: 2081
 params:
   from_asset: BTC.BTC
   to_asset: ETH.ETH
@@ -237,6 +249,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/limit
+gas_used: 2081
 params:
   from_asset: BTC.BTC
   to_asset: ETH.ETH
@@ -252,6 +265,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 1820020
 params:
   from_asset: BTC.BTC
   to_asset: ETH.ETH

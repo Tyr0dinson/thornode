@@ -91,6 +91,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -1 }}
+gas_used: 8901
 asserts:
   - .queue_type == "advanced"
   - .swap.tx.coins[0].asset == "THOR.RUNE"
@@ -112,6 +113,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -1 }}
+gas_used: 8913
 asserts:
   - .queue_type == "advanced"
   - .swap.tx.coins[0].asset == "THOR.RUNE"
@@ -133,6 +135,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -1 }}
+gas_used: 9093
 asserts:
   - .queue_type == "advanced"
   - .swap.tx.coins[0].asset == "BTC~BTC"
@@ -154,6 +157,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -1 }}
+gas_used: 8859
 asserts:
   - .queue_type == "advanced"
   - .swap.tx.coins[0].asset == "BTC~BTC"
@@ -165,10 +169,12 @@ count: 10
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap
+gas_used: 2141
 asserts:
   - .|length <= 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/invariant/asgard
+gas_used: 1170
 asserts:
   - .broken == false

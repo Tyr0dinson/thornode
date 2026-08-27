@@ -7,6 +7,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 57250
 asserts:
   - .|length == 1
   - .[0].asset == "BTC.BTC"
@@ -29,6 +30,7 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 57250
 asserts:
   - .|length == 1
   - .[0].asset == "BTC.BTC"
@@ -41,6 +43,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/export
+gas_used: 17221481
 asserts:
   - .pools|length == 2
   - .pools[0].asset == "BTC.BTC"
@@ -50,6 +53,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[.begin_block_events[]|select(.type == "pool")]|length == 1
   - .begin_block_events[]|select(.type == "pool")|.type == "pool"
@@ -61,6 +65,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/export
+gas_used: 17222478
 asserts:
   - .pools|length == 2
   - .pools[0].asset == "BTC.BTC"
@@ -70,6 +75,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[.begin_block_events[]|select(.type == "pool")]|length == 0
 ---
@@ -86,6 +92,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/export
+gas_used: 17223445
 asserts:
   - .pools|length == 2
   - .pools[0].asset == "BTC.BTC"
@@ -95,6 +102,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[.begin_block_events[]|select(.type == "pool")]|length == 0
 ---
@@ -106,17 +114,20 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/dpool/THOR.BTC
+gas_used: 267564
 asserts:
   - .status == "Suspended"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/export
+gas_used: 17224415
 asserts:
   - .pools|length == 1
   - .pools[0].asset == "BTC.BTC"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .begin_block_events|length == 1
   - .begin_block_events[0].type == "pool"
@@ -128,11 +139,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/dpool/THOR.BTC
+gas_used: 267564
 asserts:
   - .status == "Suspended"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .begin_block_events|length == 0
 ---
@@ -149,11 +162,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/dpool/THOR.BTC
+gas_used: 291016
 asserts:
   - .status == "Available" # querier reflects the next block status
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .begin_block_events|length == 0
 ---
@@ -165,6 +180,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/export
+gas_used: 17227481
 asserts:
   - .pools|length == 2
   - .pools[0].asset == "BTC.BTC"
@@ -174,6 +190,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[.begin_block_events[]|select(.type == "pool")]|length == 1
   - .begin_block_events[]|select(.type == "pool")|.type == "pool"
@@ -185,6 +202,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/export
+gas_used: 17228484
 asserts:
   - .pools|length == 2
   - .pools[0].asset == "BTC.BTC"
@@ -194,5 +212,6 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[.begin_block_events[]|select(.type == "pool")]|length == 0

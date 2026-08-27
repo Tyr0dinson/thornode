@@ -11,12 +11,18 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-// queryGasServer decorates THORChain's query service registration. The normal
-// ABCI query path remains unchanged. Direct gRPC queries can opt in to receive
-// the SDK gas meter's final consumption as response metadata, which the
-// regression runner records alongside its existing query assertions.
+// queryGasServer decorates module query service registration. The normal ABCI
+// query path remains unchanged. Direct gRPC queries can opt in to receive the
+// SDK gas meter's final consumption as response metadata, which the regression
+// runner records alongside its existing query assertions.
 type queryGasServer struct {
 	gogogrpc.Server
+}
+
+// NewQueryGasServer wraps a module query server so every registered query can
+// report SDK gas consumption to the regression harness when requested.
+func NewQueryGasServer(server gogogrpc.Server) gogogrpc.Server {
+	return queryGasServer{Server: server}
 }
 
 func (s queryGasServer) RegisterService(sd *grpc.ServiceDesc, handler interface{}) {

@@ -88,6 +88,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 45285
 asserts:
   - length == 3 # Two 1-RUNE nodes removed, fish and pig.
   #
@@ -105,6 +106,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_goat }}
+gas_used: 264
 asserts:
   - .result | length == 1 # Non-zero balance.
   - .result[0].denom == "rune"
@@ -112,6 +114,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type? == "bond")] | length == 5
   #

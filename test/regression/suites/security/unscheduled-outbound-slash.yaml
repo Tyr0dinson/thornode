@@ -7,6 +7,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 22826
 asserts:
   - .|length == 1
   - .[]|select(.node_address == "{{ addr_thor_dog }}")|.total_bond == "5000000000000"
@@ -47,16 +48,19 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 25600
 asserts:
   - .[]|select(.node_address == "{{ addr_thor_dog }}")|.total_bond|tonumber < 5000000000000
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '[.txs[].result.events[]|select(.type == "slash")]|length > 0'
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 6645
 asserts:
   - .HALTSIGNINGBTC > 0
   - .HALTBTCTRADING > 0
@@ -90,11 +94,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '[.txs[].result.events[]|select(.type == "slash")]|length > 0'
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 6645
 asserts:
   - .HALTSIGNINGBTC > 0
   - .HALTBTCTRADING > 0
@@ -128,6 +134,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 8041
 asserts:
   - .|length == 1
   - .[0].in_hash == "{{ observe_txid 3 }}"
@@ -158,6 +165,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 9239
 asserts:
   - .|length == 0
 ---
@@ -189,5 +197,6 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '[.txs[].result.events[]|select(.type == "slash")]|length > 0'

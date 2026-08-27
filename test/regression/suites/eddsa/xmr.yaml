@@ -15,11 +15,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 109930
 asserts:
   - .|length == 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
+gas_used: 8404
 asserts:
   - .|length == 1
   - '[.[]|select((.chains | index("XMR")) != null)]|length == 1'
@@ -40,6 +42,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 6422
 asserts:
   - .|length == 1
   - .[0].chain == "XMR"

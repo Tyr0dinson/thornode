@@ -16,6 +16,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
 ---
@@ -64,6 +65,7 @@ count: 1
 # Check RUNE balance after single iteration processing
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .balances[]|select(.denom == "rune")|.amount|tonumber > 2400000000000
 ---
@@ -135,6 +137,7 @@ count: 1
 # Check that outbound queue has items (should be processed across 2 iterations)
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 10027
 asserts:
   - length >= 2  # Should have processed multiple swaps with 2 iterations
 ---
@@ -192,6 +195,7 @@ count: 1
 # Verify swaps were processed (RUNE balance should increase)
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .balances[]|select(.denom == "rune")|.amount|tonumber > 2400000000000
 ---
@@ -233,6 +237,7 @@ count: 1
 # Should have outbound for the swap
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 16053
 asserts:
   - length >= 1
   - any(.in_hash == "${TXID_7}")
@@ -240,5 +245,6 @@ asserts:
 # Final invariant check
 type: check
 endpoint: http://localhost:1317/thorchain/invariant/asgard
+gas_used: 1170
 asserts:
   - .broken == false

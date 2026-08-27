@@ -20,11 +20,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.events[] | select(.type=="add_liquidity")
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_fox }}
+gas_used: 6732
 asserts:
   - .pending_rune | tonumber == 0
   - .pending_asset | tonumber == 0
@@ -44,6 +46,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 2204
 asserts:
   - length == 1
   - .PAUSELP == 1
@@ -60,12 +63,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.code == 99
   - .txs[0].result.log | contains("unable to add liquidity while chain has paused LP actions")
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_fox }}
+gas_used: 6732
 asserts:
   - .pending_rune | tonumber == 0
   - .pending_asset | tonumber == 0
@@ -92,6 +97,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 4330
 asserts:
   - length == 2
   - .PAUSELP == 0
@@ -109,12 +115,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.code == 99
   - .txs[0].result.log | contains("unable to add liquidity while chain has paused LP actions")
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_fox }}
+gas_used: 6732
 asserts:
   - .pending_rune | tonumber == 0
   - .pending_asset | tonumber == 0
@@ -141,6 +149,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 6534
 asserts:
   - length == 3
   - .PAUSELP == 0
@@ -159,12 +168,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.code == 99
   - .txs[0].result.log | contains("unable to add liquidity, deposits are paused for asset (BTC.BTC)")
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_fox }}
+gas_used: 6732
 asserts:
   - .pending_rune | tonumber == 0
   - .pending_asset | tonumber == 0
@@ -186,11 +197,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.events[] | select(.type=="add_liquidity")
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/ETH.ETH/liquidity_provider/{{ addr_thor_fox }}
+gas_used: 6738
 asserts:
   - .pending_rune | tonumber == 0
   - .pending_asset | tonumber == 0

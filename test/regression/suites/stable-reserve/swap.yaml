@@ -90,12 +90,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/stable_reserve
+gas_used: 103682
 asserts:
   - '[.inventory[]|select(.asset == "ETH.USDC-0X9999999999999999999999999999999999999999")][0].amount == "1000000000"'
   - '[.inventory[]|select(.asset == "ETH.USDT-0X9999999999999999999999999999999999999999")][0].amount == "900000000"'
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/stable_reserve/contributor/ETH.USDT-0X9999999999999999999999999999999999999999/{{ addr_eth_fox }}
+gas_used: 2507
 asserts:
   - .credit == "900000000"
 ---
@@ -139,17 +141,20 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '[..|select(.type? == "swap" and .stable_reserve == "true")]|length == 1'
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/stable_reserve
+gas_used: 103682
 asserts:
   - '[.inventory[]|select(.asset == "ETH.USDC-0X9999999999999999999999999999999999999999")][0].amount == "1100000000"'
   - '[.inventory[]|select(.asset == "ETH.USDT-0X9999999999999999999999999999999999999999")][0].amount == "800000000"'
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/stable_reserve/contributor/ETH.USDT-0X9999999999999999999999999999999999999999/{{ addr_eth_fox }}
+gas_used: 2507
 asserts:
   - .credit == "900000000"
 ---
@@ -192,17 +197,20 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '[..|select(.type? == "swap" and .stable_reserve == "true")]|length == 1'
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/stable_reserve
+gas_used: 103667
 asserts:
   - '[.inventory[]|select(.asset == "ETH.USDC-0X9999999999999999999999999999999999999999")][0].amount == "1200000000"'
   - '[.inventory[]|select(.asset == "ETH.USDT-0X9999999999999999999999999999999999999999")][0].amount == "700000000"'
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/stable_reserve/contributor/ETH.USDT-0X9999999999999999999999999999999999999999/{{ addr_eth_fox }}
+gas_used: 2507
 asserts:
   - .credit == "900000000"
 ---
@@ -247,17 +255,20 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '[..|select(.type? == "swap" and .stable_reserve == "true")]|length == 1'
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/stable_reserve
+gas_used: 103703
 asserts:
   - '[.inventory[]|select(.asset == "ETH.USDC-0X9999999999999999999999999999999999999999")][0].amount == "1300000000"'
   - '[.inventory[]|select(.asset == "ETH.USDT-0X9999999999999999999999999999999999999999")][0].amount == "600000000"'
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/stable_reserve/contributor/ETH.USDT-0X9999999999999999999999999999999999999999/{{ addr_eth_fox }}
+gas_used: 2507
 asserts:
   - .credit == "900000000"
 ---

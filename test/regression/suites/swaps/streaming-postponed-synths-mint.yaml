@@ -111,6 +111,7 @@ signer: {{ addr_thor_dog }}
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_wolf }}
+gas_used: 6876
 asserts:
   - .asset_redeem_value == ("50_00000000" | gsub("_";""))
   - .rune_redeem_value == ("50_000_00000000" | gsub("_";""))
@@ -118,6 +119,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_goat }}
+gas_used: 6885
 asserts:
   - .asset_redeem_value == ("450_00000000" | gsub("_";""))
   - .rune_redeem_value == ("450_000_00000000" | gsub("_";""))
@@ -151,6 +153,7 @@ count: 9
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_wolf }}
+gas_used: 6870
 asserts:
   - .asset_redeem_value == "5281350856"
   - .rune_redeem_value == "4991693504664"
@@ -158,6 +161,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_goat }}
+gas_used: 6879
 asserts:
   - .asset_redeem_value == "47532157708"
   - .rune_redeem_value == "44925241541977"
@@ -180,6 +184,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type?=="withdraw")] | length == 1
   - ..|select(.type?=="withdraw").emit_rune == "9470052478762"
@@ -204,6 +209,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_wolf }}
+gas_used: 6870
 asserts:
   - .units == "4493725748398"
   # Contrast with the initial units of "50_000_00000000" .
@@ -215,6 +221,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_goat }}
+gas_used: 6879
 asserts:
   - .units == ("450_000_00000000" | gsub("_";"")) # Unchanged.
   - .asset_redeem_value == "47796136254"

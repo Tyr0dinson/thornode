@@ -26,16 +26,19 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap
+gas_used: 1060
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 4000
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/scheduled
+gas_used: 722000
 asserts:
   - .|length == 0
 ---
@@ -44,6 +47,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '[.end_block_events[]|select(.type == "security")]|length == 1'
   - .end_block_events[]|select(.type == "security")|.msg == "evm outbound to null address"

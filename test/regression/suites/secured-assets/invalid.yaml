@@ -7,6 +7,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
 ---
@@ -41,6 +42,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 6044
 asserts:
   - .[0].coin.amount == "${OUT_AMOUNT=9993000}"
 ---
@@ -69,11 +71,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/securedassets
+gas_used: 30
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 7242
 asserts:
   - .|length == 0
 ---
@@ -105,6 +109,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 10286
 asserts:
   - .[0].coin.amount == "${OUT_AMOUNT=9993000}"
 ---
@@ -133,11 +138,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 11484
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/securedassets
+gas_used: 30
 asserts:
   - .|length == 0
 ---
@@ -202,6 +209,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 16516
 asserts:
   - .[0].coin.amount == "${OUT_AMOUNT=99993000}"
 ---
@@ -230,6 +238,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/securedassets
+gas_used: 2348
 asserts:
   - .|length == 1
   - .[0].supply|tonumber == 50000000
@@ -237,12 +246,14 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .balances|length == 1
   - .balances[0].denom == "rune"
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 282
 asserts:
   - .balances|length == 1
   - .balances[0].denom == "btc-btc"
@@ -261,6 +272,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 2339
 asserts:
   - ."HALTSECUREDDEPOSIT-BTC" == 5
 ---
@@ -289,6 +301,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '[.txs[]|.result.events[]|select(.type=="refund")]|length == 1'
   - .txs[]|.result.events[]|select(.type=="refund")|.from == "{{ addr_btc_pig }}"
@@ -297,6 +310,7 @@ asserts:
 # Verify that deposit balance hasn't changed
 type: check
 endpoint: http://localhost:1317/thorchain/securedassets
+gas_used: 2348
 asserts:
   - .|length == 1
   - .[0].supply|tonumber == 50000000
@@ -313,6 +327,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 2321
 asserts:
   - ."HALTSECUREDDEPOSIT-BTC" == 0
 ---
@@ -341,6 +356,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/securedassets
+gas_used: 2357
 asserts:
   - .|length == 1
   - .[0].supply|tonumber == 100000000
@@ -374,6 +390,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '[.txs[]|.result.events[]|select(.type=="refund")]|length == 1'
   - .txs[]|.result.events[]|select(.type=="refund")|.from == "{{ addr_btc_pig }}"
@@ -415,6 +432,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '[.txs[]|.result.events[]|select(.type=="refund")]|length == 1'
   - .txs[]|.result.events[]|select(.type=="refund")|.from == "{{ addr_btc_pig }}"
@@ -448,6 +466,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '[.end_block_events[]|select(.type=="refund")]|length == 1'
   - .end_block_events[]|select(.type=="refund")|.from == "{{ addr_btc_pig }}"
@@ -459,6 +478,7 @@ asserts:
 # Verify balance before withdrawal attempt (2 deposits of 50000000 each = 100000000)
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 288
 asserts:
   - .balances[]|select(.denom == "btc-btc")|.amount|tonumber == 100000000
 ---
@@ -476,5 +496,6 @@ count: 1
 # Verify balance unchanged - withdrawal was rejected due to wrong network
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
+gas_used: 288
 asserts:
   - .balances[]|select(.denom == "btc-btc")|.amount|tonumber == 100000000

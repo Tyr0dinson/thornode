@@ -26,6 +26,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 57250
 asserts:
   - .|length == 1
   - .[0].savers_fill_bps|tonumber == 0
@@ -59,18 +60,21 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
+gas_used: 3152
 asserts:
   - .|length == 1
   - .[0].asset_deposit_value|tonumber == 4770146
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
+gas_used: 237
 asserts:
   - .supply|length == 2
   - .supply[]|select(.denom == "btc/btc")|.amount|tonumber == 4777728
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 62441
 asserts:
   - .|length == 1
   - .[0].savers_fill_bps|tonumber == 455
@@ -104,6 +108,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2514342793682
@@ -113,6 +118,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
+gas_used: 3155
 asserts:
   - .|length == 1
   - .[0].asset_deposit_value|tonumber == 4770146
@@ -144,6 +150,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 8029
 asserts:
   - length == 1
   - .[0].in_hash == "{{ observe_txid 3 }}"
@@ -174,6 +181,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 9227
 asserts:
   - .|length == 0
 ---
@@ -182,6 +190,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
+gas_used: 3164
 asserts:
   - .|length == 1
   - .[0].asset_deposit_value|tonumber == 2385073
@@ -213,6 +222,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 12256
 asserts:
   - length == 1
   - .[0].in_hash == "{{ observe_txid 5 }}"
@@ -243,11 +253,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 13454
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 62075
 asserts:
   - length == 1
   - .[0].savers_fill_bps == "0"
@@ -266,6 +278,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 4537
 asserts:
   - .SAVERSSTREAMINGSWAPSINTERVAL == 1
 ---
@@ -294,6 +307,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/swap/streaming/{{ observe_txid 7 }}
+gas_used: 7707
 asserts:
   - .deposit == "20000000"
   - .count == 1
@@ -310,6 +324,7 @@ count: 2
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/swap/streaming/{{ observe_txid 7 }}
+gas_used: 7707
 asserts:
   - .deposit == "20000000"
   - .count == 3
@@ -327,11 +342,13 @@ count: 3
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/swaps/streaming
+gas_used: 60
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
+gas_used: 3170
 asserts:
   - length == 1
   - .[0].asset_deposit_value == "19845387"
@@ -365,6 +382,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
+gas_used: 3170
 asserts:
   - length == 1
   - .[0].asset_deposit_value == "19845387"
@@ -399,6 +417,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/swap/streaming/{{ observe_txid 9 }}
+gas_used: 7944
 asserts:
   - .deposit == "${ASSET_REDEEM}"
   - .count == 1
@@ -414,6 +433,7 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/swap/streaming/{{ observe_txid 9 }}
+gas_used: 7950
 asserts:
   - .deposit == "${ASSET_REDEEM}"
   - .count == 2
@@ -430,11 +450,13 @@ count: 2
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/swaps/streaming
+gas_used: 60
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 27489
 asserts:
   - length == 1
   - .[0].in_hash == "{{ observe_txid 9 }}"
@@ -442,6 +464,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
+gas_used: 2186
 asserts:
   - .|length == 0
 ---
@@ -470,6 +493,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 28687
 asserts:
   - .|length == 0
 ---
@@ -501,6 +525,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/swap/streaming/{{ observe_txid 10 }}
+gas_used: 7707
 asserts:
   - .deposit == "20000000"
   - .count == 1
@@ -514,6 +539,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/swap/streaming/{{ observe_txid 10 }}
+gas_used: 7713
 asserts:
   - .deposit == "20000000"
   - .count == 2
@@ -536,6 +562,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 6687
 asserts:
   - .HALTTRADING == 1
 ---
@@ -544,6 +571,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/swap/streaming/{{ observe_txid 10 }}
+gas_used: 7713
 asserts:
   - .deposit == "20000000"
   - .count == 2
@@ -563,6 +591,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 6675
 asserts:
   - .HALTTRADING == 0
 ---
@@ -571,11 +600,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/swaps/streaming
+gas_used: 60
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
+gas_used: 3170
 asserts:
   - length == 1
   - .[0].asset_deposit_value == "19840111"
@@ -610,11 +641,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/swaps/streaming
+gas_used: 60
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 35687
 asserts:
   - .|length == 0
 ---
@@ -623,6 +656,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
+gas_used: 3170
 asserts:
   - length == 1
   - .[0].asset_deposit_value == "${PRE_ADD_DEPOSIT=19840111}"
@@ -631,6 +665,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type?=="donate")] | length == 1
   - ..|select(.type?=="donate").memo == "THOR-SAVERS-YIELD"
@@ -669,11 +704,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type?=="add_liquidity")] | length == 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
+gas_used: 3170
 asserts:
   - .|length == 1
   - .[0].asset_deposit_value == "20038134"
@@ -686,6 +723,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 37687
 asserts:
   - .|length == 0
 ---
@@ -701,6 +739,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type?=="refund")] | length == 1
   - ..|select(.type?=="refund").reason | contains("use trade assets instead")
@@ -741,6 +780,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type?=="refund")] | length == 1
   - ..|select(.type?=="refund").reason | contains("burning synths is disabled")

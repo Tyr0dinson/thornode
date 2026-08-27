@@ -90,5 +90,6 @@ count: 1
 # Basic verification that swaps processed
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .balances[]|select(.denom == "rune")|.amount|tonumber > 2400000000000

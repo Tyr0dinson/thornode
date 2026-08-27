@@ -18,12 +18,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/ETH.USDC-0X9999999999999999999999999999999999999999
+gas_used: 63461
 asserts:
   - .asset == "ETH.USDC-0X9999999999999999999999999999999999999999"
   - .status == "Available"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 6645
 asserts:
   - 'has("TORANCHOR-ETH-USDC-0X9999999999999999999999999999999999999999") | not'
 ---
@@ -54,11 +56,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/ETH.USDC-0X9999999999999999999999999999999999999999/savers
+gas_used: 1030
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 6176
 asserts:
   - .[0].original_memo == "REFUND:{{ observe_txid 1 }}"
   - .[0].coin.amount == "${OUT_AMOUNT=936000000}"
@@ -87,6 +91,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 7374
 asserts:
   - .|length == 0
 ---
@@ -100,6 +105,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 9095
 asserts:
   - '."TORANCHOR-ETH-USDC-0X9999999999999999999999999999999999999999" == 1'
 ---
@@ -130,11 +136,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
+gas_used: 513
 asserts:
   - .supply[]|select(.denom == "eth/usdc-0x9999999999999999999999999999999999999999")|.amount|tonumber == 990250275
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/ETH.USDC-0X9999999999999999999999999999999999999999/savers
+gas_used: 3965
 asserts:
   - .|length == 1
   - .[0].asset_address == "{{ addr_eth_pig }}"
@@ -166,11 +174,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/ETH.USDC-0X9999999999999999999999999999999999999999/savers
+gas_used: 2453
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 12541
 asserts:
   - length == 1
   - .[0].original_memo == "OUT:{{ observe_txid 4 }}"
@@ -200,5 +210,6 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 13739
 asserts:
   - .|length == 0

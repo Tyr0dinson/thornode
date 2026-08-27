@@ -7,6 +7,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 57250
 asserts:
   - .|length == 1
 ---
@@ -74,6 +75,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 16604
 asserts:
   - .pol.current_deposit == "${CURRENT_DEPOSIT=42097628741}"
   - .pol.current_deposit|tonumber < ${MAX_NETWORK_DEPOSIT}
@@ -86,6 +88,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 16616
 asserts:
   - .pol.current_deposit == "${CURRENT_DEPOSIT=89348132446}"
   - .pol.current_deposit|tonumber > ${MAX_NETWORK_DEPOSIT}
@@ -101,6 +104,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 16616
 asserts:
   - .pol.current_deposit == "${CURRENT_DEPOSIT}"
   - .pol.rune_deposited == "${CURRENT_DEPOSIT}"
@@ -112,12 +116,14 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+gas_used: 429
 asserts:
   - .|[.result[]|select(.denom=="btc/btc")] | length == 1
   - .result[]|select(.denom=="btc/btc").amount == "${FOX_SYNTH_BALANCE=49999999}"
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_cat }}
+gas_used: 429
 asserts:
   - .|[.result[]|select(.denom=="btc/btc")] | length == 1
   - .result[]|select(.denom=="btc/btc").amount == "${CAT_SYNTH_BALANCE=24489288}"
@@ -146,6 +152,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 16478
 asserts:
   - .pol.current_deposit == "89340315148"
   - .pol.rune_deposited == "89348132446"
@@ -164,6 +171,7 @@ count: 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 13470
 asserts:
   - .pol.current_deposit == "${CURRENT_DEPOSIT=17467050640}"
   - .pol.rune_deposited == "${RUNE_DEPOSITED=89348132446}"
@@ -180,6 +188,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 13470
 asserts:
   - .pol.current_deposit == "${CURRENT_DEPOSIT}"
   - .pol.rune_deposited == "${RUNE_DEPOSITED}"

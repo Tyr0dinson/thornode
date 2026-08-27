@@ -57,6 +57,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.events[2].action == "/types.MsgObservedTxIn"
   - .txs[0].result.events[2].module == "MsgObservedTxIn"
@@ -152,6 +153,7 @@ txs:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.events[2].action == "/types.MsgObservedTxIn"
   - .txs[0].result.events[2].module == "MsgObservedTxIn"
@@ -225,6 +227,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/securedasset/ETH-ETH
+gas_used: 4168
 asserts:
   - .asset == "ETH-ETH"
   - .supply|tonumber == 20000000
@@ -242,6 +245,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.events[6].action == "/types.MsgDeposit"
   - .txs[0].result.events[6].module == "MsgDeposit"

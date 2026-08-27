@@ -119,6 +119,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
+gas_used: 6613
 asserts:
   - .[0].block_height == 2
   - .[0].membership|length == 1
@@ -174,6 +175,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
+gas_used: 6613
 asserts:
   - .[0].block_height == 2
   - .[0].membership|length == 1
@@ -203,11 +205,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.code == 6
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
+gas_used: 6613
 asserts:
   - .[0].block_height == 2
   - .[0].membership|length == 1
@@ -264,6 +268,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
+gas_used: 11361
 asserts:
   - .[0].block_height == 11
   - .[0].membership|length == 3

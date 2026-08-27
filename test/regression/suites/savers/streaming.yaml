@@ -63,6 +63,7 @@ count: 21
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
+gas_used: 3152
 asserts:
   - .|length == 1
   - .[0].asset_deposit_value|tonumber == 9923995
@@ -72,21 +73,25 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/saver/{{ addr_thor_fish }}
+gas_used: 3192
 asserts:
   - .units == "0" # No Savers position for the address to be used as the Affiliate's THOR Alias.
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/saver/{{ addr_btc_fish }}
+gas_used: 3192
 asserts:
   - .units == "0" # No Savers position for the address to be used as the Affiliate's BTC Alias.
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 25000
 asserts:
   - .|length == 0 # No pending outbounds.
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/swaps/streaming
+gas_used: 60
 asserts:
   - .|length == 0 # No ongoing streaming swaps.
 ---
@@ -116,6 +121,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type? == "refund")] | length == 1
   - .|..|select(.type? == "refund") | .reason | contains("fail to refund") | not # Refund possible.
@@ -126,6 +132,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 28047
 asserts:
   - .|length == 1
   - .[0].coin.asset == "${IN_ASSET}"
@@ -159,6 +166,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 29245
 asserts:
   - .|length == 0 # No pending outbounds.
 ---
@@ -195,6 +203,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/fishthorname
+gas_used: 3369
 asserts:
   - .owner == "{{ addr_thor_fox }}"
   - .aliases | length == 1
@@ -203,6 +212,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type? == "refund")] | length == 1
   - .|..|select(.type? == "refund") | .reason | contains("fail to refund") | not # Refund possible.
@@ -215,6 +225,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 32292
 asserts:
   - .|length == 1
   - .[0].coin.asset == "${IN_ASSET}"
@@ -248,6 +259,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 33490
 asserts:
   - .|length == 0
 ---
@@ -284,6 +296,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/fishthorname
+gas_used: 3528
 asserts:
   - .owner == "{{ addr_thor_fox }}"
   - .aliases | length == 2
@@ -292,11 +305,13 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type? == "refund")] | length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/swaps/streaming
+gas_used: 4445
 asserts:
   - .|length == 1
   - .[0].tx_id == "${IN_TXID}"
@@ -307,6 +322,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/saver/{{ addr_btc_fish }}
+gas_used: 3192
 asserts:
   - .units == "0" # Savers position yet for the Affiliate's BTC address.
 ---
@@ -315,11 +331,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type? == "refund")] | length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/saver/{{ addr_btc_fish }}
+gas_used: 4642
 asserts:
   - .units == "${SAVER_UNITS=148739}" # Successful Savers add for the Affiliate BTC address.
 ---
@@ -349,11 +367,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type? == "refund")] | length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/swaps/streaming
+gas_used: 4445
 asserts:
   - .|length == 1
   - .[0].tx_id == "${IN_TXID}"
@@ -364,6 +384,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/saver/{{ addr_btc_fish }}
+gas_used: 4642
 asserts:
   - .units == "${SAVER_UNITS}"
 ---
@@ -372,5 +393,6 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/saver/{{ addr_btc_fish }}
+gas_used: 4642
 asserts:
   - .units | tonumber > ${SAVER_UNITS} # Successful Savers add for the Affiliate BTC address.

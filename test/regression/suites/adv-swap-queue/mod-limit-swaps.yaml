@@ -38,6 +38,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue
+gas_used: 1028377
 asserts:
   - .swap == 2
 ---
@@ -56,6 +57,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -3 }}
+gas_used: 8913
 asserts:
   - .swap.trade_target == "9500000"
   - .queue_type == "advanced"
@@ -66,6 +68,7 @@ asserts:
 # Check balance before cancellation
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+gas_used: 294
 asserts:
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2494998000000  # Balance after initial swap
 ---
@@ -81,11 +84,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap
+gas_used: 4973
 asserts:
   - .|map(select(.tx.id == "{{ native_txid 3 }}"))|length == 0  # Swap should be removed from queue
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+gas_used: 294
 asserts:
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499995999999  # Should have refunded 5B RUNE back to original balance
 ---
@@ -117,6 +122,7 @@ count: 1
 # Fox's swap should remain unchanged
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid 2 }}
+gas_used: 8913
 asserts:
   - .swap.trade_target == "9500000"  # Should not have changed
 ---
@@ -157,6 +163,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ observe_txid 1 }}
+gas_used: 9105
 asserts:
   - .swap.trade_target == "500000000000000000"
 ---
@@ -186,6 +193,7 @@ count: 1
 # Check that swaps are in the advanced queue before modifying
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap
+gas_used: 9458
 asserts:
   - .|length >= 2  # Should have at least 2 swaps in queue
 ---
@@ -203,12 +211,14 @@ count: 1
 # Only the first swap should be updated
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid 10 }}
+gas_used: 8913
 asserts:
   - .swap.trade_target == "22000000"
 ---
 # The second swap should remain unchanged
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid 11 }}
+gas_used: 8913
 asserts:
   - .swap.trade_target == "15000000"
 ---
@@ -237,6 +247,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid 13 }}
+gas_used: 8901
 asserts:
   - .swap.trade_target == "4500000"
 ---
@@ -245,6 +256,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[].result.events[]|select(.type == "limit_swap_mod")|length > 0
 ---
@@ -253,6 +265,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid 2 }}
+gas_used: 8913
 asserts:
   - .swap != null
   - .status == "queued"
@@ -263,5 +276,6 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/queue
+gas_used: 1032802
 asserts:
   - .swap >= 5  # Should have all our test swaps (2 initial - 1 cancelled + 1 cross-chain + 2 test5 + 1 test6)

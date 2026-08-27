@@ -21,6 +21,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/supply/cmc
+gas_used: 3177
 params:
   asset: rune
   type: circulating
@@ -32,6 +33,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/supply/cmc
+gas_used: 3177
 params:
   asset: rune
   type: total
@@ -43,6 +45,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/supply/cmc
+gas_used: 3177
 params:
   asset: rune
   type: locked
@@ -54,6 +57,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/supply/cmc
+gas_used: 3177
 params:
   type: total
 asserts:
@@ -64,6 +68,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/supply/cmc
+gas_used: 1102
 params:
   asset: tcy
   type: total
@@ -75,6 +80,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/supply/cmc
+gas_used: 1102
 params:
   asset: tcy
   type: staked
@@ -86,6 +92,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/supply/cmc
+gas_used: 1102
 params:
   asset: tcy
   type: locked
@@ -97,6 +104,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/supply/cmc
+gas_used: 0
 params:
   asset: invalid
   type: total
@@ -107,6 +115,7 @@ status: 400
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/supply/cmc
+gas_used: 3177
 params:
   asset: rune
   type: staked
@@ -117,6 +126,7 @@ status: 400
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/supply/cmc
+gas_used: 1102
 params:
   asset: tcy
   type: circulating

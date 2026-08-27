@@ -11,17 +11,20 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+gas_used: 58944
 asserts:
   - .balance_asset == "${ASSET_DEPTH=100000000}"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
+gas_used: 7243
 asserts:
   - .|[.[].coins[]|select(.asset == "BTC.BTC").amount|tonumber] | add == ${ASSET_DEPTH}
   # No oversolvency at the start.
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_cat }}
+gas_used: 294
 asserts:
   - .result | length == 1
   - .result[] | select(.denom == "rune").amount == "${CAT_RUNE=2500000000000}"
@@ -42,6 +45,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -1 }}
+gas_used: 7946
 asserts:
   - .swap.state.interval == ${INTERVAL}
   - .swap.state.quantity == ${QUANTITY}
@@ -66,12 +70,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/outbound_fee/BTC.BTC
+gas_used: 25262
 asserts:
   - length == 1
   - .[0].outbound_fee > ${ASSET_DEPTH}
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -2 }}
+gas_used: 7946
 asserts:
   - .swap.state.count == ${QUANTITY} - 1 # Streaming swap about to complete.
   - .swap.target_asset == "BTC.BTC"
@@ -86,12 +92,14 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/outbound_fee/THOR.RUNE
+gas_used: 3000
 asserts:
   - length == 1
   - .[0].outbound_fee == "0"
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_cat }}
+gas_used: 294
 asserts:
   - .result | length == 1
   - .result[0].denom == "rune"
@@ -100,23 +108,27 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
+gas_used: 7261
 asserts:
   - .|[.[].coins[]|select(.asset == "BTC.BTC").amount|tonumber] | add == ${ASSET_DEPTH}
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+gas_used: 61265
 asserts:
   - .balance_asset | tonumber == ${ASSET_DEPTH}
   # No outbound was queued, so the failed unrefundable output no longer reduces pool depth.
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 5000
 asserts:
   - length == 0
   # No outbound in the queue.
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type? == "swap")] | length == 1
 #  - .|[..|select(.type? == "swap")][0] | .streaming_swap_count == .streaming_swap_quantity

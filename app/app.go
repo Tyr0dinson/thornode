@@ -565,7 +565,12 @@ func NewChainApp(
 	// Uncomment if you want to set a custom migration order here.
 	// app.ModuleManager.SetOrderMigrations(custom order)
 
-	app.configurator = module.NewConfigurator(app.appCodec, app.msgServiceRouter, app.GRPCQueryRouter())
+	queryGasServer := thorchain.NewQueryGasServer(app.GRPCQueryRouter())
+	app.configurator = module.NewConfigurator(
+		app.appCodec,
+		app.msgServiceRouter,
+		queryGasServer,
+	)
 	err = app.ModuleManager.RegisterServices(app.configurator)
 	if err != nil {
 		panic(err)
@@ -575,13 +580,13 @@ func NewChainApp(
 	// Make sure it's called after `app.ModuleManager` and `app.configurator` are set.
 	app.RegisterUpgradeHandlers()
 
-	autocliv1.RegisterQueryServer(app.GRPCQueryRouter(), runtimeservices.NewAutoCLIQueryService(app.ModuleManager.Modules))
+	autocliv1.RegisterQueryServer(queryGasServer, runtimeservices.NewAutoCLIQueryService(app.ModuleManager.Modules))
 
 	reflectionSvc, err := runtimeservices.NewReflectionService()
 	if err != nil {
 		panic(err)
 	}
-	reflectionv1.RegisterReflectionServiceServer(app.GRPCQueryRouter(), reflectionSvc)
+	reflectionv1.RegisterReflectionServiceServer(queryGasServer, reflectionSvc)
 
 	// add test gRPC service for testing gRPC queries in isolation
 	// testdata_pulsar.RegisterQueryServer(app.GRPCQueryRouter(), testdata_pulsar.QueryImpl{})
@@ -893,7 +898,7 @@ func RegisterSwaggerAPI(rtr *mux.Router, swaggerEnabled bool) error {
 
 // RegisterTxService implements the Application.RegisterTxService method.
 func (app *THORChainApp) RegisterTxService(clientCtx client.Context) {
-	authtx.RegisterTxService(app.BaseApp.GRPCQueryRouter(), clientCtx, app.BaseApp.Simulate, app.interfaceRegistry)
+	authtx.RegisterTxService(thorchain.NewQueryGasServer(app.BaseApp.GRPCQueryRouter()), clientCtx, app.BaseApp.Simulate, app.interfaceRegistry)
 }
 
 // RegisterTendermintService implements the Application.RegisterTendermintService method.
@@ -901,14 +906,14 @@ func (app *THORChainApp) RegisterTendermintService(clientCtx client.Context) {
 	cmtApp := server.NewCometABCIWrapper(app)
 	cmtservice.RegisterTendermintService(
 		clientCtx,
-		app.BaseApp.GRPCQueryRouter(),
+		thorchain.NewQueryGasServer(app.BaseApp.GRPCQueryRouter()),
 		app.interfaceRegistry,
 		cmtApp.Query,
 	)
 }
 
 func (app *THORChainApp) RegisterNodeService(clientCtx client.Context, cfg config.Config) {
-	nodeservice.RegisterNodeService(clientCtx, app.GRPCQueryRouter(), cfg)
+	nodeservice.RegisterNodeService(clientCtx, thorchain.NewQueryGasServer(app.GRPCQueryRouter()), cfg)
 
 	if err := app.EnshrinedBifrost.Start(); err != nil && !errors.Is(err, ebifrost.ErrAlreadyStarted) {
 		panic(fmt.Errorf("failed to start bifrost service: %w", err))

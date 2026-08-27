@@ -11,11 +11,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 57250
 asserts:
   - .|length == 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/constants
+gas_used: 0
 asserts:
   - .int_64_values.SigningTransactionPeriod == 3
 ---
@@ -34,6 +36,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 5029
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ native_txid 1 }}"
@@ -47,6 +50,7 @@ count: 3
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 9256
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ native_txid 1 }}"
@@ -65,6 +69,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 2357
 asserts:
   - .RESCHEDULECOALESCEBLOCKS == 5
 ---
@@ -73,6 +78,7 @@ count: 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 12358
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ native_txid 1 }}"
@@ -86,6 +92,7 @@ count: 3
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 12131
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ native_txid 1 }}"
@@ -99,6 +106,7 @@ count: 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 12361
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ native_txid 1 }}"

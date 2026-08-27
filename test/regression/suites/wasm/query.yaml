@@ -40,11 +40,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmwasm/wasm/v1/contract/tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f/smart/eyJjb3VudCI6e319
+gas_used: 0
 asserts:
   - .data == "1"
 ---
 type: check
 endpoint: http://localhost:1317/cosmwasm/wasm/v1/contract/tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f/state
+gas_used: 1318
 asserts:
   - .models|length == 1
   # base64("\"1\"")
@@ -53,5 +55,6 @@ asserts:
 type: check
 # key = base64("counter")
 endpoint: http://localhost:1317/cosmwasm/wasm/v1/contract/tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f/raw/Y291bnRlcg==
+gas_used: 2129
 asserts:
   - .data == "IjEi"

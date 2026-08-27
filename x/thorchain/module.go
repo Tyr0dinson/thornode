@@ -23,6 +23,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
 	"gitlab.com/thorchain/thornode/v3/app/params"
@@ -156,7 +157,7 @@ func (am AppModule) QuerierRoute() string {
 // RegisterServices registers module services.
 func (am AppModule) RegisterServices(cfg module.Configurator) {
 	types.RegisterMsgServer(cfg.MsgServer(), am.msgServer)
-	types.RegisterQueryServer(queryGasServer{Server: cfg.QueryServer()}, am.queryServer)
+	types.RegisterQueryServer(cfg.QueryServer(), am.queryServer)
 	wasmtypes.RegisterQueryServer(cfg.QueryServer(), wasmkeeper.Querier(&am.mgr.wasmKeeper))
 
 	m := NewMigrator(am.mgr)
@@ -365,6 +366,26 @@ func CustomGRPCGatewayRouter(apiSvr *api.Server) {
 func RegisterSupplyCMCRoute(router *mux.Router, clientCtx client.Context) {
 	router.HandleFunc("/thorchain/supply/cmc", func(w http.ResponseWriter, r *http.Request) {
 		queryClient := types.NewQueryClient(clientCtx)
+		queryCtx := r.Context()
+		gasResponseHeader := "Grpc-Metadata-" + types.QueryGasUsedMetadata
+		trackQueryGas := r.Header.Get("Grpc-Metadata-"+types.QueryGasRequestMetadata) != ""
+		var gasUsed uint64
+		if trackQueryGas {
+			queryCtx = metadata.AppendToOutgoingContext(queryCtx, types.QueryGasRequestMetadata, "true")
+			w.Header().Set(gasResponseHeader, "0")
+		}
+		addQueryGas := func(header metadata.MD) {
+			if !trackQueryGas {
+				return
+			}
+			for _, raw := range header.Get(types.QueryGasUsedMetadata) {
+				gas, err := strconv.ParseUint(raw, 10, 64)
+				if err == nil {
+					gasUsed += gas
+				}
+			}
+			w.Header().Set(gasResponseHeader, strconv.FormatUint(gasUsed, 10))
+		}
 
 		asset := strings.ToLower(r.URL.Query().Get("asset"))
 		typ := strings.ToLower(r.URL.Query().Get("type"))
@@ -373,7 +394,9 @@ func RegisterSupplyCMCRoute(router *mux.Router, clientCtx client.Context) {
 		switch asset {
 		case "tcy":
 			bankClient := banktypes.NewQueryClient(clientCtx)
-			supplyResp, err := bankClient.SupplyOf(r.Context(), &banktypes.QuerySupplyOfRequest{Denom: "tcy"})
+			var gasHeader metadata.MD
+			supplyResp, err := bankClient.SupplyOf(queryCtx, &banktypes.QuerySupplyOfRequest{Denom: "tcy"}, grpc.Header(&gasHeader))
+			addQueryGas(gasHeader)
 			if err != nil {
 				http.Error(w, "failed to query tcy supply", http.StatusInternalServerError)
 				return
@@ -382,7 +405,9 @@ func RegisterSupplyCMCRoute(router *mux.Router, clientCtx client.Context) {
 
 			// sum staked TCY across the module account and wasm staking contracts
 			var staked int64
-			balResp, err := queryClient.BalanceModule(r.Context(), &types.QueryBalanceModuleRequest{Name: TCYStakeName})
+			gasHeader = nil
+			balResp, err := queryClient.BalanceModule(queryCtx, &types.QueryBalanceModuleRequest{Name: TCYStakeName}, grpc.Header(&gasHeader))
+			addQueryGas(gasHeader)
 			if err != nil {
 				http.Error(w, "failed to query tcy stake module", http.StatusInternalServerError)
 				return
@@ -394,7 +419,9 @@ func RegisterSupplyCMCRoute(router *mux.Router, clientCtx client.Context) {
 			}
 			var addrBalResp *types.QueryBalancesResponse
 			for _, addr := range tcysmartcontract.TCYSmartContractAddresses {
-				addrBalResp, err = queryClient.Balances(r.Context(), &types.QueryBalancesRequest{Address: addr})
+				gasHeader = nil
+				addrBalResp, err = queryClient.Balances(queryCtx, &types.QueryBalancesRequest{Address: addr}, grpc.Header(&gasHeader))
+				addQueryGas(gasHeader)
 				if err != nil {
 					continue // skip contracts that don't exist on this network
 				}
@@ -412,7 +439,9 @@ func RegisterSupplyCMCRoute(router *mux.Router, clientCtx client.Context) {
 
 			// unclaimed TCY in the claiming module
 			var locked int64
-			claimResp, err := queryClient.BalanceModule(r.Context(), &types.QueryBalanceModuleRequest{Name: TCYClaimingName})
+			gasHeader = nil
+			claimResp, err := queryClient.BalanceModule(queryCtx, &types.QueryBalanceModuleRequest{Name: TCYClaimingName}, grpc.Header(&gasHeader))
+			addQueryGas(gasHeader)
 			if err != nil {
 				http.Error(w, "failed to query tcy claim module", http.StatusInternalServerError)
 				return
@@ -437,7 +466,9 @@ func RegisterSupplyCMCRoute(router *mux.Router, clientCtx client.Context) {
 				return
 			}
 		case "rune", "":
-			resp, err := queryClient.Supply(r.Context(), &types.QuerySupplyRequest{})
+			var gasHeader metadata.MD
+			resp, err := queryClient.Supply(queryCtx, &types.QuerySupplyRequest{}, grpc.Header(&gasHeader))
+			addQueryGas(gasHeader)
 			if err != nil {
 				http.Error(w, "failed to query rune supply", http.StatusInternalServerError)
 				return

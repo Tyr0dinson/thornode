@@ -10,6 +10,7 @@ count: 1
 # Step 2: Check initial node account state - should have maintenance flag as false (default)
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+gas_used: 23710
 asserts:
   - .maintenance == false
 ---
@@ -26,6 +27,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_cat }}
+gas_used: 8988
 asserts:
   - .total_bond == "10000000000"
 ---
@@ -44,6 +46,7 @@ count: 1
 # Step 5: Check that maintenance flag is now set to true
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+gas_used: 16962
 asserts:
   - .maintenance == true
 ---
@@ -61,6 +64,7 @@ count: 1
 # Step 7: Check that the maintenance flag is still true (unauthorized attempt should have no effect)
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+gas_used: 16962
 asserts:
   - .maintenance == true
 ---
@@ -78,6 +82,7 @@ count: 1
 # Step 9: Check that second node's maintenance flag is now true
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_cat }}
+gas_used: 9024
 asserts:
   - .maintenance == true
 ---
@@ -94,6 +99,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+gas_used: 23170
 asserts:
   - .maintenance == false
 ---
@@ -109,5 +115,6 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_cat }}
+gas_used: 8988
 asserts:
   - .maintenance == false

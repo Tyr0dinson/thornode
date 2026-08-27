@@ -19,6 +19,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_dog }}
+gas_used: 1537
 asserts:
   - .result.value.sequence == "1"
 ---
@@ -37,5 +38,6 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+gas_used: 1315
 asserts:
   - .result.value.sequence == "0"

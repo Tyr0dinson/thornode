@@ -81,11 +81,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_stable_reserve }}
+gas_used: 30
 asserts:
   - '[.balances[]|select(.denom == "rune")]|length == 0'
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/stable_reserve
+gas_used: 91262
 asserts:
   - '.active_swaps|length == 0'
   - '.inventory|length > 0'
@@ -131,6 +133,7 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '[..|select(.type? == "stable_reserve_depeg_detected")]|length == 1'
   - '[..|select(.type? == "stable_reserve_rescue_scheduled")]|length == 1'
@@ -153,6 +156,7 @@ count: 10
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/stable_reserve
+gas_used: 33897
 asserts:
   # USDC inventory should be gone (rescued)
   - '[.inventory[]|select(.asset == "ETH.USDC-0X9999999999999999999999999999999999999999")][0].amount == "0"'

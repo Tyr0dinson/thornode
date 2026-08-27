@@ -64,11 +64,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_wolf }}
+gas_used: 1537
 asserts:
   - .result.value.sequence == "1"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs|length == 1
   - .txs[0]|.result.log|contains("is not bonded with")
@@ -88,11 +90,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fish }}
+gas_used: 1537
 asserts:
   - .result.value.sequence == "1"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+gas_used: 25316
 asserts:
   - .bond_providers.providers[] |
     select(.bond == "400000000000" and .bond_address == "{{ addr_thor_fish }}")
@@ -113,6 +117,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 2231
 asserts:
   - .HALTREBOND == 1
 ---
@@ -128,11 +133,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fish }}
+gas_used: 1537
 asserts:
   - .result.value.sequence == "2"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs|length == 1
   - .txs[0]|.result.log|contains("has been disabled by mimir")
@@ -140,6 +147,7 @@ asserts:
 # 2_000_000 rune deducted from total_bond, over every provider, on tx-mimir
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+gas_used: 25316
 asserts:
   - .bond_providers.providers[] |
     select(.bond == "399999840000" and .bond_address == "{{ addr_thor_fish }}")
@@ -160,6 +168,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 2213
 asserts:
   - .HALTREBOND == 0
 ---
@@ -175,12 +184,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fish }}
+gas_used: 1537
 asserts:
   - .result.value.sequence == "3"
 ---
 # 2_000_000 rune deducted from total_bond, over every provider, on tx-mimir
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+gas_used: 25202
 asserts:
   - .bond_providers.providers | length == 2
   - .bond_providers.providers[] |
@@ -199,11 +210,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fish }}
+gas_used: 1537
 asserts:
   - .result.value.sequence == "4"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs|length == 1
   - .txs[0]|.result.log|contains("is not bonded with {{ addr_thor_dog }}")

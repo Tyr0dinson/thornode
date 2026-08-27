@@ -18,11 +18,13 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/outbound_fees
+gas_used: 50919
 asserts:
   - .|length == 3
   - .[0] == {"asset":"THOR.RUNE","outbound_fee":"0"}
@@ -46,12 +48,14 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
+gas_used: 7540
 asserts:
   - length == 1
   - .[0].block_height == ${VAULT_BLOCK_HEIGHT=1}
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/lastblock
+gas_used: 19356
 asserts:
   - .[0].thorchain == ${VAULT_BLOCK_HEIGHT}
   # The templates set the vault block_height to 0,
@@ -85,6 +89,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/${INBOUND_TXID}
+gas_used: 7940
 asserts:
   - .swap.tx.coins[0].asset == "${INPUT_ASSET}"
   - .swap.state.deposit == "${INPUT_AMOUNT}"
@@ -98,6 +103,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/swaps/streaming
+gas_used: 3000
 asserts:
   - .|length == 1
 ---
@@ -106,11 +112,13 @@ count: 9
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/swaps/streaming
+gas_used: 60
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 14032
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "${INBOUND_TXID}"
@@ -142,6 +150,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 15230
 asserts:
   - .|length == 0
 ---
@@ -150,11 +159,13 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/lastblock
+gas_used: 27899
 asserts:
   - .[0].thorchain == ${HEIGHT=12}
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
+gas_used: 7567
 asserts:
   - length == 1
   - .[0].block_height == 2
@@ -192,6 +203,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/${INBOUND_TXID}
+gas_used: 7970
 asserts:
   - .swap.state.deposit == "${INPUT_AMOUNT}"
   - .status == "queued"
@@ -199,6 +211,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/swaps/streaming
+gas_used: 3030
 asserts:
   - .|length == 1
 ---
@@ -215,6 +228,7 @@ count: 4
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/swaps/streaming
+gas_used: 3042
 asserts:
   - .|length == 1
 ---
@@ -228,11 +242,13 @@ count: 4
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/swaps/streaming
+gas_used: 60
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 31262
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "${INBOUND_TXID}"
@@ -264,6 +280,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 32460
 asserts:
   - .|length == 0
 ---
@@ -298,11 +315,13 @@ count: 5
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/swaps/streaming
+gas_used: 60
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 41497
 asserts:
   - .|length == 2
   - .[0]|.in_hash == "${INBOUND_TXID}"
@@ -355,6 +374,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 42893
 asserts:
   - .|length == 0
 ---
@@ -386,6 +406,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/${INBOUND_TXID}
+gas_used: 7970
 asserts:
   - .swap.stream_interval == ${INTERVAL}
   - .swap.state.deposit == "${INPUT_AMOUNT}"
@@ -397,6 +418,7 @@ count: 8
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 53925
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "${INBOUND_TXID}"
@@ -432,6 +454,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 56123
 asserts:
   - .|length == 0
 ---
@@ -463,11 +486,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/swaps/streaming
+gas_used: 60
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 59149
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "${INBOUND_TXID}"
@@ -503,11 +528,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 61347
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/swaps/streaming
+gas_used: 60
 asserts:
   - .|length == 0
 ---
@@ -526,6 +553,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/799A32266A8F0BF5E5EC7F12E0981839DF23C7E138A7C45D6814A7D80CAC7F34
+gas_used: 7958
 asserts:
   - .swap.state.deposit == "${INPUT_AMOUNT}"
   - .status == "queued"
@@ -536,6 +564,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/799A32266A8F0BF5E5EC7F12E0981839DF23C7E138A7C45D6814A7D80CAC7F34
+gas_used: 7964
 asserts:
   - .swap.state.deposit == "${INPUT_AMOUNT}"
   - .status == "queued"
@@ -546,6 +575,7 @@ count: 8
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/799A32266A8F0BF5E5EC7F12E0981839DF23C7E138A7C45D6814A7D80CAC7F34
+gas_used: 2030
 status: 400
 asserts:
   - .message|contains("not found in any queue") # The streaming swap has completed and so is no longer ongoing.
@@ -565,6 +595,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/DB631CBCF71524D9BF1141566D8A11E887B426D0C1FDDB6510EA99041220A36F
+gas_used: 7934
 asserts:
   - .swap.state.deposit == "${INPUT_AMOUNT}"
   - .status == "queued"
@@ -575,6 +606,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/DB631CBCF71524D9BF1141566D8A11E887B426D0C1FDDB6510EA99041220A36F
+gas_used: 7940
 asserts:
   - .swap.state.deposit == "${INPUT_AMOUNT}"
   - .status == "queued"
@@ -582,11 +614,13 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/invariant/streaming_swaps
+gas_used: 3030
 asserts:
   - .broken == false
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/invariant/asgard
+gas_used: 4284
 asserts:
   - .broken == false
 ---
@@ -595,22 +629,26 @@ count: 8
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/DB631CBCF71524D9BF1141566D8A11E887B426D0C1FDDB6510EA99041220A36F
+gas_used: 2030
 status: 400
 asserts:
   - .message|contains("not found in any queue") # The streaming swap has completed and so is no longer ongoing.
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/invariant/asgard
+gas_used: 1197
 asserts:
   - .broken == false
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/invariant/streaming_swaps
+gas_used: 90
 asserts:
   - .broken == false
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/outbound_fees
+gas_used: 45176
 asserts:
   - .|length == 3
   - .[0] == {"asset":"THOR.RUNE","outbound_fee":"0"}

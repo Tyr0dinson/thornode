@@ -57,6 +57,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '[.txs[]|.result.events[]|select(.type == "refund")]|length == 1'
   - '[.txs[]|.result.events[]|select(.type == "stable_reserve_deposit")]|length == 0'
@@ -100,6 +101,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '[..|select(.type? == "refund")]|length >= 1'
   - '[..|select(.type? == "stable_reserve_deposit")]|length == 0'

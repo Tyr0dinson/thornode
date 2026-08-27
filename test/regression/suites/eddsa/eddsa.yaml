@@ -7,11 +7,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
+gas_used: 8395
 asserts:
   - map(select(.status == "ActiveVault") | .chains | index("SOL"))
 ---
@@ -27,6 +29,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 5251
 asserts:
   - .[0].vault_pub_key_eddsa == "tthorpub1zcjduepqytyuhhzn286vccztkdns982ad0snfa68k3zjlcm2j2ae6rffhxssu9zuek"
   - .[0].to_address == "{{ addr_sol_cat }}"
@@ -41,6 +44,8 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+# NON DETERMINISTIC: candidate x/thorchain/types/test_common.go:203 generates a random Ed25519 key for the simulated SOL sender.
+gas_used: 1842572
 params:
   from_asset: SOL.SOL
   to_asset: BTC.BTC
@@ -61,6 +66,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 1843578
 params:
   from_asset: BTC.BTC
   to_asset: SOL.SOL

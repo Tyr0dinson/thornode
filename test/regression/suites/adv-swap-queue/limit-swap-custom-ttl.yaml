@@ -66,6 +66,7 @@ count: 1
 # Verify the swap was queued with non-zero quantity (the fix) and has started executing
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_1}
+gas_used: 9147
 asserts:
   - .swap.state.quantity > 0 # Must not be zero - this was the bug
   - .swap.state.deposit == "5000000"
@@ -82,6 +83,7 @@ count: 19
 # Verify outbound was generated (swap completed and settled)
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 25032
 asserts:
   - .|length == 1
   - .[0].in_hash == "${TXID_1}"
@@ -116,6 +118,7 @@ count: 1
 # Verify outbound queue is empty and swap completed
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 26230
 asserts:
   - .|length == 0
 ---
@@ -124,5 +127,6 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/invariant/asgard
+gas_used: 1170
 asserts:
   - .broken == false

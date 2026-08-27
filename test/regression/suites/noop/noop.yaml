@@ -10,11 +10,13 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+gas_used: 2963
 asserts:
   - .coins[]|select(.asset=="BTC.BTC")|.amount|tonumber == 100000000
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/btc.btc
+gas_used: 58944
 asserts:
   - .balance_asset|tonumber == 100000000
 ---
@@ -50,6 +52,7 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+gas_used: 2969
 asserts:
   - .coins[]|select(.asset=="BTC.BTC")|.amount|tonumber == 100000000
 ---
@@ -58,6 +61,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/pool/btc.btc
+gas_used: 58944
 asserts:
   - .balance_asset|tonumber == 100000000
 ---
@@ -66,6 +70,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 3000
 asserts:
   - .|length == 0
 ---
@@ -74,6 +79,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/tx/{{ observe_txid 1 }}
+gas_used: 8106
 asserts:
   - .observed_tx.tx.memo == "noop:novault"
 ---
@@ -108,6 +114,7 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+gas_used: 2969
 asserts:
   - .coins[]|select(.asset=="BTC.BTC")|.amount|tonumber == 103000000
 ---
@@ -116,6 +123,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/pool/btc.btc
+gas_used: 58944
 asserts:
   - .balance_asset|tonumber == 100000000
 ---
@@ -124,6 +132,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 4000
 asserts:
   - .|length == 0
 ---

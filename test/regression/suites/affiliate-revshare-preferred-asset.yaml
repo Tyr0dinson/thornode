@@ -11,6 +11,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
 ---
@@ -30,6 +31,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/t
+gas_used: 24760
 asserts:
   - .owner == "{{ addr_thor_cat }}"
   - .preferred_asset == "BTC.BTC"
@@ -50,6 +52,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/t
+gas_used: 24919
 asserts:
   - .preferred_asset == "BTC.BTC"
   # both THOR and BTC aliases are present
@@ -70,6 +73,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir/key/PREFERREDASSETOUTBOUNDFEEMULTIPLIER
+gas_used: 2132
 asserts:
   - . == 1
 ---
@@ -87,6 +91,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir/key/REVSHARE-t
+gas_used: 2060
 asserts:
   - . == 5000
 ---
@@ -110,6 +115,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type?=="rev_share" and .thorname=="T")] | length == 1
   - (.|[..|select(.type?=="rev_share" and .thorname=="T")])[0].owner == "{{ addr_thor_cat }}"
@@ -125,6 +131,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - (.|[..|select(.type?=="scheduled_outbound" and .to_address=="{{ addr_btc_cat }}" and .coin_asset=="BTC.BTC")] | length) >= 1
 ---
@@ -134,5 +141,6 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/t
+gas_used: 22139
 asserts:
   - (.affiliate_collector_rune | tonumber) == 0

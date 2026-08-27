@@ -30,11 +30,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_dog }}
+gas_used: 1537
 asserts:
   - .result.value.sequence == "1"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 5041
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ observe_txid 1 }}"
@@ -65,11 +67,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_dog }}
+gas_used: 1537
 asserts:
   - .result.value.sequence == "2"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/tx/{{ observe_txid 2 }}
+gas_used: 9457
 asserts:
 - .observed_tx.status == "done"
 ---
@@ -98,5 +102,6 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+gas_used: 1315
 asserts:
   - .result.value.sequence == "0"

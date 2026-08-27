@@ -10,11 +10,13 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/inbound_addresses
+gas_used: 132854
 asserts:
   - '[.[]|select(.pub_key == "{{ pubkey_dog }}")]|length > 0'
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 1827015
 params:
   from_asset: BTC.BTC
   to_asset: ETH.ETH
@@ -40,6 +42,7 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/inbound_addresses
+gas_used: 9908
 asserts:
   - '[.[]|select(.pub_key == "{{ pubkey_dog }}")]|length == 0'
 ---
@@ -48,6 +51,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 71716
 params:
   from_asset: BTC.BTC
   to_asset: ETH.ETH
@@ -70,11 +74,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/inbound_addresses
+gas_used: 134160
 asserts:
   - '[.[]|select(.pub_key == "{{ pubkey_dog }}")]|length > 0'
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 1831651
 params:
   from_asset: BTC.BTC
   to_asset: ETH.ETH

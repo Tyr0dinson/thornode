@@ -72,10 +72,12 @@ count: 1
 # verify native RUNE increased
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .balances[]|select(.denom == "rune")|.amount|tonumber > 2500000000000
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/invariant/asgard
+gas_used: 2151
 asserts:
   - .broken == false

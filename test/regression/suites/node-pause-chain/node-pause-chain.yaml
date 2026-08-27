@@ -5,6 +5,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/inbound_addresses
+gas_used: 174521
 asserts:
 - .[1].halted == false
 ---
@@ -17,6 +18,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/inbound_addresses
+gas_used: 160877
 asserts:
 - .[1].halted == true
 ---
@@ -29,5 +31,6 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+gas_used: 1315
 asserts:
   - .result.value.sequence == "0"

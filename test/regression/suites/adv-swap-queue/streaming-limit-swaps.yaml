@@ -30,6 +30,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
 ---
@@ -62,6 +63,7 @@ count: 1
 # Check MsgSwap State for the swap
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_1}
+gas_used: 9075
 asserts:
   - .swap.state.count == 1 # State.Count - should be 1 for completed limit swap
   - .swap.state.in == "500000" # State.In - full amount swapped
@@ -77,6 +79,7 @@ count: 19
 # Verify swap executed and in outbound queue
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 25032
 asserts:
   - .|length == 1
   - .[0].in_hash == "${TXID_1}"
@@ -111,6 +114,7 @@ count: 1
 # Verify outbound queue is now empty
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 26230
 asserts:
   - .|length == 0
 ---
@@ -151,6 +155,7 @@ count: 11 # Wait past max age
 # Should generate refund
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 40271
 asserts:
   - .|map(select(.original_memo | contains("REFUND:${TXID_3}")))|length == 1
   - .|map(select(.original_memo | contains("REFUND:${TXID_3}")) | .coin.asset)|.[0] == "BTC.BTC"
@@ -182,6 +187,7 @@ count: 1
 # Verify outbound queue is empty
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 41469
 asserts:
   - .|length == 0
 ---
@@ -214,6 +220,7 @@ count: 11 # Wait for expiration
 # Check refund to custom address
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 54510
 asserts:
   - .|map(select(.original_memo | contains("REFUND:${TXID_5}")))|length == 1
   - .|map(select(.original_memo | contains("REFUND:${TXID_5}")) | .to_address)|.[0] == "{{ addr_btc_cat }}"
@@ -245,6 +252,7 @@ count: 1
 # Verify outbound queue is empty
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 55708
 asserts:
   - .|length == 0
 ---
@@ -285,6 +293,7 @@ count: 1
 # Should generate refund as limit swaps are not allowed in market-only mode
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 59755
 asserts:
   - .|map(select(.original_memo | contains("REFUND:${TXID_9}")))|length == 1
   - .|map(select(.original_memo | contains("REFUND:${TXID_9}")) | .coin.asset)|.[0] == "BTC.BTC"
@@ -315,6 +324,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 60953
 asserts:
   - .|length == 0
 ---
@@ -380,6 +390,7 @@ count: 3
 # Check that swap has started executing (State.Out should be non-zero)
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/${TXID_10}
+gas_used: 9105
 asserts:
   - .swap.state.out != "0" # Swap has started executing
   - .swap.trade_target == "20000000" # Target was modified
@@ -389,6 +400,7 @@ asserts:
 # Ensure swap is still in the queue
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap
+gas_used: 5165
 asserts:
   - any(.tx.id == "${TXID_10}") # Swap should still be in queue
 ---
@@ -419,6 +431,7 @@ count: 1
 # Should have two items in outbound queue: partial swap output and refund
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 69993
 asserts:
   - .|length == 2
   - any(.in_hash == "${TXID_10}" and .coin.asset == "ETH.ETH") # Partial swap output
@@ -469,6 +482,7 @@ count: 1
 # Verify outbound queue is empty
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 71389
 asserts:
   - .|length == 0
 ---
@@ -477,5 +491,6 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/invariant/asgard
+gas_used: 1170
 asserts:
   - .broken == false

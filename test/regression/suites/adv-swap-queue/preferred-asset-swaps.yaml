@@ -20,6 +20,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir/key/EnableAdvSwapQueue
+gas_used: 2081
 asserts:
   - . == 1
 ---
@@ -50,6 +51,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/preftest
+gas_used: 0
 asserts:
   - .name == "preftest"
   - .owner == "{{ addr_thor_pig }}"
@@ -70,6 +72,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/preftest
+gas_used: 0
 asserts:
   - .aliases|length == 2
   - .aliases[1].chain == "BTC"
@@ -81,6 +84,7 @@ asserts:
 ## Check initial affiliate collector state
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/preftest
+gas_used: 0
 asserts:
   - .affiliate_collector_rune == "0"
 ---
@@ -111,12 +115,14 @@ count: 1
 # Check affiliate collector accumulated RUNE
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/preftest
+gas_used: 0
 asserts:
   - .affiliate_collector_rune | tonumber > 0
 ---
 # Store the collected amount for verification
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/preftest
+gas_used: 0
 asserts:
   - .affiliate_collector_rune == "${COLLECTED_RUNE_1=413234148}"
 ---
@@ -147,6 +153,7 @@ count: 1
 # Process the BTC outbound
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 0
 asserts:
   - length == 1
   - .[0].coin.asset == "BTC.BTC"
@@ -178,6 +185,7 @@ count: 1
 # Check accumulated affiliate fees increased
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/preftest
+gas_used: 0
 asserts:
   - .affiliate_collector_rune | tonumber >= ${COLLECTED_RUNE_1}
 ---
@@ -195,6 +203,7 @@ count: 1
 # Check and process all outbounds
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 0
 asserts:
   - length >= 1
 ---
@@ -224,6 +233,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 0
 asserts:
   - length == 1
   - .[0].coin.amount == "${BTC_OUT_2=2081958}"
@@ -255,6 +265,7 @@ count: 1
 # Check outbound queue is clear
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 0
 asserts:
   - length == 0
 ---
@@ -264,6 +275,7 @@ asserts:
 # Verify THORName still exists with preferred asset configured
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/preftest
+gas_used: 0
 asserts:
   - .name == "preftest"
   - .owner == "{{ addr_thor_pig }}"
@@ -273,6 +285,7 @@ asserts:
 # Verify advanced swap queue is still enabled
 type: check
 endpoint: http://localhost:1317/thorchain/mimir/key/EnableAdvSwapQueue
+gas_used: 0
 asserts:
   - . == 1
 # End of test file

@@ -7,6 +7,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 57250
 asserts:
   - .|length == 1
 ---
@@ -87,6 +88,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 16574
 asserts:
   - .pol.current_deposit == "${POL_DEPOSIT=1719663685}"
   - .pol.rune_deposited == "${POL_DEPOSIT}"
@@ -105,6 +107,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 16574
 asserts:
   - .pol.current_deposit == "${POL_DEPOSIT}"
   - .pol.rune_deposited == "${POL_DEPOSIT}"
@@ -131,6 +134,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
+gas_used: 10662
 asserts:
   - .rune_address == "{{ addr_thor_fox }}"
   - .deposit_amount == "${POL_VALUE}"
@@ -144,11 +148,13 @@ asserts:
 ########################################################################################
 type: check # Check pooler balance before withdraw
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+gas_used: 429
 asserts:
   - .result[] | select(.denom == "rune").amount == "${POOLER_INITIAL_BALANCE=2298278871398}"
 ---
 type: check # Check affiliate balance before withdraw
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+gas_used: 30
 asserts:
   - .result|length == 0
 ---
@@ -164,11 +170,13 @@ count: 1
 ---
 type: check # Check pooler balance after withdraw
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+gas_used: 429
 asserts:
   - .result[] | select(.denom == "rune")|.amount|tonumber == ${POOLER_INITIAL_BALANCE}+${POL_VALUE}/2-${GAS=2000000}
 ---
 type: check # Check affiliate balance after withdraw, should be 0 still
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+gas_used: 30
 asserts:
   - .result|length == 0
 ---
@@ -200,6 +208,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 16709
 asserts:
   - .pol.rune_withdrawn == "${POL_WITHDRAWN=1574587635}"
   - .pol.current_deposit|tonumber == ${POL_DEPOSIT} - ${POL_WITHDRAWN}
@@ -220,16 +229,19 @@ asserts:
 ########################################################################################
 type: check # Check pooler balance before withdraw
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+gas_used: 429
 asserts:
   - .result[] | select(.denom == "rune").amount == "${POOLER_INITIAL_BALANCE=2299135435699}"
 ---
 type: check # Check affiliate balance before withdraw
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+gas_used: 30
 asserts:
   - .result|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
+gas_used: 10740
 asserts:
   - .pnl|tonumber == ${PROVIDERS_PNL}
   - .value|tonumber == ${POL_VALUE}/2+${PROVIDERS_PNL}
@@ -246,6 +258,7 @@ count: 1
 ---
 type: check # Check pooler balance after withdraw
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+gas_used: 429
 asserts:
   # Mirror handler_rune_pool_withdraw.go:
   # withdrawYield = GetSafeShare(lifetimePnL, totalValue, withdrawValue)
@@ -254,5 +267,6 @@ asserts:
 ---
 type: check # Check affiliate balance after withdraw
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
+gas_used: 270
 asserts:
   - .result[] | select(.denom == "rune")|.amount|tonumber == ((${PROVIDERS_PNL} * ((${POL_VALUE}/2+${PROVIDERS_PNL}) / (${POL_VALUE}+${PROVIDERS_PNL})) | round) / 2 | round) # 50% of proportional yield

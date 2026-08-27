@@ -55,6 +55,7 @@ type: check
 # Query here is base64(json({ path: "/types.Query/Pool", data: base64(proto(QueryPoolRequest {Asset: "BTC.BTC"})) }))
 # data: CgdCVEMuQlRD
 endpoint: http://localhost:1317/cosmwasm/wasm/v1/contract/tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f/smart/eyJncnBjIjp7InBhdGgiOiIvdHlwZXMuUXVlcnkvUG9vbCIsImRhdGEiOiJDZ2RDVkVNdVFsUkQifX0=
+gas_used: 0
 asserts:
   - .data == "CgdCVEMuQlRDEgFiGglBdmFpbGFibGUgCCoBMDIBMDoJMTAwMDAwMDAwQgwxMDAwMDQzNTA1ODNKATBSDDEwMDAwMDAwMDAwMFoMMTAwMDAwMDAwMDAwYgEwagEwcgEwegEwggEBMIoBCTEwMDAwMDAwMJoBCDcwMDAwMDAwugEBMMoBATDSAQEw2gEBMOIBATA="
 ---
@@ -93,6 +94,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.events[3].type == "message"
   - .txs[0].result.events[3].action == "/cosmwasm.wasm.v1.MsgExecuteContract"
@@ -125,12 +127,14 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+gas_used: 25010
 asserts:
   - .bond_providers.providers[1].bond_address == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
   - .bond_providers.providers[1].bond == "2500000000000"
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/auth/v1beta1/module_accounts/bond
+gas_used: 1345
 asserts:
   - .account.base_account.address == "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff"
 ---
@@ -159,6 +163,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.log|match("cannot use MsgSend for Module transactions, use MsgDeposit instead")
 ---
@@ -190,6 +195,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.events[5].type == "instantiate"
   - .txs[0].result.events[5]._contract_address == "tthor1suhgf5svhu4usrurvxzlgn54ksxmn8gljarjtxqnapv8kjnp4nrs3ptfdq"
@@ -197,5 +203,6 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmwasm/wasm/v1/code/1/contracts
+gas_used: 603
 asserts:
   - .contracts|length == 2

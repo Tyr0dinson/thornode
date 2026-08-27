@@ -20,6 +20,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 962979
 params:
   from_asset: THOR.RUNE
   to_asset: BTC/BTC
@@ -42,6 +43,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .end_block_events[] | select(.type == "swap") | .swap_slip == "1"
   - .end_block_events[] | select(.type == "swap") | .pool_slip == "1"
@@ -78,11 +80,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 2285
 asserts:
   - .["SynthSlipMinBps" | ascii_upcase] == 500
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 970605
 params:
   from_asset: THOR.RUNE
   to_asset: BTC/BTC
@@ -95,6 +99,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 1101284
 params:
   from_asset: ETH.ETH
   to_asset: BTC/BTC
@@ -106,6 +111,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 1115907
 params:
   from_asset: ETH/ETH
   to_asset: BTC/BTC
@@ -127,6 +133,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .end_block_events[] | select(.type == "swap") | .swap_slip == "500"
   - .end_block_events[] | select(.type == "swap") | .pool_slip == "1"

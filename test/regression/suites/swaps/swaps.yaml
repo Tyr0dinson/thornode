@@ -7,6 +7,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
 ---
@@ -38,12 +39,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2504535171552
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+gas_used: 62499
 asserts:
   - .volume_asset == "5000000"
   - .volume_rune == "4535171552"
@@ -63,6 +66,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 6029
 asserts:
   - length == 1
   - .[0].in_hash == "{{ native_txid -1 }}"
@@ -93,17 +97,20 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 7227
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+gas_used: 62517
 asserts:
   - .volume_asset == "14012476"
   - .volume_rune == "14535171552"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
+gas_used: 60232
 asserts:
   - .volume_asset == "0"
   - .volume_rune == "0"
@@ -136,6 +143,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 10256
 asserts:
   - length == 1
   - .[0].in_hash == "{{ observe_txid 3 }}"
@@ -143,12 +151,14 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+gas_used: 62535
 asserts:
   - .volume_asset == "19012476"
   - .volume_rune == "19496402877"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
+gas_used: 62520
 asserts:
   - .volume_asset == "45032650"
   - .volume_rune == "4961231325"
@@ -178,5 +188,6 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 11454
 asserts:
   - .|length == 0

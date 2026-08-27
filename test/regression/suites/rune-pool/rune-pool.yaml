@@ -25,6 +25,7 @@ signer: {{ addr_thor_goat }}
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
 ---
@@ -33,12 +34,14 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .result[0].denom == "rune"
   - .result[0].amount == "2500000000000" # 25,000 RUNE
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_cat }}
+gas_used: 294
 asserts:
   - .result[0].denom == "rune"
   - .result[0].amount == "2500000000000" # 25,000 RUNE
@@ -61,17 +64,20 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/mimir/key/RUNEPoolEnabled
+gas_used: 2072
 asserts:
   - . == 1
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .result[0].denom == "rune"
   - .result[0].amount == "1832298000000" # 25,000 RUNE - 6677 RUNE - 0.02 RUNE tx fee
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/rune_pool
+gas_used: 288
 asserts:
   - .name == "rune_pool"
   - .address == "tthor1rzqfv62dzu585607s5awqtgnvvwz5rzhfuaw80"
@@ -80,6 +86,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
+gas_used: 12470
 asserts:
   - .rune_address == "{{ addr_thor_fox }}"
   - .deposit_amount == "667700000000"
@@ -100,6 +107,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
+gas_used: 12542
 asserts:
   - .rune_address == "{{ addr_thor_fox }}"
   - .deposit_amount == "667700000000"
@@ -109,12 +117,14 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .result[0].denom == "rune"
   - .result[0].amount == "2166146000000" # 25,000 RUNE - 6677 RUNE + 50% withdraw - 0.02 RUNE tx fee
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/rune_pool
+gas_used: 288
 asserts:
   - .name == "rune_pool"
   - .address == "tthor1rzqfv62dzu585607s5awqtgnvvwz5rzhfuaw80"
@@ -136,6 +146,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
+gas_used: 12440
 asserts:
   - .rune_address == "{{ addr_thor_fox }}"
   - .deposit_amount == "667700000000"
@@ -145,18 +156,21 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .result[0].denom == "rune"
   - .result[0].amount == "2499994000000" # 25k RUNE - 3x0.02 RUNE tx fee
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_cat }}
+gas_used: 294
 asserts:
   - .result[0].denom == "rune"
   - .result[0].amount == "2500000000000" # no profit, so no affiliate fee
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/rune_pool
+gas_used: 30
 asserts:
   - .name == "rune_pool"
   - .address == "tthor1rzqfv62dzu585607s5awqtgnvvwz5rzhfuaw80"
@@ -164,6 +178,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 20082
 asserts:
   - 'all(.pol|.[]; . == "0")'
   - 'all(.reserve|.[]; . == "0")'
@@ -171,6 +186,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[0].result.events[-1].type == "rune_pool_withdraw"
   - .txs[0].result.events[-1].rune_address == "{{ addr_thor_fox }}"
@@ -221,17 +237,20 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir/key/MaxAffiliateFeeBasisPoints
+gas_used: 2105
 asserts:
   - . == 10
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - >
     select(.txs[].result.log | contains("invalid affiliate basis points, max: 10, request: 11"))
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 20082
 asserts:
   - 'all(.pol|.[]; . == "0")'
   - 'all(.reserve|.[]; . == "0")'
@@ -265,6 +284,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 6807
 asserts:
   - .RUNEPOOLDEPOSITMATURITYBLOCKS == 2
 ---
@@ -288,6 +308,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - >
     select(.txs[0].result.log | contains("RUNEPool deposit paused"))
@@ -312,6 +333,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_pig }}
+gas_used: 12383
 asserts:
   - .rune_address == "{{ addr_thor_pig }}"
   - .deposit_amount == "10"
@@ -320,6 +342,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 20097
 asserts:
   - 'all(.pol|.[]; . == "0")'
   - 'all(.reserve|.[]; . == "0")'
@@ -344,6 +367,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_pig }}
+gas_used: 12383
 asserts:
   - .rune_address == "{{ addr_thor_pig }}"
   - .deposit_amount == "10" # no change
@@ -352,6 +376,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - >
     select(.txs[0].result.log | contains("deposit reaches maturity in 1 blocks"))
@@ -379,6 +404,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - >
     select(.txs[0].result.log | contains("RUNEPool withdraw paused"))
@@ -403,6 +429,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_pig }}
+gas_used: 12380
 asserts:
   - .rune_address == "{{ addr_thor_pig }}"
   - .value == "0"
@@ -413,6 +440,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 20082
 asserts:
   - 'all(.pol|.[]; . == "0")'
   - 'all(.reserve|.[]; . == "0")'

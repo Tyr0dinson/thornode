@@ -24,6 +24,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2500000000000
@@ -40,22 +41,26 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+gas_used: 1537
 asserts:
   - .result.value.sequence == "1"
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499998000000
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+gas_used: 6472
 asserts:
   - .total_bond == "0"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs|length == 1
   - .txs[0]|.result.log|contains("insufficient funds")
@@ -72,16 +77,19 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+gas_used: 1537
 asserts:
   - .result.value.sequence == "2"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+gas_used: 9012
 asserts:
   - .total_bond == "2499996000000"
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 30
 asserts:
   - .balances|length == 0
 ---
@@ -97,12 +105,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+gas_used: 1537
 asserts:
   - .result.value.sequence == "2"
 ---
 # Test non-RUNE bond attempt (a MsgDeposit for a network module which should only receive RUNE).
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fish }}
+gas_used: 420
 asserts:
   - .result | length == 2
   - .result[0].denom == ${NON_RUNE_ASSET="btc/btc"}
@@ -120,6 +130,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.code? and .code != 0)] | length == 1
   - ..|select(.code? and .code != 0).log| contains("(bond) memos are for the (bond) module, for which messages must only contain RUNE")

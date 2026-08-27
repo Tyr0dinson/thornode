@@ -48,6 +48,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
 ---
@@ -80,6 +81,7 @@ txs:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/block?height=1
+gas_used: 0
 asserts:
   - .end_block_events[] | select(.type == "rewards") | .bond_reward == "110984"
   - .end_block_events[] | select(.type == "rewards") | keys | length == 8

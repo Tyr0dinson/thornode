@@ -15,6 +15,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/inbound_addresses
+gas_used: 192042
 asserts:
   - .|length == 15
   - .[0].chain == "BTC"
@@ -33,11 +34,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_fox }}
+gas_used: 1315
 asserts:
   - .result.value.sequence == "0"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/inbound_addresses
+gas_used: 192042
 asserts:
   - .|length == 15
   - .[0].chain == "BTC"

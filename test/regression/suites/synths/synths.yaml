@@ -7,6 +7,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 57250
 asserts:
   - .|length == 1
 ---
@@ -25,6 +26,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+gas_used: 423
 asserts:
   - .result[]|select(.denom == "btc/btc").amount == "${SYNTH_AMOUNT=9070205}"
   - .result[]|select(.denom == "rune")|.amount == "2489998000000"
@@ -44,6 +46,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .result|length == 1
   - .result[]|select(.denom == "rune").amount == "2499125582836"
@@ -76,6 +79,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+gas_used: 423
 asserts:
   - .result|length == 2
   - .result[]|select(.denom == "btc/btc").amount == "${SYNTH_AMOUNT=4770146}"
@@ -96,12 +100,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
+gas_used: 294
 asserts:
   - .result|length == 1
   - .result[]|select(.denom == "rune").amount == "2499123582836"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 8029
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ native_txid -1 }}"

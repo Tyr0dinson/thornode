@@ -7,6 +7,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 57250
 asserts:
   - .|length == 1
 ---
@@ -93,6 +94,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 16574
 asserts:
   - .pol.pnl == "${RESERVE_PNL=-2535083}"
   - .pol.value == "${POL_VALUE=1717128590}"
@@ -102,6 +104,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/reserve
+gas_used: 300
 asserts:
   - .coins[0].amount == "${RESERVE_BALANCE=34998301226484}"
 ---
@@ -133,6 +136,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 16661
 asserts:
   - .providers.units|tonumber == 2*${POL_VALUE=1719663673}
   - .providers.pending_units == "${POL_VALUE}"
@@ -146,6 +150,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/rune_providers
+gas_used: 9442
 asserts:
   - .|length == 2
   - .[0].units == "${POL_VALUE}"
@@ -157,6 +162,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_cat }}
+gas_used: 429
 asserts:
   - .|[.result[]|select(.denom=="btc/btc")] | length == 1
   - .result[]|select(.denom=="btc/btc").amount == "${CAT_SYNTH_BALANCE=24489542}"
@@ -199,6 +205,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/rune_providers
+gas_used: 9457
 asserts:
   - .|length == 2
   - .[0].units == "0"
@@ -213,6 +220,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
+gas_used: 16628
 asserts:
   - .pol.pnl|tonumber == ${RESERVE_PNL}-2*${PROVIDER_PNL} # original reserve loss remains
   - .providers.units == "0"
@@ -224,5 +232,6 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/reserve
+gas_used: 300
 asserts:
   - .coins[0].amount|tonumber == ${RESERVE_BALANCE}+2*${PROVIDER_PNL}+5*${GAS=2000000}

@@ -7,6 +7,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
 ---
@@ -15,6 +16,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .. | select(.type? == "rewards").pol_reserve_reward == "0"
 ---
@@ -67,6 +69,7 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[.. | select(.type? == "swap").liquidity_fee_in_rune | tonumber] | add // 0 | . == ${LIQFEES=226759664}
   - .. | select(.type? == "rewards") | [.[] | tonumber?] | add - ${LIQFEES} == ${BLOCK_REWARD=1109850}
@@ -76,6 +79,7 @@ asserts:
 # Verify transfer from reserve to pol_reserve module
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type?=="transfer")] | [.[] | select(.recipient == "{{ addr_module_pol_reserve }}")] | length == 1
   - .|[..|select(.type?=="transfer")] | [.[] | select(.recipient == "{{ addr_module_pol_reserve }}")][0].sender == "{{ addr_module_reserve }}"
@@ -86,6 +90,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type?=="pol_reserve_deploy")] | length == 1
   - ..|select(.type?=="pol_reserve_deploy").pool == "BTC.BTC"
@@ -94,12 +99,14 @@ asserts:
 # Verify pool API shows pol_reserve_rune_deposited for BTC
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+gas_used: 63640
 asserts:
   - .pol_reserve_rune_deposited == "${POL_TOTAL_DEPLOYED}"
 ---
 # Verify ETH pool has no POL Reserve deposits
 type: check
 endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
+gas_used: 60232
 asserts:
   - .pol_reserve_rune_deposited == "0"
 ---
@@ -166,6 +173,7 @@ count: 1
 # BTC is blacklisted and would otherwise be the best pool, so deployment should go to ETH
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type?=="pol_reserve_deploy")] | length == 1
   - ..|select(.type?=="pol_reserve_deploy").pool == "ETH.ETH"
@@ -173,6 +181,7 @@ asserts:
 # ETH pool should now have deposits since BTC was blacklisted, forcing deployment to ETH
 type: check
 endpoint: http://localhost:1317/thorchain/pool/ETH.ETH
+gas_used: 63643
 asserts:
   - .pol_reserve_rune_deposited | tonumber > 0
 ---
@@ -215,6 +224,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .. | select(.type? == "rewards").pol_reserve_reward | tonumber > 0
   - .|[..|select(.type?=="pol_reserve_deploy")] | length == 1
@@ -253,6 +263,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .|[..|select(.type?=="pol_reserve_deploy")] | length == 1
   - .. | select(.type? == "rewards").pol_reserve_reward | tonumber > 1000
@@ -291,6 +302,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   # System income still routed to pol_reserve module
   - .. | select(.type? == "rewards").pol_reserve_reward | tonumber > 0

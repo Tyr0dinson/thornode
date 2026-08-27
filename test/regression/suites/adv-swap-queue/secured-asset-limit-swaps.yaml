@@ -33,6 +33,7 @@ count: 1
 # Verify pools are created
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
 ---
@@ -65,6 +66,7 @@ count: 1
 # Verify BTC-BTC secured asset balance
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 429
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "btc-btc")|.amount == "20000000"
@@ -98,6 +100,7 @@ count: 1
 # Verify fox has both secured assets
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 573
 asserts:
   - .balances|length == 3
   - .balances[]|select(.denom == "btc-btc")|.amount == "20000000"
@@ -109,6 +112,7 @@ asserts:
 # Get a quote to understand current rates
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
+gas_used: 1395063
 params:
   from_asset: "BTC-BTC"
   to_asset: "ETH-ETH"
@@ -131,6 +135,7 @@ count: 1
 # Verify swap is in the advanced queue
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -1 }}
+gas_used: 8883
 asserts:
   - .swap.trade_target == "60000000"
   - .swap.tx.coins[0].asset == "BTC-BTC"
@@ -140,6 +145,7 @@ asserts:
 # Secured asset limit swaps don't lock balance until execution (like trade assets)
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 573
 asserts:
   - .balances[]|select(.denom == "btc-btc")|.amount == "20000000"  # Balance unchanged until swap executes
   - .balances[]|select(.denom == "eth-eth")|.amount == "200000000"  # ETH-ETH also unchanged
@@ -147,6 +153,7 @@ asserts:
 # Verify limit swap shows in API
 type: check
 endpoint: http://localhost:1317/thorchain/queue/limit_swaps
+gas_used: 5913
 asserts:
   - .limit_swaps|length == 1
   - .limit_swaps[0].swap.tx.coins[0].asset == "BTC-BTC"
@@ -169,6 +176,7 @@ count: 1
 # Verify modification took effect
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -2 }}
+gas_used: 8883
 asserts:
   - .swap.trade_target == "50000000"  # Target should be updated
   - .swap.tx.coins[0].asset == "BTC-BTC"
@@ -178,6 +186,7 @@ asserts:
 # Verify limit_swap_mod event was emitted
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs[].result.events|map(select(.type == "limit_swap_mod"))|length > 0
 ---
@@ -197,6 +206,7 @@ count: 1
 # Verify second modification took effect
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -3 }}
+gas_used: 8973
 asserts:
   - .swap.trade_target == "45000000"  # Target should be updated again
   - .queue_type == "advanced"
@@ -232,6 +242,7 @@ count: 15  # Give time for limit swap to execute
 # Verify limit swap executed - fox should now have ETH-ETH from the swap
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 573
 asserts:
   - .balances[]|select(.denom == "eth-eth")|.amount == "313568150"  # ETH-ETH balance after swap execution
   - .balances[]|select(.denom == "eth-eth")|.amount|tonumber >= 45000000  # Must meet or exceed 45000000 target
@@ -240,6 +251,7 @@ asserts:
 # Verify swap is removed from queue after execution
 type: check
 endpoint: http://localhost:1317/thorchain/queue/limit_swaps
+gas_used: 3111
 asserts:
   - .limit_swaps|length == 0
   - .pagination.total == "0"
@@ -250,6 +262,7 @@ asserts:
 # Record balances before creating the limit swap
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 573
 asserts:
   - .balances[]|select(.denom == "eth-eth")|.amount == "${ETH_BEFORE=313568150}"
 ---
@@ -266,6 +279,7 @@ count: 1
 # Verify new swap is in queue
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid -1 }}
+gas_used: 8895
 asserts:
   - .swap.trade_target == "25000000"
   - .swap.tx.coins[0].asset == "ETH-ETH"
@@ -275,6 +289,7 @@ asserts:
 # Verify ETH-ETH balance after swap is queued (unchanged for secured asset limit swaps)
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 573
 asserts:
   - .balances[]|select(.denom == "eth-eth")|.amount == "${ETH_BEFORE}"  # Balance unchanged at queue time for secured assets
 ---
@@ -294,6 +309,7 @@ count: 1
 # Verify swap is removed from queue
 type: check
 endpoint: http://localhost:1317/thorchain/queue/limit_swaps
+gas_used: 3111
 asserts:
   - .limit_swaps|length == 0
   - .pagination.total == "0"
@@ -301,6 +317,7 @@ asserts:
 # Verify ETH-ETH was refunded (balance should be back to what it was before)
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 573
 asserts:
   - .balances[]|select(.denom == "eth-eth")|.amount == "${ETH_BEFORE}"
 ---
@@ -309,5 +326,6 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/invariant/asgard
+gas_used: 1170
 asserts:
   - .broken == false

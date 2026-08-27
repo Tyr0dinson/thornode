@@ -20,6 +20,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir/key/PAUSEONSLASHTHRESHOLD
+gas_used: 2102
 asserts:
   - . == 10000000000
 ---
@@ -38,6 +39,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 6173
 asserts:
   - length == 1
   - .[0]|.coin.amount|tonumber > 11000000000
@@ -81,6 +83,7 @@ count: 1
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/outbound_fee/eth.eth
+gas_used: 33422
 asserts:
   - .[0].fee_spent_rune == "20000118594"
 ---
@@ -89,6 +92,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 7173
 asserts:
   - length == 1
 ---
@@ -97,6 +101,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - '[.txs[]|.result.events[]|select(.type=="slash")]|length == 0'
 ---
@@ -105,6 +110,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 6699
 asserts:
   - .HALTSIGNINGETH|not
   - .HALTETHTRADING|not
@@ -114,10 +120,12 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+gas_used: 3785
 asserts:
   - .coins[]|select(.asset=="ETH.ETH")|.amount|tonumber == 1000000000-200000000
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/eth.eth
+gas_used: 64873
 asserts:
   - .balance_asset|tonumber == 1000000000-200000000

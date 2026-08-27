@@ -18,6 +18,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+gas_used: 9012
 asserts:
   - .status == "Whitelisted"
   - .total_bond == "1000000000000"
@@ -44,6 +45,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_pig }}
+gas_used: 0
 asserts:
   - .status == "Whitelisted"
   - .total_bond == "1000000000000"
@@ -63,6 +65,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/tx/v1beta1/txs/{{ native_txid -1 }}
+gas_used: 0
 asserts:
   - .tx_response.code == 6
   - .tx_response.raw_log | test("coin amount must be zero")
@@ -82,6 +85,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/tx/v1beta1/txs/{{ native_txid -1 }}
+gas_used: 0
 asserts:
   - .tx_response.code == 99
   - .tx_response.raw_log | test("invalid memo")
@@ -98,6 +102,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/tx/v1beta1/txs/{{ native_txid -1 }}
+gas_used: 0
 asserts:
   - .tx_response.code == 99
   - .tx_response.raw_log | test("invalid memo")
@@ -117,6 +122,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/tx/v1beta1/txs/{{ native_txid -1 }}
+gas_used: 0
 asserts:
   - .tx_response.code == 99
   - .tx_response.raw_log | test("invalid memo")
@@ -126,6 +132,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+gas_used: 0
 asserts:
   - .node_operator_address == "{{ addr_thor_fox }}"
   - .total_bond == "1000000000000"
@@ -153,6 +160,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/tx/v1beta1/txs/{{ native_txid -1 }}
+gas_used: 0
 asserts:
   - .tx_response.code == 99
   - .tx_response.raw_log | test("rotate is halted")
@@ -188,6 +196,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/tx/v1beta1/txs/{{ native_txid -1 }}
+gas_used: 0
 asserts:
   - .tx_response.code == 99
   - .tx_response.raw_log | test("rotate is only allowed in the first half of churn")
@@ -215,6 +224,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/tx/v1beta1/txs/{{ native_txid -1 }}
+gas_used: 0
 asserts:
   - .tx_response.code == 99
   - .tx_response.raw_log | test("cannot rotate from operator with active node")
@@ -234,6 +244,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/tx/v1beta1/txs/{{ native_txid -1 }}
+gas_used: 0
 asserts:
   - .tx_response.code == 99
   - .tx_response.raw_log | test("cannot rotate to operator with active node")
@@ -253,6 +264,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+gas_used: 0
 asserts:
   - .node_operator_address == "{{ addr_thor_cat }}"
   - .total_bond == "1000000000000"
@@ -262,6 +274,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/tx/v1beta1/txs/{{ native_txid -1 }}
+gas_used: 0
 asserts:
   - .tx_response.events[]|select(.type=="operator_rotate").attributes[]|select(.key=="signer").value == "{{ addr_thor_fox }}"
   - .tx_response.events[]|select(.type=="operator_rotate").attributes[]|select(.key=="node_address").value == "{{ addr_thor_fox }}"
@@ -282,6 +295,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/tx/v1beta1/txs/{{ native_txid -1 }}
+gas_used: 0
 asserts:
   - .tx_response.code == 6
   - .tx_response.raw_log | test("bond address is not valid for node account")
@@ -301,6 +315,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_fox }}
+gas_used: 0
 asserts:
   - .total_bond == "1000100000000"
 ---
@@ -319,6 +334,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 0
 asserts:
   - '[.[]|select(.node_operator_address=="{{ addr_thor_cat }}")]|length == 2'
   - length == 3
@@ -338,6 +354,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
+gas_used: 0
 asserts:
   - '[.[]|select(.node_operator_address=="{{ addr_thor_wolf }}")]|length == 2'
   - length == 3

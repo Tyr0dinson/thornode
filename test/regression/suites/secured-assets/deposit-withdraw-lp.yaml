@@ -7,6 +7,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
+gas_used: 110966
 asserts:
   - .|length == 2
 ---
@@ -25,6 +26,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs|length == 1
   - .txs[0].result.code == 5
@@ -58,6 +60,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+gas_used: 4174
 asserts:
   - .asset == "BTC-BTC"
   - .supply == "150000000"
@@ -65,6 +68,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 435
 asserts:
   - .balances|length == 2
   - .balances[0].denom == "btc-btc"
@@ -85,6 +89,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs|length == 1
   - .txs[0].result.code == 0
@@ -101,12 +106,14 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs|length == 1
   - .txs[0].result.code == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+gas_used: 60223
 asserts:
   - .balance_rune|tonumber >= 200000000000
   - .balance_asset == "200000000"
@@ -115,11 +122,13 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_providers
+gas_used: 1986
 asserts:
   - .|length == 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_fox }}
+gas_used: 6900
 asserts:
   - .rune_address == "{{ addr_thor_fox }}"
   - .asset_address == "{{ addr_thor_fox }}"
@@ -130,6 +139,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+gas_used: 4168
 asserts:
   - .asset == "BTC-BTC"
   - .supply == "50000000"
@@ -137,6 +147,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 429
 asserts:
   - .balances|length == 2
   - .balances[0].denom == "btc-btc"
@@ -157,6 +168,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs|length == 1
   - .txs[0].result.code == 123
@@ -187,6 +199,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs|length == 1
   - .txs[0].result.code == 0
@@ -197,6 +210,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 10047
 asserts:
   - .[0].coin.amount == "${OUT_AMOUNT=49993000}"
 ---
@@ -225,17 +239,20 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 11245
 asserts:
   - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs|length == 1
   - .txs[0].result.code == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_fox }}
+gas_used: 6900
 asserts:
   - .rune_address == "{{ addr_thor_fox }}"
   - .asset_address == "{{ addr_thor_fox }}"
@@ -260,11 +277,13 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs|length == 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 429
 asserts:
   - .balances|length == 2
   - .balances[0].denom == "btc-btc"
@@ -272,6 +291,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+gas_used: 4168
 asserts:
   - .asset == "BTC-BTC"
   - .supply == "99998859"
@@ -292,6 +312,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs|length == 1
   - .txs[0].result.code == 99
@@ -299,6 +320,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 429
 asserts:
   - .balances|length == 2
   - .balances[0].denom == "btc-btc"
@@ -306,6 +328,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+gas_used: 4168
 asserts:
   - .asset == "BTC-BTC"
   - .supply == "99998859"
@@ -326,6 +349,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
+gas_used: 0
 asserts:
   - .txs|length == 1
   - .txs[0].result.code == 99
@@ -333,6 +357,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 429
 asserts:
   - .balances|length == 2
   - .balances[0].denom == "btc-btc"
@@ -340,6 +365,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+gas_used: 4168
 asserts:
   - .asset == "BTC-BTC"
   - .supply == "99998859"
@@ -360,6 +386,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 435
 asserts:
   - .balances|length == 2
   - .balances[0].denom == "btc-btc"
@@ -367,6 +394,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+gas_used: 4174
 asserts:
   - .asset == "BTC-BTC"
   - .supply == "149997718"
@@ -374,6 +402,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_providers
+gas_used: 1332
 asserts:
   - .|length == 1
 ---
@@ -415,17 +444,20 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_providers
+gas_used: 1980
 asserts:
   - .|length == 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+gas_used: 60223
 asserts:
   - .balance_asset == "124998782"
   - .balance_rune == "125007658516"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_fox }}
+gas_used: 6897
 asserts:
   - .pending_asset == "0"
   - .pending_rune == "0"
@@ -436,6 +468,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+gas_used: 4174
 asserts:
   - .asset == "BTC-BTC"
   - .supply == "149997718"
@@ -443,6 +476,7 @@ asserts:
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 435
 asserts:
   - .balances|length == 2
   - .balances[0].denom == "btc-btc"

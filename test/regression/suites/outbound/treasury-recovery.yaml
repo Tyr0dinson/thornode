@@ -25,6 +25,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 4540
 asserts:
   - .MAXOUTBOUNDATTEMPTS == 2
   - .SIGNINGTRANSACTIONPERIOD == 3
@@ -59,6 +60,7 @@ count: 1
 # Verify swap is queued
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 7029
 asserts:
   - .|length == 1
   - .[0].in_hash == "{{ observe_txid 1 }}"
@@ -71,6 +73,7 @@ count: 4
 # The outbound should be rescheduled (attempt 1)
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 13256
 asserts:
   - .|length == 1
   - .[0].in_hash == "{{ observe_txid 1 }}"
@@ -85,6 +88,7 @@ count: 3
 # Query block at height 10 where the event was emitted (before swap processing)
 type: check
 endpoint: http://localhost:1317/thorchain/block?height=10
+gas_used: 0
 asserts:
   - .end_block_events[]? | select(.type == "failed_outbound_recovery") | .recovery_type == "reverse_swap"
 ---
@@ -92,6 +96,7 @@ asserts:
 # And the reverse swap should be queued
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 18486
 asserts:
   - .|length == 1
 ---
@@ -125,6 +130,7 @@ count: 1
 # Should create a refund outbound
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 21527
 asserts:
   - .|length >= 1
   - .|map(select(.original_memo | startswith("REFUND:"))) | length >= 1
@@ -137,6 +143,7 @@ count: 4
 # First reschedule
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 29996
 asserts:
   - .|length >= 1
 ---
@@ -150,6 +157,7 @@ count: 3
 # Query block at height 18 where the event was emitted
 type: check
 endpoint: http://localhost:1317/thorchain/block?height=18
+gas_used: 0
 asserts:
   - .end_block_events[]? | select(.type == "failed_outbound_recovery") | select(.recovery_type == "treasury") | . != null
 ---
@@ -170,6 +178,7 @@ count: 10
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/block?height=10
+gas_used: 0
 asserts:
   # Verify at least one failed_outbound_recovery event exists (checking height 10 from Test 1)
   - .end_block_events[]? | select(.type == "failed_outbound_recovery") | . != null
@@ -177,5 +186,6 @@ asserts:
 # Verify no outbounds are stuck in the queue indefinitely
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
+gas_used: 43392
 asserts:
   - .|length < 10  # Should not accumulate failed outbounds

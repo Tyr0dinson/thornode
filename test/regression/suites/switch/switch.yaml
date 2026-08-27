@@ -13,6 +13,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
+gas_used: 2339
 asserts:
   - ."ENABLESWITCH-GAIA-KUJI" == 1
 ---
@@ -65,6 +66,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/vaults/asgard
+gas_used: 8377
 asserts:
   - .[]|.coins[]|select(.asset == "GAIA.ATOM")|.amount == "10000000"
 ---
@@ -96,6 +98,7 @@ count: 1
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+gas_used: 441
 asserts:
   - .balances|length == 2
   - .balances[1].denom == "thor.kuji"
