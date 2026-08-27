@@ -8,10 +8,11 @@ import (
 const signedExtrinsicPrefix = "signed-extrinsic/"
 
 type signedExtrinsicRecord struct {
-	TxHash        string `json:"transaction_hash"`
-	VaultAddress  string `json:"vault_address"`
-	Nonce         uint32 `json:"nonce"`
-	RecheckHeight int64  `json:"recheck_height"`
+	TxHash         string `json:"transaction_hash"`
+	VaultAddress   string `json:"vault_address"`
+	Nonce          uint32 `json:"nonce"`
+	EraBirthHeight int64  `json:"era_birth_height,omitempty"`
+	RecheckHeight  int64  `json:"recheck_height"`
 }
 
 type byteStateStore interface {
@@ -45,6 +46,12 @@ func (record signedExtrinsicRecord) Validate() error {
 	}
 	if record.RecheckHeight < 0 {
 		return fmt.Errorf("recheck height is negative")
+	}
+	if record.EraBirthHeight < 0 {
+		return fmt.Errorf("era birth height is negative")
+	}
+	if record.EraBirthHeight > record.RecheckHeight {
+		return fmt.Errorf("era birth height is after recheck height")
 	}
 	return nil
 }

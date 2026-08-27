@@ -3,7 +3,11 @@
 
 package substrate
 
-import "gitlab.com/thorchain/thornode/v3/common"
+import (
+	"time"
+
+	"gitlab.com/thorchain/thornode/v3/common"
+)
 
 var ChainParams = map[common.Chain]Params{
 	// Mocknet runs the real Asset Hub Polkadot runtime (polkadot-omni-node in
@@ -12,6 +16,7 @@ var ChainParams = map[common.Chain]Params{
 	common.DOTChain: {
 		SpecName:             "statemint",
 		MortalEraPeriod:      128,
+		Lookback:             time.Minute,
 		DefaultFee:           20_000_000, // 0.002 DOT
 		BalanceSize:          16,
 		CheckMetadataHash:    true,
@@ -29,7 +34,8 @@ var ChainParams = map[common.Chain]Params{
 	},
 	common.TAOChain: {
 		SpecName:          "node-subtensor",
-		MortalEraPeriod:   64,      // 64 blocks * 12s ≈ 12.8 minutes
+		MortalEraPeriod:   64, // 64 blocks * 12s ≈ 12.8 minutes
+		Lookback:          time.Minute,
 		DefaultFee:        100_000, // 0.0001 TAO
 		BalanceSize:       8,
 		CheckMetadataHash: true,

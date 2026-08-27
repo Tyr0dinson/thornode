@@ -169,6 +169,48 @@ func (s *RPCSuite) TestSystemAccountStorageKey_Deterministic(c *C) {
 	c.Check(key1, Equals, key2, Commentf("storage key should be deterministic"))
 }
 
+func (s *RPCSuite) TestGetBlockTimestamp(c *C) {
+	const (
+		blockHash    = "0x1234"
+		timestampKey = "0xf0c365c3cf59d671eb72da0e7a4113c49f1f0515f462cdcf84e0f1d6045dfcbb"
+	)
+	timestamp := int64(1_777_000_123_456)
+	data := make([]byte, 8)
+	binary.LittleEndian.PutUint64(data, uint64(timestamp))
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Method string        `json:"method"`
+			Params []interface{} `json:"params"`
+		}
+		c.Assert(json.NewDecoder(r.Body).Decode(&request), IsNil)
+		c.Check(request.Method, Equals, "state_getStorage")
+		c.Assert(request.Params, HasLen, 2)
+		c.Check(request.Params[0], Equals, timestampKey)
+		c.Check(request.Params[1], Equals, blockHash)
+		fmt.Fprintf(w, `{"jsonrpc":"2.0","id":1,"result":"0x%s"}`, hex.EncodeToString(data))
+	}))
+	defer srv.Close()
+
+	got, err := NewClient(srv.URL, time.Second).GetBlockTimestamp(blockHash)
+	c.Assert(err, IsNil)
+	c.Check(got, Equals, timestamp)
+}
+
+func (s *RPCSuite) TestGetBlockTimestampRejectsInvalidValues(c *C) {
+	for _, value := range []string{"0x", "0x01", "0x0000000000000080", "not-hex"} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			fmt.Fprintf(w, `{"jsonrpc":"2.0","id":1,"result":"%s"}`, value)
+		}))
+		_, err := NewClient(srv.URL, time.Second).GetBlockTimestamp("0x1234")
+		srv.Close()
+		c.Check(err, NotNil, Commentf("value %q should fail", value))
+	}
+
+	_, err := NewClient("unused", time.Second).GetBlockTimestamp("")
+	c.Check(err, NotNil)
+}
+
 // ---------------------------------------------------------------------------
 // jsonRPCError formatting
 // ---------------------------------------------------------------------------

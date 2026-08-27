@@ -83,6 +83,8 @@ func TestStateStoreRejectsInvalidAndCorruptExtrinsics(t *testing.T) {
 		{VaultAddress: "vault"},
 		{TxHash: "hash"},
 		{TxHash: "hash", VaultAddress: "vault", RecheckHeight: -1},
+		{TxHash: "hash", VaultAddress: "vault", EraBirthHeight: -1},
+		{TxHash: "hash", VaultAddress: "vault", EraBirthHeight: 2, RecheckHeight: 1},
 	} {
 		err = store.PutExtrinsic(record)
 		if err == nil {

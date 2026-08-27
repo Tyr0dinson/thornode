@@ -2,6 +2,7 @@ package substrate
 
 import (
 	"fmt"
+	"time"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/substrate/types"
 )
@@ -19,7 +20,8 @@ const (
 
 type Params struct {
 	SpecName          string
-	MortalEraPeriod   uint32 // blocks a mortal era tx is valid for
+	MortalEraPeriod   uint32        // blocks a mortal era tx is valid for
+	Lookback          time.Duration // time before the THORChain signing block used to choose the mortal-era block
 	DefaultFee        uint64
 	BalanceSize       int
 	CheckMetadataHash bool // whether the runtime includes CheckMetadataHash (RFC-0078)

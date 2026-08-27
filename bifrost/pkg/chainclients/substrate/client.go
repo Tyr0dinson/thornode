@@ -125,6 +125,7 @@ func NewClient(
 		c.rpcClient,
 		pubkeyMgr,
 		c.handleFinalizedFailure,
+		c.Client.StateStore(),
 	)
 	if err != nil {
 		return c, fmt.Errorf("failed to create chain scanner: %w", err)
@@ -355,9 +356,13 @@ func (c *Client) SignTx(tx ttypes.TxOutItem, thorchainHeight int64) (signedTx, c
 		return nil, nil, nil, fmt.Errorf("failed to get vault address: %w", err)
 	}
 
-	// Read block hash + height atomically — used for both nonce management and
-	// mortal era construction (era phase must match the block hash).
+	// The local finalized tip remains the source for nonce/recovery decisions.
+	// It must not be used as the mortal-era anchor because different TSS nodes
+	// can have different local tips.
 	latestBlockHash, currentHeight := c.chainScanner.getLatestBlock()
+	if latestBlockHash == "" || currentHeight <= 0 {
+		return nil, nil, nil, fmt.Errorf("scanner has not observed a finalized block")
+	}
 	if c.HasSigned(tx) {
 		var txHash string
 		txHash, err = c.GetSignedTransactionHash(tx)
@@ -391,34 +396,61 @@ func (c *Client) SignTx(tx ttypes.TxOutItem, thorchainHeight int64) (signedTx, c
 			Msg("released expired transaction for re-signing")
 	}
 
+	blockRef, err := c.blockReference(thorchainHeight)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if currentHeight < blockRef.Height {
+		return nil, nil, nil, fmt.Errorf(
+			"local finalized height %d is behind signing block %d",
+			currentHeight,
+			blockRef.Height,
+		)
+	}
+	period := int64(c.chainScanner.params.MortalEraPeriod)
+	if blockRef.Height > math.MaxInt64-period {
+		return nil, nil, nil, fmt.Errorf("mortal era expiry height overflows int64")
+	}
+	eraExpiryHeight := blockRef.Height + period
+	if currentHeight >= eraExpiryHeight {
+		return nil, nil, nil, fmt.Errorf(
+			"deterministic signing block %d has expired at finalized height %d",
+			blockRef.Height,
+			currentHeight,
+		)
+	}
+
 	// Reserve nonce under lock to prevent concurrent SignTx calls from getting the same nonce
 	reservedNonce, checkpointBytes, err := c.reserveNonce(tx, vaultAddr.String(), currentHeight)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	// Build the extrinsic (uses consistent block hash/height for mortal era)
+	// Every signer derives this block from the same THORChain height and on-chain
+	// timestamps, so the block hash and mortal-era phase are consensus-safe.
 	rawTx, err := c.createAndSignExtrinsic(
 		tx,
 		vaultAddr.String(),
 		reservedNonce,
-		latestBlockHash,
-		currentHeight,
+		blockRef,
 		thorchainHeight,
 	)
 	if err != nil {
-		// If the scanner hasn't observed any blocks, the nonce was reserved at height 0
-		// without on-chain verification. Don't return the checkpoint — on retry (once the
-		// scanner is running) the nonce will be freshly fetched from the chain. Returning
-		// a stale checkpoint here would cause the retry to use a potentially wrong nonce.
-		if latestBlockHash == "" {
-			checkpointBytes = nil
-		}
 		return nil, checkpointBytes, nil, fmt.Errorf("failed to create and sign extrinsic: %w", err)
 	}
 
 	// Compute extrinsic hash (Blake2b-256 of the raw encoded extrinsic) — matches scanner
 	txHash := stypes.ExtrinsicHash(rawTx)
+	err = c.stateStore.PutExtrinsic(signedExtrinsicRecord{
+		TxHash:         txHash,
+		VaultAddress:   vaultAddr.String(),
+		Nonce:          reservedNonce,
+		EraBirthHeight: blockRef.Height,
+		RecheckHeight:  eraExpiryHeight,
+	})
+	if err != nil {
+		return nil, checkpointBytes, nil, fmt.Errorf("failed to persist signed extrinsic recovery state: %w", err)
+	}
 
 	// Create instant observation TxInItem
 	gasCoin := c.GetChain().NativeGasToThorCoinCeil(cosmos.NewUint(uint64(tx.GasRate)))
@@ -447,16 +479,47 @@ func (c *Client) SignTx(tx ttypes.TxOutItem, thorchainHeight int64) (signedTx, c
 	return rawTx, checkpointBytes, txIn, nil
 }
 
+// blockReference maps a shared THORChain height to the exact finalized
+// Substrate block at the configured lookback before that THORChain block. The
+// lookback gives every signer time to scan past the target and collect the
+// required upper boundary; there is deliberately no local-tip fallback.
+func (c *Client) blockReference(thorHeight int64) (generic.BlockReference, error) {
+	if c.chainScanner == nil || c.chainScanner.Scanner == nil {
+		return generic.BlockReference{}, fmt.Errorf("generic scanner is not initialized")
+	}
+	lookback := c.chainScanner.params.Lookback
+	if lookback <= 0 {
+		return generic.BlockReference{}, fmt.Errorf("signing block lookback must be positive")
+	}
+
+	thorTimestamp, err := c.GetBridge().GetBlockTimestamp(thorHeight)
+	if err != nil {
+		return generic.BlockReference{}, fmt.Errorf(
+			"failed to get THORChain block timestamp at height %d: %w",
+			thorHeight,
+			err,
+		)
+	}
+	targetTimestamp := thorTimestamp.Add(-lookback)
+	blockRef, err := c.chainScanner.ResolveBlockReference(targetTimestamp.UnixMilli())
+	if err != nil {
+		return generic.BlockReference{}, fmt.Errorf(
+			"failed to resolve signing block from THORChain height %d: %w",
+			thorHeight,
+			err,
+		)
+	}
+
+	return blockRef, nil
+}
+
 // createAndSignExtrinsic builds and signs a Substrate extrinsic.
-// latestBlockHash and latestBlockHeight must come from a single atomic read
-// (via getLatestBlock) to ensure the mortal era phase matches the block hash.
 func (c *Client) createAndSignExtrinsic(
 	tx ttypes.TxOutItem,
 	vaultAddr string,
 	nonce uint32,
-	latestBlockHash string,
-	latestBlockHeight int64,
-	thorchainHeight int64,
+	blockRef generic.BlockReference,
+	thorHeight int64,
 ) ([]byte, error) {
 	// Decode destination address
 	_, destPubkey, err := ss58.Decode(tx.ToAddress.String())
@@ -501,22 +564,17 @@ func (c *Client) createAndSignExtrinsic(
 		return nil, fmt.Errorf("failed to decode genesis hash: %w", err)
 	}
 
-	// Use the caller-provided block hash + height for mortal era.
-	// Both come from a single atomic read, preventing era/hash mismatch
-	// that would cause the Substrate runtime to reject the transaction.
-	blockHash := latestBlockHash
-	eraBlockHeight := uint64(latestBlockHeight)
-	if blockHash == "" {
-		return nil, fmt.Errorf("scanner has not observed any blocks, cannot construct mortal era")
+	if err = blockRef.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid mortal era block: %w", err)
 	}
-	blockHashBytes, err := stypes.HexDecode(blockHash)
+	blockHashBytes, err := stypes.HexDecode(blockRef.Hash)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode block hash: %w", err)
 	}
 
 	// Use mortal era so the transaction expires (prevents replay)
 	period := uint64(c.chainScanner.params.MortalEraPeriod)
-	era := stypes.MortalEra(period, eraBlockHeight)
+	era := stypes.MortalEra(period, uint64(blockRef.Height))
 
 	// Read spec + tx version atomically (both change together on runtime upgrades)
 	specVersion, txVersion := c.chainScanner.getRuntimeVersion()
@@ -556,7 +614,7 @@ func (c *Client) createAndSignExtrinsic(
 		return nil, fmt.Errorf("failed to decode vault address: %w", err)
 	}
 
-	sig, err = c.Sign(signingData, tx, thorchainHeight)
+	sig, err = c.Sign(signingData, tx, thorHeight)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign transaction: %w", err)
 	}
@@ -596,16 +654,29 @@ func (c *Client) BroadcastTx(txOutItem ttypes.TxOutItem, rawTx []byte) (string, 
 	}
 	vaultAddr := c.GetAddress(txOutItem.GetVaultPubKey())
 	_, height := c.chainScanner.getLatestBlock()
-	record := signedExtrinsicRecord{
-		TxHash:        txHash,
-		VaultAddress:  vaultAddr,
-		Nonce:         uint32(extrinsic.Nonce),
-		RecheckHeight: height + int64(c.chainScanner.params.MortalEraPeriod),
-	}
-
-	err = c.stateStore.PutExtrinsic(record)
+	record, found, err := c.stateStore.GetExtrinsic(txHash)
 	if err != nil {
-		return "", fmt.Errorf("failed to persist extrinsic recovery state: %w", err)
+		return "", fmt.Errorf("failed to load extrinsic recovery state: %w", err)
+	}
+	if found {
+		if record.VaultAddress != vaultAddr {
+			return "", fmt.Errorf("signed extrinsic recovery vault mismatch")
+		}
+		if record.Nonce != uint32(extrinsic.Nonce) {
+			return "", fmt.Errorf("signed extrinsic recovery nonce mismatch")
+		}
+	} else {
+		// Backward compatibility for transactions signed before era anchors were
+		// persisted, and for callers that supply an externally signed extrinsic.
+		record = signedExtrinsicRecord{
+			TxHash:        txHash,
+			VaultAddress:  vaultAddr,
+			Nonce:         uint32(extrinsic.Nonce),
+			RecheckHeight: height + int64(c.chainScanner.params.MortalEraPeriod),
+		}
+		if err = c.stateStore.PutExtrinsic(record); err != nil {
+			return "", fmt.Errorf("failed to persist extrinsic recovery state: %w", err)
+		}
 	}
 
 	nodeHash, err := c.rpcClient.SubmitExtrinsic(stypes.HexEncode(rawTx))

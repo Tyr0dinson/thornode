@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -379,6 +380,38 @@ func (c *Client) GetEventsStorage(blockHash string) (string, error) {
 	}
 
 	return hexData, nil
+}
+
+// GetBlockTimestamp returns Timestamp::Now at blockHash as Unix milliseconds.
+// The storage key is twox128("Timestamp") ++ twox128("Now"), and the plain
+// storage value is a SCALE-encoded u64.
+func (c *Client) GetBlockTimestamp(blockHash string) (int64, error) {
+	if blockHash == "" {
+		return 0, fmt.Errorf("block hash is empty")
+	}
+	const timestampNowKey = "0xf0c365c3cf59d671eb72da0e7a4113c49f1f0515f462cdcf84e0f1d6045dfcbb"
+	result, err := c.call("state_getStorage", []interface{}{timestampNowKey, blockHash})
+	if err != nil {
+		return 0, fmt.Errorf("failed to get block timestamp: %w", err)
+	}
+
+	var hexData string
+	if err = json.Unmarshal(result, &hexData); err != nil {
+		return 0, fmt.Errorf("failed to unmarshal block timestamp: %w", err)
+	}
+	data, err := hex.DecodeString(strings.TrimPrefix(hexData, "0x"))
+	if err != nil {
+		return 0, fmt.Errorf("failed to decode block timestamp: %w", err)
+	}
+	if len(data) != 8 {
+		return 0, fmt.Errorf("invalid block timestamp length: %d", len(data))
+	}
+	timestamp := binary.LittleEndian.Uint64(data)
+	if timestamp > math.MaxInt64 {
+		return 0, fmt.Errorf("block timestamp exceeds int64: %d", timestamp)
+	}
+
+	return int64(timestamp), nil
 }
 
 func (c *Client) GetMetadata(blockHash string) (string, error) {

@@ -12,6 +12,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/generic"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/substrate/rpc"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/substrate/types"
@@ -40,6 +41,8 @@ type FinalizedFailureHandler func(txHash string) error
 
 // Scanner is a generic block scanner for Substrate chains.
 type Scanner struct {
+	*generic.Scanner
+
 	cfg              config.BifrostBlockScannerConfiguration
 	logger           zerolog.Logger
 	rpcClient        *rpc.Client
@@ -73,13 +76,20 @@ func NewScanner(
 	rpcClient *rpc.Client,
 	pubkeyMgr pubkeymanager.PubKeyValidator,
 	failHandler FinalizedFailureHandler,
+	state generic.StateStore,
 ) (*Scanner, error) {
 	params, found := ChainParams[cfg.ChainID]
 	if !found {
 		return nil, fmt.Errorf("no params found for %s", cfg.ChainID)
 	}
 
+	genericScanner, err := generic.NewScanner(state, int(params.MortalEraPeriod)*2)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create generic scanner: %w", err)
+	}
+
 	s := &Scanner{
+		Scanner:          genericScanner,
 		cfg:              cfg,
 		logger:           log.Logger.With().Stringer("chain", cfg.ChainID).Logger(),
 		params:           params,
@@ -174,6 +184,10 @@ func (s *Scanner) FetchTxs(fetchHeight, _ int64) (ttypes.TxIn, error) {
 	if err != nil {
 		return txIn, fmt.Errorf("failed to get block at height %d: %w", fetchHeight, err)
 	}
+	blockTimestamp, err := s.rpcClient.GetBlockTimestamp(blockHash)
+	if err != nil {
+		return txIn, fmt.Errorf("failed to get timestamp at height %d: %w", fetchHeight, err)
+	}
 
 	txIn.TxArray = make([]*ttypes.TxInItem, 0, len(block.Extrinsics))
 
@@ -182,9 +196,6 @@ func (s *Scanner) FetchTxs(fetchHeight, _ int64) (ttypes.TxIn, error) {
 	if err != nil {
 		return txIn, fmt.Errorf("failed to get extrinsic results at height %d: %w", fetchHeight, err)
 	}
-
-	// Store latest block hash and height for transaction construction (thread-safe)
-	s.setLatestBlock(blockHash, fetchHeight)
 
 	// Process extrinsics in the block
 	for i, extHex := range block.Extrinsics {
@@ -238,6 +249,18 @@ func (s *Scanner) FetchTxs(fetchHeight, _ int64) (ttypes.TxIn, error) {
 	}
 
 	s.nonceCache.Purge(fetchHeight - NonceHashBlocks)
+
+	err = s.SetBlockReference(generic.BlockReference{
+		Height:    fetchHeight,
+		Hash:      blockHash,
+		Timestamp: blockTimestamp,
+	})
+	if err != nil {
+		return txIn, fmt.Errorf("failed to index block reference at height %d: %w", fetchHeight, err)
+	}
+	// Track the highest fully processed block. Prefetch workers can complete out
+	// of order, so setLatestBlock never moves this value backwards.
+	s.setLatestBlock(blockHash, fetchHeight)
 
 	return txIn, nil
 }
@@ -693,6 +716,9 @@ func (s *Scanner) updateNetworkFee(height int64) {
 func (s *Scanner) setLatestBlock(hash string, height int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if height < s.latestBlockHeight {
+		return
+	}
 	s.latestBlockHash = hash
 	s.latestBlockHeight = height
 }

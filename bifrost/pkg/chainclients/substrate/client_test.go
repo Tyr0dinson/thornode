@@ -51,6 +51,20 @@ var _ = Suite(&ClientSuite{})
 // mockBridge is a mock implementation of ThorchainBridge for testing
 type mockBridge struct {
 	thorclient.ThorchainBridge
+	blockTimestamp       time.Time
+	blockTimestampErr    error
+	blockTimestampHeight int64
+}
+
+func (m *mockBridge) GetBlockTimestamp(height int64) (time.Time, error) {
+	m.blockTimestampHeight = height
+	if m.blockTimestampErr != nil {
+		return time.Time{}, m.blockTimestampErr
+	}
+	if m.blockTimestamp.IsZero() {
+		return time.UnixMilli(height * 1_000), nil
+	}
+	return m.blockTimestamp, nil
 }
 
 type rpcError struct {
@@ -250,6 +264,13 @@ func newTestClient(rpcClient *rpc.Client, opts ...testClientOpt) *Client {
 	if err != nil {
 		logger.Fatal().Err(err).Msg("could not create substrate state store")
 	}
+	genericScanner, err := generic.NewScanner(
+		genericClient.StateStore(),
+		int(ChainParams[common.TAOChain].MortalEraPeriod)*2,
+	)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("could not create generic scanner")
+	}
 
 	return &Client{
 		Client:           genericClient,
@@ -260,6 +281,7 @@ func newTestClient(rpcClient *rpc.Client, opts ...testClientOpt) *Client {
 		migrationTxCache: newMigrationTxCache(),
 		stateStore:       stateStore,
 		chainScanner: &Scanner{
+			Scanner:    genericScanner,
 			params:     ChainParams[common.TAOChain],
 			nonceCache: newNonceCache(),
 		},
@@ -542,6 +564,123 @@ func (s *ClientSuite) TestBroadcastTx_Success(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(found, Equals, true)
 	c.Check(record.Nonce, Equals, uint32(1))
+}
+
+func (s *ClientSuite) TestBroadcastTxPreservesSigningEraExpiry(c *C) {
+	h := newRPCHandler()
+	h.on("author_submitExtrinsic", func(_ json.RawMessage) (interface{}, error) {
+		return "", nil
+	})
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	cl := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
+	txOutItem, rawTx := makeBroadcastTestTx(c, 7)
+	txHash := subtypes.ExtrinsicHash(rawTx)
+	vaultAddr := cl.GetAddress(txOutItem.GetVaultPubKey())
+	record := signedExtrinsicRecord{
+		TxHash:         txHash,
+		VaultAddress:   vaultAddr,
+		Nonce:          7,
+		EraBirthHeight: 100,
+		RecheckHeight:  164,
+	}
+	c.Assert(cl.stateStore.PutExtrinsic(record), IsNil)
+	cl.chainScanner.setLatestBlock("0xlocal-tip", 150)
+
+	_, err := cl.BroadcastTx(txOutItem, rawTx)
+	c.Assert(err, IsNil)
+	got, found, err := cl.stateStore.GetExtrinsic(txHash)
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, true)
+	c.Check(got, DeepEquals, record)
+}
+
+func (s *ClientSuite) TestBlockReferenceAppliesTimeLookback(c *C) {
+	cl := newTestClient(nil)
+	bridge := cl.GetBridge().(*mockBridge)
+	bridge.blockTimestamp = time.UnixMilli(61_050)
+	for _, reference := range []generic.BlockReference{
+		{Height: 10, Hash: "0x10", Timestamp: 1_000},
+		{Height: 11, Hash: "0x11", Timestamp: 1_100},
+	} {
+		c.Assert(cl.chainScanner.SetBlockReference(reference), IsNil)
+	}
+
+	reference, err := cl.blockReference(100)
+	c.Assert(err, IsNil)
+	c.Check(bridge.blockTimestampHeight, Equals, int64(100))
+	c.Check(reference.Height, Equals, int64(10))
+	c.Check(reference.Hash, Equals, "0x10")
+}
+
+func (s *ClientSuite) TestBlockReferenceHasNoTipFallback(c *C) {
+	cl := newTestClient(nil)
+	bridge := cl.GetBridge().(*mockBridge)
+	bridge.blockTimestamp = time.UnixMilli(61_050)
+	c.Assert(cl.chainScanner.SetBlockReference(generic.BlockReference{
+		Height: 10, Hash: "0x10", Timestamp: 1_000,
+	}), IsNil)
+	cl.chainScanner.setLatestBlock("0xlocal-tip", 1_000)
+
+	_, err := cl.blockReference(100)
+	c.Assert(err, NotNil)
+	c.Check(errors.Is(err, generic.ErrBlockReferenceUnavailable), Equals, true)
+}
+
+func (s *ClientSuite) TestSignTxUsesReferenceEraAndPersistsExactExpiry(c *C) {
+	h := newRPCHandler()
+	h.on("system_accountNextIndex", func(_ json.RawMessage) (interface{}, error) {
+		return uint32(7), nil
+	})
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	cl := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
+	bridge := cl.GetBridge().(*mockBridge)
+	bridge.blockTimestamp = time.UnixMilli(61_050)
+	eraHash := "0x" + strings.Repeat("11", 32)
+	for _, reference := range []generic.BlockReference{
+		{Height: 100, Hash: eraHash, Timestamp: 1_000},
+		{Height: 101, Hash: "0x" + strings.Repeat("22", 32), Timestamp: 1_100},
+	} {
+		c.Assert(cl.chainScanner.SetBlockReference(reference), IsNil)
+	}
+	cl.chainScanner.genesisHash = "0x" + strings.Repeat("00", 32)
+	cl.chainScanner.setLatestBlock("0x"+strings.Repeat("33", 32), 120)
+
+	destination, err := ss58.Encode(common.TAOChain.SS58Prefix(), bytes.Repeat([]byte{0x44}, 32))
+	c.Assert(err, IsNil)
+	toAddress, err := common.NewAddress(destination)
+	c.Assert(err, IsNil)
+	tx := stypes.TxOutItem{
+		Chain:            common.TAOChain,
+		ToAddress:        toAddress,
+		VaultPubKeyEddsa: cl.GetPubKey(),
+		Coins: common.Coins{
+			common.NewCoin(common.TAOAsset, cosmos.NewUint(100_000_000)),
+		},
+		GasRate: 100_000,
+	}
+
+	rawTx, _, _, err := cl.SignTx(tx, 100)
+	c.Assert(err, IsNil)
+	extrinsic, err := subtypes.ParseSignedExtrinsic(
+		rawTx,
+		nil,
+		cl.chainScanner.params.CheckMetadataHash,
+		cl.chainScanner.params.ChargeAssetTxPayment,
+	)
+	c.Assert(err, IsNil)
+	c.Check(extrinsic.Era, DeepEquals, subtypes.MortalEra(64, 100))
+	c.Check(extrinsic.Nonce, Equals, uint64(7))
+
+	txHash := subtypes.ExtrinsicHash(rawTx)
+	record, found, err := cl.stateStore.GetExtrinsic(txHash)
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, true)
+	c.Check(record.EraBirthHeight, Equals, int64(100))
+	c.Check(record.RecheckHeight, Equals, int64(164))
 }
 
 func (s *ClientSuite) TestBroadcastTx_PersistenceFailurePreventsSubmission(c *C) {
@@ -891,7 +1030,7 @@ func (s *ClientSuite) TestCreateAndSignExtrinsic_NullAddressGuard(c *C) {
 			Coins:     common.NewCoins(common.NewCoin(common.TAOAsset, cosmos.NewUint(1_000))),
 		}
 
-		_, err = cl.createAndSignExtrinsic(tx, "vault", 0, "", 100, 1)
+		_, err = cl.createAndSignExtrinsic(tx, "vault", 0, generic.BlockReference{}, 1)
 
 		if tt.wantNullErr {
 			c.Assert(err, NotNil, Commentf("%s: expected error", tt.name))
