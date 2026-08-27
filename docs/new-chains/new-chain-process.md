@@ -132,7 +132,7 @@ signing an outbound would require the network to transact on a chain it has not 
 proved it can observe. Keep the chain halted until step 4 so this stays rare.
 
 **Refreshing the readiness proof.** The attester set is drawn from the network-fee voters
-that reached consensus. Bifrost posts `MsgNetworkFee` only when the fee rate *changes*,
+that reached consensus. Bifrost posts `MsgNetworkFee` only when the fee rate _changes_,
 and its last-posted value is per-process, so on a stable-fee chain (XRP, Cosmos, TRON)
 the set is effectively frozen at the validators active when the fee last reached
 consensus. Nodes churning in afterwards never join it — a standby node's `MsgNetworkFee`
@@ -140,9 +140,9 @@ is rejected — so the supermajority requirement decays across churns. If activa
 being retried long after the first fee consensus and the log reads `readiness proof lacks
 a current supermajority`, the recovery depends on how the chain's scanner posts:
 
-- **XRP, Cosmos** post only on a period-aligned chain height (`height %
-  GasUpdatePeriodBlocks == 0`). Have at least two thirds of active nodes restart bifrost
-  within the same fee-update window: the restart clears the in-memory last fee, and they
+- **XRP, Cosmos** post only on a period-aligned chain height, gated on
+  `height % GasUpdatePeriodBlocks == 0`. Have at least two thirds of active nodes restart
+  bifrost within the same fee-update window: the restart clears the in-memory last fee, and they
   all post again at the same aligned height and rate, forming one fresh voter that can
   reach consensus. Staggered restarts land on different aligned heights, spreading the
   posts across several voter keys, and will not converge.
