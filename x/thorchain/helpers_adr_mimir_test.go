@@ -504,8 +504,8 @@ func (s *ADRMimirSuite) TestMarkNonVotingActorsPickCollision(c *C) {
 	c.Assert(pending, HasLen, 2)
 
 	marks := func() map[string]uint64 {
-		active, err := k.ListActiveValidators(ctx)
-		c.Assert(err, IsNil)
+		active, listErr := k.ListActiveValidators(ctx)
+		c.Assert(listErr, IsNil)
 		out := map[string]uint64{}
 		for _, na := range active {
 			if na.LeaveScore > 0 {
