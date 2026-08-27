@@ -30,6 +30,7 @@ func (s *capturedTransportStream) SetHeader(md metadata.MD) error {
 	s.header = metadata.Join(s.header, md)
 	return nil
 }
+
 func (s *capturedTransportStream) SendHeader(md metadata.MD) error {
 	return s.SetHeader(md)
 }
