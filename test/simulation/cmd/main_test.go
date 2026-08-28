@@ -891,6 +891,22 @@ func TestSimulationStageNamesUnique(t *testing.T) {
 	}
 }
 
+func TestWasmGasStageIsOptional(t *testing.T) {
+	for _, stage := range simulationStages() {
+		if stage.name != "wasm-gas" {
+			continue
+		}
+		if stage.defaultOn {
+			t.Fatal("wasm-gas changes Mimirs and intentionally fails transactions; it must remain opt-in")
+		}
+		if stage.constructor == nil {
+			t.Fatal("wasm-gas stage has no actor constructor")
+		}
+		return
+	}
+	t.Fatal("wasm-gas stage is not registered")
+}
+
 func TestDockerignoreKeepsSimtestBuildContextLean(t *testing.T) {
 	dockerignore := readRepoFile(t, "ci/Dockerfile.simtest.dockerignore")
 

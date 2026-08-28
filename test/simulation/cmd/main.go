@@ -98,6 +98,7 @@ func simulationStages() []simulationStage {
 		// memoless-refunds runs before every churn-triggering stage so the refund
 		// actors exercise the pre-churn vault set, per issue #2839 Section B.
 		{name: "memoless-refunds", defaultOn: false, constructor: features.MemolessRefunds},
+		{name: "wasm-gas", defaultOn: false, constructor: features.WasmGasLimits},
 		{name: "cluster-churn", defaultOn: false, constructor: suites.ClusterChurn},
 		{name: "churn", defaultOn: false, constructor: suites.Churn},
 		{name: "tron-solvency-fragmentation", defaultOn: false, constructor: core.NewTRONSolvencyFragmentationActor},
