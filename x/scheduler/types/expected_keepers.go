@@ -5,6 +5,7 @@ import (
 	"time"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 type AccountKeeper interface {
@@ -25,4 +26,8 @@ type ContractTracer interface {
 		outcome string,
 		duration time.Duration,
 	)
+}
+
+type WasmGasConfigKeeper interface {
+	GetConfigInt64(ctx sdk.Context, key constants.ConstantName) int64
 }

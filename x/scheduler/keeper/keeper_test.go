@@ -57,6 +57,7 @@ func (s *KeeperTestSuite) SetUpTest(c *C) {
 		encCfg.Codec,
 		runtime.NewKVStoreService(keys[types.StoreKey]),
 		tracingWasmKeeper,
+		nil,
 		authAcc.String(),
 	)
 

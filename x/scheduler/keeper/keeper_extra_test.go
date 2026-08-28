@@ -10,6 +10,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/query"
 	. "gopkg.in/check.v1"
 
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/scheduler"
 	"gitlab.com/thorchain/thornode/v3/x/scheduler/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/scheduler/types"
@@ -21,8 +22,50 @@ func setupKeeperWithWasm(s *KeeperTestSuite, wk types.WasmKeeper) keeper.Keeper 
 		s.encCfg.Codec,
 		runtime.NewKVStoreService(s.storeKeys[types.StoreKey]),
 		tracingWasmKeeper,
+		nil,
 		authAcc.String(),
 	)
+}
+
+func setupKeeperWithWasmGas(
+	s *KeeperTestSuite,
+	wk types.WasmKeeper,
+	gasConfig types.WasmGasConfigKeeper,
+) keeper.Keeper {
+	return keeper.NewKeeper(
+		s.encCfg.Codec,
+		runtime.NewKVStoreService(s.storeKeys[types.StoreKey]),
+		wk,
+		gasConfig,
+		authAcc.String(),
+	)
+}
+
+type staticWasmGasConfig struct {
+	perTx    int64
+	perBlock int64
+}
+
+func (c staticWasmGasConfig) GetConfigInt64(_ sdk.Context, key constants.ConstantName) int64 {
+	switch key {
+	case constants.WasmMaxGasPerTx:
+		return c.perTx
+	case constants.WasmMaxGasPerBlock:
+		return c.perBlock
+	default:
+		return 0
+	}
+}
+
+type GasConsumingWasmKeeper struct {
+	gas        storetypes.Gas
+	successful *int
+}
+
+func (m *GasConsumingWasmKeeper) Execute(ctx sdk.Context, _, _ sdk.AccAddress, _ []byte, _ sdk.Coins) ([]byte, error) {
+	ctx.GasMeter().ConsumeGas(m.gas, "scheduled wasm test")
+	*m.successful++
+	return nil, nil
 }
 
 // ErrorWasmKeeper is a mock that returns an error on Execute.
@@ -226,6 +269,81 @@ func (s *KeeperTestSuite) TestExecuteSchedule_PerExecGasCap(c *C) {
 	c.Assert(sdkCtx.KVStore(s.storeKeys[types.StoreKey]).Get(committedKey), DeepEquals, []byte("committed"))
 
 	// Schedule drained.
+	res, err := gasKeeper.GetSchedule(sdkCtx, height)
+	c.Assert(err, IsNil)
+	c.Assert(res.Msgs, HasLen, 0)
+}
+
+func (s *KeeperTestSuite) TestExecuteSchedule_PerCallGasCapDiscardsState(c *C) {
+	sdkCtx := sdk.UnwrapSDKContext(s.ctx).WithBlockGasMeter(storetypes.NewInfiniteGasMeter())
+	successful := 0
+	gasKeeper := setupKeeperWithWasmGas(s, &GasConsumingWasmKeeper{
+		gas:        51,
+		successful: &successful,
+	}, staticWasmGasConfig{perTx: 50})
+
+	height := uint64(sdkCtx.BlockHeight()) + 1
+	c.Assert(gasKeeper.SetSchedule(sdkCtx, types.Schedule{
+		Height: height,
+		Msgs: []types.MsgScheduleExecuteContract{{
+			Sender: accAddrs[0].String(),
+			Msg:    []byte(`{"bounded":true}`),
+		}},
+	}), IsNil)
+
+	sdkCtx = sdkCtx.WithBlockHeight(int64(height))
+	c.Assert(gasKeeper.ExecuteSchedule(sdkCtx), IsNil)
+	c.Assert(successful, Equals, 0)
+	c.Assert(sdkCtx.BlockGasMeter().GasConsumed(), Equals, uint64(50))
+}
+
+func (s *KeeperTestSuite) TestExecuteSchedule_UsesSharedBlockGasBudget(c *C) {
+	sdkCtx := sdk.UnwrapSDKContext(s.ctx).WithBlockGasMeter(storetypes.NewInfiniteGasMeter())
+	successful := 0
+	gasKeeper := setupKeeperWithWasmGas(s, &GasConsumingWasmKeeper{
+		gas:        100,
+		successful: &successful,
+	}, staticWasmGasConfig{perTx: 100, perBlock: 150})
+
+	height := uint64(sdkCtx.BlockHeight()) + 1
+	c.Assert(gasKeeper.SetSchedule(sdkCtx, types.Schedule{
+		Height: height,
+		Msgs: []types.MsgScheduleExecuteContract{
+			{Sender: accAddrs[0].String(), Msg: []byte(`{"call":1}`)},
+			{Sender: accAddrs[1].String(), Msg: []byte(`{"call":2}`)},
+		},
+	}), IsNil)
+
+	sdkCtx = sdkCtx.WithBlockHeight(int64(height))
+	c.Assert(gasKeeper.ExecuteSchedule(sdkCtx), IsNil)
+	c.Assert(successful, Equals, 1)
+	c.Assert(sdkCtx.BlockGasMeter().GasConsumed(), Equals, uint64(150))
+}
+
+func (s *KeeperTestSuite) TestExecuteSchedule_ContainsFiniteBlockMeterPanic(c *C) {
+	sdkCtx := sdk.UnwrapSDKContext(s.ctx).WithBlockGasMeter(storetypes.NewGasMeter(25))
+	successful := 0
+	gasKeeper := setupKeeperWithWasm(s, &GasConsumingWasmKeeper{
+		gas:        50,
+		successful: &successful,
+	})
+
+	height := uint64(sdkCtx.BlockHeight()) + 1
+	c.Assert(gasKeeper.SetSchedule(sdkCtx, types.Schedule{
+		Height: height,
+		Msgs: []types.MsgScheduleExecuteContract{
+			{Sender: accAddrs[0].String(), Msg: []byte(`{"call":1}`)},
+			{Sender: accAddrs[1].String(), Msg: []byte(`{"call":2}`)},
+		},
+	}), IsNil)
+
+	sdkCtx = sdkCtx.WithBlockHeight(int64(height))
+	c.Assert(func() { c.Assert(gasKeeper.ExecuteSchedule(sdkCtx), IsNil) }, Not(Panics), nil)
+	c.Assert(successful, Equals, 2)
+	c.Assert(sdkCtx.BlockGasMeter().IsPastLimit(), Equals, true)
+
+	// The finite block-meter panic is scoped to each callback; scheduler
+	// bookkeeping still completes and remains readable on the outer context.
 	res, err := gasKeeper.GetSchedule(sdkCtx, height)
 	c.Assert(err, IsNil)
 	c.Assert(res.Msgs, HasLen, 0)

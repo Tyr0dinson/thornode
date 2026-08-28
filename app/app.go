@@ -452,6 +452,7 @@ func NewChainApp(
 		app.appCodec,
 		runtime.NewKVStoreService(keys[schedulertypes.StoreKey]),
 		tracingWasmKeeper,
+		app.ThorchainKeeper,
 		authtypes.NewModuleAddress(thorchain.ModuleName).String(),
 	)
 
