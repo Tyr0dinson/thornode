@@ -39,6 +39,13 @@ var (
 // extrinsic from one of our vaults failed in a finalized block.
 type FinalizedFailureHandler func(txHash string) error
 
+type runtimeContext struct {
+	metadata    *stypes.Metadata
+	layout      stypes.ExtrinsicLayout
+	specVersion uint32
+	txVersion   uint32
+}
+
 // Scanner is a generic block scanner for Substrate chains.
 type Scanner struct {
 	*generic.Scanner
@@ -58,11 +65,9 @@ type Scanner struct {
 
 	nonceCache *nonceCache
 
-	// Cached runtime metadata (protected by mu)
+	// Mutable scanner state (protected by mu).
 	mu                sync.RWMutex
-	specVersion       uint32
-	txVersion         uint32
-	metadata          *stypes.Metadata
+	runtime           runtimeContext
 	latestBlockHash   string
 	latestBlockHeight int64
 	feeCache          []uint64
@@ -116,12 +121,10 @@ func NewScanner(
 		)
 	}
 
-	err = s.verifyMetadata("")
+	s.runtime, err = s.loadRuntimeContext("", rv)
 	if err != nil {
 		return nil, fmt.Errorf("failed to verify metadata: %w", err)
 	}
-	s.specVersion = rv.SpecVersion
-	s.txVersion = rv.TransactionVersion
 
 	s.genesisHash, err = rpcClient.GetGenesisHash()
 	if err != nil {
@@ -175,7 +178,7 @@ func (s *Scanner) FetchTxs(fetchHeight, _ int64) (ttypes.TxIn, error) {
 	}
 
 	// Check and refresh runtime version before parsing the block
-	metadata, err := s.checkRuntimeVersion(blockHash)
+	runtime, err := s.checkRuntimeVersion(blockHash)
 	if err != nil {
 		return txIn, fmt.Errorf("failed to refresh runtime version: %w", err)
 	}
@@ -192,7 +195,7 @@ func (s *Scanner) FetchTxs(fetchHeight, _ int64) (ttypes.TxIn, error) {
 	txIn.TxArray = make([]*ttypes.TxInItem, 0, len(block.Extrinsics))
 
 	// Fetch events and determine which extrinsics succeeded
-	successMap, feeMap, err := s.getExtrinsicResults(blockHash, len(block.Extrinsics), metadata)
+	successMap, feeMap, err := s.getExtrinsicResults(blockHash, len(block.Extrinsics), runtime.metadata)
 	if err != nil {
 		return txIn, fmt.Errorf("failed to get extrinsic results at height %d: %w", fetchHeight, err)
 	}
@@ -211,9 +214,9 @@ func (s *Scanner) FetchTxs(fetchHeight, _ int64) (ttypes.TxIn, error) {
 		var txItem *ttypes.TxInItem
 
 		if succeeded {
-			txItem, err = s.processExtrinsicWithMetadata(extHex, fetchHeight, fee, metadata)
+			txItem, err = s.processExtrinsicWithRuntime(extHex, fetchHeight, fee, runtime)
 		} else {
-			txItem, err = s.processFailedExtrinsicWithMetadata(extHex, fetchHeight, fee, metadata)
+			txItem, err = s.processFailedExtrinsicWithRuntime(extHex, fetchHeight, fee, runtime)
 		}
 
 		if err != nil {
@@ -320,30 +323,32 @@ func (s *Scanner) getExtrinsicResults(blockHash string, numExtrinsics int, metad
 
 // checkRuntimeVersion re-fetches the runtime version from the node and
 // verifies index validity on a version change
-func (s *Scanner) checkRuntimeVersion(blockHash string) (*stypes.Metadata, error) {
+func (s *Scanner) checkRuntimeVersion(blockHash string) (runtimeContext, error) {
 	rv, err := s.rpcClient.GetRuntimeVersion(blockHash)
 	if err != nil {
-		return nil, fmt.Errorf("failed to refresh runtime version: %w", err)
+		return runtimeContext{}, fmt.Errorf("failed to refresh runtime version: %w", err)
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if rv.SpecVersion != s.specVersion || rv.TransactionVersion != s.txVersion {
+	current := s.getRuntimeContext()
+	if rv.SpecVersion != current.specVersion || rv.TransactionVersion != current.txVersion {
 		s.logger.Info().
-			Uint32("old_spec", s.specVersion).Uint32("new_spec", rv.SpecVersion).
-			Uint32("old_tx", s.txVersion).Uint32("new_tx", rv.TransactionVersion).
+			Uint32("old_spec", current.specVersion).Uint32("new_spec", rv.SpecVersion).
+			Uint32("old_tx", current.txVersion).Uint32("new_tx", rv.TransactionVersion).
 			Msg("runtime version updated")
 
-		err = s.verifyMetadata(blockHash)
+		var next runtimeContext
+		next, err = s.loadRuntimeContext(blockHash, rv)
 		if err != nil {
-			return nil, fmt.Errorf("failed to verify metadata: %w", err)
+			return runtimeContext{}, fmt.Errorf("failed to verify metadata: %w", err)
 		}
 
-		s.specVersion = rv.SpecVersion
-		s.txVersion = rv.TransactionVersion
+		s.mu.Lock()
+		s.runtime = next
+		s.mu.Unlock()
+		current = next
 	}
 
-	return s.metadata, nil
+	return current, nil
 }
 
 // updateFeeCache adds a fee to the rolling window, truncating if over feeCacheSize.
@@ -357,13 +362,13 @@ func (s *Scanner) updateFeeCache(fee uint64) {
 }
 
 func (s *Scanner) processFailedExtrinsic(extHex string, blockHeight int64, fee uint64) (*ttypes.TxInItem, error) {
-	return s.processFailedExtrinsicWithMetadata(extHex, blockHeight, fee, s.getMetadata())
+	return s.processFailedExtrinsicWithRuntime(extHex, blockHeight, fee, s.getRuntimeContext())
 }
 
-// processFailedExtrinsicWithMetadata parses a failed extrinsic using the
-// metadata snapshot for its block and emits gas-only vault observations.
-func (s *Scanner) processFailedExtrinsicWithMetadata(extHex string, blockHeight int64, fee uint64, metadata *stypes.Metadata) (*ttypes.TxInItem, error) {
-	item, err := s.processExtrinsicWithMetadata(extHex, blockHeight, fee, metadata)
+// processFailedExtrinsicWithRuntime parses a failed extrinsic using the runtime
+// snapshot for its block and emits gas-only vault observations.
+func (s *Scanner) processFailedExtrinsicWithRuntime(extHex string, blockHeight int64, fee uint64, runtime runtimeContext) (*ttypes.TxInItem, error) {
+	item, err := s.processExtrinsicWithRuntime(extHex, blockHeight, fee, runtime)
 	if err != nil {
 		return nil, err
 	}
@@ -409,12 +414,12 @@ func (s *Scanner) processFailedExtrinsicWithMetadata(extHex string, blockHeight 
 // processExtrinsic parses a hex-encoded extrinsic and returns a TxInItem if it's
 // a relevant transfer to a vault address.
 func (s *Scanner) processExtrinsic(extHex string, blockHeight int64, fee uint64) (*ttypes.TxInItem, error) {
-	return s.processExtrinsicWithMetadata(extHex, blockHeight, fee, s.getMetadata())
+	return s.processExtrinsicWithRuntime(extHex, blockHeight, fee, s.getRuntimeContext())
 }
 
-// processExtrinsicWithMetadata parses an extrinsic using the metadata snapshot
-// for the block that contains it.
-func (s *Scanner) processExtrinsicWithMetadata(extHex string, blockHeight int64, fee uint64, metadata *stypes.Metadata) (*ttypes.TxInItem, error) {
+// processExtrinsicWithRuntime parses an extrinsic using the runtime snapshot for
+// the block that contains it.
+func (s *Scanner) processExtrinsicWithRuntime(extHex string, blockHeight int64, fee uint64, runtime runtimeContext) (*ttypes.TxInItem, error) {
 	raw, err := stypes.HexDecode(extHex)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode extrinsic hex: %w", err)
@@ -424,9 +429,7 @@ func (s *Scanner) processExtrinsicWithMetadata(extHex string, blockHeight int64,
 	txHash := stypes.ExtrinsicHash(raw)
 
 	var extrinsic *stypes.Extrinsic
-	extrinsic, err = stypes.ParseSignedExtrinsic(
-		raw, metadata, s.params.CheckMetadataHash, s.params.ChargeAssetTxPayment,
-	)
+	extrinsic, err = stypes.ParseSignedExtrinsic(raw, runtime.metadata, runtime.layout)
 	if err != nil {
 		if errors.Is(err, stypes.ErrUnsignedExtrinsic) {
 			return nil, nil
@@ -737,41 +740,46 @@ func (s *Scanner) getLatestBlock() (string, int64) {
 	return s.latestBlockHash, s.latestBlockHeight
 }
 
-// getRuntimeVersion returns the cached spec and transaction versions atomically.
-// Both are updated together during runtime upgrades, so reading them under a
-// single lock prevents the signing payload from mixing old and new versions.
-func (s *Scanner) getRuntimeVersion() (specVersion, txVersion uint32) {
+// getRuntimeContext returns metadata, its signed-extension layout, and runtime
+// versions from one verified snapshot.
+func (s *Scanner) getRuntimeContext() runtimeContext {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.specVersion, s.txVersion
+	return s.runtime
 }
 
-// getMetadata returns the currently verified runtime metadata.
-func (s *Scanner) getMetadata() *stypes.Metadata {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.metadata
-}
+func (s *Scanner) loadRuntimeContext(blockHash string, rv *rpc.RuntimeVersion) (runtimeContext, error) {
+	if rv == nil {
+		return runtimeContext{}, fmt.Errorf("nil runtime version")
+	}
+	if rv.SpecName != s.params.SpecName {
+		return runtimeContext{}, fmt.Errorf(
+			"runtime specName mismatch (expected %q, got %q)",
+			s.params.SpecName, rv.SpecName,
+		)
+	}
 
-func (s *Scanner) verifyMetadata(blockHash string) error {
 	raw, err := s.rpcClient.GetMetadata(blockHash)
 	if err != nil {
-		return fmt.Errorf("failed to get metadata: %w", err)
+		return runtimeContext{}, fmt.Errorf("failed to get metadata: %w", err)
 	}
 
 	metadata, err := stypes.ParseMetadata(raw)
 	if err != nil {
-		return fmt.Errorf("failed to parse metadata: %w", err)
+		return runtimeContext{}, fmt.Errorf("failed to parse metadata: %w", err)
 	}
 
-	err = s.params.ValidateMetadata(metadata)
+	layout, err := s.params.ValidateMetadata(metadata)
 	if err != nil {
-		return err
+		return runtimeContext{}, err
 	}
 
-	// Metadata is immutable after publication.
-	s.metadata = metadata
-	return nil
+	return runtimeContext{
+		metadata:    metadata,
+		layout:      layout,
+		specVersion: rv.SpecVersion,
+		txVersion:   rv.TransactionVersion,
+	}, nil
 }
 
 // --------------------------------- helpers ---------------------------------

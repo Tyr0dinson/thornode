@@ -31,20 +31,14 @@ const (
 // Extrinsic represents a Substrate extrinsic.
 type Extrinsic struct {
 	// Signature fields (for signed extrinsics)
-	Signer            []byte // 32-byte Ed25519 public key
-	SignatureType     byte
-	Signature         []byte // 64 bytes for Ed25519/Sr25519, 65 bytes for ECDSA
-	Era               []byte // mortal or immortal era
-	Nonce             uint64
-	Tip               uint64
-	MetadataMode      byte // CheckMetadataHash mode (0x00 = disabled)
-	CheckMetadataHash bool // if false, MetadataMode is not encoded
-	// ChargeAssetTxPayment marks runtimes (e.g. Polkadot Asset Hub) whose fee
-	// extension is ChargeAssetTxPayment instead of ChargeTransactionPayment.
-	// It encodes Option<AssetId> after the tip — always None (0x00) here,
-	// since the vault only ever pays fees in the native asset.
-	ChargeAssetTxPayment bool
-	CallData             []byte
+	Signer        []byte // 32-byte Ed25519 public key
+	SignatureType byte
+	Signature     []byte // 64 bytes for Ed25519/Sr25519, 65 bytes for ECDSA
+	Era           []byte // mortal or immortal era
+	Nonce         uint64
+	Tip           uint64
+	MetadataMode  byte // CheckMetadataHash mode (0x00 = disabled)
+	CallData      []byte
 }
 
 // ErrUnsignedExtrinsic indicates the version byte's bit 7 is clear (the
@@ -91,59 +85,42 @@ func BatchAll(palletIndex, callIndex byte, calls [][]byte) []byte {
 	return data
 }
 
-// SigningPayload constructs the payload to be signed for a Substrate extrinsic.
-// The payload follows the standard Substrate TransactionExtensions order
-// (for runtimes including CheckMetadataHash per RFC-0078):
-//
-//	Encoded extensions: era | compact(nonce) | compact(tip) | [asset_id] | metadata_mode
-//	Implicit data:      spec_version | tx_version | genesis_hash | block_hash | Option<Hash>::None
-//
-// The metadata_mode byte (0x00 = disabled) is from CheckMetadataHash.
-// When mode is disabled, the implicit Option<Hash> encodes as None (0x00).
-// On ChargeAssetTxPayment runtimes (Asset Hub) the fee extension encodes
-// Option<AssetId> directly after the tip — always None (0x00) for native-asset
-// fees; its implicit is empty.
+// SigningPayload constructs a Substrate signing payload. Explicit extension
+// values are appended in validated metadata order, followed by the
+// additional-signed values in the same order.
 func SigningPayload(
 	callData, era []byte,
 	nonce, tip uint64,
-	checkMetadataHash bool,
+	layout ExtrinsicLayout,
 	metadataMode byte,
-	chargeAssetTxPayment bool,
 	specVersion, txVersion uint32,
 	genesisHash, blockHash []byte,
 ) ([]byte, error) {
-	if checkMetadataHash && metadataMode != MetadataModeDisabled {
-		return nil, fmt.Errorf("metadata mode not implemented")
-	}
 	payload := make([]byte, 0, 256)
-	// Call data
 	payload = append(payload, callData...)
-	// Encoded extensions
-	payload = append(payload, era...)
-	payload = append(payload, EncodeCompact(nonce)...)
-	payload = append(payload, EncodeCompact(tip)...)
-	// ChargeAssetTxPayment: Option<AssetId>::None (pay fees in native asset)
-	if chargeAssetTxPayment {
-		payload = append(payload, 0x00)
+
+	extensionValues := Extrinsic{
+		Era:          era,
+		Nonce:        nonce,
+		Tip:          tip,
+		MetadataMode: metadataMode,
 	}
-	// Metadata hash
-	if checkMetadataHash {
-		payload = append(payload, metadataMode)
+	var err error
+	payload, err = layout.appendExtra(payload, &extensionValues)
+	if err != nil {
+		return nil, err
 	}
-	// Implicit data
-	payload = append(payload, EncodeU32LE(specVersion)...)
-	payload = append(payload, EncodeU32LE(txVersion)...)
-	payload = append(payload, genesisHash...)
-	payload = append(payload, blockHash...)
-	// CheckMetadataHash implicit: Option<[u8;32]>::None when mode == 0
-	if checkMetadataHash {
-		payload = append(payload, 0x00) // Option::None
+	payload, err = layout.appendAdditional(
+		payload, specVersion, txVersion, genesisHash, blockHash, metadataMode,
+	)
+	if err != nil {
+		return nil, err
 	}
 	return payload, nil
 }
 
 // EncodeSignedExtrinsic assembles a signed extrinsic from its components.
-func EncodeSignedExtrinsic(ext *Extrinsic) []byte {
+func EncodeSignedExtrinsic(ext *Extrinsic, layout ExtrinsicLayout) ([]byte, error) {
 	// Build the extrinsic body (without length prefix)
 	body := make([]byte, 0, 256)
 
@@ -158,23 +135,10 @@ func EncodeSignedExtrinsic(ext *Extrinsic) []byte {
 	body = append(body, ext.SignatureType)
 	body = append(body, ext.Signature...)
 
-	// Era
-	body = append(body, ext.Era...)
-
-	// Nonce (compact)
-	body = append(body, EncodeCompact(ext.Nonce)...)
-
-	// Tip (compact)
-	body = append(body, EncodeCompact(ext.Tip)...)
-
-	// ChargeAssetTxPayment: Option<AssetId>::None (pay fees in native asset)
-	if ext.ChargeAssetTxPayment {
-		body = append(body, 0x00)
-	}
-
-	// CheckMetadataHash mode byte
-	if ext.CheckMetadataHash {
-		body = append(body, ext.MetadataMode)
+	var err error
+	body, err = layout.appendExtra(body, ext)
+	if err != nil {
+		return nil, err
 	}
 
 	// Call data
@@ -186,7 +150,69 @@ func EncodeSignedExtrinsic(ext *Extrinsic) []byte {
 	result = append(result, length...)
 	result = append(result, body...)
 
-	return result
+	return result, nil
+}
+
+func (l ExtrinsicLayout) appendExtra(dst []byte, ext *Extrinsic) ([]byte, error) {
+	if len(l.kinds) == 0 {
+		return nil, fmt.Errorf("empty signed extension layout")
+	}
+	for _, kind := range l.kinds {
+		switch kind {
+		case signedExtensionNoop, signedExtensionSpecVersion, signedExtensionTxVersion, signedExtensionGenesis:
+			// These extensions have no explicit bytes in the supported runtimes.
+		case signedExtensionMortality:
+			dst = append(dst, ext.Era...)
+		case signedExtensionNonce:
+			dst = append(dst, EncodeCompact(ext.Nonce)...)
+		case signedExtensionPayment:
+			dst = append(dst, EncodeCompact(ext.Tip)...)
+		case signedExtensionAssetPayment:
+			dst = append(dst, EncodeCompact(ext.Tip)...)
+			dst = append(dst, 0x00) // Option<AssetId>::None
+		case signedExtensionMetadataHash:
+			if ext.MetadataMode != MetadataModeDisabled {
+				return nil, fmt.Errorf("metadata mode not implemented")
+			}
+			dst = append(dst, ext.MetadataMode)
+		default:
+			return nil, fmt.Errorf("unsupported signed extension encoding")
+		}
+	}
+	return dst, nil
+}
+
+func (l ExtrinsicLayout) appendAdditional(
+	dst []byte,
+	specVersion, txVersion uint32,
+	genesisHash, blockHash []byte,
+	metadataMode byte,
+) ([]byte, error) {
+	if len(l.kinds) == 0 {
+		return nil, fmt.Errorf("empty signed extension layout")
+	}
+	for _, kind := range l.kinds {
+		switch kind {
+		case signedExtensionNoop, signedExtensionNonce, signedExtensionPayment, signedExtensionAssetPayment:
+			// These extensions have no additional-signed bytes.
+		case signedExtensionSpecVersion:
+			dst = append(dst, EncodeU32LE(specVersion)...)
+		case signedExtensionTxVersion:
+			dst = append(dst, EncodeU32LE(txVersion)...)
+		case signedExtensionGenesis:
+			dst = append(dst, genesisHash...)
+		case signedExtensionMortality:
+			dst = append(dst, blockHash...)
+		case signedExtensionMetadataHash:
+			if metadataMode != MetadataModeDisabled {
+				return nil, fmt.Errorf("metadata mode not implemented")
+			}
+			dst = append(dst, 0x00) // Option<Hash>::None
+		default:
+			return nil, fmt.Errorf("unsupported additional-signed encoding")
+		}
+	}
+	return dst, nil
 }
 
 // ImmortalEra returns the immortal era encoding (single byte 0x00).
@@ -254,7 +280,7 @@ func HexEncodeHead(data []byte, n int) string {
 	return hex.EncodeToString(data[:n])
 }
 
-func ParseSignedExtrinsic(data []byte, metadata *Metadata, checkMetadataHash, chargeAssetTxPayment bool) (*Extrinsic, error) {
+func ParseSignedExtrinsic(data []byte, metadata *Metadata, layout ExtrinsicLayout) (*Extrinsic, error) {
 	// Decode the length prefix
 	_, consumed, err := DecodeCompact(data)
 	if err != nil {
@@ -316,86 +342,91 @@ func ParseSignedExtrinsic(data []byte, metadata *Metadata, checkMetadataHash, ch
 	signature := body[pos : pos+sigLen]
 	pos += sigLen
 
-	// Era
-	if pos >= len(body) {
-		return nil, fmt.Errorf("extrinsic too short for era")
-	}
-	eraStart := pos
-	if body[pos] == 0x00 {
-		pos++ // immortal era
-	} else {
-		if pos+2 > len(body) {
-			return nil, fmt.Errorf("extrinsic too short for mortal era")
-		}
-		pos += 2 // mortal era
-	}
-	era := body[eraStart:pos]
-
-	// Nonce (compact)
-	nonceVal, nonceLen, err := DecodeCompact(body[pos:])
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode nonce: %w", err)
-	}
-	if !nonceVal.BigInt().IsUint64() {
-		return nil, fmt.Errorf("nonce exceeds uint64")
-	}
-	pos += nonceLen
-
-	// Tip (compact). ChargeAssetTxPayment metadata describes both the tip and
-	// Option<AssetId>, so keep the starting position for decoding that complete
-	// extension below.
-	paymentStart := pos
-	tipVal, tipLen, err := DecodeCompact(body[pos:])
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode tip: %w", err)
-	}
-	if !tipVal.BigInt().IsUint64() {
-		return nil, fmt.Errorf("tip exceeds uint64")
+	if len(layout.kinds) == 0 {
+		return nil, fmt.Errorf("empty signed extension layout")
 	}
 
-	// ChargeAssetTxPayment (Asset Hub) contains the compact tip followed by an
-	// Option<AssetId>. AssetId is a runtime-defined type, so use metadata to
-	// consume the complete extension instead of assuming a fixed width.
-	if chargeAssetTxPayment {
-		var paymentLen int
-		_, paymentLen, err = metadata.DecodeSignedExtension(
-			chargeAssetTxPaymentExtensionID, body[paymentStart:],
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode asset transaction payment: %w", err)
-		}
-		if paymentLen <= tipLen {
-			return nil, fmt.Errorf("asset transaction payment omitted asset id option")
-		}
-		pos = paymentStart + paymentLen
-	} else {
-		pos += tipLen
-	}
-
-	// CheckMetadataHash mode byte (RFC-0078, present in DOT/KSM/TAO runtimes).
-	// Chains without this extension would not have this byte
+	var era []byte
+	var nonce uint64
+	var tip uint64
 	var metadataMode byte
-	if checkMetadataHash {
-		if pos >= len(body) {
-			return nil, fmt.Errorf("extrinsic too short for metadata mode byte")
+	for _, kind := range layout.kinds {
+		switch kind {
+		case signedExtensionNoop, signedExtensionSpecVersion, signedExtensionTxVersion, signedExtensionGenesis:
+			// These extensions have no explicit bytes in the supported runtimes.
+		case signedExtensionMortality:
+			if pos >= len(body) {
+				return nil, fmt.Errorf("extrinsic too short for era")
+			}
+			eraStart := pos
+			if body[pos] == 0x00 {
+				pos++
+			} else {
+				if pos+2 > len(body) {
+					return nil, fmt.Errorf("extrinsic too short for mortal era")
+				}
+				pos += 2
+			}
+			era = body[eraStart:pos]
+		case signedExtensionNonce:
+			nonceVal, nonceLen, decodeErr := DecodeCompact(body[pos:])
+			if decodeErr != nil {
+				return nil, fmt.Errorf("failed to decode nonce: %w", decodeErr)
+			}
+			if !nonceVal.BigInt().IsUint64() {
+				return nil, fmt.Errorf("nonce exceeds uint64")
+			}
+			nonce = nonceVal.Uint64()
+			pos += nonceLen
+		case signedExtensionPayment, signedExtensionAssetPayment:
+			paymentStart := pos
+			tipVal, tipLen, decodeErr := DecodeCompact(body[pos:])
+			if decodeErr != nil {
+				return nil, fmt.Errorf("failed to decode tip: %w", decodeErr)
+			}
+			if !tipVal.BigInt().IsUint64() {
+				return nil, fmt.Errorf("tip exceeds uint64")
+			}
+			tip = tipVal.Uint64()
+			if kind == signedExtensionPayment {
+				pos += tipLen
+				continue
+			}
+			if metadata == nil {
+				return nil, fmt.Errorf("runtime metadata required to decode asset transaction payment")
+			}
+			_, paymentLen, decodeErr := metadata.DecodeSignedExtension(
+				chargeAssetTxPaymentExtensionID, body[paymentStart:],
+			)
+			if decodeErr != nil {
+				return nil, fmt.Errorf("failed to decode asset transaction payment: %w", decodeErr)
+			}
+			if paymentLen <= tipLen {
+				return nil, fmt.Errorf("asset transaction payment omitted asset id option")
+			}
+			pos = paymentStart + paymentLen
+		case signedExtensionMetadataHash:
+			if pos >= len(body) {
+				return nil, fmt.Errorf("extrinsic too short for metadata mode byte")
+			}
+			metadataMode = body[pos]
+			pos++
+		default:
+			return nil, fmt.Errorf("unsupported signed extension decoding")
 		}
-		metadataMode = body[pos]
-		pos++ // skip metadata mode byte
 	}
 
 	// The remainder is call data
 	callData := body[pos:]
 
 	return &Extrinsic{
-		Signer:               signerPubkey,
-		Signature:            signature,
-		SignatureType:        sigType,
-		Era:                  era,
-		Nonce:                nonceVal.Uint64(),
-		Tip:                  tipVal.Uint64(),
-		MetadataMode:         metadataMode,
-		CheckMetadataHash:    checkMetadataHash,
-		ChargeAssetTxPayment: chargeAssetTxPayment,
-		CallData:             callData,
+		Signer:        signerPubkey,
+		Signature:     signature,
+		SignatureType: sigType,
+		Era:           era,
+		Nonce:         nonce,
+		Tip:           tip,
+		MetadataMode:  metadataMode,
+		CallData:      callData,
 	}, nil
 }

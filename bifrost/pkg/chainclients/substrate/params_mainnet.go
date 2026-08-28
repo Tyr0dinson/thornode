@@ -15,13 +15,12 @@ var ChainParams = map[common.Chain]Params{
 	// no longer holds user DOT. Indexes verified against live Asset Hub
 	// metadata, specVersion 2003001.
 	common.DOTChain: {
-		SpecName:             "statemint",
-		MortalEraPeriod:      128,
-		Lookback:             time.Minute,
-		DefaultFee:           20_000_000, // 0.002 DOT — recalibrate against live TransactionFeePaid before activation
-		BalanceSize:          16,
-		CheckMetadataHash:    true,
-		ChargeAssetTxPayment: true,
+		SpecName:         "statemint",
+		MortalEraPeriod:  128,
+		Lookback:         time.Minute,
+		DefaultFee:       20_000_000, // 0.002 DOT — recalibrate against live TransactionFeePaid before activation
+		BalanceSize:      16,
+		SignedExtensions: SignedExtensions[common.DOTChain],
 		Indexes: map[string]byte{
 			BalancesPallet:                 10,
 			BalancesTransferAllowDeathCall: 0,
@@ -34,12 +33,12 @@ var ChainParams = map[common.Chain]Params{
 		},
 	},
 	common.TAOChain: {
-		SpecName:          "node-subtensor",
-		MortalEraPeriod:   64, // 64 blocks * 12s ≈ 12.8 minutes
-		Lookback:          time.Minute,
-		DefaultFee:        100_000, // 0.0001 TAO
-		BalanceSize:       8,
-		CheckMetadataHash: true,
+		SpecName:         "node-subtensor",
+		MortalEraPeriod:  64, // 64 blocks * 12s ≈ 12.8 minutes
+		Lookback:         time.Minute,
+		DefaultFee:       100_000, // 0.0001 TAO
+		BalanceSize:      8,
+		SignedExtensions: SignedExtensions[common.TAOChain],
 		Indexes: map[string]byte{
 			BalancesPallet:                 5,
 			BalancesTransferAllowDeathCall: 0,

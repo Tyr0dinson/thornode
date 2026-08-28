@@ -24,15 +24,47 @@ func loadAssetHubTestMetadata(c *C) *Metadata {
 	return metadata
 }
 
-func encodeTestExtrinsicWithAssetPayment(ext *Extrinsic, payment []byte) []byte {
-	encoded := EncodeSignedExtrinsic(ext)
+func testExtrinsicLayout(c *C, assetPayment bool) ExtrinsicLayout {
+	payment := "ChargeTransactionPayment"
+	if assetPayment {
+		payment = chargeAssetTxPaymentExtensionID
+	}
+	extensions := []SignedExtension{
+		{Identifier: "CheckSpecVersion", ExtraType: "test", AdditionalType: "test"},
+		{Identifier: "CheckTxVersion", ExtraType: "test", AdditionalType: "test"},
+		{Identifier: "CheckGenesis", ExtraType: "test", AdditionalType: "test"},
+		{Identifier: "CheckMortality", ExtraType: "test", AdditionalType: "test"},
+		{Identifier: "CheckNonce", ExtraType: "test", AdditionalType: "test"},
+		{Identifier: payment, ExtraType: "test", AdditionalType: "test"},
+		{Identifier: "CheckMetadataHash", ExtraType: "test", AdditionalType: "test"},
+	}
+	layout, err := NewExtrinsicLayout(extensions)
+	c.Assert(err, IsNil)
+	return layout
+}
+
+func (s *ExtrinsicSuite) TestNewExtrinsicLayoutRejectsUnsupportedExtension(c *C) {
+	extensions := []SignedExtension{
+		{Identifier: "CheckSpecVersion", ExtraType: "test", AdditionalType: "test"},
+		{Identifier: "CheckTxVersion", ExtraType: "test", AdditionalType: "test"},
+		{Identifier: "CheckGenesis", ExtraType: "test", AdditionalType: "test"},
+		{Identifier: "CheckMortality", ExtraType: "test", AdditionalType: "test"},
+		{Identifier: "CheckNonce", ExtraType: "test", AdditionalType: "test"},
+		{Identifier: "ChargeTransactionPayment", ExtraType: "test", AdditionalType: "test"},
+		{Identifier: "UnknownExtension", ExtraType: "test", AdditionalType: "test"},
+	}
+	_, err := NewExtrinsicLayout(extensions)
+	c.Assert(err, NotNil)
+	c.Check(strings.Contains(err.Error(), "unsupported signed extension"), Equals, true)
+}
+
+func encodeTestExtrinsicWithAssetPayment(c *C, ext *Extrinsic, payment []byte) []byte {
+	encoded, err := EncodeSignedExtrinsic(ext, testExtrinsicLayout(c, true))
+	c.Assert(err, IsNil)
 	_, prefixLen, _ := DecodeCompact(encoded)
 	body := encoded[prefixLen:]
 
-	tailLen := len(ext.CallData)
-	if ext.CheckMetadataHash {
-		tailLen++
-	}
+	tailLen := len(ext.CallData) + 1 // CheckMetadataHash mode
 	optionPos := len(body) - tailLen - 1
 	tipStart := optionPos - len(EncodeCompact(ext.Tip))
 
@@ -243,7 +275,8 @@ func (s *ExtrinsicSuite) TestEncodeSignedExtrinsicFormat(c *C) {
 		CallData:      []byte{5, 3, 0x00},
 	}
 
-	encoded := EncodeSignedExtrinsic(ext)
+	encoded, err := EncodeSignedExtrinsic(ext, testExtrinsicLayout(c, false))
+	c.Assert(err, IsNil)
 
 	_, consumed, err := DecodeCompact(encoded)
 	c.Assert(err, IsNil)
@@ -264,7 +297,7 @@ func (s *ExtrinsicSuite) TestSigningPayloadContainsAllFields(c *C) {
 	blockHash := make([]byte, 32)
 	blockHash[0] = 0xBB
 
-	payload, err := SigningPayload(callData, era, 1, 0, true, MetadataModeDisabled, false, 100, 1, genesisHash, blockHash)
+	payload, err := SigningPayload(callData, era, 1, 0, testExtrinsicLayout(c, false), MetadataModeDisabled, 100, 1, genesisHash, blockHash)
 	c.Assert(err, IsNil)
 	c.Assert(payload[0], Equals, byte(5))
 	c.Assert(payload[1], Equals, byte(3))
@@ -279,9 +312,9 @@ func (s *ExtrinsicSuite) TestSigningPayloadChargeAssetTxPayment(c *C) {
 	genesisHash := make([]byte, 32)
 	blockHash := make([]byte, 32)
 
-	without, err := SigningPayload(callData, era, 1, 0, true, MetadataModeDisabled, false, 100, 1, genesisHash, blockHash)
+	without, err := SigningPayload(callData, era, 1, 0, testExtrinsicLayout(c, false), MetadataModeDisabled, 100, 1, genesisHash, blockHash)
 	c.Assert(err, IsNil)
-	with, err := SigningPayload(callData, era, 1, 0, true, MetadataModeDisabled, true, 100, 1, genesisHash, blockHash)
+	with, err := SigningPayload(callData, era, 1, 0, testExtrinsicLayout(c, true), MetadataModeDisabled, 100, 1, genesisHash, blockHash)
 	c.Assert(err, IsNil)
 
 	// ChargeAssetTxPayment adds exactly one explicit byte: Option<AssetId>::None
@@ -296,6 +329,42 @@ func (s *ExtrinsicSuite) TestSigningPayloadChargeAssetTxPayment(c *C) {
 		Commentf("metadata mode byte and implicit section must be unchanged"))
 }
 
+func (s *ExtrinsicSuite) TestSigningPayloadUsesLayoutOrder(c *C) {
+	extensions := []SignedExtension{
+		{Identifier: "CheckMetadataHash", ExtraType: "test", AdditionalType: "test"},
+		{Identifier: "CheckNonce", ExtraType: "test", AdditionalType: "test"},
+		{Identifier: "ChargeTransactionPayment", ExtraType: "test", AdditionalType: "test"},
+		{Identifier: "CheckMortality", ExtraType: "test", AdditionalType: "test"},
+		{Identifier: "CheckGenesis", ExtraType: "test", AdditionalType: "test"},
+		{Identifier: "CheckTxVersion", ExtraType: "test", AdditionalType: "test"},
+		{Identifier: "CheckSpecVersion", ExtraType: "test", AdditionalType: "test"},
+	}
+	layout, err := NewExtrinsicLayout(extensions)
+	c.Assert(err, IsNil)
+
+	callData := []byte{0xAA}
+	era := []byte{0x01, 0x02}
+	genesisHash := bytes.Repeat([]byte{0x33}, 32)
+	blockHash := bytes.Repeat([]byte{0x44}, 32)
+	payload, err := SigningPayload(
+		callData, era, 1, 2, layout, MetadataModeDisabled,
+		3, 4, genesisHash, blockHash,
+	)
+	c.Assert(err, IsNil)
+
+	expected := append([]byte{}, callData...)
+	expected = append(expected, MetadataModeDisabled)
+	expected = append(expected, EncodeCompact(1)...)
+	expected = append(expected, EncodeCompact(2)...)
+	expected = append(expected, era...)
+	expected = append(expected, 0x00) // CheckMetadataHash additional None
+	expected = append(expected, blockHash...)
+	expected = append(expected, genesisHash...)
+	expected = append(expected, EncodeU32LE(4)...)
+	expected = append(expected, EncodeU32LE(3)...)
+	c.Check(payload, DeepEquals, expected)
+}
+
 func (s *ExtrinsicSuite) TestEncodeParseRoundTripChargeAssetTxPayment(c *C) {
 	metadata := loadAssetHubTestMetadata(c)
 	signer := make([]byte, 32)
@@ -305,21 +374,22 @@ func (s *ExtrinsicSuite) TestEncodeParseRoundTripChargeAssetTxPayment(c *C) {
 	callData := []byte{10, 3, 0x00}
 
 	ext := &Extrinsic{
-		Signer:               signer,
-		SignatureType:        SignatureTypeEd25519,
-		Signature:            sig,
-		Era:                  MortalEra(64, 10),
-		Nonce:                5,
-		Tip:                  0,
-		MetadataMode:         MetadataModeDisabled,
-		CheckMetadataHash:    true,
-		ChargeAssetTxPayment: true,
-		CallData:             callData,
+		Signer:        signer,
+		SignatureType: SignatureTypeEd25519,
+		Signature:     sig,
+		Era:           MortalEra(64, 10),
+		Nonce:         5,
+		Tip:           0,
+		MetadataMode:  MetadataModeDisabled,
+		CallData:      callData,
 	}
-	encoded := EncodeSignedExtrinsic(ext)
+	assetLayout := testExtrinsicLayout(c, true)
+	standardLayout := testExtrinsicLayout(c, false)
+	encoded, err := EncodeSignedExtrinsic(ext, assetLayout)
+	c.Assert(err, IsNil)
 
-	// Round trip with matching flags recovers all fields
-	parsed, err := ParseSignedExtrinsic(encoded, metadata, true, true)
+	// Round trip with the matching validated layout recovers all fields.
+	parsed, err := ParseSignedExtrinsic(encoded, metadata, assetLayout)
 	c.Assert(err, IsNil)
 	c.Check(bytes.Equal(parsed.Signer, signer), Equals, true)
 	c.Check(parsed.Nonce, Equals, uint64(5))
@@ -327,15 +397,15 @@ func (s *ExtrinsicSuite) TestEncodeParseRoundTripChargeAssetTxPayment(c *C) {
 	c.Check(parsed.MetadataMode, Equals, byte(MetadataModeDisabled))
 	c.Check(bytes.Equal(parsed.CallData, callData), Equals, true)
 
-	// Encoding one extra byte vs. the relay-style layout
-	extNoOption := *ext
-	extNoOption.ChargeAssetTxPayment = false
-	c.Check(len(encoded), Equals, len(EncodeSignedExtrinsic(&extNoOption))+1)
+	// Asset payment encodes one extra Option<AssetId>::None byte.
+	standardEncoded, err := EncodeSignedExtrinsic(ext, standardLayout)
+	c.Assert(err, IsNil)
+	c.Check(len(encoded), Equals, len(standardEncoded)+1)
 
 	// Parsing without the flag misaligns by one byte: the option byte is
 	// consumed as the metadata mode byte and the call data shifts. Pin the
 	// shift so a params/codec mismatch cannot go unnoticed.
-	misparsed, err := ParseSignedExtrinsic(encoded, nil, true, false)
+	misparsed, err := ParseSignedExtrinsic(encoded, nil, standardLayout)
 	c.Assert(err, IsNil)
 	c.Check(bytes.Equal(misparsed.CallData, callData), Equals, false)
 
@@ -346,7 +416,7 @@ func (s *ExtrinsicSuite) TestEncodeParseRoundTripChargeAssetTxPayment(c *C) {
 	optionPos := len(mutated) - len(callData) - 1 /* mode byte */ - 1 /* option byte */
 	c.Assert(mutated[optionPos], Equals, byte(0x00))
 	mutated[optionPos] = 0x01
-	_, err = ParseSignedExtrinsic(mutated, metadata, true, true)
+	_, err = ParseSignedExtrinsic(mutated, metadata, assetLayout)
 	c.Assert(err, NotNil)
 	c.Check(strings.Contains(err.Error(), "asset transaction payment"), Equals, true,
 		Commentf("got: %v", err))
@@ -356,23 +426,21 @@ func (s *ExtrinsicSuite) TestParseChargeAssetTxPaymentWithLocation(c *C) {
 	metadata := loadAssetHubTestMetadata(c)
 	callData := []byte{10, 3, 0x00, 0xAA}
 	ext := &Extrinsic{
-		Signer:               make([]byte, 32),
-		SignatureType:        SignatureTypeEd25519,
-		Signature:            make([]byte, 64),
-		Era:                  MortalEra(128, 10),
-		Nonce:                7,
-		Tip:                  0,
-		MetadataMode:         MetadataModeDisabled,
-		CheckMetadataHash:    true,
-		ChargeAssetTxPayment: true,
-		CallData:             callData,
+		Signer:        make([]byte, 32),
+		SignatureType: SignatureTypeEd25519,
+		Signature:     make([]byte, 64),
+		Era:           MortalEra(128, 10),
+		Nonce:         7,
+		Tip:           0,
+		MetadataMode:  MetadataModeDisabled,
+		CallData:      callData,
 	}
 
 	payment := []byte{0x00, 0x01, 0x00, 0x02, 0x04, 50, 0x05}
 	payment = append(payment, EncodeCompact(1984)...)
-	encoded := encodeTestExtrinsicWithAssetPayment(ext, payment)
+	encoded := encodeTestExtrinsicWithAssetPayment(c, ext, payment)
 
-	parsed, err := ParseSignedExtrinsic(encoded, metadata, true, true)
+	parsed, err := ParseSignedExtrinsic(encoded, metadata, testExtrinsicLayout(c, true))
 	c.Assert(err, IsNil)
 	c.Check(parsed.Nonce, Equals, uint64(7))
 	c.Check(parsed.Tip, Equals, uint64(0))

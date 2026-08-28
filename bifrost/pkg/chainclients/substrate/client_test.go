@@ -284,6 +284,9 @@ func newTestClient(rpcClient *rpc.Client, opts ...testClientOpt) *Client {
 			Scanner:    genericScanner,
 			params:     ChainParams[common.TAOChain],
 			nonceCache: newNonceCache(),
+			runtime: runtimeContext{
+				layout: mustTestExtrinsicLayout(common.TAOChain),
+			},
 		},
 	}
 }
@@ -300,14 +303,13 @@ func makeBroadcastTestTx(c *C, nonce uint64) (stypes.TxOutItem, []byte) {
 
 	params := ChainParams[common.TAOChain]
 	ext := &subtypes.Extrinsic{
-		Signer:            signer,
-		SignatureType:     subtypes.SignatureTypeEd25519,
-		Signature:         make([]byte, 64),
-		Era:               subtypes.MortalEra(uint64(params.MortalEraPeriod), 100),
-		Nonce:             nonce,
-		Tip:               0,
-		MetadataMode:      subtypes.MetadataModeDisabled,
-		CheckMetadataHash: params.CheckMetadataHash,
+		Signer:        signer,
+		SignatureType: subtypes.SignatureTypeEd25519,
+		Signature:     make([]byte, 64),
+		Era:           subtypes.MortalEra(uint64(params.MortalEraPeriod), 100),
+		Nonce:         nonce,
+		Tip:           0,
+		MetadataMode:  subtypes.MetadataModeDisabled,
 		CallData: subtypes.BalanceTransferKeepAlive(
 			params.Index(BalancesPallet),
 			params.Index(BalancesTransferKeepAliveCall),
@@ -319,7 +321,7 @@ func makeBroadcastTestTx(c *C, nonce uint64) (stypes.TxOutItem, []byte) {
 		Chain:            common.TAOChain,
 		VaultPubKeyEddsa: vaultPubKey,
 		Memo:             "OUT:hash",
-	}, subtypes.EncodeSignedExtrinsic(ext)
+	}, mustEncodeTestExtrinsic(ext, common.TAOChain)
 }
 
 func seedSignedExtrinsic(
@@ -598,7 +600,8 @@ func (s *ClientSuite) TestBroadcastTxPreservesSigningEraExpiry(c *C) {
 
 func (s *ClientSuite) TestBlockReferenceAppliesTimeLookback(c *C) {
 	cl := newTestClient(nil)
-	bridge := cl.GetBridge().(*mockBridge)
+	bridge, ok := cl.GetBridge().(*mockBridge)
+	c.Assert(ok, Equals, true)
 	bridge.blockTimestamp = time.UnixMilli(61_050)
 	for _, reference := range []generic.BlockReference{
 		{Height: 10, Hash: "0x10", Timestamp: 1_000},
@@ -616,7 +619,8 @@ func (s *ClientSuite) TestBlockReferenceAppliesTimeLookback(c *C) {
 
 func (s *ClientSuite) TestBlockReferenceHasNoTipFallback(c *C) {
 	cl := newTestClient(nil)
-	bridge := cl.GetBridge().(*mockBridge)
+	bridge, ok := cl.GetBridge().(*mockBridge)
+	c.Assert(ok, Equals, true)
 	bridge.blockTimestamp = time.UnixMilli(61_050)
 	c.Assert(cl.chainScanner.SetBlockReference(generic.BlockReference{
 		Height: 10, Hash: "0x10", Timestamp: 1_000,
@@ -637,7 +641,8 @@ func (s *ClientSuite) TestSignTxUsesReferenceEraAndPersistsExactExpiry(c *C) {
 	defer srv.Close()
 
 	cl := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
-	bridge := cl.GetBridge().(*mockBridge)
+	bridge, ok := cl.GetBridge().(*mockBridge)
+	c.Assert(ok, Equals, true)
 	bridge.blockTimestamp = time.UnixMilli(61_050)
 	eraHash := "0x" + strings.Repeat("11", 32)
 	for _, reference := range []generic.BlockReference{
@@ -668,8 +673,7 @@ func (s *ClientSuite) TestSignTxUsesReferenceEraAndPersistsExactExpiry(c *C) {
 	extrinsic, err := subtypes.ParseSignedExtrinsic(
 		rawTx,
 		nil,
-		cl.chainScanner.params.CheckMetadataHash,
-		cl.chainScanner.params.ChargeAssetTxPayment,
+		cl.chainScanner.getRuntimeContext().layout,
 	)
 	c.Assert(err, IsNil)
 	c.Check(extrinsic.Era, DeepEquals, subtypes.MortalEra(64, 100))
@@ -787,14 +791,13 @@ func (s *ClientSuite) TestBroadcastTx_Stale(c *C) {
 
 		params := ChainParams[common.TAOChain]
 		ext := &subtypes.Extrinsic{
-			Signer:            signerPubkey,
-			SignatureType:     subtypes.SignatureTypeEd25519,
-			Signature:         make([]byte, 64),
-			Era:               subtypes.MortalEra(uint64(params.MortalEraPeriod), 100),
-			Nonce:             1,
-			Tip:               0,
-			MetadataMode:      subtypes.MetadataModeDisabled,
-			CheckMetadataHash: params.CheckMetadataHash,
+			Signer:        signerPubkey,
+			SignatureType: subtypes.SignatureTypeEd25519,
+			Signature:     make([]byte, 64),
+			Era:           subtypes.MortalEra(uint64(params.MortalEraPeriod), 100),
+			Nonce:         1,
+			Tip:           0,
+			MetadataMode:  subtypes.MetadataModeDisabled,
 			CallData: subtypes.BalanceTransferKeepAlive(
 				params.Index(BalancesPallet),
 				params.Index(BalancesTransferKeepAliveCall),
@@ -803,7 +806,7 @@ func (s *ClientSuite) TestBroadcastTx_Stale(c *C) {
 			),
 		}
 
-		rawTx := subtypes.EncodeSignedExtrinsic(ext)
+		rawTx := mustEncodeTestExtrinsic(ext, common.TAOChain)
 		expectedHash := subtypes.ExtrinsicHash(rawTx)
 
 		if tt.prePopulate {

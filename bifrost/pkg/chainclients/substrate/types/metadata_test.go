@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	scaleTypes "github.com/itering/scale.go/types"
+	"github.com/itering/scale.go/types/scaleBytes"
 	. "gopkg.in/check.v1"
 )
 
@@ -70,6 +72,13 @@ func (s *MetadataSuite) TestParseMetadataGoldenVectors(c *C) {
 		c.Assert(md, NotNil, Commentf("%s: nil metadata", tt.name))
 		c.Check(len(md.Modules) > 0, Equals, true,
 			Commentf("%s: expected non-empty modules, got 0", tt.name))
+		c.Check(len(md.SignedExtensions) > 0, Equals, true,
+			Commentf("%s: expected signed extensions", tt.name))
+		for i, extension := range md.SignedExtensions {
+			c.Check(extension.Identifier, Not(Equals), "", Commentf("%s extension %d identifier", tt.name, i))
+			c.Check(extension.ExtraType, Not(Equals), "", Commentf("%s extension %d explicit type", tt.name, i))
+			c.Check(extension.AdditionalType, Not(Equals), "", Commentf("%s extension %d additional type", tt.name, i))
+		}
 	}
 }
 
@@ -91,6 +100,48 @@ func (s *MetadataSuite) TestDecodeChargeAssetTxPayment(c *C) {
 	_, _, err = metadata.DecodeSignedExtension(chargeAssetTxPaymentExtensionID, some[:len(some)-1])
 	c.Assert(err, NotNil)
 	c.Check(strings.Contains(err.Error(), "truncated"), Equals, true, Commentf("got: %v", err))
+}
+
+func (s *MetadataSuite) TestSupportedNoopExtensionsEncodeNoBytes(c *C) {
+	fixtures := []string{
+		"testdata/metadata-dot-assethub-2003001.hex",
+		"testdata/metadata-tao-mainnet-401.hex",
+	}
+	noop := map[string]struct{}{
+		"AuthorizeCall":                 {},
+		"CheckNonZeroSender":            {},
+		"CheckWeight":                   {},
+		"PrevalidateAttests":            {},
+		"EthSetOrigin":                  {},
+		"StorageWeightReclaim":          {},
+		"SudoTransactionExtension":      {},
+		"CheckShieldedTxValidity":       {},
+		"SubtensorTransactionExtension": {},
+		"DrandPriority":                 {},
+	}
+
+	for _, fixture := range fixtures {
+		raw, err := os.ReadFile(fixture)
+		c.Assert(err, IsNil)
+		metadata, err := ParseMetadata(strings.TrimSpace(string(raw)))
+		c.Assert(err, IsNil)
+
+		for _, extension := range metadata.SignedExtensions {
+			if _, ok := noop[extension.Identifier]; !ok {
+				continue
+			}
+			decoder := scaleTypes.ScaleDecoder{}
+			decoder.Init(
+				scaleBytes.ScaleBytes{Data: []byte{0xFF}},
+				&scaleTypes.ScaleDecoderOption{Metadata: metadata.codec, Spec: metadata.codecSpec},
+			)
+			scaleCodecRegistryMu.RLock()
+			decoder.ProcessAndUpdateData(extension.ExtraType)
+			consumed := decoder.GetData().Offset
+			scaleCodecRegistryMu.RUnlock()
+			c.Check(consumed, Equals, 0, Commentf("%s %s encoded bytes", fixture, extension.Identifier))
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------

@@ -21,11 +21,11 @@ func newStateStoreTestDB(t *testing.T) *leveldb.DB {
 
 func TestStateStoreIsolationAndLifecycle(t *testing.T) {
 	db := newStateStoreTestDB(t)
-	dotA, err := newStateStore(db, common.DOTChain)
+	storeA, err := newStateStore(db, common.DOTChain)
 	if err != nil {
 		t.Fatal(err)
 	}
-	dotB, err := newStateStore(db, common.DOTChain)
+	storeB, err := newStateStore(db, common.DOTChain)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,11 +34,11 @@ func TestStateStoreIsolationAndLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = dotA.Put("hash", []byte("dot"))
+	err = storeA.Put("hash", []byte("dot"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, found, err := dotB.Get("hash")
+	value, found, err := storeB.Get("hash")
 	if err != nil || !found || !bytes.Equal(value, []byte("dot")) {
 		t.Fatalf("same-chain store does not share state: value=%q found=%v err=%v", value, found, err)
 	}
@@ -50,15 +50,15 @@ func TestStateStoreIsolationAndLifecycle(t *testing.T) {
 	if err != nil || !bytes.Equal(raw, []byte("dot")) {
 		t.Fatalf("unexpected physical key: value=%q err=%v", raw, err)
 	}
-	err = dotB.Delete("hash")
+	err = storeB.Delete("hash")
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = dotA.Delete("hash")
+	err = storeA.Delete("hash")
 	if err != nil {
 		t.Fatalf("delete must be idempotent: %v", err)
 	}
-	_, found, err = dotA.Get("hash")
+	_, found, err = storeA.Get("hash")
 	if err != nil || found {
 		t.Fatalf("deleted key remains: found=%v err=%v", found, err)
 	}

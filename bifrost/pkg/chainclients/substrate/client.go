@@ -576,8 +576,9 @@ func (c *Client) createAndSignExtrinsic(
 	period := uint64(c.chainScanner.params.MortalEraPeriod)
 	era := stypes.MortalEra(period, uint64(blockRef.Height))
 
-	// Read spec + tx version atomically (both change together on runtime upgrades)
-	specVersion, txVersion := c.chainScanner.getRuntimeVersion()
+	// Use one verified runtime snapshot so metadata, extension layout, and version
+	// fields cannot be mixed across a runtime upgrade.
+	runtime := c.chainScanner.getRuntimeContext()
 
 	// Construct signing payload
 	var payload []byte
@@ -586,11 +587,10 @@ func (c *Client) createAndSignExtrinsic(
 		era,
 		uint64(nonce),
 		0, // tip = 0
-		c.chainScanner.params.CheckMetadataHash,
+		runtime.layout,
 		stypes.MetadataModeDisabled,
-		c.chainScanner.params.ChargeAssetTxPayment,
-		specVersion,
-		txVersion,
+		runtime.specVersion,
+		runtime.txVersion,
 		genesisHashBytes,
 		blockHashBytes,
 	)
@@ -621,31 +621,25 @@ func (c *Client) createAndSignExtrinsic(
 
 	// Assemble the signed extrinsic
 	ext := &stypes.Extrinsic{
-		Signer:               vaultPubkeyBytes,
-		SignatureType:        stypes.SignatureTypeEd25519,
-		Signature:            sig,
-		Era:                  era,
-		Nonce:                uint64(nonce),
-		Tip:                  0,
-		MetadataMode:         stypes.MetadataModeDisabled,
-		CheckMetadataHash:    c.chainScanner.params.CheckMetadataHash,
-		ChargeAssetTxPayment: c.chainScanner.params.ChargeAssetTxPayment,
-		CallData:             callData,
+		Signer:        vaultPubkeyBytes,
+		SignatureType: stypes.SignatureTypeEd25519,
+		Signature:     sig,
+		Era:           era,
+		Nonce:         uint64(nonce),
+		Tip:           0,
+		MetadataMode:  stypes.MetadataModeDisabled,
+		CallData:      callData,
 	}
 
-	return stypes.EncodeSignedExtrinsic(ext), nil
+	return stypes.EncodeSignedExtrinsic(ext, runtime.layout)
 }
 
 // BroadcastTx broadcasts the transaction and returns the transaction hash.
 func (c *Client) BroadcastTx(txOutItem ttypes.TxOutItem, rawTx []byte) (string, error) {
 	// Compute hash locally for consistency with the scanner's extrinsicHash.
 	txHash := stypes.ExtrinsicHash(rawTx)
-	extrinsic, err := stypes.ParseSignedExtrinsic(
-		rawTx,
-		c.chainScanner.getMetadata(),
-		c.chainScanner.params.CheckMetadataHash,
-		c.chainScanner.params.ChargeAssetTxPayment,
-	)
+	runtime := c.chainScanner.getRuntimeContext()
+	extrinsic, err := stypes.ParseSignedExtrinsic(rawTx, runtime.metadata, runtime.layout)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse extrinsic before broadcast: %w", err)
 	}

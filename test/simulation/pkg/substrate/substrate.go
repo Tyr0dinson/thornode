@@ -131,6 +131,21 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fail to get runtime version: %w", err)
 	}
+	if rv.SpecName != c.params.SpecName {
+		return nil, fmt.Errorf("runtime specName mismatch (expected %q, got %q)", c.params.SpecName, rv.SpecName)
+	}
+	metadataRaw, err := c.rpc.GetMetadata("")
+	if err != nil {
+		return nil, fmt.Errorf("fail to get runtime metadata: %w", err)
+	}
+	metadata, err := types.ParseMetadata(metadataRaw)
+	if err != nil {
+		return nil, fmt.Errorf("fail to parse runtime metadata: %w", err)
+	}
+	layout, err := c.params.ValidateMetadata(metadata)
+	if err != nil {
+		return nil, fmt.Errorf("fail to validate runtime metadata: %w", err)
+	}
 
 	// Get genesis hash (also used as block hash for immortal era transactions)
 	genesisHashHex, err := c.rpc.GetGenesisHash()
@@ -179,8 +194,7 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 	era := types.ImmortalEra()
 	payload, err := types.SigningPayload(
 		callData, era, uint64(nonce), 0,
-		c.params.CheckMetadataHash, types.MetadataModeDisabled,
-		c.params.ChargeAssetTxPayment,
+		layout, types.MetadataModeDisabled,
 		rv.SpecVersion, rv.TransactionVersion,
 		genesisHash, genesisHash,
 	)
@@ -201,19 +215,17 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 
 	// Encode signed extrinsic
 	ext := &types.Extrinsic{
-		Signer:               signerPub,
-		SignatureType:        types.SignatureTypeEd25519,
-		Signature:            signature,
-		Era:                  era,
-		Nonce:                uint64(nonce),
-		Tip:                  0,
-		MetadataMode:         types.MetadataModeDisabled,
-		CheckMetadataHash:    c.params.CheckMetadataHash,
-		ChargeAssetTxPayment: c.params.ChargeAssetTxPayment,
-		CallData:             callData,
+		Signer:        signerPub,
+		SignatureType: types.SignatureTypeEd25519,
+		Signature:     signature,
+		Era:           era,
+		Nonce:         uint64(nonce),
+		Tip:           0,
+		MetadataMode:  types.MetadataModeDisabled,
+		CallData:      callData,
 	}
 
-	return types.EncodeSignedExtrinsic(ext), nil
+	return types.EncodeSignedExtrinsic(ext, layout)
 }
 
 // BroadcastTx submits a signed extrinsic to the network.

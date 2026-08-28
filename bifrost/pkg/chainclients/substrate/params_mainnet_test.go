@@ -83,7 +83,7 @@ func (s *ParamsSuite) TestValidateMetadataAgainstFixture(c *C) {
 		if tt.tamper != nil {
 			tt.tamper(md)
 		}
-		err = ChainParams[tt.chainID].ValidateMetadata(md)
+		_, err = ChainParams[tt.chainID].ValidateMetadata(md)
 		if tt.wantErrIn == "" {
 			c.Check(err, IsNil, Commentf("%s: expected nil, got %v", tt.name, err))
 			continue

@@ -474,7 +474,7 @@ func (s *SignerCacheSuite) TestCacheManagerMultipleTxOutItems(c *C) {
 	c.Assert(result, Equals, "tx-3")
 
 	// Remove txout-2
-	mgr.RemoveSigned("tx-2")
+	c.Assert(mgr.RemoveSigned("tx-2"), IsNil)
 	c.Assert(mgr.HasSigned("txout-2"), Equals, false)
 	// Others still signed
 	c.Assert(mgr.HasSigned("txout-1"), Equals, true)

@@ -13,9 +13,19 @@ import (
 )
 
 type Metadata struct {
-	Modules   []scaleTypes.MetadataModules
-	codec     *scaleTypes.MetadataStruct
-	codecSpec int
+	Modules          []scaleTypes.MetadataModules
+	SignedExtensions []SignedExtension
+	codec            *scaleTypes.MetadataStruct
+	codecSpec        int
+}
+
+// SignedExtension describes one entry in the runtime's ordered signed-extension
+// list. ExtraType is encoded in the extrinsic and AdditionalType is appended only
+// to the signing payload.
+type SignedExtension struct {
+	Identifier     string
+	ExtraType      string
+	AdditionalType string
 }
 
 // scale.go registers portable runtime types in package-global maps. All access
@@ -60,11 +70,42 @@ func ParseMetadata(raw string) (_ *Metadata, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse metadata: %w", err)
 	}
+	if decoder.Metadata.Extrinsic == nil {
+		return nil, fmt.Errorf("metadata has no extrinsic definition")
+	}
+
+	// scale.go resolves the explicit type but leaves AdditionalSigned as a
+	// portable-registry ID. Resolve that ID while the same registry namespace is
+	// active so callers never depend on unstable numeric type IDs.
+	decoder.Init(data)
+	portable, registryErr := decoder.PortableRegistry()
+	if registryErr != nil {
+		return nil, fmt.Errorf("failed to parse metadata portable registry: %w", registryErr)
+	}
+	resolver := scaleTypes.ScaleInfo{
+		ScaleDecoder: &decoder.ScaleDecoder,
+		V14:          true,
+	}
+	resolver.ProcessSiType(portable)
+
+	signedExtensions := make([]SignedExtension, 0, len(decoder.Metadata.Extrinsic.SignedExtensions))
+	for _, extension := range decoder.Metadata.Extrinsic.SignedExtensions {
+		additionalType := decoder.RegisteredSiType[extension.AdditionalSigned]
+		if extension.TypeString == "" || additionalType == "" {
+			return nil, fmt.Errorf("failed to resolve signed extension %s types", extension.Identifier)
+		}
+		signedExtensions = append(signedExtensions, SignedExtension{
+			Identifier:     extension.Identifier,
+			ExtraType:      extension.TypeString,
+			AdditionalType: additionalType,
+		})
+	}
 
 	return &Metadata{
-		Modules:   decoder.Metadata.Metadata.Modules,
-		codec:     &decoder.Metadata,
-		codecSpec: decoder.Spec,
+		Modules:          decoder.Metadata.Metadata.Modules,
+		SignedExtensions: signedExtensions,
+		codec:            &decoder.Metadata,
+		codecSpec:        decoder.Spec,
 	}, nil
 }
 

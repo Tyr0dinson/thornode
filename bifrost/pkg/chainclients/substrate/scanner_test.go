@@ -2,13 +2,17 @@ package substrate
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rs/zerolog/log"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/substrate/rpc"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/substrate/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -26,6 +30,22 @@ type ScannerSuite struct{}
 
 var _ = Suite(&ScannerSuite{})
 
+func mustTestExtrinsicLayout(chain common.Chain) stypes.ExtrinsicLayout {
+	layout, err := stypes.NewExtrinsicLayout(ChainParams[chain].SignedExtensions)
+	if err != nil {
+		panic(err)
+	}
+	return layout
+}
+
+func mustEncodeTestExtrinsic(ext *stypes.Extrinsic, chain common.Chain) []byte {
+	encoded, err := stypes.EncodeSignedExtrinsic(ext, mustTestExtrinsicLayout(chain))
+	if err != nil {
+		panic(err)
+	}
+	return encoded
+}
+
 // newTestScanner creates a minimal scanner for unit testing parse functions.
 // Defaults to the no-op pubkey validator (recognizes no addresses as vaults);
 // tests that exercise vault recognition can override pubkeyMgr after construction.
@@ -38,6 +58,9 @@ func newTestScanner() *Scanner {
 		},
 		pubkeyMgr:  pubkeymanager.NewMockPoolAddressValidator(),
 		nonceCache: newNonceCache(),
+		runtime: runtimeContext{
+			layout: mustTestExtrinsicLayout(common.TAOChain),
+		},
 	}
 	return s
 }
@@ -56,7 +79,10 @@ func newAssetHubTestScanner(c *C) *Scanner {
 		},
 		pubkeyMgr:  pubkeymanager.NewMockPoolAddressValidator(),
 		nonceCache: newNonceCache(),
-		metadata:   metadata,
+		runtime: runtimeContext{
+			metadata: metadata,
+			layout:   mustTestExtrinsicLayout(common.DOTChain),
+		},
 	}
 }
 
@@ -94,34 +120,31 @@ func buildTestExtrinsic(callData []byte) string {
 // vault-vs-non-vault paths.
 func buildTestExtrinsicFromSigner(signer, callData []byte) string {
 	ext := &stypes.Extrinsic{
-		Signer:            signer,
-		SignatureType:     stypes.SignatureTypeEd25519,
-		Signature:         make([]byte, 64),
-		Era:               stypes.ImmortalEra(),
-		Nonce:             0,
-		Tip:               0,
-		MetadataMode:      stypes.MetadataModeDisabled,
-		CheckMetadataHash: true,
-		CallData:          callData,
+		Signer:        signer,
+		SignatureType: stypes.SignatureTypeEd25519,
+		Signature:     make([]byte, 64),
+		Era:           stypes.ImmortalEra(),
+		Nonce:         0,
+		Tip:           0,
+		MetadataMode:  stypes.MetadataModeDisabled,
+		CallData:      callData,
 	}
 
-	return stypes.HexEncode(stypes.EncodeSignedExtrinsic(ext))
+	return stypes.HexEncode(mustEncodeTestExtrinsic(ext, common.TAOChain))
 }
 
 func buildAssetHubTestExtrinsic(callData []byte) string {
 	ext := &stypes.Extrinsic{
-		Signer:               defaultTestSigner(),
-		SignatureType:        stypes.SignatureTypeEd25519,
-		Signature:            make([]byte, 64),
-		Era:                  stypes.ImmortalEra(),
-		Nonce:                0,
-		Tip:                  0,
-		MetadataMode:         stypes.MetadataModeDisabled,
-		CheckMetadataHash:    true,
-		ChargeAssetTxPayment: true,
-		CallData:             callData,
+		Signer:        defaultTestSigner(),
+		SignatureType: stypes.SignatureTypeEd25519,
+		Signature:     make([]byte, 64),
+		Era:           stypes.ImmortalEra(),
+		Nonce:         0,
+		Tip:           0,
+		MetadataMode:  stypes.MetadataModeDisabled,
+		CallData:      callData,
 	}
-	encoded := stypes.EncodeSignedExtrinsic(ext)
+	encoded := mustEncodeTestExtrinsic(ext, common.DOTChain)
 	_, prefixLen, _ := stypes.DecodeCompact(encoded)
 	body := encoded[prefixLen:]
 	optionPos := len(body) - len(callData) - 2
@@ -525,17 +548,16 @@ func (s *ScannerSuite) TestProcessExtrinsic_ECDSASignature(c *C) {
 
 	// ECDSA (type 0x02) uses 65-byte signatures
 	ext := &stypes.Extrinsic{
-		Signer:            signer,
-		SignatureType:     0x02, // ECDSA
-		Signature:         make([]byte, 65),
-		Era:               stypes.ImmortalEra(),
-		Nonce:             0,
-		Tip:               0,
-		MetadataMode:      stypes.MetadataModeDisabled,
-		CheckMetadataHash: true,
-		CallData:          call,
+		Signer:        signer,
+		SignatureType: 0x02, // ECDSA
+		Signature:     make([]byte, 65),
+		Era:           stypes.ImmortalEra(),
+		Nonce:         0,
+		Tip:           0,
+		MetadataMode:  stypes.MetadataModeDisabled,
+		CallData:      call,
 	}
-	extHex := stypes.HexEncode(stypes.EncodeSignedExtrinsic(ext))
+	extHex := stypes.HexEncode(mustEncodeTestExtrinsic(ext, common.TAOChain))
 
 	txItem, err := sc.processExtrinsic(extHex, 100, 0)
 	c.Assert(err, IsNil, Commentf("processExtrinsic with ECDSA sig"))
@@ -559,17 +581,16 @@ func (s *ScannerSuite) TestProcessExtrinsic_UnknownSignatureTypeRejected(c *C) {
 
 	// Unknown signature type 0x03
 	ext := &stypes.Extrinsic{
-		Signer:            signer,
-		SignatureType:     0x03,
-		Signature:         make([]byte, 64),
-		Era:               stypes.ImmortalEra(),
-		Nonce:             0,
-		Tip:               0,
-		MetadataMode:      stypes.MetadataModeDisabled,
-		CheckMetadataHash: true,
-		CallData:          call,
+		Signer:        signer,
+		SignatureType: 0x03,
+		Signature:     make([]byte, 64),
+		Era:           stypes.ImmortalEra(),
+		Nonce:         0,
+		Tip:           0,
+		MetadataMode:  stypes.MetadataModeDisabled,
+		CallData:      call,
 	}
-	extHex := stypes.HexEncode(stypes.EncodeSignedExtrinsic(ext))
+	extHex := stypes.HexEncode(mustEncodeTestExtrinsic(ext, common.TAOChain))
 
 	_, err := sc.processExtrinsic(extHex, 100, 0)
 	c.Check(err, NotNil, Commentf("expected error for unknown signature type 0x03"))
@@ -592,17 +613,16 @@ func (s *ScannerSuite) TestProcessExtrinsic_MortalEra(c *C) {
 	}
 
 	ext := &stypes.Extrinsic{
-		Signer:            signer,
-		SignatureType:     stypes.SignatureTypeEd25519,
-		Signature:         make([]byte, 64),
-		Era:               stypes.MortalEra(64, 42),
-		Nonce:             7,
-		Tip:               100,
-		MetadataMode:      stypes.MetadataModeDisabled,
-		CheckMetadataHash: true,
-		CallData:          call,
+		Signer:        signer,
+		SignatureType: stypes.SignatureTypeEd25519,
+		Signature:     make([]byte, 64),
+		Era:           stypes.MortalEra(64, 42),
+		Nonce:         7,
+		Tip:           100,
+		MetadataMode:  stypes.MetadataModeDisabled,
+		CallData:      call,
 	}
-	extHex := stypes.HexEncode(stypes.EncodeSignedExtrinsic(ext))
+	extHex := stypes.HexEncode(mustEncodeTestExtrinsic(ext, common.TAOChain))
 
 	txItem, err := sc.processExtrinsic(extHex, 100, 0)
 	c.Assert(err, IsNil)
@@ -620,23 +640,66 @@ func (s *ScannerSuite) TestProcessExtrinsic_MortalEra(c *C) {
 func (s *ScannerSuite) TestExtrinsicHashConsistency(c *C) {
 	dest := make([]byte, 32)
 	call := stypes.BalanceTransferKeepAlive(5, 3, dest, cosmos.NewUint(1_000_000))
-	raw := stypes.EncodeSignedExtrinsic(&stypes.Extrinsic{
-		Signer:            make([]byte, 32),
-		SignatureType:     stypes.SignatureTypeEd25519,
-		Signature:         make([]byte, 64),
-		Era:               stypes.ImmortalEra(),
-		Nonce:             0,
-		Tip:               0,
-		MetadataMode:      stypes.MetadataModeDisabled,
-		CheckMetadataHash: true,
-		CallData:          call,
-	})
+	raw := mustEncodeTestExtrinsic(&stypes.Extrinsic{
+		Signer:        make([]byte, 32),
+		SignatureType: stypes.SignatureTypeEd25519,
+		Signature:     make([]byte, 64),
+		Era:           stypes.ImmortalEra(),
+		Nonce:         0,
+		Tip:           0,
+		MetadataMode:  stypes.MetadataModeDisabled,
+		CallData:      call,
+	}, common.TAOChain)
 
 	// Both should produce the same hash for the same raw bytes
 	hash1 := stypes.ExtrinsicHash(raw)
 	hash2 := stypes.ExtrinsicHash(raw)
 	c.Check(hash1, Equals, hash2, Commentf("inconsistent hashes"))
 	c.Check(hash1[:2], Equals, "0x", Commentf("hash should have 0x prefix"))
+}
+
+func (s *ScannerSuite) TestRuntimeValidationFailureKeepsPreviousContext(c *C) {
+	raw, err := os.ReadFile("types/testdata/metadata-tao-mainnet-401.hex")
+	c.Assert(err, IsNil)
+	metadata, err := stypes.ParseMetadata(strings.TrimSpace(string(raw)))
+	c.Assert(err, IsNil)
+
+	h := newRPCHandler()
+	h.on("state_getRuntimeVersion", func(_ json.RawMessage) (interface{}, error) {
+		return rpc.RuntimeVersion{
+			SpecName:           ChainParams[common.TAOChain].SpecName,
+			SpecVersion:        402,
+			TransactionVersion: 2,
+		}, nil
+	})
+	h.on("state_getMetadata", func(_ json.RawMessage) (interface{}, error) {
+		return strings.TrimSpace(string(raw)), nil
+	})
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	params := ChainParams[common.TAOChain]
+	params.SignedExtensions = append([]stypes.SignedExtension(nil), params.SignedExtensions...)
+	params.SignedExtensions[2].AdditionalType = "U64"
+	old := runtimeContext{
+		metadata:    metadata,
+		layout:      mustTestExtrinsicLayout(common.TAOChain),
+		specVersion: 401,
+		txVersion:   1,
+	}
+	scanner := &Scanner{
+		logger:    log.Logger,
+		params:    params,
+		rpcClient: rpc.NewClient(srv.URL, 5*time.Second),
+		runtime:   old,
+	}
+
+	_, err = scanner.checkRuntimeVersion("0x01")
+	c.Assert(err, NotNil)
+	current := scanner.getRuntimeContext()
+	c.Check(current.metadata, Equals, old.metadata)
+	c.Check(current.specVersion, Equals, old.specVersion)
+	c.Check(current.txVersion, Equals, old.txVersion)
 }
 
 // ---------------------------------------------------------------------------

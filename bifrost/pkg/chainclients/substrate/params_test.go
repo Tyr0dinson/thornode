@@ -22,6 +22,7 @@ var _ = Suite(&ParamsSuite{})
 // mutates a copy of this baseline to simulate drift.
 func buildTAOMetadata() *stypes.Metadata {
 	return &stypes.Metadata{
+		SignedExtensions: append([]stypes.SignedExtension(nil), SignedExtensions[common.TAOChain]...),
 		Modules: []scaletypes.MetadataModules{
 			{Name: "System", Index: 0, Calls: []scaletypes.MetadataCalls{
 				{Name: "remark", LookupIndex: 0},
@@ -98,6 +99,34 @@ func (s *ParamsSuite) TestValidateMetadata(c *C) {
 			wantErrIn: "actual_fee",
 		},
 		{
+			name: "signed extensions reordered",
+			mutate: func(m *stypes.Metadata) {
+				m.SignedExtensions[0], m.SignedExtensions[1] = m.SignedExtensions[1], m.SignedExtensions[0]
+			},
+			wantErrIn: "signed extension at index",
+		},
+		{
+			name: "signed extension explicit type changed",
+			mutate: func(m *stypes.Metadata) {
+				m.SignedExtensions[5].ExtraType = "changed"
+			},
+			wantErrIn: "explicit type",
+		},
+		{
+			name: "signed extension additional type changed",
+			mutate: func(m *stypes.Metadata) {
+				m.SignedExtensions[2].AdditionalType = "U64"
+			},
+			wantErrIn: "additional type",
+		},
+		{
+			name: "signed extension removed",
+			mutate: func(m *stypes.Metadata) {
+				m.SignedExtensions = m.SignedExtensions[:len(m.SignedExtensions)-1]
+			},
+			wantErrIn: "signed extension count",
+		},
+		{
 			// A pallet present on-chain but not in Indexes is silently
 			// skipped. Pins the pallet-level "not configured = not validated"
 			// rule — the chain may carry arbitrary extra pallets we don't
@@ -128,7 +157,7 @@ func (s *ParamsSuite) TestValidateMetadata(c *C) {
 		if tt.mutate != nil {
 			tt.mutate(md)
 		}
-		err := ChainParams[common.TAOChain].ValidateMetadata(md)
+		_, err := ChainParams[common.TAOChain].ValidateMetadata(md)
 		if tt.wantErrIn == "" {
 			c.Check(err, IsNil, Commentf("%s: expected nil, got %v", tt.name, err))
 			continue
