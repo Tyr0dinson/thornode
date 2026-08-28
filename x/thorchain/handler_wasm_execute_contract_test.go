@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math"
 
-	storetypes "cosmossdk.io/store/types"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	protov2 "google.golang.org/protobuf/proto"
@@ -268,96 +267,6 @@ func (s *HandlerWasmExecuteContractSuite) TestCheckTxFee_NegativeMinGasPrice(c *
 	fees, _, err := checkTxFeeWithValidatorMinGasPrices(ctx, k, tx)
 	c.Assert(err, IsNil)
 	c.Assert(fees, DeepEquals, tx.fee)
-}
-
-// gasConsumePanics reports whether consuming amt gas from gm triggers an
-// out-of-gas panic (the clean-failure path a wasm cap must produce).
-func gasConsumePanics(gm storetypes.GasMeter, amt uint64) (panicked bool) {
-	defer func() {
-		if r := recover(); r != nil {
-			panicked = true
-		}
-	}()
-	gm.ConsumeGas(amt, "test")
-	return false
-}
-
-// wasmExecTx is a small helper to build a wasm-execute tx for the cap tests.
-func wasmExecTx() mockFeeTx {
-	return mockFeeTx{
-		msgs: []cosmos.Msg{&wasmtypes.MsgExecuteContract{
-			Sender:   GetRandomBech32Addr().String(),
-			Contract: GetRandomBech32Addr().String(),
-			Msg:      []byte(`{}`),
-		}},
-		fee: cosmos.NewCoins(cosmos.NewCoin("rune", cosmos.NewInt(1))),
-		gas: 100,
-	}
-}
-
-// A wasm tx with the mimir set caps the gas meter, and consuming past the cap
-// fails cleanly with out-of-gas (the anti-stall property) while at/under the cap
-// is unaffected.
-func (s *HandlerWasmExecuteContractSuite) TestCapWasmTxGas_CapsAndFailsClosed(c *C) {
-	ctx, k := setupKeeperForTest(c)
-	const capGas = int64(500_000_000)
-	k.SetMimir(ctx, "WasmMaxGasPerTx", capGas)
-	ctx = ctx.WithGasMeter(storetypes.NewInfiniteGasMeter())
-
-	nc, isWasm := capWasmTxGas(ctx, k, wasmExecTx())
-	c.Assert(isWasm, Equals, true)
-	c.Assert(nc.GasMeter().Limit(), Equals, uint64(capGas))
-
-	// under/at the cap: no panic (legitimate contract unaffected).
-	nc1, _ := capWasmTxGas(ctx, k, wasmExecTx())
-	c.Assert(gasConsumePanics(nc1.GasMeter(), uint64(capGas)), Equals, false)
-
-	// over the cap: clean out-of-gas panic (tx reverts, block does not stall).
-	nc2, _ := capWasmTxGas(ctx, k, wasmExecTx())
-	c.Assert(gasConsumePanics(nc2.GasMeter(), uint64(capGas)+1), Equals, true)
-}
-
-// With the mimir at 0 (disabled), a wasm tx keeps the InfiniteGasMeter — legacy
-// unbounded behavior, no regression.
-func (s *HandlerWasmExecuteContractSuite) TestCapWasmTxGas_DisabledWhenZero(c *C) {
-	ctx, k := setupKeeperForTest(c)
-	k.SetMimir(ctx, "WasmMaxGasPerTx", 0)
-	ctx = ctx.WithGasMeter(storetypes.NewInfiniteGasMeter())
-
-	nc, isWasm := capWasmTxGas(ctx, k, wasmExecTx())
-	c.Assert(isWasm, Equals, true)
-	// still infinite: consuming far past any sane cap must not panic.
-	c.Assert(gasConsumePanics(nc.GasMeter(), 10_000_000_000), Equals, false)
-}
-
-// A non-wasm tx is never capped, even with the mimir set.
-func (s *HandlerWasmExecuteContractSuite) TestCapWasmTxGas_NonWasmUnaffected(c *C) {
-	ctx, k := setupKeeperForTest(c)
-	k.SetMimir(ctx, "WasmMaxGasPerTx", 500_000_000)
-	ctx = ctx.WithGasMeter(storetypes.NewInfiniteGasMeter())
-
-	tx := mockFeeTx{msgs: []cosmos.Msg{&MsgMimir{}}}
-	nc, isWasm := capWasmTxGas(ctx, k, tx)
-	c.Assert(isWasm, Equals, false)
-	c.Assert(gasConsumePanics(nc.GasMeter(), 10_000_000_000), Equals, false)
-}
-
-// A yevlec-style burst: every tx in the burst is independently bounded to the
-// per-tx cap, so no single tx can run unbounded and stall the block.
-func (s *HandlerWasmExecuteContractSuite) TestCapWasmTxGas_BurstEachTxBounded(c *C) {
-	ctx, k := setupKeeperForTest(c)
-	const capGas = int64(500_000_000)
-	k.SetMimir(ctx, "WasmMaxGasPerTx", capGas)
-
-	for i := 0; i < 20; i++ {
-		// each tx arrives under the tx's InfiniteGasMeter, exactly as in a burst.
-		txCtx := ctx.WithGasMeter(storetypes.NewInfiniteGasMeter())
-		nc, isWasm := capWasmTxGas(txCtx, k, wasmExecTx())
-		c.Assert(isWasm, Equals, true)
-		c.Assert(nc.GasMeter().Limit(), Equals, uint64(capGas))
-		// the ~3-5B-gas yevlec call would trip the cap and revert, not stall.
-		c.Assert(gasConsumePanics(nc.GasMeter(), 3_000_000_000), Equals, true)
-	}
 }
 
 type failingExecuteContractWasmManager struct {

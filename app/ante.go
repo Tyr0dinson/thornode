@@ -64,12 +64,20 @@ func NewAnteHandler(options HandlerOptions) (sdk.AnteHandler, error) {
 		// returned ctx is what baseapp runs the messages with
 		blockLogDecorator{},
 
-		// must precede everything below to ensure that injected txs bypass the remaining ante handlers, as they do not have gas.
+		// The two gas decorators cover mutually exclusive paths and do not charge
+		// gas themselves. Injected eBifrost txs short-circuit in the next decorator,
+		// so they retain this first activatable meter and never reach the second.
+		// Regular txs continue through SetUpContext, which replaces this first meter,
+		// and therefore require the second gas decorator below.
+		thorchain.NewGasDecorator(options.THORChainKeeper),
+
+		// Must precede all stateful/charging decorators; injected txs have no gas.
 		ebifrost.NewInjectedTxDecorator(),
 
 		ante.NewSetUpContextDecorator(), // outermost AnteDecorator. SetUpContext must be called first
 
-		// replace gas meter immediately after setting up ctx
+		// Rebind the activatable infinite meter replaced by SetUpContext. Only regular
+		// txs reach this point; injected txs returned from InjectedTxDecorator above.
 		thorchain.NewGasDecorator(options.THORChainKeeper),
 
 		wasmkeeper.NewLimitSimulationGasDecorator(options.NodeConfig.SimulationGasLimit), // after setup context to enforce limits early

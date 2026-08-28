@@ -9,6 +9,7 @@ import (
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/common/telemetry"
+	"gitlab.com/thorchain/thornode/v3/common/wasmgas"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 
@@ -47,12 +48,25 @@ func newWasmMgr(
 	}, nil
 }
 
+// capWasmExecutionGas activates the transaction's shared Wasm gas meter at the
+// execution boundary. MsgWasmExec calls created from deposits, nested contract
+// messages, and eBifrost-injected observations therefore use the same budget as
+// direct x/wasm messages.
+func (m WasmMgr) capWasmExecutionGas(ctx cosmos.Context) cosmos.Context {
+	return wasmgas.Activate(
+		ctx,
+		m.keeper.GetConfigInt64(ctx, constants.WasmMaxGasPerTx),
+		m.keeper.GetConfigInt64(ctx, constants.WasmMaxGasPerBlock),
+	)
+}
+
 // StoreCode stores a new wasm code on chain
 func (m WasmMgr) StoreCode(
 	ctx cosmos.Context,
 	creator sdk.AccAddress,
 	wasmCode []byte,
 ) (codeID uint64, checksum []byte, err error) {
+	ctx = m.capWasmExecutionGas(ctx)
 	if err = m.checkGlobalHalt(ctx); err != nil {
 		return 0, nil, err
 	}
@@ -87,6 +101,7 @@ func (m WasmMgr) InstantiateContract(
 	label string,
 	deposit sdk.Coins,
 ) (sdk.AccAddress, []byte, error) {
+	ctx = m.capWasmExecutionGas(ctx)
 	if err := m.checkGlobalHalt(ctx); err != nil {
 		return nil, nil, err
 	}
@@ -131,6 +146,7 @@ func (m WasmMgr) InstantiateContract2(
 	salt []byte,
 	fixMsg bool,
 ) (sdk.AccAddress, []byte, error) {
+	ctx = m.capWasmExecutionGas(ctx)
 	if err := m.checkGlobalHalt(ctx); err != nil {
 		return nil, nil, err
 	}
@@ -177,6 +193,7 @@ func (m WasmMgr) ExecuteContract(
 	msg []byte,
 	coins sdk.Coins,
 ) ([]byte, error) {
+	ctx = m.capWasmExecutionGas(ctx)
 	if err := m.checkGlobalHalt(ctx); err != nil {
 		return nil, err
 	}
@@ -224,6 +241,7 @@ func (m WasmMgr) MigrateContract(
 	newCodeID uint64,
 	msg []byte,
 ) ([]byte, error) {
+	ctx = m.capWasmExecutionGas(ctx)
 	if err := m.checkGlobalHalt(ctx); err != nil {
 		return nil, err
 	}
@@ -286,6 +304,7 @@ func (m WasmMgr) SudoContract(
 	contractAddress, caller sdk.AccAddress,
 	msg []byte,
 ) ([]byte, error) {
+	ctx = m.capWasmExecutionGas(ctx)
 	if err := m.checkGlobalHalt(ctx); err != nil {
 		return nil, err
 	}

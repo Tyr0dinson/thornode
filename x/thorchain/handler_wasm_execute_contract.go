@@ -6,7 +6,6 @@ import (
 
 	errorsmod "cosmossdk.io/errors"
 	sdkmath "cosmossdk.io/math"
-	storetypes "cosmossdk.io/store/types"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
@@ -102,8 +101,10 @@ func (ad WasmExecuteAnteDecorator) AnteHandle(
 	simulate bool,
 	next sdk.AnteHandler,
 ) (newCtx sdk.Context, err error) {
-	ctx, isWasm := capWasmTxGas(ctx, ad.keeper, tx)
-	if isWasm {
+	for _, msg := range tx.GetMsgs() {
+		if !isWasmTxMsg(msg) {
+			continue
+		}
 		// We can't allocate gas to a specific Msg in the Tx, so we deduct fees
 		// for gas for the entirety of any tx that contains a wasm Msg that has no
 		// fee charged in ante.
@@ -115,8 +116,9 @@ func (ad WasmExecuteAnteDecorator) AnteHandle(
 	return next(ctx, tx, simulate)
 }
 
-// wasmTxMsgTypes are the message types that carry wasm/contract activity whose
-// execution gas must be bounded (see capWasmTxGas).
+// isWasmTxMsg reports messages that require the Wasm fee check. Gas limits are
+// activated later at the actual Wasm manager execution boundary so internal
+// MsgWasmExec calls and eBifrost-injected observations cannot bypass them.
 //
 // Only add message types here whose own ante handling is a gas fee and
 // nothing else. A message that executes other messages (authz MsgExec
@@ -138,40 +140,6 @@ func isWasmTxMsg(msg sdk.Msg) bool {
 	default:
 		return false
 	}
-}
-
-// capWasmTxGas bounds the gas meter for any tx carrying a wasm/contract message.
-//
-// Every tx runs under an InfiniteGasMeter (InfiniteGasDecorator in ante.go),
-// which lets a contract consume unbounded execution gas and stall block
-// production: the yevlec/bRUNE arb call queried ~95 active nodes per invocation
-// for ~3-5B gas, and bursts froze blocks 60-80s (#515). Replacing the meter with
-// a bounded one for wasm-carrying txs makes an over-cap contract fail cleanly
-// with out-of-gas (the tx reverts, the block continues) instead of stalling.
-//
-// The ceiling is the WasmMaxGasPerTx mimir, so it can be tuned or disabled
-// without a release; a value <= 0 leaves the InfiniteGasMeter in place (legacy,
-// unbounded). Enforcement is deterministic — wasm VM gas accounting is part of
-// consensus and every node reads the same mimir value at a given height, so the
-// same txs fail on every node; the bound cannot fork the chain.
-//
-// It returns the (possibly bounded) ctx and whether the tx carried a wasm msg.
-func capWasmTxGas(ctx sdk.Context, k keeper.Keeper, tx sdk.Tx) (sdk.Context, bool) {
-	isWasm := false
-	for _, msg := range tx.GetMsgs() {
-		if isWasmTxMsg(msg) {
-			isWasm = true
-			break
-		}
-	}
-	if !isWasm {
-		return ctx, false
-	}
-	maxGas := k.GetConfigInt64(ctx, constants.WasmMaxGasPerTx)
-	if maxGas > 0 {
-		ctx = ctx.WithGasMeter(storetypes.NewGasMeter(storetypes.Gas(maxGas))) // #nosec G115 -- guarded maxGas > 0
-	}
-	return ctx, true
 }
 
 func newTxFeeChcker(k keeper.Keeper) ante.TxFeeChecker {

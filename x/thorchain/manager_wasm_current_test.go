@@ -5,8 +5,10 @@ import (
 	"path/filepath"
 	"time"
 
+	storetypes "cosmossdk.io/store/types"
 	"github.com/CosmWasm/wasmd/x/wasm/ioutils"
 	"github.com/cosmos/cosmos-sdk/types"
+	"gitlab.com/thorchain/thornode/v3/common/wasmgas"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	. "gopkg.in/check.v1"
 )
@@ -14,6 +16,47 @@ import (
 type WasmManagerSuite struct{}
 
 var _ = Suite(&WasmManagerSuite{})
+
+func (s WasmManagerSuite) TestAllExecutionBoundariesActivateTxAndBlockCaps(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	mgr.K.SetMimir(ctx, constants.WasmMaxGasPerTx.String(), 5_000_000_000)
+	mgr.K.SetMimir(ctx, constants.WasmMaxGasPerBlock.String(), 5_000_000_000)
+
+	addr := GetRandomBech32Addr()
+	calls := []struct {
+		name string
+		call func(types.Context)
+	}{
+		{"store code", func(callCtx types.Context) { _, _, _ = mgr.WasmManager().StoreCode(callCtx, addr, nil) }},
+		{"instantiate", func(callCtx types.Context) {
+			_, _, _ = mgr.WasmManager().InstantiateContract(callCtx, 0, addr, nil, nil, "", nil)
+		}},
+		{"instantiate2", func(callCtx types.Context) {
+			_, _, _ = mgr.WasmManager().InstantiateContract2(callCtx, 0, addr, nil, nil, "", nil, nil, false)
+		}},
+		{"execute", func(callCtx types.Context) {
+			_, _ = mgr.WasmManager().ExecuteContract(callCtx, addr, addr, nil, nil)
+		}},
+		{"migrate", func(callCtx types.Context) {
+			_, _ = mgr.WasmManager().MigrateContract(callCtx, addr, addr, 0, nil)
+		}},
+		{"sudo", func(callCtx types.Context) {
+			_, _ = mgr.WasmManager().SudoContract(callCtx, addr, addr, nil)
+		}},
+	}
+
+	for _, tc := range calls {
+		callCtx := ctx.
+			WithGasMeter(wasmgas.NewInfiniteMeter()).
+			WithBlockGasMeter(storetypes.NewInfiniteGasMeter())
+		callCtx.BlockGasMeter().ConsumeGas(4_000_000_000, "previous block transactions")
+
+		// Invalid arguments stop each method before VM work, but activation must
+		// still happen at the top of every execution boundary.
+		tc.call(callCtx)
+		c.Assert(callCtx.GasMeter().Limit(), Equals, uint64(1_000_000_000), Commentf(tc.name))
+	}
+}
 
 func (s WasmManagerSuite) TestStoreCode(c *C) {
 	ctx, mgr := setupManagerForTest(c)
