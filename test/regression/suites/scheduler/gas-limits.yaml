@@ -1,0 +1,117 @@
+{{ template "default-state.yaml" }}
+# Queue two callbacks for the same height, then exhaust the aggregate Wasm
+# allowance during EndBlock. The block must complete, both entries must be
+# removed, and the next block must still be producible.
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: WasmPermissionless
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-store-code
+sender: {{ addr_thor_dog }}
+wasm_file: "bindings.wasm"
+gas: 2000000
+---
+type: create-blocks
+count: 1
+---
+type: tx-instantiate-contract
+code_id: 1
+msg: {}
+label: "gas-limited-scheduler"
+sender: {{ addr_thor_dog }}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+# At block 5, after=3 targets block 9 (the scheduler adds one block).
+type: tx-execute-contract
+contract: "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+msg:
+  {
+    "any":
+      {
+        "type_url": "/thorchain.scheduler.v1.MsgScheduleExecuteContract",
+        "value": "CkB0dGhvcjE0aGoydGF2cThmcGVzZHd4eGN1NDRydHkzaGg5MHZodWpydmNtc3RsNHpyM3R4bWZ2dzlzdzU4dTlmEAMaEnsiZG8iOiJzb21ldGhpbmcifQ==",
+      },
+  }
+sender: {{ addr_thor_dog }}
+gas: 200000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.events[] | select(.type == "schedule_add") | .height == "9"
+---
+# At block 6, after=2 targets the same block 9.
+type: tx-execute-contract
+contract: "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+msg:
+  {
+    "any":
+      {
+        "type_url": "/thorchain.scheduler.v1.MsgScheduleExecuteContract",
+        "value": "CkB0dGhvcjE0aGoydGF2cThmcGVzZHd4eGN1NDRydHkzaGg5MHZodWpydmNtc3RsNHpyM3R4bWZ2dzlzdzU4dTlmEAIaEnsiZG8iOiJzb21ldGhpbmcifQ==",
+      },
+  }
+sender: {{ addr_thor_dog }}
+gas: 200000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.events[] | select(.type == "schedule_add") | .height == "9"
+---
+type: tx-mimir
+key: WasmMaxGasPerTx
+value: 1000000000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: WasmMaxGasPerBlock
+value: 1000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/schedule/9
+asserts:
+  - .schedule.msgs | length == 2
+---
+# Both callbacks exceed the remaining block allowance. Their isolated meters
+# and panic scopes must prevent either failure from aborting EndBlock.
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/schedules
+asserts:
+  - .schedules | length == 0
+---
+# Prove the application remains live after the capped EndBlock callbacks.
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .header.height == 10
