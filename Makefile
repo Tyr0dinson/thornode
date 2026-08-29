@@ -132,7 +132,20 @@ openapi:
 
 protoVer=0.13.2
 protoImageName=ghcr.io/cosmos/proto-builder:$(protoVer)
-protoImage=docker run --rm -v $(CURDIR):/workspace --workdir /workspace $(protoImageName)
+
+# buf resolves its BSR dependencies from buf.build at generate/lint/breaking
+# time. When the machine running these targets is blocked by buf.build (the
+# Finland CI runner's egress IP is served HTTP 403 at their edge), set BUF_PROXY
+# to a proxy with clean egress and it is forwarded into the container. Unset by
+# default, so local development and unaffected runners are untouched.
+BUF_PROXY ?=
+ifneq ($(strip $(BUF_PROXY)),)
+protoProxyEnv := -e HTTPS_PROXY=$(BUF_PROXY) -e HTTP_PROXY=$(BUF_PROXY) -e NO_PROXY=localhost,127.0.0.1
+else
+protoProxyEnv :=
+endif
+
+protoImage=docker run --rm -v $(CURDIR):/workspace $(protoProxyEnv) --workdir /workspace $(protoImageName)
 
 proto-all: proto-format proto-lint proto-gen format
 
