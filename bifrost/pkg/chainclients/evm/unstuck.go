@@ -130,7 +130,7 @@ func (c *EVMClient) unstuckTx(clog zerolog.Logger, item evmtypes.SignedTxItem) e
 			clog.Err(err).Msg("transaction not found on chain")
 
 			// dropped from mempool or re-orged, remove from signer cache to resign
-			c.signerCacheManager.RemoveSigned(item.Hash)
+			_ = c.signerCacheManager.RemoveSigned(item.Hash)
 
 			return nil
 		}

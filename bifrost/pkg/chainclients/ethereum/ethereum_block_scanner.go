@@ -1003,7 +1003,7 @@ func (e *ETHScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *ety
 
 			// remove the outbound from signer cache so it can be re-attempted
 			if e.signerCacheManager != nil {
-				e.signerCacheManager.RemoveSigned(tx.Hash().Hex())
+				_ = e.signerCacheManager.RemoveSigned(tx.Hash().Hex())
 			}
 		} else {
 			e.logger.Debug().Msgf("there is no coin in this tx, ignore, %+v", txInItem)
@@ -1028,7 +1028,7 @@ func (e *ETHScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, err
 		// a transaction that is failed
 		// remove the Signer cache , so the tx out item can be retried
 		if e.signerCacheManager != nil {
-			e.signerCacheManager.RemoveSigned(tx.Hash().String())
+			_ = e.signerCacheManager.RemoveSigned(tx.Hash().String())
 		}
 		e.logger.Debug().Msgf("tx(%s) state: %d means failed , ignore", tx.Hash().String(), receipt.Status)
 		return e.getTxInFromFailedTransaction(tx, receipt), nil

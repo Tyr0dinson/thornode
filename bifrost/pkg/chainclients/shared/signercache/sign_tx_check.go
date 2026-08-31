@@ -159,7 +159,10 @@ func (cm *CacheManager) SignTxCacheCheck(
 	case LookupFound:
 		return CacheCheck{SkipSign: true, Phase: PhaseVerifiedFound, Sig: sig}
 	case LookupNotFound:
-		cm.RemoveSigned(sig)
+		// RemoveSigned logs its own failure on this same logger, so it is not
+		// repeated here. A failed delete only leaves the stale entry in place for
+		// the next expiry check to clear, and signing proceeds either way.
+		_ = cm.RemoveSigned(sig)
 		return CacheCheck{SkipSign: false, Phase: PhaseVerifiedAbsentCleared, Sig: sig}
 	default: // LookupAmbiguous
 		return CacheCheck{SkipSign: true, Phase: PhaseVerifiedAmbiguous, Sig: sig}

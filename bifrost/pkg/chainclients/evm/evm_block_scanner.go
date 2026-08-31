@@ -603,7 +603,7 @@ func (e *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.R
 
 		// remove failed transactions from signer cache so they are retried
 		if e.signerCacheManager != nil {
-			e.signerCacheManager.RemoveSigned(tx.Hash().String())
+			_ = e.signerCacheManager.RemoveSigned(tx.Hash().String())
 		}
 
 		return e.getTxInFromFailedTransaction(tx, receipt), nil
@@ -1025,7 +1025,7 @@ func (e *EVMScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *ety
 			txInItem.Coins = common.NewCoins(common.NewCoin(txInItem.Gas[0].Asset, observableAmount))
 
 			// remove the outbound from signer cache so it can be re-attempted
-			e.signerCacheManager.RemoveSigned(tx.Hash().Hex())
+			_ = e.signerCacheManager.RemoveSigned(tx.Hash().Hex())
 		} else {
 			e.logger.Debug().Msgf("there is no coin in this tx, ignore, %+v", txInItem)
 			return nil, nil

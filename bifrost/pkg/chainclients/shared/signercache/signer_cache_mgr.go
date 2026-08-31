@@ -112,6 +112,10 @@ func (cm *CacheManager) GetTransactionHash(txOutItemHash string) (string, error)
 // RemoveSigned removes the corresponding TxOutItem from the signer cache. The provided
 // transaction hash should be for the broadcast transaction - it is internally mapped to
 // the cache key for the TxOutItem.
+//
+// A failure is logged here before it is returned, so a caller that cannot act on it may
+// discard the error. Callers that must not proceed unless the entry is really gone - such
+// as a client about to re-sign an expired outbound - have to check it.
 func (cm *CacheManager) RemoveSigned(txHash string) error {
 	err := cm.storageAccessor.RemoveSigned(txHash)
 	if err != nil {

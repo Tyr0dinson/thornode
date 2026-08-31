@@ -3691,7 +3691,7 @@ func (c *Client) OnObservedTxInDurable(txIn stypes.TxInItem, _ int64) error {
 			return err
 		}
 		if finalized && observationRecorded && c.signerCacheManager != nil {
-			c.signerCacheManager.RemoveSigned(txIn.Tx)
+			_ = c.signerCacheManager.RemoveSigned(txIn.Tx)
 		}
 		return nil
 	}
