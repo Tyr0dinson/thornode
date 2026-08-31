@@ -1623,7 +1623,17 @@ func (vm *NetworkMgr) scheduleKeygen(ctx cosmos.Context, nas NodeAccounts, keyge
 		v.UpdateStatus(InactiveVault, ctx.BlockHeight())
 		if err := vm.k.SetVault(ctx, v); err != nil {
 			ctx.Logger().Error("fail to save vault", "error", err)
+			continue
 		}
+		// A keygen round that never reached consensus leaves no event behind, so
+		// signal that its InitVault was dropped in favour of the new keygen.
+		ctx.EventManager().EmitEvent(
+			cosmos.NewEvent(types.KeygenAbandonedEventType,
+				cosmos.NewAttribute("vault", v.PubKey.String()),
+				cosmos.NewAttribute("vault_height", strconv.FormatInt(v.BlockHeight, 10)),
+				cosmos.NewAttribute("keygen_height", strconv.FormatInt(keygenHeight, 10)),
+				cosmos.NewAttribute("keygen_type", keygenType.String())),
+		)
 	}
 	return nil
 }

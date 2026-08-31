@@ -54,6 +54,8 @@ const (
 	TSSKeygenFailure                = "tss_keygen_failure"
 	TSSKeysignFailure               = "tss_keysign_failure"
 	TSSKeygenMetricEventType        = "tss_keygen"
+	NodeJailEventType               = "node_jail"
+	KeygenAbandonedEventType        = "keygen_abandoned"
 	TSSKeysignMetricEventType       = "tss_keysign"
 	VersionEventType                = "version"
 	WithdrawEventType               = "withdraw"

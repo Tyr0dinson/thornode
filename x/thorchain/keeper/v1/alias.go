@@ -46,6 +46,9 @@ const (
 	XMRMonovaultKeygen = types.KeygenType_XMRMonovaultKeygen
 	BondCost           = types.BondType_bond_cost
 	BondReturned       = types.BondType_bond_returned
+
+	// Event types
+	NodeJailEventType = types.NodeJailEventType
 )
 
 var (

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/blang/semver"
@@ -469,6 +470,16 @@ func (k KVStore) SetNodeAccountJail(ctx cosmos.Context, addr cosmos.AccAddress, 
 	jail.Reason = reason
 
 	k.setJail(ctx, k.GetKey(prefixNodeJail, addr.String()), jail)
+
+	// Jails are otherwise invisible off-chain (only the blame path of a keygen
+	// failure emits a slash_points event), so emit an event for every sentence
+	// that is set or extended for monitoring tools to consume.
+	ctx.EventManager().EmitEvent(
+		cosmos.NewEvent(NodeJailEventType,
+			cosmos.NewAttribute("node_address", addr.String()),
+			cosmos.NewAttribute("release_height", strconv.FormatInt(height, 10)),
+			cosmos.NewAttribute("reason", reason)),
+	)
 	return nil
 }
 

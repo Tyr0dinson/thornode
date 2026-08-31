@@ -37,6 +37,8 @@ func ScanInfo(block *thorscan.BlockResponse) {
 	SetNodeMimir(block)
 	SetMimir(block)
 	KeygenFailure(block)
+	KeygenAbandoned(block)
+	NodeJail(block)
 	TORAnchorDrift(block)
 	UpgradeProposalAndApproval(block)
 	TssKeysignFailure(block)
@@ -211,6 +213,116 @@ func KeygenFailure(block *thorscan.BlockResponse) {
 			notify.Notify(config.Get().Notifications.Info, title, block.Header.Height, nil, notify.Error, fields)
 		}
 	}
+}
+
+// blockLevelEvents returns a fresh slice with all begin, end, and finalize block
+// events, so callers can iterate without aliasing the block response slices.
+func blockLevelEvents(block *thorscan.BlockResponse) []map[string]string {
+	events := make(
+		[]map[string]string, 0,
+		len(block.BeginBlockEvents)+len(block.EndBlockEvents)+len(block.FinalizeBlockEvents),
+	)
+	events = append(events, block.BeginBlockEvents...)
+	events = append(events, block.EndBlockEvents...)
+	events = append(events, block.FinalizeBlockEvents...)
+	return events
+}
+
+////////////////////////////////////////////////////////////////////////////////////////
+// Keygen Abandoned
+////////////////////////////////////////////////////////////////////////////////////////
+
+// KeygenAbandoned alerts when a new keygen is scheduled while InitVaults from a
+// previous keygen round still exist. Those rounds never reached consensus (no
+// tss_keygen_failure or success event is ever emitted for them), so the
+// keygen_abandoned event is the only on-chain trace of the retry.
+func KeygenAbandoned(block *thorscan.BlockResponse) {
+	keygenHeight := ""
+	keygenType := ""
+	vaults := []string{}
+	// the event is emitted from the network manager, so check block level events
+	for _, event := range blockLevelEvents(block) {
+		if event["type"] != types.KeygenAbandonedEventType {
+			continue
+		}
+		keygenHeight = event["keygen_height"]
+		keygenType = event["keygen_type"]
+		pk := event["vault"]
+		if len(pk) > 4 {
+			pk = pk[len(pk)-4:]
+		}
+		vaults = append(vaults, fmt.Sprintf("`%s` (created %s)", pk, event["vault_height"]))
+	}
+	if len(vaults) == 0 {
+		return
+	}
+
+	fields := util.NewOrderedMap()
+	fields.Set("New Keygen Height", keygenHeight)
+	fields.Set("Keygen Type", keygenType)
+	fields.Set("Dropped Vaults", strings.Join(vaults, ", "))
+
+	title := "Keygen Abandoned"
+	notify.Notify(config.Get().Notifications.Info, title, block.Header.Height, nil, notify.Warning, fields)
+}
+
+////////////////////////////////////////////////////////////////////////////////////////
+// Node Jail
+////////////////////////////////////////////////////////////////////////////////////////
+
+// NodeJail alerts when a node account jail sentence is set or extended. This
+// covers jails that emit no other event, e.g. "failed to vote keygen in time"
+// for members that did not report a successful keygen before consensus.
+func NodeJail(block *thorscan.BlockResponse) {
+	// gather jail events from transactions and block level events
+	events := []map[string]string{}
+	for _, tx := range block.Txs {
+		for _, event := range tx.Result.Events {
+			if event["type"] == types.NodeJailEventType {
+				events = append(events, event)
+			}
+		}
+	}
+	for _, event := range blockLevelEvents(block) {
+		if event["type"] == types.NodeJailEventType {
+			events = append(events, event)
+		}
+	}
+	if len(events) == 0 {
+		return
+	}
+
+	// map node address to operator for readability
+	nodes := []openapi.Node{}
+	err := util.ThornodeCachedRetryGet("thorchain/nodes", block.Header.Height, &nodes)
+	if err != nil {
+		log.Panic().Err(err).Msg("failed to get nodes")
+	}
+	addrToOperator := make(map[string]string)
+	for _, node := range nodes {
+		addrToOperator[node.NodeAddress] = node.NodeOperatorAddress
+	}
+
+	lines := []string{}
+	for _, event := range events {
+		addr := event["node_address"]
+		operator := addrToOperator[addr]
+		node := addr
+		if len(operator) >= 4 && len(addr) >= 4 {
+			node = fmt.Sprintf("%s:%s", operator[len(operator)-4:], addr[len(addr)-4:])
+		}
+		release, _ := strconv.ParseInt(event["release_height"], 10, 64)
+		lines = append(lines, fmt.Sprintf(
+			"`%s` jailed until `%s` (%d blocks): %s",
+			node, event["release_height"], release-block.Header.Height, event["reason"],
+		))
+	}
+
+	title := "Node Jailed"
+	if len(events) > 1 {
+		title = fmt.Sprintf("Nodes Jailed (%d)", len(events))
+	}
+	notify.Notify(config.Get().Notifications.Info, title, block.Header.Height, lines, notify.Warning, nil)
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////

@@ -276,6 +276,22 @@ func (s *KeeperNodeAccountSuite) TestJail(c *C) {
 	c.Check(jail.NodeAddress.Equals(addr), Equals, true)
 	c.Check(jail.ReleaseHeight, Equals, int64(70))
 	c.Check(jail.Reason, Equals, "bar")
+
+	// ensure an event is emitted only when the sentence is set or extended
+	jailEvents := []cosmos.Event{}
+	for _, e := range ctx.EventManager().Events() {
+		if e.Type == NodeJailEventType {
+			jailEvents = append(jailEvents, e)
+		}
+	}
+	c.Assert(jailEvents, HasLen, 2)
+	attrs := map[string]string{}
+	for _, a := range jailEvents[1].Attributes {
+		attrs[a.Key] = a.Value
+	}
+	c.Check(attrs["node_address"], Equals, addr.String())
+	c.Check(attrs["release_height"], Equals, "70")
+	c.Check(attrs["reason"], Equals, "bar")
 }
 
 func (s *KeeperNodeAccountSuite) TestBondProviders(c *C) {
