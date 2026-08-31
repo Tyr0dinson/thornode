@@ -160,8 +160,22 @@ func (CommunicationTestSuite) TestBroadcastAndProcessBroadcast(c *C) {
 
 	// Broadcast to self should silently succeed (writeToStream skips self)
 	comm.Broadcast([]peer.ID{comm.host.ID()}, []byte("hello"), "test-self", messages.TSSKeyGenMsg)
-	// Give it a moment for the goroutine
-	time.Sleep(time.Millisecond * 100)
+
+	// Legacy TSS producers leave Encoded nil. ProcessBroadcast must preserve
+	// the base path: marshal WrappedMessage, then call Broadcast.
+	comm.BroadcastMsgChan <- &messages.BroadcastMsgChan{
+		WrappedMessage: messages.WrappedMessage{
+			MessageType: messages.TSSKeyGenMsg,
+			MsgID:       "legacy-process-broadcast",
+			Payload:     []byte("legacy-payload"),
+		},
+		PeersID: []peer.ID{comm.host.ID()},
+	}
+	deadline := time.Now().Add(time.Second)
+	for len(comm.BroadcastMsgChan) != 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	c.Assert(len(comm.BroadcastMsgChan), Equals, 0)
 }
 
 func (CommunicationTestSuite) TestStopWithNodeGater(c *C) {

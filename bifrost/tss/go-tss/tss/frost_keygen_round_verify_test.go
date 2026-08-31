@@ -145,13 +145,14 @@ func TestFrostKeygenRoundDigestCollapses95PartyVerificationMatrix(t *testing.T) 
 	if queued.WrappedMessage.MessageType != messages.TSSFrostVerifyMsg {
 		t.Fatalf("broadcast type = %q, want verification", queued.WrappedMessage.MessageType)
 	}
-	if len(queued.WrappedMessage.Payload) >= p2p.FrostKeygenControlPayload {
-		t.Fatalf("transcript vote size = %d, exceeds control cap", len(queued.WrappedMessage.Payload))
+	payload := queuedFrostPayload(t, queued)
+	if len(payload) >= p2p.FrostKeygenControlPayload {
+		t.Fatalf("transcript vote size = %d, exceeds control cap", len(payload))
 	}
-	if strings.Contains(string(queued.WrappedMessage.Payload), "verifications") || strings.Contains(string(queued.WrappedMessage.Payload), "target_sender") {
-		t.Fatalf("transcript vote retained per-target matrix: %s", queued.WrappedMessage.Payload)
+	if strings.Contains(string(payload), "verifications") || strings.Contains(string(payload), "target_sender") {
+		t.Fatalf("transcript vote retained per-target matrix: %s", payload)
 	}
-	vote, err := decodeFrostKeygenTranscriptVote(queued.WrappedMessage.Payload)
+	vote, err := decodeFrostKeygenTranscriptVote(payload)
 	if err != nil || vote.TranscriptHash != verifier.transcriptHash {
 		t.Fatalf("decode broadcast vote: vote=%+v err=%v", vote, err)
 	}

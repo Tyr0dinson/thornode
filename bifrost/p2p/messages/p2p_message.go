@@ -86,6 +86,8 @@ type WrappedMessage struct {
 type BroadcastMsgChan struct {
 	WrappedMessage WrappedMessage
 	PeersID        []peer.ID
+	// A non-nil Encoded marks Encoded and PeersID as queue-owned snapshots.
+	Encoded []byte `json:"-"`
 }
 
 // BroadcastConfirmMessage is used to broadcast to all parties what message they receive

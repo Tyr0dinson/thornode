@@ -15,6 +15,21 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
 )
 
+func queuedFrostPayload(t *testing.T, queued *messages.BroadcastMsgChan) []byte {
+	t.Helper()
+	if queued == nil || queued.Encoded == nil {
+		t.Fatal("queued FROST message is missing encoded wire bytes")
+	}
+	var wrapped messages.WrappedMessage
+	if err := json.Unmarshal(queued.Encoded, &wrapped); err != nil {
+		t.Fatalf("decode queued FROST wrapper: %v", err)
+	}
+	if wrapped.MessageType != queued.WrappedMessage.MessageType || wrapped.MsgID != queued.WrappedMessage.MsgID {
+		t.Fatal("queued FROST metadata does not match encoded wire bytes")
+	}
+	return wrapped.Payload
+}
+
 func TestFrostKeysignVerificationBatchAcceptsOnlyBoundedHomogeneousEnvelopes(t *testing.T) {
 	entry := FrostVerifyPayload{
 		SenderPubKey:           testPubKeys[0],
@@ -333,15 +348,12 @@ func measureFrostKeysignVerificationTraffic(t *testing.T, partySize int, fragmen
 			if queued.WrappedMessage.MessageType != messages.TSSFrostVerifyMsg {
 				t.Fatalf("traffic fixture message type=%s, want verification", queued.WrappedMessage.MessageType)
 			}
-			entries, err := decodeFrostVerificationBatch(queued.WrappedMessage.Payload)
+			payload := queuedFrostPayload(t, queued)
+			entries, err := decodeFrostVerificationBatch(payload)
 			if err != nil {
 				t.Fatalf("decode %s traffic batch: %v", round, err)
 			}
-			encoded, err := json.Marshal(queued.WrappedMessage)
-			if err != nil {
-				t.Fatalf("encode %s traffic wrapper: %v", round, err)
-			}
-			if got := len(queued.WrappedMessage.Payload); got >= p2p.FrostMaxSessionPayload {
+			if got := len(payload); got >= p2p.FrostMaxSessionPayload {
 				t.Fatalf("%s traffic batch payload bytes=%d exceeds frame bound=%d", round, got, p2p.FrostMaxSessionPayload)
 			}
 			if got := len(queued.PeersID); got != partySize {
@@ -363,8 +375,8 @@ func measureFrostKeysignVerificationTraffic(t *testing.T, partySize int, fragmen
 			traffic.logicalVerifications += len(entries)
 			traffic.fanoutIDs += len(queued.PeersID)
 			traffic.remoteStreamWrites += remoteWrites
-			traffic.payloadBytes += len(queued.WrappedMessage.Payload)
-			traffic.networkBytes += uint64(len(encoded)) * uint64(remoteWrites)
+			traffic.payloadBytes += len(payload)
+			traffic.networkBytes += uint64(len(queued.Encoded)) * uint64(remoteWrites)
 		}
 	}
 
@@ -515,7 +527,7 @@ func TestFrostKeysignVerificationBatchSplitsAtEntryBound(t *testing.T) {
 
 	for i, want := range []int{frostVerificationBatchMaxEntries, 1} {
 		queued := receiveFrostKeysignBroadcast(t, coord.p2pCommunication.BroadcastMsgChan)
-		entries, err := decodeFrostVerificationBatch(queued.WrappedMessage.Payload)
+		entries, err := decodeFrostVerificationBatch(queuedFrostPayload(t, queued))
 		if err != nil {
 			t.Fatalf("decode keysign batch %d: %v", i, err)
 		}
@@ -663,7 +675,7 @@ func TestFrostKeysignVerificationBatchFlushesOnTickAndRoundExit(t *testing.T) {
 		}
 		select {
 		case queued := <-coord.p2pCommunication.BroadcastMsgChan:
-			entries, err := decodeFrostVerificationBatch(queued.WrappedMessage.Payload)
+			entries, err := decodeFrostVerificationBatch(queuedFrostPayload(t, queued))
 			if queued.WrappedMessage.MessageType != messages.TSSFrostVerifyMsg || err != nil || len(entries) != 1 {
 				t.Fatalf("tick batch type=%s entries=%d err=%v", queued.WrappedMessage.MessageType, len(entries), err)
 			}

@@ -1102,10 +1102,18 @@ func (c *Communication) ProcessBroadcast() {
 	for {
 		select {
 		case msg := <-c.BroadcastMsgChan:
-			wrappedMsgBytes, err := json.Marshal(msg.WrappedMessage)
-			if err != nil {
-				c.logger.Error().Err(err).Msg("fail to marshal a wrapped message to json bytes")
+			if msg == nil {
+				c.logger.Error().Msg("invalid nil broadcast message")
 				continue
+			}
+			wrappedMsgBytes := msg.Encoded
+			if wrappedMsgBytes == nil {
+				var err error
+				wrappedMsgBytes, err = json.Marshal(msg.WrappedMessage)
+				if err != nil {
+					c.logger.Error().Err(err).Msg("fail to marshal a wrapped message to json bytes")
+					continue
+				}
 			}
 			c.logger.Debug().Msgf("broadcast message %s to %+v", msg.WrappedMessage, msg.PeersID)
 			c.Broadcast(msg.PeersID, wrappedMsgBytes, msg.WrappedMessage.MsgID, msg.WrappedMessage.MessageType)
@@ -1113,6 +1121,73 @@ func (c *Communication) ProcessBroadcast() {
 		case <-c.stopChan:
 			return
 		}
+	}
+}
+
+// QueueFrostBroadcast serializes and validates a FROST frame before transferring
+// the encoded frame and a peer snapshot into the existing blocking queue.
+func (c *Communication) QueueFrostBroadcast(
+	peers []peer.ID,
+	payload []byte,
+	msgID string,
+	msgType messages.THORChainTSSMessageType,
+) error {
+	if c == nil {
+		return errors.New("FROST broadcast is not configured")
+	}
+	if c.BroadcastMsgChan == nil {
+		return errors.New("FROST broadcast channel is not configured")
+	}
+	if !isFrostMessageType(msgType) {
+		return fmt.Errorf("non-FROST message type %s", msgType)
+	}
+	if !validTSSFrameMsgID(msgID) {
+		return errors.New("invalid FROST broadcast message ID")
+	}
+	encoded, err := json.Marshal(messages.WrappedMessage{
+		MessageType: msgType,
+		MsgID:       msgID,
+		Payload:     payload,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal FROST broadcast: %w", err)
+	}
+	if len(encoded) > FrostMaxSessionPayload {
+		return fmt.Errorf(
+			"encoded FROST frame is %d bytes, maximum is %d",
+			len(encoded),
+			FrostMaxSessionPayload,
+		)
+	}
+	queued := &messages.BroadcastMsgChan{
+		WrappedMessage: messages.WrappedMessage{
+			MessageType: msgType,
+			MsgID:       msgID,
+		},
+		PeersID: append([]peer.ID(nil), peers...),
+		Encoded: encoded,
+	}
+	select {
+	case c.BroadcastMsgChan <- queued:
+		return nil
+	case <-c.stopChan:
+		return errors.New("P2P communication stopped before FROST broadcast was queued")
+	}
+}
+
+func isFrostMessageType(msgType messages.THORChainTSSMessageType) bool {
+	switch msgType {
+	case messages.TSSFrostPreprocessMsg,
+		messages.TSSFrostShareMsg,
+		messages.TSSFrostVerifyMsg,
+		messages.TSSFrostResultMsg,
+		messages.TSSFrostDKGRound1Msg,
+		messages.TSSFrostDKGRound2Msg,
+		messages.TSSFrostDKGRound3Msg,
+		messages.TSSFrostDKGResultMsg:
+		return true
+	default:
+		return false
 	}
 }
 
