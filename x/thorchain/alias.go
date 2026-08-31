@@ -21,6 +21,7 @@ const (
 	TCYClaimingName        = types.TCYClaimingName
 	TCYStakeName           = types.TCYStakeName
 	POLReserveName         = types.POLReserveName
+	StableReserveName      = types.StableReserveName
 	RouterKey              = types.RouterKey
 	StoreKey               = types.StoreKey
 	DefaultCodespace       = types.DefaultCodespace
@@ -261,6 +262,7 @@ var (
 	// Memo
 	ParseMemo              = mem.ParseMemo
 	ParseMemoWithTHORNames = mem.ParseMemoWithTHORNames
+	StringToTxType         = mem.StringToTxType
 	FetchAddress           = mem.FetchAddress
 	NewRefundMemo          = mem.NewRefundMemo
 	NewOutboundMemo        = mem.NewOutboundMemo
@@ -427,6 +429,8 @@ type (
 	TradeAccountWithdrawalMemo = mem.TradeAccountWithdrawalMemo
 	SecuredAssetDepositMemo    = mem.SecuredAssetDepositMemo
 	SecuredAssetWithdrawMemo   = mem.SecuredAssetWithdrawMemo
+	StableReserveDepositMemo   = mem.StableReserveDepositMemo
+	StableReserveWithdrawMemo  = mem.StableReserveWithdrawMemo
 	RunePoolDepositMemo        = mem.RunePoolDepositMemo
 	RunePoolWithdrawMemo       = mem.RunePoolWithdrawMemo
 	ExecMemo                   = mem.ExecMemo

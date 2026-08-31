@@ -42,7 +42,7 @@ x-thorchain-env: &thorchain-env
   CHAIN_ID: thorchain
   SIGNER_NAME: thorchain
   SIGNER_PASSWD: password
-  THORNODE_GRPC_ENABLE: "true"
+  THOR_COSMOS_GRPC_ENABLE: "true"
   THOR_COSMOS_EBIFROST_ADDRESS: "0.0.0.0:50051"
   THOR_BLOCK_TIME: "6s"
   PORT_RPC: "26657"
@@ -84,9 +84,14 @@ x-frost-env: &frost-env
   XMR_FROST_RATE_LIMIT_GLOBAL_BURST: "5000"
   XMR_FROST_RATE_LIMIT_PER_IP_RPS: "500"
   XMR_FROST_RATE_LIMIT_PER_IP_BURST: "5000"
+  XMR_FROST_ADMIN_ALLOW_NON_LOOPBACK: "true"
 
 x-frost-healthcheck: &frost-healthcheck
-  test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/8283'"]
+  test:
+    [
+      "CMD-SHELL",
+      'curl -fsS -H "Authorization: Bearer $${XMR_FROST_AUTH_BEARER}" http://127.0.0.1:8283/v1/monero/chain/height >/dev/null',
+    ]
   interval: 5s
   timeout: 5s
   retries: 30
@@ -137,7 +142,7 @@ services:
   # ================================ FROST signers =================================
 
   xmr-frost-signer: &frost-signer
-    image: ${XMR_FROST_SIGNER_IMAGE:-registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer@sha256:49752e667970026bba9c8efe4119530668e5f1f53c6a87284e7106a6f89d41a5}
+    image: ${XMR_FROST_SIGNER_IMAGE:-registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:a61521bc@sha256:d5ac57a7302cd3e7af4bf089b0ea11a09ff60cdfcabcde599f91def7808dfa45}
     restart: unless-stopped
     user: root
     entrypoint:

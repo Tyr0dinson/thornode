@@ -193,6 +193,24 @@ func (s *SolTestSuite) SetUpSuite(c *C) {
 	c.Assert(err, IsNil)
 }
 
+// TestGetGasEstimateForSolvency verifies SOL keeps the legacy 3x MaxGasLimit
+// breathing room using the scanner's lamport fee rate, converted to THORChain units.
+func (s *SolTestSuite) TestGetGasEstimateForSolvency(c *C) {
+	client := &SOLClient{
+		cfg: config.BifrostChainConfiguration{
+			ChainID: common.SOLChain,
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				MaxGasLimit: 5_000,
+			},
+		},
+		solScanner: &SOLScanner{},
+	}
+	client.solScanner.lastFeeRate.Store(2_000)
+
+	got := client.GetGasEstimateForSolvency()
+	c.Assert(got.Equal(cosmos.NewUint(3_000_000)), Equals, true)
+}
+
 func (s *SolTestSuite) TestCreateAndSerializeTx(c *C) {
 	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
@@ -668,6 +686,48 @@ func (s *SolTestSuite) TestSignSOLTx_PostKeysignFailureUsesOriginalMemo(c *C) {
 	c.Check(bridge.postCalls[0].memo, Equals, tx.GetMemo())
 }
 
+func (s *SolTestSuite) TestSignSOLTx_ObservationUsesOriginalMemo(c *C) {
+	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+	c.Assert(err, IsNil)
+	poolMgr := thorclient.NewPoolMgr(s.bridge)
+	client, err := NewSOLClient(s.thorKeys,
+		config.BifrostChainConfiguration{
+			RPCHost: "http://" + s.server.Listener.Addr().String(),
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				ChainID:            common.SOLChain,
+				StartBlockHeight:   1,
+				HTTPRequestTimeout: time.Second,
+				MaxGasLimit:        80000,
+			},
+		}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
+	c.Assert(err, IsNil)
+	c.Assert(pubkeyMgr.Start(), IsNil)
+	defer func() { c.Assert(pubkeyMgr.Stop(), IsNil) }()
+	client.solScanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
+	client.solScanner.recentBlockHash = "asdfasdf"
+
+	pubkeys := pubkeyMgr.GetPubKeys()
+	originalMemo := "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87"
+	_, _, obs, err := client.SignTx(stypes.TxOutItem{
+		Chain:            common.SOLChain,
+		ToAddress:        "D9A6eE2pZ6oSiGb8BPkag4gvAeEhHvc3eEYPBoLSMshG",
+		VaultPubKey:      pubkeys[0],
+		VaultPubKeyEddsa: pubkeys[0],
+		Coins: common.Coins{
+			common.NewCoin(common.SOLAsset, cosmos.NewUint(11047250)),
+		},
+		MaxGas: common.Gas{
+			common.NewCoin(common.SOLAsset, cosmos.NewUint(15000)),
+		},
+		GasRate:      1,
+		Memo:         "",
+		OriginalMemo: originalMemo,
+	}, 123)
+	c.Assert(err, IsNil)
+	c.Assert(obs, NotNil)
+	c.Check(obs.Memo, Equals, originalMemo)
+}
+
 // TestSignSOLTx_DoesNotPostKeysignFailureWithoutBlameNodes keeps the existing
 // behavior for generic TSS failures where no culprit set is available.
 func (s *SolTestSuite) TestSignSOLTx_DoesNotPostKeysignFailureWithoutBlameNodes(c *C) {
@@ -773,9 +833,10 @@ func TestSolAddrKeyringRoundTrip(t *testing.T) {
 // method-by-method behavior is parameterized so each test can choose whether
 // getTransaction reports the tx as confirmed, missing, or an RPC error.
 type solCacheRPCServer struct {
-	getTxCalls       int
-	getTxReturnsSlot uint64 // > 0 → confirmed on chain
-	getTxReturnsErr  bool   // true → respond with a JSON-RPC error body
+	getTxCalls         int
+	getTxReturnsSlot   uint64 // > 0 → confirmed on chain
+	getTxReturnsErr    bool   // true → respond with a JSON-RPC error body
+	getTxFailedOnChain bool   // true (with slot > 0) → landed but meta.err set (failed execution)
 }
 
 func newSolCacheRPCServer(c *C, s *solCacheRPCServer) *httptest.Server {
@@ -793,7 +854,12 @@ func newSolCacheRPCServer(c *C, s *solCacheRPCServer) *httptest.Server {
 			case s.getTxReturnsErr:
 				_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"rpc error"}}`))
 			case s.getTxReturnsSlot > 0:
-				_, _ = fmt.Fprintf(rw, `{"jsonrpc":"2.0","id":1,"result":{"slot":%d,"meta":{},"transaction":{}}}`, s.getTxReturnsSlot)
+				meta := "{}"
+				if s.getTxFailedOnChain {
+					// landed but failed execution — mirrors the mainnet #3089 evidence
+					meta = `{"err":{"InstructionError":[1,{"Custom":1}]}}`
+				}
+				_, _ = fmt.Fprintf(rw, `{"jsonrpc":"2.0","id":1,"result":{"slot":%d,"meta":%s,"transaction":{}}}`, s.getTxReturnsSlot, meta)
 			default:
 				// result:null → tx not on chain
 				_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":null}`))
@@ -899,6 +965,34 @@ func (s *SolTestSuite) TestSignTxExpiredEntryOnChainProtectsAgainstDoubleSpend(c
 	c.Assert(result, IsNil)             // did NOT re-sign
 	c.Assert(rpc.getTxCalls, Equals, 1) // RPC was consulted because expired
 	c.Assert(e.signerCacheManager.HasSigned(txOut.CacheHash()), Equals, true)
+}
+
+// TestSignTxExpiredEntryLandedButFailedReSigns verifies the #3089 wedge fix: a
+// recorded broadcast that landed on chain but FAILED at execution (meta.err set,
+// e.g. insufficient lamports — fee burned, transfer reverted) must be treated
+// like a dropped broadcast. Presence on chain (Slot > 0) is NOT sufficient; only
+// a SUCCESSFUL landing is authoritative. The cache is cleared and the outbound
+// re-signed, otherwise every node keeps "confirming" the failed sig and refuses
+// to re-sign, wedging the outbound permanently.
+func (s *SolTestSuite) TestSignTxExpiredEntryLandedButFailedReSigns(c *C) {
+	rpc := &solCacheRPCServer{getTxReturnsSlot: 42, getTxFailedOnChain: true} // landed but failed
+	server := newSolCacheRPCServer(c, rpc)
+	defer server.Close()
+
+	e, pub, pubkeyMgr := s.newSolCacheTestClient(c, server)
+	defer func() { c.Assert(pubkeyMgr.Stop(), IsNil) }()
+
+	txOut := newSolCacheTestTxOut(pub)
+	expired := time.Now().Add(-time.Minute).UnixMilli()
+	c.Assert(e.signerCacheManager.SetSignedWithExpiry(
+		txOut.CacheHash(), txOut.CacheVault(common.SOLChain), "failed-sig", expired,
+	), IsNil)
+
+	result, _, _, err := e.SignTx(txOut, 1)
+	c.Assert(err, IsNil)
+	c.Assert(result, NotNil)                                                   // re-signed
+	c.Assert(rpc.getTxCalls, Equals, 1)                                        // RPC verified first
+	c.Assert(e.signerCacheManager.HasSigned(txOut.CacheHash()), Equals, false) // cleared
 }
 
 // TestSignTxExpiredEntryNotOnChainReSigns verifies the only path that re-signs:

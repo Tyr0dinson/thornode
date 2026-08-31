@@ -76,14 +76,23 @@ func (m NodeMimirs) countActive(key string, active []cosmos.AccAddress, maj func
 		}
 	}
 
-	// analyze-ignore(map-iteration)
+	var (
+		majorityValue int64
+		foundMajority bool
+	)
+	// analyze-ignore(map-iteration) - rejecting multiple qualifying values makes the result order-independent
 	for val, count := range counter {
-		if maj(count, len(active)) {
-			return val, true
+		if !maj(count, len(active)) {
+			continue
 		}
+		if foundMajority {
+			return 0, false
+		}
+		majorityValue = val
+		foundMajority = true
 	}
 
-	return 0, false
+	return majorityValue, foundMajority
 }
 
 func (m NodeMimirs) HasSuperMajority(key string, nas []cosmos.AccAddress) (int64, bool) {

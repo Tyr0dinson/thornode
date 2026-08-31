@@ -30,18 +30,37 @@ func (o *ObservedTx) IsValid() bool {
 // honest observers would otherwise sign different bytes for the same outbound and
 // fail to aggregate quorum.
 //
-// SpentOutputRefs are normalized (lowercased, sorted) so that observers who see the
-// same XMR refs in different case produce identical signed bytes.
+// XmrTxKey and SpentOutputRefs are normalized so that observers who see the same
+// XMR metadata in different case produce identical signed bytes. This byte layout
+// is consensus-critical: changing it after XMR is live requires an explicit
+// version transition so mixed attestors do not sign different bytes.
 //
 // inbound is appended as a trailing byte so any flip of QuorumTx.Inbound by a malicious
 // proposer changes the verified bytes and invalidates every attestation in the quorum.
 func (o *ObservedTx) GetSignablePayloadWithInbound(inbound bool) ([]byte, error) {
+	return o.getSignablePayloadWithInboundForNetwork(inbound, CurrentChainNetwork)
+}
+
+func (o *ObservedTx) getSignablePayloadWithInboundForNetwork(inbound bool, network ChainNetwork) ([]byte, error) {
 	canonical := *o
 	canonical.KeysignMs = 0
+	canonical.XmrTxKey = normalizeString(o.XmrTxKey)
 	canonical.SpentOutputRefs = normalizeSpentOutputRefs(o.SpentOutputRefs)
 	bz, err := canonical.Marshal()
 	if err != nil {
 		return nil, err
+	}
+	// XMR observations can carry outbound ref certificates transported by
+	// retiring vault members after churn. Bind every XMR attestation to one
+	// THORChain network so all XMR observations share one format and a valid
+	// chainnet/test signature cannot be replayed on another network.
+	if canonical.Tx.Chain.Equals(XMRChain) {
+		prefix := []byte(fmt.Sprintf(
+			"domain=thorchain-xmr-observed-tx-v2\nnetwork=%s\npayload_length=%d\n",
+			ChainNetworkName(network),
+			len(bz),
+		))
+		bz = append(prefix, bz...)
 	}
 	var b byte
 	if inbound {
@@ -50,11 +69,15 @@ func (o *ObservedTx) GetSignablePayloadWithInbound(inbound bool) ([]byte, error)
 	return append(bz, b), nil
 }
 
+func normalizeString(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
 // normalizeSpentOutputRefs returns a sorted copy of refs with the three
 // hex-encoded string fields lowercased and trimmed. Two attestors observing
 // the same XMR refs in different case must produce identical signed bytes;
-// canonicalising here means GetSignablePayload's `ref.Marshal()` always
-// sees the same form regardless of how bifrost surfaced the input.
+// canonicalising here means GetSignablePayloadWithInbound's marshal always sees
+// the same form regardless of how bifrost surfaced the input.
 func normalizeSpentOutputRefs(refs []OutputRef) []OutputRef {
 	sorted := make([]OutputRef, len(refs))
 	for i, ref := range refs {
@@ -86,6 +109,12 @@ func SpentOutputRefIdentity(ref OutputRef) string {
 	return spentOutputRefIdentity(ref)
 }
 
+// SpentOutputRefsEqual returns whether two XMR spent-output ref sets are
+// exactly equivalent after canonical ordering/case normalization.
+func SpentOutputRefsEqual(lhs, rhs []OutputRef) bool {
+	return spentOutputRefsEqual(lhs, rhs)
+}
+
 func spentOutputRefsEqual(lhs, rhs []OutputRef) bool {
 	if len(lhs) != len(rhs) {
 		return false
@@ -115,11 +144,15 @@ func spentOutputRefsIdentity(refs []OutputRef) string {
 	return buf.String()
 }
 
-func observedTxSpentRefsUniqueHash(base string, chain Chain, refs []OutputRef) string {
-	if !chain.Equals(XMRChain) || len(refs) == 0 {
+func observedTxXMRMetadataUniqueHash(base string, chain Chain, txKey string, refs []OutputRef) string {
+	if !chain.Equals(XMRChain) {
 		return base
 	}
-	return fmt.Sprintf("%X", sha256.Sum256([]byte(base+"|"+spentOutputRefsIdentity(refs))))
+	txKey = normalizeString(txKey)
+	if txKey == "" && len(refs) == 0 {
+		return base
+	}
+	return fmt.Sprintf("%X", sha256.Sum256([]byte(base+"|"+txKey+"|"+spentOutputRefsIdentity(refs))))
 }
 
 // Equals compares two Attestation and returns true iff they are equal

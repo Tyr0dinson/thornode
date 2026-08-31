@@ -29,6 +29,7 @@ type Keeper interface {
 	SendFromModuleToAccount(ctx cosmos.Context, from string, to cosmos.AccAddress, coin common.Coins) error
 	MintToModule(ctx cosmos.Context, module string, coin common.Coin) error
 	BurnFromModule(ctx cosmos.Context, module string, coin common.Coin) error
+	BurnEntireSynthSupply(ctx cosmos.Context, synthAsset common.Asset) (cosmos.Uint, error)
 	MintAndSendToAccount(ctx cosmos.Context, to cosmos.AccAddress, coin common.Coin) error
 	GetModuleAddress(module string) (common.Address, error)
 	GetModuleAccAddress(module string) cosmos.AccAddress
@@ -97,6 +98,7 @@ type Keeper interface {
 	KeeperTCYStaker
 	KeeperVolume
 	KeeperPOLReserve
+	KeeperStableReserve
 	KeeperXMRSpentOutputRefs
 	KeeperDynamicFee
 }
@@ -126,7 +128,7 @@ type KeeperLastHeight interface {
 	GetLastChainHeights(ctx cosmos.Context) (map[common.Chain]int64, error)
 	SetLastObserveHeight(ctx cosmos.Context, chain common.Chain, address cosmos.AccAddress, height int64) error
 	ForceSetLastObserveHeight(ctx cosmos.Context, chain common.Chain, address cosmos.AccAddress, height int64)
-	GetLastObserveHeight(ctx cosmos.Context, address cosmos.AccAddress) (map[common.Chain]int64, error)
+	GetLastObserveHeight(ctx cosmos.Context, address cosmos.AccAddress) ([]kvTypes.ChainHeight, error)
 }
 
 type KeeperSwapperClout interface {
@@ -351,6 +353,12 @@ type KeeperPOLReserve interface {
 	SetPOLReserveDeposit(ctx cosmos.Context, data POLReserveDeposit) error
 	GetPOLReserveDepositIterator(ctx cosmos.Context) cosmos.Iterator
 	IsPOLReserveEligiblePool(ctx cosmos.Context, asset common.Asset) bool
+}
+
+type KeeperStableReserve interface {
+	GetStableReserveCredit(ctx cosmos.Context, asset common.Asset, addr common.Address) (cosmos.Uint, error)
+	SetStableReserveCredit(ctx cosmos.Context, asset common.Asset, addr common.Address, amount cosmos.Uint) error
+	GetStableReserveCreditIterator(ctx cosmos.Context) cosmos.Iterator
 }
 
 type KeeperTss interface {

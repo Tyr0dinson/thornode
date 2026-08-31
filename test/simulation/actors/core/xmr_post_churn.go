@@ -9,6 +9,7 @@ import (
 	atypes "gitlab.com/thorchain/thornode/v3/api/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	openapi "gitlab.com/thorchain/thornode/v3/openapi/gen"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/thornode"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
@@ -24,11 +25,12 @@ type XMRPostChurnActor struct {
 
 const (
 	xmrPostChurnNewNodesPerChurn = int64(3)
+	xmrPostChurnLeadBlocks       = int64(10)
 	// Keep this above the 300s FROST keygen timeout, but low enough that a
 	// missed local keygen gets a retry before the actor deadline. This matches
 	// the mocknet ChurnRetryInterval override; 360 would also clear the timeout,
 	// but using one value avoids a misleading reviewer-only delta.
-	xmrPostChurnChurnRetryInterval = int64(365)
+	xmrPostChurnRetryInterval = int64(365)
 )
 
 func NewXMRPostChurnActor(rng *rand.Rand) *Actor {
@@ -99,7 +101,45 @@ func (a *XMRPostChurnActor) startChurn(config *OpConfig) OpResult {
 		return OpResult{Continue: false}
 	}
 
-	txid, err := a.broadcastMimir(node, accAddr, "NUMBEROFNEWNODESPERCHURN", xmrPostChurnNewNodesPerChurn)
+	currentHeight, err := node.Thorchain.GetBlockHeight()
+	if err != nil {
+		a.Log().Error().Err(err).Msg("failed to get thorchain block height")
+		return OpResult{Continue: false}
+	}
+	vaults, err := thornode.GetVaults()
+	if err != nil {
+		a.Log().Error().Err(err).Msg("failed to get active vaults")
+		return OpResult{Continue: false}
+	}
+	lastChurnHeight, ok := xmrPostChurnLastActiveVaultHeight(vaults)
+	if !ok {
+		a.Log().Error().Msg("failed to find active vault status height")
+		return OpResult{Continue: false}
+	}
+	churnInterval := xmrPostChurnScheduledInterval(currentHeight, lastChurnHeight)
+	txid, err := a.broadcastMimir(node, accAddr, "CHURNINTERVAL", churnInterval)
+	if err != nil {
+		a.Log().Error().Err(err).Msg("failed to broadcast churn interval mimir")
+		return OpResult{Continue: false}
+	}
+	a.Log().Info().
+		Int64("value", churnInterval).
+		Int64("current_height", currentHeight).
+		Int64("last_churn_height", lastChurnHeight).
+		Str("txid", txid.String()).
+		Msg("broadcasted churn interval mimir")
+
+	txid, err = a.broadcastMimir(node, accAddr, constants.ChurnRetryInterval.String(), xmrPostChurnRetryInterval)
+	if err != nil {
+		a.Log().Error().Err(err).Msg("failed to broadcast churn retry interval mimir")
+		return OpResult{Continue: false}
+	}
+	a.Log().Info().
+		Int64("value", xmrPostChurnRetryInterval).
+		Str("txid", txid.String()).
+		Msg("broadcasted churn retry interval mimir")
+
+	txid, err = a.broadcastMimir(node, accAddr, constants.NumberOfNewNodesPerChurn.String(), xmrPostChurnNewNodesPerChurn)
 	if err != nil {
 		a.Log().Error().Err(err).Msg("failed to broadcast node expansion mimir")
 		return OpResult{Continue: false}
@@ -109,17 +149,7 @@ func (a *XMRPostChurnActor) startChurn(config *OpConfig) OpResult {
 		Str("txid", txid.String()).
 		Msg("broadcasted node expansion mimir")
 
-	txid, err = a.broadcastMimir(node, accAddr, "CHURNRETRYINTERVAL", xmrPostChurnChurnRetryInterval)
-	if err != nil {
-		a.Log().Error().Err(err).Msg("failed to broadcast churn retry mimir")
-		return OpResult{Continue: false}
-	}
-	a.Log().Info().
-		Int64("value", xmrPostChurnChurnRetryInterval).
-		Str("txid", txid.String()).
-		Msg("broadcasted churn retry mimir")
-
-	txid, err = a.broadcastMimir(node, accAddr, "HALTCHURNING", 0)
+	txid, err = a.broadcastMimir(node, accAddr, "HaltChurning", 0)
 	if err != nil {
 		a.Log().Error().Err(err).Msg("failed to broadcast churn mimir")
 		return OpResult{Continue: false}
@@ -137,13 +167,18 @@ func (a *XMRPostChurnActor) waitForVaultRotation(config *OpConfig) OpResult {
 	}
 
 	activeNodes := 0
+	statusCounts := map[string]int{}
 	for _, node := range nodes {
+		statusCounts[node.Status]++
 		if node.Status == atypes.NodeStatus_Active.String() {
 			activeNodes++
 		}
 	}
 	if activeNodes <= 1 {
-		a.Log().Info().Msg("waiting for churn to activate additional nodes")
+		a.Log().Info().
+			Int("active_nodes", activeNodes).
+			Interface("node_statuses", statusCounts).
+			Msg("waiting for churn to activate additional nodes")
 		return OpResult{Continue: false}
 	}
 
@@ -213,6 +248,29 @@ func xmrVaultRotationReady(vaults []openapi.Vault, inboundBefore, inboundAfter c
 		return true
 	}
 	return false
+}
+
+func xmrPostChurnScheduledInterval(currentHeight, lastChurnHeight int64) int64 {
+	interval := currentHeight - lastChurnHeight + xmrPostChurnLeadBlocks
+	if interval < xmrPostChurnLeadBlocks {
+		return xmrPostChurnLeadBlocks
+	}
+	return interval
+}
+
+func xmrPostChurnLastActiveVaultHeight(vaults []openapi.Vault) (int64, bool) {
+	var lastChurnHeight int64
+	found := false
+	for _, vault := range vaults {
+		if vault.Status != thorchain.ActiveVault.String() || vault.StatusSince == nil {
+			continue
+		}
+		if !found || *vault.StatusSince > lastChurnHeight {
+			lastChurnHeight = *vault.StatusSince
+			found = true
+		}
+	}
+	return lastChurnHeight, found
 }
 
 func vaultHasAddress(vault openapi.Vault, chain common.Chain, address common.Address) bool {

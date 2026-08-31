@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"os"
 	"sort"
 	"testing"
 
@@ -9,8 +10,14 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
 )
+
+func TestMain(m *testing.M) {
+	config.Init()
+	os.Exit(m.Run())
+}
 
 func TestPackage(t *testing.T) { TestingT(t) }
 
@@ -314,7 +321,8 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
 	// Mirror the vault-side accounting done after a migrate outbound observation.
 	vault.RemovePendingTxBlockHeights(firstMigrationHeight)
-	vault.SubFunds(common.NewCoins(item.Coin).Add(item.MaxGas.ToCoins()...))
+	missed := vault.SubFundsWithDeficit(common.NewCoins(item.Coin).Add(item.MaxGas.ToCoins()...))
+	c.Assert(missed.IsEmpty(), Equals, true)
 	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
 	// check we empty the rest at the last migration event

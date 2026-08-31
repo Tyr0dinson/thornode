@@ -154,13 +154,11 @@ func (m *consolidationTSS) FrostKeySign(req tssp.FrostKeySignRequest, _ tssp.Fro
 		return resp, m.sequence[idx].err
 	}
 	if resp.Status == tsscommon.Success {
-		if strings.TrimSpace(resp.MsgID) == "" {
-			msgID, err := tssp.FrostKeySignMsgID(req)
-			if err != nil {
-				return tssp.FrostKeySignResponse{}, err
-			}
-			resp.MsgID = msgID
+		msgID, err := tssp.FrostKeySignMsgID(req)
+		if err != nil {
+			return tssp.FrostKeySignResponse{}, err
 		}
+		resp.MsgID = msgID
 		if len(strings.TrimSpace(resp.TxHash)) != 64 {
 			hashChar := string(rune('a' + ((m.calls - 1) % 26)))
 			resp.TxHash = strings.Repeat(hashChar, 64)
@@ -168,12 +166,15 @@ func (m *consolidationTSS) FrostKeySign(req tssp.FrostKeySignRequest, _ tssp.Fro
 		if strings.TrimSpace(resp.TxHex) == "" {
 			resp.TxHex = "deadbeef"
 		}
+		if strings.TrimSpace(resp.TxKey) == "" {
+			resp.TxKey = strings.Repeat("1", 64)
+		}
 		if resp.Eventuality.Version == 0 {
 			planHash, err := tssp.FrostPlanHash(req, resp.MsgID)
 			if err != nil {
 				return tssp.FrostKeySignResponse{}, err
 			}
-			eventuality, err := tssp.BuildFrostEventuality(planHash, resp.TxHash, resp.TxHex, resp.FeeAtomic)
+			eventuality, err := tssp.BuildFrostEventuality(planHash, resp.TxHash, resp.TxHex, resp.TxKey, resp.FeeAtomic)
 			if err != nil {
 				return tssp.FrostKeySignResponse{}, err
 			}
@@ -211,8 +212,26 @@ type consolidationSidecar struct {
 func (s *consolidationSidecar) handler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	switch {
+	case r.Method == http.MethodGet && r.URL.Path == "/v1/monero/keys":
+		s.mu.Lock()
+		vaults := make([]sidecar.VaultKey, 0, len(s.balanceByVault))
+		for pubKey := range s.balanceByVault {
+			vault, err := common.NewPubKey(pubKey)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			groupKey, err := groupKeyHexFromVaultPubKey(vault)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			vaults = append(vaults, sidecar.VaultKey{VaultPubKey: pubKey, GroupKey: groupKey, HasFrostKeys: true, Signable: true})
+		}
+		s.mu.Unlock()
+		_ = json.NewEncoder(w).Encode(map[string]any{"vaults": vaults})
 	case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register":
-		_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{Registered: true})
+		_ = json.NewEncoder(w).Encode(testRegisterVaultResponse(0))
 	case strings.HasPrefix(r.URL.Path, "/v1/monero/balance/"):
 		vault := strings.TrimPrefix(r.URL.Path, "/v1/monero/balance/")
 		s.mu.Lock()
@@ -261,6 +280,7 @@ func (s *consolidationSidecar) handler(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 		_ = json.NewEncoder(w).Encode(sidecar.BroadcastResp{
 			TxHash: "xmr-consolidation-hash",
+			TxKey:  req.TxKey,
 		})
 	default:
 		http.NotFound(w, r)
@@ -301,6 +321,7 @@ func newConsolidationClient(
 		sidecar:                 frostSigner,
 		tssServer:               tssServer,
 		signerCacheManager:      newTestSignerCacheManager(t),
+		signedTxPayloadStore:    newTestSignedTxPayloadStore(t),
 		vaultAddressMap:         map[string]common.Address{vaultPubKey.String(): vaultAddr},
 		scanner:                 &Scanner{currentBlockHeight: atomic.NewInt64(100), lastFee: atomic.NewUint64(10)},
 		vaultLocks:              make(map[string]*sync.Mutex),

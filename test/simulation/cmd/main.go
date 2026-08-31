@@ -96,11 +96,18 @@ func simulationStages() []simulationStage {
 		{name: "swaps", defaultOn: true, constructor: suites.Swaps},
 		{name: "memoless-swaps", defaultOn: true, constructor: suites.MemolessSwaps},
 		{name: "consolidate", defaultOn: true, constructor: features.Consolidate},
+		// memoless-refunds runs before churn (and before xmr-post-churn, which
+		// triggers the cluster churn) so the refund actors exercise the pre-churn
+		// vault set, per issue #2839 Section B.
+		{name: "memoless-refunds", defaultOn: false, constructor: features.MemolessRefunds},
 		{name: "churn", defaultOn: false, constructor: core.NewChurnActor},
+		{name: "xmr-post-churn", defaultOn: false, constructor: suites.XMRPostChurn},
+		{name: "xmr-keygen-jail", defaultOn: false, constructor: suites.XMRKeygenJail},
 		{name: "xmr-spent-refs", defaultOn: false, constructor: suites.XMRSpentRefTracking},
 		{name: "forced-to-leave-keygen", defaultOn: false, constructor: core.NewForcedToLeaveKeygenActor},
 		{name: "forced-to-leave-keysign", defaultOn: false, constructor: core.NewForcedToLeaveKeysignActor},
 		{name: "jailed-keysign-fallback", defaultOn: false, constructor: core.NewJailedKeysignFallbackActor},
+		{name: "churn-balance", defaultOn: false, constructor: core.NewChurnBalanceActor},
 		{name: "inactive-vault-refunds", defaultOn: false, constructor: features.InactiveVaultRefunds},
 		{name: "solvency", defaultOn: true, constructor: core.NewSolvencyCheckActor},
 		{name: "xmr-post-churn", defaultOn: false, constructor: suites.XMRPostChurn},
@@ -203,12 +210,20 @@ func init() {
 
 func main() {
 	// start pprof server
-	go func() {
-		log.Info().Msg("starting pprof server on :6061")
-		if err := http.ListenAndServe(":6061", nil); err != nil {
-			log.Fatal().Err(err).Msg("pprof server failed")
-		}
-	}()
+	pprofAddress := os.Getenv("SIMULATION_PPROF_ADDRESS")
+	if pprofAddress == "" {
+		pprofAddress = ":6061"
+	}
+	if !strings.EqualFold(pprofAddress, "off") {
+		go func() {
+			log.Info().Str("address", pprofAddress).Msg("starting pprof server")
+			if err := http.ListenAndServe(pprofAddress, nil); err != nil {
+				log.Fatal().Err(err).Msg("pprof server failed")
+			}
+		}()
+	} else {
+		log.Info().Msg("pprof server disabled")
+	}
 
 	// prompt to filter run stages if connected to a terminal
 	enabledStages := map[string]bool{}
@@ -594,4 +609,35 @@ func getZecBlockCount(endpoint string) (int64, error) {
 	}
 
 	return response.Result, nil
+}
+
+func generateZecBlocks(endpoint string, blocks int) error {
+	res, err := http.Post(
+		endpoint,
+		"application/json",
+		strings.NewReader(fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"generate","params":[%d]}`, blocks)),
+	)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected zec status code: %d", res.StatusCode)
+	}
+
+	var response struct {
+		Error *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&response); err != nil {
+		return err
+	}
+	if response.Error != nil {
+		return fmt.Errorf("zec rpc error %d: %s", response.Error.Code, response.Error.Message)
+	}
+
+	return nil
 }

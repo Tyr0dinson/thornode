@@ -132,7 +132,20 @@ openapi:
 
 protoVer=0.13.2
 protoImageName=ghcr.io/cosmos/proto-builder:$(protoVer)
-protoImage=docker run --rm -v $(CURDIR):/workspace --workdir /workspace $(protoImageName)
+
+# buf resolves its BSR dependencies from buf.build at generate/lint/breaking
+# time. When the machine running these targets is blocked by buf.build (the
+# Finland CI runner's egress IP is served HTTP 403 at their edge), set BUF_PROXY
+# to a proxy with clean egress and it is forwarded into the container. Unset by
+# default, so local development and unaffected runners are untouched.
+BUF_PROXY ?=
+ifneq ($(strip $(BUF_PROXY)),)
+protoProxyEnv := -e HTTPS_PROXY=$(BUF_PROXY) -e HTTP_PROXY=$(BUF_PROXY) -e NO_PROXY=localhost,127.0.0.1
+else
+protoProxyEnv :=
+endif
+
+protoImage=docker run --rm -v $(CURDIR):/workspace $(protoProxyEnv) --workdir /workspace $(protoImageName)
 
 proto-all: proto-format proto-lint proto-gen format
 
@@ -244,6 +257,7 @@ test-network-specific:
 	@go test -tags stagenet ${RUN_FLAG} ./common
 	@go test -tags chainnet ${RUN_FLAG} ./common
 	@go test -tags mainnet ${RUN_FLAG} ./common ./bifrost/pkg/chainclients/utxo/...
+	@go test -tags mainnet ./x/thorchain -run TestPackage -check.f Migrate # mainnet store-migration tests are mainnet-tagged; otherwise they never run in CI (unit-tests job is mocknet-only)
 	@go test -tags mocknet ${RUN_FLAG} ./common ./bifrost/pkg/chainclients/utxo/...
 
 test-race:
@@ -318,6 +332,9 @@ test-performance-clean:
 
 # ------------------------------ Regression Tests ------------------------------
 
+REGTEST_BIN_DIR ?= /regtest
+REGTEST_MNT_DIR ?= /mnt
+
 test-regression: build-test-regression
 	@docker run --rm ${DOCKER_TTY_ARGS} \
 		-e DEBUG -e RUN -e EXPORT -e TIME_FACTOR -e PARALLELISM -e FAIL_FAST \
@@ -344,30 +361,78 @@ test-regression-coverage:
 _build-test-regression:
 	@go install -ldflags '$(ldflags)' -tags=mocknet,regtest ./cmd/thornode
 	@go build -ldflags '$(ldflags) -X gitlab.com/thorchain/thornode/v3/constants.Version=9.999.0' \
-		-cover -tags=mocknet,regtest -o /regtest/cover-thornode ./cmd/thornode
+		-cover -tags=mocknet,regtest -o $(REGTEST_BIN_DIR)/cover-thornode ./cmd/thornode
 	@go build -ldflags '$(ldflags) -X gitlab.com/thorchain/thornode/v3/constants.Version=9.999.0' \
-		-tags mocknet -o /regtest/regtest ./test/regression/cmd
+		-tags mocknet -o $(REGTEST_BIN_DIR)/regtest ./test/regression/cmd
 
 # internal target used in test run
 _test-regression:
-	@rm -rf /mnt/coverage && mkdir -p /mnt/coverage
-	@cd test/regression && /regtest/regtest
-	@go tool covdata textfmt -i /mnt/coverage -o /mnt/coverage/coverage.txt
-	@grep -v -E -e archive.go -e 'v[0-9]+.go' -e openapi/gen /mnt/coverage/coverage.txt > /mnt/coverage/coverage-filtered.txt
-	@go tool cover -func /mnt/coverage/coverage-filtered.txt > /mnt/coverage/func-coverage.txt
-	@awk '/^total:/ {print "Regression Coverage: " $$3}' /mnt/coverage/func-coverage.txt
-	@chown -R ${UID}:${GID} /mnt
+	@rm -rf $(REGTEST_MNT_DIR)/coverage && mkdir -p $(REGTEST_MNT_DIR)/coverage
+	@cd test/regression && REGTEST_BIN_DIR=$(REGTEST_BIN_DIR) REGTEST_MNT_DIR=$(REGTEST_MNT_DIR) $(REGTEST_BIN_DIR)/regtest
+	@go tool covdata textfmt -i $(REGTEST_MNT_DIR)/coverage -o $(REGTEST_MNT_DIR)/coverage/coverage.txt
+	@grep -v -E -e archive.go -e 'v[0-9]+.go' -e openapi/gen $(REGTEST_MNT_DIR)/coverage/coverage.txt > $(REGTEST_MNT_DIR)/coverage/coverage-filtered.txt
+	@go tool cover -func $(REGTEST_MNT_DIR)/coverage/coverage-filtered.txt > $(REGTEST_MNT_DIR)/coverage/func-coverage.txt
+	@awk '/^total:/ {print "Regression Coverage: " $$3}' $(REGTEST_MNT_DIR)/coverage/func-coverage.txt
+	@chown -R ${UID}:${GID} $(REGTEST_MNT_DIR)
 
 # ------------------------------ Simulation Tests ------------------------------
 
 test-simulation: build-mocknet reset-mocknet test-simulation-no-reset
 
-TEST_SIMULATION_STAGES ?= seed,bootstrap,xmr-coverage,arb,swaps,memoless-swaps,consolidate,inactive-vault-refunds,solvency,ragnarok
-TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,swaps,memoless-swaps,inactive-vault-refunds,solvency,xmr-post-churn,ragnarok
+TEST_SIMULATION_STAGES ?= seed,bootstrap,xmr-coverage,arb,swaps,memoless-swaps,consolidate,inactive-vault-refunds,memoless-refunds,solvency,ragnarok
+TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,swaps,memoless-swaps,inactive-vault-refunds,memoless-refunds,solvency,xmr-post-churn,ragnarok
 
 test-simulation-cluster: build-test-simulation build-mocknet-cluster reset-mocknet-cluster
 	@docker stop docker-midgard-1 docker-midgard-db-1 >/dev/null 2>&1 || true
 	@STAGES=$(TEST_SIMULATION_CLUSTER_STAGES) docker run --rm ${DOCKER_TTY_ARGS} \
+		-e PARALLELISM=$(PARALLELISM) -e STAGES \
+		-e RANDOM_SEED_HEX \
+		-e SIMULATION_PPROF_ADDRESS \
+		-e XMR_SIM_HELPER_ENDPOINT -e XMR_SIM_HELPER_AUTH_BEARER \
+		-e XMR_FROST_ENDPOINT -e XMR_FROST_AUTH_BEARER \
+		--network host -w /app \
+		thornode-simtest sh -c 'make _test-simulation'
+
+# Reproduce the XMR monovault keygen mass-jailing (issue: keygen timing skew
+# jails members that participated). One bifrost (pig) gets a test-only
+# shortened FROST round-3 wait via XMR_KEYGEN_JAIL_ROUND3_TIMEOUT_MS, and
+# netem adds symmetric latency on every bifrost's p2p port so transcript
+# verifications lag round payloads by one hop. The victim then abandons a DKG
+# its peers can finish, and the xmr-keygen-jail actor asserts the resulting
+# split: new XMR vault created AND a member jailed for "failed to vote keygen
+# in time". Tune the two knobs if the split does not reproduce: the round-3
+# timeout must sit between one and two netem delays after round-3 start.
+# The delay must be small enough that the regular Asgard go-tss keygen (n-of-n
+# over the same p2p port, much chattier than FROST) still succeeds, or the new
+# XMR monovault is never activated ("waiting for regular vault rotation before
+# activating xmr monovault") and the repro stalls. 500ms is mainnet-realistic;
+# the round-3 timeout must sit between one and two netem delays.
+XMR_KEYGEN_JAIL_ROUND3_TIMEOUT_MS ?= 750
+XMR_KEYGEN_JAIL_NETEM_DELAY_MS ?= 500
+
+test-simulation-keygen-jail: export XMR_KEYGEN_JAIL_ROUND3_TIMEOUT_MS := $(XMR_KEYGEN_JAIL_ROUND3_TIMEOUT_MS)
+test-simulation-keygen-jail: build-test-simulation build-mocknet-cluster reset-mocknet-cluster
+	@docker stop docker-midgard-1 docker-midgard-db-1 >/dev/null 2>&1 || true
+	@echo "running seed+bootstrap BEFORE latency injection so the bifrost p2p mesh can form"
+	@echo "(netem-from-start makes the multi-round-trip libp2p handshake exceed the dial"
+	@echo " timeout, so no p2p connection ever forms and every churn keygen times out)"
+	@STAGES=seed,bootstrap docker run --rm ${DOCKER_TTY_ARGS} \
+		-e PARALLELISM=$(PARALLELISM) -e STAGES \
+		-e XMR_SIM_HELPER_ENDPOINT -e XMR_SIM_HELPER_AUTH_BEARER \
+		-e XMR_FROST_ENDPOINT -e XMR_FROST_AUTH_BEARER \
+		--network host -w /app \
+		thornode-simtest sh -c 'make _test-simulation'
+	@echo "applying netem delay $(XMR_KEYGEN_JAIL_NETEM_DELAY_MS)ms to bifrost p2p (port 5040)"
+	@for c in docker-bifrost-1 docker-bifrost-cat-1 docker-bifrost-fox-1 docker-bifrost-pig-1; do \
+		docker run --rm --net container:$$c --cap-add NET_ADMIN alpine:3.20 sh -c "\
+			apk add -q iproute2 && \
+			tc qdisc replace dev eth0 root handle 1: prio bands 4 priomap 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 && \
+			tc qdisc add dev eth0 parent 1:4 handle 40: netem delay $(XMR_KEYGEN_JAIL_NETEM_DELAY_MS)ms && \
+			tc filter add dev eth0 parent 1: protocol ip u32 match ip dport 5040 0xffff flowid 1:4 && \
+			tc filter add dev eth0 parent 1: protocol ip u32 match ip sport 5040 0xffff flowid 1:4" \
+			|| exit 1; \
+	done
+	@STAGES=xmr-keygen-jail docker run --rm ${DOCKER_TTY_ARGS} \
 		-e PARALLELISM=$(PARALLELISM) -e STAGES \
 		-e XMR_SIM_HELPER_ENDPOINT -e XMR_SIM_HELPER_AUTH_BEARER \
 		-e XMR_FROST_ENDPOINT -e XMR_FROST_AUTH_BEARER \
@@ -378,6 +443,8 @@ test-simulation-no-reset: build-test-simulation
 	@docker stop docker-midgard-1 docker-midgard-db-1 >/dev/null 2>&1 || true
 	@STAGES=$(TEST_SIMULATION_STAGES) docker run --rm ${DOCKER_TTY_ARGS} \
 		-e PARALLELISM=$(PARALLELISM) -e STAGES \
+		-e RANDOM_SEED_HEX \
+		-e SIMULATION_PPROF_ADDRESS \
 		-e XMR_SIM_HELPER_ENDPOINT -e XMR_SIM_HELPER_AUTH_BEARER \
 		-e XMR_FROST_ENDPOINT -e XMR_FROST_AUTH_BEARER \
 		--network host -w /app \

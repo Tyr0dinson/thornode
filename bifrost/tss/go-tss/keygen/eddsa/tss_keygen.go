@@ -85,6 +85,12 @@ func (tKeyGen *EDDSAKeyGen) GenerateNewKey(keygenReq keygen.Request) (*bcrypto.E
 	}
 	ctx := btss.NewPeerContext(partiesID)
 	params := btss.NewParameters(tss.Edwards(), ctx, localPartyID, len(partiesID), threshold)
+	// Bind the SSID to this ceremony so proofs cannot be replayed across
+	// sessions; the nonce must be byte-identical on every participant, so it
+	// is version-gated to activate on the whole network at once.
+	if common.SessionNonceEnabled(keygenReq.Version) {
+		params.SetSessionNonce(common.KeygenSessionNonce(keygenReq.Keys, keygenReq.BlockHeight, string(keygenReq.Algo)))
+	}
 	bufferSize := len(partiesID) * 10 // buffer size for outCh and endCh
 	outCh := make(chan btss.Message, bufferSize)
 	endCh := make(chan *eddsakg.LocalPartySaveData, bufferSize)
@@ -163,7 +169,7 @@ func (tKeyGen *EDDSAKeyGen) processKeyGen(errChan chan struct{},
 			// we bail out after KeyGenTimeoutSeconds
 			tKeyGen.logger.Error().Msgf("fail to generate message with %s", tssConf.KeyGenTimeout.String())
 			lastMsg := blameMgr.GetLastMsg()
-			failReason := blameMgr.GetBlame().FailReason
+			failReason := blameMgr.GetBlame().GetFailReason()
 			if failReason == "" {
 				failReason = blame.TssTimeout
 			}
@@ -190,14 +196,14 @@ func (tKeyGen *EDDSAKeyGen) processKeyGen(errChan chan struct{},
 			blameMgr.GetBlame().AddBlameNodes(blameNodesBroadcast...)
 
 			// if we cannot find the blame node, we check whether everyone send me the share
-			if len(blameMgr.GetBlame().BlameNodes) == 0 {
+			if blameMgr.GetBlame().BlameNodesCount() == 0 {
 				blameNodesMisingShare, isUnicast, err := blameMgr.TssMissingShareBlame(messages.EDDSAKEYGENROUNDS, messages.EDDSAKEYGEN)
 				if err != nil {
 					tKeyGen.logger.Error().Err(err).Msg("fail to get the node of missing share ")
 				}
 				if len(blameNodesMisingShare) > 0 && len(blameNodesMisingShare) <= threshold {
 					blameMgr.GetBlame().AddBlameNodes(blameNodesMisingShare...)
-					blameMgr.GetBlame().IsUnicast = isUnicast
+					blameMgr.GetBlame().SetIsUnicast(isUnicast)
 				}
 			}
 			return nil, blame.ErrTssTimeOut

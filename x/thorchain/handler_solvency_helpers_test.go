@@ -3,6 +3,7 @@ package thorchain
 import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	. "gopkg.in/check.v1"
 )
@@ -266,6 +267,155 @@ func (s *HandlerSolvencyHelpersSuite) TestProcessSolvencyAttestation_AutoUnhalt(
 	c.Assert(halt, Equals, int64(0))
 }
 
+func (s *HandlerSolvencyHelpersSuite) TestProcessSolvencyAttestation_FlagsVaultInsolvent(c *C) {
+	ctx, mgr, nas, vault := setupSolvencyHelpersTest(c)
+
+	// Vault holds 1000 ETH but wallet only reports 100 ETH → insolvent.
+	voter := NewSolvencyVoter(
+		GetRandomTxHash(), common.ETHChain, vault.PubKey,
+		common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One))),
+		1024,
+	)
+	sol := &common.Solvency{
+		Id: voter.Id, Chain: voter.Chain, PubKey: voter.PubKey, Coins: voter.Coins, Height: voter.Height,
+	}
+
+	bringVoterToConsensus(&voter, nas)
+	voter.ConsensusBlockHeight = 0
+
+	err := processSolvencyAttestation(ctx, mgr, &voter, nas[2].NodeAddress, nas, sol, false)
+	c.Assert(err, IsNil)
+
+	// Chain halted and the specific vault flagged insolvent for its chain.
+	halt, err := mgr.Keeper().GetMimir(ctx, "SolvencyHaltETHChain")
+	c.Assert(err, IsNil)
+	c.Assert(halt, Equals, ctx.BlockHeight())
+
+	flag, err := mgr.Keeper().GetMimir(ctx, solvencyHaltVaultKey(vault.PubKey, common.ETHChain))
+	c.Assert(err, IsNil)
+	c.Assert(flag, Equals, ctx.BlockHeight())
+
+	insolvent, err := isVaultInsolvent(ctx, mgr.Keeper(), vault)
+	c.Assert(err, IsNil)
+	c.Assert(insolvent, Equals, true)
+}
+
+func (s *HandlerSolvencyHelpersSuite) TestProcessSolvencyAttestation_ClearsVaultInsolventFlag(c *C) {
+	ctx, mgr, nas, vault := setupSolvencyHelpersTest(c)
+
+	// Chain previously halted and vault previously flagged insolvent.
+	mgr.Keeper().SetMimir(ctx, "SolvencyHaltETHChain", 500)
+	flagVaultInsolvent(ctx.WithBlockHeight(500), mgr.Keeper(), vault.PubKey, common.ETHChain)
+
+	// Vault has 1000 ETH and wallet also reports 1000 ETH → solvent again.
+	voter := NewSolvencyVoter(
+		GetRandomTxHash(), common.ETHChain, vault.PubKey,
+		common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1000*common.One))),
+		1024,
+	)
+	sol := &common.Solvency{
+		Id: voter.Id, Chain: voter.Chain, PubKey: voter.PubKey, Coins: voter.Coins, Height: voter.Height,
+	}
+
+	bringVoterToConsensus(&voter, nas)
+	voter.ConsensusBlockHeight = 0
+
+	err := processSolvencyAttestation(ctx, mgr, &voter, nas[2].NodeAddress, nas, sol, false)
+	c.Assert(err, IsNil)
+
+	// Both the chain halt and the vault flag are cleared.
+	halt, err := mgr.Keeper().GetMimir(ctx, "SolvencyHaltETHChain")
+	c.Assert(err, IsNil)
+	c.Assert(halt, Equals, int64(0))
+
+	insolvent, err := isVaultInsolvent(ctx, mgr.Keeper(), vault)
+	c.Assert(err, IsNil)
+	c.Assert(insolvent, Equals, false)
+}
+
+func (s *HandlerSolvencyHelpersSuite) TestProcessSolvencyAttestation_ClearsVaultInsolventFlagWithoutUnhaltingChain(c *C) {
+	testCases := []struct {
+		name             string
+		halt             int64
+		haltCurrentBlock bool
+	}{
+		{name: "halted this block", haltCurrentBlock: true},
+		{name: "manual halt", halt: 1},
+	}
+
+	for _, tc := range testCases {
+		ctx, mgr, nas, vault := setupSolvencyHelpersTest(c)
+
+		expectedHalt := tc.halt
+		if tc.haltCurrentBlock {
+			expectedHalt = ctx.BlockHeight()
+		}
+		mgr.Keeper().SetMimir(ctx, "SolvencyHaltETHChain", expectedHalt)
+		flagVaultInsolvent(ctx.WithBlockHeight(500), mgr.Keeper(), vault.PubKey, common.ETHChain)
+
+		// Vault has 1000 ETH and wallet also reports 1000 ETH -> solvent again.
+		voter := NewSolvencyVoter(
+			GetRandomTxHash(), common.ETHChain, vault.PubKey,
+			common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1000*common.One))),
+			1024,
+		)
+		sol := &common.Solvency{
+			Id: voter.Id, Chain: voter.Chain, PubKey: voter.PubKey, Coins: voter.Coins, Height: voter.Height,
+		}
+
+		bringVoterToConsensus(&voter, nas)
+		voter.ConsensusBlockHeight = 0
+
+		err := processSolvencyAttestation(ctx, mgr, &voter, nas[2].NodeAddress, nas, sol, false)
+		c.Assert(err, IsNil, Commentf(tc.name))
+
+		// Chain-wide halt state is preserved, but the recovered vault's exclusion
+		// flag is cleared so unrelated healthy chains can elect it again.
+		halt, err := mgr.Keeper().GetMimir(ctx, "SolvencyHaltETHChain")
+		c.Assert(err, IsNil, Commentf(tc.name))
+		c.Assert(halt, Equals, expectedHalt, Commentf(tc.name))
+
+		flag, err := mgr.Keeper().GetMimir(ctx, solvencyHaltVaultKey(vault.PubKey, common.ETHChain))
+		c.Assert(err, IsNil, Commentf(tc.name))
+		c.Assert(flag, Equals, int64(0), Commentf(tc.name))
+
+		insolvent, err := isVaultInsolvent(ctx, mgr.Keeper(), vault)
+		c.Assert(err, IsNil, Commentf(tc.name))
+		c.Assert(insolvent, Equals, false, Commentf(tc.name))
+	}
+}
+
+func (s *HandlerSolvencyHelpersSuite) TestProcessSolvencyAttestation_DoesNotClearVaultInsolventFlagForStaleHeight(c *C) {
+	ctx, mgr, nas, vault := setupSolvencyHelpersTest(c)
+
+	mgr.Keeper().SetMimir(ctx, "SolvencyHaltETHChain", ctx.BlockHeight())
+	flagVaultInsolvent(ctx.WithBlockHeight(500), mgr.Keeper(), vault.PubKey, common.ETHChain)
+	c.Assert(mgr.Keeper().SetLastChainHeight(ctx, common.ETHChain, 2000), IsNil)
+
+	voter := NewSolvencyVoter(
+		GetRandomTxHash(), common.ETHChain, vault.PubKey,
+		common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1000*common.One))),
+		1024,
+	)
+	sol := &common.Solvency{
+		Id: voter.Id, Chain: voter.Chain, PubKey: voter.PubKey, Coins: voter.Coins, Height: voter.Height,
+	}
+
+	bringVoterToConsensus(&voter, nas)
+	voter.ConsensusBlockHeight = 0
+
+	err := processSolvencyAttestation(ctx, mgr, &voter, nas[2].NodeAddress, nas, sol, false)
+	c.Assert(err, IsNil)
+
+	flag, err := mgr.Keeper().GetMimir(ctx, solvencyHaltVaultKey(vault.PubKey, common.ETHChain))
+	c.Assert(err, IsNil)
+	c.Assert(flag, Equals, int64(500))
+
+	insolvent, err := isVaultInsolvent(ctx, mgr.Keeper(), vault)
+	c.Assert(err, IsNil)
+	c.Assert(insolvent, Equals, true)
+}
+
 func (s *HandlerSolvencyHelpersSuite) TestInsolvencyCheck_EmptyCoin(c *C) {
 	ctx, mgr, _, vault := setupSolvencyHelpersTest(c)
 
@@ -423,7 +573,8 @@ func (s *HandlerSolvencyHelpersSuite) TestDeductVaultBlockPendingOutbound_NoMatc
 		},
 	}
 
-	result, _ := deductVaultBlockPendingOutbound(ctx, mgr, vault, block, make(map[string]cosmos.Uint))
+	signingPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	result, _ := deductVaultBlockPendingOutbound(ctx, mgr, vault, block, make(map[string]cosmos.Uint), common.ETHChain, signingPeriod)
 	// Balance should be unchanged since VaultPubKey doesn't match
 	ethCoin := result.Coins.GetCoin(common.ETHAsset)
 	c.Assert(ethCoin.Amount.Equal(cosmos.NewUint(1000*common.One)), Equals, true)
@@ -449,7 +600,8 @@ func (s *HandlerSolvencyHelpersSuite) TestDeductVaultBlockPendingOutbound_Alread
 		},
 	}
 
-	result, _ := deductVaultBlockPendingOutbound(ctx, mgr, vault, block, make(map[string]cosmos.Uint))
+	signingPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	result, _ := deductVaultBlockPendingOutbound(ctx, mgr, vault, block, make(map[string]cosmos.Uint), common.ETHChain, signingPeriod)
 	// Balance should be unchanged since tx already has OutHash
 	ethCoin := result.Coins.GetCoin(common.ETHAsset)
 	c.Assert(ethCoin.Amount.Equal(cosmos.NewUint(1000*common.One)), Equals, true)
@@ -477,7 +629,8 @@ func (s *HandlerSolvencyHelpersSuite) TestDeductVaultBlockPendingOutbound_WithGa
 		},
 	}
 
-	result, _ := deductVaultBlockPendingOutbound(ctx, mgr, vault, block, make(map[string]cosmos.Uint))
+	signingPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	result, _ := deductVaultBlockPendingOutbound(ctx, mgr, vault, block, make(map[string]cosmos.Uint), common.ETHChain, signingPeriod)
 	// Should deduct both the coin amount and gas
 	ethCoin := result.Coins.GetCoin(common.ETHAsset)
 	expected := cosmos.NewUint(899 * common.One) // 1000 - 100 - 1
@@ -499,7 +652,7 @@ func (s *HandlerSolvencyHelpersSuite) TestExcludePendingOutboundFromVault_Succes
 	}
 	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
 
-	adjusted, _, err := excludePendingOutboundFromVault(ctx, mgr, vault)
+	adjusted, _, err := excludePendingOutboundFromVault(ctx, mgr, vault, common.ETHChain)
 	c.Assert(err, IsNil)
 	ethCoin := adjusted.Coins.GetCoin(common.ETHAsset)
 	expected := cosmos.NewUint(950 * common.One) // 1000 - 50
@@ -508,6 +661,73 @@ func (s *HandlerSolvencyHelpersSuite) TestExcludePendingOutboundFromVault_Succes
 	// Original vault coins should not be mutated
 	originalETH := vault.Coins.GetCoin(common.ETHAsset)
 	c.Assert(originalETH.Amount.Equal(cosmos.NewUint(1000*common.One)), Equals, true)
+}
+
+func (s *HandlerSolvencyHelpersSuite) TestExcludePendingOutboundFromVaultScopesToReportedChain(c *C) {
+	ctx, mgr, _, vault := setupSolvencyHelpersTest(c)
+	vault.AddFunds(common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1000*common.One))))
+
+	prevHeight := ctx.BlockHeight() - 1
+	txOut := NewTxOut(prevHeight)
+	txOut.TxArray = []TxOutItem{
+		{
+			Chain:       common.BTCChain,
+			VaultPubKey: vault.PubKey,
+			Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(50*common.One)),
+		},
+		{
+			Chain:       common.ETHChain,
+			VaultPubKey: vault.PubKey,
+			Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(75*common.One)),
+		},
+	}
+	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+
+	adjusted, pending, err := excludePendingOutboundFromVault(ctx, mgr, vault, common.BTCChain)
+	c.Assert(err, IsNil)
+	c.Assert(adjusted.Coins.GetCoin(common.BTCAsset).Amount.Equal(cosmos.NewUint(950*common.One)), Equals, true)
+	c.Assert(adjusted.Coins.GetCoin(common.ETHAsset).Amount.Equal(cosmos.NewUint(1000*common.One)), Equals, true)
+	c.Assert(pending[common.BTCAsset.String()].Equal(cosmos.NewUint(50*common.One)), Equals, true)
+	_, hasETHPending := pending[common.ETHAsset.String()]
+	c.Assert(hasETHPending, Equals, false)
+}
+
+func (s *HandlerSolvencyHelpersSuite) TestExcludePendingOutboundFromVaultRetainsExtendedEVMClasses(c *C) {
+	ctx, mgr, _, vault := setupSolvencyHelpersTest(c)
+	defaultSigningPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	overrideSigningPeriod := defaultSigningPeriod * 2
+	mgr.Keeper().SetMimir(ctx, constants.SigningTransactionPeriod.String(), overrideSigningPeriod)
+	signingPeriod := mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
+	c.Assert(signingPeriod, Equals, overrideSigningPeriod)
+	c.Assert(signingPeriod > 0, Equals, true)
+	ctx = ctx.WithBlockHeight(signingPeriod*4 + 10)
+	usdc, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	c.Assert(err, IsNil)
+	vault.AddFunds(common.NewCoins(common.NewCoin(usdc, cosmos.NewUint(1000*common.One))))
+
+	addTxOut := func(height int64, items ...TxOutItem) {
+		txOut := NewTxOut(height)
+		txOut.TxArray = items
+		c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+	}
+	justPastStandard := ctx.BlockHeight() - signingPeriod - 1
+	justInsideExtended := ctx.BlockHeight() - signingPeriod*3 + 1
+	addTxOut(justPastStandard,
+		TxOutItem{Chain: common.ETHChain, VaultPubKey: vault.PubKey, Coin: common.NewCoin(common.ETHAsset, cosmos.NewUint(50*common.One)), Aggregator: "0xaggregator"},
+		TxOutItem{Chain: common.ETHChain, VaultPubKey: vault.PubKey, Coin: common.NewCoin(usdc, cosmos.NewUint(70*common.One))},
+		TxOutItem{Chain: common.ETHChain, VaultPubKey: vault.PubKey, Coin: common.NewCoin(common.ETHAsset, cosmos.NewUint(200*common.One))},
+	)
+	addTxOut(justInsideExtended,
+		TxOutItem{Chain: common.ETHChain, VaultPubKey: vault.PubKey, Coin: common.NewCoin(common.ETHAsset, cosmos.NewUint(50*common.One)), Aggregator: "0xaggregator"},
+		TxOutItem{Chain: common.ETHChain, VaultPubKey: vault.PubKey, Coin: common.NewCoin(usdc, cosmos.NewUint(80*common.One))},
+	)
+
+	adjusted, pending, err := excludePendingOutboundFromVault(ctx, mgr, vault, common.ETHChain)
+	c.Assert(err, IsNil)
+	c.Assert(adjusted.Coins.GetCoin(common.ETHAsset).Amount.Equal(cosmos.NewUint(900*common.One)), Equals, true)
+	c.Assert(adjusted.Coins.GetCoin(usdc).Amount.Equal(cosmos.NewUint(850*common.One)), Equals, true)
+	c.Assert(pending[common.ETHAsset.String()].Equal(cosmos.NewUint(100*common.One)), Equals, true)
+	c.Assert(pending[usdc.String()].Equal(cosmos.NewUint(150*common.One)), Equals, true)
 }
 
 func (s *HandlerSolvencyHelpersSuite) TestProcessSolvencyAttestation_InsolventButAlreadyHalted(c *C) {

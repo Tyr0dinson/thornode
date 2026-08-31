@@ -172,7 +172,7 @@ func (s *SlashingSuite) TestNotSigningSlash(c *C) {
 	}
 	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 	ctx = ctx.WithBlockHeight(3 + signingTransactionPeriod)
-	mgr := NewDummyMgr()
+	mgr := NewDummyMgrWithKeeper(keeper)
 	mgr.txOutStore = txOutStore
 	slasher := newSlasher(keeper, NewDummyEventMgr())
 	c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
@@ -186,6 +186,203 @@ func (s *SlashingSuite) TestNotSigningSlash(c *C) {
 	// ensure we've updated our action item
 	c.Assert(keeper.voter.Actions[0].VaultPubKey.Equals(outItems[0].VaultPubKey), Equals, true)
 	c.Assert(keeper.txOut.TxArray[0].OutHash.IsEmpty(), Equals, false)
+}
+
+func (s *SlashingSuite) TestLackSigningPaperRestoreDoesNotSettleDeficit(c *C) {
+	ctx, _ := setupKeeperForTest(c)
+	txOutStore := NewTxStoreDummy()
+	constAccessor := constants.GetConstantValues(GetCurrentVersion())
+	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
+	ctx = ctx.WithBlockHeight(3 + signingTransactionPeriod)
+
+	na := GetRandomValidatorNode(NodeActive)
+	inHash := GetRandomTxHash()
+	maxGas := common.NewCoin(common.ETHAsset, cosmos.NewUint(37_500))
+	outbound := common.NewCoin(common.ETHAsset, cosmos.NewUint(100_000))
+	required := outbound.Amount.Add(maxGas.Amount)
+	deficit := cosmos.NewUint(10_000)
+
+	assignedVault := GetRandomVault()
+	assignedVault.Type = AsgardVault
+	assignedVault.Status = ActiveVault
+	assignedVault.PubKey = na.PubKeySet.Secp256k1
+	assignedVault.Chains = common.Chains{common.THORChain, common.ETHChain}.Strings()
+	assignedVault.Coins = common.Coins{}
+	assignedVault.Deficit = common.NewCoins(common.NewCoin(common.ETHAsset, deficit))
+
+	otherVault := GetRandomVault()
+	otherVault.Type = AsgardVault
+	otherVault.Status = ActiveVault
+	otherVault.Chains = common.Chains{common.THORChain, common.ETHChain}.Strings()
+	otherVault.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, required.Sub(cosmos.OneUint())))
+	otherVault.Deficit = common.Coins{}
+
+	txOutItem := TxOutItem{
+		Chain:       common.ETHChain,
+		InHash:      inHash,
+		VaultPubKey: assignedVault.PubKey,
+		ToAddress:   GetRandomETHAddress(),
+		Coin:        outbound,
+		MaxGas:      common.Gas{maxGas},
+		Memo:        fmt.Sprintf("OUT:%s", inHash),
+	}
+	txOut := NewTxOut(3)
+	txOut.TxArray = append(txOut.TxArray, txOutItem)
+
+	keeper := &TestSlashingLackKeeper{
+		txOut:  txOut,
+		na:     na,
+		vaults: Vaults{assignedVault, otherVault},
+		voter: ObservedTxVoter{
+			Actions: []TxOutItem{txOutItem},
+		},
+		slashPts: make(map[string]int64),
+	}
+
+	mgr := NewDummyMgr()
+	mgr.txOutStore = txOutStore
+	slasher := newSlasher(keeper, NewDummyEventMgr())
+	c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
+
+	outItems, err := txOutStore.GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(outItems, HasLen, 1)
+	c.Assert(outItems[0].VaultPubKey.Equals(assignedVault.PubKey), Equals, true)
+	c.Assert(keeper.voter.Actions[0].VaultPubKey.Equals(assignedVault.PubKey), Equals, true)
+	c.Assert(keeper.vaults[0].GetCoin(common.ETHAsset).Amount.IsZero(), Equals, true)
+	c.Assert(keeper.vaults[0].GetDeficit(common.ETHAsset).Amount.Equal(deficit), Equals, true)
+}
+
+func (s *SlashingSuite) TestEVMAggregatorLackSigningUsesExtendedPeriod(c *C) {
+	ctx, _ := setupKeeperForTest(c)
+	txOutStore := NewTxStoreDummy()
+	ver := GetCurrentVersion()
+	constAccessor := constants.GetConstantValues(ver)
+	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
+
+	inTxID := GetRandomTxHash()
+	activeVault := GetRandomVault()
+	activeVault.Type = AsgardVault
+	activeVault.Status = ActiveVault
+	activeVault.Coins = common.Coins{
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(5000000*common.One)),
+	}
+	limit := cosmos.NewUint(1000000)
+	txOutItem := TxOutItem{
+		Chain:                 common.ETHChain,
+		InHash:                inTxID,
+		VaultPubKey:           activeVault.PubKey,
+		ToAddress:             GetRandomETHAddress(),
+		Coin:                  common.NewCoin(common.ETHAsset, cosmos.NewUint(3980500*common.One)),
+		MaxGas:                common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(3600000))},
+		Memo:                  "OUT:" + inTxID.String(),
+		OriginalMemo:          "OUT:" + inTxID.String(),
+		Aggregator:            GetRandomETHAddress().String(),
+		AggregatorTargetAsset: GetRandomETHAddress().String(),
+		AggregatorTargetLimit: &limit,
+	}
+	txOut := NewTxOut(3)
+	txOut.TxArray = append(txOut.TxArray, txOutItem)
+
+	zeroLimit := cosmos.ZeroUint()
+	standardEVMOutbound := txOutItem
+	standardEVMOutbound.Aggregator = ""
+	standardEVMOutbound.AggregatorTargetAsset = ""
+	standardEVMOutbound.AggregatorTargetLimit = &zeroLimit
+	standardEVMOutbound.Coin = common.NewCoin(common.ETHAsset, cosmos.NewUint(3980500*common.One))
+	c.Assert(isEVMAggregatorTxOut(standardEVMOutbound), Equals, false)
+	c.Assert(txOutSigningPeriod(standardEVMOutbound, signingTransactionPeriod), Equals, signingTransactionPeriod)
+
+	keeper := &TestSlashingLackKeeper{
+		txOut:       txOut,
+		txOutHeight: 3,
+		vaults:      Vaults{activeVault},
+		voter: ObservedTxVoter{
+			Actions:         []TxOutItem{txOutItem},
+			FinalisedHeight: 3,
+		},
+		slashPts: make(map[string]int64),
+	}
+	mgr := NewDummyMgrWithKeeper(keeper)
+	mgr.txOutStore = txOutStore
+	slasher := newSlasher(keeper, NewDummyEventMgr())
+
+	ctx = ctx.WithBlockHeight(3 + signingTransactionPeriod)
+	c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
+	outItems, err := txOutStore.GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(outItems, HasLen, 0)
+	c.Assert(keeper.txOut.TxArray[0].OutHash.IsEmpty(), Equals, true)
+	c.Assert(keeper.voter.Actions[0].Aggregator, Equals, txOutItem.Aggregator)
+
+	ctx = ctx.WithBlockHeight(3 + evmAggregatorSigningPeriodMultiplier*signingTransactionPeriod)
+	c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
+	outItems, err = txOutStore.GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(outItems, HasLen, 1)
+	c.Assert(keeper.txOut.TxArray[0].OutHash.IsEmpty(), Equals, false)
+	c.Assert(keeper.voter.Actions[0].Aggregator, Equals, "")
+	c.Assert(outItems[0].Aggregator, Equals, "")
+}
+
+func (s *SlashingSuite) TestEVMTokenLackSigningUsesExtendedPeriod(c *C) {
+	ctx, _ := setupKeeperForTest(c)
+	txOutStore := NewTxStoreDummy()
+	ver := GetCurrentVersion()
+	constAccessor := constants.GetConstantValues(ver)
+	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
+
+	tokenAsset, err := common.NewAsset("ETH.USDT-0XA3910454BF2CB59B8B3A401589A3BACC5CA42306")
+	c.Assert(err, IsNil)
+	inTxID := GetRandomTxHash()
+	activeVault := GetRandomVault()
+	activeVault.Type = AsgardVault
+	activeVault.Status = ActiveVault
+	activeVault.Coins = common.Coins{
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(5000000*common.One)),
+		common.NewCoin(tokenAsset, cosmos.NewUint(5000000*common.One)),
+	}
+	txOutItem := TxOutItem{
+		Chain:        common.ETHChain,
+		InHash:       inTxID,
+		VaultPubKey:  activeVault.PubKey,
+		ToAddress:    GetRandomETHAddress(),
+		Coin:         common.NewCoin(tokenAsset, cosmos.NewUint(6313528)),
+		MaxGas:       common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(3600000))},
+		Memo:         "OUT:" + inTxID.String(),
+		OriginalMemo: "OUT:" + inTxID.String(),
+	}
+	txOut := NewTxOut(3)
+	txOut.TxArray = append(txOut.TxArray, txOutItem)
+
+	keeper := &TestSlashingLackKeeper{
+		txOut:       txOut,
+		txOutHeight: 3,
+		vaults:      Vaults{activeVault},
+		voter: ObservedTxVoter{
+			Actions:         []TxOutItem{txOutItem},
+			FinalisedHeight: 3,
+		},
+		slashPts: make(map[string]int64),
+	}
+	mgr := NewDummyMgrWithKeeper(keeper)
+	mgr.txOutStore = txOutStore
+	slasher := newSlasher(keeper, NewDummyEventMgr())
+
+	ctx = ctx.WithBlockHeight(3 + signingTransactionPeriod)
+	c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
+	outItems, err := txOutStore.GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(outItems, HasLen, 0)
+	c.Assert(keeper.txOut.TxArray[0].OutHash.IsEmpty(), Equals, true)
+
+	ctx = ctx.WithBlockHeight(3 + evmTokenSigningPeriodMultiplier*signingTransactionPeriod)
+	c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
+	outItems, err = txOutStore.GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(outItems, HasLen, 1)
+	c.Assert(keeper.txOut.TxArray[0].OutHash.IsEmpty(), Equals, false)
+	c.Assert(outItems[0].Coin.Asset.Equals(tokenAsset), Equals, true)
 }
 
 func (s *SlashingSuite) TestInactiveVaultDrainedReroute(c *C) {
@@ -1034,9 +1231,9 @@ func (s *SlashingSuite) TestNeedsNewVault(c *C) {
 	ctx = ctx.WithBlockHeight(900)
 	c.Check(slasher.needsNewVault(ctx, mgr, vault, 300, 1, toi), Equals, false)
 
-	// test that more than 2/3rd will always return false
-	ctx = ctx.WithBlockHeight(999999999)
-	c.Check(slasher.needsNewVault(ctx, mgr, vault, 300, 1, toi), Equals, false)
+	// A non-finalised observation cannot pin reassignment forever.
+	ctx = ctx.WithBlockHeight(902)
+	c.Check(slasher.needsNewVault(ctx, mgr, vault, 300, 1, toi), Equals, true)
 }
 
 func (s *SlashingSuite) TestNeedsNewVaultEdDSA(c *C) {
@@ -1085,14 +1282,16 @@ func (s *SlashingSuite) TestNeedsNewVaultEdDSA(c *C) {
 	// even though it doesn't match toi.VaultPubKey (ECDSA). Should NOT need new vault.
 	c.Check(slasher.needsNewVault(ctx, mgr, vault, 300, 1, toi), Equals, false)
 
-	// Confirm it still returns false at later block heights.
-	ctx = ctx.WithBlockHeight(999999999)
-	c.Check(slasher.needsNewVault(ctx, mgr, vault, 300, 1, toi), Equals, false)
+	// The EdDSA observation pins while fresh, then expires like other non-final observations.
+	ctx = ctx.WithBlockHeight(902)
+	c.Check(slasher.needsNewVault(ctx, mgr, vault, 300, 1, toi), Equals, true)
 }
 
 func (s *SlashingSuite) TestNeedsNewVaultFrost(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
+	signingTransPeriod := int64(300)
+	startHeight := int64(1)
 	inhash := GetRandomTxHash()
 	outhash := GetRandomTxHash()
 	pk1 := GetRandomPubKey()
@@ -1107,6 +1306,8 @@ func (s *SlashingSuite) TestNeedsNewVaultFrost(c *C) {
 
 	tx := GetRandomTx()
 	tx.ID = outhash
+	tx.Chain = common.XMRChain
+	tx.Coins = common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One)))
 	obs := NewObservedTx(tx, 0, frostPK, 0)
 	obs.ObservedPubKey = frostPK
 	obs.Signers = []string{sig1.String(), sig2.String(), sig3.String()}
@@ -1118,21 +1319,74 @@ func (s *SlashingSuite) TestNeedsNewVaultFrost(c *C) {
 
 	c.Assert(len(tx.Coins), Equals, 1)
 	toi := TxOutItem{
+		Chain:            common.XMRChain,
 		InHash:           inhash,
 		Coin:             tx.Coins[0],
 		VaultPubKey:      secpPK,
 		VaultPubKeyFrost: frostPK,
 	}
+	xmrSigningTransPeriod := txOutSigningPeriod(toi, signingTransPeriod)
 
-	c.Check(slasher.needsNewVault(ctx, mgr, vault, 300, 1, toi), Equals, true)
+	c.Check(slasher.needsNewVault(ctx, mgr, vault, xmrSigningTransPeriod, startHeight, toi), Equals, true)
 
 	voter := NewObservedTxVoter(outhash, []common.ObservedTx{obs})
 	mgr.Keeper().SetObservedTxOutVoter(ctx, voter)
 	mgr.Keeper().SetObservedLink(ctx, inhash, outhash)
 
-	c.Check(slasher.needsNewVault(ctx, mgr, vault, 300, 1, toi), Equals, false)
-	ctx = ctx.WithBlockHeight(999999999)
-	c.Check(slasher.needsNewVault(ctx, mgr, vault, 300, 1, toi), Equals, false)
+	c.Check(slasher.needsNewVault(ctx, mgr, vault, xmrSigningTransPeriod, startHeight, toi), Equals, false)
+	ctx = ctx.WithBlockHeight(startHeight + staleOutboundObservationSigningPeriods*signingTransPeriod + 1)
+	c.Check(slasher.needsNewVault(ctx, mgr, vault, xmrSigningTransPeriod, startHeight, toi), Equals, false)
+	ctx = ctx.WithBlockHeight(startHeight + staleOutboundObservationSigningPeriods*xmrSigningTransPeriod + 1)
+	c.Check(slasher.needsNewVault(ctx, mgr, vault, xmrSigningTransPeriod, startHeight, toi), Equals, true)
+}
+
+func (s *SlashingSuite) TestActiveOutboundObservationExpiresStaleNonFinalized(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+
+	signingTransPeriod := int64(300)
+	startHeight := int64(100)
+	inhash := GetRandomTxHash()
+	outhash := GetRandomTxHash()
+	tx := GetRandomTx()
+	tx.ID = outhash
+	obs := NewObservedTx(tx, 0, GetRandomPubKey(), 0)
+	voter := NewObservedTxVoter(outhash, []common.ObservedTx{obs})
+	mgr.Keeper().SetObservedTxOutVoter(ctx, voter)
+	mgr.Keeper().SetObservedLink(ctx, inhash, outhash)
+
+	expiryHeight := startHeight + staleOutboundObservationSigningPeriods*signingTransPeriod
+	firstStaleHeight := expiryHeight + 1
+
+	ctx = ctx.WithBlockHeight(expiryHeight)
+	status := slasher.staleNonFinalOutboundObservation(ctx, voter, signingTransPeriod, startHeight)
+	c.Check(status.stale, Equals, false)
+	c.Check(status.firstStaleWindow, Equals, false)
+	c.Check(status.observationHeight, Equals, startHeight)
+	c.Check(status.staleSinceHeight, Equals, firstStaleHeight)
+	c.Check(slasher.hasActiveOutboundObservation(ctx, mgr, signingTransPeriod, startHeight, inhash), Equals, true)
+
+	ctx = ctx.WithBlockHeight(firstStaleHeight)
+	status = slasher.staleNonFinalOutboundObservation(ctx, voter, signingTransPeriod, startHeight)
+	c.Check(status.stale, Equals, true)
+	c.Check(status.firstStaleWindow, Equals, true)
+	c.Check(status.staleSinceHeight, Equals, firstStaleHeight)
+	c.Check(slasher.hasActiveOutboundObservation(ctx, mgr, signingTransPeriod, startHeight, inhash), Equals, false)
+
+	ctx = ctx.WithBlockHeight(firstStaleHeight + signingTransPeriod)
+	status = slasher.staleNonFinalOutboundObservation(ctx, voter, signingTransPeriod, startHeight)
+	c.Check(status.stale, Equals, true)
+	c.Check(status.firstStaleWindow, Equals, false)
+	c.Check(slasher.hasActiveOutboundObservation(ctx, mgr, signingTransPeriod, startHeight, inhash), Equals, false)
+
+	voter.UnfinalizedHeight = ctx.BlockHeight()
+	mgr.Keeper().SetObservedTxOutVoter(ctx, voter)
+	c.Check(slasher.hasActiveOutboundObservation(ctx, mgr, signingTransPeriod, startHeight, inhash), Equals, true)
+
+	voter.UnfinalizedHeight = 0
+	voter.FinalisedHeight = startHeight
+	mgr.Keeper().SetObservedTxOutVoter(ctx, voter)
+	c.Check(slasher.hasActiveOutboundObservation(ctx, mgr, signingTransPeriod, startHeight, inhash), Equals, true)
 }
 
 func (s *SlashingSuite) TestTreasuryRecoveryForMaxAttempts(c *C) {

@@ -53,9 +53,6 @@ import (
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 	txmodule "github.com/cosmos/cosmos-sdk/x/auth/tx/config"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
-	authz "github.com/cosmos/cosmos-sdk/x/authz"
-	authzkeeper "github.com/cosmos/cosmos-sdk/x/authz/keeper"
-	authzmodule "github.com/cosmos/cosmos-sdk/x/authz/module"
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
@@ -133,6 +130,7 @@ var maccPerms = map[string][]string{
 	thorchain.TCYClaimingName:        {},
 	thorchain.TCYStakeName:           {},
 	thorchain.POLReserveName:         {},
+	thorchain.StableReserveName:      {},
 }
 
 var (
@@ -154,7 +152,6 @@ type THORChainApp struct {
 
 	// keepers
 	AccountKeeper authkeeper.AccountKeeper
-	AuthzKeeper   authzkeeper.Keeper
 	BankKeeper    bankkeeper.BaseKeeper
 	StakingKeeper *stakingkeeper.Keeper
 	MintKeeper    mintkeeper.Keeper
@@ -181,6 +178,10 @@ type THORChainApp struct {
 	// module configurator
 	configurator module.Configurator
 	once         sync.Once
+
+	// restQueryViaGRPC routes REST (grpc-gateway) queries through the in-process
+	// gRPC server instead of the comet ABCI query path (app.toml api.query-via-grpc)
+	restQueryViaGRPC bool
 }
 
 // NewChainApp returns a reference to an initialized ChainApp.
@@ -249,7 +250,6 @@ func NewChainApp(
 
 	keys := storetypes.NewKVStoreKeys(
 		authtypes.StoreKey,
-		authzkeeper.StoreKey,
 		banktypes.StoreKey,
 		stakingtypes.StoreKey,
 		minttypes.StoreKey,
@@ -308,12 +308,6 @@ func NewChainApp(
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32AccountAddrPrefix()),
 		sdk.GetConfig().GetBech32AccountAddrPrefix(),
 		authtypes.NewModuleAddress(thorchain.ModuleName).String(),
-	)
-	app.AuthzKeeper = authzkeeper.NewKeeper(
-		runtime.NewKVStoreService(keys[authzkeeper.StoreKey]),
-		app.appCodec,
-		app.MsgServiceRouter(),
-		app.AccountKeeper,
 	)
 	app.BankKeeper = bankkeeper.NewBaseKeeper(
 		app.appCodec,
@@ -438,6 +432,13 @@ func NewChainApp(
 	telemetryEnabled := cast.ToBool(appOpts.Get("telemetry.enabled"))
 	testApp := cast.ToBool(appOpts.Get(TestApp))
 
+	// default true when the key is absent (e.g. preserved pre-upgrade app.toml);
+	// routing degrades to ABCI on its own if the gRPC server is not running
+	app.restQueryViaGRPC = true
+	if v := appOpts.Get("api.query-via-grpc"); v != nil {
+		app.restQueryViaGRPC = cast.ToBool(v)
+	}
+
 	mgrs := thorchain.NewManagers(app.ThorchainKeeper, app.appCodec, runtime.NewKVStoreService(keys[thorchaintypes.StoreKey]), app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper, app.WasmKeeper)
 	app.msgServiceRouter.AddCustomRoute("cosmos.bank.v1beta1.Msg", thorchain.NewBankSendHandler(thorchain.NewSendHandler(mgrs)))
 
@@ -460,7 +461,6 @@ func NewChainApp(
 	// NOTE: Any module instantiated in the module manager that is later modified
 	// must be passed by reference here.
 	authModule := auth.NewAppModule(app.appCodec, app.AccountKeeper, authsims.RandomGenesisAccounts, app.GetSubspace(authtypes.ModuleName))
-	authzModule := authzmodule.NewAppModule(app.appCodec, app.AuthzKeeper, app.AccountKeeper, app.BankKeeper, app.InterfaceRegistry())
 	bankModule := bank.NewAppModule(app.appCodec, app.BankKeeper, app.AccountKeeper, app.GetSubspace(banktypes.ModuleName))
 	consensusModule := consensus.NewAppModule(app.appCodec, app.ConsensusParamsKeeper)
 	genutilModule := genutil.NewAppModule(app.AccountKeeper, app.StakingKeeper, app, txConfig)
@@ -483,7 +483,6 @@ func NewChainApp(
 	app.ModuleManager = module.NewManager(
 		genutilModule,
 		authModule,
-		authzModule,
 		bankModule,
 		upgradeModule,
 		paramsModule,
@@ -502,7 +501,6 @@ func NewChainApp(
 	app.BasicModuleManager = module.NewBasicManager(
 		genutil.NewAppModuleBasic(genutiltypes.DefaultMessageValidator),
 		authModule,
-		authzModule,
 		bankModule,
 		upgradeModule,
 		paramsModule,
@@ -525,7 +523,6 @@ func NewChainApp(
 	// NOTE: staking module is required if HistoricalEntries param > 0
 	app.ModuleManager.SetOrderBeginBlockers(
 		genutiltypes.ModuleName,
-		authz.ModuleName,
 
 		// additional non simd modules
 		thorchaintypes.ModuleName,
@@ -534,7 +531,6 @@ func NewChainApp(
 
 	app.ModuleManager.SetOrderEndBlockers(
 		genutiltypes.ModuleName,
-		authz.ModuleName,
 
 		// additional non simd modules
 		schedulertypes.ModuleName,
@@ -553,7 +549,6 @@ func NewChainApp(
 	genesisModuleOrder := []string{
 		// simd modules
 		authtypes.ModuleName,
-		authz.ModuleName,
 		banktypes.ModuleName,
 		genutiltypes.ModuleName,
 		paramstypes.ModuleName,
@@ -835,6 +830,13 @@ func (app *THORChainApp) SimulationManager() *module.SimulationManager {
 // RegisterAPIRoutes registers all application module routes with the provided
 // API server.
 func (app *THORChainApp) RegisterAPIRoutes(apiSvr *api.Server, apiConfig config.APIConfig) {
+	if !app.restQueryViaGRPC {
+		// Strip the gRPC client so client.Context.Invoke falls back to the comet
+		// ABCI query path for every route registered below (legacy behavior).
+		apiSvr.ClientCtx = apiSvr.ClientCtx.WithGRPCClient(nil)
+	}
+	// nil client (flag off, or gRPC server disabled) means legacy ABCI routing
+	app.Logger().Info("REST gateway query routing", "via_grpc", apiSvr.ClientCtx.GRPCClient != nil)
 	clientCtx := apiSvr.ClientCtx
 
 	// Must call this before registering any GRPC gateway routes
@@ -941,6 +943,10 @@ func BlockedAddresses() map[string]bool {
 	// Allow lending and treasury to receive funds
 	delete(modAccAddrs, authtypes.NewModuleAddress(thorchaintypes.LendingName).String())
 	delete(modAccAddrs, authtypes.NewModuleAddress(thorchaintypes.TreasuryName).String())
+	// Allow the Stable Reserve to receive funds: STABLE+ deposits mint secured
+	// assets directly to this module account, and the POL income split and depeg
+	// rescue/deployment cycle credit it RUNE and secured inventory.
+	delete(modAccAddrs, authtypes.NewModuleAddress(thorchaintypes.StableReserveName).String())
 
 	return modAccAddrs
 }

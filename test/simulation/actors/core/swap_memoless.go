@@ -160,7 +160,7 @@ func (a *SwapMemolessActor) getQuote(config *OpConfig) OpResult {
 					Stringer("user_balance", a.fromBalance).
 					Msg("memoless amount encoding may exceed selected user balance, retrying user selection")
 				a.releaseUserSelection()
-				a.releaseTargetXMRSwapSlot()
+				a.releaseXMRSwapSlot()
 				result := a.acquireUserForAmount(config, requiredAmount, false)
 				if !result.Continue || result.Finish {
 					return result
@@ -187,7 +187,7 @@ func (a *SwapMemolessActor) getQuote(config *OpConfig) OpResult {
 func (a *SwapMemolessActor) registerSwap(config *OpConfig) OpResult {
 	// build the swap
 	coin := common.NewCoin(common.RuneNative, sdkmath.ZeroUint())
-	a.registeredMemo = fmt.Sprintf("=:%s:%s", a.to, a.toAddress)
+	a.registeredMemo = buildMemolessSwapRegistrationMemo(a.from, a.to, a.toAddress, a.fromAddress)
 	registerMemo := fmt.Sprintf("REFERENCE:%s:%s", a.from, a.registeredMemo)
 
 	a.Log().Info().
@@ -229,6 +229,14 @@ func (a *SwapMemolessActor) registerSwap(config *OpConfig) OpResult {
 	return OpResult{
 		Continue: true,
 	}
+}
+
+func buildMemolessSwapRegistrationMemo(from, to common.Asset, destination, refundAddress common.Address) string {
+	address := destination.String()
+	if from.GetLayer1Asset().GetChain().RequiresExplicitRefundAddress() {
+		address += "/" + refundAddress.String()
+	}
+	return fmt.Sprintf("=:%s:%s", to, address)
 }
 
 func (a *SwapMemolessActor) getMemolessRef(config *OpConfig) OpResult {
@@ -311,7 +319,7 @@ func (a *SwapMemolessActor) prepareSwapMemolessByRef(config *OpConfig) OpResult 
 }
 
 func (a *SwapMemolessActor) requotePreparedSwap(config *OpConfig) OpResult {
-	quote, quoteAmount, err := getSwapQuoteWithRecommendedMin(a.from, a.to, a.swapAmount, a.toAddress, a.from.Chain.IsUTXO())
+	quote, quoteAmount, err := getSwapQuoteWithRecommendedMin(a.from, a.to, a.swapAmount, a.fromBalance, a.toAddress, a.from.Chain.IsUTXO())
 	if err != nil {
 		a.Log().Error().Err(err).Str("amount", a.swapAmount.String()).Msg("failed to get quote for prepared memoless swap")
 		return OpResult{
@@ -364,7 +372,7 @@ func (a *SwapMemolessActor) prepareSwapMemolessByAmount(config *OpConfig) OpResu
 
 func (a *SwapMemolessActor) requoteEncodedSwap(config *OpConfig) OpResult {
 	for attempt := 0; attempt < 4; attempt++ {
-		quote, quoteAmount, err := getSwapQuoteWithRecommendedMin(a.from, a.to, a.swapAmount, a.toAddress, a.from.Chain.IsUTXO())
+		quote, quoteAmount, err := getSwapQuoteWithRecommendedMin(a.from, a.to, a.swapAmount, a.fromBalance, a.toAddress, a.from.Chain.IsUTXO())
 		if err != nil {
 			a.Log().Error().Err(err).Str("amount", a.swapAmount.String()).Msg("failed to get quote for encoded memoless swap amount")
 			return OpResult{
@@ -440,6 +448,9 @@ func (a *SwapMemolessActor) signSwap(config *OpConfig) OpResult {
 	// sign transaction
 	a.signedSwap, err = client.SignTx(tx)
 	if err != nil {
+		if result, ok := a.finishAfterMemolessFundingError(err); ok {
+			return result
+		}
 		a.Log().Error().Err(err).Msg("failed to sign tx")
 		return OpResult{
 			Continue: false,
@@ -490,6 +501,9 @@ func (a *SwapMemolessActor) signDirectTokenTransfer() OpResult {
 
 	a.signedSwap, err = client.SignContractTx(directTx)
 	if err != nil {
+		if result, ok := a.finishAfterMemolessFundingError(err); ok {
+			return result
+		}
 		a.Log().Error().Err(err).Msg("failed to sign direct token memoless swap tx")
 		return OpResult{
 			Continue: false,
@@ -548,6 +562,9 @@ func (a *SwapMemolessActor) signTokenSwap() OpResult {
 
 	signedApprove, err := client.SignContractTx(approveTx)
 	if err != nil {
+		if result, ok := a.finishAfterMemolessFundingError(err); ok {
+			return result
+		}
 		a.Log().Error().Err(err).Msg("failed to sign router approve tx")
 		return OpResult{
 			Continue: false,
@@ -556,6 +573,9 @@ func (a *SwapMemolessActor) signTokenSwap() OpResult {
 
 	approveTxID, err := client.BroadcastTx(signedApprove)
 	if err != nil {
+		if result, ok := a.finishAfterMemolessFundingError(err); ok {
+			return result
+		}
 		a.Log().Error().Err(err).Msg("failed to broadcast router approve tx")
 		return OpResult{
 			Continue: false,
@@ -583,6 +603,9 @@ func (a *SwapMemolessActor) signTokenSwap() OpResult {
 
 	a.signedSwap, err = client.SignContractTx(depositTx)
 	if err != nil {
+		if result, ok := a.finishAfterMemolessFundingError(err); ok {
+			return result
+		}
 		a.Log().Error().Err(err).Msg("failed to sign token memoless swap tx")
 		return OpResult{
 			Continue: false,
@@ -607,6 +630,9 @@ func (a *SwapMemolessActor) broadcastSwap(config *OpConfig) OpResult {
 		a.swapTxID, err = client.BroadcastTx(a.signedSwap)
 	}
 	if err != nil {
+		if result, ok := a.finishAfterMemolessFundingError(err); ok {
+			return result
+		}
 		a.Log().Error().Err(err).Msg("failed to broadcast tx")
 		return OpResult{
 			Continue: false,
@@ -626,6 +652,15 @@ func (a *SwapMemolessActor) broadcastSwap(config *OpConfig) OpResult {
 ////////////////////////////////////////////////////////////////////////////////////////
 // Helpers
 ////////////////////////////////////////////////////////////////////////////////////////
+
+// finishAfterMemolessFundingError keeps memoless swaps from retrying forever
+// after a selected user loses the spendable balance needed for the inbound.
+func (a *SwapMemolessActor) finishAfterMemolessFundingError(err error) (OpResult, bool) {
+	if !isPostSelectionFundingError(err) {
+		return OpResult{}, false
+	}
+	return a.finishAfterPostSelectionFundingError(err), true
+}
 
 func (a *SwapMemolessActor) amountModulus() uint64 {
 	memolessRefCount := constants.NewConstantValue().GetInt64Value(constants.MemolessTxnRefCount)

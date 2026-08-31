@@ -67,12 +67,23 @@
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
           "base_account": {
-            "account_number": "9",
+            "account_number": "10",
             "address": "tthor1dl7un46w7l7f3ewrnrm6nq58nerjtp0d82uzjg",
             "pub_key": null,
             "sequence": "0"
           },
           "name": "affiliate_collector",
+          "permissions": []
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.ModuleAccount",
+          "base_account": {
+            "account_number": "9",
+            "address": "tthor102ae04vpk6v2tvjgzdsc2s7ncnptj6pwz0pg2k",
+            "pub_key": null,
+            "sequence": "0"
+          },
+          "name": "stable_reserve",
           "permissions": []
         },
         {
@@ -125,9 +136,6 @@
         "tx_sig_limit": "7",
         "tx_size_cost_per_byte": "10"
       }
-    },
-    "authz": {
-      "authorization": []
     },
     "bank": {
       "balances": [
@@ -609,6 +617,7 @@
               "decimals": "8"
             }
           ],
+          "deficit": null,
           "inbound_tx_count": "2",
           "membership": [
             "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"

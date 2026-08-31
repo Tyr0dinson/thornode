@@ -19,7 +19,9 @@ type Vault struct {
 	BlockHeight *int64 `json:"block_height,omitempty"`
 	PubKey *string `json:"pub_key,omitempty"`
 	PubKeyEddsa *string `json:"pub_key_eddsa,omitempty"`
+	PubKeyFrost *string `json:"pub_key_frost,omitempty"`
 	Coins []Coin `json:"coins"`
+	Deficit []Coin `json:"deficit,omitempty"`
 	Type *string `json:"type,omitempty"`
 	Status string `json:"status"`
 	StatusSince *int64 `json:"status_since,omitempty"`
@@ -151,6 +153,38 @@ func (o *Vault) SetPubKeyEddsa(v string) {
 	o.PubKeyEddsa = &v
 }
 
+// GetPubKeyFrost returns the PubKeyFrost field value if set, zero value otherwise.
+func (o *Vault) GetPubKeyFrost() string {
+	if o == nil || o.PubKeyFrost == nil {
+		var ret string
+		return ret
+	}
+	return *o.PubKeyFrost
+}
+
+// GetPubKeyFrostOk returns a tuple with the PubKeyFrost field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *Vault) GetPubKeyFrostOk() (*string, bool) {
+	if o == nil || o.PubKeyFrost == nil {
+		return nil, false
+	}
+	return o.PubKeyFrost, true
+}
+
+// HasPubKeyFrost returns a boolean if a field has been set.
+func (o *Vault) HasPubKeyFrost() bool {
+	if o != nil && o.PubKeyFrost != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetPubKeyFrost gets a reference to the given string and assigns it to the PubKeyFrost field.
+func (o *Vault) SetPubKeyFrost(v string) {
+	o.PubKeyFrost = &v
+}
+
 // GetCoins returns the Coins field value
 func (o *Vault) GetCoins() []Coin {
 	if o == nil {
@@ -173,6 +207,38 @@ func (o *Vault) GetCoinsOk() ([]Coin, bool) {
 // SetCoins sets field value
 func (o *Vault) SetCoins(v []Coin) {
 	o.Coins = v
+}
+
+// GetDeficit returns the Deficit field value if set, zero value otherwise.
+func (o *Vault) GetDeficit() []Coin {
+	if o == nil || o.Deficit == nil {
+		var ret []Coin
+		return ret
+	}
+	return o.Deficit
+}
+
+// GetDeficitOk returns a tuple with the Deficit field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *Vault) GetDeficitOk() ([]Coin, bool) {
+	if o == nil || o.Deficit == nil {
+		return nil, false
+	}
+	return o.Deficit, true
+}
+
+// HasDeficit returns a boolean if a field has been set.
+func (o *Vault) HasDeficit() bool {
+	if o != nil && o.Deficit != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetDeficit gets a reference to the given []Coin and assigns it to the Deficit field.
+func (o *Vault) SetDeficit(v []Coin) {
+	o.Deficit = v
 }
 
 // GetType returns the Type field value if set, zero value otherwise.
@@ -514,8 +580,14 @@ func (o Vault) MarshalJSON_deprecated() ([]byte, error) {
 	if o.PubKeyEddsa != nil {
 		toSerialize["pub_key_eddsa"] = o.PubKeyEddsa
 	}
+	if o.PubKeyFrost != nil {
+		toSerialize["pub_key_frost"] = o.PubKeyFrost
+	}
 	if true {
 		toSerialize["coins"] = o.Coins
+	}
+	if o.Deficit != nil {
+		toSerialize["deficit"] = o.Deficit
 	}
 	if o.Type != nil {
 		toSerialize["type"] = o.Type

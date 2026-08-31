@@ -52,6 +52,7 @@ const (
 	RUNEPoolWithdrawEventType       = "rune_pool_withdraw"
 	TSSKeygenSuccess                = "tss_keygen_success"
 	TSSKeygenFailure                = "tss_keygen_failure"
+	TSSKeysignFailure               = "tss_keysign_failure"
 	TSSKeygenMetricEventType        = "tss_keygen"
 	TSSKeysignMetricEventType       = "tss_keysign"
 	VersionEventType                = "version"
@@ -172,6 +173,7 @@ func NewEventSwap(pool common.Asset, swapTarget, fee, swapSlip, liquidityFeeInRu
 		StreamingSwapQuantity: 0,
 		StreamingSwapCount:    0,
 		PoolSlip:              cosmos.ZeroUint(),
+		StableReserve:         false,
 	}
 }
 
@@ -193,6 +195,7 @@ func (m *EventSwap) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("streaming_swap_quantity", strconv.FormatUint(m.StreamingSwapQuantity, 10)),
 		cosmos.NewAttribute("streaming_swap_count", strconv.FormatUint(m.StreamingSwapCount, 10)),
 		cosmos.NewAttribute("pool_slip", m.PoolSlip.String()),
+		cosmos.NewAttribute("stable_reserve", strconv.FormatBool(m.StableReserve)),
 	)
 	if !m.SynthUnits.IsZero() {
 		evt = evt.AppendAttributes(cosmos.NewAttribute("synth_units", m.SynthUnits.String()))
@@ -875,6 +878,39 @@ func (m *EventTssKeysignMetric) Events() (cosmos.Events, error) {
 	evt := cosmos.NewEvent(m.Type(),
 		cosmos.NewAttribute("txid", m.TxID.String()),
 		cosmos.NewAttribute("median_duration_ms", strconv.FormatInt(m.MedianDurationMs, 10)))
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventTssKeysignFailure create a new EventTssKeysignFailure
+func NewEventTssKeysignFailure(reason, round string, unicast bool, height int64, blame []string, id string, pubkey common.PubKey) *EventTssKeysignFailure {
+	return &EventTssKeysignFailure{
+		FailReason: reason,
+		IsUnicast:  unicast,
+		Round:      round,
+		Height:     height,
+		BlameNodes: blame,
+		ID:         id,
+		PubKey:     pubkey,
+	}
+}
+
+// Type  return a string which represent the type of this event
+func (m *EventTssKeysignFailure) Type() string {
+	return TSSKeysignFailure
+}
+
+// Events return cosmos sdk events
+func (m *EventTssKeysignFailure) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(
+		m.Type(),
+		cosmos.NewAttribute("reason", m.FailReason),
+		cosmos.NewAttribute("round", m.Round),
+		cosmos.NewAttribute("is_unicast", fmt.Sprintf("%v", m.IsUnicast)),
+		cosmos.NewAttribute("height", strconv.FormatInt(m.Height, 10)),
+		cosmos.NewAttribute("blame", strings.Join(m.BlameNodes, ", ")),
+		cosmos.NewAttribute("id", m.ID),
+		cosmos.NewAttribute("pubkey", m.PubKey.String()),
+	)
 	return cosmos.Events{evt}, nil
 }
 

@@ -33,18 +33,28 @@ import (
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
 
-// signerCacheExpiry is the window after a broadcast during which SignTx respects
-// the cache unconditionally, without an RPC lookup. Past this window, SignTx
-// verifies the recorded signature on chain and only re-signs if the RPC
+// signerCacheExpiryOverride, when > 0, replaces the config-sourced signer-cache
+// expiry. Only the mocknet build sets it (see sol_client_mocknet.go), shortening
+// the window so simulations can retry dropped broadcasts quickly. Mainnet leaves
+// it zero and sources the window from config (signer_cache_expiry, default 2h).
+var signerCacheExpiryOverride time.Duration
+
+// getSignerCacheExpiry returns the window after a broadcast during which SignTx
+// respects the cache unconditionally, without an RPC lookup. Past this window,
+// SignTx verifies the recorded signature on chain and only re-signs if the RPC
 // definitively reports it absent. Both conditions must hold — expiry alone never
 // invalidates, because thorchain observation consensus can lag actual Solana
 // inclusion and re-signing a landed-but-not-yet-observed tx would double-spend.
 //
-// 2h is well past Solana's ~60s blockhash validity (MAX_PROCESSING_AGE = 150 slots)
-// and generous against prolonged scanner or consensus lag. It corresponds to 4x
-// SigningTransactionPeriod (1200 thorchain blocks at 6s), so a stuck outbound gets
-// at most a few rescheduled reschedules before this window allows re-sign.
-var signerCacheExpiry = 2 * time.Hour
+// The configured 2h (config signer_cache_expiry) is well past Solana's ~60s
+// blockhash validity (MAX_PROCESSING_AGE = 150 slots) and generous against
+// prolonged scanner or consensus lag.
+func (c *SOLClient) getSignerCacheExpiry() time.Duration {
+	if signerCacheExpiryOverride > 0 {
+		return signerCacheExpiryOverride
+	}
+	return c.cfg.SignerCacheExpiry
+}
 
 // broadcastLookupDelay is the time to wait after a broadcast error before
 // querying the chain to see if the transaction landed anyway. Exposed as a
@@ -61,11 +71,21 @@ type SOLClient struct {
 	bridge              thorclient.ThorchainBridge
 	poolMgr             thorclient.PoolManager
 	tssKeyManager       tss.ThorchainKeyManager
+	pubkeyMgr           pubkeymanager.PubKeyValidator
 	wg                  *sync.WaitGroup
 	stopchan            chan struct{}
 	globalSolvencyQueue chan stypes.Solvency
 	signerCacheManager  *signercache.CacheManager
 	rpcClient           *rpc.SolRPC
+
+	// keepAliveThorMultiple is the last keep-alive cadence boundary this node acted
+	// on. The trigger + keysign anchor are driven off the shared THORChain block
+	// height (not a per-node wall clock or Solana slot) so every member crosses the
+	// same boundary and hands the keysign an identical, valid THORChain height —
+	// converging the party the way scheduled outbounds do via their consensus
+	// txOut.Height. Guarded by the mutex since the loop reads and writes it.
+	keepAliveThorMultipleMu sync.Mutex
+	keepAliveThorMultiple   int64
 
 	// solvencySlotMultiple is the last reported solvency cadence boundary. It is
 	// read and written from two goroutines — the block scanner's solvency reporter
@@ -133,6 +153,7 @@ func NewSOLClient(
 		bridge:        bridge,
 		poolMgr:       poolMgr,
 		tssKeyManager: tssKm,
+		pubkeyMgr:     pubkeyMgr,
 		wg:            &sync.WaitGroup{},
 		stopchan:      make(chan struct{}),
 		rpcClient:     rpcClient,
@@ -186,6 +207,8 @@ func (c *SOLClient) Start(
 	go c.solScanner.Start()
 	c.wg.Add(1)
 	go runners.SolvencyCheckRunner(c.GetChain(), c, c.bridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
+	c.wg.Add(1)
+	go c.keepAliveLoop()
 }
 
 // Stop stops the chain client.
@@ -290,6 +313,14 @@ func (c *SOLClient) GetAccountByAddress(addr string, height *big.Int) (common.Ac
 
 // --------------------------------- solvency ---------------------------------
 
+// GetGasEstimateForSolvency returns the current gas fee estimate used by solvency checks.
+func (c *SOLClient) GetGasEstimateForSolvency() cosmos.Uint {
+	nativeCurrentFee := cosmos.NewUint(3).
+		MulUint64(c.cfg.BlockScanner.MaxGasLimit).
+		MulUint64(c.solScanner.lastFeeRate.Load())
+	return c.cfg.ChainID.NativeGasToThorchain(nativeCurrentFee)
+}
+
 // ReportSolvency reports solvency once per configured solvency blocks.
 func (c *SOLClient) ReportSolvency(height int64) error {
 	reportSlotMultiple := c.nextSolvencyReportSlotMultiple(height)
@@ -317,8 +348,7 @@ func (c *SOLClient) ReportSolvency(height int64) error {
 		return fmt.Errorf("fail to get asgards, err: %w", err)
 	}
 
-	nativeCurrentFee := cosmos.NewUint(3).MulUint64(c.cfg.BlockScanner.MaxGasLimit).MulUint64(c.solScanner.lastFeeRate)
-	currentFeeRate := c.cfg.ChainID.NativeGasToThorchain(nativeCurrentFee)
+	currentFeeRate := c.GetGasEstimateForSolvency()
 
 	// report insolvent asgard vaults,
 	// or else all if the chain is halted and all are solvent
@@ -452,40 +482,46 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		return nil, nil, nil, errors.New("vault public key is empty")
 	}
 
-	if signed, expired := c.signerCacheManager.HasSignedWithExpiry(tx.CacheHash()); signed {
-		if !expired {
-			// Pre-expiry: the recorded broadcast's blockhash may still allow it to
-			// land, so never re-sign during this window — doing so risks a second
-			// broadcast that lands alongside the first and double-spends.
-			c.logger.Info().Interface("tx", tx).Msg("transaction signed before, ignore")
-			return nil, nil, nil, nil
-		}
-
-		// Expired: re-signing is only safe after chain-side verification confirms
-		// the recorded broadcast is not on chain. Any other invalidation (expiry
-		// alone, RPC error) would risk a double-spend when thorchain observation
-		// consensus lags behind actual Solana inclusion.
-		sig, ok := c.signerCacheManager.GetSignedTxHash(tx.CacheHash())
-		if !ok {
-			// No recorded broadcast hash to verify — respect the cache.
-			c.logger.Info().Interface("tx", tx).Msg("transaction signed before, ignore")
-			return nil, nil, nil, nil
-		}
+	// Solana is the canonical reference for the cache-and-verify pattern. Unlike
+	// the EVM/UTXO/Cosmos/TRON/XRP clients (which gate the verification path
+	// behind a SkipSignerCache<Chain> mimir), Solana enables verification
+	// unconditionally because the broadcast's blockhash already constrains
+	// re-sign safety to a tight window (~60s).
+	verifyFn := func(sig string) signercache.LookupResult {
 		result, lookupErr := c.rpcClient.GetTransactionConfirmed(sig)
 		switch {
 		case lookupErr != nil:
-			c.logger.Warn().Err(lookupErr).Str("sig", sig).Interface("tx", tx).
-				Msg("signature lookup failed, respecting signer cache")
-			return nil, nil, nil, nil
+			return signercache.LookupAmbiguous
+		case result.Slot > 0 && result.Meta.Err == nil:
+			return signercache.LookupFound
 		case result.Slot > 0:
-			c.logger.Info().Str("sig", sig).Interface("tx", tx).
-				Msg("cached broadcast confirmed on chain, respecting signer cache")
-			return nil, nil, nil, nil
+			// Landed on chain but FAILED at execution (meta.err set, e.g.
+			// "insufficient lamports"): the fee was burned but the transfer never
+			// happened, so the outbound is unfulfilled. Presence on chain is not
+			// enough — only a SUCCESSFUL broadcast is authoritative. Treat a failed
+			// landing like a dropped one (LookupNotFound) so the cache manager clears
+			// it and expiry+verify re-signs. Without this the failed sig keeps
+			// verifying as "found" and permanently wedges the outbound (#3089).
+			c.logger.Warn().Str("sig", sig).Interface("meta_err", result.Meta.Err).Interface("tx", tx).
+				Msg("cached broadcast failed on chain, re-signing")
+			return signercache.LookupNotFound
 		default:
-			c.logger.Warn().Str("sig", sig).Interface("tx", tx).
-				Msg("expired cached broadcast not found on chain, clearing signer cache")
-			c.signerCacheManager.RemoveSigned(sig)
+			return signercache.LookupNotFound
 		}
+	}
+	check := c.signerCacheManager.SignTxCacheCheck(tx.CacheHash(), func() bool { return true }, verifyFn)
+	if check.Phase != signercache.PhaseNoEntry {
+		ev := c.logger.Info()
+		if check.Noteworthy() {
+			ev = c.logger.Warn()
+		}
+		ev.Stringer("phase", check.Phase).
+			Str("sig", check.Sig).
+			Interface("tx", tx).
+			Msg(check.Phase.String())
+	}
+	if check.SkipSign {
+		return nil, nil, nil, nil
 	}
 
 	// GetMemo returns OriginalMemo for memoless outbounds
@@ -534,7 +570,7 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	txIn := stypes.NewTxInItem(
 		height,
 		base58.Encode(signedTx.Signatures[0]),
-		tx.Memo,
+		memoForParsing,
 		fromAddr.String(),
 		tx.ToAddress.String(),
 		tx.Coins,
@@ -637,6 +673,12 @@ func (c *SOLClient) CreateTx(tx stypes.TxOutItem, memoForParsing string) (types.
 		return solTx, errors.New("sol value is zero")
 	}
 
+	// A vault sending to its own address (the keep-alive self-sign) must list the
+	// vault account exactly once, or Solana rejects the tx with AccountLoadedTwice.
+	if toPubkey == vaultPubKey {
+		return types.NewSelfTransferTransaction(vaultPubKey, tx.Coins[0].Amount.Uint64(), tx.Memo, recentBlockhash), nil
+	}
+
 	return types.NewTransferTransaction(vaultPubKey, toPubkey, tx.Coins[0].Amount.Uint64(), tx.Memo, recentBlockhash), nil
 }
 
@@ -670,7 +712,7 @@ func (c *SOLClient) BroadcastTx(txOutItem stypes.TxOutItem, rawTx []byte) (strin
 			if result, lookupErr := c.rpcClient.GetTransactionConfirmed(knownSig); lookupErr == nil && result.Slot > 0 {
 				c.logger.Warn().Str("memo", txOutItem.Memo).Str("txid", knownSig).
 					Msg("tx found on chain despite broadcast error, updating signer cache")
-				expiry := time.Now().Add(signerCacheExpiry).UnixMilli()
+				expiry := time.Now().Add(c.getSignerCacheExpiry()).UnixMilli()
 				if cacheErr := c.signerCacheManager.SetSignedWithExpiry(txOutItem.CacheHash(), txOutItem.CacheVault(c.GetChain()), knownSig, expiry); cacheErr != nil {
 					c.logger.Err(cacheErr).Interface("txOutItem", txOutItem).Msg("fail to mark tx out item as signed")
 				}
@@ -685,7 +727,7 @@ func (c *SOLClient) BroadcastTx(txOutItem stypes.TxOutItem, rawTx []byte) (strin
 	// the cache unconditionally until the expiry passes; past expiry it verifies on
 	// chain before re-signing, so a dropped broadcast eventually recovers without
 	// risking a double-spend against a lagging observation.
-	expiry := time.Now().Add(signerCacheExpiry).UnixMilli()
+	expiry := time.Now().Add(c.getSignerCacheExpiry()).UnixMilli()
 	if err := c.signerCacheManager.SetSignedWithExpiry(txOutItem.CacheHash(), txOutItem.CacheVault(c.GetChain()), txSig, expiry); err != nil {
 		c.logger.Err(err).Interface("txOutItem", txOutItem).Msg("fail to mark tx out item as signed")
 	}

@@ -4,7 +4,7 @@ info:
     email: devs@thorchain.org
   description: Thornode REST API.
   title: Thornode API
-  version: 3.19.1
+  version: 3.20.0
 servers:
 - url: /
 paths:
@@ -1695,6 +1695,71 @@ paths:
           description: OK
       tags:
       - SecuredAssets
+  /thorchain/stable_reserve:
+    get:
+      description: "Returns Stable Reserve module status, inventory health, deployment\
+        \ stream settings, and active internal swaps"
+      operationId: stable_reserve
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StableReserveResponse'
+          description: OK
+      tags:
+      - StableReserve
+  /thorchain/stable_reserve/contributor/{asset}/{address}:
+    get:
+      description: Returns a contributor's Stable Reserve credit for the given asset
+      operationId: stable_reserve_contributor
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      - explode: false
+        in: path
+        name: asset
+        required: true
+        schema:
+          example: BTC.BTC
+          type: string
+        style: simple
+      - explode: false
+        in: path
+        name: address
+        required: true
+        schema:
+          example: thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StableReserveContributorResponse'
+          description: OK
+      tags:
+      - StableReserve
   /thorchain/queue/swap/details/{tx_id}:
     get:
       description: Returns detailed information about a specific swap including its
@@ -3724,6 +3789,7 @@ components:
       type: object
     Vault:
       example:
+        pub_key_frost: pub_key_frost
         addresses:
         - chain: BTC
           address: bc1qd45uzetakjvdy5ynjjyp4nlnj89am88e4e5jeq
@@ -3754,6 +3820,13 @@ components:
         - 5
         - 5
         outbound_tx_count: 5
+        deficit:
+        - amount: "100000"
+          decimals: 6
+          asset: BTC.BTC
+        - amount: "100000"
+          decimals: 6
+          asset: BTC.BTC
         routers:
         - chain: ETH
           router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
@@ -3769,7 +3842,13 @@ components:
           type: string
         pub_key_eddsa:
           type: string
+        pub_key_frost:
+          type: string
         coins:
+          items:
+            $ref: '#/components/schemas/Coin'
+          type: array
+        deficit:
           items:
             $ref: '#/components/schemas/Coin'
           type: array
@@ -4238,10 +4317,6 @@ components:
       type: object
     ObservedTx:
       example:
-        signers:
-        - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
-        - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
-        keysign_ms: 10000
         tx:
           chain: BTC
           coins:
@@ -4262,16 +4337,30 @@ components:
           to_address: bcrt1qf3s7q037eancht7sg0aj995dht25rwrnqsf45e
           id: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
           from_address: bcrt1q0s4mg25tu6termrk8egltfyme4q7sg3h8kkydt
+        xmr_tx_key: "1111111111111111111111111111111111111111111111111111111111111111"
+        aggregator: 0x69800327b38A4CeF30367Dec3f64c2f2386f3848
+        observed_pub_key: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+        external_confirmation_delay_height: 7581334
+        spent_output_refs:
+        - key_image: "2222222222222222222222222222222222222222222222222222222222222222"
+          spend_tx_hash: "3333333333333333333333333333333333333333333333333333333333333333"
+          tx_hash: E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+          output_index: 0
+        - key_image: "2222222222222222222222222222222222222222222222222222222222222222"
+          spend_tx_hash: "3333333333333333333333333333333333333333333333333333333333333333"
+          tx_hash: E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+          output_index: 0
+        aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+        observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+        signers:
+        - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+        - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+        keysign_ms: 10000
         aggregator_target: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
         out_hashes:
         - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
         - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
-        aggregator: 0x69800327b38A4CeF30367Dec3f64c2f2386f3848
-        observed_pub_key: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
         external_observed_height: 7581334
-        external_confirmation_delay_height: 7581334
-        aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
-        observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
         status: done
       properties:
         tx:
@@ -4320,6 +4409,16 @@ components:
             example: E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
             type: string
           type: array
+        spent_output_refs:
+          description: XMR outbound spent outputs and key images committed by observers.
+          items:
+            $ref: '#/components/schemas/OutputRef'
+          type: array
+        xmr_tx_key:
+          description: XMR outbound tx private key used by third parties to verify
+            recipient outputs.
+          example: "1111111111111111111111111111111111111111111111111111111111111111"
+          type: string
         status:
           enum:
           - done
@@ -4328,6 +4427,31 @@ components:
           type: string
       required:
       - tx
+      type: object
+    OutputRef:
+      example:
+        key_image: "2222222222222222222222222222222222222222222222222222222222222222"
+        spend_tx_hash: "3333333333333333333333333333333333333333333333333333333333333333"
+        tx_hash: E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+        output_index: 0
+      properties:
+        tx_hash:
+          description: Source transaction hash for the spent XMR output.
+          example: E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+          type: string
+        output_index:
+          description: Output index in the source transaction.
+          example: 0
+          format: int64
+          type: integer
+        key_image:
+          description: XMR key image proving the referenced output was spent.
+          example: "2222222222222222222222222222222222222222222222222222222222222222"
+          type: string
+        spend_tx_hash:
+          description: XMR outbound transaction hash that spends this output.
+          example: "3333333333333333333333333333333333333333333333333333333333333333"
+          type: string
       type: object
     OutboundFee:
       example:
@@ -4574,6 +4698,7 @@ components:
           decimals: 6
           asset: BTC.BTC
         aggregator_target_limit: "100"
+        vault_pub_key_frost: thorpub1zcjduepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
         clout_spent: "1234"
         height: 1234
         coin:
@@ -4602,6 +4727,9 @@ components:
           type: string
         vault_pub_key_eddsa:
           example: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+          type: string
+        vault_pub_key_frost:
+          example: thorpub1zcjduepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           type: string
         coin:
           $ref: '#/components/schemas/Coin'
@@ -5243,10 +5371,6 @@ components:
     TxResponse:
       example:
         observed_tx:
-          signers:
-          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
-          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
-          keysign_ms: 10000
           tx:
             chain: BTC
             coins:
@@ -5267,16 +5391,30 @@ components:
             to_address: bcrt1qf3s7q037eancht7sg0aj995dht25rwrnqsf45e
             id: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
             from_address: bcrt1q0s4mg25tu6termrk8egltfyme4q7sg3h8kkydt
+          xmr_tx_key: "1111111111111111111111111111111111111111111111111111111111111111"
+          aggregator: 0x69800327b38A4CeF30367Dec3f64c2f2386f3848
+          observed_pub_key: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+          external_confirmation_delay_height: 7581334
+          spent_output_refs:
+          - key_image: "2222222222222222222222222222222222222222222222222222222222222222"
+            spend_tx_hash: "3333333333333333333333333333333333333333333333333333333333333333"
+            tx_hash: E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+            output_index: 0
+          - key_image: "2222222222222222222222222222222222222222222222222222222222222222"
+            spend_tx_hash: "3333333333333333333333333333333333333333333333333333333333333333"
+            tx_hash: E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+            output_index: 0
+          aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+          signers:
+          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          keysign_ms: 10000
           aggregator_target: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
           out_hashes:
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
-          aggregator: 0x69800327b38A4CeF30367Dec3f64c2f2386f3848
-          observed_pub_key: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           external_observed_height: 7581334
-          external_confirmation_delay_height: 7581334
-          aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
-          observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           status: done
         keysign_metric:
           tx_id: tx_id
@@ -5312,10 +5450,6 @@ components:
     TxDetailsResponse:
       example:
         tx:
-          signers:
-          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
-          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
-          keysign_ms: 10000
           tx:
             chain: BTC
             coins:
@@ -5336,16 +5470,30 @@ components:
             to_address: bcrt1qf3s7q037eancht7sg0aj995dht25rwrnqsf45e
             id: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
             from_address: bcrt1q0s4mg25tu6termrk8egltfyme4q7sg3h8kkydt
+          xmr_tx_key: "1111111111111111111111111111111111111111111111111111111111111111"
+          aggregator: 0x69800327b38A4CeF30367Dec3f64c2f2386f3848
+          observed_pub_key: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+          external_confirmation_delay_height: 7581334
+          spent_output_refs:
+          - key_image: "2222222222222222222222222222222222222222222222222222222222222222"
+            spend_tx_hash: "3333333333333333333333333333333333333333333333333333333333333333"
+            tx_hash: E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+            output_index: 0
+          - key_image: "2222222222222222222222222222222222222222222222222222222222222222"
+            spend_tx_hash: "3333333333333333333333333333333333333333333333333333333333333333"
+            tx_hash: E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+            output_index: 0
+          aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+          signers:
+          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          keysign_ms: 10000
           aggregator_target: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
           out_hashes:
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
-          aggregator: 0x69800327b38A4CeF30367Dec3f64c2f2386f3848
-          observed_pub_key: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           external_observed_height: 7581334
-          external_confirmation_delay_height: 7581334
-          aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
-          observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           status: done
         out_txs:
         - chain: BTC
@@ -5410,6 +5558,7 @@ components:
             decimals: 6
             asset: BTC.BTC
           aggregator_target_limit: "100"
+          vault_pub_key_frost: thorpub1zcjduepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           clout_spent: "1234"
           height: 1234
           coin:
@@ -5435,6 +5584,7 @@ components:
             decimals: 6
             asset: BTC.BTC
           aggregator_target_limit: "100"
+          vault_pub_key_frost: thorpub1zcjduepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           clout_spent: "1234"
           height: 1234
           coin:
@@ -5442,11 +5592,7 @@ components:
             decimals: 6
             asset: BTC.BTC
         txs:
-        - signers:
-          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
-          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
-          keysign_ms: 10000
-          tx:
+        - tx:
             chain: BTC
             coins:
             - amount: "100000"
@@ -5466,22 +5612,32 @@ components:
             to_address: bcrt1qf3s7q037eancht7sg0aj995dht25rwrnqsf45e
             id: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
             from_address: bcrt1q0s4mg25tu6termrk8egltfyme4q7sg3h8kkydt
+          xmr_tx_key: "1111111111111111111111111111111111111111111111111111111111111111"
+          aggregator: 0x69800327b38A4CeF30367Dec3f64c2f2386f3848
+          observed_pub_key: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+          external_confirmation_delay_height: 7581334
+          spent_output_refs:
+          - key_image: "2222222222222222222222222222222222222222222222222222222222222222"
+            spend_tx_hash: "3333333333333333333333333333333333333333333333333333333333333333"
+            tx_hash: E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+            output_index: 0
+          - key_image: "2222222222222222222222222222222222222222222222222222222222222222"
+            spend_tx_hash: "3333333333333333333333333333333333333333333333333333333333333333"
+            tx_hash: E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+            output_index: 0
+          aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+          signers:
+          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          keysign_ms: 10000
           aggregator_target: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
           out_hashes:
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
-          aggregator: 0x69800327b38A4CeF30367Dec3f64c2f2386f3848
-          observed_pub_key: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           external_observed_height: 7581334
-          external_confirmation_delay_height: 7581334
-          aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
-          observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           status: done
-        - signers:
-          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
-          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
-          keysign_ms: 10000
-          tx:
+        - tx:
             chain: BTC
             coins:
             - amount: "100000"
@@ -5501,16 +5657,30 @@ components:
             to_address: bcrt1qf3s7q037eancht7sg0aj995dht25rwrnqsf45e
             id: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
             from_address: bcrt1q0s4mg25tu6termrk8egltfyme4q7sg3h8kkydt
+          xmr_tx_key: "1111111111111111111111111111111111111111111111111111111111111111"
+          aggregator: 0x69800327b38A4CeF30367Dec3f64c2f2386f3848
+          observed_pub_key: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+          external_confirmation_delay_height: 7581334
+          spent_output_refs:
+          - key_image: "2222222222222222222222222222222222222222222222222222222222222222"
+            spend_tx_hash: "3333333333333333333333333333333333333333333333333333333333333333"
+            tx_hash: E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+            output_index: 0
+          - key_image: "2222222222222222222222222222222222222222222222222222222222222222"
+            spend_tx_hash: "3333333333333333333333333333333333333333333333333333333333333333"
+            tx_hash: E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+            output_index: 0
+          aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+          signers:
+          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          keysign_ms: 10000
           aggregator_target: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
           out_hashes:
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
-          aggregator: 0x69800327b38A4CeF30367Dec3f64c2f2386f3848
-          observed_pub_key: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           external_observed_height: 7581334
-          external_confirmation_delay_height: 7581334
-          aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
-          observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           status: done
         finalised_height: 7581334
         reverted: false
@@ -5562,10 +5732,6 @@ components:
     TxSignersResponse:
       example:
         tx:
-          signers:
-          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
-          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
-          keysign_ms: 10000
           tx:
             chain: BTC
             coins:
@@ -5586,16 +5752,30 @@ components:
             to_address: bcrt1qf3s7q037eancht7sg0aj995dht25rwrnqsf45e
             id: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
             from_address: bcrt1q0s4mg25tu6termrk8egltfyme4q7sg3h8kkydt
+          xmr_tx_key: "1111111111111111111111111111111111111111111111111111111111111111"
+          aggregator: 0x69800327b38A4CeF30367Dec3f64c2f2386f3848
+          observed_pub_key: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+          external_confirmation_delay_height: 7581334
+          spent_output_refs:
+          - key_image: "2222222222222222222222222222222222222222222222222222222222222222"
+            spend_tx_hash: "3333333333333333333333333333333333333333333333333333333333333333"
+            tx_hash: E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+            output_index: 0
+          - key_image: "2222222222222222222222222222222222222222222222222222222222222222"
+            spend_tx_hash: "3333333333333333333333333333333333333333333333333333333333333333"
+            tx_hash: E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+            output_index: 0
+          aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+          signers:
+          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          keysign_ms: 10000
           aggregator_target: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
           out_hashes:
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
-          aggregator: 0x69800327b38A4CeF30367Dec3f64c2f2386f3848
-          observed_pub_key: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           external_observed_height: 7581334
-          external_confirmation_delay_height: 7581334
-          aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
-          observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           status: done
         out_txs:
         - chain: BTC
@@ -5660,6 +5840,7 @@ components:
             decimals: 6
             asset: BTC.BTC
           aggregator_target_limit: "100"
+          vault_pub_key_frost: thorpub1zcjduepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           clout_spent: "1234"
           height: 1234
           coin:
@@ -5685,6 +5866,7 @@ components:
             decimals: 6
             asset: BTC.BTC
           aggregator_target_limit: "100"
+          vault_pub_key_frost: thorpub1zcjduepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           clout_spent: "1234"
           height: 1234
           coin:
@@ -5692,11 +5874,7 @@ components:
             decimals: 6
             asset: BTC.BTC
         txs:
-        - signers:
-          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
-          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
-          keysign_ms: 10000
-          tx:
+        - tx:
             chain: BTC
             coins:
             - amount: "100000"
@@ -5716,22 +5894,32 @@ components:
             to_address: bcrt1qf3s7q037eancht7sg0aj995dht25rwrnqsf45e
             id: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
             from_address: bcrt1q0s4mg25tu6termrk8egltfyme4q7sg3h8kkydt
+          xmr_tx_key: "1111111111111111111111111111111111111111111111111111111111111111"
+          aggregator: 0x69800327b38A4CeF30367Dec3f64c2f2386f3848
+          observed_pub_key: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+          external_confirmation_delay_height: 7581334
+          spent_output_refs:
+          - key_image: "2222222222222222222222222222222222222222222222222222222222222222"
+            spend_tx_hash: "3333333333333333333333333333333333333333333333333333333333333333"
+            tx_hash: E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+            output_index: 0
+          - key_image: "2222222222222222222222222222222222222222222222222222222222222222"
+            spend_tx_hash: "3333333333333333333333333333333333333333333333333333333333333333"
+            tx_hash: E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+            output_index: 0
+          aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+          signers:
+          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          keysign_ms: 10000
           aggregator_target: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
           out_hashes:
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
-          aggregator: 0x69800327b38A4CeF30367Dec3f64c2f2386f3848
-          observed_pub_key: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           external_observed_height: 7581334
-          external_confirmation_delay_height: 7581334
-          aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
-          observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           status: done
-        - signers:
-          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
-          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
-          keysign_ms: 10000
-          tx:
+        - tx:
             chain: BTC
             coins:
             - amount: "100000"
@@ -5751,16 +5939,30 @@ components:
             to_address: bcrt1qf3s7q037eancht7sg0aj995dht25rwrnqsf45e
             id: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
             from_address: bcrt1q0s4mg25tu6termrk8egltfyme4q7sg3h8kkydt
+          xmr_tx_key: "1111111111111111111111111111111111111111111111111111111111111111"
+          aggregator: 0x69800327b38A4CeF30367Dec3f64c2f2386f3848
+          observed_pub_key: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+          external_confirmation_delay_height: 7581334
+          spent_output_refs:
+          - key_image: "2222222222222222222222222222222222222222222222222222222222222222"
+            spend_tx_hash: "3333333333333333333333333333333333333333333333333333333333333333"
+            tx_hash: E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+            output_index: 0
+          - key_image: "2222222222222222222222222222222222222222222222222222222222222222"
+            spend_tx_hash: "3333333333333333333333333333333333333333333333333333333333333333"
+            tx_hash: E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
+            output_index: 0
+          aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+          signers:
+          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          keysign_ms: 10000
           aggregator_target: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
           out_hashes:
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           - E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
-          aggregator: 0x69800327b38A4CeF30367Dec3f64c2f2386f3848
-          observed_pub_key: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           external_observed_height: 7581334
-          external_confirmation_delay_height: 7581334
-          aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
-          observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           status: done
         finalised_height: 7581334
         reverted: false
@@ -6969,6 +7171,7 @@ components:
               decimals: 6
               asset: BTC.BTC
             aggregator_target_limit: "100"
+            vault_pub_key_frost: thorpub1zcjduepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
             clout_spent: "1234"
             height: 1234
             coin:
@@ -6994,6 +7197,7 @@ components:
               decimals: 6
               asset: BTC.BTC
             aggregator_target_limit: "100"
+            vault_pub_key_frost: thorpub1zcjduepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
             clout_spent: "1234"
             height: 1234
             coin:
@@ -7191,6 +7395,154 @@ components:
       items:
         $ref: '#/components/schemas/SecuredAssetResponse'
       type: array
+    StableReserveInventory:
+      example:
+        reason: reason
+        oracle_price: oracle_price
+        amount: amount
+        healthy: true
+        asset: asset
+      properties:
+        asset:
+          type: string
+        amount:
+          type: string
+        healthy:
+          type: boolean
+        reason:
+          type: string
+        oracle_price:
+          type: string
+      required:
+      - amount
+      - asset
+      - healthy
+      - oracle_price
+      - reason
+      type: object
+    StableReserveStreamingSwap:
+      example:
+        amount: amount
+        stream_quantity: 0
+        target_asset: target_asset
+        purpose: purpose
+        stream_interval: 6
+        memo: memo
+        tx_id: tx_id
+        source_asset: source_asset
+      properties:
+        tx_id:
+          type: string
+        memo:
+          type: string
+        purpose:
+          type: string
+        source_asset:
+          type: string
+        target_asset:
+          type: string
+        amount:
+          type: string
+        stream_quantity:
+          format: int64
+          type: integer
+        stream_interval:
+          format: int64
+          type: integer
+      required:
+      - amount
+      - memo
+      - purpose
+      - source_asset
+      - stream_interval
+      - stream_quantity
+      - target_asset
+      - tx_id
+      type: object
+    StableReserveResponse:
+      example:
+        rune_balance: rune_balance
+        active_swaps:
+        - amount: amount
+          stream_quantity: 0
+          target_asset: target_asset
+          purpose: purpose
+          stream_interval: 6
+          memo: memo
+          tx_id: tx_id
+          source_asset: source_asset
+        - amount: amount
+          stream_quantity: 0
+          target_asset: target_asset
+          purpose: purpose
+          stream_interval: 6
+          memo: memo
+          tx_id: tx_id
+          source_asset: source_asset
+        deployment_stream_quantity: deployment_stream_quantity
+        depeg_tolerance_bps: depeg_tolerance_bps
+        deployment_stream_interval: deployment_stream_interval
+        inventory:
+        - reason: reason
+          oracle_price: oracle_price
+          amount: amount
+          healthy: true
+          asset: asset
+        - reason: reason
+          oracle_price: oracle_price
+          amount: amount
+          healthy: true
+          asset: asset
+        pol_share_bps: pol_share_bps
+        enabled: true
+      properties:
+        enabled:
+          type: boolean
+        rune_balance:
+          type: string
+        depeg_tolerance_bps:
+          type: string
+        pol_share_bps:
+          type: string
+        inventory:
+          items:
+            $ref: '#/components/schemas/StableReserveInventory'
+          type: array
+        deployment_stream_quantity:
+          type: string
+        deployment_stream_interval:
+          type: string
+        active_swaps:
+          items:
+            $ref: '#/components/schemas/StableReserveStreamingSwap'
+          type: array
+      required:
+      - active_swaps
+      - depeg_tolerance_bps
+      - deployment_stream_interval
+      - deployment_stream_quantity
+      - enabled
+      - inventory
+      - pol_share_bps
+      - rune_balance
+      type: object
+    StableReserveContributorResponse:
+      example:
+        address: address
+        asset: asset
+        credit: credit
+      properties:
+        asset:
+          type: string
+        address:
+          type: string
+        credit:
+          type: string
+      required:
+      - address
+      - asset
+      - credit
+      type: object
     MimirResponse:
       additionalProperties:
         type: string
@@ -8818,6 +9170,7 @@ components:
             decimals: 6
             asset: BTC.BTC
           aggregator_target_limit: "100"
+          vault_pub_key_frost: thorpub1zcjduepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           clout_spent: "1234"
           height: 1234
           coin:
@@ -8843,6 +9196,7 @@ components:
             decimals: 6
             asset: BTC.BTC
           aggregator_target_limit: "100"
+          vault_pub_key_frost: thorpub1zcjduepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           clout_spent: "1234"
           height: 1234
           coin:

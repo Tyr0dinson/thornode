@@ -229,7 +229,50 @@ func (s *SlasherImpl) HandleMissingSign(ctx cosmos.Context, addr crypto.Address,
 // lands on-chain thornode emits a "missing tx out" security event.
 // Process XMR outbounds from a 3x-older batch to give FROST and chain
 // confirmation enough headroom.
-const xmrSigningPeriodMultiplier = 3
+const xmrSigningPeriodMultiplier = types.ExtendedOutboundSigningPeriodMultiplier
+
+// staleOutboundObservationSigningPeriods bounds how long a non-finalised
+// observed outbound can pin reassignment or treasury recovery.
+const staleOutboundObservationSigningPeriods = 3
+
+// evmAggregatorSigningPeriodMultiplier scales SigningTransactionPeriod for
+// EVM swap-out aggregator outbounds. The signer broadcasts a transferOutAndCall
+// transaction, but the EVM scanner may not observe and finalise the outbound
+// before the standard signing window expires. Rescheduling inside that window
+// can create a direct fallback outbound while the original aggregator call is
+// still in flight, duplicating the outbound.
+const evmAggregatorSigningPeriodMultiplier = types.ExtendedOutboundSigningPeriodMultiplier
+
+// evmTokenSigningPeriodMultiplier scales SigningTransactionPeriod for EVM token
+// outbounds. The signer may need to submit an ERC20 approval transaction before
+// the actual transfer, so a valid token outbound can observe after the standard
+// signing window even when the signer is behaving correctly.
+const evmTokenSigningPeriodMultiplier = types.ExtendedOutboundSigningPeriodMultiplier
+
+func isEVMAggregatorTxOut(toi TxOutItem) bool {
+	return toi.Chain.IsEVM() && txOutHasAggregator(toi)
+}
+
+func isEVMTokenTxOut(toi TxOutItem) bool {
+	return toi.Chain.IsEVM() &&
+		!isEVMAggregatorTxOut(toi) &&
+		!toi.Coin.Asset.Equals(toi.Chain.GetGasAsset())
+}
+
+func isObservedEVMAggregatorOutbound(tx common.ObservedTx) bool {
+	return tx.Tx.Chain.IsEVM() && observedTxHasAggregator(tx)
+}
+
+func isObservedEVMTokenOutbound(tx common.ObservedTx) bool {
+	if !tx.Tx.Chain.IsEVM() || len(tx.Tx.Coins) == 0 || isObservedEVMAggregatorOutbound(tx) {
+		return false
+	}
+	return !tx.Tx.Coins[0].Asset.Equals(tx.Tx.Chain.GetGasAsset())
+}
+
+func txOutSigningPeriod(toi TxOutItem, signingTransPeriod int64) int64 {
+	return toi.SigningTransactionPeriod(signingTransPeriod)
+}
 
 // LackSigning slash account that fail to sign tx
 func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
@@ -255,13 +298,18 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 	}
 
 	// Each pass examines a different TxOut batch and processes items whose
-	// chain matches the pass. Non-XMR chains are checked at the standard
-	// SigningTransactionPeriod. XMR outbounds are checked at a longer
-	// period (see xmrSigningPeriodMultiplier above).
+	// timing class matches the pass. Standard outbounds are checked at the
+	// SigningTransactionPeriod. XMR, EVM aggregator, and EVM token outbounds
+	// are checked at longer periods because their sign/broadcast/observe
+	// round-trips can exceed the standard window.
 	xmrSigningTransPeriod := signingTransPeriod * xmrSigningPeriodMultiplier
+	evmAggregatorSigningTransPeriod := signingTransPeriod * evmAggregatorSigningPeriodMultiplier
+	evmTokenSigningTransPeriod := signingTransPeriod * evmTokenSigningPeriodMultiplier
 	type rescheduleBatch struct {
-		height  int64
-		wantXMR bool
+		height            int64
+		wantXMR           bool
+		wantEVMAggregator bool
+		wantEVMToken      bool
 	}
 	batches := []rescheduleBatch{
 		{height: ctx.BlockHeight() - signingTransPeriod, wantXMR: false},
@@ -272,10 +320,24 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 			wantXMR: true,
 		})
 	}
+	if ctx.BlockHeight() >= evmAggregatorSigningTransPeriod {
+		batches = append(batches, rescheduleBatch{
+			height:            ctx.BlockHeight() - evmAggregatorSigningTransPeriod,
+			wantEVMAggregator: true,
+		})
+	}
+	if ctx.BlockHeight() >= evmTokenSigningTransPeriod {
+		batches = append(batches, rescheduleBatch{
+			height:       ctx.BlockHeight() - evmTokenSigningTransPeriod,
+			wantEVMToken: true,
+		})
+	}
 
 	for _, batch := range batches {
 		height := batch.height
 		wantXMR := batch.wantXMR
+		wantEVMAggregator := batch.wantEVMAggregator
+		wantEVMToken := batch.wantEVMToken
 		txs, err := s.keeper.GetTxOut(ctx, height)
 		if err != nil {
 			return fmt.Errorf("fail to get txout from block height(%d): %w", height, err)
@@ -283,14 +345,23 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 
 		for i, toi := range txs.TxArray {
 			if toi.Chain.Equals(common.XMRChain) != wantXMR {
-				// XMR items are processed in the extended-period pass;
-				// non-XMR items are processed in the standard pass.
+				// XMR items are processed in the XMR extended-period pass.
+				continue
+			}
+			if isEVMAggregatorTxOut(toi) != wantEVMAggregator {
+				// EVM aggregator items are processed in their extended-period pass.
+				continue
+			}
+			if isEVMTokenTxOut(toi) != wantEVMToken {
+				// EVM token items are processed in their extended-period pass.
 				continue
 			}
 			if !common.CurrentChainNetwork.SoftEquals(toi.ToAddress.GetNetwork(toi.Chain)) {
 				continue // skip this transaction
 			}
 			if toi.OutHash.IsEmpty() {
+				itemSigningTransPeriod := txOutSigningPeriod(toi, signingTransPeriod)
+
 				// Slash node account for not sending funds
 				vault, err := s.keeper.GetVault(ctx, toi.VaultPubKey)
 				if err != nil {
@@ -357,7 +428,7 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				if vault.Status == InactiveVault {
 					maxRetiredVaultRecoveryAttempts := mgr.Keeper().GetConfigInt64(ctx, constants.MaxRetiredVaultRecoveryAttempts)
 					age := ctx.BlockHeight() - voter.FinalisedHeight
-					attempts := age / signingTransPeriod
+					attempts := age / itemSigningTransPeriod
 					if attempts >= maxRetiredVaultRecoveryAttempts {
 						ctx.Logger().Info("too many attempts for retired vault recovery",
 							"hash", toi.InHash,
@@ -398,13 +469,12 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 
 				if maxOutboundAttempts > 0 {
 					age := ctx.BlockHeight() - voter.FinalisedHeight
-					attempts := age / signingTransPeriod
+					attempts := age / itemSigningTransPeriod
 					if attempts >= maxOutboundAttempts {
 						// Skip treasury recovery if there's already an outbound associated or
-						// at least one observation of the outbound (outbound is in progress)
+						// a non-stale observation of the outbound (outbound is in progress).
 						hasOutboundAssociated := len(voter.OutTxs) > 0
-						outboundObservations := mgr.Keeper().GetObservedLink(ctx, toi.InHash)
-						hasOutboundObservation := len(outboundObservations) > 0
+						hasOutboundObservation := s.hasActiveOutboundObservation(ctx, mgr, itemSigningTransPeriod, voter.FinalisedHeight, toi.InHash)
 						if hasOutboundAssociated || hasOutboundObservation {
 							ctx.Logger().Info("skipping treasury recovery, outbound in progress",
 								"hash", toi.InHash,
@@ -429,7 +499,7 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 					}
 				}
 
-				if !frozen && s.needsNewVault(ctx, mgr, vault, signingTransPeriod, voter.FinalisedHeight, toi) {
+				if !frozen && s.needsNewVault(ctx, mgr, vault, itemSigningTransPeriod, voter.FinalisedHeight, toi) {
 					var active types.Vaults
 					active, err = s.keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
 					if err != nil {
@@ -450,8 +520,10 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 						// have THORChain-unobserved gas costs (causing churn-migration-jamming vault insolvency).
 						// As such, re-add the (now free) funds of the outbound being replaced.
 						if active[i].PubKey.Equals(toi.VaultPubKey) {
-							active[i].Coins = active[i].Coins.Add(toi.Coin)
-							active[i].Coins = active[i].Coins.Add(toi.MaxGas...)
+							// This is a local availability simulation, not a real credit:
+							// bypass AddFunds so deficits do not consume the paper restore.
+							paperRestored := common.NewCoins(toi.Coin).Add(toi.MaxGas...)
+							active[i].Coins = active[i].Coins.Add(paperRestored...)
 						}
 					}
 
@@ -519,7 +591,7 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 								voter.Actions[i].VaultPubKey = vault.PubKey
 								voter.Actions[i].VaultPubKeyEddsa = txOutVaultPubKeyEddsa(toi.Chain, vault.PubKeyEddsa)
 								voter.Actions[i].VaultPubKeyFrost = vault.PubKeyFrost
-								if toi.Aggregator != "" || toi.AggregatorTargetAsset != "" || toi.AggregatorTargetLimit != nil {
+								if txOutHasAggregator(toi) {
 									ctx.Logger().Info("clearing aggregator fields on outbound reassignment", "hash", toi.InHash)
 
 									// Here, simultaneously clear the Aggregator information for a reassigned TxOutItem and its Actions item
@@ -1049,6 +1121,96 @@ func (s *SlasherImpl) updatePoolFromSlash(ctx cosmos.Context, pool types.Pool, s
 	}
 }
 
+// hasActiveOutboundObservation reports whether an observed link should still
+// block MaxOutboundAttempts recovery. Fresh or finalised observations remain a
+// double-send guard; only stale non-finalised observations are ignored.
+func (s *SlasherImpl) hasActiveOutboundObservation(ctx cosmos.Context, mgr Manager, staleSigningTransPeriod, startHeight int64, inHash common.TxID) bool {
+	outhashes := mgr.Keeper().GetObservedLink(ctx, inHash)
+	for _, hash := range outhashes {
+		voter, err := mgr.Keeper().GetObservedTxOutVoter(ctx, hash)
+		if err != nil {
+			ctx.Logger().Error("fail to get txout voter", "hash", hash, "error", err)
+			return true
+		}
+		staleStatus := s.staleNonFinalOutboundObservation(ctx, voter, staleSigningTransPeriod, startHeight)
+		if staleStatus.stale {
+			// The observed link proves only that signers reported a broadcast.
+			// If it never finalises, continuing to treat it as in progress blocks
+			// both reassignment and MaxOutboundAttempts recovery indefinitely.
+			logStaleOutboundObservation(ctx, staleStatus, "ignoring stale non-finalised outbound observation",
+				"inhash", inHash,
+				"outhash", hash,
+				"start_height", startHeight,
+				"observation_height", staleStatus.observationHeight,
+				"voter_height", voter.Height,
+				"unfinalized_height", voter.UnfinalizedHeight,
+				"stale_since_height", staleStatus.staleSinceHeight,
+				"reason", "non-finalised observation exceeded stale window and no longer proves outbound is in progress")
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// staleOutboundObservationStatus carries the height metadata used to decide
+// whether a stale observation should still get the one high-signal Info log.
+type staleOutboundObservationStatus struct {
+	stale             bool
+	firstStaleWindow  bool
+	observationHeight int64
+	staleSinceHeight  int64
+}
+
+// staleNonFinalOutboundObservation bounds the "vault says it sent it" heuristic.
+// A non-finalised outbound observation that never reaches finality should not
+// pin reassignment or recovery forever.
+func (s *SlasherImpl) staleNonFinalOutboundObservation(ctx cosmos.Context, voter ObservedTxVoter, signingTransPeriod, startHeight int64) staleOutboundObservationStatus {
+	status := staleOutboundObservationStatus{}
+	if signingTransPeriod <= 0 || voter.FinalisedHeight > 0 {
+		return status
+	}
+
+	// Prefer the consensus height for voters that reached non-final consensus.
+	// Fall back to the inbound/retry clock for sub-consensus signer observations.
+	observationHeight := voter.UnfinalizedHeight
+	if observationHeight == 0 {
+		observationHeight = voter.Height
+	}
+	if observationHeight == 0 {
+		observationHeight = startHeight
+	}
+	if observationHeight <= 0 {
+		return status
+	}
+
+	expiryHeight := observationHeight + (staleOutboundObservationSigningPeriods * signingTransPeriod)
+	status.observationHeight = observationHeight
+	status.staleSinceHeight = expiryHeight + 1
+	if ctx.BlockHeight() <= expiryHeight {
+		return status
+	}
+
+	status.stale = true
+	// LackSigning re-evaluates rescheduled items on signing-period boundaries,
+	// so an exact expiryHeight+1 check could miss the first actionable check.
+	status.firstStaleWindow = ctx.BlockHeight() <= expiryHeight+signingTransPeriod
+	return status
+}
+
+// logStaleOutboundObservation emits Info only while the stale condition first
+// becomes actionable; repeated stale checks after that window are Debug noise.
+func logStaleOutboundObservation(ctx cosmos.Context, status staleOutboundObservationStatus, msg string, keyvals ...interface{}) {
+	keyvals = append(keyvals,
+		"first_stale_window", status.firstStaleWindow,
+		"stale_observation_signing_periods", staleOutboundObservationSigningPeriods)
+	if status.firstStaleWindow {
+		ctx.Logger().Info(msg, keyvals...)
+		return
+	}
+	ctx.Logger().Debug(msg, keyvals...)
+}
+
 func (s *SlasherImpl) needsNewVault(ctx cosmos.Context, mgr Manager, vault Vault, signingTransPeriod, startHeight int64, toi TxOutItem) bool {
 	outhashes := mgr.Keeper().GetObservedLink(ctx, toi.InHash)
 	if len(outhashes) == 0 {
@@ -1082,6 +1244,19 @@ func (s *SlasherImpl) needsNewVault(ctx cosmos.Context, mgr Manager, vault Vault
 			}
 		}
 		if len(signers) > 0 {
+			staleStatus := s.staleNonFinalOutboundObservation(ctx, voter, signingTransPeriod, startHeight)
+			if staleStatus.stale {
+				logStaleOutboundObservation(ctx, staleStatus, "allowing vault reassignment for stale non-finalised outbound observation",
+					"inhash", toi.InHash,
+					"outhash", hash,
+					"start_height", startHeight,
+					"observation_height", staleStatus.observationHeight,
+					"voter_height", voter.Height,
+					"unfinalized_height", voter.UnfinalizedHeight,
+					"stale_since_height", staleStatus.staleSinceHeight)
+				continue
+			}
+
 			var count int // count the number of signers from the assigned vault
 			for _, member := range vault.Membership {
 				pk, err := common.NewPubKey(member)

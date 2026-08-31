@@ -3,11 +3,13 @@ package thorchain
 import (
 	"errors"
 	"os"
+	"strings"
 
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
@@ -616,6 +618,55 @@ func (s *SwapSuite) TestSynthSwap_AssetSynth(c *C) {
 	// We don't check pool.SynthUnits to not duplicate the calculation here,
 	// but we did check BalanceAsset, LPUnits, and totalSynthSupply, the
 	// three inputs to the calculation.
+}
+
+func (s *SwapSuite) TestSynthSwapBurnSynthsRagnarok(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(1000)
+
+	pool := NewPool()
+	pool.Asset = common.ETHAsset
+	pool.BalanceRune = cosmos.NewUint(1111 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(34 * common.One)
+	pool.LPUnits = pool.BalanceRune
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+	c.Assert(mgr.Keeper().SetVault(ctx, GetRandomVault()), IsNil)
+
+	mintSynthToAsgard := func() common.Tx {
+		addr := GetRandomTHORAddress()
+		tx := common.NewTx(
+			GetRandomTxHash(),
+			addr,
+			addr,
+			common.NewCoins(common.NewCoin(common.ETHAsset.GetSyntheticAsset(), cosmos.NewUint(1*common.One))),
+			common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(200_000))},
+			"",
+		)
+		tx.Chain = common.ETHChain
+		c.Assert(mgr.Keeper().MintToModule(ctx, ModuleName, tx.Coins[0]), IsNil)
+		c.Assert(mgr.Keeper().SendFromModuleToModule(ctx, ModuleName, AsgardName, tx.Coins), IsNil)
+		return tx
+	}
+
+	// BurnSynths is set below the current height, so synth-source swaps are
+	// normally rejected (this is the permanent state at the mainnet value of 1).
+	mgr.Keeper().SetMimir(ctx, constants.BurnSynths.String(), 1)
+
+	// Without ragnarok the synth->RUNE swap (the redemption leg of a saver
+	// withdraw) is rejected by the BurnSynths gate.
+	tx := mintSynthToAsgard()
+	addr := tx.FromAddress
+	_, _, err := newSwapper().Swap(ctx, mgr.Keeper(), tx, common.RuneAsset(), addr, cosmos.ZeroUint(), "", "", nil, StreamingSwap{}, 20_000, mgr, nil, nil)
+	c.Assert(err, NotNil)
+	c.Assert(strings.Contains(err.Error(), "burning synthetics has been disabled"), Equals, true,
+		Commentf("expected burn-disabled rejection, got: %v", err))
+
+	// Once the pool is in ragnarok, the same redemption swap must be allowed so
+	// the saver can be paid out; the BurnSynths gate no longer blocks it.
+	mgr.Keeper().SetMimir(ctx, "RAGNAROK-"+common.ETHAsset.MimirString(), 1)
+	tx = mintSynthToAsgard()
+	_, _, err = newSwapper().Swap(ctx, mgr.Keeper(), tx, common.RuneAsset(), tx.FromAddress, cosmos.ZeroUint(), "", "", nil, StreamingSwap{}, 20_000, mgr, nil, nil)
+	c.Assert(err, IsNil, Commentf("ragnarok saver redemption swap must not be blocked by BurnSynths: %v", err))
 }
 
 func (s *SwapSuite) TestSwap_GetSwapCalc(c *C) {
