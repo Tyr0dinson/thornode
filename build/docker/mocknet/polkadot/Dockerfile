@@ -1,5 +1,10 @@
 ARG NODE_VERSION=stable1603-4
-FROM parity/polkadot-omni-node:$NODE_VERSION
+
+# BuildKit does not expand variables in COPY --from, so the tagged image is
+# pulled as a named stage here and copied from by that name below.
+FROM parity/chain-spec-builder:${NODE_VERSION} AS chain-spec-builder
+
+FROM parity/polkadot-omni-node:${NODE_VERSION}
 
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -9,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && rm -rf /var/lib/apt/lists/*
 
 # chain-spec-builder generates the chain spec from the real Asset Hub runtime
-COPY --from=parity/chain-spec-builder:$NODE_VERSION /usr/local/bin/chain-spec-builder /usr/local/bin/chain-spec-builder
+COPY --from=chain-spec-builder /usr/local/bin/chain-spec-builder /usr/local/bin/chain-spec-builder
 
 # Production Asset Hub Polkadot runtime (spec_name "statemint"), pinned to the
 # fellowship release matching mainnet specVersion 2003001, so mocknet exercises
