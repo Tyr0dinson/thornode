@@ -98,7 +98,10 @@ Steps performed by the dev team:
 2. **Daemon Install**: Node operators sync the new chain daemon (`make install`)
 3. **Enable Scanning**: Final `node-launcher` PR merged and deployed
 4. **Admin Mimir**: Unhalt to enable scanning
-5. **Admin Mimir**: `Enable<Chain>Chain = 1` to stamp the chain onto the live vaults
+5. **Node Mimir vote**: `Enable<Chain>Chain = 1` to stamp the chain onto the live vaults.
+   Unlike the `Halt*` keys in steps 1, 4 and 6, this is an economic mimir
+   (`IsOperationalMimir` does not match it), so it takes a supermajority of active
+   nodes each voting the key before it is set — and the same again to unset it
 6. **Admin Mimir**: Enable trading once scanning reaches chain tip
 
 Step 5 replaces waiting for a churn. Historically `vault.Chains` was written only at
@@ -111,7 +114,8 @@ contract installed first. The chain must be unhalted, so step 4 comes before ste
 
 If the gates are not met nothing is stamped and the reason is logged each block
 (`chain activation not ready`). Leave the mimir set until the chain is live; unset it
-afterwards, since it is only re-read while a chain is still awaiting activation.
+afterwards: it is re-read every block whether or not the chain is activated, and while
+any enable mimir is set the activation pass scans the vault store each block too.
 
 ### Operational notes
 
@@ -140,12 +144,16 @@ is rejected — so the supermajority requirement decays across churns. If activa
 being retried long after the first fee consensus and the log reads `readiness proof lacks
 a current supermajority`, the recovery depends on how the chain's scanner posts:
 
-- **XRP, Cosmos** post only on a period-aligned chain height, gated on
-  `height % GasUpdatePeriodBlocks == 0`. Have at least two thirds of active nodes restart
-  bifrost within the same fee-update window: the restart clears the in-memory last fee, and they
-  all post again at the same aligned height and rate, forming one fresh voter that can
-  reach consensus. Staggered restarts land on different aligned heights, spreading the
-  posts across several voter keys, and will not converge.
+- **XRP, Cosmos** post only on a period-aligned chain height with a full fee cache. XRP
+  gates on `height % FeeUpdatePeriodBlocks == 0` (20 blocks) and 200 cached fee samples;
+  Cosmos on `height % GasUpdatePeriodBlocks == 0` (10 blocks) and 100. Both caches are
+  in-memory, so a restarted node posts nothing until it has re-observed that many
+  fee-asset transactions. Have at least two thirds of active nodes restart bifrost within
+  the same fee-update window: the restart clears the in-memory last fee, and they all post
+  again at the same aligned height and rate, forming one fresh voter that can reach
+  consensus. Staggered restarts, or caches that refill at different times, land on
+  different aligned heights, spreading the posts across several voter keys, and will not
+  converge.
 - **TRON** posts at whatever height it is scanning when the fee changes, with no
   alignment, so restarts do not put the nodes on a common voter key and there is no
   operator-driven refresh. The attester set there only advances when the fee genuinely
