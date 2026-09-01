@@ -780,3 +780,91 @@ func (s *HandlerObservedTxOutSuite) TestObservingSlashing(c *C) {
 
 	// Note that nas[6], the Standby node, remains unaffected by the Actives nodes' observations.
 }
+
+// TestHandleBouncedOutbound covers an EVM outbound the router returned to the
+// sending vault while still emitting a full-value TransferOut. The observation
+// deliberately keeps the intended recipient and amount so the TxOutItem match
+// still succeeds; only the coin debit is skipped, and the failure is surfaced as
+// a security event instead of silently under-counting the vault forever.
+func (s *HandlerObservedTxOutSuite) TestHandleBouncedOutbound(c *C) {
+	var err error
+	ctx, mgr := setupManagerForTest(c)
+
+	tx := GetRandomTx()
+	pk := GetRandomPubKey()
+	tx.FromAddress, err = pk.GetAddress(tx.Coins[0].Asset.Chain)
+	c.Assert(err, IsNil)
+	txInHash := GetRandomTxHash()
+	tx.Memo = fmt.Sprintf("OUT:%s", txInHash)
+	obTx := NewObservedTx(tx, 12, pk, 12)
+	obTx.Bounced = true
+	txs := ObservedTxs{obTx}
+
+	na := GetRandomValidatorNode(NodeActive)
+	na.Bond = cosmos.NewUint(1000000 * common.One)
+	na.PubKeySet.Secp256k1 = pk
+
+	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, pk, common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+	vault.Membership = []string{pk.String()}
+	vault.Coins = common.Coins{
+		common.NewCoin(common.RuneAsset(), cosmos.NewUint(500)),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(200*common.One)),
+	}
+	keeper := &TestObservedTxOutHandleKeeper{
+		nas:       NodeAccounts{GetRandomValidatorNode(NodeActive)},
+		voter:     NewObservedTxVoter(tx.ID, make(ObservedTxs, 0)),
+		txInVoter: NewObservedTxVoter(txInHash, make(ObservedTxs, 0)),
+		pool: Pool{
+			Asset:        common.ETHAsset,
+			BalanceRune:  cosmos.NewUint(200_000),
+			BalanceAsset: cosmos.NewUint(300_000),
+		},
+		vaultExists: true,
+		vault:       vault,
+		hashes:      make([]common.TxID, 0),
+	}
+	txOutStore := NewTxStoreDummy()
+	txOutStore.blockOut.TxArray = append(txOutStore.blockOut.TxArray, TxOutItem{
+		Chain:       tx.Chain,
+		InHash:      txInHash,
+		ToAddress:   tx.ToAddress,
+		VaultPubKey: vault.PubKey,
+		Coin:        tx.Coins[0],
+		Memo:        tx.Memo,
+	})
+	keeper.txOutStore = txOutStore
+
+	mgr.K = keeper
+	eventMgr := NewDummyEventMgr()
+	mgr.eventMgr = eventMgr
+	mgr.slasher = newSlasher(keeper, eventMgr)
+	validatorMgr := newValidatorMgr(keeper, mgr.NetworkMgr(), txOutStore, eventMgr)
+	mgr.validatorMgr = validatorMgr
+
+	handler := NewObservedTxOutHandler(mgr)
+	msg := NewMsgObservedTxOut(txs, keeper.nas[0].NodeAddress)
+
+	_, err = handler.handle(ctx, *msg)
+	c.Assert(err, IsNil)
+
+	// the outbound is still terminal: the TxOutItem is matched and no longer pending
+	pendingTxOuts, err := validatorMgr.getPendingTxOut(ctx)
+	c.Assert(err, IsNil)
+	c.Check(pendingTxOuts, Equals, int64(0))
+
+	vault, err = keeper.GetVault(ctx, pk)
+	c.Assert(err, IsNil)
+	// only gas (37500) comes off; the coin amount stays because the router
+	// returned it. Compare against TestHandle, where 37500+1 is subtracted.
+	c.Check(vault.Coins.GetCoin(common.ETHAsset).Amount.Equal(cosmos.NewUint(19999962500)), Equals, true,
+		Commentf("%d", vault.Coins.GetCoin(common.ETHAsset).Amount.Uint64()))
+
+	// the undelivered outbound must not be silent
+	securityEvents := 0
+	for _, e := range ctx.EventManager().Events() {
+		if e.Type == "security" {
+			securityEvents++
+		}
+	}
+	c.Check(securityEvents, Equals, 1)
+}

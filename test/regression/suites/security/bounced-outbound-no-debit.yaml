@@ -1,0 +1,99 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# swap RUNE -> ETH.ETH to schedule a real outbound
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=:ETH.ETH:{{ addr_eth_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].coin.amount == "${OUT_AMOUNT=82004267}"
+---
+########################################################################################
+# observe the outbound as bounced: the EVM router could not deliver to the recipient
+# and returned the ETH to the vault, but emitted a full-value TransferOut anyway.
+# The observation keeps the intended recipient and amount so the TxOutItem still
+# matches - only the vault coin debit is skipped.
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_fox }}
+      coins:
+        - amount: "${OUT_AMOUNT}"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "960000"
+          asset: "ETH.ETH"
+      memo: "OUT:{{ native_txid -1 }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+    bounced: true
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# the outbound is terminal - matched and out of the queue, never rescheduled
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# no slash: the observation matched its TxOutItem exactly
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+  - .[] | select(.node_address == "{{ addr_thor_dog }}") | .total_bond == "5000000000000"
+---
+########################################################################################
+# the undelivered outbound is loud, not silent
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[].result.events[] | select(.type == "security")]|length == 1'
+  - '[.txs[].result.events[] | select(.type == "slash")]|length == 0'
+---
+########################################################################################
+# the vault keeps the coins - only gas comes off. This is the whole point: before the
+# fix the full OUT_AMOUNT was debited from a vault that still held it, permanently and
+# silently under-counting the vault.
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_dog }}
+asserts:
+  - .coins[]|select(.asset=="ETH.ETH")|.amount|tonumber == 1000000000-960000
+---
+########################################################################################
+# The vault now holds more ETH than the pool accounts for: the pool paid the swap out
+# but the coins never left. That surplus is the truthful state and is what makes the
+# failure visible - before the fix the books balanced while the vault's recorded
+# balance silently drifted from what the chain actually held. Existing over-solvency
+# handling reconciles the surplus.
+########################################################################################
+type: fail-export-invariants

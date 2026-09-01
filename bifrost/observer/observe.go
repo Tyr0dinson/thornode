@@ -2142,6 +2142,7 @@ func (o *Observer) getThorchainTxIns(txIn *types.TxIn, finalized bool, finaliseH
 				obsTx.XmrMinedHeight = minedHeight
 			}
 		}
+		obsTx.Bounced = item.Bounced
 		obsTxs = append(obsTxs, obsTx)
 	}
 	return obsTxs, invalidIndices, nil

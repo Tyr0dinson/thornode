@@ -1399,8 +1399,22 @@ func handleObservedTxOutQuorum(
 		// Don't add to or subtract from vault balances when the sender and recipient are the same
 		// (particularly avoid Consolidate SafeSub zeroing of vault balances).
 		if !tx.Tx.FromAddress.Equals(tx.Tx.ToAddress) {
-			// skip deducting funds for outbound fake gas
-			if !isOutboundFakeGasTx(tx) {
+			switch {
+			case isOutboundFakeGasTx(tx):
+				// skip deducting funds for outbound fake gas
+			case tx.Bounced:
+				// The EVM router could not deliver to the recipient and returned the
+				// coins to this vault, but emitted TransferOut anyway. Gas was spent,
+				// the coins were not: debiting them here is what silently under-counts
+				// the vault. The outbound stays terminal (the router bounces rather
+				// than reverting precisely so bifrost does not retry forever), so the
+				// recipient is left unpaid - make that loud instead of silent.
+				ctx.Logger().Error("outbound bounced back to vault, coins retained",
+					"tx", tx.Tx.ID, "vault_pubkey", vault.PubKey, "coins", tx.Tx.Coins.String())
+				if err := mgr.EventMgr().EmitEvent(ctx, NewEventSecurity(tx.Tx, "outbound bounced back to vault")); err != nil {
+					ctx.Logger().Error("fail to emit security event", "error", err)
+				}
+			default:
 				// An outbound observation should normally be covered by the vault's
 				// tracked balance. If it is not, the L1 already sent the funds, so
 				// THORChain must record the deficit and halt/signal rather than keep

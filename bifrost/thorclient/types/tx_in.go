@@ -76,6 +76,12 @@ type TxInItem struct {
 	SolNonce             *common.SolNonceUpdate `json:"sol_nonce,omitempty"`
 	CommittedUnFinalised bool                   `json:"committed_pre_final"`
 
+	// Bounced marks an outbound whose coins never reached the recipient: the EVM
+	// router returned them to the sending vault and emitted TransferOut anyway.
+	// Coins and To still describe the intended outbound so THORNode's TxOutItem
+	// matching succeeds; only the vault coin debit is skipped.
+	Bounced bool `json:"bounced,omitempty"`
+
 	// OnObservedTxStored and OnObservedTxRejected are local-only handoff
 	// callbacks used by scanners which retain a durable replay record until the
 	// observer has durably accepted (or explicitly rejected) the observation.
@@ -153,6 +159,11 @@ func (t *TxInItem) Equals(other *TxInItem) bool {
 func (t *TxInItem) EqualsObservedTx(other common.ObservedTx) bool {
 	// Do not compare block height, as we only keep one deck item for a tx pre/post finalization.
 	// The final block height will be ConfirmationCount higher than the unfinalized tx.
+	//
+	// Bounced is deliberately not compared either. It is part of the signed payload,
+	// so while observers are still converging on the EVMBouncedOutbound mimir the
+	// committed observation may carry the other value; comparing it would leave this
+	// node's deck entry stuck forever, re-sending an observation thorchain already has.
 
 	txId, err := common.NewTxID(t.Tx)
 	if err != nil {

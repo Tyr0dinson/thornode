@@ -1208,6 +1208,26 @@ func (e *EVMScanner) directERC20InboundEnabled() bool {
 	return enabled > 0
 }
 
+// bouncedOutboundEnabled reports whether the log parser should flag outbounds the
+// router returned to the sending vault. Gated per-chain so every observer starts
+// setting ObservedTx.Bounced at the same height: the flag is part of the signed
+// attestation payload, so a mixed window would briefly fail to reach quorum on a
+// bounce (self-healing via the observer deck refresh).
+func (e *EVMScanner) bouncedOutboundEnabled() bool {
+	enabled, err := e.bridge.GetMimirWithRef(
+		constants.MimirTemplateEVMBouncedOutbound,
+		e.cfg.ChainID.String(),
+	)
+	if err != nil {
+		e.logger.Err(err).
+			Str("mimir_template", constants.MimirTemplateEVMBouncedOutbound).
+			Str("chain", e.cfg.ChainID.String()).
+			Msg("fail to get bounced outbound mimir")
+		return false
+	}
+	return enabled > 0
+}
+
 // getTxInFromDirectERC20Transfer observes direct ERC20 token transfers sent to
 // active vault addresses. These txs bypass the router, so they are emitted as
 // memo-less inbounds and left to THORNode's normal memoless/refund handling.
@@ -1253,6 +1273,7 @@ func (e *EVMScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 		e.vaultABI,
 		e.cfg.ChainID.GetGasAsset(),
 		maxLogs,
+		e.bouncedOutboundEnabled(),
 	)
 
 	// txInItem will be changed in p.getTxInItem function, so if the function return an

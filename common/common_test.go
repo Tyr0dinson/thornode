@@ -98,6 +98,9 @@ func (s CommonSuite) TestObservedTxSignablePayloadFieldCoverage(c *C) {
 		// The attested durable-nonce update is committed on-chain, so it must be
 		// signed: a proposer must not be able to swap the value observers attested.
 		"SolNonce": func(o *ObservedTx) { o.SolNonce = &SolNonceUpdate{NonceAccount: "acct", Nonce: "nonce", Slot: 1} },
+		// Bounced suppresses the vault coin debit, so a proposer flipping it on a
+		// real outbound would leave phantom credit on the vault. It must be signed.
+		"Bounced": func(o *ObservedTx) { o.Bounced = true },
 	}
 	for name, mutate := range covered {
 		mutated := base

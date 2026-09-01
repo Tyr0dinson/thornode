@@ -120,7 +120,7 @@ func (t *SmartContractLogParserTestSuite) getTransferAllowanceEvent(smartContrac
 func (t *SmartContractLogParserTestSuite) TestGetTxInItem_DepositEvents(c *C) {
 	vaultABI, _, err := GetContractABI(routerContractABI, erc20ContractABI)
 	c.Assert(err, IsNil)
-	parser := NewSmartContractLogParser(mockIsValidContractAddr, mockAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI, common.ETHAsset, 2)
+	parser := NewSmartContractLogParser(mockIsValidContractAddr, mockAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI, common.ETHAsset, 2, true)
 
 	// when logs are empty
 	isVaultTransfer, err := parser.GetTxInItem(nil, &types.TxInItem{})
@@ -268,7 +268,7 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_DepositEvents(c *C) {
 func (t *SmartContractLogParserTestSuite) TestGetTxInItem_TransferOutEvents(c *C) {
 	vaultABI, _, err := GetContractABI(routerContractABI, erc20ContractABI)
 	c.Assert(err, IsNil)
-	parser := NewSmartContractLogParser(mockIsValidContractAddr, mockAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI, common.ETHAsset, 2)
+	parser := NewSmartContractLogParser(mockIsValidContractAddr, mockAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI, common.ETHAsset, 2, true)
 	// corrupted transferOutEvent should be ignored
 	txInItem := &types.TxInItem{
 		Sender: "0x3fd2D4cE97B082d4BcE3f9fee2A3D60668D2f473",
@@ -325,7 +325,7 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_TransferOutEvents(c *C
 func (t *SmartContractLogParserTestSuite) TestGetTxInItem_TransferAllowance(c *C) {
 	vaultABI, _, err := GetContractABI(routerContractABI, erc20ContractABI)
 	c.Assert(err, IsNil)
-	parser := NewSmartContractLogParser(mockIsValidContractAddr, mockAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI, common.ETHAsset, 2)
+	parser := NewSmartContractLogParser(mockIsValidContractAddr, mockAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI, common.ETHAsset, 2, true)
 	// corrupted transferAllowance should be ignored
 	txInItem := &types.TxInItem{
 		Sender: "0x3fd2D4cE97B082d4BcE3f9fee2A3D60668D2f473",
@@ -427,7 +427,7 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_TransferAllowance(c *C
 func (t *SmartContractLogParserTestSuite) TestFakeDeposit(c *C) {
 	vaultABI, _, err := GetContractABI(routerContractABI, erc20ContractABI)
 	c.Assert(err, IsNil)
-	parser := NewSmartContractLogParser(mockIsValidContractAddr, mockAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI, common.ETHAsset, 2)
+	parser := NewSmartContractLogParser(mockIsValidContractAddr, mockAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI, common.ETHAsset, 2, true)
 	// When user deposit , if user use a malicious contract to trigger transferAllowance before Deposit
 	// it should fail , because memo is not the same
 	txInItem := &types.TxInItem{
@@ -446,7 +446,7 @@ func (t *SmartContractLogParserTestSuite) TestFakeDeposit(c *C) {
 func (t *SmartContractLogParserTestSuite) TestFakeTransferOut(c *C) {
 	vaultABI, _, err := GetContractABI(routerContractABI, erc20ContractABI)
 	c.Assert(err, IsNil)
-	parser := NewSmartContractLogParser(mockIsValidContractAddr, mockAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI, common.ETHAsset, 2)
+	parser := NewSmartContractLogParser(mockIsValidContractAddr, mockAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI, common.ETHAsset, 2, true)
 	tknAsset, err := common.NewAsset("ETH.TKN-0X3B7FA4DD21C6F9BA3CA375217EAD7CAB9D6BF483")
 	c.Assert(err, IsNil)
 
@@ -495,4 +495,99 @@ func (t *SmartContractLogParserTestSuite) TestFakeTransferOut(c *C) {
 	c.Assert(txInItem.Coins.EqualsEx(common.NewCoins(
 		common.NewCoin(tknAsset, cosmos.NewUint(1024000)),
 	)), Equals, true)
+}
+
+func (t *SmartContractLogParserTestSuite) getTransferFailedEvent(smartContractAddr, vault, to, asset string, amount *big.Int, memo string) *etypes.Log {
+	evt, err := t.abi.EventByID(ecommon.HexToHash(transferFailedEvent))
+	if err != nil {
+		return nil
+	}
+	data, err := evt.Inputs.NonIndexed().Pack(ecommon.HexToAddress(asset), amount, memo)
+	if err != nil {
+		return nil
+	}
+	return &etypes.Log{
+		Address: ecommon.HexToAddress(smartContractAddr),
+		Topics: []ecommon.Hash{
+			ecommon.HexToHash(transferFailedEvent),
+			ecommon.BytesToHash(ecommon.LeftPadBytes(ecommon.HexToAddress(vault).Bytes(), ecommon.HashLength)),
+			ecommon.BytesToHash(ecommon.LeftPadBytes(ecommon.HexToAddress(to).Bytes(), ecommon.HashLength)),
+		},
+		Data: data,
+	}
+}
+
+// TestGetTxInItem_BouncedOutbound covers router V6+ TransferFailed handling.
+//
+// _sendEth returns the ETH to the vault and emits TransferFailed with no memo,
+// then the caller emits a full-value TransferOut anyway. Flagging that pairing is
+// what stops THORNode debiting coins the vault still holds. The aggregator paths
+// also emit TransferFailed, but there the funds DID reach the recipient - those
+// must not be flagged.
+func (t *SmartContractLogParserTestSuite) TestGetTxInItem_BouncedOutbound(c *C) {
+	vaultABI, _, err := GetContractABI(routerContractABI, erc20ContractABI)
+	c.Assert(err, IsNil)
+
+	const (
+		router = "0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44"
+		vault  = "0x6c4a2eeb8531e3c18bca51104df7eb2377708263"
+		to     = "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437"
+	)
+	amount := big.NewInt(1024000)
+	memo := "OUT:" + types2.GetRandomTxHash().String()
+
+	parser := NewSmartContractLogParser(mockIsValidContractAddr, mockAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI, common.ETHAsset, 4, true)
+
+	// bounce: TransferFailed(no memo, native asset) precedes a matching TransferOut.
+	// The reported coins and recipient must be untouched, otherwise THORNode's
+	// TxOutItem matching fails and the vault gets slashed instead.
+	txInItem := &types.TxInItem{Sender: vault}
+	isVaultTransfer, err := parser.GetTxInItem([]*etypes.Log{
+		t.getTransferFailedEvent(router, vault, to, NativeTokenAddr, amount, ""),
+		t.getTransferOutEvent(router, vault, to, NativeTokenAddr, amount, memo),
+	}, txInItem)
+	c.Assert(err, IsNil)
+	c.Assert(isVaultTransfer, Equals, false)
+	c.Assert(txInItem.Bounced, Equals, true)
+	c.Assert(txInItem.To, Equals, ecommon.HexToAddress(to).String())
+	c.Assert(txInItem.Memo, Equals, memo)
+	c.Assert(txInItem.Coins.EqualsEx(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1024000)))), Equals, true)
+
+	// aggregator path: TransferFailed carries the outbound memo because the swap
+	// failed but the funds were forwarded to the recipient. Not a bounce.
+	txInItem = &types.TxInItem{Sender: vault}
+	_, err = parser.GetTxInItem([]*etypes.Log{
+		t.getTransferFailedEvent(router, vault, to, NativeTokenAddr, amount, memo),
+		t.getTransferOutEvent(router, vault, to, NativeTokenAddr, amount, memo),
+	}, txInItem)
+	c.Assert(err, IsNil)
+	c.Assert(txInItem.Bounced, Equals, false)
+
+	// a TransferFailed for a different amount belongs to another leg, not this one
+	txInItem = &types.TxInItem{Sender: vault}
+	_, err = parser.GetTxInItem([]*etypes.Log{
+		t.getTransferFailedEvent(router, vault, to, NativeTokenAddr, big.NewInt(999), ""),
+		t.getTransferOutEvent(router, vault, to, NativeTokenAddr, amount, memo),
+	}, txInItem)
+	c.Assert(err, IsNil)
+	c.Assert(txInItem.Bounced, Equals, false)
+
+	// _sendEth only ever bounces the native asset
+	txInItem = &types.TxInItem{Sender: vault}
+	_, err = parser.GetTxInItem([]*etypes.Log{
+		t.getTransferFailedEvent(router, vault, to, tknTestToken, amount, ""),
+		t.getTransferOutEvent(router, vault, to, NativeTokenAddr, amount, memo),
+	}, txInItem)
+	c.Assert(err, IsNil)
+	c.Assert(txInItem.Bounced, Equals, false)
+
+	// with the mimir gate off, nothing is flagged
+	gated := NewSmartContractLogParser(mockIsValidContractAddr, mockAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI, common.ETHAsset, 4, false)
+	txInItem = &types.TxInItem{Sender: vault}
+	_, err = gated.GetTxInItem([]*etypes.Log{
+		t.getTransferFailedEvent(router, vault, to, NativeTokenAddr, amount, ""),
+		t.getTransferOutEvent(router, vault, to, NativeTokenAddr, amount, memo),
+	}, txInItem)
+	c.Assert(err, IsNil)
+	c.Assert(txInItem.Bounced, Equals, false)
 }

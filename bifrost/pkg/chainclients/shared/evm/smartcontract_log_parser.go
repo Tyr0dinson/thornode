@@ -24,6 +24,7 @@ const (
 	transferAllowanceEvent  = "0x05b90458f953d3fcb2d7fb25616a2fddeca749d0c47cc5c9832d0266b5346eea"
 	vaultTransferEvent      = "0x281daef48d91e5cd3d32db0784f6af69cd8d8d2e8c612a3568dca51ded51e08f"
 	transferOutAndCallEvent = "0x8e5841bcd195b858d53b38bcf91b38d47f3bc800469b6812d35451ab619c6f6c"
+	transferFailedEvent     = "0xa6a370fa655359af5f69091e908830c250b8daffb80f6b578741423ae4c47ab1"
 )
 
 type (
@@ -42,6 +43,10 @@ type SmartContractLogParser struct {
 	vaultABI         *abi.ABI
 	nativeAsset      common.Asset
 	maxLogs          int64
+	// detectBounce enables TransferFailed handling. Gated per-chain by
+	// MimirTemplateEVMBouncedOutbound so every observer starts flagging bounces
+	// at the same height; see GetTxInItem.
+	detectBounce bool
 }
 
 func NewSmartContractLogParser(validator contractAddressValidator,
@@ -51,6 +56,7 @@ func NewSmartContractLogParser(validator contractAddressValidator,
 	vaultABI *abi.ABI,
 	nativeAsset common.Asset,
 	maxLogs int64,
+	detectBounce bool,
 ) SmartContractLogParser {
 	return SmartContractLogParser{
 		addressValidator: validator,
@@ -61,6 +67,7 @@ func NewSmartContractLogParser(validator contractAddressValidator,
 		logger:           log.Logger.With().Str("module", "SmartContractLogParser").Logger(),
 		nativeAsset:      nativeAsset,
 		maxLogs:          maxLogs,
+		detectBounce:     detectBounce,
 	}
 }
 
@@ -136,6 +143,53 @@ func (scp *SmartContractLogParser) parseTransferAllowanceEvent(log etypes.Log) (
 	return event, nil
 }
 
+// vaultTransferFailedEvent is emitted by router V6+ when a native transfer could
+// not be delivered. It carries two distinct meanings:
+//
+//   - from _sendEth: the recipient could not accept the ETH within the gas
+//     stipend, so the router returned it to the sending vault. Always
+//     asset == address(0) and memo == "". The coins never left the vault.
+//   - from transferOutAndCall / transferOutAndCallV2: the aggregator call
+//     reverted, so the router sent the funds straight on to the recipient. The
+//     memo is the outbound memo. The coins DID leave the vault.
+//
+// Only the first form is a bounce. See isBounce.
+type vaultTransferFailedEvent struct {
+	Vault  ecommon.Address
+	To     ecommon.Address
+	Asset  ecommon.Address
+	Amount *big.Int
+	Memo   string
+}
+
+func (scp *SmartContractLogParser) parseTransferFailed(log etypes.Log) (vaultTransferFailedEvent, error) {
+	const TransferFailedEventName = "TransferFailed"
+	event := vaultTransferFailedEvent{}
+	if err := scp.unpackVaultLog(&event, TransferFailedEventName, log); err != nil {
+		return event, fmt.Errorf("fail to parse transfer failed event")
+	}
+	return event, nil
+}
+
+// isBounce reports whether evt is the _sendEth form: the native asset returned
+// to the vault, with no memo.
+func (evt vaultTransferFailedEvent) isBounce() bool {
+	return evt.Memo == "" && strings.EqualFold(evt.Asset.String(), NativeTokenAddr)
+}
+
+// matchesBounce reports whether one of the bounces seen so far in this receipt
+// returned exactly (to, amount) to the vault. _sendEth emits TransferFailed
+// before the caller emits its TransferOut, so by the time a transfer event is
+// parsed every bounce belonging to it has already been collected.
+func matchesBounce(bounces []vaultTransferFailedEvent, to ecommon.Address, amount *big.Int) bool {
+	for _, b := range bounces {
+		if b.To == to && b.Amount != nil && amount != nil && b.Amount.Cmp(amount) == 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // THORChainRouterTransferOutAndCall represents a TransferOutAndCall event raised by the THORChainRouter contract.
 type THORChainRouterTransferOutAndCall struct {
 	Vault        ecommon.Address
@@ -166,6 +220,7 @@ func (scp *SmartContractLogParser) GetTxInItem(logs []*etypes.Log, txInItem *typ
 		return false, nil
 	}
 	isVaultTransfer := false
+	var bounces []vaultTransferFailedEvent
 	for _, item := range logs {
 		// only events produced by THORChain router is processed
 		if !scp.addressValidator(&item.Address, false) {
@@ -237,8 +292,22 @@ func (scp *SmartContractLogParser) GetTxInItem(logs []*etypes.Log, txInItem *typ
 			txInItem.Coins = common.NewCoins(
 				common.NewCoin(asset, scp.amtConverter(transferOutEvt.Asset.String(), transferOutEvt.Amount)).WithDecimals(decimals),
 			)
+			txInItem.Bounced = matchesBounce(bounces, transferOutEvt.To, transferOutEvt.Amount)
 			earlyExit = true
 			isVaultTransfer = false
+		case transferFailedEvent:
+			if !scp.detectBounce {
+				continue
+			}
+			transferFailedEvt, err := scp.parseTransferFailed(*item)
+			if err != nil {
+				scp.logger.Err(err).Msg("fail to parse transfer failed event")
+				continue
+			}
+			if !transferFailedEvt.isBounce() {
+				continue
+			}
+			bounces = append(bounces, transferFailedEvt)
 		case transferAllowanceEvent:
 			// there is no circumstance , router will emit multiple transferAllowance event
 			// if that does happen , it means something dodgy happened
@@ -321,6 +390,7 @@ func (scp *SmartContractLogParser) GetTxInItem(logs []*etypes.Log, txInItem *typ
 				continue
 			}
 
+			txInItem.Bounced = matchesBounce(bounces, transferOutAndCall.To, transferOutAndCall.Amount)
 			txInItem.To = transferOutAndCall.To.String()
 			txInItem.Memo = transferOutAndCall.Memo
 			txInItem.Sender = transferOutAndCall.Vault.String()

@@ -124,6 +124,13 @@ message ObservedTx {
   SolNonceUpdate sol_nonce = 14;
   // Original XMR mining location, independent of the finalization height.
   int64 xmr_mined_height = 15;
+  // bounced indicates the observed outbound never reached its recipient: the
+  // EVM router returned the coins to the sending vault and emitted TransferOut
+  // anyway. The observation still reports the full amount and the original
+  // recipient so TxOutItem matching succeeds; only the vault coin debit is
+  // skipped. Set by bifrost, gated per-chain by the
+  // MimirTemplateEVMBouncedOutbound mimir.
+  bool bounced = 16;
 }
 
 message Attestation {

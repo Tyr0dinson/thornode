@@ -935,6 +935,24 @@ func (e *ETHScanner) directERC20InboundEnabled() bool {
 	return enabled > 0
 }
 
+// bouncedOutboundEnabled reports whether the log parser should flag outbounds the
+// router returned to the sending vault. Gated per-chain so every observer starts
+// setting ObservedTx.Bounced at the same height.
+func (e *ETHScanner) bouncedOutboundEnabled() bool {
+	enabled, err := e.bridge.GetMimirWithRef(
+		constants.MimirTemplateEVMBouncedOutbound,
+		e.cfg.ChainID.String(),
+	)
+	if err != nil {
+		e.logger.Err(err).
+			Str("mimir_template", constants.MimirTemplateEVMBouncedOutbound).
+			Str("chain", e.cfg.ChainID.String()).
+			Msg("fail to get bounced outbound mimir")
+		return false
+	}
+	return enabled > 0
+}
+
 // ConvertAmount will convert the amount to 1e8, the decimals used by THORChain.
 func (e *ETHScanner) ConvertAmount(token string, amt *big.Int) cosmos.Uint {
 	if IsETH(token) {
@@ -1030,7 +1048,8 @@ func (e *ETHScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 		e.ConvertAmount,
 		e.vaultABI,
 		common.ETHAsset,
-		maxLogs)
+		maxLogs,
+		e.bouncedOutboundEnabled())
 	// txInItem will be changed in p.GetTxInItem function, so if the function return an error
 	// txInItem should be abandoned
 	if _, err = p.GetTxInItem(receipt.Logs, txInItem); err != nil {

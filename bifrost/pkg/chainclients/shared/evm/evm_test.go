@@ -277,7 +277,7 @@ func (s *UtilsSuite) TestTokenManagerGetTokenDecimalsForTHORChain(c *C) {
 func (s *UtilsSuite) TestSmartContractLogParser_MaxLogs(c *C) {
 	vaultABI, _, err := GetContractABI(routerContractABI, erc20ContractABI)
 	c.Assert(err, IsNil)
-	parser := NewSmartContractLogParser(mockIsValidContractAddr, mockAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI, common.ETHAsset, 1)
+	parser := NewSmartContractLogParser(mockIsValidContractAddr, mockAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI, common.ETHAsset, 1, true)
 
 	// Too many logs should return false
 	logs := []*etypes.Log{{}, {}}
@@ -292,7 +292,7 @@ func (s *UtilsSuite) TestSmartContractLogParser_MaxLogs(c *C) {
 func (s *SmartContractLogParserTestSuite) TestGetTxInItem_TransferOutMemoless(c *C) {
 	vaultABI, _, err := GetContractABI(routerContractABI, erc20ContractABI)
 	c.Assert(err, IsNil)
-	parser := NewSmartContractLogParser(mockIsValidContractAddr, mockAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI, common.ETHAsset, 10)
+	parser := NewSmartContractLogParser(mockIsValidContractAddr, mockAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI, common.ETHAsset, 10, true)
 
 	// TransferOut with empty memo (memoless outbound) should be treated as valid
 	txInItem := &btypes.TxInItem{
@@ -324,7 +324,7 @@ func (s *SmartContractLogParserTestSuite) TestGetTxInItem_TransferOutEmptyAsset(
 	emptyAssetResolver := func(token string) (common.Asset, error) {
 		return common.EmptyAsset, nil
 	}
-	parser := NewSmartContractLogParser(mockIsValidContractAddr, emptyAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI, common.ETHAsset, 10)
+	parser := NewSmartContractLogParser(mockIsValidContractAddr, emptyAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI, common.ETHAsset, 10, true)
 
 	txInItem := &btypes.TxInItem{
 		Sender: "0x3fd2D4cE97B082d4BcE3f9fee2A3D60668D2f473",
@@ -351,7 +351,7 @@ func (s *SmartContractLogParserTestSuite) TestGetTxInItem_DepositEmptyAsset(c *C
 	emptyAssetResolver := func(token string) (common.Asset, error) {
 		return common.EmptyAsset, nil
 	}
-	parser := NewSmartContractLogParser(mockIsValidContractAddr, emptyAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI, common.ETHAsset, 10)
+	parser := NewSmartContractLogParser(mockIsValidContractAddr, emptyAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI, common.ETHAsset, 10, true)
 
 	txInItem := &btypes.TxInItem{
 		Sender: "0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473",
@@ -440,13 +440,13 @@ func (s *UtilsSuite) TestTokenManager_ConvertSigningAmount_NonDefaultDecimals(c 
 func (s *SmartContractLogParserTestSuite) TestGetTxInItem_TransferAllowanceAssetError(c *C) {
 	vaultABI, _, err := GetContractABI(routerContractABI, erc20ContractABI)
 	c.Assert(err, IsNil)
-	parser := NewSmartContractLogParser(mockIsValidContractAddr, mockAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI, common.ETHAsset, 10)
+	parser := NewSmartContractLogParser(mockIsValidContractAddr, mockAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI, common.ETHAsset, 10, true)
 
 	// TransferAllowance with empty resolved asset should be ignored
 	emptyAssetResolver := func(token string) (common.Asset, error) {
 		return common.EmptyAsset, nil
 	}
-	parser2 := NewSmartContractLogParser(mockIsValidContractAddr, emptyAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI, common.ETHAsset, 10)
+	parser2 := NewSmartContractLogParser(mockIsValidContractAddr, emptyAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI, common.ETHAsset, 10, true)
 
 	txInItem := &btypes.TxInItem{
 		Sender: "0x3fd2D4cE97B082d4BcE3f9fee2A3D60668D2f473",
