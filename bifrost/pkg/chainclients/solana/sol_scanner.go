@@ -154,9 +154,9 @@ func (s *SOLScanner) Start() {
 	s.lastMimirCheck = time.Now().Add(-constants.ThorchainBlockTime)
 	s.isChainPaused = false
 
-	initialSlot, err := s.solRpc.GetSlot()
-	if err != nil {
-		s.logger.Error().Err(err).Msg("failed to get initial slot")
+	initialSlot, ok := waitForInitialSlot(s.solRpc, s.stopChan, s.cfg.Solana.ScanInterval, s.logger)
+	if !ok {
+		s.logger.Info().Msg("stopping SOL scanner")
 		return
 	}
 
