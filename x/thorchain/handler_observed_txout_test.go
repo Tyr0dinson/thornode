@@ -937,25 +937,33 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceDiscoveredAfterConsensus(c *
 		return n
 	}
 
-	// 1. instant observation: non-final, no receipt so never Bounced
-	instant := NewObservedTx(tx, 12, pk, 13)
+	// 1. instant observation: non-final, built from the TxOutItem (coin without
+	// decimals, gas = gas limit) and with no receipt, so never Bounced
+	instantTx := tx
+	instantTx.Coins = common.NewCoins(common.NewCoin(tx.Coins[0].Asset, tx.Coins[0].Amount))
+	instantTx.Gas = common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(60000))}
+	instant := NewObservedTx(instantTx, 12, pk, 13)
 	_, err = handler.handle(ctx, *NewMsgObservedTxOut(ObservedTxs{instant}, keeper.nas[0].NodeAddress))
 	c.Assert(err, IsNil)
 	vault, err = keeper.GetVault(ctx, pk)
 	c.Assert(err, IsNil)
-	// gas (37500) and amount (1) debited, as in TestHandle
-	c.Check(vault.Coins.GetCoin(common.ETHAsset).Amount.Uint64(), Equals, uint64(19999962499))
+	// gas limit (60000) and amount (1) debited
+	c.Check(vault.Coins.GetCoin(common.ETHAsset).Amount.Uint64(), Equals, uint64(19999939999))
 	c.Check(securityEvents(), Equals, 0)
 
-	// 2. scanner observation: finalised, router bounced the coins back
-	final := NewObservedTx(tx, 13, pk, 13)
+	// 2. scanner observation: finalised, from the receipt (coin with decimals,
+	// gas = gas used 37500), router bounced the coins back
+	finalTx := tx
+	finalTx.Coins = common.NewCoins(common.NewCoin(tx.Coins[0].Asset, tx.Coins[0].Amount).WithDecimals(18))
+	final := NewObservedTx(finalTx, 13, pk, 13)
 	final.Bounced = true
 	_, err = handler.handle(ctx, *NewMsgObservedTxOut(ObservedTxs{final}, keeper.nas[0].NodeAddress))
 	c.Assert(err, IsNil)
 	vault, err = keeper.GetVault(ctx, pk)
 	c.Assert(err, IsNil)
-	// the amount is back, gas stays spent
-	c.Check(vault.Coins.GetCoin(common.ETHAsset).Amount.Uint64(), Equals, uint64(19999962500))
+	// the amount is back. Gas is not reconciled on the non-final -> final
+	// hand-off (pre-existing; the instant observation's gas limit stays debited).
+	c.Check(vault.Coins.GetCoin(common.ETHAsset).Amount.Uint64(), Equals, uint64(19999940000))
 	c.Check(securityEvents(), Equals, 1)
 	voter, err := keeper.GetObservedTxOutVoter(ctx, tx.ID)
 	c.Assert(err, IsNil)
@@ -966,6 +974,6 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceDiscoveredAfterConsensus(c *
 	c.Assert(err, IsNil)
 	vault, err = keeper.GetVault(ctx, pk)
 	c.Assert(err, IsNil)
-	c.Check(vault.Coins.GetCoin(common.ETHAsset).Amount.Uint64(), Equals, uint64(19999962500))
+	c.Check(vault.Coins.GetCoin(common.ETHAsset).Amount.Uint64(), Equals, uint64(19999940000))
 	c.Check(securityEvents(), Equals, 1)
 }
