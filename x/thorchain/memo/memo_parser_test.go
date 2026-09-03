@@ -486,6 +486,33 @@ func (s *MemoParserSuite) TestParseTradeTarget(c *C) {
 
 	_, err = parseTradeTarget("notanumber")
 	c.Assert(err, NotNil)
+
+	// boundary: 1e77 is the largest power of ten that still fits in a 256-bit Uint
+	result, err = parseTradeTarget("1e77")
+	c.Assert(err, IsNil)
+	c.Check(result.IsZero(), Equals, false)
+
+	// magnitude guard: values beyond 2^256-1 must error rather than allocate the
+	// full integer. 1e80 is just over the boundary; 1e300000000 is the DoS payload
+	// that would otherwise materialize a ~118MB big.Int before being rejected.
+	_, err = parseTradeTarget("1e80")
+	c.Assert(err, NotNil)
+
+	_, err = parseTradeTarget("1e300000000")
+	c.Assert(err, NotNil)
+
+	// overflow guard: an exponent past int32 parses to +Inf without error, and
+	// big.Float.Int leaves the destination at zero for Inf. That must be an
+	// error, not a silent zero limit (zero means "no price protection").
+	_, err = parseTradeTarget("1e700000000")
+	c.Assert(err, NotNil)
+
+	// sign guard: NewUintFromBigInt panics on negatives; reject them as an error.
+	_, err = parseTradeTarget("-1")
+	c.Assert(err, NotNil)
+
+	_, err = parseTradeTarget("-1e80")
+	c.Assert(err, NotNil)
 }
 
 // ============================================================

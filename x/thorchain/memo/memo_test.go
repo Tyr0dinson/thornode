@@ -284,6 +284,15 @@ func (s *MemoSuite) TestParseWithAbbreviated(c *C) {
 	_, err = ParseMemoWithTHORNames(ctx, k, fmt.Sprintf("=:%s:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a:1200/102103980982304982058230492830429384080/20", common.RuneAsset()))
 	c.Assert(err, NotNil)
 
+	// a price limit that overflows big.Float to +Inf must be rejected (refund),
+	// not silently parsed as a zero limit that disables price protection
+	_, err = ParseMemoWithTHORNames(ctx, k, fmt.Sprintf("=:%s:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a:1e700000000/10/20", common.RuneAsset()))
+	c.Assert(err, NotNil)
+	// a negative price limit is rejected as a parse error, not via panic recovery
+	_, err = ParseMemoWithTHORNames(ctx, k, fmt.Sprintf("=:%s:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a:-1/10/20", common.RuneAsset()))
+	c.Assert(err, NotNil)
+	c.Check(strings.Contains(err.Error(), "panicked"), Equals, false, Commentf("%s", err))
+
 	memo, err = ParseMemoWithTHORNames(ctx, k, "=:"+common.RuneAsset().String()+":0x90f2b1ae50e6018230e90a33f98c7844a0ab635a")
 	c.Assert(err, IsNil)
 	c.Check(memo.GetAsset().String(), Equals, common.RuneAsset().String())
