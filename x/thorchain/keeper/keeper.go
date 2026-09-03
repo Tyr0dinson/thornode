@@ -190,11 +190,13 @@ type KeeperNodeAccount interface {
 	SetNodeAccount(ctx cosmos.Context, na NodeAccount) error
 	EnsureNodeKeysUnique(ctx cosmos.Context, consensusPubKey string, pubKeys common.PubKeySet) error
 	GetNodeAccountIterator(ctx cosmos.Context) cosmos.Iterator
+	GetNodeAccountSlashPointsIterator(_ cosmos.Context) cosmos.Iterator
 	GetNodeAccountSlashPoints(_ cosmos.Context, _ cosmos.AccAddress) (int64, error)
 	SetNodeAccountSlashPoints(_ cosmos.Context, _ cosmos.AccAddress, _ int64)
 	IncNodeAccountSlashPoints(_ cosmos.Context, _ cosmos.AccAddress, _ int64) error
 	DecNodeAccountSlashPoints(_ cosmos.Context, _ cosmos.AccAddress, _ int64) error
 	ResetNodeAccountSlashPoints(_ cosmos.Context, _ cosmos.AccAddress)
+	GetNodeAccountJailIterator(ctx cosmos.Context) cosmos.Iterator
 	GetNodeAccountJail(ctx cosmos.Context, addr cosmos.AccAddress) (Jail, error)
 	SetNodeAccountJail(ctx cosmos.Context, addr cosmos.AccAddress, height int64, reason string) error
 	ReleaseNodeAccountFromJail(ctx cosmos.Context, addr cosmos.AccAddress) error

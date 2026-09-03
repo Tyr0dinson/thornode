@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/btcsuite/btcutil/bech32"
@@ -169,6 +170,272 @@ func (GenesisTestSuite) TestGenesisInactiveAsgardDeficitRoundTrip(c *C) {
 	reExportedInitDeficitVault, found := findVault(reExported.Vaults, initDeficitVault.PubKey)
 	c.Assert(found, Equals, true)
 	c.Check(reExportedInitDeficitVault.GetDeficit(common.BTCAsset).Amount.Equal(cosmos.NewUint(67890)), Equals, true)
+}
+
+func (GenesisTestSuite) TestGenesisNodeAccountSlashPointsRoundTrip(c *C) {
+	SetupConfigForTest()
+
+	srcCtx, srcMgr := setupManagerForTest(c)
+	retainedNode := GetRandomValidatorNode(NodeActive)
+	retainedNode.Bond = cosmos.NewUint(common.One)
+	c.Assert(srcMgr.Keeper().SetNodeAccount(srcCtx, retainedNode), IsNil)
+	orphanAddress := GetRandomBech32Addr()
+	zeroAddress := GetRandomBech32Addr()
+	srcMgr.Keeper().SetNodeAccountSlashPoints(srcCtx, retainedNode.NodeAddress, 33)
+	srcMgr.Keeper().SetNodeAccountSlashPoints(srcCtx, orphanAddress, 44)
+	srcMgr.Keeper().SetNodeAccountSlashPoints(srcCtx, zeroAddress, 0)
+
+	exported := ExportGenesis(srcCtx, srcMgr.Keeper())
+	c.Assert(len(exported.NodeAccountSlashPoints), Equals, 2)
+	exportedAddresses := []string{
+		exported.NodeAccountSlashPoints[0].NodeAddress,
+		exported.NodeAccountSlashPoints[1].NodeAddress,
+	}
+	expectedAddresses := []string{retainedNode.NodeAddress.String(), orphanAddress.String()}
+	sort.Strings(expectedAddresses)
+	c.Check(exportedAddresses, DeepEquals, expectedAddresses)
+
+	exportedPoints := make(map[string]int64, len(exported.NodeAccountSlashPoints))
+	for _, record := range exported.NodeAccountSlashPoints {
+		exportedPoints[record.NodeAddress] = record.SlashPoints
+	}
+	c.Check(exportedPoints, DeepEquals, map[string]int64{
+		retainedNode.NodeAddress.String(): 33,
+		orphanAddress.String():            44,
+	})
+
+	// Exercise the generated binary codec rather than testing only an in-memory
+	// handoff of the new genesis field.
+	bz, err := exported.Marshal()
+	c.Assert(err, IsNil)
+	var decoded GenesisState
+	c.Assert(decoded.Unmarshal(bz), IsNil)
+	c.Assert(ValidateGenesis(decoded), IsNil)
+
+	dstCtx, dstMgr := setupManagerForTest(c)
+	InitGenesis(dstCtx, dstMgr.Keeper(), decoded)
+	for address, expected := range map[string]int64{
+		retainedNode.NodeAddress.String(): 33,
+		orphanAddress.String():            44,
+	} {
+		parsedAddress, parseErr := cosmos.AccAddressFromBech32(address)
+		c.Assert(parseErr, IsNil)
+		points, pointsErr := dstMgr.Keeper().GetNodeAccountSlashPoints(dstCtx, parsedAddress)
+		c.Assert(pointsErr, IsNil)
+		c.Check(points, Equals, expected, Commentf("address: %s", address))
+	}
+	zeroPoints, err := dstMgr.Keeper().GetNodeAccountSlashPoints(dstCtx, zeroAddress)
+	c.Assert(err, IsNil)
+	c.Check(zeroPoints, Equals, int64(0))
+
+	reExported := ExportGenesis(dstCtx, dstMgr.Keeper())
+	c.Check(reExported.NodeAccountSlashPoints, DeepEquals, decoded.NodeAccountSlashPoints)
+}
+
+func (GenesisTestSuite) TestValidateGenesisNodeAccountSlashPoints(c *C) {
+	SetupConfigForTest()
+	address := GetRandomBech32Addr()
+
+	tests := []struct {
+		name    string
+		records []NodeAccountSlashPoint
+		valid   bool
+	}{
+		{
+			name: "positive balance for any address",
+			records: []NodeAccountSlashPoint{{
+				NodeAddress: address.String(),
+				SlashPoints: 1,
+			}},
+			valid: true,
+		},
+		{
+			name: "invalid address",
+			records: []NodeAccountSlashPoint{{
+				NodeAddress: "not-an-address",
+				SlashPoints: 1,
+			}},
+		},
+		{
+			name: "zero balance",
+			records: []NodeAccountSlashPoint{{
+				NodeAddress: address.String(),
+			}},
+		},
+		{
+			name: "negative balance",
+			records: []NodeAccountSlashPoint{{
+				NodeAddress: address.String(),
+				SlashPoints: -1,
+			}},
+		},
+		{
+			name: "duplicate address",
+			records: []NodeAccountSlashPoint{
+				{NodeAddress: address.String(), SlashPoints: 1},
+				{NodeAddress: address.String(), SlashPoints: 2},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		c.Logf("case: %s", test.name)
+		state := DefaultGenesisState()
+		state.NodeAccountSlashPoints = test.records
+		err := ValidateGenesis(state)
+		if test.valid {
+			c.Check(err, IsNil, Commentf("case: %s", test.name))
+			continue
+		}
+		c.Check(err, NotNil, Commentf("case: %s", test.name))
+	}
+}
+
+func (GenesisTestSuite) TestGenesisNodeAccountJailsRoundTrip(c *C) {
+	SetupConfigForTest()
+
+	srcCtx, srcMgr := setupManagerForTest(c)
+	srcCtx = srcCtx.WithBlockHeight(100)
+	retainedNode := GetRandomValidatorNode(NodeActive)
+	retainedNode.Bond = cosmos.NewUint(common.One)
+	c.Assert(srcMgr.Keeper().SetNodeAccount(srcCtx, retainedNode), IsNil)
+	orphanAddress := GetRandomBech32Addr()
+	expiredAddress := GetRandomBech32Addr()
+	zeroHeightAddress := GetRandomBech32Addr()
+
+	expected := []types.Jail{
+		{
+			NodeAddress:   retainedNode.NodeAddress,
+			ReleaseHeight: 150,
+			Reason:        "retained node sentence",
+		},
+		{
+			NodeAddress:   orphanAddress,
+			ReleaseHeight: 175,
+			Reason:        "orphan node sentence",
+		},
+	}
+	sort.Slice(expected, func(i, j int) bool {
+		return expected[i].NodeAddress.String() < expected[j].NodeAddress.String()
+	})
+	// Insert in reverse canonical order so export ordering cannot accidentally
+	// depend on insertion order.
+	for i := len(expected) - 1; i >= 0; i-- {
+		jail := expected[i]
+		c.Assert(srcMgr.Keeper().SetNodeAccountJail(srcCtx, jail.NodeAddress, jail.ReleaseHeight, jail.Reason), IsNil)
+	}
+	// The release-height boundary is not jailed and should be omitted.
+	c.Assert(srcMgr.Keeper().SetNodeAccountJail(srcCtx, expiredAddress, srcCtx.BlockHeight(), "expired sentence"), IsNil)
+	// The public setter can persist a zero-height record. It is harmless
+	// historical residue and must not veto export validation.
+	c.Assert(srcMgr.Keeper().SetNodeAccountJail(srcCtx, zeroHeightAddress, 0, "zero-height residue"), IsNil)
+
+	exported := ExportGenesis(srcCtx, srcMgr.Keeper())
+	c.Check(exported.NodeAccountJails, DeepEquals, expected)
+
+	// Exercise the generated binary codec rather than testing only an in-memory
+	// handoff of the new genesis field.
+	bz, err := exported.Marshal()
+	c.Assert(err, IsNil)
+	var decoded GenesisState
+	c.Assert(decoded.Unmarshal(bz), IsNil)
+	c.Assert(ValidateGenesis(decoded), IsNil)
+
+	dstCtx, dstMgr := setupManagerForTest(c)
+	dstCtx = dstCtx.WithBlockHeight(srcCtx.BlockHeight())
+	InitGenesis(dstCtx, dstMgr.Keeper(), decoded)
+	for _, expectedJail := range expected {
+		jail, jailErr := dstMgr.Keeper().GetNodeAccountJail(dstCtx, expectedJail.NodeAddress)
+		c.Assert(jailErr, IsNil)
+		c.Check(jail, DeepEquals, expectedJail)
+		c.Check(jail.IsJailed(dstCtx), Equals, true)
+	}
+	orphanNode, err := dstMgr.Keeper().GetNodeAccount(dstCtx, orphanAddress)
+	c.Assert(err, IsNil)
+	c.Check(orphanNode.IsEmpty(), Equals, true)
+	for _, address := range []cosmos.AccAddress{expiredAddress, zeroHeightAddress} {
+		expiredJail, jailErr := dstMgr.Keeper().GetNodeAccountJail(dstCtx, address)
+		c.Assert(jailErr, IsNil)
+		c.Check(expiredJail.ReleaseHeight, Equals, int64(0))
+		c.Check(expiredJail.Reason, Equals, "")
+	}
+
+	reExported := ExportGenesis(dstCtx, dstMgr.Keeper())
+	c.Check(reExported.NodeAccountJails, DeepEquals, decoded.NodeAccountJails)
+}
+
+func (GenesisTestSuite) TestValidateGenesisNodeAccountJails(c *C) {
+	SetupConfigForTest()
+	address := GetRandomBech32Addr()
+
+	tests := []struct {
+		name    string
+		records []types.Jail
+		valid   bool
+	}{
+		{
+			name: "positive sentence for an orphan address with unknown reason",
+			records: []types.Jail{{
+				NodeAddress:   address,
+				ReleaseHeight: 1,
+				Reason:        "future-compatible reason",
+			}},
+			valid: true,
+		},
+		{
+			name: "empty reason",
+			records: []types.Jail{{
+				NodeAddress:   address,
+				ReleaseHeight: 1,
+			}},
+			valid: true,
+		},
+		{
+			name: "empty address",
+			records: []types.Jail{{
+				ReleaseHeight: 1,
+			}},
+		},
+		{
+			name: "oversized address",
+			records: []types.Jail{{
+				NodeAddress:   make(cosmos.AccAddress, 256),
+				ReleaseHeight: 1,
+			}},
+		},
+		{
+			name: "zero release height",
+			records: []types.Jail{{
+				NodeAddress: address,
+			}},
+		},
+		{
+			name: "negative release height",
+			records: []types.Jail{{
+				NodeAddress:   address,
+				ReleaseHeight: -1,
+			}},
+		},
+		{
+			name: "duplicate address",
+			records: []types.Jail{
+				{NodeAddress: address, ReleaseHeight: 1, Reason: "first"},
+				{NodeAddress: address, ReleaseHeight: 2, Reason: "second"},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		c.Logf("case: %s", test.name)
+		state := DefaultGenesisState()
+		state.NodeAccountJails = test.records
+		err := ValidateGenesis(state)
+		if test.valid {
+			c.Check(err, IsNil, Commentf("case: %s", test.name))
+			continue
+		}
+		c.Check(err, NotNil, Commentf("case: %s", test.name))
+	}
 }
 
 // TestGenesisStableReserveCreditRoundTrip seeds per-contributor stable reserve

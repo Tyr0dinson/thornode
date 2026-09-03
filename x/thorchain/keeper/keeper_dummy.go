@@ -370,6 +370,9 @@ func (k KVStoreDummy) EnsureNodeKeysUnique(_ cosmos.Context, _ string, _ common.
 	return kaboom
 }
 func (k KVStoreDummy) GetNodeAccountIterator(_ cosmos.Context) cosmos.Iterator { return nil }
+func (k KVStoreDummy) GetNodeAccountSlashPointsIterator(_ cosmos.Context) cosmos.Iterator {
+	return nil
+}
 
 func (k KVStoreDummy) GetNodeAccountSlashPoints(_ cosmos.Context, _ cosmos.AccAddress) (int64, error) {
 	return 0, kaboom
@@ -383,6 +386,8 @@ func (k KVStoreDummy) IncNodeAccountSlashPoints(_ cosmos.Context, _ cosmos.AccAd
 func (k KVStoreDummy) DecNodeAccountSlashPoints(_ cosmos.Context, _ cosmos.AccAddress, _ int64) error {
 	return kaboom
 }
+
+func (k KVStoreDummy) GetNodeAccountJailIterator(_ cosmos.Context) cosmos.Iterator { return nil }
 
 func (k KVStoreDummy) GetNodeAccountJail(ctx cosmos.Context, addr cosmos.AccAddress) (Jail, error) {
 	return Jail{}, kaboom

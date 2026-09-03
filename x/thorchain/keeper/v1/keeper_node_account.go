@@ -511,6 +511,18 @@ func (k KVStore) GetNodeAccountIterator(ctx cosmos.Context) cosmos.Iterator {
 	return k.getIterator(ctx, prefixNodeAccount)
 }
 
+// GetNodeAccountSlashPointsIterator exposes raw slash-point records for
+// full-state operations such as genesis export.
+func (k KVStore) GetNodeAccountSlashPointsIterator(ctx cosmos.Context) cosmos.Iterator {
+	return k.getIterator(ctx, prefixNodeSlashPoints)
+}
+
+// GetNodeAccountJailIterator exposes raw jail records for full-state
+// operations such as genesis export.
+func (k KVStore) GetNodeAccountJailIterator(ctx cosmos.Context) cosmos.Iterator {
+	return k.getIterator(ctx, prefixNodeJail)
+}
+
 // GetUpgradeProposalIterator to iterate upgrade proposals.
 func (k KVStore) GetUpgradeProposalIterator(ctx cosmos.Context) cosmos.Iterator {
 	return k.getIterator(ctx, prefixUpgradeProposals)

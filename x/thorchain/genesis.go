@@ -59,6 +59,31 @@ func ValidateGenesis(data GenesisState) error {
 		}
 	}
 
+	seenSlashPointAddresses := make(map[string]struct{}, len(data.NodeAccountSlashPoints))
+	for _, record := range data.NodeAccountSlashPoints {
+		address, err := validateGenesisNodeAccountSlashPoint(record)
+		if err != nil {
+			return err
+		}
+		key := string(address)
+		if _, ok := seenSlashPointAddresses[key]; ok {
+			return fmt.Errorf("duplicate node account slash-point address: %s", record.NodeAddress)
+		}
+		seenSlashPointAddresses[key] = struct{}{}
+	}
+
+	seenJailAddresses := make(map[string]struct{}, len(data.NodeAccountJails))
+	for _, jail := range data.NodeAccountJails {
+		if err := validateGenesisNodeAccountJail(jail); err != nil {
+			return err
+		}
+		key := string(jail.NodeAddress)
+		if _, ok := seenJailAddresses[key]; ok {
+			return fmt.Errorf("duplicate node account jail address: %s", jail.NodeAddress)
+		}
+		seenJailAddresses[key] = struct{}{}
+	}
+
 	for _, vault := range data.Vaults {
 		if err := vault.Valid(); err != nil {
 			return err
@@ -129,6 +154,35 @@ func ValidateGenesis(data GenesisState) error {
 	return nil
 }
 
+func validateGenesisNodeAccountSlashPoint(record NodeAccountSlashPoint) (cosmos.AccAddress, error) {
+	address, err := cosmos.AccAddressFromBech32(record.NodeAddress)
+	if err != nil {
+		return nil, fmt.Errorf("invalid node account slash-point address %q: %w", record.NodeAddress, err)
+	}
+	if record.SlashPoints <= 0 {
+		return nil, fmt.Errorf(
+			"node account slash-point balance for %s must be positive: %d",
+			record.NodeAddress,
+			record.SlashPoints,
+		)
+	}
+	return address, nil
+}
+
+func validateGenesisNodeAccountJail(jail types.Jail) error {
+	if err := cosmos.VerifyAddressFormat(jail.NodeAddress); err != nil {
+		return fmt.Errorf("invalid node account jail address %q: %w", jail.NodeAddress, err)
+	}
+	if jail.ReleaseHeight <= 0 {
+		return fmt.Errorf(
+			"node account jail release height for %s must be positive: %d",
+			jail.NodeAddress,
+			jail.ReleaseHeight,
+		)
+	}
+	return nil
+}
+
 // DefaultGenesisState the default values THORNode put in the Genesis
 func DefaultGenesisState() GenesisState {
 	return GenesisState{
@@ -140,6 +194,8 @@ func DefaultGenesisState() GenesisState {
 		Vaults:                  make(Vaults, 0),
 		ObservedTxInVoters:      make(ObservedTxVoters, 0),
 		ObservedTxOutVoters:     make(ObservedTxVoters, 0),
+		NodeAccountSlashPoints:  make([]NodeAccountSlashPoint, 0),
+		NodeAccountJails:        make([]types.Jail, 0),
 		LastSignedHeight:        0,
 		LastChainHeights:        make([]LastChainHeight, 0),
 		Mimirs:                  make([]Mimir, 0),
@@ -200,6 +256,27 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 
 		if err := keeper.SetNodeAccount(ctx, nodeAccount); err != nil {
 			// we should panic
+			panic(err)
+		}
+	}
+
+	// SetNodeAccount can reset a newly active node's slash points, so restore
+	// independently stored node state only after every node account is imported.
+	for _, record := range data.NodeAccountSlashPoints {
+		address, err := validateGenesisNodeAccountSlashPoint(record)
+		if err != nil {
+			panic(err)
+		}
+		keeper.SetNodeAccountSlashPoints(ctx, address, record.SlashPoints)
+	}
+	for _, jail := range data.NodeAccountJails {
+		if err := validateGenesisNodeAccountJail(jail); err != nil {
+			panic(err)
+		}
+		if !jail.IsJailed(ctx) {
+			continue
+		}
+		if err := keeper.SetNodeAccountJail(ctx, jail.NodeAddress, jail.ReleaseHeight, jail.Reason); err != nil {
 			panic(err)
 		}
 	}
@@ -481,6 +558,98 @@ func getValidPools(ctx cosmos.Context, k keeper.Keeper) Pools {
 		pools = append(pools, pool)
 	}
 	return pools
+}
+
+func nodeAccountAddressFromStoreKey(key []byte) (cosmos.AccAddress, error) {
+	parts := strings.Split(string(key), "/")
+	if len(parts) != 3 || parts[0] == "" || parts[1] != "" || parts[2] == "" {
+		return nil, fmt.Errorf("invalid node account state key %q", key)
+	}
+	address, err := cosmos.AccAddressFromBech32(strings.ToLower(parts[2]))
+	if err != nil {
+		return nil, fmt.Errorf("invalid node account state key %q: %w", key, err)
+	}
+	return address, nil
+}
+
+func exportNodeAccountSlashPoints(ctx cosmos.Context, k keeper.Keeper) []NodeAccountSlashPoint {
+	records := make([]NodeAccountSlashPoint, 0)
+	seen := make(map[string]struct{})
+	iterator := k.GetNodeAccountSlashPointsIterator(ctx)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		address, err := nodeAccountAddressFromStoreKey(iterator.Key())
+		if err != nil {
+			panic(err)
+		}
+		value := types.ProtoInt64{}
+		if err := k.Cdc().Unmarshal(iterator.Value(), &value); err != nil {
+			panic(fmt.Errorf("failed to unmarshal node account slash points for %s: %w", address, err))
+		}
+		points := value.GetValue()
+		if points < 0 {
+			panic(fmt.Errorf("node account slash-point balance for %s is negative: %d", address, points))
+		}
+		if points == 0 {
+			continue
+		}
+		key := string(address)
+		if _, ok := seen[key]; ok {
+			panic(fmt.Errorf("duplicate node account slash-point address: %s", address))
+		}
+		seen[key] = struct{}{}
+		records = append(records, NodeAccountSlashPoint{
+			NodeAddress: address.String(),
+			SlashPoints: points,
+		})
+	}
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].NodeAddress < records[j].NodeAddress
+	})
+	return records
+}
+
+func exportNodeAccountJails(ctx cosmos.Context, k keeper.Keeper) []types.Jail {
+	records := make([]types.Jail, 0)
+	seen := make(map[string]struct{})
+	iterator := k.GetNodeAccountJailIterator(ctx)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		var jail types.Jail
+		if err := k.Cdc().Unmarshal(iterator.Value(), &jail); err != nil {
+			panic(fmt.Errorf("failed to unmarshal node account jail %q: %w", iterator.Key(), err))
+		}
+		// Released and expired records are nonfunctional historical residue. Drop
+		// them before validation so a harmless legacy zero-height record cannot
+		// veto an otherwise valid export.
+		if !jail.IsJailed(ctx) {
+			continue
+		}
+		if err := validateGenesisNodeAccountJail(jail); err != nil {
+			panic(err)
+		}
+		keyAddress, err := nodeAccountAddressFromStoreKey(iterator.Key())
+		if err != nil {
+			panic(err)
+		}
+		if !jail.NodeAddress.Equals(keyAddress) {
+			panic(fmt.Errorf(
+				"node account jail key address %s does not match stored address %s",
+				keyAddress,
+				jail.NodeAddress,
+			))
+		}
+		key := string(jail.NodeAddress)
+		if _, ok := seen[key]; ok {
+			panic(fmt.Errorf("duplicate node account jail address: %s", jail.NodeAddress))
+		}
+		seen[key] = struct{}{}
+		records = append(records, jail)
+	}
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].NodeAddress.String() < records[j].NodeAddress.String()
+	})
+	return records
 }
 
 // ExportGenesis export the data in Genesis
@@ -933,12 +1102,17 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		solVaultNonces = append(solVaultNonces, record)
 	}
 
+	nodeAccountSlashPoints := exportNodeAccountSlashPoints(ctx, k)
+	nodeAccountJails := exportNodeAccountJails(ctx, k)
+
 	return GenesisState{
 		Pools:                             pools,
 		LiquidityProviders:                liquidityProviders,
 		ObservedTxInVoters:                observedTxInVoters,
 		TxOuts:                            outs,
 		NodeAccounts:                      nodeAccounts,
+		NodeAccountSlashPoints:            nodeAccountSlashPoints,
+		NodeAccountJails:                  nodeAccountJails,
 		BondProviders:                     bps,
 		Vaults:                            vaults,
 		ReferenceMemos:                    memos,
