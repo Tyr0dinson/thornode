@@ -386,11 +386,12 @@ func (s ObservedTxSuite) TestHasSignedMatchesDecodedSigners(c *C) {
 func (s ObservedTxSuite) TestEqualsBounced(c *C) {
 	tx := NewTx("A1B2", "from", "to", NewCoins(NewCoin(ETHAsset, cosmos.NewUint(1))), Gas{NewCoin(ETHAsset, cosmos.NewUint(1))}, "OUT:X")
 	base := NewObservedTx(tx, 1, testPubKey, 1)
+	same := base
 	flipped := base
 	flipped.Bounced = true
 
-	c.Check(base.Equals(base), Equals, true)
-	c.Check(base.EqualsConsensus(base), Equals, true)
+	c.Check(base.Equals(same), Equals, true)
+	c.Check(base.EqualsConsensus(same), Equals, true)
 	c.Check(base.Equals(flipped), Equals, false)
 	c.Check(base.EqualsConsensus(flipped), Equals, false)
 	c.Check(base.EqualsConsensusIgnoreGas(flipped), Equals, true)
