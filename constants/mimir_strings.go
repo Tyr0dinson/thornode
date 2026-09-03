@@ -103,8 +103,13 @@ const (
 	// marked (a stall that many nodes cause is for governance). Unset or 0 disables it.
 	MimirKeyChainSetChurnOutMax = "ChainSetChurnOutMax"
 
-	MimirTemplateEVMAllowanceCheck         = "EVMAllowanceCheck-%s"         // Use with Chain
-	MimirTemplateEVMDirectERC20Inbound     = "EVMDirectERC20Inbound-%s"     // Use with Chain
+	MimirTemplateEVMAllowanceCheck     = "EVMAllowanceCheck-%s"     // Use with Chain
+	MimirTemplateEVMDirectERC20Inbound = "EVMDirectERC20Inbound-%s" // Use with Chain
+	// MimirTemplateEVMBouncedOutbound enables bifrost's router-bounce detection
+	// (ObservedTx.Bounced) per chain. Rollout order matters: Bounced is proto
+	// field 14 and old binaries reject messages carrying it, so only set this
+	// once every node runs a build that knows the field, and only on chains whose
+	// deployed router is V6 or later (earlier routers emit no TransferFailed).
 	MimirTemplateEVMBouncedOutbound        = "EVMBouncedOutbound-%s"        // Use with Chain
 	MimirTemplateConfMultiplierBasisPoints = "ConfMultiplierBasisPoints-%s" // Use with Chain
 	MimirTemplateMaxConfirmations          = "MaxConfirmations-%s"          // Use with Chain

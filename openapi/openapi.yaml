@@ -3175,6 +3175,10 @@ components:
           format: int64
           description: Original XMR mined height, retained when observation height changes at finalization. Zero means unavailable or pre-mining.
           example: 7581328
+        bounced:
+          type: boolean
+          description: the EVM router returned this outbound's coins to the sending vault (recipient could not accept them); the vault coin debit is skipped.
+          example: false
         status:
           type: string
           enum: ["done", "incomplete"]

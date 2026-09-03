@@ -379,3 +379,19 @@ func (s ObservedTxSuite) TestHasSignedMatchesDecodedSigners(c *C) {
 	c.Check((&ObservedTx{Signers: []string{upper}}).HasSigned(addr), Equals, true)
 	c.Check((&ObservedTx{Signers: []string{""}}).HasSigned(cosmos.AccAddress{}), Equals, false)
 }
+
+// A lone attestation with Bounced flipped decides whether the vault coin debit
+// happens, so it must form its own consensus group. The ignore-gas comparison
+// stays permissive so the later Bounced re-observation can be reconciled.
+func (s ObservedTxSuite) TestEqualsBounced(c *C) {
+	tx := NewTx("A1B2", "from", "to", NewCoins(NewCoin(ETHAsset, cosmos.NewUint(1))), Gas{NewCoin(ETHAsset, cosmos.NewUint(1))}, "OUT:X")
+	base := NewObservedTx(tx, 1, testPubKey, 1)
+	flipped := base
+	flipped.Bounced = true
+
+	c.Check(base.Equals(base), Equals, true)
+	c.Check(base.EqualsConsensus(base), Equals, true)
+	c.Check(base.Equals(flipped), Equals, false)
+	c.Check(base.EqualsConsensus(flipped), Equals, false)
+	c.Check(base.EqualsConsensusIgnoreGas(flipped), Equals, true)
+}

@@ -38,6 +38,8 @@ type ObservedTx struct {
 	XmrTxKey *string `json:"xmr_tx_key,omitempty"`
 	// Original XMR mined height, retained when observation height changes at finalization. Zero means unavailable or pre-mining.
 	XmrMinedHeight *int64 `json:"xmr_mined_height,omitempty"`
+	// the EVM router returned this outbound's coins to the sending vault (recipient could not accept them); the vault coin debit is skipped.
+	Bounced *bool `json:"bounced,omitempty"`
 	Status *string `json:"status,omitempty"`
 }
 
@@ -499,6 +501,38 @@ func (o *ObservedTx) SetXmrMinedHeight(v int64) {
 	o.XmrMinedHeight = &v
 }
 
+// GetBounced returns the Bounced field value if set, zero value otherwise.
+func (o *ObservedTx) GetBounced() bool {
+	if o == nil || o.Bounced == nil {
+		var ret bool
+		return ret
+	}
+	return *o.Bounced
+}
+
+// GetBouncedOk returns a tuple with the Bounced field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *ObservedTx) GetBouncedOk() (*bool, bool) {
+	if o == nil || o.Bounced == nil {
+		return nil, false
+	}
+	return o.Bounced, true
+}
+
+// HasBounced returns a boolean if a field has been set.
+func (o *ObservedTx) HasBounced() bool {
+	if o != nil && o.Bounced != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetBounced gets a reference to the given bool and assigns it to the Bounced field.
+func (o *ObservedTx) SetBounced(v bool) {
+	o.Bounced = &v
+}
+
 // GetStatus returns the Status field value if set, zero value otherwise.
 func (o *ObservedTx) GetStatus() string {
 	if o == nil || o.Status == nil {
@@ -574,6 +608,9 @@ func (o ObservedTx) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if o.XmrMinedHeight != nil {
 		toSerialize["xmr_mined_height"] = o.XmrMinedHeight
+	}
+	if o.Bounced != nil {
+		toSerialize["bounced"] = o.Bounced
 	}
 	if o.Status != nil {
 		toSerialize["status"] = o.Status

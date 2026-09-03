@@ -829,7 +829,17 @@ func applyTxOutAttestation(
 				}
 			}
 			voter.FinalisedHeight = ctx.BlockHeight()
+			prevConsensusTx := voter.Tx
 			voter.Tx = *voter.GetTx(nas)
+			// Vault accounting already ran on the non-final consensus (ok == false
+			// here). The signing committee's instant observation carries no receipt,
+			// so it can never be Bounced; if the finalised scanner consensus is,
+			// the coins were debited but never left the vault. Credit them back.
+			if !ok && !prevConsensusTx.IsEmpty() &&
+				voter.Tx.Bounced && !prevConsensusTx.Bounced &&
+				prevConsensusTx.EqualsConsensusIgnoreGas(voter.Tx) {
+				creditBouncedOutbound(ctx, mgr, voter.Tx)
+			}
 
 			ctx.Logger().Debug(
 				"tx out finalized and has consensus",
@@ -883,19 +893,9 @@ func applyTxOutAttestation(
 			attResult = "late"
 		}
 
-		// Gas correction for re-org re-observations.
-		// When a voter is finalized but a re-observation has the same tx except gas
-		// (likely due to a reorg changing the effective gas price), check if enough
-		// nodes agree on the corrected gas to update vault accounting.
-		if voter.FinalisedHeight > 0 &&
-			voter.Tx.IsFinal() == tx.IsFinal() &&
-			!voter.Tx.Tx.Gas.Equals(tx.Tx.Gas) &&
-			voter.Tx.EqualsConsensusIgnoreGas(tx) {
-			gasCorrectionSigners := countMatchingSigners(voter, tx, nas)
-			if HasSuperMajority(gasCorrectionSigners, len(nas)) {
-				correctOutboundGas(ctx, mgr, voter.Tx, tx)
-				voter.Tx.Tx.Gas = tx.Tx.Gas
-			}
+		// Gas / bounce correction for re-observations of a finalized outbound.
+		if voter.FinalisedHeight > 0 && voter.Tx.IsFinal() == tx.IsFinal() {
+			correctOutboundObservation(ctx, mgr, &voter, tx, nas)
 		}
 	}
 	if !ok && voter.HasConsensus(nas) && !tx.IsFinal() && voter.FinalisedHeight == 0 {
@@ -938,15 +938,9 @@ func applyTxOutAttestation(
 			attResult = "late"
 		}
 
-		// Gas correction for re-org re-observations (non-finalized consensus path).
-		if voter.Height > 0 &&
-			!voter.Tx.Tx.Gas.Equals(tx.Tx.Gas) &&
-			voter.Tx.EqualsConsensusIgnoreGas(tx) {
-			gasCorrectionSigners := countMatchingSigners(voter, tx, nas)
-			if HasSuperMajority(gasCorrectionSigners, len(nas)) {
-				correctOutboundGas(ctx, mgr, voter.Tx, tx)
-				voter.Tx.Tx.Gas = tx.Tx.Gas
-			}
+		// Gas / bounce correction for re-observations (non-finalized consensus path).
+		if voter.Height > 0 {
+			correctOutboundObservation(ctx, mgr, &voter, tx, nas)
 		}
 	}
 
@@ -1029,6 +1023,57 @@ func lateFinalObservationExcused(voter ObservedTxVoter, tx common.ObservedTx, si
 		height <= voter.Height+observeFlex &&
 		voter.CreditsAcrossFinality(tx) &&
 		!voter.Tx.HasSigned(signer) && !voter.IsExcusedObserver(signer)
+}
+
+// correctOutboundObservation reconciles vault accounting when a supermajority
+// re-observes an already-processed outbound with different gas (a reorg changed
+// the effective gas price) or as Bounced (the EVM router returned the coins to
+// the vault, which the signer's receipt-less instant observation cannot know).
+// The consensus tx is updated in place so each correction applies once.
+func correctOutboundObservation(ctx cosmos.Context, mgr Manager, voter *ObservedTxVoter, tx ObservedTx, nas NodeAccounts) {
+	gasChanged := !voter.Tx.Tx.Gas.Equals(tx.Tx.Gas)
+	bounced := tx.Bounced && !voter.Tx.Bounced
+	if !gasChanged && !bounced {
+		return
+	}
+	if !voter.Tx.EqualsConsensusIgnoreGas(tx) {
+		return
+	}
+	if !HasSuperMajority(countMatchingSigners(*voter, tx, nas), len(nas)) {
+		return
+	}
+	if gasChanged {
+		correctOutboundGas(ctx, mgr, voter.Tx, tx)
+		voter.Tx.Tx.Gas = tx.Tx.Gas
+	}
+	if bounced {
+		creditBouncedOutbound(ctx, mgr, voter.Tx)
+		voter.Tx.Bounced = true
+	}
+}
+
+// creditBouncedOutbound returns an outbound's coins to the vault after consensus
+// already debited them, because a supermajority has since re-observed the same
+// outbound as Bounced. Mirrors the debit conditions in handleObservedTxOutQuorum.
+func creditBouncedOutbound(ctx cosmos.Context, mgr Manager, consensusTx common.ObservedTx) {
+	if consensusTx.Tx.FromAddress.Equals(consensusTx.Tx.ToAddress) || isOutboundFakeGasTx(consensusTx) {
+		return // nothing was debited for these
+	}
+	vault, err := mgr.Keeper().GetVault(ctx, consensusTx.ObservedPubKey)
+	if err != nil {
+		ctx.Logger().Error("fail to get vault for bounce correction", "error", err)
+		return
+	}
+	vault.AddFunds(consensusTx.Tx.Coins)
+	if err := mgr.Keeper().SetVault(ctx, vault); err != nil {
+		ctx.Logger().Error("fail to save vault after bounce correction", "error", err)
+		return
+	}
+	ctx.Logger().Error("outbound bounced back to vault, coins re-credited",
+		"tx", consensusTx.Tx.ID, "vault_pubkey", vault.PubKey, "coins", consensusTx.Tx.Coins.String())
+	if err := mgr.EventMgr().EmitEvent(ctx, NewEventSecurity(consensusTx.Tx, "outbound bounced back to vault")); err != nil {
+		ctx.Logger().Error("fail to emit security event", "error", err)
+	}
 }
 
 // countMatchingSigners counts the number of unique active node signers that have observed

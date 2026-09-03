@@ -581,6 +581,16 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_BouncedOutbound(c *C) 
 	c.Assert(err, IsNil)
 	c.Assert(txInItem.Bounced, Equals, false)
 
+	// an ERC20 TransferOut never bounces, even if a native bounce in the same
+	// receipt happens to share (to, amount)
+	txInItem = &types.TxInItem{Sender: vault}
+	_, err = parser.GetTxInItem([]*etypes.Log{
+		t.getTransferFailedEvent(router, vault, to, NativeTokenAddr, amount, ""),
+		t.getTransferOutEvent(router, vault, to, tknTestToken, amount, memo),
+	}, txInItem)
+	c.Assert(err, IsNil)
+	c.Assert(txInItem.Bounced, Equals, false)
+
 	// with the mimir gate off, nothing is flagged
 	gated := NewSmartContractLogParser(mockIsValidContractAddr, mockAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI, common.ETHAsset, 4, false)
 	txInItem = &types.TxInItem{Sender: vault}

@@ -70,12 +70,16 @@ type EVMScanner struct {
 	pubkeyMgr             pubkeymanager.PubKeyValidator
 	eipSigner             etypes.Signer
 	currentBlockHeight    stdatomic.Int64
-	gasCache              []*big.Int
-	solvencyReporter      SolvencyReporter
-	whitelistTokens       []tokenlist.ERC20Token
-	whitelistContracts    []common.Address
-	signerCacheManager    *signercache.CacheManager
-	tokenManager          *evm.TokenManager
+	// detectBounce caches the EVMBouncedOutbound mimir for the block being
+	// scanned (refreshed at the top of processBlock; reorg/reprocess paths reuse
+	// the last value) so it is not fetched once per router tx.
+	detectBounce       stdatomic.Bool
+	gasCache           []*big.Int
+	solvencyReporter   SolvencyReporter
+	whitelistTokens    []tokenlist.ERC20Token
+	whitelistContracts []common.Address
+	signerCacheManager *signercache.CacheManager
+	tokenManager       *evm.TokenManager
 
 	vaultABI *abi.ABI
 	erc20ABI *abi.ABI
@@ -316,6 +320,7 @@ func (e *EVMScanner) updateCurrentBlockHeight(height int64) {
 // --------------------------------- extraction ---------------------------------
 
 func (e *EVMScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
+	e.detectBounce.Store(e.bouncedOutboundEnabled())
 	txIn := stypes.TxIn{
 		Chain:    e.cfg.ChainID,
 		TxArray:  nil,
@@ -1273,7 +1278,7 @@ func (e *EVMScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 		e.vaultABI,
 		e.cfg.ChainID.GetGasAsset(),
 		maxLogs,
-		e.bouncedOutboundEnabled(),
+		e.detectBounce.Load(),
 	)
 
 	// txInItem will be changed in p.getTxInItem function, so if the function return an

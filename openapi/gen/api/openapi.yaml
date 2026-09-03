@@ -4699,6 +4699,7 @@ components:
           tx_hash: E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
           output_index: 0
         aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+        bounced: false
         observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
         signers:
         - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
@@ -4774,6 +4775,11 @@ components:
           example: 7581328
           format: int64
           type: integer
+        bounced:
+          description: the EVM router returned this outbound's coins to the sending
+            vault (recipient could not accept them); the vault coin debit is skipped.
+          example: false
+          type: boolean
         status:
           enum:
           - done
@@ -5764,6 +5770,7 @@ components:
             tx_hash: E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
             output_index: 0
           aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          bounced: false
           observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           signers:
           - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
@@ -5844,6 +5851,7 @@ components:
             tx_hash: E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
             output_index: 0
           aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          bounced: false
           observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           signers:
           - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
@@ -5987,6 +5995,7 @@ components:
             tx_hash: E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
             output_index: 0
           aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          bounced: false
           observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           signers:
           - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
@@ -6033,6 +6042,7 @@ components:
             tx_hash: E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
             output_index: 0
           aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          bounced: false
           observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           signers:
           - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
@@ -6129,6 +6139,7 @@ components:
             tx_hash: E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
             output_index: 0
           aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          bounced: false
           observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           signers:
           - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
@@ -6272,6 +6283,7 @@ components:
             tx_hash: E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
             output_index: 0
           aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          bounced: false
           observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           signers:
           - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
@@ -6318,6 +6330,7 @@ components:
             tx_hash: E17A0906E015F0C343691C18E475C8CB5F3F6C63F5BCDE0F3A341909763CC92B
             output_index: 0
           aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          bounced: false
           observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           signers:
           - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5

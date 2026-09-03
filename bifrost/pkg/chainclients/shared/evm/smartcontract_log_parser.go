@@ -181,7 +181,10 @@ func (evt vaultTransferFailedEvent) isBounce() bool {
 // returned exactly (to, amount) to the vault. _sendEth emits TransferFailed
 // before the caller emits its TransferOut, so by the time a transfer event is
 // parsed every bounce belonging to it has already been collected.
-func matchesBounce(bounces []vaultTransferFailedEvent, to ecommon.Address, amount *big.Int) bool {
+func matchesBounce(bounces []vaultTransferFailedEvent, asset, to ecommon.Address, amount *big.Int) bool {
+	if !strings.EqualFold(asset.String(), NativeTokenAddr) {
+		return false // only native transfers bounce; an ERC20 leg never returns to the vault
+	}
 	for _, b := range bounces {
 		if b.To == to && b.Amount != nil && amount != nil && b.Amount.Cmp(amount) == 0 {
 			return true
@@ -292,7 +295,7 @@ func (scp *SmartContractLogParser) GetTxInItem(logs []*etypes.Log, txInItem *typ
 			txInItem.Coins = common.NewCoins(
 				common.NewCoin(asset, scp.amtConverter(transferOutEvt.Asset.String(), transferOutEvt.Amount)).WithDecimals(decimals),
 			)
-			txInItem.Bounced = matchesBounce(bounces, transferOutEvt.To, transferOutEvt.Amount)
+			txInItem.Bounced = matchesBounce(bounces, transferOutEvt.Asset, transferOutEvt.To, transferOutEvt.Amount)
 			earlyExit = true
 			isVaultTransfer = false
 		case transferFailedEvent:
@@ -390,7 +393,7 @@ func (scp *SmartContractLogParser) GetTxInItem(logs []*etypes.Log, txInItem *typ
 				continue
 			}
 
-			txInItem.Bounced = matchesBounce(bounces, transferOutAndCall.To, transferOutAndCall.Amount)
+			txInItem.Bounced = matchesBounce(bounces, ecommon.HexToAddress(NativeTokenAddr), transferOutAndCall.To, transferOutAndCall.Amount)
 			txInItem.To = transferOutAndCall.To.String()
 			txInItem.Memo = transferOutAndCall.Memo
 			txInItem.Sender = transferOutAndCall.Vault.String()

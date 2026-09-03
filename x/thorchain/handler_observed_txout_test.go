@@ -868,3 +868,104 @@ func (s *HandlerObservedTxOutSuite) TestHandleBouncedOutbound(c *C) {
 	}
 	c.Check(securityEvents, Equals, 1)
 }
+
+// TestHandleBounceDiscoveredAfterConsensus covers the production ordering: the
+// signing committee's receipt-less instant observation (non-final, Bounced=false)
+// reaches quorum first and debits the vault; the scanner's finalised observation
+// then reports the outbound as Bounced. The coins must come back to the vault and
+// the failure must still be surfaced.
+func (s *HandlerObservedTxOutSuite) TestHandleBounceDiscoveredAfterConsensus(c *C) {
+	var err error
+	ctx, mgr := setupManagerForTest(c)
+
+	tx := GetRandomTx()
+	pk := GetRandomPubKey()
+	tx.FromAddress, err = pk.GetAddress(tx.Coins[0].Asset.Chain)
+	c.Assert(err, IsNil)
+	txInHash := GetRandomTxHash()
+	tx.Memo = fmt.Sprintf("OUT:%s", txInHash)
+
+	na := GetRandomValidatorNode(NodeActive)
+	na.Bond = cosmos.NewUint(1000000 * common.One)
+	na.PubKeySet.Secp256k1 = pk
+
+	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, pk, common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+	vault.Membership = []string{pk.String()}
+	vault.Coins = common.Coins{
+		common.NewCoin(common.RuneAsset(), cosmos.NewUint(500)),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(200*common.One)),
+	}
+	keeper := &TestObservedTxOutHandleKeeper{
+		nas:       NodeAccounts{GetRandomValidatorNode(NodeActive)},
+		voter:     NewObservedTxVoter(tx.ID, make(ObservedTxs, 0)),
+		txInVoter: NewObservedTxVoter(txInHash, make(ObservedTxs, 0)),
+		pool: Pool{
+			Asset:        common.ETHAsset,
+			BalanceRune:  cosmos.NewUint(200_000),
+			BalanceAsset: cosmos.NewUint(300_000),
+		},
+		vaultExists: true,
+		vault:       vault,
+		hashes:      make([]common.TxID, 0),
+	}
+	txOutStore := NewTxStoreDummy()
+	txOutStore.blockOut.TxArray = append(txOutStore.blockOut.TxArray, TxOutItem{
+		Chain:       tx.Chain,
+		InHash:      txInHash,
+		ToAddress:   tx.ToAddress,
+		VaultPubKey: vault.PubKey,
+		Coin:        tx.Coins[0],
+		Memo:        tx.Memo,
+	})
+	keeper.txOutStore = txOutStore
+
+	mgr.K = keeper
+	eventMgr := NewDummyEventMgr()
+	mgr.eventMgr = eventMgr
+	mgr.slasher = newSlasher(keeper, eventMgr)
+	validatorMgr := newValidatorMgr(keeper, mgr.NetworkMgr(), txOutStore, eventMgr)
+	mgr.validatorMgr = validatorMgr
+	handler := NewObservedTxOutHandler(mgr)
+
+	securityEvents := func() int {
+		n := 0
+		for _, e := range ctx.EventManager().Events() {
+			if e.Type == "security" {
+				n++
+			}
+		}
+		return n
+	}
+
+	// 1. instant observation: non-final, no receipt so never Bounced
+	instant := NewObservedTx(tx, 12, pk, 13)
+	_, err = handler.handle(ctx, *NewMsgObservedTxOut(ObservedTxs{instant}, keeper.nas[0].NodeAddress))
+	c.Assert(err, IsNil)
+	vault, err = keeper.GetVault(ctx, pk)
+	c.Assert(err, IsNil)
+	// gas (37500) and amount (1) debited, as in TestHandle
+	c.Check(vault.Coins.GetCoin(common.ETHAsset).Amount.Uint64(), Equals, uint64(19999962499))
+	c.Check(securityEvents(), Equals, 0)
+
+	// 2. scanner observation: finalised, router bounced the coins back
+	final := NewObservedTx(tx, 13, pk, 13)
+	final.Bounced = true
+	_, err = handler.handle(ctx, *NewMsgObservedTxOut(ObservedTxs{final}, keeper.nas[0].NodeAddress))
+	c.Assert(err, IsNil)
+	vault, err = keeper.GetVault(ctx, pk)
+	c.Assert(err, IsNil)
+	// the amount is back, gas stays spent
+	c.Check(vault.Coins.GetCoin(common.ETHAsset).Amount.Uint64(), Equals, uint64(19999962500))
+	c.Check(securityEvents(), Equals, 1)
+	voter, err := keeper.GetObservedTxOutVoter(ctx, tx.ID)
+	c.Assert(err, IsNil)
+	c.Check(voter.Tx.Bounced, Equals, true)
+
+	// 3. a repeat of the bounced observation must not credit twice
+	_, err = handler.handle(ctx, *NewMsgObservedTxOut(ObservedTxs{final}, keeper.nas[0].NodeAddress))
+	c.Assert(err, IsNil)
+	vault, err = keeper.GetVault(ctx, pk)
+	c.Assert(err, IsNil)
+	c.Check(vault.Coins.GetCoin(common.ETHAsset).Amount.Uint64(), Equals, uint64(19999962500))
+	c.Check(securityEvents(), Equals, 1)
+}

@@ -213,6 +213,9 @@ func (m ObservedTx) Equals(tx2 ObservedTx) bool {
 	if !SolNonceUpdatesEqual(m.SolNonce, tx2.SolNonce) {
 		return false
 	}
+	if m.Bounced != tx2.Bounced {
+		return false
+	}
 	return true
 }
 
@@ -247,14 +250,22 @@ func (m ObservedTx) HasEquivalentCanonicalMinedHeight(tx2 ObservedTx) bool {
 	return m.XmrMinedHeight == tx2.XmrMinedHeight
 }
 
+// EqualsConsensus includes Bounced: it decides whether the vault coin debit
+// happens, so a lone attestation with the flag flipped must form its own
+// minority group rather than ride a supermajority that disagrees with it.
 func (m ObservedTx) EqualsConsensus(tx2 ObservedTx) bool {
 	return m.ObservedPubKey.Equals(tx2.ObservedPubKey) &&
 		m.Tx.EqualsEx(tx2.Tx) &&
 		m.HasEquivalentSpentOutputRefs(tx2) &&
 		m.HasEquivalentXMRTxKey(tx2) &&
-		m.HasEquivalentCanonicalMinedHeight(tx2)
+		m.HasEquivalentCanonicalMinedHeight(tx2) &&
+		m.Bounced == tx2.Bounced
 }
 
+// EqualsConsensusIgnoreGas deliberately ignores Bounced as well as gas: it is
+// used to recognise a later re-observation of an already-processed outbound
+// (the signer's receipt-less instant observation vs the scanner's), which may
+// differ in exactly those two fields and then be reconciled.
 func (m ObservedTx) EqualsConsensusIgnoreGas(tx2 ObservedTx) bool {
 	return m.ObservedPubKey.Equals(tx2.ObservedPubKey) &&
 		m.Tx.EqualsExIgnoreGas(tx2.Tx) &&

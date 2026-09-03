@@ -18,6 +18,7 @@ Name | Type | Description | Notes
 **SpentOutputRefs** | Pointer to [**[]OutputRef**](OutputRef.md) | XMR outbound spent outputs and key images committed by observers. | [optional] 
 **XmrTxKey** | Pointer to **string** | XMR outbound tx private key used by third parties to verify recipient outputs. | [optional] 
 **XmrMinedHeight** | Pointer to **int64** | Original XMR mined height, retained when observation height changes at finalization. Zero means unavailable or pre-mining. | [optional] 
+**Bounced** | Pointer to **bool** | the EVM router returned this outbound&#39;s coins to the sending vault (recipient could not accept them); the vault coin debit is skipped. | [optional] 
 **Status** | Pointer to **string** |  | [optional] 
 
 ## Methods
@@ -383,6 +384,31 @@ SetXmrMinedHeight sets XmrMinedHeight field to given value.
 `func (o *ObservedTx) HasXmrMinedHeight() bool`
 
 HasXmrMinedHeight returns a boolean if a field has been set.
+
+### GetBounced
+
+`func (o *ObservedTx) GetBounced() bool`
+
+GetBounced returns the Bounced field if non-nil, zero value otherwise.
+
+### GetBouncedOk
+
+`func (o *ObservedTx) GetBouncedOk() (*bool, bool)`
+
+GetBouncedOk returns a tuple with the Bounced field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetBounced
+
+`func (o *ObservedTx) SetBounced(v bool)`
+
+SetBounced sets Bounced field to given value.
+
+### HasBounced
+
+`func (o *ObservedTx) HasBounced() bool`
+
+HasBounced returns a boolean if a field has been set.
 
 ### GetStatus
 

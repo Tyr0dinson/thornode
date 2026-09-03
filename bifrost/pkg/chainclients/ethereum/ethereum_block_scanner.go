@@ -79,10 +79,14 @@ type ETHScanner struct {
 	pubkeyMgr             pubkeymanager.PubKeyValidator
 	eipSigner             etypes.Signer
 	currentBlockHeight    stdatomic.Int64
-	gasCache              []*big.Int
-	solvencyReporter      SolvencyReporter
-	whitelistTokens       []tokenlist.ERC20Token
-	signerCacheManager    *signercache.CacheManager
+	// detectBounce caches the EVMBouncedOutbound mimir for the block being
+	// scanned (refreshed at the top of processBlock; reorg/reprocess paths reuse
+	// the last value) so it is not fetched once per router tx.
+	detectBounce       stdatomic.Bool
+	gasCache           []*big.Int
+	solvencyReporter   SolvencyReporter
+	whitelistTokens    []tokenlist.ERC20Token
+	signerCacheManager *signercache.CacheManager
 }
 
 // NewETHScanner create a new instance of ETHScanner
@@ -356,6 +360,7 @@ func (e *ETHScanner) updateGasPriceFromCacheLocked() {
 // processBlock extracts transactions from block
 func (e *ETHScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 	height := int64(block.NumberU64())
+	e.detectBounce.Store(e.bouncedOutboundEnabled())
 	txIn := stypes.TxIn{
 		Chain:    common.ETHChain,
 		TxArray:  nil,
@@ -1049,7 +1054,7 @@ func (e *ETHScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 		e.vaultABI,
 		common.ETHAsset,
 		maxLogs,
-		e.bouncedOutboundEnabled())
+		e.detectBounce.Load())
 	// txInItem will be changed in p.GetTxInItem function, so if the function return an error
 	// txInItem should be abandoned
 	if _, err = p.GetTxInItem(receipt.Logs, txInItem); err != nil {
