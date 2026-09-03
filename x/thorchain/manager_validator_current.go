@@ -653,7 +653,8 @@ func (vm *ValidatorMgr) payNodeAccountBondAward(ctx cosmos.Context, lastChurnHei
 		return fmt.Errorf("fail to get network: %w", err)
 	}
 
-	slashPts, err := vm.k.GetNodeAccountSlashPoints(ctx, na.NodeAddress)
+	var slashPts int64
+	slashPts, err = vm.k.GetNodeAccountSlashPoints(ctx, na.NodeAddress)
 	if err != nil {
 		return fmt.Errorf("fail to get node slash points: %w", err)
 	}
@@ -676,7 +677,8 @@ func (vm *ValidatorMgr) payNodeAccountBondAward(ctx cosmos.Context, lastChurnHei
 	reward := common.GetUncappedShare(naEffectiveBond, totalEffectiveBond, totalBondReward)
 	reward = common.GetUncappedShare(cosmos.NewUint(uint64(earnedBlocks)), cosmos.NewUint(uint64(totalActiveBlocks)), reward)
 
-	// Record the node operator's bond (in bond provider form) before the reward
+	// Load and normalize bond providers before applying this reward, so any
+	// previous rewards or legacy provider state are already accounted for.
 	bp, err := vm.k.GetBondProviders(ctx, na.NodeAddress)
 	if err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to get bond providers(%s)", na.NodeAddress))
@@ -689,41 +691,38 @@ func (vm *ValidatorMgr) payNodeAccountBondAward(ctx cosmos.Context, lastChurnHei
 	if err != nil {
 		return err
 	}
+	if err = normalizeBondProviderOperator(&bp, nodeOperatorAccAddr); err != nil {
+		return ErrInternal(err, "invalid bond provider operator invariant")
+	}
 	// Ensure that previous rewards are already accounted for
 	bp.Adjust(na.Bond)
-	nodeOperatorProvider := bp.Get(nodeOperatorAccAddr)
-	// Sanity check that the node operator is accounted for
-	if nodeOperatorProvider.IsEmpty() {
-		return ErrInternal(fmt.Errorf("node operator not found"), fmt.Sprintf("node operator address(%s) not listed in bond providers", na.BondAddress))
-	}
-	lastNodeOperatorProviderBond := nodeOperatorProvider.Bond
 
-	// Compute all state changes in memory first; do not commit anything to the
-	// store until after the irreversible operator-fee transfer has succeeded.
-	// This pairs with the per-node CacheContext in distributeBondReward to make
-	// the whole payout atomic even if a future caller invokes this function
-	// without an outer cache wrap.
-	na.Bond = na.Bond.Add(reward)
+	// Remove the NodeOperatorFee portion from the reward before distributing
+	// the remaining reward to bond providers.
+	nodeOperatorFees := common.GetSafeShare(bp.NodeOperatorFee, cosmos.NewUint(constants.MaxBasisPts), reward)
+	if nodeOperatorFees.GT(reward) {
+		nodeOperatorFees = reward
+	}
+	providerReward := common.SafeSub(reward, nodeOperatorFees)
+
+	// Distribute provider reward to bond providers. With Bond Yield disabled,
+	// the full provider reward is rebonded; with it enabled, the configured
+	// payout portions are paid out and only the remainder is rebonded.
+	bondYieldEnabled := isBondYieldEnabled(ctx, mgr)
+	rebondedReward, rewardAllocations, err := applyBondReward(&bp, nodeOperatorAccAddr, providerReward, bondYieldEnabled)
+	if err != nil {
+		return ErrInternal(err, "fail to apply bond reward")
+	}
+	// Add only the rebonded reward to the slashable node bond.
+	na.Bond = na.Bond.Add(rebondedReward)
+
+	// Minus the number of RUNE THORNode has awarded them.
 	network.BondRewardRune = common.SafeSub(network.BondRewardRune, reward)
+	// Minus the number of units na has (do not include slash points).
 	network.TotalBondUnits = common.SafeSub(
 		network.TotalBondUnits,
 		cosmos.NewUint(uint64(totalActiveBlocks)),
 	)
-
-	// Distribute reward to bond providers and remove the NodeOperatorFee portion for node operator payout.
-	// (This is the full fee from other bond providers' rewards, plus an equivalent proportion of the node operator's rewards.)
-	bp.Adjust(na.Bond)
-	nodeOperatorProvider = bp.Get(nodeOperatorAccAddr)
-	nodeOperatorFees := common.GetSafeShare(bp.NodeOperatorFee, cosmos.NewUint(10000), reward)
-	// Sanity check:  Fees to pay out should never exceed the increase of the node operator's bond.
-	nodeOperatorBondIncrease := common.SafeSub(nodeOperatorProvider.Bond, lastNodeOperatorProviderBond)
-	if nodeOperatorFees.GT(nodeOperatorBondIncrease) {
-		nodeOperatorFees = nodeOperatorBondIncrease
-	}
-	if !nodeOperatorFees.IsZero() {
-		na.Bond = common.SafeSub(na.Bond, nodeOperatorFees)
-		bp.Unbond(nodeOperatorFees, nodeOperatorAccAddr)
-	}
 
 	// Transfer node operator fees BEFORE persisting accounting updates.
 	// If the bank send fails, the in-memory bond/network changes above are
@@ -736,12 +735,39 @@ func (vm *ValidatorMgr) payNodeAccountBondAward(ctx cosmos.Context, lastChurnHei
 		}
 	}
 
+	if bondYieldEnabled {
+		for i := range rewardAllocations {
+			allocation := &rewardAllocations[i]
+			if allocation.PayoutAmount.IsZero() {
+				continue
+			}
+			provider := bp.Get(allocation.ProviderAddress)
+			// A failed provider payout must not strand funds. Rebond the failed
+			// payout amount so funds remain slashable and recoverable.
+			if err = payBondYield(ctx, mgr, common.Tx{}, &na, provider, allocation.PayoutAmount); err != nil {
+				ctx.Logger().Error("fail to pay bond yield",
+					"node_address", na.NodeAddress.String(),
+					"provider_address", allocation.ProviderAddress.String(),
+					"amount", allocation.PayoutAmount.String(),
+					"error", err,
+				)
+				rebonded := allocation.PayoutAmount
+				bp.Bond(rebonded, allocation.ProviderAddress)
+				na.Bond = na.Bond.Add(rebonded)
+				allocation.RebondedAmount = allocation.RebondedAmount.Add(rebonded)
+				allocation.PayoutAmount = common.SafeSub(allocation.PayoutAmount, rebonded)
+				continue
+			}
+		}
+	}
+
 	// Now commit the accounting updates. SetNetwork/SetNodeAccount/SetBondProviders
 	// in the THORChain keeper always return nil, so reaching this point means
 	// the payout is fully consistent.
 	if err := vm.k.SetNetwork(ctx, network); err != nil {
 		return fmt.Errorf("fail to save network data: %w", err)
 	}
+	// Minus slash points used in this calculation.
 	vm.k.SetNodeAccountSlashPoints(ctx, na.NodeAddress, slashPts-totalActiveBlocks)
 	if err := vm.k.SetNodeAccount(ctx, na); err != nil {
 		return fmt.Errorf("fail to save node account: %w", err)
@@ -750,15 +776,39 @@ func (vm *ValidatorMgr) payNodeAccountBondAward(ctx cosmos.Context, lastChurnHei
 		return ErrInternal(err, fmt.Sprintf("fail to save bond providers(%s)", bp.NodeAddress.String()))
 	}
 
+	if bondYieldEnabled {
+		for _, allocation := range rewardAllocations {
+			if allocation.Bps == 0 && allocation.PayoutAmount.IsZero() {
+				continue
+			}
+			provider := bp.Get(allocation.ProviderAddress)
+			bondYieldEvent := NewEventBondYield(
+				na.NodeAddress,
+				allocation.ProviderAddress,
+				allocation.RewardShare,
+				allocation.PayoutAmount,
+				allocation.RebondedAmount,
+				allocation.Bps,
+				provider.PayoutTarget,
+			)
+			if err := mgr.EventMgr().EmitEvent(ctx, bondYieldEvent); err != nil {
+				ctx.Logger().Error("fail to emit bond yield event", "error", err)
+			}
+		}
+	}
+
+	// Emit BondReward event for the full pre-payout reward.
 	bondRewardEvent := NewEventBond(reward, BondReward, common.Tx{}, &na, nil)
 	if err := mgr.EventMgr().EmitEvent(ctx, bondRewardEvent); err != nil {
 		ctx.Logger().Error("fail to emit bond event", "error", err)
 	}
 	if !nodeOperatorFees.IsZero() {
 		// TODO: Remove this NewAddress call entirely in the next version of this manager.
-		if _, err := common.NewAddress(na.NodeAddress.String()); err != nil {
+		_, err := common.NewAddress(na.NodeAddress.String())
+		if err != nil {
 			return fmt.Errorf("fail to parse node address: %w", err)
 		}
+		// Emit BondReturned event for the node operator fee payout.
 		bondReturnedEvent := NewEventBond(nodeOperatorFees, BondReturned, common.Tx{}, &na, nodeOperatorAccAddr)
 		if err := mgr.EventMgr().EmitEvent(ctx, bondReturnedEvent); err != nil {
 			ctx.Logger().Error("fail to emit bond event", "error", err)

@@ -424,11 +424,15 @@ func ensureAffiliateFromAddress(ctx cosmos.Context, mgr Manager, tx *common.Tx) 
 // addRuneToAffiliateCollector - accrue RUNE in the AffiliateCollector module and check if
 // a PreferredAsset swap should be triggered. Returns an error if the fee distribution fails.
 func addRuneToAffiliateCollector(ctx cosmos.Context, mgr Manager, coin common.Coin, thorname *THORName, swapIndex *int) error {
+	return addRuneToAffiliateCollectorFromModule(ctx, mgr, AsgardName, coin, thorname, swapIndex)
+}
+
+func addRuneToAffiliateCollectorFromModule(ctx cosmos.Context, mgr Manager, module string, coin common.Coin, thorname *THORName, swapIndex *int) error {
 	affcol, err := mgr.Keeper().GetAffiliateCollector(ctx, thorname.Owner)
 	if err != nil {
 		return fmt.Errorf("failed to get affiliate collector: %w", err)
 	} else {
-		if err = mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, AffiliateCollectorName, common.NewCoins(coin)); err != nil {
+		if err = mgr.Keeper().SendFromModuleToModule(ctx, module, AffiliateCollectorName, common.NewCoins(coin)); err != nil {
 			return fmt.Errorf("failed to send coin to affiliate collector: %w", err)
 		} else {
 			affcol.RuneAmount = affcol.RuneAmount.Add(coin.Amount)

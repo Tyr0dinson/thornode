@@ -37,6 +37,7 @@ const (
 	SwapEventType                   = "swap"
 	AffiliateFeeEventType           = "affiliate_fee"
 	RevShareEventType               = "rev_share"
+	BondYieldEventType              = "bond_yield"
 	LimitSwapEventType              = "limit_swap"
 	ModifyLimitSwapEventType        = "limit_swap_mod"
 	LimitSwapCloseEventType         = "limit_swap_close"
@@ -315,6 +316,36 @@ func (m *EventRevShare) Events() (cosmos.Events, error) {
 			cosmos.NewAttribute("accrued_fee", m.AccruedFee.String()),
 			cosmos.NewAttribute("bps", strconv.FormatInt(m.Bps, 10)),
 			cosmos.NewAttribute("payout", m.Payout.String()),
+		),
+	}, nil
+}
+
+func NewEventBondYield(nodeAddress, providerAddress cosmos.AccAddress, rewardShare, payoutAmount, rebondedAmount cosmos.Uint, bps uint64, payoutTarget string) *EventBondYield {
+	return &EventBondYield{
+		NodeAddress:     nodeAddress,
+		ProviderAddress: providerAddress,
+		RewardShare:     rewardShare,
+		PayoutAmount:    payoutAmount,
+		RebondedAmount:  rebondedAmount,
+		Bps:             bps,
+		PayoutTarget:    payoutTarget,
+	}
+}
+
+func (m *EventBondYield) Type() string {
+	return BondYieldEventType
+}
+
+func (m *EventBondYield) Events() (cosmos.Events, error) {
+	return cosmos.Events{
+		cosmos.NewEvent(m.Type(),
+			cosmos.NewAttribute("node_address", m.NodeAddress.String()),
+			cosmos.NewAttribute("provider_address", m.ProviderAddress.String()),
+			cosmos.NewAttribute("reward_share", m.RewardShare.String()),
+			cosmos.NewAttribute("payout_amount", m.PayoutAmount.String()),
+			cosmos.NewAttribute("rebonded_amount", m.RebondedAmount.String()),
+			cosmos.NewAttribute("bps", strconv.FormatUint(m.Bps, 10)),
+			cosmos.NewAttribute("payout_target", m.PayoutTarget),
 		),
 	}, nil
 }

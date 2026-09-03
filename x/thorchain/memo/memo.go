@@ -54,6 +54,7 @@ const (
 	TxMaint
 	TxRebond
 	TxOperatorRotate
+	TxBondYield
 )
 
 var stringToTxTypeMap = map[string]TxType{
@@ -101,6 +102,7 @@ var stringToTxTypeMap = map[string]TxType{
 	"tcy-":        TxTCYUnstake,
 	"maint":       TxMaint,
 	"operator":    TxOperatorRotate,
+	"bondyield":   TxBondYield,
 }
 
 var txToStringMap = map[TxType]string{
@@ -136,6 +138,7 @@ var txToStringMap = map[TxType]string{
 	TxTCYStake:               "tcy+",
 	TxTCYUnstake:             "tcy-",
 	TxMaint:                  "maint",
+	TxBondYield:              "bondyield",
 }
 
 // converts a string into a txType
@@ -180,7 +183,8 @@ func (tx TxType) IsInbound() bool {
 		TxTCYClaim,
 		TxTCYStake,
 		TxTCYUnstake,
-		TxOperatorRotate:
+		TxOperatorRotate,
+		TxBondYield:
 		return true
 	default:
 		return false
@@ -227,6 +231,7 @@ func (tx TxType) HasOutbound() bool {
 		TxReserve,
 		TxMigrate,
 		TxMaint,
+		TxBondYield,
 		TxRagnarok:
 		return false
 	default:

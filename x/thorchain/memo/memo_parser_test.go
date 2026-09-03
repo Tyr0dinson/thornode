@@ -73,7 +73,7 @@ func (s *MemoParserSuite) TestTxTypeIsInternal(c *C) {
 
 func (s *MemoParserSuite) TestTxTypeHasOutbound(c *C) {
 	// Types without outbound
-	noOutbound := []TxType{TxAdd, TxBond, TxTradeAccountDeposit, TxSecuredAssetDeposit, TxStableReserveDeposit, TxRunePoolDeposit, TxDonate, TxReserve, TxMigrate, TxMaint, TxRagnarok}
+	noOutbound := []TxType{TxAdd, TxBond, TxTradeAccountDeposit, TxSecuredAssetDeposit, TxStableReserveDeposit, TxRunePoolDeposit, TxDonate, TxReserve, TxMigrate, TxMaint, TxBondYield, TxRagnarok}
 	for _, tt := range noOutbound {
 		c.Check(tt.HasOutbound(), Equals, false, Commentf("%s should not have outbound", tt.String()))
 	}
