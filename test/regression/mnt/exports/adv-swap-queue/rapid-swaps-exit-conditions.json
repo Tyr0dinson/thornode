@@ -444,6 +444,8 @@
           "value": "100"
         }
       ],
+      "node_account_jails": [],
+      "node_account_slash_points": [],
       "node_accounts": [
         {
           "active_block_height": "1",

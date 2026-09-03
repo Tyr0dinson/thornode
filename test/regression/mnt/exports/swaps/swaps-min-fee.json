@@ -366,6 +366,13 @@
           "value": "500"
         }
       ],
+      "node_account_jails": [],
+      "node_account_slash_points": [
+        {
+          "node_address": "tthor12e7ngn5h22su4hecdf0h8aw7hvnly5tchrfd43",
+          "slash_points": "2"
+        }
+      ],
       "node_accounts": [
         {
           "active_block_height": "1",

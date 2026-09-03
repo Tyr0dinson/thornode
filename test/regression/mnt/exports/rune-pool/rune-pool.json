@@ -441,6 +441,8 @@
           "signer": "tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm"
         }
       ],
+      "node_account_jails": [],
+      "node_account_slash_points": [],
       "node_accounts": [
         {
           "active_block_height": "1",

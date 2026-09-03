@@ -372,6 +372,17 @@
         }
       ],
       "nodeMimirs": [],
+      "node_account_jails": [],
+      "node_account_slash_points": [
+        {
+          "node_address": "tthor1pnmhtlt8umryv9h4uz60ylc07x5d6lkxzthqlt",
+          "slash_points": "12"
+        },
+        {
+          "node_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
+          "slash_points": "5"
+        }
+      ],
       "node_accounts": [
         {
           "active_block_height": "1",

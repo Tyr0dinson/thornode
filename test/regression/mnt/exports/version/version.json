@@ -227,6 +227,8 @@
       },
       "network_fees": [],
       "nodeMimirs": [],
+      "node_account_jails": [],
+      "node_account_slash_points": [],
       "node_accounts": [
         {
           "bond": "1",
