@@ -410,5 +410,13 @@ func (scp *SmartContractLogParser) GetTxInItem(logs []*etypes.Log, txInItem *typ
 			break
 		}
 	}
+	if len(bounces) > 0 && !txInItem.Bounced {
+		// A native bounce was collected but no transfer event claimed it. The
+		// detection relies on _sendEth emitting TransferFailed before its caller's
+		// TransferOut/TransferOutAndCall; if a router ever breaks that ordering the
+		// vault silently under-counts again, so make the miss visible.
+		scp.logger.Warn().Str("tx", txInItem.Tx).Int("unmatched_bounces", len(bounces)).
+			Msg("TransferFailed bounce not matched to a transfer event, outbound not flagged as bounced")
+	}
 	return isVaultTransfer, nil
 }

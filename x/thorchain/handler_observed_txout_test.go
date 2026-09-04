@@ -977,3 +977,136 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceDiscoveredAfterConsensus(c *
 	c.Check(vault.Coins.GetCoin(common.ETHAsset).Amount.Uint64(), Equals, uint64(19999940000))
 	c.Check(securityEvents(), Equals, 1)
 }
+
+// bouncedOutboundFixture wires an ETH vault holding 200 ETH, a matching
+// TxOutItem and n active nodes behind an ObservedTxOut handler, so tests can
+// vote from different nodes and read the vault balance back.
+type bouncedOutboundFixture struct {
+	ctx     cosmos.Context
+	handler ObservedTxOutHandler
+	keeper  *TestObservedTxOutHandleKeeper
+	pk      common.PubKey
+	tx      common.Tx
+}
+
+func newBouncedOutboundFixture(c *C, activeNodes int) *bouncedOutboundFixture {
+	var err error
+	ctx, mgr := setupManagerForTest(c)
+
+	tx := GetRandomTx()
+	pk := GetRandomPubKey()
+	tx.FromAddress, err = pk.GetAddress(tx.Coins[0].Asset.Chain)
+	c.Assert(err, IsNil)
+	txInHash := GetRandomTxHash()
+	tx.Memo = fmt.Sprintf("OUT:%s", txInHash)
+
+	nas := make(NodeAccounts, activeNodes)
+	for i := range nas {
+		nas[i] = GetRandomValidatorNode(NodeActive)
+	}
+
+	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, pk, common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+	vault.Membership = []string{pk.String()}
+	vault.Coins = common.Coins{
+		common.NewCoin(common.RuneAsset(), cosmos.NewUint(500)),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(200*common.One)),
+	}
+	keeper := &TestObservedTxOutHandleKeeper{
+		nas:       nas,
+		voter:     NewObservedTxVoter(tx.ID, make(ObservedTxs, 0)),
+		txInVoter: NewObservedTxVoter(txInHash, make(ObservedTxs, 0)),
+		pool: Pool{
+			Asset:        common.ETHAsset,
+			BalanceRune:  cosmos.NewUint(200_000),
+			BalanceAsset: cosmos.NewUint(300_000),
+		},
+		vaultExists: true,
+		vault:       vault,
+		hashes:      make([]common.TxID, 0),
+	}
+	txOutStore := NewTxStoreDummy()
+	txOutStore.blockOut.TxArray = append(txOutStore.blockOut.TxArray, TxOutItem{
+		Chain:       tx.Chain,
+		InHash:      txInHash,
+		ToAddress:   tx.ToAddress,
+		VaultPubKey: vault.PubKey,
+		Coin:        tx.Coins[0],
+		Memo:        tx.Memo,
+	})
+	keeper.txOutStore = txOutStore
+
+	mgr.K = keeper
+	eventMgr := NewDummyEventMgr()
+	mgr.eventMgr = eventMgr
+	mgr.slasher = newSlasher(keeper, eventMgr)
+	mgr.validatorMgr = newValidatorMgr(keeper, mgr.NetworkMgr(), txOutStore, eventMgr)
+
+	return &bouncedOutboundFixture{ctx: ctx, handler: NewObservedTxOutHandler(mgr), keeper: keeper, pk: pk, tx: tx}
+}
+
+// vote submits one finalised observation of the outbound from node i.
+func (f *bouncedOutboundFixture) vote(c *C, i int, bounced bool) {
+	obTx := NewObservedTx(f.tx, 12, f.pk, 12)
+	obTx.Bounced = bounced
+	_, err := f.handler.handle(f.ctx, *NewMsgObservedTxOut(ObservedTxs{obTx}, f.keeper.nas[i].NodeAddress))
+	c.Assert(err, IsNil)
+}
+
+func (f *bouncedOutboundFixture) ethBalance(c *C) uint64 {
+	vault, err := f.keeper.GetVault(f.ctx, f.pk)
+	c.Assert(err, IsNil)
+	return vault.Coins.GetCoin(common.ETHAsset).Amount.Uint64()
+}
+
+func (f *bouncedOutboundFixture) securityEvents() int {
+	n := 0
+	for _, e := range f.ctx.EventManager().Events() {
+		if e.Type == "security" {
+			n++
+		}
+	}
+	return n
+}
+
+// TestHandleBouncedMinorityCannotSuppressDebit is the load-bearing consensus
+// property: Bounced decides whether the vault coin debit happens, so a lone
+// Bounced observation must form its own minority group. With 6 active nodes
+// (quorum 4), an honest supermajority still debits the vault no matter whether
+// the dissenting vote lands first, in the middle, or after consensus.
+func (s *HandlerObservedTxOutSuite) TestHandleBouncedMinorityCannotSuppressDebit(c *C) {
+	const (
+		untouched   = uint64(20000000000) // 200 ETH
+		gasOnly     = untouched - 37500
+		gasAndCoins = gasOnly - 1
+	)
+
+	// dissenting Bounced vote first, so it is voter.Txs[0]
+	f := newBouncedOutboundFixture(c, 6)
+	f.vote(c, 0, true)
+	f.vote(c, 1, false)
+	f.vote(c, 2, false)
+	f.vote(c, 3, false)
+	c.Check(f.ethBalance(c), Equals, untouched) // 3/6 honest + 1/6 bounced: no quorum
+	f.vote(c, 4, false)
+	c.Check(f.ethBalance(c), Equals, gasAndCoins) // 4/6 honest: debited
+	c.Check(f.securityEvents(), Equals, 0)
+	f.vote(c, 5, true) // a late second dissenter cannot credit anything back
+	c.Check(f.ethBalance(c), Equals, gasAndCoins)
+	c.Check(f.securityEvents(), Equals, 0)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
+
+	// the inverse: a lone honest vote cannot make a bounced supermajority debit
+	f = newBouncedOutboundFixture(c, 6)
+	f.vote(c, 0, false)
+	f.vote(c, 1, true)
+	f.vote(c, 2, true)
+	f.vote(c, 3, true)
+	c.Check(f.ethBalance(c), Equals, untouched)
+	f.vote(c, 4, true)
+	c.Check(f.ethBalance(c), Equals, gasOnly) // 4/6 bounced: coins retained, gas charged
+	c.Check(f.securityEvents(), Equals, 1)
+	f.vote(c, 5, false)
+	c.Check(f.ethBalance(c), Equals, gasOnly)
+	c.Check(f.securityEvents(), Equals, 1)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
+}

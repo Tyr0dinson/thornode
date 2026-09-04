@@ -1244,3 +1244,24 @@ func (s *TypeObservedTxSuite) TestGetTxMatchesOracle(c *C) {
 	// the generator must reach both kinds of consensus often enough to matter
 	c.Assert(selected[true] > 150 && selected[false] > 150, Equals, true, Commentf("selections: %v", selected))
 }
+
+// Observations that differ only in Bounced must not merge into one vote: a lone
+// Bounced attestation forms its own group and cannot tip an honest supermajority
+// into skipping the vault debit (nor be tipped by it).
+func (s TypeObservedTxSuite) TestVoterBouncedSplitsConsensus(c *C) {
+	nas := NodeAccounts{GetRandomValidatorNode(NodeStatus_Active), GetRandomValidatorNode(NodeStatus_Active), GetRandomValidatorNode(NodeStatus_Active)}
+	tx := common.NewObservedTx(GetRandomTx(), 12, GetRandomPubKey(), 12)
+	bounced := tx
+	bounced.Bounced = true
+
+	voter := NewObservedTxVoter(tx.Tx.ID, nil)
+	c.Assert(voter.Add(tx, nas[0].NodeAddress), Equals, true)
+	c.Assert(voter.Add(bounced, nas[1].NodeAddress), Equals, true)
+	c.Assert(voter.Txs, HasLen, 2)
+	// 1 + 1 of 3 is not a supermajority for either variant
+	c.Assert(voter.HasConsensus(nas), Equals, false)
+
+	c.Assert(voter.Add(tx, nas[2].NodeAddress), Equals, true)
+	c.Assert(voter.HasConsensus(nas), Equals, true)
+	c.Assert(voter.GetTx(nas).Bounced, Equals, false)
+}

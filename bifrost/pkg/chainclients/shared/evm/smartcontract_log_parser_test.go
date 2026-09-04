@@ -601,3 +601,116 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_BouncedOutbound(c *C) 
 	c.Assert(err, IsNil)
 	c.Assert(txInItem.Bounced, Equals, false)
 }
+
+func (t *SmartContractLogParserTestSuite) getTransferOutAndCallEvent(smartContractAddr, vault, target, finalAsset, to string, amount, amountOutMin *big.Int, memo string) *etypes.Log {
+	evt, err := t.abi.EventByID(ecommon.HexToHash(transferOutAndCallEvent))
+	if err != nil {
+		return nil
+	}
+	data, err := evt.Inputs.NonIndexed().Pack(ecommon.HexToAddress(target), amount, ecommon.HexToAddress(finalAsset), ecommon.HexToAddress(to), amountOutMin, memo)
+	if err != nil {
+		return nil
+	}
+	return &etypes.Log{
+		Address: ecommon.HexToAddress(smartContractAddr),
+		Topics: []ecommon.Hash{
+			ecommon.HexToHash(transferOutAndCallEvent),
+			ecommon.BytesToHash(ecommon.LeftPadBytes(ecommon.HexToAddress(vault).Bytes(), ecommon.HashLength)),
+		},
+		Data: data,
+	}
+}
+
+// TestGetTxInItem_BouncedTransferOutAndCall covers transferOutAndCall on router
+// V6+. When the aggregator call fails the router falls back to _sendEth; if that
+// also fails the receipt is TransferFailed(no memo, ETH) from _sendEth, then
+// TransferFailed(memo, finalToken) from transferOutAndCall, then
+// TransferOutAndCall. Only that double failure is a bounce: with a single
+// failure the ETH reached the recipient directly.
+func (t *SmartContractLogParserTestSuite) TestGetTxInItem_BouncedTransferOutAndCall(c *C) {
+	vaultABI, _, err := GetContractABI(routerContractABI, erc20ContractABI)
+	c.Assert(err, IsNil)
+
+	const (
+		router     = "0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44"
+		vault      = "0x6c4a2eeb8531e3c18bca51104df7eb2377708263"
+		to         = "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437"
+		aggregator = "0x1111111111111111111111111111111111111111"
+	)
+	amount := big.NewInt(1024000)
+	memo := "OUT:" + types2.GetRandomTxHash().String()
+	parser := NewSmartContractLogParser(mockIsValidContractAddr, mockAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI, common.ETHAsset, 4, true)
+
+	// double failure: swap failed, then _sendEth to the recipient failed too
+	txInItem := &types.TxInItem{Sender: vault}
+	_, err = parser.GetTxInItem([]*etypes.Log{
+		t.getTransferFailedEvent(router, vault, to, NativeTokenAddr, amount, ""),
+		t.getTransferFailedEvent(router, vault, to, tknTestToken, amount, memo),
+		t.getTransferOutAndCallEvent(router, vault, aggregator, tknTestToken, to, amount, big.NewInt(0), memo),
+	}, txInItem)
+	c.Assert(err, IsNil)
+	c.Assert(txInItem.Bounced, Equals, true)
+	c.Assert(txInItem.To, Equals, ecommon.HexToAddress(to).String())
+	c.Assert(txInItem.Memo, Equals, memo)
+	c.Assert(txInItem.Aggregator, Equals, ecommon.HexToAddress(aggregator).String())
+	c.Assert(txInItem.Coins.EqualsEx(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1024000)))), Equals, true)
+
+	// single failure: swap failed but _sendEth delivered the ETH to the recipient
+	txInItem = &types.TxInItem{Sender: vault}
+	_, err = parser.GetTxInItem([]*etypes.Log{
+		t.getTransferFailedEvent(router, vault, to, tknTestToken, amount, memo),
+		t.getTransferOutAndCallEvent(router, vault, aggregator, tknTestToken, to, amount, big.NewInt(0), memo),
+	}, txInItem)
+	c.Assert(err, IsNil)
+	c.Assert(txInItem.Bounced, Equals, false)
+
+	// success: no failures at all
+	txInItem = &types.TxInItem{Sender: vault}
+	_, err = parser.GetTxInItem([]*etypes.Log{
+		t.getTransferOutAndCallEvent(router, vault, aggregator, tknTestToken, to, amount, big.NewInt(0), memo),
+	}, txInItem)
+	c.Assert(err, IsNil)
+	c.Assert(txInItem.Bounced, Equals, false)
+}
+
+// TestGetTxInItem_BouncedBatchTransferOut covers batchTransferOut, which emits
+// one _sendEth (TransferFailed on bounce) followed by TransferOut per leg. The
+// parser stops at the first TransferOut, so only the first leg is observed and
+// a later leg's bounce must not be attributed to it even when both legs share
+// (to, amount).
+func (t *SmartContractLogParserTestSuite) TestGetTxInItem_BouncedBatchTransferOut(c *C) {
+	vaultABI, _, err := GetContractABI(routerContractABI, erc20ContractABI)
+	c.Assert(err, IsNil)
+
+	const (
+		router = "0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44"
+		vault  = "0x6c4a2eeb8531e3c18bca51104df7eb2377708263"
+		to     = "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437"
+	)
+	amount := big.NewInt(1024000)
+	memo1 := "OUT:" + types2.GetRandomTxHash().String()
+	memo2 := "OUT:" + types2.GetRandomTxHash().String()
+	parser := NewSmartContractLogParser(mockIsValidContractAddr, mockAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI, common.ETHAsset, 4, true)
+
+	// leg 1 delivered, leg 2 (same recipient and amount) bounced
+	txInItem := &types.TxInItem{Sender: vault}
+	_, err = parser.GetTxInItem([]*etypes.Log{
+		t.getTransferOutEvent(router, vault, to, NativeTokenAddr, amount, memo1),
+		t.getTransferFailedEvent(router, vault, to, NativeTokenAddr, amount, ""),
+		t.getTransferOutEvent(router, vault, to, NativeTokenAddr, amount, memo2),
+	}, txInItem)
+	c.Assert(err, IsNil)
+	c.Assert(txInItem.Memo, Equals, memo1)
+	c.Assert(txInItem.Bounced, Equals, false)
+
+	// leg 1 bounced, leg 2 delivered
+	txInItem = &types.TxInItem{Sender: vault}
+	_, err = parser.GetTxInItem([]*etypes.Log{
+		t.getTransferFailedEvent(router, vault, to, NativeTokenAddr, amount, ""),
+		t.getTransferOutEvent(router, vault, to, NativeTokenAddr, amount, memo1),
+		t.getTransferOutEvent(router, vault, to, NativeTokenAddr, amount, memo2),
+	}, txInItem)
+	c.Assert(err, IsNil)
+	c.Assert(txInItem.Memo, Equals, memo1)
+	c.Assert(txInItem.Bounced, Equals, true)
+}
