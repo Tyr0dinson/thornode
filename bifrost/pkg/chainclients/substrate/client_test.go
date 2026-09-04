@@ -267,6 +267,7 @@ func newTestClient(rpcClient *rpc.Client, opts ...testClientOpt) *Client {
 	genericScanner, err := generic.NewScanner(
 		genericClient.StateStore(),
 		int(ChainParams[common.TAOChain].MortalEraPeriod)*2,
+		ChainParams[common.TAOChain].Lookback*2,
 	)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("could not create generic scanner")
@@ -464,9 +465,9 @@ func (s *ClientSuite) TestReserveNonce_MortalEraExpiry(c *C) {
 	c.Assert(err, IsNil, Commentf("second"))
 	c.Check(n2, Equals, uint32(6), Commentf("second nonce: cache ahead, era not expired"))
 
-	// Now jump past mortalEraPeriod (64 blocks from height 101 when cache was updated).
-	// At height 101+64=165, the mortal era expiry triggers reset to on-chain nonce 5.
-	n3, _, err := cl.reserveNonce(tx, vault, 165)
+	// Expiry resets the reservation to the on-chain nonce.
+	expired := int64(101) + int64(ChainParams[common.TAOChain].MortalEraPeriod)
+	n3, _, err := cl.reserveNonce(tx, vault, expired)
 	c.Assert(err, IsNil, Commentf("third"))
 	c.Check(n3, Equals, uint32(5), Commentf("third nonce: should reset after mortal era expiry"))
 }
@@ -585,7 +586,7 @@ func (s *ClientSuite) TestBroadcastTxPreservesSigningEraExpiry(c *C) {
 		VaultAddress:   vaultAddr,
 		Nonce:          7,
 		EraBirthHeight: 100,
-		RecheckHeight:  164,
+		RecheckHeight:  100 + int64(ChainParams[common.TAOChain].MortalEraPeriod),
 	}
 	c.Assert(cl.stateStore.PutExtrinsic(record), IsNil)
 	cl.chainScanner.setLatestBlock("0xlocal-tip", 150)
@@ -676,7 +677,8 @@ func (s *ClientSuite) TestSignTxUsesReferenceEraAndPersistsExactExpiry(c *C) {
 		cl.chainScanner.getRuntimeContext().layout,
 	)
 	c.Assert(err, IsNil)
-	c.Check(extrinsic.Era, DeepEquals, subtypes.MortalEra(64, 100))
+	era := uint64(ChainParams[common.TAOChain].MortalEraPeriod)
+	c.Check(extrinsic.Era, DeepEquals, subtypes.MortalEra(era, 100))
 	c.Check(extrinsic.Nonce, Equals, uint64(7))
 
 	txHash := subtypes.ExtrinsicHash(rawTx)
@@ -684,7 +686,7 @@ func (s *ClientSuite) TestSignTxUsesReferenceEraAndPersistsExactExpiry(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(found, Equals, true)
 	c.Check(record.EraBirthHeight, Equals, int64(100))
-	c.Check(record.RecheckHeight, Equals, int64(164))
+	c.Check(record.RecheckHeight, Equals, 100+int64(era))
 }
 
 func (s *ClientSuite) TestBroadcastTx_PersistenceFailurePreventsSubmission(c *C) {

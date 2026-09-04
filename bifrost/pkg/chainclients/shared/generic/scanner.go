@@ -1,15 +1,19 @@
 package generic
 
-// Scanner is the reusable base for chain-specific block scanners. Shared
-// scanner capabilities belong here; their data handling stays in contained
-// stores so this type can grow without mixing persistence concerns together.
+import "time"
+
+// Scanner provides shared state for chain-specific block scanners.
 type Scanner struct {
 	blockReferences *BlockReferenceStore
 }
 
-// NewScanner creates a shared scanner with a persistent block-reference store.
-func NewScanner(state StateStore, maxBlockReferences int) (*Scanner, error) {
-	blockReferences, err := NewBlockReferenceStore(state, maxBlockReferences)
+// NewScanner creates a scanner with a persistent block-reference store.
+func NewScanner(
+	state StateStore,
+	maxBlockReferences int,
+	retention time.Duration,
+) (*Scanner, error) {
+	blockReferences, err := NewBlockReferenceStore(state, maxBlockReferences, retention)
 	if err != nil {
 		return nil, err
 	}
@@ -25,9 +29,4 @@ func (s *Scanner) SetBlockReference(reference BlockReference) error {
 // upper block boundary.
 func (s *Scanner) ResolveBlockReference(timestamp int64) (BlockReference, error) {
 	return s.blockReferences.Resolve(timestamp)
-}
-
-// RewindBlockReferences removes references above height.
-func (s *Scanner) RewindBlockReferences(height int64) error {
-	return s.blockReferences.Rewind(height)
 }

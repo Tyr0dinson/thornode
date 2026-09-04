@@ -31,6 +31,37 @@ volumes:
   xmr-frost-data-fox: {}
   xmr-frost-data-pig: {}
   xmr-sim-data: {}
+  polkadot-specs: {}
+
+x-bifrost-common-depends-on: &bifrost-common-depends-on
+  bitcoin:
+    condition: service_started
+  bitcoin-cash:
+    condition: service_started
+  dogecoin:
+    condition: service_started
+  gaia:
+    condition: service_started
+  litecoin:
+    condition: service_started
+  monero-daemon:
+    condition: service_started
+  monero-wallet-rpc:
+    condition: service_started
+  xmr-frost-signer:
+    condition: service_started
+  bittensor:
+    condition: service_healthy
+  polkadot:
+    condition: service_healthy
+  tron-supernode:
+    condition: service_started
+  tron-fullnode:
+    condition: service_started
+  thornode:
+    condition: service_started
+  polygon:
+    condition: service_started
 
 ########################################################################################
 # Services
@@ -194,21 +225,11 @@ services:
       - mocknet-cluster
       - bifrost
       - validator
-    depends_on: &bifrost-depends-on
-      - bitcoin
-      - bitcoin-cash
-      - dogecoin
-      - gaia
-      - litecoin
-      - monero-daemon
-      - monero-wallet-rpc
-      - xmr-frost-signer
-      - bittensor
-      - tron-supernode
-      - tron-fullnode
-      - thornode
-      - solana
-      - polygon
+    # Wait for Substrate RPCs before starting Bifrost.
+    depends_on:
+      <<: *bifrost-common-depends-on
+      solana:
+        condition: service_started
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment: &bifrost-environment
@@ -468,19 +489,9 @@ services:
     profiles:
       - mocknet-cluster
     depends_on:
-      - bitcoin
-      - bitcoin-cash
-      - dogecoin
-      - gaia
-      - litecoin
-      - monero-daemon
-      - monero-wallet-rpc
-      - xmr-frost-signer
-      - xmr-frost-signer-cat
-      - tron-supernode
-      - tron-fullnode
-      - thornode
-      - polygon
+      <<: *bifrost-common-depends-on
+      xmr-frost-signer-cat:
+        condition: service_started
     environment:
       <<: *bifrost-environment
       PEER: bifrost
@@ -503,19 +514,9 @@ services:
     profiles:
       - mocknet-cluster
     depends_on:
-      - bitcoin
-      - bitcoin-cash
-      - dogecoin
-      - gaia
-      - litecoin
-      - monero-daemon
-      - monero-wallet-rpc
-      - xmr-frost-signer
-      - xmr-frost-signer-fox
-      - tron-supernode
-      - tron-fullnode
-      - thornode
-      - polygon
+      <<: *bifrost-common-depends-on
+      xmr-frost-signer-fox:
+        condition: service_started
     environment:
       <<: *bifrost-environment
       PEER: bifrost
@@ -538,19 +539,9 @@ services:
     profiles:
       - mocknet-cluster
     depends_on:
-      - bitcoin
-      - bitcoin-cash
-      - dogecoin
-      - gaia
-      - litecoin
-      - monero-daemon
-      - monero-wallet-rpc
-      - xmr-frost-signer
-      - xmr-frost-signer-pig
-      - tron-supernode
-      - tron-fullnode
-      - thornode
-      - polygon
+      <<: *bifrost-common-depends-on
+      xmr-frost-signer-pig:
+        condition: service_started
     environment:
       <<: *bifrost-environment
       PEER: bifrost
@@ -1137,19 +1128,42 @@ services:
 
   # ------------------------------ polkadot ------------------------------
 
-  polkadot:
+  # Run Asset Hub against a local relay chain to provide real block timestamps.
+  _polkadot: &polkadot-defaults
+    profiles:
+      - _
+    image: polkadot-mocknet
+    build:
+      context: ./mocknet/polkadot
+    volumes:
+      - polkadot-specs:/shared
+    platform: linux/amd64
+
+  # Generate both chain specs before starting the nodes.
+  polkadot-genesis:
+    <<: *polkadot-defaults
+    profiles:
+      - mocknet
+      - mocknet-cluster
+    restart: "no"
+    environment:
+      ROLE: genesis
+      DOT_MASTER_ADDR: "${DOT_MASTER_ADDR:-5F99wvx3Rn1dJs7AYWxbgtJq43p9dEW6VVcLmxFTKfEDmArz}"
+      DOT_MASTER_AMOUNT: "${DOT_MASTER_AMOUNT:-10000000000000000}" # 1M DOT
+
+  polkadot-relay-alice:
+    <<: *polkadot-defaults
     profiles:
       - mocknet
       - mocknet-cluster
     restart: unless-stopped
-    build:
-      context: ./mocknet/polkadot
-    ports:
-      - 9944:9944
     environment:
-      DOT_MASTER_ADDR: "${DOT_MASTER_ADDR:-5F99wvx3Rn1dJs7AYWxbgtJq43p9dEW6VVcLmxFTKfEDmArz}"
-      DOT_MASTER_AMOUNT: "${DOT_MASTER_AMOUNT:-10000000000000000}" # 1M DOT
-    healthcheck:
+      ROLE: relay
+      RELAY_NAME: alice
+    depends_on:
+      polkadot-genesis:
+        condition: service_completed_successfully
+    healthcheck: &polkadot-healthcheck
       test:
         [
           "CMD",
@@ -1166,10 +1180,61 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
-      # First boot builds Asset Hub genesis state from the plain chain spec,
-      # which takes a few minutes before the RPC comes up.
+      start_period: 60s
+
+  # Run the second relay validator required to back candidates.
+  polkadot-relay-bob:
+    <<: *polkadot-defaults
+    profiles:
+      - mocknet
+      - mocknet-cluster
+    restart: unless-stopped
+    environment:
+      ROLE: relay
+      RELAY_NAME: bob
+    depends_on:
+      polkadot-relay-alice:
+        condition: service_healthy
+    healthcheck: *polkadot-healthcheck
+
+  # Expose the Alice Asset Hub collator to Bifrost.
+  polkadot:
+    <<: *polkadot-defaults
+    profiles:
+      - mocknet
+      - mocknet-cluster
+    restart: unless-stopped
+    ports:
+      - 9944:9944
+    environment:
+      ROLE: collator
+      COLLATOR_NAME: alice
+    depends_on:
+      polkadot-relay-alice:
+        condition: service_healthy
+      polkadot-relay-bob:
+        condition: service_healthy
+    healthcheck: &polkadot-collator-healthcheck
+      <<: *polkadot-healthcheck
+      # Asset Hub can take several minutes to initialize.
       start_period: 300s
-    platform: linux/amd64
+
+  # Run the Bob collator to fill its Aura slots.
+  polkadot-collator:
+    <<: *polkadot-defaults
+    profiles:
+      - mocknet
+      - mocknet-cluster
+    restart: unless-stopped
+    environment:
+      ROLE: collator
+      COLLATOR_NAME: bob
+    depends_on:
+      polkadot-relay-alice:
+        condition: service_healthy
+      polkadot-relay-bob:
+        condition: service_healthy
+    healthcheck: *polkadot-collator-healthcheck
 
   # ------------------------------ zcash ------------------------------
 

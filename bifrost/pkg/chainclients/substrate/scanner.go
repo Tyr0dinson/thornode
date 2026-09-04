@@ -28,6 +28,18 @@ const (
 	FeeCacheSize    = 200
 	FeeUpdatePeriod = 20
 	NonceHashBlocks = 100
+
+	// Scan recovery records every 200 blocks.
+	recordSweepPeriod = 200
+
+	// Retain recovery records for eight eras after their recheck height.
+	recordSweepEras = 8
+
+	// Allow reference storage for block intervals down to 100 milliseconds.
+	minBlockInterval = 100 * time.Millisecond
+
+	// Keep signing anchors longer than the nominal DOT and TAO mortal eras.
+	blockReferenceRetention = 15 * time.Minute
 )
 
 var (
@@ -56,6 +68,7 @@ type Scanner struct {
 	solvencyReporter types.SolvencyReporter
 	pubkeyMgr        pubkeymanager.PubKeyValidator
 	failHandler      FinalizedFailureHandler
+	stateStore       *stateStore
 
 	globalNetworkFeeQueue chan common.NetworkFee
 
@@ -88,9 +101,20 @@ func NewScanner(
 		return nil, fmt.Errorf("no params found for %s", cfg.ChainID)
 	}
 
-	genericScanner, err := generic.NewScanner(state, int(params.MortalEraPeriod)*2)
+	retention := blockReferenceRetention
+	references := int(params.MortalEraPeriod) * 2
+	if byRetention := int(retention / minBlockInterval); byRetention > references {
+		references = byRetention
+	}
+
+	genericScanner, err := generic.NewScanner(state, references, retention)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create generic scanner: %w", err)
+	}
+
+	store, err := newStateStore(state)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create signed extrinsic record store: %w", err)
 	}
 
 	s := &Scanner{
@@ -102,6 +126,7 @@ func NewScanner(
 		solvencyReporter: solvencyReporter,
 		pubkeyMgr:        pubkeyMgr,
 		failHandler:      failHandler,
+		stateStore:       store,
 		nonceCache:       newNonceCache(),
 	}
 
@@ -252,6 +277,7 @@ func (s *Scanner) FetchTxs(fetchHeight, _ int64) (ttypes.TxIn, error) {
 	}
 
 	s.nonceCache.Purge(fetchHeight - NonceHashBlocks)
+	s.sweepExpiredRecords(fetchHeight)
 
 	err = s.SetBlockReference(generic.BlockReference{
 		Height:    fetchHeight,
@@ -266,6 +292,32 @@ func (s *Scanner) FetchTxs(fetchHeight, _ int64) (ttypes.TxIn, error) {
 	s.setLatestBlock(blockHash, fetchHeight)
 
 	return txIn, nil
+}
+
+// sweepExpiredRecords periodically removes old recovery records.
+func (s *Scanner) sweepExpiredRecords(fetchHeight int64) {
+	if fetchHeight%recordSweepPeriod != 0 {
+		return
+	}
+
+	cutoff := fetchHeight - int64(s.params.MortalEraPeriod)*recordSweepEras
+	if cutoff <= 0 {
+		return
+	}
+
+	dropped, err := s.stateStore.SweepExpired(cutoff)
+	if err != nil {
+		s.logger.Err(err).
+			Int64("cutoff", cutoff).
+			Msg("failed to sweep expired signed extrinsic records")
+		return
+	}
+	if dropped > 0 {
+		s.logger.Info().
+			Int("records", dropped).
+			Int64("cutoff", cutoff).
+			Msg("dropped expired signed extrinsic records")
+	}
 }
 
 // FetchMemPool is not used for Substrate chains.

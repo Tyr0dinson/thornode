@@ -85,7 +85,21 @@ const (
 	masterAccountRetryAttempts = 30
 	masterAccountRetryDelay    = 2 * time.Second
 	mocknetInitConcurrency     = 2
+
+	// Log readiness progress every 15 attempts.
+	masterAccountWaitLogInterval = 15
+
+	// Allow six minutes for Asset Hub initialization.
+	dotMasterAccountRetryAttempts = 180
 )
+
+// masterAccountRetryAttemptsFor returns the readiness limit for a chain.
+func masterAccountRetryAttemptsFor(chain common.Chain) int {
+	if chain.Equals(common.DOTChain) {
+		return dotMasterAccountRetryAttempts
+	}
+	return masterAccountRetryAttempts
+}
 
 // getHeightProvider lets chains with non-replayable mock histories seed
 // network fees at their current chain height instead of the legacy height 1.
@@ -661,33 +675,45 @@ func waitForMasterAccountWithSleep(
 	sleep func(time.Duration),
 ) (*common.Account, error) {
 	var lastErr error
-	for attempt := 1; attempt <= masterAccountRetryAttempts; attempt++ {
+	maxAttempts := masterAccountRetryAttemptsFor(chain)
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		account, err := client.GetAccount(nil)
 		if err == nil && isMasterAccountReady(chain, account) {
 			return account, nil
 		}
 		if err == nil {
 			lastErr = fmt.Errorf("%s master account balance is still zero", chain)
-			if !isRetryableZeroBalanceStartupState(chain, account) || attempt == masterAccountRetryAttempts {
+			if !isRetryableZeroBalanceStartupState(chain, account) || attempt == maxAttempts {
 				return nil, lastErr
 			}
 		} else {
 			lastErr = err
-			if !isRetryableMasterAccountStartupError(chain, err) || attempt == masterAccountRetryAttempts {
+			if !isRetryableMasterAccountStartupError(chain, err) || attempt == maxAttempts {
 				return nil, err
 			}
 		}
 
-		log.Warn().
-			Stringer("chain", chain).
-			Int("attempt", attempt).
-			Int("max_attempts", masterAccountRetryAttempts).
-			Err(lastErr).
-			Msg("waiting for master account readiness")
+		logMasterAccountWait(chain, attempt, maxAttempts, lastErr)
 		sleep(masterAccountRetryDelay)
 	}
 
 	return nil, lastErr
+}
+
+// logMasterAccountWait logs periodic readiness progress at info level.
+func logMasterAccountWait(chain common.Chain, attempt, maxAttempts int, err error) {
+	event := log.Debug()
+	if attempt == 1 || attempt%masterAccountWaitLogInterval == 0 {
+		event = log.Info()
+	}
+	event.
+		Stringer("chain", chain).
+		Int("attempt", attempt).
+		Int("max_attempts", maxAttempts).
+		Dur("waited", time.Duration(attempt-1)*masterAccountRetryDelay).
+		Dur("gives_up_after", time.Duration(maxAttempts-1)*masterAccountRetryDelay).
+		Err(err).
+		Msg("waiting for master account readiness")
 }
 
 func isMasterAccountReady(chain common.Chain, account *common.Account) bool {

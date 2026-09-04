@@ -2,8 +2,10 @@ package generic
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb/util"
 	"gitlab.com/thorchain/thornode/v3/common"
 )
 
@@ -13,6 +15,9 @@ type StateStore interface {
 	Get(key string) (value []byte, found bool, err error)
 	Put(key string, value []byte) error
 	Delete(key string) error
+
+	// Iterate visits matching logical keys in byte order.
+	Iterate(prefix string, fn func(key string, value []byte) error) error
 }
 
 type stateStore struct {
@@ -81,5 +86,29 @@ func (s *stateStore) Delete(key string) error {
 	if err != nil {
 		return fmt.Errorf("failed to delete state: %w", err)
 	}
+	return nil
+}
+
+// Iterate visits matching logical keys in byte order.
+func (s *stateStore) Iterate(prefix string, fn func(key string, value []byte) error) error {
+	if fn == nil {
+		return fmt.Errorf("state store iterate callback is nil")
+	}
+
+	iterator := s.db.NewIterator(util.BytesPrefix([]byte(s.prefix+prefix)), nil)
+	defer iterator.Release()
+
+	for iterator.Next() {
+		key := strings.TrimPrefix(string(iterator.Key()), s.prefix)
+		value := append([]byte(nil), iterator.Value()...)
+
+		if err := fn(key, value); err != nil {
+			return err
+		}
+	}
+	if err := iterator.Error(); err != nil {
+		return fmt.Errorf("failed to iterate state: %w", err)
+	}
+
 	return nil
 }

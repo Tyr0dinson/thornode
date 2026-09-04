@@ -4,7 +4,7 @@ import "testing"
 
 func TestScannerBlockReferenceFacade(t *testing.T) {
 	state := &blockReferenceMemoryState{values: make(map[string][]byte)}
-	scanner, err := NewScanner(state, 3)
+	scanner, err := NewScanner(state, 3, testRetention)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -20,11 +20,5 @@ func TestScannerBlockReferenceFacade(t *testing.T) {
 	resolved, err := scanner.ResolveBlockReference(1_050)
 	if err != nil || resolved.Height != 10 {
 		t.Fatalf("unexpected resolved reference: %+v err=%v", resolved, err)
-	}
-	if err = scanner.RewindBlockReferences(10); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = scanner.ResolveBlockReference(1_050); err == nil {
-		t.Fatal("expected upper boundary to be removed")
 	}
 }

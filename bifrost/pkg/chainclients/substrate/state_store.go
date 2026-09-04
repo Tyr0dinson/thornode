@@ -2,13 +2,16 @@ package substrate
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 )
 
 const signedExtrinsicPrefix = "signed-extrinsic/"
 
 type signedExtrinsicRecord struct {
-	TxHash         string `json:"transaction_hash"`
+	// TxHash is stored in the key.
+	TxHash         string `json:"-"`
 	VaultAddress   string `json:"vault_address"`
 	Nonce          uint32 `json:"nonce"`
 	EraBirthHeight int64  `json:"era_birth_height,omitempty"`
@@ -19,16 +22,15 @@ type byteStateStore interface {
 	Get(key string) (value []byte, found bool, err error)
 	Put(key string, value []byte) error
 	Delete(key string) error
+	Iterate(prefix string, fn func(key string, value []byte) error) error
 }
 
-// stateStore is the typed persistence boundary for the Substrate client.
-// Record encoding and validation stay here; the underlying generic store only
-// handles chain-isolated bytes.
+// stateStore persists Substrate-specific records.
 type stateStore struct {
 	state byteStateStore
 }
 
-// newStateStore creates the typed Substrate state boundary over a generic byte store.
+// newStateStore creates a Substrate state store.
 func newStateStore(state byteStateStore) (*stateStore, error) {
 	if state == nil {
 		return nil, fmt.Errorf("state store is nil")
@@ -56,7 +58,7 @@ func (record signedExtrinsicRecord) Validate() error {
 	return nil
 }
 
-// signedExtrinsicKey validates a transaction hash and adds the record-family prefix.
+// signedExtrinsicKey validates and prefixes a transaction hash.
 func signedExtrinsicKey(txHash string) (string, error) {
 	if txHash == "" {
 		return "", fmt.Errorf("transaction hash is empty")
@@ -103,12 +105,10 @@ func (s *stateStore) GetExtrinsic(txHash string) (signedExtrinsicRecord, bool, e
 	if err != nil {
 		return signedExtrinsicRecord{}, false, fmt.Errorf("failed to unmarshal signed extrinsic record: %w", err)
 	}
+	record.TxHash = txHash
 	err = record.Validate()
 	if err != nil {
 		return signedExtrinsicRecord{}, false, fmt.Errorf("invalid signed extrinsic record: %w", err)
-	}
-	if record.TxHash != txHash {
-		return signedExtrinsicRecord{}, false, fmt.Errorf("signed extrinsic record hash mismatch")
 	}
 	return record, true, nil
 }
@@ -124,4 +124,43 @@ func (s *stateStore) DeleteExtrinsic(txHash string) error {
 		return fmt.Errorf("failed to delete signed extrinsic record: %w", err)
 	}
 	return nil
+}
+
+// SweepExpired removes records with recheck heights below cutoff.
+func (s *stateStore) SweepExpired(cutoff int64) (int, error) {
+	var expired []string
+	var recordErrors []error
+
+	err := s.state.Iterate(signedExtrinsicPrefix, func(key string, value []byte) error {
+		var record signedExtrinsicRecord
+		if err := json.Unmarshal(value, &record); err != nil {
+			recordErrors = append(recordErrors, fmt.Errorf("failed to decode %s: %w", key, err))
+			return nil
+		}
+		record.TxHash = strings.TrimPrefix(key, signedExtrinsicPrefix)
+		if err := record.Validate(); err != nil {
+			recordErrors = append(recordErrors, fmt.Errorf("invalid record %s: %w", key, err))
+			return nil
+		}
+		if record.RecheckHeight > 0 && record.RecheckHeight < cutoff {
+			expired = append(expired, key)
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, fmt.Errorf("failed to scan signed extrinsic records: %w", err)
+	}
+
+	deleted := 0
+	for _, key := range expired {
+		if err = s.state.Delete(key); err != nil {
+			return deleted, errors.Join(
+				fmt.Errorf("failed to delete expired signed extrinsic record: %w", err),
+				errors.Join(recordErrors...),
+			)
+		}
+		deleted++
+	}
+
+	return deleted, errors.Join(recordErrors...)
 }

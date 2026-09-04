@@ -10,9 +10,7 @@ import (
 )
 
 var ChainParams = map[common.Chain]Params{
-	// Mocknet runs the real Asset Hub Polkadot runtime (polkadot-omni-node in
-	// dev mode; see build/docker/mocknet/polkadot), so these params are
-	// identical to the mainnet entry in params_mainnet.go.
+	// Mocknet runs Asset Hub against a local relay chain with mainnet parameters.
 	common.DOTChain: {
 		SpecName:         "statemint",
 		MortalEraPeriod:  128,
@@ -32,8 +30,9 @@ var ChainParams = map[common.Chain]Params{
 		},
 	},
 	common.TAOChain: {
-		SpecName:         "node-subtensor",
-		MortalEraPeriod:  64, // 64 blocks * 12s ≈ 12.8 minutes
+		SpecName: "node-subtensor",
+		// Keep the mocknet era near the mainnet duration at a 0.3s block interval.
+		MortalEraPeriod:  2048,
 		Lookback:         time.Minute,
 		DefaultFee:       100_000, // 0.0001 TAO
 		BalanceSize:      8,
