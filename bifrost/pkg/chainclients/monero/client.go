@@ -1718,8 +1718,8 @@ func (c *Client) broadcastTx(tx stypes.TxOutItem, payload signedTxPayload) (stri
 
 	// The signer cache means a chain tx hash has been accepted for broadcast.
 	// The pre-broadcast duplicate-FROST guard is the signed payload store, so do
-	// not delete that payload here; spent-ref import or committed observation is
-	// the durable point where the proof bundle can be cleaned up.
+	// not delete that payload here or on spent-ref import. Only authoritative
+	// observation may suspend/terminalize its exact broadcast authorization.
 	if err := c.signerCacheManager.SetSigned(cacheHash, cacheVault, txHash); err != nil {
 		c.logger.Err(err).Msg("fail to set signer cache after FROST broadcast")
 	}
@@ -1756,7 +1756,7 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	// must run before signer-cache suppression: BroadcastTx marks signer cache
 	// immediately after a broadcast attempt, while the signed payload remains
 	// the only durable artifact that can actually rebroadcast the same XMR tx
-	// until spent-ref import or committed observation takes over.
+	// until an authoritative committed observation takes over.
 	if signedTx, checkpoint, observation, ok, recoverErr := c.recoverSignedXMRTxPayload(tx, identity); recoverErr != nil {
 		return nil, nil, nil, recoverErr
 	} else if ok {
@@ -2783,23 +2783,17 @@ func (c *Client) markImportedXMROutboundSigned(tx common.ObservedTx) error {
 	if c.signedTxPayloadStore == nil {
 		return nil
 	}
-	finalized := tx.BlockHeight > 0 && tx.FinaliseHeight > 0 && tx.IsFinal()
+	// MarkSpent establishes transaction visibility, which includes the mempool.
+	// Neither local signing metadata nor peer-supplied final-looking heights are
+	// authoritative finality. Preserve a matching exact signed artifact; keep
+	// the conservative duplicate-payment barrier for unknown/different results.
+	// OnObservedTxInDurable alone owns authoritative observation transitions.
 	recordExact := func(observeKey, ownerVault, txHash string) error {
-		var recordErr error
-		if finalized {
-			_, _, recordErr = c.signedTxPayloadStore.CompleteObservedExact(observeKey, ownerVault, txHash)
-		} else {
-			_, _, recordErr = c.signedTxPayloadStore.CommitUnfinalizedExact(observeKey, ownerVault, txHash)
-		}
+		_, _, recordErr := c.signedTxPayloadStore.ImportVerifiedExact(observeKey, ownerVault, txHash)
 		return recordErr
 	}
 	recordLogical := func(logicalHash string, observeKeys []string, txHash string) error {
-		var recordErr error
-		if finalized {
-			_, _, recordErr = c.signedTxPayloadStore.CompleteObservedLogical(logicalHash, observeKeys, txHash)
-		} else {
-			_, _, recordErr = c.signedTxPayloadStore.CommitUnfinalizedLogical(logicalHash, observeKeys, txHash)
-		}
+		_, _, recordErr := c.signedTxPayloadStore.ImportVerifiedLogical(logicalHash, observeKeys, txHash)
 		return recordErr
 	}
 	m, err := memo.ParseMemo(common.LatestVersion, tx.Tx.Memo)

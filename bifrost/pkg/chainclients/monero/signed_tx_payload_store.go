@@ -1569,6 +1569,27 @@ func (s *signedTxPayloadStore) CommitUnfinalizedLogical(
 	observeKeys []string,
 	observedTxHash string,
 ) (signedTxPayloadClaim, bool, error) {
+	return s.recordUnfinalizedLogical(logicalHash, observeKeys, observedTxHash, false)
+}
+
+// ImportVerifiedLogical records visibility-only spent-ref evidence. The exact
+// locally signed transaction remains recoverable and broadcastable; a different
+// transaction, or an import before local signing, still bars another ceremony.
+// Only an authoritative observation may advance the matching local claim.
+func (s *signedTxPayloadStore) ImportVerifiedLogical(
+	logicalHash string,
+	observeKeys []string,
+	observedTxHash string,
+) (signedTxPayloadClaim, bool, error) {
+	return s.recordUnfinalizedLogical(logicalHash, observeKeys, observedTxHash, true)
+}
+
+func (s *signedTxPayloadStore) recordUnfinalizedLogical(
+	logicalHash string,
+	observeKeys []string,
+	observedTxHash string,
+	visibilityOnly bool,
+) (signedTxPayloadClaim, bool, error) {
 	if s == nil || s.db == nil {
 		return signedTxPayloadClaim{}, false, nil
 	}
@@ -1599,6 +1620,22 @@ func (s *signedTxPayloadStore) CommitUnfinalizedLogical(
 		return signedTxPayloadClaim{}, false, fmt.Errorf("get finalized xmr logical tombstone: %w", observedErr)
 	}
 
+	claim := signedTxPayloadClaim{Version: signedTxClaimVersion, LogicalHash: logicalHash}
+	value, claimErr := s.db.Get([]byte(signedTxPayloadClaimKey(logicalHash)), nil)
+	if claimErr == nil {
+		claim, err = decodeSignedTxPayloadClaim(value)
+		if err != nil {
+			return signedTxPayloadClaim{}, false, err
+		}
+	} else if !errors.Is(claimErr, leveldb.ErrNotFound) {
+		return signedTxPayloadClaim{}, false, fmt.Errorf("get xmr claim selected by committed-unfinalized observation: %w", claimErr)
+	}
+	if visibilityOnly {
+		if preserved, preserveErr := s.preserveExactImportedClaimLocked(claim, observedTxHash); preserveErr != nil || preserved {
+			return claim, preserved, preserveErr
+		}
+	}
+
 	batch := new(leveldb.Batch)
 	if err = s.guardBroadcastAttemptObservationLocked(batch, logicalHash, observedTxHash); err != nil {
 		return signedTxPayloadClaim{}, false, err
@@ -1612,16 +1649,6 @@ func (s *signedTxPayloadStore) CommitUnfinalizedLogical(
 		return signedTxPayloadClaim{}, false, err
 	}
 
-	claim := signedTxPayloadClaim{Version: signedTxClaimVersion, LogicalHash: logicalHash}
-	value, claimErr := s.db.Get([]byte(signedTxPayloadClaimKey(logicalHash)), nil)
-	if claimErr == nil {
-		claim, err = decodeSignedTxPayloadClaim(value)
-		if err != nil {
-			return signedTxPayloadClaim{}, false, err
-		}
-	} else if !errors.Is(claimErr, leveldb.ErrNotFound) {
-		return signedTxPayloadClaim{}, false, fmt.Errorf("get xmr claim selected by committed-unfinalized observation: %w", claimErr)
-	}
 	if err = s.db.Write(batch, signedTxPayloadWriteOptions); err != nil {
 		return signedTxPayloadClaim{}, false, fmt.Errorf("commit unfinalized xmr logical observation: %w", err)
 	}
@@ -1635,6 +1662,25 @@ func (s *signedTxPayloadStore) CommitUnfinalizedExact(
 	observeKey,
 	ownerVault,
 	observedTxHash string,
+) (signedTxPayloadClaim, bool, error) {
+	return s.recordUnfinalizedExact(observeKey, ownerVault, observedTxHash, false)
+}
+
+// ImportVerifiedExact applies the same visibility-only rule to reusable
+// management and wire-memoless aliases without releasing their active owner.
+func (s *signedTxPayloadStore) ImportVerifiedExact(
+	observeKey,
+	ownerVault,
+	observedTxHash string,
+) (signedTxPayloadClaim, bool, error) {
+	return s.recordUnfinalizedExact(observeKey, ownerVault, observedTxHash, true)
+}
+
+func (s *signedTxPayloadStore) recordUnfinalizedExact(
+	observeKey,
+	ownerVault,
+	observedTxHash string,
+	visibilityOnly bool,
 ) (signedTxPayloadClaim, bool, error) {
 	if s == nil || s.db == nil {
 		return signedTxPayloadClaim{}, false, nil
@@ -1652,6 +1698,23 @@ func (s *signedTxPayloadStore) CommitUnfinalizedExact(
 		return signedTxPayloadClaim{}, false, quarantineErr
 	} else if quarantined {
 		return signedTxPayloadClaim{}, false, errXMRSigningClaimQuarantined
+	}
+	if visibilityOnly {
+		// Exact finalization releases reusable aliases. A delayed import of that
+		// same observed transaction must not reacquire the alias and block the
+		// next consolidation (or another legitimate wire-memoless outbound).
+		if indexed, observedErr := s.db.Get([]byte(signedTxObservedTxKey(observedTxHash)), nil); observedErr == nil {
+			if normalizeSignedTxClaimHash(string(indexed)) == "" {
+				return signedTxPayloadClaim{}, false, errors.New("observed xmr transaction reverse index is malformed")
+			}
+			if _, eventErr := s.db.Get([]byte(signedTxObserveEventKey(observeKey, observedTxHash)), nil); eventErr == nil {
+				return signedTxPayloadClaim{}, false, nil
+			} else if !errors.Is(eventErr, leveldb.ErrNotFound) {
+				return signedTxPayloadClaim{}, false, fmt.Errorf("get finalized xmr import alias event: %w", eventErr)
+			}
+		} else if !errors.Is(observedErr, leveldb.ErrNotFound) {
+			return signedTxPayloadClaim{}, false, fmt.Errorf("get finalized xmr import transaction index: %w", observedErr)
+		}
 	}
 	batch := new(leveldb.Batch)
 	if _, err := s.recordObservationLocked(batch, observeKey, observedTxHash); err != nil {
@@ -1687,6 +1750,11 @@ func (s *signedTxPayloadStore) CommitUnfinalizedExact(
 		}
 		return claim, false, nil
 	}
+	if visibilityOnly {
+		if preserved, preserveErr := s.preserveExactImportedClaimLocked(claim, observedTxHash); preserveErr != nil || preserved {
+			return claim, preserved, preserveErr
+		}
+	}
 	if err = s.guardBroadcastAttemptObservationLocked(batch, claim.LogicalHash, observedTxHash); err != nil {
 		return signedTxPayloadClaim{}, false, err
 	}
@@ -1697,6 +1765,24 @@ func (s *signedTxPayloadStore) CommitUnfinalizedExact(
 		return signedTxPayloadClaim{}, false, fmt.Errorf("commit unfinalized exact xmr observation: %w", err)
 	}
 	return claim, true, nil
+}
+
+// The already-durable exact signed claim is sufficient duplicate-payment
+// protection for a matching import. Check existing authoritative/conflicting
+// barriers while holding the same mutex, but never remove or weaken them.
+func (s *signedTxPayloadStore) preserveExactImportedClaimLocked(claim signedTxPayloadClaim, txHash string) (bool, error) {
+	if claim.SignedTxHash == "" || !strings.EqualFold(claim.SignedTxHash, txHash) {
+		return false, nil
+	}
+	if quarantined, err := s.claimQuarantinedLocked(claim); err != nil {
+		return false, err
+	} else if quarantined {
+		return false, errXMRSigningClaimQuarantined
+	}
+	if _, err := s.broadcastClaimOutcomeLocked(claim, txHash); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // CompleteObservedLogical terminalizes a vault-independent scheduled/migration
