@@ -1398,6 +1398,12 @@ func getLastChurnHeight(ctx cosmos.Context, k keeper.Keeper) int64 {
 // - Removing the swap from advanced queue and indexes
 // - Emitting appropriate events
 func settleSwap(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason string) error {
+	if reverted, err := revertedXMRSwap(ctx, mgr.Keeper(), msg); err != nil {
+		return err
+	} else if reverted {
+		_, err := mgr.Keeper().CancelXMRErrataSwaps(ctx, msg.Tx.ID)
+		return err
+	}
 	// Settle swap mutates multiple pieces of state (scheduled outbounds, refunds,
 	// queue removal, events). Run it in a cache context so partial failures do not
 	// leave committed side effects that can be duplicated on retry.

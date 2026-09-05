@@ -133,6 +133,17 @@ func (vm *SwapQueueImpl) EndBlock(ctx cosmos.Context, mgr Manager) error {
 
 	for i := int64(0); i < vm.getTodoNum(int64(len(swaps)), minSwapsPerBlock, maxSwapsPerBlock); i++ {
 		pick := swaps[i]
+		reverted, voterErr := revertedXMRSwap(ctx, vm.k, pick.msg)
+		if voterErr != nil {
+			ctx.Logger().Error("defer XMR swap with unreadable inbound voter", "error", voterErr)
+			continue
+		}
+		if reverted {
+			if _, err := vm.k.CancelXMRErrataSwaps(ctx, pick.msg.Tx.ID); err != nil {
+				return err
+			}
+			continue
+		}
 		// grab swp BEFORE a streaming swap modified the msg.Tx.Coins[0].Amount
 		// value. This is used later to refund the correct amount
 		swp := pick.msg.GetStreamingSwap()

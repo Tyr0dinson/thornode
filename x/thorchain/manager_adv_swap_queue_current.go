@@ -143,6 +143,9 @@ func (vm *SwapQueueAdv) FetchQueue(ctx cosmos.Context, mgr Manager, pairs tradeP
 }
 
 func (vm *SwapQueueAdv) isSwapReady(ctx cosmos.Context, msg MsgSwap) bool {
+	if reverted, err := revertedXMRSwap(ctx, vm.k, msg); err != nil || reverted {
+		return false
+	}
 	// skip processing limit swaps if EnableAdvSwapQueue is set to market only mode
 	val := vm.k.GetConfigInt64(ctx, constants.EnableAdvSwapQueue)
 	if types.AdvSwapQueueMode(val) == types.AdvSwapQueueModeMarketOnly && msg.IsLimitSwap() {
@@ -715,6 +718,9 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 		iterationSuccess := int64(0)
 		attempted := int64(0)
 		for _, pick := range swaps {
+			if reverted, voterErr := revertedXMRSwap(ctx, vm.k, pick.msg); voterErr != nil || reverted {
+				continue
+			}
 			if attempted >= budget {
 				break
 			}

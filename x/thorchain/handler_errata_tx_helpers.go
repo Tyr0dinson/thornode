@@ -3,6 +3,7 @@ package thorchain
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/hashicorp/go-metrics"
@@ -14,6 +15,29 @@ import (
 )
 
 func processErrataTxAttestation(
+	ctx cosmos.Context,
+	mgr Manager,
+	voter *keeper.ErrataTxVoter,
+	attester cosmos.AccAddress,
+	active NodeAccounts,
+	er *common.ErrataTx,
+	shouldSlashForDuplicate bool,
+) error {
+	if !er.Chain.Equals(common.XMRChain) {
+		return processErrataTxAttestationInner(ctx, mgr, voter, attester, active, er, shouldSlashForDuplicate)
+	}
+	cacheCtx, commit := ctx.CacheContext()
+	copyVoter := *voter
+	copyVoter.Signers = append([]string(nil), voter.Signers...)
+	if err := processErrataTxAttestationInner(cacheCtx, mgr, &copyVoter, attester, active, er, shouldSlashForDuplicate); err != nil {
+		return err
+	}
+	commit()
+	*voter = copyVoter
+	return nil
+}
+
+func processErrataTxAttestationInner(
 	ctx cosmos.Context,
 	mgr Manager,
 	voter *keeper.ErrataTxVoter,
@@ -94,6 +118,13 @@ func processErrataTxAttestation(
 	// set the observed Tx to reverted only after chain validation passes
 	observedVoter.SetReverted()
 	k.SetObservedTxInVoter(ctx, observedVoter)
+	unexecutedXMR := cosmos.ZeroUint()
+	if tx.Chain.Equals(common.XMRChain) {
+		unexecutedXMR, err = k.CancelXMRErrataSwaps(ctx, tx.ID)
+		if err != nil {
+			return fmt.Errorf("cancel orphaned XMR swaps: %w", err)
+		}
+	}
 	if observedVoter.UpdatedVault {
 		vaultPubKey := observedVoter.Tx.ObservedPubKey
 		if !vaultPubKey.IsEmpty() {
@@ -115,6 +146,14 @@ func processErrataTxAttestation(
 		return nil
 	}
 
+	if tx.Chain.Equals(common.XMRChain) {
+		// ADD attribution is already canonical; even an expired or changed
+		// THORName must not change whose original booked effect is reversed.
+		memoType, _ := StringToTxType(strings.SplitN(tx.Memo, ":", 2)[0])
+		if memoType == TxAdd {
+			return reverseXMRLiquidity(ctx, mgr, tx.ID)
+		}
+	}
 	memo, _ := ParseMemoWithTHORNames(ctx, k, tx.Memo)
 	// if the tx is a migration , from old valut to new vault , then the inbound tx must have a related outbound tx as well
 	if memo.IsInternal() {
@@ -134,6 +173,11 @@ func processErrataTxAttestation(
 		} else {
 			assetCoin = coin
 		}
+	}
+	if tx.Chain.Equals(common.XMRChain) && memo.IsType(TxSwap) {
+		// Queued input has not entered pool balances. Reverse only input
+		// already credited by executed sub-swaps, not the cancelled remainder.
+		assetCoin.Amount = common.SafeSub(assetCoin.Amount, unexecutedXMR)
 	}
 
 	// fetch pool from memo

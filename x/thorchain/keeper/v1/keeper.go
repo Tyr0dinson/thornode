@@ -41,6 +41,8 @@ const (
 	prefixPoolSwapSlipLong          types.DbPrefix = "pool_swap_slip_long/"
 	prefixPoolSwapSnapShot          types.DbPrefix = "pool_swap_slip_ss/"
 	prefixLiquidityProvider         types.DbPrefix = "lp/"
+	prefixXMRLiquidityReceipt       types.DbPrefix = "xmr_lp_receipt/"
+	prefixXMRLiquidityIndex         types.DbPrefix = "xmr_lp_index/"
 	prefixLastChainHeight           types.DbPrefix = "last_chain_height/"
 	prefixLastSignedHeight          types.DbPrefix = "last_signed_height/"
 	prefixLastObserveHeight         types.DbPrefix = "last_observe_height/"

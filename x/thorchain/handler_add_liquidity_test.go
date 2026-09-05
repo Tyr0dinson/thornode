@@ -11,6 +11,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	kvTypes "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
 )
 
 type HandlerAddLiquiditySuite struct{}
@@ -631,6 +632,26 @@ func NewAddLiquidityTestKeeper() *AddLiquidityTestKeeper {
 		store:          make(map[string]interface{}),
 		liquidityUnits: cosmos.ZeroUint(),
 	}
+}
+
+func (p *AddLiquidityTestKeeper) GetXMRLiquidityReceipts(_ cosmos.Context, txID common.TxID) ([]kvTypes.XMRLiquidityReceipt, error) {
+	receipts, _ := p.store["xmr-receipt/"+txID.String()].([]kvTypes.XMRLiquidityReceipt)
+	return append([]kvTypes.XMRLiquidityReceipt(nil), receipts...), nil
+}
+
+func (p *AddLiquidityTestKeeper) SetXMRLiquidityReceipts(_ cosmos.Context, txID common.TxID, receipts []kvTypes.XMRLiquidityReceipt) error {
+	p.store["xmr-receipt/"+txID.String()] = append([]kvTypes.XMRLiquidityReceipt(nil), receipts...)
+	return nil
+}
+
+func (p *AddLiquidityTestKeeper) GetXMRLiquidityTxIDs(_ cosmos.Context, owner common.Address) ([]common.TxID, error) {
+	ids, _ := p.store["xmr-index/"+owner.String()].([]common.TxID)
+	return append([]common.TxID(nil), ids...), nil
+}
+
+func (p *AddLiquidityTestKeeper) SetXMRLiquidityTxIDs(_ cosmos.Context, owner common.Address, ids []common.TxID) error {
+	p.store["xmr-index/"+owner.String()] = append([]common.TxID(nil), ids...)
+	return nil
 }
 
 func (p *AddLiquidityTestKeeper) PoolExist(ctx cosmos.Context, asset common.Asset) bool {

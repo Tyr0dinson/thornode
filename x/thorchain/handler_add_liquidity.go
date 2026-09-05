@@ -226,6 +226,19 @@ func (h AddLiquidityHandler) validate(ctx cosmos.Context, msg MsgAddLiquidity) e
 }
 
 func (h AddLiquidityHandler) handle(ctx cosmos.Context, msg MsgAddLiquidity) error {
+	if !msg.Asset.Equals(common.XMRAsset) {
+		return h.handleLiquidity(ctx, msg)
+	}
+	// Booking receipts, affiliate credits, and pool/LP changes are one effect.
+	cacheCtx, commit := ctx.CacheContext()
+	if err := h.handleLiquidity(cacheCtx, msg); err != nil {
+		return err
+	}
+	commit()
+	return nil
+}
+
+func (h AddLiquidityHandler) handleLiquidity(ctx cosmos.Context, msg MsgAddLiquidity) error {
 	// check if we need to swap before adding asset
 	if h.needsSwap(msg) {
 		return h.swap(ctx, msg)
@@ -504,6 +517,7 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 	stage bool,
 	constAccessor constants.ConstantValues,
 ) (err error) {
+	trackXMRReceipt := asset.Equals(common.XMRAsset)
 	if asset.IsSecuredAsset() {
 		if !addAssetAmount.IsZero() {
 			var accAddr cosmos.AccAddress
@@ -580,6 +594,7 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 	if err != nil {
 		return ErrInternal(err, "fail to get liquidity provider")
 	}
+	receiptBefore := su
 	if asset.GetLayer1Asset().GetChain().RequiresExplicitRefundAddress() &&
 		!effectiveRuneAddr.IsEmpty() &&
 		!effectiveAssetAddr.IsEmpty() {
@@ -689,6 +704,11 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 		if err = h.mgr.Keeper().SetPool(ctx, pool); err != nil {
 			return ErrInternal(err, "fail to save pool pending inbound asset")
 		}
+		if trackXMRReceipt {
+			if err = recordXMRLiquidity(ctx, h.mgr.Keeper(), receiptBefore, su, requestTxHash, runeTxID, addAssetAmount, cosmos.ZeroUint(), cosmos.ZeroUint(), true); err != nil {
+				return err
+			}
+		}
 
 		evt := NewEventPendingLiquidity(pool.Asset, AddPendingLiquidity, su.RuneAddress, cosmos.ZeroUint(), su.AssetAddress, addAssetAmount, common.TxID(""), requestTxHash)
 		if err = h.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
@@ -775,6 +795,11 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 		}
 	}
 	h.mgr.Keeper().SetLiquidityProvider(ctx, su)
+	if trackXMRReceipt {
+		if err = recordXMRLiquidity(ctx, h.mgr.Keeper(), receiptBefore, su, requestTxHash, runeTxID, addAssetAmount, pendingRuneAmt, liquidityUnits, false); err != nil {
+			return err
+		}
+	}
 
 	evt := NewEventAddLiquidity(asset, liquidityUnits, su.RuneAddress, pendingRuneAmt, pendingAssetAmt, runeTxID, assetTxID, su.AssetAddress)
 	if err = h.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {

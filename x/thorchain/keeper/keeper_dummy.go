@@ -26,6 +26,22 @@ var kaboom = errors.New("Kaboom!!!")
 
 type KVStoreDummy struct{}
 
+func (k KVStoreDummy) GetXMRLiquidityReceipts(cosmos.Context, common.TxID) ([]kvTypes.XMRLiquidityReceipt, error) {
+	return nil, nil
+}
+func (k KVStoreDummy) SetXMRLiquidityReceipts(cosmos.Context, common.TxID, []kvTypes.XMRLiquidityReceipt) error {
+	return nil
+}
+func (k KVStoreDummy) GetXMRLiquidityTxIDs(cosmos.Context, common.Address) ([]common.TxID, error) {
+	return nil, nil
+}
+func (k KVStoreDummy) SetXMRLiquidityTxIDs(cosmos.Context, common.Address, []common.TxID) error {
+	return nil
+}
+func (k KVStoreDummy) CancelXMRErrataSwaps(cosmos.Context, common.TxID) (cosmos.Uint, error) {
+	return cosmos.ZeroUint(), nil
+}
+
 func (k KVStoreDummy) Cdc() codec.BinaryCodec                  { return testutil.MakeTestEncodingConfig().Codec }
 func (k KVStoreDummy) DeleteKey(_ cosmos.Context, _ []byte)    {}
 func (k KVStoreDummy) CoinKeeper() bankkeeper.Keeper           { return bankkeeper.BaseKeeper{} }

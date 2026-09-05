@@ -146,6 +146,11 @@ type KeeperStreamingSwap interface {
 }
 
 type KeeperLiquidityProvider interface {
+	GetXMRLiquidityReceipts(ctx cosmos.Context, txID common.TxID) ([]kvTypes.XMRLiquidityReceipt, error)
+	SetXMRLiquidityReceipts(ctx cosmos.Context, txID common.TxID, receipts []kvTypes.XMRLiquidityReceipt) error
+	GetXMRLiquidityTxIDs(ctx cosmos.Context, owner common.Address) ([]common.TxID, error)
+	SetXMRLiquidityTxIDs(ctx cosmos.Context, owner common.Address, txIDs []common.TxID) error
+	CancelXMRErrataSwaps(ctx cosmos.Context, txID common.TxID) (cosmos.Uint, error)
 	GetLiquidityProviderIterator(ctx cosmos.Context, _ common.Asset) cosmos.Iterator
 	GetLiquidityProvider(ctx cosmos.Context, asset common.Asset, addr common.Address) (LiquidityProvider, error)
 	SetLiquidityProvider(ctx cosmos.Context, lp LiquidityProvider)

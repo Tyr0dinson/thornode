@@ -13,6 +13,19 @@ import (
 // Performs the withdraw for the provided MsgWithdrawLiquidity message.
 // Returns: runeAmt, assetAmount, units, lastWithdraw, err
 func withdraw(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cosmos.Uint, cosmos.Uint, cosmos.Uint, cosmos.Uint, error) {
+	if !msg.Asset.Equals(common.XMRAsset) {
+		return withdrawLiquidity(ctx, msg, mgr)
+	}
+	cacheCtx, commit := ctx.CacheContext()
+	runeOut, assetOut, units, gas, err := withdrawLiquidity(cacheCtx, msg, mgr)
+	if err != nil {
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), err
+	}
+	commit()
+	return runeOut, assetOut, units, gas, nil
+}
+
+func withdrawLiquidity(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cosmos.Uint, cosmos.Uint, cosmos.Uint, cosmos.Uint, error) {
 	if err := validateWithdraw(ctx, mgr.Keeper(), msg); err != nil {
 		ctx.Logger().Error("msg withdraw failed validation", "error", err)
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), err
@@ -40,11 +53,17 @@ func withdraw(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cosmos
 	fLiquidityProviderUnit := lp.Units
 	if lp.Units.IsZero() {
 		if !lp.PendingRune.IsZero() || !lp.PendingAsset.IsZero() {
+			if err := retireXMRLiquidity(ctx, mgr.Keeper(), lp, true); err != nil {
+				return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), err
+			}
 			mgr.Keeper().RemoveLiquidityProvider(ctx, lp)
 			pool.PendingInboundRune = common.SafeSub(pool.PendingInboundRune, lp.PendingRune)
 			pool.PendingInboundAsset = common.SafeSub(pool.PendingInboundAsset, lp.PendingAsset)
 			if err = mgr.Keeper().SetPool(ctx, pool); err != nil {
 				ctx.Logger().Error("failed to save pool pending inbound funds", "error", err)
+				if msg.Asset.Equals(common.XMRAsset) {
+					return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), err
+				}
 			}
 			// remove lp
 
@@ -166,6 +185,9 @@ func withdraw(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cosmos
 
 	if err := mgr.Keeper().SetPool(ctx, pool); err != nil {
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), ErrInternal(err, "fail to save pool")
+	}
+	if err := retireXMRLiquidity(ctx, mgr.Keeper(), lp, false); err != nil {
+		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), err
 	}
 	if mgr.Keeper().RagnarokInProgress(ctx) {
 		mgr.Keeper().SetLiquidityProvider(ctx, lp)
