@@ -52,6 +52,11 @@ func (h SwapHandler) runWithEmitAndInput(ctx cosmos.Context, m cosmos.Msg) (*cos
 	return result, emit, input, err
 }
 
+// errStableReserveRescueRecovered marks a rescue whose source asset has repegged.
+// Both swap queues treat it as terminal: the stream is settled and removed
+// instead of burning one sub-swap and resuming on the next unfed block.
+var errStableReserveRescueRecovered = errors.New("stable reserve rescue source has recovered")
+
 func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
@@ -88,7 +93,7 @@ func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 	if stableReserveInternal && strings.HasPrefix(msg.Tx.Memo, types.StableReserveRescueMemoPrefix) && len(msg.Tx.Coins) == 1 {
 		source := msg.Tx.Coins[0].Asset.GetLayer1Asset()
 		if ok, _ := h.mgr.StableReserveManager().IsEligibleStable(ctx, source); ok {
-			return fmt.Errorf("stable reserve rescue source %s has recovered", source)
+			return fmt.Errorf("%w: %s", errStableReserveRescueRecovered, source)
 		}
 	}
 

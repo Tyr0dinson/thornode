@@ -1170,6 +1170,48 @@ func (s *StableReserveMgrSuite) TestRescueAbortsOnlyWhenSourceActuallyRecovers(c
 	c.Check(strings.Contains(err.Error(), "has recovered"), Equals, true)
 }
 
+// Recovery must be terminal at the QUEUE level: the rescue is settled and
+// removed, not merely skipped for one sub-swap and resumed on the next block
+// without a price.
+func (s *StableReserveMgrSuite) TestRescueRecoveryCancelsQueuedStream(c *C) {
+	ctx, mgr, usdc, usdt := setupStableReserveSuite(c)
+	moduleAddr := mgr.Keeper().GetModuleAccAddress(StableReserveName)
+	funded := cosmos.NewUint(100_000 * common.One)
+	fundStableReserveSurplus(c, ctx, mgr, usdc, funded)
+	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "0.95"}), IsNil)
+	c.Assert(mgr.StableReserveManager().EndBlock(ctx, mgr), IsNil)
+
+	// One sub-swap runs while depegged.
+	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "0.95"}), IsNil)
+	c.Assert(mgr.AdvSwapQueueMgr().EndBlock(ctx, mgr, false), IsNil)
+	rescue, err := firstQueuedSwapWithMemoPrefix(ctx, mgr, types.StableReserveRescueMemoPrefix)
+	c.Assert(err, IsNil)
+	c.Assert(rescue.TargetAsset.Equals(usdt), Equals, true)
+	c.Assert(rescue.State.Quantity > 1, Equals, true) // must be multi-chunk or there is nothing to abort
+	c.Assert(rescue.State.Count, Equals, uint64(1))
+	swapped := rescue.State.In
+
+	// Repegged: the next queue pass settles and removes the rescue.
+	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "1.00"}), IsNil)
+	c.Assert(mgr.AdvSwapQueueMgr().EndBlock(ctx, mgr, false), IsNil)
+	c.Check(queuedSwapsWithMemoPrefix(ctx, mgr, types.StableReserveRescueMemoPrefix), HasLen, 0)
+
+	// Proceeds landed in the module; the unswapped remainder never left it.
+	c.Check(mgr.SecuredAssetManager().BalanceOf(ctx, usdt, moduleAddr).IsZero(), Equals, false)
+	remaining := mgr.SecuredAssetManager().BalanceOf(ctx, usdc, moduleAddr)
+	c.Check(remaining.Equal(common.SafeSub(funded, swapped)), Equals, true)
+	c.Check(remaining.IsZero(), Equals, false)
+
+	// A missing price on a later block is not recovery, but the stream is gone,
+	// so nothing resumes.
+	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+	mgr.Keeper().DelPrice(ctx, usdc.Ticker.String())
+	c.Assert(mgr.AdvSwapQueueMgr().EndBlock(ctx, mgr, false), IsNil)
+	c.Check(mgr.SecuredAssetManager().BalanceOf(ctx, usdc, moduleAddr).Equal(remaining), Equals, true)
+}
+
 // Hold band: past the fill tolerance the reserve stops filling, but it must not
 // liquidate until the wider rescue tolerance is breached.
 func (s *StableReserveMgrSuite) TestDepegRescueHoldsBetweenFillAndRescueBands(c *C) {

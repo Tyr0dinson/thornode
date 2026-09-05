@@ -291,7 +291,8 @@ func (vm *SwapQueueImpl) EndBlock(ctx cosmos.Context, mgr Manager) error {
 			if !triggerRefund {
 				mgr.Keeper().SetStreamingSwap(ctx, swp)
 			}
-			if swp.Valid() == nil && swp.IsDone() {
+			// A recovered stable-reserve rescue source is terminal (see the adv queue).
+			if swp.Valid() == nil && (swp.IsDone() || errors.Is(handleErr, errStableReserveRescueRecovered)) {
 				vm.k.RemoveSwapQueueItem(ctx, pick.msg.Tx.ID, pick.index)
 				vm.k.RemoveStreamingSwap(ctx, pick.msg.Tx.ID)
 

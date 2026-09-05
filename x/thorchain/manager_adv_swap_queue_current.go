@@ -1069,7 +1069,10 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 			if err := vm.k.SetAdvSwapQueueItemState(ctx, *msg); err != nil {
 				ctx.Logger().Error("fail to save swap item", "error", err)
 			}
-			if vm.IsDone(ctx, *msg) {
+			// A recovered rescue source is terminal: settle now so the remaining
+			// stream cannot resume liquidating on a later unfed block. Unswapped
+			// secured shares were never withdrawn from the module, so they stay put.
+			if vm.IsDone(ctx, *msg) || errors.Is(handleErr, errStableReserveRescueRecovered) {
 				if err := settleSwap(ctx, mgr, *msg, settleMsg); err != nil {
 					ctx.Logger().Error("fail to handle completed streaming limit swap", "error", err)
 				}
