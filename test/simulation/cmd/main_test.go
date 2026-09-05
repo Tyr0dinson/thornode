@@ -299,6 +299,10 @@ func TestMocknetBifrostDoesNotWaitForSolanaRPC(t *testing.T) {
 	if strings.Contains(entrypoint, "wait_for_solana_rpc") {
 		t.Fatal("bifrost entrypoint must leave Solana RPC readiness to the SOL scanner")
 	}
+	scanner := readRepoFile(t, "bifrost/pkg/chainclients/solana/sol_scanner.go")
+	if !strings.Contains(scanner, "waitForInitialSlot(s.solRpc, s.stopChan, s.cfg.Solana.ScanInterval, s.logger)") {
+		t.Fatal("Solana scanner must retry initial RPC failures until ready or stopped")
+	}
 }
 
 func TestMocknetSolanaRestartsValidatorInsideContainer(t *testing.T) {
