@@ -383,9 +383,15 @@ func TestBroadcastTxIgnoresBroadcastedFlagAndStillCallsSidecar(t *testing.T) {
 		VaultPubKeyFrost: vaultPubKey,
 	}
 	payload := testBroadcastPayload(t, "signed-hash", "deadbeef", "broadcast-msg-id-3")
-	payload.Broadcasted = true
+	wirePayload, err := json.Marshal(struct {
+		signedTxPayload
+		Broadcasted bool `json:"broadcasted"`
+	}{signedTxPayload: payload, Broadcasted: true})
+	if err != nil {
+		t.Fatalf("marshal signed payload with obsolete broadcast flag: %v", err)
+	}
 
-	txHash, err := client.broadcastTx(tx, payload)
+	txHash, err := client.BroadcastTx(tx, wirePayload)
 	if err != nil {
 		t.Fatalf("broadcast tx: %v", err)
 	}
@@ -433,9 +439,15 @@ func TestBroadcastTxBroadcastedFlagStillRequiresTxMetadata(t *testing.T) {
 		VaultPubKeyFrost: vaultPubKey,
 	}
 	payload := testBroadcastPayload(t, "signed-hash", "   ", "broadcast-msg-id-4")
-	payload.Broadcasted = true
+	wirePayload, err := json.Marshal(struct {
+		signedTxPayload
+		Broadcasted bool `json:"broadcasted"`
+	}{signedTxPayload: payload, Broadcasted: true})
+	if err != nil {
+		t.Fatalf("marshal signed payload with obsolete broadcast flag: %v", err)
+	}
 
-	_, err = client.broadcastTx(tx, payload)
+	_, err = client.BroadcastTx(tx, wirePayload)
 	if err == nil {
 		t.Fatalf("expected broadcast tx to fail when tx_metadata is missing")
 	}

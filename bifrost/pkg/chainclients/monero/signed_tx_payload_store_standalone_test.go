@@ -2,12 +2,32 @@ package monero
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
 )
+
+// Get inspects retained evidence without bypassing ownership in production.
+func (s *signedTxPayloadStore) Get(cacheVault, cacheHash string) ([]byte, bool, error) {
+	if s == nil || s.db == nil {
+		return nil, false, nil
+	}
+	if strings.TrimSpace(cacheVault) == "" || strings.TrimSpace(cacheHash) == "" {
+		return nil, false, errors.New("xmr signed tx payload cache identity is incomplete")
+	}
+	value, err := s.db.Get([]byte(signedTxPayloadKey(cacheVault, cacheHash)), nil)
+	if errors.Is(err, leveldb.ErrNotFound) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("get xmr signed tx payload: %w", err)
+	}
+	return append([]byte(nil), value...), true, nil
+}
 
 func newStandaloneSignedStore(t *testing.T) *signedTxPayloadStore {
 	t.Helper()

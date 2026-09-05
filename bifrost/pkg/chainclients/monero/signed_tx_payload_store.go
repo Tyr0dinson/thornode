@@ -1765,11 +1765,12 @@ func (s *signedTxPayloadStore) CompleteObservedLogical(
 	return claim, true, nil
 }
 
-func (s *signedTxPayloadStore) completeObservedAlias(
+// CompleteObservedExact records an ambiguous reusable/wire-only alias but
+// terminalizes only when its transaction hash matches the locally signed one.
+func (s *signedTxPayloadStore) CompleteObservedExact(
 	observeKey,
 	ownerVault,
 	observedTxHash string,
-	requireExactHash bool,
 ) (signedTxPayloadClaim, bool, error) {
 	if s == nil || s.db == nil {
 		return signedTxPayloadClaim{}, false, nil
@@ -1821,7 +1822,7 @@ func (s *signedTxPayloadStore) completeObservedAlias(
 	if !strings.EqualFold(claim.OwnerVault, ownerVault) || !slices.Contains(claim.ObserveKeys, observeKey) {
 		return signedTxPayloadClaim{}, false, fmt.Errorf("%w: committed observation does not match claim owner", errXMRSigningClaimConflict)
 	}
-	if requireExactHash && (claim.SignedTxHash == "" || !strings.EqualFold(claim.SignedTxHash, observedTxHash)) {
+	if claim.SignedTxHash == "" || !strings.EqualFold(claim.SignedTxHash, observedTxHash) {
 		// A finalized wire transaction with the same reusable alias does not
 		// prove it fulfilled this claim. Keep its alias barrier quarantining the
 		// different local payload until semantic/logical resolution or errata.
@@ -1857,18 +1858,6 @@ func (s *signedTxPayloadStore) completeObservedAlias(
 		return signedTxPayloadClaim{}, false, fmt.Errorf("complete observed xmr signed tx claim: %w", err)
 	}
 	return claim, true, nil
-}
-
-// CompleteObserved preserves the legacy exact-owner alias behavior for unique
-// management aliases. New scheduled outbounds should use logical completion.
-func (s *signedTxPayloadStore) CompleteObserved(observeKey, ownerVault, observedTxHash string) (signedTxPayloadClaim, bool, error) {
-	return s.completeObservedAlias(observeKey, ownerVault, observedTxHash, false)
-}
-
-// CompleteObservedExact records an ambiguous reusable/wire-only alias but
-// terminalizes only when its transaction hash matches the locally signed one.
-func (s *signedTxPayloadStore) CompleteObservedExact(observeKey, ownerVault, observedTxHash string) (signedTxPayloadClaim, bool, error) {
-	return s.completeObservedAlias(observeKey, ownerVault, observedTxHash, true)
 }
 
 func signedTxBroadcastClaimMatches(
@@ -2113,22 +2102,4 @@ func (s *signedTxPayloadStore) WithBroadcastAuthorization(
 		return "", fmt.Errorf("%w: broadcast callback returned a different transaction hash", errXMRSigningClaimConflict)
 	}
 	return txHash, nil
-}
-
-// Get is a test/diagnostic accessor for the vault-scoped payload bytes.
-func (s *signedTxPayloadStore) Get(cacheVault, cacheHash string) ([]byte, bool, error) {
-	if s == nil || s.db == nil {
-		return nil, false, nil
-	}
-	if strings.TrimSpace(cacheVault) == "" || strings.TrimSpace(cacheHash) == "" {
-		return nil, false, errors.New("xmr signed tx payload cache identity is incomplete")
-	}
-	value, err := s.db.Get([]byte(signedTxPayloadKey(cacheVault, cacheHash)), nil)
-	if errors.Is(err, leveldb.ErrNotFound) {
-		return nil, false, nil
-	}
-	if err != nil {
-		return nil, false, fmt.Errorf("get xmr signed tx payload: %w", err)
-	}
-	return append([]byte(nil), value...), true, nil
 }

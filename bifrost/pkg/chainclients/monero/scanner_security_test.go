@@ -646,7 +646,7 @@ func TestAuthenticatedMigrationReplayObserverAckRejectAndReorg(t *testing.T) {
 		t.Fatalf("retry authenticated replay enrollment: queued=%v err=%v", queued, err)
 	}
 
-	items, claims, err := scanner.replayAuthenticatedInternalInbounds(101, 101)
+	items, claims, err := scanner.replayAuthenticatedInternalInbounds()
 	if err != nil || len(items) != 1 || len(claims) != 1 {
 		t.Fatalf("first replay: items=%d claims=%d err=%v", len(items), len(claims), err)
 	}
@@ -664,7 +664,7 @@ func TestAuthenticatedMigrationReplayObserverAckRejectAndReorg(t *testing.T) {
 		t.Fatalf("destination replay leaked outbound metadata or used nondeterministic gas: %+v", destinationItem)
 	}
 	destinationItem.OnObservedTxRejected(errors.New("observer unavailable"))
-	items, claims, err = scanner.replayAuthenticatedInternalInbounds(102, 102)
+	items, claims, err = scanner.replayAuthenticatedInternalInbounds()
 	if err != nil || len(items) != 1 || len(claims) != 1 {
 		t.Fatalf("rejected replay retry: items=%d claims=%d err=%v", len(items), len(claims), err)
 	}
@@ -690,7 +690,7 @@ func TestAuthenticatedMigrationReplayObserverAckRejectAndReorg(t *testing.T) {
 	locationHash = relocatedBlockHash
 	locationParent = reorgHash
 	canonicalMu.Unlock()
-	items, claims, err = scanner.replayAuthenticatedInternalInbounds(103, 103)
+	items, claims, err = scanner.replayAuthenticatedInternalInbounds()
 	if err != nil || len(items) != 1 || len(claims) != 1 {
 		t.Fatalf("relocated replay must remain deliverable: items=%d claims=%d err=%v", len(items), len(claims), err)
 	}
@@ -793,7 +793,7 @@ func TestAuthenticatedMigrationReplayObserverAckRejectAndReorg(t *testing.T) {
 	if err != nil || !queued {
 		t.Fatalf("late relocated replay enrollment: queued=%v err=%v", queued, err)
 	}
-	items, claims, err = scanner.replayAuthenticatedInternalInbounds(int64(relocatedHeight)+1, int64(relocatedHeight)+1)
+	items, claims, err = scanner.replayAuthenticatedInternalInbounds()
 	if err != nil || len(items) != 1 || len(claims) != 1 {
 		t.Fatalf("late relocated replay: items=%d claims=%d err=%v", len(items), len(claims), err)
 	}
@@ -803,7 +803,7 @@ func TestAuthenticatedMigrationReplayObserverAckRejectAndReorg(t *testing.T) {
 		t.Fatalf("late relocated replay emitted anything other than the canonical destination: %+v", items[0])
 	}
 	items[0].OnObservedTxStored()
-	items, claims, err = scanner.replayAuthenticatedInternalInbounds(int64(relocatedHeight)+2, int64(relocatedHeight)+2)
+	items, claims, err = scanner.replayAuthenticatedInternalInbounds()
 	if err != nil || len(items) != 0 || len(claims) != 0 {
 		t.Fatalf("acknowledged relocated destination replayed twice: items=%d claims=%d err=%v", len(items), len(claims), err)
 	}

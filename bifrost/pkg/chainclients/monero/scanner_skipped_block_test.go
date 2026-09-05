@@ -61,8 +61,6 @@ func TestVaultRegistrationFailurePropagatesError(t *testing.T) {
 		signer,
 		common.XMRChain,
 		eddsaKey,
-		nil,
-		"test",
 		0,
 	)
 
@@ -132,8 +130,6 @@ func TestRegistrationFailureSkipsOnlyBadVault(t *testing.T) {
 			signer,
 			common.XMRChain,
 			v.pubKey,
-			nil,
-			"test",
 			0,
 		)
 		if regErr != nil {

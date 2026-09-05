@@ -1517,18 +1517,6 @@ func (c *Client) RequireCompatibility(requiredCapabilities ...string) (Info, err
 	return info, nil
 }
 
-// ExportKeys returns a recovery blob for the given vault's threshold share.
-func (c *Client) ExportKeys(vaultPubKey string) (string, error) {
-	var out struct {
-		KeyBytesHex string `json:"key_bytes_hex"`
-	}
-	path := fmt.Sprintf("/v1/monero/keys/%s/export", url.PathEscape(vaultPubKey))
-	if err := c.callGet(path, &out); err != nil {
-		return "", fmt.Errorf("fail to export keys: %w", err)
-	}
-	return out.KeyBytesHex, nil
-}
-
 // RestoreKeys imports a recovery blob back into the sidecar. The blob is the
 // raw on-disk recovery file, which may be at-rest encrypted (binary). It is
 // base64-encoded for transport because raw bytes are not valid UTF-8 and would

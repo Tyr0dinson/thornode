@@ -44,7 +44,6 @@ type Scanner struct {
 	bridge              thorclient.ThorchainBridge
 	chain               common.Chain
 	localNodePubKey     common.PubKey
-	vaultBootstrap      vaultSpendKeyProvider
 	reorgStore          *ReorgStore
 	internalReplayStore *authenticatedInternalInboundReplayStore
 	// scanMu serializes canonical scans with authenticated replay enrollment.
@@ -70,11 +69,9 @@ type Scanner struct {
 	// for its acknowledgement. Zero means the default; tests shorten it.
 	errataDeliveryTimeout time.Duration
 
-	asgardMu       sync.RWMutex
-	asgardLookup   map[string]common.PubKey
-	asgardUpdated  time.Time
-	manualAddrByPK map[string]string
-	manualPKByAddr map[string]common.PubKey
+	asgardMu      sync.RWMutex
+	asgardLookup  map[string]common.PubKey
+	asgardUpdated time.Time
 
 	observedOutgoingMu     sync.RWMutex
 	observedOutgoingByTxID map[string]observedOutgoingTx
@@ -109,8 +106,6 @@ func NewScanner(
 		lastFee:                atomic.NewUint64(0),
 		maxReorgRescan:         maxReorgRescan,
 		asgardLookup:           make(map[string]common.PubKey),
-		manualAddrByPK:         make(map[string]string),
-		manualPKByAddr:         make(map[string]common.PubKey),
 		observedOutgoingByTxID: make(map[string]observedOutgoingTx),
 		mempoolSeen:            make(map[string]struct{}),
 	}
@@ -120,39 +115,6 @@ func NewScanner(
 // per-block scan loop. Pass Client.ReportSolvency from the chain client.
 func (s *Scanner) SetSolvencyReporter(fn func(int64) error) {
 	s.solvencyReporter = fn
-}
-
-func (s *Scanner) SetManualVaultAddress(vaultPubKey common.PubKey, address string) {
-	if vaultPubKey.IsEmpty() || strings.TrimSpace(address) == "" {
-		return
-	}
-	derived, err := vaultPubKey.GetAddress(s.chain)
-	if err != nil || derived.IsEmpty() {
-		s.logger.Debug().Err(err).Str("vault_pubkey", vaultPubKey.String()).Msg("skip manual monero vault mapping: cannot derive address from pubkey")
-		return
-	}
-	if !common.AddressEquals(common.XMRChain, derived, common.Address(strings.TrimSpace(address))) {
-		s.logger.Warn().
-			Str("vault_pubkey", vaultPubKey.String()).
-			Str("provided_address", strings.TrimSpace(address)).
-			Str("derived_address", derived.String()).
-			Msg("rejecting manual monero vault mapping that does not match derived vault address")
-		return
-	}
-	s.asgardMu.Lock()
-	s.manualAddrByPK[vaultPubKey.String()] = derived.String()
-	s.manualPKByAddr[derived.String()] = vaultPubKey
-	s.asgardMu.Unlock()
-}
-
-func (s *Scanner) ManualVaultAddress(vaultPubKey common.PubKey) (string, bool) {
-	if vaultPubKey.IsEmpty() {
-		return "", false
-	}
-	s.asgardMu.RLock()
-	addr, ok := s.manualAddrByPK[vaultPubKey.String()]
-	s.asgardMu.RUnlock()
-	return addr, ok
 }
 
 func (s *Scanner) CurrentHeight() int64 {
@@ -184,10 +146,6 @@ func (s *Scanner) SetClaimQuarantineHandler(handler func(string) error) {
 
 func (s *Scanner) SetLocalSignedTxHandler(handler func(string) (bool, error)) {
 	s.localSignedTxHandler = handler
-}
-
-func (s *Scanner) SetVaultBootstrap(bootstrap vaultSpendKeyProvider) {
-	s.vaultBootstrap = bootstrap
 }
 
 // FetchMemPool emits only outbound mempool transfers with explicit sender metadata.
@@ -371,7 +329,7 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, error) 
 		return txIn, err
 	}
 
-	lateItems, replayClaims, err := s.replayAuthenticatedInternalInbounds(fetchHeight, chainHeight)
+	lateItems, replayClaims, err := s.replayAuthenticatedInternalInbounds()
 	if err != nil {
 		s.releaseAuthenticatedInternalInboundClaims(replayClaims)
 		return txIn, err
@@ -601,9 +559,6 @@ func (s *Scanner) EnqueueAuthenticatedInternalInboundReplay(tx common.ObservedTx
 	if err != nil {
 		return true, fmt.Errorf("mark canonical xmr migration replay %s observed: %w", tx.Tx.ID, err)
 	}
-	if err = s.validateAuthenticatedMigrationProofForObserved(proof, tx, location.Height, amountThorchain); err != nil {
-		return true, fmt.Errorf("validate canonical xmr migration replay %s: %w", tx.Tx.ID, err)
-	}
 	if err = s.validateAuthenticatedMigrationProofForRecord(proof, record); err != nil {
 		return true, fmt.Errorf("bind canonical xmr migration replay %s proof: %w", tx.Tx.ID, err)
 	}
@@ -612,7 +567,7 @@ func (s *Scanner) EnqueueAuthenticatedInternalInboundReplay(tx common.ObservedTx
 	return true, nil
 }
 
-func (s *Scanner) replayAuthenticatedInternalInbounds(_, _ int64) ([]*stypes.TxInItem, []authenticatedInternalInboundClaim, error) {
+func (s *Scanner) replayAuthenticatedInternalInbounds() ([]*stypes.TxInItem, []authenticatedInternalInboundClaim, error) {
 	if s.internalReplayStore == nil {
 		return nil, nil, nil
 	}
@@ -692,7 +647,7 @@ func (s *Scanner) replayAuthenticatedInternalInbounds(_, _ int64) ([]*stypes.TxI
 				Msg("release authenticated xmr migration replay without exact durable sidecar proof")
 			continue
 		}
-		_, destinationItem, transferErr := s.authenticatedMigrationItemsFromProof(proof, record)
+		destinationItem, transferErr := s.authenticatedMigrationDestinationFromProof(proof, record)
 		if transferErr != nil {
 			if releaseErr := s.internalReplayStore.Release(claim); releaseErr != nil {
 				return nil, handedOff, errors.Join(transferErr, releaseErr)
@@ -834,59 +789,6 @@ func authenticatedInternalSpentRefsFromCommon(refs []common.OutputRef) []authent
 	return out
 }
 
-func (s *Scanner) validateAuthenticatedMigrationProofForObserved(
-	proof sidecar.Transfer,
-	tx common.ObservedTx,
-	canonicalHeight int64,
-	amountThorchain uint64,
-) error {
-	if normalizeTxID(proof.TxID) != normalizeTxID(tx.Tx.ID.String()) {
-		return errors.New("sidecar proof transaction hash mismatch")
-	}
-	if int64(proof.Height) != canonicalHeight || proof.Locked {
-		return errors.New("sidecar proof is not mined at the requested height")
-	}
-	if !common.AddressEquals(common.XMRChain, common.Address(proof.Address), tx.Tx.ToAddress) ||
-		proof.Amount/moneroAtomicToThorchain != amountThorchain {
-		return errors.New("sidecar proof payment mismatch")
-	}
-	if strings.TrimSpace(proof.Note) != strings.TrimSpace(tx.Tx.Memo) {
-		return errors.New("sidecar proof memo mismatch")
-	}
-	if !strings.EqualFold(strings.TrimSpace(proof.TxKey), strings.TrimSpace(tx.XmrTxKey)) || !hasUsableXMROutgoingTxKey(proof) {
-		return errors.New("sidecar proof tx key mismatch")
-	}
-	sender, sourceVault := s.resolveOutgoingSender(proof)
-	if sender == "" || !sourceVault.Equals(tx.ObservedPubKey) ||
-		!common.AddressEquals(common.XMRChain, common.Address(sender), tx.Tx.FromAddress) {
-		return errors.New("sidecar proof source vault mismatch")
-	}
-	if proof.Fee == 0 {
-		return errors.New("sidecar proof has zero fee")
-	}
-	gasCoin := tx.Tx.Gas.ToCoins().GetCoin(common.XMRAsset)
-	if gasCoin.IsEmpty() || gasCoin.Amount.IsZero() ||
-		proof.Fee/moneroAtomicToThorchain != gasCoin.Amount.Uint64() {
-		return errors.New("sidecar proof fee differs at THORChain precision")
-	}
-	switch strings.TrimSpace(proof.Origin) {
-	case sidecar.OutgoingOriginLocalCombined, sidecar.OutgoingOriginVaultCertified, sidecar.OutgoingOriginChainCommitted:
-	default:
-		return errors.New("sidecar proof has unauthenticated origin")
-	}
-	actualRefs := authenticatedInternalSpentRefsFromSidecar(proof.SpentOutputRefs)
-	expectedRefs := authenticatedInternalSpentRefsFromCommon(tx.SpentOutputRefs)
-	if !authenticatedInternalSpentRefsEqual(actualRefs, expectedRefs) {
-		return errors.New("sidecar proof spent refs mismatch")
-	}
-	for _, ref := range proof.SpentOutputRefs {
-		if spendHash := strings.TrimSpace(ref.SpendTxHash); spendHash != "" && normalizeTxID(spendHash) != normalizeTxID(tx.Tx.ID.String()) {
-			return errors.New("sidecar proof spent ref names a different spend")
-		}
-	}
-	return nil
-}
-
 func (s *Scanner) validateAuthenticatedMigrationProofForRecord(
 	proof sidecar.Transfer,
 	record authenticatedInternalInboundReplay,
@@ -928,38 +830,13 @@ func (s *Scanner) validateAuthenticatedMigrationProofForRecord(
 	return nil
 }
 
-func (s *Scanner) authenticatedMigrationItemsFromProof(
+func (s *Scanner) authenticatedMigrationDestinationFromProof(
 	proof sidecar.Transfer,
 	record authenticatedInternalInboundReplay,
-) (*stypes.TxInItem, *stypes.TxInItem, error) {
-	sourceVault, err := common.NewPubKey(record.SourceVaultPubKey)
-	if err != nil || sourceVault.IsEmpty() {
-		return nil, nil, errors.New("authenticated migration source vault is invalid")
-	}
+) (*stypes.TxInItem, error) {
 	destinationVault, err := common.NewPubKey(record.DestinationVaultPubKey)
 	if err != nil || destinationVault.IsEmpty() {
-		return nil, nil, errors.New("authenticated migration destination vault is invalid")
-	}
-	source, ok := s.transferToTxInItem(
-		proof,
-		record.SourceAddress,
-		record.ToAddress,
-		sourceVault,
-		record.Memo,
-		record.BlockHeight,
-	)
-	if !ok {
-		return nil, nil, errors.New("sidecar proof could not form source authentication item")
-	}
-	source.SpentOutputRefs = make([]*common.OutputRef, 0, len(record.SpentOutputRefs))
-	for _, ref := range record.SpentOutputRefs {
-		copyRef := &common.OutputRef{
-			TxHash:      ref.TxHash,
-			OutputIndex: ref.OutputIndex,
-			KeyImage:    ref.KeyImage,
-			SpendTxHash: record.TxID,
-		}
-		source.SpentOutputRefs = append(source.SpentOutputRefs, copyRef)
+		return nil, errors.New("authenticated migration destination vault is invalid")
 	}
 
 	// The destination observation intentionally omits outbound-only tx_key and
@@ -977,9 +854,9 @@ func (s *Scanner) authenticatedMigrationItemsFromProof(
 		record.BlockHeight,
 	)
 	if !ok {
-		return nil, nil, errors.New("sidecar proof could not form destination observation")
+		return nil, errors.New("sidecar proof could not form destination observation")
 	}
-	return source, destination, nil
+	return destination, nil
 }
 
 func (s *Scanner) fetchTransfersByHeight(fetchHeight, chainHeight int64, blockHash, parentHash string) ([]*stypes.TxInItem, error) {
@@ -2445,8 +2322,6 @@ func (s *Scanner) addFrostVaultToLookup(
 		s.sidecar,
 		s.chain,
 		observedVault,
-		s.vaultBootstrap,
-		"bifrost_scanner",
 		registrationBirthday,
 	)
 	if addrErr != nil {

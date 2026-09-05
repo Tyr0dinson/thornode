@@ -14,10 +14,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
-type vaultSpendKeyProvider interface {
-	spendKeyHexFor(vaultPubKey common.PubKey) (string, bool)
-}
-
 func groupKeyHexFromVaultPubKey(vaultPubKey common.PubKey) (string, error) {
 	if vaultPubKey.IsEmpty() {
 		return "", fmt.Errorf("vault pubkey is empty")
@@ -52,19 +48,16 @@ func vaultPubKeyFromGroupKeyHex(groupKeyHex string) (common.PubKey, error) {
 	return common.NewPubKeyFromCrypto(cometed25519.PubKey(raw))
 }
 
-// ensureVaultRegistered registers the given vault with the sidecar, attaching
-// spend-key material if the local node owns the vault alone, or a deterministic
-// view key otherwise.
+// ensureVaultRegistered sends public vault identity and its scanner birthday.
+// Threshold signing material is installed only by DKG or keyshare recovery.
 func ensureVaultRegistered(
 	logger zerolog.Logger,
 	client *sidecar.Client,
 	chain common.Chain,
 	vaultPubKey common.PubKey,
-	bootstrap vaultSpendKeyProvider,
-	source string,
 	birthday int64,
 ) (common.Address, error) {
-	return ensureVaultRegisteredContext(context.Background(), logger, client, chain, vaultPubKey, bootstrap, source, birthday)
+	return ensureVaultRegisteredContext(context.Background(), logger, client, chain, vaultPubKey, birthday)
 }
 
 func ensureVaultRegisteredContext(
@@ -73,8 +66,6 @@ func ensureVaultRegisteredContext(
 	client *sidecar.Client,
 	chain common.Chain,
 	vaultPubKey common.PubKey,
-	bootstrap vaultSpendKeyProvider,
-	source string,
 	birthday int64,
 ) (common.Address, error) {
 	if client == nil {
@@ -101,23 +92,8 @@ func ensureVaultRegisteredContext(
 		VaultPubKey:         vaultPubKey.String(),
 		GroupKey:            groupKeyHex,
 		Address:             address.String(),
-		Source:              source,
 		VaultCreationHeight: birthday,
 	}
-	if bootstrap != nil {
-		if spendKeyHex, ok := bootstrap.spendKeyHexFor(vaultPubKey); ok {
-			req.SpendKeyHex = strings.TrimSpace(spendKeyHex)
-		}
-	}
-
-	// Non-member nodes lack a spend key but can still independently scan for
-	// incoming stealth outputs using the deterministic view key.
-	if req.SpendKeyHex == "" {
-		if vk, vkErr := common.XMRViewKeyHex(); vkErr == nil {
-			req.ViewKeyHex = vk
-		}
-	}
-
 	if _, err = client.RegisterVaultContext(ctx, req); err != nil {
 		logger.Debug().
 			Err(err).

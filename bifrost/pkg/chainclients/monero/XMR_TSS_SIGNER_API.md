@@ -1,6 +1,8 @@
 # XMR TSS Signer API
 
-The Monero sidecar exposes HTTP endpoints for DKG, signing rounds, broadcast, and scanner sync/read APIs.
+The Rust `xmr-frost-signer` service exposes HTTP endpoints for DKG, signing rounds,
+broadcast, and scanner sync/read APIs. Bifrost is its HTTP client and FROST
+coordinator; it does not run a second signer HTTP server.
 
 ## Configuration
 
@@ -9,8 +11,11 @@ Bifrost (`bifrost.chains.xmr`):
 - `signer_backend`: `tss`
 - `signer_endpoint`: base URL for the signer service
 - Auth credentials used by Bifrost when calling sidecar:
-  - `authorization_bearer` (Bearer token), or
-  - `username` + `password` (HTTP Basic auth)
+  - `signer_authorization_bearer` (Bearer token), or
+  - `signer_username` + `signer_password` (HTTP Basic auth)
+
+Daemon credentials (`authorization_bearer`, `username`, `password`) are separate
+and are never substituted for signer credentials.
 
 Sidecar (`xmr-frost-signer` environment):
 
@@ -59,6 +64,17 @@ its local sidecar round endpoints while exchanging round payloads over p2p:
 4. `POST /v1/monero/dkg/finalize`
 
 ## Endpoints
+
+### `POST /v1/monero/vaults/register`
+
+Registration sends only the public vault identity (`vault_pub_key`, `group_key`,
+`address`) and optional `birthday`. The signer validates their correspondence and
+derives the view key itself. Registration does not import a private spend key or
+make a keyless node signable: signing shares come from FROST DKG or authenticated
+encrypted recovery.
+
+There is no plaintext key-export endpoint. Encrypted recovery produced during
+DKG and the authenticated restore endpoint remain the recovery path.
 
 ### `POST /v1/monero/dkg/round1`
 

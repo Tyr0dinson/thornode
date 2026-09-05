@@ -139,10 +139,6 @@ func TestClientEnsureXMRVaultBalanceRegistersVault(t *testing.T) {
 				http.Error(w, "unexpected address", http.StatusBadRequest)
 				return
 			}
-			if req.Source != "bifrost" {
-				http.Error(w, "unexpected source", http.StatusBadRequest)
-				return
-			}
 			mu.Lock()
 			registered = true
 			mu.Unlock()
@@ -190,10 +186,10 @@ func TestClientEnsureXMRVaultBalanceRegistersVault(t *testing.T) {
 	}
 }
 
-func TestEnsureFrostVaultRegisteredIncludesBootstrapSpendKeyForMatchingVault(t *testing.T) {
+func TestEnsureFrostVaultRegisteredSendsOnlyPublicIdentity(t *testing.T) {
 	t.Parallel()
 
-	vaultPubKey := testVaultPubKey(t, "matching-bootstrap-spend-key")
+	vaultPubKey := testVaultPubKey(t, "public-registration-identity")
 	address, deriveErr := vaultPubKey.GetAddress(common.XMRChain)
 	if deriveErr != nil {
 		t.Fatalf("derive address: %v", deriveErr)
@@ -202,7 +198,6 @@ func TestEnsureFrostVaultRegisteredIncludesBootstrapSpendKeyForMatchingVault(t *
 	if err != nil {
 		t.Fatalf("group key: %v", err)
 	}
-	expectedSpendKeyHex := strings.Repeat("ab", 32)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/monero/vaults/register" {
@@ -210,8 +205,25 @@ func TestEnsureFrostVaultRegisteredIncludesBootstrapSpendKeyForMatchingVault(t *
 			return
 		}
 
+		var fields map[string]json.RawMessage
+		if decodeErr := json.NewDecoder(r.Body).Decode(&fields); decodeErr != nil {
+			http.Error(w, decodeErr.Error(), http.StatusBadRequest)
+			return
+		}
+		for _, field := range []string{"spend_key_hex", "view_key_hex", "source"} {
+			if _, present := fields[field]; present {
+				t.Errorf("registration includes unused field %q", field)
+				http.Error(w, "registration must contain only public vault identity and birthday", http.StatusBadRequest)
+				return
+			}
+		}
+		encoded, encodeErr := json.Marshal(fields)
+		if encodeErr != nil {
+			http.Error(w, encodeErr.Error(), http.StatusBadRequest)
+			return
+		}
 		var req sidecar.RegisterVaultReq
-		if decodeErr := json.NewDecoder(r.Body).Decode(&req); decodeErr != nil {
+		if decodeErr := json.Unmarshal(encoded, &req); decodeErr != nil {
 			http.Error(w, decodeErr.Error(), http.StatusBadRequest)
 			return
 		}
@@ -227,8 +239,8 @@ func TestEnsureFrostVaultRegisteredIncludesBootstrapSpendKeyForMatchingVault(t *
 			http.Error(w, "unexpected address", http.StatusBadRequest)
 			return
 		}
-		if req.SpendKeyHex != expectedSpendKeyHex {
-			http.Error(w, "unexpected spend key", http.StatusBadRequest)
+		if req.VaultCreationHeight != 42 {
+			http.Error(w, "unexpected vault birthday", http.StatusBadRequest)
 			return
 		}
 
@@ -242,59 +254,7 @@ func TestEnsureFrostVaultRegisteredIncludesBootstrapSpendKeyForMatchingVault(t *
 		t.Fatalf("new frost signer: %v", err)
 	}
 
-	bootstrap := &vaultBootstrap{
-		vaultPubKey: vaultPubKey,
-		spendKeyHex: expectedSpendKeyHex,
-	}
-	registeredAddress, err := ensureVaultRegistered(log.Logger, signer, common.XMRChain, vaultPubKey, bootstrap, "test", 0)
-	if err != nil {
-		t.Fatalf("ensureVaultRegistered failed: %v", err)
-	}
-	if !registeredAddress.Equals(address) {
-		t.Fatalf("expected address %s, got %s", address, registeredAddress)
-	}
-}
-
-func TestEnsureFrostVaultRegisteredOmitsBootstrapSpendKeyForOtherVault(t *testing.T) {
-	t.Parallel()
-
-	vaultPubKey := testVaultPubKey(t, "non-matching-bootstrap-spend-key")
-	address, deriveErr := vaultPubKey.GetAddress(common.XMRChain)
-	if deriveErr != nil {
-		t.Fatalf("derive address: %v", deriveErr)
-	}
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/monero/vaults/register" {
-			http.NotFound(w, r)
-			return
-		}
-
-		var req sidecar.RegisterVaultReq
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if req.SpendKeyHex != "" {
-			http.Error(w, "expected empty spend key", http.StatusBadRequest)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(testRegisterVaultResponse(0))
-	}))
-	defer server.Close()
-
-	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
-	if err != nil {
-		t.Fatalf("new frost signer: %v", err)
-	}
-
-	bootstrap := &vaultBootstrap{
-		vaultPubKey: testVaultPubKey(t, "different-bootstrap-vault"),
-		spendKeyHex: strings.Repeat("cd", 32),
-	}
-	registeredAddress, err := ensureVaultRegistered(log.Logger, signer, common.XMRChain, vaultPubKey, bootstrap, "test", 0)
+	registeredAddress, err := ensureVaultRegistered(log.Logger, signer, common.XMRChain, vaultPubKey, 42)
 	if err != nil {
 		t.Fatalf("ensureVaultRegistered failed: %v", err)
 	}

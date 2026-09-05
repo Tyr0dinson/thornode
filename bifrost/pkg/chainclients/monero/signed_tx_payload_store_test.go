@@ -104,7 +104,7 @@ func TestSignedTxPayloadStoreEnforcesLogicalOwnershipAndTombstone(t *testing.T) 
 		t.Fatalf("expected cross-vault recovery to fail closed, got %v", err)
 	}
 
-	claim, completed, err := store.CompleteObserved("observe-a", "vault-a", "tx-a")
+	claim, completed, err := store.CompleteObservedExact("observe-a", "vault-a", "tx-a")
 	if err != nil || !completed || claim.State != signedTxClaimObserved {
 		t.Fatalf("complete first observed claim: completed=%t claim=%+v err=%v", completed, claim, err)
 	}
@@ -160,7 +160,7 @@ func TestSignedTxPayloadStoreReservesExactPlanAndRejectsLateResult(t *testing.T)
 		t.Fatalf("expected changed semantic txout under the same FROST plan to be rejected, got %v", err)
 	}
 
-	claim, completed, err := store.CompleteObserved("OBSERVE-A", "vault-a", "PEER-TX")
+	claim, completed, err := store.CompleteObservedLogical(plan.LogicalHash, plan.ObserveKeys, "PEER-TX")
 	if err != nil || !completed || claim.State != signedTxClaimObserved {
 		t.Fatalf("complete peer-observed reservation: completed=%t claim=%+v err=%v", completed, claim, err)
 	}

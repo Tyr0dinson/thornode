@@ -103,7 +103,6 @@ type signedTxPayload struct {
 	FeeAtomic        uint64                `json:"fee_atomic"`
 	MsgID            string                `json:"msg_id,omitempty"`
 	Eventuality      tssp.FrostEventuality `json:"eventuality,omitempty"`
-	Broadcasted      bool                  `json:"broadcasted,omitempty"`
 	SpentOutputRefs  []sidecar.SpentRef    `json:"spent_output_refs,omitempty"`
 	Observation      *stypes.TxInItem      `json:"observation,omitempty"`
 	ClaimCacheVault  string                `json:"claim_cache_vault,omitempty"`
@@ -136,7 +135,6 @@ func encodeDurableXMRClaimTxOut(tx stypes.TxOutItem) ([]byte, error) {
 
 type validatedSignRequest struct {
 	vaultPubKey  common.PubKey
-	fromAddress  string
 	toAddress    string
 	amountAtomic uint64
 	maxGasAtomic uint64
@@ -158,8 +156,6 @@ type consolidationSettings struct {
 
 type consolidationVaultState struct {
 	LastAttemptHeight int64
-	LastSuccessHeight int64
-	LastTxHash        string
 	ConsecutiveFails  int64
 }
 
@@ -171,7 +167,6 @@ type Client struct {
 
 	thorchainBridge       thorclient.ThorchainBridge
 	localNodePubKey       common.PubKey
-	vaultBootstrap        *vaultBootstrap
 	storage               *blockscanner.BlockScannerStorage
 	blockScanner          *blockscanner.BlockScanner
 	scanner               *Scanner
@@ -300,12 +295,7 @@ func NewClient(
 		}
 	}
 
-	vaultBootstrap, bootstrapErr := deriveVaultBootstrap(thorKeys)
-	if bootstrapErr != nil {
-		logger.Debug().Err(bootstrapErr).Msg("fail to derive local monero frost vault bootstrap material")
-	}
 	scanner := NewScanner(logger, sc, bridge, cfg.ChainID, localNodePubKey, cfg.BlockScanner.MaxReorgRescanBlocks)
-	scanner.SetVaultBootstrap(vaultBootstrap)
 
 	c := &Client{
 		logger:                    logger,
@@ -313,7 +303,6 @@ func NewClient(
 		chain:                     cfg.ChainID,
 		thorchainBridge:           bridge,
 		localNodePubKey:           localNodePubKey,
-		vaultBootstrap:            vaultBootstrap,
 		scanner:                   scanner,
 		sidecar:                   sc,
 		tssServer:                 tssServer,
@@ -1091,11 +1080,10 @@ func (c *Client) runConsolidationPass() error {
 				Msg("skip xmr consolidation: near churn")
 			continue
 		}
-		triggerPeriodic := settings.CheckIntervalBlocks > 0 && height%settings.CheckIntervalBlocks == 0
-		if !triggerPeriodic {
+		if settings.CheckIntervalBlocks <= 0 || height%settings.CheckIntervalBlocks != 0 {
 			continue
 		}
-		c.consolidateVault(vault, height, settings, triggerPeriodic)
+		c.consolidateVault(vault, height, settings)
 	}
 	return nil
 }
@@ -1115,7 +1103,6 @@ func (c *Client) consolidateVault(
 	vault ttypes.Vault,
 	thorchainHeight int64,
 	settings consolidationSettings,
-	triggerPeriodic bool,
 ) {
 	vaultPubKey := txVaultPubKey(stypes.TxOutItem{
 		VaultPubKey:      vault.PubKey,
@@ -1284,15 +1271,12 @@ func (c *Client) consolidateVault(
 
 		c.setConsolidationVaultState(stateKey, consolidationVaultState{
 			LastAttemptHeight: thorchainHeight,
-			LastSuccessHeight: thorchainHeight,
-			LastTxHash:        txHash,
 			ConsecutiveFails:  0,
 		})
 		c.logger.Info().
 			Str("vault_pubkey", stateKey).
 			Str("tx_hash", txHash).
 			Int64("unlocked_outputs", unlockedOutputs).
-			Bool("periodic_trigger", triggerPeriodic).
 			Msg("xmr consolidation broadcasted")
 		return
 	}
@@ -1766,7 +1750,7 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		c.logger.Info().Interface("tx", tx).Msg("transaction already signed, ignoring")
 		return nil, nil, nil, nil
 	}
-	signReqCtx, err := c.validateSignTx(tx, height, true)
+	signReqCtx, err := c.validateSignTx(tx, height)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -1879,8 +1863,8 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		MaxGasAtomic:                signReqCtx.maxGasAtomic,
 	}
 
-	// ClearSessions is sidecar-global, so only one XMR FROST ceremony may be
-	// active on this sidecar while Bifrost may need to clean up a failed round.
+	// Serialize the ownership recheck and ceremony so concurrent reschedules
+	// cannot both sign after missing the same durable claim.
 	c.sidecarSignMu.Lock()
 	defer c.sidecarSignMu.Unlock()
 	if isConsolidationTx(tx) {
@@ -2049,7 +2033,6 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		FeeAtomic:        resp.FeeAtomic,
 		MsgID:            msgID,
 		Eventuality:      resp.Eventuality,
-		Broadcasted:      false,
 		SpentOutputRefs:  localSpentRefs,
 		Observation:      observation,
 		ClaimCacheVault:  cacheVault,
@@ -2181,7 +2164,7 @@ func decodeStoredSignedXMRTxPayload(signedTx []byte) (signedTxPayload, error) {
 	return payload, nil
 }
 
-func (c *Client) validateSignTx(tx stypes.TxOutItem, thorchainHeight int64, requireThorchainHeight bool) (validatedSignRequest, error) {
+func (c *Client) validateSignTx(tx stypes.TxOutItem, thorchainHeight int64) (validatedSignRequest, error) {
 	if tx.ToAddress.IsEmpty() {
 		return validatedSignRequest{}, fmt.Errorf("to address is empty")
 	}
@@ -2190,7 +2173,7 @@ func (c *Client) validateSignTx(tx stypes.TxOutItem, thorchainHeight int64, requ
 	}
 	// Mirror the Rust FROST signer destination policy exactly so unsupported
 	// Monero address variants fail before they enter signing.
-	if requireThorchainHeight && thorchainHeight <= 0 {
+	if thorchainHeight <= 0 {
 		return validatedSignRequest{}, fmt.Errorf("thorchain height must be greater than zero")
 	}
 
@@ -2249,7 +2232,6 @@ func (c *Client) validateSignTx(tx stypes.TxOutItem, thorchainHeight int64, requ
 
 	return validatedSignRequest{
 		vaultPubKey:  vaultPubKey,
-		fromAddress:  fromAddress,
 		toAddress:    tx.ToAddress.String(),
 		amountAtomic: amountAtomic,
 		maxGasAtomic: maxGasAtomic,
@@ -2553,17 +2535,6 @@ func xmrObservedCoinsForSignedOutbound(tx stypes.TxOutItem, feeAtomic uint64) co
 		common.XMRAsset,
 		xmrCoin.Amount.Add(cosmos.NewUint(unusedMaxGasThorchain)),
 	))
-}
-
-func (c *Client) ExportKeyshare(groupKey common.PubKey) ([]byte, error) {
-	if c.sidecar == nil {
-		return nil, fmt.Errorf("sidecar not configured")
-	}
-	hexKey, err := c.sidecar.ExportKeys(groupKey.String())
-	if err != nil {
-		return nil, fmt.Errorf("fail to export frost keys for group key %s: %w", groupKey.String(), err)
-	}
-	return []byte(hexKey), nil
 }
 
 func (c *Client) RestoreKeyshare(vaultPubKey common.PubKey, keyBlob []byte) error {
@@ -3446,7 +3417,6 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult
 		VaultPubKey:         frostVaultPubKey.String(),
 		GroupKey:            groupKeyHex,
 		Address:             frostAddr.String(),
-		Source:              "bifrost",
 		VaultCreationHeight: registrationBirthday,
 	})
 	if c.scanner != nil {
@@ -3999,7 +3969,7 @@ func (c *Client) ensureVaultRegisteredContext(ctx context.Context, vaultPubKey c
 		c.scanner.scanMu.Lock()
 		defer c.scanner.scanMu.Unlock()
 	}
-	address, err := ensureVaultRegisteredContext(ctx, c.logger, c.sidecar, c.chain, vaultPubKey, c.vaultBootstrap, "bifrost", 0)
+	address, err := ensureVaultRegisteredContext(ctx, c.logger, c.sidecar, c.chain, vaultPubKey, 0)
 	if err != nil {
 		return err
 	}
@@ -4068,9 +4038,6 @@ func (c *Client) setVaultAddressMapping(vaultPubKey common.PubKey, address commo
 		if err := c.vaultAddressStore.Set(key, address.String()); err != nil {
 			c.logger.Debug().Err(err).Str("vault_pubkey", key).Msg("fail to persist monero vault address mapping")
 		}
-	}
-	if c.scanner != nil {
-		c.scanner.SetManualVaultAddress(vaultPubKey, address.String())
 	}
 }
 

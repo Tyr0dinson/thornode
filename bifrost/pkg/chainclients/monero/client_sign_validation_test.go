@@ -61,7 +61,7 @@ func TestValidateXMRSignTxRejectsInboundMemo(t *testing.T) {
 		Memo: "DONATE:XMR.XMR",
 	}
 
-	_, err := c.validateSignTx(tx, 100, true)
+	_, err := c.validateSignTx(tx, 100)
 	if err == nil {
 		t.Fatalf("expected inbound memo validation error")
 	}
@@ -96,7 +96,7 @@ func TestValidateXMRSignTxAcceptsCheckpoint(t *testing.T) {
 		Checkpoint: ckpt,
 	}
 
-	_, err := c.validateSignTx(tx, 100, true)
+	_, err := c.validateSignTx(tx, 100)
 	if err != nil {
 		t.Fatalf("checkpoint should be accepted: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestValidateXMRSignTxRejectsFeaturedDestination(t *testing.T) {
 		Memo: "OUT:0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
 	}
 
-	_, err := c.validateSignTx(tx, 100, true)
+	_, err := c.validateSignTx(tx, 100)
 	if err == nil {
 		t.Fatalf("featured addresses should be rejected as unsupported signing destinations")
 	}
@@ -142,7 +142,7 @@ func TestValidateXMRSignTxRejectsNonGuaranteedFeaturedDestination(t *testing.T) 
 		Memo: "OUT:0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
 	}
 
-	_, err := c.validateSignTx(tx, 100, true)
+	_, err := c.validateSignTx(tx, 100)
 	if err == nil {
 		t.Fatalf("non-guaranteed featured addresses should be rejected as unsupported signing destinations")
 	}
@@ -199,7 +199,7 @@ func TestValidateXMRSignTxRejectsInsufficientBalance(t *testing.T) {
 		Memo: "OUT:0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
 	}
 
-	_, err = c.validateSignTx(tx, 100, true)
+	_, err = c.validateSignTx(tx, 100)
 	if err == nil {
 		t.Fatalf("expected insufficient balance error")
 	}
@@ -255,7 +255,7 @@ func TestValidateXMRSignTxRejectsLockedOnlyBalance(t *testing.T) {
 		Memo: "OUT:0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
 	}
 
-	_, err = c.validateSignTx(tx, 100, true)
+	_, err = c.validateSignTx(tx, 100)
 	if err == nil {
 		t.Fatalf("expected insufficient balance error when funds are fully locked")
 	}
@@ -303,7 +303,7 @@ func TestValidateXMRSignTxRejectsInsufficientSpendableBalance(t *testing.T) {
 		Memo: "OUT:0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
 	}
 
-	_, err = c.validateSignTx(tx, 100, true)
+	_, err = c.validateSignTx(tx, 100)
 	if err == nil {
 		t.Fatalf("expected insufficient balance error when spendable balance is below amount")
 	}
@@ -348,7 +348,7 @@ func TestValidateXMRSignTxRequiresFrostVaultPubKey(t *testing.T) {
 		Memo: "OUT:0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
 	}
 
-	_, err = c.validateSignTx(tx, 100, true)
+	_, err = c.validateSignTx(tx, 100)
 	if err == nil {
 		t.Fatal("expected sign validation to fail closed without VaultPubKeyFrost")
 	}
@@ -374,11 +374,11 @@ func TestValidateXMRSignTxAcceptsValidRequest(t *testing.T) {
 		Memo: "OUT:0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
 	}
 
-	req, err := c.validateSignTx(tx, 100, true)
+	req, err := c.validateSignTx(tx, 100)
 	if err != nil {
 		t.Fatalf("expected valid sign request, got error: %v", err)
 	}
-	if req.amountAtomic == 0 || req.fromAddress == "" || req.toAddress == "" || req.vaultPubKey.IsEmpty() {
+	if req.amountAtomic == 0 || req.toAddress == "" || req.vaultPubKey.IsEmpty() {
 		t.Fatalf("expected fully populated validated sign request")
 	}
 }
