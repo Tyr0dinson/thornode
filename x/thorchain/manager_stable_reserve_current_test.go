@@ -1456,6 +1456,25 @@ func (s *StableReserveMgrSuite) TestFreeStableSwapUnderwaterFeeSupportsSubBps(c 
 	c.Check(emit.Equal(cosmos.NewUint(40*common.One-40)), Equals, true)
 }
 
+// A fat-fingered StableReserveUnderwaterFee of 1e8 ("100%") withholds the whole
+// payout. The fill must DECLINE (fall through to the AMM), not hard-fail on a
+// zero-amount Withdraw.
+func (s *StableReserveMgrSuite) TestFreeStableSwapDeclinesWhenUnderwaterFeeZeroesPayout(c *C) {
+	ctx, mgr, usdc, usdt := setupStableReserveSuite(c)
+	stableReserveMgr := mgr.StableReserveManager()
+	moduleAddr := mgr.Keeper().GetModuleAccAddress(StableReserveName)
+	mgr.Keeper().SetMimir(ctx, constants.StableReserveUnderwaterFee.String(), common.One)
+
+	c.Assert(stableReserveMgr.Deposit(ctx, usdt, cosmos.NewUint(200*common.One), GetRandomETHAddress(), common.BlankTxID), IsNil)
+	_, err := mgr.SecuredAssetManager().Withdraw(ctx, usdt.GetSecuredAsset(), cosmos.NewUint(150*common.One), moduleAddr, GetRandomETHAddress(), common.BlankTxID)
+	c.Assert(err, IsNil)
+
+	filled, emit, err := stableReserveMgr.TrySwap(ctx, mgr, *stableSwapMsg(usdc, usdt, cosmos.NewUint(40*common.One)))
+	c.Assert(err, IsNil)
+	c.Check(filled, Equals, false)
+	c.Check(emit.IsZero(), Equals, true)
+}
+
 // stableSwapMsg builds a single non-streaming market swap of amount source -> the
 // ETH.USDT target used across the underwater-fee tests.
 func stableSwapMsg(source, target common.Asset, amount cosmos.Uint) *MsgSwap {

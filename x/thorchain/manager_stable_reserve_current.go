@@ -318,8 +318,11 @@ func (s *StableReserveMgr) TrySwap(ctx cosmos.Context, mgr Manager, msg MsgSwap)
 	// withheld portion stays in the reserve automatically — the full grossIn is
 	// deposited while only the reduced grossTarget is paid out. Applied AFTER the
 	// MinUint cap so it can only ever reduce the payout. The fee is a fraction of 1e8
-	// (default 10_000 = 1 bps, sub-bps configurable); clamp it to 1e8 so a
-	// misconfigured value can never zero the payout.
+	// (default 10_000 = 1 bps, sub-bps configurable). A misconfigured fee at or near
+	// 1e8 CAN zero the payout (GetSafeShare caps part at total, and rounds half-up
+	// for tiny payouts), so the zero check below declines the fill instead of
+	// handing Withdraw a zero amount, which would error and fail the whole swap
+	// rather than falling through to the AMM.
 	depositUSD, err := s.keeper.GetStableReserveDepositValue(ctx)
 	if err != nil {
 		return false, cosmos.ZeroUint(), err
@@ -331,6 +334,9 @@ func (s *StableReserveMgr) TrySwap(ctx cosmos.Context, mgr Manager, msg MsgSwap)
 			underwaterFee := common.GetSafeShare(feeUint, one, grossTarget)
 			grossTarget = common.SafeSub(grossTarget, underwaterFee)
 		}
+	}
+	if grossTarget.IsZero() {
+		return false, cosmos.ZeroUint(), nil
 	}
 
 	fee, err := mgr.GasMgr().GetAssetOutboundFee(ctx, target, false)
