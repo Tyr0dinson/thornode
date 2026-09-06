@@ -18,6 +18,7 @@ import (
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/rpc"
+	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 )
 
 // countingSOLRPC is a param-aware SOL RPC mock for the consensus-blockhash cache
@@ -513,14 +514,14 @@ func (s *SolTestSuite) TestSignTxUsesCachedConsensusBlockHash(c *C) {
 	seeded := mockBlockhashForSlot(123)
 	client.storeConsensusBlockHash(7, consensusBlockHashEntry{hash: seeded, slot: 123})
 
-	signed, _, _, err := client.SignTx(newSolCacheTestTxOut(pub), 7)
+	signed, _, _, err := client.SignTx([]stypes.TxOutItem{newSolCacheTestTxOut(pub)}, 7)
 	c.Assert(err, IsNil)
 	c.Assert(signed, NotNil)
 	c.Assert(signedTxRecentBlockhash(c, signed), Equals, seeded)
 
 	_, ok := client.lookupConsensusBlockHash(8)
 	c.Assert(ok, Equals, false)
-	signed, _, _, err = client.SignTx(newSolCacheTestTxOut(pub), 8)
+	signed, _, _, err = client.SignTx([]stypes.TxOutItem{newSolCacheTestTxOut(pub)}, 8)
 	c.Assert(err, IsNil)
 	c.Assert(signed, NotNil)
 	e, ok := client.lookupConsensusBlockHash(8)

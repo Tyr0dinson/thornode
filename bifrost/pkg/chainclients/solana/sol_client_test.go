@@ -1415,7 +1415,7 @@ func (s *SolTestSuite) TestSignTxAbstainInvalidBlockhashDrops(c *C) {
 		Memo:             "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 	}
 
-	result, checkpoint, obs, err := client.SignTx(tx, 123)
+	result, checkpoint, obs, err := client.SignTx([]stypes.TxOutItem{tx}, 123)
 	c.Assert(err, IsNil) // no error -> signer clears the item (drop for reschedule)
 	c.Assert(result, IsNil)
 	c.Assert(checkpoint, IsNil)
@@ -1453,7 +1453,7 @@ func (s *SolTestSuite) TestSignTxAbstainBlockhashValidErrorRetains(c *C) {
 		Memo:             "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 	}
 
-	result, _, _, err := client.SignTx(tx, 123)
+	result, _, _, err := client.SignTx([]stypes.TxOutItem{tx}, 123)
 	c.Assert(err, NotNil) // fail closed -> error -> signer retains + retries
 	c.Assert(result, IsNil)
 }
@@ -1489,7 +1489,7 @@ func (s *SolTestSuite) TestSignTxAbstainLaggingBackendRetains(c *C) {
 		Memo:             "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 	}
 
-	result, _, _, err := client.SignTx(tx, 123)
+	result, _, _, err := client.SignTx([]stypes.TxOutItem{tx}, 123)
 	c.Assert(err, NotNil) // lagging backend -> error -> retain (NOT drop)
 	c.Assert(result, IsNil)
 }
