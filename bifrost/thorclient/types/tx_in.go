@@ -125,6 +125,11 @@ const (
 	Failed
 )
 
+// Equals compares identity only. It deliberately excludes Bounced: the observer's
+// dedupe path relies on an identity match to recognise a re-scan that produced a
+// different verdict for an already-decked observation, and replaces the verdict in
+// place (see processObservedTx). Including Bounced here would make those
+// corrections look like new items and queue both verdicts for the same tx.
 func (t *TxInItem) Equals(other *TxInItem) bool {
 	if t.BlockHeight != other.BlockHeight {
 		return false
@@ -160,10 +165,12 @@ func (t *TxInItem) EqualsObservedTx(other common.ObservedTx) bool {
 	// Do not compare block height, as we only keep one deck item for a tx pre/post finalization.
 	// The final block height will be ConfirmationCount higher than the unfinalized tx.
 	//
-	// Bounced is deliberately not compared either. It is part of the signed payload,
-	// so while observers are still converging on the EVMBouncedOutbound mimir the
-	// committed observation may carry the other value; comparing it would leave this
-	// node's deck entry stuck forever, re-sending an observation thorchain already has.
+	// Bounced IS compared. This runs on the committed-quorum ack, which only fires
+	// for a quorum tx carrying this node's own attestation, and Bounced is part of
+	// the gossip bucket key (ObservedTx.AttestationUniqueHash), so the acked payload
+	// always carries the verdict this node signed. Ignoring Bounced here would let a
+	// late ack for the stale payload clear a deck entry that has since been corrected,
+	// silently dropping the correction.
 
 	txId, err := common.NewTxID(t.Tx)
 	if err != nil {
@@ -191,6 +198,9 @@ func (t *TxInItem) EqualsObservedTx(other common.ObservedTx) bool {
 		return false
 	}
 	if normalizeString(t.TxKey) != normalizeString(other.XmrTxKey) {
+		return false
+	}
+	if t.Bounced != other.Bounced {
 		return false
 	}
 	return true

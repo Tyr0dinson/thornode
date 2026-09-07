@@ -1046,7 +1046,13 @@ func newBouncedOutboundFixture(c *C, activeNodes int) *bouncedOutboundFixture {
 
 // vote submits one finalised observation of the outbound from node i.
 func (f *bouncedOutboundFixture) vote(c *C, i int, bounced bool) {
-	obTx := NewObservedTx(f.tx, 12, f.pk, 12)
+	f.voteAt(c, i, bounced, 12, 12)
+}
+
+// voteAt submits one observation from node i at an explicit block/finalise
+// height, so a test can drive the non-final -> final hand-off.
+func (f *bouncedOutboundFixture) voteAt(c *C, i int, bounced bool, height, finalise int64) {
+	obTx := NewObservedTx(f.tx, height, f.pk, finalise)
 	obTx.Bounced = bounced
 	_, err := f.handler.handle(f.ctx, *NewMsgObservedTxOut(ObservedTxs{obTx}, f.keeper.nas[i].NodeAddress))
 	c.Assert(err, IsNil)
@@ -1109,4 +1115,68 @@ func (s *HandlerObservedTxOutSuite) TestHandleBouncedMinorityCannotSuppressDebit
 	c.Check(f.ethBalance(c), Equals, gasOnly)
 	c.Check(f.securityEvents(), Equals, 1)
 	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
+}
+
+// TestHandleBounceReversedByReorgDebits covers the true -> false direction of the
+// bounce correction. A reorg can re-include the same tx hash with a receipt that
+// shows delivery; the scanner rescans that hash without sending any errata,
+// because the hash still exists. Once a supermajority re-observes the outbound as
+// delivered, the coins retained by the bounced consensus have in fact left the
+// vault and must be debited.
+func (s *HandlerObservedTxOutSuite) TestHandleBounceReversedByReorgDebits(c *C) {
+	const (
+		untouched   = uint64(20000000000) // 200 ETH
+		gasOnly     = untouched - 37500
+		gasAndCoins = gasOnly - 1
+	)
+
+	f := newBouncedOutboundFixture(c, 6)
+	for i := 0; i < 4; i++ {
+		f.vote(c, i, true)
+	}
+	c.Check(f.ethBalance(c), Equals, gasOnly) // 4/6 bounced: coins retained
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
+	c.Check(f.securityEvents(), Equals, 1)
+
+	// A minority re-observing it as delivered must not move anything.
+	f.vote(c, 4, false)
+	f.vote(c, 5, false)
+	c.Check(f.ethBalance(c), Equals, gasOnly)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
+
+	// A supermajority does: the coins actually left.
+	for i := 0; i < 2; i++ {
+		f.vote(c, i, false)
+	}
+	c.Check(f.ethBalance(c), Equals, gasAndCoins)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
+	c.Check(f.securityEvents(), Equals, 2)
+
+	// A repeat of the delivered observation must not debit twice.
+	f.vote(c, 2, false)
+	c.Check(f.ethBalance(c), Equals, gasAndCoins)
+	c.Check(f.securityEvents(), Equals, 2)
+}
+
+// TestHandleBounceReversedOnFinalisation covers the same true -> false direction
+// at the other reconciliation site: the non-final consensus already ran vault
+// accounting as bounced (coins retained), and the finalised consensus disagrees
+// because the reorg resolved to a delivered receipt before confirmation. The
+// coins did leave, so the hand-off must debit them.
+func (s *HandlerObservedTxOutSuite) TestHandleBounceReversedOnFinalisation(c *C) {
+	const (
+		untouched   = uint64(20000000000) // 200 ETH
+		gasOnly     = untouched - 37500
+		gasAndCoins = gasOnly - 1
+	)
+
+	f := newBouncedOutboundFixture(c, 1)
+	f.voteAt(c, 0, true, 12, 13) // unfinalised: bounced, coins retained
+	c.Check(f.ethBalance(c), Equals, gasOnly)
+	c.Check(f.securityEvents(), Equals, 1)
+
+	f.voteAt(c, 0, false, 13, 13) // finalised: delivered after all
+	c.Check(f.ethBalance(c), Equals, gasAndCoins)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
+	c.Check(f.securityEvents(), Equals, 2)
 }

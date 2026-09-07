@@ -420,3 +420,39 @@ func (s *TxInTestSuite) TestTxInItemEqualsObservedTx(c *C) {
 	item9.ObservedVaultPubKey = "thorpub1other"
 	c.Check(item9.EqualsObservedTx(observedTx), Equals, false)
 }
+
+// TestTxInItemEqualsObservedTxBounced covers the commit-ack match. The ack only
+// fires for a quorum tx carrying this node's own attestation and Bounced is part
+// of the gossip bucket key, so the acked payload always carries the verdict this
+// node signed. Ignoring Bounced here would let a late ack for a stale payload
+// clear a deck entry that has since been corrected.
+func (s *TxInTestSuite) TestTxInItemEqualsObservedTxBounced(c *C) {
+	txID := common.TxID("2C9B7B4C0E5D5F4A6E8D2F1A3B5C7D9E1F2A3B4C5D6E7F8A9B0C1D2E3F4A5B6C")
+	from := common.Address("0x90f2b1ae50e6018230e90a33f98c7844a0ab635a")
+	to := common.Address("0x90f2b1ae50e6018230e90a33f98c7844a0ab635b")
+	coins := common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100))}
+	gas := common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(10))}
+	pk := common.PubKey("thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy2cr8a2")
+
+	item := &TxInItem{
+		BlockHeight:         100,
+		Tx:                  txID.String(),
+		Memo:                "OUT:" + txID.String(),
+		Sender:              from.String(),
+		To:                  to.String(),
+		Coins:               coins,
+		Gas:                 gas,
+		ObservedVaultPubKey: pk,
+	}
+	obs := common.NewObservedTx(
+		common.NewTx(txID, from, to, coins, gas, "OUT:"+txID.String()), 100, pk, 100,
+	)
+
+	c.Check(item.EqualsObservedTx(obs), Equals, true)
+
+	item.Bounced = true
+	c.Check(item.EqualsObservedTx(obs), Equals, false)
+
+	obs.Bounced = true
+	c.Check(item.EqualsObservedTx(obs), Equals, true)
+}

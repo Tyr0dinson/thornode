@@ -356,9 +356,6 @@ func (e *ETHScanner) updateGasPriceFromCacheLocked() {
 // processBlock extracts transactions from block
 func (e *ETHScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 	height := int64(block.NumberU64())
-	// Fetched once per block and threaded down (not stored on the scanner):
-	// prefetch runs processBlock for several heights concurrently.
-	detectBounce := e.bouncedOutboundEnabled()
 	txIn := stypes.TxIn{
 		Chain:    common.ETHChain,
 		TxArray:  nil,
@@ -393,6 +390,15 @@ func (e *ETHScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 
 	if block.Transactions().Len() == 0 {
 		return txIn, nil
+	}
+
+	// Fetched once per block and threaded down (not stored on the scanner):
+	// prefetch runs processBlock for several heights concurrently. A lookup
+	// failure fails the block so the scanner retries it rather than scanning
+	// past it with bounce detection off.
+	detectBounce, err := e.bouncedOutboundEnabled()
+	if err != nil {
+		return txIn, err
 	}
 
 	txInBlock, err := e.extractTxs(block, detectBounce)
@@ -639,6 +645,17 @@ func (e *ETHScanner) processReorg(block *etypes.Header) ([]stypes.TxIn, error) {
 	if err != nil {
 		e.logger.Err(err).Msg("fail to reprocess all txs")
 	}
+	// Resolved once for the whole rescan; a failure aborts the reorg handling so
+	// processBlock retries rather than re-observing the rescanned heights with
+	// bounce detection silently off. Skipped entirely when nothing is rescanned.
+	var detectBounce bool
+	if len(heights) > 0 {
+		detectBounce, err = e.bouncedOutboundEnabled()
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	var txIns []stypes.TxIn
 	for _, item := range heights {
 		e.logger.Info().Msgf("rescan block height: %d", item)
@@ -652,7 +669,7 @@ func (e *ETHScanner) processReorg(block *etypes.Header) ([]stypes.TxIn, error) {
 			continue
 		}
 		var txIn stypes.TxIn
-		txIn, err = e.extractTxs(block, e.bouncedOutboundEnabled())
+		txIn, err = e.extractTxs(block, detectBounce)
 		if err != nil {
 			e.logger.Err(err).Msgf("fail to extract txs from block (%d)", item)
 			continue
@@ -941,19 +958,19 @@ func (e *ETHScanner) directERC20InboundEnabled() bool {
 // bouncedOutboundEnabled reports whether the log parser should flag outbounds the
 // router returned to the sending vault. Gated per-chain so every observer starts
 // setting ObservedTx.Bounced at the same height.
-func (e *ETHScanner) bouncedOutboundEnabled() bool {
+// The lookup error is returned rather than defaulted to false: scanning on with
+// bounce detection silently disabled advances the scan position past the block,
+// and nothing re-reads that receipt once thornode is reachable again, so the
+// vault would be debited for coins that never left it.
+func (e *ETHScanner) bouncedOutboundEnabled() (bool, error) {
 	enabled, err := e.bridge.GetMimirWithRef(
 		constants.MimirTemplateEVMBouncedOutbound,
 		e.cfg.ChainID.String(),
 	)
 	if err != nil {
-		e.logger.Err(err).
-			Str("mimir_template", constants.MimirTemplateEVMBouncedOutbound).
-			Str("chain", e.cfg.ChainID.String()).
-			Msg("fail to get bounced outbound mimir")
-		return false
+		return false, fmt.Errorf("fail to get bounced outbound mimir for %s: %w", common.ETHChain, err)
 	}
-	return enabled > 0
+	return enabled > 0, nil
 }
 
 // ConvertAmount will convert the amount to 1e8, the decimals used by THORChain.

@@ -80,6 +80,13 @@ func (s *UnstuckTestSuite) SetUpTest(c *C) {
 	var lastBroadcastTxJSON []byte
 
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		// EVMBouncedOutbound gates bounce detection; a lookup failure now fails the
+		// block, so the fixture must answer it.
+		if strings.HasPrefix(req.RequestURI, "/thorchain/mimir/key/EVMBouncedOutbound-") {
+			_, err := rw.Write([]byte(`0`))
+			c.Assert(err, IsNil)
+			return
+		}
 		switch req.RequestURI {
 		case thorclient.ChainVersionEndpoint:
 			_, err = rw.Write([]byte(`{"current":"` + types2.GetCurrentVersion().String() + `"}`))

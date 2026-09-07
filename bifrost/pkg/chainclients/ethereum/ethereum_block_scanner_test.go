@@ -239,7 +239,19 @@ func (s *BlockScannerTestSuite) TestNewBlockScanner(c *C) {
 }
 
 func (s *BlockScannerTestSuite) TestProcessBlock(c *C) {
+	bouncedMimirFails := false
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		// EVMBouncedOutbound gates bounce detection; a lookup failure now fails the
+		// block, so the fixture must answer it.
+		if strings.HasPrefix(req.RequestURI, "/thorchain/mimir/key/EVMBouncedOutbound-") {
+			if bouncedMimirFails {
+				rw.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			_, err := rw.Write([]byte(`0`))
+			c.Assert(err, IsNil)
+			return
+		}
 		switch {
 		case req.RequestURI == thorclient.ChainVersionEndpoint:
 			_, err := rw.Write([]byte(`{"current":"` + types2.GetCurrentVersion().String() + `"}`))
@@ -327,6 +339,17 @@ func (s *BlockScannerTestSuite) TestProcessBlock(c *C) {
 	c.Assert(bs, NotNil)
 	bs.globalNetworkFeeQueue = make(chan thorcommon.NetworkFee, 1)
 	whitelistSmartContractAddress = append(whitelistSmartContractAddress, "0x40bcd4dB8889a8Bf0b1391d0c819dcd9627f9d0a")
+
+	// A bounce-mimir lookup failure must fail the block. The blockscanner retries
+	// a failed FetchTxs at the same height, so the receipt is re-read once
+	// thornode is reachable; scanning on with detection silently off would advance
+	// past it and debit the vault for coins that never left.
+	bouncedMimirFails = true
+	_, err = bs.FetchTxs(int64(1), int64(1))
+	c.Assert(err, NotNil)
+	c.Check(strings.Contains(err.Error(), "bounced outbound mimir"), Equals, true)
+	bouncedMimirFails = false
+
 	txIn, err := bs.FetchTxs(int64(1), int64(1))
 	c.Assert(err, IsNil)
 	c.Check(len(txIn.TxArray), Equals, 1)
@@ -354,6 +377,13 @@ func httpTestHandler(c *C, rw http.ResponseWriter, fixture string) {
 
 func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		// EVMBouncedOutbound gates bounce detection; a lookup failure now fails the
+		// block, so the fixture must answer it.
+		if strings.HasPrefix(req.RequestURI, "/thorchain/mimir/key/EVMBouncedOutbound-") {
+			_, err := rw.Write([]byte(`0`))
+			c.Assert(err, IsNil)
+			return
+		}
 		switch {
 		case req.RequestURI == thorclient.ChainVersionEndpoint:
 			_, err := rw.Write([]byte(`{"current":"` + types2.GetCurrentVersion().String() + `"}`))
@@ -916,6 +946,13 @@ func (s *BlockScannerTestSuite) TestRouterValidation(c *C) {
 	var receiptResponse string
 
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		// EVMBouncedOutbound gates bounce detection; a lookup failure now fails the
+		// block, so the fixture must answer it.
+		if strings.HasPrefix(req.RequestURI, "/thorchain/mimir/key/EVMBouncedOutbound-") {
+			_, err := rw.Write([]byte(`0`))
+			c.Assert(err, IsNil)
+			return
+		}
 		switch {
 		case req.RequestURI == thorclient.ChainVersionEndpoint:
 			_, err := rw.Write([]byte(`{"current":"` + types2.GetCurrentVersion().String() + `"}`))
@@ -1020,6 +1057,13 @@ func (s *BlockScannerTestSuite) TestRouterValidation(c *C) {
 
 func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		// EVMBouncedOutbound gates bounce detection; a lookup failure now fails the
+		// block, so the fixture must answer it.
+		if strings.HasPrefix(req.RequestURI, "/thorchain/mimir/key/EVMBouncedOutbound-") {
+			_, err := rw.Write([]byte(`0`))
+			c.Assert(err, IsNil)
+			return
+		}
 		switch {
 		case req.RequestURI == thorclient.PubKeysEndpoint:
 			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/vaults/pubKeys.json")

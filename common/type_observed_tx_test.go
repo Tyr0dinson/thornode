@@ -396,3 +396,29 @@ func (s ObservedTxSuite) TestEqualsBounced(c *C) {
 	c.Check(base.EqualsConsensus(flipped), Equals, false)
 	c.Check(base.EqualsConsensusIgnoreGas(flipped), Equals, true)
 }
+
+// TestAttestationUniqueHash_BouncedDiffersFromBase pins the gossip key apart for
+// the two Bounced verdicts. They are separate signed payloads deciding the vault
+// coin debit, so sharing a bucket would let whichever arrived first keep it and
+// silently absorb the other. Only the true case is salted, so ordinary traffic
+// keeps the key it already has.
+func (s ObservedTxSuite) TestAttestationUniqueHash_BouncedDiffersFromBase(c *C) {
+	id, err := NewTxID(testSpendTxHash)
+	c.Assert(err, IsNil)
+	tx := NewTx(
+		id,
+		Address("0x90f2b1ae50e6018230e90a33f98c7844a0ab635a"),
+		Address("0x90f2b1ae50e6018230e90a33f98c7844a0ab635b"),
+		Coins{NewCoin(ETHAsset, cosmos.NewUint(5*One))},
+		Gas{NewCoin(ETHAsset, cosmos.NewUint(10000))},
+		"OUT:"+testSpendTxHash,
+	)
+	delivered := NewObservedTx(tx, 100, testPubKey, 100)
+	bounced := NewObservedTx(tx, 100, testPubKey, 100)
+	bounced.Bounced = true
+
+	c.Assert(delivered.AttestationUniqueHash(), Equals, delivered.Tx.Hash(delivered.BlockHeight))
+	c.Assert(bounced.AttestationUniqueHash() != delivered.AttestationUniqueHash(), Equals, true)
+	// deterministic
+	c.Assert(bounced.AttestationUniqueHash(), Equals, bounced.AttestationUniqueHash())
+}

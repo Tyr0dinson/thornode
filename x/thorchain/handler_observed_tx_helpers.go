@@ -832,13 +832,14 @@ func applyTxOutAttestation(
 			prevConsensusTx := voter.Tx
 			voter.Tx = *voter.GetTx(nas)
 			// Vault accounting already ran on the non-final consensus (ok == false
-			// here). The signing committee's instant observation carries no receipt,
-			// so it can never be Bounced; if the finalised scanner consensus is,
-			// the coins were debited but never left the vault. Credit them back.
+			// here). If the finalised consensus disagrees on Bounced, that accounting
+			// used the wrong branch: the coins were debited but never left the vault
+			// (false -> true), or they were retained and did leave (true -> false,
+			// a reorg re-included the same hash as delivered). Reconcile either way.
 			if !ok && !prevConsensusTx.IsEmpty() &&
-				voter.Tx.Bounced && !prevConsensusTx.Bounced &&
+				voter.Tx.Bounced != prevConsensusTx.Bounced &&
 				prevConsensusTx.EqualsConsensusIgnoreGas(voter.Tx) {
-				creditBouncedOutbound(ctx, mgr, voter.Tx)
+				reconcileBounceCorrection(ctx, mgr, voter.Tx, voter.Tx.Bounced)
 			}
 
 			ctx.Logger().Debug(
@@ -1027,13 +1028,17 @@ func lateFinalObservationExcused(voter ObservedTxVoter, tx common.ObservedTx, si
 
 // correctOutboundObservation reconciles vault accounting when a supermajority
 // re-observes an already-processed outbound with different gas (a reorg changed
-// the effective gas price) or as Bounced (the EVM router returned the coins to
-// the vault, which the signer's receipt-less instant observation cannot know).
-// The consensus tx is updated in place so each correction applies once.
+// the effective gas price) or with a different Bounced verdict. Bounced moves in
+// both directions: false -> true when the EVM router returned the coins to the
+// vault (which the signer's receipt-less instant observation cannot know), and
+// true -> false when a reorg re-includes the same tx hash with a receipt showing
+// delivery - the scanner rescans that hash without any errata, since the hash
+// still exists. The consensus tx is updated in place so each correction applies
+// once.
 func correctOutboundObservation(ctx cosmos.Context, mgr Manager, voter *ObservedTxVoter, tx ObservedTx, nas NodeAccounts) {
 	gasChanged := !voter.Tx.Tx.Gas.Equals(tx.Tx.Gas)
-	bounced := tx.Bounced && !voter.Tx.Bounced
-	if !gasChanged && !bounced {
+	bounceChanged := tx.Bounced != voter.Tx.Bounced
+	if !gasChanged && !bounceChanged {
 		return
 	}
 	if !voter.Tx.EqualsConsensusIgnoreGas(tx) {
@@ -1046,16 +1051,20 @@ func correctOutboundObservation(ctx cosmos.Context, mgr Manager, voter *Observed
 		correctOutboundGas(ctx, mgr, voter.Tx, tx)
 		voter.Tx.Tx.Gas = tx.Tx.Gas
 	}
-	if bounced {
-		creditBouncedOutbound(ctx, mgr, voter.Tx)
-		voter.Tx.Bounced = true
+	if bounceChanged {
+		reconcileBounceCorrection(ctx, mgr, voter.Tx, tx.Bounced)
+		voter.Tx.Bounced = tx.Bounced
 	}
 }
 
-// creditBouncedOutbound returns an outbound's coins to the vault after consensus
-// already debited them, because a supermajority has since re-observed the same
-// outbound as Bounced. Mirrors the debit conditions in handleObservedTxOutQuorum.
-func creditBouncedOutbound(ctx cosmos.Context, mgr Manager, consensusTx common.ObservedTx) {
+// reconcileBounceCorrection re-runs the outbound coin accounting after consensus
+// flips on Bounced, in whichever direction it flipped. bounced=true: the debit
+// already ran but the router returned the coins, so credit them back.
+// bounced=false: the coins were retained as bounced and a supermajority has since
+// re-observed the same outbound as delivered, so debit them now. Both directions
+// mirror the debit conditions in handleObservedTxOutQuorum, and neither touches
+// OutboundTxCount - the quorum handler already counted this outbound once.
+func reconcileBounceCorrection(ctx cosmos.Context, mgr Manager, consensusTx common.ObservedTx, bounced bool) {
 	if consensusTx.Tx.FromAddress.Equals(consensusTx.Tx.ToAddress) || isOutboundFakeGasTx(consensusTx) {
 		return // nothing was debited for these
 	}
@@ -1064,14 +1073,20 @@ func creditBouncedOutbound(ctx cosmos.Context, mgr Manager, consensusTx common.O
 		ctx.Logger().Error("fail to get vault for bounce correction", "error", err)
 		return
 	}
-	vault.AddFunds(consensusTx.Tx.Coins)
+	msg := "bounced outbound re-observed as delivered, coins debited"
+	if bounced {
+		msg = "outbound bounced back to vault, coins re-credited"
+		vault.AddFunds(consensusTx.Tx.Coins)
+	} else {
+		debitVault(ctx, mgr, &vault, consensusTx, consensusTx.Tx.Coins, vaultDeficitReasonOutbound)
+	}
 	if err := mgr.Keeper().SetVault(ctx, vault); err != nil {
 		ctx.Logger().Error("fail to save vault after bounce correction", "error", err)
 		return
 	}
-	ctx.Logger().Error("outbound bounced back to vault, coins re-credited",
+	ctx.Logger().Error(msg,
 		"tx", consensusTx.Tx.ID, "vault_pubkey", vault.PubKey, "coins", consensusTx.Tx.Coins.String())
-	if err := mgr.EventMgr().EmitEvent(ctx, NewEventSecurity(consensusTx.Tx, "outbound bounced back to vault")); err != nil {
+	if err := mgr.EventMgr().EmitEvent(ctx, NewEventSecurity(consensusTx.Tx, msg)); err != nil {
 		ctx.Logger().Error("fail to emit security event", "error", err)
 	}
 }

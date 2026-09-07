@@ -1,6 +1,7 @@
 package common
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -320,9 +321,19 @@ func (m ObservedTx) EqualsOutboundObservationCredit(tx2 ObservedTx) bool {
 	return m.EqualsConsensusIgnoreGas(tx2)
 }
 
+// AttestationUniqueHash keys the gossip bucket an attestation is collected in.
+// Bounced is part of the signed payload and decides whether the vault coin debit
+// happens, so a true and a false observation of the same tx must not share a
+// bucket - otherwise whichever arrived first keeps the bucket and the other is
+// merged into it. Only the Bounced case is salted, so ordinary traffic keeps the
+// key it has today and mixed-version peers still agree on it.
 func (m ObservedTx) AttestationUniqueHash() string {
 	base := observedTxXMRMetadataUniqueHash(m.Tx.Hash(m.BlockHeight), m.Tx.Chain, m.XmrTxKey, m.SpentOutputRefs, m.XmrMinedHeight)
-	return solNonceUniqueHash(base, m.Tx.Chain, m.SolNonce)
+	base = solNonceUniqueHash(base, m.Tx.Chain, m.SolNonce)
+	if !m.Bounced {
+		return base
+	}
+	return fmt.Sprintf("%X", sha256.Sum256([]byte(base+"|bounced")))
 }
 
 // IsFinal indicates whether ObserveTx is final.

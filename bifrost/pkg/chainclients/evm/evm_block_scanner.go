@@ -316,9 +316,6 @@ func (e *EVMScanner) updateCurrentBlockHeight(height int64) {
 // --------------------------------- extraction ---------------------------------
 
 func (e *EVMScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
-	// Fetched once per block and threaded down (not stored on the scanner):
-	// prefetch runs processBlock for several heights concurrently.
-	detectBounce := e.bouncedOutboundEnabled()
 	txIn := stypes.TxIn{
 		Chain:    e.cfg.ChainID,
 		TxArray:  nil,
@@ -346,6 +343,15 @@ func (e *EVMScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 				txIn.TxArray = append(txIn.TxArray, item.TxArray...)
 			}
 		}
+	}
+
+	// Fetched once per block and threaded down (not stored on the scanner):
+	// prefetch runs processBlock for several heights concurrently. A lookup
+	// failure fails the block so the scanner retries it rather than scanning
+	// past it with bounce detection off.
+	detectBounce, err := e.bouncedOutboundEnabled()
+	if err != nil {
+		return txIn, err
 	}
 
 	// collect all relevant transactions from the block and their gas prices
@@ -721,7 +727,12 @@ func (e *EVMScanner) getTxInItem(tx *etypes.Transaction) (*stypes.TxInItem, erro
 		return nil, fmt.Errorf("failed to get transaction receipt: %w", err)
 	}
 
-	return e.receiptToTxInItem(tx, receipt, e.bouncedOutboundEnabled())
+	detectBounce, err := e.bouncedOutboundEnabled()
+	if err != nil {
+		return nil, err
+	}
+
+	return e.receiptToTxInItem(tx, receipt, detectBounce)
 }
 
 func (e *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.Receipt, detectBounce bool) (*stypes.TxInItem, error) {
@@ -859,6 +870,17 @@ func (e *EVMScanner) processReorg(header *etypes.Header) ([]stypes.TxIn, error) 
 		e.logger.Err(err).Msg("fail to reprocess all txs")
 	}
 
+	// Resolved once for the whole rescan; a failure aborts the reorg handling so
+	// processBlock retries rather than re-observing the rescanned heights with
+	// bounce detection silently off. Skipped entirely when nothing is rescanned.
+	var detectBounce bool
+	if len(heights) > 0 {
+		detectBounce, err = e.bouncedOutboundEnabled()
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// rescan heights
 	var txIns []stypes.TxIn
 	for _, rescanHeight := range heights {
@@ -873,7 +895,7 @@ func (e *EVMScanner) processReorg(header *etypes.Header) ([]stypes.TxIn, error) 
 			continue
 		}
 		var txIn stypes.TxIn
-		txIn, _, err = e.getTxIn(block, e.bouncedOutboundEnabled()) // discard gas prices during reorg rescan
+		txIn, _, err = e.getTxIn(block, detectBounce) // discard gas prices during reorg rescan
 		if err != nil {
 			e.logger.Err(err).Int64("height", rescanHeight).Msg("fail to extract txs from block")
 			continue
@@ -1216,19 +1238,19 @@ func (e *EVMScanner) directERC20InboundEnabled() bool {
 // setting ObservedTx.Bounced at the same height: the flag is part of the signed
 // attestation payload, so a mixed window would briefly fail to reach quorum on a
 // bounce (self-healing via the observer deck refresh).
-func (e *EVMScanner) bouncedOutboundEnabled() bool {
+// The lookup error is returned rather than defaulted to false: scanning on with
+// bounce detection silently disabled advances the scan position past the block,
+// and nothing re-reads that receipt once thornode is reachable again, so the
+// vault would be debited for coins that never left it.
+func (e *EVMScanner) bouncedOutboundEnabled() (bool, error) {
 	enabled, err := e.bridge.GetMimirWithRef(
 		constants.MimirTemplateEVMBouncedOutbound,
 		e.cfg.ChainID.String(),
 	)
 	if err != nil {
-		e.logger.Err(err).
-			Str("mimir_template", constants.MimirTemplateEVMBouncedOutbound).
-			Str("chain", e.cfg.ChainID.String()).
-			Msg("fail to get bounced outbound mimir")
-		return false
+		return false, fmt.Errorf("fail to get bounced outbound mimir for %s: %w", e.cfg.ChainID, err)
 	}
-	return enabled > 0
+	return enabled > 0, nil
 }
 
 // getTxInFromDirectERC20Transfer observes direct ERC20 token transfers sent to

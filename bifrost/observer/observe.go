@@ -911,6 +911,14 @@ func (o *Observer) processTxIns() {
 
 // processObservedTx will process the observed tx, and either add it to the
 // onDeck queue, or merge it with an existing tx in the onDeck queue.
+// bounceCorrection records a deck item's pre-correction state so a failed
+// persist can be rolled back, leaving the correction retryable.
+type bounceCorrection struct {
+	item                 *types.TxInItem
+	bounced              bool
+	committedUnFinalised bool
+}
+
 func (o *Observer) processObservedTx(txIn types.TxIn) error {
 	if len(txIn.TxArray) == 0 {
 		rejectObservedTx(txIn.TxArray, errObservedTxEmpty)
@@ -999,49 +1007,102 @@ func (o *Observer) processObservedTx(txIn types.TxIn) error {
 		dedupeStart := time.Now()
 		var newTxs []*types.TxInItem
 		var duplicateTxs []*types.TxInItem
+		var correctedTxs []*types.TxInItem
+		var corrections []bounceCorrection
 		for _, txInItem := range txIn.TxArray {
 			foundTx := false
 			for _, txInItemDeck := range in.TxArray {
-				if txInItemDeck.Equals(txInItem) {
-					foundTx = true
-					duplicateTxs = append(duplicateTxs, txInItem)
+				if !txInItemDeck.Equals(txInItem) {
+					continue
+				}
+				foundTx = true
+				// Equals compares identity only and deliberately ignores Bounced, so
+				// a re-scan that produces a different verdict for an already-decked
+				// observation lands here. Replace the stale verdict in place: dropping
+				// it as a duplicate would keep re-sending the wrong vault accounting,
+				// and appending it would leave both verdicts queued for the same tx.
+				//
+				// ponytail: last-write-wins. TxInItem carries no receipt block hash,
+				// so a delayed pre-reorg rescan could still overwrite a newer verdict;
+				// add that hash to TxInItem if the race ever bites. What actually
+				// decides vault accounting is the supermajority gate in
+				// correctOutboundObservation, not this node's local ordering.
+				if txInItemDeck.Bounced != txInItem.Bounced {
+					corrections = append(corrections, bounceCorrection{
+						item:                 txInItemDeck,
+						bounced:              txInItemDeck.Bounced,
+						committedUnFinalised: txInItemDeck.CommittedUnFinalised,
+					})
+					txInItemDeck.Bounced = txInItem.Bounced
+					// Any payload already sent carried the stale verdict, so this item
+					// must go out again - an ack for that payload must not leave the
+					// correction unsent.
+					txInItemDeck.CommittedUnFinalised = false
+					correctedTxs = append(correctedTxs, txInItem)
 					o.logger.Warn().
 						Str("id", txInItem.Tx).
 						Str("chain", in.Chain.String()).
 						Int64("height", txInItem.BlockHeight).
-						Str("from", txInItem.Sender).
-						Str("to", txInItem.To).
-						Str("memo", txInItem.Memo).
-						Str("coins", txInItem.Coins.String()).
-						Str("gas", common.Coins(txInItem.Gas).String()).
-						Str("observed_vault_pubkey", txInItem.ObservedVaultPubKey.String()).
-						Msg("Dropping duplicate observation tx")
+						Bool("bounced", txInItem.Bounced).
+						Msg("replacing on-deck observation with corrected bounce verdict")
 					break
 				}
+				duplicateTxs = append(duplicateTxs, txInItem)
+				o.logger.Warn().
+					Str("id", txInItem.Tx).
+					Str("chain", in.Chain.String()).
+					Int64("height", txInItem.BlockHeight).
+					Str("from", txInItem.Sender).
+					Str("to", txInItem.To).
+					Str("memo", txInItem.Memo).
+					Str("coins", txInItem.Coins.String()).
+					Str("gas", common.Coins(txInItem.Gas).String()).
+					Str("observed_vault_pubkey", txInItem.ObservedVaultPubKey.String()).
+					Msg("Dropping duplicate observation tx")
+				break
 			}
 			if !foundTx {
 				newTxs = append(newTxs, txInItem)
 			}
 		}
 		o.logger.Debug().Msgf("Dedupe took %s", time.Since(dedupeStart))
-		if len(newTxs) > 0 {
+		if len(newTxs) > 0 || len(corrections) > 0 {
 			originalLen := len(in.TxArray)
 			in.TxArray = append(in.TxArray, newTxs...)
 			setDeckStart := time.Now()
-			persistErr := o.storage.AddOrUpdateTx(in)
+			var persistErr error
+			if len(corrections) > 0 {
+				// A corrected bounce verdict changes vault accounting on the next
+				// send, so fsync it: a crash must not resurrect the stale verdict
+				// from the deck on restart.
+				persistErr = o.storage.addOrUpdateTxSync(in)
+			} else {
+				persistErr = o.storage.AddOrUpdateTx(in)
+			}
 			if persistErr != nil {
 				o.logger.Error().Err(persistErr).Msg("fail to add tx to storage")
 				for i := originalLen; i < len(in.TxArray); i++ {
 					in.TxArray[i] = nil
 				}
 				in.TxArray = in.TxArray[:originalLen]
+				// Roll the corrections back so the deck keeps matching what storage
+				// holds and the next arrival of the corrected observation retries.
+				for _, c := range corrections {
+					c.item.Bounced = c.bounced
+					c.item.CommittedUnFinalised = c.committedUnFinalised
+				}
 				rejectedCallbacks = append(
 					rejectedCallbacks,
 					takeObservedTxRejectedCallbacks(newTxs, fmt.Errorf("persist observed transaction: %w", persistErr))...,
 				)
+				rejectedCallbacks = append(
+					rejectedCallbacks,
+					takeObservedTxRejectedCallbacks(correctedTxs, fmt.Errorf("persist observed transaction: %w", persistErr))...,
+				)
 				persistFailure = persistErr
 			} else {
 				storedCallbacks = append(storedCallbacks, takeObservedTxStoredCallbacks(newTxs)...)
+				storedCallbacks = append(storedCallbacks, takeObservedTxStoredCallbacks(correctedTxs)...)
 			}
 			o.logger.Debug().Msgf("AddOrUpdateTx existing took %s", time.Since(setDeckStart))
 		}

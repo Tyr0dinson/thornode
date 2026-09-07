@@ -1,10 +1,15 @@
 package observer
 
 import (
+	"errors"
+	"sync"
 	"testing"
 
 	lru "github.com/hashicorp/golang-lru"
+	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/require"
+
+	"gitlab.com/thorchain/thornode/v3/config"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
@@ -56,4 +61,120 @@ func TestFilterObservationsPreservesBounced(t *testing.T) {
 	require.Len(t, obsTxs, 1)
 	require.True(t, obsTxs[0].ObservedPubKey.Equals(vault))
 	require.True(t, obsTxs[0].Bounced)
+}
+
+// bounceDeckTxIn builds a pre-filtered single-item deck payload for an EVM
+// outbound, so processObservedTx goes straight to the dedupe path.
+func bounceDeckTxIn(tx string, vault common.PubKey, vaultAddr common.Address, bounced bool) types.TxIn {
+	return types.TxIn{
+		Chain:    common.ETHChain,
+		Filtered: true,
+		TxArray: []*types.TxInItem{{
+			BlockHeight:         100,
+			Tx:                  tx,
+			Memo:                "OUT:" + stypes.GetRandomTxHash().String(),
+			Sender:              vaultAddr.String(),
+			To:                  stypes.GetRandomETHAddress().String(),
+			Coins:               common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1024000))),
+			Gas:                 common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(37500))},
+			ObservedVaultPubKey: vault,
+			Bounced:             bounced,
+		}},
+	}
+}
+
+func newBounceDeckObserver(t *testing.T, dir string) *Observer {
+	t.Helper()
+	storage, err := NewObserverStorage(dir, config.LevelDBOptions{})
+	require.NoError(t, err)
+	return &Observer{
+		logger:  log.Logger,
+		lock:    &sync.Mutex{},
+		onDeck:  make(map[txInKey]*types.TxIn),
+		storage: storage,
+	}
+}
+
+// TestDeckBounceCorrectionReplacesStaleVerdict covers the correction path
+// zlyzol described: the same tx/height/gas re-scanned with a different Bounced
+// verdict must leave exactly one current deck entry carrying the new verdict,
+// must clear a stale CommittedUnFinalised so the correction is actually re-sent,
+// and must survive a restart.
+func TestDeckBounceCorrectionReplacesStaleVerdict(t *testing.T) {
+	dir := t.TempDir()
+	obs := newBounceDeckObserver(t, dir)
+
+	vault := stypes.GetRandomPubKey()
+	vaultAddr, err := vault.GetAddress(common.ETHChain)
+	require.NoError(t, err)
+	txID := stypes.GetRandomTxHash().String()
+
+	stale := bounceDeckTxIn(txID, vault, vaultAddr, false)
+	key := TxInKey(&stale)
+	require.NoError(t, obs.processObservedTx(stale))
+
+	// The stale verdict was already sent and acked in the unfinalised state.
+	obs.onDeck[key].TxArray[0].CommittedUnFinalised = true
+
+	corrected := bounceDeckTxIn(txID, vault, vaultAddr, true)
+	corrected.TxArray[0].Memo = stale.TxArray[0].Memo
+	corrected.TxArray[0].To = stale.TxArray[0].To
+	require.NoError(t, obs.processObservedTx(corrected))
+
+	deck := obs.onDeck[key]
+	require.Len(t, deck.TxArray, 1, "correction must replace, not append")
+	require.True(t, deck.TxArray[0].Bounced)
+	require.False(t, deck.TxArray[0].CommittedUnFinalised,
+		"stale ack must not suppress sending the correction")
+
+	// Restart: the correction must come back from storage, not the stale verdict.
+	require.NoError(t, obs.storage.Close())
+	restarted := newBounceDeckObserver(t, dir)
+	defer func() { require.NoError(t, restarted.storage.Close()) }()
+	require.NoError(t, restarted.restoreDeck())
+	restored, ok := restarted.onDeck[key]
+	require.True(t, ok)
+	require.Len(t, restored.TxArray, 1)
+	require.True(t, restored.TxArray[0].Bounced)
+}
+
+// TestDeckBounceCorrectionRetriesAfterStorageFailure asserts a failed persist
+// leaves the deck matching storage (stale verdict, stale committed flag) and
+// the correction still applicable on the next arrival.
+func TestDeckBounceCorrectionRetriesAfterStorageFailure(t *testing.T) {
+	dir := t.TempDir()
+	obs := newBounceDeckObserver(t, dir)
+	defer func() { require.NoError(t, obs.storage.Close()) }()
+
+	vault := stypes.GetRandomPubKey()
+	vaultAddr, err := vault.GetAddress(common.ETHChain)
+	require.NoError(t, err)
+	txID := stypes.GetRandomTxHash().String()
+
+	stale := bounceDeckTxIn(txID, vault, vaultAddr, false)
+	key := TxInKey(&stale)
+	require.NoError(t, obs.processObservedTx(stale))
+	obs.onDeck[key].TxArray[0].CommittedUnFinalised = true
+
+	corrected := bounceDeckTxIn(txID, vault, vaultAddr, true)
+	corrected.TxArray[0].Memo = stale.TxArray[0].Memo
+	corrected.TxArray[0].To = stale.TxArray[0].To
+
+	obs.storage.beforeSyncTxWrite = func() error { return errors.New("disk full") }
+	require.Error(t, obs.processObservedTx(corrected))
+
+	rolledBack := obs.onDeck[key]
+	require.Len(t, rolledBack.TxArray, 1)
+	require.False(t, rolledBack.TxArray[0].Bounced, "failed persist must roll the verdict back")
+	require.True(t, rolledBack.TxArray[0].CommittedUnFinalised, "and the committed flag with it")
+
+	// Retry once storage recovers.
+	obs.storage.beforeSyncTxWrite = nil
+	retry := bounceDeckTxIn(txID, vault, vaultAddr, true)
+	retry.TxArray[0].Memo = stale.TxArray[0].Memo
+	retry.TxArray[0].To = stale.TxArray[0].To
+	require.NoError(t, obs.processObservedTx(retry))
+	require.Len(t, obs.onDeck[key].TxArray, 1)
+	require.True(t, obs.onDeck[key].TxArray[0].Bounced)
+	require.False(t, obs.onDeck[key].TxArray[0].CommittedUnFinalised)
 }

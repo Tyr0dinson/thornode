@@ -1049,6 +1049,13 @@ func (s *BlockScannerTestSuite) TestRouterValidation(c *C) {
 
 func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		// EVMBouncedOutbound gates bounce detection; a lookup failure now fails the
+		// block, so the fixture must answer it.
+		if strings.HasPrefix(req.RequestURI, "/thorchain/mimir/key/EVMBouncedOutbound-") {
+			_, err := rw.Write([]byte(`0`))
+			c.Assert(err, IsNil)
+			return
+		}
 		switch req.RequestURI {
 		case thorclient.PubKeysEndpoint:
 			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/vaults/pubKeys.json")
