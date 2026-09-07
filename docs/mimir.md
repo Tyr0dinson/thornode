@@ -259,7 +259,7 @@ Operational notes:
 - `BankSendEnabled`: Enable/Disable cosmos bank send messages
 - `ObservationDelayFlexibility`\*: Number of blocks of flexibility for a validator to get their slash points taken off for making an observation
 - `AltNativeTxFeeEnabled`: Enable/disable gas fee payment in native assets
-- `AltNativeTxFeeAddedBps`: Additional premium basis points added to the base network fee when paying with a native asset instead of RUNE; eg. 0 = no premium (gas = 0.02 RUNE in asset), 5000 = 50% premium (0.03 RUNE)
+- `AltNativeTxFeeAddedBps`: Additional premium basis points added to the base network fee when paying with a native asset instead of RUNE; eg. 0 = no premium (gas = 0.02 RUNE in asset), 5000 = 50% premium (0.03 RUNE). Values are capped at 90000 bps (10x the base native fee)
 - `AltNativeTxFeeSwapThresholdBps`: Percentage of pool depth to accumulate before swapping collected alt-native fees to RUNE; default 1 basis point = 0.01%, while 0 settles every block
 - `AltNativeTxFeeSwapThresholdUSD`: USD-denominated settlement trigger in 1e8 notation; default `10_00000000` = $10 and 0 disables this USD bound. Settlement uses the smaller of this and `AltNativeTxFeeSwapThresholdBps`; if RUNE/USD pricing is unavailable, only the pool-depth threshold applies
 
