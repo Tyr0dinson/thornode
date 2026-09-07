@@ -1218,8 +1218,7 @@ services:
         condition: service_healthy
     healthcheck: &polkadot-collator-healthcheck
       <<: *polkadot-healthcheck
-      # Asset Hub can take several minutes to initialize.
-      start_period: 300s
+      start_period: 900s
 
   # Run the Bob collator to fill its Aura slots.
   polkadot-collator:
@@ -1232,9 +1231,7 @@ services:
       ROLE: collator
       COLLATOR_NAME: bob
     depends_on:
-      polkadot-relay-alice:
-        condition: service_healthy
-      polkadot-relay-bob:
+      polkadot:
         condition: service_healthy
     healthcheck: *polkadot-collator-healthcheck
 
