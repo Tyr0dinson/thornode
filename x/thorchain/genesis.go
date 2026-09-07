@@ -296,11 +296,25 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 		keeper.SetSecuredAsset(ctx, a)
 	}
 
+	// The reference memo occupancy window is derived state rather than a genesis
+	// field: it is rebuilt from the imported memos so the congestion price does not
+	// reset to "empty ring" across a fork. The count goes in the previous bucket,
+	// since every imported memo expires within one TTL of here. Assets are applied
+	// in first-seen order rather than by ranging the tally, to keep it deterministic.
 	ttl := keeper.GetConfigInt64(ctx, constants.MemolessTxnTTL)
+	liveRefs := make(map[common.Asset]int64)
+	refAssets := make([]common.Asset, 0)
 	for _, ref := range data.ReferenceMemos {
 		if !ref.IsExpired(ctx.BlockHeight(), ttl) {
 			keeper.SetReferenceMemo(ctx, ref)
+			if _, ok := liveRefs[ref.Asset]; !ok {
+				refAssets = append(refAssets, ref.Asset)
+			}
+			liveRefs[ref.Asset]++
 		}
+	}
+	for _, asset := range refAssets {
+		keeper.SetReferenceMemoWindow(ctx, asset, ctx.BlockHeight(), 0, liveRefs[asset], ttl)
 	}
 
 	// Mint coins into the reserve

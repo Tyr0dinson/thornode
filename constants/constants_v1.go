@@ -119,6 +119,7 @@ func NewConstantValue() *ConstantVals {
 			MemolessTxnRefCount:                 99_999,             // max number of reference ids per chain
 			MemolessTxnCost:                     0,                  // additional cost in RUNE to register a memoless txn (operational mimir)
 			MemolessTxnMaxUse:                   1,                  // maximum times a reference id can be utilized before refunding (operational mimir)
+			MemolessTxnCostSlopeBPS:             0,                  // steepness of the memoless cost curve as reference slots fill, 0 = flat MemolessTxnCost (operational mimir)
 			L1SlipMinBps:                        0,                  // Minimum L1 asset swap fee in basis points
 			TradeAccountsSlipMinBps:             0,                  // Minimum trade asset swap fee in basis points
 			SecuredAssetSlipMinBps:              5,                  // Minimum secured asset swap fee in basis points

@@ -195,6 +195,7 @@ const (
 	MemolessTxnRefCount
 	MemolessTxnCost
 	MemolessTxnMaxUse
+	MemolessTxnCostSlopeBPS
 	StrictBondLiquidityRatio
 	SwapOutDexAggregationDisabled
 	P2PGateDisabled

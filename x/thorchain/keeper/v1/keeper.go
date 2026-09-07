@@ -99,6 +99,7 @@ const (
 	prefixReferenceMemo             types.DbPrefix = "refm/"
 	prefixReferenceMemoIndex        types.DbPrefix = "refmi/"
 	prefixReferenceMemoHash         types.DbPrefix = "refmh/"
+	prefixReferenceMemoWindow       types.DbPrefix = "refmw/"
 	prefixRollingPoolLiquidityFee   types.DbPrefix = "rolling_pool_liquidity_fee/"
 	prefixPrevCyclePoolLiquidityFee types.DbPrefix = "prev_cycle_pool_liquidity_fee/"
 	prefixVersion                   types.DbPrefix = "version/"

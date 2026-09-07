@@ -520,6 +520,8 @@ type KeeperReferenceMemo interface {
 	DeleteReferenceMemo(ctx cosmos.Context, _ common.Asset, _ string) error
 	GetLastReferenceNumber(ctx cosmos.Context, _ common.Asset) string
 	SetLastReferenceNumber(ctx cosmos.Context, _ common.Asset, _ string)
+	GetReferenceMemoWindow(ctx cosmos.Context, _ common.Asset) (start, cur, prev, width int64)
+	SetReferenceMemoWindow(ctx cosmos.Context, _ common.Asset, start, cur, prev, width int64)
 }
 
 // NewKeeper creates new instances of the thorchain Keeper
