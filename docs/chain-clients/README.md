@@ -17,7 +17,16 @@ Chain clients are located in:
 
 Each chain lives in its own folder and typically inherits logic from a shared implementation:
 
-| Client Folder | Purpose                 | Used For                 |
+| Client Folder | Purpose                 | Used For                      |
+| -------------- | ------------------------ | ------------------------------ |
+| `evm/`         | Shared EVM logic         | BSC, AVAX, BASE, POL          |
+| `ethereum/`    | Ethereum-specific logic  | ETH                            |
+| `utxo/`        | Shared UTXO logic        | BTC, LTC, BCH, XEC, DOGE, ZEC |
+| `xrp/`         | XRP-specific logic       | XRP                           |
+| `tron/`        | Tron-specific logic      | TRON                          |
+| `solana/`      | Solana-specific logic    | SOL                           |
+| `gaia/`        | Cosmos SDK-based chains  | ATOM, NOBLE                   |
+| `monero/`      | Monero-specific logic    | XMR                           |
 | ------------- | ----------------------- | ------------------------ |
 | `evm/`        | Shared EVM logic        | ETH, BSC, AVAX, BASE     |
 | Client Folder | Purpose                 | Used For                      |
