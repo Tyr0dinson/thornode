@@ -134,11 +134,11 @@ run_collator() {
 }
 
 case "${ROLE:?ROLE must be set to genesis, relay or collator}" in
-  genesis) run_genesis ;;
-  relay) run_relay ;;
-  collator) run_collator ;;
-  *)
-    echo "Unknown ROLE '$ROLE'; expected genesis, relay or collator." >&2
-    exit 1
-    ;;
+genesis) run_genesis ;;
+relay) run_relay ;;
+collator) run_collator ;;
+*)
+  echo "Unknown ROLE '$ROLE'; expected genesis, relay or collator." >&2
+  exit 1
+  ;;
 esac
