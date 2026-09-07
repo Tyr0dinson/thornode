@@ -3294,6 +3294,15 @@ components:
                     type: string
                   bond:
                     type: string
+                  bps:
+                    format: int64
+                    type: integer
+                    example: 5000
+                    description: the share of provider rewards to pay out automatically - `0` means no reward split
+                  payout_target:
+                    type: string
+                    example: "alice"
+                    description: either empty, a THORChain address, or a THORName
         signer_membership:
           type: array
           description: the set of vault public keys of which the node is a member

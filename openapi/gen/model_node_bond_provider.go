@@ -18,6 +18,10 @@ import (
 type NodeBondProvider struct {
 	BondAddress *string `json:"bond_address,omitempty"`
 	Bond *string `json:"bond,omitempty"`
+	// the share of provider rewards to pay out automatically - `0` means no reward split
+	Bps *int64 `json:"bps,omitempty"`
+	// either empty, a THORChain address, or a THORName
+	PayoutTarget *string `json:"payout_target,omitempty"`
 }
 
 // NewNodeBondProvider instantiates a new NodeBondProvider object
@@ -101,6 +105,70 @@ func (o *NodeBondProvider) SetBond(v string) {
 	o.Bond = &v
 }
 
+// GetBps returns the Bps field value if set, zero value otherwise.
+func (o *NodeBondProvider) GetBps() int64 {
+	if o == nil || o.Bps == nil {
+		var ret int64
+		return ret
+	}
+	return *o.Bps
+}
+
+// GetBpsOk returns a tuple with the Bps field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *NodeBondProvider) GetBpsOk() (*int64, bool) {
+	if o == nil || o.Bps == nil {
+		return nil, false
+	}
+	return o.Bps, true
+}
+
+// HasBps returns a boolean if a field has been set.
+func (o *NodeBondProvider) HasBps() bool {
+	if o != nil && o.Bps != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetBps gets a reference to the given int64 and assigns it to the Bps field.
+func (o *NodeBondProvider) SetBps(v int64) {
+	o.Bps = &v
+}
+
+// GetPayoutTarget returns the PayoutTarget field value if set, zero value otherwise.
+func (o *NodeBondProvider) GetPayoutTarget() string {
+	if o == nil || o.PayoutTarget == nil {
+		var ret string
+		return ret
+	}
+	return *o.PayoutTarget
+}
+
+// GetPayoutTargetOk returns a tuple with the PayoutTarget field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *NodeBondProvider) GetPayoutTargetOk() (*string, bool) {
+	if o == nil || o.PayoutTarget == nil {
+		return nil, false
+	}
+	return o.PayoutTarget, true
+}
+
+// HasPayoutTarget returns a boolean if a field has been set.
+func (o *NodeBondProvider) HasPayoutTarget() bool {
+	if o != nil && o.PayoutTarget != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetPayoutTarget gets a reference to the given string and assigns it to the PayoutTarget field.
+func (o *NodeBondProvider) SetPayoutTarget(v string) {
+	o.PayoutTarget = &v
+}
+
 func (o NodeBondProvider) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.BondAddress != nil {
@@ -108,6 +176,12 @@ func (o NodeBondProvider) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if o.Bond != nil {
 		toSerialize["bond"] = o.Bond
+	}
+	if o.Bps != nil {
+		toSerialize["bps"] = o.Bps
+	}
+	if o.PayoutTarget != nil {
+		toSerialize["payout_target"] = o.PayoutTarget
 	}
 	return json.Marshal(toSerialize)
 }

@@ -102,6 +102,7 @@ See [Constants and Mimirs](../mimir.md#economics) for current network settings.
 ### Additional Points
 
 - Gas reimbursements and outbound fees generally balance each other over time, ensured by the dynamic [Outbound Fee Multiplier (OFM)](./fees.md#4-outbound-fee).
+- When enabled by Mimir, bond provider yield auto-claim pays the configured share of each reward distribution and rebonds the remainder.
 - POL funding prioritises RUNEPool, with the Reserve acting only as fallback.
 - System income (swap fees) is distributed immediately to developers, burns, pools, and nodes, rather than being retained by the Reserve.
 

@@ -176,6 +176,7 @@ Operational notes:
 - `ValidatorMaxRewardRatio`\*: the ratio to MinimumBondInRune at which validators stop receiving rewards proportional to their bond
 - `MaxBondProviders`\*: Maximum number of bond providers per mode
 - `NodeOperatorFee`\*: Minimum node operator fee
+- `BondYieldEnabled`\*: Enables automatic bond-yield payouts during reward distribution
 - `SignerConcurrency`\*: Number of concurrent signers for active and retiring vaults
 
 ### Slashing Management

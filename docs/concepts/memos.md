@@ -49,6 +49,7 @@ The following functions can be put into a memo:
 1. [**DEPOSIT RUNEPool**](memos.md#deposit-runepool)
 1. [**WITHDRAW RUNEPool**](memos.md#withdraw-runepool)
 1. [**BOND**, **UNBOND**, **REBOND** & **LEAVE**](memos.md#bond-unbond-rebond-and-leave)
+1. [**BONDYIELD**](memos.md#bond-yield)
 1. [**MAINT** (Maintenance Mode)](memos.md#maintenance-mode)
 1. [**OPERATOR Rotate**](memos.md#operator-rotate)
 1. [**DONATE** & **RESERVE**](memos.md#donate--reserve)
@@ -625,6 +626,44 @@ Migrate bonded RUNE to a different whitelisted address on the same node
 - `UNBOND:thor1x2whgc2nt665y0kc44uywhynazvp0l8tp0vtu6:750000000000`
 - `LEAVE:thor1hlhdm0ngr2j4lt8tt8wuvqxz6aus58j57nxnps`
 
+### Bond Yield
+
+Configure automatic payouts from a bond provider's future reward share. Bond Yield does not withdraw existing bond or pay accrued yield when the memo is submitted. At reward distribution, the configured share is paid out and the remainder is added to the provider's bond. The feature must be enabled by the `BondYieldEnabled` Mimir.
+
+**`BONDYIELD:NODEADDR:BPS:PAYOUTTARGET`**
+
+| Parameter       | Notes                                                                  | Conditions                                                                                                                                           |
+| --------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Payload         | None required.                                                         | Use `MsgDeposit`; a non-zero coin amount is rejected.                                                                                                |
+| `BONDYIELD`     | The Bond Yield configuration handler.                                  |                                                                                                                                                      |
+| `:NODEADDR`     | The node whose provider payout configuration is being changed.         | The node must be `Active`, `Standby`, or `Ready`.                                                                                                    |
+| `:BPS`          | Basis-point share of future provider rewards to pay out automatically. | Required integer from `0` to `10000`. For example, `4000` pays out 40% and rebonds 60%. `0` disables Bond Yield and clears the stored payout target. |
+| `:PAYOUTTARGET` | A THORChain address or THORName used for the automatic payout.         | Optional. The transaction must be sent by an existing bond provider for the node. THORNames must exist and be owned by that provider.                |
+
+The node operator fee is deducted before rewards are allocated among bond providers. Bond Yield then applies to the submitting provider's allocated reward:
+
+- `payout amount = provider reward share × BPS / 10000`
+- `rebonded amount = provider reward share - payout amount`
+
+If a payout fails, its amount is rebonded during the same reward distribution cycle.
+
+Payout targets behave as follows:
+
+- No stored target pays native RUNE directly to the bond provider.
+- A THORChain address pays native RUNE to that address. Network module addresses are not allowed.
+- A THORName without a preferred asset pays native RUNE to its THORChain alias, or to its owner when no THORChain alias is set.
+- A THORName with a preferred asset credits the owner's affiliate collector; conversion and delivery then follow the preferred-asset collector rules.
+- THORName ownership is checked both when configuring the target and when making a payout.
+
+For a non-zero BPS, omitting `PAYOUTTARGET` or leaving it empty preserves the currently stored target. If no target was previously stored, the payout goes directly to the provider. To clear an existing target while keeping Bond Yield enabled, send two transactions: first `BONDYIELD:NODEADDR:0`, then `BONDYIELD:NODEADDR:BPS` with the desired non-zero BPS. A target supplied with BPS `0` is ignored and cleared.
+
+**Examples:**
+
+- `BONDYIELD:thor19m4kqulyqvya339jfja84h6qp8tkjgxuxa4n4a:4000` &mdash; pay out 40% while preserving the current target; use the provider address when no target is stored.
+- `BONDYIELD:thor19m4kqulyqvya339jfja84h6qp8tkjgxuxa4n4a:4000:thor1x2whgc2nt665y0kc44uywhynazvp0l8tp0vtu6` &mdash; pay 40% as native RUNE to a THORChain address.
+- `BONDYIELD:thor19m4kqulyqvya339jfja84h6qp8tkjgxuxa4n4a:4000:yieldname` &mdash; pay 40% through a provider-owned THORName.
+- `BONDYIELD:thor19m4kqulyqvya339jfja84h6qp8tkjgxuxa4n4a:0` &mdash; disable automatic payouts and clear the stored target.
+
 ### Maintenance Mode
 
 Toggle a node's maintenance flag. When in maintenance mode, the node is excluded from churn cycles and will not be slashed for not signing. The node operator sends this as a `MsgDeposit`.
@@ -646,6 +685,8 @@ Toggle a node's maintenance flag. When in maintenance mode, the node is excluded
 **`OPERATOR:NEWOPADDR`**
 
 The operator address can send a `OPERATOR` memo to change the operator address for all their nodes. No nodes for the old or new operator can be active at the time of operator rotation. Operator rotation can only occur in the first half of churn cycle.
+
+Operator rotation changes the controlling address but preserves the existing bond-provider record, including any Bond Yield BPS and payout target. Review and update those settings from the new operator address before the node becomes active again when the payout destination should also change.
 
 | Parameter    | Notes                        | Extra             |
 | ------------ | ---------------------------- | ----------------- |

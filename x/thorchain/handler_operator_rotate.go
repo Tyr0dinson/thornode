@@ -139,6 +139,8 @@ func (h OperatorRotateHandler) rotate(ctx cosmos.Context, operator cosmos.AccAdd
 	updated := false
 	for i, provider := range bp.Providers {
 		if provider.BondAddress.Equals(currentOperator) {
+			// Rotation changes the controlling key for the existing operator provider;
+			// preserve its bond and payout configuration.
 			bp.Providers[i].BondAddress = operator
 			updated = true
 		}

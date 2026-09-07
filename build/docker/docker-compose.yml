@@ -54,6 +54,8 @@ x-bifrost-common-depends-on: &bifrost-common-depends-on
     condition: service_healthy
   polkadot:
     condition: service_healthy
+  solana:
+    condition: service_started
   tron-supernode:
     condition: service_started
   tron-fullnode:
