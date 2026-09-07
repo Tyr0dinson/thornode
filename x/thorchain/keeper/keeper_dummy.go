@@ -954,6 +954,12 @@ func (k KVStoreDummy) GetLastReferenceNumber(ctx cosmos.Context, asset common.As
 
 func (k KVStoreDummy) SetLastReferenceNumber(ctx cosmos.Context, asset common.Asset, ref string) {}
 
+func (k KVStoreDummy) GetReferenceMemoWindow(ctx cosmos.Context, _ common.Asset) (int64, int64, int64, int64) {
+	return 0, 0, 0, 0
+}
+
+func (k KVStoreDummy) SetReferenceMemoWindow(ctx cosmos.Context, _ common.Asset, _, _, _, _ int64) {}
+
 func (k KVStoreDummy) GetSwapperCloutIterator(ctx cosmos.Context) cosmos.Iterator    { return nil }
 func (k KVStoreDummy) SetSwapperClout(ctx cosmos.Context, record SwapperClout) error { return kaboom }
 

@@ -1108,8 +1108,10 @@ func (qs queryServer) queryNode(ctx cosmos.Context, req *types.QueryNodeRequest)
 		providers = make([]*types.NodeBondProvider, len(bp.Providers))
 		for i, p := range bp.Providers {
 			providers[i] = &types.NodeBondProvider{
-				BondAddress: p.BondAddress.String(),
-				Bond:        p.Bond.String(),
+				BondAddress:  p.BondAddress.String(),
+				Bond:         p.Bond.String(),
+				Bps:          p.Bps,
+				PayoutTarget: p.PayoutTarget,
 			}
 		}
 	}
@@ -1327,8 +1329,10 @@ func (qs queryServer) queryNodes(ctx cosmos.Context, _ *types.QueryNodesRequest)
 			providers = make([]*types.NodeBondProvider, len(bp.Providers))
 			for i := range bp.Providers {
 				providers[i] = &types.NodeBondProvider{
-					BondAddress: bp.Providers[i].BondAddress.String(),
-					Bond:        bp.Providers[i].Bond.String(),
+					BondAddress:  bp.Providers[i].BondAddress.String(),
+					Bond:         bp.Providers[i].Bond.String(),
+					Bps:          bp.Providers[i].Bps,
+					PayoutTarget: bp.Providers[i].PayoutTarget,
 				}
 			}
 		}

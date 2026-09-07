@@ -75,7 +75,12 @@ ifeq (test,$(firstword $(MAKECMDGOALS)))
 endif
 
 TEST_DIR?=${TEST_PATHS}
-BUILD_FLAGS := -ldflags '$(ldflags)' -tags ${TAG} -trimpath
+# -buildmode=pie builds a position-independent executable (ET_DYN) so host ASLR can
+# randomize the binary's own text/data, not just the shared libraries it loads. It
+# needs external linking, which the cgo build (wasmvm) already uses, and the release
+# toolchain (golang bookworm image) ships gcc. Covers the shipped
+# thornode/bifrost/recover-keyshare-backup (BINARIES) via the build/install targets.
+BUILD_FLAGS := -ldflags '$(ldflags)' -tags ${TAG} -trimpath -buildmode=pie
 PARALLELISM ?= 1
 TEST_BUILD_FLAGS := -parallel=$(PARALLELISM) -tags=mocknet
 ifdef RUN
@@ -380,7 +385,7 @@ _test-regression:
 test-simulation: build-mocknet reset-mocknet test-simulation-no-reset
 
 TEST_SIMULATION_STAGES ?= seed,bootstrap,xmr-coverage,arb,swaps,memoless-swaps,consolidate,inactive-vault-refunds,memoless-refunds,solvency,ragnarok
-TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,swaps,memoless-swaps,inactive-vault-refunds,memoless-refunds,solvency,xmr-post-churn,ragnarok
+TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,swaps,memoless-swaps,inactive-vault-refunds,memoless-refunds,bond-yield,solvency,xmr-post-churn,ragnarok
 
 test-simulation-cluster: build-test-simulation build-mocknet-cluster reset-mocknet-cluster
 	@docker stop docker-midgard-1 docker-midgard-db-1 >/dev/null 2>&1 || true

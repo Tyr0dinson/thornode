@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"fmt"
 	"os"
 	"regexp"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -298,4 +300,41 @@ func (GenesisTestSuite) TestGenesisDynamicFeeRoundtrip(c *C) {
 	c.Check(len(reExported.DynamicFeeRecords), Equals, 1)
 	c.Check(len(reExported.DynamicFeeAccumulators), Equals, 1)
 	c.Check(reExported.LastObservedDynamicFeeEpochBlocks, Equals, int64(1337))
+}
+
+func (GenesisTestSuite) TestGenesisReferenceMemoWindowRoundTrip(c *C) {
+	SetupConfigForTest()
+
+	srcCtx, srcMgr := setupManagerForTest(c)
+	srcCtx = srcCtx.WithBlockHeight(1000)
+	ttl := srcMgr.Keeper().GetConfigInt64(srcCtx, constants.MemolessTxnTTL)
+
+	for i := 1; i <= 3; i++ {
+		srcMgr.Keeper().SetReferenceMemo(srcCtx, types.ReferenceMemo{
+			Asset:     common.BTCAsset,
+			Reference: fmt.Sprintf("0000%d", i),
+			Memo:      "+:BTC.BTC",
+			Height:    srcCtx.BlockHeight(),
+		})
+	}
+	srcMgr.Keeper().SetReferenceMemo(srcCtx, types.ReferenceMemo{
+		Asset:     common.ETHAsset,
+		Reference: "00001",
+		Memo:      "+:ETH.ETH",
+		Height:    srcCtx.BlockHeight(),
+	})
+
+	exported := ExportGenesis(srcCtx, srcMgr.Keeper())
+
+	dstCtx, dstMgr := setupManagerForTest(c)
+	dstCtx = dstCtx.WithBlockHeight(srcCtx.BlockHeight())
+	InitGenesis(dstCtx, dstMgr.Keeper(), exported)
+
+	// the window is not a genesis field, it is rebuilt from the imported memos so
+	// the congestion price does not reset to "empty ring" across a fork
+	c.Check(memolessLiveRefs(dstCtx, dstMgr.Keeper(), common.BTCAsset, ttl), Equals, int64(3))
+	c.Check(memolessLiveRefs(dstCtx, dstMgr.Keeper(), common.ETHAsset, ttl), Equals, int64(1))
+
+	// and it decays away as the imported memos expire
+	c.Check(memolessLiveRefs(dstCtx.WithBlockHeight(dstCtx.BlockHeight()+ttl), dstMgr.Keeper(), common.BTCAsset, ttl), Equals, int64(0))
 }

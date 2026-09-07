@@ -16,6 +16,14 @@ type ValidatorMgrTestSuite struct{}
 
 var _ = Suite(&ValidatorMgrTestSuite{})
 
+type bondYieldRewardTestGasManager struct {
+	*DummyGasManager
+}
+
+func (bondYieldRewardTestGasManager) GetAssetOutboundFee(_ cosmos.Context, _ common.Asset, _ bool) (cosmos.Uint, error) {
+	return cosmos.NewUint(common.One), nil
+}
+
 func (vts *ValidatorMgrTestSuite) SetUpSuite(_ *C) {
 	SetupConfigForTest()
 }
@@ -1206,8 +1214,12 @@ func (vts *ValidatorMgrTestSuite) TestWeightedBondReward(c *C) {
 	ctx = ctx.WithBlockHeight(20)
 
 	mgr := NewDummyMgrWithKeeper(k)
-	networkMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	eventMgr, err := GetEventManager(GetCurrentVersion())
+	c.Assert(err, IsNil)
+	mgr.eventMgr = eventMgr
+	networkMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), eventMgr)
 	c.Assert(networkMgr, NotNil)
+	k.SetMimir(ctx, constants.BondYieldEnabled.String(), 1)
 
 	na1 := GetRandomValidatorNode(NodeActive)
 	na1.Bond = cosmos.NewUint(4 * common.One)
@@ -1245,6 +1257,355 @@ func (vts *ValidatorMgrTestSuite) TestWeightedBondReward(c *C) {
 	// na3.Bond is below the hard cap, it should have a smaller reward accordingly (2/8ths)
 	// (5% of 25000000 is 1250000)
 	c.Check(nodeOperator3Balance.AmountOf(common.RuneNative.Native()).String(), Equals, strconv.FormatInt(1250000, 10))
+
+	bondYieldEvents := 0
+	for _, event := range ctx.EventManager().Events() {
+		if event.Type != "bond_yield" {
+			continue
+		}
+		bondYieldEvents++
+	}
+	c.Check(bondYieldEvents, Equals, 0)
+}
+
+func (vts *ValidatorMgrTestSuite) TestBondYieldDisabledRebondsRewards(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(20)
+
+	mgr := NewDummyMgrWithKeeper(k)
+	eventMgr, err := GetEventManager(GetCurrentVersion())
+	c.Assert(err, IsNil)
+	mgr.eventMgr = eventMgr
+	networkMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), eventMgr)
+	c.Assert(networkMgr, NotNil)
+
+	na := GetRandomValidatorNode(NodeActive)
+	na.Bond = cosmos.NewUint(4 * common.One)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	network, _ := networkMgr.k.GetNetwork(ctx)
+	network.BondRewardRune = cosmos.NewUint(1 * common.One)
+	c.Assert(mgr.Keeper().SetNetwork(ctx, network), IsNil)
+
+	FundModule(c, ctx, mgr.Keeper(), BondName, 10*common.One)
+
+	c.Assert(networkMgr.distributeBondReward(ctx, mgr), IsNil)
+
+	updated, err := mgr.Keeper().GetNodeAccount(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(updated.Bond.GT(na.Bond), Equals, true)
+
+	bp, err := mgr.Keeper().GetBondProviders(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	providerAcc, err := na.BondAddress.AccAddress()
+	c.Assert(err, IsNil)
+	provider := bp.Get(providerAcc)
+	c.Assert(provider.IsEmpty(), Equals, false)
+
+	for _, event := range ctx.EventManager().Events() {
+		c.Check(event.Type, Not(Equals), "bond_yield")
+	}
+}
+
+func (vts *ValidatorMgrTestSuite) TestBondRewardNormalizesLegacyProviderOrdering(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(20)
+
+	mgr := NewDummyMgrWithKeeper(k)
+	eventMgr, err := GetEventManager(GetCurrentVersion())
+	c.Assert(err, IsNil)
+	mgr.eventMgr = eventMgr
+	networkMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), eventMgr)
+	c.Assert(networkMgr, NotNil)
+
+	na := GetRandomValidatorNode(NodeActive)
+	na.Bond = cosmos.NewUint(4 * common.One)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	operator, err := na.BondAddress.AccAddress()
+	c.Assert(err, IsNil)
+	provider := GetRandomBech32Addr()
+	bp := NewBondProviders(na.NodeAddress)
+	bp.Providers = []BondProvider{
+		NewBondProvider(provider),
+		NewBondProvider(operator),
+	}
+	bp.Bond(cosmos.NewUint(common.One), provider)
+	bp.Bond(cosmos.NewUint(3*common.One), operator)
+	c.Assert(k.SetBondProviders(ctx, bp), IsNil)
+
+	network, err := k.GetNetwork(ctx)
+	c.Assert(err, IsNil)
+	network.BondRewardRune = cosmos.NewUint(common.One)
+	c.Assert(k.SetNetwork(ctx, network), IsNil)
+	FundModule(c, ctx, k, BondName, 5*common.One)
+
+	c.Assert(networkMgr.distributeBondReward(ctx, mgr), IsNil)
+
+	stored, err := k.GetBondProviders(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(stored.Providers, HasLen, 2)
+	c.Check(stored.Providers[0].BondAddress.Equals(operator), Equals, true)
+	c.Check(stored.Providers[1].BondAddress.Equals(provider), Equals, true)
+
+	updated, err := k.GetNodeAccount(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(updated.Bond.Equal(cosmos.NewUint(5*common.One)), Equals, true)
+}
+
+func (vts *ValidatorMgrTestSuite) TestBondYieldAutoClaimPaysAndRebondsRemainder(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(20)
+
+	mgr := NewDummyMgrWithKeeper(k)
+	eventMgr, err := GetEventManager(GetCurrentVersion())
+	c.Assert(err, IsNil)
+	mgr.eventMgr = eventMgr
+	networkMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), eventMgr)
+	c.Assert(networkMgr, NotNil)
+	k.SetMimir(ctx, constants.BondYieldEnabled.String(), 1)
+
+	initialBond := cosmos.NewUint(4 * common.One)
+	reward := cosmos.NewUint(common.One)
+	expectedPayout := cosmos.NewUint(40 * common.One / 100)
+	expectedRebond := cosmos.NewUint(60 * common.One / 100)
+	expectedBond := initialBond.Add(expectedRebond)
+
+	na := GetRandomValidatorNode(NodeActive)
+	na.Bond = initialBond
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	providerAcc, err := na.BondAddress.AccAddress()
+	c.Assert(err, IsNil)
+	bp := NewBondProviders(na.NodeAddress)
+	bp.Providers = []BondProvider{NewBondProvider(providerAcc)}
+	bp.Bond(na.Bond, providerAcc)
+	c.Assert(bp.SetAutoClaim(providerAcc, 4000, ""), Equals, true)
+	c.Assert(mgr.Keeper().SetBondProviders(ctx, bp), IsNil)
+
+	network, _ := networkMgr.k.GetNetwork(ctx)
+	network.BondRewardRune = reward
+	c.Assert(mgr.Keeper().SetNetwork(ctx, network), IsNil)
+
+	FundModule(c, ctx, mgr.Keeper(), BondName, initialBond.Add(reward).Uint64())
+	assertBondInvariantHolds(c, ctx, mgr.Keeper().InvariantRoutes())
+
+	c.Assert(networkMgr.distributeBondReward(ctx, mgr), IsNil)
+
+	updated, err := mgr.Keeper().GetNodeAccount(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(updated.Bond.Equal(expectedBond), Equals, true)
+
+	stored, err := mgr.Keeper().GetBondProviders(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	provider := stored.Get(providerAcc)
+	c.Assert(provider.IsEmpty(), Equals, false)
+	c.Check(provider.Bond.Equal(expectedBond), Equals, true)
+	c.Check(provider.Bps, Equals, uint64(4000))
+	c.Check(provider.PayoutTarget, Equals, "")
+
+	balance := mgr.Keeper().GetBalanceOf(ctx, providerAcc, common.RuneNative).Amount
+	c.Check(balance.Equal(cosmos.NewInt(int64(expectedPayout.Uint64()))), Equals, true)
+
+	updatedNetwork, err := mgr.Keeper().GetNetwork(ctx)
+	c.Assert(err, IsNil)
+	c.Check(updatedNetwork.BondRewardRune.IsZero(), Equals, true)
+	c.Check(mgr.Keeper().GetRuneBalanceOfModule(ctx, BondName).Equal(expectedBond), Equals, true)
+	assertBondInvariantHolds(c, ctx, mgr.Keeper().InvariantRoutes())
+
+	attrs := singleBondYieldEventAttributes(c, ctx)
+	c.Check(attrs["provider_address"], Equals, providerAcc.String())
+	c.Check(attrs["reward_share"], Equals, reward.String())
+	c.Check(attrs["payout_amount"], Equals, expectedPayout.String())
+	c.Check(attrs["rebonded_amount"], Equals, expectedRebond.String())
+	c.Check(attrs["bps"], Equals, "4000")
+	c.Check(attrs["payout_target"], Equals, "")
+}
+
+func (vts *ValidatorMgrTestSuite) TestBondYieldPreferredAssetPayoutAtRewardTime(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(20)
+
+	mgr := NewDummyMgrWithKeeper(k)
+	mgr.gasMgr = bondYieldRewardTestGasManager{DummyGasManager: NewDummyGasManager()}
+	eventMgr, err := GetEventManager(GetCurrentVersion())
+	c.Assert(err, IsNil)
+	mgr.eventMgr = eventMgr
+	networkMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), eventMgr)
+	c.Assert(networkMgr, NotNil)
+	k.SetMimir(ctx, constants.BondYieldEnabled.String(), 1)
+
+	initialBond := cosmos.NewUint(4 * common.One)
+	reward := cosmos.NewUint(common.One)
+	expectedPayout := cosmos.NewUint(40 * common.One / 100)
+	expectedRebond := cosmos.NewUint(60 * common.One / 100)
+	expectedBond := initialBond.Add(expectedRebond)
+
+	na := GetRandomValidatorNode(NodeActive)
+	na.Bond = initialBond
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	providerAcc, err := na.BondAddress.AccAddress()
+	c.Assert(err, IsNil)
+	const payoutTarget = "yieldname"
+	bp := NewBondProviders(na.NodeAddress)
+	bp.Providers = []BondProvider{NewBondProvider(providerAcc)}
+	bp.Bond(initialBond, providerAcc)
+	c.Assert(bp.SetAutoClaim(providerAcc, 4000, payoutTarget), Equals, true)
+	c.Assert(k.SetBondProviders(ctx, bp), IsNil)
+
+	tn := NewTHORName(payoutTarget, 1000, []THORNameAlias{
+		{Chain: common.BTCChain, Address: GetRandomBTCAddress()},
+	})
+	tn.Owner = providerAcc
+	tn.PreferredAsset = common.BTCAsset
+	tn.PreferredAssetOutboundFeeMultiplier = 1
+	k.SetTHORName(ctx, tn)
+
+	network, err := k.GetNetwork(ctx)
+	c.Assert(err, IsNil)
+	network.BondRewardRune = reward
+	c.Assert(k.SetNetwork(ctx, network), IsNil)
+
+	FundModule(c, ctx, k, BondName, initialBond.Add(reward).Uint64())
+	assertBondInvariantHolds(c, ctx, k.InvariantRoutes())
+
+	c.Assert(networkMgr.payNodeAccountBondAward(
+		ctx,
+		na.ActiveBlockHeight,
+		na,
+		reward,
+		initialBond,
+		initialBond,
+		mgr,
+	), IsNil)
+
+	updated, err := k.GetNodeAccount(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(updated.Bond.Equal(expectedBond), Equals, true)
+
+	stored, err := k.GetBondProviders(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	provider := stored.Get(providerAcc)
+	c.Assert(provider.IsEmpty(), Equals, false)
+	c.Check(provider.Bond.Equal(expectedBond), Equals, true)
+	c.Check(provider.Bps, Equals, uint64(4000))
+	c.Check(provider.PayoutTarget, Equals, payoutTarget)
+
+	collector, err := k.GetAffiliateCollector(ctx, providerAcc)
+	c.Assert(err, IsNil)
+	c.Check(collector.OwnerAddress.Equals(providerAcc), Equals, true)
+	c.Check(collector.RuneAmount.Equal(expectedPayout), Equals, true)
+	c.Check(k.GetRuneBalanceOfModule(ctx, AffiliateCollectorName).Equal(expectedPayout), Equals, true)
+	c.Check(k.GetBalanceOf(ctx, providerAcc, common.RuneNative).Amount.IsZero(), Equals, true)
+
+	updatedNetwork, err := k.GetNetwork(ctx)
+	c.Assert(err, IsNil)
+	c.Check(updatedNetwork.BondRewardRune.IsZero(), Equals, true)
+	c.Check(k.GetRuneBalanceOfModule(ctx, BondName).Equal(expectedBond), Equals, true)
+	assertBondInvariantHolds(c, ctx, k.InvariantRoutes())
+
+	attrs := singleBondYieldEventAttributes(c, ctx)
+	c.Check(attrs["provider_address"], Equals, providerAcc.String())
+	c.Check(attrs["reward_share"], Equals, reward.String())
+	c.Check(attrs["payout_amount"], Equals, expectedPayout.String())
+	c.Check(attrs["rebonded_amount"], Equals, expectedRebond.String())
+	c.Check(attrs["bps"], Equals, "4000")
+	c.Check(attrs["payout_target"], Equals, payoutTarget)
+}
+
+func assertBondInvariantHolds(c *C, ctx cosmos.Context, routes []common.InvariantRoute) {
+	for _, route := range routes {
+		if route.Route != "bond" {
+			continue
+		}
+		messages, broken := route.Invariant(ctx)
+		c.Check(broken, Equals, false, Commentf("bond invariant messages: %v", messages))
+		c.Check(messages, IsNil)
+		return
+	}
+	c.Fatalf("bond invariant route not found")
+}
+
+func singleBondYieldEventAttributes(c *C, ctx cosmos.Context) map[string]string {
+	var result map[string]string
+	for _, event := range ctx.EventManager().Events() {
+		if event.Type != "bond_yield" {
+			continue
+		}
+		c.Assert(result, IsNil, Commentf("expected exactly one bond_yield event"))
+		result = make(map[string]string)
+		for _, attr := range event.Attributes {
+			result[attr.Key] = attr.Value
+		}
+	}
+	c.Assert(result, NotNil, Commentf("expected one bond_yield event"))
+	return result
+}
+
+func (vts *ValidatorMgrTestSuite) TestBondYieldFailedPayoutRebondsFallback(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(20)
+
+	mgr := NewDummyMgrWithKeeper(k)
+	eventMgr, err := GetEventManager(GetCurrentVersion())
+	c.Assert(err, IsNil)
+	mgr.eventMgr = eventMgr
+	networkMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), eventMgr)
+	c.Assert(networkMgr, NotNil)
+	k.SetMimir(ctx, constants.BondYieldEnabled.String(), 1)
+
+	na := GetRandomValidatorNode(NodeActive)
+	na.Bond = cosmos.NewUint(4 * common.One)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	providerAcc, err := na.BondAddress.AccAddress()
+	c.Assert(err, IsNil)
+	payoutTarget := k.GetModuleAccAddress(AsgardName).String()
+	bp := NewBondProviders(na.NodeAddress)
+	bp.Providers = []BondProvider{NewBondProvider(providerAcc)}
+	bp.Bond(na.Bond, providerAcc)
+	c.Assert(bp.SetAutoClaim(providerAcc, 4000, payoutTarget), Equals, true)
+	c.Assert(k.SetBondProviders(ctx, bp), IsNil)
+
+	reward := cosmos.NewUint(1 * common.One)
+	network, err := k.GetNetwork(ctx)
+	c.Assert(err, IsNil)
+	network.BondRewardRune = reward
+	c.Assert(k.SetNetwork(ctx, network), IsNil)
+
+	FundModule(c, ctx, k, BondName, 10*common.One)
+
+	c.Assert(networkMgr.distributeBondReward(ctx, mgr), IsNil)
+
+	updated, err := k.GetNodeAccount(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(updated.Bond.Equal(na.Bond.Add(reward)), Equals, true)
+
+	stored, err := k.GetBondProviders(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	provider := stored.Get(providerAcc)
+	c.Check(provider.Bond.Equal(na.Bond.Add(reward)), Equals, true)
+	c.Check(k.GetBalanceOf(ctx, providerAcc, common.RuneNative).Amount.IsZero(), Equals, true)
+
+	var bondYieldAttrs map[string]string
+	for _, event := range ctx.EventManager().Events() {
+		if event.Type != "bond_yield" {
+			continue
+		}
+		c.Check(bondYieldAttrs, IsNil, Commentf("expected exactly one bond_yield event"))
+		bondYieldAttrs = make(map[string]string)
+		for _, attr := range event.Attributes {
+			bondYieldAttrs[attr.Key] = attr.Value
+		}
+	}
+	c.Assert(bondYieldAttrs, NotNil)
+	c.Check(bondYieldAttrs["provider_address"], Equals, providerAcc.String())
+	c.Check(bondYieldAttrs["reward_share"], Equals, reward.String())
+	c.Check(bondYieldAttrs["payout_amount"], Equals, cosmos.ZeroUint().String())
+	c.Check(bondYieldAttrs["rebonded_amount"], Equals, reward.String())
+	c.Check(bondYieldAttrs["bps"], Equals, "4000")
+	c.Check(bondYieldAttrs["payout_target"], Equals, payoutTarget)
 }
 
 func (vts *ValidatorMgrTestSuite) TestNodeAccountPreflightCheckMaintenance(c *C) {

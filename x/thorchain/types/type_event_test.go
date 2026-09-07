@@ -213,6 +213,15 @@ func (EventSuite) TestEventBond(c *C) {
 	c.Check(events, NotNil)
 }
 
+func (EventSuite) TestEventBondYield(c *C) {
+	e := NewEventBondYield(GetRandomBech32Addr(), GetRandomBech32Addr(), cosmos.NewUint(100), cosmos.NewUint(25), cosmos.NewUint(75), 2500, "yieldname")
+	c.Check(e.Type(), Equals, "bond_yield")
+	events, err := e.Events()
+	c.Check(err, IsNil)
+	c.Assert(events, HasLen, 1)
+	c.Check(events[0].Attributes, HasLen, 7)
+}
+
 func (EventSuite) TestEventReBond(c *C) {
 	tx := GetRandomTx()
 	amount := cosmos.NewUint(68468161)

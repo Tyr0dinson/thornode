@@ -477,6 +477,7 @@ services:
       - tron-supernode
       - tron-fullnode
       - thornode
+      - solana
       - polygon
     environment:
       <<: *bifrost-environment
@@ -513,6 +514,7 @@ services:
       - tron-supernode
       - tron-fullnode
       - thornode
+      - solana
       - polygon
     environment:
       <<: *bifrost-environment
@@ -549,6 +551,7 @@ services:
       - tron-supernode
       - tron-fullnode
       - thornode
+      - solana
       - polygon
     environment:
       <<: *bifrost-environment

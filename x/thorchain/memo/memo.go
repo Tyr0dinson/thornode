@@ -54,6 +54,7 @@ const (
 	TxMaint
 	TxRebond
 	TxOperatorRotate
+	TxBondYield
 )
 
 var stringToTxTypeMap = map[string]TxType{
@@ -101,6 +102,7 @@ var stringToTxTypeMap = map[string]TxType{
 	"tcy-":        TxTCYUnstake,
 	"maint":       TxMaint,
 	"operator":    TxOperatorRotate,
+	"bondyield":   TxBondYield,
 }
 
 var txToStringMap = map[TxType]string{
@@ -136,6 +138,7 @@ var txToStringMap = map[TxType]string{
 	TxTCYStake:               "tcy+",
 	TxTCYUnstake:             "tcy-",
 	TxMaint:                  "maint",
+	TxBondYield:              "bondyield",
 }
 
 // converts a string into a txType
@@ -180,7 +183,8 @@ func (tx TxType) IsInbound() bool {
 		TxTCYClaim,
 		TxTCYStake,
 		TxTCYUnstake,
-		TxOperatorRotate:
+		TxOperatorRotate,
+		TxBondYield:
 		return true
 	default:
 		return false
@@ -227,6 +231,7 @@ func (tx TxType) HasOutbound() bool {
 		TxReserve,
 		TxMigrate,
 		TxMaint,
+		TxBondYield,
 		TxRagnarok:
 		return false
 	default:
@@ -376,6 +381,18 @@ func parseTradeTarget(limit string) (cosmos.Uint, error) {
 	f, _, err := big.ParseFloat(limit, 10, 0, big.ToZero)
 	if err != nil {
 		return cosmos.ZeroUint(), err
+	}
+	// Bound the value before f.Int materializes the integer: big.Float keeps
+	// the value in scientific form, so "1e300000000" parses cheaply but f.Int
+	// would allocate the full 10^exp integer (hundreds of MB) only for
+	// NewUintFromBigInt to reject it. Any finite value past 2^256-1 is an invalid
+	// Uint regardless. An exponent past int32 (e.g. "1e700000000") overflows to
+	// ±Inf, for which f.Int leaves the integer untouched at zero; that would
+	// silently become a zero limit, i.e. no price protection, so reject it.
+	// Negatives would panic in NewUintFromBigInt; reject them explicitly rather
+	// than rely on the memo parser's recover.
+	if f.IsInf() || f.Sign() < 0 || f.MantExp(nil) > 256 {
+		return cosmos.ZeroUint(), fmt.Errorf("price limit %q is out of range", limit)
 	}
 	i := new(big.Int)
 	f.Int(i) // Note: fractional part will be discarded
