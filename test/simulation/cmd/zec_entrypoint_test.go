@@ -12,7 +12,7 @@ import (
 
 // Warm-up and ongoing mining must share one sequential single-block loop.
 func TestZecEntrypointMinesSingleBlocksSequentially(t *testing.T) {
-	for _, mode := range []string{"success", "rpc-error", "timeout"} {
+	for _, mode := range []string{"success", "rpc-error", "timeout", "http-error", "transport-error"} {
 		t.Run(mode, func(t *testing.T) {
 			dir := t.TempDir()
 			write := func(name, body string) {
@@ -38,6 +38,8 @@ case "$*" in
       case "$MODE" in
         rpc-error) echo '{"error":{"code":-1,"message":"generate failed"},"result":null}'; exit 0;;
         timeout) exit 28;;
+        http-error) exit 22;;
+        transport-error) exit 7;;
       esac
     fi
     echo '{"result":["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],"error":null}';;
@@ -116,6 +118,17 @@ fi
 			} else {
 				if events() != "generate-1\n" {
 					t.Fatalf("generation continued after failure: %s", events())
+				}
+				data, err := os.ReadFile(filepath.Join(dir, "output"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := "single-block generation request failed"
+				if mode == "rpc-error" {
+					want = `single-block generation failed: {"error":{"code":-1,"message":"generate failed"},"result":null}`
+				}
+				if !strings.Contains(string(data), want) {
+					t.Fatalf("missing mining failure diagnostic %q: %s", want, data)
 				}
 			}
 		})

@@ -38,9 +38,12 @@ blocks_mined=0
 while kill -0 "$ZEBRAD_PID" 2>/dev/null; do
   # Stop on a timeout: the request could still be mining. Do not overlap it
   # with another request. HTTP 200 with a JSON-RPC error must also stop mining.
-  response=$(curl --max-time 30 -sf -X POST "$RPC_URL" \
+  if ! response=$(curl --max-time 30 -sSf -X POST "$RPC_URL" \
     -H "Content-Type: application/json" \
-    -d '{"method":"generate","params":[1],"id":1}')
+    -d '{"method":"generate","params":[1],"id":1}'); then
+    echo "single-block generation request failed; stopping mining" >&2
+    exit 1
+  fi
   if ! printf '%s' "$response" | grep -Eq '"result"[[:space:]]*:[[:space:]]*\[[[:space:]]*"[[:xdigit:]]{64}"[[:space:]]*\]'; then
     echo "single-block generation failed: $response" >&2
     exit 1
