@@ -20,7 +20,15 @@ Each chain lives in its own folder and typically inherits logic from a shared im
 | Client Folder | Purpose                 | Used For                 |
 | ------------- | ----------------------- | ------------------------ |
 | `evm/`        | Shared EVM logic        | ETH, BSC, AVAX, BASE     |
-| `utxo/`       | Shared UTXO logic       | BTC, LTC, BCH, XEC, DOGE |
+| Client Folder | Purpose                 | Used For                      |
+| ------------- | ----------------------- | ----------------------------- |
+| `evm/`        | Shared EVM logic        | BSC, AVAX, BASE, POL          |
+| `utxo/`       | Shared UTXO logic       | BTC, LTC, BCH, XEC, DOGE, ZEC |
+| `xrp/`        | XRP-specific logic      | XRP                           |
+| `tron/`       | Tron-specific logic     | TRON                          |
+| `solana/`     | Solana-specific logic   | SOL                           |
+| `gaia/`       | Cosmos SDK-based chains | ATOM, NOBLE                   |
+| `monero/`     | Monero-specific logic   | XMR                           |
 | `xrp/`        | XRP-specific logic      | XRP                      |
 | `tron/`       | Tron-specific logic     | TRON                     |
 | `solana/`     | Solana-specific logic   | SOL                      |
