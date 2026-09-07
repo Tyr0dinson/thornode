@@ -1180,3 +1180,41 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceReversedOnFinalisation(c *C)
 	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
 	c.Check(f.securityEvents(), Equals, 2)
 }
+
+// TestHandleBounceDiscoveredAfterDeliveredConsensus is the symmetric partner of
+// TestHandleBounceReversedByReorgDebits: the false -> true credit taken through
+// correctOutboundObservation once a delivered consensus has already debited.
+func (s *HandlerObservedTxOutSuite) TestHandleBounceDiscoveredAfterDeliveredConsensus(c *C) {
+	const (
+		untouched   = uint64(20000000000) // 200 ETH
+		gasOnly     = untouched - 37500
+		gasAndCoins = gasOnly - 1
+	)
+
+	f := newBouncedOutboundFixture(c, 6)
+	for i := 0; i < 4; i++ {
+		f.vote(c, i, false)
+	}
+	c.Check(f.ethBalance(c), Equals, gasAndCoins) // 4/6 delivered: debited
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
+	c.Check(f.securityEvents(), Equals, 0)
+
+	// A minority re-observing it as bounced must not credit anything back.
+	f.vote(c, 4, true)
+	f.vote(c, 5, true)
+	c.Check(f.ethBalance(c), Equals, gasAndCoins)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
+
+	// A supermajority does: the coins never left.
+	for i := 0; i < 2; i++ {
+		f.vote(c, i, true)
+	}
+	c.Check(f.ethBalance(c), Equals, gasOnly)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
+	c.Check(f.securityEvents(), Equals, 1)
+
+	// A repeat must not credit twice.
+	f.vote(c, 2, true)
+	c.Check(f.ethBalance(c), Equals, gasOnly)
+	c.Check(f.securityEvents(), Equals, 1)
+}

@@ -1048,10 +1048,15 @@ func (s *BlockScannerTestSuite) TestRouterValidation(c *C) {
 }
 
 func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
+	bouncedMimirFails := false
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		// EVMBouncedOutbound gates bounce detection; a lookup failure now fails the
 		// block, so the fixture must answer it.
 		if strings.HasPrefix(req.RequestURI, "/thorchain/mimir/key/EVMBouncedOutbound-") {
+			if bouncedMimirFails {
+				rw.WriteHeader(http.StatusInternalServerError)
+				return
+			}
 			_, err := rw.Write([]byte(`0`))
 			c.Assert(err, IsNil)
 			return
@@ -1138,7 +1143,7 @@ func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 	c.Assert(err, IsNil)
 	cfg := getConfigForTest()
 	cfg.ChainID = thorcommon.BSCChain // re-org on BSC only
-	bs, err := NewEVMScanner(cfg, storage, big.NewInt(int64(Mainnet)), ethClient, rpcClient, s.bridge, s.m, pkeyMgr, func(height int64) error {
+	bs, err := NewEVMScanner(cfg, storage, big.NewInt(int64(Mainnet)), ethClient, rpcClient, bridge, s.m, pkeyMgr, func(height int64) error {
 		return nil
 	}, nil)
 	c.Assert(err, IsNil)
@@ -1153,6 +1158,20 @@ func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 	// add one UTXO which will trigger the re-org process next
 	c.Assert(bs.blockMetaAccessor.SaveBlockMeta(0, blockMeta), IsNil)
 	bs.globalErrataQueue = make(chan stypes.ErrataBlock, 1)
+
+	// A mimir failure must abort the reorg BEFORE reprocessTxs sends erratas and
+	// rewrites the stored block metas to the new canonical hashes. Bailing out
+	// after that would lose the rescan for good: the retry would re-read the
+	// rewritten meta, see no reorg, and never re-observe the replaced blocks.
+	bouncedMimirFails = true
+	_, err = bs.processReorg(blockNew)
+	c.Assert(err, NotNil)
+	c.Check(bs.globalErrataQueue, HasLen, 0)
+	storedMeta, err := bs.blockMetaAccessor.GetBlockMeta(0)
+	c.Assert(err, IsNil)
+	c.Check(storedMeta.BlockHash, Equals, blockMeta.BlockHash)
+	bouncedMimirFails = false
+
 	reorgedBlocks, err := bs.processReorg(blockNew)
 	c.Assert(err, IsNil)
 	c.Assert(reorgedBlocks, IsNil)

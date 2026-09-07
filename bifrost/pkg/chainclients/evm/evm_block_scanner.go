@@ -864,21 +864,20 @@ func (e *EVMScanner) processReorg(header *etypes.Header) ([]stypes.TxIn, error) 
 		Str("current_parent_hash", header.ParentHash.Hex()).
 		Msg("reorg detected")
 
+	// Resolved before reprocessTxs, which sends erratas and rewrites the stored
+	// block metas to the new canonical hashes. Bailing out after that runs would
+	// lose the rescan for good: the retry re-reads the rewritten meta, sees no
+	// reorg, and never re-observes the replaced blocks. Reorgs are rare, so the
+	// occasional lookup for an empty rescan set costs nothing.
+	detectBounce, err := e.bouncedOutboundEnabled()
+	if err != nil {
+		return nil, err
+	}
+
 	// send erratas and determine the block heights to rescan
 	heights, err := e.reprocessTxs()
 	if err != nil {
 		e.logger.Err(err).Msg("fail to reprocess all txs")
-	}
-
-	// Resolved once for the whole rescan; a failure aborts the reorg handling so
-	// processBlock retries rather than re-observing the rescanned heights with
-	// bounce detection silently off. Skipped entirely when nothing is rescanned.
-	var detectBounce bool
-	if len(heights) > 0 {
-		detectBounce, err = e.bouncedOutboundEnabled()
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	// rescan heights

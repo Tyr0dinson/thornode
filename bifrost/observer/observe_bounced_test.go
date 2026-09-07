@@ -178,3 +178,49 @@ func TestDeckBounceCorrectionRetriesAfterStorageFailure(t *testing.T) {
 	require.True(t, obs.onDeck[key].TxArray[0].Bounced)
 	require.False(t, obs.onDeck[key].TxArray[0].CommittedUnFinalised)
 }
+
+// TestDeckBounceCorrectionSurvivesStaleAck is the reviewer's ack scenario at the
+// deck level: this node sent the stale verdict, corrected the deck, and only then
+// does the committed-quorum ack for the stale payload arrive. It must not clear
+// the corrected entry. The ack for the corrected payload still does.
+func TestDeckBounceCorrectionSurvivesStaleAck(t *testing.T) {
+	dir := t.TempDir()
+	obs := newBounceDeckObserver(t, dir)
+	defer func() { require.NoError(t, obs.storage.Close()) }()
+
+	vault := stypes.GetRandomPubKey()
+	vaultAddr, err := vault.GetAddress(common.ETHChain)
+	require.NoError(t, err)
+	txID := stypes.GetRandomTxHash().String()
+
+	stale := bounceDeckTxIn(txID, vault, vaultAddr, false)
+	key := TxInKey(&stale)
+	require.NoError(t, obs.processObservedTx(stale))
+
+	corrected := bounceDeckTxIn(txID, vault, vaultAddr, true)
+	corrected.TxArray[0].Memo = stale.TxArray[0].Memo
+	corrected.TxArray[0].To = stale.TxArray[0].To
+	require.NoError(t, obs.processObservedTx(corrected))
+	require.True(t, obs.onDeck[key].TxArray[0].Bounced)
+
+	item := stale.TxArray[0]
+	id, err := common.NewTxID(item.Tx)
+	require.NoError(t, err)
+	from, err := common.NewAddress(item.Sender)
+	require.NoError(t, err)
+	to, err := common.NewAddress(item.To)
+	require.NoError(t, err)
+	acked := common.NewObservedTx(
+		common.NewTx(id, from, to, item.Coins, item.Gas, item.Memo), 100, vault, 100,
+	)
+
+	// the late ack for the payload carrying the stale verdict
+	obs.handleObservedTxCommitted(acked, false)
+	require.Len(t, obs.onDeck[key].TxArray, 1, "stale ack must not clear the correction")
+	require.True(t, obs.onDeck[key].TxArray[0].Bounced)
+
+	// the ack for the corrected payload does clear it
+	acked.Bounced = true
+	obs.handleObservedTxCommitted(acked, false)
+	require.NotContains(t, obs.onDeck, key)
+}
