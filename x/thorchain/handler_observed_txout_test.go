@@ -97,6 +97,14 @@ func (k *TestObservedTxOutHandleKeeper) SetNodeAccount(_ cosmos.Context, na Node
 	return nil
 }
 
+func (k *TestObservedTxOutHandleKeeper) DebitNodeBond(ctx cosmos.Context, na NodeAccount, amount cosmos.Uint) (NodeAccount, cosmos.Uint, error) {
+	if amount.GT(na.Bond) {
+		amount = na.Bond
+	}
+	na.Bond = common.SafeSub(na.Bond, amount)
+	return na, amount, k.SetNodeAccount(ctx, na)
+}
+
 func (k *TestObservedTxOutHandleKeeper) GetObservedTxOutVoter(_ cosmos.Context, _ common.TxID) (ObservedTxVoter, error) {
 	return k.voter, nil
 }
