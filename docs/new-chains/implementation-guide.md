@@ -46,15 +46,15 @@ Example:
 
 ## Required Interfaces
 
-You must implement the following core interfaces:
+Implement the chain client contract and the scanner interface appropriate to the chain:
 
-| Interface               | Defined In                             | Purpose                                            |
-| ----------------------- | -------------------------------------- | -------------------------------------------------- |
-| `ChainClient`           | `shared/types/types.go`                | Main interface for observation, signing, solvency  |
-| `BlockScannerFetcher`   | `bifrost/blockscanner/blockscanner.go` | Scans blocks, mempool, and reports network fees    |
-| `SolvencyCheckProvider` | `shared/runners/solvency.go`           | Solvency reporting (height, should-report, report) |
+| Interface              | Defined In                             | Purpose                                                    |
+| ---------------------- | -------------------------------------- | ---------------------------------------------------------- |
+| `ChainClient`          | `shared/types/types.go`                | Main interface for observation, signing, solvency          |
+| `BlockScannerFetcher`  | `bifrost/blockscanner/blockscanner.go` | Scans blocks, mempool, and reports network fees            |
+| `reporter.ChainClient` | `bifrost/reporter/types.go`            | Subset of `ChainClient` used by unified solvency reporting |
 
-See the [`ChainClient` interface](../chain-clients/README.md#chainclient-interface) and [`BlockScannerFetcher` interface](../chain-clients/README.md#required-interface) for method-level detail.
+See the [`ChainClient` interface](../chain-clients/README.md#chainclient-interface), [`BlockScannerFetcher` interface](../chain-clients/README.md#required-interface), and [unified solvency reporter](../chain-clients/README.md#solvency-reporter) for method-level detail. `BlockScannerFetcher` applies when using the shared scanner; Solana uses its own scanner lifecycle. The observer supplies `reporter.Dispatcher` to `Start()` for forwarding to the scanner.
 
 ## Vault Address Derivation
 
@@ -163,11 +163,18 @@ Ensure short-range reorgs are gracefully handled in block polling logic.
 
 ## Solvency Reporting
 
-Clients must emit vault balance data periodically:
+Clients provide vault balances and a chain-specific gas estimate to the shared reporter:
 
 ```go
-globalSolvencyQueue <- types.Solvency
+GetVaultAccount(vault ttypes.Vault, height *big.Int) (common.Account, error)
+GetGasEstimateForSolvency() cosmos.Uint
 ```
+
+`ttypes.Vault` is the THORChain vault type. Resolve its chain-specific address and signing key, and preserve the existing balance-query height, reserve, token, and reconciliation semantics for the chain family.
+
+Accept the observer-owned `reporter.Dispatcher` in `Start()` and pass it to the scanner. Shared-scanner clients call `blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue, reporterDispatcher)`; a custom scanner must call `Process(chain, height)` at the appropriate scan progress point.
+
+The `bifrost/reporter/` package owns periodic checks, cadence, canonical heights, and vault collection. Its runner handles eligible active halts for started clients. Reports use the observer's solvency attestation path, and all-solvent auto-unhalt requires a complete successful vault check while the scanner is unhealthy.
 
 Missing funds (beyond [`PermittedSolvencyGap`](../mimir.md)) will halt the chain.
 

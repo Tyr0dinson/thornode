@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# Validates factual claims in .claude/skills/chain-client/ against the live
-# codebase. Catches drift when the skill's reference material falls out of
-# sync with the actual code (e.g. interface method counts, referenced file
-# paths). Runs as part of `make lint`.
+# Validates factual claims in .claude/skills/chain-client/ and the public
+# chain-client guides against the live codebase. Catches drift in interface
+# method counts, copied method lists, and referenced file paths.
+# Runs as part of `make lint`.
 #
 # The checks here are intentionally narrow: we verify only load-bearing
 # claims that, if stale, would cause the skill to generate wrong code.
@@ -13,6 +13,8 @@ set -euo pipefail
 SKILL_DIR=".claude/skills/chain-client"
 SKILL_MD="${SKILL_DIR}/SKILL.md"
 EVALS_JSON="${SKILL_DIR}/evals/evals.json"
+INTERFACE_MD="${SKILL_DIR}/references/interface.md"
+GUIDES=("docs/chain-clients/README.md" "docs/new-chains/implementation-guide.md")
 
 if [[ ! -f ${SKILL_MD} ]]; then
   # Skill not present on this branch — nothing to validate.
@@ -24,19 +26,31 @@ fail() {
   exit 1
 }
 
-# Count methods inside a named Go interface. A method declaration is
-# identified by a line whose first non-whitespace token is an identifier
+# List methods inside a named Go interface (first occurrence by default).
+# The optional occurrence selects between same-named examples in references.
+# A declaration is identified by a line whose first non-whitespace token is an identifier
 # followed by `(` — this correctly handles multi-line signatures (the
 # continuation lines start with a different token) and skips comments and
 # blank lines.
-count_interface_methods() {
-  local file="$1" name="$2"
-  awk -v name="${name}" '
-    $0 ~ "type[ \t]+" name "[ \t]+interface[ \t]*{" { inside = 1; next }
+interface_methods() {
+  local file="$1" name="$2" occurrence="${3:-1}"
+  awk -v name="${name}" -v occurrence="${occurrence}" '
+    $0 ~ "^[ \t]*type[ \t]+" name "[ \t]+interface[ \t]*{" {
+      matches++
+      inside = (matches == occurrence)
+      next
+    }
     inside && /^[[:space:]]*}/ { inside = 0; exit }
-    inside && /^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(/ { count++ }
-    END { print count + 0 }
+    inside && /^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(/ {
+      sub(/^[[:space:]]*/, "")
+      sub(/[[:space:]]*\(.*/, "")
+      print
+    }
   ' "${file}"
+}
+
+count_interface_methods() {
+  interface_methods "$1" "$2" | awk 'END { print NR }'
 }
 
 check_method_count() {
@@ -48,28 +62,62 @@ check_method_count() {
   actual=$(count_interface_methods "${file}" "${iface}")
   [[ ${actual} -gt 0 ]] || fail "${label}: could not find interface ${iface} in ${file}"
 
-  if ! grep -qE "${claim_pattern//N/${actual}}" "${SKILL_MD}"; then
-    local documented
-    documented=$(grep -oE "${claim_pattern//N/[0-9]+}" "${SKILL_MD}" | head -1 || true)
-    fail "${label}: SKILL.md claims '${documented:-<not found>}' but ${iface} in ${file} has ${actual} methods"
-  fi
-  echo "OK: ${label} — ${iface} has ${actual} methods (matches SKILL.md)"
+  local claims documented
+  claims=$(grep -oE "${claim_pattern//N/[0-9]+}" "${SKILL_MD}" || true)
+  [[ -n ${claims} ]] || fail "${label}: method count not found in SKILL.md"
+  while IFS= read -r documented; do
+    if ! grep -qE "${claim_pattern//N/${actual}}" <<<"${documented}"; then
+      fail "${label}: SKILL.md claims '${documented}' but ${iface} in ${file} has ${actual} methods"
+    fi
+  done <<<"${claims}"
+  echo "OK: ${label} — method count ${actual} matches SKILL.md"
 }
 
+# Backticks delimit the documented name so ChainClient cannot match reporter.ChainClient.
+# shellcheck disable=SC2016
 check_method_count "ChainClient" \
   "bifrost/pkg/chainclients/shared/types/types.go" \
   "ChainClient" \
-  'ChainClient.{0,10}\(N methods\)'
+  '`ChainClient`.{0,10}\(N methods\)'
 
+# shellcheck disable=SC2016
 check_method_count "BlockScannerFetcher" \
   "bifrost/blockscanner/blockscanner.go" \
   "BlockScannerFetcher" \
-  'BlockScannerFetcher.{0,10}\(N methods\)'
+  '`BlockScannerFetcher`.{0,10}\(N methods\)'
 
-check_method_count "SolvencyCheckProvider" \
-  "bifrost/pkg/chainclients/shared/runners/solvency.go" \
-  "SolvencyCheckProvider" \
-  'SolvencyCheckProvider.{0,10}\(N methods\)'
+# shellcheck disable=SC2016
+check_method_count "reporter.ChainClient" \
+  "bifrost/reporter/types.go" \
+  "ChainClient" \
+  '`reporter\.ChainClient`.{0,10}\(N methods\)'
+
+# shellcheck disable=SC2016
+check_method_count "reporter.Dispatcher" \
+  "bifrost/reporter/types.go" \
+  "Dispatcher" \
+  '`reporter\.Dispatcher`.{0,10}\(N methods?\)'
+
+# Check the method lists in copied interface definitions as well as the headline
+# counts. Compare sets so documentation may reorder methods without failing.
+check_reference_methods() {
+  local file="$1" iface="$2" reference="$3" occurrence="${4:-1}" actual documented
+  [[ -f ${reference} ]] || fail "reference not found: ${reference}"
+  actual=$(interface_methods "${file}" "${iface}" | sort)
+  documented=$(interface_methods "${reference}" "${iface}" "${occurrence}" | sort)
+  [[ -n ${actual} ]] || fail "could not find interface ${iface} in ${file}"
+  [[ ${documented} == "${actual}" ]] || fail "${reference}: ${iface} occurrence ${occurrence} methods differ from ${file}"
+  echo "OK: ${reference} — ${iface} occurrence ${occurrence} methods match source"
+}
+
+for reference in "${INTERFACE_MD}" "${GUIDES[0]}"; do
+  check_reference_methods "bifrost/pkg/chainclients/shared/types/types.go" "ChainClient" "${reference}"
+  check_reference_methods "bifrost/blockscanner/blockscanner.go" "BlockScannerFetcher" "${reference}"
+  check_reference_methods "bifrost/reporter/types.go" "Dispatcher" "${reference}"
+done
+
+# The reference shows the full ChainClient first and reporter.ChainClient second.
+check_reference_methods "bifrost/reporter/types.go" "ChainClient" "${INTERFACE_MD}" 2
 
 # Validate evals.json mentions the same method count. The evals file is a
 # secondary source of truth for Claude's expected output and must stay aligned
@@ -77,16 +125,17 @@ check_method_count "SolvencyCheckProvider" \
 if [[ -f ${EVALS_JSON} ]]; then
   chain_client_methods=$(count_interface_methods \
     "bifrost/pkg/chainclients/shared/types/types.go" "ChainClient")
-  if grep -qE "[0-9]+ ChainClient methods" "${EVALS_JSON}"; then
-    if ! grep -qE "${chain_client_methods} ChainClient methods" "${EVALS_JSON}"; then
-      documented=$(grep -oE "[0-9]+ ChainClient methods" "${EVALS_JSON}" | head -1)
+  claims=$(grep -oE "[0-9]+ ChainClient methods" "${EVALS_JSON}" || true)
+  while IFS= read -r documented; do
+    [[ -z ${documented} ]] && continue
+    if [[ ${documented} != "${chain_client_methods} ChainClient methods" ]]; then
       fail "evals.json claims '${documented}' but ChainClient has ${chain_client_methods} methods"
     fi
-    echo "OK: evals.json ChainClient method count (${chain_client_methods}) matches interface"
-  fi
+  done <<<"${claims}"
+  echo "OK: evals.json ChainClient method counts match interface"
 fi
 
-# Validate that every source file path referenced by the skill actually exists
+# Validate that every source file path referenced by the skill and guides exists
 # -- these are the paths Claude will open when scaffolding a chain. Extract
 # every backtick-quoted, directory-qualified .go path and assert it resolves,
 # either from the repo root or relative to bifrost/pkg/chainclients/ (the skill
@@ -101,12 +150,15 @@ fi
 # aren't paths at all. Placeholders are written `<chain>.go` so they fall
 # outside the character class and are never extracted.
 missing=()
+for guide in "${GUIDES[@]}"; do
+  [[ -f ${guide} ]] || fail "guide not found: ${guide}"
+done
 # shellcheck disable=SC2016  # backticks here are literal markdown, not expansion
 while read -r path; do
   [[ -z ${path} ]] && continue
   [[ -f ${path} || -f bifrost/pkg/chainclients/${path} ]] || missing+=("${path}")
 done < <(grep -rhoE '`[A-Za-z0-9_/.-]+/[A-Za-z0-9_.-]+\.go`' \
-  "${SKILL_MD}" "${SKILL_DIR}/references/" | tr -d '`' | sort -u)
+  "${SKILL_MD}" "${SKILL_DIR}/references/" "${GUIDES[@]}" | tr -d '`' | sort -u)
 
 if [[ ${#missing[@]} -gt 0 ]]; then
   echo "ERR: chain-client skill references non-existent paths:" >&2

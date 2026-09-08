@@ -43,7 +43,6 @@ type EVMClient struct {
     tssKeySigner       *tss.KeySign
     wg                 *sync.WaitGroup
     stopchan           chan struct{}
-    globalSolvencyQueue chan stypes.Solvency
     signerCacheManager *signercache.CacheManager
 
     // Pending liabilities: tracks signed but unconfirmed tx amounts

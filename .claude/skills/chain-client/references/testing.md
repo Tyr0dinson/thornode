@@ -233,8 +233,10 @@ func GetMetricForTest(c *C) *metrics.Metrics {
 
 ### Solvency Tests
 
-- `ShouldReportSolvency` → respects block interval
-- `ReportSolvency` → constructs correct solvency message
+- Client tests: `GetVaultAccount` selects the correct vault address/key and preserves chain-specific balances; `GetGasEstimateForSolvency` returns the expected fee estimate, including initialization behavior.
+- Scanner tests: the dispatcher receives the chain and scan height at the appropriate progress point; shared scanner persistence failures and stale blocks do not trigger reports.
+- Shared reporter tests in `bifrost/reporter/reporter_solvency_test.go`: cadence and canonical heights, active halt gating, vault filtering, partial/deferred account failures, all-solvent auto-unhalt eligibility, and observer attestation.
+- Runner tests in `bifrost/reporter/runner_test.go`: only started clients receive periodic work and shutdown stops the shared runner.
 
 ### Running Tests
 
@@ -244,6 +246,9 @@ go test -tags=mocknet -parallel=1 ./bifrost/pkg/chainclients/<chain>/...
 
 # Run a specific test
 go test -tags=mocknet -parallel=1 -run TestSignTx ./bifrost/pkg/chainclients/<chain>/...
+
+# Run shared solvency reporter tests
+go test -tags=mocknet -parallel=1 ./bifrost/reporter/...
 
 # Run with the project Makefile
 make test

@@ -81,11 +81,13 @@ Always add unit tests alongside each file (`_test.go` siblings). Do **not** crea
 
 #### Step 4: Implement the Core Interfaces
 
-Read `references/interface.md` for the full interface definitions. You must implement:
+Read `references/interface.md` for the interface definitions and reporter lifecycle:
 
-1. **`ChainClient`** (17 methods) — defined in `bifrost/pkg/chainclients/shared/types/types.go`
-2. **`BlockScannerFetcher`** (4 methods) — defined in `bifrost/blockscanner/blockscanner.go`
-3. **`SolvencyCheckProvider`** (3 methods) — defined in `bifrost/pkg/chainclients/shared/runners/solvency.go`
+1. **`ChainClient`** (19 methods) — the chain client contract, defined in `bifrost/pkg/chainclients/shared/types/types.go`
+2. **`BlockScannerFetcher`** (4 methods) — implemented by clients/scanners using the shared block scanner, defined in `bifrost/blockscanner/blockscanner.go`; Solana uses its own scanner lifecycle
+3. **`reporter.ChainClient`** (8 methods) — the subset consumed by unified solvency reporting, defined in `bifrost/reporter/types.go`; satisfying the full `ChainClient` also satisfies this contract
+
+`Start()` receives a **`reporter.Dispatcher`** (1 method), defined in `bifrost/reporter/types.go`, from the observer. Pass it to the scanner so it can call `Process(chain, height)`. Implement `GetVaultAccount` and `GetGasEstimateForSolvency` on the client; cadence, collection, and report submission belong to the shared reporter.
 
 #### Step 5: Constructor Pattern
 
@@ -129,7 +131,7 @@ Implement `GetConfirmationCount()` and `ConfirmationCountReady()` based on the c
 Every chain client should use these shared components:
 
 - **Signer Cache Manager** (`shared/signercache/`): prevents double-signing, tracks broadcast/observed transactions
-- **Solvency Check Runner** (`shared/runners/solvency.go`): periodic solvency verification, runs even when chain is halted
+- **Unified Reporter** (`bifrost/reporter/`): shared solvency collection and a periodic runner for eligible halted chains; the observer owns the dispatcher and routes reports through solvency attestation
 - **Block Scanner** (`bifrost/blockscanner/`): handles block scanning lifecycle, height tracking, and queue management
 
 #### Step 9: Token Support (if applicable)
@@ -246,14 +248,14 @@ Use this when reviewing a chain client for correctness and completeness.
 
 ### Code Review
 
-- [ ] **Interface compliance**: All 17 `ChainClient` methods implemented correctly
-- [ ] **BlockScannerFetcher**: All 4 methods implemented (`FetchMemPool`, `FetchTxs`, `GetHeight`, `GetNetworkFee`)
-- [ ] **SolvencyCheckProvider**: All 3 methods implemented (`GetHeight`, `ShouldReportSolvency`, `ReportSolvency`)
+- [ ] **Interface compliance**: All `ChainClient` methods implemented correctly, including vault-aware `GetVaultAccount` and chain-specific `GetGasEstimateForSolvency`
+- [ ] **BlockScannerFetcher**: All methods implemented (`FetchMemPool`, `FetchTxs`, `GetHeight`, `GetNetworkFee`) when using the shared block scanner
+- [ ] **Reporter compliance**: Client satisfies `reporter.ChainClient`; vault lookup uses the chain's address/key rules and preserves the requested balance-query semantics
 - [ ] **Instant observations**: `SignTx` returns a `*TxInItem` with correct txid, memo, addresses, coins, gas, vault pubkey
 - [ ] **Confirmation strategy**: `GetConfirmationCount` and `ConfirmationCountReady` appropriate for chain finality
 - [ ] **Signer cache**: Uses `signercache.CacheManager` for double-sign prevention
-- [ ] **Solvency runner**: Starts solvency check runner in `Start()` method
-- [ ] **Queue communication**: Properly sends to `globalErrataQueue`, `globalSolvencyQueue`, `globalNetworkFeeQueue`
+- [ ] **Reporter lifecycle**: `Start()` passes the observer-owned dispatcher to the scanner; the shared reporter owns periodic checks and observer attestation
+- [ ] **Queue communication**: Properly sends to `globalTxsQueue`, `globalErrataQueue`, `globalNetworkFeeQueue`; scanner progress triggers `reporter.Dispatcher.Process`
 - [ ] **Concurrency safety**: Mutexes for signing, vault locks, WaitGroups for goroutine lifecycle, atomic values for health/heights
 - [ ] **Graceful shutdown**: `Stop()` closes stop channel, waits for WaitGroup, stops block scanner and TSS signer
 - [ ] **Error handling**: Errors are wrapped with context, not swallowed silently
@@ -281,8 +283,8 @@ Read `references/testing.md` for details on expected test patterns.
 - [ ] **Signing scenarios**: Tests for valid transactions, invalid chains, empty addresses, empty vaults, bad memos
 - [ ] **Observing scenarios**: Tests for `OnObservedTxIn`, `FetchTxs`, block scanning
 - [ ] **Broadcasting scenarios**: Tests for successful broadcast, failed broadcast, retry behavior
-- [ ] **Solvency tests**: Tests for `ShouldReportSolvency` and `ReportSolvency`
-- [ ] **Account tests**: Tests for `GetAccount`, `GetAccountByAddress`, `GetAddress`
+- [ ] **Solvency tests**: Client gas estimates and dispatcher wiring are covered; shared reporter tests cover cadence, halt gating, vault collection, and observer attestation
+- [ ] **Account tests**: Tests for `GetAccount`, `GetVaultAccount`, `GetAccountByAddress`, `GetAddress`
 - [ ] **Confirmation tests**: Tests for `GetConfirmationCount` and `ConfirmationCountReady`
 - [ ] **Instant observation tests**: Tests that `SignTx` returns correct `TxInItem`
 - [ ] **Simulation tests**: Swaps in/out and liquidity add/withdraw for the chain

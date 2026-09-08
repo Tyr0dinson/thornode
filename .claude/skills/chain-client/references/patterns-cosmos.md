@@ -29,7 +29,6 @@ type CosmosClient struct {
     blockScanner        *blockscanner.BlockScanner
     signerCacheManager  *signercache.CacheManager
     cosmosScanner       *CosmosBlockScanner
-    globalSolvencyQueue chan stypes.Solvency
     wg                  *sync.WaitGroup
     stopchan            chan struct{}
 }

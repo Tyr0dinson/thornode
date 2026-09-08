@@ -4,11 +4,11 @@
     {
       "id": 1,
       "prompt": "I want to add support for Cardano (ADA) as a new chain in the bifrost. Can you walk me through all the steps needed and create the initial scaffolding?",
-      "expected_output": "A comprehensive step-by-step guide covering: chain family identification, ChainClient interface implementation, BlockScannerFetcher, SolvencyCheckProvider, instant observations, registration in loadchains.go, config additions, simulation tests, and unit tests. Should reference the correct existing files and patterns.",
+      "expected_output": "A comprehensive step-by-step guide covering: chain family identification, ChainClient interface implementation including GetVaultAccount and GetGasEstimateForSolvency, BlockScannerFetcher where the shared scanner is used, reporter.ChainClient compliance, observer-owned reporter.Dispatcher wiring through Start and the scanner, shared solvency collection and observer attestation, instant observations, registration in loadchains.go, config additions, simulation tests, and unit tests. Should reference the correct existing files and patterns.",
       "files": [],
       "assertions": [
         "Does not claim Cardano is in the repo's UTXO family (common/chain.go GetUTXOChains() excludes ADA; GetSigningAlgo() groups it with the ed25519 chains) and points at references/patterns-other.md per the skill's own fallback",
-        "Lists the three interfaces to implement: ChainClient, BlockScannerFetcher, SolvencyCheckProvider",
+        "Lists the interfaces to implement: ChainClient, BlockScannerFetcher where the shared scanner is used, and reporter.ChainClient; wires observer-owned reporter.Dispatcher through Start",
         "Mentions registration in bifrost/pkg/chainclients/loadchains.go",
         "Mentions the common package switch cases (chain.go, asset.go, address.go, pubkey.go)",
         "Mentions docker/mocknet setup and simulation tests as required steps",
@@ -18,7 +18,7 @@
     {
       "id": 2,
       "prompt": "Review the XRP chain client for correctness and test coverage. Tell me if there are any gaps or issues.",
-      "expected_output": "A thorough verification covering: interface compliance check (all 17 ChainClient methods), BlockScannerFetcher compliance, solvency provider check, instant observation support in SignTx, confirmation count strategy, signer cache usage, concurrency safety, test coverage analysis with specific gaps identified.",
+      "expected_output": "A thorough verification covering: interface compliance check (all 19 ChainClient methods), BlockScannerFetcher and reporter.ChainClient compliance, GetVaultAccount and GetGasEstimateForSolvency behavior, dispatcher wiring and shared reporter test coverage for cadence, halt gating and observer attestation, instant observation support in SignTx, confirmation count strategy, signer cache usage, concurrency safety, test coverage analysis with specific gaps identified.",
       "files": [],
       "assertions": [
         "Reads the actual xrp client source rather than describing it from memory",

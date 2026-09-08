@@ -38,17 +38,17 @@ Chains that share no common model — XRP, Tron, Solana, and Monero — implemen
 
 ## ChainClient Interface
 
-Every chain client in Bifrost must implement the `ChainClient` interface defined in [`types/types.go`](https://gitlab.com/thorchain/thornode/-/blob/develop/bifrost/pkg/chainclients/shared/types/types.go). It encapsulates the lifecycle of chain interactions — scanning, observation, signing, broadcasting, solvency reporting, and account inspection. Clients may override additional chain-specific behavior using optional interfaces or embedded logic.
+Every chain client in Bifrost must implement the `ChainClient` interface defined in [`bifrost/pkg/chainclients/shared/types/types.go`](https://gitlab.com/thorchain/thornode/-/blob/develop/bifrost/pkg/chainclients/shared/types/types.go). It encapsulates the lifecycle of chain interactions — scanning, observation, signing, broadcasting, solvency reporting, and account inspection. Clients may override additional chain-specific behavior using optional interfaces or embedded logic.
 
 ```go
 // ChainClient defines the behavior a chain client must implement.
 type ChainClient interface {
-	// Start begins the chain client with queues for txs, errata, solvency, and network fees.
+	// Start begins the chain client with tx, errata, and network fee queues and a reporter dispatcher.
 	Start(
 		globalTxsQueue chan types.TxIn,
 		globalErrataQueue chan types.ErrataBlock,
-		globalSolvencyQueue chan types.Solvency,
 		globalNetworkFeeQueue chan common.NetworkFee,
+		reporterDispatcher reporter.Dispatcher,
 	)
 
 	// Stop halts the chain client and any background processes.
@@ -65,6 +65,8 @@ type ChainClient interface {
 	GetAddress(poolPubKey common.PubKey) string
 	// GetAccount returns the on-chain account details at a specific block height.
 	GetAccount(poolPubKey common.PubKey, height *big.Int) (common.Account, error)
+	// GetVaultAccount resolves the vault's chain-specific account and balances.
+	GetVaultAccount(vault ttypes.Vault, height *big.Int) (common.Account, error)
 	// GetAccountByAddress returns account details by address.
 	GetAccountByAddress(address string, height *big.Int) (common.Account, error)
 	// GetChain returns the chain this client handles (e.g., BTC, ETH).
@@ -79,6 +81,8 @@ type ChainClient interface {
 	ConfirmationCountReady(txIn types.TxIn) bool
 	// GetBlockScannerHeight returns the block height tracked by the scanner.
 	GetBlockScannerHeight() (int64, error)
+	// GetGasEstimateForSolvency returns the chain-specific fee estimate for solvency checks.
+	GetGasEstimateForSolvency() cosmos.Uint
 	// GetLatestTxForVault fetches the last inbound and outbound tx for a vault.
 	GetLatestTxForVault(vault string) (string, string, error)
 	// RollbackBlockScanner rewinds the block scanner to reprocess recent blocks.
@@ -88,12 +92,20 @@ type ChainClient interface {
 
 ### Solvency Reporter
 
-Bifrost also defines a solvency check function type:
+Unified solvency reporting lives in `bifrost/reporter/`. Its `reporter.ChainClient` interface, defined in `bifrost/reporter/types.go`, consumes the account, gas, configuration, height, and health methods of the full client contract. `GetVaultAccount(vault, height)` provides vault-aware balances, while `GetGasEstimateForSolvency()` supplies the chain-specific fee estimate.
+
+The observer creates and owns a shared dispatcher, then passes it to every client's `Start()` method. Clients forward it to their scanner:
 
 ```go
-// SolvencyReporter reports the solvency of the chain at the given height.
-type SolvencyReporter func(height int64) error
+// Dispatcher is defined in package reporter.
+type Dispatcher interface {
+    Process(chain common.Chain, height int64)
+}
 ```
+
+The shared block scanner triggers reporting after persisting progress near the chain tip. Solana wires the dispatcher into its own scanner. The dispatcher serializes reporter work per chain, and its periodic runner schedules checks for started clients with eligible active chain or solvency halts.
+
+The shared reporter owns cadence, canonical report heights, vault collection, and solvency decisions. All-solvent reports for auto-unhalt require an unhealthy scanner and a successful check of every relevant vault. Reports are submitted through the observer's solvency attestation path, preserving validator eligibility and supermajority consensus.
 
 Solvency reports ensure THORChain’s view of vault balances matches on-chain state, helping detect drift or failures in observation.
 
@@ -145,7 +157,7 @@ type BlockScannerFetcher interface {
 }
 ```
 
-Chains that support mempool visibility (e.g., Cosmos SDK, Solana) also use this interface for near-instant detection of new txs. For EVM chains, where event subscriptions are the primary mechanism, BlockScanner is optional but sometimes included for fallback and deep scan support.
+UTXO, EVM, Ethereum, Cosmos, XRP, TRON, and Monero clients use the shared block scanner. A client or a separate scanner struct implements `BlockScannerFetcher`; Solana instead manages its own `SOLScanner` lifecycle and reporter dispatch.
 
 ## Vault Address Derivation
 
@@ -229,7 +241,7 @@ See [token-lists.md](./token-lists.md) for details.
 A Claude Code skill is available to assist with building, modifying, and verifying chain clients. The `/chain-client` skill provides:
 
 - **Decision tree** for choosing the right workflow (new chain, modify existing, or verify)
-- **Step-by-step guidance** for implementing all required interfaces (`ChainClient`, `Observer`, `Signer`, `BlockScanner`)
+- **Step-by-step guidance** for implementing `ChainClient`, `BlockScannerFetcher` where applicable, and the `reporter.ChainClient` contract consumed by unified solvency reporting
 - **Chain family patterns** with reference docs for UTXO, EVM, Cosmos, and custom chain types
 - **Known bugs database** covering 80+ historical mainnet bugs organized by category
 - **Testing and simulation** checklists for unit tests, regression tests, and mocknet verification

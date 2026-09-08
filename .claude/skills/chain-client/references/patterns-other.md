@@ -28,10 +28,8 @@ type SOLClient struct {
     tssKeyManager        tss.ThorchainKeyManager
     wg                   *sync.WaitGroup
     stopchan             chan struct{}
-    globalSolvencyQueue  chan stypes.Solvency
     signerCacheManager   *signercache.CacheManager
     rpcClient            *rpc.SolRPC
-    solvencySlotMultiple int64
 }
 ```
 
@@ -81,7 +79,6 @@ type Client struct {
     blockScanner        *blockscanner.BlockScanner
     signerCacheManager  *signercache.CacheManager
     xrpScanner          *XrpBlockScanner
-    globalSolvencyQueue chan stypes.Solvency
     wg                  *sync.WaitGroup
     stopchan            chan struct{}
     rpcClient           *rpc.Client
@@ -180,7 +177,7 @@ func NewTronClient(
 Despite their differences, all these chains follow the same structural pattern:
 
 1. Constructor validates args, creates RPC client, sets up TSS, creates scanner
-2. `Start()` starts block scanner and solvency runner
+2. `Start()` starts the scanner and passes it the observer-owned reporter dispatcher (Solana uses `solScanner.setReporterDispatcher`); the shared reporter owns periodic solvency checks
 3. `Stop()` closes stop channel and waits on WaitGroup
 4. `SignTx()` validates tx, constructs chain-specific tx, signs, returns observation
 5. `BroadcastTx()` sends to chain RPC and records in signer cache

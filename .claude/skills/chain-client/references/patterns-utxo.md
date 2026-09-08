@@ -38,7 +38,6 @@ type Client struct {
 
     // queues
     globalErrataQueue     chan<- types.ErrataBlock
-    globalSolvencyQueue   chan<- types.Solvency
     globalNetworkFeeQueue chan<- common.NetworkFee
     stopchan              chan struct{}
 
