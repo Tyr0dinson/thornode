@@ -162,6 +162,64 @@ func (s *NodeAccountSuite) TestBondProvider(c *C) {
 	c.Assert(provider.IsEmpty(), Equals, false)
 }
 
+func (s *NodeAccountSuite) TestBondProvidersBackfill(c *C) {
+	operator := GetRandomBech32Addr()
+	for _, bond := range []cosmos.Uint{cosmos.ZeroUint(), cosmos.NewUint(100 * common.One)} {
+		na := NodeAccount{
+			NodeAddress: GetRandomBech32Addr(),
+			BondAddress: common.Address(operator.String()),
+			Bond:        bond,
+		}
+		bp := NewBondProviders(na.NodeAddress)
+		c.Assert(bp.Backfill(na, cosmos.NewUint(2000)), IsNil)
+		c.Check(bp.NodeAddress.Equals(na.NodeAddress), Equals, true)
+		c.Check(bp.NodeOperatorFee.Uint64(), Equals, uint64(2000))
+		c.Assert(bp.Providers, HasLen, 1)
+		c.Check(bp.Providers[0].BondAddress.Equals(operator), Equals, true)
+		c.Check(bp.Providers[0].Bond.Equal(bond), Equals, true)
+		c.Check(bp.Providers[0].Bps, Equals, uint64(0))
+		c.Check(bp.Providers[0].PayoutTarget, Equals, "")
+	}
+}
+
+func (s *NodeAccountSuite) TestBondProvidersBackfillPreservesExistingProviders(c *C) {
+	bp := NewBondProviders(GetRandomBech32Addr())
+	bp.NodeOperatorFee = cosmos.NewUint(500)
+	bp.Providers = []BondProvider{
+		{BondAddress: GetRandomBech32Addr(), Bond: cosmos.NewUint(70 * common.One), Bps: 2500, PayoutTarget: "yieldname"},
+		{BondAddress: GetRandomBech32Addr(), Bond: cosmos.NewUint(30 * common.One)},
+	}
+	before, err := json.Marshal(bp)
+	c.Assert(err, IsNil)
+
+	for _, address := range []common.Address{common.Address(GetRandomBech32Addr().String()), "invalid"} {
+		na := NodeAccount{
+			NodeAddress: GetRandomBech32Addr(),
+			BondAddress: address,
+			Bond:        cosmos.NewUint(200 * common.One),
+		}
+		c.Assert(bp.Backfill(na, cosmos.NewUint(2000)), IsNil)
+		after, err := json.Marshal(bp)
+		c.Assert(err, IsNil)
+		c.Check(after, DeepEquals, before)
+	}
+}
+
+func (s *NodeAccountSuite) TestBondProvidersBackfillInvalidAddress(c *C) {
+	na := NodeAccount{
+		NodeAddress: GetRandomBech32Addr(),
+		BondAddress: "invalid",
+		Bond:        cosmos.NewUint(100 * common.One),
+	}
+	bp := NewBondProviders(na.NodeAddress)
+	bp.NodeOperatorFee = cosmos.NewUint(500)
+
+	c.Assert(bp.Backfill(na, cosmos.NewUint(2000)), NotNil)
+	c.Check(bp.NodeAddress.Equals(na.NodeAddress), Equals, true)
+	c.Check(bp.Providers, HasLen, 0)
+	c.Check(bp.NodeOperatorFee.Uint64(), Equals, uint64(500))
+}
+
 func (s *NodeAccountSuite) TestBondProviders(c *C) {
 	acc1 := GetRandomBech32Addr()
 	acc2 := GetRandomBech32Addr()

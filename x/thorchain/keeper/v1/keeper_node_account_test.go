@@ -12,6 +12,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	keeperpkg "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -382,6 +383,32 @@ func (s *KeeperNodeAccountSuite) TestDebitNodeBond(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(bps.Get(operator).Bond.Equal(cosmos.NewUint(540)), Equals, true)
 	c.Check(bps.Get(provider).Bond.Equal(cosmos.NewUint(360)), Equals, true)
+}
+
+func (s *KeeperNodeAccountSuite) TestDebitNodeBondBackfillsMissingProviders(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	k.SetMimir(ctx, constants.NodeOperatorFee.String(), 1234)
+	na := GetRandomValidatorNode(NodeActive)
+	na.Bond = cosmos.NewUint(1000)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+	operator, err := na.BondAddress.AccAddress()
+	c.Assert(err, IsNil)
+
+	updated, deducted, err := k.DebitNodeBond(ctx, na, cosmos.NewUint(100))
+	c.Assert(err, IsNil)
+	c.Check(deducted.Equal(cosmos.NewUint(100)), Equals, true)
+	c.Check(updated.Bond.Equal(cosmos.NewUint(900)), Equals, true)
+
+	stored, err := k.GetNodeAccount(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(stored.Bond.Equal(updated.Bond), Equals, true)
+	bps, err := k.GetBondProviders(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(bps.Providers, HasLen, 1)
+	c.Check(bps.NodeAddress.Equals(na.NodeAddress), Equals, true)
+	c.Check(bps.Providers[0].BondAddress.Equals(operator), Equals, true)
+	c.Check(bps.Providers[0].Bond.Equal(stored.Bond), Equals, true)
+	c.Check(bps.NodeOperatorFee.Equal(cosmos.NewUint(1234)), Equals, true)
 }
 
 func (s *KeeperNodeAccountSuite) TestDeductNativeTxFeeFromBondUpdatesBondProviders(c *C) {

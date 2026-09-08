@@ -1720,16 +1720,10 @@ func updateTxOutGasRate(ctx cosmos.Context, keeper keeper.Keeper, txOut types.Tx
 // backfill bond provider information (passive migration code)
 func passiveBackfill(ctx cosmos.Context, mgr Manager, nodeAccount NodeAccount, bp *BondProviders) error {
 	if len(bp.Providers) == 0 {
-		// no providers yet, add node operator bond address to the bond provider list
-		nodeOpBondAddr, err := nodeAccount.BondAddress.AccAddress()
-		if err != nil {
+		defaultNodeOperationFee := mgr.Keeper().GetConfigInt64(ctx, constants.NodeOperatorFee)
+		if err := bp.Backfill(nodeAccount, cosmos.NewUint(uint64(defaultNodeOperationFee))); err != nil {
 			return ErrInternal(err, fmt.Sprintf("fail to parse bond address(%s)", nodeAccount.BondAddress))
 		}
-		p := NewBondProvider(nodeOpBondAddr)
-		p.Bond = nodeAccount.Bond
-		bp.Providers = append(bp.Providers, p)
-		defaultNodeOperationFee := mgr.Keeper().GetConfigInt64(ctx, constants.NodeOperatorFee)
-		bp.NodeOperatorFee = cosmos.NewUint(uint64(defaultNodeOperationFee))
 	}
 
 	return nil

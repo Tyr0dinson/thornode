@@ -257,6 +257,24 @@ func (m *BondProvider) IsEmpty() bool {
 	return m.BondAddress.Empty()
 }
 
+// Backfill initializes an empty provider ledger with the node operator's bond
+// and the supplied default fee. Existing provider records are left unchanged.
+func (bp *BondProviders) Backfill(na NodeAccount, nodeOperatorFee cosmos.Uint) error {
+	if len(bp.Providers) > 0 {
+		return nil
+	}
+
+	nodeOperator, err := na.BondAddress.AccAddress()
+	if err != nil {
+		return err
+	}
+	provider := NewBondProvider(nodeOperator)
+	provider.Bond = na.Bond
+	bp.Providers = append(bp.Providers, provider)
+	bp.NodeOperatorFee = nodeOperatorFee
+	return nil
+}
+
 func (bp *BondProviders) Has(acc cosmos.AccAddress) bool {
 	provider := bp.Get(acc)
 	return !provider.IsEmpty()

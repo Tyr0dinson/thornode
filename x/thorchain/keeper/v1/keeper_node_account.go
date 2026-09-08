@@ -736,14 +736,10 @@ func (k KVStore) getBondProvidersForAccounting(ctx cosmos.Context, na NodeAccoun
 	}
 
 	if len(bps.Providers) == 0 {
-		nodeOperator, err := na.BondAddress.AccAddress()
-		if err != nil {
+		nodeOperatorFee := cosmos.SafeUintFromInt64(k.GetConfigInt64(ctx, constants.NodeOperatorFee))
+		if err := bps.Backfill(na, nodeOperatorFee); err != nil {
 			return BondProviders{}, fmt.Errorf("fail to parse bond address(%s): %w", na.BondAddress, err)
 		}
-		provider := NewBondProvider(nodeOperator)
-		provider.Bond = na.Bond
-		bps.Providers = append(bps.Providers, provider)
-		bps.NodeOperatorFee = cosmos.SafeUintFromInt64(k.GetConfigInt64(ctx, constants.NodeOperatorFee))
 	}
 
 	return bps, nil
