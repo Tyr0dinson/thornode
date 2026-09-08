@@ -1,0 +1,23 @@
+{
+  "skill_name": "chain-client",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I want to add support for Cardano (ADA) as a new chain in the bifrost. Can you walk me through all the steps needed and create the initial scaffolding?",
+      "expected_output": "A comprehensive step-by-step guide covering: chain family identification, ChainClient interface implementation, BlockScannerFetcher, SolvencyCheckProvider, instant observations, registration in loadchains.go, config additions, simulation tests, and unit tests. Should reference the correct existing files and patterns.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Review the XRP chain client for correctness and test coverage. Tell me if there are any gaps or issues.",
+      "expected_output": "A thorough verification covering: interface compliance check (all 17 ChainClient methods), BlockScannerFetcher compliance, solvency provider check, instant observation support in SignTx, confirmation count strategy, signer cache usage, concurrency safety, test coverage analysis with specific gaps identified.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "I need to add simulation tests for the Solana chain client. What's the process and what test scenarios do I need?",
+      "expected_output": "Guide covering: LiteChainClient implementation in test/simulation/pkg/solana/, registration in main.go, RPC config in mocknet.go, seed funding, network fees, SimChains registration. Required scenarios: native SOL swap to another token, swap from another token to SOL, add liquidity, withdraw liquidity. Should note that registration in SimChains auto-includes swap and LP tests.",
+      "files": []
+    }
+  ]
+}
