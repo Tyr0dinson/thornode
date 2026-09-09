@@ -524,12 +524,32 @@ func (s *ExtraTestSuite) TestFetchTxs(c *C) {
 	nf := <-feeQueue
 	c.Check(nf.Chain, Equals, common.GAIAChain)
 	c.Check(nf.Height, Equals, int64(10))
+	c.Check(nf.TransactionRate, Equals, uint64(5000))
+	c.Check(scanner.getLastFee().Uint64(), Equals, uint64(5000))
+
+	// Leave a fee change larger than the resolution pending so only the
+	// distance-from-tip guard can suppress publication while catching up.
+	for i := range scanner.feeCache {
+		scanner.feeCache[i] = sdkmath.NewUint(7000)
+	}
 
 	// chainHeight far from block -> skip network fee update
 	txIn, err = scanner.FetchTxs(20, 1000)
 	c.Assert(err, IsNil)
 	c.Check(txIn.Chain, Equals, common.GAIAChain)
-	c.Check(len(feeQueue), Equals, 0)
+	c.Assert(len(feeQueue), Equals, 0)
+	c.Check(scanner.getLastFee().Uint64(), Equals, uint64(5000))
+
+	// The same pending update must be published once scanning returns near tip.
+	txIn, err = scanner.FetchTxs(30, 30)
+	c.Assert(err, IsNil)
+	c.Check(txIn.Chain, Equals, common.GAIAChain)
+	c.Assert(len(feeQueue), Equals, 1)
+	nf = <-feeQueue
+	c.Check(nf.Chain, Equals, common.GAIAChain)
+	c.Check(nf.Height, Equals, int64(30))
+	c.Check(nf.TransactionRate, Equals, uint64(7000))
+	c.Check(scanner.getLastFee().Uint64(), Equals, uint64(7000))
 }
 
 // -------------------------------------------------------------------------------------
