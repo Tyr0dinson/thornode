@@ -70,6 +70,17 @@ func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 	if err != nil {
 		return err
 	}
+
+	// Stop on a live oracle recovery before checking target eligibility: the
+	// stream's own price impact can leave either pool outside the fill band.
+	// Missing prices are not recovery; unfed blocks must not cancel a rescue.
+	if stableReserveInternal && strings.HasPrefix(msg.Tx.Memo, types.StableReserveRescueMemoPrefix) && len(msg.Tx.Coins) == 1 {
+		source := msg.Tx.Coins[0].Asset.GetLayer1Asset()
+		if h.mgr.StableReserveManager().IsOraclePegged(ctx, source) {
+			return fmt.Errorf("%w: %s", errStableReserveRescueRecovered, source)
+		}
+	}
+
 	if stableReserveInternal && !msg.TargetAsset.IsRune() {
 		if ok, reason := h.mgr.StableReserveManager().IsEligibleStable(ctx, msg.TargetAsset); !ok {
 			purpose := "deployment"
@@ -77,23 +88,6 @@ func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 				purpose = "rescue"
 			}
 			return fmt.Errorf("stable reserve %s target no longer eligible: %s", purpose, reason)
-		}
-	}
-	// A depeg rescue liquidates the module's entire position in the source asset
-	// and, once its stream is queued, nothing re-evaluates whether it should still
-	// run — the check above validates only the swap's TARGET. Abort the stream as
-	// soon as the SOURCE has recovered, so a transient dip does not commit the
-	// reserve to selling the whole position through the AMM at slip.
-	//
-	// IsEligibleStable is the right predicate: it requires a price the oracle is
-	// ACTIVELY reporting inside the band, plus a healthy per-asset pool price.
-	// A missing price is deliberately NOT treated as recovery — OracleMgr.BeginBlock
-	// deletes every price each block, so any block without a price-feed batch would
-	// otherwise abort a legitimate rescue.
-	if stableReserveInternal && strings.HasPrefix(msg.Tx.Memo, types.StableReserveRescueMemoPrefix) && len(msg.Tx.Coins) == 1 {
-		source := msg.Tx.Coins[0].Asset.GetLayer1Asset()
-		if ok, _ := h.mgr.StableReserveManager().IsEligibleStable(ctx, source); ok {
-			return fmt.Errorf("%w: %s", errStableReserveRescueRecovered, source)
 		}
 	}
 

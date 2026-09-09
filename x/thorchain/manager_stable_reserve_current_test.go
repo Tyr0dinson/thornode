@@ -1176,25 +1176,37 @@ func (s *StableReserveMgrSuite) TestRescueAbortsOnlyWhenSourceActuallyRecovers(c
 func (s *StableReserveMgrSuite) TestRescueRecoveryCancelsQueuedStream(c *C) {
 	ctx, mgr, usdc, usdt := setupStableReserveSuite(c)
 	moduleAddr := mgr.Keeper().GetModuleAccAddress(StableReserveName)
-	funded := cosmos.NewUint(100_000 * common.One)
+	funded := cosmos.NewUint(500_000 * common.One)
 	fundStableReserveSurplus(c, ctx, mgr, usdc, funded)
 	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "0.95"}), IsNil)
 	c.Assert(mgr.StableReserveManager().EndBlock(ctx, mgr), IsNil)
 
-	// One sub-swap runs while depegged.
-	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
-	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "0.95"}), IsNil)
-	c.Assert(mgr.AdvSwapQueueMgr().EndBlock(ctx, mgr, false), IsNil)
 	rescue, err := firstQueuedSwapWithMemoPrefix(ctx, mgr, types.StableReserveRescueMemoPrefix)
 	c.Assert(err, IsNil)
 	c.Assert(rescue.TargetAsset.Equals(usdt), Equals, true)
-	c.Assert(rescue.State.Quantity > 1, Equals, true) // must be multi-chunk or there is nothing to abort
-	c.Assert(rescue.State.Count, Equals, uint64(1))
+	// Three 1,000-unit sub-swaps move both million-unit pools past the fill
+	// band while leaving most of this large position unswapped.
+	rescue.State.Quantity = 500
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, rescue), IsNil)
+	for i := uint64(1); i <= 3; i++ {
+		ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+		c.Assert(mgr.AdvSwapQueueMgr().EndBlock(ctx, mgr, false), IsNil)
+		rescue, err = firstQueuedSwapWithMemoPrefix(ctx, mgr, types.StableReserveRescueMemoPrefix)
+		c.Assert(err, IsNil)
+		c.Assert(rescue.State.Count, Equals, i)
+		c.Assert(rescue.State.In.Equal(cosmos.NewUint(i*1_000*common.One)), Equals, true)
+	}
 	swapped := rescue.State.In
 
 	// Repegged: the next queue pass settles and removes the rescue.
 	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
 	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "1.00"}), IsNil)
+	for _, asset := range []common.Asset{usdc, usdt} {
+		ok, reason := mgr.StableReserveManager().IsEligibleStable(ctx, asset)
+		c.Assert(ok, Equals, false)
+		c.Assert(reason, Equals, "unhealthy pool price")
+	}
+
 	c.Assert(mgr.AdvSwapQueueMgr().EndBlock(ctx, mgr, false), IsNil)
 	c.Check(queuedSwapsWithMemoPrefix(ctx, mgr, types.StableReserveRescueMemoPrefix), HasLen, 0)
 

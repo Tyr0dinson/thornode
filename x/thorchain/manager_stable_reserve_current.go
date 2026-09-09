@@ -632,18 +632,23 @@ func (s *StableReserveMgr) poolImpliedOutput(ctx cosmos.Context, source, target 
 	return out, true
 }
 
+// IsOraclePegged reports a live oracle price inside the fill band, independently
+// of pool prices that a rescue stream itself may have displaced.
+func (s *StableReserveMgr) IsOraclePegged(ctx cosmos.Context, asset common.Asset) bool {
+	if !asset.IsExternalL1Asset() || !s.isTORAnchor(ctx, asset) {
+		return false
+	}
+	price, err := s.keeper.GetPrice(ctx, asset.Ticker.String())
+	return err == nil && stableReserveOracleHealthy(price.Price, s.keeper.GetConfigInt64(ctx, constants.StableReserveDepegToleranceBps))
+}
+
 // isDepegged reports whether the enshrined oracle is actively pricing this asset
 // OUTSIDE the tolerance band. It is deliberately narrower than !IsEligibleStable:
 // a rescue fires only on a bad price, never on a missing one.
 //
-// An oracle outage — halted feed, unattested ticker, a rename across an upgrade —
-// says nothing about the asset's value, and a rescue cannot be cancelled once
-// scheduled (the per-sub-swap revalidation in handler_swap.go checks the target,
-// not the source). Treating a transient gap as a depeg would therefore commit the
-// module's entire position in that asset to an irreversible AMM liquidation, at
-// slip, on no evidence. Holding through the outage is the recoverable failure:
-// fills already decline while the price is missing, so the inventory just sits
-// idle until the feed returns.
+// An oracle outage says nothing about the asset's value. Do not start selling
+// the position at AMM slip without depeg evidence. An already queued rescue
+// stops only on a live oracle recovery (see handler_swap.go).
 //
 // The L1/anchor guard is kept so a non-stable secured balance can never be priced
 // by ticker and mistaken for a depeg.
@@ -1034,6 +1039,10 @@ func (DummyStableReserveManager) EndBlock(ctx cosmos.Context, mgr Manager) error
 func (DummyStableReserveManager) IsEnabled(ctx cosmos.Context) bool              { return false }
 func (DummyStableReserveManager) IsEligibleStable(ctx cosmos.Context, asset common.Asset) (bool, string) {
 	return false, "stable reserve disabled"
+}
+
+func (DummyStableReserveManager) IsOraclePegged(ctx cosmos.Context, asset common.Asset) bool {
+	return false
 }
 
 func (DummyStableReserveManager) Deposit(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint, contributor common.Address, txID common.TxID) error {

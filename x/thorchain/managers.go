@@ -79,6 +79,7 @@ type StableReserveManager interface {
 	EndBlock(ctx cosmos.Context, mgr Manager) error
 	IsEnabled(ctx cosmos.Context) bool
 	IsEligibleStable(ctx cosmos.Context, asset common.Asset) (bool, string)
+	IsOraclePegged(ctx cosmos.Context, asset common.Asset) bool
 	Deposit(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint, contributor common.Address, txID common.TxID) error
 	Withdraw(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint, contributor common.Address, txID common.TxID) (common.Coin, bool, error)
 	TrySwap(ctx cosmos.Context, mgr Manager, msg MsgSwap) (bool, cosmos.Uint, error)
