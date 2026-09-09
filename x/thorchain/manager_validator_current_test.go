@@ -1331,20 +1331,20 @@ func (vts *ValidatorMgrTestSuite) TestHasPendingCoScheduledKeygenUsesExtendedVal
 		keygenHeight + retryBlocks + 1,
 		keygenHeight + extendedValidity - 1,
 	} {
-		pending, pendingErr := validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(height), AsgardKeygen)
+		pending, pendingErr := hasPendingKeygen(ctx.WithBlockHeight(height), validatorMgr.k, AsgardKeygen)
 		c.Assert(pendingErr, IsNil)
 		c.Assert(pending, Equals, true, Commentf("height %d", height))
 	}
 
-	pending, err := validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+extendedValidity), AsgardKeygen)
+	pending, err := hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+extendedValidity), validatorMgr.k, AsgardKeygen)
 	c.Assert(err, IsNil)
 	c.Assert(pending, Equals, true)
 
-	pending, err = validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+extendedValidity), XMRMonovaultKeygen)
+	pending, err = hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+extendedValidity), validatorMgr.k, XMRMonovaultKeygen)
 	c.Assert(err, IsNil)
 	c.Assert(pending, Equals, true)
 
-	pending, err = validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+extendedValidity+1), XMRMonovaultKeygen)
+	pending, err = hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+extendedValidity+1), validatorMgr.k, XMRMonovaultKeygen)
 	c.Assert(err, IsNil)
 	c.Assert(pending, Equals, false)
 }
@@ -1368,19 +1368,19 @@ func (vts *ValidatorMgrTestSuite) TestHasPendingStandaloneAsgardExpiresAtRetryBo
 	k.SetKeygenBlock(ctx, keygenBlock)
 
 	// One block before the retry tick: still pending.
-	pending, err := validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+retryBlocks-1), AsgardKeygen)
+	pending, err := hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+retryBlocks-1), validatorMgr.k, AsgardKeygen)
 	c.Assert(err, IsNil)
 	c.Assert(pending, Equals, true)
 
 	// Exactly at the retry tick: expired, so the retry is NOT skipped. Before the
 	// off-by-one fix this returned true and the first retry silently no-opped,
 	// doubling the effective retry interval.
-	pending, err = validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+retryBlocks), AsgardKeygen)
+	pending, err = hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+retryBlocks), validatorMgr.k, AsgardKeygen)
 	c.Assert(err, IsNil)
 	c.Assert(pending, Equals, false)
 
 	// And after the tick.
-	pending, err = validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+retryBlocks+1), AsgardKeygen)
+	pending, err = hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+retryBlocks+1), validatorMgr.k, AsgardKeygen)
 	c.Assert(err, IsNil)
 	c.Assert(pending, Equals, false)
 }

@@ -54,9 +54,8 @@ func (vm *NetworkMgr) activateEnabledChains(ctx cosmos.Context, mgr Manager) err
 		return nil
 	}
 
-	// G0: never mutate chain sets while a churn is settling. tryRotateInitVaults
-	// promotes init vaults as a set and refuses on a chain-set mismatch, so an
-	// interleaved stamp could stall rotation.
+	// G0: defer from keygen scheduling through init-vault rotation. A pending
+	// regular keygen can omit the newly enabled chain when it rotates in.
 	initVaults, err := k.GetAsgardVaultsByStatus(ctx, InitVault)
 	if err != nil {
 		return fmt.Errorf("fail to get init vaults: %w", err)
@@ -97,6 +96,14 @@ func (vm *NetworkMgr) activateEnabledChains(ctx cosmos.Context, mgr Manager) err
 		}
 	}
 	if len(pending) == 0 {
+		return nil
+	}
+
+	pendingKeygen, err := hasPendingKeygen(ctx, k, AsgardKeygen)
+	if err != nil {
+		return fmt.Errorf("fail to check pending regular keygens: %w", err)
+	}
+	if pendingKeygen {
 		return nil
 	}
 

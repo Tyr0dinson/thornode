@@ -249,24 +249,24 @@ func chainHasVaultFunds(ctx cosmos.Context, k keeper.Keeper, chain common.Chain)
 	return false
 }
 
-func (vm *ValidatorMgr) hasPendingKeygen(ctx cosmos.Context, keygenType thortypes.KeygenType) (bool, error) {
-	lookback := keygenResultValidityBlocks(ctx, vm.k, keygenType)
+func hasPendingKeygen(ctx cosmos.Context, k keeper.Keeper, keygenType thortypes.KeygenType) (bool, error) {
+	lookback := keygenResultValidityBlocks(ctx, k, keygenType)
 	// A regular Asgard keygen shares the longer XMR validity window when both
 	// types are co-scheduled in one block. Scan that full possible window, then
 	// use the actual block contents below to select the precise expiry.
 	if keygenType == AsgardKeygen {
-		lookback = max(lookback, keygenResultValidityBlocks(ctx, vm.k, XMRMonovaultKeygen))
+		lookback = max(lookback, keygenResultValidityBlocks(ctx, k, XMRMonovaultKeygen))
 	}
 	startHeight := ctx.BlockHeight() - lookback
 	if startHeight < genesisBlockHeight {
 		startHeight = genesisBlockHeight
 	}
 
-	activeVaults, err := vm.k.GetAsgardVaultsByStatus(ctx, ActiveVault)
+	activeVaults, err := k.GetAsgardVaultsByStatus(ctx, ActiveVault)
 	if err != nil {
 		return false, fmt.Errorf("fail to get active vaults: %w", err)
 	}
-	initVaults, err := vm.k.GetAsgardVaultsByStatus(ctx, InitVault)
+	initVaults, err := k.GetAsgardVaultsByStatus(ctx, InitVault)
 	if err != nil {
 		return false, fmt.Errorf("fail to get init vaults: %w", err)
 	}
@@ -277,7 +277,7 @@ func (vm *ValidatorMgr) hasPendingKeygen(ctx cosmos.Context, keygenType thortype
 	// can no longer resolve it, yet no result for it can matter any more.
 	// Keygens in the same block (split Asgard groups) are each still checked.
 	for height := ctx.BlockHeight(); height >= startHeight; height-- {
-		keygenBlock, err := vm.k.GetKeygenBlock(ctx, height)
+		keygenBlock, err := k.GetKeygenBlock(ctx, height)
 		if err != nil {
 			return false, fmt.Errorf("fail to get keygen block: %w", err)
 		}
@@ -296,7 +296,7 @@ func (vm *ValidatorMgr) hasPendingKeygen(ctx cosmos.Context, keygenType thortype
 			// same window, so a result can no longer finalize a vault in the block
 			// the retry is scheduled, which stops the retry double-triggering a live
 			// keygen.
-			if ctx.BlockHeight()-height > keygenResultValidityBlocksForBlock(ctx, vm.k, keygen.Type, keygenBlock) {
+			if ctx.BlockHeight()-height > keygenResultValidityBlocksForBlock(ctx, k, keygen.Type, keygenBlock) {
 				continue
 			}
 			return true, nil
@@ -396,7 +396,7 @@ func (vm *ValidatorMgr) churnInner(ctx cosmos.Context) error {
 	}
 	if ok {
 		splitGroups := vm.splitNext(ctx, next, asgardSize)
-		pendingAsgard, pendingErr := vm.hasPendingKeygen(ctx, AsgardKeygen)
+		pendingAsgard, pendingErr := hasPendingKeygen(ctx, vm.k, AsgardKeygen)
 		if pendingErr != nil {
 			return pendingErr
 		}
@@ -425,7 +425,7 @@ func (vm *ValidatorMgr) churnInner(ctx cosmos.Context) error {
 		return err
 	}
 	if needsXMR {
-		pendingXMR, err := vm.hasPendingKeygen(ctx, XMRMonovaultKeygen)
+		pendingXMR, err := hasPendingKeygen(ctx, vm.k, XMRMonovaultKeygen)
 		if err != nil {
 			return err
 		}

@@ -241,6 +241,56 @@ func (s *ChainActivationTestSuite) TestNoStampWhileInitVaultPresent(c *C) {
 	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), active.PubKey), activationChain.String()), Equals, false)
 }
 
+func (s *ChainActivationTestSuite) TestActivationWaitsForPendingRegularKeygen(c *C) {
+	for _, tc := range []struct {
+		name       string
+		keygenType types.KeygenType
+		coSchedule bool
+		resolved   bool
+	}{
+		{name: "regular", keygenType: AsgardKeygen},
+		{name: "co-scheduled", keygenType: AsgardKeygen, coSchedule: true},
+		{name: "resolved", keygenType: AsgardKeygen, resolved: true},
+		{name: "XMR only", keygenType: XMRMonovaultKeygen},
+	} {
+		ctx, mgr, nodes := setupActivation(c, 4)
+		ctx = ctx.WithBlockHeight(100)
+		k := mgr.Keeper()
+		k.SetMimir(ctx, constants.ChurnRetryInterval.String(), 2)
+		active := newActivationVault(c, ActiveVault, nodes)
+		c.Assert(k.SetVault(ctx, active), IsNil)
+		satisfyActivationGates(ctx, c, k, activationChain, nodes)
+		k.SetMimir(ctx, activationMimirKey(activationChain), 1)
+
+		members := membershipOf(activationNodes(4))
+		if tc.resolved {
+			members = active.Membership
+		}
+		keygen, err := NewKeygen(ctx.BlockHeight(), members, tc.keygenType)
+		c.Assert(err, IsNil)
+		block := NewKeygenBlock(ctx.BlockHeight())
+		block.Keygens = []Keygen{keygen}
+		if tc.coSchedule {
+			xmr, err := NewKeygen(ctx.BlockHeight(), members, XMRMonovaultKeygen)
+			c.Assert(err, IsNil)
+			block.Keygens = append(block.Keygens, xmr)
+		}
+		k.SetKeygenBlock(ctx, block)
+		initVaults, err := k.GetAsgardVaultsByStatus(ctx, InitVault)
+		c.Assert(err, IsNil)
+		c.Assert(initVaults, HasLen, 0)
+
+		validity := keygenResultValidityBlocksForBlock(ctx, k, tc.keygenType, block)
+		for _, offset := range []int64{0, 1, validity, validity + 1} {
+			at := ctx.WithBlockHeight(block.Height + offset)
+			runActivation(at, c, mgr)
+			wantStamp := tc.resolved || tc.keygenType == XMRMonovaultKeygen || offset > validity
+			c.Assert(slices.Contains(vaultChains(at, c, k, active.PubKey), activationChain.String()), Equals, wantStamp,
+				Commentf("%s at offset %d", tc.name, offset))
+		}
+	}
+}
+
 // --- readiness proof: binding to the current validator set ---
 
 // Bifrost posts MsgNetworkFee only when the rate *changes*, so on a stable-fee chain
