@@ -54,8 +54,8 @@ type: check
 endpoint: http://localhost:1317/thorchain/mimir/votes_required
 asserts:
   - .mimirs|length == 0
-  # the gogo gateway marshals int64 as a JSON string
-  - .active_node_count == "5"
+  # the custom gateway marshaler preserves the OpenAPI numeric fields
+  - .active_node_count == 5
 ---
 ########################################################################################
 # a standby node cannot open an ADR key no active node has voted on, so cheap standby
@@ -114,8 +114,8 @@ endpoint: http://localhost:1317/thorchain/mimir/votes_required
 asserts:
   - .mimirs|length == 1
   - .mimirs[0].key == "ADR42TEST"
-  - .mimirs[0].votes == "2"
-  - .active_node_count == "5"
+  - .mimirs[0].votes == 2
+  - .active_node_count == 5
 ---
 # the mimir itself is not set without a supermajority
 type: check
@@ -220,7 +220,7 @@ asserts:
   - .mimirs|length == 1
   - .mimirs[0].key == "ADR43ABSTAIN"
   # the abstain counts toward turnout
-  - .mimirs[0].votes == "2"
+  - .mimirs[0].votes == 2
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
@@ -309,4 +309,4 @@ endpoint: http://localhost:1317/thorchain/mimir/votes_required
 asserts:
   - .mimirs|length == 1
   - .mimirs[0].key == "ADR43ABSTAIN"
-  - .mimirs[0].votes == "4"
+  - .mimirs[0].votes == 4
