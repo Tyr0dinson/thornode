@@ -2,6 +2,7 @@ package utxo
 
 import (
 	"encoding/hex"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,11 +12,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"github.com/rs/zerolog"
+	utxorpcc "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	btctxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/txscript"
 	"gitlab.com/thorchain/thornode/v3/cmd"
@@ -223,6 +227,60 @@ func TestZECSpentUtxosOnlyFinalizedAfterSuccessfulBroadcast(t *testing.T) {
 	client.finalizePendingSpentUtxos(payloadHex, true)
 	if !client.spentUtxos[key] {
 		t.Fatal("expected successful ZEC broadcast to mark selected UTXOs spent")
+	}
+}
+
+func TestZECBroadcastTreatsExistingMempoolTransactionAsSuccess(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"result":null,"error":{"code":-27,"message":"transaction already exists in mempool"},"id":1}`))
+	}))
+	defer server.Close()
+
+	rpcClient, err := utxorpcc.NewClient(
+		server.URL, "thorchain", "password", 0, time.Second, common.ZECChain, zerolog.Nop(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &Client{
+		chain:             common.ZECChain,
+		rpc:               rpcClient,
+		spentUtxos:        make(map[string]bool),
+		pendingSpentUtxos: make(map[string][]string),
+	}
+	payload := []byte{0x01, 0x02, 0x03}
+	const key = "txid-0"
+	client.rememberPendingSpentUtxos(payload, map[string]int64{key: 1})
+
+	txID, err := client.BroadcastTx(payload)
+	if err != nil {
+		t.Fatalf("existing transaction should be accepted: %v", err)
+	}
+	wantTxID := chainhash.DoubleHashH(payload).String()
+	if txID != wantTxID {
+		t.Fatalf("got tx ID %q, want %q", txID, wantTxID)
+	}
+	if !client.spentUtxos[key] {
+		t.Fatal("accepted transaction did not mark its UTXO as spent")
+	}
+	if len(client.pendingSpentUtxos) != 0 {
+		t.Fatal("accepted transaction left a pending UTXO reservation")
+	}
+}
+
+func TestZECBroadcastAlreadyAccepted(t *testing.T) {
+	for _, message := range []string{
+		"transaction already exists in mempool",
+		"already in block chain",
+		"transaction was committed to the best chain",
+	} {
+		if !zecBroadcastAlreadyAccepted(errors.New(message)) {
+			t.Fatalf("expected %q to be accepted", message)
+		}
+	}
+	if zecBroadcastAlreadyAccepted(errors.New("transaction rejected")) {
+		t.Fatal("unexpectedly accepted a rejected transaction")
 	}
 }
 

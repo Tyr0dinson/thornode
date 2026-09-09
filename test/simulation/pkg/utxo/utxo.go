@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -352,6 +353,10 @@ func (c *Client) BroadcastTx(payload []byte) (string, error) {
 		payloadHex := hex.EncodeToString(payload)
 		args := []any{payloadHex}
 		err := c.rpc.Call(&hash, "sendrawtransaction", args...)
+		if zecBroadcastAlreadyAccepted(err) {
+			hash = chainhash.DoubleHashH(payload).String()
+			err = nil
+		}
 		c.finalizePendingSpentUtxos(payloadHex, err == nil)
 		return hash, err
 	}
@@ -372,6 +377,17 @@ func (c *Client) BroadcastTx(payload []byte) (string, error) {
 
 	// broadcast tx
 	return c.rpc.SendRawTransaction(redeemTx, maxFee)
+}
+
+func zecBroadcastAlreadyAccepted(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "already exists in mempool") ||
+		strings.Contains(message, "already in block chain") ||
+		strings.Contains(message, "transaction was committed to the best chain")
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
