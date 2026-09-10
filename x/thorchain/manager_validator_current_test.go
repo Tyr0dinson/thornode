@@ -10,6 +10,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
 type ValidatorMgrTestSuite struct{}
@@ -1207,6 +1208,109 @@ func (vts *ValidatorMgrTestSuite) TestHasPendingStandaloneAsgardExpiresAfterRetr
 	pending, err = validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+retryBlocks+1), AsgardKeygen)
 	c.Assert(err, IsNil)
 	c.Assert(pending, Equals, false)
+}
+
+func setupChurnClockAuditState(c *C) (cosmos.Context, keeper.Keeper, *DummyMgr, *ValidatorMgr, *NetworkMgrDummy, NodeAccounts) {
+	ctx, k := setupKeeperForTest(c)
+	mgr := NewDummyMgrWithKeeper(k)
+	validatorMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	networkDummy, ok := mgr.NetworkMgr().(*NetworkMgrDummy)
+	c.Assert(ok, Equals, true)
+
+	k.SetMimir(ctx, constants.DesiredValidatorSet.String(), 4)
+	k.SetMimir(ctx, constants.AsgardSize.String(), 10)
+	k.SetMimir(ctx, constants.ChurnInterval.String(), 60)
+	k.SetMimir(ctx, constants.ChurnRetryInterval.String(), 10)
+
+	active := make(NodeAccounts, 0, 4)
+	membership := make([]string, 0, 4)
+	for i := 0; i < 4; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		if i == 0 {
+			na.RequestedToLeave = true
+		}
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+		active = append(active, na)
+		membership = append(membership, na.PubKeySet.Secp256k1.String())
+	}
+
+	standby := GetRandomValidatorNode(NodeStandby)
+	standby.Bond = cosmos.NewUint(uint64(constants.GetConstantValues(GetCurrentVersion()).GetInt64Value(constants.MinimumBondInRune)))
+	standby.Version = constants.SWVersion.String()
+	c.Assert(k.SetNodeAccount(ctx, standby), IsNil)
+
+	regular := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.THORChain, common.BTCChain}.Strings(), nil)
+	regular.Membership = membership
+	c.Assert(k.SetVault(ctx, regular), IsNil)
+
+	return ctx, k, mgr, validatorMgr, networkDummy, active
+}
+
+func activateAuditXMRMonovault(c *C, ctx cosmos.Context, k keeper.Keeper, mgr *DummyMgr, active NodeAccounts, height int64) Vault {
+	membership := make([]string, 0, len(active))
+	for _, na := range active {
+		membership = append(membership, na.PubKeySet.Secp256k1.String())
+	}
+
+	xmr := NewVaultV2(height, InitVault, AsgardVault, GetRandomPubKey(), xmrMonovaultChains().Strings(), nil, GetRandomPubKey())
+	xmr.PubKeyFrost = GetRandomEd25519PubKey()
+	xmr.Membership = membership
+	c.Assert(k.SetVault(ctx, xmr), IsNil)
+	c.Assert(newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr()).RotateVault(ctx.WithBlockHeight(height), xmr), IsNil)
+
+	activated, err := k.GetVault(ctx, xmr.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(activated.Status, Equals, ActiveVault)
+	c.Assert(activated.StatusSince, Equals, height)
+	return activated
+}
+
+func (vts *ValidatorMgrTestSuite) TestXMRMonovaultActivationResetsRegularChurnSchedule(c *C) {
+	ctx, k, mgr, validatorMgr, networkDummy, active := setupChurnClockAuditState(c)
+	activateAuditXMRMonovault(c, ctx, k, mgr, active, 20)
+
+	c.Assert(getLastChurnHeight(ctx, k), Equals, int64(20))
+
+	// The ordinary vault's clock would churn at 1 + 60 = 61, but the later XMR
+	// activation moves the shared clock and suppresses that tick.
+	c.Assert(validatorMgr.BeginBlock(ctx.WithBlockHeight(61), mgr, nil), IsNil)
+	c.Assert(networkDummy.nas, HasLen, 0)
+
+	// The next ordinary churn is instead scheduled at 20 + 60 = 80.
+	c.Assert(validatorMgr.BeginBlock(ctx.WithBlockHeight(80), mgr, nil), IsNil)
+	c.Assert(len(networkDummy.nas) > 0, Equals, true)
+}
+
+func (vts *ValidatorMgrTestSuite) TestXMRMonovaultActivationPostponesExpiredRegularKeygenRetry(c *C) {
+	ctx, k, mgr, validatorMgr, networkDummy, active := setupChurnClockAuditState(c)
+
+	const keygenHeight int64 = 61
+	keygen, err := NewKeygen(keygenHeight, common.PubKeys{GetRandomPubKey(), GetRandomPubKey(), GetRandomPubKey()}.Strings(), AsgardKeygen)
+	c.Assert(err, IsNil)
+	keygenBlock := NewKeygenBlock(keygenHeight)
+	keygenBlock.Keygens = []Keygen{keygen}
+	k.SetKeygenBlock(ctx, keygenBlock)
+
+	// The unresolved regular keygen is pending through its exact retry boundary.
+	pending, err := validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(71), AsgardKeygen)
+	c.Assert(err, IsNil)
+	c.Assert(pending, Equals, true)
+	pending, err = validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(72), AsgardKeygen)
+	c.Assert(err, IsNil)
+	c.Assert(pending, Equals, false)
+
+	activateAuditXMRMonovault(c, ctx, k, mgr, active, 65)
+	c.Assert(getLastChurnHeight(ctx, k), Equals, int64(65))
+
+	// Without the XMR activation, the expired keygen would be retried at height
+	// 81 (the second 10-block retry tick after the height-61 churn). The shared
+	// clock suppresses it even though the old keygen is no longer pending.
+	c.Assert(validatorMgr.BeginBlock(ctx.WithBlockHeight(81), mgr, nil), IsNil)
+	c.Assert(networkDummy.nas, HasLen, 0)
+
+	// Retry is postponed until the new regular-churn boundary, 65 + 60 = 125.
+	c.Assert(validatorMgr.BeginBlock(ctx.WithBlockHeight(125), mgr, nil), IsNil)
+	c.Assert(len(networkDummy.nas) > 0, Equals, true)
 }
 
 func (vts *ValidatorMgrTestSuite) TestWeightedBondReward(c *C) {
