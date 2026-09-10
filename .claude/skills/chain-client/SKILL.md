@@ -28,18 +28,21 @@ Determine the workflow based on the user's intent:
 
 Read the appropriate reference file based on the chain's architecture:
 
-| Chain Type     | Examples                  | Reference                       |
-| -------------- | ------------------------- | ------------------------------- |
-| **UTXO**       | BTC, BCH, LTC, DOGE, ZEC  | `references/patterns-utxo.md`   |
-| **EVM**        | ETH, AVAX, BSC, BASE, POL | `references/patterns-evm.md`    |
-| **Cosmos SDK** | GAIA, NOBLE               | `references/patterns-cosmos.md` |
-| **Other**      | SOL, XRP, TRON            | `references/patterns-other.md`  |
+| Chain Type     | Examples                  | Reference                                     |
+| -------------- | ------------------------- | --------------------------------------------- |
+| **UTXO**       | BTC, BCH, LTC, DOGE, ZEC  | `references/patterns-utxo.md`                 |
+| **EVM**        | ETH, AVAX, BSC, BASE, POL | `references/patterns-evm.md`                  |
+| **Cosmos SDK** | GAIA, NOBLE               | `references/patterns-cosmos.md`               |
+| **Other**      | SOL, XRP, TRON            | `references/patterns-other.md`                |
+| **Monero**     | XMR                       | `bifrost/pkg/chainclients/monero/` (see note) |
 
 If the chain doesn't fit neatly into a family, read `references/patterns-other.md` and pick the closest existing client as a template.
 
+Monero is the outlier: it uses a single "monovault" with a wallet-RPC sidecar under `monero/sidecar/`, view-key scanning, and its own spent-ref, reorg, and signed-payload stores, so almost nothing in the other families transfers. Read `monero/client.go`, `monero/scanner.go`, and `monero/XMR_TSS_SIGNER_API.md` directly rather than a pattern file; the shared interface, common-package, and handler steps below still apply.
+
 #### Step 2: Review Known Bug Patterns
 
-Read `references/known-bugs.md` **before writing code**. This catalog of 80 historical bugs from mainnet (double spends, stuck funds, outages) is organized into 23 categories. Understanding these patterns upfront prevents repeating past mistakes. Key categories: double-spend prevention, signer cache management, nonce safety, reorg handling, gas calculation, race conditions, nil safety, and integer overflow.
+Read `references/known-bugs.md` **before writing code**. This catalog of historical mainnet bugs (double spends, stuck funds, outages) is organized by category; see its table of contents. Understanding these patterns upfront prevents repeating past mistakes. Key categories: double-spend prevention, signer cache management, nonce safety, reorg handling, gas calculation, race conditions, nil safety, and integer overflow.
 
 ### Phase 2: Implement Bifrost Client
 
@@ -56,6 +59,7 @@ Create a new package under `bifrost/pkg/chainclients/<chain>/`. **File naming co
 | **Solana**                    | `sol_client.go`                    | `sol_scanner.go`                                                                | In `sol_client.go`                | `solana/sol_client.go`                                |
 | **TRON**                      | `tron_client.go`                   | `tron_block_scanner.go` (+ `_mainnet.go` / `_mocknet.go`)                       | In `tron_client.go`               | `tron/tron_client.go`                                 |
 | **XRP**                       | `client.go`                        | `block_scanner.go`                                                              | In `client.go`                    | `xrp/client.go`                                       |
+| **Monero**                    | `client.go`                        | `scanner.go`                                                                    | In `client.go` (+ `sidecar/`)     | `monero/client.go`                                    |
 
 Optional sub-packages (per chain):
 
@@ -210,7 +214,7 @@ Adding the chain to `allSimChains` provides random coverage, but you must also a
 
 #### Step 17: Verify Against Known Bugs
 
-Read `references/known-bugs.md` and run through the 21-item checklist in the [Known Bug Pattern Review](#known-bug-pattern-review) section below.
+Read `references/known-bugs.md` and run through the checklist in the [Known Bug Pattern Review](#known-bug-pattern-review) section below.
 
 ---
 
@@ -276,7 +280,7 @@ Read `references/testing.md` for details on expected test patterns.
 
 ### Known Bug Pattern Review
 
-Read `references/known-bugs.md` and verify the chain client avoids all 80 historical bug patterns:
+Read `references/known-bugs.md` and verify the chain client avoids the historical bug patterns:
 
 - [ ] **No re-signing**: Broadcast retries use the same signed bytes, never re-sign
 - [ ] **Scanner health gating**: Signing is blocked when block scanner is unhealthy

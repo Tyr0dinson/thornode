@@ -162,6 +162,24 @@ def classify(inp):
             "details": "Cosmos Hub address",
         }
 
+    # XRP classic addresses: r + 24-34 base58 (no 0, O, I, l)
+    if re.match(r"^r[1-9A-HJ-NP-Za-km-z]{24,34}$", inp):
+        return {
+            "type": "chain_address",
+            "value": inp,
+            "chain_hint": "XRP",
+            "details": "XRP address",
+        }
+
+    # TRON addresses: T + 33 base58 (must precede the Solana catch-all)
+    if re.match(r"^T[1-9A-HJ-NP-Za-km-z]{33}$", inp):
+        return {
+            "type": "chain_address",
+            "value": inp,
+            "chain_hint": "TRON",
+            "details": "TRON address",
+        }
+
     # Solana addresses (base58, 32-44 chars)
     if re.match(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$", inp) and not re.match(
         r"^[a-fA-F0-9]+$", inp

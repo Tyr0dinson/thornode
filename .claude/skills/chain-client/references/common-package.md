@@ -6,22 +6,22 @@ When adding a new chain or asset, the `common/` package requires updates in many
 
 Every new chain requires updates to ALL of these locations in `common/chain.go`:
 
-### 1. Chain Constant (lines ~16-39)
+### 1. Chain Constant
 
 ```go
 XxxChain = Chain("XXX")
 ```
 
-### 2. AllChains Array (lines ~41-58)
+### 2. AllChains Array
 
 Add to the `AllChains` slice when the chain is production-ready. Chains NOT in AllChains are defined but disabled (e.g., SUIChain, ADAChain are defined but not in AllChains).
 
-### 3. Chain Family Functions (lines ~109-116)
+### 3. Chain Family Functions
 
 - `GetEVMChains()` — add if EVM-compatible
 - `GetUTXOChains()` — add if UTXO-based
 
-### 4. GetSigningAlgo() (lines ~154-161)
+### 4. GetSigningAlgo()
 
 ```go
 case SOLChain, SUIChain, ADAChain:
@@ -29,7 +29,7 @@ case SOLChain, SUIChain, ADAChain:
 // default: return SigningAlgoSecp256k1
 ```
 
-### 5. GetGasAsset() (lines ~164-206)
+### 5. GetGasAsset()
 
 Map the chain to its native gas asset:
 
@@ -38,7 +38,7 @@ case XxxChain:
     return XxxAsset
 ```
 
-### 6. GetGasUnits() (lines ~213-240)
+### 6. GetGasUnits()
 
 Return the gas unit name and decimal multiplier:
 
@@ -47,7 +47,7 @@ case XxxChain:
     return "unit-name", cosmos.NewUint(1e6)  // adjust decimals
 ```
 
-### 7. GetGasAssetDecimal() (lines ~257-268)
+### 7. GetGasAssetDecimal()
 
 Return the number of decimal places for the gas asset. Common values:
 
@@ -55,7 +55,7 @@ Return the number of decimal places for the gas asset. Common values:
 - 8 decimals: BTC, ETH, BSC, AVAX, BASE, POL (THORChain standard)
 - 9 decimals: SOL, SUI
 
-### 8. AddressPrefix() (lines ~279-325)
+### 8. AddressPrefix()
 
 Return address prefixes per network type (MockNet, MainNet, StageNet). Required for bech32-style or prefix-based address chains:
 
@@ -71,7 +71,7 @@ case XxxChain:
 
 Not all chains need this (EVM chains use 0x prefix universally).
 
-### 9. DustThreshold() (lines ~333-374)
+### 9. DustThreshold()
 
 Minimum amount for withdraw transactions. Must be set to avoid dust attacks:
 
@@ -80,19 +80,19 @@ case XxxChain:
     return cosmos.NewUint(10_000_000)  // in 1e8 THORChain units
 ```
 
-### 10. P2WPKHOutputValue() (lines ~377-400)
+### 10. P2WPKHOutputValue()
 
 **UTXO chains only** — value for P2WPKH memo data outputs.
 
-### 11. MaxMemoLength() (lines ~403-412)
+### 11. MaxMemoLength()
 
 **UTXO chains only** — maximum memo length in bytes.
 
-### 12. DefaultCoinbase() (lines ~417-432)
+### 12. DefaultCoinbase()
 
 **UTXO chains only** — default block coinbase emission value.
 
-### 13. ApproximateBlockMilliseconds() (lines ~434-475)
+### 13. ApproximateBlockMilliseconds()
 
 Approximate block time in milliseconds. Used for timing calculations:
 
@@ -101,7 +101,7 @@ case XxxChain:
     return 5_000  // 5 seconds
 ```
 
-### 14. InboundNotes() (lines ~477-494)
+### 14. InboundNotes()
 
 User-facing notes about inbound transaction requirements:
 
@@ -110,7 +110,7 @@ case XxxChain:
     return "Use the memo field for transaction details"
 ```
 
-### 15. OutboundNotes() (lines ~496-505)
+### 15. OutboundNotes()
 
 User-facing notes about outbound transaction behavior (only if chain has special requirements).
 
@@ -118,13 +118,13 @@ User-facing notes about outbound transaction behavior (only if chain has special
 
 ## asset.go — Asset Definition (5-6 locations)
 
-### 1. Asset Constant (lines ~15-62)
+### 1. Asset Constant
 
 ```go
 XxxAsset = Asset{Chain: XxxChain, Symbol: "XXX", Ticker: "XXX", Synth: false}
 ```
 
-### 2. ShortCode() (lines ~314-354)
+### 2. ShortCode()
 
 Short code for compact memo encoding (1-2 characters):
 
@@ -133,7 +133,7 @@ case "XXX.XXX":
     return "xx"
 ```
 
-### 3. NewAssetWithShortCodesV3_1_0() (lines ~120-147)
+### 3. NewAssetWithShortCodesV3_1_0()
 
 Register the short code in the versioned mapping:
 
@@ -141,11 +141,11 @@ Register the short code in the versioned mapping:
 shorts[XxxAsset.ShortCode()] = XxxAsset.String()
 ```
 
-### 4. Native() (lines ~270-291)
+### 4. Native()
 
 **Only for whitelisted THORChain native assets** — maps asset to a native denom string.
 
-### 5. IsWhitelisted() (lines ~377-385)
+### 5. IsWhitelisted()
 
 **Only for base layer pool assets** — add to the whitelisted assets map.
 
@@ -165,18 +165,18 @@ func IsValidXxxAddress(addr string) bool {
 
 Existing validators for reference:
 
-- `IsValidXRPAddress()` (lines ~93-101)
-- `IsValidTRONAddress()` (lines ~103-111)
-- `IsValidSOLAddress()` (lines ~113-120)
-- `IsValidZECAddress()` (lines ~122-141)
-- `IsValidSUIAddress()` (lines ~143-149)
-- `IsValidADAAddress()` (lines ~151-157)
+- `IsValidXRPAddress()`
+- `IsValidTRONAddress()`
+- `IsValidSOLAddress()`
+- `IsValidZECAddress()`
+- `IsValidSUIAddress()`
+- `IsValidADAAddress()`
 
-### 2. NewAddress() (lines ~42-91)
+### 2. NewAddress()
 
 Wire the new validator into address creation. This function uses a mix of prefix checks and chain-specific validators.
 
-### 3. IsChain() (lines ~228-326)
+### 3. IsChain()
 
 Add chain detection logic based on address format:
 
@@ -185,7 +185,7 @@ case XxxChain:
     return IsValidXxxAddress(addr.String())
 ```
 
-### 4. GetChain() (lines ~375-382)
+### 4. GetChain()
 
 Add to the chain detection loop array:
 
@@ -197,7 +197,7 @@ for _, chain := range []Chain{..., XxxChain} {
 For the three EVM chains that is by design (per the function's own doc comment, any EVM address resolves to
 `ETHChain`); `NOBLEChain` is simply unchecked.
 
-### 5. GetNetwork() (lines ~384-535)
+### 5. GetNetwork()
 
 Add network detection from address format (MockNet vs MainNet vs StageNet):
 
@@ -213,7 +213,7 @@ case XxxChain:
 
 ## pubkey.go — Public Key to Address Conversion (1 location, critical)
 
-### GetAddress() (lines ~115-321)
+### GetAddress()
 
 This is the **most critical and complex** update. Each chain needs custom public key → address derivation logic:
 
@@ -250,7 +250,7 @@ func GetXxxTokenList() EVMTokenList {
 - `xxx_mocknet_latest.json` — mocknet token list
 - Corresponding `.go` files with `//go:embed` directives
 
-### 3. Update GetEVMTokenList() in `common/tokenlist/token_list.go` (lines ~37-55)
+### 3. Update GetEVMTokenList() in `common/tokenlist/token_list.go`
 
 ```go
 case common.XxxChain:

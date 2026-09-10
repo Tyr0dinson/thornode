@@ -27,15 +27,7 @@ Before manual review, verify automated tooling:
 
 ### Phase 3: Consensus Safety Review (CRITICAL)
 
-**[MANDATORY] Invoke the `blockchain-code-review` skill** to check for consensus-breaking patterns:
-
-- Non-deterministic operations (float math, map iteration, time.Now(), random, UUID generation)
-- Division by zero risks (any division operations)
-- WASM API changes (app/wasm.go modifications)
-- Goroutines in consensus code (BeginBlocker/EndBlocker/handlers)
-- State machine changes (keeper modifications)
-- Protobuf breaking changes (field removals, type changes)
-- Floating point arithmetic (use cosmos.Int/Dec instead)
+Invoke the `blockchain-code-review` skill on the diff. It owns the pattern catalogue (non-determinism, panics in block lifecycle, arithmetic, version gating, protobuf, WASM queries); do not re-derive it here. Carry its findings into Phase 7 unchanged.
 
 ### Phase 4: Security & Bug Review
 
@@ -126,9 +118,30 @@ Show the complete review with:
 
 ### Phase 9: Post Review (After Approval Only)
 
-1. Post inline comments on specific lines using `glab mr note`
-2. Post summary as MR comment
-3. DO NOT approve, request changes, or update labels without explicit permission
+Comments go inline on the changed line, not as general MR notes. `glab mr note` cannot do this (it has no position flag), so use the discussions API. Get the diff refs once:
+
+```bash
+glab mr view <MR_ID> --output json | jq '.diff_refs'   # base_sha, head_sha, start_sha
+```
+
+Then, per finding:
+
+```bash
+glab api --method POST -H "Content-Type: application/json" \
+  "projects/:fullpath/merge_requests/<MR_ID>/discussions" --input - <<'EOF'
+{
+  "body": "<comment>",
+  "position": {
+    "position_type": "text",
+    "base_sha": "<base_sha>", "head_sha": "<head_sha>", "start_sha": "<start_sha>",
+    "new_path": "<file>", "old_path": "<file>",
+    "new_line": <line>
+  }
+}
+EOF
+```
+
+`position` must be a nested object, so it has to go through `--input`: `--field` and `--raw-field` send every value as a string and never parse JSON objects, which posts the comment unpositioned. `--input` also needs the explicit `Content-Type` header, or GitLab answers `415`. Use `old_line` instead of `new_line` for a comment on a removed line. Post the severity summary as one general note only after the inline comments. Do not approve, request changes, or change labels without explicit permission.
 
 ## Review Principles
 
@@ -148,6 +161,7 @@ Show the complete review with:
 - Review line-by-line for trivial issues
 - Approve without user permission
 - Post comments without user approval
+- Post findings as general notes when they belong on a line
 
 ## Context for LLM
 
