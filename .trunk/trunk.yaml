@@ -40,6 +40,11 @@ lint:
         - docs/mermaid.min.js
         # Retained upstream dependency; compiled and exercised through the root module.
         - third_party/cosmos-evm
+    - linters: [golangci-lint]
+      paths:
+        # Fixture generators compile against the previous application's dependencies.
+        - app/testdata/sdk-v053
+        - bifrost/pkg/chainclients/gaia/test-data/legacy
     - linters:
         - prettier
         - yamllint
