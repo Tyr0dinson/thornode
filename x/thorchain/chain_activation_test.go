@@ -271,7 +271,8 @@ func (s *ChainActivationTestSuite) TestActivationWaitsForPendingRegularKeygen(c 
 		block := NewKeygenBlock(ctx.BlockHeight())
 		block.Keygens = []Keygen{keygen}
 		if tc.coSchedule {
-			xmr, err := NewKeygen(ctx.BlockHeight(), members, XMRMonovaultKeygen)
+			var xmr Keygen
+			xmr, err = NewKeygen(ctx.BlockHeight(), members, XMRMonovaultKeygen)
 			c.Assert(err, IsNil)
 			block.Keygens = append(block.Keygens, xmr)
 		}
