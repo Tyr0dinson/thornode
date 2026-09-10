@@ -35,21 +35,21 @@ go test -mod=readonly -tags mocknet -run '^$' ./bifrost/tss/go-tss/...
 (cd test/simulation && go test -mod=readonly -tags mocknet ./...)
 ```
 
-| Check | Result |
-| --- | --- |
-| Both complete module graphs, production dependency listing and checksum verification | PASS with SDK0.54.4/EVM0.6.3 |
-| `go mod tidy`, both modules | PASS with the unchanged EVM v0.6.3 signing/codec packages retained locally |
-| Root app/params/log/proposal/CLI tests and full mocknet app suite | PASS |
-| Two local apps, replay and disk-backed restart | PASS, heights7–10; equal app hashes, validator updates, commit IDs and final exported state |
-| Mocknet THORChain/denom/scheduler module suites | PASS, baseline and upgraded |
-| `make build`, stagenet/mainnet/chainnet builds, `make test` | PASS; clean baseline `make test` also PASS |
-| Standalone simulation binary, mocknet | PASS |
-| Enabled randomized app simulation, seed42/3blocks | FAIL identically before/after: unresolved ContinuousVestingAccount type URL during genesis generation |
-| p2p full suite + TSS keysign | PASS (p2p136.5s, keysign5.7s) |
-| All TSS packages, mocknet compile | PASS |
-| Root Ledger-tag software signing checks | PASS; no hardware Ledger test |
-| Simulation `-tags ledger` | FAIL in both baseline and upgraded: preserved ledger-thorchain-go v1.0.3 has two-argument SignSECP256K1, SDK requires three |
-| Simulation unit tests | FAIL in same four packages as baseline: cmd, pkg/dag, pkg/solana, pkg/types; local chain IDs, Solana readiness and UTXO wallet services unavailable |
+| Check                                                                                | Result                                                                                                                                              |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Both complete module graphs, production dependency listing and checksum verification | PASS with SDK0.54.4/EVM0.6.3                                                                                                                        |
+| `go mod tidy`, both modules                                                          | PASS with the unchanged EVM v0.6.3 signing/codec packages retained locally                                                                          |
+| Root app/params/log/proposal/CLI tests and full mocknet app suite                    | PASS                                                                                                                                                |
+| Two local apps, replay and disk-backed restart                                       | PASS, heights7–10; equal app hashes, validator updates, commit IDs and final exported state                                                         |
+| Mocknet THORChain/denom/scheduler module suites                                      | PASS, baseline and upgraded                                                                                                                         |
+| `make build`, stagenet/mainnet/chainnet builds, `make test`                          | PASS; clean baseline `make test` also PASS                                                                                                          |
+| Standalone simulation binary, mocknet                                                | PASS                                                                                                                                                |
+| Enabled randomized app simulation, seed42/3blocks                                    | FAIL identically before/after: unresolved ContinuousVestingAccount type URL during genesis generation                                               |
+| p2p full suite + TSS keysign                                                         | PASS (p2p136.5s, keysign5.7s)                                                                                                                       |
+| All TSS packages, mocknet compile                                                    | PASS                                                                                                                                                |
+| Root Ledger-tag software signing checks                                              | PASS; no hardware Ledger test                                                                                                                       |
+| Simulation `-tags ledger`                                                            | FAIL in both baseline and upgraded: preserved ledger-thorchain-go v1.0.3 has two-argument SignSECP256K1, SDK requires three                         |
+| Simulation unit tests                                                                | FAIL in same four packages as baseline: cmd, pkg/dag, pkg/solana, pkg/types; local chain IDs, Solana readiness and UTXO wallet services unavailable |
 
 Focused checks added in `app/sdk_upgrade_test.go` exercise actual auth5→6 and Wasm1/2/3→4 migrations, preserved account/code identity, migration-only Wasm registration, writable branch lifecycle, pin/unpin charges and native library version. The signing tests cover direct, direct-aux with separate fee payer, textual metadata, custom Amino, multisig wire round-trip, and Ethereum signing. Fixed baseline EIP712 fixtures test old-signature acceptance, not merely self-sign/verify round trips. A proposal boundary test checks exact protobuf byte capacity; existing Bifrost suites exercise injection cache types and byte limits.
 
@@ -78,13 +78,13 @@ One initial run hit timeouts and a runner nil-response panic; a failed runner le
 
 The existing normalized block export zeros gas_used, app hashes and timing fields. Matching it is **not** proof of matching raw gas or distributed app hashes. Separate old/new `gas-fee.yaml` runs with `UNFILTER_EXPORT=1` used fresh temporary artifacts and retained all fee/event assertions:
 
-| Transaction | Baseline gas | Upgraded gas | Difference |
-| --- | ---: | ---: | ---: |
-| Mimir, height2 | 101857 | 101857 | 0 |
-| Mimir, height3 | 88497 | 88497 | 0 |
-| StoreCode, height4 | 2248012 | 2248012 | 0 |
-| Instantiate, height5 | 107955 | 106954 | -1001 |
-| Execute, height6 | 71453 | 71868 | +415 |
+| Transaction          | Baseline gas | Upgraded gas | Difference |
+| -------------------- | -----------: | -----------: | ---------: |
+| Mimir, height2       |       101857 |       101857 |          0 |
+| Mimir, height3       |        88497 |        88497 |          0 |
+| StoreCode, height4   |      2248012 |      2248012 |          0 |
+| Instantiate, height5 |       107955 |       106954 |      -1001 |
+| Execute, height6     |        71453 |        71868 |       +415 |
 
 The upgraded measurements above come from a freshly rebuilt final SDK0.54.4/EVM0.6.3 binary, superseding intermediate candidate measurements. The repository regression target intentionally sets `constants.Version=9.999.0`; app release metadata is4.0.0. All five transactions returned code0 and unchanged fee/event assertions passed. These are measured fixture results, not a guarantee that all existing contracts consume equivalent gas. Exact internal attribution of each delta and mainnet contract gas-margin review remain activation gates. The block gas meter is explicitly enabled; unchanged configured gas constants alone do not prove unchanged VM gas.
 
