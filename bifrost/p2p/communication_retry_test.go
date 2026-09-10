@@ -85,14 +85,14 @@ func TestStreamPolicyClassification(t *testing.T) {
 		{messages.TSSKeySignVerMsg, tssStreamPolicy{attempts: 1}},
 		{messages.TSSControlMsg, tssStreamPolicy{attempts: 1}},
 		{messages.TSSTaskDone, tssStreamPolicy{attempts: 1}},
-		{messages.TSSFrostDKGRound1Msg, tssStreamPolicy{attempts: 3, fullClose: true}},
-		{messages.TSSFrostDKGRound2Msg, tssStreamPolicy{attempts: 3, fullClose: true}},
-		{messages.TSSFrostDKGRound3Msg, tssStreamPolicy{attempts: 3, fullClose: true}},
-		{messages.TSSFrostDKGResultMsg, tssStreamPolicy{attempts: 3, fullClose: true}},
-		{messages.TSSFrostVerifyMsg, tssStreamPolicy{attempts: 1, fullClose: true}},
-		{messages.TSSFrostPreprocessMsg, tssStreamPolicy{attempts: 1, fullClose: true}},
-		{messages.TSSFrostShareMsg, tssStreamPolicy{attempts: 1, fullClose: true}},
-		{messages.TSSFrostResultMsg, tssStreamPolicy{attempts: 1, fullClose: true}},
+		{messages.TSSFrostDKGRound1Msg, tssStreamPolicy{attempts: 3}},
+		{messages.TSSFrostDKGRound2Msg, tssStreamPolicy{attempts: 3}},
+		{messages.TSSFrostDKGRound3Msg, tssStreamPolicy{attempts: 3}},
+		{messages.TSSFrostDKGResultMsg, tssStreamPolicy{attempts: 3}},
+		{messages.TSSFrostVerifyMsg, tssStreamPolicy{attempts: 1}},
+		{messages.TSSFrostPreprocessMsg, tssStreamPolicy{attempts: 1}},
+		{messages.TSSFrostShareMsg, tssStreamPolicy{attempts: 1}},
+		{messages.TSSFrostResultMsg, tssStreamPolicy{attempts: 1}},
 		{messages.Unknown, tssStreamPolicy{attempts: 1}},
 	}
 	for _, test := range tests {
@@ -117,7 +117,7 @@ func TestFrostWriteFirstAttemptSuccessWritesAndClosesOnce(t *testing.T) {
 	}
 	payload := []byte("first-attempt-frost-dkg")
 	attempts, err := comm.writeToStreamWithRetryDelay(
-		peer.ID("remote-peer"), payload, "first-success", 3, true, time.Millisecond,
+		peer.ID("remote-peer"), payload, "first-success", 3, time.Millisecond,
 	)
 	if err != nil {
 		t.Fatalf("write: %v", err)
@@ -150,7 +150,7 @@ func TestFrostEOFDrainFailureDoesNotRetryDeliveredPayload(t *testing.T) {
 		},
 	}
 	attempts, err := comm.writeToStreamWithRetryDelay(
-		peer.ID("remote-peer"), []byte("delivered-before-eof-error"), "eof-error", 3, true, time.Millisecond,
+		peer.ID("remote-peer"), []byte("delivered-before-eof-error"), "eof-error", 3, time.Millisecond,
 	)
 	if err != nil || attempts != 1 || opens.Load() != 1 {
 		t.Fatalf("attempts=%d opens=%d err=%v, want one successful write", attempts, opens.Load(), err)
@@ -194,7 +194,7 @@ func TestFrostWriteRetriesFreshStreamsExactBytesAfterRelease(t *testing.T) {
 	result := make(chan retryResult, 1)
 	go func() {
 		attempts, err := comm.writeToStreamWithRetryDelay(
-			peer.ID("remote-peer"), payload, "retry-after-release", 3, true, time.Millisecond,
+			peer.ID("remote-peer"), payload, "retry-after-release", 3, time.Millisecond,
 		)
 		result <- retryResult{attempts: attempts, err: err}
 	}()
@@ -255,7 +255,7 @@ func TestFrostWriteErrorResetsWithoutTracking(t *testing.T) {
 					return stream, nil
 				},
 			}
-			if err := comm.writeToStream(peer.ID("remote-peer"), []byte("payload"), "write-error", true); err == nil {
+			if err := comm.writeToStream(peer.ID("remote-peer"), []byte("payload")); err == nil {
 				t.Fatal("expected write error")
 			}
 			if stream.closeCount.Load() != 0 || stream.resetCount.Load() != 1 {
@@ -268,7 +268,7 @@ func TestFrostWriteErrorResetsWithoutTracking(t *testing.T) {
 	}
 }
 
-func TestLegacyWriteSuccessRetainsStreamUntilCeremonyRelease(t *testing.T) {
+func TestLegacyWriteSuccessClosesStreamImmediately(t *testing.T) {
 	stream := newRetryWriteStream()
 	comm := &Communication{
 		stopChan:  make(chan struct{}),
@@ -278,18 +278,16 @@ func TestLegacyWriteSuccessRetainsStreamUntilCeremonyRelease(t *testing.T) {
 		},
 	}
 	payload := []byte("legacy-tss-payload")
-	if err := comm.writeToStream(peer.ID("remote-peer"), payload, "legacy-session", false); err != nil {
+	if err := comm.writeToStream(peer.ID("remote-peer"), payload); err != nil {
 		t.Fatalf("legacy write: %v", err)
 	}
 	if !bytes.Equal(stream.written.Bytes(), framedPayload(payload)) {
 		t.Fatalf("written bytes=%x, want %x", stream.written.Bytes(), framedPayload(payload))
 	}
-	if stream.closeCount.Load() != 0 || stream.resetCount.Load() != 0 || parkedStreamCount(comm.streamMgr) != 1 {
-		t.Fatalf("before release close=%d reset=%d parked=%d", stream.closeCount.Load(), stream.resetCount.Load(), parkedStreamCount(comm.streamMgr))
-	}
-	comm.ReleaseStream("legacy-session")
-	if stream.closeCount.Load() != 0 || stream.resetCount.Load() != 1 || parkedStreamCount(comm.streamMgr) != 0 {
-		t.Fatalf("after release close=%d reset=%d parked=%d", stream.closeCount.Load(), stream.resetCount.Load(), parkedStreamCount(comm.streamMgr))
+	// Retaining a written stream until ceremony completion exhausts the
+	// go-libp2p resource manager's stream budget during large keygens.
+	if stream.closeCount.Load() != 1 || stream.resetCount.Load() != 0 || parkedStreamCount(comm.streamMgr) != 0 {
+		t.Fatalf("close=%d reset=%d parked=%d", stream.closeCount.Load(), stream.resetCount.Load(), parkedStreamCount(comm.streamMgr))
 	}
 }
 

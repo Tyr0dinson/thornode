@@ -392,12 +392,12 @@ const (
 )
 
 type tssStreamPolicy struct {
-	attempts  int
-	fullClose bool
+	attempts int
 }
 
 // Broadcast message to Peers. The message policy decides whether a failed
-// write is retried and whether both endpoints fully close the stream.
+// write is retried. Every TSS stream carries exactly one frame, and both
+// endpoints fully close it once that frame is written or delivered.
 func (c *Communication) Broadcast(peers []peer.ID, msg []byte, msgID string, msgType messages.THORChainTSSMessageType) {
 	if len(peers) == 0 {
 		return
@@ -406,20 +406,19 @@ func (c *Communication) Broadcast(peers []peer.ID, msg []byte, msgID string, msg
 	go c.broadcastToPeers(peers, msg, msgID, msgType, streamPolicyFor(msgType))
 }
 
-// streamPolicyFor keeps retry and close behavior together so a newly added
-// FROST message cannot accidentally get only half of its stream lifecycle.
+// streamPolicyFor decides how many fresh streams a failed write may use.
 func streamPolicyFor(msgType messages.THORChainTSSMessageType) tssStreamPolicy {
 	switch msgType {
 	case messages.TSSFrostDKGRound1Msg,
 		messages.TSSFrostDKGRound2Msg,
 		messages.TSSFrostDKGRound3Msg,
 		messages.TSSFrostDKGResultMsg:
-		return tssStreamPolicy{attempts: streamWriteAttempts, fullClose: true}
+		return tssStreamPolicy{attempts: streamWriteAttempts}
 	case messages.TSSFrostPreprocessMsg,
 		messages.TSSFrostShareMsg,
 		messages.TSSFrostVerifyMsg,
 		messages.TSSFrostResultMsg:
-		return tssStreamPolicy{attempts: 1, fullClose: true}
+		return tssStreamPolicy{attempts: 1}
 	case messages.TSSKeyGenMsg, messages.TSSKeyGenVerMsg:
 		return tssStreamPolicy{attempts: streamWriteAttempts}
 	default:
@@ -448,7 +447,7 @@ func (c *Communication) broadcastToPeers(
 	for _, p := range peers {
 		go func(p peer.ID) {
 			defer wgSend.Done()
-			attempts, err := c.writeToStreamWithRetry(p, msg, msgID, policy.attempts, policy.fullClose)
+			attempts, err := c.writeToStreamWithRetry(p, msg, msgID, policy.attempts)
 			if err != nil {
 				atomic.AddInt64(&failed, 1)
 				c.logger.Error().Err(err).
@@ -485,9 +484,8 @@ func (c *Communication) writeToStreamWithRetry(
 	msg []byte,
 	msgID string,
 	maxAttempts int,
-	fullClose bool,
 ) (int, error) {
-	return c.writeToStreamWithRetryDelay(pID, msg, msgID, maxAttempts, fullClose, streamWriteRetryDelay)
+	return c.writeToStreamWithRetryDelay(pID, msg, msgID, maxAttempts, streamWriteRetryDelay)
 }
 
 func (c *Communication) writeToStreamWithRetryDelay(
@@ -495,7 +493,6 @@ func (c *Communication) writeToStreamWithRetryDelay(
 	msg []byte,
 	msgID string,
 	maxAttempts int,
-	fullClose bool,
 	retryDelay time.Duration,
 ) (int, error) {
 	var err error
@@ -503,7 +500,7 @@ func (c *Communication) writeToStreamWithRetryDelay(
 	attempt := 0
 	for attempt < maxAttempts {
 		attempt++
-		err = c.writeToStream(pID, msg, msgID, fullClose)
+		err = c.writeToStream(pID, msg)
 		if err == nil {
 			if attempt > 1 {
 				c.logger.Info().
@@ -530,7 +527,7 @@ func (c *Communication) writeToStreamWithRetryDelay(
 	return attempt, err
 }
 
-func (c *Communication) writeToStream(pID peer.ID, msg []byte, msgID string, fullClose bool) error {
+func (c *Communication) writeToStream(pID peer.ID, msg []byte) error {
 	// don't send to ourselves
 	if c.host != nil && pID == c.host.ID() {
 		return nil
@@ -545,15 +542,16 @@ func (c *Communication) writeToStream(pID peer.ID, msg []byte, msgID string, ful
 
 	c.logger.Debug().Msgf(">>>writing messages to peer(%s)", pID)
 
-	if err := writeStreamWithBuffer(msg, stream, !fullClose); err != nil {
-		if fullClose {
-			_ = stream.Reset()
-		} else {
-			c.streamMgr.AddStream(msgID, stream)
-		}
+	if err := writeStreamWithBuffer(msg, stream, false); err != nil {
+		_ = stream.Reset()
 		return err
 	}
-	return c.finishWrittenTSSStream(stream, msgID, fullClose)
+	// Each stream carries one frame and no response. Retaining it until
+	// ceremony completion exhausts go-libp2p's resource-manager stream budget.
+	if err := closeStreamAndDrain(stream); err != nil {
+		return fmt.Errorf("fail to close TSS stream: %w", err)
+	}
+	return nil
 }
 
 func (c *Communication) openStreamToPeer(pID peer.ID) (network.Stream, error) {
@@ -561,19 +559,6 @@ func (c *Communication) openStreamToPeer(pID peer.ID) (network.Stream, error) {
 		return c.connectToOnePeerFn(pID)
 	}
 	return c.connectToOnePeer(pID)
-}
-
-// finishWrittenTSSStream gives successful FROST writes immediate terminal
-// ownership. Legacy TSS streams retain their ceremony-scoped release behavior.
-func (c *Communication) finishWrittenTSSStream(stream network.Stream, msgID string, fullClose bool) error {
-	if fullClose {
-		if err := closeStreamAndDrain(stream); err != nil {
-			return fmt.Errorf("fail to close FROST stream: %w", err)
-		}
-		return nil
-	}
-	c.streamMgr.AddStream(msgID, stream)
-	return nil
 }
 
 func (c *Communication) handleStreamTss(stream network.Stream) {
@@ -592,8 +577,8 @@ func (c *Communication) handleStreamTss(stream network.Stream) {
 		dataBuf, err := readStreamWithBufferPreflight(stream, TSSFramePreflightBytes, func(length uint32, prefix []byte) error {
 			var preflightErr error
 			preflightHeader, subscription, preflightErr = c.preflightTSSFrame(remotePeer, length, prefix)
-			if preflightErr == nil && streamPolicyFor(preflightHeader.MessageType).fullClose {
-				// A charged FROST frame must not keep its buffer and handler
+			if preflightErr == nil {
+				// A charged TSS frame must not keep its buffer and handler
 				// until the read deadline once its ceremony ends. Cancellation
 				// triggers this reset in its own goroutine, so stop never waits
 				// on transport I/O, and no goroutine exists until then.
@@ -606,32 +591,22 @@ func (c *Communication) handleStreamTss(stream network.Stream) {
 			// delivered to a stopped subscription.
 			return
 		}
-		// A FROST stream carries exactly one frame. This handler owns it: it
+		// A TSS stream carries exactly one frame. This handler owns it: it
 		// resets the stream on any failure and fully closes it after delivery.
 		// Registry, narrowing, and coordinator paths never wait on its
 		// transport I/O; cancellation only triggers the reset this handler
-		// registered, which runs in its own goroutine. Legacy TSS streams keep
-		// their ceremony-scoped release through streamMgr.
-		frost := subscription != nil && streamPolicyFor(preflightHeader.MessageType).fullClose
+		// registered, which runs in its own goroutine.
 		if err != nil {
 			c.logger.Error().Err(err).Msgf("fail to read from stream,peerID: %s", peerID)
-			if frost || errors.Is(err, ErrTSSFramePreflightRejected) {
-				if resetErr := stream.Reset(); resetErr != nil {
-					c.logger.Debug().Err(resetErr).Msg("fail to reset rejected TSS stream")
-				}
-				return
+			if resetErr := stream.Reset(); resetErr != nil {
+				c.logger.Debug().Err(resetErr).Msg("fail to reset unreadable TSS stream")
 			}
-			c.streamMgr.AddStream(StreamUnknown, stream)
 			return
 		}
 		var wrappedMsg messages.WrappedMessage
 		if err := json.Unmarshal(dataBuf, &wrappedMsg); nil != err {
 			c.logger.Error().Err(err).Msg("fail to unmarshal wrapped message bytes")
-			if frost {
-				_ = stream.Reset()
-			} else {
-				c.streamMgr.AddStream(StreamUnknown, stream)
-			}
+			_ = stream.Reset()
 			return
 		}
 		if wrappedMsg.MessageType != preflightHeader.MessageType || wrappedMsg.MsgID != preflightHeader.MsgID {
@@ -658,11 +633,7 @@ func (c *Communication) handleStreamTss(stream network.Stream) {
 			PeerID:  remotePeer,
 			Payload: dataBuf,
 		}
-		// Park legacy streams before delivery so a consumer cannot race
-		// ReleaseStream ahead of this stream being tracked.
-		if !frost {
-			c.streamMgr.AddStream(wrappedMsg.MsgID, stream)
-		}
+		// The frame is fully read: delivery owns the bytes, not the stream.
 		// Bounded FROST queues apply backpressure rather than dropping a valid
 		// ceremony frame during a burst.
 		if !subscription.deliver(message, c.stopChan) {
@@ -678,10 +649,8 @@ func (c *Communication) handleStreamTss(stream network.Stream) {
 		}
 		// Deliver first: a slow Close then delays only this handler goroutine,
 		// never the coordinator that is already processing the message.
-		if frost {
-			if err := closeStreamAndDrain(stream); err != nil {
-				c.logger.Debug().Err(err).Msg("fail to close delivered FROST stream")
-			}
+		if err := closeStreamAndDrain(stream); err != nil {
+			c.logger.Debug().Err(err).Msg("fail to close delivered TSS stream")
 		}
 	}
 }

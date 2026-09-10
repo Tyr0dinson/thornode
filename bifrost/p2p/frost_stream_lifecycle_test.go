@@ -139,7 +139,7 @@ func TestSuccessfulFrostStreamsFullyCloseOnBothEndpoints(t *testing.T) {
 
 	for i := 0; i < frames; i++ {
 		sendResult := make(chan error, 1)
-		go func() { sendResult <- sender.writeToStream(receiverHost.ID(), frame, msgID, true) }()
+		go func() { sendResult <- sender.writeToStream(receiverHost.ID(), frame) }()
 
 		var message *Message
 		select {

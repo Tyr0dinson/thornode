@@ -31,6 +31,12 @@ type handlerStream struct {
 	*MockNetworkStream
 	conn        network.Conn
 	resetCalled atomic.Bool
+	closeCalled atomic.Bool
+}
+
+func (s *handlerStream) Close() error {
+	s.closeCalled.Store(true)
+	return nil
 }
 
 func (s *handlerStream) Reset() error {
@@ -396,7 +402,16 @@ func TestHandleStreamTssDeliversAuthorizedFrame(t *testing.T) {
 	ApplyDeadline.Store(false)
 	t.Cleanup(func() { ApplyDeadline.Store(true) })
 
-	topic := messages.TSSFrostShareMsg
+	// Legacy GG20 and FROST streams share one lifecycle: each carries a single
+	// frame and is closed by its handler once that frame is delivered.
+	for _, topic := range []messages.THORChainTSSMessageType{messages.TSSFrostShareMsg, messages.TSSKeyGenMsg} {
+		t.Run(topic.String(), func(t *testing.T) {
+			testHandleStreamTssDeliversAuthorizedFrame(t, topic)
+		})
+	}
+}
+
+func testHandleStreamTssDeliversAuthorizedFrame(t *testing.T, topic messages.THORChainTSSMessageType) {
 	msgID := "authorized-session"
 	member := peer.ID("member-peer")
 
@@ -436,8 +451,11 @@ func TestHandleStreamTssDeliversAuthorizedFrame(t *testing.T) {
 	if stream.resetCalled.Load() {
 		t.Fatal("an authorized frame's stream must not be reset")
 	}
+	if !stream.closeCalled.Load() {
+		t.Fatal("a delivered frame must release its stream before ceremony completion")
+	}
 	if got := parkedStreamCount(comm.streamMgr); got != 0 {
-		t.Fatalf("a delivered FROST stream must be closed by its handler, not parked: %d", got)
+		t.Fatalf("a delivered stream must be closed by its handler, not parked: %d", got)
 	}
 	if delivered == nil {
 		t.Fatal("no frame delivered")
