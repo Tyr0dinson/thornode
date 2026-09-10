@@ -373,8 +373,7 @@ type KeeperTss interface {
 }
 
 type KeeperTssKeysignFail interface {
-	SetTssKeysignFailVoter(_ cosmos.Context, tss TssKeysignFailVoter)
-	GetTssKeysignFailVoterIterator(_ cosmos.Context) cosmos.Iterator
+	SetTssKeysignFailVoter(_ cosmos.Context, tss TssKeysignFailVoter) error
 	GetTssKeysignFailVoter(_ cosmos.Context, _ string) (TssKeysignFailVoter, error)
 }
 

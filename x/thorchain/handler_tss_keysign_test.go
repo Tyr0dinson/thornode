@@ -3,8 +3,12 @@ package thorchain
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,6 +29,8 @@ type HandlerTssKeysignSuite struct{}
 
 var _ = Suite(&HandlerTssKeysignSuite{})
 
+const keysignSlashTelemetryChild = "THORNODE_TEST_KEYSIGN_SLASH_TELEMETRY_CHILD"
+
 type tssKeysignFailHandlerTestHelper struct {
 	ctx           cosmos.Context
 	version       semver.Version
@@ -42,6 +48,14 @@ type tssKeysignKeeperHelper struct {
 	errGetTssVoter                  bool
 	errFailToGetNodeAccountByPubKey bool
 	errFailSetNodeAccount           bool
+	failIncNodeAccountSlashPointsAt int
+	incNodeAccountSlashPointsCalls  int
+	errDecNodeAccountSlashPoints    bool
+	errSetNodeAccountJail           bool
+	returnEmptyVault                bool
+	failSetTssKeysignFailVoterAt    int
+	setTssKeysignFailVoterCalls     int
+	nextTssKeysignFailVoter         *TssKeysignFailVoter
 }
 
 func newTssKeysignFailKeeperHelper(keeper keeper.Keeper) *tssKeysignKeeperHelper {
@@ -64,11 +78,53 @@ func (k *tssKeysignKeeperHelper) SetNodeAccount(ctx cosmos.Context, na NodeAccou
 	return k.Keeper.SetNodeAccount(ctx, na)
 }
 
+func (k *tssKeysignKeeperHelper) IncNodeAccountSlashPoints(ctx cosmos.Context, addr cosmos.AccAddress, pts int64) error {
+	k.incNodeAccountSlashPointsCalls++
+	if k.failIncNodeAccountSlashPointsAt == k.incNodeAccountSlashPointsCalls {
+		return errKaboom
+	}
+	return k.Keeper.IncNodeAccountSlashPoints(ctx, addr, pts)
+}
+
+func (k *tssKeysignKeeperHelper) DecNodeAccountSlashPoints(ctx cosmos.Context, addr cosmos.AccAddress, pts int64) error {
+	if k.errDecNodeAccountSlashPoints {
+		return errKaboom
+	}
+	return k.Keeper.DecNodeAccountSlashPoints(ctx, addr, pts)
+}
+
+func (k *tssKeysignKeeperHelper) SetNodeAccountJail(ctx cosmos.Context, addr cosmos.AccAddress, height int64, reason string) error {
+	if k.errSetNodeAccountJail {
+		return errKaboom
+	}
+	return k.Keeper.SetNodeAccountJail(ctx, addr, height, reason)
+}
+
+func (k *tssKeysignKeeperHelper) GetVault(ctx cosmos.Context, pubKey common.PubKey) (Vault, error) {
+	if k.returnEmptyVault {
+		return Vault{}, nil
+	}
+	return k.Keeper.GetVault(ctx, pubKey)
+}
+
 func (k *tssKeysignKeeperHelper) GetTssKeysignFailVoter(ctx cosmos.Context, id string) (TssKeysignFailVoter, error) {
 	if k.errGetTssVoter {
 		return TssKeysignFailVoter{}, errKaboom
 	}
+	if k.nextTssKeysignFailVoter != nil {
+		voter := *k.nextTssKeysignFailVoter
+		k.nextTssKeysignFailVoter = nil
+		return voter, nil
+	}
 	return k.Keeper.GetTssKeysignFailVoter(ctx, id)
+}
+
+func (k *tssKeysignKeeperHelper) SetTssKeysignFailVoter(ctx cosmos.Context, voter TssKeysignFailVoter) error {
+	k.setTssKeysignFailVoterCalls++
+	if k.setTssKeysignFailVoterCalls == k.failSetTssKeysignFailVoterAt {
+		return errKaboom
+	}
+	return k.Keeper.SetTssKeysignFailVoter(ctx, voter)
 }
 
 func (k *tssKeysignKeeperHelper) ListActiveValidators(ctx cosmos.Context) (NodeAccounts, error) {
@@ -246,7 +302,7 @@ func (h HandlerTssKeysignSuite) TestTssKeysignFailHandler(c *C) {
 				c.Assert(err, IsNil)
 				voter, _ := helper.keeper.Keeper.GetTssKeysignFailVoter(helper.ctx, msg.ID)
 				voter.Sign(msg.Signer)
-				helper.keeper.Keeper.SetTssKeysignFailVoter(helper.ctx, voter)
+				c.Assert(helper.keeper.Keeper.SetTssKeysignFailVoter(helper.ctx, voter), IsNil)
 				return msg
 			},
 			runner: func(handler TssKeysignHandler, msg cosmos.Msg, helper tssKeysignFailHandlerTestHelper) (*cosmos.Result, error) {
@@ -297,7 +353,7 @@ func (h HandlerTssKeysignSuite) TestTssKeysignFailHandler(c *C) {
 				for i, sign := range signers {
 					voter.Signers[i] = sign.String()
 				}
-				helper.keeper.SetTssKeysignFailVoter(helper.ctx, voter)
+				c.Assert(helper.keeper.SetTssKeysignFailVoter(helper.ctx, voter), IsNil)
 				helper.keeper.errFailToGetNodeAccountByPubKey = true
 				return handler.Run(helper.ctx, msg)
 			},
@@ -366,6 +422,472 @@ func (h HandlerTssKeysignSuite) TestTssKeysignFailHandler(c *C) {
 	}
 }
 
+func (h HandlerTssKeysignSuite) TestKeysignFailVoterSetterErrorsPropagate(c *C) {
+	newMessage := func(helper *tssKeysignFailHandlerTestHelper, signer cosmos.AccAddress, pubKey common.PubKey) *MsgTssKeysignFail {
+		msg, err := NewMsgTssKeysignFail(
+			helper.ctx.BlockHeight(),
+			helper.blame,
+			"setter-error",
+			common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100))},
+			signer,
+			pubKey,
+		)
+		c.Assert(err, IsNil)
+		return msg
+	}
+
+	tests := []struct {
+		name    string
+		failAt  int
+		prepare func(*tssKeysignFailHandlerTestHelper) *MsgTssKeysignFail
+	}{
+		{
+			name:   "empty vault voter",
+			failAt: 1,
+			prepare: func(helper *tssKeysignFailHandlerTestHelper) *MsgTssKeysignFail {
+				helper.keeper.returnEmptyVault = true
+				return newMessage(helper, helper.nodeAccount.NodeAddress, GetRandomPubKey())
+			},
+		},
+		{
+			name:   "pending voter",
+			failAt: 1,
+			prepare: func(helper *tssKeysignFailHandlerTestHelper) *MsgTssKeysignFail {
+				return newMessage(helper, helper.nodeAccount.NodeAddress, helper.retiringVault.PubKey)
+			},
+		},
+		{
+			name:   "completed consensus voter",
+			failAt: 1,
+			prepare: func(helper *tssKeysignFailHandlerTestHelper) *MsgTssKeysignFail {
+				signerPubKey, err := common.NewPubKey(helper.retiringVault.Membership[0])
+				c.Assert(err, IsNil)
+				signer, err := signerPubKey.GetThorAddress()
+				c.Assert(err, IsNil)
+				msg := newMessage(helper, signer, helper.retiringVault.PubKey)
+
+				voter := types.NewTssKeysignFailVoter(msg.ID)
+				for _, member := range helper.retiringVault.Membership[1:4] {
+					memberPubKey, err := common.NewPubKey(member)
+					c.Assert(err, IsNil)
+					memberAddress, err := memberPubKey.GetThorAddress()
+					c.Assert(err, IsNil)
+					c.Assert(voter.Sign(memberAddress), Equals, true)
+				}
+				c.Assert(helper.keeper.Keeper.SetTssKeysignFailVoter(helper.ctx, voter), IsNil)
+				return msg
+			},
+		},
+	}
+
+	for _, test := range tests {
+		c.Logf("case: %s", test.name)
+		helper := newTssKeysignHandlerTestHelper(c)
+		msg := test.prepare(&helper)
+		helper.keeper.setTssKeysignFailVoterCalls = 0
+		helper.keeper.failSetTssKeysignFailVoterAt = test.failAt
+
+		handler := NewTssKeysignHandler(NewDummyMgrWithKeeper(helper.keeper))
+		_, err := handler.Run(helper.ctx, msg)
+		c.Assert(errors.Is(err, errKaboom), Equals, true, Commentf("case: %s, error: %v", test.name, err))
+		c.Check(helper.keeper.setTssKeysignFailVoterCalls, Equals, test.failAt)
+	}
+}
+
+// TestTerminalKeysignFailureEffectsAreAtomic exercises the production
+// DeliverTx commit boundary: a failed handler result discards the cache, while
+// a nil result commits it. Required node penalties must therefore fail the
+// handler rather than allowing the completed voter tombstone to commit without
+// the corresponding slash or jail state.
+func (h HandlerTssKeysignSuite) TestTerminalKeysignFailureEffectsAreAtomic(c *C) {
+	tests := []struct {
+		name          string
+		terminalRound bool
+		injectErr     func(*tssKeysignKeeperHelper)
+	}{
+		{
+			name: "observation slash point persistence",
+			injectErr: func(k *tssKeysignKeeperHelper) {
+				k.failIncNodeAccountSlashPointsAt = 1
+			},
+		},
+		{
+			name: "blamed-node slash point persistence",
+			injectErr: func(k *tssKeysignKeeperHelper) {
+				// The quorum observation increment is the first call; the blamed-
+				// node terminal penalty is the second.
+				k.failIncNodeAccountSlashPointsAt = 2
+			},
+		},
+		{
+			name: "jail persistence",
+			injectErr: func(k *tssKeysignKeeperHelper) {
+				k.errSetNodeAccountJail = true
+			},
+		},
+		{
+			name: "observation slash point refund",
+			injectErr: func(k *tssKeysignKeeperHelper) {
+				k.errDecNodeAccountSlashPoints = true
+			},
+		},
+		{
+			name:          "final replay barrier persistence",
+			terminalRound: true,
+			injectErr: func(k *tssKeysignKeeperHelper) {
+				k.failSetTssKeysignFailVoterAt = 1
+			},
+		},
+	}
+
+	for _, test := range tests {
+		c.Logf("case: %s", test.name)
+		helper := newTssKeysignHandlerTestHelper(c)
+		signerPubKey, err := common.NewPubKey(helper.retiringVault.Membership[0])
+		c.Assert(err, IsNil)
+		signer, err := signerPubKey.GetThorAddress()
+		c.Assert(err, IsNil)
+		blame := helper.blame
+		if test.terminalRound {
+			blame.Round = tssMessages.KEYSIGN9
+		}
+		msg, err := NewMsgTssKeysignFail(
+			helper.ctx.BlockHeight(),
+			blame,
+			"terminal-effect-atomicity",
+			common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100))},
+			signer,
+			helper.retiringVault.PubKey,
+		)
+		c.Assert(err, IsNil)
+
+		// Three existing votes plus this member's vote reach the four-of-eight
+		// simple-majority threshold.
+		voter := types.NewTssKeysignFailVoter(msg.ID)
+		for _, member := range helper.retiringVault.Membership[1:4] {
+			memberPubKey, memberErr := common.NewPubKey(member)
+			c.Assert(memberErr, IsNil)
+			memberAddress, memberErr := memberPubKey.GetThorAddress()
+			c.Assert(memberErr, IsNil)
+			c.Assert(voter.Sign(memberAddress), Equals, true)
+		}
+		if test.terminalRound {
+			voter.LastRoundCount = 1
+		}
+		c.Assert(helper.keeper.Keeper.SetTssKeysignFailVoter(helper.ctx, voter), IsNil)
+		helper.keeper.setTssKeysignFailVoterCalls = 0
+		test.injectErr(helper.keeper)
+		beforeEvents := len(helper.ctx.EventManager().Events())
+		beforeVault, vaultErr := helper.keeper.GetVault(helper.ctx, helper.retiringVault.PubKey)
+		c.Assert(vaultErr, IsNil)
+
+		cacheCtx, commit := helper.ctx.CacheContext()
+		handler := NewTssKeysignHandler(NewDummyMgrWithKeeper(helper.keeper))
+		_, runErr := handler.Run(cacheCtx, msg)
+		if runErr == nil {
+			commit()
+		}
+
+		c.Check(errors.Is(runErr, errKaboom), Equals, true, Commentf("case: %s, error: %v", test.name, runErr))
+		if test.terminalRound {
+			// Inspect the uncommitted cache to prove the failing setter was the
+			// final replay barrier, reached only after the terminal effects.
+			c.Check(helper.keeper.setTssKeysignFailVoterCalls, Equals, 1)
+			cachedVault, cachedVaultErr := helper.keeper.GetVault(cacheCtx, helper.retiringVault.PubKey)
+			c.Assert(cachedVaultErr, IsNil)
+			c.Check(cachedVault.Frozen, DeepEquals, []string{common.ETHChain.String()})
+			failureEventFound := false
+			for _, event := range cacheCtx.EventManager().Events() {
+				if event.Type == types.TSSKeysignFailure {
+					failureEventFound = true
+					break
+				}
+			}
+			c.Check(failureEventFound, Equals, true)
+			for _, node := range blame.BlameNodes {
+				pubKey, nodeErr := common.NewPubKey(node.Pubkey)
+				c.Assert(nodeErr, IsNil)
+				address, nodeErr := pubKey.GetThorAddress()
+				c.Assert(nodeErr, IsNil)
+				points, nodeErr := helper.keeper.GetNodeAccountSlashPoints(cacheCtx, address)
+				c.Assert(nodeErr, IsNil)
+				c.Check(points > 0, Equals, true)
+				jail, nodeErr := helper.keeper.GetNodeAccountJail(cacheCtx, address)
+				c.Assert(nodeErr, IsNil)
+				c.Check(jail.IsJailed(cacheCtx), Equals, true)
+			}
+		}
+		stored, getErr := helper.keeper.Keeper.GetTssKeysignFailVoter(helper.ctx, msg.ID)
+		c.Assert(getErr, IsNil)
+		c.Check(stored.State, Equals, types.TssKeysignFailVoterState_PendingVoter, Commentf("case: %s", test.name))
+		c.Check(stored.Signers, HasLen, 3, Commentf("case: %s", test.name))
+		if test.terminalRound {
+			c.Check(stored.LastRoundCount, Equals, int64(1))
+			c.Check(len(helper.ctx.EventManager().Events()), Equals, beforeEvents)
+			afterVault, afterVaultErr := helper.keeper.GetVault(helper.ctx, helper.retiringVault.PubKey)
+			c.Assert(afterVaultErr, IsNil)
+			c.Check(afterVault.Frozen, DeepEquals, beforeVault.Frozen)
+			points, pointsErr := helper.keeper.GetNodeAccountSlashPoints(helper.ctx, signer)
+			c.Assert(pointsErr, IsNil)
+			c.Check(points, Equals, int64(0))
+			for _, node := range blame.BlameNodes {
+				pubKey, nodeErr := common.NewPubKey(node.Pubkey)
+				c.Assert(nodeErr, IsNil)
+				address, nodeErr := pubKey.GetThorAddress()
+				c.Assert(nodeErr, IsNil)
+				points, nodeErr = helper.keeper.GetNodeAccountSlashPoints(helper.ctx, address)
+				c.Assert(nodeErr, IsNil)
+				c.Check(points, Equals, int64(0))
+				jail, nodeErr := helper.keeper.GetNodeAccountJail(helper.ctx, address)
+				c.Assert(nodeErr, IsNil)
+				c.Check(jail.ReleaseHeight, Equals, int64(0))
+			}
+		}
+	}
+}
+
+func (h HandlerTssKeysignSuite) TestTerminalVotersPerformNoWrites(c *C) {
+	tests := []struct {
+		name  string
+		state types.TssKeysignFailVoterState
+	}{
+		{name: "legacy terminal", state: types.TssKeysignFailVoterState_LegacyVoter},
+		{name: "current completed", state: types.TssKeysignFailVoterState_CompletedVoter},
+	}
+
+	for _, test := range tests {
+		c.Logf("case: %s", test.name)
+		helper := newTssKeysignHandlerTestHelper(c)
+		msg, err := NewMsgTssKeysignFail(
+			helper.ctx.BlockHeight(),
+			helper.blame,
+			"completed-write",
+			common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100))},
+			helper.nodeAccount.NodeAddress,
+			GetRandomPubKey(),
+		)
+		c.Assert(err, IsNil)
+		helper.keeper.nextTssKeysignFailVoter = &TssKeysignFailVoter{
+			ID:    msg.ID,
+			State: test.state,
+		}
+
+		handler := NewTssKeysignHandler(NewDummyMgrWithKeeper(helper.keeper))
+		_, err = handler.Run(helper.ctx, msg)
+		c.Assert(err, IsNil)
+		c.Check(helper.keeper.setTssKeysignFailVoterCalls, Equals, 0)
+	}
+}
+
+// TestLegacyTerminalRoundVoterReplayHasNoSideEffects documents the
+// accepted upgrade-boundary residual: an exact voter ID already persisted in
+// legacy form is terminal, so later reports cannot complete its side effects.
+func (h HandlerTssKeysignSuite) TestLegacyTerminalRoundVoterReplayHasNoSideEffects(c *C) {
+	helper := newTssKeysignHandlerTestHelper(c)
+	signerPubKey, err := common.NewPubKey(helper.retiringVault.Membership[0])
+	c.Assert(err, IsNil)
+	signer, err := signerPubKey.GetThorAddress()
+	c.Assert(err, IsNil)
+
+	blame := helper.blame
+	blame.Round = tssMessages.KEYSIGN9
+	msg, err := NewMsgTssKeysignFail(
+		helper.ctx.BlockHeight(),
+		blame,
+		"legacy-terminal-round",
+		common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100))},
+		signer,
+		helper.retiringVault.PubKey,
+	)
+	c.Assert(err, IsNil)
+
+	legacySigners := make([]string, 0, 3)
+	for _, member := range helper.retiringVault.Membership[1:4] {
+		legacySignerPubKey, signerErr := common.NewPubKey(member)
+		c.Assert(signerErr, IsNil)
+		legacySigner, signerErr := legacySignerPubKey.GetThorAddress()
+		c.Assert(signerErr, IsNil)
+		legacySigners = append(legacySigners, legacySigner.String())
+	}
+	helper.keeper.nextTssKeysignFailVoter = &TssKeysignFailVoter{
+		ID:             msg.ID,
+		Signers:        legacySigners,
+		LastRoundCount: 1,
+		State:          types.TssKeysignFailVoterState_LegacyVoter,
+	}
+
+	beforeEvents := len(helper.ctx.EventManager().Events())
+	beforeVault, err := helper.keeper.GetVault(helper.ctx, helper.retiringVault.PubKey)
+	c.Assert(err, IsNil)
+	mgr := NewDummyMgrWithKeeper(helper.keeper)
+	handler := NewTssKeysignHandler(mgr)
+	_, err = handler.Run(helper.ctx, msg)
+	c.Assert(err, IsNil)
+
+	c.Assert(helper.keeper.setTssKeysignFailVoterCalls, Equals, 0)
+
+	slasher, ok := mgr.Slasher().(*DummySlasher)
+	c.Assert(ok, Equals, true)
+	c.Assert(slasher.pts, HasLen, 0)
+	c.Assert(len(helper.ctx.EventManager().Events()), Equals, beforeEvents)
+	afterVault, err := helper.keeper.GetVault(helper.ctx, helper.retiringVault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(afterVault.Frozen, DeepEquals, beforeVault.Frozen)
+	for _, node := range blame.BlameNodes {
+		pubKey, nodeErr := common.NewPubKey(node.Pubkey)
+		c.Assert(nodeErr, IsNil)
+		address, nodeErr := pubKey.GetThorAddress()
+		c.Assert(nodeErr, IsNil)
+		points, nodeErr := helper.keeper.GetNodeAccountSlashPoints(helper.ctx, address)
+		c.Assert(nodeErr, IsNil)
+		c.Assert(points, Equals, int64(0))
+		jail, nodeErr := helper.keeper.GetNodeAccountJail(helper.ctx, address)
+		c.Assert(nodeErr, IsNil)
+		c.Assert(jail.ReleaseHeight, Equals, int64(0))
+	}
+}
+
+// TestCompletedKeysignFailureCannotBeReplayed proves a completed common-chain
+// failure remains terminal after durable reload, jail expiry, and a deliberate
+// vault unfreeze. Replays must perform neither accounting effects nor writes.
+func (h HandlerTssKeysignSuite) TestCompletedKeysignFailureCannotBeReplayed(c *C) {
+	helper := newTssKeysignHandlerTestHelper(c)
+	mgr := NewDummyMgrWithKeeper(helper.keeper)
+	handler := NewTssKeysignHandler(mgr)
+	coins := common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100))}
+
+	vault := NewVault(
+		helper.ctx.BlockHeight(),
+		ActiveVault,
+		AsgardVault,
+		GetRandomPubKey(),
+		common.Chains{common.ETHChain}.Strings(),
+		[]ChainContract{},
+	)
+	members := make(NodeAccounts, 0, 8)
+	for i := 0; i < 8; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		c.Assert(helper.keeper.SetNodeAccount(helper.ctx, na), IsNil)
+		vault.Membership = append(vault.Membership, na.PubKeySet.Secp256k1.String())
+		members = append(members, na)
+	}
+	c.Assert(helper.keeper.SetVault(helper.ctx, vault), IsNil)
+
+	blamed := members[7]
+	blame := Blame{
+		FailReason: "terminal keysign failure",
+		Round:      tssMessages.KEYSIGN9,
+		BlameNodes: []Node{{Pubkey: blamed.PubKeySet.Secp256k1.String()}},
+	}
+	const memo = "completed-keysign-replay"
+
+	failureEventCount := func(ctx cosmos.Context) int {
+		count := 0
+		for _, event := range ctx.EventManager().Events() {
+			if event.Type == types.TSSKeysignFailure {
+				count++
+			}
+		}
+		return count
+	}
+
+	// Four of eight vault members meet the current simple-majority threshold.
+	var voterID string
+	for i := 0; i < 4; i++ {
+		msg, err := NewMsgTssKeysignFail(
+			helper.ctx.BlockHeight(),
+			blame,
+			memo,
+			coins,
+			members[i].NodeAddress,
+			vault.PubKey,
+		)
+		c.Assert(err, IsNil)
+		voterID = msg.ID
+		if i == 3 {
+			helper.keeper.setTssKeysignFailVoterCalls = 0
+		}
+		_, err = handler.Run(helper.ctx, msg)
+		c.Assert(err, IsNil)
+		if i == 3 {
+			c.Assert(helper.keeper.setTssKeysignFailVoterCalls, Equals, 1)
+		}
+		if i == 2 {
+			pending, err := helper.keeper.GetTssKeysignFailVoter(helper.ctx, voterID)
+			c.Assert(err, IsNil)
+			c.Assert(pending.State, Equals, types.TssKeysignFailVoterState_PendingVoter)
+			c.Assert(pending.Signers, HasLen, 3)
+			c.Assert(failureEventCount(helper.ctx), Equals, 0)
+		}
+	}
+
+	voter, err := helper.keeper.GetTssKeysignFailVoter(helper.ctx, voterID)
+	c.Assert(err, IsNil)
+	c.Assert(voter.State, Equals, types.TssKeysignFailVoterState_CompletedVoter)
+	c.Assert(voter.Signers, HasLen, 0)
+	c.Assert(voter.LastRoundCount, Equals, int64(0))
+
+	blamedSlashPoints, err := helper.keeper.GetNodeAccountSlashPoints(helper.ctx, blamed.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(blamedSlashPoints, Equals, helper.constAccessor.GetInt64Value(constants.FailKeysignSlashPoints))
+	originalJail, err := helper.keeper.GetNodeAccountJail(helper.ctx, blamed.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(originalJail.IsJailed(helper.ctx), Equals, true)
+
+	gotVault, err := helper.keeper.GetVault(helper.ctx, vault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(gotVault.Frozen, DeepEquals, []string{common.ETHChain.String()})
+	originalFailureEvents := failureEventCount(helper.ctx)
+	c.Assert(originalFailureEvents, Equals, 1)
+
+	for i := 0; i < 4; i++ {
+		points, pointsErr := helper.keeper.GetNodeAccountSlashPoints(helper.ctx, members[i].NodeAddress)
+		c.Assert(pointsErr, IsNil)
+		c.Assert(points, Equals, int64(0))
+	}
+
+	// Model a later replay after the original penalty has expired and the vault
+	// has been deliberately unfrozen.
+	replayCtx := helper.ctx.WithBlockHeight(originalJail.ReleaseHeight + 1)
+	gotVault.Frozen = nil
+	c.Assert(helper.keeper.SetVault(replayCtx, gotVault), IsNil)
+	helper.keeper.setTssKeysignFailVoterCalls = 0
+	replayMgr := NewDummyMgrWithKeeper(helper.keeper)
+	replayHandler := NewTssKeysignHandler(replayMgr)
+	replaySlasher, ok := replayMgr.Slasher().(*DummySlasher)
+	c.Assert(ok, Equals, true)
+
+	for i := 0; i < 4; i++ {
+		replay, replayErr := NewMsgTssKeysignFail(
+			helper.ctx.BlockHeight(),
+			blame,
+			memo,
+			coins,
+			members[i].NodeAddress,
+			vault.PubKey,
+		)
+		c.Assert(replayErr, IsNil)
+		c.Assert(replay.ID, Equals, voterID)
+		_, replayErr = replayHandler.Run(replayCtx, replay)
+		c.Assert(replayErr, IsNil)
+
+		c.Assert(helper.keeper.setTssKeysignFailVoterCalls, Equals, 0)
+		c.Assert(replaySlasher.pts, HasLen, 0)
+		c.Assert(failureEventCount(replayCtx), Equals, originalFailureEvents)
+	}
+
+	afterSlashPoints, err := helper.keeper.GetNodeAccountSlashPoints(replayCtx, blamed.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(afterSlashPoints, Equals, blamedSlashPoints)
+	afterJail, err := helper.keeper.GetNodeAccountJail(replayCtx, blamed.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(afterJail.ReleaseHeight, Equals, originalJail.ReleaseHeight)
+	c.Assert(afterJail.IsJailed(replayCtx), Equals, false)
+	gotVault, err = helper.keeper.GetVault(replayCtx, vault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(gotVault.Frozen, HasLen, 0)
+}
+
 func (h HandlerTssKeysignSuite) TestDuplicateKeysignFailureVoteDoesNotSlashAgain(c *C) {
 	helper := newTssKeysignHandlerTestHelper(c)
 	handler := NewTssKeysignHandler(NewDummyMgrWithKeeper(helper.keeper))
@@ -381,7 +903,7 @@ func (h HandlerTssKeysignSuite) TestDuplicateKeysignFailureVoteDoesNotSlashAgain
 	voter, err := helper.keeper.GetTssKeysignFailVoter(helper.ctx, msg.ID)
 	c.Assert(err, IsNil)
 	c.Assert(voter.Sign(msg.Signer), Equals, true)
-	helper.keeper.SetTssKeysignFailVoter(helper.ctx, voter)
+	c.Assert(helper.keeper.SetTssKeysignFailVoter(helper.ctx, voter), IsNil)
 
 	before, err := helper.keeper.GetNodeAccountSlashPoints(helper.ctx, msg.Signer)
 	c.Assert(err, IsNil)
@@ -390,6 +912,77 @@ func (h HandlerTssKeysignSuite) TestDuplicateKeysignFailureVoteDoesNotSlashAgain
 	after, err := helper.keeper.GetNodeAccountSlashPoints(helper.ctx, msg.Signer)
 	c.Assert(err, IsNil)
 	c.Assert(after, Equals, before)
+}
+
+func (h HandlerTssKeysignSuite) TestKeysignFailureSlashTelemetryKeepsHandlerCaller(c *C) {
+	if os.Getenv(keysignSlashTelemetryChild) == "1" {
+		helper := newTssKeysignHandlerTestHelper(c)
+		productionKeeper := helper.keeper.Keeper
+
+		// Establish that the slash telemetry harness can attribute the caller when
+		// slash points pass through SlasherImpl.
+		slasher := newSlasher(productionKeeper, NewDummyEventMgr())
+		slasher.IncSlashPoints(helper.ctx, 1, helper.nodeAccount.NodeAddress)
+
+		// The keysign-failure handler currently bypasses SlasherImpl and invokes the
+		// keeper directly. That must retain equally useful caller attribution.
+		handler := NewTssKeysignHandler(NewDummyMgrWithKeeper(productionKeeper))
+		msg, err := NewMsgTssKeysignFail(
+			helper.ctx.BlockHeight(),
+			helper.blame,
+			"slash-telemetry-caller",
+			common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100))},
+			helper.nodeAccount.NodeAddress,
+			helper.retiringVault.PubKey,
+		)
+		c.Assert(err, IsNil)
+		_, err = handler.Run(helper.ctx, msg)
+		c.Assert(err, IsNil)
+		return
+	}
+
+	tempHome := c.MkDir()
+	c.Assert(os.MkdirAll(filepath.Join(tempHome, ".thornode"), 0o700), IsNil)
+
+	testExecutable, err := os.Executable()
+	c.Assert(err, IsNil)
+	command := exec.Command(
+		testExecutable,
+		"-test.run=^TestPackage$",
+		"-check.f=^HandlerTssKeysignSuite.TestKeysignFailureSlashTelemetryKeepsHandlerCaller$",
+	)
+	command.Env = make([]string, 0, len(os.Environ())+3)
+	for _, item := range os.Environ() {
+		name, _, _ := strings.Cut(item, "=")
+		switch name {
+		case "HOME", "THOR_TELEMETRY_SLASH_POINTS", keysignSlashTelemetryChild:
+			continue
+		}
+		command.Env = append(command.Env, item)
+	}
+	command.Env = append(
+		command.Env,
+		"HOME="+tempHome,
+		"THOR_TELEMETRY_SLASH_POINTS=true",
+		keysignSlashTelemetryChild+"=1",
+	)
+	output, err := command.CombinedOutput()
+	c.Assert(err, IsNil, Commentf("telemetry child failed:\n%s", output))
+
+	raw, err := os.ReadFile(filepath.Join(tempHome, ".thornode", "slash_telemetry.json"))
+	c.Assert(err, IsNil)
+	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	c.Assert(lines, HasLen, 2)
+
+	type slashTelemetryRecord struct {
+		Caller string `json:"caller"`
+	}
+	var slasherRecord, handlerRecord slashTelemetryRecord
+	c.Assert(json.Unmarshal([]byte(lines[0]), &slasherRecord), IsNil)
+	c.Assert(json.Unmarshal([]byte(lines[1]), &handlerRecord), IsNil)
+	c.Assert(slasherRecord.Caller, Not(Equals), "")
+	c.Assert(strings.Contains(handlerRecord.Caller, "handler_tss_keysign.go:"), Equals, true,
+		Commentf("direct keeper slash telemetry attributed %q while SlasherImpl recorded %q", handlerRecord.Caller, slasherRecord.Caller))
 }
 
 func (h HandlerTssKeysignSuite) TestTssKeysignFailHandler_accept_standby_node_messages(c *C) {

@@ -570,10 +570,7 @@ func (k KVStoreDummy) GetStableReserveCreditIterator(_ cosmos.Context) cosmos.It
 	return nil
 }
 
-func (k KVStoreDummy) SetTssKeysignFailVoter(_ cosmos.Context, tss TssKeysignFailVoter) {
-}
-
-func (k KVStoreDummy) GetTssKeysignFailVoterIterator(_ cosmos.Context) cosmos.Iterator {
+func (k KVStoreDummy) SetTssKeysignFailVoter(_ cosmos.Context, _ TssKeysignFailVoter) error {
 	return nil
 }
 
