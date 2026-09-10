@@ -46,7 +46,7 @@ issues:
     - gen\.go$
   exclude-rules:
     # Preserve SDK telemetry enablement and global labels until metrics migrate together.
-    - path: ^x/thorchain/
+    - path: (^|/)x/thorchain/
       text: 'SA1019: telemetry\.'
       linters: [staticcheck]
   max-issues-per-linter: 0
