@@ -127,5 +127,4 @@ func TestSDKTwoAppReplayAndRestart(t *testing.T) {
 	require.JSONEq(t, string(firstState.AppState), string(secondState.AppState))
 	require.Equal(t, firstState.ConsensusParams, secondState.ConsensusParams)
 	require.Equal(t, firstState.Height, secondState.Height)
-
 }

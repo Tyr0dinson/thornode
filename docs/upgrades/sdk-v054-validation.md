@@ -38,7 +38,7 @@ go test -mod=readonly -tags mocknet -run '^$' ./bifrost/tss/go-tss/...
 | Check | Result |
 | --- | --- |
 | Both complete module graphs, production dependency listing and checksum verification | PASS with SDK0.54.4/EVM0.6.3 |
-| `go mod tidy`, both modules | FAIL: dependency tests EVM→IBC10 testing/simapp→removed SDK x/group; not a successful tidy result |
+| `go mod tidy`, both modules | PASS with the unchanged EVM v0.6.3 signing/codec packages retained locally |
 | Root app/params/log/proposal/CLI tests and full mocknet app suite | PASS |
 | Two local apps, replay and disk-backed restart | PASS, heights7–10; equal app hashes, validator updates, commit IDs and final exported state |
 | Mocknet THORChain/denom/scheduler module suites | PASS, baseline and upgraded |
@@ -96,7 +96,7 @@ An isolated new libp2p0.48 host using production transport/security/mux options 
 
 ## Independent reviews
 
-- Dependency reviewer found the invalid baseline EVM graph, modern libp2p dependency collision, native packaging change and baseline simulation Ledger mismatch. A fixed pre-upgrade signature test rejected EVM0.7.x; final upstream0.6.3 preserves behavior with an explicitly unresolved tidy dependency-test closure.
+- Dependency reviewer found the invalid baseline EVM graph, modern libp2p dependency collision, native packaging change and baseline simulation Ledger mismatch. A fixed pre-upgrade signature test rejected EVM0.7.x; the unchanged v0.6.3 signing/codec packages retained locally preserve behavior and resolve the tidy dependency-test closure.
 - Migration reviewer verified registered modules, auth5→6 and Wasm4→4 source versions, validator-version ordering and context lifecycle. Executing old Wasm migrations exposed the missing legacy parameter key table, which was restored. Actual migration tests pass from Wasm1/2/3 and auth5.
 - Correctness reviewer identified the EIP712 round-trip coverage gap and independently reproduced contract operations, expected state metadata changes and actual gas differences. No additional introduced production defect was found in the reviewed paths. Reviews do not substitute for mainnet rehearsal or distributed consensus evidence.
 
@@ -106,4 +106,4 @@ Final `make build` and `make test` passed with EVM v0.6.3 and release metadata4.
 
 The synthetic `TestSDKTwoAppReplayAndRestart` initializes two independent applications from the checked-in Wasm gas-fee export. Because normalized regression exports strip active-node versions, the test restores them to the binary version before executing blocks. Both apps agree through heights7–10, including closing/reopening one disk database and native VM after height8; final exported state and consensus parameters agree. This does not rehearse an old-binary upgrade halt or distributed consensus.
 
-Dependency tidy, strict regression goldens, physical Ledger, recent-mainnet-state migration rehearsal and distributed consensus/networking validation remain open. Successful local builds and tests do not establish mainnet upgrade readiness.
+Strict regression goldens, physical Ledger, recent-mainnet-state migration rehearsal and distributed consensus/networking validation remain open. Successful local builds and tests do not establish mainnet upgrade readiness.

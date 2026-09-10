@@ -12,6 +12,7 @@ RUN mkdir /simtest
 
 WORKDIR /app
 COPY go.mod go.sum ./
+COPY third_party/cosmos-evm third_party/cosmos-evm
 COPY test/simulation/go.mod test/simulation/go.sum ./test/simulation/
 # Authenticate the private fetch with the go_private_auth BuildKit secret
 # ("user:token", chosen by scripts/ci-go-private-auth.sh in CI).

@@ -61,12 +61,15 @@ func (z SdkLogWrapper) Debug(msg string, keyVals ...any) {
 func (z SdkLogWrapper) InfoContext(_ context.Context, msg string, keyVals ...any) {
 	z.Info(msg, keyVals...)
 }
+
 func (z SdkLogWrapper) WarnContext(_ context.Context, msg string, keyVals ...any) {
 	z.Warn(msg, keyVals...)
 }
+
 func (z SdkLogWrapper) ErrorContext(_ context.Context, msg string, keyVals ...any) {
 	z.Error(msg, keyVals...)
 }
+
 func (z SdkLogWrapper) DebugContext(_ context.Context, msg string, keyVals ...any) {
 	z.Debug(msg, keyVals...)
 }

@@ -14,6 +14,7 @@ ENV GOPRIVATE=gitlab.com/thorchain/tss/tss-lib-private.git
 
 WORKDIR /app
 COPY go.mod go.sum ./
+COPY third_party/cosmos-evm third_party/cosmos-evm
 # Authenticate the private fetch with the go_private_auth BuildKit secret
 # ("user:token", chosen by scripts/ci-go-private-auth.sh in CI).
 # required=false keeps local `make` builds working without it.
