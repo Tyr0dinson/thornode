@@ -30,7 +30,7 @@
         },
         {
           "@type": "/cosmos.auth.v1beta1.BaseAccount",
-          "account_number": "12",
+          "account_number": "12224684201701500140",
           "address": "tthor1xr3rq8yvd7qplsw5yx90ftsr2zdhg4e9z60h5duusgxpv72hud3swxdzfd",
           "pub_key": null,
           "sequence": "0"
@@ -84,7 +84,7 @@
         },
         {
           "@type": "/cosmos.auth.v1beta1.BaseAccount",
-          "account_number": "11",
+          "account_number": "14023125564240517272",
           "address": "tthor1suhgf5svhu4usrurvxzlgn54ksxmn8gljarjtxqnapv8kjnp4nrs3ptfdq",
           "pub_key": null,
           "sequence": "0"
@@ -98,7 +98,7 @@
         },
         {
           "@type": "/cosmos.auth.v1beta1.BaseAccount",
-          "account_number": "10",
+          "account_number": "15056421640413744136",
           "address": "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f",
           "pub_key": null,
           "sequence": "0"
@@ -112,7 +112,7 @@
         },
         {
           "@type": "/cosmos.auth.v1beta1.BaseAccount",
-          "account_number": "13",
+          "account_number": "15171552833390115270",
           "address": "tthor1aakfpghcanxtc45gpqlx8j3rq0zcpyf49qmhm9mdjrfx036h4z5sc68ary",
           "pub_key": null,
           "sequence": "0"
@@ -408,6 +408,7 @@
             },
             "creator": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
             "extension": null,
+            "ibc2_port_id": "wasm21xr3rq8yvd7qplsw5yx90ftsr2zdhg4e9z60h5duusgxpv72hud3swxdzfd",
             "ibc_port_id": "",
             "label": "counter-contract"
           },
@@ -440,6 +441,7 @@
             },
             "creator": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
             "extension": null,
+            "ibc2_port_id": "wasm21suhgf5svhu4usrurvxzlgn54ksxmn8gljarjtxqnapv8kjnp4nrs3ptfdq",
             "ibc_port_id": "",
             "label": "counter-contract"
           },
@@ -472,6 +474,7 @@
             },
             "creator": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
             "extension": null,
+            "ibc2_port_id": "wasm214hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f",
             "ibc_port_id": "",
             "label": "counter-contract"
           },
@@ -504,6 +507,7 @@
             },
             "creator": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
             "extension": null,
+            "ibc2_port_id": "wasm21aakfpghcanxtc45gpqlx8j3rq0zcpyf49qmhm9mdjrfx036h4z5sc68ary",
             "ibc_port_id": "",
             "label": "counter-contract"
           },
@@ -539,6 +543,9 @@
     "params": {
       "abci": {
         "vote_extensions_enable_height": "0"
+      },
+      "authority": {
+        "authority": ""
       },
       "block": {
         "max_bytes": "22020096",

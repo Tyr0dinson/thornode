@@ -257,7 +257,7 @@ func NewThorchainBridge(cfg config.BifrostClientConfiguration, m *metrics.Metric
 	}, nil
 }
 
-func MakeCodec() codec.ProtoCodecMarshaler {
+func MakeCodec() codec.Codec {
 	interfaceRegistry := codectypes.NewInterfaceRegistry()
 	std.RegisterInterfaces(interfaceRegistry)
 	stypes.RegisterInterfaces(interfaceRegistry)

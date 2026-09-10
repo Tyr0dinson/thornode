@@ -79,7 +79,7 @@ var (
 	Bech32ifyPubKey         = legacybech32.MarshalPubKey   // nolint SA1019 deprecated
 	Bech32PubKeyTypeConsPub = legacybech32.ConsPK
 	Bech32PubKeyTypeAccPub  = legacybech32.AccPK
-	MustSortJSON            = sdk.MustSortJSON
+	MustSortJSON            = sdk.MustSortJSON //nolint:staticcheck // Legacy Amino signatures require canonical JSON sorting.
 	CodeUnauthorized        = uint32(4)
 	CodeInsufficientFunds   = uint32(5)
 )

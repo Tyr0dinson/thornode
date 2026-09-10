@@ -124,7 +124,7 @@
         },
         {
           "@type": "/cosmos.auth.v1beta1.BaseAccount",
-          "account_number": "13",
+          "account_number": "16384676595317856720",
           "address": "tthor1anq4fk6l89w3sfuxehwyprxqjdj3kuzpfwlrav",
           "pub_key": null,
           "sequence": "0"
@@ -673,6 +673,9 @@
     "params": {
       "abci": {
         "vote_extensions_enable_height": "0"
+      },
+      "authority": {
+        "authority": ""
       },
       "block": {
         "max_bytes": "22020096",

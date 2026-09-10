@@ -6,7 +6,7 @@
       "accounts": [
         {
           "@type": "/cosmos.auth.v1beta1.BaseAccount",
-          "account_number": "11",
+          "account_number": "12589901567179758114",
           "address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
           "pub_key": null,
           "sequence": "0"
@@ -34,7 +34,7 @@
         },
         {
           "@type": "/cosmos.auth.v1beta1.BaseAccount",
-          "account_number": "12",
+          "account_number": "16511034587426273972",
           "address": "tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm",
           "pub_key": null,
           "sequence": "0"
@@ -102,7 +102,7 @@
         },
         {
           "@type": "/cosmos.auth.v1beta1.BaseAccount",
-          "account_number": "10",
+          "account_number": "11447809086195380792",
           "address": "tthor1anq4fk6l89w3sfuxehwyprxqjdj3kuzpfwlrav",
           "pub_key": null,
           "sequence": "0"
@@ -390,6 +390,9 @@
     "params": {
       "abci": {
         "vote_extensions_enable_height": "0"
+      },
+      "authority": {
+        "authority": ""
       },
       "block": {
         "max_bytes": "22020096",

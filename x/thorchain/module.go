@@ -65,7 +65,7 @@ const (
 
 // type check to ensure the interface is properly implemented
 var (
-	_ module.AppModule           = AppModule{}
+	_ module.AppModule           = AppModule{} //nolint:staticcheck // Required by module.NewManager.
 	_ module.AppModuleBasic      = AppModuleBasic{}
 	_ module.AppModuleGenesis    = AppModule{}
 	_ module.HasABCIGenesis      = AppModule{}
@@ -172,6 +172,7 @@ func (AppModule) ConsensusVersion() uint64 {
 	return 21
 }
 
+//nolint:staticcheck // Required by the SDK legacy module manager.
 func (am AppModule) RegisterInvariants(_ sdk.InvariantRegistry) {}
 
 func (am AppModule) QuerierRoute() string {

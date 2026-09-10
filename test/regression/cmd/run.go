@@ -216,9 +216,12 @@ func run(out io.Writer, path string, routine int, doneWithRetries func(path stri
 	}
 	coverThornodePath := filepath.Join(regtestBinDir, "cover-thornode")
 
+	// CometBFT v0.39 fails startup if parallel nodes share the pprof listener.
+	pprofAddress := fmt.Sprintf("localhost:%d", 6060+routine)
+
 	// setup process io
 	// #nosec G204 G702 -- REGTEST_BIN_DIR is provided by the regression test harness.
-	thornode := exec.Command(coverThornodePath, "--log_level", logLevel, "start")
+	thornode := exec.Command(coverThornodePath, "--log_level", logLevel, "start", "--rpc.pprof_laddr", pprofAddress)
 	thornode.Env = env
 
 	stderr, err := thornode.StderrPipe()
@@ -362,7 +365,7 @@ func run(out io.Writer, path string, routine int, doneWithRetries func(path stri
 
 		// restart thornode
 		localLog.Debug().Msg("Restarting thornode")
-		thornode = exec.Command("thornode", "--log_level", logLevel, "start")
+		thornode = exec.Command("thornode", "--log_level", logLevel, "start", "--rpc.pprof_laddr", pprofAddress)
 		thornode.Env = env
 		thornode.Stdout = os.Stdout
 		thornode.Stderr = os.Stderr

@@ -1106,7 +1106,7 @@ func initParamsKeeper(appCodec codec.BinaryCodec, legacyAmino *codec.LegacyAmino
 	paramsKeeper.Subspace(banktypes.ModuleName)
 	paramsKeeper.Subspace(stakingtypes.ModuleName)
 	paramsKeeper.Subspace(minttypes.ModuleName)
-	paramsKeeper.Subspace(wasmtypes.ModuleName).WithKeyTable(wasmv2.ParamKeyTable())
+	paramsKeeper.Subspace(wasmtypes.ModuleName).WithKeyTable(wasmv2.ParamKeyTable()) //nolint:staticcheck // Required to migrate legacy Wasm parameters.
 
 	return paramsKeeper
 }

@@ -85,16 +85,20 @@ func TestSDKSigningRoundTrip(t *testing.T) {
 			}
 			signature, err := tc.key.Sign(signBytes)
 			require.NoError(t, err)
-			sig.Data.(*signing.SingleSignatureData).Signature = signature
+			signatureData, ok := sig.Data.(*signing.SingleSignatureData)
+			require.True(t, ok)
+			signatureData.Signature = signature
 			require.NoError(t, builder.SetSignatures(sig))
 			encoded, err := cfg.TxEncoder()(builder.GetTx())
 			require.NoError(t, err)
 			decoded, err := cfg.TxDecoder()(encoded)
 			require.NoError(t, err)
-			signers, err := decoded.(authsigning.Tx).GetSigners()
+			signedTx, ok := decoded.(authsigning.Tx)
+			require.True(t, ok)
+			signers, err := signedTx.GetSigners()
 			require.NoError(t, err)
 			require.Equal(t, []byte(address), signers[0])
-			signatures, err := decoded.(authsigning.Tx).GetSignaturesV2()
+			signatures, err := signedTx.GetSignaturesV2()
 			require.NoError(t, err)
 			require.Equal(t, data.Sequence, signatures[0].Sequence)
 			decodedBytes, err := authsigning.GetSignBytesAdapter(context.Background(), cfg.SignModeHandler(), tc.mode, data, decoded)
@@ -126,8 +130,8 @@ func TestSDKLegacyMultisigSigning(t *testing.T) {
 	require.NoError(t, err)
 	multi := multisigtypes.NewMultisig(len(keys))
 	for i, key := range keys {
-		signature, err := key.Sign(bytes)
-		require.NoError(t, err)
+		signature, signErr := key.Sign(bytes)
+		require.NoError(t, signErr)
 		multi.BitArray.SetIndex(i, true)
 		multi.Signatures = append(multi.Signatures, &signing.SingleSignatureData{SignMode: signing.SignMode_SIGN_MODE_LEGACY_AMINO_JSON, Signature: signature})
 	}
@@ -140,7 +144,9 @@ func TestSDKLegacyMultisigSigning(t *testing.T) {
 		return authsigning.GetSignBytesAdapter(context.Background(), ec.TxConfig.SignModeHandler(), mode, data, decoded)
 	}
 	require.NoError(t, pub.VerifyMultisignature(decodedSignBytes, multi))
-	multi.Signatures[1].(*signing.SingleSignatureData).Signature[0] ^= 1
+	signatureData, ok := multi.Signatures[1].(*signing.SingleSignatureData)
+	require.True(t, ok)
+	signatureData.Signature[0] ^= 1
 	require.Error(t, pub.VerifyMultisignature(getSignBytes, multi))
 }
 

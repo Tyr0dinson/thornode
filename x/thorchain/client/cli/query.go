@@ -53,7 +53,11 @@ func GetCmdGetVersion() *cobra.Command {
 				GitCommit: constants.GitCommit,
 				BuildTime: constants.BuildTime,
 			}
-			return clientCtx.PrintObjectLegacy(out)
+			encoded, err := clientCtx.LegacyAmino.MarshalJSON(out)
+			if err != nil {
+				return err
+			}
+			return clientCtx.PrintRaw(encoded)
 		},
 	}
 
@@ -84,7 +88,11 @@ func GetCmdGetNORelay() *cobra.Command {
 				log.Fatalln(err)
 			}
 
-			return clientCtx.PrintObjectLegacy(result)
+			encoded, err := clientCtx.LegacyAmino.MarshalJSON(result)
+			if err != nil {
+				return err
+			}
+			return clientCtx.PrintRaw(encoded)
 		},
 	}
 

@@ -38,6 +38,8 @@ lint:
         - bifrost/txscript
         # Vendored minified bundle (mermaid); updated by copying a release, never edited.
         - docs/mermaid.min.js
+        # Retained upstream dependency; compiled and exercised through the root module.
+        - third_party/cosmos-evm
     - linters:
         - prettier
         - yamllint

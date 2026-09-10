@@ -41,7 +41,7 @@
         },
         {
           "@type": "/cosmos.auth.v1beta1.BaseAccount",
-          "account_number": "11",
+          "account_number": "14931303860030981586",
           "address": "tthor1f6z8lvkkj4u0f4g0cz6akzhydn6d9yv64t7ss7",
           "pub_key": {
             "@type": "/cosmos.crypto.secp256k1.PubKey",
@@ -97,7 +97,7 @@
         },
         {
           "@type": "/cosmos.auth.v1beta1.BaseAccount",
-          "account_number": "10",
+          "account_number": "15129325367197280403",
           "address": "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f",
           "pub_key": null,
           "sequence": "0"
@@ -378,6 +378,7 @@
             },
             "creator": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
             "extension": null,
+            "ibc2_port_id": "wasm214hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f",
             "ibc_port_id": "",
             "label": "multi-deposit-test"
           },
@@ -408,6 +409,9 @@
     "params": {
       "abci": {
         "vote_extensions_enable_height": "0"
+      },
+      "authority": {
+        "authority": ""
       },
       "block": {
         "max_bytes": "22020096",

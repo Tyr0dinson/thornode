@@ -41,7 +41,7 @@
         },
         {
           "@type": "/cosmos.auth.v1beta1.BaseAccount",
-          "account_number": "10",
+          "account_number": "13868644727435577481",
           "address": "tthor1f6z8lvkkj4u0f4g0cz6akzhydn6d9yv64t7ss7",
           "pub_key": {
             "@type": "/cosmos.crypto.secp256k1.PubKey",
@@ -343,6 +343,9 @@
     "params": {
       "abci": {
         "vote_extensions_enable_height": "0"
+      },
+      "authority": {
+        "authority": ""
       },
       "block": {
         "max_bytes": "22020096",

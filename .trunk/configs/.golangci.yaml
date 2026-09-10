@@ -44,5 +44,10 @@ issues:
     - bifrost/txscript
   exclude-files:
     - gen\.go$
+  exclude-rules:
+    # Preserve SDK telemetry enablement and global labels until metrics migrate together.
+    - path: ^x/thorchain/
+      text: 'SA1019: telemetry\.'
+      linters: [staticcheck]
   max-issues-per-linter: 0
   max-same-issues: 0

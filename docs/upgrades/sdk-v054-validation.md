@@ -72,9 +72,11 @@ RUN='suites/wasm/' PARALLELISM=1 /tmp/thornode-sdk54-bin/regtest
 
 Baseline: 11/12 strict suites passed; `wasm/bindings.yaml` failed its expected MsgSend error-log assertion at line160. That assertion also failed in an earlier upgraded run but passed in the final run, so it is intermittent.
 
-The final SDK0.54.4/EVM0.6.3 regression binary completed **all operations in 12/12 suites**, passed all export invariants and matched normalized baseline block exports without retries. Strict state-golden comparisons remain **0/12 passes** because SDK/Wasmd intentionally change new account numbers, add contract `ibc2_port_id`, and export an empty consensus authority object. Every added/deleted state-diff line was checked against those three categories; no other economic/code/storage differences were found. Goldens and assertions were not weakened or automatically rewritten.
+The initial SDK0.54.4/EVM0.6.3 contract-only run completed all operations in 12/12 suites but failed the old state goldens because of expected SDK metadata changes. The subsequent full Docker regression run (`CI=true EXPORT=1 PARALLELISM=6 TIME_FACTOR=2 FAIL_FAST=true make test-regression`) passed **181/181 suites with zero retries**, preserving all operation assertions and export invariants.
 
-One initial run hit timeouts and a runner nil-response panic; a failed runner left a node holding the profiling port. After terminating only the isolated orphan, singleton execution and the final complete sequential rerun confirmed the results above. The runner now checks the HTTP error before dereferencing its response, retaining retries and failure reporting.
+The refreshed 181 state exports were compared structurally against the previous goldens. Differences were limited to new account numbers, contract `ibc2_port_id`, an empty consensus authority object, and removal of null vault `deficit` fields by the existing normalizer. Twelve normalized block exports changed only transaction signatures, transaction hashes, block data hashes, and matching signature/transaction-ID events. Transaction bodies and economic state were unchanged. A strict CI run with EXPORT and AUTO_UPDATE unset must verify the refreshed goldens.
+
+Parallel execution exposed a CometBFT v0.39 startup failure when workers shared the profiling port. The runner now assigns each worker its own profiling port on both initial start and debug restart. It also checks HTTP errors before dereferencing responses, retaining retries and failure reporting.
 
 The existing normalized block export zeros gas_used, app hashes and timing fields. Matching it is **not** proof of matching raw gas or distributed app hashes. Separate old/new `gas-fee.yaml` runs with `UNFILTER_EXPORT=1` used fresh temporary artifacts and retained all fee/event assertions:
 
@@ -106,4 +108,4 @@ Final `make build` and `make test` passed with EVM v0.6.3 and release metadata4.
 
 The synthetic `TestSDKTwoAppReplayAndRestart` initializes two independent applications from the checked-in Wasm gas-fee export. Because normalized regression exports strip active-node versions, the test restores them to the binary version before executing blocks. Both apps agree through heights7–10, including closing/reopening one disk database and native VM after height8; final exported state and consensus parameters agree. This does not rehearse an old-binary upgrade halt or distributed consensus.
 
-Strict regression goldens, physical Ledger, recent-mainnet-state migration rehearsal and distributed consensus/networking validation remain open. Successful local builds and tests do not establish mainnet upgrade readiness.
+Strict CI verification of the refreshed regression goldens, physical Ledger, recent-mainnet-state migration rehearsal and distributed consensus/networking validation remain open. Successful local builds and tests do not establish mainnet upgrade readiness.

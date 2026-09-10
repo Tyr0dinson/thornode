@@ -80,6 +80,7 @@ func TestWasmNativeLibraryVersion(t *testing.T) {
 	require.Equal(t, "3.0.7", version)
 }
 
+//nolint:staticcheck // Seed historical Wasm permissions and auth storage to verify their migration.
 func TestRegisteredWasmMigrationPreservesCodeIdentity(t *testing.T) {
 	for _, fromVersion := range []uint64{1, 2, 3} {
 		t.Run(fmt.Sprint(fromVersion), func(t *testing.T) {

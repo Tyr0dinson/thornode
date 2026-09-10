@@ -26,7 +26,7 @@ import (
 const ConsensusVersion = 1
 
 var (
-	_ module.AppModule      = AppModule{}
+	_ module.AppModule      = AppModule{} //nolint:staticcheck // Required by module.NewManager.
 	_ module.AppModuleBasic = AppModuleBasic{}
 )
 
@@ -137,6 +137,8 @@ func (am AppModule) RegisterServices(cfg module.Configurator) {
 }
 
 // RegisterInvariants registers the denom module's invariants.
+//
+//nolint:staticcheck // Required by the SDK legacy module manager.
 func (am AppModule) RegisterInvariants(_ sdk.InvariantRegistry) {}
 
 // InitGenesis performs the denom module's genesis initialization It returns
