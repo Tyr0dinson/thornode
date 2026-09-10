@@ -223,7 +223,8 @@ func (c *CosmosBlockScanner) GetBlock(height int64) (*tmtypes.Block, error) {
 func (c *CosmosBlockScanner) updateGasCache(tx interface {
 	GetGas() uint64
 	GetFee() ctypes.Coins
-}) {
+},
+) {
 	fees := tx.GetFee()
 
 	// only consider transactions that have a single fee
