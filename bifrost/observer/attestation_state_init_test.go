@@ -538,29 +538,7 @@ func TestReceiveBatchedAttestationState(t *testing.T) {
 		}
 	}
 
-	// Create a simulated peer to send these transactions
-	// Create stream pair for testing
-	clientReader := bytes.NewBuffer(nil)
-	clientWriter := &bytes.Buffer{}
-
-	serverReader := clientWriter
-	serverWriter := clientReader
-
-	var sharedMu sync.Mutex
-
-	peerStream := &MockStream{
-		reader: serverReader,
-		writer: serverWriter,
-		peer:   "test-peer",
-		mu:     &sharedMu,
-	}
-
-	ourStream := &MockStream{
-		reader: clientReader,
-		writer: clientWriter,
-		peer:   ag.host.ID(),
-		mu:     &sharedMu,
-	}
+	peerStream, ourStream := newMockStreamPair(t, "test-peer", ag.host.ID())
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -810,29 +788,7 @@ func TestSendReceiveBatchedAttestationState(t *testing.T) {
 		agSender.mu.Unlock()
 	}
 
-	// Create a simulated peer to send these transactions
-	// Create stream pair for testing
-	senderReader := bytes.NewBuffer(nil)
-	senderWriter := &bytes.Buffer{}
-
-	receiverReader := senderWriter
-	receiverWriter := senderReader
-
-	var sharedMu sync.Mutex
-
-	receiverStream := &MockStream{
-		reader: receiverReader,
-		writer: receiverWriter,
-		peer:   agSender.host.ID(),
-		mu:     &sharedMu,
-	}
-
-	senderStream := &MockStream{
-		reader: senderReader,
-		writer: senderWriter,
-		peer:   agReceiver.host.ID(),
-		mu:     &sharedMu,
-	}
+	receiverStream, senderStream := newMockStreamPair(t, agSender.host.ID(), agReceiver.host.ID())
 
 	// Call the method with a timeout
 	var wg sync.WaitGroup
@@ -1183,25 +1139,7 @@ func TestAskStreamForStateEmptyState(t *testing.T) {
 	agSender.stateInitPeers = map[peer.ID]bool{agReceiver.host.ID(): true}
 	agSender.stateInitMu.Unlock()
 
-	// Buffered stream pair: what one writes the other reads.
-	senderReader := bytes.NewBuffer(nil)
-	senderWriter := &bytes.Buffer{}
-	receiverReader := senderWriter
-	receiverWriter := senderReader
-
-	var sharedMu sync.Mutex
-	receiverStream := &MockStream{
-		reader: receiverReader,
-		writer: receiverWriter,
-		peer:   agSender.host.ID(),
-		mu:     &sharedMu,
-	}
-	senderStream := &MockStream{
-		reader: senderReader,
-		writer: senderWriter,
-		peer:   agReceiver.host.ID(),
-		mu:     &sharedMu,
-	}
+	receiverStream, senderStream := newMockStreamPair(t, agSender.host.ID(), agReceiver.host.ID())
 
 	done := make(chan struct{})
 	go func() {

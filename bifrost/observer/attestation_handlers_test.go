@@ -34,27 +34,7 @@ func TestHandleStreamBatchedAttestations(t *testing.T) {
 	agVal1.setActiveValidators(valPubs)
 	agVal2.setActiveValidators(valPubs)
 
-	val1Reader := bytes.NewBuffer(nil)
-	val1Writer := &bytes.Buffer{}
-
-	val2Reader := val1Writer
-	val2Writer := val1Reader
-
-	var sharedMu sync.Mutex
-
-	val2Stream := &MockStream{
-		reader: val2Reader,
-		writer: val2Writer,
-		peer:   agVal1.host.ID(),
-		mu:     &sharedMu,
-	}
-
-	val1Stream := &MockStream{
-		reader: val1Reader,
-		writer: val1Writer,
-		peer:   agVal2.host.ID(),
-		mu:     &sharedMu,
-	}
+	val2Stream, val1Stream := newMockStreamPair(t, agVal1.host.ID(), agVal2.host.ID())
 
 	// Create test data for each attestation type
 
@@ -172,6 +152,9 @@ func TestHandleStreamBatchedAttestations(t *testing.T) {
 		// Write batch data to stream
 		writeErr := p2p.WriteStreamWithBuffer(batchBz, val1Stream)
 		require.NoError(t, writeErr, "Should be able to write to stream")
+		ack, readErr := p2p.ReadStreamWithBuffer(val1Stream)
+		require.NoError(t, readErr, "Should read batch acknowledgment")
+		require.Equal(t, p2p.StreamMsgDone, string(ack))
 	}()
 
 	go func() {
@@ -259,6 +242,9 @@ func TestHandleStreamBatchedAttestations(t *testing.T) {
 	agVal2.solvencies = make(map[common.TxID]*AttestationState[*common.Solvency])
 	agVal2.errataTxs = make(map[common.ErrataTx]*AttestationState[*common.ErrataTx])
 
+	// Each exchange closes its stream.
+	val2Stream, val1Stream = newMockStreamPair(t, agVal1.host.ID(), agVal2.host.ID())
+
 	// Test with oversized batch
 	wg.Add(2)
 	go func() {
@@ -266,6 +252,9 @@ func TestHandleStreamBatchedAttestations(t *testing.T) {
 		// Write oversized batch to stream
 		err := p2p.WriteStreamWithBuffer(oversizedBatchBz, val1Stream)
 		require.NoError(t, err, "Should be able to write to stream")
+		ack, readErr := p2p.ReadStreamWithBuffer(val1Stream)
+		require.NoError(t, readErr, "Should read batch acknowledgment")
+		require.Equal(t, p2p.StreamMsgDone, string(ack))
 	}()
 
 	go func() {

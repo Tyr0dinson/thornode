@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"net"
 	"sync"
+	"testing"
 	"time"
 
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
@@ -329,6 +331,37 @@ func (m *MockThorchainBridge) GetObservedTxVoterUncached(txID string) (*stypes.Q
 	voter, err := m.GetObservedTxVoter(txID)
 	return voter, voter != nil, err
 }
+
+// Paired streams must block until data arrives; bytes.Buffer reports EOF while
+// its peer is still processing a batch, which makes loaded CI runs flaky.
+func newMockStreamPair(t *testing.T, firstPeer, secondPeer peer.ID) (*mockPipeStream, *mockPipeStream) {
+	t.Helper()
+	first, second := net.Pipe()
+	t.Cleanup(func() {
+		_ = first.Close()
+		_ = second.Close()
+	})
+	return &mockPipeStream{connection: first, peer: firstPeer}, &mockPipeStream{connection: second, peer: secondPeer}
+}
+
+type mockPipeStream struct {
+	network.Stream
+	connection net.Conn
+	peer       peer.ID
+}
+
+func (s *mockPipeStream) Read(p []byte) (int, error)  { return s.connection.Read(p) }
+func (s *mockPipeStream) Write(p []byte) (int, error) { return s.connection.Write(p) }
+func (s *mockPipeStream) Close() error                { return s.connection.Close() }
+func (s *mockPipeStream) Reset() error                { return s.connection.Close() }
+func (s *mockPipeStream) SetReadDeadline(deadline time.Time) error {
+	return s.connection.SetReadDeadline(deadline)
+}
+
+func (s *mockPipeStream) SetWriteDeadline(deadline time.Time) error {
+	return s.connection.SetWriteDeadline(deadline)
+}
+func (s *mockPipeStream) Conn() network.Conn { return &MockConn{peer: s.peer} }
 
 type MockStream struct {
 	network.Stream
