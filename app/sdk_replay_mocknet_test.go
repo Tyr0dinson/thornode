@@ -29,25 +29,7 @@ import (
 // This compares two local applications and a disk-backed restart. It does not
 // exercise distributed consensus, validator networking, catch-up or state sync.
 func TestSDKTwoAppReplayAndRestart(t *testing.T) {
-	config := sdk.GetConfig()
-	acc, accPub := config.GetBech32AccountAddrPrefix(), config.GetBech32AccountPubPrefix()
-	val, valPub := config.GetBech32ValidatorAddrPrefix(), config.GetBech32ValidatorPubPrefix()
-	cons, consPub := config.GetBech32ConsensusAddrPrefix(), config.GetBech32ConsensusPubPrefix()
-	coinType, purpose := config.GetCoinType(), config.GetPurpose()
-	cacheEnabled := sdk.IsAddrCacheEnabled()
-	thorchaintypes.SetupConfigForTest()
-	sdk.SetAddrCacheEnabled(false)
-	t.Cleanup(func() {
-		config.SetBech32PrefixForAccount(acc, accPub)
-		config.SetBech32PrefixForValidator(val, valPub)
-		config.SetBech32PrefixForConsensusNode(cons, consPub)
-		config.SetCoinType(coinType)
-		config.SetPurpose(purpose)
-		sdk.SetAddrCacheEnabled(cacheEnabled)
-	})
-	oldVersion := constants.SWVersion
-	constants.SWVersion = thorchaintypes.GetCurrentVersion()
-	t.Cleanup(func() { constants.SWVersion = oldVersion })
+	setupSDKReplay(t)
 	bz, err := os.ReadFile(filepath.Join("..", "test", "regression", "mnt", "exports", "wasm", "gas-fee.json"))
 	require.NoError(t, err)
 	var genesis struct {
@@ -127,4 +109,27 @@ func TestSDKTwoAppReplayAndRestart(t *testing.T) {
 	require.JSONEq(t, string(firstState.AppState), string(secondState.AppState))
 	require.Equal(t, firstState.ConsensusParams, secondState.ConsensusParams)
 	require.Equal(t, firstState.Height, secondState.Height)
+}
+
+func setupSDKReplay(t *testing.T) {
+	t.Helper()
+	config := sdk.GetConfig()
+	acc, accPub := config.GetBech32AccountAddrPrefix(), config.GetBech32AccountPubPrefix()
+	val, valPub := config.GetBech32ValidatorAddrPrefix(), config.GetBech32ValidatorPubPrefix()
+	cons, consPub := config.GetBech32ConsensusAddrPrefix(), config.GetBech32ConsensusPubPrefix()
+	coinType, purpose := config.GetCoinType(), config.GetPurpose()
+	cacheEnabled := sdk.IsAddrCacheEnabled()
+	thorchaintypes.SetupConfigForTest()
+	sdk.SetAddrCacheEnabled(false)
+	t.Cleanup(func() {
+		config.SetBech32PrefixForAccount(acc, accPub)
+		config.SetBech32PrefixForValidator(val, valPub)
+		config.SetBech32PrefixForConsensusNode(cons, consPub)
+		config.SetCoinType(coinType)
+		config.SetPurpose(purpose)
+		sdk.SetAddrCacheEnabled(cacheEnabled)
+	})
+	oldVersion := constants.SWVersion
+	constants.SWVersion = thorchaintypes.GetCurrentVersion()
+	t.Cleanup(func() { constants.SWVersion = oldVersion })
 }
