@@ -112,10 +112,12 @@ active nodes (and of every Asgard's own membership, so TSS keysign can be assemb
 must be among the nodes that attested it. EVM chains additionally need their router
 contract installed first. The chain must be unhalted, so step 4 comes before step 5.
 
-If the gates are not met nothing is stamped and the reason is logged each block
-(`chain activation not ready`). Leave the mimir set until the chain is live; unset it
-afterwards: it is re-read every block whether or not the chain is activated, and while
-any enable mimir is set the activation pass scans the vault store each block too.
+Activation is silently deferred while an init vault or a pending, unresolved regular
+keygen exists. Otherwise, failed readiness gates leave the chain unstamped and log
+the reason each block (`chain activation not ready`). Leave the mimir set until the
+chain is live; unset it afterwards: it is re-read every block whether or not the chain
+is activated, and while any enable mimir is set the activation pass scans the vault
+store each block too.
 
 ### Operational notes
 
