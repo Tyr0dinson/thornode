@@ -7,8 +7,8 @@ import (
 	sdkmath "cosmossdk.io/math"
 	tmtypes "github.com/cometbft/cometbft/types"
 	ctypes "github.com/cosmos/cosmos-sdk/types"
+	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	protov2 "google.golang.org/protobuf/proto"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -28,22 +28,6 @@ func (v *failedTxPoolAddressValidator) IsValidPoolAddress(addr string, chain com
 	}
 	return false, common.EmptyChainPoolInfo
 }
-
-type failedSendTx struct {
-	msgs []ctypes.Msg
-	fee  ctypes.Coins
-	gas  uint64
-}
-
-func (m *failedSendTx) GetMsgs() []ctypes.Msg { return m.msgs }
-func (m *failedSendTx) GetMsgsV2() ([]protov2.Message, error) {
-	return nil, nil
-}
-func (m *failedSendTx) ValidateBasic() error { return nil }
-func (m *failedSendTx) GetGas() uint64       { return m.gas }
-func (m *failedSendTx) GetFee() ctypes.Coins { return m.fee }
-func (m *failedSendTx) FeePayer() []byte     { return nil }
-func (m *failedSendTx) FeeGranter() []byte   { return nil }
 
 func newFailedTxScanner(t *testing.T, validAddr string) *CosmosBlockScanner {
 	t.Helper()
@@ -71,7 +55,7 @@ func TestGetTxInFromFailedTransactionIgnoresNonVaultSenders(t *testing.T) {
 	t.Parallel()
 
 	scanner := newFailedTxScanner(t, "cosmos1vaultsender")
-	tx := &failedSendTx{
+	tx := &observedTx{
 		msgs: []ctypes.Msg{
 			&banktypes.MsgSend{
 				FromAddress: "cosmos1nontreasurysender",
@@ -79,11 +63,10 @@ func TestGetTxInFromFailedTransactionIgnoresNonVaultSenders(t *testing.T) {
 				Amount:      ctypes.NewCoins(ctypes.NewCoin("uatom", sdkmath.NewInt(1))),
 			},
 		},
-		fee: ctypes.NewCoins(ctypes.NewCoin("uatom", sdkmath.NewInt(1234))),
-		gas: GasLimit,
+		fee: &txtypes.Fee{Amount: ctypes.NewCoins(ctypes.NewCoin("uatom", sdkmath.NewInt(1234))), GasLimit: GasLimit},
 	}
 
-	item := scanner.getTxInFromFailedTransaction("deadbeef", 42, tmtypes.Tx("ignored"), func([]byte) (ctypes.Tx, error) {
+	item := scanner.getTxInFromFailedTransaction("deadbeef", 42, tmtypes.Tx("ignored"), func([]byte) (*observedTx, error) {
 		return tx, nil
 	})
 	if item != nil {
@@ -96,7 +79,7 @@ func TestGetTxInFromFailedTransactionBuildsGasObservation(t *testing.T) {
 
 	vaultAddr := "cosmos1vaultsender"
 	scanner := newFailedTxScanner(t, vaultAddr)
-	tx := &failedSendTx{
+	tx := &observedTx{
 		msgs: []ctypes.Msg{
 			&banktypes.MsgSend{
 				FromAddress: vaultAddr,
@@ -104,12 +87,11 @@ func TestGetTxInFromFailedTransactionBuildsGasObservation(t *testing.T) {
 				Amount:      ctypes.NewCoins(ctypes.NewCoin("uatom", sdkmath.NewInt(1))),
 			},
 		},
-		fee: ctypes.NewCoins(ctypes.NewCoin("uatom", sdkmath.NewInt(1234))),
-		gas: GasLimit,
+		fee: &txtypes.Fee{Amount: ctypes.NewCoins(ctypes.NewCoin("uatom", sdkmath.NewInt(1234))), GasLimit: GasLimit},
 	}
 
 	hash := "deadbeef"
-	item := scanner.getTxInFromFailedTransaction(hash, 42, tmtypes.Tx("ignored"), func([]byte) (ctypes.Tx, error) {
+	item := scanner.getTxInFromFailedTransaction(hash, 42, tmtypes.Tx("ignored"), func([]byte) (*observedTx, error) {
 		return tx, nil
 	})
 	if item == nil {

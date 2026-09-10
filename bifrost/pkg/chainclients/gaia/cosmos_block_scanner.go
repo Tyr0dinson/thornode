@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -35,7 +34,6 @@ import (
 	distribtypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
 	govv1types "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
 	govv1beta1types "github.com/cosmos/cosmos-sdk/x/gov/types/v1beta1"
-	grouptypes "github.com/cosmos/cosmos-sdk/x/group"
 	paramsproptypes "github.com/cosmos/cosmos-sdk/x/params/types/proposal"
 	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
@@ -222,7 +220,10 @@ func (c *CosmosBlockScanner) GetBlock(height int64) (*tmtypes.Block, error) {
 	return resultBlock.Block, nil
 }
 
-func (c *CosmosBlockScanner) updateGasCache(tx ctypes.FeeTx) {
+func (c *CosmosBlockScanner) updateGasCache(tx interface {
+	GetGas() uint64
+	GetFee() ctypes.Coins
+}) {
 	fees := tx.GetFee()
 
 	// only consider transactions that have a single fee
@@ -400,30 +401,20 @@ func newGaiaCodec() *codec.ProtoCodec {
 	// transactions decode, while processTxs still observes only MsgSend and
 	// ignores the messages themselves — this widens decoding, not the deposit
 	// surface.
-	// (Residual gap: a nested Any of a type absent from ALL deps — e.g. an
-	// 08-wasm light-client update — still fails whole-tx; processTxs logs every
-	// unresolved type URL, so the next gap surfaces in logs instead of silence.)
+	// (processTxs itself no longer depends on this registry: decodeObservedTx
+	// decodes only observed messages, so companion types cannot drop a deposit.)
 	wasmtypes.RegisterInterfaces(registry)        // CosmWasm is live on the Hub (MsgExecuteContract)
 	ibctransfertypes.RegisterInterfaces(registry) // MsgTransfer — outgoing IBC transfers
 	authztypes.RegisterInterfaces(registry)       // MsgGrant/MsgExec/MsgRevoke — constant restake-bot traffic
 	feegranttypes.RegisterInterfaces(registry)    // MsgGrantAllowance + its allowance Anys
 	slashingtypes.RegisterInterfaces(registry)    // MsgUnjail — routine validator traffic
-	grouptypes.RegisterInterfaces(registry)       // x/group user transactions
 	icacontrollertypes.RegisterInterfaces(registry)
 	return codec.NewProtoCodec(registry)
 }
 
-// typeURLPattern extracts the offending type URL from the SDK's
-// "unable to resolve type URL <url>" decode error.
-var typeURLPattern = regexp.MustCompile(`unable to resolve type URL ([^\s:]+)`)
-
 func (c *CosmosBlockScanner) processTxs(height int64, rawTxs []tmtypes.Tx) ([]*types.TxInItem, error) {
-	// One log per unresolved type URL per scan pass (see the decode-failure branch).
-	unresolvedTypeURLs := map[string]struct{}{}
-	// Proto types for Cosmos chains that we are transacting with may not be included in this repo.
-	// Therefore, it is necessary to include them in the "proto" directory and register them in
-	// the cdc (codec) that is passed below. Registry occurs in the NewCosmosBlockScanner function.
-	decoder := tx.DefaultTxDecoder(c.cdc)
+	// Decode only observed messages; companion schemas can change across Gaia upgrades.
+	decoder := decodeObservedTx
 
 	// Fetch the block results so that we can ensure the transaction was successful before processing a TxInItem
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
@@ -458,39 +449,14 @@ func (c *CosmosBlockScanner) processTxs(height int64, rawTxs []tmtypes.Tx) ([]*t
 			continue
 		}
 
-		var tx ctypes.Tx
-		tx, err = decoder(rawTx)
+		tx, err := decoder(rawTx)
 		if err != nil {
-			if strings.Contains(err.Error(), "unable to resolve type URL") {
-				// One of the transaction's messages has a type absent from the interface
-				// registry (newGaiaCodec), and tx decoding is all-or-nothing: the WHOLE
-				// transaction is dropped here, including any valid MsgSend deposit bundled
-				// in it. That is exactly how wasm- and IBC-transfer-bearing deposits went
-				// unobserved. This log line is the tripwire that catches the next missing
-				// registration — it deliberately fires for EVERY unresolved type URL: the
-				// previous version logged only errors naming an allowlist of message
-				// types, which silently discarded precisely the unknown unknowns this
-				// tripwire exists to catch. Deduped per type URL per scan pass so a busy
-				// block cannot spam the log.
-				typeURL := "unknown"
-				if m := typeURLPattern.FindStringSubmatch(err.Error()); len(m) == 2 {
-					typeURL = m[1]
-				}
-				if _, seen := unresolvedTypeURLs[typeURL]; !seen {
-					unresolvedTypeURLs[typeURL] = struct{}{}
-					c.logger.Err(err).
-						Str("type_url", typeURL).
-						Str("tx_hash", hash).
-						Msg("dropping whole tx: message type missing from decode registry")
-				}
-			}
+			c.logger.Err(err).Str("txhash", hash).Msg("unable to decode observation")
 			continue
 		}
 
-		feeTx, _ := tx.(ctypes.FeeTx)
-		fees := feeTx.GetFee()
-		mem, _ := tx.(ctypes.TxWithMemo)
-		memo := mem.GetMemo()
+		fees := tx.GetFee()
+		memo := tx.memo
 
 		// Filter out transactions with memos that exceed MaxMemoSize
 		// This prevents spam from reaching the observer and matches behavior of other chains
@@ -502,9 +468,9 @@ func (c *CosmosBlockScanner) processTxs(height int64, rawTxs []tmtypes.Tx) ([]*t
 			continue
 		}
 
-		c.updateGasCache(feeTx)
+		c.updateGasCache(tx)
 
-		for _, message := range tx.GetMsgs() {
+		for _, message := range tx.msgs {
 			// If there are more than one TxIn item per transaction hash,
 			// thornode will fail to process any after the first.
 			// Therefore, limit to 1 MsgSend per transaction.
@@ -587,7 +553,7 @@ func (c *CosmosBlockScanner) getTxInFromFailedTransaction(
 	hash string,
 	height int64,
 	rawTx tmtypes.Tx,
-	decoder ctypes.TxDecoder,
+	decoder func([]byte) (*observedTx, error),
 ) *types.TxInItem {
 	if c.pubkeyMgr == nil {
 		return nil
@@ -600,7 +566,7 @@ func (c *CosmosBlockScanner) getTxInFromFailedTransaction(
 
 	// Extract the sender from the first MsgSend in the transaction.
 	var fromAddress, toAddress string
-	for _, message := range tx.GetMsgs() {
+	for _, message := range tx.msgs {
 		msg, ok := message.(*banktypes.MsgSend)
 		if !ok {
 			continue
@@ -620,12 +586,8 @@ func (c *CosmosBlockScanner) getTxInFromFailedTransaction(
 	}
 
 	// Use the fee paid in the transaction as the gas cost.
-	feeTx, ok := tx.(ctypes.FeeTx)
-	if !ok {
-		return nil
-	}
 	gasFees := common.Gas{}
-	for _, fee := range feeTx.GetFee() {
+	for _, fee := range tx.GetFee() {
 		cCoin, err := c.fromCosmosToThorchain(fee)
 		if err != nil {
 			continue
