@@ -832,6 +832,11 @@ func (c *Communication) startChannel(privKeyBytes []byte) error {
 	for i := 0; i < c.bootstrapRetryAttempts(); i++ {
 		connectionErr = c.connectToBootstrapPeers()
 		if connectionErr == nil {
+			// Connect can succeed locally before the remote gater rejects us.
+			// Retry until a stream works, allowing its validator list to refresh.
+			connectionErr = c.bootStrapConnectivityCheck()
+		}
+		if connectionErr == nil {
 			break
 		}
 		c.logger.Warn().Err(connectionErr).Msgf("cannot connect to any bootstrap node, retry in %s", bootstrapRetrySleep)
@@ -851,12 +856,6 @@ func (c *Communication) startChannel(privKeyBytes []byte) error {
 	// This is like telling your friends to meet you at the Eiffel Tower.
 	routingDiscovery := discovery.NewRoutingDiscovery(kademliaDHT)
 	discoveryutil.Advertise(ctx, routingDiscovery, c.config.GetRendezvous())
-	if err = c.bootStrapConnectivityCheck(); err != nil {
-		if requireBootstrapConnectivity {
-			return err
-		}
-		c.logger.Warn().Err(err).Msg("bootstrap connectivity check failed, continuing")
-	}
 
 	c.logger.Info().Msg("Successfully announced!")
 	return nil

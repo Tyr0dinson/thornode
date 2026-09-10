@@ -5,9 +5,13 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net"
+	"sync/atomic"
 	"time"
 
+	libp2p "github.com/libp2p/go-libp2p"
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/p2p/protocol/ping"
 	maddr "github.com/multiformats/go-multiaddr"
 
 	"github.com/libp2p/go-libp2p/core/crypto"
@@ -47,6 +51,17 @@ func testSecp256k1RawKey(c *C) []byte {
 	raw, err := sk.Raw()
 	c.Assert(err, IsNil)
 	return raw
+}
+
+func testFreeTCPPort(c *C) int {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	c.Assert(err, IsNil)
+	defer func() {
+		c.Assert(listener.Close(), IsNil)
+	}()
+	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
+	c.Assert(ok, Equals, true)
+	return tcpAddr.Port
 }
 
 func (CommunicationTestSuite) TestEstablishP2pCommunication(c *C) {
@@ -209,4 +224,28 @@ func (CommunicationTestSuite) TestConnectToBootstrapPeersSelfDoesNotDeadlock(c *
 
 	stopErr := comm.Stop()
 	c.Assert(stopErr, IsNil)
+}
+
+// A successful connection is not enough when the remote side rejects streams
+// before refreshing its validator allowlist. Startup must retry the ping too.
+func (CommunicationTestSuite) TestBootstrapRetriesUntilPingSucceeds(c *C) {
+	remote, err := libp2p.New(libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/0"))
+	c.Assert(err, IsNil)
+	defer func() { c.Assert(remote.Close(), IsNil) }()
+	service := ping.NewPingService(remote)
+	var attempts atomic.Int32
+	remote.SetStreamHandler(ping.ID, func(stream network.Stream) {
+		if attempts.Add(1) == 1 {
+			_ = stream.Reset()
+			return
+		}
+		service.PingHandler(stream)
+	})
+	addresses, err := peer.AddrInfoToP2pAddrs(&peer.AddrInfo{ID: remote.ID(), Addrs: remote.Addrs()})
+	c.Assert(err, IsNil)
+	comm, err := NewCommunication(&Config{Port: testFreeTCPPort(c), RendezvousString: "bootstrap-retry", BootstrapPeers: addresses}, nil, nil)
+	c.Assert(err, IsNil)
+	defer func() { c.Assert(comm.Stop(), IsNil) }()
+	c.Assert(comm.Start(testSecp256k1RawKey(c)), IsNil)
+	c.Assert(attempts.Load() >= 2, Equals, true)
 }
