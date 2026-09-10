@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"cosmossdk.io/log"
+	"cosmossdk.io/log/v2"
 	"cosmossdk.io/math"
-	upgradetypes "cosmossdk.io/x/upgrade/types"
+	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
 
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/codec"

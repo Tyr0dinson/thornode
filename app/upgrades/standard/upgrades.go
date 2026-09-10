@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	storetypes "cosmossdk.io/store/types"
-	upgradetypes "cosmossdk.io/x/upgrade/types"
+	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
+	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
 
 	"gitlab.com/thorchain/thornode/v3/app/upgrades"
 	keeperv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"

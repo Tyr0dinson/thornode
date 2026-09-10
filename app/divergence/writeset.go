@@ -18,7 +18,7 @@ import (
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
-	storetypes "cosmossdk.io/store/types"
+	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
 )
 
 // StoreHash is one store's commit hash at a height.

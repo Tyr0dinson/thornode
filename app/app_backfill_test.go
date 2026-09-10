@@ -6,9 +6,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	storetypes "cosmossdk.io/store/types"
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
+	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
@@ -71,12 +71,6 @@ func TestMsgServiceRouterAddCustomRoute(t *testing.T) {
 	msr.AddCustomRoute("test.service.v1", handler)
 
 	require.NotNil(t, msr.customRoutes["test.service.v1"])
-}
-
-func TestNewCustomWasmModule(t *testing.T) {
-	mod := NewCustomWasmModule(nil)
-	// RegisterServices is a no-op
-	mod.RegisterServices(nil)
 }
 
 func TestNewWasmBankKeeper(t *testing.T) {

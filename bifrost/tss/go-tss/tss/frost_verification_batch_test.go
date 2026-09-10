@@ -8,7 +8,7 @@ import (
 	"time"
 
 	tcrypto "github.com/cometbft/cometbft/crypto"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"

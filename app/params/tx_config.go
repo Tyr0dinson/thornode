@@ -4,13 +4,13 @@ import (
 	gogoproto "github.com/cosmos/gogoproto/proto"
 	"google.golang.org/protobuf/reflect/protoregistry"
 
-	txsigning "cosmossdk.io/x/tx/signing"
-	"cosmossdk.io/x/tx/signing/aminojson"
-	"cosmossdk.io/x/tx/signing/textual"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	"github.com/cosmos/cosmos-sdk/x/auth/tx"
+	txsigning "github.com/cosmos/cosmos-sdk/x/tx/signing"
+	"github.com/cosmos/cosmos-sdk/x/tx/signing/aminojson"
+	"github.com/cosmos/cosmos-sdk/x/tx/signing/textual"
 
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
 )

@@ -4,7 +4,7 @@ import (
 	"os"
 	"sync"
 
-	"cosmossdk.io/log"
+	"cosmossdk.io/log/v2"
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
 	dbm "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/cosmos-sdk/client/flags"

@@ -1,9 +1,10 @@
 package main
 
 import (
+	"context"
 	"os"
 
-	"cosmossdk.io/log"
+	"cosmossdk.io/log/v2"
 
 	"gitlab.com/thorchain/thornode/v3/app/divergence"
 )
@@ -22,7 +23,7 @@ const (
 // exitProcess is os.Exit, replaceable in tests.
 var exitProcess = os.Exit
 
-// ConsensusFailureLogger wraps a cosmossdk.io/log.Logger and monitors for
+// ConsensusFailureLogger wraps a cosmossdk.io/log/v2.Logger and monitors for
 // CometBFT consensus failure log messages. When CometBFT's consensus
 // receiveRoutine catches a panic, it logs "CONSENSUS FAILURE!!!" and silently
 // returns — leaving the process alive but unable to participate in consensus.
@@ -41,7 +42,17 @@ func NewConsensusFailureLogger(inner log.Logger) ConsensusFailureLogger {
 func (l ConsensusFailureLogger) Error(msg string, keyvals ...interface{}) {
 	// Always log the message first so operators see the full error.
 	l.Logger.Error(msg, keyvals...)
+	l.handleError(msg, keyvals)
+}
 
+func (l ConsensusFailureLogger) ErrorContext(ctx context.Context, msg string, keyvals ...any) {
+	// Always log the message first so operators see the full error.
+	l.Logger.ErrorContext(ctx, msg, keyvals...)
+	l.handleError(msg, keyvals)
+}
+
+// handleError reacts to the CometBFT failure messages after they are logged.
+func (l ConsensusFailureLogger) handleError(msg string, keyvals []interface{}) {
 	switch msg {
 	case consensusFailureMsg:
 		// In-memory state is lost at exit, so write the divergence bundle

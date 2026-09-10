@@ -1,9 +1,9 @@
 package types
 
 import (
-	"cosmossdk.io/x/tx/signing"
 	"github.com/cosmos/cosmos-sdk/codec"
 	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
+	"github.com/cosmos/cosmos-sdk/x/tx/signing"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"

@@ -18,13 +18,8 @@ import (
 	reflectionv1 "cosmossdk.io/api/cosmos/reflection/v1"
 	"cosmossdk.io/client/v2/autocli"
 	"cosmossdk.io/core/appmodule"
-	"cosmossdk.io/log"
-	"cosmossdk.io/store/rootmulti"
-	storetypes "cosmossdk.io/store/types"
-	"cosmossdk.io/x/upgrade"
-	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
-	upgradetypes "cosmossdk.io/x/upgrade/types"
-	wasmvmtypes "github.com/CosmWasm/wasmvm/v2/types"
+	"cosmossdk.io/log/v2"
+	wasmvmtypes "github.com/CosmWasm/wasmvm/v3/types"
 	abci "github.com/cometbft/cometbft/abci/types"
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	cmtlocal "github.com/cometbft/cometbft/rpc/client/local"
@@ -42,6 +37,8 @@ import (
 	"github.com/cosmos/cosmos-sdk/server/api"
 	"github.com/cosmos/cosmos-sdk/server/config"
 	servertypes "github.com/cosmos/cosmos-sdk/server/types"
+	"github.com/cosmos/cosmos-sdk/store/v2/rootmulti"
+	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	"github.com/cosmos/cosmos-sdk/types/msgservice"
@@ -72,12 +69,16 @@ import (
 	paramstypes "github.com/cosmos/cosmos-sdk/x/params/types"
 	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+	"github.com/cosmos/cosmos-sdk/x/upgrade"
+	upgradekeeper "github.com/cosmos/cosmos-sdk/x/upgrade/keeper"
+	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
 	"github.com/cosmos/gogoproto/proto"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/cast"
 
 	"github.com/CosmWasm/wasmd/x/wasm"
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
+	wasmv2 "github.com/CosmWasm/wasmd/x/wasm/migrations/v2"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	"gitlab.com/thorchain/thornode/v3/app/divergence"
 	appparams "gitlab.com/thorchain/thornode/v3/app/params"
@@ -198,7 +199,7 @@ type THORChainApp struct {
 func NewChainApp(
 	logger log.Logger,
 	db dbm.DB,
-	traceStore io.Writer,
+	_ io.Writer, // Store v2 removed the legacy KV tracing writer.
 	loadLatest bool,
 	appOpts servertypes.AppOptions,
 	wasmOpts []wasmkeeper.Option,
@@ -253,7 +254,6 @@ func NewChainApp(
 	// baseAppOptions = append(baseAppOptions, voteExtOp)
 
 	bApp := baseapp.NewBaseApp(appName, logger, db, ec.TxConfig.TxDecoder(), baseAppOptions...)
-	bApp.SetCommitMultiStoreTracer(traceStore)
 	bApp.SetVersion(version.Version)
 
 	bApp.SetTxEncoder(ec.TxConfig.TxEncoder())
@@ -413,7 +413,7 @@ func NewChainApp(
 		app.AccountKeeper,
 		NewWasmBankKeeper(app.BankKeeper),
 		app.StakingKeeper,
-		nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil,
 		app.MsgServiceRouter(),
 		app.BaseApp.GRPCQueryRouter(),
 		wasmDir,
@@ -485,6 +485,9 @@ func NewChainApp(
 		defaultProposalHandler.ProcessProposalHandler(),
 	)
 
+	// SDK v0.54 disables this by default; preserve sequential block gas accounting.
+	bApp.SetDisableBlockGasMeter(false)
+
 	bApp.SetPrepareProposal(wrapPrepareProposal(eBifrostProposalHandler.PrepareProposal))
 	bApp.SetProcessProposal(eBifrostProposalHandler.ProcessProposal)
 	setPrepareCheckStater(bApp)
@@ -506,7 +509,7 @@ func NewChainApp(
 		app.MsgServiceRouter().MsgServiceRouter,
 		app.GetSubspace(wasmtypes.ModuleName),
 	)
-	customWasmModule := NewCustomWasmModule(&wasmModule)
+	customWasmModule := NewCustomWasmModule(&wasmModule, wasmkeeper.NewMigrator(app.WasmKeeper, app.GetSubspace(wasmtypes.ModuleName)))
 	denomModule := denom.NewAppModule(app.appCodec, app.DenomKeeper, app.AccountKeeper, app.BankKeeper)
 	schedulerModule := scheduler.NewAppModule(app.appCodec, app.SchedulerKeeper)
 
@@ -560,6 +563,7 @@ func NewChainApp(
 	)
 
 	app.ModuleManager.SetOrderEndBlockers(
+		banktypes.ModuleName,
 		genutiltypes.ModuleName,
 
 		// additional non simd modules
@@ -709,8 +713,8 @@ func NewChainApp(
 			panic(fmt.Errorf("error loading last version: %w", err))
 		}
 
-		ctx := app.BaseApp.NewUncachedContext(true, tmproto.Header{})
-		_ = ctx
+		// Pinned-code initialization reads committed state and updates only the VM cache.
+		ctx := app.BaseApp.NewContext(true)
 
 		// Initialize pinned codes in wasmvm as they are not persisted there
 		if err := app.WasmKeeper.InitializePinnedCodes(ctx); err != nil {
@@ -728,7 +732,10 @@ func (app *THORChainApp) FinalizeBlock(req *abci.RequestFinalizeBlock) (*abci.Re
 	// when skipping sdk 47 for sdk 50, the upgrade handler is called too late in BaseApp
 	// this is a hack to ensure that the migration is executed when needed and not panics
 	app.once.Do(func() {
-		ctx := app.NewUncachedContext(false, tmproto.Header{})
+		// Store v2 requires writes through a branch. Do not reset the existing
+		// finalize state, which may already contain InitChain or proposal state.
+		branch := app.CommitMultiStore().CacheMultiStore()
+		ctx := sdk.NewContext(branch, tmproto.Header{}, false, app.Logger())
 		if _, err := app.ConsensusParamsKeeper.Params(ctx, &consensusparamtypes.QueryParamsRequest{}); err != nil {
 			// prevents panic: consensus key is nil: collections: not found: key 'no_key' of type github.com/cosmos/gogoproto/tendermint.types.ConsensusParams
 			// sdk 47:
@@ -739,6 +746,7 @@ func (app *THORChainApp) FinalizeBlock(req *abci.RequestFinalizeBlock) (*abci.Re
 			if err != nil {
 				panic(err)
 			}
+			branch.Write()
 		}
 	})
 
@@ -1032,7 +1040,7 @@ func (app *THORChainApp) RegisterTendermintService(clientCtx client.Context) {
 }
 
 func (app *THORChainApp) RegisterNodeService(clientCtx client.Context, cfg config.Config) {
-	nodeservice.RegisterNodeService(clientCtx, app.GRPCQueryRouter(), cfg)
+	nodeservice.RegisterNodeService(clientCtx, app.GRPCQueryRouter(), cfg, app.CommitMultiStore().EarliestVersion)
 
 	if err := app.EnshrinedBifrost.Start(); err != nil && !errors.Is(err, ebifrost.ErrAlreadyStarted) {
 		panic(fmt.Errorf("failed to start bifrost service: %w", err))
@@ -1098,7 +1106,7 @@ func initParamsKeeper(appCodec codec.BinaryCodec, legacyAmino *codec.LegacyAmino
 	paramsKeeper.Subspace(banktypes.ModuleName)
 	paramsKeeper.Subspace(stakingtypes.ModuleName)
 	paramsKeeper.Subspace(minttypes.ModuleName)
-	paramsKeeper.Subspace(wasmtypes.ModuleName)
+	paramsKeeper.Subspace(wasmtypes.ModuleName).WithKeyTable(wasmv2.ParamKeyTable())
 
 	return paramsKeeper
 }

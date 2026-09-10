@@ -1,7 +1,6 @@
 package p2p
 
 import (
-	"context"
 	"math/rand"
 	"sort"
 	"sync"
@@ -9,8 +8,8 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/proto" // nolint: staticcheck
-	"github.com/libp2p/go-libp2p-core/host"
 	tnet "github.com/libp2p/go-libp2p-testing/net"
+	"github.com/libp2p/go-libp2p/core/host"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/assert"
 
@@ -23,7 +22,7 @@ func init() {
 }
 
 func setupHosts(t *testing.T, n int) []host.Host {
-	mn := mocknet.New(context.Background())
+	mn := mocknet.New()
 	var hosts []host.Host
 	for i := 0; i < n; i++ {
 
@@ -323,7 +322,7 @@ func TestUnmatchedEphemeralFrostJoinStreamsAreNotParked(t *testing.T) {
 
 func TestGetPeerIDs(t *testing.T) {
 	id1 := tnet.RandIdentityOrFatal(t)
-	mn := mocknet.New(context.Background())
+	mn := mocknet.New()
 	// add peers to mock net
 
 	a1 := tnet.RandLocalTCPAddress()

@@ -14,8 +14,8 @@ import (
 	"time"
 
 	libp2p "github.com/libp2p/go-libp2p"
-	peer "github.com/libp2p/go-libp2p-core/peer"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
+	peer "github.com/libp2p/go-libp2p/core/peer"
 	ma "github.com/multiformats/go-multiaddr"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	openapi "gitlab.com/thorchain/thornode/v3/openapi/gen"
@@ -34,7 +34,7 @@ func getPeers(peers map[string]string, source string) (map[string]string, error)
 	ctx := context.Background()
 
 	// Create a new libp2p Host that listens on a random TCP port
-	host, err := libp2p.New(ctx)
+	host, err := libp2p.New()
 	if err != nil {
 		return peers, err
 	}

@@ -18,8 +18,8 @@ import (
 	cosedkey "github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	coskey "github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	sdk "github.com/cosmos/cosmos-sdk/types/bech32/legacybech32" // nolint:staticcheck
-	crypto2 "github.com/libp2p/go-libp2p-core/crypto"
-	"github.com/libp2p/go-libp2p-core/peer"
+	crypto2 "github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/tss/tss-lib-private.git/v3/crypto"
 	btss "gitlab.com/thorchain/tss/tss-lib-private.git/v3/tss"

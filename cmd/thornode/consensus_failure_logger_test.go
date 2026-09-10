@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"cosmossdk.io/log"
+	"cosmossdk.io/log/v2"
 
 	"gitlab.com/thorchain/thornode/v3/app/divergence"
 )

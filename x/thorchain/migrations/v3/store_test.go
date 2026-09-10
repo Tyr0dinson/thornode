@@ -3,8 +3,8 @@ package v3_test
 import (
 	"testing"
 
-	storetypes "cosmossdk.io/store/types"
 	"github.com/cosmos/cosmos-sdk/runtime"
+	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
 	"github.com/cosmos/cosmos-sdk/testutil"
 
 	v3 "gitlab.com/thorchain/thornode/v3/x/thorchain/migrations/v3"

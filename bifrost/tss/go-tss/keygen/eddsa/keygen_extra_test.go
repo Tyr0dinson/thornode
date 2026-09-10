@@ -7,8 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/libp2p/go-libp2p-peerstore/addr"
+	maddr "github.com/multiformats/go-multiaddr"
+
+	"github.com/libp2p/go-libp2p/core/peer"
 	bcrypto "gitlab.com/thorchain/tss/tss-lib-private.git/v3/crypto"
 	eddsakg "gitlab.com/thorchain/tss/tss-lib-private.git/v3/eddsa/keygen"
 	"gitlab.com/thorchain/tss/tss-lib-private.git/v3/tss"
@@ -52,11 +53,11 @@ func (s *errorSaveStateMgr) GetLocalState(_ string) (storage.KeygenLocalState, e
 	return storage.KeygenLocalState{}, nil
 }
 
-func (s *errorSaveStateMgr) SaveAddressBook(_ map[peer.ID]addr.AddrList) error {
+func (s *errorSaveStateMgr) SaveAddressBook(_ map[peer.ID][]maddr.Multiaddr) error {
 	return nil
 }
 
-func (s *errorSaveStateMgr) RetrieveP2PAddresses() (addr.AddrList, error) {
+func (s *errorSaveStateMgr) RetrieveP2PAddresses() ([]maddr.Multiaddr, error) {
 	return nil, nil
 }
 

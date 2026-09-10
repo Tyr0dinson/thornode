@@ -4,9 +4,9 @@ import (
 	"fmt"
 
 	storetypes "cosmossdk.io/core/store"
-	"cosmossdk.io/log"
-	sdkstore "cosmossdk.io/store/types"
+	"cosmossdk.io/log/v2"
 	"github.com/cosmos/cosmos-sdk/codec"
+	sdkstore "github.com/cosmos/cosmos-sdk/store/v2/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	"gitlab.com/thorchain/thornode/v3/x/scheduler/types"

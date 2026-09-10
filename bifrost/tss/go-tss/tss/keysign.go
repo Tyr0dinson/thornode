@@ -12,7 +12,7 @@ import (
 
 	tsslibcommon "gitlab.com/thorchain/tss/tss-lib-private.git/v3/common"
 
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"

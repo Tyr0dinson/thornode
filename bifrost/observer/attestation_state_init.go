@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/libp2p/go-libp2p-core/network"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/rs/zerolog"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"

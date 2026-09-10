@@ -9,9 +9,9 @@ import (
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/client"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/libp2p/go-libp2p-core/crypto"
-	"github.com/libp2p/go-libp2p-core/network"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
 	ma "github.com/multiformats/go-multiaddr"
 	. "gopkg.in/check.v1"
 
@@ -878,17 +878,19 @@ type mockConn struct {
 	remotePeer peer.ID
 }
 
-func (m *mockConn) Close() error                       { return nil }
-func (m *mockConn) LocalPeer() peer.ID                 { return "" }
-func (m *mockConn) RemotePeer() peer.ID                { return m.remotePeer }
-func (m *mockConn) RemotePublicKey() crypto.PubKey     { return nil }
-func (m *mockConn) LocalMultiaddr() ma.Multiaddr       { return nil }
-func (m *mockConn) RemoteMultiaddr() ma.Multiaddr      { return nil }
-func (m *mockConn) LocalPrivateKey() crypto.PrivKey    { return nil }
-func (m *mockConn) Stat() network.Stat                 { return network.Stat{Direction: m.direction} }
-func (m *mockConn) ID() string                         { return "" }
-func (m *mockConn) NewStream() (network.Stream, error) { return nil, nil }
-func (m *mockConn) GetStreams() []network.Stream       { return nil }
+func (m *mockConn) Close() error                    { return nil }
+func (m *mockConn) LocalPeer() peer.ID              { return "" }
+func (m *mockConn) RemotePeer() peer.ID             { return m.remotePeer }
+func (m *mockConn) RemotePublicKey() crypto.PubKey  { return nil }
+func (m *mockConn) LocalMultiaddr() ma.Multiaddr    { return nil }
+func (m *mockConn) RemoteMultiaddr() ma.Multiaddr   { return nil }
+func (m *mockConn) LocalPrivateKey() crypto.PrivKey { return nil }
+func (m *mockConn) Stat() network.ConnStats {
+	return network.ConnStats{Stats: network.Stats{Direction: m.direction}}
+}
+func (m *mockConn) ID() string                                        { return "" }
+func (m *mockConn) NewStream(context.Context) (network.Stream, error) { return nil, nil }
+func (m *mockConn) GetStreams() []network.Stream                      { return nil }
 
 // mockConnMultiaddrs is a mock implementation of network.ConnMultiaddrs for testing
 type mockConnMultiaddrs struct{}
@@ -902,3 +904,9 @@ func (m *mockConnMultiaddrs) RemoteMultiaddr() ma.Multiaddr {
 	addr, _ := ma.NewMultiaddr("/ip4/192.168.1.1/tcp/5678")
 	return addr
 }
+
+func (m *mockConn) As(any) bool                                { return false }
+func (m *mockConn) IsClosed() bool                             { return false }
+func (m *mockConn) CloseWithError(network.ConnErrorCode) error { return m.Close() }
+func (m *mockConn) Scope() network.ConnScope                   { return &network.NullScope{} }
+func (m *mockConn) ConnState() network.ConnectionState         { return network.ConnectionState{} }

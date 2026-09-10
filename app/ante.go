@@ -13,7 +13,7 @@ import (
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	"github.com/cosmos/evm/crypto/ethsecp256k1"
 
-	storetypes "cosmossdk.io/store/types"
+	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
 
 	thorlog "gitlab.com/thorchain/thornode/v3/log"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain"

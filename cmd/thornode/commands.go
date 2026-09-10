@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 
@@ -19,11 +18,11 @@ import (
 	"gitlab.com/thorchain/thornode/v3/app/divergence"
 	"gitlab.com/thorchain/thornode/v3/common"
 
-	"cosmossdk.io/log"
-	"cosmossdk.io/store"
-	snapshottypes "cosmossdk.io/store/snapshots/types"
-	storetypes "cosmossdk.io/store/types"
+	"cosmossdk.io/log/v2"
 	confixcmd "cosmossdk.io/tools/confix/cmd"
+	"github.com/cosmos/cosmos-sdk/store/v2"
+	snapshottypes "github.com/cosmos/cosmos-sdk/store/v2/snapshots/types"
+	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
 
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/client"
@@ -313,7 +312,6 @@ func compactCommand() *cobra.Command {
 func newApp(
 	logger log.Logger,
 	db dbm.DB,
-	traceStore io.Writer,
 	appOpts servertypes.AppOptions,
 ) servertypes.Application {
 	baseappOptions := DefaultBaseappOptions(appOpts)
@@ -330,7 +328,7 @@ func newApp(
 	}
 
 	chainApp := app.NewChainApp(
-		logger, db, traceStore, true,
+		logger, db, nil, true,
 		appOpts,
 		wasmOpts,
 		baseappOptions...,
@@ -350,7 +348,6 @@ func newApp(
 func appExport(
 	logger log.Logger,
 	db dbm.DB,
-	traceStore io.Writer,
 	height int64,
 	forZeroHeight bool,
 	jailAllowedAddrs []string,
@@ -378,7 +375,7 @@ func appExport(
 	chainApp = app.NewChainApp(
 		logger,
 		db,
-		traceStore,
+		nil,
 		height == -1,
 		appOpts,
 		emptyWasmOpts,

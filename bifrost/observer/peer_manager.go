@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/rs/zerolog"
 	"golang.org/x/time/rate"
 )

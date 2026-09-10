@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 	bkg "gitlab.com/thorchain/tss/tss-lib-private.git/v3/ecdsa/keygen"
 	btss "gitlab.com/thorchain/tss/tss-lib-private.git/v3/tss"
 	. "gopkg.in/check.v1"

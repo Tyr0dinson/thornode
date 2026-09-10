@@ -1,9 +1,10 @@
 package log
 
 import (
+	"context"
 	"strings"
 
-	sdklog "cosmossdk.io/log"
+	sdklog "cosmossdk.io/log/v2"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/config"
 )
@@ -54,6 +55,20 @@ func (z SdkLogWrapper) Debug(msg string, keyVals ...any) {
 		return
 	}
 	z.Logger.Debug().Fields(getLogFields(keyVals...)).Msg(msg)
+}
+
+// Context methods retain THORNode's message and module filtering.
+func (z SdkLogWrapper) InfoContext(_ context.Context, msg string, keyVals ...any) {
+	z.Info(msg, keyVals...)
+}
+func (z SdkLogWrapper) WarnContext(_ context.Context, msg string, keyVals ...any) {
+	z.Warn(msg, keyVals...)
+}
+func (z SdkLogWrapper) ErrorContext(_ context.Context, msg string, keyVals ...any) {
+	z.Error(msg, keyVals...)
+}
+func (z SdkLogWrapper) DebugContext(_ context.Context, msg string, keyVals ...any) {
+	z.Debug(msg, keyVals...)
 }
 
 // With returns a new wrapped logger with additional context provided by a set

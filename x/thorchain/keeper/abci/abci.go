@@ -46,18 +46,6 @@ func (h *ProposalHandler) PrepareProposal(ctx sdk.Context, req *abci.RequestPrep
 	origMaxTxBytes := req.MaxTxBytes
 	req.MaxTxBytes -= txBzLen
 
-	// TODO remove this after upgrading to cosmos sdk that has this fix
-	// https://github.com/cosmos/cosmos-sdk/pull/24074
-	// Note: not critical to do ASAP but will open up some space for more txs
-	var toRemove int64
-	for _, txBz := range req.Txs {
-		amount := int64(len(txBz))
-		protoAmount := cmttypes.ComputeProtoSizeForTxs([]cmttypes.Tx{txBz})
-		toRemove += protoAmount - amount
-	}
-	req.MaxTxBytes -= toRemove
-	// END TODO
-
 	// Let default handler process original txs with reduced size
 	resp, err := h.prepareProposalHandler(ctx, req)
 	if err != nil {

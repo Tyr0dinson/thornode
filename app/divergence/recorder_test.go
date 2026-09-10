@@ -16,7 +16,7 @@ import (
 	cmttypes "github.com/cometbft/cometbft/types"
 	"github.com/stretchr/testify/require"
 
-	storetypes "cosmossdk.io/store/types"
+	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
 )
 
 func TestNetPairsDedupesAndSorts(t *testing.T) {

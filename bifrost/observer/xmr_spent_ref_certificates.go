@@ -10,8 +10,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/libp2p/go-libp2p-core/network"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"golang.org/x/time/rate"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"

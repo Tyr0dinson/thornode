@@ -5,12 +5,9 @@ import (
 
 	. "gopkg.in/check.v1"
 
-	"cosmossdk.io/log"
-	"cosmossdk.io/store"
-	storemetrics "cosmossdk.io/store/metrics"
+	"cosmossdk.io/log/v2"
+	"github.com/cosmos/cosmos-sdk/store/v2"
 
-	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
-	upgradetypes "cosmossdk.io/x/upgrade/types"
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	dbm "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/cosmos-sdk/runtime"
@@ -26,6 +23,8 @@ import (
 	distrtypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
 	minttypes "github.com/cosmos/cosmos-sdk/x/mint/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+	upgradekeeper "github.com/cosmos/cosmos-sdk/x/upgrade/keeper"
+	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -48,7 +47,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, KVStore) {
 	)
 
 	db := dbm.NewMemDB()
-	ms := store.NewCommitMultiStore(db, log.NewNopLogger(), storemetrics.NewNoOpMetrics())
+	ms := store.NewCommitMultiStore(db, log.NewNopLogger())
 	ms.MountStoreWithDB(keys[authtypes.StoreKey], cosmos.StoreTypeIAVL, db)
 	ms.MountStoreWithDB(keys[banktypes.StoreKey], cosmos.StoreTypeIAVL, db)
 	ms.MountStoreWithDB(keys[upgradetypes.StoreKey], cosmos.StoreTypeIAVL, db)
@@ -56,7 +55,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, KVStore) {
 	err := ms.LoadLatestVersion()
 	c.Assert(err, IsNil)
 
-	ctx := cosmos.NewContext(ms, tmproto.Header{ChainID: "thorchain"}, false, log.NewNopLogger())
+	ctx := cosmos.NewContext(ms.CacheMultiStore(), tmproto.Header{ChainID: "thorchain"}, false, log.NewNopLogger())
 	ctx = ctx.WithBlockHeight(18)
 
 	encodingConfig := testutil.MakeTestEncodingConfig(

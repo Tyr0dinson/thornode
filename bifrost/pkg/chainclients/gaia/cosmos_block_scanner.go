@@ -10,13 +10,13 @@ import (
 	"sync"
 	"time"
 
-	feegranttypes "cosmossdk.io/x/feegrant"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
-	icacontrollertypes "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts/controller/types"
-	ibctransfertypes "github.com/cosmos/ibc-go/v8/modules/apps/transfer/types"
-	ibccoretypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
-	ibcchanneltypes "github.com/cosmos/ibc-go/v8/modules/core/04-channel/types"
-	ibclightclient "github.com/cosmos/ibc-go/v8/modules/light-clients/07-tendermint"
+	feegranttypes "github.com/cosmos/cosmos-sdk/x/feegrant"
+	icacontrollertypes "github.com/cosmos/ibc-go/v11/modules/apps/27-interchain-accounts/controller/types"
+	ibctransfertypes "github.com/cosmos/ibc-go/v11/modules/apps/transfer/types"
+	ibccoretypes "github.com/cosmos/ibc-go/v11/modules/core/02-client/types"
+	ibcchanneltypes "github.com/cosmos/ibc-go/v11/modules/core/04-channel/types"
+	ibclightclient "github.com/cosmos/ibc-go/v11/modules/light-clients/07-tendermint"
 
 	sdkmath "cosmossdk.io/math"
 	"github.com/cosmos/cosmos-sdk/client"
@@ -27,7 +27,7 @@ import (
 	signingtypes "github.com/cosmos/cosmos-sdk/types/tx/signing"
 	"github.com/cosmos/cosmos-sdk/x/auth/tx"
 
-	upgradetypes "cosmossdk.io/x/upgrade/types"
+	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	authvesting "github.com/cosmos/cosmos-sdk/x/auth/vesting/types"
 	authztypes "github.com/cosmos/cosmos-sdk/x/authz"

@@ -3,7 +3,7 @@ package common
 import (
 	"github.com/cometbft/cometbft/crypto/secp256k1"
 	sdk "github.com/cosmos/cosmos-sdk/types/bech32/legacybech32"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"

@@ -6,7 +6,7 @@ import (
 
 	"github.com/cometbft/cometbft/crypto/ed25519"
 	"github.com/decred/dcrd/dcrec/edwards/v2"
-	crypto2 "github.com/libp2p/go-libp2p-core/crypto"
+	crypto2 "github.com/libp2p/go-libp2p/core/crypto"
 	"gitlab.com/thorchain/tss/tss-lib-private.git/v3/crypto"
 	. "gopkg.in/check.v1"
 

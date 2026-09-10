@@ -4,7 +4,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 // Peers removed by narrowing can never send to the session again, so their

@@ -7,15 +7,12 @@ import (
 	"testing"
 	"time"
 
-	sdklog "cosmossdk.io/log"
-	"cosmossdk.io/store"
-	storemetrics "cosmossdk.io/store/metrics"
-	storetypes "cosmossdk.io/store/types"
-	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
-	upgradetypes "cosmossdk.io/x/upgrade/types"
+	sdklog "cosmossdk.io/log/v2"
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	dbm "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/cosmos-sdk/runtime"
+	"github.com/cosmos/cosmos-sdk/store/v2"
+	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	se "github.com/cosmos/cosmos-sdk/types/errors"
 	"github.com/cosmos/cosmos-sdk/types/module/testutil"
@@ -26,6 +23,8 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	upgradekeeper "github.com/cosmos/cosmos-sdk/x/upgrade/keeper"
+	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	. "gopkg.in/check.v1"
@@ -141,7 +140,7 @@ func setupManagerWith(c testFatal, mkdir func() string, lg thorlog.SdkLogWrapper
 	keyWasm := cosmos.NewKVStoreKey(wasmtypes.StoreKey)
 
 	db := dbm.NewMemDB()
-	ms := store.NewCommitMultiStore(db, sdklog.NewNopLogger(), storemetrics.NewNoOpMetrics())
+	ms := store.NewCommitMultiStore(db, sdklog.NewNopLogger())
 	ms.MountStoreWithDB(keyAcc, cosmos.StoreTypeIAVL, db)
 	ms.MountStoreWithDB(keyThorchain, cosmos.StoreTypeIAVL, db)
 	ms.MountStoreWithDB(keyBank, cosmos.StoreTypeIAVL, db)
@@ -150,7 +149,7 @@ func setupManagerWith(c testFatal, mkdir func() string, lg thorlog.SdkLogWrapper
 	err := ms.LoadLatestVersion()
 	must(err)
 
-	ctx := cosmos.NewContext(ms, tmproto.Header{ChainID: "thorchain"}, false, lg)
+	ctx := cosmos.NewContext(ms.CacheMultiStore(), tmproto.Header{ChainID: "thorchain"}, false, lg)
 	ctx = ctx.WithBlockHeight(18)
 	ctx = ctx.WithBlockTime(time.Now())
 	encodingConfig := testutil.MakeTestEncodingConfig(
@@ -194,7 +193,7 @@ func setupManagerWith(c testFatal, mkdir func() string, lg thorlog.SdkLogWrapper
 		encodingConfig.Codec,
 		runtime.NewKVStoreService(keyWasm),
 		ak, bk,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, wasmDir,
+		nil, nil, nil, nil, nil, nil, nil, nil, wasmDir,
 		wasmtypes.DefaultNodeConfig(), wasmtypes.VMConfig{}, wasmkeeper.BuiltInCapabilities(),
 		authtypes.NewModuleAddress(ModuleName).String(),
 		wasmOpt,
@@ -270,14 +269,14 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 	keyUpgrade := cosmos.NewKVStoreKey(upgradetypes.StoreKey)
 
 	db := dbm.NewMemDB()
-	ms := store.NewCommitMultiStore(db, sdklog.NewNopLogger(), storemetrics.NewNoOpMetrics())
+	ms := store.NewCommitMultiStore(db, sdklog.NewNopLogger())
 	ms.MountStoreWithDB(keyAcc, cosmos.StoreTypeIAVL, db)
 	ms.MountStoreWithDB(keyThorchain, cosmos.StoreTypeIAVL, db)
 	ms.MountStoreWithDB(keyBank, cosmos.StoreTypeIAVL, db)
 	err := ms.LoadLatestVersion()
 	c.Assert(err, IsNil)
 
-	ctx := cosmos.NewContext(ms, tmproto.Header{ChainID: "thorchain"}, false, logger())
+	ctx := cosmos.NewContext(ms.CacheMultiStore(), tmproto.Header{ChainID: "thorchain"}, false, logger())
 	ctx = ctx.WithBlockHeight(18)
 	ctx = ctx.WithTxBytes([]byte("tx"))
 

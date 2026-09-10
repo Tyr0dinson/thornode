@@ -3,8 +3,8 @@ package v2_test
 import (
 	"testing"
 
-	storetypes "cosmossdk.io/store/types"
 	"github.com/cosmos/cosmos-sdk/runtime"
+	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
 	"github.com/cosmos/cosmos-sdk/testutil"
 	modtestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
 

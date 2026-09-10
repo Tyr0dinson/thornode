@@ -9,9 +9,9 @@ import (
 	"time"
 
 	libp2p "github.com/libp2p/go-libp2p"
-	"github.com/libp2p/go-libp2p-core/crypto"
-	"github.com/libp2p/go-libp2p-core/network"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
 	maddr "github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/assert"
 	. "gopkg.in/check.v1"
@@ -215,7 +215,6 @@ func TestConnectToOnePeerUsesDiscoveryWhenPeerstoreIsEmpty(t *testing.T) {
 	targetPriv, _, err := crypto.GenerateSecp256k1Key(cryptorand.Reader)
 	assert.NoError(t, err)
 	targetHost, err := libp2p.New(
-		context.Background(),
 		libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/7801"),
 		libp2p.Identity(targetPriv),
 	)

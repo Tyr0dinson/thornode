@@ -15,7 +15,7 @@ import (
 
 	tcrypto "github.com/cometbft/cometbft/crypto"
 	"github.com/eager7/dogd/btcec"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	ecdsaKeygen "gitlab.com/thorchain/tss/tss-lib-private.git/v3/ecdsa/keygen"

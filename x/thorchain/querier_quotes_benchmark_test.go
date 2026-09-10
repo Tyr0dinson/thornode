@@ -6,17 +6,14 @@ import (
 	"testing"
 	"time"
 
-	sdklog "cosmossdk.io/log"
-	"cosmossdk.io/store"
-	storemetrics "cosmossdk.io/store/metrics"
-	storetypes "cosmossdk.io/store/types"
-	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
-	upgradetypes "cosmossdk.io/x/upgrade/types"
+	sdklog "cosmossdk.io/log/v2"
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	dbm "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/cosmos-sdk/runtime"
+	"github.com/cosmos/cosmos-sdk/store/v2"
+	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module/testutil"
 	"github.com/cosmos/cosmos-sdk/x/auth"
@@ -26,6 +23,8 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	upgradekeeper "github.com/cosmos/cosmos-sdk/x/upgrade/keeper"
+	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -88,7 +87,7 @@ func setupBenchmarkManagerWith(b testing.TB, bootstrapValidator bool) (cosmos.Co
 		b.Fatal(err)
 	}
 
-	ctx := cosmos.NewContext(ms, tmproto.Header{ChainID: "thorchain"}, false, logger())
+	ctx := cosmos.NewContext(ms.CacheMultiStore(), tmproto.Header{ChainID: "thorchain"}, false, logger())
 	ctx = ctx.WithBlockHeight(1000000) // Use high block height for benchmarking
 	ctx = ctx.WithBlockTime(time.Now())
 
@@ -134,7 +133,7 @@ func setupBenchmarkManagerWith(b testing.TB, bootstrapValidator bool) (cosmos.Co
 		encodingConfig.Codec,
 		runtime.NewKVStoreService(keyWasm),
 		ak, bk,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, wasmDir,
+		nil, nil, nil, nil, nil, nil, nil, nil, wasmDir,
 		wasmtypes.DefaultNodeConfig(), wasmtypes.VMConfig{}, wasmkeeper.BuiltInCapabilities(),
 		authtypes.NewModuleAddress(ModuleName).String(),
 	)

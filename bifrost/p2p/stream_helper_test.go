@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/libp2p/go-libp2p-core/network"
-	"github.com/libp2p/go-libp2p-core/protocol"
+	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/magiconair/properties/assert"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -85,14 +85,14 @@ func (m MockNetworkStream) Protocol() protocol.ID {
 	return testProtocolID
 }
 
-func (m MockNetworkStream) SetProtocol(id protocol.ID) {}
+func (m MockNetworkStream) SetProtocol(id protocol.ID) error { return nil }
 
 func (s MockNetworkStream) ID() string {
 	return strconv.FormatInt(s.id, 10)
 }
 
-func (m MockNetworkStream) Stat() network.Stat {
-	return network.Stat{
+func (m MockNetworkStream) Stat() network.Stats {
+	return network.Stats{
 		Direction: 0,
 		Extra:     make(map[interface{}]interface{}),
 	}
@@ -319,6 +319,11 @@ func TestStreamManager(t *testing.T) {
 	streamMgr.ReleaseStream("3")
 	assert.Equal(t, len(streamMgr.unusedStreams), 0)
 }
+
+func (m MockNetworkStream) CloseRead() error                             { return nil }
+func (m MockNetworkStream) CloseWrite() error                            { return nil }
+func (m MockNetworkStream) Scope() network.StreamScope                   { return &network.NullScope{} }
+func (m MockNetworkStream) ResetWithError(network.StreamErrorCode) error { return m.Reset() }
 
 type limitTestStream struct {
 	network.Stream

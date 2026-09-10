@@ -6,7 +6,7 @@ import (
 	"github.com/CosmWasm/wasmd/x/wasm"
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
-	wasmvmtypes "github.com/CosmWasm/wasmvm/v2/types"
+	wasmvmtypes "github.com/CosmWasm/wasmvm/v3/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	"github.com/cosmos/gogoproto/proto"
@@ -43,23 +43,37 @@ var WasmGasRegister = wasmtypes.NewWasmGasRegister(wasmtypes.WasmGasRegisterConf
 	// Contracts are stored in memory my default, rather than on disk
 	// Standard contract ~ 20m gas to store, vs 50-200k for a regular contract execution
 	UncompressCost: wasmvmtypes.UFraction{Numerator: 15, Denominator: 1},
+	// Preserve the previous release's lack of a separate pin/unpin gas charge.
+	PinCodeCost:   0,
+	UnpinCodeCost: 0,
 })
 
 // CustomWasmModule re-exposes the underlying module's methods,
-// but prevents Services from being registered, as these
-// should be registered and handled in x/thorchain
+// but registers only migrations. Message and query services remain handled
+// in x/thorchain.
 type CustomWasmModule struct {
 	*wasm.AppModule
+	migrator wasmkeeper.Migrator
 }
 
 // NewCustomWasmModule creates a new CustomWasmModule object
 func NewCustomWasmModule(
 	module *wasm.AppModule,
+	migrator wasmkeeper.Migrator,
 ) CustomWasmModule {
-	return CustomWasmModule{module}
+	return CustomWasmModule{module, migrator}
 }
 
 func (am CustomWasmModule) RegisterServices(cfg module.Configurator) {
+	for i, migration := range []module.MigrationHandler{
+		am.migrator.Migrate1to2,
+		am.migrator.Migrate2to3,
+		am.migrator.Migrate3to4,
+	} {
+		if err := cfg.RegisterMigration(wasmtypes.ModuleName, uint64(i+1), migration); err != nil {
+			panic(err)
+		}
+	}
 }
 
 // x/wasm uses bankkeeper.IsSendEnabledCoins to check the movement of

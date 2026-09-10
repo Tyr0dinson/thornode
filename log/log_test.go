@@ -2,6 +2,7 @@ package log
 
 import (
 	"bytes"
+	"context"
 	"testing"
 
 	"github.com/rs/zerolog"
@@ -183,4 +184,15 @@ func (s *LogSuite) TestSdkLogWrapper_Filter_DebugLevel(c *C) {
 	w := newTestLogger(&buf, zerolog.DebugLevel)
 	w.Info("executed block")
 	c.Assert(bytes.Contains(buf.Bytes(), []byte("executed block")), Equals, true)
+}
+
+func (s *LogSuite) TestContextLoggingPreservesFilter(c *C) {
+	config.Init()
+	var buf bytes.Buffer
+	w := newTestLogger(&buf, zerolog.InfoLevel)
+	w.InfoContext(context.Background(), "executed block")
+	c.Assert(buf.Len(), Equals, 0)
+	w.ErrorContext(context.Background(), "keep-this", "height", 42)
+	c.Assert(bytes.Contains(buf.Bytes(), []byte("keep-this")), Equals, true)
+	c.Assert(bytes.Contains(buf.Bytes(), []byte(`"height":42`)), Equals, true)
 }

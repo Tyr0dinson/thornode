@@ -3,7 +3,7 @@ package blame
 import (
 	"sync"
 
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	btss "gitlab.com/thorchain/tss/tss-lib-private.git/v3/tss"

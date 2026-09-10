@@ -17,7 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"cosmossdk.io/log"
+	"cosmossdk.io/log/v2"
 )
 
 const (

@@ -7,8 +7,8 @@ import (
 
 	"google.golang.org/protobuf/reflect/protoreflect"
 
-	"cosmossdk.io/x/tx/signing/aminojson"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/x/tx/signing/aminojson"
 
 	apicommon "gitlab.com/thorchain/thornode/v3/api/common"
 	"gitlab.com/thorchain/thornode/v3/common"

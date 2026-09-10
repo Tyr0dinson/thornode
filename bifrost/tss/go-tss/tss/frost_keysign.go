@@ -11,7 +11,7 @@ import (
 	"time"
 
 	tcrypto "github.com/cometbft/cometbft/crypto"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 

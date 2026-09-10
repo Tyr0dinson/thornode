@@ -3,7 +3,7 @@ package app
 import (
 	"fmt"
 
-	upgradetypes "cosmossdk.io/x/upgrade/types"
+	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
 
 	"gitlab.com/thorchain/thornode/v3/app/upgrades"
 	"gitlab.com/thorchain/thornode/v3/app/upgrades/standard"
@@ -29,7 +29,7 @@ var Upgrades = []upgrades.Upgrade{
 	//
 	// Example pattern: https://gitlab.com/thorchain/thornode/-/merge_requests/3837
 
-	standard.NewUpgrade("3.20.0"),
+	standard.NewUpgrade("4.0.0"),
 }
 
 // RegisterUpgradeHandlers registers the chain upgrade handlers

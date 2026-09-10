@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/libp2p/go-libp2p-core/peer"
 	tnet "github.com/libp2p/go-libp2p-testing/net"
+	"github.com/libp2p/go-libp2p/core/peer"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/assert"
 	tsslibcommon "gitlab.com/thorchain/tss/tss-lib-private.git/v3/common"
@@ -32,7 +32,7 @@ func TestSignatureNotifierHappyPath(t *testing.T) {
 	id1 := tnet.RandIdentityOrFatal(t)
 	id2 := tnet.RandIdentityOrFatal(t)
 	id3 := tnet.RandIdentityOrFatal(t)
-	mn := mocknet.New(context.Background())
+	mn := mocknet.New()
 	// add peers to mock net
 
 	a1 := tnet.RandLocalTCPAddress()
@@ -104,7 +104,7 @@ func TestSignatureNotifierBroadcastFirst(t *testing.T) {
 	id1 := tnet.RandIdentityOrFatal(t)
 	id2 := tnet.RandIdentityOrFatal(t)
 	id3 := tnet.RandIdentityOrFatal(t)
-	mn := mocknet.New(context.Background())
+	mn := mocknet.New()
 	// add peers to mock net
 
 	a1 := tnet.RandLocalTCPAddress()
@@ -205,7 +205,7 @@ func TestSignatureNotifierTimeout(t *testing.T) {
 	p2p.ApplyDeadline.Store(false)
 
 	id1 := tnet.RandIdentityOrFatal(t)
-	mn := mocknet.New(context.Background())
+	mn := mocknet.New()
 	a1 := tnet.RandLocalTCPAddress()
 	h1, err := mn.AddPeer(id1.PrivateKey(), a1)
 	assert.Nil(t, err)
@@ -232,7 +232,7 @@ func TestSignatureNotifierSigChan(t *testing.T) {
 	p2p.ApplyDeadline.Store(false)
 
 	id1 := tnet.RandIdentityOrFatal(t)
-	mn := mocknet.New(context.Background())
+	mn := mocknet.New()
 	a1 := tnet.RandLocalTCPAddress()
 	h1, err := mn.AddPeer(id1.PrivateKey(), a1)
 	assert.Nil(t, err)
@@ -257,7 +257,7 @@ func TestSignatureNotifierBroadcastFailed(t *testing.T) {
 
 	id1 := tnet.RandIdentityOrFatal(t)
 	id2 := tnet.RandIdentityOrFatal(t)
-	mn := mocknet.New(context.Background())
+	mn := mocknet.New()
 	a1 := tnet.RandLocalTCPAddress()
 	a2 := tnet.RandLocalTCPAddress()
 
@@ -290,7 +290,7 @@ func TestSignatureNotifierReleaseStream(t *testing.T) {
 	p2p.ApplyDeadline.Store(false)
 
 	id1 := tnet.RandIdentityOrFatal(t)
-	mn := mocknet.New(context.Background())
+	mn := mocknet.New()
 	a1 := tnet.RandLocalTCPAddress()
 	h1, err := mn.AddPeer(id1.PrivateKey(), a1)
 	assert.Nil(t, err)
@@ -312,7 +312,7 @@ func TestSignatureNotifierCleanupReleasesParkedStreams(t *testing.T) {
 
 	id1 := tnet.RandIdentityOrFatal(t)
 	id2 := tnet.RandIdentityOrFatal(t)
-	mn := mocknet.New(context.Background())
+	mn := mocknet.New()
 	a1 := tnet.RandLocalTCPAddress()
 	a2 := tnet.RandLocalTCPAddress()
 	h1, err := mn.AddPeer(id1.PrivateKey(), a1)
@@ -360,7 +360,7 @@ func TestSignatureNotifierGetNotifier(t *testing.T) {
 	p2p.ApplyDeadline.Store(false)
 
 	id1 := tnet.RandIdentityOrFatal(t)
-	mn := mocknet.New(context.Background())
+	mn := mocknet.New()
 	a1 := tnet.RandLocalTCPAddress()
 	h1, err := mn.AddPeer(id1.PrivateKey(), a1)
 	assert.Nil(t, err)
@@ -388,7 +388,7 @@ func TestSignatureNotifierRemoveNotifier(t *testing.T) {
 	p2p.ApplyDeadline.Store(false)
 
 	id1 := tnet.RandIdentityOrFatal(t)
-	mn := mocknet.New(context.Background())
+	mn := mocknet.New()
 	a1 := tnet.RandLocalTCPAddress()
 	h1, err := mn.AddPeer(id1.PrivateKey(), a1)
 	assert.Nil(t, err)

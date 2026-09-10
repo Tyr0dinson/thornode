@@ -12,16 +12,22 @@ import (
 
 	tcrypto "github.com/cometbft/cometbft/crypto"
 	libp2p "github.com/libp2p/go-libp2p"
-	"github.com/libp2p/go-libp2p-core/crypto"
-	"github.com/libp2p/go-libp2p-core/host"
-	"github.com/libp2p/go-libp2p-core/network"
-	"github.com/libp2p/go-libp2p-core/peer"
-	peerstorecore "github.com/libp2p/go-libp2p-core/peerstore"
-	"github.com/libp2p/go-libp2p-core/protocol"
-	discovery "github.com/libp2p/go-libp2p-discovery"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
-	"github.com/libp2p/go-libp2p-peerstore/addr"
+	mplex "github.com/libp2p/go-libp2p-mplex"
+	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
+	peerstorecore "github.com/libp2p/go-libp2p/core/peerstore"
+	"github.com/libp2p/go-libp2p/core/protocol"
+	discovery "github.com/libp2p/go-libp2p/p2p/discovery/routing"
+	discoveryutil "github.com/libp2p/go-libp2p/p2p/discovery/util"
+	"github.com/libp2p/go-libp2p/p2p/muxer/yamux"
 	"github.com/libp2p/go-libp2p/p2p/protocol/ping"
+	"github.com/libp2p/go-libp2p/p2p/security/noise"
+	libp2ptls "github.com/libp2p/go-libp2p/p2p/security/tls"
+	"github.com/libp2p/go-libp2p/p2p/transport/tcp"
+	"github.com/libp2p/go-libp2p/p2p/transport/websocket"
 	maddr "github.com/multiformats/go-multiaddr"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -680,8 +686,8 @@ func (c *Communication) handleStreamTss(stream network.Stream) {
 	}
 }
 
-func (c *Communication) getPeers() addr.AddrList {
-	var bootstrapPeers addr.AddrList
+func (c *Communication) getPeers() []maddr.Multiaddr {
+	var bootstrapPeers []maddr.Multiaddr
 
 	cfgBoostrapPeers, err := c.config.GetBootstrapPeers()
 	if err != nil {
@@ -781,8 +787,14 @@ func (c *Communication) startChannel(privKeyBytes []byte) error {
 		return addrs
 	}
 
-	// Build libp2p options
+	// Preserve the existing TCP/WebSocket, Noise/TLS and Yamux/Mplex protocol set.
 	opts := []libp2p.Option{
+		libp2p.Transport(tcp.NewTCPTransport),
+		libp2p.Transport(websocket.New),
+		libp2p.Security(noise.ID, noise.New),
+		libp2p.Security(libp2ptls.ID, libp2ptls.New),
+		libp2p.Muxer(yamux.ID, yamux.DefaultTransport),
+		libp2p.Muxer(mplex.ID, mplex.DefaultTransport),
 		libp2p.ListenAddrs([]maddr.Multiaddr{c.listenAddr}...),
 		libp2p.Identity(p2pPriKey),
 		libp2p.AddrsFactory(addressFactory),
@@ -794,7 +806,7 @@ func (c *Communication) startChannel(privKeyBytes []byte) error {
 		opts = append(opts, libp2p.ConnectionGater(c.nodeGater))
 	}
 
-	h, err := libp2p.New(ctx, opts...)
+	h, err := libp2p.New(opts...)
 	if err != nil {
 		return fmt.Errorf("fail to create p2p host: %w", err)
 	}
@@ -838,7 +850,7 @@ func (c *Communication) startChannel(privKeyBytes []byte) error {
 	// We use a rendezvous point "meet me here" to announce our location.
 	// This is like telling your friends to meet you at the Eiffel Tower.
 	routingDiscovery := discovery.NewRoutingDiscovery(kademliaDHT)
-	discovery.Advertise(ctx, routingDiscovery, c.config.GetRendezvous())
+	discoveryutil.Advertise(ctx, routingDiscovery, c.config.GetRendezvous())
 	if err = c.bootStrapConnectivityCheck(); err != nil {
 		if requireBootstrapConnectivity {
 			return err

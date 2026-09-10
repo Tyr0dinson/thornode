@@ -12,7 +12,7 @@ import (
 
 	tcrypto "github.com/cometbft/cometbft/crypto"
 	cometsecp "github.com/cometbft/cometbft/crypto/secp256k1"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/rs/zerolog"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
