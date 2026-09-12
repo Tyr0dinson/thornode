@@ -91,10 +91,14 @@ func (s *KeeperMimirSuite) TestIsOperationalMimirOverSolvencyToTreasuryBps(c *C)
 	c.Check(k.IsOperationalMimir("OverSolvencyToTreasuryFoo-BTC-BTC"), Equals, false)
 }
 
-func (s *KeeperMimirSuite) TestDisableTSSSignerFilteringIsEconomicMimir(c *C) {
+func (s *KeeperMimirSuite) TestDisableTSSSignerFilteringIsOperationalMimir(c *C) {
 	_, k := setupKeeperForTest(c)
 
-	c.Check(k.IsOperationalMimir(constants.MimirKeyDisableTSSSignerFiltering), Equals, false)
+	key := constants.MimirKeyDisableTSSSignerFiltering
+	c.Check(k.IsOperationalMimir(key), Equals, true)
+	c.Check(k.IsOperationalMimir(strings.ToUpper(key)), Equals, true)
+	c.Check(k.IsOperationalMimir(strings.ToLower(key)), Equals, true)
+	c.Check(k.IsOperationalMimir(key+"-BTC"), Equals, false)
 }
 
 func (s *KeeperMimirSuite) TestIsOperationalMimirSkipSignerCache(c *C) {
