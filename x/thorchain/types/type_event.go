@@ -37,6 +37,7 @@ const (
 	SwapEventType                   = "swap"
 	AffiliateFeeEventType           = "affiliate_fee"
 	RevShareEventType               = "rev_share"
+	BondYieldEventType              = "bond_yield"
 	LimitSwapEventType              = "limit_swap"
 	ModifyLimitSwapEventType        = "limit_swap_mod"
 	LimitSwapCloseEventType         = "limit_swap_close"
@@ -52,6 +53,7 @@ const (
 	RUNEPoolWithdrawEventType       = "rune_pool_withdraw"
 	TSSKeygenSuccess                = "tss_keygen_success"
 	TSSKeygenFailure                = "tss_keygen_failure"
+	TSSKeysignFailure               = "tss_keysign_failure"
 	TSSKeygenMetricEventType        = "tss_keygen"
 	TSSKeysignMetricEventType       = "tss_keysign"
 	VersionEventType                = "version"
@@ -314,6 +316,36 @@ func (m *EventRevShare) Events() (cosmos.Events, error) {
 			cosmos.NewAttribute("accrued_fee", m.AccruedFee.String()),
 			cosmos.NewAttribute("bps", strconv.FormatInt(m.Bps, 10)),
 			cosmos.NewAttribute("payout", m.Payout.String()),
+		),
+	}, nil
+}
+
+func NewEventBondYield(nodeAddress, providerAddress cosmos.AccAddress, rewardShare, payoutAmount, rebondedAmount cosmos.Uint, bps uint64, payoutTarget string) *EventBondYield {
+	return &EventBondYield{
+		NodeAddress:     nodeAddress,
+		ProviderAddress: providerAddress,
+		RewardShare:     rewardShare,
+		PayoutAmount:    payoutAmount,
+		RebondedAmount:  rebondedAmount,
+		Bps:             bps,
+		PayoutTarget:    payoutTarget,
+	}
+}
+
+func (m *EventBondYield) Type() string {
+	return BondYieldEventType
+}
+
+func (m *EventBondYield) Events() (cosmos.Events, error) {
+	return cosmos.Events{
+		cosmos.NewEvent(m.Type(),
+			cosmos.NewAttribute("node_address", m.NodeAddress.String()),
+			cosmos.NewAttribute("provider_address", m.ProviderAddress.String()),
+			cosmos.NewAttribute("reward_share", m.RewardShare.String()),
+			cosmos.NewAttribute("payout_amount", m.PayoutAmount.String()),
+			cosmos.NewAttribute("rebonded_amount", m.RebondedAmount.String()),
+			cosmos.NewAttribute("bps", strconv.FormatUint(m.Bps, 10)),
+			cosmos.NewAttribute("payout_target", m.PayoutTarget),
 		),
 	}, nil
 }
@@ -877,6 +909,39 @@ func (m *EventTssKeysignMetric) Events() (cosmos.Events, error) {
 	evt := cosmos.NewEvent(m.Type(),
 		cosmos.NewAttribute("txid", m.TxID.String()),
 		cosmos.NewAttribute("median_duration_ms", strconv.FormatInt(m.MedianDurationMs, 10)))
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventTssKeysignFailure create a new EventTssKeysignFailure
+func NewEventTssKeysignFailure(reason, round string, unicast bool, height int64, blame []string, id string, pubkey common.PubKey) *EventTssKeysignFailure {
+	return &EventTssKeysignFailure{
+		FailReason: reason,
+		IsUnicast:  unicast,
+		Round:      round,
+		Height:     height,
+		BlameNodes: blame,
+		ID:         id,
+		PubKey:     pubkey,
+	}
+}
+
+// Type  return a string which represent the type of this event
+func (m *EventTssKeysignFailure) Type() string {
+	return TSSKeysignFailure
+}
+
+// Events return cosmos sdk events
+func (m *EventTssKeysignFailure) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(
+		m.Type(),
+		cosmos.NewAttribute("reason", m.FailReason),
+		cosmos.NewAttribute("round", m.Round),
+		cosmos.NewAttribute("is_unicast", fmt.Sprintf("%v", m.IsUnicast)),
+		cosmos.NewAttribute("height", strconv.FormatInt(m.Height, 10)),
+		cosmos.NewAttribute("blame", strings.Join(m.BlameNodes, ", ")),
+		cosmos.NewAttribute("id", m.ID),
+		cosmos.NewAttribute("pubkey", m.PubKey.String()),
+	)
 	return cosmos.Events{evt}, nil
 }
 

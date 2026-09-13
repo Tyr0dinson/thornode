@@ -51,7 +51,13 @@ func (h WithdrawLiquidityHandler) validate(ctx cosmos.Context, msg MsgWithdrawLi
 	}
 
 	if msg.Asset.IsSyntheticAsset() {
-		if h.mgr.Keeper().GetConfigInt64(ctx, constants.BurnSynths) > 0 {
+		// The BurnSynths mimir disables user-facing saver withdrawals (purposeful
+		// inconsistency of int64 vs. other mimirs). It must NOT block the internal
+		// ragnarok saver withdrawals: when a pool is being ragnaroked the protocol
+		// has to be able to pay savers out. Blocking here would otherwise cause the
+		// ragnarok saver path to delete saver records with no payout.
+		if h.mgr.Keeper().GetConfigInt64(ctx, constants.BurnSynths) > 0 &&
+			!h.mgr.Keeper().IsRagnarok(ctx, []common.Asset{msg.Asset.GetLayer1Asset()}) {
 			// Burning synths is disabled (purposeful inconsistency of int64 vs. other mimirs)
 			return fmt.Errorf("burning synths is disabled, unable to withdraw to savers")
 		}
@@ -278,8 +284,13 @@ func (h WithdrawLiquidityHandler) handle(ctx cosmos.Context, msg MsgWithdrawLiqu
 }
 
 func (h WithdrawLiquidityHandler) swap(ctx cosmos.Context, msg MsgWithdrawLiquidity, coin common.Coin, addr common.Address) error {
+	advSwapQueueEnabled := h.mgr.Keeper().AdvSwapQueueEnabled(ctx)
+
 	// ensure TxID does NOT have a collision with another swap
 	if ok := h.mgr.Keeper().HasSwapQueueItem(ctx, msg.Tx.ID, 0); ok {
+		return fmt.Errorf("txn hash conflict")
+	}
+	if advSwapQueueEnabled && h.mgr.Keeper().HasAdvSwapQueueItem(ctx, msg.Tx.ID, 0) {
 		return fmt.Errorf("txn hash conflict")
 	}
 
@@ -292,10 +303,12 @@ func (h WithdrawLiquidityHandler) swap(ctx cosmos.Context, msg MsgWithdrawLiquid
 		ssInterval = 0
 	}
 
-	// if the asset is in ragnarok, disable streaming withdraw
-	key := "RAGNAROK-" + targetAsset.MimirString()
-	ragnarok, err := h.mgr.Keeper().GetMimir(ctx, key)
-	if err == nil && ragnarok > 0 {
+	// If the asset is in ragnarok, disable streaming withdraw. Use the canonical
+	// IsRagnarok predicate rather than a direct RAGNAROK-<asset> lookup: a chain
+	// gas asset ragnarok covers every token pool on that chain (as checkPoolRagnarok
+	// treats it), so a token pool must be recognised here too.
+	isRagnarok := h.mgr.Keeper().IsRagnarok(ctx, []common.Asset{targetAsset})
+	if isRagnarok {
 		ssInterval = 0
 	}
 
@@ -305,7 +318,7 @@ func (h WithdrawLiquidityHandler) swap(ctx cosmos.Context, msg MsgWithdrawLiquid
 
 	// Determine version based on configuration
 	version := types.SwapVersion_v1
-	if h.mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+	if advSwapQueueEnabled {
 		version = types.SwapVersion_v2
 	}
 
@@ -315,6 +328,28 @@ func (h WithdrawLiquidityHandler) swap(ctx cosmos.Context, msg MsgWithdrawLiquid
 	handler := NewSwapHandler(h.mgr)
 	if err := handler.validate(ctx, *swapMsg); err != nil {
 		return err
+	}
+
+	if advSwapQueueEnabled {
+		// The advanced swap queue owns execution and outbound scheduling for the
+		// swaps it manages: SwapperImpl.Swap deliberately skips TryAddTxOutItem
+		// while it is enabled, deferring to settleSwap. Queueing this redemption
+		// in the legacy namespace instead would burn the synth and drop the item
+		// with no outbound ever scheduled, so route it where it can be settled.
+		if ssInterval == 0 {
+			// Streaming was not asked for (disabled by config, or by ragnarok
+			// above), but AddSwapQueueItem expands a zero quantity to
+			// maxSwapQuantity - which IsStreaming() reads as a streaming swap.
+			// Pin it to a single swap to keep the legacy queue's semantics: during
+			// ragnarok that also keeps it clear of the streaming-on-ragnarok guard
+			// in isSwapReady.
+			swapMsg.State.Quantity = 1
+		}
+		if err := h.mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, h.mgr, swapMsg); err != nil {
+			ctx.Logger().Error("fail to add swap to adv queue", "error", err)
+			return err
+		}
+		return nil
 	}
 
 	if err := h.mgr.Keeper().SetSwapQueueItem(ctx, *swapMsg, 0); err != nil {

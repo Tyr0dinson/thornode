@@ -17,21 +17,22 @@ Chain clients are located in:
 
 Each chain lives in its own folder and typically inherits logic from a shared implementation:
 
-| Client Folder | Purpose                 | Used For             |
-| ------------- | ----------------------- | -------------------- |
-| `evm/`        | Shared EVM logic        | ETH, BSC, AVAX, BASE |
-| `utxo/`       | Shared UTXO logic       | BTC, LTC, BCH, DOGE  |
-| `xrp/`        | XRP-specific logic      | XRP                  |
-| `tron/`       | Tron-specific logic     | TRON                 |
-| `solana/`     | Solana-specific logic   | SOL                  |
-| `gaia/`       | Cosmos SDK-based chains | ATOM                 |
-| `monero/`     | Monero-specific logic   | XMR                  |
+| Client Folder | Purpose                 | Used For                 |
+| ------------- | ----------------------- | ------------------------ |
+| `ethereum/`   | Ethereum-specific logic | ETH                      |
+| `evm/`        | Shared EVM logic        | AVAX, BSC, BASE, POL     |
+| `utxo/`       | Shared UTXO logic       | BTC, LTC, BCH, DOGE, ZEC |
+| `gaia/`       | Cosmos SDK-based chains | GAIA, NOBLE              |
+| `solana/`     | Solana-specific logic   | SOL                      |
+| `tron/`       | Tron-specific logic     | TRON                     |
+| `xrp/`        | XRP-specific logic      | XRP                      |
+| `monero/`     | Monero-specific logic   | XMR                      |
 
-Chains that do not fit a shared model can implement their own logic from scratch. For UTXO-based chains, the actual `Client` is constructed using the shared implementation in `utxo/client.go`, which handles block scanning, mempool fetches, reorg tracking, and solvency reporting.
+Chains that do not fit a shared model can implement their own logic from scratch. For UTXO-based chains, the `Client` is constructed using the shared implementation in `utxo/client.go`, which handles block scanning, mempool fetches, reorg tracking, and solvency reporting. Each specific chain (BTC, LTC, DOGE, etc.) has a per-chain file (e.g., `utxo/bitcoin.go`, `utxo/litecoin.go`) that provides chain-specific configuration.
 
-Each specific chain such as BTC, LTC, or DOGE wraps this shared logic with minimal overrides in `btc/client.go`, `ltc/client.go`, etc.
+For EVM-based chains, shared functionality is implemented in `evm/client.go` and reused by non-Ethereum EVM chains (AVAX, BSC, BASE, POL). Ethereum has its own dedicated client in `ethereum/ethereum.go` with custom logic for gas estimation, smart contract detection, and confirmation counting.
 
-Similarly, for EVM-based chains like Ethereum, Avalanche, and BSC, shared functionality is implemented in evm/client.go and reused by each specific EVM client (e.g., `ethereum/client.go`, `bsc/client.go`).
+Cosmos SDK chains (GAIA, NOBLE) share a single `CosmosClient` implementation in `gaia/cosmos_client.go`, differentiated by chain ID configuration.
 
 Chains that share no common model — XRP, Tron, Solana, and Monero — implement the `ChainClient` interface directly in their own folder. See [Standalone Chains](./standalone.md).
 
@@ -128,15 +129,19 @@ The BlockScanner component is responsible for scanning the blockchain to detect 
 
 ### Required Interface
 
+The `BlockScannerFetcher` interface is defined in `bifrost/blockscanner/blockscanner.go`:
+
 ```go
 // BlockScannerFetcher defines the methods a block scanner must implement
 type BlockScannerFetcher interface {
     // FetchMemPool scan the mempool
     FetchMemPool(height int64) (types.TxIn, error)
     // FetchTxs scan block with the given height
-    FetchTxs(height int64) (types.TxIn, error)
+    FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error)
     // GetHeight return current block height
     GetHeight() (int64, error)
+    // GetNetworkFee returns current network fee details
+    GetNetworkFee() (transactionSize, transactionFeeRate uint64)
 }
 ```
 
@@ -175,30 +180,33 @@ All chain clients must handle the following responsibilities consistently:
 
 ### Confirmation Counting
 
-- For delayed-finality chains (EVM, UTXO), transactions require dynamic confirmations.
+- For delayed-finality chains (UTXO, Ethereum), transactions require dynamic confirmations based on transaction value relative to block rewards.
 
-- Confirmations are calculated using:
+- **UTXO chains** (BTC, BCH, LTC, DOGE, ZEC — see `utxo/client_internal.go`) compute a confirmation value from `ConfMultiplier` (a basis-points parameter) and block reward, then divide the transaction value by it:
 
-  ```go
-  RequiredConfirmations = min(
-    (TxValue / BlockReward) × ConfMultiplier,
-    MAXCONFIRMATIONS
-  )
-  ```
+```text
+  confValue = (ConfMultiplier × BlockReward) / MaxBasisPts
+  confirm   = TxValue / confValue
+  confirm   = min(confirm, MAXCONFIRMATIONS)
+  confirm   = max(confirm, MinConfirmations)
+```
+
+- **Ethereum** (see `ethereum/ethereum.go`) uses the same shape but applies an additional `×2` safety multiplier to `TxValue` and enforces a hard floor of 2 confirmations to defend against post-Merge reorgs:
+
+```text
+  confValue = (ConfMultiplier × BlockReward) / MaxBasisPts
+  confirm   = (TxValue × 2) / confValue
+  confirm   = min(confirm, MAXCONFIRMATIONS)
+  confirm   = max(confirm, 2)
+```
 
 - Finality is only reached after this threshold is met.
 
-`MAXCONFIRMATIONS` values are defined per chain in Mimir:
+- Chains with instant finality (Cosmos, Solana, XRP, Avalanche) return 0 confirmations.
 
-```json
-{
-  "MAXCONFIRMATIONS-BTC": 2,
-  "MAXCONFIRMATIONS-BCH": 3,
-  "MAXCONFIRMATIONS-LTC": 6,
-  "MAXCONFIRMATIONS-DOGE": 15,
-  "MAXCONFIRMATIONS-ETH": 14
-}
-```
+- Some EVM chains use hard-coded confirmation counts: BSC (3), BASE (12), POL (15).
+
+`MAXCONFIRMATIONS` values for dynamic chains are defined per chain in Mimir (e.g., `MAXCONFIRMATIONS-BTC`, `MAXCONFIRMATIONS-ETH`).
 
 ### Re-org Detection
 
@@ -215,6 +223,18 @@ All chain clients must handle the following responsibilities consistently:
 For chains that support tokens (EVM, Solana), THORChain maintains per-chain whitelists to reduce attack surface. These lists are JSON files stored in the Thornode repository and periodically fetched by clients.
 
 See [token-lists.md](./token-lists.md) for details.
+
+## Claude Code Skill
+
+A Claude Code skill is available to assist with building, modifying, and verifying chain clients. The `/chain-client` skill provides:
+
+- **Decision tree** for choosing the right workflow (new chain, modify existing, or verify)
+- **Step-by-step guidance** for implementing all required interfaces (`ChainClient`, `Observer`, `Signer`, `BlockScanner`)
+- **Chain family patterns** with reference docs for UTXO, EVM, Cosmos, and custom chain types
+- **Known bugs database** covering 80+ historical mainnet bugs organized by category
+- **Testing and simulation** checklists for unit tests, regression tests, and mocknet verification
+
+To use it, run `/chain-client` in Claude Code or describe a chain client task (e.g., "add support for chain X", "review the Solana chain client", "fix stuck outbounds on ETH").
 
 ## Related Pages
 

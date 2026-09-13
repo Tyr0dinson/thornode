@@ -28,6 +28,7 @@ func RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
 	cdc.RegisterConcrete(&MsgObservedTxOut{}, ModuleName+"/ObservedTxOut", nil)
 	cdc.RegisterConcrete(&MsgDonate{}, ModuleName+"/MsgDonate", nil)
 	cdc.RegisterConcrete(&MsgBond{}, ModuleName+"/MsgBond", nil)
+	cdc.RegisterConcrete(&MsgBondYield{}, ModuleName+"/MsgBondYield", nil)
 	cdc.RegisterConcrete(&MsgUnBond{}, ModuleName+"/MsgUnBond", nil)
 	cdc.RegisterConcrete(&MsgLeave{}, ModuleName+"/MsgLeave", nil)
 	cdc.RegisterConcrete(&MsgNoOp{}, ModuleName+"/MsgNoOp", nil)
@@ -80,6 +81,7 @@ func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
 		&MsgObservedTxQuorum{},
 		&MsgDonate{},
 		&MsgBond{},
+		&MsgBondYield{},
 		&MsgUnBond{},
 		&MsgLeave{},
 		&MsgNoOp{},

@@ -86,6 +86,7 @@ const (
 	TxModifyLimitSwap   = mem.TxModifyLimitSwap
 	TxAdd               = mem.TxAdd
 	TxBond              = mem.TxBond
+	TxBondYield         = mem.TxBondYield
 	TxMigrate           = mem.TxMigrate
 	TxRagnarok          = mem.TxRagnarok
 	TxReserve           = mem.TxReserve
@@ -153,6 +154,7 @@ var (
 	NewEventDonate                 = types.NewEventDonate
 	NewEventSwap                   = types.NewEventSwap
 	NewEventAffiliateFee           = types.NewEventAffiliateFee
+	NewEventBondYield              = types.NewEventBondYield
 	NewEventStreamingSwap          = types.NewEventStreamingSwap
 	NewEventLimitSwap              = types.NewEventLimitSwap
 	NewEventModifyLimitSwap        = types.NewEventModifyLimitSwap
@@ -208,6 +210,7 @@ var (
 	NewReserveContributor          = types.NewReserveContributor
 	NewMsgReserveContributor       = types.NewMsgReserveContributor
 	NewMsgBond                     = types.NewMsgBond
+	NewMsgBondYield                = types.NewMsgBondYield
 	NewMsgUnBond                   = types.NewMsgUnBond
 	NewMsgReBond                   = types.NewMsgReBond
 	NewMsgErrataTx                 = types.NewMsgErrataTx
@@ -279,6 +282,7 @@ type (
 	MsgSend                   = types.MsgSend
 	MsgDeposit                = types.MsgDeposit
 	MsgBond                   = types.MsgBond
+	MsgBondYield              = types.MsgBondYield
 	MsgUnBond                 = types.MsgUnBond
 	MsgReBond                 = types.MsgReBond
 	MsgNoOp                   = types.MsgNoOp
@@ -348,6 +352,7 @@ type (
 	KeygenBlock              = types.KeygenBlock
 	EventSwap                = types.EventSwap
 	EventAffiliateFee        = types.EventAffiliateFee
+	EventBondYield           = types.EventBondYield
 	EventAddLiquidity        = types.EventAddLiquidity
 	EventWithdraw            = types.EventWithdraw
 	EventDonate              = types.EventDonate
@@ -414,6 +419,7 @@ type (
 	MigrateMemo                = mem.MigrateMemo
 	RagnarokMemo               = mem.RagnarokMemo
 	BondMemo                   = mem.BondMemo
+	BondYieldMemo              = mem.BondYieldMemo
 	UnbondMemo                 = mem.UnbondMemo
 	RebondMemo                 = mem.RebondMemo
 	OutboundMemo               = mem.OutboundMemo

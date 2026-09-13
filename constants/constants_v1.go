@@ -119,6 +119,7 @@ func NewConstantValue() *ConstantVals {
 			MemolessTxnRefCount:                 99_999,             // max number of reference ids per chain
 			MemolessTxnCost:                     0,                  // additional cost in RUNE to register a memoless txn (operational mimir)
 			MemolessTxnMaxUse:                   1,                  // maximum times a reference id can be utilized before refunding (operational mimir)
+			MemolessTxnCostSlopeBPS:             0,                  // steepness of the memoless cost curve as reference slots fill, 0 = flat MemolessTxnCost (operational mimir)
 			L1SlipMinBps:                        0,                  // Minimum L1 asset swap fee in basis points
 			TradeAccountsSlipMinBps:             0,                  // Minimum trade asset swap fee in basis points
 			SecuredAssetSlipMinBps:              5,                  // Minimum secured asset swap fee in basis points
@@ -173,6 +174,7 @@ func NewConstantValue() *ConstantVals {
 			L1DynamicFeeWindowEpochs:            3,                  // epochs averaged on each side of the last bps change when measuring the fees_rune gradient (clamped into [1, MaxDynamicFeeHistory])
 			VaultDeficitGasHaltMaxGasMultiplier: 30,                 // multiple of current max gas at which gas-related vault deficits halt signing and trading
 			MaxAbsentKeygenReporters:            1,                  // number of keygen members allowed to skip MsgTssPool reporting before a successful keygen finalizes (mainnet default)
+			BondYieldEnabled:                    0,                  // enable/disable automatic bond-yield payouts
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

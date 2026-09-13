@@ -1731,6 +1731,14 @@ func (vm *NetworkMgr) withdrawSavers(ctx cosmos.Context, pool Pool, na NodeAccou
 			return false, fmt.Errorf("fail to unmarshal liquidity provider, err: %w", err)
 		}
 
+		// A record with no units and no pending balances has nothing to claim,
+		// so it is safe to remove without a payout. This also cleans up any
+		// zero-unit records left behind by a prior successful withdraw.
+		if lp.Units.IsZero() && lp.PendingAsset.IsZero() && lp.PendingRune.IsZero() {
+			vm.k.RemoveLiquidityProvider(ctx, lp)
+			continue
+		}
+
 		// create the saver withdraw message
 		tx := common.GetRagnarokTx(pool.Asset.GetChain(), lp.AssetAddress, lp.AssetAddress)
 		tx.ID, err = common.NewTxID(tx.Hash(ctx.BlockHeight()))
@@ -1749,10 +1757,22 @@ func (vm *NetworkMgr) withdrawSavers(ctx cosmos.Context, pool Pool, na NodeAccou
 
 		// best effort to process the withdraw
 		ctx.Logger().Info("ragnarok saver", "pool", pool.Asset, "saver", lp.AssetAddress, "txid", tx.ID)
-		_, err = handler(ctx, withdrawMsg)
-		if err != nil {
-			ctx.Logger().Error("saver withdraw failed", "address", lp.AssetAddress, "error", err)
-			vm.k.RemoveLiquidityProvider(ctx, lp)
+		_, herr := handler(ctx, withdrawMsg)
+		if herr != nil {
+			// The internal handler runs in a CacheContext that is discarded on
+			// error, so a failed withdraw commits neither a payout nor any pool
+			// accounting. Only remove the saver record when the position is
+			// unrecoverable dust (payout below the outbound fee); for any other
+			// (potentially transient) error keep the record so it is retried in a
+			// later interval rather than deleting a saver's claim without paying
+			// them. Because such a record remains in the iterator, totalCount
+			// stays non-zero and the pool is not finalized until it clears.
+			if errors.Is(herr, ErrNotEnoughToPayFee) {
+				ctx.Logger().Info("saver withdraw below outbound fee, removing dust saver", "address", lp.AssetAddress, "error", herr)
+				vm.k.RemoveLiquidityProvider(ctx, lp)
+			} else {
+				ctx.Logger().Error("saver withdraw failed, will retry", "address", lp.AssetAddress, "error", herr)
+			}
 		}
 
 		// only process up to the max per iteration of savers per fund migration interval
@@ -1762,7 +1782,9 @@ func (vm *NetworkMgr) withdrawSavers(ctx cosmos.Context, pool Pool, na NodeAccou
 		}
 	}
 
-	// return false if there were any savers withdrawn
+	// return false if there were any savers processed this round; a later round
+	// that processes zero savers confirms all have been withdrawn (or removed)
+	// and lets queued saver swaps settle before synth redemption proceeds.
 	if totalCount > 0 {
 		ctx.Logger().Info("savers withdrawn", "count", totalCount, "pool", pool.Asset)
 		return false, nil
@@ -1776,6 +1798,17 @@ func (vm *NetworkMgr) withdrawLPs(ctx cosmos.Context, pool Pool, na NodeAccount,
 	handler := NewInternalHandler(mgr)
 	lpPerIteration := mgr.Keeper().GetConfigInt64(ctx, constants.RagnarokProcessNumOfLPPerIteration)
 	totalCount := int64(0)
+	// retryRemaining tracks whether any LP could not be withdrawn for a
+	// potentially transient/recoverable reason and must be retried in a later
+	// interval rather than being deleted without a payout.
+	retryRemaining := false
+	// A dual-address LP is withdrawn symmetrically, and the handler schedules the
+	// asset outbound before the RUNE one - so an asset leg that cannot cover its
+	// own outbound fee rolls the whole withdraw back, RUNE leg included. The
+	// RUNE-only retry below is the escape hatch, but assetToWithdraw() turns an
+	// asymmetric withdraw back into a symmetric one while it is paused for the
+	// chain, which would prove nothing about the RUNE leg.
+	pauseAsym, _ := vm.k.GetMimir(ctx, fmt.Sprintf("PauseAsymWithdrawal-%s", pool.Asset.GetChain()))
 
 	iterator := vm.k.GetLiquidityProviderIterator(ctx, pool.Asset)
 	defer iterator.Close()
@@ -1811,17 +1844,101 @@ func (vm *NetworkMgr) withdrawLPs(ctx cosmos.Context, pool Pool, na NodeAccount,
 			na.NodeAddress,
 		)
 
-		// withdraw is best effort only, fails and deletes LP if vault has insufficient gas
+		// withdraw is best effort only
 		ctx.Logger().Info("ragnarok LP", "pool", pool.Asset, "rune_address", lp.RuneAddress, "asset_address", lp.AssetAddress)
 		_, err := handler(ctx, withdrawMsg)
+		if errors.Is(err, ErrNotEnoughToPayFee) && !lp.RuneAddress.IsEmpty() && !lp.AssetAddress.IsEmpty() {
+			// Dust on one leg of a symmetric withdraw does not prove the position
+			// as a whole is unpayable: the asset outbound is scheduled first, so
+			// its failure rolls back a RUNE leg that was never even attempted.
+			// Retry RUNE-only, which converts the asset side in the pool and emits
+			// a single native outbound - nothing is forfeited, and reaching
+			// ErrNotEnoughToPayFee again then does mean every remaining leg is
+			// individually unpayable.
+			if pauseAsym > 0 {
+				// Deliberately not wrapped: this must NOT satisfy errors.Is for
+				// ErrNotEnoughToPayFee below, since the RUNE leg is unproven and
+				// the LP has to be retained rather than removed.
+				err = fmt.Errorf("asymmetric withdraw paused for %s, cannot pay out the RUNE leg (%s)", pool.Asset.GetChain(), err)
+			} else {
+				ctx.Logger().Info(
+					"LP asset leg below outbound fee, retrying RUNE-only",
+					"liquidity provider", lp.RuneAddress,
+					"asset address", lp.AssetAddress,
+					"error", err,
+				)
+				runeOnlyMsg := NewMsgWithdrawLiquidity(
+					common.GetRagnarokTx(pool.Asset.GetChain(), withdrawAddr, withdrawAddr),
+					withdrawAddr,
+					cosmos.NewUint(uint64(MaxWithdrawBasisPoints)),
+					pool.Asset,
+					common.RuneAsset(),
+					na.NodeAddress,
+				)
+				_, err = handler(ctx, runeOnlyMsg)
+			}
+		}
 		if err != nil {
-			ctx.Logger().Error(
-				"fail to withdraw, remove LP",
-				"liquidity provider", lp.RuneAddress,
-				"asset address", lp.AssetAddress,
-				"error", err,
-			)
-			vm.k.RemoveLiquidityProvider(ctx, lp)
+			// The internal handler runs in a CacheContext that is discarded on
+			// error, so a failed withdraw commits neither a payout nor any pool
+			// accounting. Only remove the LP record when the position is
+			// unrecoverable dust (payout below the outbound fee, i.e. the vault
+			// has insufficient gas to pay it out); for any other (potentially
+			// transient) error - chain halt, LP pause, etc. - keep the record so
+			// it is retried in a later interval rather than deleting the LP's
+			// claim without paying them. A retained record keeps the iterator
+			// non-empty so the pool is not finalized until it clears.
+			if errors.Is(err, ErrNotEnoughToPayFee) {
+				if !lp.Units.IsZero() && (!lp.PendingRune.IsZero() || !lp.PendingAsset.IsZero()) {
+					// The failed withdraw only proves the leg it attempted is dust.
+					// withdraw() takes its unit branch whenever Units > 0, so a record
+					// holding both units and staged pending liquidity has had its
+					// pending claim untested - deleting it here would forfeit a claim
+					// that may well be payable. Zero the (proven unpayable) units and
+					// retain the record: the next pass takes withdraw()'s pending
+					// branch and either pays the claim or proves it dust too, at which
+					// point the zero-unit record falls through to removal below.
+					// Retaining rather than zeroing would livelock - every pass would
+					// re-take the unit branch and fail identically, so the pool could
+					// never finalize. Zeroing orphans the units in the pool exactly as
+					// removal already does, so the pool accounting is unchanged.
+					ctx.Logger().Info(
+						"LP unit withdraw below outbound fee, retaining pending claim",
+						"liquidity provider", lp.RuneAddress,
+						"asset address", lp.AssetAddress,
+						"error", err,
+					)
+					lp.Units = cosmos.ZeroUint()
+					vm.k.SetLiquidityProvider(ctx, lp)
+					retryRemaining = true
+				} else {
+					ctx.Logger().Info(
+						"LP withdraw below outbound fee, removing dust LP",
+						"liquidity provider", lp.RuneAddress,
+						"asset address", lp.AssetAddress,
+						"error", err,
+					)
+					vm.k.RemoveLiquidityProvider(ctx, lp)
+				}
+			} else {
+				ctx.Logger().Error(
+					"fail to withdraw, will retry",
+					"liquidity provider", lp.RuneAddress,
+					"asset address", lp.AssetAddress,
+					"error", err,
+				)
+				retryRemaining = true
+			}
+		} else if vm.lpClaimRemains(ctx, pool.Asset, lp) {
+			// A successful withdraw does not always clear the whole position: a
+			// full unit withdrawal pays out only the unit-derived share and
+			// deliberately leaves any staged pending liquidity (PendingRune /
+			// PendingAsset) untouched on a retained record. That claim is paid on
+			// a later pass, when the now zero-unit record takes the pending
+			// branch of withdraw(). Report not-done so the pool cannot be
+			// finalized - and its pending accounting swept to the Reserve -
+			// before the provider has been paid.
+			retryRemaining = true
 		}
 		totalCount++
 		if totalCount >= lpPerIteration {
@@ -1829,8 +1946,28 @@ func (vm *NetworkMgr) withdrawLPs(ctx cosmos.Context, pool Pool, na NodeAccount,
 		}
 	}
 
-	// return true (done) if there are no more LPs to withdraw
-	return totalCount < lpPerIteration
+	// return true (done) only if the full set of LPs has been processed and none
+	// still need to be retried in a later interval
+	return totalCount < lpPerIteration && !retryRemaining
+}
+
+// lpClaimRemains re-reads an LP record after a withdraw was handled and reports
+// whether the provider still has anything owed to them - units or pending
+// (staged, not-yet-paired) liquidity. A record which no longer exists reads back
+// as all-zero and correctly reports false.
+func (vm *NetworkMgr) lpClaimRemains(ctx cosmos.Context, asset common.Asset, lp LiquidityProvider) bool {
+	post, err := vm.k.GetLiquidityProvider(ctx, asset, lp.GetAddress())
+	if err != nil {
+		// Unable to prove the claim was settled - retry rather than finalize.
+		ctx.Logger().Error(
+			"fail to re-read liquidity provider after withdraw",
+			"liquidity provider", lp.RuneAddress,
+			"asset address", lp.AssetAddress,
+			"error", err,
+		)
+		return true
+	}
+	return !post.Units.IsZero() || !post.PendingRune.IsZero() || !post.PendingAsset.IsZero()
 }
 
 // withdrawLiquidity will process a batch of LP per iteration, the batch size is defined by constants.RagnarokProcessNumOfLPPerIteration
@@ -1888,11 +2025,32 @@ func (vm *NetworkMgr) withdrawLiquidity(ctx cosmos.Context, pool Pool, na NodeAc
 	remainingRune := common.NewCoin(common.RuneAsset(), pool.BalanceRune.Add(pool.PendingInboundRune))
 	if !remainingRune.IsEmpty() {
 		if err = vm.k.SendFromModuleToModule(ctx, AsgardName, ReserveName, common.NewCoins(remainingRune)); err != nil {
-			// Still proceed to suspend the pool, but log the error.
-			ctx.Logger().Error("fail to transfer remaining pool ragnarok rune from asgard to reserve", "error", err)
-		} else {
-			pool.BalanceRune = cosmos.ZeroUint()
-			pool.PendingInboundRune = cosmos.ZeroUint()
+			// The remaining RUNE could not be moved to the Reserve. Do NOT proceed
+			// to suspend/remove the pool: removing it here would delete the pool
+			// accounting while the RUNE was never credited to the Reserve. Return
+			// the error so this interval's ragnarok cache is rolled back and the
+			// finalization is retried in a later interval once the transfer can
+			// succeed.
+			return fmt.Errorf("fail to transfer remaining pool ragnarok rune from asgard to reserve: %w", err)
+		}
+		pool.BalanceRune = cosmos.ZeroUint()
+		pool.PendingInboundRune = cosmos.ZeroUint()
+	}
+
+	// The same applies to a pool asset which is itself a THORChain asset backed by
+	// the Pool Module (TCY and whitelisted base-layer pools): if any remains - such
+	// as if the last withdraw were RUNE-address-only - it has to be moved to the
+	// Reserve rather than left behind a removed pool. An external L1 remainder has
+	// no module balance to reconcile and is instead left orphaned in the vault for
+	// the nodes to dispose of.
+	if pool.Asset.IsTCY() || pool.Asset.IsWhitelisted() {
+		remainingAsset := common.NewCoin(pool.Asset, pool.BalanceAsset.Add(pool.PendingInboundAsset))
+		if !remainingAsset.IsEmpty() {
+			if err = vm.k.SendFromModuleToModule(ctx, AsgardName, ReserveName, common.NewCoins(remainingAsset)); err != nil {
+				return fmt.Errorf("fail to transfer remaining pool ragnarok asset from asgard to reserve: %w", err)
+			}
+			pool.BalanceAsset = cosmos.ZeroUint()
+			pool.PendingInboundAsset = cosmos.ZeroUint()
 		}
 	}
 
@@ -2013,6 +2171,14 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 		totalEffectiveBond, totalReserve, totalLiquidityFees, totalRevShare, emissionCurve,
 		blocksPerYear, devFundSystemIncomeBps, systemIncomeBurnRateBps, tcyStakeSystemIncomeBps, marketingFundSystemIncomeBps, polReserveSystemIncomeBps)
 
+	// Use CacheContext for atomicity: the Reserve deductions, reward transfers,
+	// mimir/burn updates and the final SetNetwork bookkeeping must either all
+	// persist or none of them. Committing directly on ctx risks debiting the
+	// Reserve (dev/marketing/burn/tcy/pol/bond) while a later error skips
+	// SetNetwork, leaving RUNE moved but BondRewardRune/TotalBondUnits/income
+	// splits unpersisted. commit() is only reached after every step succeeds.
+	cacheCtx, commit := ctx.CacheContext()
+
 	if !devFundDeduct.IsZero() {
 		// Send to dev fund address
 		devFundAddressConst := vm.k.GetConstants().GetStringValue(constants.DevFundAddress)
@@ -2022,7 +2188,7 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 			return fmt.Errorf("fail to AccAddressFromBech32(devFundAddressConst)")
 		}
 		coin := common.NewCoin(common.RuneNative, devFundDeduct)
-		if err = vm.k.SendFromModuleToAccount(ctx, ReserveName, devFundAddress, common.NewCoins(coin)); err != nil {
+		if err = vm.k.SendFromModuleToAccount(cacheCtx, ReserveName, devFundAddress, common.NewCoins(coin)); err != nil {
 			return fmt.Errorf("fail to transfer funds from reserve to devFundAddress: %w", err)
 		}
 	}
@@ -2036,7 +2202,7 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 			return fmt.Errorf("fail to AccAddressFromBech32(marketingFundAddressConst)")
 		}
 		coin := common.NewCoin(common.RuneNative, marketingFundDeduct)
-		if err = vm.k.SendFromModuleToAccount(ctx, ReserveName, marketingFundAddress, common.NewCoins(coin)); err != nil {
+		if err = vm.k.SendFromModuleToAccount(cacheCtx, ReserveName, marketingFundAddress, common.NewCoins(coin)); err != nil {
 			return fmt.Errorf("fail to transfer funds from reserve to marketingFundAddress: %w", err)
 		}
 	}
@@ -2045,25 +2211,25 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 		coin := common.NewCoin(common.RuneNative, systemIncomeBurnDeduct)
 		// Burn system income
 		// Send to THORCHain module first, then burn
-		if err = vm.k.SendFromModuleToModule(ctx, ReserveName, ModuleName, common.NewCoins(coin)); err != nil {
+		if err = vm.k.SendFromModuleToModule(cacheCtx, ReserveName, ModuleName, common.NewCoins(coin)); err != nil {
 			return fmt.Errorf("fail to transfer funds from reserve to devFundAddress: %w", err)
 		}
-		if err = vm.k.BurnFromModule(ctx, ModuleName, coin); err != nil {
+		if err = vm.k.BurnFromModule(cacheCtx, ModuleName, coin); err != nil {
 			return fmt.Errorf("fail to burn system income from reserve: %w", err)
 		}
 		burnEvt := NewEventMintBurn(BurnSupplyType, coin.Asset.Native(), coin.Amount, "burn_system_income")
-		if err = vm.eventMgr.EmitEvent(ctx, burnEvt); err != nil {
-			ctx.Logger().Error("fail to emit burn event", "error", err)
+		if err = vm.eventMgr.EmitEvent(cacheCtx, burnEvt); err != nil {
+			cacheCtx.Logger().Error("fail to emit burn event", "error", err)
 		}
 		// Decrement the MaxRuneSupply mimir by the amount of RUNE burnt
-		currentMaxRuneSupply := cosmos.SafeUintFromInt64(vm.k.GetConfigInt64(ctx, constants.MaxRuneSupply))
+		currentMaxRuneSupply := cosmos.SafeUintFromInt64(vm.k.GetConfigInt64(cacheCtx, constants.MaxRuneSupply))
 		currentMaxRuneSupply = common.SafeSub(currentMaxRuneSupply, systemIncomeBurnDeduct)
-		vm.k.SetMimir(ctx, constants.MaxRuneSupply.String(), int64(currentMaxRuneSupply.Uint64()))
+		vm.k.SetMimir(cacheCtx, constants.MaxRuneSupply.String(), int64(currentMaxRuneSupply.Uint64()))
 	}
 
 	if !tcyStakeDeduct.IsZero() {
 		coin := common.NewCoin(common.RuneNative, tcyStakeDeduct)
-		if err = vm.k.SendFromModuleToModule(ctx, ReserveName, TCYStakeName, common.NewCoins(coin)); err != nil {
+		if err = vm.k.SendFromModuleToModule(cacheCtx, ReserveName, TCYStakeName, common.NewCoins(coin)); err != nil {
 			return fmt.Errorf("fail to transfer funds from reserve to tcy fund: %w", err)
 		}
 	}
@@ -2073,8 +2239,8 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 	// module. Gating here keeps the StableReservePOLShareBps and
 	// StableReserveEnabled mimirs from silently disagreeing. When disabled, the
 	// share flows to POLReserve via the remainder below.
-	if !polReserveDeduct.IsZero() && vm.k.GetConfigInt64(ctx, constants.StableReserveEnabled) > 0 {
-		stableReservePOLShareBps := vm.k.GetConfigInt64(ctx, constants.StableReservePOLShareBps)
+	if !polReserveDeduct.IsZero() && vm.k.GetConfigInt64(cacheCtx, constants.StableReserveEnabled) > 0 {
+		stableReservePOLShareBps := vm.k.GetConfigInt64(cacheCtx, constants.StableReservePOLShareBps)
 		if stableReservePOLShareBps < 0 {
 			stableReservePOLShareBps = 0
 		}
@@ -2085,7 +2251,7 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 		stableReserveDeduct := common.GetSafeShare(cosmos.NewUint(uint64(stableReservePOLShareBps)), cosmos.NewUint(10_000), polReserveDeduct)
 		if !stableReserveDeduct.IsZero() {
 			coin := common.NewCoin(common.RuneNative, stableReserveDeduct)
-			if err = vm.k.SendFromModuleToModule(ctx, ReserveName, StableReserveName, common.NewCoins(coin)); err != nil {
+			if err = vm.k.SendFromModuleToModule(cacheCtx, ReserveName, StableReserveName, common.NewCoins(coin)); err != nil {
 				return fmt.Errorf("fail to transfer funds from reserve to stable_reserve: %w", err)
 			}
 			polReserveDeduct = common.SafeSub(polReserveDeduct, stableReserveDeduct)
@@ -2094,7 +2260,7 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 
 	if !polReserveDeduct.IsZero() {
 		coin := common.NewCoin(common.RuneNative, polReserveDeduct)
-		if err = vm.k.SendFromModuleToModule(ctx, ReserveName, POLReserveName, common.NewCoins(coin)); err != nil {
+		if err = vm.k.SendFromModuleToModule(cacheCtx, ReserveName, POLReserveName, common.NewCoins(coin)); err != nil {
 			return fmt.Errorf("fail to transfer funds from reserve to pol_reserve: %w", err)
 		}
 	}
@@ -2119,14 +2285,14 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 				amt = common.GetSafeShare(pool.BalanceRune, availablePoolsRune, totalPoolRewards)
 				fees = cosmos.ZeroUint()
 			} else {
-				fees, err = vm.k.GetPoolLiquidityFees(ctx, currentHeight, pool.Asset)
+				fees, err = vm.k.GetPoolLiquidityFees(cacheCtx, currentHeight, pool.Asset)
 				if err != nil {
-					ctx.Logger().Error("fail to get fees", "error", err)
+					cacheCtx.Logger().Error("fail to get fees", "error", err)
 					continue
 				}
 				amt = common.GetSafeShare(fees, totalLiquidityFees, totalPoolRewards)
 			}
-			if err = vm.paySaverYield(ctx, pool.Asset, amt.Add(fees)); err != nil {
+			if err = vm.paySaverYield(cacheCtx, pool.Asset, amt.Add(fees)); err != nil {
 				return fmt.Errorf("fail to pay saver yield: %w", err)
 			}
 			// when pool reward is zero, don't emit it
@@ -2139,7 +2305,7 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 
 		}
 		// Pay out
-		if err = vm.payPoolRewards(ctx, rewardAmts, rewardPools); err != nil {
+		if err = vm.payPoolRewards(cacheCtx, rewardAmts, rewardPools); err != nil {
 			return err
 		}
 
@@ -2147,24 +2313,30 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 
 	if !bondReward.IsZero() {
 		coin := common.NewCoin(common.RuneNative, bondReward)
-		if err = vm.k.SendFromModuleToModule(ctx, ReserveName, BondName, common.NewCoins(coin)); err != nil {
-			ctx.Logger().Error("fail to transfer funds from reserve to bond", "error", err)
+		if err = vm.k.SendFromModuleToModule(cacheCtx, ReserveName, BondName, common.NewCoins(coin)); err != nil {
+			cacheCtx.Logger().Error("fail to transfer funds from reserve to bond", "error", err)
 			return fmt.Errorf("fail to transfer funds from reserve to bond: %w", err)
 		}
 	}
 	network.BondRewardRune = network.BondRewardRune.Add(bondReward) // Add here for individual Node collection later
 
 	rewardEvt := NewEventRewards(bondReward, evtPools, devFundDeduct, systemIncomeBurnDeduct, tcyStakeDeduct, marketingFundDeduct, polReserveDeduct)
-	if err = eventMgr.EmitEvent(ctx, rewardEvt); err != nil {
+	if err = eventMgr.EmitEvent(cacheCtx, rewardEvt); err != nil {
 		return fmt.Errorf("fail to emit reward event: %w", err)
 	}
-	i, err := getTotalActiveNodeWithBond(ctx, vm.k)
+	i, err := getTotalActiveNodeWithBond(cacheCtx, vm.k)
 	if err != nil {
 		return fmt.Errorf("fail to get total active node account: %w", err)
 	}
 	network.TotalBondUnits = network.TotalBondUnits.Add(cosmos.NewUint(uint64(i))) // Add 1 unit for each active Node
 
-	return vm.k.SetNetwork(ctx, network)
+	if err = vm.k.SetNetwork(cacheCtx, network); err != nil {
+		return err
+	}
+
+	// All reward transfers and network bookkeeping succeeded; commit atomically.
+	commit()
+	return nil
 }
 
 // processRevShare drains the per-block affiliate liquidity fee accumulator,

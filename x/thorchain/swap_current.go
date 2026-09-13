@@ -64,7 +64,13 @@ func (s *SwapperImpl) Swap(ctx cosmos.Context,
 
 	if source.IsSyntheticAsset() {
 		burnHeight := mgr.Keeper().GetConfigInt64(ctx, constants.BurnSynths)
-		if burnHeight > 0 && ctx.BlockHeight() > burnHeight {
+		// The BurnSynths mimir disables synth-source swaps, but it must NOT block
+		// the synth->L1 swap that pays out a saver whose pool is being ragnaroked.
+		// WithdrawLiquidityHandler.validate relaxes the matching gate for ragnarok
+		// and queues this swap; without the same exception here the queued saver
+		// payout would be rejected, deleting the saver claim with no outbound.
+		if burnHeight > 0 && ctx.BlockHeight() > burnHeight &&
+			!mgr.Keeper().IsRagnarok(ctx, []common.Asset{source.GetLayer1Asset()}) {
 			return cosmos.ZeroUint(), swapEvents, fmt.Errorf("burning synthetics has been disabled")
 		}
 	}

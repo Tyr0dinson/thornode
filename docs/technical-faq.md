@@ -162,11 +162,13 @@ Yes, they are held in the network’s bond module. Bonders giving up custody of 
 
 **Are staking rewards claimed on-chain, automatically or in response to a claim transaction, or must the validator send rewards back manually?**
 
-Rewards are accrued to a bond provider’s amount, which is a separate ledger. They must be withdrawn by an explicit UNBOND transaction and can only be withdrawn when a validator is churned out. Otherwise, they continue to accrue in the absence of explicit UNBOND transactions.
+By default, rewards are accrued to a bond provider’s amount, which is a separate ledger. They must be withdrawn by an explicit UNBOND transaction and can only be withdrawn when a validator is churned out. Otherwise, they continue to accrue in the absence of explicit UNBOND transactions.
+
+The exception is Bond Yield (see [ADR 029](./architecture/adr-029-bond-yield-payouts.md)), which must first be enabled by the `BondYieldEnabled` [network variable](./mimir.md#node-management). A bond provider can send a [`BONDYIELD`](./concepts/memos.md#bond-yield) memo to configure a basis-point share of their _future_ reward allocations to be paid out automatically at each reward distribution, with the remainder rebonded as usual. This requires no claim transaction and no churn out, but it does not touch existing bond or rewards already accrued — those still require an UNBOND after the validator churns out. Setting the share back to `0` restores the default full-rebond behavior.
 
 **Are staking rewards automatically redelegated as they accumulate or must they be claimed and redelegated with a transaction?**
 
-Yes, see above.
+Yes, they are redelegated automatically, with no transaction required — except for the portion a bond provider has configured for automatic payout via Bond Yield, see above.
 
 **How much staking rewards are distributed as a percentage of total issuance?**
 

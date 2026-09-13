@@ -87,6 +87,13 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 	if err != nil {
 		return nil, err
 	}
+	if voter.State != thortypes.TssKeysignFailVoterState_PendingVoter {
+		// Legacy and completed records are terminal replay barriers. A legacy
+		// record cannot distinguish a completed vote from partial or late-report
+		// residue, so processing it again could repeat terminal side effects.
+		ctx.Logger().Info("MsgTssKeysignFail voter is terminal", "ID", msg.ID, "state", voter.State)
+		return &cosmos.Result{}, nil
+	}
 	observeSlashPoints := h.mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
 
 	// add labels to telemetry context
@@ -106,14 +113,20 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 		ctx.Logger().Info("signer already signed MsgTssKeysignFail", "signer", msg.Signer.String(), "txid", msg.ID)
 		return &cosmos.Result{}, nil
 	}
-	h.mgr.Slasher().IncSlashPoints(slashCtx, observeSlashPoints, msg.Signer)
+	err = h.mgr.Keeper().IncNodeAccountSlashPoints(slashCtx, msg.Signer, observeSlashPoints)
+	if err != nil {
+		return nil, wrapError(ctx, err, "fail to increase observation slash points")
+	}
 
 	vault, err := h.mgr.Keeper().GetVault(ctx, msg.PubKey)
 	if err != nil {
 		return nil, wrapError(ctx, err, "fail to get vault")
 	}
 	if vault.IsEmpty() {
-		h.mgr.Keeper().SetTssKeysignFailVoter(ctx, voter)
+		err = h.mgr.Keeper().SetTssKeysignFailVoter(ctx, voter)
+		if err != nil {
+			return nil, wrapError(ctx, err, "fail to save tss keysign fail voter")
+		}
 		return &cosmos.Result{}, nil
 	}
 	var vaultMemberNodes NodeAccounts
@@ -176,10 +189,12 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 			}
 		}
 	}
-	h.mgr.Keeper().SetTssKeysignFailVoter(ctx, voter)
-
 	// doesn't have consensus yet
 	if !voter.HasConsensus(vaultMemberNodes) {
+		err = h.mgr.Keeper().SetTssKeysignFailVoter(ctx, voter)
+		if err != nil {
+			return nil, wrapError(ctx, err, "fail to save tss keysign fail voter")
+		}
 		return &cosmos.Result{}, nil
 	}
 	violaters := make([]string, len(msg.Blame.BlameNodes))
@@ -193,6 +208,23 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 		"round", msg.Blame.Round,
 		"blame", strings.Join(violaters, ", "),
 	)
+
+	// Emit the keysign failure with round and blame granularity so off-chain
+	// consumers can track failures per vault, round and blamed node without
+	// decoding the tx. Blame.Round is already canonical — ValidateBasic
+	// rejects non-canonical round names.
+	keysignFailEvent := thortypes.NewEventTssKeysignFailure(
+		msg.Blame.FailReason,
+		msg.Blame.Round,
+		msg.Blame.IsUnicast,
+		msg.Height,
+		violaters,
+		msg.ID,
+		msg.PubKey,
+	)
+	if emitErr := h.mgr.EventMgr().EmitEvent(ctx, keysignFailEvent); emitErr != nil {
+		ctx.Logger().Error("fail to emit tss keysign failure event", "error", emitErr)
+	}
 
 	telemetry.IncrCounterWithLabels(
 		[]string{"thornode", "tss", "keysign", "failure"},
@@ -220,33 +252,30 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 				vault.Frozen = append(vault.Frozen, coin.Asset.GetChain().String())
 			}
 		}
-		if err := h.mgr.Keeper().SetVault(ctx, vault); err != nil {
+		err = h.mgr.Keeper().SetVault(ctx, vault)
+		if err != nil {
 			return nil, fmt.Errorf("fail to save vault: %w", err)
 		}
 	}
-
-	h.mgr.Slasher().DecSlashPoints(slashCtx, observeSlashPoints, voter.GetSigners()...)
-	voter.Signers = nil
-	voter.LastRoundCount = 0
-	h.mgr.Keeper().SetTssKeysignFailVoter(ctx, voter)
 
 	slashPoints := h.mgr.GetConstants().GetInt64Value(constants.FailKeysignSlashPoints)
 	// fail to generate a new tss key let's slash the node account
 
 	for _, node := range msg.Blame.BlameNodes {
-		nodePubKey, err := common.NewPubKey(node.Pubkey)
-		if err != nil {
-			return nil, ErrInternal(err, "fail to parse pubkey")
+		nodePubKey, nodeErr := common.NewPubKey(node.Pubkey)
+		if nodeErr != nil {
+			return nil, ErrInternal(nodeErr, "fail to parse pubkey")
 		}
-		na, err := h.mgr.Keeper().GetNodeAccountByPubKey(ctx, nodePubKey)
-		if err != nil {
-			return nil, ErrInternal(err, fmt.Sprintf("fail to get node account,pub key: %s", nodePubKey.String()))
+		na, nodeErr := h.mgr.Keeper().GetNodeAccountByPubKey(ctx, nodePubKey)
+		if nodeErr != nil {
+			return nil, ErrInternal(nodeErr, fmt.Sprintf("fail to get node account,pub key: %s", nodePubKey.String()))
 		}
-		if err := h.mgr.Keeper().IncNodeAccountSlashPoints(slashCtx, na.NodeAddress, slashPoints); err != nil {
-			ctx.Logger().Error("fail to inc slash points", "error", err)
+		err = h.mgr.Keeper().IncNodeAccountSlashPoints(slashCtx, na.NodeAddress, slashPoints)
+		if err != nil {
+			return nil, wrapError(ctx, err, "fail to inc slash points")
 		}
 
-		if err := h.mgr.EventMgr().EmitEvent(ctx, NewEventSlashPoint(na.NodeAddress, slashPoints, "fail keysign")); err != nil {
+		if emitErr := h.mgr.EventMgr().EmitEvent(ctx, NewEventSlashPoint(na.NodeAddress, slashPoints, "fail keysign")); emitErr != nil {
 			ctx.Logger().Error("fail to emit slash point event")
 		}
 		// go to jail
@@ -254,9 +283,30 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 		jailTime := h.mgr.GetConstants().GetInt64Value(constants.JailTimeKeysign)
 		releaseHeight := ctx.BlockHeight() + jailTime
 		reason := jailReasonFailedToPerformKeysign
-		if err := h.mgr.Keeper().SetNodeAccountJail(ctx, na.NodeAddress, releaseHeight, reason); err != nil {
-			ctx.Logger().Error("fail to set node account jail", "node address", na.NodeAddress, "reason", reason, "error", err)
+		err = h.mgr.Keeper().SetNodeAccountJail(ctx, na.NodeAddress, releaseHeight, reason)
+		if err != nil {
+			return nil, wrapError(ctx, err, "fail to set node account jail")
 		}
+	}
+
+	// The voter is the durable replay barrier. Write it only after every
+	// required terminal effect has succeeded. DeliverTx executes the handler in
+	// a cached context, so returning any error above rolls back the vote,
+	// observation-point charge/refund, vault freeze, blamed-node slash points,
+	// jail records and events together. Once the completed state is persisted,
+	// a replay may safely no-op.
+	for _, signer := range voter.GetSigners() {
+		err = h.mgr.Keeper().DecNodeAccountSlashPoints(slashCtx, signer, observeSlashPoints)
+		if err != nil {
+			return nil, wrapError(ctx, err, "fail to refund observation slash points")
+		}
+	}
+	voter.Signers = nil
+	voter.LastRoundCount = 0
+	voter.State = thortypes.TssKeysignFailVoterState_CompletedVoter
+	err = h.mgr.Keeper().SetTssKeysignFailVoter(ctx, voter)
+	if err != nil {
+		return nil, wrapError(ctx, err, "fail to save tss keysign fail voter")
 	}
 
 	return &cosmos.Result{}, nil

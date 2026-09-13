@@ -195,6 +195,7 @@ const (
 	MemolessTxnRefCount
 	MemolessTxnCost
 	MemolessTxnMaxUse
+	MemolessTxnCostSlopeBPS
 	StrictBondLiquidityRatio
 	SwapOutDexAggregationDisabled
 	P2PGateDisabled
@@ -206,6 +207,8 @@ const (
 	L1DynamicFeeDeadbandBPS
 	L1DynamicFeeWindowEpochs
 	VaultDeficitGasHaltMaxGasMultiplier
+
+	BondYieldEnabled
 )
 
 // ConstantValues define methods used to get constant values

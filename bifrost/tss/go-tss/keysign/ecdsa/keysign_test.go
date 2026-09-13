@@ -31,6 +31,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/storage"
+	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/blame"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/common"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/keysign"
 	tcommon "gitlab.com/thorchain/thornode/v3/common"
@@ -420,7 +421,8 @@ func (s *TssECDSAKeysignTestSuite) TestSignMessageWithStop(c *C) {
 			}
 			// we skip the node 1 as we force it to stop
 			if idx != 1 {
-				blames := keysignIns.GetTssCommonStruct().GetBlameMgr().GetBlame().BlameNodes
+				blameSnapshot := keysignIns.GetTssCommonStruct().GetBlameMgr().GetBlame().Snapshot()
+				blames := blameSnapshot.BlameNodes
 				c.Assert(blames, HasLen, 1)
 				c.Assert(blames[0].Pubkey, Equals, testPubKeys[1])
 			}
@@ -547,6 +549,22 @@ func (s *TssECDSAKeysignTestSuite) TestNewTssKeySign(c *C) {
 	c.Assert(ks.GetTssCommonStruct(), NotNil)
 	ch := ks.GetTssKeySignChannels()
 	c.Assert(ch, NotNil)
+}
+
+func (s *TssECDSAKeysignTestSuite) TestProcessKeySignTimeoutBeforeFirstMessage(c *C) {
+	conf := common.TssConfig{
+		KeySignTimeout: time.Millisecond,
+	}
+	stopChan := make(chan struct{})
+	ks := NewTssKeySign("localP2PID", conf, nil, stopChan, "msgID", s.nodePrivKeys[0], nil, nil, 1)
+
+	errCh := make(chan struct{})
+	outCh := make(chan btss.Message, 1)
+	endCh := make(chan *tsslibcommon.SignatureData, 1)
+
+	result, err := ks.processKeySign(1, errCh, outCh, endCh)
+	c.Assert(err, Equals, blame.ErrTssTimeOut)
+	c.Assert(result, IsNil)
 }
 
 func (s *TssECDSAKeysignTestSuite) TestSignMessageNotInParty(c *C) {

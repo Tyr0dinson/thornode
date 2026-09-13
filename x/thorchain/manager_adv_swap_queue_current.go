@@ -170,11 +170,25 @@ func (vm *SwapQueueAdv) isSwapReady(ctx cosmos.Context, msg MsgSwap) bool {
 		return false // skip
 	}
 
-	// if either source or target in ragnarok, streaming is not allowed
-	for _, asset := range []common.Asset{msg.Tx.Coins[0].Asset, msg.TargetAsset} {
-		key := "RAGNAROK-" + asset.MimirString()
-		ragnarok, err := vm.k.GetMimir(ctx, key)
-		if err == nil && ragnarok > 0 {
+	// If either source or target in ragnarok, streaming is not allowed. Only skip
+	// streaming swaps here: a non-streaming (market) swap must still be processed
+	// during ragnarok, otherwise the synth->L1 swap that redeems a saver while its
+	// pool is being ragnaroked would be skipped forever - stranding the payout
+	// while the saver claim is removed. Non-synth market swaps against a ragnarok
+	// pool remain blocked by the pool-availability check in swapOne, so this only
+	// lets synth redemptions through. Mirrors handler_swap.go, which likewise only
+	// blocks streaming swaps on ragnarok assets.
+	//
+	// Use the canonical IsRagnarok predicate on the layer1 assets: it also treats
+	// a chain's gas asset ragnarok as covering every token pool on that chain,
+	// which is exactly how checkPoolRagnarok picks the pools to ragnarok. A
+	// direct RAGNAROK-<asset> lookup would miss those token pools.
+	if msg.IsStreaming() {
+		assets := []common.Asset{
+			msg.Tx.Coins[0].Asset.GetLayer1Asset(),
+			msg.TargetAsset.GetLayer1Asset(),
+		}
+		if vm.k.IsRagnarok(ctx, assets) {
 			return false
 		}
 	}

@@ -27,6 +27,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	kv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -283,6 +284,15 @@ func (s *MemoSuite) TestParseWithAbbreviated(c *C) {
 	c.Assert(err, NotNil)
 	_, err = ParseMemoWithTHORNames(ctx, k, fmt.Sprintf("=:%s:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a:1200/102103980982304982058230492830429384080/20", common.RuneAsset()))
 	c.Assert(err, NotNil)
+
+	// a price limit that overflows big.Float to +Inf must be rejected (refund),
+	// not silently parsed as a zero limit that disables price protection
+	_, err = ParseMemoWithTHORNames(ctx, k, fmt.Sprintf("=:%s:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a:1e700000000/10/20", common.RuneAsset()))
+	c.Assert(err, NotNil)
+	// a negative price limit is rejected as a parse error, not via panic recovery
+	_, err = ParseMemoWithTHORNames(ctx, k, fmt.Sprintf("=:%s:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a:-1/10/20", common.RuneAsset()))
+	c.Assert(err, NotNil)
+	c.Check(strings.Contains(err.Error(), "panicked"), Equals, false, Commentf("%s", err))
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "=:"+common.RuneAsset().String()+":0x90f2b1ae50e6018230e90a33f98c7844a0ab635a")
 	c.Assert(err, IsNil)
@@ -565,6 +575,22 @@ func (s *MemoSuite) TestParse(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(mem.BondProviderAddress.String(), Equals, bondProvider.String())
 	c.Assert(mem.NodeOperatorFee, Equals, int64(1000))
+
+	memo, err = ParseMemoWithTHORNames(ctx, k, fmt.Sprintf("BONDYIELD:%s:%d", whiteListAddr, constants.MaxBasisPts))
+	c.Assert(err, IsNil)
+	c.Assert(memo.IsType(TxBondYield), Equals, true)
+	c.Assert(memo.GetAccAddress().String(), Equals, whiteListAddr.String())
+	bondYieldMemo, ok := memo.(BondYieldMemo)
+	c.Assert(ok, Equals, true)
+	c.Assert(bondYieldMemo.GetBps(), Equals, constants.MaxBasisPts)
+	memoParser, _ := newParser(ctx, k, k.GetVersion(), fmt.Sprintf("BONDYIELD:%s:2500:yieldname", whiteListAddr.String()))
+	bondYieldMemo, err = memoParser.ParseBondYieldMemo()
+	c.Assert(err, IsNil)
+	c.Assert(bondYieldMemo.GetBps(), Equals, uint64(2500))
+	c.Assert(bondYieldMemo.PayoutTarget, Equals, "yieldname")
+	memoParser, _ = newParser(ctx, k, k.GetVersion(), fmt.Sprintf("BONDYIELD:%s:AUTO:2500:yieldname", whiteListAddr.String()))
+	_, err = memoParser.ParseBondYieldMemo()
+	c.Assert(err, NotNil)
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "leave:"+types.GetRandomBech32Addr().String())
 	c.Assert(err, IsNil)

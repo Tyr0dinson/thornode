@@ -19,40 +19,42 @@ All chain clients live under:
 /bifrost/pkg/chainclients
 ```
 
-If your chain fits an existing type (EVM, UTXO, BFT), you **should place your client in the corresponding shared folder** and extend the base implementation. This allows you to reuse common logic and minimize custom code.
+If your chain fits an existing type (EVM, UTXO, Cosmos), you **should place your client in the corresponding shared folder** and extend the base implementation. This allows you to reuse common logic and minimize custom code.
 
-| Folder    | Type   | Purpose / Notes                           | Example Chains              |
-| --------- | ------ | ----------------------------------------- | --------------------------- |
-| `evm/`    | Shared | For EVM-compatible chains                 | Ethereum, BSC, AVAX, Base   |
-| `utxo/`   | Shared | For Bitcoin-style UTXO chains             | Bitcoin, Litecoin, Dogecoin |
-| `bft/`    | Shared | For Cosmos SDK or Tendermint-style chains | Cosmos Hub, GIA, Noble      |
-| `solana/` | Custom | Custom logic (non-shared Solana client)   | Solana                      |
-| `xrp/`    | Custom | Custom Ripple client                      | XRP                         |
-| `tron/`   | Custom | Custom TRON client                        | TRON                        |
+| Folder      | Type   | Purpose / Notes                            | Example Chains           |
+| ----------- | ------ | ------------------------------------------ | ------------------------ |
+| `ethereum/` | Custom | Ethereum-specific EVM client               | ETH                      |
+| `evm/`      | Shared | Generic EVM client for non-Ethereum chains | AVAX, BSC, BASE, POL     |
+| `utxo/`     | Shared | For Bitcoin-style UTXO chains              | BTC, LTC, BCH, DOGE, ZEC |
+| `gaia/`     | Shared | For Cosmos SDK / Tendermint chains         | GAIA, NOBLE              |
+| `solana/`   | Custom | Custom Solana client                       | SOL                      |
+| `tron/`     | Custom | Custom TRON client                         | TRON                     |
+| `xrp/`      | Custom | Custom Ripple client                       | XRP                      |
 
 ### How to Choose
 
-- Use an existing shared type folder (`evm/`, `utxo/`, `bft/`) if your chain's architecture matches.
+- Use an existing shared type folder (`evm/`, `utxo/`, `gaia/`) if your chain's architecture matches.
 - Use a new folder (e.g. `solana/`, `xrp/`, `tron/`) only if the chain requires custom observation, signing, or RPC handling that doesn't align with existing types.
 
 Example:
 
-- `evm/ethereum/client.go` – Ethereum-specific config using shared EVM logic
-- `utxo/bitcoin/client.go` – Bitcoin-specific config using shared UTXO logic
+- `utxo/bitcoin.go` – Bitcoin-specific config using shared UTXO logic in `utxo/client.go`
+- `evm/client.go` – Generic EVM client used by AVAX, BSC, BASE, POL
+- `ethereum/ethereum.go` – Ethereum-specific client with custom gas and confirmation logic
+- `gaia/cosmos_client.go` – Cosmos client used by GAIA and NOBLE
 - `xrp/client.go` – XRP-specific logic using custom implementation
 
 ## Required Interfaces
 
 You must implement the following core interfaces:
 
-| Interface      | Purpose                                           |
-| -------------- | ------------------------------------------------- |
-| `ChainClient`  | Main interface for observation, signing, solvency |
-| `Observer`     | Watches for inbound txs                           |
-| `Signer`       | Builds and signs outbound txs                     |
-| `BlockScanner` | Scans blocks and mempool                          |
+| Interface               | Defined In                             | Purpose                                            |
+| ----------------------- | -------------------------------------- | -------------------------------------------------- |
+| `ChainClient`           | `shared/types/types.go`                | Main interface for observation, signing, solvency  |
+| `BlockScannerFetcher`   | `bifrost/blockscanner/blockscanner.go` | Scans blocks, mempool, and reports network fees    |
+| `SolvencyCheckProvider` | `shared/runners/solvency.go`           | Solvency reporting (height, should-report, report) |
 
-See the [`ChainClient` interface](../chain-clients/README.md#chainclient-interface) for method-level detail.
+See the [`ChainClient` interface](../chain-clients/README.md#chainclient-interface) and [`BlockScannerFetcher` interface](../chain-clients/README.md#required-interface) for method-level detail.
 
 ## Vault Address Derivation
 
@@ -84,11 +86,13 @@ func (c *YourChain) GetAddress(pubkey common.PubKey) string
 
 Each client must observe inbound txs and forward them to THORChain.
 
-Implement:
+Implement the `BlockScannerFetcher` interface:
 
 ```go
-func (c *YourChain) FetchTxs(height int64) ([]types.TxIn, error)
-func (c *YourChain) FetchMemPool() ([]types.TxIn, error) // optional
+func (c *YourScanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error)
+func (c *YourScanner) FetchMemPool(height int64) (types.TxIn, error)
+func (c *YourScanner) GetHeight() (int64, error)
+func (c *YourScanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64)
 ```
 
 Inbound txs must:
@@ -103,13 +107,7 @@ globalTxsQueue <- types.TxIn
 
 ### Dust Threshold
 
-Prevent spam by implementing:
-
-```go
-func (c *YourChain) GetThreshold() cosmos.Uint
-```
-
-Return the minimum inbound amount considered valid.
+Prevent spam by defining a dust threshold for your chain in `common/chain.go` via the `DustThreshold()` method. This determines the minimum inbound amount considered valid.
 
 ## Memo Parsing
 
@@ -127,13 +125,9 @@ Chains with delayed finality (EVM, UTXO) must track confirmations:
 func (c *YourChain) GetConfirmationCount(txIn types.TxIn) int64
 ```
 
-Use:
-
-```go
-RequiredConfirmations = min((TxValue / BlockReward) × Multiplier, MAXCONFIRMATIONS)
-```
-
-- `MAXCONFIRMATIONS-<CHAIN>` is set via Mimir
+- For chains with instant finality (Cosmos, Solana, XRP, Avalanche), return `0`.
+- For chains requiring dynamic confirmations (UTXO, Ethereum), compute based on transaction value relative to block reward using `ConfMultiplier` and cap with `MAXCONFIRMATIONS-<CHAIN>` (set via Mimir).
+- Some EVM chains use hard-coded confirmation counts (e.g., BSC=3, BASE=12, POL=15).
 
 ## Outbound Signing
 
@@ -154,11 +148,7 @@ BroadcastTx(txOut types.TxOutItem, rawTx []byte) (string, error)
 
 ## Gas Estimation
 
-Clients must report gas rates and outbound fees:
-
-- `GetGasRate()` — gas price estimate (per block)
-- `GetMaxGas()` — ceiling per tx
-- `GetFee()` — base fee (used for outbound calculation)
+Clients must report network fees via the `BlockScannerFetcher.GetNetworkFee()` method, which returns the transaction size and fee rate. This data is submitted to THORChain via the network fee queue and used to calculate outbound gas costs.
 
 See [Gas Tracking](../bifrost/how-bifrost-works.md#gas-tracking) for details.
 
@@ -194,6 +184,21 @@ EVM chains must implement the **unstuck logic**:
 - Reuse the same nonce
 - Send a 0-value tx to self
 - Use max(gasPrice × 1.1, 2 × current median gas)
+
+## Chain Registration
+
+New chain clients must be registered in `bifrost/pkg/chainclients/loadchains.go` within the `LoadChains()` function. Add a case to the switch statement mapping your chain constant to its constructor:
+
+```go
+case common.YOURChain:
+    return yourchain.NewClient(thorKeys, chain, server, thorchainBridge, m, ...)
+```
+
+You must also register the chain in `x/thorchain/manager_network_current.go` in the `supportChains` array, and update 30+ locations in the `common/` package (chain constant, gas asset, address derivation, signing algorithm, dust threshold, etc.). See the [Chain Clients Overview](../chain-clients/README.md) for the full list of shared responsibilities.
+
+## Claude Code Skill
+
+The `/chain-client` Claude Code skill can guide you through the full implementation process interactively. It includes decision trees, chain-family-specific patterns, registration checklists, and a database of 80+ historical bugs to avoid. Run `/chain-client` in Claude Code to get started.
 
 ## Testing & Simulation
 

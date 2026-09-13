@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math/big"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -28,6 +30,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	kvTypes "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
 	keeperv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -54,8 +57,9 @@ var (
 	queryExport = func(_ sdk.Context, _ *Mgrs) ([]byte, error) {
 		return nil, fmt.Errorf("export query not supported")
 	}
-	tendermintClient   *tmhttp.HTTP
-	initTendermintOnce = sync.Once{}
+	tendermintClient    *tmhttp.HTTP
+	tendermintClientErr error
+	initTendermintOnce  = sync.Once{}
 )
 
 func initTendermint() {
@@ -67,7 +71,10 @@ func initTendermint() {
 	var err error
 	tendermintClient, err = tmhttp.New(fmt.Sprintf("tcp://localhost:%s", port), "/websocket")
 	if err != nil {
-		log.Fatal().Err(err).Msg("fail to create tendermint client")
+		// reachable from a query - return the error to the caller rather than
+		// taking the process down
+		tendermintClientErr = fmt.Errorf("fail to create tendermint client: %w", err)
+		log.Error().Err(err).Msg("fail to create tendermint client")
 	}
 }
 
@@ -1013,6 +1020,20 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 	}, nil
 }
 
+// observeChainsFromHeights converts keeper observe heights into the query
+// response type. No sorting is needed or performed here: the keeper returns the
+// heights in ascending chain order, and this only maps them one-for-one.
+func observeChainsFromHeights(chainHeights []kvTypes.ChainHeight) []*types.ChainHeight {
+	observeChains := make([]*types.ChainHeight, 0, len(chainHeights))
+	for _, chainHeight := range chainHeights {
+		observeChains = append(observeChains, &types.ChainHeight{
+			Chain:  chainHeight.Chain.String(),
+			Height: chainHeight.Height,
+		})
+	}
+	return observeChains
+}
+
 // queryNode return the Node information related to the request node address
 // /thorchain/node/{nodeaddress}
 func (qs queryServer) queryNode(ctx cosmos.Context, req *types.QueryNodeRequest) (*types.QueryNodeResponse, error) {
@@ -1087,8 +1108,10 @@ func (qs queryServer) queryNode(ctx cosmos.Context, req *types.QueryNodeRequest)
 		providers = make([]*types.NodeBondProvider, len(bp.Providers))
 		for i, p := range bp.Providers {
 			providers[i] = &types.NodeBondProvider{
-				BondAddress: p.BondAddress.String(),
-				Bond:        p.Bond.String(),
+				BondAddress:  p.BondAddress.String(),
+				Bond:         p.Bond.String(),
+				Bps:          p.Bps,
+				PayoutTarget: p.PayoutTarget,
 			}
 		}
 	}
@@ -1129,19 +1152,11 @@ func (qs queryServer) queryNode(ctx cosmos.Context, req *types.QueryNodeRequest)
 		result.CurrentAward = reward.String()
 	}
 
-	// TODO: Represent this map as the field directly, instead of making an array?
-	// It would then always be represented in alphabetical order.
 	chainHeights, err := qs.mgr.Keeper().GetLastObserveHeight(ctx, addr)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get last observe chain height: %w", err)
 	}
-	// analyze-ignore(map-iteration)
-	for c, h := range chainHeights {
-		result.ObserveChains = append(result.ObserveChains, &types.ChainHeight{
-			Chain:  c.String(),
-			Height: h,
-		})
-	}
+	result.ObserveChains = observeChainsFromHeights(chainHeights)
 
 	preflightCheckResult, err := getNodePreflightResult(ctx, qs.mgr, nodeAcc)
 	if err != nil {
@@ -1289,19 +1304,11 @@ func (qs queryServer) queryNodes(ctx cosmos.Context, _ *types.QueryNodesRequest)
 			Reason:        jail.Reason,
 		}
 
-		// TODO: Represent this map as the field directly, instead of making an array?
-		// It would then always be represented in alphabetical order.
 		chainHeights, err := qs.mgr.Keeper().GetLastObserveHeight(ctx, na.NodeAddress)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get last observe chain height: %w", err)
 		}
-		// analyze-ignore(map-iteration)
-		for c, h := range chainHeights {
-			result[i].ObserveChains = append(result[i].ObserveChains, &types.ChainHeight{
-				Chain:  c.String(),
-				Height: h,
-			})
-		}
+		result[i].ObserveChains = observeChainsFromHeights(chainHeights)
 
 		preflightCheckResult, err := getNodePreflightResult(ctx, qs.mgr, na)
 		if err != nil {
@@ -1322,8 +1329,10 @@ func (qs queryServer) queryNodes(ctx cosmos.Context, _ *types.QueryNodesRequest)
 			providers = make([]*types.NodeBondProvider, len(bp.Providers))
 			for i := range bp.Providers {
 				providers[i] = &types.NodeBondProvider{
-					BondAddress: bp.Providers[i].BondAddress.String(),
-					Bond:        bp.Providers[i].Bond.String(),
+					BondAddress:  bp.Providers[i].BondAddress.String(),
+					Bond:         bp.Providers[i].Bond.String(),
+					Bps:          bp.Providers[i].Bps,
+					PayoutTarget: bp.Providers[i].PayoutTarget,
 				}
 			}
 		}
@@ -2381,12 +2390,7 @@ func (qs queryServer) queryStableReserve(ctx cosmos.Context, _ *types.QueryStabl
 		assets[asset.String()] = asset
 	}
 
-	keys := make([]string, 0, len(assets))
-	// analyze-ignore(map-iteration) - extracting keys to sort them immediately after
-	for key := range assets {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(assets))
 
 	inventory := make([]*types.QueryStableReserveInventory, 0, len(keys))
 	for _, key := range keys {
@@ -2463,7 +2467,7 @@ func (qs queryServer) queryStableReserveActiveSwaps(ctx cosmos.Context) []*types
 	appendActive(qs.mgr.Keeper().GetSwapQueueIterator(ctx))
 	appendActive(qs.mgr.Keeper().GetAdvSwapQueueItemIterator(ctx))
 
-	sort.Slice(active, func(i, j int) bool {
+	sort.SliceStable(active, func(i, j int) bool {
 		if active[i].Purpose != active[j].Purpose {
 			return active[i].Purpose < active[j].Purpose
 		}
@@ -3139,25 +3143,22 @@ func (qs queryServer) queryConstantValues(_ cosmos.Context, _ *types.QueryConsta
 	cv := constAccessor.GetConstantValsByKeyname()
 
 	proto := types.QueryConstantValuesResponse{}
-	// analyze-ignore(map-iteration)
-	for k, v := range cv.Int64Values {
+	for _, k := range slices.Sorted(maps.Keys(cv.Int64Values)) {
 		proto.Int_64Values = append(proto.Int_64Values, &types.Int64Constants{
 			Name:  k,
-			Value: v,
+			Value: cv.Int64Values[k],
 		})
 	}
-	// analyze-ignore(map-iteration)
-	for k, v := range cv.BoolValues {
+	for _, k := range slices.Sorted(maps.Keys(cv.BoolValues)) {
 		proto.BoolValues = append(proto.BoolValues, &types.BoolConstants{
 			Name:  k,
-			Value: v,
+			Value: cv.BoolValues[k],
 		})
 	}
-	// analyze-ignore(map-iteration)
-	for k, v := range cv.StringValues {
+	for _, k := range slices.Sorted(maps.Keys(cv.StringValues)) {
 		proto.StringValues = append(proto.StringValues, &types.StringConstants{
 			Name:  k,
-			Value: v,
+			Value: cv.StringValues[k],
 		})
 	}
 
@@ -3852,6 +3853,9 @@ func (qs queryServer) queryInvariant(ctx cosmos.Context, req *types.QueryInvaria
 
 func (qs queryServer) queryBlock(ctx cosmos.Context, req *types.QueryBlockRequest) (*types.QueryBlockResponse, error) {
 	initTendermintOnce.Do(initTendermint)
+	if tendermintClientErr != nil {
+		return nil, tendermintClientErr
+	}
 	height := ctx.BlockHeight()
 	if parsed, err := strconv.ParseInt(req.Height, 10, 64); err == nil {
 		height = parsed

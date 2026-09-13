@@ -20,7 +20,7 @@
   - [Sending Transactions](concepts/sending-transactions.md)
   - [Transaction Memos](concepts/memos.md)
   - [Swap Queue Monitoring](concepts/swap-queue-monitoring.md)
-  - [Quote Examples](examples/tutorials.md)
+  - [Query Examples](examples/tutorials.md)
   - [Asset Notation](concepts/asset-notation.md)
   - [Memo Length Reduction](concepts/memo-length-reduction.md)
 
@@ -110,17 +110,9 @@
     - [ADR 026: Dynamic L1 Min Swap Fee Per Thorname & Pair](architecture/adr-026-dynamic-l1-min-fee-per-thorname.md)
     - [ADR 027: Affiliate Revenue Share (REVSHARE)](architecture/adr-027-affiliate-revshare.md)
     - [ADR 028: Exploit Conciliation](architecture/adr-028-exploit-conciliation.md)
+    - [ADR 029: Bond Yield Reward-Time Payouts](architecture/adr-029-bond-yield-payouts.md)
 
 - [Archived](archived/archived.md)
-
-  - [TypeScript (Web)](examples/typescript-web/README.md)
-
-    - [Overview](examples/typescript-web/overview.md)
-    - [Query Package](examples/typescript-web/query-package.md)
-    - [AMM Package](examples/typescript-web/amm-package.md)
-    - [Client Packages](examples/typescript-web/client-packages.md)
-    - [Packages Breakdown](examples/typescript-web/packages-breakdown.md)
-    - [Coding Guide](examples/typescript-web/coding-guide.md)
 
   - [Saving Guide](archived/saving-guide/quickstart-guide.md)
     - [Fees and Wait Times](archived/saving-guide/fees-and-wait-times.md)

@@ -117,9 +117,6 @@
         "tx_size_cost_per_byte": "10"
       }
     },
-    "authz": {
-      "authorization": []
-    },
     "bank": {
       "balances": [
         {
@@ -341,7 +338,6 @@
               "decimals": "12"
             }
           ],
-          "deficit": null,
           "inbound_tx_count": "1",
           "membership": [
             "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
@@ -365,7 +361,6 @@
               "decimals": "8"
             }
           ],
-          "deficit": null,
           "inbound_tx_count": "1",
           "membership": [
             "tthorpub1addwnpepqwlkdxcyz8fnxk3xp0eqt89g6cxau2c4zp89yr2x2dy56s2zgu2jx3pmacu"

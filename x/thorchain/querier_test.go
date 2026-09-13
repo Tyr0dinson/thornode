@@ -3,6 +3,7 @@ package thorchain
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -830,6 +831,29 @@ func (s *QuerierSuite) TestQueryConstantValues(c *C) {
 	queryConstantValResp, err := s.queryServer.ConstantValues(s.ctx, &types.QueryConstantValuesRequest{})
 	c.Assert(queryConstantValResp, NotNil)
 	c.Assert(err, IsNil)
+	c.Assert(sort.SliceIsSorted(queryConstantValResp.Int_64Values, func(i, j int) bool {
+		return queryConstantValResp.Int_64Values[i].Name < queryConstantValResp.Int_64Values[j].Name
+	}), Equals, true)
+	c.Assert(sort.SliceIsSorted(queryConstantValResp.BoolValues, func(i, j int) bool {
+		return queryConstantValResp.BoolValues[i].Name < queryConstantValResp.BoolValues[j].Name
+	}), Equals, true)
+	c.Assert(sort.SliceIsSorted(queryConstantValResp.StringValues, func(i, j int) bool {
+		return queryConstantValResp.StringValues[i].Name < queryConstantValResp.StringValues[j].Name
+	}), Equals, true)
+
+	cv := s.mgr.GetConstants().GetConstantValsByKeyname()
+	c.Assert(queryConstantValResp.Int_64Values, HasLen, len(cv.Int64Values))
+	c.Assert(queryConstantValResp.BoolValues, HasLen, len(cv.BoolValues))
+	c.Assert(queryConstantValResp.StringValues, HasLen, len(cv.StringValues))
+	for _, kv := range queryConstantValResp.Int_64Values {
+		c.Assert(kv.Value, Equals, cv.Int64Values[kv.Name])
+	}
+	for _, kv := range queryConstantValResp.BoolValues {
+		c.Assert(kv.Value, Equals, cv.BoolValues[kv.Name])
+	}
+	for _, kv := range queryConstantValResp.StringValues {
+		c.Assert(kv.Value, Equals, cv.StringValues[kv.Name])
+	}
 
 	_, err = queryConstantValResp.MarshalJSONPB(nil)
 	c.Assert(err, IsNil)
@@ -958,6 +982,84 @@ func (s *QuerierSuite) TestQueryNodeAccount(c *C) {
 	// Second node has 75% of bond, should have 75% of the rewards
 	c.Assert(r3.TotalBond, Equals, cosmos.NewUint(common.One*3000).String())
 	c.Assert(r3.CurrentAward, Equals, cosmos.NewUint(common.One*750).String())
+}
+
+func (s *QuerierSuite) TestQueryNodeWasmResponseIsDeterministic(c *C) {
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(s.k.SetNodeAccount(s.ctx, na), IsNil)
+
+	vault := GetRandomVault()
+	vault.Status = ActiveVault
+	vault.StatusSince = 1
+	c.Assert(s.k.SetVault(s.ctx, vault), IsNil)
+
+	chains := common.Chains{
+		common.BTCChain,
+		common.ETHChain,
+		common.LTCChain,
+		common.BCHChain,
+		common.DOGEChain,
+		common.GAIAChain,
+		common.AVAXChain,
+		common.TRONChain,
+	}
+	for i, chain := range chains {
+		c.Assert(s.k.SetLastObserveHeight(s.ctx, chain, na.NodeAddress, int64(1000+i)), IsNil)
+	}
+
+	const attempts = 10
+	wasmCtx := s.ctx.WithValue(constants.CtxWASMQuery, true)
+	expectedOrder := chains.Strings()
+	sort.Strings(expectedOrder)
+	expectedOrderString := strings.Join(expectedOrder, ",")
+	var firstEncoding string
+	for attempt := 1; attempt <= attempts; attempt++ {
+		response, err := s.queryServer.Node(wasmCtx, &types.QueryNodeRequest{
+			Address: na.NodeAddress.String(),
+		})
+		c.Assert(err, IsNil)
+
+		encoding, err := response.Marshal()
+		c.Assert(err, IsNil)
+
+		order := make([]string, len(response.ObserveChains))
+		for i, chainHeight := range response.ObserveChains {
+			order[i] = chainHeight.Chain
+		}
+		currentOrder := strings.Join(order, ",")
+		c.Assert(currentOrder, Equals, expectedOrderString)
+
+		if attempt == 1 {
+			firstEncoding = string(encoding)
+			continue
+		}
+
+		c.Assert(string(encoding), Equals, firstEncoding,
+			Commentf("QueryNode response changed on attempt %d", attempt))
+	}
+
+	var firstNodesEncoding string
+	for attempt := 1; attempt <= attempts; attempt++ {
+		response, err := s.queryServer.Nodes(wasmCtx, &types.QueryNodesRequest{})
+		c.Assert(err, IsNil)
+		c.Assert(response.Nodes, HasLen, 1)
+
+		encoding, err := response.Marshal()
+		c.Assert(err, IsNil)
+
+		order := make([]string, len(response.Nodes[0].ObserveChains))
+		for i, chainHeight := range response.Nodes[0].ObserveChains {
+			order[i] = chainHeight.Chain
+		}
+		c.Assert(strings.Join(order, ","), Equals, expectedOrderString)
+
+		if attempt == 1 {
+			firstNodesEncoding = string(encoding)
+			continue
+		}
+		c.Assert(string(encoding), Equals, firstNodesEncoding,
+			Commentf("QueryNodes response changed on attempt %d", attempt))
+	}
 }
 
 func (s *QuerierSuite) TestQueryPoolAddresses(c *C) {

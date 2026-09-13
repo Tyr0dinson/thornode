@@ -1,12 +1,12 @@
 ---
 name: tc-debug
-description: Debug THORChain network issues - transactions, vaults, addresses, or described problems. Investigates unobserved inbounds, stuck outbounds, signing failures, vault insolvency, and more using THORNode API, Loki logs, and on-chain data.
-allowed-tools: WebFetch, Bash, Read, Write, Edit, AskUserQuestion, Grep, Glob, Agent
+description: Investigate a specific THORChain problem - a transaction hash, THORChain or L1 address, vault pubkey, block-explorer URL, or a described symptom like "my swap is stuck" or "funds never arrived". Traces inbound observation, swap queue, outbound scheduling, signing, and broadcast using the THORNode API, Midgard, Loki logs, and L1 data, and reads the code at the version that was live. Use whenever the user pastes a hash or address or describes a stuck, missing, refunded, or failed transaction, even if they do not say "debug". For overall network state use health.
+allowed-tools: WebFetch, Bash, Read, Write, Edit, AskUserQuestion, Grep, Glob
 ---
 
 # THORChain Network Debugger
 
-**Improvement policy**: When the user corrects behavior or gives feedback about this skill, always update THIS file (SKILL.md) directly — never save feedback memories. This skill is a shared artifact; improvements belong here so all users benefit.
+Shared conventions (endpoints and fallbacks, scripts, node/vault naming, units, Loki rules, hand-offs) are in `.claude/skills/shared/conventions.md`; read it first.
 
 ## Invocation
 
@@ -14,60 +14,11 @@ allowed-tools: WebFetch, Bash, Read, Write, Edit, AskUserQuestion, Grep, Glob, A
 /tc-debug <transaction_hash | vault_pubkey | address | description>
 ```
 
-The input is classified automatically:
+`classify_input.py` decides which path below to follow.
 
-- **Transaction hash**: 64-char hex (with or without 0x prefix)
-- **Vault pubkey**: `thorpub...` or `tthorpub...`
-- **THORChain address**: `thor1...` or `tthor1...`
-- **Chain address**: BTC (`bc1...`, `1...`, `3...`), EVM (`0x...` 40-char), LTC, DOGE, BCH, GAIA, SOL
-- **Description**: Any free text describing the issue
+## Conventions specific to this skill
 
-## Endpoints
-
-| Service        | URL                                                   |
-| -------------- | ----------------------------------------------------- |
-| THORNode API   | `https://gateway.liquify.com/chain/thorchain_api`     |
-| Tendermint RPC | `https://gateway.liquify.com/chain/thorchain_rpc`     |
-| Midgard API    | `https://gateway.liquify.com/chain/thorchain_midgard` |
-
-**Endpoint fallback**: If a Liquify endpoint is down or returning errors, fall back to these:
-
-- THORNode API: `https://thornode.thorchain.network`
-- Tendermint RPC: `https://rpc.thorchain.network`
-- Midgard API: `https://midgard.thorchain.network`
-
-**Network fallback**: Default to mainnet (above URLs). If a transaction/address is not found, prompt user or try stagenet:
-
-- Stagenet THORNode: `https://stagenet-thornode.ninerealms.com`
-- Stagenet Midgard: `https://stagenet-midgard.ninerealms.com`
-
-## Scripts
-
-In this skill's directory (`.claude/skills/tc-debug/`):
-
-| Script                        | Purpose                                                     |
-| ----------------------------- | ----------------------------------------------------------- |
-| `classify_input.py <input>`   | Classify input type (tx, vault, address, description)       |
-| `discover_loki.py [addr]`     | Discover & cache Loki job labels → `/tmp/tc_loki_jobs.json` |
-| `parse_tx_status.py [height]` | Parse tx/status response → diagnostic summary (stdin)       |
-
-Also reuse scripts from the health skill (`.claude/skills/health/`):
-
-| Script                                       | Purpose                                          |
-| -------------------------------------------- | ------------------------------------------------ |
-| `parse_nodes.py <M.m> <height>`              | Node analysis → pubkey map + IPs to `/tmp/`      |
-| `parse_vaults.py <height>`                   | Vault status, balances, retirement duration      |
-| `extract_vault_balances.py <chain> [status]` | Extract per-chain balances for solvency pipeline |
-| `check_solvency.py <chain>`                  | Compare vault vs L1 balances at 1e8 precision    |
-
-## Conventions
-
-- **SANITIZATION (MANDATORY)**: Never expose namespace names, pod names, container names, job labels, or any Kubernetes-internal identifiers in output. Use generic labels: "thornode logs", "bifrost logs".
-- **Case sensitivity (MANDATORY)**: Always use `(?i)` case-insensitive flag in LogQL for chain names, event keywords, error terms.
-- **Log limit caveat**: `--limit=N` caps lines returned, not total events. Label counts as "of sample" with sample size.
-- **Nodes**: `<operator_last4>:<address_last4>` — never bare pubkeys. Resolve via `/tmp/tc_pubkey_map.json`.
-- **Vaults**: `...{last 4 of pub_key}`.
-- **Amounts**: Full 1e8 precision for THORChain native amounts. Divide `rune_price_in_tor` by 1e8 for USD.
+- **Network fallback**: default to mainnet. If a tx or address is not found, try stagenet (see shared conventions) or ask the user.
 
 ## Procedure
 
@@ -120,8 +71,6 @@ curl -s 'https://gateway.liquify.com/chain/thorchain_api/thorchain/nodes' \
 curl -s 'https://gateway.liquify.com/chain/thorchain_api/thorchain/vaults/asgard' > /tmp/tc_vaults.json
 python3 .claude/skills/health/parse_vaults.py "$HEIGHT" < /tmp/tc_vaults.json
 ```
-
----
 
 ### 1. Transaction Debugging
 
@@ -268,23 +217,7 @@ If the user reports it as stuck but status shows completed:
 
 #### 1e. Non-swap transaction types
 
-Not all transactions are swaps. Parse the memo to determine the action type and adjust investigation:
-
-| Memo prefix                 | Action                         | Key difference                                  |
-| --------------------------- | ------------------------------ | ----------------------------------------------- |
-| `SWAP:` or `=` or `s:`      | Swap                           | Full pipeline: observe → swap → outbound        |
-| `ADD:` or `+` or `a:`       | Add liquidity                  | No outbound — completes at inbound finalisation |
-| `WITHDRAW:` or `-` or `wd:` | Withdraw liquidity             | Outbound sends LP's share back                  |
-| `DONATE:` or `d:`           | Donate to pool                 | No outbound                                     |
-| `BOND:` or `UNBOND:`        | Node bond/unbond               | Bond has no outbound; unbond sends RUNE         |
-| `LEAVE:`                    | Node leave                     | Sends bond back                                 |
-| `MIGRATE:`                  | Vault migration                | Internal — skip in stuck outbound analysis      |
-| `NOOP:`                     | No-op (gas)                    | Observed only, no action                        |
-| `REFUND:`                   | Refund                         | Should have an outbound returning funds         |
-| `$+` or `$-`                | Trade account deposit/withdraw | Deposit has no outbound; withdraw does          |
-| `LOAN+:` or `LOAN-:`        | Loan open/close                | Open has outbound; close may not                |
-
-For add/donate/bond with no expected outbound: if the stage shows completed at `inbound_finalised` and there are no planned outbounds, this is **normal** — not stuck.
+Parse the memo prefix to learn which stages to expect; `references/memo-types.md` lists them. Add, donate, bond, and trade-account deposits have no outbound, so "completed at inbound_finalised with no planned outbounds" is normal, not stuck.
 
 #### 1f. Cross-reference outbound hashes
 
@@ -300,8 +233,6 @@ If `/thorchain/tx/status/<TXID>` returns empty/404 on mainnet:
 1. Try Midgard: `WebFetch: .../v2/actions?txid=<TXID>`
 2. Try stagenet endpoints.
 3. Ask user if they can confirm which network/chain the tx is from.
-
----
 
 ### 2. Vault Debugging
 
@@ -320,15 +251,13 @@ Key fields: `type` (asgard/yggdrasil), `status` (active/retiring/inactive), `coi
 For each chain the vault holds assets on:
 
 ```bash
-# Get vault balances from THORNode
-python3 .claude/skills/health/extract_vault_balances.py <CHAIN> < /tmp/tc_vaults.json
-
-# Compare to L1 on-chain balances
-python3 .claude/skills/health/extract_vault_balances.py <CHAIN> < /tmp/tc_vaults.json \
+# Fetch and compare in one command so the THORNode snapshot and the L1 read are seconds apart
+curl -s 'https://gateway.liquify.com/chain/thorchain_api/thorchain/vaults/asgard' \
+  | python3 .claude/skills/health/extract_vault_balances.py <CHAIN> \
   | python3 .claude/skills/health/check_solvency.py <CHAIN>
 ```
 
-Report discrepancies at full 1e8 precision. Common causes:
+Report discrepancies at full 1e8 precision. Before calling a deficit real, rerun once: a stale vault snapshot straddling an outbound shows up as exactly that outbound's amount missing from L1. Common causes of a persistent gap:
 
 - Gas spent on failed outbounds (not accounted for in THORChain)
 - Dust attacks (unsolicited deposits)
@@ -401,8 +330,6 @@ python3 .claude/skills/health/extract_vault_balances.py <CHAIN> inactive < /tmp/
 
 **Why this matters**: Funds on inactive vaults are effectively locked. The vault's TSS members may have churned out, making signing impossible. Even if the vault has the balance, the outbound can't be fulfilled without either (a) the inactive vault successfully signing, or (b) a code fix to reroute the outbound to an active vault.
 
----
-
 ### 3. Address Debugging
 
 Use when input type is `thor_address` or `chain_address`.
@@ -439,8 +366,6 @@ If Midgard doesn't return results, search Loki:
 {<bifrost_job_selector>} |~ "(?i)<ADDRESS_or_last12>"
 {<thornode_job_selector>} |~ "(?i)<ADDRESS_or_last12>"
 ```
-
----
 
 ### 4. Description Debugging
 
@@ -487,8 +412,6 @@ Depending on the description:
 - **Version issues**: `/thorchain/version` + node version spread
 - **Churn issues**: Vault analysis from step 0d
 
----
-
 ### 5. GitLab Correlation
 
 Once you've identified a likely root cause:
@@ -518,82 +441,9 @@ glab mr list --merged -P 15 | grep -i "<keywords>"
 
 Report any related issues/MRs with their IDs (use `#N` for issues, `!N` for MRs).
 
----
-
 ### 6. Loki Query Reference
 
-#### Job selection
-
-Always discover jobs dynamically (step 0b). Pick **one** thornode job to avoid duplicate log lines. Use all available bifrost jobs unless filtering to specific vault members. If no bifrost jobs were discovered, skip all bifrost log queries.
-
-#### logcli flags
-
-Always use these flags for clean output:
-
-- `--quiet` — suppress progress/stats output
-- `--output=raw` — for human-readable log lines (default for most queries)
-- `--limit=N` — cap results (default 500, use 2000+ for counting/blame)
-- `--since=Nh` — time range (24h for recent tx, 72h for vault/general issues)
-
-Example full command:
-
-```bash
-logcli --addr=http://localhost:3100 query --quiet --output=raw --limit=500 --since=24h \
-  '{job="<job>"} |~ "(?i)<pattern>"'
-```
-
-#### Standard queries
-
-**Transaction lookup (all hashes)**:
-
-```logql
-{<job_selector>} |~ "(?i)<HASH_or_first16>"
-```
-
-**Chain-specific errors**:
-
-```logql
-{<bifrost_job_selector>} |~ "(?i)<CHAIN>" |~ "(?i)(error|fail|timeout|panic|reject)"
-```
-
-**Signing events**:
-
-```logql
-{<bifrost_job_selector>} |~ "(?i)(keysign|sign.*tx|broadcast)" |~ "(?i)<CHAIN>"
-```
-
-**Observer events**:
-
-```logql
-{<bifrost_job_selector>} |~ "(?i)observe" |~ "(?i)<CHAIN>"
-```
-
-**Solvency alerts**:
-
-```logql
-{<thornode_job_selector>} |~ "(?i)solvency"
-```
-
-**Expanding search (when txid lookups yield nothing)**:
-When direct txid lookups don't find relevant logs, expand to time-based chain client logs:
-
-1. Determine the approximate THORChain block time of the event.
-2. Convert to wall-clock time: `(CURRENT_HEIGHT - event_height) * 6` seconds ago.
-3. Search chain client logs in that time window:
-
-```bash
-logcli --addr=http://localhost:3100 query --quiet --output=raw --limit=1000 \
-  --from="<rfc3339_start>" --to="<rfc3339_end>" \
-  '{<bifrost_job_selector>} |~ "(?i)<CHAIN>"'
-```
-
-#### Time range guidance
-
-- Transaction debugging: Start with `--since=24h`, expand to `--since=72h` if not found.
-- Vault issues: `--since=72h` or wider — insolvency can build up over days.
-- Description-based: Match the user's reported timeframe, default to `--since=72h`.
-
----
+See `references/loki.md` for job selection, logcli flags, the standard query set, and the time-window expansion technique.
 
 ## Output Format
 
@@ -638,25 +488,8 @@ Walk through the debugging steps taken, showing key findings at each step. Use c
 
 | ID  | Title | Status | Relevance |
 | --- | ----- | ------ | --------- |
-
-Source labels must be generic: "thornode logs", "bifrost logs", etc. Never expose job names, namespaces, pod names, or any Kubernetes-internal identifiers.
 ```
 
-## Chain-Specific Block Explorers
+## L1 Verification
 
-When L1 verification is needed, use these public APIs:
-
-| Chain | Explorer API                                                                                 |
-| ----- | -------------------------------------------------------------------------------------------- |
-| BTC   | `https://blockchair.com/bitcoin/transaction/<hash>` or `https://mempool.space/api/tx/<hash>` |
-| ETH   | `https://api.etherscan.io/api?module=proxy&action=eth_getTransactionByHash&txhash=0x<hash>`  |
-| AVAX  | `https://api.snowtrace.io/api?module=proxy&action=eth_getTransactionByHash&txhash=0x<hash>`  |
-| BSC   | `https://api.bscscan.com/api?module=proxy&action=eth_getTransactionByHash&txhash=0x<hash>`   |
-| BASE  | `https://api.basescan.org/api?module=proxy&action=eth_getTransactionByHash&txhash=0x<hash>`  |
-| DOGE  | `https://blockchair.com/dogecoin/transaction/<hash>`                                         |
-| LTC   | `https://blockchair.com/litecoin/transaction/<hash>`                                         |
-| BCH   | `https://blockchair.com/bitcoin-cash/transaction/<hash>`                                     |
-| GAIA  | `https://cosmos.directory/cosmoshub/tx/<hash>`                                               |
-| SOL   | `https://public-api.solscan.io/transaction/<hash>`                                           |
-
-For vault balance lookups, prefer the solvency pipeline from the health skill scripts.
+When a tx or balance must be confirmed on the external chain, use the public JSON endpoints in `references/l1-endpoints.md`. For vault balances prefer the solvency pipeline from the health scripts.

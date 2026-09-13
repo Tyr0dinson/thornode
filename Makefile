@@ -75,7 +75,12 @@ ifeq (test,$(firstword $(MAKECMDGOALS)))
 endif
 
 TEST_DIR?=${TEST_PATHS}
-BUILD_FLAGS := -ldflags '$(ldflags)' -tags ${TAG} -trimpath
+# -buildmode=pie builds a position-independent executable (ET_DYN) so host ASLR can
+# randomize the binary's own text/data, not just the shared libraries it loads. It
+# needs external linking, which the cgo build (wasmvm) already uses, and the release
+# toolchain (golang bookworm image) ships gcc. Covers the shipped
+# thornode/bifrost/recover-keyshare-backup (BINARIES) via the build/install targets.
+BUILD_FLAGS := -ldflags '$(ldflags)' -tags ${TAG} -trimpath -buildmode=pie
 PARALLELISM ?= 1
 TEST_BUILD_FLAGS := -parallel=$(PARALLELISM) -tags=mocknet
 ifdef RUN
@@ -132,7 +137,20 @@ openapi:
 
 protoVer=0.13.2
 protoImageName=ghcr.io/cosmos/proto-builder:$(protoVer)
-protoImage=docker run --rm -v $(CURDIR):/workspace --workdir /workspace $(protoImageName)
+
+# buf resolves its BSR dependencies from buf.build at generate/lint/breaking
+# time. When the machine running these targets is blocked by buf.build (the
+# Finland CI runner's egress IP is served HTTP 403 at their edge), set BUF_PROXY
+# to a proxy with clean egress and it is forwarded into the container. Unset by
+# default, so local development and unaffected runners are untouched.
+BUF_PROXY ?=
+ifneq ($(strip $(BUF_PROXY)),)
+protoProxyEnv := -e HTTPS_PROXY=$(BUF_PROXY) -e HTTP_PROXY=$(BUF_PROXY) -e NO_PROXY=localhost,127.0.0.1
+else
+protoProxyEnv :=
+endif
+
+protoImage=docker run --rm -v $(CURDIR):/workspace $(protoProxyEnv) --workdir /workspace $(protoImageName)
 
 proto-all: proto-format proto-lint proto-gen format
 
@@ -244,6 +262,7 @@ test-network-specific:
 	@go test -tags stagenet ${RUN_FLAG} ./common
 	@go test -tags chainnet ${RUN_FLAG} ./common
 	@go test -tags mainnet ${RUN_FLAG} ./common ./bifrost/pkg/chainclients/utxo/...
+	@go test -tags mainnet ./x/thorchain -run TestPackage -check.f Migrate # mainnet store-migration tests are mainnet-tagged; otherwise they never run in CI (unit-tests job is mocknet-only)
 	@go test -tags mocknet ${RUN_FLAG} ./common ./bifrost/pkg/chainclients/utxo/...
 
 test-race:
@@ -366,7 +385,7 @@ _test-regression:
 test-simulation: build-mocknet reset-mocknet test-simulation-no-reset
 
 TEST_SIMULATION_STAGES ?= seed,bootstrap,xmr-coverage,arb,swaps,memoless-swaps,consolidate,inactive-vault-refunds,memoless-refunds,solvency,ragnarok
-TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,swaps,memoless-swaps,inactive-vault-refunds,memoless-refunds,solvency,xmr-post-churn,ragnarok
+TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,swaps,memoless-swaps,inactive-vault-refunds,memoless-refunds,bond-yield,solvency,xmr-post-churn,ragnarok
 
 test-simulation-cluster: build-test-simulation build-mocknet-cluster reset-mocknet-cluster
 	@docker stop docker-midgard-1 docker-midgard-db-1 >/dev/null 2>&1 || true

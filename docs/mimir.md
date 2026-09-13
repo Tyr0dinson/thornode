@@ -51,18 +51,32 @@ Mimirs have a maximum length of 128 bytes (see MaxMimirLength in THORNode code).
 - `AdvSwapQueueRapidSwapMax`: Maximum number of rapid swap iterations per block
 - `StreamingLimitSwapMaxAge`: Maximum number of blocks a limit swap can exist before expiring
 - `ModifyLimitSwapMaxIterations`: Maximum iterations when searching for a user's swap to modify or cancel
+
+### [Swap Fee Minimums](./concepts/fees.md#minimum-swap-fee)
+
 - `L1SlipMinBps`: Minimum L1 asset swap fee in basis points
 - `TradeAccountsSlipMinBps`: Minimum trade asset swap fee in basis points
 - `SecuredAssetSlipMinBps`: Minimum secured asset swap fee in basis points
 - `SynthSlipMinBps`: Minimum synth asset swap fee in basis points
 - `DerivedSlipMinBps`: Minimum derived asset swap fee in basis points
+- `StableSlipMinBps`: Minimum swap fee in basis points for stable-to-stable swaps
+- `WasmArbSlipMinBps`: Minimum swap fee in basis points for swaps from the WASM arbitrage contract
+- `SlipMinBpsMax`: Upper limit accepted for any of the minimum swap fee mimirs
+- `L1DynamicFeeEnabled`: Enable/disable the per-thorname [dynamic L1 minimum fee](./concepts/fees.md#dynamic-l1-minimum-fee)
+- `L1DynamicFeeEpochBlocks`: Number of blocks per dynamic fee epoch
+- `L1DynamicFeeFloorBPS`: Lower bound of the dynamic minimum, and the value a new record starts at
+- `L1DynamicFeeCeilingBPS`: Upper bound of the dynamic minimum
+- `L1DynamicFeeStepBPS`: Basis points the dynamic minimum moves per epoch
+- `L1DynamicFeeDeadbandBPS`: Percentage change in fees (in basis points) below which the floor is left unchanged
+- `L1DynamicFeeWindowEpochs`: Epochs averaged either side of the last change when measuring the fee response
 
 ## Memoless Transactions
 
-- `MemolessTxnTTL`\*: Number of blocks before a registered reference memo expires (default: 3600 blocks ≈ 6 hours)
+- `MemolessTxnTTL`\*: Number of blocks before a registered reference memo expires (default: 3600 blocks ≈ 6 hours). **CAUTION:** Expiry is evaluated against the current value, so _raising_ it brings already-expired references back to life. The occupancy estimate behind `MemolessTxnCostSlopeBPS` cannot see those, and so undercharges until every pre-change reference has expired — at most one (new) `MemolessTxnTTL` after the change. Lowering it is safe; the estimate errs high instead.
 - `MemolessTxnRefCount`\*: Maximum number of reference IDs available per chain (default: 99,999). Reference numbers range from 1 to this value. **CAUTION:** Changing this value alters the zero-padding length used to normalize reference keys in the KV store. All existing (non-expired) references will become inaccessible under the new normalization. Only change this value after all current references have expired (see `MemolessTxnTTL`), or coordinate a store migration.
 - `MemolessTxnCost`\*: Optional RUNE cost for registering reference memos (default: 0, in 1e8 notation). Only charged on successful registration.
 - `MemolessTxnMaxUse`\*: Maximum number of times a reference can be used before being invalidated (default: 1). Set to 0 for unlimited usage.
+- `MemolessTxnCostSlopeBPS`\*: Steepness of the memoless registration cost curve as an asset's reference slots fill up (default: 0). The charged cost is `MemolessTxnCost * (1 + slope * used / free)` where `slope = MemolessTxnCostSlopeBPS / 10,000`, `used` is an estimate of the asset's occupied reference slots and `free` is the remainder of `MemolessTxnRefCount` (floored at 1). `used` is deliberately conservative: it is counted over two `MemolessTxnTTL`-wide buckets, so it never undercounts, but it keeps counting a registration for up to one extra `MemolessTxnTTL` after that registration has actually expired — the cost can therefore stay elevated for that long after a burst drains. (The `MemolessTxnTTL` caveat above is the one case where it undercounts instead.) `0` disables the curve and charges a flat `MemolessTxnCost`. `10,000` gives `cost = MemolessTxnCost / (1 - occupancy)`: 2x at half full, 10x at 90% full. Higher values make the cost climb sooner, lower values keep it cheap until the ring is nearly exhausted.
 - `HaltMemoless`#: Emergency halt for all memoless transaction functionality (registration and usage)
 
 ## TCY Management
@@ -146,7 +160,8 @@ Operational notes:
 - `MaxOutboundFeeMultiplierBasisPoints`\*: Maximum outbound fee multiplier in basis points
 - `MinOutboundFeeMultiplierBasisPoints`\*: Minimum outbound fee multiplier in basis points
 - `PreferredAssetOutboundFeeMultiplier`\*: Multiplier of preferred asset outbound fee for triggering preferred asset swaps
-- `REVSHARE-<thorname>`#: Per-thorname share (in basis points, capped at 5000) of attributed swap liquidity fees that the protocol pays from the reserve to the affiliate's `AffiliateCollector` balance at end of block. Operational mimir; only valid for existing thornames whose name uses characters `[a-zA-Z0-9-]`. See [ADR 027](./architecture/adr-027-affiliate-revshare.md) and the [Affiliate Fee Guide](./affiliate-guide/affiliate-fee-guide.md#revenue-share-revshare).
+- `DYNAMICFEE-WHITELIST-<thorname>`#: Per-thorname [enrollment](./concepts/fees.md#dynamic-l1-minimum-fee) in the dynamic L1 minimum fee
+- `REVSHARE-<thorname>`#: Per-thorname [share of swap liquidity fees](./affiliate-guide/affiliate-fee-guide.md#revenue-share-revshare) paid to the affiliate from the reserve, in basis points (max 5000)
 
 ### Solvency Checker
 
@@ -162,6 +177,7 @@ Operational notes:
 - `ValidatorMaxRewardRatio`\*: the ratio to MinimumBondInRune at which validators stop receiving rewards proportional to their bond
 - `MaxBondProviders`\*: Maximum number of bond providers per mode
 - `NodeOperatorFee`\*: Minimum node operator fee
+- `BondYieldEnabled`\*: Enables automatic bond-yield payouts during reward distribution
 - `SignerConcurrency`\*: Number of concurrent signers for active and retiring vaults
 
 ### Slashing Management
@@ -218,6 +234,7 @@ Operational notes:
 ## Miscellaneous
 
 - `DollarsPerRune`: Manual override of number of dollars per one RUNE. Used for metrics data collection and RUNE calculation from MinimumL1OutboundFeeUSD
+- `TorAnchor-<asset>`#: Set above zero to include a stablecoin pool in the [TOR](https://docs.thorchain.org/technical-documentation/thorchain-finance/tor) anchor set, e.g. `TorAnchor-ETH-USDC-0XA0B8...`. The median of these pools prices RUNE in USD, and a swap between two anchors uses `StableSlipMinBps`
 - `THORNames`: Enable/Disable THORNames
 - `TNSRegisterFee`: TNS registration fee of new names
 - `TNSFeePerBlock`: TNS cost per block to retain ownership of a name

@@ -126,6 +126,10 @@ func (k KVStoreDummy) BurnFromModule(ctx cosmos.Context, module string, coin com
 	return kaboom
 }
 
+func (k KVStoreDummy) BurnEntireSynthSupply(ctx cosmos.Context, synthAsset common.Asset) (cosmos.Uint, error) {
+	return cosmos.ZeroUint(), kaboom
+}
+
 func (k KVStoreDummy) MintAndSendToAccount(ctx cosmos.Context, to cosmos.AccAddress, coin common.Coin) error {
 	return kaboom
 }
@@ -566,10 +570,7 @@ func (k KVStoreDummy) GetStableReserveCreditIterator(_ cosmos.Context) cosmos.It
 	return nil
 }
 
-func (k KVStoreDummy) SetTssKeysignFailVoter(_ cosmos.Context, tss TssKeysignFailVoter) {
-}
-
-func (k KVStoreDummy) GetTssKeysignFailVoterIterator(_ cosmos.Context) cosmos.Iterator {
+func (k KVStoreDummy) SetTssKeysignFailVoter(_ cosmos.Context, _ TssKeysignFailVoter) error {
 	return nil
 }
 
@@ -782,7 +783,7 @@ func (k KVStoreDummy) SetLastObserveHeight(ctx cosmos.Context, chain common.Chai
 func (k KVStoreDummy) ForceSetLastObserveHeight(ctx cosmos.Context, chain common.Chain, address cosmos.AccAddress, height int64) {
 }
 
-func (k KVStoreDummy) GetLastObserveHeight(ctx cosmos.Context, address cosmos.AccAddress) (map[common.Chain]int64, error) {
+func (k KVStoreDummy) GetLastObserveHeight(ctx cosmos.Context, address cosmos.AccAddress) ([]kvTypes.ChainHeight, error) {
 	return nil, kaboom
 }
 
@@ -949,6 +950,12 @@ func (k KVStoreDummy) GetLastReferenceNumber(ctx cosmos.Context, asset common.As
 }
 
 func (k KVStoreDummy) SetLastReferenceNumber(ctx cosmos.Context, asset common.Asset, ref string) {}
+
+func (k KVStoreDummy) GetReferenceMemoWindow(ctx cosmos.Context, _ common.Asset) (int64, int64, int64, int64) {
+	return 0, 0, 0, 0
+}
+
+func (k KVStoreDummy) SetReferenceMemoWindow(ctx cosmos.Context, _ common.Asset, _, _, _, _ int64) {}
 
 func (k KVStoreDummy) GetSwapperCloutIterator(ctx cosmos.Context) cosmos.Iterator    { return nil }
 func (k KVStoreDummy) SetSwapperClout(ctx cosmos.Context, record SwapperClout) error { return kaboom }

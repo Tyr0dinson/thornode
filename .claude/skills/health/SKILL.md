@@ -1,43 +1,18 @@
 ---
 name: health
-description: Diagnose THORChain network health using public thornode endpoints. Checks halts, stuck outbounds, churn status, vault solvency, bifrost lag, node versions, and more. Use when asked about network status, health, or diagnosing issues.
+description: Point-in-time THORChain mainnet health check from public THORNode endpoints - halted chains and their mimirs, stuck outbounds and churns, vault solvency, bifrost scanner lag, node versions and jails, keysign blame, release adoption. Use whenever someone asks how the network is doing, whether something is halted or stuck, whether a churn is progressing, or wants a status report or incident summary, even without the word "health". For a specific tx, address, or vault use tc-debug.
 allowed-tools: WebFetch, Bash, Read, Write, Edit, AskUserQuestion, Grep, Glob
 ---
 
 # THORChain Network Health Check
 
-**Improvement policy**: When the user corrects behavior or gives feedback about this skill, always update THIS file (SKILL.md) directly — never save feedback memories. This skill is a shared artifact; improvements belong here so all users benefit.
+Shared conventions (endpoints, scripts, node/vault naming, units, Loki rules, hand-offs) are in `.claude/skills/shared/conventions.md`; read it first. Health-specific rules:
 
-## Endpoints
-
-| Service        | URL                                               |
-| -------------- | ------------------------------------------------- |
-| THORNode API   | `https://gateway.liquify.com/chain/thorchain_api` |
-| Tendermint RPC | `https://gateway.liquify.com/chain/thorchain_rpc` |
-
-## Scripts
-
-In this skill's directory. Use for large JSON — never WebFetch for `/thorchain/nodes` or `/thorchain/vaults/asgard`.
-
-| Script                                       | Purpose                                          |
-| -------------------------------------------- | ------------------------------------------------ |
-| `parse_nodes.py <M.m> <height>`              | Node analysis → pubkey map + IPs to `/tmp/`      |
-| `parse_vaults.py <height>`                   | Vault status, balances, retirement duration      |
-| `extract_vault_balances.py <chain> [status]` | Extract per-chain balances for solvency pipeline |
-| `check_solvency.py <chain>`                  | Compare vault vs L1 balances at 1e8 precision    |
-| `check_bifrost.py [count] [timeout]`         | Scanner lag from bifrost `/status/scanner`       |
-
-All read stdin (piped from `curl`) except `check_bifrost.py` which reads `/tmp/tc_active_ips.json`.
-
-## Conventions
-
-- **Nodes**: `<operator_last4>:<address_last4>` — never bare pubkeys. Resolve via `/tmp/tc_pubkey_map.json`.
-- **Vaults**: `...{last 4 of pub_key}`.
-- **Mimirs**: Value is block height = set at that block (compute duration). Value `1` = node mimir. Never say "admin mimir".
-- **Filtering**: Current major.minor only (old = dead). Jails only if active. Standby only if bond ≥ active min.
-- **Keysign blame**: Resolve → `op:addr`, group by operator. Flag >15% share or multi-node operators.
-- **Tables**: Pipe-delimited markdown. Solvency at full 1e8. Cause/fix columns reference GitLab (`#N`, `!N`).
-- **Omit**: Loans, fee multiplier, LP deposit pauses, active node IP status.
+- **Filtering**: current major.minor only (old = dead). Jails only if active. Standby only if bond ≥ active min.
+- **Keysign blame**: resolve to `op:addr`, group by operator. Flag >15% share or multi-node operators.
+- **Tables**: pipe-delimited markdown. Solvency at full 1e8. Cause/fix columns reference GitLab (`#N`, `!N`).
+- **Omit**: loans, fee multiplier, LP deposit pauses, active node IP status.
+- **Scope**: current state only.
 
 ## Procedure
 
@@ -45,11 +20,7 @@ All read stdin (piped from `curl`) except `check_bifrost.py` which reads `/tmp/t
 
 Check for `logcli`. If found, ask user via AskUserQuestion. If yes: verify localhost:3100, pick **one** validator job (avoid duplicates). Query 72h+.
 
-**SANITIZATION (MANDATORY)**: Never expose namespace names, pod names, container names, job labels, or any Kubernetes-internal identifiers in output. When referencing a Loki source in the report, use a generic label like "thornode logs" or "bifrost logs" — never the actual job string. Strip or redact these from any raw log excerpts before including them. This applies to ALL output: tables, summaries, inline references, and error messages.
-
-**Case sensitivity (MANDATORY)**: Always use `(?i)` case-insensitive flag when searching for chain names (e.g. `(?i)sol`, `(?i)base`), mimir key names, and event keywords (`halt`, `upgrade`, `router`, `contract`). Log lines can emit these in mixed case depending on the code path, and a case-sensitive match will silently miss events.
-
-**Log limit caveat (MANDATORY)**: `--limit=N` caps lines returned, not total events in the time range. Never treat the limit as the population size. When reporting counts or percentages derived from sampled log data, always label them as "of sample" and state the sample size. Use limits of ≥2000 for blame/event counting to reduce sampling bias.
+Apply the Loki rules from the shared conventions (sanitise identifiers, `(?i)` everywhere, `--limit` is a sample).
 
 ### 1. Height + Version
 
@@ -157,12 +128,15 @@ Retiring >1000 blocks = stuck. If signing halted for chain with remaining assets
 
 ### 8. Solvency
 
-When stuck churn or outbounds. Full 1e8.
+When stuck churn or outbounds. Full 1e8. Re-fetch the vaults in the same command: a vault snapshot even a few minutes old, compared against a live L1 balance, straddles any outbound sent in between and reports that outbound as a deficit.
 
 ```bash
-python3 .claude/skills/health/extract_vault_balances.py CHAIN STATUS < /tmp/tc_vaults.json \
+curl -s '.../thorchain/vaults/asgard' \
+  | python3 .claude/skills/health/extract_vault_balances.py CHAIN STATUS \
   | python3 .claude/skills/health/check_solvency.py CHAIN
 ```
+
+A deficit on one busy vault that other vaults on the same chain do not show is usually this skew, not insolvency; rerun before reporting it.
 
 ### 9. Economics
 
@@ -172,9 +146,7 @@ python3 .claude/skills/health/extract_vault_balances.py CHAIN STATUS < /tmp/tc_v
 
 ### 10. Keysign Blame (Loki)
 
-Single thornode job, 72h+, resolve via `/tmp/tc_pubkey_map.json`. Group by node and operator. Never include the job label or any Kubernetes identifiers in output.
-
-**Log limit caveat (MANDATORY)**: The `--limit` flag caps how many log lines are returned, not how many events actually occurred. Never use the limit value as the denominator for percentages or say "N of M total" when M comes from a limit. When computing blame percentages, count the total blamed-pubkey mentions extracted from the returned sample, and label all percentages as "of sample" or "of visible events" — not as absolute network-wide totals. Use a high enough limit (≥2000) to get a representative sample, and note the sample size in the report.
+Single thornode job, 72h+, `--limit=2000` or more, resolve via `/tmp/tc_pubkey_map.json`. Group by node and operator. Report counts as "of sample" with the sample size.
 
 ### 11. Releases
 
@@ -238,6 +210,4 @@ Only include sections with findings. Healthy = say so briefly.
 ### Loki
 
 | Source | Finding |
-
-Source labels must be generic: "thornode logs", "bifrost logs", etc. Never expose job names, namespaces, pod names, or any Kubernetes-internal identifiers.
 ```

@@ -132,6 +132,53 @@ func (s *HandlerMimirSuite) TestMimirHandle(c *C) {
 	c.Assert(val, Equals, int64(1))
 }
 
+func (s *HandlerMimirSuite) TestDisableTSSSignerFilteringOperationalVoting(c *C) {
+	ctx, keeper := setupKeeperForTest(c)
+	handler := NewMimirHandler(NewDummyMgrWithKeeper(keeper))
+	FundModule(c, ctx, keeper, BondName, 100*common.One)
+
+	// Three operational votes must suffice even though eight active nodes
+	// would require six votes for an economic Mimir.
+	nodes := make(NodeAccounts, 8)
+	for i := range nodes {
+		nodes[i] = GetRandomValidatorNode(NodeActive)
+		c.Assert(keeper.SetNodeAccount(ctx, nodes[i]), IsNil)
+	}
+	key := constants.MimirKeyDisableTSSSignerFiltering
+	keeper.SetMimir(ctx, constants.OperationalVotesMin.String(), 3)
+	keeper.SetMimir(ctx, key, 0)
+
+	// Both disabling and restoring filtering require the operational minimum.
+	for _, value := range []int64{1, 0} {
+		for i, node := range nodes[:3] {
+			result, err := handler.Run(ctx, NewMsgMimir(key, value, node.NodeAddress))
+			c.Assert(err, IsNil)
+			c.Assert(result, NotNil)
+			actual, err := keeper.GetMimir(ctx, key)
+			c.Assert(err, IsNil)
+			expected := 1 - value
+			if i == 2 {
+				expected = value
+			}
+			c.Assert(actual, Equals, expected, Commentf("value=%d votes=%d", value, i+1))
+		}
+	}
+
+	// Churn clears operational votes, but preserves the effective Mimir value
+	// and unrelated economic votes.
+	c.Assert(keeper.SetNodeMimir(ctx, "EconomicMimir", 1, nodes[0].NodeAddress), IsNil)
+	keeper.PurgeOperationalNodeMimirs(ctx)
+	votes, err := keeper.GetNodeMimirs(ctx, key)
+	c.Assert(err, IsNil)
+	c.Assert(votes.Mimirs, HasLen, 0)
+	actual, err := keeper.GetMimir(ctx, key)
+	c.Assert(err, IsNil)
+	c.Assert(actual, Equals, int64(0))
+	votes, err = keeper.GetNodeMimirs(ctx, "EconomicMimir")
+	c.Assert(err, IsNil)
+	c.Assert(votes.Mimirs, HasLen, 1)
+}
+
 func (HandlerMimirSuite) TestRevShareValidation(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()

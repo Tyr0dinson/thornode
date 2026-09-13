@@ -4,12 +4,13 @@
 Usage: echo '<json>' | python3 check_solvency.py <chain>
 
 Input: JSON array of {address, thorchain_amount (1e8 base units), vault_key}
-Supported: SOL, BTC, ETH, AVAX, BSC, BASE, DOGE, LTC, BCH, GAIA
+Supported: SOL, BTC, ETH, AVAX, BSC, BASE, DOGE, LTC, BCH, GAIA, XRP, TRON
 """
 
 import json
 import subprocess
 import sys
+import time
 
 TC_DEC = 8
 
@@ -51,9 +52,21 @@ CHAINS = {
         "path": ["balance", "amount"],
         "dec": 6,
     },
+    "XRP": {"method": "xrp", "rpc": "https://xrplcluster.com", "dec": 6},
+    "TRON": {
+        "method": "tron",
+        "url": "https://api.trongrid.io/v1/accounts/{a}",
+        "dec": 6,
+        "delay": 1.1,  # trongrid allows 1 req/s without a key
+    },
 }
 
-ASSET_NAME = {"GAIA": "GAIA.ATOM", "BSC": "BSC.BNB", "BASE": "BASE.ETH"}
+ASSET_NAME = {
+    "GAIA": "GAIA.ATOM",
+    "BSC": "BSC.BNB",
+    "BASE": "BASE.ETH",
+    "TRON": "TRON.TRX",
+}
 
 
 def curl(url, data=None):
@@ -98,6 +111,21 @@ def balance(addr, chain):
                 int(s.get("funded_txo_sum", 0)) - int(s.get("spent_txo_sum", 0)),
                 None,
             )
+        if m == "xrp":
+            r = rpc(
+                c["rpc"],
+                "account_info",
+                [{"account": addr, "ledger_index": "validated"}],
+            )
+            if r["result"].get("error") == "actNotFound":
+                return 0, None
+            return int(r["result"]["account_data"]["Balance"]), None
+        if m == "tron":
+            # an unactivated account returns {"data": []} and a zero balance omits
+            # the field entirely, both of which mean 0 -- a real deficit, not an error.
+            # A malformed envelope has no "data" key at all and still raises.
+            d = json.loads(curl(c["url"].format(a=addr)))["data"]
+            return (int(d[0].get("balance", 0)) if d else 0), None
         if m == "chair":
             d = json.loads(curl(c["url"].format(a=addr)))
             return int(d["data"][addr]["address"]["balance"]), None
@@ -130,15 +158,19 @@ def main():
     print(hdr)
     print(sep)
 
-    tot_tc = tot_l1 = 0
+    tot_tc = tot_l1 = errors = 0
     issue = False
 
-    for v in vaults:
+    for i, v in enumerate(vaults):
         addr, tc, vk = v["address"], int(v["thorchain_amount"]), v["vault_key"]
+        if i and CHAINS[chain].get("delay"):
+            time.sleep(CHAINS[chain]["delay"])
         native, err = balance(addr, chain)
         if err:
+            # ponytail: errored vaults are left out of both totals so the
+            # verdict compares like with like instead of reporting a phantom deficit
             print(f"...{vk:<10} {tc:>18,} {'ERROR':>20} {'':>18} {'':>14} {err}")
-            tot_tc += tc
+            errors += 1
             continue
         l1 = to_tc(native, dec)
         d = l1 - tc
@@ -150,19 +182,30 @@ def main():
         print(f"...{vk:<10} {tc:>18,} {native:>20,} {l1:>18,} {d:>+14,} {st}")
 
     td = tot_l1 - tot_tc
-    print(sep)
-    print(
-        f"{'TOTAL':<14} {tot_tc:>18,} {'':>20} {tot_l1:>18,} {td:>+14,} {'OK' if td >= 0 else 'INSOLVENT'}"
+    verdict = (
+        "NO DATA"
+        if errors and errors == len(vaults)
+        else ("OK" if td >= 0 else "INSOLVENT")
     )
+    print(sep)
+    print(f"{'TOTAL':<14} {tot_tc:>18,} {'':>20} {tot_l1:>18,} {td:>+14,} {verdict}")
     print(
         f"\n  TC: {tot_tc/1e8:.8f}  L1: {tot_l1/1e8:.8f}  Diff: {td/1e8:.8f} {asset} ({td} base)"
     )
+    if errors and errors == len(vaults):
+        print(f"  NO DATA: all {errors} vault fetches failed; no verdict")
+        return
     if issue and td < 0:
         print(f"  !!! INSOLVENCY: L1 short by {abs(td)} base units")
     elif issue:
         print("  Base-unit discrepancies (all surplus)")
     else:
         print("  Exact match at 1e8")
+    if errors:
+        print(
+            f"  INCOMPLETE: {errors} of {len(vaults)} vaults could not be fetched;"
+            " totals exclude them, so the verdict above covers only the rest"
+        )
 
 
 if __name__ == "__main__":

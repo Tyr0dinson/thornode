@@ -183,6 +183,7 @@ type VaultManagerTestHelpKeeper struct {
 	failGetNetwork             bool
 	failGetTotalLiquidityFee   bool
 	failGetPools               bool
+	failSetNetwork             bool
 }
 
 func NewVaultGenesisSetupTestHelper(k keeper.Keeper) *VaultManagerTestHelpKeeper {
@@ -241,6 +242,16 @@ func (h *VaultManagerTestHelpKeeper) GetTotalLiquidityFees(ctx cosmos.Context, h
 		return cosmos.ZeroUint(), errKaboom
 	}
 	return h.Keeper.GetTotalLiquidityFees(ctx, height)
+}
+
+// SetNetwork is the final write of UpdateNetwork, after every Reserve
+// deduction and reward transfer. Failing it exercises the rollback path of the
+// UpdateNetwork CacheContext.
+func (h *VaultManagerTestHelpKeeper) SetNetwork(ctx cosmos.Context, network Network) error {
+	if h.failSetNetwork {
+		return errKaboom
+	}
+	return h.Keeper.SetNetwork(ctx, network)
 }
 
 func (h *VaultManagerTestHelpKeeper) GetPools(ctx cosmos.Context) (Pools, error) {

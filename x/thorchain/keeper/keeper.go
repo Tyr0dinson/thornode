@@ -29,6 +29,7 @@ type Keeper interface {
 	SendFromModuleToAccount(ctx cosmos.Context, from string, to cosmos.AccAddress, coin common.Coins) error
 	MintToModule(ctx cosmos.Context, module string, coin common.Coin) error
 	BurnFromModule(ctx cosmos.Context, module string, coin common.Coin) error
+	BurnEntireSynthSupply(ctx cosmos.Context, synthAsset common.Asset) (cosmos.Uint, error)
 	MintAndSendToAccount(ctx cosmos.Context, to cosmos.AccAddress, coin common.Coin) error
 	GetModuleAddress(module string) (common.Address, error)
 	GetModuleAccAddress(module string) cosmos.AccAddress
@@ -127,7 +128,7 @@ type KeeperLastHeight interface {
 	GetLastChainHeights(ctx cosmos.Context) (map[common.Chain]int64, error)
 	SetLastObserveHeight(ctx cosmos.Context, chain common.Chain, address cosmos.AccAddress, height int64) error
 	ForceSetLastObserveHeight(ctx cosmos.Context, chain common.Chain, address cosmos.AccAddress, height int64)
-	GetLastObserveHeight(ctx cosmos.Context, address cosmos.AccAddress) (map[common.Chain]int64, error)
+	GetLastObserveHeight(ctx cosmos.Context, address cosmos.AccAddress) ([]kvTypes.ChainHeight, error)
 }
 
 type KeeperSwapperClout interface {
@@ -372,8 +373,7 @@ type KeeperTss interface {
 }
 
 type KeeperTssKeysignFail interface {
-	SetTssKeysignFailVoter(_ cosmos.Context, tss TssKeysignFailVoter)
-	GetTssKeysignFailVoterIterator(_ cosmos.Context) cosmos.Iterator
+	SetTssKeysignFailVoter(_ cosmos.Context, tss TssKeysignFailVoter) error
 	GetTssKeysignFailVoter(_ cosmos.Context, _ string) (TssKeysignFailVoter, error)
 }
 
@@ -519,6 +519,8 @@ type KeeperReferenceMemo interface {
 	DeleteReferenceMemo(ctx cosmos.Context, _ common.Asset, _ string) error
 	GetLastReferenceNumber(ctx cosmos.Context, _ common.Asset) string
 	SetLastReferenceNumber(ctx cosmos.Context, _ common.Asset, _ string)
+	GetReferenceMemoWindow(ctx cosmos.Context, _ common.Asset) (start, cur, prev, width int64)
+	SetReferenceMemoWindow(ctx cosmos.Context, _ common.Asset, start, cur, prev, width int64)
 }
 
 // NewKeeper creates new instances of the thorchain Keeper

@@ -96,6 +96,11 @@ func LargeUnconfirmedInbounds(block *thorscan.BlockResponse) {
 			// since this is checked often, only update cached price every 10 blocks
 			priceHeight := block.Header.Height / 10 * 10
 
+			// skip simulation test inbounds (mocknet only)
+			if isTestMemo(tx.Tx.Memo) {
+				continue
+			}
+
 			// skip if below usd threshold
 			usdValue := util.USDValue(priceHeight, tx.Tx.Coins[0])
 			if uint64(usdValue) < config.Get().Thresholds.USDValue {
@@ -603,6 +608,10 @@ func scheduledOutbound(height int64, events []map[string]string) {
 	}
 	memoType := memo.TxUnknown
 	if status.Tx != nil && status.Tx.Memo != nil {
+		// skip simulation test outbounds (mocknet only)
+		if isTestMemo(*status.Tx.Memo) {
+			return
+		}
 		memoParts := strings.Split(*status.Tx.Memo, ":")
 		memoType, err = memo.StringToTxType(memoParts[0])
 		if err != nil {

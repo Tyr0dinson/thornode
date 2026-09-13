@@ -1,6 +1,6 @@
 # UTXO Chain Clients
 
-THORChain supports several UTXO-based chains such as Bitcoin, Litecoin, Bitcoin Cash, and Dogecoin. These chains share a common implementation based on `utxo/client.go`, which handles block scanning, mempool observations, signing, consolidation, and solvency reporting.
+THORChain supports several UTXO-based chains: Bitcoin, Litecoin, Bitcoin Cash, Dogecoin, and Zcash. These chains share a common implementation based on `utxo/client.go`, which handles block scanning, mempool observations, signing, consolidation, and solvency reporting.
 
 ## Shared Architecture
 
@@ -10,11 +10,14 @@ UTXO chains use a shared client located at:
 /bifrost/pkg/chainclients/utxo/client.go
 ```
 
-Each chain (e.g. BTC, LTC) wraps this logic with minimal overrides:
+Each chain has a per-chain configuration file within the `utxo/` directory:
 
 ```text
-/bifrost/pkg/chainclients/bitcoin/client.go
-/bifrost/pkg/chainclients/litecoin/client.go
+/bifrost/pkg/chainclients/utxo/bitcoin.go
+/bifrost/pkg/chainclients/utxo/litecoin.go
+/bifrost/pkg/chainclients/utxo/bitcoincash.go
+/bifrost/pkg/chainclients/utxo/dogecoin.go
+/bifrost/pkg/chainclients/utxo/zcash.go
 ```
 
 The shared logic handles:

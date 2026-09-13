@@ -1035,6 +1035,48 @@ func (s AdvSwapQueueSuite) TestIsSwapReady(c *C) {
 	msg.State.LastHeight = 98
 	ctx = ctx.WithBlockHeight(100) // (100-98) % 2 = 0, so timing is right
 	c.Assert(vm.isSwapReady(ctx, msg), Equals, true)
+
+	// Test 20: Ragnarok only blocks streaming swaps, not market swaps. A saver
+	// redemption during pool ragnarok is a synth->L1 market swap that must still
+	// be processed here, otherwise the payout is stranded and the claim removed.
+	btcSynth := common.BTCAsset.GetSyntheticAsset()
+	k.SetMimir(ctx, "RAGNAROK-"+common.BTCAsset.MimirString(), 1)
+	msg.Tx = common.Tx{
+		Coins: common.Coins{common.NewCoin(btcSynth, cosmos.NewUint(100))},
+	}
+	msg.TargetAsset = common.BTCAsset
+	msg.State.Interval = 0
+	msg.State.LastHeight = 100
+	ctx = ctx.WithBlockHeight(105)
+
+	// A market (non-streaming) swap must still be ready during ragnarok.
+	msg.State.Quantity = 0
+	c.Assert(vm.isSwapReady(ctx, msg), Equals, true, Commentf("ragnarok saver redemption market swap must be ready"))
+
+	// A streaming swap against a ragnarok asset must still be skipped.
+	msg.State.Quantity = 10
+	c.Assert(vm.isSwapReady(ctx, msg), Equals, false, Commentf("streaming swap on ragnarok asset must be skipped"))
+	k.SetMimir(ctx, "RAGNAROK-"+common.BTCAsset.MimirString(), 0)
+
+	// Test 21: a chain gas asset ragnarok covers every token pool on that chain,
+	// which is how checkPoolRagnarok selects pools. A streaming swap on an ETH
+	// token pool must therefore be skipped when only RAGNAROK-ETH-ETH is set -
+	// there is no RAGNAROK-ETH-USDC key to find.
+	usdc, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	c.Assert(err, IsNil)
+	k.SetMimir(ctx, "RAGNAROK-"+common.ETHAsset.MimirString(), 1)
+	msg.Tx = common.Tx{
+		Coins: common.Coins{common.NewCoin(usdc.GetSyntheticAsset(), cosmos.NewUint(100))},
+	}
+	msg.TargetAsset = usdc
+
+	msg.State.Quantity = 10
+	c.Assert(vm.isSwapReady(ctx, msg), Equals, false, Commentf("streaming swap on a token pool of a ragnarok chain must be skipped"))
+
+	// The market redemption of that same token pool must still be processed.
+	msg.State.Quantity = 0
+	c.Assert(vm.isSwapReady(ctx, msg), Equals, true, Commentf("token pool ragnarok redemption market swap must be ready"))
+	k.SetMimir(ctx, "RAGNAROK-"+common.ETHAsset.MimirString(), 0)
 }
 
 func (s AdvSwapQueueSuite) TestCheckFeelessSwap(c *C) {
