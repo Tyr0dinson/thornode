@@ -5,9 +5,15 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/rs/zerolog"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/endpoints"
+	"gitlab.com/thorchain/thornode/v3/config"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/blame"
@@ -211,22 +217,59 @@ func (HealthServerTestSuite) TestVersionHandler(c *C) {
 	c.Assert(body.GitCommit, Equals, constants.GitCommit)
 }
 
-func (HealthServerTestSuite) TestProviderStatusHandler(c *C) {
-	tssServer := &MockTssServer{}
+// fakeManagedChain is a ChainClient stub that also exposes an endpoint manager.
+type fakeManagedChain struct {
+	chainclients.ChainClient // nil; only GetConfig / GetChain are called
+	cfg                      config.BifrostChainConfiguration
+	mgr                      *endpoints.Manager
+}
 
-	// handler returns 500 when payload is nil (marshal failure path)
-	s := NewHealthServer("127.0.0.1:8080", tssServer, nil)
-	s.providerPayload = nil
-	req := httptest.NewRequest(http.MethodGet, "/status/provider", nil)
+func (f *fakeManagedChain) GetConfig() config.BifrostChainConfiguration { return f.cfg }
+func (f *fakeManagedChain) GetChain() tcommon.Chain                     { return f.cfg.ChainID }
+func (f *fakeManagedChain) EndpointManager() *endpoints.Manager         { return f.mgr }
+
+func (HealthServerTestSuite) TestProviderStatusHandlerIsLive(c *C) {
+	cfg := config.BifrostChainConfiguration{ChainID: tcommon.BTCChain, Endpoints: []config.ChainEndpointConfig{
+		{Name: "local", RPCHost: "http://127.0.0.1:8332", Priority: 1},
+		{Name: "ankr", RPCHost: "https://rpc.ankr.com/btc/KEY", Priority: 2},
+	}}
+	mgr, err := endpoints.NewManager(tcommon.BTCChain, cfg.Endpoints, cfg.GetFailoverConfig(), zerolog.Nop())
+	c.Assert(err, IsNil)
+	for _, e := range mgr.Entries() {
+		e.SetIdentity("genesis")
+	}
+	chains := map[tcommon.Chain]chainclients.ChainClient{tcommon.BTCChain: &fakeManagedChain{cfg: cfg, mgr: mgr}}
+	s := NewHealthServer("127.0.0.1:8080", &MockTssServer{}, chains)
+
+	get := func(path string) map[string]ProviderEntry {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		res := httptest.NewRecorder()
+		s.newHandler().ServeHTTP(res, req)
+		c.Assert(res.Code, Equals, http.StatusOK)
+		body := res.Body.String()
+		c.Assert(body, Not(Matches), "(?s).*KEY.*") // never leak the URL
+		var out map[string]ProviderEntry
+		c.Assert(json.NewDecoder(strings.NewReader(body)).Decode(&out), IsNil)
+		return out
+	}
+	out := get("/status/provider")
+	c.Assert(out["BTC"].Providers, HasLen, 2)
+	c.Assert(out["BTC"].Providers[0].Name, Equals, "local")
+	c.Assert(out["BTC"].Providers[0].State, Equals, "healthy")
+	c.Assert(out["BTC"].Providers[0].Active, Equals, true)
+	c.Assert(out["BTC"].Providers[1].Host, Equals, "ankr.com")
+	c.Assert(out["BTC"].Providers[1].IdentityVerified, Equals, true)
+
+	for i := 0; i < 5; i++ {
+		mgr.RecordError("local", endpoints.ErrorKindTransport)
+	}
+	out = get("/status/provider/BTC")
+	c.Assert(out["BTC"].Providers[0].State, Equals, "unhealthy")
+	c.Assert(out["BTC"].Providers[0].LastErrorKind, Equals, "transport")
+	c.Assert(out["BTC"].Providers[1].Active, Equals, true)
+
+	req := httptest.NewRequest(http.MethodGet, "/status/provider/DOGE", nil)
 	res := httptest.NewRecorder()
-	s.providerStatus(res, req)
-	c.Assert(res.Code, Equals, http.StatusInternalServerError)
-
-	// handler returns pre-computed payload when set
-	s.providerPayload = []byte(`{"BTC":{"rpc_host":"self-hosted"}}`)
-	req = httptest.NewRequest(http.MethodGet, "/status/provider", nil)
-	res = httptest.NewRecorder()
-	s.providerStatus(res, req)
-	c.Assert(res.Code, Equals, http.StatusOK)
-	c.Assert(res.Body.String(), Equals, `{"BTC":{"rpc_host":"self-hosted"}}`)
+	s.newHandler().ServeHTTP(res, req)
+	c.Assert(res.Code, Equals, http.StatusNotFound)
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/endpoints"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -64,6 +65,17 @@ type ProviderSummary struct {
 	Name     string `json:"name"`
 	Priority int    `json:"priority"`
 	Host     string `json:"host"`
+	// Live health from the endpoint manager (empty for chains without one).
+	State            string `json:"state,omitempty"`
+	Active           bool   `json:"active,omitempty"`
+	Height           int64  `json:"height,omitempty"`
+	ProbeLatencyMs   int64  `json:"probe_latency_ms,omitempty"`
+	InCooldown       bool   `json:"in_cooldown,omitempty"`
+	IdentityVerified bool   `json:"identity_verified,omitempty"`
+	InlineErrors     int    `json:"inline_errors,omitempty"`
+	ProbeStrikes     int    `json:"probe_strikes,omitempty"`
+	LastErrorKind    string `json:"last_error_kind,omitempty"`
+	DisabledReason   string `json:"disabled_reason,omitempty"`
 }
 
 type ProviderResponse map[string]ProviderEntry
@@ -95,36 +107,18 @@ type VaultResponse struct {
 
 // HealthServer to provide something for health check and also p2pid
 type HealthServer struct {
-	logger          zerolog.Logger
-	s               *http.Server
-	tssServer       tss.Server
-	chains          map[common.Chain]chainclients.ChainClient
-	providerPayload []byte
+	logger    zerolog.Logger
+	s         *http.Server
+	tssServer tss.Server
+	chains    map[common.Chain]chainclients.ChainClient
 }
 
 // NewHealthServer create a new instance of health server
 func NewHealthServer(addr string, tssServer tss.Server, chains map[common.Chain]chainclients.ChainClient) *HealthServer {
-	res := make(ProviderResponse)
-	for chain, client := range chains {
-		cfg := client.GetConfig()
-		res[chain.String()] = ProviderEntry{
-			RPCHost:   classifyHost(cfg.RPCHost),
-			APIHost:   classifyHost(cfg.APIHost),
-			ChainHost: classifyHost(cfg.ChainHost),
-			GRPCHost:  classifyHost(cfg.CosmosGRPCHost),
-			Providers: buildProviderSummaries(cfg),
-		}
-	}
-	providerPayload, err := json.MarshalIndent(res, "", "  ")
-	if err != nil {
-		log.Error().Err(err).Msg("fail to marshal provider status")
-	}
-
 	hs := &HealthServer{
-		logger:          log.With().Str("module", "http").Logger(),
-		tssServer:       tssServer,
-		chains:          chains,
-		providerPayload: providerPayload,
+		logger:    log.With().Str("module", "http").Logger(),
+		tssServer: tssServer,
+		chains:    chains,
 	}
 	s := &http.Server{
 		Addr:              addr,
@@ -143,6 +137,7 @@ func (s *HealthServer) newHandler() http.Handler {
 	router.Handle("/status/p2p", http.HandlerFunc(s.p2pStatus)).Methods(http.MethodGet)
 	router.Handle("/status/scanner", http.HandlerFunc(s.chainScanner)).Methods(http.MethodGet)
 	router.Handle("/status/provider", http.HandlerFunc(s.providerStatus)).Methods(http.MethodGet)
+	router.Handle("/status/provider/{chain}", http.HandlerFunc(s.providerStatusForChain)).Methods(http.MethodGet)
 	router.Handle("/status/signing", http.HandlerFunc(s.currentSigning)).Methods(http.MethodGet)
 	router.Handle("/version", http.HandlerFunc(s.versionHandler)).Methods(http.MethodGet)
 	return router
@@ -411,13 +406,68 @@ func (s *HealthServer) chainScanner(w http.ResponseWriter, _ *http.Request) {
 	}
 }
 
+// providerEntry renders one chain's endpoints with live health when the chain
+// client runs an endpoint manager. Hosts are classified, never printed raw.
+func (s *HealthServer) providerEntry(client chainclients.ChainClient) ProviderEntry {
+	cfg := client.GetConfig()
+	entry := ProviderEntry{
+		RPCHost:   classifyHost(cfg.RPCHost),
+		APIHost:   classifyHost(cfg.APIHost),
+		ChainHost: classifyHost(cfg.ChainHost),
+		GRPCHost:  classifyHost(cfg.CosmosGRPCHost),
+		Providers: buildProviderSummaries(cfg),
+	}
+	mp, ok := client.(endpoints.ManagerProvider)
+	if !ok || mp.EndpointManager() == nil {
+		return entry
+	}
+	live := make(map[string]endpoints.Snapshot)
+	for _, snap := range mp.EndpointManager().Status() {
+		live[snap.Name] = snap
+	}
+	for i := range entry.Providers {
+		snap, found := live[entry.Providers[i].Name]
+		if !found {
+			continue
+		}
+		entry.Providers[i].State = snap.State
+		entry.Providers[i].Active = snap.Active
+		entry.Providers[i].Height = snap.Height
+		entry.Providers[i].ProbeLatencyMs = snap.ProbeLatencyMs
+		entry.Providers[i].InCooldown = snap.InCooldown
+		entry.Providers[i].IdentityVerified = snap.IdentityVerified
+		entry.Providers[i].InlineErrors = snap.InlineErrors
+		entry.Providers[i].ProbeStrikes = snap.ProbeStrikes
+		entry.Providers[i].LastErrorKind = snap.LastErrorKind
+		entry.Providers[i].DisabledReason = snap.DisabledReason
+	}
+	return entry
+}
+
+// providerStatus lists every chain's endpoints with live health.
 func (s *HealthServer) providerStatus(w http.ResponseWriter, _ *http.Request) {
-	if s.providerPayload == nil {
-		w.WriteHeader(http.StatusInternalServerError)
+	res := make(ProviderResponse, len(s.chains))
+	for chain, client := range s.chains {
+		res[chain.String()] = s.providerEntry(client)
+	}
+	s.writeJSON(w, res)
+}
+
+// providerStatusForChain is providerStatus for a single chain (404 if unknown).
+func (s *HealthServer) providerStatusForChain(w http.ResponseWriter, r *http.Request) {
+	chain := common.Chain(strings.ToUpper(mux.Vars(r)["chain"]))
+	client, ok := s.chains[chain]
+	if !ok {
+		http.NotFound(w, r)
 		return
 	}
-	if _, err := w.Write(s.providerPayload); err != nil {
-		s.logger.Error().Err(err).Msg("fail to write to response")
+	s.writeJSON(w, ProviderResponse{chain.String(): s.providerEntry(client)})
+}
+
+func (s *HealthServer) writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		s.logger.Error().Err(err).Msg("fail to write response")
 	}
 }
 
