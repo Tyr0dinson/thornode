@@ -25,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/endpoints"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/runners"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
@@ -53,6 +54,7 @@ type EVMClient struct {
 	localPubKey         common.PubKey
 	kw                  *evm.KeySignWrapper
 	ethClient           *ethclient.Client
+	endpointMgr         *endpoints.Manager
 	evmScanner          *EVMScanner
 	bridge              thorclient.ThorchainBridge
 	blockScanner        *blockscanner.BlockScanner
@@ -134,11 +136,12 @@ func NewEVMClient(
 
 	clog := log.With().Str("module", "evm").Stringer("chain", cfg.ChainID).Logger()
 
-	// create rpc client — try endpoints in priority order until one connects
-	ethClient, err := evm.DialWithFallbacks(cfg.GetEndpoints(), cfg.BlockScanner.HTTPRequestTimeout)
+	// create rpc client: every JSON-RPC call is routed to the active endpoint (#2828)
+	failover, err := evm.NewFailoverClient(context.Background(), cfg, cfg.BlockScanner.HTTPRequestTimeout, clog)
 	if err != nil {
 		return nil, fmt.Errorf("fail to dial EVM rpc: %w", err)
 	}
+	ethClient := failover.Client
 
 	rpcClient, err := evm.NewEthRPC(
 		ethClient,
@@ -149,10 +152,15 @@ func NewEVMClient(
 		return nil, fmt.Errorf("fail to create ETH rpc host(%s): %w", cfg.RPCHost, err)
 	}
 
-	// get chain id
-	chainID, err := getChainID(ethClient, cfg.BlockScanner.HTTPRequestTimeout)
+	// the signing chain id is the verified reference identity; the active endpoint
+	// must agree with it (it does unless something changed between bootstrap and now)
+	chainID := failover.ChainID
+	activeID, err := getChainID(ethClient, cfg.BlockScanner.HTTPRequestTimeout)
 	if err != nil {
 		return nil, err
+	}
+	if activeID.Cmp(chainID) != 0 {
+		return nil, fmt.Errorf("active endpoint reports chain id %d, verified chain id is %d", activeID, chainID)
 	}
 	if chainID.Uint64() == 0 {
 		return nil, fmt.Errorf("chain id is: %d , invalid", chainID.Uint64())
@@ -174,6 +182,7 @@ func NewEVMClient(
 		logger:             clog,
 		cfg:                cfg,
 		ethClient:          ethClient,
+		endpointMgr:        failover.Manager,
 		localPubKey:        pk,
 		kw:                 keysignWrapper,
 		bridge:             bridge,
@@ -456,6 +465,10 @@ func (c *EVMClient) Start(
 	c.globalSolvencyQueue = globalSolvencyQueue
 	c.tssKeySigner.Start()
 	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
+	if c.endpointMgr != nil {
+		c.endpointMgr.SetScannerHeight(c.blockScanner.PreviousHeight)
+		c.endpointMgr.Start()
+	}
 	c.wg.Add(1)
 	go c.unstuck()
 	c.wg.Add(1)
@@ -476,11 +489,15 @@ func (c *EVMClient) solvencyRunnerBackoff() time.Duration {
 
 // Stop stops the chain client.
 func (c *EVMClient) Stop() {
+	c.endpointMgr.Stop()
 	c.tssKeySigner.Stop()
 	c.blockScanner.Stop()
 	close(c.stopchan)
 	c.wg.Wait()
 }
+
+// EndpointManager exposes live endpoint health to the bifrost health server.
+func (c *EVMClient) EndpointManager() *endpoints.Manager { return c.endpointMgr }
 
 // IsBlockScannerHealthy returns true if the block scanner is healthy.
 func (c *EVMClient) IsBlockScannerHealthy() bool {
@@ -951,20 +968,25 @@ func (c *EVMClient) buildOutboundTx(txOutItem stypes.TxOutItem, memo mem.Memo, n
 // as ethereum.NotFound and be misclassified as absent. TransactionByHash returns
 // (tx, pending, err) and only returns NotFound for genuinely absent txs. A
 // non-NotFound RPC error is ambiguous (fail-closed). Same approach as unstuckTx.
+//
+// With several endpoints the broadcast may sit in only one endpoint's mempool, so
+// every endpoint is asked (see evm.LookupTxEverywhere); an unreachable endpoint
+// makes the answer ambiguous rather than "absent".
 func (c *EVMClient) verifyBroadcast(sig string) signercache.LookupResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	onchainTx, _, lookupErr := c.ethClient.TransactionByHash(ctx, ecommon.HexToHash(sig))
-	switch {
-	case lookupErr != nil && !errors.Is(lookupErr, ethereum.NotFound):
-		return signercache.LookupAmbiguous
-	case lookupErr == nil && onchainTx != nil:
-		// Mined or pending — both mean the recorded broadcast is alive, so
-		// re-signing risks double-spend at a different pending nonce.
-		return signercache.LookupFound
-	default:
-		return signercache.LookupNotFound
+	if c.endpointMgr == nil {
+		onchainTx, _, lookupErr := c.ethClient.TransactionByHash(ctx, ecommon.HexToHash(sig))
+		switch {
+		case lookupErr != nil && !errors.Is(lookupErr, ethereum.NotFound):
+			return signercache.LookupAmbiguous
+		case lookupErr == nil && onchainTx != nil:
+			return signercache.LookupFound
+		default:
+			return signercache.LookupNotFound
+		}
 	}
+	return evm.LookupTxEverywhere(ctx, c.endpointMgr, c.ethClient, ecommon.HexToHash(sig))
 }
 
 // SignTx returns the signed transaction.

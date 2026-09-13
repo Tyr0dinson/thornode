@@ -25,6 +25,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/endpoints"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/runners"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
@@ -57,6 +58,7 @@ type Client struct {
 	cfg                 config.BifrostChainConfiguration
 	localPubKey         common.PubKey
 	client              *ethclient.Client
+	endpointMgr         *endpoints.Manager
 	chainID             *big.Int
 	kw                  *evm.KeySignWrapper
 	ethScanner          *ETHScanner
@@ -133,13 +135,18 @@ func NewClient(thorKeys *thorclient.Keys,
 		return nil, err
 	}
 
-	ethClient, err := evm.DialWithFallbacks(cfg.GetEndpoints(), cfg.BlockScanner.HTTPRequestTimeout)
+	failover, err := evm.NewFailoverClient(context.Background(), cfg, cfg.BlockScanner.HTTPRequestTimeout, log.With().Str("module", "ethereum").Logger())
 	if err != nil {
 		return nil, fmt.Errorf("fail to dial ETH rpc: %w", err)
 	}
-	chainID, err := getChainID(ethClient, cfg.BlockScanner.HTTPRequestTimeout)
+	ethClient := failover.Client
+	chainID := failover.ChainID
+	activeID, err := getChainID(ethClient, cfg.BlockScanner.HTTPRequestTimeout)
 	if err != nil {
 		return nil, err
+	}
+	if activeID.Cmp(chainID) != 0 {
+		return nil, fmt.Errorf("active endpoint reports chain id %d, verified chain id is %d", activeID, chainID)
 	}
 
 	keysignWrapper, err := evm.NewKeySignWrapper(ethPrivateKey, pk, tssKm, chainID, "ETH")
@@ -154,6 +161,7 @@ func NewClient(thorKeys *thorclient.Keys,
 		logger:             log.With().Str("module", "ethereum").Logger(),
 		cfg:                cfg,
 		client:             ethClient,
+		endpointMgr:        failover.Manager,
 		chainID:            chainID,
 		localPubKey:        pk,
 		kw:                 keysignWrapper,
@@ -249,6 +257,10 @@ func (c *Client) Start(globalTxsQueue chan stypes.TxIn, globalErrataQueue chan s
 	c.globalSolvencyQueue = globalSolvencyQueue
 	c.tssKeySigner.Start()
 	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
+	if c.endpointMgr != nil {
+		c.endpointMgr.SetScannerHeight(c.blockScanner.PreviousHeight)
+		c.endpointMgr.Start()
+	}
 	c.wg.Add(1)
 	go c.unstuck()
 	c.wg.Add(1)
@@ -426,12 +438,16 @@ func (c *Client) reconstructVaultLiability(vaultAddr string) (bool, error) {
 
 // Stop ETH client
 func (c *Client) Stop() {
+	c.endpointMgr.Stop()
 	c.tssKeySigner.Stop()
 	c.blockScanner.Stop()
 	c.client.Close()
 	close(c.stopchan)
 	c.wg.Wait()
 }
+
+// EndpointManager exposes live endpoint health to the bifrost health server.
+func (c *Client) EndpointManager() *endpoints.Manager { return c.endpointMgr }
 
 func (c *Client) IsBlockScannerHealthy() bool {
 	return c.blockScanner.IsHealthy()
@@ -611,6 +627,10 @@ func (c *Client) getSignerCacheExpiry() time.Duration {
 func (c *Client) verifyBroadcast(sig string) signercache.LookupResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	if c.endpointMgr != nil {
+		// every endpoint is asked (pinned); unreachable endpoints make it ambiguous
+		return evm.LookupTxEverywhere(ctx, c.endpointMgr, c.client, ecommon.HexToHash(sig))
+	}
 	onchainTx, _, lookupErr := c.client.TransactionByHash(ctx, ecommon.HexToHash(sig))
 	switch {
 	case lookupErr != nil && !errors.Is(lookupErr, ethereum.NotFound):
