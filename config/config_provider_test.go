@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"fmt"
 	"time"
 
 	. "gopkg.in/check.v1"
@@ -71,4 +72,90 @@ func (s *ConfigSuite) TestFailoverConfigDefaults(c *C) {
 	c.Assert(fc.MinRecoveryChecks, Equals, 3)
 	c.Assert(fc.PreferHigherPriority, Equals, false)
 	c.Assert(fc.RateLimitBackoff, Equals, 30*time.Second)
+}
+
+func (s *ConfigSuite) TestFailoverConfigNewDefaults(c *C) {
+	cfg := config.BifrostChainConfiguration{}
+	fc := cfg.GetFailoverConfig()
+	c.Assert(fc.HealthCheckTimeout, Equals, 5*time.Second)
+	c.Assert(fc.IntegrityCheckDepth, Equals, int64(0)) // 0 = disabled; default.yaml enables per chain
+}
+
+func (s *ConfigSuite) TestFailoverConfigClampsTimeoutToInterval(c *C) {
+	cfg := config.BifrostChainConfiguration{}
+	cfg.Failover.HealthCheckInterval = 4 * time.Second
+	fc := cfg.GetFailoverConfig()
+	c.Assert(fc.HealthCheckTimeout, Equals, 2*time.Second)
+	c.Assert(fc.Validate(), IsNil)
+}
+
+func (s *ConfigSuite) TestFailoverConfigValidate(c *C) {
+	ok := config.BifrostChainConfiguration{}.GetFailoverConfig()
+	c.Assert(ok.Validate(), IsNil)
+
+	bad := ok
+	bad.ErrorThreshold = 0
+	c.Assert(bad.Validate(), ErrorMatches, ".*error_threshold.*")
+
+	bad = ok
+	bad.MinRecoveryChecks = 0
+	c.Assert(bad.Validate(), ErrorMatches, ".*min_recovery_checks.*")
+
+	bad = ok
+	bad.MaxBlockLag = -1
+	c.Assert(bad.Validate(), ErrorMatches, ".*max_block_lag.*")
+
+	bad = ok
+	bad.HealthCheckInterval = 500 * time.Millisecond
+	c.Assert(bad.Validate(), ErrorMatches, ".*health_check_interval.*")
+
+	bad = ok
+	bad.HealthCheckTimeout = ok.HealthCheckInterval
+	c.Assert(bad.Validate(), ErrorMatches, ".*health_check_timeout.*")
+
+	bad = ok
+	bad.IntegrityCheckDepth = -1
+	c.Assert(bad.Validate(), ErrorMatches, ".*integrity_check_depth.*")
+}
+
+func (s *ConfigSuite) TestValidateEndpoints(c *C) {
+	// legacy single host: always valid
+	c.Assert(config.BifrostChainConfiguration{ChainID: common.BTCChain, RPCHost: "http://x"}.ValidateEndpoints(), IsNil)
+
+	dup := config.BifrostChainConfiguration{ChainID: common.BTCChain, Endpoints: []config.ChainEndpointConfig{
+		{Name: "a", RPCHost: "http://x", Priority: 1},
+		{Name: "a", RPCHost: "http://y", Priority: 2},
+	}}
+	c.Assert(dup.ValidateEndpoints(), ErrorMatches, `.*duplicate endpoint name "a".*`)
+
+	unnamed := config.BifrostChainConfiguration{ChainID: common.BTCChain, Endpoints: []config.ChainEndpointConfig{
+		{Name: "", RPCHost: "http://x", Priority: 1},
+	}}
+	c.Assert(unnamed.ValidateEndpoints(), ErrorMatches, ".*endpoint 1 has no name.*")
+
+	noHost := config.BifrostChainConfiguration{ChainID: common.BTCChain, Endpoints: []config.ChainEndpointConfig{
+		{Name: "a", Priority: 1},
+	}}
+	c.Assert(noHost.ValidateEndpoints(), ErrorMatches, `.*endpoint "a" has no host.*`)
+
+	apiOnly := config.BifrostChainConfiguration{ChainID: common.XRPChain, Endpoints: []config.ChainEndpointConfig{
+		{Name: "a", APIHost: "http://x", Priority: 1},
+	}}
+	c.Assert(apiOnly.ValidateEndpoints(), ErrorMatches, `.*endpoint "a" needs rpc_host.*`)
+
+	gaiaMissingRPC := config.BifrostChainConfiguration{ChainID: common.GAIAChain, Endpoints: []config.ChainEndpointConfig{
+		{Name: "a", CosmosGRPCHost: "h:9090", Priority: 1},
+	}}
+	c.Assert(gaiaMissingRPC.ValidateEndpoints(), ErrorMatches, `.*endpoint "a" needs both cosmos_grpc_host and rpc_host.*`)
+
+	tronMissingAPI := config.BifrostChainConfiguration{ChainID: common.TRONChain, Endpoints: []config.ChainEndpointConfig{
+		{Name: "a", RPCHost: "http://x", Priority: 1},
+	}}
+	c.Assert(tronMissingAPI.ValidateEndpoints(), ErrorMatches, `.*endpoint "a" needs both rpc_host and api_host.*`)
+
+	tooMany := config.BifrostChainConfiguration{ChainID: common.BTCChain}
+	for i := 0; i < 17; i++ {
+		tooMany.Endpoints = append(tooMany.Endpoints, config.ChainEndpointConfig{Name: fmt.Sprintf("e%d", i), RPCHost: "http://x", Priority: i + 1})
+	}
+	c.Assert(tooMany.ValidateEndpoints(), ErrorMatches, ".*at most 16 endpoints.*")
 }

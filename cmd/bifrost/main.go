@@ -193,6 +193,12 @@ func main() {
 		if chainCfg.Disabled {
 			continue
 		}
+		if err = chainCfg.ValidateEndpoints(); err != nil {
+			log.Fatal().Err(err).Msg("invalid chain endpoints configuration")
+		}
+		if err = chainCfg.GetFailoverConfig().Validate(); err != nil {
+			log.Fatal().Err(err).Stringer("chain", chainCfg.ChainID).Msg("invalid chain failover configuration")
+		}
 		for _, e := range chainCfg.GetEndpoints() {
 			if e.RPCHost == "" && e.APIHost == "" && e.CosmosGRPCHost == "" {
 				log.Fatal().

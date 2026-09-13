@@ -882,6 +882,15 @@ type ChainFailoverConfig struct {
 	// RateLimitBackoff is the minimum sleep on HTTP 429 responses.
 	// 429 does NOT count as a failover trigger. Default: 30s.
 	RateLimitBackoff time.Duration `mapstructure:"rate_limit_backoff"`
+	// HealthCheckTimeout bounds each background health probe. A probe that does not
+	// answer in time counts as a failed check (issue #2828 "provider is slow").
+	// Clamped to HealthCheckInterval/2 when larger. Default: 5s.
+	HealthCheckTimeout time.Duration `mapstructure:"health_check_timeout"`
+	// IntegrityCheckDepth, when > 0, makes the health monitor compare the block hash at
+	// (consensus tip - depth) across healthy endpoints each cycle and count a minority
+	// hash as a probe strike. 0 disables the check. Chains with skipped slots (SOL)
+	// must keep 0.
+	IntegrityCheckDepth int64 `mapstructure:"integrity_check_depth"`
 }
 
 type BifrostChainConfiguration struct {
@@ -951,6 +960,13 @@ type BifrostChainConfiguration struct {
 	// Failover controls how bifrost switches between endpoints.
 	// All zero values use sensible defaults (see GetFailoverConfig).
 	Failover ChainFailoverConfig `mapstructure:"failover"`
+
+	// ExpectedIdentity pins the network every endpoint of this chain must be on:
+	// EVM chain id in hex ("0x38"), UTXO genesis block hash, Cosmos node network
+	// (defaults to cosmos_chain_id), Solana genesis hash, XRP network_id. Optional;
+	// when set, the priority-1 endpoint disagreeing with it is fatal at startup and
+	// any other endpoint disagreeing is disabled.
+	ExpectedIdentity string `mapstructure:"expected_identity"`
 
 	// SignerBackend selects the transaction signing implementation for the chain.
 	// The XMR chain uses a single TSS signing path with backend value "tss".
@@ -1136,7 +1152,92 @@ func (c BifrostChainConfiguration) GetFailoverConfig() ChainFailoverConfig {
 	if fc.RateLimitBackoff == 0 {
 		fc.RateLimitBackoff = 30 * time.Second
 	}
+	if fc.HealthCheckTimeout == 0 {
+		fc.HealthCheckTimeout = 5 * time.Second
+	}
+	if fc.HealthCheckTimeout >= fc.HealthCheckInterval {
+		// A probe must finish inside one cycle; clamp rather than fail so an operator
+		// who tuned health_check_interval before this field existed keeps starting.
+		fc.HealthCheckTimeout = fc.HealthCheckInterval / 2
+	}
 	return fc
+}
+
+// Validate checks a failover configuration after defaults have been applied.
+func (fc ChainFailoverConfig) Validate() error {
+	if fc.ErrorThreshold < 1 {
+		return fmt.Errorf("failover.error_threshold must be >= 1, got %d", fc.ErrorThreshold)
+	}
+	if fc.MinRecoveryChecks < 1 {
+		return fmt.Errorf("failover.min_recovery_checks must be >= 1, got %d", fc.MinRecoveryChecks)
+	}
+	if fc.MaxBlockLag < 0 {
+		return fmt.Errorf("failover.max_block_lag must be >= 0, got %d", fc.MaxBlockLag)
+	}
+	if fc.HealthCheckInterval < time.Second {
+		return fmt.Errorf("failover.health_check_interval must be >= 1s, got %s", fc.HealthCheckInterval)
+	}
+	if fc.RecoveryCheckInterval < time.Second {
+		return fmt.Errorf("failover.recovery_check_interval must be >= 1s, got %s", fc.RecoveryCheckInterval)
+	}
+	if fc.ErrorWindow <= 0 {
+		return fmt.Errorf("failover.error_window must be > 0, got %s", fc.ErrorWindow)
+	}
+	if fc.HealthCheckTimeout <= 0 || fc.HealthCheckTimeout >= fc.HealthCheckInterval {
+		return fmt.Errorf("failover.health_check_timeout must be > 0 and < health_check_interval (%s), got %s",
+			fc.HealthCheckInterval, fc.HealthCheckTimeout)
+	}
+	if fc.RateLimitBackoff < 0 {
+		return fmt.Errorf("failover.rate_limit_backoff must be >= 0, got %s", fc.RateLimitBackoff)
+	}
+	if fc.IntegrityCheckDepth < 0 {
+		return fmt.Errorf("failover.integrity_check_depth must be >= 0, got %d", fc.IntegrityCheckDepth)
+	}
+	return nil
+}
+
+// MaxChainEndpoints bounds the endpoints list per chain; each endpoint costs a probe
+// goroutine per health cycle and a metric label set.
+const MaxChainEndpoints = 16
+
+// ValidateEndpoints checks the explicit endpoints list. Legacy single-host configs
+// (no endpoints list) are always valid here; host presence for them is checked at
+// startup in cmd/bifrost.
+func (c BifrostChainConfiguration) ValidateEndpoints() error {
+	if len(c.Endpoints) == 0 {
+		return nil
+	}
+	if len(c.Endpoints) > MaxChainEndpoints {
+		return fmt.Errorf("chain %s: at most %d endpoints are supported, got %d", c.ChainID, MaxChainEndpoints, len(c.Endpoints))
+	}
+	seen := make(map[string]struct{}, len(c.Endpoints))
+	for i, e := range c.Endpoints {
+		if e.Name == "" {
+			return fmt.Errorf("chain %s: endpoint %d has no name", c.ChainID, i+1)
+		}
+		if _, dup := seen[e.Name]; dup {
+			return fmt.Errorf("chain %s: duplicate endpoint name %q", c.ChainID, e.Name)
+		}
+		seen[e.Name] = struct{}{}
+		if e.RPCHost == "" && e.APIHost == "" && e.CosmosGRPCHost == "" {
+			return fmt.Errorf("chain %s: endpoint %q has no host", c.ChainID, e.Name)
+		}
+		switch c.ChainID {
+		case common.GAIAChain, common.NOBLEChain:
+			if e.CosmosGRPCHost == "" || e.RPCHost == "" {
+				return fmt.Errorf("chain %s: endpoint %q needs both cosmos_grpc_host and rpc_host", c.ChainID, e.Name)
+			}
+		case common.TRONChain:
+			if e.RPCHost == "" || e.APIHost == "" {
+				return fmt.Errorf("chain %s: endpoint %q needs both rpc_host and api_host", c.ChainID, e.Name)
+			}
+		default:
+			if e.RPCHost == "" {
+				return fmt.Errorf("chain %s: endpoint %q needs rpc_host", c.ChainID, e.Name)
+			}
+		}
+	}
+	return nil
 }
 
 // bifrostChainConfigPtrs maps the chain token used in environment variable keys to a

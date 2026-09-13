@@ -200,8 +200,10 @@ bifrost:
       opt_to_retire: false
       solvency_blocks: 0
       endpoints: []
+      expected_identity: ""
       failover:
         health_check_interval: 0s
+        health_check_timeout: 0s
         max_block_lag: 0
         error_threshold: 0
         error_window: 0s
@@ -209,6 +211,7 @@ bifrost:
         min_recovery_checks: 0
         prefer_higher_priority: false
         rate_limit_backoff: 0s
+        integrity_check_depth: 20
 
     eth:
       <<: *default-chain
@@ -236,6 +239,17 @@ bifrost:
     base:
       <<: *default-chain
       chain_id: BASE
+      failover: # YAML merge keys are shallow: restate every key from the default-chain anchor
+        health_check_interval: 0s
+        health_check_timeout: 0s
+        max_block_lag: 10 # ~2s blocks
+        error_threshold: 0
+        error_window: 0s
+        recovery_check_interval: 0s
+        min_recovery_checks: 0
+        prefer_higher_priority: false
+        rate_limit_backoff: 0s
+        integrity_check_depth: 20
       solvency_blocks: 100
       max_pending_nonces: 3
       evm:
@@ -275,6 +289,17 @@ bifrost:
     pol:
       <<: *default-chain
       chain_id: POL
+      failover: # YAML merge keys are shallow: restate every key from the default-chain anchor
+        health_check_interval: 0s
+        health_check_timeout: 0s
+        max_block_lag: 10 # ~2s blocks
+        error_threshold: 0
+        error_window: 0s
+        recovery_check_interval: 0s
+        min_recovery_checks: 0
+        prefer_higher_priority: false
+        rate_limit_backoff: 0s
+        integrity_check_depth: 20
       solvency_blocks: 50
       max_pending_nonces: 3
       evm:
@@ -300,6 +325,17 @@ bifrost:
       <<: *default-chain
       signer_cache_expiry: 2h # TRON keysigns embed a recent ref block; a long window is unnecessary
       chain_id: TRON
+      failover: # YAML merge keys are shallow: restate every key from the default-chain anchor
+        health_check_interval: 0s
+        health_check_timeout: 0s
+        max_block_lag: 10 # ~3s blocks
+        error_threshold: 0
+        error_window: 0s
+        recovery_check_interval: 0s
+        min_recovery_checks: 0
+        prefer_higher_priority: false
+        rate_limit_backoff: 0s
+        integrity_check_depth: 20
       block_scanner:
         <<: *default-block-scanner
         chain_id: TRON
@@ -317,6 +353,17 @@ bifrost:
     avax:
       <<: *default-chain
       chain_id: AVAX
+      failover: # YAML merge keys are shallow: restate every key from the default-chain anchor
+        health_check_interval: 0s
+        health_check_timeout: 0s
+        max_block_lag: 10 # ~2s blocks
+        error_threshold: 0
+        error_window: 0s
+        recovery_check_interval: 0s
+        min_recovery_checks: 0
+        prefer_higher_priority: false
+        rate_limit_backoff: 0s
+        integrity_check_depth: 20
       solvency_blocks: 100
       max_pending_nonces: 3
       evm:
@@ -348,6 +395,17 @@ bifrost:
       disabled: true
       <<: *default-chain
       chain_id: BSC
+      failover: # YAML merge keys are shallow: restate every key from the default-chain anchor
+        health_check_interval: 0s
+        health_check_timeout: 0s
+        max_block_lag: 10 # ~3s blocks
+        error_threshold: 0
+        error_window: 0s
+        recovery_check_interval: 0s
+        min_recovery_checks: 0
+        prefer_higher_priority: false
+        rate_limit_backoff: 0s
+        integrity_check_depth: 20
       solvency_blocks: 100
       max_pending_nonces: 3
       evm:
@@ -475,6 +533,17 @@ bifrost:
     xrp:
       <<: *default-chain
       chain_id: XRP
+      failover: # YAML merge keys are shallow: restate every key from the default-chain anchor
+        health_check_interval: 0s
+        health_check_timeout: 0s
+        max_block_lag: 5 # ~4s ledgers
+        error_threshold: 0
+        error_window: 0s
+        recovery_check_interval: 0s
+        min_recovery_checks: 0
+        prefer_higher_priority: false
+        rate_limit_backoff: 0s
+        integrity_check_depth: 20
       solvency_blocks: 10
       block_scanner:
         <<: *default-block-scanner
@@ -565,6 +634,17 @@ bifrost:
       <<: *default-chain
       signer_cache_expiry: 2h # SOL keysigns embed a recent blockhash (~60s validity); a long window is unnecessary
       chain_id: SOL
+      failover: # YAML merge keys are shallow: restate every key from the default-chain anchor
+        health_check_interval: 0s
+        health_check_timeout: 0s
+        max_block_lag: 50 # slots (~400ms); endpoints legitimately differ by tens of slots. depth 0: slots can be skipped
+        error_threshold: 0
+        error_window: 0s
+        recovery_check_interval: 0s
+        min_recovery_checks: 0
+        prefer_higher_priority: false
+        rate_limit_backoff: 0s
+        integrity_check_depth: 0
       block_scanner:
         <<: *default-block-scanner
         block_height_discover_back_off: 0.2s
