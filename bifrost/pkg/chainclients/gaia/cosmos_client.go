@@ -8,9 +8,16 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/endpoints"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm"
+	grpc "google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
 
 	errorsmod "cosmossdk.io/errors"
 	"github.com/cometbft/cometbft/crypto"
@@ -85,6 +92,9 @@ type CosmosClient struct {
 	signerCacheManager  *signercache.CacheManager
 	cosmosScanner       *CosmosBlockScanner
 	cometRPC            cometMempoolClient
+	cometPinned         map[string]cometMempoolClient // direct client per endpoint, for verification
+	endpointMgr         *endpoints.Manager
+	grpcConn            *endpoints.GRPCConn
 	globalSolvencyQueue chan stypes.Solvency
 	// Serializes ReportSolvency when FetchTxs prefetch callbacks and SolvencyCheckRunner can both enter.
 	solvencyLock sync.Mutex
@@ -131,21 +141,98 @@ func NewCosmosClient(
 		pubkey:  pk,
 	}
 
-	grpcConn, chosenEndpoint, err := getGRPCConnWithFallbacks(cfg.GetEndpoints(), cfg.CosmosGRPCHost, cfg.CosmosGRPCTLS)
-	if err != nil {
-		return nil, fmt.Errorf("fail to create grpc connection,err: %w", err)
+	// Endpoint manager (#2828): one gRPC connection and one CometBFT RPC target per
+	// endpoint, all routed to the same active endpoint so gRPC broadcasts and RPC
+	// block / mempool reads always hit the same backend. Identity is the CometBFT
+	// node network, pinned to cosmos_chain_id (or expected_identity when set).
+	failoverCfg := cfg.GetFailoverConfig()
+	endpointCfgs := cfg.GetEndpoints()
+	expected := cfg.ExpectedIdentity
+	if expected == "" {
+		expected = cfg.CosmosChainID
 	}
-	// Use the same endpoint's RPC host for the scanner so gRPC and tendermint RPC
-	// always point at the same backend.
-	// chosenEndpoint is zero when no gRPC endpoint was reachable (legacy single-host
-	// config); in that case fall back to endpoint[0]. If an endpoint was chosen but has
-	// no RPCHost the config is invalid — fail loudly rather than silently misaligning.
-	scannerHost := chosenEndpoint.RPCHost
-	if scannerHost == "" {
-		if chosenEndpoint.CosmosGRPCHost != "" {
-			return nil, fmt.Errorf("endpoint %q has cosmos_grpc_host but no rpc_host configured", chosenEndpoint.Name)
+	mgrOpts := []endpoints.Option{endpoints.WithMetrics(endpoints.DefaultMetrics())}
+	if expected != "" {
+		mgrOpts = append(mgrOpts, endpoints.WithExpectedIdentity(expected))
+	}
+	endpointMgr, err := endpoints.NewManager(cfg.ChainID, endpointCfgs, failoverCfg, logger, mgrOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create endpoint manager: %w", err)
+	}
+	ordered := endpoints.OrderedEndpoints(endpointMgr, endpointCfgs)
+
+	grpcConns := make(map[string]*grpc.ClientConn, len(ordered))
+	for _, e := range ordered {
+		if e.CosmosGRPCHost == "" {
+			continue
 		}
-		scannerHost = cfg.GetEndpoints()[0].RPCHost
+		dialOpts := []grpc.DialOption{grpc.WithConnectParams(grpc.ConnectParams{
+			Backoff:           backoff.DefaultConfig,
+			MinConnectTimeout: failoverCfg.HealthCheckTimeout,
+		})}
+		if creds := endpoints.GRPCCredentials(e, e.CosmosGRPCTLS); creds != nil {
+			dialOpts = append(dialOpts, grpc.WithPerRPCCredentials(creds))
+			if !e.CosmosGRPCTLS {
+				logger.Warn().Str("endpoint", e.Name).Msg("gRPC credentials configured over plaintext")
+			}
+		}
+		conn, gerr := getGRPCConn(e.CosmosGRPCHost, e.CosmosGRPCTLS, dialOpts...)
+		if gerr != nil {
+			return nil, fmt.Errorf("fail to create grpc connection for endpoint %s: %w", e.Name, gerr)
+		}
+		grpcConns[e.Name] = conn
+	}
+	attempt := evm.AttemptTimeout(cfg.BlockScanner.HTTPRequestTimeout)
+	grpcConn := endpoints.NewGRPCConn(endpointMgr, grpcConns, []string{"/cosmos.tx.v1beta1.Service/BroadcastTx"}, attempt, logger)
+
+	// compound probes: CometBFT status on rpc_host plus a gRPC call on the endpoint's
+	// own connection, so an endpoint with RPC up and gRPC down is not healthy
+	probes := make([]endpoints.Probe, len(ordered))
+	for i, e := range ordered {
+		base := endpoints.NewCometProbe(e, failoverCfg.HealthCheckTimeout)
+		if conn, ok := grpcConns[e.Name]; ok {
+			svc := cmtservice.NewServiceClient(conn)
+			probes[i] = endpoints.CompoundProbe{Probe: base, Extra: func(ctx context.Context) error {
+				_, perr := svc.GetLatestBlock(ctx, &cmtservice.GetLatestBlockRequest{})
+				return perr
+			}}
+		} else {
+			probes[i] = base
+		}
+	}
+	if err = endpointMgr.Bootstrap(context.Background(), probes); err != nil {
+		return nil, fmt.Errorf("fail to bootstrap endpoints: %w", err)
+	}
+
+	rpcTargets, err := endpoints.TargetsFrom(ordered, endpoints.RPCHost)
+	if err != nil {
+		return nil, fmt.Errorf("fail to build rpc targets: %w", err)
+	}
+	rpcRouter, err := endpoints.NewHTTPRouter(endpointMgr, endpoints.HTTPRouterConfig{
+		Base:           endpoints.SyntheticBase(cfg.ChainID),
+		Targets:        rpcTargets,
+		WriteMethods:   []string{"broadcast_tx_sync", "broadcast_tx_async", "broadcast_tx_commit"},
+		DialTimeout:    failoverCfg.HealthCheckTimeout,
+		AttemptTimeout: attempt,
+	}, logger)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create rpc router: %w", err)
+	}
+	rpcHTTP := &http.Client{Transport: rpcRouter, Timeout: cfg.BlockScanner.HTTPRequestTimeout}
+	scannerHost := endpoints.SyntheticBase(cfg.ChainID).String()
+
+	// direct (unrouted) mempool clients, one per endpoint, for signer-cache
+	// verification: a broadcast may sit in only one endpoint's mempool
+	cometPinned := make(map[string]cometMempoolClient, len(rpcTargets))
+	for _, t := range rpcTargets {
+		if t.URL == nil {
+			continue
+		}
+		direct, derr := rpcclienthttp.NewWithClient(t.URL.String(), "/websocket", &http.Client{Timeout: cfg.BlockScanner.HTTPRequestTimeout})
+		if derr != nil {
+			return nil, fmt.Errorf("fail to create cometbft client for endpoint %s: %w", t.Name, derr)
+		}
+		cometPinned[t.Name] = direct
 	}
 
 	interfaceRegistry := codectypes.NewInterfaceRegistry()
@@ -161,6 +248,9 @@ func NewCosmosClient(
 		txClient:        txtypes.NewServiceClient(grpcConn),
 		bankClient:      btypes.NewQueryClient(grpcConn),
 		accountClient:   atypes.NewQueryClient(grpcConn),
+		endpointMgr:     endpointMgr,
+		grpcConn:        grpcConn,
+		cometPinned:     cometPinned,
 		accts:           NewCosmosMetaDataStore(),
 		tssKeyManager:   tssKm,
 		localKeyManager: localKm,
@@ -178,8 +268,9 @@ func NewCosmosClient(
 		return nil, fmt.Errorf("fail to create scan storage: %w", err)
 	}
 
-	c.cosmosScanner, err = NewCosmosBlockScanner(
+	c.cosmosScanner, err = NewCosmosBlockScannerWithClient(
 		scannerHost,
+		rpcHTTP,
 		c.cfg.BlockScanner,
 		c.storage,
 		c.thorchainBridge,
@@ -196,7 +287,7 @@ func NewCosmosClient(
 	// RPCHost, so the mempool consulted is the same backend the tx was broadcast
 	// to via gRPC; a different node's mempool could miss the tx and trigger a
 	// wrongful cache-clear and re-sign.
-	c.cometRPC, err = rpcclienthttp.New(scannerHost, "/websocket")
+	c.cometRPC, err = rpcclienthttp.NewWithClient(scannerHost, "/websocket", rpcHTTP)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cometbft rpc client: %w", err)
 	}
@@ -226,17 +317,28 @@ func (c *CosmosClient) Start(
 	c.cosmosScanner.globalNetworkFeeQueue = globalNetworkFeeQueue
 	c.tssKeyManager.Start()
 	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
+	if c.endpointMgr != nil {
+		c.endpointMgr.SetScannerHeight(c.blockScanner.PreviousHeight)
+		c.endpointMgr.Start()
+	}
 	c.wg.Add(1)
 	go runners.SolvencyCheckRunner(c.GetChain(), c, c.thorchainBridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
 }
 
 // Stop Cosmos chain client
 func (c *CosmosClient) Stop() {
+	c.endpointMgr.Stop()
 	c.tssKeyManager.Stop()
 	c.blockScanner.Stop()
 	close(c.stopchan)
 	c.wg.Wait()
+	if c.grpcConn != nil {
+		_ = c.grpcConn.Close()
+	}
 }
+
+// EndpointManager exposes live endpoint health to the bifrost health server.
+func (c *CosmosClient) EndpointManager() *endpoints.Manager { return c.endpointMgr }
 
 // GetConfig return the configuration used by Cosmos chain client
 func (c *CosmosClient) GetConfig() config.BifrostChainConfiguration {
@@ -387,11 +489,33 @@ func (c *CosmosClient) processOutboundTx(tx stypes.TxOutItem, thorchainHeight in
 // size. That requires the signer cache to record the signed sequence and is left
 // as a follow-up.
 func (c *CosmosClient) mempoolLookup(ctx context.Context, sig string) signercache.LookupResult {
-	if c.cometRPC == nil {
+	if len(c.cometPinned) == 0 {
+		return mempoolLookupOn(ctx, c.cometRPC, sig)
+	}
+	// With several endpoints the broadcast may sit in only one endpoint's mempool:
+	// found anywhere is Found; not found everywhere with every endpoint answering a
+	// complete page is NotFound; anything else is Ambiguous (keeps the cache entry).
+	ambiguous := false
+	for _, client := range c.cometPinned {
+		switch mempoolLookupOn(ctx, client, sig) {
+		case signercache.LookupFound:
+			return signercache.LookupFound
+		case signercache.LookupAmbiguous:
+			ambiguous = true
+		}
+	}
+	if ambiguous {
+		return signercache.LookupAmbiguous
+	}
+	return signercache.LookupNotFound
+}
+
+func mempoolLookupOn(ctx context.Context, client cometMempoolClient, sig string) signercache.LookupResult {
+	if client == nil {
 		return signercache.LookupAmbiguous
 	}
 	limit := 100 // CometBFT caps per-page at maxPerPage=100; a larger value is silently clamped
-	res, err := c.cometRPC.UnconfirmedTxs(ctx, &limit)
+	res, err := client.UnconfirmedTxs(ctx, &limit)
 	if err != nil {
 		return signercache.LookupAmbiguous
 	}
@@ -401,7 +525,7 @@ func (c *CosmosClient) mempoolLookup(ctx context.Context, sig string) signercach
 		}
 	}
 	if res.Total > len(res.Txs) {
-		// Mempool larger than we could fetch — cannot confirm absence, fail closed.
+		// Mempool larger than we could fetch: cannot confirm absence, fail closed.
 		return signercache.LookupAmbiguous
 	}
 	return signercache.LookupNotFound

@@ -26,11 +26,20 @@ type TronApi struct {
 }
 
 func NewTronApi(url string, timeout time.Duration) *TronApi {
+	return NewTronAPIWithClient(url, timeout, nil)
+}
+
+// NewTronAPIWithClient uses hc for every request (e.g. an endpoint-routing
+// transport). A nil hc uses a plain client with the given timeout.
+func NewTronAPIWithClient(url string, timeout time.Duration, hc *http.Client) *TronApi {
+	if hc == nil {
+		hc = &http.Client{Timeout: timeout}
+	}
 	return &TronApi{
 		logger:  log.Logger.With().Str("module", "tron_api").Logger(),
 		url:     url,
 		timeout: timeout,
-		http:    &http.Client{Timeout: timeout},
+		http:    hc,
 	}
 }
 

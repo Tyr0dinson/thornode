@@ -60,6 +60,22 @@ func NewTronBlockScanner(
 	pubkeyMgr pubkeymanager.PubKeyValidator,
 	reportSolvency ReportSolvency,
 ) (*TronBlockScanner, error) {
+	return NewTronBlockScannerWithAPI(cfg, nil, bridge, pubkeyMgr, reportSolvency)
+}
+
+// NewTronBlockScannerWithAPI is NewTronBlockScanner with an injected API client
+// (e.g. one whose transport routes to the active endpoint). nil builds a plain
+// client for the highest-priority endpoint.
+func NewTronBlockScannerWithAPI(
+	cfg config.BifrostChainConfiguration,
+	apiClient *api.TronApi,
+	bridge thorclient.ThorchainBridge,
+	pubkeyMgr pubkeymanager.PubKeyValidator,
+	reportSolvency ReportSolvency,
+) (*TronBlockScanner, error) {
+	if apiClient == nil {
+		apiClient = api.NewTronApi(cfg.GetEndpoints()[0].APIHost, cfg.BlockScanner.HTTPRequestTimeout)
+	}
 	logger := log.Logger.With().
 		Str("module", "blockscanner").
 		Str("chain", cfg.ChainID.String()).
@@ -86,7 +102,7 @@ func NewTronBlockScanner(
 		config:         cfg.BlockScanner,
 		logger:         logger,
 		whitelist:      whitelist,
-		api:            api.NewTronApi(cfg.GetEndpoints()[0].APIHost, cfg.BlockScanner.HTTPRequestTimeout),
+		api:            apiClient,
 		bridge:         bridge,
 		pubkeyMgr:      pubkeyMgr,
 		refBlocks:      []RefBlock{},

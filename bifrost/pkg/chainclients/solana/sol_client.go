@@ -1,14 +1,19 @@
 package solana
 
 import (
+	"context"
 	"crypto/ed25519"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"math/big"
+	"net/http"
 	"strconv"
 	"sync"
 	"time"
+
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/endpoints"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm"
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/mr-tron/base58"
@@ -79,6 +84,7 @@ type SOLClient struct {
 	globalSolvencyQueue chan stypes.Solvency
 	signerCacheManager  *signercache.CacheManager
 	rpcClient           *rpc.SolRPC
+	endpointMgr         *endpoints.Manager
 	m                   *metrics.Metrics
 
 	// keepAliveThorMultiple is the last keep-alive cadence boundary this node acted
@@ -165,8 +171,42 @@ func NewSOLClient(
 	}
 	formattedPub := base58.Encode(pub.Bytes())
 
-	// create rpc clients
-	rpcClient := rpc.NewSolRPC(cfg.GetEndpoints()[0].RPCHost, cfg.BlockScanner.HTTPRequestTimeout)
+	// endpoint manager + router: every Solana JSON-RPC call goes to the active
+	// endpoint, with health-aware retries for reads (#2828)
+	failoverCfg := cfg.GetFailoverConfig()
+	endpointCfgs := cfg.GetEndpoints()
+	mgrOpts := []endpoints.Option{endpoints.WithMetrics(endpoints.DefaultMetrics())}
+	if cfg.ExpectedIdentity != "" {
+		mgrOpts = append(mgrOpts, endpoints.WithExpectedIdentity(cfg.ExpectedIdentity))
+	}
+	endpointMgr, err := endpoints.NewManager(cfg.ChainID, endpointCfgs, failoverCfg, log.Logger, mgrOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create endpoint manager: %w", err)
+	}
+	ordered := endpoints.OrderedEndpoints(endpointMgr, endpointCfgs)
+	probes := make([]endpoints.Probe, len(ordered))
+	for i, e := range ordered {
+		probes[i] = endpoints.NewSolanaProbe(e, failoverCfg.HealthCheckTimeout)
+	}
+	if err = endpointMgr.Bootstrap(context.Background(), probes); err != nil {
+		return nil, fmt.Errorf("fail to bootstrap endpoints: %w", err)
+	}
+	targets, err := endpoints.TargetsFrom(ordered, endpoints.RPCHost)
+	if err != nil {
+		return nil, fmt.Errorf("fail to build endpoint targets: %w", err)
+	}
+	router, err := endpoints.NewHTTPRouter(endpointMgr, endpoints.HTTPRouterConfig{
+		Base:           endpoints.SyntheticBase(cfg.ChainID),
+		Targets:        targets,
+		WriteMethods:   []string{"sendTransaction"},
+		DialTimeout:    failoverCfg.HealthCheckTimeout,
+		AttemptTimeout: evm.AttemptTimeout(cfg.BlockScanner.HTTPRequestTimeout),
+	}, log.Logger)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create endpoint router: %w", err)
+	}
+	rpcClient := rpc.NewSolRPCWithClient(endpoints.SyntheticBase(cfg.ChainID).String(), cfg.BlockScanner.HTTPRequestTimeout,
+		&http.Client{Transport: router, Timeout: cfg.BlockScanner.HTTPRequestTimeout})
 
 	c := &SOLClient{
 		logger:        log.With().Str("module", "sol").Stringer("chain", cfg.ChainID).Logger(),
@@ -180,6 +220,7 @@ func NewSOLClient(
 		wg:            &sync.WaitGroup{},
 		stopchan:      make(chan struct{}),
 		rpcClient:     rpcClient,
+		endpointMgr:   endpointMgr,
 		m:             m,
 	}
 
@@ -229,6 +270,13 @@ func (c *SOLClient) Start(
 	c.solScanner.globalTxsQueue = globalTxsQueue
 	c.tssKeyManager.Start()
 	go c.solScanner.Start()
+	if c.endpointMgr != nil {
+		c.endpointMgr.SetScannerHeight(func() int64 {
+			h, _ := c.solScanner.ScanHeight()
+			return h
+		})
+		c.endpointMgr.Start()
+	}
 	c.wg.Add(1)
 	go runners.SolvencyCheckRunner(c.GetChain(), c, c.bridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
 	c.wg.Add(1)
@@ -237,10 +285,14 @@ func (c *SOLClient) Start(
 
 // Stop stops the chain client.
 func (c *SOLClient) Stop() {
+	c.endpointMgr.Stop()
 	c.tssKeyManager.Stop()
 	close(c.stopchan)
 	c.wg.Wait()
 }
+
+// EndpointManager exposes live endpoint health to the bifrost health server.
+func (c *SOLClient) EndpointManager() *endpoints.Manager { return c.endpointMgr }
 
 // IsBlockScannerHealthy returns true if the block scanner is healthy.
 func (c *SOLClient) IsBlockScannerHealthy() bool {

@@ -4,9 +4,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"math/big"
-	"net"
 	"os"
-	"time"
 
 	sdkmath "cosmossdk.io/math"
 	"github.com/cosmos/cosmos-sdk/client"
@@ -18,7 +16,6 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
-	"gitlab.com/thorchain/thornode/v3/config"
 	grpc "google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -118,7 +115,9 @@ func (c *CosmosBlockScanner) fromThorchainToCosmos(coin common.Coin) (cosmos.Coi
 	return cosmos.NewCoin(asset.CosmosDenom, sdkmath.NewIntFromBigInt(amount)), nil
 }
 
-func getGRPCConn(host string, tls bool) (*grpc.ClientConn, error) {
+// getGRPCConn dials host lazily; extra dial options (per-RPC credentials, connect
+// parameters) are appended to the transport credentials.
+func getGRPCConn(host string, tls bool, extra ...grpc.DialOption) (*grpc.ClientConn, error) {
 	// load system certificates or proceed with insecure if tls disabled
 	var creds credentials.TransportCredentials
 	if tls {
@@ -131,27 +130,8 @@ func getGRPCConn(host string, tls bool) (*grpc.ClientConn, error) {
 		creds = insecure.NewCredentials()
 	}
 
-	return grpc.NewClient(host, grpc.WithTransportCredentials(creds))
-}
-
-// getGRPCConnWithFallbacks tries endpoints in slice order and returns the first
-// whose CosmosGRPCHost is non-empty and reachable via TCP, along with that endpoint's config.
-// Falls back to host/tls if none match; returned config is the zero value in that case.
-func getGRPCConnWithFallbacks(endpoints []config.ChainEndpointConfig, host string, tls bool) (*grpc.ClientConn, config.ChainEndpointConfig, error) {
-	for _, e := range endpoints {
-		if e.CosmosGRPCHost == "" {
-			continue
-		}
-		// grpc.NewClient is lazy — probe TCP reachability before committing.
-		if conn, err := net.DialTimeout("tcp", e.CosmosGRPCHost, 3*time.Second); err == nil {
-			_ = conn.Close()
-			if grpcConn, err := getGRPCConn(e.CosmosGRPCHost, e.CosmosGRPCTLS); err == nil {
-				return grpcConn, e, nil
-			}
-		}
-	}
-	conn, err := getGRPCConn(host, tls)
-	return conn, config.ChainEndpointConfig{}, err
+	opts := append([]grpc.DialOption{grpc.WithTransportCredentials(creds)}, extra...)
+	return grpc.NewClient(host, opts...)
 }
 
 func unmarshalJSONToPb(filePath string, msg proto.Message) error {

@@ -18,13 +18,24 @@ type SolRPC struct {
 	host    string
 	timeout time.Duration
 	logger  zerolog.Logger
+	http    *http.Client
 }
 
 func NewSolRPC(host string, timeout time.Duration) *SolRPC {
+	return NewSolRPCWithClient(host, timeout, nil)
+}
+
+// NewSolRPCWithClient uses hc for every request (e.g. an endpoint-routing
+// transport). A nil hc uses a plain client with the given timeout.
+func NewSolRPCWithClient(host string, timeout time.Duration, hc *http.Client) *SolRPC {
+	if hc == nil {
+		hc = &http.Client{Timeout: timeout}
+	}
 	return &SolRPC{
 		host:    host,
 		timeout: timeout,
 		logger:  log.Logger.With().Str("module", "sol_rpc").Logger(),
+		http:    hc,
 	}
 }
 
@@ -60,8 +71,7 @@ func (s *SolRPC) post(method string, params, response interface{}) error {
 
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: s.timeout}
-	resp, err := client.Do(req)
+	resp, err := s.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to perform request: %w", err)
 	}

@@ -2,6 +2,7 @@ package tron
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -9,9 +10,13 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/endpoints"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 
@@ -183,6 +188,7 @@ type TronClient struct {
 	tronScanner        *TronBlockScanner
 	api                *api.TronApi
 	rpc                *rpc.TronRpc
+	endpointMgr        *endpoints.Manager
 	abi                abi.ABI
 
 	whitelist           map[string]tokenlist.ERC20Token
@@ -223,16 +229,74 @@ func NewTronClient(
 		}
 	}
 
+	// endpoint manager (#2828): one router for api_host (/wallet/*) and one for
+	// rpc_host (JSON-RPC), both following the same active endpoint. Probes check
+	// eth_blockNumber / eth_chainId on rpc_host and /wallet/getnowblock on api_host.
+	failoverCfg := config.GetFailoverConfig()
+	endpointCfgs := config.GetEndpoints()
+	mgrOpts := []endpoints.Option{endpoints.WithMetrics(endpoints.DefaultMetrics())}
+	if config.ExpectedIdentity != "" {
+		mgrOpts = append(mgrOpts, endpoints.WithExpectedIdentity(strings.ToLower(config.ExpectedIdentity)))
+	}
+	endpointMgr, err := endpoints.NewManager(config.ChainID, endpointCfgs, failoverCfg, logger, mgrOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create endpoint manager: %w", err)
+	}
+	ordered := endpoints.OrderedEndpoints(endpointMgr, endpointCfgs)
+	probes := make([]endpoints.Probe, len(ordered))
+	for i, e := range ordered {
+		probes[i] = endpoints.CompoundProbe{
+			Probe: endpoints.NewEVMProbe(e, failoverCfg.HealthCheckTimeout),
+			Extra: endpoints.HTTPPostCheck(e, e.APIHost, "/wallet/getnowblock", failoverCfg.HealthCheckTimeout),
+		}
+	}
+	if err = endpointMgr.Bootstrap(context.Background(), probes); err != nil {
+		return nil, fmt.Errorf("fail to bootstrap endpoints: %w", err)
+	}
+	apiTargets, err := endpoints.TargetsFrom(ordered, endpoints.APIHost)
+	if err != nil {
+		return nil, fmt.Errorf("fail to build api targets: %w", err)
+	}
+	rpcTargets, err := endpoints.TargetsFrom(ordered, endpoints.RPCHost)
+	if err != nil {
+		return nil, fmt.Errorf("fail to build rpc targets: %w", err)
+	}
+	timeout := config.BlockScanner.HTTPRequestTimeout
+	attempt := evm.AttemptTimeout(timeout)
+	apiRouter, err := endpoints.NewHTTPRouter(endpointMgr, endpoints.HTTPRouterConfig{
+		Base:           endpoints.SyntheticBase(config.ChainID),
+		Targets:        apiTargets,
+		WritePaths:     []string{"/wallet/broadcasttransaction"},
+		DialTimeout:    failoverCfg.HealthCheckTimeout,
+		AttemptTimeout: attempt,
+	}, logger)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create api router: %w", err)
+	}
+	rpcRouter, err := endpoints.NewHTTPRouter(endpointMgr, endpoints.HTTPRouterConfig{
+		Base:           endpoints.SyntheticBase(config.ChainID),
+		Targets:        rpcTargets,
+		DialTimeout:    failoverCfg.HealthCheckTimeout,
+		AttemptTimeout: attempt,
+	}, logger)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create rpc router: %w", err)
+	}
+	base := endpoints.SyntheticBase(config.ChainID).String()
+	apiClient := api.NewTronAPIWithClient(base, timeout, &http.Client{Transport: apiRouter, Timeout: timeout})
+	rpcClient := rpc.NewTronRPCWithClient(base, timeout, &http.Client{Transport: rpcRouter, Timeout: timeout})
+
 	client := TronClient{
-		logger:    logger,
-		chainId:   config.ChainID.String(),
-		config:    config,
-		bridge:    bridge,
-		wg:        &sync.WaitGroup{},
-		stopchan:  make(chan struct{}),
-		whitelist: whitelist,
-		api:       api.NewTronApi(config.GetEndpoints()[0].APIHost, config.BlockScanner.HTTPRequestTimeout),
-		rpc:       rpc.NewTronRpc(config.GetEndpoints()[0].RPCHost, config.BlockScanner.HTTPRequestTimeout),
+		logger:      logger,
+		chainId:     config.ChainID.String(),
+		config:      config,
+		bridge:      bridge,
+		wg:          &sync.WaitGroup{},
+		stopchan:    make(chan struct{}),
+		whitelist:   whitelist,
+		api:         apiClient,
+		rpc:         rpcClient,
+		endpointMgr: endpointMgr,
 	}
 
 	client.tssKeyManager, err = tss.NewKeySign(server, bridge)
@@ -263,8 +327,9 @@ func NewTronClient(
 		return nil, err
 	}
 
-	client.tronScanner, err = NewTronBlockScanner(
+	client.tronScanner, err = NewTronBlockScannerWithAPI(
 		config,
+		apiClient,
 		client.bridge,
 		pubkeyMgr,
 		client.ReportSolvency,
@@ -314,6 +379,10 @@ func (c *TronClient) Start(
 	c.tronScanner.globalNetworkFeeQueue = globalNetworkFeeQueue
 	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
 	c.tssKeyManager.Start()
+	if c.endpointMgr != nil {
+		c.endpointMgr.SetScannerHeight(c.blockScanner.PreviousHeight)
+		c.endpointMgr.Start()
+	}
 
 	c.wg.Add(1)
 	go runners.SolvencyCheckRunner(
@@ -328,11 +397,15 @@ func (c *TronClient) Start(
 
 // Stop Tron chain client
 func (c *TronClient) Stop() {
+	c.endpointMgr.Stop()
 	c.tssKeyManager.Stop()
 	c.blockScanner.Stop()
 	close(c.stopchan)
 	c.wg.Wait()
 }
+
+// EndpointManager exposes live endpoint health to the bifrost health server.
+func (c *TronClient) EndpointManager() *endpoints.Manager { return c.endpointMgr }
 
 func (c *TronClient) IsBlockScannerHealthy() bool {
 	return c.blockScanner.IsHealthy()

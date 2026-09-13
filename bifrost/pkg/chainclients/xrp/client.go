@@ -9,9 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net/http"
 	"strconv"
 	"sync"
 	"time"
+
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/endpoints"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -65,6 +69,7 @@ type Client struct {
 	wg           *sync.WaitGroup
 	stopchan     chan struct{}
 	rpcClient    *rpc.Client
+	endpointMgr  *endpoints.Manager
 	networkID    uint32
 }
 
@@ -105,7 +110,46 @@ func NewClient(
 		}
 	}
 
-	rpcConfig, err := rpc.NewClientConfig(cfg.GetEndpoints()[0].RPCHost)
+	// endpoint manager + router: every XRPL JSON-RPC call goes to the active
+	// endpoint, with health-aware retries for reads (#2828)
+	failoverCfg := cfg.GetFailoverConfig()
+	endpointCfgs := cfg.GetEndpoints()
+	mgrOpts := []endpoints.Option{endpoints.WithMetrics(endpoints.DefaultMetrics())}
+	if cfg.ExpectedIdentity != "" {
+		mgrOpts = append(mgrOpts, endpoints.WithExpectedIdentity(cfg.ExpectedIdentity))
+	}
+	endpointMgr, err := endpoints.NewManager(cfg.ChainID, endpointCfgs, failoverCfg, logger, mgrOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create endpoint manager: %w", err)
+	}
+	ordered := endpoints.OrderedEndpoints(endpointMgr, endpointCfgs)
+	probes := make([]endpoints.Probe, len(ordered))
+	for i, e := range ordered {
+		probes[i] = endpoints.NewXRPProbe(e, failoverCfg.HealthCheckTimeout)
+	}
+	if err = endpointMgr.Bootstrap(context.Background(), probes); err != nil {
+		return nil, fmt.Errorf("fail to bootstrap endpoints: %w", err)
+	}
+	if ref := endpointMgr.ReferenceIdentity(); ref != "" && cfg.ChainNetwork != "" && ref != cfg.ChainNetwork {
+		return nil, fmt.Errorf("endpoint network_id %q does not match chain_network %q", ref, cfg.ChainNetwork)
+	}
+	targets, err := endpoints.TargetsFrom(ordered, endpoints.RPCHost)
+	if err != nil {
+		return nil, fmt.Errorf("fail to build endpoint targets: %w", err)
+	}
+	router, err := endpoints.NewHTTPRouter(endpointMgr, endpoints.HTTPRouterConfig{
+		Base:           endpoints.SyntheticBase(cfg.ChainID),
+		Targets:        targets,
+		WriteMethods:   []string{"submit", "submit_multisigned"},
+		DialTimeout:    failoverCfg.HealthCheckTimeout,
+		AttemptTimeout: evm.AttemptTimeout(cfg.BlockScanner.HTTPRequestTimeout),
+	}, logger)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create endpoint router: %w", err)
+	}
+	xrpHTTP := &http.Client{Transport: router, Timeout: cfg.BlockScanner.HTTPRequestTimeout}
+	rpcBase := endpoints.SyntheticBase(cfg.ChainID).String()
+	rpcConfig, err := rpc.NewClientConfig(rpcBase, rpc.WithHTTPClient(xrpHTTP))
 	if err != nil {
 		return nil, fmt.Errorf("unable to create rpc config for client, %w", err)
 	}
@@ -121,6 +165,7 @@ func NewClient(
 		wg:              &sync.WaitGroup{},
 		stopchan:        make(chan struct{}),
 		rpcClient:       rpcClient,
+		endpointMgr:     endpointMgr,
 		networkID:       uint32(networkID),
 	}
 
@@ -133,8 +178,9 @@ func NewClient(
 		return nil, fmt.Errorf("fail to create scan storage: %w", err)
 	}
 
-	c.xrpScanner, err = NewXrpBlockScanner(
-		c.cfg.GetEndpoints()[0].RPCHost,
+	c.xrpScanner, err = NewXrpBlockScannerWithClient(
+		rpcBase,
+		xrpHTTP,
 		c.cfg.BlockScanner,
 		c.storage,
 		c.thorchainBridge,
@@ -165,12 +211,20 @@ func (c *Client) Start(globalTxsQueue chan stypes.TxIn, globalErrataQueue chan s
 	c.xrpScanner.globalNetworkFeeQueue = globalNetworkFeeQueue
 	c.tssKeyManager.Start()
 	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
+	if c.endpointMgr != nil {
+		c.endpointMgr.SetScannerHeight(c.blockScanner.PreviousHeight)
+		c.endpointMgr.Start()
+	}
 	c.wg.Add(1)
 	go runners.SolvencyCheckRunner(c.GetChain(), c, c.thorchainBridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
 }
 
+// EndpointManager exposes live endpoint health to the bifrost health server.
+func (c *Client) EndpointManager() *endpoints.Manager { return c.endpointMgr }
+
 // Stop Xrp chain client
 func (c *Client) Stop() {
+	c.endpointMgr.Stop()
 	c.tssKeyManager.Stop()
 	c.blockScanner.Stop()
 	close(c.stopchan)

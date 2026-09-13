@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -118,6 +119,22 @@ func NewCosmosBlockScanner(
 	solvencyReporter SolvencyReporter,
 	pubkeyMgr pubkeymanager.PubKeyValidator,
 ) (*CosmosBlockScanner, error) {
+	return NewCosmosBlockScannerWithClient(rpcHost, nil, cfg, scanStorage, bridge, m, solvencyReporter, pubkeyMgr)
+}
+
+// NewCosmosBlockScannerWithClient is NewCosmosBlockScanner with an injected HTTP
+// client for the CometBFT RPC (e.g. one whose transport routes to the active
+// endpoint). A nil client uses the default.
+func NewCosmosBlockScannerWithClient(
+	rpcHost string,
+	httpClient *http.Client,
+	cfg config.BifrostBlockScannerConfiguration,
+	scanStorage blockscanner.ScannerStorage,
+	bridge thorclient.ThorchainBridge,
+	m *metrics.Metrics,
+	solvencyReporter SolvencyReporter,
+	pubkeyMgr pubkeymanager.PubKeyValidator,
+) (*CosmosBlockScanner, error) {
 	if scanStorage == nil {
 		return nil, errors.New("scanStorage is nil")
 	}
@@ -151,9 +168,17 @@ func NewCosmosBlockScanner(
 
 	// Registry for encoding txs
 	txConfig := tx.NewTxConfig(cdc, []signingtypes.SignMode{signingtypes.SignMode_SIGN_MODE_DIRECT})
-	rpcClient, err := rpcclienthttp.New(rpcHost, "/websocket")
+	var (
+		rpcClient *rpcclienthttp.HTTP
+		err       error
+	)
+	if httpClient != nil {
+		rpcClient, err = rpcclienthttp.NewWithClient(rpcHost, "/websocket", httpClient)
+	} else {
+		rpcClient, err = rpcclienthttp.New(rpcHost, "/websocket")
+	}
 	if err != nil {
-		logger.Fatal().Err(err).Msg("fail to create tendemrint rpcclient")
+		return nil, fmt.Errorf("fail to create tendermint rpcclient: %w", err)
 	}
 
 	return &CosmosBlockScanner{

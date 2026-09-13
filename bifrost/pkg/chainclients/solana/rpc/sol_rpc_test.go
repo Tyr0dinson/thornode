@@ -698,3 +698,27 @@ func (s *SolRPCTestSuite) TestIsBlockhashValidLaggingBackend(c *C) {
 	c.Assert(err, NotNil) // lagging backend -> error -> caller retains
 	c.Assert(valid, Equals, false)
 }
+
+type countingTransport struct {
+	next  http.RoundTripper
+	calls int
+}
+
+func (t *countingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	t.calls++
+	return t.next.RoundTrip(r)
+}
+
+func (s *SolRPCTestSuite) TestNewSolRPCWithClientUsesInjectedTransport(c *C) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":42}`))
+	}))
+	defer srv.Close()
+	rt := &countingTransport{next: http.DefaultTransport}
+	cl := NewSolRPCWithClient(srv.URL, time.Second, &http.Client{Transport: rt})
+	slot, err := cl.GetSlot()
+	c.Assert(err, IsNil)
+	c.Assert(slot, Equals, uint64(42))
+	c.Assert(rt.calls, Equals, 1)
+	c.Assert(NewSolRPCWithClient(srv.URL, time.Second, nil).http, NotNil)
+}

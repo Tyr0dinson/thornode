@@ -2,6 +2,7 @@ package gaia
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -482,4 +483,88 @@ func (s *CosmosTestSuite) TestSign(c *C) {
 		0,
 	)
 	c.Assert(err, IsNil)
+}
+
+func (s *CosmosTestSuite) TestEndpointIdentityMustMatchCosmosChainID(c *C) {
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		var body struct {
+			Method string `json:"method"`
+		}
+		_ = json.NewDecoder(req.Body).Decode(&body)
+		rw.Header().Set("Content-Type", "application/json")
+		if body.Method == "status" {
+			_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"node_info":{"network":"theta-testnet-001"},"sync_info":{"latest_block_height":"1"}}}`))
+			return
+		}
+		_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"nope"}}`))
+	}))
+	defer server.Close()
+	fakeGRPCHost := strings.ReplaceAll(server.URL, "http://", "grpc://")
+	cfg := config.BifrostChainConfiguration{
+		ChainID:        common.GAIAChain,
+		CosmosChainID:  "cosmoshub-4",
+		RPCHost:        server.URL,
+		CosmosGRPCHost: fakeGRPCHost,
+		BlockScanner: config.BifrostBlockScannerConfiguration{
+			CosmosGRPCHost:   fakeGRPCHost,
+			StartBlockHeight: 1,
+		},
+	}
+	cfg.Failover.HealthCheckTimeout = 500 * time.Millisecond
+	_, err := NewCosmosClient(s.thorKeys, cfg, nil, s.bridge, s.m, nil)
+	c.Assert(err, ErrorMatches, `(?s).*priority-1 endpoint primary reports identity "theta-testnet-001" but expected_identity is "cosmoshub-4".*`)
+}
+
+func (s *CosmosTestSuite) TestEndpointManagerExposedAndMempoolLookupUsesEveryEndpoint(c *C) {
+	// two CometBFT RPC mocks: A knows tx INMEMPOOL, B does not; the gRPC hosts are lazy
+	mk := func(has bool) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			var body struct {
+				Method string          `json:"method"`
+				ID     json.RawMessage `json:"id"`
+			}
+			_ = json.NewDecoder(req.Body).Decode(&body)
+			id := string(body.ID) // the CometBFT client rejects replies whose id differs from the request
+			if id == "" {
+				id = "1"
+			}
+			rw.Header().Set("Content-Type", "application/json")
+			switch body.Method {
+			case "status":
+				_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":` + id + `,"result":{"node_info":{"network":"cosmoshub-4"},"sync_info":{"latest_block_height":"10"}}}`))
+			case "unconfirmed_txs":
+				if has {
+					_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":` + id + `,"result":{"n_txs":"1","total":"1","total_bytes":"2","txs":["AQI="]}}`))
+				} else {
+					_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":` + id + `,"result":{"n_txs":"0","total":"0","total_bytes":"0","txs":[]}}`))
+				}
+			default:
+				_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":` + id + `,"error":{"code":-32601,"message":"nope"}}`))
+			}
+		}))
+	}
+	a := mk(true)
+	defer a.Close()
+	b := mk(false)
+	defer b.Close()
+	cfg := config.BifrostChainConfiguration{
+		ChainID:       common.GAIAChain,
+		CosmosChainID: "cosmoshub-4",
+		Endpoints: []config.ChainEndpointConfig{
+			{Name: "a", RPCHost: a.URL, CosmosGRPCHost: "127.0.0.1:1", Priority: 1},
+			{Name: "b", RPCHost: b.URL, CosmosGRPCHost: "127.0.0.1:2", Priority: 2},
+		},
+		BlockScanner: config.BifrostBlockScannerConfiguration{StartBlockHeight: 1},
+	}
+	cfg.Failover.HealthCheckTimeout = 500 * time.Millisecond
+	client, err := NewCosmosClient(s.thorKeys, cfg, nil, s.bridge, s.m, nil)
+	c.Assert(err, IsNil)
+	c.Assert(client.EndpointManager(), NotNil)
+	c.Assert(client.EndpointManager().ReferenceIdentity(), Equals, "cosmoshub-4")
+	c.Assert(client.EndpointManager().Len(), Equals, 2)
+	// the gRPC liveness half of the compound probe fails (nothing listens), so both
+	// endpoints are unhealthy at bootstrap; the mempool lookup still asks every endpoint
+	txHash := fmt.Sprintf("%X", cmttypes.Tx([]byte{1, 2}).Hash())
+	c.Assert(client.mempoolLookup(context.Background(), txHash), Equals, signercache.LookupFound)
+	c.Assert(client.mempoolLookup(context.Background(), "DEADBEEF"), Equals, signercache.LookupNotFound)
 }

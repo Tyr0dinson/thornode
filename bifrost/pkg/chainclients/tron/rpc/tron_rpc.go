@@ -22,11 +22,20 @@ type TronRpc struct {
 }
 
 func NewTronRpc(url string, timeout time.Duration) *TronRpc {
+	return NewTronRPCWithClient(url, timeout, nil)
+}
+
+// NewTronRPCWithClient uses hc for every request (e.g. an endpoint-routing
+// transport). A nil hc uses a plain client with the given timeout.
+func NewTronRPCWithClient(url string, timeout time.Duration, hc *http.Client) *TronRpc {
+	if hc == nil {
+		hc = &http.Client{Timeout: timeout}
+	}
 	return &TronRpc{
 		logger:  log.Logger.With().Str("module", "tron_rpc").Logger(),
 		url:     url,
 		timeout: timeout,
-		http:    &http.Client{Timeout: timeout},
+		http:    hc,
 	}
 }
 

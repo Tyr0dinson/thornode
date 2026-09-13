@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"sync"
 
 	sdkmath "cosmossdk.io/math"
@@ -76,6 +77,19 @@ func NewXrpBlockScanner(rpcHost string,
 	m *metrics.Metrics,
 	solvencyReporter SolvencyReporter,
 ) (*XrpBlockScanner, error) {
+	return NewXrpBlockScannerWithClient(rpcHost, nil, cfg, scanStorage, bridge, m, solvencyReporter)
+}
+
+// NewXrpBlockScannerWithClient is NewXrpBlockScanner with an injected HTTP client
+// (e.g. one whose transport routes to the active endpoint). nil uses the default.
+func NewXrpBlockScannerWithClient(rpcHost string,
+	httpClient *http.Client,
+	cfg config.BifrostBlockScannerConfiguration,
+	scanStorage blockscanner.ScannerStorage,
+	bridge thorclient.ThorchainBridge,
+	m *metrics.Metrics,
+	solvencyReporter SolvencyReporter,
+) (*XrpBlockScanner, error) {
 	if scanStorage == nil {
 		return nil, errors.New("scanStorage is nil")
 	}
@@ -85,7 +99,11 @@ func NewXrpBlockScanner(rpcHost string,
 
 	logger := log.Logger.With().Str("module", "blockscanner").Str("chain", cfg.ChainID.String()).Logger()
 
-	rpcConfig, err := rpc.NewClientConfig(rpcHost)
+	var opts []rpc.ConfigOpt
+	if httpClient != nil {
+		opts = append(opts, rpc.WithHTTPClient(httpClient))
+	}
+	rpcConfig, err := rpc.NewClientConfig(rpcHost, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create rpc config, %w", err)
 	}
