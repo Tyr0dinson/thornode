@@ -177,6 +177,9 @@ func pinnedFrom(ctx context.Context) (string, bool) {
 	return name, ok && name != ""
 }
 
+// PinnedEndpoint returns the endpoint name a context was pinned to with PinContext.
+func PinnedEndpoint(ctx context.Context) (string, bool) { return pinnedFrom(ctx) }
+
 // RoundTrip implements http.RoundTripper.
 func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 	body, err := r.bufferBody(req)
@@ -219,10 +222,14 @@ func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 		if isWrite && i > 0 && !isDialError(lastErr) {
 			break // may have been sent; never duplicate a write
 		}
-		// per-attempt budget: a stalled endpoint must leave time for the next one
-		actx, acancel := context.WithTimeout(req.Context(), attemptBudget(req.Context(), r.cfg.AttemptTimeout, len(candidates)-i-1))
+		// per-attempt budget: a stalled endpoint must leave time for the next one.
+		// The budget only bounds the wait for response headers; once they arrive the
+		// timer is stopped and the body read keeps the caller's own deadline.
+		actx, acancel := context.WithCancel(req.Context())
+		timer := time.AfterFunc(attemptBudget(req.Context(), r.cfg.AttemptTimeout, len(candidates)-i-1), acancel)
 		out := r.rewrite(req.WithContext(actx), t, body)
 		resp, err := r.cfg.Transport.RoundTrip(out)
+		timer.Stop()
 		if err != nil {
 			acancel()
 			if req.Context().Err() != nil {
@@ -232,8 +239,13 @@ func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 			lastErr = Redact(fmt.Errorf("endpoint %s: %w", e.Name, err), t.secrets)
 			continue
 		}
-		resp.Body = &cancelOnClose{ReadCloser: resp.Body, cancel: acancel}
-		verdict, kind := r.classify(resp, isWrite)
+		name := e.Name
+		resp.Body = &attemptBody{ReadCloser: resp.Body, cancel: acancel, onReadError: func(rerr error) {
+			if req.Context().Err() == nil {
+				r.mgr.RecordError(name, ErrorKindTransport) // body broke mid-stream
+			}
+		}}
+		verdict, kind, fromBody := r.classify(resp, isWrite)
 		switch verdict {
 		case verdictOK:
 			r.mgr.RecordSuccess(e.Name)
@@ -242,15 +254,21 @@ func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 			// the endpoint answered; the caller's own error handling applies
 			return resp, nil
 		case verdictRateLimited:
-			drain(resp)
 			r.mgr.RecordRateLimited(e.Name)
+			if isWrite && fromBody {
+				return resp, nil // the write may have been accepted; hand the answer back, never retry
+			}
+			drain(resp)
 			lastErr = fmt.Errorf("endpoint %s: rate limited", e.Name)
 			if isWrite {
 				return nil, lastErr
 			}
 		case verdictEndpointError:
-			drain(resp)
 			r.mgr.RecordError(e.Name, kind)
+			if isWrite && fromBody {
+				return resp, nil
+			}
+			drain(resp)
 			lastErr = fmt.Errorf("endpoint %s: http %d", e.Name, resp.StatusCode)
 			if isWrite {
 				return nil, lastErr
@@ -263,15 +281,28 @@ func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 	return nil, lastErr
 }
 
-// cancelOnClose releases the attempt context once the caller has consumed the body.
-type cancelOnClose struct {
+// attemptBody releases the attempt context once the caller has consumed the body
+// and reports a body that breaks mid-stream (after headers were classified) to the
+// manager exactly once.
+type attemptBody struct {
 	io.ReadCloser
-	cancel context.CancelFunc
+	cancel      context.CancelFunc
+	onReadError func(error)
+	reported    bool
 }
 
-func (c *cancelOnClose) Close() error {
-	err := c.ReadCloser.Close()
-	c.cancel()
+func (b *attemptBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if err != nil && !errors.Is(err, io.EOF) && !b.reported {
+		b.reported = true
+		b.onReadError(err)
+	}
+	return n, err
+}
+
+func (b *attemptBody) Close() error {
+	err := b.ReadCloser.Close()
+	b.cancel()
 	return err
 }
 
@@ -303,45 +334,50 @@ const (
 	verdictEndpointError
 )
 
-// classify decides what a response says about the endpoint. Reads with a 200 JSON
-// body are sniffed (bounded) for JSON-RPC server-side error codes.
-func (r *HTTPRouter) classify(resp *http.Response, isWrite bool) (verdict, ErrorKind) {
+// classify decides what a response says about the endpoint. 200 JSON bodies are
+// sniffed (bounded) for JSON-RPC server-side error codes; fromBody reports that the
+// verdict came from an intact JSON body (so a write's answer can still be returned).
+func (r *HTTPRouter) classify(resp *http.Response, isWrite bool) (verdict, ErrorKind, bool) {
 	switch {
 	case resp.StatusCode == http.StatusTooManyRequests:
-		return verdictRateLimited, ErrorKindRateLimit
+		return verdictRateLimited, ErrorKindRateLimit, false
 	case resp.StatusCode >= 500, resp.StatusCode >= 300 && resp.StatusCode < 400,
 		resp.StatusCode == http.StatusUnauthorized, resp.StatusCode == http.StatusForbidden:
-		return verdictEndpointError, ErrorKindHTTP
+		return verdictEndpointError, ErrorKindHTTP, false
 	case resp.StatusCode >= 400:
-		return verdictAppError, ""
-	}
-	if isWrite {
-		return verdictOK, ""
+		return verdictAppError, "", false
 	}
 	ct := strings.ToLower(resp.Header.Get("Content-Type"))
 	if strings.Contains(ct, "text/html") {
-		return verdictEndpointError, ErrorKindHTTP
+		return verdictEndpointError, ErrorKindHTTP, false
 	}
 	if !strings.Contains(ct, "json") && ct != "" {
-		return verdictOK, ""
+		return verdictOK, "", false
 	}
 	if resp.ContentLength > sniffLimit {
-		return verdictOK, ""
+		return verdictOK, "", false
 	}
 	br := bufio.NewReaderSize(resp.Body, sniffLimit)
 	peek, perr := br.Peek(sniffLimit)
 	resp.Body = &peekedBody{Reader: br, closer: resp.Body}
 	if perr != nil && !errors.Is(perr, io.EOF) {
 		// headers arrived but the body broke: the endpoint failed this request
-		return verdictEndpointError, ErrorKindTransport
+		return verdictEndpointError, ErrorKindTransport, false
 	}
 	if len(peek) == sniffLimit {
-		return verdictOK, "" // large result; JSON-RPC error objects are tiny
+		return verdictOK, "", false // large result; JSON-RPC error objects are tiny
 	}
 	trimmed := bytes.TrimLeft(peek, " \t\r\n")
 	if len(trimmed) == 0 {
-		return verdictEndpointError, ErrorKindTransport
+		return verdictEndpointError, ErrorKindTransport, false
 	}
+	v, k := classifyJSONRPC(trimmed)
+	return v, k, true
+}
+
+// classifyJSONRPC applies the JSON-RPC error code rules to a single response or a
+// batch; the worst element decides.
+func classifyJSONRPC(trimmed []byte) (verdict, ErrorKind) {
 	type rpcErr struct {
 		Code int `json:"code"`
 	}
@@ -375,12 +411,12 @@ func (r *HTTPRouter) classify(resp *http.Response, isWrite bool) (verdict, Error
 		if e == nil {
 			continue
 		}
-		switch e.Code {
-		case -32005, -32029: // provider request limit exceeded (Infura / Ankr style)
+		switch {
+		case isRateLimitCode(e.Code): // provider request limit exceeded (Infura / Ankr style)
 			if worst < verdictRateLimited {
 				worst, worstKind = verdictRateLimited, ErrorKindRateLimit
 			}
-		case -32601, -32603: // method not found / internal error: the endpoint cannot serve bifrost
+		case e.Code == -32601 || e.Code == -32603: // method not found / internal error: the endpoint cannot serve bifrost
 			worst, worstKind = verdictEndpointError, ErrorKindHTTP
 		default:
 			if worst < verdictAppError {

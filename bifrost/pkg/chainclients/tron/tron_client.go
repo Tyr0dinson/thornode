@@ -542,6 +542,44 @@ func (c *TronClient) ConfirmationCountReady(_ types.TxIn) bool {
 // OnObservedTxIn is called when a new observed tx is received.
 func (c *TronClient) OnObservedTxIn(_ types.TxInItem, _ int64) {}
 
+// tronVerifyBroadcast is the signer-cache verifyFn. With an endpoint manager, every
+// non-disabled endpoint is asked with a pinned request: a tx known to any endpoint
+// is Found, any transport error or no queried endpoint is Ambiguous, and only
+// absence on every endpoint is NotFound. Without a manager it asks the single API.
+func tronVerifyBroadcast(ctx context.Context, mgr *endpoints.Manager, tronAPI *api.TronApi, sig string) signercache.LookupResult {
+	lookup := func(ctx context.Context) signercache.LookupResult {
+		tx, txErr := tronAPI.GetTransactionWithContext(ctx, sig)
+		switch {
+		case txErr == nil && tx.TxId != "":
+			return signercache.LookupFound
+		case txErr == nil, isTronNotFoundErr(txErr):
+			return signercache.LookupNotFound
+		default:
+			return signercache.LookupAmbiguous
+		}
+	}
+	if mgr == nil {
+		return lookup(ctx)
+	}
+	ambiguous, queried := false, 0
+	for _, e := range mgr.Entries() {
+		if e.State() == endpoints.StateDisabled {
+			continue
+		}
+		queried++
+		switch lookup(endpoints.PinContext(ctx, e.Name)) {
+		case signercache.LookupFound:
+			return signercache.LookupFound
+		case signercache.LookupAmbiguous:
+			ambiguous = true
+		}
+	}
+	if ambiguous || queried == 0 {
+		return signercache.LookupAmbiguous
+	}
+	return signercache.LookupNotFound
+}
+
 // getSignerCacheExpiry returns the configured signer-cache expiry (config signer_cache_expiry).
 func (c *TronClient) getSignerCacheExpiry() time.Duration {
 	return c.config.SignerCacheExpiry
@@ -566,15 +604,7 @@ func (c *TronClient) SignTx(
 	// cache), an empty result with no error means absent (safe to clear and
 	// re-sign). Transport errors stay ambiguous (fail-closed, cache respected).
 	verifyFn := func(sig string) signercache.LookupResult {
-		tx, txErr := c.api.GetTransaction(sig)
-		switch {
-		case txErr == nil && tx.TxId != "":
-			return signercache.LookupFound
-		case txErr == nil, isTronNotFoundErr(txErr):
-			return signercache.LookupNotFound
-		default:
-			return signercache.LookupAmbiguous
-		}
+		return tronVerifyBroadcast(context.Background(), c.endpointMgr, c.api, sig)
 	}
 	check := c.signerCacheManager.SignTxCacheCheck(txOutItem.CacheHash(), gateFn, verifyFn)
 	if check.Phase != signercache.PhaseNoEntry {

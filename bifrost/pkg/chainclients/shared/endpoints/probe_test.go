@@ -196,3 +196,31 @@ func (s *ProbeSuite) TestRedact(c *C) {
 	c.Assert(red.Error(), Not(Matches), ".*KEY.*")
 	c.Assert(endpoints.Redact(nil, nil), IsNil)
 }
+
+func (s *ProbeSuite) TestProbeReportsRateLimits(c *C) {
+	limited := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer limited.Close()
+	p := endpoints.NewEVMProbe(config.ChainEndpointConfig{Name: "a", RPCHost: limited.URL}, time.Second)
+	_, err := p.Height(ctxBg())
+	c.Assert(errors.Is(err, endpoints.ErrRateLimited), Equals, true)
+
+	byCode := jsonrpcServer(c, nil, nil) // method not found for everything
+	defer byCode.Close()
+	p = endpoints.NewEVMProbe(config.ChainEndpointConfig{Name: "a", RPCHost: byCode.URL}, time.Second)
+	_, err = p.Height(ctxBg())
+	c.Assert(err, NotNil)
+	c.Assert(errors.Is(err, endpoints.ErrRateLimited), Equals, false)
+
+	codeLimited := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32005,"message":"limit"}}`))
+	}))
+	defer codeLimited.Close()
+	p = endpoints.NewEVMProbe(config.ChainEndpointConfig{Name: "a", RPCHost: codeLimited.URL}, time.Second)
+	_, err = p.Height(ctxBg())
+	c.Assert(errors.Is(err, endpoints.ErrRateLimited), Equals, true)
+
+	check := endpoints.HTTPPostCheck(config.ChainEndpointConfig{Name: "a"}, limited.URL, "/wallet/getnowblock", time.Second)
+	c.Assert(errors.Is(check(ctxBg()), endpoints.ErrRateLimited), Equals, true)
+}

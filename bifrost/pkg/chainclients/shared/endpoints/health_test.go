@@ -3,6 +3,7 @@ package endpoints_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -430,4 +431,34 @@ func (s *HealthSuite) TestIntegrityRecheckAgainstSingleHealthyReference(c *C) {
 	d.mu.Unlock()
 	m.Cycle(ctxBg())
 	c.Assert(m.Entry("d").State(), Equals, endpoints.StateHealthy)
+}
+
+func (s *HealthSuite) TestRateLimitedProbeIsCooldownNotStrike(c *C) {
+	cfg := healthCfg()
+	cfg.ErrorThreshold = 1
+	a := &fakeProbe{name: "a", height: 100, identity: "g"}
+	b := &fakeProbe{name: "b", height: 100, identity: "g"}
+	m, ps := newHealthMgr(c, cfg, nil, a, b)
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	a.set(0, errors.New("wrapped: "+endpoints.ErrRateLimited.Error()))
+	a.mu.Lock()
+	a.err = fmt.Errorf("http 429: %w", endpoints.ErrRateLimited)
+	a.mu.Unlock()
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("a").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m.Entry("a").InCooldown(), Equals, true)
+	c.Assert(m.Active().Name, Equals, "b") // handed off while cooling down
+	// while cooling down the endpoint is not probed at all
+	a.set(0, errors.New("down"))
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("a").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m.Entry("a").Snapshot().ProbeStrikes, Equals, 0)
+}
+
+func (s *HealthSuite) TestBootstrapRateLimitedEndpointStaysHealthyInCooldown(c *C) {
+	a := &fakeProbe{name: "a", err: fmt.Errorf("429: %w", endpoints.ErrRateLimited), identity: "g"}
+	m, ps := newHealthMgr(c, healthCfg(), nil, a)
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	c.Assert(m.Entry("a").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m.Entry("a").InCooldown(), Equals, true)
 }

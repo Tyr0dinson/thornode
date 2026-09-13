@@ -193,6 +193,9 @@ func NewCosmosClient(
 			svc := cmtservice.NewServiceClient(conn)
 			probes[i] = endpoints.CompoundProbe{Probe: base, Extra: func(ctx context.Context) error {
 				_, perr := svc.GetLatestBlock(ctx, &cmtservice.GetLatestBlockRequest{})
+				if status.Code(perr) == codes.ResourceExhausted {
+					return fmt.Errorf("grpc: %w", endpoints.ErrRateLimited)
+				}
 				return perr
 			}}
 		} else {
@@ -481,11 +484,12 @@ func (c *CosmosClient) mempoolLookup(ctx context.Context, sig string) signercach
 	// client (so each endpoint's credentials apply). Found anywhere is Found; not
 	// found everywhere with every endpoint answering a complete page is NotFound;
 	// anything else is Ambiguous (keeps the cache entry).
-	ambiguous := false
+	ambiguous, queried := false, 0
 	for _, e := range c.endpointMgr.Entries() {
 		if e.State() == endpoints.StateDisabled {
 			continue
 		}
+		queried++
 		switch mempoolLookupOn(endpoints.PinContext(ctx, e.Name), c.cometRPC, sig) {
 		case signercache.LookupFound:
 			return signercache.LookupFound
@@ -493,8 +497,8 @@ func (c *CosmosClient) mempoolLookup(ctx context.Context, sig string) signercach
 			ambiguous = true
 		}
 	}
-	if ambiguous {
-		return signercache.LookupAmbiguous
+	if ambiguous || queried == 0 {
+		return signercache.LookupAmbiguous // absence needs at least one witness
 	}
 	return signercache.LookupNotFound
 }
@@ -545,11 +549,12 @@ func (c *CosmosClient) verifyBroadcast(sig string) signercache.LookupResult {
 			return signercache.LookupAmbiguous
 		}
 	}
-	ambiguous := false
+	ambiguous, queried := false, 0
 	for _, e := range c.endpointMgr.Entries() {
 		if e.State() == endpoints.StateDisabled {
 			continue
 		}
+		queried++
 		_, txErr := c.txClient.GetTx(endpoints.PinContext(ctx, e.Name), &txtypes.GetTxRequest{Hash: sig})
 		switch {
 		case txErr == nil:
@@ -558,8 +563,8 @@ func (c *CosmosClient) verifyBroadcast(sig string) signercache.LookupResult {
 			ambiguous = true
 		}
 	}
-	if ambiguous {
-		return signercache.LookupAmbiguous
+	if ambiguous || queried == 0 {
+		return signercache.LookupAmbiguous // absence needs at least one witness
 	}
 	return c.mempoolLookup(ctx, sig)
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -117,6 +118,14 @@ func NormalizeHost(host string) string {
 // maxProbeBody bounds a probe response; height and hash replies are tiny.
 const maxProbeBody = 1 << 20
 
+// ErrRateLimited marks a probe answer that was a rate limit (HTTP 429, JSON-RPC
+// -32005 / -32029, gRPC ResourceExhausted). The health loop cools the endpoint down
+// instead of counting a strike.
+var ErrRateLimited = errors.New("rate limited")
+
+// isRateLimitCode reports whether a JSON-RPC error code is a provider rate limit.
+func isRateLimitCode(code int) bool { return code == -32005 || code == -32029 }
+
 // JSONRPCProbe is a generic JSON-RPC 2.0 prober. Chain-specific constructors below
 // fill in method names and result parsers.
 type JSONRPCProbe struct {
@@ -182,6 +191,9 @@ func (p *JSONRPCProbe) call(ctx context.Context, method string, params any, out 
 		return p.wrap(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return p.wrap(fmt.Errorf("%s: http 429: %w", method, ErrRateLimited))
+	}
 	if resp.StatusCode != http.StatusOK {
 		return p.wrap(fmt.Errorf("%s: http status %d", method, resp.StatusCode))
 	}
@@ -200,6 +212,9 @@ func (p *JSONRPCProbe) call(ctx context.Context, method string, params any, out 
 		return p.wrap(fmt.Errorf("%s: decode: %w", method, err))
 	}
 	if env.Error != nil {
+		if isRateLimitCode(env.Error.Code) {
+			return p.wrap(fmt.Errorf("%s: rpc error %d: %w", method, env.Error.Code, ErrRateLimited))
+		}
 		return p.wrap(fmt.Errorf("%s: rpc error %d: %s", method, env.Error.Code, env.Error.Message))
 	}
 	*out = env.Result
@@ -426,6 +441,9 @@ func HTTPPostCheck(e config.ChainEndpointConfig, base, path string, timeout time
 		}
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxProbeBody))
 		_ = resp.Body.Close()
+		if resp.StatusCode == http.StatusTooManyRequests {
+			return fmt.Errorf("%s: http 429: %w", path, ErrRateLimited)
+		}
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("%s: http status %d", path, resp.StatusCode)
 		}

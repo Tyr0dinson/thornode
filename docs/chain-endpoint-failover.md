@@ -38,8 +38,10 @@ are re-probed every `recovery_check_interval` and return to healthy after
 higher-priority endpoint only when `prefer_higher_priority` is true.
 
 A rate limit (HTTP 429, gRPC `ResourceExhausted`, JSON-RPC -32005 / -32029) never marks
-an endpoint unhealthy: it is skipped for `rate_limit_backoff` and traffic uses the next
-endpoint meanwhile.
+an endpoint unhealthy and never counts as a strike, including when a health probe is
+rate limited: the endpoint enters a cooldown of `rate_limit_backoff`, is not probed while
+cooling down, and traffic moves to the next eligible endpoint immediately. Only a chain
+with a single endpoint sleeps for `rate_limit_backoff` before returning the error.
 
 If every endpoint is unhealthy, bifrost logs an error, sets
 `bifrost_endpoint_all_down{chain}` to 1, and keeps trying all of them.
@@ -109,7 +111,7 @@ chains:
       min_recovery_checks: 3 # passing checks required to restore an endpoint
       recovery_check_interval: 30s
       prefer_higher_priority: false # set true to actively fail back to lower-priority-number endpoints
-      rate_limit_backoff: 30s # minimum sleep on HTTP 429 (rate limit); does NOT trigger failover
+      rate_limit_backoff: 30s # cooldown after a rate limit (429, -32005): the endpoint is skipped this long and traffic moves to the next endpoint at once; a lone endpoint sleeps instead
       health_check_timeout: 5s # a probe slower than this is a strike; must be < health_check_interval
       integrity_check_depth: 20 # compare block hashes at tip - depth across endpoints; 0 disables
     expected_identity: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f" # optional network pin

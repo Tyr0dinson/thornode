@@ -40,10 +40,14 @@ func (m *Manager) Bootstrap(ctx context.Context, probes []Probe) error {
 	verified := make(map[string]string, len(m.entries))
 	for i, e := range m.entries {
 		r := results[i]
-		if r.err != nil {
+		switch {
+		case r.err != nil && errors.Is(r.err, ErrRateLimited):
+			m.log.Warn().Str("endpoint", e.Name).Msg("endpoint rate limited at startup; cooling down")
+			e.RecordRateLimited(m.cfg.RateLimitBackoff)
+		case r.err != nil:
 			m.log.Warn().Err(r.err).Str("endpoint", e.Name).Msg("endpoint unreachable at startup")
 			e.MarkUnhealthy(ErrorKindProbe)
-		} else {
+		default:
 			e.RecordProbe(r.height, r.latency)
 		}
 		if r.idErr == nil && r.identity != "" {
@@ -238,7 +242,7 @@ func (m *Manager) Cycle(ctx context.Context) {
 		case StateDisabled:
 			return false
 		case StateHealthy:
-			return true
+			return !e.InCooldown() // a rate-limited endpoint is left alone until its cooldown ends
 		default:
 			return e.RecoveryDue(m.cfg.RecoveryCheckInterval)
 		}
@@ -330,6 +334,11 @@ func (m *Manager) Cycle(ctx context.Context) {
 	for i, e := range m.entries {
 		r := results[i]
 		if errors.Is(r.err, errSkipped) {
+			continue
+		}
+		if r.err != nil && errors.Is(r.err, ErrRateLimited) {
+			// a rate limit is a cooldown, never a strike or a failed recovery check
+			m.RecordRateLimited(e.Name)
 			continue
 		}
 		switch e.State() {

@@ -390,3 +390,69 @@ func (s *RouterSuite) TestAttemptBudgetLeavesTimeForNextCandidate(c *C) {
 	c.Assert(h2, HasLen, 1)
 	c.Assert(m.Entry("slow").Snapshot().InlineErrors, Equals, 1)
 }
+
+func (s *RouterSuite) TestBodyReadKeepsCallerBudgetAfterHeaders(c *C) {
+	// headers arrive at once, the body (larger than the sniff limit) trickles in for
+	// longer than the attempt budget: the read must still complete
+	slowBody := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Length", "100000")
+		flusher, _ := w.(http.Flusher)
+		chunk := bytes.Repeat([]byte("x"), 10000)
+		for i := 0; i < 10; i++ {
+			_, _ = w.Write(chunk)
+			if flusher != nil {
+				flusher.Flush()
+			}
+			time.Sleep(60 * time.Millisecond)
+		}
+	}))
+	defer slowBody.Close()
+	m, targets := twoEndpointMgr(c, common.ETHChain, []config.ChainEndpointConfig{{Name: "a", RPCHost: slowBody.URL, Priority: 1}, {Name: "b", RPCHost: slowBody.URL, Priority: 2}}, 5)
+	r, err := endpoints.NewHTTPRouter(m, endpoints.HTTPRouterConfig{Base: endpoints.SyntheticBase(m.Chain()), Targets: targets, AttemptTimeout: 200 * time.Millisecond}, zerolog.Nop())
+	c.Assert(err, IsNil)
+	hc := &http.Client{Transport: r, Timeout: 5 * time.Second}
+	resp, err := post(c, hc, base(m), "eth_getBlockByNumber")
+	c.Assert(err, IsNil)
+	body, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	c.Assert(err, IsNil)
+	c.Assert(body, HasLen, 100000)
+	c.Assert(m.Entry("a").Snapshot().InlineErrors, Equals, 0)
+}
+
+func (s *RouterSuite) TestBodyBrokenMidStreamIsReported(c *C) {
+	broken := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Length", "200000")
+		_, _ = w.Write(bytes.Repeat([]byte("x"), 70000)) // more than the sniff limit, then cut
+	}))
+	defer broken.Close()
+	m, targets := twoEndpointMgr(c, common.ETHChain, []config.ChainEndpointConfig{{Name: "a", RPCHost: broken.URL, Priority: 1}, {Name: "b", RPCHost: broken.URL, Priority: 2}}, 5)
+	hc := routerFor(c, m, targets, nil)
+	resp, err := post(c, hc, base(m), "eth_getBlockByNumber")
+	c.Assert(err, IsNil)
+	_, err = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	c.Assert(err, NotNil)
+	c.Assert(m.Entry("a").Snapshot().InlineErrors, Equals, 1)
+}
+
+func (s *RouterSuite) TestWriteResponseRateLimitCoolsDownWithoutRetry(c *C) {
+	var st int32 = http.StatusOK
+	var h1, h2 []hit
+	limited := rpcServer(&st, &h1, `{"jsonrpc":"2.0","id":1,"error":{"code":-32005,"message":"limit"}}`)
+	defer limited.Close()
+	good := rpcServer(&st, &h2, "")
+	defer good.Close()
+	m, targets := twoEndpointMgr(c, common.ETHChain, []config.ChainEndpointConfig{{Name: "lim", RPCHost: limited.URL, Priority: 1}, {Name: "good", RPCHost: good.URL, Priority: 2}}, 5)
+	hc := routerFor(c, m, targets, []string{"eth_sendRawTransaction"})
+	resp, err := post(c, hc, base(m), "eth_sendRawTransaction")
+	c.Assert(err, IsNil)
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	c.Assert(string(body), Matches, ".*-32005.*") // the answer is handed back, never retried
+	c.Assert(h2, HasLen, 0)
+	c.Assert(m.Entry("lim").InCooldown(), Equals, true)
+	c.Assert(m.Active().Name, Equals, "good") // handed off for the next broadcast
+}

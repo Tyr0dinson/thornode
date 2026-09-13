@@ -1796,3 +1796,49 @@ func (s *RPCSuite) TestIsRateLimitErrorRecognizesZcashFormat(c *C) {
 	c.Assert(isRateLimitError(errors.New("response status: 429: response body: slow down")), Equals, true)
 	c.Assert(isRateLimitError(errors.New("response status: 500")), Equals, false)
 }
+
+func (s *RPCSuite) TestJSONRPCEndpointAndRateLimitCodesAreClassified(c *C) {
+	code := int32(-32601)
+	primary := newMockRPCServer(func(method string, _ []interface{}) (interface{}, *btcjson.RPCError) {
+		return nil, btcjson.NewRPCError(btcjson.RPCErrorCode(atomic.LoadInt32(&code)), "nope")
+	})
+	defer primary.Close()
+	fb := &mockUTXOReader{getBlockCountFn: func() (int64, error) { return 5, nil }}
+	m, cfgEps := mgrFor(c, 1, map[string]string{"primary": primary.URL}, "primary", "fb")
+	cl, err := NewClientWithFallbacks(primary.URL, "u", "p", "", 0, time.Second, common.BTCChain, zerolog.Nop(), []UTXOReader{fb}, 0)
+	c.Assert(err, IsNil)
+	cl.WithEndpointManager(m, cfgEps)
+	n, err := cl.GetBlockCount()
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, int64(5))
+	c.Assert(m.Entry("primary").State(), Equals, endpoints.StateUnhealthy) // -32601: endpoint failure
+
+	m2, cfgEps2 := mgrFor(c, 1, map[string]string{"primary": primary.URL}, "primary", "fb")
+	atomic.StoreInt32(&code, -32005)
+	cl2, err := NewClientWithFallbacks(primary.URL, "u", "p", "", 0, time.Second, common.BTCChain, zerolog.Nop(), []UTXOReader{fb}, 0)
+	c.Assert(err, IsNil)
+	cl2.WithEndpointManager(m2, cfgEps2)
+	_, err = cl2.GetBlockCount()
+	c.Assert(err, IsNil)
+	c.Assert(m2.Entry("primary").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m2.Entry("primary").InCooldown(), Equals, true) // -32005: cooldown
+}
+
+func (s *RPCSuite) TestDisabledPrimaryRejectsPrimaryOnlyOperations(c *C) {
+	primary := newMockRPCServer(func(method string, _ []interface{}) (interface{}, *btcjson.RPCError) {
+		return "txid", nil
+	})
+	defer primary.Close()
+	m, cfgEps := mgrFor(c, 5, map[string]string{"primary": primary.URL}, "primary", "fb")
+	cl, err := NewClientWithFallbacks(primary.URL, "u", "p", "", 0, time.Second, common.BTCChain, zerolog.Nop(), []UTXOReader{&mockUTXOReader{}}, 0)
+	c.Assert(err, IsNil)
+	cl.WithEndpointManager(m, cfgEps)
+	_, err = cl.SendRawTransaction(&mockTx{data: []byte{1}}, nil)
+	c.Assert(err, IsNil)
+	m.Disable("primary", "identity mismatch")
+	_, err = cl.SendRawTransaction(&mockTx{data: []byte{1}}, nil)
+	c.Assert(err, ErrorMatches, ".*primary BTC endpoint primary is disabled: identity mismatch.*")
+	c.Assert(cl.ImportAddress("addr"), ErrorMatches, ".*disabled.*")
+	_, err = cl.GetRawTransactionVerbosePrimary("abc")
+	c.Assert(err, ErrorMatches, ".*disabled.*")
+}

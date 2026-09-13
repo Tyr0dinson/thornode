@@ -107,13 +107,22 @@ func (api *TronApi) GetTransactionInfo(
 func (api *TronApi) GetTransaction(
 	hash string,
 ) (Transaction, error) {
+	ctx, cancel := api.getContext()
+	defer cancel()
+	return api.GetTransactionWithContext(ctx, hash)
+}
+
+// GetTransactionWithContext is GetTransaction with a caller-supplied context (for
+// example one pinned to a specific endpoint with endpoints.PinContext).
+func (api *TronApi) GetTransactionWithContext(ctx context.Context, hash string) (Transaction, error) {
 	params := map[string]any{
 		"value": hash,
 	}
 
-	data, err := api.post("gettransactionbyid", params)
+	data, err := api.doWithContext(ctx, "POST", "gettransactionbyid", params)
 	if err != nil {
-		return Transaction{}, err
+		api.logger.Err(err)
+		return Transaction{}, fmt.Errorf("failed to call %s: %w", "gettransactionbyid", err)
 	}
 
 	var tx Transaction
@@ -344,7 +353,15 @@ func (api *TronApi) do(
 ) ([]byte, error) {
 	ctx, cancel := api.getContext()
 	defer cancel()
+	return api.doWithContext(ctx, httpMethod, apiMethod, params)
+}
 
+func (api *TronApi) doWithContext(
+	ctx context.Context,
+	httpMethod string,
+	apiMethod string,
+	params map[string]any,
+) ([]byte, error) {
 	body, err := json.Marshal(params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal params: %w", err)

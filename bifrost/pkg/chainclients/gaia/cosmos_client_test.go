@@ -15,6 +15,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/endpoints"
+
 	sdkmath "cosmossdk.io/math"
 	cmtcoretypes "github.com/cometbft/cometbft/rpc/core/types"
 	cmttypes "github.com/cometbft/cometbft/types"
@@ -567,4 +570,59 @@ func (s *CosmosTestSuite) TestEndpointManagerExposedAndMempoolLookupUsesEveryEnd
 	txHash := fmt.Sprintf("%X", cmttypes.Tx([]byte{1, 2}).Hash())
 	c.Assert(client.mempoolLookup(context.Background(), txHash), Equals, signercache.LookupFound)
 	c.Assert(client.mempoolLookup(context.Background(), "DEADBEEF"), Equals, signercache.LookupNotFound)
+}
+
+// pinnedTxClient answers GetTx per pinned endpoint name (see endpoints.PinContext).
+type pinnedTxClient struct {
+	mockTxServiceClient
+	byEndpoint map[string]error
+}
+
+func (p pinnedTxClient) GetTx(ctx context.Context, _ *txtypes.GetTxRequest, _ ...grpc.CallOption) (*txtypes.GetTxResponse, error) {
+	name, _ := endpoints.PinnedEndpoint(ctx)
+	err, ok := p.byEndpoint[name]
+	if !ok {
+		return nil, errors.New("unexpected endpoint " + name)
+	}
+	return nil, err
+}
+
+// TestGaiaVerifyBroadcastManaged covers the managed path: every non-disabled endpoint
+// is asked, a tx known to only one endpoint is Found, an incomplete answer is
+// Ambiguous, and with every endpoint disabled nothing can prove absence.
+func TestGaiaVerifyBroadcastManaged(t *testing.T) {
+	notCommitted := status.Error(codes.NotFound, "tx not found")
+	emptyMempool := fakeCometRPC{res: &cmtcoretypes.ResultUnconfirmedTxs{Txs: []cmttypes.Tx{}, Total: 0}}
+	newMgr := func() *endpoints.Manager {
+		m, err := endpoints.NewManager(common.GAIAChain, []config.ChainEndpointConfig{
+			{Name: "a", RPCHost: "http://a", CosmosGRPCHost: "a:9090", Priority: 1},
+			{Name: "b", RPCHost: "http://b", CosmosGRPCHost: "b:9090", Priority: 2},
+		}, config.BifrostChainConfiguration{}.GetFailoverConfig(), zerolog.Nop())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	cases := []struct {
+		name       string
+		byEndpoint map[string]error
+		disableAll bool
+		want       signercache.LookupResult
+	}{
+		{"committed only on the secondary", map[string]error{"a": notCommitted, "b": nil}, false, signercache.LookupFound},
+		{"absent on both, empty mempools", map[string]error{"a": notCommitted, "b": notCommitted}, false, signercache.LookupNotFound},
+		{"secondary incomplete", map[string]error{"a": notCommitted, "b": errors.New("boom")}, false, signercache.LookupAmbiguous},
+		{"every endpoint disabled", map[string]error{"a": notCommitted, "b": notCommitted}, true, signercache.LookupAmbiguous},
+	}
+	for _, tc := range cases {
+		m := newMgr()
+		if tc.disableAll {
+			m.Disable("a", "identity")
+			m.Disable("b", "identity")
+		}
+		cc := CosmosClient{txClient: pinnedTxClient{byEndpoint: tc.byEndpoint}, cometRPC: emptyMempool, endpointMgr: m}
+		if got := cc.verifyBroadcast("ABCD"); got != tc.want {
+			t.Fatalf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
+	}
 }

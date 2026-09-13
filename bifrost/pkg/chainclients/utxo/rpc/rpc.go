@@ -201,26 +201,62 @@ func (c *Client) callPrimary(result any, method string, args ...interface{}) err
 	return c.client.CallContext(ctx, result, method, args...)
 }
 
-// isAppError reports whether err is a JSON-RPC application answer (a
-// btcjson.RPCError such as "No such mempool transaction"): the endpoint served the
-// request, so it is not an endpoint failure.
-func isAppError(err error) bool {
+// rpcVerdict classifies an RPC error for health accounting: a provider rate limit
+// (HTTP 429 or JSON-RPC -32005 / -32029) is a cooldown; JSON-RPC -32601 / -32603
+// (method not found / internal) mean the endpoint cannot serve bifrost; any other
+// JSON-RPC application answer (such as "No such mempool transaction") means the
+// endpoint served the request; everything else is a transport / HTTP failure.
+type rpcVerdict int
+
+const (
+	verdictFailure rpcVerdict = iota
+	verdictRateLimit
+	verdictEndpointError
+	verdictApplication
+)
+
+func classifyRPCError(err error) rpcVerdict {
+	if isRateLimitError(err) {
+		return verdictRateLimit
+	}
 	var rpcErr *btcjson.RPCError
-	return errors.As(extractBTCError(err), &rpcErr)
+	if !errors.As(extractBTCError(err), &rpcErr) {
+		return verdictFailure
+	}
+	switch rpcErr.Code {
+	case -32005, -32029:
+		return verdictRateLimit
+	case -32601, -32603:
+		return verdictEndpointError
+	}
+	return verdictApplication
 }
 
 func (c *Client) recordFailure(i int, err error) {
 	if c.manager == nil || err == nil {
 		return
 	}
-	switch {
-	case isRateLimitError(err):
+	switch classifyRPCError(err) {
+	case verdictRateLimit:
 		c.manager.RecordRateLimited(c.names[i])
-	case isAppError(err):
+	case verdictApplication:
 		c.manager.RecordSuccess(c.names[i])
 	default:
 		c.manager.RecordError(c.names[i], endpoints.ErrorKindHTTP)
 	}
+}
+
+// primaryDisabled reports whether the manager disabled the primary (identity
+// mismatch). Primary-only operations (writes, wallet RPC, verification reads) must
+// then fail instead of reaching a wrong-network daemon.
+func (c *Client) primaryDisabled() error {
+	if c.manager == nil {
+		return nil
+	}
+	if e := c.manager.Entry(c.names[0]); e != nil && e.State() == endpoints.StateDisabled {
+		return fmt.Errorf("primary %s endpoint %s is disabled: %s", c.chain, e.Name, e.Snapshot().DisabledReason)
+	}
+	return nil
 }
 
 func (c *Client) recordSuccess(i int) {
@@ -260,7 +296,7 @@ func (c *Client) readWithFallback(primary func() error, fn func(UTXOReader) erro
 		if firstErr == nil {
 			firstErr, firstIdx = err, i
 		}
-		if i == 0 && isRateLimitError(err) {
+		if i == 0 && classifyRPCError(err) == verdictRateLimit {
 			rateLimited = true
 			if c.manager == nil {
 				break
@@ -706,6 +742,9 @@ func (c *Client) CallWithFallback(result any, method string, args ...interface{}
 // callRaw performs a JSON-RPC call with retry but without extractBTCError, so the raw
 // HTTP status (e.g. "429 Too Many Requests: ...") is preserved for isRateLimitError to inspect.
 func (c *Client) callRaw(result any, method string, args ...interface{}) error {
+	if err := c.primaryDisabled(); err != nil {
+		return err
+	}
 	fn := func() error {
 		if c.timeout <= 0 {
 			return c.client.Call(result, method, args...)
