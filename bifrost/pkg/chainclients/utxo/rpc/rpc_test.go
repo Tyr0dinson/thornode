@@ -11,8 +11,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/endpoints"
+	"gitlab.com/thorchain/thornode/v3/config"
 
 	"github.com/btcsuite/btcd/btcjson"
 	ethrpc "github.com/ethereum/go-ethereum/rpc"
@@ -1074,6 +1078,8 @@ func (s *RPCSuite) TestZecClientTimeout(c *C) {
 type mockUTXOReader struct {
 	getBlockCountFn func() (int64, error)
 	callFn          func(result any, method string, args ...interface{}) error
+	batchRawTxFn    func(txids []string) ([]*btcjson.TxRawResult, []error, error)
+	batchMempoolFn  func(txids []string) ([]*btcjson.GetMempoolEntryResult, []error, error)
 	called          bool
 }
 
@@ -1108,6 +1114,10 @@ func (m *mockUTXOReader) GetMempoolEntry(_ string) (*btcjson.GetMempoolEntryResu
 }
 
 func (m *mockUTXOReader) BatchGetMempoolEntry(txids []string) ([]*btcjson.GetMempoolEntryResult, []error, error) {
+	m.called = true
+	if m.batchMempoolFn != nil {
+		return m.batchMempoolFn(txids)
+	}
 	return nil, nil, errMockNotSupported
 }
 
@@ -1124,6 +1134,10 @@ func (m *mockUTXOReader) GetRawTransaction(_ string) (string, error) {
 }
 
 func (m *mockUTXOReader) BatchGetRawTransactionVerbose(txids []string) ([]*btcjson.TxRawResult, []error, error) {
+	m.called = true
+	if m.batchRawTxFn != nil {
+		return m.batchRawTxFn(txids)
+	}
 	return nil, nil, errMockNotSupported
 }
 
@@ -1521,4 +1535,181 @@ func (s *RPCSuite) TestFlexibleWarningsUnmarshal(c *C) {
 
 	w = nil
 	c.Assert(json.Unmarshal([]byte(`123`), &w), NotNil)
+}
+
+// ---------------------------------------------------------------------------
+// endpoint-manager-aware fallback tests
+// ---------------------------------------------------------------------------
+
+func mgrFor(c *C, threshold int, hosts map[string]string, names ...string) (*endpoints.Manager, []config.ChainEndpointConfig) {
+	var cfgEps []config.ChainEndpointConfig
+	for i, n := range names {
+		host := hosts[n]
+		if host == "" {
+			host = "http://" + n
+		}
+		cfgEps = append(cfgEps, config.ChainEndpointConfig{Name: n, RPCHost: host, Priority: i + 1})
+	}
+	m, err := endpoints.NewManager(common.BTCChain, cfgEps, config.ChainFailoverConfig{
+		ErrorThreshold: threshold, ErrorWindow: time.Minute, MinRecoveryChecks: 1, RateLimitBackoff: time.Minute,
+	}, zerolog.Nop())
+	c.Assert(err, IsNil)
+	for _, e := range m.Entries() {
+		e.SetIdentity("genesis")
+	}
+	return m, cfgEps
+}
+
+func (s *RPCSuite) TestManagerSkipsUnhealthyPrimaryWithoutRetrying(c *C) {
+	var primaryHits int32
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&primaryHits, 1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer primary.Close()
+	fb := &mockUTXOReader{getBlockCountFn: func() (int64, error) { return 7, nil }}
+	m, cfgEps := mgrFor(c, 1, map[string]string{"primary": primary.URL}, "primary", "fb")
+	cl, err := NewClientWithFallbacks(primary.URL, "u", "p", "", 2, time.Second, common.BTCChain, zerolog.Nop(), []UTXOReader{fb}, 0)
+	c.Assert(err, IsNil)
+	cl.WithEndpointManager(m, cfgEps)
+
+	n, err := cl.GetBlockCount()
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, int64(7))
+	c.Assert(m.Entry("primary").State(), Equals, endpoints.StateUnhealthy)
+	hitsAfterFirst := atomic.LoadInt32(&primaryHits)
+	c.Assert(hitsAfterFirst > 0, Equals, true)
+
+	// second read: primary is unhealthy, must not be touched at all
+	n, err = cl.GetBlockCount()
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, int64(7))
+	c.Assert(atomic.LoadInt32(&primaryHits), Equals, hitsAfterFirst)
+}
+
+func (s *RPCSuite) TestManagerSkipsUnhealthyFallback(c *C) {
+	primary := newErrorServer(500)
+	defer primary.Close()
+	bad := &mockUTXOReader{getBlockCountFn: func() (int64, error) { return 1, nil }}
+	good := &mockUTXOReader{getBlockCountFn: func() (int64, error) { return 2, nil }}
+	m, cfgEps := mgrFor(c, 1, map[string]string{"primary": primary.URL}, "primary", "bad", "good")
+	m.RecordError("bad", endpoints.ErrorKindTransport)
+	cl, err := NewClientWithFallbacks(primary.URL, "u", "p", "", 0, time.Second, common.BTCChain, zerolog.Nop(), []UTXOReader{bad, good}, 0)
+	c.Assert(err, IsNil)
+	cl.WithEndpointManager(m, cfgEps)
+	n, err := cl.GetBlockCount()
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, int64(2))
+	c.Assert(bad.called, Equals, false)
+}
+
+func (s *RPCSuite) TestAllDownStillTriesPrimaryAndFallbacks(c *C) {
+	primary := newMockRPCServer(func(method string, _ []interface{}) (interface{}, *btcjson.RPCError) {
+		return 42, nil
+	})
+	defer primary.Close()
+	fb := &mockUTXOReader{}
+	m, cfgEps := mgrFor(c, 1, map[string]string{"primary": primary.URL}, "primary", "fb")
+	m.RecordError("primary", endpoints.ErrorKindTransport)
+	m.RecordError("fb", endpoints.ErrorKindTransport)
+	c.Assert(m.AllDown(), Equals, true)
+	cl, err := NewClientWithFallbacks(primary.URL, "u", "p", "", 0, time.Second, common.BTCChain, zerolog.Nop(), []UTXOReader{fb}, 0)
+	c.Assert(err, IsNil)
+	cl.WithEndpointManager(m, cfgEps)
+	n, err := cl.GetBlockCount()
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, int64(42))
+	c.Assert(m.Entry("primary").State(), Equals, endpoints.StateHealthy) // inline success recovered it
+}
+
+func (s *RPCSuite) TestRateLimitedPrimaryServesFromFallbackAndCoolsDown(c *C) {
+	primary := newErrorServer(429)
+	defer primary.Close()
+	fb := &mockUTXOReader{getBlockCountFn: func() (int64, error) { return 9, nil }}
+	m, cfgEps := mgrFor(c, 5, map[string]string{"primary": primary.URL}, "primary", "fb")
+	cl, err := NewClientWithFallbacks(primary.URL, "u", "p", "", 0, time.Second, common.BTCChain, zerolog.Nop(), []UTXOReader{fb}, 0)
+	c.Assert(err, IsNil)
+	cl.WithEndpointManager(m, cfgEps)
+	n, err := cl.GetBlockCount()
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, int64(9))
+	c.Assert(m.Entry("primary").InCooldown(), Equals, true)
+	c.Assert(m.Entry("primary").State(), Equals, endpoints.StateHealthy)
+}
+
+func (s *RPCSuite) TestRateLimitWithoutFallbackStillBacksOff(c *C) {
+	primary := newErrorServer(429)
+	defer primary.Close()
+	m, cfgEps := mgrFor(c, 5, map[string]string{"primary": primary.URL}, "primary")
+	cl, err := NewClientWithFallbacks(primary.URL, "u", "p", "", 0, time.Second, common.BTCChain, zerolog.Nop(), nil, 50*time.Millisecond)
+	c.Assert(err, IsNil)
+	cl.WithEndpointManager(m, cfgEps)
+	start := time.Now()
+	_, err = cl.GetBlockCount()
+	c.Assert(err, NotNil)
+	c.Assert(time.Since(start) >= 50*time.Millisecond, Equals, true)
+}
+
+func (s *RPCSuite) TestBatchGetRawTransactionVerboseFallsOverWithManager(c *C) {
+	primary := newErrorServer(500)
+	defer primary.Close()
+	fb := &mockUTXOReader{batchRawTxFn: func(txids []string) ([]*btcjson.TxRawResult, []error, error) {
+		out := make([]*btcjson.TxRawResult, len(txids))
+		for i, id := range txids {
+			out[i] = &btcjson.TxRawResult{Txid: id}
+		}
+		return out, make([]error, len(txids)), nil
+	}}
+	m, cfgEps := mgrFor(c, 1, map[string]string{"primary": primary.URL}, "primary", "fb")
+	cl, err := NewClientWithFallbacks(primary.URL, "u", "p", "", 0, time.Second, common.BTCChain, zerolog.Nop(), []UTXOReader{fb}, 0)
+	c.Assert(err, IsNil)
+	cl.WithEndpointManager(m, cfgEps)
+	res, errs, err := cl.BatchGetRawTransactionVerbose([]string{"a", "b"})
+	c.Assert(err, IsNil)
+	c.Assert(errs, HasLen, 2)
+	c.Assert(res[1].Txid, Equals, "b")
+	c.Assert(m.Entry("primary").State(), Equals, endpoints.StateUnhealthy)
+}
+
+func (s *RPCSuite) TestBatchGetMempoolEntryRateLimitServesFromFallbackAndCoolsDown(c *C) {
+	primary := newErrorServer(429)
+	defer primary.Close()
+	fb := &mockUTXOReader{batchMempoolFn: func(txids []string) ([]*btcjson.GetMempoolEntryResult, []error, error) {
+		return make([]*btcjson.GetMempoolEntryResult, len(txids)), make([]error, len(txids)), nil
+	}}
+	m, cfgEps := mgrFor(c, 5, map[string]string{"primary": primary.URL}, "primary", "fb")
+	cl, err := NewClientWithFallbacks(primary.URL, "u", "p", "", 0, time.Second, common.BTCChain, zerolog.Nop(), []UTXOReader{fb}, 0)
+	c.Assert(err, IsNil)
+	cl.WithEndpointManager(m, cfgEps)
+	_, _, err = cl.BatchGetMempoolEntry([]string{"a"})
+	c.Assert(err, IsNil)
+	c.Assert(m.Entry("primary").InCooldown(), Equals, true)
+}
+
+func (s *RPCSuite) TestPrimaryOnlyReadsNeverFallBack(c *C) {
+	primary := newErrorServer(500)
+	defer primary.Close()
+	fb := &mockUTXOReader{}
+	m, cfgEps := mgrFor(c, 5, map[string]string{"primary": primary.URL + "/SECRET"}, "primary", "fb")
+	cl, err := NewClientWithFallbacks(primary.URL+"/SECRET", "u", "p", "", 0, time.Second, common.BTCChain, zerolog.Nop(), []UTXOReader{fb}, 0)
+	c.Assert(err, IsNil)
+	cl.WithEndpointManager(m, cfgEps)
+	_, err = cl.GetRawTransactionVerbosePrimary("abc")
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Not(Matches), "(?s).*SECRET.*")
+	_, err = cl.GetMempoolEntryPrimary("abc")
+	c.Assert(err, NotNil)
+	c.Assert(fb.called, Equals, false)
+}
+
+func (s *RPCSuite) TestWithEndpointManagerRejectsMismatch(c *C) {
+	primary := newErrorServer(500)
+	defer primary.Close()
+	m, cfgEps := mgrFor(c, 5, nil, "primary", "fb")
+	cl, err := NewClientWithFallbacks(primary.URL, "u", "p", "", 0, time.Second, common.BTCChain, zerolog.Nop(), nil, 0)
+	c.Assert(err, IsNil)
+	cl.WithEndpointManager(m, cfgEps) // 2 endpoints for 0 fallbacks: ignored
+	_, err = cl.GetBlockCount()
+	c.Assert(err, NotNil)
+	c.Assert(m.Entry("primary").State(), Equals, endpoints.StateHealthy) // manager not attached
 }

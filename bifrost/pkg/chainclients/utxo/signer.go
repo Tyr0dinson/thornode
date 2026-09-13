@@ -75,7 +75,9 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		return err == nil && skipCache > 0
 	}
 	verifyFn := func(sig string) signercache.LookupResult {
-		verbose, txLookupErr := c.rpc.GetRawTransactionVerbose(sig)
+		// primary only: the broadcast went to the primary daemon, and a fallback that
+		// never saw it would answer "not found" and trigger a wrongful re-sign
+		verbose, txLookupErr := c.rpc.GetRawTransactionVerbosePrimary(sig)
 		return utxoVerifyPresence(verbose, txLookupErr)
 	}
 	check := c.signerCacheManager.SignTxCacheCheck(tx.CacheHash(), gateFn, verifyFn)

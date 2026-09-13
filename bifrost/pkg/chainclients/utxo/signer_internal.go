@@ -99,7 +99,7 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total btcutil.Amount) ([]b
 			// chain count to avoid exceeding the chain's mempool limits. Set to 0 to disable.
 			if item.Confirmations == 0 && c.cfg.UTXO.MaxMempoolAncestors > 0 {
 				var entry *btcjson.GetMempoolEntryResult
-				entry, err = c.rpc.GetMempoolEntry(item.TxID)
+				entry, err = c.rpc.GetMempoolEntryPrimary(item.TxID) // our own broadcasts live in the primary's mempool
 				if err != nil {
 					// If we cannot get the mempool entry, the tx is likely confirmed.
 					c.log.Debug().Err(err).Str("txid", item.TxID).Msg("failed to get mempool entry")

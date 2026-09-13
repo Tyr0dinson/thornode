@@ -1,6 +1,7 @@
 package utxo
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math/big"
@@ -21,6 +22,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/endpoints"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/runners"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
@@ -52,6 +54,8 @@ type Client struct {
 	log zerolog.Logger
 	m   *metrics.Metrics
 	rpc *rpc.Client
+	// endpointMgr monitors every configured endpoint and orders read fallbacks.
+	endpointMgr *endpoints.Manager
 
 	// ---------- signing ----------
 	nodePubKey         common.PubKey
@@ -124,8 +128,9 @@ func NewClient(
 	// endpoint is a full node daemon (self-hosted or an external provider), so failover
 	// reads are served by a peer rpc.Client rather than a partial REST adapter.
 	failoverCfg := cfg.GetFailoverConfig()
-	endpoints := cfg.GetEndpoints()
-	primary := endpoints[0]
+	allEndpoints := cfg.GetEndpoints()
+	primary := allEndpoints[0]
+	fallbacks, usedFallbacks := buildUTXOFallbacks(allEndpoints[1:], cfg.MaxRPCRetries, cfg.BlockScanner.HTTPRequestTimeout, cfg.ChainID, logger)
 	rpcClient, err := rpc.NewClientWithFallbacks(
 		primary.RPCHost,
 		primary.UserName,
@@ -135,12 +140,38 @@ func NewClient(
 		cfg.BlockScanner.HTTPRequestTimeout,
 		cfg.ChainID,
 		logger,
-		buildUTXOFallbacks(endpoints[1:], cfg.MaxRPCRetries, cfg.BlockScanner.HTTPRequestTimeout, cfg.ChainID, logger),
+		fallbacks,
 		failoverCfg.RateLimitBackoff,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create rpc client: %w", err)
 	}
+
+	// Endpoint manager over the effective list (primary + fallbacks that were built),
+	// with priorities re-assigned 1..n so the manager order matches the fallbacks
+	// slice exactly. Identity is the genesis block hash (#2828).
+	effective := make([]config.ChainEndpointConfig, 0, 1+len(usedFallbacks))
+	effective = append(effective, primary)
+	effective = append(effective, usedFallbacks...)
+	for i := range effective {
+		effective[i].Priority = i + 1
+	}
+	mgrOpts := []endpoints.Option{endpoints.WithMetrics(endpoints.DefaultMetrics())}
+	if cfg.ExpectedIdentity != "" {
+		mgrOpts = append(mgrOpts, endpoints.WithExpectedIdentity(cfg.ExpectedIdentity))
+	}
+	endpointMgr, err := endpoints.NewManager(cfg.ChainID, effective, failoverCfg, logger, mgrOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create endpoint manager: %w", err)
+	}
+	probes := make([]endpoints.Probe, len(effective))
+	for i, e := range effective {
+		probes[i] = endpoints.NewUTXOProbe(e, failoverCfg.HealthCheckTimeout)
+	}
+	if err = endpointMgr.Bootstrap(context.Background(), probes); err != nil {
+		return nil, fmt.Errorf("fail to bootstrap endpoints: %w", err)
+	}
+	rpcClient.WithEndpointManager(endpointMgr, effective)
 
 	// node key setup
 	tssKeysign, err := tss.NewKeySign(server, bridge)
@@ -163,6 +194,7 @@ func NewClient(
 		log:                       logger,
 		m:                         m,
 		rpc:                       rpcClient,
+		endpointMgr:               endpointMgr,
 		nodePubKey:                nodePubKey,
 		nodePrivKey:               nodePrivKey,
 		tssKeySigner:              tssKeysign,
@@ -211,13 +243,18 @@ func NewClient(
 	return c, nil
 }
 
-// buildUTXOFallbacks constructs read fallback clients from the given secondary endpoints.
+// buildUTXOFallbacks constructs read fallback clients from the given secondary endpoints
+// and returns them with the endpoint configs actually used (hostless or unparsable
+// endpoints are skipped and logged), so the endpoint manager matches the fallbacks.
 // Each fallback is a full rpc.Client pointing at another node daemon (self-hosted or an
 // external provider exposing the same RPC) — only read methods are routed to it during
 // failover, while writes always go to the primary.
-func buildUTXOFallbacks(endpoints []config.ChainEndpointConfig, maxRetries int, timeout time.Duration, chain common.Chain, log zerolog.Logger) []rpc.UTXOReader {
-	var fallbacks []rpc.UTXOReader
-	for _, e := range endpoints {
+func buildUTXOFallbacks(endpointCfgs []config.ChainEndpointConfig, maxRetries int, timeout time.Duration, chain common.Chain, log zerolog.Logger) ([]rpc.UTXOReader, []config.ChainEndpointConfig) {
+	var (
+		fallbacks []rpc.UTXOReader
+		used      []config.ChainEndpointConfig
+	)
+	for _, e := range endpointCfgs {
 		host := e.RPCHost
 		if host == "" {
 			host = e.APIHost
@@ -234,8 +271,10 @@ func buildUTXOFallbacks(endpoints []config.ChainEndpointConfig, maxRetries int, 
 			continue
 		}
 		fallbacks = append(fallbacks, cl)
+		e.RPCHost = host // probes and redaction use RPCHost
+		used = append(used, e)
 	}
-	return fallbacks
+	return fallbacks, used
 }
 
 // GetConfig returns the chain configuration.
@@ -247,6 +286,9 @@ func (c *Client) GetConfig() config.BifrostChainConfiguration {
 func (c *Client) GetChain() common.Chain {
 	return c.cfg.ChainID
 }
+
+// EndpointManager exposes live endpoint health to the bifrost health server.
+func (c *Client) EndpointManager() *endpoints.Manager { return c.endpointMgr }
 
 // IsBlockScannerHealthy returns true if the block scanner is healthy.
 func (c *Client) IsBlockScannerHealthy() bool {
@@ -312,6 +354,10 @@ func (c *Client) Start(
 	c.globalNetworkFeeQueue = globalNetworkFeeQueue
 	c.tssKeySigner.Start()
 	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
+	if c.endpointMgr != nil {
+		c.endpointMgr.SetScannerHeight(c.blockScanner.PreviousHeight)
+		c.endpointMgr.Start()
+	}
 	c.wg.Add(1)
 	go runners.SolvencyCheckRunner(
 		c.GetChain(), c, c.bridge, c.stopchan, c.wg, constants.ThorchainBlockTime,
@@ -320,6 +366,7 @@ func (c *Client) Start(
 
 // Stop stops the scanner, signer, and solvency check.
 func (c *Client) Stop() {
+	c.endpointMgr.Stop()
 	c.blockScanner.Stop()
 	c.tssKeySigner.Stop()
 	close(c.stopchan)
