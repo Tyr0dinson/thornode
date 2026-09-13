@@ -193,9 +193,13 @@ func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 		candidates = []*Entry{e}
 	} else if isWrite {
-		candidates = []*Entry{r.mgr.WriteTarget()}
+		wt := r.mgr.WriteTarget()
+		if wt == nil {
+			return nil, fmt.Errorf("chain %s: no permitted write endpoint (active endpoint disabled)", r.mgr.Chain())
+		}
+		candidates = []*Entry{wt}
 		for _, e := range r.mgr.ReadCandidates() { // dial-error fallbacks only
-			if e != candidates[0] {
+			if e != wt {
 				candidates = append(candidates, e)
 			}
 		}
@@ -215,9 +219,12 @@ func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 		if isWrite && i > 0 && !isDialError(lastErr) {
 			break // may have been sent; never duplicate a write
 		}
-		out := r.rewrite(req, t, body)
+		// per-attempt budget: a stalled endpoint must leave time for the next one
+		actx, acancel := context.WithTimeout(req.Context(), attemptBudget(req.Context(), r.cfg.AttemptTimeout, len(candidates)-i-1))
+		out := r.rewrite(req.WithContext(actx), t, body)
 		resp, err := r.cfg.Transport.RoundTrip(out)
 		if err != nil {
+			acancel()
 			if req.Context().Err() != nil {
 				return nil, err // caller cancelled; not the endpoint's fault
 			}
@@ -225,6 +232,7 @@ func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 			lastErr = Redact(fmt.Errorf("endpoint %s: %w", e.Name, err), t.secrets)
 			continue
 		}
+		resp.Body = &cancelOnClose{ReadCloser: resp.Body, cancel: acancel}
 		verdict, kind := r.classify(resp, isWrite)
 		switch verdict {
 		case verdictOK:
@@ -253,6 +261,37 @@ func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 		lastErr = fmt.Errorf("chain %s: no endpoint available", r.mgr.Chain())
 	}
 	return nil, lastErr
+}
+
+// cancelOnClose releases the attempt context once the caller has consumed the body.
+type cancelOnClose struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (c *cancelOnClose) Close() error {
+	err := c.ReadCloser.Close()
+	c.cancel()
+	return err
+}
+
+// attemptBudget bounds one attempt so that, when more candidates remain, at least
+// half of the caller's remaining deadline is left for them.
+func attemptBudget(ctx context.Context, base time.Duration, remainingCandidates int) time.Duration {
+	budget := base
+	if deadline, ok := ctx.Deadline(); ok {
+		remaining := time.Until(deadline)
+		if remainingCandidates > 0 {
+			remaining /= 2
+		}
+		if remaining < budget {
+			budget = remaining
+		}
+	}
+	if budget <= 0 {
+		budget = time.Millisecond
+	}
+	return budget
 }
 
 type verdict int
@@ -290,30 +329,66 @@ func (r *HTTPRouter) classify(resp *http.Response, isWrite bool) (verdict, Error
 		return verdictOK, ""
 	}
 	br := bufio.NewReaderSize(resp.Body, sniffLimit)
-	peek, _ := br.Peek(sniffLimit)
+	peek, perr := br.Peek(sniffLimit)
 	resp.Body = &peekedBody{Reader: br, closer: resp.Body}
+	if perr != nil && !errors.Is(perr, io.EOF) {
+		// headers arrived but the body broke: the endpoint failed this request
+		return verdictEndpointError, ErrorKindTransport
+	}
 	if len(peek) == sniffLimit {
 		return verdictOK, "" // large result; JSON-RPC error objects are tiny
 	}
 	trimmed := bytes.TrimLeft(peek, " \t\r\n")
-	if len(trimmed) == 0 || trimmed[0] != '{' {
+	if len(trimmed) == 0 {
+		return verdictEndpointError, ErrorKindTransport
+	}
+	type rpcErr struct {
+		Code int `json:"code"`
+	}
+	var errs []*rpcErr
+	switch trimmed[0] {
+	case '{':
+		var env struct {
+			Error *rpcErr `json:"error"`
+		}
+		if json.Unmarshal(trimmed, &env) != nil {
+			return verdictOK, ""
+		}
+		errs = append(errs, env.Error)
+	case '[':
+		var batch []struct {
+			Error *rpcErr `json:"error"`
+		}
+		if json.Unmarshal(trimmed, &batch) != nil {
+			return verdictOK, ""
+		}
+		for _, b := range batch {
+			errs = append(errs, b.Error)
+		}
+	default:
 		return verdictOK, ""
 	}
-	var env struct {
-		Error *struct {
-			Code int `json:"code"`
-		} `json:"error"`
+	// the worst element decides: an endpoint-level error anywhere in a batch means the
+	// batch was not served and must be retried elsewhere
+	worst, worstKind := verdictOK, ErrorKind("")
+	for _, e := range errs {
+		if e == nil {
+			continue
+		}
+		switch e.Code {
+		case -32005, -32029: // provider request limit exceeded (Infura / Ankr style)
+			if worst < verdictRateLimited {
+				worst, worstKind = verdictRateLimited, ErrorKindRateLimit
+			}
+		case -32601, -32603: // method not found / internal error: the endpoint cannot serve bifrost
+			worst, worstKind = verdictEndpointError, ErrorKindHTTP
+		default:
+			if worst < verdictAppError {
+				worst = verdictAppError
+			}
+		}
 	}
-	if json.Unmarshal(trimmed, &env) != nil || env.Error == nil {
-		return verdictOK, ""
-	}
-	switch env.Error.Code {
-	case -32005, -32029: // provider request limit exceeded (Infura / Ankr style)
-		return verdictRateLimited, ErrorKindRateLimit
-	case -32601, -32603: // method not found / internal error: the endpoint cannot serve bifrost
-		return verdictEndpointError, ErrorKindHTTP
-	}
-	return verdictAppError, ""
+	return worst, worstKind
 }
 
 // peekedBody serves the buffered bytes first and closes the original body.

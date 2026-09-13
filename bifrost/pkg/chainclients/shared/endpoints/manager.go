@@ -153,8 +153,16 @@ func (m *Manager) Entry(name string) *Entry { return m.byName[name] }
 // Active returns the sticky active entry. It never returns nil.
 func (m *Manager) Active() *Entry { return m.entries[m.active.Load()] }
 
-// WriteTarget is the only endpoint writes go to.
-func (m *Manager) WriteTarget() *Entry { return m.Active() }
+// WriteTarget is the only endpoint writes go to. It is nil when the active entry
+// is Disabled (wrong network) and nothing else could replace it; routers must then
+// refuse the write rather than send it to a rejected endpoint.
+func (m *Manager) WriteTarget() *Entry {
+	e := m.Active()
+	if e.State() == StateDisabled {
+		return nil
+	}
+	return e
+}
 
 // AllDown reports whether no endpoint is Healthy.
 func (m *Manager) AllDown() bool {
@@ -349,7 +357,7 @@ func (m *Manager) MaybeFailback() bool {
 		if int32(i) >= curIdx {
 			return false
 		}
-		if e.State() == StateHealthy && e.Priority < cur.Priority {
+		if e.Eligible() && e.Priority < cur.Priority {
 			m.switchActive(cur, e, int32(i), "higher-priority endpoint healthy", "failback")
 			return true
 		}

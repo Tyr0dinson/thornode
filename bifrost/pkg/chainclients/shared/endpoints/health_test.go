@@ -364,3 +364,70 @@ func (s *HealthSuite) TestStopCancelsInFlightCycle(c *C) {
 	m.Stop()
 	c.Assert(time.Since(start) < time.Second, Equals, true)
 }
+
+func (s *HealthSuite) TestBootstrapWithoutReferenceLeavesEndpointsUnverified(c *C) {
+	local := &fakeProbe{name: "local", err: down}
+	b := &fakeProbe{name: "b", height: 100, identity: "mainnet"}
+	x := &fakeProbe{name: "x", height: 100, identity: "testnet"}
+	m, ps := newHealthMgr(c, healthCfg(), nil, local, b, x)
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	c.Assert(m.ReferenceIdentity(), Equals, "")
+	c.Assert(m.Entry("b").IdentityVerified(), Equals, false)
+	c.Assert(m.Entry("x").IdentityVerified(), Equals, false)
+	c.Assert(m.AllDown(), Equals, true)
+	// a cycle with still no majority and no priority-1 identity changes nothing
+	m.Cycle(ctxBg())
+	c.Assert(m.ReferenceIdentity(), Equals, "")
+	// priority-1 comes up: it sets the reference, x is disabled, b recovers
+	local.set(100, nil)
+	local.identity = "mainnet"
+	m.Cycle(ctxBg())
+	c.Assert(m.ReferenceIdentity(), Equals, "mainnet")
+	c.Assert(m.Entry("x").State(), Equals, endpoints.StateDisabled)
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("b").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m.Entry("local").State(), Equals, endpoints.StateHealthy)
+}
+
+func (s *HealthSuite) TestIntegrityEvictedEndpointMustMatchMajorityToRecover(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 5
+	cfg.ErrorThreshold = 1
+	cfg.MinRecoveryChecks = 1
+	a := &fakeProbe{name: "a", height: 100, identity: "g", hashes: map[int64]string{95: "H"}}
+	b := &fakeProbe{name: "b", height: 100, identity: "g", hashes: map[int64]string{95: "H"}}
+	d := &fakeProbe{name: "d", height: 100, identity: "g", hashes: map[int64]string{95: "X"}}
+	m, ps := newHealthMgr(c, cfg, nil, a, b, d)
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("d").State(), Equals, endpoints.StateUnhealthy)
+	// still disagreeing: liveness and height are fine but the hash is not
+	m.Cycle(ctxBg())
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("d").State(), Equals, endpoints.StateUnhealthy)
+	// now agreeing: recovers
+	d.mu.Lock()
+	d.hashes[95] = "H"
+	d.mu.Unlock()
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("d").State(), Equals, endpoints.StateHealthy)
+}
+
+func (s *HealthSuite) TestIntegrityRecheckAgainstSingleHealthyReference(c *C) {
+	cfg := healthCfg()
+	cfg.IntegrityCheckDepth = 5
+	cfg.ErrorThreshold = 1
+	cfg.MinRecoveryChecks = 1
+	a := &fakeProbe{name: "a", height: 100, identity: "g", hashes: map[int64]string{95: "H"}}
+	d := &fakeProbe{name: "d", height: 100, identity: "g", hashes: map[int64]string{95: "X"}}
+	m, ps := newHealthMgr(c, cfg, nil, a, d)
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	m.Entry("d").MarkUnhealthy(endpoints.ErrorKindIntegrity) // evicted earlier
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("d").State(), Equals, endpoints.StateUnhealthy) // X != H
+	d.mu.Lock()
+	d.hashes[95] = "H"
+	d.mu.Unlock()
+	m.Cycle(ctxBg())
+	c.Assert(m.Entry("d").State(), Equals, endpoints.StateHealthy)
+}

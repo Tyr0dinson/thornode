@@ -170,72 +170,115 @@ func (c *Client) WithEndpointManager(m *endpoints.Manager, eps []config.ChainEnd
 	return c
 }
 
-// errPrimarySkipped is returned by readPrimary when the manager does not list the
-// primary as a read candidate and at least one fallback exists.
-var errPrimarySkipped = errors.New("primary endpoint skipped")
-
-// candidates returns whether the primary should be tried and the fallback indexes
-// to try, in the manager's preferred order. Without a manager: primary then every
-// fallback in config order. When every endpoint is down the manager lists all
-// non-disabled endpoints so reads keep flowing (#2828 failover logic 5).
-func (c *Client) candidates() (tryPrimary bool, fallbackIdx []int) {
+// candidates returns the read order as indexes: 0 is the primary, i+1 is
+// fallbacks[i]. Without a manager: primary then every fallback in config order.
+// With one: the manager's ReadCandidates order (the active endpoint first, healthy
+// ones by priority, every non-disabled one when everything is down), so a recovered
+// primary is not read before the endpoint the manager selected.
+func (c *Client) candidates() []int {
+	order := make([]int, 0, len(c.fallbacks)+1)
 	if c.manager == nil {
-		fallbackIdx = make([]int, len(c.fallbacks))
-		for i := range c.fallbacks {
-			fallbackIdx[i] = i
+		for i := 0; i <= len(c.fallbacks); i++ {
+			order = append(order, i)
 		}
-		return true, fallbackIdx
+		return order
 	}
 	for _, e := range c.manager.ReadCandidates() {
-		i, ok := c.index[e.Name]
-		if !ok {
-			continue
-		}
-		if i == 0 {
-			tryPrimary = true
-		} else {
-			fallbackIdx = append(fallbackIdx, i-1)
+		if i, ok := c.index[e.Name]; ok {
+			order = append(order, i)
 		}
 	}
-	return tryPrimary, fallbackIdx
+	return order
 }
 
-// readPrimary runs a read against the primary with the usual retry loop, unless
-// the manager does not list the primary as a candidate and a fallback exists, so
-// the retry backoff is not burned on a known-dead primary.
-func (c *Client) readPrimary(fn func() error) error {
-	if tryPrimary, _ := c.candidates(); !tryPrimary && len(c.fallbacks) > 0 {
-		return errPrimarySkipped
+// callPrimary performs one JSON-RPC call against the primary without retry.
+func (c *Client) callPrimary(result any, method string, args ...interface{}) error {
+	if c.timeout <= 0 {
+		return c.client.Call(result, method, args...)
 	}
-	return c.retry(fn)
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+	return c.client.CallContext(ctx, result, method, args...)
 }
 
-// callRead is callRaw for reads: it honors readPrimary.
-func (c *Client) callRead(result any, method string, args ...interface{}) error {
-	return c.readPrimary(func() error {
-		if c.timeout <= 0 {
-			return c.client.Call(result, method, args...)
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
-		defer cancel()
-		return c.client.CallContext(ctx, result, method, args...)
-	})
+// isAppError reports whether err is a JSON-RPC application answer (a
+// btcjson.RPCError such as "No such mempool transaction"): the endpoint served the
+// request, so it is not an endpoint failure.
+func isAppError(err error) bool {
+	var rpcErr *btcjson.RPCError
+	return errors.As(extractBTCError(err), &rpcErr)
 }
 
 func (c *Client) recordFailure(i int, err error) {
-	if c.manager == nil || err == nil || errors.Is(err, errPrimarySkipped) {
+	if c.manager == nil || err == nil {
 		return
 	}
-	if isRateLimitError(err) {
+	switch {
+	case isRateLimitError(err):
 		c.manager.RecordRateLimited(c.names[i])
-		return
+	case isAppError(err):
+		c.manager.RecordSuccess(c.names[i])
+	default:
+		c.manager.RecordError(c.names[i], endpoints.ErrorKindHTTP)
 	}
-	c.manager.RecordError(c.names[i], endpoints.ErrorKindHTTP)
 }
 
 func (c *Client) recordSuccess(i int) {
 	if c.manager != nil {
 		c.manager.RecordSuccess(c.names[i])
+	}
+}
+
+// readWithFallback runs a read against the endpoints in candidate order: primary
+// (with the usual retry loop) at its own position, fallbacks through fn. The first
+// nil result wins. Every attempt is reported to the manager; application-level RPC
+// errors count as served, not as failures.
+//
+// Without a manager (single-endpoint legacy path), an HTTP 429 on the primary never
+// fails over: the caller sleeps rateLimitBackoff and returns the error, so a
+// rate-limited daemon is not hammered. With a manager, a 429 puts that endpoint in
+// cooldown and the read is served by the next candidate; if nothing served the read
+// and the primary was rate limited, the caller still sleeps.
+func (c *Client) readWithFallback(primary func() error, fn func(UTXOReader) error) error {
+	var (
+		firstErr    error
+		firstIdx    int
+		rateLimited bool
+	)
+	for _, i := range c.candidates() {
+		var err error
+		if i == 0 {
+			err = c.retry(primary)
+		} else {
+			err = fn(c.fallbacks[i-1])
+		}
+		if err == nil {
+			c.recordSuccess(i)
+			return nil
+		}
+		c.recordFailure(i, err)
+		if firstErr == nil {
+			firstErr, firstIdx = err, i
+		}
+		if i == 0 && isRateLimitError(err) {
+			rateLimited = true
+			if c.manager == nil {
+				break
+			}
+		}
+	}
+	if rateLimited {
+		c.sleepRateLimit()
+	}
+	if firstErr == nil {
+		return fmt.Errorf("no eligible %s endpoint served the read", c.chain)
+	}
+	return c.redact(firstIdx, firstErr)
+}
+
+func (c *Client) sleepRateLimit() {
+	if c.rateLimitBackoff > 0 {
+		time.Sleep(c.rateLimitBackoff)
 	}
 }
 
@@ -267,8 +310,7 @@ func (c *Client) GetMempoolEntryPrimary(txid string) (*btcjson.GetMempoolEntryRe
 
 func (c *Client) GetBlockCount() (int64, error) {
 	var count int64
-	err := c.callRead(&count, "getblockcount")
-	err = c.withFallback(err, func(fb UTXOReader) error {
+	err := c.readWithFallback(func() error { return c.callPrimary(&count, "getblockcount") }, func(fb UTXOReader) error {
 		var ferr error
 		count, ferr = fb.GetBlockCount()
 		return ferr
@@ -298,8 +340,7 @@ func (c *Client) SendRawTransaction(tx SerializableTx, maxFeeParam any) (string,
 // GetBlockHash returns the hash of the block in best-block-chain at the given height.
 func (c *Client) GetBlockHash(height int64) (string, error) {
 	var hash string
-	err := c.callRead(&hash, "getblockhash", height)
-	err = c.withFallback(err, func(fb UTXOReader) error {
+	err := c.readWithFallback(func() error { return c.callPrimary(&hash, "getblockhash", height) }, func(fb UTXOReader) error {
 		var ferr error
 		hash, ferr = fb.GetBlockHash(height)
 		return ferr
@@ -310,8 +351,7 @@ func (c *Client) GetBlockHash(height int64) (string, error) {
 // GetBlockVerboseTxs returns information about the block with verbosity 2.
 func (c *Client) GetBlockVerboseTxs(hash string) (*btcjson.GetBlockVerboseTxResult, error) {
 	var block btcjson.GetBlockVerboseTxResult
-	err := c.callRead(&block, "getblock", hash, 2)
-	err = c.withFallback(err, func(fb UTXOReader) error {
+	err := c.readWithFallback(func() error { return c.callPrimary(&block, "getblock", hash, 2) }, func(fb UTXOReader) error {
 		result, ferr := fb.GetBlockVerboseTxs(hash)
 		if ferr == nil {
 			block = *result
@@ -324,8 +364,7 @@ func (c *Client) GetBlockVerboseTxs(hash string) (*btcjson.GetBlockVerboseTxResu
 // GetBlockVerbose returns information about the block with verbosity 1.
 func (c *Client) GetBlockVerbose(hash string) (*btcjson.GetBlockVerboseResult, error) {
 	var block btcjson.GetBlockVerboseResult
-	err := c.callRead(&block, "getblock", hash, 1)
-	err = c.withFallback(err, func(fb UTXOReader) error {
+	err := c.readWithFallback(func() error { return c.callPrimary(&block, "getblock", hash, 1) }, func(fb UTXOReader) error {
 		result, ferr := fb.GetBlockVerbose(hash)
 		if ferr == nil {
 			block = *result
@@ -338,8 +377,7 @@ func (c *Client) GetBlockVerbose(hash string) (*btcjson.GetBlockVerboseResult, e
 // GetBlockStats returns statistics about the block at the given hash.
 func (c *Client) GetBlockStats(hash string) (*btcjson.GetBlockStatsResult, error) {
 	var stats btcjson.GetBlockStatsResult
-	err := c.callRead(&stats, "getblockstats", hash)
-	err = c.withFallback(err, func(fb UTXOReader) error {
+	err := c.readWithFallback(func() error { return c.callPrimary(&stats, "getblockstats", hash) }, func(fb UTXOReader) error {
 		result, ferr := fb.GetBlockStats(hash)
 		if ferr == nil {
 			stats = *result
@@ -352,8 +390,7 @@ func (c *Client) GetBlockStats(hash string) (*btcjson.GetBlockStatsResult, error
 // GetMempoolEntry returns mempool data for the given transaction.
 func (c *Client) GetMempoolEntry(txid string) (*btcjson.GetMempoolEntryResult, error) {
 	var entry btcjson.GetMempoolEntryResult
-	err := c.callRead(&entry, "getmempoolentry", txid)
-	err = c.withFallback(err, func(fb UTXOReader) error {
+	err := c.readWithFallback(func() error { return c.callPrimary(&entry, "getmempoolentry", txid) }, func(fb UTXOReader) error {
 		result, ferr := fb.GetMempoolEntry(txid)
 		if ferr == nil {
 			entry = *result
@@ -374,21 +411,22 @@ func (c *Client) BatchGetMempoolEntry(txids []string) ([]*btcjson.GetMempoolEntr
 		})
 	}
 
-	// Use readPrimary directly (not BatchCall) so the raw error reaches isRateLimitError.
-	if rawErr := c.readPrimary(func() error { return c.batchCall(batch) }); rawErr != nil {
-		var (
-			results []*btcjson.GetMempoolEntryResult
-			errs    []error
-		)
-		ferr := c.withFallback(rawErr, func(fb UTXOReader) error {
-			var e error
-			results, errs, e = fb.BatchGetMempoolEntry(txids)
-			return e
-		})
-		if ferr != nil {
-			return nil, nil, extractBTCError(ferr)
-		}
-		return results, errs, nil
+	var (
+		fbResults []*btcjson.GetMempoolEntryResult
+		fbErrs    []error
+		served    bool
+	)
+	err := c.readWithFallback(func() error { return c.batchCall(batch) }, func(fb UTXOReader) error {
+		var e error
+		fbResults, fbErrs, e = fb.BatchGetMempoolEntry(txids)
+		served = e == nil
+		return e
+	})
+	if err != nil {
+		return nil, nil, extractBTCError(err)
+	}
+	if served {
+		return fbResults, fbErrs, nil
 	}
 
 	errs := make([]error, len(txids))
@@ -408,8 +446,7 @@ func (c *Client) BatchGetMempoolEntry(txids []string) ([]*btcjson.GetMempoolEntr
 // GetRawMempool returns all transaction ids in the mempool.
 func (c *Client) GetRawMempool() ([]string, error) {
 	var txids []string
-	err := c.callRead(&txids, "getrawmempool")
-	err = c.withFallback(err, func(fb UTXOReader) error {
+	err := c.readWithFallback(func() error { return c.callPrimary(&txids, "getrawmempool") }, func(fb UTXOReader) error {
 		var ferr error
 		txids, ferr = fb.GetRawMempool()
 		return ferr
@@ -420,8 +457,7 @@ func (c *Client) GetRawMempool() ([]string, error) {
 // GetRawTransactionVerbose returns a raw transaction for the transaction id.
 func (c *Client) GetRawTransactionVerbose(txid string) (*btcjson.TxRawResult, error) {
 	var tx btcjson.TxRawResult
-	err := c.callRead(&tx, "getrawtransaction", txid, true)
-	err = c.withFallback(err, func(fb UTXOReader) error {
+	err := c.readWithFallback(func() error { return c.callPrimary(&tx, "getrawtransaction", txid, true) }, func(fb UTXOReader) error {
 		result, ferr := fb.GetRawTransactionVerbose(txid)
 		if ferr == nil {
 			tx = *result
@@ -434,8 +470,7 @@ func (c *Client) GetRawTransactionVerbose(txid string) (*btcjson.TxRawResult, er
 // GetRawTransaction returns a raw transaction string for the transaction id.
 func (c *Client) GetRawTransaction(txid string) (string, error) {
 	var tx string
-	err := c.callRead(&tx, "getrawtransaction", txid, false)
-	err = c.withFallback(err, func(fb UTXOReader) error {
+	err := c.readWithFallback(func() error { return c.callPrimary(&tx, "getrawtransaction", txid, false) }, func(fb UTXOReader) error {
 		var ferr error
 		tx, ferr = fb.GetRawTransaction(txid)
 		return ferr
@@ -454,20 +489,22 @@ func (c *Client) BatchGetRawTransactionVerbose(txids []string) ([]*btcjson.TxRaw
 		})
 	}
 
-	if rawErr := c.readPrimary(func() error { return c.batchCall(batch) }); rawErr != nil {
-		var (
-			results []*btcjson.TxRawResult
-			errs    []error
-		)
-		ferr := c.withFallback(rawErr, func(fb UTXOReader) error {
-			var e error
-			results, errs, e = fb.BatchGetRawTransactionVerbose(txids)
-			return e
-		})
-		if ferr != nil {
-			return nil, nil, extractBTCError(ferr)
-		}
-		return results, errs, nil
+	var (
+		fbResults []*btcjson.TxRawResult
+		fbErrs    []error
+		served    bool
+	)
+	err := c.readWithFallback(func() error { return c.batchCall(batch) }, func(fb UTXOReader) error {
+		var e error
+		fbResults, fbErrs, e = fb.BatchGetRawTransactionVerbose(txids)
+		served = e == nil
+		return e
+	})
+	if err != nil {
+		return nil, nil, extractBTCError(err)
+	}
+	if served {
+		return fbResults, fbErrs, nil
 	}
 
 	errs := make([]error, len(txids))
@@ -631,10 +668,15 @@ func (c *Client) GetNetworkInfo() (*btcjson.GetNetworkInfoResult, error) {
 		btcjson.GetNetworkInfoResult
 		Warnings flexibleWarnings `json:"warnings"`
 	}
-	err := c.callRead(&info, "getnetworkinfo")
-	result := info.GetNetworkInfoResult
-	result.Warnings = strings.Join(info.Warnings, "; ")
-	err = c.withFallback(err, func(fb UTXOReader) error {
+	var result btcjson.GetNetworkInfoResult
+	err := c.readWithFallback(func() error {
+		perr := c.callPrimary(&info, "getnetworkinfo")
+		if perr == nil {
+			result = info.GetNetworkInfoResult
+			result.Warnings = strings.Join(info.Warnings, "; ")
+		}
+		return perr
+	}, func(fb UTXOReader) error {
 		fbResult, ferr := fb.GetNetworkInfo()
 		if ferr == nil {
 			result = *fbResult
@@ -655,15 +697,14 @@ func (c *Client) Call(result any, method string, args ...interface{}) error {
 // needs a chain-specific result struct that the typed GetBlockStats cannot represent.
 // Writes must keep using Call, which is primary-only.
 func (c *Client) CallWithFallback(result any, method string, args ...interface{}) error {
-	err := c.callRead(result, method, args...)
-	err = c.withFallback(err, func(fb UTXOReader) error {
+	err := c.readWithFallback(func() error { return c.callPrimary(result, method, args...) }, func(fb UTXOReader) error {
 		return fb.Call(result, method, args...)
 	})
 	return extractBTCError(err)
 }
 
 // callRaw performs a JSON-RPC call with retry but without extractBTCError, so the raw
-// HTTP status (e.g. "429 Too Many Requests: ...") is preserved for withFallback to inspect.
+// HTTP status (e.g. "429 Too Many Requests: ...") is preserved for isRateLimitError to inspect.
 func (c *Client) callRaw(result any, method string, args ...interface{}) error {
 	fn := func() error {
 		if c.timeout <= 0 {
@@ -696,51 +737,6 @@ func (c *Client) batchCall(batch []rpc.BatchElem) error {
 // Helpers
 ////////////////////////////////////////////////////////////////////////////////////////
 
-// withFallback tries fn against the read fallbacks when err is non-nil.
-//
-// Without a manager (single-endpoint legacy path), an HTTP 429 never fails over:
-// the caller sleeps rateLimitBackoff and returns the error, so a rate-limited
-// daemon is not hammered.
-//
-// With a manager, endpoints are tried in the manager's order (healthy first, all
-// non-disabled ones when everything is down), a 429 puts that endpoint in cooldown
-// so later reads skip it, and the read is served by the next candidate. If nothing
-// served the read and the primary was rate limited, the caller still sleeps.
-func (c *Client) withFallback(err error, fn func(UTXOReader) error) error {
-	if err == nil {
-		c.recordSuccess(0)
-		return nil
-	}
-	c.recordFailure(0, err)
-	rateLimited := isRateLimitError(err)
-	if c.manager == nil && rateLimited {
-		c.sleepRateLimit()
-		return err
-	}
-	_, fallbackIdx := c.candidates()
-	for _, i := range fallbackIdx {
-		ferr := fn(c.fallbacks[i])
-		if ferr == nil {
-			c.recordSuccess(i + 1)
-			return nil
-		}
-		c.recordFailure(i+1, ferr)
-	}
-	if rateLimited {
-		c.sleepRateLimit()
-	}
-	if errors.Is(err, errPrimarySkipped) {
-		return fmt.Errorf("no eligible %s endpoint served the read", c.chain)
-	}
-	return c.redact(0, err)
-}
-
-func (c *Client) sleepRateLimit() {
-	if c.rateLimitBackoff > 0 {
-		time.Sleep(c.rateLimitBackoff)
-	}
-}
-
 // isRateLimitError reports whether err represents an HTTP 429 response.
 func isRateLimitError(err error) bool {
 	if err == nil {
@@ -750,7 +746,7 @@ func isRateLimitError(err error) bool {
 	if strings.Contains(s, "too many requests") {
 		return true
 	}
-	return strings.Contains(s, "status 429") || strings.Contains(s, " 429 ") || strings.Contains(s, "http 429")
+	return strings.Contains(s, "status 429") || strings.Contains(s, "status: 429") || strings.Contains(s, " 429 ") || strings.Contains(s, "http 429")
 }
 
 // Ethereum RPC returns an error with the response appended to the HTTP status like:

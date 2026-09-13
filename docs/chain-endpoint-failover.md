@@ -149,8 +149,8 @@ BIFROST_CHAINS_<CHAIN>_ENDPOINTS_<N>_<FIELD>
 ```
 
 where `<CHAIN>` is the chain symbol (e.g. `BTC`, `ETH`, `GAIA`) and `<N>` is the 1-based
-endpoint index. An endpoint with no explicit `PRIORITY` defaults to its index, so
-`ENDPOINTS_1` is preferred over `ENDPOINTS_2`. Supported fields (case-insensitive):
+endpoint index. Every endpoint needs a distinct `NAME`. An endpoint with no explicit
+`PRIORITY` defaults to its index, so `ENDPOINTS_1` is preferred over `ENDPOINTS_2`. Supported fields (case-insensitive):
 
 | Env field              | Maps to                |
 | ---------------------- | ---------------------- |
@@ -167,9 +167,11 @@ endpoint index. An endpoint with no explicit `PRIORITY` defaults to its index, s
 Example, a primary local daemon with an external fallback for BTC:
 
 ```bash
+BIFROST_CHAINS_BTC_ENDPOINTS_1_NAME=local
 BIFROST_CHAINS_BTC_ENDPOINTS_1_URL=http://localhost:8332
 BIFROST_CHAINS_BTC_ENDPOINTS_1_USERNAME=user
 BIFROST_CHAINS_BTC_ENDPOINTS_1_PASSWORD=pass
+BIFROST_CHAINS_BTC_ENDPOINTS_2_NAME=ankr
 BIFROST_CHAINS_BTC_ENDPOINTS_2_URL=https://rpc.ankr.com/btc/YOUR_ANKR_KEY
 ```
 

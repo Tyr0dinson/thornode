@@ -92,7 +92,6 @@ type CosmosClient struct {
 	signerCacheManager  *signercache.CacheManager
 	cosmosScanner       *CosmosBlockScanner
 	cometRPC            cometMempoolClient
-	cometPinned         map[string]cometMempoolClient // direct client per endpoint, for verification
 	endpointMgr         *endpoints.Manager
 	grpcConn            *endpoints.GRPCConn
 	globalSolvencyQueue chan stypes.Solvency
@@ -221,20 +220,6 @@ func NewCosmosClient(
 	rpcHTTP := &http.Client{Transport: rpcRouter, Timeout: cfg.BlockScanner.HTTPRequestTimeout}
 	scannerHost := endpoints.SyntheticBase(cfg.ChainID).String()
 
-	// direct (unrouted) mempool clients, one per endpoint, for signer-cache
-	// verification: a broadcast may sit in only one endpoint's mempool
-	cometPinned := make(map[string]cometMempoolClient, len(rpcTargets))
-	for _, t := range rpcTargets {
-		if t.URL == nil {
-			continue
-		}
-		direct, derr := rpcclienthttp.NewWithClient(t.URL.String(), "/websocket", &http.Client{Timeout: cfg.BlockScanner.HTTPRequestTimeout})
-		if derr != nil {
-			return nil, fmt.Errorf("fail to create cometbft client for endpoint %s: %w", t.Name, derr)
-		}
-		cometPinned[t.Name] = direct
-	}
-
 	interfaceRegistry := codectypes.NewInterfaceRegistry()
 	interfaceRegistry.RegisterImplementations((*ctypes.Msg)(nil), &btypes.MsgSend{})
 	marshaler := codec.NewProtoCodec(interfaceRegistry)
@@ -250,7 +235,6 @@ func NewCosmosClient(
 		accountClient:   atypes.NewQueryClient(grpcConn),
 		endpointMgr:     endpointMgr,
 		grpcConn:        grpcConn,
-		cometPinned:     cometPinned,
 		accts:           NewCosmosMetaDataStore(),
 		tssKeyManager:   tssKm,
 		localKeyManager: localKm,
@@ -489,15 +473,20 @@ func (c *CosmosClient) processOutboundTx(tx stypes.TxOutItem, thorchainHeight in
 // size. That requires the signer cache to record the signed sequence and is left
 // as a follow-up.
 func (c *CosmosClient) mempoolLookup(ctx context.Context, sig string) signercache.LookupResult {
-	if len(c.cometPinned) == 0 {
+	if c.endpointMgr == nil {
 		return mempoolLookupOn(ctx, c.cometRPC, sig)
 	}
 	// With several endpoints the broadcast may sit in only one endpoint's mempool:
-	// found anywhere is Found; not found everywhere with every endpoint answering a
-	// complete page is NotFound; anything else is Ambiguous (keeps the cache entry).
+	// every non-disabled endpoint is asked with a pinned request through the routed
+	// client (so each endpoint's credentials apply). Found anywhere is Found; not
+	// found everywhere with every endpoint answering a complete page is NotFound;
+	// anything else is Ambiguous (keeps the cache entry).
 	ambiguous := false
-	for _, client := range c.cometPinned {
-		switch mempoolLookupOn(ctx, client, sig) {
+	for _, e := range c.endpointMgr.Entries() {
+		if e.State() == endpoints.StateDisabled {
+			continue
+		}
+		switch mempoolLookupOn(endpoints.PinContext(ctx, e.Name), c.cometRPC, sig) {
 		case signercache.LookupFound:
 			return signercache.LookupFound
 		case signercache.LookupAmbiguous:
@@ -537,18 +526,42 @@ func mempoolLookupOn(ctx context.Context, client cometMempoolClient, sig string)
 // as "absent" and clearing the cache — which would re-sign at a new sequence while
 // the original at the old sequence still settles, a double-spend — it consults the
 // CometBFT mempool via mempoolLookup. A non-NotFound RPC error is ambiguous.
+//
+// With several endpoints, an endpoint behind in blocks or tx indexing can report a
+// committed tx as absent, so GetTx is asked on every non-disabled endpoint (pinned):
+// found anywhere is Found, any non-NotFound error is Ambiguous, and only NotFound
+// everywhere proceeds to the mempool lookup, which is also done on every endpoint.
 func (c *CosmosClient) verifyBroadcast(sig string) signercache.LookupResult {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
-	_, txErr := c.txClient.GetTx(ctx, &txtypes.GetTxRequest{Hash: sig})
-	switch {
-	case txErr == nil:
-		return signercache.LookupFound
-	case status.Code(txErr) == codes.NotFound:
-		return c.mempoolLookup(ctx, sig)
-	default:
+	if c.endpointMgr == nil {
+		_, txErr := c.txClient.GetTx(ctx, &txtypes.GetTxRequest{Hash: sig})
+		switch {
+		case txErr == nil:
+			return signercache.LookupFound
+		case status.Code(txErr) == codes.NotFound:
+			return c.mempoolLookup(ctx, sig)
+		default:
+			return signercache.LookupAmbiguous
+		}
+	}
+	ambiguous := false
+	for _, e := range c.endpointMgr.Entries() {
+		if e.State() == endpoints.StateDisabled {
+			continue
+		}
+		_, txErr := c.txClient.GetTx(endpoints.PinContext(ctx, e.Name), &txtypes.GetTxRequest{Hash: sig})
+		switch {
+		case txErr == nil:
+			return signercache.LookupFound
+		case status.Code(txErr) != codes.NotFound:
+			ambiguous = true
+		}
+	}
+	if ambiguous {
 		return signercache.LookupAmbiguous
 	}
+	return c.mempoolLookup(ctx, sig)
 }
 
 // SignTx sign the the given TxArrayItem

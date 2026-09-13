@@ -72,13 +72,16 @@ func (m *Manager) Bootstrap(ctx context.Context, probes []Probe) error {
 
 	for i, e := range m.entries {
 		id, ok := verified[e.Name]
-		if !ok {
+		if !ok || ref == "" {
+			// no identity, or no reference to compare it with: stay unverified (and
+			// out of rotation when verification is required) until the health loop
+			// can establish a reference
 			if e.identityRequiredValue() {
 				e.MarkUnhealthy(ErrorKindProbe)
 			}
 			continue
 		}
-		if ref != "" && id != ref {
+		if id != ref {
 			if i == 0 && m.expectedIdentity != "" {
 				return fmt.Errorf("chain %s: priority-1 endpoint %s reports identity %q but expected_identity is %q; check the endpoint is on the right network",
 					m.chain, e.Name, id, ref)
@@ -242,31 +245,44 @@ func (m *Manager) Cycle(ctx context.Context) {
 	}
 	results := m.probeAll(ctx, selected, true)
 
-	// 1. identity verification for endpoints that were unverified
+	// 1. identity verification for endpoints that were unverified. Without a
+	// reference, one is established only from the priority-1 endpoint or from a
+	// strict majority of every identity known so far; never from the first
+	// endpoint that happens to answer.
 	ref := m.ReferenceIdentity()
-	for i, e := range m.entries {
-		r := results[i]
-		if e.IdentityVerified() || r.idErr != nil || r.identity == "" {
-			continue
-		}
-		if ref == "" {
-			// no reference yet: the priority-1 endpoint sets it, otherwise the first
-			// verified endpoint does (the operator can pin it with expected_identity)
-			if i == 0 || m.entries[0].State() == StateDisabled || !m.anyVerified() {
-				m.setReference(r.identity)
-				ref = r.identity
+	if ref == "" {
+		known := make(map[string]string, len(m.entries))
+		for i, e := range m.entries {
+			switch {
+			case e.IdentityVerified():
+				known[e.Name] = e.Identity()
+			case results[i].idErr == nil && results[i].identity != "":
+				known[e.Name] = results[i].identity
 			}
 		}
-		if ref != "" && r.identity != ref {
+		if id, ok := known[m.entries[0].Name]; ok && m.entries[0].State() != StateDisabled {
+			ref = id
+		} else {
+			ref = majorityIdentity(known)
+		}
+		if ref != "" {
+			m.setReference(ref)
+			m.log.Info().Str("identity", ref).Msg("reference chain identity established")
+		}
+	}
+	for i, e := range m.entries {
+		r := results[i]
+		if ref == "" || e.IdentityVerified() || r.idErr != nil || r.identity == "" {
+			continue
+		}
+		if r.identity != ref {
 			m.log.Error().Str("endpoint", e.Name).Str("expected", ref).Str("got", r.identity).
 				Msg("endpoint reports a different chain identity; disabling it permanently")
 			m.Disable(e.Name, fmt.Sprintf("identity %q != %q", r.identity, ref))
 			results[i].err = errors.New("disabled: identity mismatch")
 			continue
 		}
-		if ref != "" {
-			e.SetIdentity(r.identity)
-		}
+		e.SetIdentity(r.identity)
 	}
 
 	// 2. record probe data
@@ -301,10 +317,13 @@ func (m *Manager) Cycle(ctx context.Context) {
 		return false, ""
 	}
 
-	// 4. integrity: majority hash at tip - depth among healthy hash-capable endpoints
+	// 4. integrity: majority hash at tip - depth among healthy hash-capable endpoints;
+	// endpoints evicted for a minority hash are compared to it before they may recover
 	badHash := map[string]bool{}
+	integrityChecked := false
 	if quorum && m.cfg.IntegrityCheckDepth > 0 && tip-m.cfg.IntegrityCheckDepth > 0 {
 		badHash = m.integrityCheck(ctx, tip-m.cfg.IntegrityCheckDepth, heights)
+		integrityChecked = true
 	}
 
 	// 5. apply results per entry
@@ -337,6 +356,10 @@ func (m *Manager) Cycle(ctx context.Context) {
 					ok = false
 				}
 			}
+			if ok && e.LastErrorKind() == ErrorKindIntegrity && m.cfg.IntegrityCheckDepth > 0 {
+				// evicted for a minority hash: must match the healthy majority first
+				ok = integrityChecked && !badHash[e.Name]
+			}
 			from, to := e.RecordHealthCheck(ok, m.cfg)
 			m.logTransition(e, from, to, "health probe")
 		}
@@ -347,15 +370,6 @@ func (m *Manager) Cycle(ctx context.Context) {
 		m.MaybeFailback()
 	}
 	m.publishMetrics()
-}
-
-func (m *Manager) anyVerified() bool {
-	for _, e := range m.entries {
-		if e.IdentityVerified() {
-			return true
-		}
-	}
-	return false
 }
 
 // consensusTip returns the greatest height that at least one other endpoint is
@@ -378,11 +392,16 @@ func consensusTip(heights map[string]int64, lag int64) (tip int64, quorum bool) 
 }
 
 // integrityCheck fetches the block hash at height from every healthy endpoint that
-// supports it and returns the set of endpoints in the minority. Ties yield nothing.
+// supports it (and from non-healthy endpoints that were evicted for a minority
+// hash, so they can be re-checked) and returns the set of endpoints whose hash
+// differs from the majority of the healthy ones. Ties among healthy endpoints
+// yield nothing; an integrity-evicted endpoint with no healthy majority to compare
+// against is reported as bad, since it cannot be cleared.
 func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[string]int64) map[string]bool {
 	type res struct {
-		name string
-		hash string
+		name    string
+		hash    string
+		healthy bool
 	}
 	var (
 		wg      sync.WaitGroup
@@ -391,14 +410,20 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 	)
 	for i, e := range m.entries {
 		hp, ok := m.probes[i].(HashProbe)
-		if !ok || e.State() != StateHealthy {
+		if !ok {
+			continue
+		}
+		st := e.State()
+		healthy := st == StateHealthy
+		recheck := (st == StateUnhealthy || st == StateRecovering) && e.LastErrorKind() == ErrorKindIntegrity
+		if !healthy && !recheck {
 			continue
 		}
 		if h, seen := heights[e.Name]; !seen || h < height {
 			continue // endpoint has not reached that height yet; not evidence of anything
 		}
 		wg.Add(1)
-		go func(e *Entry, hp HashProbe) {
+		go func(e *Entry, hp HashProbe, healthy bool) {
 			defer wg.Done()
 			pctx, cancel := context.WithTimeout(ctx, m.cfg.HealthCheckTimeout)
 			defer cancel()
@@ -407,17 +432,41 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 				return // a failed hash fetch is not an integrity signal
 			}
 			mu.Lock()
-			results = append(results, res{e.Name, strings.ToLower(h)})
+			results = append(results, res{e.Name, strings.ToLower(h), healthy})
 			mu.Unlock()
-		}(e, hp)
+		}(e, hp, healthy)
 	}
 	wg.Wait()
-	if len(results) < 2 {
-		return nil
-	}
 	counts := map[string]int{}
+	healthyN := 0
 	for _, r := range results {
-		counts[r.hash]++
+		if r.healthy {
+			counts[r.hash]++
+			healthyN++
+		}
+	}
+	if healthyN == 0 {
+		// nothing to compare against: integrity-evicted endpoints stay evicted
+		bad := map[string]bool{}
+		for _, r := range results {
+			bad[r.name] = true
+		}
+		return bad
+	}
+	if healthyN < 2 {
+		// a single healthy endpoint is the reference for re-checks but cannot be
+		// outvoted; only compare the non-healthy candidates to it
+		var ref string
+		for h := range counts {
+			ref = h
+		}
+		bad := map[string]bool{}
+		for _, r := range results {
+			if !r.healthy && r.hash != ref {
+				bad[r.name] = true
+			}
+		}
+		return bad
 	}
 	best, bestN, tie := "", 0, false
 	for h, n := range counts {

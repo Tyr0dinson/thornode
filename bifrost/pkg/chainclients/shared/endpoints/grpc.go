@@ -59,12 +59,16 @@ func (g *GRPCConn) Invoke(ctx context.Context, method string, args, reply any, o
 		}
 		candidates, pinned = []*Entry{e}, true
 	} else if g.writeMethods[method] {
-		candidates = []*Entry{g.mgr.WriteTarget()}
+		wt := g.mgr.WriteTarget()
+		if wt == nil {
+			return fmt.Errorf("chain %s: no permitted write endpoint (active endpoint disabled)", g.mgr.Chain())
+		}
+		candidates = []*Entry{wt}
 	} else {
 		candidates = g.mgr.ReadCandidates()
 	}
 	var lastErr error
-	for _, e := range candidates {
+	for i, e := range candidates {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -74,7 +78,8 @@ func (g *GRPCConn) Invoke(ctx context.Context, method string, args, reply any, o
 		}
 		actx, cancel := ctx, func() {}
 		if !pinned && !g.writeMethods[method] {
-			actx, cancel = context.WithTimeout(ctx, g.attemptTimeout)
+			// leave budget for the remaining candidates inside the caller's deadline
+			actx, cancel = context.WithTimeout(ctx, attemptBudget(ctx, g.attemptTimeout, len(candidates)-i-1))
 		}
 		err := conn.Invoke(actx, method, args, reply, opts...)
 		cancel()
@@ -114,6 +119,9 @@ func (g *GRPCConn) NewStream(ctx context.Context, desc *grpc.StreamDesc, method 
 		if pe := g.mgr.Entry(name); pe != nil {
 			e = pe
 		}
+	}
+	if e == nil {
+		return nil, fmt.Errorf("chain %s: no permitted endpoint for streams (active endpoint disabled)", g.mgr.Chain())
 	}
 	conn, ok := g.conns[e.Name]
 	if !ok {

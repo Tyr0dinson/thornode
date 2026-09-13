@@ -308,3 +308,85 @@ func (s *RouterSuite) TestTargetsFromAndBaseValidation(c *C) {
 	_, err = endpoints.NewHTTPRouter(m, endpoints.HTTPRouterConfig{Base: endpoints.SyntheticBase(m.Chain()), Targets: targets[:1]}, zerolog.Nop())
 	c.Assert(err, ErrorMatches, ".*1 targets for 2 endpoints.*")
 }
+
+func (s *RouterSuite) TestBatchResponsesAreClassified(c *C) {
+	var st int32 = http.StatusOK
+	var h1, h2 []hit
+	limited := rpcServer(&st, &h1, `[{"jsonrpc":"2.0","id":1,"result":"0x1"},{"jsonrpc":"2.0","id":2,"error":{"code":-32005,"message":"limit"}}]`)
+	defer limited.Close()
+	good := rpcServer(&st, &h2, `[{"jsonrpc":"2.0","id":1,"result":"0x1"},{"jsonrpc":"2.0","id":2,"result":"0x2"}]`)
+	defer good.Close()
+	m, targets := twoEndpointMgr(c, common.ETHChain, []config.ChainEndpointConfig{{Name: "lim", RPCHost: limited.URL, Priority: 1}, {Name: "good", RPCHost: good.URL, Priority: 2}}, 5)
+	hc := routerFor(c, m, targets, nil)
+	req, _ := http.NewRequest(http.MethodPost, base(m), bytes.NewReader([]byte(`[{"method":"eth_getTransactionReceipt"},{"method":"eth_getTransactionReceipt"}]`)))
+	resp, err := hc.Do(req)
+	c.Assert(err, IsNil)
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	c.Assert(string(body), Matches, `.*"0x2".*`) // served by good after lim's batch carried a rate limit
+	c.Assert(m.Entry("lim").InCooldown(), Equals, true)
+	c.Assert(h2, HasLen, 1)
+}
+
+func (s *RouterSuite) TestTruncatedBodyIsAnEndpointFailure(c *C) {
+	broken := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Length", "200")
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"re`)) // handler returns early: connection cut
+	}))
+	defer broken.Close()
+	var st int32 = http.StatusOK
+	var h2 []hit
+	good := rpcServer(&st, &h2, "")
+	defer good.Close()
+	m, targets := twoEndpointMgr(c, common.ETHChain, []config.ChainEndpointConfig{{Name: "broken", RPCHost: broken.URL, Priority: 1}, {Name: "good", RPCHost: good.URL, Priority: 2}}, 1)
+	hc := routerFor(c, m, targets, nil)
+	resp, err := post(c, hc, base(m), "eth_blockNumber")
+	c.Assert(err, IsNil)
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	c.Assert(string(body), Matches, `.*"ok".*`)
+	c.Assert(m.Entry("broken").State(), Equals, endpoints.StateUnhealthy)
+}
+
+func (s *RouterSuite) TestWritesRefusedWhenEveryEndpointDisabled(c *C) {
+	var st int32 = http.StatusOK
+	srv := rpcServer(&st, nil, "")
+	defer srv.Close()
+	m, targets := twoEndpointMgr(c, common.ETHChain, []config.ChainEndpointConfig{{Name: "a", RPCHost: srv.URL, Priority: 1}, {Name: "b", RPCHost: srv.URL, Priority: 2}}, 1)
+	m.Disable("b", "identity")
+	m.Disable("a", "identity")
+	hc := routerFor(c, m, targets, []string{"eth_sendRawTransaction"})
+	_, err := post(c, hc, base(m), "eth_sendRawTransaction")
+	c.Assert(err, ErrorMatches, "(?s).*no permitted write endpoint.*")
+	_, err = post(c, hc, base(m), "eth_blockNumber")
+	c.Assert(err, ErrorMatches, "(?s).*no endpoint available.*")
+}
+
+func (s *RouterSuite) TestAttemptBudgetLeavesTimeForNextCandidate(c *C) {
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-time.After(2 * time.Second):
+		case <-r.Context().Done():
+		}
+	}))
+	defer slow.Close()
+	var st int32 = http.StatusOK
+	var h2 []hit
+	good := rpcServer(&st, &h2, "")
+	defer good.Close()
+	m, targets := twoEndpointMgr(c, common.ETHChain, []config.ChainEndpointConfig{{Name: "slow", RPCHost: slow.URL, Priority: 1}, {Name: "good", RPCHost: good.URL, Priority: 2}}, 5)
+	r, err := endpoints.NewHTTPRouter(m, endpoints.HTTPRouterConfig{Base: endpoints.SyntheticBase(m.Chain()), Targets: targets, AttemptTimeout: 10 * time.Second}, zerolog.Nop())
+	c.Assert(err, IsNil)
+	hc := &http.Client{Transport: r}
+	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Millisecond)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, base(m), bytes.NewReader([]byte(`{"method":"eth_blockNumber"}`)))
+	start := time.Now()
+	resp, err := hc.Do(req)
+	c.Assert(err, IsNil) // slow got ~300ms, good served within the caller's 600ms
+	_ = resp.Body.Close()
+	c.Assert(time.Since(start) < 600*time.Millisecond, Equals, true)
+	c.Assert(h2, HasLen, 1)
+	c.Assert(m.Entry("slow").Snapshot().InlineErrors, Equals, 1)
+}

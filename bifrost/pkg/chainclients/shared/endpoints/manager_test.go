@@ -169,3 +169,21 @@ func (s *ManagerSuite) TestStopIsIdempotentAndNilSafe(c *C) {
 	nilMgr.Start()
 	nilMgr.SetScannerHeight(nil)
 }
+
+func (s *ManagerSuite) TestWriteTargetIsNilWhenEveryEndpointDisabled(c *C) {
+	m := newMgr(c, fc(1, 1), "a", "b")
+	m.Disable("b", "identity")
+	m.Disable("a", "identity")
+	c.Assert(m.WriteTarget(), IsNil)
+	c.Assert(m.ReadCandidates(), HasLen, 0)
+}
+
+func (s *ManagerSuite) TestFailbackSkipsCoolingDownEndpoint(c *C) {
+	cfg := fc(1, 1)
+	cfg.PreferHigherPriority = true
+	m := newMgr(c, cfg, "a", "b")
+	m.RecordRateLimited("a") // hands off to b while a cools down
+	c.Assert(m.Active().Name, Equals, "b")
+	c.Assert(m.MaybeFailback(), Equals, false) // a is healthy but not eligible
+	c.Assert(m.Active().Name, Equals, "b")
+}

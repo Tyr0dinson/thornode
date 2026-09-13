@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"sync/atomic"
+	"time"
 
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
@@ -166,4 +167,57 @@ func (s *GRPCSuite) TestCredentials(c *C) {
 	c.Assert(md["authorization"], Equals, "Basic dTpw")
 	c.Assert(basic.RequireTransportSecurity(), Equals, true)
 	c.Assert(endpoints.GRPCCredentials(config.ChainEndpointConfig{}, false), IsNil)
+}
+
+// slowHealthServer blocks until the request context ends or delay passes.
+type slowHealthServer struct {
+	healthpb.UnimplementedHealthServer
+	delay time.Duration
+}
+
+func (h *slowHealthServer) Check(ctx context.Context, _ *healthpb.HealthCheckRequest) (*healthpb.HealthCheckResponse, error) {
+	select {
+	case <-time.After(h.delay):
+		return &healthpb.HealthCheckResponse{Status: healthpb.HealthCheckResponse_SERVING}, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (s *GRPCSuite) TestAttemptBudgetLeavesTimeForNextCandidate(c *C) {
+	lis := bufconn.Listen(1 << 20)
+	srv := grpc.NewServer()
+	healthpb.RegisterHealthServer(srv, &slowHealthServer{delay: 2 * time.Second})
+	go func() { _ = srv.Serve(lis) }()
+	defer srv.Stop()
+	pc, err := grpc.NewClient("passthrough:///slow",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return lis.Dial() }),
+		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	c.Assert(err, IsNil)
+	defer func() { _ = pc.Close() }()
+	backup := &healthServer{}
+	bc, closeB := bufServer(c, backup)
+	defer closeB()
+	m := grpcMgr(c, 5)
+	g := endpoints.NewGRPCConn(m, map[string]*grpc.ClientConn{"primary": pc, "backup": bc}, nil, 10*time.Second, zerolog.Nop())
+	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Millisecond)
+	defer cancel()
+	res, err := healthpb.NewHealthClient(g).Check(ctx, &healthpb.HealthCheckRequest{})
+	c.Assert(err, IsNil)
+	c.Assert(res.Status, Equals, healthpb.HealthCheckResponse_SERVING)
+	c.Assert(backup.calls.Load(), Equals, int32(1))
+	c.Assert(m.Entry("primary").Snapshot().InlineErrors, Equals, 1) // the attempt timeout counted against it
+}
+
+func (s *GRPCSuite) TestWritesRefusedWhenEveryEndpointDisabled(c *C) {
+	primary := &healthServer{}
+	pc, closeP := bufServer(c, primary)
+	defer closeP()
+	m := grpcMgr(c, 1)
+	m.Disable("backup", "identity")
+	m.Disable("primary", "identity")
+	g := endpoints.NewGRPCConn(m, map[string]*grpc.ClientConn{"primary": pc}, []string{"/grpc.health.v1.Health/Check"}, 0, zerolog.Nop())
+	_, err := healthpb.NewHealthClient(g).Check(context.Background(), &healthpb.HealthCheckRequest{})
+	c.Assert(err, ErrorMatches, ".*no permitted write endpoint.*")
+	c.Assert(primary.calls.Load(), Equals, int32(0))
 }

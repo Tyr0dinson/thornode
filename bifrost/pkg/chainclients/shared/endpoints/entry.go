@@ -280,6 +280,13 @@ func (e *Entry) RecordProbe(height int64, latency time.Duration) {
 	e.lastProbeAt = e.now()
 }
 
+// LastErrorKind returns the kind of the most recent recorded error ("" if none).
+func (e *Entry) LastErrorKind() ErrorKind {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.lastErrorKind
+}
+
 // LastHeight returns the height from the latest successful probe (0 if none).
 func (e *Entry) LastHeight() int64 {
 	e.mu.Lock()

@@ -1541,6 +1541,15 @@ func (s *RPCSuite) TestFlexibleWarningsUnmarshal(c *C) {
 // endpoint-manager-aware fallback tests
 // ---------------------------------------------------------------------------
 
+// newPlainErrorServer answers with the status and a non-JSON body: an endpoint
+// failure, unlike newErrorServer whose JSON-RPC error body is an application answer
+// (Bitcoin Core before 28 reports every RPC error with HTTP 500).
+func newPlainErrorServer(statusCode int) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "bad gateway", statusCode)
+	}))
+}
+
 func mgrFor(c *C, threshold int, hosts map[string]string, names ...string) (*endpoints.Manager, []config.ChainEndpointConfig) {
 	var cfgEps []config.ChainEndpointConfig
 	for i, n := range names {
@@ -1651,7 +1660,7 @@ func (s *RPCSuite) TestRateLimitWithoutFallbackStillBacksOff(c *C) {
 }
 
 func (s *RPCSuite) TestBatchGetRawTransactionVerboseFallsOverWithManager(c *C) {
-	primary := newErrorServer(500)
+	primary := newPlainErrorServer(502)
 	defer primary.Close()
 	fb := &mockUTXOReader{batchRawTxFn: func(txids []string) ([]*btcjson.TxRawResult, []error, error) {
 		out := make([]*btcjson.TxRawResult, len(txids))
@@ -1712,4 +1721,78 @@ func (s *RPCSuite) TestWithEndpointManagerRejectsMismatch(c *C) {
 	_, err = cl.GetBlockCount()
 	c.Assert(err, NotNil)
 	c.Assert(m.Entry("primary").State(), Equals, endpoints.StateHealthy) // manager not attached
+}
+
+func (s *RPCSuite) TestApplicationErrorIsNotAnEndpointFailure(c *C) {
+	// Bitcoin Core answers "No such mempool transaction" as a JSON-RPC error (-5)
+	primary := newMockRPCServer(func(method string, _ []interface{}) (interface{}, *btcjson.RPCError) {
+		return nil, btcjson.NewRPCError(-5, "No such mempool transaction")
+	})
+	defer primary.Close()
+	fb := &mockUTXOReader{} // its GetMempoolEntry returns a plain error: an endpoint failure
+	m, cfgEps := mgrFor(c, 5, map[string]string{"primary": primary.URL}, "primary", "fb")
+	cl, err := NewClientWithFallbacks(primary.URL, "u", "p", "", 0, time.Second, common.BTCChain, zerolog.Nop(), []UTXOReader{fb}, 0)
+	c.Assert(err, IsNil)
+	cl.WithEndpointManager(m, cfgEps)
+	for i := 0; i < 3; i++ {
+		_, err = cl.GetMempoolEntry("abc")
+		c.Assert(err, NotNil)
+	}
+	c.Assert(m.Entry("primary").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m.Entry("primary").Snapshot().InlineErrors, Equals, 0) // application answers are not failures
+	c.Assert(m.Entry("fb").Snapshot().InlineErrors, Equals, 3)      // still tried, as in Phase 1, and its plain errors count
+}
+
+func (s *RPCSuite) TestReadsFollowManagerOrderAfterFailover(c *C) {
+	var primaryHits int32
+	primary := newMockRPCServer(func(method string, _ []interface{}) (interface{}, *btcjson.RPCError) {
+		atomic.AddInt32(&primaryHits, 1)
+		return 1, nil
+	})
+	defer primary.Close()
+	fb := &mockUTXOReader{getBlockCountFn: func() (int64, error) { return 2, nil }}
+	m, cfgEps := mgrFor(c, 1, map[string]string{"primary": primary.URL}, "primary", "fb")
+	cl, err := NewClientWithFallbacks(primary.URL, "u", "p", "", 0, time.Second, common.BTCChain, zerolog.Nop(), []UTXOReader{fb}, 0)
+	c.Assert(err, IsNil)
+	cl.WithEndpointManager(m, cfgEps)
+	// evict the primary, then let it recover: active stays on fb (no prefer_higher_priority)
+	m.RecordError("primary", endpoints.ErrorKindTransport)
+	m.Entry("primary").RecordHealthCheck(true, m.Config())
+	c.Assert(m.Entry("primary").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m.Active().Name, Equals, "fb")
+	n, err := cl.GetBlockCount()
+	c.Assert(err, IsNil)
+	c.Assert(n, Equals, int64(2)) // served by the active fallback first
+	c.Assert(atomic.LoadInt32(&primaryHits), Equals, int32(0))
+}
+
+func (s *RPCSuite) TestSuccessfulBatchRecordsSuccess(c *C) {
+	var fail atomic.Bool
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if fail.Load() {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write([]byte(`[{"jsonrpc":"2.0","id":1,"result":{"txid":"a"}}]`))
+	}))
+	defer primary.Close()
+	m, cfgEps := mgrFor(c, 2, map[string]string{"primary": primary.URL}, "primary")
+	cl, err := NewClientWithFallbacks(primary.URL, "u", "p", "", 0, time.Second, common.BTCChain, zerolog.Nop(), nil, 0)
+	c.Assert(err, IsNil)
+	cl.WithEndpointManager(m, cfgEps)
+	for i := 0; i < 3; i++ { // alternate failure and success: never two consecutive failures
+		fail.Store(true)
+		_, _, _ = cl.BatchGetRawTransactionVerbose([]string{"a"})
+		fail.Store(false)
+		_, _, err = cl.BatchGetRawTransactionVerbose([]string{"a"})
+		c.Assert(err, IsNil)
+	}
+	c.Assert(m.Entry("primary").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m.Entry("primary").Snapshot().InlineErrors, Equals, 0)
+}
+
+func (s *RPCSuite) TestIsRateLimitErrorRecognizesZcashFormat(c *C) {
+	c.Assert(isRateLimitError(errors.New("response status: 429")), Equals, true)
+	c.Assert(isRateLimitError(errors.New("response status: 429: response body: slow down")), Equals, true)
+	c.Assert(isRateLimitError(errors.New("response status: 500")), Equals, false)
 }
