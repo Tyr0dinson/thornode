@@ -527,6 +527,16 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 			shouldFinalizeVault = true
 		}
 
+		// A vault finalized at first supermajority (above) computed its chain set
+		// from as few as 2/3 of the reports, so a single reporter running with a
+		// chain disabled leaves that chain one vote short and it is dropped even
+		// though every remaining report carries it. Reconsider the chain set as
+		// the late reports land. This must stay after the voter.Sign/SetTssVoter
+		// above so the recomputed set includes the report being handled.
+		if msg.KeygenType == AsgardKeygen && h.mgr.Keeper().VaultExists(ctx, voter.PoolPubKey) {
+			return h.refreshInitVaultChains(ctx, msg, voter)
+		}
+
 		if shouldFinalizeVault && !h.mgr.Keeper().VaultExists(ctx, voter.PoolPubKey) {
 			ctx.Logger().Info(
 				"tss keygen results success",
@@ -637,9 +647,82 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 	return nil
 }
 
+// refreshInitVaultChains handles a keygen success report that arrives after the
+// vault was already finalized. Finalizing on first supermajority means
+// ConsensusChains() ran against as few as 2/3 of the members, so a chain needs
+// unanimity among those early reporters to survive - one member with the chain
+// disabled in its bifrost config is enough to drop it, stalling the churn on the
+// tryRotateInitVaults chain set guard. Widening the set as the remaining reports
+// land repairs that, and rotation is re-attempted because the widening is what
+// makes the init vaults agree.
+//
+// Widening only ever adds: Sign appends and the denominator len(PubKeys) is
+// fixed, so ConsensusChains() is monotone non-decreasing.
+//
+// It deliberately does not re-emit the keygen success event, re-run the keygen
+// metric, re-check the check signature quorum, or restamp voter.BlockHeight -
+// restamping would re-open the ObservationDelayFlexibility window and refund
+// slash points to arbitrarily late reporters.
+//
+// ponytail: a chain still under threshold at the instant rotation succeeds is
+// excluded for the life of the vault. Rotation only fires once every init vault
+// of the keygen block agrees, so that needs a dissenter inside the early
+// reporters of every group - out of reach for a couple of misconfigured nodes.
+func (h TssHandler) refreshInitVaultChains(ctx cosmos.Context, msg *MsgTssPool, voter TssVoter) error {
+	vault, err := h.mgr.Keeper().GetVault(ctx, voter.PoolPubKey)
+	if err != nil {
+		return fmt.Errorf("fail to get vault: %w", err)
+	}
+	if vault.Status != InitVault {
+		// Already rotated or retired. NetworkMgr.RotateVault is not idempotent -
+		// a second call matches the now-Active vault against its own membership
+		// and sets it Retiring - so stop here.
+		return nil
+	}
+
+	// Start from the sorted consensus set and keep whatever the vault already
+	// carries: AddFunds appends a chain when a coin for it is observed, and an
+	// inbound must not be undone by a later keygen report.
+	merged := voter.ConsensusChains()
+	for _, c := range vault.GetChains() {
+		if !merged.Has(c) {
+			merged = append(merged, c)
+		}
+	}
+	// Keep the sorted order ConsensusChains() produces: initVaultsAgreeOnChains
+	// compares the slices positionally.
+	sort.SliceStable(merged, func(i, j int) bool { return merged[i].String() < merged[j].String() })
+	if slices.Equal(merged.Strings(), vault.Chains) {
+		return nil
+	}
+
+	ctx.Logger().Info("init vault chain set widened by late keygen report",
+		"pubkey", vault.PubKey.String(),
+		"before", strings.Join(vault.Chains, ","),
+		"after", strings.Join(merged.Strings(), ","),
+	)
+	vault.Chains = merged.Strings()
+	// Routers are only recomputed for an active vault when Routers is entirely
+	// nil, so a chain added here would otherwise never get its router.
+	vault.Routers = h.mgr.Keeper().GetChainContracts(ctx, merged)
+	if err = h.mgr.Keeper().SetVault(ctx, vault); err != nil {
+		return fmt.Errorf("fail to save vault: %w", err)
+	}
+
+	keygenBlock, err := h.mgr.Keeper().GetKeygenBlock(ctx, msg.Height)
+	if err != nil {
+		return fmt.Errorf("fail to get keygen block, err: %w, height: %d", err, msg.Height)
+	}
+	// Return rather than log on failure: tryRotateInitVaults returns nil for a
+	// chain set mismatch, so an error here is a keeper failure partway through
+	// the per-vault rotation loop. Reverting the tx is better than leaving the
+	// churn half rotated.
+	return h.rotateReadyKeygenVaultFamilies(ctx, keygenBlock)
+}
+
 // tryRotateInitVaults rotates every vault into Active, or skips and emits
-// a security event if their Chains disagree. vault.Chains is immutable
-// post-creation, so an asymmetric set would leave some Asgards permanently
+// a security event if their Chains disagree. vault.Chains is immutable once
+// Active, so an asymmetric set would leave some Asgards permanently
 // without an address for a chain. ChurnRetryInterval retries on skip.
 func (h TssHandler) tryRotateInitVaults(ctx cosmos.Context, initVaults Vaults) error {
 	if !initVaultsAgreeOnChains(initVaults) {
@@ -660,25 +743,6 @@ func (h TssHandler) tryRotateInitVaults(ctx cosmos.Context, initVaults Vaults) e
 		}
 	}
 	return nil
-}
-
-// initVaultsForKeygenBlock returns the subset of vaults produced by a
-// keygen in kb. Stale init vaults from prior churns (e.g. left at
-// InitVault status because TriggerKeygen's funds-aware sweep skipped them)
-// are excluded so they don't poison the count check that gates rotation.
-func initVaultsForKeygenBlock(vaults Vaults, kb KeygenBlock) Vaults {
-	out := make(Vaults, 0, len(vaults))
-	for _, v := range vaults {
-		if v.BlockHeight < kb.Height {
-			continue
-		}
-		if slices.ContainsFunc(kb.Keygens, func(kg Keygen) bool {
-			return v.MembershipEquals(kg.GetMembers())
-		}) {
-			out = append(out, v)
-		}
-	}
-	return out
 }
 
 // initVaultsAgreeOnChains returns true if every vault's Chains slice is

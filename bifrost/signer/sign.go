@@ -515,6 +515,7 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 		keygenStart := time.Now()
 		keygenTime := time.Since(keygenStart).Milliseconds()
 		keygenChains := s.keygenChainsForType(keygenReq.Type)
+		go s.warnOnChainsMissingFromKeygen(keygenChains, keygenReq.Type)
 		var pubKey common.PubKeySet
 		var blame []ttypes.Blame
 		var frostPubKey common.PubKey
@@ -681,6 +682,40 @@ func (s *Signer) keygenChainsForType(keygenType ttypes.KeygenType) common.Chains
 		chains = append(chains, chain)
 	}
 	return chains.Distinct()
+}
+
+// warnOnChainsMissingFromKeygen reports chains the active vaults serve that this
+// bifrost is not configured for. THORNode keeps a chain in a new vault only when
+// a supermajority of the keygen members report it, so a node running with a
+// chain disabled can drop that chain from its vault and stall the churn on the
+// init vault chain set guard. Log only - never block or alter the report.
+//
+// Runs off the keygen goroutine: GetAsgards goes through the retrying HTTP
+// client with no overall deadline, so a stalled thornode must not delay this
+// node's entry into the ceremony past the party timeout.
+func (s *Signer) warnOnChainsMissingFromKeygen(keygenChains common.Chains, keygenType ttypes.KeygenType) {
+	if keygenType == ttypes.KeygenType_XMRMonovaultKeygen {
+		return // fixed chain set, not derived from local config
+	}
+	asgards, err := s.thorchainBridge.GetAsgards()
+	if err != nil {
+		s.logger.Debug().Err(err).Msg("fail to fetch asgards for keygen chain check")
+		return
+	}
+	var missing common.Chains
+	for _, vault := range asgards {
+		for _, chain := range vault.GetChains() {
+			if chain.Equals(common.XMRChain) || keygenChains.Has(chain) || missing.Has(chain) {
+				continue
+			}
+			missing = append(missing, chain)
+		}
+	}
+	for _, chain := range missing {
+		s.logger.Error().
+			Stringer("chain", chain).
+			Msg("chain is served by the active vaults but disabled in this bifrost - keygen will report without it and may stall the churn")
+	}
 }
 
 func (s *Signer) runCustomKeygenHooks(
