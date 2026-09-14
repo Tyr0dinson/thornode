@@ -272,8 +272,8 @@ func (s *collectorOutputStore) TryAddTxOutItem(_ cosmos.Context, _ Manager, item
 	return true, nil
 }
 
-func (k *collectorFailKeeper) SetSwapQueueItem(ctx cosmos.Context, msg MsgSwap, index int) error {
-	if err := k.Keeper.SetSwapQueueItem(ctx, msg, index); err != nil {
+func (k *collectorFailKeeper) SetAdvSwapQueueItem(ctx cosmos.Context, msg MsgSwap) error {
+	if err := k.Keeper.SetAdvSwapQueueItem(ctx, msg); err != nil {
 		return err
 	}
 	if k.failQueue {
@@ -323,6 +323,9 @@ func (AffiliateCollectorQueueSuite) TestPayoutCreationRollsBackVoterQueueAndFund
 		beforeAsgard := k.GetRuneBalanceOfModule(ctx, AsgardName)
 		fault := &collectorFailKeeper{Keeper: k, failQueue: failure == "queue", failTransfer: failure == "transfer", failWrite: failure == "write"}
 		mgr.K = fault
+		// The queue manager holds its own keeper reference, so it has to be
+		// rebuilt for the injected queue-write failure to be reached.
+		mgr.advSwapQueue = newSwapQueueAdv(fault)
 		c.Assert(triggerPreferredAssetSwap(ctx, mgr, few, col, 3), NotNil)
 		assertNamedAffiliateBalance(c, ctx, k, "few", 1000)
 		c.Assert(k.GetRuneBalanceOfModule(ctx, AffiliateCollectorName).String(), Equals, "1000")
@@ -388,50 +391,6 @@ func (AffiliateCollectorQueueSuite) TestAdvancedRestorationWriteFailureRetries(c
 	c.Assert(k.HasAdvSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index)), Equals, false)
 	assertNamedAffiliateBalance(c, ctx, k, "few", 1000)
 	assertAffiliateIntegrationInvariant(c, ctx, k)
-}
-
-func (AffiliateCollectorQueueSuite) TestLegacyQueueFailureRestoresOnceAndRetainsFailedSettlement(c *C) {
-	for _, name := range []string{"few", "THORSWAP.FI"} {
-		ctx, mgr, few, _ := setupAffiliateCollectorPartners(c)
-		k := mgr.Keeper()
-		few.Name = name
-		k.SetTHORName(ctx, few)
-		k.SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 0)
-		col := fundNamedCollector(c, ctx, k, name, 1000)
-		fundNamedCollector(c, ctx, k, "tan", 200)
-		beforeAsgard := k.GetRuneBalanceOfModule(ctx, AsgardName)
-		beforeReserve := k.GetRuneBalanceOfModule(ctx, ReserveName)
-		c.Assert(triggerPreferredAssetSwap(ctx, mgr, few, col, 3), IsNil)
-		// The THORName may change owner and expire while the payout is queued.
-		few.Owner = GetRandomBech32Addr()
-		few.ExpireBlockHeight = ctx.BlockHeight() - 1
-		k.SetTHORName(ctx, few)
-		fault := &collectorFailKeeper{Keeper: k, failTransfer: true}
-		mgr.K = fault
-		queue := newSwapQueue(fault)
-		queue.handler = func(Manager) cosmos.Handler {
-			return func(cosmos.Context, cosmos.Msg) (*cosmos.Result, error) {
-				return nil, fmt.Errorf("injected swap failure")
-			}
-		}
-		c.Assert(queue.EndBlock(ctx, mgr), IsNil)
-		c.Assert(affiliateIntegrationQueuedSwaps(c, ctx, k), HasLen, 1)
-		assertNamedAffiliateBalance(c, ctx, k, name, 0)
-		c.Assert(k.GetRuneBalanceOfModule(ctx, AffiliateCollectorName).String(), Equals, "200")
-		fault.failTransfer = false
-		// A fresh queue manager retries from the persisted record.
-		restarted := newSwapQueue(fault)
-		restarted.handler = queue.handler
-		c.Assert(restarted.EndBlock(ctx, mgr), IsNil)
-		c.Assert(restarted.EndBlock(ctx, mgr), IsNil)
-		c.Assert(affiliateIntegrationQueuedSwaps(c, ctx, k), HasLen, 0)
-		assertNamedAffiliateBalance(c, ctx, k, name, 1000)
-		assertNamedAffiliateBalance(c, ctx, k, "tan", 200)
-		c.Assert(k.GetRuneBalanceOfModule(ctx, AffiliateCollectorName).String(), Equals, "1200")
-		c.Assert(k.GetRuneBalanceOfModule(ctx, AsgardName).Equal(beforeAsgard), Equals, true)
-		c.Assert(k.GetRuneBalanceOfModule(ctx, ReserveName).Equal(beforeReserve), Equals, true)
-		assertAffiliateIntegrationInvariant(c, ctx, k)
-	}
 }
 
 func (AffiliateCollectorQueueSuite) TestAdvancedRestorationConservesRUNEAndRetries(c *C) {

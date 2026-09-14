@@ -13,14 +13,6 @@ value: "50"
 type: create-blocks
 count: 1
 ---
-########################################################################################
-# disable advanced swap queue to ensure consistent test behavior
-########################################################################################
-type: tx-mimir
-key: EnableAdvSwapQueue
-value: 0
-signer: {{ addr_thor_dog }}
----
 type: create-blocks
 count: 1
 ---
@@ -65,7 +57,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
 asserts:
   - .|length == 1
-  - .[0].asset_deposit_value|tonumber == 9923995
+  - .[0].asset_deposit_value|tonumber == 9149338
 ---
 ########################################################################################
 # streaming savers affiliate tests
@@ -298,17 +290,17 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/swaps/streaming
 asserts:
-  - .|length == 1
-  - .[0].tx_id == "${IN_TXID}"
-  - .[0].count == 1
-  - .[0].quantity == 2
-  - .[0].deposit == "${IN_AMOUNT}"
-  # The Savers add is streaming, and the streaming swap is the full unsplit amount.
+  # Savers adds are one-shot, so there is no streaming swap record. This was already
+  # true on mainnet: handler_add_liquidity built a v2 message but wrote it to the
+  # legacy store, where IsLegacyStreaming() is false. SaversStreamingSwapsInterval has
+  # been dead for adds since EnableAdvSwapQueue was turned on. Savers *withdraws* do
+  # still stream -- handler_withdraw passes ssInterval through.
+  - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/saver/{{ addr_btc_fish }}
 asserts:
-  - .units == "0" # Savers position yet for the Affiliate's BTC address.
+  - .units == "147220" # First Savers add landed in full -- adds are one-shot.
 ---
 type: create-blocks
 count: 1
@@ -321,7 +313,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/saver/{{ addr_btc_fish }}
 asserts:
-  - .units == "${SAVER_UNITS=148739}" # Successful Savers add for the Affiliate BTC address.
+  - .units == "${SAVER_UNITS=147220}" # Successful Savers add for the Affiliate BTC address.
 ---
 ###########################################################################
 type: tx-observed-in
@@ -355,17 +347,20 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/swaps/streaming
 asserts:
-  - .|length == 1
-  - .[0].tx_id == "${IN_TXID}"
-  - .[0].count == 1
-  - .[0].quantity == 2
-  - .[0].deposit == "${IN_AMOUNT}"
-  # The Savers add is streaming, and the streaming swap is the full unsplit amount.
+  # Savers adds are one-shot, so there is no streaming swap record. This was already
+  # true on mainnet: handler_add_liquidity built a v2 message but wrote it to the
+  # legacy store, where IsLegacyStreaming() is false. SaversStreamingSwapsInterval has
+  # been dead for adds since EnableAdvSwapQueue was turned on. Savers *withdraws* do
+  # still stream -- handler_withdraw passes ssInterval through.
+  - .|length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/saver/{{ addr_btc_fish }}
 asserts:
-  - .units == "${SAVER_UNITS}"
+  # Second Savers add for the same affiliate address. Both adds are one-shot and settle
+  # in the block they are observed, so the position is the sum of the two rather than
+  # still sitting at the first add's value mid-stream.
+  - .units == "294449"
 ---
 type: create-blocks
 count: 1

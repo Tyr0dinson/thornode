@@ -72,7 +72,6 @@ const (
 	LimitSwap  = types.SwapType_limit
 
 	// Advanced Swap Queue Mode
-	AdvSwapQueueModeDisabled   = types.AdvSwapQueueModeDisabled
 	AdvSwapQueueModeEnabled    = types.AdvSwapQueueModeEnabled
 	AdvSwapQueueModeMarketOnly = types.AdvSwapQueueModeMarketOnly
 

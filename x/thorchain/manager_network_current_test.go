@@ -3325,8 +3325,13 @@ func (s *NetworkManagerTestSuite) TestCalculateNetworkSolvency(c *C) {
 			Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(5*common.One))},
 		},
 		TargetAsset: common.RuneAsset(),
+		State: &types.SwapState{
+			Deposit: cosmos.NewUint(5 * common.One),
+			In:      cosmos.ZeroUint(),
+			Out:     cosmos.ZeroUint(),
+		},
 	}
-	c.Assert(mgr.Keeper().SetSwapQueueItem(ctx, swapMsg, 0), IsNil)
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, swapMsg), IsNil)
 
 	solvency, err = nmgr.calculateNetworkSolvency(ctx, mgr)
 	c.Assert(err, IsNil)
@@ -3468,7 +3473,6 @@ func (s *NetworkManagerTestSuite) TestProcessOverSolvencyDoesNotSweepInactiveVau
 	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 1)
 	mgr.Keeper().SetMimir(ctx, constants.OverSolvencyCheckInterval.String(), 432000)
 	mgr.Keeper().SetMimir(ctx, constants.OverSolvencyToTreasuryBps.String(), int64(constants.MaxBasisPts))
-	c.Assert(mgr.Keeper().AdvSwapQueueEnabled(ctx), Equals, true)
 
 	pool := NewPool()
 	pool.Asset = common.BTCAsset
@@ -3527,8 +3531,13 @@ func (s *NetworkManagerTestSuite) TestCalculateNetworkSolvencyWithStreamingSwaps
 			Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One))},
 		},
 		TargetAsset: common.RuneAsset(),
+		State: &types.SwapState{
+			Deposit: cosmos.NewUint(10 * common.One),
+			In:      cosmos.ZeroUint(),
+			Out:     cosmos.ZeroUint(),
+		},
 	}
-	c.Assert(mgr.Keeper().SetSwapQueueItem(ctx, swapMsg, 0), IsNil)
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, swapMsg), IsNil)
 
 	solvency, err := nmgr.calculateNetworkSolvency(ctx, mgr)
 	c.Assert(err, IsNil)
@@ -3538,39 +3547,7 @@ func (s *NetworkManagerTestSuite) TestCalculateNetworkSolvencyWithStreamingSwaps
 		Commentf("Non-streaming swap should deduct full amount, expected 40, got %s", solvency[0].Amount))
 
 	// Clean up non-streaming swap
-	mgr.Keeper().RemoveSwapQueueItem(ctx, txID, 0)
-
-	// Test 2: Legacy streaming swap with partial progress - should only deduct remaining amount
-	streamingTxID := GetRandomTxHash()
-	streamingSwapMsg := types.MsgSwap{
-		Tx: common.Tx{
-			ID:    streamingTxID,
-			Chain: common.BTCChain,
-			Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(50*common.One))}, // Full deposit: 50 BTC
-		},
-		TargetAsset:    common.RuneAsset(),
-		StreamInterval: 10, // Makes it a legacy streaming swap (V1)
-		Version:        types.SwapVersion_v1,
-	}
-	c.Assert(mgr.Keeper().SetSwapQueueItem(ctx, streamingSwapMsg, 0), IsNil)
-
-	// Create streaming swap state showing 20 BTC has been processed
-	streamingSwap := types.NewStreamingSwap(streamingTxID, 5, 10, cosmos.ZeroUint(), cosmos.NewUint(50*common.One))
-	streamingSwap.In = cosmos.NewUint(20 * common.One) // 20 BTC processed, 30 BTC remaining
-	mgr.Keeper().SetStreamingSwap(ctx, streamingSwap)
-
-	solvency, err = nmgr.calculateNetworkSolvency(ctx, mgr)
-	c.Assert(err, IsNil)
-	c.Assert(len(solvency), Equals, 1)
-	// Vault: 150, Pool: 100 (includes 20 BTC from processed streaming swap), SwapQueue: 30 (remaining)
-	// Solvency: 150 - 100 - 30 = 20
-	// If we incorrectly deducted full deposit: 150 - 100 - 50 = 0 (wrong!)
-	c.Assert(solvency[0].Amount.Equal(math.NewInt(20*common.One)), Equals, true,
-		Commentf("Streaming swap should only deduct remaining amount, expected 20, got %s", solvency[0].Amount))
-
-	// Clean up
-	mgr.Keeper().RemoveSwapQueueItem(ctx, streamingTxID, 0)
-	mgr.Keeper().RemoveStreamingSwap(ctx, streamingTxID)
+	c.Assert(mgr.Keeper().RemoveAdvSwapQueueItem(ctx, txID, 0), IsNil)
 
 	// Test 3: Advanced swap queue with streaming swap (V2)
 	advStreamingTxID := GetRandomTxHash()
@@ -3615,11 +3592,15 @@ func (s *NetworkManagerTestSuite) TestCalculateNetworkSolvencyWithStreamingSwaps
 			Chain: common.BTCChain,
 			Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(25*common.One))},
 		},
-		TargetAsset:    common.RuneAsset(),
-		StreamInterval: 10,
-		Version:        types.SwapVersion_v1,
+		TargetAsset: common.RuneAsset(),
+		Version:     types.SwapVersion_v2,
+		// Deposit left zero: progress still lives in the StreamingSwap record.
+		State: &types.SwapState{
+			Quantity: 5,
+			Interval: 10,
+		},
 	}
-	c.Assert(mgr.Keeper().SetSwapQueueItem(ctx, newStreamingSwapMsg, 0), IsNil)
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, newStreamingSwapMsg), IsNil)
 
 	// Create streaming swap state with zero progress
 	newStreamingSwap := types.NewStreamingSwap(newStreamingTxID, 5, 10, cosmos.ZeroUint(), cosmos.NewUint(25*common.One))
@@ -4180,18 +4161,8 @@ func (s *NetworkManagerTestSuite) TestProcessPostChurnSolvency(c *C) {
 	c.Assert(err, IsNil)
 
 	// Verify swap was added to queue
-	// Note: This depends on which queue is enabled
-	if mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+	{
 		iter := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
-		defer iter.Close()
-		hasSwap := false
-		for ; iter.Valid(); iter.Next() {
-			hasSwap = true
-			break
-		}
-		c.Assert(hasSwap, Equals, true)
-	} else {
-		iter := mgr.Keeper().GetSwapQueueIterator(ctx)
 		defer iter.Close()
 		hasSwap := false
 		for ; iter.Valid(); iter.Next() {
@@ -4295,18 +4266,8 @@ func (s *NetworkManagerTestSuite) TestCreateSwapToOverSolvency(c *C) {
 
 	// Verify swap was created in the queue
 	var foundSwap *types.MsgSwap
-	if mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+	{
 		iter := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
-		defer iter.Close()
-		for ; iter.Valid(); iter.Next() {
-			var msg types.MsgSwap
-			unmarshalErr := mgr.Keeper().Cdc().Unmarshal(iter.Value(), &msg)
-			c.Assert(unmarshalErr, IsNil)
-			foundSwap = &msg
-			break
-		}
-	} else {
-		iter := mgr.Keeper().GetSwapQueueIterator(ctx)
 		defer iter.Close()
 		for ; iter.Valid(); iter.Next() {
 			var msg types.MsgSwap
@@ -4383,18 +4344,8 @@ func (s *NetworkManagerTestSuite) TestCreateSwapToOverSolvencyXMRUsesFrostAddres
 	c.Assert(err, IsNil)
 
 	var foundSwap *types.MsgSwap
-	if mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+	{
 		iter := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
-		defer iter.Close()
-		for ; iter.Valid(); iter.Next() {
-			var msg types.MsgSwap
-			unmarshalErr := mgr.Keeper().Cdc().Unmarshal(iter.Value(), &msg)
-			c.Assert(unmarshalErr, IsNil)
-			foundSwap = &msg
-			break
-		}
-	} else {
-		iter := mgr.Keeper().GetSwapQueueIterator(ctx)
 		defer iter.Close()
 		for ; iter.Valid(); iter.Next() {
 			var msg types.MsgSwap
@@ -4783,7 +4734,7 @@ func (s *NetworkManagerTestSuite) TestSwapToOverSolvencyIncome(c *C) {
 	// Test 1: Process L1 asset (BTC) as income
 	coin := common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One))
 	err := nmgr.SwapToOverSolvencyIncome(ctx, mgr, coin)
-	if mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+	{
 		c.Assert(err, IsNil)
 		// Verify swap was created in the queue (fee tracking happens during swap execution)
 		iter := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
@@ -4800,8 +4751,6 @@ func (s *NetworkManagerTestSuite) TestSwapToOverSolvencyIncome(c *C) {
 			}
 		}
 		c.Assert(foundSwap, Equals, true, Commentf("swap should have been created in queue"))
-	} else {
-		c.Assert(err, NotNil, Commentf("should return error when AdvSwapQueue is disabled"))
 	}
 
 	// Test 2: Process RUNE directly to over-solvency address
@@ -4863,7 +4812,7 @@ func (s *NetworkManagerTestSuite) TestSwapToOverSolvencyIncomeTradeAsset(c *C) {
 	c.Assert(err, IsNil)
 
 	// Verify swap was created (fee tracking happens during swap execution)
-	if mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+	{
 		iter := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
 		defer iter.Close()
 		var foundSwap bool
@@ -4909,7 +4858,7 @@ func (s *NetworkManagerTestSuite) TestSwapToOverSolvencyIncomeSecuredAsset(c *C)
 	c.Assert(err, IsNil)
 
 	// Verify swap was created (fee tracking happens during swap execution)
-	if mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+	{
 		iter := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
 		defer iter.Close()
 		var foundSwap bool

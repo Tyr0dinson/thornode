@@ -8,11 +8,8 @@
           "@type": "/cosmos.auth.v1beta1.BaseAccount",
           "account_number": "6",
           "address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-          "pub_key": {
-            "@type": "/cosmos.crypto.secp256k1.PubKey",
-            "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
-          },
-          "sequence": "1"
+          "pub_key": null,
+          "sequence": "0"
         },
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
@@ -147,7 +144,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35000000670970",
+              "amount": "34999998670970",
               "denom": "rune"
             }
           ]
@@ -174,7 +171,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "4999998137206",
+              "amount": "5000000137206",
               "denom": "rune"
             }
           ]
@@ -245,11 +242,7 @@
           "units": "100000000000"
         }
       ],
-      "mimirs": [
-        {
-          "key": "ENABLEADVSWAPQUEUE"
-        }
-      ],
+      "mimirs": [],
       "network": {
         "LPIncomeSplit": "9600",
         "NodeIncomeSplit": "400",
@@ -268,16 +261,11 @@
           "transaction_size": "5000"
         }
       ],
-      "nodeMimirs": [
-        {
-          "key": "ENABLEADVSWAPQUEUE",
-          "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
-        }
-      ],
+      "nodeMimirs": [],
       "node_accounts": [
         {
           "active_block_height": "1",
-          "bond": "4999998000000",
+          "bond": "5000000000000",
           "bond_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "ip_address": "1.1.1.1",
           "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
@@ -294,6 +282,7 @@
           "actions": [
             {
               "chain": "XMR",
+              "clout_spent": "0",
               "coin": {
                 "amount": "997987384",
                 "asset": "XMR.XMR"

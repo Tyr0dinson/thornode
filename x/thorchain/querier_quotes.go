@@ -614,12 +614,6 @@ func quoteCalculateLimitExpectedOutput(ctx cosmos.Context, mgr *Mgrs, toAsset co
 }
 
 func (qs queryServer) queryQuoteLimit(ctx cosmos.Context, req *types.QueryQuoteLimitRequest) (*types.QueryQuoteLimitResponse, error) {
-	// check if advanced swap queue is enabled
-	advSwapQueueEnabled := qs.mgr.Keeper().GetConfigInt64(ctx, constants.EnableAdvSwapQueue)
-	if advSwapQueueEnabled == 0 {
-		return nil, fmt.Errorf("limit orders require advanced swap queue to be enabled")
-	}
-
 	// validate required parameters
 	if len(req.FromAsset) == 0 {
 		return nil, fmt.Errorf("missing from_asset parameter")
@@ -1139,10 +1133,9 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		return nil, fmt.Errorf("failed to simulate swap: %w", err)
 	}
 
-	// Quote rapid/auto streaming only when the advanced queue is enabled.
-	// In legacy mode, interval=0 is still a non-streaming swap.
-	shouldQuoteStreaming := streamingInterval > 0 || qs.mgr.Keeper().AdvSwapQueueEnabled(ctx)
-	autoStreamingQuantity := shouldQuoteStreaming && streamingQuantity == 0
+	// The advanced queue auto-sizes a zero quantity, so an interval of 0 still
+	// quotes as a streaming swap.
+	autoStreamingQuantity := streamingQuantity == 0
 
 	// if we're using a streaming swap, calculate emit amount by a sub-swap amount instead
 	// of the full amount, then multiply the result by the swap count
@@ -1155,7 +1148,7 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 	// so the second simulate() - including its end-block loop - would be pure
 	// redundant work. res/emitAmount from the quantity-1 simulation already hold
 	// the correct values.
-	if shouldQuoteStreaming && streamingQuantity > 1 {
+	if streamingQuantity > 1 {
 		if autoStreamingQuantity && streamingInterval == 0 && streamingQuantity > 1 {
 			memo.StreamQuantity = streamingQuantity
 			memoString = memo.ShortString()

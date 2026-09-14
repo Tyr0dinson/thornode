@@ -169,50 +169,6 @@ func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 		sourceCoin = msg.Tx.Coins[0]
 	}
 
-	if msg.IsLegacyStreaming() {
-		pausedStreaming := h.mgr.Keeper().GetConfigInt64(ctx, constants.StreamingSwapPause)
-		if pausedStreaming > 0 {
-			return fmt.Errorf("streaming swaps are paused")
-		}
-
-		// if either source or target in ragnarok, streaming is not allowed
-		for _, asset := range []common.Asset{sourceCoin.Asset, target} {
-			key := "RAGNAROK-" + asset.MimirString()
-			ragnarok, err := h.mgr.Keeper().GetMimir(ctx, key)
-			if err == nil && ragnarok > 0 {
-				return fmt.Errorf("streaming swaps disabled on ragnarok asset %s", asset)
-			}
-		}
-
-		swp := msg.GetStreamingSwap()
-		if h.mgr.Keeper().StreamingSwapExists(ctx, msg.Tx.ID) {
-			var err error
-			swp, err = h.mgr.Keeper().GetStreamingSwap(ctx, msg.Tx.ID)
-			if err != nil {
-				ctx.Logger().Error("fail to fetch streaming swap", "error", err)
-				return err
-			}
-		}
-
-		if (swp.Quantity > 0 && swp.IsDone()) || swp.In.GTE(swp.Deposit) {
-			// check both swap count and swap in vs deposit to cover all basis
-			return fmt.Errorf("streaming swap is completed, cannot continue to swap again")
-		}
-
-		if swp.Count > 0 {
-			// end validation early, as synth TVL caps are not applied to streaming
-			// swaps. This is to ensure that streaming swaps don't get interrupted
-			// and cause a partial fulfillment, which would cause issues for
-			// internal streaming swaps for savers and loans.
-			return nil
-		} else {
-			// first swap we check the entire swap amount (not just the
-			// sub-swap amount) to ensure the value of the entire has TVL/synth
-			// room
-			sourceCoin.Amount = swp.Deposit
-		}
-	}
-
 	if target.IsSyntheticAsset() {
 		// the following is only applicable for mainnet
 		totalLiquidityRUNE, err := h.getTotalLiquidityRUNE(ctx)
@@ -384,43 +340,6 @@ func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cos
 		return &cosmos.Result{}, emit, msg.Tx.Coins[0].Amount, nil
 	}
 
-	// Only create streaming swap records for actual streaming swaps (not limit swaps)
-	if msg.IsLegacyStreaming() && !msg.IsLimitSwap() {
-		if h.mgr.Keeper().StreamingSwapExists(ctx, msg.Tx.ID) {
-			swp, err = h.mgr.Keeper().GetStreamingSwap(ctx, msg.Tx.ID)
-			if err != nil {
-				ctx.Logger().Error("fail to fetch streaming swap", "error", err)
-				return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), err
-			}
-		}
-
-		// for first swap only, override interval and quantity (if needed)
-		if swp.Count == 0 {
-			// ensure interval is never larger than max length, override if so
-			maxLength := h.mgr.Keeper().GetConfigInt64(ctx, constants.StreamingSwapMaxLength)
-			if uint64(maxLength) < swp.Interval {
-				swp.Interval = uint64(maxLength)
-			}
-
-			sourceAsset := msg.Tx.Coins[0].Asset
-			targetAsset := msg.TargetAsset
-			var maxSwapQuantity uint64
-			maxSwapQuantity, err = getMaxSwapQuantity(ctx, h.mgr, sourceAsset, targetAsset, swp, swapAffiliates, swapAffiliateBps)
-			if err != nil {
-				return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), err
-			}
-			if swp.Quantity == 0 || swp.Quantity > maxSwapQuantity {
-				swp.Quantity = maxSwapQuantity
-			}
-		}
-		h.mgr.Keeper().SetStreamingSwap(ctx, swp)
-		// hijack the inbound amount
-		// NOTE: its okay if the amount is zero. The swap will fail as it
-		// should, which will cause the swap queue manager later to send out
-		// the In/Out amounts accordingly
-		msg.Tx.Coins[0].Amount, msg.TradeTarget = swp.NextSize()
-	}
-
 	emit, effectiveInput, swapEvents, swapErr := swapper.Swap(
 		ctx,
 		h.mgr.Keeper(),
@@ -448,15 +367,8 @@ func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cos
 		ctx.Logger().Error("failed to retrieve AffiliateCollector module address", "error", err)
 	}
 
-	// V1 delivers collector output here in the handler's cached context.
-	// V2 accumulates output and delivers it once during settlement.
+	// Collector output is accumulated and delivered once during settlement.
 	collectorConversion := affiliateCollectorConversionName(h.mgr.Keeper(), msg) != ""
-	collectorPayout := isPreferredAssetCollectorSwap(h.mgr.Keeper(), msg)
-	if (collectorConversion || collectorPayout) && msg.IsV1() {
-		if err = deliverAffiliateCollectorOutput(ctx, h.mgr, msg, emit); err != nil {
-			return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), err
-		}
-	}
 
 	// Credit dynamic fee tracking for eligible affiliates. Per-leg, with
 	// RUNE→TOR conversion so the closed-loop gradient signal is not corrupted
@@ -472,29 +384,11 @@ func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cos
 
 	// Check if swap to a synth would cause synth supply to exceed
 	// MaxSynthPerPoolDepth cap
-	// Ignore caps when the swap is streaming (its checked at the start of the
-	// stream, not during)
-	if msg.TargetAsset.IsSyntheticAsset() && !msg.IsLegacyStreaming() {
+	if msg.TargetAsset.IsSyntheticAsset() {
 		err = isSynthMintPaused(ctx, h.mgr, msg.TargetAsset, emit)
 		if err != nil {
 			return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), err
 		}
-	}
-
-	// Only update streaming swap records for actual streaming swaps (not limit swaps)
-	if msg.IsLegacyStreaming() && !msg.IsLimitSwap() {
-		// only increment In/Out if we have a successful swap
-		swp.In = swp.In.Add(msg.Tx.Coins[0].Amount)
-		swp.Out = swp.Out.Add(emit)
-		h.mgr.Keeper().SetStreamingSwap(ctx, swp)
-		if !swp.IsLastSwap() {
-			// exit early so we don't execute follow-on handlers mid streaming swap. if this
-			// is the last swap execute the follow-on handlers as swap count is incremented in
-			// the swap queue manager
-			return &cosmos.Result{}, finalEmit, effectiveInput, nil
-		}
-		emit = swp.Out
-		finalEmit = swp.Out
 	}
 
 	// Internal reserve swaps and collector conversions use dedicated settlement

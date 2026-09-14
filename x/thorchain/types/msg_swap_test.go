@@ -515,31 +515,11 @@ func (MsgSwapSuite) TestSwapState_SuccessCount(c *C) {
 }
 
 func (MsgSwapSuite) TestSwapVersioning(c *C) {
-	// Test V1 swap
-	v1Swap := &MsgSwap{
-		Version: SwapVersion_v1,
-	}
-	c.Assert(v1Swap.IsV1(), Equals, true)
-	c.Assert(v1Swap.IsV2(), Equals, false)
-
-	// Test V2 swap
-	v2Swap := &MsgSwap{
-		Version: SwapVersion_v2,
-	}
-	c.Assert(v2Swap.IsV1(), Equals, false)
-	c.Assert(v2Swap.IsV2(), Equals, true)
-
-	// Test uninitialized version (defaults to 0 which is v1)
-	uninitializedSwap := &MsgSwap{}
-	c.Assert(uninitializedSwap.IsV1(), Equals, true)
-	c.Assert(uninitializedSwap.IsV2(), Equals, false)
-
-	// Test with explicit zero value
-	zeroSwap := &MsgSwap{
-		Version: 0,
-	}
-	c.Assert(zeroSwap.IsV1(), Equals, true)
-	c.Assert(zeroSwap.IsV2(), Equals, false)
+	// v2 is the only version produced; the v1 enum value survives only for
+	// historical/genesis data.
+	c.Assert((&MsgSwap{Version: SwapVersion_v2}).IsV2(), Equals, true)
+	c.Assert((&MsgSwap{Version: SwapVersion_v1}).IsV2(), Equals, false)
+	c.Assert((&MsgSwap{}).IsV2(), Equals, false)
 }
 
 func (MsgSwapSuite) TestSwapTypes(c *C) {
@@ -729,40 +709,4 @@ func (MsgSwapSuite) TestNewMsgSwap(c *C) {
 
 	// Should use first coin amount for deposit
 	c.Assert(msgMulti.State.Deposit.Equal(cosmos.NewUint(50000000)), Equals, true)
-}
-
-func (MsgSwapSuite) TestIsLegacyStreaming(c *C) {
-	// Test V1 with StreamInterval = 0
-	v1NoStream := &MsgSwap{
-		Version:        SwapVersion_v1,
-		StreamInterval: 0,
-	}
-	c.Assert(v1NoStream.IsLegacyStreaming(), Equals, false)
-
-	// Test V1 with StreamInterval > 0
-	v1Stream := &MsgSwap{
-		Version:        SwapVersion_v1,
-		StreamInterval: 10,
-	}
-	c.Assert(v1Stream.IsLegacyStreaming(), Equals, true)
-
-	// Test V2 with StreamInterval > 0 (should return false as it only works for V1)
-	v2Stream := &MsgSwap{
-		Version:        SwapVersion_v2,
-		StreamInterval: 10,
-	}
-	c.Assert(v2Stream.IsLegacyStreaming(), Equals, false)
-
-	// Test V2 with StreamInterval = 0
-	v2NoStream := &MsgSwap{
-		Version:        SwapVersion_v2,
-		StreamInterval: 0,
-	}
-	c.Assert(v2NoStream.IsLegacyStreaming(), Equals, false)
-
-	// Test uninitialized version (defaults to 0 which is v1)
-	uninitialized := &MsgSwap{
-		StreamInterval: 10,
-	}
-	c.Assert(uninitialized.IsLegacyStreaming(), Equals, true)
 }

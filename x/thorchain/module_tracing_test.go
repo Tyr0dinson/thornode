@@ -30,7 +30,6 @@ var lifecycleCalls = []lifecycleCall{
 	{name: "network/begin", manager: "network", operation: "begin_block"},
 	{name: "slasher/begin", manager: "slasher", operation: "begin_block"},
 	{name: "validator/begin", manager: "validator", operation: "begin_block"},
-	{name: "swap_queue/end", manager: "swap_queue", operation: "end_block"},
 	{name: "advanced_swap_queue/end", manager: "advanced_swap_queue", operation: "end_block"},
 	{name: "slasher/lack_signing", manager: "slasher", operation: "lack_signing"},
 	{name: "pool/end", manager: "pool", operation: "end_block"},
@@ -135,13 +134,6 @@ func (m lifecycleValidator) BeginBlock(cosmos.Context, Manager, []string) error 
 func (m lifecycleValidator) EndBlock(cosmos.Context, Manager) []abci.ValidatorUpdate {
 	m.recorder.record("validator/end")
 	return m.updates
-}
-
-type lifecycleSwapQueue struct{ recorder *lifecycleRecorder }
-
-func (m lifecycleSwapQueue) EndBlock(cosmos.Context, Manager) error {
-	m.recorder.record("swap_queue/end")
-	return nil
 }
 
 type lifecycleAdvSwapQueue struct {
@@ -267,7 +259,6 @@ func newLifecycleModule(
 		validatorMgr:              lifecycleValidator{ValidatorManager: NewValidatorDummyMgr(), recorder: recorder, updates: updates},
 		obMgr:                     lifecycleObserver{ObserverManager: NewDummyObserverManager(), recorder: recorder},
 		poolMgr:                   lifecyclePool{recorder: recorder},
-		swapQ:                     lifecycleSwapQueue{recorder: recorder},
 		advSwapQueue:              lifecycleAdvSwapQueue{AdvSwapQueue: NewDummyAdvSwapQueue(), recorder: recorder},
 		slasher:                   lifecycleSlasher{Slasher: NewDummySlasher(), recorder: recorder},
 		stableReserveManager:      lifecycleStableReserve{StableReserveManager: NewDummyStableReserveManager(), recorder: recorder},

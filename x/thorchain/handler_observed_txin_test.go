@@ -756,7 +756,7 @@ type TestObservedTxInHandleKeeper struct {
 	referenceMemos       map[string]ReferenceMemo // key: asset:reference
 }
 
-func (k *TestObservedTxInHandleKeeper) SetSwapQueueItem(_ cosmos.Context, msg MsgSwap, _ int) error {
+func (k *TestObservedTxInHandleKeeper) SetAdvSwapQueueItem(_ cosmos.Context, msg MsgSwap) error {
 	k.msg = msg
 	return nil
 }
@@ -932,6 +932,7 @@ func (s *HandlerObservedTxInSuite) testHandleWithConfirmation(c *C) {
 		vaultExists: true,
 	}
 	mgr.K = keeper
+	mgr.advSwapQueue = newSwapQueueAdv(keeper)
 	handler := NewObservedTxInHandler(mgr)
 
 	// first not confirmed message
@@ -1071,6 +1072,7 @@ func (s *HandlerObservedTxInSuite) testHandleWithVersion(c *C) {
 		vaultExists: true,
 	}
 	mgr.K = keeper
+	mgr.advSwapQueue = newSwapQueueAdv(keeper)
 	handler := NewObservedTxInHandler(mgr)
 
 	c.Assert(err, IsNil)
@@ -1137,10 +1139,9 @@ func (s *HandlerObservedTxInSuite) TestCompromisedVaultInboundIsNoOp(c *C) {
 	c.Assert(securityMsg, Not(Equals), "")
 	c.Assert(strings.Contains(securityMsg, vaultPubKey.String()), Equals, true)
 
-	queue := newSwapQueue(k)
-	swaps, err := queue.FetchQueue(ctx)
-	c.Assert(err, IsNil)
-	c.Assert(swaps, HasLen, 0)
+	advIter := k.GetAdvSwapQueueItemIterator(ctx)
+	c.Assert(advIter.Valid(), Equals, false)
+	advIter.Close()
 
 	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
 	c.Assert(err, IsNil)
@@ -1596,8 +1597,6 @@ func (HandlerObservedTxInSuite) TestObservedTxHandler_validations(c *C) {
 func (s HandlerObservedTxInSuite) TestSwapWithAffiliate(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
-	queue := newSwapQueue(mgr.Keeper())
-
 	affAddr := GetRandomTHORAddress()
 
 	msg := NewMsgSwap(
@@ -1620,20 +1619,9 @@ func (s HandlerObservedTxInSuite) TestSwapWithAffiliate(c *C) {
 	// no affiliate fees
 	c.Assert(addSwap(ctx, mgr, *msg), IsNil)
 
-	// Check if the swap was added to the appropriate queue
-	// Route based on message version (V1 goes to regular queue, V2 goes to advanced queue)
-	if msg.IsV2() {
-		// Swap should be in advanced queue
-		swap, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, msg.Tx.ID, 0)
-		c.Assert(err, IsNil)
-		c.Check(swap.Tx.Coins[0].Amount.Uint64(), Equals, uint64(200000000))
-	} else {
-		// Swap should be in regular queue
-		swaps, err := queue.FetchQueue(ctx)
-		c.Assert(err, IsNil)
-		c.Assert(swaps, HasLen, 1, Commentf("%d", len(swaps)))
-		c.Check(swaps[0].msg.Tx.Coins[0].Amount.Uint64(), Equals, uint64(200000000))
-	}
+	swap, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, msg.Tx.ID, 0)
+	c.Assert(err, IsNil)
+	c.Check(swap.Tx.Coins[0].Amount.Uint64(), Equals, uint64(200000000))
 }
 
 func (s HandlerObservedTxInSuite) TestAddSwapEmitsLimitEventOnlyForLimitSwaps(c *C) {
@@ -1782,6 +1770,7 @@ func (s *HandlerObservedTxInSuite) TestVaultStatus(c *C) {
 			vaultExists: true,
 		}
 		mgr.K = keeper
+		mgr.advSwapQueue = newSwapQueueAdv(keeper)
 		handler := NewObservedTxInHandler(mgr)
 
 		keeper.vault.Status = tc.statusAtConsensus
@@ -1916,6 +1905,7 @@ func (s *HandlerObservedTxInSuite) testMemolessERC20AmountMode6Dec(c *C) {
 	keeper.SetReferenceMemo(ctx, refMemo)
 
 	mgr.K = keeper
+	mgr.advSwapQueue = newSwapQueueAdv(keeper)
 	handler := NewObservedTxInHandler(mgr)
 
 	msg := NewMsgObservedTxIn(txs, keeper.nas[0].NodeAddress)
@@ -2001,6 +1991,7 @@ func (s *HandlerObservedTxInSuite) testMemolessERC20AmountMode18Dec(c *C) {
 	keeper.SetReferenceMemo(ctx, refMemo)
 
 	mgr.K = keeper
+	mgr.advSwapQueue = newSwapQueueAdv(keeper)
 	handler := NewObservedTxInHandler(mgr)
 
 	msg := NewMsgObservedTxIn(txs, keeper.nas[0].NodeAddress)
@@ -2225,6 +2216,7 @@ func (s *HandlerObservedTxInSuite) TestMemolessTransactionErrorCases(c *C) {
 		vaultExists: true,
 	}
 	mgr.K = keeper
+	mgr.advSwapQueue = newSwapQueueAdv(keeper)
 
 	// Process transaction with no coins - should not generate reference memo
 	handler := NewObservedTxInHandler(mgr)
@@ -2282,6 +2274,7 @@ func (s *HandlerObservedTxInSuite) TestMemolessTransactionWithExistingMemo(c *C)
 		vaultExists: true,
 	}
 	mgr.K = keeper
+	mgr.advSwapQueue = newSwapQueueAdv(keeper)
 
 	// Process transaction with existing memo
 	handler := NewObservedTxInHandler(mgr)

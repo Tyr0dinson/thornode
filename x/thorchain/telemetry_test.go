@@ -308,10 +308,8 @@ func must(t *testing.T, err error) {
 // Counters are process-local and cannot roll back. The querier's quote simulation
 // runs the real handlers under CtxSimulationMode, so every counter on a path a
 // quote can reach is guarded by isSimulationMode - without it API traffic drowns
-// the on-chain signal. The swap queue case is the path a quote actually takes:
-// SwapQ().EndBlock with a swap that fails and is refunded, which must record no
-// thornode counter of any name under simulation. refundTx and EventMgr.EmitEvent
-// pin the two widest guards individually.
+// the on-chain signal. refundTx and EventMgr.EmitEvent pin the two widest guards
+// individually.
 func TestTelemetrySimulationModeSuppressesCounters(t *testing.T) {
 	ctx, mgr := setupBenchmarkManager(t)
 	// native outbounds need an active asgard to sign from
@@ -335,26 +333,12 @@ func TestTelemetrySimulationModeSuppressesCounters(t *testing.T) {
 	emit := func(c cosmos.Context) {
 		must(t, mgr.EventMgr().EmitEvent(c, NewEventSetMimir("TelemetryTest", "1")))
 	}
-	// no BTC pool exists, so the swap fails in the handler and is refunded
-	swapQueue := func(c cosmos.Context) {
-		btcAddr := GetRandomBTCAddress()
-		tx := common.NewTx(
-			GetRandomTxHash(), GetRandomTHORAddress(), GetRandomTHORAddress(),
-			common.Coins{common.NewCoin(common.RuneNative, cosmos.NewUint(10*common.One))},
-			common.Gas{common.NewCoin(common.RuneNative, cosmos.NewUint(2_000_000))},
-			"=:BTC.BTC:"+btcAddr.String(),
-		)
-		msg := NewMsgSwap(tx, common.BTCAsset, btcAddr, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr())
-		must(t, mgr.Keeper().SetSwapQueueItem(c, *msg, 0))
-		must(t, mgr.SwapQ().EndBlock(c, mgr))
-	}
 
 	for _, tc := range []struct {
 		name   string
 		run    func(cosmos.Context)
 		metric string
 	}{
-		{"swap_queue", swapQueue, "thornode.swap.failed{"},
 		{"refund", refund, "thornode.refund{"},
 		{"event", emit, "thornode.event.emitted{"},
 	} {

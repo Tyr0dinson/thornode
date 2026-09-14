@@ -612,14 +612,16 @@ func (s *PoolMgrSuite) TestAbandonNativePoolSkipsBurnWithLegacyQueuedNativeOutpu
 		},
 		TargetAsset:    common.TCY,
 		StreamInterval: 10,
-		Version:        types.SwapVersion_v1,
+		Version:        types.SwapVersion_v2,
+		State: &types.SwapState{
+			Quantity: 5,
+			Interval: 10,
+			Deposit:  cosmos.NewUint(25 * common.One),
+			In:       cosmos.NewUint(25 * common.One),
+			Out:      cosmos.NewUint(25 * common.One),
+		},
 	}
-	c.Assert(k.SetSwapQueueItem(ctx, swapMsg, 0), IsNil)
-
-	streamingSwap := NewStreamingSwap(txID, 5, 10, cosmos.ZeroUint(), cosmos.NewUint(25*common.One))
-	streamingSwap.In = cosmos.NewUint(25 * common.One)
-	streamingSwap.Out = cosmos.NewUint(25 * common.One)
-	k.SetStreamingSwap(ctx, streamingSwap)
+	c.Assert(k.SetAdvSwapQueueItem(ctx, swapMsg), IsNil)
 
 	asgardNativeBefore := k.GetBalanceOfModule(ctx, AsgardName, common.TCY.Native())
 	treasuryNativeBefore := k.GetBalanceOfModule(ctx, TreasuryName, common.TCY.Native())

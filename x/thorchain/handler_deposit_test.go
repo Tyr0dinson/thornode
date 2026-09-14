@@ -229,7 +229,7 @@ func (s *HandlerDepositSuite) TestAddSwap(c *C) {
 		fmt.Sprintf("=:BTC.BTC:%s", GetRandomBTCAddress().String()),
 	)
 	// no affiliate fee
-	msg := NewMsgSwap(tx, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr())
+	msg := NewMsgSwap(tx, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v2, GetRandomBech32Addr())
 
 	c.Assert(addSwap(ctx, mgr, *msg), IsNil)
 	swap, err := getSwapQueueItem(ctx, mgr, tx.ID, 0)
@@ -242,7 +242,7 @@ func (s *HandlerDepositSuite) TestAddSwap(c *C) {
 	tx.Memo = fmt.Sprintf("=:BTC.BTC:%s::%s:20000", GetRandomBTCAddress().String(), affAddr.String())
 
 	// affiliate fee, with more than 10K as basis points
-	msg1 := NewMsgSwap(tx, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), GetRandomTHORAddress(), cosmos.NewUint(20000), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr())
+	msg1 := NewMsgSwap(tx, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), GetRandomTHORAddress(), cosmos.NewUint(20000), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v2, GetRandomBech32Addr())
 
 	// Check balance before swap
 	affiliateFeeAddr, err := msg1.GetAffiliateAddress().AccAddress()
@@ -250,17 +250,17 @@ func (s *HandlerDepositSuite) TestAddSwap(c *C) {
 	acct := mgr.Keeper().GetBalance(ctx, affiliateFeeAddr)
 	c.Assert(acct.AmountOf(common.RuneNative.Native()).String(), Equals, "0")
 
-	c.Assert(addSwap(ctx, mgr, *msg1), IsNil)
-	swap, err = getSwapQueueItem(ctx, mgr, tx.ID, 0)
-	c.Assert(err, IsNil)
-	c.Assert(swap.Tx.Coins[0].Amount.IsZero(), Equals, false)
+	// The advanced queue validates on the way in, so an over-cap affiliate fee is
+	// rejected here rather than queued and failed later. Both addSwap callers
+	// refund the inbound on error, so the funds are not stranded.
+	c.Assert(addSwap(ctx, mgr, *msg1), NotNil)
 	// Check balance after swap, should be the same
 	c.Assert(acct.AmountOf(common.RuneNative.Native()).String(), Equals, "0")
 
 	// affiliate fee not taken on deposit
 	tx.Memo = fmt.Sprintf("=:BTC.BTC:%s::%s:1000", GetRandomBTCAddress().String(), affAddr.String())
 	tx.Coins[0].Amount = cosmos.NewUint(common.One)
-	msg2 := NewMsgSwap(tx, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), affAddr, cosmos.NewUint(1000), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr())
+	msg2 := NewMsgSwap(tx, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), affAddr, cosmos.NewUint(1000), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v2, GetRandomBech32Addr())
 	c.Assert(addSwap(ctx, mgr, *msg2), IsNil)
 	swap, err = getSwapQueueItem(ctx, mgr, tx.ID, 0)
 	c.Assert(err, IsNil)
@@ -289,7 +289,7 @@ func (s *HandlerDepositSuite) TestAddSwap(c *C) {
 
 	c.Assert(mgr.Keeper().MintToModule(ctx, ModuleName, tx1.Coins[0]), IsNil)
 	c.Assert(mgr.Keeper().SendFromModuleToModule(ctx, ModuleName, AsgardName, tx1.Coins), IsNil)
-	msg3 := NewMsgSwap(tx1, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), affAddr, cosmos.NewUint(1000), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr())
+	msg3 := NewMsgSwap(tx1, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), affAddr, cosmos.NewUint(1000), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v2, GetRandomBech32Addr())
 	c.Assert(addSwap(ctx, mgr, *msg3), IsNil)
 	swap, err = getSwapQueueItem(ctx, mgr, tx1.ID, 0)
 	c.Assert(err, IsNil)
@@ -343,13 +343,6 @@ func (s *HandlerDepositSuite) TestTargetModule(c *C) {
 // Helper function to get swap queue item from either regular or advanced queue
 // depending on the EnableAdvSwapQueue constant
 func getSwapQueueItem(ctx cosmos.Context, mgr Manager, txID common.TxID, index int) (MsgSwap, error) {
-	// First try the regular queue
-	swap, err := mgr.Keeper().GetSwapQueueItem(ctx, txID, index)
-	if err == nil {
-		return swap, nil
-	}
-
-	// If not found in regular queue, try advanced queue
 	return mgr.Keeper().GetAdvSwapQueueItem(ctx, txID, index)
 }
 

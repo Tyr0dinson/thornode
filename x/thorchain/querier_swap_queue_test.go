@@ -9,7 +9,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
-	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -18,11 +17,9 @@ func (s *QuerierSuite) TestQuerySwapQueuePagination(c *C) {
 	k := mgr.Keeper()
 	qs := &queryServer{mgr: mgr}
 
-	k.SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 1)
-
 	for i := 1; i <= 105; i++ {
 		msg := newQuerySwapQueueTestMsg(i, types.SwapType_market)
-		c.Assert(k.SetSwapQueueItem(ctx, msg, 0), IsNil)
+		c.Assert(k.SetAdvSwapQueueItem(ctx, msg), IsNil)
 	}
 	for i := 200; i <= 201; i++ {
 		msg := newQuerySwapQueueTestMsg(i, types.SwapType_limit)
@@ -81,31 +78,6 @@ func (s *QuerierSuite) TestQuerySwapQueuePagination(c *C) {
 	c.Assert(resp.SwapQueue, HasLen, 0)
 	c.Assert(resp.Pagination.HasNext, Equals, false)
 	c.Assert(resp.Pagination.HasPrev, Equals, true)
-}
-
-func (s *QuerierSuite) TestQuerySwapQueuePaginationAdvQueueDisabled(c *C) {
-	ctx, mgr := setupManagerForTest(c)
-	k := mgr.Keeper()
-	qs := &queryServer{mgr: mgr}
-
-	k.SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 0)
-
-	for i := 1; i <= 3; i++ {
-		msg := newQuerySwapQueueTestMsg(i, types.SwapType_market)
-		c.Assert(k.SetSwapQueueItem(ctx, msg, 0), IsNil)
-	}
-	for i := 200; i <= 201; i++ {
-		msg := newQuerySwapQueueTestMsg(i, types.SwapType_limit)
-		c.Assert(k.SetAdvSwapQueueItem(ctx, msg), IsNil)
-	}
-
-	resp, err := qs.querySwapQueuePaginated(ctx, &types.QuerySwapQueuePaginatedRequest{Limit: 10})
-	c.Assert(err, IsNil)
-	c.Assert(resp.SwapQueue, HasLen, 3)
-	c.Assert(resp.Pagination.Total, Equals, uint64(3))
-	for _, msg := range resp.SwapQueue {
-		c.Assert(msg.SwapType, Equals, types.SwapType_market)
-	}
 }
 
 func (s *QuerierSuite) TestQuerySwapQueueJSONShape(c *C) {

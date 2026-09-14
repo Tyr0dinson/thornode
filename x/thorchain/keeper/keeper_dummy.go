@@ -677,18 +677,13 @@ func (k KVStoreDummy) GetBanVoterIterator(ctx cosmos.Context) cosmos.Iterator {
 	return nil
 }
 
-func (k KVStoreDummy) SetSwapQueueItem(ctx cosmos.Context, msg MsgSwap, i int) error { return kaboom }
-func (k KVStoreDummy) GetSwapQueueIterator(ctx cosmos.Context) cosmos.Iterator       { return nil }
-func (k KVStoreDummy) RemoveSwapQueueItem(ctx cosmos.Context, _ common.TxID, _ int)  {}
+func (k KVStoreDummy) GetSwapQueueIterator(ctx cosmos.Context) cosmos.Iterator      { return nil }
+func (k KVStoreDummy) RemoveSwapQueueItem(ctx cosmos.Context, _ common.TxID, _ int) {}
 func (k KVStoreDummy) GetSwapQueueItem(ctx cosmos.Context, txID common.TxID, _ int) (MsgSwap, error) {
 	return MsgSwap{}, kaboom
 }
 
 func (k KVStoreDummy) HasSwapQueueItem(ctx cosmos.Context, txID common.TxID, _ int) bool {
-	return false
-}
-
-func (k KVStoreDummy) AdvSwapQueueEnabled(ctx cosmos.Context) bool {
 	return false
 }
 

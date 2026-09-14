@@ -65,15 +65,6 @@ asserts:
   - .affiliate_collector_rune == "0"
   - .aliases[1].address == "{{ addr_btc_pig }}"
 ---
-# Exercise preferred payouts through swap queue V1.
-type: tx-mimir
-key: EnableAdvSwapQueue
-value: 0
-signer: {{ addr_thor_dog }}
----
-type: create-blocks
-count: 1
----
 type: tx-mimir
 key: AdvSwapQueueRapidSwapMax
 value: 1
@@ -82,163 +73,7 @@ signer: {{ addr_thor_dog }}
 type: create-blocks
 count: 1
 ---
-type: tx-observed-in
-signer: {{ addr_thor_dog }}
-txs:
-  - tx:
-      id: "{{ observe_txid 1 }}"
-      chain: ETH
-      from_address: {{ addr_eth_fox }}
-      to_address: {{ addr_eth_dog }}
-      coins:
-        - amount: "100000000"
-          asset: "ETH.ETH"
-          decimals: 8
-      gas:
-        - amount: "10000"
-          asset: "ETH.ETH"
-      memo: "=:THOR.RUNE:{{ addr_thor_fox }}::few/tan:100/200"
-    block_height: 1
-    finalise_height: 1
-    observed_pub_key: {{ pubkey_dog }}
----
-type: create-blocks
-count: 1
----
-type: check
-endpoint: http://localhost:1317/thorchain/queue/swap
-asserts:
-  - '[.[] | select(.tx.memo | startswith("THOR-PREFERRED-ASSET-"))] | length == 2'
-  - '[.[] | select(.tx.memo == "THOR-PREFERRED-ASSET-few")][0].tx.coins[0].amount == "82647710"'
-  - '[.[] | select(.tx.memo == "THOR-PREFERRED-ASSET-tan")][0].tx.coins[0].amount == "165295420"'
-  - '[.[] | select(.tx.memo == "THOR-PREFERRED-ASSET-few")][0].destination == "{{ addr_btc_cat }}"'
-  - '[.[] | select(.tx.memo == "THOR-PREFERRED-ASSET-tan")][0].destination == "{{ addr_btc_pig }}"'
----
-type: create-blocks
-count: 2
----
-type: check
-endpoint: http://localhost:1317/thorchain/queue/outbound
-asserts:
-  - '[.[] | select(.coin.asset == "BTC.BTC")] | length == 2'
-  - '[.[] | select(.to_address == "{{ addr_btc_cat }}")] | length == 1'
-  - '[.[] | select(.to_address == "{{ addr_btc_pig }}")] | length == 1'
-  - '[.[] | select(.coin.asset == "BTC.BTC") | (.coin.amount | tonumber)] | all(. > 0)'
----
-type: check
-endpoint: http://localhost:1317/thorchain/queue/outbound
-asserts:
-  - '[.[] | select(.to_address == "{{ addr_btc_cat }}") | (.coin.amount | tonumber)] | sort == [75248]'
-  - '[.[] | select(.to_address == "{{ addr_btc_pig }}") | (.coin.amount | tonumber)] | sort == [157744]'
----
-type: check
-endpoint: http://localhost:1317/thorchain/thorname/few
-asserts:
-  - '.affiliate_collector_rune == "0"'
----
-type: check
-endpoint: http://localhost:1317/thorchain/thorname/tan
-asserts:
-  - '.affiliate_collector_rune == "0"'
----
-type: check
-endpoint: http://localhost:1317/thorchain/invariant/affiliate_collector
-asserts:
-  - '.broken == false'
----
-# Admit a FEW payout while BTC is live, then halt its execution.
-type: tx-observed-in
-signer: {{ addr_thor_dog }}
-txs:
-  - tx:
-      id: "{{ observe_txid 2 }}"
-      chain: ETH
-      from_address: {{ addr_eth_fox }}
-      to_address: {{ addr_eth_dog }}
-      coins:
-        - amount: "100000000"
-          asset: "ETH.ETH"
-          decimals: 8
-      gas:
-        - amount: "10000"
-          asset: "ETH.ETH"
-      memo: "=:THOR.RUNE:{{ addr_thor_fox }}::few:500"
-    block_height: 2
-    finalise_height: 2
-    observed_pub_key: {{ pubkey_dog }}
----
-type: create-blocks
-count: 1
----
-type: check
-endpoint: http://localhost:1317/thorchain/queue/swap
-asserts:
-  - '[.[] | select(.tx.memo == "THOR-PREFERRED-ASSET-few")] | length == 1'
-  - '[.[] | select(.tx.memo == "THOR-PREFERRED-ASSET-few")][0].tx.coins[0].amount == "350277346"'
----
-type: check
-endpoint: http://localhost:1317/thorchain/thorname/few
-asserts:
-  - '.affiliate_collector_rune == "0"'
----
-type: tx-mimir
-key: HaltBTCTrading
-value: 1
-signer: {{ addr_thor_dog }}
----
-type: create-blocks
-count: 1
----
-# V1 rejects the halted swap and restores its full principal, without a fee.
-type: check
-endpoint: http://localhost:1317/thorchain/queue/swap
-asserts:
-  - '[.[] | select(.tx.memo | startswith("THOR-PREFERRED-ASSET-"))] | length == 0'
----
-type: check
-endpoint: http://localhost:1317/thorchain/thorname/few
-asserts:
-  - '.affiliate_collector_rune == "350277346"'
----
-type: check
-endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
-asserts:
-  - '.coins[] | select(.denom == "rune") | .amount == "350277346"'
----
-type: check
-endpoint: http://localhost:1317/thorchain/thorname/tan
-asserts:
-  - '.affiliate_collector_rune == "0"'
----
-type: check
-endpoint: http://localhost:1317/thorchain/invariant/affiliate_collector
-asserts:
-  - '.broken == false'
----
-type: check
-endpoint: http://localhost:1317/thorchain/queue/outbound
-asserts:
-  - '[.[] | select(.coin.asset == "BTC.BTC")] | length == 2'
----
-type: create-blocks
-count: 1
----
-type: check
-endpoint: http://localhost:1317/thorchain/thorname/few
-asserts:
-  - '.affiliate_collector_rune == "350277346"'
----
-type: check
-endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
-asserts:
-  - '.coins[] | select(.denom == "rune") | .amount == "350277346"'
----
-type: check
-endpoint: http://localhost:1317/thorchain/invariant/affiliate_collector
-asserts:
-  - '.broken == false'
----
-# Exercise preferred payouts through swap queue V2.
+# Exercise preferred payouts through the advanced swap queue.
 type: tx-mimir
 key: EnableAdvSwapQueue
 value: 1
@@ -282,8 +117,8 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/swap
 asserts:
   - '[.[] | select(.tx.memo | startswith("THOR-PREFERRED-ASSET-"))] | length == 2'
-  - '[.[] | select(.tx.memo == "THOR-PREFERRED-ASSET-few")][0].tx.coins[0].amount == "410407274"'
-  - '[.[] | select(.tx.memo == "THOR-PREFERRED-ASSET-tan")][0].tx.coins[0].amount == "120259856"'
+  - '[.[] | select(.tx.memo == "THOR-PREFERRED-ASSET-few")][0].tx.coins[0].amount == "82648150"'
+  - '[.[] | select(.tx.memo == "THOR-PREFERRED-ASSET-tan")][0].tx.coins[0].amount == "165296301"'
   - '[.[] | select(.tx.memo == "THOR-PREFERRED-ASSET-few")][0].destination == "{{ addr_btc_cat }}"'
   - '[.[] | select(.tx.memo == "THOR-PREFERRED-ASSET-tan")][0].destination == "{{ addr_btc_pig }}"'
 ---
@@ -293,16 +128,16 @@ count: 2
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
-  - '[.[] | select(.coin.asset == "BTC.BTC")] | length == 4'
-  - '[.[] | select(.to_address == "{{ addr_btc_cat }}")] | length == 2'
-  - '[.[] | select(.to_address == "{{ addr_btc_pig }}")] | length == 2'
+  - '[.[] | select(.coin.asset == "BTC.BTC")] | length == 2'
+  - '[.[] | select(.to_address == "{{ addr_btc_cat }}")] | length == 1'
+  - '[.[] | select(.to_address == "{{ addr_btc_pig }}")] | length == 1'
   - '[.[] | select(.coin.asset == "BTC.BTC") | (.coin.amount | tonumber)] | all(. > 0)'
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
-  - '[.[] | select(.to_address == "{{ addr_btc_cat }}") | (.coin.amount | tonumber)] | sort == [75248,398140]'
-  - '[.[] | select(.to_address == "{{ addr_btc_pig }}") | (.coin.amount | tonumber)] | sort == [111454,157744]'
+  - '[.[] | select(.to_address == "{{ addr_btc_cat }}") | (.coin.amount | tonumber)] | sort == [75248]'
+  - '[.[] | select(.to_address == "{{ addr_btc_pig }}") | (.coin.amount | tonumber)] | sort == [157744]'
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/few
@@ -347,7 +182,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/swap
 asserts:
   - '[.[] | select(.tx.memo == "THOR-PREFERRED-ASSET-few")] | length == 1'
-  - '[.[] | select(.tx.memo == "THOR-PREFERRED-ASSET-few")][0].tx.coins[0].amount == "260841182"'
+  - '[.[] | select(.tx.memo == "THOR-PREFERRED-ASSET-few")][0].tx.coins[0].amount == "350279211"'
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/few
@@ -367,7 +202,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/swap
 asserts:
   - '[.[] | select(.tx.memo == "THOR-PREFERRED-ASSET-few")] | length == 1'
-  - '[.[] | select(.tx.memo == "THOR-PREFERRED-ASSET-few")][0].tx.coins[0].amount == "260841182"'
+  - '[.[] | select(.tx.memo == "THOR-PREFERRED-ASSET-few")][0].tx.coins[0].amount == "350279211"'
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/few
@@ -391,7 +226,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/swap
 asserts:
   - '[.[] | select(.tx.memo == "THOR-PREFERRED-ASSET-few")] | length == 1'
-  - '[.[] | select(.tx.memo == "THOR-PREFERRED-ASSET-few")][0].tx.coins[0].amount == "260841182"'
+  - '[.[] | select(.tx.memo == "THOR-PREFERRED-ASSET-few")][0].tx.coins[0].amount == "350279211"'
 ---
 type: tx-mimir
 key: HaltBTCTrading
@@ -409,9 +244,9 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
-  - '[.[] | select(.coin.asset == "BTC.BTC")] | length == 5'
-  - '[.[] | select(.to_address == "{{ addr_btc_cat }}")] | length == 3'
-  - '[.[] | select(.to_address == "{{ addr_btc_pig }}")] | length == 2'
+  - '[.[] | select(.coin.asset == "BTC.BTC")] | length == 3'
+  - '[.[] | select(.to_address == "{{ addr_btc_cat }}")] | length == 2'
+  - '[.[] | select(.to_address == "{{ addr_btc_pig }}")] | length == 1'
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/few

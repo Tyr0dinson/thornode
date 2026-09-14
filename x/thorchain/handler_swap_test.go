@@ -278,25 +278,17 @@ func (s *HandlerSwapSuite) TestValidationWithStreamingSwap(c *C) {
 	)
 
 	// happy path
-	msg := NewMsgSwap(tx, common.DOGEAsset.GetSyntheticAsset(), GetRandomTHORAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 10, 20, types.SwapVersion_v1, observerAddr)
+	msg := NewMsgSwap(tx, common.DOGEAsset.GetSyntheticAsset(), GetRandomTHORAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 10, 20, types.SwapVersion_v2, observerAddr)
 	err := handler.validate(ctx, *msg)
 	c.Assert(err, IsNil)
 
-	// test mimir shutdown
-	mgr.Keeper().SetMimir(ctx, "StreamingSwapPause", 1)
-	err = handler.validate(ctx, *msg)
-	c.Assert(err, NotNil)
-	mgr.Keeper().SetMimir(ctx, "StreamingSwapPause", 0)
+	// StreamingSwapPause is enforced by the swap queue (isSwapReady skips paused
+	// streaming swaps), not by validate: a paused swap waits in the queue rather
+	// than being rejected and refunded.
 
 	// check that validation fails due to synth cap
 	mgr.Keeper().SetMimir(ctx, "MaxSynthPerPoolDepth", 1)
-	// first swap should fail as it include the total value of the streaming swap
 	c.Assert(handler.validate(ctx, *msg), NotNil)
-	// second swap should NOT fail as the synth cap is ignored
-	swp := msg.GetStreamingSwap()
-	swp.Count = 3
-	mgr.Keeper().SetStreamingSwap(ctx, swp)
-	c.Assert(handler.validate(ctx, *msg), IsNil)
 }
 
 func (s *HandlerSwapSuite) TestValidateRejectsDestinationEqualsTargetContract(c *C) {
@@ -346,6 +338,10 @@ func (s *HandlerSwapSuite) TestValidateRejectsDestinationEqualsTargetContract(c 
 
 func (s *HandlerSwapSuite) TestHandle(c *C) {
 	ctx, mgr := setupManagerForTest(c)
+	// The swap queue owns outbound scheduling outside simulation (settleSwap).
+	// This test drives a mock keeper that cannot run the queue, so run in
+	// simulation mode, where the swapper still builds the TxOutItem itself.
+	ctx = ctx.WithValue(constants.CtxSimulationMode, true)
 	keeper := &TestSwapHandleKeeper{
 		pools:             make(map[common.Asset]Pool),
 		activeNodeAccount: GetRandomValidatorNode(NodeActive),
@@ -552,83 +548,6 @@ func (s *HandlerSwapSuite) TestHandleRejectsWrongNetworkZECDestination(c *C) {
 	c.Check(err.Error(), Not(Matches), ".*is not same network.*")
 }
 
-func (s *HandlerSwapSuite) TestHandleStreamingSwap(c *C) {
-	var err error
-	ctx, mgr := setupManagerForTest(c)
-
-	pool := NewPool()
-	pool.Asset = common.DOGEAsset
-	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
-	pool.BalanceRune = cosmos.NewUint(100 * common.One)
-	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
-	mgr.txOutStore = NewTxStoreDummy()
-
-	na := GetRandomValidatorNode(NodeActive)
-	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
-
-	handler := NewSwapHandler(mgr)
-
-	txID := GetRandomTxHash()
-	signerDOGEAddr := GetRandomDOGEAddress()
-	// no pool
-	tx := common.NewTx(
-		txID,
-		signerDOGEAddr,
-		signerDOGEAddr,
-		common.Coins{
-			common.NewCoin(common.RuneAsset(), cosmos.NewUint(2_123400000)),
-		},
-		common.Gas{
-			common.NewCoin(common.DOGEAsset, cosmos.NewUint(10000)),
-		},
-		fmt.Sprintf("=:DOGE.DOGE:%s", signerDOGEAddr),
-	)
-	msg := NewMsgSwap(tx, common.DOGEAsset, signerDOGEAddr, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 3, 5, types.SwapVersion_v1, na.NodeAddress)
-	swp := msg.GetStreamingSwap()
-	swp.Deposit = tx.Coins[0].Amount
-	mgr.Keeper().SetStreamingSwap(ctx, swp)
-	mgr.Keeper().SetMimir(ctx, constants.L1SlipMinBps.String(), 1)
-	// Enable advanced swap queue so streaming swaps are handled by the queue manager
-	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 1)
-	_, _, err = handler.handleWithEmit(ctx, *msg)
-	c.Assert(err, IsNil)
-
-	// ensure we don't add items into txout for streaming swaps. That is
-	// handled in the swap queue manager
-	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
-	c.Assert(err, IsNil)
-	c.Assert(items, HasLen, 0)
-
-	swp, err = mgr.Keeper().GetStreamingSwap(ctx, txID)
-	c.Assert(err, IsNil)
-	c.Check(swp.In.String(), Equals, "707800000")
-	c.Check(swp.Out.String(), Equals, "617319586")
-
-	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
-	_, _, err = handler.handleWithEmit(ctx, *msg)
-	c.Assert(err, IsNil)
-	swp, err = mgr.Keeper().GetStreamingSwap(ctx, txID)
-	c.Assert(err, IsNil)
-	c.Check(swp.In.String(), Equals, "1415600000")
-	c.Check(swp.Out.String(), Equals, "1165237487")
-
-	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
-	_, _, err = handler.handleWithEmit(ctx, *msg)
-	c.Assert(err, IsNil)
-	swp, err = mgr.Keeper().GetStreamingSwap(ctx, txID)
-	c.Assert(err, IsNil)
-	c.Check(swp.In.String(), Equals, "2123400000")
-	c.Check(swp.Out.String(), Equals, "1654583341")
-
-	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
-	_, _, err = handler.handleWithEmit(ctx, *msg)
-	c.Assert(err, NotNil)
-	swp, err = mgr.Keeper().GetStreamingSwap(ctx, txID)
-	c.Assert(err, IsNil)
-	c.Check(swp.In.String(), Equals, "2123400000")
-	c.Check(swp.Out.String(), Equals, "1654583341")
-}
-
 func (s *HandlerSwapSuite) TestHandleWithEmitUsesStateStreamingQuantityForV2Swaps(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
@@ -731,6 +650,10 @@ func (s *HandlerSwapSuite) TestSwapSynthERC20(c *C) {
 
 func (s *HandlerSwapSuite) TestDoubleSwap(c *C) {
 	ctx, mgr := setupManagerForTest(c)
+	// The swap queue owns outbound scheduling outside simulation (settleSwap).
+	// This test drives a mock keeper that cannot run the queue, so run in
+	// simulation mode, where the swapper still builds the TxOutItem itself.
+	ctx = ctx.WithValue(constants.CtxSimulationMode, true)
 	keeper := &TestSwapHandleKeeper{
 		pools:             make(map[common.Asset]Pool),
 		activeNodeAccount: GetRandomValidatorNode(NodeActive),
@@ -822,6 +745,10 @@ func (s *HandlerSwapSuite) TestDoubleSwap(c *C) {
 
 func (s *HandlerSwapSuite) TestSwapOutDexIntegration(c *C) {
 	ctx, mgr := setupManagerForTest(c)
+	// The swap queue owns outbound scheduling outside simulation (settleSwap).
+	// This test drives a mock keeper that cannot run the queue, so run in
+	// simulation mode, where the swapper still builds the TxOutItem itself.
+	ctx = ctx.WithValue(constants.CtxSimulationMode, true)
 	keeper := &TestSwapHandleKeeper{
 		pools:             make(map[common.Asset]Pool),
 		activeNodeAccount: GetRandomValidatorNode(NodeActive),
@@ -936,7 +863,6 @@ func (s *HandlerSwapSuite) TestSwapOutDexIntegration(c *C) {
 	res, err = handler.Run(ctx, msgSwapFromTxIn)
 	c.Assert(err, IsNil)
 	c.Assert(res, NotNil)
-	c.Assert(processSwapQueues(ctx, mgr), IsNil)
 	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(items, HasLen, 1)
@@ -945,17 +871,8 @@ func (s *HandlerSwapSuite) TestSwapOutDexIntegration(c *C) {
 	c.Assert(items[0].AggregatorTargetLimit, IsNil)
 }
 
-// Helper function to process both swap queues
 func processSwapQueues(ctx cosmos.Context, mgr Manager) error {
-	if err := mgr.SwapQ().EndBlock(ctx, mgr); err != nil {
-		return err
-	}
-	if mgr.Keeper().AdvSwapQueueEnabled(ctx) {
-		if err := mgr.AdvSwapQueueMgr().EndBlock(ctx, mgr, false); err != nil {
-			return err
-		}
-	}
-	return nil
+	return mgr.AdvSwapQueueMgr().EndBlock(ctx, mgr, false)
 }
 
 // TestSwapDynamicFeeIntegration exercises the end-to-end wiring that the

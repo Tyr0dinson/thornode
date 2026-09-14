@@ -17,7 +17,6 @@ type DummyMgr struct {
 	validatorMgr              ValidatorManager
 	obMgr                     ObserverManager
 	poolMgr                   PoolManager
-	swapQ                     SwapQueue
 	advSwapQueue              AdvSwapQueue
 	slasher                   Slasher
 	tradeMgr                  TradeAccountManager
@@ -84,7 +83,6 @@ func (m DummyMgr) NetworkMgr() NetworkManager                 { return m.network
 func (m DummyMgr) ValidatorMgr() ValidatorManager             { return m.validatorMgr }
 func (m DummyMgr) ObMgr() ObserverManager                     { return m.obMgr }
 func (m DummyMgr) PoolMgr() PoolManager                       { return m.poolMgr }
-func (m DummyMgr) SwapQ() SwapQueue                           { return m.swapQ }
 func (m DummyMgr) Slasher() Slasher                           { return m.slasher }
 func (m DummyMgr) AdvSwapQueueMgr() AdvSwapQueue              { return m.advSwapQueue }
 func (m DummyMgr) TradeAccountManager() TradeAccountManager   { return m.tradeMgr }

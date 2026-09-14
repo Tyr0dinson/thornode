@@ -286,6 +286,7 @@
         {
           "affiliate_basis_points": "0",
           "destination": "0x1b03d088612a00df0049634e9cc8684d622cada2",
+          "index": 2,
           "initial_block_height": "15",
           "signer": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
           "state": {

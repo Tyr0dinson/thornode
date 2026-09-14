@@ -297,13 +297,8 @@ func (h WithdrawLiquidityHandler) handle(ctx cosmos.Context, msg MsgWithdrawLiqu
 }
 
 func (h WithdrawLiquidityHandler) swap(ctx cosmos.Context, msg MsgWithdrawLiquidity, coin common.Coin, addr common.Address) error {
-	advSwapQueueEnabled := h.mgr.Keeper().AdvSwapQueueEnabled(ctx)
-
 	// ensure TxID does NOT have a collision with another swap
-	if ok := h.mgr.Keeper().HasSwapQueueItem(ctx, msg.Tx.ID, 0); ok {
-		return fmt.Errorf("txn hash conflict")
-	}
-	if advSwapQueueEnabled && h.mgr.Keeper().HasAdvSwapQueueItem(ctx, msg.Tx.ID, 0) {
+	if h.mgr.Keeper().HasAdvSwapQueueItem(ctx, msg.Tx.ID, 0) {
 		return fmt.Errorf("txn hash conflict")
 	}
 
@@ -329,44 +324,20 @@ func (h WithdrawLiquidityHandler) swap(ctx cosmos.Context, msg MsgWithdrawLiquid
 	msg.Tx.Memo = memo
 	msg.Tx.Coins = common.NewCoins(coin)
 
-	// Determine version based on configuration
-	version := types.SwapVersion_v1
-	if advSwapQueueEnabled {
-		version = types.SwapVersion_v2
+	swapMsg := NewMsgSwap(msg.Tx, targetAsset, addr, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketSwap, 0, uint64(ssInterval), types.SwapVersion_v2, msg.Signer)
+
+	if ssInterval == 0 {
+		// Streaming was not asked for (disabled by config, or by ragnarok above),
+		// but AddSwapQueueItem expands a zero quantity to maxSwapQuantity - which
+		// IsStreaming() reads as a streaming swap. Pin it to a single swap: during
+		// ragnarok that also keeps it clear of the streaming-on-ragnarok guard in
+		// isSwapReady.
+		swapMsg.State.Quantity = 1
 	}
 
-	swapMsg := NewMsgSwap(msg.Tx, targetAsset, addr, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketSwap, 0, uint64(ssInterval), version, msg.Signer)
-
-	// sanity check swap msg
-	handler := NewSwapHandler(h.mgr)
-	if err := handler.validate(ctx, *swapMsg); err != nil {
-		return err
-	}
-
-	if advSwapQueueEnabled {
-		// The advanced swap queue owns execution and outbound scheduling for the
-		// swaps it manages: SwapperImpl.Swap deliberately skips TryAddTxOutItem
-		// while it is enabled, deferring to settleSwap. Queueing this redemption
-		// in the legacy namespace instead would burn the synth and drop the item
-		// with no outbound ever scheduled, so route it where it can be settled.
-		if ssInterval == 0 {
-			// Streaming was not asked for (disabled by config, or by ragnarok
-			// above), but AddSwapQueueItem expands a zero quantity to
-			// maxSwapQuantity - which IsStreaming() reads as a streaming swap.
-			// Pin it to a single swap to keep the legacy queue's semantics: during
-			// ragnarok that also keeps it clear of the streaming-on-ragnarok guard
-			// in isSwapReady.
-			swapMsg.State.Quantity = 1
-		}
-		if err := h.mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, h.mgr, swapMsg); err != nil {
-			ctx.Logger().Error("fail to add swap to adv queue", "error", err)
-			return err
-		}
-		return nil
-	}
-
-	if err := h.mgr.Keeper().SetSwapQueueItem(ctx, *swapMsg, 0); err != nil {
-		ctx.Logger().Error("fail to add swap to queue", "error", err)
+	// AddSwapQueueItem validates the message itself.
+	if err := h.mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, h.mgr, swapMsg); err != nil {
+		ctx.Logger().Error("fail to add swap to adv queue", "error", err)
 		return err
 	}
 

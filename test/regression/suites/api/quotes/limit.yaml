@@ -9,34 +9,6 @@
 type: create-blocks
 count: 1
 ---
-type: tx-mimir
-key: EnableAdvSwapQueue
-value: 0
-signer: {{ addr_thor_dog }}
----
-type: create-blocks
-count: 1
----
-########################################################################################
-# Test that limit endpoint is disabled when advanced swap queue is off
-########################################################################################
-type: check
-endpoint: http://localhost:1317/thorchain/quote/limit
-params:
-  from_asset: BTC.BTC
-  to_asset: ETH.ETH
-  amount: 100000000
-  destination: {{ addr_eth_fox }}
-  target_out: 2000000000
-status: 400
-asserts:
-  - .message|contains("limit orders require advanced swap queue to be enabled")
----
-type: tx-mimir
-key: EnableAdvSwapQueue
-value: 1
-signer: {{ addr_thor_dog }}
----
 type: create-blocks
 count: 1
 ---

@@ -38,10 +38,6 @@ func (ManagersTestSuite) TestManagers(c *C) {
 	c.Assert(observerMgr, NotNil)
 	c.Assert(err, IsNil)
 
-	swapQueue, err := GetSwapQueue(ver, mgr.Keeper())
-	c.Assert(swapQueue, NotNil)
-	c.Assert(err, IsNil)
-
 	swapper, err := GetSwapper(ver)
 	c.Assert(swapper, NotNil)
 	c.Assert(err, IsNil)

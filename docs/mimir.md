@@ -69,7 +69,7 @@ Mimirs have a maximum length of 128 bytes (see MaxMimirLength in THORNode code).
 - `CloutReset`: The number of blocks before clout spent gets reset
 - `CloutLimit`\*: Max clout allowed to spend
 - `MultipleAffiliatesMaxCount`: Maximum number of nested affiliates
-- `EnableAdvSwapQueue`: Enable advanced swap queue (0 = disabled, 1 = enabled, 2 = market swaps only, limit swaps skipped)
+- `EnableAdvSwapQueue`: Advanced swap queue mode (2 = market swaps only, limit swaps skipped; any other value = all swap types). The advanced swap queue is the only swap queue and cannot be disabled.
 - `AdvSwapQueueRapidSwapMax`: Maximum number of rapid swap iterations per block
 - `StreamingLimitSwapMaxAge`: Maximum number of blocks a limit swap can exist before expiring
 - `ModifyLimitSwapMaxIterations`: Maximum iterations when searching for a user's swap to modify or cancel

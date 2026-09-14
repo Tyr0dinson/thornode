@@ -8,6 +8,10 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
+// The legacy swap queue no longer has any writers - Migrate20to21 drains the
+// swapitem/ prefix into the advanced queue. The read side below is kept only so
+// that migration (and the older migrations that reference it) still compile; it
+// can go once no migration reads this prefix.
 func (k KVStore) setMsgSwap(ctx cosmos.Context, key []byte, record MsgSwap) {
 	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
@@ -31,7 +35,9 @@ func (k KVStore) getMsgSwap(ctx cosmos.Context, key []byte, record *MsgSwap) (bo
 	return true, nil
 }
 
-// SetSwapQueueItem - writes a swap item to the kv store
+// SetSwapQueueItem writes a swap item to the legacy kv store. Nothing in
+// production calls this any more - it is retained off the Keeper interface so
+// that the Migrate20to21 drain can be tested against realistic legacy state.
 func (k KVStore) SetSwapQueueItem(ctx cosmos.Context, msg MsgSwap, i int) error {
 	key := k.GetKey(prefixSwapQueueItem, formatSwapQueueItemKey(msg.Tx.ID, i))
 	k.setMsgSwap(ctx, key, msg)

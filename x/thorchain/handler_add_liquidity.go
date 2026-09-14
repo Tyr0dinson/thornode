@@ -364,7 +364,7 @@ func (h AddLiquidityHandler) handle(ctx cosmos.Context, msg MsgAddLiquidity) err
 
 func (h AddLiquidityHandler) swap(ctx cosmos.Context, msg MsgAddLiquidity) error {
 	// ensure TxID does NOT have a collision with another swap
-	if ok := h.mgr.Keeper().HasSwapQueueItem(ctx, msg.Tx.ID, 0); ok {
+	if ok := h.mgr.Keeper().HasAdvSwapQueueItem(ctx, msg.Tx.ID, 0); ok {
 		return fmt.Errorf("txn hash conflict")
 	}
 
@@ -375,26 +375,15 @@ func (h AddLiquidityHandler) swap(ctx cosmos.Context, msg MsgAddLiquidity) error
 	memo := fmt.Sprintf("+:%s::%s:%d", msg.Asset, msg.AffiliateAddress, msg.AffiliateBasisPoints.Uint64())
 	msg.Tx.Memo = memo
 
-	// Get streaming swaps interval to use for native -> synth swap
-	ssInterval := h.mgr.Keeper().GetConfigInt64(ctx, constants.SaversStreamingSwapsInterval)
-	if ssInterval <= 0 {
-		ssInterval = 0
-	}
+	// Savers adds execute as a single swap: the +: follow-on add handler runs per
+	// successful swap, so a streamed add would fire a partial add per sub-swap.
+	// A quantity of 1 also keeps AddSwapQueueItem from expanding a zero quantity
+	// into a stream (see handler_withdraw.go). This matches the behaviour these
+	// adds already had in the legacy queue, where they ran as one-shots.
+	swapMsg := NewMsgSwap(msg.Tx, msg.Asset, common.NoopAddress, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketSwap, 1, 0, types.SwapVersion_v2, msg.Signer)
 
-	// Determine version based on configuration
-	version := types.SwapVersion_v1
-	if h.mgr.Keeper().AdvSwapQueueEnabled(ctx) {
-		version = types.SwapVersion_v2
-	}
-
-	swapMsg := NewMsgSwap(msg.Tx, msg.Asset, common.NoopAddress, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketSwap, 0, uint64(ssInterval), version, msg.Signer)
-
-	// sanity check swap msg
-	handler := NewSwapHandler(h.mgr)
-	if err := handler.validate(ctx, *swapMsg); err != nil {
-		return err
-	}
-	if err := h.mgr.Keeper().SetSwapQueueItem(ctx, *swapMsg, 0); err != nil {
+	// AddSwapQueueItem validates the message itself.
+	if err := h.mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, h.mgr, swapMsg); err != nil {
 		ctx.Logger().Error("fail to add swap to queue", "error", err)
 		return err
 	}

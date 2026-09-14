@@ -115,11 +115,11 @@ For the DEX aggregator-oriented variation of the `SWAP` memo, see [Aggregators M
 
 #### Advanced Swap Queue
 
-THORChain uses an advanced swap queue system with different operational modes controlled by the `EnableAdvSwapQueue` mimir setting:
+THORChain processes every swap through the advanced swap queue. The
+`EnableAdvSwapQueue` mimir selects its operating mode:
 
-- **Disabled (0)**: Uses legacy swap queue
-- **Enabled (1)**: Full advanced queue with both market and limit swaps
-- **Market-only (2)**: Advanced queue for market swaps only, limit swaps are skipped
+- **Enabled (default)**: Both market and limit swaps
+- **Market-only (2)**: Market swaps only, limit swaps are skipped
 
 #### Swap Boundaries and Limits
 

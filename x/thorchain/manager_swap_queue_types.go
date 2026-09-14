@@ -1,14 +1,49 @@
 package thorchain
 
 import (
+	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 const PreferredAssetSwapMemoPrefix = "THOR-PREFERRED-ASSET"
+
+// swapQueueFailureReason maps a swap error to a bounded telemetry label. The raw
+// error must NEVER be used as a label value: it embeds amounts and tx-specific
+// text and is unbounded. The two literal strings matched here are the same ones
+// swap_current.go documents as load-bearing for the adv swap queue.
+func swapQueueFailureReason(err error) string {
+	if err == nil {
+		return "none"
+	}
+	switch {
+	case errors.Is(err, errSwapFailInvalidAmount):
+		return "invalid_amount"
+	case errors.Is(err, errSwapFailInvalidBalance):
+		return "invalid_balance"
+	case errors.Is(err, errSwapFailNotEnoughBalance):
+		return "not_enough_balance"
+	}
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "less than price limit"):
+		return "price_limit"
+	case strings.Contains(msg, "zero emit asset"):
+		return "zero_emit_asset"
+	case strings.Contains(msg, "doesn't exist"):
+		return "pool_not_exist"
+	case strings.Contains(msg, "insufficient synth capacity"):
+		return "synth_cap"
+	case strings.Contains(msg, "has been disabled"):
+		return "disabled"
+	default:
+		return "other"
+	}
+}
 
 type swapItem struct {
 	index int

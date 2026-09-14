@@ -87,42 +87,11 @@ func (h ObservedTxInHandler) handle(ctx cosmos.Context, msg MsgObservedTxIn) (*c
 }
 
 func addSwap(ctx cosmos.Context, mgr Manager, msg MsgSwap) error {
-	// Route swap based on message version instead of configuration
-	if msg.IsV2() {
-		// TODO: swap to synth if layer1 asset (follow on PR)
-		// TODO: create handler to modify/cancel a limit swap (follow on PR)
-		if err := mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, mgr, &msg); err != nil {
-			ctx.Logger().Error("fail to add swap to queue", "error", err)
-			telemetry.IncrCounterWithLabels(
-				[]string{"thornode", "swap_queue", "add_failed"},
-				float32(1),
-				[]metrics.Label{telemetry.NewLabel("reason", "adv_queue")},
-			)
-			return err
-		}
-		if msg.IsLimitSwap() {
-			source := msg.Tx.Coins[0]
-			target := common.NewCoin(msg.TargetAsset, msg.TradeTarget)
-			evt := NewEventLimitSwap(source, target, msg.Tx.ID)
-			if err := mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
-				ctx.Logger().Error("fail to emit swap event", "error", err)
-			}
-		}
-	} else {
-		return addSwapDirect(ctx, mgr.Keeper(), msg)
-	}
-	return nil
-}
-
-// addSwapDirect adds the swap directly to the swap queue (no order book) - segmented
-// out into its own function to allow easier maintenance of original behavior vs order
-// book behavior.
-func addSwapDirect(ctx cosmos.Context, k keeper.Keeper, msg MsgSwap) error {
+	// AddSwapQueueItem indexes Tx.Coins[0], so an empty coin set would panic.
 	if msg.Tx.Coins.IsEmpty() {
 		return nil
 	}
-	// Queue the main swap
-	if err := k.SetSwapQueueItem(ctx, msg, 0); err != nil {
+	if err := mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, mgr, &msg); err != nil {
 		ctx.Logger().Error("fail to add swap to queue", "error", err)
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "swap_queue", "add_failed"},
@@ -130,6 +99,14 @@ func addSwapDirect(ctx cosmos.Context, k keeper.Keeper, msg MsgSwap) error {
 			[]metrics.Label{telemetry.NewLabel("reason", "direct")},
 		)
 		return err
+	}
+	if msg.IsLimitSwap() {
+		source := msg.Tx.Coins[0]
+		target := common.NewCoin(msg.TargetAsset, msg.TradeTarget)
+		evt := NewEventLimitSwap(source, target, msg.Tx.ID)
+		if err := mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
+			ctx.Logger().Error("fail to emit swap event", "error", err)
+		}
 	}
 	return nil
 }

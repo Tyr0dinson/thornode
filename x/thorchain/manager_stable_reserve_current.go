@@ -192,15 +192,6 @@ func (s *StableReserveMgr) TrySwap(ctx cosmos.Context, mgr Manager, msg MsgSwap)
 	if msg.State != nil && (msg.State.Count > 0 || msg.IsStreaming()) {
 		return false, cosmos.ZeroUint(), nil
 	}
-	// Legacy (V1) streaming swaps track progress in a separate StreamingSwap
-	// record, not msg.State, so the guard above never trips for them. On this path
-	// TrySwap runs before that record is created and before the sub-swap-size
-	// hijack in handler_swap.go, so it would see the full deposit and fill it 1:1
-	// every block. Leave legacy streaming swaps to the normal streaming machinery;
-	// the direct fill only serves single market swaps.
-	if msg.IsLegacyStreaming() {
-		return false, cosmos.ZeroUint(), nil
-	}
 	if len(msg.Tx.Coins) != 1 {
 		return false, cosmos.ZeroUint(), nil
 	}
@@ -281,14 +272,12 @@ func (s *StableReserveMgr) TrySwap(ctx cosmos.Context, mgr Manager, msg MsgSwap)
 		return false, cosmos.ZeroUint(), err
 	}
 
-	// Mirror swapper.Swap's outbound gate (see swap_current.go): when the
-	// advanced swap queue is active (and not a simulation), the queue accumulates
-	// this fill's emit into msg.State.Out and settleSwap creates the completed-swap
-	// outbound. Scheduling the outbound here as well would pay the fill twice. Only
-	// schedule directly on the legacy path (or in simulation, where settlement is
-	// skipped), matching how normal swaps materialize their outbound.
-	advSwapQueueSettles := s.keeper.AdvSwapQueueEnabled(ctx) && !isSimulationMode(ctx)
-	if !msg.Destination.IsNoop() && !advSwapQueueSettles {
+	// Mirror swapper.Swap's outbound gate (see swap_current.go): outside of
+	// simulation the queue accumulates this fill's emit into msg.State.Out and
+	// settleSwap creates the completed-swap outbound. Scheduling the outbound here
+	// as well would pay the fill twice. Only schedule directly in simulation, where
+	// settlement is skipped, matching how normal swaps materialize their outbound.
+	if !msg.Destination.IsNoop() && isSimulationMode(ctx) {
 		toi := TxOutItem{
 			Chain:     target.GetChain(),
 			InHash:    msg.Tx.ID,
@@ -488,9 +477,6 @@ func (s *StableReserveMgr) pendingRescueKeys(ctx cosmos.Context, mgr Manager) (m
 		}
 		return nil
 	}
-	if err := scan(mgr.Keeper().GetSwapQueueIterator(ctx)); err != nil {
-		return nil, err
-	}
 	if err := scan(mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)); err != nil {
 		return nil, err
 	}
@@ -554,7 +540,7 @@ func (s *StableReserveMgr) scheduleDeploymentSwap(ctx cosmos.Context, mgr Manage
 	txID := stableReserveSyntheticTxID(ctx, "deploy", target)
 	memo := types.StableReserveDeployMemoPrefix + target.String()
 	tx := common.NewTx(txID, stableReserveAddress, asgardAddress, common.NewCoins(coin), common.Gas{}, memo)
-	msg := NewMsgSwap(tx, target, common.NoopAddress, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketSwap, quantity, interval, types.SwapVersion_v1, moduleAddr)
+	msg := NewMsgSwap(tx, target, common.NoopAddress, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketSwap, quantity, interval, types.SwapVersion_v2, moduleAddr)
 	if err = s.queueStableReserveSwap(cacheCtx, mgr, msg); err != nil {
 		return err
 	}
@@ -593,7 +579,7 @@ func (s *StableReserveMgr) scheduleRescueSwap(ctx cosmos.Context, mgr Manager, t
 	// floors the count at 1, so tiny rescues stay single-shot without a manual
 	// guard.
 	const quantity, interval uint64 = 0, 1
-	msg := NewMsgSwap(tx, target, common.NoopAddress, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketSwap, quantity, interval, types.SwapVersion_v1, moduleAddr)
+	msg := NewMsgSwap(tx, target, common.NoopAddress, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketSwap, quantity, interval, types.SwapVersion_v2, moduleAddr)
 	if err := s.queueStableReserveSwap(ctx, mgr, msg); err != nil {
 		return err
 	}
@@ -608,11 +594,7 @@ func (s *StableReserveMgr) scheduleRescueSwap(ctx cosmos.Context, mgr Manager, t
 }
 
 func (s *StableReserveMgr) queueStableReserveSwap(ctx cosmos.Context, mgr Manager, msg *MsgSwap) error {
-	if s.keeper.AdvSwapQueueEnabled(ctx) {
-		msg.Version = types.SwapVersion_v2
-		return mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, mgr, msg)
-	}
-	return s.keeper.SetSwapQueueItem(ctx, *msg, 0)
+	return mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, mgr, msg)
 }
 
 func settleStableReserveInternalSwap(ctx cosmos.Context, mgr Manager, msg MsgSwap, emit cosmos.Uint) (bool, error) {

@@ -110,13 +110,7 @@ func getMsgSwapFromMemo(ctx cosmos.Context, keeper keeper.Keeper, memo SwapMemo,
 		memo.Destination = tx.Tx.FromAddress
 	}
 
-	// Determine version based on configuration
-	version := types.SwapVersion_v1
-	if keeper.AdvSwapQueueEnabled(ctx) {
-		version = types.SwapVersion_v2
-	}
-
-	return NewMsgSwap(tx.Tx, memo.GetAsset(), memo.Destination, memo.SlipLimit, memo.AffiliateAddress, memo.AffiliateBasisPoints, memo.GetDexAggregator(), memo.GetDexTargetAddress(), memo.GetDexTargetLimit(), memo.GetSwapType(), memo.GetStreamQuantity(), memo.GetStreamInterval(), version, signer), nil
+	return NewMsgSwap(tx.Tx, memo.GetAsset(), memo.Destination, memo.SlipLimit, memo.AffiliateAddress, memo.AffiliateBasisPoints, memo.GetDexAggregator(), memo.GetDexTargetAddress(), memo.GetDexTargetLimit(), memo.GetSwapType(), memo.GetStreamQuantity(), memo.GetStreamInterval(), types.SwapVersion_v2, signer), nil
 }
 
 func getMsgReferenceMemo(memo ReferenceWriteMemo, signer cosmos.AccAddress) (cosmos.Msg, error) {

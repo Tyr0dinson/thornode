@@ -146,7 +146,7 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "4645768D999E5D58EEAF23AE7D0C618DAAD76A7030DC9EF28F818241E9ADB189",
+      "data_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
@@ -243,128 +243,7 @@
         "type": "rewards"
       }
     ],
-    "txs": [
-      {
-        "hash": "C4F1DC7636E39B56271D90687A4C20AD753F466F4EB432ABD26B842876FE247F",
-        "tx": {
-          "auth_info": {
-            "fee": {
-              "amount": [],
-              "gas_limit": "0",
-              "granter": "",
-              "payer": ""
-            },
-            "signer_infos": [
-              {
-                "mode_info": {
-                  "single": {
-                    "mode": "SIGN_MODE_DIRECT"
-                  }
-                },
-                "public_key": {
-                  "@type": "/cosmos.crypto.secp256k1.PubKey",
-                  "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
-                },
-                "sequence": "0"
-              }
-            ],
-            "tip": null
-          },
-          "body": {
-            "extension_options": [],
-            "memo": "",
-            "messages": [
-              {
-                "@type": "/types.MsgMimir",
-                "key": "EnableAdvSwapQueue",
-                "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-                "value": "0"
-              }
-            ],
-            "non_critical_extension_options": [],
-            "timeout_height": "0",
-            "timeout_timestamp": null,
-            "unordered": false
-          },
-          "signatures": [
-            "MP7wLtIBr8oVm6SL6pCZ8KifuJsWgzM+ZxRMUNB4VG5KoAAO4MY/zXRj/pEsgf2HipDqC12lX/HapiGI4JSLuQ=="
-          ]
-        },
-        "result": {
-          "code": 0,
-          "gas_wanted": "-1",
-          "gas_used": "0",
-          "events": [
-            {
-              "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/0",
-              "type": "tx"
-            },
-            {
-              "signature": "MP7wLtIBr8oVm6SL6pCZ8KifuJsWgzM+ZxRMUNB4VG5KoAAO4MY/zXRj/pEsgf2HipDqC12lX/HapiGI4JSLuQ==",
-              "type": "tx"
-            },
-            {
-              "action": "/types.MsgMimir",
-              "module": "MsgMimir",
-              "msg_index": "0",
-              "sender": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-              "type": "message"
-            },
-            {
-              "amount": "2000000rune",
-              "msg_index": "0",
-              "spender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
-              "type": "coin_spent"
-            },
-            {
-              "amount": "2000000rune",
-              "msg_index": "0",
-              "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
-              "type": "coin_received"
-            },
-            {
-              "amount": "2000000rune",
-              "msg_index": "0",
-              "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
-              "sender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
-              "type": "transfer"
-            },
-            {
-              "msg_index": "0",
-              "sender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
-              "type": "message"
-            },
-            {
-              "address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-              "key": "ENABLEADVSWAPQUEUE",
-              "msg_index": "0",
-              "type": "set_node_mimir",
-              "value": "0"
-            },
-            {
-              "amount": "2000000",
-              "bond_address": "",
-              "bond_type": "bond_cost",
-              "chain": "",
-              "coin": "",
-              "from": "",
-              "id": "",
-              "memo": "",
-              "msg_index": "0",
-              "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-              "to": "",
-              "type": "bond"
-            },
-            {
-              "key": "ENABLEADVSWAPQUEUE",
-              "msg_index": "0",
-              "type": "set_mimir",
-              "value": "0"
-            }
-          ]
-        }
-      }
-    ]
+    "txs": []
   },
   {
     "id": {
@@ -702,7 +581,7 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "D0611B033C66B44DEA2A9BA3112266844ED3525180973E73AFF46176AE9DFFEF",
+      "data_hash": "6FA7024B38C0D6CFD764CD89337426B8299E34F693267DDC2E322207B7664FDD",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
@@ -801,7 +680,7 @@
     ],
     "txs": [
       {
-        "hash": "99D06341D21C53D39A83F83E6BDFFA30DCE58406B1EE0ADDD8F28D0B02ADB04E",
+        "hash": "463D8909CE0D4BECA62B5BEF6209D5201AD5C0DEAAE409BBD1534C70A8E247C2",
         "tx": {
           "auth_info": {
             "fee": {
@@ -821,7 +700,7 @@
                   "@type": "/cosmos.crypto.secp256k1.PubKey",
                   "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
                 },
-                "sequence": "1"
+                "sequence": "0"
               }
             ],
             "tip": null
@@ -878,7 +757,7 @@
                         }
                       ],
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
-                      "memo": "OUT:C4F1DC7636E39B56271D90687A4C20AD753F466F4EB432ABD26B842876FE247F",
+                      "memo": "OUT:421CFCFD4F6DF5FF09CD32C68E458391AA08BC6505E1A2C0CE0859FE3A01135D",
                       "to_address": "46QDeeLcyrEGkn7NyaJCsD3NJbDgjJk1BXiopzvU6aejKB4XKtcf1e86oAXAxDJXbPbGME2xWBgFdSUzrxhiKLiqGdtinVR"
                     },
                     "xmr_mined_height": "0",
@@ -893,7 +772,7 @@
             "unordered": false
           },
           "signatures": [
-            "OGO9u6TAnXEx+SPSNjX9zqwDDizVg6jmYYBVoOauPYM9V1brdQmEm84SyKO7tEg4FyPcwFmGJ08uFJC3ywQHEA=="
+            "dnA2RGIl5WV4T4K7chXQozkHEAm5Q7DnZF92azMcYyRo0etcsP0uVVOdHpkyEa87nv4CfzUcpqvUWFikXYmZ6w=="
           ]
         },
         "result": {
@@ -902,11 +781,11 @@
           "gas_used": "0",
           "events": [
             {
-              "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/1",
+              "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/0",
               "type": "tx"
             },
             {
-              "signature": "OGO9u6TAnXEx+SPSNjX9zqwDDizVg6jmYYBVoOauPYM9V1brdQmEm84SyKO7tEg4FyPcwFmGJ08uFJC3ywQHEA==",
+              "signature": "dnA2RGIl5WV4T4K7chXQozkHEAm5Q7DnZF92azMcYyRo0etcsP0uVVOdHpkyEa87nv4CfzUcpqvUWFikXYmZ6w==",
               "type": "tx"
             },
             {
@@ -921,8 +800,8 @@
               "coin": "99500000 XMR.XMR",
               "from": "42VghrBc8Az8X5sEmjxTwpWodkQxA8wh9YgWetJB4EPGAeJDcirVzzk6oAXAxDJXbPbGME2xWBgFdSUzrxhiKLiqGfg5wvk",
               "id": "0000000000000000000000000000000000000000000000000000000000000001",
-              "memo": "OUT:C4F1DC7636E39B56271D90687A4C20AD753F466F4EB432ABD26B842876FE247F",
-              "msg": "missing tx out in=C4F1DC7636E39B56271D90687A4C20AD753F466F4EB432ABD26B842876FE247F",
+              "memo": "OUT:421CFCFD4F6DF5FF09CD32C68E458391AA08BC6505E1A2C0CE0859FE3A01135D",
+              "msg": "missing tx out in=421CFCFD4F6DF5FF09CD32C68E458391AA08BC6505E1A2C0CE0859FE3A01135D",
               "msg_index": "0",
               "to": "46QDeeLcyrEGkn7NyaJCsD3NJbDgjJk1BXiopzvU6aejKB4XKtcf1e86oAXAxDJXbPbGME2xWBgFdSUzrxhiKLiqGdtinVR",
               "type": "security"

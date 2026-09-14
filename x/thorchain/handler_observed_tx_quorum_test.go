@@ -406,10 +406,9 @@ func (s *HandlerObservedTxQuorumSuite) TestHandleInboundCompromisedVaultNoOp(c *
 	c.Assert(securityMsg, Not(Equals), "")
 	c.Assert(strings.Contains(securityMsg, vaultPubKey.String()), Equals, true)
 
-	queue := newSwapQueue(k)
-	swaps, err := queue.FetchQueue(ctx)
-	c.Assert(err, IsNil)
-	c.Assert(swaps, HasLen, 0)
+	advIter := k.GetAdvSwapQueueItemIterator(ctx)
+	c.Assert(advIter.Valid(), Equals, false)
+	advIter.Close()
 }
 
 func (s *HandlerObservedTxQuorumSuite) TestHandleOutboundValidAttestations(c *C) {

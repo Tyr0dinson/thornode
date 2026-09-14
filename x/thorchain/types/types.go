@@ -11,11 +11,11 @@ const (
 type AdvSwapQueueMode int64
 
 const (
-	// AdvSwapQueueModeDisabled - Advanced swap queue is disabled
-	AdvSwapQueueModeDisabled AdvSwapQueueMode = 0
-	// AdvSwapQueueModeEnabled - Advanced swap queue is enabled for all swap types
+	// AdvSwapQueueModeEnabled - all swap types are processed. This is the default:
+	// the advanced swap queue is the only swap queue, so it cannot be turned off.
+	// Any value other than AdvSwapQueueModeMarketOnly means this.
 	AdvSwapQueueModeEnabled AdvSwapQueueMode = 1
-	// AdvSwapQueueModeMarketOnly - Advanced swap queue processes market swaps only, blocks limit swaps
+	// AdvSwapQueueModeMarketOnly - market swaps only, limit swaps blocked
 	AdvSwapQueueModeMarketOnly AdvSwapQueueMode = 2
 )
 

@@ -1,7 +1,6 @@
 package thorchain
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -986,16 +985,7 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 				// block where every attempt failed is distinguishable from a block
 				// with no swaps at all (both read zero on the success counters).
 				failedSwapCount++
-				switch {
-				case errors.Is(handleErr, errSwapFailInvalidAmount):
-					failedSwapReasons["invalid_amount"]++
-				case errors.Is(handleErr, errSwapFailInvalidBalance):
-					failedSwapReasons["invalid_balance"]++
-				case errors.Is(handleErr, errSwapFailNotEnoughBalance):
-					failedSwapReasons["not_enough_balance"]++
-				default:
-					failedSwapReasons["other"]++
-				}
+				failedSwapReasons[swapQueueFailureReason(handleErr)]++
 				// Don't commit - this discards all state changes
 				ctx.Logger().Error("fail to execute streaming swap interval", "error", handleErr)
 				msg.State.FailedSwaps = append(msg.State.FailedSwaps, msg.State.Count)
@@ -1097,7 +1087,10 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 		vm.emitAdvSwapQueueTelemetry(ctx, mgr, iterationCount, swapSuccesses, marketSwapSuccesses, limitSwapSuccesses, completedSwapCount)
 
 		// Fixed, ordered reason list: never iterate the map itself.
-		for _, reason := range []string{"invalid_amount", "invalid_balance", "not_enough_balance", "other"} {
+		for _, reason := range []string{
+			"invalid_amount", "invalid_balance", "not_enough_balance",
+			"price_limit", "zero_emit_asset", "pool_not_exist", "synth_cap", "disabled", "other",
+		} {
 			if n := failedSwapReasons[reason]; n > 0 {
 				telemetry.IncrCounterWithLabels(
 					[]string{"thornode", "adv_swap_queue", "failed_swaps_total"},

@@ -132,6 +132,10 @@ func scheduleStableReserveWithdrawalFeeSwap(ctx cosmos.Context, mgr Manager, msg
 	feeTx.ID = stableReserveSyntheticTxID(ctx, "withdraw-fee-"+msg.Tx.ID.String(), requestCoin.Asset)
 	feeTx.Coins = common.NewCoins(requestCoin)
 	feeTx.Memo = types.StableReserveWithdrawFeeMemoPrefix + msg.Tx.ID.String()
-	feeSwap := NewMsgSwap(feeTx, common.RuneAsset(), reserveAddress, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketSwap, 0, 0, types.SwapVersion_v1, msg.Signer)
-	return mgr.Keeper().SetSwapQueueItem(ctx, *feeSwap, 0)
+	// Quantity 1 keeps this a one-shot: AddSwapQueueItem expands a zero quantity
+	// into a stream. The destination is the Reserve (not Noop), so settleSwap
+	// schedules the outbound - the memo does not parse as a THORChain memo, so
+	// settleSwap takes its outbound path rather than a module transfer.
+	feeSwap := NewMsgSwap(feeTx, common.RuneAsset(), reserveAddress, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketSwap, 1, 0, types.SwapVersion_v2, msg.Signer)
+	return mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, mgr, feeSwap)
 }

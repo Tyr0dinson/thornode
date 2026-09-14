@@ -3115,64 +3115,7 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 		assetAmounts[pool.Asset] = assetAmounts[pool.Asset].Sub(pendingInbound)
 	}
 
-	// Step 3: Subtract swap queue items (legacy)
-	swapQueueIterator := vm.k.GetSwapQueueIterator(ctx)
-	defer swapQueueIterator.Close()
-	for ; swapQueueIterator.Valid(); swapQueueIterator.Next() {
-		var msg types.MsgSwap
-		if err := vm.k.Cdc().Unmarshal(swapQueueIterator.Value(), &msg); err != nil {
-			ctx.Logger().Error("fail to unmarshal swap queue item", "error", err)
-			continue
-		}
-		// Subtract the source asset coin from the calculation
-		if !msg.Tx.Coins.IsEmpty() {
-			coin := msg.Tx.Coins[0]
-
-			// For streaming swaps, subtract accumulated output from the TARGET asset
-			// regardless of the source asset. The pool has already emitted these assets
-			// (reducing pool.BalanceAsset), but no outbound exists until settleSwap runs.
-			// Skip only synth targets: synths are minted without reducing the L1 pool
-			// balance. Trade and secured targets DO reduce the underlying L1 pool balance
-			// (only synths bypass the BalanceAsset subtraction in swapOne), yet their
-			// trade/secured depth is not credited until settlement, so the in-flight
-			// output is a real liability that must be subtracted here to avoid the
-			// reduced pool balance appearing as excess vault funds.
-			if msg.IsLegacyStreaming() && !msg.TargetAsset.IsSyntheticAsset() {
-				swp, err := vm.k.GetStreamingSwap(ctx, msg.Tx.ID)
-				if err == nil && swp.TxID.Equals(msg.Tx.ID) {
-					targetAsset := msg.TargetAsset.GetLayer1Asset()
-					if !targetAsset.IsNative() && !swp.Out.IsZero() {
-						if _, ok := assetAmounts[targetAsset]; ok {
-							outAmount := math.NewIntFromBigInt(swp.Out.BigInt())
-							assetAmounts[targetAsset] = assetAmounts[targetAsset].Sub(outAmount)
-						}
-					}
-				}
-			}
-
-			// Skip native source assets (no L1 balance to track)
-			if coin.Asset.IsNative() {
-				continue
-			}
-			if _, ok := assetAmounts[coin.Asset]; !ok {
-				return nil, fmt.Errorf("unexpected asset %s not found in tracking map (legacy swap queue)", coin.Asset)
-			}
-			coinAmount := math.NewIntFromBigInt(coin.Amount.BigInt())
-			// For streaming swaps, only deduct the remaining (unprocessed) amount
-			// to avoid double-counting with pool balance which already includes processed amounts
-			if msg.IsLegacyStreaming() {
-				swp, err := vm.k.GetStreamingSwap(ctx, msg.Tx.ID)
-				if err == nil && swp.TxID.Equals(msg.Tx.ID) {
-					// Remaining = Deposit - In (what hasn't been swapped yet)
-					remaining := common.SafeSub(swp.Deposit, swp.In)
-					coinAmount = math.NewIntFromBigInt(remaining.BigInt())
-				}
-			}
-			assetAmounts[coin.Asset] = assetAmounts[coin.Asset].Sub(coinAmount)
-		}
-	}
-
-	// Step 4: Subtract advanced swap queue items
+	// Step 3: Subtract advanced swap queue items
 	advSwapQueueIterator := vm.k.GetAdvSwapQueueItemIterator(ctx)
 	defer advSwapQueueIterator.Close()
 	for ; advSwapQueueIterator.Valid(); advSwapQueueIterator.Next() {
@@ -3550,11 +3493,6 @@ func (vm *NetworkMgr) getOverSolvencyToTreasuryBps(ctx cosmos.Context, asset com
 
 // createSwapToOverSolvency creates a swap from the over-solvent asset to RUNE and sends to over-solvency address
 func (vm *NetworkMgr) createSwapToOverSolvency(ctx cosmos.Context, mgr Manager, asset common.Asset, amount math.Uint) error {
-	// Only create over-solvency swaps when advanced swap queue is enabled
-	if !mgr.Keeper().AdvSwapQueueEnabled(ctx) {
-		return fmt.Errorf("advanced swap queue is disabled, cannot create over-solvency swap")
-	}
-
 	// Get the over-solvency destination address
 	overSolvencyAddrStr := mgr.Keeper().GetConstants().GetStringValue(constants.OverSolvencyAddress)
 	overSolvencyAddr, err := cosmos.AccAddressFromBech32(overSolvencyAddrStr)

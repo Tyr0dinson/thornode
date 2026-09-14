@@ -313,34 +313,6 @@ func (pm *PoolMgr) getQueuedSwapLiabilityAssets(ctx cosmos.Context, mgr Manager)
 		}
 	}
 
-	swapIter := mgr.Keeper().GetSwapQueueIterator(ctx)
-	defer swapIter.Close()
-	for ; swapIter.Valid(); swapIter.Next() {
-		var msg MsgSwap
-		if err := mgr.Keeper().Cdc().Unmarshal(swapIter.Value(), &msg); err != nil {
-			return nil, fmt.Errorf("fail to unmarshal queued swap: %w", err)
-		}
-		if msg.Tx.Coins.IsEmpty() {
-			continue
-		}
-
-		swp := msg.GetStreamingSwap()
-		if msg.IsLegacyStreaming() && mgr.Keeper().StreamingSwapExists(ctx, msg.Tx.ID) {
-			var err error
-			swp, err = mgr.Keeper().GetStreamingSwap(ctx, msg.Tx.ID)
-			if err != nil {
-				return nil, fmt.Errorf("fail to get streaming swap %s: %w", msg.Tx.ID, err)
-			}
-		}
-
-		if swp.Deposit.GT(swp.In) {
-			markLiability(msg.Tx.Coins[0].Asset)
-		}
-		if !swp.Out.IsZero() {
-			markLiability(msg.TargetAsset)
-		}
-	}
-
 	advSwapIter := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
 	defer advSwapIter.Close()
 	for ; advSwapIter.Valid(); advSwapIter.Next() {

@@ -573,14 +573,19 @@ func (s *MigrationCommonSuite) TestNamedCollectorMigrationModuleOwnerAfterQueued
 		ctx, mgr, few := setupCollectorSwapExecution(c)
 		k := mgr.Keeper()
 		previousOwner := few.Owner
-		msg := collectorConversionForTest(ctx, mgr, few, types.SwapVersion_v1)
-		c.Assert(k.SetSwapQueueItem(ctx, *msg, int(msg.Index)), IsNil)
+		msg := collectorConversionForTest(ctx, mgr, few, types.SwapVersion_v2)
 		// Legacy registration allowed this transfer while a conversion was queued.
 		// Model its stored result because the new handler rejects module owners.
 		few.Owner = k.GetModuleAccAddress(module)
 		k.SetTHORName(ctx, few)
-		c.Assert(newSwapQueue(k).EndBlock(ctx, mgr), IsNil)
-		c.Assert(k.HasSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index)), Equals, false)
+		_, emit, swapErr := NewSwapHandler(mgr).RunWithEmit(ctx, msg)
+		c.Assert(swapErr, IsNil)
+		msg.State.In = msg.State.Deposit
+		msg.State.Out = emit
+		msg.State.Count = 1
+		c.Assert(k.SetAdvSwapQueueItem(ctx, *msg), IsNil)
+		c.Assert(settleSwap(ctx, mgr, *msg, "queued conversion complete"), IsNil)
+		c.Assert(k.HasAdvSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index)), Equals, false)
 		collector, err := k.GetAffiliateCollector(ctx, few.Name)
 		c.Assert(err, IsNil)
 		amount := collector.RuneAmount
@@ -733,7 +738,7 @@ func (s *MigrationCommonSuite) TestNamedCollectorGenesisRoundTrip(c *C) {
 
 func (s *MigrationCommonSuite) TestNamedCollectorMigrationPendingConversions(c *C) {
 	for _, singleName := range []bool{false, true} {
-		for _, version := range []types.SwapVersion{types.SwapVersion_v1, types.SwapVersion_v2} {
+		for _, version := range []types.SwapVersion{types.SwapVersion_v2} {
 			ctx, mgr, few := setupCollectorSwapExecution(c)
 			k := mgr.Keeper()
 			if singleName {
@@ -744,12 +749,8 @@ func (s *MigrationCommonSuite) TestNamedCollectorMigrationPendingConversions(c *
 			legacyAmount := cosmos.NewUint(2 * common.One)
 			key := seedOwnerCollector(c, ctx, mgr, few.Owner, legacyAmount.String())
 			FundModule(c, ctx, k, AffiliateCollectorName, legacyAmount.Uint64())
-			if msg.IsV2() {
-				c.Assert(k.SetAdvSwapQueueItem(ctx, *msg), IsNil)
-				c.Assert(k.SetAdvSwapQueueIndex(ctx, *msg), IsNil)
-			} else {
-				c.Assert(k.SetSwapQueueItem(ctx, *msg, int(msg.Index)), IsNil)
-			}
+			c.Assert(k.SetAdvSwapQueueItem(ctx, *msg), IsNil)
+			c.Assert(k.SetAdvSwapQueueIndex(ctx, *msg), IsNil)
 			store := mgr.storeService.OpenKVStore(ctx)
 			ownerBalance := k.GetBalanceOf(ctx, few.Owner, common.RuneAsset()).Amount
 			c.Assert(NewMigrator(mgr).Migrate18to19(ctx), IsNil)
@@ -769,25 +770,17 @@ func (s *MigrationCommonSuite) TestNamedCollectorMigrationPendingConversions(c *
 			events := ctx.EventManager().Events()
 			c.Assert(NewMigrator(mgr).Migrate18to19(ctx), IsNil)
 			c.Check(ctx.EventManager().Events(), DeepEquals, events)
-			if msg.IsV2() {
-				queued, queueErr := k.GetAdvSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index))
-				c.Assert(queueErr, IsNil)
-				c.Check(queued, DeepEquals, *msg)
-				indexed, indexErr := k.HasAdvSwapQueueIndex(ctx, *msg)
-				c.Assert(indexErr, IsNil)
-				c.Check(indexed, Equals, true)
-				c.Assert(newSwapQueueAdv(k).EndBlock(ctx, mgr, false), IsNil)
-				c.Check(k.HasAdvSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index)), Equals, false)
-				indexed, indexErr = k.HasAdvSwapQueueIndex(ctx, *msg)
-				c.Assert(indexErr, IsNil)
-				c.Check(indexed, Equals, false)
-			} else {
-				queued, queueErr := k.GetSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index))
-				c.Assert(queueErr, IsNil)
-				c.Check(queued, DeepEquals, *msg)
-				c.Assert(newSwapQueue(k).EndBlock(ctx, mgr), IsNil)
-				c.Check(k.HasSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index)), Equals, false)
-			}
+			queued, queueErr := k.GetAdvSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index))
+			c.Assert(queueErr, IsNil)
+			c.Check(queued, DeepEquals, *msg)
+			indexed, indexErr := k.HasAdvSwapQueueIndex(ctx, *msg)
+			c.Assert(indexErr, IsNil)
+			c.Check(indexed, Equals, true)
+			c.Assert(newSwapQueueAdv(k).EndBlock(ctx, mgr, false), IsNil)
+			c.Check(k.HasAdvSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index)), Equals, false)
+			indexed, indexErr = k.HasAdvSwapQueueIndex(ctx, *msg)
+			c.Assert(indexErr, IsNil)
+			c.Check(indexed, Equals, false)
 			// Its new earnings are credited on delivery to FEW alone, after migration.
 			collector, err := k.GetAffiliateCollector(ctx, few.Name)
 			c.Assert(err, IsNil)
@@ -844,4 +837,111 @@ func (s *MigrationCommonSuite) TestMigrate19to20MergesZECTexClout(c *C) {
 	otherAfter, err := k.GetSwapperClout(ctx, other)
 	c.Assert(err, IsNil)
 	c.Check(otherAfter, DeepEquals, otherClout)
+}
+
+// seedLegacySwapItem writes a MsgSwap into the legacy swapitem/ prefix so the
+// drain has something to find. SetSwapQueueItem is off the Keeper interface -
+// nothing in production writes this store any more - so reach the concrete type.
+func seedLegacySwapItem(c *C, ctx cosmos.Context, mgr *Mgrs, msg MsgSwap, i int) {
+	kv, ok := mgr.Keeper().(interface {
+		SetSwapQueueItem(ctx cosmos.Context, msg MsgSwap, i int) error
+	})
+	c.Assert(ok, Equals, true, Commentf("keeper type %T", mgr.Keeper()))
+	c.Assert(kv.SetSwapQueueItem(ctx, msg, i), IsNil)
+}
+
+func (s *MigrationCommonSuite) TestDrainLegacySwapQueue(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+
+	newTx := func() common.Tx {
+		tx := GetRandomTx()
+		tx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One)))
+		return tx
+	}
+
+	// 1. a plain one-shot market swap
+	oneShot := MsgSwap{Tx: newTx(), TargetAsset: common.BTCAsset, SwapType: MarketSwap}
+	seedLegacySwapItem(c, ctx, mgr, oneShot, 0)
+
+	// 2. an item whose State never got written (older binary)
+	nilState := MsgSwap{Tx: newTx(), TargetAsset: common.BTCAsset, SwapType: MarketSwap}
+	nilState.State = nil
+	seedLegacySwapItem(c, ctx, mgr, nilState, 0)
+
+	// 3. two sub-swaps sharing a TxID at different indexes - these must not collide
+	subTx := newTx()
+	for i := 0; i <= 1; i++ {
+		seedLegacySwapItem(c, ctx, mgr, MsgSwap{Tx: subTx, TargetAsset: common.BTCAsset, SwapType: MarketSwap}, i)
+	}
+
+	// 4. a legacy streaming swap with its companion StreamingSwap record
+	streamTx := newTx()
+	streaming := MsgSwap{
+		Tx:             streamTx,
+		TargetAsset:    common.BTCAsset,
+		SwapType:       MarketSwap,
+		StreamInterval: 10,
+		Version:        types.SwapVersion_v1,
+	}
+	seedLegacySwapItem(c, ctx, mgr, streaming, 0)
+	swp := NewStreamingSwap(streamTx.ID, 5, 10, cosmos.ZeroUint(), cosmos.NewUint(100*common.One))
+	swp.Count = 2
+	swp.In = cosmos.NewUint(40 * common.One)
+	swp.Out = cosmos.NewUint(7 * common.One)
+	k.SetStreamingSwap(ctx, swp)
+
+	c.Assert(NewMigrator(mgr).drainLegacySwapQueue(ctx), IsNil)
+
+	// the legacy prefix is empty
+	legacyIter := k.GetSwapQueueIterator(ctx)
+	c.Check(legacyIter.Valid(), Equals, false)
+	legacyIter.Close()
+
+	// every item landed in the adv item store
+	count := 0
+	advIter := k.GetAdvSwapQueueItemIterator(ctx)
+	for ; advIter.Valid(); advIter.Next() {
+		count++
+	}
+	advIter.Close()
+	c.Check(count, Equals, 5)
+
+	// ...and in the market index, without which FetchQueue can never see them
+	idx, err := k.GetAdvSwapQueueIndex(ctx, MsgSwap{SwapType: MarketSwap})
+	c.Assert(err, IsNil)
+	c.Check(len(idx), Equals, 5)
+
+	// one-shots stay one-shots rather than expanding into a stream
+	got, err := k.GetAdvSwapQueueItem(ctx, oneShot.Tx.ID, 0)
+	c.Assert(err, IsNil)
+	c.Check(got.Version, Equals, types.SwapVersion_v2)
+	c.Check(got.State.Quantity, Equals, uint64(1))
+	c.Check(got.IsStreaming(), Equals, false)
+	c.Check(got.State.Deposit.Equal(cosmos.NewUint(100*common.One)), Equals, true)
+
+	// a nil State is normalised rather than panicking
+	gotNil, err := k.GetAdvSwapQueueItem(ctx, nilState.Tx.ID, 0)
+	c.Assert(err, IsNil)
+	c.Assert(gotNil.State, NotNil)
+	c.Check(gotNil.State.Quantity, Equals, uint64(1))
+
+	// sub-swap indexes survive: index 1 is its own item, not an overwrite of 0
+	for i := 0; i <= 1; i++ {
+		sub, subErr := k.GetAdvSwapQueueItem(ctx, subTx.ID, i)
+		c.Assert(subErr, IsNil)
+		c.Check(int(sub.Index), Equals, i)
+	}
+
+	// streaming progress moved from the side record onto the message
+	gotStream, err := k.GetAdvSwapQueueItem(ctx, streamTx.ID, 0)
+	c.Assert(err, IsNil)
+	c.Check(gotStream.Version, Equals, types.SwapVersion_v2)
+	c.Check(gotStream.State.Quantity, Equals, uint64(5))
+	c.Check(gotStream.State.Interval, Equals, uint64(10))
+	c.Check(gotStream.State.Count, Equals, uint64(2))
+	c.Check(gotStream.State.In.Equal(cosmos.NewUint(40*common.One)), Equals, true)
+	c.Check(gotStream.State.Out.Equal(cosmos.NewUint(7*common.One)), Equals, true)
+	// and the now-redundant record is gone, so the solvency invariant stays sane
+	c.Check(k.StreamingSwapExists(ctx, streamTx.ID), Equals, false)
 }

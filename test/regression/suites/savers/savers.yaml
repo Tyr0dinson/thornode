@@ -13,14 +13,6 @@ value: "50"
 type: create-blocks
 count: 1
 ---
-########################################################################################
-# disable advanced swap queue to ensure consistent test behavior
-########################################################################################
-type: tx-mimir
-key: EnableAdvSwapQueue
-value: 0
-signer: {{ addr_thor_dog }}
----
 type: create-blocks
 count: 1
 ---
@@ -94,7 +86,7 @@ txs:
       gas:
         - amount: "10000"
           asset: "BTC.BTC"
-      memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}:0/1/1"
     block_height: 2
     finalise_height: 2
     observed_pub_key: {{ pubkey_dog }}
@@ -292,33 +284,12 @@ txs:
 type: create-blocks
 count: 1
 ---
-type: check
-endpoint: http://localhost:1317/thorchain/swap/streaming/{{ observe_txid 7 }}
-asserts:
-  - .deposit == "20000000"
-  - .count == 1
-  - .tx_id == "{{ observe_txid 7 }}"
-  - .interval == 1
-  - .quantity == 6
-  - .in == "3333333"
----
 type: create-blocks
 count: 2
 ---
 ########################################################################################
 # streaming swap should be 2/3 done
 ########################################################################################
-type: check
-endpoint: http://localhost:1317/thorchain/swap/streaming/{{ observe_txid 7 }}
-asserts:
-  - .deposit == "20000000"
-  - .count == 3
-  - .tx_id == "{{ observe_txid 7 }}"
-  - .interval == 1
-  - .quantity == 6
-  - .in == "9999999"
-  - .out == "9922468"
----
 type: create-blocks
 count: 3
 ---
@@ -334,8 +305,8 @@ type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
 asserts:
   - length == 1
-  - .[0].asset_deposit_value == "19845387"
-  - .[0].asset_redeem_value == "19845986"
+  - .[0].asset_deposit_value == "19364147"
+  - .[0].asset_redeem_value == "19379161"
 ---
 ########################################################################################
 # swap btc to rune and back to generate yield
@@ -355,7 +326,7 @@ txs:
       gas:
         - amount: "10000"
           asset: "BTC.BTC"
-      memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}:0/1/1"
     block_height: 24
     finalise_height: 24
     observed_pub_key: {{ pubkey_dog }}
@@ -367,9 +338,9 @@ type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
 asserts:
   - length == 1
-  - .[0].asset_deposit_value == "19845387"
-  - .[0].asset_redeem_value == "${ASSET_REDEEM=23391289}"
-  - .[0].growth_pct == "0.178676384592550400"
+  - .[0].asset_deposit_value == "19364147"
+  - .[0].asset_redeem_value == "${ASSET_REDEEM=22842480}"
+  - .[0].growth_pct == "0.179627483720300202"
 ---
 ########################################################################################
 # withdraw savers should use streaming swaps
@@ -420,7 +391,7 @@ asserts:
   - .tx_id == "{{ observe_txid 9 }}"
   - .interval == 1
   - .quantity == 4
-  - .in == "11695644"
+  - .in == "11421240"
 ---
 type: create-blocks
 count: 2
@@ -438,7 +409,7 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 1
   - .[0].in_hash == "{{ observe_txid 9 }}"
-  - .[0].coin.amount == "${OUTPUT_AMOUNT=23084664}"
+  - .[0].coin.amount == "${OUTPUT_AMOUNT=22547083}"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
@@ -499,29 +470,8 @@ txs:
 type: create-blocks
 count: 1
 ---
-type: check
-endpoint: http://localhost:1317/thorchain/swap/streaming/{{ observe_txid 10 }}
-asserts:
-  - .deposit == "20000000"
-  - .count == 1
-  - .tx_id == "{{ observe_txid 10 }}"
-  - .interval == 1
-  - .quantity == 3
-  - .in == "6666666"
----
 type: create-blocks
 count: 1
----
-type: check
-endpoint: http://localhost:1317/thorchain/swap/streaming/{{ observe_txid 10 }}
-asserts:
-  - .deposit == "20000000"
-  - .count == 2
-  - .tx_id == "{{ observe_txid 10 }}"
-  - .interval == 1
-  - .quantity == 3
-  - .in == "13333332"
-  - .out == "13226619"
 ---
 ########################################################################################
 # pause swaps - streaming should pause
@@ -541,17 +491,6 @@ asserts:
 ---
 type: create-blocks
 count: 1
----
-type: check
-endpoint: http://localhost:1317/thorchain/swap/streaming/{{ observe_txid 10 }}
-asserts:
-  - .deposit == "20000000"
-  - .count == 2
-  - .tx_id == "{{ observe_txid 10 }}"
-  - .interval == 1
-  - .quantity == 3
-  - .in == "13333332"
-  - .out == "13226619"
 ---
 type: tx-mimir
 key: HaltTrading
@@ -578,9 +517,9 @@ type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
 asserts:
   - length == 1
-  - .[0].asset_deposit_value == "19840111"
-  - .[0].asset_redeem_value == "19840915"
-  - .[0].last_add_height == 26
+  - .[0].asset_deposit_value == "19644924"
+  - .[0].asset_redeem_value == "19650052"
+  - .[0].last_add_height == 22
 ---
 ########################################################################################
 # small savers add: shouldn't create streaming swap even when enabled
@@ -625,9 +564,9 @@ type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
 asserts:
   - length == 1
-  - .[0].asset_deposit_value == "${PRE_ADD_DEPOSIT=19840111}"
-  - .[0].asset_redeem_value == "${PRE_ADD_REDEEM=19840998}"
-  - .[0].last_add_height == 26
+  - .[0].asset_deposit_value == "${PRE_ADD_DEPOSIT=19644924}"
+  - .[0].asset_redeem_value == "${PRE_ADD_REDEEM=19650135}"
+  - .[0].last_add_height == 22
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
@@ -676,10 +615,10 @@ type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
 asserts:
   - .|length == 1
-  - .[0].asset_deposit_value == "20038134"
+  - .[0].asset_deposit_value == "19842946"
   - .[0].asset_deposit_value | tonumber > ${PRE_ADD_DEPOSIT} + (${ADD} * 0.99)
   - .[0].asset_deposit_value | tonumber < ${PRE_ADD_DEPOSIT} + ${ADD}
-  - .[0].asset_redeem_value == "20039206"
+  - .[0].asset_redeem_value == "19848341"
   - .[0].asset_redeem_value | tonumber > ${PRE_ADD_REDEEM} + (${ADD} * 0.99)
   # Larger-than-add increase is hypothetically possible due to savers yield.
   - .[0].last_add_height == 30

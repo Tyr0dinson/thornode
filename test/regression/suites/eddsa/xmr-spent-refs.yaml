@@ -5,11 +5,6 @@
 type: create-blocks
 count: 1
 ---
-type: tx-mimir
-key: EnableAdvSwapQueue
-value: 0
-signer: {{ addr_thor_dog }}
----
 type: create-blocks
 count: 1
 ---

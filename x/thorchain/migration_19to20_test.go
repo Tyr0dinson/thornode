@@ -5,6 +5,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 type Migration19to20Suite struct{}
@@ -265,8 +266,10 @@ func (s *Migration19to20Suite) TestUnaccountedVaultAssetNetsLiabilities(c *C) {
 	swapAmt := uint64(fixExtraHeld / 10)
 	swapTx := common.NewTx(GetRandomTxHash(), GetRandomETHAddress(), GetRandomETHAddress(),
 		common.NewCoins(common.NewCoin(f.asset, cosmos.NewUint(swapAmt))), nil, "swap")
-	qmsg := MsgSwap{Tx: swapTx, TargetAsset: common.RuneAsset()}
-	c.Assert(k.SetSwapQueueItem(f.ctx, qmsg, 0), IsNil)
+	qmsg := MsgSwap{Tx: swapTx, TargetAsset: common.RuneAsset(), State: &types.SwapState{
+		Deposit: cosmos.NewUint(swapAmt), Withdrawn: cosmos.ZeroUint(), In: cosmos.ZeroUint(), Out: cosmos.ZeroUint(),
+	}}
+	c.Assert(k.SetAdvSwapQueueItem(f.ctx, qmsg), IsNil)
 	got, err = unaccountedVaultAsset19to20(f.ctx, f.mgr, f.asset)
 	c.Assert(err, IsNil)
 	c.Assert(got.Equal(cosmos.NewUint(fixExtraHeld-tradeDepth-securedDepth-swapAmt)), Equals, true)

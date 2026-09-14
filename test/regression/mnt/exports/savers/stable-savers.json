@@ -12,7 +12,7 @@
             "@type": "/cosmos.crypto.secp256k1.PubKey",
             "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
           },
-          "sequence": "7"
+          "sequence": "6"
         },
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
@@ -135,7 +135,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "299975709522",
+              "amount": "299975709523",
               "denom": "rune"
             }
           ]
@@ -144,7 +144,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35000026025697",
+              "amount": "35000024025697",
               "denom": "rune"
             }
           ]
@@ -171,7 +171,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "4999998264781",
+              "amount": "5000000264780",
               "denom": "rune"
             }
           ]
@@ -261,9 +261,6 @@
       ],
       "mimirs": [
         {
-          "key": "ENABLEADVSWAPQUEUE"
-        },
-        {
           "key": "LENDING-THOR-BTC",
           "value": "1"
         },
@@ -279,7 +276,7 @@
       "network": {
         "LPIncomeSplit": "9400",
         "NodeIncomeSplit": "600",
-        "bond_reward_rune": "2264781",
+        "bond_reward_rune": "2264780",
         "total_bond_units": "8"
       },
       "network_fees": [
@@ -296,10 +293,6 @@
       ],
       "nodeMimirs": [
         {
-          "key": "ENABLEADVSWAPQUEUE",
-          "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
-        },
-        {
           "key": "TORANCHOR-ETH-USDC-0X9999999999999999999999999999999999999999",
           "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "value": "1"
@@ -308,7 +301,7 @@
       "node_accounts": [
         {
           "active_block_height": "1",
-          "bond": "4999996000000",
+          "bond": "4999998000000",
           "bond_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "ip_address": "1.1.1.1",
           "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
@@ -361,7 +354,7 @@
           "LP_units": "100000000000",
           "asset": "ETH.USDC-0X9999999999999999999999999999999999999999",
           "balance_asset": "100156948100",
-          "balance_rune": "99874532741",
+          "balance_rune": "99874532742",
           "decimals": "6",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",

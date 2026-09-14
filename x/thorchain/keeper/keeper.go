@@ -460,7 +460,6 @@ type KeeperErrataTx interface {
 }
 
 type KeeperSwapQueue interface {
-	SetSwapQueueItem(ctx cosmos.Context, msg MsgSwap, i int) error
 	GetSwapQueueIterator(ctx cosmos.Context) cosmos.Iterator
 	GetSwapQueueItem(ctx cosmos.Context, txID common.TxID, i int) (MsgSwap, error)
 	HasSwapQueueItem(ctx cosmos.Context, txID common.TxID, i int) bool
@@ -468,7 +467,6 @@ type KeeperSwapQueue interface {
 }
 
 type KeeperAdvSwapQueues interface {
-	AdvSwapQueueEnabled(ctx cosmos.Context) bool
 	SetAdvSwapQueueItem(ctx cosmos.Context, msg MsgSwap) error
 	SetAdvSwapQueueItemState(ctx cosmos.Context, msg MsgSwap) error
 	GetAdvSwapQueueItemIterator(ctx cosmos.Context) cosmos.Iterator

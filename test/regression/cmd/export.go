@@ -240,16 +240,6 @@ func checkExportInvariants(out io.Writer, genesis map[string]any) error {
 		sumPoolAsset = sumPoolAsset.Add(coin)
 	}
 
-	// adjust vault depths to ignore streaming swap amounts
-	for _, swp := range genesisState.StreamingSwaps {
-		for _, msg := range genesisState.SwapQueueItems {
-			if swp.TxID.Equals(msg.Tx.ID) {
-				sumVaultAsset = sumVaultAsset.SafeSub(common.NewCoin(msg.Tx.Coins[0].Asset, common.SafeSub(swp.Deposit, swp.In)))
-				sumVaultAsset = sumVaultAsset.SafeSub(common.NewCoin(msg.TargetAsset, swp.Out))
-			}
-		}
-	}
-
 	// adjust vault depths to account for advanced swap queue items (limit swaps)
 	for _, msg := range genesisState.AdvSwapQueueItems {
 		// For limit swaps in the advanced queue, the input asset is already in the vault

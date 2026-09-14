@@ -45,7 +45,6 @@ type Manager interface {
 	ValidatorMgr() ValidatorManager
 	ObMgr() ObserverManager
 	PoolMgr() PoolManager
-	SwapQ() SwapQueue
 	AdvSwapQueueMgr() AdvSwapQueue
 	Slasher() Slasher
 	TradeAccountManager() TradeAccountManager
@@ -212,11 +211,6 @@ type WasmManager interface {
 	HasContract(ctx cosmos.Context, addr cosmos.AccAddress) bool
 }
 
-// SwapQueue interface define the contract of Swap Queue
-type SwapQueue interface {
-	EndBlock(ctx cosmos.Context, mgr Manager) error
-}
-
 // AdvSwapQueue interface define the contract of Advanced Swap Queue
 type AdvSwapQueue interface {
 	AddSwapQueueItem(ctx cosmos.Context, mgr Manager, msg *MsgSwap) error
@@ -296,7 +290,6 @@ type Mgrs struct {
 	validatorMgr              ValidatorManager
 	obMgr                     ObserverManager
 	poolMgr                   PoolManager
-	swapQ                     SwapQueue
 	advSwapQueue              AdvSwapQueue
 	slasher                   Slasher
 	tradeManager              TradeAccountManager
@@ -440,11 +433,6 @@ func (mgr *Mgrs) recreateManagers(ctx cosmos.Context, v semver.Version) error {
 		return fmt.Errorf("fail to get observer manager: %w", err)
 	}
 
-	swapQ, err := GetSwapQueue(v, k)
-	if err != nil {
-		return fmt.Errorf("fail to create swap queue: %w", err)
-	}
-
 	advSwapQueue, err := GetAdvSwapQueue(v, k)
 	if err != nil {
 		return fmt.Errorf("fail to create adv swap queue: %w", err)
@@ -512,7 +500,6 @@ func (mgr *Mgrs) recreateManagers(ctx cosmos.Context, v semver.Version) error {
 	mgr.poolMgr = poolMgr
 	mgr.validatorMgr = validatorMgr
 	mgr.obMgr = obMgr
-	mgr.swapQ = swapQ
 	mgr.advSwapQueue = advSwapQueue
 	mgr.slasher = slasher
 	mgr.tradeManager = tradeManager
@@ -582,13 +569,6 @@ func (mgr *Mgrs) ObMgr() ObserverManager {
 	mgr.mu.RLock()
 	defer mgr.mu.RUnlock()
 	return mgr.obMgr
-}
-
-// SwapQ return an implementation of SwapQueue
-func (mgr *Mgrs) SwapQ() SwapQueue {
-	mgr.mu.RLock()
-	defer mgr.mu.RUnlock()
-	return mgr.swapQ
 }
 
 // AdvSwapQueueMgr
@@ -708,11 +688,6 @@ func GetObserverManager(version semver.Version) (ObserverManager, error) {
 // GetPoolManager return an implementation of PoolManager
 func GetPoolManager(version semver.Version) (PoolManager, error) {
 	return newPoolMgr(), nil
-}
-
-// GetSwapQueue retrieve a SwapQueue that is compatible with the given version
-func GetSwapQueue(version semver.Version, keeper keeper.Keeper) (SwapQueue, error) {
-	return newSwapQueue(keeper), nil
 }
 
 // GetAdvSwapQueue retrieve a AdvSwapQueue that is compatible with the given version

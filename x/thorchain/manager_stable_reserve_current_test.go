@@ -652,41 +652,6 @@ func (s *StableReserveMgrSuite) TestFreeStableSwapCanSpendCreditedInventory(c *C
 	c.Check(credit.Equal(cosmos.NewUint(150*common.One)), Equals, true)
 }
 
-func (s *StableReserveMgrSuite) TestFreeStableSwapSkipsLegacyStreaming(c *C) {
-	ctx, mgr, usdc, usdt := setupStableReserveSuite(c)
-	stableReserveMgr := mgr.StableReserveManager()
-	contributor := GetRandomETHAddress()
-	c.Assert(stableReserveMgr.Deposit(ctx, usdt, cosmos.NewUint(150*common.One), contributor, common.BlankTxID), IsNil)
-
-	tx := common.NewTx(
-		GetRandomTxHash(),
-		GetRandomETHAddress(),
-		GetRandomETHAddress(),
-		common.NewCoins(common.NewCoin(usdc, cosmos.NewUint(100*common.One))),
-		common.Gas{common.NewCoin(common.ETHAsset, cosmos.OneUint())},
-		"=:ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7",
-	)
-	// Legacy (V1) streaming market swap: interval > 0 with a v1 version. TrySwap
-	// runs before the persisted StreamingSwap record exists, so filling the full
-	// deposit here would be re-paid every block. It must decline and defer to the
-	// streaming machinery.
-	msg := NewMsgSwap(tx, usdt, common.NoopAddress, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketSwap, 5, 10, types.SwapVersion_v1, GetRandomBech32Addr())
-	c.Assert(msg.IsLegacyStreaming(), Equals, true)
-
-	filled, emit, err := stableReserveMgr.TrySwap(ctx, mgr, *msg)
-	c.Assert(err, IsNil)
-	c.Check(filled, Equals, false)
-	c.Check(emit.IsZero(), Equals, true)
-
-	// Inventory and credit are untouched — no deposit was pulled or paid out.
-	moduleAddr := mgr.Keeper().GetModuleAccAddress(StableReserveName)
-	c.Check(mgr.SecuredAssetManager().BalanceOf(ctx, usdt, moduleAddr).Equal(cosmos.NewUint(150*common.One)), Equals, true)
-	c.Check(mgr.SecuredAssetManager().BalanceOf(ctx, usdc, moduleAddr).IsZero(), Equals, true)
-	credit, err := mgr.Keeper().GetStableReserveCredit(ctx, usdt, contributor)
-	c.Assert(err, IsNil)
-	c.Check(credit.Equal(cosmos.NewUint(150*common.One)), Equals, true)
-}
-
 func (s *StableReserveMgrSuite) TestFreeStableSwapRefusesValueLosingFill(c *C) {
 	ctx, mgr, usdc, usdt := setupStableReserveSuite(c)
 	stableReserveMgr := mgr.StableReserveManager()

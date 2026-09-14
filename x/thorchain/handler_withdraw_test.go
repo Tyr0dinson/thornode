@@ -715,10 +715,7 @@ func (s *HandlerWithdrawSuite) TestFairMergeAddAndWithdrawLiquidityHandlerSavers
 	err = addHandler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
 
-	c.Assert(mgr.SwapQ().EndBlock(ctx, mgr), IsNil)
-	if mgr.Keeper().AdvSwapQueueEnabled(ctx) {
-		c.Assert(mgr.AdvSwapQueueMgr().EndBlock(ctx, mgr, false), IsNil)
-	}
+	c.Assert(mgr.AdvSwapQueueMgr().EndBlock(ctx, mgr, false), IsNil)
 
 	pool, err = mgr.Keeper().GetPool(ctx, common.AVAXAsset)
 	c.Assert(err, IsNil)
@@ -784,9 +781,6 @@ func (s *HandlerWithdrawSuite) TestSaversWithdrawSchedulesOutboundWithAdvSwapQue
 		c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 
 		c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.AVAXChain, NewNetworkFee(common.AVAXChain, 1, 10)), IsNil)
-
-		// the advanced swap queue is enabled for this test (mocknet default)
-		c.Assert(mgr.Keeper().AdvSwapQueueEnabled(ctx), Equals, true)
 
 		// deposit to savers
 		tx := common.NewTx(

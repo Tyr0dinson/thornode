@@ -2,10 +2,10 @@
 
 ## Overview
 
-The Advanced Swap Queue is THORChain's enhanced swap processing system that provides improved performance, better price discovery, and support for limit swaps. It represents a significant upgrade from the legacy swap queue, offering multiple swap types and advanced processing capabilities.
+The Advanced Swap Queue is THORChain's enhanced swap processing system that provides improved performance, better price discovery, and support for limit swaps. It replaced the original swap queue, offering multiple swap types and advanced processing capabilities.
 
 ```admonish info
-The advanced swap queue is controlled by the `EnableAdvSwapQueue` Mimir value. Check the current value on the [Constants and Mimirs](../mimir.md) page. A value of 0 means disabled, 1 means enabled, and 2 means market-only mode (limit swaps are skipped).
+The advanced swap queue is controlled by the `EnableAdvSwapQueue` Mimir value. Check the current value on the [Constants and Mimirs](../mimir.md) page. A value of 2 means market-only mode (limit swaps are skipped); any other value processes all swap types.
 ```
 
 ## Key Features
@@ -37,13 +37,13 @@ The advanced queue supports three distinct swap types:
 
 ### Queue Modes
 
-The advanced swap queue operates in different modes controlled by the `EnableAdvSwapQueue` mimir setting:
+The advanced swap queue is the only swap queue and cannot be disabled. The
+`EnableAdvSwapQueue` mimir selects its operating mode:
 
-| Mode            | Value | Description                                                   |
-| --------------- | ----- | ------------------------------------------------------------- |
-| **Disabled**    | 0     | Uses legacy swap queue system                                 |
-| **Enabled**     | 1     | Full advanced queue with market and limit swaps               |
-| **Market-only** | 2     | Advanced queue for market swaps only, limit swaps are skipped |
+| Mode            | Value     | Description                                |
+| --------------- | --------- | ------------------------------------------ |
+| **Enabled**     | any but 2 | Market and limit swaps                     |
+| **Market-only** | 2         | Market swaps only, limit swaps are skipped |
 
 ## Behavioral Differences
 
@@ -51,7 +51,7 @@ The advanced swap queue operates in different modes controlled by the `EnableAdv
 
 **IMPORTANT CHANGE**: The advanced swap queue changes the default swap behavior:
 
-- **Legacy Queue**: Simple swaps by default (no streaming)
+- **Previously**: simple swaps by default (no streaming)
 - **Advanced Queue**: **Streaming swaps by default** when no interval/quantity specified
 
 When you omit interval and quantity parameters (e.g., `=:ETH.ETH:0xaddress`), the advanced queue will:

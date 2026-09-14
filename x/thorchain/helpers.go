@@ -1225,7 +1225,7 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 	}
 	var queueSwap, queueInternal, queueOutbound int64
 	queueScheduledOutboundValue := cosmos.ZeroUint()
-	iterator := mgr.Keeper().GetSwapQueueIterator(ctx)
+	iterator := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
 		var msg MsgSwap

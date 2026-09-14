@@ -46,15 +46,6 @@ func NewMsgSwap(tx common.Tx, target common.Asset, destination common.Address, t
 	}
 }
 
-func (m *MsgSwap) IsLegacyStreaming() bool {
-	// TODO: delete this function when retiring V1 swap manager
-	return m.StreamInterval > 0 && m.IsV1()
-}
-
-func (m *MsgSwap) IsV1() bool {
-	return m.Version == SwapVersion_v1
-}
-
 func (m *MsgSwap) IsV2() bool {
 	return m.Version == SwapVersion_v2
 }
@@ -68,7 +59,9 @@ func (m *MsgSwap) IsLimitSwap() bool {
 }
 
 func (m *MsgSwap) IsStreaming() bool {
-	return m.State.Quantity > 1
+	// State can be nil on a message decoded from an older encoding; a missing
+	// state is not a streaming swap rather than a panic.
+	return m.State != nil && m.State.Quantity > 1
 }
 
 func (m *MsgSwap) IsDone() bool {

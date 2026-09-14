@@ -7,6 +7,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -429,4 +430,56 @@ func (s *ManagerSwapQueueSuite) TestFindMatchingTradesMatchesReference(c *C) {
 	indexed = indexed.findMatchingTradesIndexed(trade, index, make(tradePairSet))
 	ref = ref.findMatchingTradesRef(trade, pairs)
 	c.Assert(indexed, DeepEquals, ref)
+}
+
+// items are ordered by fee descending, with (txID asc, sub-swap index asc)
+// as a stable tiebreaker when fees are equal. Tests that don't care about
+// exact positions should use this instead of hardcoding expected orderings,
+// since any scoring change that preserves the invariant is still legal.
+func assertSortedByFeeDesc(c *C, items swapItems) {
+	for i := 0; i+1 < len(items); i++ {
+		a, b := items[i], items[i+1]
+		if a.fee.Equal(b.fee) {
+			aID, bID := a.msg.Tx.ID.String(), b.msg.Tx.ID.String()
+			if aID == bID {
+				c.Check(a.index <= b.index, Equals, true,
+					Commentf("equal (fee,txID) but index out of order at %d: %d > %d", i, a.index, b.index))
+				continue
+			}
+			c.Check(aID < bID, Equals, true,
+				Commentf("equal fee but txID out of order at %d: %s > %s", i, aID, bID))
+			continue
+		}
+		c.Check(a.fee.GT(b.fee), Equals, true,
+			Commentf("fee not descending at %d: %s < %s", i, a.fee.String(), b.fee.String()))
+	}
+}
+
+func expectedSwapLeg(ctx cosmos.Context, k keeper.Keeper, pool Pool, sourceCoin common.Coin, virtualDepthMult int64, nonRuneAsset common.Asset, stableSwap bool) (cosmos.Uint, cosmos.Uint) {
+	var X, x, Y cosmos.Uint
+	x = sourceCoin.Amount
+	if sourceCoin.IsRune() {
+		X = pool.BalanceRune
+		Y = pool.BalanceAsset
+	} else {
+		Y = pool.BalanceRune
+		X = pool.BalanceAsset
+	}
+
+	X = common.GetUncappedShare(cosmos.NewUint(uint64(virtualDepthMult)), cosmos.NewUint(10_000), X)
+	Y = common.GetUncappedShare(cosmos.NewUint(uint64(virtualDepthMult)), cosmos.NewUint(10_000), Y)
+
+	swapper, err := GetSwapper(k.GetVersion())
+	if err != nil {
+		panic(err)
+	}
+
+	swapSlipBps := swapper.CalcSwapSlip(X, x)
+	minSlipBps := getMinSlipBps(ctx, k, common.NoAddress, nonRuneAsset, stableSwap, nil, nil, common.EmptyAsset, common.EmptyAsset, nil)
+	emit, fee, _ := swapper.GetSwapCalc(X, x, Y, swapSlipBps, minSlipBps)
+	emit = cosmos.RoundToDecimal(emit, pool.Decimals)
+	if sourceCoin.IsRune() {
+		fee = pool.AssetValueInRune(fee)
+	}
+	return emit, fee
 }

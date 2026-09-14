@@ -271,8 +271,19 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 		}
 	}
 
+	// Legacy swap queue items from an older genesis export: the legacy queue no
+	// longer exists, so route them at the advanced queue the same way the
+	// Migrate18to19 drain does.
 	for _, item := range data.SwapQueueItems {
-		if err := keeper.SetSwapQueueItem(ctx, item, 0); err != nil {
+		item.Version = types.SwapVersion_v2
+		if item.State == nil {
+			item.State = &types.SwapState{}
+		}
+		if item.State.Quantity == 0 {
+			item.State.Quantity = 1
+			item.State.Interval = 0
+		}
+		if err := keeper.SetAdvSwapQueueItem(ctx, item); err != nil {
 			panic(err)
 		}
 	}
@@ -701,6 +712,10 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		swapMsgs = append(swapMsgs, m)
 	}
 
+	// The legacy swap queue is drained by Migrate18to19 and has no producers, so this
+	// is always empty in practice. It is still exported so the genesis field keeps
+	// round-tripping, and so anything left behind on an unmigrated node is preserved
+	// rather than silently dropped. initGenesis routes these to the advanced queue.
 	swapQ := make([]MsgSwap, 0)
 	iterSwapQ := k.GetSwapQueueIterator(ctx)
 	defer iterSwapQ.Close()

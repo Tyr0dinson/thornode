@@ -105,17 +105,6 @@ func AsgardInvariant(k KVStore) common.Invariant {
 				// adjust for streaming swaps
 				ss := swap.GetStreamingSwap() // GetStreamingSwap() rather than var so In.IsZero() doesn't panic
 
-				// A non-streaming affiliate swap and streaming main swap could have the same TxID,
-				// so explicitly check IsLegacyStreaming to not double-count the main swap's In and Out amounts.
-				if swap.IsLegacyStreaming() {
-					var err error
-					ss, err = k.GetStreamingSwap(ctx, swap.Tx.ID)
-					if err != nil {
-						ctx.Logger().Error("error getting streaming swap", "error", err)
-						continue // should never happen
-					}
-				}
-
 				// Trade Assets do not correspond to Module balance coins and panic on .Native(),
 				// so do not include them in swapCoins.
 				if coin.IsNative() && !coin.Asset.IsTradeAsset() && !coin.Asset.IsSecuredAsset() {
@@ -148,7 +137,6 @@ func AsgardInvariant(k KVStore) common.Invariant {
 		}
 
 		// sum all rune in pending swaps
-		swapCoins := processSwaps(ctx, k, k.GetSwapQueueIterator(ctx))
 		advSwapCoins := processSwaps(ctx, k, k.GetAdvSwapQueueItemIterator(ctx))
 
 		// get asgard module balance
@@ -156,7 +144,7 @@ func AsgardInvariant(k KVStore) common.Invariant {
 		asgardCoins := k.GetBalance(ctx, asgardAddr)
 
 		// asgard balance is expected to equal sum of pool and swap coins
-		expNative, _ := poolCoins.Add(append(swapCoins, advSwapCoins...)...).Native()
+		expNative, _ := poolCoins.Add(advSwapCoins...).Native()
 
 		// note: coins must be sorted for SafeSub
 		diffCoins, _ := asgardCoins.SafeSub(expNative.Sort()...)
@@ -391,79 +379,6 @@ func StreamingSwapsInvariant(k KVStore) common.Invariant {
 					swap.Tx.ID.String(),
 					swap.State.In.String(),
 					swap.State.Deposit.String(),
-				))
-			}
-		}
-
-		// fetch all streaming swaps from the regular swap queue (V1)
-		var v1StreamingSwaps []MsgSwap
-		swapIter := k.GetSwapQueueIterator(ctx)
-		defer swapIter.Close()
-		for ; swapIter.Valid(); swapIter.Next() {
-			var swap MsgSwap
-			k.Cdc().MustUnmarshal(swapIter.Value(), &swap)
-			// Skip limit swaps - they have interval=1 but are not streaming swaps
-			if swap.IsLimitSwap() {
-				continue
-			}
-			if swap.IsLegacyStreaming() {
-				v1StreamingSwaps = append(v1StreamingSwaps, swap)
-			}
-		}
-
-		// fetch all stream swap records (only used by V1)
-		var streams []StreamingSwap
-		ssIter := k.GetStreamingSwapIterator(ctx)
-		defer ssIter.Close()
-		for ; ssIter.Valid(); ssIter.Next() {
-			var stream StreamingSwap
-			k.Cdc().MustUnmarshal(ssIter.Value(), &stream)
-			streams = append(streams, stream)
-		}
-
-		// Validate V1 streaming swaps against StreamingSwap records
-		v1SwapMap := make(map[string]MsgSwap, len(v1StreamingSwaps))
-		for _, swap := range v1StreamingSwaps {
-			v1SwapMap[swap.Tx.ID.String()] = swap
-		}
-
-		for _, stream := range streams {
-			swap, found := v1SwapMap[stream.TxID.String()]
-			if !found {
-				broken = true
-				msg = append(msg, fmt.Sprintf("swap not found for stream: %s", stream.TxID.String()))
-				continue
-			}
-
-			if len(swap.Tx.Coins) == 0 {
-				broken = true
-				msg = append(msg, fmt.Sprintf("%s: swap missing coins", stream.TxID.String()))
-				continue
-			} else if !swap.Tx.Coins[0].Amount.Equal(stream.Deposit) {
-				broken = true
-				msg = append(msg, fmt.Sprintf(
-					"%s: swap.coin %s != stream.deposit %s",
-					stream.TxID.String(),
-					swap.Tx.Coins[0].Amount,
-					stream.Deposit.String(),
-				))
-			}
-			if stream.Count > stream.Quantity {
-				broken = true
-				msg = append(msg, fmt.Sprintf(
-					"%s: stream.count %d > stream.quantity %d",
-					stream.TxID.String(),
-					stream.Count,
-					stream.Quantity,
-				))
-			}
-			if stream.In.GT(stream.Deposit) {
-				broken = true
-				msg = append(msg, fmt.Sprintf(
-					"%s: stream.in %s > stream.deposit %s",
-					stream.TxID.String(),
-					stream.In.String(),
-					stream.Deposit.String(),
 				))
 			}
 		}

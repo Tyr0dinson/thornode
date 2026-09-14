@@ -3,6 +3,7 @@ package thorchain
 import (
 	"bytes"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/cosmos/cosmos-sdk/runtime"
@@ -519,11 +520,181 @@ func (m Migrator) Migrate19to20(ctx cosmos.Context) error {
 // the TRON.TRX manual refund tcso funded from its own holdings, plus the LTC
 // manual refund paid in ETH by Maya Secured Ops (mso), for which tcso is
 // reimbursed by Itz's decision of 2026-11-05. The three RUNE payments are
-// applied atomically (all or none) and move no vault, pool or Asgard balance.
-// Mainnet only; it never halts the upgrade.
+// applied atomically (all or none) and move no vault, pool or Asgard balance
+// (mainnet only; this step never halts the upgrade).
+//
+// It then drains the legacy swap queue into the advanced swap queue. The legacy
+// queue is removed in this release, so any in-flight item left in the
+// swapitem/ prefix would never execute and never refund.
 func (m Migrator) Migrate20to21(ctx cosmos.Context) error {
 	if err := m.mgr.LoadManagerIfNecessary(ctx); err != nil {
 		return err
 	}
-	return m.migrate20to21Mainnet(ctx)
+	if err := m.migrate20to21Mainnet(ctx); err != nil {
+		return err
+	}
+	return m.drainLegacySwapQueue(ctx)
+}
+
+// drainLegacySwapQueue moves every remaining legacy ("OG") swap queue item
+// (prefix swapitem/) into the advanced swap queue (prefix aq/). The legacy
+// queue and its EndBlock are removed in this release, so anything left behind
+// would never execute, never refund, and permanently strand the inbound funds.
+//
+// Items are re-encoded, not executed and not refunded: executing here would run
+// full swaps inside the upgrade's PreBlocker against pools that are typically
+// halted at upgrade height, and refunding would punish users whose swap is fine.
+//
+// The write goes through the keeper's SetAdvSwapQueueItem rather than
+// SwapQueueAdv.AddSwapQueueItem on purpose. SetAdvSwapQueueItem already writes
+// the market/limit secondary index (keeper_adv_swap_queue.go), so nothing is
+// stranded, while AddSwapQueueItem would additionally
+//
+//	(a) run SwapHandler.validate, which rejects while trading is halted -
+//	    leaving the item nowhere at all, and
+//	(b) expand a zero State.Quantity to getMaxSwapQuantity, silently turning a
+//	    one-shot swap into a streaming swap (see handler_withdraw.go).
+func (m Migrator) drainLegacySwapQueue(ctx sdk.Context) error {
+	k := m.mgr.Keeper()
+
+	type legacyItem struct {
+		key []byte
+		msg MsgSwap
+		ok  bool
+	}
+
+	// Collect first, write after: the loop below deletes keys from the very
+	// prefix being iterated.
+	var items []legacyItem
+	iter := k.GetSwapQueueIterator(ctx)
+	for ; iter.Valid(); iter.Next() {
+		key := append([]byte(nil), iter.Key()...)
+		var msg MsgSwap
+		if err := k.Cdc().Unmarshal(iter.Value(), &msg); err != nil {
+			ctx.Logger().Error("drain legacy swap queue: undecodable item", "key", string(key), "error", err)
+			items = append(items, legacyItem{key: key})
+			continue
+		}
+		items = append(items, legacyItem{key: key, msg: msg, ok: true})
+	}
+	iter.Close()
+
+	migrated, dropped := 0, 0
+	for _, item := range items {
+		keyStr := string(item.key)
+
+		// Structurally unmigratable and equally unrefundable (no coins to send
+		// back, or no tx to reference). Drop, exactly as the legacy FetchQueue did.
+		if !item.ok || item.msg.Tx.ID.IsEmpty() || len(item.msg.Tx.Coins) != 1 {
+			ctx.Logger().Error("drain legacy swap queue: malformed item, dropping", "key", keyStr)
+			k.DeleteKey(ctx, item.key)
+			dropped++
+			continue
+		}
+		msg := item.msg
+
+		// Recover the sub-swap index from the key. SetSwapQueueItem(ctx, msg, i)
+		// takes i as a parameter and never stores it on the message, whereas the
+		// advanced keeper keys off msg.Index - without this, the affiliate
+		// sub-swaps at <txid>-1, <txid>-2, ... would all collide at <txid>-0.
+		// Key is "swapitem/<TXID>-<i>"; TxIDs are hex, so the last hyphen splits.
+		idx := 0
+		if p := strings.LastIndex(keyStr, "-"); p >= 0 {
+			parsed, err := strconv.Atoi(keyStr[p+1:])
+			if err != nil {
+				ctx.Logger().Error("drain legacy swap queue: unparsable index, dropping", "key", keyStr, "error", err)
+				k.DeleteKey(ctx, item.key)
+				dropped++
+				continue
+			}
+			idx = parsed
+		}
+		msg.Index = uint32(idx) // nolint:gosec // index is a small sub-swap counter
+
+		// Never clobber an advanced-queue item that already owns this key.
+		if k.HasAdvSwapQueueItem(ctx, msg.Tx.ID, idx) {
+			ctx.Logger().Error("drain legacy swap queue: adv item already present, dropping legacy duplicate", "key", keyStr)
+			k.DeleteKey(ctx, item.key)
+			dropped++
+			continue
+		}
+
+		// State is a pointer and IsStreaming()/NextSize() dereference it; an item
+		// written by an older binary can decode with a nil State. Normalise first.
+		if msg.State == nil {
+			msg.State = &types.SwapState{}
+		}
+		for _, f := range []*cosmos.Uint{&msg.State.Deposit, &msg.State.Withdrawn, &msg.State.In, &msg.State.Out} {
+			if f.IsNil() {
+				*f = cosmos.ZeroUint()
+			}
+		}
+		if msg.State.Deposit.IsZero() {
+			msg.State.Deposit = msg.Tx.Coins[0].Amount
+		}
+
+		// Fold the legacy StreamingSwap record into State: the legacy queue kept
+		// execution progress in a side record, the advanced queue keeps it on the
+		// message. MUST run before Version is flipped below - the predicate is
+		// false once the message is v2, which would make this branch dead. The
+		// predicate is inlined rather than calling IsLegacyStreaming() because
+		// this code reads legacy-encoded data and that helper is being retired.
+		if msg.StreamInterval > 0 && msg.Version == types.SwapVersion_v1 && k.StreamingSwapExists(ctx, msg.Tx.ID) {
+			swp, err := k.GetStreamingSwap(ctx, msg.Tx.ID)
+			if err != nil {
+				return fmt.Errorf("drain legacy swap queue: get streaming swap %s: %w", msg.Tx.ID, err)
+			}
+			msg.State.Quantity = swp.Quantity
+			msg.State.Interval = swp.Interval
+			msg.State.Count = swp.Count
+			msg.State.LastHeight = swp.LastHeight
+			msg.State.Deposit = swp.Deposit
+			msg.State.In = swp.In
+			msg.State.Out = swp.Out
+			msg.State.FailedSwaps = swp.FailedSwaps
+			msg.State.FailedSwapReasons = swp.FailedSwapReasons
+			// The queue item is now the sole source of truth. An orphaned record
+			// breaks the streaming_swaps invariant ("swap not found for stream").
+			k.RemoveStreamingSwap(ctx, msg.Tx.ID)
+		}
+
+		// A legacy item that never streamed is a one-shot. Pin it: Quantity == 0
+		// makes NextSize() return zero, and any later pass through
+		// AddSwapQueueItem would expand it into a streaming swap.
+		if msg.State.Quantity == 0 {
+			msg.State.Quantity = 1
+			msg.State.Interval = 0
+		}
+
+		// Route it at the advanced queue from here on.
+		msg.Version = types.SwapVersion_v2
+
+		// Limit swaps age out on InitialBlockHeight; give migrated items a fresh
+		// clock, and the TTL entry the legacy queue never had.
+		if msg.InitialBlockHeight == 0 {
+			msg.InitialBlockHeight = ctx.BlockHeight()
+		}
+
+		if err := k.SetAdvSwapQueueItem(ctx, msg); err != nil {
+			// Only fails on coin/txid shape, both already excluded above.
+			return fmt.Errorf("drain legacy swap queue: set adv item %s-%d: %w", msg.Tx.ID, idx, err)
+		}
+		if msg.IsLimitSwap() {
+			maxAge := k.GetConfigInt64(ctx, constants.StreamingLimitSwapMaxAge)
+			if ttl := getLimitSwapTTL(msg, maxAge); ttl > 0 {
+				if err := k.AddToLimitSwapTTL(ctx, msg.InitialBlockHeight+ttl, msg.Tx.ID); err != nil {
+					ctx.Logger().Error("drain legacy swap queue: fail to add limit swap TTL", "tx", msg.Tx.ID, "error", err)
+				}
+			}
+		}
+		k.DeleteKey(ctx, item.key)
+		migrated++
+
+		ctx.Logger().Info("drain legacy swap queue: migrated",
+			"tx", msg.Tx.ID, "index", idx, "type", msg.SwapType,
+			"quantity", msg.State.Quantity, "in", msg.State.In, "out", msg.State.Out)
+	}
+
+	ctx.Logger().Info("drain legacy swap queue: complete", "migrated", migrated, "dropped", dropped)
+	return nil
 }

@@ -947,13 +947,6 @@ func (s *SlasherImpl) queueRecoverySwap(
 	// Get Asgard module address for signer
 	asgardAddr := mgr.Keeper().GetModuleAccAddress(AsgardName)
 
-	// Determine which swap queue to use and set appropriate version
-	enableAdvQueue := mgr.Keeper().GetConfigInt64(ctx, constants.EnableAdvSwapQueue)
-	swapVersion := types.SwapVersion_v1
-	if enableAdvQueue > 0 {
-		swapVersion = types.SwapVersion_v2
-	}
-
 	// Create swap message
 	swapMsg := NewMsgSwap(
 		recoveryTx,
@@ -968,8 +961,8 @@ func (s *SlasherImpl) queueRecoverySwap(
 		MarketSwap,        // swap type
 		0,                 // quantity (let handler decide)
 		1,                 // interval
-		swapVersion,       // v1 for legacy queue, v2 for advanced queue
-		asgardAddr,        // Asgard module account as signer
+		types.SwapVersion_v2,
+		asgardAddr, // Asgard module account as signer
 	)
 
 	// The advanced queue validates on insert, but the legacy queue would
@@ -981,14 +974,8 @@ func (s *SlasherImpl) queueRecoverySwap(
 	}
 
 	// Add to swap queue
-	if enableAdvQueue > 0 {
-		if err := mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, mgr, swapMsg); err != nil {
-			return fmt.Errorf("failed to add %s recovery swap to adv queue: %w", recoveryType, err)
-		}
-	} else {
-		if err := mgr.Keeper().SetSwapQueueItem(ctx, *swapMsg, 0); err != nil {
-			return fmt.Errorf("failed to add %s recovery swap to queue: %w", recoveryType, err)
-		}
+	if err := mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, mgr, swapMsg); err != nil {
+		return fmt.Errorf("failed to add %s recovery swap to adv queue: %w", recoveryType, err)
 	}
 
 	ctx.Logger().Info("recovery swap queued",

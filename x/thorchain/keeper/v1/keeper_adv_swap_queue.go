@@ -9,7 +9,6 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
-	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -28,12 +27,6 @@ const ratioLength int = 18
 // formatSwapQueueItemKey formats a swap queue item key from a TxID and index
 func formatSwapQueueItemKey(txID common.TxID, index int) string {
 	return fmt.Sprintf("%s-%d", txID.String(), index)
-}
-
-// AdvSwapQueueEnabled return true if the adv swap queue feature is enabled
-func (k KVStore) AdvSwapQueueEnabled(ctx cosmos.Context) bool {
-	val := k.GetConfigInt64(ctx, constants.EnableAdvSwapQueue)
-	return types.AdvSwapQueueMode(val) != types.AdvSwapQueueModeDisabled
 }
 
 // SetAdvSwapQueueItem - writes an adv swap queue item to the kv store

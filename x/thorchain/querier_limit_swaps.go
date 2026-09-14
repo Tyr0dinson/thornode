@@ -36,20 +36,6 @@ func (qs queryServer) queryLimitSwaps(ctx cosmos.Context, req *types.QueryLimitS
 	currentBlockHeight := ctx.BlockHeight()
 	maxAge := qs.mgr.Keeper().GetConfigInt64(ctx, constants.StreamingLimitSwapMaxAge)
 
-	// Only check advanced swap queue if enabled (limit swaps are only in advanced queue)
-	if !qs.mgr.Keeper().AdvSwapQueueEnabled(ctx) {
-		return &types.QueryLimitSwapsResponse{
-			LimitSwaps: allSwaps,
-			Pagination: &types.PaginationMeta{
-				Offset:  offset,
-				Limit:   limit,
-				Total:   0,
-				HasNext: false,
-				HasPrev: offset > 0,
-			},
-		}, nil
-	}
-
 	// Get advanced swap queue iterator
 	iterator := qs.mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
 	defer iterator.Close()
@@ -201,17 +187,6 @@ func (qs queryServer) queryLimitSwapsSummary(ctx cosmos.Context, req *types.Quer
 
 	// Get USD pricing using TOR pool
 	dollarsPerRune := dollarsPerRuneIgnoreHalt(ctx, qs.mgr.Keeper())
-
-	// Only check advanced swap queue if enabled (limit swaps are only in advanced queue)
-	if !qs.mgr.Keeper().AdvSwapQueueEnabled(ctx) {
-		return &types.QueryLimitSwapsSummaryResponse{
-			TotalLimitSwaps:  0,
-			TotalValueUsd:    "0",
-			AssetPairs:       []*types.AssetPairSummary{},
-			OldestSwapBlocks: 0,
-			AverageAgeBlocks: 0,
-		}, nil
-	}
 
 	iterator := qs.mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
 	defer iterator.Close()

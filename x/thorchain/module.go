@@ -52,7 +52,6 @@ const (
 	managerScheduledMigration = "scheduled_migration"
 	managerSlasher            = "slasher"
 	managerStableReserve      = "stable_reserve"
-	managerSwapQueue          = "swap_queue"
 	managerTxOut              = "tx_out"
 	managerValidator          = "validator"
 	managerVolume             = "volume"
@@ -285,22 +284,7 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 	// telemetry sink is disabled, and neither reads nor writes keeper state. The
 	// order of the manager calls and their error handling are unchanged.
 	start := telemetry.Now()
-	luviCtx, luviStep := beginLuviScope(ctx, am.mgr.Keeper(), "endblock/swap_queue", "", false)
-	if err := runTracedManager(tracer, managerSwapQueue, operationEndBlock, func() error {
-		return am.mgr.SwapQ().EndBlock(luviCtx, am.mgr)
-	}); err != nil {
-		ctx.Logger().Error("fail to process swap queue", "error", err)
-		telemetry.IncrCounterWithLabels(
-			[]string{"thornode", "endblock", "manager_error"},
-			float32(1),
-			[]metrics.Label{telemetry.NewLabel("manager", "swap_queue")},
-		)
-	}
-	luviStep.end(luviCtx, am.mgr)
-	telemetry.ModuleMeasureSince("swap_queue", start, "thornode", "block", "endblock")
-
-	start = telemetry.Now()
-	luviCtx, luviStep = beginLuviScope(ctx, am.mgr.Keeper(), "endblock/adv_swap_queue", "", false)
+	luviCtx, luviStep := beginLuviScope(ctx, am.mgr.Keeper(), "endblock/adv_swap_queue", "", false)
 	if err := runTracedManager(tracer, managerAdvancedSwapQueue, operationEndBlock, func() error {
 		return am.mgr.AdvSwapQueueMgr().EndBlock(luviCtx, am.mgr, am.telemetryEnabled)
 	}); err != nil {

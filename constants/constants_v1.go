@@ -59,8 +59,7 @@ func NewConstantValue() *ConstantVals {
 			EnableDerivedAssets:                 0,                  // enable/disable swapping of derived assets
 			MinSwapsPerBlock:                    10,                 // process all swaps if queue is less than this number
 			MaxSwapsPerBlock:                    100,                // max swaps to process per block
-			EnableOrderBooks:                    0,                  // enable order books instead of swap queue
-			EnableAdvSwapQueue:                  0,                  // enable advanced swap queue, value of 2 skips limit swaps and forces all swaps to be market trades
+			EnableAdvSwapQueue:                  1,                  // 2 skips limit swaps and forces all swaps to be market trades; any other value processes all swap types
 			AdvSwapQueueRapidSwapMax:            1,                  // maximum number of rapid swap iterations per block
 			VirtualMultSynths:                   2,                  // pool depth multiplier for synthetic swaps
 			VirtualMultSynthsBasisPoints:        10_000,             // pool depth multiplier for synthetic swaps (in basis points)

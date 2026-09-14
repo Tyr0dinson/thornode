@@ -59,41 +59,6 @@ func assertCollectorSwapBTCSolvency(c *C, ctx cosmos.Context, mgr Manager, expec
 		Commentf("expected BTC solvency %s, got %s", expected, amounts[0].Amount))
 }
 
-func (CollectorSwapExecutionSuite) TestLegacyCollectorConversionAfterAdvancedQueueEnabled(c *C) {
-	ctx, mgr, few := setupCollectorSwapExecution(c)
-	k := mgr.Keeper()
-	msg := collectorConversionForTest(ctx, mgr, few, types.SwapVersion_v1)
-	c.Assert(k.SetSwapQueueItem(ctx, *msg, int(msg.Index)), IsNil)
-	k.SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 1)
-	c.Assert(newSwapQueue(k).EndBlock(ctx, mgr), IsNil)
-	c.Assert(k.HasSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index)), Equals, false)
-	collector, err := k.GetAffiliateCollector(ctx, few.Name)
-	c.Assert(err, IsNil)
-	c.Assert(collector.RuneAmount.IsZero(), Equals, false)
-	c.Assert(k.GetRuneBalanceOfModule(ctx, AffiliateCollectorName).Equal(collector.RuneAmount), Equals, true)
-	assertAffiliateIntegrationInvariant(c, ctx, k)
-}
-
-func (CollectorSwapExecutionSuite) TestLegacyCollectorPayoutAfterAdvancedQueueEnabled(c *C) {
-	ctx, mgr, few := setupCollectorSwapExecution(c)
-	k := mgr.Keeper()
-	k.SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 0)
-	collector := fundNamedCollector(c, ctx, k, few.Name, 10*common.One)
-	c.Assert(triggerPreferredAssetSwap(ctx, mgr, few, collector, 1), IsNil)
-	queued := affiliateIntegrationQueuedSwaps(c, ctx, k)
-	c.Assert(queued, HasLen, 1)
-	k.SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 1)
-	c.Assert(newSwapQueue(k).EndBlock(ctx, mgr), IsNil)
-	c.Assert(k.HasSwapQueueItem(ctx, queued[0].Tx.ID, 1), Equals, false)
-	voter, err := k.GetObservedTxInVoter(ctx, queued[0].Tx.ID)
-	c.Assert(err, IsNil)
-	c.Assert(voter.Actions, HasLen, 1)
-	c.Assert(voter.Actions[0].ToAddress.Equals(few.GetAlias(common.BTCChain)), Equals, true)
-	c.Assert(voter.Actions[0].Coin.Amount.IsZero(), Equals, false)
-	assertNamedAffiliateBalance(c, ctx, k, few.Name, 0)
-	assertAffiliateIntegrationInvariant(c, ctx, k)
-}
-
 func (CollectorSwapExecutionSuite) TestAdvancedCollectorConversionSimulationSettlesOnce(c *C) {
 	ctx, mgr, few := setupCollectorSwapExecution(c)
 	k := mgr.Keeper()
@@ -170,7 +135,7 @@ func (CollectorSwapExecutionSuite) TestExternalModuleDestinationStillRefunds(c *
 
 func (CollectorSwapExecutionSuite) TestConversionUsesMemoNameAfterOwnerChangeAndExpiry(c *C) {
 	for _, name := range []string{"FEW", "THORSWAP.FI", strings.Repeat("a", 31)} {
-		for _, version := range []types.SwapVersion{types.SwapVersion_v1, types.SwapVersion_v2} {
+		for _, version := range []types.SwapVersion{types.SwapVersion_v2} {
 			ctx, mgr, few := setupCollectorSwapExecution(c)
 			k := mgr.Keeper()
 			few.Name = name

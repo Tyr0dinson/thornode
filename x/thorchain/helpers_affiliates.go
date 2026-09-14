@@ -100,10 +100,6 @@ func triggerPreferredAssetSwap(ctx cosmos.Context, mgr Manager, tn THORName, aff
 	)
 
 	// Determine version based on configuration
-	version := types.SwapVersion_v1
-	if mgr.Keeper().AdvSwapQueueEnabled(ctx) {
-		version = types.SwapVersion_v2
-	}
 
 	preferredAssetSwap := NewMsgSwap(
 		tx,
@@ -116,7 +112,7 @@ func triggerPreferredAssetSwap(ctx cosmos.Context, mgr Manager, tn THORName, aff
 		"", nil,
 		MarketSwap,
 		1, 0,
-		version,
+		types.SwapVersion_v2,
 		tn.Owner,
 	)
 
@@ -128,18 +124,14 @@ func triggerPreferredAssetSwap(ctx cosmos.Context, mgr Manager, tn THORName, aff
 	txInVoter.Tx = txIn
 	mgr.Keeper().SetObservedTxInVoter(ctx, txInVoter)
 
-	// Queue the preferred asset swap
-	// Use advanced swap queue if enabled
-	if mgr.Keeper().AdvSwapQueueEnabled(ctx) {
-		if err = mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, mgr, preferredAssetSwap); err != nil {
-			ctx.Logger().Error("fail to add preferred asset swap to advanced queue", "error", err)
-			return err
-		}
-	} else {
-		if err = mgr.Keeper().SetSwapQueueItem(ctx, *preferredAssetSwap, queueIndex); err != nil {
-			ctx.Logger().Error("fail to add preferred asset swap to queue", "error", err)
-			return err
-		}
+	// Queue the preferred asset swap. The index must be set explicitly: the
+	// advanced queue keys off msg.Index, and this swap shares a TxID with the
+	// affiliate swap queued by the caller - without it both key at <txid>-0 and
+	// the second write silently overwrites the first.
+	preferredAssetSwap.Index = uint32(queueIndex) // nolint:gosec // small sub-swap counter
+	if err = mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, mgr, preferredAssetSwap); err != nil {
+		ctx.Logger().Error("fail to add preferred asset swap to advanced queue", "error", err)
+		return err
 	}
 
 	// Send RUNE from AffiliateCollector to Asgard and update AffiliateCollector
@@ -407,10 +399,6 @@ func affiliateSwapToRune(ctx cosmos.Context, mgr Manager, mainTx common.Tx, sign
 	mainTx.Memo = memoStr
 
 	// Determine version based on configuration
-	version := types.SwapVersion_v1
-	if mgr.Keeper().AdvSwapQueueEnabled(ctx) {
-		version = types.SwapVersion_v2
-	}
 
 	affiliateSwap := NewMsgSwap(
 		mainTx,
@@ -423,7 +411,7 @@ func affiliateSwapToRune(ctx cosmos.Context, mgr Manager, mainTx common.Tx, sign
 		"", nil,
 		MarketSwap,
 		1, 0,
-		version,
+		types.SwapVersion_v2,
 		signer,
 	)
 
@@ -476,16 +464,9 @@ func affiliateSwapToRune(ctx cosmos.Context, mgr Manager, mainTx common.Tx, sign
 	}
 
 	*swapIndex++
-	// Use advanced swap queue if enabled
-	if mgr.Keeper().AdvSwapQueueEnabled(ctx) {
-		affiliateSwap.Index = uint32(*swapIndex)
-		if err = mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, mgr, affiliateSwap); err != nil {
-			return fmt.Errorf("fail to add swap to advanced queue: %w", err)
-		}
-	} else {
-		if err = mgr.Keeper().SetSwapQueueItem(ctx, *affiliateSwap, *swapIndex); err != nil {
-			return fmt.Errorf("fail to add swap to queue: %w", err)
-		}
+	affiliateSwap.Index = uint32(*swapIndex) // nolint:gosec // small sub-swap counter
+	if err = mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, mgr, affiliateSwap); err != nil {
+		return fmt.Errorf("fail to add swap to advanced queue: %w", err)
 	}
 
 	return nil
