@@ -580,12 +580,17 @@ func (h SwapHandler) getTotalLiquidityRUNE(ctx cosmos.Context) (cosmos.Uint, err
 		if p.Asset.IsDerivedAsset() {
 			continue
 		}
-		asset := p.Asset
-		p, _, err = poolView.adjust(ctx, p)
-		if err != nil {
-			return cosmos.ZeroUint(), fmt.Errorf("fail to get finality-adjusted pool %s: %w", asset, err)
+		// This is a summation, not a price: fall back to the live pool if the
+		// speculative overlay cannot be removed. The overlay is bounded by the
+		// mempool swap caps, so a stale sample shifts this soft cap slightly --
+		// whereas failing closed would halt every synth-target swap network-wide,
+		// including swaps on pools carrying no overlay at all.
+		adjusted, _, adjustErr := poolView.adjust(ctx, p)
+		if adjustErr != nil {
+			ctx.Logger().Error("fail to remove active mempool swap balances from total liquidity", "asset", p.Asset, "error", adjustErr)
+			adjusted = p
 		}
-		total = total.Add(p.BalanceRune)
+		total = total.Add(adjusted.BalanceRune)
 	}
 	return total, nil
 }

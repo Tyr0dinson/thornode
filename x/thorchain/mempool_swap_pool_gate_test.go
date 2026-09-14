@@ -579,6 +579,32 @@ func (s *MempoolSwapPoolGateSuite) TestTVLCapAndLiquidityTotalUseFinalizedPoolVi
 	c.Check(liquidity.Equal(cosmos.NewUint(1000*common.One)), Equals, true)
 }
 
+func (s *MempoolSwapPoolGateSuite) TestTotalLiquidityFallsBackToLivePoolOnOverlayFailure(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	_, record, pool := setupMempoolSwapEffectsSwap(c, ctx, mgr, 0)
+
+	// An overlay claiming a larger RUNE increase than the live pool holds cannot
+	// be removed, so finalityPoolView.adjust fails for this pool.
+	effect := newMempoolSwapPoolEffect(pool.Asset)
+	effect.BalanceRuneIncrease = pool.BalanceRune.Add(cosmos.NewUint(common.One))
+	record.PendingEffects.Pools = []types.MempoolSwapPoolEffect{effect}
+	c.Assert(mgr.Keeper().SetMempoolSwap(ctx, record), IsNil)
+
+	live, err := mgr.Keeper().GetPool(ctx, pool.Asset)
+	c.Assert(err, IsNil)
+	c.Check(live.BalanceRune.IsZero(), Equals, false)
+
+	// The total must still compute -- a single unusable overlay may not halt
+	// liquidity adds and synth swaps for every pool on the network.
+	total, err := NewAddLiquidityHandler(mgr).getTotalLiquidityRUNE(ctx)
+	c.Assert(err, IsNil)
+	c.Check(total.Equal(live.BalanceRune), Equals, true)
+
+	total, err = NewSwapHandler(mgr).getTotalLiquidityRUNE(ctx)
+	c.Assert(err, IsNil)
+	c.Check(total.Equal(live.BalanceRune), Equals, true)
+}
+
 func (s *MempoolSwapPoolGateSuite) TestSynthLiquidityCapUsesFinalizedDisjointPoolView(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.constAccessor = constants.NewDummyConstants(nil, map[constants.ConstantName]bool{
