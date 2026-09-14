@@ -764,12 +764,30 @@ func (c *Client) BatchCall(batch []rpc.BatchElem) error {
 }
 
 func (c *Client) batchCall(batch []rpc.BatchElem) error {
+	var err error
 	if c.timeout <= 0 {
-		return c.client.BatchCall(batch)
+		err = c.client.BatchCall(batch)
+	} else {
+		ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+		defer cancel()
+		err = c.client.BatchCallContext(ctx, batch)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
-	defer cancel()
-	return c.client.BatchCallContext(ctx, batch)
+	if err != nil {
+		return err
+	}
+	// A batch reports per-element failures through BatchElem.Error with a nil
+	// aggregate error, so an endpoint that rate limits or cannot serve the method
+	// would otherwise look like a success. Surface the first such element so the
+	// read is retried on another endpoint and the endpoint is accounted for.
+	for _, elem := range batch {
+		if elem.Error == nil {
+			continue
+		}
+		if v := classifyRPCError(elem.Error); v == verdictRateLimit || v == verdictEndpointError {
+			return elem.Error
+		}
+	}
+	return nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -863,7 +881,7 @@ func (c *Client) retry(fn func() error) error {
 		}
 
 		// backoff and retry
-		c.log.Err(err).
+		c.log.Err(c.redact(0, err)).
 			Str("backoff", backoff.String()).
 			Msgf("retrying %d/%d after backoff", i+1, c.maxRetries)
 		time.Sleep(backoff)

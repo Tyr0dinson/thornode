@@ -1842,3 +1842,44 @@ func (s *RPCSuite) TestDisabledPrimaryRejectsPrimaryOnlyOperations(c *C) {
 	_, err = cl.GetRawTransactionVerbosePrimary("abc")
 	c.Assert(err, ErrorMatches, ".*disabled.*")
 }
+
+func (s *RPCSuite) TestBatchElementErrorsAreClassified(c *C) {
+	// HTTP 200 with a per-element rate limit: the aggregate error is nil, so this
+	// used to look like a served batch
+	body := `[{"jsonrpc":"2.0","id":1,"result":{"txid":"a"}},{"jsonrpc":"2.0","id":2,"error":{"code":-32005,"message":"limit"}}]`
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	defer primary.Close()
+	fb := &mockUTXOReader{batchRawTxFn: func(txids []string) ([]*btcjson.TxRawResult, []error, error) {
+		out := make([]*btcjson.TxRawResult, len(txids))
+		for i, id := range txids {
+			out[i] = &btcjson.TxRawResult{Txid: id}
+		}
+		return out, make([]error, len(txids)), nil
+	}}
+	m, cfgEps := mgrFor(c, 5, map[string]string{"primary": primary.URL}, "primary", "fb")
+	cl, err := NewClientWithFallbacks(primary.URL, "u", "p", "", 0, time.Second, common.BTCChain, zerolog.Nop(), []UTXOReader{fb}, 0)
+	c.Assert(err, IsNil)
+	cl.WithEndpointManager(m, cfgEps)
+	res, _, err := cl.BatchGetRawTransactionVerbose([]string{"a", "b"})
+	c.Assert(err, IsNil)
+	c.Assert(res[1].Txid, Equals, "b") // served by the fallback, not the throttled primary
+	c.Assert(m.Entry("primary").InCooldown(), Equals, true)
+}
+
+func (s *RPCSuite) TestRetryLogRedactsEndpointURL(c *C) {
+	var buf bytes.Buffer
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "503 Service Unavailable", http.StatusServiceUnavailable)
+	}))
+	defer primary.Close()
+	host := primary.URL + "/v1/SECRETKEY"
+	m, cfgEps := mgrFor(c, 5, map[string]string{"primary": host}, "primary")
+	cl, err := NewClientWithFallbacks(host, "u", "SECRETPASS", "", 1, time.Second, common.BTCChain, zerolog.New(&buf), nil, 0)
+	c.Assert(err, IsNil)
+	cl.WithEndpointManager(m, cfgEps)
+	_, _ = cl.GetBlockCount()
+	c.Assert(buf.String(), Matches, "(?s).*retrying.*")
+	c.Assert(buf.String(), Not(Matches), "(?s).*SECRET.*")
+}

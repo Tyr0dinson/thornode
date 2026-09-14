@@ -456,3 +456,69 @@ func (s *RouterSuite) TestWriteResponseRateLimitCoolsDownWithoutRetry(c *C) {
 	c.Assert(m.Entry("lim").InCooldown(), Equals, true)
 	c.Assert(m.Active().Name, Equals, "good") // handed off for the next broadcast
 }
+
+func (s *RouterSuite) TestTruncatedBodyIsChargedOnce(c *C) {
+	broken := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Length", "200")
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"re`)) // cut before the sniff limit
+	}))
+	defer broken.Close()
+	var st int32 = http.StatusOK
+	good := rpcServer(&st, nil, "")
+	defer good.Close()
+	m, targets := twoEndpointMgr(c, common.ETHChain, []config.ChainEndpointConfig{{Name: "broken", RPCHost: broken.URL, Priority: 1}, {Name: "good", RPCHost: good.URL, Priority: 2}}, 3)
+	hc := routerFor(c, m, targets, nil)
+	resp, err := post(c, hc, base(m), "eth_blockNumber")
+	c.Assert(err, IsNil)
+	_ = resp.Body.Close()
+	// one physical failure, one charge: the body wrapper reports it and RoundTrip
+	// does not record the same failure again
+	c.Assert(m.Entry("broken").Snapshot().InlineErrors, Equals, 1)
+}
+
+func (s *RouterSuite) TestRepeatedTruncatedBodiesEvictAndFailOver(c *C) {
+	broken := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Length", "200000")
+		_, _ = w.Write(bytes.Repeat([]byte("x"), 70000)) // past the sniff limit, then cut
+	}))
+	defer broken.Close()
+	var st int32 = http.StatusOK
+	var hg []hit
+	good := rpcServer(&st, &hg, "")
+	defer good.Close()
+	m, targets := twoEndpointMgr(c, common.ETHChain, []config.ChainEndpointConfig{{Name: "broken", RPCHost: broken.URL, Priority: 1}, {Name: "good", RPCHost: good.URL, Priority: 2}}, 3)
+	hc := routerFor(c, m, targets, nil)
+	for i := 0; i < 3; i++ {
+		resp, err := post(c, hc, base(m), "eth_getBlockByNumber")
+		c.Assert(err, IsNil)
+		_, _ = io.ReadAll(resp.Body) // fails mid-stream every time
+		_ = resp.Body.Close()
+	}
+	// a header-time success used to reset the run each round, so this never evicted
+	c.Assert(m.Entry("broken").State(), Equals, endpoints.StateUnhealthy)
+	c.Assert(m.Active().Name, Equals, "good")
+	resp, err := post(c, hc, base(m), "eth_blockNumber")
+	c.Assert(err, IsNil)
+	_ = resp.Body.Close()
+	c.Assert(hg, HasLen, 1)
+}
+
+func (s *RouterSuite) TestSuccessIsRecordedWhenTheBodyCompletes(c *C) {
+	var st int32 = http.StatusOK
+	srv := rpcServer(&st, nil, "")
+	defer srv.Close()
+	m, targets := twoEndpointMgr(c, common.ETHChain, []config.ChainEndpointConfig{{Name: "a", RPCHost: srv.URL, Priority: 1}, {Name: "b", RPCHost: srv.URL, Priority: 2}}, 3)
+	m.RecordError("a", endpoints.ErrorKindTransport)
+	c.Assert(m.Entry("a").Snapshot().InlineErrors, Equals, 1)
+	resp, err := post(c, hcFor(c, m, targets), base(m), "eth_blockNumber")
+	c.Assert(err, IsNil)
+	_, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	c.Assert(m.Entry("a").Snapshot().InlineErrors, Equals, 0) // reset on clean completion
+}
+
+func hcFor(c *C, m *endpoints.Manager, targets []endpoints.Target) *http.Client {
+	return routerFor(c, m, targets, nil)
+}

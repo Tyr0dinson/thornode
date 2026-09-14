@@ -385,6 +385,28 @@ func (m *Manager) logTransition(e *Entry, from, to State, why string) {
 	}
 }
 
+// VerificationCandidates returns the endpoints worth asking when verifying whether
+// a broadcast is still alive (signer-cache verification): every non-disabled
+// endpoint, minus those that have been continuously non-healthy for longer than
+// maxDown. A long-dead endpoint cannot inform the answer, and treating it as
+// "cannot confirm absence" forever would wedge re-signing of a stuck outbound.
+// maxDown <= 0 keeps every non-disabled endpoint.
+func (m *Manager) VerificationCandidates(maxDown time.Duration) []*Entry {
+	out := make([]*Entry, 0, len(m.entries))
+	for _, e := range m.entries {
+		if e.State() == StateDisabled {
+			continue
+		}
+		if maxDown > 0 && e.NonHealthyFor() > maxDown {
+			m.log.Info().Str("endpoint", e.Name).Dur("down", e.NonHealthyFor()).
+				Msg("skipping long-dead endpoint for broadcast verification")
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
 // Status returns a snapshot of every endpoint in priority order.
 func (m *Manager) Status() []Snapshot {
 	active := m.Active()

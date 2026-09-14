@@ -986,7 +986,7 @@ func (c *EVMClient) verifyBroadcast(sig string) signercache.LookupResult {
 			return signercache.LookupNotFound
 		}
 	}
-	return evm.LookupTxEverywhere(ctx, c.endpointMgr, c.ethClient, ecommon.HexToHash(sig))
+	return evm.LookupTxEverywhere(ctx, c.endpointMgr, c.ethClient, ecommon.HexToHash(sig), c.getSignerCacheExpiry())
 }
 
 // SignTx returns the signed transaction.

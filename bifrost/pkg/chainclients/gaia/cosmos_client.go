@@ -146,8 +146,11 @@ func NewCosmosClient(
 	// node network, pinned to cosmos_chain_id (or expected_identity when set).
 	failoverCfg := cfg.GetFailoverConfig()
 	endpointCfgs := cfg.GetEndpoints()
+	// cosmos_chain_id pins the network only when the operator opted into the new
+	// endpoints list (or set expected_identity explicitly). A legacy flat config
+	// keeps starting as it did before this MR; a mismatch is logged loudly below.
 	expected := cfg.ExpectedIdentity
-	if expected == "" {
+	if expected == "" && len(cfg.Endpoints) > 0 {
 		expected = cfg.CosmosChainID
 	}
 	mgrOpts := []endpoints.Option{endpoints.WithMetrics(endpoints.DefaultMetrics())}
@@ -191,12 +194,23 @@ func NewCosmosClient(
 		base := endpoints.NewCometProbe(e, failoverCfg.HealthCheckTimeout)
 		if conn, ok := grpcConns[e.Name]; ok {
 			svc := cmtservice.NewServiceClient(conn)
+			wantNetwork := cfg.CosmosChainID
 			probes[i] = endpoints.CompoundProbe{Probe: base, Extra: func(ctx context.Context) error {
-				_, perr := svc.GetLatestBlock(ctx, &cmtservice.GetLatestBlockRequest{})
+				// GetNodeInfo is the cheapest call on the service and doubles as the
+				// gRPC host's identity: the gRPC and RPC halves of one endpoint must
+				// be the same network (GetLatestBlock would download a whole block
+				// from every endpoint on every health cycle).
+				info, perr := svc.GetNodeInfo(ctx, &cmtservice.GetNodeInfoRequest{})
 				if status.Code(perr) == codes.ResourceExhausted {
 					return fmt.Errorf("grpc: %w", endpoints.ErrRateLimited)
 				}
-				return perr
+				if perr != nil {
+					return perr
+				}
+				if got := info.GetDefaultNodeInfo().GetNetwork(); wantNetwork != "" && got != "" && got != wantNetwork {
+					return fmt.Errorf("grpc host is on network %q, expected %q", got, wantNetwork)
+				}
+				return nil
 			}}
 		} else {
 			probes[i] = base
@@ -484,21 +498,32 @@ func (c *CosmosClient) mempoolLookup(ctx context.Context, sig string) signercach
 	// client (so each endpoint's credentials apply). Found anywhere is Found; not
 	// found everywhere with every endpoint answering a complete page is NotFound;
 	// anything else is Ambiguous (keeps the cache entry).
-	ambiguous, queried := false, 0
-	for _, e := range c.endpointMgr.Entries() {
-		if e.State() == endpoints.StateDisabled {
-			continue
-		}
-		queried++
-		switch mempoolLookupOn(endpoints.PinContext(ctx, e.Name), c.cometRPC, sig) {
+	candidates := c.endpointMgr.VerificationCandidates(c.cfg.SignerCacheExpiry)
+	return c.mempoolLookupOnCandidates(ctx, sig, candidates, evm.VerificationBudget(ctx, len(candidates)))
+}
+
+// mempoolLookupOnCandidates asks the given endpoints, each with its own bounded
+// context. Found anywhere is Found; not found on every endpoint, each of which
+// answered a complete page, is NotFound; anything else, including no endpoint at
+// all, is Ambiguous.
+func (c *CosmosClient) mempoolLookupOnCandidates(ctx context.Context, sig string, candidates []*endpoints.Entry, perEndpoint time.Duration) signercache.LookupResult {
+	if len(candidates) == 0 {
+		return signercache.LookupAmbiguous // absence needs at least one witness
+	}
+	ambiguous := false
+	for _, e := range candidates {
+		ectx, cancel := context.WithTimeout(endpoints.PinContext(ctx, e.Name), perEndpoint)
+		res := mempoolLookupOn(ectx, c.cometRPC, sig)
+		cancel()
+		switch res {
 		case signercache.LookupFound:
 			return signercache.LookupFound
 		case signercache.LookupAmbiguous:
 			ambiguous = true
 		}
 	}
-	if ambiguous || queried == 0 {
-		return signercache.LookupAmbiguous // absence needs at least one witness
+	if ambiguous {
+		return signercache.LookupAmbiguous
 	}
 	return signercache.LookupNotFound
 }
@@ -549,13 +574,18 @@ func (c *CosmosClient) verifyBroadcast(sig string) signercache.LookupResult {
 			return signercache.LookupAmbiguous
 		}
 	}
-	ambiguous, queried := false, 0
-	for _, e := range c.endpointMgr.Entries() {
-		if e.State() == endpoints.StateDisabled {
-			continue
-		}
-		queried++
-		_, txErr := c.txClient.GetTx(endpoints.PinContext(ctx, e.Name), &txtypes.GetTxRequest{Hash: sig})
+	candidates := c.endpointMgr.VerificationCandidates(c.cfg.SignerCacheExpiry)
+	if len(candidates) == 0 {
+		return signercache.LookupAmbiguous // absence needs at least one witness
+	}
+	// the fixed budget has to cover up to two pinned round trips per endpoint
+	// (GetTx here, then UnconfirmedTxs in mempoolLookup), so bound each one
+	perEndpoint := evm.VerificationBudget(ctx, 2*len(candidates))
+	ambiguous := false
+	for _, e := range candidates {
+		ectx, cancel := context.WithTimeout(endpoints.PinContext(ctx, e.Name), perEndpoint)
+		_, txErr := c.txClient.GetTx(ectx, &txtypes.GetTxRequest{Hash: sig})
+		cancel()
 		switch {
 		case txErr == nil:
 			return signercache.LookupFound
@@ -563,10 +593,10 @@ func (c *CosmosClient) verifyBroadcast(sig string) signercache.LookupResult {
 			ambiguous = true
 		}
 	}
-	if ambiguous || queried == 0 {
-		return signercache.LookupAmbiguous // absence needs at least one witness
+	if ambiguous {
+		return signercache.LookupAmbiguous
 	}
-	return c.mempoolLookup(ctx, sig)
+	return c.mempoolLookupOnCandidates(ctx, sig, candidates, perEndpoint)
 }
 
 // SignTx sign the the given TxArrayItem

@@ -546,7 +546,7 @@ func (c *TronClient) OnObservedTxIn(_ types.TxInItem, _ int64) {}
 // non-disabled endpoint is asked with a pinned request: a tx known to any endpoint
 // is Found, any transport error or no queried endpoint is Ambiguous, and only
 // absence on every endpoint is NotFound. Without a manager it asks the single API.
-func tronVerifyBroadcast(ctx context.Context, mgr *endpoints.Manager, tronAPI *api.TronApi, sig string) signercache.LookupResult {
+func tronVerifyBroadcast(ctx context.Context, mgr *endpoints.Manager, tronAPI *api.TronApi, sig string, maxDown time.Duration) signercache.LookupResult {
 	lookup := func(ctx context.Context) signercache.LookupResult {
 		tx, txErr := tronAPI.GetTransactionWithContext(ctx, sig)
 		switch {
@@ -561,20 +561,24 @@ func tronVerifyBroadcast(ctx context.Context, mgr *endpoints.Manager, tronAPI *a
 	if mgr == nil {
 		return lookup(ctx)
 	}
-	ambiguous, queried := false, 0
-	for _, e := range mgr.Entries() {
-		if e.State() == endpoints.StateDisabled {
-			continue
-		}
-		queried++
-		switch lookup(endpoints.PinContext(ctx, e.Name)) {
+	candidates := mgr.VerificationCandidates(maxDown)
+	if len(candidates) == 0 {
+		return signercache.LookupAmbiguous // absence needs at least one witness
+	}
+	perEndpoint := evm.VerificationBudget(ctx, len(candidates))
+	ambiguous := false
+	for _, e := range candidates {
+		ectx, cancel := context.WithTimeout(endpoints.PinContext(ctx, e.Name), perEndpoint)
+		res := lookup(ectx)
+		cancel()
+		switch res {
 		case signercache.LookupFound:
 			return signercache.LookupFound
 		case signercache.LookupAmbiguous:
 			ambiguous = true
 		}
 	}
-	if ambiguous || queried == 0 {
+	if ambiguous {
 		return signercache.LookupAmbiguous
 	}
 	return signercache.LookupNotFound
@@ -604,7 +608,7 @@ func (c *TronClient) SignTx(
 	// cache), an empty result with no error means absent (safe to clear and
 	// re-sign). Transport errors stay ambiguous (fail-closed, cache respected).
 	verifyFn := func(sig string) signercache.LookupResult {
-		return tronVerifyBroadcast(context.Background(), c.endpointMgr, c.api, sig)
+		return tronVerifyBroadcast(context.Background(), c.endpointMgr, c.api, sig, c.getSignerCacheExpiry())
 	}
 	check := c.signerCacheManager.SignTxCacheCheck(txOutItem.CacheHash(), gateFn, verifyFn)
 	if check.Phase != signercache.PhaseNoEntry {

@@ -112,12 +112,12 @@ func (s *TronTestSuite) TestVerifyBroadcastAsksEveryEndpoint(c *C) {
 	apiClient := api.NewTronAPIWithClient(endpoints.SyntheticBase(common.TRONChain).String(), 2*time.Second, &http.Client{Transport: router, Timeout: 2 * time.Second})
 
 	// known only to b (a is active and reports it absent)
-	c.Assert(tronVerifyBroadcast(context.Background(), mgr, apiClient, known), Equals, signercache.LookupFound)
+	c.Assert(tronVerifyBroadcast(context.Background(), mgr, apiClient, known, time.Hour), Equals, signercache.LookupFound)
 	// absent on a, b broken: ambiguous
 	bDown.Store(true)
-	c.Assert(tronVerifyBroadcast(context.Background(), mgr, apiClient, known), Equals, signercache.LookupAmbiguous)
+	c.Assert(tronVerifyBroadcast(context.Background(), mgr, apiClient, known, time.Hour), Equals, signercache.LookupAmbiguous)
 	// every endpoint disabled: nothing can prove absence
 	mgr.Disable("b", "identity")
 	mgr.Disable("a", "identity")
-	c.Assert(tronVerifyBroadcast(context.Background(), mgr, apiClient, known), Equals, signercache.LookupAmbiguous)
+	c.Assert(tronVerifyBroadcast(context.Background(), mgr, apiClient, known, time.Hour), Equals, signercache.LookupAmbiguous)
 }

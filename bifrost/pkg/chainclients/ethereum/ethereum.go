@@ -629,7 +629,7 @@ func (c *Client) verifyBroadcast(sig string) signercache.LookupResult {
 	defer cancel()
 	if c.endpointMgr != nil {
 		// every endpoint is asked (pinned); unreachable endpoints make it ambiguous
-		return evm.LookupTxEverywhere(ctx, c.endpointMgr, c.client, ecommon.HexToHash(sig))
+		return evm.LookupTxEverywhere(ctx, c.endpointMgr, c.client, ecommon.HexToHash(sig), c.getSignerCacheExpiry())
 	}
 	onchainTx, _, lookupErr := c.client.TransactionByHash(ctx, ecommon.HexToHash(sig))
 	switch {

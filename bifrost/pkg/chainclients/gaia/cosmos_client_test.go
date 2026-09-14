@@ -504,10 +504,12 @@ func (s *CosmosTestSuite) TestEndpointIdentityMustMatchCosmosChainID(c *C) {
 	defer server.Close()
 	fakeGRPCHost := strings.ReplaceAll(server.URL, "http://", "grpc://")
 	cfg := config.BifrostChainConfiguration{
-		ChainID:        common.GAIAChain,
-		CosmosChainID:  "cosmoshub-4",
-		RPCHost:        server.URL,
-		CosmosGRPCHost: fakeGRPCHost,
+		ChainID:       common.GAIAChain,
+		CosmosChainID: "cosmoshub-4",
+		// an explicit endpoints list opts into the identity gate
+		Endpoints: []config.ChainEndpointConfig{
+			{Name: "a", RPCHost: server.URL, CosmosGRPCHost: fakeGRPCHost, Priority: 1},
+		},
 		BlockScanner: config.BifrostBlockScannerConfiguration{
 			CosmosGRPCHost:   fakeGRPCHost,
 			StartBlockHeight: 1,
@@ -515,7 +517,53 @@ func (s *CosmosTestSuite) TestEndpointIdentityMustMatchCosmosChainID(c *C) {
 	}
 	cfg.Failover.HealthCheckTimeout = 500 * time.Millisecond
 	_, err := NewCosmosClient(s.thorKeys, cfg, nil, s.bridge, s.m, nil)
-	c.Assert(err, ErrorMatches, `(?s).*priority-1 endpoint primary reports identity "theta-testnet-001" but expected_identity is "cosmoshub-4".*`)
+	c.Assert(err, ErrorMatches, `(?s).*priority-1 endpoint a reports identity "theta-testnet-001" but expected_identity is "cosmoshub-4".*`)
+}
+
+// A legacy flat config (no endpoints list) keeps starting even when the node's
+// reported network disagrees with cosmos_chain_id: the check is advisory there, as
+// it was before endpoint failover existed.
+func (s *CosmosTestSuite) TestLegacyFlatConfigStartsAndBuildsOneEndpoint(c *C) {
+	mk := func(network string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+			var body struct {
+				Method string          `json:"method"`
+				ID     json.RawMessage `json:"id"`
+			}
+			_ = json.NewDecoder(req.Body).Decode(&body)
+			id := string(body.ID)
+			if id == "" {
+				id = "1"
+			}
+			rw.Header().Set("Content-Type", "application/json")
+			if body.Method == "status" {
+				_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":` + id + `,"result":{"node_info":{"network":"` + network +
+					`"},"sync_info":{"latest_block_height":"10"}}}`))
+				return
+			}
+			_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":` + id + `,"error":{"code":-32601,"message":"nope"}}`))
+		}))
+	}
+	for _, network := range []string{"cosmoshub-4", "theta-testnet-001"} {
+		server := mk(network)
+		fakeGRPCHost := strings.ReplaceAll(server.URL, "http://", "grpc://")
+		cfg := config.BifrostChainConfiguration{
+			ChainID:        common.GAIAChain,
+			CosmosChainID:  "cosmoshub-4",
+			RPCHost:        server.URL,
+			CosmosGRPCHost: fakeGRPCHost,
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				CosmosGRPCHost:   fakeGRPCHost,
+				StartBlockHeight: 1,
+			},
+		}
+		cfg.Failover.HealthCheckTimeout = 500 * time.Millisecond
+		client, err := NewCosmosClient(s.thorKeys, cfg, nil, s.bridge, s.m, nil)
+		c.Assert(err, IsNil, Commentf("network %s", network))
+		c.Assert(client.EndpointManager().Len(), Equals, 1)
+		c.Assert(client.EndpointManager().Active().Name, Equals, "primary")
+		server.Close()
+	}
 }
 
 func (s *CosmosTestSuite) TestEndpointManagerExposedAndMempoolLookupUsesEveryEndpoint(c *C) {

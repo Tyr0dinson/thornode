@@ -40,8 +40,13 @@ higher-priority endpoint only when `prefer_higher_priority` is true.
 A rate limit (HTTP 429, gRPC `ResourceExhausted`, JSON-RPC -32005 / -32029) never marks
 an endpoint unhealthy and never counts as a strike, including when a health probe is
 rate limited: the endpoint enters a cooldown of `rate_limit_backoff`, is not probed while
-cooling down, and traffic moves to the next eligible endpoint immediately. Only a chain
-with a single endpoint sleeps for `rate_limit_backoff` before returning the error.
+cooling down, and traffic moves to the next eligible endpoint immediately.
+
+`rate_limit_backoff` is also slept, once, on the UTXO chains only, and only when the
+rate-limited endpoint was the primary and no other endpoint served the read. That
+applies whatever the endpoint count. On every other chain the request fails fast after
+the cooldown is recorded; a lone rate-limited endpoint there does not pause, so set a
+provider's own client-side limits accordingly.
 
 If every endpoint is unhealthy, bifrost logs an error, sets
 `bifrost_endpoint_all_down{chain}` to 1, and keeps trying all of them.
@@ -86,6 +91,16 @@ majority; prefer endpoints from different operators.
 
 Mocknet and stagenet use different values, so nothing is pinned by default.
 
+On GAIA and NOBLE, `cosmos_chain_id` is used as the expected identity when an
+`endpoints:` list is configured, and a mismatch then stops the chain client from
+starting. A legacy configuration with only the flat `rpc_host` / `cosmos_grpc_host`
+fields keeps its previous behavior: a mismatch is logged as an error and bifrost
+starts. Set `endpoints:` or `expected_identity` to make it fatal.
+
+A dead endpoint left in the list does not block recovery of a stuck outbound: an
+endpoint continuously unhealthy for longer than `signer_cache_expiry` is skipped when
+verifying whether a broadcast is still alive.
+
 ## Configuration
 
 Add an `endpoints` list to any chain in `bifrost.yaml`. If `endpoints` is omitted, bifrost
@@ -111,7 +126,7 @@ chains:
       min_recovery_checks: 3 # passing checks required to restore an endpoint
       recovery_check_interval: 30s
       prefer_higher_priority: false # set true to actively fail back to lower-priority-number endpoints
-      rate_limit_backoff: 30s # cooldown after a rate limit (429, -32005): the endpoint is skipped this long and traffic moves to the next endpoint at once; a lone endpoint sleeps instead
+      rate_limit_backoff: 30s # cooldown after a rate limit (429, -32005): the endpoint is skipped this long and traffic moves on at once. UTXO chains also sleep it once when the primary was rate limited and nothing else served the read
       health_check_timeout: 5s # a probe slower than this is a strike; must be < health_check_interval
       integrity_check_depth: 20 # compare block hashes at tip - depth across endpoints; 0 disables
     expected_identity: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f" # optional network pin

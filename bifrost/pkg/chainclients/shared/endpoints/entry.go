@@ -42,6 +42,7 @@ type Entry struct {
 	lastProbeAt      time.Time
 	lastErrorKind    ErrorKind
 	nextRecoveryAt   time.Time
+	nonHealthySince  time.Time
 }
 
 // Snapshot is a read-only copy of an Entry's state for status output.
@@ -105,6 +106,9 @@ func (e *Entry) inCooldownLocked() bool {
 }
 
 func (e *Entry) markUnhealthyLocked() {
+	if e.state == StateHealthy {
+		e.nonHealthySince = e.now()
+	}
 	e.state = StateUnhealthy
 	e.inlineErrors = 0
 	e.lastInlineAt = time.Time{}
@@ -238,13 +242,30 @@ func (e *Entry) RecordHealthCheck(ok bool, cfg config.ChainFailoverConfig) (from
 			e.recoveryChecks = 0
 		}
 	}
+	if e.state == StateHealthy {
+		e.nonHealthySince = time.Time{}
+	}
 	return from, e.state
+}
+
+// NonHealthyFor returns how long the endpoint has been continuously out of the
+// Healthy state, or 0 while it is healthy.
+func (e *Entry) NonHealthyFor() time.Duration {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.state == StateHealthy || e.nonHealthySince.IsZero() {
+		return 0
+	}
+	return e.now().Sub(e.nonHealthySince)
 }
 
 // Disable permanently removes the endpoint from rotation.
 func (e *Entry) Disable(reason string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if e.state == StateHealthy {
+		e.nonHealthySince = e.now()
+	}
 	e.state = StateDisabled
 	e.disabledReason = reason
 }

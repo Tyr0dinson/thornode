@@ -1,6 +1,8 @@
 package endpoints_test
 
 import (
+	"time"
+
 	"github.com/rs/zerolog"
 	. "gopkg.in/check.v1"
 
@@ -186,4 +188,24 @@ func (s *ManagerSuite) TestFailbackSkipsCoolingDownEndpoint(c *C) {
 	c.Assert(m.Active().Name, Equals, "b")
 	c.Assert(m.MaybeFailback(), Equals, false) // a is healthy but not eligible
 	c.Assert(m.Active().Name, Equals, "b")
+}
+
+func (s *ManagerSuite) TestVerificationCandidatesSkipDisabledAndLongDead(c *C) {
+	now := time.Unix(1_700_000_000, 0)
+	m, err := endpoints.NewManager(common.BTCChain, eps("a", "b", "d"), fc(1, 1), zerolog.Nop(),
+		endpoints.WithClock(func() time.Time { return now }))
+	c.Assert(err, IsNil)
+	for _, e := range m.Entries() {
+		e.SetIdentity("g")
+	}
+	c.Assert(names(m.VerificationCandidates(time.Hour)), DeepEquals, []string{"a", "b", "d"})
+
+	m.Entry("b").MarkUnhealthy(endpoints.ErrorKindTransport)
+	now = now.Add(2 * time.Hour) // b has been down longer than the cache expiry
+	m.Disable("d", "identity")
+	c.Assert(names(m.VerificationCandidates(time.Hour)), DeepEquals, []string{"a"})
+	// a briefly-down endpoint still counts, and maxDown <= 0 keeps everything
+	c.Assert(names(m.VerificationCandidates(3*time.Hour)), DeepEquals, []string{"a", "b"})
+	c.Assert(names(m.VerificationCandidates(0)), DeepEquals, []string{"a", "b"})
+	c.Assert(m.Entry("a").NonHealthyFor(), Equals, time.Duration(0))
 }
