@@ -1372,3 +1372,46 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionAfterMemoRecovery(
 	c.Check(f.ethBalance(c), Equals, gasOnly)
 	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
 }
+
+// TestHandleBounceCorrectionCapIsPerFinality: the one-shot cap must not carry
+// across finalisation. countMatchingSigners never counts an observation of the
+// other finality, so an attestation consumed while unfinalised can never be
+// replayed into a correction of the finalised consensus - and a reorg found after
+// finalisation still has to be reconcilable.
+func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionCapIsPerFinality(c *C) {
+	const (
+		untouched   = uint64(20000000000) // 200 ETH
+		gasOnly     = untouched - 37500
+		gasAndCoins = gasOnly - 1
+	)
+
+	f := newBouncedOutboundFixture(c, 6)
+
+	// unfinalised consensus: delivered, debited
+	for i := 0; i < 4; i++ {
+		f.voteAt(c, i, false, 12, 13)
+	}
+	c.Check(f.ethBalance(c), Equals, gasAndCoins)
+
+	// unfinalised correction: the receipt shows the router bounced it
+	for i := 0; i < 6; i++ {
+		f.voteAt(c, i, true, 12, 13)
+	}
+	c.Check(f.ethBalance(c), Equals, gasOnly)
+	c.Check(f.keeper.voter.BounceCorrected, Equals, true)
+
+	// finalisation agrees, so nothing to reconcile, and the cap resets
+	for i := 0; i < 4; i++ {
+		f.voteAt(c, i, true, 13, 13)
+	}
+	c.Check(f.ethBalance(c), Equals, gasOnly)
+	c.Check(f.keeper.voter.BounceCorrected, Equals, false)
+
+	// a reorg re-includes the hash as delivered: still correctable
+	for i := 0; i < 6; i++ {
+		f.voteAt(c, i, false, 13, 13)
+	}
+	c.Check(f.ethBalance(c), Equals, gasAndCoins)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
+	c.Check(f.keeper.voter.BounceCorrected, Equals, true)
+}

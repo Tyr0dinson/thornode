@@ -42,7 +42,8 @@ type ObservedTxVoter struct {
 	// Cleared at final consensus.
 	ExcusedObservers []string `protobuf:"bytes,16,rep,name=excused_observers,json=excusedObservers,proto3" json:"excused_observers,omitempty"`
 	// bounce_corrected records that a supermajority has already reconciled this
-	// outbound's Bounced verdict once. Attestations carry no nonce, so a genuine
+	// outbound's Bounced verdict once at the current finality level (it is reset
+	// when the voter finalises). Attestations carry no nonce, so a genuine
 	// re-observation and a replay of a previously gossiped attestation are
 	// byte-identical; without a cap an attacker could re-file the superseded
 	// verdict and oscillate the vault's coin accounting at will.

@@ -1311,7 +1311,8 @@ type ObservedTxVoter struct {
 	OutboundHeight    int64                `protobuf:"varint,10,opt,name=outbound_height,json=outboundHeight,proto3" json:"outbound_height,omitempty"`
 	UnfinalizedHeight int64                `protobuf:"varint,11,opt,name=unfinalized_height,json=unfinalizedHeight,proto3" json:"unfinalized_height,omitempty"`
 	// bounce_corrected records that a supermajority has already reconciled this
-	// outbound's Bounced verdict once. Attestations carry no nonce, so a genuine
+	// outbound's Bounced verdict once at the current finality level (it is reset
+	// when the voter finalises). Attestations carry no nonce, so a genuine
 	// re-observation and a replay of a previously gossiped attestation are
 	// byte-identical; without a cap an attacker could re-file the superseded
 	// verdict and oscillate the vault's coin accounting at will.

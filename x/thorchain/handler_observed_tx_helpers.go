@@ -831,6 +831,12 @@ func applyTxOutAttestation(
 			voter.FinalisedHeight = ctx.BlockHeight()
 			prevConsensusTx := voter.Tx
 			voter.Tx = *voter.GetTx(nas)
+			// The cap on bounce corrections is per finality level. countMatchingSigners
+			// never counts an observation of the other finality, so an attestation
+			// consumed while unfinalised can never be replayed into a correction of the
+			// finalised consensus - and this consensus was just established by its own
+			// first supermajority, so no finalised correction has been consumed yet.
+			voter.BounceCorrected = false
 			// Vault accounting already ran on the non-final consensus (ok == false
 			// here). If the finalised consensus disagrees on Bounced, that accounting
 			// used the wrong branch: the coins were debited but never left the vault
@@ -1045,7 +1051,8 @@ func correctOutboundObservation(ctx cosmos.Context, mgr Manager, voter *Observed
 		return
 	}
 	gasChanged := !voter.Tx.Tx.Gas.Equals(tx.Tx.Gas)
-	// Only the first bounce reconciliation is honoured. An attestation carries no
+	// Only the first bounce reconciliation per finality level is honoured. An
+	// attestation carries no
 	// nonce or height, so a node genuinely re-observing the superseded verdict and
 	// an attacker replaying the attestations that verdict was originally carried by
 	// produce byte-identical payloads. Without this cap either one could re-file the
