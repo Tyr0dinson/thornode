@@ -714,3 +714,56 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_BouncedBatchTransferOu
 	c.Assert(txInItem.Memo, Equals, memo1)
 	c.Assert(txInItem.Bounced, Equals, true)
 }
+
+// TestGetTxInItem_BouncedRequiresSameVaultAndRouter: a _sendEth refund only
+// establishes that that router returned the coins to that vault. GetTxInItem
+// carries collected failures across skipped events and admits logs from every
+// router GetContracts allows, so a receipt with nested router activity can hold a
+// refund belonging to someone else. Pairing it with this outbound would suppress
+// a vault debit for coins that did leave.
+func (t *SmartContractLogParserTestSuite) TestGetTxInItem_BouncedRequiresSameVaultAndRouter(c *C) {
+	vaultABI, _, err := GetContractABI(routerContractABI, erc20ContractABI)
+	c.Assert(err, IsNil)
+
+	const (
+		router      = "0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44"
+		otherRouter = "0x3fd2d4CE97b082D4bcE3f9fee2A3D60668D2F473"
+		vault       = "0x6c4a2eeb8531e3c18bca51104df7eb2377708263"
+		otherVault  = "0x9EcA25ee04FDCc9d9CDFF377aa8da019Dba38437"
+		to          = "0x9eca25ee04fdcc9d9cdff377aa8da019dba38437"
+	)
+	amount := big.NewInt(1024000)
+	memo := "OUT:" + types2.GetRandomTxHash().String()
+
+	twoRouters := func(addr *ecommon.Address, _ bool) bool {
+		return addr.String() == router || addr.String() == otherRouter
+	}
+	parser := NewSmartContractLogParser(twoRouters, mockAssetResolver, mockTokenDecimalResolver, mockAmountConverter, vaultABI, common.ETHAsset, 4, true)
+
+	// same router, different vault: the refund went back to someone else's vault
+	txInItem := &types.TxInItem{Sender: vault}
+	_, err = parser.GetTxInItem([]*etypes.Log{
+		t.getTransferFailedEvent(router, otherVault, to, NativeTokenAddr, amount, ""),
+		t.getTransferOutEvent(router, vault, to, NativeTokenAddr, amount, memo),
+	}, txInItem)
+	c.Assert(err, IsNil)
+	c.Assert(txInItem.Bounced, Equals, false)
+
+	// same vault, different router: a nested call's refund, not this one's
+	txInItem = &types.TxInItem{Sender: vault}
+	_, err = parser.GetTxInItem([]*etypes.Log{
+		t.getTransferFailedEvent(otherRouter, vault, to, NativeTokenAddr, amount, ""),
+		t.getTransferOutEvent(router, vault, to, NativeTokenAddr, amount, memo),
+	}, txInItem)
+	c.Assert(err, IsNil)
+	c.Assert(txInItem.Bounced, Equals, false)
+
+	// both match: still a bounce
+	txInItem = &types.TxInItem{Sender: vault}
+	_, err = parser.GetTxInItem([]*etypes.Log{
+		t.getTransferFailedEvent(router, vault, to, NativeTokenAddr, amount, ""),
+		t.getTransferOutEvent(router, vault, to, NativeTokenAddr, amount, memo),
+	}, txInItem)
+	c.Assert(err, IsNil)
+	c.Assert(txInItem.Bounced, Equals, true)
+}

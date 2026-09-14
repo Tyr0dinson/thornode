@@ -177,16 +177,33 @@ func (evt vaultTransferFailedEvent) isBounce() bool {
 	return evt.Memo == "" && strings.EqualFold(evt.Asset.String(), NativeTokenAddr)
 }
 
+// bounce pairs a _sendEth refund with the router that emitted it. GetTxInItem
+// accepts logs from every router GetContracts admits and carries collected
+// failures across skipped events, so a receipt with nested router activity can
+// hold refunds that have nothing to do with the outbound being parsed.
+type bounce struct {
+	router ecommon.Address
+	evt    vaultTransferFailedEvent
+}
+
 // matchesBounce reports whether one of the bounces seen so far in this receipt
-// returned exactly (to, amount) to the vault. _sendEth emits TransferFailed
+// returned exactly (to, amount) to this vault. _sendEth emits TransferFailed
 // before the caller emits its TransferOut, so by the time a transfer event is
 // parsed every bounce belonging to it has already been collected.
-func matchesBounce(bounces []vaultTransferFailedEvent, asset, to ecommon.Address, amount *big.Int) bool {
+//
+// The emitting router and the refunded vault must both match: the refund only
+// establishes that _that_ router returned the coins to _that_ vault. Pairing it
+// with an outbound from a different vault or router would suppress a legitimate
+// vault debit for coins that did leave.
+func matchesBounce(bounces []bounce, router, vault, asset, to ecommon.Address, amount *big.Int) bool {
 	if !strings.EqualFold(asset.String(), NativeTokenAddr) {
 		return false // only native transfers bounce; an ERC20 leg never returns to the vault
 	}
 	for _, b := range bounces {
-		if b.To == to && b.Amount != nil && amount != nil && b.Amount.Cmp(amount) == 0 {
+		if b.router != router || b.evt.Vault != vault {
+			continue
+		}
+		if b.evt.To == to && b.evt.Amount != nil && amount != nil && b.evt.Amount.Cmp(amount) == 0 {
 			return true
 		}
 	}
@@ -223,7 +240,7 @@ func (scp *SmartContractLogParser) GetTxInItem(logs []*etypes.Log, txInItem *typ
 		return false, nil
 	}
 	isVaultTransfer := false
-	var bounces []vaultTransferFailedEvent
+	var bounces []bounce
 	for _, item := range logs {
 		// only events produced by THORChain router is processed
 		if !scp.addressValidator(&item.Address, false) {
@@ -295,7 +312,7 @@ func (scp *SmartContractLogParser) GetTxInItem(logs []*etypes.Log, txInItem *typ
 			txInItem.Coins = common.NewCoins(
 				common.NewCoin(asset, scp.amtConverter(transferOutEvt.Asset.String(), transferOutEvt.Amount)).WithDecimals(decimals),
 			)
-			txInItem.Bounced = matchesBounce(bounces, transferOutEvt.Asset, transferOutEvt.To, transferOutEvt.Amount)
+			txInItem.Bounced = matchesBounce(bounces, item.Address, transferOutEvt.Vault, transferOutEvt.Asset, transferOutEvt.To, transferOutEvt.Amount)
 			earlyExit = true
 			isVaultTransfer = false
 		case transferFailedEvent:
@@ -310,7 +327,7 @@ func (scp *SmartContractLogParser) GetTxInItem(logs []*etypes.Log, txInItem *typ
 			if !transferFailedEvt.isBounce() {
 				continue
 			}
-			bounces = append(bounces, transferFailedEvt)
+			bounces = append(bounces, bounce{router: item.Address, evt: transferFailedEvt})
 		case transferAllowanceEvent:
 			// there is no circumstance , router will emit multiple transferAllowance event
 			// if that does happen , it means something dodgy happened
@@ -393,7 +410,7 @@ func (scp *SmartContractLogParser) GetTxInItem(logs []*etypes.Log, txInItem *typ
 				continue
 			}
 
-			txInItem.Bounced = matchesBounce(bounces, ecommon.HexToAddress(NativeTokenAddr), transferOutAndCall.To, transferOutAndCall.Amount)
+			txInItem.Bounced = matchesBounce(bounces, item.Address, transferOutAndCall.Vault, ecommon.HexToAddress(NativeTokenAddr), transferOutAndCall.To, transferOutAndCall.Amount)
 			txInItem.To = transferOutAndCall.To.String()
 			txInItem.Memo = transferOutAndCall.Memo
 			txInItem.Sender = transferOutAndCall.Vault.String()
