@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -167,6 +168,20 @@ func (s *RPCSuite) TestSystemAccountStorageKey_Deterministic(c *C) {
 	key1 := systemAccountStorageKey(accountID)
 	key2 := systemAccountStorageKey(accountID)
 	c.Check(key1, Equals, key2, Commentf("storage key should be deterministic"))
+}
+
+func (s *RPCSuite) TestGetEventsStorageRejectsEmptyHash(c *C) {
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer srv.Close()
+
+	value, err := NewClient(srv.URL, time.Second).GetEventsStorage("")
+	c.Assert(err, ErrorMatches, "block hash is empty")
+	c.Check(value, Equals, "")
+	c.Check(requests.Load(), Equals, int32(0))
 }
 
 func (s *RPCSuite) TestGetBlockTimestamp(c *C) {

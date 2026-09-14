@@ -274,6 +274,24 @@ func (tos *TxOutStorage) cachedTryAddTxOutItem(ctx cosmos.Context, mgr Manager, 
 		return false, ErrNotEnoughToPayFee
 	}
 
+	// Check each final amount, including outputs exempt from outbound fees.
+	for _, output := range outputs {
+		if !output.Coin.Asset.OneOf(common.TAOAsset, common.DOTAsset) {
+			continue
+		}
+		minimum := output.Chain.ExistentialDeposit()
+		if output.Coin.Amount.LT(minimum) {
+			ctx.Logger().Error("rejecting outbound below recipient minimum",
+				"chain", output.Chain,
+				"address", output.ToAddress,
+				"amount", output.Coin.Amount,
+				"minimum", minimum,
+				"inbound", output.InHash,
+			)
+			return false, ErrNotEnoughToPayFee
+		}
+	}
+
 	sumOut := cosmos.ZeroUint()
 	for _, o := range outputs {
 		sumOut = sumOut.Add(o.Coin.Amount)

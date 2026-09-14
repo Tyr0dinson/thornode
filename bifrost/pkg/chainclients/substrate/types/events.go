@@ -15,7 +15,14 @@ const (
 	systemExtrinsicFailedEvent  = "ExtrinsicFailed"
 	txPaymentFeePaidEvent       = "TransactionFeePaid"
 	actualFeeParam              = "actual_fee"
+	tipParam                    = "tip"
 )
+
+// Fee records the native transaction fee, including its optional tip.
+type Fee struct {
+	Total uint64
+	Tip   uint64
+}
 
 // EventPalletConfig identifies the pallets whose events affect transaction
 // observation. Metadata supplies event names, indexes, and SCALE payload types.
@@ -176,14 +183,14 @@ func processEventRecord(record *scalecodec.EventRecord) (err error) {
 
 // ParseExtrinsicResults returns extrinsic success and fee information from a
 // fully metadata-decoded event stream.
-func ParseExtrinsicResults(data []byte, pallets EventPalletConfig) (map[uint32]bool, map[uint32]uint64, error) {
+func ParseExtrinsicResults(data []byte, pallets EventPalletConfig) (map[uint32]bool, map[uint32]Fee, error) {
 	events, err := DecodeEvents(data, pallets.Metadata)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	results := make(map[uint32]bool)
-	fees := make(map[uint32]uint64)
+	fees := make(map[uint32]Fee)
 	for _, event := range events {
 		if event.Phase != 0 {
 			continue
@@ -215,11 +222,19 @@ func ParseExtrinsicResults(data []byte, pallets EventPalletConfig) (map[uint32]b
 			if parseErr != nil {
 				return nil, nil, parseErr
 			}
+			tip, parseErr := uint64EventParam(event, tipParam)
+			if parseErr != nil {
+				return nil, nil, parseErr
+			}
+			// The total includes the tip; reject invalid values before subtracting.
+			if tip > fee {
+				return nil, nil, fmt.Errorf("tip %d exceeds total fee %d for extrinsic %d", tip, fee, event.ExtrinsicIndex)
+			}
 			_, duplicate := fees[event.ExtrinsicIndex]
 			if duplicate {
 				return nil, nil, fmt.Errorf("duplicate fee event for extrinsic %d", event.ExtrinsicIndex)
 			}
-			fees[event.ExtrinsicIndex] = fee
+			fees[event.ExtrinsicIndex] = Fee{Total: fee, Tip: tip}
 		}
 	}
 

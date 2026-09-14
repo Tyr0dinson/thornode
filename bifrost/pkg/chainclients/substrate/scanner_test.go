@@ -453,30 +453,70 @@ func (s *ScannerSuite) TestProcessExtrinsic_BatchEmptyFirstRemarkRejected(c *C) 
 		Commentf("error should mention multiple remarks, got: %v", err))
 }
 
-func (s *ScannerSuite) TestProcessExtrinsic_BatchUnknownCallUsesFirstTransfer(c *C) {
-	sc := newTestScanner()
+func (s *ScannerSuite) TestProcessExtrinsic_BatchPartialObservationRejected(c *C) {
+	for _, chain := range []common.Chain{common.TAOChain, common.DOTChain} {
+		sc := newTestScanner()
+		encode := buildTestExtrinsic
+		if chain == common.DOTChain {
+			sc = newAssetHubTestScanner(c)
+			encode = buildAssetHubTestExtrinsic
+		}
+		dest := bytes.Repeat([]byte{0xDD}, 32)
+		amount := cosmos.NewUint(5_000_000_000)
+		transfer := stypes.BalanceTransferKeepAlive(
+			sc.params.Index(BalancesPallet), sc.params.Index(BalancesTransferKeepAliveCall), dest, amount,
+		)
+		remark := stypes.SystemRemark(sc.params.Index(SystemPallet), sc.params.Index(SystemRemarkCall), []byte("memo"))
+		batch := func(calls ...[]byte) []byte {
+			return stypes.BatchAll(sc.params.Index(UtilityPallet), sc.params.Index(UtilityBatchAllCall), calls)
+		}
+		unknown := []byte{99, 1, 0xFF, 0xFF}
+		// transfer_all stays unsupported; its payload is a destination and a boolean.
+		transferAll := append([]byte{sc.params.Index(BalancesPallet), 4, stypes.MultiAddressID}, dest...)
+		transferAll = append(transferAll, 1)
 
-	dest := make([]byte, 32)
-	dest[0] = 0xDD
-	amount := cosmos.NewUint(5_000_000_000) // 5 TAO
+		for _, calls := range [][][]byte{{transfer}, {transfer, remark}, {remark, transfer}} {
+			item, err := sc.processExtrinsic(encode(batch(calls...)), 100, 0)
+			c.Assert(err, IsNil)
+			c.Assert(item, NotNil)
+			c.Check(item.Coins[0].Amount.Equal(chain.NativeGasToThorchain(amount)), Equals, true)
+			if len(calls) == 2 {
+				c.Check(item.Memo, Equals, "memo")
+			}
+		}
 
-	transferCall := stypes.BalanceTransferKeepAlive(5, 3, dest, amount)
-	remarkCall := stypes.SystemRemark(0, 0, []byte("ADD:TAO.TAO"))
-	// Unknown call from pallet 99 — parser breaks here
-	unknownCall := []byte{99, 1, 0xFF, 0xFF}
-	batchCall := stypes.BatchAll(11, 2, [][]byte{transferCall, remarkCall, unknownCall})
-
-	extHex := buildTestExtrinsic(batchCall)
-
-	txItem, err := sc.processExtrinsic(extHex, 100, 0)
-	c.Assert(err, IsNil)
-	c.Assert(txItem, NotNil, Commentf("expected non-nil TxInItem"))
-
-	// Transfer should still be captured despite unknown call
-	expectedAmount := cosmos.NewUint(500_000_000) // 5e9 / 10
-	c.Check(txItem.Coins[0].Amount.Equal(expectedAmount), Equals, true,
-		Commentf("amount: got %s, want %s", txItem.Coins[0].Amount, expectedAmount))
-	c.Check(txItem.Memo, Equals, "ADD:TAO.TAO")
+		for _, tt := range []struct {
+			name        string
+			data        []byte
+			unsupported bool
+			message     string
+		}{
+			{"unknown before transfer", batch(unknown, transfer, remark), true, "unsupported pallet 99"},
+			{"unknown between transfer and memo", batch(transfer, unknown, remark), true, "unsupported pallet 99"},
+			{"unknown after transfer and memo", batch(transfer, remark, unknown), true, "unsupported pallet 99"},
+			{"nested batch before transfer", batch(batch(remark), transfer), true, "unsupported pallet"},
+			{"nested batch after transfer", batch(transfer, batch(remark)), true, "unsupported pallet"},
+			{"transfer_all after transfer", batch(transfer, transferAll), true, "unsupported pallet"},
+			{"missing call header", batch(transfer, remark, nil), false, "call 2 is truncated"},
+			{"incomplete call header", batch(transfer, remark, []byte{0}), false, "call 2 is truncated"},
+			{"incomplete transfer", batch(remark, transfer[:len(transfer)-1]), false, "failed to skip transfer amount"},
+			{"incomplete remark", batch(transfer, remark[:len(remark)-1]), false, "remark data exceeds bounds"},
+			{"trailing byte", append(batch(transfer, remark), 0), false, "1 trailing bytes"},
+			{"undeclared call", append(batch(transfer), remark...), false, "trailing bytes"},
+			{"trailing data without transfer", append(batch(remark), 0), false, "trailing bytes"},
+		} {
+			extHex := encode(tt.data)
+			item, err := sc.processExtrinsic(extHex, 100, 0)
+			c.Assert(err, NotNil, Commentf("%s: %s", chain, tt.name))
+			c.Check(item, IsNil)
+			c.Check(errors.Is(err, errUnsupportedObservation), Equals, tt.unsupported)
+			c.Check(strings.Contains(err.Error(), tt.message), Equals, true, Commentf("%s: %v", tt.name, err))
+			raw, err := stypes.HexDecode(extHex)
+			c.Assert(err, IsNil)
+			_, found := sc.nonceCache.Get(stypes.ExtrinsicHash(raw))
+			c.Check(found, Equals, false)
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -658,48 +698,128 @@ func (s *ScannerSuite) TestExtrinsicHashConsistency(c *C) {
 	c.Check(hash1[:2], Equals, "0x", Commentf("hash should have 0x prefix"))
 }
 
-func (s *ScannerSuite) TestRuntimeValidationFailureKeepsPreviousContext(c *C) {
-	raw, err := os.ReadFile("types/testdata/metadata-tao-mainnet-401.hex")
-	c.Assert(err, IsNil)
-	metadata, err := stypes.ParseMetadata(strings.TrimSpace(string(raw)))
-	c.Assert(err, IsNil)
+func (s *ScannerSuite) TestRuntimeContextRefresh(c *C) {
+	for _, chain := range []struct {
+		id      common.Chain
+		fixture string
+	}{
+		{common.TAOChain, "metadata-tao-mainnet-401.hex"},
+		{common.DOTChain, "metadata-dot-assethub-2003001.hex"},
+	} {
+		raw, err := os.ReadFile("types/testdata/" + chain.fixture)
+		c.Assert(err, IsNil)
+		metadataHex := strings.TrimSpace(string(raw))
+		metadata, err := stypes.ParseMetadata(metadataHex)
+		c.Assert(err, IsNil)
+		layout, err := ChainParams[chain.id].ValidateMetadata(metadata)
+		c.Assert(err, IsNil)
+		old := runtimeContext{
+			metadata:    metadata,
+			layout:      layout,
+			specVersion: 100,
+			txVersion:   1,
+		}
 
-	h := newRPCHandler()
-	h.on("state_getRuntimeVersion", func(_ json.RawMessage) (interface{}, error) {
-		return rpc.RuntimeVersion{
-			SpecName:           ChainParams[common.TAOChain].SpecName,
-			SpecVersion:        402,
-			TransactionVersion: 2,
-		}, nil
-	})
-	h.on("state_getMetadata", func(_ json.RawMessage) (interface{}, error) {
-		return strings.TrimSpace(string(raw)), nil
-	})
-	srv := httptest.NewServer(h)
-	defer srv.Close()
+		for _, tt := range []struct {
+			name              string
+			specVersion       uint32
+			txVersion         uint32
+			runtimeError      bool
+			metadataError     bool
+			validationError   bool
+			wantMetadataCalls int
+			wantError         string
+		}{
+			{name: "unchanged", specVersion: 100, txVersion: 1},
+			{name: "spec version changed", specVersion: 101, txVersion: 1, wantMetadataCalls: 1},
+			{name: "transaction version changed", specVersion: 100, txVersion: 2, wantMetadataCalls: 1},
+			{name: "runtime RPC failure", runtimeError: true, wantError: "failed to refresh runtime version: .*runtime unavailable.*"},
+			{
+				name: "metadata RPC failure", specVersion: 101, txVersion: 1, metadataError: true,
+				wantMetadataCalls: 1, wantError: "failed to verify metadata: failed to get metadata: .*metadata unavailable.*",
+			},
+			{
+				name: "metadata validation failure", specVersion: 101, txVersion: 1, validationError: true,
+				wantMetadataCalls: 1, wantError: "failed to verify metadata: .*",
+			},
+		} {
+			func() {
+				info := Commentf("%s: %s", chain.id, tt.name)
+				const blockHash = "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+				// Channels record requests without assertions in HTTP handler goroutines.
+				runtimeCalls := make(chan json.RawMessage, 4)
+				metadataCalls := make(chan json.RawMessage, 4)
+				h := newRPCHandler()
+				h.on("state_getRuntimeVersion", func(params json.RawMessage) (interface{}, error) {
+					runtimeCalls <- params
+					if tt.runtimeError {
+						return nil, errors.New("runtime unavailable")
+					}
+					return rpc.RuntimeVersion{
+						SpecName:           ChainParams[chain.id].SpecName,
+						SpecVersion:        tt.specVersion,
+						TransactionVersion: tt.txVersion,
+					}, nil
+				})
+				h.on("state_getMetadata", func(params json.RawMessage) (interface{}, error) {
+					metadataCalls <- params
+					if tt.metadataError {
+						return nil, errors.New("metadata unavailable")
+					}
+					return metadataHex, nil
+				})
+				srv := httptest.NewServer(h)
+				defer srv.Close()
 
-	params := ChainParams[common.TAOChain]
-	params.SignedExtensions = append([]stypes.SignedExtension(nil), params.SignedExtensions...)
-	params.SignedExtensions[2].AdditionalType = "U64"
-	old := runtimeContext{
-		metadata:    metadata,
-		layout:      mustTestExtrinsicLayout(common.TAOChain),
-		specVersion: 401,
-		txVersion:   1,
+				params := ChainParams[chain.id]
+				if tt.validationError {
+					params.SignedExtensions = append([]stypes.SignedExtension(nil), params.SignedExtensions...)
+					for i := range params.SignedExtensions {
+						if params.SignedExtensions[i].Identifier == "CheckTxVersion" {
+							params.SignedExtensions[i].AdditionalType = "U64"
+						}
+					}
+				}
+				scanner := &Scanner{
+					logger:    log.Logger,
+					params:    params,
+					rpcClient: rpc.NewClient(srv.URL, 5*time.Second),
+					runtime:   old,
+				}
+				returned, err := scanner.checkRuntimeVersion(blockHash)
+				current := scanner.getRuntimeContext()
+				c.Assert(len(runtimeCalls), Equals, 1, info)
+				c.Assert(len(metadataCalls), Equals, tt.wantMetadataCalls, info)
+				for _, calls := range []chan json.RawMessage{runtimeCalls, metadataCalls} {
+					for len(calls) > 0 {
+						var hashes []string
+						c.Assert(json.Unmarshal(<-calls, &hashes), IsNil, info)
+						c.Check(hashes, DeepEquals, []string{blockHash}, info)
+					}
+				}
+				if tt.wantError != "" {
+					c.Assert(err, ErrorMatches, tt.wantError, info)
+					c.Check(returned, DeepEquals, runtimeContext{}, info)
+					c.Check(current, DeepEquals, old, info)
+					c.Check(current.metadata, Equals, old.metadata, info)
+					return
+				}
+				c.Assert(err, IsNil, info)
+				c.Check(returned, DeepEquals, current, info)
+				c.Check(returned.metadata, Equals, current.metadata, info)
+				if tt.wantMetadataCalls == 0 {
+					c.Check(current, DeepEquals, old, info)
+					c.Check(current.metadata, Equals, old.metadata, info)
+					return
+				}
+				c.Assert(current.metadata, NotNil, info)
+				c.Check(current.metadata == old.metadata, Equals, false, info)
+				c.Check(current.layout, DeepEquals, layout, info)
+				c.Check(current.specVersion, Equals, tt.specVersion, info)
+				c.Check(current.txVersion, Equals, tt.txVersion, info)
+			}()
+		}
 	}
-	scanner := &Scanner{
-		logger:    log.Logger,
-		params:    params,
-		rpcClient: rpc.NewClient(srv.URL, 5*time.Second),
-		runtime:   old,
-	}
-
-	_, err = scanner.checkRuntimeVersion("0x01")
-	c.Assert(err, NotNil)
-	current := scanner.getRuntimeContext()
-	c.Check(current.metadata, Equals, old.metadata)
-	c.Check(current.specVersion, Equals, old.specVersion)
-	c.Check(current.txVersion, Equals, old.txVersion)
 }
 
 // ---------------------------------------------------------------------------

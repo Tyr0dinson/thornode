@@ -2,6 +2,7 @@ package types
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -304,6 +305,159 @@ func (s *ExtrinsicSuite) TestSigningPayloadContainsAllFields(c *C) {
 	c.Assert(payload[len(payload)-1], Equals, byte(0x00))
 	c.Assert(payload[len(payload)-33], Equals, byte(0xBB))
 	c.Assert(payload[len(payload)-65], Equals, byte(0xAA))
+}
+
+func (s *ExtrinsicSuite) TestParseSignedExtrinsicLength(c *C) {
+	layout := testExtrinsicLayout(c, false)
+	ext := &Extrinsic{
+		Signer:        bytes.Repeat([]byte{1}, 32),
+		SignatureType: SignatureTypeEd25519,
+		Signature:     make([]byte, 64),
+		Era:           MortalEra(64, 10),
+		Nonce:         5,
+		CallData:      []byte{5, 3, 0},
+	}
+	encoded, err := EncodeSignedExtrinsic(ext, layout)
+	c.Assert(err, IsNil)
+	_, consumed, err := DecodeCompact(encoded)
+	c.Assert(err, IsNil)
+	body := encoded[consumed:]
+	length := uint64(len(body))
+
+	parsed, err := ParseSignedExtrinsic(encoded, nil, layout)
+	c.Assert(err, IsNil)
+	c.Check(parsed.Nonce, Equals, ext.Nonce)
+	c.Check(parsed.CallData, DeepEquals, ext.CallData)
+
+	for _, tt := range []struct {
+		name    string
+		data    []byte
+		pattern string
+	}{
+		{
+			name:    "declared length too small",
+			data:    append(EncodeCompact(length-1), body...),
+			pattern: "extrinsic length mismatch: declared [0-9]+, actual [0-9]+",
+		},
+		{
+			name:    "declared length too large",
+			data:    append(EncodeCompact(length+1), body...),
+			pattern: "extrinsic length mismatch: declared [0-9]+, actual [0-9]+",
+		},
+		{
+			name:    "appended byte",
+			data:    append(append([]byte(nil), encoded...), 0),
+			pattern: "extrinsic length mismatch: declared [0-9]+, actual [0-9]+",
+		},
+		{
+			name:    "declared length exceeds uint64",
+			data:    append(EncodeCompactUint(cosmos.NewUintFromString("18446744073709551616")), body...),
+			pattern: "extrinsic length mismatch: declared 18446744073709551616, actual [0-9]+",
+		},
+		{name: "empty input", data: nil, pattern: "failed to decode extrinsic length: .*"},
+		{name: "truncated two-byte prefix", data: []byte{1}, pattern: "failed to decode extrinsic length: .*"},
+		{name: "truncated four-byte prefix", data: []byte{2, 0}, pattern: "failed to decode extrinsic length: .*"},
+		{name: "truncated big-integer prefix", data: []byte{3, 0}, pattern: "failed to decode extrinsic length: .*"},
+		{name: "prefix exceeds decoder limit", data: []byte{55}, pattern: "failed to decode extrinsic length: .*"},
+		{name: "empty body", data: EncodeCompact(0), pattern: "empty extrinsic body"},
+	} {
+		parsed, err := ParseSignedExtrinsic(tt.data, nil, layout)
+		c.Assert(err, ErrorMatches, tt.pattern, Commentf("%s", tt.name))
+		c.Check(parsed, IsNil)
+	}
+}
+
+func (s *ExtrinsicSuite) TestParseSignedExtrinsicFields(c *C) {
+	layout := testExtrinsicLayout(c, false)
+	for _, tt := range []struct {
+		name          string
+		signatureType byte
+		nonce         uint64
+		tip           uint64
+	}{
+		{"Sr25519", 1, 7, 100},
+		{"four-byte nonce", SignatureTypeEd25519, 20_000, 100},
+		{"big-integer nonce", SignatureTypeEd25519, 2_000_000_000, 100},
+		{"four-byte tip", SignatureTypeEd25519, 7, 20_000},
+		{"big-integer tip", SignatureTypeEd25519, 7, 2_000_000_000},
+	} {
+		ext := &Extrinsic{
+			Signer:        bytes.Repeat([]byte{0x11}, 32),
+			SignatureType: tt.signatureType,
+			Signature:     bytes.Repeat([]byte{0x22}, 64),
+			Era:           MortalEra(64, 10),
+			Nonce:         tt.nonce,
+			Tip:           tt.tip,
+			MetadataMode:  MetadataModeDisabled,
+			CallData:      []byte{5, 3, 0, 0xAA},
+		}
+		encoded, err := EncodeSignedExtrinsic(ext, layout)
+		c.Assert(err, IsNil, Commentf("%s", tt.name))
+		parsed, err := ParseSignedExtrinsic(encoded, nil, layout)
+		c.Assert(err, IsNil, Commentf("%s", tt.name))
+		c.Check(parsed, DeepEquals, ext, Commentf("%s", tt.name))
+	}
+}
+
+func (s *ExtrinsicSuite) TestParseSignedExtrinsicTruncatedCompactFields(c *C) {
+	layout := testExtrinsicLayout(c, false)
+	for _, field := range []string{"nonce", "tip"} {
+		for _, value := range []uint64{20_000, 2_000_000_000} {
+			compact := EncodeCompact(value)
+			for kept := 1; kept < len(compact); kept++ {
+				body := []byte{ExtrinsicFormatVersion, MultiAddressID}
+				body = append(body, make([]byte, 32)...)
+				body = append(body, SignatureTypeEd25519)
+				body = append(body, make([]byte, 64)...)
+				body = append(body, MortalEra(64, 10)...)
+				if field == "tip" {
+					body = append(body, EncodeCompact(7)...)
+				}
+				body = append(body, compact[:kept]...)
+				// Keep the outer length valid to reach the truncated field.
+				encoded := append(EncodeCompact(uint64(len(body))), body...)
+				parsed, err := ParseSignedExtrinsic(encoded, nil, layout)
+				c.Assert(err, ErrorMatches, "failed to decode "+field+": insufficient data.*",
+					Commentf("%s=%d, kept=%d", field, value, kept))
+				c.Check(parsed, IsNil)
+			}
+		}
+	}
+}
+
+func (s *ExtrinsicSuite) TestParseUnsignedExtrinsic(c *C) {
+	body := []byte{4, 5, 3, 0}
+	encoded := append(EncodeCompact(uint64(len(body))), body...)
+	parsed, err := ParseSignedExtrinsic(encoded, nil, testExtrinsicLayout(c, false))
+	c.Assert(errors.Is(err, ErrUnsignedExtrinsic), Equals, true)
+	c.Check(parsed, IsNil)
+}
+
+func (s *ExtrinsicSuite) TestParseSignedExtrinsicEnabledMetadataMode(c *C) {
+	ext := &Extrinsic{
+		Signer:        bytes.Repeat([]byte{0x11}, 32),
+		SignatureType: SignatureTypeEd25519,
+		Signature:     bytes.Repeat([]byte{0x22}, 64),
+		Era:           MortalEra(64, 10),
+		Nonce:         7,
+		Tip:           100,
+		MetadataMode:  1,
+		CallData:      []byte{5, 3, 0, 0xAA},
+	}
+	// Assemble incoming mode 1 without enabling it in the signing encoder.
+	body := []byte{ExtrinsicFormatVersion, MultiAddressID}
+	body = append(body, ext.Signer...)
+	body = append(body, ext.SignatureType)
+	body = append(body, ext.Signature...)
+	body = append(body, ext.Era...)
+	body = append(body, EncodeCompact(ext.Nonce)...)
+	body = append(body, EncodeCompact(ext.Tip)...)
+	body = append(body, ext.MetadataMode)
+	body = append(body, ext.CallData...)
+	encoded := append(EncodeCompact(uint64(len(body))), body...)
+	parsed, err := ParseSignedExtrinsic(encoded, nil, testExtrinsicLayout(c, false))
+	c.Assert(err, IsNil)
+	c.Check(parsed, DeepEquals, ext)
 }
 
 func (s *ExtrinsicSuite) TestSigningPayloadChargeAssetTxPayment(c *C) {

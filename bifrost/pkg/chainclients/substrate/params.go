@@ -2,6 +2,7 @@ package substrate
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/substrate/types"
@@ -27,6 +28,25 @@ type Params struct {
 	BalanceSize      int
 	SignedExtensions []types.SignedExtension
 	Indexes          map[string]byte
+}
+
+// Validate checks parameters used for signing, account reads, and fee estimates.
+func (p Params) Validate() error {
+	period := p.MortalEraPeriod
+	// Larger periods can round the era's birth away from the signing block.
+	if period < 4 || period > 4096 || period&(period-1) != 0 {
+		return fmt.Errorf("mortal era period must be a power of two between 4 and 4096: %d", period)
+	}
+	if p.DefaultFee == 0 {
+		return fmt.Errorf("default fee must be positive")
+	}
+	if p.BalanceSize != 8 && p.BalanceSize != 16 {
+		return fmt.Errorf("balance size must be 8 or 16: %d", p.BalanceSize)
+	}
+	if p.Lookback < time.Millisecond {
+		return fmt.Errorf("lookback must be at least one millisecond: %s", p.Lookback)
+	}
+	return nil
 }
 
 var SignedExtensions = map[common.Chain][]types.SignedExtension{
@@ -185,12 +205,12 @@ func validateTransactionFeeEvent(metadata *types.Metadata) error {
 			if event.Name != "TransactionFeePaid" {
 				continue
 			}
-			for _, name := range event.ArgsName {
-				if name == "actual_fee" {
-					return nil
+			for _, name := range []string{"actual_fee", "tip"} {
+				if !slices.Contains(event.ArgsName, name) {
+					return fmt.Errorf("required parameter %s not found in %s:%s metadata", name, module.Name, event.Name)
 				}
 			}
-			return fmt.Errorf("required parameter actual_fee not found in %s:%s metadata", module.Name, event.Name)
+			return nil
 		}
 		return fmt.Errorf("required event %s:TransactionFeePaid not found in metadata", TransactionPaymentPallet)
 	}

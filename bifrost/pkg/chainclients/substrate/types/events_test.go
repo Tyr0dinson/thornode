@@ -101,7 +101,7 @@ func TestParseExtrinsicResultsAcrossRuntimes(t *testing.T) {
 		config   EventPalletConfig
 		want     map[uint32]bool
 		feeIndex uint32
-		wantFee  uint64
+		wantFee  Fee
 	}{
 		{
 			name:     "Asset Hub",
@@ -109,7 +109,7 @@ func TestParseExtrinsicResultsAcrossRuntimes(t *testing.T) {
 			config:   EventPalletConfig{Metadata: assetHub, SystemPalletIndex: 0, TransactionPaymentPalletIndex: 11},
 			want:     map[uint32]bool{0: true},
 			feeIndex: 0,
-			wantFee:  20_000_000,
+			wantFee:  Fee{Total: 20_000_000},
 		},
 		{
 			name:     "TAO",
@@ -117,7 +117,7 @@ func TestParseExtrinsicResultsAcrossRuntimes(t *testing.T) {
 			config:   EventPalletConfig{Metadata: tao, SystemPalletIndex: 0, TransactionPaymentPalletIndex: 6},
 			want:     map[uint32]bool{0: true, 1: false},
 			feeIndex: 0,
-			wantFee:  125_000,
+			wantFee:  Fee{Total: 125_000},
 		},
 	}
 
@@ -136,7 +136,7 @@ func TestParseExtrinsicResultsAcrossRuntimes(t *testing.T) {
 				}
 			}
 			if got := fees[tt.feeIndex]; got != tt.wantFee {
-				t.Errorf("fee[%d] = %d, want %d", tt.feeIndex, got, tt.wantFee)
+				t.Errorf("fee[%d] = %+v, want %+v", tt.feeIndex, got, tt.wantFee)
 			}
 		})
 	}
@@ -225,5 +225,41 @@ func TestDecodeEventsRejectsMalformedData(t *testing.T) {
 func TestParseExtrinsicResultsRequiresMetadata(t *testing.T) {
 	if _, _, err := ParseExtrinsicResults([]byte{0}, EventPalletConfig{}); err == nil {
 		t.Fatal("expected missing metadata error")
+	}
+}
+
+func TestParseExtrinsicResultsTips(t *testing.T) {
+	for _, runtime := range []struct {
+		name     string
+		metadata string
+		pallet   byte
+		size     int
+	}{
+		{"TAO", "testdata/metadata-tao-mainnet-401.hex", 6, 8},
+		{"DOT", "testdata/metadata-dot-assethub-2003001.hex", 11, 16},
+	} {
+		t.Run(runtime.name, func(t *testing.T) {
+			metadata := testMetadata(t, runtime.metadata)
+			config := EventPalletConfig{Metadata: metadata, SystemPalletIndex: 0, TransactionPaymentPalletIndex: runtime.pallet}
+			for _, fee := range []Fee{{Total: 110, Tip: 100}, {Total: 100}, {Total: 100, Tip: 100}, {}, {Total: 100, Tip: 101}} {
+				payload := make([]byte, 32+2*runtime.size)
+				binary.LittleEndian.PutUint64(payload[32:], fee.Total)
+				binary.LittleEndian.PutUint64(payload[32+runtime.size:], fee.Tip)
+				data := append(EncodeCompact(1), buildEvent(0, 0, runtime.pallet, 0, payload, 0)...)
+				_, fees, err := ParseExtrinsicResults(data, config)
+				if fee.Tip > fee.Total {
+					if err == nil || !strings.Contains(err.Error(), "exceeds total fee") {
+						t.Fatalf("expected excessive-tip error, got %v", err)
+					}
+					continue
+				}
+				if err != nil {
+					t.Fatalf("parse fee %+v: %v", fee, err)
+				}
+				if got, found := fees[0]; !found || got != fee {
+					t.Errorf("fee = %+v (found %v), want %+v", got, found, fee)
+				}
+			}
+		})
 	}
 }

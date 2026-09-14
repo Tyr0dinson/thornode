@@ -30,7 +30,8 @@ func (c *migrationTxCache) Add(hash string, height uint64) {
 		hashes = []string{}
 	}
 
-	if height > c.latestHeightByHash[hash] {
+	previousHeight, found := c.latestHeightByHash[hash]
+	if !found || height > previousHeight {
 		c.latestHeightByHash[hash] = height
 	}
 

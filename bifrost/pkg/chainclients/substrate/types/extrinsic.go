@@ -172,7 +172,7 @@ func (l ExtrinsicLayout) appendExtra(dst []byte, ext *Extrinsic) ([]byte, error)
 			dst = append(dst, 0x00) // Option<AssetId>::None
 		case signedExtensionMetadataHash:
 			if ext.MetadataMode != MetadataModeDisabled {
-				return nil, fmt.Errorf("metadata mode not implemented")
+				return nil, fmt.Errorf("unsupported metadata mode %d: only disabled mode (0) is supported", ext.MetadataMode)
 			}
 			dst = append(dst, ext.MetadataMode)
 		default:
@@ -205,7 +205,7 @@ func (l ExtrinsicLayout) appendAdditional(
 			dst = append(dst, blockHash...)
 		case signedExtensionMetadataHash:
 			if metadataMode != MetadataModeDisabled {
-				return nil, fmt.Errorf("metadata mode not implemented")
+				return nil, fmt.Errorf("unsupported metadata mode %d: only disabled mode (0) is supported", metadataMode)
 			}
 			dst = append(dst, 0x00) // Option<Hash>::None
 		default:
@@ -221,7 +221,8 @@ func ImmortalEra() []byte {
 }
 
 // MortalEra encodes a mortal era given the period and current block number.
-// Period should be a power of 2 between 4 and 65536.
+// Period is rounded up to a power of two and clamped to 4–65536.
+// Periods above 4096 also round the phase down.
 func MortalEra(period uint64, currentBlock uint64) []byte {
 	// Find the exponent (period = 2^(exponent+1), min 1, max 15)
 	calPeriod := uint64(4) // minimum period
@@ -282,11 +283,17 @@ func HexEncodeHead(data []byte, n int) string {
 
 func ParseSignedExtrinsic(data []byte, metadata *Metadata, layout ExtrinsicLayout) (*Extrinsic, error) {
 	// Decode the length prefix
-	_, consumed, err := DecodeCompact(data)
+	length, consumed, err := DecodeCompact(data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode extrinsic length: %w", err)
 	}
 	body := data[consumed:]
+	if !length.Equal(cosmos.NewUint(uint64(len(body)))) {
+		return nil, fmt.Errorf(
+			"extrinsic length mismatch: declared %s, actual %d",
+			length, len(body),
+		)
+	}
 
 	if len(body) == 0 {
 		return nil, fmt.Errorf("empty extrinsic body")

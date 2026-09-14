@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -35,6 +36,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/crypto/ed25519"
 	"gitlab.com/thorchain/thornode/v3/common/crypto/ss58"
 	"gitlab.com/thorchain/thornode/v3/config"
+	thorTypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -51,6 +53,7 @@ var _ = Suite(&ClientSuite{})
 // mockBridge is a mock implementation of ThorchainBridge for testing
 type mockBridge struct {
 	thorclient.ThorchainBridge
+	asgards              thorTypes.Vaults
 	blockTimestamp       time.Time
 	blockTimestampErr    error
 	blockTimestampHeight int64
@@ -83,8 +86,8 @@ func (e *rpcError) Error() string {
 
 func (s *ClientSuite) TestNonceMetadataJSON(c *C) {
 	meta := nonceMetadata{
-		Nonce:       42,
-		BlockHeight: 1000,
+		Nonce:          42,
+		ReservedHeight: 1000,
 	}
 
 	data, err := json.Marshal(meta)
@@ -95,7 +98,7 @@ func (s *ClientSuite) TestNonceMetadataJSON(c *C) {
 	c.Assert(err, IsNil)
 
 	c.Check(restored.Nonce, Equals, meta.Nonce)
-	c.Check(restored.BlockHeight, Equals, meta.BlockHeight)
+	c.Check(restored.ReservedHeight, Equals, meta.ReservedHeight)
 }
 
 func (s *ClientSuite) TestNonceMetadataJSONBackwardsCompat(c *C) {
@@ -106,7 +109,7 @@ func (s *ClientSuite) TestNonceMetadataJSONBackwardsCompat(c *C) {
 	err := json.Unmarshal([]byte(raw), &meta)
 	c.Assert(err, IsNil)
 	c.Check(meta.Nonce, Equals, uint32(7))
-	c.Check(meta.BlockHeight, Equals, int64(500))
+	c.Check(meta.ReservedHeight, Equals, int64(500))
 }
 
 // ---------------------------------------------------------------------------
@@ -201,9 +204,7 @@ func newTestClient(rpcClient *rpc.Client, opts ...testClientOpt) *Client {
 
 	chainConfig := config.BifrostChainConfiguration{
 		ChainID: common.TAOChain,
-		// Sane default for tests; the production cap-exceeded branch in
-		// reserveNonce treats 0 as "no pending allowed at all", which is
-		// not what most tests want to exercise.
+		// This helper bypasses NewClient, which replaces a zero limit with 3.
 		MaxPendingNonces: 16,
 	}
 	for _, opt := range opts {
@@ -366,8 +367,10 @@ func (s *ClientSuite) TestReserveNonce_Fresh(c *C) {
 }
 
 func (s *ClientSuite) TestReserveNonce_Increment(c *C) {
+	var calls atomic.Int32
 	h := newRPCHandler()
 	h.on("system_accountNextIndex", func(_ json.RawMessage) (interface{}, error) {
+		calls.Add(1)
 		return uint32(5), nil
 	})
 	srv := httptest.NewServer(h)
@@ -385,13 +388,23 @@ func (s *ClientSuite) TestReserveNonce_Increment(c *C) {
 	n2, _, err := cl.reserveNonce(tx, vault, 100)
 	c.Assert(err, IsNil, Commentf("second reserveNonce"))
 	c.Check(n2, Equals, uint32(6), Commentf("second nonce"))
+	c.Check(calls.Load(), Equals, int32(1))
+
+	_, _, err = cl.reserveNonce(tx, vault, 101)
+	c.Assert(err, IsNil)
+	_, _, err = cl.reserveNonce(tx, vault, 101)
+	c.Assert(err, IsNil)
+	c.Check(calls.Load(), Equals, int32(2))
+	c.Check(cl.getCachedNonce(vault), Equals, nonceMetadata{Nonce: 9, ReservedHeight: 101})
 }
 
 func (s *ClientSuite) TestReserveNonce_Checkpoint(c *C) {
 	cl := newTestClient(nil) // RPC not needed for checkpoint path
 	vault := "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
+	cached := nonceMetadata{Nonce: 44, ReservedHeight: 110}
+	cl.nonces[vault] = cached
 
-	checkpointData, _ := json.Marshal(nonceMetadata{Nonce: 42, BlockHeight: 100})
+	checkpointData, _ := json.Marshal(nonceMetadata{Nonce: 42, ReservedHeight: 100})
 	tx := stypes.TxOutItem{
 		Chain:      common.TAOChain,
 		Checkpoint: checkpointData,
@@ -403,12 +416,7 @@ func (s *ClientSuite) TestReserveNonce_Checkpoint(c *C) {
 	// Checkpoint should be returned as-is
 	c.Check(string(cp), Equals, string(checkpointData), Commentf("checkpoint mismatch"))
 
-	// The nonce map should NOT have been incremented (checkpoint bypasses increment)
-	meta, ok := cl.nonces[vault]
-	if ok {
-		c.Check(meta.Nonce, Equals, uint32(0),
-			Commentf("nonce map should not be modified by checkpoint path, got nonce=%d", meta.Nonce))
-	}
+	c.Check(cl.getCachedNonce(vault), Equals, cached)
 }
 
 func (s *ClientSuite) TestReserveNonce_OnChainRefresh(c *C) {
@@ -449,27 +457,88 @@ func (s *ClientSuite) TestReserveNonce_MortalEraExpiry(c *C) {
 	srv := httptest.NewServer(h)
 	defer srv.Close()
 
-	cl := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
 	vault := "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
 	tx := stypes.TxOutItem{Chain: common.TAOChain}
 
-	// First call at height 100: gets on-chain nonce 5, reserves it, cache goes to 6
-	n1, _, err := cl.reserveNonce(tx, vault, 100)
-	c.Assert(err, IsNil, Commentf("first"))
-	c.Check(n1, Equals, uint32(5), Commentf("first nonce"))
+	period := int64(ChainParams[common.TAOChain].MortalEraPeriod)
+	for _, tt := range []struct {
+		height int64
+		nonce  uint32
+	}{
+		{100 + period, 7},
+		{110 + period - 1, 7},
+		{110 + period, 5},
+	} {
+		// Each boundary starts with the same two reservations.
+		cl := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
+		for i, height := range []int64{100, 110} {
+			nonce, checkpoint, err := cl.reserveNonce(tx, vault, height)
+			c.Assert(err, IsNil)
+			c.Check(nonce, Equals, uint32(5+i))
+			var meta nonceMetadata
+			c.Assert(json.Unmarshal(checkpoint, &meta), IsNil)
+			c.Check(meta, Equals, nonceMetadata{Nonce: nonce, ReservedHeight: height})
+			c.Check(cl.getCachedNonce(vault), Equals, nonceMetadata{Nonce: nonce + 1, ReservedHeight: height})
+		}
 
-	// Simulate: the broadcast failed, on-chain nonce is still 5, but cache is at 6.
-	// At height 101 (same block epoch), cache nonce (6) > on-chain (5) and
-	// mortalEraPeriod hasn't passed, so cache wins — returns 6.
-	n2, _, err := cl.reserveNonce(tx, vault, 101)
-	c.Assert(err, IsNil, Commentf("second"))
-	c.Check(n2, Equals, uint32(6), Commentf("second nonce: cache ahead, era not expired"))
+		nonce, _, err := cl.reserveNonce(tx, vault, tt.height)
+		c.Assert(err, IsNil)
+		c.Check(nonce, Equals, tt.nonce, Commentf("height %d", tt.height))
+	}
+}
 
-	// Expiry resets the reservation to the on-chain nonce.
-	expired := int64(101) + int64(ChainParams[common.TAOChain].MortalEraPeriod)
-	n3, _, err := cl.reserveNonce(tx, vault, expired)
-	c.Assert(err, IsNil, Commentf("third"))
-	c.Check(n3, Equals, uint32(5), Commentf("third nonce: should reset after mortal era expiry"))
+func (s *ClientSuite) TestReserveNonce_OutOfOrder(c *C) {
+	for _, rpcNonce := range []uint32{5, 6, 8} {
+		func() {
+			started := make(chan struct{})
+			release := make(chan struct{})
+			var calls atomic.Int32
+			h := newRPCHandler()
+			h.on("system_accountNextIndex", func(_ json.RawMessage) (interface{}, error) {
+				if calls.Add(1) == 1 {
+					close(started)
+					<-release
+					return rpcNonce, nil
+				}
+				return uint32(5), nil
+			})
+			srv := httptest.NewServer(h)
+			defer srv.Close()
+			defer close(release)
+
+			cl := newTestClient(rpc.NewClient(srv.URL, 5*time.Second))
+			vault := "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
+			cl.nonces[vault] = nonceMetadata{Nonce: 5, ReservedHeight: 100}
+			tx := stypes.TxOutItem{Chain: common.TAOChain}
+			type result struct {
+				nonce      uint32
+				checkpoint []byte
+				err        error
+			}
+			done := make(chan result, 1)
+			go func() {
+				nonce, checkpoint, err := cl.reserveNonce(tx, vault, 101)
+				done <- result{nonce, checkpoint, err}
+			}()
+			select {
+			case <-started:
+			case <-time.After(5 * time.Second):
+				c.Fatal("older reservation did not reach RPC")
+			}
+
+			nonce, _, err := cl.reserveNonce(tx, vault, 102)
+			c.Assert(err, IsNil)
+			c.Check(nonce, Equals, uint32(5))
+			release <- struct{}{}
+			older := <-done
+			c.Assert(older.err, IsNil)
+			c.Check(older.nonce, Equals, max(uint32(6), rpcNonce))
+			var checkpoint nonceMetadata
+			c.Assert(json.Unmarshal(older.checkpoint, &checkpoint), IsNil)
+			c.Check(checkpoint, Equals, nonceMetadata{Nonce: older.nonce, ReservedHeight: 102})
+			c.Check(cl.getCachedNonce(vault), Equals, nonceMetadata{Nonce: older.nonce + 1, ReservedHeight: 102})
+		}()
+	}
 }
 
 func (s *ClientSuite) TestReserveNonce_ScannerNotReady(c *C) {
@@ -518,11 +587,18 @@ func (s *ClientSuite) TestGetAccountByAddress(c *C) {
 		"0000000000000000" + "0000000000000000" + // reserved = 0
 		"0000000000000000" + "0000000000000000" + // frozen = 0
 		"00000000" // flags
-	h.on("state_getStorage", func(_ json.RawMessage) (interface{}, error) {
+	h.on("state_getStorage", func(raw json.RawMessage) (interface{}, error) {
+		var params []string
+		if err := json.Unmarshal(raw, &params); err != nil {
+			return nil, err
+		}
+		if len(params) != 1 {
+			return nil, fmt.Errorf("expected latest-state read, got %s", raw)
+		}
 		return accountHex, nil
 	})
 	h.on("system_accountNextIndex", func(_ json.RawMessage) (interface{}, error) {
-		return uint32(1), nil
+		return uint32(9), nil
 	})
 	srv := httptest.NewServer(h)
 	defer srv.Close()
@@ -532,7 +608,7 @@ func (s *ClientSuite) TestGetAccountByAddress(c *C) {
 	acct, err := cl.GetAccountByAddress("5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY", nil)
 	c.Assert(err, IsNil)
 
-	c.Check(acct.Sequence, Equals, int64(1))
+	c.Check(acct.Sequence, Equals, int64(9))
 
 	// 5_000_000_000 rao / 10 = 500_000_000 thorchain units
 	expectedAmount := cosmos.NewUint(500_000_000)
@@ -669,7 +745,7 @@ func (s *ClientSuite) TestSignTxUsesReferenceEraAndPersistsExactExpiry(c *C) {
 		GasRate: 100_000,
 	}
 
-	rawTx, _, _, err := cl.SignTx(tx, 100)
+	rawTx, checkpoint, _, err := cl.SignTx(tx, 100)
 	c.Assert(err, IsNil)
 	extrinsic, err := subtypes.ParseSignedExtrinsic(
 		rawTx,
@@ -687,6 +763,62 @@ func (s *ClientSuite) TestSignTxUsesReferenceEraAndPersistsExactExpiry(c *C) {
 	c.Assert(found, Equals, true)
 	c.Check(record.EraBirthHeight, Equals, int64(100))
 	c.Check(record.RecheckHeight, Equals, 100+int64(era))
+
+	// A checkpoint retry cannot extend the original signing era.
+	vault, err := tx.VaultPubKeyEddsa.GetAddress(common.TAOChain)
+	c.Assert(err, IsNil)
+	cached := cl.getCachedNonce(vault.String())
+	tx.Checkpoint = checkpoint
+	cl.chainScanner.setLatestBlock("0x"+strings.Repeat("44", 32), record.RecheckHeight)
+	rawTx, _, _, err = cl.SignTx(tx, 100)
+	c.Assert(err, ErrorMatches, "deterministic signing block 100 has expired at finalized height .*")
+	c.Check(rawTx, IsNil)
+	c.Check(cl.getCachedNonce(vault.String()), Equals, cached)
+}
+
+func (s *ClientSuite) TestBroadcastTx_InvalidVaultAddress(c *C) {
+	var submissions atomic.Int32
+	h := newRPCHandler()
+	h.on("author_submitExtrinsic", func(_ json.RawMessage) (interface{}, error) {
+		submissions.Add(1)
+		return "unused", nil
+	})
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	for _, chain := range []common.Chain{common.TAOChain, common.DOTChain} {
+		cl := newTestClient(rpc.NewClient(srv.URL, time.Second), func(cfg *config.BifrostChainConfiguration) {
+			cfg.ChainID = chain
+		})
+		if chain == common.DOTChain {
+			cl.chainScanner = newAssetHubTestScanner(c)
+		}
+		for _, tt := range []struct {
+			pubkey  common.PubKey
+			pattern string
+		}{
+			{common.PubKey("invalid"), "failed to derive vault address: .*"},
+			{common.EmptyPubKey, "vault address is empty"},
+		} {
+			// An address error must be returned before recovery storage is read.
+			state := &memoryStateStore{getErr: errors.New("unexpected recovery read")}
+			var err error
+			cl.stateStore, err = newStateStore(state)
+			c.Assert(err, IsNil)
+			txOutItem, rawTx := makeBroadcastTestTx(c, 1)
+			extrinsic, err := subtypes.ParseSignedExtrinsic(rawTx, nil, mustTestExtrinsicLayout(common.TAOChain))
+			c.Assert(err, IsNil)
+			rawTx = mustEncodeTestExtrinsic(extrinsic, chain)
+			txOutItem.Chain = chain
+			txOutItem.VaultPubKeyEddsa = tt.pubkey
+
+			txHash, err := cl.BroadcastTx(txOutItem, rawTx)
+			c.Assert(err, ErrorMatches, tt.pattern, Commentf("%s: %q", chain, tt.pubkey))
+			c.Check(txHash, Equals, "")
+			c.Check(state.values, HasLen, 0)
+			c.Check(submissions.Load(), Equals, int32(0))
+		}
+	}
 }
 
 func (s *ClientSuite) TestBroadcastTx_PersistenceFailurePreventsSubmission(c *C) {
@@ -1155,7 +1287,7 @@ func (s *ClientSuite) TestReserveNonce_MaxPendingNoncesCap(c *C) {
 			wantErr:     false,
 		},
 		{
-			name:        "gap exactly at cap → success (cap is exclusive)",
+			name:        "gap exactly at cap → success",
 			maxPending:  16,
 			cachedNonce: onChainNonce + 16, // gap = 16, condition is `> max`
 			wantErr:     false,
@@ -1167,10 +1299,8 @@ func (s *ClientSuite) TestReserveNonce_MaxPendingNoncesCap(c *C) {
 			wantErr:     true,
 		},
 		{
-			// Documents production behavior: with MaxPendingNonces unset
-			// (0), even a single pending nonce trips the cap. Operators
-			// must configure max_pending_nonces explicitly.
-			name:        "cap of 0 trips on any pending → error",
+			// Only the test helper preserves zero; NewClient defaults it to 3.
+			name:        "zero cap rejects a positive nonce gap",
 			maxPending:  0,
 			cachedNonce: onChainNonce + 1,
 			wantErr:     true,
@@ -1185,21 +1315,22 @@ func (s *ClientSuite) TestReserveNonce_MaxPendingNoncesCap(c *C) {
 		srv := httptest.NewServer(h)
 
 		cl := newTestClient(rpc.NewClient(srv.URL, 5*time.Second), withMaxPendingNonces(tt.maxPending))
-		// Pre-populate the cache ahead of on-chain. BlockHeight is set so
+		// Pre-populate the cache ahead of on-chain. ReservedHeight is set so
 		// mortal-era expiry does NOT trigger first (would otherwise reset
 		// the cache and bypass the cap branch).
 		cl.nonces[vault] = nonceMetadata{
-			Nonce:       tt.cachedNonce,
-			BlockHeight: 100,
+			Nonce:          tt.cachedNonce,
+			ReservedHeight: 100,
 		}
 
-		// currentHeight 101: just past the cache's BlockHeight so the
+		// currentHeight 101: just past the cache's ReservedHeight so the
 		// on-chain fetch fires, but well within MortalEraPeriod (64) so the
 		// expiry branch doesn't preempt the cap check.
 		_, _, err := cl.reserveNonce(stypes.TxOutItem{Chain: common.TAOChain}, vault, 101)
 
 		if tt.wantErr {
 			c.Assert(err, NotNil, Commentf("%s: expected error", tt.name))
+			c.Check(cl.getCachedNonce(vault), Equals, nonceMetadata{Nonce: tt.cachedNonce, ReservedHeight: 100})
 			c.Check(strings.Contains(err.Error(), "pending nonce"), Equals, true,
 				Commentf("%s: error %q does not mention pending nonce", tt.name, err))
 		} else {
@@ -1208,6 +1339,47 @@ func (s *ClientSuite) TestReserveNonce_MaxPendingNoncesCap(c *C) {
 
 		srv.Close()
 	}
+}
+
+func (s *ClientSuite) TestReserveNonce_PendingLimitOnRefresh(c *C) {
+	const vault = "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
+	var rpcNonce atomic.Uint32
+	rpcNonce.Store(5)
+	var calls atomic.Int32
+	h := newRPCHandler()
+	h.on("system_accountNextIndex", func(_ json.RawMessage) (interface{}, error) {
+		calls.Add(1)
+		return rpcNonce.Load(), nil
+	})
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	cl := newTestClient(rpc.NewClient(srv.URL, 5*time.Second), withMaxPendingNonces(3))
+	tx := stypes.TxOutItem{Chain: common.TAOChain}
+
+	// Same-height reservations can exceed the gap limit without refreshing.
+	for want := uint32(5); want <= 9; want++ {
+		nonce, _, err := cl.reserveNonce(tx, vault, 100)
+		c.Assert(err, IsNil)
+		c.Check(nonce, Equals, want)
+	}
+	c.Check(calls.Load(), Equals, int32(1))
+	c.Check(cl.getCachedNonce(vault), Equals, nonceMetadata{Nonce: 10, ReservedHeight: 100})
+
+	// An unchanged RPC nonce blocks reservations at the next height.
+	_, checkpoint, err := cl.reserveNonce(tx, vault, 101)
+	c.Assert(err, ErrorMatches, "pending nonce too far in future")
+	c.Check(checkpoint, IsNil)
+	c.Check(calls.Load(), Equals, int32(2))
+	c.Check(cl.getCachedNonce(vault), Equals, nonceMetadata{Nonce: 10, ReservedHeight: 100})
+
+	// Retry succeeds once the RPC nonce catches up.
+	rpcNonce.Store(10)
+	nonce, _, err := cl.reserveNonce(tx, vault, 101)
+	c.Assert(err, IsNil)
+	c.Check(nonce, Equals, uint32(10))
+	c.Check(calls.Load(), Equals, int32(3))
+	c.Check(cl.getCachedNonce(vault), Equals, nonceMetadata{Nonce: 11, ReservedHeight: 101})
 }
 
 func (s *ClientSuite) TestReportSolvency_DoesNotRecurse(c *C) {

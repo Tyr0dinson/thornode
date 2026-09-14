@@ -55,10 +55,10 @@ type Client struct {
 	stateStore          *stateStore
 }
 
-// nonceMetadata holds nonce and block height for a vault.
+// nonceMetadata holds the next cached nonce or a checkpoint's reserved nonce.
 type nonceMetadata struct {
-	Nonce       uint32 `json:"Nonce"`
-	BlockHeight int64  `json:"BlockHeight"`
+	Nonce          uint32 `json:"Nonce"`
+	ReservedHeight int64  `json:"BlockHeight"` // Latest reservation height.
 }
 
 // NewClient creates a new instance of Client.
@@ -74,7 +74,7 @@ func NewClient(
 		return nil, errors.New("thorchain bridge is nil")
 	}
 
-	// default
+	// Zero selects the default pending nonce gap.
 	if config.MaxPendingNonces == 0 {
 		config.MaxPendingNonces = defaultMaxPendingNonces
 	}
@@ -126,6 +126,7 @@ func NewClient(
 		pubkeyMgr,
 		c.handleFinalizedFailure,
 		c.Client.StateStore(),
+		metrics,
 	)
 	if err != nil {
 		return c, fmt.Errorf("failed to create chain scanner: %w", err)
@@ -207,8 +208,33 @@ func (c *Client) GetAccount(pk common.PubKey, height *big.Int) (common.Account, 
 	return c.GetAccountByAddress(addr.String(), height)
 }
 
-// GetAccountByAddress returns account information.
+// GetAccountByAddress reads a block snapshot, or latest balance and pending nonce when height is nil.
 func (c *Client) GetAccountByAddress(addr string, height *big.Int) (common.Account, error) {
+	if height != nil {
+		if !height.IsUint64() {
+			return common.Account{}, fmt.Errorf("invalid account height: %s", height)
+		}
+
+		blockNumber := height.Uint64()
+		blockHash, err := c.rpcClient.GetBlockHash(&blockNumber)
+		if err != nil {
+			return common.Account{}, fmt.Errorf("failed to get account block %d: %w", blockNumber, err)
+		}
+		if blockHash == "" {
+			return common.Account{}, fmt.Errorf("account block %d not found", blockNumber)
+		}
+
+		nonce, balance, err := c.rpcClient.GetAccountInfo(addr, blockHash, c.chainScanner.params.BalanceSize)
+		if err != nil {
+			return common.Account{}, fmt.Errorf("failed to get account at block %d: %w", blockNumber, err)
+		}
+
+		return common.Account{
+			Sequence: int64(nonce),
+			Coins:    common.Coins{c.GetChain().NativeGasToThorCoin(balance)},
+		}, nil
+	}
+
 	balance, err := c.rpcClient.GetBalance(addr, "", c.chainScanner.params.BalanceSize)
 	if err != nil {
 		return common.Account{}, fmt.Errorf("failed to get balance: %w", err)
@@ -268,7 +294,7 @@ func (c *Client) reportSolvency(height int64) error {
 		}
 		checkedVaults++
 
-		acct, err := c.GetAccount(asgardVaults[i].PubKeyEddsa, nil)
+		acct, err := c.GetAccount(asgardVaults[i].PubKeyEddsa, big.NewInt(height))
 		if err != nil {
 			c.logger.Err(err).Stringer("asgard", asgardVaults[i].PubKey).Msg("failed to get account balance for solvency")
 			continue
@@ -452,7 +478,7 @@ func (c *Client) SignTx(tx ttypes.TxOutItem, thorchainHeight int64) (signedTx, c
 		return nil, checkpointBytes, nil, fmt.Errorf("failed to persist signed extrinsic recovery state: %w", err)
 	}
 
-	// Create instant observation TxInItem
+	// Instant observations use estimated gas; finalized observations use event fees.
 	gasCoin := c.GetChain().NativeGasToThorCoinCeil(cosmos.NewUint(uint64(tx.GasRate)))
 	if gasCoin.Amount.IsZero() {
 		gasCoin.Amount = cosmos.OneUint()
@@ -646,7 +672,14 @@ func (c *Client) BroadcastTx(txOutItem ttypes.TxOutItem, rawTx []byte) (string, 
 	if extrinsic.Nonce > math.MaxUint32 {
 		return "", fmt.Errorf("extrinsic nonce exceeds uint32: %d", extrinsic.Nonce)
 	}
-	vaultAddr := c.GetAddress(txOutItem.GetVaultPubKey())
+	address, err := txOutItem.GetVaultPubKey().GetAddress(c.GetChain())
+	if err != nil {
+		return "", fmt.Errorf("failed to derive vault address: %w", err)
+	}
+	if address.IsEmpty() {
+		return "", fmt.Errorf("vault address is empty")
+	}
+	vaultAddr := address.String()
 	_, height := c.chainScanner.getLatestBlock()
 	record, found, err := c.stateStore.GetExtrinsic(txHash)
 	if err != nil {
@@ -866,7 +899,7 @@ func (c *Client) reserveNonce(tx ttypes.TxOutItem, vaultAddr string, currentHeig
 	var onChainNonce uint32
 	var fetchedOnChain bool
 	cachedMeta := c.getCachedNonce(vaultAddr)
-	if currentHeight > cachedMeta.BlockHeight {
+	if currentHeight > cachedMeta.ReservedHeight {
 		c.logger.Debug().Str("vault", vaultAddr).Int64("height", currentHeight).Msg("fetching on-chain nonce")
 		nonce, err := c.rpcClient.GetNonce(vaultAddr)
 		if err != nil {
@@ -883,7 +916,8 @@ func (c *Client) reserveNonce(tx ttypes.TxOutItem, vaultAddr string, currentHeig
 
 	meta := c.nonces[vaultAddr]
 	if fetchedOnChain {
-		if meta.Nonce <= onChainNonce {
+		switch {
+		case meta.Nonce <= onChainNonce:
 			if meta.Nonce < onChainNonce {
 				c.logger.Info().
 					Str("vault", vaultAddr).
@@ -891,39 +925,32 @@ func (c *Client) reserveNonce(tx ttypes.TxOutItem, vaultAddr string, currentHeig
 					Uint32("new", onChainNonce).
 					Msg("on-chain nonce advanced")
 			}
-			meta = nonceMetadata{
-				Nonce:       onChainNonce,
-				BlockHeight: currentHeight,
-			}
-		} else {
-			if currentHeight >= meta.BlockHeight+period {
-				// If the cached nonce is ahead of on-chain and MortalEraPeriod blocks have
-				// passed, any pending transaction has expired without landing. Reset to the
-				// on-chain nonce to recover from a stuck outbound that left the cache ahead.
-				c.logger.Warn().
-					Str("vault", vaultAddr).
-					Uint32("cached", meta.Nonce).
-					Uint32("on_chain", onChainNonce).
-					Int64("stale_height", meta.BlockHeight).
-					Int64("current_height", currentHeight).
-					Msg("nonce cache stale after mortal era expiry, resetting to on-chain")
-				meta = nonceMetadata{
-					Nonce:       onChainNonce,
-					BlockHeight: currentHeight,
-				}
-			} else if uint64(meta.Nonce-onChainNonce) > c.GetConfig().MaxPendingNonces {
-				// Cap on pending nonces: when the cache has drifted too far ahead of
-				// on-chain, refuse to sign rather than queue more transactions that
-				// will all expire via mortal era. An unset max_pending_nonces (0)
-				// means "no pending allowed".
-				c.logger.Warn().
-					Str("vault", vaultAddr).
-					Uint32("cached", meta.Nonce).
-					Uint32("on_chain", onChainNonce).
-					Msg("pending nonce too far in future")
-				return 0, nil, fmt.Errorf("pending nonce too far in future")
-			}
+			meta.Nonce = onChainNonce
+		case currentHeight >= meta.ReservedHeight+period:
+			// Reset after a full mortal period since the latest reservation.
+			c.logger.Warn().
+				Str("vault", vaultAddr).
+				Uint32("cached", meta.Nonce).
+				Uint32("on_chain", onChainNonce).
+				Int64("stale_height", meta.ReservedHeight).
+				Int64("current_height", currentHeight).
+				Msg("nonce cache stale after mortal era expiry, resetting to on-chain")
+			meta.Nonce = onChainNonce
+		case uint64(meta.Nonce-onChainNonce) > c.GetConfig().MaxPendingNonces:
+			// On nonce refresh, reject gaps above the limit.
+			// This is not a strict cap on outstanding transactions.
+			c.logger.Warn().
+				Str("vault", vaultAddr).
+				Uint32("cached", meta.Nonce).
+				Uint32("on_chain", onChainNonce).
+				Msg("pending nonce too far in future")
+			return 0, nil, fmt.Errorf("pending nonce too far in future")
 		}
+	}
+
+	// Older concurrent calls must not move the expiry window backwards.
+	if currentHeight > meta.ReservedHeight {
+		meta.ReservedHeight = currentHeight
 	}
 
 	reservedNonce := meta.Nonce

@@ -1,12 +1,15 @@
 package substrate
 
 import (
+	"math"
 	"strings"
 	"testing"
+	"time"
 
 	scaletypes "github.com/itering/scale.go/types"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/substrate/types"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/config"
 
 	. "gopkg.in/check.v1"
 )
@@ -16,6 +19,68 @@ func TestParamsSuite(t *testing.T) { TestingT(t) }
 type ParamsSuite struct{}
 
 var _ = Suite(&ParamsSuite{})
+
+func (s *ParamsSuite) TestValidateMortalEraPeriod(c *C) {
+	params := ChainParams[common.TAOChain]
+	for _, period := range []uint32{4, 8, 64, 128, 2048, 4096} {
+		params.MortalEraPeriod = period
+		c.Check(params.Validate(), IsNil, Commentf("period %d", period))
+	}
+	for _, period := range []uint32{0, 1, 2, 3, 5, 100, 4095, 4097, 8192, 65536, math.MaxUint32} {
+		params.MortalEraPeriod = period
+		c.Check(params.Validate(), ErrorMatches, "mortal era period must be a power of two between 4 and 4096: .*", Commentf("period %d", period))
+	}
+}
+
+func (s *ParamsSuite) TestValidateAccountAndFeeParams(c *C) {
+	for _, tt := range []struct {
+		name     string
+		fee      uint64
+		size     int
+		lookback time.Duration
+		pattern  string
+	}{
+		{"minimum values", 1, 8, time.Millisecond, ""},
+		{"u128 balance", 1, 16, time.Minute, ""},
+		{"zero fee", 0, 8, time.Minute, "default fee must be positive"},
+		{"negative balance size", 1, -8, time.Minute, "balance size must be 8 or 16: .*"},
+		{"zero balance size", 1, 0, time.Minute, "balance size must be 8 or 16: .*"},
+		{"unsupported balance size", 1, 4, time.Minute, "balance size must be 8 or 16: .*"},
+		{"negative lookback", 1, 8, -time.Second, "lookback must be at least one millisecond: .*"},
+		{"zero lookback", 1, 8, 0, "lookback must be at least one millisecond: .*"},
+		{"sub-millisecond lookback", 1, 8, time.Millisecond - 1, "lookback must be at least one millisecond: .*"},
+	} {
+		params := ChainParams[common.TAOChain]
+		params.DefaultFee = tt.fee
+		params.BalanceSize = tt.size
+		params.Lookback = tt.lookback
+		err := params.Validate()
+		if tt.pattern == "" {
+			c.Check(err, IsNil, Commentf("%s", tt.name))
+		} else {
+			c.Check(err, ErrorMatches, tt.pattern, Commentf("%s", tt.name))
+		}
+	}
+}
+
+func (s *ParamsSuite) TestValidateChainParams(c *C) {
+	for chain, params := range ChainParams {
+		c.Check(params.Validate(), IsNil, Commentf("%s", chain))
+	}
+}
+
+func (s *ParamsSuite) TestNewScannerRejectsInvalidParamsBeforeInitialization(c *C) {
+	original := ChainParams[common.TAOChain]
+	defer func() { ChainParams[common.TAOChain] = original }()
+	invalid := original
+	invalid.MortalEraPeriod = 100
+	ChainParams[common.TAOChain] = invalid
+
+	// Nil dependencies must not be used before parameter validation.
+	scanner, err := NewScanner(config.BifrostBlockScannerConfiguration{ChainID: common.TAOChain}, nil, nil, nil, nil, nil, nil)
+	c.Check(scanner, IsNil)
+	c.Check(err, ErrorMatches, "invalid params for TAO: mortal era period .*")
+}
 
 // buildTAOMetadata returns a synthetic *Metadata whose pallet/call/event
 // indices align with ChainParams[common.TAOChain].Indexes. Each test row
@@ -97,6 +162,13 @@ func (s *ParamsSuite) TestValidateMetadata(c *C) {
 				m.Modules[2].Events[0].ArgsName[1] = "renamed_fee"
 			},
 			wantErrIn: "actual_fee",
+		},
+		{
+			name: "fee event missing tip",
+			mutate: func(m *stypes.Metadata) {
+				m.Modules[2].Events[0].ArgsName = []string{"who", "actual_fee"}
+			},
+			wantErrIn: "tip",
 		},
 		{
 			name: "signed extensions reordered",

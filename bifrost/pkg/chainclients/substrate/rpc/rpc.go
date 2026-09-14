@@ -108,7 +108,7 @@ func (c *Client) call(method string, params []interface{}) (json.RawMessage, err
 		return nil, fmt.Errorf("rpc request failed with status %d", resp.StatusCode)
 	}
 
-	const maxResponseSize = 16 << 20 // 16 MB
+	const maxResponseSize = 16 << 20 // Limit responses to 16 MiB to bound memory use.
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize+1))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
@@ -367,6 +367,9 @@ func (c *Client) SubmitExtrinsic(hexEncoded string) (string, error) {
 // GetEventsStorage fetches the raw System::Events storage at the given block hash.
 // The storage key is twox128("System") ++ twox128("Events").
 func (c *Client) GetEventsStorage(blockHash string) (string, error) {
+	if blockHash == "" {
+		return "", fmt.Errorf("block hash is empty")
+	}
 	const eventsKey = "0x26aa394eea5630e07c48ae0c9558cef780d41e5e16056765bc8461851072c9d7"
 	result, err := c.call("state_getStorage", []interface{}{eventsKey, blockHash})
 	if err != nil {

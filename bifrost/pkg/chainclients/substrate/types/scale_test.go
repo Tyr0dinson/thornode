@@ -86,6 +86,42 @@ func (s *ScaleSuite) TestEncodeU32LE(c *C) {
 	c.Assert(bytes.Equal(result, expected), Equals, true)
 }
 
+func (s *ScaleSuite) TestCompactLargeBoundaries(c *C) {
+	for _, tt := range []struct {
+		name   string
+		value  string
+		length int
+	}{
+		{"2^30", "1073741824", 5},
+		{"2^32", "4294967296", 6},
+		{"MaxUint64", "18446744073709551615", 9},
+		{"2^64", "18446744073709551616", 10},
+		{"2^127", "170141183460469231731687303715884105728", 17},
+		{"MaxUint128", "340282366920938463463374607431768211455", 17},
+	} {
+		value := cosmos.NewUintFromString(tt.value)
+		encoded := EncodeCompactUint(value)
+		c.Assert(encoded, HasLen, tt.length, Commentf("%s", tt.name))
+		c.Check(encoded[0], Equals, byte((tt.length-5)<<2|3), Commentf("%s", tt.name))
+		decoded, consumed, err := DecodeCompact(encoded)
+		c.Assert(err, IsNil, Commentf("%s", tt.name))
+		c.Check(decoded.Equal(value), Equals, true, Commentf("%s", tt.name))
+		c.Check(consumed, Equals, len(encoded), Commentf("%s", tt.name))
+	}
+}
+
+func (s *ScaleSuite) TestCompactEncodedValueExceedsDecoderLimit(c *C) {
+	value := cosmos.NewUintFromString("340282366920938463463374607431768211456") // 2^128
+	encoded := EncodeCompactUint(value)
+	expected := make([]byte, 18)
+	expected[0] = 55 // 17-byte payload
+	expected[17] = 1
+	c.Assert(encoded, DeepEquals, expected)
+	_, consumed, err := DecodeCompact(encoded)
+	c.Assert(err, ErrorMatches, "compact value too large: 17 bytes \\(max 16\\)")
+	c.Check(consumed, Equals, 0)
+}
+
 func (s *ScaleSuite) TestDecodeCompactBigIntOverflow(c *C) {
 	// Construct a compact big-int with n=17 bytes (exceeds u128 capacity of 16)
 	// prefix byte: upper 6 bits = (17-4)=13, lower 2 bits = 0b11 → (13<<2)|3 = 55
@@ -107,7 +143,7 @@ func (s *ScaleSuite) TestDecodeCompactBigInt8BytesOK(c *C) {
 	data[1] = 0x00
 	data[2] = 0x00
 	data[3] = 0x00
-	data[4] = 0x40 // 0x4000000000000000 = 2^62
+	data[4] = 0x40 // 0x40000000 = 2^30
 	data[5] = 0x00
 	data[6] = 0x00
 	data[7] = 0x00

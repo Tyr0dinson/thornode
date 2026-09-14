@@ -3,12 +3,14 @@ package substrate
 import (
 	"errors"
 	"fmt"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 
@@ -64,6 +66,7 @@ type Scanner struct {
 
 	cfg              config.BifrostBlockScannerConfiguration
 	logger           zerolog.Logger
+	metrics          *metrics.Metrics
 	rpcClient        *rpc.Client
 	solvencyReporter types.SolvencyReporter
 	pubkeyMgr        pubkeymanager.PubKeyValidator
@@ -95,10 +98,14 @@ func NewScanner(
 	pubkeyMgr pubkeymanager.PubKeyValidator,
 	failHandler FinalizedFailureHandler,
 	state generic.StateStore,
+	m *metrics.Metrics,
 ) (*Scanner, error) {
 	params, found := ChainParams[cfg.ChainID]
 	if !found {
 		return nil, fmt.Errorf("no params found for %s", cfg.ChainID)
+	}
+	if err := params.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid params for %s: %w", cfg.ChainID, err)
 	}
 
 	retention := blockReferenceRetention
@@ -120,6 +127,7 @@ func NewScanner(
 	s := &Scanner{
 		Scanner:          genericScanner,
 		cfg:              cfg,
+		metrics:          m,
 		logger:           log.Logger.With().Stringer("chain", cfg.ChainID).Logger(),
 		params:           params,
 		rpcClient:        rpcClient,
@@ -239,9 +247,9 @@ func (s *Scanner) FetchTxs(fetchHeight, _ int64) (ttypes.TxIn, error) {
 		var txItem *ttypes.TxInItem
 
 		if succeeded {
-			txItem, err = s.processExtrinsicWithRuntime(extHex, fetchHeight, fee, runtime)
+			txItem, err = s.processExtrinsicWithRuntime(extHex, fetchHeight, fee.Total, runtime)
 		} else {
-			txItem, err = s.processFailedExtrinsicWithRuntime(extHex, fetchHeight, fee, runtime)
+			txItem, err = s.processFailedExtrinsicWithRuntime(extHex, fetchHeight, fee.Total, runtime)
 		}
 
 		if err != nil {
@@ -258,10 +266,9 @@ func (s *Scanner) FetchTxs(fetchHeight, _ int64) (ttypes.TxIn, error) {
 
 		txIn.TxArray = append(txIn.TxArray, txItem)
 
-		// Collect actual fee from events for the rolling cache.
-		// These are the most representative since they match our tx type.
-		if fee > 0 {
-			s.updateFeeCache(fee)
+		// Estimate fees without optional tips.
+		if fee.Total > fee.Tip {
+			s.updateFeeCache(fee.Total - fee.Tip)
 		}
 	}
 
@@ -325,7 +332,7 @@ func (s *Scanner) FetchMemPool(_ int64) (ttypes.TxIn, error) {
 	return ttypes.TxIn{}, nil
 }
 
-// GetNetworkFee returns the current network fee estimate.
+// GetNetworkFee returns size 1 for one extrinsic and its estimated fee in native units.
 func (s *Scanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
 	fee := s.currentFee.Load()
 	if fee == 0 {
@@ -336,7 +343,7 @@ func (s *Scanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
 
 // getExtrinsicResults queries System::Events and determines which extrinsics succeeded.
 // numExtrinsics is the number of extrinsics in the block, used to validate decoded results.
-func (s *Scanner) getExtrinsicResults(blockHash string, numExtrinsics int, metadata *stypes.Metadata) (map[uint32]bool, map[uint32]uint64, error) {
+func (s *Scanner) getExtrinsicResults(blockHash string, numExtrinsics int, metadata *stypes.Metadata) (map[uint32]bool, map[uint32]stypes.Fee, error) {
 	eventsHex, err := s.rpcClient.GetEventsStorage(blockHash)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get events storage: %w", err)
@@ -520,7 +527,7 @@ func (s *Scanner) processExtrinsicWithRuntime(extHex string, blockHeight int64, 
 	s.nonceCache.Add(txItem.Tx, extrinsic.Nonce, uint64(blockHeight))
 
 	// Filter oversized memos (defense-in-depth, matches UTXO/EVM/Gaia scanners).
-	if len([]byte(txItem.Memo)) > constants.MaxMemoSize {
+	if len(txItem.Memo) > constants.MaxMemoSize {
 		return nil, nil
 	}
 
@@ -603,10 +610,9 @@ func (s *Scanner) parseBatchAll(data []byte, sender, txHash string, blockHeight 
 	var hasTransfer bool
 	var hasRemark bool
 
-	stop := false
 	for i := 0; i < numCalls; i++ {
 		if pos+2 > len(data) {
-			break
+			return nil, fmt.Errorf("batch_all call %d is truncated", i)
 		}
 
 		pallet := data[pos]
@@ -670,21 +676,15 @@ func (s *Scanner) parseBatchAll(data []byte, sender, txHash string, blockHeight 
 			transferData = data[start:pos]
 			hasTransfer = true
 		default:
-			// Unknown call in batch — we can't determine its size, so stop parsing.
-			// Any transfer + memo already captured will still be used.
-			stop = true
-			s.logger.Warn().
-				Int("call_index", i).
-				Int("total_calls", numCalls).
-				Uint8("pallet", pallet).
-				Uint8("call", call).
-				Bool("has_transfer", hasTransfer).
-				Msg("batch_all contains unknown call, stopping parse early")
+			return nil, fmt.Errorf(
+				"%w: batch_all call %d uses unsupported pallet %d call %d",
+				errUnsupportedObservation, i, pallet, call,
+			)
 		}
+	}
 
-		if stop {
-			break
-		}
+	if pos != len(data) {
+		return nil, fmt.Errorf("batch_all has %d trailing bytes", len(data)-pos)
 	}
 
 	if !hasTransfer {
@@ -707,17 +707,17 @@ func (s *Scanner) updateNetworkFee(height int64) {
 
 	currentFee := s.currentFee.Load()
 
-	// Read cache length, average, and last-reported under a single RLock
-	// to avoid TOCTOU between the length check and the average calculation.
+	// Read the sample count and average under the same lock.
 	s.mu.RLock()
 	cacheLen := len(s.feeCache)
 	var fee uint64
 	if cacheLen > 0 {
-		var sum uint64
+		// The sum can exceed uint64 even though the average cannot.
+		sum := cosmos.ZeroUint()
 		for _, f := range s.feeCache {
-			sum += f
+			sum = sum.AddUint64(f)
 		}
-		fee = sum / uint64(cacheLen)
+		fee = sum.QuoUint64(uint64(cacheLen)).Uint64()
 	}
 	s.mu.RUnlock()
 
@@ -733,7 +733,21 @@ func (s *Scanner) updateNetworkFee(height int64) {
 	// Round up to GasPriceResolution
 	resolution := uint64(s.cfg.GasPriceResolution)
 	if resolution > 0 {
-		fee = ((fee + resolution - 1) / resolution) * resolution
+		if remainder := fee % resolution; remainder != 0 {
+			increment := resolution - remainder
+			if fee > math.MaxUint64-increment {
+				s.logger.Error().Uint64("fee", fee).Uint64("resolution", resolution).Msg("rounded network fee exceeds uint64")
+				return
+			}
+			fee += increment
+		}
+	}
+
+	if s.metrics != nil {
+		if gauge := s.metrics.GetGauge(metrics.GasPrice(s.cfg.ChainID)); gauge != nil {
+			// Whole-transaction fee in native units.
+			gauge.Set(float64(fee))
+		}
 	}
 
 	if fee == currentFee {
@@ -757,7 +771,12 @@ func (s *Scanner) updateNetworkFee(height int64) {
 		return
 	}
 
-	s.currentFee.Swap(fee)
+	s.currentFee.Store(fee)
+	if s.metrics != nil {
+		if counter := s.metrics.GetCounter(metrics.GasPriceChange(s.cfg.ChainID)); counter != nil {
+			counter.Inc()
+		}
+	}
 
 	s.logger.Info().
 		Uint64("fee", fee).

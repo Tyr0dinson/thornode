@@ -15,6 +15,7 @@ func EncodeCompact(v uint64) []byte {
 }
 
 // EncodeCompactUint encodes a cosmos.Uint value as a SCALE compact integer.
+// It can encode values above uint128; DecodeCompact rejects those values.
 func EncodeCompactUint(v cosmos.Uint) []byte {
 	bigInt := v.BigInt()
 	if !bigInt.IsUint64() {
