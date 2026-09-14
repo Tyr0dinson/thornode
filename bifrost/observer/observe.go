@@ -909,16 +909,17 @@ func (o *Observer) processTxIns() {
 	}
 }
 
-// processObservedTx will process the observed tx, and either add it to the
-// onDeck queue, or merge it with an existing tx in the onDeck queue.
-// bounceCorrection records a deck item's pre-correction state so a failed
-// persist can be rolled back, leaving the correction retryable.
-type bounceCorrection struct {
+// deckCorrection is the pre-correction state of a deck item, kept so a failed
+// persist can roll the in-place replacement back.
+type deckCorrection struct {
 	item                 *types.TxInItem
 	bounced              bool
+	gas                  common.Gas
 	committedUnFinalised bool
 }
 
+// processObservedTx will process the observed tx, and either add it to the
+// onDeck queue, or merge it with an existing tx in the onDeck queue.
 func (o *Observer) processObservedTx(txIn types.TxIn) error {
 	if len(txIn.TxArray) == 0 {
 		rejectObservedTx(txIn.TxArray, errObservedTxEmpty)
@@ -1008,33 +1009,38 @@ func (o *Observer) processObservedTx(txIn types.TxIn) error {
 		var newTxs []*types.TxInItem
 		var duplicateTxs []*types.TxInItem
 		var correctedTxs []*types.TxInItem
-		var corrections []bounceCorrection
+		var corrections []deckCorrection
 		for _, txInItem := range txIn.TxArray {
 			foundTx := false
 			for _, txInItemDeck := range in.TxArray {
-				if !txInItemDeck.Equals(txInItem) {
+				if !txInItemDeck.EqualsIgnoreGas(txInItem) {
 					continue
 				}
 				foundTx = true
-				// Equals compares identity only and deliberately ignores Bounced, so
-				// a re-scan that produces a different verdict for an already-decked
-				// observation lands here. Replace the stale verdict in place: dropping
-				// it as a duplicate would keep re-sending the wrong vault accounting,
-				// and appending it would leave both verdicts queued for the same tx.
+				// Identity matches, so anything that differs here is receipt-derived:
+				// a re-scan produced a different bounce verdict, a different effective
+				// gas price, or both. Replace them in place: dropping the observation
+				// as a duplicate would keep re-sending the wrong vault accounting, and
+				// appending it would leave both variants queued for the same tx - a
+				// reorg that re-prices a transaction and changes its bounce outcome at
+				// once does both, which is why gas is matched loosely and replaced
+				// alongside the verdict rather than treated as a separate observation.
 				//
 				// ponytail: last-write-wins. TxInItem carries no receipt block hash,
 				// so a delayed pre-reorg rescan could still overwrite a newer verdict;
 				// add that hash to TxInItem if the race ever bites. What actually
 				// decides vault accounting is the supermajority gate in
 				// correctOutboundObservation, not this node's local ordering.
-				if txInItemDeck.Bounced != txInItem.Bounced {
-					corrections = append(corrections, bounceCorrection{
+				if txInItemDeck.Bounced != txInItem.Bounced || !txInItemDeck.Gas.Equals(txInItem.Gas) {
+					corrections = append(corrections, deckCorrection{
 						item:                 txInItemDeck,
 						bounced:              txInItemDeck.Bounced,
+						gas:                  txInItemDeck.Gas,
 						committedUnFinalised: txInItemDeck.CommittedUnFinalised,
 					})
 					txInItemDeck.Bounced = txInItem.Bounced
-					// Any payload already sent carried the stale verdict, so this item
+					txInItemDeck.Gas = txInItem.Gas
+					// Any payload already sent carried the stale receipt, so this item
 					// must go out again - an ack for that payload must not leave the
 					// correction unsent.
 					txInItemDeck.CommittedUnFinalised = false
@@ -1044,7 +1050,8 @@ func (o *Observer) processObservedTx(txIn types.TxIn) error {
 						Str("chain", in.Chain.String()).
 						Int64("height", txInItem.BlockHeight).
 						Bool("bounced", txInItem.Bounced).
-						Msg("replacing on-deck observation with corrected bounce verdict")
+						Str("gas", common.Coins(txInItem.Gas).String()).
+						Msg("replacing on-deck observation with corrected receipt")
 					break
 				}
 				duplicateTxs = append(duplicateTxs, txInItem)
@@ -1089,6 +1096,7 @@ func (o *Observer) processObservedTx(txIn types.TxIn) error {
 				// holds and the next arrival of the corrected observation retries.
 				for _, c := range corrections {
 					c.item.Bounced = c.bounced
+					c.item.Gas = c.gas
 					c.item.CommittedUnFinalised = c.committedUnFinalised
 				}
 				rejectedCallbacks = append(

@@ -224,3 +224,50 @@ func TestDeckBounceCorrectionSurvivesStaleAck(t *testing.T) {
 	obs.handleObservedTxCommitted(acked, false)
 	require.NotContains(t, obs.onDeck, key)
 }
+
+// TestDeckCorrectionReplacesGasAndBounceTogether: a reorg can re-include the same
+// transaction at the same height with both a different effective gas price and a
+// different bounce outcome. Matching the deck entry on full equality (gas
+// included) would treat that as a new observation and queue both receipts for the
+// same tx, leaving this node signing the superseded one alongside its replacement.
+func TestDeckCorrectionReplacesGasAndBounceTogether(t *testing.T) {
+	dir := t.TempDir()
+	obs := newBounceDeckObserver(t, dir)
+	defer func() { require.NoError(t, obs.storage.Close()) }()
+
+	vault := stypes.GetRandomPubKey()
+	vaultAddr, err := vault.GetAddress(common.ETHChain)
+	require.NoError(t, err)
+	txID := stypes.GetRandomTxHash().String()
+
+	stale := bounceDeckTxIn(txID, vault, vaultAddr, false)
+	key := TxInKey(&stale)
+	require.NoError(t, obs.processObservedTx(stale))
+	obs.onDeck[key].TxArray[0].CommittedUnFinalised = true
+
+	newGas := common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(42000))}
+	corrected := bounceDeckTxIn(txID, vault, vaultAddr, true)
+	corrected.TxArray[0].Memo = stale.TxArray[0].Memo
+	corrected.TxArray[0].To = stale.TxArray[0].To
+	corrected.TxArray[0].Gas = newGas
+	require.NoError(t, obs.processObservedTx(corrected))
+
+	deck := obs.onDeck[key]
+	require.Len(t, deck.TxArray, 1, "the re-priced receipt must replace, not append")
+	require.True(t, deck.TxArray[0].Bounced)
+	require.True(t, deck.TxArray[0].Gas.Equals(newGas))
+	require.False(t, deck.TxArray[0].CommittedUnFinalised,
+		"the acked payload carried the stale receipt, so the correction must go out again")
+
+	// A gas-only re-price is a correction too, not a second observation.
+	newerGas := common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(51000))}
+	reGassed := bounceDeckTxIn(txID, vault, vaultAddr, true)
+	reGassed.TxArray[0].Memo = stale.TxArray[0].Memo
+	reGassed.TxArray[0].To = stale.TxArray[0].To
+	reGassed.TxArray[0].Gas = newerGas
+	require.NoError(t, obs.processObservedTx(reGassed))
+
+	deck = obs.onDeck[key]
+	require.Len(t, deck.TxArray, 1)
+	require.True(t, deck.TxArray[0].Gas.Equals(newerGas))
+}

@@ -131,6 +131,13 @@ const (
 // place (see processObservedTx). Including Bounced here would make those
 // corrections look like new items and queue both verdicts for the same tx.
 func (t *TxInItem) Equals(other *TxInItem) bool {
+	return t.EqualsIgnoreGas(other) && t.Gas.Equals(other.Gas)
+}
+
+// EqualsIgnoreGas is Equals without the gas comparison. Gas is read off the
+// receipt, so a reorg that re-prices the same transaction changes it without
+// making it a different observation - the identity is the rest of these fields.
+func (t *TxInItem) EqualsIgnoreGas(other *TxInItem) bool {
 	if t.BlockHeight != other.BlockHeight {
 		return false
 	}
@@ -147,9 +154,6 @@ func (t *TxInItem) Equals(other *TxInItem) bool {
 		return false
 	}
 	if !t.Coins.EqualsEx(other.Coins) {
-		return false
-	}
-	if !t.Gas.Equals(other.Gas) {
 		return false
 	}
 	if !t.ObservedVaultPubKey.Equals(other.ObservedVaultPubKey) {
