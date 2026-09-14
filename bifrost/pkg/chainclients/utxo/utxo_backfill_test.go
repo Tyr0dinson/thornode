@@ -500,6 +500,27 @@ func (s *CoverageBackfillSuite) TestIsRBFEnabled(c *C) {
 	c.Assert(s.client.isRBFEnabled(tx), Equals, false)
 }
 
+func (s *CoverageBackfillSuite) TestFeeRateBelowMempoolThreshold(c *C) {
+	tx := &btcjson.TxRawResult{Vsize: 200}
+	gasOf := func(sats uint64) common.Gas {
+		return common.Gas{common.NewCoin(s.client.cfg.ChainID.GetGasAsset(), cosmos.NewUint(sats))}
+	}
+
+	// No observed fee rate yet: fail open.
+	s.client.lastFeeRate.Store(0)
+	c.Assert(s.client.feeRateBelowMempoolThreshold(tx, gasOf(1)), Equals, false)
+
+	// 10 sats/vbyte over 200 vbytes requires 1000 sats at 50%.
+	s.client.lastFeeRate.Store(10)
+	c.Assert(s.client.feeRateBelowMempoolThreshold(tx, gasOf(999)), Equals, true)
+	c.Assert(s.client.feeRateBelowMempoolThreshold(tx, gasOf(1000)), Equals, false)
+	c.Assert(s.client.feeRateBelowMempoolThreshold(tx, gasOf(2000)), Equals, false)
+
+	// Unknown virtual size or missing gas: fail open.
+	c.Assert(s.client.feeRateBelowMempoolThreshold(&btcjson.TxRawResult{Vsize: 0}, gasOf(1)), Equals, false)
+	c.Assert(s.client.feeRateBelowMempoolThreshold(tx, common.Gas{}), Equals, false)
+}
+
 func (s *CoverageBackfillSuite) TestGetAddressesFromScriptPubKey(c *C) {
 	// BTC chain uses special path
 	spk := btcjson.ScriptPubKeyResult{

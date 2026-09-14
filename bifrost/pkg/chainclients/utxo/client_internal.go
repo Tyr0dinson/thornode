@@ -516,6 +516,37 @@ func (c *Client) isRBFEnabled(tx *btcjson.TxRawResult) bool {
 	return false
 }
 
+// mempoolMinFeeRateBPS is the share of the last observed network fee rate that an
+// unconfirmed inbound must pay before it is observed ahead of being mined. Like
+// isRBFEnabled this is deliberately not configurable: observation gating has to be
+// identical across nodes, or they disagree on which mempool transactions exist.
+const mempoolMinFeeRateBPS = 5_000
+
+// feeRateBelowMempoolThreshold reports whether tx pays less than mempoolMinFeeRateBPS of
+// the last observed network fee rate. An underpriced transaction can sit unconfirmed
+// indefinitely at no cost to the sender, and a 0-conf swap holds its pools for the whole
+// unfinalized window, so observing one defers every other swap on those pools for free.
+//
+// It fails open: an unknown fee rate, an unknown virtual size, or a chain whose
+// lastFeeRate is not a per-byte rate never gates observation.
+func (c *Client) feeRateBelowMempoolThreshold(tx *btcjson.TxRawResult, gas common.Gas) bool {
+	// ZEC's lastFeeRate is the whole-transaction ZIP-317 fee rather than a per-byte rate,
+	// so it cannot be compared against a per-vbyte rate.
+	if c.cfg.ChainID.Equals(common.ZECChain) {
+		return false
+	}
+	lastFeeRate := c.lastFeeRate.Load()
+	if lastFeeRate == 0 || tx.Vsize <= 0 || len(gas) == 0 {
+		return false
+	}
+	// Compare total fees rather than rates so the threshold does not truncate to zero.
+	required := cosmos.NewUint(lastFeeRate).
+		MulUint64(uint64(tx.Vsize)).
+		MulUint64(mempoolMinFeeRateBPS).
+		QuoUint64(10_000)
+	return gas[0].Amount.LT(required)
+}
+
 func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool, vinZeroTxs map[string]*btcjson.TxRawResult) (types.TxInItem, error) {
 	if c.ignoreTx(tx, height) {
 		c.log.Debug().Int64("height", height).Str("txid", tx.Hash).Msg("ignore tx not matching format")
@@ -573,6 +604,12 @@ func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool, 
 	gas, err := c.getGas(tx, isInbound)
 	if err != nil {
 		return types.TxInItem{}, fmt.Errorf("fail to get gas from tx: %w", err)
+	}
+	// Underpriced inbounds are not observed until they are mined, so they cannot hold a
+	// 0-conf swap's pools while sitting unconfirmed.
+	if isMemPool && isInbound && c.feeRateBelowMempoolThreshold(tx, gas) {
+		c.log.Debug().Str("txid", tx.Hash).Msg("ignore underpriced mempool inbound until mined")
+		return types.TxInItem{}, nil
 	}
 	return types.TxInItem{
 		BlockHeight: height,
