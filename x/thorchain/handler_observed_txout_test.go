@@ -983,6 +983,7 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceDiscoveredAfterConsensus(c *
 // vote from different nodes and read the vault balance back.
 type bouncedOutboundFixture struct {
 	ctx     cosmos.Context
+	mgr     *Mgrs
 	handler ObservedTxOutHandler
 	keeper  *TestObservedTxOutHandleKeeper
 	pk      common.PubKey
@@ -1041,7 +1042,16 @@ func newBouncedOutboundFixture(c *C, activeNodes int) *bouncedOutboundFixture {
 	mgr.slasher = newSlasher(keeper, eventMgr)
 	mgr.validatorMgr = newValidatorMgr(keeper, mgr.NetworkMgr(), txOutStore, eventMgr)
 
-	return &bouncedOutboundFixture{ctx: ctx, handler: NewObservedTxOutHandler(mgr), keeper: keeper, pk: pk, tx: tx}
+	return &bouncedOutboundFixture{ctx: ctx, mgr: mgr, handler: NewObservedTxOutHandler(mgr), keeper: keeper, pk: pk, tx: tx}
+}
+
+// errata reverts the outbound the way a reorg-driven errata would: the vault is
+// credited the coins (unless the consensus was Bounced) and the voter is marked
+// Reverted.
+func (f *bouncedOutboundFixture) errata(c *C) {
+	er := &common.ErrataTx{Id: f.tx.ID, Chain: f.tx.Chain}
+	c.Assert(processErrataOutboundTx(f.ctx, f.keeper, f.mgr.EventMgr(), er), IsNil)
+	c.Check(f.keeper.voter.Reverted, Equals, true)
 }
 
 // vote submits one finalised observation of the outbound from node i.
@@ -1262,4 +1272,41 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionRequiresFreshQuoru
 	c.Check(f.ethBalance(c), Equals, gasOnly)
 	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
 	c.Check(f.securityEvents(), Equals, 3)
+}
+
+// TestHandleBounceCorrectionAfterErrata: an errata has already credited the coins
+// back and marked the voter Reverted. A bounced quorum arriving afterwards must not
+// credit the same coins a second time, on either correction path.
+func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionAfterErrata(c *C) {
+	const (
+		untouched   = uint64(20000000000) // 200 ETH
+		gasOnly     = untouched - 37500
+		gasAndCoins = gasOnly - 1
+	)
+
+	// correctOutboundObservation after a finalised delivered consensus
+	f := newBouncedOutboundFixture(c, 6)
+	for i := 0; i < 4; i++ {
+		f.vote(c, i, false)
+	}
+	c.Check(f.ethBalance(c), Equals, gasAndCoins)
+	f.errata(c)
+	c.Check(f.ethBalance(c), Equals, gasOnly) // coins restored by the errata
+	c.Check(f.securityEvents(), Equals, 1)    // "outbound errata"
+	for i := 0; i < 4; i++ {
+		f.vote(c, i, true)
+	}
+	c.Check(f.ethBalance(c), Equals, gasOnly) // not restored twice
+	c.Check(f.securityEvents(), Equals, 1)
+
+	// the non-final -> final hand-off
+	f = newBouncedOutboundFixture(c, 1)
+	f.voteAt(c, 0, false, 12, 13) // unfinalised delivered: debited
+	c.Check(f.ethBalance(c), Equals, gasAndCoins)
+	f.errata(c)
+	c.Check(f.ethBalance(c), Equals, gasOnly)
+	c.Check(f.securityEvents(), Equals, 1)
+	f.voteAt(c, 0, true, 13, 13) // finalised bounced after the errata
+	c.Check(f.ethBalance(c), Equals, gasOnly)
+	c.Check(f.securityEvents(), Equals, 1)
 }

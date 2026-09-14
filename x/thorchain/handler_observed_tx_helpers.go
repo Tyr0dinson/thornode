@@ -836,7 +836,9 @@ func applyTxOutAttestation(
 			// used the wrong branch: the coins were debited but never left the vault
 			// (false -> true), or they were retained and did leave (true -> false,
 			// a reorg re-included the same hash as delivered). Reconcile either way.
-			if !ok && !prevConsensusTx.IsEmpty() &&
+			// An errata has already restored (or, for a Bounced consensus,
+			// deliberately not restored) the vault; leave that state alone.
+			if !ok && !voter.Reverted && !prevConsensusTx.IsEmpty() &&
 				voter.Tx.Bounced != prevConsensusTx.Bounced &&
 				prevConsensusTx.EqualsConsensusIgnoreGas(voter.Tx) {
 				reconcileBounceCorrection(ctx, mgr, voter.Tx, voter.Tx.Bounced)
@@ -1036,6 +1038,12 @@ func lateFinalObservationExcused(voter ObservedTxVoter, tx common.ObservedTx, si
 // still exists. The consensus tx is updated in place so each correction applies
 // once.
 func correctOutboundObservation(ctx cosmos.Context, mgr Manager, voter *ObservedTxVoter, tx ObservedTx, nas NodeAccounts) {
+	// An errata has declared this outbound reverted and already restored the
+	// vault (skipped for a Bounced consensus, which was never debited). Any later
+	// correction would move the same coins a second time, so leave it be.
+	if voter.Reverted {
+		return
+	}
 	gasChanged := !voter.Tx.Tx.Gas.Equals(tx.Tx.Gas)
 	bounceChanged := tx.Bounced != voter.Tx.Bounced
 	if !gasChanged && !bounceChanged {
