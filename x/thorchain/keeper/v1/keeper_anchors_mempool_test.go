@@ -65,7 +65,7 @@ func (s *KeeperMempoolSwapSuite) TestAnchorPricingUsesFinalizedPoolBalances(c *C
 	c.Check(k.DollarsPerRune(ctx).Equal(baselineDollarsPerRune), Equals, true)
 }
 
-func (s *KeeperMempoolSwapSuite) TestAnchorPricingFallsBackToRawPool(c *C) {
+func (s *KeeperMempoolSwapSuite) TestAnchorPricingExcludesAnchorOnOverlayFailure(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	pool := NewPool()
 	pool.Asset = common.BTCAsset
@@ -83,8 +83,12 @@ func (s *KeeperMempoolSwapSuite) TestAnchorPricingFallsBackToRawPool(c *C) {
 	effect.BalanceAssetDecrease = cosmos.ZeroUint()
 	c.Assert(k.SetMempoolSwap(ctx, record), IsNil)
 
+	// The overlay claims a larger asset increase than the pool holds, so it cannot be
+	// removed. The anchor must be excluded rather than priced from its speculative raw
+	// pool, which would otherwise feed DollarsPerRune.
+	rawValue := pool.RuneValueInAsset(cosmos.NewUint(constants.DollarMulti * common.One))
+	c.Check(rawValue.IsZero(), Equals, false)
 	value := k.AnchorMedian(ctx, []common.Asset{common.BTCAsset})
-	expected := pool.RuneValueInAsset(cosmos.NewUint(constants.DollarMulti * common.One))
-	c.Check(value.Equal(expected), Equals, true)
-	c.Check(value.IsZero(), Equals, false)
+	c.Check(value.Equal(rawValue), Equals, false)
+	c.Check(value.IsZero(), Equals, true)
 }
