@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -353,6 +354,39 @@ func (s *BlockScannerTestSuite) TestProcessBlock(c *C) {
 	txIn, err := bs.FetchTxs(int64(1), int64(1))
 	c.Assert(err, IsNil)
 	c.Check(len(txIn.TxArray), Equals, 1)
+
+	// The mimir is looked up once per block, before reorg handling. A reorg sends
+	// erratas and rewrites the stored block metas to the new canonical hashes, so
+	// a second lookup failing after that would discard the replacement
+	// observations for good: the retry sees matching hashes and skips the rescan.
+	// Store a meta for the parent height whose hash does not match the served
+	// block's parent hash (reorg) and whose hash does not match the served header
+	// (rescan). The bridge wrapper bypasses the one-block HTTP response cache and
+	// allows exactly one successful lookup: the block must still process, and the
+	// rescanned block's observation must be returned alongside the current
+	// block's.
+	bs.globalErrataQueue = make(chan stypes.ErrataBlock, 1)
+	staleHeader, err := CreateBlock(0x6a)
+	c.Assert(err, IsNil)
+	c.Assert(bs.blockMetaAccessor.SaveBlockMeta(0x6a, types.NewBlockMeta(staleHeader, stypes.TxIn{})), IsNil)
+	var mimirCalls atomic.Int64
+	bs.bridge = testMimirBridge{ThorchainBridge: bridge, getMimir: func(key string) (int64, error) {
+		if !strings.HasPrefix(key, "EVMBouncedOutbound-") {
+			return bridge.GetMimir(key)
+		}
+		if mimirCalls.Add(1) > 1 {
+			return 0, fmt.Errorf("thornode unreachable")
+		}
+		return 0, nil
+	}}
+	txIn, err = bs.FetchTxs(int64(1), int64(1))
+	c.Assert(err, IsNil)
+	c.Check(len(txIn.TxArray), Equals, 2)
+	c.Check(mimirCalls.Load(), Equals, int64(1))
+	c.Check(bs.globalErrataQueue, HasLen, 1) // the earlier block's tx is gone from the mocked chain
+	storedMeta, err := bs.blockMetaAccessor.GetBlockMeta(0x6a)
+	c.Assert(err, IsNil)
+	c.Check(storedMeta.BlockHash, Not(Equals), staleHeader.Hash().Hex())
 }
 
 func httpTestHandler(c *C, rw http.ResponseWriter, fixture string) {
@@ -1056,15 +1090,8 @@ func (s *BlockScannerTestSuite) TestRouterValidation(c *C) {
 }
 
 func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
-	bouncedMimirFails := false
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		// EVMBouncedOutbound gates bounce detection; a lookup failure now fails the
-		// block, so the fixture must answer it.
 		if strings.HasPrefix(req.RequestURI, "/thorchain/mimir/key/EVMBouncedOutbound-") {
-			if bouncedMimirFails {
-				rw.WriteHeader(http.StatusInternalServerError)
-				return
-			}
 			_, err := rw.Write([]byte(`0`))
 			c.Assert(err, IsNil)
 			return
@@ -1187,20 +1214,7 @@ func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 	c.Assert(bs.blockMetaAccessor.SaveBlockMeta(0, blockMeta), IsNil)
 	bs.globalErrataQueue = make(chan stypes.ErrataBlock, 1)
 
-	// A mimir failure must abort the reorg BEFORE reprocessTxs sends erratas and
-	// rewrites the stored block metas to the new canonical hashes. Bailing out
-	// after that would lose the rescan for good: the retry would re-read the
-	// rewritten meta, see no reorg, and never re-observe the replaced blocks.
-	bouncedMimirFails = true
-	_, err = bs.processReorg(blockNew)
-	c.Assert(err, NotNil)
-	c.Check(bs.globalErrataQueue, HasLen, 0)
-	storedMeta, err := bs.blockMetaAccessor.GetBlockMeta(0)
-	c.Assert(err, IsNil)
-	c.Check(storedMeta.BlockHash, Equals, blockMeta.BlockHash)
-	bouncedMimirFails = false
-
-	reorgedBlocks, err := bs.processReorg(blockNew)
+	reorgedBlocks, err := bs.processReorg(blockNew, false)
 	c.Assert(err, IsNil)
 	c.Assert(reorgedBlocks, IsNil)
 	// make sure there is errata block in the queue

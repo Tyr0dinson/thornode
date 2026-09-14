@@ -374,7 +374,20 @@ func (e *ETHScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 	}
 	e.updateGasPrice(block.BaseFee(), priorityFees)
 
-	reorgedTxIns, err := e.processReorg(block.Header())
+	// Fetched once per block, before reorg handling, and threaded down (not
+	// stored on the scanner: prefetch runs processBlock for several heights
+	// concurrently). A lookup failure fails the block so the scanner retries it
+	// rather than scanning past it with bounce detection off. It has to be
+	// resolved before processReorg, which sends erratas and rewrites the stored
+	// block metas to the new canonical hashes: a failure after that would
+	// discard the replacement observations, and the retry would re-read the
+	// rewritten metas, see no reorg, and never re-observe the replaced blocks.
+	detectBounce, err := e.bouncedOutboundEnabled()
+	if err != nil {
+		return txIn, err
+	}
+
+	reorgedTxIns, err := e.processReorg(block.Header(), detectBounce)
 	if err != nil {
 		e.logger.Error().Err(err).Msgf("fail to process reorg for block %d", height)
 		return txIn, err
@@ -390,15 +403,6 @@ func (e *ETHScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 
 	if block.Transactions().Len() == 0 {
 		return txIn, nil
-	}
-
-	// Fetched once per block and threaded down (not stored on the scanner):
-	// prefetch runs processBlock for several heights concurrently. A lookup
-	// failure fails the block so the scanner retries it rather than scanning
-	// past it with bounce detection off.
-	detectBounce, err := e.bouncedOutboundEnabled()
-	if err != nil {
-		return txIn, err
 	}
 
 	txInBlock, err := e.extractTxs(block, detectBounce)
@@ -626,7 +630,7 @@ func (e *ETHScanner) onObservedTxIn(txIn stypes.TxInItem, blockHeight int64) {
 
 // processReorg will compare block's parent hash and the block hash we have in store
 // when there is a reorg detected , it will return true, other false
-func (e *ETHScanner) processReorg(block *etypes.Header) ([]stypes.TxIn, error) {
+func (e *ETHScanner) processReorg(block *etypes.Header, detectBounce bool) ([]stypes.TxIn, error) {
 	previousHeight := block.Number.Int64() - 1
 	prevBlockMeta, err := e.blockMetaAccessor.GetBlockMeta(previousHeight)
 	if err != nil {
@@ -641,16 +645,6 @@ func (e *ETHScanner) processReorg(block *etypes.Header) ([]stypes.TxIn, error) {
 		return nil, nil
 	}
 	e.logger.Info().Msgf("re-org detected, current block height:%d ,previous block hash is : %s , however block meta at height: %d, block hash is %s", block.Number.Int64(), block.ParentHash.Hex(), prevBlockMeta.Height, prevBlockMeta.BlockHash)
-	// Resolved before reprocessTxs, which sends erratas and rewrites the stored
-	// block metas to the new canonical hashes. Bailing out after that runs would
-	// lose the rescan for good: the retry re-reads the rewritten meta, sees no
-	// reorg, and never re-observes the replaced blocks. Reorgs are rare, so the
-	// occasional lookup for an empty rescan set costs nothing.
-	detectBounce, err := e.bouncedOutboundEnabled()
-	if err != nil {
-		return nil, err
-	}
-
 	heights, err := e.reprocessTxs()
 	if err != nil {
 		e.logger.Err(err).Msg("fail to reprocess all txs")

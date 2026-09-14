@@ -328,12 +328,25 @@ func (e *EVMScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 		return txIn, nil
 	}
 
+	// Fetched once per block, before reorg handling, and threaded down (not
+	// stored on the scanner: prefetch runs processBlock for several heights
+	// concurrently). A lookup failure fails the block so the scanner retries it
+	// rather than scanning past it with bounce detection off. It has to be
+	// resolved before processReorg, which sends erratas and rewrites the stored
+	// block metas to the new canonical hashes: a failure after that would
+	// discard the replacement observations, and the retry would re-read the
+	// rewritten metas, see no reorg, and never re-observe the replaced blocks.
+	detectBounce, err := e.bouncedOutboundEnabled()
+	if err != nil {
+		return txIn, err
+	}
+
 	// process reorg if possible on this chain
 	if e.cfg.MaxReorgRescanBlocks > 0 {
-		reorgedTxIns, err := e.processReorg(block.Header())
-		if err != nil {
-			e.logger.Error().Err(err).Msgf("fail to process reorg for block %d", block.NumberU64())
-			return txIn, err
+		reorgedTxIns, reorgErr := e.processReorg(block.Header(), detectBounce)
+		if reorgErr != nil {
+			e.logger.Error().Err(reorgErr).Msgf("fail to process reorg for block %d", block.NumberU64())
+			return txIn, reorgErr
 		}
 		if len(reorgedTxIns) > 0 {
 			for _, item := range reorgedTxIns {
@@ -343,15 +356,6 @@ func (e *EVMScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 				txIn.TxArray = append(txIn.TxArray, item.TxArray...)
 			}
 		}
-	}
-
-	// Fetched once per block and threaded down (not stored on the scanner):
-	// prefetch runs processBlock for several heights concurrently. A lookup
-	// failure fails the block so the scanner retries it rather than scanning
-	// past it with bounce detection off.
-	detectBounce, err := e.bouncedOutboundEnabled()
-	if err != nil {
-		return txIn, err
 	}
 
 	// collect all relevant transactions from the block and their gas prices
@@ -842,7 +846,7 @@ func (e *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.R
 // processReorg compares the block's parent hash with the stored block hash. When a
 // reorg is detected, it triggers a rescan of all cached blocks in the reorg window.
 // The function returns observations from the rescanned blocks.
-func (e *EVMScanner) processReorg(header *etypes.Header) ([]stypes.TxIn, error) {
+func (e *EVMScanner) processReorg(header *etypes.Header, detectBounce bool) ([]stypes.TxIn, error) {
 	previousHeight := header.Number.Int64() - 1
 	prevBlockMeta, err := e.blockMetaAccessor.GetBlockMeta(previousHeight)
 	if err != nil {
@@ -863,16 +867,6 @@ func (e *EVMScanner) processReorg(header *etypes.Header) ([]stypes.TxIn, error) 
 		Str("stored_hash", prevBlockMeta.BlockHash).
 		Str("current_parent_hash", header.ParentHash.Hex()).
 		Msg("reorg detected")
-
-	// Resolved before reprocessTxs, which sends erratas and rewrites the stored
-	// block metas to the new canonical hashes. Bailing out after that runs would
-	// lose the rescan for good: the retry re-reads the rewritten meta, sees no
-	// reorg, and never re-observes the replaced blocks. Reorgs are rare, so the
-	// occasional lookup for an empty rescan set costs nothing.
-	detectBounce, err := e.bouncedOutboundEnabled()
-	if err != nil {
-		return nil, err
-	}
 
 	// send erratas and determine the block heights to rescan
 	heights, err := e.reprocessTxs()
