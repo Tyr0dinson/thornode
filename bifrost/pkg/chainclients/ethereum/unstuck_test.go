@@ -83,7 +83,7 @@ func (s *UnstuckTestSuite) SetUpTest(c *C) {
 		// EVMBouncedOutbound gates bounce detection; a lookup failure now fails the
 		// block, so the fixture must answer it.
 		if strings.HasPrefix(req.RequestURI, "/thorchain/mimir/key/EVMBouncedOutbound-") {
-			_, err := rw.Write([]byte(`0`))
+			_, err = rw.Write([]byte(`0`))
 			c.Assert(err, IsNil)
 			return
 		}
