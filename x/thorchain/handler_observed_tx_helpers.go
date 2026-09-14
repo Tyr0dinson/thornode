@@ -1055,6 +1055,11 @@ func correctOutboundObservation(ctx cosmos.Context, mgr Manager, voter *Observed
 		reconcileBounceCorrection(ctx, mgr, voter.Tx, tx.Bounced)
 		voter.Tx.Bounced = tx.Bounced
 	}
+	// The quorum that just applied has superseded every other variant, including
+	// the one it replaced. Drop them so a stale re-submission of the old verdict
+	// cannot ride the old signers back to a supermajority; the next reversal has
+	// to be voted afresh.
+	voter.PruneSupersededTxs()
 }
 
 // reconcileBounceCorrection re-runs the outbound coin accounting after consensus

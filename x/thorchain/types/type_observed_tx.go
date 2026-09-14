@@ -296,6 +296,21 @@ func (m *ObservedTxVoter) getConsensusTx(accounts NodeAccounts, final bool, idx 
 	return common.ObservedTx{}
 }
 
+// PruneSupersededTxs drops every observation with the consensus Tx's finality
+// that no longer matches the consensus verdict (gas or Bounced). Called after a
+// correction has been applied so the superseded quorum cannot be reused: a
+// stale re-submission of the old verdict at new heights starts from zero, and
+// every further reversal needs a fresh supermajority of its own.
+func (m *ObservedTxVoter) PruneSupersededTxs() {
+	if m.Tx.IsEmpty() {
+		return
+	}
+	final := m.Tx.IsFinal()
+	m.Txs = slices.DeleteFunc(m.Txs, func(tx common.ObservedTx) bool {
+		return tx.IsFinal() == final && !m.Tx.EqualsConsensus(tx)
+	})
+}
+
 // SetReverted set all the tx status to `Reverted` , only when a relevant errata tx had been processed
 func (m *ObservedTxVoter) SetReverted() {
 	m.setStatus(common.Status_reverted)

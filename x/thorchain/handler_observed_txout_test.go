@@ -1218,3 +1218,48 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceDiscoveredAfterDeliveredCons
 	c.Check(f.ethBalance(c), Equals, gasOnly)
 	c.Check(f.securityEvents(), Equals, 1)
 }
+
+// TestHandleBounceCorrectionRequiresFreshQuorum: a correction consumes the quorum
+// that produced it. Once delivered has superseded bounced, one node re-filing the
+// old bounced verdict at new heights must not ride the six stale bounced signers
+// back to a supermajority and credit the coins a second time. A fresh bounced
+// supermajority still corrects, so pruning does not freeze the voter.
+func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionRequiresFreshQuorum(c *C) {
+	const (
+		untouched   = uint64(20000000000) // 200 ETH
+		gasOnly     = untouched - 37500
+		gasAndCoins = gasOnly - 1
+	)
+
+	f := newBouncedOutboundFixture(c, 6)
+	for i := 0; i < 6; i++ {
+		f.vote(c, i, true)
+	}
+	c.Check(f.ethBalance(c), Equals, gasOnly) // 6/6 bounced: coins retained
+	c.Check(f.securityEvents(), Equals, 1)
+
+	for i := 0; i < 6; i++ {
+		f.vote(c, i, false)
+	}
+	c.Check(f.ethBalance(c), Equals, gasAndCoins) // 6/6 delivered: debited
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
+	c.Check(f.securityEvents(), Equals, 2)
+	// the superseded bounced observations are gone; only the delivered quorum remains
+	for _, tx := range f.keeper.voter.Txs {
+		c.Check(tx.Bounced, Equals, false)
+	}
+
+	// one stale bounced vote at different heights: a lone fresh vote, no quorum
+	f.voteAt(c, 0, true, 14, 14)
+	c.Check(f.ethBalance(c), Equals, gasAndCoins)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
+	c.Check(f.securityEvents(), Equals, 2)
+
+	// a fresh bounced supermajority does correct again
+	for i := 1; i < 4; i++ {
+		f.voteAt(c, i, true, 14, 14)
+	}
+	c.Check(f.ethBalance(c), Equals, gasOnly)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
+	c.Check(f.securityEvents(), Equals, 3)
+}
