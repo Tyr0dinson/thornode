@@ -767,3 +767,13 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_BouncedRequiresSameVau
 	c.Assert(err, IsNil)
 	c.Assert(txInItem.Bounced, Equals, true)
 }
+
+// TestDetectBounceAt: the activation is an external block height so that every
+// observer derives the same verdict for a given receipt no matter when it scans
+// it. A flag read at scan time would split observers across the mimir change.
+func (t *SmartContractLogParserTestSuite) TestDetectBounceAt(c *C) {
+	c.Assert(DetectBounceAt(0, 5_000_000), Equals, false) // unset: never
+	c.Assert(DetectBounceAt(5_000_000, 4_999_999), Equals, false)
+	c.Assert(DetectBounceAt(5_000_000, 5_000_000), Equals, true) // inclusive
+	c.Assert(DetectBounceAt(5_000_000, 5_000_001), Equals, true)
+}

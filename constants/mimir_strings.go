@@ -106,10 +106,15 @@ const (
 	MimirTemplateEVMAllowanceCheck     = "EVMAllowanceCheck-%s"     // Use with Chain
 	MimirTemplateEVMDirectERC20Inbound = "EVMDirectERC20Inbound-%s" // Use with Chain
 	// MimirTemplateEVMBouncedOutbound enables bifrost's router-bounce detection
-	// (ObservedTx.Bounced) per chain. Rollout order matters: Bounced is proto
-	// field 14 and old binaries reject messages carrying it, so only set this
-	// once every node runs a build that knows the field, and only on chains whose
-	// deployed router is V6 or later (earlier routers emit no TransferFailed).
+	// (ObservedTx.Bounced) per chain. Its value is the EXTERNAL block height the
+	// detection starts at, not a flag: Bounced is part of the signed attestation
+	// payload and observers scan asynchronously, so a flag would have them
+	// disagree about receipts scanned either side of the change. Set it ahead of
+	// the chain's current head - a height already scanned past reintroduces
+	// exactly that split. Rollout order matters too: Bounced is proto field 14
+	// and old binaries reject messages carrying it, so only set this once every
+	// node runs a build that knows the field, and only on chains whose deployed
+	// router is V6 or later (earlier routers emit no TransferFailed).
 	MimirTemplateEVMBouncedOutbound        = "EVMBouncedOutbound-%s"        // Use with Chain
 	MimirTemplateConfMultiplierBasisPoints = "ConfMultiplierBasisPoints-%s" // Use with Chain
 	MimirTemplateMaxConfirmations          = "MaxConfirmations-%s"          // Use with Chain

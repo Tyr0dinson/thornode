@@ -374,7 +374,8 @@ func (e *ETHScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 	}
 	e.updateGasPrice(block.BaseFee(), priorityFees)
 
-	// Fetched once per block, before reorg handling, and threaded down (not
+	// Fetched once per block, before reorg handling, and threaded down as the
+	// activation height so each rescanned block resolves its own verdict (not
 	// stored on the scanner: prefetch runs processBlock for several heights
 	// concurrently). A lookup failure fails the block so the scanner retries it
 	// rather than scanning past it with bounce detection off. It has to be
@@ -382,12 +383,12 @@ func (e *ETHScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 	// block metas to the new canonical hashes: a failure after that would
 	// discard the replacement observations, and the retry would re-read the
 	// rewritten metas, see no reorg, and never re-observe the replaced blocks.
-	detectBounce, err := e.bouncedOutboundEnabled()
+	bounceFrom, err := e.bounceActivationHeight()
 	if err != nil {
 		return txIn, err
 	}
 
-	reorgedTxIns, err := e.processReorg(block.Header(), detectBounce)
+	reorgedTxIns, err := e.processReorg(block.Header(), bounceFrom)
 	if err != nil {
 		e.logger.Error().Err(err).Msgf("fail to process reorg for block %d", height)
 		return txIn, err
@@ -405,7 +406,7 @@ func (e *ETHScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 		return txIn, nil
 	}
 
-	txInBlock, err := e.extractTxs(block, detectBounce)
+	txInBlock, err := e.extractTxs(block, bounceFrom)
 	if err != nil {
 		return txIn, err
 	}
@@ -415,7 +416,9 @@ func (e *ETHScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 	return txIn, nil
 }
 
-func (e *ETHScanner) extractTxs(block *etypes.Block, detectBounce bool) (stypes.TxIn, error) {
+func (e *ETHScanner) extractTxs(block *etypes.Block, bounceFrom int64) (stypes.TxIn, error) {
+	detectBounce := evm.DetectBounceAt(bounceFrom, block.Number().Int64())
+
 	txInbound := stypes.TxIn{
 		Chain:    common.ETHChain,
 		Filtered: false,
@@ -630,7 +633,7 @@ func (e *ETHScanner) onObservedTxIn(txIn stypes.TxInItem, blockHeight int64) {
 
 // processReorg will compare block's parent hash and the block hash we have in store
 // when there is a reorg detected , it will return true, other false
-func (e *ETHScanner) processReorg(block *etypes.Header, detectBounce bool) ([]stypes.TxIn, error) {
+func (e *ETHScanner) processReorg(block *etypes.Header, bounceFrom int64) ([]stypes.TxIn, error) {
 	previousHeight := block.Number.Int64() - 1
 	prevBlockMeta, err := e.blockMetaAccessor.GetBlockMeta(previousHeight)
 	if err != nil {
@@ -662,7 +665,7 @@ func (e *ETHScanner) processReorg(block *etypes.Header, detectBounce bool) ([]st
 			continue
 		}
 		var txIn stypes.TxIn
-		txIn, err = e.extractTxs(block, detectBounce)
+		txIn, err = e.extractTxs(block, bounceFrom)
 		if err != nil {
 			e.logger.Err(err).Msgf("fail to extract txs from block (%d)", item)
 			continue
@@ -948,22 +951,35 @@ func (e *ETHScanner) directERC20InboundEnabled() bool {
 	return enabled > 0
 }
 
-// bouncedOutboundEnabled reports whether the log parser should flag outbounds the
-// router returned to the sending vault. Gated per-chain so every observer starts
-// setting ObservedTx.Bounced at the same height.
-// The lookup error is returned rather than defaulted to false: scanning on with
+// bounceActivationHeight returns the external block height from which the log
+// parser should flag outbounds the router returned to the sending vault, or 0
+// when the chain has none set.
+//
+// The mimir holds a height rather than a boolean because Bounced is part of the
+// signed attestation payload. Observers scan asynchronously, so a boolean read at
+// scan time would have them disagree about the same receipt purely according to
+// which side of the mimir change they happened to read it on - and nothing goes
+// back to re-read that receipt afterwards, so an instant observation's debit
+// would stay uncorrected. Keyed off the external height the verdict is a property
+// of the block, and every observer derives the same one whenever it scans it.
+// Operators must set it ahead of the chain's current head for that to hold.
+//
+// The lookup error is returned rather than defaulted to 0: scanning on with
 // bounce detection silently disabled advances the scan position past the block,
 // and nothing re-reads that receipt once thornode is reachable again, so the
 // vault would be debited for coins that never left it.
-func (e *ETHScanner) bouncedOutboundEnabled() (bool, error) {
-	enabled, err := e.bridge.GetMimirWithRef(
+func (e *ETHScanner) bounceActivationHeight() (int64, error) {
+	height, err := e.bridge.GetMimirWithRef(
 		constants.MimirTemplateEVMBouncedOutbound,
 		e.cfg.ChainID.String(),
 	)
 	if err != nil {
-		return false, fmt.Errorf("fail to get bounced outbound mimir for %s: %w", common.ETHChain, err)
+		return 0, fmt.Errorf("fail to get bounced outbound mimir for %s: %w", common.ETHChain, err)
 	}
-	return enabled > 0, nil
+	if height < 0 {
+		return 0, nil
+	}
+	return height, nil
 }
 
 // ConvertAmount will convert the amount to 1e8, the decimals used by THORChain.

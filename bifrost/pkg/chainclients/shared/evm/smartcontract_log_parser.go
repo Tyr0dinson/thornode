@@ -43,9 +43,10 @@ type SmartContractLogParser struct {
 	vaultABI         *abi.ABI
 	nativeAsset      common.Asset
 	maxLogs          int64
-	// detectBounce enables TransferFailed handling. Gated per-chain by
-	// MimirTemplateEVMBouncedOutbound so every observer starts flagging bounces
-	// at the same height; see GetTxInItem.
+	// detectBounce enables TransferFailed handling. Gated per-chain and per
+	// external block height by MimirTemplateEVMBouncedOutbound (see
+	// DetectBounceAt), so every observer derives the same verdict for a given
+	// receipt whenever it scans it; see GetTxInItem.
 	detectBounce bool
 }
 
@@ -175,6 +176,18 @@ func (scp *SmartContractLogParser) parseTransferFailed(log etypes.Log) (vaultTra
 // to the vault, with no memo.
 func (evt vaultTransferFailedEvent) isBounce() bool {
 	return evt.Memo == "" && strings.EqualFold(evt.Asset.String(), NativeTokenAddr)
+}
+
+// DetectBounceAt reports whether a block at this external height is past the
+// chain's bounce activation height (MimirTemplateEVMBouncedOutbound). An
+// activation of 0 means the chain has none set.
+//
+// The activation is a height rather than a flag because Bounced is part of the
+// signed attestation payload: observers scan asynchronously, so a flag read at
+// scan time would have them disagree about the same receipt purely according to
+// which side of the mimir change they read it on.
+func DetectBounceAt(activation, height int64) bool {
+	return activation > 0 && height >= activation
 }
 
 // bounce pairs a _sendEth refund with the router that emitted it. GetTxInItem

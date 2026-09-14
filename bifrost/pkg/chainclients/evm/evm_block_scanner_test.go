@@ -1188,7 +1188,7 @@ func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 	c.Assert(bs.blockMetaAccessor.SaveBlockMeta(0, blockMeta), IsNil)
 	bs.globalErrataQueue = make(chan stypes.ErrataBlock, 1)
 
-	reorgedBlocks, err := bs.processReorg(blockNew, false)
+	reorgedBlocks, err := bs.processReorg(blockNew, 0)
 	c.Assert(err, IsNil)
 	c.Assert(reorgedBlocks, IsNil)
 	// make sure there is errata block in the queue

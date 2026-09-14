@@ -328,7 +328,8 @@ func (e *EVMScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 		return txIn, nil
 	}
 
-	// Fetched once per block, before reorg handling, and threaded down (not
+	// Fetched once per block, before reorg handling, and threaded down as the
+	// activation height so each rescanned block resolves its own verdict (not
 	// stored on the scanner: prefetch runs processBlock for several heights
 	// concurrently). A lookup failure fails the block so the scanner retries it
 	// rather than scanning past it with bounce detection off. It has to be
@@ -336,14 +337,14 @@ func (e *EVMScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 	// block metas to the new canonical hashes: a failure after that would
 	// discard the replacement observations, and the retry would re-read the
 	// rewritten metas, see no reorg, and never re-observe the replaced blocks.
-	detectBounce, err := e.bouncedOutboundEnabled()
+	bounceFrom, err := e.bounceActivationHeight()
 	if err != nil {
 		return txIn, err
 	}
 
 	// process reorg if possible on this chain
 	if e.cfg.MaxReorgRescanBlocks > 0 {
-		reorgedTxIns, reorgErr := e.processReorg(block.Header(), detectBounce)
+		reorgedTxIns, reorgErr := e.processReorg(block.Header(), bounceFrom)
 		if reorgErr != nil {
 			e.logger.Error().Err(reorgErr).Msgf("fail to process reorg for block %d", block.NumberU64())
 			return txIn, reorgErr
@@ -359,7 +360,7 @@ func (e *EVMScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 	}
 
 	// collect all relevant transactions from the block and their gas prices
-	txInBlock, gasPrices, err := e.getTxIn(block, detectBounce)
+	txInBlock, gasPrices, err := e.getTxIn(block, bounceFrom)
 	if err != nil {
 		return txIn, err
 	}
@@ -598,7 +599,9 @@ func (e *EVMScanner) isPoolAddress(addr ecommon.Address) bool {
 	return ok
 }
 
-func (e *EVMScanner) getTxIn(block *etypes.Block, detectBounce bool) (stypes.TxIn, []*big.Int, error) {
+func (e *EVMScanner) getTxIn(block *etypes.Block, bounceFrom int64) (stypes.TxIn, []*big.Int, error) {
+	detectBounce := evm.DetectBounceAt(bounceFrom, block.Number().Int64())
+
 	// CHANGEME: if an EVM chain supports some way of fetching all transaction receipts
 	// within a block, register it here.
 	switch e.cfg.ChainID {
@@ -731,12 +734,12 @@ func (e *EVMScanner) getTxInItem(tx *etypes.Transaction) (*stypes.TxInItem, erro
 		return nil, fmt.Errorf("failed to get transaction receipt: %w", err)
 	}
 
-	detectBounce, err := e.bouncedOutboundEnabled()
+	bounceFrom, err := e.bounceActivationHeight()
 	if err != nil {
 		return nil, err
 	}
 
-	return e.receiptToTxInItem(tx, receipt, detectBounce)
+	return e.receiptToTxInItem(tx, receipt, evm.DetectBounceAt(bounceFrom, receipt.BlockNumber.Int64()))
 }
 
 func (e *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.Receipt, detectBounce bool) (*stypes.TxInItem, error) {
@@ -846,7 +849,7 @@ func (e *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.R
 // processReorg compares the block's parent hash with the stored block hash. When a
 // reorg is detected, it triggers a rescan of all cached blocks in the reorg window.
 // The function returns observations from the rescanned blocks.
-func (e *EVMScanner) processReorg(header *etypes.Header, detectBounce bool) ([]stypes.TxIn, error) {
+func (e *EVMScanner) processReorg(header *etypes.Header, bounceFrom int64) ([]stypes.TxIn, error) {
 	previousHeight := header.Number.Int64() - 1
 	prevBlockMeta, err := e.blockMetaAccessor.GetBlockMeta(previousHeight)
 	if err != nil {
@@ -888,7 +891,7 @@ func (e *EVMScanner) processReorg(header *etypes.Header, detectBounce bool) ([]s
 			continue
 		}
 		var txIn stypes.TxIn
-		txIn, _, err = e.getTxIn(block, detectBounce) // discard gas prices during reorg rescan
+		txIn, _, err = e.getTxIn(block, bounceFrom) // discard gas prices during reorg rescan
 		if err != nil {
 			e.logger.Err(err).Int64("height", rescanHeight).Msg("fail to extract txs from block")
 			continue
@@ -1226,24 +1229,35 @@ func (e *EVMScanner) directERC20InboundEnabled() bool {
 	return enabled > 0
 }
 
-// bouncedOutboundEnabled reports whether the log parser should flag outbounds the
-// router returned to the sending vault. Gated per-chain so every observer starts
-// setting ObservedTx.Bounced at the same height: the flag is part of the signed
-// attestation payload, so a mixed window would briefly fail to reach quorum on a
-// bounce (self-healing via the observer deck refresh).
-// The lookup error is returned rather than defaulted to false: scanning on with
+// bounceActivationHeight returns the external block height from which the log
+// parser should flag outbounds the router returned to the sending vault, or 0
+// when the chain has none set.
+//
+// The mimir holds a height rather than a boolean because Bounced is part of the
+// signed attestation payload. Observers scan asynchronously, so a boolean read at
+// scan time would have them disagree about the same receipt purely according to
+// which side of the mimir change they happened to read it on - and nothing goes
+// back to re-read that receipt afterwards, so an instant observation's debit
+// would stay uncorrected. Keyed off the external height the verdict is a property
+// of the block, and every observer derives the same one whenever it scans it.
+// Operators must set it ahead of the chain's current head for that to hold.
+//
+// The lookup error is returned rather than defaulted to 0: scanning on with
 // bounce detection silently disabled advances the scan position past the block,
 // and nothing re-reads that receipt once thornode is reachable again, so the
 // vault would be debited for coins that never left it.
-func (e *EVMScanner) bouncedOutboundEnabled() (bool, error) {
-	enabled, err := e.bridge.GetMimirWithRef(
+func (e *EVMScanner) bounceActivationHeight() (int64, error) {
+	height, err := e.bridge.GetMimirWithRef(
 		constants.MimirTemplateEVMBouncedOutbound,
 		e.cfg.ChainID.String(),
 	)
 	if err != nil {
-		return false, fmt.Errorf("fail to get bounced outbound mimir for %s: %w", e.cfg.ChainID, err)
+		return 0, fmt.Errorf("fail to get bounced outbound mimir for %s: %w", e.cfg.ChainID, err)
 	}
-	return enabled > 0, nil
+	if height < 0 {
+		return 0, nil
+	}
+	return height, nil
 }
 
 // getTxInFromDirectERC20Transfer observes direct ERC20 token transfers sent to
