@@ -1304,3 +1304,34 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionKeepsStaleSignersO
 	}
 	c.Check(bouncedSigners, Equals, 6)
 }
+
+// TestHandleBounceCorrectionAfterMemoRecovery: a memoless outbound's consensus
+// memo is rewritten with the one recovered from the scheduled TxOutItem, but the
+// router emitted none, so every later scanner observation still carries the empty
+// memo it saw. The correction must still recognise them as the same outbound.
+func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionAfterMemoRecovery(c *C) {
+	const (
+		untouched   = uint64(20000000000) // 200 ETH
+		gasOnly     = untouched - 37500
+		gasAndCoins = gasOnly - 1
+	)
+
+	f := newBouncedOutboundFixture(c, 6)
+	recovered := f.tx.Memo
+	f.tx.Memo = "" // memoless: the router emitted no memo
+
+	for i := 0; i < 4; i++ {
+		f.vote(c, i, false)
+	}
+	c.Check(f.ethBalance(c), Equals, gasAndCoins) // 4/6 delivered: debited
+	// the consensus tx now carries the memo recovered from the scheduled TxOutItem
+	c.Check(f.keeper.voter.Tx.Tx.Memo, Equals, recovered)
+
+	// the receipt shows the router bounced it back; the empty memo on those
+	// observations must not stop the reconciliation
+	for i := 0; i < 6; i++ {
+		f.vote(c, i, true)
+	}
+	c.Check(f.ethBalance(c), Equals, gasOnly)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
+}

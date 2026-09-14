@@ -1054,7 +1054,17 @@ func correctOutboundObservation(ctx cosmos.Context, mgr Manager, voter *Observed
 	if !gasChanged && !bounceChanged {
 		return
 	}
-	if !voter.Tx.EqualsConsensusIgnoreGas(tx) {
+	// Compare against the consensus payload with the observed memo substituted in.
+	// handleObservedTxOutQuorum rewrites a memoless outbound's consensus memo with
+	// the one recovered from the scheduled TxOutItem - processErrataOutboundTx needs
+	// it to find the inbound, and the TxOut search window it came from is long gone
+	// by then - but the router emitted no memo, so every later scanner observation
+	// still carries the empty one. Without this the correction could never match a
+	// memoless outbound. Identity is still pinned by the tx id, chain, vault, both
+	// addresses and the coins, and a supermajority is still required below.
+	consensus := voter.Tx
+	consensus.Tx.Memo = tx.Tx.Memo
+	if !consensus.EqualsConsensusIgnoreGas(tx) {
 		return
 	}
 	if !HasSuperMajority(countMatchingSigners(*voter, tx, nas), len(nas)) {
