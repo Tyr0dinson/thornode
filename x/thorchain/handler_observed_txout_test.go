@@ -1229,12 +1229,13 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceDiscoveredAfterDeliveredCons
 	c.Check(f.securityEvents(), Equals, 1)
 }
 
-// TestHandleBounceCorrectionRequiresFreshQuorum: a correction consumes the quorum
-// that produced it. Once delivered has superseded bounced, one node re-filing the
-// old bounced verdict at new heights must not ride the six stale bounced signers
-// back to a supermajority and credit the coins a second time. A fresh bounced
-// supermajority still corrects, so pruning does not freeze the voter.
-func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionRequiresFreshQuorum(c *C) {
+// TestHandleBounceCorrectionIsOneShot: a correction consumes the quorum that
+// produced it, and no later quorum can undo it. Attestations carry no nonce, so
+// a node genuinely re-observing the superseded verdict and an attacker replaying
+// the very attestations that verdict was first carried by produce byte-identical
+// payloads - the chain cannot tell them apart. Capping the reconciliation at one
+// keeps either from swinging the vault's coin accounting back and forth.
+func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionIsOneShot(c *C) {
 	const (
 		untouched   = uint64(20000000000) // 200 ETH
 		gasOnly     = untouched - 37500
@@ -1247,66 +1248,59 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionRequiresFreshQuoru
 	}
 	c.Check(f.ethBalance(c), Equals, gasOnly) // 6/6 bounced: coins retained
 	c.Check(f.securityEvents(), Equals, 1)
+	c.Check(f.keeper.voter.BounceCorrected, Equals, false)
 
 	for i := 0; i < 6; i++ {
 		f.vote(c, i, false)
 	}
 	c.Check(f.ethBalance(c), Equals, gasAndCoins) // 6/6 delivered: debited
 	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
+	c.Check(f.keeper.voter.BounceCorrected, Equals, true)
 	c.Check(f.securityEvents(), Equals, 2)
-	// the superseded bounced observations are gone; only the delivered quorum remains
-	for _, tx := range f.keeper.voter.Txs {
-		c.Check(tx.Bounced, Equals, false)
-	}
 
-	// one stale bounced vote at different heights: a lone fresh vote, no quorum
-	f.voteAt(c, 0, true, 14, 14)
+	// The same six nodes re-file the superseded bounced verdict at new heights -
+	// indistinguishable from a replay of the attestations they already gossiped.
+	// It is a full supermajority and it still must not credit the coins back.
+	for i := 0; i < 6; i++ {
+		f.voteAt(c, i, true, 14, 14)
+	}
 	c.Check(f.ethBalance(c), Equals, gasAndCoins)
 	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
 	c.Check(f.securityEvents(), Equals, 2)
-
-	// a fresh bounced supermajority does correct again
-	for i := 1; i < 4; i++ {
-		f.voteAt(c, i, true, 14, 14)
-	}
-	c.Check(f.ethBalance(c), Equals, gasOnly)
-	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
-	c.Check(f.securityEvents(), Equals, 3)
 }
 
-// TestHandleBounceCorrectionAfterErrata: an errata has already credited the coins
-// back and marked the voter Reverted. A bounced quorum arriving afterwards must not
-// credit the same coins a second time, on either correction path.
-func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionAfterErrata(c *C) {
-	const (
-		untouched   = uint64(20000000000) // 200 ETH
-		gasOnly     = untouched - 37500
-		gasAndCoins = gasOnly - 1
-	)
-
-	// correctOutboundObservation after a finalised delivered consensus
+// TestHandleBounceCorrectionKeepsStaleSignersOnRecord: the superseded
+// observations stay on the voter after a correction, so ObservedTxVoter.Add goes
+// on rejecting a signer that already voted that variant. Pruning them would hand
+// a replayed attestation a fresh slot to be counted in.
+func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionKeepsStaleSignersOnRecord(c *C) {
 	f := newBouncedOutboundFixture(c, 6)
-	for i := 0; i < 4; i++ {
-		f.vote(c, i, false)
-	}
-	c.Check(f.ethBalance(c), Equals, gasAndCoins)
-	f.errata(c)
-	c.Check(f.ethBalance(c), Equals, gasOnly) // coins restored by the errata
-	c.Check(f.securityEvents(), Equals, 1)    // "outbound errata"
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 6; i++ {
 		f.vote(c, i, true)
 	}
-	c.Check(f.ethBalance(c), Equals, gasOnly) // not restored twice
-	c.Check(f.securityEvents(), Equals, 1)
+	for i := 0; i < 6; i++ {
+		f.vote(c, i, false)
+	}
+	c.Check(f.keeper.voter.BounceCorrected, Equals, true)
 
-	// the non-final -> final hand-off
-	f = newBouncedOutboundFixture(c, 1)
-	f.voteAt(c, 0, false, 12, 13) // unfinalised delivered: debited
-	c.Check(f.ethBalance(c), Equals, gasAndCoins)
-	f.errata(c)
-	c.Check(f.ethBalance(c), Equals, gasOnly)
-	c.Check(f.securityEvents(), Equals, 1)
-	f.voteAt(c, 0, true, 13, 13) // finalised bounced after the errata
-	c.Check(f.ethBalance(c), Equals, gasOnly)
-	c.Check(f.securityEvents(), Equals, 1)
+	var bouncedSigners int
+	for _, tx := range f.keeper.voter.Txs {
+		if tx.Bounced {
+			bouncedSigners += len(tx.Signers)
+		}
+	}
+	c.Check(bouncedSigners, Equals, 6)
+
+	// Re-submitting the identical bounced observation is rejected as a duplicate
+	// rather than recorded a second time.
+	for i := 0; i < 6; i++ {
+		f.vote(c, i, true)
+	}
+	bouncedSigners = 0
+	for _, tx := range f.keeper.voter.Txs {
+		if tx.Bounced {
+			bouncedSigners += len(tx.Signers)
+		}
+	}
+	c.Check(bouncedSigners, Equals, 6)
 }

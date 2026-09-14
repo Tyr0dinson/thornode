@@ -1045,7 +1045,12 @@ func correctOutboundObservation(ctx cosmos.Context, mgr Manager, voter *Observed
 		return
 	}
 	gasChanged := !voter.Tx.Tx.Gas.Equals(tx.Tx.Gas)
-	bounceChanged := tx.Bounced != voter.Tx.Bounced
+	// Only the first bounce reconciliation is honoured. An attestation carries no
+	// nonce or height, so a node genuinely re-observing the superseded verdict and
+	// an attacker replaying the attestations that verdict was originally carried by
+	// produce byte-identical payloads. Without this cap either one could re-file the
+	// old verdict and swing the vault's coin accounting back and forth indefinitely.
+	bounceChanged := tx.Bounced != voter.Tx.Bounced && !voter.BounceCorrected
 	if !gasChanged && !bounceChanged {
 		return
 	}
@@ -1062,12 +1067,8 @@ func correctOutboundObservation(ctx cosmos.Context, mgr Manager, voter *Observed
 	if bounceChanged {
 		reconcileBounceCorrection(ctx, mgr, voter.Tx, tx.Bounced)
 		voter.Tx.Bounced = tx.Bounced
+		voter.BounceCorrected = true
 	}
-	// The quorum that just applied has superseded every other variant, including
-	// the one it replaced. Drop them so a stale re-submission of the old verdict
-	// cannot ride the old signers back to a supermajority; the next reversal has
-	// to be voted afresh.
-	voter.PruneSupersededTxs()
 }
 
 // reconcileBounceCorrection re-runs the outbound coin accounting after consensus
