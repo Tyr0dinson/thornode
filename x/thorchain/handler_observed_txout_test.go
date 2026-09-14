@@ -1305,6 +1305,43 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionKeepsStaleSignersO
 	c.Check(bouncedSigners, Equals, 6)
 }
 
+// TestHandleBounceCorrectionAfterErrata: an errata has already credited the coins
+// back and marked the voter Reverted. A bounced quorum arriving afterwards must not
+// credit the same coins a second time, on either correction path.
+func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionAfterErrata(c *C) {
+	const (
+		untouched   = uint64(20000000000) // 200 ETH
+		gasOnly     = untouched - 37500
+		gasAndCoins = gasOnly - 1
+	)
+
+	// correctOutboundObservation after a finalised delivered consensus
+	f := newBouncedOutboundFixture(c, 6)
+	for i := 0; i < 4; i++ {
+		f.vote(c, i, false)
+	}
+	c.Check(f.ethBalance(c), Equals, gasAndCoins)
+	f.errata(c)
+	c.Check(f.ethBalance(c), Equals, gasOnly) // coins restored by the errata
+	c.Check(f.securityEvents(), Equals, 1)    // "outbound errata"
+	for i := 0; i < 4; i++ {
+		f.vote(c, i, true)
+	}
+	c.Check(f.ethBalance(c), Equals, gasOnly) // not restored twice
+	c.Check(f.securityEvents(), Equals, 1)
+
+	// the non-final -> final hand-off
+	f = newBouncedOutboundFixture(c, 1)
+	f.voteAt(c, 0, false, 12, 13) // unfinalised delivered: debited
+	c.Check(f.ethBalance(c), Equals, gasAndCoins)
+	f.errata(c)
+	c.Check(f.ethBalance(c), Equals, gasOnly)
+	c.Check(f.securityEvents(), Equals, 1)
+	f.voteAt(c, 0, true, 13, 13) // finalised bounced after the errata
+	c.Check(f.ethBalance(c), Equals, gasOnly)
+	c.Check(f.securityEvents(), Equals, 1)
+}
+
 // TestHandleBounceCorrectionAfterMemoRecovery: a memoless outbound's consensus
 // memo is rewritten with the one recovered from the scheduled TxOutItem, but the
 // router emitted none, so every later scanner observation still carries the empty
