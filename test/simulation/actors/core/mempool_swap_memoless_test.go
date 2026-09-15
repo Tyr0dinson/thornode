@@ -1,6 +1,9 @@
 package core
 
 import (
+	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
 	sdkmath "cosmossdk.io/math"
@@ -94,5 +97,29 @@ func TestValidateMempoolMemolessExclusion(t *testing.T) {
 				t.Fatal("invalid exclusion snapshot was accepted")
 			}
 		})
+	}
+}
+
+func TestMempoolMemolessMissedWindowClassification(t *testing.T) {
+	t.Parallel()
+
+	missedErr := &mempoolMemolessMissedWindow{
+		err: fmt.Errorf("POL inbound finalized before %d pre-finality exclusion samples (got %d)",
+			mempoolMemolessPreFinalitySamples, 0),
+	}
+
+	var missed *mempoolMemolessMissedWindow
+	if !errors.As(fmt.Errorf("attempt: %w", missedErr), &missed) {
+		t.Fatal("wrapped missed window was not recognized")
+	}
+	if !strings.Contains(missedErr.Error(), "got 0") {
+		t.Fatalf("missed window lost its message: %v", missedErr)
+	}
+
+	// Every other pre-finality failure is a real exclusion breach, not a race.
+	breach := fmt.Errorf("pre-finality exclusion sample at height 10: %w",
+		fmt.Errorf("reference swap reserved mempool TOR"))
+	if errors.As(breach, &missed) {
+		t.Fatalf("exclusion breach classified as a missed window: %v", breach)
 	}
 }

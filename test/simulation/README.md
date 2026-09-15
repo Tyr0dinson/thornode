@@ -255,6 +255,15 @@ and security-event handling, but it does not create a real Polygon reorg or test
 Bifrost's reorg detection. Scanner-level reorg coverage therefore remains a
 separate test concern.
 
+POL's fifteen confirmations are only about thirty seconds of mocknet wall clock.
+Under a loaded cluster Bifrost can fall far enough behind the chain that an
+inbound is observed and confirmation counted in the same breath, leaving no
+unfinalized window to assert against. The native and memoless actors classify
+that collapsed window separately from a policy breach: they settle the abandoned
+inbound, take fresh baselines, and replay the case on a new inbound a bounded
+number of times. A swap that is genuinely admitted before finality still fails
+every attempt.
+
 A freshly reset cluster begins with one genesis validator `Active` and the other
 three validator processes `Standby`. The errata actor always reaches the quorum
 of the active set. If churn has activated enough additional validators, it also

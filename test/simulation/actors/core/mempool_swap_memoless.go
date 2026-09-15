@@ -27,7 +27,25 @@ const (
 	mempoolMemolessSetupAdvQueue       int64 = 1
 
 	mempoolMemolessPreFinalitySamples = 3
+
+	// mempoolMemolessWindowAttempts bounds how many references an actor may spend
+	// looking for POL's pre-finality window. Fifteen POL confirmations are only
+	// thirty seconds of mocknet wall clock, and a loaded simulation can leave
+	// Bifrost far enough behind the chain that an inbound is observed and
+	// confirmation counted in the same breath. A literal reference that is
+	// genuinely admitted before finality still fails every attempt.
+	mempoolMemolessWindowAttempts = 2
 )
+
+// mempoolMemolessMissedWindow marks an attempt that lost the race with POL
+// finality rather than one that caught a reference resolving speculatively.
+type mempoolMemolessMissedWindow struct {
+	err error
+}
+
+func (e *mempoolMemolessMissedWindow) Error() string { return e.err.Error() }
+
+func (e *mempoolMemolessMissedWindow) Unwrap() error { return e.err }
 
 type mempoolMemolessMimirSetting struct {
 	key          string
@@ -69,7 +87,9 @@ func NewMempoolSwapMemolessSimulationActor(rng *rand.Rand) *Actor {
 			to:    common.BTCAsset,
 		},
 	}
-	a.Timeout = 8 * time.Minute
+	// The scenario may replay a lost pre-finality race on a fresh reference,
+	// after settling the inbound the previous attempt left in flight.
+	a.Timeout = 16 * time.Minute
 	a.Ops = append(a.Ops, a.run)
 	return &a.Actor
 }
@@ -111,13 +131,40 @@ func (a *MempoolSwapMemolessActor) runScenario(config *OpConfig) (err error) {
 		}
 	}()
 
-	if err = a.quoteSwap(); err != nil {
+	for attempt := 1; attempt <= mempoolMemolessWindowAttempts; attempt++ {
+		err = a.runReferenceAttempt()
+		var missed *mempoolMemolessMissedWindow
+		if !errors.As(err, &missed) {
+			return err
+		}
+		a.Log().Warn().
+			Err(err).
+			Int("attempt", attempt).
+			Str("txid", a.swapTxID).
+			Msg("POL finality outran the pre-finality window; retrying on a fresh reference")
+	}
+	return err
+}
+
+// runReferenceAttempt registers a fresh one-shot reference, broadcasts the
+// literal-reference inbound, and proves it stayed outside every mempool-swap
+// surface until POL finality settled it exactly once.
+//
+// A collapsed pre-finality window proves nothing about the ReferenceRead policy,
+// so it is reported as a retryable miss. The abandoned inbound is still a swap
+// that must settle correctly, so it is verified rather than merely drained: that
+// both keeps its assertions and leaves the next attempt settled balances.
+func (a *MempoolSwapMemolessActor) runReferenceAttempt() error {
+	if err := a.refreshUserBalances(); err != nil {
 		return err
 	}
-	if err = a.registerReference(); err != nil {
+	if err := a.quoteSwap(); err != nil {
 		return err
 	}
-	if err = a.loadReference(); err != nil {
+	if err := a.registerReference(); err != nil {
+		return err
+	}
+	if err := a.loadReference(); err != nil {
 		return err
 	}
 
@@ -130,6 +177,12 @@ func (a *MempoolSwapMemolessActor) runScenario(config *OpConfig) (err error) {
 		return err
 	}
 	if err = a.verifyPreFinalityExclusion(baselineUsage); err != nil {
+		var missed *mempoolMemolessMissedWindow
+		if errors.As(err, &missed) {
+			if settleErr := a.verifyFinalizedSwap(baselineUsage); settleErr != nil {
+				return errors.Join(err, settleErr)
+			}
+		}
 		return err
 	}
 	if err = a.verifyFinalizedSwap(baselineUsage); err != nil {
@@ -140,6 +193,22 @@ func (a *MempoolSwapMemolessActor) runScenario(config *OpConfig) (err error) {
 		Str("txid", a.swapTxID).
 		Str("reference_memo", a.referenceMemo).
 		Msg("memoless reference correctly bypassed speculative execution and settled once after finality")
+	return nil
+}
+
+// refreshUserBalances re-reads the locked user's balances so an attempt quotes
+// and asserts against the state left by any earlier attempt's settled swap.
+func (a *MempoolSwapMemolessActor) refreshUserBalances() error {
+	spendable, err := a.userSpendableBalance(a.user)
+	if err != nil {
+		return fmt.Errorf("get %s balance: %w", a.from, err)
+	}
+	a.fromBalance = spendable
+	toAccount, err := a.user.ChainClients[a.to.Chain].GetAccount(nil)
+	if err != nil {
+		return fmt.Errorf("get %s balance: %w", a.to, err)
+	}
+	a.toBalance = accountAssetAmount(toAccount, a.to)
 	return nil
 }
 
@@ -402,7 +471,9 @@ func (a *MempoolSwapMemolessActor) verifyPreFinalityExclusion(baselineUsage sdkm
 			continue
 		}
 		if mempoolMemolessInboundFinalized(stages) {
-			return fmt.Errorf("POL inbound finalized before %d pre-finality exclusion samples (got %d)", mempoolMemolessPreFinalitySamples, samples)
+			return &mempoolMemolessMissedWindow{
+				err: fmt.Errorf("POL inbound finalized before %d pre-finality exclusion samples (got %d)", mempoolMemolessPreFinalitySamples, samples),
+			}
 		}
 		if !mempoolMemolessInboundObservedUnfinalized(stages) {
 			time.Sleep(500 * time.Millisecond)

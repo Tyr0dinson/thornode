@@ -26,7 +26,54 @@ const (
 	nativeMempoolSynthStream      = "native-synth-stream"
 	nativeMempoolSecuredNonstream = "native-secured-nonstream"
 	nativeMempoolSecuredStream    = "native-secured-stream"
+
+	// nativeMempoolWindowAttempts bounds how many inbounds a scenario may spend
+	// looking for POL's pre-finality window. Fifteen POL confirmations are only
+	// thirty seconds of mocknet wall clock, and a loaded simulation can leave
+	// Bifrost far enough behind the chain that an inbound is observed and
+	// confirmation counted in the same breath. That collapsed window proves
+	// nothing either way, so the attempt is replayed on a fresh inbound; a
+	// genuinely admitted native target still fails every attempt.
+	nativeMempoolWindowAttempts = 3
 )
+
+// nativeMempoolMissedWindow marks an attempt that lost the race with POL
+// finality rather than one that caught a policy violation. It carries the
+// abandoned inbound and the attempt's baselines so the retry can wait for that
+// inbound to settle before taking fresh ones.
+type nativeMempoolMissedWindow struct {
+	txID          string
+	before        cosmos.Uint
+	baselineUsage cosmos.Uint
+	err           error
+}
+
+func (e *nativeMempoolMissedWindow) Error() string { return e.err.Error() }
+
+func (e *nativeMempoolMissedWindow) Unwrap() error { return e.err }
+
+// nativeMempoolMissedWindowError reports that txID finalized before the
+// unfinalized-window assertion described by format could be made.
+func nativeMempoolMissedWindowError(txID, format string, args ...any) error {
+	return &nativeMempoolMissedWindow{
+		txID:          txID,
+		before:        cosmos.ZeroUint(),
+		baselineUsage: cosmos.ZeroUint(),
+		err:           fmt.Errorf(format, args...),
+	}
+}
+
+// nativeMempoolCarryBaselines attaches the attempt's baselines to a missed
+// window, which only the scenario knows, so the retry can drain the abandoned
+// inbound back to them.
+func nativeMempoolCarryBaselines(err error, before, baselineUsage cosmos.Uint) error {
+	var missed *nativeMempoolMissedWindow
+	if errors.As(err, &missed) {
+		missed.before = before
+		missed.baselineUsage = baselineUsage
+	}
+	return err
+}
 
 type nativeMempoolTarget struct {
 	name        string
@@ -91,7 +138,9 @@ func NewMempoolSwapNativeSimulationActor(rng *rand.Rand) *simtypes.Actor {
 	a := &MempoolSwapNativeSimulationActor{
 		Actor: *simtypes.NewActor("MempoolSwap-NativeTargets", rng),
 	}
-	a.Timeout = 15 * time.Minute
+	// Six scenarios run sequentially, each of which may replay a lost
+	// pre-finality race on a fresh inbound after draining the abandoned one.
+	a.Timeout = 25 * time.Minute
 	a.Ops = append(a.Ops, a.run)
 	return &a.Actor
 }
@@ -130,11 +179,11 @@ func (a *MempoolSwapNativeSimulationActor) runScenarios(config *simtypes.OpConfi
 
 	for _, target := range nativeMempoolTargets() {
 		a.Log().Info().Str("scenario", target.nonstreamID).Msg("running native-target exclusion scenario")
-		if err = a.runNonstreaming(user, target); err != nil {
+		if err = a.runOnFreshInbound(user, target, target.nonstreamID, a.runNonstreaming); err != nil {
 			return fmt.Errorf("%s: %w", target.nonstreamID, err)
 		}
 		a.Log().Info().Str("scenario", target.streamID).Msg("running native-target streaming scenario")
-		if err = a.runStreaming(user, target); err != nil {
+		if err = a.runOnFreshInbound(user, target, target.streamID, a.runStreaming); err != nil {
 			return fmt.Errorf("%s: %w", target.streamID, err)
 		}
 	}
@@ -142,7 +191,45 @@ func (a *MempoolSwapNativeSimulationActor) runScenarios(config *simtypes.OpConfi
 	return nil
 }
 
-func (a *MempoolSwapNativeSimulationActor) runNonstreaming(user *simtypes.User, target nativeMempoolTarget) error {
+// runOnFreshInbound replays scenario when POL finality outran its assertions,
+// and only then. The abandoned inbound is drained back to the attempt's
+// baselines first, so the replay starts from settled balances and its exact
+// credit assertion still holds.
+func (a *MempoolSwapNativeSimulationActor) runOnFreshInbound(
+	user *simtypes.User,
+	target nativeMempoolTarget,
+	name string,
+	scenario func(*simtypes.User, nativeMempoolTarget) error,
+) error {
+	var err error
+	for attempt := 1; attempt <= nativeMempoolWindowAttempts; attempt++ {
+		err = scenario(user, target)
+		var missed *nativeMempoolMissedWindow
+		if !errors.As(err, &missed) {
+			return err
+		}
+		a.Log().Warn().
+			Err(err).
+			Str("scenario", name).
+			Int("attempt", attempt).
+			Str("txid", missed.txID).
+			Msg("POL finality outran the pre-finality window; draining the inbound to retry")
+		_, drainErr := nativeMempoolWaitFinalCredit(
+			missed.txID,
+			user.Address(common.THORChain),
+			target.target,
+			missed.before,
+			missed.baselineUsage,
+			2*time.Minute,
+		)
+		if drainErr != nil {
+			return errors.Join(err, fmt.Errorf("drain abandoned inbound %s: %w", missed.txID, drainErr))
+		}
+	}
+	return err
+}
+
+func (a *MempoolSwapNativeSimulationActor) runNonstreaming(user *simtypes.User, target nativeMempoolTarget) (err error) {
 	destination := user.Address(common.THORChain)
 	before, err := nativeMempoolRecipientBalance(destination, target.target)
 	if err != nil {
@@ -152,6 +239,8 @@ func (a *MempoolSwapNativeSimulationActor) runNonstreaming(user *simtypes.User, 
 	if err != nil {
 		return fmt.Errorf("get baseline mempool TOR usage: %w", err)
 	}
+	defer func() { err = nativeMempoolCarryBaselines(err, before, baselineUsage) }()
+
 	amount, err := nativeMempoolSwapAmount(user, target.target, destination)
 	if err != nil {
 		return err
@@ -188,7 +277,7 @@ func (a *MempoolSwapNativeSimulationActor) runNonstreaming(user *simtypes.User, 
 	return nativeMempoolVerifyExactCredit(txID, destination, target.target, before, after, cosmos.ZeroUint())
 }
 
-func (a *MempoolSwapNativeSimulationActor) runStreaming(user *simtypes.User, target nativeMempoolTarget) error {
+func (a *MempoolSwapNativeSimulationActor) runStreaming(user *simtypes.User, target nativeMempoolTarget) (err error) {
 	destination := user.Address(common.THORChain)
 	before, err := nativeMempoolRecipientBalance(destination, target.target)
 	if err != nil {
@@ -198,6 +287,8 @@ func (a *MempoolSwapNativeSimulationActor) runStreaming(user *simtypes.User, tar
 	if err != nil {
 		return fmt.Errorf("get baseline mempool TOR usage: %w", err)
 	}
+	defer func() { err = nativeMempoolCarryBaselines(err, before, baselineUsage) }()
+
 	amount, err := nativeMempoolSwapAmount(user, target.target, destination)
 	if err != nil {
 		return err
@@ -422,7 +513,7 @@ func nativeMempoolWaitObservedUnfinalized(txID string, timeout time.Duration) (o
 			continue
 		}
 		if nativeMempoolInboundFinalized(stages) {
-			return stages, fmt.Errorf("POL inbound %s finalized before the pre-finality assertion", txID)
+			return stages, nativeMempoolMissedWindowError(txID, "POL inbound %s finalized before the pre-finality assertion", txID)
 		}
 		if nativeMempoolObservedUnfinalized(stages) {
 			return stages, nil
@@ -471,7 +562,7 @@ func nativeMempoolWaitReservation(txID string, baseline cosmos.Uint, timeout tim
 	for time.Now().Before(deadline) {
 		stages, err := thornode.GetTxStages(txID)
 		if err == nil && nativeMempoolInboundFinalized(stages) {
-			return fmt.Errorf("POL inbound %s finalized before a TOR reservation was observed", txID)
+			return nativeMempoolMissedWindowError(txID, "POL inbound %s finalized before a TOR reservation was observed", txID)
 		}
 		usage, usageErr := thornode.GetMempoolSwapUsageTOR()
 		if usageErr != nil {
@@ -501,7 +592,7 @@ func nativeMempoolWaitStagedBeforeFinality(txID string, timeout time.Duration) (
 	for time.Now().Before(deadline) {
 		stages, err := thornode.GetTxStages(txID)
 		if err == nil && nativeMempoolInboundFinalized(stages) {
-			return nil, fmt.Errorf("POL inbound %s finalized before its native outbound was staged", txID)
+			return nil, nativeMempoolMissedWindowError(txID, "POL inbound %s finalized before its native outbound was staged", txID)
 		}
 		staged, stagedErr := thornode.GetStagedOutbounds()
 		if stagedErr == nil {

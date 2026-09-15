@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -136,5 +137,42 @@ func nativeMempoolTestSettlement(txID string, destination common.Address, target
 			Coins:     []openapi.Coin{coin},
 			Memo:      &memo,
 		}},
+	}
+}
+
+func TestNativeMempoolMissedWindowClassification(t *testing.T) {
+	txID := strings.Repeat("C", 64)
+	before := cosmos.NewUint(101)
+	baseline := cosmos.NewUint(202)
+
+	// A missed window stays recognizable through the wrapping every scenario and
+	// recheck path adds, and it carries the baselines the retry drains back to.
+	wrapped := fmt.Errorf("plain native target finalized before the exclusion could be rechecked: %w",
+		nativeMempoolMissedWindowError(txID, "POL inbound %s finalized before the pre-finality assertion", txID))
+	wrapped = nativeMempoolCarryBaselines(wrapped, before, baseline)
+
+	var missed *nativeMempoolMissedWindow
+	if !errors.As(wrapped, &missed) {
+		t.Fatalf("missed window was not recognized: %v", wrapped)
+	}
+	if missed.txID != txID {
+		t.Fatalf("missed window txid: got %s, want %s", missed.txID, txID)
+	}
+	if !missed.before.Equal(before) || !missed.baselineUsage.Equal(baseline) {
+		t.Fatalf("missed window baselines: got (%s,%s), want (%s,%s)",
+			missed.before, missed.baselineUsage, before, baseline)
+	}
+	if !strings.Contains(wrapped.Error(), txID) {
+		t.Fatalf("missed window lost its message: %v", wrapped)
+	}
+
+	// A policy violation must never be retried as a lost race.
+	violation := nativeMempoolCarryBaselines(
+		fmt.Errorf("plain native target created staged outbound before finality"), before, baseline)
+	if errors.As(violation, &missed) {
+		t.Fatalf("policy violation classified as a missed window: %v", violation)
+	}
+	if nativeMempoolCarryBaselines(nil, before, baseline) != nil {
+		t.Fatal("a successful attempt was turned into an error")
 	}
 }
