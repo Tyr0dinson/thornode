@@ -46,6 +46,7 @@ message ObservedTxVoter {
   // is a different payload and carries no stale signers, so it still applies.
   repeated common.ObservedTx bounce_superseded = 12 [
     (gogoproto.nullable) = false,
+    (gogoproto.jsontag) = "bounce_superseded,omitempty",
     (gogoproto.castrepeated) =
         "gitlab.com/thorchain/thornode/v3/common.ObservedTxs"
   ];
