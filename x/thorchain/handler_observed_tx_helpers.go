@@ -1076,8 +1076,13 @@ func correctOutboundObservation(ctx cosmos.Context, mgr Manager, voter *Observed
 	// Record what is being superseded before mutating it, on a gas-only correction
 	// as well: a payload left behind by a gas correction keeps its own stale
 	// supermajority, and a later bounce correction back onto it would be exactly
-	// the revival this list exists to refuse.
-	voter.BounceSuperseded = append(voter.BounceSuperseded, consensus)
+	// the revival this list exists to refuse. Only the consensus identity is kept -
+	// isSupersededObservation reads neither Signers nor OutHashes, and both grow
+	// with the active set on a voter nothing ever prunes.
+	superseded := consensus
+	superseded.Signers = nil
+	superseded.OutHashes = nil
+	voter.BounceSuperseded = append(voter.BounceSuperseded, superseded)
 	if gasChanged {
 		correctOutboundGas(ctx, mgr, voter.Tx, tx)
 		voter.Tx.Tx.Gas = tx.Tx.Gas
