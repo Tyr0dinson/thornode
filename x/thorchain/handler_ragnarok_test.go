@@ -350,8 +350,8 @@ func (HandlerRagnarokSuite) TestRagnarokZecTexDestination(c *C) {
 		mgr := NewDummyMgrWithKeeper(keeper)
 		mgr.slasher = newSlasher(keeper, NewDummyEventMgr())
 
-		fromAddress, err := retireVault.PubKey.GetAddress(common.ZECChain)
-		c.Assert(err, IsNil)
+		fromAddress, fromErr := retireVault.PubKey.GetAddress(common.ZECChain)
+		c.Assert(fromErr, IsNil)
 		tx := NewObservedTx(common.Tx{
 			ID:          GetRandomTxHash(),
 			Chain:       common.ZECChain,
