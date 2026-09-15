@@ -268,14 +268,14 @@ func TestValidateMempoolRollbackEventSummary(t *testing.T) {
 
 	preFinality := base
 	preFinality.scheduledOutboundAt = []int64{21}
-	if err := validateMempoolRollbackEventSummary(txID, mempoolRollbackEventExpectation{timeout: true}, preFinality); err == nil {
+	if err := validateMempoolRollbackEventSummary(txID, mempoolRollbackEventExpectation{recoverable: true}, preFinality); err == nil {
 		t.Fatal("timeout outbound before a known finality height must fail")
 	}
 
 	postFinality := base
 	postFinality.scheduledOutboundAt = []int64{30}
 	postFinality.observedOutboundAt = []int64{31}
-	expectation := mempoolRollbackEventExpectation{timeout: true, expectedRollbackHeight: 20, finalisedHeight: 30, requireOutboundHistory: true}
+	expectation := mempoolRollbackEventExpectation{recoverable: true, expectedRollbackHeight: 20, finalisedHeight: 30, requireOutboundHistory: true}
 	if err := validateMempoolRollbackEventSummary(txID, expectation, postFinality); err != nil {
 		t.Fatal(err)
 	}

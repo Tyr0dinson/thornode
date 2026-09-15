@@ -18,8 +18,8 @@ import (
 //     `POL.POL -> BTC.BTC` stream before finality.
 //   - stream-finality-before-settlement - keeps a slower six-part
 //     `POL.POL -> BTC.BTC` stream queued across finality and finishes it afterward.
-//   - pool-serialization - makes a finalized `AVAX.AVAX -> BTC.BTC` swap wait
-//     without attempts while a speculative swap owns the BTC pool.
+//   - pool-preemption - lets a finalized `AVAX.AVAX -> BTC.BTC` swap take the
+//     BTC pool from a speculative owner instead of waiting behind it.
 //   - max-count-fallback - fills the lifecycle count with one speculative swap
 //     and routes a second swap through ordinary finalized processing.
 //   - tor-cap-fallback - uses a low network TOR cap to exclude pre-finality

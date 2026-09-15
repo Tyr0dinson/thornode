@@ -98,7 +98,7 @@ func (a *MempoolSwapSimulationActor) runScenarios(config *OpConfig) (err error) 
 		{name: "affiliate-revshare-finality", run: a.scenarioAffiliateRevShareFinality},
 		{name: "stream-settle-before-finality", run: a.scenarioStreamSettleBeforeFinality},
 		{name: "stream-finality-before-settlement", run: a.scenarioStreamFinalityBeforeSettlement},
-		{name: "pool-serialization", run: a.scenarioPoolSerialization},
+		{name: "pool-preemption", run: a.scenarioPoolPreemption},
 		{name: "max-count-fallback", run: a.scenarioMaxCountFallback},
 		{name: "tor-cap-fallback", run: a.scenarioTORCapFallback},
 		{name: "pool-cap-fallback", run: a.scenarioPoolCapFallback},
@@ -300,6 +300,15 @@ func (s *mempoolLiveSwap) release() {
 	if s != nil && s.user != nil {
 		s.user.Release()
 		s.user = nil
+	}
+}
+
+// poolBaselines is the pre-swap balance of both pools this swap touches, which
+// is what an undisturbed rollback must restore.
+func (s *mempoolLiveSwap) poolBaselines() map[common.Asset]cosmos.Uint {
+	return map[common.Asset]cosmos.Uint{
+		s.from: s.fromPoolStart,
+		s.to:   s.toPoolStart,
 	}
 }
 
@@ -762,100 +771,98 @@ func (a *MempoolSwapSimulationActor) scenarioStreamFinalityBeforeSettlement(conf
 	return a.waitForL1Completion(swap, cosmos.ZeroUint())
 }
 
-func (a *MempoolSwapSimulationActor) scenarioPoolSerialization(config *OpConfig) error {
-	owner, err := a.prepareSwap(config, "pool-serialization-owner", common.POLAsset, mempoolEarlyLifecycleTarget, 2_000, "")
+// scenarioPoolPreemption proves a swap whose own inbound is already final is
+// not held behind a speculative mempool swap on the same pool.
+//
+// Per-pool serialization exists so a rollback can reverse its exact recorded
+// deltas with no foreign mutation in between; it is not a priority claim. Since
+// an unconfirmed inbound can be replaced under full-RBF, letting it outrank a
+// confirmed one would be an availability lever, so the speculative owner is
+// resolved rather than waited out. POL needs fifteen confirmations and AVAX
+// only a couple, giving the final swap a wide window in which the owner is
+// still speculative.
+func (a *MempoolSwapSimulationActor) scenarioPoolPreemption(config *OpConfig) error {
+	startHeight, err := thornode.GetBlockHeight()
+	if err != nil {
+		return err
+	}
+	owner, err := a.prepareSwap(config, "pool-preemption-owner", common.POLAsset, mempoolEarlyLifecycleTarget, 2_000, "")
 	if err != nil {
 		return err
 	}
 	defer owner.release()
-	blocked, err := a.prepareSwap(config, "pool-serialization-blocked", common.AVAXAsset, mempoolEarlyLifecycleTarget, 2_000, "")
+	final, err := a.prepareSwap(config, "pool-preemption-final", common.AVAXAsset, mempoolEarlyLifecycleTarget, 2_000, "")
 	if err != nil {
 		return err
 	}
-	defer blocked.release()
+	defer final.release()
 	if err = a.broadcastPreparedSwap(owner); err != nil {
 		return err
 	}
 	if err = a.waitForSpeculativeSettlement(owner, cosmos.ZeroUint()); err != nil {
 		return err
 	}
-	ownerUsage, err := thornode.GetMempoolSwapUsageTOR()
-	if err != nil {
+	// Register before the contending inbound exists: preemption is the intended
+	// outcome here, so its security event must already be accounted for by the
+	// time the watcher sees it.
+	if err = config.RegisterExpectedSecurityEvent(owner.txID, mempoolRollbackSecurityMsg, 1); err != nil {
 		return err
 	}
-	polBalance, err := mempoolPoolAssetBalance(common.POLAsset)
-	if err != nil {
-		return err
-	}
-	btcBalance, err := mempoolPoolAssetBalance(common.BTCAsset)
-	if err != nil {
-		return err
-	}
-	avaxBalance, err := mempoolPoolAssetBalance(common.AVAXAsset)
-	if err != nil {
+	if err = a.broadcastPreparedSwap(final); err != nil {
 		return err
 	}
 
-	if err = a.broadcastPreparedSwap(blocked); err != nil {
-		return err
-	}
-
-	if err = waitForMempoolCondition("serialized finalized swap "+blocked.txID, 30*time.Second, func() (bool, error) {
-		details, queryErr := thornode.GetTxDetails(blocked.txID)
+	// The final swap moves the shared target pool in the same block the owner
+	// releases it, so only the owner's source pool can be pinned across the
+	// preemption.
+	ownerPools := map[common.Asset]cosmos.Uint{owner.from: owner.fromPoolStart}
+	if err = waitForMempoolCondition("preemption of speculative owner "+owner.txID, mempoolCompletionTimeout, func() (bool, error) {
+		// The owner must still be unconfirmed when it loses the pool. If it
+		// finalizes first, the final swap was merely served by ordinary
+		// processing and the scenario proves nothing, so stop rather than pass.
+		if waitErr := requireMempoolSwapUnfinalized(owner.txID); waitErr != nil {
+			return false, waitErr
+		}
+		details, queryErr := thornode.GetTxDetails(final.txID)
 		if queryErr != nil || details.GetFinalisedHeight() == 0 {
 			return false, queryErr
 		}
-		return mempoolSwapQueueStateIsZero(blocked.txID)
+		// A real outbound proves the final swap executed rather than deferring
+		// behind the owner for the lifecycle recovery window.
+		hasOutbound, queryErr := mempoolHasRealOutbound(final.txID)
+		if queryErr != nil || !hasOutbound {
+			return false, queryErr
+		}
+		return true, a.requireRolledBackState(owner, false, ownerPools)
 	}); err != nil {
 		return err
 	}
-	startHeight, err := thornode.GetBlockHeight()
-	if err != nil {
+	if err = waitForExpectedSecurityEvent(config, owner.txID); err != nil {
 		return err
 	}
-	deadline := time.Now().Add(30 * time.Second)
-	for {
-		if time.Now().After(deadline) {
-			return fmt.Errorf("timed out proving swap %s remained serialized for three blocks", blocked.txID)
-		}
-		if err = requireMempoolSwapUnfinalized(owner.txID); err != nil {
-			return err
-		}
-		zero, queryErr := mempoolSwapQueueStateIsZero(blocked.txID)
-		if queryErr != nil {
-			return queryErr
-		}
-		if !zero {
-			return fmt.Errorf("blocked swap %s consumed an execution attempt while pool was owned", blocked.txID)
-		}
-		usage, queryErr := thornode.GetMempoolSwapUsageTOR()
-		if queryErr != nil {
-			return queryErr
-		}
-		if !usage.Equal(ownerUsage) {
-			return fmt.Errorf("pool serialization changed TOR usage: expected %s, got %s", ownerUsage, usage)
-		}
-		if err = requireMempoolPoolBalances(map[common.Asset]cosmos.Uint{
-			common.POLAsset:  polBalance,
-			common.BTCAsset:  btcBalance,
-			common.AVAXAsset: avaxBalance,
-		}); err != nil {
-			return err
-		}
-		height, queryErr := thornode.GetBlockHeight()
-		if queryErr != nil {
-			return queryErr
-		}
-		if height >= startHeight+3 {
-			break
-		}
-		time.Sleep(mempoolWaitInterval)
+	expectation := mempoolRollbackEventExpectation{recoverable: true}
+	if err = requireRollbackEvents(startHeight, owner.txID, expectation); err != nil {
+		return err
 	}
 
+	if err = a.waitForL1Completion(final, cosmos.ZeroUint()); err != nil {
+		return err
+	}
+	// The preempted owner is not lost: its inbound confirms and takes the
+	// ordinary finalized path, releasing its outbound only after finality.
 	if err = a.waitForL1Completion(owner, cosmos.ZeroUint()); err != nil {
 		return err
 	}
-	return a.waitForL1Completion(blocked, cosmos.ZeroUint())
+	details, err := thornode.GetTxDetails(owner.txID)
+	if err != nil {
+		return err
+	}
+	if details.GetFinalisedHeight() <= 0 {
+		return fmt.Errorf("preempted swap %s completed without an actual finalised height", owner.txID)
+	}
+	expectation.finalisedHeight = details.GetFinalisedHeight()
+	expectation.requireOutboundHistory = true
+	return requireRollbackEvents(startHeight, owner.txID, expectation)
 }
 
 func (a *MempoolSwapSimulationActor) scenarioMaxCountFallback(config *OpConfig) (err error) {
@@ -1044,7 +1051,7 @@ func (a *MempoolSwapSimulationActor) scenarioTimeoutRollback(config *OpConfig) (
 		return err
 	}
 	expectation := mempoolRollbackEventExpectation{
-		timeout:                true,
+		recoverable:            true,
 		expectedRollbackHeight: expectedRecoveryHeight,
 	}
 	details, err := thornode.GetTxDetails(swap.txID)
@@ -1110,7 +1117,7 @@ func (a *MempoolSwapSimulationActor) scenarioErrataRollback(config *OpConfig) er
 		if _, err = broadcastErrataFromNode(lateNodes[0], swap.txID); err != nil {
 			return err
 		}
-		if err = a.requireRolledBackState(swap, true); err != nil {
+		if err = a.requireRolledBackState(swap, true, swap.poolBaselines()); err != nil {
 			return err
 		}
 		if err = requireRollbackEvents(startHeight, swap.txID, mempoolRollbackEventExpectation{}); err != nil {
@@ -1133,7 +1140,7 @@ func (a *MempoolSwapSimulationActor) scenarioErrataRollback(config *OpConfig) er
 	}); err != nil {
 		return err
 	}
-	if err = a.requireRolledBackState(swap, true); err != nil {
+	if err = a.requireRolledBackState(swap, true, swap.poolBaselines()); err != nil {
 		return err
 	}
 	return requireRollbackEvents(startHeight, swap.txID, mempoolRollbackEventExpectation{})
@@ -1295,14 +1302,19 @@ func (a *MempoolSwapSimulationActor) waitForL1CompletionWithVaultMode(swap *memp
 
 func (a *MempoolSwapSimulationActor) waitForRollbackCleanup(swap *mempoolLiveSwap, reverted bool) error {
 	return waitForMempoolCondition("rollback cleanup "+swap.txID, 45*time.Second, func() (bool, error) {
-		if err := a.requireRolledBackState(swap, reverted); err != nil {
+		if err := a.requireRolledBackState(swap, reverted, swap.poolBaselines()); err != nil {
 			return false, err
 		}
 		return true, nil
 	})
 }
 
-func (a *MempoolSwapSimulationActor) requireRolledBackState(swap *mempoolLiveSwap, reverted bool) error {
+// requireRolledBackState proves a rolled-back lifecycle left no trace. pools
+// names the balances the rollback must have restored: a lifecycle preempted by
+// another swap shares a pool with it, and that swap legitimately moves the
+// shared pool in the same block, so only the pools it does not touch can be
+// pinned to their pre-swap values.
+func (a *MempoolSwapSimulationActor) requireRolledBackState(swap *mempoolLiveSwap, reverted bool, pools map[common.Asset]cosmos.Uint) error {
 	usage, err := thornode.GetMempoolSwapUsageTOR()
 	if err != nil {
 		return err
@@ -1335,10 +1347,7 @@ func (a *MempoolSwapSimulationActor) requireRolledBackState(swap *mempoolLiveSwa
 	if len(details.Actions) != 0 || len(details.OutTxs) != 0 {
 		return fmt.Errorf("rollback %s retained actions or out txs", swap.txID)
 	}
-	if err = requireMempoolPoolBalances(map[common.Asset]cosmos.Uint{
-		swap.from: swap.fromPoolStart,
-		swap.to:   swap.toPoolStart,
-	}); err != nil {
+	if err = requireMempoolPoolBalances(pools); err != nil {
 		return err
 	}
 	vault, err := mempoolVaultAssetBalance(swap.vaultPubKey, swap.from)
@@ -1494,7 +1503,11 @@ func waitForExpectedSecurityEvent(config *OpConfig, txID string) error {
 }
 
 type mempoolRollbackEventExpectation struct {
-	timeout                bool
+	// recoverable marks a rollback that left the inbound eligible for ordinary
+	// finalized processing - a timeout recovery or a preemption, as opposed to
+	// an errata revert. Only then may the swap release an outbound at all, and
+	// only at or after its finalised height.
+	recoverable            bool
 	expectedRollbackHeight int64
 	finalisedHeight        int64
 	requireOutboundHistory bool
@@ -1517,7 +1530,7 @@ func requireRollbackEvents(startHeight int64, txID string, expectation mempoolRo
 	// Couple the finality snapshot to the history boundary. If finality lands
 	// between the actor's earlier state check and this audit, an outbound in the
 	// scanned range is legitimate only from that finalised height onward.
-	if expectation.timeout && expectation.finalisedHeight == 0 {
+	if expectation.recoverable && expectation.finalisedHeight == 0 {
 		details, queryErr := thornode.GetTxDetails(txID)
 		if queryErr != nil {
 			return queryErr
@@ -1550,7 +1563,7 @@ func validateMempoolRollbackEventSummary(txID string, expectation mempoolRollbac
 		return fmt.Errorf("rollback %s occurred at height %d, expected recovery height %d", txID, summary.rollbackHeight, expectation.expectedRollbackHeight)
 	}
 
-	if !expectation.timeout || expectation.finalisedHeight == 0 {
+	if !expectation.recoverable || expectation.finalisedHeight == 0 {
 		if len(summary.scheduledOutboundAt) != 0 || len(summary.observedOutboundAt) != 0 {
 			return fmt.Errorf("rollback %s released outbound history before allowed finality: scheduled=%v outbound=%v", txID, summary.scheduledOutboundAt, summary.observedOutboundAt)
 		}
@@ -1739,21 +1752,6 @@ func mempoolSwapQueueExists(txID string) (bool, error) {
 		return false, nil
 	}
 	return false, err
-}
-
-func mempoolSwapQueueStateIsZero(txID string) (bool, error) {
-	details, err := thornode.GetSwapDetails(txID)
-	if err != nil {
-		return false, err
-	}
-	if details.Swap == nil || details.Swap.State == nil {
-		return false, nil
-	}
-	state := details.Swap.State
-	return state.GetCount() == 0 &&
-		(state.In == nil || state.GetIn() == "0") &&
-		(state.Out == nil || state.GetOut() == "0") &&
-		len(state.FailedSwaps) == 0 && len(state.FailedSwapReasons) == 0, nil
 }
 
 func mempoolQueueNotFound(err error) bool {
