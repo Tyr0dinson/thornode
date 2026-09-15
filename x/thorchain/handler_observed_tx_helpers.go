@@ -831,12 +831,6 @@ func applyTxOutAttestation(
 			voter.FinalisedHeight = ctx.BlockHeight()
 			prevConsensusTx := voter.Tx
 			voter.Tx = *voter.GetTx(nas)
-			// The cap on bounce corrections is per finality level. countMatchingSigners
-			// never counts an observation of the other finality, so an attestation
-			// consumed while unfinalised can never be replayed into a correction of the
-			// finalised consensus - and this consensus was just established by its own
-			// first supermajority, so no finalised correction has been consumed yet.
-			voter.BounceCorrected = false
 			// Vault accounting already ran on the non-final consensus (ok == false
 			// here). If the finalised consensus disagrees on Bounced, that accounting
 			// used the wrong branch: the coins were debited but never left the vault
@@ -1051,13 +1045,15 @@ func correctOutboundObservation(ctx cosmos.Context, mgr Manager, voter *Observed
 		return
 	}
 	gasChanged := !voter.Tx.Tx.Gas.Equals(tx.Tx.Gas)
-	// Only the first bounce reconciliation per finality level is honoured. An
-	// attestation carries no
-	// nonce or height, so a node genuinely re-observing the superseded verdict and
-	// an attacker replaying the attestations that verdict was originally carried by
-	// produce byte-identical payloads. Without this cap either one could re-file the
-	// old verdict and swing the vault's coin accounting back and forth indefinitely.
-	bounceChanged := tx.Bounced != voter.Tx.Bounced && !voter.BounceCorrected
+	// A correction never moves back to a payload a previous correction already
+	// moved away from. An attestation carries no nonce or height and a superseded
+	// payload keeps its signers forever, so a handful of nodes that never observed
+	// it could otherwise tip the stale supermajority back over the line and
+	// oscillate the vault's coin accounting at will. The nodes that did observe it
+	// cannot re-file it either way - ObservedTxVoter.Add rejects a byte-identical
+	// re-sign - so nothing honest is lost: a reorg's new receipt differs in at
+	// least gas, making it a different payload with no stale signers behind it.
+	bounceChanged := tx.Bounced != voter.Tx.Bounced && !isSupersededObservation(voter, tx)
 	if !gasChanged && !bounceChanged {
 		return
 	}
@@ -1077,15 +1073,33 @@ func correctOutboundObservation(ctx cosmos.Context, mgr Manager, voter *Observed
 	if !HasSuperMajority(countMatchingSigners(*voter, tx, nas), len(nas)) {
 		return
 	}
+	// Record what is being superseded before mutating it, on a gas-only correction
+	// as well: a payload left behind by a gas correction keeps its own stale
+	// supermajority, and a later bounce correction back onto it would be exactly
+	// the revival this list exists to refuse.
+	voter.BounceSuperseded = append(voter.BounceSuperseded, consensus)
 	if gasChanged {
 		correctOutboundGas(ctx, mgr, voter.Tx, tx)
 		voter.Tx.Tx.Gas = tx.Tx.Gas
 	}
 	if bounceChanged {
-		reconcileBounceCorrection(ctx, mgr, voter.Tx, tx.Bounced)
+		// Pass the memo-substituted copy: the cancel/approval exemption below is
+		// keyed off the empty observed memo, not the memo recovered from the
+		// scheduled TxOutItem that handleObservedTxOutQuorum wrote onto voter.Tx.
+		reconcileBounceCorrection(ctx, mgr, consensus, tx.Bounced)
 		voter.Tx.Bounced = tx.Bounced
-		voter.BounceCorrected = true
 	}
+}
+
+// isSupersededObservation reports whether tx is a payload that a previous
+// correction on this voter already moved away from, at the same finality level.
+func isSupersededObservation(voter *ObservedTxVoter, tx ObservedTx) bool {
+	for _, superseded := range voter.BounceSuperseded {
+		if superseded.IsFinal() == tx.IsFinal() && superseded.EqualsConsensus(tx) {
+			return true
+		}
+	}
+	return false
 }
 
 // reconcileBounceCorrection re-runs the outbound coin accounting after consensus
@@ -1096,8 +1110,12 @@ func correctOutboundObservation(ctx cosmos.Context, mgr Manager, voter *Observed
 // mirror the debit conditions in handleObservedTxOutQuorum, and neither touches
 // OutboundTxCount - the quorum handler already counted this outbound once.
 func reconcileBounceCorrection(ctx cosmos.Context, mgr Manager, consensusTx common.ObservedTx, bounced bool) {
-	if consensusTx.Tx.FromAddress.Equals(consensusTx.Tx.ToAddress) || isOutboundFakeGasTx(consensusTx) {
-		return // nothing was debited for these
+	if consensusTx.Tx.FromAddress.Equals(consensusTx.Tx.ToAddress) ||
+		isOutboundFakeGasTx(consensusTx) || isCancelOrApprovalTx(consensusTx) {
+		// Nothing was debited for these - handleObservedTxOutQuorum returns before
+		// the coin debit for a cancel/approval tx and skips it for a fake gas tx -
+		// so there is nothing to credit back, and nothing to debit either.
+		return
 	}
 	vault, err := mgr.Keeper().GetVault(ctx, consensusTx.ObservedPubKey)
 	if err != nil {

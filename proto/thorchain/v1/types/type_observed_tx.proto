@@ -36,11 +36,17 @@ message ObservedTxVoter {
   // it within its flex window, because they observed the tx in the final tier.
   // Cleared at final consensus.
   repeated string excused_observers = 16;
-  // bounce_corrected records that a supermajority has already reconciled this
-  // outbound's Bounced verdict once at the current finality level (it is reset
-  // when the voter finalises). Attestations carry no nonce, so a genuine
-  // re-observation and a replay of a previously gossiped attestation are
-  // byte-identical; without a cap an attacker could re-file the superseded
-  // verdict and oscillate the vault's coin accounting at will.
-  bool bounce_corrected = 12;
+  // bounce_superseded records every consensus payload that a correction has
+  // already moved away from, at the finality level it held. Attestations carry
+  // no nonce and a superseded payload keeps its signers forever, so without
+  // this a handful of nodes that never observed it could tip a stale payload
+  // back over the supermajority line and oscillate the vault's coin accounting
+  // at will. A correction is refused when its target is one of these; a
+  // genuinely new observation (a reorg's new receipt differs in at least gas)
+  // is a different payload and carries no stale signers, so it still applies.
+  repeated common.ObservedTx bounce_superseded = 12 [
+    (gogoproto.nullable) = false,
+    (gogoproto.castrepeated) =
+        "gitlab.com/thorchain/thornode/v3/common.ObservedTxs"
+  ];
 }

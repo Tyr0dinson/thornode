@@ -1068,6 +1068,18 @@ func (f *bouncedOutboundFixture) voteAt(c *C, i int, bounced bool, height, final
 	c.Assert(err, IsNil)
 }
 
+// voteAtGas submits one finalised observation from node i carrying an explicit
+// gas amount. A reorg's replacement receipt reports its own gas used, which is
+// what makes it a different payload from the one it replaces.
+func (f *bouncedOutboundFixture) voteAtGas(c *C, i int, bounced bool, gas uint64) {
+	tx := f.tx
+	tx.Gas = common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(gas))}
+	obTx := NewObservedTx(tx, 12, f.pk, 12)
+	obTx.Bounced = bounced
+	_, err := f.handler.handle(f.ctx, *NewMsgObservedTxOut(ObservedTxs{obTx}, f.keeper.nas[i].NodeAddress))
+	c.Assert(err, IsNil)
+}
+
 func (f *bouncedOutboundFixture) ethBalance(c *C) uint64 {
 	vault, err := f.keeper.GetVault(f.ctx, f.pk)
 	c.Assert(err, IsNil)
@@ -1229,13 +1241,14 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceDiscoveredAfterDeliveredCons
 	c.Check(f.securityEvents(), Equals, 1)
 }
 
-// TestHandleBounceCorrectionIsOneShot: a correction consumes the quorum that
-// produced it, and no later quorum can undo it. Attestations carry no nonce, so
-// a node genuinely re-observing the superseded verdict and an attacker replaying
-// the very attestations that verdict was first carried by produce byte-identical
-// payloads - the chain cannot tell them apart. Capping the reconciliation at one
-// keeps either from swinging the vault's coin accounting back and forth.
-func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionIsOneShot(c *C) {
+// TestHandleBounceCorrectionRefusesSupersededVerdict: a correction never moves
+// back to a payload an earlier correction already moved away from. Attestations
+// carry no nonce, so a node genuinely re-observing the superseded verdict and an
+// attacker replaying the very attestations that verdict was first carried by
+// produce byte-identical payloads - the chain cannot tell them apart. Recording
+// the superseded payload keeps either from swinging the vault's coin accounting
+// back and forth.
+func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionRefusesSupersededVerdict(c *C) {
 	const (
 		untouched   = uint64(20000000000) // 200 ETH
 		gasOnly     = untouched - 37500
@@ -1248,14 +1261,14 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionIsOneShot(c *C) {
 	}
 	c.Check(f.ethBalance(c), Equals, gasOnly) // 6/6 bounced: coins retained
 	c.Check(f.securityEvents(), Equals, 1)
-	c.Check(f.keeper.voter.BounceCorrected, Equals, false)
+	c.Check(f.keeper.voter.BounceSuperseded, HasLen, 0)
 
 	for i := 0; i < 6; i++ {
 		f.vote(c, i, false)
 	}
 	c.Check(f.ethBalance(c), Equals, gasAndCoins) // 6/6 delivered: debited
 	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
-	c.Check(f.keeper.voter.BounceCorrected, Equals, true)
+	c.Check(f.keeper.voter.BounceSuperseded, HasLen, 1)
 	c.Check(f.securityEvents(), Equals, 2)
 
 	// The same six nodes re-file the superseded bounced verdict at new heights -
@@ -1281,7 +1294,7 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionKeepsStaleSignersO
 	for i := 0; i < 6; i++ {
 		f.vote(c, i, false)
 	}
-	c.Check(f.keeper.voter.BounceCorrected, Equals, true)
+	c.Check(f.keeper.voter.BounceSuperseded, HasLen, 1)
 
 	var bouncedSigners int
 	for _, tx := range f.keeper.voter.Txs {
@@ -1303,6 +1316,118 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionKeepsStaleSignersO
 		}
 	}
 	c.Check(bouncedSigners, Equals, 6)
+}
+
+// TestHandleBounceCorrectionAfterReorgReceipt is the sequence a signer actually
+// produces: bifrost signs with zero confirmations, so its receipt-less instant
+// observation is already finalised and cannot know the router bounced. The
+// scanner's receipt corrects that, and a reorg's replacement receipt - a new
+// payload, since it reports its own gas used - must still be able to correct it
+// back at the same finality level.
+func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionAfterReorgReceipt(c *C) {
+	const (
+		untouched = uint64(20000000000) // 200 ETH
+		origGas   = uint64(37500)
+		reorgGas  = uint64(37600)
+	)
+
+	f := newBouncedOutboundFixture(c, 6)
+
+	// the signer's instant observation: finalised, no receipt, delivered
+	for i := 0; i < 6; i++ {
+		f.voteAtGas(c, i, false, origGas)
+	}
+	c.Check(f.ethBalance(c), Equals, untouched-origGas-1)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
+
+	// the scanner's receipt: the router bounced it back, coins never left
+	for i := 0; i < 6; i++ {
+		f.voteAtGas(c, i, true, origGas)
+	}
+	c.Check(f.ethBalance(c), Equals, untouched-origGas)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
+
+	// a reorg re-includes the hash and this time it was delivered: the coins did
+	// leave, so debit them - and settle the gas the replacement receipt reports
+	for i := 0; i < 6; i++ {
+		f.voteAtGas(c, i, false, reorgGas)
+	}
+	c.Check(f.ethBalance(c), Equals, untouched-reorgGas-1)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
+	c.Check(f.keeper.voter.Tx.Tx.Gas[0].Amount.Uint64(), Equals, reorgGas)
+
+	// nodes that never observed the original bounced payload cannot revive it
+	for i := 0; i < 6; i++ {
+		f.voteAtGas(c, i, true, origGas)
+	}
+	c.Check(f.ethBalance(c), Equals, untouched-reorgGas-1)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
+}
+
+// TestHandleBounceCorrectionRecordsGasSupersededPayload: a payload left behind by
+// a gas-only correction keeps its own stale supermajority of signers forever. If
+// it were not recorded, a later bounce correction could land back on it and move
+// the coins on the strength of those stale signers alone.
+func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionRecordsGasSupersededPayload(c *C) {
+	const (
+		untouched = uint64(20000000000) // 200 ETH
+		origGas   = uint64(37500)
+		newGas    = uint64(37600)
+	)
+
+	f := newBouncedOutboundFixture(c, 6)
+
+	// delivered consensus at the original gas: coins and gas debited
+	for i := 0; i < 6; i++ {
+		f.voteAtGas(c, i, false, origGas)
+	}
+	c.Check(f.ethBalance(c), Equals, untouched-origGas-1)
+
+	// gas-only correction; the (delivered, origGas) payload is now superseded
+	for i := 0; i < 6; i++ {
+		f.voteAtGas(c, i, false, newGas)
+	}
+	c.Check(f.ethBalance(c), Equals, untouched-newGas-1)
+	c.Check(f.keeper.voter.BounceSuperseded, HasLen, 1)
+
+	// the receipt shows it bounced: credit the coins back
+	for i := 0; i < 6; i++ {
+		f.voteAtGas(c, i, true, newGas)
+	}
+	c.Check(f.ethBalance(c), Equals, untouched-newGas)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
+
+	// the payload the gas correction left behind must not be a way back in
+	for i := 0; i < 6; i++ {
+		f.voteAtGas(c, i, false, origGas)
+	}
+	c.Check(f.ethBalance(c), Equals, untouched-newGas)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
+}
+
+// TestHandleBounceCorrectionSkipsCancelTx: handleObservedTxOutQuorum returns
+// before the coin debit for a cancel or approval tx - an EVM gas-asset outbound
+// of exactly DustThreshold with no memo - and charges only gas. A later bounced
+// quorum must not credit a principal that was never debited.
+func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionSkipsCancelTx(c *C) {
+	f := newBouncedOutboundFixture(c, 6)
+	// an approval tx: to the router, no memo, amount exactly DustThreshold
+	f.tx.Memo = ""
+	f.tx.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, common.ETHChain.DustThreshold()))
+
+	for i := 0; i < 6; i++ {
+		f.vote(c, i, false)
+	}
+	debited := f.ethBalance(c)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
+
+	// a supermajority now reports it bounced; nothing was debited, so nothing
+	// may be credited back
+	for i := 0; i < 6; i++ {
+		f.voteAtGas(c, i, true, 37500)
+	}
+	c.Check(f.ethBalance(c), Equals, debited)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
 }
 
 // TestHandleBounceCorrectionAfterErrata: an errata has already credited the coins
@@ -1373,12 +1498,12 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionAfterMemoRecovery(
 	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
 }
 
-// TestHandleBounceCorrectionCapIsPerFinality: the one-shot cap must not carry
-// across finalisation. countMatchingSigners never counts an observation of the
-// other finality, so an attestation consumed while unfinalised can never be
-// replayed into a correction of the finalised consensus - and a reorg found after
-// finalisation still has to be reconcilable.
-func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionCapIsPerFinality(c *C) {
+// TestHandleBounceCorrectionSupersededIsPerFinality: a superseded payload is
+// recorded at the finality level it held. countMatchingSigners never counts an
+// observation of the other finality, so an unfinalised payment left behind can
+// never be replayed into a correction of the finalised consensus - and a reorg
+// found after finalisation still has to be reconcilable.
+func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionSupersededIsPerFinality(c *C) {
 	const (
 		untouched   = uint64(20000000000) // 200 ETH
 		gasOnly     = untouched - 37500
@@ -1398,20 +1523,22 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionCapIsPerFinality(c
 		f.voteAt(c, i, true, 12, 13)
 	}
 	c.Check(f.ethBalance(c), Equals, gasOnly)
-	c.Check(f.keeper.voter.BounceCorrected, Equals, true)
+	c.Check(f.keeper.voter.BounceSuperseded, HasLen, 1)
+	c.Check(f.keeper.voter.BounceSuperseded[0].IsFinal(), Equals, false)
 
-	// finalisation agrees, so nothing to reconcile, and the cap resets
+	// finalisation agrees, so there is nothing to reconcile
 	for i := 0; i < 4; i++ {
 		f.voteAt(c, i, true, 13, 13)
 	}
 	c.Check(f.ethBalance(c), Equals, gasOnly)
-	c.Check(f.keeper.voter.BounceCorrected, Equals, false)
+	c.Check(f.keeper.voter.BounceSuperseded, HasLen, 1)
 
-	// a reorg re-includes the hash as delivered: still correctable
+	// a reorg re-includes the hash as delivered: the unfinalised delivered payload
+	// left behind above does not shadow the finalised one, so this still corrects
 	for i := 0; i < 6; i++ {
 		f.voteAt(c, i, false, 13, 13)
 	}
 	c.Check(f.ethBalance(c), Equals, gasAndCoins)
 	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
-	c.Check(f.keeper.voter.BounceCorrected, Equals, true)
+	c.Check(f.keeper.voter.BounceSuperseded, HasLen, 2)
 }

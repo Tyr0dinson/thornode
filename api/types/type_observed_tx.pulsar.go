@@ -167,6 +167,57 @@ func (x *_ObservedTxVoter_6_list) IsValid() bool {
 	return x.list != nil
 }
 
+var _ protoreflect.List = (*_ObservedTxVoter_12_list)(nil)
+
+type _ObservedTxVoter_12_list struct {
+	list *[]*common.ObservedTx
+}
+
+func (x *_ObservedTxVoter_12_list) Len() int {
+	if x.list == nil {
+		return 0
+	}
+	return len(*x.list)
+}
+
+func (x *_ObservedTxVoter_12_list) Get(i int) protoreflect.Value {
+	return protoreflect.ValueOfMessage((*x.list)[i].ProtoReflect())
+}
+
+func (x *_ObservedTxVoter_12_list) Set(i int, value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*common.ObservedTx)
+	(*x.list)[i] = concreteValue
+}
+
+func (x *_ObservedTxVoter_12_list) Append(value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*common.ObservedTx)
+	*x.list = append(*x.list, concreteValue)
+}
+
+func (x *_ObservedTxVoter_12_list) AppendMutable() protoreflect.Value {
+	v := new(common.ObservedTx)
+	*x.list = append(*x.list, v)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_ObservedTxVoter_12_list) Truncate(n int) {
+	for i := n; i < len(*x.list); i++ {
+		(*x.list)[i] = nil
+	}
+	*x.list = (*x.list)[:n]
+}
+
+func (x *_ObservedTxVoter_12_list) NewElement() protoreflect.Value {
+	v := new(common.ObservedTx)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_ObservedTxVoter_12_list) IsValid() bool {
+	return x.list != nil
+}
+
 var (
 	md_ObservedTxVoter                    protoreflect.MessageDescriptor
 	fd_ObservedTxVoter_tx_id              protoreflect.FieldDescriptor
@@ -180,7 +231,7 @@ var (
 	fd_ObservedTxVoter_reverted           protoreflect.FieldDescriptor
 	fd_ObservedTxVoter_outbound_height    protoreflect.FieldDescriptor
 	fd_ObservedTxVoter_unfinalized_height protoreflect.FieldDescriptor
-	fd_ObservedTxVoter_bounce_corrected   protoreflect.FieldDescriptor
+	fd_ObservedTxVoter_bounce_superseded  protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -197,7 +248,7 @@ func init() {
 	fd_ObservedTxVoter_reverted = md_ObservedTxVoter.Fields().ByName("reverted")
 	fd_ObservedTxVoter_outbound_height = md_ObservedTxVoter.Fields().ByName("outbound_height")
 	fd_ObservedTxVoter_unfinalized_height = md_ObservedTxVoter.Fields().ByName("unfinalized_height")
-	fd_ObservedTxVoter_bounce_corrected = md_ObservedTxVoter.Fields().ByName("bounce_corrected")
+	fd_ObservedTxVoter_bounce_superseded = md_ObservedTxVoter.Fields().ByName("bounce_superseded")
 }
 
 var _ protoreflect.Message = (*fastReflection_ObservedTxVoter)(nil)
@@ -331,9 +382,9 @@ func (x *fastReflection_ObservedTxVoter) Range(f func(protoreflect.FieldDescript
 			return
 		}
 	}
-	if x.BounceCorrected != false {
-		value := protoreflect.ValueOfBool(x.BounceCorrected)
-		if !f(fd_ObservedTxVoter_bounce_corrected, value) {
+	if len(x.BounceSuperseded) != 0 {
+		value := protoreflect.ValueOfList(&_ObservedTxVoter_12_list{list: &x.BounceSuperseded})
+		if !f(fd_ObservedTxVoter_bounce_superseded, value) {
 			return
 		}
 	}
@@ -374,8 +425,8 @@ func (x *fastReflection_ObservedTxVoter) Has(fd protoreflect.FieldDescriptor) bo
 		return x.OutboundHeight != int64(0)
 	case "types.ObservedTxVoter.unfinalized_height":
 		return x.UnfinalizedHeight != int64(0)
-	case "types.ObservedTxVoter.bounce_corrected":
-		return x.BounceCorrected != false
+	case "types.ObservedTxVoter.bounce_superseded":
+		return len(x.BounceSuperseded) != 0
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.ObservedTxVoter"))
@@ -414,8 +465,8 @@ func (x *fastReflection_ObservedTxVoter) Clear(fd protoreflect.FieldDescriptor) 
 		x.OutboundHeight = int64(0)
 	case "types.ObservedTxVoter.unfinalized_height":
 		x.UnfinalizedHeight = int64(0)
-	case "types.ObservedTxVoter.bounce_corrected":
-		x.BounceCorrected = false
+	case "types.ObservedTxVoter.bounce_superseded":
+		x.BounceSuperseded = nil
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.ObservedTxVoter"))
@@ -474,9 +525,12 @@ func (x *fastReflection_ObservedTxVoter) Get(descriptor protoreflect.FieldDescri
 	case "types.ObservedTxVoter.unfinalized_height":
 		value := x.UnfinalizedHeight
 		return protoreflect.ValueOfInt64(value)
-	case "types.ObservedTxVoter.bounce_corrected":
-		value := x.BounceCorrected
-		return protoreflect.ValueOfBool(value)
+	case "types.ObservedTxVoter.bounce_superseded":
+		if len(x.BounceSuperseded) == 0 {
+			return protoreflect.ValueOfList(&_ObservedTxVoter_12_list{})
+		}
+		listValue := &_ObservedTxVoter_12_list{list: &x.BounceSuperseded}
+		return protoreflect.ValueOfList(listValue)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.ObservedTxVoter"))
@@ -525,8 +579,10 @@ func (x *fastReflection_ObservedTxVoter) Set(fd protoreflect.FieldDescriptor, va
 		x.OutboundHeight = value.Int()
 	case "types.ObservedTxVoter.unfinalized_height":
 		x.UnfinalizedHeight = value.Int()
-	case "types.ObservedTxVoter.bounce_corrected":
-		x.BounceCorrected = value.Bool()
+	case "types.ObservedTxVoter.bounce_superseded":
+		lv := value.List()
+		clv := lv.(*_ObservedTxVoter_12_list)
+		x.BounceSuperseded = *clv.list
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.ObservedTxVoter"))
@@ -570,6 +626,12 @@ func (x *fastReflection_ObservedTxVoter) Mutable(fd protoreflect.FieldDescriptor
 		}
 		value := &_ObservedTxVoter_6_list{list: &x.OutTxs}
 		return protoreflect.ValueOfList(value)
+	case "types.ObservedTxVoter.bounce_superseded":
+		if x.BounceSuperseded == nil {
+			x.BounceSuperseded = []*common.ObservedTx{}
+		}
+		value := &_ObservedTxVoter_12_list{list: &x.BounceSuperseded}
+		return protoreflect.ValueOfList(value)
 	case "types.ObservedTxVoter.tx_id":
 		panic(fmt.Errorf("field tx_id of message types.ObservedTxVoter is not mutable"))
 	case "types.ObservedTxVoter.height":
@@ -584,8 +646,6 @@ func (x *fastReflection_ObservedTxVoter) Mutable(fd protoreflect.FieldDescriptor
 		panic(fmt.Errorf("field outbound_height of message types.ObservedTxVoter is not mutable"))
 	case "types.ObservedTxVoter.unfinalized_height":
 		panic(fmt.Errorf("field unfinalized_height of message types.ObservedTxVoter is not mutable"))
-	case "types.ObservedTxVoter.bounce_corrected":
-		panic(fmt.Errorf("field bounce_corrected of message types.ObservedTxVoter is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.ObservedTxVoter"))
@@ -625,8 +685,9 @@ func (x *fastReflection_ObservedTxVoter) NewField(fd protoreflect.FieldDescripto
 		return protoreflect.ValueOfInt64(int64(0))
 	case "types.ObservedTxVoter.unfinalized_height":
 		return protoreflect.ValueOfInt64(int64(0))
-	case "types.ObservedTxVoter.bounce_corrected":
-		return protoreflect.ValueOfBool(false)
+	case "types.ObservedTxVoter.bounce_superseded":
+		list := []*common.ObservedTx{}
+		return protoreflect.ValueOfList(&_ObservedTxVoter_12_list{list: &list})
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.ObservedTxVoter"))
@@ -740,8 +801,11 @@ func (x *fastReflection_ObservedTxVoter) ProtoMethods() *protoiface.Methods {
 		if x.UnfinalizedHeight != 0 {
 			n += 1 + runtime.Sov(uint64(x.UnfinalizedHeight))
 		}
-		if x.BounceCorrected {
-			n += 2
+		if len(x.BounceSuperseded) > 0 {
+			for _, e := range x.BounceSuperseded {
+				l = options.Size(e)
+				n += 1 + l + runtime.Sov(uint64(l))
+			}
 		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
@@ -772,15 +836,21 @@ func (x *fastReflection_ObservedTxVoter) ProtoMethods() *protoiface.Methods {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
 		}
-		if x.BounceCorrected {
-			i--
-			if x.BounceCorrected {
-				dAtA[i] = 1
-			} else {
-				dAtA[i] = 0
+		if len(x.BounceSuperseded) > 0 {
+			for iNdEx := len(x.BounceSuperseded) - 1; iNdEx >= 0; iNdEx-- {
+				encoded, err := options.Marshal(x.BounceSuperseded[iNdEx])
+				if err != nil {
+					return protoiface.MarshalOutput{
+						NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+						Buf:               input.Buf,
+					}, err
+				}
+				i -= len(encoded)
+				copy(dAtA[i:], encoded)
+				i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+				i--
+				dAtA[i] = 0x62
 			}
-			i--
-			dAtA[i] = 0x60
 		}
 		if x.UnfinalizedHeight != 0 {
 			i = runtime.EncodeVarint(dAtA, i, uint64(x.UnfinalizedHeight))
@@ -1227,10 +1297,10 @@ func (x *fastReflection_ObservedTxVoter) ProtoMethods() *protoiface.Methods {
 					}
 				}
 			case 12:
-				if wireType != 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field BounceCorrected", wireType)
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field BounceSuperseded", wireType)
 				}
-				var v int
+				var msglen int
 				for shift := uint(0); ; shift += 7 {
 					if shift >= 64 {
 						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
@@ -1240,12 +1310,26 @@ func (x *fastReflection_ObservedTxVoter) ProtoMethods() *protoiface.Methods {
 					}
 					b := dAtA[iNdEx]
 					iNdEx++
-					v |= int(b&0x7F) << shift
+					msglen |= int(b&0x7F) << shift
 					if b < 0x80 {
 						break
 					}
 				}
-				x.BounceCorrected = bool(v != 0)
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.BounceSuperseded = append(x.BounceSuperseded, &common.ObservedTx{})
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.BounceSuperseded[len(x.BounceSuperseded)-1]); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
 				skippy, err := runtime.Skip(dAtA[iNdEx:])
@@ -1310,13 +1394,15 @@ type ObservedTxVoter struct {
 	Reverted          bool                 `protobuf:"varint,9,opt,name=reverted,proto3" json:"reverted,omitempty"`
 	OutboundHeight    int64                `protobuf:"varint,10,opt,name=outbound_height,json=outboundHeight,proto3" json:"outbound_height,omitempty"`
 	UnfinalizedHeight int64                `protobuf:"varint,11,opt,name=unfinalized_height,json=unfinalizedHeight,proto3" json:"unfinalized_height,omitempty"`
-	// bounce_corrected records that a supermajority has already reconciled this
-	// outbound's Bounced verdict once at the current finality level (it is reset
-	// when the voter finalises). Attestations carry no nonce, so a genuine
-	// re-observation and a replay of a previously gossiped attestation are
-	// byte-identical; without a cap an attacker could re-file the superseded
-	// verdict and oscillate the vault's coin accounting at will.
-	BounceCorrected bool `protobuf:"varint,12,opt,name=bounce_corrected,json=bounceCorrected,proto3" json:"bounce_corrected,omitempty"`
+	// bounce_superseded records every consensus payload that a correction has
+	// already moved away from, at the finality level it held. Attestations carry
+	// no nonce and a superseded payload keeps its signers forever, so without
+	// this a handful of nodes that never observed it could tip a stale payload
+	// back over the supermajority line and oscillate the vault's coin accounting
+	// at will. A correction is refused when its target is one of these; a
+	// genuinely new observation (a reorg's new receipt differs in at least gas)
+	// is a different payload and carries no stale signers, so it still applies.
+	BounceSuperseded []*common.ObservedTx `protobuf:"bytes,12,rep,name=bounce_superseded,json=bounceSuperseded,proto3" json:"bounce_superseded,omitempty"`
 }
 
 func (x *ObservedTxVoter) Reset() {
@@ -1416,11 +1502,11 @@ func (x *ObservedTxVoter) GetUnfinalizedHeight() int64 {
 	return 0
 }
 
-func (x *ObservedTxVoter) GetBounceCorrected() bool {
+func (x *ObservedTxVoter) GetBounceSuperseded() []*common.ObservedTx {
 	if x != nil {
-		return x.BounceCorrected
+		return x.BounceSuperseded
 	}
-	return false
+	return nil
 }
 
 var File_types_type_observed_tx_proto protoreflect.FileDescriptor
@@ -1432,7 +1518,7 @@ var file_types_type_observed_tx_proto_rawDesc = []byte{
 	0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x17, 0x74, 0x79, 0x70, 0x65,
 	0x73, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x5f, 0x74, 0x78, 0x5f, 0x6f, 0x75, 0x74, 0x2e, 0x70, 0x72,
 	0x6f, 0x74, 0x6f, 0x1a, 0x14, 0x67, 0x6f, 0x67, 0x6f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x67,
-	0x6f, 0x67, 0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0x80, 0x05, 0x0a, 0x0f, 0x4f, 0x62,
+	0x6f, 0x67, 0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0xd3, 0x05, 0x0a, 0x0f, 0x4f, 0x62,
 	0x73, 0x65, 0x72, 0x76, 0x65, 0x64, 0x54, 0x78, 0x56, 0x6f, 0x74, 0x65, 0x72, 0x12, 0x4d, 0x0a,
 	0x05, 0x74, 0x78, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x42, 0x38, 0xe2, 0xde,
 	0x1f, 0x04, 0x54, 0x78, 0x49, 0x44, 0xfa, 0xde, 0x1f, 0x2c, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62,
@@ -1470,19 +1556,24 @@ var file_types_type_observed_tx_proto_rawDesc = []byte{
 	0x68, 0x74, 0x12, 0x2d, 0x0a, 0x12, 0x75, 0x6e, 0x66, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65,
 	0x64, 0x5f, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x0b, 0x20, 0x01, 0x28, 0x03, 0x52, 0x11,
 	0x75, 0x6e, 0x66, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65, 0x64, 0x48, 0x65, 0x69, 0x67, 0x68,
-	0x74, 0x12, 0x29, 0x0a, 0x10, 0x62, 0x6f, 0x75, 0x6e, 0x63, 0x65, 0x5f, 0x63, 0x6f, 0x72, 0x72,
-	0x65, 0x63, 0x74, 0x65, 0x64, 0x18, 0x0c, 0x20, 0x01, 0x28, 0x08, 0x52, 0x0f, 0x62, 0x6f, 0x75,
-	0x6e, 0x63, 0x65, 0x43, 0x6f, 0x72, 0x72, 0x65, 0x63, 0x74, 0x65, 0x64, 0x42, 0x8c, 0x01, 0x0a,
-	0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x13, 0x54, 0x79, 0x70, 0x65,
-	0x4f, 0x62, 0x73, 0x65, 0x72, 0x76, 0x65, 0x64, 0x54, 0x78, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50,
-	0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68,
-	0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65,
-	0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03,
-	0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79,
-	0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d,
-	0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xc8,
-	0xe1, 0x1e, 0x00, 0xd8, 0xe1, 0x1e, 0x00, 0x80, 0xe2, 0x1e, 0x00, 0x62, 0x06, 0x70, 0x72, 0x6f,
-	0x74, 0x6f, 0x33,
+	0x74, 0x12, 0x7c, 0x0a, 0x11, 0x62, 0x6f, 0x75, 0x6e, 0x63, 0x65, 0x5f, 0x73, 0x75, 0x70, 0x65,
+	0x72, 0x73, 0x65, 0x64, 0x65, 0x64, 0x18, 0x0c, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x12, 0x2e, 0x63,
+	0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x4f, 0x62, 0x73, 0x65, 0x72, 0x76, 0x65, 0x64, 0x54, 0x78,
+	0x42, 0x3b, 0xc8, 0xde, 0x1f, 0x00, 0xaa, 0xdf, 0x1f, 0x33, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62,
+	0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74,
+	0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x63, 0x6f, 0x6d, 0x6d, 0x6f,
+	0x6e, 0x2e, 0x4f, 0x62, 0x73, 0x65, 0x72, 0x76, 0x65, 0x64, 0x54, 0x78, 0x73, 0x52, 0x10, 0x62,
+	0x6f, 0x75, 0x6e, 0x63, 0x65, 0x53, 0x75, 0x70, 0x65, 0x72, 0x73, 0x65, 0x64, 0x65, 0x64, 0x42,
+	0x8c, 0x01, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x13, 0x54,
+	0x79, 0x70, 0x65, 0x4f, 0x62, 0x73, 0x65, 0x72, 0x76, 0x65, 0x64, 0x54, 0x78, 0x50, 0x72, 0x6f,
+	0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d,
+	0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e,
+	0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73,
+	0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xca, 0x02,
+	0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73, 0x5c, 0x47,
+	0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54, 0x79, 0x70,
+	0x65, 0x73, 0xc8, 0xe1, 0x1e, 0x00, 0xd8, 0xe1, 0x1e, 0x00, 0x80, 0xe2, 0x1e, 0x00, 0x62, 0x06,
+	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -1509,11 +1600,12 @@ var file_types_type_observed_tx_proto_depIdxs = []int32{
 	1, // 1: types.ObservedTxVoter.txs:type_name -> common.ObservedTx
 	2, // 2: types.ObservedTxVoter.actions:type_name -> types.TxOutItem
 	3, // 3: types.ObservedTxVoter.out_txs:type_name -> common.Tx
-	4, // [4:4] is the sub-list for method output_type
-	4, // [4:4] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	1, // 4: types.ObservedTxVoter.bounce_superseded:type_name -> common.ObservedTx
+	5, // [5:5] is the sub-list for method output_type
+	5, // [5:5] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_types_type_observed_tx_proto_init() }
