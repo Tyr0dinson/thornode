@@ -688,6 +688,14 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 						"height", height,
 						"age", ctx.BlockHeight()-height,
 						"chain", toi.Chain)
+					// A sustained per-chain rate is a direct "migration keeps failing
+					// on chain X" signal; the retry loop can otherwise spin
+					// indefinitely with churn blocked and no metric at all.
+					telemetry.IncrCounterWithLabels(
+						[]string{"thornode", "churn", "migration_stale_pruned"},
+						float32(1),
+						[]metrics.Label{telemetry.NewLabel("chain", toi.Chain.String())},
+					)
 					// Mark the old request as replaced so bifrost will not sign it after
 					// the pending height is cleared and a fresh migrate is scheduled.
 					toi.OutHash = common.BlankTxID
@@ -781,6 +789,14 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 				}
 				if len(targetVaults) == 0 {
 					ctx.Logger().Error("no active target vault for migration chain", "chain", chain.String())
+					// A post-churn topology failure: the retiring vault keeps its
+					// funds for this chain indefinitely, and nothing else in the
+					// metric surface separates that from "migration is just slow".
+					telemetry.IncrCounterWithLabels(
+						[]string{"thornode", "churn", "migration_no_target_vault"},
+						float32(1),
+						[]metrics.Label{telemetry.NewLabel("chain", chain.String())},
+					)
 					continue
 				}
 
@@ -1566,6 +1582,19 @@ func (vm *NetworkMgr) scheduleKeygen(ctx cosmos.Context, nas NodeAccounts, keyge
 		return err
 	}
 	if err = validateKeygenEligibleThreshold(nas, eligible); err != nil {
+		// An error here aborts the entire churn (all-or-nothing under the churn
+		// CacheContext), so a handful of ForcedToLeave nodes shrinking a group
+		// below threshold+1 can deadlock churn indefinitely with no metric.
+		// The reason is derived from the closed set of eligibility outcomes, not
+		// from the error text.
+		reason := "below_eligible_threshold"
+		if len(eligible) == 0 {
+			reason = "no_eligible_members"
+		}
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "churn", "keygen_schedule_failed"}, 1,
+			[]metrics.Label{telemetry.NewLabel("reason", reason)},
+		)
 		return err
 	}
 	nas = eligible
@@ -1610,6 +1639,13 @@ func (vm *NetworkMgr) scheduleKeygen(ctx cosmos.Context, nas NodeAccounts, keyge
 	}
 
 	vm.k.SetKeygenBlock(ctx, keygenBlock)
+	// The denominator for keygen failure: churn actually reached the point of
+	// asking the nodes to do work. Separates the regular Asgard path from the
+	// independent XMR monovault path.
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "churn", "keygen_scheduled"}, 1,
+		[]metrics.Label{telemetry.NewLabel("keygen_type", keygenType.String())},
+	)
 	// clear the init vault
 	initVaults, err := vm.k.GetAsgardVaultsByStatus(ctx, InitVault)
 	if err != nil {
@@ -2118,6 +2154,12 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 
 	// when total reserve is zero , can't pay reward
 	if totalReserve.IsZero() {
+		// UpdateNetwork's caller only logs non-nil errors, so this silent
+		// nil-return produces no output at all today.
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "network", "block_rewards_skipped"}, 1,
+			[]metrics.Label{telemetry.NewLabel("reason", "reserve_empty")},
+		)
 		return nil
 	}
 	availablePools, availablePoolsRune, err := getAvailablePoolsRune(ctx, vm.k)
@@ -2131,6 +2173,10 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 
 	// If no Rune is in Available pools, then don't give out block rewards.
 	if availablePoolsRune.IsZero() {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "network", "block_rewards_skipped"}, 1,
+			[]metrics.Label{telemetry.NewLabel("reason", "no_available_pool_rune")},
+		)
 		return nil // If no Rune is in available pools, then don't give out block rewards.
 	}
 
@@ -2799,6 +2845,10 @@ func (vm *NetworkMgr) distributeTCYStake(ctx cosmos.Context, mgr Manager) {
 		if err != nil {
 			// We will just log error but continue distributing funds
 			ctx.Logger().Error("fail to send rune distribution", "amount", accRuneCoin.Amount.Uint64(), "account", dist.Account.String(), "error", err)
+			// The payout is skipped and the RUNE stays in the TCYStake module with
+			// no event and no retry. Unlabelled on purpose: the only natural label
+			// (dist.Account) is an unbounded address.
+			telemetry.IncrCounter(1, "thornode", "tcy", "distribution_failed")
 		} else {
 			evt := types.NewEventTCYDistribution(dist.Account, accRuneCoin.Amount)
 			if err := mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
@@ -3328,6 +3378,10 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 func (vm *NetworkMgr) processOverSolvency(ctx cosmos.Context, mgr Manager) error {
 	// Check interval configuration first - skip if not configured or invalid
 	overSolvencyInterval := vm.k.GetConfigInt64(ctx, constants.OverSolvencyCheckInterval)
+	// "is the solvency calculation switched on at all" - a gauge, not a counter:
+	// this branch returns before the IsPeriodLastBlock gate, so a counter here
+	// would tick every block while the feature is simply off.
+	telemetry.SetGauge(boolTelem(overSolvencyInterval > 0), "thornode", "solvency", "network_check_enabled")
 	if overSolvencyInterval <= 0 {
 		return nil // Interval not configured, skip processing
 	}
@@ -3341,16 +3395,38 @@ func (vm *NetworkMgr) processOverSolvency(ctx cosmos.Context, mgr Manager) error
 	// to avoid calculations during vault migration
 	retiringVaults, err := vm.k.GetAsgardVaultsByStatus(ctx, RetiringVault)
 	if err != nil {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "solvency", "network_check_skipped"}, 1,
+			[]metrics.Label{telemetry.NewLabel("reason", "vault_error")},
+		)
 		return fmt.Errorf("failed to get retiring vaults: %w", err)
 	}
 	if len(retiringVaults) > 0 {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "solvency", "network_check_skipped"}, 1,
+			[]metrics.Label{telemetry.NewLabel("reason", "churn_in_progress")},
+		)
 		return nil // Churn in progress, skip processing
 	}
 
 	// Calculate network solvency (both over and under-solvency)
 	solvencyAmounts, err := vm.calculateNetworkSolvency(ctx, mgr)
 	if err != nil {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "solvency", "network_check_skipped"}, 1,
+			[]metrics.Label{telemetry.NewLabel("reason", "calc_error")},
+		)
 		return fmt.Errorf("failed to calculate network solvency: %w", err)
+	}
+
+	// The over-solvent filter below discards every negative amount, which is the
+	// funds-are-missing half. Export the full signed set before it is thrown away.
+	for _, solvencyAmt := range solvencyAmounts {
+		telemetry.SetGaugeWithLabels(
+			[]string{"thornode", "solvency", "network_delta"},
+			telemInt(solvencyAmt.Amount),
+			[]metrics.Label{telemetry.NewLabel("asset", solvencyAmt.Asset.String())},
+		)
 	}
 
 	// Filter to only process Available-pool assets with positive amounts (over-solvent).

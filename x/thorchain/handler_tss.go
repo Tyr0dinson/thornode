@@ -15,6 +15,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/hashicorp/go-metrics"
 
+	tssMessages "gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
@@ -263,6 +264,32 @@ func validateTssAuth(ctx cosmos.Context, k keeper.Keeper, signer cosmos.AccAddre
 	return nil
 }
 
+// canonicalKeygenRoundLabel bounds the telemetry round label for keygen blame.
+// Unlike MsgTssKeysignFail, MsgTssPool.ValidateBasic does not canonicalise
+// Blame.Round, and CanonicalTssRound passes an unrecognised name through
+// unchanged - so anything outside the known keygen rounds collapses to "other"
+// rather than becoming an unbounded label value.
+func canonicalKeygenRoundLabel(round string) string {
+	switch types.CanonicalTssRound(round, "") {
+	case tssMessages.KEYGEN1:
+		return tssMessages.KEYGEN1
+	case tssMessages.KEYGEN2aUnicast:
+		return tssMessages.KEYGEN2aUnicast
+	case tssMessages.KEYGEN2b:
+		return tssMessages.KEYGEN2b
+	case tssMessages.KEYGEN3:
+		return tssMessages.KEYGEN3
+	case tssMessages.EDDSAKEYGEN1:
+		return tssMessages.EDDSAKEYGEN1
+	case tssMessages.EDDSAKEYGEN2a:
+		return tssMessages.EDDSAKEYGEN2a
+	case tssMessages.EDDSAKEYGEN2b:
+		return tssMessages.EDDSAKEYGEN2b
+	default:
+		return "other"
+	}
+}
+
 func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 	ctx.Logger().Info("handler tss", "current version", h.mgr.GetVersion())
 	blames := make([]string, 0)
@@ -412,6 +439,31 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 
 		// Do the below only for a non-success message upon 2/3rds consensus.
 		if !msg.IsSuccess() {
+			// One increment per failed keygen reaching 2/3rds consensus. The
+			// existing failed_keygen labels live on thornode_point_slash and
+			// thornode_bond_slash, which fire per BLAMED node (and bond_slash only
+			// for a non-zero amount), so a keygen failure with an empty Blame list
+			// emits nothing at all today and one blaming 5 nodes looks like 5.
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "churn", "keygen_failure"},
+				1,
+				[]metrics.Label{telemetry.NewLabel("keygen_type", msg.KeygenType.String())},
+			)
+			// Per-round/unicast breakdown. Emitted here rather than in the blame
+			// loop below, because a Blame entry carrying zero BlameNodes never
+			// enters that loop and so produces no attributable signal at all.
+			for _, b := range msg.Blame {
+				telemetry.IncrCounterWithLabels(
+					[]string{"thornode", "tss", "keygen", "failure"},
+					1,
+					[]metrics.Label{
+						telemetry.NewLabel("keygen_type", msg.KeygenType.String()),
+						telemetry.NewLabel("round", canonicalKeygenRoundLabel(b.Round)),
+						telemetry.NewLabel("is_unicast", fmt.Sprintf("%t", b.IsUnicast)),
+					},
+				)
+			}
+
 			// since the keygen failed, it's now safe to reset all nodes in
 			// ready status back to standby status
 			ready, err := h.mgr.Keeper().ListValidatorsByStatus(ctx, NodeReady)
@@ -439,6 +491,21 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 					if err != nil {
 						return fmt.Errorf("fail to get node from it's pub key: %w", err)
 					}
+					// Which node is blamed for the keygen failure. Blamed non-Active
+					// nodes take the jail+bond-slash branch below, which emits
+					// thornode_bond_slash only when the slash amount is non-zero, so
+					// a blamed standby node with no rewards owed is invisible today.
+					// Count both branches here.
+					telemetry.IncrCounterWithLabels(
+						[]string{"thornode", "tss", "keygen", "blame"},
+						1,
+						[]metrics.Label{
+							telemetry.NewLabel("node_address", na.NodeAddress.String()),
+							telemetry.NewLabel("round", canonicalKeygenRoundLabel(b.Round)),
+							telemetry.NewLabel("keygen_type", msg.KeygenType.String()),
+						},
+					)
+
 					if na.Status == NodeActive {
 						failedKeygenSlashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
 							telemetry.NewLabel("reason", "failed_keygen"),
@@ -641,6 +708,18 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 					ctx.Logger().Error("fail to emit keygen success event")
 				}
 			}
+
+			// Counts a keygen that actually finalized a vault, so
+			// thornode_churn_keygen_failure has a matching denominator on the same
+			// keygen_type dimension. Keygen success is unmetered today. Emitted
+			// outside the members if/else so an Addresses() failure - unrelated to
+			// the keygen outcome - does not silently drop the success, and after
+			// the last fallible step so a vault that never finalized is not counted.
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "churn", "keygen_success"},
+				1,
+				[]metrics.Label{telemetry.NewLabel("keygen_type", msg.KeygenType.String())},
+			)
 		}
 	}
 

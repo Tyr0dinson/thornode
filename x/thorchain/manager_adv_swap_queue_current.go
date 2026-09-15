@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -674,6 +675,12 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 	limitSwapSuccesses := int64(0)
 	completedSwapCount := int64(0)
 
+	// Failed swap attempts, bucketed by a fixed closed set of reasons. Locals
+	// only - never chain state - so accumulating on every node while emitting
+	// on telemetry nodes only is consensus-neutral.
+	failedSwapReasons := map[string]int64{}
+	failedSwapCount := int64(0)
+
 	// Track the last swap direction per pool for rapid swap safety.
 	lastPoolDir := make(poolSwapDir)
 
@@ -763,6 +770,20 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 					continue
 				}
 				attempted++
+				// Telemetry only: bucket the failure into a fixed reason set so a
+				// block where every attempt failed is distinguishable from a block
+				// with no swaps at all (both read zero on the success counters).
+				failedSwapCount++
+				switch {
+				case errors.Is(handleErr, errSwapFailInvalidAmount):
+					failedSwapReasons["invalid_amount"]++
+				case errors.Is(handleErr, errSwapFailInvalidBalance):
+					failedSwapReasons["invalid_balance"]++
+				case errors.Is(handleErr, errSwapFailNotEnoughBalance):
+					failedSwapReasons["not_enough_balance"]++
+				default:
+					failedSwapReasons["other"]++
+				}
 				// Don't commit - this discards all state changes
 				ctx.Logger().Error("fail to execute streaming swap interval", "error", handleErr)
 				msg.State.FailedSwaps = append(msg.State.FailedSwaps, msg.State.Count)
@@ -859,6 +880,18 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 	// Emit telemetry metrics only if telemetry is enabled
 	if telemetryEnabled && !isSimulation {
 		vm.emitAdvSwapQueueTelemetry(ctx, mgr, iterationCount, swapSuccesses, marketSwapSuccesses, limitSwapSuccesses, completedSwapCount)
+
+		// Fixed, ordered reason list: never iterate the map itself.
+		for _, reason := range []string{"invalid_amount", "invalid_balance", "not_enough_balance", "other"} {
+			if n := failedSwapReasons[reason]; n > 0 {
+				telemetry.IncrCounterWithLabels(
+					[]string{"thornode", "adv_swap_queue", "failed_swaps_total"},
+					float32(n),
+					[]metrics.Label{telemetry.NewLabel("reason", reason)},
+				)
+			}
+		}
+		telemetry.SetGauge(float32(failedSwapCount), "thornode", "adv_swap_queue", "failed_swaps_per_block")
 	}
 
 	return nil
@@ -1032,6 +1065,11 @@ func (vm *SwapQueueAdv) processExpiredLimitSwaps(ctx cosmos.Context, mgr Manager
 				if err := settleSwap(ctx, mgr, swap, "limit swap expired"); err != nil {
 					ctx.Logger().Error("fail to settle expired limit swap", "error", err, "txID", txHash.String(), "index", index)
 					settleFailed = true
+				} else {
+					// Only a settled expiry counts: TTL entries for swaps filled or
+					// cancelled before TTL still fire here, and failed settles are
+					// re-queued every block, so len(expiredTxHashes) overcounts both.
+					telemetry.IncrCounter(1, "thornode", "limit_swap", "expired")
 				}
 				found = true
 			}
@@ -1039,6 +1077,9 @@ func (vm *SwapQueueAdv) processExpiredLimitSwaps(ctx cosmos.Context, mgr Manager
 
 		if settleFailed {
 			failedTxHashes = append(failedTxHashes, txHash)
+			// Failed settles are re-queued at currentHeight+1 forever below, so a
+			// wedged settle increments this every single block.
+			telemetry.IncrCounter(1, "thornode", "limit_swap", "settle_failed")
 		}
 
 		if !found {
@@ -1189,6 +1230,35 @@ func (vm *SwapQueueAdv) emitQueueDepthTelemetry(ctx cosmos.Context, mgr Manager)
 	marketItems, err := vm.k.GetAdvSwapQueueIndex(ctx, MsgSwap{SwapType: MarketSwap})
 	if err == nil {
 		telemetry.SetGauge(float32(len(marketItems)), "thornode", "adv_swap_queue", "market_swaps_queued")
+	}
+
+	// Oldest queued adv-swap age: a limit swap whose TTL settle keeps failing, or a
+	// market swap whose pool went unavailable, sits here forever while newer swaps
+	// churn past it, so queue depth alone cannot see it. Only adv-queue items carry
+	// InitialBlockHeight (set in AddSwapQueueItem); legacy items carry 0 and are skipped.
+	// Read-only pass, reached only from the telemetry-gated path.
+	itemIter := vm.k.GetAdvSwapQueueItemIterator(ctx)
+	if itemIter != nil {
+		queuedItems := int64(0)
+		oldestAgeBlocks := int64(0)
+		func() { // Use anonymous function to ensure defer works properly
+			defer itemIter.Close()
+			for ; itemIter.Valid(); itemIter.Next() {
+				var qmsg MsgSwap
+				if uerr := vm.k.Cdc().Unmarshal(itemIter.Value(), &qmsg); uerr != nil {
+					continue
+				}
+				queuedItems++
+				if qmsg.InitialBlockHeight <= 0 {
+					continue
+				}
+				if age := ctx.BlockHeight() - qmsg.InitialBlockHeight; age > oldestAgeBlocks {
+					oldestAgeBlocks = age
+				}
+			}
+		}()
+		telemetry.SetGauge(float32(queuedItems), "thornode", "adv_swap_queue", "items")
+		telemetry.SetGauge(float32(oldestAgeBlocks), "thornode", "adv_swap_queue", "oldest_swap_age_blocks")
 	}
 }
 

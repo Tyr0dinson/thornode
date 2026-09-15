@@ -4,6 +4,9 @@ import (
 	"crypto/sha256"
 	"fmt"
 
+	"github.com/cosmos/cosmos-sdk/telemetry"
+	"github.com/hashicorp/go-metrics"
+
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
@@ -178,6 +181,11 @@ func skimAffiliateFees(ctx cosmos.Context, mgr Manager, mainTx common.Tx, signer
 	totalFee := cosmos.ZeroUint()      // total fee distributed
 	swapIndex := 1                     // swap index, start at 1 to account for the main user swap
 
+	// Telemetry only. This path is reachable from quote simulation (via
+	// prepareTxOutItem), so simulated swaps must not move the counters.
+	// Affiliate identity (thorname or address) is unbounded and is never a label.
+	emitTelem := !isSimulationMode(ctx)
+
 	// Iterate through each affiliate and attempt to distribute the fee
 	for i, affiliate := range affiliates {
 		ctx.Logger().Info("distributing affiliate fee", "txid", mainTx.ID.String(), "index", i, "affiliate", affiliate, "fee", affiliatesBps[i].String(), "asset", coin.Asset, "amount", coin.Amount)
@@ -191,6 +199,13 @@ func skimAffiliateFees(ctx cosmos.Context, mgr Manager, mainTx common.Tx, signer
 			tn, errTn := mgr.Keeper().GetTHORName(ctx, affiliate)
 			if errTn != nil {
 				ctx.Logger().Error("fail to get thorname, skipping fee", "err", err)
+				if emitTelem && i < len(affiliatesBps) && !affiliatesBps[i].IsZero() {
+					telemetry.IncrCounterWithLabels(
+						[]string{"thornode", "affiliate", "fee_skipped"},
+						1,
+						[]metrics.Label{telemetry.NewLabel("reason", "thorname_lookup_failed")},
+					)
+				}
 				continue
 			}
 			thorname = &tn
@@ -198,6 +213,13 @@ func skimAffiliateFees(ctx cosmos.Context, mgr Manager, mainTx common.Tx, signer
 			// If affiliate is thorname, check if it can receive an affiliate fee. If not, skip.
 			if !thorname.CanReceiveAffiliateFee() {
 				ctx.Logger().Info("affiliate cannot receive affiliate fee", "affiliate", affiliate)
+				if emitTelem && i < len(affiliatesBps) && !affiliatesBps[i].IsZero() {
+					telemetry.IncrCounterWithLabels(
+						[]string{"thornode", "affiliate", "fee_skipped"},
+						1,
+						[]metrics.Label{telemetry.NewLabel("reason", "cannot_receive")},
+					)
+				}
 				continue
 			}
 			addr := thorname.GetAlias(common.THORChain)
@@ -205,6 +227,13 @@ func skimAffiliateFees(ctx cosmos.Context, mgr Manager, mainTx common.Tx, signer
 				runeAddr, err = addr.AccAddress()
 				if err != nil {
 					ctx.Logger().Error("fail to convert address into AccAddress, skipping fee", "msg", addr, "error", err)
+					if emitTelem && i < len(affiliatesBps) && !affiliatesBps[i].IsZero() {
+						telemetry.IncrCounterWithLabels(
+							[]string{"thornode", "affiliate", "fee_skipped"},
+							1,
+							[]metrics.Label{telemetry.NewLabel("reason", "bad_alias_address")},
+						)
+					}
 					continue
 				}
 			} else {
@@ -216,15 +245,36 @@ func skimAffiliateFees(ctx cosmos.Context, mgr Manager, mainTx common.Tx, signer
 			addr, errAddr := common.NewAddress(affiliate)
 			if errAddr != nil {
 				ctx.Logger().Error("fail to parse affiliate address, skipping fee", "msg", affiliate, "error", err)
+				if emitTelem && i < len(affiliatesBps) && !affiliatesBps[i].IsZero() {
+					telemetry.IncrCounterWithLabels(
+						[]string{"thornode", "affiliate", "fee_skipped"},
+						1,
+						[]metrics.Label{telemetry.NewLabel("reason", "unparsable_address")},
+					)
+				}
 				continue
 			}
 			if !addr.GetChain().IsTHORChain() {
 				ctx.Logger().Error("affiliate address is not THORChain, skipping fee", "msg", affiliate)
+				if emitTelem && i < len(affiliatesBps) && !affiliatesBps[i].IsZero() {
+					telemetry.IncrCounterWithLabels(
+						[]string{"thornode", "affiliate", "fee_skipped"},
+						1,
+						[]metrics.Label{telemetry.NewLabel("reason", "not_thorchain_address")},
+					)
+				}
 				continue
 			}
 			runeAddr, err = addr.AccAddress()
 			if err != nil {
 				ctx.Logger().Error("fail to convert address into AccAddress, skipping fee", "msg", addr, "error", err)
+				if emitTelem && i < len(affiliatesBps) && !affiliatesBps[i].IsZero() {
+					telemetry.IncrCounterWithLabels(
+						[]string{"thornode", "affiliate", "fee_skipped"},
+						1,
+						[]metrics.Label{telemetry.NewLabel("reason", "bad_affiliate_address")},
+					)
+				}
 				continue
 			}
 		}
@@ -246,6 +296,13 @@ func skimAffiliateFees(ctx cosmos.Context, mgr Manager, mainTx common.Tx, signer
 					err = addRuneToAffiliateCollector(ctx, mgr, affCoin, thorname, &swapIndex)
 					if err != nil {
 						ctx.Logger().Error("fail to update affiliate collector", "error", err)
+						if emitTelem {
+							telemetry.IncrCounterWithLabels(
+								[]string{"thornode", "affiliate", "fee_skipped"},
+								1,
+								[]metrics.Label{telemetry.NewLabel("reason", "collector_update_failed")},
+							)
+						}
 						continue
 					}
 				} else {
@@ -253,6 +310,13 @@ func skimAffiliateFees(ctx cosmos.Context, mgr Manager, mainTx common.Tx, signer
 					err = mgr.Keeper().SendFromModuleToAccount(ctx, AsgardName, runeAddr, common.NewCoins(affCoin))
 					if err != nil {
 						ctx.Logger().Error("fail to send rune to affiliate", "affiliate", affiliate, "error", err)
+						if emitTelem {
+							telemetry.IncrCounterWithLabels(
+								[]string{"thornode", "affiliate", "fee_skipped"},
+								1,
+								[]metrics.Label{telemetry.NewLabel("reason", "rune_transfer_failed")},
+							)
+						}
 						continue
 					}
 				}
@@ -261,6 +325,13 @@ func skimAffiliateFees(ctx cosmos.Context, mgr Manager, mainTx common.Tx, signer
 				err := affiliateSwapToRune(ctx, mgr, mainTx, signer, affAmt, runeAddr, memo, thorname, &swapIndex)
 				if err != nil {
 					ctx.Logger().Error("fail to swap to rune", "affiliate", affiliate, "error", err)
+					if emitTelem {
+						telemetry.IncrCounterWithLabels(
+							[]string{"thornode", "affiliate", "fee_skipped"},
+							1,
+							[]metrics.Label{telemetry.NewLabel("reason", "swap_to_rune_failed")},
+						)
+					}
 					continue
 				}
 			}
@@ -281,6 +352,13 @@ func skimAffiliateFees(ctx cosmos.Context, mgr Manager, mainTx common.Tx, signer
 			)
 
 			feeEvents = append(feeEvents, feeEvent)
+			if emitTelem {
+				telemetry.IncrCounterWithLabels(
+					[]string{"thornode", "affiliate", "fee_paid"},
+					telem(affAmt),
+					[]metrics.Label{telemetry.NewLabel("asset", coin.Asset.String())},
+				)
+			}
 			totalFee = totalFee.Add(affAmt)
 		}
 	}

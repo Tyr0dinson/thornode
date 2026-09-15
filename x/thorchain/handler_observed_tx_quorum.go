@@ -1,6 +1,9 @@
 package thorchain
 
 import (
+	"github.com/cosmos/cosmos-sdk/telemetry"
+	"github.com/hashicorp/go-metrics"
+
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -67,12 +70,27 @@ func (h ObservedTxQuorumHandler) handle(ctx cosmos.Context, msg types.MsgObserve
 	for _, att := range attestations {
 		accAddr, verifyErr := verifyQuorumAttestation(activeNodeAccounts, signBz, att)
 		if verifyErr != nil {
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "quorum", "attestation_invalid"}, 1,
+				[]metrics.Label{telemetry.NewLabel("kind", "tx")},
+			)
 			ctx.Logger().Error("fail to verify quorum tx in attestation", "error", verifyErr)
 			continue
 		}
 		accAddrs = append(accAddrs, accAddr)
 	}
 	if len(accAddrs) == 0 {
+		direction := "out"
+		if inbound {
+			direction = "in"
+		}
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "quorum", "tx_no_valid_attestations"}, 1,
+			[]metrics.Label{
+				telemetry.NewLabel("chain", telemChain(obsTx.Tx.Chain)),
+				telemetry.NewLabel("direction", direction),
+			},
+		)
 		ctx.Logger().Info(
 			"quorum tx has no active attestations",
 			"chain", obsTx.Tx.Chain,

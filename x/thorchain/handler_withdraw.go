@@ -280,6 +280,19 @@ func (h WithdrawLiquidityHandler) handle(ctx cosmos.Context, msg MsgWithdrawLiqu
 		}
 	}
 
+	// LP outflow attribution: pool depth is a gauge, so a depth drop cannot be told
+	// apart from swap outflow or pool cycling. thornode_pol_pool_rune_withdrawn
+	// above covers only Reserve/POL withdrawals; ordinary user withdrawals are
+	// unmetered. Emitted at the end of the success path so a withdrawal that later
+	// fails the secured-asset deposit, the reserve-fee add or the leftover-coin
+	// pool writes is not counted. This still runs under the internal handler's
+	// CacheContext, so a later error in the surrounding tx leaves these
+	// incremented - process-local counters do not roll back.
+	withdrawLabels := []metrics.Label{telemetry.NewLabel("pool", msg.Asset.String())}
+	telemetry.IncrCounterWithLabels([]string{"thornode", "withdraw", "count"}, 1, withdrawLabels)
+	telemetry.IncrCounterWithLabels([]string{"thornode", "withdraw", "rune"}, telem(runeAmt), withdrawLabels)
+	telemetry.IncrCounterWithLabels([]string{"thornode", "withdraw", "asset"}, telem(assetAmt), withdrawLabels)
+
 	return &cosmos.Result{}, nil
 }
 

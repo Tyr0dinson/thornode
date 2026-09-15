@@ -1,9 +1,13 @@
 package thorchain
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/cosmos/cosmos-sdk/telemetry"
+	"github.com/hashicorp/go-metrics"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -102,6 +106,39 @@ func (vm *SwapQueueImpl) FetchQueue(ctx cosmos.Context) (swapItems, error) { // 
 	return items, nil
 }
 
+// swapQueueFailureReason maps a swap error to a bounded telemetry label. The raw
+// error must NEVER be used as a label value: it embeds amounts and tx-specific
+// text and is unbounded. The two literal strings matched here are the same ones
+// swap_current.go documents as load-bearing for the adv swap queue.
+func swapQueueFailureReason(err error) string {
+	if err == nil {
+		return "none"
+	}
+	switch {
+	case errors.Is(err, errSwapFailInvalidAmount):
+		return "invalid_amount"
+	case errors.Is(err, errSwapFailInvalidBalance):
+		return "invalid_balance"
+	case errors.Is(err, errSwapFailNotEnoughBalance):
+		return "not_enough_balance"
+	}
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "less than price limit"):
+		return "price_limit"
+	case strings.Contains(msg, "zero emit asset"):
+		return "zero_emit_asset"
+	case strings.Contains(msg, "doesn't exist"):
+		return "pool_not_exist"
+	case strings.Contains(msg, "insufficient synth capacity"):
+		return "synth_cap"
+	case strings.Contains(msg, "has been disabled"):
+		return "disabled"
+	default:
+		return "other"
+	}
+}
+
 // EndBlock trigger the real swap to be processed
 func (vm *SwapQueueImpl) EndBlock(ctx cosmos.Context, mgr Manager) error {
 	handler := vm.handler(mgr)
@@ -141,6 +178,36 @@ func (vm *SwapQueueImpl) EndBlock(ctx cosmos.Context, mgr Manager) error {
 		_, handleErr := handler(ctx, &pick.msg)
 		if handleErr != nil {
 			ctx.Logger().Error("fail to swap", "msg", pick.msg.Tx.String(), "error", handleErr)
+
+			// Distinguish a user's unreachable price limit (benign) from
+			// 'pool not available' / 'zero emit asset' / 'not enough balance'
+			// (network problem). A pool silently dropping out of Available shows
+			// up today only as a wall of refunds with no signal.
+			// Take the non-RUNE side so the label describes the traded chain.
+			// CHAIN, not the asset: nothing rejects a swap whose target pool does
+			// not exist (SwapHandler.validate does no pool lookup - the failure
+			// surfaces as "pool %s doesn't exist" during execution), and asset
+			// symbols are not a closed set, so an attacker could mint an unbounded
+			// number of label values for the price of a deposit fee each.
+			// The chain alone is NOT self-bounding either: common.NewChain only
+			// runs Chain.Valid, which checks length and uppercase-ness and nothing
+			// else, so telemChain is what actually closes the set.
+			failedAsset := pick.msg.TargetAsset.GetLayer1Asset()
+			if pick.msg.TargetAsset.IsRune() && len(pick.msg.Tx.Coins) > 0 {
+				failedAsset = pick.msg.Tx.Coins[0].Asset.GetLayer1Asset()
+			}
+			// Quote endpoints run this EndBlock under simulate(); a quote past its
+			// price limit would otherwise count as an on-chain failure.
+			if !isSimulationMode(ctx) {
+				telemetry.IncrCounterWithLabels(
+					[]string{"thornode", "swap", "failed"},
+					1,
+					[]metrics.Label{
+						telemetry.NewLabel("reason", swapQueueFailureReason(handleErr)),
+						telemetry.NewLabel("chain", telemChain(failedAsset.Chain)),
+					},
+				)
+			}
 
 			var refundErr error
 			triggerRefund = !pick.msg.IsLegacyStreaming()
@@ -196,6 +263,16 @@ func (vm *SwapQueueImpl) EndBlock(ctx cosmos.Context, mgr Manager) error {
 
 				if refundErr != nil {
 					ctx.Logger().Error("fail to refund swap", "error", refundErr)
+					// Swap failed AND the refund failed. refundTx only errors before
+					// unrefundableCoinCleanup can run, so the funds sit in a vault
+					// with no outbound scheduled and no cleanup accounting.
+					if len(pick.msg.Tx.Coins) > 0 && !isSimulationMode(ctx) {
+						telemetry.IncrCounterWithLabels(
+							[]string{"thornode", "swap", "refund_failed"},
+							1,
+							[]metrics.Label{telemetry.NewLabel("asset", pick.msg.Tx.Coins[0].Asset.String())},
+						)
+					}
 				}
 			}
 		}

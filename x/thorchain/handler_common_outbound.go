@@ -38,7 +38,7 @@ func (h CommonOutboundTxHandler) slash(ctx cosmos.Context, tx ObservedTx) error 
 
 	ctx = ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{ // nolint
 		telemetry.NewLabel("reason", "failed_outbound"),
-		telemetry.NewLabel("chain", string(tx.Tx.Chain)),
+		telemetry.NewLabel("chain", telemChain(tx.Tx.Chain)),
 	}))
 
 	return h.mgr.Slasher().SlashVault(ctx, tx.ObservedPubKey, toSlash, h.mgr)
@@ -70,6 +70,16 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 	if voter.AddOutTx(tx.Tx) {
 		if err = h.mgr.EventMgr().EmitEvent(ctx, NewEventOutbound(inTxID, tx.Tx)); err != nil {
 			return nil, ErrInternal(err, "fail to emit outbound event")
+		}
+		// Confirmed outbound landed on the external chain; paired with the
+		// scheduled-outbound counters this gives scheduled-minus-observed. Native
+		// RUNE outbounds run this handler inline, so quote simulation reaches it.
+		if !isSimulationMode(ctx) {
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "outbound", "observed"},
+				1,
+				[]metrics.Label{telemetry.NewLabel("chain", telemChain(tx.Tx.Chain))},
+			)
 		}
 	}
 	h.mgr.Keeper().SetObservedTxInVoter(ctx, voter)
@@ -199,6 +209,14 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 							// signer spend more than the maximum gas prescribed by THORChain , slash it
 							ctx.Logger().Info("slash node", "max gas", maxGasAmt, "real gas spend", realGasAmt, "gap", common.SafeSub(realGasAmt, maxGasAmt).String())
 							matchCoin = false
+							telemetry.IncrCounterWithLabels(
+								[]string{"thornode", "outbound", "gas_overspend"},
+								1,
+								[]metrics.Label{
+									telemetry.NewLabel("chain", txOutItem.Chain.String()),
+									telemetry.NewLabel("reason", "max_gas_exceeded"),
+								},
+							)
 						}
 					}
 				}
@@ -216,6 +234,14 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 					if evmOutboundGasShouldSlash(txOutItem, gasAmount, maxGasCap) {
 						ctx.Logger().Info("EVM chain transaction spent more than max gas cap, should be slashed", "chain", txOutItem.Chain, "gas", gasAmount.String(), "max gas cap", maxGasCap)
 						matchCoin = false
+						telemetry.IncrCounterWithLabels(
+							[]string{"thornode", "outbound", "gas_overspend"},
+							1,
+							[]metrics.Label{
+								telemetry.NewLabel("chain", txOutItem.Chain.String()),
+								telemetry.NewLabel("reason", "evm_gas_cap"),
+							},
+						)
 					}
 				}
 
@@ -226,6 +252,15 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 				shouldSlash = false
 				if err = h.mgr.Keeper().SetTxOut(ctx, txOut); err != nil {
 					ctx.Logger().Error("fail to save tx out", "error", err)
+					// OutHash is not persisted while shouldSlash is already false:
+					// LackSigning will reschedule this outbound and the vault pays twice.
+					// Pre-existing; tracked as thornode issue #3296. Not fixed here
+					// because the fix is a consensus change.
+					telemetry.IncrCounterWithLabels(
+						[]string{"thornode", "outbound", "txout_save_failed"},
+						1,
+						[]metrics.Label{telemetry.NewLabel("chain", telemChain(tx.Tx.Chain))},
+					)
 				}
 
 				// reclaim clout spent
@@ -298,6 +333,14 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 		if err = h.mgr.EventMgr().EmitEvent(ctx, NewEventSecurity(tx.Tx, msg)); err != nil {
 			ctx.Logger().Error("fail to emit security event", "error", err)
 		}
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "security", "event"},
+			1,
+			[]metrics.Label{
+				telemetry.NewLabel("reason", "missing_tx_out"),
+				telemetry.NewLabel("chain", telemChain(tx.Tx.Chain)),
+			},
+		)
 
 		if err = h.slash(ctx, tx); err != nil {
 			return nil, ErrInternal(err, "fail to slash account")

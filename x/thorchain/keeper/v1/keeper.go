@@ -9,6 +9,7 @@ import (
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/runtime"
+	"github.com/cosmos/cosmos-sdk/telemetry"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 
@@ -467,6 +468,20 @@ func (k KVStore) MintToModule(ctx cosmos.Context, module string, coin common.Coi
 				// If unable to move the needed surplus coin from the Reserve, error out without any minting.
 				ctx.Logger().Error("fail to move coins during circuit breaker", "error", err)
 				return err
+			}
+
+			// The supply cap has begun converting minting into Reserve drainage.
+			// Guard the uint64 conversion: this is a handler path with no
+			// recover(), and cosmos.Uint.Uint64() panics when out of range.
+			borrowTelem := float32(0)
+			if borrowReserveAmt.BigInt().IsUint64() {
+				borrowTelem = float32(borrowReserveAmt.Uint64()) / 100000000
+			}
+			// Quote simulation reaches this through synth->RUNE swaps; counters
+			// are process-local, so API traffic must not count as borrowing.
+			if sim, _ := ctx.Value(constants.CtxSimulationMode).(bool); !sim {
+				telemetry.IncrCounter(1, "thornode", "rune_supply", "reserve_borrow")
+				telemetry.IncrCounter(borrowTelem, "thornode", "rune_supply", "reserve_borrow_amount")
 			}
 		}
 	}

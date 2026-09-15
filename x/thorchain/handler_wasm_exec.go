@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	math "cosmossdk.io/math"
+	"github.com/cosmos/cosmos-sdk/telemetry"
+	"github.com/hashicorp/go-metrics"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -70,12 +72,29 @@ func (h WasmExecHandler) handle(ctx cosmos.Context, msg MsgWasmExec) (*cosmos.Re
 	} else {
 		execAmt, err = h.mgr.SecuredAssetManager().Deposit(cacheCtx, msg.Asset, msg.Amount, msg.Sender, msg.Tx.FromAddress, msg.Tx.ID)
 		if err != nil {
+			// the cache context is discarded here, so the L1 deposit is unwound
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "wasm", "exec_failed"},
+				float32(1),
+				[]metrics.Label{
+					telemetry.NewLabel("asset", msg.Asset.String()),
+					telemetry.NewLabel("reason", "deposit"),
+				},
+			)
 			return nil, err
 		}
 	}
 
 	_, err = h.mgr.WasmManager().ExecuteContract(cacheCtx, msg.Contract, msg.Sender, msg.Msg, cosmos.NewCoins(execAmt))
 	if err != nil {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "wasm", "exec_failed"},
+			float32(1),
+			[]metrics.Label{
+				telemetry.NewLabel("asset", msg.Asset.String()),
+				telemetry.NewLabel("reason", "execute"),
+			},
+		)
 		return nil, err
 	}
 

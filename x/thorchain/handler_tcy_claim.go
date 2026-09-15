@@ -3,6 +3,9 @@ package thorchain
 import (
 	"fmt"
 
+	"github.com/cosmos/cosmos-sdk/telemetry"
+	"github.com/hashicorp/go-metrics"
+
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/common/tcysmartcontract"
@@ -66,6 +69,11 @@ func (h TCYClaimHandler) validate(ctx cosmos.Context, msg MsgTCYClaim) error {
 func (h TCYClaimHandler) handle(ctx cosmos.Context, msg MsgTCYClaim) (*cosmos.Result, error) {
 	claimingTCYBalance := h.mgr.Keeper().GetBalanceOfModule(ctx, TCYClaimingName, common.TCY.Native())
 	if claimingTCYBalance.IsZero() {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "tcy", "claim_failed"},
+			float32(1),
+			[]metrics.Label{telemetry.NewLabel("reason", "no_module_funds")},
+		)
 		return &cosmos.Result{}, fmt.Errorf("claiming module doesn't have tcy funds")
 	}
 
@@ -83,6 +91,11 @@ func (h TCYClaimHandler) handle(ctx cosmos.Context, msg MsgTCYClaim) (*cosmos.Re
 		// Recheck module balance before each transfer to prevent double-spend
 		currentBalance := h.mgr.Keeper().GetBalanceOfModule(ctx, TCYClaimingName, common.TCY.Native())
 		if currentBalance.LT(claim.Amount) {
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "tcy", "claim_failed"},
+				float32(1),
+				[]metrics.Label{telemetry.NewLabel("reason", "insufficient_module_balance")},
+			)
 			return &cosmos.Result{}, fmt.Errorf("insufficient module balance for claim: balance %s, claim_amount %s", currentBalance, claim.Amount)
 		}
 
@@ -90,11 +103,21 @@ func (h TCYClaimHandler) handle(ctx cosmos.Context, msg MsgTCYClaim) (*cosmos.Re
 		coin := common.NewCoin(common.TCY, claim.Amount)
 		err = h.mgr.Keeper().SendFromModuleToModule(ctx, TCYClaimingName, TCYStakeName, common.NewCoins(coin))
 		if err != nil {
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "tcy", "claim_failed"},
+				float32(1),
+				[]metrics.Label{telemetry.NewLabel("reason", "send_failed")},
+			)
 			return &cosmos.Result{}, fmt.Errorf("failed to send from claiming to staking module: %w", err)
 		}
 
 		err = h.mgr.Keeper().UpdateTCYStaker(ctx, msg.RuneAddress, claim.Amount)
 		if err != nil {
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "tcy", "claim_failed"},
+				float32(1),
+				[]metrics.Label{telemetry.NewLabel("reason", "update_staker_failed")},
+			)
 			return &cosmos.Result{}, fmt.Errorf("failed to update tcy staker: %w", err)
 		}
 

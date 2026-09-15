@@ -367,6 +367,16 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				if err != nil {
 					ctx.Logger().Error("Unable to get vault", "error", err, "vault pub key", toi.VaultPubKey.String())
 					resultErr = fmt.Errorf("failed to get vault: %w", err)
+					// the outbound is skipped entirely this pass - it never reaches
+					// the reschedule success counter below
+					telemetry.IncrCounterWithLabels(
+						[]string{"thornode", "outbound", "reschedule_failed"},
+						float32(1),
+						[]metrics.Label{
+							telemetry.NewLabel("chain", toi.Chain.String()),
+							telemetry.NewLabel("reason", "no_vault"),
+						},
+					)
 					continue
 				}
 
@@ -416,6 +426,14 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 					if err != nil {
 						ctx.Logger().Error("fail to get observed tx voter", "error", err)
 						resultErr = fmt.Errorf("failed to get observed tx voter: %w", err)
+						telemetry.IncrCounterWithLabels(
+							[]string{"thornode", "outbound", "reschedule_failed"},
+							float32(1),
+							[]metrics.Label{
+								telemetry.NewLabel("chain", toi.Chain.String()),
+								telemetry.NewLabel("reason", "no_voter"),
+							},
+						)
 						continue
 					}
 				}
@@ -434,6 +452,16 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 							"hash", toi.InHash,
 							"attempts", attempts,
 							"max", maxRetiredVaultRecoveryAttempts)
+						// dropped on the floor: no reschedule, no recovery, no event
+						telemetry.IncrCounterWithLabels(
+							[]string{"thornode", "outbound", "abandoned"},
+							float32(1),
+							[]metrics.Label{
+								telemetry.NewLabel("chain", toi.Chain.String()),
+								telemetry.NewLabel("asset", toi.Coin.Asset.String()),
+								telemetry.NewLabel("reason", "retired_vault_max_attempts"),
+							},
+						)
 						continue
 					}
 
@@ -488,12 +516,32 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 							treasuryErr := s.sendFailedOutboundToTreasury(ctx, mgr, toi, vault, memo)
 							if treasuryErr != nil {
 								ctx.Logger().Error("failed to send outbound to treasury recovery", "error", treasuryErr, "hash", toi.InHash)
+								// max attempts reached AND recovery could not be
+								// queued: the funds are stranded with no further
+								// mechanism
+								telemetry.IncrCounterWithLabels(
+									[]string{"thornode", "outbound", "treasury_recovery_failed"},
+									float32(1),
+									[]metrics.Label{
+										telemetry.NewLabel("chain", toi.Chain.String()),
+										telemetry.NewLabel("asset", toi.Coin.Asset.String()),
+									},
+								)
 							} else {
 								txs.TxArray[i].OutHash = common.BlankTxID
 							}
 						} else {
 							// For non-outbound transactions (shouldn't happen often), just log and drop
 							ctx.Logger().Info("txn dropped, too many attempts (non-outbound)", "hash", toi.InHash)
+							telemetry.IncrCounterWithLabels(
+								[]string{"thornode", "outbound", "abandoned"},
+								float32(1),
+								[]metrics.Label{
+									telemetry.NewLabel("chain", toi.Chain.String()),
+									telemetry.NewLabel("asset", toi.Coin.Asset.String()),
+									telemetry.NewLabel("reason", "non_outbound_max_attempts"),
+								},
+							)
 						}
 						continue
 					}
@@ -556,6 +604,18 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 						// TODO add split logic to send it out from multiple asgards in
 						// this edge case.
 						ctx.Logger().Error("unable to determine asgard vault to send funds, trying first asgard")
+						// deliberately assigning to a vault without enough funds,
+						// expecting failure and reschedule - an unbounded retry
+						// loop. A non-zero rate means this asset is over-committed
+						// against vault balances network-wide.
+						telemetry.IncrCounterWithLabels(
+							[]string{"thornode", "outbound", "no_vault_available"},
+							float32(1),
+							[]metrics.Label{
+								telemetry.NewLabel("chain", toi.Chain.String()),
+								telemetry.NewLabel("asset", toi.Coin.Asset.String()),
+							},
+						)
 						if len(active) > 0 {
 							// Fall back on the vault with the most available funds.
 							vault = active.SortBy(mainCoin.Asset)[0]
@@ -636,6 +696,14 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				// if a pool with the asset name doesn't exist, skip rescheduling
 				if !toi.Coin.IsRune() && !s.keeper.PoolExist(ctx, toi.Coin.Asset) {
 					ctx.Logger().Error("fail to add outbound to queue", "error", "coin is not rune and does not have an associated pool")
+					telemetry.IncrCounterWithLabels(
+						[]string{"thornode", "outbound", "reschedule_failed"},
+						float32(1),
+						[]metrics.Label{
+							telemetry.NewLabel("chain", toi.Chain.String()),
+							telemetry.NewLabel("reason", "no_pool"),
+						},
+					)
 					continue
 				}
 
@@ -646,8 +714,26 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				if err != nil {
 					ctx.Logger().Error("fail to add outbound to queue", "error", err)
 					resultErr = fmt.Errorf("failed to add outbound to queue: %w", err)
+					telemetry.IncrCounterWithLabels(
+						[]string{"thornode", "outbound", "reschedule_failed"},
+						float32(1),
+						[]metrics.Label{
+							telemetry.NewLabel("chain", toi.Chain.String()),
+							telemetry.NewLabel("reason", "queue_add_failed"),
+						},
+					)
 					continue
 				}
+				// an outbound only lands here when it went unsigned for a whole
+				// signing period - a sustained rate is the stuck-outbound alarm
+				telemetry.IncrCounterWithLabels(
+					[]string{"thornode", "outbound", "rescheduled"},
+					float32(1),
+					[]metrics.Label{
+						telemetry.NewLabel("chain", toi.Chain.String()),
+						telemetry.NewLabel("asset", toi.Coin.Asset.String()),
+					},
+				)
 				// because the txout item has been rescheduled, thus mark the replaced tx out item as already send out, even it is not
 				// in this way bifrost will not send it out again cause node to be slashed
 				txs.TxArray[i].OutHash = common.BlankTxID
@@ -814,6 +900,19 @@ func (s *SlasherImpl) queueRecoverySwap(
 		ctx.Logger().Error("failed to emit recovery event", "error", err)
 	}
 
+	// every increment is a user who did not receive their funds; a burst on one
+	// chain is the signature of a chain client that cannot broadcast.
+	// recoveryType is a compile-time literal at both call sites.
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "outbound", "treasury_recovery"},
+		float32(1),
+		[]metrics.Label{
+			telemetry.NewLabel("chain", toi.Chain.String()),
+			telemetry.NewLabel("asset", toi.Coin.Asset.String()),
+			telemetry.NewLabel("recovery_type", recoveryType),
+		},
+	)
+
 	return nil
 }
 
@@ -978,6 +1077,17 @@ func (s *SlasherImpl) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coin
 			// set mimirs to pause signing
 			haltsignKey := fmt.Sprintf(constants.MimirTemplateHaltSigning, coin.Asset.Chain)
 			s.keeper.SetMimir(ctx, haltsignKey, ctx.BlockHeight())
+			// an automatic PauseOnSlashThreshold trip means a theft/overspend
+			// large enough to halt the chain; thornode_chain_halted alone cannot
+			// distinguish this from a routine operator mimir halt
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "slash", "auto_halt"},
+				float32(1),
+				[]metrics.Label{
+					telemetry.NewLabel("chain", coin.Asset.Chain.String()),
+					telemetry.NewLabel("kind", "signing"),
+				},
+			)
 			mimirEvent1 := NewEventSetMimir(haltsignKey, strconv.FormatInt(ctx.BlockHeight(), 10))
 			if err := mgr.EventMgr().EmitEvent(ctx, mimirEvent1); err != nil {
 				ctx.Logger().Error("fail to emit set_mimir event", "error", err)
@@ -985,6 +1095,14 @@ func (s *SlasherImpl) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coin
 			// set mimirs to pause trading
 			halttradeKey := fmt.Sprintf(constants.MimirTemplateHaltTrading, coin.Asset.Chain)
 			s.keeper.SetMimir(ctx, halttradeKey, ctx.BlockHeight())
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "slash", "auto_halt"},
+				float32(1),
+				[]metrics.Label{
+					telemetry.NewLabel("chain", coin.Asset.Chain.String()),
+					telemetry.NewLabel("kind", "trading"),
+				},
+			)
 			mimirEvent2 := NewEventSetMimir(halttradeKey, strconv.FormatInt(ctx.BlockHeight(), 10))
 			if err := mgr.EventMgr().EmitEvent(ctx, mimirEvent2); err != nil {
 				ctx.Logger().Error("fail to emit set_mimir event", "error", err)
@@ -1013,6 +1131,16 @@ func (s *SlasherImpl) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coin
 		if totalRuneSlashed.LT(stolenRuneValue) {
 			// this should theoretically never happen
 			ctx.Logger().Info("total slashed bond amount is less than RUNE value", "slashed_bond", totalRuneSlashed.String(), "rune_value", stolenRuneValue.String())
+			// broken invariant: bond could not cover the theft, so the pool is
+			// credited less RUNE than the asset it lost
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "vault", "slash", "shortfall_rune"},
+				telem(common.SafeSub(stolenRuneValue, totalRuneSlashed)),
+				[]metrics.Label{
+					telemetry.NewLabel("asset", coin.Asset.String()),
+					telemetry.NewLabel("vault_type", vault.Type.String()),
+				},
+			)
 			runeToAsgard = totalRuneSlashed
 		}
 		runeToReserve := common.SafeSub(totalRuneSlashed, runeToAsgard)
