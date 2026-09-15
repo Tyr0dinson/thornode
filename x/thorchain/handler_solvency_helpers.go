@@ -441,8 +441,13 @@ func insolvencyCheck(ctx cosmos.Context, mgr Manager, vault Vault, coins common.
 			continue
 		}
 
-		// Convert the gap to RUNE value using the pool
-		pool, _, err := poolView.getPool(ctx, c.Asset.GetLayer1Asset())
+		// Convert the gap to RUNE value using the pool. Fetch the live pool and
+		// remove the speculative overlay separately: a missing pool is a real
+		// reason to fail closed, but an overlay that cannot be subtracted is a
+		// bookkeeping fault in the speculative swap subsystem and is no evidence
+		// of vault insolvency -- failing closed on it would auto-halt the chain.
+		layer1Asset := c.Asset.GetLayer1Asset()
+		pool, err := mgr.Keeper().GetPool(ctx, layer1Asset)
 		if err != nil {
 			if pendingRagnarokOutboundsExplainGap(ctx, mgr, nil, c.Asset, originalAmount, walletCoin.Amount, pendingAmount) {
 				ctx.Logger().Error(
@@ -458,6 +463,14 @@ func insolvencyCheck(ctx cosmos.Context, mgr Manager, vault Vault, coins common.
 			ctx.Logger().Error("fail to get pool for solvency check", "asset", c.Asset.String(), "error", err)
 			// If we can't get the pool, treat as insolvent to be safe
 			return true
+		}
+		if adjustedPool, _, adjustErr := poolView.adjust(ctx, pool); adjustErr != nil {
+			ctx.Logger().Error(
+				"fail to remove active mempool swap balances for solvency check, using live pool",
+				"asset", layer1Asset.String(), "error", adjustErr,
+			)
+		} else {
+			pool = adjustedPool
 		}
 		gapInRune := pool.AssetValueInRune(gap)
 		// Export the gap itself, not just the bool insolvencyCheck reduces it to.

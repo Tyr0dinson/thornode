@@ -1084,6 +1084,37 @@ func (s *MempoolSwapEffectsSuite) TestSlashUsesFinalizedValueAndMutatesLivePool(
 	c.Check(adjustedAfterSlash.BalanceAsset.Equal(common.SafeSub(poolBefore.BalanceAsset, stolen)), Equals, true)
 }
 
+func (s *MempoolSwapEffectsSuite) TestSolvencyCheckDoesNotHaltOnUnusableOverlay(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	base := NewPool()
+	base.Asset = common.ETHAsset
+	base.Status = PoolAvailable
+	base.BalanceRune = cosmos.NewUint(1_000 * common.One)
+	base.BalanceAsset = cosmos.NewUint(1_000 * common.One)
+	live := base
+	live.BalanceRune = cosmos.NewUint(10_000 * common.One)
+	installManualMempoolPoolOverlay(c, ctx, mgr, base, live)
+
+	// Shrink the live pool below the recorded overlay increase so the overlay can
+	// no longer be subtracted -- a bookkeeping fault in the speculative subsystem.
+	broken := live
+	broken.BalanceRune = cosmos.NewUint(100 * common.One)
+	c.Assert(mgr.Keeper().SetPool(ctx, broken), IsNil)
+	_, _, err := newFinalityPoolView(mgr.Keeper()).getPool(ctx, common.ETHAsset)
+	c.Assert(err, NotNil)
+
+	mgr.Keeper().SetMimir(ctx, "DollarsPerRune", 5*common.One)
+	mgr.Keeper().SetMimir(ctx, constants.PermittedSolvencyGapUSD.String(), 500*common.One)
+
+	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.ETHChain}.Strings(), nil)
+	vault.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1_000*common.One)))
+	wallet := common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(999*common.One)))
+
+	// The 1 ETH gap is far below the permitted gap. An overlay that cannot be
+	// removed must not by itself report insolvency, which would auto-halt ETH.
+	c.Check(insolvencyCheck(ctx, mgr, vault, wallet, common.ETHChain), Equals, false)
+}
+
 func (s *MempoolSwapEffectsSuite) TestSolvencyCheckUsesFinalizedPoolValue(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	base := NewPool()
