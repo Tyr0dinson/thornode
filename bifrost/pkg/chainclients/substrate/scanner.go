@@ -254,7 +254,17 @@ func (s *Scanner) FetchTxs(fetchHeight, _ int64) (ttypes.TxIn, error) {
 
 		if err != nil {
 			if errors.Is(err, errUnsupportedObservation) {
-				s.logger.Debug().Err(err).Int("index", i).Msg("skip extrinsic")
+				event := s.logger.Warn().Err(err).Int64("height", fetchHeight).Int("index", i)
+				if raw, decodeErr := stypes.HexDecode(extHex); decodeErr == nil {
+					event.Str("txid", stypes.ExtrinsicHash(raw))
+				}
+				event.Msg("skip unsupported extrinsic")
+
+				if s.metrics != nil {
+					if counter := s.metrics.GetCounterVec(metrics.BlockScanError(s.cfg.ChainID)); counter != nil {
+						counter.WithLabelValues("unsupported_observation", "").Inc()
+					}
+				}
 				continue
 			}
 			return txIn, fmt.Errorf("failed to process extrinsic %d: %w", i, err)
@@ -550,7 +560,7 @@ func (s *Scanner) parseTransfer(data []byte, sender, txHash string, blockHeight 
 	pos++
 
 	if addrType != stypes.MultiAddressID {
-		return nil, fmt.Errorf("unsupported destination address type: %d", addrType)
+		return nil, fmt.Errorf("%w: unsupported destination address type: %d", errUnsupportedObservation, addrType)
 	}
 
 	if pos+32 > len(data) {
@@ -659,7 +669,7 @@ func (s *Scanner) parseBatchAll(data []byte, sender, txHash string, blockHeight 
 				return nil, fmt.Errorf("transfer data too short for address type")
 			}
 			if data[pos] != stypes.MultiAddressID {
-				return nil, fmt.Errorf("unsupported MultiAddress variant in batch transfer: %d", data[pos])
+				return nil, fmt.Errorf("%w: unsupported destination address type: %d", errUnsupportedObservation, data[pos])
 			}
 			// Advance past MultiAddress::Id (1 byte variant + 32 bytes pubkey)
 			if pos+1+32 > len(data) {

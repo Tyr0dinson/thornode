@@ -1002,6 +1002,7 @@ func (s *ClientSuite) TestExpiredSignedExtrinsicRecovery(c *C) {
 		name          string
 		finalized     int64
 		nonce         uint32
+		missing       bool
 		expectRPC     bool
 		expectRetry   bool
 		expectRemoved bool
@@ -1025,6 +1026,19 @@ func (s *ClientSuite) TestExpiredSignedExtrinsicRecovery(c *C) {
 			expectRPC:   true,
 			expectRetry: false,
 		},
+		{
+			name:          "existing account with nonce zero",
+			finalized:     100,
+			expectRPC:     true,
+			expectRetry:   true,
+			expectRemoved: true,
+		},
+		{
+			name:      "absent account after expiry",
+			finalized: 100,
+			missing:   true,
+			expectRPC: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1034,6 +1048,9 @@ func (s *ClientSuite) TestExpiredSignedExtrinsicRecovery(c *C) {
 			called = true
 			if !strings.Contains(string(params), "0xfinalized") {
 				return nil, fmt.Errorf("query was not anchored to finalized block: %s", params)
+			}
+			if tt.missing {
+				return nil, nil
 			}
 			return accountInfoHex(tt.nonce), nil
 		})
@@ -1050,6 +1067,9 @@ func (s *ClientSuite) TestExpiredSignedExtrinsicRecovery(c *C) {
 			c.Assert(cl.releaseExpiredSignedTx(txHash), IsNil, Commentf("%s", tt.name))
 		}
 		c.Check(cl.HasSigned(txOutItem), Equals, !tt.expectRemoved, Commentf("%s", tt.name))
+		_, found, readErr := cl.stateStore.GetExtrinsic(txHash)
+		c.Assert(readErr, IsNil)
+		c.Check(found, Equals, !tt.expectRemoved, Commentf("%s: recovery record", tt.name))
 		srv.Close()
 	}
 }

@@ -224,14 +224,17 @@ func (c *Client) GetAccountByAddress(addr string, height *big.Int) (common.Accou
 			return common.Account{}, fmt.Errorf("account block %d not found", blockNumber)
 		}
 
-		nonce, balance, err := c.rpcClient.GetAccountInfo(addr, blockHash, c.chainScanner.params.BalanceSize)
+		account, err := c.rpcClient.GetAccountInfo(addr, blockHash, c.chainScanner.params.BalanceSize)
 		if err != nil {
 			return common.Account{}, fmt.Errorf("failed to get account at block %d: %w", blockNumber, err)
 		}
+		if account == nil {
+			account = &rpc.Account{Balance: cosmos.ZeroUint()}
+		}
 
 		return common.Account{
-			Sequence: int64(nonce),
-			Coins:    common.Coins{c.GetChain().NativeGasToThorCoin(balance)},
+			Sequence: int64(account.Nonce),
+			Coins:    common.Coins{c.GetChain().NativeGasToThorCoin(account.Balance)},
 		}, nil
 	}
 
@@ -830,18 +833,19 @@ func (c *Client) canRetrySignedTx(
 	if finalizedHash == "" {
 		return false, fmt.Errorf("finalized scanner block hash is empty")
 	}
-	nonce, _, err := c.rpcClient.GetAccountInfo(
+	account, err := c.rpcClient.GetAccountInfo(
 		vaultAddr,
 		finalizedHash,
 		c.chainScanner.params.BalanceSize,
 	)
 	if err != nil {
-		return false, fmt.Errorf("failed to get finalized account nonce: %w", err)
+		return false, fmt.Errorf("failed to get finalized account: %w", err)
 	}
-	if nonce > record.Nonce {
+	// An absent account cannot prove that the signed nonce was never consumed.
+	if account == nil {
 		return false, nil
 	}
-	return true, nil
+	return account.Nonce <= record.Nonce, nil
 }
 
 // releaseExpiredSignedTx removes signer state and then best-effort recovery state after an expiry check.

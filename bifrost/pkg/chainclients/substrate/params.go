@@ -46,6 +46,20 @@ func (p Params) Validate() error {
 	if p.Lookback < time.Millisecond {
 		return fmt.Errorf("lookback must be at least one millisecond: %s", p.Lookback)
 	}
+	for _, key := range []string{
+		SystemPallet,
+		SystemRemarkCall,
+		BalancesPallet,
+		BalancesTransferAllowDeathCall,
+		BalancesTransferKeepAliveCall,
+		UtilityPallet,
+		UtilityBatchAllCall,
+		TransactionPaymentPallet,
+	} {
+		if _, ok := p.Indexes[key]; !ok {
+			return fmt.Errorf("missing configured index for %q", key)
+		}
+	}
 	return nil
 }
 

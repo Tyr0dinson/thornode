@@ -204,17 +204,19 @@ func (c *Client) GetHeader(hash string) (*Header, error) {
 // It queries System::Account storage directly via state_getStorage and SCALE-decodes
 // the AccountInfo struct to extract the free balance.
 func (c *Client) GetBalance(address, blockHash string, balanceSize int) (cosmos.Uint, error) {
-	_, balance, err := c.GetAccountInfo(address, blockHash, balanceSize)
-	return balance, err
+	account, err := c.GetAccountInfo(address, blockHash, balanceSize)
+	if err != nil || account == nil {
+		return cosmos.ZeroUint(), err
+	}
+	return account.Balance, nil
 }
 
-// GetAccountInfo returns the account nonce and free balance from one
-// System::Account storage value at the requested block hash. An empty hash uses
-// the node's latest state.
-func (c *Client) GetAccountInfo(address, blockHash string, balanceSize int) (uint32, cosmos.Uint, error) {
+// GetAccountInfo returns nil without error if the account is absent.
+// An empty blockHash uses the node's latest state.
+func (c *Client) GetAccountInfo(address, blockHash string, balanceSize int) (*Account, error) {
 	accountID, err := ss58DecodeAccountID(address)
 	if err != nil {
-		return 0, cosmos.ZeroUint(), fmt.Errorf("failed to decode SS58 address: %w", err)
+		return nil, fmt.Errorf("failed to decode SS58 address: %w", err)
 	}
 
 	storageKey := systemAccountStorageKey(accountID)
@@ -226,29 +228,29 @@ func (c *Client) GetAccountInfo(address, blockHash string, balanceSize int) (uin
 
 	result, err := c.call("state_getStorage", params)
 	if err != nil {
-		return 0, cosmos.ZeroUint(), fmt.Errorf("failed to get account storage: %w", err)
+		return nil, fmt.Errorf("failed to get account storage: %w", err)
 	}
 
 	var hexData string
 	err = json.Unmarshal(result, &hexData)
 	if err != nil {
-		return 0, cosmos.ZeroUint(), fmt.Errorf("failed to unmarshal storage result: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal storage result: %w", err)
 	}
 	if hexData == "" {
-		return 0, cosmos.ZeroUint(), nil // account not found
+		return nil, nil
 	}
 
 	data, err := hex.DecodeString(strings.TrimPrefix(hexData, "0x"))
 	if err != nil {
-		return 0, cosmos.ZeroUint(), fmt.Errorf("failed to decode storage hex: %w", err)
+		return nil, fmt.Errorf("failed to decode storage hex: %w", err)
 	}
 
 	nonce, free, err := decodeAccountInfo(data, balanceSize)
 	if err != nil {
-		return 0, cosmos.ZeroUint(), fmt.Errorf("failed to decode AccountInfo: %w", err)
+		return nil, fmt.Errorf("failed to decode AccountInfo: %w", err)
 	}
 
-	return nonce, free, nil
+	return &Account{Nonce: nonce, Balance: free}, nil
 }
 
 // systemAccountStorageKey computes the storage key for System::Account(account_id).

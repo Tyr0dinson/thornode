@@ -204,6 +204,20 @@ func (s *ClientSuite) TestReportSolvencySnapshot(c *C) {
 		c.Fatal("missing solvency report")
 	}
 
+	// An absent account must still produce a zero-balance solvency report.
+	h.on("state_getStorage", func(json.RawMessage) (interface{}, error) { return nil, nil })
+	c.Assert(cl.ReportSolvency(100), IsNil)
+	select {
+	case msg := <-cl.globalSolvencyQueue:
+		c.Check(msg.Height, Equals, int64(100))
+		c.Check(msg.Chain, Equals, common.TAOChain)
+		c.Check(msg.PubKey, Equals, cl.GetPubKey())
+		c.Assert(msg.Coins, HasLen, 1)
+		c.Check(msg.Coins[0].Amount.IsZero(), Equals, true)
+	default:
+		c.Fatal("missing zero-balance solvency report")
+	}
+
 	// Unavailable historical state must not produce a report with a substitute balance.
 	h.on("state_getStorage", func(_ json.RawMessage) (interface{}, error) {
 		return nil, errors.New("state unavailable")

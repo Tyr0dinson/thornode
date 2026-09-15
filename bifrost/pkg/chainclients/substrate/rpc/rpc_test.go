@@ -22,6 +22,69 @@ type RPCSuite struct{}
 
 var _ = Suite(&RPCSuite{})
 
+func (s *RPCSuite) TestGetAccountInfoPresence(c *C) {
+	const address = "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
+	for _, balanceSize := range []int{8, 16} {
+		data := make([]byte, 16+4*balanceSize)
+		zeroAccount := fmt.Sprintf(`"0x%s"`, hex.EncodeToString(data))
+		binary.LittleEndian.PutUint32(data, 7)
+		binary.LittleEndian.PutUint64(data[16:], 123)
+		fundedAccount := fmt.Sprintf(`"0x%s"`, hex.EncodeToString(data))
+		for _, tt := range []struct {
+			name    string
+			result  string
+			exists  bool
+			nonce   uint32
+			balance uint64
+			wantErr bool
+		}{
+			{name: "null storage", result: "null"},
+			{name: "empty storage", result: `""`},
+			{name: "existing zero account", result: zeroAccount, exists: true},
+			{name: "existing funded account", result: fundedAccount, exists: true, nonce: 7, balance: 123},
+			{name: "truncated storage", result: `"0x00"`, wantErr: true},
+		} {
+			func() {
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					var request struct {
+						Method string   `json:"method"`
+						Params []string `json:"params"`
+					}
+					if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+						http.Error(w, err.Error(), http.StatusBadRequest)
+						return
+					}
+					if request.Method != "state_getStorage" || len(request.Params) != 2 || request.Params[1] != "0xfinalized" {
+						http.Error(w, "unexpected account query", http.StatusBadRequest)
+						return
+					}
+					fmt.Fprintf(w, `{"jsonrpc":"2.0","id":1,"result":%s}`, tt.result)
+				}))
+				defer srv.Close()
+				client := NewClient(srv.URL, 5*time.Second)
+				account, err := client.GetAccountInfo(address, "0xfinalized", balanceSize)
+				if tt.wantErr {
+					c.Assert(err, NotNil)
+					c.Check(account, IsNil)
+					c.Check(strings.Contains(err.Error(), "failed to decode AccountInfo"), Equals, true)
+					return
+				}
+				c.Assert(err, IsNil, Commentf("%s: size %d", tt.name, balanceSize))
+				if tt.exists {
+					c.Assert(account, NotNil)
+					c.Check(account.Nonce, Equals, tt.nonce)
+					c.Check(account.Balance.Equal(cosmos.NewUint(tt.balance)), Equals, true)
+				} else {
+					c.Check(account, IsNil)
+				}
+				free, balanceErr := client.GetBalance(address, "0xfinalized", balanceSize)
+				c.Assert(balanceErr, IsNil)
+				c.Check(free.Equal(cosmos.NewUint(tt.balance)), Equals, true)
+			}()
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // ss58DecodeAccountID
 // ---------------------------------------------------------------------------

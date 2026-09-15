@@ -3,7 +3,15 @@ package rpc
 import (
 	"strconv"
 	"strings"
+
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
+
+// Account holds the decoded System::Account values used by the client.
+type Account struct {
+	Nonce   uint32
+	Balance cosmos.Uint // Free balance in native units.
+}
 
 // SignedBlock is the response from chain_getBlock.
 type SignedBlock struct {
