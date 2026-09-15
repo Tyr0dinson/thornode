@@ -221,10 +221,13 @@ func (s *MempoolSwapExecutionGateSuite) TestFinalizedSwapQueuesBehindLifecycleOw
 
 	queue := newSwapQueueAdv(mgr.Keeper())
 	c.Assert(queue.AddSwapQueueItem(ctx, mgr, &normal), IsNil)
-	c.Check(queue.isSwapReady(ctx, normal), Equals, false)
+	// Readiness admits a final swap so the execution site can try to preempt
+	// the owner for it. This owner has no voter, so preemption cannot resolve
+	// it and the swap defers there instead.
+	c.Check(queue.isSwapReady(ctx, normal), Equals, true)
 
-	// EndBlock must defer at readiness without consuming an attempt or
-	// mutating either the queued state or the pool.
+	// EndBlock must defer without consuming an attempt or mutating either the
+	// queued state or the pool.
 	c.Assert(queue.EndBlock(ctx, mgr, false), IsNil)
 	stored, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, normal.Tx.ID, int(normal.Index))
 	c.Assert(err, IsNil)
@@ -456,4 +459,195 @@ func (s *MempoolSwapExecutionGateSuite) TestMultiplePhysicalOwnersRejectedAtStor
 
 	rollbackCtx := withMempoolSwapExecutionMode(ctx, mempoolSwapExecutionRollback)
 	c.Check(ensureSwapExecutionFinalityIsolation(rollbackCtx, mgr, msgA), IsNil)
+}
+
+// newLifecyclelessMempoolSwapExecutionSwap returns a swap over the same pools as
+// the lifecycle owner but with its own inbound hash and no lifecycle record,
+// which is how an ordinary already-final inbound reaches the queue.
+func newLifecyclelessMempoolSwapExecutionSwap(owner MsgSwap) MsgSwap {
+	msg := owner
+	msg.Tx.ID = GetRandomTxHash()
+	return msg
+}
+
+// A speculative inbound is only ever unconfirmed, and full-RBF relay means any
+// unconfirmed inbound can be replaced so it never confirms. A swap whose own
+// inbound is already final must therefore be able to take the pool back rather
+// than wait for the lifecycle recovery timeout.
+func (s *MempoolSwapExecutionGateSuite) TestFinalSwapPreemptsUnconfirmedPoolOwner(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	record, voter, _ := setExecutedMempoolSwapPoolOwner(c, ctx, mgr)
+
+	// The owner's inbound is still unconfirmed: exactly the state an attacker
+	// holds while the replacement propagates.
+	c.Assert(voter.FinalisedHeight, Equals, int64(0))
+
+	queue := newSwapQueueAdv(mgr.Keeper())
+	final := newLifecyclelessMempoolSwapExecutionSwap(record.LatestSwap)
+	blocked := queue.ensureExecutionPoolsAvailable(ctx, final)
+	c.Assert(blocked, NotNil)
+	c.Check(errors.Is(blocked, errMempoolSwapPoolExecutionPending), Equals, true)
+
+	c.Assert(preemptMempoolSwapExecutionOwnersAtomic(ctx, mgr, final), IsNil)
+
+	c.Check(queue.ensureExecutionPoolsAvailable(ctx, final), IsNil)
+	c.Check(mgr.Keeper().HasMempoolSwap(ctx, record.TxId, record.Index), Equals, false)
+	_, found, err := mgr.Keeper().GetMempoolSwapPoolOwner(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(found, Equals, false)
+
+	// The preempted lifecycle releases its reservation rather than leaking it.
+	updatedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, voter.TxID)
+	c.Assert(err, IsNil)
+	c.Check(updatedVoter.MempoolSwapTOR.IsZero(), Equals, true)
+	c.Check(updatedVoter.Reverted, Equals, false,
+		Commentf("preemption must leave the inbound free to execute normally if it does confirm"))
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true)
+}
+
+// Preemption is a privilege of finality, not of contention. A second
+// speculative lifecycle has an unconfirmed inbound of its own and must keep
+// deferring, otherwise two reversible lifecycles could interleave deltas on one
+// pool and neither could roll back exactly.
+func (s *MempoolSwapExecutionGateSuite) TestSpeculativeSwapCannotPreemptPoolOwner(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	record, _, _ := setExecutedMempoolSwapPoolOwner(c, ctx, mgr)
+
+	foreign, foreignRecord := cloneMempoolSwapExecutionOwner(record)
+	foreignRecord.Status = types.MempoolSwapStatus_EXECUTING
+	c.Assert(mgr.Keeper().SetMempoolSwap(ctx, foreignRecord), IsNil)
+
+	queue := newSwapQueueAdv(mgr.Keeper())
+	c.Check(queue.isSwapReady(ctx, foreign), Equals, false)
+	c.Check(mgr.Keeper().HasMempoolSwap(ctx, record.TxId, record.Index), Equals, true,
+		Commentf("a speculative swap must not roll back the pool owner"))
+}
+
+// Readiness and execution have to agree: filtering a final swap out of the
+// fetched batch would leave it deferred even though the execution site is
+// willing to preempt for it.
+func (s *MempoolSwapExecutionGateSuite) TestReadinessAdmitsFinalSwapBehindUnconfirmedOwner(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	record, _, _ := setExecutedMempoolSwapPoolOwner(c, ctx, mgr)
+
+	queue := newSwapQueueAdv(mgr.Keeper())
+	final := newLifecyclelessMempoolSwapExecutionSwap(record.LatestSwap)
+	c.Check(queue.isSwapReady(ctx, final), Equals, true)
+	c.Check(mgr.Keeper().HasMempoolSwap(ctx, record.TxId, record.Index), Equals, true,
+		Commentf("readiness must stay read-only; the execution site owns preemption"))
+}
+
+// The replacement scenario end to end: an unconfirmed inbound buys a hold on
+// BTC, and the hold outlives the inbound because the sender replaces it. A
+// queued swap whose own inbound is already final must still execute in the very
+// next EndBlock rather than wait out the lifecycle recovery timeout.
+func (s *MempoolSwapExecutionGateSuite) TestEndBlockExecutesFinalSwapHeldByReplacedInbound(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	record, voter, _ := setExecutedMempoolSwapPoolOwner(c, ctx, mgr)
+	c.Assert(voter.FinalisedHeight, Equals, int64(0))
+	// setExecutedMempoolSwapPoolOwner installs dummy constants, which zero the
+	// per-block swap budget EndBlock derives from them.
+	mgr.Keeper().SetMimir(ctx, constants.MinSwapsPerBlock.String(), 10)
+	mgr.Keeper().SetMimir(ctx, constants.MaxSwapsPerBlock.String(), 100)
+
+	amount := cosmos.NewUint(10 * common.One)
+	final := newLifecyclelessMempoolSwapExecutionSwap(record.LatestSwap)
+	final.Tx.Coins[0].Amount = amount
+	final.Tx.Memo = "=:r:" + final.Destination.String()
+	final.AffiliateAddress = common.NoAddress
+	final.AffiliateBasisPoints = cosmos.ZeroUint()
+	final.StreamQuantity = 1
+	final.StreamInterval = 0
+	final.State = &types.SwapState{
+		Quantity:   1,
+		Interval:   0,
+		Deposit:    amount,
+		Withdrawn:  cosmos.ZeroUint(),
+		In:         cosmos.ZeroUint(),
+		Out:        cosmos.ZeroUint(),
+		LastHeight: ctx.BlockHeight() - 1,
+	}
+
+	queue := newSwapQueueAdv(mgr.Keeper())
+	c.Assert(queue.AddSwapQueueItem(ctx, mgr, &final), IsNil)
+	c.Assert(queue.EndBlock(ctx, mgr, false), IsNil)
+
+	// The speculative hold is gone and the final swap made progress.
+	c.Check(mgr.Keeper().HasMempoolSwap(ctx, record.TxId, record.Index), Equals, false)
+	_, found, err := mgr.Keeper().GetMempoolSwapPoolOwner(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(found, Equals, false)
+
+	stored, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, final.Tx.ID, int(final.Index))
+	if err == nil {
+		c.Check(stored.State.FailedSwaps, HasLen, 0)
+		c.Check(stored.State.Count, Equals, uint64(1))
+	}
+}
+
+// The legacy queue has the same exposure: its items are always final, so an
+// unconfirmed inbound must not be able to park on their pools.
+func (s *MempoolSwapExecutionGateSuite) TestLegacyQueuePreemptsUnconfirmedPoolOwner(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	record, _, _ := setExecutedMempoolSwapPoolOwner(c, ctx, mgr)
+
+	legacy := newLifecyclelessMempoolSwapExecutionSwap(record.LatestSwap)
+	legacy.Version = types.SwapVersion_v1
+	legacy.StreamInterval = 0
+	legacy.StreamQuantity = 0
+	legacy.Tx.Coins[0].Amount = cosmos.NewUint(100 * common.One)
+	c.Assert(mgr.Keeper().SetSwapQueueItem(ctx, legacy, int(legacy.Index)), IsNil)
+
+	mgr.Keeper().SetMimir(ctx, constants.MinSwapsPerBlock.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.MaxSwapsPerBlock.String(), 1)
+	attemptedIDs := make([]common.TxID, 0, 1)
+	queue := newSwapQueue(mgr.Keeper())
+	queue.handler = func(Manager) cosmos.Handler {
+		return func(_ cosmos.Context, msg cosmos.Msg) (*cosmos.Result, error) {
+			swapMsg, ok := msg.(*MsgSwap)
+			c.Assert(ok, Equals, true, Commentf("expected *MsgSwap, got %T", msg))
+			attemptedIDs = append(attemptedIDs, swapMsg.Tx.ID)
+			return &cosmos.Result{}, nil
+		}
+	}
+
+	c.Assert(queue.EndBlock(ctx, mgr), IsNil)
+	c.Check(attemptedIDs, DeepEquals, []common.TxID{legacy.Tx.ID})
+	c.Check(mgr.Keeper().HasSwapQueueItem(ctx, legacy.Tx.ID, int(legacy.Index)), Equals, false)
+	c.Check(mgr.Keeper().HasMempoolSwap(ctx, record.TxId, record.Index), Equals, false)
+	_, found, err := mgr.Keeper().GetMempoolSwapPoolOwner(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(found, Equals, false)
+}
+
+// An owner which cannot be resolved stays unresolvable for the rest of the
+// pass, so preemption must be attempted once per pool rather than once per
+// queued swap waiting on it.
+func (s *MempoolSwapExecutionGateSuite) TestPreemptionFailureIsNotRetriedWithinAPass(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	// No voter is ever created for this owner, so preemption cannot resolve it.
+	ownerMsg, owner, _ := setupMempoolSwapEffectsSwap(c, ctx, mgr, 0)
+	effect := newMempoolSwapPoolEffect(common.BTCAsset)
+	effect.BalanceAssetIncrease = cosmos.OneUint()
+	owner.PendingEffects.Pools = []types.MempoolSwapPoolEffect{effect}
+	c.Assert(mgr.Keeper().SetMempoolSwap(ctx, owner), IsNil)
+
+	baseKeeper := mgr.Keeper()
+	gateKeeper := newMempoolSwapExecutionGateReadCountingKeeper(baseKeeper)
+	mgr.K = gateKeeper
+	defer func() { mgr.K = baseKeeper }()
+	preemptions := newMempoolSwapPreemptionAttempts()
+
+	first := newLifecyclelessMempoolSwapExecutionSwap(ownerMsg)
+	c.Check(preemptions.preempt(ctx, mgr, first), NotNil)
+	btcKey := mempoolSwapExecutionGateReadKey(common.BTCAsset)
+	readsAfterFirst := gateKeeper.poolOwnerReads[btcKey]
+	c.Check(readsAfterFirst > 0, Equals, true)
+
+	second := newLifecyclelessMempoolSwapExecutionSwap(ownerMsg)
+	err := preemptions.preempt(ctx, mgr, second)
+	c.Check(errors.Is(err, errMempoolSwapPoolExecutionPending), Equals, true)
+	c.Check(gateKeeper.poolOwnerReads[btcKey], Equals, readsAfterFirst,
+		Commentf("a recorded failure must short-circuit before touching the keeper again"))
+	c.Check(baseKeeper.HasMempoolSwap(ctx, owner.TxId, owner.Index), Equals, true)
 }

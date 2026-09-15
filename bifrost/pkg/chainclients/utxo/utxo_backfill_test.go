@@ -1985,3 +1985,65 @@ func (s *CoverageBackfillSuite) TestProcessReorgWithBlockMeta(c *C) {
 	c.Assert(errata.Txs, HasLen, 1)
 	c.Assert(errata.Txs[0].TxID.String(), Equals, "27de3e1865c098cd4fded71bae1e8236fd27ce5dce6e524a9ac5cd1a17b5c241")
 }
+
+// TestBitcoinFullRBFReplacementIsNotGated pins the observation gate against
+// Bitcoin Core's current replacement policy. mempoolfullrbf defaults to 1 from
+// Core v28 onwards (29.1 included), so a transaction which sets every nSequence
+// to 0xffffffff still gets replaced by a conflicting transaction that pays a
+// higher absolute fee and feerate. The gate must therefore never be read as a
+// finality guarantee:
+//
+//   - the original is not RBF-signalling and clears the fee floor, so it is
+//     observed while unconfirmed;
+//   - the replacement, which under full-RBF evicts it, looks exactly the same
+//     to both checks.
+//
+// Nothing here can distinguish the two, which is why THORChain resolves a
+// speculative pool owner on demand instead of trusting the inbound to confirm.
+// See preemptMempoolSwapExecutionOwnersAtomic in x/thorchain.
+func (s *CoverageBackfillSuite) TestBitcoinFullRBFReplacementIsNotGated(c *C) {
+	const (
+		vsize       = 200
+		feeRate     = 10 // sats/vbyte, as last reported to THORChain
+		originalFee = uint64(2_000)
+	)
+	gasOf := func(sats uint64) common.Gas {
+		return common.Gas{common.NewCoin(s.client.cfg.ChainID.GetGasAsset(), cosmos.NewUint(sats))}
+	}
+	// Both transactions spend the same outpoint: that conflict is what makes
+	// one a replacement of the other.
+	conflictingOutpoint := btcjson.Vin{
+		Txid:     "b1e1b2ad2f6ec2ae3a1ea6b4ed9c40b8c25cbe3ff0e0d1f0f3b2f4e2a1c0d9e8",
+		Vout:     0,
+		Sequence: 0xffffffff, // opt out of BIP-125 signalling
+	}
+	original := &btcjson.TxRawResult{
+		Txid:  "aa" + strings.Repeat("0", 62),
+		Vsize: vsize,
+		Vin:   []btcjson.Vin{conflictingOutpoint},
+	}
+	replacement := &btcjson.TxRawResult{
+		Txid:  "bb" + strings.Repeat("0", 62),
+		Vsize: vsize,
+		Vin:   []btcjson.Vin{conflictingOutpoint},
+	}
+
+	s.client.lastFeeRate.Store(feeRate)
+
+	// Neither transaction asks to be replaced, yet Core relays the replacement
+	// anyway. A false result means "did not signal", not "cannot be replaced".
+	c.Check(s.client.isRBFEnabled(original), Equals, false)
+	c.Check(s.client.isRBFEnabled(replacement), Equals, false)
+
+	// A replacement must beat the original's absolute fee and feerate, so if the
+	// original clears the floor the replacement necessarily does too. The fee
+	// check prices entry to the unconfirmed path; it cannot keep either out.
+	c.Check(s.client.feeRateBelowMempoolThreshold(original, gasOf(originalFee)), Equals, false)
+	c.Check(s.client.feeRateBelowMempoolThreshold(replacement, gasOf(originalFee*2)), Equals, false,
+		Commentf("a replacement pays strictly more than the transaction it evicts"))
+
+	// The floor is the one thing it does enforce: below it, a transaction that
+	// was never priced to confirm is held back until it is mined.
+	underpriced := &btcjson.TxRawResult{Txid: original.Txid, Vsize: vsize, Vin: original.Vin}
+	c.Check(s.client.feeRateBelowMempoolThreshold(underpriced, gasOf(999)), Equals, true)
+}

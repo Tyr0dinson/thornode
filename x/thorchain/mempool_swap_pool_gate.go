@@ -3,6 +3,7 @@ package thorchain
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -116,4 +117,95 @@ func preemptMempoolSwapPoolOwnerCached(
 		return fmt.Errorf("mempool swap pool owner preemption did not clear %s: %w", asset.GetLayer1Asset(), err)
 	}
 	return nil
+}
+
+// preemptMempoolSwapExecutionOwnersAtomic lets a swap whose own inbound is
+// already final take the pools it needs from a speculative lifecycle whose
+// inbound is still unconfirmed.
+//
+// Per-pool serialization exists so a rollback can reverse its exact recorded
+// deltas without a foreign mutation in between; it is not a priority claim.
+// Making a final swap wait for an unconfirmed one turns that bookkeeping
+// requirement into an availability lever. Bitcoin Core has relayed full-RBF
+// replacements by default since v28, so nSequence signalling does not make an
+// inbound irreplaceable and a fee floor only sets the entry price: a sender can
+// buy a hold on a pool with a well-priced inbound, wait for the speculative
+// swap, then replace the inbound so it never confirms. Without preemption every
+// other swap on those pools waits out the lifecycle recovery timeout.
+//
+// Resolving the owner first restores the invariant rollback needs and caps the
+// hold at "until someone else needs the pool". The preempted lifecycle is not
+// lost: an unfinalized owner is rolled back and follows the ordinary finalized
+// path if its inbound does confirm, exactly as it would for an add-liquidity or
+// withdraw preemption.
+//
+// Rollback or completion of the owner is a valid terminal outcome on its own,
+// so it commits independently of whether the caller's swap then succeeds.
+func preemptMempoolSwapExecutionOwnersAtomic(ctx cosmos.Context, mgr Manager, msg MsgSwap) error {
+	pools, err := mempoolSwapExecutionPools(msg)
+	if err != nil {
+		return err
+	}
+	cacheCtx, commit := ctx.CacheContext()
+	for _, asset := range pools {
+		if err = preemptMempoolSwapPoolOwnerCached(cacheCtx, mgr, asset); err != nil {
+			return err
+		}
+	}
+	// Fail closed. Preemption must leave every pool executable by a swap
+	// without a lifecycle of its own, or the caller keeps deferring.
+	if err = ensureMempoolSwapExecutionPoolsAvailable(cacheCtx, mgr.Keeper(), msg, nil); err != nil {
+		return err
+	}
+	commit()
+	return nil
+}
+
+// mempoolSwapPreemptionAttempts remembers the pools whose owner could not be
+// resolved during one EndBlock pass.
+//
+// Unlike the availability checks, preemption performs real rollback work before
+// it can fail, and it only fails on a durable inconsistency or a rollback that
+// recovery must retry. Neither clears within the pass, so re-attempting it for
+// every later queued swap on the same pool would repeat that work for as many
+// items as the queue holds while the condition persists. Recording the failure
+// once keeps a stuck owner costing one attempt per pool per block.
+type mempoolSwapPreemptionAttempts map[string]bool
+
+func newMempoolSwapPreemptionAttempts() mempoolSwapPreemptionAttempts {
+	return make(mempoolSwapPreemptionAttempts)
+}
+
+func (a mempoolSwapPreemptionAttempts) failedKeys(msg MsgSwap) ([]string, bool) {
+	pools, err := mempoolSwapExecutionPools(msg)
+	if err != nil {
+		// A swap whose pools cannot be resolved never reaches preemption.
+		return nil, false
+	}
+	keys := make([]string, 0, len(pools))
+	failed := false
+	for _, asset := range pools {
+		key := strings.ToUpper(asset.GetLayer1Asset().String())
+		keys = append(keys, key)
+		if a[key] {
+			failed = true
+		}
+	}
+	return keys, failed
+}
+
+// preempt resolves the speculative owners standing in a final swap's way,
+// skipping pools already known to be unresolvable this pass.
+func (a mempoolSwapPreemptionAttempts) preempt(ctx cosmos.Context, mgr Manager, msg MsgSwap) error {
+	keys, failed := a.failedKeys(msg)
+	if failed {
+		return errMempoolSwapPoolExecutionPending
+	}
+	err := preemptMempoolSwapExecutionOwnersAtomic(ctx, mgr, msg)
+	if err != nil {
+		for _, key := range keys {
+			a[key] = true
+		}
+	}
+	return err
 }

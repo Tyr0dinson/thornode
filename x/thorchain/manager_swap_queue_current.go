@@ -174,6 +174,7 @@ func (vm *SwapQueueImpl) EndBlock(ctx cosmos.Context, mgr Manager) error {
 	// Recreate the cache every pass so lifecycle work elsewhere is visible in
 	// the next EndBlock.
 	poolGateCache := newMempoolSwapLegacyPoolGateCache()
+	preemptions := newMempoolSwapPreemptionAttempts()
 	for _, pick := range swaps {
 		if attempted >= budget {
 			break
@@ -182,19 +183,27 @@ func (vm *SwapQueueImpl) EndBlock(ctx cosmos.Context, mgr Manager) error {
 		// finalized legacy swap that reaches SwapHandler while another inbound
 		// owns either pool would otherwise treat the isolation error as a swap
 		// failure, refund the user, and remove the queue item. This condition is
-		// temporary rather than an execution failure, so leave the item untouched
-		// until the lifecycle owner finalizes or rolls back.
+		// temporary rather than an execution failure, so resolve the owner first
+		// and only leave the item untouched when that is not possible.
 		if poolErr := poolGateCache.ensureExecutionPoolsAvailable(ctx, vm.k, pick.msg); poolErr != nil {
 			if errors.Is(poolErr, errMempoolSwapPoolExecutionPending) {
-				ctx.Logger().Debug("deferring legacy swap behind unfinalized mempool pool owner",
+				// This item has no lifecycle of its own, so its inbound is
+				// already final. An unconfirmed inbound must not be able to
+				// hold the pool against it: preempt the speculative owner
+				// rather than waiting out the lifecycle recovery timeout.
+				if preemptErr := preemptions.preempt(ctx, mgr, pick.msg); preemptErr != nil {
+					ctx.Logger().Info("deferring legacy swap behind mempool pool owner",
+						"tx", pick.msg.Tx.ID,
+						"error", preemptErr)
+					continue
+				}
+				poolGateCache.forget(pick.msg)
+			} else {
+				ctx.Logger().Error("skipping legacy swap with inconsistent mempool pool state",
 					"tx", pick.msg.Tx.ID,
 					"error", poolErr)
 				continue
 			}
-			ctx.Logger().Error("skipping legacy swap with inconsistent mempool pool state",
-				"tx", pick.msg.Tx.ID,
-				"error", poolErr)
-			continue
 		}
 		attempted++
 		isActualLegacyStreaming := pick.msg.IsActualLegacyStreaming()

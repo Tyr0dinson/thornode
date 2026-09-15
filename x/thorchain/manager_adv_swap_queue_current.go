@@ -342,7 +342,12 @@ func (vm *SwapQueueAdv) isSwapReady(ctx cosmos.Context, msg MsgSwap) bool {
 		}
 	}
 	if err := ensureMempoolSwapExecutionPoolsAvailable(ctx, vm.k, msg, owner); err != nil {
-		return false
+		// Readiness must not hide a final inbound behind a speculative owner:
+		// the execution site preempts that owner, and an item filtered out here
+		// would never reach it. Every other isolation error stays fail-closed.
+		if owner != nil || !errors.Is(err, errMempoolSwapPoolExecutionPending) {
+			return false
+		}
 	}
 
 	return true
@@ -991,6 +996,10 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 	// Track the last swap direction per pool for rapid swap safety.
 	lastPoolDir := make(poolSwapDir)
 
+	// An owner which cannot be preempted stays that way for the whole pass, so
+	// track those pools across rapid-swap iterations rather than per iteration.
+	preemptions := newMempoolSwapPreemptionAttempts()
+
 	// Rapid swap iterations - exit early if no swaps succeeded on previous iteration
 	prevIterationSuccess := int64(0)
 	for iteration := int64(0); iteration < rapidSwapMax; iteration++ {
@@ -1116,10 +1125,22 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 				owner = &record
 			}
 			if poolErr := ensureMempoolSwapExecutionPoolsAvailable(ctx, vm.k, *msg, owner); poolErr != nil {
-				ctx.Logger().Debug("deferring swap behind unfinalized mempool pool owner",
-					"tx", msg.Tx.ID,
-					"error", poolErr)
-				continue
+				// An item without a lifecycle has a final inbound. Let it take
+				// the pools from a speculative owner rather than wait out that
+				// lifecycle's recovery timeout, which an inbound that is
+				// replaced instead of confirmed would otherwise run to the end.
+				if owner != nil || !errors.Is(poolErr, errMempoolSwapPoolExecutionPending) {
+					ctx.Logger().Debug("deferring swap behind unfinalized mempool pool owner",
+						"tx", msg.Tx.ID,
+						"error", poolErr)
+					continue
+				}
+				if preemptErr := preemptions.preempt(ctx, mgr, *msg); preemptErr != nil {
+					ctx.Logger().Info("deferring swap behind mempool pool owner",
+						"tx", msg.Tx.ID,
+						"error", preemptErr)
+					continue
+				}
 			}
 
 			// Preserve original values before modification

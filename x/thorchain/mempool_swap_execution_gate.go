@@ -55,6 +55,20 @@ func (cache mempoolSwapLegacyPoolGateCache) ensureExecutionPoolsAvailable(
 	return nil
 }
 
+// forget drops the memoized results for every pool a swap touches. Preemption
+// is the one thing inside a legacy pass which does mutate ownership, so the
+// cached "blocked" verdict it just invalidated must not be reused.
+func (cache mempoolSwapLegacyPoolGateCache) forget(msg MsgSwap) {
+	pools, err := mempoolSwapExecutionPools(msg)
+	if err != nil {
+		// An unresolvable swap has no cached pools to drop.
+		return
+	}
+	for _, asset := range pools {
+		delete(cache, strings.ToUpper(asset.GetLayer1Asset().String()))
+	}
+}
+
 // mempoolSwapQueueAdmissionContextKey marks validation performed solely to
 // persist a swap in the advanced queue. Admission may defer the expected
 // pool-owner conflict; all other isolation errors remain fatal.

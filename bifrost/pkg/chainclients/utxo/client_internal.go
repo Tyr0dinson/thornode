@@ -507,6 +507,13 @@ func (c *Client) isValidUTXO(hexPubKey string) bool {
 	}
 }
 
+// isRBFEnabled reports whether tx opts in to replacement under BIP-125. It is a
+// signalling check, not a replaceability check: Bitcoin Core relays full-RBF
+// replacements by default from v28 onwards, so a tx with every nSequence at
+// 0xffffffff can still be replaced while it is unconfirmed. Treat a false
+// result as "did not ask to be replaced", never as "cannot be replaced";
+// nothing downstream of an unconfirmed observation may assume the inbound is
+// certain to confirm.
 func (c *Client) isRBFEnabled(tx *btcjson.TxRawResult) bool {
 	for _, vin := range tx.Vin {
 		if vin.Sequence < (0xffffffff - 1) {
@@ -524,8 +531,14 @@ const mempoolMinFeeRateBPS = 5_000
 
 // feeRateBelowMempoolThreshold reports whether tx pays less than mempoolMinFeeRateBPS of
 // the last observed network fee rate. An underpriced transaction can sit unconfirmed
-// indefinitely at no cost to the sender, and a 0-conf swap holds its pools for the whole
-// unfinalized window, so observing one defers every other swap on those pools for free.
+// indefinitely at no cost to the sender, so this keeps inbounds which were never priced
+// to confirm out of the unconfirmed observation path entirely.
+//
+// It is a price floor, not a guarantee of confirmation. A sender can pay above the floor
+// and then replace the transaction, and no fee rule can prevent that while full-RBF is
+// the default relay policy. Speculative state on THORChain is therefore never allowed to
+// block a swap whose own inbound is already final; see
+// preemptMempoolSwapExecutionOwnersAtomic.
 //
 // It fails open: an unknown fee rate, an unknown virtual size, or a chain whose
 // lastFeeRate is not a per-byte rate never gates observation.
