@@ -56,16 +56,83 @@ func (s *MempoolSwapLifecycleIntegrationSuite) TestRecoveryHeightBoundsUntrusted
 	market := fixture.msg
 	market.SwapType = types.SwapType_market
 	market.State.Interval = math.MaxUint64
-	c.Check(mempoolSwapRecoveryHeight(ctx, mgr.Keeper(), market), Equals, ctx.BlockHeight()+110)
+	c.Check(mempoolSwapRecoveryHeight(ctx, mgr.Keeper(), market, types.MempoolSwapStatus_RESERVED), Equals, ctx.BlockHeight()+110)
 
 	limit := fixture.msg
 	limit.SwapType = types.SwapType_limit
 	limit.InitialBlockHeight = ctx.BlockHeight()
 	limit.State.Interval = math.MaxUint64
-	c.Check(mempoolSwapRecoveryHeight(ctx, mgr.Keeper(), limit), Equals, ctx.BlockHeight()+210)
+	c.Check(mempoolSwapRecoveryHeight(ctx, mgr.Keeper(), limit, types.MempoolSwapStatus_EXECUTING), Equals, ctx.BlockHeight()+210)
 
 	c.Check(addMempoolSwapRecoveryHeight(math.MaxInt64-5, 10), Equals, int64(math.MaxInt64))
 	c.Check(multiplyMempoolSwapRecoveryDelay(math.MaxInt64, 2), Equals, int64(math.MaxInt64))
+}
+
+func (s *MempoolSwapLifecycleIntegrationSuite) TestRecoveryHeightDropsStreamGraceOnceSettled(c *C) {
+	ctx, mgr, fixture := setupMempoolSwapLifecycleFixture(c)
+	mgr.Keeper().SetMimir(ctx, constants.SigningTransactionPeriod.String(), 10)
+	mgr.Keeper().SetMimir(ctx, constants.MaxOutboundAttempts.String(), 3)
+	mgr.Keeper().SetMimir(ctx, constants.StreamingSwapMaxLength.String(), 100)
+	mgr.Keeper().SetMimir(ctx, constants.StreamingLimitSwapMaxAge.String(), 200)
+
+	// A market swap requesting the maximum stream lifetime is normalized to a
+	// single slice, yet the queue state keeps the requested interval. While it
+	// is still scheduled the grace applies; once it settles only the normal
+	// recovery window may, otherwise its pools stay locked for a whole interval
+	// after the one slice it ever gets has already run.
+	market := fixture.msg
+	market.SwapType = types.SwapType_market
+	market.State.Interval = 100
+	market.State.Quantity = 1
+	c.Check(mempoolSwapRecoveryHeight(ctx, mgr.Keeper(), market, types.MempoolSwapStatus_RESERVED), Equals, ctx.BlockHeight()+110)
+	c.Check(mempoolSwapRecoveryHeight(ctx, mgr.Keeper(), market, types.MempoolSwapStatus_EXECUTING), Equals, ctx.BlockHeight()+110)
+	c.Check(mempoolSwapRecoveryHeight(ctx, mgr.Keeper(), market, types.MempoolSwapStatus_SETTLED), Equals, ctx.BlockHeight()+30)
+	c.Check(mempoolSwapRecoveryHeight(ctx, mgr.Keeper(), market, types.MempoolSwapStatus_STAGED), Equals, ctx.BlockHeight()+30)
+
+	// A finalized tombstone still owns live advanced-queue work, so it keeps
+	// the grace instead of being re-inspected every normal window.
+	c.Check(mempoolSwapRecoveryHeight(ctx, mgr.Keeper(), market, types.MempoolSwapStatus_FINALIZED), Equals, ctx.BlockHeight()+110)
+
+	// The limit TTL is the same kind of forward schedule and is dropped too.
+	limit := fixture.msg
+	limit.SwapType = types.SwapType_limit
+	limit.InitialBlockHeight = ctx.BlockHeight()
+	limit.State.Interval = math.MaxUint64
+	limit.State.Quantity = 1
+	c.Check(mempoolSwapRecoveryHeight(ctx, mgr.Keeper(), limit, types.MempoolSwapStatus_EXECUTING), Equals, ctx.BlockHeight()+210)
+	c.Check(mempoolSwapRecoveryHeight(ctx, mgr.Keeper(), limit, types.MempoolSwapStatus_SETTLED), Equals, ctx.BlockHeight()+30)
+}
+
+func (s *MempoolSwapLifecycleIntegrationSuite) TestSettledOneSliceSwapPersistsNormalRecoveryWindow(c *C) {
+	ctx, mgr, fixture := setupMempoolSwapLifecycleFixture(c)
+	mgr.Keeper().SetMimir(ctx, constants.SigningTransactionPeriod.String(), 10)
+	mgr.Keeper().SetMimir(ctx, constants.MaxOutboundAttempts.String(), 3)
+	mgr.Keeper().SetMimir(ctx, constants.StreamingSwapMaxLength.String(), 100)
+
+	queued, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, fixture.voter.TxID, 0)
+	c.Assert(err, IsNil)
+	lastHeight := ctx.BlockHeight()
+	// The queue only runs a slice on an interval boundary, so step forward one
+	// whole interval: this is the single slice such a swap ever gets.
+	ctx = ctx.WithBlockHeight(lastHeight + 100)
+	queued.State.Quantity = 1
+	queued.State.Interval = 100
+	queued.State.Deposit = queued.Tx.Coins[0].Amount
+	queued.State.In = cosmos.ZeroUint()
+	queued.State.Out = cosmos.ZeroUint()
+	queued.State.Count = 0
+	queued.State.LastHeight = lastHeight
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, queued), IsNil)
+
+	c.Assert(mgr.AdvSwapQueueMgr().EndBlock(ctx, mgr, false), IsNil)
+	c.Check(mgr.Keeper().HasAdvSwapQueueItem(ctx, fixture.voter.TxID, 0), Equals, false)
+
+	record, found, err := mgr.Keeper().GetMempoolSwap(ctx, fixture.voter.TxID, 0)
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, true)
+	c.Check(mempoolSwapRecoveryScheduleDone(record.Status), Equals, true)
+	// 30 blocks, not the 110 the retained interval would otherwise impose.
+	c.Check(record.NextRecoveryHeight, Equals, ctx.BlockHeight()+30)
 }
 
 func (s *MempoolSwapLifecycleIntegrationSuite) TestRagnarokDrainsQueueOnlyLifecycleBeforeStageTwo(c *C) {
@@ -332,7 +399,7 @@ func (s *MempoolSwapLifecycleIntegrationSuite) TestAdmissionPersistsNormalizedLi
 	c.Check(queued.InitialBlockHeight, Equals, ctx.BlockHeight())
 	c.Check(queued.State.Interval, Equals, uint64(30))
 	c.Check(record.LatestSwap, DeepEquals, queued)
-	c.Check(record.NextRecoveryHeight, Equals, mempoolSwapRecoveryHeight(ctx, mgr.Keeper(), queued))
+	c.Check(record.NextRecoveryHeight, Equals, mempoolSwapRecoveryHeight(ctx, mgr.Keeper(), queued, record.Status))
 	c.Check(record.NextRecoveryHeight >= queued.InitialBlockHeight+30, Equals, true)
 }
 

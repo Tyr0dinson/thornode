@@ -994,7 +994,7 @@ func (s *SlasherImpl) recoverDueMempoolSwaps(ctx cosmos.Context, mgr Manager, si
 				// Healthy finalized queue work is governed by the queue's own
 				// interval/TTL rules. Retain the tombstone and periodically verify it
 				// without force-rolling back a merely paused stream.
-				record.NextRecoveryHeight = mempoolSwapRecoveryHeight(ctx, s.keeper, record.LatestSwap)
+				record.NextRecoveryHeight = mempoolSwapRecoveryHeight(ctx, s.keeper, record.LatestSwap, record.Status)
 				if err = s.keeper.SetMempoolSwap(ctx, record); err != nil {
 					ctx.Logger().Error("fail to reschedule finalized mempool swap tombstone", "error", err, "hash", record.TxId)
 				}

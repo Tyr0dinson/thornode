@@ -560,7 +560,7 @@ func handleObservedTxInQuorum(
 		}
 		if found {
 			record.UpdatedHeight = ctx.BlockHeight()
-			record.NextRecoveryHeight = mempoolSwapRecoveryHeight(ctx, k, record.LatestSwap)
+			record.NextRecoveryHeight = mempoolSwapRecoveryHeight(ctx, k, record.LatestSwap, record.Status)
 			if lifecycleErr = k.SetMempoolSwap(ctx, record); lifecycleErr != nil {
 				ctx.Logger().Error("fail to schedule finalized mempool swap recovery", "error", lifecycleErr, "hash", voter.TxID)
 				return nil

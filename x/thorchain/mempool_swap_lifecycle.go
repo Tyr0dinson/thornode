@@ -40,12 +40,14 @@ func multiplyMempoolSwapRecoveryDelay(value, multiplier int64) int64 {
 }
 
 // mempoolSwapRecoveryStreamInterval bounds the finality lock grace granted to
-// a market swap. Advanced-queue normalization reduces a request whose interval
-// exceeds the maximum stream lifetime to one slice, but deliberately preserves
-// the requested interval in queue state. Using that raw uint64 as a recovery
-// delay would let a completed, dropped one-slice transaction own a pool for an
-// attacker-chosen duration (and int64 conversion could wrap). The queue's
-// configured maximum lifetime is the largest grace that can be justified.
+// a market swap which still has slices left to run. Advanced-queue
+// normalization reduces a request whose interval exceeds the maximum stream
+// lifetime to one slice, but deliberately preserves the requested interval in
+// queue state. Using that raw uint64 as a recovery delay would let an
+// in-flight swap own a pool for an attacker-chosen duration (and int64
+// conversion could wrap). The queue's configured maximum lifetime is the
+// largest grace that can be justified; once the swap settles its caller drops
+// the grace entirely.
 func mempoolSwapRecoveryStreamInterval(ctx cosmos.Context, k keeper.Keeper, msg MsgSwap) int64 {
 	if msg.State == nil || msg.State.Interval == 0 || !msg.IsMarketSwap() {
 		return 0
@@ -64,11 +66,20 @@ func mempoolSwapRecoveryStreamInterval(ctx cosmos.Context, k keeper.Keeper, msg 
 	return int64(msg.State.Interval)
 }
 
+// mempoolSwapRecoveryScheduleDone reports whether a lifecycle status means the
+// swap will never execute another advanced-queue slice. Settlement marks the
+// record STAGED or SETTLED as it drops the queue item, so from that point the
+// stream/TTL grace below would only wait on work that has already finished.
+func mempoolSwapRecoveryScheduleDone(status types.MempoolSwapStatus) bool {
+	return status == types.MempoolSwapStatus_STAGED || status == types.MempoolSwapStatus_SETTLED
+}
+
 // mempoolSwapRecoveryHeight returns the next height at which recovery should
 // inspect an active speculative swap. The normal window matches LackSigning's
-// historical retry policy, while streams and limit orders are never expired
-// before their next scheduled execution or configured TTL.
-func mempoolSwapRecoveryHeight(ctx cosmos.Context, k keeper.Keeper, msg MsgSwap) int64 {
+// historical retry policy, while streams and limit orders which still have
+// slices to run are never expired before their next scheduled execution or
+// configured TTL.
+func mempoolSwapRecoveryHeight(ctx cosmos.Context, k keeper.Keeper, msg MsgSwap, status types.MempoolSwapStatus) int64 {
 	signingPeriod := k.GetConfigInt64(ctx, constants.SigningTransactionPeriod)
 	if signingPeriod <= 0 {
 		signingPeriod = k.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
@@ -82,6 +93,14 @@ func mempoolSwapRecoveryHeight(ctx cosmos.Context, k keeper.Keeper, msg MsgSwap)
 		ctx.BlockHeight(),
 		multiplyMempoolSwapRecoveryDelay(signingPeriod, attempts),
 	)
+	// A finished swap only waits on inbound finality, not on its own schedule.
+	// Normalization can reduce a market swap whose interval exceeds the maximum
+	// stream lifetime to a single slice while preserving the requested interval
+	// in queue state, so granting the grace here would hold the inbound's pools
+	// for StreamingSwapMaxLength after that one slice had already settled.
+	if mempoolSwapRecoveryScheduleDone(status) {
+		return next
+	}
 	if msg.State != nil {
 		// A healthy stream may intentionally wait longer than the generic
 		// recovery window between slices. Give it one signing period of grace.
@@ -122,7 +141,7 @@ func newMempoolSwapLifecycle(
 		ReservedTor:        reservedTOR,
 		AdmittedHeight:     ctx.BlockHeight(),
 		UpdatedHeight:      ctx.BlockHeight(),
-		NextRecoveryHeight: mempoolSwapRecoveryHeight(ctx, k, msg),
+		NextRecoveryHeight: mempoolSwapRecoveryHeight(ctx, k, msg, types.MempoolSwapStatus_RESERVED),
 		Status:             types.MempoolSwapStatus_RESERVED,
 		LatestSwap:         msg,
 		PendingEffects:     types.MempoolSwapPendingEffects{},
@@ -155,7 +174,10 @@ func updateMempoolSwapProgressCached(
 		record.Status = status
 	}
 	record.UpdatedHeight = ctx.BlockHeight()
-	record.NextRecoveryHeight = mempoolSwapRecoveryHeight(ctx, k, msg)
+	// Schedule from the reported execution progress rather than record.Status:
+	// a FINALIZED tombstone which has just settled has no queue work left, even
+	// though its status is deliberately preserved above.
+	record.NextRecoveryHeight = mempoolSwapRecoveryHeight(ctx, k, msg, status)
 	if err = k.SetMempoolSwap(ctx, record); err != nil {
 		return fmt.Errorf("fail to update mempool swap lifecycle: %w", err)
 	}
@@ -244,7 +266,7 @@ func completeMempoolSwapCached(ctx cosmos.Context, mgr Manager, voter ObservedTx
 		record.ReservedTor = cosmos.ZeroUint()
 		record.Status = types.MempoolSwapStatus_FINALIZED
 		record.UpdatedHeight = ctx.BlockHeight()
-		record.NextRecoveryHeight = mempoolSwapRecoveryHeight(ctx, k, record.LatestSwap)
+		record.NextRecoveryHeight = mempoolSwapRecoveryHeight(ctx, k, record.LatestSwap, record.Status)
 		if err = k.SetMempoolSwap(ctx, record); err != nil {
 			return fmt.Errorf("fail to retain finalized mempool swap tombstone: %w", err)
 		}
