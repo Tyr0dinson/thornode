@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	. "gopkg.in/check.v1"
@@ -242,6 +243,268 @@ func (s *QuotesSuite) TestQuoteLimitStaleState(c *C) {
 	if err != nil {
 		c.Assert(strings.Contains(err.Error(), "stale state"), Equals, false)
 	}
+}
+
+func (s *QuotesSuite) TestQuoteRefundAddressValidation(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	qs := queryServer{mgr: mgr}
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 1)
+
+	primary := common.Address(common.XMRSeededDummyAddress('4', []byte("quote-refund-primary")))
+	subaddress := common.Address(common.XMRSeededDummyAddress('8', []byte("quote-refund-subaddress")))
+	wrongNetwork := common.Address("FRw3ZEEFtuK82ifoJK7iFrLuDkpBEc7xx1WjLvqAQc8HgRjJXwrDr37TX9yDq9Ye2yQWfaTvMJpkXQbyPty1pgpZ2m6UsaJbC")
+	if common.CurrentChainNetwork == common.MockNet {
+		wrongNetwork = common.Address(common.XMRSeededDummyAddress('C', []byte("quote-refund-wrong-network")))
+	}
+	integrated := common.Address("4CdvgtrwKjggnkXTAXRu7peYZruMJNii9EHrneXZie344btcwjvbzMbDvRcXvC4h4667vpwhdQWwPivq8ZfVPsGJeEvzNowpChm17H3MqL")
+	otherChain := GetRandomETHAddress()
+	thorDestination := GetRandomTHORAddress()
+	btcBech32 := GetRandomBTCAddress()
+	btcLegacy := common.Address("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa")
+	btcWrongNetwork := common.Address("bcrt1qj08ys4ct2hzzc2hcz6h2hgrvlmsjynawhcf2xa")
+	if common.CurrentChainNetwork == common.MockNet {
+		btcLegacy = common.Address("mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn")
+		btcWrongNetwork = common.Address("bc1qj08ys4ct2hzzc2hcz6h2hgrvlmsjynawlht528")
+	}
+
+	const thorName = "xmrrefund"
+	mgr.Keeper().SetTHORName(ctx, types.NewTHORName(thorName, ctx.BlockHeight()+1000, []types.THORNameAlias{
+		{Chain: common.XMRChain, Address: primary},
+	}))
+
+	type testCase struct {
+		name       string
+		chain      common.Chain
+		input      string
+		want       common.Address
+		errorMatch string
+	}
+	tests := []testCase{
+		{
+			name:       "missing XMR refund",
+			chain:      common.XMRChain,
+			errorMatch: "refund address is required for source chain XMR",
+		},
+		{
+			name:       "address from another chain",
+			chain:      common.XMRChain,
+			input:      otherChain.String(),
+			errorMatch: "is not valid for source chain XMR",
+		},
+		{
+			name:       "unsupported XMR integrated address",
+			chain:      common.XMRChain,
+			input:      integrated.String(),
+			errorMatch: "uses an unsupported XMR address form",
+		},
+		{
+			name:  "valid XMR standard address",
+			chain: common.XMRChain,
+			input: primary.String(),
+			want:  primary,
+		},
+		{
+			name:  "valid XMR subaddress",
+			chain: common.XMRChain,
+			input: subaddress.String(),
+			want:  subaddress,
+		},
+		{
+			name:  "THORName XMR alias",
+			chain: common.XMRChain,
+			input: thorName,
+			want:  primary,
+		},
+		{
+			name:       "malformed address",
+			chain:      common.XMRChain,
+			input:      "not-an-address",
+			errorMatch: "unable to parse address",
+		},
+		{
+			name:       "wrong-network XMR address",
+			chain:      common.XMRChain,
+			input:      wrongNetwork.String(),
+			errorMatch: "is not valid for XMR on the current network",
+		},
+		{
+			name:  "observable source chain remains optional",
+			chain: common.BTCChain,
+			want:  common.NoAddress,
+		},
+		{
+			name:  "valid BTC bech32 refund",
+			chain: common.BTCChain,
+			input: btcBech32.String(),
+			want:  btcBech32,
+		},
+		{
+			name:  "valid BTC legacy refund",
+			chain: common.BTCChain,
+			input: btcLegacy.String(),
+			want:  btcLegacy,
+		},
+		{
+			name:       "wrong-network BTC refund",
+			chain:      common.BTCChain,
+			input:      btcWrongNetwork.String(),
+			errorMatch: "is not valid for BTC on the current network",
+		},
+		{
+			name:  "XMR synth source remains optional",
+			chain: common.THORChain,
+			want:  common.NoAddress,
+		},
+		{
+			name:       "XMR synth rejects L1 refund",
+			chain:      common.THORChain,
+			input:      primary.String(),
+			errorMatch: "is not valid for source chain THOR",
+		},
+	}
+
+	for _, tc := range tests {
+		comment := Commentf("case %q", tc.name)
+		addr, err := quoteParseRefundAddress(ctx, mgr, tc.input, tc.chain)
+		if tc.errorMatch != "" {
+			c.Assert(err, NotNil, comment)
+			c.Assert(strings.Contains(err.Error(), tc.errorMatch), Equals, true, comment)
+		} else {
+			c.Assert(err, IsNil, comment)
+			c.Assert(addr, Equals, tc.want, comment)
+		}
+
+		fromAsset := common.XMRAsset
+		if tc.chain.Equals(common.BTCChain) {
+			fromAsset = common.BTCAsset
+		} else if tc.chain.Equals(common.THORChain) {
+			fromAsset = common.XMRAsset.GetSyntheticAsset()
+		}
+		_, swapErr := qs.queryQuoteSwap(ctx, &types.QueryQuoteSwapRequest{
+			FromAsset:     fromAsset.String(),
+			ToAsset:       common.RuneNative.String(),
+			Amount:        "100000000",
+			Destination:   thorDestination.String(),
+			RefundAddress: tc.input,
+		})
+		_, limitErr := qs.queryQuoteLimit(ctx, &types.QueryQuoteLimitRequest{
+			FromAsset:     fromAsset.String(),
+			ToAsset:       common.RuneNative.String(),
+			Amount:        "100000000",
+			Destination:   thorDestination.String(),
+			TargetOut:     "1000000",
+			RefundAddress: tc.input,
+		})
+
+		if tc.errorMatch != "" {
+			c.Assert(swapErr, NotNil, comment)
+			c.Assert(strings.Contains(swapErr.Error(), tc.errorMatch), Equals, true, comment)
+			c.Assert(limitErr, NotNil, comment)
+			c.Assert(strings.Contains(limitErr.Error(), tc.errorMatch), Equals, true, comment)
+			continue
+		}
+		if swapErr != nil {
+			c.Assert(strings.HasPrefix(swapErr.Error(), "bad refund address:"), Equals, false, comment)
+		}
+		if limitErr != nil {
+			c.Assert(strings.HasPrefix(limitErr.Error(), "bad refund_address:"), Equals, false, comment)
+		}
+	}
+}
+
+func (s *QuotesSuite) TestQuoteRefundAddressMemoGeneration(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	qs := queryServer{mgr: mgr}
+
+	nodeAccount := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, nodeAccount), IsNil)
+
+	vault := NewVaultV2(
+		ctx.BlockHeight(),
+		ActiveVault,
+		AsgardVault,
+		GetRandomPubKey(),
+		common.Chains{common.BTCChain, common.XMRChain}.Strings(),
+		nil,
+		GetRandomEd25519PubKey(),
+	)
+	vault.PubKeyFrost = GetRandomEd25519PubKey()
+	vault.AddFunds(common.Coins{
+		common.NewCoin(common.XMRAsset, common.XMRChain.ThorchainToNativeGas(cosmos.NewUint(100*common.One))),
+	})
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	for _, asset := range []common.Asset{common.BTCAsset, common.XMRAsset} {
+		pool := NewPool()
+		pool.Asset = asset
+		pool.BalanceAsset = cosmos.NewUint(1_000_000_000_000)
+		pool.BalanceRune = cosmos.NewUint(10_000_000_000_000)
+		pool.LPUnits = cosmos.NewUint(100)
+		c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+	}
+	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.BTCChain, NewNetworkFee(common.BTCChain, 1000, 10)), IsNil)
+	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.XMRChain, NewNetworkFee(common.XMRChain, 5000, 10_000)), IsNil)
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.L1SlipMinBps.String(), 1)
+
+	primary := common.Address(common.XMRSeededDummyAddress('4', []byte("quote-memo-primary")))
+	subaddress := common.Address(common.XMRSeededDummyAddress('8', []byte("quote-memo-subaddress")))
+	const thorName = "xmrmemo"
+	mgr.Keeper().SetTHORName(ctx, types.NewTHORName(thorName, ctx.BlockHeight()+1000, []types.THORNameAlias{
+		{Chain: common.XMRChain, Address: primary},
+	}))
+
+	destination := GetRandomTHORAddress()
+	for _, tc := range []struct {
+		name         string
+		refundInput  string
+		resolvedAddr common.Address
+	}{
+		{name: "standard", refundInput: primary.String(), resolvedAddr: primary},
+		{name: "subaddress", refundInput: subaddress.String(), resolvedAddr: subaddress},
+		{name: "THORName", refundInput: thorName, resolvedAddr: primary},
+	} {
+		comment := Commentf("case %q", tc.name)
+		swap, err := qs.queryQuoteSwap(ctx, &types.QueryQuoteSwapRequest{
+			FromAsset:     common.XMRAsset.String(),
+			ToAsset:       common.RuneNative.String(),
+			Amount:        "100000000",
+			Destination:   destination.String(),
+			RefundAddress: tc.refundInput,
+		})
+		c.Assert(err, IsNil, comment)
+		c.Assert(strings.Contains(swap.Memo, "/"+tc.resolvedAddr.String()), Equals, true, comment)
+
+		limit, err := qs.queryQuoteLimit(ctx, &types.QueryQuoteLimitRequest{
+			FromAsset:     common.XMRAsset.String(),
+			ToAsset:       common.RuneNative.String(),
+			Amount:        "100000000",
+			Destination:   destination.String(),
+			TargetOut:     "1000000",
+			RefundAddress: tc.refundInput,
+		})
+		c.Assert(err, IsNil, comment)
+		c.Assert(strings.Contains(limit.Memo, "/"+tc.resolvedAddr.String()), Equals, true, comment)
+	}
+
+	swap, err := qs.queryQuoteSwap(ctx, &types.QueryQuoteSwapRequest{
+		FromAsset:   common.BTCAsset.String(),
+		ToAsset:     common.RuneNative.String(),
+		Amount:      "100000000",
+		Destination: destination.String(),
+	})
+	c.Assert(err, IsNil)
+	c.Assert(strings.Contains(swap.Memo, destination.String()+"/"), Equals, false)
+
+	limit, err := qs.queryQuoteLimit(ctx, &types.QueryQuoteLimitRequest{
+		FromAsset:   common.BTCAsset.String(),
+		ToAsset:     common.RuneNative.String(),
+		Amount:      "100000000",
+		Destination: destination.String(),
+		TargetOut:   "1000000",
+	})
+	c.Assert(err, IsNil)
+	c.Assert(strings.Contains(limit.Memo, destination.String()+"/"), Equals, false)
 }
 
 // QuoteSwap is WASM-reachable, so the placeholder addresses it simulates with

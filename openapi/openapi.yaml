@@ -1573,7 +1573,7 @@ paths:
           example: "0x1c7b17362c84287bd1184447e6dfeaf920c31bbe"
       - name: refund_address
         in: query
-        description: the refund address, refunds will be sent here if the swap fails
+        description: the source-chain refund address; required when the source chain cannot observe senders (currently XMR), and otherwise optional; when provided, it must be valid for the configured network
         schema:
           type: string
           example: "0x1c7b17362c84287bd1184447e6dfeaf920c31bbe"
@@ -1661,7 +1661,7 @@ paths:
           example: "0x1c7b17362c84287bd1184447e6dfeaf920c31bbe"
       - name: refund_address
         in: query
-        description: the refund address, refunds will be sent here if the swap fails
+        description: the source-chain refund address; required when the source chain cannot observe senders (currently XMR), and otherwise optional; when provided, it must be valid for the configured network
         schema:
           type: string
           example: "0x1c7b17362c84287bd1184447e6dfeaf920c31bbe"
