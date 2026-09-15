@@ -290,3 +290,104 @@ func (HandlerRagnarokSuite) TestSlash(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(keeper.activeNodeAccount.Bond, DeepEquals, cosmos.NewUint(9999983464))
 }
+
+// A Zcash ragnarok outbound scheduled to a tex address is broadcast to - and
+// observed as - the P2PKH form of that same address, because the signer leaves
+// tex destinations unencoded while observers report what the daemon decoded.
+// Comparing the two spellings byte for byte strands the payout three ways at
+// once: OutHash is never written so the item looks unfulfilled forever, the
+// pending ragnarok count never drops so ragnarok never finishes, and the vault
+// is slashed over a transaction the network itself ordered.
+func (HandlerRagnarokSuite) TestRagnarokZecTexDestination(c *C) {
+	p2pkhAddress, err := common.NewAddress("tmEp4k7dSU8eGj32uJPi2wBSGuiNaVFBLN7")
+	c.Assert(err, IsNil)
+	texAddress, err := p2pkhAddress.ToTexAddress()
+	c.Assert(err, IsNil)
+	c.Assert(p2pkhAddress.Equals(texAddress), Equals, false)
+
+	// setup schedules a ragnarok outbound to texAddress and observes it as paid
+	// to observedTo, returning everything the assertions below read.
+	setup := func(observedTo common.Address) (cosmos.Context, *TestRagnarokKeeperHappyPath, RagnarokHandler, MsgRagnarok) {
+		ctx, k := setupKeeperForTest(c)
+
+		na := GetRandomValidatorNode(NodeActive)
+		na.Bond = cosmos.NewUint(100 * common.One)
+
+		retireVault := GetRandomVault()
+		retireVault.Chains = common.Chains{common.ZECChain}.Strings()
+		retireVault.Membership = []string{na.PubKeySet.Secp256k1.String()}
+		retireVault.AddFunds(common.Coins{
+			common.NewCoin(common.ZECAsset, cosmos.NewUint(2*common.One)),
+		})
+
+		pool := NewPool()
+		pool.Asset = common.ZECAsset
+		pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+		pool.BalanceRune = cosmos.NewUint(100 * common.One)
+
+		coin := common.NewCoin(common.ZECAsset, cosmos.NewUint(1024))
+		txout := NewTxOut(1)
+		txout.TxArray = append(txout.TxArray, TxOutItem{
+			Chain:       common.ZECChain,
+			InHash:      common.BlankTxID,
+			ToAddress:   texAddress,
+			VaultPubKey: retireVault.PubKey,
+			Coin:        coin,
+			MaxGas:      common.Gas{common.NewCoin(common.ZECAsset, cosmos.NewUint(10000))},
+			Memo:        NewRagnarokMemo(1).String(),
+		})
+
+		keeper := &TestRagnarokKeeperHappyPath{
+			Keeper:            k,
+			activeNodeAccount: na,
+			newVault:          GetRandomVault(),
+			retireVault:       retireVault,
+			txout:             txout,
+			pool:              pool,
+		}
+		keeper.SetRagnarokPending(ctx, 2)
+
+		mgr := NewDummyMgrWithKeeper(keeper)
+		mgr.slasher = newSlasher(keeper, NewDummyEventMgr())
+
+		fromAddress, err := retireVault.PubKey.GetAddress(common.ZECChain)
+		c.Assert(err, IsNil)
+		tx := NewObservedTx(common.Tx{
+			ID:          GetRandomTxHash(),
+			Chain:       common.ZECChain,
+			Coins:       common.Coins{coin},
+			Memo:        NewRagnarokMemo(1).String(),
+			FromAddress: fromAddress,
+			ToAddress:   observedTo,
+			Gas:         common.Gas{common.NewCoin(common.ZECAsset, cosmos.NewUint(10000))},
+		}, 1, retireVault.PubKey, 1)
+
+		return ctx, keeper, NewRagnarokHandler(mgr), *NewMsgRagnarok(tx, 1, na.NodeAddress)
+	}
+
+	// The scheduled tex destination, observed in its P2PKH form.
+	ctx, keeper, handler, msg := setup(p2pkhAddress)
+	_, err = handler.handle(ctx, msg)
+	c.Assert(err, IsNil)
+	c.Check(keeper.txout.TxArray[0].OutHash.Equals(msg.Tx.Tx.ID), Equals, true,
+		Commentf("tex outbound observed as P2PKH should be marked complete"))
+	pending, err := keeper.GetRagnarokPending(ctx)
+	c.Assert(err, IsNil)
+	c.Check(pending, Equals, int64(1), Commentf("pending ragnarok count should be decremented"))
+	c.Check(keeper.activeNodeAccount.Bond.String(), Equals, cosmos.NewUint(100*common.One).String(),
+		Commentf("vault must not be slashed for an outbound the network ordered"))
+
+	// Control: an unrelated Zcash destination is still no match, so the slash
+	// above is genuinely withheld rather than simply unreachable in this setup.
+	strangerAddress, err := common.NewAddress("tmAbHS91acTju5QaDawZ1M5Pkbv2FFnRwUX")
+	c.Assert(err, IsNil)
+	ctx, keeper, handler, msg = setup(strangerAddress)
+	_, err = handler.handle(ctx, msg)
+	c.Assert(err, IsNil)
+	c.Check(keeper.txout.TxArray[0].OutHash.IsEmpty(), Equals, true)
+	pending, err = keeper.GetRagnarokPending(ctx)
+	c.Assert(err, IsNil)
+	c.Check(pending, Equals, int64(2))
+	c.Check(keeper.activeNodeAccount.Bond.LT(cosmos.NewUint(100*common.One)), Equals, true,
+		Commentf("an unmatched ragnarok outbound should still slash"))
+}
