@@ -167,6 +167,18 @@ func (s *ZcashSignerSuite) newZecExpiryFixture(c *C) *zecExpiryFixture {
 	return fixture
 }
 
+// setZecCheckpoint drives the signer-cache checkpoint the batch signer reads.
+// The batch SignTx keys its checkpoint on the vault pubkey in the signer cache
+// rather than carrying it on the TxOutItem, so tests that used to assign
+// TxOutItem.Checkpoint set (or clear) the cache entry instead.
+func (s *ZcashSignerSuite) setZecCheckpoint(c *C, tx stypes.TxOutItem, checkpoint []byte) {
+	if len(checkpoint) == 0 {
+		c.Assert(s.client.signerCacheManager.RemoveCheckpoint(tx.VaultPubKey), IsNil)
+		return
+	}
+	c.Assert(s.client.signerCacheManager.SetCheckpoint(tx.VaultPubKey, checkpoint), IsNil)
+}
+
 func (s *ZcashSignerSuite) TestZECExpiryAcrossSignersAndCheckpointRetry(c *C) {
 	const signingHeight = int64(1237)
 	const agreedHeight = int64(3500000)
@@ -178,12 +190,13 @@ func (s *ZcashSignerSuite) TestZECExpiryAcrossSignersAndCheckpointRetry(c *C) {
 	var err error
 
 	// Independent first attempts must agree even across a local block boundary.
-	raw, checkpoint1, _, err := s.client.SignTx(tx, signingHeight)
+	raw, checkpoint1, _, err := s.client.SignTx([]stypes.TxOutItem{tx}, signingHeight)
 	c.Assert(err, ErrorMatches, "(?s).*injected signing failure.*")
 	c.Assert(raw, IsNil)
 	c.Assert(len(checkpoint1) > 0, Equals, true)
 	localHeight.Add(1)
-	_, checkpoint2, _, err := s.client.SignTx(tx, signingHeight)
+	s.setZecCheckpoint(c, tx, nil) // an independent signer starts without one
+	_, checkpoint2, _, err := s.client.SignTx([]stypes.TxOutItem{tx}, signingHeight)
 	c.Assert(err, ErrorMatches, "(?s).*injected signing failure.*")
 	c.Assert(checkpoint2, DeepEquals, checkpoint1)
 	c.Assert(bridge.requestedHeights, DeepEquals, []int64{signingHeight, signingHeight})
@@ -210,13 +223,14 @@ func (s *ZcashSignerSuite) TestZECExpiryAcrossSignersAndCheckpointRetry(c *C) {
 	restarted.signerCacheManager = s.client.signerCacheManager
 	s.client = restarted
 	bridge.err = errors.New("historical state pruned")
-	_, _, _, err = s.client.SignTx(tx, signingHeight)
+	s.setZecCheckpoint(c, tx, nil)
+	_, _, _, err = s.client.SignTx([]stypes.TxOutItem{tx}, signingHeight)
 	c.Assert(err, ErrorMatches, ".*historical state pruned")
 	c.Assert(len(restartedSigner.digests), Equals, 0)
 	localHeight.Add(10)
 	fixture.upgradesErr.Store(true) // Retries must not fetch a new branch either.
-	tx.Checkpoint = checkpoint1
-	_, retriedCheckpoint, _, err := s.client.SignTx(tx, signingHeight)
+	s.setZecCheckpoint(c, tx, checkpoint1)
+	_, retriedCheckpoint, _, err := s.client.SignTx([]stypes.TxOutItem{tx}, signingHeight)
 	c.Assert(err, ErrorMatches, "(?s).*injected signing failure.*")
 	c.Assert(retriedCheckpoint, DeepEquals, checkpoint1)
 	c.Assert(restartedSigner.digests[0], DeepEquals, signer.digests[0])
@@ -225,10 +239,11 @@ func (s *ZcashSignerSuite) TestZECExpiryAcrossSignersAndCheckpointRetry(c *C) {
 	// Expiry-less checkpoints predate mainnet activation. Drop the attempt
 	// without inventing a new digest or querying historical state to fill it in.
 	checkpoint.ZecExpiryHeight = 0
-	tx.Checkpoint, err = json.Marshal(checkpoint)
+	legacyCheckpoint, err := json.Marshal(checkpoint)
 	c.Assert(err, IsNil)
+	s.setZecCheckpoint(c, tx, legacyCheckpoint)
 	fixture.heightErr.Store(true) // Discard does not require a functioning ZEC RPC.
-	raw, retiredCheckpoint, retiredObservation, err := s.client.SignTx(tx, signingHeight)
+	raw, retiredCheckpoint, retiredObservation, err := s.client.SignTx([]stypes.TxOutItem{tx}, signingHeight)
 	c.Assert(err, IsNil)
 	c.Assert(raw, IsNil)
 	c.Assert(retiredCheckpoint, IsNil)
@@ -238,9 +253,9 @@ func (s *ZcashSignerSuite) TestZECExpiryAcrossSignersAndCheckpointRetry(c *C) {
 	fixture.heightErr.Store(false)
 
 	// The pinned expiry must also reach the successfully serialized payload.
-	tx.Checkpoint = checkpoint1
+	s.setZecCheckpoint(c, tx, checkpoint1)
 	restartedSigner.fail = false
-	raw, _, observation, err := s.client.SignTx(tx, signingHeight)
+	raw, _, observation, err := s.client.SignTx([]stypes.TxOutItem{tx}, signingHeight)
 	c.Assert(err, IsNil)
 	c.Assert(observation, NotNil)
 	c.Assert(restartedSigner.digests[1], DeepEquals, signer.digests[0])
@@ -444,15 +459,18 @@ func (s *ZcashSignerSuite) TestZECExpiryRejectsStaleAnchorAndCheckpoint(c *C) {
 			fixture := s.newZecExpiryFixture(c)
 			tx := fixture.tx
 			if restored {
-				_, checkpoint, _, signErr := s.client.SignTx(tx, 1237)
+				s.setZecCheckpoint(c, tx, nil)
+				_, checkpoint, _, signErr := s.client.SignTx([]stypes.TxOutItem{tx}, 1237)
 				c.Assert(signErr, ErrorMatches, "(?s).*injected signing failure.*")
-				tx.Checkpoint = checkpoint
+				s.setZecCheckpoint(c, tx, checkpoint)
 				fixture.bridge.err = errors.New("historical state pruned")
+			} else {
+				s.setZecCheckpoint(c, tx, nil)
 			}
 			fixture.signer.digests = nil
 			fixture.signer.fail = false
 			fixture.localHeight.Store(tip)
-			raw, _, observation, err := s.client.SignTx(tx, 1237)
+			raw, _, observation, err := s.client.SignTx([]stypes.TxOutItem{tx}, 1237)
 			c.Assert(errors.Is(err, chainclienttypes.ErrTxExpired), Equals, true, Commentf("restored=%v tip=%d: %v", restored, tip, err))
 			c.Assert(raw, IsNil)
 			c.Assert(observation, IsNil)
@@ -470,7 +488,7 @@ func (s *ZcashSignerSuite) TestZECExpiryDuringSigning(c *C) {
 	defer fixture.rpcServer.Close()
 	fixture.signer.fail = false
 	fixture.signer.afterSign = func() { fixture.localHeight.Store(3500040) }
-	raw, _, observation, err := s.client.SignTx(fixture.tx, 1237)
+	raw, _, observation, err := s.client.SignTx([]stypes.TxOutItem{fixture.tx}, 1237)
 	c.Assert(errors.Is(err, chainclienttypes.ErrTxExpired), Equals, true)
 	c.Assert(raw, IsNil)
 	c.Assert(observation, IsNil)
@@ -489,7 +507,7 @@ func (s *ZcashSignerSuite) TestZECExpiryRequiresLiveTip(c *C) {
 		} else {
 			fixture.afterUTXOs = func() { fixture.heightErr.Store(true) }
 		}
-		raw, checkpoint, observation, err := s.client.SignTx(fixture.tx, 1237)
+		raw, checkpoint, observation, err := s.client.SignTx([]stypes.TxOutItem{fixture.tx}, 1237)
 		if afterSigning {
 			// Keep completed signatures and reserve their inputs when the tip
 			// becomes unavailable. Broadcast remains blocked until it recovers.
@@ -519,7 +537,7 @@ func (s *ZcashSignerSuite) TestZECExpiryLastValidBlockAndCachePruning(c *C) {
 	defer fixture.rpcServer.Close()
 	fixture.signer.fail = false
 	fixture.localHeight.Store(3500039)
-	raw, _, observation, err := s.client.SignTx(fixture.tx, 1237)
+	raw, _, observation, err := s.client.SignTx([]stypes.TxOutItem{fixture.tx}, 1237)
 	c.Assert(err, IsNil)
 	c.Assert(observation, NotNil)
 	signed, err := zcash.ParseTx(raw)

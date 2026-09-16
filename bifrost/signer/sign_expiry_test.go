@@ -23,9 +23,12 @@ type expiryChainClient struct {
 
 func (b *expiryChainClient) GetChain() common.Chain { return common.ZECChain }
 
-func (b *expiryChainClient) SignTx(tx types.TxOutItem, _ int64) ([]byte, []byte, *types.TxInItem, error) {
+func (b *expiryChainClient) SignTx(txs []types.TxOutItem, _ int64) ([]byte, []byte, []*types.TxInItem, error) {
 	b.signCount++
-	return nil, tx.Checkpoint, nil, b.err
+	if len(txs) == 0 {
+		return nil, nil, nil, fmt.Errorf("no transactions to sign")
+	}
+	return nil, txs[0].Checkpoint, nil, b.err
 }
 
 func (b *expiryChainClient) BroadcastTx(types.TxOutItem, []byte) (string, error) {

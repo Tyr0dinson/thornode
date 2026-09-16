@@ -27,9 +27,12 @@ type preActivationZECClient struct {
 
 func (b *preActivationZECClient) GetChain() common.Chain { return common.ZECChain }
 
-func (b *preActivationZECClient) SignTx(tx types.TxOutItem, height int64) ([]byte, []byte, *types.TxInItem, error) {
+func (b *preActivationZECClient) SignTx(txs []types.TxOutItem, height int64) ([]byte, []byte, []*types.TxInItem, error) {
 	b.signingHeights = append(b.signingHeights, height)
-	if bytes.Equal(tx.Checkpoint, b.legacyCheckpoint) {
+	if len(txs) == 0 {
+		return nil, nil, nil, fmt.Errorf("no transactions to sign")
+	}
+	if bytes.Equal(txs[0].Checkpoint, b.legacyCheckpoint) {
 		// The real ZEC client's pre-activation discard contract is covered by
 		// TestZECExpiryAcrossSignersAndCheckpointRetry in the UTXO package.
 		return nil, nil, nil, nil

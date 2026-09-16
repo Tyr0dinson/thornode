@@ -1110,7 +1110,7 @@ func (s *SolTestSuite) TestBroadcastTxBlockhashValidity(c *C) {
 			defer func() { c.Assert(manager.Stop(), IsNil) }()
 			txOut := newSolCacheTestTxOut(pub)
 			txOut.Height = 1
-			rawTx, _, _, err := client.SignTx(txOut, txOut.Height)
+			rawTx, _, _, err := client.SignTx([]stypes.TxOutItem{txOut}, txOut.Height)
 			c.Assert(err, IsNil)
 			c.Assert(len(rawTx) > 0, Equals, true)
 			if tc.restart {
@@ -1149,7 +1149,7 @@ func (s *SolTestSuite) TestBroadcastTxBlockhashValidity(c *C) {
 			phase.Store(2)
 			sibling := txOut
 			sibling.Coins = common.Coins{common.NewCoin(common.SOLAsset, cosmos.NewUint(12000000))}
-			siblingTx, _, _, err := client.SignTx(sibling, txOut.Height)
+			siblingTx, _, _, err := client.SignTx([]stypes.TxOutItem{sibling}, txOut.Height)
 			c.Assert(err, IsNil)
 			c.Assert(len(siblingTx) == 0, Equals, tc.expired, Commentf("%s: shared hash", tc.name))
 			c.Assert(<-broadcasts, Equals, base64.StdEncoding.EncodeToString(rawTx))
