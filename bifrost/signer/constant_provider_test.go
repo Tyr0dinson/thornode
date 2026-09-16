@@ -2,6 +2,7 @@ package signer
 
 import (
 	"fmt"
+	"sync"
 
 	. "gopkg.in/check.v1"
 
@@ -167,4 +168,31 @@ func (s *ConstantsProviderSuite) TestGetInt64Value_MissingKey(c *C) {
 	val, err := cp.GetInt64Value(100, constants.SigningTransactionPeriod)
 	c.Assert(err, IsNil)
 	c.Assert(val, Equals, int64(0))
+}
+
+// TestEnsureConstants_Concurrent fails under -race if requestHeight is read
+// outside constantsLock while a refresh writes it.
+func (s *ConstantsProviderSuite) TestEnsureConstants_Concurrent(c *C) {
+	bridge := &mockBridgeConstants{
+		constants: map[string]int64{
+			constants.SigningTransactionPeriod.String(): 300,
+			constants.ChurnInterval.String():            100,
+		},
+	}
+	cp := NewConstantsProvider(bridge)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			for h := int64(1); h < 200; h++ {
+				// every goroutine walks past the churn interval, so refreshes
+				// and cache hits interleave
+				_, err := cp.GetInt64Value(h*int64(i+1), constants.SigningTransactionPeriod)
+				c.Assert(err, IsNil)
+			}
+		}(i)
+	}
+	wg.Wait()
 }
