@@ -1255,6 +1255,23 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	if err != nil {
 		s.logger.Error().Err(err).Str("memo", tx.Memo).Msg("fail to broadcast tx to chain")
 
+		// A chain client returns ErrResignRequired when the signed bytes can never
+		// land (e.g. a SOL tx whose blockhash expired mid-keysign): re-broadcasting
+		// the same bytes loops forever. Clear the stored signed tx + checkpoint so
+		// the next pass re-enters SignTx, where the chain's sign-time validity gate
+		// re-evaluates (for SOL, dropping the item for a deterministic fresh-height
+		// reschedule). Every other broadcast error keeps the signed tx for a plain
+		// broadcast retry, since re-signing wastes a keysign and risks a double
+		// broadcast when the tx may still land.
+		if errors.Is(err, types.ErrResignRequired) {
+			item.SignedTx = nil
+			item.Checkpoint = nil
+			if storeErr := s.storage.Set(item); storeErr != nil {
+				s.logger.Error().Err(storeErr).Msg("fail to clear signed tx for re-sign")
+			}
+			return nil, observation, err
+		}
+
 		// store the signed tx for the next retry
 		item.SignedTx = signedTx
 		item.Observation = observation

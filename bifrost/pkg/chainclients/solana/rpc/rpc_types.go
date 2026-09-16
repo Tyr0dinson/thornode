@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"encoding/json"
+	"fmt"
 	"strconv"
 )
 
@@ -68,6 +69,12 @@ type RPCInstruction struct {
 type RPCError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
+}
+
+// Error implements the error interface so callers can errors.As a returned
+// error back to *RPCError and inspect the Solana JSON-RPC code/message.
+func (e *RPCError) Error() string {
+	return fmt.Sprintf("rpc error %d: %s", e.Code, e.Message)
 }
 
 // Custom type for Version to handle both string and numeric values
