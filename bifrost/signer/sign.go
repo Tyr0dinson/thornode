@@ -1289,6 +1289,18 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 		return s.signAndBroadcast(item)
 	})
 
+	if errors.Is(err, chainclienttypes.ErrTxExpired) {
+		// Expiry is terminal for this attempt, including saved payloads and
+		// terminal-round retries. Never auto-observe it as a successful outbound.
+		s.logger.Warn().Err(err).Interface("tx", item.TxOutItem).
+			Msg("retiring expired transaction; awaiting THORChain rescheduling")
+		if removeErr := s.storage.Remove(item); removeErr != nil {
+			s.logger.Error().Err(removeErr).Msg("fail to remove expired tx out store item")
+		}
+		cancel()
+		return
+	}
+
 	// Apply spent output refs from the signing observation before handling
 	// errors. The observation is populated during FROST signing and contains
 	// the real inputs consumed. Applying immediately ensures the sidecar
