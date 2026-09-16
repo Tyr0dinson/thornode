@@ -1002,6 +1002,105 @@ func (s *SolTestSuite) TestBroadcastTxLandedDespiteError(c *C) {
 	c.Assert(e.signerCacheManager.HasSigned(txOut.CacheHash()), Equals, true)
 }
 
+// TestBroadcastTxBlockhashExpiredResign covers board 754: a "Blockhash not
+// found" preflight rejection (blockhash expired mid-keysign) must return
+// ErrResignRequired so the signer drops the dead signed tx and re-signs, rather
+// than looping on the same dead bytes. The tx must NOT be recorded in the signer
+// cache (it never landed).
+func (s *SolTestSuite) TestBroadcastTxBlockhashExpiredResign(c *C) {
+	broadcastServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		body, _ := io.ReadAll(req.Body)
+		var rpcRequest struct {
+			Method string          `json:"method"`
+			Params json.RawMessage `json:"params"`
+		}
+		_ = json.Unmarshal(body, &rpcRequest)
+		rw.Header().Set("Content-Type", "application/json")
+		if res, ok := consensusBlockhashRPCResponse(rpcRequest.Method, rpcRequest.Params); ok {
+			_, _ = fmt.Fprintf(rw, `{"jsonrpc":"2.0","id":1,"result":%s}`, res)
+			return
+		}
+		switch rpcRequest.Method {
+		case "sendTransaction":
+			// Blockhash expired -> preflight rejects with -32002 "Blockhash not found".
+			_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32002,"message":"Transaction simulation failed: Blockhash not found"}}`))
+		case "getTransaction":
+			// Not on chain: a preflight-rejected tx never landed.
+			_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":null}`))
+		default:
+			_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":null}`))
+		}
+	}))
+	defer broadcastServer.Close()
+
+	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+	c.Assert(err, IsNil)
+	poolMgr := thorclient.NewPoolMgr(s.bridge)
+	e, err := NewSOLClient(s.thorKeys,
+		config.BifrostChainConfiguration{
+			RPCHost: "http://" + broadcastServer.Listener.Addr().String(),
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				ChainID:            common.SOLChain,
+				StartBlockHeight:   1,
+				HTTPRequestTimeout: time.Second,
+				MaxGasLimit:        80000,
+			},
+		}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
+	c.Assert(err, IsNil)
+	c.Assert(pubkeyMgr.Start(), IsNil)
+	defer func() { c.Assert(pubkeyMgr.Stop(), IsNil) }()
+	e.solScanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
+	pubkeys := pubkeyMgr.GetPubKeys()
+
+	txOut := stypes.TxOutItem{
+		Chain:            common.SOLChain,
+		ToAddress:        "D9A6eE2pZ6oSiGb8BPkag4gvAeEhHvc3eEYPBoLSMshG",
+		VaultPubKey:      pubkeys[0],
+		VaultPubKeyEddsa: pubkeys[0],
+		Coins: common.Coins{
+			common.NewCoin(common.SOLAsset, cosmos.NewUint(11047250)),
+		},
+		MaxGas: common.Gas{
+			common.NewCoin(common.SOLAsset, cosmos.NewUint(15000)),
+		},
+		GasRate: 1,
+		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
+	}
+
+	broadcastLookupDelay = 0
+
+	rawTx, _, _, err := e.SignTx(txOut, 1)
+	c.Assert(err, IsNil)
+	c.Assert(rawTx, NotNil)
+
+	// Broadcast fails with "Blockhash not found" -> must surface ErrResignRequired.
+	_, err = e.BroadcastTx(txOut, rawTx)
+	c.Assert(err, NotNil)
+	c.Assert(errors.Is(err, stypes.ErrResignRequired), Equals, true)
+
+	// The dead tx must NOT be cached (it never landed) so the re-sign path is free.
+	c.Assert(e.signerCacheManager.HasSigned(txOut.CacheHash()), Equals, false)
+
+	// The preflight rejection marked this consensus blockhash dead. A re-sign at
+	// the SAME height must now DROP the item (no-op) for a fresh-height reschedule
+	// rather than re-derive, re-keysign and re-broadcast the same dead hash — even
+	// though this mock's IsBlockhashValid still reports the hash valid (the
+	// backend-disagreement loop). Pre-fix this returned a freshly signed tx.
+	resignTx, _, _, err := e.SignTx(txOut, 1)
+	c.Assert(err, IsNil)
+	c.Assert(resignTx, IsNil, Commentf("dead-hash re-sign must drop (no-op), not re-keysign"))
+}
+
+// TestIsBlockhashExpired guards the message match that gates the re-sign signal:
+// only the "Blockhash not found" preflight cause, not other simulation failures.
+func (s *SolTestSuite) TestIsBlockhashExpired(c *C) {
+	c.Assert(isBlockhashExpired(nil), Equals, false)
+	c.Assert(isBlockhashExpired(errors.New("sendTransaction error: rpc error -32002: Transaction simulation failed: Blockhash not found")), Equals, true)
+	c.Assert(isBlockhashExpired(errors.New("BlockHash Not Found")), Equals, true)
+	c.Assert(isBlockhashExpired(errors.New("sendTransaction error: rpc error -32002: insufficient lamports")), Equals, false)
+	c.Assert(isBlockhashExpired(errors.New("node is behind")), Equals, false)
+}
+
 func (s *SolTestSuite) TestSignSOLTx_ObservationUsesOriginalMemo(c *C) {
 	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)

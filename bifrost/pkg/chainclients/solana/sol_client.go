@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/big"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -117,6 +118,17 @@ type SOLClient struct {
 	consensusHashes     map[int64]consensusBlockHashEntry
 	consensusHashNewest int64
 	consensusHashGroup  singleflight.Group
+
+	// resignDeadMu guards re-sign dead-hash tracking. When a signed tx is
+	// rejected at broadcast preflight with "Blockhash not found" (its consensus
+	// blockhash expired), the blockhash it was signed with is marked dead so the
+	// next SignTx pass drops that item deterministically for a fresh-height
+	// reschedule, instead of re-deriving, re-keysigning and re-broadcasting the
+	// same dead hash every ~1s while IsBlockhashValid may still (transiently,
+	// under backend disagreement) report it valid.
+	resignDeadMu     sync.Mutex
+	resignSignedHash map[string]string   // CacheHash -> consensus blockhash last signed
+	resignDeadHash   map[string]struct{} // consensus blockhashes rejected at preflight
 }
 
 // consensusBlockHashEntry is one immutable keysign-height derivation.
@@ -591,6 +603,19 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		c.countAbstain("no_consensus_blockhash")
 		return nil, nil, nil, errors.New("no consensus blockhash for SOL height yet; retaining outbound for retry until reschedule")
 	}
+	// If this consensus blockhash was already rejected at broadcast preflight
+	// ("Blockhash not found"), it can never land — drop the item deterministically
+	// for a fresh-height reschedule instead of re-deriving, re-keysigning and
+	// re-broadcasting the same dead hash every pass. This fires even if the
+	// IsBlockhashValid gate below still (transiently, under backend disagreement)
+	// reports the hash valid, closing that re-sign loop and freeing the vault's
+	// single SOL signing slot for later outbounds.
+	if c.isResignDeadHash(recentBlockhash) {
+		c.logger.Warn().Str("blockhash", recentBlockhash).Interface("tx", tx).
+			Msg("consensus blockhash already rejected at preflight; dropping for reschedule")
+		c.countAbstain("blockhash_dead_resign_dropped")
+		return nil, nil, nil, nil
+	}
 	// Per-node participation gate (never touches the signed bytes — the blockhash
 	// above is deterministic): is the derived blockhash still usable against the
 	// PROCESSING tip, i.e. the bank a broadcast tx is actually validated against?
@@ -680,6 +705,10 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		"",
 		nil,
 	)
+
+	// Remember which consensus blockhash this item was signed with, so a broadcast
+	// preflight rejection of these bytes can mark exactly that hash dead.
+	c.recordResignSignedHash(tx.CacheHash(), recentBlockhash)
 
 	return signedBytes, nil, txIn, nil
 }
@@ -832,6 +861,64 @@ func (c *SOLClient) storeConsensusBlockHash(height int64, e consensusBlockHashEn
 			delete(c.consensusHashes, h)
 		}
 	}
+}
+
+// maxResignDeadHashes caps the dead-blockhash set. Dead hashes are self-obsolete
+// (a reschedule derives a new height -> new hash that is never dead), so this is
+// only a guard against unbounded growth in a pathological loop.
+const maxResignDeadHashes = 512
+
+// recordResignSignedHash remembers the consensus blockhash a CacheHash was last
+// signed with, so a broadcast preflight rejection of those bytes can mark
+// exactly that hash dead.
+func (c *SOLClient) recordResignSignedHash(cacheHash, blockhash string) {
+	c.resignDeadMu.Lock()
+	defer c.resignDeadMu.Unlock()
+	if c.resignSignedHash == nil {
+		c.resignSignedHash = make(map[string]string)
+	}
+	c.resignSignedHash[cacheHash] = blockhash
+}
+
+// markResignDead marks the blockhash a CacheHash was last signed with as dead —
+// called when a broadcast is rejected at preflight because that blockhash has
+// expired. The next SignTx pass that re-derives the same hash drops the item for
+// a fresh-height reschedule instead of re-keysigning it.
+func (c *SOLClient) markResignDead(cacheHash string) {
+	c.resignDeadMu.Lock()
+	defer c.resignDeadMu.Unlock()
+	bh := c.resignSignedHash[cacheHash]
+	if bh == "" {
+		return
+	}
+	if c.resignDeadHash == nil {
+		c.resignDeadHash = make(map[string]struct{})
+	}
+	if len(c.resignDeadHash) >= maxResignDeadHashes {
+		for k := range c.resignDeadHash {
+			delete(c.resignDeadHash, k)
+			break
+		}
+	}
+	c.resignDeadHash[bh] = struct{}{}
+	delete(c.resignSignedHash, cacheHash)
+}
+
+// isResignDeadHash reports whether a derived consensus blockhash was already
+// rejected at broadcast preflight and must not be re-signed.
+func (c *SOLClient) isResignDeadHash(blockhash string) bool {
+	c.resignDeadMu.Lock()
+	defer c.resignDeadMu.Unlock()
+	_, dead := c.resignDeadHash[blockhash]
+	return dead
+}
+
+// clearResignSignedHash forgets a CacheHash's recorded signed hash after a
+// successful broadcast; it is no longer a re-sign candidate.
+func (c *SOLClient) clearResignSignedHash(cacheHash string) {
+	c.resignDeadMu.Lock()
+	defer c.resignDeadMu.Unlock()
+	delete(c.resignSignedHash, cacheHash)
 }
 
 // consensusBlockHash derives the SOL blockhash every signer must embed from a CONSENSUS
@@ -1067,9 +1154,30 @@ func (c *SOLClient) BroadcastTx(txOutItem stypes.TxOutItem, rawTx []byte) (strin
 				return knownSig, nil
 			}
 		}
+		// A "Blockhash not found" rejection means the signed tx's recent blockhash
+		// expired (keysign ran past its ~60s validity) — the tx was refused at
+		// preflight and can NEVER land, so re-broadcasting the same bytes loops
+		// forever. Signal ErrResignRequired so the signer drops the stored signed
+		// tx + checkpoint and re-enters SignTx, where the deterministic
+		// consensus-blockhash gate drops the item for a fresh-height reschedule.
+		// Safe against double-spend: a preflight-rejected tx never entered any
+		// leader's bank (and the on-chain lookup above already confirmed it did not
+		// land).
+		if isBlockhashExpired(err) {
+			c.logger.Warn().Err(err).Str("memo", txOutItem.Memo).
+				Msg("SOL blockhash expired before broadcast; dropping signed tx to re-sign")
+			// Mark this item's signed blockhash dead so the next SignTx pass drops
+			// it for a fresh-height reschedule instead of re-deriving, re-keysigning
+			// and re-broadcasting the same expired hash (even if IsBlockhashValid
+			// transiently still reports it valid under backend disagreement).
+			c.markResignDead(txOutItem.CacheHash())
+			return "", fmt.Errorf("%w: %v", stypes.ErrResignRequired, err)
+		}
 		return "", fmt.Errorf("failed to broadcast tx: %w", err)
 	}
 	c.logger.Info().Str("memo", txOutItem.Memo).Str("txid", txSig).Msg("broadcast tx")
+	// Successful broadcast — this item is no longer a re-sign candidate.
+	c.clearResignSignedHash(txOutItem.CacheHash())
 
 	// Record the broadcast in the signer cache with its expiry. SignTx will respect
 	// the cache unconditionally until the expiry passes; past expiry it verifies on
@@ -1081,6 +1189,18 @@ func (c *SOLClient) BroadcastTx(txOutItem stypes.TxOutItem, rawTx []byte) (strin
 	}
 
 	return txSig, nil
+}
+
+// isBlockhashExpired reports whether a Solana broadcast error is the
+// "Blockhash not found" preflight rejection — the signal that the signed tx's
+// recent blockhash has expired and the tx can never land. Matched on the RPC
+// message (Solana returns code -32002 with this text) so only this specific
+// preflight cause triggers a re-sign, not every simulation failure.
+func isBlockhashExpired(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "blockhash not found")
 }
 
 // txSigFromRawTx extracts the base58-encoded transaction signature from a
