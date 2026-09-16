@@ -18,6 +18,7 @@ func (k KVStore) InvariantRoutes() []common.InvariantRoute {
 		common.NewInvariantRoute("streaming_swaps", StreamingSwapsInvariant(k)),
 		common.NewInvariantRoute("runepool", RUNEPoolInvariant(k)),
 		common.NewInvariantRoute("tcy_claim", TCYClaimInvariant(k)),
+		common.NewInvariantRoute("tcy_stake", TCYStakeInvariant(k)),
 		common.NewInvariantRoute("vault_deficit", VaultDeficitInvariant(k)),
 	}
 }
@@ -488,6 +489,45 @@ func TCYClaimInvariant(k KVStore) common.Invariant {
 			diff := claimerSum.Sub(moduleTCY)
 			coin, _ := common.NewCoin(common.TCY, diff).Native()
 			msg = append(msg, fmt.Sprintf("insolvent: %s", coin))
+			broken = true
+		}
+
+		return msg, broken
+	}
+}
+
+// TCYStakeInvariant the tcy_stake module's TCY must exactly back the recorded
+// stakers. TCY only enters the module against a TCYStaker record (a claim or a
+// stake deposit) and only leaves it against one (an unstake), so any difference
+// is either stake the module cannot pay out or TCY stranded with no record to
+// redeem it - the fingerprint of a credit that was dropped after the funds moved.
+//
+// Only the stored records are summed: TCY smart contract addresses are surfaced by
+// ListTCYStakers as synthetic stakers whose amount is the contract's own balance,
+// which the module never held.
+func TCYStakeInvariant(k KVStore) common.Invariant {
+	return func(ctx cosmos.Context) (msg []string, broken bool) {
+		moduleTCY := k.GetBalanceOfModule(ctx, TCYStakeName, common.TCY.Native())
+
+		stakerSum := cosmos.ZeroUint()
+		iter := k.getTCYStakerIterator(ctx)
+		defer iter.Close()
+		for ; iter.Valid(); iter.Next() {
+			var staker TCYStaker
+			k.Cdc().MustUnmarshal(iter.Value(), &staker)
+			stakerSum = stakerSum.Add(staker.Amount)
+		}
+
+		switch {
+		case stakerSum.GT(moduleTCY):
+			diff := stakerSum.Sub(moduleTCY)
+			coin, _ := common.NewCoin(common.TCY, diff).Native()
+			msg = append(msg, fmt.Sprintf("insolvent: %s", coin))
+			broken = true
+		case stakerSum.LT(moduleTCY):
+			diff := moduleTCY.Sub(stakerSum)
+			coin, _ := common.NewCoin(common.TCY, diff).Native()
+			msg = append(msg, fmt.Sprintf("oversolvent: %s", coin))
 			broken = true
 		}
 

@@ -12,6 +12,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/common/tcysmartcontract"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -337,4 +338,42 @@ func (GenesisTestSuite) TestGenesisReferenceMemoWindowRoundTrip(c *C) {
 
 	// and it decays away as the imported memos expire
 	c.Check(memolessLiveRefs(dstCtx.WithBlockHeight(dstCtx.BlockHeight()+ttl), dstMgr.Keeper(), common.BTCAsset, ttl), Equals, int64(0))
+}
+
+// TCY smart contract addresses are surfaced by ListTCYStakers as synthetic stakers whose
+// amount is the contract's own TCY balance. That balance is exported by the bank module,
+// so exporting it again as a staker record would double count it and, if the smart
+// contract address list ever changed, import as real TCYStake module backed stake.
+func (GenesisTestSuite) TestGenesisExportSkipsTCYSmartContractStakers(c *C) {
+	SetupConfigForTest()
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+
+	scAddr, _ := tcySmartContractStaker(c, ctx, k, cosmos.NewUint(1234))
+
+	staker := GetRandomRUNEAddress()
+	c.Assert(k.SetTCYStaker(ctx, types.NewTCYStaker(staker, cosmos.NewUint(500))), IsNil)
+
+	// the synthetic staker is visible through the keeper
+	stakers, err := k.ListTCYStakers(ctx)
+	c.Assert(err, IsNil)
+	foundSC := false
+	for _, s := range stakers {
+		if s.Address.Equals(scAddr) {
+			foundSC = true
+		}
+	}
+	c.Assert(foundSC, Equals, true)
+
+	// ...but not through the genesis export
+	exported := ExportGenesis(ctx, k)
+	foundStaker := false
+	for _, s := range exported.TcyStakers {
+		c.Assert(tcysmartcontract.IsTCYSmartContractAddress(s.Address), Equals, false)
+		if s.Address.Equals(staker) {
+			foundStaker = true
+			c.Assert(s.Amount.Equal(cosmos.NewUint(500)), Equals, true)
+		}
+	}
+	c.Assert(foundStaker, Equals, true)
 }

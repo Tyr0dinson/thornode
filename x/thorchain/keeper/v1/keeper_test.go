@@ -82,6 +82,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, KVStore) {
 		RUNEPoolName:                   {},
 		BondName:                       {authtypes.Staking},
 		TCYClaimingName:                {},
+		TCYStakeName:                   {},
 		StableReserveName:              {},
 	}
 	ak := authkeeper.NewAccountKeeper(

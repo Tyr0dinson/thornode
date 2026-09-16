@@ -9,6 +9,7 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/common/tcysmartcontract"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -532,6 +533,14 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 			continue
 		}
 		if staker.Amount.IsZero() {
+			continue
+		}
+		// ListTCYStakers synthesises an entry for every TCY smart contract address whose
+		// amount is that contract's own TCY balance, already exported by the bank module,
+		// rather than stake held by the TCYStake module. Exporting it as a staker record
+		// double counts the balance, and would import as a real module backed record
+		// should the smart contract address list ever change.
+		if tcysmartcontract.IsTCYSmartContractAddress(staker.Address) {
 			continue
 		}
 
