@@ -1390,8 +1390,11 @@ func outboundObservationAmountMatches(ctx cosmos.Context, mgr Manager, tx common
 		return false
 	}
 	intendToSpend := toi.Coin.Amount.Add(toi.MaxGas.ToCoins().GetCoin(gasAsset).Amount)
-	actualSpend := tx.Coins.GetCoin(gasAsset).Amount.Add(tx.Gas.ToCoins().GetCoin(gasAsset).Amount)
-	return intendToSpend.Equal(actualSpend)
+	// This can be one node's observation before consensus. Adding its amount
+	// and gas can overflow Uint, so compare using a guarded subtraction instead.
+	observedAmount := tx.Coins.GetCoin(gasAsset).Amount
+	observedGas := tx.Gas.ToCoins().GetCoin(gasAsset).Amount
+	return observedAmount.LTE(intendToSpend) && intendToSpend.Sub(observedAmount).Equal(observedGas)
 }
 
 // needsNewVault reports whether an unfulfilled TxOutItem should be reassigned to

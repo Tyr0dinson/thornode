@@ -2354,3 +2354,126 @@ func (s *SlashingSuite) TestNeedsNewVaultWeighsEveryLink(c *C) {
 		)
 	}
 }
+
+func (s *SlashingSuite) TestOutboundObservationAmountMatches(c *C) {
+	maxUint, err := cosmos.ParseUint("115792089237316195423570985008687907853269984665640564039457584007913129639935")
+	c.Assert(err, IsNil)
+	token, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	c.Assert(err, IsNil)
+
+	for _, tc := range []struct {
+		name                          string
+		asset                         common.Asset
+		amount, observed, maxGas, gas cosmos.Uint
+		decimals                      int64
+		matches                       bool
+	}{
+		{"exact amount", common.BTCAsset, cosmos.NewUint(10000), cosmos.NewUint(10000), cosmos.NewUint(1000), cosmos.NewUint(500), 8, true},
+		{"pool decimal rounding", token, cosmos.NewUint(123456789), cosmos.NewUint(123456700), cosmos.NewUint(1000), cosmos.NewUint(500), 6, true},
+		{"wrong token amount", token, cosmos.NewUint(123456789), cosmos.NewUint(123456600), cosmos.NewUint(1000), cosmos.NewUint(500), 6, false},
+		{"unused gas paid to recipient", common.BTCAsset, cosmos.NewUint(10000), cosmos.NewUint(10500), cosmos.NewUint(1000), cosmos.NewUint(500), 8, true},
+		{"gas overspend with same total", common.BTCAsset, cosmos.NewUint(10000), cosmos.NewUint(9500), cosmos.NewUint(1000), cosmos.NewUint(1500), 8, true},
+		{"wrong total spend", common.BTCAsset, cosmos.NewUint(10000), cosmos.NewUint(9499), cosmos.NewUint(1000), cosmos.NewUint(1500), 8, false},
+		{"amount exceeds intended spend", common.BTCAsset, cosmos.NewUint(10000), cosmos.NewUint(11001), cosmos.NewUint(1000), cosmos.ZeroUint(), 8, false},
+		{"zero gas at intended spend", common.BTCAsset, cosmos.NewUint(10000), cosmos.NewUint(11000), cosmos.NewUint(1000), cosmos.ZeroUint(), 8, true},
+		{"largest valid total", common.BTCAsset, maxUint.SubUint64(1000), maxUint.SubUint64(500), cosmos.NewUint(1000), cosmos.NewUint(500), 8, true},
+		{"maximum amount plus one gas", common.BTCAsset, cosmos.NewUint(10000), maxUint, cosmos.NewUint(1000), cosmos.OneUint(), 8, false},
+		{"one amount plus maximum gas", common.BTCAsset, cosmos.NewUint(10000), cosmos.OneUint(), cosmos.NewUint(1000), maxUint, 8, false},
+		{"maximum amount and gas", common.BTCAsset, cosmos.NewUint(10000), maxUint, cosmos.NewUint(1000), maxUint, 8, false},
+	} {
+		ctx, mgr := setupManagerForTest(c)
+		pool := NewPool()
+		pool.Asset = tc.asset
+		pool.Decimals = tc.decimals
+		c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+		gasAsset := tc.asset.GetChain().GetGasAsset()
+		toi := TxOutItem{
+			Chain:  tc.asset.GetChain(),
+			Coin:   common.NewCoin(tc.asset, tc.amount),
+			MaxGas: common.Gas{common.NewCoin(gasAsset, tc.maxGas)},
+		}
+		tx := common.Tx{
+			Coins: common.NewCoins(common.NewCoin(tc.asset, tc.observed)),
+			Gas:   common.Gas{common.NewCoin(gasAsset, tc.gas)},
+		}
+		c.Check(outboundObservationAmountMatches(ctx, mgr, tx, toi), Equals, tc.matches, Commentf("case: %s", tc.name))
+	}
+}
+
+func (s *SlashingSuite) TestLackSigningSurvivesOversizedObservation(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(500)
+
+	nodes := make(NodeAccounts, 4)
+	for i := range nodes {
+		nodes[i] = GetRandomValidatorNode(NodeActive)
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, nodes[i]), IsNil)
+	}
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = ActiveVault
+	vault.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One))}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.Decimals = 8
+	pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	signingTransPeriod := mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
+	c.Assert(signingTransPeriod > 0, Equals, true)
+	const scheduledHeight = int64(302)
+	inHash := GetRandomTxHash()
+	toi := TxOutItem{
+		Chain:       common.BTCChain,
+		InHash:      inHash,
+		VaultPubKey: vault.PubKey,
+		ToAddress:   GetRandomBTCAddress(),
+		Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One)),
+		MaxGas:      common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(1000))},
+		Memo:        "OUT:" + inHash.String(),
+	}
+	txOut := NewTxOut(scheduledHeight)
+	txOut.TxArray = append(txOut.TxArray, toi)
+	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+	inVoter := NewObservedTxVoter(inHash, nil)
+	inVoter.FinalisedHeight = 1
+	inVoter.Actions = []TxOutItem{toi}
+	mgr.Keeper().SetObservedTxInVoter(ctx, inVoter)
+
+	// One active node can store a matching report before consensus. Both values
+	// are valid Uint amounts, but adding the reported amount and gas overflows.
+	maxUint, err := cosmos.ParseUint("115792089237316195423570985008687907853269984665640564039457584007913129639935")
+	c.Assert(err, IsNil)
+	from, err := vault.PubKey.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+	tx := common.NewTx(GetRandomTxHash(), from, toi.ToAddress,
+		common.NewCoins(common.NewCoin(common.BTCAsset, maxUint)),
+		common.Gas{common.NewCoin(common.BTCAsset, cosmos.OneUint())}, toi.Memo)
+	msg := NewMsgObservedTxOut(ObservedTxs{NewObservedTx(tx, 100, vault.PubKey, 101)}, nodes[0].NodeAddress)
+	c.Assert(msg.ValidateBasic(), IsNil)
+	_, err = NewObservedTxOutHandler(mgr).Run(ctx, msg)
+	c.Assert(err, IsNil)
+	c.Assert(mgr.Keeper().GetObservedLink(ctx, inHash), HasLen, 1)
+	outVoter, err := mgr.Keeper().GetObservedTxOutVoter(ctx, tx.ID)
+	c.Assert(err, IsNil)
+	c.Assert(outVoter.Txs, HasLen, 1)
+	c.Assert(outVoter.Txs[0].Signers, HasLen, 1)
+	c.Assert(outVoter.Height, Equals, int64(0))
+	c.Assert(outVoter.UnfinalizedHeight, Equals, int64(0))
+	c.Assert(outVoter.FinalisedHeight, Equals, int64(0))
+
+	// Re-read the persisted report at the next signing boundary. It cannot
+	// match this outbound or panic the check called from EndBlock.
+	ctx = ctx.WithBlockHeight(scheduledHeight + signingTransPeriod)
+	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+	c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
+	c.Check(slasher.needsNewVault(ctx, mgr, vault, signingTransPeriod, inVoter.FinalisedHeight, toi), Equals, true)
+	after, err := mgr.Keeper().GetTxOut(ctx, scheduledHeight)
+	c.Assert(err, IsNil)
+	c.Assert(after.TxArray, HasLen, 1)
+	// The replaced batch item proves LackSigning reached and rescheduled it.
+	c.Check(after.TxArray[0].OutHash.Equals(common.BlankTxID), Equals, true)
+}
