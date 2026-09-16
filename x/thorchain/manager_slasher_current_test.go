@@ -2069,12 +2069,16 @@ func (s *SlashingSuite) TestReverseSwapXMRUnknownSenderFallsBackToTreasury(c *C)
 func (s *SlashingSuite) TestNeedsNewVaultMatchesDestination(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
+	// A majority of the assigned vault's members pins an item outright, so the
+	// members below sign every observation in this test and the destination is
+	// then the only thing that can decide the outcome.
+	pk1 := GetRandomPubKey()
+	pk2 := GetRandomPubKey()
+	pk3 := GetRandomPubKey()
+
 	newVoterFor := func(toi TxOutItem, observedTo common.Address, pk common.PubKey) common.TxID {
 		inhash := toi.InHash
 		outhash := GetRandomTxHash()
-		pk1 := GetRandomPubKey()
-		pk2 := GetRandomPubKey()
-		pk3 := GetRandomPubKey()
 		sig1, _ := pk1.GetThorAddress()
 		sig2, _ := pk2.GetThorAddress()
 		sig3, _ := pk3.GetThorAddress()
@@ -2094,8 +2098,6 @@ func (s *SlashingSuite) TestNeedsNewVaultMatchesDestination(c *C) {
 		return outhash
 	}
 
-	// The signers below are not this vault's members, so a match must be the
-	// only thing that could ever open the grace window.
 	vaultOf := func(members ...common.PubKey) Vault {
 		vault := GetRandomVault()
 		vault.Membership = nil
@@ -2115,13 +2117,13 @@ func (s *SlashingSuite) TestNeedsNewVaultMatchesDestination(c *C) {
 		VaultPubKey: pk,
 	}
 	_ = newVoterFor(strangerToi, GetRandomBTCAddress(), pk)
-	c.Check(slasherNeedsNewVault(c, mgr, ctx, vaultOf(GetRandomPubKey()), strangerToi), Equals, true)
+	c.Check(slasherNeedsNewVault(c, mgr, ctx, vaultOf(pk1, pk2, pk3), strangerToi), Equals, true)
 
 	// The very same observation, reported to the scheduled destination, pins it.
 	matchedToi := strangerToi
 	matchedToi.InHash = GetRandomTxHash()
 	_ = newVoterFor(matchedToi, matchedToi.ToAddress, pk)
-	c.Check(slasherNeedsNewVault(c, mgr, ctx, vaultOf(GetRandomPubKey()), matchedToi), Equals, false)
+	c.Check(slasherNeedsNewVault(c, mgr, ctx, vaultOf(pk1, pk2, pk3), matchedToi), Equals, false)
 
 	// A Zcash tex destination and its P2PKH form are one address.
 	p2pkhAddress, err := common.NewAddress("tmEp4k7dSU8eGj32uJPi2wBSGuiNaVFBLN7")
@@ -2138,7 +2140,7 @@ func (s *SlashingSuite) TestNeedsNewVaultMatchesDestination(c *C) {
 		VaultPubKey: pk,
 	}
 	_ = newVoterFor(zecToi, p2pkhAddress, pk)
-	c.Check(slasherNeedsNewVault(c, mgr, ctx, vaultOf(GetRandomPubKey()), zecToi), Equals, false)
+	c.Check(slasherNeedsNewVault(c, mgr, ctx, vaultOf(pk1, pk2, pk3), zecToi), Equals, false)
 }
 
 // slasherNeedsNewVault runs needsNewVault with the fixture's signing period and
@@ -2146,4 +2148,209 @@ func (s *SlashingSuite) TestNeedsNewVaultMatchesDestination(c *C) {
 func slasherNeedsNewVault(c *C, mgr Manager, ctx cosmos.Context, vault Vault, toi TxOutItem) bool {
 	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
 	return slasher.needsNewVault(ctx, mgr, vault, 300, 1, toi)
+}
+
+// A link is written on the first attestation, long before the outbound voter
+// reaches consensus, so the links for an inbound hash are an unordered pile of
+// claims rather than a record of what was sent. Every one of them must be
+// weighed before the outbound is handed to another vault, and only the assigned
+// vault's own members can speak the majority that pins it indefinitely.
+func (s *SlashingSuite) TestNeedsNewVaultWeighsEveryLink(c *C) {
+	const (
+		signingTransPeriod = int64(300)
+		startHeight        = int64(1)
+	)
+
+	// A five member vault: one signer is a sub-majority, three are a majority.
+	members := make([]common.PubKey, 5)
+	memberSigners := make([]string, len(members))
+	for i := range members {
+		members[i] = GetRandomPubKey()
+		addr, err := members[i].GetThorAddress()
+		c.Assert(err, IsNil)
+		memberSigners[i] = addr.String()
+	}
+	outsiderSigners := make([]string, 6)
+	for i := range outsiderSigners {
+		addr, err := GetRandomPubKey().GetThorAddress()
+		c.Assert(err, IsNil)
+		outsiderSigners[i] = addr.String()
+	}
+
+	// link describes one observed link to record for the item under test.
+	type link struct {
+		signers        []string
+		toAddress      common.Address
+		amount         *cosmos.Uint
+		finalised      bool
+		observedPubKey *common.PubKey
+	}
+
+	// setup records the given links against a fresh inbound hash and returns
+	// the assigned vault and the item they were recorded for.
+	setup := func(ctx cosmos.Context, mgr Manager, links []link) (Vault, TxOutItem) {
+		vault := GetRandomVault()
+		vault.Membership = nil
+		for _, member := range members {
+			vault.Membership = append(vault.Membership, member.String())
+		}
+
+		inhash := GetRandomTxHash()
+		toi := TxOutItem{
+			Chain:       common.BTCChain,
+			InHash:      inhash,
+			Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One)),
+			ToAddress:   GetRandomBTCAddress(),
+			VaultPubKey: vault.PubKey,
+			MaxGas:      common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(1_000))},
+		}
+
+		for _, l := range links {
+			outhash := GetRandomTxHash()
+			tx := GetRandomTx()
+			tx.ID = outhash
+			tx.Chain = toi.Chain
+			tx.ToAddress = toi.ToAddress
+			if !l.toAddress.IsEmpty() {
+				tx.ToAddress = l.toAddress
+			}
+			amount := toi.Coin.Amount
+			if l.amount != nil {
+				amount = *l.amount
+			}
+			tx.Coins = common.NewCoins(common.NewCoin(toi.Coin.Asset, amount))
+			tx.Gas = common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(1_000))}
+
+			observedPubKey := toi.VaultPubKey
+			if l.observedPubKey != nil {
+				observedPubKey = *l.observedPubKey
+			}
+			obs := NewObservedTx(tx, 0, observedPubKey, 0)
+			obs.ObservedPubKey = observedPubKey
+			obs.Signers = l.signers
+
+			voter := NewObservedTxVoter(outhash, []common.ObservedTx{obs})
+			if l.finalised {
+				voter.FinalisedHeight = startHeight
+				voter.Tx = obs
+			}
+			mgr.Keeper().SetObservedTxOutVoter(ctx, voter)
+			mgr.Keeper().SetObservedLink(ctx, inhash, outhash)
+		}
+
+		return vault, toi
+	}
+
+	// The sub-majority window for a single member closes at
+	// startHeight + 2*signingTransPeriod; the stale window closes later still,
+	// so at this height a majority observation is live and a lone one is not.
+	liveHeight := startHeight + 2*signingTransPeriod + 1
+	staleHeight := startHeight + staleOutboundObservationSigningPeriods*signingTransPeriod + 1
+
+	strangerKey := GetRandomPubKey()
+	unrelatedAmount := cosmos.NewUint(7 * common.One)
+
+	for _, tc := range []struct {
+		name    string
+		height  int64
+		links   []link
+		expects bool
+	}{
+		{
+			// The regression: a stray low-quorum link recorded first must not
+			// hide the assigned vault's majority observation under a later one.
+			name:    "low quorum link ahead of a majority link",
+			height:  liveHeight,
+			links:   []link{{signers: memberSigners[:1]}, {signers: memberSigners[:3]}},
+			expects: false,
+		},
+		{
+			name:    "majority link ahead of a low quorum link",
+			height:  liveHeight,
+			links:   []link{{signers: memberSigners[:3]}, {signers: memberSigners[:1]}},
+			expects: false,
+		},
+		{
+			// Nothing but expired low-quorum claims: the outbound is not in
+			// progress and the item must be reassignable.
+			name:    "several expired low quorum links",
+			height:  liveHeight,
+			links:   []link{{signers: memberSigners[:1]}, {signers: memberSigners[1:2]}},
+			expects: true,
+		},
+		{
+			// Outbound observations come from any active observer, not just
+			// vault members, so an outsider quorum saying funds left this
+			// vault's address still earns the waiting window - reassigning
+			// over it is what pays the destination twice.
+			name:    "outsiders only inside the window",
+			height:  liveHeight,
+			links:   []link{{signers: outsiderSigners}},
+			expects: false,
+		},
+		{
+			// That window is bounded: outsiders are not the vault's own word,
+			// and once the observation goes stale the item is reassignable.
+			name:    "outsiders only once stale",
+			height:  staleHeight,
+			links:   []link{{signers: outsiderSigners}},
+			expects: true,
+		},
+		{
+			// A lone outsider buys only two signing periods, and no more.
+			name:    "expired lone outsider",
+			height:  liveHeight,
+			links:   []link{{signers: outsiderSigners[:1]}},
+			expects: true,
+		},
+		{
+			name:    "majority reporting an unrelated destination",
+			height:  liveHeight,
+			links:   []link{{signers: memberSigners[:3], toAddress: GetRandomBTCAddress()}},
+			expects: true,
+		},
+		{
+			name:    "majority reporting an unrelated amount",
+			height:  liveHeight,
+			links:   []link{{signers: memberSigners[:3], amount: &unrelatedAmount}},
+			expects: true,
+		},
+		{
+			name:    "majority naming a vault the item is not assigned to",
+			height:  liveHeight,
+			links:   []link{{signers: memberSigners[:3], observedPubKey: &strangerKey}},
+			expects: true,
+		},
+		{
+			// A non-finalised observation cannot pin the item forever.
+			name:    "stale majority",
+			height:  staleHeight,
+			links:   []link{{signers: memberSigners[:3]}},
+			expects: true,
+		},
+		{
+			// A split outbound finalises the parts that did go out; the part
+			// still unfulfilled must stay reassignable.
+			name:    "finalised sibling of a split outbound",
+			height:  liveHeight,
+			links:   []link{{signers: memberSigners[:3], finalised: true}},
+			expects: true,
+		},
+		{
+			name:    "a live majority alongside a finalised sibling",
+			height:  liveHeight,
+			links:   []link{{signers: memberSigners[:3], finalised: true}, {signers: memberSigners[:3]}},
+			expects: false,
+		},
+	} {
+		ctx, mgr := setupManagerForTest(c)
+		slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+		vault, toi := setup(ctx, mgr, tc.links)
+		ctx = ctx.WithBlockHeight(tc.height)
+		c.Check(
+			slasher.needsNewVault(ctx, mgr, vault, signingTransPeriod, startHeight, toi),
+			Equals, tc.expects,
+			Commentf("case %q", tc.name),
+		)
+	}
 }
