@@ -161,6 +161,10 @@ func processErrataTx(ctx cosmos.Context, mgr Manager, er *common.ErrataTx) (comm
 			return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, fmt.Errorf("fail to stop errata mempool swap: %w", lifecycleErr)
 		}
 		observedVoter.SetReverted()
+		// Emit the same reverted counter the ordinary path below emits: both
+		// outcomes of this branch persist Reverted, so without it a dashboard
+		// built on errata.reverted undercounts once mempool-swap traffic exists.
+		incrErrataRevertedIn(er.Chain)
 		k.SetObservedTxInVoter(errataCtx, observedVoter)
 		if lifecycleErr = rollbackMempoolSwapCached(errataCtx, k, mgr, observedVoter); lifecycleErr == nil {
 			commitErrata()
@@ -187,14 +191,7 @@ func processErrataTx(ctx cosmos.Context, mgr Manager, er *common.ErrataTx) (comm
 
 	// set the observed Tx to reverted only after chain validation passes
 	observedVoter.SetReverted()
-	telemetry.IncrCounterWithLabels(
-		[]string{"thornode", "errata", "reverted"},
-		1,
-		[]metrics.Label{
-			telemetry.NewLabel("chain", telemChain(er.Chain)),
-			telemetry.NewLabel("direction", "in"),
-		},
-	)
+	incrErrataRevertedIn(er.Chain)
 	k.SetObservedTxInVoter(ctx, observedVoter)
 	// The inbound path marks a self-send as updated without crediting it.
 	if observedVoter.UpdatedVault && (!er.Chain.RequiresTerminalErrataOutcome() || !tx.FromAddress.Equals(tx.ToAddress)) {
@@ -419,4 +416,20 @@ func processErrataOutboundTx(ctx cosmos.Context, k keeper.Keeper, eventMgr Event
 	)
 	k.SetObservedTxOutVoter(ctx, txOutVoter)
 	return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED, nil
+}
+
+// incrErrataRevertedIn counts one reverted inbound. Both the mempool-swap
+// lifecycle path and the ordinary errata path end at SetReverted, so both emit
+// it; the counter is a global metrics side effect and is deliberately not tied
+// to the errata CacheContext, because the voter is persisted Reverted whether
+// or not the speculative rollback commits on this pass.
+func incrErrataRevertedIn(chain common.Chain) {
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "errata", "reverted"},
+		1,
+		[]metrics.Label{
+			telemetry.NewLabel("chain", telemChain(chain)),
+			telemetry.NewLabel("direction", "in"),
+		},
+	)
 }
