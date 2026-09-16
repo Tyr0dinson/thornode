@@ -885,3 +885,53 @@ func (s *BitcoinSignerSuite) TestBTCFeeFloorPreservesCheckpoint(c *C) {
 	c.Assert(signed, IsNil)
 	c.Assert(retained, DeepEquals, tx.Checkpoint)
 }
+
+// TestBatchTxInfoGasWeightsAreSignerIndependent guards the batch fee split against
+// node-local state. buildTx records the fee it just derived into temporal storage, so
+// a weight resolved through getGasCoin comes out differently for a signer on its first
+// attempt than for one that has already built a transaction. Every signer of a batch
+// has to checkpoint identical bytes, so the weights may only depend on the txs.
+func (s *BitcoinSignerSuite) TestBatchTxInfoGasWeightsAreSignerIndependent(c *C) {
+	addr, err := types2.GetRandomPubKey().GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+	inHash := thorchain.GetRandomTxHash()
+	priKeyBuf, err := hex.DecodeString("b404c5ec58116b5f0fe13464a92e46626fc5db130e418cbce98df86ffe9317c5")
+	c.Assert(err, IsNil)
+	pkey, _ := btcec.PrivKeyFromBytes(btcec.S256(), priKeyBuf)
+	s.client.nodePrivKey = pkey
+	s.client.nodePubKey, err = bech32AccountPubKey(pkey)
+	c.Assert(err, IsNil)
+
+	txOutItem := stypes.TxOutItem{
+		Chain:       common.BTCChain,
+		ToAddress:   addr,
+		VaultPubKey: s.client.nodePubKey,
+		Coins:       common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(10))},
+		MaxGas:      common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(1000))},
+		InHash:      inHash,
+		Memo:        "OUT:" + inHash.String(),
+	}
+	sourceScript, err := s.client.getSourceScript(txOutItem)
+	c.Assert(err, IsNil)
+
+	_, _, first, err := s.client.buildTx([]stypes.TxOutItem{txOutItem}, sourceScript)
+	c.Assert(err, IsNil)
+	c.Assert(len(first), Equals, 1)
+	c.Assert(first[0].UnbatchedGas > 0, Equals, true)
+
+	// Stand in for a signer that has already built and cached a transaction fee.
+	c.Assert(s.client.temporalStorage.UpsertTransactionFee(0.0001, 250), IsNil)
+	_, _, second, err := s.client.buildTx([]stypes.TxOutItem{txOutItem}, sourceScript)
+	c.Assert(err, IsNil)
+	c.Assert(second, DeepEquals, first)
+
+	// A tx that asks for twice the rate still carries twice the weight, so the split
+	// remains rate-weighted rather than collapsing to a plain byte share.
+	txOutItem.GasRate = 10
+	_, _, single, err := s.client.buildTx([]stypes.TxOutItem{txOutItem}, sourceScript)
+	c.Assert(err, IsNil)
+	txOutItem.GasRate = 20
+	_, _, doubled, err := s.client.buildTx([]stypes.TxOutItem{txOutItem}, sourceScript)
+	c.Assert(err, IsNil)
+	c.Assert(doubled[0].UnbatchedGas, Equals, 2*single[0].UnbatchedGas)
+}

@@ -14,8 +14,11 @@ import (
 // BatchTxInfo contains per-transaction data for batch signed transactions
 type BatchTxInfo struct {
 	OutputAmount uint64 `json:"output_amount"` // Amount sent in this output (in sats)
-	UnbatchedGas uint64 `json:"unbatched_gas"` // Gas this tx would use if sent alone (in sats)
-	OutputIndex  int    `json:"output_index"`  // Index of the customer output in the wire transaction
+	// Gas this tx would use if sent alone (in sats), used only as a relative weight
+	// to split the batch fee. Derived solely from the signed txs so that every
+	// signer of a batch checkpoints the same bytes.
+	UnbatchedGas uint64 `json:"unbatched_gas"`
+	OutputIndex  int    `json:"output_index"` // Index of the customer output in the wire transaction
 }
 
 // SignCheckpoint is used to checkpoint the built transaction before signing, for use in

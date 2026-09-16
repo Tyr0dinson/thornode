@@ -547,9 +547,19 @@ func (c *Client) buildTx(txs []stypes.TxOutItem, sourceScript []byte, zecReferen
 	var unbatchedGasSats uint64
 	var unbatchedSize int64
 	var maxGas common.Gas
+	// batchGasRate stands in for any zero GasRate when weighting the batch fee split
+	// below. It must be derived only from the txs being signed: every signer of this
+	// batch has to produce byte-identical BatchTxInfos, and the getGasCoin fallback
+	// reads node-local storage that each signer updates on every SignTx.
+	var batchGasRate int64
 	for _, tx := range txs {
 		totalMemoSize += len([]byte(tx.Memo))
 		maxGas = maxGas.Adds_deprecated(tx.MaxGas)
+		batchGasRate = max(batchGasRate, tx.GasRate)
+	}
+	if batchGasRate == 0 {
+		// No tx carried a rate, so the weights reduce to each tx's share of the bytes.
+		batchGasRate = 1
 	}
 
 	// build vOuts
@@ -740,10 +750,15 @@ func (c *Client) buildTx(txs []stypes.TxOutItem, sourceScript []byte, zecReferen
 	for idx, tx := range txs {
 		size := c.estimateTxSize(txes, txNullDataScripts[idx], [][]byte{txBufs[idx]}, sourceScript)
 		unbatchedSize += size
-		txUnbatchedGas := c.getGasCoin(tx.GasRate, size).Amount.Uint64()
-		unbatchedGasSats += txUnbatchedGas
-		// Store unbatched gas for this transaction
-		batchTxInfos[idx].UnbatchedGas = txUnbatchedGas
+		unbatchedGasSats += c.getGasCoin(tx.GasRate, size).Amount.Uint64()
+		// Store the weight used to apportion the batch fee across the outputs. Only
+		// the ratio between these matters, so resolve a zero rate against the batch
+		// rather than against node-local state to keep every signer in agreement.
+		txGasRate := tx.GasRate
+		if txGasRate == 0 {
+			txGasRate = batchGasRate
+		}
+		batchTxInfos[idx].UnbatchedGas = uint64(txGasRate * size)
 	}
 
 	totalSize := c.estimateTxSize(txes, allNullDataScripts, txBufs, sourceScript)
