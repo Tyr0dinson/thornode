@@ -8,6 +8,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 var errMempoolSwapPoolFinalityPending = errors.New("pool has active unfinalized mempool swap effects")
@@ -152,9 +153,18 @@ func preemptMempoolSwapExecutionOwnersAtomic(ctx cosmos.Context, mgr Manager, ms
 			return err
 		}
 	}
-	// Fail closed. Preemption must leave every pool executable by a swap
-	// without a lifecycle of its own, or the caller keeps deferring.
-	if err = ensureMempoolSwapExecutionPoolsAvailable(cacheCtx, mgr.Keeper(), msg, nil); err != nil {
+	// Preserve the caller's lifecycle identity when checking the result. A
+	// finalized stream may still own effects that another lifecycle cannot
+	// interleave, even though a swap without its own journal could proceed.
+	record, found, err := mgr.Keeper().GetMempoolSwap(cacheCtx, msg.Tx.ID, msg.Index)
+	if err != nil {
+		return fmt.Errorf("fail to load preempting swap lifecycle: %w", err)
+	}
+	var owner *types.MempoolSwap
+	if found {
+		owner = &record
+	}
+	if err = ensureMempoolSwapExecutionPoolsAvailable(cacheCtx, mgr.Keeper(), msg, owner); err != nil {
 		return err
 	}
 	commit()

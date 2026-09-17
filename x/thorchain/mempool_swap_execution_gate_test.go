@@ -651,3 +651,138 @@ func (s *MempoolSwapExecutionGateSuite) TestPreemptionFailureIsNotRetriedWithinA
 		Commentf("a recorded failure must short-circuit before touching the keeper again"))
 	c.Check(baseKeeper.HasMempoolSwap(ctx, owner.TxId, owner.Index), Equals, true)
 }
+
+// Admit a second swap after the first has executed one slice and claimed BTC.
+// Both inbounds are initially unconfirmed, so the second swap must wait.
+func setupWaitingMempoolSwap(c *C) (cosmos.Context, *Mgrs, mempoolSwapLifecycleFixture, MsgSwap, ObservedTxVoter) {
+	ctx, mgr, fixture := setupMempoolSwapLifecycleFixture(c)
+	c.Assert(mgr.AdvSwapQueueMgr().EndBlock(ctx, mgr, false), IsNil)
+	owner, found, err := mgr.Keeper().GetMempoolSwapPoolOwner(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, true)
+	c.Assert(owner.TxId, Equals, fixture.voter.TxID)
+
+	waiting := fixture.msg
+	waiting.Tx.ID = GetRandomTxHash()
+	state := *waiting.State
+	waiting.State = &state
+	queue := newSwapQueueAdv(mgr.Keeper())
+	c.Assert(queue.AddSwapQueueItem(ctx, mgr, &waiting), IsNil)
+	observed := NewObservedTx(waiting.Tx, ctx.BlockHeight(), fixture.vault.PubKey, 0)
+	voter := NewObservedTxVoter(waiting.Tx.ID, ObservedTxs{observed})
+	voter.Tx = observed
+	voter.Height = ctx.BlockHeight()
+	voter.UnfinalizedHeight = ctx.BlockHeight()
+	voter.MempoolSwapTOR = fixture.reservedTOR
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	mgr.Keeper().AddMempoolSwapUsageTOR(ctx, fixture.reservedTOR)
+	record := newMempoolSwapLifecycle(ctx, mgr.Keeper(), voter, waiting, fixture.reservedTOR)
+	c.Assert(mgr.Keeper().SetMempoolSwap(ctx, record), IsNil)
+	c.Assert(queue.isSwapReady(ctx, waiting), Equals, false)
+	return ctx, mgr, fixture, waiting, voter
+}
+
+func (s *MempoolSwapExecutionGateSuite) TestConfirmedLifecyclePreemptsUnconfirmedPoolOwner(c *C) {
+	ctx, mgr, fixture, waiting, voter := setupWaitingMempoolSwap(c)
+	voter.FinalisedHeight = ctx.BlockHeight()
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	c.Assert(completeMempoolSwapAtomic(ctx, mgr, voter), IsNil)
+	record, found, err := mgr.Keeper().GetMempoolSwap(ctx, waiting.Tx.ID, waiting.Index)
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, true)
+	c.Assert(record.Status, Equals, types.MempoolSwapStatus_FINALIZED)
+	c.Assert(record.PendingEffects.Pools, HasLen, 0)
+
+	queue := newSwapQueueAdv(mgr.Keeper())
+	c.Check(queue.isSwapReady(ctx, waiting), Equals, true)
+	c.Check(mgr.Keeper().HasMempoolSwap(ctx, fixture.voter.TxID, 0), Equals, true,
+		Commentf("readiness must not preempt the owner"))
+	c.Assert(queue.EndBlock(ctx, mgr, false), IsNil)
+
+	stored, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, waiting.Tx.ID, int(waiting.Index))
+	c.Assert(err, IsNil)
+	c.Check(stored.State.Count, Equals, uint64(1))
+	c.Check(stored.State.In.IsZero(), Equals, false)
+	c.Check(stored.State.FailedSwaps, HasLen, 0)
+	c.Check(mgr.Keeper().HasMempoolSwap(ctx, fixture.voter.TxID, 0), Equals, false)
+	owner, found, err := mgr.Keeper().GetMempoolSwapPoolOwner(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, true)
+	c.Check(owner.TxId, Equals, waiting.Tx.ID)
+	c.Check(owner.Status, Equals, types.MempoolSwapStatus_FINALIZED)
+	c.Check(len(owner.PendingEffects.Pools) > 0, Equals, true,
+		Commentf("the confirmed stream must retain its own effects journal"))
+	preempted, err := mgr.Keeper().GetObservedTxInVoter(ctx, fixture.voter.TxID)
+	c.Assert(err, IsNil)
+	c.Check(preempted.Reverted, Equals, false)
+	c.Check(preempted.MempoolSwapTOR.IsZero(), Equals, true)
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true)
+}
+
+func (s *MempoolSwapExecutionGateSuite) TestLifecyclePreemptionRequiresCompletedFinality(c *C) {
+	for _, tc := range []struct {
+		status    types.MempoolSwapStatus
+		confirmed bool
+		reverted  bool
+	}{
+		{types.MempoolSwapStatus_RESERVED, false, false},
+		{types.MempoolSwapStatus_EXECUTING, false, false},
+		{types.MempoolSwapStatus_FINALIZED, false, false},
+		{types.MempoolSwapStatus_RESERVED, true, false},
+		{types.MempoolSwapStatus_ROLLBACK_PENDING, true, false},
+		{types.MempoolSwapStatus_FINALIZED, true, true},
+	} {
+		ctx, mgr, fixture, waiting, voter := setupWaitingMempoolSwap(c)
+		if tc.confirmed {
+			voter.FinalisedHeight = ctx.BlockHeight()
+		}
+		voter.Reverted = tc.reverted
+		record, _, err := mgr.Keeper().GetMempoolSwap(ctx, waiting.Tx.ID, waiting.Index)
+		c.Assert(err, IsNil)
+		if tc.status == types.MempoolSwapStatus_FINALIZED {
+			mgr.Keeper().SubMempoolSwapUsageTOR(ctx, record.ReservedTor)
+			record.ReservedTor = cosmos.ZeroUint()
+			voter.MempoolSwapTOR = cosmos.ZeroUint()
+		}
+		mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+		record.Status = tc.status
+		c.Assert(mgr.Keeper().SetMempoolSwap(ctx, record), IsNil)
+		queue := newSwapQueueAdv(mgr.Keeper())
+		c.Check(queue.isSwapReady(ctx, waiting), Equals, false,
+			Commentf("status=%s confirmed=%t reverted=%t", tc.status, tc.confirmed, tc.reverted))
+		c.Assert(queue.EndBlock(ctx, mgr, false), IsNil)
+		c.Check(mgr.Keeper().HasMempoolSwap(ctx, fixture.voter.TxID, 0), Equals, true)
+		stored, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, waiting.Tx.ID, int(waiting.Index))
+		c.Assert(err, IsNil)
+		c.Check(stored.State.Count, Equals, uint64(0))
+		c.Check(stored.State.FailedSwaps, HasLen, 0)
+	}
+}
+
+func (s *MempoolSwapExecutionGateSuite) TestConfirmedLifecycleDefersBehindFinalizedPoolOwner(c *C) {
+	ctx, mgr, fixture, waiting, voter := setupWaitingMempoolSwap(c)
+	for _, finalVoter := range []ObservedTxVoter{fixture.voter, voter} {
+		finalVoter.FinalisedHeight = ctx.BlockHeight()
+		mgr.Keeper().SetObservedTxInVoter(ctx, finalVoter)
+		c.Assert(completeMempoolSwapAtomic(ctx, mgr, finalVoter), IsNil)
+	}
+	ownerBefore, found, err := mgr.Keeper().GetMempoolSwapPoolOwner(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, true)
+	c.Assert(ownerBefore.Status, Equals, types.MempoolSwapStatus_FINALIZED)
+
+	// The first confirmed stream still owns pool effects. A second lifecycle
+	// cannot interleave its journal, even though a lifecycle-free swap could.
+	err = preemptMempoolSwapExecutionOwnersAtomic(ctx, mgr, waiting)
+	c.Check(errors.Is(err, errMempoolSwapPoolExecutionPending), Equals, true)
+	queue := newSwapQueueAdv(mgr.Keeper())
+	c.Assert(queue.EndBlock(ctx, mgr, false), IsNil)
+	stored, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, waiting.Tx.ID, int(waiting.Index))
+	c.Assert(err, IsNil)
+	c.Check(stored.State.Count, Equals, uint64(0))
+	c.Check(stored.State.FailedSwaps, HasLen, 0)
+	ownerAfter, found, err := mgr.Keeper().GetMempoolSwapPoolOwner(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, true)
+	c.Check(ownerAfter, DeepEquals, ownerBefore)
+}
