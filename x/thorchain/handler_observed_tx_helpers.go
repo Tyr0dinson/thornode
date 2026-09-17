@@ -3365,8 +3365,8 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 			return fmt.Errorf("fail to mark mempool swap rollback pending: %w", err)
 		}
 		// Forward fee RUNE stayed in Asgard but was excluded from pool depth.
-		// Restore that depth before executing the accounting-neutral reverse
-		// operation. Every other pending effect is simply discarded on delete.
+		// Restore that depth before executing the reverse swap. Every other
+		// pending effect is simply discarded on delete.
 		if err = prepareMempoolSwapRollbackEffectsCached(ctx, mgr, lifecycleRecord); err != nil {
 			return fmt.Errorf("fail to prepare mempool swap rollback effects: %w", err)
 		}
@@ -3620,6 +3620,10 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 			}
 		}
 
+		// Cross-asset rollback deliberately uses a reverse AMM swap followed by
+		// a source-pool donation. Price impact and RUNE redistribution are accepted;
+		// exact restoration of each pool's pre-swap RUNE balance is not required.
+		// See [accepted rollback behavior](../../docs/swap-guide/mempool-swaps.md#accepted-rollback-behavior).
 		rollbackSwap, buildErr := buildMempoolRollbackSwapMsg(ctx, mgr, voter, sourceAsset, action, rollbackAction.actionIndex, rollbackSwapVault)
 		if buildErr != nil {
 			return buildErr

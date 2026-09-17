@@ -8,6 +8,7 @@
 
   - [Memoless Swaps](swap-guide/memoless-swaps.md)
   - [Advanced Swap Queue](swap-guide/advanced-swap-queue.md)
+  - [Zero-confirmation (Mempool) Swaps](swap-guide/mempool-swaps.md)
   - [Fees and Wait Times](swap-guide/fees-and-wait-times.md)
 
 - [Affiliate Guide](affiliate-guide/thorname-guide.md)
