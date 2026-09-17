@@ -86,7 +86,9 @@ func (AppModuleBasic) RegisterGRPCGatewayRoutes(clientCtx client.Context, mux *r
 	types.RegisterQueryHandlerClient(context.Background(), mux, types.NewQueryClient(clientCtx)) //nolint:errcheck
 }
 
-// Antehandler blocks x/denom Msgs. Used only via approved CosmWasm contracts
+// GetTxCmd returns no commands: x/denom Msgs are rejected by the antehandler
+// when submitted directly, and the Msg server only accepts them from approved
+// CosmWasm contracts, so there is nothing for a user to submit.
 func (a AppModuleBasic) GetTxCmd() *cobra.Command {
 	return nil
 }

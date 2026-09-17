@@ -81,3 +81,7 @@ func (s *DummyWasmManager) ClearAdmin(ctx cosmos.Context,
 ) ([]byte, error) {
 	return nil, nil
 }
+
+func (s *DummyWasmManager) HasContract(ctx cosmos.Context, addr cosmos.AccAddress) bool {
+	return false
+}

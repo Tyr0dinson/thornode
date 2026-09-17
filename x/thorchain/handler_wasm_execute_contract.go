@@ -104,7 +104,14 @@ func (ad WasmExecuteAnteDecorator) AnteHandle(
 	for _, msg := range tx.GetMsgs() {
 		// We can't allocate gas to a specific Msg in the Tx, so we deduct fees
 		// for gas for the entirety of any tx that contains a wasm Msg that has no
-		// fee charged in ante
+		// fee charged in ante.
+		//
+		// Only add message types here whose own ante handling is a gas fee and
+		// nothing else. A message that executes other messages (authz MsgExec
+		// was such a case) would take this fee path and then pass through
+		// AnteDecorator, which inspects top level messages only - its inner
+		// messages would reach their handlers having skipped every
+		// message-specific ante check.
 		switch msg.(type) {
 		case *wasmtypes.MsgStoreCode,
 			*wasmtypes.MsgInstantiateContract,

@@ -3,6 +3,7 @@ package keeper
 import (
 	"context"
 
+	"cosmossdk.io/errors"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"gitlab.com/thorchain/thornode/v3/x/denom/types"
@@ -20,8 +21,35 @@ func NewMsgServerImpl(keeper Keeper) types.MsgServer {
 
 var _ types.MsgServer = msgServer{}
 
+// assertContractSender enforces the x/denom permission boundary: tokens may
+// only be created and their supply managed by approved CosmWasm contracts.
+//
+// The ante handler rejects x/denom messages submitted directly in a
+// transaction, but it only inspects the top level messages of that
+// transaction. Any message router that dispatches an inner message on behalf
+// of its signer would reach the Msg service without passing through the ante
+// handler at all, so the restriction is repeated here, where every dispatch
+// path converges.
+func (server msgServer) assertContractSender(ctx sdk.Context, sender string) error {
+	addr, err := sdk.AccAddressFromBech32(sender)
+	if err != nil {
+		return err
+	}
+	if server.Keeper.contractKeeper == nil {
+		return errors.Wrap(types.ErrUnauthorized, "no contract keeper configured")
+	}
+	if !server.Keeper.contractKeeper.HasContractInfo(ctx, addr) {
+		return errors.Wrapf(types.ErrUnauthorized, "sender %s is not a contract", sender)
+	}
+	return nil
+}
+
 func (server msgServer) CreateDenom(goCtx context.Context, msg *types.MsgCreateDenom) (*types.MsgCreateDenomResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	if err := server.assertContractSender(ctx, msg.Sender); err != nil {
+		return nil, err
+	}
 
 	denom, err := server.Keeper.CreateDenom(ctx, msg.Id, msg.Sender)
 	if err != nil {
@@ -52,6 +80,10 @@ func (server msgServer) CreateDenom(goCtx context.Context, msg *types.MsgCreateD
 func (server msgServer) MintTokens(goCtx context.Context, msg *types.MsgMintTokens) (*types.MsgMintTokensResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
+	if err := server.assertContractSender(ctx, msg.Sender); err != nil {
+		return nil, err
+	}
+
 	admin, err := server.Keeper.GetAdmin(ctx, msg.Amount.GetDenom())
 	if err != nil {
 		return nil, err
@@ -80,6 +112,10 @@ func (server msgServer) MintTokens(goCtx context.Context, msg *types.MsgMintToke
 func (server msgServer) BurnTokens(goCtx context.Context, msg *types.MsgBurnTokens) (*types.MsgBurnTokensResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
+	if err := server.assertContractSender(ctx, msg.Sender); err != nil {
+		return nil, err
+	}
+
 	admin, err := server.Keeper.GetAdmin(ctx, msg.Amount.GetDenom())
 	if err != nil {
 		return nil, err
@@ -107,6 +143,11 @@ func (server msgServer) BurnTokens(goCtx context.Context, msg *types.MsgBurnToke
 
 func (server msgServer) ChangeDenomAdmin(goCtx context.Context, msg *types.MsgChangeDenomAdmin) (*types.MsgChangeDenomAdminResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	if err := server.assertContractSender(ctx, msg.Sender); err != nil {
+		return nil, err
+	}
+
 	admin, err := server.Keeper.GetAdmin(ctx, msg.Denom)
 	if err != nil {
 		return nil, err

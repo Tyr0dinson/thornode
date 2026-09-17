@@ -418,6 +418,9 @@ func NewChainApp(
 		runtime.NewKVStoreService(keys[denomtypes.StoreKey]),
 		app.AccountKeeper,
 		app.BankKeeper.WithMintCoinsRestriction(denomtypes.NewDenomMintCoinsRestriction()),
+		// x/denom Msgs are only valid when dispatched by an approved CosmWasm
+		// contract, which the Msg server verifies with the wasm keeper.
+		&app.WasmKeeper,
 		authtypes.NewModuleAddress(thorchain.ModuleName).String(),
 	)
 

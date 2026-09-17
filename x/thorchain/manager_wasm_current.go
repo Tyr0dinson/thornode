@@ -145,6 +145,11 @@ func (m WasmMgr) InstantiateContract2(
 	)
 }
 
+// HasContract returns true if addr is an instantiated wasm contract.
+func (m WasmMgr) HasContract(ctx cosmos.Context, addr cosmos.AccAddress) bool {
+	return m.wasmKeeper.HasContractInfo(ctx, addr)
+}
+
 func (m WasmMgr) ExecuteContract(
 	ctx cosmos.Context,
 	contractAddress, caller sdk.AccAddress,

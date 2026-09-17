@@ -20,8 +20,9 @@ import (
 )
 
 const (
-	ContextKeyTxMemo   = "tx_memo"
-	ActiveNodePriority = int64(math.MaxInt64)
+	ContextKeyTxMemo    = "tx_memo"
+	ContextKeyTxSigners = "tx_signers"
+	ActiveNodePriority  = int64(math.MaxInt64)
 )
 
 type AnteDecorator struct {
@@ -52,6 +53,15 @@ func (ad AnteDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool, ne
 		ctx = ctx.WithValue(ContextKeyTxMemo, mTx.GetMemo())
 	}
 
+	// Record who signs the transaction body, so that handlers can tell a
+	// directly signed message - one this ante handler has seen and gated - from
+	// a message dispatched internally, which never passes through here.
+	signers, err := txSigners(tx)
+	if err != nil {
+		return ctx, err
+	}
+	ctx = ctx.WithValue(ContextKeyTxSigners, signers)
+
 	// run the message-specific ante for each msg, all must succeed
 	version, _ := ad.keeper.GetVersionWithCtx(ctx)
 	for _, msg := range tx.GetMsgs() {
@@ -62,6 +72,58 @@ func (ad AnteDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool, ne
 	}
 
 	return next(newCtx, tx, simulate)
+}
+
+// txSigners returns the set of addresses required to sign the transaction body,
+// keyed by their raw bytes. The bech32 form is deliberately not used: signer
+// bytes come straight off the wire here, before any signature has been checked,
+// and AccAddress.String() would both feed them to the SDK's global address
+// cache and panic on anything it cannot encode.
+func txSigners(tx sdk.Tx) (map[string]struct{}, error) {
+	sigTx, ok := tx.(authsigning.SigVerifiableTx)
+	if !ok {
+		return nil, cosmos.ErrUnknownRequest("invalid transaction type")
+	}
+	signers, err := sigTx.GetSigners()
+	if err != nil {
+		return nil, err
+	}
+	set := make(map[string]struct{}, len(signers))
+	for _, signer := range signers {
+		set[string(signer)] = struct{}{}
+	}
+	return set, nil
+}
+
+// TxSignedBy reports whether addr signs the transaction body currently being
+// executed. Messages dispatched from inside another message - by a CosmWasm
+// contract, or by any message router that executes a message on behalf of its
+// signer - are not signed by their sender and return false.
+//
+// The signer set is recorded by the ante handler, so a context that carries none
+// never ran one. There is nothing to check against, and every address is taken
+// to be a signer. Note this includes BeginBlock and EndBlock, which therefore
+// return true rather than false. The paths relying on that fallback are:
+//
+//   - InitGenesis, and the unit and regression tests that build a context
+//     directly instead of executing a transaction;
+//   - the block lifecycle, notably the contract executions driven by the
+//     x/scheduler EndBlocker. Nothing there dispatches a MsgSend from an address
+//     that is not itself the executing contract, and contracts are checked by
+//     ownership rather than by signature in MsgSendValidate. The deposit memo is
+//     recorded by this same ante handler, so a send that reaches getDeposit from
+//     a block hook carries no memo to execute either.
+//
+// TODO: marking trusted internal contexts explicitly would be a safer default
+// than reading a missing signer set as authorization, and would let the block
+// lifecycle be denied rather than exempted.
+func TxSignedBy(ctx cosmos.Context, addr cosmos.AccAddress) bool {
+	signers, ok := ctx.Context().Value(ContextKeyTxSigners).(map[string]struct{})
+	if !ok {
+		return true
+	}
+	_, found := signers[string(addr)]
+	return found
 }
 
 // rejectInvalidSigners reject txs if they are signed with secp256r1 keys
