@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"cosmossdk.io/store/rootmulti"
+	"github.com/cosmos/cosmos-sdk/store/v2/rootmulti"
 
 	tssMessages "gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
 	"gitlab.com/thorchain/thornode/v3/common"

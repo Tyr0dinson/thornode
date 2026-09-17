@@ -124,6 +124,7 @@ require (
 
 require (
 	cosmossdk.io/collections v1.4.0
+	cosmossdk.io/store v1.1.0
 	github.com/blinklabs-io/gouroboros v0.157.0
 	github.com/btcsuite/btcd/btcutil v1.1.6
 	github.com/coder/websocket v1.8.13
@@ -136,6 +137,7 @@ require github.com/decred/dcrd/dcrec/secp256k1/v2 v2.0.0 // indirect
 require (
 	cel.dev/expr v0.25.2 // indirect
 	cloud.google.com/go/monitoring v1.29.0 // indirect
+	cosmossdk.io/log v1.4.0 // indirect
 	cosmossdk.io/schema v1.1.0 // indirect
 	filippo.io/bigmod v0.1.1-0.20260103110540-f8a47775ebe5 // indirect
 	filippo.io/keygen v0.0.0-20260114151900-8e2790ea4c5b // indirect

@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	storetypes "cosmossdk.io/store/types"
+	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	gometrics "github.com/hashicorp/go-metrics"
 

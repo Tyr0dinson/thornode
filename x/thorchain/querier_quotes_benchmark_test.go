@@ -73,7 +73,7 @@ func setupBenchmarkManagerWith(b testing.TB, bootstrapValidator bool) (cosmos.Co
 	keyWasm := cosmos.NewKVStoreKey(wasmtypes.StoreKey)
 
 	db := dbm.NewMemDB()
-	ms := store.NewCommitMultiStore(db, sdklog.NewNopLogger(), storemetrics.NewNoOpMetrics())
+	ms := store.NewCommitMultiStore(db, sdklog.NewNopLogger())
 	// nil db: rootmulti prefixes its own db per store. Handing every store the
 	// same raw memdb makes their IAVL versions collide, so Commit() panics and
 	// the fixture can never be measured on a committed tree.
@@ -87,7 +87,7 @@ func setupBenchmarkManagerWith(b testing.TB, bootstrapValidator bool) (cosmos.Co
 		b.Fatal(err)
 	}
 
-	ctx := cosmos.NewContext(ms.CacheMultiStore(), tmproto.Header{ChainID: "thorchain"}, false, logger())
+	ctx := cosmos.NewContext(ms, tmproto.Header{ChainID: "thorchain"}, false, logger())
 	ctx = ctx.WithBlockHeight(1000000) // Use high block height for benchmarking
 	ctx = ctx.WithBlockTime(time.Now())
 
