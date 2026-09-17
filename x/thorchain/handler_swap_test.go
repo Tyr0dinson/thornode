@@ -62,6 +62,28 @@ func (s *HandlerSwapSuite) TestValidate(c *C) {
 	c.Assert(err, NotNil)
 }
 
+func (s *HandlerSwapSuite) TestTradingHaltAllowsOnlyInternalMempoolRollback(c *C) {
+	for _, halt := range []string{"Ragnarok", constants.MimirKeyHaltTradingGlobal, "HaltBTCTrading", "HaltBTCChain"} {
+		ctx, mgr, fixture := setupMempoolSwapLifecycleFixture(c)
+		ctx = withMempoolSwapExecutionIdentity(ctx, fixture.msg.Tx.ID, fixture.msg.Index)
+		if halt == "Ragnarok" {
+			mgr.Keeper().SetRagnarokBlockHeight(ctx, 1)
+		} else {
+			mgr.Keeper().SetMimir(ctx, halt, ctx.BlockHeight())
+		}
+		handler := NewSwapHandler(mgr)
+		c.Assert(mgr.Keeper().IsTradingHalt(ctx, &fixture.msg), Equals, true)
+		c.Check(handler.validate(ctx, fixture.msg), ErrorMatches, "trading is halted, can't process swap", Commentf("halt=%s", halt))
+		speculativeCtx := withMempoolSwapExecutionMode(ctx, mempoolSwapExecutionSpeculative)
+		c.Check(handler.validate(speculativeCtx, fixture.msg), ErrorMatches, "trading is halted, can't process swap", Commentf("halt=%s", halt))
+
+		rollbackCtx := withMempoolSwapExecutionMode(ctx, mempoolSwapExecutionRollback)
+		c.Check(handler.validate(rollbackCtx, fixture.msg), IsNil, Commentf("halt=%s", halt))
+		// The internal mode bypasses the halt, not ordinary message validation.
+		c.Check(handler.validate(rollbackCtx, MsgSwap{}), NotNil)
+	}
+}
+
 type TestSwapHandleKeeper struct {
 	keeper.KVStoreDummy
 	pools             map[common.Asset]Pool

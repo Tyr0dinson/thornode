@@ -125,7 +125,10 @@ func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 		}
 	}
 
-	if h.mgr.Keeper().IsTradingHalt(ctx, &msg) {
+	// Internal rollback must unwind speculative pool changes even while trading
+	// is halted, including during Ragnarok. Only the trusted rollback caller
+	// sets this context mode; normal and speculative swaps still obey the halt.
+	if getMempoolSwapExecutionMode(ctx) != mempoolSwapExecutionRollback && h.mgr.Keeper().IsTradingHalt(ctx, &msg) {
 		return errors.New("trading is halted, can't process swap")
 	}
 

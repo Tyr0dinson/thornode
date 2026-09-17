@@ -165,6 +165,73 @@ func (s *MempoolSwapLifecycleIntegrationSuite) TestRagnarokDrainsQueueOnlyLifecy
 	c.Check(nth, Equals, int64(1))
 }
 
+func (s *MempoolSwapLifecycleIntegrationSuite) TestRagnarokDrainsExecutedCrossAssetLifecycle(c *C) {
+	for _, retry := range []bool{false, true} {
+		ctx, mgr, fixture := setupMempoolSwapLifecycleFixture(c)
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, GetRandomValidatorNode(NodeActive)), IsNil)
+		targetPool := fixture.sourcePool
+		targetPool.Asset = common.ETHAsset
+		c.Assert(mgr.Keeper().SetPool(ctx, targetPool), IsNil)
+
+		msg := fixture.msg
+		msg.TargetAsset = common.ETHAsset
+		msg.Destination = GetRandomETHAddress()
+		msg.Tx.Memo = fmt.Sprintf("=:ETH.ETH:%s:0/1/2", msg.Destination)
+		fixture.voter.Tx.Tx = msg.Tx
+		mgr.Keeper().SetObservedTxInVoter(ctx, fixture.voter)
+		record := newMempoolSwapLifecycle(ctx, mgr.Keeper(), fixture.voter, msg, fixture.reservedTOR)
+		c.Assert(mgr.Keeper().SetMempoolSwap(ctx, record), IsNil)
+		c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, msg), IsNil)
+
+		// Execute one real queue slice, leaving pool effects that require an
+		// ETH->BTC internal swap to unwind when shutdown begins.
+		c.Assert(mgr.AdvSwapQueueMgr().EndBlock(ctx, mgr, false), IsNil)
+		record, found, err := mgr.Keeper().GetMempoolSwap(ctx, msg.Tx.ID, msg.Index)
+		c.Assert(err, IsNil)
+		c.Assert(found, Equals, true)
+		c.Assert(record.Status, Equals, types.MempoolSwapStatus_EXECUTING)
+		c.Assert(record.PendingEffects.Pools, HasLen, 2)
+		c.Assert(record.LatestSwap.State.Out.IsZero(), Equals, false)
+
+		if retry {
+			// A previous failed drain leaves this status for the recovery worker.
+			record.Status = types.MempoolSwapStatus_ROLLBACK_PENDING
+			record.NextRecoveryHeight = ctx.BlockHeight()
+			c.Assert(mgr.Keeper().SetMempoolSwap(ctx, record), IsNil)
+		}
+		mgr.Keeper().SetRagnarokBlockHeight(ctx, 1)
+		mgr.Keeper().SetRagnarokNth(ctx, 0)
+		validatorMgr := newValidatorMgr(mgr.Keeper(), mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+		c.Assert(mgr.Keeper().IsTradingHalt(ctx, &msg), Equals, true)
+		c.Assert(validatorMgr.processRagnarok(ctx, mgr), IsNil, Commentf("retry=%t", retry))
+		nth, err := mgr.Keeper().GetRagnarokNth(ctx)
+		c.Assert(err, IsNil)
+		c.Check(nth, Equals, int64(0), Commentf("the drain block must not advance Ragnarok"))
+		if retry {
+			c.Assert(mgr.Keeper().HasMempoolSwap(ctx, msg.Tx.ID, msg.Index), Equals, true)
+			slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+			c.Assert(slasher.recoverDueMempoolSwaps(ctx, mgr, 10, 100), IsNil)
+		}
+
+		c.Check(mgr.Keeper().HasMempoolSwap(ctx, msg.Tx.ID, msg.Index), Equals, false)
+		c.Check(mgr.Keeper().HasAdvSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index)), Equals, false)
+		c.Check(mgr.Keeper().GetMempoolSwapCount(ctx).IsZero(), Equals, true)
+		c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true)
+		for _, asset := range []common.Asset{common.BTCAsset, common.ETHAsset} {
+			_, hasOwner, ownerErr := mgr.Keeper().GetMempoolSwapPoolOwner(ctx, asset)
+			c.Assert(ownerErr, IsNil)
+			c.Check(hasOwner, Equals, false)
+		}
+
+		// Stage two can begin on the next pass, with trading still halted.
+		c.Assert(validatorMgr.processRagnarok(ctx, mgr), IsNil)
+		nth, err = mgr.Keeper().GetRagnarokNth(ctx)
+		c.Assert(err, IsNil)
+		c.Check(nth, Equals, int64(1))
+		c.Check(mgr.Keeper().IsTradingHalt(ctx, &msg), Equals, true)
+	}
+}
+
 // setupMempoolSwapLifecycleFixture creates one admitted, unexecuted BTC->RUNE
 // mempool swap. The queue entry is deliberately present alongside the durable
 // lifecycle record so each test can remove or advance whichever representation
