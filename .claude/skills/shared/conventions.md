@@ -29,11 +29,12 @@ All live in `.claude/skills/health/` and `.claude/skills/tc-debug/`, paths relat
 | `health/extract_vault_balances.py <chain> [status]` | Per-chain vault balances as JSON for the solvency check                      |
 | `health/check_solvency.py <chain>`                  | Vault accounting vs L1 balance at 1e8                                        |
 | `health/check_bifrost.py [count] [timeout]`         | Bifrost scanner lag from `/status/scanner`; reads `/tmp/tc_active_ips.json`  |
+| `health/fetch_logs.py <start> <end> [level] [mod]`  | `/thorchain/logs` over a block range, as JSONL on stdout                     |
 | `tc-debug/classify_input.py <input>`                | tx hash / vault / address / description, with chain hint                     |
 | `tc-debug/discover_loki.py [addr]`                  | Loki job labels, cached to `/tmp/tc_loki_jobs.json`                          |
 | `tc-debug/parse_tx_status.py [height]`              | `/thorchain/tx/status` to phase + stuck verdict (stdin)                      |
 
-All read stdin from `curl` except `classify_input.py` and `discover_loki.py`, which take their argument on the command line.
+All read stdin from `curl` except `classify_input.py`, `discover_loki.py`, and `fetch_logs.py`, which take their arguments on the command line.
 
 ## Naming and units
 

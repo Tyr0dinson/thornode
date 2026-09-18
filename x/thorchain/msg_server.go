@@ -139,7 +139,8 @@ func (ms msgServer) RejectUpgrade(goCtx context.Context, msg *types.MsgRejectUpg
 
 func externalHandler(goCtx context.Context, handler MsgHandler, msg sdk.Msg) (_ *types.MsgEmpty, err error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
-	ctx = ctx.WithLogger(ctx.Logger().With("height", ctx.BlockHeight()))
+	// block log capture is already on the logger (ante handler); tag the module
+	ctx = ctx.WithLogger(ctx.Logger().With("module", "x/"+ModuleName, "height", ctx.BlockHeight()))
 
 	defer func() {
 		if r := recover(); r != nil {

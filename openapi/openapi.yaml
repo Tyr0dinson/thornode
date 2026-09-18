@@ -857,6 +857,65 @@ paths:
                 type: boolean
                 example: false
 
+  /thorchain/logs:
+    parameters:
+      - name: start
+        in: query
+        description: first block height to include, defaults to the last block capture closed
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+      - name: end
+        in: query
+        description: last block height to include, defaults to the last block capture closed
+        required: false
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+      - name: level
+        in: query
+        description: lowest log level to include, along with every more severe level, defaults to info
+        required: false
+        schema:
+          type: string
+          enum: [debug, info, warn, error]
+      - name: modules
+        in: query
+        description: modules to include, repeat the parameter for more than one (x/thorchain, x/bank, x/wasm, x/upgrade, ...), defaults to x/thorchain, pass * for every module
+        required: false
+        schema:
+          type: array
+          items:
+            type: string
+    get:
+      description: |
+        Returns the module log lines this node captured while executing the
+        requested blocks. Node-local, never consensus data, and only available when
+        the operator has set thor.api.logs.retain_blocks above zero. start and end
+        default to the last block capture closed, which this route reads from the
+        capture store rather than from consensus, so it can briefly trail the last
+        committed height; both are clamped to the blocks still on disk, so a range outside that window returns an empty array rather than an
+        error. A block can be absent for three reasons: it fell out of
+        retain_blocks, it was dropped oldest-first to keep the log directory under
+        its 1 GiB ceiling, or writing it failed and the rest of that block was
+        skipped. An empty result therefore does not mean the node logged nothing at
+        that level. Unauthenticated like every other endpoint here.
+      operationId: logs
+      tags:
+        - Network
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LogEntry"
+
   /thorchain/ban/{address}:
     parameters:
       - $ref: "#/components/parameters/queryHeight"
@@ -2051,6 +2110,35 @@ components:
   # ------------------------------ schemas ------------------------------
 
   schemas:
+    LogEntry:
+      type: object
+      required:
+        - height
+        - time
+        - level
+        - module
+        - msg
+        - fields
+      properties:
+        height:
+          type: integer
+          format: int64
+          description: block height the line was emitted during
+        time:
+          type: string
+          description: RFC3339 wall-clock time on this node
+        level:
+          type: string
+          enum: [debug, info, warn, error]
+        module:
+          type: string
+          description: module that emitted the line (x/thorchain, x/bank, x/wasm, ...)
+        msg:
+          type: string
+        fields:
+          type: object
+          additionalProperties: true
+          description: structured key/value context attached to the line
     Pool:
       type: object
       required:

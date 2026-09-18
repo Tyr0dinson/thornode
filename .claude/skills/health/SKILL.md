@@ -16,11 +16,41 @@ Shared conventions (endpoints, scripts, node/vault naming, units, Loki rules, ha
 
 ## Procedure
 
-### 0. Loki
+### 0. Logs
 
-Check for `logcli`. If found, ask user via AskUserQuestion. If yes: verify localhost:3100, pick **one** validator job (avoid duplicates). Query 72h+.
+Two sources, in order. Loki is preferred: it has bifrost logs and weeks of history. `/thorchain/logs` is the fallback and only ever has thornode module lines.
 
-Apply the Loki rules from the shared conventions (sanitise identifiers, `(?i)` everywhere, `--limit` is a sample).
+**a) Loki**: check for `logcli`. If found, ask user via AskUserQuestion. If yes: verify localhost:3100, pick **one** validator job (avoid duplicates). Query 72h+. Apply the Loki rules from the shared conventions (sanitise identifiers, `(?i)` everywhere, `--limit` is a sample). Skip (b) once Loki is working.
+
+**b) `/thorchain/logs`** (when `logcli` is absent, declined, or Loki is unreachable). Probe it:
+
+```bash
+curl -s "$API/thorchain/logs?level=error"
+```
+
+Three outcomes:
+
+- JSON array → available. Use `fetch_logs.py` for everything below.
+- `400` with `block log capture is disabled` → the node has the endpoint but the operator left `thor.api.logs.retain_blocks: 0`. Ask via AskUserQuestion whether the user has another node URL with it enabled; if not, proceed without logs.
+- 404 / unknown query path → the node predates the endpoint. Same AskUserQuestion, same fallback.
+
+If neither source is available, run the whole check without logs and say so in the report — do not silently skip log-dependent steps.
+
+**Using `/thorchain/logs`**:
+
+```bash
+export THOR_API='https://gateway.liquify.com/chain/thorchain_api'
+python3 .claude/skills/health/fetch_logs.py $((H-2000)) "$H" info > /tmp/tc_logs.jsonl
+```
+
+- **Retention is blocks, not time.** `start`/`end` default to the last block capture closed (which can trail the last committed height slightly) and are clamped to the blocks still on disk. `fetch_logs.py` prints the oldest height actually returned to stderr — report coverage as "thornode logs cover blocks X–Y (~N h at 6s blocks)", never "72h".
+- **A block can be missing for three reasons**: it fell out of `retain_blocks`, it was dropped to keep the log directory under its 1 GiB ceiling, or capture was cut short for that block. An empty result is _not_ proof the node logged nothing at that level — say "no lines retained", not "no such events".
+- **Status codes**: `400` means the request is wrong (bad `start`/`end` — `0` and non-integers are rejected — reversed range, unknown level, or a range too wide). `503` means both read slots are busy: retry, do not treat it as fatal. `500` means the node could not read one of its own block files: retry the identical request, and report it as a node problem if it persists. `fetch_logs.py` splits wide ranges and backs off on 503.
+- **No LogQL.** Filter the JSONL with `jq`/`grep`. Entries are `{height, time, level, module, msg, fields}`; `fields` is a flat map of the line's key/value context.
+- **Search `fields`, not just `msg`.** Chain names and mimir keys live in `.fields.key`, `.fields.chain`, etc. A `msg`-only grep misses them.
+- **No bifrost logs.** Any step below marked bifrost is Loki-only.
+- `.time` is RFC3339 per entry, so "Set At"/"Duration" can come straight off the line instead of block arithmetic.
+- **Not line-limited.** The endpoint returns every retained line in the range, so the shared `--limit` caveat does not apply — label counts "of retained window" and state the block range. It carries no Kubernetes identifiers either, so there is nothing to redact.
 
 ### 1. Height + Version
 
@@ -64,6 +94,21 @@ Apply the Loki rules from the shared conventions (sanitise identifiers, `(?i)` e
 
    **Always use `(?i)` (case-insensitive) for chain names and mimir keywords** — log output can mix upper/lowercase depending on the code path that emitted the event. A case-sensitive query will silently miss events.
 
+   **API equivalent** (when using `/thorchain/logs` instead). Mimir votes are logged as `handleMsgMimir request` with the key in `.fields.key`, not in `msg` — grep the whole entry, not the message:
+
+   ```bash
+   # broad sweep: anything mimir/router/upgrade shaped, key and value included
+   jq -c 'select((.msg + " " + (.fields|tostring)) | test("mimir|router|upgrade|halt|solvency";"i"))' /tmp/tc_logs.jsonl
+
+   # chain-specific, after reviewing the sweep
+   jq -c 'select((.msg + " " + (.fields|tostring)) | test("<CHAIN>";"i"))' /tmp/tc_logs.jsonl
+
+   # who voted what, and when
+   jq -r 'select(.msg=="handleMsgMimir request") | [.time, .height, .fields.node, .fields.key, .fields.value] | @tsv' /tmp/tc_logs.jsonl
+   ```
+
+   Router upgrade activity also shows up as `new router already set` / `fail to upgrade contract` with `.fields.chain`. Use `.time` for the "Set At" column.
+
 4. **Classify the halt**:
 
    - **Planned router upgrade**: `Halt{CHAIN}Trading=1` + `StopSolvencyCheck{CHAIN}=1` + `MimirUpgradeContract{CHAIN}` votes present → standard router upgrade playbook. Do not misclassify as an incident.
@@ -82,7 +127,7 @@ Search GitLab: `glab issue list -s opened -P 30 | grep -i <CHAIN>`, `glab mr lis
 
 **True age lookup (MANDATORY for EVERY non-MIGRATE queued item)**: The `height` field on queued outbound items is the **latest retry height**, NOT when the outbound was originally scheduled. For EVERY non-MIGRATE outbound item, look up `/thorchain/tx/details/{in_hash}` and read the `outbound_height` field to determine the true age. Compare `outbound_height` to `CURRENT_HEIGHT` — if the difference is more than ~100 blocks, the outbound is stuck. Never dismiss an outbound as "in-flight" or "recent" based solely on the queue `height` field.
 
-**Bifrost log investigation (MANDATORY for stuck outbounds)**: For every stuck outbound, search ALL available bifrost Loki jobs for errors related to the chain and/or the specific transaction:
+**Bifrost log investigation (MANDATORY for stuck outbounds, Loki only)**: `/thorchain/logs` has no bifrost lines. Without Loki, write "bifrost logs unavailable (no Loki)" in the Likely Cause column rather than omitting the row or guessing. With Loki, search ALL available bifrost jobs for errors related to the chain and/or the specific transaction:
 
 ```logql
 {job="<bifrost_job>"} |~ "(?i)<CHAIN>.*(error|fail|timeout|reject)"
@@ -144,9 +189,18 @@ A deficit on one busy vault that other vaults on the same chain do not show is u
 
 **RUNE price**: `rune_price_in_tor` from `/thorchain/network` is in **1e8 base units** (like all THORChain amounts). Divide by 1e8 to get the USD price. Example: `rune_price_in_tor: 41001823` → $0.41, NOT $4.10.
 
-### 10. Keysign Blame (Loki)
+### 10. Keysign Blame
 
-Single thornode job, 72h+, `--limit=2000` or more, resolve via `/tmp/tc_pubkey_map.json`. Group by node and operator. Report counts as "of sample" with the sample size.
+**Loki**: single thornode job, 72h+, `--limit=2000` or more, resolve via `/tmp/tc_pubkey_map.json`. Group by node and operator. Report counts as "of sample" with the sample size.
+
+**API**: the same lines are in `/thorchain/logs`. `.fields.blame` is `Blame.String()` — a multi-line string with `Node: <pubkey>` per blamed node, so pull pubkeys with a regex, not a field access:
+
+```bash
+jq -r 'select(.msg=="handle MsgTssKeysignFail request") | .fields.blame' /tmp/tc_logs.jsonl \
+  | grep -oE 'thorpub[0-9a-z]+' | sort | uniq -c | sort -rn
+```
+
+Resolve each pubkey via `/tmp/tc_pubkey_map.json` to `op:addr`. Percentages here are "of retained window" — state the block range covered, not a 72h claim.
 
 ### 11. Releases
 
@@ -207,7 +261,9 @@ Only include sections with findings. Healthy = say so briefly.
 
 | ID | Title | Status | Relevance |
 
-### Loki
+### Logs
 
 | Source | Finding |
+
+State which source was used and its coverage, e.g. "thornode logs (node-local, blocks 1234000–1236000)" or "thornode logs (Loki, 72h)". If no log source was available, say so instead of dropping the section.
 ```

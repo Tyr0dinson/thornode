@@ -176,7 +176,7 @@ func (am AppModule) RegisterServices(cfg module.Configurator) {
 // BeginBlock called when a block get proposed
 func (am AppModule) BeginBlock(goCtx context.Context) error {
 	ctx := sdk.UnwrapSDKContext(goCtx)
-	ctx = ctx.WithLogger(ctx.Logger().With("height", ctx.BlockHeight()))
+	ctx = ctx.WithLogger(ctx.Logger().With("module", "x/"+ModuleName, "height", ctx.BlockHeight()))
 
 	votes := ctx.CometInfo().GetLastCommit().Votes()
 	var existingValidators []string
@@ -224,7 +224,7 @@ func (am AppModule) BeginBlock(goCtx context.Context) error {
 // EndBlock called when a block get committed
 func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
-	ctx = ctx.WithLogger(ctx.Logger().With("height", ctx.BlockHeight()))
+	ctx = ctx.WithLogger(ctx.Logger().With("module", "x/"+ModuleName, "height", ctx.BlockHeight()))
 
 	ctx.Logger().Debug("End Block")
 
