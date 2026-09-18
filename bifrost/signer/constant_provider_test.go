@@ -196,3 +196,42 @@ func (s *ConstantsProviderSuite) TestEnsureConstants_Concurrent(c *C) {
 	}
 	wg.Wait()
 }
+
+func (s *ConstantsProviderSuite) TestGetInt64Value_ConcurrentRefresh(c *C) {
+	// Exercise concurrent first use and refresh of an expired cache.
+	for _, cachedHeight := range []int64{0, 100} {
+		bridge := &mockBridgeConstants{
+			constants: map[string]int64{
+				constants.SigningTransactionPeriod.String(): 300,
+				constants.ChurnInterval.String():            100,
+			},
+		}
+		cp := NewConstantsProvider(bridge)
+		if cachedHeight != 0 {
+			c.Assert(cp.EnsureConstants(cachedHeight), IsNil)
+		}
+
+		type result struct {
+			value int64
+			err   error
+		}
+		const workers = 32
+		start := make(chan struct{})
+		results := make(chan result, workers)
+		for i := 0; i < workers; i++ {
+			go func() {
+				<-start
+				value, err := cp.GetInt64Value(200, constants.SigningTransactionPeriod)
+				results <- result{value: value, err: err}
+			}()
+		}
+		close(start)
+
+		for i := 0; i < workers; i++ {
+			got := <-results
+			c.Check(got.err, IsNil)
+			c.Check(got.value, Equals, int64(300))
+		}
+		c.Assert(cp.requestHeight, Equals, int64(200))
+	}
+}
