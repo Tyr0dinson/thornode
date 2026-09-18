@@ -10,6 +10,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/runtime"
 	"github.com/cosmos/cosmos-sdk/telemetry"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 
@@ -95,7 +96,7 @@ const (
 	prefixChainContract             types.DbPrefix = "chain_contract/"
 	prefixSolvencyVoter             types.DbPrefix = "solvency_voter/"
 	prefixTHORName                  types.DbPrefix = "thorname/"
-	prefixAffiliateCollector        types.DbPrefix = "affcol/"
+	prefixAffiliateCollector        types.DbPrefix = "affcol_name/"
 	prefixAffiliateLiquidityFee     types.DbPrefix = "affiliate_liquidity_fee/"
 	prefixReferenceMemo             types.DbPrefix = "refm/"
 	prefixReferenceMemoIndex        types.DbPrefix = "refmi/"
@@ -530,6 +531,22 @@ func (k KVStore) GetModuleAddress(module string) (common.Address, error) {
 
 func (k KVStore) GetModuleAccAddress(module string) cosmos.AccAddress {
 	return k.accountKeeper.GetModuleAddress(module)
+}
+
+// IsModuleAccount includes configured modules whose accounts are not yet created.
+func (k KVStore) IsModuleAccount(ctx cosmos.Context, addr cosmos.AccAddress) bool {
+	if addr.Empty() {
+		return false
+	}
+	// This loop and the methods it calls perform no gas-metered operations.
+	// analyze-ignore(map-iteration) - membership only; order cannot change the result or gas usage.
+	for _, permissions := range k.accountKeeper.GetModulePermissions() {
+		if permissions.GetAddress().Equals(addr) {
+			return true
+		}
+	}
+	_, module := k.accountKeeper.GetAccount(ctx, addr).(sdk.ModuleAccountI)
+	return module
 }
 
 func (k KVStore) GetBalance(ctx cosmos.Context, addr cosmos.AccAddress) cosmos.Coins {

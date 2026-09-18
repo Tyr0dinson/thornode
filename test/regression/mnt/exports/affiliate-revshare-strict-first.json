@@ -353,12 +353,12 @@
       ],
       "affiliate_collectors": [
         {
-          "owner_address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
-          "rune_amount": "452273578"
+          "name": "a",
+          "rune_amount": "247739888"
         },
         {
-          "owner_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
-          "rune_amount": "247739888"
+          "name": "b",
+          "rune_amount": "452273578"
         }
       ],
       "bond_providers": [

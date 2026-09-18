@@ -250,6 +250,9 @@ func AffilliateCollectorInvariant(k KVStore) common.Invariant {
 
 		totalAffRune := cosmos.ZeroUint()
 		for _, ac := range affCols {
+			if ac.Name == "" {
+				return []string{"affiliate collector THORName cannot be empty"}, true
+			}
 			totalAffRune = totalAffRune.Add(ac.RuneAmount)
 		}
 

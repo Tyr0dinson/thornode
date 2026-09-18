@@ -233,7 +233,9 @@ func seedTelemetryState(b testing.TB, ctx cosmos.Context, mgr *Mgrs) {
 		})
 	}
 	for i := 0; i < benchAffiliates; i++ {
-		k.SetAffiliateCollector(ctx, AffiliateFeeCollector{OwnerAddress: GetRandomBech32Addr(), RuneAmount: cosmos.NewUint(uint64(i + 1))})
+		if err := k.SetAffiliateCollector(ctx, AffiliateFeeCollector{Name: fmt.Sprintf("affiliate%d", i), RuneAmount: cosmos.NewUint(uint64(i + 1))}); err != nil {
+			b.Fatalf("set affiliate collector %d: %v", i, err)
+		}
 	}
 	for i := 0; i < benchCredits; i++ {
 		if err := k.SetStableReserveCredit(ctx, assets[i%len(assets)], GetRandomETHAddress(), cosmos.NewUint(uint64(i+1)*common.One)); err != nil {

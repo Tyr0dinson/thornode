@@ -718,7 +718,7 @@ func (s *HelperBondYieldSuite) TestBondYieldPreferredAssetPayoutUsesAffiliateCol
 	err := payBondYield(ctx, mgr, common.Tx{}, &nodeAcc, provider, amount)
 	c.Assert(err, IsNil)
 
-	collector, err := k.GetAffiliateCollector(ctx, providerAcc)
+	collector, err := k.GetAffiliateCollector(ctx, tn.Name)
 	c.Assert(err, IsNil)
 	c.Check(collector.RuneAmount.Equal(amount), Equals, true)
 	c.Check(k.GetRuneBalanceOfModule(ctx, AffiliateCollectorName).Equal(amount), Equals, true)

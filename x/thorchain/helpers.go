@@ -3,6 +3,7 @@ package thorchain
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -1882,6 +1883,12 @@ func getLastChurnHeight(ctx cosmos.Context, k keeper.Keeper) int64 {
 // - Removing the swap from advanced queue and indexes
 // - Emitting appropriate events
 func settleSwap(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason string) error {
+	// Skip collector swaps that have already left the queue so repeated settlement
+	// cannot deliver their output or restore their unused RUNE twice.
+	if (affiliateCollectorConversionName(mgr.Keeper(), msg) != "" || isPreferredAssetCollectorSwap(mgr.Keeper(), msg)) &&
+		!mgr.Keeper().HasAdvSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index)) {
+		return nil
+	}
 	// Settle swap mutates multiple pieces of state (scheduled outbounds, refunds,
 	// queue removal, events). Run it in a cache context so partial failures do not
 	// leave committed side effects that can be duplicated on retry.
@@ -1894,6 +1901,35 @@ func settleSwap(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason strin
 }
 
 func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason string) error {
+	// Deliver accumulated collector output and credit any converted RUNE in the
+	// same cached context as queue removal, so failed settlement can be retried.
+	collectorConversion := affiliateCollectorConversionName(mgr.Keeper(), msg) != ""
+	collectorPayout := isPreferredAssetCollectorSwap(mgr.Keeper(), msg)
+	if !msg.State.Out.IsZero() && (collectorConversion || collectorPayout) {
+		if err := deliverAffiliateCollectorOutput(ctx, mgr, msg, msg.State.Out); err != nil {
+			if !collectorPayout || !errors.Is(err, ErrNotEnoughToPayFee) {
+				return err
+			}
+			// Output below the fee or dust limit cannot be paid. Return it to
+			// the pool through the normal cleanup path, then restore only unused
+			// input below. Keep the queue item if cleanup fails so it can retry.
+			toi := TxOutItem{
+				Chain:     msg.TargetAsset.GetChain(),
+				InHash:    msg.Tx.ID,
+				ToAddress: msg.Destination,
+				Coin:      common.NewCoin(msg.TargetAsset, msg.State.Out),
+			}
+			unrefundableCoinCleanup(ctx, mgr, toi, "failed_outbound")
+			if !mgr.Keeper().HasRefundCleanup(ctx, refundCleanupKey(toi, "failed_outbound")) {
+				return fmt.Errorf("failed to clean up preferred asset payout %s", msg.Tx.ID)
+			}
+			refundReason := fmt.Sprintf("%s; fail to refund (%s): swap output", err, toi.Coin.String())
+			refundTx := common.NewTx(msg.Tx.ID, msg.Tx.FromAddress, msg.Tx.ToAddress, common.NewCoins(toi.Coin), msg.Tx.Gas, msg.Tx.Memo)
+			if emitErr := mgr.EventMgr().EmitEvent(ctx, NewEventRefund(CodeFailAddOutboundTx, refundReason, refundTx, common.Fee{})); emitErr != nil {
+				return emitErr
+			}
+		}
+	}
 	stableReserveInternal, err := isStableReserveInternalSwap(ctx, mgr, msg)
 	if err != nil {
 		return err
@@ -1903,7 +1939,7 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 	// place materializing the final outbound. The advanced swap queue skips
 	// outbound creation during execution and relies on settlement to create the
 	// completed swap outbound, even after multiple sub-swaps have already run.
-	if !msg.State.Out.IsZero() && !stableReserveInternal {
+	if !msg.State.Out.IsZero() && !stableReserveInternal && !collectorConversion && !collectorPayout {
 		// Parse memo to check if this is a savers add
 		memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), msg.Tx.Memo)
 		if err != nil {
@@ -1979,8 +2015,15 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 		}
 	}
 
-	// Refund any remaining deposit
-	if msg.State.Deposit.GT(msg.State.In) {
+	// Return unused payout RUNE to both the module and this THORName's collector.
+	// A normal refund would charge an outbound fee and leave the ledger uncredited.
+	if msg.State.Deposit.GT(msg.State.In) && collectorPayout {
+		if err := restorePreferredAssetCollector(ctx, mgr, msg.Tx.Memo, msg.State.Deposit.Sub(msg.State.In)); err != nil {
+			return err
+		}
+	}
+	// Other swaps refund their remaining deposit through the normal refund path.
+	if msg.State.Deposit.GT(msg.State.In) && !collectorPayout {
 		remainder := common.SafeSub(msg.State.Deposit, msg.State.In)
 		refundCoin := common.NewCoin(msg.Tx.Coins[0].Asset, remainder)
 		refundCoinTx := msg.Tx

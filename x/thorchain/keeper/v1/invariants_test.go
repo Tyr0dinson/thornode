@@ -15,6 +15,21 @@ type InvariantsSuite struct{}
 
 var _ = Suite(&InvariantsSuite{})
 
+func (s *InvariantsSuite) TestAffiliateCollectorInvariantRejectsEmptyTHORName(c *C) {
+	for _, amount := range []uint64{0, 100} {
+		ctx, k := setupKeeperForTest(c)
+		if amount > 0 {
+			FundModule(c, ctx, k, AffiliateCollectorName, amount)
+		}
+		// Bypass the public setter to simulate invalid persisted state. Even a
+		// fully funded unnamed collector must fail the invariant.
+		k.setAffiliateCollector(ctx, k.GetKey(prefixAffiliateCollector, ""), AffiliateFeeCollector{RuneAmount: cosmos.NewUint(amount)})
+		messages, broken := AffilliateCollectorInvariant(k)(ctx)
+		c.Assert(broken, Equals, true)
+		c.Assert(messages, DeepEquals, []string{"affiliate collector THORName cannot be empty"})
+	}
+}
+
 func (s *InvariantsSuite) TestAsgardInvariant(c *C) {
 	ctx, k := setupKeeperForTest(c)
 

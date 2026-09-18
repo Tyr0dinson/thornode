@@ -2387,7 +2387,7 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 
 // processRevShare drains the per-block affiliate liquidity fee accumulator,
 // paying out REVSHARE_bps * accrued / 10_000 from the Reserve to the
-// AffiliateCollector module (credited to the thorname owner's collector entry)
+// AffiliateCollector module (credited to the thorname's collector entry)
 // and emitting a rev_share event per thorname. Returns the total RUNE paid
 // out, which the caller subtracts from systemIncome before splits.
 //
@@ -2421,17 +2421,22 @@ func (vm *NetworkMgr) processRevShare(ctx cosmos.Context, mgr Manager) cosmos.Ui
 		if canPay && bps > 0 {
 			payout = common.GetSafeShare(cosmos.NewUint(uint64(bps)), cosmos.NewUint(10_000), entry.Fee)
 			if !payout.IsZero() {
-				col, _ = vm.k.GetAffiliateCollector(ctx, owner)
-				col.RuneAmount = col.RuneAmount.Add(payout)
-				vm.k.SetAffiliateCollector(ctx, col)
-				if sendErr := vm.k.SendFromModuleToModule(ctx, ReserveName, AffiliateCollectorName,
-					common.NewCoins(common.NewCoin(common.RuneAsset(), payout))); sendErr != nil {
-					ctx.Logger().Error("fail to transfer revshare", "thorname", entry.Thorname, "error", sendErr)
-					// roll back the collector change so state stays consistent.
-					col.RuneAmount = common.SafeSub(col.RuneAmount, payout)
-					vm.k.SetAffiliateCollector(ctx, col)
+				// A failed read, write or transfer must leave both balances unchanged.
+				cacheCtx, commit := ctx.CacheContext()
+				col, err = vm.k.GetAffiliateCollector(cacheCtx, tn.Name)
+				if err == nil {
+					col.RuneAmount = col.RuneAmount.Add(payout)
+					err = vm.k.SetAffiliateCollector(cacheCtx, col)
+				}
+				if err == nil {
+					err = vm.k.SendFromModuleToModule(cacheCtx, ReserveName, AffiliateCollectorName,
+						common.NewCoins(common.NewCoin(common.RuneAsset(), payout)))
+				}
+				if err != nil {
+					ctx.Logger().Error("fail to credit revshare", "thorname", entry.Thorname, "error", err)
 					payout = cosmos.ZeroUint()
 				} else {
+					commit()
 					totalRevShare = totalRevShare.Add(payout)
 				}
 			}
@@ -2456,7 +2461,7 @@ func (vm *NetworkMgr) processRevShare(ctx cosmos.Context, mgr Manager) cosmos.Ui
 					// already unique per thorname per block, so queueIndex=0 is
 					// safe and cannot collide with skim-path items (which use
 					// the user-tx ID).
-					if triggerErr := triggerPreferredAssetSwap(ctx, mgr, common.NoAddress, "", tn, col, 0); triggerErr != nil {
+					if triggerErr := triggerPreferredAssetSwap(ctx, mgr, tn, col, 0); triggerErr != nil {
 						ctx.Logger().Error("fail to trigger preferred asset swap from revshare",
 							"thorname", entry.Thorname, "err", triggerErr)
 					}
@@ -3141,27 +3146,27 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 			ctx.Logger().Error("fail to unmarshal adv swap queue item", "error", err)
 			continue
 		}
+		if msg.State == nil {
+			return nil, fmt.Errorf("missing state for advanced swap %s/%d", msg.Tx.ID, msg.Index)
+		}
 		// Subtract the source asset coin from the calculation
 		if !msg.Tx.Coins.IsEmpty() {
 			coin := msg.Tx.Coins[0]
-
-			// For streaming swaps, subtract accumulated output from the TARGET asset
-			// regardless of the source asset. The pool has already emitted these assets
-			// (reducing pool.BalanceAsset), but no outbound exists until settleSwap runs.
-			// Skip only synth targets: synths are minted without reducing the L1 pool
-			// balance. Trade and secured targets DO reduce the underlying L1 pool balance
-			// (only synths bypass the BalanceAsset subtraction in swapOne), yet their
-			// trade/secured depth is not credited until settlement, so the in-flight
-			// output is a real liability that must be subtracted here to avoid the
-			// reduced pool balance appearing as excess vault funds.
-			if msg.IsStreaming() && !msg.TargetAsset.IsSyntheticAsset() {
-				stateOut := msg.State.Out
-				if msg.State.Deposit.IsZero() {
-					swp, err := vm.k.GetStreamingSwap(ctx, msg.Tx.ID)
-					if err == nil && swp.TxID.Equals(msg.Tx.ID) {
-						stateOut = swp.Out
-					}
+			stateDeposit, stateIn, stateOut := msg.State.Deposit, msg.State.In, msg.State.Out
+			// Older streaming swaps can keep their progress in a separate record.
+			if stateDeposit.IsZero() && msg.IsStreaming() {
+				swp, err := vm.k.GetStreamingSwap(ctx, msg.Tx.ID)
+				if err == nil && swp.TxID.Equals(msg.Tx.ID) {
+					stateDeposit, stateIn, stateOut = swp.Deposit, swp.In, swp.Out
 				}
+			}
+
+			// Output has left the pool but is still owed until settlement. Include
+			// completed single swaps retained after a failed payout, as well as
+			// streaming swaps, before skipping native inputs such as RUNE.
+			// Synth output does not reduce the L1 pool; trade and secured output
+			// does, and their account balances are only credited at settlement.
+			if !msg.TargetAsset.IsSyntheticAsset() {
 				if !stateOut.IsZero() {
 					targetAsset := msg.TargetAsset.GetLayer1Asset()
 					if !targetAsset.IsNative() {
@@ -3181,25 +3186,11 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 				return nil, fmt.Errorf("unexpected asset %s not found in tracking map (advanced swap queue)", coin.Asset)
 			}
 			coinAmount := math.NewIntFromBigInt(coin.Amount.BigInt())
-			// For streaming swaps, only deduct the remaining (unprocessed) amount
-			// to avoid double-counting with pool balance which already includes processed amounts
-			if msg.IsStreaming() {
-				stateDeposit := msg.State.Deposit
-				stateIn := msg.State.In
-
-				if stateDeposit.IsZero() {
-					swp, err := vm.k.GetStreamingSwap(ctx, msg.Tx.ID)
-					if err == nil && swp.TxID.Equals(msg.Tx.ID) {
-						stateDeposit = swp.Deposit
-						stateIn = swp.In
-					}
-				}
-
-				// Remaining = Deposit - In (what hasn't been swapped yet)
-				if !stateDeposit.IsZero() {
-					remaining := common.SafeSub(stateDeposit, stateIn)
-					coinAmount = math.NewIntFromBigInt(remaining.BigInt())
-				}
+			// Processed input is already in the pool, including completed single
+			// swaps awaiting settlement. Only the unspent deposit remains owed.
+			if !stateDeposit.IsZero() {
+				remaining := common.SafeSub(stateDeposit, stateIn)
+				coinAmount = math.NewIntFromBigInt(remaining.BigInt())
 			}
 			assetAmounts[coin.Asset] = assetAmounts[coin.Asset].Sub(coinAmount)
 		}

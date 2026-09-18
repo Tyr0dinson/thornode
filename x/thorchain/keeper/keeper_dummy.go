@@ -145,6 +145,10 @@ func (k KVStoreDummy) GetModuleAccAddress(module string) cosmos.AccAddress {
 	return nil
 }
 
+func (k KVStoreDummy) IsModuleAccount(ctx cosmos.Context, addr cosmos.AccAddress) bool {
+	return false
+}
+
 func (k KVStoreDummy) GetAccount(ctx cosmos.Context, addr cosmos.AccAddress) cosmos.Account {
 	return nil
 }
@@ -825,12 +829,19 @@ func (k KVStoreDummy) THORNameExists(ctx cosmos.Context, _ string) bool { return
 func (k KVStoreDummy) GetTHORName(ctx cosmos.Context, _ string) (THORName, error) {
 	return THORName{}, kaboom
 }
+
+func (k KVStoreDummy) GetTHORNameRecord(ctx cosmos.Context, _ string) (THORName, error) {
+	return THORName{}, kaboom
+}
 func (k KVStoreDummy) SetTHORName(ctx cosmos.Context, name THORName)          {}
 func (k KVStoreDummy) GetTHORNameIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
 func (k KVStoreDummy) DeleteTHORName(ctx cosmos.Context, _ string) error      { return kaboom }
 
-func (k KVStoreDummy) SetAffiliateCollector(_ cosmos.Context, _ AffiliateFeeCollector) {}
-func (k KVStoreDummy) GetAffiliateCollector(_ cosmos.Context, _ cosmos.AccAddress) (AffiliateFeeCollector, error) {
+func (k KVStoreDummy) SetAffiliateCollector(_ cosmos.Context, _ AffiliateFeeCollector) error {
+	return nil
+}
+
+func (k KVStoreDummy) GetAffiliateCollector(_ cosmos.Context, _ string) (AffiliateFeeCollector, error) {
 	return AffiliateFeeCollector{}, kaboom
 }
 

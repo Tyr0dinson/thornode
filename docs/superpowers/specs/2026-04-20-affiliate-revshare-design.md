@@ -3,6 +3,8 @@
 **Status:** Design approved 2026-04-20
 **Scope:** THORChain protocol change — `x/thorchain` module and related keeper state.
 
+> **Collector upgrade:** This document records the original owner-based collector design. Module migration 18 to 19 introduces per-THORName collectors. It moves a legacy balance to the owner's sole stored THORName if its spelling meets current registration rules, or pays the owner in RUNE otherwise. Module-owned legacy balances go to Reserve. The owner-based examples below describe the pre-upgrade implementation; see the [current collector and migration rules](../../affiliate-guide/thorname-guide.md#upgrade-from-shared-owner-collectors).
+
 ## Problem
 
 THORChain's existing affiliate system takes a cut of the **user's input amount** at swap time (via memo `affiliate` / `affiliate_bps`). There is no mechanism to share the **protocol's own income** (liquidity fees collected on swaps) with the affiliate that drove the swap. This limits the business models affiliates can build on top of THORChain — they cannot earn a residual share of the protocol revenue they generate without taxing their users more heavily.

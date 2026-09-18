@@ -64,8 +64,12 @@ func (h ManageTHORNameHandler) validate(ctx cosmos.Context, msg MsgManageTHORNam
 	}
 
 	exists := h.mgr.Keeper().THORNameExists(ctx, msg.Name)
+	newOwner := msg.Owner
 
 	if !exists {
+		if newOwner.Empty() {
+			newOwner = msg.Signer
+		}
 		// thorname doesn't appear to exist, let's validate the name
 		if err := h.validateName(msg.Name); err != nil {
 			return err
@@ -90,6 +94,16 @@ func (h ManageTHORNameHandler) validate(ctx cosmos.Context, msg MsgManageTHORNam
 		// ensure user isn't inflating their expire block height artificaially
 		if name.ExpireBlockHeight < msg.ExpireBlockHeight {
 			return errors.New("cannot artificially inflate expire block height")
+		}
+		if newOwner.Equals(name.Owner) {
+			newOwner = nil
+		}
+	}
+	// A module cannot receive ownership: late collector earnings could prevent
+	// re-registration after expiry because settlement cannot pay a module owner.
+	if !newOwner.Empty() {
+		if err := validateAffiliateCollectorOwner(ctx, h.mgr.Keeper(), newOwner); err != nil {
+			return fmt.Errorf("invalid THORName owner: %w", err)
 		}
 	}
 
@@ -125,6 +139,26 @@ func (h ManageTHORNameHandler) handle(ctx cosmos.Context, msg MsgManageTHORName)
 	if exists {
 		tn, err = h.mgr.Keeper().GetTHORName(ctx, msg.Name)
 		if err != nil {
+			return nil, err
+		}
+	}
+	previous := tn
+	if !exists {
+		// GetTHORName hides expired ownership, but re-registration must still
+		// pay the available collector balance to the previous owner.
+		previous, err = h.mgr.Keeper().GetTHORNameRecord(ctx, msg.Name)
+		if err != nil {
+			return nil, err
+		}
+	}
+	// Settle the previous owner's available fees before transfer or re-registration
+	// after expiry. NewInternalHandler commits the payout and ownership together.
+	if !previous.Owner.Empty() && (!exists || (!msg.Owner.Empty() && !msg.Owner.Equals(previous.Owner))) {
+		collector, collectorErr := h.mgr.Keeper().GetAffiliateCollector(ctx, previous.Name)
+		if collectorErr != nil {
+			return nil, collectorErr
+		}
+		if err = settleTHORNameCollector(ctx, h.mgr.Keeper(), collector, previous.Owner); err != nil {
 			return nil, err
 		}
 	}

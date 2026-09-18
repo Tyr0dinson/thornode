@@ -106,6 +106,19 @@ func ValidateGenesis(data GenesisState) error {
 			return errors.New("invalid THORName")
 		}
 	}
+	// Collector keys can contain historical spellings. Compare the keys used by
+	// the keeper so duplicate records cannot overwrite a balance during import.
+	collectorNames := make(map[string]bool)
+	for _, collector := range data.AffiliateCollectors {
+		name := strings.ToUpper(strings.ToLower(collector.Name))
+		if name == "" || collector.RuneAmount.IsNil() {
+			return fmt.Errorf("invalid affiliate collector %q", collector.Name)
+		}
+		if collectorNames[name] {
+			return fmt.Errorf("duplicate affiliate collector %q", collector.Name)
+		}
+		collectorNames[name] = true
+	}
 
 	return nil
 }
@@ -346,7 +359,9 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 	}
 
 	for _, item := range data.AffiliateCollectors {
-		keeper.SetAffiliateCollector(ctx, item)
+		if err := keeper.SetAffiliateCollector(ctx, item); err != nil {
+			panic(err)
+		}
 	}
 
 	for _, item := range data.TcyClaimers {

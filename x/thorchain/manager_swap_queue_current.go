@@ -178,6 +178,19 @@ func (vm *SwapQueueImpl) EndBlock(ctx cosmos.Context, mgr Manager) error {
 		_, handleErr := handler(ctx, &pick.msg)
 		if handleErr != nil {
 			ctx.Logger().Error("fail to swap", "msg", pick.msg.Tx.String(), "error", handleErr)
+			// Restore the full RUNE amount to this THORName's collector without a refund
+			// fee. Commit restoration and queue removal together so a failed restore
+			// leaves the swap available for retry.
+			if isPreferredAssetCollectorSwap(vm.k, pick.msg) {
+				cacheCtx, commit := ctx.CacheContext()
+				if restoreErr := restorePreferredAssetCollector(cacheCtx, mgr, pick.msg.Tx.Memo, pick.msg.Tx.Coins[0].Amount); restoreErr != nil {
+					ctx.Logger().Error("failed preferred asset swap retained for retry", "error", restoreErr)
+					continue
+				}
+				vm.k.RemoveSwapQueueItem(cacheCtx, pick.msg.Tx.ID, pick.index)
+				commit()
+				continue
+			}
 
 			// Distinguish a user's unreachable price limit (benign) from
 			// 'pool not available' / 'zero emit asset' / 'not enough balance'
@@ -230,23 +243,6 @@ func (vm *SwapQueueImpl) EndBlock(ctx cosmos.Context, mgr Manager) error {
 					pick.msg.Tx.Coins[0].Amount = swp.Deposit
 					vm.k.RemoveStreamingSwap(ctx, pick.msg.Tx.ID)
 					vm.k.RemoveSwapQueueItem(ctx, pick.msg.Tx.ID, pick.index)
-				}
-			} else {
-				// Should not refund a failed preferred asset swap, the RUNE is still in the AffiliateCollector module
-				var affColAddress common.Address
-				affColAddress, err = mgr.Keeper().GetModuleAddress(AffiliateCollectorName)
-				if err != nil {
-					ctx.Logger().Error("failed to retrieve AffiliateCollector module address", "error", err)
-				}
-
-				if strings.HasPrefix(pick.msg.Tx.Memo, PreferredAssetSwapMemoPrefix) && pick.msg.Tx.FromAddress.Equals(affColAddress) {
-					triggerRefund = false
-					// clean up failed preferred asset swap
-					runeAmt := pick.msg.Tx.Coins[0].Amount
-					memo := pick.msg.Tx.Memo
-					if err = vm.cleanupFailedPreferredAssetSwap(ctx, mgr, memo, runeAmt); err != nil {
-						ctx.Logger().Error("failed to cleanup failed preferred asset swap", "error", err)
-					}
 				}
 			}
 
@@ -387,34 +383,6 @@ func (vm *SwapQueueImpl) EndBlock(ctx cosmos.Context, mgr Manager) error {
 			vm.k.RemoveSwapQueueItem(ctx, pick.msg.Tx.ID, pick.index)
 		}
 	}
-	return nil
-}
-
-func (vm *SwapQueueImpl) cleanupFailedPreferredAssetSwap(ctx cosmos.Context, mgr Manager, memo string, runeAmt cosmos.Uint) error {
-	ctx.Logger().Info("preferred asset swap failed, send rune back to affiliate collector", "runeAmt", runeAmt.String(), "memo", memo)
-	// get the preferred asset swap's thorname
-	name, ok := strings.CutPrefix(memo, fmt.Sprintf("%s-", PreferredAssetSwapMemoPrefix))
-	if !ok {
-		return fmt.Errorf("failed to get thorname from memo: %s", memo)
-	}
-	if tn, err := vm.k.GetTHORName(ctx, name); err == nil {
-		var affCol AffiliateFeeCollector
-		affCol, err = mgr.Keeper().GetAffiliateCollector(ctx, tn.Owner)
-		if err != nil {
-			return fmt.Errorf("failed to get affiliate collector record: %w", err)
-		} else {
-			affCol.RuneAmount = affCol.RuneAmount.Add(runeAmt)
-			mgr.Keeper().SetAffiliateCollector(ctx, affCol)
-		}
-	} else {
-		return fmt.Errorf("failed to get thorname: %w", err)
-	}
-
-	// send rune back to affiliate collector
-	if err := mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, AffiliateCollectorName, common.NewCoins(common.NewCoin(common.RuneAsset(), runeAmt))); err != nil {
-		return fmt.Errorf("failed to send rune back to affiliate collector: %w", err)
-	}
-
 	return nil
 }
 

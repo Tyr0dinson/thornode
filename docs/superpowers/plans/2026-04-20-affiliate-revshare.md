@@ -1,5 +1,7 @@
 # Affiliate Revenue Share (REVSHARE) Implementation Plan
 
+> **Collector upgrade:** The owner-based collector examples in this historical plan predate module migration 18 to 19. Collectors now use THORName keys. Migration moves a legacy balance to the owner's sole stored THORName if its spelling meets current registration rules, or pays the owner in RUNE otherwise. Module-owned legacy balances go to Reserve. See the [current collector and migration rules](../../affiliate-guide/thorname-guide.md#upgrade-from-shared-owner-collectors) when working on the current implementation.
+
 > **Status (2026-05-04): Implemented.** The design landed via the
 > branch documented in this plan; the shipped code is the authoritative
 > reference. **One API shape differs from earlier drafts of this plan:**
