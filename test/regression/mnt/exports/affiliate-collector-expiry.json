@@ -67,7 +67,7 @@
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
           "base_account": {
-            "account_number": "10",
+            "account_number": "9733323132444556648",
             "address": "tthor1dl7un46w7l7f3ewrnrm6nq58nerjtp0d82uzjg",
             "pub_key": null,
             "sequence": "0"
@@ -476,6 +476,9 @@
     "params": {
       "abci": {
         "vote_extensions_enable_height": "0"
+      },
+      "authority": {
+        "authority": ""
       },
       "block": {
         "max_bytes": "22020096",

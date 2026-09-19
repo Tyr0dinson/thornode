@@ -5806,7 +5806,7 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "74B378F8624F9AEC611E373918153A6F4FE1B70FFA2C36FFC0A650E4CEA78B0B",
+      "data_hash": "76A199420DF32AA68848AEA58D5461165FFFC7A13F76137D2DCB2974D5129F05",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
@@ -5999,7 +5999,7 @@
     ],
     "txs": [
       {
-        "hash": "A65CAF7F98C0F40DB11BB63B68C35CFC1F1C9C7AF3ACF2B65EFD8E4BAFADB7EF",
+        "hash": "91622BE8E092CE52FA793578D31AA2037CC6E654CFD9722A2DD0131A7BF84AC0",
         "tx": {
           "auth_info": {
             "fee": {
@@ -6048,7 +6048,7 @@
             "unordered": false
           },
           "signatures": [
-            "AwAW1qCHM47wkhUYmwqgs1A/Fr5NPdUBVW6uYOPxfbB/1xsvqQ7CuC9IL/6zLkR/+A9mudZtgNOYjKGo2MuZqQ=="
+            "D/F38BGxAL/HFAMt7NzKBjpp1OtcIiOsHmAjZmqwBXU80ZY3+57ll6/yr2/u1g3BJBrqq0GB/B1GcX3D/SOLLg=="
           ]
         },
         "result": {
@@ -6082,7 +6082,7 @@
               "type": "tx"
             },
             {
-              "signature": "AwAW1qCHM47wkhUYmwqgs1A/Fr5NPdUBVW6uYOPxfbB/1xsvqQ7CuC9IL/6zLkR/+A9mudZtgNOYjKGo2MuZqQ==",
+              "signature": "D/F38BGxAL/HFAMt7NzKBjpp1OtcIiOsHmAjZmqwBXU80ZY3+57ll6/yr2/u1g3BJBrqq0GB/B1GcX3D/SOLLg==",
               "type": "tx"
             }
           ]
@@ -6114,7 +6114,7 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "334BD0EC15B549C9EDADBBD6B664C185A9899B2FB3000B33157012E371C52563",
+      "data_hash": "AD99A69EBD01462A021AC9CC686204EB206592342C2B146A1CAB730C6F427FD7",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
@@ -6307,7 +6307,7 @@
     ],
     "txs": [
       {
-        "hash": "293F24681D89D69B64F48499420027946233A810AC04A5BA823AF8ED204CDC4A",
+        "hash": "CABFDF3602A3D0230D5B37FEDB4F03C2AD03B93377BEC95F7BCDBD51662C2978",
         "tx": {
           "auth_info": {
             "fee": {
@@ -6356,7 +6356,7 @@
             "unordered": false
           },
           "signatures": [
-            "IhV01UOGlAht5JWoitmZ4dkq/zgk7Tp5X5DB6dwPaWUBt3FDpQQ3ROKP0APJYR9aL8BCi9/XSyp+USmK88Z78Q=="
+            "7R4FJVZn6NWJXVDt3C5/xEwUyPGcMw0r4JyuCIY49LhcdQoXU0FMLS9ach0djjhyX1uCiqi7CKx4FWVnGxFkdQ=="
           ]
         },
         "result": {
@@ -6390,7 +6390,7 @@
               "type": "tx"
             },
             {
-              "signature": "IhV01UOGlAht5JWoitmZ4dkq/zgk7Tp5X5DB6dwPaWUBt3FDpQQ3ROKP0APJYR9aL8BCi9/XSyp+USmK88Z78Q==",
+              "signature": "7R4FJVZn6NWJXVDt3C5/xEwUyPGcMw0r4JyuCIY49LhcdQoXU0FMLS9ach0djjhyX1uCiqi7CKx4FWVnGxFkdQ==",
               "type": "tx"
             }
           ]

@@ -41,7 +41,7 @@
         },
         {
           "@type": "/cosmos.auth.v1beta1.BaseAccount",
-          "account_number": "13868644727435577481",
+          "account_number": "13243940859956139881",
           "address": "tthor1f6z8lvkkj4u0f4g0cz6akzhydn6d9yv64t7ss7",
           "pub_key": {
             "@type": "/cosmos.crypto.secp256k1.PubKey",
