@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	sdklog "cosmossdk.io/log"
+	sdklog "cosmossdk.io/log/v2"
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )

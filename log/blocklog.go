@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	sdklog "cosmossdk.io/log"
+	sdklog "cosmossdk.io/log/v2"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/rs/zerolog/log"
 )
@@ -583,6 +583,26 @@ func (c captureLogger) Error(msg string, kv ...any) {
 	c.inner.Error(msg, kv...)
 }
 func (c captureLogger) Impl() any { return c.inner.Impl() }
+
+func (c captureLogger) DebugContext(ctx context.Context, msg string, kv ...any) {
+	c.record("debug", msg, kv)
+	c.inner.DebugContext(ctx, msg, kv...)
+}
+
+func (c captureLogger) InfoContext(ctx context.Context, msg string, kv ...any) {
+	c.record("info", msg, kv)
+	c.inner.InfoContext(ctx, msg, kv...)
+}
+
+func (c captureLogger) WarnContext(ctx context.Context, msg string, kv ...any) {
+	c.record("warn", msg, kv)
+	c.inner.WarnContext(ctx, msg, kv...)
+}
+
+func (c captureLogger) ErrorContext(ctx context.Context, msg string, kv ...any) {
+	c.record("error", msg, kv)
+	c.inner.ErrorContext(ctx, msg, kv...)
+}
 
 func (c captureLogger) With(kv ...any) sdklog.Logger {
 	return captureLogger{inner: c.inner.With(kv...), height: c.height, fields: c.merge(kv)}

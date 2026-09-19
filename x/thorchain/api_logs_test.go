@@ -10,7 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 
-	sdklog "cosmossdk.io/log"
+	sdklog "cosmossdk.io/log/v2"
 	"github.com/gorilla/mux"
 	. "gopkg.in/check.v1"
 
