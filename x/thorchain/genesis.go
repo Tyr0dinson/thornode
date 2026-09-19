@@ -132,40 +132,41 @@ func ValidateGenesis(data GenesisState) error {
 // DefaultGenesisState the default values THORNode put in the Genesis
 func DefaultGenesisState() GenesisState {
 	return GenesisState{
-		Pools:                   make([]Pool, 0),
-		NodeAccounts:            NodeAccounts{},
-		BondProviders:           make([]BondProviders, 0),
-		TxOuts:                  make([]TxOut, 0),
-		LiquidityProviders:      make(LiquidityProviders, 0),
-		Vaults:                  make(Vaults, 0),
-		ObservedTxInVoters:      make(ObservedTxVoters, 0),
-		ObservedTxOutVoters:     make(ObservedTxVoters, 0),
-		LastSignedHeight:        0,
-		LastChainHeights:        make([]LastChainHeight, 0),
-		Mimirs:                  make([]Mimir, 0),
-		NodeMimirs:              make([]NodeMimir, 0),
-		Network:                 NewNetwork(),
-		OutboundFeeWithheldRune: common.Coins{},
-		OutboundFeeSpentRune:    common.Coins{},
-		POL:                     NewProtocolOwnedLiquidity(),
-		AdvSwapQueueItems:       make([]MsgSwap, 0),
-		SwapQueueItems:          make([]MsgSwap, 0),
-		StreamingSwaps:          make([]StreamingSwap, 0),
-		NetworkFees:             make([]NetworkFee, 0),
-		ChainContracts:          make([]ChainContract, 0),
-		THORNames:               make([]THORName, 0),
-		SwapperClout:            make([]SwapperClout, 0),
-		TradeAccounts:           make([]TradeAccount, 0),
-		TradeUnits:              make([]TradeUnit, 0),
-		SecuredAssets:           make([]SecuredAsset, 0),
-		RuneProviders:           make([]RUNEProvider, 0),
-		RunePool:                NewRUNEPool(),
-		AffiliateCollectors:     []AffiliateFeeCollector{},
-		PolReserveDeposits:      make([]POLReserveDeposit, 0),
-		DynamicFeeRecords:       make([]types.DynamicFeeRecord, 0),
-		DynamicFeeAccumulators:  make([]types.DynamicFeeAccumulator, 0),
-		StableReserveCredits:    make([]StableReserveCredit, 0),
-		SolVaultNonces:          make([]types.SolVaultNonce, 0),
+		Pools:                      make([]Pool, 0),
+		NodeAccounts:               NodeAccounts{},
+		BondProviders:              make([]BondProviders, 0),
+		TxOuts:                     make([]TxOut, 0),
+		LiquidityProviders:         make(LiquidityProviders, 0),
+		Vaults:                     make(Vaults, 0),
+		ObservedTxInVoters:         make(ObservedTxVoters, 0),
+		ObservedTxOutVoters:        make(ObservedTxVoters, 0),
+		LastSignedHeight:           0,
+		LastChainHeights:           make([]LastChainHeight, 0),
+		Mimirs:                     make([]Mimir, 0),
+		NodeMimirs:                 make([]NodeMimir, 0),
+		Network:                    NewNetwork(),
+		OutboundFeeWithheldRune:    common.Coins{},
+		OutboundFeeSpentRune:       common.Coins{},
+		POL:                        NewProtocolOwnedLiquidity(),
+		AdvSwapQueueItems:          make([]MsgSwap, 0),
+		SwapQueueItems:             make([]MsgSwap, 0),
+		StreamingSwaps:             make([]StreamingSwap, 0),
+		NetworkFees:                make([]NetworkFee, 0),
+		ChainContracts:             make([]ChainContract, 0),
+		THORNames:                  make([]THORName, 0),
+		SwapperClout:               make([]SwapperClout, 0),
+		TradeAccounts:              make([]TradeAccount, 0),
+		TradeUnits:                 make([]TradeUnit, 0),
+		SecuredAssets:              make([]SecuredAsset, 0),
+		RuneProviders:              make([]RUNEProvider, 0),
+		RunePool:                   NewRUNEPool(),
+		AffiliateCollectors:        []AffiliateFeeCollector{},
+		PolReserveDeposits:         make([]POLReserveDeposit, 0),
+		DynamicFeeRecords:          make([]types.DynamicFeeRecord, 0),
+		DynamicFeeAccumulators:     make([]types.DynamicFeeAccumulator, 0),
+		StableReserveCredits:       make([]StableReserveCredit, 0),
+		SolVaultNonces:             make([]types.SolVaultNonce, 0),
+		DynamicFeePoolAccumulators: make([]types.DynamicFeePoolAccumulator, 0),
 	}
 }
 
@@ -396,6 +397,12 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 			panic(err)
 		}
 	}
+	for _, acc := range data.DynamicFeePoolAccumulators {
+		if err := keeper.SetDynamicFeePoolAccumulator(ctx, acc); err != nil {
+			panic(err)
+		}
+	}
+
 	for _, acc := range data.DynamicFeeAccumulators {
 		if err := keeper.SetDynamicFeeAccumulator(ctx, acc); err != nil {
 			panic(err)
@@ -887,6 +894,15 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		dynamicFeeAccumulators = append(dynamicFeeAccumulators, acc)
 	}
 
+	dynamicFeePoolAccumulators := make([]types.DynamicFeePoolAccumulator, 0)
+	iterDFPoolAcc := k.GetDynamicFeePoolAccumulatorIterator(ctx)
+	defer iterDFPoolAcc.Close()
+	for ; iterDFPoolAcc.Valid(); iterDFPoolAcc.Next() {
+		var acc types.DynamicFeePoolAccumulator
+		k.Cdc().MustUnmarshal(iterDFPoolAcc.Value(), &acc)
+		dynamicFeePoolAccumulators = append(dynamicFeePoolAccumulators, acc)
+	}
+
 	lastObservedDynamicFeeEpochBlocks, err := k.GetLastObservedDynamicFeeEpochBlocks(ctx)
 	if err != nil {
 		panic(err)
@@ -968,6 +984,7 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		PolReserveDeposits:                polReserveDeposits,
 		DynamicFeeRecords:                 dynamicFeeRecords,
 		DynamicFeeAccumulators:            dynamicFeeAccumulators,
+		DynamicFeePoolAccumulators:        dynamicFeePoolAccumulators,
 		LastObservedDynamicFeeEpochBlocks: lastObservedDynamicFeeEpochBlocks,
 		StableReserveCredits:              stableReserveCredits,
 		SolVaultNonces:                    solVaultNonces,

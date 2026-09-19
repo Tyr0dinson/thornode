@@ -130,6 +130,7 @@ const (
 	prefixVolume                    types.DbPrefix = "volume/"
 	prefixDynamicFee                types.DbPrefix = "dynfee/"
 	prefixDynamicFeeAcc             types.DbPrefix = "dynfeeacc/"
+	prefixDynamicFeePoolAcc         types.DbPrefix = "dynfeepoolacc/"
 	prefixDynamicFeeEpochBlocks     types.DbPrefix = "dynfeeebo/"
 )
 

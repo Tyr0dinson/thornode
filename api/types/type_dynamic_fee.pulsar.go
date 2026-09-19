@@ -14,11 +14,13 @@ import (
 )
 
 var (
-	md_DynamicFeeEpochRecord              protoreflect.MessageDescriptor
-	fd_DynamicFeeEpochRecord_epoch        protoreflect.FieldDescriptor
-	fd_DynamicFeeEpochRecord_volume_tor   protoreflect.FieldDescriptor
-	fd_DynamicFeeEpochRecord_fees_tor     protoreflect.FieldDescriptor
-	fd_DynamicFeeEpochRecord_bps_at_close protoreflect.FieldDescriptor
+	md_DynamicFeeEpochRecord                 protoreflect.MessageDescriptor
+	fd_DynamicFeeEpochRecord_epoch           protoreflect.FieldDescriptor
+	fd_DynamicFeeEpochRecord_volume_tor      protoreflect.FieldDescriptor
+	fd_DynamicFeeEpochRecord_fees_tor        protoreflect.FieldDescriptor
+	fd_DynamicFeeEpochRecord_bps_at_close    protoreflect.FieldDescriptor
+	fd_DynamicFeeEpochRecord_swap_count      protoreflect.FieldDescriptor
+	fd_DynamicFeeEpochRecord_pool_volume_tor protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -28,6 +30,8 @@ func init() {
 	fd_DynamicFeeEpochRecord_volume_tor = md_DynamicFeeEpochRecord.Fields().ByName("volume_tor")
 	fd_DynamicFeeEpochRecord_fees_tor = md_DynamicFeeEpochRecord.Fields().ByName("fees_tor")
 	fd_DynamicFeeEpochRecord_bps_at_close = md_DynamicFeeEpochRecord.Fields().ByName("bps_at_close")
+	fd_DynamicFeeEpochRecord_swap_count = md_DynamicFeeEpochRecord.Fields().ByName("swap_count")
+	fd_DynamicFeeEpochRecord_pool_volume_tor = md_DynamicFeeEpochRecord.Fields().ByName("pool_volume_tor")
 }
 
 var _ protoreflect.Message = (*fastReflection_DynamicFeeEpochRecord)(nil)
@@ -119,6 +123,18 @@ func (x *fastReflection_DynamicFeeEpochRecord) Range(f func(protoreflect.FieldDe
 			return
 		}
 	}
+	if x.SwapCount != uint64(0) {
+		value := protoreflect.ValueOfUint64(x.SwapCount)
+		if !f(fd_DynamicFeeEpochRecord_swap_count, value) {
+			return
+		}
+	}
+	if x.PoolVolumeTor != "" {
+		value := protoreflect.ValueOfString(x.PoolVolumeTor)
+		if !f(fd_DynamicFeeEpochRecord_pool_volume_tor, value) {
+			return
+		}
+	}
 }
 
 // Has reports whether a field is populated.
@@ -142,6 +158,10 @@ func (x *fastReflection_DynamicFeeEpochRecord) Has(fd protoreflect.FieldDescript
 		return x.FeesTor != ""
 	case "types.DynamicFeeEpochRecord.bps_at_close":
 		return x.BpsAtClose != uint64(0)
+	case "types.DynamicFeeEpochRecord.swap_count":
+		return x.SwapCount != uint64(0)
+	case "types.DynamicFeeEpochRecord.pool_volume_tor":
+		return x.PoolVolumeTor != ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.DynamicFeeEpochRecord"))
@@ -166,6 +186,10 @@ func (x *fastReflection_DynamicFeeEpochRecord) Clear(fd protoreflect.FieldDescri
 		x.FeesTor = ""
 	case "types.DynamicFeeEpochRecord.bps_at_close":
 		x.BpsAtClose = uint64(0)
+	case "types.DynamicFeeEpochRecord.swap_count":
+		x.SwapCount = uint64(0)
+	case "types.DynamicFeeEpochRecord.pool_volume_tor":
+		x.PoolVolumeTor = ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.DynamicFeeEpochRecord"))
@@ -194,6 +218,12 @@ func (x *fastReflection_DynamicFeeEpochRecord) Get(descriptor protoreflect.Field
 	case "types.DynamicFeeEpochRecord.bps_at_close":
 		value := x.BpsAtClose
 		return protoreflect.ValueOfUint64(value)
+	case "types.DynamicFeeEpochRecord.swap_count":
+		value := x.SwapCount
+		return protoreflect.ValueOfUint64(value)
+	case "types.DynamicFeeEpochRecord.pool_volume_tor":
+		value := x.PoolVolumeTor
+		return protoreflect.ValueOfString(value)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.DynamicFeeEpochRecord"))
@@ -222,6 +252,10 @@ func (x *fastReflection_DynamicFeeEpochRecord) Set(fd protoreflect.FieldDescript
 		x.FeesTor = value.Interface().(string)
 	case "types.DynamicFeeEpochRecord.bps_at_close":
 		x.BpsAtClose = value.Uint()
+	case "types.DynamicFeeEpochRecord.swap_count":
+		x.SwapCount = value.Uint()
+	case "types.DynamicFeeEpochRecord.pool_volume_tor":
+		x.PoolVolumeTor = value.Interface().(string)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.DynamicFeeEpochRecord"))
@@ -250,6 +284,10 @@ func (x *fastReflection_DynamicFeeEpochRecord) Mutable(fd protoreflect.FieldDesc
 		panic(fmt.Errorf("field fees_tor of message types.DynamicFeeEpochRecord is not mutable"))
 	case "types.DynamicFeeEpochRecord.bps_at_close":
 		panic(fmt.Errorf("field bps_at_close of message types.DynamicFeeEpochRecord is not mutable"))
+	case "types.DynamicFeeEpochRecord.swap_count":
+		panic(fmt.Errorf("field swap_count of message types.DynamicFeeEpochRecord is not mutable"))
+	case "types.DynamicFeeEpochRecord.pool_volume_tor":
+		panic(fmt.Errorf("field pool_volume_tor of message types.DynamicFeeEpochRecord is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.DynamicFeeEpochRecord"))
@@ -271,6 +309,10 @@ func (x *fastReflection_DynamicFeeEpochRecord) NewField(fd protoreflect.FieldDes
 		return protoreflect.ValueOfString("")
 	case "types.DynamicFeeEpochRecord.bps_at_close":
 		return protoreflect.ValueOfUint64(uint64(0))
+	case "types.DynamicFeeEpochRecord.swap_count":
+		return protoreflect.ValueOfUint64(uint64(0))
+	case "types.DynamicFeeEpochRecord.pool_volume_tor":
+		return protoreflect.ValueOfString("")
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.DynamicFeeEpochRecord"))
@@ -354,6 +396,13 @@ func (x *fastReflection_DynamicFeeEpochRecord) ProtoMethods() *protoiface.Method
 		if x.BpsAtClose != 0 {
 			n += 1 + runtime.Sov(uint64(x.BpsAtClose))
 		}
+		if x.SwapCount != 0 {
+			n += 1 + runtime.Sov(uint64(x.SwapCount))
+		}
+		l = len(x.PoolVolumeTor)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
 		}
@@ -382,6 +431,18 @@ func (x *fastReflection_DynamicFeeEpochRecord) ProtoMethods() *protoiface.Method
 		if x.unknownFields != nil {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.PoolVolumeTor) > 0 {
+			i -= len(x.PoolVolumeTor)
+			copy(dAtA[i:], x.PoolVolumeTor)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.PoolVolumeTor)))
+			i--
+			dAtA[i] = 0x32
+		}
+		if x.SwapCount != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.SwapCount))
+			i--
+			dAtA[i] = 0x28
 		}
 		if x.BpsAtClose != 0 {
 			i = runtime.EncodeVarint(dAtA, i, uint64(x.BpsAtClose))
@@ -558,6 +619,57 @@ func (x *fastReflection_DynamicFeeEpochRecord) ProtoMethods() *protoiface.Method
 						break
 					}
 				}
+			case 5:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field SwapCount", wireType)
+				}
+				x.SwapCount = 0
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					x.SwapCount |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+			case 6:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field PoolVolumeTor", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.PoolVolumeTor = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
 				skippy, err := runtime.Skip(dAtA[iNdEx:])
@@ -1376,12 +1488,14 @@ func (x *fastReflection_DynamicFeeRecord) ProtoMethods() *protoiface.Methods {
 }
 
 var (
-	md_DynamicFeeAccumulator              protoreflect.MessageDescriptor
-	fd_DynamicFeeAccumulator_thorname     protoreflect.FieldDescriptor
-	fd_DynamicFeeAccumulator_pair_asset_a protoreflect.FieldDescriptor
-	fd_DynamicFeeAccumulator_pair_asset_b protoreflect.FieldDescriptor
-	fd_DynamicFeeAccumulator_volume_tor   protoreflect.FieldDescriptor
-	fd_DynamicFeeAccumulator_fees_tor     protoreflect.FieldDescriptor
+	md_DynamicFeeAccumulator                 protoreflect.MessageDescriptor
+	fd_DynamicFeeAccumulator_thorname        protoreflect.FieldDescriptor
+	fd_DynamicFeeAccumulator_pair_asset_a    protoreflect.FieldDescriptor
+	fd_DynamicFeeAccumulator_pair_asset_b    protoreflect.FieldDescriptor
+	fd_DynamicFeeAccumulator_volume_tor      protoreflect.FieldDescriptor
+	fd_DynamicFeeAccumulator_fees_tor        protoreflect.FieldDescriptor
+	fd_DynamicFeeAccumulator_swap_count      protoreflect.FieldDescriptor
+	fd_DynamicFeeAccumulator_pool_volume_tor protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -1392,6 +1506,8 @@ func init() {
 	fd_DynamicFeeAccumulator_pair_asset_b = md_DynamicFeeAccumulator.Fields().ByName("pair_asset_b")
 	fd_DynamicFeeAccumulator_volume_tor = md_DynamicFeeAccumulator.Fields().ByName("volume_tor")
 	fd_DynamicFeeAccumulator_fees_tor = md_DynamicFeeAccumulator.Fields().ByName("fees_tor")
+	fd_DynamicFeeAccumulator_swap_count = md_DynamicFeeAccumulator.Fields().ByName("swap_count")
+	fd_DynamicFeeAccumulator_pool_volume_tor = md_DynamicFeeAccumulator.Fields().ByName("pool_volume_tor")
 }
 
 var _ protoreflect.Message = (*fastReflection_DynamicFeeAccumulator)(nil)
@@ -1489,6 +1605,18 @@ func (x *fastReflection_DynamicFeeAccumulator) Range(f func(protoreflect.FieldDe
 			return
 		}
 	}
+	if x.SwapCount != uint64(0) {
+		value := protoreflect.ValueOfUint64(x.SwapCount)
+		if !f(fd_DynamicFeeAccumulator_swap_count, value) {
+			return
+		}
+	}
+	if x.PoolVolumeTor != "" {
+		value := protoreflect.ValueOfString(x.PoolVolumeTor)
+		if !f(fd_DynamicFeeAccumulator_pool_volume_tor, value) {
+			return
+		}
+	}
 }
 
 // Has reports whether a field is populated.
@@ -1514,6 +1642,10 @@ func (x *fastReflection_DynamicFeeAccumulator) Has(fd protoreflect.FieldDescript
 		return x.VolumeTor != ""
 	case "types.DynamicFeeAccumulator.fees_tor":
 		return x.FeesTor != ""
+	case "types.DynamicFeeAccumulator.swap_count":
+		return x.SwapCount != uint64(0)
+	case "types.DynamicFeeAccumulator.pool_volume_tor":
+		return x.PoolVolumeTor != ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.DynamicFeeAccumulator"))
@@ -1540,6 +1672,10 @@ func (x *fastReflection_DynamicFeeAccumulator) Clear(fd protoreflect.FieldDescri
 		x.VolumeTor = ""
 	case "types.DynamicFeeAccumulator.fees_tor":
 		x.FeesTor = ""
+	case "types.DynamicFeeAccumulator.swap_count":
+		x.SwapCount = uint64(0)
+	case "types.DynamicFeeAccumulator.pool_volume_tor":
+		x.PoolVolumeTor = ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.DynamicFeeAccumulator"))
@@ -1571,6 +1707,12 @@ func (x *fastReflection_DynamicFeeAccumulator) Get(descriptor protoreflect.Field
 	case "types.DynamicFeeAccumulator.fees_tor":
 		value := x.FeesTor
 		return protoreflect.ValueOfString(value)
+	case "types.DynamicFeeAccumulator.swap_count":
+		value := x.SwapCount
+		return protoreflect.ValueOfUint64(value)
+	case "types.DynamicFeeAccumulator.pool_volume_tor":
+		value := x.PoolVolumeTor
+		return protoreflect.ValueOfString(value)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.DynamicFeeAccumulator"))
@@ -1601,6 +1743,10 @@ func (x *fastReflection_DynamicFeeAccumulator) Set(fd protoreflect.FieldDescript
 		x.VolumeTor = value.Interface().(string)
 	case "types.DynamicFeeAccumulator.fees_tor":
 		x.FeesTor = value.Interface().(string)
+	case "types.DynamicFeeAccumulator.swap_count":
+		x.SwapCount = value.Uint()
+	case "types.DynamicFeeAccumulator.pool_volume_tor":
+		x.PoolVolumeTor = value.Interface().(string)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.DynamicFeeAccumulator"))
@@ -1631,6 +1777,10 @@ func (x *fastReflection_DynamicFeeAccumulator) Mutable(fd protoreflect.FieldDesc
 		panic(fmt.Errorf("field volume_tor of message types.DynamicFeeAccumulator is not mutable"))
 	case "types.DynamicFeeAccumulator.fees_tor":
 		panic(fmt.Errorf("field fees_tor of message types.DynamicFeeAccumulator is not mutable"))
+	case "types.DynamicFeeAccumulator.swap_count":
+		panic(fmt.Errorf("field swap_count of message types.DynamicFeeAccumulator is not mutable"))
+	case "types.DynamicFeeAccumulator.pool_volume_tor":
+		panic(fmt.Errorf("field pool_volume_tor of message types.DynamicFeeAccumulator is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.DynamicFeeAccumulator"))
@@ -1653,6 +1803,10 @@ func (x *fastReflection_DynamicFeeAccumulator) NewField(fd protoreflect.FieldDes
 	case "types.DynamicFeeAccumulator.volume_tor":
 		return protoreflect.ValueOfString("")
 	case "types.DynamicFeeAccumulator.fees_tor":
+		return protoreflect.ValueOfString("")
+	case "types.DynamicFeeAccumulator.swap_count":
+		return protoreflect.ValueOfUint64(uint64(0))
+	case "types.DynamicFeeAccumulator.pool_volume_tor":
 		return protoreflect.ValueOfString("")
 	default:
 		if fd.IsExtension() {
@@ -1743,6 +1897,13 @@ func (x *fastReflection_DynamicFeeAccumulator) ProtoMethods() *protoiface.Method
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
+		if x.SwapCount != 0 {
+			n += 1 + runtime.Sov(uint64(x.SwapCount))
+		}
+		l = len(x.PoolVolumeTor)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
 		}
@@ -1771,6 +1932,18 @@ func (x *fastReflection_DynamicFeeAccumulator) ProtoMethods() *protoiface.Method
 		if x.unknownFields != nil {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.PoolVolumeTor) > 0 {
+			i -= len(x.PoolVolumeTor)
+			copy(dAtA[i:], x.PoolVolumeTor)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.PoolVolumeTor)))
+			i--
+			dAtA[i] = 0x3a
+		}
+		if x.SwapCount != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.SwapCount))
+			i--
+			dAtA[i] = 0x30
 		}
 		if len(x.FeesTor) > 0 {
 			i -= len(x.FeesTor)
@@ -2016,6 +2189,605 @@ func (x *fastReflection_DynamicFeeAccumulator) ProtoMethods() *protoiface.Method
 				}
 				x.FeesTor = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
+			case 6:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field SwapCount", wireType)
+				}
+				x.SwapCount = 0
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					x.SwapCount |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+			case 7:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field PoolVolumeTor", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.PoolVolumeTor = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
+var (
+	md_DynamicFeePoolAccumulator              protoreflect.MessageDescriptor
+	fd_DynamicFeePoolAccumulator_pair_asset_a protoreflect.FieldDescriptor
+	fd_DynamicFeePoolAccumulator_pair_asset_b protoreflect.FieldDescriptor
+	fd_DynamicFeePoolAccumulator_volume_tor   protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_types_type_dynamic_fee_proto_init()
+	md_DynamicFeePoolAccumulator = File_types_type_dynamic_fee_proto.Messages().ByName("DynamicFeePoolAccumulator")
+	fd_DynamicFeePoolAccumulator_pair_asset_a = md_DynamicFeePoolAccumulator.Fields().ByName("pair_asset_a")
+	fd_DynamicFeePoolAccumulator_pair_asset_b = md_DynamicFeePoolAccumulator.Fields().ByName("pair_asset_b")
+	fd_DynamicFeePoolAccumulator_volume_tor = md_DynamicFeePoolAccumulator.Fields().ByName("volume_tor")
+}
+
+var _ protoreflect.Message = (*fastReflection_DynamicFeePoolAccumulator)(nil)
+
+type fastReflection_DynamicFeePoolAccumulator DynamicFeePoolAccumulator
+
+func (x *DynamicFeePoolAccumulator) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_DynamicFeePoolAccumulator)(x)
+}
+
+func (x *DynamicFeePoolAccumulator) slowProtoReflect() protoreflect.Message {
+	mi := &file_types_type_dynamic_fee_proto_msgTypes[3]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_DynamicFeePoolAccumulator_messageType fastReflection_DynamicFeePoolAccumulator_messageType
+var _ protoreflect.MessageType = fastReflection_DynamicFeePoolAccumulator_messageType{}
+
+type fastReflection_DynamicFeePoolAccumulator_messageType struct{}
+
+func (x fastReflection_DynamicFeePoolAccumulator_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_DynamicFeePoolAccumulator)(nil)
+}
+func (x fastReflection_DynamicFeePoolAccumulator_messageType) New() protoreflect.Message {
+	return new(fastReflection_DynamicFeePoolAccumulator)
+}
+func (x fastReflection_DynamicFeePoolAccumulator_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_DynamicFeePoolAccumulator
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_DynamicFeePoolAccumulator) Descriptor() protoreflect.MessageDescriptor {
+	return md_DynamicFeePoolAccumulator
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_DynamicFeePoolAccumulator) Type() protoreflect.MessageType {
+	return _fastReflection_DynamicFeePoolAccumulator_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_DynamicFeePoolAccumulator) New() protoreflect.Message {
+	return new(fastReflection_DynamicFeePoolAccumulator)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_DynamicFeePoolAccumulator) Interface() protoreflect.ProtoMessage {
+	return (*DynamicFeePoolAccumulator)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_DynamicFeePoolAccumulator) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.PairAssetA != "" {
+		value := protoreflect.ValueOfString(x.PairAssetA)
+		if !f(fd_DynamicFeePoolAccumulator_pair_asset_a, value) {
+			return
+		}
+	}
+	if x.PairAssetB != "" {
+		value := protoreflect.ValueOfString(x.PairAssetB)
+		if !f(fd_DynamicFeePoolAccumulator_pair_asset_b, value) {
+			return
+		}
+	}
+	if x.VolumeTor != "" {
+		value := protoreflect.ValueOfString(x.VolumeTor)
+		if !f(fd_DynamicFeePoolAccumulator_volume_tor, value) {
+			return
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_DynamicFeePoolAccumulator) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "types.DynamicFeePoolAccumulator.pair_asset_a":
+		return x.PairAssetA != ""
+	case "types.DynamicFeePoolAccumulator.pair_asset_b":
+		return x.PairAssetB != ""
+	case "types.DynamicFeePoolAccumulator.volume_tor":
+		return x.VolumeTor != ""
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.DynamicFeePoolAccumulator"))
+		}
+		panic(fmt.Errorf("message types.DynamicFeePoolAccumulator does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_DynamicFeePoolAccumulator) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "types.DynamicFeePoolAccumulator.pair_asset_a":
+		x.PairAssetA = ""
+	case "types.DynamicFeePoolAccumulator.pair_asset_b":
+		x.PairAssetB = ""
+	case "types.DynamicFeePoolAccumulator.volume_tor":
+		x.VolumeTor = ""
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.DynamicFeePoolAccumulator"))
+		}
+		panic(fmt.Errorf("message types.DynamicFeePoolAccumulator does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_DynamicFeePoolAccumulator) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "types.DynamicFeePoolAccumulator.pair_asset_a":
+		value := x.PairAssetA
+		return protoreflect.ValueOfString(value)
+	case "types.DynamicFeePoolAccumulator.pair_asset_b":
+		value := x.PairAssetB
+		return protoreflect.ValueOfString(value)
+	case "types.DynamicFeePoolAccumulator.volume_tor":
+		value := x.VolumeTor
+		return protoreflect.ValueOfString(value)
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.DynamicFeePoolAccumulator"))
+		}
+		panic(fmt.Errorf("message types.DynamicFeePoolAccumulator does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_DynamicFeePoolAccumulator) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "types.DynamicFeePoolAccumulator.pair_asset_a":
+		x.PairAssetA = value.Interface().(string)
+	case "types.DynamicFeePoolAccumulator.pair_asset_b":
+		x.PairAssetB = value.Interface().(string)
+	case "types.DynamicFeePoolAccumulator.volume_tor":
+		x.VolumeTor = value.Interface().(string)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.DynamicFeePoolAccumulator"))
+		}
+		panic(fmt.Errorf("message types.DynamicFeePoolAccumulator does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_DynamicFeePoolAccumulator) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.DynamicFeePoolAccumulator.pair_asset_a":
+		panic(fmt.Errorf("field pair_asset_a of message types.DynamicFeePoolAccumulator is not mutable"))
+	case "types.DynamicFeePoolAccumulator.pair_asset_b":
+		panic(fmt.Errorf("field pair_asset_b of message types.DynamicFeePoolAccumulator is not mutable"))
+	case "types.DynamicFeePoolAccumulator.volume_tor":
+		panic(fmt.Errorf("field volume_tor of message types.DynamicFeePoolAccumulator is not mutable"))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.DynamicFeePoolAccumulator"))
+		}
+		panic(fmt.Errorf("message types.DynamicFeePoolAccumulator does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_DynamicFeePoolAccumulator) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.DynamicFeePoolAccumulator.pair_asset_a":
+		return protoreflect.ValueOfString("")
+	case "types.DynamicFeePoolAccumulator.pair_asset_b":
+		return protoreflect.ValueOfString("")
+	case "types.DynamicFeePoolAccumulator.volume_tor":
+		return protoreflect.ValueOfString("")
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.DynamicFeePoolAccumulator"))
+		}
+		panic(fmt.Errorf("message types.DynamicFeePoolAccumulator does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_DynamicFeePoolAccumulator) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in types.DynamicFeePoolAccumulator", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_DynamicFeePoolAccumulator) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_DynamicFeePoolAccumulator) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_DynamicFeePoolAccumulator) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_DynamicFeePoolAccumulator) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*DynamicFeePoolAccumulator)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		l = len(x.PairAssetA)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.PairAssetB)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.VolumeTor)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*DynamicFeePoolAccumulator)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.VolumeTor) > 0 {
+			i -= len(x.VolumeTor)
+			copy(dAtA[i:], x.VolumeTor)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.VolumeTor)))
+			i--
+			dAtA[i] = 0x1a
+		}
+		if len(x.PairAssetB) > 0 {
+			i -= len(x.PairAssetB)
+			copy(dAtA[i:], x.PairAssetB)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.PairAssetB)))
+			i--
+			dAtA[i] = 0x12
+		}
+		if len(x.PairAssetA) > 0 {
+			i -= len(x.PairAssetA)
+			copy(dAtA[i:], x.PairAssetA)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.PairAssetA)))
+			i--
+			dAtA[i] = 0xa
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*DynamicFeePoolAccumulator)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: DynamicFeePoolAccumulator: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: DynamicFeePoolAccumulator: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field PairAssetA", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.PairAssetA = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 2:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field PairAssetB", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.PairAssetB = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 3:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field VolumeTor", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.VolumeTor = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
 				skippy, err := runtime.Skip(dAtA[iNdEx:])
@@ -2069,10 +2841,12 @@ type DynamicFeeEpochRecord struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Epoch      uint64 `protobuf:"varint,1,opt,name=epoch,proto3" json:"epoch,omitempty"`
-	VolumeTor  string `protobuf:"bytes,2,opt,name=volume_tor,json=volumeTor,proto3" json:"volume_tor,omitempty"`
-	FeesTor    string `protobuf:"bytes,3,opt,name=fees_tor,json=feesTor,proto3" json:"fees_tor,omitempty"`
-	BpsAtClose uint64 `protobuf:"varint,4,opt,name=bps_at_close,json=bpsAtClose,proto3" json:"bps_at_close,omitempty"`
+	Epoch         uint64 `protobuf:"varint,1,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	VolumeTor     string `protobuf:"bytes,2,opt,name=volume_tor,json=volumeTor,proto3" json:"volume_tor,omitempty"`
+	FeesTor       string `protobuf:"bytes,3,opt,name=fees_tor,json=feesTor,proto3" json:"fees_tor,omitempty"`
+	BpsAtClose    uint64 `protobuf:"varint,4,opt,name=bps_at_close,json=bpsAtClose,proto3" json:"bps_at_close,omitempty"`
+	SwapCount     uint64 `protobuf:"varint,5,opt,name=swap_count,json=swapCount,proto3" json:"swap_count,omitempty"`
+	PoolVolumeTor string `protobuf:"bytes,6,opt,name=pool_volume_tor,json=poolVolumeTor,proto3" json:"pool_volume_tor,omitempty"`
 }
 
 func (x *DynamicFeeEpochRecord) Reset() {
@@ -2121,6 +2895,20 @@ func (x *DynamicFeeEpochRecord) GetBpsAtClose() uint64 {
 		return x.BpsAtClose
 	}
 	return 0
+}
+
+func (x *DynamicFeeEpochRecord) GetSwapCount() uint64 {
+	if x != nil {
+		return x.SwapCount
+	}
+	return 0
+}
+
+func (x *DynamicFeeEpochRecord) GetPoolVolumeTor() string {
+	if x != nil {
+		return x.PoolVolumeTor
+	}
+	return ""
 }
 
 type DynamicFeeRecord struct {
@@ -2203,11 +2991,13 @@ type DynamicFeeAccumulator struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Thorname   string `protobuf:"bytes,1,opt,name=thorname,proto3" json:"thorname,omitempty"`
-	PairAssetA string `protobuf:"bytes,2,opt,name=pair_asset_a,json=pairAssetA,proto3" json:"pair_asset_a,omitempty"`
-	PairAssetB string `protobuf:"bytes,3,opt,name=pair_asset_b,json=pairAssetB,proto3" json:"pair_asset_b,omitempty"`
-	VolumeTor  string `protobuf:"bytes,4,opt,name=volume_tor,json=volumeTor,proto3" json:"volume_tor,omitempty"`
-	FeesTor    string `protobuf:"bytes,5,opt,name=fees_tor,json=feesTor,proto3" json:"fees_tor,omitempty"`
+	Thorname      string `protobuf:"bytes,1,opt,name=thorname,proto3" json:"thorname,omitempty"`
+	PairAssetA    string `protobuf:"bytes,2,opt,name=pair_asset_a,json=pairAssetA,proto3" json:"pair_asset_a,omitempty"`
+	PairAssetB    string `protobuf:"bytes,3,opt,name=pair_asset_b,json=pairAssetB,proto3" json:"pair_asset_b,omitempty"`
+	VolumeTor     string `protobuf:"bytes,4,opt,name=volume_tor,json=volumeTor,proto3" json:"volume_tor,omitempty"`
+	FeesTor       string `protobuf:"bytes,5,opt,name=fees_tor,json=feesTor,proto3" json:"fees_tor,omitempty"`
+	SwapCount     uint64 `protobuf:"varint,6,opt,name=swap_count,json=swapCount,proto3" json:"swap_count,omitempty"`
+	PoolVolumeTor string `protobuf:"bytes,7,opt,name=pool_volume_tor,json=poolVolumeTor,proto3" json:"pool_volume_tor,omitempty"`
 }
 
 func (x *DynamicFeeAccumulator) Reset() {
@@ -2265,13 +3055,81 @@ func (x *DynamicFeeAccumulator) GetFeesTor() string {
 	return ""
 }
 
+func (x *DynamicFeeAccumulator) GetSwapCount() uint64 {
+	if x != nil {
+		return x.SwapCount
+	}
+	return 0
+}
+
+func (x *DynamicFeeAccumulator) GetPoolVolumeTor() string {
+	if x != nil {
+		return x.PoolVolumeTor
+	}
+	return ""
+}
+
+// DynamicFeePoolAccumulator tracks total swap volume across a pair (pool) for
+// the in-progress epoch, regardless of affiliate. It is the denominator that
+// normalizes each thorname's fee signal against market-wide activity.
+type DynamicFeePoolAccumulator struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	PairAssetA string `protobuf:"bytes,1,opt,name=pair_asset_a,json=pairAssetA,proto3" json:"pair_asset_a,omitempty"`
+	PairAssetB string `protobuf:"bytes,2,opt,name=pair_asset_b,json=pairAssetB,proto3" json:"pair_asset_b,omitempty"`
+	VolumeTor  string `protobuf:"bytes,3,opt,name=volume_tor,json=volumeTor,proto3" json:"volume_tor,omitempty"`
+}
+
+func (x *DynamicFeePoolAccumulator) Reset() {
+	*x = DynamicFeePoolAccumulator{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_types_type_dynamic_fee_proto_msgTypes[3]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *DynamicFeePoolAccumulator) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DynamicFeePoolAccumulator) ProtoMessage() {}
+
+// Deprecated: Use DynamicFeePoolAccumulator.ProtoReflect.Descriptor instead.
+func (*DynamicFeePoolAccumulator) Descriptor() ([]byte, []int) {
+	return file_types_type_dynamic_fee_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *DynamicFeePoolAccumulator) GetPairAssetA() string {
+	if x != nil {
+		return x.PairAssetA
+	}
+	return ""
+}
+
+func (x *DynamicFeePoolAccumulator) GetPairAssetB() string {
+	if x != nil {
+		return x.PairAssetB
+	}
+	return ""
+}
+
+func (x *DynamicFeePoolAccumulator) GetVolumeTor() string {
+	if x != nil {
+		return x.VolumeTor
+	}
+	return ""
+}
+
 var File_types_type_dynamic_fee_proto protoreflect.FileDescriptor
 
 var file_types_type_dynamic_fee_proto_rawDesc = []byte{
 	0x0a, 0x1c, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x5f, 0x64, 0x79, 0x6e,
 	0x61, 0x6d, 0x69, 0x63, 0x5f, 0x66, 0x65, 0x65, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x12, 0x05,
 	0x74, 0x79, 0x70, 0x65, 0x73, 0x1a, 0x14, 0x67, 0x6f, 0x67, 0x6f, 0x70, 0x72, 0x6f, 0x74, 0x6f,
-	0x2f, 0x67, 0x6f, 0x67, 0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0xc9, 0x01, 0x0a, 0x15,
+	0x2f, 0x67, 0x6f, 0x67, 0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0xb0, 0x02, 0x0a, 0x15,
 	0x44, 0x79, 0x6e, 0x61, 0x6d, 0x69, 0x63, 0x46, 0x65, 0x65, 0x45, 0x70, 0x6f, 0x63, 0x68, 0x52,
 	0x65, 0x63, 0x6f, 0x72, 0x64, 0x12, 0x14, 0x0a, 0x05, 0x65, 0x70, 0x6f, 0x63, 0x68, 0x18, 0x01,
 	0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x65, 0x70, 0x6f, 0x63, 0x68, 0x12, 0x3d, 0x0a, 0x0a, 0x76,
@@ -2284,47 +3142,70 @@ var file_types_type_dynamic_fee_proto_rawDesc = []byte{
 	0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74, 0x52, 0x07, 0x66, 0x65,
 	0x65, 0x73, 0x54, 0x6f, 0x72, 0x12, 0x20, 0x0a, 0x0c, 0x62, 0x70, 0x73, 0x5f, 0x61, 0x74, 0x5f,
 	0x63, 0x6c, 0x6f, 0x73, 0x65, 0x18, 0x04, 0x20, 0x01, 0x28, 0x04, 0x52, 0x0a, 0x62, 0x70, 0x73,
-	0x41, 0x74, 0x43, 0x6c, 0x6f, 0x73, 0x65, 0x22, 0xfd, 0x01, 0x0a, 0x10, 0x44, 0x79, 0x6e, 0x61,
-	0x6d, 0x69, 0x63, 0x46, 0x65, 0x65, 0x52, 0x65, 0x63, 0x6f, 0x72, 0x64, 0x12, 0x1a, 0x0a, 0x08,
-	0x74, 0x68, 0x6f, 0x72, 0x6e, 0x61, 0x6d, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08,
-	0x74, 0x68, 0x6f, 0x72, 0x6e, 0x61, 0x6d, 0x65, 0x12, 0x20, 0x0a, 0x0c, 0x70, 0x61, 0x69, 0x72,
-	0x5f, 0x61, 0x73, 0x73, 0x65, 0x74, 0x5f, 0x61, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0a,
-	0x70, 0x61, 0x69, 0x72, 0x41, 0x73, 0x73, 0x65, 0x74, 0x41, 0x12, 0x20, 0x0a, 0x0c, 0x70, 0x61,
-	0x69, 0x72, 0x5f, 0x61, 0x73, 0x73, 0x65, 0x74, 0x5f, 0x62, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09,
-	0x52, 0x0a, 0x70, 0x61, 0x69, 0x72, 0x41, 0x73, 0x73, 0x65, 0x74, 0x42, 0x12, 0x1f, 0x0a, 0x0b,
-	0x64, 0x79, 0x6e, 0x61, 0x6d, 0x69, 0x63, 0x5f, 0x62, 0x70, 0x73, 0x18, 0x04, 0x20, 0x01, 0x28,
-	0x04, 0x52, 0x0a, 0x64, 0x79, 0x6e, 0x61, 0x6d, 0x69, 0x63, 0x42, 0x70, 0x73, 0x12, 0x2a, 0x0a,
-	0x11, 0x6c, 0x61, 0x73, 0x74, 0x5f, 0x61, 0x63, 0x74, 0x69, 0x76, 0x65, 0x5f, 0x65, 0x70, 0x6f,
-	0x63, 0x68, 0x18, 0x05, 0x20, 0x01, 0x28, 0x04, 0x52, 0x0f, 0x6c, 0x61, 0x73, 0x74, 0x41, 0x63,
-	0x74, 0x69, 0x76, 0x65, 0x45, 0x70, 0x6f, 0x63, 0x68, 0x12, 0x3c, 0x0a, 0x07, 0x68, 0x69, 0x73,
-	0x74, 0x6f, 0x72, 0x79, 0x18, 0x06, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x1c, 0x2e, 0x74, 0x79, 0x70,
-	0x65, 0x73, 0x2e, 0x44, 0x79, 0x6e, 0x61, 0x6d, 0x69, 0x63, 0x46, 0x65, 0x65, 0x45, 0x70, 0x6f,
-	0x63, 0x68, 0x52, 0x65, 0x63, 0x6f, 0x72, 0x64, 0x42, 0x04, 0xc8, 0xde, 0x1f, 0x00, 0x52, 0x07,
-	0x68, 0x69, 0x73, 0x74, 0x6f, 0x72, 0x79, 0x22, 0xf1, 0x01, 0x0a, 0x15, 0x44, 0x79, 0x6e, 0x61,
-	0x6d, 0x69, 0x63, 0x46, 0x65, 0x65, 0x41, 0x63, 0x63, 0x75, 0x6d, 0x75, 0x6c, 0x61, 0x74, 0x6f,
-	0x72, 0x12, 0x1a, 0x0a, 0x08, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x61, 0x6d, 0x65, 0x18, 0x01, 0x20,
-	0x01, 0x28, 0x09, 0x52, 0x08, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x61, 0x6d, 0x65, 0x12, 0x20, 0x0a,
-	0x0c, 0x70, 0x61, 0x69, 0x72, 0x5f, 0x61, 0x73, 0x73, 0x65, 0x74, 0x5f, 0x61, 0x18, 0x02, 0x20,
-	0x01, 0x28, 0x09, 0x52, 0x0a, 0x70, 0x61, 0x69, 0x72, 0x41, 0x73, 0x73, 0x65, 0x74, 0x41, 0x12,
-	0x20, 0x0a, 0x0c, 0x70, 0x61, 0x69, 0x72, 0x5f, 0x61, 0x73, 0x73, 0x65, 0x74, 0x5f, 0x62, 0x18,
-	0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0a, 0x70, 0x61, 0x69, 0x72, 0x41, 0x73, 0x73, 0x65, 0x74,
-	0x42, 0x12, 0x3d, 0x0a, 0x0a, 0x76, 0x6f, 0x6c, 0x75, 0x6d, 0x65, 0x5f, 0x74, 0x6f, 0x72, 0x18,
-	0x04, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1e, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x16, 0x63,
-	0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68,
-	0x2e, 0x55, 0x69, 0x6e, 0x74, 0x52, 0x09, 0x76, 0x6f, 0x6c, 0x75, 0x6d, 0x65, 0x54, 0x6f, 0x72,
-	0x12, 0x39, 0x0a, 0x08, 0x66, 0x65, 0x65, 0x73, 0x5f, 0x74, 0x6f, 0x72, 0x18, 0x05, 0x20, 0x01,
-	0x28, 0x09, 0x42, 0x1e, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x16, 0x63, 0x6f, 0x73, 0x6d,
-	0x6f, 0x73, 0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55, 0x69,
-	0x6e, 0x74, 0x52, 0x07, 0x66, 0x65, 0x65, 0x73, 0x54, 0x6f, 0x72, 0x42, 0x80, 0x01, 0x0a, 0x09,
-	0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x13, 0x54, 0x79, 0x70, 0x65, 0x44,
-	0x79, 0x6e, 0x61, 0x6d, 0x69, 0x63, 0x46, 0x65, 0x65, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01,
-	0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f,
-	0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f,
-	0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54,
-	0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70,
-	0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65,
-	0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0x62, 0x06,
-	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x41, 0x74, 0x43, 0x6c, 0x6f, 0x73, 0x65, 0x12, 0x1d, 0x0a, 0x0a, 0x73, 0x77, 0x61, 0x70, 0x5f,
+	0x63, 0x6f, 0x75, 0x6e, 0x74, 0x18, 0x05, 0x20, 0x01, 0x28, 0x04, 0x52, 0x09, 0x73, 0x77, 0x61,
+	0x70, 0x43, 0x6f, 0x75, 0x6e, 0x74, 0x12, 0x46, 0x0a, 0x0f, 0x70, 0x6f, 0x6f, 0x6c, 0x5f, 0x76,
+	0x6f, 0x6c, 0x75, 0x6d, 0x65, 0x5f, 0x74, 0x6f, 0x72, 0x18, 0x06, 0x20, 0x01, 0x28, 0x09, 0x42,
+	0x1e, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x16, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73,
+	0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74, 0x52,
+	0x0d, 0x70, 0x6f, 0x6f, 0x6c, 0x56, 0x6f, 0x6c, 0x75, 0x6d, 0x65, 0x54, 0x6f, 0x72, 0x22, 0xfd,
+	0x01, 0x0a, 0x10, 0x44, 0x79, 0x6e, 0x61, 0x6d, 0x69, 0x63, 0x46, 0x65, 0x65, 0x52, 0x65, 0x63,
+	0x6f, 0x72, 0x64, 0x12, 0x1a, 0x0a, 0x08, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x61, 0x6d, 0x65, 0x18,
+	0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x61, 0x6d, 0x65, 0x12,
+	0x20, 0x0a, 0x0c, 0x70, 0x61, 0x69, 0x72, 0x5f, 0x61, 0x73, 0x73, 0x65, 0x74, 0x5f, 0x61, 0x18,
+	0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0a, 0x70, 0x61, 0x69, 0x72, 0x41, 0x73, 0x73, 0x65, 0x74,
+	0x41, 0x12, 0x20, 0x0a, 0x0c, 0x70, 0x61, 0x69, 0x72, 0x5f, 0x61, 0x73, 0x73, 0x65, 0x74, 0x5f,
+	0x62, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0a, 0x70, 0x61, 0x69, 0x72, 0x41, 0x73, 0x73,
+	0x65, 0x74, 0x42, 0x12, 0x1f, 0x0a, 0x0b, 0x64, 0x79, 0x6e, 0x61, 0x6d, 0x69, 0x63, 0x5f, 0x62,
+	0x70, 0x73, 0x18, 0x04, 0x20, 0x01, 0x28, 0x04, 0x52, 0x0a, 0x64, 0x79, 0x6e, 0x61, 0x6d, 0x69,
+	0x63, 0x42, 0x70, 0x73, 0x12, 0x2a, 0x0a, 0x11, 0x6c, 0x61, 0x73, 0x74, 0x5f, 0x61, 0x63, 0x74,
+	0x69, 0x76, 0x65, 0x5f, 0x65, 0x70, 0x6f, 0x63, 0x68, 0x18, 0x05, 0x20, 0x01, 0x28, 0x04, 0x52,
+	0x0f, 0x6c, 0x61, 0x73, 0x74, 0x41, 0x63, 0x74, 0x69, 0x76, 0x65, 0x45, 0x70, 0x6f, 0x63, 0x68,
+	0x12, 0x3c, 0x0a, 0x07, 0x68, 0x69, 0x73, 0x74, 0x6f, 0x72, 0x79, 0x18, 0x06, 0x20, 0x03, 0x28,
+	0x0b, 0x32, 0x1c, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x44, 0x79, 0x6e, 0x61, 0x6d, 0x69,
+	0x63, 0x46, 0x65, 0x65, 0x45, 0x70, 0x6f, 0x63, 0x68, 0x52, 0x65, 0x63, 0x6f, 0x72, 0x64, 0x42,
+	0x04, 0xc8, 0xde, 0x1f, 0x00, 0x52, 0x07, 0x68, 0x69, 0x73, 0x74, 0x6f, 0x72, 0x79, 0x22, 0xd8,
+	0x02, 0x0a, 0x15, 0x44, 0x79, 0x6e, 0x61, 0x6d, 0x69, 0x63, 0x46, 0x65, 0x65, 0x41, 0x63, 0x63,
+	0x75, 0x6d, 0x75, 0x6c, 0x61, 0x74, 0x6f, 0x72, 0x12, 0x1a, 0x0a, 0x08, 0x74, 0x68, 0x6f, 0x72,
+	0x6e, 0x61, 0x6d, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x74, 0x68, 0x6f, 0x72,
+	0x6e, 0x61, 0x6d, 0x65, 0x12, 0x20, 0x0a, 0x0c, 0x70, 0x61, 0x69, 0x72, 0x5f, 0x61, 0x73, 0x73,
+	0x65, 0x74, 0x5f, 0x61, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0a, 0x70, 0x61, 0x69, 0x72,
+	0x41, 0x73, 0x73, 0x65, 0x74, 0x41, 0x12, 0x20, 0x0a, 0x0c, 0x70, 0x61, 0x69, 0x72, 0x5f, 0x61,
+	0x73, 0x73, 0x65, 0x74, 0x5f, 0x62, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0a, 0x70, 0x61,
+	0x69, 0x72, 0x41, 0x73, 0x73, 0x65, 0x74, 0x42, 0x12, 0x3d, 0x0a, 0x0a, 0x76, 0x6f, 0x6c, 0x75,
+	0x6d, 0x65, 0x5f, 0x74, 0x6f, 0x72, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1e, 0xc8, 0xde,
+	0x1f, 0x00, 0xda, 0xde, 0x1f, 0x16, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64, 0x6b, 0x2e,
+	0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74, 0x52, 0x09, 0x76, 0x6f,
+	0x6c, 0x75, 0x6d, 0x65, 0x54, 0x6f, 0x72, 0x12, 0x39, 0x0a, 0x08, 0x66, 0x65, 0x65, 0x73, 0x5f,
+	0x74, 0x6f, 0x72, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1e, 0xc8, 0xde, 0x1f, 0x00, 0xda,
+	0xde, 0x1f, 0x16, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f,
+	0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74, 0x52, 0x07, 0x66, 0x65, 0x65, 0x73, 0x54,
+	0x6f, 0x72, 0x12, 0x1d, 0x0a, 0x0a, 0x73, 0x77, 0x61, 0x70, 0x5f, 0x63, 0x6f, 0x75, 0x6e, 0x74,
+	0x18, 0x06, 0x20, 0x01, 0x28, 0x04, 0x52, 0x09, 0x73, 0x77, 0x61, 0x70, 0x43, 0x6f, 0x75, 0x6e,
+	0x74, 0x12, 0x46, 0x0a, 0x0f, 0x70, 0x6f, 0x6f, 0x6c, 0x5f, 0x76, 0x6f, 0x6c, 0x75, 0x6d, 0x65,
+	0x5f, 0x74, 0x6f, 0x72, 0x18, 0x07, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1e, 0xc8, 0xde, 0x1f, 0x00,
+	0xda, 0xde, 0x1f, 0x16, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f,
+	0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74, 0x52, 0x0d, 0x70, 0x6f, 0x6f, 0x6c,
+	0x56, 0x6f, 0x6c, 0x75, 0x6d, 0x65, 0x54, 0x6f, 0x72, 0x22, 0x9e, 0x01, 0x0a, 0x19, 0x44, 0x79,
+	0x6e, 0x61, 0x6d, 0x69, 0x63, 0x46, 0x65, 0x65, 0x50, 0x6f, 0x6f, 0x6c, 0x41, 0x63, 0x63, 0x75,
+	0x6d, 0x75, 0x6c, 0x61, 0x74, 0x6f, 0x72, 0x12, 0x20, 0x0a, 0x0c, 0x70, 0x61, 0x69, 0x72, 0x5f,
+	0x61, 0x73, 0x73, 0x65, 0x74, 0x5f, 0x61, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0a, 0x70,
+	0x61, 0x69, 0x72, 0x41, 0x73, 0x73, 0x65, 0x74, 0x41, 0x12, 0x20, 0x0a, 0x0c, 0x70, 0x61, 0x69,
+	0x72, 0x5f, 0x61, 0x73, 0x73, 0x65, 0x74, 0x5f, 0x62, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52,
+	0x0a, 0x70, 0x61, 0x69, 0x72, 0x41, 0x73, 0x73, 0x65, 0x74, 0x42, 0x12, 0x3d, 0x0a, 0x0a, 0x76,
+	0x6f, 0x6c, 0x75, 0x6d, 0x65, 0x5f, 0x74, 0x6f, 0x72, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x42,
+	0x1e, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x16, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73,
+	0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74, 0x52,
+	0x09, 0x76, 0x6f, 0x6c, 0x75, 0x6d, 0x65, 0x54, 0x6f, 0x72, 0x42, 0x80, 0x01, 0x0a, 0x09, 0x63,
+	0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x13, 0x54, 0x79, 0x70, 0x65, 0x44, 0x79,
+	0x6e, 0x61, 0x6d, 0x69, 0x63, 0x46, 0x65, 0x65, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a,
+	0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72,
+	0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76,
+	0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58,
+	0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65,
+	0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74,
+	0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0x62, 0x06, 0x70,
+	0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -2339,11 +3220,12 @@ func file_types_type_dynamic_fee_proto_rawDescGZIP() []byte {
 	return file_types_type_dynamic_fee_proto_rawDescData
 }
 
-var file_types_type_dynamic_fee_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_types_type_dynamic_fee_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_types_type_dynamic_fee_proto_goTypes = []interface{}{
-	(*DynamicFeeEpochRecord)(nil), // 0: types.DynamicFeeEpochRecord
-	(*DynamicFeeRecord)(nil),      // 1: types.DynamicFeeRecord
-	(*DynamicFeeAccumulator)(nil), // 2: types.DynamicFeeAccumulator
+	(*DynamicFeeEpochRecord)(nil),     // 0: types.DynamicFeeEpochRecord
+	(*DynamicFeeRecord)(nil),          // 1: types.DynamicFeeRecord
+	(*DynamicFeeAccumulator)(nil),     // 2: types.DynamicFeeAccumulator
+	(*DynamicFeePoolAccumulator)(nil), // 3: types.DynamicFeePoolAccumulator
 }
 var file_types_type_dynamic_fee_proto_depIdxs = []int32{
 	0, // 0: types.DynamicFeeRecord.history:type_name -> types.DynamicFeeEpochRecord
@@ -2396,6 +3278,18 @@ func file_types_type_dynamic_fee_proto_init() {
 				return nil
 			}
 		}
+		file_types_type_dynamic_fee_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*DynamicFeePoolAccumulator); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -2403,7 +3297,7 @@ func file_types_type_dynamic_fee_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_types_type_dynamic_fee_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

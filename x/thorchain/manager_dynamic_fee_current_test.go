@@ -29,6 +29,37 @@ func setDynamicFeeTestMimirs(ctx cosmos.Context, k keeper.Keeper) {
 	k.SetMimir(ctx, "L1DynamicFeeCeilingBPS", 100)
 	k.SetMimir(ctx, "L1DynamicFeeStepBPS", 1)
 	k.SetMimir(ctx, "L1DynamicFeeDeadbandBPS", 0)
+	// Liquidity gate off by default; the gate tests set it explicitly.
+	k.SetMimir(ctx, "L1DynamicFeeMinSwaps", 0)
+	k.SetMimir(ctx, "L1DynamicFeeMinVolumeUSD", 0)
+}
+
+// endBlockT seals an epoch in tests. It first gives every live accumulator's pair
+// a pool volume of exactly SignalScale, which makes NormalizedSignal() return
+// FeesTor unchanged -- so tests written against the raw-fee signal keep their
+// arithmetic, and no sealed entry looks like pre-upgrade history.
+func endBlockT(ctx cosmos.Context, k keeper.Keeper, dfm DynamicFeeManager) error {
+	var accs []types.DynamicFeeAccumulator
+	iter := k.GetDynamicFeeAccumulatorIterator(ctx)
+	for ; iter.Valid(); iter.Next() {
+		var acc types.DynamicFeeAccumulator
+		if err := k.Cdc().Unmarshal(iter.Value(), &acc); err != nil {
+			continue
+		}
+		accs = append(accs, acc)
+	}
+	iter.Close()
+	for _, acc := range accs {
+		poolAcc, err := k.GetDynamicFeePoolAccumulator(ctx, acc.PairAssetA, acc.PairAssetB)
+		if err != nil {
+			continue
+		}
+		poolAcc.VolumeTor = types.SignalScale
+		if err := k.SetDynamicFeePoolAccumulator(ctx, poolAcc); err != nil {
+			continue
+		}
+	}
+	return dfm.EndBlock(ctx)
 }
 
 // registerThorname creates and stores a THORName, and optionally whitelists it.
@@ -59,6 +90,7 @@ func (s *DynamicFeeMgrSuite) TestCreditSwapDisabled(c *C) {
 		[]string{"mytn"}, []cosmos.Uint{cosmos.NewUint(100)},
 		common.BTCAsset, common.RuneAsset(),
 		cosmos.NewUint(1000), cosmos.NewUint(10),
+		true,
 	)
 
 	pairA, pairB, ok := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
@@ -85,6 +117,7 @@ func (s *DynamicFeeMgrSuite) TestCreditSwapNonL1Asset(c *C) {
 		[]string{"mytn"}, []cosmos.Uint{cosmos.NewUint(100)},
 		synthBTC, common.RuneAsset(),
 		cosmos.NewUint(1000), cosmos.NewUint(10),
+		true,
 	)
 
 	_, _, ok := dynamicFeePairKey(synthBTC, common.RuneAsset())
@@ -116,6 +149,7 @@ func (s *DynamicFeeMgrSuite) TestCreditSwapBasicFlow(c *C) {
 		[]string{"mytn"}, []cosmos.Uint{cosmos.NewUint(100)},
 		common.BTCAsset, common.RuneAsset(),
 		volume, fees,
+		true,
 	)
 
 	pairA, pairB, ok := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
@@ -136,6 +170,7 @@ func (s *DynamicFeeMgrSuite) TestCreditSwapBasicFlow(c *C) {
 		[]string{"mytn"}, []cosmos.Uint{cosmos.NewUint(100)},
 		common.BTCAsset, common.RuneAsset(),
 		volume, fees,
+		true,
 	)
 	tnAcc2, err := k.GetDynamicFeeAccumulator(ctx, "mytn", pairA, pairB)
 	c.Assert(err, IsNil)
@@ -158,7 +193,7 @@ func (s *DynamicFeeMgrSuite) TestGetDynamicBpsBasic(c *C) {
 		PairAssetA: pairA,
 		PairAssetB: pairB,
 		DynamicBps: 42,
-		History:    []types.DynamicFeeEpochRecord{{Epoch: 1, FeesTor: cosmos.NewUint(100), BpsAtClose: 42}},
+		History:    []types.DynamicFeeEpochRecord{{Epoch: 1, FeesTor: cosmos.NewUint(100), BpsAtClose: 42, PoolVolumeTor: types.SignalScale}},
 	}
 	c.Assert(k.SetDynamicFeeRecord(ctx, rec), IsNil)
 
@@ -237,6 +272,7 @@ func (s *DynamicFeeMgrSuite) TestGetDynamicBpsMonitorMode(c *C) {
 		[]string{"montn"}, []cosmos.Uint{cosmos.NewUint(100)},
 		common.BTCAsset, common.RuneAsset(),
 		cosmos.NewUint(500_000), cosmos.NewUint(5_000),
+		true,
 	)
 	tnAcc, err := k.GetDynamicFeeAccumulator(ctx, "montn", pairA, pairB)
 	c.Assert(err, IsNil)
@@ -247,7 +283,7 @@ func (s *DynamicFeeMgrSuite) TestGetDynamicBpsMonitorMode(c *C) {
 		PairAssetA: pairA,
 		PairAssetB: pairB,
 		DynamicBps: 55,
-		History:    []types.DynamicFeeEpochRecord{{Epoch: 1, FeesTor: cosmos.NewUint(100), BpsAtClose: 55}},
+		History:    []types.DynamicFeeEpochRecord{{Epoch: 1, FeesTor: cosmos.NewUint(100), BpsAtClose: 55, PoolVolumeTor: types.SignalScale}},
 	}
 	c.Assert(k.SetDynamicFeeRecord(ctx, rec), IsNil)
 
@@ -278,14 +314,14 @@ func (s *DynamicFeeMgrSuite) TestGetDynamicBpsMultiAffiliate(c *C) {
 		PairAssetA: pairA,
 		PairAssetB: pairB,
 		DynamicBps: 10,
-		History:    []types.DynamicFeeEpochRecord{{Epoch: 1, FeesTor: cosmos.NewUint(100), BpsAtClose: 10}},
+		History:    []types.DynamicFeeEpochRecord{{Epoch: 1, FeesTor: cosmos.NewUint(100), BpsAtClose: 10, PoolVolumeTor: types.SignalScale}},
 	}
 	recLarge := types.DynamicFeeRecord{
 		Thorname:   "large",
 		PairAssetA: pairA,
 		PairAssetB: pairB,
 		DynamicBps: 77,
-		History:    []types.DynamicFeeEpochRecord{{Epoch: 1, FeesTor: cosmos.NewUint(100), BpsAtClose: 77}},
+		History:    []types.DynamicFeeEpochRecord{{Epoch: 1, FeesTor: cosmos.NewUint(100), BpsAtClose: 77, PoolVolumeTor: types.SignalScale}},
 	}
 	c.Assert(k.SetDynamicFeeRecord(ctx, recSmall), IsNil)
 	c.Assert(k.SetDynamicFeeRecord(ctx, recLarge), IsNil)
@@ -314,10 +350,11 @@ func (s *DynamicFeeMgrSuite) TestEndBlockEpochBoundary(c *C) {
 		[]string{"mytn"}, []cosmos.Uint{cosmos.NewUint(100)},
 		common.BTCAsset, common.RuneAsset(),
 		cosmos.NewUint(1_000_000), cosmos.NewUint(10_000),
+		true,
 	)
 
 	ctx = ctx.WithBlockHeight(20)
-	c.Assert(dfm.EndBlock(ctx), IsNil)
+	c.Assert(endBlockT(ctx, k, dfm), IsNil)
 
 	pairA, pairB, ok := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
 	c.Assert(ok, Equals, true)
@@ -352,9 +389,10 @@ func (s *DynamicFeeMgrSuite) TestEndBlockColdStartProbesUp(c *C) {
 		[]string{"mytn"}, []cosmos.Uint{cosmos.NewUint(100)},
 		common.BTCAsset, common.RuneAsset(),
 		cosmos.NewUint(1_000_000), cosmos.NewUint(10_000),
+		true,
 	)
 	ctx = ctx.WithBlockHeight(20)
-	c.Assert(dfm.EndBlock(ctx), IsNil)
+	c.Assert(endBlockT(ctx, k, dfm), IsNil)
 	rec1, _ := k.GetDynamicFeeRecord(ctx, "mytn", pairA, pairB)
 	c.Assert(rec1.DynamicBps, Equals, uint64(2), Commentf("first epoch probes up from floor=1"))
 
@@ -365,9 +403,10 @@ func (s *DynamicFeeMgrSuite) TestEndBlockColdStartProbesUp(c *C) {
 		[]string{"mytn"}, []cosmos.Uint{cosmos.NewUint(100)},
 		common.BTCAsset, common.RuneAsset(),
 		cosmos.NewUint(1_000_000), cosmos.NewUint(10_000),
+		true,
 	)
 	ctx = ctx.WithBlockHeight(30)
-	c.Assert(dfm.EndBlock(ctx), IsNil)
+	c.Assert(endBlockT(ctx, k, dfm), IsNil)
 	rec2, _ := k.GetDynamicFeeRecord(ctx, "mytn", pairA, pairB)
 	c.Assert(rec2.DynamicBps, Equals, uint64(3), Commentf("second epoch probes up again"))
 }
@@ -389,9 +428,9 @@ func (s *DynamicFeeMgrSuite) TestEndBlockContinueUpOnFeeRise(c *C) {
 		Thorname: "mytn", PairAssetA: pairA, PairAssetB: pairB,
 		DynamicBps: 6,
 		History: []types.DynamicFeeEpochRecord{
-			{Epoch: 9, FeesTor: cosmos.NewUint(100), BpsAtClose: 5},
-			{Epoch: 10, FeesTor: cosmos.NewUint(100), BpsAtClose: 6},
-			{Epoch: 11, FeesTor: cosmos.NewUint(100), BpsAtClose: 6},
+			{Epoch: 9, FeesTor: cosmos.NewUint(100), BpsAtClose: 5, PoolVolumeTor: types.SignalScale},
+			{Epoch: 10, FeesTor: cosmos.NewUint(100), BpsAtClose: 6, PoolVolumeTor: types.SignalScale},
+			{Epoch: 11, FeesTor: cosmos.NewUint(100), BpsAtClose: 6, PoolVolumeTor: types.SignalScale},
 		},
 	}
 	c.Assert(k.SetDynamicFeeRecord(ctx, pre), IsNil)
@@ -401,9 +440,10 @@ func (s *DynamicFeeMgrSuite) TestEndBlockContinueUpOnFeeRise(c *C) {
 		[]string{"mytn"}, []cosmos.Uint{cosmos.NewUint(100)},
 		common.BTCAsset, common.RuneAsset(),
 		cosmos.NewUint(10_000), cosmos.NewUint(200),
+		true,
 	)
 	ctx = ctx.WithBlockHeight(120)
-	c.Assert(dfm.EndBlock(ctx), IsNil)
+	c.Assert(endBlockT(ctx, k, dfm), IsNil)
 
 	rec, _ := k.GetDynamicFeeRecord(ctx, "mytn", pairA, pairB)
 	c.Assert(rec.DynamicBps, Equals, uint64(7), Commentf("continue up: fees rose, direction was up"))
@@ -425,8 +465,8 @@ func (s *DynamicFeeMgrSuite) TestEndBlockReverseDownOnFeeFall(c *C) {
 		Thorname: "mytn", PairAssetA: pairA, PairAssetB: pairB,
 		DynamicBps: 8,
 		History: []types.DynamicFeeEpochRecord{
-			{Epoch: 9, FeesTor: cosmos.NewUint(200), BpsAtClose: 5},
-			{Epoch: 10, FeesTor: cosmos.NewUint(200), BpsAtClose: 8},
+			{Epoch: 9, FeesTor: cosmos.NewUint(200), BpsAtClose: 5, PoolVolumeTor: types.SignalScale},
+			{Epoch: 10, FeesTor: cosmos.NewUint(200), BpsAtClose: 8, PoolVolumeTor: types.SignalScale},
 		},
 	}
 	c.Assert(k.SetDynamicFeeRecord(ctx, pre), IsNil)
@@ -437,9 +477,10 @@ func (s *DynamicFeeMgrSuite) TestEndBlockReverseDownOnFeeFall(c *C) {
 		[]string{"mytn"}, []cosmos.Uint{cosmos.NewUint(100)},
 		common.BTCAsset, common.RuneAsset(),
 		cosmos.NewUint(10_000), cosmos.NewUint(50),
+		true,
 	)
 	ctx = ctx.WithBlockHeight(110)
-	c.Assert(dfm.EndBlock(ctx), IsNil)
+	c.Assert(endBlockT(ctx, k, dfm), IsNil)
 
 	rec, _ := k.GetDynamicFeeRecord(ctx, "mytn", pairA, pairB)
 	c.Assert(rec.DynamicBps, Equals, uint64(7), Commentf("reverse down: raising floor hurt fees"))
@@ -460,8 +501,8 @@ func (s *DynamicFeeMgrSuite) TestEndBlockContinueDownOnFeeRise(c *C) {
 		Thorname: "mytn", PairAssetA: pairA, PairAssetB: pairB,
 		DynamicBps: 5,
 		History: []types.DynamicFeeEpochRecord{
-			{Epoch: 9, FeesTor: cosmos.NewUint(100), BpsAtClose: 8},
-			{Epoch: 10, FeesTor: cosmos.NewUint(100), BpsAtClose: 5},
+			{Epoch: 9, FeesTor: cosmos.NewUint(100), BpsAtClose: 8, PoolVolumeTor: types.SignalScale},
+			{Epoch: 10, FeesTor: cosmos.NewUint(100), BpsAtClose: 5, PoolVolumeTor: types.SignalScale},
 		},
 	}
 	c.Assert(k.SetDynamicFeeRecord(ctx, pre), IsNil)
@@ -471,9 +512,10 @@ func (s *DynamicFeeMgrSuite) TestEndBlockContinueDownOnFeeRise(c *C) {
 		[]string{"mytn"}, []cosmos.Uint{cosmos.NewUint(100)},
 		common.BTCAsset, common.RuneAsset(),
 		cosmos.NewUint(10_000), cosmos.NewUint(150),
+		true,
 	)
 	ctx = ctx.WithBlockHeight(110)
-	c.Assert(dfm.EndBlock(ctx), IsNil)
+	c.Assert(endBlockT(ctx, k, dfm), IsNil)
 
 	rec, _ := k.GetDynamicFeeRecord(ctx, "mytn", pairA, pairB)
 	c.Assert(rec.DynamicBps, Equals, uint64(4), Commentf("continue down: lowering floor helped fees"))
@@ -496,8 +538,8 @@ func (s *DynamicFeeMgrSuite) TestEndBlockHoldInDeadband(c *C) {
 		Thorname: "mytn", PairAssetA: pairA, PairAssetB: pairB,
 		DynamicBps: 6,
 		History: []types.DynamicFeeEpochRecord{
-			{Epoch: 9, FeesTor: cosmos.NewUint(100), BpsAtClose: 5},
-			{Epoch: 10, FeesTor: cosmos.NewUint(100), BpsAtClose: 6},
+			{Epoch: 9, FeesTor: cosmos.NewUint(100), BpsAtClose: 5, PoolVolumeTor: types.SignalScale},
+			{Epoch: 10, FeesTor: cosmos.NewUint(100), BpsAtClose: 6, PoolVolumeTor: types.SignalScale},
 		},
 	}
 	c.Assert(k.SetDynamicFeeRecord(ctx, pre), IsNil)
@@ -507,9 +549,10 @@ func (s *DynamicFeeMgrSuite) TestEndBlockHoldInDeadband(c *C) {
 		[]string{"mytn"}, []cosmos.Uint{cosmos.NewUint(100)},
 		common.BTCAsset, common.RuneAsset(),
 		cosmos.NewUint(10_000), cosmos.NewUint(105), // 5% increase
+		true,
 	)
 	ctx = ctx.WithBlockHeight(110)
-	c.Assert(dfm.EndBlock(ctx), IsNil)
+	c.Assert(endBlockT(ctx, k, dfm), IsNil)
 
 	rec, _ := k.GetDynamicFeeRecord(ctx, "mytn", pairA, pairB)
 	c.Assert(rec.DynamicBps, Equals, uint64(6), Commentf("within deadband: hold at 6"))
@@ -537,8 +580,8 @@ func (s *DynamicFeeMgrSuite) TestEndBlockZeroVolumeAccumulator(c *C) {
 		Thorname: "mytn", PairAssetA: pairA, PairAssetB: pairB,
 		DynamicBps: 5,
 		History: []types.DynamicFeeEpochRecord{
-			{Epoch: 9, FeesTor: cosmos.ZeroUint(), BpsAtClose: 8},
-			{Epoch: 10, FeesTor: cosmos.ZeroUint(), BpsAtClose: 5},
+			{Epoch: 9, FeesTor: cosmos.ZeroUint(), BpsAtClose: 8, PoolVolumeTor: types.SignalScale},
+			{Epoch: 10, FeesTor: cosmos.ZeroUint(), BpsAtClose: 5, PoolVolumeTor: types.SignalScale},
 		},
 	}
 	c.Assert(k.SetDynamicFeeRecord(ctx, pre), IsNil)
@@ -554,7 +597,7 @@ func (s *DynamicFeeMgrSuite) TestEndBlockZeroVolumeAccumulator(c *C) {
 	}), IsNil)
 
 	ctx = ctx.WithBlockHeight(110)
-	c.Assert(dfm.EndBlock(ctx), IsNil)
+	c.Assert(endBlockT(ctx, k, dfm), IsNil)
 
 	rec, err := k.GetDynamicFeeRecord(ctx, "mytn", pairA, pairB)
 	c.Assert(err, IsNil)
@@ -590,8 +633,8 @@ func (s *DynamicFeeMgrSuite) TestEndBlockFloorClamp(c *C) {
 		Thorname: "mytn", PairAssetA: pairA, PairAssetB: pairB,
 		DynamicBps: 1,
 		History: []types.DynamicFeeEpochRecord{
-			{Epoch: 9, FeesTor: cosmos.NewUint(100), BpsAtClose: 2},
-			{Epoch: 10, FeesTor: cosmos.NewUint(100), BpsAtClose: 1},
+			{Epoch: 9, FeesTor: cosmos.NewUint(100), BpsAtClose: 2, PoolVolumeTor: types.SignalScale},
+			{Epoch: 10, FeesTor: cosmos.NewUint(100), BpsAtClose: 1, PoolVolumeTor: types.SignalScale},
 		},
 	}
 	c.Assert(k.SetDynamicFeeRecord(ctx, pre), IsNil)
@@ -601,9 +644,10 @@ func (s *DynamicFeeMgrSuite) TestEndBlockFloorClamp(c *C) {
 		[]string{"mytn"}, []cosmos.Uint{cosmos.NewUint(100)},
 		common.BTCAsset, common.RuneAsset(),
 		cosmos.NewUint(10_000), cosmos.NewUint(500),
+		true,
 	)
 	ctx = ctx.WithBlockHeight(110)
-	c.Assert(dfm.EndBlock(ctx), IsNil)
+	c.Assert(endBlockT(ctx, k, dfm), IsNil)
 
 	rec, _ := k.GetDynamicFeeRecord(ctx, "mytn", pairA, pairB)
 	c.Assert(rec.DynamicBps, Equals, uint64(1), Commentf("floor clamp: cannot go below floor=1"))
@@ -626,8 +670,8 @@ func (s *DynamicFeeMgrSuite) TestEndBlockCeilingClamp(c *C) {
 		Thorname: "mytn", PairAssetA: pairA, PairAssetB: pairB,
 		DynamicBps: 10,
 		History: []types.DynamicFeeEpochRecord{
-			{Epoch: 9, FeesTor: cosmos.NewUint(100), BpsAtClose: 9},
-			{Epoch: 10, FeesTor: cosmos.NewUint(100), BpsAtClose: 10},
+			{Epoch: 9, FeesTor: cosmos.NewUint(100), BpsAtClose: 9, PoolVolumeTor: types.SignalScale},
+			{Epoch: 10, FeesTor: cosmos.NewUint(100), BpsAtClose: 10, PoolVolumeTor: types.SignalScale},
 		},
 	}
 	c.Assert(k.SetDynamicFeeRecord(ctx, pre), IsNil)
@@ -637,9 +681,10 @@ func (s *DynamicFeeMgrSuite) TestEndBlockCeilingClamp(c *C) {
 		[]string{"mytn"}, []cosmos.Uint{cosmos.NewUint(100)},
 		common.BTCAsset, common.RuneAsset(),
 		cosmos.NewUint(10_000), cosmos.NewUint(500),
+		true,
 	)
 	ctx = ctx.WithBlockHeight(110)
-	c.Assert(dfm.EndBlock(ctx), IsNil)
+	c.Assert(endBlockT(ctx, k, dfm), IsNil)
 
 	rec, _ := k.GetDynamicFeeRecord(ctx, "mytn", pairA, pairB)
 	c.Assert(rec.DynamicBps, Equals, uint64(10), Commentf("ceiling clamp: cannot exceed 10"))
@@ -663,9 +708,10 @@ func (s *DynamicFeeMgrSuite) TestEndBlockSoloOnPair(c *C) {
 			[]string{"mytn"}, []cosmos.Uint{cosmos.NewUint(100)},
 			common.BTCAsset, common.RuneAsset(),
 			cosmos.NewUint(1_000_000), cosmos.NewUint(uint64(100*epoch)),
+			true,
 		)
 		ctx = ctx.WithBlockHeight(epoch * 10)
-		c.Assert(dfm.EndBlock(ctx), IsNil)
+		c.Assert(endBlockT(ctx, k, dfm), IsNil)
 	}
 
 	rec, _ := k.GetDynamicFeeRecord(ctx, "mytn", pairA, pairB)
@@ -688,9 +734,10 @@ func (s *DynamicFeeMgrSuite) TestEndBlockWhitelistRemovalCleanup(c *C) {
 		[]string{"mytn"}, []cosmos.Uint{cosmos.NewUint(100)},
 		common.BTCAsset, common.RuneAsset(),
 		cosmos.NewUint(500_000), cosmos.NewUint(5_000),
+		true,
 	)
 	ctx = ctx.WithBlockHeight(20)
-	c.Assert(dfm.EndBlock(ctx), IsNil)
+	c.Assert(endBlockT(ctx, k, dfm), IsNil)
 
 	pairA, pairB, ok := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
 	c.Assert(ok, Equals, true)
@@ -703,14 +750,14 @@ func (s *DynamicFeeMgrSuite) TestEndBlockWhitelistRemovalCleanup(c *C) {
 
 	// Cleanup runs at epoch boundaries only.
 	ctx = ctx.WithBlockHeight(21)
-	c.Assert(dfm.EndBlock(ctx), IsNil)
+	c.Assert(endBlockT(ctx, k, dfm), IsNil)
 	recMid, err := k.GetDynamicFeeRecord(ctx, "mytn", pairA, pairB)
 	c.Assert(err, IsNil)
 	c.Assert(recMid.DynamicBps > 0 || len(recMid.History) > 0, Equals, true,
 		Commentf("record should survive non-epoch block after whitelist removal"))
 
 	ctx = ctx.WithBlockHeight(30)
-	c.Assert(dfm.EndBlock(ctx), IsNil)
+	c.Assert(endBlockT(ctx, k, dfm), IsNil)
 
 	rec2, err := k.GetDynamicFeeRecord(ctx, "mytn", pairA, pairB)
 	c.Assert(err, IsNil)
@@ -741,6 +788,7 @@ func (s *DynamicFeeMgrSuite) TestCreditSwapDoubleSwapPerLegKeys(c *C) {
 		[]string{"mytn"}, []cosmos.Uint{cosmos.NewUint(100)},
 		common.BTCAsset, common.RuneAsset(),
 		legVolume, legFees,
+		true,
 	)
 	// Leg 2: RUNE → ETH
 	dfm.CreditSwap(
@@ -748,6 +796,7 @@ func (s *DynamicFeeMgrSuite) TestCreditSwapDoubleSwapPerLegKeys(c *C) {
 		[]string{"mytn"}, []cosmos.Uint{cosmos.NewUint(100)},
 		common.RuneAsset(), common.ETHAsset,
 		legVolume, legFees,
+		true,
 	)
 
 	btcRuneA, btcRuneB, ok := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
@@ -817,6 +866,7 @@ func (s *DynamicFeeMgrSuite) TestCreditSwapDominantOnly(c *C) {
 		[]cosmos.Uint{cosmos.NewUint(100), cosmos.NewUint(300)},
 		common.BTCAsset, common.RuneAsset(),
 		cosmos.NewUint(1_000_000), cosmos.NewUint(10_000),
+		true,
 	)
 
 	pairA, pairB, ok := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
@@ -856,7 +906,7 @@ func (s *DynamicFeeMgrSuite) TestDominantEligibleAffiliateBypass(c *C) {
 		PairAssetA: pairA,
 		PairAssetB: pairB,
 		DynamicBps: 50,
-		History:    []types.DynamicFeeEpochRecord{{Epoch: 1, FeesTor: cosmos.NewUint(100), BpsAtClose: 50}},
+		History:    []types.DynamicFeeEpochRecord{{Epoch: 1, FeesTor: cosmos.NewUint(100), BpsAtClose: 50, PoolVolumeTor: types.SignalScale}},
 	}
 	c.Assert(k.SetDynamicFeeRecord(ctx, rec), IsNil)
 
@@ -877,6 +927,7 @@ func (s *DynamicFeeMgrSuite) TestDominantEligibleAffiliateBypass(c *C) {
 		[]cosmos.Uint{cosmos.NewUint(1), cosmos.NewUint(500)},
 		common.BTCAsset, common.RuneAsset(),
 		cosmos.NewUint(1_000_000), cosmos.NewUint(10_000),
+		true,
 	)
 	xdefiAcc, err := k.GetDynamicFeeAccumulator(ctx, "xdefi", pairA, pairB)
 	c.Assert(err, IsNil)
@@ -902,7 +953,7 @@ func (s *DynamicFeeMgrSuite) TestDominantEligibleAffiliateAddressForm(c *C) {
 		PairAssetA: pairA,
 		PairAssetB: pairB,
 		DynamicBps: 33,
-		History:    []types.DynamicFeeEpochRecord{{Epoch: 1, FeesTor: cosmos.NewUint(100), BpsAtClose: 33}},
+		History:    []types.DynamicFeeEpochRecord{{Epoch: 1, FeesTor: cosmos.NewUint(100), BpsAtClose: 33, PoolVolumeTor: types.SignalScale}},
 	}
 	c.Assert(k.SetDynamicFeeRecord(ctx, rec), IsNil)
 
@@ -936,7 +987,7 @@ func (s *DynamicFeeMgrSuite) TestDominantEligibleAffiliateUnwhitelisted(c *C) {
 		PairAssetA: pairA,
 		PairAssetB: pairB,
 		DynamicBps: 25,
-		History:    []types.DynamicFeeEpochRecord{{Epoch: 1, FeesTor: cosmos.NewUint(100), BpsAtClose: 25}},
+		History:    []types.DynamicFeeEpochRecord{{Epoch: 1, FeesTor: cosmos.NewUint(100), BpsAtClose: 25, PoolVolumeTor: types.SignalScale}},
 	}
 	c.Assert(k.SetDynamicFeeRecord(ctx, rec), IsNil)
 
@@ -972,7 +1023,7 @@ func (s *DynamicFeeMgrSuite) TestDominantEligibleAffiliateMonitorVsActive(c *C) 
 		PairAssetA: pairA,
 		PairAssetB: pairB,
 		DynamicBps: 17,
-		History:    []types.DynamicFeeEpochRecord{{Epoch: 1, FeesTor: cosmos.NewUint(100), BpsAtClose: 17}},
+		History:    []types.DynamicFeeEpochRecord{{Epoch: 1, FeesTor: cosmos.NewUint(100), BpsAtClose: 17, PoolVolumeTor: types.SignalScale}},
 	}
 	c.Assert(k.SetDynamicFeeRecord(ctx, rec), IsNil)
 
@@ -993,6 +1044,7 @@ func (s *DynamicFeeMgrSuite) TestDominantEligibleAffiliateMonitorVsActive(c *C) 
 		[]cosmos.Uint{cosmos.NewUint(100), cosmos.NewUint(900)},
 		common.BTCAsset, common.RuneAsset(),
 		cosmos.NewUint(1_000_000), cosmos.NewUint(10_000),
+		true,
 	)
 	monitorAcc, err := k.GetDynamicFeeAccumulator(ctx, "monitor", pairA, pairB)
 	c.Assert(err, IsNil)
@@ -1021,6 +1073,7 @@ func (s *DynamicFeeMgrSuite) TestCreditSwapMismatchedAffiliateLengths(c *C) {
 		[]string{"mytn", "other"}, []cosmos.Uint{cosmos.NewUint(100)},
 		common.BTCAsset, common.RuneAsset(),
 		cosmos.NewUint(1_000_000), cosmos.NewUint(10_000),
+		true,
 	)
 
 	pairA, pairB, ok := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
@@ -1057,6 +1110,7 @@ func (s *DynamicFeeMgrSuite) TestCreditSwapCacheContextRollback(c *C) {
 		[]string{"mytn"}, []cosmos.Uint{cosmos.NewUint(100)},
 		common.BTCAsset, common.RuneAsset(),
 		cosmos.NewUint(1_000_000), cosmos.NewUint(10_000),
+		true,
 	)
 	// Deliberately do NOT call commit — simulates the handler returning an error.
 
@@ -1093,9 +1147,10 @@ func (s *DynamicFeeMgrSuite) TestEndBlockSealBeforePruneSurvivesLateStart(c *C) 
 		[]string{"mytn"}, []cosmos.Uint{cosmos.NewUint(100)},
 		common.BTCAsset, common.RuneAsset(),
 		cosmos.NewUint(1_000_000), cosmos.NewUint(10_000),
+		true,
 	)
 	ctx = ctx.WithBlockHeight(500) // epoch = 500 / 10 = 50
-	c.Assert(dfm.EndBlock(ctx), IsNil)
+	c.Assert(endBlockT(ctx, k, dfm), IsNil)
 
 	pairA, pairB, _ := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
 	rec, err := k.GetDynamicFeeRecord(ctx, "mytn", pairA, pairB)
@@ -1125,9 +1180,10 @@ func (s *DynamicFeeMgrSuite) TestEndBlockRebasesOnEpochBlocksShrink(c *C) {
 		[]string{"mytn"}, []cosmos.Uint{cosmos.NewUint(100)},
 		common.BTCAsset, common.RuneAsset(),
 		cosmos.NewUint(1_000_000), cosmos.NewUint(10_000),
+		true,
 	)
 	ctx = ctx.WithBlockHeight(1000)
-	c.Assert(dfm.EndBlock(ctx), IsNil)
+	c.Assert(endBlockT(ctx, k, dfm), IsNil)
 
 	pairA, pairB, _ := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
 	rec, err := k.GetDynamicFeeRecord(ctx, "mytn", pairA, pairB)
@@ -1140,7 +1196,7 @@ func (s *DynamicFeeMgrSuite) TestEndBlockRebasesOnEpochBlocksShrink(c *C) {
 	// With rebase: LastActiveEpoch becomes 10*100/10 = 100; diff = 10.
 	k.SetMimir(ctx, "L1DynamicFeeEpochBlocks", 10)
 	ctx = ctx.WithBlockHeight(1100)
-	c.Assert(dfm.EndBlock(ctx), IsNil)
+	c.Assert(endBlockT(ctx, k, dfm), IsNil)
 
 	rec2, err := k.GetDynamicFeeRecord(ctx, "mytn", pairA, pairB)
 	c.Assert(err, IsNil)
@@ -1172,9 +1228,10 @@ func (s *DynamicFeeMgrSuite) TestEndBlockRebasesOnEpochBlocksGrow(c *C) {
 		[]string{"mytn"}, []cosmos.Uint{cosmos.NewUint(100)},
 		common.BTCAsset, common.RuneAsset(),
 		cosmos.NewUint(1_000_000), cosmos.NewUint(10_000),
+		true,
 	)
 	ctx = ctx.WithBlockHeight(100)
-	c.Assert(dfm.EndBlock(ctx), IsNil)
+	c.Assert(endBlockT(ctx, k, dfm), IsNil)
 
 	pairA, pairB, _ := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
 
@@ -1184,7 +1241,7 @@ func (s *DynamicFeeMgrSuite) TestEndBlockRebasesOnEpochBlocksGrow(c *C) {
 	// After rebase: LastActiveEpoch = 10*10/100 = 1, diff = 1.
 	k.SetMimir(ctx, "L1DynamicFeeEpochBlocks", 100)
 	ctx = ctx.WithBlockHeight(200)
-	c.Assert(dfm.EndBlock(ctx), IsNil)
+	c.Assert(endBlockT(ctx, k, dfm), IsNil)
 
 	rec, err := k.GetDynamicFeeRecord(ctx, "mytn", pairA, pairB)
 	c.Assert(err, IsNil)
@@ -1211,9 +1268,10 @@ func (s *DynamicFeeMgrSuite) TestEndBlockRebaseFirstObservationNoop(c *C) {
 		[]string{"mytn"}, []cosmos.Uint{cosmos.NewUint(100)},
 		common.BTCAsset, common.RuneAsset(),
 		cosmos.NewUint(1_000_000), cosmos.NewUint(10_000),
+		true,
 	)
 	ctx = ctx.WithBlockHeight(20)
-	c.Assert(dfm.EndBlock(ctx), IsNil)
+	c.Assert(endBlockT(ctx, k, dfm), IsNil)
 
 	observed, err := k.GetLastObservedDynamicFeeEpochBlocks(ctx)
 	c.Assert(err, IsNil)
@@ -1238,16 +1296,16 @@ func (s *DynamicFeeMgrSuite) TestDecideNextBpsPureUnit(c *C) {
 	}
 
 	// Cold start: single entry, no prior bps change.
-	rec := mkRec(types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(100), BpsAtClose: 1})
+	rec := mkRec(types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(100), BpsAtClose: 1, PoolVolumeTor: types.SignalScale})
 	reason, newBps, _, _, _ := decideNextBps(rec, 1, 1, 20, 1, 3, deadband, tenK)
 	c.Check(reason, Equals, "cold_start_probe")
 	c.Check(newBps, Equals, uint64(2))
 
 	// Continue up: 3→4 at epoch 10, fees rose.
 	rec = mkRec(
-		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(100), BpsAtClose: 3},
-		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(100), BpsAtClose: 4}, // change here
-		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(200), BpsAtClose: 4}, // now
+		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(100), BpsAtClose: 3, PoolVolumeTor: types.SignalScale},
+		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(100), BpsAtClose: 4, PoolVolumeTor: types.SignalScale}, // change here
+		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(200), BpsAtClose: 4, PoolVolumeTor: types.SignalScale}, // now
 	)
 	reason, newBps, _, _, _ = decideNextBps(rec, 4, 1, 20, 1, 3, deadband, tenK)
 	c.Check(reason, Equals, "continue_up")
@@ -1255,9 +1313,9 @@ func (s *DynamicFeeMgrSuite) TestDecideNextBpsPureUnit(c *C) {
 
 	// Reverse down: 3→4, fees fell.
 	rec = mkRec(
-		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(200), BpsAtClose: 3},
-		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(200), BpsAtClose: 4},
-		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(50), BpsAtClose: 4},
+		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(200), BpsAtClose: 3, PoolVolumeTor: types.SignalScale},
+		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(200), BpsAtClose: 4, PoolVolumeTor: types.SignalScale},
+		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(50), BpsAtClose: 4, PoolVolumeTor: types.SignalScale},
 	)
 	reason, newBps, _, _, _ = decideNextBps(rec, 4, 1, 20, 1, 3, deadband, tenK)
 	c.Check(reason, Equals, "reverse_down")
@@ -1265,9 +1323,9 @@ func (s *DynamicFeeMgrSuite) TestDecideNextBpsPureUnit(c *C) {
 
 	// Continue down: 8→7, fees rose.
 	rec = mkRec(
-		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(100), BpsAtClose: 8},
-		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(100), BpsAtClose: 7},
-		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(200), BpsAtClose: 7},
+		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(100), BpsAtClose: 8, PoolVolumeTor: types.SignalScale},
+		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(100), BpsAtClose: 7, PoolVolumeTor: types.SignalScale},
+		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(200), BpsAtClose: 7, PoolVolumeTor: types.SignalScale},
 	)
 	reason, newBps, _, _, _ = decideNextBps(rec, 7, 1, 20, 1, 3, deadband, tenK)
 	c.Check(reason, Equals, "continue_down")
@@ -1275,9 +1333,9 @@ func (s *DynamicFeeMgrSuite) TestDecideNextBpsPureUnit(c *C) {
 
 	// Reverse up: 8→7, fees fell.
 	rec = mkRec(
-		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(200), BpsAtClose: 8},
-		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(200), BpsAtClose: 7},
-		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(50), BpsAtClose: 7},
+		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(200), BpsAtClose: 8, PoolVolumeTor: types.SignalScale},
+		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(200), BpsAtClose: 7, PoolVolumeTor: types.SignalScale},
+		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(50), BpsAtClose: 7, PoolVolumeTor: types.SignalScale},
 	)
 	reason, newBps, _, _, _ = decideNextBps(rec, 7, 1, 20, 1, 3, deadband, tenK)
 	c.Check(reason, Equals, "reverse_up")
@@ -1285,9 +1343,9 @@ func (s *DynamicFeeMgrSuite) TestDecideNextBpsPureUnit(c *C) {
 
 	// Hold in deadband.
 	rec = mkRec(
-		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(100), BpsAtClose: 3},
-		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(100), BpsAtClose: 4},
-		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(101), BpsAtClose: 4},
+		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(100), BpsAtClose: 3, PoolVolumeTor: types.SignalScale},
+		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(100), BpsAtClose: 4, PoolVolumeTor: types.SignalScale},
+		types.DynamicFeeEpochRecord{FeesTor: cosmos.NewUint(101), BpsAtClose: 4, PoolVolumeTor: types.SignalScale},
 	)
 	reason, newBps, _, _, _ = decideNextBps(rec, 4, 1, 20, 1, 3, deadband, tenK)
 	c.Check(reason, Equals, "hold")
@@ -1314,6 +1372,7 @@ func (s *DynamicFeeMgrSuite) TestEndBlockClearsAccumulatorsWhenDisabled(c *C) {
 		[]string{"mytn"}, []cosmos.Uint{cosmos.NewUint(100)},
 		common.BTCAsset, common.RuneAsset(),
 		cosmos.NewUint(1_000_000), cosmos.NewUint(10_000),
+		true,
 	)
 	acc, err := k.GetDynamicFeeAccumulator(ctx, "mytn", pairA, pairB)
 	c.Assert(err, IsNil)
@@ -1324,7 +1383,7 @@ func (s *DynamicFeeMgrSuite) TestEndBlockClearsAccumulatorsWhenDisabled(c *C) {
 	// normally seal here.
 	k.SetMimir(ctx, "L1DynamicFeeEnabled", 0)
 	ctx = ctx.WithBlockHeight(5)
-	c.Assert(dfm.EndBlock(ctx), IsNil)
+	c.Assert(endBlockT(ctx, k, dfm), IsNil)
 
 	acc, err = k.GetDynamicFeeAccumulator(ctx, "mytn", pairA, pairB)
 	c.Assert(err, IsNil)
@@ -1339,6 +1398,7 @@ func (s *DynamicFeeMgrSuite) TestEndBlockClearsAccumulatorsWhenDisabled(c *C) {
 		[]string{"mytn"}, []cosmos.Uint{cosmos.NewUint(100)},
 		common.BTCAsset, common.RuneAsset(),
 		cosmos.NewUint(7), cosmos.NewUint(3),
+		true,
 	)
 	acc, err = k.GetDynamicFeeAccumulator(ctx, "mytn", pairA, pairB)
 	c.Assert(err, IsNil)
@@ -1379,7 +1439,7 @@ func (s *DynamicFeeMgrSuite) TestEndBlockDisabledEmptyStoreIdempotent(c *C) {
 	// were on, to confirm the short-circuit holds regardless of height.
 	for _, h := range []int64{1, 5, 10, 20, 100} {
 		ctx = ctx.WithBlockHeight(h)
-		c.Assert(dfm.EndBlock(ctx), IsNil)
+		c.Assert(endBlockT(ctx, k, dfm), IsNil)
 	}
 
 	recIter := k.GetDynamicFeeRecordIterator(ctx)
@@ -1443,7 +1503,7 @@ func (s *DynamicFeeMgrSuite) TestCreditDynamicFeeForLegsTORConversion(c *C) {
 		),
 	}}
 
-	creditDynamicFeeForLegs(ctx, mgr, swapEvents, affiliates, affiliateBps)
+	creditDynamicFeeForLegs(ctx, mgr, swapEvents, affiliates, affiliateBps, true)
 
 	pairA, pairB, ok := dynamicFeePairKey(common.RuneAsset(), common.BTCAsset)
 	c.Assert(ok, Equals, true)
@@ -1487,7 +1547,7 @@ func (s *DynamicFeeMgrSuite) TestCreditDynamicFeeForLegsZeroPriceSkipped(c *C) {
 		),
 	}}
 
-	creditDynamicFeeForLegs(ctx, mgr, swapEvents, affiliates, affiliateBps)
+	creditDynamicFeeForLegs(ctx, mgr, swapEvents, affiliates, affiliateBps, true)
 
 	pairA, pairB, ok := dynamicFeePairKey(common.RuneAsset(), common.BTCAsset)
 	c.Assert(ok, Equals, true)
@@ -1496,4 +1556,269 @@ func (s *DynamicFeeMgrSuite) TestCreditDynamicFeeForLegsZeroPriceSkipped(c *C) {
 	c.Check(acc.VolumeTor.IsZero(), Equals, true,
 		Commentf("zero DollarsPerRune must skip the credit, not record zeros"))
 	c.Check(acc.FeesTor.IsZero(), Equals, true)
+}
+
+// --- Liquidity gate (Change 1) ---
+
+// creditOneSwap is the shorthand the gate tests use: one BTC/RUNE swap for
+// `name`, counted as a user swap.
+func creditOneSwap(ctx cosmos.Context, dfm *DynamicFeeMgr, name string, volume, fees cosmos.Uint) {
+	dfm.CreditSwap(
+		ctx,
+		[]string{name}, []cosmos.Uint{cosmos.NewUint(100)},
+		common.BTCAsset, common.RuneAsset(),
+		volume, fees,
+		true,
+	)
+}
+
+// TestEndBlockGateRollsOnLowSwapCount pins the core of the change: an epoch
+// holding fewer than L1DynamicFeeMinSwaps swaps must not seal a decision. The
+// accumulator survives so its volume, fees and swap count roll into the next
+// epoch, and LastActiveEpoch advances so a permanently-gated integration is
+// not pruned out from under its own accumulator.
+func (s *DynamicFeeMgrSuite) TestEndBlockGateRollsOnLowSwapCount(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	setDynamicFeeTestMimirs(ctx, k)
+	k.SetMimir(ctx, "L1DynamicFeeMinSwaps", 30)
+	dfm := newDynamicFeeMgr(k)
+	registerThorname(ctx, k, "ss", 1)
+	pairA, pairB, _ := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
+
+	volume, fees := cosmos.NewUint(1_000_000), cosmos.NewUint(10_000)
+	creditOneSwap(ctx, dfm, "ss", volume, fees)
+	dfm.CreditPoolVolume(ctx, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(5_000_000))
+
+	ctx = ctx.WithBlockHeight(20)
+	c.Assert(dfm.EndBlock(ctx), IsNil)
+
+	rec, err := k.GetDynamicFeeRecord(ctx, "ss", pairA, pairB)
+	c.Assert(err, IsNil)
+	c.Check(len(rec.History), Equals, 0, Commentf("a gated epoch must not append history"))
+	c.Check(rec.DynamicBps, Equals, uint64(1), Commentf("bps must not step on one swap"))
+	c.Check(rec.LastActiveEpoch, Equals, uint64(2), Commentf("rolling must keep the record alive"))
+
+	acc, err := k.GetDynamicFeeAccumulator(ctx, "ss", pairA, pairB)
+	c.Assert(err, IsNil)
+	c.Check(acc.SwapCount, Equals, uint64(1))
+	c.Check(acc.VolumeTor.Equal(volume), Equals, true)
+	c.Check(acc.FeesTor.Equal(fees), Equals, true)
+	c.Check(acc.PoolVolumeTor.Equal(cosmos.NewUint(5_000_000)), Equals, true,
+		Commentf("the epoch's pool volume must fold into the rolling accumulator"))
+
+	poolAcc, err := k.GetDynamicFeePoolAccumulator(ctx, pairA, pairB)
+	c.Assert(err, IsNil)
+	c.Check(poolAcc.VolumeTor.IsZero(), Equals, true,
+		Commentf("pool accumulators are per-epoch and cleared at every seal"))
+}
+
+// TestEndBlockGateRollsOnLowVolume covers the other half of the gate: enough
+// swaps, not enough dollars.
+func (s *DynamicFeeMgrSuite) TestEndBlockGateRollsOnLowVolume(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	setDynamicFeeTestMimirs(ctx, k)
+	k.SetMimir(ctx, "L1DynamicFeeMinVolumeUSD", 50_000)
+	dfm := newDynamicFeeMgr(k)
+	registerThorname(ctx, k, "ss", 1)
+	pairA, pairB, _ := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
+
+	// $49,999 of volume — one dollar short.
+	creditOneSwap(ctx, dfm, "ss", cosmos.NewUint(49_999*common.One), cosmos.NewUint(10_000))
+	dfm.CreditPoolVolume(ctx, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(50_000*common.One))
+
+	ctx = ctx.WithBlockHeight(20)
+	c.Assert(dfm.EndBlock(ctx), IsNil)
+
+	rec, err := k.GetDynamicFeeRecord(ctx, "ss", pairA, pairB)
+	c.Assert(err, IsNil)
+	c.Check(len(rec.History), Equals, 0)
+	c.Check(rec.DynamicBps, Equals, uint64(1))
+	_, err = k.GetDynamicFeeAccumulator(ctx, "ss", pairA, pairB)
+	c.Assert(err, IsNil)
+}
+
+// TestEndBlockGateSealsSummedRolledEpochs verifies the rolled epochs are
+// merged, not dropped: three thin epochs that individually fail the gate seal
+// as one history entry carrying the summed fees, volume, pool volume and swap
+// count.
+func (s *DynamicFeeMgrSuite) TestEndBlockGateSealsSummedRolledEpochs(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	setDynamicFeeTestMimirs(ctx, k)
+	k.SetMimir(ctx, "L1DynamicFeeMinSwaps", 3)
+	dfm := newDynamicFeeMgr(k)
+	registerThorname(ctx, k, "ss", 1)
+	pairA, pairB, _ := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
+
+	volume, fees := cosmos.NewUint(1_000_000), cosmos.NewUint(10_000)
+	poolVolume := cosmos.NewUint(5_000_000)
+	for i, height := range []int64{20, 30, 40} {
+		creditOneSwap(ctx, dfm, "ss", volume, fees)
+		dfm.CreditPoolVolume(ctx, common.BTCAsset, common.RuneAsset(), poolVolume)
+		ctx = ctx.WithBlockHeight(height)
+		c.Assert(dfm.EndBlock(ctx), IsNil)
+
+		rec, err := k.GetDynamicFeeRecord(ctx, "ss", pairA, pairB)
+		c.Assert(err, IsNil)
+		if i < 2 {
+			c.Check(len(rec.History), Equals, 0, Commentf("epoch %d is still below the gate", i+1))
+		}
+	}
+
+	rec, err := k.GetDynamicFeeRecord(ctx, "ss", pairA, pairB)
+	c.Assert(err, IsNil)
+	c.Assert(len(rec.History), Equals, 1, Commentf("three rolled epochs seal as one entry"))
+	h := rec.History[0]
+	c.Check(h.SwapCount, Equals, uint64(3))
+	c.Check(h.VolumeTor.Equal(volume.MulUint64(3)), Equals, true)
+	c.Check(h.FeesTor.Equal(fees.MulUint64(3)), Equals, true)
+	c.Check(h.PoolVolumeTor.Equal(poolVolume.MulUint64(3)), Equals, true)
+	c.Check(rec.DynamicBps, Equals, uint64(2), Commentf("first sealed epoch is a cold-start probe"))
+
+	// Sealing consumes the accumulator; the next epoch starts from zero.
+	acc, err := k.GetDynamicFeeAccumulator(ctx, "ss", pairA, pairB)
+	c.Assert(err, IsNil)
+	c.Check(acc.SwapCount, Equals, uint64(0))
+	c.Check(acc.VolumeTor.IsZero(), Equals, true)
+}
+
+// TestCreditDynamicFeeForLegsStreamDedupe pins that a streaming swap counts
+// once against the gate, not once per sub-swap — otherwise a single 30-interval
+// stream would satisfy MinSwaps=30 on its own.
+func (s *DynamicFeeMgrSuite) TestCreditDynamicFeeForLegsStreamDedupe(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	setDynamicFeeTestMimirs(ctx, k)
+	registerThorname(ctx, k, "alice", 1)
+	setupTorAnchorPool(c, ctx, k, 41_000_000)
+
+	affiliates := []string{"alice"}
+	affiliateBps := []cosmos.Uint{cosmos.NewUint(100)}
+	mkEvents := func() []*EventSwap {
+		return []*EventSwap{{
+			Pool:               common.BTCAsset,
+			LiquidityFeeInRune: cosmos.NewUint(1 * common.One),
+			EmitAsset:          common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)),
+			InTx: common.NewTx(
+				GetRandomTxHash(), GetRandomRUNEAddress(), GetRandomBTCAddress(),
+				common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(10*common.One))},
+				common.Gas{}, "",
+			),
+		}}
+	}
+
+	// One stream: first sub-swap counts, the following three do not.
+	creditDynamicFeeForLegs(ctx, mgr, mkEvents(), affiliates, affiliateBps, true)
+	for i := 0; i < 3; i++ {
+		creditDynamicFeeForLegs(ctx, mgr, mkEvents(), affiliates, affiliateBps, false)
+	}
+
+	pairA, pairB, _ := dynamicFeePairKey(common.RuneAsset(), common.BTCAsset)
+	acc, err := k.GetDynamicFeeAccumulator(ctx, "alice", pairA, pairB)
+	c.Assert(err, IsNil)
+	c.Check(acc.SwapCount, Equals, uint64(1), Commentf("a stream is one user swap"))
+	// Volume and fees still accumulate on every sub-swap.
+	c.Check(acc.VolumeTor.Equal(cosmos.NewUint(uint64(10*common.One)*41_000_000/common.One).MulUint64(4)), Equals, true)
+	c.Check(acc.PoolVolumeTor.IsZero(), Equals, true,
+		Commentf("pool volume lives in its own pair-scoped row until the seal folds it in"))
+
+	poolAcc, err := k.GetDynamicFeePoolAccumulator(ctx, pairA, pairB)
+	c.Assert(err, IsNil)
+	c.Check(poolAcc.VolumeTor.Equal(acc.VolumeTor), Equals, true,
+		Commentf("every sub-swap credits the pool denominator"))
+}
+
+// --- Normalized signal (Change 2) ---
+
+// TestDecideNextBpsNormalizesPoolVolume is the point of the change: with the
+// affiliate's own fees flat but the pool's volume doubling, the affiliate is
+// losing share, and the controller must read that as a fall. The old raw-fee
+// rule saw no change at all and would have held.
+func (s *DynamicFeeMgrSuite) TestDecideNextBpsNormalizesPoolVolume(c *C) {
+	tenK := cosmos.NewUint(10000)
+	deadband := cosmos.NewUint(500) // 5%
+	pool := types.SignalScale
+
+	fees := cosmos.NewUint(100)
+	rec := types.DynamicFeeRecord{History: []types.DynamicFeeEpochRecord{
+		{FeesTor: fees, BpsAtClose: 3, PoolVolumeTor: pool},
+		{FeesTor: fees, BpsAtClose: 4, PoolVolumeTor: pool}, // moved up here
+		{FeesTor: fees, BpsAtClose: 4, PoolVolumeTor: pool.MulUint64(2)},
+	}}
+	reason, newBps, _, _, _ := decideNextBps(rec, 4, 1, 20, 1, 3, deadband, tenK)
+	c.Check(reason, Equals, "reverse_down",
+		Commentf("flat fees against double the pool volume is a 50%% fall in signal"))
+	c.Check(newBps, Equals, uint64(3))
+
+	// Control: hold the pool volume flat and the same history is a hold.
+	rec.History[2].PoolVolumeTor = pool
+	reason, _, _, _, _ = decideNextBps(rec, 4, 1, 20, 1, 3, deadband, tenK)
+	c.Check(reason, Equals, "hold")
+}
+
+// TestEndBlockDropsPreUpgradeHistory pins the migration: history written
+// before pool volume was tracked carries raw fee levels in incompatible
+// units, so it is discarded and the record re-enters cold start from its
+// current bps — two forced probes, then a real gradient.
+func (s *DynamicFeeMgrSuite) TestEndBlockDropsPreUpgradeHistory(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	setDynamicFeeTestMimirs(ctx, k)
+	dfm := newDynamicFeeMgr(k)
+	registerThorname(ctx, k, "ss", 1)
+	pairA, pairB, _ := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
+
+	// Pre-upgrade history: no PoolVolumeTor. bps sits at 8, well off the floor.
+	c.Assert(k.SetDynamicFeeRecord(ctx, types.DynamicFeeRecord{
+		Thorname: "ss", PairAssetA: pairA, PairAssetB: pairB,
+		DynamicBps: 8,
+		History: []types.DynamicFeeEpochRecord{
+			{Epoch: 9, FeesTor: cosmos.NewUint(100), BpsAtClose: 7},
+			{Epoch: 10, FeesTor: cosmos.NewUint(100), BpsAtClose: 8},
+			{Epoch: 11, FeesTor: cosmos.NewUint(500), BpsAtClose: 8},
+		},
+	}), IsNil)
+
+	bps := []uint64{9, 10}
+	for i, height := range []int64{20, 30} {
+		creditOneSwap(ctx, dfm, "ss", cosmos.NewUint(1_000_000), cosmos.NewUint(10_000))
+		dfm.CreditPoolVolume(ctx, common.BTCAsset, common.RuneAsset(), types.SignalScale)
+		ctx = ctx.WithBlockHeight(height)
+		c.Assert(dfm.EndBlock(ctx), IsNil)
+
+		rec, err := k.GetDynamicFeeRecord(ctx, "ss", pairA, pairB)
+		c.Assert(err, IsNil)
+		c.Check(len(rec.History), Equals, i+1,
+			Commentf("pre-upgrade entries are dropped, not kept alongside"))
+		c.Check(rec.DynamicBps, Equals, bps[i],
+			Commentf("cold start probes up from the record's current bps, not from the floor"))
+	}
+}
+
+// TestEndBlockDisabledClearsPoolAccumulators pins that disabling the feature
+// wipes the pair-scoped rows too — otherwise a re-enable folds pre-disable
+// pool volume into the first epoch and distorts the denominator.
+func (s *DynamicFeeMgrSuite) TestEndBlockDisabledClearsPoolAccumulators(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	setDynamicFeeTestMimirs(ctx, k)
+	dfm := newDynamicFeeMgr(k)
+	registerThorname(ctx, k, "ss", 1)
+	pairA, pairB, _ := dynamicFeePairKey(common.BTCAsset, common.RuneAsset())
+
+	creditOneSwap(ctx, dfm, "ss", cosmos.NewUint(1_000_000), cosmos.NewUint(10_000))
+	dfm.CreditPoolVolume(ctx, common.BTCAsset, common.RuneAsset(), cosmos.NewUint(5_000_000))
+	poolAcc, err := k.GetDynamicFeePoolAccumulator(ctx, pairA, pairB)
+	c.Assert(err, IsNil)
+	c.Assert(poolAcc.VolumeTor.IsZero(), Equals, false)
+
+	k.SetMimir(ctx, "L1DynamicFeeEnabled", 0)
+	ctx = ctx.WithBlockHeight(11) // not an epoch boundary; the disabled branch still clears
+	c.Assert(dfm.EndBlock(ctx), IsNil)
+
+	poolAcc, err = k.GetDynamicFeePoolAccumulator(ctx, pairA, pairB)
+	c.Assert(err, IsNil)
+	c.Check(poolAcc.VolumeTor.IsZero(), Equals, true)
 }

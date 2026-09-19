@@ -208,6 +208,8 @@ const (
 	L1DynamicFeeStepBPS
 	L1DynamicFeeDeadbandBPS
 	L1DynamicFeeWindowEpochs
+	L1DynamicFeeMinSwaps
+	L1DynamicFeeMinVolumeUSD
 	VaultDeficitGasHaltMaxGasMultiplier
 
 	BondYieldEnabled

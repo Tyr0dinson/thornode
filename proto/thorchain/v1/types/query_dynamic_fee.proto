@@ -40,6 +40,8 @@ message DynamicL1FeeHistoryEntry {
   string volume_tor = 2;
   string fees_tor = 3;
   uint64 bps_at_close = 4;
+  uint64 swap_count = 5;
+  string pool_volume_tor = 6;
 }
 
 message QueryDynamicL1FeesByThornameResponse {
@@ -56,6 +58,8 @@ message DynamicL1FeeCurrentEntry {
   string volume_tor = 3;
   string fees_tor = 4;
   uint64 epoch = 5;
+  uint64 swap_count = 6;
+  string pool_volume_tor = 7;
 }
 
 message QueryDynamicL1FeesCurrentResponse {

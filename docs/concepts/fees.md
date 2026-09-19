@@ -87,7 +87,9 @@ When a swap generates less slip than the applicable minimum, the liquidity fee i
 
 For L1 pairs carrying an enrolled THORName affiliate, the minimum is set per THORName and trading pair rather than by the network-wide `L1SlipMinBps`, and increases or decreases with the fee revenue that affiliate generates on the pair.
 
-At the end of each epoch (~24h) the network totals the fee income that THORName produced on the pair and compares it with the period before its last floor change. Income up, the floor continues in the same direction; income down, it reverses. Each step is one basis point, so the floor settles higher where THORChain is the only venue and lower where it competes. See [ADR 026](../architecture/adr-026-dynamic-l1-min-fee-per-thorname.md) for the rule, bounds and events.
+At the end of each epoch (~24h) the network totals the fee income that THORName produced on the pair, expresses it as a share of the pool's total volume over the same period, and compares that with the period before its last floor change. Income share up, the floor continues in the same direction; down, it reverses. Each step is one basis point, so the floor settles higher where THORChain is the only venue and lower where it competes.
+
+An epoch only decides anything if it is large enough to carry signal — at least `L1DynamicFeeMinSwaps` swaps and `L1DynamicFeeMinVolumeUSD` of volume. Thinner epochs roll into the next one and the floor does not move, so a small integration simply never steps. See [ADR 026](../architecture/adr-026-dynamic-l1-min-fee-per-thorname.md) for the rule, bounds and events.
 
 This only affects the liquidity fee charged to the swapper. The affiliate's own basis points and the existing fee accounting path (extraction to the Reserve, then distribution via the [Incentive Pendulum](./incentive-pendulum.md)) are unchanged. The THORName is only the key that selects the floor.
 

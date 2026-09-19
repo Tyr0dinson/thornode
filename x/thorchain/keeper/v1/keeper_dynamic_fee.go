@@ -119,6 +119,41 @@ func (k KVStore) DeleteDynamicFeeAccumulator(ctx cosmos.Context, thorname, pairA
 	return nil
 }
 
+// --- DynamicFeePoolAccumulator ---
+//
+// Pair-scoped (not thorname-scoped): holds every swap's volume through the
+// pair for the in-progress epoch, and is the denominator that normalizes each
+// thorname's fee signal against market-wide activity.
+
+func (k KVStore) GetDynamicFeePoolAccumulatorIterator(ctx cosmos.Context) cosmos.Iterator {
+	return k.getIterator(ctx, prefixDynamicFeePoolAcc)
+}
+
+func (k KVStore) SetDynamicFeePoolAccumulator(ctx cosmos.Context, acc DynamicFeePoolAccumulator) error {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store.Set(k.GetKey(prefixDynamicFeePoolAcc, acc.Key()), k.cdc.MustMarshal(&acc))
+	return nil
+}
+
+func (k KVStore) GetDynamicFeePoolAccumulator(ctx cosmos.Context, pairAssetA, pairAssetB string) (DynamicFeePoolAccumulator, error) {
+	acc := NewDynamicFeePoolAccumulator(pairAssetA, pairAssetB)
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	key := k.GetKey(prefixDynamicFeePoolAcc, acc.Key())
+	if !store.Has(key) {
+		return acc, nil
+	}
+	if err := k.cdc.Unmarshal(store.Get(key), &acc); err != nil {
+		return acc, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", &acc, key), err)
+	}
+	return acc, nil
+}
+
+func (k KVStore) DeleteDynamicFeePoolAccumulator(ctx cosmos.Context, pairAssetA, pairAssetB string) error {
+	acc := NewDynamicFeePoolAccumulator(pairAssetA, pairAssetB)
+	k.del(ctx, k.GetKey(prefixDynamicFeePoolAcc, acc.Key()))
+	return nil
+}
+
 // --- DeleteAllDynamicFeeStateForThorname ---
 
 func (k KVStore) DeleteAllDynamicFeeStateForThorname(ctx cosmos.Context, thorname string) error {

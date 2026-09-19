@@ -92,7 +92,11 @@ func (m *DynamicFeeMgr) dominantEligibleAffiliate(ctx cosmos.Context, affiliates
 // current-epoch accumulator. volumeTor and feesTor are denominated in TOR
 // (1e8-precision USD value) so that the gradient signal does not drift with
 // the RUNE/USD price.
-func (m *DynamicFeeMgr) CreditSwap(ctx cosmos.Context, affiliates []string, affiliateBps []cosmos.Uint, sourceAsset, targetAsset common.Asset, volumeTor, feesTor cosmos.Uint) {
+// countAsSwap distinguishes the first sub-swap of a streaming swap from its
+// continuations so that SwapCount measures user swaps rather than intervals —
+// otherwise a single 30-interval stream would clear a 30-swap liquidity gate
+// on its own.
+func (m *DynamicFeeMgr) CreditSwap(ctx cosmos.Context, affiliates []string, affiliateBps []cosmos.Uint, sourceAsset, targetAsset common.Asset, volumeTor, feesTor cosmos.Uint, countAsSwap bool) {
 	enabled := m.keeper.GetConfigInt64(ctx, constants.L1DynamicFeeEnabled)
 	if enabled != 1 {
 		return
@@ -139,8 +143,35 @@ func (m *DynamicFeeMgr) CreditSwap(ctx cosmos.Context, affiliates []string, affi
 	}
 	affAcc.VolumeTor = affAcc.VolumeTor.Add(volumeTor)
 	affAcc.FeesTor = affAcc.FeesTor.Add(feesTor)
+	if countAsSwap {
+		affAcc.SwapCount++
+	}
 	if setErr := m.keeper.SetDynamicFeeAccumulator(ctx, affAcc); setErr != nil {
 		ctx.Logger().Error("fail to set thorname accumulator", "error", setErr)
+	}
+}
+
+// CreditPoolVolume accumulates the pair's total swap volume for the current
+// epoch, regardless of affiliate. This is the denominator that normalizes each
+// thorname's fee signal against market-wide activity: without it the gradient
+// reads epoch-to-epoch swings in overall trading as a response to the fee
+// floor. It must not be conditioned on the affiliate list.
+func (m *DynamicFeeMgr) CreditPoolVolume(ctx cosmos.Context, sourceAsset, targetAsset common.Asset, volumeTor cosmos.Uint) {
+	if m.keeper.GetConfigInt64(ctx, constants.L1DynamicFeeEnabled) != 1 {
+		return
+	}
+	pairA, pairB, ok := dynamicFeePairKey(sourceAsset, targetAsset)
+	if !ok {
+		return
+	}
+	acc, err := m.keeper.GetDynamicFeePoolAccumulator(ctx, pairA, pairB)
+	if err != nil {
+		ctx.Logger().Error("fail to get dynamic fee pool accumulator", "error", err)
+		return
+	}
+	acc.VolumeTor = acc.VolumeTor.Add(volumeTor)
+	if err := m.keeper.SetDynamicFeePoolAccumulator(ctx, acc); err != nil {
+		ctx.Logger().Error("fail to set dynamic fee pool accumulator", "error", err)
 	}
 }
 
@@ -153,10 +184,7 @@ func (m *DynamicFeeMgr) CreditSwap(ctx cosmos.Context, affiliates []string, affi
 // entire credit is skipped: recording zeros would drag the window-mean fee
 // signal toward zero and trigger spurious controller reversals on the next
 // epoch boundary.
-func creditDynamicFeeForLegs(ctx cosmos.Context, mgr Manager, swapEvents []*EventSwap, affiliates []string, affiliateBps []cosmos.Uint) {
-	if len(affiliates) == 0 {
-		return
-	}
+func creditDynamicFeeForLegs(ctx cosmos.Context, mgr Manager, swapEvents []*EventSwap, affiliates []string, affiliateBps []cosmos.Uint, countAsSwap bool) {
 	dollarsPerRune := mgr.Keeper().DollarsPerRune(ctx)
 	if dollarsPerRune.IsZero() {
 		return
@@ -181,8 +209,23 @@ func creditDynamicFeeForLegs(ctx cosmos.Context, mgr Manager, swapEvents []*Even
 		}
 		legVolumeTor := legVolumeRune.Mul(dollarsPerRune).Quo(one)
 		legFeesTor := evt.LiquidityFeeInRune.Mul(dollarsPerRune).Quo(one)
+		// Pool volume first, and unconditionally: it is the normalization
+		// denominator and must count non-affiliate flow too. Crediting it
+		// before the affiliate credit also guarantees that any sealed epoch
+		// carrying fees carries non-zero pool volume, which is what lets
+		// sealEpochForRecord treat a zero pool volume as "pre-upgrade entry".
+		//
+		// ponytail: protocol-internal swaps that call swap() directly (POL,
+		// affiliate-fee conversion) bypass this handler and are excluded.
+		// That is arguably correct for a market-activity denominator; move
+		// the hook to swap_current.go if it ever needs to be literally every
+		// swap.
+		mgr.DynamicFeeMgr().CreditPoolVolume(ctx, legSource, legTarget, legVolumeTor)
+		if len(affiliates) == 0 {
+			continue
+		}
 		mgr.DynamicFeeMgr().CreditSwap(ctx, affiliates, affiliateBps,
-			legSource, legTarget, legVolumeTor, legFeesTor)
+			legSource, legTarget, legVolumeTor, legFeesTor, countAsSwap)
 	}
 }
 
@@ -222,6 +265,7 @@ func (m *DynamicFeeMgr) EndBlock(ctx cosmos.Context) error {
 		// we left them, a later re-enable would add new volume on top of old
 		// and seal the mix into a wrong epoch.
 		m.clearAccumulators(ctx)
+		m.clearPoolAccumulators(ctx)
 		return nil
 	}
 
@@ -257,6 +301,10 @@ func (m *DynamicFeeMgr) EndBlock(ctx cosmos.Context) error {
 	deadbandBps := cosmos.NewUint(nonNegUint64(m.keeper.GetConfigInt64(ctx, constants.L1DynamicFeeDeadbandBPS)))
 	windowEpochs := clampWindowEpochs(m.keeper.GetConfigInt64(ctx, constants.L1DynamicFeeWindowEpochs))
 	tenK := cosmos.NewUint(10000)
+	minSwaps := nonNegUint64(m.keeper.GetConfigInt64(ctx, constants.L1DynamicFeeMinSwaps))
+	// Mimir carries whole USD; widen in Uint so a fat-fingered value cannot
+	// overflow uint64 on the way to TOR (1e8) precision.
+	minVolumeTor := cosmos.NewUint(nonNegUint64(m.keeper.GetConfigInt64(ctx, constants.L1DynamicFeeMinVolumeUSD))).MulUint64(common.One)
 
 	// Seal all accumulators. Only thorname-keyed accumulators exist under the
 	// revenue-gradient algorithm; the pair-wide accumulator used by the older
@@ -268,18 +316,48 @@ func (m *DynamicFeeMgr) EndBlock(ctx cosmos.Context) error {
 		if err := m.keeper.Cdc().Unmarshal(accIter.Value(), &acc); err != nil {
 			continue
 		}
+		// Accumulators written before pool volume was tracked unmarshal with a
+		// nil Uint, which panics on Add/Marshal.
+		if acc.PoolVolumeTor.IsNil() {
+			acc.PoolVolumeTor = cosmos.ZeroUint()
+		}
 		thornameAccs = append(thornameAccs, acc)
 	}
 	accIter.Close()
 
 	for _, acc := range thornameAccs {
-		if err := m.sealEpochForRecord(ctx, acc, currentEpoch, floorBps, ceilingBps, stepBps, windowEpochs, deadbandBps, tenK); err != nil {
+		// Fold this epoch's pair-wide volume into the thorname accumulator
+		// before deciding. A rolled accumulator then carries a pool volume
+		// spanning exactly the same epochs as its fees, which keeps the
+		// normalized signal comparable across merged epochs.
+		poolAcc, err := m.keeper.GetDynamicFeePoolAccumulator(ctx, acc.PairAssetA, acc.PairAssetB)
+		if err != nil {
+			ctx.Logger().Error("fail to get dynamic fee pool accumulator", "error", err)
+		} else {
+			acc.PoolVolumeTor = acc.PoolVolumeTor.Add(poolAcc.VolumeTor)
+		}
+
+		sealed, err := m.sealEpochForRecord(ctx, acc, currentEpoch, floorBps, ceilingBps, stepBps, windowEpochs, deadbandBps, tenK, minSwaps, minVolumeTor)
+		if err != nil {
 			ctx.Logger().Error("fail to seal dynamic fee epoch", "error", err, "thorname", acc.Thorname)
+			continue
+		}
+		if !sealed {
+			// Too thin to carry signal — roll the accumulator into the next
+			// epoch instead of stepping the floor on noise.
+			if err := m.keeper.SetDynamicFeeAccumulator(ctx, acc); err != nil {
+				ctx.Logger().Error("fail to roll thorname accumulator", "error", err)
+			}
+			continue
 		}
 		if err := m.keeper.DeleteDynamicFeeAccumulator(ctx, acc.Thorname, acc.PairAssetA, acc.PairAssetB); err != nil {
 			ctx.Logger().Error("fail to delete thorname accumulator", "error", err)
 		}
 	}
+
+	// Pool accumulators are per-epoch by construction; every thorname
+	// accumulator that needed this epoch's slice has already folded it in.
+	m.clearPoolAccumulators(ctx)
 
 	// Prune inactive records. Collect-then-delete to avoid mutating the store
 	// under an open IAVL iterator, which can skip entries or panic depending
@@ -315,11 +393,42 @@ func (m *DynamicFeeMgr) EndBlock(ctx cosmos.Context) error {
 // sealEpochForRecord appends this epoch's entry, decides the next
 // dynamic_bps via the closed-loop revenue gradient, and emits a
 // dynamic_l1_fee_update event on a bps change.
-func (m *DynamicFeeMgr) sealEpochForRecord(ctx cosmos.Context, acc types.DynamicFeeAccumulator, currentEpoch, floorBps, ceilingBps, stepBps uint64, windowEpochs int, deadbandBps, tenK cosmos.Uint) error {
+//
+// It returns sealed=false when the epoch is too thin to carry signal (below
+// the minimum swap count or volume). The caller then keeps the accumulator so
+// this epoch's volume, fees and swap count roll into the next one. Rolling is
+// deliberately unbounded: an integration that never reaches the threshold
+// should never step the floor, which is the whole point of the gate. It is
+// safe because the decision signal is normalized against pool volume and so is
+// comparable across spans of different length.
+func (m *DynamicFeeMgr) sealEpochForRecord(ctx cosmos.Context, acc types.DynamicFeeAccumulator, currentEpoch, floorBps, ceilingBps, stepBps uint64, windowEpochs int, deadbandBps, tenK cosmos.Uint, minSwaps uint64, minVolumeTor cosmos.Uint) (bool, error) {
 	rec, err := m.keeper.GetDynamicFeeRecord(ctx, acc.Thorname, acc.PairAssetA, acc.PairAssetB)
 	if err != nil {
-		return err
+		return false, err
 	}
+
+	if acc.SwapCount < minSwaps || acc.VolumeTor.LT(minVolumeTor) {
+		// Keep the record alive while it rolls, otherwise a permanently
+		// sub-threshold record is pruned after MaxDynamicFeeHistory idle
+		// epochs and leaves its accumulator orphaned.
+		//
+		// ponytail: the roll fires every epoch the accumulator exists, even
+		// one that saw no new swaps, so an integration that stops entirely
+		// pins its record forever (one record + one accumulator per dead
+		// pair; de-whitelisting still reclaims it). Advance LastActiveEpoch
+		// only on a non-zero SwapCount delta if that ever matters.
+		rec.LastActiveEpoch = currentEpoch
+		return false, m.keeper.SetDynamicFeeRecord(ctx, rec)
+	}
+
+	// Drop history written before pool volume was tracked: those entries hold
+	// raw fee levels, which are not comparable with the normalized signal.
+	// Safe to run on every seal because CreditPoolVolume is credited ahead of
+	// CreditSwap for the same leg, so a sealed epoch with fees always has
+	// non-zero pool volume.
+	rec.History = slices.DeleteFunc(rec.History, func(e types.DynamicFeeEpochRecord) bool {
+		return e.PoolVolumeTor.IsNil() || e.PoolVolumeTor.IsZero()
+	})
 
 	oldBps := rec.DynamicBps
 
@@ -328,10 +437,12 @@ func (m *DynamicFeeMgr) sealEpochForRecord(ctx cosmos.Context, acc types.Dynamic
 	// bps that actually governed this epoch's fees_tor; rec.DynamicBps is then
 	// advanced to the next epoch's setting below.
 	rec.AppendHistory(types.DynamicFeeEpochRecord{
-		Epoch:      currentEpoch,
-		VolumeTor:  acc.VolumeTor,
-		FeesTor:    acc.FeesTor,
-		BpsAtClose: oldBps,
+		Epoch:         currentEpoch,
+		VolumeTor:     acc.VolumeTor,
+		FeesTor:       acc.FeesTor,
+		BpsAtClose:    oldBps,
+		SwapCount:     acc.SwapCount,
+		PoolVolumeTor: acc.PoolVolumeTor,
 	})
 
 	reason, newBps, feesBefore, feesAfter, deltaPctBps := decideNextBps(rec, oldBps, floorBps, ceilingBps, stepBps, windowEpochs, deadbandBps, tenK)
@@ -339,7 +450,7 @@ func (m *DynamicFeeMgr) sealEpochForRecord(ctx cosmos.Context, acc types.Dynamic
 	rec.LastActiveEpoch = currentEpoch
 
 	if err := m.keeper.SetDynamicFeeRecord(ctx, rec); err != nil {
-		return err
+		return false, err
 	}
 
 	if newBps != oldBps {
@@ -355,11 +466,13 @@ func (m *DynamicFeeMgr) sealEpochForRecord(ctx cosmos.Context, acc types.Dynamic
 				cosmos.NewAttribute("fees_after", feesAfter.String()),
 				cosmos.NewAttribute("delta_pct_bps", deltaPctBps.String()),
 				cosmos.NewAttribute("reason", reason),
+				cosmos.NewAttribute("swap_count", fmt.Sprintf("%d", acc.SwapCount)),
+				cosmos.NewAttribute("pool_volume_tor", acc.PoolVolumeTor.String()),
 			),
 		)
 	}
 
-	return nil
+	return true, nil
 }
 
 // decideNextBps implements the closed-loop revenue gradient rule for one
@@ -381,10 +494,10 @@ func decideNextBps(rec types.DynamicFeeRecord, oldBps, floorBps, ceilingBps, ste
 	}
 
 	directionUp := rec.History[changeIdx].BpsAtClose > rec.History[changeIdx-1].BpsAtClose
-	feesBefore = windowMeanFees(rec.History, changeIdx-windowEpochs, changeIdx)
+	feesBefore = windowMeanSignal(rec.History, changeIdx-windowEpochs, changeIdx)
 	// Use only the latest post-change epochs instead of averaging every
 	// epoch since the last bps move.
-	feesAfter = windowMeanFees(rec.History, max(changeIdx, len(rec.History)-windowEpochs), len(rec.History))
+	feesAfter = windowMeanSignal(rec.History, max(changeIdx, len(rec.History)-windowEpochs), len(rec.History))
 
 	if feesBefore.IsZero() {
 		return "hold", oldBps, feesBefore, feesAfter, cosmos.ZeroUint()
@@ -432,24 +545,34 @@ func lastBpsChangeBefore(history []types.DynamicFeeEpochRecord, upToExclusive in
 	return 0, false
 }
 
-// windowMeanFees returns the mean of FeesTor across history[lo:hi] with
-// bounds clamped into the slice. If the resulting window is empty, returns
-// zero.
-func windowMeanFees(history []types.DynamicFeeEpochRecord, lo, hi int) cosmos.Uint {
+// windowMeanSignal returns the mean normalized fee signal
+// (fees_tor / pool_volume_tor, scaled by types.SignalScale) across
+// history[lo:hi] with bounds clamped into the slice. Normalizing against the
+// pair's total volume removes market-wide activity from the gradient: the
+// median epoch-volume CV of ~1.5 otherwise swamps a 1 bps step worth ~33% of
+// the fee rate. Entries with no recorded pool volume are skipped; an empty
+// window returns zero, which decideNextBps reads as "hold".
+func windowMeanSignal(history []types.DynamicFeeEpochRecord, lo, hi int) cosmos.Uint {
 	if lo < 0 {
 		lo = 0
 	}
 	if hi > len(history) {
 		hi = len(history)
 	}
-	if hi-lo <= 0 {
+	sum := cosmos.ZeroUint()
+	count := uint64(0)
+	for i := lo; i < hi; i++ {
+		signal, ok := history[i].NormalizedSignal()
+		if !ok {
+			continue
+		}
+		sum = sum.Add(signal)
+		count++
+	}
+	if count == 0 {
 		return cosmos.ZeroUint()
 	}
-	sum := cosmos.ZeroUint()
-	for i := lo; i < hi; i++ {
-		sum = sum.Add(history[i].FeesTor)
-	}
-	return sum.Quo(cosmos.NewUint(uint64(hi - lo)))
+	return sum.QuoUint64(count)
 }
 
 func clampBps(candidate, floorBps, ceilingBps uint64) uint64 {
@@ -567,6 +690,27 @@ func (m *DynamicFeeMgr) clearAccumulators(ctx cosmos.Context) {
 	for _, acc := range accs {
 		if err := m.keeper.DeleteDynamicFeeAccumulator(ctx, acc.Thorname, acc.PairAssetA, acc.PairAssetB); err != nil {
 			ctx.Logger().Error("fail to clear dynamic fee accumulator", "error", err, "thorname", acc.Thorname)
+		}
+	}
+}
+
+// clearPoolAccumulators drops every pair-wide volume accumulator. Called at
+// each epoch boundary after the folds, and when the feature is disabled so a
+// later re-enable does not fold pre-disable volume into its first epoch.
+func (m *DynamicFeeMgr) clearPoolAccumulators(ctx cosmos.Context) {
+	iter := m.keeper.GetDynamicFeePoolAccumulatorIterator(ctx)
+	var accs []types.DynamicFeePoolAccumulator
+	for ; iter.Valid(); iter.Next() {
+		var acc types.DynamicFeePoolAccumulator
+		if err := m.keeper.Cdc().Unmarshal(iter.Value(), &acc); err != nil {
+			continue
+		}
+		accs = append(accs, acc)
+	}
+	iter.Close()
+	for _, acc := range accs {
+		if err := m.keeper.DeleteDynamicFeePoolAccumulator(ctx, acc.PairAssetA, acc.PairAssetB); err != nil {
+			ctx.Logger().Error("fail to delete dynamic fee pool accumulator", "error", err)
 		}
 	}
 }

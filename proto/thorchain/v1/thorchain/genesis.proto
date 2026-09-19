@@ -141,4 +141,10 @@ message GenesisState {
       [ (gogoproto.nullable) = false ];
   repeated types.SolVaultNonce sol_vault_nonces = 50
       [ (gogoproto.nullable) = false ];
+  // jsontag carries omitempty so adding this field does not rewrite every
+  // regression export fixture with an empty list.
+  repeated types.DynamicFeePoolAccumulator dynamic_fee_pool_accumulators = 51 [
+    (gogoproto.nullable) = false,
+    (gogoproto.jsontag) = "dynamic_fee_pool_accumulators,omitempty"
+  ];
 }

@@ -461,7 +461,11 @@ func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cos
 	// Credit dynamic fee tracking for eligible affiliates. Per-leg, with
 	// RUNE→TOR conversion so the closed-loop gradient signal is not corrupted
 	// by RUNE price moves.
-	creditDynamicFeeForLegs(ctx, h.mgr, swapEvents, swapAffiliates, swapAffiliateBps)
+	// swp.Count is still pre-increment here (both queues bump it after the
+	// handler returns), so Count == 0 marks the first sub-swap of a stream —
+	// and every non-streaming swap. This keeps the liquidity gate's swap count
+	// a count of user swaps rather than of streaming intervals.
+	creditDynamicFeeForLegs(ctx, h.mgr, swapEvents, swapAffiliates, swapAffiliateBps, swp.Count == 0)
 
 	stableReserveInternalSettled := false
 	if settled, settleErr := settleStableReserveInternalSwap(ctx, h.mgr, msg, emit); settleErr != nil {

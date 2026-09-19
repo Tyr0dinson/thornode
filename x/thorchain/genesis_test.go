@@ -253,25 +253,33 @@ func (GenesisTestSuite) TestGenesisDynamicFeeRoundtrip(c *C) {
 		DynamicBps:      7,
 		LastActiveEpoch: 42,
 		History: []types.DynamicFeeEpochRecord{
-			{Epoch: 41, VolumeTor: cosmos.NewUint(100), FeesTor: cosmos.NewUint(10), BpsAtClose: 6},
-			{Epoch: 42, VolumeTor: cosmos.NewUint(200), FeesTor: cosmos.NewUint(20), BpsAtClose: 7},
+			{Epoch: 41, VolumeTor: cosmos.NewUint(100), FeesTor: cosmos.NewUint(10), BpsAtClose: 6, SwapCount: 31, PoolVolumeTor: cosmos.NewUint(1000)},
+			{Epoch: 42, VolumeTor: cosmos.NewUint(200), FeesTor: cosmos.NewUint(20), BpsAtClose: 7, SwapCount: 32, PoolVolumeTor: cosmos.NewUint(2000)},
 		},
 	}
 	c.Assert(k.SetDynamicFeeRecord(ctx, rec), IsNil)
 
 	acc := types.DynamicFeeAccumulator{
-		Thorname:   "bentley",
-		PairAssetA: "BTC.BTC",
-		PairAssetB: "THOR.RUNE",
-		VolumeTor:  cosmos.NewUint(333),
-		FeesTor:    cosmos.NewUint(33),
+		Thorname:      "bentley",
+		PairAssetA:    "BTC.BTC",
+		PairAssetB:    "THOR.RUNE",
+		VolumeTor:     cosmos.NewUint(333),
+		FeesTor:       cosmos.NewUint(33),
+		SwapCount:     33,
+		PoolVolumeTor: cosmos.NewUint(3333),
 	}
 	c.Assert(k.SetDynamicFeeAccumulator(ctx, acc), IsNil)
+	c.Assert(k.SetDynamicFeePoolAccumulator(ctx, types.DynamicFeePoolAccumulator{
+		PairAssetA: "BTC.BTC",
+		PairAssetB: "THOR.RUNE",
+		VolumeTor:  cosmos.NewUint(9999),
+	}), IsNil)
 	k.SetLastObservedDynamicFeeEpochBlocks(ctx, 1337)
 
 	exported := ExportGenesis(ctx, k)
 	c.Check(len(exported.DynamicFeeRecords), Equals, 1)
 	c.Check(len(exported.DynamicFeeAccumulators), Equals, 1)
+	c.Check(len(exported.DynamicFeePoolAccumulators), Equals, 1)
 	c.Check(exported.LastObservedDynamicFeeEpochBlocks, Equals, int64(1337))
 	c.Check(exported.DynamicFeeRecords[0].DynamicBps, Equals, uint64(7))
 	c.Check(len(exported.DynamicFeeRecords[0].History), Equals, 2)
@@ -287,11 +295,19 @@ func (GenesisTestSuite) TestGenesisDynamicFeeRoundtrip(c *C) {
 	c.Check(reimported.LastActiveEpoch, Equals, uint64(42))
 	c.Check(len(reimported.History), Equals, 2)
 	c.Check(reimported.History[1].BpsAtClose, Equals, uint64(7))
+	c.Check(reimported.History[1].SwapCount, Equals, uint64(32))
+	c.Check(reimported.History[1].PoolVolumeTor.Equal(cosmos.NewUint(2000)), Equals, true)
 
 	reimportedAcc, err := k2.GetDynamicFeeAccumulator(ctx2, "bentley", "BTC.BTC", "THOR.RUNE")
 	c.Assert(err, IsNil)
 	c.Check(reimportedAcc.VolumeTor.Equal(cosmos.NewUint(333)), Equals, true)
 	c.Check(reimportedAcc.FeesTor.Equal(cosmos.NewUint(33)), Equals, true)
+	c.Check(reimportedAcc.SwapCount, Equals, uint64(33))
+	c.Check(reimportedAcc.PoolVolumeTor.Equal(cosmos.NewUint(3333)), Equals, true)
+
+	reimportedPoolAcc, err := k2.GetDynamicFeePoolAccumulator(ctx2, "BTC.BTC", "THOR.RUNE")
+	c.Assert(err, IsNil)
+	c.Check(reimportedPoolAcc.VolumeTor.Equal(cosmos.NewUint(9999)), Equals, true)
 
 	observed, err := k2.GetLastObservedDynamicFeeEpochBlocks(ctx2)
 	c.Assert(err, IsNil)
@@ -300,6 +316,7 @@ func (GenesisTestSuite) TestGenesisDynamicFeeRoundtrip(c *C) {
 	reExported := ExportGenesis(ctx2, k2)
 	c.Check(len(reExported.DynamicFeeRecords), Equals, 1)
 	c.Check(len(reExported.DynamicFeeAccumulators), Equals, 1)
+	c.Check(len(reExported.DynamicFeePoolAccumulators), Equals, 1)
 	c.Check(reExported.LastObservedDynamicFeeEpochBlocks, Equals, int64(1337))
 }
 

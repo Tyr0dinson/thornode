@@ -16,6 +16,11 @@ message DynamicFeeEpochRecord {
     (gogoproto.nullable) = false
   ];
   uint64 bps_at_close = 4;
+  uint64 swap_count = 5;
+  string pool_volume_tor = 6 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
 }
 
 message DynamicFeeRecord {
@@ -36,6 +41,23 @@ message DynamicFeeAccumulator {
     (gogoproto.nullable) = false
   ];
   string fees_tor = 5 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  uint64 swap_count = 6;
+  string pool_volume_tor = 7 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+}
+
+// DynamicFeePoolAccumulator tracks total swap volume across a pair (pool) for
+// the in-progress epoch, regardless of affiliate. It is the denominator that
+// normalizes each thorname's fee signal against market-wide activity.
+message DynamicFeePoolAccumulator {
+  string pair_asset_a = 1;
+  string pair_asset_b = 2;
+  string volume_tor = 3 [
     (gogoproto.customtype) = "cosmossdk.io/math.Uint",
     (gogoproto.nullable) = false
   ];

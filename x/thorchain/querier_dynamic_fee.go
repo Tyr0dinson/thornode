@@ -8,6 +8,15 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
+// uintOrZero normalizes a Uint that unmarshalled from a record written before
+// the field existed, where the inner big.Int is nil and String() would panic.
+func uintOrZero(u cosmos.Uint) cosmos.Uint {
+	if u.IsNil() {
+		return cosmos.ZeroUint()
+	}
+	return u
+}
+
 func (qs queryServer) queryDynamicL1Fees(ctx cosmos.Context, req *types.QueryDynamicL1FeesRequest) (*types.QueryDynamicL1FeesResponse, error) {
 	resp := &types.QueryDynamicL1FeesResponse{}
 
@@ -62,10 +71,12 @@ func (qs queryServer) queryDynamicL1FeesByThorname(ctx cosmos.Context, req *type
 		}
 		for _, h := range rec.History {
 			detail.History = append(detail.History, types.DynamicL1FeeHistoryEntry{
-				Epoch:      h.Epoch,
-				VolumeTor:  h.VolumeTor.String(),
-				FeesTor:    h.FeesTor.String(),
-				BpsAtClose: h.BpsAtClose,
+				Epoch:         h.Epoch,
+				VolumeTor:     h.VolumeTor.String(),
+				FeesTor:       h.FeesTor.String(),
+				BpsAtClose:    h.BpsAtClose,
+				SwapCount:     h.SwapCount,
+				PoolVolumeTor: uintOrZero(h.PoolVolumeTor).String(),
 			})
 		}
 		resp.Pairs = append(resp.Pairs, detail)
@@ -93,12 +104,22 @@ func (qs queryServer) queryDynamicL1FeesCurrent(ctx cosmos.Context, req *types.Q
 		if err := qs.mgr.Keeper().Cdc().Unmarshal(iter.Value(), &acc); err != nil {
 			continue
 		}
+		// Pool volume the accumulator carries from rolled epochs, plus the
+		// pair's in-progress slice, which is only folded in at the seal.
+		// Together with swap_count this is the answer to "why hasn't the
+		// controller moved" for a gated integration.
+		poolVolumeTor := uintOrZero(acc.PoolVolumeTor)
+		if poolAcc, err := qs.mgr.Keeper().GetDynamicFeePoolAccumulator(ctx, acc.PairAssetA, acc.PairAssetB); err == nil {
+			poolVolumeTor = poolVolumeTor.Add(poolAcc.VolumeTor)
+		}
 		resp.Entries = append(resp.Entries, types.DynamicL1FeeCurrentEntry{
-			Thorname:  acc.Thorname,
-			Pair:      fmt.Sprintf("%s|%s", acc.PairAssetA, acc.PairAssetB),
-			VolumeTor: acc.VolumeTor.String(),
-			FeesTor:   acc.FeesTor.String(),
-			Epoch:     resp.Epoch,
+			Thorname:      acc.Thorname,
+			Pair:          fmt.Sprintf("%s|%s", acc.PairAssetA, acc.PairAssetB),
+			VolumeTor:     acc.VolumeTor.String(),
+			FeesTor:       acc.FeesTor.String(),
+			Epoch:         resp.Epoch,
+			SwapCount:     acc.SwapCount,
+			PoolVolumeTor: poolVolumeTor.String(),
 		})
 	}
 

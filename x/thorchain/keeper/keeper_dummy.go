@@ -1168,6 +1168,22 @@ func (k KVStoreDummy) DeleteDynamicFeeAccumulator(_ cosmos.Context, _, _, _ stri
 
 func (k KVStoreDummy) GetDynamicFeeAccumulatorIterator(_ cosmos.Context) cosmos.Iterator { return nil }
 
+func (k KVStoreDummy) GetDynamicFeePoolAccumulator(_ cosmos.Context, _, _ string) (DynamicFeePoolAccumulator, error) {
+	return DynamicFeePoolAccumulator{}, kaboom
+}
+
+func (k KVStoreDummy) SetDynamicFeePoolAccumulator(_ cosmos.Context, _ DynamicFeePoolAccumulator) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) DeleteDynamicFeePoolAccumulator(_ cosmos.Context, _, _ string) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) GetDynamicFeePoolAccumulatorIterator(_ cosmos.Context) cosmos.Iterator {
+	return nil
+}
+
 func (k KVStoreDummy) DeleteAllDynamicFeeStateForThorname(_ cosmos.Context, _ string) error {
 	return kaboom
 }

@@ -557,6 +557,10 @@ type KeeperDynamicFee interface {
 	SetDynamicFeeAccumulator(ctx cosmos.Context, acc DynamicFeeAccumulator) error
 	DeleteDynamicFeeAccumulator(ctx cosmos.Context, thorname, pairAssetA, pairAssetB string) error
 	GetDynamicFeeAccumulatorIterator(ctx cosmos.Context) cosmos.Iterator
+	GetDynamicFeePoolAccumulator(ctx cosmos.Context, pairAssetA, pairAssetB string) (DynamicFeePoolAccumulator, error)
+	SetDynamicFeePoolAccumulator(ctx cosmos.Context, acc DynamicFeePoolAccumulator) error
+	DeleteDynamicFeePoolAccumulator(ctx cosmos.Context, pairAssetA, pairAssetB string) error
+	GetDynamicFeePoolAccumulatorIterator(ctx cosmos.Context) cosmos.Iterator
 	DeleteAllDynamicFeeStateForThorname(ctx cosmos.Context, thorname string) error
 	GetRemovedDynamicFeeWhitelistThornames(ctx cosmos.Context) []string
 	GetLastObservedDynamicFeeEpochBlocks(ctx cosmos.Context) (int64, error)

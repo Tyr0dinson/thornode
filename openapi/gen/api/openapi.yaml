@@ -8867,9 +8867,11 @@ components:
       type: object
     DynamicL1FeeHistoryEntry:
       example:
+        pool_volume_tor: "900000000000"
         volume_tor: "10000000000"
         epoch: 41
         fees_tor: "12345678"
+        swap_count: 42
         bps_at_close: 12
       properties:
         epoch:
@@ -8891,23 +8893,42 @@ components:
           example: 12
           format: uint64
           type: integer
+        swap_count:
+          description: "user swaps counted in this epoch; a streaming swap counts\
+            \ once, not\nonce per sub-swap. Epochs below L1DynamicFeeMinSwaps do not\
+            \ seal and\nroll into the next one, so this may span several epochs\n"
+          example: 42
+          format: uint64
+          type: integer
+        pool_volume_tor:
+          description: "TOR-denominated (1e8-precision USD value) total volume through\
+            \ the\npair over the same span, regardless of affiliate. It is the\ndenominator\
+            \ that normalizes fees_tor against market-wide activity\n"
+          example: "900000000000"
+          type: string
       required:
       - bps_at_close
       - epoch
       - fees_tor
+      - pool_volume_tor
+      - swap_count
       - volume_tor
       type: object
     DynamicL1FeePairDetail:
       example:
         last_active_epoch: 42
         history:
-        - volume_tor: "10000000000"
+        - pool_volume_tor: "900000000000"
+          volume_tor: "10000000000"
           epoch: 41
           fees_tor: "12345678"
+          swap_count: 42
           bps_at_close: 12
-        - volume_tor: "10000000000"
+        - pool_volume_tor: "900000000000"
+          volume_tor: "10000000000"
           epoch: 41
           fees_tor: "12345678"
+          swap_count: 42
           bps_at_close: 12
         dynamic_bps: 12
         pair: BTC.BTC|THOR.RUNE
@@ -8940,25 +8961,33 @@ components:
         pairs:
         - last_active_epoch: 42
           history:
-          - volume_tor: "10000000000"
+          - pool_volume_tor: "900000000000"
+            volume_tor: "10000000000"
             epoch: 41
             fees_tor: "12345678"
+            swap_count: 42
             bps_at_close: 12
-          - volume_tor: "10000000000"
+          - pool_volume_tor: "900000000000"
+            volume_tor: "10000000000"
             epoch: 41
             fees_tor: "12345678"
+            swap_count: 42
             bps_at_close: 12
           dynamic_bps: 12
           pair: BTC.BTC|THOR.RUNE
         - last_active_epoch: 42
           history:
-          - volume_tor: "10000000000"
+          - pool_volume_tor: "900000000000"
+            volume_tor: "10000000000"
             epoch: 41
             fees_tor: "12345678"
+            swap_count: 42
             bps_at_close: 12
-          - volume_tor: "10000000000"
+          - pool_volume_tor: "900000000000"
+            volume_tor: "10000000000"
             epoch: 41
             fees_tor: "12345678"
+            swap_count: 42
             bps_at_close: 12
           dynamic_bps: 12
           pair: BTC.BTC|THOR.RUNE
@@ -8983,10 +9012,12 @@ components:
     DynamicL1FeeCurrentEntry:
       example:
         thorname: alice
+        pool_volume_tor: "900000000000"
         volume_tor: "10000000000"
         epoch: 42
         fees_tor: "12345678"
         pair: BTC.BTC|THOR.RUNE
+        swap_count: 4
       properties:
         thorname:
           example: alice
@@ -9010,10 +9041,24 @@ components:
           example: 42
           format: uint64
           type: integer
+        swap_count:
+          description: |
+            running count of user swaps for this accumulator; compare against
+            L1DynamicFeeMinSwaps to see whether the epoch will seal or roll
+          example: 4
+          format: uint64
+          type: integer
+        pool_volume_tor:
+          description: "running TOR-denominated total volume through the pair, including\
+            \ the\npair's in-progress slice that is only folded in at the seal\n"
+          example: "900000000000"
+          type: string
       required:
       - epoch
       - fees_tor
       - pair
+      - pool_volume_tor
+      - swap_count
       - thorname
       - volume_tor
       type: object
@@ -9021,15 +9066,19 @@ components:
       example:
         entries:
         - thorname: alice
+          pool_volume_tor: "900000000000"
           volume_tor: "10000000000"
           epoch: 42
           fees_tor: "12345678"
           pair: BTC.BTC|THOR.RUNE
+          swap_count: 4
         - thorname: alice
+          pool_volume_tor: "900000000000"
           volume_tor: "10000000000"
           epoch: 42
           fees_tor: "12345678"
           pair: BTC.BTC|THOR.RUNE
+          swap_count: 4
         epoch: 42
       properties:
         epoch:

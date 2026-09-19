@@ -202,3 +202,37 @@ func (s *KeeperDynamicFeeSuite) TestGetRemovedDynamicFeeWhitelistThornames(c *C)
 	c.Check(gotSet["ACTIVEB"], Equals, false)
 	c.Check(gotSet["ACCRUING"], Equals, false)
 }
+
+// TestDynamicFeePoolAccumulator covers the pair-scoped denominator row: it
+// round-trips, defaults to zero rather than erroring when absent, and — being
+// shared across thornames — survives a per-thorname state wipe.
+func (s *KeeperDynamicFeeSuite) TestDynamicFeePoolAccumulator(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	missing, err := k.GetDynamicFeePoolAccumulator(ctx, "BTC.BTC", "THOR.RUNE")
+	c.Assert(err, IsNil)
+	c.Check(missing.VolumeTor.IsZero(), Equals, true)
+
+	acc := NewDynamicFeePoolAccumulator("BTC.BTC", "THOR.RUNE")
+	acc.VolumeTor = math.NewUint(12345)
+	c.Assert(k.SetDynamicFeePoolAccumulator(ctx, acc), IsNil)
+
+	got, err := k.GetDynamicFeePoolAccumulator(ctx, "BTC.BTC", "THOR.RUNE")
+	c.Assert(err, IsNil)
+	c.Check(got.VolumeTor.Equal(math.NewUint(12345)), Equals, true)
+
+	// A thorname losing its whitelist must not take the shared pool row with it.
+	rec := DynamicFeeRecord{Thorname: "myname", PairAssetA: "BTC.BTC", PairAssetB: "THOR.RUNE", DynamicBps: 42}
+	c.Assert(k.SetDynamicFeeRecord(ctx, rec), IsNil)
+	c.Assert(k.DeleteAllDynamicFeeStateForThorname(ctx, "myname"), IsNil)
+
+	got, err = k.GetDynamicFeePoolAccumulator(ctx, "BTC.BTC", "THOR.RUNE")
+	c.Assert(err, IsNil)
+	c.Check(got.VolumeTor.Equal(math.NewUint(12345)), Equals, true,
+		Commentf("pool accumulators are pair-scoped, shared across thornames"))
+
+	c.Assert(k.DeleteDynamicFeePoolAccumulator(ctx, "BTC.BTC", "THOR.RUNE"), IsNil)
+	got, err = k.GetDynamicFeePoolAccumulator(ctx, "BTC.BTC", "THOR.RUNE")
+	c.Assert(err, IsNil)
+	c.Check(got.VolumeTor.IsZero(), Equals, true)
+}

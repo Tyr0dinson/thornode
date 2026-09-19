@@ -2,6 +2,34 @@
 
 ## Changelog
 
+- 2026-09-19: **Noise reduction.** Two changes, driven by live data from
+  a small integration whose epochs held a median of 4 swaps against a
+  noise-crossover near 70:
+  1. **Liquidity gate.** An epoch must hold at least
+     `L1DynamicFeeMinSwaps` swaps *and* `L1DynamicFeeMinVolumeUSD` of
+     affiliate volume before it may seal a decision. Otherwise the
+     accumulator rolls into the next epoch, unbounded, and the floor
+     does not move. Streaming swaps count once, not once per
+     sub-swap. An integration that never clears the gate simply never
+     steps, which is the correct behaviour at that size.
+  2. **Pool-volume normalization.** The gradient now compares
+     `fees_tor / pool_volume_tor` — the affiliate's fee revenue as a
+     share of the pool's *total* volume over the same span — rather
+     than raw fee levels. Most of the previously-measured swing was
+     market-wide activity, not a response to the floor. Note the
+     denominator is deliberately the *pool's* volume and not the
+     affiliate's own `volume_tor`: because the floor binds, the latter
+     ratio is identically `f / 10⁴`, which would read `continue_up`
+     every epoch and pin the ceiling while carrying zero elasticity
+     information.
+
+  Adds pair-scoped `DynamicFeePoolAccumulator` state, `swap_count` and
+  `pool_volume_tor` to epoch records, accumulators and both query
+  endpoints. History written before this change carries raw fee levels
+  in incompatible units and is dropped at the first post-upgrade seal;
+  affected records keep their current `dynamic_bps` and re-enter
+  cold start (see "Migration" below).
+
 - 2026-07-22: Status moved to Implemented — the feature is live on mainnet
   (`L1DynamicFeeEnabled = 1`).
 - 2026-04-27: Switch the gradient signal from `fees_rune` to `fees_tor`
@@ -248,22 +276,39 @@ or reverses when fees responded negatively.
   thorname had any in-scope activity on this pair. Used for the
   30-epoch prune rule.
 - `history: []EpochRecord` (up to 30 entries, one per epoch):
-  - `epoch`, `volume_tor`, `fees_tor`, `bps_at_close`.
+  - `epoch`, `volume_tor`, `fees_tor`, `bps_at_close`, `swap_count`,
+    `pool_volume_tor`.
   - `volume_tor` is kept for observability and event emission; it
-    is not read by the controller.
+    is not read by the controller. It *is* read by the liquidity
+    gate before the entry is written.
+  - `pool_volume_tor` is the pool's total volume over the same span,
+    regardless of affiliate. It is the controller's denominator.
+  - `swap_count` counts user swaps, not sub-swaps: a streaming swap
+    contributes 1. An entry may span several epochs if earlier ones
+    rolled, in which case all four quantities are sums over the
+    rolled span.
   - `bps_at_close` records what the floor was set to at the end of
     this epoch; the controller's "find the most recent change" walk
     inspects this field.
 
 **In-progress (current epoch) accumulators:**
 
-- Per `(thorname, pair)`: running `volume_tor`, `fees_tor` for the
-  current epoch. Sealed and cleared at each epoch boundary.
+- Per `(thorname, pair)`: running `volume_tor`, `fees_tor`,
+  `swap_count`, `pool_volume_tor` for the current epoch. Sealed and
+  cleared at each epoch boundary — unless the liquidity gate rejects
+  the epoch, in which case the accumulator survives and keeps
+  accumulating into the next one.
+- Per `pair`: running `volume_tor` covering *every* swap through the
+  pair, affiliate or not. This is the normalization denominator. It is
+  folded into each thorname accumulator's `pool_volume_tor` at the
+  epoch boundary and then cleared unconditionally, so a rolled
+  accumulator carries a pool volume spanning exactly the same epochs
+  as its fees.
 
-Note: there is no per-pair record or per-pair accumulator. The
-share-based controller in the previous revision required a pair-wide
-score as its denominator; the revenue-gradient controller has no such
-need and the state is gone.
+Note: protocol-internal swaps that call `swap()` directly (POL,
+affiliate-fee conversion) bypass the swap-completion hook and so are
+excluded from the pair denominator. This is deliberate — the
+denominator is meant to measure market activity.
 
 ### Mimir keys (all operational)
 
@@ -277,6 +322,8 @@ need and the state is gone.
 | `L1DynamicFeeStepBPS`             | 1       | Magnitude of movement per epoch.                                                                                      |
 | `L1DynamicFeeDeadbandBPS`         | 1000    | Percentage change in windowed `fees_tor` below which the controller holds (in bps: 1000 = 10%).                       |
 | `L1DynamicFeeWindowEpochs`        | 3       | Epochs averaged on each side of the last bps change when measuring the gradient. Clamped into `[1, 30]` at read time. |
+| `L1DynamicFeeMinSwaps`            | 30      | Swaps an epoch must hold before it may seal a decision. Below this the accumulator rolls into the next epoch. `0` disables this half of the gate. |
+| `L1DynamicFeeMinVolumeUSD`        | 50000   | Whole USD of affiliate volume an epoch must hold before it may seal. Converted to TOR internally. `0` disables this half of the gate. |
 
 The whitelist key's `{thorname}` suffix is the registered thorname
 name, normalized per thornode's existing Mimir-key conventions
@@ -372,6 +419,18 @@ At block heights where `block_height % L1DynamicFeeEpochBlocks == 0`:
 2. **Seal accumulators.** Iterate all `(thorname, pair)` accumulators
    from this epoch. For each:
 
+   - Fold the pair's pool accumulator into
+     `accumulator.pool_volume_tor`.
+   - **Liquidity gate.** If `accumulator.swap_count < MinSwaps` or
+     `accumulator.volume_tor < MinVolumeUSD * 1e8`, the epoch is too
+     thin to carry signal: set `record.last_active_epoch =
+current_epoch` (so a permanently-gated record is not pruned out from
+     under its own accumulator), leave `dynamic_bps` alone, keep the
+     accumulator, and move on. No history entry, no event.
+   - Drop any history entry with `pool_volume_tor == 0` — pre-upgrade
+     data in incompatible units. Safe to run on every seal because the
+     pool credit precedes the affiliate credit for the same swap leg,
+     so any entry with fees necessarily has non-zero pool volume.
    - `fees_now = accumulator.fees_tor`.
    - Load the record; append a new history entry
      `{epoch, volume_tor=accumulator.volume_tor,
@@ -382,6 +441,10 @@ fees_tor=fees_now, bps_at_close=TBD}`.
      `record.last_active_epoch = current_epoch`.
    - If `new_bps != old_bps`, emit `dynamic_l1_fee_update`.
    - Delete the accumulator.
+
+   After the loop, delete every pool accumulator: they are per-epoch by
+   construction and each thorname accumulator that needed this epoch's
+   slice has already folded it in.
 
 3. **Prune.** For every record where
    `current_epoch - last_active_epoch >= 30`, delete the record in
@@ -398,8 +461,11 @@ if not hasChange:
     return "cold_start_probe", clamp(old_bps + step, floor, ceiling)
 
 dir       = sign(history[changeIdx].bps_at_close - history[changeIdx-1].bps_at_close)
-feesBefore = mean(history[changeIdx-K : changeIdx].fees_tor)    # up to K epochs before change
-feesAfter  = mean(history[changeIdx : ].fees_tor)               # up to K epochs since change, incl. this one
+# The signal is fee revenue as a share of pool volume, not a raw fee level:
+#   signal(e) = e.fees_tor * 1e12 / e.pool_volume_tor
+# Entries with pool_volume_tor == 0 are skipped; an empty window reads as 0.
+feesBefore = mean(signal(history[changeIdx-K : changeIdx]))    # up to K epochs before change
+feesAfter  = mean(signal(history[changeIdx : ]))               # up to K epochs since change, incl. this one
 
 if feesBefore == 0:
     # No baseline to compare against; hold.
@@ -455,11 +521,39 @@ change at an epoch boundary:
   "new_bps":       48,
   "fees_before":   "1000000000",
   "fees_after":    "1250000000",
+  "swap_count":    "142",
+  "pool_volume_tor": "980000000000",
   "delta_pct_bps": "2500",
   "reason":        "cold_start_probe" | "continue_up" | "continue_down" |
                    "reverse_up" | "reverse_down"
 }
 ```
+
+`fees_before` and `fees_after` are **normalized signals**
+(`fees_tor * 1e12 / pool_volume_tor`), not TOR fee levels. The
+attribute names are kept for continuity with existing consumers.
+
+### Migration
+
+At the first post-upgrade seal a record's entire history is discarded,
+because pre-upgrade entries carry raw fee levels rather than the
+normalized signal. The record keeps its current `dynamic_bps` and
+re-enters cold start from there — **two** forced `+1` probes (clamped
+at the ceiling), not one: `lastBpsChangeBefore` excludes the newest
+entry, so a real gradient is only evaluated once history reaches three
+entries. For a gated record each probe requires a qualifying epoch, so
+this may take a long time to play out. There is no store migration;
+the filter is a condition at seal time.
+
+One artifact to expect: an accumulator alive at the upgrade height
+carries fees from the whole epoch but pool volume only from
+post-upgrade blocks, so its sealed entry has an inflated signal. That
+entry is the whole `feesBefore` window when the first real gradient is
+evaluated, which reads as a fall and can produce one spurious
+`reverse_down` on an integration large enough to seal. It self-corrects
+at the next evaluation. Deleting all thorname accumulators at the
+upgrade height would avoid it, at the cost of a store migration for a
+one-step artifact.
 
 ### REST endpoints
 

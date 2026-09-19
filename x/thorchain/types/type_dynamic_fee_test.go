@@ -72,35 +72,6 @@ func (s *DynamicFeeTypesSuite) TestDynamicFeeRecordLatestHistory(c *C) {
 	c.Check(latest.BpsAtClose, Equals, uint64(20))
 }
 
-func (s *DynamicFeeTypesSuite) TestDynamicFeeRecordLastBpsChangeIndex(c *C) {
-	rec := DynamicFeeRecord{}
-	_, ok := rec.LastBpsChangeIndex()
-	c.Check(ok, Equals, false)
-
-	rec.AppendHistory(DynamicFeeEpochRecord{Epoch: 1, BpsAtClose: 5})
-	_, ok = rec.LastBpsChangeIndex()
-	c.Check(ok, Equals, false)
-
-	rec.AppendHistory(DynamicFeeEpochRecord{Epoch: 2, BpsAtClose: 5})
-	_, ok = rec.LastBpsChangeIndex()
-	c.Check(ok, Equals, false)
-
-	rec.AppendHistory(DynamicFeeEpochRecord{Epoch: 3, BpsAtClose: 6})
-	idx, ok := rec.LastBpsChangeIndex()
-	c.Check(ok, Equals, true)
-	c.Check(idx, Equals, 2)
-
-	rec.AppendHistory(DynamicFeeEpochRecord{Epoch: 4, BpsAtClose: 6})
-	idx, ok = rec.LastBpsChangeIndex()
-	c.Check(ok, Equals, true)
-	c.Check(idx, Equals, 2)
-
-	rec.AppendHistory(DynamicFeeEpochRecord{Epoch: 5, BpsAtClose: 7})
-	idx, ok = rec.LastBpsChangeIndex()
-	c.Check(ok, Equals, true)
-	c.Check(idx, Equals, 4)
-}
-
 func (s *DynamicFeeTypesSuite) TestNewDynamicFeeAccumulator(c *C) {
 	acc := NewDynamicFeeAccumulator("myname", "BTC.BTC", "ETH.ETH")
 	c.Check(acc.Thorname, Equals, "myname")

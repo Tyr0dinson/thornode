@@ -930,6 +930,7 @@ func (s *HandlerSwapSuite) TestSwapDynamicFeeIntegration(c *C) {
 		ctx, affiliates, affiliateBps,
 		common.BTCAsset, common.RuneAsset(),
 		cosmos.NewUint(10*common.One), cosmos.NewUint(100),
+		true,
 	)
 	acc1, err := k.GetDynamicFeeAccumulator(ctx, "bentley", pairA, pairB)
 	c.Assert(err, IsNil)
@@ -937,7 +938,7 @@ func (s *HandlerSwapSuite) TestSwapDynamicFeeIntegration(c *C) {
 		Commentf("CreditSwap must populate the accumulator via the runtime DynamicFeeMgr"))
 
 	ctx = ctx.WithBlockHeight(10)
-	c.Assert(mgr.DynamicFeeMgr().EndBlock(ctx), IsNil)
+	c.Assert(endBlockT(ctx, k, mgr.DynamicFeeMgr()), IsNil)
 
 	rec1, err := k.GetDynamicFeeRecord(ctx, "bentley", pairA, pairB)
 	c.Assert(err, IsNil)
@@ -949,9 +950,10 @@ func (s *HandlerSwapSuite) TestSwapDynamicFeeIntegration(c *C) {
 		ctx, affiliates, affiliateBps,
 		common.BTCAsset, common.RuneAsset(),
 		cosmos.NewUint(20*common.One), cosmos.NewUint(300),
+		true,
 	)
 	ctx = ctx.WithBlockHeight(20)
-	c.Assert(mgr.DynamicFeeMgr().EndBlock(ctx), IsNil)
+	c.Assert(endBlockT(ctx, k, mgr.DynamicFeeMgr()), IsNil)
 
 	rec2, err := k.GetDynamicFeeRecord(ctx, "bentley", pairA, pairB)
 	c.Assert(err, IsNil)

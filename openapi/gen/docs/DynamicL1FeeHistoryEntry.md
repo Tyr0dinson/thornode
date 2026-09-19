@@ -8,12 +8,14 @@ Name | Type | Description | Notes
 **VolumeTor** | **string** | TOR-denominated (1e8-precision USD value) swap volume in this epoch  | 
 **FeesTor** | **string** | TOR-denominated (1e8-precision USD value) fees accrued in this epoch  | 
 **BpsAtClose** | **int32** | dynamic_bps value at the close of the epoch | 
+**SwapCount** | **int32** | user swaps counted in this epoch; a streaming swap counts once, not once per sub-swap. Epochs below L1DynamicFeeMinSwaps do not seal and roll into the next one, so this may span several epochs  | 
+**PoolVolumeTor** | **string** | TOR-denominated (1e8-precision USD value) total volume through the pair over the same span, regardless of affiliate. It is the denominator that normalizes fees_tor against market-wide activity  | 
 
 ## Methods
 
 ### NewDynamicL1FeeHistoryEntry
 
-`func NewDynamicL1FeeHistoryEntry(epoch int32, volumeTor string, feesTor string, bpsAtClose int32, ) *DynamicL1FeeHistoryEntry`
+`func NewDynamicL1FeeHistoryEntry(epoch int32, volumeTor string, feesTor string, bpsAtClose int32, swapCount int32, poolVolumeTor string, ) *DynamicL1FeeHistoryEntry`
 
 NewDynamicL1FeeHistoryEntry instantiates a new DynamicL1FeeHistoryEntry object
 This constructor will assign default values to properties that have it defined,
@@ -106,6 +108,46 @@ and a boolean to check if the value has been set.
 `func (o *DynamicL1FeeHistoryEntry) SetBpsAtClose(v int32)`
 
 SetBpsAtClose sets BpsAtClose field to given value.
+
+
+### GetSwapCount
+
+`func (o *DynamicL1FeeHistoryEntry) GetSwapCount() int32`
+
+GetSwapCount returns the SwapCount field if non-nil, zero value otherwise.
+
+### GetSwapCountOk
+
+`func (o *DynamicL1FeeHistoryEntry) GetSwapCountOk() (*int32, bool)`
+
+GetSwapCountOk returns a tuple with the SwapCount field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetSwapCount
+
+`func (o *DynamicL1FeeHistoryEntry) SetSwapCount(v int32)`
+
+SetSwapCount sets SwapCount field to given value.
+
+
+### GetPoolVolumeTor
+
+`func (o *DynamicL1FeeHistoryEntry) GetPoolVolumeTor() string`
+
+GetPoolVolumeTor returns the PoolVolumeTor field if non-nil, zero value otherwise.
+
+### GetPoolVolumeTorOk
+
+`func (o *DynamicL1FeeHistoryEntry) GetPoolVolumeTorOk() (*string, bool)`
+
+GetPoolVolumeTorOk returns a tuple with the PoolVolumeTor field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetPoolVolumeTor
+
+`func (o *DynamicL1FeeHistoryEntry) SetPoolVolumeTor(v string)`
+
+SetPoolVolumeTor sets PoolVolumeTor field to given value.
 
 
 

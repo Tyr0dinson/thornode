@@ -25,19 +25,25 @@ type DynamicL1FeeCurrentEntry struct {
 	FeesTor string `json:"fees_tor"`
 	// current epoch index this accumulator belongs to
 	Epoch int32 `json:"epoch"`
+	// running count of user swaps for this accumulator; compare against L1DynamicFeeMinSwaps to see whether the epoch will seal or roll 
+	SwapCount int32 `json:"swap_count"`
+	// running TOR-denominated total volume through the pair, including the pair's in-progress slice that is only folded in at the seal 
+	PoolVolumeTor string `json:"pool_volume_tor"`
 }
 
 // NewDynamicL1FeeCurrentEntry instantiates a new DynamicL1FeeCurrentEntry object
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewDynamicL1FeeCurrentEntry(thorname string, pair string, volumeTor string, feesTor string, epoch int32) *DynamicL1FeeCurrentEntry {
+func NewDynamicL1FeeCurrentEntry(thorname string, pair string, volumeTor string, feesTor string, epoch int32, swapCount int32, poolVolumeTor string) *DynamicL1FeeCurrentEntry {
 	this := DynamicL1FeeCurrentEntry{}
 	this.Thorname = thorname
 	this.Pair = pair
 	this.VolumeTor = volumeTor
 	this.FeesTor = feesTor
 	this.Epoch = epoch
+	this.SwapCount = swapCount
+	this.PoolVolumeTor = poolVolumeTor
 	return &this
 }
 
@@ -169,6 +175,54 @@ func (o *DynamicL1FeeCurrentEntry) SetEpoch(v int32) {
 	o.Epoch = v
 }
 
+// GetSwapCount returns the SwapCount field value
+func (o *DynamicL1FeeCurrentEntry) GetSwapCount() int32 {
+	if o == nil {
+		var ret int32
+		return ret
+	}
+
+	return o.SwapCount
+}
+
+// GetSwapCountOk returns a tuple with the SwapCount field value
+// and a boolean to check if the value has been set.
+func (o *DynamicL1FeeCurrentEntry) GetSwapCountOk() (*int32, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.SwapCount, true
+}
+
+// SetSwapCount sets field value
+func (o *DynamicL1FeeCurrentEntry) SetSwapCount(v int32) {
+	o.SwapCount = v
+}
+
+// GetPoolVolumeTor returns the PoolVolumeTor field value
+func (o *DynamicL1FeeCurrentEntry) GetPoolVolumeTor() string {
+	if o == nil {
+		var ret string
+		return ret
+	}
+
+	return o.PoolVolumeTor
+}
+
+// GetPoolVolumeTorOk returns a tuple with the PoolVolumeTor field value
+// and a boolean to check if the value has been set.
+func (o *DynamicL1FeeCurrentEntry) GetPoolVolumeTorOk() (*string, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.PoolVolumeTor, true
+}
+
+// SetPoolVolumeTor sets field value
+func (o *DynamicL1FeeCurrentEntry) SetPoolVolumeTor(v string) {
+	o.PoolVolumeTor = v
+}
+
 func (o DynamicL1FeeCurrentEntry) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
@@ -185,6 +239,12 @@ func (o DynamicL1FeeCurrentEntry) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if true {
 		toSerialize["epoch"] = o.Epoch
+	}
+	if true {
+		toSerialize["swap_count"] = o.SwapCount
+	}
+	if true {
+		toSerialize["pool_volume_tor"] = o.PoolVolumeTor
 	}
 	return json.Marshal(toSerialize)
 }
