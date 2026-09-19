@@ -41,9 +41,11 @@ message ObservedTxVoter {
   // no nonce and a superseded payload keeps its signers forever, so without
   // this a handful of nodes that never observed it could tip a stale payload
   // back over the supermajority line and oscillate the vault's coin accounting
-  // at will. A correction is refused when its target is one of these; a
-  // genuinely new observation (a reorg's new receipt differs in at least gas)
-  // is a different payload and carries no stale signers, so it still applies.
+  // at will. A bounce correction back onto one of these still applies, but only
+  // when the observations filed at inclusion heights other than the superseded
+  // payload's reach supermajority on their own: a replay cannot ride the stale
+  // signers, while a fresh quorum re-observing a genuinely re-included outbound
+  // - a replacement receipt that reuses an earlier gas amount included - can.
   repeated common.ObservedTx bounce_superseded = 12 [
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "bounce_superseded,omitempty",
