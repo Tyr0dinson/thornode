@@ -1131,6 +1131,7 @@ func (c *Communication) QueueFrostBroadcast(
 	payload []byte,
 	msgID string,
 	msgType messages.THORChainTSSMessageType,
+	maxFrameBytes int,
 ) error {
 	if c == nil {
 		return errors.New("FROST broadcast is not configured")
@@ -1144,6 +1145,9 @@ func (c *Communication) QueueFrostBroadcast(
 	if !validTSSFrameMsgID(msgID) {
 		return errors.New("invalid FROST broadcast message ID")
 	}
+	if maxFrameBytes <= 0 || maxFrameBytes > FrostMaxSessionPayload {
+		return fmt.Errorf("invalid FROST frame limit %d", maxFrameBytes)
+	}
 	encoded, err := json.Marshal(messages.WrappedMessage{
 		MessageType: msgType,
 		MsgID:       msgID,
@@ -1152,11 +1156,11 @@ func (c *Communication) QueueFrostBroadcast(
 	if err != nil {
 		return fmt.Errorf("marshal FROST broadcast: %w", err)
 	}
-	if len(encoded) > FrostMaxSessionPayload {
+	if len(encoded) > maxFrameBytes {
 		return fmt.Errorf(
 			"encoded FROST frame is %d bytes, maximum is %d",
 			len(encoded),
-			FrostMaxSessionPayload,
+			maxFrameBytes,
 		)
 	}
 	queued := &messages.BroadcastMsgChan{

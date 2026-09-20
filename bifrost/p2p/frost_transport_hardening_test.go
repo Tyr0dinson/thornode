@@ -3,6 +3,7 @@ package p2p
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"runtime"
 	"strings"
 	"testing"
@@ -30,6 +31,7 @@ func queueTestFrostBroadcast(comm *Communication, msg *messages.BroadcastMsgChan
 		msg.WrappedMessage.Payload,
 		msg.WrappedMessage.MsgID,
 		msg.WrappedMessage.MessageType,
+		FrostMaxSessionPayload,
 	)
 }
 
@@ -47,16 +49,16 @@ func assertFrostBroadcastBlocked(t *testing.T, done <-chan error) {
 	}
 }
 
-func encodedFrostBoundaryMessages(t *testing.T, msgType messages.THORChainTSSMessageType) (*messages.BroadcastMsgChan, *messages.BroadcastMsgChan) {
+func encodedFrostBoundaryMessages(t *testing.T, msgType messages.THORChainTSSMessageType, limit int) (*messages.BroadcastMsgChan, *messages.BroadcastMsgChan) {
 	t.Helper()
-	for msgIDBytes := 1; msgIDBytes < maxTSSFrameMsgIDBytes; msgIDBytes++ {
+	for msgIDBytes := 2; msgIDBytes < maxTSSFrameMsgIDBytes; msgIDBytes++ {
 		msgID := string(bytes.Repeat([]byte{'a'}, msgIDBytes))
 		empty := messages.WrappedMessage{MessageType: msgType, MsgID: msgID, Payload: []byte{}}
 		base, err := json.Marshal(empty)
 		if err != nil {
 			t.Fatal(err)
 		}
-		encodedPayloadBytes := FrostMaxSessionPayload - len(base)
+		encodedPayloadBytes := limit - len(base)
 		if encodedPayloadBytes < 0 || encodedPayloadBytes%4 != 0 {
 			continue
 		}
@@ -72,7 +74,7 @@ func encodedFrostBoundaryMessages(t *testing.T, msgType messages.THORChainTSSMes
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(encoded) != FrostMaxSessionPayload {
+		if len(encoded) != limit {
 			continue
 		}
 		above := &messages.BroadcastMsgChan{
@@ -87,50 +89,62 @@ func encodedFrostBoundaryMessages(t *testing.T, msgType messages.THORChainTSSMes
 }
 
 func TestQueueFrostBroadcastEncodedFrameBoundary(t *testing.T) {
-	for _, msgType := range []messages.THORChainTSSMessageType{
-		messages.TSSFrostPreprocessMsg,
-		messages.TSSFrostShareMsg,
-		messages.TSSFrostVerifyMsg,
-		messages.TSSFrostResultMsg,
-		messages.TSSFrostDKGRound1Msg,
-		messages.TSSFrostDKGRound2Msg,
-		messages.TSSFrostDKGRound3Msg,
-		messages.TSSFrostDKGResultMsg,
-	} {
-		t.Run(msgType.String(), func(t *testing.T) {
-			atLimit, above := encodedFrostBoundaryMessages(t, msgType)
-			expected, err := json.Marshal(atLimit.WrappedMessage)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(expected) != FrostMaxSessionPayload {
-				t.Fatalf("encoded frame bytes=%d, want %d", len(expected), FrostMaxSessionPayload)
-			}
-			comm := &Communication{
-				BroadcastMsgChan: make(chan *messages.BroadcastMsgChan, 1),
-				stopChan:         make(chan struct{}),
-			}
-			if err = queueTestFrostBroadcast(comm, atLimit); err != nil {
-				t.Fatalf("queue encoded frame at limit: %v", err)
-			}
-			queued := <-comm.BroadcastMsgChan
-			if queued.Encoded == nil || !bytes.Equal(queued.Encoded, expected) {
-				t.Fatal("queued frame does not contain the exact serialized bytes")
-			}
-			aboveEncoded, err := json.Marshal(above.WrappedMessage)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(aboveEncoded) != FrostMaxSessionPayload+1 {
-				t.Fatalf("limit+1 fixture bytes=%d, want %d", len(aboveEncoded), FrostMaxSessionPayload+1)
-			}
-			if err = queueTestFrostBroadcast(comm, above); err == nil {
-				t.Fatal("queue admitted encoded frame at limit+1")
-			}
-			if len(comm.BroadcastMsgChan) != 0 {
-				t.Fatal("rejected encoded frame changed the broadcast queue")
-			}
-		})
+	for _, limit := range []int{FrostKeygenControlPayload, FrostMaxSessionPayload} {
+		for _, msgType := range []messages.THORChainTSSMessageType{
+			messages.TSSFrostPreprocessMsg,
+			messages.TSSFrostShareMsg,
+			messages.TSSFrostVerifyMsg,
+			messages.TSSFrostResultMsg,
+			messages.TSSFrostDKGRound1Msg,
+			messages.TSSFrostDKGRound2Msg,
+			messages.TSSFrostDKGRound3Msg,
+			messages.TSSFrostDKGResultMsg,
+		} {
+			t.Run(fmt.Sprintf("%s/%d", msgType, limit), func(t *testing.T) {
+				atLimit, above := encodedFrostBoundaryMessages(t, msgType, limit)
+				expected, err := json.Marshal(atLimit.WrappedMessage)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(expected) != limit {
+					t.Fatalf("encoded frame bytes=%d, want %d", len(expected), limit)
+				}
+				comm := &Communication{
+					BroadcastMsgChan: make(chan *messages.BroadcastMsgChan, 1),
+					stopChan:         make(chan struct{}),
+				}
+				below := *atLimit
+				below.WrappedMessage.MsgID = atLimit.WrappedMessage.MsgID[:len(atLimit.WrappedMessage.MsgID)-1]
+				belowEncoded, err := json.Marshal(below.WrappedMessage)
+				if err != nil || len(belowEncoded) != limit-1 {
+					t.Fatal("invalid limit-1 fixture")
+				}
+				if err = comm.QueueFrostBroadcast(below.PeersID, below.WrappedMessage.Payload, below.WrappedMessage.MsgID, msgType, limit); err != nil {
+					t.Fatal(err)
+				}
+				<-comm.BroadcastMsgChan
+				if err = comm.QueueFrostBroadcast(atLimit.PeersID, atLimit.WrappedMessage.Payload, atLimit.WrappedMessage.MsgID, msgType, limit); err != nil {
+					t.Fatalf("queue encoded frame at limit: %v", err)
+				}
+				queued := <-comm.BroadcastMsgChan
+				if queued.Encoded == nil || !bytes.Equal(queued.Encoded, expected) {
+					t.Fatal("queued frame does not contain the exact serialized bytes")
+				}
+				aboveEncoded, err := json.Marshal(above.WrappedMessage)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(aboveEncoded) != limit+1 {
+					t.Fatalf("limit+1 fixture bytes=%d, want %d", len(aboveEncoded), limit+1)
+				}
+				if err = comm.QueueFrostBroadcast(above.PeersID, above.WrappedMessage.Payload, above.WrappedMessage.MsgID, msgType, limit); err == nil {
+					t.Fatal("queue admitted encoded frame at limit+1")
+				}
+				if len(comm.BroadcastMsgChan) != 0 {
+					t.Fatal("rejected encoded frame changed the broadcast queue")
+				}
+			})
+		}
 	}
 }
 
@@ -259,5 +273,17 @@ func TestQueueFrostBroadcastStopReleasesBlockedProducer(t *testing.T) {
 	}
 	if got := <-comm.BroadcastMsgChan; got != sentinel {
 		t.Fatal("stopped FROST producer changed the full queue")
+	}
+}
+
+func TestQueueFrostBroadcastRejectsInvalidFrameLimit(t *testing.T) {
+	comm := &Communication{BroadcastMsgChan: make(chan *messages.BroadcastMsgChan, 1), stopChan: make(chan struct{})}
+	for _, limit := range []int{-1, 0, FrostMaxSessionPayload + 1} {
+		if err := comm.QueueFrostBroadcast(nil, nil, "invalid-limit", messages.TSSFrostVerifyMsg, limit); err == nil {
+			t.Fatalf("accepted invalid limit %d", limit)
+		}
+	}
+	if len(comm.BroadcastMsgChan) != 0 {
+		t.Fatal("invalid limit admitted a frame")
 	}
 }

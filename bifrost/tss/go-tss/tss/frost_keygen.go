@@ -1466,7 +1466,11 @@ func (c *FrostKeygenCoordinator) BroadcastResult(resp FrostKeygenResponse, peers
 }
 
 func (c *FrostKeygenCoordinator) broadcast(msgType messages.THORChainTSSMessageType, payload []byte, peers []peer.ID) error {
-	return c.p2pCommunication.QueueFrostBroadcast(peers, payload, c.msgID, msgType)
+	maxFrameBytes := p2p.FrostKeygenControlPayload
+	if msgType == messages.TSSFrostDKGRound2Msg {
+		maxFrameBytes = p2p.FrostMaxSessionPayload
+	}
+	return c.p2pCommunication.QueueFrostBroadcast(peers, payload, c.msgID, msgType, maxFrameBytes)
 }
 
 func (c *FrostKeygenCoordinator) validateSenderPeerBinding(msgPeer peer.ID, senderPubKey string) error {

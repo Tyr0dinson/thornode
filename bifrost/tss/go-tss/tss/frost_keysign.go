@@ -2031,7 +2031,7 @@ func (c *FrostSignCoordinator) BroadcastResult(resp FrostKeySignResponse, peers 
 }
 
 func (c *FrostSignCoordinator) broadcast(msgType messages.THORChainTSSMessageType, payload []byte, peers []peer.ID) error {
-	return c.p2pCommunication.QueueFrostBroadcast(peers, payload, c.msgID, msgType)
+	return c.p2pCommunication.QueueFrostBroadcast(peers, payload, c.msgID, msgType, p2p.FrostMaxSessionPayload)
 }
 
 func (c *FrostSignCoordinator) queueSignedTranscriptVerification(
