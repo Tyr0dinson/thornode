@@ -1339,13 +1339,83 @@ func logStaleOutboundObservation(ctx cosmos.Context, status staleOutboundObserva
 	ctx.Logger().Debug(msg, keyvals...)
 }
 
-func (s *SlasherImpl) needsNewVault(ctx cosmos.Context, mgr Manager, vault Vault, signingTransPeriod, startHeight int64, toi TxOutItem) bool {
-	outhashes := mgr.Keeper().GetObservedLink(ctx, toi.InHash)
-	if len(outhashes) == 0 {
+// outboundObservationFulfils reports whether an observed outbound plausibly
+// fulfils toi, disregarding which vault sent it: the same destination, the same
+// asset, and an amount the outbound handler would accept.
+//
+// The destination is matched with the same comparator CommonOutboundTxHandler
+// and matchActionItem use, so an unrelated transaction cannot stand in for the
+// scheduled outbound and the slasher's notion of "in progress" cannot diverge
+// from the handlers' notion of "done".
+func outboundObservationFulfils(ctx cosmos.Context, mgr Manager, tx ObservedTx, toi TxOutItem) bool {
+	return len(tx.Tx.Coins) == 1 &&
+		tx.Tx.Coins[0].Asset.Equals(toi.Coin.Asset) &&
+		common.EquivalentAddresses(toi.Chain, tx.Tx.ToAddress, toi.ToAddress) &&
+		outboundObservationAmountMatches(ctx, mgr, tx.Tx, toi)
+}
+
+// outboundObservationAmountMatches applies the amount tolerances
+// CommonOutboundTxHandler already allows when deciding that an observed
+// transaction is the scheduled outbound: the exact amount, the amount rounded
+// to the chain's precision, or - for a gas asset - the same total spend once
+// the gas is accounted for.
+//
+// Unlike the handler this does not withhold the match when the signer overspent
+// MaxGas. That refinement exists so the handler can slash rather than mark the
+// action done; here the question is only whether funds have already left the
+// vault, and they have. Treating an overspending broadcast as "not this
+// outbound" would invite a second payment, which is the failure this guard
+// exists to prevent.
+func outboundObservationAmountMatches(ctx cosmos.Context, mgr Manager, tx common.Tx, toi TxOutItem) bool {
+	scheduled := common.Coins{toi.Coin}
+	if tx.Coins.EqualsEx(scheduled) {
 		return true
 	}
 
-	for _, hash := range outhashes {
+	// The scheduled amount may carry more precision than the chain can express.
+	pool, err := mgr.Keeper().GetPool(ctx, toi.Coin.Asset)
+	if err != nil {
+		ctx.Logger().Error("fail to get pool", "asset", toi.Coin.Asset, "error", err)
+	} else if !pool.IsEmpty() {
+		rounded := common.NewCoin(toi.Coin.Asset, cosmos.RoundToDecimal(toi.Coin.Amount, pool.Decimals))
+		if tx.Coins.EqualsEx(common.Coins{rounded}) {
+			return true
+		}
+	}
+
+	// A gas asset outbound pays its own gas, so the observed amount differs from
+	// the scheduled one by however much gas was actually spent.
+	gasAsset := toi.Chain.GetGasAsset()
+	if !toi.Coin.Asset.Equals(gasAsset) {
+		return false
+	}
+	intendToSpend := toi.Coin.Amount.Add(toi.MaxGas.ToCoins().GetCoin(gasAsset).Amount)
+	// This can be one node's observation before consensus. Adding its amount
+	// and gas can overflow Uint, so compare using a guarded subtraction instead.
+	observedAmount := tx.Coins.GetCoin(gasAsset).Amount
+	observedGas := tx.Gas.ToCoins().GetCoin(gasAsset).Amount
+	return observedAmount.LTE(intendToSpend) && intendToSpend.Sub(observedAmount).Equal(observedGas)
+}
+
+// needsNewVault reports whether an unfulfilled TxOutItem should be reassigned to
+// another vault.
+//
+// Reassignment sends the outbound a second time if the assigned vault did in
+// fact broadcast it, so every observed link is weighed before deciding - not
+// just the first. A link is written on the first attestation, before the
+// outbound voter reaches consensus, so any single node can have an arbitrary
+// hash linked to this inbound; if that stray link is examined first, returning
+// on it hides the assigned vault's own majority observation recorded under a
+// later hash, and the outbound is paid twice.
+//
+// Only members of the assigned vault carry weight for the majority: that is the
+// strong "the vault says it sent it" signal. Every matching signer earns the
+// bounded waiting window though - outbound observations are submitted by any
+// active observer, not just vault members, so an outsider majority attesting
+// that funds left this vault's address is exactly what a reassignment would
+// pay twice. staleNonFinalOutboundObservation caps how long that window runs.
+func (s *SlasherImpl) needsNewVault(ctx cosmos.Context, mgr Manager, vault Vault, signingTransPeriod, startHeight int64, toi TxOutItem) bool {
+	for _, hash := range mgr.Keeper().GetObservedLink(ctx, toi.InHash) {
 		voter, err := mgr.Keeper().GetObservedTxOutVoter(ctx, hash)
 		if err != nil {
 			ctx.Logger().Error("fail to get txout voter", "hash", hash, "error", err)
@@ -1358,12 +1428,13 @@ func (s *SlasherImpl) needsNewVault(ctx cosmos.Context, mgr Manager, vault Vault
 			continue
 		}
 		// in the event there are multiple observed txouts for a given inhash, we
-		// focus on the matching pubkey and asset
+		// focus on the observations that could actually be this outbound: the
+		// assigned vault as sender, and a payload the handlers would accept as
+		// fulfilling the item.
 		signers := make(map[string]bool)
 		for _, tx1 := range voter.Txs {
 			if !txOutPubKeyMatchesObserved(toi.Chain, tx1.ObservedPubKey, toi) ||
-				len(tx1.Tx.Coins) != 1 ||
-				!tx1.Tx.Coins[0].Asset.Equals(toi.Coin.Asset) {
+				!outboundObservationFulfils(ctx, mgr, tx1, toi) {
 				continue
 			}
 
@@ -1371,46 +1442,65 @@ func (s *SlasherImpl) needsNewVault(ctx cosmos.Context, mgr Manager, vault Vault
 				signers[signer] = true
 			}
 		}
-		if len(signers) > 0 {
-			staleStatus := s.staleNonFinalOutboundObservation(ctx, voter, signingTransPeriod, startHeight)
-			if staleStatus.stale {
-				logStaleOutboundObservation(ctx, staleStatus, "allowing vault reassignment for stale non-finalised outbound observation",
-					"inhash", toi.InHash,
-					"outhash", hash,
-					"start_height", startHeight,
-					"observation_height", staleStatus.observationHeight,
-					"voter_height", voter.Height,
-					"unfinalized_height", voter.UnfinalizedHeight,
-					"stale_since_height", staleStatus.staleSinceHeight)
-				continue
-			}
-
-			var count int // count the number of signers from the assigned vault
-			for _, member := range vault.Membership {
-				pk, err := common.NewPubKey(member)
-				if err != nil {
-					continue
-				}
-				addr, err := pk.GetAddress(common.THORChain)
-				if err != nil {
-					continue
-				}
-				if _, ok := signers[addr.String()]; ok {
-					count++
-				}
-			}
-			// if a simple majority of vault members have observed the outbound,
-			// then we should not reschedule. If a vault says it sent it, it
-			// sent it and shouldn't get another vault to send it (potentially
-			// a second time)
-			if count > 0 && HasSimpleMajority(count, len(vault.Membership)) {
-				return false
-			}
-			maxHeight := startHeight + ((int64(len(signers)) + 1) * signingTransPeriod)
-			return maxHeight < ctx.BlockHeight()
+		if len(signers) == 0 {
+			continue
 		}
 
+		staleStatus := s.staleNonFinalOutboundObservation(ctx, voter, signingTransPeriod, startHeight)
+		if staleStatus.stale {
+			logStaleOutboundObservation(ctx, staleStatus, "allowing vault reassignment for stale non-finalised outbound observation",
+				"inhash", toi.InHash,
+				"outhash", hash,
+				"start_height", startHeight,
+				"observation_height", staleStatus.observationHeight,
+				"voter_height", voter.Height,
+				"unfinalized_height", voter.UnfinalizedHeight,
+				"stale_since_height", staleStatus.staleSinceHeight)
+			continue
+		}
+
+		count := vaultSignerCount(vault, signers)
+
+		// if a simple majority of vault members have observed the outbound,
+		// then we should not reschedule. If a vault says it sent it, it
+		// sent it and shouldn't get another vault to send it (potentially
+		// a second time)
+		if count > 0 && HasSimpleMajority(count, len(vault.Membership)) {
+			return false
+		}
+
+		// A sub-majority observation is not yet the vault saying it sent the
+		// outbound, so it only earns a bounded window for the remaining
+		// observations to arrive. Active nodes outside the vault watch this
+		// chain too and their attestation that funds left the vault's address
+		// is what a reassignment would double-spend, so they earn the window as
+		// well; staleNonFinalOutboundObservation already bounds it. Keep
+		// scanning: a later link may still hold the majority this one lacks.
+		maxHeight := startHeight + ((int64(len(signers)) + 1) * signingTransPeriod)
+		if maxHeight >= ctx.BlockHeight() {
+			return false
+		}
 	}
 
 	return true
+}
+
+// vaultSignerCount counts the members of the given vault that are among the
+// given observation signers.
+func vaultSignerCount(vault Vault, signers map[string]bool) int {
+	var count int
+	for _, member := range vault.Membership {
+		pk, err := common.NewPubKey(member)
+		if err != nil {
+			continue
+		}
+		addr, err := pk.GetAddress(common.THORChain)
+		if err != nil {
+			continue
+		}
+		if signers[addr.String()] {
+			count++
+		}
+	}
+	return count
 }

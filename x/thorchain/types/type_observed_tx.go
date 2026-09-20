@@ -64,7 +64,7 @@ func (m *ObservedTxVoter) matchActionItem(outboundTx common.Tx) bool {
 		// Use GetMemo() to compare memos for memoless outbounds where
 		// toi.Memo is empty but toi.OriginalMemo contains the actual memo
 		if strings.EqualFold(toi.GetMemo(), outboundTx.Memo) &&
-			toi.ToAddress.Equals(outboundTx.ToAddress) &&
+			common.EquivalentAddresses(toi.Chain, toi.ToAddress, outboundTx.ToAddress) &&
 			toi.Chain.Equals(outboundTx.Chain) &&
 			matchCoin {
 			return true

@@ -343,6 +343,43 @@ func (TypeObservedTxSuite) TestAddOutTx(c *C) {
 	c.Assert(voter.GetTx(activeNodes).Equals(voter.Tx), Equals, true)
 }
 
+// A Zcash outbound scheduled to a tex address is observed in its P2PKH form, so
+// the action must still match - otherwise the vault is slashed for "extra
+// funds" over a payment the network itself ordered.
+func (TypeObservedTxSuite) TestMatchActionItemZecTex(c *C) {
+	p2pkhAddr, err := common.NewAddress("tmEp4k7dSU8eGj32uJPi2wBSGuiNaVFBLN7")
+	c.Assert(err, IsNil)
+	otherAddr, err := common.NewAddress("tmAbHS91acTju5QaDawZ1M5Pkbv2FFnRwUX")
+	c.Assert(err, IsNil)
+	texAddr, err := p2pkhAddr.ToTexAddress()
+	c.Assert(err, IsNil)
+	c.Assert(p2pkhAddr.Equals(texAddr), Equals, false)
+
+	coin := common.NewCoin(common.ZECAsset, cosmos.NewUint(common.One))
+	outboundTx := common.NewTx(
+		GetRandomTxHash(),
+		otherAddr,
+		p2pkhAddr,
+		common.Coins{coin},
+		common.Gas{{Asset: common.ZECAsset, Amount: cosmos.NewUint(1000)}},
+		"OUT:"+GetRandomTxHash().String(),
+	)
+
+	voter := NewObservedTxVoter(GetRandomTxHash(), nil)
+	voter.Actions = []TxOutItem{{
+		Chain:     common.ZECChain,
+		ToAddress: texAddr,
+		Coin:      coin,
+		Memo:      outboundTx.Memo,
+	}}
+	c.Check(voter.matchActionItem(outboundTx), Equals, true)
+
+	// An unrelated Zcash destination still fails to match.
+	strangerTx := outboundTx
+	strangerTx.ToAddress = otherAddr
+	c.Check(voter.matchActionItem(strangerTx), Equals, false)
+}
+
 func (TypeObservedTxSuite) TestObservedTxEquals(c *C) {
 	coins1 := common.Coins{
 		common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
