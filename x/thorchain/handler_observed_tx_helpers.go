@@ -764,7 +764,11 @@ func applyTxOutAttestation(
 	// gas/height race, re-observed once" case. Further variants (count >= 2) are
 	// self-inflicted spam and keep their observe slash point, so a node cannot file
 	// unlimited gas/height variants at zero cost to erase the per-observation charge.
-	redundantReObservation := voter.ShouldRefundRedundantOutboundObservation(tx, signer)
+	// A signer moving its current vote back onto an entry it already signed re-files
+	// a payload it has already attested to: AddLatest accepts it so the vote record
+	// follows, but it is not new work and keeps its observe point.
+	redundantReObservation := !voter.HasSignedEntry(tx, signer) &&
+		voter.ShouldRefundRedundantOutboundObservation(tx, signer)
 	// Whether this is the signer's first observation in its finality tier, for
 	// the cross-tier credit after final consensus below.
 	firstInTier := !voter.HasObservedInTier(tx, signer)

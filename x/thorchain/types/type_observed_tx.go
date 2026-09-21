@@ -115,6 +115,19 @@ func (m *ObservedTxVoter) AddOutTx(in common.Tx) bool {
 // outbound back at the height it was first included at, with the same receipt.
 // The signature history itself is left intact: the redundant-variant refund cap
 // counts every variant a signer has ever filed.
+// HasSignedEntry reports whether the signer already signed the voter entry this
+// observation would land on. AddLatest lets a signer move its current vote back
+// onto such an entry, but that re-file is not new work, so it must not earn the
+// redundant-observation refund.
+func (m *ObservedTxVoter) HasSignedEntry(observedTx common.ObservedTx, signer cosmos.AccAddress) bool {
+	for _, transaction := range m.Txs {
+		if transaction.Equals(observedTx) {
+			return transaction.HasSigned(signer)
+		}
+	}
+	return false
+}
+
 func (m *ObservedTxVoter) AddLatest(observedTx common.ObservedTx, signer cosmos.AccAddress) bool {
 	idx := -1
 	for i, transaction := range m.Txs {
