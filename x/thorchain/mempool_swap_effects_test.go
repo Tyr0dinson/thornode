@@ -1432,15 +1432,13 @@ func (s *MempoolSwapEffectsSuite) TestSpeculativeRevShareCannotPayBeforeFinality
 	mgr.Keeper().SetMimir(ctx, "REVSHARE-EFFECTS-AFFILIATE", 5000)
 	FundModule(c, ctx, mgr.Keeper(), ReserveName, 10*common.One)
 
-	name, err := mgr.Keeper().GetTHORName(ctx, mempoolSwapEffectsAffiliate)
-	c.Assert(err, IsNil)
-	collectorBefore, err := mgr.Keeper().GetAffiliateCollector(ctx, name.Owner)
+	collectorBefore, err := mgr.Keeper().GetAffiliateCollector(ctx, mempoolSwapEffectsAffiliate)
 	c.Assert(err, IsNil)
 	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
 
 	executeMempoolSwapEffectsSwap(c, ctx, mgr, msg, mempoolSwapExecutionSpeculative)
 	c.Check(networkMgr.processRevShare(ctx, mgr).IsZero(), Equals, true)
-	collectorBeforeFinality, err := mgr.Keeper().GetAffiliateCollector(ctx, name.Owner)
+	collectorBeforeFinality, err := mgr.Keeper().GetAffiliateCollector(ctx, mempoolSwapEffectsAffiliate)
 	c.Assert(err, IsNil)
 	c.Check(collectorBeforeFinality, DeepEquals, collectorBefore)
 	c.Check(mgr.Keeper().GetAffiliateLiquidityFees(ctx), HasLen, 0)
@@ -1452,7 +1450,7 @@ func (s *MempoolSwapEffectsSuite) TestSpeculativeRevShareCannotPayBeforeFinality
 	c.Assert(applyPendingMempoolSwapEffectsCached(ctx, mgr, originalRecord), IsNil)
 	expectedPayout := common.GetSafeShare(cosmos.NewUint(5000), cosmos.NewUint(constants.MaxBasisPts), feeRune)
 	c.Check(networkMgr.processRevShare(ctx, mgr).Equal(expectedPayout), Equals, true)
-	collectorAfterFinality, err := mgr.Keeper().GetAffiliateCollector(ctx, name.Owner)
+	collectorAfterFinality, err := mgr.Keeper().GetAffiliateCollector(ctx, mempoolSwapEffectsAffiliate)
 	c.Assert(err, IsNil)
 	c.Check(collectorAfterFinality.RuneAmount.Sub(collectorBefore.RuneAmount).Equal(expectedPayout), Equals, true)
 	c.Check(mgr.Keeper().GetAffiliateLiquidityFees(ctx), HasLen, 0)
@@ -1461,7 +1459,7 @@ func (s *MempoolSwapEffectsSuite) TestSpeculativeRevShareCannotPayBeforeFinality
 	// second time.
 	c.Assert(applyPendingMempoolSwapEffectsCached(ctx, mgr, originalRecord), IsNil)
 	c.Check(networkMgr.processRevShare(ctx, mgr).IsZero(), Equals, true)
-	collectorAfterReplay, err := mgr.Keeper().GetAffiliateCollector(ctx, name.Owner)
+	collectorAfterReplay, err := mgr.Keeper().GetAffiliateCollector(ctx, mempoolSwapEffectsAffiliate)
 	c.Assert(err, IsNil)
 	c.Check(collectorAfterReplay, DeepEquals, collectorAfterFinality)
 }
