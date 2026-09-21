@@ -1701,6 +1701,25 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionEarlyDeliveryVoteD
 	}
 	c.Check(f.ethBalance(c), Equals, untouched-gas-1)
 	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
+
+	// the same sequence with the early node reporting the bounce first, so it
+	// has a vote to move rather than only one to cast
+	f = newBouncedOutboundFixture(c, 6)
+	for i := 0; i < 6; i++ {
+		f.voteAtGasHeight(c, i, false, gas, 12)
+	}
+	f.voteAtGasHeight(c, 0, true, bounceGas, 13)
+	f.voteAtGasHeight(c, 0, false, gas, 14) // it moves on before the others vote
+	for i := 1; i < 6; i++ {
+		f.voteAtGasHeight(c, i, true, bounceGas, 13)
+	}
+	c.Check(f.ethBalance(c), Equals, untouched-bounceGas) // 5/6 bounced
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
+	for i := 1; i < 6; i++ {
+		f.voteAtGasHeight(c, i, false, gas, 14)
+	}
+	c.Check(f.ethBalance(c), Equals, untouched-gas-1)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
 }
 
 // TestHandleBounceCorrectionRedeliveryAtEarlierHeight: a replacement chain can
