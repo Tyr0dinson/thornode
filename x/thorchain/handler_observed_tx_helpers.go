@@ -772,7 +772,7 @@ func applyTxOutAttestation(
 	obsChain := telemetry.NewLabel("chain", telemChain(tx.Tx.Chain))
 	obsDir := telemetry.NewLabel("direction", "out")
 
-	if !voter.Add(tx, signer) {
+	if !voter.AddLatest(tx, signer) {
 		if !shouldSlashForDuplicate {
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signer)
 		}
@@ -1035,11 +1035,9 @@ func lateFinalObservationExcused(voter ObservedTxVoter, tx common.ObservedTx, si
 // vault (which the signer's receipt-less instant observation cannot know), and
 // true -> false when a reorg re-includes the same tx hash with a receipt showing
 // delivery - the scanner rescans that hash without any errata, since the hash
-// still exists. A correction back onto a payload an earlier correction already
-// moved away from still applies, but only when the observations filed at
-// inclusion heights other than the superseded payload's reach supermajority on
-// their own. The consensus tx is updated in place so each correction applies
-// once.
+// still exists. A correction back onto a verdict an earlier correction moved
+// away from still applies, as long as a supermajority currently holds it. The
+// consensus tx is updated in place so each correction applies once.
 func correctOutboundObservation(ctx cosmos.Context, mgr Manager, voter *ObservedTxVoter, tx ObservedTx, nas NodeAccounts) {
 	// An errata has declared this outbound reverted and already restored the
 	// vault (skipped for a Bounced consensus, which was never debited). Any later
@@ -1065,44 +1063,15 @@ func correctOutboundObservation(ctx cosmos.Context, mgr Manager, voter *Observed
 	if !consensus.EqualsConsensusIgnoreGas(tx) {
 		return
 	}
-	// The target may be a payload a previous correction already moved away from:
-	// a re-delivery's replacement receipt can legitimately reuse an earlier gas
-	// amount, and a reorg can flip the verdict back onto a recorded identity.
-	// Such a target is still corrected, but never on the strength of the
-	// signatures its entries keep forever. Replayed attestations ride the
-	// inclusion heights those entries were recorded at, and a minority filing
-	// lookalikes at new heights deduplicates to the minority by signer, so the
-	// observations filed at any other inclusion height must reach supermajority
-	// on their own: a fresh quorum re-observing a genuinely re-included outbound
-	// passes, while a verdict the network already moved off of cannot ride its
-	// stale signers back over the line. Neither half of the correction moves -
-	// the coins a bounce leg would re-debit or re-credit, and the gas delta a
-	// leg onto a minority-reported receipt would settle - without that quorum.
-	staleHeights := supersededStaleHeights(voter, tx)
-	if len(staleHeights) > 0 &&
-		!HasSuperMajority(countMatchingSignersExceptHeights(*voter, tx, nas, staleHeights), len(nas)) {
-		return
-	}
+	// Every correction needs a supermajority behind the payload it moves to. Each
+	// signature counted here is a node's current view: ObservedTxVoter.AddLatest
+	// moves a re-observing node's signature onto the entry it filed last, so a
+	// verdict the network has moved off of cannot ride the signatures its entry
+	// once held back over the line, and a genuinely re-included outbound - even one
+	// whose replacement receipt reuses an earlier height and gas - passes as soon
+	// as a fresh quorum re-observes it.
 	if !HasSuperMajority(countMatchingSigners(*voter, tx, nas), len(nas)) {
 		return
-	}
-	// Record what is being superseded before mutating it, on a gas-only correction
-	// as well: a payload left behind by a gas correction keeps its own stale
-	// supermajority, and a later bounce correction back onto it would be exactly
-	// the revival the fresh-quorum gate above exists to refuse. Every entry
-	// carrying the payload is recorded - the consensus copy no longer knows which
-	// heights the verdict was observed at - with only the consensus identity kept:
-	// the gate reads just IsFinal, EqualsConsensus and BlockHeight off it, while
-	// Signers and OutHashes grow with the active set on a voter nothing ever
-	// prunes.
-	for _, otherTx := range voter.Txs {
-		if otherTx.IsFinal() != voter.Tx.IsFinal() || !otherTx.EqualsConsensus(consensus) {
-			continue
-		}
-		supersededPayload := otherTx
-		supersededPayload.Signers = nil
-		supersededPayload.OutHashes = nil
-		voter.BounceSuperseded = append(voter.BounceSuperseded, supersededPayload)
 	}
 	if gasChanged {
 		correctOutboundGas(ctx, mgr, voter.Tx, tx)
@@ -1115,20 +1084,6 @@ func correctOutboundObservation(ctx cosmos.Context, mgr Manager, voter *Observed
 		reconcileBounceCorrection(ctx, mgr, consensus, tx.Bounced)
 		voter.Tx.Bounced = tx.Bounced
 	}
-}
-
-// supersededStaleHeights returns the inclusion heights the recorded payloads
-// matching tx (same finality level) were observed at. Signatures on entries at
-// those heights are the ones the verdict carried when it was still consensus -
-// the ones a replay or a minority's lookalikes must not be allowed to ride.
-func supersededStaleHeights(voter *ObservedTxVoter, tx ObservedTx) []int64 {
-	var heights []int64
-	for _, superseded := range voter.BounceSuperseded {
-		if superseded.IsFinal() == tx.IsFinal() && superseded.EqualsConsensus(tx) {
-			heights = append(heights, superseded.BlockHeight)
-		}
-	}
-	return heights
 }
 
 // reconcileBounceCorrection re-runs the outbound coin accounting after consensus
@@ -1169,40 +1124,29 @@ func reconcileBounceCorrection(ctx cosmos.Context, mgr Manager, consensusTx comm
 	}
 }
 
-// countMatchingSigners counts the number of unique active node signers that have observed
-// the exact same tx (including gas) as the given observation.
+// countMatchingSigners counts the unique active node signers whose current
+// observation is the exact same tx (including gas and Bounced) as the given one.
+// An entry keeps the signatures it once held forever, so a signer that has since
+// filed a different variant at this finality level no longer counts towards this
+// one - its vote moved with it (ObservedTxVoter.AddLatest). A signer with no
+// recorded vote at all predates the record and counts where it signed, as before.
 func countMatchingSigners(voter ObservedTxVoter, tx ObservedTx, nas NodeAccounts) int {
-	return countMatchingSignersExceptHeights(voter, tx, nas, nil)
-}
-
-// countMatchingSignersExceptHeights is countMatchingSigners restricted to
-// observations recorded at inclusion heights other than the given ones (an
-// empty list excludes nothing).
-func countMatchingSignersExceptHeights(voter ObservedTxVoter, tx ObservedTx, nas NodeAccounts, exceptHeights []int64) int {
-	excluded := func(height int64) bool {
-		for _, exceptHeight := range exceptHeights {
-			if exceptHeight != 0 && height == exceptHeight {
-				return true
-			}
-		}
-		return false
+	matching := make([]bool, len(voter.Txs))
+	for i, otherTx := range voter.Txs {
+		matching[i] = otherTx.IsFinal() == tx.IsFinal() &&
+			otherTx.ObservedPubKey.Equals(tx.ObservedPubKey) &&
+			otherTx.EqualsConsensus(tx)
 	}
 	signers := make(map[string]struct{})
-	for _, otherTx := range voter.Txs {
-		if excluded(otherTx.BlockHeight) {
-			continue
-		}
-		if otherTx.IsFinal() != tx.IsFinal() {
-			continue
-		}
-		if !otherTx.ObservedPubKey.Equals(tx.ObservedPubKey) {
-			continue
-		}
-		if !otherTx.EqualsConsensus(tx) {
+	for i, otherTx := range voter.Txs {
+		if !matching[i] {
 			continue
 		}
 		for _, s := range otherTx.GetSigners() {
 			if !nas.IsNodeKeys(s) {
+				continue
+			}
+			if latest, ok := voter.LatestVote(s, tx.IsFinal()); ok && !matching[latest] {
 				continue
 			}
 			signers[s.String()] = struct{}{}

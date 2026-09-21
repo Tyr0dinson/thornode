@@ -2,6 +2,7 @@ package types
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -103,6 +104,80 @@ func (m *ObservedTxVoter) AddOutTx(in common.Tx) bool {
 	}
 
 	return true
+}
+
+// AddLatest is Add with a record of which entry the signer filed last, kept per
+// finality level. An entry keeps the signatures it once held forever, so a
+// verdict the network has moved off of could otherwise be tipped back over the
+// supermajority line by a handful of nodes that never observed it. The record
+// also makes a re-observation of a payload the signer has since moved away from
+// a genuine vote rather than a duplicate - a replacement chain can put an
+// outbound back at the height it was first included at, with the same receipt.
+// The signature history itself is left intact: the redundant-variant refund cap
+// counts every variant a signer has ever filed.
+func (m *ObservedTxVoter) AddLatest(observedTx common.ObservedTx, signer cosmos.AccAddress) bool {
+	idx := -1
+	for i, transaction := range m.Txs {
+		if transaction.Equals(observedTx) {
+			idx = i
+			break
+		}
+	}
+	if idx != -1 {
+		recorded, ok := m.LatestVote(signer, observedTx.IsFinal())
+		switch {
+		case ok && recorded == idx:
+			// This is still the signer's current vote: a duplicate.
+			return false
+		case !ok && m.Txs[idx].HasSigned(signer):
+			// A voter from before the record existed: no take-backs, as before.
+			return false
+		}
+	}
+	if idx == -1 {
+		observedTx.Signers = []string{signer.String()}
+		m.Txs = append(m.Txs, observedTx)
+		idx = len(m.Txs) - 1
+	} else if !m.Txs[idx].HasSigned(signer) {
+		m.Txs[idx].Sign(signer)
+	}
+	m.setLatestVote(signer, observedTx.IsFinal(), idx)
+	return true
+}
+
+// String implements fmt.Stringer, which the generated code needs since the
+// types package disables the gogoproto stringer.
+func (m *ObservedTxVote) String() string {
+	return fmt.Sprintf("%s:%d", m.Signer, m.TxIndex)
+}
+
+// LatestVote returns the index in Txs of the entry the signer filed most
+// recently at the given finality level, and whether one is recorded at all.
+func (m *ObservedTxVoter) LatestVote(signer cosmos.AccAddress, final bool) (int, bool) {
+	for _, vote := range m.LatestVotes {
+		if vote.Signer != signer.String() {
+			continue
+		}
+		if int(vote.TxIndex) >= len(m.Txs) || m.Txs[vote.TxIndex].IsFinal() != final {
+			continue
+		}
+		return int(vote.TxIndex), true
+	}
+	return 0, false
+}
+
+func (m *ObservedTxVoter) setLatestVote(signer cosmos.AccAddress, final bool, idx int) {
+	for i, vote := range m.LatestVotes {
+		if vote.Signer != signer.String() {
+			continue
+		}
+		if int(vote.TxIndex) >= len(m.Txs) || m.Txs[vote.TxIndex].IsFinal() != final {
+			continue
+		}
+		m.LatestVotes[i].TxIndex = int64(idx)
+		return
+	}
+	m.LatestVotes = append(m.LatestVotes, ObservedTxVote{Signer: signer.String(), TxIndex: int64(idx)})
 }
 
 // IsDone check whether THORChain finished process the tx, all outbound tx had

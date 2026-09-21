@@ -36,20 +36,21 @@ message ObservedTxVoter {
   // it within its flex window, because they observed the tx in the final tier.
   // Cleared at final consensus.
   repeated string excused_observers = 16;
-  // bounce_superseded records every consensus payload that a correction has
-  // already moved away from, at the finality level it held. Attestations carry
-  // no nonce and a superseded payload keeps its signers forever, so without
-  // this a handful of nodes that never observed it could tip a stale payload
-  // back over the supermajority line and oscillate the vault's coin accounting
-  // at will. A bounce correction back onto one of these still applies, but only
-  // when the observations filed at inclusion heights other than the superseded
-  // payload's reach supermajority on their own: a replay cannot ride the stale
-  // signers, while a fresh quorum re-observing a genuinely re-included outbound
-  // - a replacement receipt that reuses an earlier gas amount included - can.
-  repeated common.ObservedTx bounce_superseded = 12 [
+  // latest_votes records, per signer, which entry of txs that signer filed most
+  // recently at each finality level. An entry keeps the signatures it once held
+  // forever, so without this a verdict the network has moved off of could be
+  // tipped back over the supermajority line by a handful of nodes that never
+  // observed it, and the vault's coin accounting oscillated at will. Only the
+  // outbound correction quorum reads it; consensus formation is unchanged.
+  repeated ObservedTxVote latest_votes = 13 [
     (gogoproto.nullable) = false,
-    (gogoproto.jsontag) = "bounce_superseded,omitempty",
-    (gogoproto.castrepeated) =
-        "gitlab.com/thorchain/thornode/v3/common.ObservedTxs"
+    (gogoproto.jsontag) = "latest_votes,omitempty"
   ];
+}
+
+// ObservedTxVote is one signer's most recent observation of an outbound at one
+// finality level, as an index into ObservedTxVoter.txs (which is append-only).
+message ObservedTxVote {
+  string signer = 1;
+  int64 tx_index = 2;
 }
