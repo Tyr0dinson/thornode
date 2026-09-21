@@ -70,31 +70,27 @@ func (h WasmExecHandler) handle(ctx cosmos.Context, msg MsgWasmExec) (*cosmos.Re
 	if msg.Asset.IsSecuredAsset() {
 		execAmt = cosmos.NewCoin(msg.Asset.Native(), math.Int(msg.Amount))
 	} else {
+		// A layer-1 inbound mints new secured asset shares below, exactly as
+		// MsgSecuredAssetDeposit does, so it has to clear the same governance
+		// controls rather than route around them. A secured asset inbound mints
+		// nothing - it only moves existing shares into the contract - so it is
+		// not gated.
+		if err = validateSecuredAssetDeposit(cacheCtx, h.mgr, msg.Asset, msg.Amount); err != nil {
+			incrWasmExecFailed(msg.Asset, "deposit")
+			return nil, err
+		}
+
 		execAmt, err = h.mgr.SecuredAssetManager().Deposit(cacheCtx, msg.Asset, msg.Amount, msg.Sender, msg.Tx.FromAddress, msg.Tx.ID)
 		if err != nil {
 			// the cache context is discarded here, so the L1 deposit is unwound
-			telemetry.IncrCounterWithLabels(
-				[]string{"thornode", "wasm", "exec_failed"},
-				float32(1),
-				[]metrics.Label{
-					telemetry.NewLabel("asset", msg.Asset.String()),
-					telemetry.NewLabel("reason", "deposit"),
-				},
-			)
+			incrWasmExecFailed(msg.Asset, "deposit")
 			return nil, err
 		}
 	}
 
 	_, err = h.mgr.WasmManager().ExecuteContract(cacheCtx, msg.Contract, msg.Sender, msg.Msg, cosmos.NewCoins(execAmt))
 	if err != nil {
-		telemetry.IncrCounterWithLabels(
-			[]string{"thornode", "wasm", "exec_failed"},
-			float32(1),
-			[]metrics.Label{
-				telemetry.NewLabel("asset", msg.Asset.String()),
-				telemetry.NewLabel("reason", "execute"),
-			},
-		)
+		incrWasmExecFailed(msg.Asset, "execute")
 		return nil, err
 	}
 
@@ -103,4 +99,17 @@ func (h WasmExecHandler) handle(ctx cosmos.Context, msg MsgWasmExec) (*cosmos.Re
 	commit()
 
 	return &cosmos.Result{}, nil
+}
+
+// incrWasmExecFailed counts an exec that was rejected, labelled by the stage
+// that rejected it.
+func incrWasmExecFailed(asset common.Asset, reason string) {
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "wasm", "exec_failed"},
+		float32(1),
+		[]metrics.Label{
+			telemetry.NewLabel("asset", asset.String()),
+			telemetry.NewLabel("reason", reason),
+		},
+	)
 }

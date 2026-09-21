@@ -1,6 +1,6 @@
 {{ template "default-state.yaml" }}
 ---
-{{ template "btc-eth-pool-state.yaml" }}
+{{ template "btc-eth-gaia-pool-state.yaml" }}
 ---
 type: create-blocks
 count: 1
@@ -260,3 +260,63 @@ asserts:
   - .txs[0].result.events[11]._contract_address == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
   - .txs[0].result.events[11].new_value == "3"
   - .txs[0].result.events[11].type == "wasm"
+---
+########################################################################################
+# an exec memo must not mint secured assets while the chain's deposits are halted
+########################################################################################
+type: tx-mimir
+key: HaltSecuredDeposit-GAIA
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - ."HALTSECUREDDEPOSIT-GAIA" == 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/securedasset/GAIA-ATOM
+asserts:
+  - .supply|tonumber == 10000000
+  - .depth|tonumber == 10000000
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+gas: 100000
+txs:
+  - tx:
+      id: "{{ observe_txid 4 }}"
+      chain: GAIA
+      from_address: {{ addr_gaia_fox }}
+      to_address: {{ addr_gaia_dog }}
+      coins:
+        - amount: "10000000"
+          asset: "GAIA.ATOM"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "GAIA.ATOM"
+      memo: "x:tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f:eyJpbmNyZW1lbnQiOnt9fQ=="
+    block_height: 4
+    finalise_height: 4
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[]|.result.events[]|select(.type=="refund")]|length == 1'
+  - .txs[]|.result.events[]|select(.type=="refund")|.from == "{{ addr_gaia_fox }}"
+  - .txs[]|.result.events[]|select(.type=="refund")|.reason|match("GAIA secured asset deposits are disabled")
+---
+# no secured assets were minted by the halted exec deposit
+type: check
+endpoint: http://localhost:1317/thorchain/securedasset/GAIA-ATOM
+asserts:
+  - .supply|tonumber == 10000000
+  - .depth|tonumber == 10000000

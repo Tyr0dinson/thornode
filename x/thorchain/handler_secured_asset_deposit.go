@@ -39,16 +39,31 @@ func (h SecuredAssetDepositHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosm
 }
 
 func (h SecuredAssetDepositHandler) validate(ctx cosmos.Context, msg MsgSecuredAssetDeposit) error {
-	if err := h.checkHalt(ctx, msg.Asset.Chain.String()); err != nil {
+	if err := validateSecuredAssetDeposit(ctx, h.mgr, msg.Asset, msg.Amount); err != nil {
 		return err
 	}
 
-	pool, err := h.mgr.Keeper().GetPool(ctx, msg.Asset)
+	return msg.ValidateBasic()
+}
+
+// validateSecuredAssetDeposit gates taking new layer-1 custody as a secured
+// asset. Any path that mints secured shares for a fresh layer-1 inbound must
+// run it before SecuredAssetManager().Deposit, otherwise it is an unguarded
+// route around these controls (#2962, #2702). Paths that instead pay out value
+// the network already custodies - withdrawing liquidity to a secured asset,
+// the secured-asset fallback for an undeliverable outbound - are deliberately
+// not gated: failing those strands funds rather than stopping an inflow.
+func validateSecuredAssetDeposit(ctx cosmos.Context, mgr Manager, asset common.Asset, amount cosmos.Uint) error {
+	if err := checkSecuredAssetDepositHalt(ctx, mgr, asset.Chain.String()); err != nil {
+		return err
+	}
+
+	pool, err := mgr.Keeper().GetPool(ctx, asset)
 	if err != nil {
-		return fmt.Errorf("error loading %s pool", msg.Asset)
+		return fmt.Errorf("error loading %s pool", asset)
 	}
 	if !pool.IsAvailable() || pool.IsEmpty() {
-		return fmt.Errorf("pool %s unavailable", msg.Asset)
+		return fmt.Errorf("pool %s unavailable", asset)
 	}
 
 	// STABLE+ (stable-reserve) deposits are intentionally NOT exempt from the
@@ -56,12 +71,12 @@ func (h SecuredAssetDepositHandler) validate(ctx cosmos.Context, msg MsgSecuredA
 	// that atTVLCap bounds against bonded RUNE, so exempting them would let total
 	// custodied secured value exceed what node bond secures.
 	if atTVLCap(ctx, common.NewCoins(
-		common.NewCoin(msg.Asset, msg.Amount),
-	), h.mgr) {
-		return fmt.Errorf("%s secured deposits more than bond", msg.Asset)
+		common.NewCoin(asset, amount),
+	), mgr) {
+		return fmt.Errorf("%s secured deposits more than bond", asset)
 	}
 
-	return msg.ValidateBasic()
+	return nil
 }
 
 // handle process MsgSecuredAssetDeposit
@@ -78,8 +93,8 @@ func (h SecuredAssetDepositHandler) handle(ctx cosmos.Context, msg MsgSecuredAss
 	return nil
 }
 
-func (h SecuredAssetDepositHandler) checkHalt(ctx cosmos.Context, val string) error {
-	m, err := h.mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplateSecuredAssetHaltDeposit, val)
+func checkSecuredAssetDepositHalt(ctx cosmos.Context, mgr Manager, val string) error {
+	m, err := mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplateSecuredAssetHaltDeposit, val)
 	if err != nil {
 		return err
 	}
