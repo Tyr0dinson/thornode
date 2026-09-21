@@ -521,3 +521,49 @@ func (m Migrator) Migrate20to21(ctx cosmos.Context) error {
 	}
 	return m.migrate20to21Mainnet(ctx)
 }
+
+// Migrate21to22 clears the in-flight dynamic-fee accumulators (ADR-026).
+//
+// The controller's signal is now fee revenue as a share of the pool's total
+// volume over the same span. An accumulator that straddles the upgrade height
+// carries a full epoch of fees but only post-upgrade pool volume, so its sealed
+// entry would hold an inflated signal — and being the first entry, it is the
+// whole comparison baseline when the first real gradient is evaluated, costing
+// the controller one spurious step. Dropping the partial epoch is cheaper than
+// reading it wrong.
+//
+// Records themselves are left alone: they keep their current dynamic_bps, and
+// the seal drops their pre-upgrade history on its own.
+func (m Migrator) Migrate21to22(ctx cosmos.Context) error {
+	if err := m.mgr.LoadManagerIfNecessary(ctx); err != nil {
+		return err
+	}
+	k := m.mgr.Keeper()
+
+	// Collect before deleting; mutating the store under its own iterator is
+	// not safe.
+	type accKey struct{ thorname, pairA, pairB string }
+	var keys []accKey
+	iter := k.GetDynamicFeeAccumulatorIterator(ctx)
+	for ; iter.Valid(); iter.Next() {
+		var acc types.DynamicFeeAccumulator
+		if err := k.Cdc().Unmarshal(iter.Value(), &acc); err != nil {
+			iter.Close()
+			return fmt.Errorf("read dynamic fee accumulator: %w", err)
+		}
+		keys = append(keys, accKey{acc.Thorname, acc.PairAssetA, acc.PairAssetB})
+	}
+	iter.Close()
+
+	for _, key := range keys {
+		if err := k.DeleteDynamicFeeAccumulator(ctx, key.thorname, key.pairA, key.pairB); err != nil {
+			return err
+		}
+	}
+
+	// ponytail: pool accumulators cannot exist yet — the prefix ships with
+	// this upgrade — so there is nothing to clear on that side.
+
+	ctx.Logger().Info("ADR-026: cleared in-flight dynamic fee accumulators", "count", len(keys))
+	return nil
+}

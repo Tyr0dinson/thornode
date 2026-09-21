@@ -845,3 +845,53 @@ func (s *MigrationCommonSuite) TestMigrate19to20MergesZECTexClout(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(otherAfter, DeepEquals, otherClout)
 }
+
+// TestMigrate21to22ClearsDynamicFeeAccumulators pins the ADR-026 upgrade step:
+// in-flight accumulators are dropped so no sealed entry mixes a full epoch of
+// fees with a partial epoch of pool volume. Records survive untouched — they
+// keep their bps, and the seal drops their pre-upgrade history on its own.
+func (s *MigrationCommonSuite) TestMigrate21to22ClearsDynamicFeeAccumulators(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+
+	pairs := []struct{ thorname, a, b string }{
+		{"ss", "BTC.BTC", "THOR.RUNE"},
+		{"ss", "ETH.ETH", "THOR.RUNE"},
+		{"bentley", "BTC.BTC", "THOR.RUNE"},
+	}
+	for _, p := range pairs {
+		acc := types.NewDynamicFeeAccumulator(p.thorname, p.a, p.b)
+		acc.VolumeTor = cosmos.NewUint(1_000_000)
+		acc.FeesTor = cosmos.NewUint(10_000)
+		acc.SwapCount = 7
+		c.Assert(k.SetDynamicFeeAccumulator(ctx, acc), IsNil)
+		c.Assert(k.SetDynamicFeeRecord(ctx, types.DynamicFeeRecord{
+			Thorname: p.thorname, PairAssetA: p.a, PairAssetB: p.b,
+			DynamicBps: 8, LastActiveEpoch: 41,
+			History: []types.DynamicFeeEpochRecord{
+				{Epoch: 41, FeesTor: cosmos.NewUint(100), BpsAtClose: 8},
+			},
+		}), IsNil)
+	}
+
+	c.Assert(NewMigrator(mgr).Migrate21to22(ctx), IsNil)
+
+	accIter := k.GetDynamicFeeAccumulatorIterator(ctx)
+	count := 0
+	for ; accIter.Valid(); accIter.Next() {
+		count++
+	}
+	accIter.Close()
+	c.Check(count, Equals, 0, Commentf("every in-flight accumulator should be cleared"))
+
+	for _, p := range pairs {
+		rec, err := k.GetDynamicFeeRecord(ctx, p.thorname, p.a, p.b)
+		c.Assert(err, IsNil)
+		c.Check(rec.DynamicBps, Equals, uint64(8), Commentf("records keep their current floor"))
+		c.Check(rec.LastActiveEpoch, Equals, uint64(41))
+		c.Check(len(rec.History), Equals, 1, Commentf("history is dropped at the seal, not here"))
+	}
+
+	// Idempotent: a second run on an empty accumulator store is a no-op.
+	c.Assert(NewMigrator(mgr).Migrate21to22(ctx), IsNil)
+}

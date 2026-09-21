@@ -28,7 +28,9 @@
   endpoints. History written before this change carries raw fee levels
   in incompatible units and is dropped at the first post-upgrade seal;
   affected records keep their current `dynamic_bps` and re-enter
-  cold start (see "Migration" below).
+  cold start. Store migration `Migrate19to20` clears the in-flight
+  accumulators so no sealed entry mixes a full epoch of fees with a
+  partial epoch of pool volume (see "Migration" below).
 
 - 2026-07-22: Status moved to Implemented — the feature is live on mainnet
   (`L1DynamicFeeEnabled = 1`).
@@ -545,15 +547,14 @@ entries. For a gated record each probe requires a qualifying epoch, so
 this may take a long time to play out. There is no store migration;
 the filter is a condition at seal time.
 
-One artifact to expect: an accumulator alive at the upgrade height
-carries fees from the whole epoch but pool volume only from
-post-upgrade blocks, so its sealed entry has an inflated signal. That
-entry is the whole `feesBefore` window when the first real gradient is
-evaluated, which reads as a fall and can produce one spurious
-`reverse_down` on an integration large enough to seal. It self-corrects
-at the next evaluation. Deleting all thorname accumulators at the
-upgrade height would avoid it, at the cost of a store migration for a
-one-step artifact.
+Accumulators alive at the upgrade height are a separate problem: one
+carries a full epoch of fees but pool volume only from post-upgrade
+blocks, so its sealed entry would hold an inflated signal — and being
+the first entry, it is the whole comparison baseline when the first
+real gradient is evaluated, costing one spurious step. Store migration
+`Migrate19to20` (consensus version 20) deletes every in-flight thorname
+accumulator at the upgrade height, so the first sealed epoch measures
+fees and pool volume over the same span. Records are left alone.
 
 ### REST endpoints
 
