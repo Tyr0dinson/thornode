@@ -5,8 +5,9 @@
 - 2026-09-19: **Noise reduction.** Two changes, driven by live data from
   a small integration whose epochs held a median of 4 swaps against a
   noise-crossover near 70:
+
   1. **Liquidity gate.** An epoch must hold at least
-     `L1DynamicFeeMinSwaps` swaps *and* `L1DynamicFeeMinVolumeUSD` of
+     `L1DynamicFeeMinSwaps` swaps _and_ `L1DynamicFeeMinVolumeUSD` of
      affiliate volume before it may seal a decision. Otherwise the
      accumulator rolls into the next epoch, unbounded, and the floor
      does not move. Streaming swaps count once, not once per
@@ -14,10 +15,10 @@
      steps, which is the correct behaviour at that size.
   2. **Pool-volume normalization.** The gradient now compares
      `fees_tor / pool_volume_tor` — the affiliate's fee revenue as a
-     share of the pool's *total* volume over the same span — rather
+     share of the pool's _total_ volume over the same span — rather
      than raw fee levels. Most of the previously-measured swing was
      market-wide activity, not a response to the floor. Note the
-     denominator is deliberately the *pool's* volume and not the
+     denominator is deliberately the _pool's_ volume and not the
      affiliate's own `volume_tor`: because the floor binds, the latter
      ratio is identically `f / 10⁴`, which would read `continue_up`
      every epoch and pin the ceiling while carrying zero elasticity
@@ -281,7 +282,7 @@ or reverses when fees responded negatively.
   - `epoch`, `volume_tor`, `fees_tor`, `bps_at_close`, `swap_count`,
     `pool_volume_tor`.
   - `volume_tor` is kept for observability and event emission; it
-    is not read by the controller. It *is* read by the liquidity
+    is not read by the controller. It _is_ read by the liquidity
     gate before the entry is written.
   - `pool_volume_tor` is the pool's total volume over the same span,
     regardless of affiliate. It is the controller's denominator.
@@ -300,7 +301,7 @@ or reverses when fees responded negatively.
   cleared at each epoch boundary — unless the liquidity gate rejects
   the epoch, in which case the accumulator survives and keeps
   accumulating into the next one.
-- Per `pair`: running `volume_tor` covering *every* swap through the
+- Per `pair`: running `volume_tor` covering _every_ swap through the
   pair, affiliate or not. This is the normalization denominator. It is
   folded into each thorname accumulator's `pool_volume_tor` at the
   epoch boundary and then cleared unconditionally, so a rolled
@@ -314,18 +315,18 @@ denominator is meant to measure market activity.
 
 ### Mimir keys (all operational)
 
-| Key                               | Default | Meaning                                                                                                               |
-| --------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------- |
-| `L1DynamicFeeEnabled`             | 0       | Master on/off. 0 disables the entire mechanism.                                                                       |
-| `L1DynamicFeeEpochBlocks`         | 14400   | Epoch length in blocks (~24h at 6s).                                                                                  |
-| `DYNAMICFEE-WHITELIST-{thorname}` | absent  | Per-thorname enrollment: `1` = active, `2` = monitor (collect only), `0`/absent = not enrolled.                       |
-| `L1DynamicFeeFloorBPS`            | 1       | Lower bound of dynamic bps.                                                                                           |
-| `L1DynamicFeeCeilingBPS`          | 20      | Upper bound of dynamic bps.                                                                                           |
-| `L1DynamicFeeStepBPS`             | 1       | Magnitude of movement per epoch.                                                                                      |
-| `L1DynamicFeeDeadbandBPS`         | 1000    | Percentage change in windowed `fees_tor` below which the controller holds (in bps: 1000 = 10%).                       |
-| `L1DynamicFeeWindowEpochs`        | 3       | Epochs averaged on each side of the last bps change when measuring the gradient. Clamped into `[1, 30]` at read time. |
+| Key                               | Default | Meaning                                                                                                                                           |
+| --------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `L1DynamicFeeEnabled`             | 0       | Master on/off. 0 disables the entire mechanism.                                                                                                   |
+| `L1DynamicFeeEpochBlocks`         | 14400   | Epoch length in blocks (~24h at 6s).                                                                                                              |
+| `DYNAMICFEE-WHITELIST-{thorname}` | absent  | Per-thorname enrollment: `1` = active, `2` = monitor (collect only), `0`/absent = not enrolled.                                                   |
+| `L1DynamicFeeFloorBPS`            | 1       | Lower bound of dynamic bps.                                                                                                                       |
+| `L1DynamicFeeCeilingBPS`          | 20      | Upper bound of dynamic bps.                                                                                                                       |
+| `L1DynamicFeeStepBPS`             | 1       | Magnitude of movement per epoch.                                                                                                                  |
+| `L1DynamicFeeDeadbandBPS`         | 1000    | Percentage change in windowed `fees_tor` below which the controller holds (in bps: 1000 = 10%).                                                   |
+| `L1DynamicFeeWindowEpochs`        | 3       | Epochs averaged on each side of the last bps change when measuring the gradient. Clamped into `[1, 30]` at read time.                             |
 | `L1DynamicFeeMinSwaps`            | 30      | Swaps an epoch must hold before it may seal a decision. Below this the accumulator rolls into the next epoch. `0` disables this half of the gate. |
-| `L1DynamicFeeMinVolumeUSD`        | 50000   | Whole USD of affiliate volume an epoch must hold before it may seal. Converted to TOR internally. `0` disables this half of the gate. |
+| `L1DynamicFeeMinVolumeUSD`        | 50000   | Whole USD of affiliate volume an epoch must hold before it may seal. Converted to TOR internally. `0` disables this half of the gate.             |
 
 The whitelist key's `{thorname}` suffix is the registered thorname
 name, normalized per thornode's existing Mimir-key conventions
