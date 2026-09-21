@@ -1562,7 +1562,7 @@ func (s *MempoolSwapEffectsSuite) TestExternalAffiliateCollectorDestinationCanno
 	)
 
 	err = NewSwapHandler(mgr).validate(ctx, *msg)
-	c.Assert(err, ErrorMatches, "a network module cannot be the final destination of a swap memo")
+	c.Assert(err, ErrorMatches, "external swap cannot target the affiliate collector module")
 }
 
 func newStableReserveMempoolTestSwap(source, target common.Asset, index uint32) *MsgSwap {
