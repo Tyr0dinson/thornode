@@ -1969,8 +1969,11 @@ func (s *SignCoverageSuite) TestScheduleKeygenRetry_MimirErrors(c *C) {
 		thorchainBridge: bridge,
 	}
 
-	result := sign.scheduleKeygenRetry(ttypes.KeygenBlock{Height: 100})
-	c.Assert(result, Equals, false)
+	sign.stopChan = make(chan struct{})
+	defer sign.keygenWorkerWG.Wait()
+	defer close(sign.stopChan)
+	result := sign.scheduleKeygenRetry(ttypes.KeygenBlock{Height: 100}, ttypes.Keygen{})
+	c.Assert(result, Equals, true)
 }
 
 func (s *SignCoverageSuite) TestScheduleKeygenRetry_KeygenRetryIntervalZero(c *C) {
@@ -1986,7 +1989,7 @@ func (s *SignCoverageSuite) TestScheduleKeygenRetry_KeygenRetryIntervalZero(c *C
 		thorchainBridge: bridge,
 	}
 
-	result := sign.scheduleKeygenRetry(ttypes.KeygenBlock{Height: 100})
+	result := sign.scheduleKeygenRetry(ttypes.KeygenBlock{Height: 100}, ttypes.Keygen{})
 	c.Assert(result, Equals, false)
 }
 
@@ -2008,7 +2011,7 @@ func (s *SignCoverageSuite) TestScheduleKeygenRetry_RetryIntervalTooShort(c *C) 
 		thorchainBridge: bridge,
 	}
 
-	result := sign.scheduleKeygenRetry(ttypes.KeygenBlock{Height: 100})
+	result := sign.scheduleKeygenRetry(ttypes.KeygenBlock{Height: 100}, ttypes.Keygen{})
 	c.Assert(result, Equals, false)
 }
 
@@ -2031,8 +2034,11 @@ func (s *SignCoverageSuite) TestScheduleKeygenRetry_BlockHeightError(c *C) {
 		thorchainBridge: bridge,
 	}
 
-	result := sign.scheduleKeygenRetry(ttypes.KeygenBlock{Height: 100})
-	c.Assert(result, Equals, false)
+	sign.stopChan = make(chan struct{})
+	defer sign.keygenWorkerWG.Wait()
+	defer close(sign.stopChan)
+	result := sign.scheduleKeygenRetry(ttypes.KeygenBlock{Height: 100}, ttypes.Keygen{})
+	c.Assert(result, Equals, true)
 }
 
 func (s *SignCoverageSuite) TestScheduleKeygenRetry_CloseToChurnRetry(c *C) {
@@ -2057,7 +2063,7 @@ func (s *SignCoverageSuite) TestScheduleKeygenRetry_CloseToChurnRetry(c *C) {
 	// keygenBlock at height 100, current at 990
 	// targetRetryHeight = (100 - ((990-100)%100)) + 990 = 1000
 	// condition: 1000 > 100 + 500 - 100 = 500 => true => return false
-	result := sign.scheduleKeygenRetry(ttypes.KeygenBlock{Height: 100})
+	result := sign.scheduleKeygenRetry(ttypes.KeygenBlock{Height: 100}, ttypes.Keygen{})
 	c.Assert(result, Equals, false)
 }
 
@@ -2335,7 +2341,7 @@ func (s *SignCoverageSuite) TestScheduleKeygenRetry_ChurnRetryIntervalDefault(c 
 	bridge := &mockSignBridge{
 		blockHeight: 200,
 		mimirs: map[string]int64{
-			constants.ChurnRetryInterval.String():  0, // will use default
+			constants.ChurnRetryInterval.String():  -1, // use default; zero disables retries
 			constants.KeygenRetryInterval.String(): 100,
 		},
 	}
@@ -2350,13 +2356,11 @@ func (s *SignCoverageSuite) TestScheduleKeygenRetry_ChurnRetryIntervalDefault(c 
 		thorchainBridge: bridge,
 	}
 
-	// When churnRetryInterval <= 0, it uses the default from constants
-	// The default ChurnRetryInterval is typically large, so the retry should
-	// either succeed (schedule) or fail depending on whether close to churn retry
-	result := sign.scheduleKeygenRetry(ttypes.KeygenBlock{Height: 100})
-	// The result depends on the default ChurnRetryInterval value, but we at least
-	// exercise the code path
-	_ = result
+	sign.stopChan = make(chan struct{})
+	defer close(sign.stopChan)
+	// An unset Mimir uses the constant default and permits this retry.
+	result := sign.scheduleKeygenRetry(ttypes.KeygenBlock{Height: 100}, ttypes.Keygen{})
+	c.Assert(result, Equals, true)
 }
 
 func (s *SignCoverageSuite) TestScheduleKeygenRetry_SecondMimirError(c *C) {
@@ -2378,8 +2382,11 @@ func (s *SignCoverageSuite) TestScheduleKeygenRetry_SecondMimirError(c *C) {
 		thorchainBridge: bridge,
 	}
 
-	result := sign.scheduleKeygenRetry(ttypes.KeygenBlock{Height: 100})
-	c.Assert(result, Equals, false)
+	sign.stopChan = make(chan struct{})
+	defer sign.keygenWorkerWG.Wait()
+	defer close(sign.stopChan)
+	result := sign.scheduleKeygenRetry(ttypes.KeygenBlock{Height: 100}, ttypes.Keygen{})
+	c.Assert(result, Equals, true)
 }
 
 func (s *SignCoverageSuite) TestSemaphore(c *C) {
