@@ -45,8 +45,8 @@ type reorgBlockMeta struct {
 	ProvenanceComplete      bool     `json:"provenance_complete,omitempty"`
 }
 
-// scannerCatchupMarker is written before a registration-triggered historical
-// scan advances the sidecar. StartHeight is advanced only in the same synced
+// scannerCatchupMarker is written before registration or churn recovery
+// mutates the sidecar. StartHeight is advanced only in the same synced
 // LevelDB batch which checkpoints that height's observation receipt and reorg
 // journal entry. Receipts from earlier chunks remain until Observer fsyncs the
 // complete mixed-height TxIn.
@@ -55,6 +55,10 @@ type scannerCatchupMarker struct {
 	TargetHeight int64  `json:"target_height"`
 	AnchorHeight int64  `json:"anchor_height"`
 	AnchorHash   string `json:"anchor_hash"`
+	// ChurnRollback preserves the recovery's rewind allowance across restarts
+	// and lets a later Bifrost request extend it without skipping unfinished work.
+	// Older and registration-only markers keep their existing recovery policy.
+	ChurnRollback bool `json:"churn_rollback,omitempty"`
 }
 
 func (m scannerCatchupMarker) valid() bool {
@@ -69,7 +73,8 @@ func (m scannerCatchupMarker) completed() bool {
 
 func (m scannerCatchupMarker) equal(other scannerCatchupMarker) bool {
 	return m.StartHeight == other.StartHeight && m.TargetHeight == other.TargetHeight &&
-		m.AnchorHeight == other.AnchorHeight && strings.EqualFold(m.AnchorHash, other.AnchorHash)
+		m.AnchorHeight == other.AnchorHeight && strings.EqualFold(m.AnchorHash, other.AnchorHash) &&
+		m.ChurnRollback == other.ChurnRollback
 }
 
 type scannerObservationReceipt struct {

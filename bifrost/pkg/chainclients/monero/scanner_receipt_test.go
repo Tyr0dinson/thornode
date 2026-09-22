@@ -131,6 +131,52 @@ func TestScannerReceiptOldCallbackCannotDeleteReplacement(t *testing.T) {
 	}
 }
 
+func TestScannerReceiptOldAcknowledgementCannotClearChurnMarker(t *testing.T) {
+	store := newScannerReceiptStore(t)
+	completed := scannerCatchupMarker{StartHeight: 11, TargetHeight: 10, AnchorHeight: 10, AnchorHash: "h10"}
+	meta := &reorgBlockMeta{Height: 10, BlockHash: "h10", PreviousHash: "h9"}
+	if err := store.CheckpointCatchup(completed, meta, []*stypes.TxInItem{scannerReceiptItem("churn-marker", 10)}); err != nil {
+		t.Fatal(err)
+	}
+	oldClaims, err := store.ListObservationReceipts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(oldClaims) != 1 {
+		t.Fatalf("expected one pending receipt, got %d", len(oldClaims))
+	}
+
+	// Recovery can return to the same height and hash before the original
+	// acknowledgement arrives. The churn flag still identifies a new marker.
+	churnCompleted := completed
+	churnCompleted.ChurnRollback = true
+	if err = store.CheckpointCatchup(churnCompleted, meta, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.AckObservationReceipts(oldClaims, &completed); err == nil ||
+		!strings.Contains(err.Error(), "catch-up marker changed before acknowledgement") {
+		t.Fatalf("old acknowledgement did not reject the changed churn flag: %v", err)
+	}
+	claims, err := store.ListObservationReceipts()
+	if err != nil || !reflect.DeepEqual(oldClaims, claims) {
+		t.Fatalf("old acknowledgement changed pending receipts: claims=%#v err=%v", claims, err)
+	}
+	if got, markerErr := store.GetCatchupMarker(); markerErr != nil || got == nil || *got != churnCompleted {
+		t.Fatalf("old acknowledgement changed the churn marker: marker=%#v err=%v", got, markerErr)
+	}
+
+	if err = store.AckObservationReceipts(claims, &churnCompleted); err != nil {
+		t.Fatal(err)
+	}
+	claims, err = store.ListObservationReceipts()
+	if err != nil || len(claims) != 0 {
+		t.Fatalf("matching acknowledgement did not clear receipts: claims=%d err=%v", len(claims), err)
+	}
+	if got, markerErr := store.GetCatchupMarker(); markerErr != nil || got != nil {
+		t.Fatalf("matching acknowledgement did not clear the churn marker: marker=%#v err=%v", got, markerErr)
+	}
+}
+
 func TestReorgJournalPruneRetainsReceiptAndCatchupAnchor(t *testing.T) {
 	store := newScannerReceiptStore(t)
 	for height := int64(1); height <= 100; height++ {

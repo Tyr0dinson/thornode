@@ -32,9 +32,12 @@ const (
 	// less likely to be blocked by fee spikes before the full MaxGas feedback and
 	// reschedule path lands.
 	typicalVaultOutboundWeight = 10000
-	// Keep Bifrost's cursor replay bound aligned with the sidecar's hard rewind
-	// limit. The configured reorg window may be smaller and wins when it is.
+	// Retain the existing ceiling for reorg replay and per-call catch-up work.
 	maxSidecarScannerRewindBlocks int64 = 256
+	// Quiet-chain churn can roll Bifrost back farther than its reorg window.
+	// The pinned signer's MAX_SCANNER_REWIND_BLOCKS permits this initial rewind;
+	// replay still proceeds in the configured, smaller catch-up batches.
+	maxChurnScannerRewindBlocks int64 = 730
 )
 
 // Scanner adapts monero daemon/wallet RPC to the generic block scanner fetcher interface.
@@ -1094,11 +1097,19 @@ func (s *Scanner) cursorReplayLimit() int64 {
 	return limit
 }
 
+func (s *Scanner) churnRewindLimit() int64 {
+	if s.cursorReplayLimit() == 0 {
+		return 0
+	}
+	return maxChurnScannerRewindBlocks
+}
+
 // advanceSidecarCatchup drives at most one bounded chunk of a registration-
-// triggered historical scan. The durable marker is advanced one height only
+// or rollback-triggered historical scan. The durable marker advances only
 // after that response, its observations, and its journal entry are fsynced in
 // one batch. Retrying after an ambiguous response rewinds at most one block;
-// arbitrarily large gaps therefore make progress across bounded Fetch retries.
+// birthday gaps make progress across bounded Fetch retries. The initial churn
+// rewind uses the signer's supported window independently of the batch size.
 func (s *Scanner) advanceSidecarCatchup(targetHeight, chainHeight int64) (bool, *scannerCatchupMarker, error) {
 	return s.advanceSidecarCatchupThrough(targetHeight, targetHeight, chainHeight)
 }
@@ -1128,9 +1139,6 @@ func (s *Scanner) advanceSidecarCatchupThrough(
 		if next >= targetHeight && next <= targetHeight+1 {
 			return false, nil, nil
 		}
-		if next > targetHeight+1 {
-			return false, nil, fmt.Errorf("sidecar scanner cursor %d is ahead of requested height %d", next, targetHeight)
-		}
 	}
 	state, err = s.sidecar.ScannerState()
 	if err != nil {
@@ -1141,35 +1149,75 @@ func (s *Scanner) advanceSidecarCatchupThrough(
 	}
 	nextHeight := int64(*state.NextHeight)
 
-	if marker == nil {
+	switch {
+	case marker == nil:
 		switch {
-		case nextHeight < targetHeight:
+		case nextHeight < targetHeight || nextHeight > targetHeight+1:
 			if s.reorgStore == nil {
 				return false, nil, errors.New("monero scanner cannot catch up without durable storage")
 			}
 			if nextHeight <= 0 {
 				return false, nil, fmt.Errorf("invalid sidecar catch-up start height %d", nextHeight)
 			}
-			anchor, anchorErr := s.sidecar.ChainBlock(nextHeight - 1)
+			// Churn-in rolls Bifrost back between scans while the signer retains
+			// its durable cursor. Enroll the requested block in the same recovery
+			// journal as birthday catch-up before rewinding the signer below.
+			// Same-birthday registration cannot do this, and skipping forward
+			// would lose observations needed by the newly active validator.
+			startHeight := min(nextHeight, targetHeight)
+			if limit := s.churnRewindLimit(); nextHeight-startHeight > limit {
+				return false, nil, fmt.Errorf("sidecar scanner cursor %d is ahead of requested height %d beyond rewind limit %d", nextHeight, targetHeight, limit)
+			}
+			anchor, anchorErr := s.sidecar.ChainBlock(startHeight - 1)
 			if anchorErr != nil {
-				return false, nil, fmt.Errorf("fetch xmr catch-up anchor %d: %w", nextHeight-1, anchorErr)
+				return false, nil, fmt.Errorf("fetch xmr catch-up anchor %d: %w", startHeight-1, anchorErr)
 			}
 			marker = &scannerCatchupMarker{
-				StartHeight:  nextHeight,
-				TargetHeight: targetHeight,
-				AnchorHeight: nextHeight - 1,
-				AnchorHash:   anchor.Hash,
+				StartHeight:   startHeight,
+				TargetHeight:  targetHeight,
+				AnchorHeight:  startHeight - 1,
+				AnchorHash:    anchor.Hash,
+				ChurnRollback: nextHeight > targetHeight,
 			}
 			if err = s.reorgStore.BeginCatchup(*marker); err != nil {
 				return false, nil, err
 			}
-		case nextHeight > targetHeight+1:
-			return false, nil, fmt.Errorf("sidecar scanner cursor %d is ahead of requested height %d", nextHeight, targetHeight)
 		default:
 			return false, nil, nil
 		}
-	} else if marker.TargetHeight != targetHeight {
-		if !marker.completed() || targetHeight < marker.TargetHeight {
+	case targetHeight < marker.TargetHeight:
+		// A queued churn rollback can interrupt a catch-up retry. Keep its
+		// earlier unfinished history and all receipts, but finish at Bifrost's
+		// new target so it can resume ordinary ascending scans afterwards.
+		startHeight := min(marker.StartHeight, targetHeight)
+		if limit := s.churnRewindLimit(); limit == 0 || nextHeight-startHeight > limit {
+			return true, nil, fmt.Errorf("sidecar scanner cursor %d is ahead of requested height %d beyond rewind limit %d", nextHeight, targetHeight, limit)
+		}
+		if marker.StartHeight > targetHeight {
+			anchor, anchorErr := s.sidecar.ChainBlock(targetHeight - 1)
+			if anchorErr != nil {
+				return true, nil, anchorErr
+			}
+			marker.StartHeight = targetHeight
+			marker.AnchorHeight = targetHeight - 1
+			marker.AnchorHash = anchor.Hash
+		}
+		marker.TargetHeight = targetHeight
+		marker.ChurnRollback = true
+		if err = s.reorgStore.BeginCatchup(*marker); err != nil {
+			return true, nil, err
+		}
+	case targetHeight > marker.TargetHeight && marker.ChurnRollback && !marker.completed():
+		// Startup clamping or stall recovery can move Bifrost forward while a
+		// churn rewind/replay is unfinished. Extend its destination, retaining
+		// the crash-safe start, anchor and receipts. Registration-only catch-up
+		// keeps its existing policy; arbitrary relocation is outside this fix.
+		marker.TargetHeight = targetHeight
+		if err = s.reorgStore.BeginCatchup(*marker); err != nil {
+			return true, nil, err
+		}
+	case marker.TargetHeight != targetHeight:
+		if !marker.completed() {
 			return true, nil, fmt.Errorf(
 				"xmr scanner catch-up targets height %d while blockscanner requested %d",
 				marker.TargetHeight, targetHeight,
@@ -1194,10 +1242,11 @@ func (s *Scanner) advanceSidecarCatchupThrough(
 				return true, nil, anchorErr
 			}
 			marker = &scannerCatchupMarker{
-				StartHeight:  oldTarget,
-				TargetHeight: targetHeight,
-				AnchorHeight: oldTarget - 1,
-				AnchorHash:   anchor.Hash,
+				StartHeight:   oldTarget,
+				TargetHeight:  targetHeight,
+				AnchorHeight:  oldTarget - 1,
+				AnchorHash:    anchor.Hash,
+				ChurnRollback: marker.ChurnRollback,
 			}
 		}
 		if err = s.reorgStore.BeginCatchup(*marker); err != nil {
@@ -1225,10 +1274,11 @@ func (s *Scanner) advanceSidecarCatchupThrough(
 				return true, nil, anchorErr
 			}
 			marker = &scannerCatchupMarker{
-				StartHeight:  marker.TargetHeight,
-				TargetHeight: marker.TargetHeight,
-				AnchorHeight: marker.TargetHeight - 1,
-				AnchorHash:   anchor.Hash,
+				StartHeight:   marker.TargetHeight,
+				TargetHeight:  marker.TargetHeight,
+				AnchorHeight:  marker.TargetHeight - 1,
+				AnchorHash:    anchor.Hash,
+				ChurnRollback: marker.ChurnRollback,
 			}
 			if err = s.reorgStore.BeginCatchup(*marker); err != nil {
 				return true, nil, err
@@ -1272,6 +1322,9 @@ func (s *Scanner) advanceSidecarCatchupThrough(
 	if nextHeight > marker.StartHeight {
 		distance := nextHeight - marker.StartHeight
 		limit := s.cursorReplayLimit()
+		if marker.ChurnRollback {
+			limit = s.churnRewindLimit()
+		}
 		if limit == 0 || distance > limit {
 			return true, nil, fmt.Errorf("xmr catch-up ambiguous advance %d exceeds rewind limit %d", distance, limit)
 		}
@@ -1315,10 +1368,11 @@ func (s *Scanner) advanceSidecarCatchupThrough(
 		}
 		meta := s.blockMetaForItems(canonical, height, items)
 		next := scannerCatchupMarker{
-			StartHeight:  height + 1,
-			TargetHeight: marker.TargetHeight,
-			AnchorHeight: height,
-			AnchorHash:   canonical.Hash,
+			StartHeight:   height + 1,
+			TargetHeight:  marker.TargetHeight,
+			AnchorHeight:  height,
+			AnchorHash:    canonical.Hash,
+			ChurnRollback: marker.ChurnRollback,
 		}
 		if err = s.reorgStore.CheckpointCatchup(next, meta, items); err != nil {
 			return true, nil, err
