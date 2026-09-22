@@ -1315,7 +1315,9 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		startKeySign := time.Now()
 		signedTx, checkpoint, observation, err = chain.SignTx(tx, height)
 		if err != nil {
-			s.logger.Error().Err(err).Msg("fail to sign tx")
+			if !errors.Is(err, chainclienttypes.ErrUnsupportedXMRDestination) {
+				s.logger.Error().Err(err).Msg("fail to sign tx")
+			}
 			return checkpoint, nil, err
 		}
 		elapse = time.Since(startKeySign)
@@ -1468,6 +1470,23 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 	}
 
 	if err != nil {
+		if errors.Is(err, chainclienttypes.ErrUnsupportedXMRDestination) && item.TxOutItem.Chain.Equals(common.XMRChain) &&
+			!item.Round7Retry && len(item.SignedTx) == 0 && len(item.Checkpoint) == 0 && len(item.TxOutItem.Checkpoint) == 0 &&
+			item.Observation == nil && len(checkpoint) == 0 && obs == nil {
+			// Retire only this local unsigned attempt, never the on-chain
+			// obligation. A delete failure leaves it retryable; THORChain can
+			// also supply the same unsupported destination in a later schedule.
+			if removeErr := s.storage.Remove(item); removeErr != nil {
+				s.logger.Error().Err(removeErr).Str("item", item.Key()).
+					Msg("fail to retire unsupported unsigned XMR destination")
+			} else {
+				s.logger.Warn().Str("chain", item.TxOutItem.Chain.String()).Str("item", item.Key()).
+					Stringer("destination", item.TxOutItem.ToAddress).
+					Msg("retired local unsigned attempt for unsupported destination; on-chain obligation remains pending")
+			}
+			cancel()
+			return
+		}
 		// Always store the checkpoint of the built tx if we have one. This ensures the same
 		// vault will never attempt multiple txs for an outbound, as further protection
 		// against cases like https://gitlab.com/thorchain/thornode/-/merge_requests/4344.

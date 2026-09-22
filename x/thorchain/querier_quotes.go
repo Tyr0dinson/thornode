@@ -122,6 +122,20 @@ func quoteParseRefundAddress(ctx cosmos.Context, mgr *Mgrs, addrString string, s
 	return addr, nil
 }
 
+// quoteParseXMRDestination validates raw and resolved XMR payment destinations.
+// External and contract queries share the same destination policy.
+// Keep the shared parser and refund validation unchanged for other consumers.
+func quoteParseXMRDestination(ctx cosmos.Context, mgr *Mgrs, addrString string) (common.Address, error) {
+	addr, err := quoteParseAddress(ctx, mgr, addrString, common.XMRChain)
+	if err != nil {
+		return common.NoAddress, err
+	}
+	if !common.IsSupportedXMRAddress(addr.String()) {
+		return common.NoAddress, fmt.Errorf("destination %s uses an unsupported XMR address form", addr)
+	}
+	return addr, nil
+}
+
 // parseMultipleAffiliateParams - attempts to parse one or more affiliates + affiliate
 // bps from slash-separated strings. skips any that are invalid
 func parseMultipleAffiliateParams(ctx cosmos.Context, mgr *Mgrs, affiliateParam, bpParam string) ([]string, []sdkmath.Uint, sdkmath.Uint, error) {
@@ -713,7 +727,12 @@ func (qs queryServer) queryQuoteLimit(ctx cosmos.Context, req *types.QueryQuoteL
 	}
 
 	// get destination address
-	destination, err := common.NewAddress(req.Destination)
+	var destination common.Address
+	if toAsset.GetChain().Equals(common.XMRChain) {
+		destination, err = quoteParseXMRDestination(ctx, qs.mgr, req.Destination)
+	} else {
+		destination, err = common.NewAddress(req.Destination)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("bad destination: %w", err)
 	}
@@ -928,7 +947,11 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 	sendMemo := true
 	var destination common.Address
 	if len(req.Destination) > 0 {
-		destination, err = quoteParseAddress(ctx, qs.mgr, req.Destination, toAsset.Chain)
+		if toAsset.GetChain().Equals(common.XMRChain) {
+			destination, err = quoteParseXMRDestination(ctx, qs.mgr, req.Destination)
+		} else {
+			destination, err = quoteParseAddress(ctx, qs.mgr, req.Destination, toAsset.Chain)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("bad destination address: %w", err)
 		}

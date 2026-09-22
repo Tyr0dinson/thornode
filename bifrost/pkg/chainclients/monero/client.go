@@ -1915,6 +1915,20 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	}
 	signReqCtx, err := c.validateSignTx(tx, height, true)
 	if err != nil {
+		// Recover signed artifacts above before considering local retirement.
+		// Even a reserved claim can have exposed shares without a complete
+		// payload, so absence of bytes alone is not proof that this is unsigned.
+		// Unknown storage state and all operational errors remain retryable.
+		if len(tx.Checkpoint) == 0 && c.signedTxPayloadStore != nil && c.signedTxPayloadStore.db != nil &&
+			tx.ToAddress.IsChain(common.XMRChain) && !common.IsSupportedXMRAddress(tx.ToAddress.String()) {
+			_, claimed, claimErr := c.signedTxPayloadStore.Claim(identity.LogicalHash)
+			if claimErr != nil {
+				return nil, nil, nil, claimErr
+			}
+			if !claimed {
+				return nil, nil, nil, fmt.Errorf("%w: %s", types.ErrUnsupportedXMRDestination, tx.ToAddress)
+			}
+		}
 		return nil, nil, nil, err
 	}
 
@@ -2332,11 +2346,11 @@ func (c *Client) validateSignTx(tx stypes.TxOutItem, thorchainHeight int64, requ
 	if tx.ToAddress.IsEmpty() {
 		return validatedSignRequest{}, fmt.Errorf("to address is empty")
 	}
+	// The shared external-recipient policy rejects unsupported address forms
+	// before they enter FROST signing.
 	if !isValidXMROutboundDestination(c.chain, tx.ToAddress) {
 		return validatedSignRequest{}, fmt.Errorf("to address %s is not a valid %s address", tx.ToAddress.String(), c.chain.String())
 	}
-	// Mirror the Rust FROST signer destination policy exactly so unsupported
-	// Monero address variants fail before they enter signing.
 	if requireThorchainHeight && thorchainHeight <= 0 {
 		return validatedSignRequest{}, fmt.Errorf("thorchain height must be greater than zero")
 	}
