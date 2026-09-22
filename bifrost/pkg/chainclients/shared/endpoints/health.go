@@ -65,41 +65,35 @@ func (m *Manager) Bootstrap(ctx context.Context, probes []Probe) error {
 			ref = majorityIdentity(verified)
 		}
 	}
-	if ref == "" && len(verified) == 1 {
-		for name, id := range verified {
-			ref = id
-			m.log.Warn().Str("endpoint", name).Str("identity", id).
-				Msg("reference identity taken from the only verified endpoint; set expected_identity to pin it")
-		}
+	if ref == "" && len(verified) > 0 {
+		m.log.Warn().Int("verified", len(verified)).
+			Msg("no reference chain identity yet: the priority-1 endpoint has not answered and no two endpoints agree; " +
+				"endpoints serve but none can be disabled for a mismatch until one does, or set expected_identity to pin it")
 	}
 	m.setReference(ref)
 
-	for i, e := range m.entries {
+	for _, e := range m.entries {
 		id, ok := verified[e.Name]
-		if !ok || ref == "" {
-			// no identity, or no reference to compare it with: stay unverified (and
-			// out of rotation when verification is required) until the health loop
-			// can establish a reference
+		if !ok {
+			// no identity at all: unverified, and out of rotation when verification
+			// is required, until the health loop obtains one
 			if e.identityRequiredValue() {
 				e.MarkUnhealthy(ErrorKindProbe)
 			}
 			continue
 		}
-		if id != ref {
-			if i == 0 && m.expectedIdentity != "" {
-				return fmt.Errorf("chain %s: priority-1 endpoint %s reports identity %q but expected_identity is %q; check the endpoint is on the right network",
-					m.chain, e.Name, id, ref)
-			}
-			m.log.Error().Str("endpoint", e.Name).Str("expected", ref).Str("got", id).
-				Msg("endpoint reports a different chain identity; disabling it permanently")
-			e.Disable(fmt.Sprintf("identity %q != %q", id, ref))
-			continue
-		}
+		// record what the endpoint claims even when there is no reference yet: it is
+		// compared as soon as one exists, and until then the endpoint can still serve
+		// (that is the behavior that predates endpoint failover)
 		e.SetIdentity(id)
 	}
-	if ref == "" && len(verified) > 1 {
-		m.log.Error().Msg("verified endpoints disagree on chain identity with no majority; none is healthy until expected_identity is set or a majority forms")
+	if ref != "" && m.expectedIdentity != "" {
+		if id, ok := verified[m.entries[0].Name]; ok && id != ref {
+			return fmt.Errorf("chain %s: priority-1 endpoint %s reports identity %q but expected_identity is %q; check the endpoint is on the right network",
+				m.chain, m.entries[0].Name, id, ref)
+		}
 	}
+	m.disableIdentityMismatches(ref)
 	if m.AllDown() {
 		m.log.Error().Msg("no healthy endpoint at startup; continuing and retrying in the background")
 	}
@@ -108,9 +102,33 @@ func (m *Manager) Bootstrap(ctx context.Context, probes []Probe) error {
 	return nil
 }
 
+// disableIdentityMismatches permanently disables every endpoint whose recorded
+// identity differs from the reference. It is a no-op until a reference exists, so
+// an endpoint that answered before one was established is compared as soon as it is.
+func (m *Manager) disableIdentityMismatches(ref string) {
+	if ref == "" {
+		return
+	}
+	for _, e := range m.entries {
+		id := e.Identity()
+		if id == "" || id == ref || e.State() == StateDisabled {
+			continue
+		}
+		m.log.Error().Str("endpoint", e.Name).Str("expected", ref).Str("got", id).
+			Msg("endpoint reports a different chain identity; disabling it permanently")
+		m.Disable(e.Name, fmt.Sprintf("identity %q != %q", id, ref))
+	}
+}
+
 // majorityIdentity returns the identity held by a strict majority of verified
-// endpoints, or "" when there is none.
+// endpoints, or "" when there is none. At least two endpoints must agree: a single
+// reachable endpoint is not a majority, and letting it latch the reference would
+// permanently disable the priority-1 endpoint when it comes back on the right
+// network.
 func majorityIdentity(verified map[string]string) string {
+	if len(verified) < 2 {
+		return ""
+	}
 	counts := map[string]int{}
 	for _, id := range verified {
 		counts[id]++
@@ -253,15 +271,19 @@ func (m *Manager) Cycle(ctx context.Context) {
 	// reference, one is established only from the priority-1 endpoint or from a
 	// strict majority of every identity known so far; never from the first
 	// endpoint that happens to answer.
+	for i, e := range m.entries {
+		r := results[i]
+		if e.IdentityVerified() || r.idErr != nil || r.identity == "" {
+			continue
+		}
+		e.SetIdentity(r.identity)
+	}
 	ref := m.ReferenceIdentity()
 	if ref == "" {
 		known := make(map[string]string, len(m.entries))
-		for i, e := range m.entries {
-			switch {
-			case e.IdentityVerified():
-				known[e.Name] = e.Identity()
-			case results[i].idErr == nil && results[i].identity != "":
-				known[e.Name] = results[i].identity
+		for _, e := range m.entries {
+			if id := e.Identity(); id != "" {
+				known[e.Name] = id
 			}
 		}
 		if id, ok := known[m.entries[0].Name]; ok && m.entries[0].State() != StateDisabled {
@@ -274,20 +296,7 @@ func (m *Manager) Cycle(ctx context.Context) {
 			m.log.Info().Str("identity", ref).Msg("reference chain identity established")
 		}
 	}
-	for i, e := range m.entries {
-		r := results[i]
-		if ref == "" || e.IdentityVerified() || r.idErr != nil || r.identity == "" {
-			continue
-		}
-		if r.identity != ref {
-			m.log.Error().Str("endpoint", e.Name).Str("expected", ref).Str("got", r.identity).
-				Msg("endpoint reports a different chain identity; disabling it permanently")
-			m.Disable(e.Name, fmt.Sprintf("identity %q != %q", r.identity, ref))
-			results[i].err = errors.New("disabled: identity mismatch")
-			continue
-		}
-		e.SetIdentity(r.identity)
-	}
+	m.disableIdentityMismatches(ref)
 
 	// 2. record probe data
 	heights := make(map[string]int64, len(m.entries))
@@ -365,7 +374,7 @@ func (m *Manager) Cycle(ctx context.Context) {
 					ok = false
 				}
 			}
-			if ok && e.LastErrorKind() == ErrorKindIntegrity && m.cfg.IntegrityCheckDepth > 0 {
+			if ok && e.IntegrityEvicted() && m.cfg.IntegrityCheckDepth > 0 {
 				// evicted for a minority hash: must match the healthy majority first
 				ok = integrityChecked && !badHash[e.Name]
 			}
@@ -424,7 +433,7 @@ func (m *Manager) integrityCheck(ctx context.Context, height int64, heights map[
 		}
 		st := e.State()
 		healthy := st == StateHealthy
-		recheck := (st == StateUnhealthy || st == StateRecovering) && e.LastErrorKind() == ErrorKindIntegrity
+		recheck := (st == StateUnhealthy || st == StateRecovering) && e.IntegrityEvicted()
 		if !healthy && !recheck {
 			continue
 		}

@@ -158,7 +158,7 @@ func (m *Manager) Active() *Entry { return m.entries[m.active.Load()] }
 // refuse the write rather than send it to a rejected endpoint.
 func (m *Manager) WriteTarget() *Entry {
 	e := m.Active()
-	if e.State() == StateDisabled {
+	if !e.Usable() {
 		return nil
 	}
 	return e
@@ -193,9 +193,12 @@ func (m *Manager) ReadCandidates() []*Entry {
 		return out
 	}
 	for _, e := range m.entries {
-		if e.State() != StateDisabled {
+		if e.Usable() {
 			out = append(out, e)
 		}
+	}
+	if len(out) == 0 {
+		m.log.Error().Msg("no usable endpoint: every endpoint is disabled or its chain identity is unverified")
 	}
 	return out
 }
@@ -394,7 +397,7 @@ func (m *Manager) logTransition(e *Entry, from, to State, why string) {
 func (m *Manager) VerificationCandidates(maxDown time.Duration) []*Entry {
 	out := make([]*Entry, 0, len(m.entries))
 	for _, e := range m.entries {
-		if e.State() == StateDisabled {
+		if !e.Usable() {
 			continue
 		}
 		if maxDown > 0 && e.NonHealthyFor() > maxDown {

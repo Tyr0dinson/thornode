@@ -22,13 +22,20 @@ A background health check runs every `health_check_interval` against every endpo
   endpoint, the block scanner's own height is the baseline instead.
 - **Identity.** Every endpoint must report the same chain identity (EVM `eth_chainId`,
   UTXO genesis block hash, Cosmos `node_info.network`, Solana genesis hash, XRP
-  `network_id`). The reference is `expected_identity` when set, otherwise the
-  priority-1 endpoint. An endpoint on another network is disabled permanently; the
-  priority-1 endpoint disagreeing with `expected_identity` stops the chain client from
-  starting. With more than one endpoint, an endpoint whose identity cannot be verified
-  never becomes healthy.
-- **Integrity.** When `integrity_check_depth` is greater than 0, the block hash at
-  `tip - depth` is compared across healthy endpoints; a minority hash is a strike.
+  `network_id`). The reference is `expected_identity` when set, otherwise the priority-1
+  endpoint's, otherwise one that at least two endpoints agree on. A single reachable
+  endpoint never becomes the reference: it would otherwise disable your own node when it
+  came back. Until a reference exists, endpoints serve but none can be disabled for a
+  mismatch. Once one exists, an endpoint on another network is disabled permanently, and
+  the priority-1 endpoint disagreeing with `expected_identity` stops the chain client
+  from starting. With more than one endpoint, an endpoint that reports no identity at
+  all is never used, even when every other endpoint is down: observing an unknown
+  network is worse than observing nothing.
+- **Integrity.** When `integrity_check_depth` is greater than 0 **and at least two
+  endpoints agree on a tip**, the block hash at `tip - depth` is compared across the
+  healthy endpoints; a minority hash is a strike, and an endpoint evicted for one must
+  match the majority again before it may serve. With fewer than two agreeing endpoints
+  there is no tip and the check does not run.
 
 `error_threshold` consecutive probe strikes, or `error_threshold` consecutive inline
 request errors no more than `error_window` apart, mark an endpoint **unhealthy**. If it
@@ -99,7 +106,13 @@ starts. Set `endpoints:` or `expected_identity` to make it fatal.
 
 A dead endpoint left in the list does not block recovery of a stuck outbound: an
 endpoint continuously unhealthy for longer than `signer_cache_expiry` is skipped when
-verifying whether a broadcast is still alive.
+verifying whether a broadcast is still alive. That window counts any time spent out of
+the healthy state, lag included, not only unreachability.
+
+An endpoint's identity is verified once, when it is first reached. A provider URL
+repointed at another network after bifrost started is caught by the block-hash
+integrity check rather than by identity verification, so leave `integrity_check_depth`
+enabled on chains that support it.
 
 ## Configuration
 
@@ -121,7 +134,7 @@ chains:
     failover:
       error_threshold: 5 # errors within error_window before marking unhealthy
       error_window: 60s
-      health_check_interval: 10s # how often to probe unhealthy endpoints
+      health_check_interval: 10s # how often every endpoint is probed
       max_block_lag: 3 # blocks behind consensus tip before eviction
       min_recovery_checks: 3 # passing checks required to restore an endpoint
       recovery_check_interval: 30s

@@ -81,6 +81,21 @@ func NewClient(host, user, password string, maxRetries int, timeout time.Duratio
 func NewClientWithAuth(host, user, password, bearer string, maxRetries int, timeout time.Duration, chain common.Chain, log zerolog.Logger) (
 	*Client, error,
 ) {
+	// default to http if no scheme is specified
+	if !strings.Contains(host, "://") {
+		host = "http://" + host
+	}
+	// credentials embedded in the URL are lifted into the header and stripped from
+	// the URL, matching the router and the probes (and the documented behavior)
+	if u, perr := url.Parse(host); perr == nil && u.User != nil {
+		if bearer == "" && user == "" && password == "" {
+			user = u.User.Username()
+			password, _ = u.User.Password()
+		}
+		u.User = nil
+		host = u.String()
+	}
+
 	authFn := func(h http.Header) error {
 		if bearer != "" {
 			h.Set("Authorization", fmt.Sprintf("Bearer %s", bearer))
@@ -91,16 +106,16 @@ func NewClientWithAuth(host, user, password, bearer string, maxRetries int, time
 		return nil
 	}
 
-	// default to http if no scheme is specified
-	if !strings.Contains(host, "://") {
-		host = "http://" + host
-	}
-
 	client := Client{
 		log:        log,
 		chain:      chain,
 		maxRetries: maxRetries,
 		timeout:    timeout,
+	}
+	// record this client's own secrets so its errors are redacted with or without
+	// an endpoint manager
+	if u, perr := url.Parse(host); perr == nil {
+		client.secrets = [][]string{endpoints.SecretsOf(u, bearer, password)}
 	}
 
 	var err error
@@ -159,12 +174,15 @@ func (c *Client) WithEndpointManager(m *endpoints.Manager, eps []config.ChainEnd
 	c.manager = m
 	c.names = make([]string, len(eps))
 	c.index = make(map[string]int, len(eps))
+	secrets := c.secrets
 	c.secrets = make([][]string, len(eps))
 	for i, e := range eps {
 		c.names[i] = e.Name
 		c.index[e.Name] = i
 		if u, err := url.Parse(endpoints.NormalizeHost(e.RPCHost)); err == nil {
 			c.secrets[i] = endpoints.SecretsOf(u, e.AuthorizationBearer, e.Password)
+		} else if i < len(secrets) {
+			c.secrets[i] = secrets[i]
 		}
 	}
 	return c
@@ -318,9 +336,11 @@ func (c *Client) sleepRateLimit() {
 	}
 }
 
-// redact scrubs endpoint i's URL and credentials from err.
+// redact scrubs endpoint i's URL and credentials from err. Index 0 is the primary,
+// whose secrets are recorded at construction, so a client with no endpoint manager
+// (every fallback built by buildUTXOFallbacks) still redacts its own URL.
 func (c *Client) redact(i int, err error) error {
-	if c.manager == nil || err == nil || i >= len(c.secrets) {
+	if err == nil || i >= len(c.secrets) {
 		return err
 	}
 	return endpoints.Redact(err, c.secrets[i])
@@ -783,7 +803,10 @@ func (c *Client) batchCall(batch []rpc.BatchElem) error {
 		if elem.Error == nil {
 			continue
 		}
-		if v := classifyRPCError(elem.Error); v == verdictRateLimit || v == verdictEndpointError {
+		// only an application answer means the endpoint served this element; a rate
+		// limit, an endpoint-level code, or a plain failure such as a missing batch
+		// response all mean it did not
+		if classifyRPCError(elem.Error) != verdictApplication {
 			return elem.Error
 		}
 	}

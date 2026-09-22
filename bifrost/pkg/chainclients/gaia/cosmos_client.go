@@ -164,6 +164,16 @@ func NewCosmosClient(
 	ordered := endpoints.OrderedEndpoints(endpointMgr, endpointCfgs)
 
 	grpcConns := make(map[string]*grpc.ClientConn, len(ordered))
+	// every connection built below must be closed if a later step fails
+	grpcOK := false
+	defer func() {
+		if grpcOK {
+			return
+		}
+		for _, conn := range grpcConns {
+			_ = conn.Close()
+		}
+	}()
 	for _, e := range ordered {
 		if e.CosmosGRPCHost == "" {
 			continue
@@ -194,7 +204,10 @@ func NewCosmosClient(
 		base := endpoints.NewCometProbe(e, failoverCfg.HealthCheckTimeout)
 		if conn, ok := grpcConns[e.Name]; ok {
 			svc := cmtservice.NewServiceClient(conn)
-			wantNetwork := cfg.CosmosChainID
+			// only a pinned identity is enforced here; without one, a differing
+			// network is advisory, exactly as on the CometBFT half, so a legacy
+			// config does not become permanently unhealthy
+			wantNetwork, endpointName := expected, e.Name
 			probes[i] = endpoints.CompoundProbe{Probe: base, Extra: func(ctx context.Context) error {
 				// GetNodeInfo is the cheapest call on the service and doubles as the
 				// gRPC host's identity: the gRPC and RPC halves of one endpoint must
@@ -207,8 +220,14 @@ func NewCosmosClient(
 				if perr != nil {
 					return perr
 				}
-				if got := info.GetDefaultNodeInfo().GetNetwork(); wantNetwork != "" && got != "" && got != wantNetwork {
+				got := info.GetDefaultNodeInfo().GetNetwork()
+				switch {
+				case got == "" || got == wantNetwork:
+				case wantNetwork != "":
 					return fmt.Errorf("grpc host is on network %q, expected %q", got, wantNetwork)
+				case cfg.CosmosChainID != "" && got != cfg.CosmosChainID:
+					logger.Error().Str("endpoint", endpointName).Str("network", got).Str("cosmos_chain_id", cfg.CosmosChainID).
+						Msg("gRPC host reports a different network than cosmos_chain_id; set endpoints or expected_identity to make this fatal")
 				}
 				return nil
 			}}
@@ -284,10 +303,10 @@ func NewCosmosClient(
 	}
 
 	// Reused by the SignTx verifyFn mempool fallback (mempoolLookup) so it doesn't
-	// construct a CometBFT client per call. Built from scannerHost, not the flat
-	// RPCHost, so the mempool consulted is the same backend the tx was broadcast
-	// to via gRPC; a different node's mempool could miss the tx and trigger a
-	// wrongful cache-clear and re-sign.
+	// construct a CometBFT client per call. It is routed, and mempoolLookup pins
+	// each request to a specific endpoint, so every endpoint's mempool is consulted
+	// with that endpoint's own credentials: a single node's mempool missing the tx
+	// must never trigger a wrongful cache-clear and re-sign.
 	c.cometRPC, err = rpcclienthttp.NewWithClient(scannerHost, "/websocket", rpcHTTP)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cometbft rpc client: %w", err)
@@ -304,6 +323,7 @@ func NewCosmosClient(
 	}
 	c.signerCacheManager = signerCacheManager
 
+	grpcOK = true
 	return c, nil
 }
 

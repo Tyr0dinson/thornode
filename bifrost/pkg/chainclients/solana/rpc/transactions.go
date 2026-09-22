@@ -1,6 +1,7 @@
 package rpc
 
 import (
+	"context"
 	"fmt"
 )
 
@@ -80,6 +81,14 @@ type SignatureStatusResult struct {
 // GetTransactionWithCommitment makes a getTransaction RPC call to the Solana RPC
 // with the requested commitment level.
 func (s *SolRPC) GetTransactionWithCommitment(signature, commitment string) (*TransactionResult, error) {
+	ctx, cancel := s.getContext()
+	defer cancel()
+	return s.GetTransactionWithCommitmentContext(ctx, signature, commitment)
+}
+
+// GetTransactionWithCommitmentContext is GetTransactionWithCommitment with a
+// caller-supplied context (for example one pinned to a specific endpoint).
+func (s *SolRPC) GetTransactionWithCommitmentContext(ctx context.Context, signature, commitment string) (*TransactionResult, error) {
 	params := []interface{}{
 		signature,
 		map[string]interface{}{
@@ -90,7 +99,7 @@ func (s *SolRPC) GetTransactionWithCommitment(signature, commitment string) (*Tr
 	}
 
 	var response GetTransactionResponse
-	if err := s.post("getTransaction", params, &response); err != nil {
+	if err := s.postWithContext(ctx, "getTransaction", params, &response); err != nil {
 		return nil, fmt.Errorf("failed to call getTransaction: %w", err)
 	}
 

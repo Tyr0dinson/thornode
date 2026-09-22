@@ -103,7 +103,8 @@ func (s *ProbeSuite) TestURLUserinfoBecomesBasicAuth(c *C) {
 func (s *ProbeSuite) TestCometProbe(c *C) {
 	srv := jsonrpcServer(c, map[string]string{
 		"status": `{"node_info":{"network":"cosmoshub-4"},"sync_info":{"latest_block_height":"22000001"}}`,
-		"block":  `{"block_id":{"hash":"DEADBEEF"}}`,
+		// commit, not block: the hash without the block's transactions
+		"commit": `{"signed_header":{"commit":{"block_id":{"hash":"DEADBEEF"}}},"canonical":true}`,
 	}, nil)
 	defer srv.Close()
 	p := endpoints.NewCometProbe(config.ChainEndpointConfig{Name: "a", RPCHost: srv.URL}, time.Second)

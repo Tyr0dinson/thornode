@@ -11,6 +11,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -1768,12 +1770,24 @@ func (s *RPCSuite) TestReadsFollowManagerOrderAfterFailover(c *C) {
 
 func (s *RPCSuite) TestSuccessfulBatchRecordsSuccess(c *C) {
 	var fail atomic.Bool
-	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if fail.Load() {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		_, _ = w.Write([]byte(`[{"jsonrpc":"2.0","id":1,"result":{"txid":"a"}}]`))
+		// echo the request ids: a batch element whose id is missing from the response
+		// is a failure (rpc.ErrMissingBatchResponse), which is exactly what the
+		// endpoint accounting must see
+		var reqs []struct {
+			ID json.RawMessage `json:"id"`
+		}
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &reqs)
+		out := make([]string, 0, len(reqs))
+		for _, rq := range reqs {
+			out = append(out, `{"jsonrpc":"2.0","id":`+string(rq.ID)+`,"result":{"txid":"a"}}`)
+		}
+		_, _ = w.Write([]byte("[" + strings.Join(out, ",") + "]"))
 	}))
 	defer primary.Close()
 	m, cfgEps := mgrFor(c, 2, map[string]string{"primary": primary.URL}, "primary")
@@ -1881,5 +1895,57 @@ func (s *RPCSuite) TestRetryLogRedactsEndpointURL(c *C) {
 	cl.WithEndpointManager(m, cfgEps)
 	_, _ = cl.GetBlockCount()
 	c.Assert(buf.String(), Matches, "(?s).*retrying.*")
+	c.Assert(buf.String(), Not(Matches), "(?s).*SECRET.*")
+}
+
+func (s *RPCSuite) TestBatchMissingResponseIsAnEndpointFailure(c *C) {
+	// a batch reply that omits an element leaves BatchElem.Error set with a nil
+	// aggregate error: the endpoint did not serve the read
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer primary.Close()
+	fb := &mockUTXOReader{batchRawTxFn: func(txids []string) ([]*btcjson.TxRawResult, []error, error) {
+		out := make([]*btcjson.TxRawResult, len(txids))
+		for i, id := range txids {
+			out[i] = &btcjson.TxRawResult{Txid: id}
+		}
+		return out, make([]error, len(txids)), nil
+	}}
+	m, cfgEps := mgrFor(c, 1, map[string]string{"primary": primary.URL}, "primary", "fb")
+	cl, err := NewClientWithFallbacks(primary.URL, "u", "p", "", 0, time.Second, common.BTCChain, zerolog.Nop(), []UTXOReader{fb}, 0)
+	c.Assert(err, IsNil)
+	cl.WithEndpointManager(m, cfgEps)
+	res, _, err := cl.BatchGetRawTransactionVerbose([]string{"a"})
+	c.Assert(err, IsNil)
+	c.Assert(res[0].Txid, Equals, "a") // served by the fallback
+	c.Assert(m.Entry("primary").State(), Equals, endpoints.StateUnhealthy)
+}
+
+func (s *RPCSuite) TestURLCredentialsAreLiftedIntoTheAuthHeader(c *C) {
+	var auth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth = r.Header.Get("Authorization")
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":7}`))
+	}))
+	defer srv.Close()
+	u, err := url.Parse(srv.URL)
+	c.Assert(err, IsNil)
+	cl, err := NewClient("http://user:pw@"+u.Host, "", "", 0, time.Second, common.BTCChain, zerolog.Nop())
+	c.Assert(err, IsNil)
+	_, err = cl.GetBlockCount()
+	c.Assert(err, IsNil)
+	c.Assert(auth, Equals, "Basic dXNlcjpwdw==")
+}
+
+func (s *RPCSuite) TestFallbackClientRedactsWithoutAManager(c *C) {
+	var buf bytes.Buffer
+	// no manager is ever attached to a fallback client, and its own retry logging
+	// must still not print the endpoint URL
+	cl, err := NewClientWithAuth("http://127.0.0.1:1/v1/SECRETKEY", "u", "SECRETPASS", "", 1, 200*time.Millisecond, common.BTCChain, zerolog.New(&buf))
+	c.Assert(err, IsNil)
+	_, err = cl.GetBlockCount()
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Not(Matches), "(?s).*SECRET.*")
 	c.Assert(buf.String(), Not(Matches), "(?s).*SECRET.*")
 }

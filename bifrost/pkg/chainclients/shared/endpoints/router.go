@@ -108,9 +108,6 @@ const (
 	defaultDialTimeout    = 5 * time.Second
 	defaultAttemptTimeout = 10 * time.Second
 	sniffLimit            = 64 << 10
-	// minSniffBuffer is bufio's own minimum reader size; a smaller request is
-	// silently rounded up, so Peek must ask for what it will actually get.
-	minSniffBuffer = 16
 )
 
 // NewHTTPRouter validates the config against the manager and returns the router.
@@ -226,13 +223,32 @@ func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 		if isWrite && i > 0 && !isDialError(lastErr) {
 			break // may have been sent; never duplicate a write
 		}
-		// per-attempt budget: a stalled endpoint must leave time for the next one.
+		// Per-attempt budget: a stalled endpoint must leave time for the next one.
 		// The budget only bounds the wait for response headers; once they arrive the
-		// timer is stopped and the body read keeps the caller's own deadline.
+		// timer is disarmed and the body read keeps the caller's own deadline. A
+		// write keeps the whole budget: its only fallback is a provable dial error,
+		// which fails fast anyway.
+		remaining := len(candidates) - i - 1
+		if isWrite {
+			remaining = 0
+		}
 		actx, acancel := context.WithCancel(req.Context())
-		timer := time.AfterFunc(attemptBudget(req.Context(), r.cfg.AttemptTimeout, len(candidates)-i-1), acancel)
+		var (
+			headerMu sync.Mutex
+			gotHead  bool
+		)
+		timer := time.AfterFunc(attemptBudget(req.Context(), r.cfg.AttemptTimeout, remaining), func() {
+			headerMu.Lock()
+			defer headerMu.Unlock()
+			if !gotHead {
+				acancel()
+			}
+		})
 		out := r.rewrite(req.WithContext(actx), t, body)
 		resp, err := r.cfg.Transport.RoundTrip(out)
+		headerMu.Lock()
+		gotHead = err == nil
+		headerMu.Unlock()
 		timer.Stop()
 		if err != nil {
 			acancel()
@@ -243,32 +259,32 @@ func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 			lastErr = Redact(fmt.Errorf("endpoint %s: %w", e.Name, err), t.secrets)
 			continue
 		}
-		// The body wrapper is the single health reporter for this response: it
-		// records one success when the body completes cleanly, or one transport
-		// failure when it breaks mid-stream. Recording success only at body
-		// completion is what lets a broken body actually evict an endpoint: a
-		// header-time success would reset the error run that the same request
-		// is about to add to.
+		// The body wrapper starts unarmed so that classify's own sniffing read
+		// cannot report anything. Only a response that classify hands back to the
+		// caller is armed, and it then becomes the single reporter for that
+		// response: one success when the body completes cleanly, one transport
+		// failure when it breaks mid-stream. Reporting success at body completion
+		// rather than at header time is what lets a broken body actually evict an
+		// endpoint, instead of resetting the error run it is about to add to.
 		name := e.Name
-		ab := &attemptBody{ReadCloser: resp.Body, cancel: acancel, report: func(rerr error) {
-			if req.Context().Err() != nil {
-				return // caller cancelled; not the endpoint's fault
-			}
-			if rerr != nil {
-				r.mgr.RecordError(name, ErrorKindTransport)
-				return
-			}
-			r.mgr.RecordSuccess(name)
-		}}
+		ab := &attemptBody{ReadCloser: resp.Body, cancel: acancel}
 		resp.Body = ab
 		verdict, kind, fromBody := r.classify(resp, isWrite)
 		switch verdict {
 		case verdictOK, verdictAppError:
-			// the endpoint answered; success is recorded when the caller finishes
-			// the body, and the caller's own error handling applies to appError
+			// the endpoint answered; the caller's own error handling applies to appError
+			ab.arm(func(rerr error) {
+				if req.Context().Err() != nil {
+					return // caller cancelled; not the endpoint's fault
+				}
+				if rerr != nil {
+					r.mgr.RecordError(name, ErrorKindTransport)
+					return
+				}
+				r.mgr.RecordSuccess(name)
+			})
 			return resp, nil
 		case verdictRateLimited:
-			ab.disarm() // this verdict is recorded here, not by the body
 			r.mgr.RecordRateLimited(e.Name)
 			if isWrite && fromBody {
 				return resp, nil // the write may have been accepted; hand the answer back, never retry
@@ -279,11 +295,7 @@ func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 				return nil, lastErr
 			}
 		case verdictEndpointError:
-			// a broken body already reported itself from inside classify
-			if !ab.reported() {
-				r.mgr.RecordError(e.Name, kind)
-			}
-			ab.disarm()
+			r.mgr.RecordError(e.Name, kind)
 			if isWrite && fromBody {
 				return resp, nil
 			}
@@ -300,10 +312,11 @@ func (r *HTTPRouter) RoundTrip(req *http.Request) (*http.Response, error) {
 	return nil, lastErr
 }
 
-// attemptBody releases the attempt context once the caller has consumed the body
-// and reports the outcome of the response exactly once: a non-EOF read error is a
-// transport failure, a clean end (EOF or Close) is a success. disarm cancels the
-// reporting when the caller records its own verdict instead.
+// attemptBody releases the attempt context once the caller has consumed the body,
+// and once armed reports the outcome of the response exactly once: a non-EOF read
+// error is a transport failure, a clean end (EOF or Close) is a success. It stays
+// unarmed while the router classifies the response, so classification reads never
+// report anything and the router's own verdict is charged exactly once.
 type attemptBody struct {
 	io.ReadCloser
 	cancel context.CancelFunc
@@ -311,7 +324,13 @@ type attemptBody struct {
 	mu     sync.Mutex
 	report func(error)
 	fired  bool
-	failed bool
+}
+
+// arm makes the body report its outcome once, from now on.
+func (b *attemptBody) arm(report func(error)) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.report = report
 }
 
 func (b *attemptBody) fire(err error) {
@@ -321,24 +340,9 @@ func (b *attemptBody) fire(err error) {
 		b.mu.Unlock()
 		return
 	}
-	b.fired, b.failed = true, err != nil
+	b.fired = true
 	b.mu.Unlock()
 	report(err)
-}
-
-// reported reports whether the outcome has already been sent to the manager as a
-// failure (so the caller does not record the same physical failure twice).
-func (b *attemptBody) reported() bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.fired && b.failed
-}
-
-// disarm stops any further reporting from this body.
-func (b *attemptBody) disarm() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.report = nil
 }
 
 func (b *attemptBody) Read(p []byte) (int, error) {
@@ -411,24 +415,21 @@ func (r *HTTPRouter) classify(resp *http.Response, isWrite bool) (verdict, Error
 	if resp.ContentLength > sniffLimit {
 		return verdictOK, "", false
 	}
-	// size the sniff buffer to the response when its length is known: this is the
-	// hot path for every routed EVM, Solana, XRP and TRON call
+	// This is the hot path for every routed EVM, Solana, XRP and TRON call, so the
+	// sniff readers are pooled: Content-Length is absent (-1) for chunked and for
+	// transparently gunzipped responses, which is most of them, so sizing the
+	// reader from it would not help there.
+	br, _ := sniffPool.Get().(*bufio.Reader)
+	br.Reset(resp.Body)
 	size := sniffLimit
-	if resp.ContentLength > 0 && int(resp.ContentLength)+1 < size {
-		size = int(resp.ContentLength) + 1
-	}
-	if size < minSniffBuffer {
-		size = minSniffBuffer
-	}
-	br := bufio.NewReaderSize(resp.Body, size)
 	peek, perr := br.Peek(size)
 	resp.Body = &peekedBody{Reader: br, closer: resp.Body}
 	if perr != nil && !errors.Is(perr, io.EOF) {
 		// headers arrived but the body broke: the endpoint failed this request
 		return verdictEndpointError, ErrorKindTransport, false
 	}
-	if len(peek) == size && resp.ContentLength <= 0 {
-		return verdictOK, "", false // large streamed result; JSON-RPC error objects are tiny
+	if len(peek) == size {
+		return verdictOK, "", false // large result; JSON-RPC error objects are tiny
 	}
 	trimmed := bytes.TrimLeft(peek, " \t\r\n")
 	if len(trimmed) == 0 {
@@ -490,13 +491,25 @@ func classifyJSONRPC(trimmed []byte) (verdict, ErrorKind) {
 	return worst, worstKind
 }
 
-// peekedBody serves the buffered bytes first and closes the original body.
+// sniffPool recycles the readers classify uses to peek at JSON-RPC bodies.
+var sniffPool = sync.Pool{New: func() any { return bufio.NewReaderSize(nil, sniffLimit) }}
+
+// peekedBody serves the buffered bytes first, closes the original body, and
+// returns the sniff reader to the pool exactly once.
 type peekedBody struct {
 	*bufio.Reader
 	closer io.Closer
+	once   sync.Once
 }
 
-func (p *peekedBody) Close() error { return p.closer.Close() }
+func (p *peekedBody) Close() error {
+	err := p.closer.Close()
+	p.once.Do(func() {
+		p.Reader.Reset(nil) // drop the reference to the response body
+		sniffPool.Put(p.Reader)
+	})
+	return err
+}
 
 // bufferBody reads the request body once so it can be replayed per endpoint.
 func (r *HTTPRouter) bufferBody(req *http.Request) ([]byte, error) {

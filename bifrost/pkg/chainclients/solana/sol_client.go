@@ -293,7 +293,9 @@ func (c *SOLClient) Start(
 
 // Stop stops the chain client.
 func (c *SOLClient) Stop() {
-	c.endpointMgr.Stop()
+	if c.endpointMgr != nil {
+		c.endpointMgr.Stop()
+	}
 	c.tssKeyManager.Stop()
 	close(c.stopchan)
 	c.wg.Wait()
@@ -584,26 +586,7 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	// unconditionally because the broadcast's blockhash already constrains
 	// re-sign safety to a tight window (~60s).
 	verifyFn := func(sig string) signercache.LookupResult {
-		result, lookupErr := c.rpcClient.GetTransactionConfirmed(sig)
-		switch {
-		case lookupErr != nil:
-			return signercache.LookupAmbiguous
-		case result.Slot > 0 && result.Meta.Err == nil:
-			return signercache.LookupFound
-		case result.Slot > 0:
-			// Landed on chain but FAILED at execution (meta.err set, e.g.
-			// "insufficient lamports"): the fee was burned but the transfer never
-			// happened, so the outbound is unfulfilled. Presence on chain is not
-			// enough — only a SUCCESSFUL broadcast is authoritative. Treat a failed
-			// landing like a dropped one (LookupNotFound) so the cache manager clears
-			// it and expiry+verify re-signs. Without this the failed sig keeps
-			// verifying as "found" and permanently wedges the outbound (#3089).
-			c.logger.Warn().Str("sig", sig).Interface("meta_err", result.Meta.Err).Interface("tx", tx).
-				Msg("cached broadcast failed on chain, re-signing")
-			return signercache.LookupNotFound
-		default:
-			return signercache.LookupNotFound
-		}
+		return c.verifyBroadcast(sig, tx)
 	}
 	check := c.signerCacheManager.SignTxCacheCheck(tx.CacheHash(), func() bool { return true }, verifyFn)
 	if check.Phase != signercache.PhaseNoEntry {
@@ -1300,4 +1283,58 @@ func (c *SOLClient) GetConfirmationCount(txIn stypes.TxIn) int64 {
 func (c *SOLClient) ConfirmationCountReady(txIn stypes.TxIn) bool {
 	// Solana has instant finality since we query everything with commitment "finalized"
 	return true
+}
+
+// verifyBroadcast is the signer-cache verifyFn: it reports whether the recorded
+// broadcast is still alive. A broadcast may have reached only one endpoint, so
+// every endpoint worth asking is asked with a pinned request: alive on any endpoint
+// is Found, any transport error or no endpoint to ask is Ambiguous, and only a
+// consistent answer of "absent or failed" on every endpoint clears the cache.
+//
+// A transaction that landed but FAILED at execution (meta.err set, e.g. insufficient
+// lamports) burned the fee without transferring, so the outbound is unfulfilled: it
+// counts as absent so expiry plus verification re-signs it (#3089). Without that the
+// failed signature keeps verifying as found and wedges the outbound forever.
+func (c *SOLClient) verifyBroadcast(sig string, tx stypes.TxOutItem) signercache.LookupResult {
+	lookup := func(ctx context.Context) signercache.LookupResult {
+		result, lookupErr := c.rpcClient.GetTransactionWithCommitmentContext(ctx, sig, "confirmed")
+		switch {
+		case lookupErr != nil:
+			return signercache.LookupAmbiguous
+		case result.Slot > 0 && result.Meta.Err == nil:
+			return signercache.LookupFound
+		case result.Slot > 0:
+			c.logger.Warn().Str("sig", sig).Interface("meta_err", result.Meta.Err).Interface("tx", tx).
+				Msg("cached broadcast failed on chain, re-signing")
+			return signercache.LookupNotFound
+		default:
+			return signercache.LookupNotFound
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), c.cfg.BlockScanner.HTTPRequestTimeout)
+	defer cancel()
+	if c.endpointMgr == nil {
+		return lookup(ctx)
+	}
+	candidates := c.endpointMgr.VerificationCandidates(c.cfg.SignerCacheExpiry)
+	if len(candidates) == 0 {
+		return signercache.LookupAmbiguous // absence needs at least one witness
+	}
+	perEndpoint := evm.VerificationBudget(ctx, len(candidates))
+	ambiguous := false
+	for _, e := range candidates {
+		ectx, ecancel := context.WithTimeout(endpoints.PinContext(ctx, e.Name), perEndpoint)
+		res := lookup(ectx)
+		ecancel()
+		switch res {
+		case signercache.LookupFound:
+			return signercache.LookupFound
+		case signercache.LookupAmbiguous:
+			ambiguous = true
+		}
+	}
+	if ambiguous {
+		return signercache.LookupAmbiguous
+	}
+	return signercache.LookupNotFound
 }

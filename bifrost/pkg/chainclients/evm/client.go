@@ -149,7 +149,7 @@ func NewEVMClient(
 		cfg.ChainID.String(),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("fail to create ETH rpc host(%s): %w", cfg.RPCHost, err)
+		return nil, fmt.Errorf("fail to create %s rpc client for endpoint %s: %w", cfg.ChainID, failover.Manager.Active().Name, err)
 	}
 
 	// the signing chain id is the verified reference identity; the active endpoint

@@ -57,6 +57,9 @@ func (g *GRPCConn) Invoke(ctx context.Context, method string, args, reply any, o
 		if e == nil {
 			return fmt.Errorf("chain %s: pinned endpoint %s not configured", g.mgr.Chain(), name)
 		}
+		if !e.Usable() {
+			return fmt.Errorf("chain %s: pinned endpoint %s is disabled or unverified", g.mgr.Chain(), name)
+		}
 		candidates, pinned = []*Entry{e}, true
 	} else if g.writeMethods[method] {
 		wt := g.mgr.WriteTarget()
@@ -91,7 +94,7 @@ func (g *GRPCConn) Invoke(ctx context.Context, method string, args, reply any, o
 			return err // caller's deadline or cancellation, not the endpoint's fault
 		}
 		switch status.Code(err) {
-		case codes.Unavailable, codes.DeadlineExceeded, codes.Internal, codes.Unauthenticated:
+		case codes.Unavailable, codes.DeadlineExceeded, codes.Internal, codes.Unauthenticated, codes.Unimplemented:
 			g.mgr.RecordError(e.Name, ErrorKindHTTP)
 			lastErr = fmt.Errorf("endpoint %s: %w", e.Name, err)
 			continue
@@ -116,9 +119,11 @@ func (g *GRPCConn) Invoke(ctx context.Context, method string, args, reply any, o
 func (g *GRPCConn) NewStream(ctx context.Context, desc *grpc.StreamDesc, method string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
 	e := g.mgr.WriteTarget()
 	if name, ok := pinnedFrom(ctx); ok {
-		if pe := g.mgr.Entry(name); pe != nil {
-			e = pe
+		pe := g.mgr.Entry(name)
+		if pe == nil || !pe.Usable() {
+			return nil, fmt.Errorf("chain %s: pinned endpoint %s is not usable", g.mgr.Chain(), name)
 		}
+		e = pe
 	}
 	if e == nil {
 		return nil, fmt.Errorf("chain %s: no permitted endpoint for streams (active endpoint disabled)", g.mgr.Chain())

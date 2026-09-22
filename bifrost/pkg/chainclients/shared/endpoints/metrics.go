@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/rs/zerolog/log"
 )
 
 // Metrics holds the Prometheus vectors shared by every chain's Manager.
@@ -40,6 +41,7 @@ func DefaultMetrics() *Metrics {
 	defaultMetricsOnce.Do(func() {
 		m, err := NewMetrics(prometheus.DefaultRegisterer)
 		if err != nil {
+			log.Error().Err(err).Msg("failed to register bifrost_endpoint metrics; endpoint metrics are disabled for this process")
 			m = nil
 		}
 		defaultMetrics = m

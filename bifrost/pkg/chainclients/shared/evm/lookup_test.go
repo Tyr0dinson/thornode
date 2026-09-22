@@ -27,8 +27,10 @@ const lookupHash = "0x0000000000000000000000000000000000000000000000000000000000
 
 func ecommonHash() ecommon.Hash { return ecommon.HexToHash(lookupHash) }
 
-// txServer answers eth_getTransactionByHash: known returns a transaction, absent
-// returns a null result, broken returns HTTP 502.
+// txServer answers eth_getTransactionByHash: "known" returns a transaction,
+// "absent" a null result, "txerror" HTTP 502 for the lookup only (so the endpoint
+// still verifies its identity at bootstrap and counts as a witness that could not
+// answer), and "broken" HTTP 502 for everything (so it never verifies at all).
 func txServer(mode string) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if mode == "broken" {
@@ -48,6 +50,10 @@ func txServer(mode string) *httptest.Server {
 		case "eth_blockNumber":
 			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":` + id + `,"result":"0x10"}`))
 		case "eth_getTransactionByHash":
+			if mode == "txerror" {
+				w.WriteHeader(http.StatusBadGateway)
+				return
+			}
 			if mode == "known" {
 				_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":` + id + `,"result":{"hash":"` + lookupHash +
 					`","nonce":"0x1","blockHash":null,"blockNumber":null,"transactionIndex":null,` +
@@ -77,9 +83,10 @@ func lookupClient(c *C, a, b *httptest.Server) *evm.FailoverClient {
 }
 
 func (s *LookupSuite) TestLookupTxEverywhere(c *C) {
-	known, absent, broken := txServer("known"), txServer("absent"), txServer("broken")
+	known, absent, txerror, broken := txServer("known"), txServer("absent"), txServer("txerror"), txServer("broken")
 	defer known.Close()
 	defer absent.Close()
+	defer txerror.Close()
 	defer broken.Close()
 
 	// found only on the secondary: the active endpoint says absent, b knows it
@@ -94,11 +101,19 @@ func (s *LookupSuite) TestLookupTxEverywhere(c *C) {
 	defer fc2.Client.Close()
 	c.Assert(evm.LookupTxEverywhere(context.Background(), fc2.Manager, fc2.Client, ecommonHash(), time.Hour), Equals, signercache.LookupNotFound)
 
-	// one endpoint erroring: absence is not established
-	fc3 := lookupClient(c, absent, broken)
+	// one endpoint answers, the other cannot: absence is not established
+	fc3 := lookupClient(c, absent, txerror)
 	defer fc3.Manager.Stop()
 	defer fc3.Client.Close()
 	c.Assert(evm.LookupTxEverywhere(context.Background(), fc3.Manager, fc3.Client, ecommonHash(), time.Hour), Equals, signercache.LookupAmbiguous)
+
+	// an endpoint whose chain identity was never verified is never asked, so it
+	// cannot make the answer ambiguous: bifrost never broadcast to it either
+	fc5 := lookupClient(c, absent, broken)
+	defer fc5.Manager.Stop()
+	defer fc5.Client.Close()
+	c.Assert(fc5.Manager.Entry("b").Usable(), Equals, false)
+	c.Assert(evm.LookupTxEverywhere(context.Background(), fc5.Manager, fc5.Client, ecommonHash(), time.Hour), Equals, signercache.LookupNotFound)
 
 	// every endpoint disabled: nothing was queried, so nothing can prove absence
 	fc4 := lookupClient(c, absent, absent)
@@ -110,16 +125,17 @@ func (s *LookupSuite) TestLookupTxEverywhere(c *C) {
 }
 
 func (s *LookupSuite) TestLookupSkipsLongDeadEndpoints(c *C) {
-	absent, broken := txServer("absent"), txServer("broken")
+	absent, txerror := txServer("absent"), txServer("txerror")
 	defer absent.Close()
-	defer broken.Close()
-	fc := lookupClient(c, absent, broken)
+	defer txerror.Close()
+	fc := lookupClient(c, absent, txerror)
 	defer fc.Manager.Stop()
 	defer fc.Client.Close()
-	// b is unreachable: while it counts, absence stays ambiguous
-	c.Assert(evm.LookupTxEverywhere(context.Background(), fc.Manager, fc.Client, ecommonHash(), time.Hour), Equals, signercache.LookupAmbiguous)
-	// mark b down and treat anything down at all as too long: it is skipped, and the
-	// remaining endpoint establishes absence instead of wedging re-signing forever
+	// b is verified but cannot answer: while it counts as a witness, absence stays
+	// ambiguous and the signer cache is kept
 	fc.Manager.Entry("b").MarkUnhealthy(endpoints.ErrorKindTransport)
+	c.Assert(evm.LookupTxEverywhere(context.Background(), fc.Manager, fc.Client, ecommonHash(), time.Hour), Equals, signercache.LookupAmbiguous)
+	// once it has been down longer than the signer-cache expiry it is skipped, so a
+	// retired provider left in the list does not wedge re-signing forever
 	c.Assert(evm.LookupTxEverywhere(context.Background(), fc.Manager, fc.Client, ecommonHash(), time.Nanosecond), Equals, signercache.LookupNotFound)
 }

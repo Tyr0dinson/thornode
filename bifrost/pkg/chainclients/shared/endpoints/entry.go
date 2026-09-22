@@ -43,6 +43,7 @@ type Entry struct {
 	lastErrorKind    ErrorKind
 	nextRecoveryAt   time.Time
 	nonHealthySince  time.Time
+	integrityEvicted bool
 }
 
 // Snapshot is a read-only copy of an Entry's state for status output.
@@ -94,6 +95,19 @@ func (e *Entry) Eligible() bool {
 	return e.state == StateHealthy && !e.inCooldownLocked()
 }
 
+// Usable reports whether the endpoint may be talked to at all: it is not disabled,
+// and its chain identity is verified when verification is required. An endpoint of
+// an unknown network must never serve reads, writes or verification, even when
+// every other endpoint is down: observing the wrong chain is worse than going dark.
+func (e *Entry) Usable() bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.state == StateDisabled {
+		return false
+	}
+	return !e.identityRequired || e.identityVerified
+}
+
 // InCooldown reports whether the endpoint is backing off after a rate limit.
 func (e *Entry) InCooldown() bool {
 	e.mu.Lock()
@@ -122,6 +136,9 @@ func (e *Entry) MarkUnhealthy(kind ErrorKind) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.lastErrorKind = kind
+	if kind == ErrorKindIntegrity {
+		e.integrityEvicted = true
+	}
 	if e.state == StateHealthy || e.state == StateRecovering {
 		e.markUnhealthyLocked()
 	}
@@ -179,12 +196,25 @@ func (e *Entry) RecordProbeStrike(cfg config.ChainFailoverConfig, kind ErrorKind
 	case StateUnhealthy, StateDisabled:
 		return false
 	}
+	if kind == ErrorKindIntegrity {
+		// sticky: lastErrorKind is overwritten by the next transport error or rate
+		// limit, and recovery must still require a matching hash
+		e.integrityEvicted = true
+	}
 	e.probeStrikes++
 	if e.probeStrikes >= cfg.ErrorThreshold {
 		e.markUnhealthyLocked()
 		return true
 	}
 	return false
+}
+
+// IntegrityEvicted reports whether the endpoint has an outstanding block-hash
+// disagreement that it must clear before it may serve traffic again.
+func (e *Entry) IntegrityEvicted() bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.integrityEvicted
 }
 
 // RecordProbePass clears probe strikes of a Healthy entry.
@@ -244,6 +274,7 @@ func (e *Entry) RecordHealthCheck(ok bool, cfg config.ChainFailoverConfig) (from
 	}
 	if e.state == StateHealthy {
 		e.nonHealthySince = time.Time{}
+		e.integrityEvicted = false
 	}
 	return from, e.state
 }

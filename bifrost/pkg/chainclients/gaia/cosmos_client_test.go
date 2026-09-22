@@ -649,6 +649,9 @@ func TestGaiaVerifyBroadcastManaged(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		for _, e := range m.Entries() {
+			e.SetIdentity("cosmoshub-4") // bootstrap is not run in this unit test
+		}
 		return m
 	}
 	cases := []struct {

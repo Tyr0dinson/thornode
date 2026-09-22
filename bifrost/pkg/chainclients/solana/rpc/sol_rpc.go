@@ -51,7 +51,12 @@ func (s *SolRPC) getContext() (context.Context, context.CancelFunc) {
 func (s *SolRPC) post(method string, params, response interface{}) error {
 	ctx, cancel := s.getContext()
 	defer cancel()
+	return s.postWithContext(ctx, method, params, response)
+}
 
+// postWithContext is post with a caller-supplied context, for example one pinned to
+// a specific endpoint with endpoints.PinContext.
+func (s *SolRPC) postWithContext(ctx context.Context, method string, params, response interface{}) error {
 	payload := map[string]interface{}{
 		"jsonrpc": "2.0",
 		"id":      1,

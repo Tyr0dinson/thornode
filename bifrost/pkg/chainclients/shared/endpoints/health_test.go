@@ -93,8 +93,51 @@ func (s *HealthSuite) TestBootstrapSelectsHighestPriorityReachable(c *C) {
 	c.Assert(m.Active().Name, Equals, "backup")
 	c.Assert(m.Entry("local").State(), Equals, endpoints.StateUnhealthy)
 	c.Assert(m.Entry("local").IdentityVerified(), Equals, false)
+	// the backup's identity is recorded so it can serve, but one endpoint is not a
+	// majority, so it does not become the reference the others are judged against
 	c.Assert(m.Entry("backup").IdentityVerified(), Equals, true)
+	c.Assert(m.ReferenceIdentity(), Equals, "")
+	// once priority-1 answers it sets the reference, and the agreeing backup stays
+	local.set(100, nil)
+	m.Cycle(ctxBg())
 	c.Assert(m.ReferenceIdentity(), Equals, "g1")
+	c.Assert(m.Entry("backup").State(), Not(Equals), endpoints.StateDisabled)
+}
+
+// A lone reachable backup must never latch the reference identity: if it did, the
+// operator's own priority-1 endpoint would be permanently disabled when it came
+// back on the correct network.
+func (s *HealthSuite) TestLoneVerifiedEndpointDoesNotLatchReference(c *C) {
+	local := &fakeProbe{name: "local", err: down, identity: "mainnet"}
+	backup := &fakeProbe{name: "backup", height: 100, identity: "testnet"}
+	m, ps := newHealthMgr(c, healthCfg(), nil, local, backup)
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	c.Assert(m.ReferenceIdentity(), Equals, "")
+	c.Assert(m.Entry("backup").State(), Equals, endpoints.StateHealthy) // still serves
+	c.Assert(m.Active().Name, Equals, "backup")
+
+	// priority-1 recovers on the correct network: it sets the reference and the
+	// wrong-network backup is the one disabled, not the other way round
+	local.set(100, nil)
+	m.Cycle(ctxBg())
+	c.Assert(m.ReferenceIdentity(), Equals, "mainnet")
+	c.Assert(m.Entry("backup").State(), Equals, endpoints.StateDisabled)
+	c.Assert(m.Entry("local").State(), Not(Equals), endpoints.StateDisabled)
+	c.Assert(m.Active().Name, Equals, "local")
+}
+
+// Two agreeing endpoints are a majority even without priority-1, and a third that
+// disagrees is disabled.
+func (s *HealthSuite) TestMajorityOfTwoEstablishesReference(c *C) {
+	local := &fakeProbe{name: "local", err: down}
+	b := &fakeProbe{name: "b", height: 100, identity: "mainnet"}
+	d := &fakeProbe{name: "d", height: 100, identity: "mainnet"}
+	x := &fakeProbe{name: "x", height: 100, identity: "testnet"}
+	m, ps := newHealthMgr(c, healthCfg(), nil, local, b, d, x)
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	c.Assert(m.ReferenceIdentity(), Equals, "mainnet")
+	c.Assert(m.Entry("x").State(), Equals, endpoints.StateDisabled)
+	c.Assert(m.Active().Name, Equals, "b")
 }
 
 func (s *HealthSuite) TestBootstrapPriorityOneSetsReferenceAndDisablesOthers(c *C) {
@@ -122,7 +165,7 @@ func (s *HealthSuite) TestBootstrapExpectedIdentityPinsPriorityOne(c *C) {
 	c.Assert(m2.Entry("backup").State(), Equals, endpoints.StateDisabled)
 }
 
-func (s *HealthSuite) TestBootstrapMajorityWhenPriorityOneDown(c *C) {
+func (s *HealthSuite) TestBootstrapMajorityWhenPriorityOneDownAndMismatchDisabled(c *C) {
 	local := &fakeProbe{name: "local", err: down, identity: "mainnet"}
 	b := &fakeProbe{name: "b", height: 100, identity: "mainnet"}
 	d := &fakeProbe{name: "d", height: 100, identity: "mainnet"}
@@ -355,10 +398,13 @@ func (s *HealthSuite) TestStopCancelsInFlightCycle(c *C) {
 	cfg := healthCfg()
 	cfg.HealthCheckInterval = 10 * time.Millisecond
 	cfg.HealthCheckTimeout = 5 * time.Second
-	slow := &slowProbe{fakeProbe: fakeProbe{name: "slow", height: 1, identity: "g"}, delay: 3 * time.Second}
+	slow := &slowProbe{fakeProbe: fakeProbe{name: "slow", height: 1, identity: "g"}}
 	m, err := endpoints.NewManager(common.BTCChain, eps("slow"), cfg, zerolog.Nop())
 	c.Assert(err, IsNil)
-	c.Assert(m.Bootstrap(context.Background(), []endpoints.Probe{slow}), IsNil) // bootstrap itself waits up to timeout... use a short one
+	// bootstrap answers at once; only the cycles the loop runs are slow, so the test
+	// measures Stop and not the probe
+	c.Assert(m.Bootstrap(context.Background(), []endpoints.Probe{slow}), IsNil)
+	slow.delay = 3 * time.Second
 	m.Start()
 	time.Sleep(30 * time.Millisecond)
 	start := time.Now()
@@ -366,28 +412,56 @@ func (s *HealthSuite) TestStopCancelsInFlightCycle(c *C) {
 	c.Assert(time.Since(start) < time.Second, Equals, true)
 }
 
-func (s *HealthSuite) TestBootstrapWithoutReferenceLeavesEndpointsUnverified(c *C) {
+func (s *HealthSuite) TestBootstrapWithoutReferenceStillServes(c *C) {
 	local := &fakeProbe{name: "local", err: down}
 	b := &fakeProbe{name: "b", height: 100, identity: "mainnet"}
 	x := &fakeProbe{name: "x", height: 100, identity: "testnet"}
 	m, ps := newHealthMgr(c, healthCfg(), nil, local, b, x)
 	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	// two endpoints disagree and priority-1 is silent: no reference, nobody disabled,
+	// and both keep serving rather than taking the chain dark
 	c.Assert(m.ReferenceIdentity(), Equals, "")
-	c.Assert(m.Entry("b").IdentityVerified(), Equals, false)
-	c.Assert(m.Entry("x").IdentityVerified(), Equals, false)
-	c.Assert(m.AllDown(), Equals, true)
-	// a cycle with still no majority and no priority-1 identity changes nothing
+	c.Assert(m.Entry("b").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m.Entry("x").State(), Equals, endpoints.StateHealthy)
+	c.Assert(m.AllDown(), Equals, false)
 	m.Cycle(ctxBg())
 	c.Assert(m.ReferenceIdentity(), Equals, "")
-	// priority-1 comes up: it sets the reference, x is disabled, b recovers
+	// priority-1 comes up: it sets the reference and x is disabled
 	local.set(100, nil)
 	local.identity = "mainnet"
 	m.Cycle(ctxBg())
 	c.Assert(m.ReferenceIdentity(), Equals, "mainnet")
 	c.Assert(m.Entry("x").State(), Equals, endpoints.StateDisabled)
-	m.Cycle(ctxBg())
 	c.Assert(m.Entry("b").State(), Equals, endpoints.StateHealthy)
+	m.Cycle(ctxBg())
 	c.Assert(m.Entry("local").State(), Equals, endpoints.StateHealthy)
+}
+
+// An endpoint that never reports an identity is out of rotation when verification
+// is required, even when nothing else is healthy: observing an unknown network is
+// worse than going dark.
+func (s *HealthSuite) TestUnverifiedEndpointIsNotUsedEvenWhenAllDown(c *C) {
+	a := &fakeProbe{name: "a", height: 100, identity: "g"}
+	b := &fakeProbe{name: "b", height: 100} // never reports an identity
+	m, ps := newHealthMgr(c, healthCfg(), nil, a, b)
+	c.Assert(m.Bootstrap(ctxBg(), ps), IsNil)
+	c.Assert(m.Entry("b").State(), Equals, endpoints.StateUnhealthy)
+	c.Assert(names(m.ReadCandidates()), DeepEquals, []string{"a"})
+	c.Assert(m.WriteTarget().Name, Equals, "a")
+	// a goes down too: the all-down fallback keeps retrying a, which is verified,
+	// but never reaches for b, whose network is unknown
+	a.set(0, down)
+	m.Cycle(ctxBg())
+	m.Cycle(ctxBg())
+	c.Assert(m.AllDown(), Equals, true)
+	c.Assert(names(m.ReadCandidates()), DeepEquals, []string{"a"})
+	c.Assert(names(m.VerificationCandidates(0)), DeepEquals, []string{"a"})
+	c.Assert(m.WriteTarget().Name, Equals, "a")
+	// and if a is disabled outright, nothing is usable at all
+	m.Disable("a", "identity")
+	c.Assert(m.ReadCandidates(), HasLen, 0)
+	c.Assert(m.WriteTarget(), IsNil)
+	c.Assert(m.VerificationCandidates(0), HasLen, 0)
 }
 
 func (s *HealthSuite) TestIntegrityEvictedEndpointMustMatchMajorityToRecover(c *C) {

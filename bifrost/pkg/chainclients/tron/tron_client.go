@@ -247,7 +247,7 @@ func NewTronClient(
 	for i, e := range ordered {
 		probes[i] = endpoints.CompoundProbe{
 			Probe: endpoints.NewEVMProbe(e, failoverCfg.HealthCheckTimeout),
-			Extra: endpoints.HTTPPostCheck(e, e.APIHost, "/wallet/getnowblock", failoverCfg.HealthCheckTimeout),
+			Extra: endpoints.HTTPPostCheck(e, e.APIHost, "/wallet/getnowblock", failoverCfg.HealthCheckTimeout, "blockID"),
 		}
 	}
 	if err = endpointMgr.Bootstrap(context.Background(), probes); err != nil {

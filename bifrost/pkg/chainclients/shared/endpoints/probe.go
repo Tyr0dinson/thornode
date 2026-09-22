@@ -388,9 +388,11 @@ func NewCometProbe(e config.ChainEndpointConfig, timeout time.Duration) Probe {
 	p := newJSONRPCProbe(e, e.RPCHost, timeout)
 	p.heightMethod, p.parseHeight = "status", fieldInt64("sync_info", "latest_block_height")
 	p.identityMethod, p.parseIdentity = "status", fieldString("node_info", "network")
-	p.hashMethod = "block"
+	// commit carries the block hash without the block's transactions; the block
+	// RPC would download a whole block from every endpoint on every health cycle
+	p.hashMethod = "commit"
 	p.hashParams = func(h int64) any { return map[string]any{"height": strconv.FormatInt(h, 10)} }
-	p.parseHash = fieldString("block_id", "hash")
+	p.parseHash = fieldString("signed_header", "commit", "block_id", "hash")
 	return p.asProbe()
 }
 
@@ -416,9 +418,11 @@ func NewXRPProbe(e config.ChainEndpointConfig, timeout time.Duration) Probe {
 }
 
 // HTTPPostCheck returns an extra liveness check for CompoundProbe that POSTs an
-// empty JSON object to base+path with the endpoint's credentials and requires a 200.
-// TRON uses it against api_host/wallet/getnowblock.
-func HTTPPostCheck(e config.ChainEndpointConfig, base, path string, timeout time.Duration) func(ctx context.Context) error {
+// empty JSON object to base+path with the endpoint's credentials and requires a 200
+// whose JSON body contains every field in wantFields. The field requirement is what
+// separates a real chain API from a proxy or a captive portal that answers 200 to
+// anything. TRON uses it against api_host/wallet/getnowblock with "blockID".
+func HTTPPostCheck(e config.ChainEndpointConfig, base, path string, timeout time.Duration, wantFields ...string) func(ctx context.Context) error {
 	u, err := url.Parse(NormalizeHost(base))
 	if err != nil || u.Host == "" {
 		return func(context.Context) error { return fmt.Errorf("invalid url") }
@@ -439,13 +443,28 @@ func HTTPPostCheck(e config.ChainEndpointConfig, base, path string, timeout time
 		if err != nil {
 			return Redact(err, secrets)
 		}
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxProbeBody))
+		raw, rerr := io.ReadAll(io.LimitReader(resp.Body, maxProbeBody))
 		_ = resp.Body.Close()
 		if resp.StatusCode == http.StatusTooManyRequests {
 			return fmt.Errorf("%s: http 429: %w", path, ErrRateLimited)
 		}
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("%s: http status %d", path, resp.StatusCode)
+		}
+		if len(wantFields) == 0 {
+			return nil
+		}
+		if rerr != nil {
+			return Redact(fmt.Errorf("%s: %w", path, rerr), secrets)
+		}
+		var obj map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &obj); err != nil {
+			return fmt.Errorf("%s: response is not a JSON object", path)
+		}
+		for _, f := range wantFields {
+			if _, ok := obj[f]; !ok {
+				return fmt.Errorf("%s: response has no %q field; is this endpoint the right chain API?", path, f)
+			}
 		}
 		return nil
 	}

@@ -22,8 +22,15 @@ func (e *redactedError) Unwrap() error { return e.cause }
 // superstring.
 func SecretsOf(u *url.URL, extra ...string) []string {
 	var out []string
+	// short strings are skipped so that a value like "0" does not mangle every
+	// message; explicit credentials are scrubbed from three characters
 	add := func(s string) {
 		if len(s) >= 4 {
+			out = append(out, s)
+		}
+	}
+	addCredential := func(s string) {
+		if len(s) >= 3 {
 			out = append(out, s)
 		}
 	}
@@ -37,13 +44,13 @@ func SecretsOf(u *url.URL, extra ...string) []string {
 		}
 		if u.User != nil {
 			if pw, ok := u.User.Password(); ok {
-				add(pw)
+				addCredential(pw)
 			}
 		}
 		add(u.RawQuery)
 	}
 	for _, s := range extra {
-		add(s)
+		addCredential(s)
 	}
 	for i := 1; i < len(out); i++ {
 		for j := i; j > 0 && len(out[j]) > len(out[j-1]); j-- {
