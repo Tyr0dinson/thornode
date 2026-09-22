@@ -93,8 +93,10 @@ func TestSpentRefImportKeepsExactBroadcastLiveUntilAuthoritativeObservation(t *t
 				defer server.Close()
 				signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
 				require.NoError(t, err)
-				client := &Client{chain: common.XMRChain, sidecar: signer, logger: testLogger(),
-					signedTxPayloadStore: store, signerCacheManager: newTestSignerCacheManager(t)}
+				client := &Client{
+					chain: common.XMRChain, sidecar: signer, logger: testLogger(),
+					signedTxPayloadStore: store, signerCacheManager: newTestSignerCacheManager(t),
+				}
 				observation := client.buildOutboundObservation(tx, payload.TxHash, payload.TxKey, payload.FeeAtomic, payload.SpentOutputRefs)
 				require.NotNil(t, observation)
 				observation.BlockHeight = 100 // The signing-time scanner cursor is not inclusion evidence.
