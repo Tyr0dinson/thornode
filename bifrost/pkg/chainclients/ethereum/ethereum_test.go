@@ -294,6 +294,10 @@ func (s *EthereumSuite) SetUpTest(c *C) {
 }
 
 func (s *EthereumSuite) TearDownTest(c *C) {
+	if s.server != nil {
+		s.server.Close()
+		s.server = nil
+	}
 	c.Assert(os.Unsetenv("NET"), IsNil)
 
 	if err := os.RemoveAll(s.thordir); err != nil {
