@@ -143,6 +143,30 @@ func NewReorgStore(db *leveldb.DB) *ReorgStore {
 	return &ReorgStore{db: db}
 }
 
+// LatestHeight returns the highest retained journal height, or -1 if empty.
+// Journal keys are not zero-padded, so compare their numeric heights.
+func (s *ReorgStore) LatestHeight() (int64, error) {
+	if s == nil || s.db == nil {
+		return -1, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	latest := int64(-1)
+	iter := s.db.NewIterator(util.BytesPrefix([]byte(reorgBlockMetaPrefix)), nil)
+	defer iter.Release()
+	for iter.Next() {
+		height, err := strconv.ParseInt(strings.TrimPrefix(string(iter.Key()), reorgBlockMetaPrefix), 10, 64)
+		if err != nil || height < 0 {
+			return -1, fmt.Errorf("invalid xmr reorg journal key %q", iter.Key())
+		}
+		latest = max(latest, height)
+	}
+	if err := iter.Error(); err != nil {
+		return -1, fmt.Errorf("find latest xmr reorg journal height: %w", err)
+	}
+	return latest, nil
+}
+
 func (s *ReorgStore) Get(height int64) (*reorgBlockMeta, error) {
 	if s == nil || s.db == nil {
 		return nil, nil

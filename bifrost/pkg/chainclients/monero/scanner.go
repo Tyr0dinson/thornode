@@ -309,32 +309,13 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, error) 
 		}
 	}
 
-	// While historical registration catch-up is in flight, continuity is at
-	// the durable marker rather than the requested tip. Checking that next
-	// block makes a reorg in an already checkpointed chunk visible before any
-	// stale receipt can be handed to Observer.
-	continuityBlock := block
-	markerBefore, err := s.reorgStore.GetCatchupMarker()
-	if err != nil {
-		return txIn, err
-	}
-	if markerBefore != nil && !markerBefore.completed() && markerBefore.StartHeight <= fetchHeight {
-		continuityBlock, err = s.sidecar.ChainBlock(markerBefore.StartHeight)
-		if err != nil {
-			if errors.Is(err, sidecar.ErrUnavailableBlock) {
-				return txIn, btypes.ErrUnavailableBlock
-			}
-			return txIn, fmt.Errorf("fetch monero catch-up continuity block %d: %w", markerBefore.StartHeight, err)
-		}
-	}
-
 	// Drain a fair page before a new fork can add relocation watches. This gives
 	// stale ordinary entries a chance to resolve before the bounded anti-DoS
 	// quota is evaluated during reorg emission.
 	if err = s.reconcileRelocationWatches(); err != nil {
 		return txIn, err
 	}
-	pendingMetas, reorgErr := s.processReorg(continuityBlock, chainHeight)
+	pendingMetas, reorgErr := s.processReorg(block, chainHeight)
 	if reorgErr != nil {
 		if errors.Is(reorgErr, btypes.ErrUnavailableBlock) {
 			return txIn, btypes.ErrUnavailableBlock
@@ -393,15 +374,14 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, error) 
 	for _, claim := range receiptClaims {
 		receiptItems = append(receiptItems, claim.entry.Items...)
 	}
-	// Reorg replay items are fsynced into observation receipts before the
-	// replacement journal advances. Hand off that single durable copy only;
-	// appending processReorg's return value here would make the ordinary deduper
-	// sum the same observation twice (while genuine same-TxID outputs must still
-	// aggregate normally).
+	// Each scan response already aggregated its transaction outputs. A same-height
+	// reorg or retry can return the same complete observation through both the
+	// ordinary scan and a durable receipt. Merge those copies without adding
+	// their amounts again, including after the replacement journal is committed.
 	canonicalItems := append([]*stypes.TxInItem(nil), currentItems...)
 	canonicalItems = append(canonicalItems, receiptItems...)
 	canonicalItems = append(canonicalItems, lateItems...)
-	canonicalItems = s.dedupeTxInItemsByTxID(canonicalItems)
+	canonicalItems = s.mergeTxInItemsByTxID(canonicalItems, false)
 	orderTxInItemsHighestFirst(canonicalItems)
 	canonicalItems, err = s.prepareCanonicalObservationHandoff(
 		canonicalItems, receiptClaims, completedMarker,
@@ -1881,19 +1861,36 @@ func (s *Scanner) processReorg(
 	if s.reorgStore == nil || block.Hash == "" || block.PreviousHash == "" {
 		return nil, nil
 	}
-	previousHeight := block.Height - 1
-	if block.Height <= 0 {
-		previousHeight = s.CurrentHeight() - 1
+	// The retained journal is the reconciliation boundary even when churn,
+	// registration or restart moves the requested block or signer cursor.
+	// Reconcile it before replay can overwrite old metadata or return receipts.
+	// This also detects reorgs in already checkpointed chunks of an unfinished
+	// registration catch-up before any stale receipt reaches Observer.
+	previousHeight, err := s.reorgStore.LatestHeight()
+	if err != nil {
+		return nil, err
 	}
 	if previousHeight < 0 {
 		return nil, nil
 	}
-
 	prevBlockMeta, err := s.reorgStore.Get(previousHeight)
 	if err != nil {
 		return nil, err
 	}
-	if prevBlockMeta == nil || strings.EqualFold(prevBlockMeta.BlockHash, block.PreviousHash) {
+	expectedHash := block.PreviousHash
+	switch previousHeight {
+	case block.Height - 1:
+		// Ordinary forward scanning already fetched the successor's header.
+	case block.Height:
+		expectedHash = block.Hash
+	default:
+		canonical, blockErr := s.sidecar.ChainBlock(previousHeight)
+		if blockErr != nil {
+			return nil, fmt.Errorf("fetch latest journal block %d during reorg check: %w", previousHeight, blockErr)
+		}
+		expectedHash = canonical.Hash
+	}
+	if prevBlockMeta == nil || strings.EqualFold(prevBlockMeta.BlockHash, expectedHash) {
 		return nil, nil
 	}
 
@@ -1901,7 +1898,7 @@ func (s *Scanner) processReorg(
 		Int64("height", previousHeight+1).
 		Int64("previous_height", previousHeight).
 		Str("expected_previous_hash", prevBlockMeta.BlockHash).
-		Str("actual_previous_hash", block.PreviousHash).
+		Str("actual_previous_hash", expectedHash).
 		Msg("monero reorg detected")
 
 	anchor, replacementBlocks, oldMetas, err := s.discoverReorgReplacement(previousHeight)
@@ -2725,6 +2722,13 @@ func (s *Scanner) echoedSpentOutputRefs(transfer sidecar.Transfer, sender string
 }
 
 func (s *Scanner) dedupeTxInItemsByTxID(items []*stypes.TxInItem) []*stypes.TxInItem {
+	return s.mergeTxInItemsByTxID(items, true)
+}
+
+// aggregateOutputs allows identical raw outputs within a scan response to add
+// their amounts. Complete observations from separate scans or receipts instead
+// collapse exact duplicates while retaining every durable acknowledgement.
+func (s *Scanner) mergeTxInItemsByTxID(items []*stypes.TxInItem, aggregateOutputs bool) []*stypes.TxInItem {
 	if len(items) < 2 {
 		return items
 	}
@@ -2768,7 +2772,7 @@ func (s *Scanner) dedupeTxInItemsByTxID(items []*stypes.TxInItem) []*stypes.TxIn
 		// A replay can coincide with a canonical reorg rescan of the same exact
 		// destination item. Preserve its observer acknowledgement without
 		// summing the same credit twice.
-		if ((item.OnObservedTxStored != nil || item.OnObservedTxRejected != nil) ||
+		if (!aggregateOutputs || (item.OnObservedTxStored != nil || item.OnObservedTxRejected != nil) ||
 			(existing.OnObservedTxStored != nil || existing.OnObservedTxRejected != nil)) && existing.Equals(item) {
 			composeTxInItemCallbacks(existing, item)
 			continue
