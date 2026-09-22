@@ -33,6 +33,7 @@ type Keeper interface {
 	MintAndSendToAccount(ctx cosmos.Context, to cosmos.AccAddress, coin common.Coin) error
 	GetModuleAddress(module string) (common.Address, error)
 	GetModuleAccAddress(module string) cosmos.AccAddress
+	IsModuleAccount(ctx cosmos.Context, addr cosmos.AccAddress) bool
 	GetBalance(ctx cosmos.Context, addr cosmos.AccAddress) cosmos.Coins
 	GetBalanceOf(ctx cosmos.Context, addr cosmos.AccAddress, asset common.Asset) cosmos.Coin
 	HasCoins(ctx cosmos.Context, addr cosmos.AccAddress, coins cosmos.Coins) bool
@@ -527,11 +528,12 @@ type KeeperReferenceMemo interface {
 type KeeperTHORName interface {
 	THORNameExists(ctx cosmos.Context, _ string) bool
 	GetTHORName(ctx cosmos.Context, _ string) (THORName, error)
+	GetTHORNameRecord(ctx cosmos.Context, _ string) (THORName, error)
 	SetTHORName(ctx cosmos.Context, name THORName)
 	GetTHORNameIterator(ctx cosmos.Context) cosmos.Iterator
 	DeleteTHORName(ctx cosmos.Context, _ string) error
-	SetAffiliateCollector(_ cosmos.Context, _ AffiliateFeeCollector)
-	GetAffiliateCollector(_ cosmos.Context, _ cosmos.AccAddress) (AffiliateFeeCollector, error)
+	SetAffiliateCollector(_ cosmos.Context, _ AffiliateFeeCollector) error
+	GetAffiliateCollector(_ cosmos.Context, _ string) (AffiliateFeeCollector, error)
 	GetAffiliateCollectorIterator(_ cosmos.Context) cosmos.Iterator
 	GetAffiliateCollectors(_ cosmos.Context) ([]AffiliateFeeCollector, error)
 }

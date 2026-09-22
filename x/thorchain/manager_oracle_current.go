@@ -1,6 +1,8 @@
 package thorchain
 
 import (
+	"github.com/cosmos/cosmos-sdk/telemetry"
+
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
@@ -35,6 +37,13 @@ func (om *OracleMgr) BeginBlock(ctx cosmos.Context) error {
 			ctx.Logger().Error("failed to unmarshal price, removing malformed entry by key", "key", key, "error", err)
 		}
 	}
+
+	// The price store is wiped every block and repopulated by
+	// PriceFeedQuorumBatchHandler, so this is exactly the number of symbols that
+	// reached consensus last block. 0 and staying there means the feed is dead -
+	// which thornode_oracle_price cannot show, because it is only written from
+	// inside the handler and simply freezes when the handler stops running.
+	telemetry.SetGauge(float32(len(keys)), "thornode", "oracle", "prices_set")
 
 	for _, key := range keys {
 		om.keeper.DeleteKey(ctx, key)

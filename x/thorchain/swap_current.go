@@ -202,7 +202,12 @@ func (s *SwapperImpl) Swap(ctx cosmos.Context,
 		isSimMode := isSimulationMode(ctx)
 		streamingSwap := swp.Valid() == nil
 
-		if streamingSwap || (advSwapQueueEnabled && !isSimMode) {
+		// Defer collector conversions and preferred-asset payouts to settlement,
+		// which handles module transfers and collector accounting together.
+		collectorAddress := common.Address(keeper.GetModuleAccAddress(AffiliateCollectorName).String())
+		collectorOutput := (target.IsRune() && destination.Equals(collectorAddress)) ||
+			(tx.FromAddress.Equals(collectorAddress) && strings.HasPrefix(tx.Memo, PreferredAssetSwapMemoPrefix+"-"))
+		if collectorOutput || streamingSwap || (advSwapQueueEnabled && !isSimMode) {
 			// Skip - outbound will be created by swap queue manager or settleSwap
 		} else {
 			// Create outbound for regular swaps when advanced queue is disabled

@@ -34,7 +34,13 @@ func (k KVStore) getTCYStaker(ctx cosmos.Context, key []byte, record *TCYStaker)
 	return true, nil
 }
 
-// GetTCYStaker - gets tcy staker
+// GetTCYStaker - gets tcy staker.
+//
+// For a TCY smart contract address the record is synthesised from the contract's own
+// TCY balance rather than read from the store: it is a read only view for queries and
+// reward distribution, and is not backed by TCY held in the TCYStake module. Callers
+// that move funds out of that module must reject those addresses instead of treating
+// the amount as withdrawable stake.
 func (k KVStore) GetTCYStaker(ctx cosmos.Context, address common.Address) (TCYStaker, error) {
 	if tcysmartcontract.IsTCYSmartContractAddress(address) {
 		return k.getTCYSmartContractAddressStaker(address, ctx)
@@ -105,7 +111,14 @@ func (k KVStore) TCYStakerExists(ctx cosmos.Context, address common.Address) boo
 	return store.Has(key)
 }
 
+// UpdateTCYStaker adds amount to the staker's recorded stake. TCY smart contract
+// addresses are rejected rather than credited: SetTCYStaker stores no record for them,
+// so the stake would be dropped while the TCY stayed in the TCYStake module.
 func (k KVStore) UpdateTCYStaker(ctx cosmos.Context, address common.Address, amount math.Uint) error {
+	if tcysmartcontract.IsTCYSmartContractAddress(address) {
+		return fmt.Errorf("cannot stake for TCY smart contract address: %s", address)
+	}
+
 	if k.TCYStakerExists(ctx, address) {
 		staker, err := k.GetTCYStaker(ctx, address)
 		if err != nil {
@@ -117,6 +130,8 @@ func (k KVStore) UpdateTCYStaker(ctx cosmos.Context, address common.Address, amo
 	return k.SetTCYStaker(ctx, types.NewTCYStaker(address, amount))
 }
 
+// getTCYSmartContractAddressStaker builds the read only staker view described on
+// GetTCYStaker from the TCY held in the contract's own account.
 func (k KVStore) getTCYSmartContractAddressStaker(address common.Address, ctx cosmos.Context) (TCYStaker, error) {
 	accAddress, err := address.AccAddress()
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/common/tcysmartcontract"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -48,6 +49,15 @@ func (h TCYStakeHandler) validate(ctx cosmos.Context, msg MsgTCYStake) error {
 	if stakingHalt > 0 {
 		return fmt.Errorf("tcy staking is halted")
 	}
+
+	// The keeper stores no staker record for TCY smart contract addresses, so staking
+	// from one would move the TCY into the TCYStake module with nothing to credit it to.
+	// UpdateTCYStaker refuses it too; rejecting here fails the deposit up front, as the
+	// sibling claim handler does.
+	if tcysmartcontract.IsTCYSmartContractAddress(msg.Tx.FromAddress) {
+		return fmt.Errorf("cannot stake from TCY smart contract address: %s", msg.Tx.FromAddress)
+	}
+
 	return nil
 }
 

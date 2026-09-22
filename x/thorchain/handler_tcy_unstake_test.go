@@ -4,6 +4,9 @@ import (
 	"cosmossdk.io/math"
 	"gitlab.com/thorchain/thornode/v3/common"
 	cosmos "gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/common/tcysmartcontract"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 
 	. "gopkg.in/check.v1"
 )
@@ -204,4 +207,128 @@ func (s *HandlerTCYStake) TestHandle(c *C) {
 	c.Assert(addr2Coin.Amount.Equal(math.NewInt(200)), Equals, true)
 	tcyStakeAmount = k.GetBalanceOfModule(ctx, TCYStakeName, common.TCY.Native())
 	c.Assert(tcyStakeAmount.IsZero(), Equals, true)
+}
+
+// tcySmartContractStaker returns the first configured TCY smart contract address,
+// funded with amount of TCY in its own account - which is where those addresses hold
+// their TCY, and what GetTCYStaker reports as their stake.
+func tcySmartContractStaker(c *C, ctx cosmos.Context, k keeper.Keeper, amount cosmos.Uint) (common.Address, cosmos.AccAddress) {
+	addrs, err := tcysmartcontract.GetTCYSmartContractAddresses()
+	c.Assert(err, IsNil)
+	c.Assert(len(addrs) > 0, Equals, true)
+	addr := addrs[0]
+
+	acc, err := addr.AccAddress()
+	c.Assert(err, IsNil)
+	if !amount.IsZero() {
+		coin := common.NewCoin(common.TCY, amount)
+		c.Assert(k.MintToModule(ctx, ModuleName, coin), IsNil)
+		c.Assert(k.SendFromModuleToAccount(ctx, ModuleName, acc, common.NewCoins(coin)), IsNil)
+	}
+	return addr, acc
+}
+
+func (s *HandlerTCYUnstake) TestValidateRejectsSmartContractAddress(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	k.SetMimir(ctx, "TCYUnstakingHalt", 0)
+
+	scAddr, scAcc := tcySmartContractStaker(c, ctx, k, cosmos.NewUint(500))
+
+	tx := common.NewTx(
+		common.BlankTxID,
+		scAddr,
+		GetRandomRUNEAddress(),
+		common.Coins{},
+		common.Gas{},
+		"",
+	)
+	msg := NewMsgTCYUnstake(tx, cosmos.NewUint(100_00), scAcc)
+	handler := NewTCYUnstakeHandler(NewDummyMgrWithKeeper(k))
+
+	err := handler.validate(ctx, *msg)
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Equals, "cannot unstake from TCY smart contract address: "+scAddr.String())
+}
+
+// A smart contract unstake would have paid a share of the contract's own balance out of
+// the TCYStake module - which only holds the regular stakers' deposits - and, since the
+// keeper stores no record for those addresses, nothing would have been decremented: the
+// payout grew the balance GetTCYStaker reports, so the drain could be repeated.
+func (s *HandlerTCYUnstake) TestSmartContractUnstakeCannotDrainStakeModule(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	k.SetMimir(ctx, "TCYUnstakingHalt", 0)
+
+	scAddr, scAcc := tcySmartContractStaker(c, ctx, k, cosmos.NewUint(500))
+
+	// a regular staker's TCY, held by the module on their behalf
+	staker := GetRandomRUNEAddress()
+	stakerAmount := cosmos.NewUint(1000)
+	c.Assert(k.SetTCYStaker(ctx, types.NewTCYStaker(staker, stakerAmount)), IsNil)
+	stakeCoin := common.NewCoin(common.TCY, stakerAmount)
+	c.Assert(k.MintToModule(ctx, ModuleName, stakeCoin), IsNil)
+	c.Assert(k.SendFromModuleToModule(ctx, ModuleName, TCYStakeName, common.NewCoins(stakeCoin)), IsNil)
+
+	tx := common.NewTx(
+		common.BlankTxID,
+		scAddr,
+		GetRandomRUNEAddress(),
+		common.Coins{},
+		common.Gas{},
+		"",
+	)
+	msg := NewMsgTCYUnstake(tx, cosmos.NewUint(100_00), scAcc)
+	handler := NewTCYUnstakeHandler(NewDummyMgrWithKeeper(k))
+
+	for i := 0; i < 3; i++ {
+		_, err := handler.Run(ctx, msg)
+		c.Assert(err, NotNil)
+		c.Assert(k.GetBalanceOfModule(ctx, TCYStakeName, common.TCY.Native()).Equal(stakerAmount), Equals, true)
+		c.Assert(k.GetBalanceOf(ctx, scAcc, common.TCY).Amount.Equal(math.NewInt(500)), Equals, true)
+	}
+
+	// the regular staker can still withdraw everything the module holds
+	tx.FromAddress = staker
+	stakerAcc, err := staker.AccAddress()
+	c.Assert(err, IsNil)
+	_, err = handler.Run(ctx, NewMsgTCYUnstake(tx, cosmos.NewUint(100_00), stakerAcc))
+	c.Assert(err, IsNil)
+	c.Assert(k.GetBalanceOfModule(ctx, TCYStakeName, common.TCY.Native()).IsZero(), Equals, true)
+	c.Assert(k.GetBalanceOf(ctx, stakerAcc, common.TCY).Amount.Equal(math.NewInt(1000)), Equals, true)
+}
+
+// handle() is reached only after validate() has already rejected these addresses, so
+// this pins the independent guard on the fund moving half of the path: called directly,
+// handle() must refuse before SendFromModuleToAccount pays out other stakers' deposits.
+func (s *HandlerTCYUnstake) TestHandleRejectsSmartContractAddress(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	k.SetMimir(ctx, "TCYUnstakingHalt", 0)
+
+	scAddr, scAcc := tcySmartContractStaker(c, ctx, k, cosmos.NewUint(500))
+
+	// a regular staker's TCY, held by the module on their behalf
+	stakerAmount := cosmos.NewUint(1000)
+	c.Assert(k.SetTCYStaker(ctx, types.NewTCYStaker(GetRandomRUNEAddress(), stakerAmount)), IsNil)
+	stakeCoin := common.NewCoin(common.TCY, stakerAmount)
+	c.Assert(k.MintToModule(ctx, ModuleName, stakeCoin), IsNil)
+	c.Assert(k.SendFromModuleToModule(ctx, ModuleName, TCYStakeName, common.NewCoins(stakeCoin)), IsNil)
+
+	tx := common.NewTx(
+		common.BlankTxID,
+		scAddr,
+		GetRandomRUNEAddress(),
+		common.Coins{},
+		common.Gas{},
+		"",
+	)
+	msg := NewMsgTCYUnstake(tx, cosmos.NewUint(100_00), scAcc)
+	handler := NewTCYUnstakeHandler(NewDummyMgrWithKeeper(k))
+
+	_, err := handler.handle(ctx, *msg)
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Equals, "cannot unstake from TCY smart contract address: "+scAddr.String())
+
+	// nothing left the module, and the contract's own balance is untouched
+	c.Assert(k.GetBalanceOfModule(ctx, TCYStakeName, common.TCY.Native()).Equal(stakerAmount), Equals, true)
+	c.Assert(k.GetBalanceOf(ctx, scAcc, common.TCY).Amount.Equal(math.NewInt(500)), Equals, true)
+	c.Assert(tcysmartcontract.IsTCYSmartContractAddress(scAddr), Equals, true)
 }

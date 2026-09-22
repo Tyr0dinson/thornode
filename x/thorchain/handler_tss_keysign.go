@@ -185,6 +185,18 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 		for _, na := range vaultMemberNodes {
 			if msg.Signer.Equals(na.NodeAddress) {
 				voter.LastRoundCount++
+				// Pre-freeze early warning: two of these freeze the vault below,
+				// and LastRoundCount is reset to 0 on consensus, so it cannot be
+				// recovered from state afterwards. round is bounded to the four
+				// terminal rounds by the guard above.
+				telemetry.IncrCounterWithLabels(
+					[]string{"thornode", "tss", "keysign", "terminal_round_report"},
+					1,
+					[]metrics.Label{
+						telemetry.NewLabel("pubkey", msg.PubKey.String()),
+						telemetry.NewLabel("round", round),
+					},
+				)
 				break
 			}
 		}
@@ -274,6 +286,21 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 		if err != nil {
 			return nil, wrapError(ctx, err, "fail to inc slash points")
 		}
+
+		// Which node is actually being blamed. thornode_tss_keysign_failure says a
+		// keysign failed but not who caused it, and thornode_point_slash{reason=
+		// "failed_keysign"} cannot answer it either: the same slashCtx charges the
+		// honest reporter above and the blamed offender here, so the two are
+		// indistinguishable. msg.Blame.Round is canonical by ValidateBasic.
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "tss", "keysign", "blame"},
+			1,
+			[]metrics.Label{
+				telemetry.NewLabel("node_address", na.NodeAddress.String()),
+				telemetry.NewLabel("round", msg.Blame.Round),
+				telemetry.NewLabel("pubkey", msg.PubKey.String()),
+			},
+		)
 
 		if emitErr := h.mgr.EventMgr().EmitEvent(ctx, NewEventSlashPoint(na.NodeAddress, slashPoints, "fail keysign")); emitErr != nil {
 			ctx.Logger().Error("fail to emit slash point event")

@@ -2656,3 +2656,89 @@ func (s *HelperSuite) TestGetMinSlipBpsNonL1IgnoresDynamic(c *C) {
 	result = getMinSlipBps(ctx, k, common.NoAddress, derivedBTC, false, affiliates, affBps, btc, common.RuneAsset(), dfm)
 	c.Assert(result.Uint64(), Equals, uint64(40))
 }
+
+func (s *HelperSuite) TestEmitEndBlockTelemetry(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+
+	// pool with liquidity, so the pool loop actually runs
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(10 * common.One)
+	pool.LPUnits = cosmos.NewUint(100 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	// active node
+	na := GetRandomValidatorNode(NodeActive)
+	na.Bond = cosmos.NewUint(1000 * common.One)
+	na.Version = "3.0.0"
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	// active asgard holding the pool asset
+	vault := GetRandomVault()
+	vault.Status = ActiveVault
+	vault.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One)))
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	// chain observation state + network fee
+	c.Assert(k.SetLastChainHeight(ctx, common.BTCChain, 900000), IsNil)
+	c.Assert(k.SaveNetworkFee(ctx, common.BTCChain, NetworkFee{
+		Chain: common.BTCChain, TransactionSize: 1000, TransactionFeeRate: 10,
+	}), IsNil)
+
+	// in-flight streaming swap and a secured asset
+	k.SetStreamingSwap(ctx, StreamingSwap{
+		TxID:     GetRandomTxHash(),
+		Quantity: 10,
+		Count:    3,
+		Deposit:  cosmos.NewUint(5 * common.One),
+		In:       cosmos.NewUint(1 * common.One),
+		Out:      cosmos.NewUint(1 * common.One),
+	})
+	k.SetSecuredAsset(ctx, SecuredAsset{Asset: common.BTCAsset, Depth: cosmos.NewUint(common.One)})
+
+	// mimir: a plain value and a block-height-valued halt key
+	k.SetMimir(ctx, "MaxSynthPerPoolDepth", 1700)
+	k.SetMimir(ctx, "HaltBTCChain", ctx.BlockHeight())
+
+	// emitEndBlockTelemetry recovers panics internally, so also exercise the
+	// sub-emitters directly - a nil deref there fails the test loudly.
+	c.Assert(emitEndBlockTelemetry(ctx, mgr), IsNil)
+	emitChainTelemetry(ctx, mgr)
+	emitNetworkStateTelemetry(ctx, mgr)
+	emitStreamingSwapTelemetry(ctx, mgr)
+	emitSecuredAssetTelemetry(ctx, mgr)
+	emitMimirTelemetry(ctx, mgr)
+	emitVaultDetailTelemetry(ctx, mgr)
+	emitSolvencyTelemetry(ctx, mgr)
+	emitChainDetailTelemetry(ctx, mgr)
+	emitQueueDetailTelemetry(ctx, mgr)
+	emitTCYTelemetry(ctx, mgr)
+}
+
+// The mimir gauge is keyed by the store key with its prefix trimmed; if that
+// trimming regresses every mimir series silently renames itself.
+func (s *HelperSuite) TestEmitMimirTelemetryKeys(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+
+	k.SetMimir(ctx, "MaxSynthPerPoolDepth", 1700)
+	k.SetMimir(ctx, "HaltBTCChain", 42)
+
+	got := map[string]int64{}
+	iter := k.GetMimirIterator(ctx)
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		value := types.ProtoInt64{}
+		c.Assert(k.Cdc().Unmarshal(iter.Value(), &value), IsNil)
+		got[trimKeyPrefix(iter.Key())] = value.GetValue()
+	}
+
+	// KVStore.GetKey uppercases, so the gauge label is the upper-cased key. That
+	// matches the label on the thornode_mimir_changed counter and on EventSetMimir,
+	// so a PromQL join across the three lines up.
+	c.Assert(got["MAXSYNTHPERPOOLDEPTH"], Equals, int64(1700))
+	c.Assert(got["HALTBTCCHAIN"], Equals, int64(42))
+}

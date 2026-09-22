@@ -5,6 +5,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	. "gopkg.in/check.v1"
 )
 
@@ -199,12 +200,7 @@ func (s *HandlerWasmExecSuite) TestWasmExecHandler_NonSecuredAsset_DepositSucces
 	h := NewWasmExecHandler(mgr)
 
 	// Set up a BTC pool so SecuredAssetManager.Deposit can succeed
-	btcPool := NewPool()
-	btcPool.Asset = common.BTCAsset
-	btcPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
-	btcPool.BalanceRune = cosmos.NewUint(10000 * common.One)
-	btcPool.Status = PoolAvailable
-	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+	c.Assert(mgr.Keeper().SetPool(ctx, availableBTCPool()), IsNil)
 
 	msg := NewMsgWasmExec(
 		common.BTCAsset,
@@ -262,12 +258,7 @@ func (s *HandlerWasmExecSuite) TestWasmExecHandler_DepositRolledBackOnExecuteFai
 	h := NewWasmExecHandler(mgr)
 
 	// Set up a BTC pool so SecuredAssetManager.Deposit can succeed.
-	btcPool := NewPool()
-	btcPool.Asset = common.BTCAsset
-	btcPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
-	btcPool.BalanceRune = cosmos.NewUint(10000 * common.One)
-	btcPool.Status = PoolAvailable
-	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+	c.Assert(mgr.Keeper().SetPool(ctx, availableBTCPool()), IsNil)
 
 	sender := GetRandomBech32Addr()
 	securedAsset := common.BTCAsset.GetSecuredAsset()
@@ -333,4 +324,129 @@ func (s *HandlerWasmExecSuite) TestWasmExecHandler_THORChainAssetRejected(c *C) 
 	result, err := h.Run(ctx, msg)
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
+}
+
+// availableBTCPool returns a funded, available BTC pool for the exec tests.
+func availableBTCPool() Pool {
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	pool.BalanceRune = cosmos.NewUint(10000 * common.One)
+	pool.Status = PoolAvailable
+	return pool
+}
+
+// execMsgForBTC builds a layer-1 BTC exec message minting secured shares for sender.
+func execMsgForBTC(sender cosmos.AccAddress) *MsgWasmExec {
+	return NewMsgWasmExec(
+		common.BTCAsset,
+		cosmos.NewUint(100),
+		GetRandomBech32Addr(),
+		sender,
+		GetRandomBech32Addr(),
+		[]byte(`{"action":"test"}`),
+		common.Tx{
+			ID:          GetRandomTxHash(),
+			FromAddress: GetRandomBTCAddress(),
+		},
+	)
+}
+
+// TestWasmExecHandler_PerChainDepositHalt ensures an exec memo cannot mint
+// secured-asset shares while that chain's secured deposits are halted by
+// governance, which the dedicated secured-asset deposit handler already
+// enforces (#2702).
+func (s *HandlerWasmExecSuite) TestWasmExecHandler_PerChainDepositHalt(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	mgr.wasmManager = NewDummyWasmManager()
+	h := NewWasmExecHandler(mgr)
+
+	c.Assert(mgr.Keeper().SetPool(ctx, availableBTCPool()), IsNil)
+	mgr.Keeper().SetMimir(ctx, fmt.Sprintf(constants.MimirTemplateSecuredAssetHaltDeposit, common.BTCChain), 1)
+
+	sender := GetRandomBech32Addr()
+	result, err := h.Run(ctx, execMsgForBTC(sender))
+	c.Assert(err, NotNil)
+	c.Assert(result, IsNil)
+	c.Check(err.Error(), Matches, ".*secured asset deposits are disabled.*")
+
+	// nothing was minted for the sender
+	c.Check(mgr.SecuredAssetManager().BalanceOf(ctx, common.BTCAsset, sender).IsZero(), Equals, true)
+}
+
+// TestWasmExecHandler_SecuredAssetNotHalted ensures the per-chain deposit halt
+// only gates exec calls that mint new shares; moving already minted secured
+// assets into a contract is unaffected.
+func (s *HandlerWasmExecSuite) TestWasmExecHandler_SecuredAssetNotHalted(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	mgr.wasmManager = NewDummyWasmManager()
+	h := NewWasmExecHandler(mgr)
+
+	mgr.Keeper().SetMimir(ctx, fmt.Sprintf(constants.MimirTemplateSecuredAssetHaltDeposit, common.BTCChain), 1)
+
+	msg := NewMsgWasmExec(
+		common.BTCAsset.GetSecuredAsset(),
+		cosmos.NewUint(100),
+		GetRandomBech32Addr(),
+		GetRandomBech32Addr(),
+		GetRandomBech32Addr(),
+		[]byte(`{"action":"test"}`),
+		common.Tx{ID: GetRandomTxHash()},
+	)
+
+	result, err := h.Run(ctx, msg)
+	c.Assert(err, IsNil)
+	c.Assert(result, NotNil)
+}
+
+// TestWasmExecHandler_PoolUnavailable ensures an exec memo cannot mint secured
+// shares for an asset whose layer-1 pool is not available (#2702).
+func (s *HandlerWasmExecSuite) TestWasmExecHandler_PoolUnavailable(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	mgr.wasmManager = NewDummyWasmManager()
+	h := NewWasmExecHandler(mgr)
+
+	pool := availableBTCPool()
+	pool.Status = PoolStaged
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	sender := GetRandomBech32Addr()
+	result, err := h.Run(ctx, execMsgForBTC(sender))
+	c.Assert(err, NotNil)
+	c.Assert(result, IsNil)
+	c.Check(err.Error(), Matches, ".*pool.*unavailable.*")
+
+	c.Check(mgr.SecuredAssetManager().BalanceOf(ctx, common.BTCAsset, sender).IsZero(), Equals, true)
+}
+
+// TestWasmExecHandler_TVLCap ensures an exec memo cannot mint secured shares
+// beyond the bond-backed TVL cap (#2702).
+func (s *HandlerWasmExecSuite) TestWasmExecHandler_TVLCap(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	mgr.wasmManager = NewDummyWasmManager()
+	h := NewWasmExecHandler(mgr)
+
+	c.Assert(mgr.Keeper().SetPool(ctx, availableBTCPool()), IsNil)
+
+	// mocknet disables StrictBondLiquidityRatio, so enable it to exercise the cap
+	mgr.constAccessor = constants.NewDummyConstants(map[constants.ConstantName]int64{
+		constants.MaximumLiquidityRune: 1,
+	}, map[constants.ConstantName]bool{
+		constants.StrictBondLiquidityRatio: true,
+	}, map[constants.ConstantName]string{})
+
+	// an asgard vault holding far more value than the (zero) active bond
+	vault := GetRandomVault()
+	vault.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(10000*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	sender := GetRandomBech32Addr()
+	result, err := h.Run(ctx, execMsgForBTC(sender))
+	c.Assert(err, NotNil)
+	c.Assert(result, IsNil)
+	c.Check(err.Error(), Matches, ".*secured deposits more than bond.*")
+
+	c.Check(mgr.SecuredAssetManager().BalanceOf(ctx, common.BTCAsset, sender).IsZero(), Equals, true)
 }

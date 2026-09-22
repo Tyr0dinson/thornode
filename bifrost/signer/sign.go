@@ -515,6 +515,7 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 		keygenStart := time.Now()
 		keygenTime := time.Since(keygenStart).Milliseconds()
 		keygenChains := s.keygenChainsForType(keygenReq.Type)
+		go s.warnOnChainsMissingFromKeygen(keygenChains, keygenReq.Type)
 		var pubKey common.PubKeySet
 		var blame []ttypes.Blame
 		var frostPubKey common.PubKey
@@ -681,6 +682,40 @@ func (s *Signer) keygenChainsForType(keygenType ttypes.KeygenType) common.Chains
 		chains = append(chains, chain)
 	}
 	return chains.Distinct()
+}
+
+// warnOnChainsMissingFromKeygen reports chains the active vaults serve that this
+// bifrost is not configured for. THORNode keeps a chain in a new vault only when
+// a supermajority of the keygen members report it, so a node running with a
+// chain disabled can drop that chain from its vault and stall the churn on the
+// init vault chain set guard. Log only - never block or alter the report.
+//
+// Runs off the keygen goroutine: GetAsgards goes through the retrying HTTP
+// client with no overall deadline, so a stalled thornode must not delay this
+// node's entry into the ceremony past the party timeout.
+func (s *Signer) warnOnChainsMissingFromKeygen(keygenChains common.Chains, keygenType ttypes.KeygenType) {
+	if keygenType == ttypes.KeygenType_XMRMonovaultKeygen {
+		return // fixed chain set, not derived from local config
+	}
+	asgards, err := s.thorchainBridge.GetAsgards()
+	if err != nil {
+		s.logger.Debug().Err(err).Msg("fail to fetch asgards for keygen chain check")
+		return
+	}
+	var missing common.Chains
+	for _, vault := range asgards {
+		for _, chain := range vault.GetChains() {
+			if chain.Equals(common.XMRChain) || keygenChains.Has(chain) || missing.Has(chain) {
+				continue
+			}
+			missing = append(missing, chain)
+		}
+	}
+	for _, chain := range missing {
+		s.logger.Error().
+			Stringer("chain", chain).
+			Msg("chain is served by the active vaults but disabled in this bifrost - keygen will report without it and may stall the churn")
+	}
 }
 
 func (s *Signer) runCustomKeygenHooks(
@@ -1220,6 +1255,23 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	if err != nil {
 		s.logger.Error().Err(err).Str("memo", tx.Memo).Msg("fail to broadcast tx to chain")
 
+		// A chain client returns ErrResignRequired when the signed bytes can never
+		// land (e.g. a SOL tx whose blockhash expired mid-keysign): re-broadcasting
+		// the same bytes loops forever. Clear the stored signed tx + checkpoint so
+		// the next pass re-enters SignTx, where the chain's sign-time validity gate
+		// re-evaluates (for SOL, dropping the item for a deterministic fresh-height
+		// reschedule). Every other broadcast error keeps the signed tx for a plain
+		// broadcast retry, since re-signing wastes a keysign and risks a double
+		// broadcast when the tx may still land.
+		if errors.Is(err, types.ErrResignRequired) {
+			item.SignedTx = nil
+			item.Checkpoint = nil
+			if storeErr := s.storage.Set(item); storeErr != nil {
+				s.logger.Error().Err(storeErr).Msg("fail to clear signed tx for re-sign")
+			}
+			return nil, observation, err
+		}
+
 		// store the signed tx for the next retry
 		item.SignedTx = signedTx
 		item.Observation = observation
@@ -1288,6 +1340,18 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 	checkpoint, obs, err := runWithContext(ctx, func() ([]byte, *types.TxInItem, error) {
 		return s.signAndBroadcast(item)
 	})
+
+	if errors.Is(err, chainclienttypes.ErrTxExpired) {
+		// Expiry is terminal for this attempt, including saved payloads and
+		// terminal-round retries. Never auto-observe it as a successful outbound.
+		s.logger.Warn().Err(err).Interface("tx", item.TxOutItem).
+			Msg("retiring expired transaction; awaiting THORChain rescheduling")
+		if removeErr := s.storage.Remove(item); removeErr != nil {
+			s.logger.Error().Err(removeErr).Msg("fail to remove expired tx out store item")
+		}
+		cancel()
+		return
+	}
 
 	// Apply spent output refs from the signing observation before handling
 	// errors. The observation is populated during FROST signing and contains

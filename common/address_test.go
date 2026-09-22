@@ -27,6 +27,16 @@ func (s *AddressSuite) TestAddressEqualsNonXMRPreservesLegacyBehavior(c *C) {
 	c.Check(AddressEquals(BTCChain, Address("legacyAddress"), Address("LEGACYaddress")), Equals, true)
 }
 
+// TestEquivalentAddressesDefersToAddressEquals documents that off the Zcash
+// path the equivalence is exactly AddressEquals - notably the case-sensitive
+// Monero comparison.
+func (s *AddressSuite) TestEquivalentAddressesDefersToAddressEquals(c *C) {
+	c.Check(EquivalentAddresses(XMRChain, Address("4abcDEF"), Address("4abcDEF")), Equals, true)
+	c.Check(EquivalentAddresses(XMRChain, Address("4abcDEF"), Address("4Abcdef")), Equals, false)
+	c.Check(EquivalentAddresses(BTCChain, Address("legacyAddress"), Address("LEGACYaddress")), Equals, true)
+	c.Check(EquivalentAddresses(BTCChain, Address("legacyAddress"), Address("other")), Equals, false)
+}
+
 func (s *AddressSuite) TestAddress(c *C) {
 	c.Assert(AllChains, HasLen, 19)
 

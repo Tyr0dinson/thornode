@@ -652,7 +652,7 @@ Payout targets behave as follows:
 - No stored target pays native RUNE directly to the bond provider.
 - A THORChain address pays native RUNE to that address. Network module addresses are not allowed.
 - A THORName without a preferred asset pays native RUNE to its THORChain alias, or to its owner when no THORChain alias is set.
-- A THORName with a preferred asset credits the owner's affiliate collector; conversion and delivery then follow the preferred-asset collector rules.
+- A THORName with a preferred asset credits that THORName's affiliate collector; conversion and delivery then follow the preferred-asset collector rules.
 - THORName ownership is checked both when configuring the target and when making a payout.
 
 For a non-zero BPS, omitting `PAYOUTTARGET` or leaving it empty preserves the currently stored target. If no target was previously stored, the payout goes directly to the provider. To clear an existing target while keeping Bond Yield enabled, send two transactions: first `BONDYIELD:NODEADDR:0`, then `BONDYIELD:NODEADDR:BPS` with the desired non-zero BPS. A target supplied with BPS `0` is ignored and cleared.

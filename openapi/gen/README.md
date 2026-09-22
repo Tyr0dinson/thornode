@@ -102,6 +102,7 @@ Class | Method | HTTP request | Description
 *NetworkApi* | [**InboundAddresses**](docs/NetworkApi.md#inboundaddresses) | **Get** /thorchain/inbound_addresses | 
 *NetworkApi* | [**Lastblock**](docs/NetworkApi.md#lastblock) | **Get** /thorchain/lastblock | 
 *NetworkApi* | [**LastblockChain**](docs/NetworkApi.md#lastblockchain) | **Get** /thorchain/lastblock/{chain} | 
+*NetworkApi* | [**Logs**](docs/NetworkApi.md#logs) | **Get** /thorchain/logs | 
 *NetworkApi* | [**Network**](docs/NetworkApi.md#network) | **Get** /thorchain/network | 
 *NetworkApi* | [**OutboundFeeAsset**](docs/NetworkApi.md#outboundfeeasset) | **Get** /thorchain/outbound_fee/{asset} | 
 *NetworkApi* | [**OutboundFees**](docs/NetworkApi.md#outboundfees) | **Get** /thorchain/outbound_fees | 
@@ -229,6 +230,7 @@ Class | Method | HTTP request | Description
  - [LiquidityProvider](docs/LiquidityProvider.md)
  - [LiquidityProviderSummary](docs/LiquidityProviderSummary.md)
  - [LockedSupply](docs/LockedSupply.md)
+ - [LogEntry](docs/LogEntry.md)
  - [MetricsResponse](docs/MetricsResponse.md)
  - [MimirNodesResponse](docs/MimirNodesResponse.md)
  - [MimirVote](docs/MimirVote.md)

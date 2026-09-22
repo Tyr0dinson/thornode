@@ -298,6 +298,12 @@ func newApp(
 ) servertypes.Application {
 	baseappOptions := DefaultBaseappOptions(appOpts)
 
+	// node-local capture of thorchain module logs for /thorchain/logs (off unless
+	// configured). Wired here rather than in NewChainApp so appExport's app never
+	// touches the process-wide store.
+	homePath := cast.ToString(appOpts.Get(flags.FlagHome))
+	thorlog.InitBlockLogs(filepath.Join(homePath, "data", "thorchain_logs"), config.GetThornode().API.Logs.RetainBlocks)
+
 	var wasmOpts []wasmkeeper.Option
 	if cast.ToBool(appOpts.Get("telemetry.enabled")) {
 		wasmOpts = append(wasmOpts, wasmkeeper.WithVMCacheMetrics(prometheus.DefaultRegisterer))

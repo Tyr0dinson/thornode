@@ -2274,13 +2274,12 @@ func (s *QuerierSuite) TestQuerySwap(c *C) {
 	c.Assert(queryPoolsResp.Memo, Equals, "")
 
 	longDest := "43hSSzguniAQWhHnwk1rcYH51z2thnf6AVfNaMwg9t99S78LtMrjrKdJZCnLTnFVzS9hQNjVXdJi3hUxMwmPrPDkRY3YMUb"
-	longRefund := "46QDeeLcyrEGkn7NyaJCsD3NJbDgjJk1BXiopzvU6aejK5g6JTU2K5uJZCnLTnFVzS9hQNjVXdJi3hUxMwmPrPDkRXBN2hK"
 	queryPoolsResp, err = s.queryServer.QuoteSwap(s.ctx, &types.QueryQuoteSwapRequest{
 		FromAsset:         common.BTCAsset.String(),
 		ToAsset:           common.XMRAsset.String(),
 		Amount:            "100000000",
 		Destination:       longDest,
-		RefundAddress:     longRefund,
+		RefundAddress:     addressBTC,
 		Affiliate:         GetRandomTHORAddress().String() + "/" + GetRandomTHORAddress().String() + "/" + GetRandomTHORAddress().String(),
 		AffiliateBps:      "10/10/10",
 		StreamingInterval: "2",

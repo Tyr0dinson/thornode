@@ -367,6 +367,16 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				if err != nil {
 					ctx.Logger().Error("Unable to get vault", "error", err, "vault pub key", toi.VaultPubKey.String())
 					resultErr = fmt.Errorf("failed to get vault: %w", err)
+					// the outbound is skipped entirely this pass - it never reaches
+					// the reschedule success counter below
+					telemetry.IncrCounterWithLabels(
+						[]string{"thornode", "outbound", "reschedule_failed"},
+						float32(1),
+						[]metrics.Label{
+							telemetry.NewLabel("chain", toi.Chain.String()),
+							telemetry.NewLabel("reason", "no_vault"),
+						},
+					)
 					continue
 				}
 
@@ -416,6 +426,14 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 					if err != nil {
 						ctx.Logger().Error("fail to get observed tx voter", "error", err)
 						resultErr = fmt.Errorf("failed to get observed tx voter: %w", err)
+						telemetry.IncrCounterWithLabels(
+							[]string{"thornode", "outbound", "reschedule_failed"},
+							float32(1),
+							[]metrics.Label{
+								telemetry.NewLabel("chain", toi.Chain.String()),
+								telemetry.NewLabel("reason", "no_voter"),
+							},
+						)
 						continue
 					}
 				}
@@ -434,6 +452,16 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 							"hash", toi.InHash,
 							"attempts", attempts,
 							"max", maxRetiredVaultRecoveryAttempts)
+						// dropped on the floor: no reschedule, no recovery, no event
+						telemetry.IncrCounterWithLabels(
+							[]string{"thornode", "outbound", "abandoned"},
+							float32(1),
+							[]metrics.Label{
+								telemetry.NewLabel("chain", toi.Chain.String()),
+								telemetry.NewLabel("asset", toi.Coin.Asset.String()),
+								telemetry.NewLabel("reason", "retired_vault_max_attempts"),
+							},
+						)
 						continue
 					}
 
@@ -488,12 +516,32 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 							treasuryErr := s.sendFailedOutboundToTreasury(ctx, mgr, toi, vault, memo)
 							if treasuryErr != nil {
 								ctx.Logger().Error("failed to send outbound to treasury recovery", "error", treasuryErr, "hash", toi.InHash)
+								// max attempts reached AND recovery could not be
+								// queued: the funds are stranded with no further
+								// mechanism
+								telemetry.IncrCounterWithLabels(
+									[]string{"thornode", "outbound", "treasury_recovery_failed"},
+									float32(1),
+									[]metrics.Label{
+										telemetry.NewLabel("chain", toi.Chain.String()),
+										telemetry.NewLabel("asset", toi.Coin.Asset.String()),
+									},
+								)
 							} else {
 								txs.TxArray[i].OutHash = common.BlankTxID
 							}
 						} else {
 							// For non-outbound transactions (shouldn't happen often), just log and drop
 							ctx.Logger().Info("txn dropped, too many attempts (non-outbound)", "hash", toi.InHash)
+							telemetry.IncrCounterWithLabels(
+								[]string{"thornode", "outbound", "abandoned"},
+								float32(1),
+								[]metrics.Label{
+									telemetry.NewLabel("chain", toi.Chain.String()),
+									telemetry.NewLabel("asset", toi.Coin.Asset.String()),
+									telemetry.NewLabel("reason", "non_outbound_max_attempts"),
+								},
+							)
 						}
 						continue
 					}
@@ -556,6 +604,18 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 						// TODO add split logic to send it out from multiple asgards in
 						// this edge case.
 						ctx.Logger().Error("unable to determine asgard vault to send funds, trying first asgard")
+						// deliberately assigning to a vault without enough funds,
+						// expecting failure and reschedule - an unbounded retry
+						// loop. A non-zero rate means this asset is over-committed
+						// against vault balances network-wide.
+						telemetry.IncrCounterWithLabels(
+							[]string{"thornode", "outbound", "no_vault_available"},
+							float32(1),
+							[]metrics.Label{
+								telemetry.NewLabel("chain", toi.Chain.String()),
+								telemetry.NewLabel("asset", toi.Coin.Asset.String()),
+							},
+						)
 						if len(active) > 0 {
 							// Fall back on the vault with the most available funds.
 							vault = active.SortBy(mainCoin.Asset)[0]
@@ -636,6 +696,14 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				// if a pool with the asset name doesn't exist, skip rescheduling
 				if !toi.Coin.IsRune() && !s.keeper.PoolExist(ctx, toi.Coin.Asset) {
 					ctx.Logger().Error("fail to add outbound to queue", "error", "coin is not rune and does not have an associated pool")
+					telemetry.IncrCounterWithLabels(
+						[]string{"thornode", "outbound", "reschedule_failed"},
+						float32(1),
+						[]metrics.Label{
+							telemetry.NewLabel("chain", toi.Chain.String()),
+							telemetry.NewLabel("reason", "no_pool"),
+						},
+					)
 					continue
 				}
 
@@ -646,8 +714,26 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				if err != nil {
 					ctx.Logger().Error("fail to add outbound to queue", "error", err)
 					resultErr = fmt.Errorf("failed to add outbound to queue: %w", err)
+					telemetry.IncrCounterWithLabels(
+						[]string{"thornode", "outbound", "reschedule_failed"},
+						float32(1),
+						[]metrics.Label{
+							telemetry.NewLabel("chain", toi.Chain.String()),
+							telemetry.NewLabel("reason", "queue_add_failed"),
+						},
+					)
 					continue
 				}
+				// an outbound only lands here when it went unsigned for a whole
+				// signing period - a sustained rate is the stuck-outbound alarm
+				telemetry.IncrCounterWithLabels(
+					[]string{"thornode", "outbound", "rescheduled"},
+					float32(1),
+					[]metrics.Label{
+						telemetry.NewLabel("chain", toi.Chain.String()),
+						telemetry.NewLabel("asset", toi.Coin.Asset.String()),
+					},
+				)
 				// because the txout item has been rescheduled, thus mark the replaced tx out item as already send out, even it is not
 				// in this way bifrost will not send it out again cause node to be slashed
 				txs.TxArray[i].OutHash = common.BlankTxID
@@ -814,6 +900,19 @@ func (s *SlasherImpl) queueRecoverySwap(
 		ctx.Logger().Error("failed to emit recovery event", "error", err)
 	}
 
+	// every increment is a user who did not receive their funds; a burst on one
+	// chain is the signature of a chain client that cannot broadcast.
+	// recoveryType is a compile-time literal at both call sites.
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "outbound", "treasury_recovery"},
+		float32(1),
+		[]metrics.Label{
+			telemetry.NewLabel("chain", toi.Chain.String()),
+			telemetry.NewLabel("asset", toi.Coin.Asset.String()),
+			telemetry.NewLabel("recovery_type", recoveryType),
+		},
+	)
+
 	return nil
 }
 
@@ -978,6 +1077,17 @@ func (s *SlasherImpl) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coin
 			// set mimirs to pause signing
 			haltsignKey := fmt.Sprintf(constants.MimirTemplateHaltSigning, coin.Asset.Chain)
 			s.keeper.SetMimir(ctx, haltsignKey, ctx.BlockHeight())
+			// an automatic PauseOnSlashThreshold trip means a theft/overspend
+			// large enough to halt the chain; thornode_chain_halted alone cannot
+			// distinguish this from a routine operator mimir halt
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "slash", "auto_halt"},
+				float32(1),
+				[]metrics.Label{
+					telemetry.NewLabel("chain", coin.Asset.Chain.String()),
+					telemetry.NewLabel("kind", "signing"),
+				},
+			)
 			mimirEvent1 := NewEventSetMimir(haltsignKey, strconv.FormatInt(ctx.BlockHeight(), 10))
 			if err := mgr.EventMgr().EmitEvent(ctx, mimirEvent1); err != nil {
 				ctx.Logger().Error("fail to emit set_mimir event", "error", err)
@@ -985,6 +1095,14 @@ func (s *SlasherImpl) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coin
 			// set mimirs to pause trading
 			halttradeKey := fmt.Sprintf(constants.MimirTemplateHaltTrading, coin.Asset.Chain)
 			s.keeper.SetMimir(ctx, halttradeKey, ctx.BlockHeight())
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "slash", "auto_halt"},
+				float32(1),
+				[]metrics.Label{
+					telemetry.NewLabel("chain", coin.Asset.Chain.String()),
+					telemetry.NewLabel("kind", "trading"),
+				},
+			)
 			mimirEvent2 := NewEventSetMimir(halttradeKey, strconv.FormatInt(ctx.BlockHeight(), 10))
 			if err := mgr.EventMgr().EmitEvent(ctx, mimirEvent2); err != nil {
 				ctx.Logger().Error("fail to emit set_mimir event", "error", err)
@@ -1013,6 +1131,16 @@ func (s *SlasherImpl) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coin
 		if totalRuneSlashed.LT(stolenRuneValue) {
 			// this should theoretically never happen
 			ctx.Logger().Info("total slashed bond amount is less than RUNE value", "slashed_bond", totalRuneSlashed.String(), "rune_value", stolenRuneValue.String())
+			// broken invariant: bond could not cover the theft, so the pool is
+			// credited less RUNE than the asset it lost
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "vault", "slash", "shortfall_rune"},
+				telem(common.SafeSub(stolenRuneValue, totalRuneSlashed)),
+				[]metrics.Label{
+					telemetry.NewLabel("asset", coin.Asset.String()),
+					telemetry.NewLabel("vault_type", vault.Type.String()),
+				},
+			)
 			runeToAsgard = totalRuneSlashed
 		}
 		runeToReserve := common.SafeSub(totalRuneSlashed, runeToAsgard)
@@ -1211,13 +1339,83 @@ func logStaleOutboundObservation(ctx cosmos.Context, status staleOutboundObserva
 	ctx.Logger().Debug(msg, keyvals...)
 }
 
-func (s *SlasherImpl) needsNewVault(ctx cosmos.Context, mgr Manager, vault Vault, signingTransPeriod, startHeight int64, toi TxOutItem) bool {
-	outhashes := mgr.Keeper().GetObservedLink(ctx, toi.InHash)
-	if len(outhashes) == 0 {
+// outboundObservationFulfils reports whether an observed outbound plausibly
+// fulfils toi, disregarding which vault sent it: the same destination, the same
+// asset, and an amount the outbound handler would accept.
+//
+// The destination is matched with the same comparator CommonOutboundTxHandler
+// and matchActionItem use, so an unrelated transaction cannot stand in for the
+// scheduled outbound and the slasher's notion of "in progress" cannot diverge
+// from the handlers' notion of "done".
+func outboundObservationFulfils(ctx cosmos.Context, mgr Manager, tx ObservedTx, toi TxOutItem) bool {
+	return len(tx.Tx.Coins) == 1 &&
+		tx.Tx.Coins[0].Asset.Equals(toi.Coin.Asset) &&
+		common.EquivalentAddresses(toi.Chain, tx.Tx.ToAddress, toi.ToAddress) &&
+		outboundObservationAmountMatches(ctx, mgr, tx.Tx, toi)
+}
+
+// outboundObservationAmountMatches applies the amount tolerances
+// CommonOutboundTxHandler already allows when deciding that an observed
+// transaction is the scheduled outbound: the exact amount, the amount rounded
+// to the chain's precision, or - for a gas asset - the same total spend once
+// the gas is accounted for.
+//
+// Unlike the handler this does not withhold the match when the signer overspent
+// MaxGas. That refinement exists so the handler can slash rather than mark the
+// action done; here the question is only whether funds have already left the
+// vault, and they have. Treating an overspending broadcast as "not this
+// outbound" would invite a second payment, which is the failure this guard
+// exists to prevent.
+func outboundObservationAmountMatches(ctx cosmos.Context, mgr Manager, tx common.Tx, toi TxOutItem) bool {
+	scheduled := common.Coins{toi.Coin}
+	if tx.Coins.EqualsEx(scheduled) {
 		return true
 	}
 
-	for _, hash := range outhashes {
+	// The scheduled amount may carry more precision than the chain can express.
+	pool, err := mgr.Keeper().GetPool(ctx, toi.Coin.Asset)
+	if err != nil {
+		ctx.Logger().Error("fail to get pool", "asset", toi.Coin.Asset, "error", err)
+	} else if !pool.IsEmpty() {
+		rounded := common.NewCoin(toi.Coin.Asset, cosmos.RoundToDecimal(toi.Coin.Amount, pool.Decimals))
+		if tx.Coins.EqualsEx(common.Coins{rounded}) {
+			return true
+		}
+	}
+
+	// A gas asset outbound pays its own gas, so the observed amount differs from
+	// the scheduled one by however much gas was actually spent.
+	gasAsset := toi.Chain.GetGasAsset()
+	if !toi.Coin.Asset.Equals(gasAsset) {
+		return false
+	}
+	intendToSpend := toi.Coin.Amount.Add(toi.MaxGas.ToCoins().GetCoin(gasAsset).Amount)
+	// This can be one node's observation before consensus. Adding its amount
+	// and gas can overflow Uint, so compare using a guarded subtraction instead.
+	observedAmount := tx.Coins.GetCoin(gasAsset).Amount
+	observedGas := tx.Gas.ToCoins().GetCoin(gasAsset).Amount
+	return observedAmount.LTE(intendToSpend) && intendToSpend.Sub(observedAmount).Equal(observedGas)
+}
+
+// needsNewVault reports whether an unfulfilled TxOutItem should be reassigned to
+// another vault.
+//
+// Reassignment sends the outbound a second time if the assigned vault did in
+// fact broadcast it, so every observed link is weighed before deciding - not
+// just the first. A link is written on the first attestation, before the
+// outbound voter reaches consensus, so any single node can have an arbitrary
+// hash linked to this inbound; if that stray link is examined first, returning
+// on it hides the assigned vault's own majority observation recorded under a
+// later hash, and the outbound is paid twice.
+//
+// Only members of the assigned vault carry weight for the majority: that is the
+// strong "the vault says it sent it" signal. Every matching signer earns the
+// bounded waiting window though - outbound observations are submitted by any
+// active observer, not just vault members, so an outsider majority attesting
+// that funds left this vault's address is exactly what a reassignment would
+// pay twice. staleNonFinalOutboundObservation caps how long that window runs.
+func (s *SlasherImpl) needsNewVault(ctx cosmos.Context, mgr Manager, vault Vault, signingTransPeriod, startHeight int64, toi TxOutItem) bool {
+	for _, hash := range mgr.Keeper().GetObservedLink(ctx, toi.InHash) {
 		voter, err := mgr.Keeper().GetObservedTxOutVoter(ctx, hash)
 		if err != nil {
 			ctx.Logger().Error("fail to get txout voter", "hash", hash, "error", err)
@@ -1230,12 +1428,13 @@ func (s *SlasherImpl) needsNewVault(ctx cosmos.Context, mgr Manager, vault Vault
 			continue
 		}
 		// in the event there are multiple observed txouts for a given inhash, we
-		// focus on the matching pubkey and asset
+		// focus on the observations that could actually be this outbound: the
+		// assigned vault as sender, and a payload the handlers would accept as
+		// fulfilling the item.
 		signers := make(map[string]bool)
 		for _, tx1 := range voter.Txs {
 			if !txOutPubKeyMatchesObserved(toi.Chain, tx1.ObservedPubKey, toi) ||
-				len(tx1.Tx.Coins) != 1 ||
-				!tx1.Tx.Coins[0].Asset.Equals(toi.Coin.Asset) {
+				!outboundObservationFulfils(ctx, mgr, tx1, toi) {
 				continue
 			}
 
@@ -1243,46 +1442,65 @@ func (s *SlasherImpl) needsNewVault(ctx cosmos.Context, mgr Manager, vault Vault
 				signers[signer] = true
 			}
 		}
-		if len(signers) > 0 {
-			staleStatus := s.staleNonFinalOutboundObservation(ctx, voter, signingTransPeriod, startHeight)
-			if staleStatus.stale {
-				logStaleOutboundObservation(ctx, staleStatus, "allowing vault reassignment for stale non-finalised outbound observation",
-					"inhash", toi.InHash,
-					"outhash", hash,
-					"start_height", startHeight,
-					"observation_height", staleStatus.observationHeight,
-					"voter_height", voter.Height,
-					"unfinalized_height", voter.UnfinalizedHeight,
-					"stale_since_height", staleStatus.staleSinceHeight)
-				continue
-			}
-
-			var count int // count the number of signers from the assigned vault
-			for _, member := range vault.Membership {
-				pk, err := common.NewPubKey(member)
-				if err != nil {
-					continue
-				}
-				addr, err := pk.GetAddress(common.THORChain)
-				if err != nil {
-					continue
-				}
-				if _, ok := signers[addr.String()]; ok {
-					count++
-				}
-			}
-			// if a simple majority of vault members have observed the outbound,
-			// then we should not reschedule. If a vault says it sent it, it
-			// sent it and shouldn't get another vault to send it (potentially
-			// a second time)
-			if count > 0 && HasSimpleMajority(count, len(vault.Membership)) {
-				return false
-			}
-			maxHeight := startHeight + ((int64(len(signers)) + 1) * signingTransPeriod)
-			return maxHeight < ctx.BlockHeight()
+		if len(signers) == 0 {
+			continue
 		}
 
+		staleStatus := s.staleNonFinalOutboundObservation(ctx, voter, signingTransPeriod, startHeight)
+		if staleStatus.stale {
+			logStaleOutboundObservation(ctx, staleStatus, "allowing vault reassignment for stale non-finalised outbound observation",
+				"inhash", toi.InHash,
+				"outhash", hash,
+				"start_height", startHeight,
+				"observation_height", staleStatus.observationHeight,
+				"voter_height", voter.Height,
+				"unfinalized_height", voter.UnfinalizedHeight,
+				"stale_since_height", staleStatus.staleSinceHeight)
+			continue
+		}
+
+		count := vaultSignerCount(vault, signers)
+
+		// if a simple majority of vault members have observed the outbound,
+		// then we should not reschedule. If a vault says it sent it, it
+		// sent it and shouldn't get another vault to send it (potentially
+		// a second time)
+		if count > 0 && HasSimpleMajority(count, len(vault.Membership)) {
+			return false
+		}
+
+		// A sub-majority observation is not yet the vault saying it sent the
+		// outbound, so it only earns a bounded window for the remaining
+		// observations to arrive. Active nodes outside the vault watch this
+		// chain too and their attestation that funds left the vault's address
+		// is what a reassignment would double-spend, so they earn the window as
+		// well; staleNonFinalOutboundObservation already bounds it. Keep
+		// scanning: a later link may still hold the majority this one lacks.
+		maxHeight := startHeight + ((int64(len(signers)) + 1) * signingTransPeriod)
+		if maxHeight >= ctx.BlockHeight() {
+			return false
+		}
 	}
 
 	return true
+}
+
+// vaultSignerCount counts the members of the given vault that are among the
+// given observation signers.
+func vaultSignerCount(vault Vault, signers map[string]bool) int {
+	var count int
+	for _, member := range vault.Membership {
+		pk, err := common.NewPubKey(member)
+		if err != nil {
+			continue
+		}
+		addr, err := pk.GetAddress(common.THORChain)
+		if err != nil {
+			continue
+		}
+		if signers[addr.String()] {
+			count++
+		}
+	}
+	return count
 }

@@ -3,10 +3,15 @@ package thorchain
 import (
 	"crypto/sha256"
 	"fmt"
+	"strings"
+
+	"github.com/cosmos/cosmos-sdk/telemetry"
+	"github.com/hashicorp/go-metrics"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	thorchain "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -25,7 +30,10 @@ func getEffectiveMultiplier(ctx cosmos.Context, mgr Manager, tn THORName) int64 
 	return multiplier
 }
 
-func triggerPreferredAssetSwap(ctx cosmos.Context, mgr Manager, affiliateAddress common.Address, txID common.TxID, tn THORName, affcol AffiliateFeeCollector, queueIndex int) error {
+func triggerPreferredAssetSwap(ctx cosmos.Context, mgr Manager, tn THORName, affcol AffiliateFeeCollector, queueIndex int) error {
+	// Callers log payout failures and continue, so roll back the voter, queue and
+	// funds together here if any step fails.
+	ctx, commit := ctx.CacheContext()
 	// Check that the THORName has an address alias for the PreferredAsset, if not skip
 	// the swap
 	alias := tn.GetAlias(tn.PreferredAsset.GetChain())
@@ -140,7 +148,10 @@ func triggerPreferredAssetSwap(ctx cosmos.Context, mgr Manager, affiliateAddress
 	}
 
 	affcol.RuneAmount = cosmos.ZeroUint()
-	mgr.Keeper().SetAffiliateCollector(ctx, affcol)
+	if err = mgr.Keeper().SetAffiliateCollector(ctx, affcol); err != nil {
+		return err
+	}
+	commit()
 
 	return nil
 }
@@ -178,6 +189,11 @@ func skimAffiliateFees(ctx cosmos.Context, mgr Manager, mainTx common.Tx, signer
 	totalFee := cosmos.ZeroUint()      // total fee distributed
 	swapIndex := 1                     // swap index, start at 1 to account for the main user swap
 
+	// Telemetry only. This path is reachable from quote simulation (via
+	// prepareTxOutItem), so simulated swaps must not move the counters.
+	// Affiliate identity (thorname or address) is unbounded and is never a label.
+	emitTelem := !isSimulationMode(ctx)
+
 	// Iterate through each affiliate and attempt to distribute the fee
 	for i, affiliate := range affiliates {
 		ctx.Logger().Info("distributing affiliate fee", "txid", mainTx.ID.String(), "index", i, "affiliate", affiliate, "fee", affiliatesBps[i].String(), "asset", coin.Asset, "amount", coin.Amount)
@@ -191,6 +207,13 @@ func skimAffiliateFees(ctx cosmos.Context, mgr Manager, mainTx common.Tx, signer
 			tn, errTn := mgr.Keeper().GetTHORName(ctx, affiliate)
 			if errTn != nil {
 				ctx.Logger().Error("fail to get thorname, skipping fee", "err", err)
+				if emitTelem && i < len(affiliatesBps) && !affiliatesBps[i].IsZero() {
+					telemetry.IncrCounterWithLabels(
+						[]string{"thornode", "affiliate", "fee_skipped"},
+						1,
+						[]metrics.Label{telemetry.NewLabel("reason", "thorname_lookup_failed")},
+					)
+				}
 				continue
 			}
 			thorname = &tn
@@ -198,6 +221,13 @@ func skimAffiliateFees(ctx cosmos.Context, mgr Manager, mainTx common.Tx, signer
 			// If affiliate is thorname, check if it can receive an affiliate fee. If not, skip.
 			if !thorname.CanReceiveAffiliateFee() {
 				ctx.Logger().Info("affiliate cannot receive affiliate fee", "affiliate", affiliate)
+				if emitTelem && i < len(affiliatesBps) && !affiliatesBps[i].IsZero() {
+					telemetry.IncrCounterWithLabels(
+						[]string{"thornode", "affiliate", "fee_skipped"},
+						1,
+						[]metrics.Label{telemetry.NewLabel("reason", "cannot_receive")},
+					)
+				}
 				continue
 			}
 			addr := thorname.GetAlias(common.THORChain)
@@ -205,6 +235,13 @@ func skimAffiliateFees(ctx cosmos.Context, mgr Manager, mainTx common.Tx, signer
 				runeAddr, err = addr.AccAddress()
 				if err != nil {
 					ctx.Logger().Error("fail to convert address into AccAddress, skipping fee", "msg", addr, "error", err)
+					if emitTelem && i < len(affiliatesBps) && !affiliatesBps[i].IsZero() {
+						telemetry.IncrCounterWithLabels(
+							[]string{"thornode", "affiliate", "fee_skipped"},
+							1,
+							[]metrics.Label{telemetry.NewLabel("reason", "bad_alias_address")},
+						)
+					}
 					continue
 				}
 			} else {
@@ -216,15 +253,36 @@ func skimAffiliateFees(ctx cosmos.Context, mgr Manager, mainTx common.Tx, signer
 			addr, errAddr := common.NewAddress(affiliate)
 			if errAddr != nil {
 				ctx.Logger().Error("fail to parse affiliate address, skipping fee", "msg", affiliate, "error", err)
+				if emitTelem && i < len(affiliatesBps) && !affiliatesBps[i].IsZero() {
+					telemetry.IncrCounterWithLabels(
+						[]string{"thornode", "affiliate", "fee_skipped"},
+						1,
+						[]metrics.Label{telemetry.NewLabel("reason", "unparsable_address")},
+					)
+				}
 				continue
 			}
 			if !addr.GetChain().IsTHORChain() {
 				ctx.Logger().Error("affiliate address is not THORChain, skipping fee", "msg", affiliate)
+				if emitTelem && i < len(affiliatesBps) && !affiliatesBps[i].IsZero() {
+					telemetry.IncrCounterWithLabels(
+						[]string{"thornode", "affiliate", "fee_skipped"},
+						1,
+						[]metrics.Label{telemetry.NewLabel("reason", "not_thorchain_address")},
+					)
+				}
 				continue
 			}
 			runeAddr, err = addr.AccAddress()
 			if err != nil {
 				ctx.Logger().Error("fail to convert address into AccAddress, skipping fee", "msg", addr, "error", err)
+				if emitTelem && i < len(affiliatesBps) && !affiliatesBps[i].IsZero() {
+					telemetry.IncrCounterWithLabels(
+						[]string{"thornode", "affiliate", "fee_skipped"},
+						1,
+						[]metrics.Label{telemetry.NewLabel("reason", "bad_affiliate_address")},
+					)
+				}
 				continue
 			}
 		}
@@ -246,6 +304,13 @@ func skimAffiliateFees(ctx cosmos.Context, mgr Manager, mainTx common.Tx, signer
 					err = addRuneToAffiliateCollector(ctx, mgr, affCoin, thorname, &swapIndex)
 					if err != nil {
 						ctx.Logger().Error("fail to update affiliate collector", "error", err)
+						if emitTelem {
+							telemetry.IncrCounterWithLabels(
+								[]string{"thornode", "affiliate", "fee_skipped"},
+								1,
+								[]metrics.Label{telemetry.NewLabel("reason", "collector_update_failed")},
+							)
+						}
 						continue
 					}
 				} else {
@@ -253,6 +318,13 @@ func skimAffiliateFees(ctx cosmos.Context, mgr Manager, mainTx common.Tx, signer
 					err = mgr.Keeper().SendFromModuleToAccount(ctx, AsgardName, runeAddr, common.NewCoins(affCoin))
 					if err != nil {
 						ctx.Logger().Error("fail to send rune to affiliate", "affiliate", affiliate, "error", err)
+						if emitTelem {
+							telemetry.IncrCounterWithLabels(
+								[]string{"thornode", "affiliate", "fee_skipped"},
+								1,
+								[]metrics.Label{telemetry.NewLabel("reason", "rune_transfer_failed")},
+							)
+						}
 						continue
 					}
 				}
@@ -261,6 +333,13 @@ func skimAffiliateFees(ctx cosmos.Context, mgr Manager, mainTx common.Tx, signer
 				err := affiliateSwapToRune(ctx, mgr, mainTx, signer, affAmt, runeAddr, memo, thorname, &swapIndex)
 				if err != nil {
 					ctx.Logger().Error("fail to swap to rune", "affiliate", affiliate, "error", err)
+					if emitTelem {
+						telemetry.IncrCounterWithLabels(
+							[]string{"thornode", "affiliate", "fee_skipped"},
+							1,
+							[]metrics.Label{telemetry.NewLabel("reason", "swap_to_rune_failed")},
+						)
+					}
 					continue
 				}
 			}
@@ -281,6 +360,13 @@ func skimAffiliateFees(ctx cosmos.Context, mgr Manager, mainTx common.Tx, signer
 			)
 
 			feeEvents = append(feeEvents, feeEvent)
+			if emitTelem {
+				telemetry.IncrCounterWithLabels(
+					[]string{"thornode", "affiliate", "fee_paid"},
+					telem(affAmt),
+					[]metrics.Label{telemetry.NewLabel("asset", coin.Asset.String())},
+				)
+			}
 			totalFee = totalFee.Add(affAmt)
 		}
 	}
@@ -351,7 +437,7 @@ func affiliateSwapToRune(ctx cosmos.Context, mgr Manager, mainTx common.Tx, sign
 	// preferred asset swap should be triggered
 	if tn != nil && !tn.Owner.Empty() && !tn.PreferredAsset.IsEmpty() {
 		var affCol AffiliateFeeCollector
-		affCol, err = mgr.Keeper().GetAffiliateCollector(ctx, tn.Owner)
+		affCol, err = mgr.Keeper().GetAffiliateCollector(ctx, tn.Name)
 		if err != nil {
 			return fmt.Errorf("failed to get affiliate collector for thorname: %w", err)
 		}
@@ -383,7 +469,7 @@ func affiliateSwapToRune(ctx cosmos.Context, mgr Manager, mainTx common.Tx, sign
 
 		if err == nil && affCol.RuneAmount.GT(threshold) {
 			*swapIndex++
-			if err = triggerPreferredAssetSwap(ctx, mgr, common.NoAddress, "", *tn, affCol, *swapIndex); err != nil {
+			if err = triggerPreferredAssetSwap(ctx, mgr, *tn, affCol, *swapIndex); err != nil {
 				ctx.Logger().Error("fail to swap to preferred asset", "thorname", tn.Name, "err", err)
 			}
 		}
@@ -428,17 +514,20 @@ func addRuneToAffiliateCollector(ctx cosmos.Context, mgr Manager, coin common.Co
 }
 
 func addRuneToAffiliateCollectorFromModule(ctx cosmos.Context, mgr Manager, module string, coin common.Coin, thorname *THORName, swapIndex *int) error {
-	affcol, err := mgr.Keeper().GetAffiliateCollector(ctx, thorname.Owner)
+	affcol, err := mgr.Keeper().GetAffiliateCollector(ctx, thorname.Name)
 	if err != nil {
 		return fmt.Errorf("failed to get affiliate collector: %w", err)
-	} else {
-		if err = mgr.Keeper().SendFromModuleToModule(ctx, module, AffiliateCollectorName, common.NewCoins(coin)); err != nil {
-			return fmt.Errorf("failed to send coin to affiliate collector: %w", err)
-		} else {
-			affcol.RuneAmount = affcol.RuneAmount.Add(coin.Amount)
-			mgr.Keeper().SetAffiliateCollector(ctx, affcol)
-		}
 	}
+	// Callers can log an error and continue, so commit funds and the claim together.
+	cacheCtx, commit := ctx.CacheContext()
+	if err = mgr.Keeper().SendFromModuleToModule(cacheCtx, module, AffiliateCollectorName, common.NewCoins(coin)); err != nil {
+		return fmt.Errorf("failed to send coin to affiliate collector: %w", err)
+	}
+	affcol.RuneAmount = affcol.RuneAmount.Add(coin.Amount)
+	if err = mgr.Keeper().SetAffiliateCollector(cacheCtx, affcol); err != nil {
+		return err
+	}
+	commit()
 
 	// Check if balance exceeds threshold for preferred asset swap. Don't return error if preferred asset swap fails.
 	ofRune, err := mgr.GasMgr().GetAssetOutboundFee(ctx, thorname.PreferredAsset, true)
@@ -451,9 +540,133 @@ func addRuneToAffiliateCollectorFromModule(ctx cosmos.Context, mgr Manager, modu
 	threshold := ofRune.Mul(cosmos.NewUint(uint64(multiplier)))
 	if affcol.RuneAmount.GT(threshold) {
 		*swapIndex++
-		if err = triggerPreferredAssetSwap(ctx, mgr, common.NoAddress, "", *thorname, affcol, *swapIndex); err != nil {
+		if err = triggerPreferredAssetSwap(ctx, mgr, *thorname, affcol, *swapIndex); err != nil {
 			ctx.Logger().Error("fail to swap to preferred asset", "thorname", thorname.Name, "err", err)
 		}
 	}
+	return nil
+}
+
+func isPreferredAssetCollectorSwap(k keeper.Keeper, msg MsgSwap) bool {
+	return msg.Tx.FromAddress.Equals(common.Address(k.GetModuleAccAddress(AffiliateCollectorName).String())) &&
+		strings.HasPrefix(msg.Tx.Memo, PreferredAssetSwapMemoPrefix+"-")
+}
+
+// affiliateCollectorConversionName returns the THORName for an internal affiliate
+// fee conversion to RUNE, or an empty string for other swaps. The destination
+// must be the collector module and the memo must match the affiliate address.
+// These internal memos can reference THORNames accepted under older registration rules.
+func affiliateCollectorConversionName(k keeper.Keeper, msg MsgSwap) string {
+	module := common.Address(k.GetModuleAccAddress(AffiliateCollectorName).String())
+	if !msg.TargetAsset.IsRune() || !msg.Destination.Equals(module) {
+		return ""
+	}
+	parts := strings.Split(msg.Tx.Memo, ":")
+	if len(parts) < 5 || parts[4] == "" || msg.AffiliateAddress.IsEmpty() ||
+		!msg.AffiliateAddress.Equals(common.Address(parts[2])) || msg.Destination.Equals(common.Address(parts[2])) {
+		return ""
+	}
+	return strings.ToLower(parts[4])
+}
+
+// Deliver and credit together. V1 calls this after Swap, V2 during settlement;
+// the queue version decides delivery even if admission configuration changes.
+// The handler dispatcher or settleSwap rolls back both on error.
+func deliverAffiliateCollectorOutput(ctx cosmos.Context, mgr Manager, msg MsgSwap, amount cosmos.Uint) error {
+	name := affiliateCollectorConversionName(mgr.Keeper(), msg)
+	var before cosmos.Uint
+	if name != "" {
+		before = mgr.Keeper().GetRuneBalanceOfModule(ctx, AffiliateCollectorName)
+	}
+	toi := TxOutItem{
+		Chain:     msg.TargetAsset.GetChain(),
+		InHash:    msg.Tx.ID,
+		ToAddress: msg.Destination,
+		Coin:      common.NewCoin(msg.TargetAsset, amount),
+	}
+	added, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, msg.TradeTarget)
+	if err != nil {
+		return err
+	}
+	if !added {
+		return errFailAddOutboundTx
+	}
+	if name != "" {
+		collector, err := mgr.Keeper().GetAffiliateCollector(ctx, name)
+		if err != nil {
+			return err
+		}
+		// Use the actual native delivery, including the outbound fee.
+		after := mgr.Keeper().GetRuneBalanceOfModule(ctx, AffiliateCollectorName)
+		if after.LT(before) {
+			return fmt.Errorf("affiliate conversion reduced collector module balance")
+		}
+		collector.RuneAmount = collector.RuneAmount.Add(after.Sub(before))
+		if err = mgr.Keeper().SetAffiliateCollector(ctx, collector); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Failed preferred swaps return the complete internal RUNE claim, without an
+// outbound fee. The queue caller commits restoration and removal together.
+func restorePreferredAssetCollector(ctx cosmos.Context, mgr Manager, memo string, amount cosmos.Uint) error {
+	name, ok := strings.CutPrefix(memo, PreferredAssetSwapMemoPrefix+"-")
+	if !ok || name == "" {
+		return fmt.Errorf("invalid preferred asset swap memo: %s", memo)
+	}
+	collector, err := mgr.Keeper().GetAffiliateCollector(ctx, name)
+	if err != nil {
+		return err
+	}
+	if !amount.IsZero() {
+		if sendErr := mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, AffiliateCollectorName,
+			common.NewCoins(common.NewCoin(common.RuneAsset(), amount))); sendErr != nil {
+			return sendErr
+		}
+		collector.RuneAmount = collector.RuneAmount.Add(amount)
+		if err = mgr.Keeper().SetAffiliateCollector(ctx, collector); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateAffiliateCollectorOwner(ctx cosmos.Context, k keeper.Keeper, owner cosmos.AccAddress) error {
+	if err := cosmos.VerifyAddressFormat(owner); err != nil {
+		return fmt.Errorf("invalid affiliate collector owner: %w", err)
+	}
+	if k.IsModuleAccount(ctx, owner) {
+		return fmt.Errorf("affiliate collector owner cannot be a module address")
+	}
+	return nil
+}
+
+// settleTHORNameCollector pays the available balance; pending swaps continue to
+// belong to the THORName. The caller commits this payment and ownership atomically.
+func settleTHORNameCollector(ctx cosmos.Context, k keeper.Keeper, collector AffiliateFeeCollector, owner cosmos.AccAddress) error {
+	if collector.RuneAmount.IsNil() {
+		return fmt.Errorf("affiliate collector has an uninitialized RUNE balance")
+	}
+	if collector.RuneAmount.IsZero() {
+		return nil
+	}
+	if err := validateAffiliateCollectorOwner(ctx, k, owner); err != nil {
+		return err
+	}
+	amount := collector.RuneAmount
+	if err := k.SendFromModuleToAccount(ctx, AffiliateCollectorName, owner, common.NewCoins(common.NewCoin(common.RuneAsset(), amount))); err != nil {
+		return fmt.Errorf("pay affiliate collector to owner: %w", err)
+	}
+	collector.RuneAmount = cosmos.ZeroUint()
+	if err := k.SetAffiliateCollector(ctx, collector); err != nil {
+		return err
+	}
+	ctx.EventManager().EmitEvent(cosmos.NewEvent("affiliate_collector_settlement",
+		cosmos.NewAttribute("name", collector.Name),
+		cosmos.NewAttribute("owner", owner.String()),
+		cosmos.NewAttribute("rune_amount", amount.String()),
+	))
 	return nil
 }

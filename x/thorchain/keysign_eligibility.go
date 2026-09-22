@@ -3,6 +3,9 @@ package thorchain
 import (
 	"fmt"
 
+	"github.com/cosmos/cosmos-sdk/telemetry"
+	"github.com/hashicorp/go-metrics"
+
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
@@ -52,6 +55,11 @@ func keygenEligibleNodeAccounts(ctx cosmos.Context, k keeper.Keeper, nas NodeAcc
 // permanently shrinking a new vault below the original keygen safety threshold.
 func validateKeygenEligibleThreshold(original, eligible NodeAccounts) error {
 	if len(eligible) == 0 {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "keygen", "eligibility_abort"},
+			1,
+			[]metrics.Label{telemetry.NewLabel("reason", "no_eligible")},
+		)
 		return fmt.Errorf("no eligible keygen members")
 	}
 	threshold, err := conversion.GetThreshold(len(original))
@@ -60,6 +68,11 @@ func validateKeygenEligibleThreshold(original, eligible NodeAccounts) error {
 	}
 	required := threshold + 1
 	if len(eligible) < required {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "keygen", "eligibility_abort"},
+			1,
+			[]metrics.Label{telemetry.NewLabel("reason", "below_threshold")},
+		)
 		return fmt.Errorf("not enough eligible keygen members after filtering: need at least %d of %d original members, got %d", required, len(original), len(eligible))
 	}
 	return nil

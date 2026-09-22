@@ -15,6 +15,9 @@ message QueryQuoteSwapRequest {
   string streaming_quantity = 5;
   string destination = 6;
   string tolerance_bps = 7;
+  // Refund address on the source chain. Required when that chain cannot observe
+  // senders (currently XMR); when provided, it must be valid for the configured
+  // network.
   string refund_address = 8;
   string affiliate = 9;
   string affiliate_bps = 10;
@@ -125,7 +128,9 @@ message QueryQuoteLimitRequest {
   string affiliate = 8 [ (gogoproto.jsontag) = "affiliate" ];
   // affiliate basis points (0-10000)
   string affiliate_bps = 9 [ (gogoproto.jsontag) = "affiliate_bps" ];
-  // refund address
+  // Refund address on the source chain. Required when that chain cannot observe
+  // senders (currently XMR); when provided, it must be valid for the configured
+  // network.
   string refund_address = 10 [ (gogoproto.jsontag) = "refund_address" ];
 }
 

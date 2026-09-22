@@ -92,6 +92,36 @@ func quoteParseAddress(ctx cosmos.Context, mgr *Mgrs, addrString string, chain c
 	return common.NoAddress, fmt.Errorf("no thorname alias for chain %s", chain)
 }
 
+func quoteParseRefundAddress(ctx cosmos.Context, mgr *Mgrs, addrString string, sourceChain common.Chain) (common.Address, error) {
+	if addrString == "" {
+		if sourceChain.RequiresExplicitRefundAddress() {
+			return common.NoAddress, fmt.Errorf("refund address is required for source chain %s", sourceChain)
+		}
+		return common.NoAddress, nil
+	}
+
+	addr, err := quoteParseAddress(ctx, mgr, addrString, sourceChain)
+	if err != nil {
+		return common.NoAddress, err
+	}
+	if !addr.IsChain(sourceChain) {
+		return common.NoAddress, fmt.Errorf("refund address %s is not valid for source chain %s", addr, sourceChain)
+	}
+	// GetNetwork handles every accepted encoding for ordinary chains, including
+	// legacy UTXO forms that Chain.IsValidAddress does not classify completely.
+	if !common.CurrentChainNetwork.SoftEquals(addr.GetNetwork(sourceChain)) {
+		return common.NoAddress, fmt.Errorf("refund address %s is not valid for %s on the current network", addr, sourceChain)
+	}
+	if sourceChain.RequiresExplicitRefundAddress() && !sourceChain.IsValidAddress(addr) {
+		return common.NoAddress, fmt.Errorf("refund address %s is not valid for %s on the current network", addr, sourceChain)
+	}
+	if sourceChain.Equals(common.XMRChain) && !common.IsSupportedXMRAddress(addr.String()) {
+		return common.NoAddress, fmt.Errorf("refund address %s uses an unsupported XMR address form", addr)
+	}
+
+	return addr, nil
+}
+
 // parseMultipleAffiliateParams - attempts to parse one or more affiliates + affiliate
 // bps from slash-separated strings. skips any that are invalid
 func parseMultipleAffiliateParams(ctx cosmos.Context, mgr *Mgrs, affiliateParam, bpParam string) ([]string, []sdkmath.Uint, sdkmath.Uint, error) {
@@ -607,7 +637,10 @@ func (qs queryServer) queryQuoteLimit(ctx cosmos.Context, req *types.QueryQuoteL
 	if err != nil {
 		return nil, fmt.Errorf("bad to_asset: %w", err)
 	}
-
+	refundChain := fromAsset.GetChain()
+	if req.RefundAddress == "" && refundChain.RequiresExplicitRefundAddress() {
+		return nil, fmt.Errorf("bad refund_address: refund address is required for source chain %s", refundChain)
+	}
 	// parse amount
 	amount, err := sdkmath.ParseUint(req.Amount)
 	if err != nil {
@@ -672,13 +705,11 @@ func (qs queryServer) queryQuoteLimit(ctx cosmos.Context, req *types.QueryQuoteL
 		streamingQuantity = maxSwapQuantity
 	}
 
-	// parse refund address
-	var refundAddress common.Address
-	if len(req.RefundAddress) > 0 {
-		refundAddress, err = common.NewAddress(req.RefundAddress)
-		if err != nil {
-			return nil, fmt.Errorf("bad refund_address: %w", err)
-		}
+	// parse refund address at the same stage as the legacy quote path so existing
+	// parameter-error precedence remains stable.
+	refundAddress, err := quoteParseRefundAddress(ctx, qs.mgr, req.RefundAddress, refundChain)
+	if err != nil {
+		return nil, fmt.Errorf("bad refund_address: %w", err)
 	}
 
 	// get destination address
@@ -805,6 +836,10 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		return nil, fmt.Errorf("bad to asset: %w", err)
 	}
 	toAsset = fuzzyAssetMatch(ctx, qs.mgr.Keeper(), toAsset)
+	fromChain := fromAsset.GetChain()
+	if req.RefundAddress == "" && fromChain.RequiresExplicitRefundAddress() {
+		return nil, fmt.Errorf("bad refund address: refund address is required for source chain %s", fromChain)
+	}
 
 	// parse amount
 	amount, err := cosmos.ParseUint(req.Amount)
@@ -867,10 +902,6 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 	}
 
 	// trade assets must have from address on the source tx
-	fromChain := fromAsset.Chain
-	if fromAsset.IsSyntheticAsset() || fromAsset.IsDerivedAsset() || fromAsset.IsTradeAsset() || fromAsset.IsSecuredAsset() {
-		fromChain = common.THORChain
-	}
 	fromPubkey, err := quotePlaceholderPubKey(fromChain)
 	if err != nil {
 		return nil, fmt.Errorf("failed to derive placeholder pubkey: %w", err)
@@ -952,13 +983,9 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		}
 	}
 
-	// custom refund addr
-	refundAddress := common.NoAddress
-	if len(req.RefundAddress) > 0 {
-		refundAddress, err = quoteParseAddress(ctx, qs.mgr, req.RefundAddress, fromAsset.Chain)
-		if err != nil {
-			return nil, fmt.Errorf("bad refund address: %w", err)
-		}
+	refundAddress, err := quoteParseRefundAddress(ctx, qs.mgr, req.RefundAddress, fromChain)
+	if err != nil {
+		return nil, fmt.Errorf("bad refund address: %w", err)
 	}
 
 	// check if the amount is less than the minimum swap amount

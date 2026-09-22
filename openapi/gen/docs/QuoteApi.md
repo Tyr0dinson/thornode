@@ -34,7 +34,7 @@ func main() {
     toAsset := "ETH.ETH" // string | the target asset (optional)
     amount := int64(1000000) // int64 | the source asset amount in 1e8 decimals (optional)
     destination := "0x1c7b17362c84287bd1184447e6dfeaf920c31bbe" // string | the destination address, required to generate memo (optional)
-    refundAddress := "0x1c7b17362c84287bd1184447e6dfeaf920c31bbe" // string | the refund address, refunds will be sent here if the swap fails (optional)
+    refundAddress := "0x1c7b17362c84287bd1184447e6dfeaf920c31bbe" // string | the source-chain refund address; required when the source chain cannot observe senders (currently XMR), and otherwise optional; when provided, it must be valid for the configured network (optional)
     streamingInterval := int64(10) // int64 | the interval in which streaming swaps are swapped (optional)
     streamingQuantity := int64(10) // int64 | the quantity of swaps within a streaming swap (optional)
     toleranceBps := int64(100) // int64 | the maximum basis points from the current feeless swap price to set the limit in the generated memo (optional)
@@ -70,7 +70,7 @@ Name | Type | Description  | Notes
  **toAsset** | **string** | the target asset | 
  **amount** | **int64** | the source asset amount in 1e8 decimals | 
  **destination** | **string** | the destination address, required to generate memo | 
- **refundAddress** | **string** | the refund address, refunds will be sent here if the swap fails | 
+ **refundAddress** | **string** | the source-chain refund address; required when the source chain cannot observe senders (currently XMR), and otherwise optional; when provided, it must be valid for the configured network | 
  **streamingInterval** | **int64** | the interval in which streaming swaps are swapped | 
  **streamingQuantity** | **int64** | the quantity of swaps within a streaming swap | 
  **toleranceBps** | **int64** | the maximum basis points from the current feeless swap price to set the limit in the generated memo | 

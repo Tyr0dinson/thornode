@@ -51,7 +51,7 @@ func (h RagnarokHandler) slash(ctx cosmos.Context, tx ObservedTx) error {
 
 	ctx = ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
 		telemetry.NewLabel("reason", "failed_ragnarok"),
-		telemetry.NewLabel("chain", string(tx.Tx.Chain)),
+		telemetry.NewLabel("chain", telemChain(tx.Tx.Chain)),
 	}))
 
 	return h.mgr.Slasher().SlashVault(ctx, tx.ObservedPubKey, toSlash, h.mgr)
@@ -100,7 +100,7 @@ func (h RagnarokHandler) handle(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Re
 
 			if tx.InHash.Equals(common.BlankTxID) &&
 				tx.OutHash.IsEmpty() &&
-				tx.ToAddress.Equals(msg.Tx.Tx.ToAddress) &&
+				common.EquivalentAddresses(tx.Chain, tx.ToAddress, msg.Tx.Tx.ToAddress) &&
 				fromAddress.Equals(msg.Tx.Tx.FromAddress) {
 
 				matchCoin := msg.Tx.Tx.Coins.EqualsEx(common.Coins{tx.Coin})

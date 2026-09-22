@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/blang/semver"
+	"github.com/cosmos/cosmos-sdk/telemetry"
+	"github.com/hashicorp/go-metrics"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -64,12 +66,21 @@ func (h ObservedTxInHandler) handle(ctx cosmos.Context, msg MsgObservedTxIn) (*c
 		voter, err := ensureVaultAndGetTxInVoter(ctx, tx.ObservedPubKey, tx.Tx.ID, h.mgr.Keeper())
 		if err != nil {
 			ctx.Logger().Error("fail to ensure vault and get tx in voter", "error", err)
+			// No counter here: ensureVaultAndGetTxInVoter already emits
+			// thornode.observation.dropped with an accurate reason label on both
+			// of its error branches. Counting again here would double-count and
+			// would mislabel the voter-read failure as an unknown vault.
 			continue
 		}
 
 		voter, isQuorum := processTxInAttestation(ctx, h.mgr, voter, activeNodeAccounts, tx, msg.Signer, true)
 		if err := handleObservedTxInQuorum(ctx, h.mgr, msg.Signer, activeNodeAccounts, handler, tx, voter, voter.Tx.GetSigners(), isQuorum); err != nil {
 			ctx.Logger().Error("fail to handle observed tx in quorum", "error", err, "tx", tx.Tx.ID)
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "observed_tx", "handling_failed"},
+				float32(1),
+				[]metrics.Label{telemetry.NewLabel("chain", telemChain(tx.Tx.Chain))},
+			)
 		}
 	}
 	return &cosmos.Result{}, nil
@@ -82,6 +93,11 @@ func addSwap(ctx cosmos.Context, mgr Manager, msg MsgSwap) error {
 		// TODO: create handler to modify/cancel a limit swap (follow on PR)
 		if err := mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, mgr, &msg); err != nil {
 			ctx.Logger().Error("fail to add swap to queue", "error", err)
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "swap_queue", "add_failed"},
+				float32(1),
+				[]metrics.Label{telemetry.NewLabel("reason", "adv_queue")},
+			)
 			return err
 		}
 		if msg.IsLimitSwap() {
@@ -108,6 +124,11 @@ func addSwapDirect(ctx cosmos.Context, k keeper.Keeper, msg MsgSwap) error {
 	// Queue the main swap
 	if err := k.SetSwapQueueItem(ctx, msg, 0); err != nil {
 		ctx.Logger().Error("fail to add swap to queue", "error", err)
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "swap_queue", "add_failed"},
+			float32(1),
+			[]metrics.Label{telemetry.NewLabel("reason", "direct")},
+		)
 		return err
 	}
 	return nil

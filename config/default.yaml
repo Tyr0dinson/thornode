@@ -1117,10 +1117,22 @@ thor:
     pagination:
       default_page_size: 100
       max_page_size: 1000
+    logs:
+      # blocks of module logs (all levels, thorchain and cosmos sdk) kept for
+      # /thorchain/logs, 0 disables and leaves existing files in place; the
+      # directory is also capped at 1GiB. Capture records every level whatever
+      # --log_level is, so enabling this adds per-line work (stringify, JSON
+      # encode, a mutex) to block execution proportional to debug log volume:
+      # prefer a non-validating node. /thorchain/logs is served unauthenticated
+      # on the api port and reads off the state disk, so do not leave this on
+      # with the api port publicly reachable.
+      retain_blocks: 0
   telemetry:
     slash_points: false
     price_per_node: false
 
+  # these suppress stdout only: api.logs capture records a line before the
+  # filter runs, so a filtered module still appears in /thorchain/logs
   log_filter:
     modules:
       - api-server

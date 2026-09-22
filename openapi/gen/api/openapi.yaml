@@ -1399,6 +1399,81 @@ paths:
           description: OK
       tags:
       - Network
+  /thorchain/logs:
+    get:
+      description: "Returns the module log lines this node captured while executing\
+        \ the\nrequested blocks. Node-local, never consensus data, and only available\
+        \ when\nthe operator has set thor.api.logs.retain_blocks above zero. start\
+        \ and end\ndefault to the last block capture closed, which this route reads\
+        \ from the\ncapture store rather than from consensus, so it can briefly trail\
+        \ the last\ncommitted height; both are clamped to the blocks still on disk,\
+        \ so a range outside that window returns an empty array rather than an\nerror.\
+        \ A block can be absent for three reasons: it fell out of\nretain_blocks,\
+        \ it was dropped oldest-first to keep the log directory under\nits 1 GiB ceiling,\
+        \ or writing it failed and the rest of that block was\nskipped. An empty result\
+        \ therefore does not mean the node logged nothing at\nthat level. Unauthenticated\
+        \ like every other endpoint here.\n"
+      operationId: logs
+      parameters:
+      - description: "first block height to include, defaults to the last block capture\
+          \ closed"
+        explode: true
+        in: query
+        name: start
+        required: false
+        schema:
+          format: int64
+          minimum: 1
+          type: integer
+        style: form
+      - description: "last block height to include, defaults to the last block capture\
+          \ closed"
+        explode: true
+        in: query
+        name: end
+        required: false
+        schema:
+          format: int64
+          minimum: 1
+          type: integer
+        style: form
+      - description: "lowest log level to include, along with every more severe level,\
+          \ defaults to info"
+        explode: true
+        in: query
+        name: level
+        required: false
+        schema:
+          enum:
+          - debug
+          - info
+          - warn
+          - error
+          type: string
+        style: form
+      - description: "modules to include, repeat the parameter for more than one (x/thorchain,\
+          \ x/bank, x/wasm, x/upgrade, ...), defaults to x/thorchain, pass * for every\
+          \ module"
+        explode: true
+        in: query
+        name: modules
+        required: false
+        schema:
+          items:
+            type: string
+          type: array
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/LogEntry'
+                type: array
+          description: OK
+      tags:
+      - Network
   /thorchain/ban/{address}:
     get:
       description: Returns the ban status for the provided node address.
@@ -2556,7 +2631,9 @@ paths:
           example: 0x1c7b17362c84287bd1184447e6dfeaf920c31bbe
           type: string
         style: form
-      - description: "the refund address, refunds will be sent here if the swap fails"
+      - description: "the source-chain refund address; required when the source chain\
+          \ cannot observe senders (currently XMR), and otherwise optional; when provided,\
+          \ it must be valid for the configured network"
         explode: true
         in: query
         name: refund_address
@@ -2687,7 +2764,9 @@ paths:
           example: 0x1c7b17362c84287bd1184447e6dfeaf920c31bbe
           type: string
         style: form
-      - description: "the refund address, refunds will be sent here if the swap fails"
+      - description: "the source-chain refund address; required when the source chain\
+          \ cannot observe senders (currently XMR), and otherwise optional; when provided,\
+          \ it must be valid for the configured network"
         explode: true
         in: query
         name: refund_address
@@ -3189,6 +3268,48 @@ components:
         type: string
       style: form
   schemas:
+    LogEntry:
+      example:
+        msg: msg
+        level: debug
+        module: module
+        time: time
+        fields:
+          key: ""
+        height: 0
+      properties:
+        height:
+          description: block height the line was emitted during
+          format: int64
+          type: integer
+        time:
+          description: RFC3339 wall-clock time on this node
+          type: string
+        level:
+          enum:
+          - debug
+          - info
+          - warn
+          - error
+          type: string
+        module:
+          description: "module that emitted the line (x/thorchain, x/bank, x/wasm,\
+            \ ...)"
+          type: string
+        msg:
+          type: string
+        fields:
+          additionalProperties: true
+          description: structured key/value context attached to the line
+          type: object
+      required:
+      - fields
+      - height
+      - level
+      - module
+      - msg
+      - time
+      type: object
     Pool:
       example:
         rolling_pool_liquidity_fee_rune: "12345678"

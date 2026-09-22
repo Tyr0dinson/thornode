@@ -332,8 +332,10 @@ func (m *MockStream) Read(p []byte) (n int, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Perform the read
-	for range 5 {
+	// Perform the read. A bytes.Buffer returns EOF whenever it is momentarily
+	// empty, so poll for up to 5s: a loaded CI runner can starve the peer
+	// goroutine past a few hundred ms and turn "not written yet" into a fake EOF.
+	for range 50 {
 		n, err = m.reader.Read(p)
 		if err == nil {
 			break

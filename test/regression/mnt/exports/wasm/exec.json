@@ -12,7 +12,7 @@
             "@type": "/cosmos.crypto.secp256k1.PubKey",
             "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
           },
-          "sequence": "7"
+          "sequence": "9"
         },
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
@@ -152,7 +152,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "200010654488",
+              "amount": "290921264460",
               "denom": "rune"
             }
           ]
@@ -161,7 +161,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "34999992901564",
+              "amount": "35009083938438",
               "denom": "rune"
             }
           ]
@@ -188,7 +188,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "4999998443948",
+              "amount": "4999996797102",
               "denom": "rune"
             }
           ]
@@ -223,7 +223,7 @@
           "denom": "gaia-atom"
         },
         {
-          "amount": "50200000000000",
+          "amount": "50300000000000",
           "denom": "rune"
         }
       ]
@@ -262,7 +262,7 @@
         },
         {
           "chain": "GAIA",
-          "height": "1"
+          "height": "4"
         }
       ],
       "liquidity_providers": [
@@ -287,19 +287,34 @@
           "rune_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
           "rune_deposit_value": "100000000000",
           "units": "100000000000"
+        },
+        {
+          "asset": "GAIA.ATOM",
+          "asset_address": "cosmos1uuds8pd92qnnq0udw0rpg0szpgcslc9p90hh4g",
+          "asset_deposit_value": "10000000",
+          "last_add_height": "1",
+          "pending_asset": "0",
+          "pending_rune": "0",
+          "rune_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
+          "rune_deposit_value": "100000000000",
+          "units": "100000000000"
         }
       ],
       "mimirs": [
+        {
+          "key": "HALTSECUREDDEPOSIT-GAIA",
+          "value": "1"
+        },
         {
           "key": "WASMPERMISSIONLESS",
           "value": "1"
         }
       ],
       "network": {
-        "LPIncomeSplit": "9600",
-        "NodeIncomeSplit": "400",
-        "bond_reward_rune": "443948",
-        "total_bond_units": "10"
+        "LPIncomeSplit": "9418",
+        "NodeIncomeSplit": "582",
+        "bond_reward_rune": "797102",
+        "total_bond_units": "12"
       },
       "network_fees": [
         {
@@ -311,9 +326,19 @@
           "chain": "ETH",
           "transaction_fee_rate": "80",
           "transaction_size": "80000"
+        },
+        {
+          "chain": "GAIA",
+          "transaction_fee_rate": "10",
+          "transaction_size": "1000"
         }
       ],
       "nodeMimirs": [
+        {
+          "key": "HALTSECUREDDEPOSIT-GAIA",
+          "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+          "value": "1"
+        },
         {
           "key": "WASMPERMISSIONLESS",
           "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
@@ -323,7 +348,7 @@
       "node_accounts": [
         {
           "active_block_height": "1",
-          "bond": "4999998000000",
+          "bond": "4999996000000",
           "bond_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "ip_address": "1.1.1.1",
           "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
@@ -335,16 +360,112 @@
           "validator_cons_pub_key": "tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz"
         }
       ],
-      "observed_tx_in_voters": null,
+      "observed_tx_in_voters": [
+        {
+          "actions": [
+            {
+              "aggregator_target_limit": "0",
+              "chain": "GAIA",
+              "coin": {
+                "amount": "9000000",
+                "asset": "GAIA.ATOM",
+                "decimals": "8"
+              },
+              "gas_rate": "15",
+              "in_hash": "0000000000000000000000000000000000000000000000000000000000000004",
+              "max_gas": [
+                {
+                  "amount": "1500000",
+                  "asset": "GAIA.ATOM",
+                  "decimals": "6"
+                }
+              ],
+              "original_memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000004",
+              "to_address": "cosmos13wrmhnh2qe98rjse30pl7u6jxszjjwl4t2v05e",
+              "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
+            }
+          ],
+          "finalised_height": "12",
+          "height": "12",
+          "out_txs": null,
+          "outbound_height": "12",
+          "tx": {
+            "block_height": "4",
+            "finalise_height": "4",
+            "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
+            "signers": [
+              "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
+            ],
+            "tx": {
+              "chain": "GAIA",
+              "coins": [
+                {
+                  "amount": "10000000",
+                  "asset": "GAIA.ATOM",
+                  "decimals": "8"
+                }
+              ],
+              "from_address": "cosmos13wrmhnh2qe98rjse30pl7u6jxszjjwl4t2v05e",
+              "gas": [
+                {
+                  "amount": "10000",
+                  "asset": "GAIA.ATOM"
+                }
+              ],
+              "id": "0000000000000000000000000000000000000000000000000000000000000004",
+              "memo": "x:tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f:eyJpbmNyZW1lbnQiOnt9fQ==",
+              "to_address": "cosmos1zf3gsk7edzwl9syyefvfhle37cjtql35427vcp"
+            }
+          },
+          "tx_id": "0000000000000000000000000000000000000000000000000000000000000004",
+          "txs": [
+            {
+              "block_height": "4",
+              "finalise_height": "4",
+              "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
+              "signers": [
+                "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
+              ],
+              "tx": {
+                "chain": "GAIA",
+                "coins": [
+                  {
+                    "amount": "10000000",
+                    "asset": "GAIA.ATOM",
+                    "decimals": "8"
+                  }
+                ],
+                "from_address": "cosmos13wrmhnh2qe98rjse30pl7u6jxszjjwl4t2v05e",
+                "gas": [
+                  {
+                    "amount": "10000",
+                    "asset": "GAIA.ATOM"
+                  }
+                ],
+                "id": "0000000000000000000000000000000000000000000000000000000000000004",
+                "memo": "x:tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f:eyJpbmNyZW1lbnQiOnt9fQ==",
+                "to_address": "cosmos1zf3gsk7edzwl9syyefvfhle37cjtql35427vcp"
+              }
+            }
+          ],
+          "unfinalized_height": "12",
+          "updated_vault": true
+        }
+      ],
       "observed_tx_out_voters": null,
       "outbound_fee_spent_rune": [],
-      "outbound_fee_withheld_rune": [],
+      "outbound_fee_withheld_rune": [
+        {
+          "amount": "698746429255",
+          "asset": "GAIA.ATOM"
+        }
+      ],
       "pools": [
         {
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
           "balance_asset": "100000000",
-          "balance_rune": "100005327244",
+          "balance_rune": "100004184658",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -355,8 +476,19 @@
           "LP_units": "100000000000",
           "asset": "ETH.ETH",
           "balance_asset": "1000000000",
-          "balance_rune": "100005327244",
+          "balance_rune": "100004184658",
           "decimals": "8",
+          "pending_inbound_asset": "0",
+          "pending_inbound_rune": "0",
+          "status": "Available",
+          "synth_units": "0"
+        },
+        {
+          "LP_units": "100000000000",
+          "asset": "GAIA.ATOM",
+          "balance_asset": "11000000",
+          "balance_rune": "90912895144",
+          "decimals": "6",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
           "status": "Available",
@@ -389,7 +521,35 @@
       "tcy_stakers": [],
       "trade_accounts": [],
       "trade_units": [],
-      "tx_outs": null,
+      "tx_outs": [
+        {
+          "height": "12",
+          "tx_array": [
+            {
+              "aggregator_target_limit": "0",
+              "chain": "GAIA",
+              "clout_spent": "0",
+              "coin": {
+                "amount": "9000000",
+                "asset": "GAIA.ATOM",
+                "decimals": "8"
+              },
+              "gas_rate": "15",
+              "in_hash": "0000000000000000000000000000000000000000000000000000000000000004",
+              "max_gas": [
+                {
+                  "amount": "1500000",
+                  "asset": "GAIA.ATOM",
+                  "decimals": "6"
+                }
+              ],
+              "original_memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000004",
+              "to_address": "cosmos13wrmhnh2qe98rjse30pl7u6jxszjjwl4t2v05e",
+              "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
+            }
+          ]
+        }
+      ],
       "vaults": [
         {
           "block_height": "2",
@@ -415,12 +575,12 @@
               "decimals": "8"
             },
             {
-              "amount": "10000000",
+              "amount": "30000000",
               "asset": "GAIA.ATOM",
-              "decimals": "8"
+              "decimals": "6"
             }
           ],
-          "inbound_tx_count": "5",
+          "inbound_tx_count": "7",
           "membership": [
             "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
           ],
@@ -526,5 +686,5 @@
       }
     }
   },
-  "initial_height": 11
+  "initial_height": 13
 }

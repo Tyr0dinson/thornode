@@ -203,6 +203,10 @@ type WasmManager interface {
 	ClearAdmin(ctx cosmos.Context,
 		contractAddress, caller sdk.AccAddress,
 	) ([]byte, error)
+	// HasContract reports whether the address belongs to an instantiated
+	// contract, which is how a message dispatched by a contract is told apart
+	// from one sent by an externally owned account.
+	HasContract(ctx cosmos.Context, addr cosmos.AccAddress) bool
 }
 
 // SwapQueue interface define the contract of Swap Queue

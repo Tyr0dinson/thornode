@@ -270,7 +270,7 @@
       "adv_swap_queue_items": [],
       "affiliate_collectors": [
         {
-          "owner_address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
+          "name": "test",
           "rune_amount": "289836139"
         }
       ],

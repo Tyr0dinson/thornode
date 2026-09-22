@@ -77,6 +77,7 @@ import (
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	appparams "gitlab.com/thorchain/thornode/v3/app/params"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	thorlog "gitlab.com/thorchain/thornode/v3/log"
 	"gitlab.com/thorchain/thornode/v3/openapi"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
@@ -315,7 +316,7 @@ func NewChainApp(
 		app.AccountKeeper,
 		BlockedAddresses(),
 		authtypes.NewModuleAddress(thorchain.ModuleName).String(),
-		logger,
+		thorlog.WithWindowCapture(logger), // bank logs via this, not ctx.Logger()
 	)
 
 	txSigningOptions, err := tx.NewDefaultSigningOptions()
@@ -418,6 +419,9 @@ func NewChainApp(
 		runtime.NewKVStoreService(keys[denomtypes.StoreKey]),
 		app.AccountKeeper,
 		app.BankKeeper.WithMintCoinsRestriction(denomtypes.NewDenomMintCoinsRestriction()),
+		// x/denom Msgs are only valid when dispatched by an approved CosmWasm
+		// contract, which the Msg server verifies with the wasm keeper.
+		&app.WasmKeeper,
 		authtypes.NewModuleAddress(thorchain.ModuleName).String(),
 	)
 
@@ -603,9 +607,20 @@ func NewChainApp(
 
 	// initialize BaseApp
 	app.SetInitChainer(app.InitChainer)
-	app.SetPreBlocker(app.PreBlocker)
-	app.SetBeginBlocker(app.BeginBlocker)
-	app.SetEndBlocker(app.EndBlocker)
+	// node-local block log capture for /thorchain/logs: these three plus the
+	// ante handler are the finalize-mode entry points, so every module's
+	// ctx.Logger() lines reach the store
+	app.SetPreBlocker(func(ctx sdk.Context, req *abci.RequestFinalizeBlock) (*sdk.ResponsePreBlock, error) {
+		thorlog.BeginBlock(ctx.BlockHeight())
+		return app.PreBlocker(thorlog.CaptureContext(ctx), req)
+	})
+	app.SetBeginBlocker(func(ctx sdk.Context) (sdk.BeginBlock, error) {
+		return app.BeginBlocker(thorlog.CaptureContext(ctx))
+	})
+	app.SetEndBlocker(func(ctx sdk.Context) (sdk.EndBlock, error) {
+		defer thorlog.EndBlock(ctx.BlockHeight())
+		return app.EndBlocker(thorlog.CaptureContext(ctx))
+	})
 
 	anteHandler, err := NewAnteHandler(
 		HandlerOptions{
@@ -856,6 +871,10 @@ func (app *THORChainApp) RegisterAPIRoutes(apiSvr *api.Server, apiConfig config.
 
 	// Register plain-text supply/cmc route (must be before catch-all gRPC gateway).
 	thorchain.RegisterSupplyCMCRoute(apiSvr.Router, clientCtx)
+
+	// Register the node-local block log route (must be before catch-all gRPC
+	// gateway). Plain HTTP by design: see RegisterLogsRoute.
+	thorchain.RegisterLogsRoute(apiSvr.Router)
 
 	// register thorchain-specific swagger API from root so that other applications can override easily
 	if err := RegisterSwaggerAPI(apiSvr.Router, apiConfig.Swagger); err != nil {

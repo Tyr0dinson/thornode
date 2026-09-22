@@ -806,6 +806,16 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 			[]metrics.Label{telemetry.NewLabel("pool", pool.Asset.String())},
 		)
 	}
+
+	// Counterpart to the withdraw metrics: together they explain pool depth as a
+	// flow instead of an unattributable level. The POL counter above covers only
+	// Reserve/POL adds; a real user add emits nothing else.
+	// Placed after every `return err` path so only committed adds are counted.
+	addLabels := []metrics.Label{telemetry.NewLabel("pool", pool.Asset.String())}
+	telemetry.IncrCounterWithLabels([]string{"thornode", "add_liquidity", "count"}, 1, addLabels)
+	telemetry.IncrCounterWithLabels([]string{"thornode", "add_liquidity", "rune"}, telem(pendingRuneAmt), addLabels)
+	telemetry.IncrCounterWithLabels([]string{"thornode", "add_liquidity", "asset"}, telem(pendingAssetAmt), addLabels)
+
 	return nil
 }
 

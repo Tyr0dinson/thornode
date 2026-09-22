@@ -123,7 +123,7 @@ If the THORName has no preferred asset, the payout is sent as RUNE to its
 THORChain alias when one is set, or to the owner otherwise.
 
 If the THORName has a preferred asset, Bond Yield credits the affiliate
-collector for the THORName owner. Preferred-asset swap execution then follows
+collector for that THORName. Preferred-asset swap execution then follows
 the existing affiliate collector rules and may be skipped when the preferred
 asset route is unavailable.
 

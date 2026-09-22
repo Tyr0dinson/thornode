@@ -24,13 +24,16 @@ var _ = math.Inf
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
 type QueryQuoteSwapRequest struct {
-	FromAsset             string `protobuf:"bytes,1,opt,name=from_asset,json=fromAsset,proto3" json:"from_asset,omitempty"`
-	ToAsset               string `protobuf:"bytes,2,opt,name=to_asset,json=toAsset,proto3" json:"to_asset,omitempty"`
-	Amount                string `protobuf:"bytes,3,opt,name=amount,proto3" json:"amount,omitempty"`
-	StreamingInterval     string `protobuf:"bytes,4,opt,name=streaming_interval,json=streamingInterval,proto3" json:"streaming_interval,omitempty"`
-	StreamingQuantity     string `protobuf:"bytes,5,opt,name=streaming_quantity,json=streamingQuantity,proto3" json:"streaming_quantity,omitempty"`
-	Destination           string `protobuf:"bytes,6,opt,name=destination,proto3" json:"destination,omitempty"`
-	ToleranceBps          string `protobuf:"bytes,7,opt,name=tolerance_bps,json=toleranceBps,proto3" json:"tolerance_bps,omitempty"`
+	FromAsset         string `protobuf:"bytes,1,opt,name=from_asset,json=fromAsset,proto3" json:"from_asset,omitempty"`
+	ToAsset           string `protobuf:"bytes,2,opt,name=to_asset,json=toAsset,proto3" json:"to_asset,omitempty"`
+	Amount            string `protobuf:"bytes,3,opt,name=amount,proto3" json:"amount,omitempty"`
+	StreamingInterval string `protobuf:"bytes,4,opt,name=streaming_interval,json=streamingInterval,proto3" json:"streaming_interval,omitempty"`
+	StreamingQuantity string `protobuf:"bytes,5,opt,name=streaming_quantity,json=streamingQuantity,proto3" json:"streaming_quantity,omitempty"`
+	Destination       string `protobuf:"bytes,6,opt,name=destination,proto3" json:"destination,omitempty"`
+	ToleranceBps      string `protobuf:"bytes,7,opt,name=tolerance_bps,json=toleranceBps,proto3" json:"tolerance_bps,omitempty"`
+	// Refund address on the source chain. Required when that chain cannot observe
+	// senders (currently XMR); when provided, it must be valid for the configured
+	// network.
 	RefundAddress         string `protobuf:"bytes,8,opt,name=refund_address,json=refundAddress,proto3" json:"refund_address,omitempty"`
 	Affiliate             string `protobuf:"bytes,9,opt,name=affiliate,proto3" json:"affiliate,omitempty"`
 	AffiliateBps          string `protobuf:"bytes,10,opt,name=affiliate_bps,json=affiliateBps,proto3" json:"affiliate_bps,omitempty"`
@@ -576,7 +579,9 @@ type QueryQuoteLimitRequest struct {
 	Affiliate string `protobuf:"bytes,8,opt,name=affiliate,proto3" json:"affiliate"`
 	// affiliate basis points (0-10000)
 	AffiliateBps string `protobuf:"bytes,9,opt,name=affiliate_bps,json=affiliateBps,proto3" json:"affiliate_bps"`
-	// refund address
+	// Refund address on the source chain. Required when that chain cannot observe
+	// senders (currently XMR); when provided, it must be valid for the configured
+	// network.
 	RefundAddress string `protobuf:"bytes,10,opt,name=refund_address,json=refundAddress,proto3" json:"refund_address"`
 }
 

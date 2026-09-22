@@ -251,3 +251,55 @@ func (s *KeeperTestSuite) TestMsgServerChangeDenomAdmin() {
 	)
 	s.Require().Error(err)
 }
+
+// TestMsgServerRejectsNonContractSender asserts the x/denom permission boundary
+// is enforced by the Msg server itself, not only by the ante handler: an
+// externally owned account cannot create denoms or manage their supply, even if
+// its message reaches the Msg service without passing through the ante handler.
+func (s *KeeperTestSuite) TestMsgServerRejectsNonContractSender() {
+	s.SetupTest()
+
+	// a contract creates a denom and mints into the EOA
+	_, err := s.msgServer.CreateDenom(s.ctx, &types.MsgCreateDenom{
+		Sender: accAddrs[0].String(),
+		Id:     "foo",
+	})
+	s.Require().NoError(err)
+	denom, err := types.GetTokenDenom("foo")
+	s.Require().NoError(err)
+
+	// the EOA cannot create a denom of its own
+	_, err = s.msgServer.CreateDenom(s.ctx, &types.MsgCreateDenom{
+		Sender: eoaAddr.String(),
+		Id:     "bar",
+	})
+	s.Require().ErrorIs(err, types.ErrUnauthorized)
+	barAdmin, err := s.keeper.GetAdmin(sdk.UnwrapSDKContext(s.ctx), "x/bar")
+	s.Require().NoError(err)
+	s.Require().Nil(barAdmin)
+
+	// nor mint, burn or reassign the admin of an existing one
+	_, err = s.msgServer.MintTokens(s.ctx, &types.MsgMintTokens{
+		Sender:    eoaAddr.String(),
+		Amount:    sdk.NewCoin(denom, math.NewInt(100)),
+		Recipient: eoaAddr.String(),
+	})
+	s.Require().ErrorIs(err, types.ErrUnauthorized)
+
+	_, err = s.msgServer.BurnTokens(s.ctx, &types.MsgBurnTokens{
+		Sender: eoaAddr.String(),
+		Amount: sdk.NewCoin(denom, math.NewInt(100)),
+	})
+	s.Require().ErrorIs(err, types.ErrUnauthorized)
+
+	_, err = s.msgServer.ChangeDenomAdmin(s.ctx, &types.MsgChangeDenomAdmin{
+		Sender:   eoaAddr.String(),
+		Denom:    denom,
+		NewAdmin: eoaAddr.String(),
+	})
+	s.Require().ErrorIs(err, types.ErrUnauthorized)
+
+	admin, err := s.keeper.GetAdmin(sdk.UnwrapSDKContext(s.ctx), denom)
+	s.Require().NoError(err)
+	s.Require().Equal(accAddrs[0].String(), admin.String())
+}

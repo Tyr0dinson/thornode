@@ -3,6 +3,7 @@ package thorchain
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -214,6 +215,20 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 			}
 			if success {
 				refundCoins = append(refundCoins, toi.Coin)
+				// Count refunds actually scheduled, not merely attempted. Skipped in
+				// simulation mode: the querier's quote simulation reaches refundTx via
+				// SwapQ().EndBlock for any failing simulated swap, and would otherwise
+				// inflate this counter on every quote request.
+				if !isSimulationMode(ctx) {
+					telemetry.IncrCounterWithLabels(
+						[]string{"thornode", "refund"},
+						1,
+						[]metrics.Label{
+							telemetry.NewLabel("chain", toi.Chain.String()),
+							telemetry.NewLabel("code", refundCodeLabel(refundCode)),
+						},
+					)
+				}
 			}
 		}
 		// Zombie coins are just dropped.
@@ -281,8 +296,27 @@ func unrefundableCoinCleanup(ctx cosmos.Context, mgr Manager, toi TxOutItem, bur
 		return
 	}
 
+	// Past this point the network has given up on returning a user's coins. Every
+	// increment is a customer-visible loss event, and nothing else exports it.
+	// disposition records where the money actually ended up, so one deferred emit
+	// covers all the exit paths below instead of a counter at each. Skipped in
+	// simulation mode, which reaches here through the querier's quote simulation.
+	disposition := "left_in_vault"
+	if !isSimulationMode(ctx) {
+		defer func() {
+			labels := []metrics.Label{
+				telemetry.NewLabel("reason", burnReason),
+				telemetry.NewLabel("disposition", disposition),
+				telemetry.NewLabel("asset", coin.Asset.String()),
+			}
+			telemetry.IncrCounterWithLabels([]string{"thornode", "unrefundable_cleanup"}, 1, labels)
+			telemetry.IncrCounterWithLabels([]string{"thornode", "unrefundable_cleanup", "amount"}, telem(coin.Amount), labels)
+		}()
+	}
+
 	if coin.Asset.IsTradeAsset() {
 		mgr.Keeper().SetRefundCleanup(ctx, cleanupKey)
+		disposition = "trade_asset_noop"
 		return
 	}
 
@@ -320,6 +354,7 @@ func unrefundableCoinCleanup(ctx cosmos.Context, mgr Manager, toi TxOutItem, bur
 			return
 		}
 		mgr.Keeper().SetRefundCleanup(ctx, cleanupKey)
+		disposition = "pool_donate"
 		donateEvt := NewEventDonate(coin.Asset.GetLayer1Asset(), tx)
 		if emitErr := mgr.EventMgr().EmitEvent(ctx, donateEvt); emitErr != nil {
 			ctx.Logger().Error("fail to emit donate event for unrefundable coin", "error", emitErr)
@@ -332,6 +367,7 @@ func unrefundableCoinCleanup(ctx cosmos.Context, mgr Manager, toi TxOutItem, bur
 			return
 		}
 		mgr.Keeper().SetRefundCleanup(ctx, cleanupKey)
+		disposition = "reserve"
 
 		reserveContributor := NewReserveContributor(tx.FromAddress, coin.Amount)
 		reserveEvent := NewEventReserve(reserveContributor, tx)
@@ -342,6 +378,7 @@ func unrefundableCoinCleanup(ctx cosmos.Context, mgr Manager, toi TxOutItem, bur
 		// If not satisfying the other conditions this coin should be a native coin in the Reserve,
 		// so leave it there.
 		mgr.Keeper().SetRefundCleanup(ctx, cleanupKey)
+		disposition = "reserve_noop"
 	}
 }
 
@@ -794,13 +831,78 @@ func telemInt(input cosmos.Int) float32 {
 	return float32(i) / 100000000
 }
 
+// telemChainNames is the set of chain label values a metric may carry, built once
+// from common.AllChains.
+var telemChainNames = func() map[string]struct{} {
+	m := make(map[string]struct{}, len(common.AllChains))
+	for _, c := range common.AllChains {
+		m[c.String()] = struct{}{}
+	}
+	return m
+}()
+
+// telemChain renders a chain as a metric label value, collapsing anything outside
+// common.AllChains to a fixed "other".
+//
+// Chain.Valid (common/chain.go) only checks length and uppercase-ness, and nothing
+// upstream narrows it further: MsgObservedTxQuorum.ValidateBasic delegates to
+// Tx.Valid, which only requires a non-empty Chain, and Address.IsChain accepts an
+// unknown chain through its default branch. So a chain that arrives on an inbound
+// message - or one derived from a user-supplied memo asset - is attacker-chosen,
+// and emitting it verbatim mints unbounded Prometheus series on every
+// telemetry-enabled validator, including from messages that were then rejected.
+//
+// Label normalisation only. It is deliberately not a validation helper: no
+// consensus path calls it, and collapsing to "other" must never become a way to
+// accept a chain a handler would otherwise reject.
+func telemChain(c common.Chain) string {
+	name := c.String()
+	if _, ok := telemChainNames[name]; ok {
+		return name
+	}
+	return "other"
+}
+
+// telemRaw renders an unscaled magnitude (unit counts, scores) as a gauge value.
+// cosmos.Uint.Uint64() panics when out of range, and a panic here is swallowed by
+// the recover in emitEndBlockTelemetry - which would silently stop every metric
+// emitted after it, every block. Guard instead.
+func telemRaw(input cosmos.Uint) float32 {
+	if !input.BigInt().IsUint64() {
+		return 0
+	}
+	return float32(input.Uint64())
+}
+
 func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 	// capture panics
 	defer func() {
 		if err := recover(); err != nil {
 			ctx.Logger().Error("panic while emitting end block telemetry", "error", err)
+			// the recover above makes a telemetry panic otherwise invisible to monitoring
+			telemetry.IncrCounter(1, "thornode", "telemetry", "panic")
 		}
 	}()
+
+	// Per-entity gauge loops (per-pool, per-node, per-vault) produce thousands of
+	// gauge writes a block, and the go-metrics sink layer - not the keeper reads -
+	// is where that time goes. Prometheus scrapes every 15-30s (2.5-5 blocks) and
+	// go-metrics gauges retain their last value (prometheus_retention_time=600s in
+	// config/default.yaml), so a series refreshed every 5 blocks is indistinguishable
+	// to a scraper from one refreshed every block. Each group gets a different
+	// residue so the cost is spread across the period instead of landing on one
+	// block. Small scalar gauges an operator alerts on for liveness stay per-block.
+	//
+	// Residue choice is deliberate: every pre-existing IsPeriodLastBlock(10/50/100/600)
+	// gate in the telemetry_*.go emitters also fires at height%5==0, so the heaviest
+	// group (pools, ~16 gauges x ~100 pools) is put on residue 2 and the lightest of the
+	// three (vaults) shares residue 0 with them. Residues 3 and 4 are mimir and secured
+	// assets, gated inside their own emitters below. Residue 1 also carries the
+	// node-store scans in emitNetworkStateTelemetry, which are gated there so all
+	// node-account walks land on the same block as the per-node loop here.
+	emitVaults := ctx.BlockHeight()%5 == 0
+	emitNodes := ctx.BlockHeight()%5 == 1
+	emitPools := ctx.BlockHeight()%5 == 2
 
 	// emit network data
 	network, err := mgr.Keeper().GetNetwork(ctx)
@@ -809,7 +911,11 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 	}
 
 	telemetry.SetGauge(telem(network.BondRewardRune), "thornode", "network", "bond_reward_rune")
-	telemetry.SetGauge(float32(network.TotalBondUnits.Uint64()), "thornode", "network", "total_bond_units")
+	telemetry.SetGauge(telemRaw(network.TotalBondUnits), "thornode", "network", "total_bond_units")
+	telemetry.SetGauge(float32(network.LPIncomeSplit), "thornode", "network", "lp_income_split")
+	telemetry.SetGauge(float32(network.NodeIncomeSplit), "thornode", "network", "node_income_split")
+	telemetry.SetGauge(telem(cosmos.NewUint(network.OutboundGasSpentRune)), "thornode", "network", "outbound_gas_spent_rune")
+	telemetry.SetGauge(telem(cosmos.NewUint(network.OutboundGasWithheldRune)), "thornode", "network", "outbound_gas_withheld_rune")
 
 	// emit protocol owned liquidity data
 	pol, err := mgr.Keeper().GetPOL(ctx)
@@ -829,12 +935,12 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 	for _, name := range []string{ReserveName, AsgardName, BondName} {
 		modAddr := mgr.Keeper().GetModuleAccAddress(name)
 		bal := mgr.Keeper().GetBalance(ctx, modAddr)
+		modLabel := telemetry.NewLabel("module", name)
 		for _, coin := range bal {
-			modLabel := telemetry.NewLabel("module", name)
 			denom := telemetry.NewLabel("denom", coin.Denom)
 			telemetry.SetGaugeWithLabels(
 				[]string{"thornode", "module", "balance"},
-				telem(cosmos.NewUint(coin.Amount.Uint64())),
+				telemInt(coin.Amount),
 				[]metrics.Label{modLabel, denom},
 			)
 		}
@@ -845,31 +951,61 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 	if err != nil {
 		return err
 	}
+	totalActiveBond := cosmos.ZeroUint()
 	for _, node := range nodes {
-		telemetry.SetGaugeWithLabels(
-			[]string{"thornode", "node", "bond"},
-			telem(cosmos.NewUint(node.Bond.Uint64())),
-			[]metrics.Label{telemetry.NewLabel("node_address", node.NodeAddress.String()), telemetry.NewLabel("status", node.Status.String())},
-		)
-		var pts int64
-		pts, err = mgr.Keeper().GetNodeAccountSlashPoints(ctx, node.NodeAddress)
-		if err != nil {
+		// totalActiveBond feeds the per-block network.total_active_bond and
+		// security_ratio scalars, so it is accumulated every block regardless of
+		// whether the per-node series are refreshed this block.
+		if node.Status == NodeActive {
+			totalActiveBond = totalActiveBond.Add(node.Bond)
+		}
+		if !emitNodes {
 			continue
 		}
+
+		// String() once per node: it is the dominant per-iteration allocation and
+		// four of the label sets below need it.
+		addr := node.NodeAddress.String()
+		nodeLabel := []metrics.Label{telemetry.NewLabel("node_address", addr)}
 		telemetry.SetGaugeWithLabels(
-			[]string{"thornode", "node", "slash_points"},
-			float32(pts),
-			[]metrics.Label{telemetry.NewLabel("node_address", node.NodeAddress.String())},
+			[]string{"thornode", "node", "bond"},
+			telem(node.Bond),
+			[]metrics.Label{telemetry.NewLabel("node_address", addr), telemetry.NewLabel("status", node.Status.String())},
 		)
+
+		// info-style gauge (always 1) so `count by (version)` / `by (status)` works in PromQL
+		telemetry.SetGaugeWithLabels(
+			[]string{"thornode", "node", "info"},
+			1,
+			[]metrics.Label{
+				telemetry.NewLabel("node_address", addr),
+				telemetry.NewLabel("status", node.Status.String()),
+				telemetry.NewLabel("version", node.Version),
+			},
+		)
+		telemetry.SetGaugeWithLabels([]string{"thornode", "node", "missing_blocks"}, float32(node.MissingBlocks), nodeLabel)
+		telemetry.SetGaugeWithLabels([]string{"thornode", "node", "requested_to_leave"}, boolTelem(node.RequestedToLeave), nodeLabel)
+		telemetry.SetGaugeWithLabels([]string{"thornode", "node", "forced_to_leave"}, boolTelem(node.ForcedToLeave), nodeLabel)
+		telemetry.SetGaugeWithLabels([]string{"thornode", "node", "maintenance"}, boolTelem(node.Maintenance), nodeLabel)
+
+		// jail: blocks remaining until release (0 when not jailed)
+		jailBlocks := float32(0)
+		if jail, jerr := mgr.Keeper().GetNodeAccountJail(ctx, node.NodeAddress); jerr == nil && jail.ReleaseHeight > ctx.BlockHeight() {
+			jailBlocks = float32(jail.ReleaseHeight - ctx.BlockHeight())
+		}
+		telemetry.SetGaugeWithLabels([]string{"thornode", "node", "jail_blocks_remaining"}, jailBlocks, nodeLabel)
+
+		pts, perr := mgr.Keeper().GetNodeAccountSlashPoints(ctx, node.NodeAddress)
+		if perr != nil {
+			continue
+		}
+		// same label content as nodeLabel; reuse it rather than rebuilding the slice.
+		telemetry.SetGaugeWithLabels([]string{"thornode", "node", "slash_points"}, float32(pts), nodeLabel)
 
 		age := cosmos.NewUint(uint64((ctx.BlockHeight() - node.StatusSince) * common.One))
 		if pts > 0 {
 			leaveScore := age.QuoUint64(uint64(pts))
-			telemetry.SetGaugeWithLabels(
-				[]string{"thornode", "node", "leave_score"},
-				float32(leaveScore.Uint64()),
-				[]metrics.Label{telemetry.NewLabel("node_address", node.NodeAddress.String())},
-			)
+			telemetry.SetGaugeWithLabels([]string{"thornode", "node", "leave_score"}, telemRaw(leaveScore), nodeLabel)
 		}
 	}
 
@@ -882,8 +1018,16 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 	if err != nil {
 		return err
 	}
+	totalPooledRune := cosmos.ZeroUint()
 	for _, pool := range pools {
 		if pool.LPUnits.IsZero() {
+			continue
+		}
+		// totalPooledRune feeds the per-block network.total_pooled_rune and
+		// security_ratio scalars - accumulate it every block, gate only the
+		// per-pool series (and the seven keeper reads that exist solely to feed them).
+		totalPooledRune = totalPooledRune.Add(pool.BalanceRune)
+		if !emitPools {
 			continue
 		}
 		synthSupply := mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
@@ -914,13 +1058,59 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 		}
 		telemetry.SetGaugeWithLabels([]string{"thornode", "pool", "tradeasset", "units"}, telem(tu.Units), labels)
 		telemetry.SetGaugeWithLabels([]string{"thornode", "pool", "tradeasset", "depth"}, telem(tu.Depth), labels)
+
+		// fee & slip pressure per pool
+		if fee, ferr := mgr.Keeper().GetRollingPoolLiquidityFee(ctx, pool.Asset); ferr == nil {
+			telemetry.SetGaugeWithLabels([]string{"thornode", "pool", "liquidity_fee", "rolling"}, telem(cosmos.NewUint(fee)), labels)
+		}
+		if fee, ferr := mgr.Keeper().GetEffectivePoolLiquidityFee(ctx, pool.Asset); ferr == nil {
+			telemetry.SetGaugeWithLabels([]string{"thornode", "pool", "liquidity_fee", "effective"}, telem(cosmos.NewUint(fee)), labels)
+		}
+		if slip, serr := mgr.Keeper().GetLongRollup(ctx, pool.Asset); serr == nil {
+			telemetry.SetGaugeWithLabels([]string{"thornode", "pool", "swap_slip", "long_rollup"}, float32(slip), labels)
+		}
+
+		// NOTE: the outbound_fee withheld/spent/surplus gauges used to be emitted
+		// here via Keeper.GetOutboundFeeWithheldRune. That accessor is NOT read-only:
+		// on a zero read it lazily writes the equilibrium surplus back to the store
+		// (keeper/v1/keeper_outbound_fees.go). emitEndBlockTelemetry runs only on
+		// nodes with telemetry.enabled, so that write happened on some validators and
+		// not others - a state divergence. They now live in emitQueueDetailTelemetry,
+		// which resolves the same value read-only through the store iterator.
+
+		// halt / pause state, per pool
+		telemetry.SetGaugeWithLabels([]string{"thornode", "pool", "deposit_paused"}, boolTelem(mgr.Keeper().IsPoolDepositPaused(ctx, pool.Asset)), labels)
+		ragStart, rerr := mgr.Keeper().GetPoolRagnarokStart(ctx, pool.Asset)
+		telemetry.SetGaugeWithLabels([]string{"thornode", "pool", "ragnarok"}, boolTelem(rerr == nil && ragStart > 0), labels)
+	}
+	telemetry.SetGauge(telem(totalPooledRune), "thornode", "network", "total_pooled_rune")
+	telemetry.SetGauge(telem(totalActiveBond), "thornode", "network", "total_active_bond")
+	if !totalPooledRune.IsZero() {
+		// bond/liquidity security ratio: below 1 means pools out-value the bond securing them
+		telemetry.SetGauge(telem(totalActiveBond)/telem(totalPooledRune), "thornode", "network", "security_ratio")
 	}
 
 	// emit vault metrics
 	asgards, _ := mgr.Keeper().GetAsgardVaults(ctx)
+	vaultCounts := map[VaultStatus]int{}
+	vaultAssetTotals := map[string]cosmos.Uint{}
 	for _, vault := range asgards {
+		// vault.count by status is four cheap scalars and the stuck-churn alarm -
+		// keep it per-block. The per-vault and per-coin series below are gated.
+		vaultCounts[vault.Status]++
+		if !emitVaults {
+			continue
+		}
 		if vault.Status != ActiveVault && vault.Status != RetiringVault {
 			continue
+		}
+		for _, coin := range vault.Coins {
+			key := coin.Asset.GetLayer1Asset().String()
+			if cur, ok := vaultAssetTotals[key]; ok {
+				vaultAssetTotals[key] = cur.Add(coin.Amount)
+			} else {
+				vaultAssetTotals[key] = coin.Amount
+			}
 		}
 
 		// calculate the total value of this vault
@@ -937,16 +1127,71 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 				totalValue = totalValue.Add(pool.AssetValueInRune(coin.Amount))
 			}
 		}
-		labels := []metrics.Label{telemetry.NewLabel("vault_type", vault.Type.String()), telemetry.NewLabel("pubkey", vault.PubKey.String())}
+		// vault_type/pubkey are invariant across this vault's coins - build the two
+		// Labels (and the vault.balance key) once instead of per coin.
+		typeLabel := telemetry.NewLabel("vault_type", vault.Type.String())
+		pkLabel := telemetry.NewLabel("pubkey", vault.PubKey.String())
+		labels := []metrics.Label{typeLabel, pkLabel}
 		telemetry.SetGaugeWithLabels([]string{"thornode", "vault", "total_value"}, telem(totalValue), labels)
 
+		balanceKey := []string{"thornode", "vault", "balance"}
 		for _, coin := range vault.Coins {
-			vaultCoinLabel := []metrics.Label{
-				telemetry.NewLabel("vault_type", vault.Type.String()),
-				telemetry.NewLabel("pubkey", vault.PubKey.String()),
-				telemetry.NewLabel("asset", coin.Asset.String()),
+			vaultCoinLabel := []metrics.Label{typeLabel, pkLabel, telemetry.NewLabel("asset", coin.Asset.String())}
+			telemetry.SetGaugeWithLabels(balanceKey, telem(coin.Amount), vaultCoinLabel)
+		}
+	}
+
+	// vault counts by status - a retiring count that never returns to zero means a stuck churn
+	for _, status := range []VaultStatus{ActiveVault, RetiringVault, InactiveVault, InitVault} {
+		telemetry.SetGaugeWithLabels(
+			[]string{"thornode", "vault", "count"},
+			float32(vaultCounts[status]),
+			[]metrics.Label{telemetry.NewLabel("status", status.String())},
+		)
+	}
+
+	// Vault backing: what the asgards actually custody for an L1 asset vs everything
+	// that asset backs. Vaults hold more than the pool depth - trade account and
+	// secured asset depth are custodied in the same vaults - so comparing against
+	// pool.BalanceAsset alone would leave this permanently negative and useless.
+	// A delta that trends negative is funds going missing. It is subtracted on
+	// cosmos.Uint before the float32 conversion (solvencyDelta) so a deficit smaller
+	// than one float32 ULP of the balance is not quantised to zero.
+	//
+	// Gated with the rest of the vault group: vaultAssetTotals is only populated on
+	// those blocks, and this loop is three gauges plus two keeper reads per pool.
+	if emitVaults {
+		for _, pool := range pools {
+			if pool.LPUnits.IsZero() {
+				continue
 			}
-			telemetry.SetGaugeWithLabels([]string{"thornode", "vault", "balance"}, telem(coin.Amount), vaultCoinLabel)
+			// External layer-1 pools only. GetPools also returns savers pools
+			// (BTC/BTC) and native pools (THOR.TCY), both of which can carry
+			// LPUnits while their assets live in module accounts rather than in a
+			// vault - AsgardInvariant accounts for those module balances
+			// separately. vaultAssetTotals is keyed by the layer-1 assets the
+			// asgards actually custody, so those pools would report held == 0
+			// against a positive backing and pin vault_backing_delta negative
+			// forever on healthy accounting.
+			if !pool.Asset.IsExternalL1Asset() {
+				continue
+			}
+			assetStr := pool.Asset.String()
+			held := cosmos.ZeroUint()
+			if amt, ok := vaultAssetTotals[assetStr]; ok {
+				held = amt
+			}
+			backing := pool.BalanceAsset
+			if tu, terr := mgr.Keeper().GetTradeUnit(ctx, pool.Asset.GetTradeAsset()); terr == nil {
+				backing = backing.Add(tu.Depth)
+			}
+			if sa, serr := mgr.Keeper().GetSecuredAsset(ctx, pool.Asset.GetSecuredAsset()); serr == nil {
+				backing = backing.Add(sa.Depth)
+			}
+			labels := []metrics.Label{telemetry.NewLabel("pool", assetStr)}
+			telemetry.SetGaugeWithLabels([]string{"thornode", "vault", "backing", "held"}, telem(held), labels)
+			telemetry.SetGaugeWithLabels([]string{"thornode", "vault", "backing", "owed"}, telem(backing), labels)
+			telemetry.SetGaugeWithLabels([]string{"thornode", "vault", "backing", "delta"}, solvencyDelta(held, backing), labels)
 		}
 	}
 
@@ -1011,7 +1256,247 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 	telemetry.SetGauge(telem(queueScheduledOutboundValue), "thornode", "queue", "scheduled", "value", "rune")
 	telemetry.SetGauge(telem(queueScheduledOutboundValue)*runeUSDPrice, "thornode", "queue", "scheduled", "value", "usd")
 
+	// NOTE: `pools` and `asgards` above are already fetched this block.
+	// emitQueueDetailTelemetry re-runs GetPools and emitVaultDetailTelemetry re-runs
+	// GetAsgardVaults. Once those take the slice as a parameter -
+	// emitQueueDetailTelemetry(ctx, mgr, pools) / emitVaultDetailTelemetry(ctx, mgr, asgards) -
+	// pass them here and drop the duplicate reads.
+	emitChainTelemetry(ctx, mgr)
+	emitNetworkStateTelemetry(ctx, mgr)
+	emitStreamingSwapTelemetry(ctx, mgr)
+	emitSecuredAssetTelemetry(ctx, mgr)
+	emitMimirTelemetry(ctx, mgr)
+	emitVaultDetailTelemetry(ctx, mgr)
+	emitSolvencyTelemetry(ctx, mgr)
+	emitChainDetailTelemetry(ctx, mgr)
+	emitQueueDetailTelemetry(ctx, mgr)
+	emitTCYTelemetry(ctx, mgr)
+
 	return nil
+}
+
+// boolTelem renders a boolean as a 0/1 gauge.
+func boolTelem(b bool) float32 {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// emitChainTelemetry emits per-chain observation, halt and fee state. This is the
+// primary "is a chain wedged" signal: last_observed_height going flat while other
+// chains advance means bifrost observation has stalled for that chain.
+func emitChainTelemetry(ctx cosmos.Context, mgr Manager) {
+	k := mgr.Keeper()
+	for _, chain := range common.AllChains {
+		labels := []metrics.Label{telemetry.NewLabel("chain", chain.String())}
+
+		height, err := k.GetLastChainHeight(ctx, chain)
+		if err != nil {
+			ctx.Logger().Error("fail to get last chain height for telemetry", "chain", chain, "error", err)
+			continue
+		}
+		if height == 0 {
+			// chain not observed on this network, don't emit a series for it
+			continue
+		}
+		telemetry.SetGaugeWithLabels([]string{"thornode", "chain", "last_observed_height"}, float32(height), labels)
+		telemetry.SetGaugeWithLabels([]string{"thornode", "chain", "halted"}, boolTelem(k.IsChainHalted(ctx, chain)), labels)
+		telemetry.SetGaugeWithLabels([]string{"thornode", "chain", "trading_halted"}, boolTelem(k.IsChainTradingHalted(ctx, chain)), labels)
+		telemetry.SetGaugeWithLabels([]string{"thornode", "chain", "lp_paused"}, boolTelem(k.IsLPPaused(ctx, chain)), labels)
+
+		nf, err := k.GetNetworkFee(ctx, chain)
+		if err != nil {
+			continue
+		}
+		telemetry.SetGaugeWithLabels([]string{"thornode", "chain", "network_fee", "tx_size"}, float32(nf.TransactionSize), labels)
+		telemetry.SetGaugeWithLabels([]string{"thornode", "chain", "network_fee", "rate"}, float32(nf.TransactionFeeRate), labels)
+	}
+}
+
+// emitNetworkStateTelemetry emits churn, version, global halt and RUNEPool state.
+func emitNetworkStateTelemetry(ctx cosmos.Context, mgr Manager) {
+	k := mgr.Keeper()
+
+	// global halts
+	telemetry.SetGauge(boolTelem(k.IsGlobalTradingHalted(ctx)), "thornode", "network", "trading_halted")
+	telemetry.SetGauge(boolTelem(k.RagnarokInProgress(ctx)), "thornode", "network", "ragnarok_in_progress")
+
+	// signing liveness
+	if h, err := k.GetLastSignedHeight(ctx); err == nil {
+		telemetry.SetGauge(float32(h), "thornode", "network", "last_signed_height")
+	}
+
+	// churn: blocks since the last successful churn is the stuck-churn alarm
+	lastChurn := getLastChurnHeight(ctx, k)
+	telemetry.SetGauge(float32(lastChurn), "thornode", "churn", "last_height")
+	telemetry.SetGauge(float32(ctx.BlockHeight()-lastChurn), "thornode", "churn", "blocks_since")
+
+	// The two blocks below are the expensive half of this emitter: six full walks
+	// of the node-account store, each unmarshalling every NodeAccount.
+	// GetMinJoinVersion and GetLowestActiveVersion scan it once apiece, and
+	// ListValidatorsByStatus once per status. They share residue 1 with the
+	// per-node gauge loop in emitEndBlockTelemetry so all node-store work lands on
+	// one block of the five rather than every block. Neither series is a liveness
+	// alarm - node counts move on join/leave and versions on the timescale of a
+	// churn - and go-metrics gauges hold their last value between updates, so a
+	// scraper cannot tell the difference. The scalar halt, signing and churn gauges
+	// above stay per-block.
+	if ctx.BlockHeight()%5 == 1 {
+		// version consensus: a min_join above lowest_active means nodes are being churned out on version
+		telemetry.SetGaugeWithLabels(
+			[]string{"thornode", "network", "version_info"},
+			1,
+			[]metrics.Label{
+				telemetry.NewLabel("consensus", mgr.GetVersion().String()),
+				telemetry.NewLabel("min_join", k.GetMinJoinVersion(ctx).String()),
+				telemetry.NewLabel("lowest_active", k.GetLowestActiveVersion(ctx).String()),
+			},
+		)
+
+		// node counts by status - avoids a PromQL aggregation over per-node series
+		for _, status := range []NodeStatus{NodeActive, NodeStandby, NodeReady, NodeDisabled} {
+			nas, err := k.ListValidatorsByStatus(ctx, status)
+			if err != nil {
+				continue
+			}
+			telemetry.SetGaugeWithLabels(
+				[]string{"thornode", "node", "count"},
+				float32(len(nas)),
+				[]metrics.Label{telemetry.NewLabel("status", status.String())},
+			)
+		}
+	}
+
+	// RUNEPool
+	if rp, err := k.GetRUNEPool(ctx); err == nil {
+		telemetry.SetGauge(telem(rp.PoolUnits), "thornode", "runepool", "pool_units")
+		telemetry.SetGauge(telem(rp.ReserveUnits), "thornode", "runepool", "reserve_units")
+		telemetry.SetGauge(telem(rp.RuneDeposited), "thornode", "runepool", "rune_deposited")
+		telemetry.SetGauge(telem(rp.RuneWithdrawn), "thornode", "runepool", "rune_withdrawn")
+	}
+	if v, err := runePoolValue(ctx, mgr); err == nil {
+		telemetry.SetGauge(telem(v), "thornode", "runepool", "value")
+	}
+}
+
+// emitStreamingSwapTelemetry emits in-flight streaming swap depth. A rising
+// remaining-count with a flat completion rate means streaming swaps are stalling.
+func emitStreamingSwapTelemetry(ctx cosmos.Context, mgr Manager) {
+	iter := mgr.Keeper().GetStreamingSwapIterator(ctx)
+	defer iter.Close()
+
+	var count, remaining, failed int64
+	deposited := cosmos.ZeroUint()
+	swappedIn := cosmos.ZeroUint()
+	for ; iter.Valid(); iter.Next() {
+		var swp StreamingSwap
+		if err := mgr.Keeper().Cdc().Unmarshal(iter.Value(), &swp); err != nil {
+			continue
+		}
+		count++
+		if swp.Quantity > swp.Count {
+			remaining += int64(swp.Quantity - swp.Count)
+		}
+		failed += int64(len(swp.FailedSwaps))
+		deposited = deposited.Add(swp.Deposit)
+		swappedIn = swappedIn.Add(swp.In)
+	}
+	telemetry.SetGauge(float32(count), "thornode", "streaming_swap", "count")
+	telemetry.SetGauge(float32(remaining), "thornode", "streaming_swap", "sub_swaps_remaining")
+	telemetry.SetGauge(float32(failed), "thornode", "streaming_swap", "failed_sub_swaps")
+	telemetry.SetGauge(telem(deposited), "thornode", "streaming_swap", "deposited")
+	telemetry.SetGauge(telem(swappedIn), "thornode", "streaming_swap", "swapped_in")
+}
+
+// refundCodeLabel maps a refund code to a bounded, readable label. Named cases are
+// the ones worth alerting on separately; anything else falls back to its numeric code,
+// which keeps the label bounded without needing this list kept in sync with errors.go.
+func refundCodeLabel(code uint32) string {
+	switch code {
+	case CodeTxFail:
+		return "tx_fail"
+	case CodeInvalidVault:
+		return "invalid_vault"
+	case CodeInvalidMemo:
+		return "invalid_memo"
+	case CodeSwapFail:
+		return "swap_fail"
+	case CodeInternalError:
+		return "internal_error"
+	case CodeInvalidPoolStatus:
+		return "invalid_pool_status"
+	default:
+		return fmt.Sprintf("%d", code)
+	}
+}
+
+// emitMimirTelemetry emits every explicitly-set mimir value as a gauge. Mimir is the
+// operator control plane - a key left at, or set to, the wrong value is a classic mainnet
+// incident - and nothing else exposes it to Prometheus, so today it can only be diffed by
+// polling the REST API. A change shows up as a step in the series (PromQL
+// changes()/delta()), which is what an alert or an agent watches.
+//
+// Cardinality is bounded by operator action: the mimir store only holds keys that have
+// actually been set, so unset keys falling back to their constant default emit nothing.
+//
+// Gated to every 5th block (residue 3, staggered against the pool/node/vault groups):
+// with ~200 set keys this is one of the larger per-entity loops, and Prometheus scrapes
+// no faster than every 15s. Cost of the gate: the step edge is located to within 5
+// blocks (~30s) rather than 1, and a mimir set and then unset again inside a single
+// 5-block window is invisible - the series never shows the intermediate value.
+//
+// Note: gauges are float32, so values above 2^24 - which includes the block-height-valued
+// halt keys - quantise. Use these to see WHICH key changed and roughly when, not as an
+// exact height.
+func emitMimirTelemetry(ctx cosmos.Context, mgr Manager) {
+	if ctx.BlockHeight()%5 != 3 {
+		return
+	}
+
+	iter := mgr.Keeper().GetMimirIterator(ctx)
+	defer iter.Close()
+
+	for ; iter.Valid(); iter.Next() {
+		value := types.ProtoInt64{}
+		if err := mgr.Keeper().Cdc().Unmarshal(iter.Value(), &value); err != nil {
+			continue
+		}
+		telemetry.SetGaugeWithLabels(
+			[]string{"thornode", "mimir", "value"},
+			float32(value.GetValue()),
+			[]metrics.Label{telemetry.NewLabel("key", trimKeyPrefix(iter.Key()))},
+		)
+	}
+}
+
+// emitSecuredAssetTelemetry emits secured asset depth per asset.
+//
+// Gated to every 5th block (residue 4, staggered against the pool/node/vault/mimir
+// groups): one gauge per secured asset, a depth series read by a scraper that samples
+// no faster than every 15s. Cost of the gate: a depth change is timestamped to within
+// 5 blocks (~30s), and depth is a level, not a counter, so no movement is lost - only
+// intra-window intermediate values are.
+func emitSecuredAssetTelemetry(ctx cosmos.Context, mgr Manager) {
+	if ctx.BlockHeight()%5 != 4 {
+		return
+	}
+
+	iter := mgr.Keeper().GetSecuredAssetIterator(ctx)
+	defer iter.Close()
+
+	depthKey := []string{"thornode", "secured_asset", "depth"}
+	for ; iter.Valid(); iter.Next() {
+		var sa SecuredAsset
+		if err := mgr.Keeper().Cdc().Unmarshal(iter.Value(), &sa); err != nil {
+			continue
+		}
+		telemetry.SetGaugeWithLabels(
+			depthKey,
+			telem(sa.Depth),
+			[]metrics.Label{telemetry.NewLabel("asset", sa.Asset.String())},
+		)
+	}
 }
 
 func getAvailablePoolsRune(ctx cosmos.Context, keeper keeper.Keeper) (Pools, cosmos.Uint, error) {
@@ -1398,6 +1883,12 @@ func getLastChurnHeight(ctx cosmos.Context, k keeper.Keeper) int64 {
 // - Removing the swap from advanced queue and indexes
 // - Emitting appropriate events
 func settleSwap(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason string) error {
+	// Skip collector swaps that have already left the queue so repeated settlement
+	// cannot deliver their output or restore their unused RUNE twice.
+	if (affiliateCollectorConversionName(mgr.Keeper(), msg) != "" || isPreferredAssetCollectorSwap(mgr.Keeper(), msg)) &&
+		!mgr.Keeper().HasAdvSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index)) {
+		return nil
+	}
 	// Settle swap mutates multiple pieces of state (scheduled outbounds, refunds,
 	// queue removal, events). Run it in a cache context so partial failures do not
 	// leave committed side effects that can be duplicated on retry.
@@ -1410,6 +1901,35 @@ func settleSwap(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason strin
 }
 
 func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason string) error {
+	// Deliver accumulated collector output and credit any converted RUNE in the
+	// same cached context as queue removal, so failed settlement can be retried.
+	collectorConversion := affiliateCollectorConversionName(mgr.Keeper(), msg) != ""
+	collectorPayout := isPreferredAssetCollectorSwap(mgr.Keeper(), msg)
+	if !msg.State.Out.IsZero() && (collectorConversion || collectorPayout) {
+		if err := deliverAffiliateCollectorOutput(ctx, mgr, msg, msg.State.Out); err != nil {
+			if !collectorPayout || !errors.Is(err, ErrNotEnoughToPayFee) {
+				return err
+			}
+			// Output below the fee or dust limit cannot be paid. Return it to
+			// the pool through the normal cleanup path, then restore only unused
+			// input below. Keep the queue item if cleanup fails so it can retry.
+			toi := TxOutItem{
+				Chain:     msg.TargetAsset.GetChain(),
+				InHash:    msg.Tx.ID,
+				ToAddress: msg.Destination,
+				Coin:      common.NewCoin(msg.TargetAsset, msg.State.Out),
+			}
+			unrefundableCoinCleanup(ctx, mgr, toi, "failed_outbound")
+			if !mgr.Keeper().HasRefundCleanup(ctx, refundCleanupKey(toi, "failed_outbound")) {
+				return fmt.Errorf("failed to clean up preferred asset payout %s", msg.Tx.ID)
+			}
+			refundReason := fmt.Sprintf("%s; fail to refund (%s): swap output", err, toi.Coin.String())
+			refundTx := common.NewTx(msg.Tx.ID, msg.Tx.FromAddress, msg.Tx.ToAddress, common.NewCoins(toi.Coin), msg.Tx.Gas, msg.Tx.Memo)
+			if emitErr := mgr.EventMgr().EmitEvent(ctx, NewEventRefund(CodeFailAddOutboundTx, refundReason, refundTx, common.Fee{})); emitErr != nil {
+				return emitErr
+			}
+		}
+	}
 	stableReserveInternal, err := isStableReserveInternalSwap(ctx, mgr, msg)
 	if err != nil {
 		return err
@@ -1419,7 +1939,7 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 	// place materializing the final outbound. The advanced swap queue skips
 	// outbound creation during execution and relies on settlement to create the
 	// completed swap outbound, even after multiple sub-swaps have already run.
-	if !msg.State.Out.IsZero() && !stableReserveInternal {
+	if !msg.State.Out.IsZero() && !stableReserveInternal && !collectorConversion && !collectorPayout {
 		// Parse memo to check if this is a savers add
 		memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), msg.Tx.Memo)
 		if err != nil {
@@ -1495,8 +2015,15 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 		}
 	}
 
-	// Refund any remaining deposit
-	if msg.State.Deposit.GT(msg.State.In) {
+	// Return unused payout RUNE to both the module and this THORName's collector.
+	// A normal refund would charge an outbound fee and leave the ledger uncredited.
+	if msg.State.Deposit.GT(msg.State.In) && collectorPayout {
+		if err := restorePreferredAssetCollector(ctx, mgr, msg.Tx.Memo, msg.State.Deposit.Sub(msg.State.In)); err != nil {
+			return err
+		}
+	}
+	// Other swaps refund their remaining deposit through the normal refund path.
+	if msg.State.Deposit.GT(msg.State.In) && !collectorPayout {
 		remainder := common.SafeSub(msg.State.Deposit, msg.State.In)
 		refundCoin := common.NewCoin(msg.Tx.Coins[0].Asset, remainder)
 		refundCoinTx := msg.Tx

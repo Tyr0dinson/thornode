@@ -116,7 +116,7 @@ func (qs queryServer) queryTHORName(ctx cosmos.Context, req *types.QueryThorname
 	}
 
 	affRune := cosmos.ZeroUint()
-	affCol, err := qs.mgr.Keeper().GetAffiliateCollector(ctx, name.Owner)
+	affCol, err := qs.mgr.Keeper().GetAffiliateCollector(ctx, name.Name)
 	if err == nil {
 		affRune = affCol.RuneAmount
 	}

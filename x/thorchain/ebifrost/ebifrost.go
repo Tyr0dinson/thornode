@@ -11,10 +11,12 @@ import (
 
 	"cosmossdk.io/log"
 	"github.com/cosmos/cosmos-sdk/codec"
+	"github.com/cosmos/cosmos-sdk/telemetry"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/bech32"
 
 	cmttypes "github.com/cometbft/cometbft/types"
+	"github.com/hashicorp/go-metrics"
 	common "gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	"google.golang.org/grpc"
@@ -157,6 +159,48 @@ func (b *EnshrinedBifrost) startPruneTimer() {
 				prunedNfs := b.networkFeeCache.PruneExpiredItems(b.cfg.CacheItemTTL)
 				prunedSlvs := b.solvencyCache.PruneExpiredItems(b.cfg.CacheItemTTL)
 				prunedEtxs := b.errataCache.PruneExpiredItems(b.cfg.CacheItemTTL)
+
+				// An attested item that expires here never reached consensus, so
+				// any sustained non-zero rate means observed-but-unprocessed
+				// activity. priceFeedCache is deliberately excluded: it is pruned
+				// with ttl 0 on every commit, which is normal operation.
+				for _, pruned := range []struct {
+					kind  string
+					count int
+				}{
+					{"tx", len(prunedTxs)},
+					{"network_fee", len(prunedNfs)},
+					{"solvency", len(prunedSlvs)},
+					{"errata", len(prunedEtxs)},
+				} {
+					if pruned.count == 0 {
+						continue
+					}
+					telemetry.IncrCounterWithLabels(
+						[]string{"thornode", "ebifrost", "cache_pruned"},
+						float32(pruned.count),
+						[]metrics.Label{telemetry.NewLabel("kind", pruned.kind)},
+					)
+				}
+
+				// Pending-attestation backlog: rising depth with a flat injection
+				// rate means items are accumulating faster than the proposer can
+				// inject them, and pruning is about to start.
+				for _, depth := range []struct {
+					kind  string
+					items int
+				}{
+					{"tx", len(b.quorumTxCache.Get())},
+					{"network_fee", len(b.networkFeeCache.Get())},
+					{"solvency", len(b.solvencyCache.Get())},
+					{"errata", len(b.errataCache.Get())},
+				} {
+					telemetry.SetGaugeWithLabels(
+						[]string{"thornode", "ebifrost", "cache_items"},
+						float32(depth.items),
+						[]metrics.Label{telemetry.NewLabel("kind", depth.kind)},
+					)
+				}
 
 				for _, tx := range prunedTxs {
 					b.logger.Warn(
@@ -682,6 +726,15 @@ func (b *EnshrinedBifrost) ProposalInjectTxs(ctx sdk.Context, maxTxBytes int64) 
 	for _, bz := range txBzs {
 		addLen := cmttypes.ComputeProtoSizeForTxs([]cmttypes.Tx{bz})
 		if txBzLen+addLen > maxTxBytes {
+			// Silently skipped because the proposed block is full. The item stays
+			// cached and is retried, but under sustained load it can be dropped
+			// every round until PruneExpiredItems discards it. Only increments on
+			// the proposing node, so the network rate is the sum across nodes.
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "ebifrost", "inject_dropped_oversize"},
+				1,
+				[]metrics.Label{telemetry.NewLabel("kind", "tx")},
+			)
 			continue
 		}
 		txBzLen += addLen
@@ -706,6 +759,11 @@ func (b *EnshrinedBifrost) ProposalInjectTxs(ctx sdk.Context, maxTxBytes int64) 
 	for _, bz := range nfBzs {
 		addLen := cmttypes.ComputeProtoSizeForTxs([]cmttypes.Tx{bz})
 		if txBzLen+addLen > maxTxBytes {
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "ebifrost", "inject_dropped_oversize"},
+				1,
+				[]metrics.Label{telemetry.NewLabel("kind", "network_fee")},
+			)
 			continue
 		}
 		txBzLen += addLen
@@ -732,6 +790,11 @@ func (b *EnshrinedBifrost) ProposalInjectTxs(ctx sdk.Context, maxTxBytes int64) 
 	for _, bz := range sBzs {
 		addLen := cmttypes.ComputeProtoSizeForTxs([]cmttypes.Tx{bz})
 		if txBzLen+addLen > maxTxBytes {
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "ebifrost", "inject_dropped_oversize"},
+				1,
+				[]metrics.Label{telemetry.NewLabel("kind", "solvency")},
+			)
 			continue
 		}
 		txBzLen += addLen
@@ -756,6 +819,11 @@ func (b *EnshrinedBifrost) ProposalInjectTxs(ctx sdk.Context, maxTxBytes int64) 
 	for _, bz := range eBzs {
 		addLen := cmttypes.ComputeProtoSizeForTxs([]cmttypes.Tx{bz})
 		if txBzLen+addLen > maxTxBytes {
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "ebifrost", "inject_dropped_oversize"},
+				1,
+				[]metrics.Label{telemetry.NewLabel("kind", "errata")},
+			)
 			continue
 		}
 		txBzLen += addLen
@@ -777,6 +845,11 @@ func (b *EnshrinedBifrost) ProposalInjectTxs(ctx sdk.Context, maxTxBytes int64) 
 	for _, bz := range pfBzs {
 		addLen := cmttypes.ComputeProtoSizeForTxs([]cmttypes.Tx{bz})
 		if txBzLen+addLen > maxTxBytes {
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "ebifrost", "inject_dropped_oversize"},
+				1,
+				[]metrics.Label{telemetry.NewLabel("kind", "price_feed")},
+			)
 			continue
 		}
 		txBzLen += addLen

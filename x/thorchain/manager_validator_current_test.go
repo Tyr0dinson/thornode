@@ -1492,9 +1492,9 @@ func (vts *ValidatorMgrTestSuite) TestBondYieldPreferredAssetPayoutAtRewardTime(
 	c.Check(provider.Bps, Equals, uint64(4000))
 	c.Check(provider.PayoutTarget, Equals, payoutTarget)
 
-	collector, err := k.GetAffiliateCollector(ctx, providerAcc)
+	collector, err := k.GetAffiliateCollector(ctx, tn.Name)
 	c.Assert(err, IsNil)
-	c.Check(collector.OwnerAddress.Equals(providerAcc), Equals, true)
+	c.Check(collector.Name, Equals, tn.Name)
 	c.Check(collector.RuneAmount.Equal(expectedPayout), Equals, true)
 	c.Check(k.GetRuneBalanceOfModule(ctx, AffiliateCollectorName).Equal(expectedPayout), Equals, true)
 	c.Check(k.GetBalanceOf(ctx, providerAcc, common.RuneNative).Amount.IsZero(), Equals, true)

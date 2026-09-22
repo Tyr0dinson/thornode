@@ -67,7 +67,7 @@ func (r ApiQuotelimitRequest) Destination(destination string) ApiQuotelimitReque
 	return r
 }
 
-// the refund address, refunds will be sent here if the swap fails
+// the source-chain refund address; required when the source chain cannot observe senders (currently XMR), and otherwise optional; when provided, it must be valid for the configured network
 func (r ApiQuotelimitRequest) RefundAddress(refundAddress string) ApiQuotelimitRequest {
 	r.refundAddress = &refundAddress
 	return r

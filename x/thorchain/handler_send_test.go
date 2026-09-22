@@ -29,6 +29,12 @@ func (s *HandlerSendSuiteV87) TestValidate(c *C) {
 	c.Assert(err, IsNil)
 
 	msg.ToAddress = moduleNameAccAddr
+	// "dummy" is not the denom of the asset it parses to (THOR.DUMMY, whose
+	// denom is "thor.dummy"), so it cannot be converted to a deposit.
+	err = handler.validate(ctx, msg)
+	c.Assert(err, NotNil)
+
+	msg.Amount = cosmos.NewCoins(cosmos.NewCoin("rune", cosmos.NewInt(12)))
 	err = handler.validate(ctx, msg)
 	c.Assert(err, IsNil, Commentf("sending to module address: %s indicates a memo will be attached for MsgDeposit", ModuleName))
 
@@ -80,6 +86,10 @@ func (s *HandlerSendSuiteV87) TestValidate(c *C) {
 func (s *HandlerSendSuiteV87) TestValidateMultiple(c *C) {
 	// Verify that multiple coins can be sent, except to module address
 	ctx, k := setupKeeperForTest(c)
+
+	// cosmos bank sends are gated in the handler and default to off, and this
+	// case is about the coins rather than the gate
+	k.SetMimir(ctx, "BankSendEnabled", 1)
 
 	addr1 := GetRandomBech32Addr()
 	addr2 := GetRandomBech32Addr()
@@ -165,4 +175,95 @@ func (s *HandlerSendSuiteV87) TestHandle(c *C) {
 	}
 	_, err = handler.handle(ctx, msg)
 	c.Assert(err, NotNil)
+}
+
+func (s *HandlerSendSuiteV87) TestDepositConversionRequiresCanonicalDenom(c *C) {
+	ctx, _ := setupKeeperForTest(c)
+
+	fromAddr := GetRandomBech32Addr()
+
+	// "x/ruji" is the denom of the asset it parses to, so it converts
+	_, err := getDeposit(ctx, fromAddr, cosmos.Coins{cosmos.NewCoin("x/ruji", cosmos.NewInt(12))})
+	c.Assert(err, IsNil)
+
+	// "x/rune" parses to THOR.RUNE, whose denom is "rune" - converting it would
+	// debit native RUNE for a send of a different denom
+	_, err = getDeposit(ctx, fromAddr, cosmos.Coins{cosmos.NewCoin("x/rune", cosmos.NewInt(12))})
+	c.Assert(err, NotNil)
+}
+
+func (s *HandlerSendSuiteV87) TestDepositConversionRequiresDirectSigner(c *C) {
+	ctx, _ := setupKeeperForTest(c)
+
+	fromAddr := GetRandomBech32Addr()
+	coins := cosmos.NewCoins(cosmos.NewCoin("rune", cosmos.NewInt(12)))
+	memoCtx := ctx.WithValue(ContextKeyTxMemo, "SWAP:BTC.BTC")
+
+	// a directly signed send is converted, inheriting the memo of the tx it signed
+	signedCtx := memoCtx.WithValue(ContextKeyTxSigners, map[string]struct{}{
+		string(fromAddr): {},
+	})
+	msgDeposit, err := getDeposit(signedCtx, fromAddr, coins)
+	c.Assert(err, IsNil)
+	c.Assert(msgDeposit.Memo, Equals, "SWAP:BTC.BTC")
+	c.Assert(msgDeposit.Signer.Equals(fromAddr), Equals, true)
+
+	// a send dispatched on behalf of fromAddr must not execute a memo fromAddr
+	// never signed
+	dispatchedCtx := memoCtx.WithValue(ContextKeyTxSigners, map[string]struct{}{
+		string(GetRandomBech32Addr()): {},
+	})
+	_, err = getDeposit(dispatchedCtx, fromAddr, coins)
+	c.Assert(err, NotNil)
+}
+
+func (s *HandlerSendSuiteV87) TestSendRequiresDirectSignerOrContract(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	fromAddr := GetRandomBech32Addr()
+	toAddr := GetRandomBech32Addr()
+	handler := NewSendHandler(NewDummyMgrWithKeeper(k))
+
+	msg := &MsgSend{
+		FromAddress: fromAddr,
+		ToAddress:   toAddr,
+		Amount:      cosmos.NewCoins(cosmos.NewCoin("rune", cosmos.NewInt(12))),
+	}
+
+	// signed by its sender
+	signedCtx := ctx.WithValue(ContextKeyTxSigners, map[string]struct{}{
+		string(fromAddr): {},
+	})
+	c.Assert(handler.validate(signedCtx, msg), IsNil)
+
+	// dispatched by neither the sender nor a contract
+	dispatchedCtx := ctx.WithValue(ContextKeyTxSigners, map[string]struct{}{
+		string(GetRandomBech32Addr()): {},
+	})
+	c.Assert(handler.validate(dispatchedCtx, msg), NotNil)
+}
+
+func (s *HandlerSendSuiteV87) TestBankSendEnabledGateInHandler(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	addr1 := GetRandomBech32Addr()
+	addr2 := GetRandomBech32Addr()
+	FundAccount(c, ctx, k, addr1, 200*common.One)
+
+	handler := NewBankSendHandler(NewSendHandler(NewDummyMgrWithKeeper(k)))
+	msg := &banktypes.MsgSend{
+		FromAddress: addr1.String(),
+		ToAddress:   addr2.String(),
+		Amount:      cosmos.NewCoins(cosmos.NewCoin("rune", cosmos.NewInt(12))),
+	}
+
+	// the gate is enforced by the msg server itself, not only by the ante
+	// handler, so that no dispatch path can bypass it
+	k.SetMimir(ctx, "BankSendEnabled", 0)
+	_, err := handler.Send(ctx, msg)
+	c.Assert(err, ErrorMatches, ".*bank sends are disabled.*")
+
+	k.SetMimir(ctx, "BankSendEnabled", 1)
+	_, err = handler.Send(ctx, msg)
+	c.Assert(err, IsNil)
 }

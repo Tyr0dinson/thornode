@@ -3009,6 +3009,90 @@ func (s *NetworkManagerTestSuite) TestCalculateNetworkSolvencyWithStreamingSwaps
 		Commentf("Streaming swap with no progress should deduct full amount, expected 25, got %s", solvency[0].Amount))
 }
 
+func (s *NetworkManagerTestSuite) TestSolvencyAdvancedSwapInputProgress(c *C) {
+	for _, tc := range []struct {
+		name      string
+		deposit   uint64
+		processed uint64
+		quantity  uint64
+	}{
+		{name: "unprocessed single swap", deposit: 10, quantity: 1},
+		{name: "completed single swap", deposit: 10, processed: 10, quantity: 1},
+		{name: "partly processed stream", deposit: 10, processed: 4, quantity: 5},
+		{name: "single swap without deposit state", quantity: 1},
+		{name: "stream without deposit state or legacy record", quantity: 5},
+	} {
+		ctx, mgr := setupManagerForTest(c)
+		k := mgr.Keeper()
+		pool := NewPool()
+		pool.Asset = common.BTCAsset
+		pool.Status = PoolAvailable
+		pool.BalanceRune = cosmos.NewUint(100 * common.One)
+		pool.BalanceAsset = cosmos.NewUint((100 + tc.processed) * common.One)
+		c.Assert(k.SetPool(ctx, pool), IsNil)
+		vault := GetRandomVault()
+		// All 10 BTC of input has arrived; only processed input belongs to the pool.
+		vault.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(110*common.One)))
+		c.Assert(k.SetVault(ctx, vault), IsNil)
+		msg := types.MsgSwap{
+			Tx: common.Tx{
+				ID:    GetRandomTxHash(),
+				Chain: common.BTCChain,
+				Coins: common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One))),
+			},
+			TargetAsset: common.RuneAsset(),
+			Version:     types.SwapVersion_v2,
+			State: &types.SwapState{
+				Quantity: tc.quantity,
+				Deposit:  cosmos.NewUint(tc.deposit * common.One),
+				In:       cosmos.NewUint(tc.processed * common.One),
+				Out:      cosmos.ZeroUint(),
+			},
+		}
+		c.Assert(k.SetAdvSwapQueueItem(ctx, msg), IsNil)
+		nmgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+		solvency, err := nmgr.calculateNetworkSolvency(ctx, mgr)
+		c.Assert(err, IsNil, Commentf("%s", tc.name))
+		c.Assert(solvency, HasLen, 1)
+		c.Assert(solvency[0].Asset.Equals(common.BTCAsset), Equals, true)
+		c.Assert(solvency[0].Amount.IsZero(), Equals, true, Commentf("%s: got %s", tc.name, solvency[0].Amount))
+	}
+}
+
+func (s *NetworkManagerTestSuite) TestSolvencyAdvancedSwapMissingState(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(432000)
+	k := mgr.Keeper()
+	k.SetMimir(ctx, constants.OverSolvencyCheckInterval.String(), 432000)
+	k.SetMimir(ctx, constants.OverSolvencyToTreasuryBps.String(), int64(constants.MaxBasisPts))
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.Status = PoolAvailable
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+	vault := GetRandomVault()
+	vault.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(110*common.One)))
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+	msg := types.MsgSwap{
+		Tx: common.Tx{
+			ID:    GetRandomTxHash(),
+			Chain: common.BTCChain,
+			Coins: common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One))),
+		},
+		TargetAsset: common.RuneAsset(),
+		Version:     types.SwapVersion_v2,
+	}
+	// A decodable record can omit State. Do not guess its liabilities or panic.
+	c.Assert(k.SetAdvSwapQueueItem(ctx, msg), IsNil)
+	nmgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+	solvency, err := nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, ErrorMatches, "missing state for advanced swap .*/0")
+	c.Assert(solvency, IsNil)
+	c.Assert(nmgr.processOverSolvency(ctx, mgr), ErrorMatches, "failed to calculate network solvency: missing state for advanced swap .*/0")
+	c.Assert(affiliateIntegrationQueuedSwaps(c, ctx, k), HasLen, 1)
+}
+
 func (s *NetworkManagerTestSuite) TestSolvencyStreamingSwapTargetOutput(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
@@ -3142,6 +3226,20 @@ func (s *NetworkManagerTestSuite) TestSolvencyStreamingSwapTargetOutputFromNativ
 	// BTC: Vault 100 - Pool 80 - StreamingOutput 20 = 0
 	c.Assert(solvency[0].Amount.Equal(math.ZeroInt()), Equals, true,
 		Commentf("BTC solvency: expected 0 when native-source streaming output is deducted, got %s", solvency[0].Amount))
+
+	// Older advanced streams may have all progress in the legacy record. Its
+	// output must still be counted before the native source asset is skipped.
+	legacy := types.NewStreamingSwap(streamingTxID, 10, 5, cosmos.ZeroUint(), streamingSwapMsg.State.Deposit)
+	legacy.In, legacy.Out = streamingSwapMsg.State.In, streamingSwapMsg.State.Out
+	mgr.Keeper().SetStreamingSwap(ctx, legacy)
+	streamingSwapMsg.State.Deposit = cosmos.ZeroUint()
+	streamingSwapMsg.State.In = cosmos.ZeroUint()
+	streamingSwapMsg.State.Out = cosmos.ZeroUint()
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, streamingSwapMsg), IsNil)
+	solvency, err = nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	c.Assert(solvency, HasLen, 1)
+	c.Assert(solvency[0].Amount.IsZero(), Equals, true)
 }
 
 // TestSolvencyStreamingSwapTargetSynthOutput reproduces the case where a
@@ -4996,7 +5094,7 @@ func (s *NetworkManagerTestSuite) TestRevShareDeductionBeforeSplits(c *C) {
 	// ensure reserve has enough for the payout.
 	FundModule(c, ctx, k, ReserveName, 10_000)
 
-	affcolBefore, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	affcolBefore, err := k.GetAffiliateCollector(ctx, name.Name)
 	c.Assert(err, IsNil)
 	reserveBefore := k.GetRuneBalanceOfModule(ctx, ReserveName)
 
@@ -5008,7 +5106,7 @@ func (s *NetworkManagerTestSuite) TestRevShareDeductionBeforeSplits(c *C) {
 	c.Check(totalRevShare.Equal(expectedPayout), Equals, true,
 		Commentf("totalRevShare = %s, want %s", totalRevShare.String(), expectedPayout.String()))
 
-	affcolAfter, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	affcolAfter, err := k.GetAffiliateCollector(ctx, name.Name)
 	c.Assert(err, IsNil)
 	c.Check(affcolAfter.RuneAmount.Sub(affcolBefore.RuneAmount).Equal(expectedPayout), Equals, true,
 		Commentf("affiliate collector delta = %s, want %s",
@@ -5071,7 +5169,7 @@ func (s *NetworkManagerTestSuite) TestRevShareEventEvenWhenNoMimirSet(c *C) {
 
 	FundModule(c, ctx, k, ReserveName, 10_000)
 
-	affcolBefore, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	affcolBefore, err := k.GetAffiliateCollector(ctx, name.Name)
 	c.Assert(err, IsNil)
 
 	totalRevShare := networkMgr.processRevShare(ctx, mgr)
@@ -5079,7 +5177,7 @@ func (s *NetworkManagerTestSuite) TestRevShareEventEvenWhenNoMimirSet(c *C) {
 		Commentf("totalRevShare must be zero when no REVSHARE mimir is set, got %s", totalRevShare.String()))
 
 	// collector must NOT have changed (no bps set -> no payout).
-	affcolAfter, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	affcolAfter, err := k.GetAffiliateCollector(ctx, name.Name)
 	c.Assert(err, IsNil)
 	c.Check(affcolAfter.RuneAmount.Equal(affcolBefore.RuneAmount), Equals, true,
 		Commentf("collector changed when no REVSHARE mimir was set: before=%s after=%s",
@@ -5139,7 +5237,7 @@ func (s *NetworkManagerTestSuite) TestRevShareExpiredThornameNoPayoutButEventEmi
 
 	FundModule(c, ctx, k, ReserveName, 10_000)
 
-	collectorBefore, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	collectorBefore, err := k.GetAffiliateCollector(ctx, name.Name)
 	c.Assert(err, IsNil)
 	reserveBefore := k.GetRuneBalanceOfModule(ctx, ReserveName)
 
@@ -5147,7 +5245,7 @@ func (s *NetworkManagerTestSuite) TestRevShareExpiredThornameNoPayoutButEventEmi
 	c.Check(totalRevShare.IsZero(), Equals, true,
 		Commentf("expired thorname must not contribute to totalRevShare, got %s", totalRevShare.String()))
 
-	collectorAfter, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	collectorAfter, err := k.GetAffiliateCollector(ctx, name.Name)
 	c.Assert(err, IsNil)
 	c.Check(collectorAfter.RuneAmount.Equal(collectorBefore.RuneAmount), Equals, true,
 		Commentf("expired thorname must not receive payout"))
@@ -5212,7 +5310,7 @@ func (s *NetworkManagerTestSuite) TestRevShareExplicitlyDisabledNoPayoutButEvent
 	c.Assert(k.AddAffiliateLiquidityFee(ctx, "affd", cosmos.NewUint(1000)), IsNil)
 
 	FundModule(c, ctx, k, ReserveName, 10_000)
-	collectorBefore, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	collectorBefore, err := k.GetAffiliateCollector(ctx, name.Name)
 	c.Assert(err, IsNil)
 	reserveBefore := k.GetRuneBalanceOfModule(ctx, ReserveName)
 
@@ -5221,7 +5319,7 @@ func (s *NetworkManagerTestSuite) TestRevShareExplicitlyDisabledNoPayoutButEvent
 		Commentf("explicit bps=0 must not contribute to totalRevShare, got %s",
 			totalRevShare.String()))
 
-	collectorAfter, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	collectorAfter, err := k.GetAffiliateCollector(ctx, name.Name)
 	c.Assert(err, IsNil)
 	c.Check(collectorAfter.RuneAmount.Equal(collectorBefore.RuneAmount), Equals, true,
 		Commentf("collector must not change for explicit bps=0"))
@@ -5283,7 +5381,7 @@ func (s *NetworkManagerTestSuite) TestRevShareRoundedToZeroPayoutEventEmitted(c 
 	c.Assert(k.AddAffiliateLiquidityFee(ctx, "affr", cosmos.NewUint(1)), IsNil)
 
 	FundModule(c, ctx, k, ReserveName, 10_000)
-	collectorBefore, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	collectorBefore, err := k.GetAffiliateCollector(ctx, name.Name)
 	c.Assert(err, IsNil)
 	reserveBefore := k.GetRuneBalanceOfModule(ctx, ReserveName)
 
@@ -5292,7 +5390,7 @@ func (s *NetworkManagerTestSuite) TestRevShareRoundedToZeroPayoutEventEmitted(c 
 		Commentf("rounded-to-zero payout must not contribute to totalRevShare, got %s",
 			totalRevShare.String()))
 
-	collectorAfter, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	collectorAfter, err := k.GetAffiliateCollector(ctx, name.Name)
 	c.Assert(err, IsNil)
 	c.Check(collectorAfter.RuneAmount.Equal(collectorBefore.RuneAmount), Equals, true,
 		Commentf("collector must not change when payout rounds to zero"))
@@ -5333,12 +5431,7 @@ func (s *NetworkManagerTestSuite) TestRevShareRoundedToZeroPayoutEventEmitted(c 
 		Commentf("accrued_fee must reflect gross attribution even when payout rounds to zero"))
 }
 
-// TestRevShareMultiThornameSameOwner asserts that two distinct thornames
-// resolving to the same Owner address compound their payouts into the
-// owner's single AffiliateCollector entry. processRevShare reads
-// GetAffiliateCollector once per accumulator entry; the second iteration
-// must observe the post-mutation state from the first or payouts will
-// silently overwrite each other instead of summing.
+// THORNames sharing an owner retain separate REVSHARE balances.
 func (s *NetworkManagerTestSuite) TestRevShareMultiThornameSameOwner(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
@@ -5354,38 +5447,36 @@ func (s *NetworkManagerTestSuite) TestRevShareMultiThornameSameOwner(c *C) {
 	nameB.Owner = ownerAddr
 	k.SetTHORName(ctx, nameB)
 
-	// Different bps so a shadowing-bug regression would surface as the
-	// second value clobbering the first rather than summing with it.
 	k.SetMimir(ctx, "REVSHARE-AFFA", 2500) // 25%
-	k.SetMimir(ctx, "REVSHARE-AFFB", 1000) // 10%
+	k.SetMimir(ctx, "REVSHARE-AFFB", 2000) // 20%
 
 	c.Assert(k.AddAffiliateLiquidityFee(ctx, "affa", cosmos.NewUint(2000)), IsNil)
 	c.Assert(k.AddAffiliateLiquidityFee(ctx, "affb", cosmos.NewUint(5000)), IsNil)
 
 	FundModule(c, ctx, k, ReserveName, 100_000)
 
-	collectorBefore, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	collectorBefore, err := k.GetAffiliateCollector(ctx, nameA.Name)
+	c.Assert(err, IsNil)
+	collectorBBefore, err := k.GetAffiliateCollector(ctx, nameB.Name)
 	c.Assert(err, IsNil)
 	reserveBefore := k.GetRuneBalanceOfModule(ctx, ReserveName)
 
 	totalRevShare := networkMgr.processRevShare(ctx, mgr)
 
 	// Expected: AFFA payout = 2000 * 2500 / 10000 = 500
-	//           AFFB payout = 5000 * 1000 / 10000 = 500
-	expectedTotal := cosmos.NewUint(1000)
+	//           AFFB payout = 5000 * 2000 / 10000 = 1000
+	expectedTotal := cosmos.NewUint(1500)
 	c.Check(totalRevShare.Equal(expectedTotal), Equals, true,
 		Commentf("totalRevShare = %s, want %s (sum of both thornames)",
 			totalRevShare.String(), expectedTotal.String()))
 
-	// The collector must hold the SUM of both payouts; if the second
-	// iteration's read shadowed the first iteration's write the delta
-	// would equal only one of the two payouts.
-	collectorAfter, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	collectorAfter, err := k.GetAffiliateCollector(ctx, nameA.Name)
 	c.Assert(err, IsNil)
 	collectorDelta := collectorAfter.RuneAmount.Sub(collectorBefore.RuneAmount)
-	c.Check(collectorDelta.Equal(expectedTotal), Equals, true,
-		Commentf("collector delta = %s, want %s — second iteration must observe first iteration's write",
-			collectorDelta.String(), expectedTotal.String()))
+	c.Check(collectorDelta.Equal(cosmos.NewUint(500)), Equals, true)
+	collectorBAfter, err := k.GetAffiliateCollector(ctx, nameB.Name)
+	c.Assert(err, IsNil)
+	c.Check(collectorBAfter.RuneAmount.Sub(collectorBBefore.RuneAmount).Equal(cosmos.NewUint(1000)), Equals, true)
 
 	reserveAfter := k.GetRuneBalanceOfModule(ctx, ReserveName)
 	c.Check(reserveBefore.Sub(reserveAfter).Equal(expectedTotal), Equals, true,
@@ -5455,9 +5546,9 @@ func (s *NetworkManagerTestSuite) TestRevShareReserveInsufficientRollback(c *C) 
 	c.Assert(k.GetRuneBalanceOfModule(ctx, ReserveName).Equal(cosmos.NewUint(250)), Equals, true,
 		Commentf("Reserve balance should be exactly 250 after drain"))
 
-	collectorABefore, err := k.GetAffiliateCollector(ctx, ownerA)
+	collectorABefore, err := k.GetAffiliateCollector(ctx, nameA.Name)
 	c.Assert(err, IsNil)
-	collectorBBefore, err := k.GetAffiliateCollector(ctx, ownerB)
+	collectorBBefore, err := k.GetAffiliateCollector(ctx, nameB.Name)
 	c.Assert(err, IsNil)
 
 	totalRevShare := networkMgr.processRevShare(ctx, mgr)
@@ -5469,7 +5560,7 @@ func (s *NetworkManagerTestSuite) TestRevShareReserveInsufficientRollback(c *C) 
 			totalRevShare.String()))
 
 	// Successful entry: collector grew by the payout amount.
-	collectorAAfter, err := k.GetAffiliateCollector(ctx, ownerA)
+	collectorAAfter, err := k.GetAffiliateCollector(ctx, nameA.Name)
 	c.Assert(err, IsNil)
 	c.Check(collectorAAfter.RuneAmount.Sub(collectorABefore.RuneAmount).Equal(cosmos.NewUint(250)),
 		Equals, true,
@@ -5477,7 +5568,7 @@ func (s *NetworkManagerTestSuite) TestRevShareReserveInsufficientRollback(c *C) 
 			collectorAAfter.RuneAmount.Sub(collectorABefore.RuneAmount).String()))
 
 	// Rolled-back entry: collector unchanged from the pre-call state.
-	collectorBAfter, err := k.GetAffiliateCollector(ctx, ownerB)
+	collectorBAfter, err := k.GetAffiliateCollector(ctx, nameB.Name)
 	c.Assert(err, IsNil)
 	c.Check(collectorBAfter.RuneAmount.Equal(collectorBBefore.RuneAmount), Equals, true,
 		Commentf("AFFB collector must be rolled back to %s after failed send, got %s",
@@ -5731,7 +5822,7 @@ func (s *NetworkManagerTestSuite) TestProcessRevShareTriggersPreferredAssetFlush
 	// triggerPreferredAssetSwap zeroes the AffiliateCollector RuneAmount as
 	// part of its successful flush. If our threshold trigger ran, the
 	// collector should be empty.
-	col, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	col, err := k.GetAffiliateCollector(ctx, name.Name)
 	c.Assert(err, IsNil)
 	c.Check(col.RuneAmount.IsZero(), Equals, true,
 		Commentf("AffiliateCollector.RuneAmount should be zero after preferred-asset flush, got %s",
@@ -5787,7 +5878,7 @@ func (s *NetworkManagerTestSuite) TestProcessRevShareNoPreferredAssetSkipsFlush(
 
 	// The collector retains the credit since there's no preferred asset to
 	// flush to.
-	col, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	col, err := k.GetAffiliateCollector(ctx, name.Name)
 	c.Assert(err, IsNil)
 	c.Check(col.RuneAmount.Equal(cosmos.NewUint(50*common.One)), Equals, true,
 		Commentf("AffiliateCollector should retain its credit when no preferred asset, got %s",
@@ -5796,6 +5887,27 @@ func (s *NetworkManagerTestSuite) TestProcessRevShareNoPreferredAssetSkipsFlush(
 	// No swap should have been queued.
 	c.Check(countQueuedSwaps(k, ctx), Equals, 0,
 		Commentf("no preferred-asset swap should be queued when thorname has no preferred asset"))
+}
+
+func (s *NetworkManagerTestSuite) TestProcessRevShareCollectorErrorsLeaveBalancesUnchanged(c *C) {
+	for _, failure := range []string{"read", "write", "transfer"} {
+		ctx, mgr, _, _ := setupAffiliateCollectorPartners(c)
+		k := mgr.Keeper()
+		fundNamedCollector(c, ctx, k, "few", 20)
+		FundModule(c, ctx, k, ReserveName, 100)
+		k.SetMimir(ctx, "REVSHARE-FEW", 5000)
+		c.Assert(k.AddAffiliateLiquidityFee(ctx, "few", cosmos.NewUint(20)), IsNil)
+		beforeReserve := k.GetRuneBalanceOfModule(ctx, ReserveName)
+		fault := &collectorFailKeeper{Keeper: k, failRead: failure == "read", failWrite: failure == "write", failTransfer: failure == "transfer"}
+		mgr.K = fault
+		networkMgr := newNetworkMgr(fault, mgr.TxOutStore(), mgr.EventMgr())
+		c.Assert(networkMgr.processRevShare(ctx, mgr).IsZero(), Equals, true)
+		c.Check(k.GetRuneBalanceOfModule(ctx, ReserveName).Equal(beforeReserve), Equals, true)
+		assertNamedAffiliateBalance(c, ctx, k, "few", 20)
+		assertAffiliateIntegrationInvariant(c, ctx, k)
+		c.Check(k.GetAffiliateLiquidityFees(ctx), HasLen, 0)
+		c.Check(countQueuedSwaps(k, ctx), Equals, 0)
+	}
 }
 
 // TestProcessRevShareBelowThresholdNoFlush asserts that a REVSHARE credit
@@ -5838,7 +5950,7 @@ func (s *NetworkManagerTestSuite) TestProcessRevShareBelowThresholdNoFlush(c *C)
 	c.Check(totalRevShare.Equal(cosmos.NewUint(500)), Equals, true)
 
 	// Collector retained the credit (no flush).
-	col, err := k.GetAffiliateCollector(ctx, ownerAddr)
+	col, err := k.GetAffiliateCollector(ctx, name.Name)
 	c.Assert(err, IsNil)
 	c.Check(col.RuneAmount.Equal(cosmos.NewUint(500)), Equals, true,
 		Commentf("collector should retain credit below threshold, got %s",

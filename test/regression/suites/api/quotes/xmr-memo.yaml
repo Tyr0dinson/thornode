@@ -28,7 +28,7 @@ asserts:
   - .message|contains("generated memo too long for source chain")
 ---
 ########################################################################################
-# XMR destination + refund address is too long for default BTC memo limit
+# XMR destination + BTC refund address is too long for default BTC memo limit
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
@@ -37,7 +37,7 @@ params:
   to_asset: XMR.XMR
   amount: 100000000
   destination: {{ addr_xmr_fox }}
-  refund_address: {{ addr_xmr_cat }}
+  refund_address: {{ addr_btc_cat }}
 status: 400
 asserts:
   - .message|contains("generated memo too long for source chain")
@@ -52,13 +52,13 @@ params:
   to_asset: XMR.XMR
   amount: 100000000
   destination: {{ addr_xmr_fox }}
-  refund_address: {{ addr_xmr_cat }}
+  refund_address: {{ addr_btc_cat }}
   extended: true
 asserts:
   - .expected_amount_out|tonumber > 0
   - .memo|startswith("=:")
   - .memo|contains("{{ addr_xmr_fox }}")
-  - .memo|contains("{{ addr_xmr_cat }}")
+  - .memo|contains("{{ addr_btc_cat }}")
 ---
 ########################################################################################
 # Even extended mode should fail when XMR memo includes too many optional fields
@@ -70,7 +70,7 @@ params:
   to_asset: XMR.XMR
   amount: 100000000
   destination: {{ addr_xmr_fox }}
-  refund_address: {{ addr_xmr_cat }}
+  refund_address: {{ addr_btc_cat }}
   affiliate: {{ addr_thor_cat }}/{{ addr_thor_fox }}/{{ addr_thor_pig }}
   affiliate_bps: 10/10/10
   streaming_interval: 2

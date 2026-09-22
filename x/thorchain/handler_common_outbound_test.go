@@ -436,3 +436,64 @@ func (s *HandlerCommonOutboundSuite) TestOutboundSearchUsesMimirSigningPeriod(c 
 	c.Assert(stored.TxArray, check.HasLen, 1)
 	c.Check(stored.TxArray[0].OutHash.Equals(outHash), check.Equals, true)
 }
+
+// A Zcash outbound scheduled to a tex destination is broadcast to the P2PKH
+// form of the same address and observed as such. The two spellings must be
+// recognised as one destination, otherwise the payment lands but OutHash is
+// never written: the item looks unfulfilled forever and the vault is slashed
+// for "extra funds" over a transaction the network itself ordered.
+func (s *HandlerCommonOutboundSuite) TestZecTexOutboundCompletesAction(c *check.C) {
+	ctx, k := setupKeeperForTest(c)
+	mgr := NewDummyMgrWithKeeper(k)
+	scheduledHeight := ctx.BlockHeight()
+
+	p2pkhAddress, err := common.NewAddress("tmEp4k7dSU8eGj32uJPi2wBSGuiNaVFBLN7")
+	c.Assert(err, check.IsNil)
+	texAddress, err := p2pkhAddress.ToTexAddress()
+	c.Assert(err, check.IsNil)
+	c.Assert(p2pkhAddress.Equals(texAddress), check.Equals, false)
+
+	inHash := GetRandomTxHash()
+	outHash := GetRandomTxHash()
+	vaultPubKey := GetRandomPubKey()
+	vaultAddress, err := vaultPubKey.GetAddress(common.ZECChain)
+	c.Assert(err, check.IsNil)
+
+	coin := common.NewCoin(common.ZECAsset, cosmos.NewUint(common.One))
+	item := TxOutItem{
+		Chain:       common.ZECChain,
+		InHash:      inHash,
+		ToAddress:   texAddress,
+		VaultPubKey: vaultPubKey,
+		Coin:        coin,
+		Memo:        NewOutboundMemo(inHash).String(),
+		MaxGas:      common.Gas{common.NewCoin(common.ZECAsset, cosmos.NewUint(1_000))},
+	}
+	txOut := NewTxOut(scheduledHeight)
+	txOut.TxArray = append(txOut.TxArray, item)
+	c.Assert(k.SetTxOut(ctx, txOut), check.IsNil)
+
+	vault := NewVault(1, ActiveVault, AsgardVault, vaultPubKey, common.Chains{common.ZECChain}.Strings(), nil)
+	c.Assert(k.SetVault(ctx, vault), check.IsNil)
+	voter := NewObservedTxVoter(inHash, nil)
+	voter.Height = scheduledHeight
+	voter.FinalisedHeight = scheduledHeight
+	k.SetObservedTxInVoter(ctx, voter)
+
+	// The daemon reports the decoded P2PKH form of the tex destination.
+	observed := NewObservedTx(common.NewTx(
+		outHash,
+		vaultAddress,
+		p2pkhAddress,
+		common.NewCoins(coin),
+		common.Gas{common.NewCoin(common.ZECAsset, cosmos.NewUint(1_000))},
+		item.Memo,
+	), ctx.BlockHeight(), vaultPubKey, ctx.BlockHeight())
+	_, err = NewCommonOutboundTxHandler(mgr).handle(ctx, observed, inHash)
+	c.Assert(err, check.IsNil)
+
+	stored, err := k.GetTxOut(ctx, scheduledHeight)
+	c.Assert(err, check.IsNil)
+	c.Assert(stored.TxArray, check.HasLen, 1)
+	c.Check(stored.TxArray[0].OutHash.Equals(outHash), check.Equals, true)
+}

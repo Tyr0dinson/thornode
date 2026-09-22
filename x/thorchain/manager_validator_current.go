@@ -8,7 +8,9 @@ import (
 
 	abci "github.com/cometbft/cometbft/abci/types"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
+	"github.com/cosmos/cosmos-sdk/telemetry"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/hashicorp/go-metrics"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -67,6 +69,11 @@ func (vm *ValidatorMgr) BeginBlock(ctx cosmos.Context, mgr Manager, existingVali
 	halt, err := vm.k.GetMimir(ctx, "HaltChurning")
 	if halt > 0 && halt <= ctx.BlockHeight() && err == nil {
 		ctx.Logger().Info("churn event skipped due to mimir has halted churning")
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "churn", "skipped"},
+			float32(1),
+			[]metrics.Label{telemetry.NewLabel("reason", "halt_churning")},
+		)
 		return nil
 	}
 
@@ -115,6 +122,14 @@ func (vm *ValidatorMgr) BeginBlock(ctx cosmos.Context, mgr Manager, existingVali
 	for _, chain := range activeChains {
 		if mgr.Keeper().IsChainHalted(ctx, chain) {
 			ctx.Logger().Info("Skipping node account rotation for halted chain", "chain", chain)
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "churn", "skipped"},
+				float32(1),
+				[]metrics.Label{
+					telemetry.NewLabel("reason", "chain_halted"),
+					telemetry.NewLabel("chain", chain.String()),
+				},
+			)
 			return nil
 		}
 	}
@@ -133,16 +148,51 @@ func (vm *ValidatorMgr) BeginBlock(ctx cosmos.Context, mgr Manager, existingVali
 		// rotation until then.
 		if vault.HasFundsAboveDust() {
 			ctx.Logger().Info("Skipping rotation due to retiring vaults still have funds.")
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "churn", "skipped"},
+				float32(1),
+				[]metrics.Label{telemetry.NewLabel("reason", "retiring_vault_has_funds")},
+			)
 			return nil
 		}
 	}
 
 	if retryChurn {
 		ctx.Logger().Info("Checking for node account rotation... (retry)")
+		if oldVaultCheck {
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "churn", "retry"},
+				float32(1),
+				[]metrics.Label{telemetry.NewLabel("reason", "old_vault")},
+			)
+		}
+		if incompleteChurnCheck {
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "churn", "retry"},
+				float32(1),
+				[]metrics.Label{telemetry.NewLabel("reason", "incomplete_vaults")},
+			)
+		}
 	} else {
 		ctx.Logger().Info("Checking for node account rotation...")
 	}
-	return vm.churn(ctx)
+
+	// churn is called exactly once here; the returned error is propagated
+	// unchanged on every path. The counters are leaf, process-local side effects.
+	if churnErr := vm.churn(ctx); churnErr != nil {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "churn", "attempt"},
+			float32(1),
+			[]metrics.Label{telemetry.NewLabel("status", "failed")},
+		)
+		return churnErr
+	}
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "churn", "attempt"},
+		float32(1),
+		[]metrics.Label{telemetry.NewLabel("status", "ok")},
+	)
+	return nil
 }
 
 func (vm *ValidatorMgr) hasPendingKeygen(ctx cosmos.Context, keygenType thortypes.KeygenType) (bool, error) {
@@ -384,11 +434,21 @@ func (vm *ValidatorMgr) splitNext(ctx cosmos.Context, nas NodeAccounts, asgardSi
 		// ensure no group is more than the max
 		if int64(len(group)) > asgardSize {
 			ctx.Logger().Info("Skipping rotation due to an Asgard group is larger than the max size.")
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "churn", "split_aborted"},
+				float32(1),
+				[]metrics.Label{telemetry.NewLabel("reason", "group_too_large")},
+			)
 			return nil
 		}
 		// ensure no group is less than the min
 		if int64(len(group)) < 2 {
 			ctx.Logger().Info("Skipping rotation due to an Asgard group is smaller than the min size.")
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "churn", "split_aborted"},
+				float32(1),
+				[]metrics.Label{telemetry.NewLabel("reason", "group_too_small")},
+			)
 			return nil
 		}
 		// ensure a single group is significantly larger than another
@@ -399,6 +459,11 @@ func (vm *ValidatorMgr) splitNext(ctx cosmos.Context, nas NodeAccounts, asgardSi
 			}
 			if diff > 1 {
 				ctx.Logger().Info("Skipping rotation due to an Asgard groups having dissimilar membership size.")
+				telemetry.IncrCounterWithLabels(
+					[]string{"thornode", "churn", "split_aborted"},
+					float32(1),
+					[]metrics.Label{telemetry.NewLabel("reason", "dissimilar_group_size")},
+				)
 				return nil
 			}
 		}
@@ -463,6 +528,17 @@ func (vm *ValidatorMgr) EndBlock(ctx cosmos.Context, mgr Manager) []abci.Validat
 		return nil
 	}
 
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "churn", "nodes_changed"},
+		float32(len(newNodes)),
+		[]metrics.Label{telemetry.NewLabel("status", "churned_in")},
+	)
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "churn", "nodes_changed"},
+		float32(len(removedNodes)),
+		[]metrics.Label{telemetry.NewLabel("status", "churned_out")},
+	)
+
 	// remove low bond node accounts
 	if err = vm.k.RemoveLowBondValidatorAccounts(ctx); err != nil {
 		ctx.Logger().Error("fail to remove low bond node accounts", "error", err)
@@ -490,6 +566,14 @@ func (vm *ValidatorMgr) EndBlock(ctx cosmos.Context, mgr Manager) []abci.Validat
 				cosmos.NewAttribute("Address", na.NodeAddress.String()),
 				cosmos.NewAttribute("Former:", na.Status.String()),
 				cosmos.NewAttribute("Current:", NodeActive.String())),
+		)
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "node", "status_change"},
+			float32(1),
+			[]metrics.Label{
+				telemetry.NewLabel("from", na.Status.String()),
+				telemetry.NewLabel("to", NodeActive.String()),
+			},
 		)
 		na.UpdateStatus(NodeActive, height)
 		na.LeaveScore = 0
@@ -530,6 +614,14 @@ func (vm *ValidatorMgr) EndBlock(ctx cosmos.Context, mgr Manager) []abci.Validat
 				cosmos.NewAttribute("Address", nodeRemove.NodeAddress.String()),
 				cosmos.NewAttribute("Former:", nodeRemove.Status.String()),
 				cosmos.NewAttribute("Current:", status.String())),
+		)
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "node", "status_change"},
+			float32(1),
+			[]metrics.Label{
+				telemetry.NewLabel("from", nodeRemove.Status.String()),
+				telemetry.NewLabel("to", status.String()),
+			},
 		)
 		nodeRemove.UpdateStatus(status, height)
 		if err = vm.k.SetNodeAccount(ctx, nodeRemove); err != nil {
@@ -964,6 +1056,9 @@ func (vm *ValidatorMgr) distributeBondReward(ctx cosmos.Context, mgr Manager) er
 		if err := vm.payNodeAccountBondAward(cacheCtx, lastChurnHeight, item, network.BondRewardRune, totalEffectiveBond, bondHardCap, mgr); err != nil {
 			resultErr = errors.Join(resultErr, err)
 			ctx.Logger().Error("fail to pay node account bond award", "node address", item.NodeAddress.String(), "error", err)
+			// No per-node label: a node bech32 address is unbounded-cardinality
+			// label material. The failing node address is already in the log line.
+			telemetry.IncrCounter(float32(1), "thornode", "churn", "bond_reward_failed")
 		} else {
 			commit()
 		}
@@ -1430,6 +1525,13 @@ func (vm *ValidatorMgr) findLowBondActor(ctx cosmos.Context) (NodeAccount, error
 func (vm *ValidatorMgr) markActor(ctx cosmos.Context, na NodeAccount, reason string) error {
 	if !na.IsEmpty() && na.LeaveScore == 0 {
 		ctx.Logger().Info("marked Validator to be churned out", "node address", na.NodeAddress, "reason", reason)
+		// reason is always one of five compile-time string literals at the five
+		// markActor call sites in this file, so label cardinality is fixed at 5.
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "churn", "node_marked"},
+			float32(1),
+			[]metrics.Label{telemetry.NewLabel("reason", reason)},
+		)
 		slashPts, err := vm.k.GetNodeAccountSlashPoints(ctx, na.NodeAddress)
 		if err != nil {
 			return fmt.Errorf("fail to get node account(%s) slash points: %w", na.NodeAddress, err)

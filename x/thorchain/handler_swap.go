@@ -51,6 +51,10 @@ func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
+	if msg.Destination.Equals(common.Address(h.mgr.Keeper().GetModuleAccAddress(AffiliateCollectorName).String())) &&
+		affiliateCollectorConversionName(h.mgr.Keeper(), msg) == "" {
+		return fmt.Errorf("external swap cannot target the affiliate collector module")
+	}
 
 	stableReserveInternal, err := isStableReserveInternalSwap(ctx, h.mgr, msg)
 	if err != nil {
@@ -414,35 +418,18 @@ func (h SwapHandler) handleWithEmit(ctx cosmos.Context, msg MsgSwap) (*cosmos.Re
 	// Track the final emit value to return
 	finalEmit := emit
 
-	// Check if swap is to AffiliateCollector Module, if so, add the accrued RUNE for the affiliate
 	affColAddress, err := h.mgr.Keeper().GetModuleAddress(AffiliateCollectorName)
 	if err != nil {
 		ctx.Logger().Error("failed to retrieve AffiliateCollector module address", "error", err)
 	}
 
-	var affThorname *THORName
-	var affCol AffiliateFeeCollector
-
-	if parseMemoErr == nil {
-		affThorname = mem.GetAffiliateTHORName()
-	}
-
-	if affThorname != nil && msg.Destination.Equals(affColAddress) && !msg.AffiliateAddress.IsEmpty() && msg.TargetAsset.IsRune() {
-		// Add accrued RUNE for this affiliate
-		affCol, err = h.mgr.Keeper().GetAffiliateCollector(ctx, affThorname.Owner)
-		if err != nil {
-			ctx.Logger().Error("failed to retrieve AffiliateCollector for thorname owner", "address", affThorname.Owner.String(), "error", err)
-		} else {
-			// The TargetAsset has already been established to be RUNE.
-			var transactionFee cosmos.Uint
-			transactionFee, err = h.mgr.GasMgr().GetAssetOutboundFee(ctx, common.RuneAsset(), true)
-			if err != nil {
-				ctx.Logger().Error("failed to get transaction fee", "error", err)
-			} else {
-				addRuneAmt := common.SafeSub(emit, transactionFee)
-				affCol.RuneAmount = affCol.RuneAmount.Add(addRuneAmt)
-				h.mgr.Keeper().SetAffiliateCollector(ctx, affCol)
-			}
+	// V1 delivers collector output here in the handler's cached context.
+	// V2 accumulates output and delivers it once during settlement.
+	collectorConversion := affiliateCollectorConversionName(h.mgr.Keeper(), msg) != ""
+	collectorPayout := isPreferredAssetCollectorSwap(h.mgr.Keeper(), msg)
+	if (collectorConversion || collectorPayout) && msg.IsV1() {
+		if err = deliverAffiliateCollectorOutput(ctx, h.mgr, msg, emit); err != nil {
+			return nil, cosmos.ZeroUint(), err
 		}
 	}
 
@@ -485,7 +472,9 @@ func (h SwapHandler) handleWithEmit(ctx cosmos.Context, msg MsgSwap) (*cosmos.Re
 		finalEmit = swp.Out
 	}
 
-	if stableReserveInternalSettled {
+	// Internal reserve swaps and collector conversions use dedicated settlement
+	// paths, so skip the downstream handlers selected by the memo.
+	if stableReserveInternalSettled || collectorConversion {
 		return &cosmos.Result{}, finalEmit, nil
 	}
 
