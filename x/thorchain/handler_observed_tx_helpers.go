@@ -838,6 +838,10 @@ func applyTxOutAttestation(
 			// a reorg re-included the same hash as delivered). Reconcile either way.
 			// An errata has already restored (or, for a Bounced consensus,
 			// deliberately not restored) the vault; leave that state alone.
+			// Memo is ignored as in correctOutboundObservation: a memoless outbound's
+			// scanner observations carry no memo while an earlier one may carry the
+			// scheduled TxOutItem memo.
+			prevConsensusTx.Tx.Memo = voter.Tx.Tx.Memo
 			if !ok && !voter.Reverted && !prevConsensusTx.IsEmpty() &&
 				voter.Tx.Bounced != prevConsensusTx.Bounced &&
 				prevConsensusTx.EqualsConsensusIgnoreGas(voter.Tx) {

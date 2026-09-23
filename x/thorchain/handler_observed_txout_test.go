@@ -1212,6 +1212,27 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceReversedOnFinalisation(c *C)
 	c.Check(f.securityEvents(), Equals, 2)
 }
 
+// TestHandleBounceOnFinalisationAfterMemoRecovery: the hand-off must compare the
+// non-final and finalised consensus ignoring memo, like correctOutboundObservation.
+// A non-final observation carrying the scheduled memo followed by a finalised,
+// memoless scanner observation of the bounced receipt is still one outbound.
+func (s *HandlerObservedTxOutSuite) TestHandleBounceOnFinalisationAfterMemoRecovery(c *C) {
+	const (
+		untouched   = uint64(20000000000) // 200 ETH
+		gasOnly     = untouched - 37500
+		gasAndCoins = gasOnly - 1
+	)
+
+	f := newBouncedOutboundFixture(c, 1)
+	f.voteAt(c, 0, false, 12, 13) // unfinalised: delivered with the memo, debited
+	c.Check(f.ethBalance(c), Equals, gasAndCoins)
+
+	f.tx.Memo = ""               // the router emitted no memo
+	f.voteAt(c, 0, true, 13, 13) // finalised: bounced
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
+	c.Check(f.ethBalance(c), Equals, gasOnly)
+}
+
 // TestHandleBounceDiscoveredAfterDeliveredConsensus is the symmetric partner of
 // TestHandleBounceReversedByReorgDebits: the false -> true credit taken through
 // correctOutboundObservation once a delivered consensus has already debited.
