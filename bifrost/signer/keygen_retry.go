@@ -174,6 +174,10 @@ func (s *Signer) tryKeygenRetry(retry *keygenRetry) bool {
 	if !s.keygenRetries.CompareAndDelete(retryID(block, keygen), retry) {
 		return true
 	}
-	s.processKeygenRequest(block, keygen)
+	if keygen.Type == ttypes.KeygenType_XMRMonovaultKeygen {
+		s.processXMRKeygenRequest(block, keygen, true)
+	} else {
+		s.processKeygenRequest(block, keygen)
+	}
 	return true
 }
