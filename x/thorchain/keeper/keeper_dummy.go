@@ -432,6 +432,10 @@ func (k KVStoreDummy) ResetSinceChurnCountersForMembers(ctx cosmos.Context, memb
 	return kaboom
 }
 
+func (k KVStoreDummy) ResetAllSinceChurnCounters(ctx cosmos.Context) error {
+	return kaboom
+}
+
 func (k KVStoreDummy) GetObservingAddresses(_ cosmos.Context) ([]cosmos.AccAddress, error) {
 	return nil, kaboom
 }

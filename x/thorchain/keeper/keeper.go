@@ -212,6 +212,7 @@ type KeeperNodeBlame interface {
 	CalculateKeygenPenaltyMultiplier(ctx cosmos.Context, addr cosmos.AccAddress) (int64, error)
 	GetNodeBlameIterator(ctx cosmos.Context) cosmos.Iterator
 	ResetSinceChurnCountersForMembers(ctx cosmos.Context, members []cosmos.AccAddress) error
+	ResetAllSinceChurnCounters(ctx cosmos.Context) error
 }
 
 type KeeperUpgrade interface {

@@ -1591,6 +1591,11 @@ func (s *HandlerTssSuite) TestSharedKeygenBlockRotatesRegularAsgardWithoutWaitin
 	voter.Secp256K1Signatures = []string{"sig-a", "sig-a", "sig-a"}
 	helper.keeper.SetTssVoter(helper.ctx, voter)
 
+	// A non-member offender blamed during this churn. The XMR keygen is still
+	// pending, so the churn is not complete and its blame must survive.
+	offender := GetRandomBech32Addr()
+	c.Assert(helper.keeper.IncrementKeygenBlame(helper.ctx, offender), IsNil)
+
 	_, err = handler.Run(helper.ctx, msg)
 	c.Assert(err, IsNil)
 
@@ -1598,6 +1603,68 @@ func (s *HandlerTssSuite) TestSharedKeygenBlockRotatesRegularAsgardWithoutWaitin
 	c.Assert(err, IsNil)
 	c.Assert(regularVault.Status, Equals, ActiveVault)
 	c.Assert(regularVault.IsXMRMonovault(), Equals, false)
+
+	record, err := helper.keeper.GetNodeBlameRecord(helper.ctx, offender)
+	c.Assert(err, IsNil)
+	c.Check(record.KeygenBlameCountSinceChurn, Equals, int64(1),
+		Commentf("partial churn rotation must not reset since_churn blame"))
+}
+
+// TestCompletedChurnResetsNonMemberBlame verifies that once every keygen in the
+// keygen block has rotated to an active vault, since_churn blame is cleared for
+// all nodes, including offenders left out of the new vault. Otherwise a jailed
+// standby node would carry an escalated multiplier into a later churn.
+func (s *HandlerTssSuite) TestCompletedChurnResetsNonMemberBlame(c *C) {
+	helper := newTssHandlerTestHelper(c)
+	mgr := NewDummyMgrWithKeeper(helper.keeper)
+	mgr.networkMgr = newNetworkMgr(helper.keeper, mgr.TxOutStore(), mgr.EventMgr())
+	handler := NewTssHandler(mgr)
+	c.Assert(helper.keeper.Keeper.DeleteVault(helper.ctx, helper.poolPk), IsNil)
+	members := helper.members[:4]
+
+	keygenBlock := NewKeygenBlock(helper.ctx.BlockHeight())
+	keygenBlock.Keygens = []Keygen{{Type: AsgardKeygen, Members: members.Strings()}}
+	helper.keeper.SetKeygenBlock(helper.ctx, keygenBlock)
+
+	poolPubKey := GetRandomPubKey()
+	poolEddsaPubKey := GetRandomPubKey()
+	msg, err := NewMsgTssPoolV2(
+		members.Strings(), poolPubKey, nil, nil, AsgardKeygen,
+		helper.ctx.BlockHeight(), nil,
+		common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer,
+		int64(1024), poolEddsaPubKey, nil, nil, common.EmptyPubKey,
+	)
+	c.Assert(err, IsNil)
+
+	setKeygenMemberNodeAccount(c, helper, members[0], NodeActive)
+	setKeygenMemberNodeAccount(c, helper, members[1], NodeReady)
+	setKeygenMemberNodeAccount(c, helper, members[2], NodeReady)
+	setKeygenMemberNodeAccount(c, helper, members[3], NodeReady)
+
+	voter := NewTssVoter(msg.ID, members.Strings(), poolPubKey, poolEddsaPubKey)
+	for _, member := range members[1:3] {
+		addr, addrErr := member.GetThorAddress()
+		c.Assert(addrErr, IsNil)
+		voter.Signers = append(voter.Signers, addr.String())
+	}
+	voter.Secp256K1Signatures = []string{"sig-a", "sig-a", "sig-a"}
+	helper.keeper.SetTssVoter(helper.ctx, voter)
+
+	offender := GetRandomBech32Addr()
+	c.Assert(helper.keeper.IncrementKeygenBlame(helper.ctx, offender), IsNil)
+
+	_, err = handler.Run(helper.ctx, msg)
+	c.Assert(err, IsNil)
+
+	vault, err := helper.keeper.GetVault(helper.ctx, poolPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(vault.Status, Equals, ActiveVault)
+
+	record, err := helper.keeper.GetNodeBlameRecord(helper.ctx, offender)
+	c.Assert(err, IsNil)
+	c.Check(record.KeygenBlameCountTotal, Equals, int64(1))
+	c.Check(record.KeygenBlameCountSinceChurn, Equals, int64(0),
+		Commentf("completed churn must reset non-member since_churn blame"))
 }
 
 func (s *HandlerTssSuite) TestXMRMonovaultRotatesWithoutRegularVaultRotation(c *C) {

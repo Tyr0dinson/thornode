@@ -140,3 +140,34 @@ func (k KVStore) ResetSinceChurnCountersForMembers(ctx cosmos.Context, members [
 	}
 	return errors.Join(errs...)
 }
+
+// ResetAllSinceChurnCounters resets the since_churn counters of every node.
+// Called once a churn completes (every keygen in the keygen block has become
+// an active vault) so offenders left out of the new vaults do not carry
+// escalated penalties into later churns.
+func (k KVStore) ResetAllSinceChurnCounters(ctx cosmos.Context) error {
+	// Collect before writing: mutating the store being iterated has
+	// implementation-defined behavior across Cosmos store backends.
+	var errs []error
+	var toReset []NodeBlameRecord
+	iter := k.GetNodeBlameIterator(ctx)
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		var record NodeBlameRecord
+		if err := k.cdc.Unmarshal(iter.Value(), &record); err != nil {
+			errs = append(errs, fmt.Errorf("fail to unmarshal node blame record (%s): %w", iter.Key(), err))
+			continue
+		}
+		if record.KeygenBlameCountSinceChurn > 0 || record.KeysignBlameCountSinceChurn > 0 {
+			toReset = append(toReset, record)
+		}
+	}
+
+	for _, record := range toReset {
+		record.ResetSinceChurnCounters()
+		if err := k.SetNodeBlameRecord(ctx, record); err != nil {
+			errs = append(errs, fmt.Errorf("fail to reset blame counters (%s): %w", record.NodeAddress, err))
+		}
+	}
+	return errors.Join(errs...)
+}
