@@ -909,6 +909,13 @@ func (k KVStoreDummy) GetObservedNetworkFeeVoterIteratorForChain(_ cosmos.Contex
 	return nil
 }
 
+func (k KVStoreDummy) SetLatestObservedNetworkFeeVoterID(_ cosmos.Context, _ common.Chain, _ string) {
+}
+
+func (k KVStoreDummy) GetLatestObservedNetworkFeeVoter(_ cosmos.Context, _ common.Chain) (ObservedNetworkFeeVoter, bool, error) {
+	return ObservedNetworkFeeVoter{}, false, kaboom
+}
+
 func (k KVStoreDummy) GetChainContracts(ctx cosmos.Context, chains common.Chains) []ChainContract {
 	return nil
 }

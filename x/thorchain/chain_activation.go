@@ -25,7 +25,7 @@ import (
 // filtered to the currently-active set, then required to clear the same ceil(2n/3) bar
 // both network-wide and within every individual Asgard's membership - the latter because
 // TSS keysign is per-vault, so a network-wide quorum can still leave one vault unable to
-// sign. See chainAttesters for why the signers are gathered by scan rather than lookup.
+// sign. See chainAttesters for how the signers are gathered.
 //
 // Bifrost needs no change: it starts chain clients from local config, and derives
 // each vault's address per chain from the vault pubkey alone (pubkeymanager), so a
@@ -71,7 +71,7 @@ func (vm *NetworkMgr) activateEnabledChains(ctx cosmos.Context, mgr Manager) err
 
 	// Drop chains that are already fully stamped BEFORE running the gates. The enable
 	// mimir persists after activation, so this routine keeps being entered for the rest
-	// of the chain's life, and without this the fee-voter scan below would run on every
+	// of the chain's life, and without this the full gate below would run on every
 	// one of those blocks.
 	//
 	// Retiring vaults count too. One that missed the keysign quorum on the block the
@@ -81,14 +81,9 @@ func (vm *NetworkMgr) activateEnabledChains(ctx cosmos.Context, mgr Manager) err
 	// those that can address the chain at all, so a permanently unaddressable vault
 	// still cannot hold the path open.
 	//
-	// Known cost, named rather than optimised: a retiring vault that can address the
-	// chain but can never assemble its keysign quorum keeps the full gate - including the
-	// chainAttesters scan - running once per block for the rest of the migration window,
-	// even though the active set is already stamped. The scan is bounded to that one
-	// chain's fee voters and the window ends when the vault churns out, so the ceiling is
-	// a handful of KV reads per block for at most a migration period. Bounding it properly
-	// would mean predicting the keysign outcome before computing the attester set the
-	// prediction needs, which is the scan itself.
+	// A retiring vault that can address the chain but never assembles its keysign
+	// quorum keeps the full gate running once per block until it churns out. That is
+	// bounded per block: chainAttesters reads one pointed-to voter, not the history.
 	pending := make(common.Chains, 0, len(requested))
 	for _, chain := range requested {
 		if chainNeedsStamping(ctx, k, chain, active) || retiringNeedsStamping(ctx, k, chain, retiring) {
@@ -191,22 +186,33 @@ func retiringNeedsStamping(ctx cosmos.Context, k keeper.Keeper, chain common.Cha
 }
 
 // chainAttesters returns the currently-active nodes that have proved they can observe
-// the chain, by scanning the network-fee voters recorded for it. Signing a fee is
-// direct evidence: a node cannot report a fee for a chain it did not scan.
+// the chain: the signers of the chain's most recent consensus network-fee voter. Signing
+// a fee is direct evidence: a node cannot report a fee for a chain it did not scan.
 //
-// A scan rather than a keyed lookup, because nothing records which voter produced the
+// Keyed rather than derived, because nothing else records which voter produced the
 // stored NetworkFee. GetLastChainHeight cannot identify it: fee consensus is only one
 // of its three writers - every observed inbound advances it too
 // (handler_observed_tx_helpers.go) - so it drifts off the fee heights as soon as the
 // chain sees any traffic, and anyone can push it off deliberately by sending dust to
-// the derived pre-activation address.
+// the derived pre-activation address. processNetworkFeeAttestation therefore records
+// the voter's ID when it reaches consensus, while activation is requested.
 //
-// The union across voters is deliberate, and it is why no freshness window is applied
-// to the voter itself. Bifrost posts MsgNetworkFee only when the rate *changes*
-// (utxo/client_internal.go, xrp/block_scanner.go, gaia/cosmos_block_scanner.go), so on
-// a stable-fee chain - XRP, Cosmos, TRON, precisely the chains this feature exists to
-// turn on - there may be exactly one voter, written once and never refreshed. Any bar
-// measured on voter age is therefore unsatisfiable there, not merely strict.
+// That pointer is what bounds the cost. This runs every block for as long as a chain
+// sits unconverged, and the voter store is never pruned, so scanning the chain's voters
+// each time would make EndBlock cost scale with its lifetime fee history. When no
+// pointer exists yet - the mimir was set after the chain's last fee consensus, or the
+// history predates the pointer - one scan re-derives it (the voter with the highest
+// consensus height, the first in key order on a tie) and stores it, so the scan runs
+// once per activation episode rather than once per block. Nodes that sign after
+// consensus are appended to the same stored voter, so the pointer sees them too.
+//
+// No freshness window is applied to the voter itself. Bifrost posts MsgNetworkFee only
+// when the rate *changes* (utxo/client_internal.go, xrp/block_scanner.go,
+// gaia/cosmos_block_scanner.go), so on a stable-fee chain - XRP, Cosmos, TRON, precisely
+// the chains this feature exists to turn on - there may be exactly one voter, written
+// once and never refreshed. Any bar measured on voter age is therefore unsatisfiable
+// there, not merely strict. On a volatile-fee chain the latest voter is replaced every
+// few blocks, each by construction signed by a supermajority of the then-active set.
 //
 // The filter to activeNodes establishes who the attesters ARE, not that their
 // attestation is still current - a node that scanned the chain a year ago, is still
@@ -224,17 +230,42 @@ func retiringNeedsStamping(ctx cosmos.Context, k keeper.Keeper, chain common.Cha
 // is needed. Where the scanner posts on a period-aligned height (XRP, Cosmos) a
 // coordinated bifrost restart refreshes it; TRON has no alignment and so no
 // operator-driven refresh at all - see docs/new-chains/new-chain-process.md.
-//
-// Scoped to the chain's own keys: the voter store is never pruned, and this runs every
-// block for as long as a chain sits unconverged, so the unscoped iterator would make
-// EndBlock cost scale with every fee voter the network has ever recorded.
 func chainAttesters(ctx cosmos.Context, k keeper.Keeper, chain common.Chain, activeNodes NodeAccounts) map[string]bool {
+	attesters := make(map[string]bool, len(activeNodes))
+	voter, found, err := k.GetLatestObservedNetworkFeeVoter(ctx, chain)
+	if err != nil {
+		ctx.Logger().Error("fail to get latest network fee voter", "chain", chain, "error", err)
+		return attesters
+	}
+	if !found {
+		if voter, found = latestConsensusNetworkFeeVoter(ctx, k, chain); !found {
+			return attesters
+		}
+		k.SetLatestObservedNetworkFeeVoterID(ctx, chain, voter.ID())
+	}
+	// BlockHeight is stamped only by the attestation that carried the voter to a
+	// supermajority, so an unfinished vote is not proof of anything.
+	if !voter.Chain.Equals(chain) || voter.BlockHeight <= 0 {
+		return attesters
+	}
+
 	isActive := make(map[string]bool, len(activeNodes))
 	for _, na := range activeNodes {
 		isActive[na.NodeAddress.String()] = true
 	}
+	for _, addr := range voter.GetSigners() {
+		if isActive[addr.String()] {
+			attesters[addr.String()] = true
+		}
+	}
+	return attesters
+}
 
-	attesters := make(map[string]bool, len(activeNodes))
+// latestConsensusNetworkFeeVoter scans the chain's voters for the one that most recently
+// reached consensus. Unbounded in the chain's fee history, so it is only the fallback
+// that re-derives chainAttesters' pointer, never the per-block path.
+func latestConsensusNetworkFeeVoter(ctx cosmos.Context, k keeper.Keeper, chain common.Chain) (ObservedNetworkFeeVoter, bool) {
+	var latest ObservedNetworkFeeVoter
 	iter := k.GetObservedNetworkFeeVoterIteratorForChain(ctx, chain)
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
@@ -243,21 +274,12 @@ func chainAttesters(ctx cosmos.Context, k keeper.Keeper, chain common.Chain, act
 			ctx.Logger().Error("fail to unmarshal network fee voter", "error", err)
 			continue
 		}
-		if !voter.Chain.Equals(chain) {
-			continue
-		}
-		// BlockHeight is stamped only by the attestation that carried the voter to a
-		// supermajority, so an unfinished vote is not proof of anything.
-		if voter.BlockHeight <= 0 {
-			continue
-		}
-		for _, addr := range voter.GetSigners() {
-			if isActive[addr.String()] {
-				attesters[addr.String()] = true
-			}
+		// strictly greater, so a tie keeps the first in key order - deterministic
+		if voter.Chain.Equals(chain) && voter.BlockHeight > latest.BlockHeight {
+			latest = voter
 		}
 	}
-	return attesters
+	return latest, latest.BlockHeight > 0
 }
 
 // chainActivationReady applies the objective gates. On success it also returns the set
@@ -319,7 +341,7 @@ func chainActivationReady(ctx cosmos.Context, k keeper.Keeper, chain common.Chai
 	// what each bifrost reports it actually runs. So when a retiring vault holds the chain
 	// and a newer active vault does not, the churn that produced the active set was told
 	// by a supermajority that the chain is no longer run - operators disabled it in
-	// bifrost, say. Re-stamping it from the historical attester union would silently
+	// bifrost, say. Re-stamping it from the historical fee attestation would silently
 	// override that fresh vote and publish an inbound address nobody is scanning.
 	//
 	// This is what supplies currency to the proof - but only for a clean drop, see the
@@ -394,7 +416,7 @@ func chainActivationReady(ctx cosmos.Context, k keeper.Keeper, chain common.Chai
 	}
 
 	// The nodes that proved the chain observable, restricted to those still active.
-	// See chainAttesters for why this is a scan and what it does and does not prove.
+	// See chainAttesters for how they are found and what that does and does not prove.
 	signed := chainAttesters(ctx, k, chain, activeNodes)
 
 	// G6b: the proof still holds across the network as it stands today. Same ceil(2n/3)

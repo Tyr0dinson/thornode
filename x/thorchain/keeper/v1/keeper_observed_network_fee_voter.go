@@ -51,6 +51,32 @@ func (k KVStore) GetObservedNetworkFeeVoterIteratorForChain(ctx cosmos.Context, 
 	return cosmos.KVStorePrefixIterator(store, []byte(prefix))
 }
 
+// SetLatestObservedNetworkFeeVoterID records which voter last reached consensus for the
+// chain, so chain activation can read that one voter instead of scanning the chain's
+// whole, never-pruned voter history. An empty id removes the record.
+func (k KVStore) SetLatestObservedNetworkFeeVoterID(ctx cosmos.Context, chain common.Chain, id string) {
+	store := k.kvStore(ctx)
+	key := k.GetKey(prefixLatestNetworkFeeVoter, chain.String())
+	if id == "" {
+		store.Delete(key)
+		return
+	}
+	store.Set(key, []byte(id))
+}
+
+// GetLatestObservedNetworkFeeVoter returns the voter recorded by
+// SetLatestObservedNetworkFeeVoterID, and false when none is recorded.
+func (k KVStore) GetLatestObservedNetworkFeeVoter(ctx cosmos.Context, chain common.Chain) (ObservedNetworkFeeVoter, bool, error) {
+	store := k.kvStore(ctx)
+	id := store.Get(k.GetKey(prefixLatestNetworkFeeVoter, chain.String()))
+	if len(id) == 0 {
+		return ObservedNetworkFeeVoter{}, false, nil
+	}
+	var voter ObservedNetworkFeeVoter
+	found, err := k.getObservedNetworkFeeVoter(ctx, k.GetKey(prefixNetworkFeeVoter, string(id)), &voter)
+	return voter, found, err
+}
+
 // GetObservedNetworkFeeVoterIterator iterate tx in voters
 func (k KVStore) GetObservedNetworkFeeVoterIterator(ctx cosmos.Context) cosmos.Iterator {
 	return k.getIterator(ctx, prefixNetworkFeeVoter)

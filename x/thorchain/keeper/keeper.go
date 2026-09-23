@@ -501,6 +501,8 @@ type KeeperObservedNetworkFeeVoter interface {
 	SetObservedNetworkFeeVoter(ctx cosmos.Context, networkFeeVoter ObservedNetworkFeeVoter)
 	GetObservedNetworkFeeVoterIterator(ctx cosmos.Context) cosmos.Iterator
 	GetObservedNetworkFeeVoterIteratorForChain(ctx cosmos.Context, chain common.Chain) cosmos.Iterator
+	SetLatestObservedNetworkFeeVoterID(ctx cosmos.Context, chain common.Chain, id string)
+	GetLatestObservedNetworkFeeVoter(ctx cosmos.Context, chain common.Chain) (ObservedNetworkFeeVoter, bool, error)
 	GetObservedNetworkFeeVoter(ctx cosmos.Context, height int64, chain common.Chain, rate, size int64) (ObservedNetworkFeeVoter, error)
 }
 

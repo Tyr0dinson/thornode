@@ -502,6 +502,74 @@ func (s *ChainActivationTestSuite) TestNoStampWhenAttesterJailedOutOfParty(c *C)
 	c.Assert(slices.Contains(vaultChains(ctx, c, k, vault.PubKey), activationChain.String()), Equals, true)
 }
 
+// The attester set comes from the pointed-to voter alone, so its cost is bounded
+// rather than a scan of the chain's lifetime fee history on every block. Without a
+// pointer, one scan re-derives it from the latest consensus voter and stores it.
+func (s *ChainActivationTestSuite) TestAttestersReadFromLatestVoterPointer(c *C) {
+	ctx, mgr, nodes := setupActivation(c, 4)
+	k := mgr.Keeper()
+
+	setReadinessProof(ctx, c, k, activationChain, nodes[0:2], 10, activationChainHeight)
+	// an older consensus whose key sorts after the latest one, which the backfill scan
+	// must not pick
+	older := types.NewObservedNetworkFeeVoter(activationChainHeight+5, activationChain)
+	older.BlockHeight = 5
+	older.Sign(nodes[3].NodeAddress)
+	k.SetObservedNetworkFeeVoter(ctx, older)
+
+	attesters := chainAttesters(ctx, k, activationChain, nodes)
+	c.Assert(attesters, DeepEquals, map[string]bool{
+		nodes[0].NodeAddress.String(): true,
+		nodes[1].NodeAddress.String(): true,
+	})
+	latest, found, err := k.GetLatestObservedNetworkFeeVoter(ctx, activationChain)
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, true)
+	c.Assert(latest.ReportBlockHeight, Equals, activationChainHeight)
+
+	// a later voter written behind the pointer's back is not scanned: the history is
+	// no longer read once the pointer exists
+	setReadinessProof(ctx, c, k, activationChain, nodes[2:3], 20, activationChainHeight+10)
+	c.Assert(chainAttesters(ctx, k, activationChain, nodes), DeepEquals, attesters)
+}
+
+// Fee consensus keeps the pointer current while activation is requested - including
+// signers that arrive after consensus - and clears it otherwise, so a network that
+// never sets the mimir stores nothing new.
+func (s *ChainActivationTestSuite) TestFeeConsensusMaintainsLatestVoterPointer(c *C) {
+	ctx, mgr, nodes := setupActivation(c, 4)
+	k := mgr.Keeper()
+	handler := NewNetworkFeeHandler(mgr)
+	broadcast := func(feeHeight int64, signers NodeAccounts) {
+		for _, na := range signers {
+			_, err := handler.handle(ctx, *NewMsgNetworkFee(feeHeight, activationChain, 1000, 10, na.NodeAddress))
+			c.Assert(err, IsNil)
+		}
+	}
+
+	// mimir unset: consensus stores no pointer
+	broadcast(activationChainHeight, nodes)
+	_, found, err := k.GetLatestObservedNetworkFeeVoter(ctx, activationChain)
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, false)
+
+	// mimir set: consensus at 3 of 4 records the voter, and the late 4th signer shows
+	k.SetMimir(ctx, activationMimirKey(activationChain), 1)
+	broadcast(activationChainHeight+1, nodes)
+	latest, found, err := k.GetLatestObservedNetworkFeeVoter(ctx, activationChain)
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, true)
+	c.Assert(latest.ReportBlockHeight, Equals, activationChainHeight+1)
+	c.Assert(latest.GetSigners(), HasLen, 4)
+
+	// mimir unset again: the next consensus clears it, so it cannot go stale
+	k.SetMimir(ctx, activationMimirKey(activationChain), 0)
+	broadcast(activationChainHeight+2, nodes)
+	_, found, err = k.GetLatestObservedNetworkFeeVoter(ctx, activationChain)
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, false)
+}
+
 // --- the happy path ---
 
 func (s *ChainActivationTestSuite) TestStampsActiveAndRetiringVaults(c *C) {

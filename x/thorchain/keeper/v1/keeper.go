@@ -102,6 +102,7 @@ const (
 	prefixNodePauseChain            types.DbPrefix = "node_pause_chain/"
 	prefixNetworkFee                types.DbPrefix = "network_fee/"
 	prefixNetworkFeeVoter           types.DbPrefix = "network_fee_voter/"
+	prefixLatestNetworkFeeVoter     types.DbPrefix = "latest_network_fee_voter/"
 	prefixTssKeygenMetric           types.DbPrefix = "tss_keygen_metric/"
 	prefixTssKeysignMetric          types.DbPrefix = "tss_keysign_metric/"
 	prefixTssKeysignMetricLatest    types.DbPrefix = "latest_tss_keysign_metric/"
