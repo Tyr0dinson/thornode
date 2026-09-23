@@ -1109,9 +1109,16 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	// so a persisted payload can safely rebroadcast the exact same transaction.
 	hasSignedRetry := len(item.SignedTx) > 0
 	allowStaleSignedRetry := hasSignedRetry && tx.Chain.Equals(common.XMRChain)
+	signingWindow := signingTransactionPeriod
+	if tx.Chain.Equals(common.XMRChain) {
+		// Match THORChain's XMR outbound lifetime. Scanner catch-up and a failed
+		// FROST join can consume the base period before all participants retry.
+		// Keep the reschedule buffer and completed-request check below intact.
+		signingWindow = ttypes.MaxTxOutSigningTransactionPeriod(signingTransactionPeriod)
+	}
 	if !allowStaleSignedRetry && (!item.Round7Retry || inactiveVaultRound7Retry) {
-		if blockHeight-signingTransactionPeriod > height-s.cfg.Signer.RescheduleBufferBlocks {
-			s.logger.Error().Msgf("tx was created at block height(%d), now it is (%d), it is older than (%d) blocks, skip it", height, blockHeight, signingTransactionPeriod)
+		if blockHeight-signingWindow > height-s.cfg.Signer.RescheduleBufferBlocks {
+			s.logger.Error().Msgf("tx was created at block height(%d), now it is (%d), it is older than (%d) blocks, skip it", height, blockHeight, signingWindow)
 			return nil, nil, nil
 		}
 	}

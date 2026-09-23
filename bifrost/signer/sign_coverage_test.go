@@ -1439,6 +1439,61 @@ func (s *SignCoverageSuite) TestSignAndBroadcast_DropsStaleSignedTxBeforeDiffere
 	c.Assert(cc.signedTx.VaultPubKey.Equals(replacementVault), Equals, true)
 }
 
+// XMR remains live on THORChain for three signing periods. A failed join must
+// still be retried during that window, but must stop at the buffered cutoff or
+// when THORChain has already completed/replaced the exact request.
+func (s *SignCoverageSuite) TestSignAndBroadcast_XMRUnsignedSigningWindow(c *C) {
+	vaultPubKey, err := common.NewPubKey(pubkeymanager.MockPubkey)
+	c.Assert(err, IsNil)
+	for _, tc := range []struct {
+		name           string
+		chain          common.Chain
+		age            int64
+		outHash        common.TxID
+		wantBroadcasts int
+	}{
+		{"migration retry after delayed scanner recovery", common.XMRChain, 168, common.TxID(""), 1},
+		{"last block before XMR cutoff", common.XMRChain, 350, common.TxID(""), 1},
+		{"XMR buffered cutoff", common.XMRChain, 351, common.TxID(""), 0},
+		{"XMR beyond extended period", common.XMRChain, 361, common.TxID(""), 0},
+		{"replaced migration remains discarded", common.XMRChain, 168, common.BlankTxID, 0},
+		{"other chains retain original cutoff", common.ETHChain, 168, common.TxID(""), 0},
+	} {
+		coin := common.NewCoin(tc.chain.GetGasAsset(), cosmos.NewUint(1000))
+		tx := types.TxArrayItem{
+			Chain: tc.chain, VaultPubKey: vaultPubKey,
+			ToAddress: "48A1xmr-destination", Coin: coin, Memo: "MIGRATE:1856",
+		}
+		bridge := &mockSignBridge{
+			blockHeight: 1856 + tc.age,
+			constants: map[string]int64{
+				constants.SigningTransactionPeriod.String(): 120,
+				constants.ChurnInterval.String():            43200,
+			},
+			mimirs: map[string]int64{},
+		}
+		item := TxOutStoreItem{TxOutItem: tx.TxOutItem(1856), Height: 1856}
+		tx.OutHash = tc.outHash
+		bridge.keysign = types.TxOut{Height: 1856, TxArray: []types.TxArrayItem{tx}}
+		storage, storeErr := NewSignerStore("", config.LevelDBOptions{}, "")
+		c.Assert(storeErr, IsNil)
+		cc := &MockCaptureSignChainClient{}
+		sign := &Signer{
+			logger:          log.With().Str("module", "test").Logger(),
+			cfg:             config.Bifrost{Signer: config.BifrostSignerConfiguration{RescheduleBufferBlocks: 10}},
+			thorchainBridge: bridge, constantsProvider: NewConstantsProvider(bridge),
+			chains:    map[common.Chain]chainclients.ChainClient{tc.chain: cc},
+			pubkeyMgr: pubkeymanager.NewMockPoolAddressValidator(),
+			m:         GetMetricForTest(c), storage: storage, localPubKeyECDSA: vaultPubKey,
+			tssKeysignMetricMgr: metrics.NewTssKeysignMetricMgr(),
+		}
+		_, _, signErr := sign.signAndBroadcast(item)
+		c.Check(signErr, IsNil, Commentf(tc.name))
+		c.Check(cc.broadcastCount, Equals, tc.wantBroadcasts, Commentf(tc.name))
+		c.Assert(storage.Close(), IsNil)
+	}
+}
+
 func (s *SignCoverageSuite) TestSignAndBroadcast_RebroadcastsStaleXMRSignedTx(c *C) {
 	vaultPubKey, _ := common.NewPubKey(pubkeymanager.MockPubkey)
 	bridge := &mockSignBridge{
