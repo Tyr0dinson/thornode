@@ -16,6 +16,17 @@ const (
 	// consensus code). Unset defaults to ~1 day of blocks; 0 disables the keep-alive.
 	MimirKeySignatureRefreshBlocks = "SignatureRefreshBlocks"
 	MimirKeyStableReserveEnabled   = "StableReserveEnabled"
+	// MimirKeySOLDurableNonce gates bifrost provisioning of per-vault Solana
+	// durable-nonce accounts (#661). Read by bifrost only (never by consensus code):
+	// >0 enables provisioning of a nonce account for each active SOL vault; SOL
+	// outbounds then anchor on the stored nonce (which never expires) instead of a
+	// recent blockhash, removing the ~60s keysign+broadcast expiry window. Unset/0
+	// leaves the feature dormant — no accounts are created and every outbound uses
+	// the existing recent-blockhash path unchanged. Disabling after rollout is
+	// graceful: provisioning stops and retiring vaults close their nonce accounts at
+	// churn, while extant nonce accounts keep serving outbounds until then. Operator
+	// emergency stop remains HaltSigningSOL.
+	MimirKeySOLDurableNonce = "SOLDurableNonce"
 
 	MimirTemplateEVMAllowanceCheck         = "EVMAllowanceCheck-%s"         // Use with Chain
 	MimirTemplateEVMDirectERC20Inbound     = "EVMDirectERC20Inbound-%s"     // Use with Chain

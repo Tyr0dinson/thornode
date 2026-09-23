@@ -149,6 +149,112 @@ func NewNonceTransferTransaction(from, to PublicKey, amount uint64, memo, nonceV
 	return NewTransaction(message)
 }
 
+// NonceAccountSize is the fixed byte length of a SystemProgram durable-nonce
+// account (version + state + authority + stored hash + fee calculator). It is the
+// `space` argument to CreateAccountWithSeed and, with the rent schedule, fixes the
+// account's rent-exempt minimum.
+const NonceAccountSize = 80
+
+// NewCreateNonceAccountTransaction builds the bootstrap transaction that creates a
+// vault's durable-nonce account at a seed-derived address and initializes it with
+// the vault as nonce authority, in a single transaction (#661). Unlike an outbound,
+// this transaction uses a recent blockhash (a nonce cannot anchor its own creation),
+// so its keysign is still subject to the ~150-slot expiry — it is issued at normal
+// cadence with retry-until-landed, off the churn-storm path, and never blocks an
+// outbound (which falls back to the recent-blockhash path while the nonce is absent).
+//
+// Determinism: every field (seed-derived nonce address, seed, lamports, space,
+// owner, authority) is a pure function of the vault, so keysign parties handed the
+// same consensus recentBlockHash produce identical bytes.
+//
+// Account order (writable signers, readonly signers, writable non-signers, readonly
+// non-signers):
+//
+//	0 vault                      (writable signer; fee payer, funder, seed base, authority)
+//	1 nonceAccount               (writable non-signer; created + initialized)
+//	2 SystemProgramID            (readonly non-signer; runs both instructions)
+//	3 RecentBlockhashes sysvar   (readonly non-signer; InitializeNonce input)
+//	4 Rent sysvar                (readonly non-signer; InitializeNonce input)
+func NewCreateNonceAccountTransaction(vault, nonceAccount PublicKey, seed string, lamports uint64, recentBlockHash string) Transaction {
+	const (
+		idxVault     = 0
+		idxNonce     = 1
+		idxSystem    = 2
+		idxSysvarRBH = 3
+		idxSysvarR   = 4
+	)
+	accountKeys := []PublicKey{vault, nonceAccount, SystemProgramID, SysVarRecentBlockhashesID, SysVarRentID}
+
+	instructions := make([]CompiledInstruction, 0, 2)
+	// CreateAccountWithSeed: base == funder == vault (idxVault referenced twice).
+	instructions = append(instructions, NewCompiledCreateAccountWithSeedInstruction(
+		idxSystem, idxVault, idxNonce, idxVault,
+		vault, seed, lamports, NonceAccountSize, SystemProgramID,
+	))
+	// InitializeNonceAccount: authority = vault.
+	instructions = append(instructions, NewCompiledInitializeNonceInstruction(
+		idxSystem, idxNonce, idxSysvarRBH, idxSysvarR, vault,
+	))
+
+	header := MessageHeader{
+		NumRequireSignatures:      1,
+		NumReadonlySignedAccounts: 0,
+		// Readonly non-signers = SystemProgram + RecentBlockhashes + Rent sysvars.
+		NumReadonlyUnsignedAccounts: uint8(len(accountKeys) - 2),
+	}
+
+	message := NewMessage(header, accountKeys, recentBlockHash, instructions)
+	return NewTransaction(message)
+}
+
+// NewCloseNonceAccountTransaction builds a transaction that withdraws a vault's
+// full durable-nonce balance to a recipient, reclaiming the rent and closing the
+// account (#661). Used at churn: the retiring vault sweeps its nonce rent to the
+// incoming asgard (recipient != vault) or back to itself (recipient == vault). It
+// uses a recent blockhash — WithdrawNonceAccount does not require the nonce to
+// anchor it — and runs off the churn-storm path with retry-until-landed.
+//
+// The account list dedups when recipient == vault, so the vault (fee payer,
+// authority, and possibly recipient) appears once. Account order follows Solana's
+// rule; indices are resolved after dedup.
+func NewCloseNonceAccountTransaction(vault, nonceAccount, recipient PublicKey, lamports uint64, recentBlockHash string) Transaction {
+	sameRecipient := recipient == vault
+
+	// Writable signer (vault) first, then writable non-signers (recipient when
+	// distinct, nonce account), then readonly non-signers (System + two sysvars).
+	accountKeys := []PublicKey{vault}
+	idxVault := 0
+	idxRecipient := idxVault
+	if !sameRecipient {
+		idxRecipient = len(accountKeys)
+		accountKeys = append(accountKeys, recipient)
+	}
+	idxNonce := len(accountKeys)
+	accountKeys = append(accountKeys, nonceAccount)
+	idxSystem := len(accountKeys)
+	accountKeys = append(accountKeys, SystemProgramID)
+	idxSysvarRBH := len(accountKeys)
+	accountKeys = append(accountKeys, SysVarRecentBlockhashesID)
+	idxSysvarR := len(accountKeys)
+	accountKeys = append(accountKeys, SysVarRentID)
+
+	instructions := []CompiledInstruction{
+		NewCompiledWithdrawNonceInstruction(
+			idxSystem, idxNonce, idxRecipient, idxSysvarRBH, idxSysvarR, idxVault, lamports,
+		),
+	}
+
+	header := MessageHeader{
+		NumRequireSignatures:      1,
+		NumReadonlySignedAccounts: 0,
+		// Readonly non-signers = SystemProgram + RecentBlockhashes + Rent sysvars.
+		NumReadonlyUnsignedAccounts: 3,
+	}
+
+	message := NewMessage(header, accountKeys, recentBlockHash, instructions)
+	return NewTransaction(message)
+}
+
 func NewTransaction(message Message) Transaction {
 	signatures := make([]Signature, 0, message.Header.NumRequireSignatures)
 	for i := uint8(0); i < message.Header.NumRequireSignatures; i++ {

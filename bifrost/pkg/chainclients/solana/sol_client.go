@@ -580,21 +580,34 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	// derivation and expiry gating below is unnecessary for a nonce tx. Default OFF
 	// (useSolDurableNonce=false) and, even when on, falls through to the existing
 	// recent-blockhash path unchanged whenever no nonce account is available (ok=false).
+	// The durable-nonce branch only runs when the MimirKeySOLDurableNonce gate is on.
+	// The gate is read live (current), NOT at the keysign height: a live read can
+	// differ across parties only during the ~1-block window of a governance flip, and
+	// a disagreement there merely fragments THIS outbound's keysign for one round (it
+	// is retained and retried, converging once the flip has propagated) — the same
+	// self-healing the keep-alive's live mimir read relies on. Operators flip it
+	// gracefully (see MimirKeySOLDurableNonce) and never under load. A stricter
+	// keysign-height-anchored read (bridge getKeysignMimirAtHeight) removes even the
+	// flip-window round entirely and is the hardening to land before any mainnet
+	// enable. When the gate is off or unreadable, SignTx never calls getAccountInfo
+	// and behaves exactly as the pre-#661 recent-blockhash path.
 	if useSolDurableNonce {
-		nonceAccount, nonceAuthority, nonceValue, ok, nErr := c.durableNonceForVault(tx)
-		if nErr != nil {
-			// Fail CLOSED, mirroring the recent-blockhash RPC-error path: retain the
-			// outbound and retry rather than fall through to a blockhash tx, so a
-			// half-provisioned nonce account never silently reverts to the expiring path.
-			c.countAbstain("durable_nonce_error")
-			return nil, nil, nil, fmt.Errorf("fail to resolve durable nonce: %w", nErr)
-		}
-		if ok {
-			solTx, buildErr := c.CreateTxWithNonce(tx, memoForParsing, nonceValue, nonceAccount, nonceAuthority)
-			if buildErr != nil {
-				return nil, nil, nil, fmt.Errorf("fail to create durable-nonce tx: %w", buildErr)
+		if enabled, mErr := c.bridge.GetMimir(constants.MimirKeySOLDurableNonce); mErr == nil && enabled > 0 {
+			nonceAccount, nonceAuthority, nonceValue, ok, nErr := c.durableNonceForVault(tx)
+			if nErr != nil {
+				// A usable-but-unreadable nonce account fails CLOSED: retain and retry
+				// rather than silently reverting a provisioned vault to the expiring
+				// path. (A not-yet-provisioned account is ok=false, not an error.)
+				c.countAbstain("durable_nonce_error")
+				return nil, nil, nil, fmt.Errorf("fail to resolve durable nonce: %w", nErr)
 			}
-			return c.finishSign(solTx, tx, memoForParsing, height)
+			if ok {
+				solTx, buildErr := c.CreateTxWithNonce(tx, memoForParsing, nonceValue, nonceAccount, nonceAuthority)
+				if buildErr != nil {
+					return nil, nil, nil, fmt.Errorf("fail to create durable-nonce tx: %w", buildErr)
+				}
+				return c.finishSign(solTx, tx, memoForParsing, height)
+			}
 		}
 	}
 
@@ -1113,28 +1126,96 @@ func (c *SOLClient) CreateTx(tx stypes.TxOutItem, memoForParsing, recentBlockhas
 	return types.NewTransferTransaction(vaultPubKey, toPubkey, tx.Coins[0].Amount.Uint64(), tx.Memo, recentBlockhash), nil
 }
 
-// useSolDurableNonce gates the #661 durable-nonce outbound path in SignTx. OFF
-// until vault nonce-account provisioning and the single-nonce-vs-pool rollout are
-// decided; flipping it on has no effect until durableNonceForVault returns ok.
-const useSolDurableNonce = false
+// useSolDurableNonce enables the #661 durable-nonce outbound branch in SignTx.
+// When on, SignTx anchors a SOL outbound on the vault's stored nonce IF a usable
+// nonce account exists (durableNonceForVault ok); otherwise it falls through to the
+// recent-blockhash path unchanged. It is therefore SAFE to leave on in every build:
+// the effective rollout gate is MimirKeySOLDurableNonce, which controls whether the
+// provisioning loop ever creates the nonce accounts. With provisioning off, no
+// account exists, durableNonceForVault returns ok=false, and behaviour is identical
+// to the pre-#661 path — including during a mixed-version fleet rollout, since both
+// on and off builds produce the recent-blockhash tx when no nonce account exists.
+// The mimir gate is deliberately NOT read inside SignTx: a per-node mimir read
+// could differ across parties during a governance flip and fragment the keysign,
+// whereas nonce-account existence is finalized on-chain state that all parties
+// agree on. HaltSigningSOL remains the emergency stop.
+const useSolDurableNonce = true
 
-// durableNonceForVault resolves the durable-nonce account a vault should use for
-// its next SOL outbound and reads its stored nonce (the value baked into the tx
-// message in place of a recent blockhash).
+// solNonceSeed is the fixed create_with_seed seed that fixes a vault's durable-nonce
+// account address as a pure function of the vault pubkey (CreateWithSeed(vault,
+// solNonceSeed, SystemProgram)). Every keysign party derives the identical address
+// with no shared state, and a churn-in vault's account is deterministic from its own
+// pubkey. Changing this string orphans every existing nonce account, so it is
+// versioned and never edited in place.
+const solNonceSeed = "thornode-durable-nonce-v1"
+
+// nonceAccountRentLamports funds a new nonce account. It must be >= the rent-exempt
+// minimum for an 80-byte (types.NonceAccountSize) account — 1,447,680 lamports under
+// the current Solana rent schedule — and is a FIXED constant (not an RPC read) so
+// every keysign party funds the identical amount and the create tx bytes converge.
+// Rounded up to 1,500,000 for headroom against a rent-schedule tweak; any surplus is
+// reclaimed when the account is closed at churn.
+const nonceAccountRentLamports = uint64(1_500_000)
+
+// nonceAddressForVault derives the deterministic durable-nonce account address for a
+// vault: CreateWithSeed(vaultPubKey, solNonceSeed, SystemProgram). It is a pure
+// function of the vault pubkey, so every keysign party — and the provisioning loop —
+// compute the identical address with no shared state or coordination.
+func (c *SOLClient) nonceAddressForVault(vaultPubKey types.PublicKey) (types.PublicKey, error) {
+	return types.CreateWithSeed(vaultPubKey, solNonceSeed, types.SystemProgramID)
+}
+
+// durableNonceForVault resolves the durable-nonce account a vault should use for its
+// next SOL outbound and reads its stored nonce (the value baked into the tx message
+// in place of a recent blockhash). It returns ok=true only when a usable nonce
+// account exists and is authorized by the vault.
 //
-// STUB: returns ok=false so SignTx falls through to the recent-blockhash path.
-// Wiring it up is gated on the provisioning + single-nonce-account-vs-pool design
-// decisions (#661). Once resolved it will select the vault's nonce account and read
-// it deterministically across all keysign parties via c.rpcClient.GetNonceAccount,
-// which already fails closed on a missing/uninitialised/empty account.
+// Determinism: the account address is a pure function of the vault pubkey, and the
+// stored nonce is read at FINALIZED commitment. A nonce value only changes when a
+// durable-nonce tx using it lands; between advances it is stable, so every party
+// reads the identical value regardless of when it queries. Single-nonce-per-vault +
+// the signer pipeline's one-item-per-{vault,chain}-per-pass serialization keeps at
+// most one durable-nonce tx in flight per vault, so the value does not move under a
+// live keysign — no consensus-height cache is required (unlike a recent blockhash,
+// which advances every slot).
+//
+// A not-yet-provisioned account (ErrNonceAccountNotProvisioned) is NOT an error:
+// ok=false falls through to the recent-blockhash path while the provisioning loop
+// creates the account out of band. Only a transport/RPC error fails closed.
 func (c *SOLClient) durableNonceForVault(tx stypes.TxOutItem) (nonceAccount, nonceAuthority types.PublicKey, nonceValue string, ok bool, err error) {
-	// TODO(#661 provisioning): resolve the vault's nonce account address (single vs
-	// pool), then:
-	//   nonceValue, authority, err := c.rpcClient.GetNonceAccount(nonceAddr)
-	// returning ok=true with the parsed nonceAccount/nonceAuthority pubkeys. Reading
-	// must be deterministic across parties (like cachedConsensusBlockHash) so every
-	// signer bakes the same nonce and converges on one TSS party.
-	return types.PublicKey{}, types.PublicKey{}, "", false, nil
+	vaultAddr, err := tx.VaultPubKeyEddsa.GetAddress(c.GetChain())
+	if err != nil {
+		return types.PublicKey{}, types.PublicKey{}, "", false, fmt.Errorf("fail to get vault address: %w", err)
+	}
+	vaultPubKey, err := types.PublicKeyFromString(vaultAddr.String())
+	if err != nil {
+		return types.PublicKey{}, types.PublicKey{}, "", false, fmt.Errorf("fail to parse vault pubkey: %w", err)
+	}
+	nonceAddr, err := c.nonceAddressForVault(vaultPubKey)
+	if err != nil {
+		return types.PublicKey{}, types.PublicKey{}, "", false, fmt.Errorf("fail to derive nonce address: %w", err)
+	}
+
+	nonce, authority, err := c.rpcClient.GetNonceAccount(nonceAddr.String())
+	if err != nil {
+		if errors.Is(err, rpc.ErrNonceAccountNotProvisioned) {
+			// Not provisioned yet: fall through to the recent-blockhash path (the
+			// provisioning loop creates it out of band). ok=false, no error.
+			return types.PublicKey{}, types.PublicKey{}, "", false, nil
+		}
+		// Transport/RPC error: fail closed so SignTx retains and retries rather than
+		// silently reverting a provisioned vault to the expiring path.
+		return types.PublicKey{}, types.PublicKey{}, "", false, err
+	}
+	// Only use a nonce account the vault authorizes — the signing model assumes the
+	// vault signs AdvanceNonceAccount. A mismatch means we could not advance it, so
+	// fall through to the recent-blockhash path rather than build an unlandable tx.
+	if !vaultPubKey.EqualsString(authority) {
+		c.logger.Warn().Str("nonce_account", nonceAddr.String()).Str("authority", authority).
+			Interface("tx", tx).Msg("durable-nonce account authority is not the vault; using recent-blockhash path")
+		return types.PublicKey{}, types.PublicKey{}, "", false, nil
+	}
+	return nonceAddr, vaultPubKey, nonce, true, nil
 }
 
 // CreateTxWithNonce builds an outbound SOL transfer anchored on a durable nonce

@@ -1,8 +1,17 @@
 package rpc
 
 import (
+	"errors"
 	"fmt"
 )
+
+// ErrNonceAccountNotProvisioned marks the cases where a durable-nonce account does
+// not yet exist in a usable form (missing, uninitialized, wrong program, or an
+// empty stored nonce). These are RECOVERABLE by provisioning, so the caller must
+// treat them as "no nonce yet, fall through to the recent-blockhash path" — as
+// distinct from a transport/RPC error, which fails closed. Wrap with %w and test
+// with errors.Is.
+var ErrNonceAccountNotProvisioned = errors.New("durable-nonce account not provisioned")
 
 // getAccountInfoResponse is the response for a getAccountInfo call made with the
 // jsonParsed encoding. For a SystemProgram durable-nonce account the runtime
@@ -54,17 +63,17 @@ func (s *SolRPC) GetNonceAccount(pubkey string) (nonce string, authority string,
 		return "", "", fmt.Errorf("RPC Error %d: %s", response.Error.Code, response.Error.Message)
 	}
 	if response.Result == nil || response.Result.Value == nil {
-		return "", "", fmt.Errorf("getAccountInfo: nonce account %s not found", pubkey)
+		return "", "", fmt.Errorf("%w: account %s not found", ErrNonceAccountNotProvisioned, pubkey)
 	}
 	v := response.Result.Value
 	if v.Data.Program != "nonce" {
-		return "", "", fmt.Errorf("getAccountInfo: account %s is not a nonce account (program=%q)", pubkey, v.Data.Program)
+		return "", "", fmt.Errorf("%w: account %s is not a nonce account (program=%q)", ErrNonceAccountNotProvisioned, pubkey, v.Data.Program)
 	}
 	if v.Data.Parsed.Type != "initialized" {
-		return "", "", fmt.Errorf("getAccountInfo: nonce account %s not initialized (type=%q)", pubkey, v.Data.Parsed.Type)
+		return "", "", fmt.Errorf("%w: account %s not initialized (type=%q)", ErrNonceAccountNotProvisioned, pubkey, v.Data.Parsed.Type)
 	}
 	if v.Data.Parsed.Info.Blockhash == "" {
-		return "", "", fmt.Errorf("getAccountInfo: nonce account %s has empty stored nonce", pubkey)
+		return "", "", fmt.Errorf("%w: account %s has empty stored nonce", ErrNonceAccountNotProvisioned, pubkey)
 	}
 	return v.Data.Parsed.Info.Blockhash, v.Data.Parsed.Info.Authority, nil
 }
