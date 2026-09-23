@@ -144,6 +144,13 @@ func (k KVStore) IsOperationalMimir(key string) bool {
 	if strings.HasPrefix(key, "COMPROMISEDVAULT-") {
 		return true
 	}
+	// AllowNoVault-<CHAIN> opens the noop:novault debit for a brief, coordinated
+	// insolvency-correction window. That is a time-critical operator action (a
+	// gas top-up to a retiring vault must not be credited before the next
+	// migration round), so it is operational rather than economic.
+	if strings.HasPrefix(key, "ALLOWNOVAULT-") {
+		return true
+	}
 	partialMatches := []string{
 		"HALT",
 		"PAUSE",

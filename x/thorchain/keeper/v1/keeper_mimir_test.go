@@ -1,6 +1,7 @@
 package keeperv1
 
 import (
+	"fmt"
 	"strings"
 
 	"gitlab.com/thorchain/thornode/v3/constants"
@@ -117,4 +118,19 @@ func (s *KeeperMimirSuite) TestIsOperationalMimirSkipSignerCache(c *C) {
 	// Case-insensitive (partial match uppercases the key).
 	c.Check(k.IsOperationalMimir("skipsignercacheBTC"), Equals, true)
 	c.Check(k.IsOperationalMimir("SKIPSIGNERCACHEBTC"), Equals, true)
+}
+
+func (s *KeeperMimirSuite) TestIsOperationalMimirAllowNoVault(c *C) {
+	_, k := setupKeeperForTest(c)
+
+	// AllowNoVault-<CHAIN> gates noop:novault debits for a short correction
+	// window; operators must be able to open it by plurality, not 2/3. Derive
+	// the key from the template so a renamed constant fails here, not on mainnet.
+	c.Check(k.IsOperationalMimir(fmt.Sprintf(constants.MimirTemplateAllowNoVault, "TRON")), Equals, true)
+	c.Check(k.IsOperationalMimir("ALLOWNOVAULT-BSC"), Equals, true)
+	c.Check(k.IsOperationalMimir("allownovault-eth"), Equals, true)
+
+	// Unrelated keys stay non-operational.
+	c.Check(k.IsOperationalMimir("NoVaultAllowed-TRON"), Equals, false)
+	c.Check(k.IsOperationalMimir("AllowNoVault"), Equals, false)
 }

@@ -167,6 +167,7 @@ Operational notes:
 
 - `StopSolvencyCheck`#: Enable/Disable Solvency Checker
 - `StopSolvencyCheck<chain>`#: Enable/Disable Solvency Checker, per chain
+- `AllowNoVault-<Chain>`#: Authorizes `NOOP:NOVAULT` vault debits on the chain, used for a brief, coordinated insolvency correction (operational Mimir). Prefer setting it to a future block height so the window closes itself (agree the exact height off-chain first: operational votes only count when the values match, and a tie sets nothing); `1` holds it open until it is reset to `0`, and because churn purges operational node votes while keeping the effective value, a `1` gate outlives churn still listed in `/thorchain/mimir` but with no vote trail left in `/thorchain/mimir/nodes_all`.
 - `OverSolvencyToTreasuryBps-<asset>`#: Per-asset basis points (0-10000) of over-solvent liquidity to swap to RUNE and transfer to the over-solvency sweep destination address, for example `OverSolvencyToTreasuryBps-BTC-BTC`. Falls back to `OverSolvencyToTreasuryBps` when unset.
 - `PermittedSolvencyGap`: (deprecated) The amount of funds permitted to be "insolvent" as a percentage (basis points). Replaced by `PermittedSolvencyGapUSD`.
 - `PermittedSolvencyGapUSD`: The permitted solvency gap in USD (1e8 notation). Vault insolvency below this USD value will not trigger a chain halt. Default is $500 (500_00000000).

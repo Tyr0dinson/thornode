@@ -726,6 +726,8 @@ May cause loss of funds if not performed correctly and at the right time.
 | `NOOP`     | The no-op handler.              | Adds to the vault balance, but does not add to the pool. |
 | `:NOVAULT` | Do not credit the vault.        | Optional. Just fix the insolvency issue.                 |
 
+The `:NOVAULT` debit only applies while the operational mimir `AllowNoVault-<CHAIN>` is `1` (or a block height greater than or equal to the current height). Prefer the block-height form: it is the only variant that closes itself. When the gate is closed the vault is credited as with a plain `NOOP`.
+
 ## Refunds
 
 The following are the conditions for refunds:
