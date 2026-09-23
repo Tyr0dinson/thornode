@@ -81,6 +81,74 @@ func NewSelfTransferTransaction(vault PublicKey, amount uint64, memo, recentBloc
 	return NewTransaction(message)
 }
 
+// NewNonceTransferTransaction builds a vault->recipient SOL transfer that uses a
+// durable nonce instead of a recent blockhash, so the transaction does not expire
+// during the multi-party TSS keysign+broadcast window (#661). The message's
+// recentBlockhash field carries the nonce account's STORED nonce (nonceValue), and
+// an AdvanceNonceAccount instruction is prepended as instruction[0] — Solana
+// requires the nonce advance to be the first instruction. The nonce authority is
+// the vault (from), which already signs the transaction, so no extra signer is
+// added.
+//
+// Determinism: the byte layout is a pure function of the inputs, so every keysign
+// party handed the same nonceValue produces identical bytes. Reading a consistent
+// nonceValue across all parties is the caller's responsibility.
+//
+// Account order follows Solana's rule (writable signers, readonly signers,
+// writable non-signers, readonly non-signers):
+//
+//	0 from                       (writable signer; fee payer, source, nonce authority)
+//	1 to                         (writable non-signer)
+//	2 nonceAccount               (writable non-signer; AdvanceNonce mutates it)
+//	3 SystemProgramID            (readonly non-signer; runs AdvanceNonce + Transfer)
+//	4 RecentBlockhashes sysvar   (readonly non-signer)
+//	5 MemoProgramID              (readonly non-signer; only when memo != "")
+func NewNonceTransferTransaction(from, to PublicKey, amount uint64, memo, nonceValue string, nonceAccount, nonceAuthority PublicKey) Transaction {
+	const (
+		idxFrom      = 0
+		idxTo        = 1
+		idxNonce     = 2
+		idxSystem    = 3
+		idxSysvarRBH = 4
+	)
+	accountKeys := []PublicKey{from, to, nonceAccount, SystemProgramID, SysVarRecentBlockhashesID}
+
+	idxMemoProgram := -1
+	if memo != "" {
+		idxMemoProgram = len(accountKeys) // 5
+		accountKeys = append(accountKeys, MemoProgramID)
+	}
+
+	// The single signer is `from`, which is also the nonce authority in the vault
+	// signing model, so AdvanceNonceAccount references the authority at idxFrom. A
+	// distinct nonce authority would have to be added as an extra signer; that is
+	// out of scope for the current model (vault-owned nonce accounts).
+	_ = nonceAuthority
+
+	// 1e8 --> 1e9
+	solValue := amount * 10
+
+	instructions := make([]CompiledInstruction, 0, 3)
+	// instruction[0] MUST be AdvanceNonceAccount.
+	instructions = append(instructions, NewCompiledAdvanceNonceInstruction(idxSystem, idxNonce, idxSysvarRBH, idxFrom))
+	if memo != "" {
+		instructions = append(instructions, NewCompiledInstruction(idxMemoProgram, []int{idxFrom}, []byte(memo)))
+	}
+	instructions = append(instructions, NewCompiledTransferInstruction(idxSystem, idxFrom, idxTo, solValue))
+
+	header := MessageHeader{
+		NumRequireSignatures:      1,
+		NumReadonlySignedAccounts: 0,
+		// Readonly non-signers = SystemProgram + RecentBlockhashes sysvar (+ Memo).
+		// The two writable non-signers (to, nonceAccount) plus the writable signer
+		// (from) are the remaining accounts.
+		NumReadonlyUnsignedAccounts: uint8(len(accountKeys) - 3),
+	}
+
+	message := NewMessage(header, accountKeys, nonceValue, instructions)
+	return NewTransaction(message)
+}
+
 func NewTransaction(message Message) Transaction {
 	signatures := make([]Signature, 0, message.Header.NumRequireSignatures)
 	for i := uint8(0); i < message.Header.NumRequireSignatures; i++ {

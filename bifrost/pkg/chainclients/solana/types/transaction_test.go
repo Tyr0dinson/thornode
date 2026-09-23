@@ -240,3 +240,87 @@ func TestNewSelfTransferTransactionWithoutMemo(t *testing.T) {
 	require.Equal(t, 1, tx.Message.Instructions[0].ProgramIDIndex)
 	require.Equal(t, []int{0, 0}, tx.Message.Instructions[0].Accounts)
 }
+
+// advanceNonceData is the SystemProgram AdvanceNonceAccount discriminator: enum
+// index 4, 4-byte little-endian, no arguments.
+var advanceNonceData = []byte{4, 0, 0, 0}
+
+func TestNewNonceTransferTransactionWithMemo(t *testing.T) {
+	from := MustPublicKeyFromString("E6wak7XKQtXVS8DqRRFnhToht7Grdz7BHWMQaCdJdaqc")
+	to := MustPublicKeyFromString("2YpsG3TShyPDPWbtU5hTtGpb5XbKDQqaWVspVdWVaJSc")
+	nonceAccount := MustPublicKeyFromString("9aE476sH92Vz7DMPyq5WLPkrKWivxeuTKEFKd2sZZcde")
+	nonceAuthority := from
+	// nonceValue occupies the message's recentBlockhash field, so it must be a
+	// base58 blob the message serializer can decode.
+	nonceValue := "9rAtxuhtKn8qagc3UtZFyhLrw5zkh6etv43TibaXuSKo"
+
+	tx := NewNonceTransferTransaction(from, to, 6_331_658, "r:00001", nonceValue, nonceAccount, nonceAuthority)
+
+	// Account order: writable signer, writable non-signers, then readonly programs.
+	require.Len(t, tx.Message.Accounts, 6)
+	require.Equal(t, from, tx.Message.Accounts[0])
+	require.Equal(t, to, tx.Message.Accounts[1])
+	require.Equal(t, nonceAccount, tx.Message.Accounts[2])
+	require.Equal(t, SystemProgramID, tx.Message.Accounts[3])
+	require.Equal(t, SysVarRecentBlockhashesID, tx.Message.Accounts[4])
+	require.Equal(t, MemoProgramID, tx.Message.Accounts[5])
+
+	require.Equal(t, uint8(1), tx.Message.Header.NumRequireSignatures)
+	require.Equal(t, uint8(0), tx.Message.Header.NumReadonlySignedAccounts)
+	// readonly non-signers = SystemProgram + RecentBlockhashes sysvar + Memo
+	require.Equal(t, uint8(3), tx.Message.Header.NumReadonlyUnsignedAccounts)
+
+	// instruction[0] MUST be AdvanceNonceAccount, referencing System program (3), and
+	// accounts [nonce(2), RecentBlockhashes sysvar(4), authority=from(0)] in that order.
+	require.Len(t, tx.Message.Instructions, 3)
+	require.Equal(t, 3, tx.Message.Instructions[0].ProgramIDIndex)
+	require.Equal(t, []int{2, 4, 0}, tx.Message.Instructions[0].Accounts)
+	require.Equal(t, advanceNonceData, tx.Message.Instructions[0].Data)
+
+	// memo instruction, then the transfer (system program, from->to).
+	require.Equal(t, 5, tx.Message.Instructions[1].ProgramIDIndex)
+	require.Equal(t, []byte("r:00001"), tx.Message.Instructions[1].Data)
+	require.Equal(t, 3, tx.Message.Instructions[2].ProgramIDIndex)
+	require.Equal(t, []int{0, 1}, tx.Message.Instructions[2].Accounts)
+	require.Equal(t, uint32(2), binary.LittleEndian.Uint32(tx.Message.Instructions[2].Data[0:4]))
+	require.Equal(t, uint64(63_316_580), binary.LittleEndian.Uint64(tx.Message.Instructions[2].Data[4:12]))
+
+	// the durable nonce is baked into the recentBlockhash field, unchanged.
+	require.Equal(t, nonceValue, tx.Message.RecentBlockHash)
+
+	// must serialize cleanly for TSS signing, and round-trip byte-identically so
+	// every keysign party handed the same nonce produces the same msgID.
+	data, err := tx.Message.Serialize()
+	require.NoError(t, err)
+	require.NotEmpty(t, data)
+	again, err := tx.Message.Serialize()
+	require.NoError(t, err)
+	require.Equal(t, data, again)
+}
+
+func TestNewNonceTransferTransactionWithoutMemo(t *testing.T) {
+	from := MustPublicKeyFromString("E6wak7XKQtXVS8DqRRFnhToht7Grdz7BHWMQaCdJdaqc")
+	to := MustPublicKeyFromString("2YpsG3TShyPDPWbtU5hTtGpb5XbKDQqaWVspVdWVaJSc")
+	nonceAccount := MustPublicKeyFromString("9aE476sH92Vz7DMPyq5WLPkrKWivxeuTKEFKd2sZZcde")
+	nonceValue := "9rAtxuhtKn8qagc3UtZFyhLrw5zkh6etv43TibaXuSKo"
+
+	tx := NewNonceTransferTransaction(from, to, 200_123, "", nonceValue, nonceAccount, from)
+
+	// no memo program appended
+	require.Len(t, tx.Message.Accounts, 5)
+	require.Equal(t, SystemProgramID, tx.Message.Accounts[3])
+	require.Equal(t, SysVarRecentBlockhashesID, tx.Message.Accounts[4])
+	require.Equal(t, uint8(2), tx.Message.Header.NumReadonlyUnsignedAccounts)
+
+	// instruction[0] is still AdvanceNonce; transfer follows immediately (no memo).
+	require.Len(t, tx.Message.Instructions, 2)
+	require.Equal(t, 3, tx.Message.Instructions[0].ProgramIDIndex)
+	require.Equal(t, []int{2, 4, 0}, tx.Message.Instructions[0].Accounts)
+	require.Equal(t, advanceNonceData, tx.Message.Instructions[0].Data)
+	require.Equal(t, 3, tx.Message.Instructions[1].ProgramIDIndex)
+	require.Equal(t, []int{0, 1}, tx.Message.Instructions[1].Accounts)
+
+	require.Equal(t, nonceValue, tx.Message.RecentBlockHash)
+	_, err := tx.Message.Serialize()
+	require.NoError(t, err)
+}
