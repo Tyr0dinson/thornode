@@ -113,7 +113,11 @@ func (c *SOLClient) keepAliveLoop() {
 				// anchorHeight = boundary × cadence: identical across members crossing
 				// this boundary and ≤ the firing node's tip, so it is both a converged
 				// AND a valid THORChain signing_height.
-				c.keepAliveCheck(scanSlot, boundary*keepAliveThorBlockCadence)
+				anchorHeight := boundary * keepAliveThorBlockCadence
+				c.keepAliveCheck(scanSlot, anchorHeight)
+				// Durable-nonce (#661) provisioning + churn close share this boundary so
+				// their keysigns get the same converged, valid anchor height.
+				c.nonceProvisionCheck(anchorHeight)
 			}
 			// Advance past this boundary so it is acted on exactly once, whether or not
 			// a keysign actually fired (fresh-node seed / disabled / inactive /

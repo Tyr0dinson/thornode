@@ -1,0 +1,297 @@
+package solana
+
+import (
+	"errors"
+	"fmt"
+	"math/big"
+
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signing"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/rpc"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
+	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
+	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/constants"
+	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
+)
+
+////////////////////////////////////////////////////////////////////////////////////////
+// sol_nonce_provision.go — durable-nonce account provisioning + churn close (#661)
+//
+// A vault's SOL outbounds anchor on a durable nonce (AdvanceNonceAccount) instead of
+// a recent blockhash so they cannot expire during the multi-party TSS keysign +
+// broadcast window. That requires each vault to own an initialized nonce account at a
+// deterministic address. Provisioning creates it; churn closes it to reclaim rent.
+//
+// Both run bifrost-autonomously, off the outbound path — modelled on the keep-alive
+// self-sign (sol_keepalive.go): they fire on the SAME shared THORChain-block cadence
+// boundary the keep-alive uses, so the keysign anchor height (boundary × cadence) is
+// (a) ≤ tip and (b) identical across every vault member, so members batch into one
+// keysign session (go-tss batches by {algo, height}) and — with all other tx fields
+// being pure functions of the vault — sign byte-identical transactions. Nodes that
+// are not members of a vault skip it.
+//
+// Chicken-egg / churn safety (Itz's question): the create-nonce tx itself uses a
+// recent (consensus) blockhash — a nonce cannot anchor its own creation — so its
+// keysign is still subject to the ~150-slot expiry. It lands anyway because it runs
+// at NORMAL cadence (not the churn storm), retries every boundary with a fresh
+// blockhash, and has no slasher deadline: one good roll ever suffices. Crucially,
+// outbounds NEVER block on it — until the nonce account exists, SignTx's
+// durableNonceForVault returns ok=false and the outbound falls back to the
+// recent-blockhash path. So a not-yet-provisioned or slow-to-provision vault is never
+// worse than today, and churn is never locked. The only state in which provisioning
+// cannot complete is a PERSISTENTLY >expiry keysign latency — a regime already fully
+// broken for ordinary outbounds; durable nonce self-heals the moment latency dips
+// below the window even once.
+////////////////////////////////////////////////////////////////////////////////////////
+
+// nonceProvisionFeeMarginLamports is the balance headroom required beyond the rent
+// funding so the create-nonce transaction fee is always payable.
+const nonceProvisionFeeMarginLamports = 100_000
+
+// nonceProvisionCheck evaluates every vault this node is a member of at a shared
+// keep-alive cadence boundary (anchorHeight = boundary × cadence, identical across
+// members and ≤ tip). Active vaults are provisioned with a nonce account when the
+// MimirKeySOLDurableNonce gate is on; retiring vaults have their nonce account closed
+// unconditionally so reclaimed rent is never stranded (a no-op when none exists).
+//
+// The mimir gates PROVISIONING only. SignTx never reads it — it branches on
+// nonce-account existence (finalized on-chain state all parties agree on), so a
+// governance flip can never fragment a keysign.
+func (c *SOLClient) nonceProvisionCheck(anchorHeight int64) {
+	enabled, err := c.bridge.GetMimir(constants.MimirKeySOLDurableNonce)
+	if err != nil {
+		c.logger.Err(err).Msgf("fail to get %s mimir", constants.MimirKeySOLDurableNonce)
+		return
+	}
+	provisioningEnabled := enabled > 0
+
+	nodeStatus, err := c.bridge.FetchNodeStatus()
+	if err != nil {
+		c.logger.Err(err).Msg("fail to get node status")
+		return
+	}
+	if nodeStatus != ttypes.NodeStatus_Active {
+		return
+	}
+	if signing.IsSigningHalted(c.bridge, c.cfg.ChainID, c.logger) {
+		return
+	}
+	// An unhealthy scanner signals a degraded node that should not initiate keysigns.
+	if !c.IsBlockScannerHealthy() {
+		return
+	}
+
+	nodePubKey := c.pubkeyMgr.GetNodePubKey(common.SigningAlgoSecp256k1)
+	if nodePubKey.IsEmpty() {
+		return
+	}
+
+	vaults, err := c.bridge.GetAsgards()
+	if err != nil {
+		c.logger.Err(err).Msg("fail to get current asgards")
+		return
+	}
+
+	for _, vault := range vaults {
+		if !vault.Contains(nodePubKey) {
+			// not a member of this vault, its members handle it
+			continue
+		}
+		if vault.PubKeyEddsa.IsEmpty() {
+			continue
+		}
+		switch vault.Status {
+		case ttypes.VaultStatus_ActiveVault:
+			if !provisioningEnabled {
+				continue
+			}
+			if err := c.provisionNonceForVault(vault, anchorHeight); err != nil {
+				c.logger.Err(err).Str("vault_pubkey", vault.PubKey.String()).
+					Msg("fail to provision durable-nonce account")
+			}
+		case ttypes.VaultStatus_RetiringVault:
+			if err := c.closeNonceForRetiringVault(vault, anchorHeight); err != nil {
+				c.logger.Err(err).Str("vault_pubkey", vault.PubKey.String()).
+					Msg("fail to close durable-nonce account")
+			}
+		}
+	}
+}
+
+// provisionNonceForVault creates and initializes the vault's durable-nonce account
+// if it does not already exist. Idempotent: it checks the finalized chain first and
+// skips when the account is already present, so re-running every boundary (and across
+// nodes) is safe. The vault funds the rent + fee; a vault too poor to cover it is
+// skipped (its outbounds keep using the recent-blockhash path). The recent blockhash
+// is the consensus one for anchorHeight, so all members' create txs are byte-identical.
+func (c *SOLClient) provisionNonceForVault(vault ttypes.Vault, anchorHeight int64) error {
+	vaultAddr, err := vault.PubKeyEddsa.GetAddress(common.SOLChain)
+	if err != nil {
+		return fmt.Errorf("fail to get vault address: %w", err)
+	}
+	vaultPubKey, err := types.PublicKeyFromString(vaultAddr.String())
+	if err != nil {
+		return fmt.Errorf("fail to parse vault pubkey: %w", err)
+	}
+	nonceAddr, err := c.nonceAddressForVault(vaultPubKey)
+	if err != nil {
+		return fmt.Errorf("fail to derive nonce address: %w", err)
+	}
+
+	// Idempotent: already provisioned -> nothing to do.
+	if _, _, gErr := c.rpcClient.GetNonceAccount(nonceAddr.String()); gErr == nil {
+		return nil
+	} else if !errors.Is(gErr, rpc.ErrNonceAccountNotProvisioned) {
+		// transport error; retry next boundary
+		return fmt.Errorf("fail to check nonce account: %w", gErr)
+	}
+
+	balance, err := c.rpcClient.GetBalance(vaultAddr.String(), "finalized", 0)
+	if err != nil {
+		return fmt.Errorf("fail to get vault balance: %w", err)
+	}
+	required := new(big.Int).Add(
+		new(big.Int).SetUint64(nonceAccountRentLamports),
+		big.NewInt(nonceProvisionFeeMarginLamports),
+	)
+	if balance.Cmp(required) < 0 {
+		c.logger.Info().
+			Str("vault", vaultAddr.String()).
+			Str("balance", balance.String()).
+			Str("required", required.String()).
+			Msg("vault balance too low to provision durable-nonce account, skipping")
+		return nil
+	}
+
+	recentBlockhash, _, err := c.cachedConsensusBlockHash(anchorHeight)
+	if err != nil {
+		return fmt.Errorf("fail to derive consensus blockhash: %w", err)
+	}
+	if recentBlockhash == "" {
+		// No finalized consensus block for this height yet; retry next boundary.
+		return nil
+	}
+
+	solTx := types.NewCreateNonceAccountTransaction(vaultPubKey, nonceAddr, solNonceSeed, nonceAccountRentLamports, recentBlockhash)
+	c.logger.Info().
+		Str("vault", vaultAddr.String()).
+		Str("nonce_account", nonceAddr.String()).
+		Int64("anchor_height", anchorHeight).
+		Msg("provisioning durable-nonce account")
+
+	txid, err := c.signAndBroadcastNonceTx(solTx, vault, anchorHeight, "nonce-provision")
+	if err != nil {
+		return err
+	}
+	if txid != "" {
+		c.logger.Info().
+			Str("vault", vaultAddr.String()).
+			Str("nonce_account", nonceAddr.String()).
+			Str("txid", txid).
+			Msg("broadcast durable-nonce provisioning tx")
+	}
+	return nil
+}
+
+// closeNonceForRetiringVault withdraws a retiring vault's full durable-nonce balance
+// back to the vault, closing the account. The reclaimed rent lands in the vault's
+// main SOL balance and then migrates to the incoming asgard through the normal
+// migrateFunds path — so no incoming-asgard address needs to be resolved here. A
+// no-op when the vault has no nonce account. The full finalized balance is withdrawn;
+// a nonce account's balance is stable rent, so every member computes the same amount.
+func (c *SOLClient) closeNonceForRetiringVault(vault ttypes.Vault, anchorHeight int64) error {
+	vaultAddr, err := vault.PubKeyEddsa.GetAddress(common.SOLChain)
+	if err != nil {
+		return fmt.Errorf("fail to get vault address: %w", err)
+	}
+	vaultPubKey, err := types.PublicKeyFromString(vaultAddr.String())
+	if err != nil {
+		return fmt.Errorf("fail to parse vault pubkey: %w", err)
+	}
+	nonceAddr, err := c.nonceAddressForVault(vaultPubKey)
+	if err != nil {
+		return fmt.Errorf("fail to derive nonce address: %w", err)
+	}
+
+	// Nothing to close if the account does not exist.
+	if _, _, gErr := c.rpcClient.GetNonceAccount(nonceAddr.String()); gErr != nil {
+		if errors.Is(gErr, rpc.ErrNonceAccountNotProvisioned) {
+			return nil
+		}
+		return fmt.Errorf("fail to check nonce account: %w", gErr)
+	}
+
+	balance, err := c.rpcClient.GetBalance(nonceAddr.String(), "finalized", 0)
+	if err != nil {
+		return fmt.Errorf("fail to get nonce account balance: %w", err)
+	}
+	if balance.Sign() <= 0 {
+		return nil
+	}
+	lamports := balance.Uint64()
+
+	recentBlockhash, _, err := c.cachedConsensusBlockHash(anchorHeight)
+	if err != nil {
+		return fmt.Errorf("fail to derive consensus blockhash: %w", err)
+	}
+	if recentBlockhash == "" {
+		return nil
+	}
+
+	solTx := types.NewCloseNonceAccountTransaction(vaultPubKey, nonceAddr, vaultPubKey, lamports, recentBlockhash)
+	c.logger.Info().
+		Str("vault", vaultAddr.String()).
+		Str("nonce_account", nonceAddr.String()).
+		Uint64("lamports", lamports).
+		Int64("anchor_height", anchorHeight).
+		Msg("closing retiring vault durable-nonce account")
+
+	txid, err := c.signAndBroadcastNonceTx(solTx, vault, anchorHeight, "nonce-close")
+	if err != nil {
+		return err
+	}
+	if txid != "" {
+		c.logger.Info().
+			Str("vault", vaultAddr.String()).
+			Str("nonce_account", nonceAddr.String()).
+			Str("txid", txid).
+			Msg("broadcast durable-nonce close tx")
+	}
+	return nil
+}
+
+// signAndBroadcastNonceTx TSS-signs an autonomous nonce management transaction (the
+// vault is account index 0 / the sole signer) and broadcasts it. Unlike a scheduled
+// outbound it does NOT post a keysign failure to THORChain on error — there is no
+// scheduled TxOutItem to slash against, and a failed keysign simply retries on the
+// next cadence boundary with a fresh blockhash. Returns an empty txid (nil error)
+// when this node was not selected for the keysign — another member broadcasts.
+func (c *SOLClient) signAndBroadcastNonceTx(solTx types.Transaction, vault ttypes.Vault, anchorHeight int64, memo string) (string, error) {
+	toi := stypes.TxOutItem{
+		Chain:            common.SOLChain,
+		VaultPubKey:      vault.PubKey,
+		VaultPubKeyEddsa: vault.PubKeyEddsa,
+		Height:           anchorHeight,
+		Memo:             memo,
+	}
+
+	signedTx, err := c.signTransaction(solTx, toi, anchorHeight)
+	if err != nil {
+		if errors.Is(err, tss.ErrNotSelectedForKeysign) {
+			return "", nil
+		}
+		return "", fmt.Errorf("fail to sign nonce tx: %w", err)
+	}
+
+	signedBytes, err := signedTx.Serialize()
+	if err != nil {
+		return "", fmt.Errorf("fail to serialize signed nonce tx: %w", err)
+	}
+
+	txid, err := c.BroadcastTx(toi, signedBytes)
+	if err != nil {
+		return "", fmt.Errorf("fail to broadcast nonce tx: %w", err)
+	}
+	return txid, nil
+}

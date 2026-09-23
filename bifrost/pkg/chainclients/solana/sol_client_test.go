@@ -353,6 +353,13 @@ func (m *mockSOLThorchainBridge) GetBlockTimestamp(int64) (time.Time, error) {
 	return time.Unix(testConsensusBlockTimeUnix, 0).UTC(), nil
 }
 
+// GetMimir returns 0 (durable-nonce disabled) so SignTx takes the recent-blockhash
+// path these tests assert. Overriding the embedded nil interface avoids a nil deref
+// now that SignTx reads MimirKeySOLDurableNonce (#661).
+func (m *mockSOLThorchainBridge) GetMimir(string) (int64, error) {
+	return 0, nil
+}
+
 func (m *mockSOLThorchainBridge) PostKeysignFailure(blame types2.Blame, height int64, memo string, coins common.Coins, pubkey common.PubKey) (common.TxID, error) {
 	m.postCalls = append(m.postCalls, solKeysignFailureCall{
 		blame:  blame,
