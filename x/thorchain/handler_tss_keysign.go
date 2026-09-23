@@ -283,8 +283,8 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 			return nil, ErrInternal(nodeErr, fmt.Sprintf("fail to get node account,pub key: %s", nodePubKey.String()))
 		}
 		// Track the keysign blame per node (tracking only, no penalty escalation)
-		if err := h.mgr.Keeper().IncrementKeysignBlame(ctx, na.NodeAddress); err != nil {
-			ctx.Logger().Error("fail to increment keysign blame", "error", err)
+		if errBlame := h.mgr.Keeper().IncrementKeysignBlame(ctx, na.NodeAddress); errBlame != nil {
+			ctx.Logger().Error("fail to increment keysign blame", "error", errBlame)
 		}
 
 		err = h.mgr.Keeper().IncNodeAccountSlashPoints(slashCtx, na.NodeAddress, slashPoints)
