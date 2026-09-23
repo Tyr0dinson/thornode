@@ -8148,6 +8148,14 @@
       "name": "Circle Wrapped Bitcoin",
       "symbol": "cirBTC",
       "decimals": 8
+    },
+    {
+      "address": "0xcE682c89C63d2850Cb2ca898E44D6c7c30d897a6",
+      "chainId": 1,
+      "name": "Yum",
+      "symbol": "YUM",
+      "decimals": 18,
+      "logoURI": "https://assets.coingecko.com/coins/images/39116/small/yum.png"
     }
   ],
   "logoURI": "https://1inch.exchange/assets/images/logo.png"
