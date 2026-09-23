@@ -57,9 +57,13 @@ type blockingConfirmationChainClient struct {
 	once    sync.Once
 }
 
-func (c *blockingConfirmationChainClient) GetConfirmationCount(types.TxIn) int64 {
+func (c *blockingConfirmationChainClient) ConfirmationCountReady(types.TxIn) bool {
 	c.once.Do(func() { close(c.started) })
 	<-c.release
+	return false
+}
+
+func (c *blockingConfirmationChainClient) GetConfirmationCount(types.TxIn) int64 {
 	return 0
 }
 
