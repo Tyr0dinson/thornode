@@ -129,6 +129,70 @@ func (HandlerSecuredAssetDeposit) TestSecuredAssetDepositTVLCap(c *C) {
 	c.Check(err.Error(), Matches, ".*secured deposits more than bond.*")
 }
 
+func (HandlerSecuredAssetDeposit) TestSecuredAssetDepositTVLCapOraclePrice(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	asset := common.BTCAsset
+	pool := NewPool()
+	pool.Asset = asset
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	c.Assert(mgr.K.SetPool(ctx, pool), IsNil)
+
+	node := GetRandomValidatorNode(NodeActive)
+	node.Bond = cosmos.NewUint(150 * common.One)
+	c.Assert(mgr.K.SetNodeAccount(ctx, node), IsNil)
+	mgr.constAccessor = constants.NewDummyConstants(nil, map[constants.ConstantName]bool{
+		constants.StrictBondLiquidityRatio: true,
+	}, nil)
+
+	amount := cosmos.NewUint(100 * common.One)
+	coins := common.NewCoins(common.NewCoin(asset, amount))
+	// The pool values this deposit at 100 RUNE, below the 150 RUNE bond.
+	c.Check(atTVLCap(ctx, coins, mgr), Equals, false)
+	c.Check(validateSecuredAssetDeposit(ctx, mgr, asset, amount), IsNil)
+
+	c.Assert(mgr.K.SetPrice(ctx, OraclePrice{Symbol: "BTC", Price: "4"}), IsNil)
+	// With neither oracle nor TOR RUNE pricing, use the direct pool ratio.
+	c.Check(atTVLCap(ctx, coins, mgr), Equals, false)
+
+	// A TOR anchor provides $2.50 per RUNE even when the RUNE feed is absent.
+	anchor := NewPool()
+	anchor.Asset = common.USDCAsset
+	anchor.BalanceRune = cosmos.NewUint(100 * common.One)
+	anchor.BalanceAsset = cosmos.NewUint(250 * common.One)
+	c.Assert(mgr.K.SetPool(ctx, anchor), IsNil)
+	mgr.K.SetMimir(ctx, fmt.Sprintf("TorAnchor-%s-%s", anchor.Asset.Chain, anchor.Asset.Symbol), 1)
+	c.Assert(mgr.K.DollarsPerRune(ctx).String(), Equals, "250000000")
+	// BTC's oracle price and RUNE's TOR price value the deposit at 160 RUNE.
+	c.Check(atTVLCap(ctx, coins, mgr), Equals, true)
+	c.Check(validateSecuredAssetDeposit(ctx, mgr, asset, amount), NotNil)
+
+	// An available RUNE oracle takes priority over TOR: 100 * $4 / $4 = 100 RUNE.
+	c.Assert(mgr.K.SetPrice(ctx, OraclePrice{Symbol: "RUNE", Price: "4"}), IsNil)
+	c.Check(atTVLCap(ctx, coins, mgr), Equals, false)
+	c.Assert(mgr.K.SetPrice(ctx, OraclePrice{Symbol: "RUNE", Price: "2"}), IsNil)
+	// The oracle values the same deposit at 200 RUNE.
+	c.Check(atTVLCap(ctx, coins, mgr), Equals, true)
+	c.Check(validateSecuredAssetDeposit(ctx, mgr, asset, amount), NotNil)
+
+	mgr.K.DelPrice(ctx, "BTC")
+	c.Check(atTVLCap(ctx, coins, mgr), Equals, false)
+	c.Assert(mgr.K.SetPrice(ctx, OraclePrice{Symbol: "BTC", Price: "invalid"}), IsNil)
+	c.Check(atTVLCap(ctx, coins, mgr), Equals, false)
+	c.Assert(mgr.K.SetPrice(ctx, OraclePrice{Symbol: "BTC", Price: "0"}), IsNil)
+	c.Check(atTVLCap(ctx, coins, mgr), Equals, false)
+	c.Assert(mgr.K.SetPrice(ctx, OraclePrice{Symbol: "BTC", Price: "4"}), IsNil)
+	for _, invalidPrice := range []string{"0", "-1", "invalid"} {
+		c.Assert(mgr.K.SetPrice(ctx, OraclePrice{Symbol: "RUNE", Price: invalidPrice}), IsNil)
+		c.Check(atTVLCap(ctx, coins, mgr), Equals, true, Commentf("RUNE price=%s", invalidPrice))
+	}
+
+	// When both feeds are missing, the pool ratio still values the deposit.
+	mgr.K.DelPrice(ctx, "BTC")
+	mgr.K.DelPrice(ctx, "RUNE")
+	c.Check(atTVLCap(ctx, coins, mgr), Equals, false)
+}
+
 func (HandlerSecuredAssetDeposit) TestSecuredAssetDepositValidateBasicFails(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	h := NewSecuredAssetDepositHandler(mgr)

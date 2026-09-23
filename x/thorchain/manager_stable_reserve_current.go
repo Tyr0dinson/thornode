@@ -251,7 +251,7 @@ func (s *StableReserveMgr) TrySwap(ctx cosmos.Context, mgr Manager, msg MsgSwap)
 		// redundant — every in-band pair fills, the reserve just pays out the
 		// value equivalent rather than a flat 1:1 count.
 		var ok bool
-		grossTarget, ok = stableReserveOracleRatioOutput(grossIn, srcPrice, tgtPrice)
+		grossTarget, ok = common.OraclePriceRatioOutput(grossIn, srcPrice, tgtPrice)
 		if !ok || grossTarget.IsZero() {
 			return false, cosmos.ZeroUint(), nil
 		}
@@ -700,35 +700,6 @@ func stableReserveSyntheticTxID(ctx cosmos.Context, purpose string, asset common
 		return common.BlankTxID
 	}
 	return txID
-}
-
-// stableReserveOracleRatioOutput scales a stable-reserve fill by the oracle
-// price ratio: out = floor(grossIn * srcPrice / tgtPrice). Only used when the
-// StableReserveOraclePricing mimir is on; the default fill is 1:1. Both prices
-// are USD-per-unit strings from stableReservePoolPrice. The result is floored so
-// any rounding favors the reserve. All arithmetic uses big.Rat (no float math).
-// Returns false if either price is unparsable, the source price is negative, or
-// the target price is non-positive — those sign guards also keep the result
-// non-negative so cosmos.NewUintFromBigInt can never panic.
-func stableReserveOracleRatioOutput(grossIn cosmos.Uint, srcPrice, tgtPrice string) (cosmos.Uint, bool) {
-	// Bound input length to mitigate G113 (CVE-2022-23772), mirroring
-	// stableReserveOracleHealthy.
-	if len(srcPrice) > 64 || len(tgtPrice) > 64 {
-		return cosmos.ZeroUint(), false
-	}
-	src, ok := new(big.Rat).SetString(srcPrice) // nolint:gosec // G113 mitigated by length bound above
-	if !ok || src.Sign() < 0 {
-		return cosmos.ZeroUint(), false
-	}
-	tgt, ok := new(big.Rat).SetString(tgtPrice) // nolint:gosec // G113 mitigated by length bound above
-	if !ok || tgt.Sign() <= 0 {
-		return cosmos.ZeroUint(), false
-	}
-	out := new(big.Rat).SetInt(grossIn.BigInt())
-	out.Mul(out, src)
-	out.Quo(out, tgt)
-	floored := new(big.Int).Quo(out.Num(), out.Denom())
-	return cosmos.NewUintFromBigInt(floored), true
 }
 
 // stableReserveSourceWorthAtLeastTarget reports whether the source stable's

@@ -1736,13 +1736,16 @@ func atTVLCap(ctx cosmos.Context, coins common.Coins, mgr Manager) bool {
 	// coins must be copied to a new variable to avoid modifying the original
 	coins = coins.Copy()
 	for _, vault := range vaults {
-		if vault.IsAsgard() && (vault.IsActive() || vault.IsRetiring()) {
-			coins = coins.Add(vault.Coins...)
+		if !vault.IsAsgard() || (!vault.IsActive() && !vault.IsRetiring()) {
+			continue
 		}
+		coins = coins.Add(vault.Coins...)
 	}
 
 	runeCoin := coins.GetCoin(common.RuneAsset())
 	totalRuneValue := runeCoin.Amount
+	runePrice, runePriceErr := mgr.Keeper().GetPrice(ctx, common.RuneAsset().Ticker.String())
+	var runeTORPrice string
 	for _, coin := range coins {
 		if coin.IsEmpty() {
 			continue
@@ -1768,7 +1771,31 @@ func atTVLCap(ctx cosmos.Context, coins common.Coins, mgr Manager) bool {
 		if pool.Asset.IsNative() {
 			continue
 		}
-		totalRuneValue = totalRuneValue.Add(pool.AssetValueInRune(coin.Amount))
+		assetPrice, assetPriceErr := mgr.Keeper().GetPrice(ctx, pool.Asset.Ticker.String())
+		if assetPriceErr != nil {
+			totalRuneValue = totalRuneValue.Add(pool.AssetValueInRune(coin.Amount))
+			continue
+		}
+
+		value, ok := cosmos.ZeroUint(), false
+		if runePriceErr == nil {
+			value, ok = common.OraclePriceRatioOutput(coin.Amount, assetPrice.Price, runePrice.Price)
+		}
+		if ok {
+			totalRuneValue = totalRuneValue.Add(value)
+			continue
+		}
+
+		// A missing or invalid RUNE feed can still use the TOR anchor price.
+		if runeTORPrice == "" {
+			runeTORPrice = sdkmath.LegacyNewDecFromBigIntWithPrec(mgr.Keeper().DollarsPerRune(ctx).BigInt(), 8).String()
+		}
+		value, ok = common.OraclePriceRatioOutput(coin.Amount, assetPrice.Price, runeTORPrice)
+		if !ok {
+			totalRuneValue = totalRuneValue.Add(pool.AssetValueInRune(coin.Amount))
+			continue
+		}
+		totalRuneValue = totalRuneValue.Add(value)
 	}
 
 	// get effectiveSecurity

@@ -5,6 +5,8 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
+
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 const (
@@ -74,4 +76,26 @@ func (p *OraclePrice) BigFloat() *big.Float {
 	amount := new(big.Float).SetUint64(p.Amount)
 
 	return new(big.Float).Quo(amount, new(big.Float).SetInt(divisor))
+}
+
+// OraclePriceRatioOutput returns floor(amount * source USD price / target USD
+// price). It uses exact rational arithmetic and rejects invalid prices.
+func OraclePriceRatioOutput(amount cosmos.Uint, srcPrice, tgtPrice string) (cosmos.Uint, bool) {
+	// Bound input length before parsing prices.
+	if len(srcPrice) > 64 || len(tgtPrice) > 64 {
+		return cosmos.ZeroUint(), false
+	}
+	src, ok := new(big.Rat).SetString(srcPrice) // nolint:gosec // G113 mitigated by length bound above
+	if !ok || src.Sign() <= 0 {
+		return cosmos.ZeroUint(), false
+	}
+	tgt, ok := new(big.Rat).SetString(tgtPrice) // nolint:gosec // G113 mitigated by length bound above
+	if !ok || tgt.Sign() <= 0 {
+		return cosmos.ZeroUint(), false
+	}
+	out := new(big.Rat).SetInt(amount.BigInt())
+	out.Mul(out, src)
+	out.Quo(out, tgt)
+	floored := new(big.Int).Quo(out.Num(), out.Denom())
+	return cosmos.NewUintFromBigInt(floored), true
 }

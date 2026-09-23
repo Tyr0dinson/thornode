@@ -1126,38 +1126,3 @@ func removeQueuedSwap(ctx cosmos.Context, mgr *Mgrs, msg MsgSwap) error {
 	mgr.Keeper().RemoveSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index))
 	return nil
 }
-
-func (s *StableReserveMgrSuite) TestStableReserveOracleRatioOutput(c *C) {
-	in := cosmos.NewUint(100 * common.One)
-
-	// Equal prices settle 1:1.
-	out, ok := stableReserveOracleRatioOutput(in, "1.00", "1.00")
-	c.Check(ok, Equals, true)
-	c.Check(out.Equal(in), Equals, true)
-
-	// Opposite band edges scale down and floor toward the reserve:
-	// floor(100e8 * 0.99 / 1.01) = floor(990_000_000_000 / 101) = 9_801_980_198.
-	out, ok = stableReserveOracleRatioOutput(in, "0.99", "1.01")
-	c.Check(ok, Equals, true)
-	c.Check(out.Equal(cosmos.NewUint(9_801_980_198)), Equals, true)
-	// The output is strictly less than a flat 1:1 fill, so the reserve never
-	// overpays at the band edge.
-	c.Check(out.LT(in), Equals, true)
-
-	// Source worth more than target scales the output up.
-	out, ok = stableReserveOracleRatioOutput(in, "1.01", "0.99")
-	c.Check(ok, Equals, true)
-	c.Check(out.Equal(cosmos.NewUint(10_202_020_202)), Equals, true)
-
-	// Unparsable or non-positive target prices are rejected, not panicked on.
-	for _, tc := range []struct{ src, tgt string }{
-		{"1.00", "0"},     // zero target -> no division by zero
-		{"1.00", "-1.00"}, // negative target
-		{"-1.00", "1.00"}, // negative source -> floored result must stay non-negative
-		{"abc", "1.00"},   // unparsable source
-		{"1.00", "abc"},   // unparsable target
-	} {
-		_, ok = stableReserveOracleRatioOutput(in, tc.src, tc.tgt)
-		c.Check(ok, Equals, false, Commentf("src=%s tgt=%s", tc.src, tc.tgt))
-	}
-}

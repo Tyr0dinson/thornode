@@ -3,6 +3,7 @@ package common
 import (
 	"math/big"
 
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	. "gopkg.in/check.v1"
 )
 
@@ -135,5 +136,46 @@ func (s *OraclePriceSuite) TestNewOraclePrice(c *C) {
 			c.Assert(price.Decimals, Equals, tc.ExpectedDecimals, Commentf(tc.Number))
 			c.Assert(price.Amount, Equals, tc.ExpectedAmount, Commentf(tc.Number))
 		}
+	}
+}
+
+func (s *OraclePriceSuite) TestOraclePriceRatioOutput(c *C) {
+	in := cosmos.NewUint(100 * One)
+
+	// Equal prices settle 1:1.
+	out, ok := OraclePriceRatioOutput(in, "1.00", "1.00")
+	c.Check(ok, Equals, true)
+	c.Check(out.Equal(in), Equals, true)
+
+	// Opposite band edges scale down and floor toward the reserve:
+	// floor(100e8 * 0.99 / 1.01) = floor(990_000_000_000 / 101) = 9_801_980_198.
+	out, ok = OraclePriceRatioOutput(in, "0.99", "1.01")
+	c.Check(ok, Equals, true)
+	c.Check(out.Equal(cosmos.NewUint(9_801_980_198)), Equals, true)
+	// The output is strictly less than a flat 1:1 fill, so the reserve never
+	// overpays at the band edge.
+	c.Check(out.LT(in), Equals, true)
+
+	// Source worth more than target scales the output up.
+	out, ok = OraclePriceRatioOutput(in, "1.01", "0.99")
+	c.Check(ok, Equals, true)
+	c.Check(out.Equal(cosmos.NewUint(10_202_020_202)), Equals, true)
+
+	// Fractional prices retain precision when converting asset amounts to RUNE.
+	out, ok = OraclePriceRatioOutput(cosmos.NewUint(3*One), "2.5", "1.5")
+	c.Assert(ok, Equals, true)
+	c.Check(out.Equal(cosmos.NewUint(5*One)), Equals, true)
+
+	// Unparsable or non-positive prices are rejected, not panicked on.
+	for _, tc := range []struct{ src, tgt string }{
+		{"1.00", "0"},     // zero target -> no division by zero
+		{"0", "1.00"},     // zero source -> invalid price
+		{"1.00", "-1.00"}, // negative target
+		{"-1.00", "1.00"}, // negative source -> floored result must stay non-negative
+		{"abc", "1.00"},   // unparsable source
+		{"1.00", "abc"},   // unparsable target
+	} {
+		_, ok = OraclePriceRatioOutput(in, tc.src, tc.tgt)
+		c.Check(ok, Equals, false, Commentf("src=%s tgt=%s", tc.src, tc.tgt))
 	}
 }
