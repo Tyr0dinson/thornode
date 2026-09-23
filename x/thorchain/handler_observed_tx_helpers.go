@@ -518,6 +518,7 @@ func handleObservedTxInQuorum(
 			return nil
 		}
 
+		incrInactiveVaultRefund(tx.Tx.Chain)
 		if newErr := refundTx(ctx, tx, mgr, CodeInvalidVault, "observed inbound tx to an inactive vault", ""); newErr != nil {
 			ctx.Logger().Error("fail to refund", "error", newErr)
 		}
@@ -954,18 +955,24 @@ func rollbackAndRefundInactiveVaultMempoolSwap(ctx cosmos.Context, mgr Manager, 
 		return fmt.Errorf("fail to refund inactive-vault mempool swap: %w", err)
 	}
 	commit()
-	telemetry.IncrCounterWithLabels(
-		[]string{"thornode", "inbound", "refund"}, 1,
-		[]metrics.Label{
-			telemetry.NewLabel("chain", telemChain(tx.Tx.Chain)),
-			telemetry.NewLabel("reason", "inactive_vault"),
-		},
-	)
+	incrInactiveVaultRefund(tx.Tx.Chain)
 	if hasCleanupState {
 		incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "inactive_vault")})
 	}
 
 	return nil
+}
+
+// incrInactiveVaultRefund counts every inactive-vault inbound refund, whether
+// it takes the direct path or the mempool-swap rollback path.
+func incrInactiveVaultRefund(chain common.Chain) {
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "inbound", "refund"}, 1,
+		[]metrics.Label{
+			telemetry.NewLabel("chain", telemChain(chain)),
+			telemetry.NewLabel("reason", "inactive_vault"),
+		},
+	)
 }
 
 // startMempoolSwapVaultRecovery schedules an indexed recovery job. The vault
