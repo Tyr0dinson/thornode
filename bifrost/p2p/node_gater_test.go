@@ -216,6 +216,15 @@ func (m *MockThorchainBridge) GetObservedTxVoter(txID string) (*types.QueryObser
 	return nil, nil
 }
 
+func (m *MockThorchainBridge) GetObservedTxOutVoter(txID string) (*types.QueryObservedTxVoter, error) {
+	return m.GetObservedTxVoter(txID)
+}
+
+func (m *MockThorchainBridge) GetObservedTxOutVoterUncached(txID string) (*types.QueryObservedTxVoter, bool, error) {
+	voter, err := m.GetObservedTxVoter(txID)
+	return voter, voter != nil, err
+}
+
 func (m *MockThorchainBridge) GetXMRSpentOutputRefs(vaultPubKey common.PubKey) ([]*common.OutputRef, error) {
 	return nil, nil
 }

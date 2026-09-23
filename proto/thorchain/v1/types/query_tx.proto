@@ -116,6 +116,8 @@ message QueryObservedTxVoter {
 message QueryTxVotersRequest {
   string tx_id = 1;
   string height = 2;
+  // Select only the outbound voter. The default keeps inbound-first lookup.
+  bool outbound = 3;
 }
 
 message PlannedOutTx {

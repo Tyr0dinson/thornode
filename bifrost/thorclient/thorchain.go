@@ -140,6 +140,8 @@ type ThorchainBridge interface {
 	GetReferenceMemo(chain common.Chain, ref string) (string, error)
 	GetReferenceMemoByTxHash(hash string) (string, error)
 	GetObservedTxVoter(txID string) (*stypes.QueryObservedTxVoter, error)
+	GetObservedTxOutVoter(txID string) (*stypes.QueryObservedTxVoter, error)
+	GetObservedTxOutVoterUncached(txID string) (*stypes.QueryObservedTxVoter, bool, error)
 }
 
 // httpResponseCache used for caching HTTP responses for less frequent querying
@@ -876,7 +878,19 @@ func (b *thorchainBridge) GetXMRSpentOutputRefs(vaultPubKey common.PubKey) ([]*c
 }
 
 func (b *thorchainBridge) GetObservedTxVoter(txID string) (*stypes.QueryObservedTxVoter, error) {
-	buf, s, err := b.getWithPath(fmt.Sprintf(TxDetailEndpoint, txID))
+	return b.getObservedTxVoter(txID, b.getThorChainURL(fmt.Sprintf(TxDetailEndpoint, txID)))
+}
+
+// GetObservedTxOutVoter selects source-side consensus even when a migration's
+// destination has an inbound voter with the same ID. Its cache key is distinct.
+func (b *thorchainBridge) GetObservedTxOutVoter(txID string) (*stypes.QueryObservedTxVoter, error) {
+	// Append the query after URL construction: a host without a scheme uses
+	// url.URL.Path, which would otherwise escape '?' as part of the path.
+	return b.getObservedTxVoter(txID, b.getThorChainURL(fmt.Sprintf(TxDetailEndpoint, txID))+"?outbound=true")
+}
+
+func (b *thorchainBridge) getObservedTxVoter(txID, endpoint string) (*stypes.QueryObservedTxVoter, error) {
+	buf, s, err := b.get(endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get observed tx voter: %w", err)
 	}
@@ -895,7 +909,17 @@ func (b *thorchainBridge) GetObservedTxVoter(txID string) (*stypes.QueryObserved
 // fresh HTTP response. A missing voter is not an endpoint failure and is
 // reported as found=false; transport and server failures remain errors.
 func (b *thorchainBridge) GetObservedTxVoterUncached(txID string) (*stypes.QueryObservedTxVoter, bool, error) {
-	buf, status, err := b.getWithPathUncached(fmt.Sprintf(TxDetailEndpoint, txID))
+	return b.getObservedTxVoterUncached(txID, b.getThorChainURL(fmt.Sprintf(TxDetailEndpoint, txID)))
+}
+
+// GetObservedTxOutVoterUncached preserves the commit-race lookup's freshness
+// without allowing an inbound voter to hide a missing or pending outbound.
+func (b *thorchainBridge) GetObservedTxOutVoterUncached(txID string) (*stypes.QueryObservedTxVoter, bool, error) {
+	return b.getObservedTxVoterUncached(txID, b.getThorChainURL(fmt.Sprintf(TxDetailEndpoint, txID))+"?outbound=true")
+}
+
+func (b *thorchainBridge) getObservedTxVoterUncached(txID, endpoint string) (*stypes.QueryObservedTxVoter, bool, error) {
+	buf, status, err := b.getUncached(endpoint)
 	if missingObservedTxVoterResponse(buf, status, txID) {
 		return nil, false, nil
 	}

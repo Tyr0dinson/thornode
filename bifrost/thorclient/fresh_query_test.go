@@ -55,6 +55,65 @@ func (s *FreshQuerySuite) TestFreshVoterBypassesButDoesNotReplaceCache(c *C) {
 	c.Assert(requests, Equals, 2)
 }
 
+func (s *FreshQuerySuite) TestOutboundVoterUsesSeparateCacheAndFreshLookup(c *C) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		requests++
+		height := 11
+		if req.URL.Query().Get("outbound") == "true" {
+			height = requests * 11
+		}
+		_, err := fmt.Fprintf(w, `{"tx_id":"%s","consensus_height":%d}`, strings.Repeat("A", 64), height)
+		c.Assert(err, IsNil)
+	}))
+	defer server.Close()
+	bridge := newFreshQueryBridge(c, server)
+	txID := strings.Repeat("A", 64)
+	inbound, err := bridge.GetObservedTxVoter(txID)
+	c.Assert(err, IsNil)
+	c.Assert(inbound.Height, Equals, int64(11))
+	outbound, err := bridge.GetObservedTxOutVoter(txID)
+	c.Assert(err, IsNil)
+	c.Assert(outbound.Height, Equals, int64(22))
+	fresh, found, err := bridge.GetObservedTxOutVoterUncached(txID)
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, true)
+	c.Assert(fresh.Height, Equals, int64(33))
+	stillCached, err := bridge.GetObservedTxOutVoter(txID)
+	c.Assert(err, IsNil)
+	c.Assert(stillCached.Height, Equals, int64(22))
+	inbound, err = bridge.GetObservedTxVoter(txID)
+	c.Assert(err, IsNil)
+	c.Assert(inbound.Height, Equals, int64(11))
+	c.Assert(requests, Equals, 3)
+}
+
+func (s *FreshQuerySuite) TestOutboundVoterQueryFailures(c *C) {
+	txID := strings.Repeat("B", 64)
+	for _, test := range []struct {
+		status    int
+		body      string
+		wantError bool
+	}{
+		{http.StatusInternalServerError, fmt.Sprintf(`{"message":"tx: %s doesn't exist"}`, txID), false},
+		{http.StatusNotFound, "", true},
+		{http.StatusServiceUnavailable, "unavailable", true},
+		{http.StatusOK, "invalid json", true},
+	} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			c.Assert(req.URL.Query().Get("outbound"), Equals, "true")
+			w.WriteHeader(test.status)
+			_, _ = w.Write([]byte(test.body))
+		}))
+		bridge := newFreshQueryBridge(c, server)
+		voter, found, err := bridge.GetObservedTxOutVoterUncached(txID)
+		c.Assert(err != nil, Equals, test.wantError)
+		c.Assert(found, Equals, false)
+		c.Assert(voter, IsNil)
+		server.Close()
+	}
+}
+
 func (s *FreshQuerySuite) TestFreshVoterReportsBareNotFoundAsFailure(c *C) {
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		rw.WriteHeader(http.StatusNotFound)

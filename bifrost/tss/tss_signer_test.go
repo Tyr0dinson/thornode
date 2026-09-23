@@ -150,6 +150,15 @@ func (m *mockBridgeForKeysign) GetObservedTxVoter(string) (*stypes.QueryObserved
 	return nil, nil
 }
 
+func (m *mockBridgeForKeysign) GetObservedTxOutVoter(txID string) (*stypes.QueryObservedTxVoter, error) {
+	return m.GetObservedTxVoter(txID)
+}
+
+func (m *mockBridgeForKeysign) GetObservedTxOutVoterUncached(txID string) (*stypes.QueryObservedTxVoter, bool, error) {
+	voter, err := m.GetObservedTxVoter(txID)
+	return voter, voter != nil, err
+}
+
 func (m *mockBridgeForKeysign) GetXMRSpentOutputRefs(common.PubKey) ([]*common.OutputRef, error) {
 	return nil, nil
 }
