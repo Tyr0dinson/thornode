@@ -1,6 +1,7 @@
 package keeperv1
 
 import (
+	"github.com/cosmos/cosmos-sdk/runtime"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -232,6 +233,21 @@ func (s *KeeperNodeBlameSuite) TestResetSinceChurnCountersForMembers(c *C) {
 	record4, _ = k.GetNodeBlameRecord(ctx, addr4)
 	c.Check(record4.KeygenBlameCountTotal, Equals, int64(2))
 	c.Check(record4.KeygenBlameCountSinceChurn, Equals, int64(0))
+
+	// A corrupt record must surface as an error rather than be silently
+	// swallowed, while other members in the same call are still reset.
+	addr5 := GetRandomBech32Addr()
+	c.Assert(k.IncrementKeygenBlame(ctx, addr5), IsNil)
+	corrupt := GetRandomBech32Addr()
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store.Set(k.GetKey(prefixNodeBlameRecord, corrupt.String()), []byte{0xff, 0xff, 0xff})
+
+	err = k.ResetSinceChurnCountersForMembers(ctx, []cosmos.AccAddress{corrupt, addr5})
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, "(?s).*"+corrupt.String()+".*")
+
+	record5, _ := k.GetNodeBlameRecord(ctx, addr5)
+	c.Check(record5.KeygenBlameCountSinceChurn, Equals, int64(0))
 }
 
 func (s *KeeperNodeBlameSuite) TestGetNodeBlameIterator(c *C) {

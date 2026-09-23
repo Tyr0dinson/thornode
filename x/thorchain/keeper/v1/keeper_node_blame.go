@@ -1,6 +1,7 @@
 package keeperv1
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/cosmos/cosmos-sdk/runtime"
@@ -116,23 +117,26 @@ func (k KVStore) GetNodeBlameIterator(ctx cosmos.Context) cosmos.Iterator {
 // the just-succeeded keygen are reset. A global reset would be unsafe during
 // parallel multi-Asgard churn — a success in one Asgard would otherwise wipe
 // pending blame counters for nodes in another Asgard that is still failing.
+// A failure for one member does not stop the others from being reset; all
+// failures are returned joined.
 func (k KVStore) ResetSinceChurnCountersForMembers(ctx cosmos.Context, members []cosmos.AccAddress) error {
+	var errs []error
 	for _, addr := range members {
 		if addr.Empty() {
 			continue
 		}
 		record, err := k.GetNodeBlameRecord(ctx, addr)
 		if err != nil {
-			ctx.Logger().Error("fail to get node blame record", "address", addr.String(), "error", err)
+			errs = append(errs, fmt.Errorf("fail to get node blame record (%s): %w", addr, err))
 			continue
 		}
 		if record.KeygenBlameCountSinceChurn == 0 && record.KeysignBlameCountSinceChurn == 0 {
 			continue
 		}
 		record.ResetSinceChurnCounters()
-		if err := k.SetNodeBlameRecord(ctx, record); err != nil {
-			ctx.Logger().Error("fail to reset blame counters", "address", addr.String(), "error", err)
+		if err = k.SetNodeBlameRecord(ctx, record); err != nil {
+			errs = append(errs, fmt.Errorf("fail to reset blame counters (%s): %w", addr, err))
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
