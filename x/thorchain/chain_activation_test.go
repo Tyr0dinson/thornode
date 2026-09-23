@@ -456,6 +456,52 @@ func (s *ChainActivationTestSuite) TestNoStampWhenOneVaultBelowKeysignThreshold(
 	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), vaultB.PubKey), activationChain.String()), Equals, true)
 }
 
+// The per-vault bar counts only members bifrost will actually sign with. A 4-member
+// vault needs 3 signers; nodes[0..2] proved the chain, but nodes[0] is barred from the
+// keysign party, leaving 2 capable signers - so the vault cannot sign and must not stamp.
+func (s *ChainActivationTestSuite) TestNoStampWhenAttesterForcedToLeave(c *C) {
+	ctx, mgr, nodes := setupActivation(c, 4)
+	k := mgr.Keeper()
+	vault := newActivationVault(c, ActiveVault, nodes)
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+	satisfyActivationGates(ctx, c, k, activationChain, nodes[0:3])
+	k.SetMimir(ctx, activationMimirKey(activationChain), 1)
+
+	// still active, so it keeps counting toward the network-wide G6b quorum
+	nodes[0].ForcedToLeave = true
+	c.Assert(k.SetNodeAccount(ctx, nodes[0]), IsNil)
+
+	runActivation(ctx, c, mgr)
+	c.Assert(slices.Contains(vaultChains(ctx, c, k, vault.PubKey), activationChain.String()), Equals, false)
+
+	// the emergency switch signs with the whole membership, so the same proof suffices
+	k.SetMimir(ctx, constants.MimirKeyDisableTSSSignerFiltering, 1)
+	runActivation(ctx, c, mgr)
+	c.Assert(slices.Contains(vaultChains(ctx, c, k, vault.PubKey), activationChain.String()), Equals, true)
+}
+
+// A jailed member is dropped from the party whenever enough clean members remain, so
+// its attestation cannot help the vault sign either.
+func (s *ChainActivationTestSuite) TestNoStampWhenAttesterJailedOutOfParty(c *C) {
+	ctx, mgr, nodes := setupActivation(c, 4)
+	k := mgr.Keeper()
+	vault := newActivationVault(c, ActiveVault, nodes)
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+	satisfyActivationGates(ctx, c, k, activationChain, nodes[0:3])
+	k.SetMimir(ctx, activationMimirKey(activationChain), 1)
+
+	// nodes[1..3] are clean and exactly fill the 3-signer party, excluding nodes[0]
+	c.Assert(k.SetNodeAccountJail(ctx, nodes[0].NodeAddress, ctx.BlockHeight()+100, "test"), IsNil)
+
+	runActivation(ctx, c, mgr)
+	c.Assert(slices.Contains(vaultChains(ctx, c, k, vault.PubKey), activationChain.String()), Equals, false)
+
+	// once the party members themselves prove the chain, it stamps
+	satisfyActivationGates(ctx, c, k, activationChain, nodes)
+	runActivation(ctx, c, mgr)
+	c.Assert(slices.Contains(vaultChains(ctx, c, k, vault.PubKey), activationChain.String()), Equals, true)
+}
+
 // --- the happy path ---
 
 func (s *ChainActivationTestSuite) TestStampsActiveAndRetiringVaults(c *C) {

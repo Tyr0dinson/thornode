@@ -420,7 +420,7 @@ func chainActivationReady(ctx cosmos.Context, k keeper.Keeper, chain common.Chai
 		if _, err := vault.GetAddress(chain); err != nil {
 			return false, nil, fmt.Sprintf("vault %s cannot derive address", vault.PubKey)
 		}
-		if ok, reason := vaultHasChainKeysignQuorum(ctx, vault, signed); !ok {
+		if ok, reason := vaultHasChainKeysignQuorum(ctx, k, vault, signed); !ok {
 			return false, nil, reason
 		}
 	}
@@ -434,18 +434,38 @@ func chainActivationReady(ctx cosmos.Context, k keeper.Keeper, chain common.Chai
 // vaultHasChainKeysignQuorum reports whether enough of the vault's own members proved
 // the chain observable to clear a TSS keysign.
 //
-// HasSuperMajority is the same ceil(2n/3) bar as conversion.GetThreshold(n)+1, the
-// requiredSigners figure the keysign party is built against (querier.go). It is used
-// here rather than GetThreshold because it is integer-only - GetThreshold reaches for
-// math.Ceil on a float, which has no place in EndBlock consensus code.
-func vaultHasChainKeysignQuorum(ctx cosmos.Context, vault Vault, signed map[string]bool) (bool, string) {
+// Only members in the party bifrost will actually sign with count. queryKeysignParty
+// narrows the membership through keysignPolicyForVaultMembers - forced-to-leave members
+// are dropped, and jailed ones are dropped whenever enough clean members remain - and
+// bifrost treats that set as authoritative, so an attester outside it cannot help sign.
+// The bar itself is still taken from the full membership, as queryKeysignParty does.
+//
+// requiredSigners is ceil(2n/3), the same figure as conversion.GetThreshold(n)+1. It is
+// computed in integers here because GetThreshold reaches for math.Ceil on a float, which
+// has no place in EndBlock consensus code.
+func vaultHasChainKeysignQuorum(ctx cosmos.Context, k keeper.Keeper, vault Vault, signed map[string]bool) (bool, string) {
 	members := vault.GetMembership()
 	if len(members) == 0 {
 		return false, fmt.Sprintf("vault %s has empty membership", vault.PubKey)
 	}
+	requiredSigners := (2*len(members) + 2) / 3
+
+	// Fail closed on every read: a party that cannot be computed cannot be proved.
+	party := members
+	filteringDisabled, err := tssSignerFilteringDisabled(ctx, k)
+	if err != nil {
+		return false, fmt.Sprintf("fail to get tss signer filtering mimir: %s", err)
+	}
+	if !filteringDisabled {
+		policy, err := keysignPolicyForVaultMembers(ctx, k, members, requiredSigners)
+		if err != nil {
+			return false, fmt.Sprintf("vault %s cannot form a keysign party: %s", vault.PubKey, err)
+		}
+		party = policy.signers
+	}
 
 	capable := 0
-	for _, pk := range members {
+	for _, pk := range party {
 		addr, err := pk.GetThorAddress()
 		if err != nil {
 			// Fail closed: an unreadable member counts as incapable, never as capable.
@@ -458,9 +478,9 @@ func vaultHasChainKeysignQuorum(ctx cosmos.Context, vault Vault, signed map[stri
 		}
 	}
 
-	if !HasSuperMajority(capable, len(members)) {
-		return false, fmt.Sprintf("vault %s below keysign threshold: %d of %d members proved the chain",
-			vault.PubKey, capable, len(members))
+	if capable < requiredSigners {
+		return false, fmt.Sprintf("vault %s below keysign threshold: %d of %d signing-party members proved the chain, %d required",
+			vault.PubKey, capable, len(party), requiredSigners)
 	}
 	return true, ""
 }
@@ -517,7 +537,7 @@ func stampChainsOnVaults(ctx cosmos.Context, mgr Manager, chains common.Chains, 
 			// migrations and outbounds, so one whose own members never proved the chain
 			// would be handed an address it cannot sign for - the active-vault harm in
 			// miniature. Skipped rather than fatal, per the best-effort rule above.
-			if ok, reason := vaultHasChainKeysignQuorum(ctx, vault, proved[chain]); !ok {
+			if ok, reason := vaultHasChainKeysignQuorum(ctx, k, vault, proved[chain]); !ok {
 				ctx.Logger().Info("skipping retiring vault below keysign threshold",
 					"chain", chain, "pub_key", vault.PubKey, "reason", reason)
 				continue
