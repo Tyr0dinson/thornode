@@ -572,6 +572,32 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	// For truly memoless transactions (no Memo or OriginalMemo), default to TxOutbound
 	memoForParsing := tx.GetMemo()
 
+	// Durable-nonce path (#661). When enabled AND the vault has a usable durable-nonce
+	// account, anchor the outbound on a stored nonce (AdvanceNonceAccount as
+	// instruction[0]) instead of a recent blockhash. A durable nonce does not expire,
+	// so it removes the ~150-slot (~60s) expiry window that kills a recent-blockhash tx
+	// during the multi-party TSS keysign+broadcast — the whole consensus-blockhash
+	// derivation and expiry gating below is unnecessary for a nonce tx. Default OFF
+	// (useSolDurableNonce=false) and, even when on, falls through to the existing
+	// recent-blockhash path unchanged whenever no nonce account is available (ok=false).
+	if useSolDurableNonce {
+		nonceAccount, nonceAuthority, nonceValue, ok, nErr := c.durableNonceForVault(tx)
+		if nErr != nil {
+			// Fail CLOSED, mirroring the recent-blockhash RPC-error path: retain the
+			// outbound and retry rather than fall through to a blockhash tx, so a
+			// half-provisioned nonce account never silently reverts to the expiring path.
+			c.countAbstain("durable_nonce_error")
+			return nil, nil, nil, fmt.Errorf("fail to resolve durable nonce: %w", nErr)
+		}
+		if ok {
+			solTx, buildErr := c.CreateTxWithNonce(tx, memoForParsing, nonceValue, nonceAccount, nonceAuthority)
+			if buildErr != nil {
+				return nil, nil, nil, fmt.Errorf("fail to create durable-nonce tx: %w", buildErr)
+			}
+			return c.finishSign(solTx, tx, memoForParsing, height)
+		}
+	}
+
 	// Deterministic blockhash: derive it from the CONSENSUS keysign height (txOut.Height
 	// for scheduled outbounds, the shared keep-alive anchor otherwise) instead of the
 	// per-node scanner, so every member signs identical bytes and converges on ONE TSS
@@ -650,6 +676,15 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		return nil, nil, nil, fmt.Errorf("fail to create tx: %w", err)
 	}
 
+	return c.finishSign(solTx, tx, memoForParsing, height)
+}
+
+// finishSign serializes the checkpoint, runs the multi-party TSS keysign, and
+// assembles the observation. It is shared by the recent-blockhash path and the
+// durable-nonce path (#661) so both produce identical downstream behaviour; the
+// only difference between the two is how solTx was built (recent blockhash vs.
+// AdvanceNonceAccount + stored durable nonce).
+func (c *SOLClient) finishSign(solTx types.Transaction, tx stypes.TxOutItem, memoForParsing string, height int64) ([]byte, []byte, *stypes.TxInItem, error) {
 	checkPointBytes, err := solTx.Message.Serialize()
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to serialize checkpoint bytes: %w", err)
@@ -1076,6 +1111,90 @@ func (c *SOLClient) CreateTx(tx stypes.TxOutItem, memoForParsing, recentBlockhas
 	}
 
 	return types.NewTransferTransaction(vaultPubKey, toPubkey, tx.Coins[0].Amount.Uint64(), tx.Memo, recentBlockhash), nil
+}
+
+// useSolDurableNonce gates the #661 durable-nonce outbound path in SignTx. OFF
+// until vault nonce-account provisioning and the single-nonce-vs-pool rollout are
+// decided; flipping it on has no effect until durableNonceForVault returns ok.
+const useSolDurableNonce = false
+
+// durableNonceForVault resolves the durable-nonce account a vault should use for
+// its next SOL outbound and reads its stored nonce (the value baked into the tx
+// message in place of a recent blockhash).
+//
+// STUB: returns ok=false so SignTx falls through to the recent-blockhash path.
+// Wiring it up is gated on the provisioning + single-nonce-account-vs-pool design
+// decisions (#661). Once resolved it will select the vault's nonce account and read
+// it deterministically across all keysign parties via c.rpcClient.GetNonceAccount,
+// which already fails closed on a missing/uninitialised/empty account.
+func (c *SOLClient) durableNonceForVault(tx stypes.TxOutItem) (nonceAccount, nonceAuthority types.PublicKey, nonceValue string, ok bool, err error) {
+	// TODO(#661 provisioning): resolve the vault's nonce account address (single vs
+	// pool), then:
+	//   nonceValue, authority, err := c.rpcClient.GetNonceAccount(nonceAddr)
+	// returning ok=true with the parsed nonceAccount/nonceAuthority pubkeys. Reading
+	// must be deterministic across parties (like cachedConsensusBlockHash) so every
+	// signer bakes the same nonce and converges on one TSS party.
+	return types.PublicKey{}, types.PublicKey{}, "", false, nil
+}
+
+// CreateTxWithNonce builds an outbound SOL transfer anchored on a durable nonce
+// (#661) rather than a recent blockhash. It mirrors CreateTx's validation; the
+// difference is the transaction it emits (NewNonceTransferTransaction, with
+// AdvanceNonceAccount as instruction[0] and the message's recentBlockhash field set
+// to nonceValue). Because a durable nonce does not expire, the SignTx nonce path
+// skips the recent-blockhash derivation and expiry gating entirely.
+func (c *SOLClient) CreateTxWithNonce(tx stypes.TxOutItem, memoForParsing, nonceValue string, nonceAccount, nonceAuthority types.PublicKey) (types.Transaction, error) {
+	if nonceValue == "" {
+		return types.Transaction{}, errors.New("durable nonce value is empty")
+	}
+
+	// Validation - identical to CreateTx: memoForParsing may be OriginalMemo for
+	// memoless outbounds; truly memoless defaults to TxOutbound.
+	var memo mem.Memo
+	if memoForParsing == "" {
+		memo = mem.NewOutboundMemo(tx.InHash)
+	} else {
+		var err error
+		memo, err = mem.ParseMemo(common.LatestVersion, memoForParsing)
+		if err != nil {
+			return types.Transaction{}, fmt.Errorf("fail to parse memo(%s):%w", memoForParsing, err)
+		}
+		if memo.IsInbound() {
+			return types.Transaction{}, errors.New("inbound memo should not be used for outbound tx")
+		}
+	}
+	if len(tx.Coins) != 1 {
+		return types.Transaction{}, fmt.Errorf("only support one coin per transaction, received: %d", len(tx.Coins))
+	}
+
+	solTx := types.Transaction{}
+
+	vaultAddr, err := tx.VaultPubKeyEddsa.GetAddress(c.GetChain())
+	if err != nil {
+		return types.Transaction{}, fmt.Errorf("fail to get vault address: %w", err)
+	}
+	vaultPubKey, err := types.PublicKeyFromString(vaultAddr.String())
+	if err != nil {
+		return solTx, fmt.Errorf("fail to create vault public key: %w", err)
+	}
+	toPubkey, err := types.PublicKeyFromString(tx.ToAddress.String())
+	if err != nil {
+		return solTx, fmt.Errorf("fail to create to public key: %w", err)
+	}
+
+	solValue := convertToLamports(tx.Coins[0].Amount)
+	if solValue.Int64() == 0 {
+		return solTx, errors.New("sol value is zero")
+	}
+
+	// The vault->self keep-alive under a durable nonce needs a builder that lists the
+	// vault once (as NewSelfTransferTransaction does for the blockhash path); that is
+	// not required for scheduled outbounds and is out of scope for the initial draft.
+	if toPubkey == vaultPubKey {
+		return solTx, errors.New("durable-nonce self-transfer not supported yet")
+	}
+
+	return types.NewNonceTransferTransaction(vaultPubKey, toPubkey, tx.Coins[0].Amount.Uint64(), tx.Memo, nonceValue, nonceAccount, nonceAuthority), nil
 }
 
 // --------------------------------- sign ---------------------------------
