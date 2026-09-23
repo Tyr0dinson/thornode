@@ -45,58 +45,101 @@ func TestFrostVerificationMessagesPerPeer(t *testing.T) {
 	}
 }
 
-// Keysign's two verification rounds and keygen's three rounds share one
-// TSSFrostVerifyMsg subscription. Exercise the real stream preflight at the
-// maximum modeled party size so a count or byte budget regression cannot make
-// honest ceremony completion depend on message ordering.
+func TestFrostKeygenVerificationMessagesPerPeer(t *testing.T) {
+	t.Parallel()
+
+	maxInt := int(^uint(0) >> 1)
+	tests := []struct {
+		name   string
+		rounds int
+		want   uint32
+	}{
+		{name: "invalid rounds retain headroom", rounds: 0, want: frostVerificationMessageHeadroom},
+		{name: "three DKG rounds", rounds: 3, want: 19},
+		{name: "overflow saturates", rounds: maxInt, want: ^uint32(0)},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := FrostKeygenVerificationMessagesPerPeer(tc.rounds); got != tc.want {
+				t.Fatalf("FrostKeygenVerificationMessagesPerPeer(%d) = %d, want %d", tc.rounds, got, tc.want)
+			}
+		})
+	}
+	if FrostKeygenControlPayload >= FrostMaxSessionPayload {
+		t.Fatalf("keygen control limit %d must be smaller than session maximum %d", FrostKeygenControlPayload, FrostMaxSessionPayload)
+	}
+}
+
+// Keysign retains per-target signed verification echoes. Exercise its real
+// stream preflight at the maximum modeled party size so a count or byte budget
+// regression cannot make honest ceremony completion depend on message order.
 func TestFrostFullPartyVerificationRoundsFitPreflightBudgets(t *testing.T) {
 	remotePeers := make([]peer.ID, maxFrostParty-1)
 	for i := range remotePeers {
 		remotePeers[i] = peer.ID(fmt.Sprintf("frost-verify-member-%03d", i))
 	}
 
-	tests := []struct {
-		name   string
-		rounds int
-	}{
-		{name: "keysign two rounds", rounds: 2},
-		{name: "keygen three rounds", rounds: 3},
+	const rounds = 2
+	msgID := "full-party-keysign-verify"
+	limit := FrostVerificationMessagesPerPeer(maxFrostParty, rounds)
+	comm := newTSSPreflightCommunication(
+		messages.TSSFrostVerifyMsg,
+		msgID,
+		remotePeers,
+		FrostMaxSessionPayload,
+		limit,
+	)
+	prefix := tssFramePrefix(t, messages.TSSFrostVerifyMsg, msgID)
+	// Includes comfortable overhead for the outer JSON/base64 wrapper and both
+	// application signatures in a signed verification echo.
+	const verificationFrameBytes = uint32(1280)
+
+	for _, remote := range remotePeers {
+		for frame := uint32(0); frame < limit; frame++ {
+			if _, _, err := comm.preflightTSSFrame(remote, verificationFrameBytes, prefix); err != nil {
+				t.Fatalf("peer %s frame %d/%d rejected: %v", remote, frame+1, limit, err)
+			}
+		}
 	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			msgID := fmt.Sprintf("full-party-verify-%d", tc.rounds)
-			limit := FrostVerificationMessagesPerPeer(maxFrostParty, tc.rounds)
-			comm := newTSSPreflightCommunication(
-				messages.TSSFrostVerifyMsg,
-				msgID,
-				remotePeers,
-				FrostMaxSessionPayload,
-				limit,
-			)
-			prefix := tssFramePrefix(t, messages.TSSFrostVerifyMsg, msgID)
-			// Includes comfortable overhead for the outer JSON/base64 wrapper and
-			// both application signatures in a signed verification echo.
-			const verificationFrameBytes = uint32(1280)
 
-			for _, remote := range remotePeers {
-				for frame := uint32(0); frame < limit; frame++ {
-					if _, _, err := comm.preflightTSSFrame(remote, verificationFrameBytes, prefix); err != nil {
-						t.Fatalf("peer %s frame %d/%d rejected in %d-round ceremony: %v", remote, frame+1, limit, tc.rounds, err)
-					}
-				}
-			}
+	sub := comm.getSubscriber(messages.TSSFrostVerifyMsg, msgID)
+	if sub == nil {
+		t.Fatal("expected verification subscription")
+	}
+	if sub.sessionBytes >= FrostMaxSessionBytes {
+		t.Fatalf("full ceremony exhausted byte budget: used %d of %d", sub.sessionBytes, FrostMaxSessionBytes)
+	}
+	if _, _, err := comm.preflightTSSFrame(remotePeers[0], verificationFrameBytes, prefix); err == nil {
+		t.Fatalf("frame %d must be rejected after peer reaches the keysign verification limit", limit+1)
+	}
+}
 
-			sub := comm.getSubscriber(messages.TSSFrostVerifyMsg, msgID)
-			if sub == nil {
-				t.Fatal("expected verification subscription")
+func TestFrostFullPartyKeygenDigestVotesFitPreflightBudgets(t *testing.T) {
+	remotePeers := make([]peer.ID, maxFrostParty-1)
+	for i := range remotePeers {
+		remotePeers[i] = peer.ID(fmt.Sprintf("frost-keygen-member-%03d", i))
+	}
+	const rounds = 3
+	limit := FrostKeygenVerificationMessagesPerPeer(rounds)
+	comm := newTSSPreflightCommunication(
+		messages.TSSFrostVerifyMsg,
+		"full-party-keygen-verify",
+		remotePeers,
+		FrostKeygenControlPayload,
+		limit,
+	)
+	prefix := tssFramePrefix(t, messages.TSSFrostVerifyMsg, "full-party-keygen-verify")
+	const digestVoteFrameBytes = uint32(512)
+	for _, remote := range remotePeers {
+		for frame := uint32(0); frame < limit; frame++ {
+			if _, _, err := comm.preflightTSSFrame(remote, digestVoteFrameBytes, prefix); err != nil {
+				t.Fatalf("peer %s frame %d/%d rejected: %v", remote, frame+1, limit, err)
 			}
-			if sub.sessionBytes >= FrostMaxSessionBytes {
-				t.Fatalf("full ceremony exhausted byte budget: used %d of %d", sub.sessionBytes, FrostMaxSessionBytes)
-			}
-			if _, _, err := comm.preflightTSSFrame(remotePeers[0], verificationFrameBytes, prefix); err == nil {
-				t.Fatalf("frame %d must be rejected after peer reaches the %d-round verification limit", limit+1, tc.rounds)
-			}
-		})
+		}
+	}
+	if _, _, err := comm.preflightTSSFrame(remotePeers[0], digestVoteFrameBytes, prefix); err == nil {
+		t.Fatalf("frame %d must be rejected after peer reaches the keygen verification limit", limit+1)
 	}
 }
 

@@ -57,14 +57,21 @@ const (
 	// keeping a distinct limit prevents the 20 MiB legacy TSS frame allowance
 	// from becoming the FROST session allowance.
 	FrostMaxSessionPayload = 1 * 1024 * 1024
-	// FrostSessionQueueSize bounds the shared coordinator queue, so the queue
-	// itself holds at most 64 frames of up to FrostMaxSessionPayload each.
-	// Handlers blocked on a full queue hold their frames too; the per-topic
-	// session budgets bound them. Narrowing releases removed peers' budget and
-	// wakes their blocked handlers, and cancellation resets frames still being
-	// read, so released charges outlive only frames already queued or those
-	// delivered in the races documented on MessageSubscription.deliver.
+	// FrostSessionQueueSize bounds each coordinator topic queue. FROST keygen
+	// applies the smaller control-frame limit below to four of its five topics;
+	// only encrypted round-2 shares retain the 1 MiB ceiling. Its maximum channel
+	// retention is therefore roughly 64 * (1 MiB + 4 * 64 KiB) = 80 MiB. This is
+	// not an aggregate process-memory bound: blocked handlers retain frames too,
+	// subject to the per-topic session budgets. Narrowing releases removed peers'
+	// charges and wakes their blocked handlers; cancellation resets frames still
+	// being read. Released charges can outlive only queued frames or deliveries
+	// racing with narrowing, as documented on MessageSubscription.deliver.
 	FrostSessionQueueSize = 64
+	// FrostKeygenControlPayload bounds round 1, round 3, transcript-vote, and
+	// terminal-result frames. Maximum-party payload fixtures must remain below
+	// this ceiling; round 2 uses FrostMaxSessionPayload because it carries one
+	// encrypted share per remote participant.
+	FrostKeygenControlPayload = 64 * 1024
 	// FrostMaxMessagesPerPeer is the baseline retained/processed traffic bound
 	// per peer for one message type and session. Shared FROST verification topics
 	// use FrostVerificationMessagesPerPeer because one peer legitimately echoes
@@ -90,6 +97,19 @@ const (
 	FrostMaxBytesPerPeer = uint64(8 * 1024 * 1024)
 	FrostMaxSessionBytes = uint64(64 * 1024 * 1024)
 )
+
+// FrostKeygenVerificationMessagesPerPeer permits one complete-transcript vote
+// per DKG round plus bounded duplicate/delivery headroom. Unlike keysign's
+// per-target echoes, this limit does not scale with party size.
+func FrostKeygenVerificationMessagesPerPeer(rounds int) uint32 {
+	if rounds <= 0 {
+		return frostVerificationMessageHeadroom
+	}
+	if uint64(rounds) > uint64(^uint32(0)-frostVerificationMessageHeadroom) {
+		return ^uint32(0)
+	}
+	return uint32(rounds) + frostVerificationMessageHeadroom
+}
 
 // FrostVerificationMessagesPerPeer sizes the shared verification-topic count
 // for a complete ceremony. The baseline preserves the existing allowance for

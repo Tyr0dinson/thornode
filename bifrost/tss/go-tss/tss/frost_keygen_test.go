@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/libp2p/go-libp2p-core/peer"
+
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
@@ -73,19 +75,33 @@ func (m *mockFrostSidecarKeygen) GetChainHeight() (int64, error) {
 	return m.chainHeight, nil
 }
 
-func newTestFrostKeygenCoordinator(localPubKey, msgID string, msgChan chan *p2p.Message, timeout time.Duration) *FrostKeygenCoordinator {
+func newTestFrostKeygenCoordinator(localPubKey, msgID string, inbox *frostKeygenInbox, timeout time.Duration) *FrostKeygenCoordinator {
 	return &FrostKeygenCoordinator{
 		p2pCommunication: &p2p.Communication{BroadcastMsgChan: make(chan *messages.BroadcastMsgChan, 64)},
 		localPubKey:      localPubKey,
 		msgID:            msgID,
-		msgChan:          msgChan,
+		inbox:            inbox,
 		timeout:          timeout,
 	}
 }
 
+func initTestFrostKeygenRoundState(
+	t *testing.T,
+	coord *FrostKeygenCoordinator,
+	activeSet *activeSignerSet,
+	participantIndexMap map[string]uint32,
+) {
+	t.Helper()
+	state, err := newFrostKeygenRoundState(activeSet, participantIndexMap)
+	if err != nil {
+		t.Fatalf("initialize frost keygen round state: %v", err)
+	}
+	coord.roundState = state
+}
+
 func enqueueWrappedPayload(
 	t *testing.T,
-	msgChan chan<- *p2p.Message,
+	inbox *frostKeygenInbox,
 	msgType messages.THORChainTSSMessageType,
 	msgID string,
 	peerPubKey string,
@@ -104,12 +120,60 @@ func enqueueWrappedPayload(
 	if err != nil {
 		t.Fatalf("marshal wrapped message: %v", err)
 	}
-	msgChan <- &p2p.Message{PeerID: peerID, Payload: wrapped}
+	for _, subscription := range inbox.subscriptions() {
+		if subscription.msgType == msgType {
+			subscription.messageChan <- &p2p.Message{PeerID: peerID, Payload: wrapped}
+			return
+		}
+	}
+	t.Fatalf("unsupported FROST keygen test message type %q", msgType)
+}
+
+// TestFrostKeygenInboxSubscriptionsCoverEveryTopic protects the lifecycle
+// invariant: each keygen topic owns one non-nil phase inbox, with no omissions
+// or channel reuse hidden by the shared subscription table.
+func TestFrostKeygenInboxSubscriptionsCoverEveryTopic(t *testing.T) {
+	inbox := newFrostKeygenInbox()
+	want := map[messages.THORChainTSSMessageType]chan *p2p.Message{
+		messages.TSSFrostDKGRound1Msg: inbox.round1,
+		messages.TSSFrostDKGRound2Msg: inbox.round2,
+		messages.TSSFrostDKGRound3Msg: inbox.round3,
+		messages.TSSFrostVerifyMsg:    inbox.verify,
+		messages.TSSFrostDKGResultMsg: inbox.result,
+	}
+	seenChannels := make(map[chan *p2p.Message]struct{}, len(want))
+	for _, subscription := range inbox.subscriptions() {
+		wantChannel, ok := want[subscription.msgType]
+		if !ok {
+			t.Fatalf("unexpected or duplicate FROST keygen topic %q", subscription.msgType)
+		}
+		if subscription.messageChan == nil {
+			t.Fatalf("FROST keygen topic %q has a nil inbox", subscription.msgType)
+		}
+		if subscription.messageChan != wantChannel {
+			t.Fatalf("FROST keygen topic %q is bound to the wrong inbox", subscription.msgType)
+		}
+		wantPayloadLimit := p2p.FrostKeygenControlPayload
+		if subscription.msgType == messages.TSSFrostDKGRound2Msg {
+			wantPayloadLimit = p2p.FrostMaxSessionPayload
+		}
+		if subscription.maxPayloadBytes != wantPayloadLimit {
+			t.Fatalf("FROST keygen topic %q payload limit = %d, want %d", subscription.msgType, subscription.maxPayloadBytes, wantPayloadLimit)
+		}
+		if _, duplicate := seenChannels[subscription.messageChan]; duplicate {
+			t.Fatalf("FROST keygen topic %q reuses another topic's inbox", subscription.msgType)
+		}
+		seenChannels[subscription.messageChan] = struct{}{}
+		delete(want, subscription.msgType)
+	}
+	if len(want) != 0 {
+		t.Fatalf("FROST keygen subscription table is missing %d topics", len(want))
+	}
 }
 
 func enqueueRoundMessage(
 	t *testing.T,
-	msgChan chan<- *p2p.Message,
+	inbox *frostKeygenInbox,
 	msgType messages.THORChainTSSMessageType,
 	msgID string,
 	peerPubKey string,
@@ -120,22 +184,60 @@ func enqueueRoundMessage(
 	if err != nil {
 		t.Fatalf("marshal payload: %v", err)
 	}
-	enqueueWrappedPayload(t, msgChan, msgType, msgID, peerPubKey, payloadBytes)
+	enqueueWrappedPayload(t, inbox, msgType, msgID, peerPubKey, payloadBytes)
 }
 
 func enqueueVerifyMessage(
 	t *testing.T,
-	msgChan chan<- *p2p.Message,
+	inbox *frostKeygenInbox,
 	msgID string,
 	peerPubKey string,
-	payload FrostVerifyPayload,
+	round string,
+	transcriptHash string,
 ) {
 	t.Helper()
-	payloadBytes, err := json.Marshal(payload)
+	payloadBytes, err := json.Marshal(frostKeygenTranscriptVote{
+		Round:          round,
+		TranscriptHash: transcriptHash,
+	})
 	if err != nil {
 		t.Fatalf("marshal verification payload: %v", err)
 	}
-	enqueueWrappedPayload(t, msgChan, messages.TSSFrostVerifyMsg, msgID, peerPubKey, payloadBytes)
+	enqueueWrappedPayload(t, inbox, messages.TSSFrostVerifyMsg, msgID, peerPubKey, payloadBytes)
+}
+
+func testFrostKeygenTranscriptHash(
+	t *testing.T,
+	msgID string,
+	round string,
+	entries ...frostKeygenTranscriptEntry,
+) string {
+	t.Helper()
+	transcriptHash, err := frostKeygenTranscriptHash(msgID, round, entries)
+	if err != nil {
+		t.Fatalf("hash frost keygen transcript: %v", err)
+	}
+	return transcriptHash
+}
+
+func testFrostKeygenParticipants(
+	t *testing.T,
+	members []string,
+) (*activeSignerSet, map[string]uint32, []peer.ID) {
+	t.Helper()
+	_, participantIndexMap, signerByNormalized, err := buildParticipantIndex(members)
+	if err != nil {
+		t.Fatalf("build participant index: %v", err)
+	}
+	activeSet, err := buildActiveSet(members, signerByNormalized)
+	if err != nil {
+		t.Fatalf("build active set: %v", err)
+	}
+	peerIDs, err := conversion.GetPeerIDsFromPubKeys(members)
+	if err != nil {
+		t.Fatalf("peer ids: %v", err)
+	}
+	return activeSet, participantIndexMap, peerIDs
 }
 
 func TestNewFrostKeygenCoordinatorClampsTimeoutToFloor(t *testing.T) {
@@ -152,7 +254,7 @@ func TestNewFrostKeygenCoordinatorClampsTimeoutToFloor(t *testing.T) {
 		{name: "equal to floor", in: minFrostKeygenTimeout, wantMin: minFrostKeygenTimeout},
 		{name: "above floor", in: 5 * time.Minute, wantMin: 5 * time.Minute},
 	}
-	msgChan := make(chan *p2p.Message, 1)
+	msgChan := newFrostKeygenInbox()
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			coord := NewFrostKeygenCoordinator(nil, nil, "local", "msg-id", msgChan, tc.in)
@@ -215,7 +317,7 @@ func TestFrostKeygenExecuteRejectsPartialActiveSet(t *testing.T) {
 	}
 
 	sidecar := &mockFrostSidecarKeygen{}
-	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", make(chan *p2p.Message, 1), time.Second)
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", newFrostKeygenInbox(), time.Second)
 	coord.sidecar = sidecar
 	resp := coord.Execute(FrostKeygenRequest{
 		VaultPubKey:   "vault",
@@ -262,7 +364,8 @@ func TestFrostKeygenRound1TimeoutReturnsBlame(t *testing.T) {
 		t.Fatalf("peer ids: %v", err)
 	}
 
-	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", make(chan *p2p.Message, 2), 30*time.Millisecond)
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", newFrostKeygenInbox(), 30*time.Millisecond)
+	initTestFrostKeygenRoundState(t, coord, activeSet, participantIndexMap)
 	_, failResp := coord.exchangeRound1(activeSet, participantIndexMap, peerIDs, FrostDKGRound1Payload{
 		SenderPubKey:     testPubKeys[0],
 		ParticipantIndex: participantIndexMap[normalizePubKey(testPubKeys[0])],
@@ -299,9 +402,10 @@ func TestFrostKeygenRound1RejectsMalformedPayload(t *testing.T) {
 		t.Fatalf("peer ids: %v", err)
 	}
 
-	msgChan := make(chan *p2p.Message, 2)
+	msgChan := newFrostKeygenInbox()
 	enqueueWrappedPayload(t, msgChan, messages.TSSFrostDKGRound1Msg, "msg-id", testPubKeys[1], []byte("{bad-json"))
 	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", msgChan, time.Second)
+	initTestFrostKeygenRoundState(t, coord, activeSet, participantIndexMap)
 
 	_, failResp := coord.exchangeRound1(activeSet, participantIndexMap, peerIDs, FrostDKGRound1Payload{
 		SenderPubKey:     testPubKeys[0],
@@ -336,13 +440,14 @@ func TestFrostKeygenRound1RejectsSenderBindingMismatch(t *testing.T) {
 		t.Fatalf("peer ids: %v", err)
 	}
 
-	msgChan := make(chan *p2p.Message, 2)
+	msgChan := newFrostKeygenInbox()
 	enqueueRoundMessage(t, msgChan, messages.TSSFrostDKGRound1Msg, "msg-id", testPubKeys[2], FrostDKGRound1Payload{
 		SenderPubKey:     testPubKeys[1],
 		ParticipantIndex: participantIndexMap[normalizePubKey(testPubKeys[1])],
 		Commitments:      "remote-commitment",
 	})
 	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", msgChan, time.Second)
+	initTestFrostKeygenRoundState(t, coord, activeSet, participantIndexMap)
 
 	_, failResp := coord.exchangeRound1(activeSet, participantIndexMap, peerIDs, FrostDKGRound1Payload{
 		SenderPubKey:     testPubKeys[0],
@@ -376,7 +481,7 @@ func TestFrostKeygenRound3RejectsResultMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("peer ids: %v", err)
 	}
-	msgChan := make(chan *p2p.Message, 2)
+	msgChan := newFrostKeygenInbox()
 	enqueueRoundMessage(t, msgChan, messages.TSSFrostDKGRound3Msg, "msg-id", testPubKeys[1], FrostDKGRound3Payload{
 		SenderPubKey:     testPubKeys[1],
 		ParticipantIndex: participantIndexMap[normalizePubKey(testPubKeys[1])],
@@ -385,6 +490,7 @@ func TestFrostKeygenRound3RejectsResultMismatch(t *testing.T) {
 	})
 
 	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", msgChan, time.Second)
+	initTestFrostKeygenRoundState(t, coord, activeSet, participantIndexMap)
 	_, _, _, failResp := coord.exchangeRound3(activeSet, participantIndexMap, peerIDs, FrostDKGRound3Payload{
 		SenderPubKey:     testPubKeys[0],
 		ParticipantIndex: participantIndexMap[normalizePubKey(testPubKeys[0])],
@@ -421,7 +527,7 @@ func TestFrostKeygenRound3RejectsUncertifiedPayloadsOnTimeout(t *testing.T) {
 
 	groupAddress := "48addr"
 	groupKey := strings.Repeat("ab", 32)
-	msgChan := make(chan *p2p.Message, 2)
+	msgChan := newFrostKeygenInbox()
 	enqueueRoundMessage(t, msgChan, messages.TSSFrostDKGRound3Msg, "msg-id", testPubKeys[1], FrostDKGRound3Payload{
 		SenderPubKey:         testPubKeys[1],
 		ParticipantIndex:     participantIndexMap[normalizePubKey(testPubKeys[1])],
@@ -431,6 +537,7 @@ func TestFrostKeygenRound3RejectsUncertifiedPayloadsOnTimeout(t *testing.T) {
 	})
 
 	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", msgChan, 30*time.Millisecond)
+	initTestFrostKeygenRoundState(t, coord, activeSet, participantIndexMap)
 	_, _, _, failResp := coord.exchangeRound3(activeSet, participantIndexMap, peerIDs, FrostDKGRound3Payload{
 		SenderPubKey:         testPubKeys[0],
 		ParticipantIndex:     participantIndexMap[normalizePubKey(testPubKeys[0])],
@@ -522,30 +629,89 @@ func TestFrostKeygenRound1AcceptsTranscriptVerification(t *testing.T) {
 		t.Fatalf("remote hash: %v", err)
 	}
 
-	msgChan := make(chan *p2p.Message, 8)
+	msgChan := newFrostKeygenInbox()
 	enqueueRoundMessage(t, msgChan, messages.TSSFrostDKGRound1Msg, "msg-id", testPubKeys[1], remotePayload)
-	enqueueVerifyMessage(t, msgChan, "msg-id", testPubKeys[1], FrostVerifyPayload{
-		SenderPubKey:           testPubKeys[1],
-		Round:                  frostDKGRound1,
-		TargetSenderPubKey:     testPubKeys[1],
-		TargetParticipantIndex: remotePayload.ParticipantIndex,
-		PayloadHash:            remoteHash,
-	})
-	enqueueVerifyMessage(t, msgChan, "msg-id", testPubKeys[1], FrostVerifyPayload{
-		SenderPubKey:           testPubKeys[1],
-		Round:                  frostDKGRound1,
-		TargetSenderPubKey:     testPubKeys[0],
-		TargetParticipantIndex: localPayload.ParticipantIndex,
-		PayloadHash:            localHash,
-	})
+	transcriptHash := testFrostKeygenTranscriptHash(t, "msg-id", frostDKGRound1,
+		frostKeygenTranscriptEntry{participantIndex: localPayload.ParticipantIndex, payloadHash: localHash},
+		frostKeygenTranscriptEntry{participantIndex: remotePayload.ParticipantIndex, payloadHash: remoteHash},
+	)
+	enqueueVerifyMessage(t, msgChan, "msg-id", testPubKeys[1], frostDKGRound1, transcriptHash)
 
 	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", msgChan, time.Second)
+	initTestFrostKeygenRoundState(t, coord, activeSet, participantIndexMap)
 	values, failResp := coord.exchangeRound1(activeSet, participantIndexMap, peerIDs, localPayload)
 	if failResp != nil {
 		t.Fatalf("expected success, got fail response: %+v", failResp)
 	}
 	if len(values) != 2 {
 		t.Fatalf("expected two commitment payloads, got %d", len(values))
+	}
+}
+
+func TestFrostKeygenRound1GrantsConfirmationPhaseFullTimeout(t *testing.T) {
+	ensureBech32Prefix()
+
+	members := []string{testPubKeys[0], testPubKeys[1]}
+	activeSet, participantIndexMap, peerIDs := testFrostKeygenParticipants(t, members)
+	localPayload := FrostDKGRound1Payload{
+		SenderPubKey:     testPubKeys[0],
+		ParticipantIndex: participantIndexMap[normalizePubKey(testPubKeys[0])],
+		Commitments:      "local-commitment",
+	}
+	remotePayload := FrostDKGRound1Payload{
+		SenderPubKey:     testPubKeys[1],
+		ParticipantIndex: participantIndexMap[normalizePubKey(testPubKeys[1])],
+		Commitments:      "remote-commitment",
+	}
+	localHash, err := FrostTranscriptDKGRound1Hash("msg-id", localPayload)
+	if err != nil {
+		t.Fatalf("local hash: %v", err)
+	}
+	remoteHash, err := FrostTranscriptDKGRound1Hash("msg-id", remotePayload)
+	if err != nil {
+		t.Fatalf("remote hash: %v", err)
+	}
+	transcriptHash := testFrostKeygenTranscriptHash(t, "msg-id", frostDKGRound1,
+		frostKeygenTranscriptEntry{participantIndex: localPayload.ParticipantIndex, payloadHash: localHash},
+		frostKeygenTranscriptEntry{participantIndex: remotePayload.ParticipantIndex, payloadHash: remoteHash},
+	)
+
+	inbox := newFrostKeygenInbox()
+	const phaseTimeout = 200 * time.Millisecond
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", inbox, phaseTimeout)
+	initTestFrostKeygenRoundState(t, coord, activeSet, participantIndexMap)
+	done := make(chan *FrostKeygenResponse, 1)
+	go func() {
+		_, failure := coord.exchangeRound1(activeSet, participantIndexMap, peerIDs, localPayload)
+		done <- failure
+	}()
+
+	if initial := <-coord.p2pCommunication.BroadcastMsgChan; initial.WrappedMessage.MessageType != messages.TSSFrostDKGRound1Msg {
+		t.Fatalf("initial broadcast type = %q, want round1", initial.WrappedMessage.MessageType)
+	}
+	time.Sleep(140 * time.Millisecond)
+	enqueueRoundMessage(t, inbox, messages.TSSFrostDKGRound1Msg, "msg-id", testPubKeys[1], remotePayload)
+	select {
+	case confirmation := <-coord.p2pCommunication.BroadcastMsgChan:
+		if confirmation.WrappedMessage.MessageType != messages.TSSFrostVerifyMsg {
+			t.Fatalf("confirmation broadcast type = %q, want verification", confirmation.WrappedMessage.MessageType)
+		}
+	case <-time.After(phaseTimeout):
+		t.Fatal("local transcript confirmation was not broadcast")
+	}
+
+	// This vote arrives after the original payload-collection deadline but well
+	// within the reset confirmation deadline. Without the phase reset the round
+	// would expire roughly 60 ms after the local confirmation was emitted.
+	time.Sleep(100 * time.Millisecond)
+	enqueueVerifyMessage(t, inbox, "msg-id", testPubKeys[1], frostDKGRound1, transcriptHash)
+	select {
+	case failure := <-done:
+		if failure != nil {
+			t.Fatalf("confirmation phase did not receive its own timeout: %+v", failure)
+		}
+	case <-time.After(phaseTimeout):
+		t.Fatal("round did not finish after quorum confirmation")
 	}
 }
 
@@ -566,7 +732,7 @@ func TestFrostKeygenRound1RejectsSenderEquivocation(t *testing.T) {
 		t.Fatalf("peer ids: %v", err)
 	}
 
-	msgChan := make(chan *p2p.Message, 8)
+	msgChan := newFrostKeygenInbox()
 	enqueueRoundMessage(t, msgChan, messages.TSSFrostDKGRound1Msg, "msg-id", testPubKeys[1], FrostDKGRound1Payload{
 		SenderPubKey:     testPubKeys[1],
 		ParticipantIndex: participantIndexMap[normalizePubKey(testPubKeys[1])],
@@ -579,6 +745,7 @@ func TestFrostKeygenRound1RejectsSenderEquivocation(t *testing.T) {
 	})
 
 	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", msgChan, time.Second)
+	initTestFrostKeygenRoundState(t, coord, activeSet, participantIndexMap)
 	_, failResp := coord.exchangeRound1(activeSet, participantIndexMap, peerIDs, FrostDKGRound1Payload{
 		SenderPubKey:     testPubKeys[0],
 		ParticipantIndex: participantIndexMap[normalizePubKey(testPubKeys[0])],
@@ -614,39 +781,119 @@ func TestFrostKeygenRound1RejectsVerifierEquivocation(t *testing.T) {
 		ParticipantIndex: participantIndexMap[normalizePubKey(testPubKeys[0])],
 		Commitments:      "local-commitment",
 	}
-	localHash, err := FrostTranscriptDKGRound1Hash("msg-id", localPayload)
-	if err != nil {
-		t.Fatalf("local hash: %v", err)
-	}
-
-	msgChan := make(chan *p2p.Message, 8)
+	msgChan := newFrostKeygenInbox()
 	enqueueRoundMessage(t, msgChan, messages.TSSFrostDKGRound1Msg, "msg-id", testPubKeys[1], FrostDKGRound1Payload{
 		SenderPubKey:     testPubKeys[1],
 		ParticipantIndex: participantIndexMap[normalizePubKey(testPubKeys[1])],
 		Commitments:      "remote-commitment",
 	})
-	enqueueVerifyMessage(t, msgChan, "msg-id", testPubKeys[1], FrostVerifyPayload{
-		SenderPubKey:           testPubKeys[1],
-		Round:                  frostDKGRound1,
-		TargetSenderPubKey:     testPubKeys[0],
-		TargetParticipantIndex: localPayload.ParticipantIndex,
-		PayloadHash:            localHash,
-	})
-	enqueueVerifyMessage(t, msgChan, "msg-id", testPubKeys[1], FrostVerifyPayload{
-		SenderPubKey:           testPubKeys[1],
-		Round:                  frostDKGRound1,
-		TargetSenderPubKey:     testPubKeys[0],
-		TargetParticipantIndex: localPayload.ParticipantIndex,
-		PayloadHash:            strings.Repeat("f", 64),
-	})
+	enqueueVerifyMessage(t, msgChan, "msg-id", testPubKeys[1], frostDKGRound1, strings.Repeat("a", 64))
+	enqueueVerifyMessage(t, msgChan, "msg-id", testPubKeys[1], frostDKGRound1, strings.Repeat("f", 64))
 
-	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", msgChan, time.Second)
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", msgChan, 30*time.Millisecond)
+	initTestFrostKeygenRoundState(t, coord, activeSet, participantIndexMap)
 	_, failResp := coord.exchangeRound1(activeSet, participantIndexMap, peerIDs, localPayload)
 	if failResp == nil {
 		t.Fatalf("expected verifier equivocation failure")
 	}
 	if failResp.Status != tcommon.Fail {
 		t.Fatalf("expected fail status, got %d", failResp.Status)
+	}
+	if len(failResp.Blame.BlameNodes) != 1 || failResp.Blame.BlameNodes[0].Pubkey != testPubKeys[1] {
+		t.Fatalf("expected verifier equivocation blame for %s, got %+v", testPubKeys[1], failResp.Blame.BlameNodes)
+	}
+	if !strings.Contains(failResp.Blame.FailReason, "verification vote equivocation") {
+		t.Fatalf("expected equivocation diagnosis, got %q", failResp.Blame.FailReason)
+	}
+}
+
+func TestFrostKeygenVerificationGapsSeparateParticipantBehavior(t *testing.T) {
+	ensureBech32Prefix()
+
+	members := testPubKeys[:4]
+	activeSet, participantIndexMap, _ := testFrostKeygenParticipants(t, members)
+	verifier, err := newFrostKeygenRoundVerifier(frostDKGRound1, activeSet, participantIndexMap)
+	if err != nil {
+		t.Fatalf("new keygen round verifier: %v", err)
+	}
+	if _, failure := verifier.recordTranscriptVote(testPubKeys[3], strings.Repeat("c", 64)); failure != nil {
+		t.Fatalf("record first equivocating vote: %v", failure)
+	}
+	if _, failure := verifier.recordTranscriptVote(testPubKeys[3], strings.Repeat("d", 64)); failure != nil {
+		t.Fatalf("record second equivocating vote: %v", failure)
+	}
+	earlyGaps := verifier.verificationGaps()
+	if len(earlyGaps.missingPubKeys) != 0 || len(earlyGaps.conflictingPubKeys) != 0 ||
+		len(earlyGaps.equivocatingPubKeys) != 1 || earlyGaps.equivocatingPubKeys[0] != testPubKeys[3] {
+		t.Fatalf("pre-transcript verification gaps = %+v, want only equivocator %s", earlyGaps, testPubKeys[3])
+	}
+
+	verifier.transcriptHash = strings.Repeat("a", 64)
+	if _, failure := verifier.recordTranscriptVote(testPubKeys[0], verifier.transcriptHash); failure != nil {
+		t.Fatalf("record matching vote: %v", failure)
+	}
+	if _, failure := verifier.recordTranscriptVote(testPubKeys[2], strings.Repeat("b", 64)); failure != nil {
+		t.Fatalf("record conflicting vote: %v", failure)
+	}
+
+	gaps := verifier.verificationGaps()
+	if len(gaps.missingPubKeys) != 1 || gaps.missingPubKeys[0] != testPubKeys[1] {
+		t.Fatalf("missing verifiers = %v, want [%s]", gaps.missingPubKeys, testPubKeys[1])
+	}
+	if len(gaps.conflictingPubKeys) != 1 || gaps.conflictingPubKeys[0] != testPubKeys[2] {
+		t.Fatalf("conflicting verifiers = %v, want [%s]", gaps.conflictingPubKeys, testPubKeys[2])
+	}
+	if len(gaps.equivocatingPubKeys) != 1 || gaps.equivocatingPubKeys[0] != testPubKeys[3] {
+		t.Fatalf("equivocating verifiers = %v, want [%s]", gaps.equivocatingPubKeys, testPubKeys[3])
+	}
+}
+
+func TestFrostKeygenRound1ConflictingVerificationIsNotBlamedAsMissing(t *testing.T) {
+	ensureBech32Prefix()
+
+	members := []string{testPubKeys[0], testPubKeys[1]}
+	activeSet, participantIndexMap, peerIDs := testFrostKeygenParticipants(t, members)
+	localPayload := FrostDKGRound1Payload{
+		SenderPubKey:     testPubKeys[0],
+		ParticipantIndex: participantIndexMap[normalizePubKey(testPubKeys[0])],
+		Commitments:      "local-commitment",
+	}
+	remotePayload := FrostDKGRound1Payload{
+		SenderPubKey:     testPubKeys[1],
+		ParticipantIndex: participantIndexMap[normalizePubKey(testPubKeys[1])],
+		Commitments:      "remote-commitment",
+	}
+	localHash, err := FrostTranscriptDKGRound1Hash("msg-id", localPayload)
+	if err != nil {
+		t.Fatalf("local payload hash: %v", err)
+	}
+	remoteHash, err := FrostTranscriptDKGRound1Hash("msg-id", remotePayload)
+	if err != nil {
+		t.Fatalf("remote payload hash: %v", err)
+	}
+	transcriptHash := testFrostKeygenTranscriptHash(t, "msg-id", frostDKGRound1,
+		frostKeygenTranscriptEntry{participantIndex: localPayload.ParticipantIndex, payloadHash: localHash},
+		frostKeygenTranscriptEntry{participantIndex: remotePayload.ParticipantIndex, payloadHash: remoteHash},
+	)
+	conflictingHash := strings.Repeat("f", 64)
+	if conflictingHash == transcriptHash {
+		conflictingHash = strings.Repeat("e", 64)
+	}
+
+	inbox := newFrostKeygenInbox()
+	enqueueRoundMessage(t, inbox, messages.TSSFrostDKGRound1Msg, "msg-id", testPubKeys[1], remotePayload)
+	enqueueVerifyMessage(t, inbox, "msg-id", testPubKeys[1], frostDKGRound1, conflictingHash)
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", inbox, 30*time.Millisecond)
+	initTestFrostKeygenRoundState(t, coord, activeSet, participantIndexMap)
+	_, failResp := coord.exchangeRound1(activeSet, participantIndexMap, peerIDs, localPayload)
+	if failResp == nil {
+		t.Fatal("expected transcript disagreement timeout")
+	}
+	if len(failResp.Blame.BlameNodes) != 0 {
+		t.Fatalf("conflicting verifier must not be blamed as missing: %+v", failResp.Blame.BlameNodes)
+	}
+	if !strings.Contains(failResp.Blame.FailReason, "local transcript disagrees") {
+		t.Fatalf("expected transcript disagreement diagnosis, got %q", failResp.Blame.FailReason)
 	}
 }
 
@@ -667,7 +914,7 @@ func TestFrostKeygenRound1TimeoutMissingVerifications(t *testing.T) {
 		t.Fatalf("peer ids: %v", err)
 	}
 
-	msgChan := make(chan *p2p.Message, 4)
+	msgChan := newFrostKeygenInbox()
 	enqueueRoundMessage(t, msgChan, messages.TSSFrostDKGRound1Msg, "msg-id", testPubKeys[1], FrostDKGRound1Payload{
 		SenderPubKey:     testPubKeys[1],
 		ParticipantIndex: participantIndexMap[normalizePubKey(testPubKeys[1])],
@@ -675,6 +922,7 @@ func TestFrostKeygenRound1TimeoutMissingVerifications(t *testing.T) {
 	})
 
 	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", msgChan, 30*time.Millisecond)
+	initTestFrostKeygenRoundState(t, coord, activeSet, participantIndexMap)
 	_, failResp := coord.exchangeRound1(activeSet, participantIndexMap, peerIDs, FrostDKGRound1Payload{
 		SenderPubKey:     testPubKeys[0],
 		ParticipantIndex: participantIndexMap[normalizePubKey(testPubKeys[0])],
@@ -846,7 +1094,7 @@ func TestFrostKeygenExecuteSuccess(t *testing.T) {
 	localIndexKey := strconv.FormatUint(uint64(localIndex), 10)
 	remoteIndexKey := strconv.FormatUint(uint64(remoteIndex), 10)
 
-	msgChan := make(chan *p2p.Message, 32)
+	msgChan := newFrostKeygenInbox()
 	groupAddress := "48xmrvaultaddress"
 	groupKey := strings.Repeat("ab", 32)
 	localRound1 := FrostDKGRound1Payload{
@@ -919,50 +1167,26 @@ func TestFrostKeygenExecuteSuccess(t *testing.T) {
 		ParticipantIndex: remoteIndex,
 		Commitments:      "remote-commitment",
 	})
-	enqueueVerifyMessage(t, msgChan, "msg-id", testPubKeys[1], FrostVerifyPayload{
-		SenderPubKey:           testPubKeys[1],
-		Round:                  frostDKGRound1,
-		TargetSenderPubKey:     testPubKeys[1],
-		TargetParticipantIndex: remoteIndex,
-		PayloadHash:            remoteRound1Hash,
-	})
-	enqueueVerifyMessage(t, msgChan, "msg-id", testPubKeys[1], FrostVerifyPayload{
-		SenderPubKey:           testPubKeys[1],
-		Round:                  frostDKGRound1,
-		TargetSenderPubKey:     testPubKeys[0],
-		TargetParticipantIndex: localIndex,
-		PayloadHash:            localRound1Hash,
-	})
+	enqueueVerifyMessage(t, msgChan, "msg-id", testPubKeys[1], frostDKGRound1,
+		testFrostKeygenTranscriptHash(t, "msg-id", frostDKGRound1,
+			frostKeygenTranscriptEntry{participantIndex: localIndex, payloadHash: localRound1Hash},
+			frostKeygenTranscriptEntry{participantIndex: remoteIndex, payloadHash: remoteRound1Hash},
+		),
+	)
 	enqueueRoundMessage(t, msgChan, messages.TSSFrostDKGRound2Msg, "msg-id", testPubKeys[1], remoteRound2)
-	enqueueVerifyMessage(t, msgChan, "msg-id", testPubKeys[1], FrostVerifyPayload{
-		SenderPubKey:           testPubKeys[1],
-		Round:                  frostDKGRound2,
-		TargetSenderPubKey:     testPubKeys[1],
-		TargetParticipantIndex: remoteIndex,
-		PayloadHash:            remoteRound2Hash,
-	})
-	enqueueVerifyMessage(t, msgChan, "msg-id", testPubKeys[1], FrostVerifyPayload{
-		SenderPubKey:           testPubKeys[1],
-		Round:                  frostDKGRound2,
-		TargetSenderPubKey:     testPubKeys[0],
-		TargetParticipantIndex: localIndex,
-		PayloadHash:            localRound2Hash,
-	})
+	enqueueVerifyMessage(t, msgChan, "msg-id", testPubKeys[1], frostDKGRound2,
+		testFrostKeygenTranscriptHash(t, "msg-id", frostDKGRound2,
+			frostKeygenTranscriptEntry{participantIndex: localIndex, payloadHash: localRound2Hash},
+			frostKeygenTranscriptEntry{participantIndex: remoteIndex, payloadHash: remoteRound2Hash},
+		),
+	)
 	enqueueRoundMessage(t, msgChan, messages.TSSFrostDKGRound3Msg, "msg-id", testPubKeys[1], remoteRound3)
-	enqueueVerifyMessage(t, msgChan, "msg-id", testPubKeys[1], FrostVerifyPayload{
-		SenderPubKey:           testPubKeys[1],
-		Round:                  frostDKGRound3,
-		TargetSenderPubKey:     testPubKeys[1],
-		TargetParticipantIndex: remoteIndex,
-		PayloadHash:            remoteRound3Hash,
-	})
-	enqueueVerifyMessage(t, msgChan, "msg-id", testPubKeys[1], FrostVerifyPayload{
-		SenderPubKey:           testPubKeys[1],
-		Round:                  frostDKGRound3,
-		TargetSenderPubKey:     testPubKeys[0],
-		TargetParticipantIndex: localIndex,
-		PayloadHash:            localRound3Hash,
-	})
+	enqueueVerifyMessage(t, msgChan, "msg-id", testPubKeys[1], frostDKGRound3,
+		testFrostKeygenTranscriptHash(t, "msg-id", frostDKGRound3,
+			frostKeygenTranscriptEntry{participantIndex: localIndex, payloadHash: localRound3Hash},
+			frostKeygenTranscriptEntry{participantIndex: remoteIndex, payloadHash: remoteRound3Hash},
+		),
+	)
 
 	sidecar := &mockFrostSidecarKeygen{
 		round1Resp: FrostSidecarDKGRound1Resp{Commitments: "local-commitment"},
@@ -1021,6 +1245,322 @@ func TestFrostKeygenExecuteSuccess(t *testing.T) {
 	}
 }
 
+// TestFrostKeygenRetainsFutureRoundTraffic forces the exact phase skew that a
+// shared queue could not tolerate: round-3 payload and echo traffic arrives
+// before the final round-2 echoes. Round 2 must finish without consuming the
+// payload, and Round 3 must start with the early echoes still available.
+func TestFrostKeygenRetainsFutureRoundTraffic(t *testing.T) {
+	ensureBech32Prefix()
+
+	members := []string{testPubKeys[0], testPubKeys[1]}
+	activeSet, participantIndexMap, peerIDs := testFrostKeygenParticipants(t, members)
+	localIndex := participantIndexMap[normalizePubKey(testPubKeys[0])]
+	remoteIndex := participantIndexMap[normalizePubKey(testPubKeys[1])]
+	localIndexKey := strconv.FormatUint(uint64(localIndex), 10)
+	remoteIndexKey := strconv.FormatUint(uint64(remoteIndex), 10)
+
+	localRound2 := FrostDKGRound2Payload{
+		SenderPubKey:     testPubKeys[0],
+		ParticipantIndex: localIndex,
+		EncryptedShares: map[string]string{
+			remoteIndexKey: "local-to-remote",
+		},
+	}
+	remoteRound2 := FrostDKGRound2Payload{
+		SenderPubKey:     testPubKeys[1],
+		ParticipantIndex: remoteIndex,
+		EncryptedShares: map[string]string{
+			localIndexKey: "remote-to-local",
+		},
+	}
+	localRound2Hash, err := FrostTranscriptDKGRound2Hash("msg-id", localRound2)
+	if err != nil {
+		t.Fatalf("local round2 hash: %v", err)
+	}
+	remoteRound2Hash, err := FrostTranscriptDKGRound2Hash("msg-id", remoteRound2)
+	if err != nil {
+		t.Fatalf("remote round2 hash: %v", err)
+	}
+
+	groupAddress := "48xmrvaultaddress"
+	groupKey := strings.Repeat("ab", 32)
+	localRound3 := FrostDKGRound3Payload{
+		SenderPubKey:         testPubKeys[0],
+		ParticipantIndex:     localIndex,
+		Address:              groupAddress,
+		GroupKey:             groupKey,
+		ObservedMoneroHeight: 456,
+	}
+	remoteRound3 := FrostDKGRound3Payload{
+		SenderPubKey:         testPubKeys[1],
+		ParticipantIndex:     remoteIndex,
+		Address:              groupAddress,
+		GroupKey:             groupKey,
+		ObservedMoneroHeight: 455,
+	}
+	localRound3Hash, err := FrostTranscriptDKGRound3Hash("msg-id", localRound3)
+	if err != nil {
+		t.Fatalf("local round3 hash: %v", err)
+	}
+	remoteRound3Hash, err := FrostTranscriptDKGRound3Hash("msg-id", remoteRound3)
+	if err != nil {
+		t.Fatalf("remote round3 hash: %v", err)
+	}
+
+	inbox := newFrostKeygenInbox()
+	// The remote node is a full phase ahead. These are intentionally queued
+	// before the round-2 messages on the shared verification topic.
+	enqueueRoundMessage(t, inbox, messages.TSSFrostDKGRound3Msg, "msg-id", testPubKeys[1], remoteRound3)
+	round3TranscriptHash := testFrostKeygenTranscriptHash(t, "msg-id", frostDKGRound3,
+		frostKeygenTranscriptEntry{participantIndex: localIndex, payloadHash: localRound3Hash},
+		frostKeygenTranscriptEntry{participantIndex: remoteIndex, payloadHash: remoteRound3Hash},
+	)
+	enqueueVerifyMessage(t, inbox, "msg-id", testPubKeys[1], frostDKGRound3, round3TranscriptHash)
+	enqueueRoundMessage(t, inbox, messages.TSSFrostDKGRound2Msg, "msg-id", testPubKeys[1], remoteRound2)
+	round2TranscriptHash := testFrostKeygenTranscriptHash(t, "msg-id", frostDKGRound2,
+		frostKeygenTranscriptEntry{participantIndex: localIndex, payloadHash: localRound2Hash},
+		frostKeygenTranscriptEntry{participantIndex: remoteIndex, payloadHash: remoteRound2Hash},
+	)
+	enqueueVerifyMessage(t, inbox, "msg-id", testPubKeys[1], frostDKGRound2, round2TranscriptHash)
+
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", inbox, 100*time.Millisecond)
+	initTestFrostKeygenRoundState(t, coord, activeSet, participantIndexMap)
+	shares, failure := coord.exchangeRound2(activeSet, participantIndexMap, peerIDs, localRound2)
+	if failure != nil {
+		t.Fatalf("round2 failed under phase skew: %+v", failure)
+	}
+	if shares[remoteIndexKey][localIndexKey] != "remote-to-local" {
+		t.Fatalf("round2 lost the remote encrypted share: %+v", shares)
+	}
+	round3Verifier, err := coord.roundState.verifier(frostDKGRound3)
+	if err != nil {
+		t.Fatalf("round3 verifier: %v", err)
+	}
+	if got := len(round3Verifier.payloadHashByTarget); got != 0 {
+		t.Fatalf("future round payloads must remain unvalidated, got %d", got)
+	}
+	if round3Verifier.isComplete() {
+		t.Fatal("future echoes completed round3 before its payloads were validated")
+	}
+	remoteNorm := normalizePubKey(testPubKeys[1])
+	if got := round3Verifier.votesByAttester[remoteNorm]; got != round3TranscriptHash {
+		t.Fatalf("expected one retained early round vote, got %q", got)
+	}
+	if got := len(inbox.round3); got != 1 {
+		t.Fatalf("expected the early round3 payload to remain queued, got %d", got)
+	}
+
+	address, derivedKey, birthday, failure := coord.exchangeRound3(
+		activeSet,
+		participantIndexMap,
+		peerIDs,
+		localRound3,
+	)
+	if failure != nil {
+		t.Fatalf("round3 failed after draining staged traffic: %+v", failure)
+	}
+	if address != groupAddress || derivedKey != groupKey || birthday != 445 {
+		t.Fatalf("unexpected round3 result: address=%q key=%q birthday=%d", address, derivedKey, birthday)
+	}
+}
+
+// TestFrostKeygenEarlyResultQuorumSurvivesRound3 proves terminal results stay
+// on their dedicated channel while the local node is still waiting in Round 3
+// and remain available to the adoption waiter after the local round times out.
+func TestFrostKeygenEarlyResultQuorumSurvivesRound3(t *testing.T) {
+	ensureBech32Prefix()
+
+	members := []string{testPubKeys[0], testPubKeys[1], testPubKeys[2]}
+	activeSet, participantIndexMap, peerIDs := testFrostKeygenParticipants(t, members)
+	groupAddress := "48xmrvaultaddress"
+	groupKey := strings.Repeat("ab", 32)
+	success := FrostDKGResult{
+		Address:              groupAddress,
+		GroupKey:             groupKey,
+		ObservedMoneroHeight: 456,
+		Status:               uint8(tcommon.Success),
+	}
+
+	inbox := newFrostKeygenInbox()
+	enqueueRoundMessage(t, inbox, messages.TSSFrostDKGResultMsg, "msg-id", testPubKeys[1], FrostDKGResultPayload{
+		SenderPubKey: testPubKeys[1],
+		Response:     success,
+	})
+	enqueueRoundMessage(t, inbox, messages.TSSFrostDKGResultMsg, "msg-id", testPubKeys[2], FrostDKGResultPayload{
+		SenderPubKey: testPubKeys[2],
+		Response:     success,
+	})
+
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", inbox, 30*time.Millisecond)
+	initTestFrostKeygenRoundState(t, coord, activeSet, participantIndexMap)
+	_, _, _, failure := coord.exchangeRound3(activeSet, participantIndexMap, peerIDs, FrostDKGRound3Payload{
+		SenderPubKey:         testPubKeys[0],
+		ParticipantIndex:     participantIndexMap[normalizePubKey(testPubKeys[0])],
+		Address:              groupAddress,
+		GroupKey:             groupKey,
+		ObservedMoneroHeight: 456,
+	})
+	if failure == nil || failure.Blame.Round != frostDKGRound3 {
+		t.Fatalf("expected local round3 timeout, got %+v", failure)
+	}
+
+	response, err := coord.WaitForResult(members, 2, 20*time.Millisecond)
+	if err != nil {
+		t.Fatalf("early result quorum was lost: %v", err)
+	}
+	if response.Status != tcommon.Success || response.Address != groupAddress || response.GroupKey != groupKey {
+		t.Fatalf("unexpected retained result: %+v", response)
+	}
+}
+
+func TestFrostKeygenFutureVerificationIsIdempotentAndCannotCompleteWithoutPayload(t *testing.T) {
+	ensureBech32Prefix()
+
+	members := []string{testPubKeys[0], testPubKeys[1]}
+	activeSet, participantIndexMap, _ := testFrostKeygenParticipants(t, members)
+	inbox := newFrostKeygenInbox()
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", inbox, time.Second)
+	initTestFrostKeygenRoundState(t, coord, activeSet, participantIndexMap)
+	localIndex := participantIndexMap[normalizePubKey(testPubKeys[0])]
+	remoteIndex := participantIndexMap[normalizePubKey(testPubKeys[1])]
+	localPayloadHash := strings.Repeat("a", 64)
+	remotePayloadHash := strings.Repeat("b", 64)
+	transcriptHash := testFrostKeygenTranscriptHash(t, "msg-id", frostDKGRound3,
+		frostKeygenTranscriptEntry{participantIndex: localIndex, payloadHash: localPayloadHash},
+		frostKeygenTranscriptEntry{participantIndex: remoteIndex, payloadHash: remotePayloadHash},
+	)
+	enqueueVerifyMessage(t, inbox, "msg-id", testPubKeys[1], frostDKGRound3, transcriptHash)
+	enqueueVerifyMessage(t, inbox, "msg-id", testPubKeys[1], frostDKGRound3, strings.ToUpper(transcriptHash))
+	for range 2 {
+		if response := coord.routeVerificationMessage(<-inbox.verify, frostDKGRound2); response != nil {
+			t.Fatalf("future verification failed early: %+v", response)
+		}
+	}
+
+	verifier, err := coord.roundState.verifier(frostDKGRound3)
+	if err != nil {
+		t.Fatalf("round3 verifier: %v", err)
+	}
+	remoteNorm := normalizePubKey(testPubKeys[1])
+	if got := verifier.votesByAttester[remoteNorm]; got != transcriptHash {
+		t.Fatalf("authenticated peer was not recorded as the attester: got %q want %q", got, transcriptHash)
+	}
+	if verifier.isComplete() {
+		t.Fatal("future echo completed round3 without a payload")
+	}
+	if _, failure := verifier.recordPayload(testPubKeys[0], localIndex, localPayloadHash); failure != nil {
+		t.Fatalf("record local payload: %v", failure)
+	}
+	if verifier.isComplete() {
+		t.Fatal("round3 completed while the remote payload was still absent")
+	}
+	if _, failure := verifier.recordPayload(testPubKeys[1], remoteIndex, remotePayloadHash); failure != nil {
+		t.Fatalf("record remote payload: %v", failure)
+	}
+	preparedHash, ready, err := verifier.prepareTranscriptHash("msg-id")
+	if err != nil || !ready || preparedHash != transcriptHash {
+		t.Fatalf("prepare transcript hash: hash=%q ready=%t err=%v", preparedHash, ready, err)
+	}
+	if _, failure := verifier.recordTranscriptVote(testPubKeys[0], preparedHash); failure != nil {
+		t.Fatalf("record local transcript vote: %v", failure)
+	}
+	if !verifier.isComplete() {
+		t.Fatal("early remote vote was not counted after the full transcript arrived")
+	}
+}
+
+func TestFrostKeygenFutureVerificationConflictDisqualifiesAttester(t *testing.T) {
+	ensureBech32Prefix()
+
+	members := []string{testPubKeys[0], testPubKeys[1], testPubKeys[2]}
+	activeSet, participantIndexMap, _ := testFrostKeygenParticipants(t, members)
+	inbox := newFrostKeygenInbox()
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", inbox, time.Second)
+	initTestFrostKeygenRoundState(t, coord, activeSet, participantIndexMap)
+	conflictingHash := strings.Repeat("b", 64)
+	for _, hash := range []string{strings.Repeat("a", 64), conflictingHash, strings.Repeat("a", 64)} {
+		enqueueVerifyMessage(t, inbox, "msg-id", testPubKeys[1], frostDKGRound3, hash)
+		if response := coord.routeVerificationMessage(<-inbox.verify, frostDKGRound2); response != nil {
+			t.Fatalf("future verification failed early: %+v", response)
+		}
+	}
+
+	verifier, err := coord.roundState.verifier(frostDKGRound3)
+	if err != nil {
+		t.Fatalf("round3 verifier: %v", err)
+	}
+	remoteNorm := normalizePubKey(testPubKeys[1])
+	if _, disqualified := verifier.equivocatingAttesters[remoteNorm]; !disqualified {
+		t.Fatal("conflicting future echoes did not disqualify their attester")
+	}
+	if _, retained := verifier.votesByAttester[remoteNorm]; retained {
+		t.Fatal("disqualified attester still contributes a verification vote")
+	}
+	entries := make([]frostKeygenTranscriptEntry, 0, len(members))
+	for _, member := range members {
+		index := participantIndexMap[normalizePubKey(member)]
+		payloadHash := strings.Repeat(strconv.FormatUint(uint64(index), 10), 64)
+		payloadHash = payloadHash[:64]
+		if _, failure := verifier.recordPayload(member, index, payloadHash); failure != nil {
+			t.Fatalf("record payload for %s: %v", member, failure)
+		}
+		entries = append(entries, frostKeygenTranscriptEntry{participantIndex: index, payloadHash: payloadHash})
+	}
+	transcriptHash := testFrostKeygenTranscriptHash(t, "msg-id", frostDKGRound3, entries...)
+	preparedHash, ready, err := verifier.prepareTranscriptHash("msg-id")
+	if err != nil || !ready || preparedHash != transcriptHash {
+		t.Fatalf("prepare transcript hash: hash=%q ready=%t err=%v", preparedHash, ready, err)
+	}
+	if _, failure := verifier.recordTranscriptVote(testPubKeys[0], transcriptHash); failure != nil {
+		t.Fatalf("record local vote: %v", failure)
+	}
+	if verifier.isComplete() {
+		t.Fatal("disqualified attester incorrectly completed the transcript quorum")
+	}
+	enqueueVerifyMessage(t, inbox, "msg-id", testPubKeys[2], frostDKGRound3, transcriptHash)
+	if response := coord.routeVerificationMessage(<-inbox.verify, frostDKGRound2); response != nil {
+		t.Fatalf("replacement future verification failed: %+v", response)
+	}
+	if !verifier.isComplete() {
+		t.Fatal("non-equivocating quorum did not verify the transcript")
+	}
+}
+
+func TestFrostKeygenFutureVerificationFailureWaitsForRound(t *testing.T) {
+	ensureBech32Prefix()
+
+	members := []string{testPubKeys[0], testPubKeys[1]}
+	activeSet, participantIndexMap, peerIDs := testFrostKeygenParticipants(t, members)
+	inbox := newFrostKeygenInbox()
+	// The invalid future-round hash must be retained as a deferred semantic
+	// failure and surface only when Round 3 starts.
+	enqueueVerifyMessage(t, inbox, "msg-id", testPubKeys[1], frostDKGRound3, "invalid-hash")
+
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", inbox, time.Second)
+	initTestFrostKeygenRoundState(t, coord, activeSet, participantIndexMap)
+	if response := coord.routeVerificationMessage(<-inbox.verify, frostDKGRound2); response != nil {
+		t.Fatalf("future verification should defer its failure, got %+v", response)
+	}
+	response, ok := coord.roundState.failure(frostDKGRound3)
+	if !ok || response == nil || !strings.Contains(response.Blame.FailReason, "invalid frost keygen transcript hash") {
+		t.Fatalf("future verification failure was not retained: %+v", response)
+	}
+
+	_, _, _, response = coord.exchangeRound3(activeSet, participantIndexMap, peerIDs, FrostDKGRound3Payload{
+		SenderPubKey:         testPubKeys[0],
+		ParticipantIndex:     participantIndexMap[normalizePubKey(testPubKeys[0])],
+		Address:              "48addr",
+		GroupKey:             strings.Repeat("ab", 32),
+		ObservedMoneroHeight: 456,
+	})
+	if response == nil || !strings.Contains(response.Blame.FailReason, "invalid frost keygen transcript hash") {
+		t.Fatalf("round3 did not surface the retained failure: %+v", response)
+	}
+	if got := len(coord.p2pCommunication.BroadcastMsgChan); got != 0 {
+		t.Fatalf("round3 broadcast %d messages before checking its retained failure", got)
+	}
+}
+
 // TestFrostKeygenExecuteBlamesAlmostCompleteFinisherOnLastRoundTimeout pins
 // the bifrost half of the chainnet mass-jailing mechanism and its fix. The
 // remote peer participates fully through rounds 1 and 2 — payloads and
@@ -1061,7 +1601,7 @@ func TestFrostKeygenExecuteBlamesAlmostCompleteFinisherOnLastRoundTimeout(t *tes
 	localIndexKey := strconv.FormatUint(uint64(localIndex), 10)
 	remoteIndexKey := strconv.FormatUint(uint64(remoteIndex), 10)
 
-	msgChan := make(chan *p2p.Message, 32)
+	msgChan := newFrostKeygenInbox()
 	groupAddress := "48xmrvaultaddress"
 	groupKey := strings.Repeat("ab", 32)
 
@@ -1109,35 +1649,19 @@ func TestFrostKeygenExecuteBlamesAlmostCompleteFinisherOnLastRoundTimeout(t *tes
 
 	// Rounds 1 and 2: the remote peer is fully present and verifiable.
 	enqueueRoundMessage(t, msgChan, messages.TSSFrostDKGRound1Msg, "msg-id", testPubKeys[1], remoteRound1)
-	enqueueVerifyMessage(t, msgChan, "msg-id", testPubKeys[1], FrostVerifyPayload{
-		SenderPubKey:           testPubKeys[1],
-		Round:                  frostDKGRound1,
-		TargetSenderPubKey:     testPubKeys[1],
-		TargetParticipantIndex: remoteIndex,
-		PayloadHash:            remoteRound1Hash,
-	})
-	enqueueVerifyMessage(t, msgChan, "msg-id", testPubKeys[1], FrostVerifyPayload{
-		SenderPubKey:           testPubKeys[1],
-		Round:                  frostDKGRound1,
-		TargetSenderPubKey:     testPubKeys[0],
-		TargetParticipantIndex: localIndex,
-		PayloadHash:            localRound1Hash,
-	})
+	enqueueVerifyMessage(t, msgChan, "msg-id", testPubKeys[1], frostDKGRound1,
+		testFrostKeygenTranscriptHash(t, "msg-id", frostDKGRound1,
+			frostKeygenTranscriptEntry{participantIndex: localIndex, payloadHash: localRound1Hash},
+			frostKeygenTranscriptEntry{participantIndex: remoteIndex, payloadHash: remoteRound1Hash},
+		),
+	)
 	enqueueRoundMessage(t, msgChan, messages.TSSFrostDKGRound2Msg, "msg-id", testPubKeys[1], remoteRound2)
-	enqueueVerifyMessage(t, msgChan, "msg-id", testPubKeys[1], FrostVerifyPayload{
-		SenderPubKey:           testPubKeys[1],
-		Round:                  frostDKGRound2,
-		TargetSenderPubKey:     testPubKeys[1],
-		TargetParticipantIndex: remoteIndex,
-		PayloadHash:            remoteRound2Hash,
-	})
-	enqueueVerifyMessage(t, msgChan, "msg-id", testPubKeys[1], FrostVerifyPayload{
-		SenderPubKey:           testPubKeys[1],
-		Round:                  frostDKGRound2,
-		TargetSenderPubKey:     testPubKeys[0],
-		TargetParticipantIndex: localIndex,
-		PayloadHash:            localRound2Hash,
-	})
+	enqueueVerifyMessage(t, msgChan, "msg-id", testPubKeys[1], frostDKGRound2,
+		testFrostKeygenTranscriptHash(t, "msg-id", frostDKGRound2,
+			frostKeygenTranscriptEntry{participantIndex: localIndex, payloadHash: localRound2Hash},
+			frostKeygenTranscriptEntry{participantIndex: remoteIndex, payloadHash: remoteRound2Hash},
+		),
+	)
 	// Round 3: nothing from the remote peer — its final message is a moment
 	// too late for the local per-round timer.
 
@@ -1238,7 +1762,7 @@ func TestFrostKeygenAdoptQuorumSuccessRequiresKeyshareProof(t *testing.T) {
 	// No completed local DKG session: the sidecar rejects the finalize and the
 	// adoption must be refused.
 	sidecar := &mockFrostSidecarKeygen{finalizeErr: errors.New("DKG session keys not found")}
-	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", make(chan *p2p.Message, 1), time.Second)
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", newFrostKeygenInbox(), time.Second)
 	coord.sidecar = sidecar
 	if _, ok := coord.AdoptQuorumSuccess(req, quorumResp); ok {
 		t.Fatalf("expected adoption refusal without a finalizable local session")
@@ -1317,7 +1841,7 @@ func TestFrostKeygenWaitForResultSurvivesInvalidResultMessages(t *testing.T) {
 		Status:               uint8(tcommon.Success),
 	}
 
-	msgChan := make(chan *p2p.Message, 16)
+	msgChan := newFrostKeygenInbox()
 
 	// 1. Unparseable result payload.
 	enqueueWrappedPayload(t, msgChan, messages.TSSFrostDKGResultMsg, "msg-id", testPubKeys[1], []byte("{not-json"))
@@ -1369,6 +1893,82 @@ func TestFrostKeygenWaitForResultSurvivesInvalidResultMessages(t *testing.T) {
 	}
 }
 
+// TestFrostKeygenWaitForResultDrainsNonResultTraffic pins the failed-active
+// path: once local execution stops, peers can still advance and fill the four
+// phase queues while this node waits to adopt their result. The waiter must
+// consume those now-obsolete frames so bounded delivery does not leave stream
+// handlers parked until the keygen timeout.
+func TestFrostKeygenWaitForResultDrainsNonResultTraffic(t *testing.T) {
+	ensureBech32Prefix()
+
+	members := []string{testPubKeys[0], testPubKeys[1], testPubKeys[2]}
+	inbox := newFrostKeygenInbox()
+	nonResultQueues := []chan *p2p.Message{
+		inbox.round1,
+		inbox.round2,
+		inbox.round3,
+		inbox.verify,
+	}
+
+	// Fill every queue before the waiter starts, then attempt one additional
+	// delivery to each. All four sends block before the fix because result was
+	// the only topic WaitForResult consumed.
+	delivered := make(chan struct{}, len(nonResultQueues))
+	for _, queue := range nonResultQueues {
+		for range cap(queue) {
+			queue <- &p2p.Message{}
+		}
+		go func(queue chan *p2p.Message) {
+			queue <- &p2p.Message{}
+			delivered <- struct{}{}
+		}(queue)
+	}
+
+	type waitResult struct {
+		response FrostKeygenResponse
+		err      error
+	}
+	waitDone := make(chan waitResult, 1)
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", inbox, time.Second)
+	go func() {
+		response, err := coord.WaitForResult(members, 2, 2*time.Second)
+		waitDone <- waitResult{response: response, err: err}
+	}()
+
+	for range nonResultQueues {
+		select {
+		case <-delivered:
+		case <-time.After(time.Second):
+			t.Fatal("non-result queue delivery remained blocked during result wait")
+		}
+	}
+
+	success := FrostDKGResult{
+		Address:              "48xmrvaultaddress",
+		GroupKey:             strings.Repeat("ab", 32),
+		ObservedMoneroHeight: 456,
+		Status:               uint8(tcommon.Success),
+	}
+	for _, sender := range members[1:] {
+		enqueueRoundMessage(t, inbox, messages.TSSFrostDKGResultMsg, "msg-id", sender, FrostDKGResultPayload{
+			SenderPubKey: sender,
+			Response:     success,
+		})
+	}
+
+	select {
+	case result := <-waitDone:
+		if result.err != nil {
+			t.Fatalf("wait for result: %v", result.err)
+		}
+		if result.response.Status != tcommon.Success || result.response.Address != success.Address {
+			t.Fatalf("unexpected quorum result: %+v", result.response)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("result quorum was not returned after draining non-result traffic")
+	}
+}
+
 // TestFrostKeygenWaitForResultLastVoteWinsPerSender pins the per-sender vote
 // accounting: a sender re-voting with a different result moves between vote
 // buckets, so one member cannot hold votes in two buckets at once (or count
@@ -1391,7 +1991,7 @@ func TestFrostKeygenWaitForResultLastVoteWinsPerSender(t *testing.T) {
 		Status:               uint8(tcommon.Success),
 	}
 
-	msgChan := make(chan *p2p.Message, 8)
+	msgChan := newFrostKeygenInbox()
 	// Member 1 votes X, then replaces it with Y; member 2 votes X. No result
 	// may reach quorum 2: X holds only member 2 after the replacement.
 	enqueueRoundMessage(t, msgChan, messages.TSSFrostDKGResultMsg, "msg-id", testPubKeys[1], FrostDKGResultPayload{
@@ -1422,7 +2022,7 @@ func TestFrostKeygenWaitForResultDuplicateVotesDoNotInflateQuorum(t *testing.T) 
 		ObservedMoneroHeight: 456,
 		Status:               uint8(tcommon.Success),
 	}
-	msgChan := make(chan *p2p.Message, 8)
+	msgChan := newFrostKeygenInbox()
 	for i := 0; i < 5; i++ {
 		enqueueRoundMessage(t, msgChan, messages.TSSFrostDKGResultMsg, "msg-id", testPubKeys[1], FrostDKGResultPayload{
 			SenderPubKey: testPubKeys[1],
@@ -1468,7 +2068,7 @@ func TestFrostKeygenExecuteSuccessSingleSigner(t *testing.T) {
 		chainHeight:  123,
 	}
 
-	msgChan := make(chan *p2p.Message, 4)
+	msgChan := newFrostKeygenInbox()
 	enqueueRoundMessage(t, msgChan, messages.TSSFrostDKGRound1Msg, "msg-id-single", testPubKeys[0], FrostDKGRound1Payload{
 		SenderPubKey:     testPubKeys[0],
 		ParticipantIndex: localIndex,
@@ -1509,8 +2109,8 @@ func TestFrostKeygenExecuteSuccessSingleSigner(t *testing.T) {
 	if len(coord.p2pCommunication.BroadcastMsgChan) != 0 {
 		t.Fatalf("expected single-signer keygen to skip p2p transcript exchange, broadcast %d messages", len(coord.p2pCommunication.BroadcastMsgChan))
 	}
-	if len(msgChan) != 1 {
-		t.Fatalf("expected queued p2p noise to remain unread for single-signer keygen, got %d queued messages", len(msgChan))
+	if len(msgChan.round1) != 1 {
+		t.Fatalf("expected queued p2p noise to remain unread for single-signer keygen, got %d queued messages", len(msgChan.round1))
 	}
 	if len(sidecar.round3Reqs) != 1 {
 		t.Fatalf("expected one round3 call, got %d", len(sidecar.round3Reqs))
@@ -1554,7 +2154,7 @@ func TestFrostKeygenExecuteFailsWhenFinalizeUnsuccessful(t *testing.T) {
 		chainHeight:  123,
 	}
 
-	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id-finalize-fail", make(chan *p2p.Message, 4), time.Second)
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id-finalize-fail", newFrostKeygenInbox(), time.Second)
 	coord.sidecar = sidecar
 
 	resp := coord.Execute(FrostKeygenRequest{
@@ -1602,7 +2202,7 @@ func TestFrostKeygenExecuteFailsWithoutPositiveMoneroHeight(t *testing.T) {
 		chainErr:     errors.New("height unavailable"),
 	}
 
-	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id-height-fail", make(chan *p2p.Message, 4), time.Second)
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id-height-fail", newFrostKeygenInbox(), time.Second)
 	coord.sidecar = sidecar
 
 	resp := coord.Execute(FrostKeygenRequest{
@@ -1650,7 +2250,7 @@ func TestFrostKeygenExecuteFailsWithInvalidFinalizeKeyBytes(t *testing.T) {
 		chainHeight:  123,
 	}
 
-	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id-keybytes-fail", make(chan *p2p.Message, 4), time.Second)
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id-keybytes-fail", newFrostKeygenInbox(), time.Second)
 	coord.sidecar = sidecar
 
 	resp := coord.Execute(FrostKeygenRequest{
