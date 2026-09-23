@@ -392,8 +392,11 @@ func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cos
 	}
 
 	// Internal reserve swaps and collector conversions use dedicated settlement
-	// paths, so skip the downstream handlers selected by the memo.
-	if stableReserveInternalSettled || collectorConversion {
+	// paths, so skip the downstream handlers selected by the memo. The
+	// withdraw-fee memo is internal too and is not a THORChain memo, so without
+	// this it would fall through to the parse error below and be refunded.
+	withdrawFeeSwap := strings.HasPrefix(msg.Tx.Memo, types.StableReserveWithdrawFeeMemoPrefix)
+	if stableReserveInternalSettled || collectorConversion || withdrawFeeSwap {
 		return &cosmos.Result{}, finalEmit, effectiveInput, nil
 	}
 

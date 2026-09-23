@@ -1126,3 +1126,57 @@ func (s *StableReserveMgrSuite) TestStableReserveOracleRatioOutput(c *C) {
 		c.Check(ok, Equals, false, Commentf("src=%s tgt=%s", tc.src, tc.tgt))
 	}
 }
+
+// The withdraw-fee swap carries an internal memo that is not a THORChain memo.
+// If handleWithEmit does not return before the memo-driven follow-on handlers,
+// the swap errors, the advanced queue discards its cache context and settleSwap
+// refunds the fee to the contributor -- the Reserve never receives it.
+func (s *StableReserveMgrSuite) TestStableReserveWithdrawalFeeSwapCreditsReserve(c *C) {
+	ctx, mgr, usdc, _ := setupStableReserveSuite(c)
+	contributor := GetRandomETHAddress()
+	signer := GetRandomBech32Addr()
+	c.Assert(mgr.StableReserveManager().Deposit(ctx, usdc, cosmos.NewUint(100*common.One), contributor, common.BlankTxID), IsNil)
+
+	vault := GetRandomVault()
+	vault.Status = ActiveVault
+	vault.Coins = common.Coins{
+		common.NewCoin(usdc, cosmos.NewUint(100*common.One)),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.ETHChain, NetworkFee{
+		Chain: common.ETHChain, TransactionSize: 80000, TransactionFeeRate: 30,
+	}), IsNil)
+
+	withdrawTx := common.Tx{
+		ID:          GetRandomTxHash(),
+		Chain:       common.ETHChain,
+		FromAddress: contributor,
+		ToAddress:   GetRandomETHAddress(),
+		Coins:       common.NewCoins(common.NewCoin(usdc, cosmos.NewUint(10_000))),
+		Gas:         common.Gas{common.NewCoin(common.ETHAsset, cosmos.OneUint())},
+		Memo:        "STABLE-:4000000000",
+	}
+	withdrawMsg, err := processOneTxIn(ctx, mgr.Keeper(), NewObservedTx(withdrawTx, ctx.BlockHeight(), GetRandomPubKey(), ctx.BlockHeight()), signer)
+	c.Assert(err, IsNil)
+
+	_, err = NewSecuredAssetWithdrawHandler(mgr).Run(ctx, withdrawMsg)
+	c.Assert(err, IsNil)
+
+	feeSwap, err := firstQueuedSwapWithMemoPrefix(ctx, mgr, types.StableReserveWithdrawFeeMemoPrefix)
+	c.Assert(err, IsNil)
+	c.Check(feeSwap.TargetAsset.Equals(common.RuneAsset()), Equals, true)
+
+	before := mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName)
+	c.Assert(processSwapQueues(ctx, mgr), IsNil)
+
+	// The fee reached the Reserve and was not refunded to the contributor.
+	after := mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName)
+	// Nearly the whole request coin lands in the Reserve (10_000 in, 9_999 out
+	// after slip) -- a floor rather than an equality so pool sizing in
+	// setupStableReserveAsset stays free to move. A bare GT would also pass on
+	// unrelated module income.
+	c.Check(after.Sub(before).GTE(cosmos.NewUint(9_000)), Equals, true, Commentf("reserve rune %s -> %s", before, after))
+	_, err = firstQueuedSwapWithMemoPrefix(ctx, mgr, types.StableReserveWithdrawFeeMemoPrefix)
+	c.Check(err, NotNil)
+}
