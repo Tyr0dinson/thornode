@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/libp2p/go-libp2p-core/helpers"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -88,6 +89,28 @@ func (sm *StreamMgr) AddStream(msgID string, stream network.Stream) {
 		entries = append(entries, stream)
 		sm.unusedStreams[msgID] = entries
 	}
+}
+
+// closeStreamAndDrain closes the local write side before returning, then
+// observes the peer EOF in the background. AwaitEOF resets the stream on
+// timeout or protocol error, so callers do not need to retain another owner.
+func closeStreamAndDrain(stream network.Stream) error {
+	if stream == nil {
+		return nil
+	}
+	if err := stream.Close(); err != nil {
+		_ = stream.Reset()
+		return err
+	}
+	// The drain can outlive its caller. Own the logger value so a later
+	// reconfiguration of the package-global logger cannot race with it.
+	drainLogger := log.Logger
+	go func(logger zerolog.Logger) {
+		if err := helpers.AwaitEOF(stream); err != nil {
+			logger.Debug().Err(err).Msg("fail to drain peer EOF after stream close")
+		}
+	}(drainLogger)
+	return nil
 }
 
 // ReadStreamWithBuffer read data from the given stream
@@ -186,6 +209,12 @@ func readStreamWithBufferPreflight(
 
 // WriteStreamWithBuffer write the message to stream
 func WriteStreamWithBuffer(msg []byte, stream network.Stream) error {
+	return writeStreamWithBuffer(msg, stream, true)
+}
+
+// writeStreamWithBuffer lets a caller that owns terminal cleanup suppress the
+// legacy deadline-error reset. All exported callers retain the old behavior.
+func writeStreamWithBuffer(msg []byte, stream network.Stream, resetDeadlineError bool) error {
 	length := uint32(len(msg))
 	// Fail fast on the sender: receivers enforce the same bound and reject
 	// the frame after the bandwidth is already spent, attributing the error
@@ -197,8 +226,10 @@ func WriteStreamWithBuffer(msg []byte, stream network.Stream) error {
 	binary.LittleEndian.PutUint32(lengthBytes, length)
 	if ApplyDeadline.Load() {
 		if err := stream.SetWriteDeadline(time.Now().Add(TimeoutWritePayload)); err != nil {
-			if errReset := stream.Reset(); errReset != nil {
-				return errReset
+			if resetDeadlineError {
+				if errReset := stream.Reset(); errReset != nil {
+					return errReset
+				}
 			}
 			return err
 		}

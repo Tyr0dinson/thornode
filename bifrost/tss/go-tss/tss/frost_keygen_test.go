@@ -733,6 +733,45 @@ func TestFrostTranscriptVerifierRejectsUnanimousHashMismatch(t *testing.T) {
 	}
 }
 
+func TestFrostTranscriptVerifierDuplicateRoundPayloadIsIdempotentAndConflictRejected(t *testing.T) {
+	members := []string{testPubKeys[0], testPubKeys[1]}
+	_, participantIndexMap, signerByNormalized, err := buildParticipantIndex(members)
+	if err != nil {
+		t.Fatalf("build participant index: %v", err)
+	}
+	activeSet, err := buildActiveSet(members, signerByNormalized)
+	if err != nil {
+		t.Fatalf("build active set: %v", err)
+	}
+	verifier, err := newFrostTranscriptVerifier(frostDKGRound1, activeSet, participantIndexMap)
+	if err != nil {
+		t.Fatalf("new verifier: %v", err)
+	}
+	target := testPubKeys[1]
+	index := participantIndexMap[normalizePubKey(target)]
+	firstHash := strings.Repeat("a", 64)
+	conflictHash := strings.Repeat("b", 64)
+
+	added, failure := verifier.recordPayload(target, index, firstHash)
+	if !added || failure != nil {
+		t.Fatalf("first payload added=%t failure=%v", added, failure)
+	}
+	added, failure = verifier.recordPayload(target, index, firstHash)
+	if added || failure != nil {
+		t.Fatalf("exact retry added=%t failure=%v", added, failure)
+	}
+	if len(verifier.payloadHashByTarget) != 1 {
+		t.Fatalf("exact retry changed payload cardinality: %d", len(verifier.payloadHashByTarget))
+	}
+	added, failure = verifier.recordPayload(target, index, conflictHash)
+	if added || failure == nil {
+		t.Fatalf("conflicting retry added=%t failure=%v", added, failure)
+	}
+	if got := verifier.payloadHashByTarget[normalizePubKey(target)]; got != firstHash {
+		t.Fatalf("conflict replaced first payload hash: %s", got)
+	}
+}
+
 func TestFrostTranscriptDKGRound2HashDeterministicAcrossMapOrder(t *testing.T) {
 	payloadA := FrostDKGRound2Payload{
 		SenderPubKey:     "sender",
@@ -1371,6 +1410,28 @@ func TestFrostKeygenWaitForResultLastVoteWinsPerSender(t *testing.T) {
 	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", msgChan, time.Second)
 	if _, err := coord.WaitForResult(members, 2, 500*time.Millisecond); err == nil {
 		t.Fatalf("expected timeout: the replaced vote must not count toward quorum")
+	}
+}
+
+func TestFrostKeygenWaitForResultDuplicateVotesDoNotInflateQuorum(t *testing.T) {
+	ensureBech32Prefix()
+	members := []string{testPubKeys[0], testPubKeys[1], testPubKeys[2]}
+	result := FrostDKGResult{
+		Address:              "48duplicatevoteaddress",
+		GroupKey:             strings.Repeat("ab", 32),
+		ObservedMoneroHeight: 456,
+		Status:               uint8(tcommon.Success),
+	}
+	msgChan := make(chan *p2p.Message, 8)
+	for i := 0; i < 5; i++ {
+		enqueueRoundMessage(t, msgChan, messages.TSSFrostDKGResultMsg, "msg-id", testPubKeys[1], FrostDKGResultPayload{
+			SenderPubKey: testPubKeys[1],
+			Response:     result,
+		})
+	}
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "msg-id", msgChan, 50*time.Millisecond)
+	if _, err := coord.WaitForResult(members, 2, 100*time.Millisecond); err == nil {
+		t.Fatal("duplicate votes from one sender reached quorum")
 	}
 }
 

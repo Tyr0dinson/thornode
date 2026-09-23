@@ -172,16 +172,6 @@ func (t *TssServer) FrostKeygen(req FrostKeygenRequest, sidecar FrostSidecarKeyg
 		}, nil
 	}
 
-	// Party formation resolved the peers that actually joined; narrow the
-	// allow-list to them so a declared-but-absent signer cannot inject frames.
-	// The result type keeps the full signer allow-list, matching keysign.
-	for _, msgType := range frostKeygenMsgTypes {
-		if msgType == messages.TSSFrostDKGResultMsg {
-			continue
-		}
-		t.p2pCommunication.UpdateSubscribePeers(msgType, msgID, onlinePeers)
-	}
-
 	activeParticipants, err := conversion.GetPubKeysFromPeerIDs(peerIDsToStrings(onlinePeers))
 	if err != nil {
 		return FrostKeygenResponse{

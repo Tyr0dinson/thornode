@@ -801,9 +801,20 @@ func (t *TssServer) FrostKeySign(req FrostKeySignRequest, sidecar FrostSidecarCl
 	// the authenticated join response forms a smaller party, narrow all round
 	// traffic to that exact set. Result gossip stays on the eligible set so
 	// stand-by members can adopt a quorum result.
-	t.p2pCommunication.UpdateSubscribePeers(messages.TSSFrostPreprocessMsg, msgID, onlinePeers)
-	t.p2pCommunication.UpdateSubscribePeers(messages.TSSFrostShareMsg, msgID, onlinePeers)
-	t.p2pCommunication.UpdateSubscribePeers(messages.TSSFrostVerifyMsg, msgID, onlinePeers)
+	for _, msgType := range []messages.THORChainTSSMessageType{
+		messages.TSSFrostPreprocessMsg,
+		messages.TSSFrostShareMsg,
+		messages.TSSFrostVerifyMsg,
+	} {
+		if !t.p2pCommunication.NarrowSubscribePeers(msgType, msgID, onlinePeers) {
+			reason := fmt.Sprintf("failed to narrow FROST keysign %s subscription", msgType)
+			t.logger.Error().Str("msg_id", msgID).Str("message_type", msgType.String()).Msg(reason)
+			return FrostKeySignResponse{
+				Status: tcommon.Fail,
+				Blame:  blame.NewBlame(reason, nil),
+			}, nil
+		}
+	}
 	allPeerIDs, peerErr := conversion.GetPeerIDsFromPubKeys(req.SignerPubKeys)
 	if peerErr != nil {
 		t.logger.Warn().Err(peerErr).Msg("fail to resolve all peer IDs for frost result broadcast, fallback to active peers")
@@ -1132,6 +1143,10 @@ func (c *FrostSignCoordinator) exchangePreprocess(
 	activePeerIDs []peer.ID,
 	local FrostPreprocessPayload,
 ) (map[string]string, *FrostKeySignResponse) {
+	activePeers := make(map[peer.ID]struct{}, len(activePeerIDs))
+	for _, id := range activePeerIDs {
+		activePeers[id] = struct{}{}
+	}
 	localHash, err := FrostTranscriptPreprocessHash(c.msgID, local)
 	if err != nil {
 		resp := c.failForPubKeys(fmt.Sprintf("failed to hash local preprocess payload: %v", err), frostRoundPreprocess, nil)
@@ -1195,6 +1210,11 @@ func (c *FrostSignCoordinator) exchangePreprocess(
 	for !verifier.isComplete() {
 		select {
 		case msg := <-c.msgChan:
+			// Narrowing does not purge frames queued by removed peers. Drop
+			// them before parsing; the sender checks below imply this one.
+			if _, active := activePeers[msg.PeerID]; !active {
+				continue
+			}
 			wrapped, ok := parseWrappedMessage(msg.Payload)
 			if !ok {
 				continue
@@ -1323,6 +1343,10 @@ func (c *FrostSignCoordinator) exchangeShares(
 	activePeerIDs []peer.ID,
 	local FrostSharePayload,
 ) (map[string]string, *FrostKeySignResponse) {
+	activePeers := make(map[peer.ID]struct{}, len(activePeerIDs))
+	for _, id := range activePeerIDs {
+		activePeers[id] = struct{}{}
+	}
 	localHash, err := FrostTranscriptShareHash(c.msgID, local)
 	if err != nil {
 		resp := c.failForPubKeys(fmt.Sprintf("failed to hash local share payload: %v", err), frostRoundShare, nil)
@@ -1386,6 +1410,11 @@ func (c *FrostSignCoordinator) exchangeShares(
 	for !verifier.isComplete() {
 		select {
 		case msg := <-c.msgChan:
+			// Narrowing does not purge frames queued by removed peers. Drop
+			// them before parsing; the sender checks below imply this one.
+			if _, active := activePeers[msg.PeerID]; !active {
+				continue
+			}
 			wrapped, ok := parseWrappedMessage(msg.Payload)
 			if !ok {
 				continue
@@ -1532,6 +1561,15 @@ func (c *FrostSignCoordinator) WaitForResult(activeParticipants []string, quorum
 		timeout = c.timeout
 	}
 
+	// Votes count only from active signers bound to their peer, so frames
+	// from any other peer are dropped before parsing. After narrowing, the
+	// shared queue can still hold large frames from removed peers.
+	activePeers := make(map[peer.ID]struct{}, len(activeByNormalized))
+	for _, pubKey := range activeByNormalized {
+		if id, idErr := conversion.GetPeerIDFromPubKey(pubKey); idErr == nil {
+			activePeers[id] = struct{}{}
+		}
+	}
 	buckets := make(map[string]*resultVoteBucket, len(activeByNormalized))
 	malformedBuckets := make(map[string]*malformedResultVoteBucket, len(activeByNormalized))
 	senderVotes := make(map[string]senderResultVote, len(activeByNormalized))
@@ -1541,6 +1579,9 @@ func (c *FrostSignCoordinator) WaitForResult(activeParticipants []string, quorum
 	for {
 		select {
 		case msg := <-c.msgChan:
+			if _, active := activePeers[msg.PeerID]; !active {
+				continue
+			}
 			wrapped, ok := parseWrappedMessage(msg.Payload)
 			if !ok || wrapped.MessageType != messages.TSSFrostResultMsg {
 				continue
