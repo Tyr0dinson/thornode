@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/blang/semver"
+	"github.com/cometbft/cometbft/crypto/secp256k1"
 	se "github.com/cosmos/cosmos-sdk/types/errors"
 	. "gopkg.in/check.v1"
 
@@ -12,6 +13,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 type HandlerObservedTxOutSuite struct{}
@@ -1351,9 +1353,8 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionRedeliveryReusesEa
 // latest entry is recorded and the verdict it left behind keeps no backing it
 // can be revived on. The signature history itself stays intact - the
 // redundant-variant refund cap counts every variant a signer has ever filed -
-// and because the node no longer backs the entry it moved away from, it can
-// re-file that very payload when a replacement chain puts the outbound back at
-// the same height with the same receipt.
+// and a node can never re-file an entry it already signed: that would be
+// indistinguishable from a proposer replaying its original attestation.
 func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionRecordsLatestVote(c *C) {
 	const (
 		untouched   = uint64(20000000000) // 200 ETH
@@ -1389,21 +1390,15 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionRecordsLatestVote(
 		c.Check(f.keeper.voter.Txs[idx].Bounced, Equals, false)
 	}
 
-	// The identical bounced observation is now a genuine re-observation rather
-	// than a duplicate, so the quorum can flip the verdict back.
-	for i := 0; i < 6; i++ {
-		f.vote(c, i, true)
-	}
-	c.Check(bouncedSigners(f), Equals, 6) // recorded once, not twice
-	c.Check(f.ethBalance(c), Equals, gasOnly)
-	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
-
-	// Re-filing it a second time without having moved away is still a duplicate.
+	// Re-filing the bounced entry they already signed is a duplicate, even
+	// though their current votes moved away from it.
 	securityEvents := f.securityEvents()
 	for i := 0; i < 6; i++ {
 		f.vote(c, i, true)
 	}
-	c.Check(f.ethBalance(c), Equals, gasOnly)
+	c.Check(bouncedSigners(f), Equals, 6)
+	c.Check(f.ethBalance(c), Equals, gasAndCoins)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
 	c.Check(f.securityEvents(), Equals, securityEvents)
 }
 
@@ -1455,7 +1450,7 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionAfterReorgReceipt(
 
 // TestHandleBounceCorrectionReturnToGasPayloadNeedsQuorum: a payload left behind
 // by a gas-only correction must not keep a stale supermajority a later bounce
-// correction could land back on. Returning to it takes a current quorum.
+// correction could land back on. Its signers can never re-file it.
 func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionReturnToGasPayloadNeedsQuorum(c *C) {
 	const (
 		untouched = uint64(20000000000) // 200 ETH
@@ -1484,20 +1479,13 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionReturnToGasPayload
 	c.Check(f.ethBalance(c), Equals, untouched-newGas)
 	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
 
-	// the payload the gas correction left behind is not a way back in for a
-	// minority: its earlier signers have all moved on
-	for i := 0; i < 2; i++ {
+	// the payload the gas correction left behind is not a way back in: its
+	// signers have all moved on and cannot re-file what they already signed
+	for i := 0; i < 6; i++ {
 		f.voteAtGas(c, i, false, origGas)
 	}
 	c.Check(f.ethBalance(c), Equals, untouched-newGas)
 	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
-
-	// a current quorum on it is a real re-delivery, so the coins are debited
-	for i := 2; i < 6; i++ {
-		f.voteAtGas(c, i, false, origGas)
-	}
-	c.Check(f.ethBalance(c), Equals, untouched-origGas-1)
-	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
 }
 
 // TestHandleBounceCorrectionSkipsCancelTx: handleObservedTxOutQuorum returns
@@ -1724,9 +1712,10 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionEarlyDeliveryVoteD
 
 // TestHandleBounceCorrectionRedeliveryAtEarlierHeight: a replacement chain can
 // put the outbound back at the height it was first included at, with the same
-// receipt - a payload byte-identical to one every node has already filed. Because
-// their signatures moved to the bounced verdict in between, the re-delivery is a
-// fresh observation rather than a duplicate, and the coins are debited again.
+// receipt - a payload byte-identical to one every node has already filed. That is
+// indistinguishable from a proposer replaying the original attestations, so it is
+// rejected as a duplicate and the bounced verdict stands. This is a deliberate
+// trade-off: re-accepting it needs a signed freshness token on attestations.
 func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionRedeliveryAtEarlierHeight(c *C) {
 	const (
 		untouched = uint64(20000000000) // 200 ETH
@@ -1751,7 +1740,57 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionRedeliveryAtEarlie
 	for i := 0; i < 6; i++ {
 		f.voteAtGasHeight(c, i, false, gas, 12)
 	}
+	c.Check(f.ethBalance(c), Equals, untouched-bounceGas)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
+}
+
+// TestHandleBounceCorrectionRejectsReplayedQuorum: quorum attestations sign the
+// payload only, so a block proposer holding a quorum's attestations can inject
+// them again at any later block. Once the committee has moved on to the bounced
+// verdict, re-injecting the original delivered quorum unchanged must not move
+// any vote back or debit the vault a second time.
+func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionRejectsReplayedQuorum(c *C) {
+	const (
+		untouched = uint64(20000000000) // 200 ETH
+		gas       = uint64(40000)
+		bounceGas = uint64(37500)
+	)
+
+	f := newBouncedOutboundFixture(c, 6)
+	privKeys := make([]secp256k1.PrivKey, len(f.keeper.nas))
+	for i := range f.keeper.nas {
+		privKeys[i] = secp256k1.GenPrivKey()
+		pk, err := common.NewPubKeyFromCrypto(privKeys[i].PubKey())
+		c.Assert(err, IsNil)
+		f.keeper.nas[i].NodeAddress = cosmos.AccAddress(privKeys[i].PubKey().Address())
+		f.keeper.nas[i].PubKeySet = common.PubKeySet{Secp256k1: pk, Ed25519: pk}
+	}
+	quorum := func(bounced bool, gas uint64, height int64) *types.MsgObservedTxQuorum {
+		tx := f.tx
+		tx.Gas = common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(gas))}
+		obTx := NewObservedTx(tx, height, f.pk, height)
+		obTx.Bounced = bounced
+		atts := make([]*common.Attestation, len(privKeys))
+		for i, privKey := range privKeys {
+			atts[i] = attestObservedTx(c, privKey, obTx, false)
+		}
+		return types.NewMsgObservedTxQuorum(&common.QuorumTx{ObsTx: obTx, Attestations: atts}, f.keeper.nas[0].NodeAddress)
+	}
+	handler := NewObservedTxQuorumHandler(f.mgr)
+	inject := func(msg *types.MsgObservedTxQuorum) {
+		_, err := handler.handle(f.ctx, *msg)
+		c.Assert(err, IsNil)
+	}
+
+	delivered := quorum(false, gas, 12)
+	inject(delivered)
 	c.Check(f.ethBalance(c), Equals, untouched-gas-1)
-	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
-	c.Check(f.keeper.voter.Tx.Tx.Gas[0].Amount.Uint64(), Equals, gas)
+
+	inject(quorum(true, bounceGas, 13))
+	c.Check(f.ethBalance(c), Equals, untouched-bounceGas)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
+
+	inject(delivered)
+	c.Check(f.ethBalance(c), Equals, untouched-bounceGas)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
 }

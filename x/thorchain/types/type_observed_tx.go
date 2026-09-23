@@ -109,25 +109,11 @@ func (m *ObservedTxVoter) AddOutTx(in common.Tx) bool {
 // AddLatest is Add with a record of which entry the signer filed last, kept per
 // finality level. An entry keeps the signatures it once held forever, so a
 // verdict the network has moved off of could otherwise be tipped back over the
-// supermajority line by a handful of nodes that never observed it. The record
-// also makes a re-observation of a payload the signer has since moved away from
-// a genuine vote rather than a duplicate - a replacement chain can put an
-// outbound back at the height it was first included at, with the same receipt.
-// The signature history itself is left intact: the redundant-variant refund cap
-// counts every variant a signer has ever filed.
-// HasSignedEntry reports whether the signer already signed the voter entry this
-// observation would land on. AddLatest lets a signer move its current vote back
-// onto such an entry, but that re-file is not new work, so it must not earn the
-// redundant-observation refund.
-func (m *ObservedTxVoter) HasSignedEntry(observedTx common.ObservedTx, signer cosmos.AccAddress) bool {
-	for _, transaction := range m.Txs {
-		if transaction.Equals(observedTx) {
-			return transaction.HasSigned(signer)
-		}
-	}
-	return false
-}
-
+// supermajority line by a handful of nodes that never observed it; counting only
+// each signer's current vote prevents that. Like Add there are no take-backs: a
+// signer can never re-file an entry it already signed, even after moving away
+// from it. Quorum attestations sign the payload only, so a re-file is
+// indistinguishable from a proposer replaying the original attestations.
 func (m *ObservedTxVoter) AddLatest(observedTx common.ObservedTx, signer cosmos.AccAddress) bool {
 	idx := -1
 	for i, transaction := range m.Txs {
@@ -136,22 +122,14 @@ func (m *ObservedTxVoter) AddLatest(observedTx common.ObservedTx, signer cosmos.
 			break
 		}
 	}
-	if idx != -1 {
-		recorded, ok := m.LatestVote(signer, observedTx.IsFinal())
-		switch {
-		case ok && recorded == idx:
-			// This is still the signer's current vote: a duplicate.
-			return false
-		case !ok && m.Txs[idx].HasSigned(signer):
-			// A voter from before the record existed: no take-backs, as before.
-			return false
-		}
-	}
-	if idx == -1 {
+	switch {
+	case idx == -1:
 		observedTx.Signers = []string{signer.String()}
 		m.Txs = append(m.Txs, observedTx)
 		idx = len(m.Txs) - 1
-	} else if !m.Txs[idx].HasSigned(signer) {
+	case m.Txs[idx].HasSigned(signer):
+		return false
+	default:
 		m.Txs[idx].Sign(signer)
 	}
 	m.setLatestVote(signer, observedTx.IsFinal(), idx)
