@@ -7,4 +7,8 @@ var (
 	// of the SystemProgram AdvanceNonceAccount instruction used by durable-nonce
 	// transactions (#661).
 	SysVarRecentBlockhashesID = MustPublicKeyFromString("SysvarRecentB1ockHashes11111111111111111111")
+	// SysVarRentID is the Rent sysvar, a required account of the SystemProgram
+	// InitializeNonceAccount and WithdrawNonceAccount instructions used to provision
+	// and close durable-nonce accounts (#661).
+	SysVarRentID = MustPublicKeyFromString("SysvarRent111111111111111111111111111111111")
 )
