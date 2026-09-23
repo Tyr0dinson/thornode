@@ -84,7 +84,4 @@ func TestFrostCancellationResetsStalledFrameRead(t *testing.T) {
 	if stream.resetCount.Load() != 1 || stream.closeCount.Load() != 0 {
 		t.Fatalf("terminal actions reset=%d close=%d, want exactly one reset", stream.resetCount.Load(), stream.closeCount.Load())
 	}
-	if got := parkedStreamCount(comm.streamMgr); got != 0 {
-		t.Fatalf("cancelled FROST stream parked %d streams", got)
-	}
 }

@@ -122,14 +122,13 @@ func TestSuccessfulFrostStreamsFullyCloseOnBothEndpoints(t *testing.T) {
 		host:             receiverHost,
 		subscribers:      make(map[messages.THORChainTSSMessageType]*MessageIDSubscriber),
 		subscriberLocker: &sync.Mutex{},
-		streamMgr:        NewStreamMgr(),
 		stopChan:         make(chan struct{}),
 	}
 	receiver.SetSubscribeWithPeers(topic, msgID, channel, []peer.ID{senderHost.ID()}, FrostMaxSessionPayload, frames)
 	receiverHost.SetStreamHandler(TSSProtocolID, receiver.handleStreamTss)
 	t.Cleanup(func() { receiver.CancelSubscribe(topic, msgID) })
 
-	sender := &Communication{host: senderHost, streamMgr: NewStreamMgr(), stopChan: make(chan struct{})}
+	sender := &Communication{host: senderHost, stopChan: make(chan struct{})}
 	connectCtx, cancelConnect := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelConnect()
 	if err = senderHost.Connect(connectCtx, peer.AddrInfo{ID: receiverHost.ID(), Addrs: receiverHost.Addrs()}); err != nil {

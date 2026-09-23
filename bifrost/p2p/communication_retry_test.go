@@ -109,7 +109,6 @@ func TestFrostWriteFirstAttemptSuccessWritesAndClosesOnce(t *testing.T) {
 	var opens atomic.Int32
 	comm := &Communication{
 		stopChan:  make(chan struct{}),
-		streamMgr: NewStreamMgr(),
 		connectToOnePeerFn: func(peer.ID) (network.Stream, error) {
 			opens.Add(1)
 			return stream, nil
@@ -131,9 +130,6 @@ func TestFrostWriteFirstAttemptSuccessWritesAndClosesOnce(t *testing.T) {
 	if stream.closeCount.Load() != 1 || stream.resetCount.Load() != 0 {
 		t.Fatalf("terminal actions close=%d reset=%d", stream.closeCount.Load(), stream.resetCount.Load())
 	}
-	if got := parkedStreamCount(comm.streamMgr); got != 0 {
-		t.Fatalf("successful FROST write retained %d streams", got)
-	}
 }
 
 func TestFrostEOFDrainFailureDoesNotRetryDeliveredPayload(t *testing.T) {
@@ -143,7 +139,6 @@ func TestFrostEOFDrainFailureDoesNotRetryDeliveredPayload(t *testing.T) {
 	var opens atomic.Int32
 	comm := &Communication{
 		stopChan:  make(chan struct{}),
-		streamMgr: NewStreamMgr(),
 		connectToOnePeerFn: func(peer.ID) (network.Stream, error) {
 			opens.Add(1)
 			return stream, nil
@@ -165,7 +160,7 @@ func TestFrostEOFDrainFailureDoesNotRetryDeliveredPayload(t *testing.T) {
 	}
 }
 
-func TestFrostWriteRetriesFreshStreamsExactBytesAfterRelease(t *testing.T) {
+func TestFrostWriteRetriesFreshStreamsExactBytes(t *testing.T) {
 	closeErr := errors.New("peer close failed")
 	streams := []*retryWriteStream{
 		newRetryWriteStream(),
@@ -177,7 +172,7 @@ func TestFrostWriteRetriesFreshStreamsExactBytesAfterRelease(t *testing.T) {
 	thirdOpen := make(chan struct{})
 	thirdGate := make(chan struct{})
 	var openIndex atomic.Int32
-	comm := &Communication{stopChan: make(chan struct{}), streamMgr: NewStreamMgr()}
+	comm := &Communication{stopChan: make(chan struct{})}
 	comm.connectToOnePeerFn = func(peer.ID) (network.Stream, error) {
 		index := int(openIndex.Add(1)) - 1
 		if index == 2 {
@@ -194,12 +189,11 @@ func TestFrostWriteRetriesFreshStreamsExactBytesAfterRelease(t *testing.T) {
 	result := make(chan retryResult, 1)
 	go func() {
 		attempts, err := comm.writeToStreamWithRetryDelay(
-			peer.ID("remote-peer"), payload, "retry-after-release", 3, time.Millisecond,
+			peer.ID("remote-peer"), payload, "retry-exact-bytes", 3, time.Millisecond,
 		)
 		result <- retryResult{attempts: attempts, err: err}
 	}()
 	waitForTestSignal(t, thirdOpen, "third retry stream")
-	comm.ReleaseStream("retry-after-release")
 	close(thirdGate)
 
 	var got retryResult
@@ -227,9 +221,6 @@ func TestFrostWriteRetriesFreshStreamsExactBytesAfterRelease(t *testing.T) {
 			t.Fatalf("stream %d reset count=%d, want %d", index, stream.resetCount.Load(), wantReset)
 		}
 	}
-	if got := parkedStreamCount(comm.streamMgr); got != 0 {
-		t.Fatalf("retry completion after release retained %d streams", got)
-	}
 }
 
 func TestFrostWriteErrorResetsWithoutTracking(t *testing.T) {
@@ -250,7 +241,6 @@ func TestFrostWriteErrorResetsWithoutTracking(t *testing.T) {
 			test.configure(stream)
 			comm := &Communication{
 				stopChan:  make(chan struct{}),
-				streamMgr: NewStreamMgr(),
 				connectToOnePeerFn: func(peer.ID) (network.Stream, error) {
 					return stream, nil
 				},
@@ -261,9 +251,6 @@ func TestFrostWriteErrorResetsWithoutTracking(t *testing.T) {
 			if stream.closeCount.Load() != 0 || stream.resetCount.Load() != 1 {
 				t.Fatalf("terminal actions close=%d reset=%d", stream.closeCount.Load(), stream.resetCount.Load())
 			}
-			if got := parkedStreamCount(comm.streamMgr); got != 0 {
-				t.Fatalf("failed FROST write retained %d streams", got)
-			}
 		})
 	}
 }
@@ -272,7 +259,6 @@ func TestLegacyWriteSuccessClosesStreamImmediately(t *testing.T) {
 	stream := newRetryWriteStream()
 	comm := &Communication{
 		stopChan:  make(chan struct{}),
-		streamMgr: NewStreamMgr(),
 		connectToOnePeerFn: func(peer.ID) (network.Stream, error) {
 			return stream, nil
 		},
@@ -286,8 +272,8 @@ func TestLegacyWriteSuccessClosesStreamImmediately(t *testing.T) {
 	}
 	// Retaining a written stream until ceremony completion exhausts the
 	// go-libp2p resource manager's stream budget during large keygens.
-	if stream.closeCount.Load() != 1 || stream.resetCount.Load() != 0 || parkedStreamCount(comm.streamMgr) != 0 {
-		t.Fatalf("close=%d reset=%d parked=%d", stream.closeCount.Load(), stream.resetCount.Load(), parkedStreamCount(comm.streamMgr))
+	if stream.closeCount.Load() != 1 || stream.resetCount.Load() != 0 {
+		t.Fatalf("close=%d reset=%d", stream.closeCount.Load(), stream.resetCount.Load())
 	}
 }
 
@@ -298,7 +284,6 @@ func TestFrostWriteShutdownDuringBackoffStopsRetries(t *testing.T) {
 	var opens atomic.Int32
 	comm := &Communication{
 		stopChan:  make(chan struct{}),
-		streamMgr: NewStreamMgr(),
 		connectToOnePeerFn: func(peer.ID) (network.Stream, error) {
 			opens.Add(1)
 			return stream, nil

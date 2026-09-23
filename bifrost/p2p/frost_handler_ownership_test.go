@@ -101,9 +101,6 @@ func TestFrostHandlerDeliversBeforeSlowClose(t *testing.T) {
 	if stream.closeCount.Load() != 1 || stream.resetCount.Load() != 0 {
 		t.Fatalf("terminal actions close=%d reset=%d", stream.closeCount.Load(), stream.resetCount.Load())
 	}
-	if got := parkedStreamCount(comm.streamMgr); got != 0 {
-		t.Fatalf("delivered FROST stream parked %d streams", got)
-	}
 }
 
 // Narrowing and cancellation never touch streams. A handler blocked in
@@ -122,7 +119,6 @@ func TestFrostNarrowingAndCancelDoNoStreamIO(t *testing.T) {
 	comm := &Communication{
 		subscribers:      make(map[messages.THORChainTSSMessageType]*MessageIDSubscriber),
 		subscriberLocker: &sync.Mutex{},
-		streamMgr:        NewStreamMgr(),
 		stopChan:         make(chan struct{}),
 	}
 	// Unbuffered: nobody consumes, so the handler blocks in delivery.
@@ -180,8 +176,5 @@ func TestFrostNarrowingAndCancelDoNoStreamIO(t *testing.T) {
 	waitForTestSignal(t, handled, "handler return")
 	if stream.resetCount.Load() != 1 || stream.closeCount.Load() != 0 {
 		t.Fatalf("terminal actions reset=%d close=%d", stream.resetCount.Load(), stream.closeCount.Load())
-	}
-	if got := parkedStreamCount(comm.streamMgr); got != 0 {
-		t.Fatalf("undelivered FROST stream parked %d streams", got)
 	}
 }

@@ -87,19 +87,6 @@ func TestBroadcastEmptyPeers(t *testing.T) {
 	comm.Broadcast(nil, []byte("hello"), "test", messages.TSSKeyGenMsg)
 }
 
-func TestReleaseStream(t *testing.T) {
-	comm, err := NewCommunication(&Config{Port: 7792, RendezvousString: "test"}, nil, nil)
-	assert.NoError(t, err)
-
-	s := NewMockNetworkStream()
-	comm.streamMgr.AddStream("test-msg", s)
-	comm.ReleaseStream("test-msg")
-
-	// Verify stream was released
-	_, ok := comm.streamMgr.unusedStreams["test-msg"]
-	assert.False(t, ok)
-}
-
 func TestGetPeersWithNoStateManager(t *testing.T) {
 	comm, err := NewCommunication(&Config{
 		Port:             7793,

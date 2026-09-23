@@ -31,7 +31,6 @@ func TestNarrowingWakesRemovedPeersBlockedOnFullQueue(t *testing.T) {
 	comm := &Communication{
 		subscribers:      make(map[messages.THORChainTSSMessageType]*MessageIDSubscriber),
 		subscriberLocker: &sync.Mutex{},
-		streamMgr:        NewStreamMgr(),
 		stopChan:         make(chan struct{}),
 	}
 	queue := make(chan *Message, queueSize)

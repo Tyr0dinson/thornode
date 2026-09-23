@@ -1055,7 +1055,6 @@ func (t *TssServer) FrostKeySign(req FrostKeySignRequest, sidecar FrostSidecarCl
 		for _, subscription := range subscriptions {
 			t.p2pCommunication.CancelSubscribe(subscription.msgType, msgID)
 		}
-		t.p2pCommunication.ReleaseStream(msgID)
 		t.partyCoordinator.ReleaseStream(msgID)
 		close(sigChan)
 	}()

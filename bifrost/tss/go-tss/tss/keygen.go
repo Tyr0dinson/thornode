@@ -69,7 +69,6 @@ func (t *TssServer) Keygen(req keygen.Request) (keygen.Response, error) {
 		t.p2pCommunication.CancelSubscribe(messages.TSSControlMsg, msgID)
 		t.p2pCommunication.CancelSubscribe(messages.TSSTaskDone, msgID)
 
-		t.p2pCommunication.ReleaseStream(msgID)
 		t.partyCoordinator.ReleaseStream(msgID)
 	}()
 	sigChan := make(chan string)
@@ -255,11 +254,9 @@ func (t *TssServer) KeygenAllAlgo(req keygen.Request) ([]keygen.Response, error)
 			t.p2pCommunication.CancelSubscribe(messages.TSSControlMsg, algoMsgID)
 			t.p2pCommunication.CancelSubscribe(messages.TSSTaskDone, algoMsgID)
 
-			t.p2pCommunication.ReleaseStream(algoMsgID)
 			t.partyCoordinator.ReleaseStream(algoMsgID)
 		}
 
-		t.p2pCommunication.ReleaseStream(msgID)
 		t.partyCoordinator.ReleaseStream(msgID)
 	}()
 

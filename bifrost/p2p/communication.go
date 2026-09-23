@@ -261,7 +261,6 @@ type Communication struct {
 	streamCount      int64
 	BroadcastMsgChan chan *messages.BroadcastMsgChan
 	externalAddr     maddr.Multiaddr
-	streamMgr        *StreamMgr
 	nodeGater        *NodeGater // gater to restrict connections to allowed nodes only
 	peerFinder       peerFinder
 
@@ -351,7 +350,6 @@ func NewCommunication(cfg P2PConfig, stateManager *storage.FileStateMgr, bridge 
 		streamCount:      0,
 		BroadcastMsgChan: make(chan *messages.BroadcastMsgChan, 1024),
 		externalAddr:     externalAddr,
-		streamMgr:        NewStreamMgr(),
 	}
 
 	// If bridge is provided, create the node gater
@@ -1094,8 +1092,4 @@ func (c *Communication) ProcessBroadcast() {
 			return
 		}
 	}
-}
-
-func (c *Communication) ReleaseStream(msgID string) {
-	c.streamMgr.ReleaseStream(msgID)
 }

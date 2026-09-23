@@ -78,21 +78,10 @@ func newHandlerCommunicationWithLimit(
 	c := &Communication{
 		subscribers:      make(map[messages.THORChainTSSMessageType]*MessageIDSubscriber),
 		subscriberLocker: &sync.Mutex{},
-		streamMgr:        NewStreamMgr(),
 		stopChan:         make(chan struct{}),
 	}
 	c.SetSubscribeWithPeers(topic, msgID, make(chan *Message, 4), allowed, FrostMaxSessionPayload, maxMessages)
 	return c
-}
-
-func parkedStreamCount(sm *StreamMgr) int {
-	sm.streamLocker.RLock()
-	defer sm.streamLocker.RUnlock()
-	total := 0
-	for _, streams := range sm.unusedStreams {
-		total += len(streams)
-	}
-	return total
 }
 
 // The frame's bounded PREFIX declares the session that preflight authorizes
@@ -310,16 +299,12 @@ func TestHandleStreamTssPeerProtocolErrorsConsumeReservation(t *testing.T) {
 				t.Fatalf("over-limit peer reached the session channel: %q", message.Payload)
 			default:
 			}
-			if got := parkedStreamCount(comm.streamMgr); got != 0 {
-				t.Fatalf("protocol failure left %d streams parked", got)
-			}
 		})
 	}
 }
 
-// A frame rejected in preflight must be RESET, not parked in streamMgr. Parking
-// it would leak the stream: streamMgr only releases streams keyed by a msgID a
-// ceremony later completes, and a rejected frame has no such ceremony.
+// A frame rejected in preflight must be RESET rather than left open: a rejected
+// frame has no ceremony whose completion would ever release its stream.
 func TestHandleStreamTssResetsPreflightRejectedStreamWithoutParkingIt(t *testing.T) {
 	ApplyDeadline.Store(false)
 	t.Cleanup(func() { ApplyDeadline.Store(true) })
@@ -347,9 +332,6 @@ func TestHandleStreamTssResetsPreflightRejectedStreamWithoutParkingIt(t *testing
 
 	if !stream.resetCalled.Load() {
 		t.Fatal("a preflight-rejected stream must be reset")
-	}
-	if got := parkedStreamCount(comm.streamMgr); got != 0 {
-		t.Fatalf("a preflight-rejected stream must not be parked in streamMgr, got %d parked", got)
 	}
 
 	sub := comm.getSubscriber(topic, msgID)
@@ -390,9 +372,6 @@ func TestHandleStreamTssResetsOversizedLengthHeaderWithoutParkingIt(t *testing.T
 
 	if !stream.resetCalled.Load() {
 		t.Fatal("a stream declaring an oversized payload length must be reset")
-	}
-	if got := parkedStreamCount(comm.streamMgr); got != 0 {
-		t.Fatalf("an oversized-length stream must not be parked in streamMgr, got %d parked", got)
 	}
 }
 
@@ -453,9 +432,6 @@ func testHandleStreamTssDeliversAuthorizedFrame(t *testing.T, topic messages.THO
 	}
 	if !stream.closeCalled.Load() {
 		t.Fatal("a delivered frame must release its stream before ceremony completion")
-	}
-	if got := parkedStreamCount(comm.streamMgr); got != 0 {
-		t.Fatalf("a delivered stream must be closed by its handler, not parked: %d", got)
 	}
 	if delivered == nil {
 		t.Fatal("no frame delivered")
