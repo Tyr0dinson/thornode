@@ -1462,23 +1462,25 @@ func (s *Signer) applySpentOutputRefsFromObs(ctx context.Context, tx types.TxOut
 		Str("tx_hash", obs.Tx).
 		Int("refs", len(obs.SpentOutputRefs)).
 		Msg("applying spent output refs from signing observation")
-	applier, ok := chain.(chainclienttypes.SpentOutputRefsApplier)
-	if !ok {
-		// Exact spent refs are an XMR signing invariant. Other clients may carry
-		// future optional metadata, but XMR must never discard the TxOut until
-		// the production sidecar confirms durable import.
-		return !tx.Chain.Equals(common.XMRChain)
-	}
-
 	outcome := make(chan bool, 1)
-	applier.ApplySpentOutputRefsWithOutcome(obsTx, func(applied bool) {
+	onOutcome := func(applied bool) {
 		// The contract is exactly-once, but keep a misbehaving implementation
 		// from blocking its retry goroutine after the signer has timed out.
 		select {
 		case outcome <- applied:
 		default:
 		}
-	})
+	}
+	applier, ok := chain.(chainclienttypes.SpentOutputRefsApplier)
+	if !ok {
+		// Exact spent refs and wire-memo authentication are XMR signing
+		// invariants. Never discard an XMR TxOut without the production hook.
+		return !tx.Chain.Equals(common.XMRChain)
+	}
+	applier.ApplySpentOutputRefsWithOutcome(chainclienttypes.SpentOutputRefsImport{
+		Tx:       obsTx,
+		WireMemo: tx.Memo,
+	}, onOutcome)
 	select {
 	case applied := <-outcome:
 		return applied

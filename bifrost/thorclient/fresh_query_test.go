@@ -1,10 +1,17 @@
 package thorclient
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
+	"time"
+
+	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/constants"
 
 	. "gopkg.in/check.v1"
 )
@@ -24,6 +31,189 @@ func newFreshQueryBridge(c *C, server *httptest.Server) *thorchainBridge {
 	c.Assert(ok, Equals, true)
 	concrete.httpClient.RetryMax = 0
 	return concrete
+}
+
+func (s *FreshQuerySuite) TestFreshSpentRefsBypassesLockedCacheWithoutReplacingIt(c *C) {
+	var requests atomic.Uint32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprintf(w, `{"spent_output_refs":[{"output_index":%d}]}`, requests.Add(1))
+	}))
+	defer server.Close()
+	bridge := newFreshQueryBridge(c, server)
+	vault := common.PubKey("spent-ref-vault")
+	cached, err := bridge.GetXMRSpentOutputRefs(vault)
+	c.Assert(err, IsNil)
+	c.Assert(cached, HasLen, 1)
+	c.Assert(cached[0].OutputIndex, Equals, uint32(1))
+
+	endpoint := bridge.getThorChainURL(fmt.Sprintf(XMRSpentOutputRefsEndpoint, vault.String()))
+	httpResponseCachesMu.Lock()
+	cache := httpResponseCaches[endpoint]
+	httpResponseCachesMu.Unlock()
+	c.Assert(cache, NotNil)
+	func() {
+		cache.httpResponseMu.Lock()
+		defer cache.httpResponseMu.Unlock()
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		type response struct {
+			refs []*common.OutputRef
+			err  error
+		}
+		result := make(chan response, 1)
+		go func() {
+			refs, requestErr := bridge.GetXMRSpentOutputRefsUncached(ctx, vault)
+			result <- response{refs: refs, err: requestErr}
+		}()
+		select {
+		case fresh := <-result:
+			c.Assert(fresh.err, IsNil)
+			c.Assert(fresh.refs, HasLen, 1)
+			c.Assert(fresh.refs[0].OutputIndex, Equals, uint32(2))
+		case <-time.After(2 * time.Second):
+			c.Fatal("fresh spent-ref lookup waited for the shared cache lock")
+		}
+	}()
+
+	stillCached, err := bridge.GetXMRSpentOutputRefs(vault)
+	c.Assert(err, IsNil)
+	c.Assert(stillCached, HasLen, 1)
+	c.Assert(stillCached[0].OutputIndex, Equals, uint32(1))
+	c.Assert(requests.Load(), Equals, uint32(2))
+}
+
+func (s *FreshQuerySuite) TestFreshSpentRefsCancelsStalledHTTP(c *C) {
+	testFreshQueryCancelsStalledHTTP(c, func(ctx context.Context, bridge *thorchainBridge) error {
+		_, err := bridge.GetXMRSpentOutputRefsUncached(ctx, common.PubKey("stalled-ref-vault"))
+		return err
+	})
+}
+
+func (s *FreshQuerySuite) TestFreshOutboundVoterCancelsStalledHTTP(c *C) {
+	testFreshQueryCancelsStalledHTTP(c, func(ctx context.Context, bridge *thorchainBridge) error {
+		_, _, err := bridge.GetObservedTxOutVoterUncached(ctx, strings.Repeat("A", 64))
+		return err
+	})
+}
+
+func testFreshQueryCancelsStalledHTTP(c *C, query func(context.Context, *thorchainBridge) error) {
+	for _, tc := range []struct {
+		name        string
+		flushHeader bool
+		useDeadline bool
+	}{
+		{name: "cancel before headers"},
+		{name: "cancel during body", flushHeader: true},
+		{name: "deadline before headers", useDeadline: true},
+		{name: "deadline during body", flushHeader: true, useDeadline: true},
+	} {
+		func() {
+			started := make(chan struct{})
+			stopped := make(chan struct{})
+			release := make(chan struct{})
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				if tc.flushHeader {
+					w.WriteHeader(http.StatusOK)
+					if flusher, ok := w.(http.Flusher); ok {
+						flusher.Flush()
+					} else {
+						c.Error("test HTTP response writer does not support flushing")
+					}
+				}
+				close(started)
+				select {
+				case <-req.Context().Done():
+				case <-release:
+				}
+				close(stopped)
+			}))
+			defer server.Close()
+			defer close(release)
+			bridge := newFreshQueryBridge(c, server)
+			ctx, cancel := context.WithCancel(context.Background())
+			wantErr := context.Canceled
+			if tc.useDeadline {
+				cancel()
+				ctx, cancel = context.WithTimeout(context.Background(), 200*time.Millisecond)
+				wantErr = context.DeadlineExceeded
+			}
+			defer cancel()
+			result := make(chan error, 1)
+			go func() {
+				result <- query(ctx, bridge)
+			}()
+			select {
+			case <-started:
+			case <-time.After(time.Second):
+				c.Fatalf("%s: HTTP request did not start", tc.name)
+			}
+			if !tc.useDeadline {
+				cancel()
+			}
+			select {
+			case requestErr := <-result:
+				c.Check(errors.Is(requestErr, wantErr), Equals, true, Commentf("%s: %v", tc.name, requestErr))
+			case <-time.After(time.Second):
+				c.Fatalf("%s: stalled HTTP request ignored caller cancellation", tc.name)
+			}
+			select {
+			case <-stopped:
+			case <-time.After(time.Second):
+				c.Fatalf("%s: request returned without canceling the HTTP connection", tc.name)
+			}
+		}()
+	}
+}
+
+func (s *FreshQuerySuite) TestFreshSpentRefsCapsRequestDeadline(c *C) {
+	testFreshQueryCapsRequestDeadline(c, func(ctx context.Context, bridge *thorchainBridge) error {
+		_, err := bridge.GetXMRSpentOutputRefsUncached(ctx, common.PubKey("deadline-ref-vault"))
+		return err
+	})
+}
+
+func (s *FreshQuerySuite) TestFreshOutboundVoterCapsRequestDeadline(c *C) {
+	testFreshQueryCapsRequestDeadline(c, func(ctx context.Context, bridge *thorchainBridge) error {
+		_, _, err := bridge.GetObservedTxOutVoterUncached(ctx, strings.Repeat("A", 64))
+		return err
+	})
+}
+
+func testFreshQueryCapsRequestDeadline(c *C, query func(context.Context, *thorchainBridge) error) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprint(w, `{}`)
+	}))
+	defer server.Close()
+	bridge := newFreshQueryBridge(c, server)
+	transport := bridge.httpClient.HTTPClient.Transport
+	var seenDeadline time.Time
+	bridge.httpClient.HTTPClient.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		var hasDeadline bool
+		seenDeadline, hasDeadline = req.Context().Deadline()
+		c.Assert(hasDeadline, Equals, true)
+		return transport.RoundTrip(req)
+	})
+	for _, parentTimeout := range []time.Duration{0, 2 * constants.ThorchainBlockTime, constants.ThorchainBlockTime / 2} {
+		func() {
+			ctx := context.Background()
+			if parentTimeout > 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, parentTimeout)
+				defer cancel()
+			}
+			before := time.Now()
+			err := query(ctx, bridge)
+			after := time.Now()
+			c.Assert(err, IsNil)
+			if parentTimeout > 0 && parentTimeout < constants.ThorchainBlockTime {
+				parentDeadline, _ := ctx.Deadline()
+				c.Check(seenDeadline.Equal(parentDeadline), Equals, true)
+			} else {
+				c.Check(seenDeadline.Before(before.Add(constants.ThorchainBlockTime)), Equals, false)
+				c.Check(seenDeadline.After(after.Add(constants.ThorchainBlockTime)), Equals, false)
+			}
+		}()
+	}
 }
 
 func (s *FreshQuerySuite) TestFreshVoterBypassesButDoesNotReplaceCache(c *C) {
@@ -75,7 +265,7 @@ func (s *FreshQuerySuite) TestOutboundVoterUsesSeparateCacheAndFreshLookup(c *C)
 	outbound, err := bridge.GetObservedTxOutVoter(txID)
 	c.Assert(err, IsNil)
 	c.Assert(outbound.Height, Equals, int64(22))
-	fresh, found, err := bridge.GetObservedTxOutVoterUncached(txID)
+	fresh, found, err := bridge.GetObservedTxOutVoterUncached(context.Background(), txID)
 	c.Assert(err, IsNil)
 	c.Assert(found, Equals, true)
 	c.Assert(fresh.Height, Equals, int64(33))
@@ -106,7 +296,7 @@ func (s *FreshQuerySuite) TestOutboundVoterQueryFailures(c *C) {
 			_, _ = w.Write([]byte(test.body))
 		}))
 		bridge := newFreshQueryBridge(c, server)
-		voter, found, err := bridge.GetObservedTxOutVoterUncached(txID)
+		voter, found, err := bridge.GetObservedTxOutVoterUncached(context.Background(), txID)
 		c.Assert(err != nil, Equals, test.wantError)
 		c.Assert(found, Equals, false)
 		c.Assert(voter, IsNil)

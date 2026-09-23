@@ -168,11 +168,13 @@ func TestHistoricalXMRSpentRefCertificateInactiveQuorumIsCertificateOnly(t *test
 	bridge.getKeysignFunc = observerTestKeysignFunc(planned)
 
 	applied := make(chan common.ObservedTx, 1)
-	ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx, onOutcome func(bool)) {
+	wireMemos := make(chan string, 1)
+	ag.SetObserverApplySpentOutputRefs(func(request spentOutputRefsImport, onOutcome func(bool)) {
 		if onOutcome != nil {
 			onOutcome(true)
 		}
-		applied <- tx
+		applied <- request.Tx
+		wireMemos <- request.WireMemo
 	})
 
 	// The local process has churned out, but remains a member of the retiring
@@ -194,6 +196,8 @@ func TestHistoricalXMRSpentRefCertificateInactiveQuorumIsCertificateOnly(t *test
 	case got := <-applied:
 		assert.Equal(t, obsTx.Tx.ID, got.Tx.ID)
 		assert.Equal(t, obsTx.SpentOutputRefs, got.SpentOutputRefs)
+		assert.Equal(t, obsTx.Tx.Memo, got.Tx.Memo)
+		assert.Empty(t, <-wireMemos)
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for historical certificate quorum import")
 	}
@@ -226,7 +230,7 @@ func TestHistoricalXMRCertificateRetainsScannerReceiptUntilApplied(t *testing.T)
 	ag.setActiveValidators(nil)
 	bridge.getVaultFunc = observerTestRetiringVaultFunc(obsTx.ObservedPubKey, members...)
 	bridge.getKeysignFunc = observerTestKeysignFunc(planned)
-	ag.SetObserverApplySpentOutputRefs(func(_ common.ObservedTx, onOutcome func(bool)) {
+	ag.SetObserverApplySpentOutputRefs(func(_ spentOutputRefsImport, onOutcome func(bool)) {
 		if onOutcome != nil {
 			onOutcome(true)
 		}
@@ -347,7 +351,7 @@ func TestHistoricalXMRCertificateMixedBatchHandlesEachItemIndependently(t *testi
 		}}, nil
 	}
 	ag.setActiveValidators(nil)
-	ag.SetObserverApplySpentOutputRefs(func(_ common.ObservedTx, onOutcome func(bool)) {
+	ag.SetObserverApplySpentOutputRefs(func(_ spentOutputRefsImport, onOutcome func(bool)) {
 		if onOutcome != nil {
 			onOutcome(true)
 		}
@@ -752,7 +756,8 @@ func TestXMRSpentRefImportRetriesAfterBoundedSaturation(t *testing.T) {
 		first.Tx.ID:  make(chan struct{}),
 		second.Tx.ID: make(chan struct{}),
 	}
-	ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx, onOutcome func(bool)) {
+	ag.SetObserverApplySpentOutputRefs(func(request spentOutputRefsImport, onOutcome func(bool)) {
+		tx := request.Tx
 		started <- tx.Tx.ID
 		<-releases[tx.Tx.ID]
 		if onOutcome != nil {
@@ -760,10 +765,10 @@ func TestXMRSpentRefImportRetriesAfterBoundedSaturation(t *testing.T) {
 		}
 	})
 
-	ag.applySpentRefsAsync(first, nil)
+	ag.applySpentRefsAsync(spentOutputRefsImport{Tx: first}, nil)
 	require.Equal(t, first.Tx.ID, <-started)
 	rejected := make(chan bool, 1)
-	ag.applySpentRefsAsync(second, func(applied bool) { rejected <- applied })
+	ag.applySpentRefsAsync(spentOutputRefsImport{Tx: second}, func(applied bool) { rejected <- applied })
 	require.False(t, <-rejected, "saturation must resolve the callback without leaking a waiter")
 
 	close(releases[first.Tx.ID])
@@ -772,7 +777,7 @@ func TestXMRSpentRefImportRetriesAfterBoundedSaturation(t *testing.T) {
 	// The same exact work can be resubmitted after the overload callback. This
 	// is the path used by a duplicate attestation/reconciliation tick.
 	retried := make(chan bool, 1)
-	ag.applySpentRefsAsync(second, func(applied bool) { retried <- applied })
+	ag.applySpentRefsAsync(spentOutputRefsImport{Tx: second}, func(applied bool) { retried <- applied })
 	require.Equal(t, second.Tx.ID, <-started)
 	close(releases[second.Tx.ID])
 	require.True(t, <-retried)
@@ -799,7 +804,8 @@ func TestObservedXMRSpentRefsReconcileAfterCapacityRejection(t *testing.T) {
 	ag.applySpentRefsSem = make(chan struct{}, 1)
 	ag.applySpentRefsSem <- struct{}{}
 	applied := make(chan common.ObservedTx, 1)
-	ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx, onOutcome func(bool)) {
+	ag.SetObserverApplySpentOutputRefs(func(request spentOutputRefsImport, onOutcome func(bool)) {
+		tx := request.Tx
 		applied <- tx
 		if onOutcome != nil {
 			onOutcome(true)
@@ -847,10 +853,8 @@ func TestCommittedXMRSpentRefsLatchExactPayload(t *testing.T) {
 	}
 	ag.mu.Unlock()
 
-	ag.SetObserverApplySpentOutputRefs(func(_ common.ObservedTx, onOutcome func(bool)) {
-		if onOutcome != nil {
-			onOutcome(true)
-		}
+	ag.SetObserverApplyCommittedSpentRefs(func(context.Context, common.PubKey, common.TxID) (common.ObservedTx, bool) {
+		return exact, true
 	})
 	committed := common.QuorumTx{
 		ObsTx:        exact,
@@ -909,7 +913,8 @@ func TestObservedXMRSpentRefsReconcileBacksOff(t *testing.T) {
 	bridge.getKeysignFunc = observerTestKeysignFunc(planned)
 
 	applied := make(chan common.ObservedTx, 1)
-	ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx, onOutcome func(bool)) {
+	ag.SetObserverApplySpentOutputRefs(func(request spentOutputRefsImport, onOutcome func(bool)) {
+		tx := request.Tx
 		applied <- tx
 		if onOutcome != nil {
 			onOutcome(true)
@@ -959,7 +964,7 @@ func TestObservedXMRSpentRefsReconcileBacksOff(t *testing.T) {
 // eligible states are claimed first.
 func TestObservedXMRSpentRefsReconcileCapsPostFilterWork(t *testing.T) {
 	ag, _, _, _, bridge, _ := setupTestGossip(t)
-	ag.SetObserverApplySpentOutputRefs(func(common.ObservedTx, func(bool)) {})
+	ag.SetObserverApplySpentOutputRefs(func(spentOutputRefsImport, func(bool)) {})
 	base, _ := observerTestXMRPlan(t)
 	signer := secp256k1.GenPrivKey()
 	members := common.PubKeys{
@@ -1027,7 +1032,7 @@ func TestObservedXMRSpentRefsReconcileCapsPostFilterWork(t *testing.T) {
 // cannot accumulate another reconciliation goroutine on the next trigger.
 func TestObservedXMRSpentRefsReconcileSingleFlight(t *testing.T) {
 	ag, _, _, _, bridge, _ := setupTestGossip(t)
-	ag.SetObserverApplySpentOutputRefs(func(common.ObservedTx, func(bool)) {})
+	ag.SetObserverApplySpentOutputRefs(func(spentOutputRefsImport, func(bool)) {})
 	base, _ := observerTestXMRPlan(t)
 	signer := secp256k1.GenPrivKey()
 	members := common.PubKeys{
@@ -1330,7 +1335,7 @@ func TestHistoricalXMRCertificateReconcileBacksOffRPCs(t *testing.T) {
 		return loadVault(pubKey)
 	}
 	bridge.getKeysignFunc = observerTestKeysignFunc(planned)
-	ag.SetObserverApplySpentOutputRefs(func(common.ObservedTx, func(bool)) {})
+	ag.SetObserverApplySpentOutputRefs(func(spentOutputRefsImport, func(bool)) {})
 
 	require.NoError(t, ag.acceptHistoricalXMRSpentRefCertificate(
 		observerTestSignedHistoricalXMRCertificate(t, obsTx, signer),
@@ -1388,7 +1393,8 @@ func TestHistoricalXMRCertificateActiveReceiverReconcilesAfterCapacityRejection(
 	ag.applySpentRefsSem = make(chan struct{}, 1)
 	ag.applySpentRefsSem <- struct{}{}
 	applied := make(chan common.ObservedTx, 1)
-	ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx, onOutcome func(bool)) {
+	ag.SetObserverApplySpentOutputRefs(func(request spentOutputRefsImport, onOutcome func(bool)) {
+		tx := request.Tx
 		applied <- tx
 		if onOutcome != nil {
 			onOutcome(true)

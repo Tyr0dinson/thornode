@@ -77,12 +77,23 @@ type PermanentErrataQuarantiner interface {
 	QuarantinePermanentErrata(errata common.ErrataTx, orphanHeight int64) error
 }
 
+// SpentOutputRefsImport keeps the semantic observation separate from the exact
+// wire metadata authenticated by a chain client. WireMemo may be explicitly
+// empty for vault-certified imports. ChainCommitted internal transactions
+// derive their exact wire memo from Tx because internal memos are never
+// stripped; other committed transactions remain accounting-only imports.
+type SpentOutputRefsImport struct {
+	Tx             common.ObservedTx
+	WireMemo       string
+	ChainCommitted bool
+}
+
 // SpentOutputRefsApplier is the optional XMR durability hook used after a
 // signed outbound exposes its exact consumed outputs. Implementations report
 // the final import outcome exactly once, including after any bounded retries.
 // Callers must retain the outbound until the callback reports success.
 type SpentOutputRefsApplier interface {
-	ApplySpentOutputRefsWithOutcome(tx common.ObservedTx, onOutcome func(applied bool))
+	ApplySpentOutputRefsWithOutcome(request SpentOutputRefsImport, onOutcome func(applied bool))
 }
 
 // CustomKeygenRequest carries common keygen context for chain-specific hooks.

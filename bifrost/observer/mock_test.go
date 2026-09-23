@@ -301,6 +301,17 @@ func (m *MockThorchainBridge) GetObservedTxVoter(txID string) (*stypes.QueryObse
 	return nil, nil
 }
 
+func (m *MockThorchainBridge) GetObservedTxOutVoter(txID string) (*stypes.QueryObservedTxVoter, error) {
+	return m.GetObservedTxVoter(txID)
+}
+
+func (m *MockThorchainBridge) GetObservedTxOutVoterUncached(ctx context.Context, txID string) (*stypes.QueryObservedTxVoter, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
+	return m.GetObservedTxVoterUncached(txID)
+}
+
 func (m *MockThorchainBridge) GetObservedTxVoterUncached(txID string) (*stypes.QueryObservedTxVoter, bool, error) {
 	if m.getObservedTxVoterFreshFunc != nil {
 		return m.getObservedTxVoterFreshFunc(txID)
@@ -492,6 +503,17 @@ func (m *MockThorchainBridge2) GetObservedTxVoter(txID string) (*stypes.QueryObs
 		return m.getObservedTxVoterFunc(txID)
 	}
 	return nil, nil
+}
+
+func (m *MockThorchainBridge2) GetObservedTxOutVoter(txID string) (*stypes.QueryObservedTxVoter, error) {
+	return m.GetObservedTxVoter(txID)
+}
+
+func (m *MockThorchainBridge2) GetObservedTxOutVoterUncached(ctx context.Context, txID string) (*stypes.QueryObservedTxVoter, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
+	return m.GetObservedTxVoterUncached(txID)
 }
 
 func (m *MockThorchainBridge2) GetObservedTxVoterUncached(txID string) (*stypes.QueryObservedTxVoter, bool, error) {

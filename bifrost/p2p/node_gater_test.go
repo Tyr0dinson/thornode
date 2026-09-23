@@ -1,6 +1,7 @@
 package p2p
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -220,13 +221,23 @@ func (m *MockThorchainBridge) GetObservedTxOutVoter(txID string) (*types.QueryOb
 	return m.GetObservedTxVoter(txID)
 }
 
-func (m *MockThorchainBridge) GetObservedTxOutVoterUncached(txID string) (*types.QueryObservedTxVoter, bool, error) {
+func (m *MockThorchainBridge) GetObservedTxOutVoterUncached(ctx context.Context, txID string) (*types.QueryObservedTxVoter, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
 	voter, err := m.GetObservedTxVoter(txID)
 	return voter, voter != nil, err
 }
 
 func (m *MockThorchainBridge) GetXMRSpentOutputRefs(vaultPubKey common.PubKey) ([]*common.OutputRef, error) {
 	return nil, nil
+}
+
+func (m *MockThorchainBridge) GetXMRSpentOutputRefsUncached(ctx context.Context, vaultPubKey common.PubKey) ([]*common.OutputRef, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return m.GetXMRSpentOutputRefs(vaultPubKey)
 }
 
 func (m *MockThorchainBridge) GetBlockTimestamp(height int64) (time.Time, error) {

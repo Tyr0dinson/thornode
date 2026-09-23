@@ -58,6 +58,7 @@ type historicalXMRCertificateVaultCacheEntry struct {
 
 type historicalXMRCertificatePlanCacheEntry struct {
 	expiresAt time.Time
+	wireMemo  string
 }
 
 // historicalXMRCertificateRPCControl contains only process-wide RPC state. A
@@ -224,36 +225,39 @@ func validateHistoricalXMRCertificateVault(vaultPubKey common.PubKey, vault thor
 	return nil
 }
 
-// historicalXMRCertificatePlan caches only a successful exact-payload match.
+// historicalXMRCertificatePlan caches only a successful exact-payload match,
+// including the exact planned wire memo needed by a later sidecar import.
 // Scanner lag and RPC errors therefore remain retryable under the rate limit.
 // The caller must hold one certificate RPC slot.
 func (s *AttestationGossip) historicalXMRCertificatePlan(
 	payloadHash [sha256.Size]byte,
 	obsTx common.ObservedTx,
-) bool {
+) (string, bool) {
 	now := time.Now()
 	s.mu.Lock()
 	control := s.historicalXMRCertificateRPCControlLocked()
 	entry, ok := control.planCache[payloadHash]
 	if ok && now.Before(entry.expiresAt) {
 		s.mu.Unlock()
-		return true
+		return entry.wireMemo, true
 	}
 	delete(control.planCache, payloadHash)
 	s.mu.Unlock()
 
-	if !s.observedXMRMatchesPlannedOutbound(obsTx) {
-		return false
+	wireMemo, ok := s.plannedXMRWireMemo(obsTx)
+	if !ok {
+		return "", false
 	}
 	s.mu.Lock()
 	control = s.historicalXMRCertificateRPCControlLocked()
 	if _, exists := control.planCache[payloadHash]; exists || len(control.planCache) < maxHistoricalXMRCertificateRPCCacheEntries {
 		control.planCache[payloadHash] = historicalXMRCertificatePlanCacheEntry{
 			expiresAt: time.Now().Add(s.historicalXMRCertificateRPCCacheTTL()),
+			wireMemo:  wireMemo,
 		}
 	}
 	s.mu.Unlock()
-	return true
+	return wireMemo, true
 }
 
 // validateHistoricalXMRSpentRefCertificate is the admission boundary for the
@@ -327,7 +331,7 @@ func (s *AttestationGossip) validateHistoricalXMRSpentRefCertificate(
 			bifrosttypes.ErrObservedTxNotApplicable,
 		)
 	}
-	if !s.historicalXMRCertificatePlan(payloadHash, tx.ObsTx) {
+	if _, ok := s.historicalXMRCertificatePlan(payloadHash, tx.ObsTx); !ok {
 		return empty, common.AttestTx{}, fmt.Errorf("historical certificate does not match a planned outbound")
 	}
 
@@ -430,13 +434,17 @@ func (s *AttestationGossip) tryApplyHistoricalXMRSpentRefCertificate(payloadHash
 	// the lookup to this certificate's exact observation instead of scanning
 	// every live observation bucket.
 	attestations = append(attestations, s.observedXMRPayloadAttestations(obsTx, payloadHash)...)
-	if !s.shouldApplyHistoricalXMRSpentRefsFromAttestations(obsTx, payloadHash, attestations) {
+	wireMemo, ok := s.shouldApplyHistoricalXMRSpentRefsFromAttestations(obsTx, payloadHash, attestations)
+	if !ok {
 		return
 	}
 
 	conflictKey := xmrSpentRefsConflictKeyFor(obsTx)
 	identity := xmrSpentRefsIdentity(obsTx.SpentOutputRefs)
-	s.applySpentRefsAsync(obsTx, func(applied bool) {
+	s.applySpentRefsAsync(spentOutputRefsImport{
+		Tx:       obsTx,
+		WireMemo: wireMemo,
+	}, func(applied bool) {
 		if applied {
 			s.markHistoricalXMRSpentRefCertificateApplied(payloadHash)
 			s.markXMRSpentRefsAppliedByPayload(obsTx, payloadHash)
@@ -451,14 +459,14 @@ func (s *AttestationGossip) shouldApplyHistoricalXMRSpentRefsFromAttestations(
 	obsTx common.ObservedTx,
 	payloadHash [sha256.Size]byte,
 	attestations []*common.Attestation,
-) bool {
+) (string, bool) {
 	if len(attestations) == 0 || s.bridge == nil {
-		return false
+		return "", false
 	}
 	releaseRPC, err := s.acquireHistoricalXMRCertificateRPC()
 	if err != nil {
 		s.logger.Debug().Err(err).Msg("defer historical xmr spent refs: RPC capacity exhausted")
-		return false
+		return "", false
 	}
 	defer releaseRPC()
 	vault, err := s.historicalXMRCertificateVault(obsTx.ObservedPubKey)
@@ -466,7 +474,7 @@ func (s *AttestationGossip) shouldApplyHistoricalXMRSpentRefsFromAttestations(
 		s.logger.Debug().Err(err).
 			Str("vault", obsTx.ObservedPubKey.String()).
 			Msg("skip historical xmr spent refs: cannot load source vault")
-		return false
+		return "", false
 	}
 	memberAttestations, membershipSize, ok := sourceVaultAttestationQuorumForMembership(
 		vault.Membership,
@@ -479,16 +487,20 @@ func (s *AttestationGossip) shouldApplyHistoricalXMRSpentRefsFromAttestations(
 			Int("source_vault_attestations", memberAttestations).
 			Int("source_vault_members", membershipSize).
 			Msg("skip historical xmr spent refs: source vault quorum not reached")
-		return false
+		return "", false
 	}
-	if !s.historicalXMRCertificatePlan(payloadHash, obsTx) {
+	wireMemo, ok := s.historicalXMRCertificatePlan(payloadHash, obsTx)
+	if !ok {
 		s.logger.Debug().
 			Str("tx_id", obsTx.Tx.ID.String()).
 			Str("memo", obsTx.Tx.Memo).
 			Msg("skip historical xmr spent refs: observed outbound does not match planned txout")
-		return false
+		return "", false
 	}
-	return s.rememberAuthorizedXMRSpentRefs(obsTx)
+	if !s.rememberAuthorizedXMRSpentRefs(obsTx) {
+		return "", false
+	}
+	return wireMemo, true
 }
 
 func (s *AttestationGossip) historicalXMRSpentRefCertificateSnapshot(

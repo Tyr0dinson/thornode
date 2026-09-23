@@ -1,6 +1,7 @@
 package tss
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -154,7 +155,10 @@ func (m *mockBridgeForKeysign) GetObservedTxOutVoter(txID string) (*stypes.Query
 	return m.GetObservedTxVoter(txID)
 }
 
-func (m *mockBridgeForKeysign) GetObservedTxOutVoterUncached(txID string) (*stypes.QueryObservedTxVoter, bool, error) {
+func (m *mockBridgeForKeysign) GetObservedTxOutVoterUncached(ctx context.Context, txID string) (*stypes.QueryObservedTxVoter, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
 	voter, err := m.GetObservedTxVoter(txID)
 	return voter, voter != nil, err
 }
@@ -162,6 +166,14 @@ func (m *mockBridgeForKeysign) GetObservedTxOutVoterUncached(txID string) (*styp
 func (m *mockBridgeForKeysign) GetXMRSpentOutputRefs(common.PubKey) ([]*common.OutputRef, error) {
 	return nil, nil
 }
+
+func (m *mockBridgeForKeysign) GetXMRSpentOutputRefsUncached(ctx context.Context, vaultPubKey common.PubKey) ([]*common.OutputRef, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return m.GetXMRSpentOutputRefs(vaultPubKey)
+}
+
 func (m *mockBridgeForKeysign) WaitToCatchUp() error { return nil }
 func (m *mockBridgeForKeysign) GetBlockHeight() (int64, error) {
 	return m.blockHeight, m.blockErr
