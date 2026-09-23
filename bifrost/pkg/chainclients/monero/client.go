@@ -808,7 +808,7 @@ func (c *Client) catchupSpentOutputRefs() {
 					Msg("xmr catchup: mark-spent did not verify every referenced output")
 				continue
 			}
-			if markSignedErr := c.markImportedXMROutboundSigned(obsTx); markSignedErr != nil {
+			if markSignedErr := c.markImportedXMROutboundSigned(obsTx, true); markSignedErr != nil {
 				c.logger.Error().Err(markSignedErr).
 					Str("tx_hash", obsTx.Tx.ID.String()).
 					Msg("xmr catchup: failed to update signer cache")
@@ -2750,7 +2750,7 @@ func (c *Client) applySpentOutputRefsOnce(tx common.ObservedTx) (bool, bool) {
 	if !verifiedXMRMarkSpentResult(result, len(refs)) {
 		return false, false
 	}
-	if err = c.markImportedXMROutboundSigned(tx); err != nil {
+	if err = c.markImportedXMROutboundSigned(tx, false); err != nil {
 		c.logger.Warn().Err(err).Str("tx_hash", txHash).Msg("refuse to commit unauthenticated xmr spent-ref import")
 		return false, false
 	}
@@ -2772,7 +2772,7 @@ func (c *Client) applySpentOutputRefsOnce(tx common.ObservedTx) (bool, bool) {
 	return true, false
 }
 
-func (c *Client) markImportedXMROutboundSigned(tx common.ObservedTx) error {
+func (c *Client) markImportedXMROutboundSigned(tx common.ObservedTx, thorchainSourced bool) error {
 	vaultAddress := common.Address(c.deriveVaultAddress(tx.ObservedPubKey))
 	if vaultAddress.String() == "" {
 		return errors.New("cannot authenticate imported xmr fulfillment without a derived vault address")
@@ -2787,13 +2787,27 @@ func (c *Client) markImportedXMROutboundSigned(tx common.ObservedTx) error {
 	// Neither local signing metadata nor peer-supplied final-looking heights are
 	// authoritative finality. Preserve a matching exact signed artifact; keep
 	// the conservative duplicate-payment barrier for unknown/different results.
-	// OnObservedTxInDurable alone owns authoritative observation transitions.
+	// OnObservedTxInDurable owns authoritative observation transitions, except
+	// that THORChain-sourced catch-up keeps its final transition: a node that
+	// never observes the transaction itself would otherwise keep reusable
+	// aliases (consolidation, wire-memoless) committed-unfinalized forever.
+	finalized := thorchainSourced && tx.BlockHeight > 0 && tx.FinaliseHeight > 0 && tx.IsFinal()
 	recordExact := func(observeKey, ownerVault, txHash string) error {
-		_, _, recordErr := c.signedTxPayloadStore.ImportVerifiedExact(observeKey, ownerVault, txHash)
+		var recordErr error
+		if finalized {
+			_, _, recordErr = c.signedTxPayloadStore.CompleteObservedExact(observeKey, ownerVault, txHash)
+		} else {
+			_, _, recordErr = c.signedTxPayloadStore.ImportVerifiedExact(observeKey, ownerVault, txHash)
+		}
 		return recordErr
 	}
 	recordLogical := func(logicalHash string, observeKeys []string, txHash string) error {
-		_, _, recordErr := c.signedTxPayloadStore.ImportVerifiedLogical(logicalHash, observeKeys, txHash)
+		var recordErr error
+		if finalized {
+			_, _, recordErr = c.signedTxPayloadStore.CompleteObservedLogical(logicalHash, observeKeys, txHash)
+		} else {
+			_, _, recordErr = c.signedTxPayloadStore.ImportVerifiedLogical(logicalHash, observeKeys, txHash)
+		}
 		return recordErr
 	}
 	m, err := memo.ParseMemo(common.LatestVersion, tx.Tx.Memo)

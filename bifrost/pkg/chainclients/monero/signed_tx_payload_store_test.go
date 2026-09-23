@@ -327,7 +327,7 @@ func TestXMRMemolessLogicalIdentitySurvivesVaultReschedule(t *testing.T) {
 		newVault,
 		100, // Peer-provided final-looking heights are not authoritative finality.
 	)
-	if err = client.markImportedXMROutboundSigned(winner); err != nil {
+	if err = client.markImportedXMROutboundSigned(winner, false); err != nil {
 		t.Fatalf("record verified new-vault fulfillment: %v", err)
 	}
 	if _, _, err = store.GetOwned(plan.CacheVault, plan.CacheHash, plan.LogicalHash); !errors.Is(err, errXMRSigningClaimCommitted) {
@@ -407,7 +407,7 @@ func TestXMRRagnarokSpentRefImportRetainsExactClaimWithoutInboundTxID(t *testing
 		vaultPubKey,
 		110,
 	)
-	if err = client.markImportedXMROutboundSigned(observed); err != nil {
+	if err = client.markImportedXMROutboundSigned(observed, false); err != nil {
 		t.Fatalf("record verified RAGNAROK fulfillment: %v", err)
 	}
 	if _, found, getErr := store.GetOwned(plan.CacheVault, plan.CacheHash, plan.LogicalHash); getErr != nil || !found {
