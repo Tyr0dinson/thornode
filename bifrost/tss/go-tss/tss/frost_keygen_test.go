@@ -1,6 +1,8 @@
 package tss
 
 import (
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strconv"
@@ -16,6 +18,68 @@ import (
 	tcommon "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/common"
 	thorchaintypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
+
+// Exercise the server entry point, not only the coordinator, so a reintroduced
+// legacy version dispatch cannot silently prevent FROST from forming a party.
+func TestFrostKeygenJoinsWithoutThorchainVersion(t *testing.T) {
+	ensureBech32Prefix()
+	encodedKey, err := base64.StdEncoding.DecodeString(testPriKeyArr[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := hex.DecodeString(string(encodedKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	comm, err := p2p.NewCommunication(&p2p.Config{Port: 0, RendezvousString: "frost-version-test"}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = comm.Start(key); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := comm.Stop(); err != nil {
+			t.Error(err)
+		}
+	}()
+	party := p2p.NewPartyCoordinator(comm.GetHost(), time.Second)
+	defer party.Stop()
+	server := &TssServer{p2pCommunication: comm, partyCoordinator: party, localNodePubKey: testPubKeys[0]}
+	sidecar := &mockFrostSidecarKeygen{
+		round1Resp:   FrostSidecarDKGRound1Resp{Commitments: "commitment"},
+		round2Resp:   FrostSidecarDKGRound2Resp{EncryptedShares: map[string]string{}},
+		round3Resp:   FrostSidecarDKGRound3Resp{Address: "48xmrsinglesigner", GroupKey: strings.Repeat("cd", 32)},
+		finalizeResp: FrostSidecarDKGFinalizeResp{Success: true, KeyBytesHex: "abcd"},
+		chainHeight:  123,
+	}
+	resp, err := server.FrostKeygen(FrostKeygenRequest{
+		VaultPubKey: "thorpub-single", SignerPubKeys: []string{testPubKeys[0]},
+		BlockHeight: 100,
+	}, sidecar)
+	if err != nil || resp.Status != tcommon.Success || len(sidecar.round1Reqs) != 1 {
+		t.Fatalf("FROST keygen without version failed: err=%v response=%+v", err, resp)
+	}
+}
+
+func TestFrostKeygenExecuteFailsOnSidecarDKGError(t *testing.T) {
+	members := []string{testPubKeys[0]}
+	_, _, signerByNormalized, err := buildParticipantIndex(members)
+	if err != nil {
+		t.Fatal(err)
+	}
+	active, err := buildActiveSet(members, signerByNormalized)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sidecar := &mockFrostSidecarKeygen{round1Err: errors.New("sidecar unavailable")}
+	coord := newTestFrostKeygenCoordinator(testPubKeys[0], "sidecar-error", newFrostKeygenInbox(), time.Second)
+	coord.sidecar = sidecar
+	resp := coord.Execute(FrostKeygenRequest{VaultPubKey: "vault", SignerPubKeys: members}, active, nil)
+	if resp.Status != tcommon.Fail || len(sidecar.round1Reqs) != 1 || len(sidecar.round2Reqs) != 0 || len(sidecar.finalizeReqs) != 0 {
+		t.Fatalf("sidecar DKG failure was not terminal for local execution: %+v", resp)
+	}
+}
 
 type mockFrostSidecarKeygen struct {
 	round1Reqs   []FrostSidecarDKGRound1Req

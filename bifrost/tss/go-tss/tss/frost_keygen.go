@@ -433,11 +433,12 @@ func (t *TssServer) FrostKeygen(req FrostKeygenRequest, sidecar FrostSidecarKeyg
 		close(sigChan)
 	}()
 
-	onlinePeers, _, errJoinParty := t.joinParty(
+	// FROST has no legacy leadless ceremony. Enter the leader protocol directly
+	// so a missing THORChain version cannot prevent an otherwise valid join.
+	onlinePeers, _, errJoinParty := t.partyCoordinator.JoinPartyWithLeader(
 		msgID,
-		req.Version,
 		req.BlockHeight,
-		req.SignerPubKeys,
+		peerIDsToStrings(allowedPeerIDs),
 		frostKeygenJoinThreshold(len(req.SignerPubKeys)),
 		sigChan,
 	)

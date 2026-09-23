@@ -813,13 +813,6 @@ func (s *Signer) runCustomKeygenHooks(
 	poolPubKey common.PubKey,
 	poolPubKeyEddsa common.PubKey,
 ) (common.PubKey, common.PubKey, string, int64, error) {
-	version := ""
-	if v, err := s.thorchainBridge.GetThorchainVersion(); err != nil {
-		s.logger.Debug().Err(err).Msg("fail to fetch thorchain version for custom keygen")
-	} else {
-		version = v.String()
-	}
-
 	var customHookErr error
 	effectivePoolPubKeyEddsa := poolPubKeyEddsa
 	var frostPoolPubKey common.PubKey
@@ -835,11 +828,10 @@ func (s *Signer) runCustomKeygenHooks(
 		}
 
 		result, err := custom.Keygen(chainclienttypes.CustomKeygenRequest{
-			Members:          keys,
-			BlockHeight:      blockHeight,
-			ThorchainVersion: version,
-			PoolPubKey:       poolPubKey,
-			PoolPubKeyEddsa:  effectivePoolPubKeyEddsa,
+			Members:         keys,
+			BlockHeight:     blockHeight,
+			PoolPubKey:      poolPubKey,
+			PoolPubKeyEddsa: effectivePoolPubKeyEddsa,
 		})
 		if err != nil {
 			s.logger.Error().Err(err).Str("chain", chainID.String()).Msg("custom keygen failed")

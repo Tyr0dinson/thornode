@@ -98,11 +98,10 @@ type SpentOutputRefsApplier interface {
 
 // CustomKeygenRequest carries common keygen context for chain-specific hooks.
 type CustomKeygenRequest struct {
-	Members          []string
-	BlockHeight      int64
-	ThorchainVersion string
-	PoolPubKey       common.PubKey
-	PoolPubKeyEddsa  common.PubKey
+	Members         []string
+	BlockHeight     int64
+	PoolPubKey      common.PubKey
+	PoolPubKeyEddsa common.PubKey
 }
 
 // CustomKeygenResult carries the chain-specific outputs from a custom keygen

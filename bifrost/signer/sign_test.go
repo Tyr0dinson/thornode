@@ -662,21 +662,20 @@ func (b *spentRefApplyingChainClient) ApplySpentOutputRefsWithOutcome(
 
 type MockCustomKeygenChainClient struct {
 	*MockChainClient
-	mu            sync.Mutex
-	called        bool
-	callCount     int
-	calledKeys    []string
-	calledHeight  int64
-	calledVersion string
-	calledPoolPK  common.PubKey
-	calledPoolED  common.PubKey
-	retAddress    common.Address
-	retPoolED     common.PubKey
-	retPoolFrost  common.PubKey
-	retBlame      []types2.Blame
-	retErr        error
-	results       []chainclienttypes.CustomKeygenResult
-	errs          []error
+	mu           sync.Mutex
+	called       bool
+	callCount    int
+	calledKeys   []string
+	calledHeight int64
+	calledPoolPK common.PubKey
+	calledPoolED common.PubKey
+	retAddress   common.Address
+	retPoolED    common.PubKey
+	retPoolFrost common.PubKey
+	retBlame     []types2.Blame
+	retErr       error
+	results      []chainclienttypes.CustomKeygenResult
+	errs         []error
 }
 
 func (m *MockCustomKeygenChainClient) CustomKeygen() bool { return true }
@@ -689,7 +688,6 @@ func (m *MockCustomKeygenChainClient) Keygen(req chainclienttypes.CustomKeygenRe
 	m.callCount++
 	m.calledKeys = append([]string(nil), req.Members...)
 	m.calledHeight = req.BlockHeight
-	m.calledVersion = req.ThorchainVersion
 	m.calledPoolPK = req.PoolPubKey
 	m.calledPoolED = req.PoolPubKeyEddsa
 	if len(m.results) >= m.callCount {
@@ -1126,8 +1124,7 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 }
 
 func (s *SignSuite) TestRunCustomKeygenHooks(c *C) {
-	bridge := fakeBridge{s.bridge}
-
+	// Even a non-XMR custom-hook dispatch needs no bridge/version query.
 	custom := &MockCustomKeygenChainClient{
 		MockChainClient: &MockChainClient{},
 	}
@@ -1136,8 +1133,7 @@ func (s *SignSuite) TestRunCustomKeygenHooks(c *C) {
 		chains: map[common.Chain]chainclients.ChainClient{
 			common.ETHChain: custom,
 		},
-		thorchainBridge: bridge,
-		logger:          log.With().Str("module", "signer").Logger(),
+		logger: log.With().Str("module", "signer").Logger(),
 	}
 
 	poolPK := types2.GetRandomPubKey()
@@ -1147,7 +1143,6 @@ func (s *SignSuite) TestRunCustomKeygenHooks(c *C) {
 
 	c.Assert(custom.called, Equals, true)
 	c.Assert(custom.calledHeight, Equals, int64(1234))
-	c.Assert(custom.calledVersion, Equals, "1.0.0")
 	c.Assert(custom.calledPoolPK.Equals(poolPK), Equals, true)
 	c.Assert(custom.calledPoolED.IsEmpty(), Equals, true)
 	c.Assert(updatedPoolED.IsEmpty(), Equals, true)
@@ -1202,7 +1197,8 @@ func (s *SignSuite) TestRunCustomKeygenHooksCarriesFrostPubKeyWithoutOverride(c 
 }
 
 func (s *SignSuite) TestRunCustomKeygenHooksClearsEddsaForXMRFrostKeygen(c *C) {
-	bridge := fakeBridge{s.bridge}
+	// A nil bridge makes any accidental pre-join version lookup fail this
+	// test; FROST keygen must not need that API to start its custom hook.
 	frost := types2.GetRandomPubKey()
 	custom := &MockCustomKeygenChainClient{
 		MockChainClient: &MockChainClient{},
@@ -1213,8 +1209,7 @@ func (s *SignSuite) TestRunCustomKeygenHooksClearsEddsaForXMRFrostKeygen(c *C) {
 		chains: map[common.Chain]chainclients.ChainClient{
 			common.XMRChain: custom,
 		},
-		thorchainBridge: bridge,
-		logger:          log.With().Str("module", "signer").Logger(),
+		logger: log.With().Str("module", "signer").Logger(),
 	}
 
 	poolPK := types2.GetRandomPubKey()

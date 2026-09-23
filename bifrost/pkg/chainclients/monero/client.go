@@ -3567,10 +3567,9 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult
 		return types.CustomKeygenResult{}, fmt.Errorf("tss server is not initialized")
 	}
 
-	xmrHeight, heightErr := c.GetHeight()
-	if heightErr != nil || xmrHeight <= 0 {
-		return types.CustomKeygenResult{}, fmt.Errorf("xmr keygen requires synced monero node (height: %d): %w", xmrHeight, heightErr)
-	}
+	// Join before querying height: round 3 collects the birthday-height quorum
+	// and treats an unavailable local height as an abstention. A preflight RPC
+	// only adds node-specific join delay; actual sidecar DKG failures still fail.
 
 	members := make([]string, 0, len(req.Members))
 	for _, member := range req.Members {
@@ -3583,19 +3582,11 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult
 		return types.CustomKeygenResult{}, fmt.Errorf("xmr keygen requires non-empty member set")
 	}
 	requestedVaultKey := monovaultKeygenLabel(req.BlockHeight, req.PoolPubKey, members)
-	version := strings.TrimSpace(req.ThorchainVersion)
-	if version == "" && c.thorchainBridge != nil {
-		chainVersion, versionErr := c.thorchainBridge.GetThorchainVersion()
-		if versionErr == nil {
-			version = chainVersion.String()
-		}
-	}
 
 	frostResp, err := c.tssServer.FrostKeygen(tssp.FrostKeygenRequest{
 		VaultPubKey:   requestedVaultKey,
 		SignerPubKeys: members,
 		BlockHeight:   req.BlockHeight,
-		Version:       version,
 	}, sidecar.NewFrostAdapter(c.sidecar))
 	if err != nil {
 		c.logFailClosedCoordination("frost_tss_keygen", err)
