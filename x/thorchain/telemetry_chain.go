@@ -306,6 +306,12 @@ func emitChainDetailTelemetry(ctx cosmos.Context, mgr Manager) {
 		ctx.Logger().Error("fail to list validators for chain detail telemetry", "error", err)
 	}
 	vMgr := mgr.ValidatorMgr()
+	// The pending ADR set is the same for every node, so derive it once for the preflight
+	// check below. Fail open like markReadyActors: telemetry must not stop on a store error.
+	pendingADR, err := pendingADRVotes(ctx, k)
+	if err != nil {
+		ctx.Logger().Error("fail to get pending ADR votes for chain detail telemetry", "error", err)
+	}
 	for _, node := range nodes {
 		// cosmos.AccAddress.String() is a mutex-guarded LRU lookup that bech32
 		// encodes on a miss; it was previously called once per node per chain
@@ -367,7 +373,7 @@ func emitChainDetailTelemetry(ctx cosmos.Context, mgr Manager) {
 		// computes exactly this and discards it. The error is only the human-readable
 		// reason - the returned status is valid on every path - so it is deliberately
 		// dropped rather than exposed as a label. Up to 4 store reads per node.
-		preflight, _ := vMgr.NodeAccountPreflightCheck(ctx, node, mgr.GetConstants())
+		preflight, _ := vMgr.NodeAccountPreflightCheck(ctx, node, pendingADR)
 		// Zero-write every reachable status so a node moving between them clears its
 		// old series immediately. NodeActive is never returned by this function; a
 		// node that churns in stops being written here at all, and its last series
