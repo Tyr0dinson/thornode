@@ -531,6 +531,12 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 						},
 					)
 
+					// Track the keygen blame for every blamed node; only the
+					// escalated penalties below are limited to non-active nodes.
+					if errInc := h.mgr.Keeper().IncrementKeygenBlame(ctx, na.NodeAddress); errInc != nil {
+						ctx.Logger().Error("fail to increment keygen blame", "error", errInc)
+					}
+
 					if na.Status == NodeActive {
 						failedKeygenSlashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
 							telemetry.NewLabel("reason", "failed_keygen"),
@@ -543,11 +549,6 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 							ctx.Logger().Error("fail to emit slash point event")
 						}
 					} else {
-						// Track the keygen blame per node
-						if errInc := h.mgr.Keeper().IncrementKeygenBlame(ctx, na.NodeAddress); errInc != nil {
-							ctx.Logger().Error("fail to increment keygen blame", "error", errInc)
-						}
-
 						// Calculate escalated penalties based on blame history
 						mult, errMult := h.mgr.Keeper().CalculateKeygenPenaltyMultiplier(ctx, na.NodeAddress)
 						if errMult != nil {

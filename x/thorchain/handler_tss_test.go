@@ -2667,3 +2667,61 @@ func (s *HandlerTssSuite) TestKeygenFailEscalationMath(c *C) {
 	c.Check(naAfter.Bond.Equal(expectedBond), Equals, true,
 		Commentf("expected %s, got %s", expectedBond.String(), naAfter.Bond.String()))
 }
+
+func (s *HandlerTssSuite) TestKeygenFailRecordsBlameForActiveNode(c *C) {
+	helper := newTssHandlerTestHelper(c)
+	handler := NewTssHandler(NewDummyMgrWithKeeper(helper.keeper))
+	verifySecp256K1Signature = func(_ common.PubKey, _ []byte) error { return nil }
+
+	blamedPK := helper.members[3]
+	blamedAddr, err := blamedPK.GetThorAddress()
+	c.Assert(err, IsNil)
+	blamedNode := GetRandomValidatorNode(NodeActive)
+	blamedNode.NodeAddress = blamedAddr
+	blamedNode.Bond = cosmos.NewUint(10000 * common.One)
+	c.Assert(helper.keeper.SetNodeAccount(helper.ctx, blamedNode), IsNil)
+
+	b := Blame{
+		FailReason: "test active blame",
+		BlameNodes: []Node{{Pubkey: blamedPK.String()}},
+	}
+	tssMsg, err := NewMsgTssPoolV2(
+		helper.members.Strings(), GetRandomPubKey(), []byte("fakeSignature"), nil,
+		AsgardKeygen, helper.ctx.BlockHeight(), []Blame{b},
+		common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer,
+		1024, GetRandomPubKey(), nil, nil, common.EmptyPubKey,
+	)
+	c.Assert(err, IsNil)
+
+	voter, err := helper.keeper.GetTssVoter(helper.ctx, tssMsg.ID)
+	c.Assert(err, IsNil)
+	for _, pk := range helper.members {
+		addr, errPK := pk.GetThorAddress()
+		c.Assert(errPK, IsNil)
+		if addr.Equals(helper.signer) {
+			continue
+		}
+		voter.Signers = append(voter.Signers, addr.String())
+	}
+	helper.keeper.SetTssVoter(helper.ctx, voter)
+
+	_, err = handler.Run(helper.ctx, tssMsg)
+	c.Assert(err, IsNil)
+
+	// Blame is recorded for the active node.
+	record, err := helper.keeper.GetNodeBlameRecord(helper.ctx, blamedAddr)
+	c.Assert(err, IsNil)
+	c.Check(record.KeygenBlameCountSinceChurn, Equals, int64(1))
+	c.Check(record.KeygenBlameCountTotal, Equals, int64(1))
+
+	// Active nodes get slash points only: no escalated jail or bond slash.
+	slashPoints, err := helper.keeper.GetNodeAccountSlashPoints(helper.ctx, blamedAddr)
+	c.Assert(err, IsNil)
+	c.Check(slashPoints >= helper.constAccessor.GetInt64Value(constants.FailKeygenSlashPoints), Equals, true)
+	jail, err := helper.keeper.GetNodeAccountJail(helper.ctx, blamedAddr)
+	c.Assert(err, IsNil)
+	c.Check(jail.ReleaseHeight, Equals, int64(0))
+	naAfter, err := helper.keeper.GetNodeAccount(helper.ctx, blamedAddr)
+	c.Assert(err, IsNil)
+	c.Check(naAfter.Bond.Equal(cosmos.NewUint(10000*common.One)), Equals, true)
+}
