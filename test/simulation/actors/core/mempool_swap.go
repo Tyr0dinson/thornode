@@ -940,15 +940,7 @@ func (a *MempoolSwapSimulationActor) scenarioTORCapFallback(config *OpConfig) (e
 		}
 	}()
 
-	swap, err := a.startSwap(config, "tor-cap-fallback", common.POLAsset, mempoolCumulativeProfileTarget, 2_000, "")
-	if err != nil {
-		return err
-	}
-	defer swap.release()
-	if err = a.assertNoSpeculativeWindow(swap, cosmos.ZeroUint(), 2); err != nil {
-		return err
-	}
-	return a.waitForL1Completion(swap, cosmos.ZeroUint())
+	return a.runExcludedSwap(config, "tor-cap-fallback")
 }
 
 func (a *MempoolSwapSimulationActor) scenarioPoolCapFallback(config *OpConfig) (err error) {
@@ -961,15 +953,39 @@ func (a *MempoolSwapSimulationActor) scenarioPoolCapFallback(config *OpConfig) (
 		}
 	}()
 
-	swap, err := a.startSwap(config, "pool-cap-fallback", common.POLAsset, mempoolCumulativeProfileTarget, 2_000, "")
+	return a.runExcludedSwap(config, "pool-cap-fallback")
+}
+
+// runExcludedSwap proves a cap-excluded swap stays inert until finality. A
+// collapsed pre-finality window proves nothing, so the abandoned swap is still
+// verified to settle and the proof retries on a fresh swap.
+func (a *MempoolSwapSimulationActor) runExcludedSwap(config *OpConfig, label string) error {
+	var err error
+	for attempt := 1; attempt <= mempoolMemolessWindowAttempts; attempt++ {
+		err = a.runExcludedSwapAttempt(config, label)
+		if !errors.Is(err, errMempoolMissedWindow) {
+			return err
+		}
+		a.Log().Warn().Err(err).Int("attempt", attempt).Str("scenario", label).
+			Msg("POL finality outran the pre-finality window; retrying on a fresh swap")
+	}
+	return err
+}
+
+func (a *MempoolSwapSimulationActor) runExcludedSwapAttempt(config *OpConfig, label string) error {
+	swap, err := a.startSwap(config, label, common.POLAsset, mempoolCumulativeProfileTarget, 2_000, "")
 	if err != nil {
 		return err
 	}
 	defer swap.release()
-	if err = a.assertNoSpeculativeWindow(swap, cosmos.ZeroUint(), 2); err != nil {
+	err = a.assertNoSpeculativeWindow(swap, cosmos.ZeroUint(), 2)
+	if err != nil && !errors.Is(err, errMempoolMissedWindow) {
 		return err
 	}
-	return a.waitForL1Completion(swap, cosmos.ZeroUint())
+	if settleErr := a.waitForL1Completion(swap, cosmos.ZeroUint()); settleErr != nil {
+		return settleErr
+	}
+	return err
 }
 
 func (a *MempoolSwapSimulationActor) scenarioTimeoutRollback(config *OpConfig) (err error) {
@@ -1189,65 +1205,61 @@ func (a *MempoolSwapSimulationActor) assertNoSpeculativeWindow(swap *mempoolLive
 	}); err != nil {
 		return err
 	}
-	startHeight, err := thornode.GetBlockHeight()
-	if err != nil {
-		return err
-	}
-	deadline := time.Now().Add(30 * time.Second)
-	for {
-		if time.Now().After(deadline) {
-			return fmt.Errorf("timed out proving excluded swap %s stayed inert for %d blocks", swap.txID, blocks)
+	// Query errors retry until the deadline; only a violated invariant is
+	// terminal, so one slow API response on a loaded runner does not fail the
+	// scenario.
+	var startHeight int64
+	return waitForMempoolCondition(fmt.Sprintf("excluded swap %s to stay inert for %d blocks", swap.txID, blocks), 30*time.Second, func() (bool, error) {
+		if err := requireMempoolSwapUnfinalized(swap.txID); err != nil {
+			return false, err
 		}
-		if err = requireMempoolSwapUnfinalized(swap.txID); err != nil {
-			return err
-		}
-		usage, queryErr := thornode.GetMempoolSwapUsageTOR()
-		if queryErr != nil {
-			return queryErr
+		usage, err := thornode.GetMempoolSwapUsageTOR()
+		if err != nil {
+			return false, err
 		}
 		if !usage.Equal(expectedUsage) {
-			return fmt.Errorf("excluded swap %s changed TOR usage: expected %s, got %s", swap.txID, expectedUsage, usage)
+			return false, stopMempoolWait(fmt.Errorf("excluded swap %s changed TOR usage: expected %s, got %s", swap.txID, expectedUsage, usage))
 		}
-		if has, queryErr := mempoolHasStagedOutbound(swap.txID); queryErr != nil || has {
-			if queryErr != nil {
-				return queryErr
+		if has, err := mempoolHasStagedOutbound(swap.txID); err != nil || has {
+			if err != nil {
+				return false, err
 			}
-			return fmt.Errorf("excluded swap %s created a staged outbound", swap.txID)
+			return false, stopMempoolWait(fmt.Errorf("excluded swap %s created a staged outbound", swap.txID))
 		}
-		if has, queryErr := mempoolHasRealOutbound(swap.txID); queryErr != nil || has {
-			if queryErr != nil {
-				return queryErr
+		if has, err := mempoolHasRealOutbound(swap.txID); err != nil || has {
+			if err != nil {
+				return false, err
 			}
-			return fmt.Errorf("excluded swap %s released an outbound", swap.txID)
+			return false, stopMempoolWait(fmt.Errorf("excluded swap %s released an outbound", swap.txID))
 		}
-		if exists, queryErr := mempoolSwapQueueExists(swap.txID); queryErr != nil || exists {
-			if queryErr != nil {
-				return queryErr
+		if exists, err := mempoolSwapQueueExists(swap.txID); err != nil || exists {
+			if err != nil {
+				return false, err
 			}
-			return fmt.Errorf("excluded swap %s entered a swap queue", swap.txID)
+			return false, stopMempoolWait(fmt.Errorf("excluded swap %s entered a swap queue", swap.txID))
 		}
-		destination, queryErr := mempoolDestinationBalance(swap)
-		if queryErr != nil {
-			return queryErr
+		destination, err := mempoolDestinationBalance(swap)
+		if err != nil {
+			return false, err
 		}
 		if !destination.Equal(swap.destinationStart) {
-			return fmt.Errorf("excluded swap %s credited destination before finality", swap.txID)
+			return false, stopMempoolWait(fmt.Errorf("excluded swap %s credited destination before finality", swap.txID))
 		}
 		if err = requireMempoolPoolBalances(map[common.Asset]cosmos.Uint{
 			swap.from: swap.fromPoolStart,
 			swap.to:   swap.toPoolStart,
 		}); err != nil {
-			return err
+			return false, err
 		}
-		height, queryErr := thornode.GetBlockHeight()
-		if queryErr != nil {
-			return queryErr
+		height, err := thornode.GetBlockHeight()
+		if err != nil {
+			return false, err
 		}
-		if height >= startHeight+blocks {
-			return nil
+		if startHeight == 0 {
+			startHeight = height
 		}
-		time.Sleep(mempoolWaitInterval)
-	}
+		return height >= startHeight+blocks, nil
+	})
 }
 
 func (a *MempoolSwapSimulationActor) waitForL1Completion(swap *mempoolLiveSwap, expectedUsage cosmos.Uint) error {
@@ -1643,7 +1655,7 @@ func requireMempoolSwapUnfinalized(txID string) error {
 	if !observed {
 		stages, queryErr := thornode.GetTxStages(txID)
 		if queryErr == nil && stages.InboundFinalised != nil && stages.InboundFinalised.Completed {
-			return stopMempoolWait(fmt.Errorf("missed required pre-finality window for %s", txID))
+			return stopMempoolWait(fmt.Errorf("%w for %s", errMempoolMissedWindow, txID))
 		}
 	}
 	return nil
@@ -1655,7 +1667,7 @@ func mempoolSwapObservedUnfinalized(txID string) (bool, error) {
 		return false, err
 	}
 	if stages.InboundFinalised != nil && stages.InboundFinalised.Completed {
-		return false, stopMempoolWait(fmt.Errorf("missed required pre-finality window for %s", txID))
+		return false, stopMempoolWait(fmt.Errorf("%w for %s", errMempoolMissedWindow, txID))
 	}
 	return stages.InboundObserved.Completed, nil
 }
@@ -1768,7 +1780,7 @@ func requireMempoolPoolBalances(expected map[common.Asset]cosmos.Uint) error {
 			return err
 		}
 		if !current.Equal(amount) {
-			return fmt.Errorf("pool %s asset balance changed: expected %s, got %s", asset.GetLayer1Asset(), amount, current)
+			return stopMempoolWait(fmt.Errorf("pool %s asset balance changed: expected %s, got %s", asset.GetLayer1Asset(), amount, current))
 		}
 	}
 	return nil
@@ -1783,6 +1795,10 @@ func mempoolTxIDsEqual(a, b string) bool {
 type mempoolStopWaitError struct {
 	err error
 }
+
+// errMempoolMissedWindow marks a POL finality that outran the sim's first
+// observation, which proves nothing about the lifecycle under test.
+var errMempoolMissedWindow = errors.New("missed required pre-finality window")
 
 func (e mempoolStopWaitError) Error() string { return e.err.Error() }
 func (e mempoolStopWaitError) Unwrap() error { return e.err }

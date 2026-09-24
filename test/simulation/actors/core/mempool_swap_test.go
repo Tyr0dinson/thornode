@@ -2,9 +2,11 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	openapi "gitlab.com/thorchain/thornode/v3/openapi/gen"
@@ -294,5 +296,27 @@ func TestMempoolErrataConsensusThreshold(t *testing.T) {
 		if actual := mempoolErrataConsensusThreshold(total); actual != expected {
 			t.Fatalf("validator count %d: expected threshold %d, got %d", total, expected, actual)
 		}
+	}
+}
+
+func TestMempoolMissedWindowSurvivesTerminalWait(t *testing.T) {
+	t.Parallel()
+
+	missed := stopMempoolWait(fmt.Errorf("%w for tx", errMempoolMissedWindow))
+	err := waitForMempoolCondition("missed", time.Second, func() (bool, error) { return false, missed })
+	if !errors.Is(err, errMempoolMissedWindow) {
+		t.Fatalf("terminal missed window lost its sentinel: %v", err)
+	}
+
+	calls := 0
+	err = waitForMempoolCondition("transient", 5*time.Second, func() (bool, error) {
+		calls++
+		if calls == 1 {
+			return false, errors.New("context deadline exceeded")
+		}
+		return true, nil
+	})
+	if err != nil || calls != 2 {
+		t.Fatalf("transient error did not retry: calls=%d err=%v", calls, err)
 	}
 }
