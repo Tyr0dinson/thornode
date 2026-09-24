@@ -626,37 +626,6 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 					ctx.Logger().Error("fail to emit keygen failure event")
 				}
 			}
-
-			// Emit blame summary event showing all nodes with keygen blames since churn
-			var blameSummary []NodeBlameDetail
-			iter := h.mgr.Keeper().GetNodeBlameIterator(ctx)
-			defer iter.Close()
-			for ; iter.Valid(); iter.Next() {
-				var record NodeBlameRecord
-				if err := h.mgr.Keeper().Cdc().Unmarshal(iter.Value(), &record); err != nil {
-					ctx.Logger().Error("fail to unmarshal node blame record", "error", err)
-					continue
-				}
-
-				// Include if has KEYGEN blames since churn
-				if record.KeygenBlameCountSinceChurn > 0 {
-					blameSummary = append(blameSummary, NodeBlameDetail{
-						NodeAddress:                record.NodeAddress,
-						KeygenBlameCountSinceChurn: record.KeygenBlameCountSinceChurn,
-					})
-				}
-			}
-
-			// Sort by keygen blame count (highest to lowest)
-			sort.Slice(blameSummary, func(i, j int) bool {
-				return blameSummary[i].KeygenBlameCountSinceChurn > blameSummary[j].KeygenBlameCountSinceChurn
-			})
-
-			if len(blameSummary) > 0 {
-				if err := h.mgr.EventMgr().EmitEvent(ctx, NewEventKeygenBlameSummary(ctx.BlockHeight(), blameSummary)); err != nil {
-					ctx.Logger().Error("fail to emit keygen blame summary event")
-				}
-			}
 		}
 	}
 
