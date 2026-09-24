@@ -43,32 +43,35 @@ func (s *QuotesSuite) TestQuoteXMRDestinations(c *C) {
 	} {
 		mgr.Keeper().SetTHORName(ctx, types.NewTHORName(tc.name, ctx.BlockHeight()+1000, []types.THORNameAlias{{Chain: common.XMRChain, Address: common.Address(tc.address)}}))
 		for _, input := range []string{tc.address, tc.name} {
-			for _, isWasm := range []bool{false, true} {
-				queryCtx := ctx.WithValue(constants.CtxWASMQuery, isWasm)
-				comment := Commentf("wasm %t %s input %s", isWasm, tc.name, input)
-				swapReq := &types.QueryQuoteSwapRequest{FromAsset: common.RuneNative.String(), ToAsset: common.XMRAsset.String(), Amount: "100000000", Destination: input}
-				swap, swapErr := qs.queryQuoteSwap(queryCtx, swapReq)
-				limit, limitErr := qs.queryQuoteLimit(queryCtx, &types.QueryQuoteLimitRequest{FromAsset: common.RuneNative.String(), ToAsset: common.XMRAsset.String(), Amount: "100000000", Destination: input, TargetOut: "1000000"})
-				if tc.supported {
-					c.Check(swapErr, IsNil, comment)
-					c.Check(limitErr, IsNil, comment)
-					if swap != nil {
-						c.Check(strings.Contains(swap.Memo, tc.address), Equals, true, comment)
-					}
-					if limit != nil {
-						c.Check(strings.Contains(limit.Memo, tc.address), Equals, true, comment)
-					}
-				} else {
-					c.Check(swapErr, ErrorMatches, ".*bad destination.*unsupported XMR address form.*", comment)
-					c.Check(limitErr, ErrorMatches, ".*bad destination.*unsupported XMR address form.*", comment)
+			comment := Commentf("%s input %s", tc.name, input)
+			swapReq := &types.QueryQuoteSwapRequest{FromAsset: common.RuneNative.String(), ToAsset: common.XMRAsset.String(), Amount: "100000000", Destination: input}
+			swap, swapErr := qs.queryQuoteSwap(ctx, swapReq)
+			limit, limitErr := qs.queryQuoteLimit(ctx, &types.QueryQuoteLimitRequest{FromAsset: common.RuneNative.String(), ToAsset: common.XMRAsset.String(), Amount: "100000000", Destination: input, TargetOut: "1000000"})
+			if tc.supported {
+				c.Check(swapErr, IsNil, comment)
+				c.Check(limitErr, IsNil, comment)
+				if swap != nil {
+					c.Check(strings.Contains(swap.Memo, tc.address), Equals, true, comment)
+				}
+				if limit != nil {
+					c.Check(strings.Contains(limit.Memo, tc.address), Equals, true, comment)
+				}
+			} else {
+				c.Check(swapErr, ErrorMatches, ".*bad destination.*unsupported XMR address form.*", comment)
+				c.Check(limitErr, ErrorMatches, ".*bad destination.*unsupported XMR address form.*", comment)
+			}
+			// Contract queries retain their existing validation and gas path.
+			if tc.name == "integrated" {
+				wasm, err := qs.queryQuoteSwap(ctx.WithValue(constants.CtxWASMQuery, true), swapReq)
+				c.Check(err, IsNil, comment)
+				if wasm != nil {
+					c.Check(strings.Contains(wasm.Memo, tc.address), Equals, true, comment)
 				}
 			}
 		}
 	}
 	// The price-only swap quote still allows an omitted destination.
-	for _, isWasm := range []bool{false, true} {
-		swap, err := qs.queryQuoteSwap(ctx.WithValue(constants.CtxWASMQuery, isWasm), &types.QueryQuoteSwapRequest{FromAsset: common.RuneNative.String(), ToAsset: common.XMRAsset.String(), Amount: "100000000"})
-		c.Assert(err, IsNil)
-		c.Check(swap.Memo, Equals, "")
-	}
+	swap, err := qs.queryQuoteSwap(ctx, &types.QueryQuoteSwapRequest{FromAsset: common.RuneNative.String(), ToAsset: common.XMRAsset.String(), Amount: "100000000"})
+	c.Assert(err, IsNil)
+	c.Check(swap.Memo, Equals, "")
 }

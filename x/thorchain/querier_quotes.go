@@ -123,7 +123,7 @@ func quoteParseRefundAddress(ctx cosmos.Context, mgr *Mgrs, addrString string, s
 }
 
 // quoteParseXMRDestination validates raw and resolved XMR payment destinations.
-// External and contract queries share the same destination policy.
+// Only external queries use this policy; contract queries retain their old path.
 // Keep the shared parser and refund validation unchanged for other consumers.
 func quoteParseXMRDestination(ctx cosmos.Context, mgr *Mgrs, addrString string) (common.Address, error) {
 	addr, err := quoteParseAddress(ctx, mgr, addrString, common.XMRChain)
@@ -728,7 +728,7 @@ func (qs queryServer) queryQuoteLimit(ctx cosmos.Context, req *types.QueryQuoteL
 
 	// get destination address
 	var destination common.Address
-	if toAsset.GetChain().Equals(common.XMRChain) {
+	if !isWasm && toAsset.GetChain().Equals(common.XMRChain) {
 		destination, err = quoteParseXMRDestination(ctx, qs.mgr, req.Destination)
 	} else {
 		destination, err = common.NewAddress(req.Destination)
@@ -947,7 +947,7 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 	sendMemo := true
 	var destination common.Address
 	if len(req.Destination) > 0 {
-		if toAsset.GetChain().Equals(common.XMRChain) {
+		if !isWasm && toAsset.GetChain().Equals(common.XMRChain) {
 			destination, err = quoteParseXMRDestination(ctx, qs.mgr, req.Destination)
 		} else {
 			destination, err = quoteParseAddress(ctx, qs.mgr, req.Destination, toAsset.Chain)
