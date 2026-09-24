@@ -92,7 +92,11 @@ func (s *SignCoverageSuite) TestUnsupportedDestinationPreservesSignerEvidence(c 
 func (c *destinationChainClient) IsBlockScannerHealthy() bool { return true }
 
 func (c *destinationChainClient) CanSkipUnsupportedXMRDestination(tx types.TxOutItem) (bool, error) {
-	return c.ChainClient.(*monero.Client).CanSkipUnsupportedXMRDestination(tx)
+	client, ok := c.ChainClient.(*monero.Client)
+	if !ok {
+		return false, fmt.Errorf("destination test requires a Monero client")
+	}
+	return client.CanSkipUnsupportedXMRDestination(tx)
 }
 
 func (c *destinationChainClient) SignTx(tx types.TxOutItem, height int64) ([]byte, []byte, *types.TxInItem, error) {
