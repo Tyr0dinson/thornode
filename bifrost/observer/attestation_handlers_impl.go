@@ -73,7 +73,7 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 		// Every entry in this state signed the same exact observation/ref set.
 		// Copy while holding the state lock so the authorization step can count
 		// a stable source-vault certificate after the lock is released.
-		maybeApplySpentRefsAttestations = state.AttestationsCopy()
+		maybeApplySpentRefsAttestations = state.VerifiedAttestationsCopy()
 	}
 
 	// Observation quorum is independent of the keysign committee. Even future

@@ -576,15 +576,16 @@ func (s *AttestationGossip) visitObservedXMRPayloadStates(
 	}
 }
 
-// observedXMRPayloadAttestations returns uncommitted ordinary attestations for
-// the certificate's exact signed payload across both observation routes.
+// observedXMRPayloadAttestations returns all verified ordinary attestations,
+// including committed shares, for the certificate's exact signed payload across
+// both observation routes.
 func (s *AttestationGossip) observedXMRPayloadAttestations(
 	obsTx common.ObservedTx,
 	payloadHash [sha256.Size]byte,
 ) []*common.Attestation {
 	var attestations []*common.Attestation
 	s.visitObservedXMRPayloadStates(obsTx, payloadHash, func(state *AttestationState[*attestableObservedTx]) {
-		attestations = append(attestations, state.AttestationsCopy()...)
+		attestations = append(attestations, state.VerifiedAttestationsCopy()...)
 	})
 	return attestations
 }
@@ -908,7 +909,7 @@ func (s *AttestationGossip) reconcilePendingObservedXMRSpentRefs(ctx context.Con
 	for _, retry := range due {
 		state := retry.state
 		state.mu.Lock()
-		attestations := state.AttestationsCopy()
+		attestations := state.VerifiedAttestationsCopy()
 		if len(attestations) > 0 {
 			delay := state.spentRefsRetryDelay
 			if delay <= 0 {

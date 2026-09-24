@@ -205,7 +205,7 @@ func (s *AttestationState[T]) UnsentAttestations() []*common.Attestation {
 	return unsent
 }
 
-// AttestationsCopy returns a deep copy of all attestations
+// AttestationsCopy returns deep copies of uncommitted attestations only.
 func (s *AttestationState[T]) AttestationsCopy() []*common.Attestation {
 	atts := make([]*common.Attestation, 0, len(s.attestations))
 	for _, item := range s.attestations {
@@ -213,6 +213,20 @@ func (s *AttestationState[T]) AttestationsCopy() []*common.Attestation {
 			// skip committed attestations
 			continue
 		}
+		atts = append(atts, &common.Attestation{
+			PubKey:    append([]byte(nil), item.attestation.PubKey...),
+			Signature: append([]byte(nil), item.attestation.Signature...),
+		})
+	}
+	return atts
+}
+
+// VerifiedAttestationsCopy returns deep copies of every verified attestation,
+// including committed shares. Use it for proof and authority checks, not
+// delivery bookkeeping. The caller must hold the state lock.
+func (s *AttestationState[T]) VerifiedAttestationsCopy() []*common.Attestation {
+	atts := make([]*common.Attestation, 0, len(s.attestations))
+	for _, item := range s.attestations {
 		atts = append(atts, &common.Attestation{
 			PubKey:    append([]byte(nil), item.attestation.PubKey...),
 			Signature: append([]byte(nil), item.attestation.Signature...),
@@ -259,6 +273,15 @@ func (s *AttestationState[T]) ShouldSendLate(minTimeBetweenAttestations time.Dur
 
 // ExpiredAfterQuorum determines if the attestation state can be pruned
 func (s *AttestationState[T]) ExpiredAfterQuorum(lateObserveTimeout, nonQuorumTimeout time.Duration) bool {
+	if observed, ok := any(s.Item).(*attestableObservedTx); ok && observed != nil && observed.ObservedTx != nil &&
+		!observed.inbound && observed.Tx.Chain.Equals(common.XMRChain) && len(observed.SpentOutputRefs) > 0 && !s.spentRefsApplied {
+		// Delivery or commitment does not complete source-vault authorization.
+		// Ordinary shares are not archived in the historical certificate store,
+		// so retain pending proof through retries, with an absolute lifetime that
+		// later sends and commits cannot extend.
+		return time.Since(s.firstAttestationObserved) > nonQuorumTimeout
+	}
+
 	if !s.lastAttestationsSent.IsZero() && time.Since(s.lastAttestationsSent) > nonQuorumTimeout {
 		// we haven't received a new attestation in a long time, stop tracking this item
 		return true
