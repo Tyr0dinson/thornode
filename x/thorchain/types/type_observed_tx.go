@@ -349,10 +349,19 @@ func (m *ObservedTxVoter) getConsensusTx(accounts NodeAccounts, final bool, idx 
 			}
 			for _, signer := range txIn.Signers {
 				slot := idx.signerSlot(signer)
-				if slot >= 0 && !idx.voted[slot] {
-					idx.voted[slot] = true
-					voters++
+				if slot < 0 || idx.voted[slot] {
+					continue
 				}
+				// Count only the signer's current vote (see AddLatest); a signer
+				// with none recorded (every Add-only voter) counts where it signed.
+				if len(m.LatestVotes) > 0 {
+					addr, _ := common.SignerAddressString(signer)
+					if latest, ok := m.LatestVote(cosmos.AccAddress(addr), final); ok && !sameConsensusObservation(txFinal, m.Txs[latest]) {
+						continue
+					}
+				}
+				idx.voted[slot] = true
+				voters++
 			}
 		}
 		if HasSuperMajority(voters, len(accounts)) {

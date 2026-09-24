@@ -1675,6 +1675,44 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionIgnoresAbandonedMi
 	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
 }
 
+// TestHandleBounceFinalisationIgnoresAbandonedVotes is the same abandoned
+// minority, but before the finalised consensus exists: the non-final -> final
+// hand-off must pick its verdict from current votes too, or three abandoned
+// final bounce votes plus one straggler finalise a bounce only one node holds.
+func (s *HandlerObservedTxOutSuite) TestHandleBounceFinalisationIgnoresAbandonedVotes(c *C) {
+	const (
+		untouched   = uint64(20000000000) // 200 ETH
+		gasOnly     = untouched - 37500
+		gasAndCoins = gasOnly - 1
+	)
+
+	f := newBouncedOutboundFixture(c, 6)
+	for i := 0; i < 4; i++ {
+		f.voteAt(c, i, false, 12, 13) // non-final delivered consensus: debited
+	}
+	c.Check(f.ethBalance(c), Equals, gasAndCoins)
+
+	// three nodes report a final bounce, then change their minds
+	for i := 0; i < 3; i++ {
+		f.voteAt(c, i, true, 13, 13)
+		f.voteAt(c, i, false, 14, 14)
+	}
+	// a fourth reports the bounce: four historical signers, one current vote
+	f.voteAt(c, 3, true, 13, 13)
+	c.Check(f.keeper.voter.FinalisedHeight, Equals, int64(0))
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
+	c.Check(f.ethBalance(c), Equals, gasAndCoins)
+
+	// the delivered verdict still finalises once a supermajority holds it
+	for i := 3; i < 6; i++ {
+		f.voteAt(c, i, false, 14, 14)
+	}
+	c.Check(f.keeper.voter.FinalisedHeight > 0, Equals, true)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
+	c.Check(f.ethBalance(c), Equals, gasAndCoins)
+	c.Check(f.securityEvents(), Equals, 0)
+}
+
 // TestHandleBounceCorrectionEarlyDeliveryVoteDoesNotBlockQuorum: one honest node
 // observes the re-delivery before the bounce reaches consensus. Its early vote is
 // the only one at that inclusion height when the bounce correction lands, and it
