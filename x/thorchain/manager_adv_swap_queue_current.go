@@ -327,7 +327,9 @@ func (vm *SwapQueueAdv) isSwapReady(ctx cosmos.Context, msg MsgSwap) bool {
 			return false
 		}
 		vault, err := vm.k.GetVault(ctx, record.VaultPubKey)
-		if err != nil || vault.Status == InactiveVault {
+		// A finalized stream has already credited its inbound; retiring that
+		// vault and migrating its funds must not cancel the remaining slices.
+		if err != nil || (vault.Status == InactiveVault && record.Status != types.MempoolSwapStatus_FINALIZED) {
 			return false
 		}
 		if voterErr != nil || voter.IsEmpty() || voter.Reverted {

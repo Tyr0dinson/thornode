@@ -985,19 +985,6 @@ func (s *SlasherImpl) recoverDueMempoolSwaps(ctx cosmos.Context, mgr Manager, si
 			continue
 		}
 
-		observedVault, vaultErr := s.keeper.GetVault(ctx, record.VaultPubKey)
-		if vaultErr != nil {
-			ctx.Logger().Error("fail to get observed vault for mempool swap recovery", "error", vaultErr, "hash", record.TxId)
-			s.rescheduleMempoolSwapRecovery(ctx, record, signingTransPeriod, false)
-			continue
-		}
-		if observedVault.Status == InactiveVault {
-			if err = s.rollbackFinalizedMempoolSwapRecovery(ctx, mgr, voter, record); err != nil {
-				s.rescheduleMempoolSwapRecovery(ctx, record, signingTransPeriod, true)
-			}
-			continue
-		}
-
 		if record.Status == types.MempoolSwapStatus_FINALIZED {
 			if s.keeper.HasAdvSwapQueueItem(ctx, record.TxId, int(record.Index)) {
 				// Healthy finalized queue work is governed by the queue's own
@@ -1015,6 +1002,19 @@ func (s *SlasherImpl) recoverDueMempoolSwaps(ctx cosmos.Context, mgr Manager, si
 			if err = finishFinalizedMempoolSwapSettlementAtomic(ctx, mgr, record.TxId, record.Index); err != nil {
 				ctx.Logger().Error("fail to finish orphaned finalized mempool swap tombstone", "error", err, "hash", record.TxId)
 				s.rescheduleMempoolSwapRecovery(ctx, record, signingTransPeriod, false)
+			}
+			continue
+		}
+
+		observedVault, vaultErr := s.keeper.GetVault(ctx, record.VaultPubKey)
+		if vaultErr != nil {
+			ctx.Logger().Error("fail to get observed vault for mempool swap recovery", "error", vaultErr, "hash", record.TxId)
+			s.rescheduleMempoolSwapRecovery(ctx, record, signingTransPeriod, false)
+			continue
+		}
+		if observedVault.Status == InactiveVault {
+			if err = s.rollbackFinalizedMempoolSwapRecovery(ctx, mgr, voter, record); err != nil {
+				s.rescheduleMempoolSwapRecovery(ctx, record, signingTransPeriod, true)
 			}
 			continue
 		}

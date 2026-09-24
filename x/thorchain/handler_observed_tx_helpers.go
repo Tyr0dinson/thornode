@@ -1049,6 +1049,18 @@ func processMempoolSwapVaultRecoveryBatch(ctx cosmos.Context, k keeper.Keeper, m
 	}
 
 	for _, record := range records {
+		voter, voterErr := k.GetObservedTxInVoter(ctx, record.TxId)
+		compromised := isCompromisedMempoolSwapVault(ctx, k, record)
+		if voterErr == nil && !voter.IsEmpty() && !voter.Reverted && voter.FinalisedHeight > 0 &&
+			record.Status == types.MempoolSwapStatus_FINALIZED && !compromised {
+			// Finality already accepted this deposit. The funds can migrate to a
+			// new vault while the stream continues, and the due worker still owns
+			// cleanup of orphaned tombstones. Skipped records must advance the
+			// cursor so they cannot starve later recovery work.
+			cursor = record.Cursor()
+			k.SetMempoolSwapVaultRecovery(ctx, vaultPubKey, cursor)
+			continue
+		}
 		// Persist the stop marker before attempting rollback. If rollback fails,
 		// queue execution remains disabled and the due worker retries after one
 		// signing period. UpdatedHeight intentionally remains the last real swap
@@ -1058,14 +1070,13 @@ func processMempoolSwapVaultRecoveryBatch(ctx cosmos.Context, k keeper.Keeper, m
 		if setErr := k.SetMempoolSwap(ctx, record); setErr != nil {
 			ctx.Logger().Error("fail to mark inactive-vault mempool swap for rollback", "error", setErr, "hash", record.TxId)
 		} else {
-			voter, voterErr := k.GetObservedTxInVoter(ctx, record.TxId)
 			switch {
 			case voterErr != nil || voter.IsEmpty():
 				if voterErr == nil {
 					voterErr = fmt.Errorf("observed tx voter is empty")
 				}
 				ctx.Logger().Error("fail to load inactive-vault mempool swap voter", "error", voterErr, "hash", record.TxId)
-			case isCompromisedMempoolSwapVault(ctx, k, record):
+			case compromised:
 				if cancelErr := cancelCompromisedVaultMempoolSwap(ctx, mgr, voter); cancelErr != nil {
 					ctx.Logger().Error("fail to cancel compromised-vault mempool swap", "error", cancelErr, "hash", record.TxId)
 				}
