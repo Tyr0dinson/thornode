@@ -252,6 +252,12 @@ func adrMimirSignerPriority(ctx cosmos.Context, k keeper.Keeper, msg MsgMimir) (
 			continue
 		case NodeStandby, NodeReady:
 			allActive = false
+			// A non-active node's vote is what let it pass the churn-in preflight, and
+			// nothing re-checks it before vault activation, so it can't be withdrawn.
+			// Abstain (-2) is still allowed; it counts as a vote.
+			if msg.Value < 0 && msg.Value != constants.MimirAbstainValue {
+				return ctx, cosmos.ErrUnauthorized(fmt.Sprintf("%s cannot withdraw an ADR vote while not active", signer))
+			}
 		default:
 			return ctx, unauthorized
 		}

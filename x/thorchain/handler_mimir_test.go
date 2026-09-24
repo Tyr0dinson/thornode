@@ -418,6 +418,13 @@ func (HandlerMimirSuite) TestADRMimirStandbyVoting(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(v, Equals, int64(1))
 
+	// the vote that passed the churn-in gate can't be withdrawn before activation, but
+	// switching to abstain is fine; active nodes may still withdraw (and take the penalty)
+	c.Assert(h.validate(ctx, *NewMsgMimir("ADR42TEST", -1, standby.NodeAddress)), NotNil)
+	c.Assert(h.validate(ctx, *NewMsgMimir("ADR42TEST", -1, ready.NodeAddress)), NotNil)
+	c.Assert(h.validate(ctx, *NewMsgMimir("ADR42TEST", constants.MimirAbstainValue, standby.NodeAddress)), IsNil)
+	c.Assert(h.validate(ctx, *NewMsgMimir("ADR42TEST", -1, active.NodeAddress)), IsNil)
+
 	cost := cosmos.NewUint(uint64(k.GetConfigInt64(ctx, constants.StandbyMimirCost)))
 	na, err := k.GetNodeAccount(ctx, standby.NodeAddress)
 	c.Assert(err, IsNil)
