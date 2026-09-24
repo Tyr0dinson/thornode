@@ -1122,6 +1122,28 @@ func (s *StableReserveMgrSuite) TestDepegRescueIgnoresOracleOutage(c *C) {
 	c.Check(rescue.Tx.Coins[0].Equals(common.NewCoin(usdc.GetSecuredAsset(), amount)), Equals, true)
 }
 
+// Governance de-anchoring a stable the module holds must still rescue it, even
+// with a missing or in-band price: nothing else will ever sell that inventory.
+func (s *StableReserveMgrSuite) TestDepegRescueFiresOnDeAnchoredInventory(c *C) {
+	ctx, mgr, usdc, usdt := setupStableReserveSuite(c)
+	stableReserveMgr := mgr.StableReserveManager()
+	// A third anchor keeps usdt pool-priceable once usdc leaves the anchor set.
+	dai, err := common.NewAsset("ETH.DAI-0X6B175474E89094C44DA98B954EEDEAC495271D0F")
+	c.Assert(err, IsNil)
+	setupStableReserveAsset(c, ctx, mgr, dai, "1.00")
+	amount := cosmos.NewUint(100 * common.One)
+	fundStableReserveSurplus(c, ctx, mgr, usdc, amount)
+	mgr.Keeper().SetMimir(ctx, "TorAnchor-"+strings.ReplaceAll(usdc.String(), ".", "-"), 0)
+	mgr.Keeper().DelPrice(ctx, usdc.Ticker.String())
+
+	c.Assert(stableReserveMgr.EndBlock(ctx, mgr), IsNil)
+
+	rescue, err := firstQueuedSwapWithMemoPrefix(ctx, mgr, types.StableReserveRescueMemoPrefix)
+	c.Assert(err, IsNil)
+	c.Check(rescue.TargetAsset.Equals(usdt) || rescue.TargetAsset.Equals(dai), Equals, true)
+	c.Check(rescue.Tx.Coins[0].Equals(common.NewCoin(usdc.GetSecuredAsset(), amount)), Equals, true)
+}
+
 func (s *StableReserveMgrSuite) TestDepositFloorUnwindsWithoutALivePrice(c *C) {
 	ctx, mgr, usdc, _ := setupStableReserveSuite(c)
 	stableReserveMgr := mgr.StableReserveManager()

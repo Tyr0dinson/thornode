@@ -527,9 +527,8 @@ func (s *StableReserveMgr) scheduleDepegRescue(ctx cosmos.Context, mgr Manager) 
 			}
 		}
 
-		// Note this also fires when the ORACLE breaks (IsEligibleStable rejects on
-		// missing/unhealthy oracle or pool price), not only on a real depeg, and it
-		// re-fires every block until the rescue swap settles.
+		// Fires on an out-of-band oracle price or a de-anchored asset (never on a
+		// missing price), and re-fires every block until the rescue swap settles.
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "stable_reserve", "depeg_detected"},
 			float32(1),
@@ -650,11 +649,16 @@ func (s *StableReserveMgr) IsOraclePegged(ctx cosmos.Context, asset common.Asset
 // the position at AMM slip without depeg evidence. An already queued rescue
 // stops only on a live oracle recovery (see handler_swap.go).
 //
-// The L1/anchor guard is kept so a non-stable secured balance can never be priced
-// by ticker and mistaken for a depeg.
+// A held asset that is no longer a TOR anchor is always rescued, whatever its
+// price. The module only receives anchors (deposits, fills and deploys all pass
+// IsEligibleStable), so this is inventory governance de-anchored, typically a
+// collapsing stable. Nothing else would ever sell it.
 func (s *StableReserveMgr) isDepegged(ctx cosmos.Context, asset common.Asset) bool {
-	if !asset.IsExternalL1Asset() || !s.isTORAnchor(ctx, asset) {
+	if !asset.IsExternalL1Asset() {
 		return false
+	}
+	if !s.isTORAnchor(ctx, asset) {
+		return true
 	}
 	price, err := s.keeper.GetPrice(ctx, asset.Ticker.String())
 	if err != nil {
