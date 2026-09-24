@@ -123,7 +123,7 @@ func (s *KeeperNodeBlameSuite) TestCalculateKeygenPenaltyMultiplier(c *C) {
 		c.Assert(err, IsNil)
 	}
 
-	// Test with no cap (MaxKeygenBlameMultiplier = 0, default)
+	// At the default cap (MaxKeygenBlameMultiplier = 3)
 	mult, err = k.CalculateKeygenPenaltyMultiplier(ctx, addr)
 	c.Assert(err, IsNil)
 	c.Check(mult, Equals, int64(3))
@@ -134,7 +134,13 @@ func (s *KeeperNodeBlameSuite) TestCalculateKeygenPenaltyMultiplier(c *C) {
 		c.Assert(err, IsNil)
 	}
 
-	// Should now be 10 blames, returned without cap
+	// 10 blames are capped at the default of 3
+	mult, err = k.CalculateKeygenPenaltyMultiplier(ctx, addr)
+	c.Assert(err, IsNil)
+	c.Check(mult, Equals, int64(3))
+
+	// Mimir 0 removes the cap
+	k.SetMimir(ctx, constants.MaxKeygenBlameMultiplier.String(), 0)
 	mult, err = k.CalculateKeygenPenaltyMultiplier(ctx, addr)
 	c.Assert(err, IsNil)
 	c.Check(mult, Equals, int64(10))

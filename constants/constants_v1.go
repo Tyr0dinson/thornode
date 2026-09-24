@@ -51,9 +51,9 @@ func NewConstantValue() *ConstantVals {
 			MissBlockSignSlashPoints:            1,                  // slash points for not signing a block
 			ObservationDelayFlexibility:         10,                 // number of blocks of flexibility for a validator to get their slash points taken off for making an observation
 			JailTimeKeygen:                      720 * 6,            // blocks a node account is jailed for failing to keygen. DO NOT drop below tss timeout
-			JailTimeKeygenBase:                  720,                // base jail blocks per keygen blame for non-active nodes; multiplied by blame count for escalation
+			JailTimeKeygenBase:                  720 * 6,            // base jail blocks per keygen blame for non-active nodes; multiplied by blame count for escalation. DO NOT drop below JailTimeKeygen or tss timeout
 			JailTimeKeysign:                     60,                 // blocks a node account is jailed for failing to keysign. DO NOT drop below tss timeout
-			MaxKeygenBlameMultiplier:            0,                  // maximum penalty multiplier for repeated keygen failures, 0 = no cap
+			MaxKeygenBlameMultiplier:            3,                  // maximum penalty multiplier for repeated keygen failures, 0 = no cap
 			NodePauseChainBlocks:                720,                // number of blocks that a node can pause/resume a global chain halt
 			NodeOperatorFee:                     500,                // Node operator fee
 			EnableDerivedAssets:                 0,                  // enable/disable swapping of derived assets

@@ -2583,6 +2583,20 @@ func (s *HandlerTssSuite) TestKeygenSuccessResetsOnlyMembershipBlame(c *C) {
 // CalcNodeRewards, would produce a different jail height / bond delta and
 // fail this test. See handler_tss.go else-branch around lines 351-424.
 func (s *HandlerTssSuite) TestKeygenFailEscalationMath(c *C) {
+	// 2 prior blames; the handler increments to 3, so the multiplier is 3.
+	assertKeygenFailEscalation(c, 2, 3)
+}
+
+// TestKeygenFailEscalationCapped checks that the default
+// MaxKeygenBlameMultiplier caps the jail and bond slash multiplier while the
+// blame count keeps growing.
+func (s *HandlerTssSuite) TestKeygenFailEscalationCapped(c *C) {
+	// 5 prior blames; the handler increments to 6, capped at 3.
+	c.Assert(constants.NewConstantValue().GetInt64Value(constants.MaxKeygenBlameMultiplier), Equals, int64(3))
+	assertKeygenFailEscalation(c, 5, 3)
+}
+
+func assertKeygenFailEscalation(c *C, priorBlames, expectedMult int64) {
 	helper := newTssHandlerTestHelper(c)
 	handler := NewTssHandler(NewDummyMgrWithKeeper(helper.keeper))
 
@@ -2600,14 +2614,13 @@ func (s *HandlerTssSuite) TestKeygenFailEscalationMath(c *C) {
 	blamedNode.Bond = cosmos.NewUint(10000 * common.One)
 	c.Assert(helper.keeper.SetNodeAccount(helper.ctx, blamedNode), IsNil)
 
-	// Pre-load 2 keygen blames; the handler increments to 3, so the
-	// multiplier becomes 3.
-	c.Assert(helper.keeper.IncrementKeygenBlame(helper.ctx, blamedAddr), IsNil)
-	c.Assert(helper.keeper.IncrementKeygenBlame(helper.ctx, blamedAddr), IsNil)
+	for i := int64(0); i < priorBlames; i++ {
+		c.Assert(helper.keeper.IncrementKeygenBlame(helper.ctx, blamedAddr), IsNil)
+	}
 
 	// Pick Network values that give a clean, multiplier-sensitive slashBond:
-	//   escalated nodeUnits = 720 * 3 = 2160 -> slashBond = 3 * common.One
-	//   regression nodeUnits = 720          -> slashBond = 1 * common.One
+	//   escalated nodeUnits = 720 * expectedMult -> slashBond = expectedMult * common.One
+	//   regression nodeUnits = 720               -> slashBond = 1 * common.One
 	network := Network{
 		BondRewardRune: cosmos.NewUint(common.One),
 		TotalBondUnits: cosmos.NewUint(720),
@@ -2648,19 +2661,19 @@ func (s *HandlerTssSuite) TestKeygenFailEscalationMath(c *C) {
 	// Blame count was incremented by the handler.
 	record, err := helper.keeper.GetNodeBlameRecord(helper.ctx, blamedAddr)
 	c.Assert(err, IsNil)
-	c.Check(record.KeygenBlameCountSinceChurn, Equals, int64(3))
+	c.Check(record.KeygenBlameCountSinceChurn, Equals, priorBlames+1)
 
-	// Jail release height = blockHeight + JailTimeKeygenBase * count.
+	// Jail release height = blockHeight + JailTimeKeygenBase * multiplier.
 	jailTimeKeygenBase := helper.constAccessor.GetInt64Value(constants.JailTimeKeygenBase)
-	expectedRelease := helper.ctx.BlockHeight() + jailTimeKeygenBase*3
+	expectedRelease := helper.ctx.BlockHeight() + jailTimeKeygenBase*expectedMult
 	jail, err := helper.keeper.GetNodeAccountJail(helper.ctx, blamedAddr)
 	c.Assert(err, IsNil)
 	c.Check(jail.ReleaseHeight, Equals, expectedRelease,
 		Commentf("expected %d, got %d", expectedRelease, jail.ReleaseHeight))
 
-	// Bond slash = CalcNodeRewards(FailKeygenSlashPoints * count).
+	// Bond slash = CalcNodeRewards(FailKeygenSlashPoints * multiplier).
 	failKeygenSlashPoints := helper.constAccessor.GetInt64Value(constants.FailKeygenSlashPoints)
-	expectedSlash := network.CalcNodeRewards(cosmos.NewUint(uint64(failKeygenSlashPoints * 3)))
+	expectedSlash := network.CalcNodeRewards(cosmos.NewUint(uint64(failKeygenSlashPoints * expectedMult)))
 	expectedBond := cosmos.NewUint(10000 * common.One).Sub(expectedSlash)
 	naAfter, err := helper.keeper.GetNodeAccount(helper.ctx, blamedAddr)
 	c.Assert(err, IsNil)
