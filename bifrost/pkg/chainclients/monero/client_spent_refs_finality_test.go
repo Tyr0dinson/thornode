@@ -12,6 +12,7 @@ import (
 	"github.com/syndtr/goleveldb/leveldb"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
+	chainclienttypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	tssp "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -105,7 +106,7 @@ func TestSpentRefImportKeepsExactBroadcastLiveUntilAuthoritativeObservation(t *t
 				imported.XmrTxKey = observation.TxKey
 				imported.SpentOutputRefs = []common.OutputRef{*ref}
 
-				applied, retry := client.applySpentOutputRefsOnce(imported)
+				applied, retry := client.applySpentOutputRefsOnce(chainclienttypes.SpentOutputRefsImport{Tx: imported, WireMemo: imported.Tx.Memo})
 				require.True(t, applied)
 				require.False(t, retry)
 				require.Len(t, imports, 1)
@@ -148,7 +149,7 @@ func TestSpentRefImportKeepsExactBroadcastLiveUntilAuthoritativeObservation(t *t
 				// suppress exact broadcast. Reimport must not undo that decision.
 				observation.CommittedUnFinalised = true
 				require.NoError(t, client.OnObservedTxInDurable(*observation, 100))
-				applied, retry = client.applySpentOutputRefsOnce(imported)
+				applied, retry = client.applySpentOutputRefsOnce(chainclienttypes.SpentOutputRefsImport{Tx: imported, WireMemo: imported.Tx.Memo})
 				require.True(t, applied)
 				require.False(t, retry)
 				_, err = client.BroadcastTx(tx, payloadBytes)
@@ -156,7 +157,7 @@ func TestSpentRefImportKeepsExactBroadcastLiveUntilAuthoritativeObservation(t *t
 				require.Empty(t, broadcasts, "committed observation must retain its reversible broadcast barrier")
 				observation.CommittedUnFinalised = false
 				require.NoError(t, client.OnObservedTxInDurable(*observation, 100))
-				applied, retry = client.applySpentOutputRefsOnce(imported)
+				applied, retry = client.applySpentOutputRefsOnce(chainclienttypes.SpentOutputRefsImport{Tx: imported, WireMemo: imported.Tx.Memo})
 				require.True(t, applied)
 				require.False(t, retry)
 				_, err = client.BroadcastTx(tx, payloadBytes)
