@@ -800,7 +800,7 @@ func TestSimulationTargetsUseExplicitStageDefaults(t *testing.T) {
 		t.Fatalf("missing expected single-node simulation stages: %s", wantSingle)
 	}
 
-	wantCluster := "TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,swaps,memoless-swaps,inactive-vault-refunds,memoless-refunds,cluster-churn,solvency,xmr-post-churn,ragnarok"
+	wantCluster := "TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,xmr-spent-refs,swaps,memoless-swaps,inactive-vault-refunds,memoless-refunds,cluster-churn,solvency,xmr-post-churn,ragnarok"
 	if !strings.Contains(makefile, wantCluster) {
 		t.Fatalf("missing expected cluster simulation stages: %s", wantCluster)
 	}
