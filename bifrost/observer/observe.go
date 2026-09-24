@@ -469,7 +469,14 @@ func (o *Observer) handleObservedTxCommitted(tx common.ObservedTx, allowFutureOb
 		if err != nil {
 			o.logger.Error().Err(err).Msg("chain not found")
 		} else {
-			chain.OnObservedTxIn(*txInItem, txInItem.BlockHeight)
+			committedItem := *txInItem
+			if deck.Chain.Equals(common.XMRChain) {
+				// The deck remembers a prior pre-final commit. The signed-payload
+				// guard must receive this authoritative event's current finality,
+				// not the stale marker, to terminalize the exact outbound claim.
+				committedItem.CommittedUnFinalised = !isFinal
+			}
+			chain.OnObservedTxIn(committedItem, txInItem.BlockHeight)
 		}
 
 		madeChanges = true

@@ -465,9 +465,11 @@ func TestApplySpentOutputRefsMarksImportedOutboundSignedOnlyAfterFullImport(t *t
 	assert.Equal(t, spendTxHash, cachedTxHash)
 	_, ok, err = payloadStore.Get(payloadCacheVault, cacheHash)
 	require.NoError(t, err)
-	assert.True(t, ok, "verified full spent-ref import must retain exact bytes behind the fulfillment tombstone for deep reorgs")
-	_, _, err = payloadStore.GetOwned(payloadCacheVault, cacheHash, logicalHash)
-	assert.ErrorIs(t, err, errXMRSigningClaimObserved)
+	assert.True(t, ok, "verified full spent-ref import must retain exact bytes for rebroadcast")
+	recovered, ok, err := payloadStore.GetOwned(payloadCacheVault, cacheHash, logicalHash)
+	require.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, payloadBytes, recovered, "visibility-only import must not terminalize exact recovery")
 
 	c.OnObservedTxIn(stypes.TxInItem{
 		Tx:                  spendTxHash,
