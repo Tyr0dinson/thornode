@@ -299,10 +299,41 @@ func (c *Client) getSourceScript(tx stypes.TxOutItem) ([]byte, error) {
 // Build Transaction
 ////////////////////////////////////////////////////////////////////////////////////////
 
+const (
+	// estimateSigLen is the signature length (DER encoding plus the sighash type byte)
+	// assumed when estimating the fee. A low-S secp256k1 signature is at most 72 bytes.
+	estimateSigLen = 72
+
+	// feeCapSigLen is the shortest signature length assumed when capping the fee rate.
+	// DER drops leading zero bytes, so small r or s values shorten a signature by a byte
+	// each (probability ~1/256 per byte). 67 bytes allows r and s to lose five bytes
+	// between them, which leaves a negligible (~2^-38) chance per signature that the
+	// signed transaction is smaller than the capped estimate.
+	feeCapSigLen = 67
+)
+
 // estimateTxSize builds a dummy transaction with the given inputs and outputs and
 // returns the exact virtual size (vbytes) according to BIP141.
 // For non-segwit chains, it returns the actual serialized size.
+// A nil changeScript estimates a transaction without a change output.
 func (c *Client) estimateTxSize(txes []btcjson.ListUnspentResult, memoScripts [][]byte, customerScript, changeScript []byte) int64 {
+	return c.estimateTxSizeWithSigLen(txes, memoScripts, customerScript, changeScript, estimateSigLen)
+}
+
+// maxFeeSats returns the largest fee that keeps the signed transaction within
+// MaxSatsPerVByte. It sizes the transaction with the outputs it will contain and the
+// shortest expected signatures, so the cap still holds against the final signed size.
+func (c *Client) maxFeeSats(txes []btcjson.ListUnspentResult, memoScripts [][]byte, customerScript, changeScript []byte) int64 {
+	satsPerVByte := c.cfg.UTXO.MaxSatsPerVByte
+	switch c.cfg.ChainID {
+	case common.BTCChain, common.LTCChain:
+		// never exceed the maxfeerate BroadcastTx asks the daemon to enforce
+		satsPerVByte = min(satsPerVByte, broadcastMaxSatsPerVByte)
+	}
+	return c.estimateTxSizeWithSigLen(txes, memoScripts, customerScript, changeScript, feeCapSigLen) * satsPerVByte
+}
+
+func (c *Client) estimateTxSizeWithSigLen(txes []btcjson.ListUnspentResult, memoScripts [][]byte, customerScript, changeScript []byte, sigLen int) int64 {
 	tx := wire.NewMsgTx(wire.TxVersion)
 
 	// Add inputs with realistic witness/scriptSig data for size estimation
@@ -318,15 +349,14 @@ func (c *Client) estimateTxSize(txes []btcjson.ListUnspentResult, memoScripts []
 		// Add realistic scriptSig/witness data for accurate size estimation
 		if c.isSegwitChain() {
 			// For segwit chains (BTC, LTC), inputs have empty scriptSig but witness data
-			// Typical P2WPKH witness: [signature (71-73 bytes), pubkey (33 bytes)]
+			// P2WPKH witness: [signature, compressed pubkey (33 bytes)]
 			txIn.Witness = make([][]byte, 2)
-			txIn.Witness[0] = make([]byte, 72) // signature
-			txIn.Witness[1] = make([]byte, 33) // pubkey
+			txIn.Witness[0] = make([]byte, sigLen) // signature
+			txIn.Witness[1] = make([]byte, 33)     // pubkey
 		} else {
 			// For non-segwit chains (DOGE, BCH), inputs have scriptSig
-			// Typical P2PKH scriptSig: [signature (71-73 bytes), pubkey (33 bytes)]
-			// Script format: <sig> <pubkey>
-			txIn.SignatureScript = make([]byte, 107) // ~72 + 33 + 2 bytes overhead
+			// P2PKH scriptSig: <sig> <pubkey>, each with a one byte push opcode
+			txIn.SignatureScript = make([]byte, 1+sigLen+1+33)
 		}
 
 		tx.AddTxIn(txIn)
@@ -336,7 +366,9 @@ func (c *Client) estimateTxSize(txes []btcjson.ListUnspentResult, memoScripts []
 	tx.AddTxOut(wire.NewTxOut(0, customerScript))
 
 	// Add change output (will be added if balance > 0)
-	tx.AddTxOut(wire.NewTxOut(0, changeScript))
+	if changeScript != nil {
+		tx.AddTxOut(wire.NewTxOut(0, changeScript))
+	}
 
 	// Add memo outputs
 	if len(memoScripts) > 0 {
@@ -555,10 +587,63 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 		gasCoin = c.getGasCoin(tx, totalSize)
 	}
 
-	// maxFee in sats
-	maxFeeSats := totalSize * c.cfg.UTXO.MaxSatsPerVByte
-	gasAmtSats := gasCoin.Amount.Uint64()
+	// Calculate the total cost of P2WPKH outputs for extended memos
+	p2wpkhOutputsCost := int64(0)
+	if len(nullDataScripts) > 1 {
+		// Each P2WPKH output (nullDataScripts[1:]) costs P2WPKHOutputValue()
+		p2wpkhOutputsCost = int64(len(nullDataScripts)-1) * tx.Chain.P2WPKHOutputValue()
+	}
 
+	settleFee := func(changeScript []byte) (gasAmtSats, toCustomer uint64, balance int64) {
+		gasAmtSats, toCustomer = c.applyFeeLimits(tx, memo, gasCoin.Amount.Uint64(), coinToCustomer.Amount.Uint64(),
+			c.maxFeeSats(txes, nullDataScripts, buf, changeScript))
+		return gasAmtSats, toCustomer, totalAmt - int64(toCustomer) - int64(gasAmtSats) - p2wpkhOutputsCost
+	}
+
+	// Cap the fee assuming a change output first. When no balance is left for change
+	// (e.g. a migration that sends everything), the signed transaction is smaller, so
+	// re-cap against the size without the change output to stay within the fee rate.
+	gasAmtSats, toCustomer, balance := settleFee(sourceScript)
+	if balance == 0 {
+		c.log.Info().Msg("no change output, capping fee against the transaction without change")
+		gasAmtSats, toCustomer, balance = settleFee(nil)
+	}
+
+	gasAmt := btcutil.Amount(gasAmtSats)
+	if err = c.temporalStorage.UpsertTransactionFee(gasAmt.ToBTC(), int32(totalSize)); err != nil {
+		c.log.Err(err).Msg("fail to save gas info to UTXO storage")
+	}
+
+	// pay to customer
+	redeemTxOut := wire.NewTxOut(int64(toCustomer), buf)
+	redeemTx.AddTxOut(redeemTxOut)
+
+	// balance to ourselves
+	// add output to pay the balance back ourselves
+	// Now properly account for P2WPKH outputs cost
+	c.log.Info().Msgf("total: %d, to customer: %d, gas: %d, p2wpkh_outputs_cost: %d", totalAmt, redeemTxOut.Value, int64(gasAmt), p2wpkhOutputsCost)
+	if balance < 0 {
+		return nil, nil, fmt.Errorf("not enough balance to pay customer: %d", balance)
+	}
+	if balance > 0 {
+		c.log.Info().Msgf("send %d back to self", balance)
+		redeemTx.AddTxOut(wire.NewTxOut(balance, sourceScript))
+	}
+
+	// memo
+	if len(tx.Memo) != 0 {
+		redeemTx.AddTxOut(wire.NewTxOut(0, nullDataScripts[0]))
+		for _, script := range nullDataScripts[1:] {
+			redeemTx.AddTxOut(wire.NewTxOut(tx.Chain.P2WPKHOutputValue(), script))
+		}
+	}
+
+	return redeemTx, individualAmounts, nil
+}
+
+// applyFeeLimits bounds the estimated gas by maxFeeSats, the min relay fee and the
+// outbound's MaxGas, and returns the gas and the amount to pay the customer.
+func (c *Client) applyFeeLimits(tx stypes.TxOutItem, memo mem.Memo, gasAmtSats, toCustomer uint64, maxFeeSats int64) (uint64, uint64) {
 	// make sure the transaction fee is not more than the max, otherwise it might reject the transaction
 	if gasAmtSats > uint64(maxFeeSats) {
 		diffSats := gasAmtSats - uint64(maxFeeSats) // in sats
@@ -583,52 +668,15 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 			// if the tx spend less gas then the estimated MaxGas , then the extra can be added to the coinToCustomer
 			gap := maxGasCoin.Amount.Uint64() - gasAmtSats
 			c.log.Info().Msgf("max gas is: %s, however only: %d is required, gap: %d goes to the vault migrated to", tx.MaxGas, gasAmtSats, gap)
-			coinToCustomer.Amount = coinToCustomer.Amount.Add(cosmos.NewUint(gap))
+			toCustomer += gap
 		}
 	} else if memo.GetType() == mem.TxConsolidate {
 		gap := gasAmtSats
 		c.log.Info().Msgf("consolidate tx, need gas: %d", gap)
-		coinToCustomer.Amount = common.SafeSub(coinToCustomer.Amount, cosmos.NewUint(gap))
+		toCustomer -= min(gap, toCustomer)
 	}
 
-	gasAmt := btcutil.Amount(gasAmtSats)
-	if err = c.temporalStorage.UpsertTransactionFee(gasAmt.ToBTC(), int32(totalSize)); err != nil {
-		c.log.Err(err).Msg("fail to save gas info to UTXO storage")
-	}
-
-	// pay to customer
-	redeemTxOut := wire.NewTxOut(int64(coinToCustomer.Amount.Uint64()), buf)
-	redeemTx.AddTxOut(redeemTxOut)
-
-	// Calculate the total cost of P2WPKH outputs for extended memos
-	p2wpkhOutputsCost := int64(0)
-	if len(nullDataScripts) > 1 {
-		// Each P2WPKH output (nullDataScripts[1:]) costs P2WPKHOutputValue()
-		p2wpkhOutputsCost = int64(len(nullDataScripts)-1) * tx.Chain.P2WPKHOutputValue()
-	}
-
-	// balance to ourselves
-	// add output to pay the balance back ourselves
-	// Now properly account for P2WPKH outputs cost
-	balance := totalAmt - redeemTxOut.Value - int64(gasAmt) - p2wpkhOutputsCost
-	c.log.Info().Msgf("total: %d, to customer: %d, gas: %d, p2wpkh_outputs_cost: %d", totalAmt, redeemTxOut.Value, int64(gasAmt), p2wpkhOutputsCost)
-	if balance < 0 {
-		return nil, nil, fmt.Errorf("not enough balance to pay customer: %d", balance)
-	}
-	if balance > 0 {
-		c.log.Info().Msgf("send %d back to self", balance)
-		redeemTx.AddTxOut(wire.NewTxOut(balance, sourceScript))
-	}
-
-	// memo
-	if len(tx.Memo) != 0 {
-		redeemTx.AddTxOut(wire.NewTxOut(0, nullDataScripts[0]))
-		for _, script := range nullDataScripts[1:] {
-			redeemTx.AddTxOut(wire.NewTxOut(tx.Chain.P2WPKHOutputValue(), script))
-		}
-	}
-
-	return redeemTx, individualAmounts, nil
+	return gasAmtSats, toCustomer
 }
 
 // MemoToScripts converts a memo to UTXO scripts.

@@ -56,6 +56,15 @@ const ZecTxExpiry = uint32(40)
 
 const zecHeightReportInterval = int64(ZecTxExpiry) / 4
 
+// broadcastMaxFeeRate is the "maxfeerate" passed to sendrawtransaction for BTC and
+// LTC. It is denominated in BTC/kvB, not sats - Core multiplies by 1e8 itself and
+// rejects anything >= 1 BTC/kvB. 0.1 is Core's own default (10,000 sat/vB); the fee
+// cap in buildTx must keep the signed transaction within it (see maxFeeSats).
+const broadcastMaxFeeRate = 0.1
+
+// broadcastMaxSatsPerVByte is broadcastMaxFeeRate in sats per vbyte (1e8 / 1000).
+const broadcastMaxSatsPerVByte = int64(broadcastMaxFeeRate * 1e5)
+
 // ZecExtraFee (in Zats) is added to the calculated gas costs
 const ZecExtraFee = int(0)
 
@@ -629,9 +638,7 @@ func (c *Client) BroadcastTx(txOut stypes.TxOutItem, payload []byte) (string, er
 		case common.DOGEChain, common.BCHChain:
 			maxFee = true // "allowHighFees"
 		case common.LTCChain, common.BTCChain:
-			// "maxfeerate" is denominated in BTC/kvB, not sats - Core multiplies by 1e8
-			// itself and rejects anything >= 1 BTC/kvB. 0.1 is Core's own default.
-			maxFee = 0.1
+			maxFee = broadcastMaxFeeRate
 		}
 
 		txid, err = c.rpc.SendRawTransaction(redeemTx, maxFee)
