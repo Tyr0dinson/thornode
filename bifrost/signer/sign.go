@@ -377,16 +377,43 @@ func (s *Signer) processTxnOut(ch <-chan types.TxOut, idx int) {
 				return
 			}
 			s.logger.Info().Msgf("Received a TxOut Array of %v from the Thorchain", txOut)
-			items := make([]TxOutStoreItem, 0, len(txOut.TxArray))
-
-			for i, tx := range txOut.TxArray {
-				items = append(items, NewTxOutStoreItem(txOut.Height, tx.TxOutItem(txOut.Height), int64(i)))
-			}
-			if err := s.storage.Batch(items); err != nil {
+			if err := s.storeTxOut(txOut); err != nil {
 				s.logger.Error().Err(err).Msg("fail to save tx out items to storage")
 			}
 		}
 	}
+}
+
+// storeTxOut filters fresh impossible XMR attempts before they enter the signing
+// queue. Rescheduled obligations are checked anew; nothing is marked paid on
+// THORChain. Existing records, including recovery artifacts, are never replaced
+// by an XMR redelivery.
+func (s *Signer) storeTxOut(txOut types.TxOut) error {
+	items := make([]TxOutStoreItem, 0, len(txOut.TxArray))
+	for i, tx := range txOut.TxArray {
+		item := NewTxOutStoreItem(txOut.Height, tx.TxOutItem(txOut.Height), int64(i))
+		if item.TxOutItem.Chain.Equals(common.XMRChain) {
+			existing, err := s.storage.Get(item.Key())
+			if err != nil {
+				return err
+			}
+			if existing.RetrievalKey != "" {
+				continue
+			}
+			if admission, ok := s.chains[common.XMRChain].(interface {
+				CanSkipUnsupportedXMRDestination(types.TxOutItem) (bool, error)
+			}); ok {
+				skip, checkErr := admission.CanSkipUnsupportedXMRDestination(item.TxOutItem)
+				if checkErr != nil {
+					s.logger.Warn().Err(checkErr).Msg("retaining XMR attempt while admission state is unknown")
+				} else if skip {
+					continue
+				}
+			}
+		}
+		items = append(items, item)
+	}
+	return s.storage.Batch(items)
 }
 
 func (s *Signer) processKeygen(ch <-chan ttypes.KeygenBlock) {

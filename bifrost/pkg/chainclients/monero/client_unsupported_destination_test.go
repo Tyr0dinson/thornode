@@ -68,6 +68,10 @@ func TestSignTxUnsupportedDestinationRetirement(t *testing.T) {
 				case "sidecar-not-configured":
 					client.sidecar = nil
 				}
+				skip, skipErr := client.CanSkipUnsupportedXMRDestination(tx)
+				if skip != (state == "unsigned") || (skip && skipErr != nil) {
+					t.Fatalf("unsafe admission for %s: skip=%v err=%v", state, skip, skipErr)
+				}
 				signed, checkpoint, obs, signErr := client.SignTx(tx, 12345)
 				if state == "signed" {
 					if signErr != nil || !bytes.Equal(signed, saved) || len(checkpoint) == 0 || obs == nil {

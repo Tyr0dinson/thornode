@@ -91,6 +91,10 @@ func (s *SignCoverageSuite) TestUnsupportedDestinationPreservesSignerEvidence(c 
 
 func (c *destinationChainClient) IsBlockScannerHealthy() bool { return true }
 
+func (c *destinationChainClient) CanSkipUnsupportedXMRDestination(tx types.TxOutItem) (bool, error) {
+	return c.ChainClient.(*monero.Client).CanSkipUnsupportedXMRDestination(tx)
+}
+
 func (c *destinationChainClient) SignTx(tx types.TxOutItem, height int64) ([]byte, []byte, *types.TxInItem, error) {
 	c.attempts = append(c.attempts, tx.ToAddress)
 	return c.ChainClient.SignTx(tx, height)
@@ -200,5 +204,54 @@ func (s *SignCoverageSuite) TestPipelineUnsupportedXMRDestination(c *C) {
 		c.Assert(bridge.broadcastCalls, Equals, 0)
 		c.Assert(bad.TxOutItem.OutHash.IsEmpty(), Equals, true)
 		// Observer is nil: any fabricated auto-observation would fail this test.
+
+		// Keep admitting fresh unsupported obligations while all earlier ones
+		// are redelivered. Admission keeps the queue and signing-pass work flat.
+		// The valid payout must be attempted on every pass, including after a
+		// restart and while its source vault retires during replacement.
+		var pressure []types.TxArrayItem
+		for round := 0; round < 20; round++ {
+			for i := 0; i < 50; i++ {
+				pressure = append(pressure, types.TxArrayItem{
+					Chain: common.XMRChain, VaultPubKey: vaultKey, VaultPubKeyFrost: frostKey,
+					ToAddress: bad.TxOutItem.ToAddress, Coin: bad.TxOutItem.Coins[0],
+					Memo: fmt.Sprintf("OUT:%064X", round*50+i+1),
+				})
+			}
+			c.Assert(sign.storeTxOut(types.TxOut{Height: int64(100 + round), TxArray: pressure}), IsNil)
+			c.Assert(storage.List(), HasLen, 1)
+			before := registrationCalls.Load()
+			step()
+			c.Assert(registrationCalls.Load(), Equals, before+1)
+			c.Assert(chain.attempts[len(chain.attempts)-1], Equals, good.TxOutItem.ToAddress)
+			if round == 9 {
+				c.Assert(storage.Close(), IsNil)
+				restarted, openErr := NewSignerStore(storePath, config.LevelDBOptions{}, "")
+				c.Assert(openErr, IsNil)
+				defer restarted.Close()
+				storage.SignerStorage = restarted
+				pipeline, err = newPipeline(1)
+				c.Assert(err, IsNil)
+				bridge.vault.Status = ttypes.VaultStatus_RetiringVault
+			}
+		}
+		c.Assert(unexpectedCalls.Load(), Equals, int32(0))
+		c.Assert(bridge.broadcastCalls, Equals, 0)
+
+		// A replay must not overwrite a stored checkpoint or signed payload.
+		delivery := types.TxOut{Height: 200, TxArray: pressure[:1]}
+		protected := NewTxOutStoreItem(delivery.Height, delivery.TxArray[0].TxOutItem(delivery.Height), 0)
+		protected.SignedTx = []byte("persisted-signed-payload")
+		protected.Checkpoint = []byte("persisted-checkpoint")
+		protected.Observation = &types.TxInItem{Tx: strings.Repeat("C", 64)}
+		protected.Round7Retry = true
+		c.Assert(storage.Set(protected), IsNil)
+		c.Assert(sign.storeTxOut(delivery), IsNil)
+		preserved, err := storage.Get(protected.Key())
+		c.Assert(err, IsNil)
+		c.Assert(preserved.SignedTx, DeepEquals, protected.SignedTx)
+		c.Assert(preserved.Checkpoint, DeepEquals, protected.Checkpoint)
+		c.Assert(preserved.Observation, DeepEquals, protected.Observation)
+		c.Assert(preserved.Round7Retry, Equals, true)
 	}
 }
