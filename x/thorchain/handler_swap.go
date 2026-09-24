@@ -132,7 +132,10 @@ func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 		return errors.New("trading is halted, can't process swap")
 	}
 
-	if target.IsDerivedAsset() || msg.Tx.Coins[0].Asset.IsDerivedAsset() {
+	// Disabling derived trading must not prevent unwinding an already-executed
+	// speculative swap. Only the internal rollback caller sets this mode.
+	if getMempoolSwapExecutionMode(ctx) != mempoolSwapExecutionRollback &&
+		(target.IsDerivedAsset() || msg.Tx.Coins[0].Asset.IsDerivedAsset()) {
 		if h.mgr.Keeper().GetConfigInt64(ctx, constants.EnableDerivedAssets) == 0 {
 			// since derived assets are disabled, only the protocol can use
 			// them (specifically lending)
