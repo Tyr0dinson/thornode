@@ -244,7 +244,7 @@ type Swapper interface {
 		synthVirtualDepthMult int64,
 		mgr Manager,
 		affiliates []string, affiliateBps []cosmos.Uint,
-	) (cosmos.Uint, []*EventSwap, error)
+	) (cosmos.Uint, cosmos.Uint, []*EventSwap, error)
 	CalcAssetEmission(X, x, Y cosmos.Uint) cosmos.Uint
 	CalcLiquidityFee(X, x, Y cosmos.Uint) cosmos.Uint
 	CalcSwapSlip(Xi, xi cosmos.Uint) cosmos.Uint

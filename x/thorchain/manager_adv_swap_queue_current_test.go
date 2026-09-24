@@ -761,6 +761,224 @@ func (s AdvSwapQueueSuite) TestEndBlock(c *C) {
 	// the actual implementation of findMatchingTrades logic
 }
 
+// TestEndBlockLimitSwapTradeAssetCancelsWhenUnderfunded verifies that an
+// underfunded Trade Asset limit swap is settled before withdrawal, leaving the
+// account balance and pool unchanged.
+func (s AdvSwapQueueSuite) TestEndBlockLimitSwapTradeAssetCancelsWhenUnderfunded(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	mgr.txOutStore = NewTxStoreDummy()
+	book := newSwapQueueAdv(mgr.Keeper())
+
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
+	mgr.Keeper().SetMimir(ctx, constants.TradeAccountsEnabled.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.AdvSwapQueueRapidSwapMax.String(), 1)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.BalanceRune = cosmos.NewUint(10_000 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	owner := GetRandomBech32Addr()
+	tradeAsset := common.BTCAsset.GetTradeAsset()
+	available := cosmos.NewUint(common.One / 2)
+	requestedDeposit := cosmos.NewUint(10 * common.One)
+
+	// The queued order requests 10 BTC trade asset split into 10 chunks, so the
+	// first chunk needs 1 BTC while the account only has 0.5 BTC available.
+	_, err := mgr.TradeAccountManager().Deposit(ctx, tradeAsset, available, owner, common.NoAddress, common.BlankTxID)
+	c.Assert(err, IsNil)
+
+	destination := GetRandomTHORAddress()
+	target := cosmos.NewUint(250 * common.One)
+	tx := common.NewTx(
+		GetRandomTxHash(),
+		common.Address(owner.String()),
+		GetRandomTHORAddress(),
+		common.NewCoins(common.NewCoin(tradeAsset, requestedDeposit)),
+		common.Gas{},
+		fmt.Sprintf("=<:%s:%s:%s", common.RuneAsset(), destination, target),
+	)
+
+	swap := NewMsgSwap(
+		tx, common.RuneAsset(), destination, target,
+		common.NoAddress, cosmos.ZeroUint(),
+		"", "", nil,
+		types.SwapType_limit,
+		10, 0, types.SwapVersion_v2, owner)
+	swap.InitialBlockHeight = ctx.BlockHeight()
+	swap.State = &types.SwapState{
+		Quantity:   10,
+		Count:      0,
+		Deposit:    requestedDeposit,
+		In:         cosmos.ZeroUint(),
+		Out:        cosmos.ZeroUint(),
+		Interval:   0,
+		LastHeight: ctx.BlockHeight() - 1,
+	}
+
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, *swap), IsNil)
+	c.Assert(book.EndBlock(ctx, mgr, false), IsNil)
+
+	_, err = mgr.Keeper().GetAdvSwapQueueItem(ctx, swap.Tx.ID, 0)
+	c.Assert(err, NotNil)
+
+	balance := mgr.TradeAccountManager().BalanceOf(ctx, tradeAsset, owner)
+	c.Assert(balance.Equal(available), Equals, true)
+
+	updatedPool, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Assert(updatedPool.BalanceAsset.Equal(pool.BalanceAsset), Equals, true)
+	c.Assert(updatedPool.BalanceRune.Equal(pool.BalanceRune), Equals, true)
+}
+
+// TestEndBlockLimitSwapSecuredAssetCancelsWhenUnderfunded verifies that an
+// underfunded Secured Asset limit swap is settled before withdrawal, leaving the
+// account balance and pool unchanged.
+func (s AdvSwapQueueSuite) TestEndBlockLimitSwapSecuredAssetCancelsWhenUnderfunded(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	mgr.txOutStore = NewTxStoreDummy()
+	book := newSwapQueueAdv(mgr.Keeper())
+
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
+	mgr.Keeper().SetMimir(ctx, constants.AdvSwapQueueRapidSwapMax.String(), 1)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.BalanceRune = cosmos.NewUint(10_000 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	owner := GetRandomBech32Addr()
+	securedAsset := common.BTCAsset.GetSecuredAsset()
+	available := cosmos.NewUint(common.One / 2)
+	requestedDeposit := cosmos.NewUint(10 * common.One)
+
+	// The queued order requests 10 BTC secured asset split into 10 chunks, so
+	// the first chunk needs 1 BTC while the account only has 0.5 BTC available.
+	_, err := mgr.SecuredAssetManager().Deposit(ctx, common.BTCAsset, available, owner, common.NoAddress, common.BlankTxID)
+	c.Assert(err, IsNil)
+
+	destination := GetRandomTHORAddress()
+	target := cosmos.NewUint(250 * common.One)
+	tx := common.NewTx(
+		GetRandomTxHash(),
+		common.Address(owner.String()),
+		GetRandomTHORAddress(),
+		common.NewCoins(common.NewCoin(securedAsset, requestedDeposit)),
+		common.Gas{},
+		fmt.Sprintf("=<:%s:%s:%s", common.RuneAsset(), destination, target),
+	)
+
+	swap := NewMsgSwap(
+		tx, common.RuneAsset(), destination, target,
+		common.NoAddress, cosmos.ZeroUint(),
+		"", "", nil,
+		types.SwapType_limit,
+		10, 0, types.SwapVersion_v2, owner)
+	swap.InitialBlockHeight = ctx.BlockHeight()
+	swap.State = &types.SwapState{
+		Quantity:   10,
+		Count:      0,
+		Deposit:    requestedDeposit,
+		In:         cosmos.ZeroUint(),
+		Out:        cosmos.ZeroUint(),
+		Interval:   0,
+		LastHeight: ctx.BlockHeight() - 1,
+	}
+
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, *swap), IsNil)
+	c.Assert(book.EndBlock(ctx, mgr, false), IsNil)
+
+	_, err = mgr.Keeper().GetAdvSwapQueueItem(ctx, swap.Tx.ID, 0)
+	c.Assert(err, NotNil)
+
+	balance := mgr.SecuredAssetManager().BalanceOf(ctx, securedAsset, owner)
+	c.Assert(balance.Equal(available), Equals, true)
+
+	updatedPool, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Assert(updatedPool.BalanceAsset.Equal(pool.BalanceAsset), Equals, true)
+	c.Assert(updatedPool.BalanceRune.Equal(pool.BalanceRune), Equals, true)
+}
+
+func (s AdvSwapQueueSuite) TestEndBlockLimitSwapUsesEffectiveTradeAssetInput(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	out := &roundedLimitSwapTxOutStore{TxOutStoreDummy: NewTxStoreDummy()}
+	mgr.txOutStore = out
+	book := newSwapQueueAdv(mgr.Keeper())
+
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
+	mgr.Keeper().SetMimir(ctx, constants.TradeAccountsEnabled.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.AdvSwapQueueRapidSwapMax.String(), 1)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceAsset = cosmos.NewUint(100)
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.Status = PoolAvailable
+	pool.Decimals = 8
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	owner := GetRandomBech32Addr()
+	tradeAsset := common.BTCAsset.GetTradeAsset()
+
+	// Force Trade withdrawal share rounding: BalanceOf is 5 sats, the requested
+	// chunk is 4 sats, but Withdrawal redeems 3 sats from the account units.
+	tradeUnit := types.NewTradeUnit(tradeAsset)
+	tradeUnit.Units = cosmos.NewUint(3)
+	tradeUnit.Depth = cosmos.NewUint(5)
+	mgr.Keeper().SetTradeUnit(ctx, tradeUnit)
+	tradeAccount := types.NewTradeAccount(owner, tradeAsset)
+	tradeAccount.Units = cosmos.NewUint(3)
+	mgr.Keeper().SetTradeAccount(ctx, tradeAccount)
+
+	destination := GetRandomTHORAddress()
+	tx := common.NewTx(
+		GetRandomTxHash(),
+		common.Address(owner.String()),
+		GetRandomTHORAddress(),
+		common.NewCoins(common.NewCoin(tradeAsset, cosmos.NewUint(4))),
+		common.Gas{},
+		fmt.Sprintf("=<:%s:%s:1", common.RuneAsset(), destination),
+	)
+
+	swap := NewMsgSwap(
+		tx, common.RuneAsset(), destination, cosmos.NewUint(1),
+		common.NoAddress, cosmos.ZeroUint(),
+		"", "", nil,
+		types.SwapType_limit,
+		1, 0, types.SwapVersion_v2, owner)
+	swap.InitialBlockHeight = ctx.BlockHeight()
+	swap.State = &types.SwapState{
+		Quantity:   1,
+		Count:      0,
+		Deposit:    cosmos.NewUint(4),
+		In:         cosmos.ZeroUint(),
+		Out:        cosmos.ZeroUint(),
+		Interval:   0,
+		LastHeight: ctx.BlockHeight() - 1,
+	}
+
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, *swap), IsNil)
+	c.Assert(book.EndBlock(ctx, mgr, false), IsNil)
+
+	_, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, swap.Tx.ID, 0)
+	c.Assert(err, NotNil, Commentf("the configured single successful swap should settle"))
+	updatedPool, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Assert(updatedPool.BalanceAsset.Sub(pool.BalanceAsset).String(), Equals, "3")
+	c.Assert(mgr.TradeAccountManager().BalanceOf(ctx, tradeAsset, owner).String(), Equals, "2")
+	c.Assert(out.items, HasLen, 1)
+	c.Assert(out.items[0].InHash, Equals, swap.Tx.ID)
+	c.Assert(out.items[0].ToAddress, Equals, destination)
+	liquidityFee, err := mgr.Keeper().GetPoolLiquidityFees(ctx, uint64(ctx.BlockHeight()), common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Assert(out.items[0].Coin, DeepEquals, common.NewCoin(common.RuneAsset(), pool.BalanceRune.Sub(updatedPool.BalanceRune).Sub(liquidityFee)))
+}
+
 func (s AdvSwapQueueSuite) TestGetMaxSwapQuantity(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
