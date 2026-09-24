@@ -313,7 +313,7 @@ func (s *LitecoinFeeCapSuite) TestFeeCapHoldsForFinalSignedSize(c *C) {
 			txOut.MaxGas = common.Gas{common.NewCoin(common.LTCAsset, cosmos.NewUint(tc.maxGas))}
 		}
 
-		payload, _, obs, err := s.client.SignTx(txOut, 1)
+		payload, _, obs, err := s.client.SignTx([]stypes.TxOutItem{txOut}, 1)
 		c.Assert(err, IsNil, comment)
 		c.Assert(payload, NotNil, comment)
 
@@ -331,8 +331,9 @@ func (s *LitecoinFeeCapSuite) TestFeeCapHoldsForFinalSignedSize(c *C) {
 		vsize := mempool.GetTxVirtualSize(btcutil.NewTx(signed))
 		c.Assert(fee > 0, Equals, true, comment)
 		// the instant observation reports the fee the signed transaction pays
-		c.Assert(obs, NotNil, comment)
-		c.Check(obs.Gas[0].Amount.Uint64(), Equals, uint64(fee), comment)
+		c.Assert(obs, HasLen, 1, comment)
+		c.Assert(obs[0], NotNil, comment)
+		c.Check(obs[0].Gas[0].Amount.Uint64(), Equals, uint64(fee), comment)
 		c.Check(fee <= feeCapTestMaxSatsPerVByte*vsize, Equals, true,
 			Commentf("%s: fee %d exceeds %d sat/vB at final size %d vB", tc.name, fee, feeCapTestMaxSatsPerVByte, vsize))
 		if tc.maxGas > 0 {
@@ -372,7 +373,7 @@ func (s *LitecoinFeeCapSuite) TestMaxFeeSatsSignatureSizes(c *C) {
 				if withChange {
 					change = changeScript
 				}
-				maxFee := s.client.maxFeeSats(utxos, memoScripts, customerScript, change)
+				maxFee := s.client.maxFeeSats(utxos, memoScripts, [][]byte{customerScript}, change)
 
 				// feeCapSigLen..72 covers low-S DER signatures, including a 33-byte r
 				for sigLen := feeCapSigLen; sigLen <= estimateSigLen; sigLen++ {
@@ -400,7 +401,7 @@ func (s *LitecoinFeeCapSuite) TestMaxFeeSatsSignatureSizes(c *C) {
 					c.Check(maxFee <= feeCapTestMaxSatsPerVByte*vsize, Equals, true, comment)
 					if sigLen == estimateSigLen {
 						// the fee estimate sizes the same transaction exactly
-						c.Check(s.client.estimateTxSize(utxos, memoScripts, customerScript, change), Equals, vsize, comment)
+						c.Check(s.client.estimateTxSize(utxos, memoScripts, [][]byte{customerScript}, change), Equals, vsize, comment)
 					}
 				}
 			}
@@ -418,12 +419,12 @@ func (s *LitecoinFeeCapSuite) TestMaxFeeSatsClampedToBroadcastLimit(c *C) {
 
 	for _, chain := range []common.Chain{common.LTCChain, common.BTCChain, common.DOGEChain, common.BCHChain} {
 		s.client.cfg.ChainID = chain
-		size := s.client.estimateTxSizeWithSigLen(utxos, nil, script, nil, feeCapSigLen)
+		size := s.client.estimateTxSizeWithSigLen(utxos, nil, [][]byte{script}, nil, feeCapSigLen)
 		want := size * s.client.cfg.UTXO.MaxSatsPerVByte
 		if chain == common.LTCChain || chain == common.BTCChain {
 			want = size * broadcastMaxSatsPerVByte
 		}
-		c.Check(s.client.maxFeeSats(utxos, nil, script, nil), Equals, want, Commentf("chain=%s", chain))
+		c.Check(s.client.maxFeeSats(utxos, nil, [][]byte{script}, nil), Equals, want, Commentf("chain=%s", chain))
 	}
 	c.Check(broadcastMaxSatsPerVByte, Equals, int64(10_000))
 }
