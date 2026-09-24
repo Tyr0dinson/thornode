@@ -11,7 +11,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
-	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 func processErrataTxAttestation(
@@ -153,39 +152,17 @@ func processErrataTx(ctx cosmos.Context, mgr Manager, er *common.ErrataTx) (comm
 		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, fmt.Errorf("fail to get errata mempool swap lifecycle: %w", lifecycleErr)
 	}
 	if found {
-		errataCtx, commitErrata := ctx.CacheContext()
-		record.Status = types.MempoolSwapStatus_ROLLBACK_PENDING
-		record.UpdatedHeight = ctx.BlockHeight()
-		record.NextRecoveryHeight = ctx.BlockHeight()
-		if lifecycleErr = k.SetMempoolSwap(errataCtx, record); lifecycleErr != nil {
-			return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, fmt.Errorf("fail to stop errata mempool swap: %w", lifecycleErr)
+		rolledBack, revertErr := revertMempoolSwap(ctx, mgr, observedVoter, record)
+		if revertErr != nil {
+			return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, revertErr
 		}
-		observedVoter.SetReverted()
 		// Emit the same reverted counter the ordinary path below emits: both
 		// outcomes of this branch persist Reverted, so without it a dashboard
 		// built on errata.reverted undercounts once mempool-swap traffic exists.
 		incrErrataRevertedIn(er.Chain)
-		k.SetObservedTxInVoter(errataCtx, observedVoter)
-		if lifecycleErr = rollbackMempoolSwapCached(errataCtx, k, mgr, observedVoter); lifecycleErr == nil {
-			commitErrata()
+		if rolledBack {
 			incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "errata")})
-			return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED, nil
 		}
-
-		ctx.Logger().Error("fail to roll back errata mempool swap; scheduling retry",
-			"error", lifecycleErr,
-			"hash", observedVoter.TxID)
-		// The nested cache was discarded. Persist only the terminal stop state
-		// in the parent context, leaving every economic mutation available for
-		// a clean retry.
-		record.Status = types.MempoolSwapStatus_ROLLBACK_PENDING
-		record.UpdatedHeight = ctx.BlockHeight()
-		record.NextRecoveryHeight = ctx.BlockHeight() + 1
-		if setErr := k.SetMempoolSwap(ctx, record); setErr != nil {
-			return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, fmt.Errorf("fail to persist errata rollback retry: %w", setErr)
-		}
-		observedVoter.SetReverted()
-		k.SetObservedTxInVoter(ctx, observedVoter)
 		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED, nil
 	}
 

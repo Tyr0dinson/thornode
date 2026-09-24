@@ -283,6 +283,14 @@ func isVaultCompromised(ctx cosmos.Context, k keeper.Keeper, vaultPubKey common.
 	return flagged > 0, nil
 }
 
+func isCompromisedMempoolSwapVault(ctx cosmos.Context, k keeper.Keeper, record types.MempoolSwap) bool {
+	compromised, err := isVaultCompromised(ctx, k, record.VaultPubKey)
+	if err != nil {
+		ctx.Logger().Error("fail to read compromised vault flag for mempool swap; cancelling", "error", err, "hash", record.TxId)
+	}
+	return compromised
+}
+
 // emitCompromisedVaultNoOpSecurityEvent emits the operator-facing alert for an
 // inbound that reached quorum but was intentionally skipped because its vault is
 // flagged by CompromisedVault-<pubkey>.
@@ -381,7 +389,7 @@ func handleObservedTxInQuorum(
 			ctx.Logger().Info("observed tx in to compromised vault pending confirmation counting", "pub_key", vault.PubKey.String(), "tx", tx.Tx.ID.String())
 		}
 		k.SetObservedTxInVoter(ctx, voter)
-		return nil
+		return cancelCompromisedVaultMempoolSwap(ctx, mgr, voter)
 	}
 
 	// add memo for memoless transactions (after consensus is reached)
@@ -938,6 +946,9 @@ func xmrMigrateInboundMatchesTxOut(tx common.Tx, item TxOutItem) bool {
 // pool/accounting reversal, TOR release, and the refund. Any failure leaves the
 // lifecycle snapshot intact for deterministic recovery.
 func rollbackAndRefundInactiveVaultMempoolSwap(ctx cosmos.Context, mgr Manager, tx common.ObservedTx, voter ObservedTxVoter) error {
+	if voter.Reverted {
+		return fmt.Errorf("cannot refund reverted mempool swap %s", voter.TxID)
+	}
 	k := mgr.Keeper()
 	cacheCtx, commit := ctx.CacheContext()
 
@@ -982,6 +993,27 @@ func incrInactiveVaultRefund(chain common.Chain) {
 // leg can run while the job waits for its deterministic turn.
 func startMempoolSwapVaultRecovery(ctx cosmos.Context, k keeper.Keeper, vault Vault) {
 	k.SetMempoolSwapVaultRecovery(ctx, vault.PubKey, "")
+}
+
+// cancelCompromisedVaultMempoolSwap also handles speculative work admitted
+// before the vault was flagged. FinalisedHeight alone is not permission to pay
+// an inbound whose vault credit was deliberately excluded.
+func cancelCompromisedVaultMempoolSwap(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter) error {
+	k := mgr.Keeper()
+	record, found, err := k.GetMempoolSwap(ctx, voter.TxID, 0)
+	if err != nil {
+		voter.SetReverted()
+		k.SetObservedTxInVoter(ctx, voter)
+		return fmt.Errorf("fail to inspect compromised-vault mempool swap: %w", err)
+	}
+	if !found {
+		return nil
+	}
+	rolledBack, err := revertMempoolSwap(ctx, mgr, voter, record)
+	if rolledBack {
+		incrMempoolSwapCounter("rolled_back_total", []metrics.Label{telemetry.NewLabel("reason", "compromised_vault")})
+	}
+	return err
 }
 
 // processMempoolSwapVaultRecoveryBatch advances one persisted inactive-vault
@@ -1033,6 +1065,10 @@ func processMempoolSwapVaultRecoveryBatch(ctx cosmos.Context, k keeper.Keeper, m
 					voterErr = fmt.Errorf("observed tx voter is empty")
 				}
 				ctx.Logger().Error("fail to load inactive-vault mempool swap voter", "error", voterErr, "hash", record.TxId)
+			case isCompromisedMempoolSwapVault(ctx, k, record):
+				if cancelErr := cancelCompromisedVaultMempoolSwap(ctx, mgr, voter); cancelErr != nil {
+					ctx.Logger().Error("fail to cancel compromised-vault mempool swap", "error", cancelErr, "hash", record.TxId)
+				}
 			case voter.FinalisedHeight > 0 && !voter.Reverted:
 				if rollbackErr := rollbackAndRefundInactiveVaultMempoolSwap(ctx, mgr, voter.Tx, voter); rollbackErr != nil {
 					ctx.Logger().Error("fail to roll back finalized inactive-vault mempool swap", "error", rollbackErr, "hash", record.TxId)
@@ -3262,6 +3298,9 @@ func rollbackMempoolSwapAtomic(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 // funds. Keeping both steps under the same outer CacheContext also ensures a
 // hard refund error cannot commit the rollback by itself.
 func rollbackAndRefundFinalizedMempoolSwapAtomic(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter) error {
+	if voter.Reverted {
+		return fmt.Errorf("cannot refund reverted mempool swap %s", voter.TxID)
+	}
 	cacheCtx, commit := ctx.CacheContext()
 	if err := rollbackMempoolSwapCached(cacheCtx, mgr.Keeper(), mgr, voter); err != nil {
 		return fmt.Errorf("fail to roll back finalized mempool swap: %w", err)

@@ -950,6 +950,15 @@ func (s *SlasherImpl) recoverDueMempoolSwaps(ctx cosmos.Context, mgr Manager, si
 			continue
 		}
 
+		// A compromised inbound may have finality metadata without vault credit.
+		// Cancel it before any branch can complete or refund the deposit.
+		if isCompromisedMempoolSwapVault(ctx, s.keeper, record) {
+			if cancelErr := cancelCompromisedVaultMempoolSwap(ctx, mgr, voter); cancelErr != nil {
+				ctx.Logger().Error("fail to cancel compromised-vault mempool swap", "error", cancelErr, "hash", record.TxId)
+			}
+			continue
+		}
+
 		// Errata and any earlier failed rollback own the record once it enters
 		// ROLLBACK_PENDING. An unfinalized due record also cannot make forward
 		// progress safely: its inbound exceeded the deadline calculated from the

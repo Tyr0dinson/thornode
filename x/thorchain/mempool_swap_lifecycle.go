@@ -229,6 +229,9 @@ func releaseMempoolSwapLifecycleCached(
 // immediately. A stream with queue work remaining releases TOR but retains its
 // full effects journal and latest rollback snapshot until terminal settlement.
 func completeMempoolSwapCached(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter) error {
+	if voter.Reverted {
+		return fmt.Errorf("cannot complete reverted mempool swap %s", voter.TxID)
+	}
 	k := mgr.Keeper()
 	record, found, err := k.GetMempoolSwap(ctx, voter.TxID, 0)
 	if err != nil {
@@ -246,6 +249,9 @@ func completeMempoolSwapCached(ctx cosmos.Context, mgr Manager, voter ObservedTx
 			err = fmt.Errorf("observed tx voter is empty")
 		}
 		return fmt.Errorf("fail to reload finalized mempool voter: %w", err)
+	}
+	if voter.Reverted {
+		return fmt.Errorf("cannot complete reverted mempool swap %s", voter.TxID)
 	}
 	if voter.FinalisedHeight == 0 {
 		return fmt.Errorf("cannot complete unfinalized mempool swap %s", voter.TxID)
@@ -321,6 +327,36 @@ func completeMempoolSwapAtomic(ctx cosmos.Context, mgr Manager, voter ObservedTx
 	}
 	commit()
 	return nil
+}
+
+// revertMempoolSwap invalidates an inbound and unwinds its speculative work
+// without a payout or refund. If rollback fails, retain only the durable stop
+// markers; recovery retries the unchanged economic state on the next block.
+// The bool reports whether rollback completed, rather than merely being queued.
+func revertMempoolSwap(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter, record types.MempoolSwap) (bool, error) {
+	k := mgr.Keeper()
+	voter.SetReverted()
+	record.Status = types.MempoolSwapStatus_ROLLBACK_PENDING
+	record.UpdatedHeight = ctx.BlockHeight()
+	record.NextRecoveryHeight = addMempoolSwapRecoveryHeight(ctx.BlockHeight(), 1)
+	rollbackCtx, commit := ctx.CacheContext()
+	k.SetObservedTxInVoter(rollbackCtx, voter)
+	err := k.SetMempoolSwap(rollbackCtx, record)
+	if err == nil {
+		err = rollbackMempoolSwapCached(rollbackCtx, k, mgr, voter)
+	}
+	if err == nil {
+		commit()
+		return true, nil
+	}
+
+	ctx.Logger().Error("fail to roll back invalidated mempool swap; scheduling retry", "error", err, "hash", voter.TxID)
+	// Keep the voter stopped even if writing the lifecycle retry marker fails.
+	k.SetObservedTxInVoter(ctx, voter)
+	if err = k.SetMempoolSwap(ctx, record); err != nil {
+		return false, fmt.Errorf("fail to persist invalidated mempool swap retry: %w", err)
+	}
+	return false, nil
 }
 
 // finishFinalizedMempoolSwapSettlementCached applies the complete effects
