@@ -320,6 +320,53 @@ func TestUnmatchedEphemeralFrostJoinStreamsAreNotParked(t *testing.T) {
 	}
 }
 
+// Unmatched legacy join streams used to be parked until a local ceremony that
+// never runs, so a follower retrying every 500ms filled libp2p's per-peer,
+// per-protocol inbound stream limit. They must be closed on handler return
+// without hiding the ack from a sender that waits for one.
+func TestUnmatchedLegacyJoinStreamsAreClosed(t *testing.T) {
+	hosts := setupHosts(t, 2)
+	sender := NewPartyCoordinator(hosts[0], time.Second)
+	receiver := NewPartyCoordinator(hosts[1], time.Second)
+	defer sender.Stop()
+	defer receiver.Stop()
+
+	openStreams := func() int {
+		count := 0
+		for _, conn := range hosts[1].Network().ConnsToPeer(hosts[0].ID()) {
+			count += len(conn.GetStreams())
+		}
+		return count
+	}
+
+	const joinID = "legacy-join-never-run-locally"
+	request, err := proto.Marshal(&messages.JoinPartyLeaderComm{ID: joinID, MsgType: "request"})
+	assert.NoError(t, err)
+	legacyRequest, err := proto.Marshal(&messages.JoinPartyRequest{ID: joinID})
+	assert.NoError(t, err)
+	for i := 0; i < 100; i++ {
+		assert.NoError(t, sender.sendMsgToPeer(request, joinID, hosts[1].ID(), joinPartyProtocolWithLeader, false))
+		assert.NoError(t, sender.sendMsgToPeer(legacyRequest, joinID, hosts[1].ID(), joinPartyProtocol, false))
+	}
+
+	response, err := proto.Marshal(&messages.JoinPartyLeaderComm{ID: joinID, MsgType: "response"})
+	assert.NoError(t, err)
+	stream, err := hosts[0].NewStream(t.Context(), hosts[1].ID(), joinPartyProtocolWithLeader)
+	assert.NoError(t, err)
+	assert.NoError(t, WriteStreamWithBuffer(response, stream))
+	ack, err := ReadStreamWithBuffer(stream)
+	assert.NoError(t, err, "graceful close must still deliver the ack")
+	assert.Equal(t, StreamMsgDone, string(ack))
+	assert.NoError(t, stream.Close())
+
+	assert.Eventually(t, func() bool { return openStreams() == 0 }, 5*time.Second, 10*time.Millisecond,
+		"receiver must not retain unmatched join streams")
+	receiver.streamMgr.streamLocker.RLock()
+	assert.Empty(t, receiver.streamMgr.unusedStreams)
+	receiver.streamMgr.streamLocker.RUnlock()
+	sender.ReleaseStream(joinID)
+}
+
 func TestGetPeerIDs(t *testing.T) {
 	id1 := tnet.RandIdentityOrFatal(t)
 	mn := mocknet.New()

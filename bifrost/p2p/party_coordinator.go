@@ -93,13 +93,6 @@ func (pc *PartyCoordinator) processRespMsg(respMsg *messages.JoinPartyLeaderComm
 	}
 }
 
-// TODO(stream-leak): legacy streams parked here (and in HandleStream /
-// HandleStreamWithLeader) under a msgID whose join-party never runs locally
-// are never released — ReleaseStream only fires at local keygen/keysign
-// completion. Resetting every unmatched legacy stream is unsafe because
-// "party not ready" is often a legitimate early arrival. Retryable FROST join
-// attempts are explicitly namespaced and handled by trackJoinStream below;
-// the remaining legacy lifecycle needs a TTL sweep or protocol-level change.
 func (pc *PartyCoordinator) processReqMsg(requestMsg *messages.JoinPartyLeaderComm, stream network.Stream) {
 	peerGroup, ok := pc.trackJoinStream(requestMsg.ID, stream)
 	if !ok {
@@ -117,16 +110,13 @@ func (pc *PartyCoordinator) processReqMsg(requestMsg *messages.JoinPartyLeaderCo
 	}
 }
 
-// trackJoinStream preserves the legacy behavior of parking unmatched join
-// streams while failing closed for retryable FROST attempt IDs. The peer-group
-// lock ensures a matched stream is tracked before the local Join call can
-// remove its group and release that attempt's streams.
+// trackJoinStream looks up the local peer group for a join-party message.
+// Inbound join streams are never parked: each carries one framed message, and
+// the handler closes it on return. Unmatched retryable FROST attempt IDs are
+// reset instead, since the sender retries the selected leader every 500ms.
 func (pc *PartyCoordinator) trackJoinStream(msgID string, stream network.Stream) (*peerStatus, bool) {
 	pc.joinPartyGroupLock.Lock()
 	peerGroup, ok := pc.peersGroup[msgID]
-	if ok {
-		pc.streamMgr.AddStream(msgID, stream)
-	}
 	pc.joinPartyGroupLock.Unlock()
 	if ok {
 		return peerGroup, true
@@ -135,29 +125,37 @@ func (pc *PartyCoordinator) trackJoinStream(msgID string, stream network.Stream)
 		if err := stream.Reset(); err != nil {
 			pc.logger.Debug().Err(err).Str("msg_id", msgID).Msg("fail to reset unmatched ephemeral FROST join stream")
 		}
-		return nil, false
 	}
-	pc.streamMgr.AddStream(msgID, stream)
 	return nil, false
 }
 
+// closeJoinStream gracefully closes an inbound join-party stream once its
+// handler has read the request and written any ack. Close flushes the ack
+// before FIN, so unlike Reset it is not visible to a sender awaiting a
+// response. Parking these streams until local ceremony completion leaked them
+// for join-parties that never run locally, and a follower retrying every
+// 500ms exhausts libp2p's per-peer, per-protocol inbound stream limit.
+func (pc *PartyCoordinator) closeJoinStream(stream network.Stream) {
+	if err := stream.Close(); err != nil {
+		pc.logger.Debug().Err(err).Msg("fail to close join party stream")
+	}
+}
+
 func (pc *PartyCoordinator) HandleStream(stream network.Stream) {
+	defer pc.closeJoinStream(stream)
 	remotePeer := stream.Conn().RemotePeer()
 	logger := pc.logger.With().Str("remote peer", remotePeer.String()).Logger()
 	logger.Debug().Msg("reading from join party request")
 	payload, err := ReadStreamWithBuffer(stream)
 	if err != nil {
 		logger.Err(err).Msgf("fail to read payload from stream")
-		pc.streamMgr.AddStream(StreamUnknown, stream)
 		return
 	}
 	var msg messages.JoinPartyRequest
 	if err = proto.Unmarshal(payload, &msg); err != nil {
 		logger.Err(err).Msg("fail to unmarshal join party request")
-		pc.streamMgr.AddStream(StreamUnknown, stream)
 		return
 	}
-	pc.streamMgr.AddStream(msg.ID, stream)
 	pc.joinPartyGroupLock.Lock()
 	peerGroup, ok := pc.peersGroup[msg.ID]
 	pc.joinPartyGroupLock.Unlock()
@@ -174,13 +172,13 @@ func (pc *PartyCoordinator) HandleStream(stream network.Stream) {
 
 // HandleStream handle party coordinate stream
 func (pc *PartyCoordinator) HandleStreamWithLeader(stream network.Stream) {
+	defer pc.closeJoinStream(stream)
 	remotePeer := stream.Conn().RemotePeer()
 	logger := pc.logger.With().Str("remote peer", remotePeer.String()).Logger()
 	logger.Debug().Msg("reading from join party request")
 	payload, err := ReadStreamWithBuffer(stream)
 	if err != nil {
 		logger.Err(err).Msgf("fail to read payload from stream")
-		pc.streamMgr.AddStream(StreamUnknown, stream)
 		return
 	}
 
@@ -188,7 +186,6 @@ func (pc *PartyCoordinator) HandleStreamWithLeader(stream network.Stream) {
 	err = proto.Unmarshal(payload, &msg)
 	if err != nil {
 		logger.Err(err).Msg("fail to unmarshal party data")
-		pc.streamMgr.AddStream(StreamUnknown, stream)
 		return
 	}
 
@@ -207,7 +204,6 @@ func (pc *PartyCoordinator) HandleStreamWithLeader(stream network.Stream) {
 		return
 	default:
 		logger.Err(err).Msg("fail to process this message")
-		pc.streamMgr.AddStream(StreamUnknown, stream)
 		return
 	}
 }
