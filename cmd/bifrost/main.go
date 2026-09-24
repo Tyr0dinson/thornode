@@ -131,15 +131,11 @@ func main() {
 	tmPrivateKeyEddsa := tcommon.CosmosPrivateKeyToTMPrivateKey(priKeyEddsa)
 
 	consts := constants.NewConstantValue()
-	jailTimeKeygen := time.Duration(consts.GetInt64Value(constants.JailTimeKeygen)) * constants.ThorchainBlockTime
 	jailTimeKeysign := time.Duration(consts.GetInt64Value(constants.JailTimeKeysign)) * constants.ThorchainBlockTime
-	if cfg.Signer.KeygenTimeout >= jailTimeKeygen {
-		log.Fatal().
-			Stringer("keygenTimeout", cfg.Signer.KeygenTimeout).
-			Stringer("keygenJail", jailTimeKeygen).
-			Msg("keygen timeout must be shorter than jail time")
+	if err = checkKeygenTimeout(cfg.Signer.KeygenTimeout, consts); err != nil {
+		log.Fatal().Err(err).Msg("keygen timeout must be shorter than jail time")
 	}
-	// FrostKeygenTimeout is intentionally NOT bound by jailTimeKeygen.
+	// FrostKeygenTimeout is intentionally NOT bound by the keygen jail times.
 	// FROST DKG is a 3-round p2p protocol whose round-2 message exchange
 	// can legitimately exceed the aggressive jail times used in test
 	// environments. The 60s
@@ -279,6 +275,21 @@ func main() {
 // signing, so the caller must hand recovery to superviseLegacyKeyshareRecovery.
 // Transient errors (RPC flake, message not yet found) keep the foreground retry
 // loop, which usually resolves within a few blocks.
+// checkKeygenTimeout ensures the keygen timeout is shorter than every jail
+// period a failed keygen can produce, so a jailed node is never released
+// while the keygen that blamed it may still be running. JailTimeKeygen
+// covers the flat jail and JailTimeKeygenBase the first escalated jail of a
+// non-active node.
+func checkKeygenTimeout(keygenTimeout time.Duration, consts constants.ConstantValues) error {
+	for _, name := range []constants.ConstantName{constants.JailTimeKeygen, constants.JailTimeKeygenBase} {
+		jail := time.Duration(consts.GetInt64Value(name)) * constants.ThorchainBlockTime
+		if keygenTimeout >= jail {
+			return fmt.Errorf("keygen timeout %s is not shorter than %s (%s)", keygenTimeout, name, jail)
+		}
+	}
+	return nil
+}
+
 func recoverLegacyKeysharesBeforeStartup(cfg config.Bifrost, bridge thorclient.ThorchainBridge) (start, degraded bool) {
 	ctx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stopSignals()
