@@ -1148,6 +1148,27 @@ func (b *thorchainBridge) GetMimir(key string) (int64, error) {
 	return value, nil
 }
 
+// GetMimirAtHeight reads a mimir value as of a specific consensus height via the
+// ?height= state query (bypassing the live one-block cache), so every keysign party
+// evaluating the same height observes the identical value. It gates the SOL
+// durable-nonce path deterministically (#661) instead of a divergent live GetMimir
+// read that could fragment a keysign across a governance flip. Unlike
+// getKeysignMimirAtHeight (a safety control where null must NOT read as disabled), a
+// feature gate treats a missing/null mimir as 0 (off).
+func (b *thorchainBridge) GetMimirAtHeight(key string, height int64) (int64, error) {
+	if height <= 0 {
+		return 0, fmt.Errorf("mimir-at-height requires a positive height: %d", height)
+	}
+	var value *int64
+	if err := b.getKeysignStateAtHeight(MimirEndpoint+"/key/"+key, height, &value); err != nil {
+		return 0, err
+	}
+	if value == nil {
+		return 0, nil // unset/null mimir = feature disabled
+	}
+	return *value, nil
+}
+
 // GetMimirWithRef is a helper function to more readably insert references (such as Asset MimirString or Chain) into Mimir key templates.
 func (b *thorchainBridge) GetMimirWithRef(template, ref string) (int64, error) {
 	// 'template' should be something like "Halt%sChain" (to halt an arbitrary specified chain)

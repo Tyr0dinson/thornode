@@ -55,15 +55,16 @@ const nonceProvisionFeeMarginLamports = 100_000
 // MimirKeySOLDurableNonce gate is on; retiring vaults have their nonce account closed
 // unconditionally so reclaimed rent is never stranded (a no-op when none exists).
 //
-// This mimir gates PROVISIONING (here). SignTx ALSO reads it live to gate the durable
-// outbound path, then branches on nonce-account existence (finalized on-chain state).
-// A governance flip can fragment a single outbound's keysign for the ~1-block
-// propagation window (self-heals via retain+retry); the height-anchored read is the
-// pre-mainnet hardening.
+// This mimir gates PROVISIONING (here) and the SignTx durable path; both read it at a
+// shared consensus height (durableNonceMimirAtHeight), so provisioning and signing
+// agree on whether the feature is on and a governance flip cannot fragment a keysign
+// (N3/N10).
 func (c *SOLClient) nonceProvisionCheck(anchorHeight int64) {
-	enabled, err := c.bridge.GetMimir(constants.MimirKeySOLDurableNonce)
+	// Read the gate at the shared anchor height (not a live per-node read), matching
+	// SignTx, so provisioning and signing agree on whether the feature is on (N3/N10).
+	enabled, err := c.durableNonceMimirAtHeight(anchorHeight)
 	if err != nil {
-		c.logger.Err(err).Msgf("fail to get %s mimir", constants.MimirKeySOLDurableNonce)
+		c.logger.Err(err).Msgf("fail to get %s mimir at height %d", constants.MimirKeySOLDurableNonce, anchorHeight)
 		return
 	}
 	provisioningEnabled := enabled > 0
@@ -140,8 +141,20 @@ func (c *SOLClient) provisionNonceForVault(vault ttypes.Vault, anchorHeight int6
 		return fmt.Errorf("fail to derive nonce address: %w", err)
 	}
 
-	// Idempotent: already provisioned -> nothing to do.
-	if _, _, gErr := c.rpcClient.GetNonceAccount(nonceAddr.String()); gErr == nil {
+	// Derive the consensus blockhash + anchor slot for this boundary up front: the
+	// blockhash seeds a byte-identical create tx across members, and the anchor slot
+	// pins the idempotency existence check to one finalized frontier (N3/N10).
+	recentBlockhash, anchorSlot, err := c.cachedConsensusBlockHash(anchorHeight)
+	if err != nil {
+		return fmt.Errorf("fail to derive consensus blockhash: %w", err)
+	}
+	if recentBlockhash == "" || anchorSlot <= 0 {
+		// No finalized consensus block for this height yet; retry next boundary.
+		return nil
+	}
+
+	// Idempotent: already provisioned -> nothing to do (read at the anchor slot).
+	if _, _, gErr := c.rpcClient.GetNonceAccount(nonceAddr.String(), uint64(anchorSlot)); gErr == nil {
 		return nil
 	} else if !errors.Is(gErr, rpc.ErrNonceAccountNotProvisioned) {
 		// transport error; retry next boundary
@@ -162,15 +175,6 @@ func (c *SOLClient) provisionNonceForVault(vault ttypes.Vault, anchorHeight int6
 			Str("balance", balance.String()).
 			Str("required", required.String()).
 			Msg("vault balance too low to provision durable-nonce account, skipping")
-		return nil
-	}
-
-	recentBlockhash, _, err := c.cachedConsensusBlockHash(anchorHeight)
-	if err != nil {
-		return fmt.Errorf("fail to derive consensus blockhash: %w", err)
-	}
-	if recentBlockhash == "" {
-		// No finalized consensus block for this height yet; retry next boundary.
 		return nil
 	}
 
@@ -216,7 +220,7 @@ func (c *SOLClient) closeNonceForRetiringVault(vault ttypes.Vault, anchorHeight 
 	}
 
 	// Nothing to close if the account does not exist.
-	if _, _, gErr := c.rpcClient.GetNonceAccount(nonceAddr.String()); gErr != nil {
+	if _, _, gErr := c.rpcClient.GetNonceAccount(nonceAddr.String(), 0); gErr != nil {
 		if errors.Is(gErr, rpc.ErrNonceAccountNotProvisioned) {
 			return nil
 		}

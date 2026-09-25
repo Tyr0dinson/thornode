@@ -582,17 +582,13 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	// MimirKeySOLDurableNonce mimir (default off). Even with both on, this falls through
 	// to the existing recent-blockhash path unchanged whenever no nonce account is
 	// available (ok=false).
-	// The durable-nonce branch only runs when the MimirKeySOLDurableNonce gate is on.
-	// The gate is read live (current), NOT at the keysign height: a live read can
-	// differ across parties only during the ~1-block window of a governance flip, and
-	// a disagreement there merely fragments THIS outbound's keysign for one round (it
-	// is retained and retried, converging once the flip has propagated) — the same
-	// self-healing the keep-alive's live mimir read relies on. Operators flip it
-	// gracefully (see MimirKeySOLDurableNonce) and never under load. A stricter
-	// keysign-height-anchored read (bridge getKeysignMimirAtHeight) removes even the
-	// flip-window round entirely and is the hardening to land before any mainnet
-	// enable. When the gate is off or unreadable, SignTx never calls getAccountInfo
-	// and behaves exactly as the pre-#661 recent-blockhash path.
+	// The durable-nonce branch only runs when the MimirKeySOLDurableNonce gate is on,
+	// read at the CONSENSUS keysign height (durableNonceMimirAtHeight), so every party
+	// evaluating this outbound observes the same gate value — a governance flip cannot
+	// split the party between the durable and legacy paths (N3/N10). The nonce
+	// existence read is likewise anchored to the consensus slot (minContextSlot). When
+	// the gate is off (default) SignTx never calls getAccountInfo and behaves exactly
+	// as the pre-#661 recent-blockhash path.
 	// Self-sends (the vault keep-alive / consolidate) must NOT take the durable-nonce
 	// branch: a nonce tx lists the vault once as fee-payer+source+authority and cannot
 	// also be the distinct recipient, so CreateTxWithNonce rejects a self-transfer. The
@@ -604,8 +600,34 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		selfSend = tx.ToAddress.Equals(vaultAddr)
 	}
 	if useSolDurableNonce && !selfSend {
-		if enabled, mErr := c.bridge.GetMimir(constants.MimirKeySOLDurableNonce); mErr == nil && enabled > 0 {
-			nonceAccount, nonceAuthority, nonceValue, ok, nErr := c.durableNonceForVault(tx)
+		// Gate on the mimir read at the CONSENSUS keysign height, not a live per-node
+		// read: every party evaluating this outbound's height observes the same value,
+		// so a governance flip can never split the party between the durable and legacy
+		// paths (N3/N10). A per-node gate-read FAILURE falls through to the legacy
+		// recent-blockhash path (available, and identical to the pre-feature path when
+		// the mimir is off — the default): when the feature is on this can fragment a
+		// single outbound's keysign for one round on the failing node, self-healing on
+		// retry once its RPC recovers. Once we KNOW the feature is on (enabled>0), the
+		// downstream anchor/nonce reads fail CLOSED so a provisioned vault never reverts
+		// to the expiring path. A retain+per-height cache of the gate read is a
+		// pre-enable hardening follow-up.
+		enabled, mErr := c.durableNonceMimirAtHeight(height)
+		if mErr == nil && enabled > 0 {
+			// Anchor the nonce existence/decode read to the consensus anchor slot (the
+			// same slot the recent-blockhash path derives) so all parties resolve the
+			// account against one finalized frontier, not each node's live tip.
+			_, anchorSlot, bhErr := c.cachedConsensusBlockHash(height)
+			if bhErr != nil {
+				c.countAbstain("durable_nonce_anchor_error")
+				return nil, nil, nil, fmt.Errorf("fail to derive durable-nonce anchor slot: %w", bhErr)
+			}
+			if anchorSlot <= 0 {
+				// No finalized consensus block for this height yet — retain + retry,
+				// matching the recent-blockhash path's abstain.
+				c.countAbstain("durable_nonce_no_anchor")
+				return nil, nil, nil, errors.New("no consensus anchor slot for durable nonce yet; retaining outbound for retry")
+			}
+			nonceAccount, nonceAuthority, nonceValue, ok, nErr := c.durableNonceForVault(tx, uint64(anchorSlot))
 			if nErr != nil {
 				// A usable-but-unreadable nonce account fails CLOSED: retain and retry
 				// rather than silently reverting a provisioned vault to the expiring
@@ -620,6 +642,8 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 				}
 				return c.finishSign(solTx, tx, memoForParsing, height)
 			}
+			// ok=false (not provisioned / not our authority) → fall through to the
+			// recent-blockhash path below.
 		}
 	}
 
@@ -1147,13 +1171,12 @@ func (c *SOLClient) CreateTx(tx stypes.TxOutItem, memoForParsing, recentBlockhas
 // account exists, durableNonceForVault returns ok=false, and behaviour is identical
 // to the pre-#661 path — including during a mixed-version fleet rollout, since both
 // on and off builds produce the recent-blockhash tx when no nonce account exists.
-// SignTx reads MimirKeySOLDurableNonce LIVE to decide whether to take the durable
-// path, then branches on nonce-account existence (finalized on-chain state). The
-// live read can differ across parties only during the ~1-block window of a governance
-// flip, which self-heals (the outbound is retained + retried once the flip propagates);
-// a keysign-height-anchored read (getKeysignMimirAtHeight) removes even that window and
-// is the hardening to land before any mainnet enable. HaltSigningSOL remains the
-// emergency stop.
+// SignTx reads MimirKeySOLDurableNonce at the CONSENSUS keysign height
+// (durableNonceMimirAtHeight → the bridge GetMimirAtHeight ?height= query), so every
+// party evaluating an outbound observes the same gate value and a governance flip
+// cannot split the party between the durable and legacy paths (N3/N10). It then
+// branches on nonce-account existence read at the consensus anchor slot. HaltSigningSOL
+// remains the emergency stop.
 const useSolDurableNonce = true
 
 // solNonceSeed is the fixed create_with_seed seed that fixes a vault's durable-nonce
@@ -1180,24 +1203,42 @@ func (c *SOLClient) nonceAddressForVault(vaultPubKey types.PublicKey) (types.Pub
 	return types.CreateWithSeed(vaultPubKey, solNonceSeed, types.SystemProgramID)
 }
 
+// mimirHeightReader is implemented by the production thorchain bridge (see
+// thorclient GetMimirAtHeight): it reads a mimir as of a consensus height so every
+// keysign party observes the same value. Test bridges that do not implement it fall
+// back to the live read.
+type mimirHeightReader interface {
+	GetMimirAtHeight(key string, height int64) (int64, error)
+}
+
+// durableNonceMimirAtHeight reads the SOLDurableNonce gate at the consensus keysign
+// height so the durable-vs-legacy choice is identical across all parties, not a
+// divergent per-node live read that could fragment a keysign across a governance flip
+// (#661, N3/N10). Falls back to the live GetMimir only for test bridges that do not
+// implement the height-anchored read; production always uses the concrete bridge.
+func (c *SOLClient) durableNonceMimirAtHeight(height int64) (int64, error) {
+	if r, ok := c.bridge.(mimirHeightReader); ok {
+		return r.GetMimirAtHeight(constants.MimirKeySOLDurableNonce, height)
+	}
+	return c.bridge.GetMimir(constants.MimirKeySOLDurableNonce)
+}
+
 // durableNonceForVault resolves the durable-nonce account a vault should use for its
 // next SOL outbound and reads its stored nonce (the value baked into the tx message
 // in place of a recent blockhash). It returns ok=true only when a usable nonce
 // account exists and is authorized by the vault.
 //
 // Determinism: the account address is a pure function of the vault pubkey, and the
-// stored nonce is read at FINALIZED commitment. A nonce value only changes when a
-// durable-nonce tx using it lands; between advances it is stable, so every party
-// reads the identical value regardless of when it queries. Single-nonce-per-vault +
-// the signer pipeline's one-item-per-{vault,chain}-per-pass serialization keeps at
-// most one durable-nonce tx in flight per vault, so the value does not move under a
-// live keysign — no consensus-height cache is required (unlike a recent blockhash,
-// which advances every slot).
+// existence/decode read is anchored to anchorSlot (minContextSlot) — the consensus
+// keysign anchor slot — so every party resolves the account against the same
+// finalized frontier rather than its own live tip (#661, N3/N10). The stored nonce
+// VALUE not moving under a live keysign is guaranteed by the serialize-with-finality
+// rule (N2), not by this read.
 //
 // A not-yet-provisioned account (ErrNonceAccountNotProvisioned) is NOT an error:
 // ok=false falls through to the recent-blockhash path while the provisioning loop
 // creates the account out of band. Only a transport/RPC error fails closed.
-func (c *SOLClient) durableNonceForVault(tx stypes.TxOutItem) (nonceAccount, nonceAuthority types.PublicKey, nonceValue string, ok bool, err error) {
+func (c *SOLClient) durableNonceForVault(tx stypes.TxOutItem, anchorSlot uint64) (nonceAccount, nonceAuthority types.PublicKey, nonceValue string, ok bool, err error) {
 	vaultAddr, err := tx.VaultPubKeyEddsa.GetAddress(c.GetChain())
 	if err != nil {
 		return types.PublicKey{}, types.PublicKey{}, "", false, fmt.Errorf("fail to get vault address: %w", err)
@@ -1211,7 +1252,7 @@ func (c *SOLClient) durableNonceForVault(tx stypes.TxOutItem) (nonceAccount, non
 		return types.PublicKey{}, types.PublicKey{}, "", false, fmt.Errorf("fail to derive nonce address: %w", err)
 	}
 
-	nonce, authority, err := c.rpcClient.GetNonceAccount(nonceAddr.String())
+	nonce, authority, err := c.rpcClient.GetNonceAccount(nonceAddr.String(), anchorSlot)
 	if err != nil {
 		if errors.Is(err, rpc.ErrNonceAccountNotProvisioned) {
 			// Not provisioned yet: fall through to the recent-blockhash path (the

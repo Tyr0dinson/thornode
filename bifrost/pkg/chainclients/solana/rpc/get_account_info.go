@@ -61,8 +61,16 @@ type nonceAccountData struct {
 // uninitialized account, or an empty stored nonce all return the RECOVERABLE
 // ErrNonceAccountNotProvisioned so the caller falls through to the recent-blockhash
 // path instead of halting the vault.
-func (s *SolRPC) GetNonceAccount(pubkey string) (nonce string, authority string, err error) {
+// minContextSlot > 0 pins the read to a bank at or beyond that consensus anchor slot
+// (getAccountInfo returns an error on a node still behind it), so every keysign party
+// resolves the account against the same finalized frontier rather than each node's
+// own live tip — the deterministic existence/decode anchor the durable-nonce gate
+// requires (#661). Pass 0 to read the current finalized state.
+func (s *SolRPC) GetNonceAccount(pubkey string, minContextSlot uint64) (nonce string, authority string, err error) {
 	cfg := map[string]interface{}{"encoding": "jsonParsed", "commitment": "finalized"}
+	if minContextSlot > 0 {
+		cfg["minContextSlot"] = minContextSlot
+	}
 	params := []interface{}{pubkey, cfg}
 
 	var response getAccountInfoResponse

@@ -26,7 +26,7 @@ func (s *GetNonceAccountTestSuite) TestValid(c *C) {
 	value := `{"owner":"11111111111111111111111111111111","data":{"program":"nonce","parsed":{"type":"initialized","info":{"authority":"9aE476sH92Vz7DMPyq5WLPkrKWivxeuTKEFKd2sZZcde","blockhash":"9rAtxuhtKn8qagc3UtZFyhLrw5zkh6etv43TibaXuSKo"}}},"space":80}`
 	server, rpc := newTestServer(nonceAcctHandler(value))
 	defer server.Close()
-	nonce, authority, err := rpc.GetNonceAccount("Nonce111")
+	nonce, authority, err := rpc.GetNonceAccount("Nonce111", 0)
 	c.Assert(err, IsNil)
 	c.Assert(nonce, Equals, "9rAtxuhtKn8qagc3UtZFyhLrw5zkh6etv43TibaXuSKo")
 	c.Assert(authority, Equals, "9aE476sH92Vz7DMPyq5WLPkrKWivxeuTKEFKd2sZZcde")
@@ -42,7 +42,7 @@ func (s *GetNonceAccountTestSuite) TestDustedArrayData(c *C) {
 	value := `{"owner":"11111111111111111111111111111111","data":["","base64"],"lamports":1}`
 	server, rpc := newTestServer(nonceAcctHandler(value))
 	defer server.Close()
-	_, _, err := rpc.GetNonceAccount("Dusted111")
+	_, _, err := rpc.GetNonceAccount("Dusted111", 0)
 	c.Assert(err, NotNil)
 	c.Assert(errors.Is(err, ErrNonceAccountNotProvisioned), Equals, true)
 }
@@ -51,7 +51,7 @@ func (s *GetNonceAccountTestSuite) TestDustedArrayData(c *C) {
 func (s *GetNonceAccountTestSuite) TestMissing(c *C) {
 	server, rpc := newTestServer(nonceAcctHandler("null"))
 	defer server.Close()
-	_, _, err := rpc.GetNonceAccount("Missing111")
+	_, _, err := rpc.GetNonceAccount("Missing111", 0)
 	c.Assert(errors.Is(err, ErrNonceAccountNotProvisioned), Equals, true)
 }
 
@@ -60,7 +60,7 @@ func (s *GetNonceAccountTestSuite) TestUninitialized(c *C) {
 	value := `{"owner":"11111111111111111111111111111111","data":{"program":"nonce","parsed":{"type":"uninitialized","info":{}}},"space":80}`
 	server, rpc := newTestServer(nonceAcctHandler(value))
 	defer server.Close()
-	_, _, err := rpc.GetNonceAccount("Uninit111")
+	_, _, err := rpc.GetNonceAccount("Uninit111", 0)
 	c.Assert(errors.Is(err, ErrNonceAccountNotProvisioned), Equals, true)
 }
 
@@ -73,7 +73,7 @@ func (s *GetNonceAccountTestSuite) TestRPCError(c *C) {
 	}
 	server, rpc := newTestServer(handler)
 	defer server.Close()
-	_, _, err := rpc.GetNonceAccount("Any111")
+	_, _, err := rpc.GetNonceAccount("Any111", 0)
 	c.Assert(err, NotNil)
 	c.Assert(errors.Is(err, ErrNonceAccountNotProvisioned), Equals, false)
 }
