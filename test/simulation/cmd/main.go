@@ -106,6 +106,7 @@ func simulationStages() []simulationStage {
 		{name: "forced-to-leave-keysign", defaultOn: false, constructor: core.NewForcedToLeaveKeysignActor},
 		{name: "jailed-keysign-fallback", defaultOn: false, constructor: core.NewJailedKeysignFallbackActor},
 		{name: "churn-balance", defaultOn: false, constructor: core.NewChurnBalanceActor},
+		{name: "xmr-historical-refund", defaultOn: false, constructor: features.XMRHistoricalRefund},
 		{name: "inactive-vault-refunds", defaultOn: false, constructor: features.InactiveVaultRefunds},
 		{name: "solvency", defaultOn: true, constructor: core.NewSolvencyCheckActor},
 		{name: "xmr-post-churn", defaultOn: false, constructor: suites.XMRPostChurn},
@@ -141,6 +142,12 @@ func selectedSimulationStages(enabledStages map[string]bool) []simulationStage {
 			continue
 		}
 		switch stage.name {
+		case "xmr-historical-refund":
+			// Requires the dedicated long-jail mocknet setup; keep generic "all"
+			// runs unchanged unless this scenario is explicitly requested as well.
+			if !enabledStages[stage.name] {
+				continue
+			}
 		case "churn":
 			// ClusterChurn already activates the cluster and requests a leave.
 			if enabled("cluster-churn") {

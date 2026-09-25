@@ -4,6 +4,9 @@ import (
 	"errors"
 	"testing"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
+
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	openapi "gitlab.com/thorchain/thornode/v3/openapi/gen"
@@ -117,5 +120,49 @@ func TestInactiveVaultRefundVerificationRejectsUnrelatedOutbounds(t *testing.T) 
 				t.Fatal("invalid refund accepted")
 			}
 		})
+	}
+}
+
+func TestHistoricalRefundRequiresDepartedMemberAndExactParty(t *testing.T) {
+	statuses := map[string]string{"a": "Active", "b": "Active", "c": "Active", "d": "Standby"}
+	good := thorclient.KeysignPolicy{RequiredSigners: 3, Signers: common.PubKeys{"a", "b", "d"}}
+	if err := validateHistoricalRefundPolicy(good, statuses); err != nil {
+		t.Fatal(err)
+	}
+	for _, signers := range []common.PubKeys{{"a", "b", "c"}, {"a", "b", "c", "d"}, {"a", "d"}, {"a", "d", "d"}, {"a", "b", "unknown"}} {
+		bad := good
+		bad.Signers = signers
+		if err := validateHistoricalRefundPolicy(bad, statuses); err == nil {
+			t.Fatalf("accepted a party that does not prove recovery: %v", signers)
+		}
+	}
+	vault := openapi.Vault{Status: "InactiveVault", PubKeyFrost: openapi.PtrString("frost"), Membership: []string{"a", "b", "c", "d"}}
+	nodes := []openapi.Node{}
+	for _, key := range vault.Membership {
+		nodes = append(nodes, openapi.Node{Status: statuses[key], PubKeySet: openapi.NodePubKeySet{Secp256k1: openapi.PtrString(key)}})
+	}
+	if _, ok := historicalRefundMembers(vault, nodes); !ok {
+		t.Fatal("eligible historical vault rejected")
+	}
+	nodes[3].ForcedToLeave = true
+	if _, ok := historicalRefundMembers(vault, nodes); ok {
+		t.Fatal("a forced-to-leave member cannot provide the required signature")
+	}
+	nodes[3].ForcedToLeave = false
+	nodes[3].Status = "Active"
+	if _, ok := historicalRefundMembers(vault, nodes); ok {
+		t.Fatal("all-active vault does not cover certificate recovery")
+	}
+}
+
+func TestHistoricalRefundDoesNotConfuseOutboundFallbackWithDeposit(t *testing.T) {
+	vault := common.Address("vault-address")
+	outbound := types.QueryObservedTxVoter{FinalisedHeight: 100, UpdatedVault: true, Tx: types.QueryObservedTx{Tx: common.Tx{Chain: common.XMRChain, FromAddress: vault, ToAddress: "refund-user"}}}
+	if err := validateNoXMRRefundDeposit(outbound, vault); err != nil {
+		t.Fatal(err)
+	}
+	outbound.Txs = []types.QueryObservedTx{{Tx: common.Tx{Chain: common.XMRChain, FromAddress: "unknown", ToAddress: vault}}}
+	if err := validateNoXMRRefundDeposit(outbound, vault); err == nil {
+		t.Fatal("unfinalized change votes must also fail the filter coverage check")
 	}
 }

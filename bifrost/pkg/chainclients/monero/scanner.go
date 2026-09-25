@@ -390,6 +390,11 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, error) 
 		return txIn, err
 	}
 	txIn.TxArray = canonicalItems
+	if len(canonicalItems) > 0 {
+		// BlockScanner must not advance until Observer owns every observation
+		// durably (including the inactive producer certificate outbox).
+		txIn.Persisted = make(chan error, 1)
+	}
 	if len(txIn.TxArray) > 0 {
 		txIDs := make([]string, 0, len(txIn.TxArray))
 		for _, item := range txIn.TxArray {
@@ -429,6 +434,64 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, error) 
 
 	replayHandedOff = true
 	return txIn, nil
+}
+
+// EnqueueAuthenticatedOutboundReplay hands a late, independently verified
+// source payout to Observer through the existing durable receipt mechanism.
+// It never treats a committed-accounting import as a fresh source vote.
+func (s *Scanner) EnqueueAuthenticatedOutboundReplay(tx common.ObservedTx) (bool, error) {
+	parsed, err := memo.ParseMemo(common.LatestVersion, tx.Tx.Memo)
+	if err != nil || !parsed.IsOutbound() {
+		return false, nil
+	}
+	if s.sidecar == nil || s.reorgStore == nil {
+		return false, errors.New("xmr payout replay is unavailable")
+	}
+	if err = validateXMRSpentRefsForSidecar(tx); err != nil {
+		return false, err
+	}
+	s.scanMu.Lock()
+	defer s.scanMu.Unlock()
+	location, err := s.sidecar.CanonicalTxLocation(tx.Tx.ID.String())
+	if err != nil {
+		return false, err
+	}
+	if s.CurrentHeight() < location.Height {
+		// MarkSpent completed before this lock: the future canonical scan owns
+		// delivery, including if it was waiting for this import to finish.
+		return false, nil
+	}
+	proof, err := s.sidecar.MarkObserved(tx.ObservedPubKey.String(), tx.Tx.ID.String(), location.Height, location.BlockHash)
+	if err != nil {
+		return false, err
+	}
+	amount := tx.Tx.Coins.GetCoin(common.XMRAsset).Amount.Uint64()
+	if err = s.validateAuthenticatedMigrationProofForObserved(proof, tx, location.Height, amount); err != nil {
+		return false, err
+	}
+	if !proof.ObservationEligible || (proof.Origin != sidecar.OutgoingOriginVaultCertified && proof.Origin != sidecar.OutgoingOriginLocalCombined) {
+		return false, errors.New("xmr payout proof is not eligible for source observation")
+	}
+	// Re-check the location after sidecar reconciliation, before the synced
+	// journal/receipt write. No local scan/reorg can cross scanMu meanwhile.
+	current, err := s.sidecar.CanonicalTxLocation(tx.Tx.ID.String())
+	if err != nil {
+		return false, err
+	}
+	if current != location {
+		return false, errors.New("xmr payout moved during replay enrollment")
+	}
+	item, ok := s.transferToTxInItem(proof, tx.Tx.FromAddress.String(), tx.Tx.ToAddress.String(), tx.ObservedPubKey, proof.Note, location.Height)
+	if !ok {
+		return false, errors.New("cannot build authenticated xmr payout observation")
+	}
+	meta := &reorgBlockMeta{Height: location.Height, BlockHash: location.BlockHash, PreviousHash: location.PreviousHash, ProvenanceComplete: true}
+	if err = s.reorgStore.PutAuthenticatedObservation(meta, item); err != nil {
+		return false, err
+	}
+	s.logger.Info().Str("txid", tx.Tx.ID.String()).Int64("block_height", location.Height).
+		Msg("durably queued authenticated xmr payout source replay")
+	return true, nil
 }
 
 // EnqueueAuthenticatedInternalInboundReplay creates a bounded replay request
@@ -1576,6 +1639,13 @@ func (s *Scanner) transfersToTxInItems(resp sidecar.Transfers, fetchHeight int64
 		}
 
 		memoText := strings.TrimSpace(transfer.Note)
+		// The note belongs to the transaction, including its change outputs.
+		// Apply this before proof import can identify the spend as our own.
+		if parsed, err := memo.ParseMemo(common.LatestVersion, memoText); err == nil && parsed.IsOutbound() {
+			s.logger.Info().Str("txid", transfer.TxID).Str("memo", memoText).
+				Msg("skip incoming monero output carrying an outbound memo")
+			continue
+		}
 		sender := unknownSenderAddress(transfer.TxID, to)
 		if knownSender, matchingOutgoing, foundKnownSender := s.resolveIncomingKnownSender(transfer, to, vaultPubKey, memoText, resp.Outgoing); foundKnownSender {
 			sender = knownSender

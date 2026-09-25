@@ -5,12 +5,15 @@ import (
 	rand "math/rand/v2"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/rs/zerolog/log"
+	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	openapi "gitlab.com/thorchain/thornode/v3/openapi/gen"
 	acommon "gitlab.com/thorchain/thornode/v3/test/simulation/actors/common"
+	"gitlab.com/thorchain/thornode/v3/test/simulation/actors/core"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/thornode"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 
@@ -52,10 +55,32 @@ type InactiveVaultRefundActor struct {
 	registeredMemo   string
 	registrationTxID common.TxID
 
-	getInactiveVaults func() ([]openapi.Vault, error)
+	requireHistoricalRecovery bool
+	recoveryVault             openapi.Vault
+	recoveryMembers           map[string]string
+	recoveryGate              Op
+	getInactiveVaults         func() ([]openapi.Vault, error)
 }
 
 func NewInactiveVaultRefundActor(asset common.Asset, rng *rand.Rand) *Actor {
+	return &newInactiveVaultRefundActor(asset, rng).Actor
+}
+
+// XMRHistoricalRefund is a deterministic five-node recovery scenario. Jailing
+// one active old member requires the departed member to sign without disabling
+// any node's scanner. The completed payment must use that historical policy.
+func XMRHistoricalRefund(rng *rand.Rand) *Actor {
+	root := NewActor("XMRHistoricalRefund", rng)
+	root.Append(newMultiNodeMimirActor("HaltChurning", 1, rng))
+	a := newInactiveVaultRefundActor(common.XMRAsset, rng)
+	a.requireHistoricalRecovery = true
+	a.Name = "XMRHistoricalRefund-DepartedSigner"
+	a.Timeout = 35 * time.Minute
+	root.Append(&a.Actor)
+	return root
+}
+
+func newInactiveVaultRefundActor(asset common.Asset, rng *rand.Rand) *InactiveVaultRefundActor {
 	a := &InactiveVaultRefundActor{
 		Actor:             *NewActor(fmt.Sprintf("InactiveVaultRefund-%s", asset), rng),
 		asset:             asset,
@@ -71,7 +96,7 @@ func NewInactiveVaultRefundActor(asset common.Asset, rng *rand.Rand) *Actor {
 	a.Ops = append(a.Ops, a.acquireUser)
 
 	// XMR needs an explicit refund destination in a registered reference memo.
-	a.Ops = append(a.Ops, a.registerRefundMemo, a.resolveRefundMemo)
+	a.Ops = append(a.Ops, a.registerRefundMemo, a.resolveRefundMemo, a.prepareHistoricalRecovery)
 
 	// send inbound to the selected inactive vault
 	a.Ops = append(a.Ops, a.sendInactiveVaultInbound)
@@ -79,7 +104,7 @@ func NewInactiveVaultRefundActor(asset common.Asset, rng *rand.Rand) *Actor {
 	// verify refund outbound
 	a.Ops = append(a.Ops, a.verifyRefund)
 
-	return &a.Actor
+	return a
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -146,7 +171,41 @@ func (a *InactiveVaultRefundActor) acquireUser(config *OpConfig) OpResult {
 	}
 }
 
-func (a *InactiveVaultRefundActor) selectInactiveVault(_ *OpConfig) OpResult {
+func (a *InactiveVaultRefundActor) selectInactiveVault(config *OpConfig) OpResult {
+	if a.requireHistoricalRecovery {
+		mimirs, err := thornode.GetMimirs()
+		if err != nil {
+			return OpResult{Error: err}
+		}
+		if mimirs["HALTCHURNING"] != 1 {
+			return OpResult{}
+		}
+		nodes, err := thornode.GetNodes()
+		if err != nil {
+			return OpResult{Error: err}
+		}
+		vaults, err := a.getInactiveVaults()
+		if err != nil {
+			return OpResult{Error: err}
+		}
+		for _, vault := range vaults {
+			members, ok := historicalRefundMembers(vault, nodes)
+			if !ok {
+				continue
+			}
+			for _, addr := range vault.Addresses {
+				if addr.Chain != common.XMRChain.String() || addr.Address == "" {
+					continue
+				}
+				a.inboundAddress, a.inboundVault = common.Address(addr.Address), vault.GetPubKeyFrost()
+				a.recoveryVault, a.recoveryMembers = vault, members
+				a.Log().Info().Str("vault", a.inboundVault).Interface("member_statuses", members).Msg("selected XMR historical refund vault")
+				return OpResult{Continue: true}
+			}
+		}
+		return OpResult{Finish: true, Error: fmt.Errorf("run cluster-churn first: historical refund requires a four-member inactive XMR vault with one departed and three active members")}
+	}
+
 	address, pubkey, err := a.findInactiveVaultAddress()
 	if err != nil {
 		return OpResult{Error: err}
@@ -291,6 +350,14 @@ func (a *InactiveVaultRefundActor) verifyRefund(config *OpConfig) OpResult {
 	// Verify the deposit reached the selected retired vault and that the
 	// completed outbound really is a refund to this user's source-chain address.
 	err = validateInactiveVaultRefund(details, a.asset, a.inboundTxid, a.inboundVault, a.refundAddress, a.amount)
+	if err == nil && a.requireHistoricalRecovery {
+		if result := a.verifyHistoricalRecovery(config, details); !result.Continue {
+			if result.Finish {
+				a.account.Release()
+			}
+			return result
+		}
+	}
 	a.account.Release()
 	return OpResult{Finish: true, Error: err}
 }
@@ -320,6 +387,105 @@ func validateInactiveVaultRefund(details openapi.TxDetailsResponse, asset common
 	amount, err := cosmos.ParseUint(outbound.Coins[0].Amount)
 	if err != nil || amount.IsZero() || amount.GT(deposited) {
 		return fmt.Errorf("inactive-vault refund has an invalid amount")
+	}
+	return nil
+}
+
+func historicalRefundMembers(vault openapi.Vault, nodes []openapi.Node) (map[string]string, bool) {
+	if vault.Status != "InactiveVault" || vault.GetPubKeyFrost() == "" || len(vault.Membership) != 4 {
+		return nil, false
+	}
+	byKey := make(map[string]openapi.Node)
+	for _, node := range nodes {
+		byKey[node.PubKeySet.GetSecp256k1()] = node
+	}
+	statuses := make(map[string]string)
+	active, departed := 0, 0
+	for _, key := range vault.Membership {
+		node, ok := byKey[key]
+		if !ok || node.ForcedToLeave || (node.Status == "Unknown" || node.Status == "") || statuses[key] != "" {
+			return nil, false
+		}
+		statuses[key] = node.Status
+		if node.Status == "Active" {
+			active++
+		} else {
+			departed++
+		}
+	}
+	return statuses, active == 3 && departed == 1
+}
+
+func (a *InactiveVaultRefundActor) prepareHistoricalRecovery(config *OpConfig) OpResult {
+	if !a.requireHistoricalRecovery {
+		return OpResult{Continue: true}
+	}
+	if a.recoveryGate == nil {
+		a.recoveryGate = core.NewXMRHistoricalSignerGate(a.recoveryVault)
+	}
+	return a.recoveryGate(config)
+}
+
+func validateHistoricalRefundPolicy(policy thorclient.KeysignPolicy, statuses map[string]string) error {
+	if policy.RequiredSigners != 3 || len(policy.Signers) != 3 {
+		return fmt.Errorf("refund signing policy did not force a three-member party")
+	}
+	departed := 0
+	seen := make(map[string]bool)
+	for _, key := range policy.Signers {
+		status, exists := statuses[key.String()]
+		if !exists || seen[key.String()] {
+			return fmt.Errorf("refund policy contains a duplicate or unexpected member")
+		}
+		seen[key.String()] = true
+		if status != "Active" {
+			departed++
+		}
+	}
+	if departed != 1 {
+		return fmt.Errorf("refund could complete without a departed signer; recovery coverage is missing")
+	}
+	return nil
+}
+
+func (a *InactiveVaultRefundActor) verifyHistoricalRecovery(config *OpConfig, details openapi.TxDetailsResponse) OpResult {
+	policy, err := config.NodeUsers[0].Thorchain.GetKeysignPolicy(common.PubKey(a.inboundVault), details.GetOutboundHeight())
+	if err != nil {
+		return OpResult{Error: err}
+	}
+	if err = validateHistoricalRefundPolicy(policy, a.recoveryMembers); err != nil {
+		return OpResult{Finish: true, Error: err}
+	}
+	hash := details.OutTxs[0].GetId()
+	// The default query falls back to outbound when no inbound voter exists.
+	// Inspect the destination instead of mistaking its finalization for a credit.
+	var inbound types.QueryObservedTxVoter
+	endpoint := fmt.Sprintf("%s/thorchain/tx/details/%s", thornode.BaseURL(), hash)
+	if err = thornode.Get(endpoint, &inbound); err != nil {
+		return OpResult{Error: err}
+	}
+	if err = validateNoXMRRefundDeposit(inbound, a.inboundAddress); err != nil {
+		return OpResult{Finish: true, Error: err}
+	}
+	var outbound types.QueryObservedTxVoter
+	if err = thornode.Get(endpoint+"?outbound=true", &outbound); err != nil {
+		return OpResult{Error: err}
+	}
+	if outbound.FinalisedHeight <= 0 {
+		return OpResult{}
+	}
+	a.Log().Info().Str("txid", hash).Int64("signing_height", details.GetOutboundHeight()).
+		Strs("signing_members", policy.Signers.Strings()).Interface("member_statuses", a.recoveryMembers).
+		Msg("historical XMR refund finalized with a required departed signer and no false inbound credit")
+	return OpResult{Continue: true}
+}
+
+func validateNoXMRRefundDeposit(voter types.QueryObservedTxVoter, source common.Address) error {
+	observations := append([]types.QueryObservedTx{voter.Tx}, voter.Txs...)
+	for _, observed := range observations {
+		if observed.Tx.Chain.Equals(common.XMRChain) && observed.Tx.ToAddress.Equals(source) {
+			return fmt.Errorf("XMR refund change was reported as an inbound: %s", voter.TxID)
+		}
 	}
 	return nil
 }

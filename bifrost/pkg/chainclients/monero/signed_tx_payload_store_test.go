@@ -441,7 +441,7 @@ func TestXMRSigningCacheIdentityKeepsScheduledMigrationGlobal(t *testing.T) {
 	}
 }
 
-func TestMemolessRecoveryAliasesIgnoreCanonicalStoreOrder(t *testing.T) {
+func TestXMRMemolessPlanUsesOnlySemanticObservationKey(t *testing.T) {
 	t.Parallel()
 
 	vault := testVaultPubKey(t, "memoless-recovery-alias-vault")
@@ -459,10 +459,19 @@ func TestMemolessRecoveryAliasesIgnoreCanonicalStoreOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("derive memoless recovery identity: %v", err)
 	}
-	if len(identity.ObserveKeys) != 2 {
-		t.Fatalf("expected wire and semantic memoless aliases, got %d", len(identity.ObserveKeys))
+	if len(identity.ObserveKeys) != 1 {
+		t.Fatalf("expected only the on-chain semantic memo alias, got %d", len(identity.ObserveKeys))
 	}
 
+	other := tx
+	other.OriginalMemo = "OUT:" + testXMRHash("another-inbound")
+	otherIdentity, err := xmrSigningCacheIdentity(other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slicesEqualStrings(identity.ObserveKeys, otherIdentity.ObserveKeys) {
+		t.Fatal("distinct memoless planned payouts must not share an empty-memo claim")
+	}
 	// Reserve canonicalization sorts and lower-cases aliases. Reverse that
 	// canonical order to model the construction order recovered from TxOutJSON;
 	// recovery must compare alias sets, not slice positions.

@@ -131,6 +131,7 @@ func (s *AttestationGossip) checkHistoricalXMRCertificateCapacity(
 ) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.evictAppliedHistoricalXMRCertificatesLocked(payloadHash, signer)
 	bucket := s.historicalXMRSpentRefCertificates[payloadHash]
 	if bucket == nil && len(s.historicalXMRSpentRefCertificates) >= maxHistoricalXMRCertificateBuckets {
 		return fmt.Errorf("historical certificate bucket capacity exhausted")
@@ -143,6 +144,38 @@ func (s *AttestationGossip) checkHistoricalXMRCertificateCapacity(
 		return fmt.Errorf("historical certificate signer capacity exhausted")
 	}
 	return nil
+}
+
+// An applied receiver has already handed replay to durable scanner storage.
+// Its memory signatures may be evicted; producer retransmission is separately
+// owned by the durable certificate outbox until THORChain finalizes the payout.
+func (s *AttestationGossip) evictAppliedHistoricalXMRCertificatesLocked(incoming [sha256.Size]byte, signer string) {
+	for s.historicalXMRCertificateSignerUse[signer] >= maxHistoricalXMRCertificateBucketsPerSigner ||
+		len(s.historicalXMRSpentRefCertificates) >= maxHistoricalXMRCertificateBuckets {
+		var oldest [sha256.Size]byte
+		var chosen *historicalXMRSpentRefCertificateBucket
+		for hash, bucket := range s.historicalXMRSpentRefCertificates {
+			if hash == incoming || !bucket.applied {
+				continue
+			}
+			if s.historicalXMRCertificateSignerUse[signer] >= maxHistoricalXMRCertificateBucketsPerSigner && bucket.attestations[signer] == nil {
+				continue
+			}
+			if chosen == nil || bucket.updatedAt.Before(chosen.updatedAt) {
+				oldest, chosen = hash, bucket
+			}
+		}
+		if chosen == nil {
+			return
+		}
+		for member := range chosen.attestations {
+			s.historicalXMRCertificateSignerUse[member]--
+			if s.historicalXMRCertificateSignerUse[member] <= 0 {
+				delete(s.historicalXMRCertificateSignerUse, member)
+			}
+		}
+		delete(s.historicalXMRSpentRefCertificates, oldest)
+	}
 }
 
 func (s *AttestationGossip) historicalXMRCertificateRPCCacheTTL() time.Duration {
@@ -176,8 +209,8 @@ func (s *AttestationGossip) xmrSpentRefsRetryDelayCap() time.Duration {
 }
 
 // historicalXMRCertificateVault returns a short-lived, positively validated
-// retiring vault. Errors and non-retiring vaults are never cached, so transient
-// Thornode failures and churn state changes remain immediately retryable.
+// source vault. Errors and missing vaults are never cached, so transient
+// THORNode failures remain immediately retryable. Status does not grant authority.
 // The caller must hold one certificate RPC slot.
 func (s *AttestationGossip) historicalXMRCertificateVault(vaultPubKey common.PubKey) (thortypes.Vault, error) {
 	pubKey := vaultPubKey.String()
@@ -212,8 +245,8 @@ func (s *AttestationGossip) historicalXMRCertificateVault(vaultPubKey common.Pub
 }
 
 func validateHistoricalXMRCertificateVault(vaultPubKey common.PubKey, vault thortypes.Vault) error {
-	if vault.IsEmpty() || !vault.IsRetiring() {
-		return fmt.Errorf("historical certificate source vault is not retiring")
+	if vault.IsEmpty() {
+		return fmt.Errorf("historical certificate source vault is empty")
 	}
 	if !vault.PubKeyFrost.IsEmpty() {
 		if !vault.PubKeyFrost.Equals(vaultPubKey) {
@@ -262,7 +295,7 @@ func (s *AttestationGossip) historicalXMRCertificatePlan(
 
 // validateHistoricalXMRSpentRefCertificate is the admission boundary for the
 // certificate-only protocol. It accepts an inactive sender for exactly one
-// purpose: certifying a daemon-observed, planned outbound from a retiring XMR
+// purpose: certifying a daemon-observed, planned outbound from an XMR
 // vault that the sender historically controlled. The exact ObservedTx payload
 // is application-signed and, on the network path, bound to the authenticated
 // libp2p peer before it can consume certificate state.
@@ -309,8 +342,10 @@ func (s *AttestationGossip) validateHistoricalXMRSpentRefCertificate(
 		return empty, common.AttestTx{}, fmt.Errorf("verify historical certificate signature: %w", err)
 	}
 	payloadHash := sha256.Sum256(payload)
-	if err = s.checkHistoricalXMRCertificateCapacity(payloadHash, string(tx.Attestation.PubKey)); err != nil {
-		return empty, common.AttestTx{}, err
+	if transportPeer != "" {
+		if err = s.checkHistoricalXMRCertificateCapacity(payloadHash, string(tx.Attestation.PubKey)); err != nil {
+			return empty, common.AttestTx{}, err
+		}
 	}
 
 	if s.bridge == nil {
@@ -381,6 +416,7 @@ func (s *AttestationGossip) acceptHistoricalXMRSpentRefCertificate(tx common.Att
 	if s.historicalXMRCertificateSignerUse == nil {
 		s.historicalXMRCertificateSignerUse = make(map[string]int)
 	}
+	s.evictAppliedHistoricalXMRCertificatesLocked(payloadHash, signer)
 	bucket := s.historicalXMRSpentRefCertificates[payloadHash]
 	duplicate := false
 	if bucket != nil {
@@ -778,6 +814,9 @@ func (s *AttestationGossip) triggerHistoricalXMRSpentRefCertificateReconcile(ctx
 }
 
 func (s *AttestationGossip) reconcileHistoricalXMRSpentRefCertificates(ctx context.Context) {
+	if s.certificateObserver != nil {
+		s.certificateObserver.retryPendingXMRCertificates(ctx)
+	}
 	type retainedCertificate struct {
 		payloadHash [sha256.Size]byte
 		tx          common.AttestTx
@@ -810,7 +849,9 @@ func (s *AttestationGossip) reconcileHistoricalXMRSpentRefCertificates(ctx conte
 		// complete certificate just as its bounded sidecar-import queue filled;
 		// retry must not depend on another network duplicate arriving.
 		retained = append(retained, retainedCertificate{payloadHash: payloadHash})
-		if isActive {
+		if isActive || s.certificateObserver != nil {
+			// Production retransmission belongs exclusively to the durable outbox.
+			// Still retry local imports, but do not bypass its per-record backoff.
 			continue
 		}
 		attestation := bucket.attestations[string(s.pubKey)]
@@ -945,4 +986,98 @@ func (s *AttestationGossip) mergeHistoricalXMRCertificateAttestations(
 	attestations []*common.Attestation,
 ) []*common.Attestation {
 	return append(attestations, s.historicalXMRSpentRefAttestations(payloadHash)...)
+}
+
+// retryPendingXMRCertificates runs independently of scanner progress. A full
+// outbox can backpressure the scanner without preventing completion and drain.
+func (o *Observer) retryPendingXMRCertificates(ctx context.Context) {
+	o.lastNodeStatusMu.RLock()
+	status := o.lastNodeStatus
+	o.lastNodeStatusMu.RUnlock()
+	if status == thortypes.NodeStatus_Unknown || o.storage == nil {
+		return
+	}
+	records, err := o.storage.pendingXMRCertificates(time.Now(), maxPendingObservedXMRSpentRefsPerReconcile)
+	if err != nil {
+		o.logger.Error().Err(err).Msg("load pending xmr certificates")
+		return
+	}
+	s := o.attestationGossip
+	for _, record := range records {
+		if ctx.Err() != nil {
+			return
+		}
+		var tx common.AttestTx
+		if err = tx.Unmarshal(record.Payload); err != nil {
+			o.logger.Error().Err(err).Msg("decode pending xmr certificate")
+			continue
+		}
+		// Reserve this retry before network I/O. Each record keeps its own backoff,
+		// so one unavailable payout cannot monopolize the next bounded pass.
+		if err = o.storage.finishPendingXMRCertificate(record, false, time.Now()); err != nil {
+			o.logger.Error().Err(err).Msg("persist xmr certificate retry schedule")
+			continue
+		}
+		voter, found, queryErr := o.thorchainBridge.GetObservedTxOutVoterUncached(ctx, tx.ObsTx.Tx.ID.String())
+		if queryErr == nil && found && pendingXMRCertificateComplete(tx.ObsTx, voter) {
+			// Completion applies to both phases of this exact source observation.
+			if err = o.storage.completePendingXMRCertificate(tx); err != nil {
+				o.logger.Error().Err(err).Msg("complete pending xmr certificate")
+			}
+			continue
+		}
+		if !tx.ObsTx.IsFinal() {
+			chain, chainErr := o.getChain(common.XMRChain)
+			if chainErr != nil {
+				continue
+			}
+			height, heightErr := chain.GetHeight()
+			if heightErr == nil && height >= tx.ObsTx.FinaliseHeight {
+				tx.ObsTx.BlockHeight = tx.ObsTx.FinaliseHeight
+				payload, payloadErr := tx.ObsTx.GetSignablePayloadWithInbound(false)
+				if payloadErr != nil {
+					continue
+				}
+				signature, signErr := s.privKey.Sign(payload)
+				if signErr != nil {
+					continue
+				}
+				tx.Attestation = &common.Attestation{PubKey: s.pubKey, Signature: signature}
+				// Persist the exact final payload before it can leave this process.
+				if err = o.storage.savePendingXMRCertificate(tx); err != nil {
+					continue
+				}
+			}
+		}
+		if s.isActiveValidator(s.host.ID()) {
+			// A returning validator contributes an ordinary vote; its historical
+			// certificate transport is intentionally rejected by active peers.
+			s.handleObservedTxAttestation(ctx, tx)
+			s.batcher.AddObservedTx(tx)
+		} else {
+			// Local application is helpful but never a completion condition. Continue
+			// broadcasting even if the in-memory import is applied or at capacity.
+			if acceptErr := s.acceptHistoricalXMRSpentRefCertificate(tx, ""); acceptErr != nil {
+				o.logger.Debug().Err(acceptErr).Str("tx_id", tx.ObsTx.Tx.ID.String()).Msg("defer local xmr certificate import")
+			}
+			s.broadcastHistoricalXMRSpentRefCertificate(ctx, tx)
+		}
+	}
+}
+
+func pendingXMRCertificateComplete(obs common.ObservedTx, voter *thortypes.QueryObservedTxVoter) bool {
+	if voter == nil || !voter.GetTxID().Equals(obs.Tx.ID) {
+		return false
+	}
+	if voter.Reverted {
+		return true
+	}
+	if voter.GetFinalisedHeight() <= 0 {
+		return false
+	}
+	tx := voter.GetTx()
+	return tx.GetBlockHeight() > 0 && tx.GetBlockHeight() == tx.GetFinaliseHeight() &&
+		tx.GetTx().EqualsEx(obs.Tx) && tx.GetObservedPubKey().Equals(obs.ObservedPubKey) &&
+		tx.GetXmrTxKey() == obs.XmrTxKey &&
+		common.SpentOutputRefsEqual(common.OutputRefsFromPointers(tx.GetSpentOutputRefs()), obs.SpentOutputRefs)
 }

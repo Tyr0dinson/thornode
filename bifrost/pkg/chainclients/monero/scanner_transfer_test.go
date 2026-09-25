@@ -341,3 +341,25 @@ func TestResolveOutgoingSenderRejectsSenderVaultMismatch(t *testing.T) {
 		t.Fatalf("expected sender/vault mismatch to fail closed, got sender=%q pk=%s", sender, pk.String())
 	}
 }
+
+func TestIncomingXMROutboundMemoChangeIsFilteredBeforeProofImport(t *testing.T) {
+	vault, address := testVaultPubKeyAndAddress(t)
+	for _, memoText := range []string{"OUT:" + strings.Repeat("a", 64), "REFUND:" + strings.Repeat("b", 64), "RAGNAROK:42"} {
+		t.Run(memoText, func(t *testing.T) {
+			scanner := NewScanner(log.Logger, nil, nil, common.XMRChain, common.EmptyPubKey, 72)
+			scanner.asgardLookup = map[string]common.PubKey{address.String(): vault}
+			change := sidecar.Transfer{TxID: testXMRHash("change"), Address: address.String(), VaultPubKey: vault.String(), Amount: 100000000, Height: 100, Note: memoText}
+			deposit := change
+			deposit.TxID = testXMRHash("ordinary-deposit")
+			deposit.Note = "SWAP:BTC.BTC:bc1qdeposit"
+			// No outgoing record, spend proof, or certificate has reached this node.
+			items, err := scanner.transfersToTxInItems(sidecar.Transfers{Incoming: []sidecar.Transfer{change, deposit}}, 100)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(items) != 1 || !strings.EqualFold(items[0].Tx, deposit.TxID) {
+				t.Fatalf("must ignore change while retaining ordinary deposit: %#v", items)
+			}
+		})
+	}
+}

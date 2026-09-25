@@ -86,6 +86,10 @@ type SpentOutputRefsImport struct {
 	Tx             common.ObservedTx
 	WireMemo       string
 	ChainCommitted bool
+	// ReplaySource transfers a peer-certified mined payout to the scanner's
+	// durable receipt queue before the import is acknowledged. Local signing
+	// imports leave this false because they run before broadcast.
+	ReplaySource bool
 }
 
 // SpentOutputRefsApplier is the optional XMR durability hook used after a

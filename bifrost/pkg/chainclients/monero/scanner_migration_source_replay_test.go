@@ -126,3 +126,82 @@ func TestLateMigrationReplayIncludesOnlyEligibleSourceProof(t *testing.T) {
 		})
 	}
 }
+
+func TestLatePayoutReplayRecreatesPrunedJournalAndPersistsSource(t *testing.T) {
+	for _, prefix := range []string{"OUT:", "REFUND:"} {
+		t.Run(prefix, func(t *testing.T) {
+			source, destination, txID, voter, refs := testXMRCatchupMigration(t, prefix)
+			voter.Tx.Tx.Memo = prefix + testXMRHash("inbound")
+			blockHash, parentHash := testXMRHash("late-block"), testXMRHash("late-parent")
+			proof := sidecar.Transfer{
+				TxID: txID, TxKey: voter.Tx.XmrTxKey, VaultPubKey: source.String(), FromAddress: voter.Tx.Tx.FromAddress.String(),
+				Address: voter.Tx.Tx.ToAddress.String(), Amount: 2 * moneroAtomicToThorchain, Fee: moneroAtomicToThorchain,
+				Height: 100, Note: voter.Tx.Tx.Memo, Origin: sidecar.OutgoingOriginVaultCertified, ObservationEligible: true,
+				SpentOutputRefs: []sidecar.SpentRef{{TxHash: refs[0].TxHash, OutputIndex: refs[0].OutputIndex, KeyImage: refs[0].KeyImage, SpendTxHash: txID}},
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/v1/monero/chain/tx/" + txID + "/location":
+					_ = json.NewEncoder(w).Encode(sidecar.CanonicalTxLocationResp{TxHash: txID, Height: 100, BlockHash: blockHash, PreviousHash: parentHash})
+				case "/v1/monero/outputs/mark-observed":
+					_ = json.NewEncoder(w).Encode(proof)
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			t.Cleanup(server.Close)
+			signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+			require.NoError(t, err)
+			scanner, _, _ := newXMRCatchupReplayScanner(t, signer, source, destination)
+			scanner.setCurrentHeight(200)
+			observed := common.NewObservedTx(voter.Tx.Tx, 110, source, 110)
+			observed.XmrTxKey, observed.SpentOutputRefs = voter.Tx.XmrTxKey, []common.OutputRef{*refs[0]}
+			// Final certificate height is not the mining height, and the real journal
+			// has already expired under the 72-block retention window.
+			_, err = scanner.reorgStore.PruneBefore(128)
+			require.NoError(t, err)
+			// A failure while preparing any part of the atomic write must leave
+			// neither a receipt nor a partial journal behind.
+			watchKey := []byte(scannerRelocationWatchPrefix + normalizeTxID(txID))
+			require.NoError(t, scanner.reorgStore.db.Put(watchKey, []byte("malformed"), syncScannerWrite))
+			_, err = scanner.EnqueueAuthenticatedOutboundReplay(observed)
+			require.ErrorContains(t, err, "malformed")
+			absent, err := scanner.reorgStore.Get(100)
+			require.NoError(t, err)
+			require.Nil(t, absent)
+			emptyClaims, err := scanner.canonicalObservationReceipts()
+			require.NoError(t, err)
+			require.Empty(t, emptyClaims)
+			require.NoError(t, scanner.reorgStore.db.Delete(watchKey, syncScannerWrite))
+			require.NoError(t, scanner.reorgStore.WatchRelocation(scannerRelocationWatch{
+				TxID: txID, OriginalHeight: 99, LocationHeight: 100, BlockHash: blockHash, PreviousHash: parentHash,
+			}))
+			queued, err := scanner.EnqueueAuthenticatedOutboundReplay(observed)
+			require.NoError(t, err)
+			require.True(t, queued)
+			watches, err := scanner.reorgStore.ListRelocationWatches(1)
+			require.NoError(t, err)
+			require.Len(t, watches, 1)
+			require.True(t, watches[0].VaultOrigin, "journal, receipt and relocation provenance commit together")
+			meta, err := scanner.reorgStore.Get(100)
+			require.NoError(t, err)
+			require.Contains(t, meta.CustomerTransactions, normalizeTxID(txID))
+			require.Contains(t, meta.VaultOriginTransactions, normalizeTxID(txID))
+			_, err = scanner.reorgStore.PruneBefore(128)
+			require.NoError(t, err)
+			claims, err := scanner.canonicalObservationReceipts()
+			require.NoError(t, err)
+			require.Len(t, claims, 1)
+			require.Len(t, claims[0].entry.Items, 1)
+			item := claims[0].entry.Items[0]
+			require.Equal(t, int64(100), item.BlockHeight)
+			require.Equal(t, observed.Tx.Memo, item.Memo)
+			require.Equal(t, source, item.ObservedVaultPubKey)
+			require.NotEmpty(t, item.SpentOutputRefs)
+			// Query replay never creates a fresh vote from a consensus-only proof.
+			proof.Origin = sidecar.OutgoingOriginChainCommitted
+			_, err = scanner.EnqueueAuthenticatedOutboundReplay(observed)
+			require.ErrorContains(t, err, "not eligible")
+		})
+	}
+}

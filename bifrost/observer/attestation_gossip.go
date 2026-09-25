@@ -223,6 +223,7 @@ type AttestationGossip struct {
 	activeVals map[peer.ID]bool // active val peer IDs
 	avMu       sync.Mutex
 
+	certificateObserver               *Observer
 	observerHandleObservedTxCommitted func(tx common.ObservedTx, allowFutureObservation bool)
 	observerHandleErrataTxCommitted   func(errata common.ErrataTx) error
 	observerApplySpentOutputRefs      func(request spentOutputRefsImport, onOutcome func(applied bool))
@@ -447,6 +448,7 @@ func (s *AttestationGossip) SetObserverApplyCommittedSpentRefs(
 // full limiter into an unbounded population of blocked goroutines. Saturated
 // work is rejected immediately; reconciliation can retry it later.
 func (s *AttestationGossip) applySpentRefsAsync(request spentOutputRefsImport, onOutcome func(applied bool)) {
+	request.ReplaySource = !request.ChainCommitted
 	s.applySpentRefsAsyncWithLimit(request, onOutcome, s.applySpentRefsSem, "pre-quorum")
 }
 

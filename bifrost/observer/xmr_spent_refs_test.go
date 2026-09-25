@@ -281,7 +281,7 @@ func TestPeerXMRSpentRefsRequirePlannedOutboundAndSourceVaultQuorum(t *testing.T
 		case got := <-applied:
 			assert.Equal(t, obsTx.Tx.ID, got.Tx.ID)
 			assert.Equal(t, obsTx.Tx.Memo, got.Tx.Memo)
-			assert.Empty(t, <-wireMemos)
+			assert.Equal(t, obsTx.Tx.Memo, <-wireMemos)
 		case <-time.After(time.Second):
 			t.Fatal("timed out waiting for historical source-vault quorum import")
 		}
@@ -704,7 +704,7 @@ func TestXMRPlannedOutboundMatcherUsesInboundVoterActions(t *testing.T) {
 
 	wireMemo, ok := ag.plannedXMRWireMemo(obsTx)
 	assert.True(t, ok)
-	assert.Empty(t, wireMemo)
+	assert.Equal(t, obsTx.Tx.Memo, wireMemo)
 
 	planned.wireMemo = planned.memo
 	bridge.getObservedTxVoterFunc = observerTestObservedTxVoterFunc(inboundID, planned)

@@ -922,3 +922,18 @@ func (s *stubGetHeightClient) GetHeight() (int64, error) {
 	s.calls++
 	return s.height, nil
 }
+
+func TestHistoricalXMRRefundStageRequiresExplicitSelection(t *testing.T) {
+	for _, explicit := range []bool{false, true} {
+		stages := selectedSimulationStages(map[string]bool{"all": true, "xmr-historical-refund": explicit})
+		found := false
+		for _, stage := range stages {
+			if stage.name == "xmr-historical-refund" {
+				found = true
+			}
+		}
+		if found != explicit {
+			t.Fatalf("dedicated historical-refund stage: explicit=%v found=%v", explicit, found)
+		}
+	}
+}

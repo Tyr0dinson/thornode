@@ -398,7 +398,7 @@ func plannedXMROutboundFromThorclient(item tctypes.TxOutItem) plannedXMROutbound
 		vaultPubKeyFrost: item.VaultPubKeyFrost,
 		coins:            item.Coins,
 		memo:             item.GetMemo(),
-		wireMemo:         item.Memo,
+		wireMemo:         tctypes.XMRWireMemo(item.Memo, item.OriginalMemo),
 		maxGas:           item.MaxGas,
 	}
 }
@@ -413,7 +413,7 @@ func plannedXMROutboundFromThorchain(item thortypes.TxOutItem) plannedXMROutboun
 		vaultPubKeyFrost: item.VaultPubKeyFrost,
 		coins:            common.NewCoins(item.Coin),
 		memo:             item.GetMemo(),
-		wireMemo:         item.Memo,
+		wireMemo:         tctypes.XMRWireMemo(item.Memo, item.OriginalMemo),
 		maxGas:           item.MaxGas,
 	}
 }

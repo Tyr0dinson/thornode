@@ -15,10 +15,19 @@ import (
 
 // AttestObservedTx creates and broadcasts an attestation for an observed transaction
 func (s *AttestationGossip) AttestObservedTx(ctx context.Context, obsTx *common.ObservedTx, inbound, allowFutureObservation bool) error {
+	return s.attestObservedTx(ctx, obsTx, inbound, allowFutureObservation, false)
+}
+
+func (s *AttestationGossip) attestObservedTx(ctx context.Context, obsTx *common.ObservedTx, inbound, allowFutureObservation, historicalOnly bool) error {
 	if obsTx == nil {
 		return fmt.Errorf("observed tx is nil")
 	}
 	isActive := s.isActiveValidator(s.host.ID())
+	if historicalOnly && isActive {
+		// The node-status poll and the gossip active-set refresh are independent.
+		// Never acknowledge a historical handoff via non-durable ordinary gossip.
+		return fmt.Errorf("historical XMR handoff is waiting for node status to agree with gossip membership")
+	}
 
 	signBz, err := obsTx.GetSignablePayloadWithInbound(inbound)
 	if err != nil {
@@ -43,10 +52,19 @@ func (s *AttestationGossip) AttestObservedTx(ctx context.Context, obsTx *common.
 		if !obsTx.Tx.Chain.Equals(common.XMRChain) || inbound || len(obsTx.SpentOutputRefs) == 0 {
 			return fmt.Errorf("skipping attest observed tx: not active")
 		}
-		// A churned-out member may still certify a spend by a retiring vault it
+		// A churned-out member may still certify a spend by a source vault it
 		// historically controlled. Keep this out of observedTxs and the ordinary
 		// batch protocol: it is a source-vault certificate share, never an active
 		// validator observation vote.
+		if s.certificateObserver != nil {
+			_, canonical, err := s.validateHistoricalXMRSpentRefCertificate(msg, "")
+			if err != nil {
+				return err
+			}
+			// The independent retry worker sends only durable payloads. Returning
+			// here transfers ownership before Observer acknowledges the scanner.
+			return s.certificateObserver.storage.savePendingXMRCertificate(canonical)
+		}
 		if err := s.acceptHistoricalXMRSpentRefCertificate(msg, ""); err != nil {
 			return fmt.Errorf("skipping inactive historical XMR certificate: %w", err)
 		}

@@ -1628,7 +1628,7 @@ func (s *Signer) applySpentOutputRefsFromObs(ctx context.Context, tx types.TxOut
 	}
 	applier.ApplySpentOutputRefsWithOutcome(chainclienttypes.SpentOutputRefsImport{
 		Tx:       obsTx,
-		WireMemo: tx.Memo,
+		WireMemo: types.XMRWireMemo(tx.Memo, tx.OriginalMemo),
 	}, onOutcome)
 	select {
 	case applied := <-outcome:

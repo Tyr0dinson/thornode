@@ -189,6 +189,9 @@ func TestApplySpentOutputRefsSidecarCall(t *testing.T) {
 	applied, retry := c.applySpentOutputRefsOnce(chainclienttypes.SpentOutputRefsImport{Tx: obsTx, WireMemo: obsTx.Tx.Memo})
 	assert.True(t, applied, "idempotent Marked=0 response must count as verified")
 	assert.False(t, retry)
+	applied, retry = c.applySpentOutputRefsOnce(chainclienttypes.SpentOutputRefsImport{Tx: obsTx, WireMemo: obsTx.Tx.Memo, ReplaySource: true})
+	assert.False(t, applied, "certificate import cannot succeed without a scanner to own replay")
+	assert.True(t, retry)
 
 	mu.Lock()
 	defer mu.Unlock()

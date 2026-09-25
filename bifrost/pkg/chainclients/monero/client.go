@@ -2070,7 +2070,7 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		Network:                     strings.ToLower(strings.TrimSpace(c.cfg.SignerExpectedNetwork)),
 		ToAddress:                   signReqCtx.toAddress,
 		AmountAtomic:                signReqCtx.amountAtomic,
-		Memo:                        tx.Memo,
+		Memo:                        stypes.XMRWireMemo(tx.Memo, tx.OriginalMemo),
 		FeeRate:                     feeRate,
 		SignerPubKeys:               members,
 		ActiveSignerPubKeys:         activeMembers,
@@ -2401,6 +2401,9 @@ func (c *Client) validateSignTx(tx stypes.TxOutItem, thorchainHeight int64, requ
 	}
 
 	memoForParsing := tx.GetMemo()
+	if strings.TrimSpace(stypes.XMRWireMemo(tx.Memo, tx.OriginalMemo)) == "" {
+		return validatedSignRequest{}, errors.New("new xmr payout requires its original memo")
+	}
 	if memoForParsing != "" {
 		parsedMemo, err := memo.ParseMemo(common.LatestVersion, memoForParsing)
 		if err != nil {
@@ -3001,11 +3004,20 @@ func (c *Client) applySpentOutputRefsOnceContext(ctx context.Context, request ty
 			Msg("refuse to enroll xmr spent-ref import without authenticated durable signer state")
 		return false, false
 	}
+	if request.ReplaySource && !request.ChainCommitted && c.scanner == nil {
+		return false, true
+	}
 	if c.scanner != nil {
 		if ctx.Err() != nil {
 			// The refs and signer state are durable. Periodic catch-up can
 			// retry the import and enroll replay after this request is canceled.
 			return false, true
+		}
+		if request.ReplaySource && !request.ChainCommitted {
+			if _, replayErr := c.scanner.EnqueueAuthenticatedOutboundReplay(tx); replayErr != nil {
+				c.logger.Error().Err(replayErr).Str("tx_hash", txHash).Msg("failed to queue authenticated xmr payout replay")
+				return false, true
+			}
 		}
 		queued, replayErr := c.scanner.EnqueueAuthenticatedInternalInboundReplay(tx)
 		if replayErr != nil {
@@ -4448,23 +4460,10 @@ func xmrSigningCacheIdentity(tx stypes.TxOutItem) (xmrSigningIdentity, error) {
 }
 
 func xmrScheduledObserveKeys(tx stypes.TxOutItem) []string {
-	memos := []string{tx.Memo, tx.GetMemo()}
-	keys := make([]string, 0, len(memos))
-	seen := make(map[string]struct{}, len(memos))
-	for _, observedMemo := range memos {
-		key := xmrScheduledObserveKey(
-			txVaultPubKey(tx),
-			tx.ToAddress.String(),
-			tx.Coins,
-			observedMemo,
-		)
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		keys = append(keys, key)
-	}
-	return keys
+	return []string{xmrScheduledObserveKey(
+		txVaultPubKey(tx), tx.ToAddress.String(), tx.Coins,
+		stypes.XMRWireMemo(tx.Memo, tx.OriginalMemo),
+	)}
 }
 
 // xmrScheduledLogicalHash is the vault-independent semantic identity of a

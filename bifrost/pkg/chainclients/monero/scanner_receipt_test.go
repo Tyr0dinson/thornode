@@ -784,3 +784,55 @@ func TestAdvanceSidecarCatchupChunksAndRecoversAmbiguousAdvance(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestLateObservationReceiptBacklogProgressAndJournalMerge(t *testing.T) {
+	store := newScannerReceiptStore(t)
+	scanner := NewScanner(log.Logger, nil, nil, common.XMRChain, common.EmptyPubKey, 72)
+	scanner.SetReorgStore(store)
+	for i := int64(1); i <= 80; i++ {
+		meta := &reorgBlockMeta{Height: i, BlockHash: fmt.Sprintf("h%d", i), PreviousHash: fmt.Sprintf("h%d", i-1), CustomerTransactions: []string{testXMRHash("existing")}}
+		if err := store.Set(meta); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.PutAuthenticatedObservation(meta, scannerReceiptItem(fmt.Sprintf("late-%d", i), i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	claims, err := scanner.canonicalObservationReceipts()
+	if err != nil || len(claims) != 64 {
+		t.Fatalf("first bounded fetch: %d %v", len(claims), err)
+	}
+	items := make([]*stypes.TxInItem, 0, len(claims))
+	for _, claim := range claims {
+		items = append(items, claim.entry.Items...)
+	}
+	scanner.attachObservationReceiptBarrier(items, claims, nil)
+	items[0].OnObservedTxRejected(errors.New("temporary observer failure"))
+	for _, item := range items[1:] {
+		item.OnObservedTxStored()
+	}
+	claims, err = scanner.canonicalObservationReceipts()
+	if err != nil || len(claims) != 64 {
+		t.Fatalf("retry lost receipts: %d %v", len(claims), err)
+	}
+	items = nil
+	for _, claim := range claims {
+		items = append(items, claim.entry.Items...)
+	}
+	scanner.attachObservationReceiptBarrier(items, claims, nil)
+	for _, item := range items {
+		item.OnObservedTxStored()
+	}
+	claims, err = scanner.canonicalObservationReceipts()
+	if err != nil || len(claims) != 16 {
+		t.Fatalf("later receipts did not progress: %d %v", len(claims), err)
+	}
+	meta, err := store.Get(80)
+	if err != nil || len(meta.CustomerTransactions) != 2 || len(meta.VaultOriginTransactions) != 1 {
+		t.Fatalf("late write erased journal evidence: %+v %v", meta, err)
+	}
+	conflict := &reorgBlockMeta{Height: 80, BlockHash: "different", PreviousHash: "h79"}
+	if err = store.PutAuthenticatedObservation(conflict, scannerReceiptItem("bad-fork", 80)); err == nil {
+		t.Fatal("conflicting fork accepted")
+	}
+}

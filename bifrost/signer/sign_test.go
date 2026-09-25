@@ -221,8 +221,8 @@ func TestApplySpentOutputRefsFromObsUsesWireMemo(t *testing.T) {
 	if chain.applied[0].Tx.Memo != originalMemo {
 		t.Fatalf("expected semantic import memo %q, got %q", originalMemo, chain.applied[0].Tx.Memo)
 	}
-	if len(chain.wireMemos) != 1 || chain.wireMemos[0] != txOut.Memo {
-		t.Fatalf("expected sidecar wire memo %q, got %q", txOut.Memo, chain.wireMemos)
+	if len(chain.wireMemos) != 1 || chain.wireMemos[0] != originalMemo {
+		t.Fatalf("expected sidecar wire memo %q, got %q", originalMemo, chain.wireMemos)
 	}
 }
 

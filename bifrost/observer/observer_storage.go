@@ -1,6 +1,8 @@
 package observer
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,7 +27,9 @@ type ObserverStorage struct {
 	db *leveldb.DB
 
 	// errataMu serializes read-modify-write access to the durable errata outbox.
-	errataMu sync.Mutex
+	errataMu               sync.Mutex
+	certificateMu          sync.Mutex
+	beforeCertificateWrite func() error
 
 	// beforeSyncTxWrite is a deterministic failure hook used only by durable
 	// duplicate-handoff tests. Production leaves it nil.
@@ -1057,4 +1061,175 @@ func (s *ObserverStorage) RemoveAllTxs() error {
 
 func (s *ObserverStorage) Close() error {
 	return s.db.Close()
+}
+
+const (
+	pendingXMRCertificatePrefix = "xmr-certificate-v1:"
+	maxPendingXMRCertificates   = 256
+)
+
+type pendingXMRCertificate struct {
+	Payload     []byte        `json:"payload"`
+	NextAttempt time.Time     `json:"next_attempt"`
+	RetryDelay  time.Duration `json:"retry_delay"`
+	key         string
+	raw         []byte
+}
+
+func pendingXMRCertificateKey(tx common.AttestTx) (string, error) {
+	// Both phases occupy one slot. Preserve the actual signed payload separately.
+	obs := tx.ObsTx
+	obs.BlockHeight = obs.FinaliseHeight
+	payload, err := obs.GetSignablePayloadWithInbound(false)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s%x", pendingXMRCertificatePrefix, sha256.Sum256(payload)), nil
+}
+
+func (s *ObserverStorage) savePendingXMRCertificate(tx common.AttestTx) error {
+	if s == nil || s.db == nil {
+		return errors.New("xmr certificate storage is unavailable")
+	}
+	payload, err := tx.Marshal()
+	if err != nil {
+		return err
+	}
+	if len(payload) > maxHistoricalXMRCertificateBytes {
+		return errors.New("xmr certificate exceeds durable payload limit")
+	}
+	key, err := pendingXMRCertificateKey(tx)
+	if err != nil {
+		return err
+	}
+	s.certificateMu.Lock()
+	defer s.certificateMu.Unlock()
+	previous, err := s.db.Get([]byte(key), nil)
+	record := pendingXMRCertificate{Payload: payload, NextAttempt: time.Now()}
+	switch {
+	case err == nil:
+		if err = json.Unmarshal(previous, &record); err != nil {
+			return err
+		}
+		var old common.AttestTx
+		if err = old.Unmarshal(record.Payload); err != nil {
+			return err
+		}
+		// Redelivery neither consumes a slot nor defeats retry backoff. Only a
+		// transition to final replaces the signed bytes; never downgrade a final.
+		if old.ObsTx.IsFinal() || !tx.ObsTx.IsFinal() {
+			return nil
+		}
+		record.Payload = payload
+		record.NextAttempt = time.Now()
+	case errors.Is(err, leveldb.ErrNotFound):
+		iter := s.db.NewIterator(util.BytesPrefix([]byte(pendingXMRCertificatePrefix)), nil)
+		count := 0
+		for iter.Next() {
+			count++
+			if count >= maxPendingXMRCertificates {
+				break
+			}
+		}
+		iterErr := iter.Error()
+		iter.Release()
+		if iterErr != nil {
+			return iterErr
+		}
+		if count >= maxPendingXMRCertificates {
+			return errors.New("pending xmr certificate queue is full; retry scanner handoff")
+		}
+	default:
+		return err
+	}
+	value, err := json.Marshal(record)
+	if err != nil {
+		return err
+	}
+	if s.beforeCertificateWrite != nil {
+		if err = s.beforeCertificateWrite(); err != nil {
+			return err
+		}
+	}
+	return s.db.Put([]byte(key), value, &opt.WriteOptions{Sync: true})
+}
+
+func (s *ObserverStorage) pendingXMRCertificates(now time.Time, limit int) ([]pendingXMRCertificate, error) {
+	s.certificateMu.Lock()
+	defer s.certificateMu.Unlock()
+	iter := s.db.NewIterator(util.BytesPrefix([]byte(pendingXMRCertificatePrefix)), nil)
+	defer iter.Release()
+	records := make([]pendingXMRCertificate, 0)
+	count := 0
+	for iter.Next() {
+		count++
+		if count > maxPendingXMRCertificates {
+			return nil, errors.New("pending xmr certificate queue exceeds limit")
+		}
+		var record pendingXMRCertificate
+		if len(iter.Value()) > 2*maxHistoricalXMRCertificateBytes {
+			return nil, errors.New("oversized saved xmr certificate")
+		}
+		if err := json.Unmarshal(iter.Value(), &record); err != nil {
+			return nil, err
+		}
+		if record.NextAttempt.After(now) {
+			continue
+		}
+		record.key = string(iter.Key())
+		record.raw = append([]byte(nil), iter.Value()...)
+		records = append(records, record)
+	}
+	if err := iter.Error(); err != nil {
+		return nil, err
+	}
+	slices.SortFunc(records, func(a, b pendingXMRCertificate) int { return a.NextAttempt.Compare(b.NextAttempt) })
+	if len(records) > limit {
+		records = records[:limit]
+	}
+	return records, nil
+}
+
+// finishPendingXMRCertificate uses a compare-and-swap so retry completion
+// cannot erase a newer final payload saved concurrently by scanner redelivery.
+func (s *ObserverStorage) finishPendingXMRCertificate(record pendingXMRCertificate, complete bool, now time.Time) error {
+	s.certificateMu.Lock()
+	defer s.certificateMu.Unlock()
+	current, err := s.db.Get([]byte(record.key), nil)
+	if errors.Is(err, leveldb.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(current, record.raw) {
+		return nil
+	}
+	if complete {
+		return s.db.Delete([]byte(record.key), &opt.WriteOptions{Sync: true})
+	}
+	if record.RetryDelay <= 0 {
+		record.RetryDelay = defaultObserveReconcileInterval
+	} else {
+		record.RetryDelay *= 2
+	}
+	if record.RetryDelay > xmrSpentRefsMaxRetryDelay {
+		record.RetryDelay = xmrSpentRefsMaxRetryDelay
+	}
+	record.NextAttempt = now.Add(record.RetryDelay)
+	value, err := json.Marshal(record)
+	if err != nil {
+		return err
+	}
+	return s.db.Put([]byte(record.key), value, &opt.WriteOptions{Sync: true})
+}
+
+func (s *ObserverStorage) completePendingXMRCertificate(tx common.AttestTx) error {
+	key, err := pendingXMRCertificateKey(tx)
+	if err != nil {
+		return err
+	}
+	s.certificateMu.Lock()
+	defer s.certificateMu.Unlock()
+	return s.db.Delete([]byte(key), &opt.WriteOptions{Sync: true})
 }
