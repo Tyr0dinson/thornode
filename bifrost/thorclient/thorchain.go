@@ -53,6 +53,7 @@ const (
 	XMRSpentOutputRefsEndpoint  = "/thorchain/xmr/spent_refs/%s"
 	AsgardVault                 = "/thorchain/vaults/asgard"
 	PubKeysEndpoint             = "/thorchain/vaults/pubkeys"
+	PendingOutboundEndpoint     = "/thorchain/queue/outbound"
 	ThorchainConstants          = "/thorchain/constants"
 	RagnarokEndpoint            = "/thorchain/ragnarok"
 	MimirEndpoint               = "/thorchain/mimir"
@@ -1146,6 +1147,40 @@ func (b *thorchainBridge) GetMimir(key string) (int64, error) {
 		return 0, fmt.Errorf("fail to unmarshal mimir: %w", err)
 	}
 	return value, nil
+}
+
+// PendingOutbound is the minimal view of a not-yet-observed scheduled outbound
+// the SOL durable-nonce signer needs to serialize one durable tx per vault (#661,
+// N2): its chain, vault pubkeys, and scheduled height.
+type PendingOutbound struct {
+	Chain            string `json:"chain"`
+	VaultPubKey      string `json:"vault_pub_key"`
+	VaultPubKeyEddsa string `json:"vault_pub_key_eddsa"`
+	InHash           string `json:"in_hash"`
+	Height           int64  `json:"height"`
+}
+
+// GetPendingOutbounds returns the outbounds currently in the outbound queue that
+// have NOT yet been observed (thornode's /thorchain/queue/outbound, which filters to
+// items whose OutHash is empty). Used by the SOL durable-nonce signer to gate a
+// durable outbound on being the lowest-height not-yet-observed item for its vault
+// (N2 serialize-with-finality): a higher-height durable outbound waits until the
+// lower-height one is observed and drops from this list.
+func (b *thorchainBridge) GetPendingOutbounds() ([]PendingOutbound, error) {
+	buf, s, err := b.getWithPath(PendingOutboundEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get pending outbounds: %w", err)
+	}
+	if s != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code %d", s)
+	}
+	var resp struct {
+		TxOutItems []PendingOutbound `json:"tx_out_items"`
+	}
+	if err := json.Unmarshal(buf, &resp); err != nil {
+		return nil, fmt.Errorf("fail to unmarshal pending outbounds: %w", err)
+	}
+	return resp.TxOutItems, nil
 }
 
 // GetMimirAtHeight reads a mimir value as of a specific consensus height via the

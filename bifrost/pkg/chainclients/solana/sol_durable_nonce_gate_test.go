@@ -1,7 +1,12 @@
 package solana
 
 import (
+	"errors"
+
+	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
+	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
+	"gitlab.com/thorchain/thornode/v3/common"
 
 	. "gopkg.in/check.v1"
 )
@@ -60,4 +65,71 @@ func (s *SolTestSuite) TestDurableNonceGateFallsBackToLive(c *C) {
 	v, err := fb.durableNonceMimirAtHeight(100)
 	c.Assert(err, IsNil)
 	c.Assert(v, Equals, int64(7))
+}
+
+// pendingBridge stubs the not-yet-observed outbound queue for the N2 serialization gate.
+type pendingBridge struct {
+	thorclient.ThorchainBridge
+	items []thorclient.PendingOutbound
+	err   error
+}
+
+func (b *pendingBridge) GetPendingOutbounds() ([]thorclient.PendingOutbound, error) {
+	return b.items, b.err
+}
+
+// TestDurableSerializeLowestOnly: only the lowest-height not-yet-observed SOL outbound
+// for a vault may sign durable (exactly one in flight); higher-height siblings wait;
+// the wait unblocks once the lower one drops from the pending queue (bounded, not a
+// permanent wedge); same-height ties break by InHash; other vaults/chains don't block;
+// and the gate fails open when unavailable.
+func (s *SolTestSuite) TestDurableSerializeLowestOnly(c *C) {
+	sol := common.SOLChain.String()
+	mk := func(h int64, hash string) stypes.TxOutItem {
+		return stypes.TxOutItem{Chain: common.SOLChain, VaultPubKey: "vaultA", InHash: common.TxID(hash), Height: h}
+	}
+	burst := []thorclient.PendingOutbound{
+		{Chain: sol, VaultPubKey: "vaultA", InHash: "h100", Height: 100},
+		{Chain: sol, VaultPubKey: "vaultA", InHash: "h101", Height: 101},
+		{Chain: sol, VaultPubKey: "vaultA", InHash: "h102", Height: 102},
+	}
+	cl := &SOLClient{bridge: &pendingBridge{items: burst}, logger: log.Logger}
+	c.Assert(cl.durableSerializeAllows(mk(100, "h100"), 100), Equals, true)  // lowest — the one in flight
+	c.Assert(cl.durableSerializeAllows(mk(101, "h101"), 101), Equals, false) // waits
+	c.Assert(cl.durableSerializeAllows(mk(102, "h102"), 102), Equals, false) // waits
+
+	// Lowest observed (drops from the pending queue) -> next becomes eligible (bounded).
+	cl2 := &SOLClient{bridge: &pendingBridge{items: burst[1:]}, logger: log.Logger}
+	c.Assert(cl2.durableSerializeAllows(mk(101, "h101"), 101), Equals, true)
+
+	// Stuck lowest: as long as @100 is present, @101 keeps waiting (not a crash/panic —
+	// bounded by the B1 reschedule guard in production).
+	c.Assert(cl.durableSerializeAllows(mk(101, "h101"), 101), Equals, false)
+
+	// Same-height tiebreak by InHash: lowest InHash goes, the other waits.
+	sameHeight := []thorclient.PendingOutbound{
+		{Chain: sol, VaultPubKey: "vaultA", InHash: "aaa", Height: 100},
+		{Chain: sol, VaultPubKey: "vaultA", InHash: "bbb", Height: 100},
+	}
+	cl3 := &SOLClient{bridge: &pendingBridge{items: sameHeight}, logger: log.Logger}
+	c.Assert(cl3.durableSerializeAllows(mk(100, "aaa"), 100), Equals, true)
+	c.Assert(cl3.durableSerializeAllows(mk(100, "bbb"), 100), Equals, false)
+
+	// A different vault's pending outbound does not block.
+	otherVault := []thorclient.PendingOutbound{{Chain: sol, VaultPubKey: "vaultB", InHash: "hx", Height: 50}}
+	cl4 := &SOLClient{bridge: &pendingBridge{items: otherVault}, logger: log.Logger}
+	c.Assert(cl4.durableSerializeAllows(mk(100, "h100"), 100), Equals, true)
+
+	// A non-SOL pending outbound does not block.
+	ethPending := []thorclient.PendingOutbound{{Chain: "ETH", VaultPubKey: "vaultA", InHash: "e50", Height: 50}}
+	cl5 := &SOLClient{bridge: &pendingBridge{items: ethPending}, logger: log.Logger}
+	c.Assert(cl5.durableSerializeAllows(mk(100, "h100"), 100), Equals, true)
+
+	// Fail-open: a query error proceeds (available; never halts SOL signing).
+	cl6 := &SOLClient{bridge: &pendingBridge{err: errors.New("boom")}, logger: log.Logger}
+	c.Assert(cl6.durableSerializeAllows(mk(100, "h100"), 100), Equals, true)
+
+	// Fail-open: a bridge without GetPendingOutbounds proceeds.
+	cl7 := &SOLClient{bridge: &fallbackMimirBridge{}, logger: log.Logger}
+	c.Assert(cl7.durableSerializeAllows(mk(100, "h100"), 100), Equals, true)
 }

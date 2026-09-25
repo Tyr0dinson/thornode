@@ -636,6 +636,16 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 				return nil, nil, nil, fmt.Errorf("fail to resolve durable nonce: %w", nErr)
 			}
 			if ok {
+				// Serialize-with-finality (N2): only the lowest-height not-yet-observed
+				// SOL outbound for this vault may sign durable, so at most one durable tx
+				// is in flight per vault and the stored nonce is stable during its
+				// keysign. A higher-height sibling WAITS (retain + retry) until the
+				// earlier one is observed and the nonce advances — it does NOT fall back
+				// to the blockhash path here.
+				if !c.durableSerializeAllows(tx, height) {
+					c.countAbstain("durable_nonce_serialize_wait")
+					return nil, nil, nil, errors.New("durable-nonce serialize: waiting for a lower-height in-flight SOL outbound for this vault to be observed")
+				}
 				solTx, buildErr := c.CreateTxWithNonce(tx, memoForParsing, nonceValue, nonceAccount, nonceAuthority)
 				if buildErr != nil {
 					return nil, nil, nil, fmt.Errorf("fail to create durable-nonce tx: %w", buildErr)
@@ -1221,6 +1231,63 @@ func (c *SOLClient) durableNonceMimirAtHeight(height int64) (int64, error) {
 		return r.GetMimirAtHeight(constants.MimirKeySOLDurableNonce, height)
 	}
 	return c.bridge.GetMimir(constants.MimirKeySOLDurableNonce)
+}
+
+// pendingOutboundReader is implemented by the production thorchain bridge; it lists
+// the not-yet-observed outbound queue so the durable-nonce path can serialize one
+// tx per vault (N2). Test bridges may not implement it (the gate then fails open).
+type pendingOutboundReader interface {
+	GetPendingOutbounds() ([]thorclient.PendingOutbound, error)
+}
+
+// durableSerializeAllows reports whether tx may take the durable-nonce path now
+// under serialize-with-finality (N2): only the LOWEST-height not-yet-observed SOL
+// outbound for its vault may sign durable, so at most one durable tx is in flight
+// per vault and the stored nonce is stable during its keysign. Higher-height (or
+// same-height, higher-InHash) siblings must WAIT until the earlier one is observed
+// (drops from the pending queue) and the nonce advances.
+//
+// FAILS OPEN: if the pending-outbound gate is unavailable (test bridge) or the query
+// errors, it returns true so a transient failure never halts SOL signing — the only
+// cost is a possible self-healing concurrency fragmentation, never fund-loss or a
+// double-pay (a durable tx signed with nonce N and a sibling with the same N conflict
+// on-chain; exactly one lands, the other re-signs with the advanced nonce).
+func (c *SOLClient) durableSerializeAllows(tx stypes.TxOutItem, height int64) bool {
+	r, ok := c.bridge.(pendingOutboundReader)
+	if !ok {
+		return true
+	}
+	pending, err := r.GetPendingOutbounds()
+	if err != nil {
+		c.logger.Err(err).Msg("fail to read pending outbounds for durable-nonce serialization; proceeding")
+		return true
+	}
+	sol := common.SOLChain.String()
+	vault := tx.VaultPubKey.String()
+	vaultEddsa := tx.VaultPubKeyEddsa.String()
+	inHash := tx.InHash.String()
+	for _, p := range pending {
+		if p.Chain != sol {
+			continue
+		}
+		// Belongs to this vault if EITHER non-empty pubkey matches; empty fields never
+		// match (else two different vaults with an empty eddsa would collide).
+		belongs := (vault != "" && p.VaultPubKey == vault) ||
+			(vaultEddsa != "" && p.VaultPubKeyEddsa == vaultEddsa)
+		if !belongs {
+			continue
+		}
+		// Skip the item itself.
+		if p.Height == height && p.InHash == inHash {
+			continue
+		}
+		// A strictly-earlier sibling (lower height, or same height + lower InHash for a
+		// deterministic same-block tiebreak) is still in flight -> this one waits.
+		if p.Height < height || (p.Height == height && p.InHash < inHash) {
+			return false
+		}
+	}
+	return true
 }
 
 // durableNonceForVault resolves the durable-nonce account a vault should use for its
