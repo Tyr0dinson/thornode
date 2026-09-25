@@ -78,8 +78,12 @@ func (a *InactiveVaultRefundActor) acquireUser(config *OpConfig) OpResult {
 		}
 	}
 
-	// amount is 1% of the pool asset depth
-	a.amount = cosmos.NewUintFromString(pool.BalanceAsset).QuoUint64(100)
+	fee, err := thornode.GetOutboundFee(a.asset)
+	if err != nil {
+		a.Log().Error().Err(err).Msg("failed to get refund outbound fee")
+		return OpResult{Continue: false}
+	}
+	a.amount = refundAmount(cosmos.NewUintFromString(pool.BalanceAsset), fee)
 
 	for _, user := range config.Users {
 		a.SetLogger(a.Log().With().Str("user", user.Name()).Logger())
@@ -153,9 +157,7 @@ func (a *InactiveVaultRefundActor) sendInactiveVaultInbound(config *OpConfig) Op
 	txid, err := SignAndBroadcastTx(client, tx)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to broadcast tx")
-		return OpResult{
-			Continue: false,
-		}
+		return SimTxErrorResult(err)
 	}
 	a.Log().Info().Str("txid", txid).Msg("sent inbound to inactive vault")
 

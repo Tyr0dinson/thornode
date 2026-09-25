@@ -72,6 +72,10 @@ func GetBalances(addr common.Address) (common.Coins, error) {
 	return coins, nil
 }
 
+// ErrInboundAddressNotFound means a successful inbound-address query had no
+// entry for the requested chain. Request and malformed-response errors differ.
+var ErrInboundAddressNotFound = errors.New("no inbound address found")
+
 func GetInboundAddress(chain common.Chain) (address common.Address, router *common.Address, err error) {
 	url := fmt.Sprintf("%s/thorchain/inbound_addresses", thornodeURL)
 	var inboundAddresses []openapi.InboundAddress
@@ -80,9 +84,19 @@ func GetInboundAddress(chain common.Chain) (address common.Address, router *comm
 		return "", nil, err
 	}
 
+	if inboundAddresses == nil {
+		return "", nil, fmt.Errorf("invalid null inbound address response")
+	}
+
 	// find address for chain
 	for _, inboundAddress := range inboundAddresses {
+		if inboundAddress.Chain == nil || *inboundAddress.Chain == "" {
+			return "", nil, fmt.Errorf("inbound address entry has no chain")
+		}
 		if *inboundAddress.Chain == string(chain) {
+			if inboundAddress.Address == nil || *inboundAddress.Address == "" {
+				return "", nil, fmt.Errorf("inbound address entry for chain %s has no address", chain)
+			}
 			if inboundAddress.Router != nil {
 				router = new(common.Address)
 				*router = common.Address(*inboundAddress.Router)
@@ -91,7 +105,7 @@ func GetInboundAddress(chain common.Chain) (address common.Address, router *comm
 		}
 	}
 
-	return "", nil, fmt.Errorf("no inbound address found for chain %s", chain)
+	return "", nil, fmt.Errorf("%w for chain %s", ErrInboundAddressNotFound, chain)
 }
 
 func GetInboundAddressPubKey(chain common.Chain) (common.PubKey, error) {
@@ -182,7 +196,27 @@ func GetPool(asset common.Asset) (openapi.Pool, error) {
 	return pool, err
 }
 
-func GetSwapQuote(from, to common.Asset, amount sdk.Uint, destination common.Address, extended bool) (openapi.QuoteSwapResponse, error) {
+// GetOutboundFee returns the current fee in the requested asset's 1e8 units.
+func GetOutboundFee(asset common.Asset) (sdk.Uint, error) {
+	url := fmt.Sprintf("%s/thorchain/outbound_fee/%s", thornodeURL, asset)
+	var fees []openapi.OutboundFee
+	if err := Get(url, &fees); err != nil {
+		return sdk.ZeroUint(), err
+	}
+	for _, fee := range fees {
+		if !strings.EqualFold(fee.Asset, asset.String()) {
+			continue
+		}
+		amount, err := sdk.ParseUint(fee.OutboundFee)
+		if err != nil || amount.IsZero() {
+			return sdk.ZeroUint(), fmt.Errorf("invalid outbound fee for %s: %q", asset, fee.OutboundFee)
+		}
+		return amount, nil
+	}
+	return sdk.ZeroUint(), fmt.Errorf("no outbound fee found for %s", asset)
+}
+
+func GetSwapQuote(from, to common.Asset, amount sdk.Uint, destination, refundAddress common.Address, extended bool) (openapi.QuoteSwapResponse, error) {
 	baseURL := fmt.Sprintf("%s/thorchain/quote/swap", thornodeURL)
 	parsedURL, err := url.Parse(baseURL)
 	if err != nil {
@@ -192,6 +226,12 @@ func GetSwapQuote(from, to common.Asset, amount sdk.Uint, destination common.Add
 	params.Add("from_asset", from.String())
 	params.Add("to_asset", to.String())
 	params.Add("amount", amount.String())
+	if from.GetChain().RequiresExplicitRefundAddress() {
+		if refundAddress.IsEmpty() {
+			return openapi.QuoteSwapResponse{}, fmt.Errorf("refund address is required for source chain %s", from.GetChain())
+		}
+		params.Add("refund_address", refundAddress.String())
+	}
 	if !destination.IsEmpty() {
 		params.Add("destination", destination.String())
 	}
@@ -234,10 +274,7 @@ func GetVaultXMRStates() ([]VaultXMRState, error) {
 }
 
 type XMRSpentOutputRefs struct {
-	SpentOutputRefs []struct {
-		TxHash      string `json:"tx_hash"`
-		OutputIndex uint32 `json:"output_index"`
-	} `json:"spent_output_refs"`
+	SpentOutputRefs []common.OutputRef `json:"spent_output_refs"`
 }
 
 func GetXMRSpentOutputRefs(vaultPubKey string) (XMRSpentOutputRefs, error) {
@@ -249,16 +286,17 @@ func GetXMRSpentOutputRefs(vaultPubKey string) (XMRSpentOutputRefs, error) {
 
 type ObservedTxSpentRefs struct {
 	ObservedTx struct {
-		SpentOutputRefs []struct {
-			TxHash      string `json:"tx_hash"`
-			OutputIndex uint32 `json:"output_index"`
-		} `json:"spent_output_refs"`
-		Status string `json:"status"`
+		Tx              openapi.Tx         `json:"tx"`
+		ObservedPubKey  string             `json:"observed_pub_key"`
+		SpentOutputRefs []common.OutputRef `json:"spent_output_refs"`
+		Status          string             `json:"status"`
 	} `json:"observed_tx"`
 }
 
 func GetTxSpentRefs(txid string) (ObservedTxSpentRefs, error) {
-	url := fmt.Sprintf("%s/thorchain/tx/details/%s", thornodeURL, txid)
+	// The consensus observation is returned by /tx/{id}; /tx/details/{id}
+	// returns the voter with a different JSON envelope.
+	url := fmt.Sprintf("%s/thorchain/tx/%s", thornodeURL, txid)
 	var result ObservedTxSpentRefs
 	err := Get(url, &result)
 	return result, err

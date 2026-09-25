@@ -61,6 +61,7 @@ var (
 		strings.Repeat("cat ", 23) + "crawl",
 		strings.Repeat("fox ", 23) + "filter",
 		strings.Repeat("pig ", 23) + "quick",
+		strings.Repeat("frog ", 23) + "blossom",
 	}
 
 	mocknetUserMnemonics = [...]string{

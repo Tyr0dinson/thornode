@@ -13,10 +13,41 @@ import (
 	"time"
 
 	sdkmath "cosmossdk.io/math"
+	"github.com/cosmos/cosmos-sdk/crypto/hd"
+	"github.com/cosmos/cosmos-sdk/types/bech32"
+	bip39 "github.com/cosmos/go-bip39"
+	thornodecmd "gitlab.com/thorchain/thornode/v3/cmd"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	acommon "gitlab.com/thorchain/thornode/v3/test/simulation/actors/common"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 )
+
+func TestMocknetValidatorsSupportChurnOut(t *testing.T) {
+	minimum := constants.NewConstantValue().GetInt64Value(constants.MinimumNodesForBFT)
+	if int64(len(mocknetValidatorMnemonics)-1) < minimum {
+		t.Fatal("mocknet needs a spare validator so churn-out preserves the BFT minimum")
+	}
+	seen := make(map[string]bool)
+	genesis := readRepoFile(t, "build/scripts/genesis.sh")
+	for _, mnemonic := range mocknetValidatorMnemonics {
+		if !bip39.IsMnemonicValid(mnemonic) || seen[mnemonic] {
+			t.Fatal("mocknet validator mnemonics must be valid and distinct")
+		}
+		seen[mnemonic] = true
+		derived, err := hd.Secp256k1.Derive()(mnemonic, "", thornodecmd.THORChainHDPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		address, err := bech32.ConvertAndEncode("tthor", hd.Secp256k1.Generate()(derived).PubKey().Address())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(genesis, "add_account "+address+" rune 200000000000000") {
+			t.Fatalf("mocknet validator %s needs genesis funds for its bond and fees", address)
+		}
+	}
+}
 
 func repoRoot(t *testing.T) string {
 	t.Helper()
@@ -215,17 +246,44 @@ func TestMocknetBifrostDeclaresXMRChainNetwork(t *testing.T) {
 	}
 }
 
-func TestMocknetBifrostWaitsForSolanaRPC(t *testing.T) {
-	entrypoint := readRepoFile(t, "build/scripts/bifrost.sh")
+func TestMocknetBifrostConfiguresXMRSignerConnection(t *testing.T) {
+	compose := readRepoFile(t, "build/docker/docker-compose.yml")
 	for _, snippet := range []string{
-		`wait_for_solana_rpc()`,
-		`BIFROST_CHAINS_SOL_DISABLED`,
-		`BIFROST_CHAINS_SOL_RPC_HOST`,
-		`"method":"getSlot"`,
+		`BIFROST_CHAINS_XMR_SIGNER_AUTHORIZATION_BEARER: "${XMR_FROST_AUTH_BEARER:-xmr-frost-mocknet-token}"`,
+		`BIFROST_CHAINS_XMR_SIGNER_EXPECTED_NETWORK: "mocknet"`,
+		`BIFROST_CHAINS_XMR_SIGNER_ALLOW_INSECURE_HTTP: "true"`,
 	} {
-		if !strings.Contains(entrypoint, snippet) {
-			t.Fatalf("bifrost entrypoint must contain %q so Solana startup does not trigger a mid-keygen Bifrost restart", snippet)
+		if !strings.Contains(compose, snippet) {
+			t.Fatalf("mocknet bifrost compose must contain %q so the XMR client can authenticate and connect to its mocknet HTTP signer", snippet)
 		}
+	}
+	if strings.Contains(compose, "BIFROST_CHAINS_XMR_AUTHORIZATION_BEARER:") {
+		t.Fatal("mocknet bifrost must use the signer-specific XMR authorization setting")
+	}
+}
+
+func TestMocknetExplicitlyEnablesXMRMonovaultKeygen(t *testing.T) {
+	compose := readRepoFile(t, "build/docker/docker-compose.yml")
+	start := strings.Index(compose, "  _thornode: &thornode")
+	if start < 0 {
+		t.Fatal("failed to locate mocknet THORNode service anchor")
+	}
+	relativeEnd := strings.Index(compose[start:], "\n  thornode:")
+	if relativeEnd < 0 {
+		t.Fatal("failed to locate the end of the mocknet THORNode service anchor")
+	}
+	end := start + relativeEnd
+	if !strings.Contains(compose[start:end], "ENABLE_MONOVAULT_KEYGEN: 1") {
+		t.Fatal("mocknet THORNode must explicitly enable S00 XMR monovault keygen")
+	}
+}
+
+func TestMocknetBifrostDoesNotWaitForSolanaRPC(t *testing.T) {
+	entrypoint := readRepoFile(t, "build/scripts/bifrost.sh")
+	// The SOL scanner owns initial-slot retries; its tests cover recovery and stop.
+	// Waiting here would prevent every chain from starting while SOL RPC is down.
+	if strings.Contains(entrypoint, "wait_for_solana_rpc") {
+		t.Fatal("bifrost entrypoint must leave Solana RPC readiness to the SOL scanner")
 	}
 }
 
@@ -269,9 +327,11 @@ func TestMocknetClusterPublishesBifrostAndXMRFrostReadinessPorts(t *testing.T) {
 		"- 6041:6040",
 		"- 6042:6040",
 		"- 6043:6040",
+		"- 6044:6040",
 		"- 8285:8283",
 		"- 8286:8283",
 		"- 8287:8283",
+		"- 8288:8283",
 	} {
 		if !strings.Contains(compose, snippet) {
 			t.Fatalf("mocknet cluster compose must publish %q so simulation can gate churn on all Bifrost and XMR FROST readiness endpoints", snippet)
@@ -740,7 +800,7 @@ func TestSimulationTargetsUseExplicitStageDefaults(t *testing.T) {
 		t.Fatalf("missing expected single-node simulation stages: %s", wantSingle)
 	}
 
-	wantCluster := "TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,swaps,memoless-swaps,inactive-vault-refunds,memoless-refunds,bond-yield,solvency,xmr-post-churn,ragnarok"
+	wantCluster := "TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,swaps,memoless-swaps,inactive-vault-refunds,memoless-refunds,cluster-churn,solvency,xmr-post-churn,ragnarok"
 	if !strings.Contains(makefile, wantCluster) {
 		t.Fatalf("missing expected cluster simulation stages: %s", wantCluster)
 	}
@@ -776,7 +836,7 @@ func TestSimulationTargetsOnlyRequestDockerTTYInteractively(t *testing.T) {
 	}
 }
 
-func TestSimulationStageOrder(t *testing.T) {
+func TestSimulationStageRegistryOrder(t *testing.T) {
 	stageNames := make([]string, 0, len(simulationStages()))
 	for _, stage := range simulationStages() {
 		stageNames = append(stageNames, stage.name)
@@ -784,11 +844,18 @@ func TestSimulationStageOrder(t *testing.T) {
 
 	assertStageOrder(t, stageNames, "bootstrap", "xmr-coverage")
 	assertStageOrder(t, stageNames, "xmr-coverage", "arb")
-	assertStageOrder(t, stageNames, "memoless-refunds", "bond-yield")
-	assertStageOrder(t, stageNames, "churn", "xmr-post-churn")
-	assertStageOrder(t, stageNames, "solvency", "xmr-post-churn")
+	assertStageOrder(t, stageNames, "memoless-refunds", "cluster-churn")
 	assertStageOrder(t, stageNames, "xmr-spent-refs", "jailed-keysign-fallback")
-	assertStageOrder(t, stageNames, "xmr-post-churn", "ragnarok")
+}
+
+func TestSimulationStageNamesUnique(t *testing.T) {
+	seen := make(map[string]struct{}, len(simulationStages()))
+	for _, stage := range simulationStages() {
+		if _, exists := seen[stage.name]; exists {
+			t.Fatalf("simulation stage %q is registered more than once", stage.name)
+		}
+		seen[stage.name] = struct{}{}
+	}
 }
 
 func TestDockerignoreKeepsSimtestBuildContextLean(t *testing.T) {

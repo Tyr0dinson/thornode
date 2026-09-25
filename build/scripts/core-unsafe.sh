@@ -115,6 +115,78 @@ deploy_evm_contracts() {
   done
 }
 
+# A successful sync broadcast only means CheckTx accepted the transaction. Wait
+# for successful execution before signing the next transaction with this account.
+mocknet_tx() {
+  local node="tcp://${PEER}:${PORT_RPC:-26657}"
+  local response code txhash attempt poll committed
+  for ((attempt = 1; attempt <= 10; attempt++)); do
+    if ! response=$(printf "%s\n" "$SIGNER_PASSWD" | timeout 30s thornode tx thorchain "$@" \
+      --node "$node" --from "$SIGNER_NAME" --keyring-backend=file --chain-id "$CHAIN_ID" \
+      --yes --broadcast-mode sync --output json); then
+      echo "Mocknet $1 broadcast failed" >&2
+      return 1
+    fi
+    if ! code=$(jq -er '.code | numbers' <<<"$response"); then
+      echo "Mocknet $1 returned an invalid broadcast response" >&2
+      return 1
+    fi
+
+    if [ "$code" = "0" ]; then
+      if ! txhash=$(jq -er '.txhash | strings | select(test("^[[:xdigit:]]{64}$"))' <<<"$response"); then
+        echo "Mocknet $1 broadcast returned no valid transaction hash" >&2
+        return 1
+      fi
+      committed=false
+      for ((poll = 1; poll <= 30; poll++)); do
+        if response=$(timeout 5s thornode query tx "$txhash" --node "$node" --output json 2>/dev/null) &&
+          jq -e --arg hash "$txhash" '.txhash == $hash and ((.height | tonumber) > 0) and (.code | type == "number")' <<<"$response" >/dev/null 2>&1; then
+          code=$(jq -r '.code' <<<"$response")
+          committed=true
+          break
+        fi
+        sleep 2
+      done
+      if [ "$committed" != true ]; then
+        # The outcome is unknown. In particular, never submit another bond just
+        # because the accepted transaction could not be found in the index yet.
+        echo "Mocknet $1 transaction $txhash was not confirmed after 30 queries" >&2
+        return 1
+      fi
+      if [ "$code" = "0" ]; then
+        echo "Mocknet $1 transaction $txhash committed successfully"
+        return 0
+      fi
+    fi
+
+    # Only a known sequence rejection is safe to retry automatically. Each
+    # invocation signs again using the account sequence from the same peer.
+    if [ "$code" != "32" ] || ! jq -e '.codespace == "sdk"' <<<"$response" >/dev/null; then
+      echo "Mocknet $1 transaction rejected: $(jq -r '.raw_log' <<<"$response") (code $code)" >&2
+      return 1
+    fi
+    echo "Mocknet $1 account sequence mismatch (attempt $attempt/10)" >&2
+    sleep 2
+  done
+  echo "Mocknet $1 failed after 10 sequence retries" >&2
+  return 1
+}
+
+# Publish a complete state with a same-directory rename. A failed write must
+# never allow registration to proceed without its restart guard.
+write_mocknet_registration_state() {
+  local state_file="$1"
+  local state="$2"
+  local temporary_file
+  mkdir -p "$(dirname "$state_file")" || return 1
+  temporary_file=$(mktemp "${state_file}.XXXXXX") || return 1
+  if ! printf '%s\n' "$state" >"$temporary_file" || ! mv -f "$temporary_file" "$state_file"; then
+    rm -f "$temporary_file"
+    echo "Failed to persist mocknet registration state: $state" >&2
+    return 1
+  fi
+}
+
 init_mocknet() {
   NODE_ADDRESS=$(echo "$SIGNER_PASSWD" | thornode keys show "$SIGNER_NAME" -a --keyring-backend file)
 
@@ -129,33 +201,21 @@ init_mocknet() {
     sleep 3
   done
 
-  printf "%s\n" "$SIGNER_PASSWD" | thornode tx thorchain deposit 100000000000000 RUNE "bond:$NODE_ADDRESS" --node tcp://"$PEER":26657 --from "$SIGNER_NAME" --keyring-backend=file --chain-id "$CHAIN_ID" --yes
-
   # send bond
-
-  sleep 2 # wait for thorchain to commit a block , otherwise it get the wrong sequence number
+  mocknet_tx deposit 100000000000000 RUNE "bond:$NODE_ADDRESS" || return 1
 
   NODE_PUB_KEY=$(echo "$SIGNER_PASSWD" | thornode keys show thorchain --pubkey --keyring-backend=file | thornode pubkey)
   VALIDATOR=$(thornode tendermint show-validator | thornode pubkey --bech cons)
 
   # set node keys
-  until printf "%s\n" "$SIGNER_PASSWD" | thornode tx thorchain set-node-keys "$NODE_PUB_KEY" "$NODE_PUB_KEY_ED25519" "$VALIDATOR" --node tcp://"$PEER":26657 --from "$SIGNER_NAME" --keyring-backend=file --chain-id "$CHAIN_ID" --yes; do
-    sleep 5
-  done
+  mocknet_tx set-node-keys "$NODE_PUB_KEY" "$NODE_PUB_KEY_ED25519" "$VALIDATOR" || return 1
 
   # add IP address
-  sleep 2 # wait for thorchain to commit a block
-
   NODE_IP_ADDRESS=${EXTERNAL_IP:=$(curl -s http://whatismyip.akamai.com)}
-  until printf "%s\n" "$SIGNER_PASSWD" | thornode tx thorchain set-ip-address "$NODE_IP_ADDRESS" --node tcp://"$PEER":26657 --from "$SIGNER_NAME" --keyring-backend=file --chain-id "$CHAIN_ID" --yes; do
-    sleep 5
-  done
+  mocknet_tx set-ip-address "$NODE_IP_ADDRESS" || return 1
 
-  sleep 2 # wait for thorchain to commit a block
   # set node version
-  until printf "%s\n" "$SIGNER_PASSWD" | thornode tx thorchain set-version --node tcp://"$PEER":26657 --from "$SIGNER_NAME" --keyring-backend=file --chain-id "$CHAIN_ID" --yes; do
-    sleep 5
-  done
+  mocknet_tx set-version || return 1
 }
 
 # set external ip to localhost in mocknet

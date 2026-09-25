@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"math/big"
 	rand "math/rand/v2"
@@ -45,10 +46,17 @@ type SwapActor struct {
 	minExpected           sdkmath.Uint
 	maxExpected           sdkmath.Uint
 	// expectedOutboundVault lets specialized swap actors prove a specific vault
-	// produced the outbound instead of only checking the final amount.
+	// produced the outbound instead of only checking the final amount. It is the
+	// FROST key for XMR and the primary vault key for other chains.
 	expectedOutboundVault common.PubKey
 
+	// Required verification actors must fail rather than skip an unfunded swap.
+	requireOutbound bool
+
 	xmrSwapSlotAcquired bool
+
+	getSwapStages  func(string) (openapi.TxStagesResponse, error)
+	getSwapDetails func(string) (openapi.TxDetailsResponse, error)
 }
 
 var (
@@ -131,10 +139,10 @@ func retryAmountAtRecommendedMin(currentAmount, minAmount sdkmath.Uint) sdkmath.
 	return base.Add(buffer)
 }
 
-func getSwapQuoteWithRecommendedMin(from, to common.Asset, amount, maxAmount sdkmath.Uint, destination common.Address, extended bool) (openapi.QuoteSwapResponse, sdkmath.Uint, error) {
+func getSwapQuoteWithRecommendedMin(from, to common.Asset, amount, maxAmount sdkmath.Uint, destination, refundAddress common.Address, extended bool) (openapi.QuoteSwapResponse, sdkmath.Uint, error) {
 	currentAmount := amount
 	for attempt := 0; attempt < swapQuoteRecommendedMinAttempts(from, to); attempt++ {
-		quote, err := thornode.GetSwapQuote(from, to, currentAmount, destination, extended)
+		quote, err := thornode.GetSwapQuote(from, to, currentAmount, destination, refundAddress, extended)
 		if err != nil {
 			minAmount, ok := getRecommendedMinAmountInFromError(err)
 			if ok {
@@ -341,6 +349,9 @@ func (a *SwapActor) releaseXMRSwapSlot() {
 // isPostSelectionFundingError detects balance failures that can happen after a
 // simulation user is selected but before the swap is submitted.
 func isPostSelectionFundingError(err error) bool {
+	if errors.Is(err, ErrSimTxUncertain) {
+		return false
+	}
 	if err == nil {
 		return false
 	}
@@ -353,9 +364,12 @@ func isPostSelectionFundingError(err error) bool {
 // finishAfterPostSelectionFundingError releases any acquired simulation slots
 // and ends this actor when its selected user can no longer fund the swap.
 func (a *SwapActor) finishAfterPostSelectionFundingError(err error) OpResult {
-	a.Log().Warn().Err(err).Msg("selected user can no longer fund swap; skipping actor")
 	a.releaseUserSelection()
 	a.releaseXMRSwapSlot()
+	if a.requireOutbound {
+		return OpResult{Finish: true, Error: fmt.Errorf("required swap cannot be funded: %w", err)}
+	}
+	a.Log().Warn().Err(err).Msg("selected user can no longer fund swap; skipping actor")
 	return OpResult{Finish: true}
 }
 
@@ -516,6 +530,11 @@ func (a *SwapActor) acquireUserForAmount(config *OpConfig, targetAmount sdkmath.
 	}
 
 	if !allowPartial && strictReadableUsers > 0 && accountErrorUsers == 0 && strictInsufficientUsers == strictReadableUsers {
+		if a.requireOutbound {
+			a.releaseUserSelection()
+			a.releaseXMRSwapSlot()
+			return OpResult{Finish: true, Error: fmt.Errorf("required swap amount %s exceeds every available user balance", targetAmount)}
+		}
 		a.Log().Info().
 			Int("available_users", availableUsers).
 			Int("locked_users", lockedUsers).
@@ -560,7 +579,7 @@ func (a *SwapActor) getQuoteWithUserRetry(config *OpConfig) (openapi.QuoteSwapRe
 			return openapi.QuoteSwapResponse{}, result
 		}
 
-		quote, quoteAmount, err := getSwapQuoteWithRecommendedMin(a.from, a.to, a.swapAmount, a.fromBalance, a.toAddress, a.from.Chain.IsUTXO())
+		quote, quoteAmount, err := getSwapQuoteWithRecommendedMin(a.from, a.to, a.swapAmount, a.fromBalance, a.toAddress, a.fromAddress, a.from.Chain.IsUTXO())
 		if err != nil {
 			if quoteAmount.GT(a.fromBalance) {
 				a.Log().Info().
@@ -633,6 +652,11 @@ func (a *SwapActor) getQuoteWithUserRetry(config *OpConfig) (openapi.QuoteSwapRe
 ////////////////////////////////////////////////////////////////////////////////////////
 
 func (a *SwapActor) acquireUser(config *OpConfig) OpResult {
+	if a.from.Chain.Equals(common.XMRChain) || a.to.Chain.Equals(common.XMRChain) {
+		if result := waitForXMRNetworkFee(a.Log(), config); !result.Continue {
+			return result
+		}
+	}
 	// swap 0.25% of from pool depth
 	pool, err := thornode.GetPool(a.from)
 	if err != nil {
@@ -695,9 +719,7 @@ func (a *SwapActor) sendSwap(config *OpConfig) OpResult {
 			return a.finishAfterPostSelectionFundingError(err)
 		}
 		a.Log().Error().Err(err).Msg("failed to broadcast tx")
-		return OpResult{
-			Continue: false,
-		}
+		return SimTxErrorResult(err)
 	}
 	a.swapTxID = txid
 
@@ -821,8 +843,16 @@ func (a *SwapActor) sendTokenSwap(config *OpConfig) OpResult {
 }
 
 func (a *SwapActor) verifyOutbound(config *OpConfig) OpResult {
+	getStages, getDetails := a.getSwapStages, a.getSwapDetails
+	if getStages == nil {
+		getStages = thornode.GetTxStages
+	}
+	if getDetails == nil {
+		getDetails = thornode.GetTxDetails
+	}
+
 	// get swap stages
-	stages, err := thornode.GetTxStages(a.swapTxID)
+	stages, err := getStages(a.swapTxID)
 	if err != nil {
 		a.Log().Warn().Err(err).Msg("failed to get tx stages")
 		return OpResult{
@@ -841,7 +871,7 @@ func (a *SwapActor) verifyOutbound(config *OpConfig) OpResult {
 	}
 
 	// get tx details
-	details, err := thornode.GetTxDetails(a.swapTxID)
+	details, err := getDetails(a.swapTxID)
 	if err != nil {
 		a.Log().Warn().Err(err).Msg("failed to get tx details")
 		return OpResult{
@@ -884,10 +914,14 @@ func (a *SwapActor) verifyOutbound(config *OpConfig) OpResult {
 	action := details.Actions[0]
 	out := details.OutTxs[0]
 	if !a.expectedOutboundVault.IsEmpty() {
-		if action.VaultPubKey == nil {
+		vaultPubKey := action.GetVaultPubKey()
+		if a.to.Chain.Equals(common.XMRChain) {
+			vaultPubKey = action.GetVaultPubKeyFrost()
+		}
+		if vaultPubKey == "" {
 			err = fmt.Errorf("expected outbound vault %s, got empty vault pubkey", a.expectedOutboundVault)
-		} else if *action.VaultPubKey != a.expectedOutboundVault.String() {
-			err = fmt.Errorf("expected outbound vault %s, got %s", a.expectedOutboundVault, *action.VaultPubKey)
+		} else if vaultPubKey != a.expectedOutboundVault.String() {
+			err = fmt.Errorf("expected outbound vault %s, got %s", a.expectedOutboundVault, vaultPubKey)
 		}
 	}
 	outAmountPlusGas, convertErr := outboundAmountPlusGas(out, action, a.to)
@@ -920,7 +954,7 @@ func (a *SwapActor) verifyOutbound(config *OpConfig) OpResult {
 
 	// fail if received amount is outside expected range
 	if outAmountPlusGas.LT(a.minExpected) || outAmountPlusGas.GT(a.maxExpected) {
-		currentQuote, quoteErr := thornode.GetSwapQuote(a.from, a.to, a.swapAmount, a.toAddress, a.from.Chain.IsUTXO())
+		currentQuote, quoteErr := thornode.GetSwapQuote(a.from, a.to, a.swapAmount, a.toAddress, a.fromAddress, a.from.Chain.IsUTXO())
 		if quoteErr != nil {
 			a.Log().Warn().Err(quoteErr).Msg("failed to refresh quote after original expectation drifted")
 			err = fmt.Errorf("out amount plus gas outside tolerance")

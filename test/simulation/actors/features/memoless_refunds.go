@@ -220,9 +220,12 @@ func (a *MemolessRefundActor) acquireUser(config *OpConfig) OpResult {
 		return OpResult{Continue: false}
 	}
 
-	// 1% of pool depth keeps inbound well above outbound fee while avoiding
-	// depletion; mirrors InactiveVaultRefundActor.acquireUser sizing.
-	a.amount = cosmos.NewUintFromString(pool.BalanceAsset).QuoUint64(100)
+	fee, err := thornode.GetOutboundFee(a.asset)
+	if err != nil {
+		a.Log().Error().Err(err).Msg("failed to get refund outbound fee")
+		return OpResult{Continue: false}
+	}
+	a.amount = refundAmount(cosmos.NewUintFromString(pool.BalanceAsset), fee)
 
 	for _, user := range config.Users {
 		if !user.Acquire() {

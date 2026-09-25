@@ -7,8 +7,11 @@ import (
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 )
 
-func TestBondYieldRestoresMimirsAfterChurnOut(t *testing.T) {
-	a := BondYield(rand.New(rand.NewPCG(5, 6)))
+func TestClusterChurnRestoresMimirsAfterChurnOut(t *testing.T) {
+	a := ClusterChurn(rand.New(rand.NewPCG(5, 6)))
+	if a.Name != "ClusterChurn" {
+		t.Fatalf("unexpected suite name: %s", a.Name)
+	}
 	a.InitRoot()
 
 	var cleanup *Actor
@@ -19,7 +22,7 @@ func TestBondYieldRestoresMimirsAfterChurnOut(t *testing.T) {
 		return true
 	})
 	if cleanup == nil {
-		t.Fatal("expected Bond Yield suite to include Mimir cleanup")
+		t.Fatal("expected ClusterChurn suite to include Mimir cleanup")
 	}
 
 	for parent := range cleanup.Parents() {

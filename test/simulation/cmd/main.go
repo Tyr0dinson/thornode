@@ -52,6 +52,8 @@ const (
 	solanaRPCReadinessTimeout = 4 * time.Minute
 	zecRPCReadinessTimeout    = 8 * time.Minute
 	xmrSimulationWaitTimeout  = 30 * time.Second
+	// Required coverage must allow the initial FROST ceremony to finish.
+	xmrRequiredSimulationWaitTimeout = 8 * time.Minute
 )
 
 var bifrostReadinessEndpoints = []string{
@@ -96,9 +98,8 @@ func simulationStages() []simulationStage {
 		// memoless-refunds runs before every churn-triggering stage so the refund
 		// actors exercise the pre-churn vault set, per issue #2839 Section B.
 		{name: "memoless-refunds", defaultOn: false, constructor: features.MemolessRefunds},
-		{name: "bond-yield", defaultOn: false, constructor: suites.BondYield},
+		{name: "cluster-churn", defaultOn: false, constructor: suites.ClusterChurn},
 		{name: "churn", defaultOn: false, constructor: core.NewChurnActor},
-		{name: "xmr-post-churn", defaultOn: false, constructor: suites.XMRPostChurn},
 		{name: "xmr-keygen-jail", defaultOn: false, constructor: suites.XMRKeygenJail},
 		{name: "xmr-spent-refs", defaultOn: false, constructor: suites.XMRSpentRefTracking},
 		{name: "forced-to-leave-keygen", defaultOn: false, constructor: core.NewForcedToLeaveKeygenActor},
@@ -122,40 +123,70 @@ func simulationStageOptions() []cli.Option {
 }
 
 func appendSimulationStages(root *Actor, enabledStages map[string]bool, rng *rand.Rand) {
-	appendIfEnabled := func(key string, constructor func(rng *rand.Rand) *Actor) {
-		if constructor == nil {
-			return
-		}
-		if enabledStages[key] || enabledStages["all"] {
-			root.Append(constructor(rng))
-		}
-	}
-
-	for _, stage := range simulationStages() {
-		appendIfEnabled(stage.name, stage.constructor)
+	for _, stage := range selectedSimulationStages(enabledStages) {
+		root.Append(stage.constructor(rng))
 	}
 }
 
-// configureXMRSimulationProfile disables XMR simulation coverage when no XMR inbound address is available.
-func configureXMRSimulationProfile() {
-	inboundAddress, err := waitForXMRSimulationInbound(
-		xmrSimulationWaitTimeout,
-		thornode.GetInboundAddress,
-		time.Sleep,
-	)
-	if err == nil {
+func selectedSimulationStages(enabledStages map[string]bool) []simulationStage {
+	var selected []simulationStage
+	// Keep the old STAGES selector as an alias without registering a second
+	// suite, so selecting both names (or all) still performs one churn sequence.
+	enabled := func(name string) bool {
+		return enabledStages[name] || enabledStages["all"] ||
+			(name == "cluster-churn" && enabledStages["bond-yield"])
+	}
+	for _, stage := range simulationStages() {
+		if stage.constructor == nil || !enabled(stage.name) {
+			continue
+		}
+		switch stage.name {
+		case "churn":
+			// ClusterChurn already activates the cluster and requests a leave.
+			if enabled("cluster-churn") {
+				continue
+			}
+		case "cluster-churn":
+			if enabled("xmr-post-churn") {
+				stage.constructor = suites.ClusterChurnWithXMRPostChurn
+			}
+		case "xmr-post-churn":
+			if enabled("cluster-churn") {
+				continue
+			}
+		}
+		selected = append(selected, stage)
+	}
+	return selected
+}
+
+// configureXMRSimulationProfile permits optional XMR coverage to fall back,
+// but required runs must establish the inbound address before building the DAG.
+func configureXMRSimulationProfile(required bool, wait func(time.Duration) (common.Address, error)) error {
+	timeout := xmrSimulationWaitTimeout
+	if required {
+		timeout = xmrRequiredSimulationWaitTimeout
+	}
+	inboundAddress, err := wait(timeout)
+	if err == nil && !inboundAddress.IsEmpty() {
 		acommon.SetXMRChainEnabled(true)
 		log.Info().
 			Stringer("inbound_address", inboundAddress).
 			Msg("XMR inbound address available; enabling XMR simulation coverage")
-		return
+		return nil
 	}
-
+	if err == nil {
+		err = fmt.Errorf("empty XMR inbound address")
+	}
 	acommon.SetXMRChainEnabled(false)
+	if required {
+		return fmt.Errorf("required XMR inbound address unavailable after %s: %w", timeout, err)
+	}
 	log.Warn().
 		Err(err).
-		Dur("timeout", xmrSimulationWaitTimeout).
+		Dur("timeout", timeout).
 		Msg("XMR inbound address unavailable; skipping XMR simulation coverage")
+	return nil
 }
 
 type inboundAddressGetter func(common.Chain) (common.Address, *common.Address, error)
@@ -295,7 +326,11 @@ func main() {
 	}
 
 	cfg := InitConfig(parallelismInt, enabledStages["seed"] || enabledStages["all"], rng)
-	configureXMRSimulationProfile()
+	if err := configureXMRSimulationProfile(os.Getenv("XMR_POST_CHURN_REQUIRED") == "1", func(timeout time.Duration) (common.Address, error) {
+		return waitForXMRSimulationInbound(timeout, thornode.GetInboundAddress, time.Sleep)
+	}); err != nil {
+		log.Fatal().Err(err).Msg("failed waiting for required XMR simulation readiness")
+	}
 
 	// combine all actor dags for the complete test run
 	root := NewActor("Root", rng)

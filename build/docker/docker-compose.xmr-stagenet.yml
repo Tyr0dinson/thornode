@@ -1,11 +1,14 @@
 ########################################################################################
-# Private THORChain 2-of-3 cluster + real Monero mainnet
+# Private THORChain mocknet 2-of-3 cluster + real Monero mainnet
 #
 # Usage:
 #   docker compose -f docker-compose.xmr-stagenet.yml up --build -d
 #
-# Three validators (dog/cat/fox) with FROST threshold signing against a real
+# Three mocknet validators (dog/cat/fox) use FROST threshold signing against a real
 # monerod syncing Monero mainnet. Dog is genesis, cat and fox join via validator.sh.
+# The signer identity therefore remains mocknet while the daemon identity is mainnet.
+# Set XMR_FROST_AUTH_BEARER to a strong random token before running Compose;
+# the shared environment anchors pass it to every Bifrost/signer pair.
 ########################################################################################
 
 volumes:
@@ -72,19 +75,20 @@ x-bifrost-env: &bifrost-env
   BIFROST_CHAINS_XMR_RPC_HOST: "http://monero-daemon:18081"
   BIFROST_CHAINS_XMR_CHAIN_NETWORK: "mainnet"
   BIFROST_CHAINS_XMR_DISABLE_TLS: "true"
+  BIFROST_CHAINS_XMR_SIGNER_AUTHORIZATION_BEARER: "${XMR_FROST_AUTH_BEARER:?set XMR_FROST_AUTH_BEARER to a strong random token}"
+  # HTTP is permitted for Bifrost-to-signer traffic on this isolated Compose network.
+  BIFROST_CHAINS_XMR_SIGNER_ALLOW_INSECURE_HTTP: "true"
+  BIFROST_CHAINS_XMR_SIGNER_EXPECTED_NETWORK: "mocknet"
 
 x-frost-env: &frost-env
   XMR_FROST_LISTEN_ADDR: "0.0.0.0:8283"
   XMR_FROST_DAEMON_URL: "http://monero-daemon:18081"
-  XMR_FROST_DAEMON_DISABLE_TLS: "true"
   XMR_FROST_DATA_DIR: "/home/serai/xmr-frost"
   XMR_FROST_CHAIN_NETWORK: "mocknet"
+  XMR_FROST_AUTH_BEARER: "${XMR_FROST_AUTH_BEARER:?set XMR_FROST_AUTH_BEARER to a strong random token}"
   XMR_FROST_MAX_SIGN_SCAN_LAG_BLOCKS: "32"
-  XMR_FROST_RATE_LIMIT_GLOBAL_RPS: "500"
-  XMR_FROST_RATE_LIMIT_GLOBAL_BURST: "5000"
-  XMR_FROST_RATE_LIMIT_PER_IP_RPS: "500"
-  XMR_FROST_RATE_LIMIT_PER_IP_BURST: "5000"
-  XMR_FROST_ADMIN_ALLOW_NON_LOOPBACK: "true"
+  XMR_FROST_MAX_REQUESTS_PER_SECOND: "256"
+  XMR_FROST_MAX_REQUESTS_PER_IP_SECOND: "64"
 
 x-frost-healthcheck: &frost-healthcheck
   test:
@@ -142,7 +146,7 @@ services:
   # ================================ FROST signers =================================
 
   xmr-frost-signer: &frost-signer
-    image: ${XMR_FROST_SIGNER_IMAGE:-registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:a61521bc@sha256:d5ac57a7302cd3e7af4bf089b0ea11a09ff60cdfcabcde599f91def7808dfa45}
+    image: ${XMR_FROST_SIGNER_IMAGE:-registry.gitlab.com/thorchain/devops/serai/xmr-frost-signer:a3cb3e5f@sha256:ca11b703898d1ecd20d6d2383b6583e1116d140db46a268cce5896196af4b3f5}
     restart: unless-stopped
     user: root
     entrypoint:

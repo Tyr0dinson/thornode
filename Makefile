@@ -391,12 +391,29 @@ _test-regression:
 test-simulation: build-mocknet reset-mocknet test-simulation-no-reset
 
 TEST_SIMULATION_STAGES ?= seed,bootstrap,xmr-coverage,arb,swaps,memoless-swaps,consolidate,inactive-vault-refunds,memoless-refunds,solvency,ragnarok
-TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,swaps,memoless-swaps,inactive-vault-refunds,memoless-refunds,bond-yield,solvency,xmr-post-churn,ragnarok
+TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,swaps,memoless-swaps,inactive-vault-refunds,memoless-refunds,cluster-churn,solvency,xmr-post-churn,ragnarok
+# Descendants that implement XMR keygen set this to 1 to require live coverage.
+TEST_SIMULATION_REQUIRE_XMR ?= 0
 
-test-simulation-cluster: build-test-simulation build-mocknet-cluster reset-mocknet-cluster
+.PHONY: test-mocknet-startup test-xmr-readiness-config test-simulation-xmr-readiness
+test-mocknet-startup:
+	@python3 -m unittest discover -s build/scripts/tests -v
+
+# Render every XMR profile and check the effective per-validator settings.
+test-xmr-readiness-config:
+	@python3 -m unittest discover -s build/docker/tests -p 'test_xmr_readiness.py' -v
+
+# Exercise initial-vault creation, churn, funding, and a real BTC-to-XMR swap.
+# Requires S00's keygen dependency; see docs/xmr-readiness-baseline.md.
+test-simulation-xmr-readiness: TEST_SIMULATION_CLUSTER_STAGES=seed,bootstrap,xmr-post-churn
+test-simulation-xmr-readiness: override TEST_SIMULATION_REQUIRE_XMR=1
+test-simulation-xmr-readiness: test-simulation-cluster
+
+test-simulation-cluster: test-mocknet-startup test-xmr-readiness-config build-test-simulation build-mocknet-cluster reset-mocknet-cluster
 	@docker stop docker-midgard-1 docker-midgard-db-1 >/dev/null 2>&1 || true
 	@STAGES=$(TEST_SIMULATION_CLUSTER_STAGES) docker run --rm ${DOCKER_TTY_ARGS} \
 		-e PARALLELISM=$(PARALLELISM) -e STAGES \
+		-e XMR_POST_CHURN_REQUIRED=$(TEST_SIMULATION_REQUIRE_XMR) \
 		-e RANDOM_SEED_HEX \
 		-e SIMULATION_PPROF_ADDRESS \
 		-e XMR_SIM_HELPER_ENDPOINT -e XMR_SIM_HELPER_AUTH_BEARER \
@@ -434,7 +451,7 @@ test-simulation-keygen-jail: build-test-simulation build-mocknet-cluster reset-m
 		--network host -w /app \
 		thornode-simtest sh -c 'make _test-simulation'
 	@echo "applying netem delay $(XMR_KEYGEN_JAIL_NETEM_DELAY_MS)ms to bifrost p2p (port 5040)"
-	@for c in docker-bifrost-1 docker-bifrost-cat-1 docker-bifrost-fox-1 docker-bifrost-pig-1; do \
+	@for c in docker-bifrost-1 docker-bifrost-cat-1 docker-bifrost-fox-1 docker-bifrost-pig-1 docker-bifrost-frog-1; do \
 		docker run --rm --net container:$$c --cap-add NET_ADMIN alpine:3.20 sh -c "\
 			apk add -q iproute2 && \
 			tc qdisc replace dev eth0 root handle 1: prio bands 4 priomap 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 && \
@@ -531,7 +548,7 @@ run-mocknet-cluster:
 	@# Compose can leave dependent validator thornodes in Created under detached
 	@# startup when the primary thornode healthcheck is not yet satisfied.
 	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster \
-		--profile midgard up -d thornode-cat thornode-fox thornode-pig
+		--profile midgard up -d thornode-cat thornode-fox thornode-pig thornode-frog
 
 stop-mocknet-cluster:
 	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster --profile midgard down -v

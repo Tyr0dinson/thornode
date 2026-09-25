@@ -211,9 +211,7 @@ func (a *DualLPActor) depositL1(config *OpConfig) OpResult {
 	txid, err := DepositL1(a.Log(), client, a.asset, memo, a.l1Amount)
 	if err != nil {
 		a.Log().Error().Err(err).Msg("failed to deposit L1")
-		return OpResult{
-			Continue: false,
-		}
+		return SimTxErrorResult(err)
 	}
 
 	a.Log().Info().Str("txid", txid).Msg("broadcasted L1 add liquidity tx")
