@@ -22,10 +22,11 @@ const (
 	// outbounds then anchor on the stored nonce (which never expires) instead of a
 	// recent blockhash, removing the ~60s keysign+broadcast expiry window. Unset/0
 	// leaves the feature dormant — no accounts are created and every outbound uses
-	// the existing recent-blockhash path unchanged. Disabling after rollout is
-	// graceful: provisioning stops and retiring vaults close their nonce accounts at
-	// churn, while extant nonce accounts keep serving outbounds until then. Operator
-	// emergency stop remains HaltSigningSOL.
+	// the existing recent-blockhash path unchanged. Disabling after rollout reverts
+	// IMMEDIATELY: SignTx reads this mimir live, so setting it to 0 makes every SOL
+	// outbound use the recent-blockhash path again at once; provisioning also stops and
+	// extant nonce accounts simply sit unused until a retiring vault closes them at
+	// churn. Operator emergency stop remains HaltSigningSOL.
 	MimirKeySOLDurableNonce = "SOLDurableNonce"
 
 	MimirTemplateEVMAllowanceCheck         = "EVMAllowanceCheck-%s"         // Use with Chain

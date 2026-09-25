@@ -1,23 +1,27 @@
 package rpc
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 )
 
 // ErrNonceAccountNotProvisioned marks the cases where a durable-nonce account does
-// not yet exist in a usable form (missing, uninitialized, wrong program, or an
-// empty stored nonce). These are RECOVERABLE by provisioning, so the caller must
-// treat them as "no nonce yet, fall through to the recent-blockhash path" — as
-// distinct from a transport/RPC error, which fails closed. Wrap with %w and test
-// with errors.Is.
+// not yet exist in a usable form (missing, uninitialized, wrong program, an empty
+// stored nonce, or a plain non-nonce account at the address). These are RECOVERABLE
+// — the caller must treat them as "no nonce yet, fall through to the recent-blockhash
+// path" — as distinct from a transport/RPC error, which fails closed. Wrap with %w
+// and test with errors.Is.
 var ErrNonceAccountNotProvisioned = errors.New("durable-nonce account not provisioned")
 
 // getAccountInfoResponse is the response for a getAccountInfo call made with the
-// jsonParsed encoding. For a SystemProgram durable-nonce account the runtime
-// returns data.program == "nonce" with parsed.type == "initialized" and
-// parsed.info.{authority, blockhash, feeCalculator}. The blockhash field is the
-// STORED nonce value.
+// jsonParsed encoding. Value.Data is kept as RawMessage because jsonParsed returns
+// an OBJECT ({program,parsed}) only for an account the runtime can parse (an
+// initialized nonce account); for ANY other account — including a plain System
+// account holding lamports at the address (e.g. a dusted seed address) — it returns
+// an ARRAY (["<base64>","base64"]). Typing Data as a struct would make the whole
+// response fail to decode on that array and surface as a (fail-closed) transport
+// error, letting anyone halt a vault's SOL outbounds by sending it 1 lamport (#661).
 type getAccountInfoResponse struct {
 	Jsonrpc string `json:"jsonrpc"`
 	Id      int    `json:"id"`
@@ -26,20 +30,24 @@ type getAccountInfoResponse struct {
 			Slot uint64 `json:"slot"`
 		} `json:"context"`
 		Value *struct {
-			Owner string `json:"owner"`
-			Data  struct {
-				Program string `json:"program"`
-				Parsed  struct {
-					Type string `json:"type"`
-					Info struct {
-						Authority string `json:"authority"`
-						Blockhash string `json:"blockhash"`
-					} `json:"info"`
-				} `json:"parsed"`
-			} `json:"data"`
+			Owner string          `json:"owner"`
+			Data  json.RawMessage `json:"data"`
 		} `json:"value"`
 	} `json:"result"`
 	Error *RPCError `json:"error"`
+}
+
+// nonceAccountData is the jsonParsed object shape for an initialized nonce account.
+// The blockhash field is the STORED nonce value.
+type nonceAccountData struct {
+	Program string `json:"program"`
+	Parsed  struct {
+		Type string `json:"type"`
+		Info struct {
+			Authority string `json:"authority"`
+			Blockhash string `json:"blockhash"`
+		} `json:"info"`
+	} `json:"parsed"`
 }
 
 // GetNonceAccount reads a SystemProgram durable-nonce account and returns its
@@ -47,10 +55,12 @@ type getAccountInfoResponse struct {
 // transaction bakes into the message's recentBlockhash field so the transaction
 // does not expire during the multi-party TSS keysign+broadcast window (#661).
 //
-// jsonParsed encoding at finalized commitment. Fails CLOSED: an RPC error, a
-// missing/uninitialized account, a non-nonce account, or an empty stored nonce is
-// returned as an error rather than a silent empty value — a wrong or empty nonce
-// would produce a transaction the keysign party can never land.
+// jsonParsed encoding at finalized commitment. Fails CLOSED only on a genuine
+// transport/RPC error (a wrong or empty nonce would produce a transaction the
+// keysign party can never land). A missing account, a non-nonce/plain account, an
+// uninitialized account, or an empty stored nonce all return the RECOVERABLE
+// ErrNonceAccountNotProvisioned so the caller falls through to the recent-blockhash
+// path instead of halting the vault.
 func (s *SolRPC) GetNonceAccount(pubkey string) (nonce string, authority string, err error) {
 	cfg := map[string]interface{}{"encoding": "jsonParsed", "commitment": "finalized"}
 	params := []interface{}{pubkey, cfg}
@@ -65,15 +75,23 @@ func (s *SolRPC) GetNonceAccount(pubkey string) (nonce string, authority string,
 	if response.Result == nil || response.Result.Value == nil {
 		return "", "", fmt.Errorf("%w: account %s not found", ErrNonceAccountNotProvisioned, pubkey)
 	}
-	v := response.Result.Value
-	if v.Data.Program != "nonce" {
-		return "", "", fmt.Errorf("%w: account %s is not a nonce account (program=%q)", ErrNonceAccountNotProvisioned, pubkey, v.Data.Program)
+
+	// A parseable nonce account returns an OBJECT; anything else (an array for a
+	// plain/dusted account, null, or a different parsed program) is NOT a transport
+	// error — it means no usable nonce account exists, so fall through recoverably.
+	raw := response.Result.Value.Data
+	var data nonceAccountData
+	if len(raw) == 0 || json.Unmarshal(raw, &data) != nil {
+		return "", "", fmt.Errorf("%w: account %s has no parsed nonce object", ErrNonceAccountNotProvisioned, pubkey)
 	}
-	if v.Data.Parsed.Type != "initialized" {
-		return "", "", fmt.Errorf("%w: account %s not initialized (type=%q)", ErrNonceAccountNotProvisioned, pubkey, v.Data.Parsed.Type)
+	if data.Program != "nonce" {
+		return "", "", fmt.Errorf("%w: account %s is not a nonce account (program=%q)", ErrNonceAccountNotProvisioned, pubkey, data.Program)
 	}
-	if v.Data.Parsed.Info.Blockhash == "" {
+	if data.Parsed.Type != "initialized" {
+		return "", "", fmt.Errorf("%w: account %s not initialized (type=%q)", ErrNonceAccountNotProvisioned, pubkey, data.Parsed.Type)
+	}
+	if data.Parsed.Info.Blockhash == "" {
 		return "", "", fmt.Errorf("%w: account %s has empty stored nonce", ErrNonceAccountNotProvisioned, pubkey)
 	}
-	return v.Data.Parsed.Info.Blockhash, v.Data.Parsed.Info.Authority, nil
+	return data.Parsed.Info.Blockhash, data.Parsed.Info.Authority, nil
 }

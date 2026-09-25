@@ -577,9 +577,11 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	// instruction[0]) instead of a recent blockhash. A durable nonce does not expire,
 	// so it removes the ~150-slot (~60s) expiry window that kills a recent-blockhash tx
 	// during the multi-party TSS keysign+broadcast — the whole consensus-blockhash
-	// derivation and expiry gating below is unnecessary for a nonce tx. Default OFF
-	// (useSolDurableNonce=false) and, even when on, falls through to the existing
-	// recent-blockhash path unchanged whenever no nonce account is available (ok=false).
+	// derivation and expiry gating below is unnecessary for a nonce tx. The compile
+	// const useSolDurableNonce is true; the effective runtime gate is the
+	// MimirKeySOLDurableNonce mimir (default off). Even with both on, this falls through
+	// to the existing recent-blockhash path unchanged whenever no nonce account is
+	// available (ok=false).
 	// The durable-nonce branch only runs when the MimirKeySOLDurableNonce gate is on.
 	// The gate is read live (current), NOT at the keysign height: a live read can
 	// differ across parties only during the ~1-block window of a governance flip, and
@@ -591,7 +593,17 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	// flip-window round entirely and is the hardening to land before any mainnet
 	// enable. When the gate is off or unreadable, SignTx never calls getAccountInfo
 	// and behaves exactly as the pre-#661 recent-blockhash path.
-	if useSolDurableNonce {
+	// Self-sends (the vault keep-alive / consolidate) must NOT take the durable-nonce
+	// branch: a nonce tx lists the vault once as fee-payer+source+authority and cannot
+	// also be the distinct recipient, so CreateTxWithNonce rejects a self-transfer. The
+	// recent-blockhash path's NewSelfTransferTransaction handles it. Skipping here keeps
+	// the keep-alive working when the mimir is on — otherwise enabling durable nonce
+	// kills the keep-alive self-sign and re-opens the -32020 scanner prune-wedge.
+	selfSend := false
+	if vaultAddr, aerr := tx.VaultPubKeyEddsa.GetAddress(common.SOLChain); aerr == nil {
+		selfSend = tx.ToAddress.Equals(vaultAddr)
+	}
+	if useSolDurableNonce && !selfSend {
 		if enabled, mErr := c.bridge.GetMimir(constants.MimirKeySOLDurableNonce); mErr == nil && enabled > 0 {
 			nonceAccount, nonceAuthority, nonceValue, ok, nErr := c.durableNonceForVault(tx)
 			if nErr != nil {
@@ -1135,10 +1147,13 @@ func (c *SOLClient) CreateTx(tx stypes.TxOutItem, memoForParsing, recentBlockhas
 // account exists, durableNonceForVault returns ok=false, and behaviour is identical
 // to the pre-#661 path — including during a mixed-version fleet rollout, since both
 // on and off builds produce the recent-blockhash tx when no nonce account exists.
-// The mimir gate is deliberately NOT read inside SignTx: a per-node mimir read
-// could differ across parties during a governance flip and fragment the keysign,
-// whereas nonce-account existence is finalized on-chain state that all parties
-// agree on. HaltSigningSOL remains the emergency stop.
+// SignTx reads MimirKeySOLDurableNonce LIVE to decide whether to take the durable
+// path, then branches on nonce-account existence (finalized on-chain state). The
+// live read can differ across parties only during the ~1-block window of a governance
+// flip, which self-heals (the outbound is retained + retried once the flip propagates);
+// a keysign-height-anchored read (getKeysignMimirAtHeight) removes even that window and
+// is the hardening to land before any mainnet enable. HaltSigningSOL remains the
+// emergency stop.
 const useSolDurableNonce = true
 
 // solNonceSeed is the fixed create_with_seed seed that fixes a vault's durable-nonce

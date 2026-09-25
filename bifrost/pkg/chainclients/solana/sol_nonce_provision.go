@@ -55,9 +55,11 @@ const nonceProvisionFeeMarginLamports = 100_000
 // MimirKeySOLDurableNonce gate is on; retiring vaults have their nonce account closed
 // unconditionally so reclaimed rent is never stranded (a no-op when none exists).
 //
-// The mimir gates PROVISIONING only. SignTx never reads it — it branches on
-// nonce-account existence (finalized on-chain state all parties agree on), so a
-// governance flip can never fragment a keysign.
+// This mimir gates PROVISIONING (here). SignTx ALSO reads it live to gate the durable
+// outbound path, then branches on nonce-account existence (finalized on-chain state).
+// A governance flip can fragment a single outbound's keysign for the ~1-block
+// propagation window (self-heals via retain+retry); the height-anchored read is the
+// pre-mainnet hardening.
 func (c *SOLClient) nonceProvisionCheck(anchorHeight int64) {
 	enabled, err := c.bridge.GetMimir(constants.MimirKeySOLDurableNonce)
 	if err != nil {
@@ -101,19 +103,18 @@ func (c *SOLClient) nonceProvisionCheck(anchorHeight int64) {
 		if vault.PubKeyEddsa.IsEmpty() {
 			continue
 		}
-		switch vault.Status {
-		case ttypes.VaultStatus_ActiveVault:
-			if !provisioningEnabled {
-				continue
-			}
+		// N8 (3.20.4): the retiring-vault close trigger is DISABLED. Closing a nonce
+		// account at the START of Retiring strips durable-nonce protection from exactly
+		// the churn-migration outbounds this feature exists to protect, and it was not
+		// serialised against in-flight signing. For 3.20.4 we do not close: a retiring
+		// vault's nonce account simply strands its rent (~0.0015 SOL per vault per churn,
+		// accepted + documented). The follow-up design is close-when-drained, sequenced
+		// before the final migrate. closeNonceForRetiringVault is left unreachable for
+		// that follow-up. See the MR "NOT safe to enable" section (N8/N11).
+		if vault.Status == ttypes.VaultStatus_ActiveVault && provisioningEnabled {
 			if err := c.provisionNonceForVault(vault, anchorHeight); err != nil {
 				c.logger.Err(err).Str("vault_pubkey", vault.PubKey.String()).
 					Msg("fail to provision durable-nonce account")
-			}
-		case ttypes.VaultStatus_RetiringVault:
-			if err := c.closeNonceForRetiringVault(vault, anchorHeight); err != nil {
-				c.logger.Err(err).Str("vault_pubkey", vault.PubKey.String()).
-					Msg("fail to close durable-nonce account")
 			}
 		}
 	}
@@ -222,14 +223,14 @@ func (c *SOLClient) closeNonceForRetiringVault(vault ttypes.Vault, anchorHeight 
 		return fmt.Errorf("fail to check nonce account: %w", gErr)
 	}
 
-	balance, err := c.rpcClient.GetBalance(nonceAddr.String(), "finalized", 0)
-	if err != nil {
-		return fmt.Errorf("fail to get nonce account balance: %w", err)
-	}
-	if balance.Sign() <= 0 {
-		return nil
-	}
-	lamports := balance.Uint64()
+	// Withdraw a DETERMINISTIC amount (the known rent constant), never a per-node
+	// finalized balance read: a live balance baked into the TSS-signed lamports would
+	// let parties reading at slightly different times sign divergent bytes and fragment
+	// the close keysign (the per-node-value-in-signed-bytes anti-pattern the SOL
+	// determinism work forbids). A freshly provisioned account holds exactly this rent,
+	// so this fully closes it; an account dusted above the rent simply fails the on-chain
+	// withdraw and is retried next boundary (no funds lost, only unreclaimed dust).
+	lamports := nonceAccountRentLamports
 
 	recentBlockhash, _, err := c.cachedConsensusBlockHash(anchorHeight)
 	if err != nil {
