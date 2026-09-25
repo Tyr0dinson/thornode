@@ -31,6 +31,10 @@ type countingSOLRPC struct {
 
 	failAll atomic.Bool
 
+	// failBroadcastBlockhash makes sendTransaction answer with the preflight
+	// "Blockhash not found" rejection that gates BroadcastTx's expiry check.
+	failBroadcastBlockhash atomic.Bool
+
 	// gateGetSlot, when non-nil, blocks every getSlot until closed; arrivals
 	// counts the callers that reached the gate.
 	gateGetSlot chan struct{}
@@ -48,10 +52,17 @@ func (m *countingSOLRPC) getBlockConfig() map[string]interface{} {
 }
 
 func newCountingSOLRPC(t *testing.T, sc solRPCScenario) (*countingSOLRPC, *rpc.SolRPC) {
-	m := &countingSOLRPC{scenario: sc, calls: map[string]int{}}
-	server := httptest.NewServer(http.HandlerFunc(m.serve))
+	m, server := newCountingSOLRPCServer(sc)
 	t.Cleanup(server.Close)
-	return m, rpc.NewSolRPC("http://"+server.Listener.Addr().String(), 5*time.Second)
+	return m, newSolRPCForServer(server)
+}
+
+// newCountingSOLRPCServer exposes the mock's httptest server so a test can hand the
+// SAME view to a full SOLClient built by newSolCacheTestClient (which takes a server,
+// not an RPC client) and drive SignTx/BroadcastTx against it. The caller owns Close.
+func newCountingSOLRPCServer(sc solRPCScenario) (*countingSOLRPC, *httptest.Server) {
+	m := &countingSOLRPC{scenario: sc, calls: map[string]int{}}
+	return m, httptest.NewServer(http.HandlerFunc(m.serve))
 }
 
 func (m *countingSOLRPC) count(method string) int {
@@ -103,6 +114,12 @@ func (m *countingSOLRPC) serve(rw http.ResponseWriter, req *http.Request) {
 			<-m.gateGetSlot
 		}
 		write(fmt.Sprintf("%d", sc.tip))
+	case "getFirstAvailableBlock":
+		if sc.noHistoryFloor {
+			_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"Method not found"}}`))
+			break
+		}
+		write(fmt.Sprintf("%d", sc.floorSlot))
 	case "getBlocks":
 		b, _ := json.Marshal(sc.presentSlots(slotArg(0), slotArg(1)))
 		write(string(b))
@@ -125,6 +142,21 @@ func (m *countingSOLRPC) serve(rw http.ResponseWriter, req *http.Request) {
 		m.lastGetBlockConfig = cfg
 		m.mu.Unlock()
 		write(fmt.Sprintf(`{"blockhash":%q,"previousBlockhash":"","parentSlot":%d}`, mockBlockhashForSlot(slot), slot-1))
+	case "isBlockhashValid":
+		result, valid := sc.blockhashValidResponse()
+		if !valid {
+			_, _ = rw.Write([]byte(result))
+			break
+		}
+		write(result)
+	case "sendTransaction":
+		if m.failBroadcastBlockhash.Load() {
+			_, _ = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32002,"message":"Transaction simulation failed: Blockhash not found"}}`))
+			break
+		}
+		write(`"broadcast-sig"`)
+	case "getLatestBlockhash":
+		write(fmt.Sprintf(`{"context":{"slot":%d},"value":{"blockhash":%q,"lastValidBlockHeight":%d}}`, sc.tip, mockBlockhashForSlot(sc.tip), sc.tip))
 	default:
 		write("null")
 	}
@@ -166,10 +198,11 @@ func TestConsensusBlockHashAcrossRPCViews(t *testing.T) {
 	tiedAt100 := tiedConsensusBlockTimes(target, 100)
 
 	tests := []struct {
-		name     string
-		scenario solRPCScenario
-		wantSlot int64 // zero means the node should abstain
-		wantErr  bool
+		name      string
+		scenario  solRPCScenario
+		wantSlot  int64 // zero means the node should abstain
+		wantErr   bool
+		wantErrIs error // when set, the specific sentinel the caller branches on
 	}{
 		// A node finalized far past the target must still select the global
 		// rightmost slot at the target, not a slot relative to its local tip.
@@ -205,14 +238,18 @@ func TestConsensusBlockHashAcrossRPCViews(t *testing.T) {
 			scenario: solRPCScenario{tip: 1000, floorSlot: 0, target: target, blockTime: tiedAt100},
 			wantSlot: 102,
 		},
-		// A snapshot whose retained history begins after the target cannot provide
-		// a lower witness, so the node must abstain after bounded widening.
+		// A snapshot whose retained history begins after the target cannot provide a
+		// lower witness. The 1001 finalized blocks it DOES serve all postdate the
+		// target, which is more than MAX_PROCESSING_AGE, so the anchor is provably
+		// dead and the caller is told to reschedule rather than keep retrying.
 		{
-			name:     "snapshot history starts after target",
-			scenario: solRPCScenario{tip: 10000, floorSlot: 9000, target: target, blockTime: tiedAt950},
+			name:      "snapshot history starts after target",
+			scenario:  solRPCScenario{tip: 10000, floorSlot: 9000, target: target, blockTime: tiedAt950},
+			wantErr:   true,
+			wantErrIs: errAnchorExpired,
 		},
-		// A target older than the configured search cap must terminate with an
-		// abstention rather than performing an unbounded scan or guessing a slot.
+		// Same verdict when the search runs out of lookback rather than history: the
+		// capped window still proves thousands of blocks postdate the target.
 		{
 			name: "target is beyond maximum lookback",
 			scenario: solRPCScenario{
@@ -221,6 +258,15 @@ func TestConsensusBlockHashAcrossRPCViews(t *testing.T) {
 				target:    target,
 				blockTime: tiedConsensusBlockTimes(target, 1000),
 			},
+			wantErr:   true,
+			wantErrIs: errAnchorExpired,
+		},
+		// ... but only when the block count proves it. A cluster producing blocks
+		// slowly can leave the target unreachable with FEWER than MAX_PROCESSING_AGE
+		// blocks above it, and then expiry is unproven: abstain and retry, never drop.
+		{
+			name:     "unreachable target with too few blocks to prove expiry",
+			scenario: solRPCScenario{tip: 10000, floorSlot: 9950, target: target, blockTime: tiedAt950},
 		},
 		// A null timestamp at the newest slot removes the upper witness, so the
 		// node must abstain until its RPC can provide a usable finalized view.
@@ -264,6 +310,9 @@ func TestConsensusBlockHashAcrossRPCViews(t *testing.T) {
 
 			if tt.wantErr {
 				require.Error(t, err)
+				if tt.wantErrIs != nil {
+					require.ErrorIs(t, err, tt.wantErrIs)
+				}
 				require.Empty(t, hash)
 				return
 			}

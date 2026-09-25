@@ -341,6 +341,13 @@ type mockSOLThorchainBridge struct {
 	thorclient.ThorchainBridge
 	postCalls []solKeysignFailureCall
 	postErr   error
+
+	// thorHeight is the THORChain tip GetBlockHeight reports, and blockHeightCalls
+	// counts the reads. consensusBlockHash must never consult either: how far behind
+	// the THORChain tip a keysign height sits says nothing about whether its SOL
+	// anchor is still inside MAX_PROCESSING_AGE.
+	thorHeight       int64
+	blockHeightCalls int
 }
 
 // testConsensusBlockTimeUnix is the fixed THORChain block time the mock bridge
@@ -354,6 +361,13 @@ const testConsensusBlockTimeUnix = int64(1788116000)
 // blockhash from a known consensus time instead of the per-node scanner.
 func (m *mockSOLThorchainBridge) GetBlockTimestamp(int64) (time.Time, error) {
 	return time.Unix(testConsensusBlockTimeUnix, 0).UTC(), nil
+}
+
+// GetBlockHeight serves the keep-alive anchor. Calls are counted so a test can pin
+// that the consensus-blockhash derivation does not depend on the THORChain tip.
+func (m *mockSOLThorchainBridge) GetBlockHeight() (int64, error) {
+	m.blockHeightCalls++
+	return m.thorHeight, nil
 }
 
 func (m *mockSOLThorchainBridge) PostKeysignFailure(blame types2.Blame, height int64, memo string, coins common.Coins, pubkey common.PubKey) (common.TxID, error) {

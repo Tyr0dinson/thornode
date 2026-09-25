@@ -232,7 +232,7 @@ func TestMocknetBifrostWaitsForSolanaRPC(t *testing.T) {
 func TestMocknetSolanaRestartsValidatorInsideContainer(t *testing.T) {
 	entrypoint := readRepoFile(t, "build/docker/mocknet/solana/entrypoint.sh")
 	for _, snippet := range []string{
-		`LEDGER_SHRED_LIMIT="${LEDGER_SHRED_LIMIT:-500}"`,
+		`LEDGER_SHRED_LIMIT="${LEDGER_SHRED_LIMIT:-100000}"`,
 		`start_validator()`,
 		`Solana test validator exited with code`,
 		`wait "$validator_wrapper_pid"`,

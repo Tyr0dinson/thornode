@@ -502,6 +502,21 @@ func (c *SOLClient) advanceSolvencySlotMultiple(v int64) {
 
 // --------------------------------- sign ---------------------------------
 
+// dropForReschedule abandons an outbound whose blockhash can never be usable at this
+// keysign height, counting the reason and logging ev. The (nil,nil,nil,nil) no-op is
+// read by sign.go as "nothing to broadcast", so the signer clears the item and
+// THORChain reschedules it at a FRESH height. Returning an ERROR instead would RETAIN
+// it, and a retained item stays the lowest-height SOL outbound for its vault: the
+// signer pipeline (lowest-height-first, one item per {vault,chain} per pass) would let
+// it re-claim the vault's single signing slot every pass and starve every later SOL
+// outbound for that vault. Callers pass a partially-built event so each drop can carry
+// its own fields; tx and the abstain metric are attached here.
+func (c *SOLClient) dropForReschedule(tx stypes.TxOutItem, reason string, ev *zerolog.Event, msg string) ([]byte, []byte, *stypes.TxInItem, error) {
+	ev.Interface("tx", tx).Msg(msg)
+	c.countAbstain(reason)
+	return nil, nil, nil, nil
+}
+
 // countAbstain increments the SOL keysign-abstain metric by reason, so a fleet-wide
 // stall (all nodes failing the blockhash gate) is observable rather than looking like
 // routine keysign non-selection. Nil-safe: directly-constructed test clients omit m.
@@ -582,6 +597,16 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	// TxOut, retries, other vaults and the keep-alive share one RPC derivation.
 	recentBlockhash, anchorSlot, err := c.cachedConsensusBlockHash(height)
 	if err != nil {
+		if errors.Is(err, errAnchorExpired) {
+			// This height's anchor is provably past MAX_PROCESSING_AGE, so no derivation
+			// at it can produce a hash that lands — including the case where the search
+			// cannot complete at all and so never reaches the IsBlockhashValid gate
+			// below (#3344). Escalate to a fresh-height reschedule instead of retrying
+			// for the rest of the signing window.
+			return c.dropForReschedule(tx, "anchor_expired_dropped",
+				c.logger.Warn().Err(err),
+				"SOL consensus anchor is past MAX_PROCESSING_AGE, dropping for reschedule")
+		}
 		// RPC failures / probe exhaustion land here — the most likely abstain trigger,
 		// so count it too (the signer retains + retries on this error).
 		c.countAbstain("derive_error")
@@ -593,8 +618,9 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		// CreateTx-error behaviour). A (nil,nil,nil,nil) no-op is read as a successful
 		// broadcast (sign.go:signAndBroadcast len(signedTx)==0 -> nil err) and the item
 		// is Remove()d from the store, so a transient miss would DROP the outbound until
-		// THORChain reschedules ~300 blocks later. The slasher reschedule stays the
-		// eventual fallback; retaining+retrying is the fast path.
+		// THORChain reschedules ~300 blocks later. Retaining+retrying is the fast path;
+		// once consensusBlockHash can PROVE the anchor is past MAX_PROCESSING_AGE it
+		// returns errAnchorExpired above and the retry loop ends in a drop instead.
 		c.logger.Info().Interface("tx", tx).Msg("no consensus blockhash for SOL sign yet, retaining outbound for retry")
 		c.countAbstain("no_consensus_blockhash")
 		return nil, nil, nil, errors.New("no consensus blockhash for SOL height yet; retaining outbound for retry until reschedule")
@@ -603,10 +629,9 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	// rejection alone may come from a lagging backend and must not suppress
 	// participation in other outbounds that share the same consensus hash.
 	if c.isResignDeadHash(recentBlockhash) {
-		c.logger.Warn().Str("blockhash", recentBlockhash).Interface("tx", tx).
-			Msg("consensus blockhash expiry already confirmed; dropping for reschedule")
-		c.countAbstain("blockhash_dead_resign_dropped")
-		return nil, nil, nil, nil
+		return c.dropForReschedule(tx, "blockhash_dead_resign_dropped",
+			c.logger.Warn().Str("blockhash", recentBlockhash),
+			"consensus blockhash expiry already confirmed, dropping for reschedule")
 	}
 	// Per-node participation gate (never touches the signed bytes — the blockhash
 	// above is deterministic): is the derived blockhash still usable against the
@@ -639,10 +664,9 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		// (nil,nil,nil,nil) no-op so the signer clears it; THORChain reschedules at a
 		// FRESH height where a live hash derives. (The transient-blip drop the earlier
 		// review flagged is the IsBlockhashValid-ERROR path above — that stays retained.)
-		c.logger.Warn().Int64("anchor_slot", anchorSlot).Interface("tx", tx).
-			Msg("consensus blockhash expired at processed tip (permanent for this height), dropping for reschedule")
-		c.countAbstain("blockhash_expired_dropped")
-		return nil, nil, nil, nil
+		return c.dropForReschedule(tx, "blockhash_expired_dropped",
+			c.logger.Warn().Int64("anchor_slot", anchorSlot),
+			"consensus blockhash expired at processed tip (permanent for this height), dropping for reschedule")
 	}
 
 	solTx, err := c.CreateTx(tx, memoForParsing, recentBlockhash)
@@ -782,10 +806,28 @@ const (
 	// for ~60s (~10 heights), so 128 heights (~13 min) is ample while keeping the
 	// map to at most window+1 entries.
 	solConsensusCacheWindow = int64(128)
+
+	// solMaxProcessingAgeBlocks mirrors Solana's MAX_PROCESSING_AGE: a transaction is
+	// rejected once more than this many BLOCKS have been produced after the block whose
+	// blockhash it carries. The unit is load-bearing and is neither seconds nor slots.
+	// At the nominal 400ms slot 150 blocks is ~60s, but a cluster slowdown stretches the
+	// same 150 blocks over several minutes, and skipped slots stretch them over more
+	// than 150 slots. A wall-clock or slot-count stand-in therefore drifts from the real
+	// rule in one direction or the other; the expiry proof in consensusBlockHash counts
+	// blocks and nothing else.
+	solMaxProcessingAgeBlocks = 150
 )
 
 // errTooManyProbes caps the getBlockTime fan-out inside consensusBlockHash.
 var errTooManyProbes = errors.New("consensus blockhash search exceeded probe budget")
+
+// errAnchorExpired reports a keysign height whose anchor slot S* is PROVABLY past
+// Solana's MAX_PROCESSING_AGE: more than solMaxProcessingAgeBlocks finalized blocks
+// have been produced after it, so no blockhash derived at this height can ever land.
+// SignTx drops the outbound for a fresh-height reschedule instead of retrying for the
+// rest of the signing window (#3344). Errors are never memoized, so the proof is
+// re-established from live RPC data on every attempt.
+var errAnchorExpired = errors.New("SOL consensus anchor is past MAX_PROCESSING_AGE")
 
 // cachedConsensusBlockHash is consensusBlockHash memoized by keysign height. A
 // successful derivation is immutable, so it is returned from memory on every later
@@ -904,8 +946,15 @@ func (c *SOLClient) isResignDeadHash(blockhash string) bool {
 //     exact failure mode that would reintroduce the per-node divergence this fix removes.
 //
 // No slot-rate constant is used: the lookback is only an initial guess, galloped wider
-// until target is bracketed. Only slots returned by getBlocks (finalized listing) are
-// ever probed/fetched, so no unvetted raw slot hits getBlockTime/getBlock.
+// until target is bracketed, and cut short only once getFirstAvailableBlock proves the
+// window already reaches the RPC's retained history. Only slots returned by getBlocks
+// (finalized listing) are ever probed/fetched, so no unvetted raw slot hits
+// getBlockTime/getBlock.
+//
+// Abandoning a height is likewise decided on Solana evidence, never on a clock: only
+// when the finalized listing PROVES more than solMaxProcessingAgeBlocks blocks have been
+// produced after S* does this return errAnchorExpired, telling SignTx to reschedule
+// rather than keep searching (#3344). Everything else stays ("",0,nil) — retry.
 func (c *SOLClient) consensusBlockHash(height int64) (string, int64, error) {
 	t, err := c.bridge.GetBlockTimestamp(height)
 	if err != nil {
@@ -943,6 +992,13 @@ func (c *SOLClient) consensusBlockHash(height int64) (string, int64, error) {
 	}
 
 	lookback := solConsensusInitialLookbackSlots
+	// historyFloor memoizes getFirstAvailableBlock — the oldest slot this RPC has NOT
+	// purged. Fetched lazily (only when a window fails to reach target) and at most
+	// once per derivation, since it cannot move backwards while we search.
+	var (
+		historyFloor     uint64
+		haveHistoryFloor bool
+	)
 	for {
 		startI := int64(tip) - lookback
 		if startI < 0 {
@@ -955,21 +1011,21 @@ func (c *SOLClient) consensusBlockHash(height int64) (string, int64, error) {
 		if len(slots) == 0 {
 			// No finalized blocks in a wide window below tip -> RPC badly behind.
 			if lookback >= solConsensusMaxLookbackSlots {
-				return "", 0, nil // give up this round -> reschedule
+				return "", 0, nil // give up this round -> retry
 			}
 			lookback *= 2
 			continue
 		}
 
 		// Upper witness (bracket guard): the newest finalized slot must be strictly
-		// PAST target, else this node hasn't caught up -> reschedule, don't guess.
+		// PAST target, else this node hasn't caught up -> retry, don't guess.
 		newest := slots[len(slots)-1]
 		newestTime, ok, err := blockTimeAt(newest)
 		if err != nil {
 			return "", 0, err
 		}
 		if !ok || newestTime <= target {
-			return "", 0, nil // not finalized past target yet -> reschedule
+			return "", 0, nil // not finalized past target yet -> retry
 		}
 
 		// Lower witness: the window must reach back to <= target, else gallop wider.
@@ -979,8 +1035,54 @@ func (c *SOLClient) consensusBlockHash(height int64) (string, int64, error) {
 			return "", 0, err
 		}
 		if !ok || oldestTime > target {
-			if lookback >= solConsensusMaxLookbackSlots {
-				return "", 0, nil // can't bracket within cap -> reschedule
+			// Stop early only when widening is PROVABLY pointless: the window already
+			// reaches the oldest slot the RPC retains, so no wider one can return
+			// anything older. Without this, an outbound whose target had dropped below a
+			// pruning RPC's history floor climbed the whole 400->6400 ladder on every
+			// retry pass (#3344).
+			//
+			// The floor must come from getFirstAvailableBlock, never from the shape of
+			// the getBlocks listing: a window whose oldest slot sits above startI — even
+			// one that repeats across two widenings — is equally explained by a long run
+			// of SKIPPED slots, below which the blocks are still served. Guessing pruning
+			// there abandons a target the very next widening would have bracketed.
+			if !haveHistoryFloor {
+				floor, floorErr := c.rpcClient.GetFirstAvailableBlock()
+				if floorErr != nil {
+					// Unproven, so keep searching: the cap still bounds the work, and a
+					// wrong "pruned" call would strand a reachable target.
+					c.logger.Debug().Err(floorErr).Msg("fail to get SOL first available block, continuing bounded search")
+					floor = 0
+				}
+				historyFloor, haveHistoryFloor = floor, true
+			}
+			// startI == 0 satisfies this too: nothing is older than genesis.
+			atHistoryFloor := uint64(startI) <= historyFloor
+			if atHistoryFloor || lookback >= solConsensusMaxLookbackSlots {
+				// The search is over; decide retry-vs-drop on evidence already in hand,
+				// denominated in BLOCKS exactly like Solana's rule:
+				//
+				//   ok (the oldest listed block has a timestamp) and oldestTime > target,
+				//   and blockTime is monotonic in slot, so S* lies strictly below
+				//   slots[0] and every one of the len(slots) finalized blocks listed here
+				//   was produced AFTER S*. More than solMaxProcessingAgeBlocks of them
+				//   means S*'s blockhash has already aged out of the recent-blockhash
+				//   queue — whatever the slot cadence was and however many slots were
+				//   skipped. A slow cluster stretches those blocks over more wall-clock
+				//   time; it does not make the count smaller, so a slowdown can never
+				//   manufacture this verdict.
+				//
+				// The ok term is load-bearing: a null timestamp on the oldest slot leaves
+				// it unordered against target, and without oldestTime > target the listed
+				// blocks are not known to postdate S* at all. Unproven -> retry.
+				//
+				// tip is the FINALIZED tip, ~32 slots behind the processing bank a tx is
+				// really validated against, so the count under-reports the true age: this
+				// test can only ever be too cautious, never too eager.
+				if ok && len(slots) > solMaxProcessingAgeBlocks {
+					return "", 0, fmt.Errorf("%w: keysign height %d anchors below the %d finalized blocks at or under slot tip %d", errAnchorExpired, height, len(slots), tip)
+				}
+				return "", 0, nil // can't bracket, expiry unproven -> retry
 			}
 			lookback *= 2
 			continue
@@ -1119,10 +1221,15 @@ func (c *SOLClient) BroadcastTx(txOutItem stypes.TxOutItem, rawTx []byte) (strin
 		// unless a caught-up processing bank confirms that their hash expired.
 		if isBlockhashNotFound(err) {
 			blockhash, expiryErr := c.confirmedExpiredBlockhash(txOutItem, rawTx)
-			if expiryErr != nil {
+			switch {
+			case expiryErr != nil:
+				// This includes errAnchorExpired: an expired anchor for the signing
+				// height says nothing about the hash these bytes carry. Signed txs
+				// persisted before the consensus-anchor upgrade used the scanner's
+				// recent hash, which can be newer and still live, so retain them.
 				c.logger.Warn().Err(expiryErr).Str("memo", txOutItem.Memo).
 					Msg("cannot confirm SOL blockhash expiry; retaining signed tx for retry")
-			} else if blockhash != "" {
+			case blockhash != "":
 				c.logger.Warn().Err(err).Str("memo", txOutItem.Memo).
 					Msg("SOL blockhash expiry confirmed; dropping signed tx for reschedule")
 				c.markResignDead(blockhash)
