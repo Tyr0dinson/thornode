@@ -358,6 +358,7 @@ func (a *MempoolSwapMemolessActor) quoteSwap() error {
 		a.swapAmount,
 		a.fromBalance,
 		a.toAddress,
+		a.fromAddress,
 		false,
 	)
 	if err != nil {

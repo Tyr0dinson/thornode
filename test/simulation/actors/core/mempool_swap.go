@@ -372,8 +372,13 @@ func (a *MempoolSwapSimulationActor) prepareSwap(
 			user.Release()
 			return nil, fmt.Errorf("get %s account for quote sizing: %w", from, accountErr)
 		}
+		refundAddress, addrErr := user.PubKey(from.Chain).GetAddress(from.Chain)
+		if addrErr != nil {
+			user.Release()
+			return nil, fmt.Errorf("get %s refund address for quote sizing: %w", from, addrErr)
+		}
 		spendable := swapSpendableBalance(from, accountAssetAmount(fromAccount, from))
-		_, sizedAmount, sizingErr := getSwapQuoteWithRecommendedMin(from, to, amount, spendable, destination, false)
+		_, sizedAmount, sizingErr := getSwapQuoteWithRecommendedMin(from, to, amount, spendable, destination, refundAddress, false)
 		if sizingErr == nil {
 			amount = sizedAmount
 			break

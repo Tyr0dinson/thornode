@@ -483,7 +483,11 @@ func nativeMempoolSwapAmount(user *simtypes.User, target common.Asset, destinati
 	if amount.IsZero() {
 		amount = cosmos.OneUint()
 	}
-	_, amount, err = getSwapQuoteWithRecommendedMin(common.POLAsset, target, amount, spendable, destination, false)
+	refundAddress, err := user.PubKey(common.POLChain).GetAddress(common.POLChain)
+	if err != nil {
+		return cosmos.ZeroUint(), fmt.Errorf("get POL refund address: %w", err)
+	}
+	_, amount, err = getSwapQuoteWithRecommendedMin(common.POLAsset, target, amount, spendable, destination, refundAddress, false)
 	if err != nil {
 		return cosmos.ZeroUint(), fmt.Errorf("quote POL to %s: %w", target, err)
 	}
