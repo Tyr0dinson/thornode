@@ -810,7 +810,7 @@ func (*NetworkManagerTestSuite) TestMigrateFundsInactivatesDeficitOnlyRetiringVa
 	c.Assert(items, HasLen, 0)
 }
 
-func (*NetworkManagerTestSuite) TestMigrateFundsSkipsVaultWithPendingMigrateTx(c *C) {
+func (*NetworkManagerTestSuite) TestMigrateFundsSkipsChainWithPendingMigrateTx(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.txOutStore = NewTxStoreDummy()
 	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
@@ -856,7 +856,7 @@ func (*NetworkManagerTestSuite) TestMigrateFundsSkipsVaultWithPendingMigrateTx(c
 	c.Assert(items, HasLen, 0)
 }
 
-func (*NetworkManagerTestSuite) TestMigrateFundsSkipsVaultWithUnexpiredStalePendingMigrateTx(c *C) {
+func (*NetworkManagerTestSuite) TestMigrateFundsSkipsChainWithUnexpiredStalePendingMigrateTx(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockHeight(400)
 	mgr.txOutStore = NewTxStoreDummy()
@@ -973,6 +973,438 @@ func (*NetworkManagerTestSuite) TestMigrateFundsReissuesExpiredStalePendingMigra
 	c.Assert(updatedTxOut.TxArray, HasLen, 2)
 	c.Assert(updatedTxOut.TxArray[0].OutHash.Equals(common.BlankTxID), Equals, true)
 	c.Assert(updatedTxOut.TxArray[1].OutHash.Equals(common.BlankTxID), Equals, true)
+}
+
+// TestMigrateFundsPendingMigrateHoldsOnlyItsChain covers issue #3350: a stuck
+// GAIA token migrate holds the whole GAIA chain, including its gas asset before
+// the final round, while BASE keeps migrating from the same RetiringVault.
+func (*NetworkManagerTestSuite) TestMigrateFundsPendingMigrateHoldsOnlyItsChain(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	mgr.txOutStore = NewTxStoreDummy()
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	mgr.Keeper().SetMimir(ctx, constants.FundMigrationInterval.String(), 1)
+	chains := common.Chains{common.GAIAChain, common.BASEChain}
+	for _, chain := range chains {
+		c.Assert(mgr.Keeper().SaveNetworkFee(ctx, chain, NetworkFee{
+			Chain:              chain,
+			TransactionSize:    1,
+			TransactionFeeRate: 1,
+		}), IsNil)
+	}
+
+	target := NewVaultV2(ctx.BlockHeight()-1, ActiveVault, AsgardVault, GetRandomPubKey(), chains.Strings(), nil, GetRandomEd25519PubKey())
+	c.Assert(mgr.Keeper().SetVault(ctx, target), IsNil)
+
+	gaiaToken, err := common.NewAsset("GAIA.LQDY")
+	c.Assert(err, IsNil)
+	pendingHeight := ctx.BlockHeight() - 1
+	retiring := NewVaultV2(ctx.BlockHeight()-1, RetiringVault, AsgardVault, GetRandomPubKey(), chains.Strings(), nil, GetRandomEd25519PubKey())
+	retiring.AddFunds(common.NewCoins(
+		common.NewCoin(common.ATOMAsset, cosmos.NewUint(100*common.One)),
+		common.NewCoin(gaiaToken, cosmos.NewUint(100*common.One)),
+		common.NewCoin(common.BaseETHAsset, cosmos.NewUint(100*common.One)),
+	))
+	retiring.PendingTxBlockHeights = []int64{pendingHeight}
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+
+	gaiaAddress, err := target.GetAddress(common.GAIAChain)
+	c.Assert(err, IsNil)
+	c.Assert(mgr.Keeper().SetTxOut(ctx, &TxOut{
+		Height: pendingHeight,
+		TxArray: []TxOutItem{
+			{
+				Chain:       common.GAIAChain,
+				ToAddress:   gaiaAddress,
+				VaultPubKey: retiring.PubKey,
+				Coin:        common.NewCoin(gaiaToken, cosmos.NewUint(20*common.One)),
+				Memo:        NewMigrateMemo(pendingHeight).String(),
+			},
+		},
+	}), IsNil)
+
+	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
+
+	// Only BASE is scheduled: neither the stuck GAIA token nor GAIA's gas asset.
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 1)
+	c.Assert(items[0].Chain.Equals(common.BASEChain), Equals, true)
+	c.Assert(items[0].Coin.Asset.Equals(common.BaseETHAsset), Equals, true)
+	c.Assert(items[0].VaultPubKey.Equals(retiring.PubKey), Equals, true)
+	c.Assert(items[0].Memo, Equals, NewMigrateMemo(ctx.BlockHeight()).String())
+
+	updatedRetiring, err := mgr.Keeper().GetVault(ctx, retiring.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(updatedRetiring.PendingTxBlockHeights, DeepEquals, []int64{ctx.BlockHeight(), pendingHeight})
+}
+
+// TestMigrateFundsUnexpiredStalePendingMigrateHoldsOnlyItsChain checks that a
+// migrate older than the signing window, tracked only through the vault's
+// pending heights, still holds its chain but no longer holds other chains.
+func (*NetworkManagerTestSuite) TestMigrateFundsUnexpiredStalePendingMigrateHoldsOnlyItsChain(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(400)
+	mgr.txOutStore = NewTxStoreDummy()
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	mgr.Keeper().SetMimir(ctx, constants.FundMigrationInterval.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.ChurnMigrateRounds.String(), 2)
+	chains := common.Chains{common.XRPChain, common.BTCChain}
+	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.XRPChain, NetworkFee{
+		Chain:              common.XRPChain,
+		TransactionSize:    1,
+		TransactionFeeRate: 15,
+	}), IsNil)
+	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.BTCChain, NetworkFee{
+		Chain:              common.BTCChain,
+		TransactionSize:    1,
+		TransactionFeeRate: 1,
+	}), IsNil)
+
+	target := NewVaultV2(ctx.BlockHeight()-1, ActiveVault, AsgardVault, GetRandomPubKey(), chains.Strings(), nil, GetRandomEd25519PubKey())
+	c.Assert(mgr.Keeper().SetVault(ctx, target), IsNil)
+
+	staleHeight := ctx.BlockHeight() - mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod) - 1
+	retiring := NewVaultV2(ctx.BlockHeight()-1, RetiringVault, AsgardVault, GetRandomPubKey(), chains.Strings(), nil, GetRandomEd25519PubKey())
+	// Enough XRP that, without the guard, the remainder would clear the reserve
+	// and be migrated again.
+	retiring.AddFunds(common.NewCoins(
+		common.NewCoin(common.XRPAsset, cosmos.NewUint(10*common.One)),
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(2*common.One)),
+	))
+	retiring.PendingTxBlockHeights = []int64{staleHeight}
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+
+	xrpAddress, err := target.GetAddress(common.XRPChain)
+	c.Assert(err, IsNil)
+	c.Assert(mgr.Keeper().SetTxOut(ctx, &TxOut{
+		Height: staleHeight,
+		TxArray: []TxOutItem{
+			{
+				Chain:       common.XRPChain,
+				ToAddress:   xrpAddress,
+				VaultPubKey: retiring.PubKey,
+				Coin:        common.NewCoin(common.XRPAsset, cosmos.NewUint(common.One)),
+				Memo:        NewMigrateMemo(staleHeight).String(),
+			},
+		},
+	}), IsNil)
+
+	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
+
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 1)
+	c.Assert(items[0].Chain.Equals(common.BTCChain), Equals, true)
+	c.Assert(items[0].VaultPubKey.Equals(retiring.PubKey), Equals, true)
+
+	// The unexpired XRP migrate stays tracked and signable next to the new BTC one.
+	updatedRetiring, err := mgr.Keeper().GetVault(ctx, retiring.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(updatedRetiring.PendingTxBlockHeights, DeepEquals, []int64{ctx.BlockHeight(), staleHeight})
+	staleTxOut, err := mgr.Keeper().GetTxOut(ctx, staleHeight)
+	c.Assert(err, IsNil)
+	c.Assert(staleTxOut.TxArray[0].OutHash.IsEmpty(), Equals, true)
+}
+
+// TestMigrateFundsExpiredPendingMigrateResumesItsChainWhileAnotherChainIsPending
+// checks that stale expiry releases only the expired chain: XRP is reissued
+// while a recent GAIA migrate from the same RetiringVault still holds GAIA.
+func (*NetworkManagerTestSuite) TestMigrateFundsExpiredPendingMigrateResumesItsChainWhileAnotherChainIsPending(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(5000)
+	mgr.txOutStore = NewTxStoreDummy()
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	mgr.Keeper().SetMimir(ctx, constants.FundMigrationInterval.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.ChurnMigrateRounds.String(), 2)
+	chains := common.Chains{common.XRPChain, common.GAIAChain}
+	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.XRPChain, NetworkFee{
+		Chain:              common.XRPChain,
+		TransactionSize:    1,
+		TransactionFeeRate: 15,
+	}), IsNil)
+	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.GAIAChain, NetworkFee{
+		Chain:              common.GAIAChain,
+		TransactionSize:    1,
+		TransactionFeeRate: 1,
+	}), IsNil)
+
+	target := NewVaultV2(ctx.BlockHeight()-1, ActiveVault, AsgardVault, GetRandomPubKey(), chains.Strings(), nil, GetRandomEd25519PubKey())
+	c.Assert(mgr.Keeper().SetVault(ctx, target), IsNil)
+
+	staleHeight := ctx.BlockHeight() - mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)*constants.StaleMigratePendingSigningPeriodMultiplier - 1
+	gaiaHeight := ctx.BlockHeight() - 1
+	retiring := NewVaultV2(ctx.BlockHeight()-1, RetiringVault, AsgardVault, GetRandomPubKey(), chains.Strings(), nil, GetRandomEd25519PubKey())
+	retiring.AddFunds(common.NewCoins(
+		common.NewCoin(common.XRPAsset, cosmos.NewUint(10*common.One)),
+		common.NewCoin(common.ATOMAsset, cosmos.NewUint(100*common.One)),
+	))
+	retiring.PendingTxBlockHeights = []int64{staleHeight, gaiaHeight}
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+
+	xrpAddress, err := target.GetAddress(common.XRPChain)
+	c.Assert(err, IsNil)
+	c.Assert(mgr.Keeper().SetTxOut(ctx, &TxOut{
+		Height: staleHeight,
+		TxArray: []TxOutItem{
+			{
+				Chain:       common.XRPChain,
+				ToAddress:   xrpAddress,
+				VaultPubKey: retiring.PubKey,
+				Coin:        common.NewCoin(common.XRPAsset, cosmos.NewUint(common.One)),
+				Memo:        NewMigrateMemo(staleHeight).String(),
+			},
+		},
+	}), IsNil)
+	gaiaAddress, err := target.GetAddress(common.GAIAChain)
+	c.Assert(err, IsNil)
+	c.Assert(mgr.Keeper().SetTxOut(ctx, &TxOut{
+		Height: gaiaHeight,
+		TxArray: []TxOutItem{
+			{
+				Chain:       common.GAIAChain,
+				ToAddress:   gaiaAddress,
+				VaultPubKey: retiring.PubKey,
+				Coin:        common.NewCoin(common.ATOMAsset, cosmos.NewUint(20*common.One)),
+				Memo:        NewMigrateMemo(gaiaHeight).String(),
+			},
+		},
+	}), IsNil)
+
+	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
+
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 1)
+	c.Assert(items[0].Chain.Equals(common.XRPChain), Equals, true)
+	c.Assert(items[0].Memo, Equals, NewMigrateMemo(ctx.BlockHeight()).String())
+
+	staleTxOut, err := mgr.Keeper().GetTxOut(ctx, staleHeight)
+	c.Assert(err, IsNil)
+	c.Assert(staleTxOut.TxArray[0].OutHash.Equals(common.BlankTxID), Equals, true)
+	updatedRetiring, err := mgr.Keeper().GetVault(ctx, retiring.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(updatedRetiring.PendingTxBlockHeights, DeepEquals, []int64{ctx.BlockHeight(), gaiaHeight})
+}
+
+// TestMigrateFundsObservedMigrateResumesItsChainWhileAnotherChainIsPending
+// walks the hold across two migration ticks: GAIA waits while its migrate is
+// pending, then resumes once it is observed, while the BASE migrate scheduled
+// on the first tick is still pending and now holds BASE.
+func (*NetworkManagerTestSuite) TestMigrateFundsObservedMigrateResumesItsChainWhileAnotherChainIsPending(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+	mgr.txOutStore = NewTxStoreDummy()
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	mgr.Keeper().SetMimir(ctx, constants.FundMigrationInterval.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.ChurnMigrateRounds.String(), 5)
+	chains := common.Chains{common.GAIAChain, common.BASEChain}
+	for _, chain := range chains {
+		c.Assert(mgr.Keeper().SaveNetworkFee(ctx, chain, NetworkFee{
+			Chain:              chain,
+			TransactionSize:    1,
+			TransactionFeeRate: 1,
+		}), IsNil)
+	}
+
+	target := NewVaultV2(ctx.BlockHeight()-1, ActiveVault, AsgardVault, GetRandomPubKey(), chains.Strings(), nil, GetRandomEd25519PubKey())
+	c.Assert(mgr.Keeper().SetVault(ctx, target), IsNil)
+
+	gaiaToken, err := common.NewAsset("GAIA.LQDY")
+	c.Assert(err, IsNil)
+	gaiaHeight := ctx.BlockHeight() - 1
+	retiring := NewVaultV2(ctx.BlockHeight()-1, RetiringVault, AsgardVault, GetRandomPubKey(), chains.Strings(), nil, GetRandomEd25519PubKey())
+	retiring.AddFunds(common.NewCoins(
+		common.NewCoin(common.ATOMAsset, cosmos.NewUint(100*common.One)),
+		common.NewCoin(gaiaToken, cosmos.NewUint(100*common.One)),
+		common.NewCoin(common.BaseETHAsset, cosmos.NewUint(100*common.One)),
+	))
+	retiring.PendingTxBlockHeights = []int64{gaiaHeight}
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+
+	gaiaAddress, err := target.GetAddress(common.GAIAChain)
+	c.Assert(err, IsNil)
+	gaiaMigrate := common.NewCoin(gaiaToken, cosmos.NewUint(20*common.One))
+	c.Assert(mgr.Keeper().SetTxOut(ctx, &TxOut{
+		Height: gaiaHeight,
+		TxArray: []TxOutItem{
+			{
+				Chain:       common.GAIAChain,
+				ToAddress:   gaiaAddress,
+				VaultPubKey: retiring.PubKey,
+				Coin:        gaiaMigrate,
+				Memo:        NewMigrateMemo(gaiaHeight).String(),
+			},
+		},
+	}), IsNil)
+
+	// First tick: GAIA is held, BASE migrates.
+	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 1)
+	c.Assert(items[0].Chain.Equals(common.BASEChain), Equals, true)
+
+	// Persist the BASE migrate as a still-unsigned txout, as the real store would.
+	baseHeight := ctx.BlockHeight()
+	c.Assert(mgr.Keeper().SetTxOut(ctx, &TxOut{Height: baseHeight, TxArray: items}), IsNil)
+	mgr.TxOutStore().ClearOutboundItems(ctx)
+
+	// Simulate the persisted effects of observing the GAIA migrate: mark its
+	// txout sent, clear its pending height and debit the migrated funds.
+	gaiaTxOut, err := mgr.Keeper().GetTxOut(ctx, gaiaHeight)
+	c.Assert(err, IsNil)
+	gaiaTxOut.TxArray[0].OutHash = GetRandomTxHash()
+	c.Assert(mgr.Keeper().SetTxOut(ctx, gaiaTxOut), IsNil)
+	retiring, err = mgr.Keeper().GetVault(ctx, retiring.PubKey)
+	c.Assert(err, IsNil)
+	retiring.RemovePendingTxBlockHeights(gaiaHeight)
+	retiring.SubFundsWithClamping(common.Coins{gaiaMigrate})
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+
+	// Second tick: GAIA resumes (gas and token), BASE is held by its own pending migrate.
+	ctx = ctx.WithBlockHeight(baseHeight + 1)
+	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
+	items, err = mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 2)
+	scheduled := common.Coins{}
+	for _, item := range items {
+		c.Assert(item.Chain.Equals(common.GAIAChain), Equals, true)
+		c.Assert(item.Memo, Equals, NewMigrateMemo(ctx.BlockHeight()).String())
+		scheduled = append(scheduled, item.Coin)
+	}
+	c.Assert(scheduled.GetCoin(common.ATOMAsset).Amount.IsZero(), Equals, false)
+	c.Assert(scheduled.GetCoin(gaiaToken).Amount.IsZero(), Equals, false)
+
+	updatedRetiring, err := mgr.Keeper().GetVault(ctx, retiring.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(updatedRetiring.PendingTxBlockHeights, DeepEquals, []int64{ctx.BlockHeight(), ctx.BlockHeight(), baseHeight})
+}
+
+func (*NetworkManagerTestSuite) TestMigrateFundsExpiresEveryPendingHeight(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(5000)
+	mgr.txOutStore = NewTxStoreDummy()
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+	mgr.Keeper().SetMimir(ctx, constants.FundMigrationInterval.String(), 1)
+
+	chains := common.Chains{common.GAIAChain, common.BASEChain, common.BTCChain}
+	target := NewVaultV2(1000, ActiveVault, AsgardVault, GetRandomPubKey(), chains.Strings(), nil, GetRandomEd25519PubKey())
+	c.Assert(mgr.Keeper().SetVault(ctx, target), IsNil)
+	retiring := NewVaultV2(1000, RetiringVault, AsgardVault, GetRandomPubKey(), chains.Strings(), nil, GetRandomEd25519PubKey())
+	staleHeight := ctx.BlockHeight() - mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)*constants.StaleMigratePendingSigningPeriodMultiplier - 1
+	for i, chain := range chains {
+		c.Assert(mgr.Keeper().SaveNetworkFee(ctx, chain, NetworkFee{
+			Chain:              chain,
+			TransactionSize:    1,
+			TransactionFeeRate: 1,
+		}), IsNil)
+		asset := chain.GetGasAsset()
+		retiring.AddFunds(common.NewCoins(common.NewCoin(asset, cosmos.NewUint(100*common.One))))
+		height := staleHeight - int64(i)
+		retiring.PendingTxBlockHeights = append(retiring.PendingTxBlockHeights, height)
+		address, err := target.GetAddress(chain)
+		c.Assert(err, IsNil)
+		c.Assert(mgr.Keeper().SetTxOut(ctx, &TxOut{
+			Height: height,
+			TxArray: []TxOutItem{{
+				Chain:       chain,
+				ToAddress:   address,
+				VaultPubKey: retiring.PubKey,
+				Coin:        common.NewCoin(asset, cosmos.NewUint(20*common.One)),
+				Memo:        NewMigrateMemo(height).String(),
+			}},
+		}), IsNil)
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+
+	// Several chains can expire together after migration was paused. Removing
+	// the newest pending height must not skip the next entry in the same slice.
+	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, len(chains))
+	for _, chain := range chains {
+		count := 0
+		for _, item := range items {
+			if item.Chain.Equals(chain) {
+				count++
+				c.Assert(item.VaultPubKey.Equals(retiring.PubKey), Equals, true)
+				c.Assert(item.Memo, Equals, NewMigrateMemo(ctx.BlockHeight()).String())
+			}
+		}
+		c.Check(count, Equals, 1)
+	}
+	// Every old request must be made unsignable before its replacement is queued.
+	for _, height := range retiring.PendingTxBlockHeights {
+		oldTxOut, getErr := mgr.Keeper().GetTxOut(ctx, height)
+		c.Assert(getErr, IsNil)
+		c.Check(oldTxOut.TxArray[0].OutHash.Equals(common.BlankTxID), Equals, true, Commentf("height %d", height))
+	}
+	updated, err := mgr.Keeper().GetVault(ctx, retiring.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(updated.PendingTxBlockHeights, DeepEquals, []int64{ctx.BlockHeight(), ctx.BlockHeight(), ctx.BlockHeight()})
+}
+
+func (*NetworkManagerTestSuite) TestMigrateFundsHoldsEveryPendingChain(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(400)
+	mgr.txOutStore = NewTxStoreDummy()
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+	mgr.Keeper().SetMimir(ctx, constants.FundMigrationInterval.String(), 1)
+
+	chains := common.Chains{common.GAIAChain, common.BASEChain, common.BTCChain}
+	target := NewVaultV2(1, ActiveVault, AsgardVault, GetRandomPubKey(), chains.Strings(), nil, GetRandomEd25519PubKey())
+	c.Assert(mgr.Keeper().SetVault(ctx, target), IsNil)
+	retiring := NewVaultV2(1, RetiringVault, AsgardVault, GetRandomPubKey(), chains.Strings(), nil, GetRandomEd25519PubKey())
+	for _, chain := range chains {
+		c.Assert(mgr.Keeper().SaveNetworkFee(ctx, chain, NetworkFee{
+			Chain:              chain,
+			TransactionSize:    1,
+			TransactionFeeRate: 1,
+		}), IsNil)
+		retiring.AddFunds(common.NewCoins(common.NewCoin(chain.GetGasAsset(), cosmos.NewUint(100*common.One))))
+	}
+	// BASE is found in the rolling window; GAIA is found only through its older
+	// durable pending height. Both must be held while the third chain progresses.
+	heights := []int64{ctx.BlockHeight() - 1, ctx.BlockHeight() - mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod) - 1}
+	retiring.PendingTxBlockHeights = heights
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+	pendingChains := common.Chains{common.BASEChain, common.GAIAChain}
+	for i, chain := range pendingChains {
+		address, err := target.GetAddress(chain)
+		c.Assert(err, IsNil)
+		c.Assert(mgr.Keeper().SetTxOut(ctx, &TxOut{
+			Height: heights[i],
+			TxArray: []TxOutItem{{
+				Chain:       chain,
+				ToAddress:   address,
+				VaultPubKey: retiring.PubKey,
+				Coin:        common.NewCoin(chain.GetGasAsset(), cosmos.NewUint(20*common.One)),
+				Memo:        NewMigrateMemo(heights[i]).String(),
+			}},
+		}), IsNil)
+	}
+
+	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
+	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 1)
+	c.Assert(items[0].Chain.Equals(common.BTCChain), Equals, true)
+	c.Assert(items[0].VaultPubKey.Equals(retiring.PubKey), Equals, true)
+	c.Assert(items[0].Memo, Equals, NewMigrateMemo(ctx.BlockHeight()).String())
+	updated, err := mgr.Keeper().GetVault(ctx, retiring.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(updated.PendingTxBlockHeights, DeepEquals, []int64{ctx.BlockHeight(), heights[0], heights[1]})
+	for _, height := range heights {
+		pending, getErr := mgr.Keeper().GetTxOut(ctx, height)
+		c.Assert(getErr, IsNil)
+		c.Assert(pending.TxArray[0].OutHash.IsEmpty(), Equals, true)
+	}
 }
 
 func (*NetworkManagerTestSuite) TestMigrateFundsLeavesXMRDustBufferForFinalRound(c *C) {
