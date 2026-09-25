@@ -2,10 +2,12 @@ package signer
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/rs/zerolog/log"
@@ -242,20 +244,184 @@ func (s *SignCoverageSuite) TestPipelineUnsupportedXMRDestination(c *C) {
 		c.Assert(unexpectedCalls.Load(), Equals, int32(0))
 		c.Assert(bridge.broadcastCalls, Equals, 0)
 
-		// A replay must not overwrite a stored checkpoint or signed payload.
-		delivery := types.TxOut{Height: 200, TxArray: pressure[:1]}
-		protected := NewTxOutStoreItem(delivery.Height, delivery.TxArray[0].TxOutItem(delivery.Height), 0)
-		protected.SignedTx = []byte("persisted-signed-payload")
-		protected.Checkpoint = []byte("persisted-checkpoint")
-		protected.Observation = &types.TxInItem{Tx: strings.Repeat("C", 64)}
-		protected.Round7Retry = true
-		c.Assert(storage.Set(protected), IsNil)
+	}
+}
+
+type admissionReadErrorStore struct {
+	SignerStorage
+	key string
+	err error
+}
+
+func (s *admissionReadErrorStore) Get(key string) (TxOutStoreItem, error) {
+	if key == s.key && s.err != nil {
+		return TxOutStoreItem{}, s.err
+	}
+	return s.SignerStorage.Get(key)
+}
+
+type admissionErrorClient struct {
+	chainclients.ChainClient
+}
+
+func (*admissionErrorClient) CanSkipUnsupportedXMRDestination(types.TxOutItem) (bool, error) {
+	// Even a "skip" result must not be used alongside an error.
+	return true, errors.New("recovery store is unavailable")
+}
+
+func xmrAdmissionDelivery(c *C) types.TxOut {
+	vaultKey, err := common.NewPubKey(pubkeymanager.MockPubkey)
+	c.Assert(err, IsNil)
+	delivery := types.TxOut{Height: 100}
+	for i := 0; i < 3; i++ {
+		delivery.TxArray = append(delivery.TxArray, types.TxArrayItem{
+			Chain: common.XMRChain, VaultPubKey: vaultKey,
+			ToAddress: common.Address(common.XMRChecksummedDummyAddress('4')),
+			Coin:      common.NewCoin(common.XMRAsset, cosmos.NewUint(1)),
+			Memo:      fmt.Sprintf("OUT:%064X", i+1),
+		})
+	}
+	return delivery
+}
+
+func admissionItem(delivery types.TxOut, index int) TxOutStoreItem {
+	return NewTxOutStoreItem(delivery.Height, delivery.TxArray[index].TxOutItem(delivery.Height), int64(index))
+}
+
+func (s *SignCoverageSuite) TestXMRAdmissionReadErrorIsolatesItemAndAllowsRedelivery(c *C) {
+	for failedIndex := 0; failedIndex < 3; failedIndex++ {
+		for _, existing := range []bool{false, true} {
+			storePath := c.MkDir()
+			store, err := NewSignerStore(storePath, config.LevelDBOptions{}, "")
+			c.Assert(err, IsNil)
+			delivery := xmrAdmissionDelivery(c)
+			failed := admissionItem(delivery, failedIndex)
+			if existing {
+				failed.SignedTx = []byte("exact-signed-transaction")
+				failed.Checkpoint = []byte("persisted-input-selection")
+				c.Assert(store.Set(failed), IsNil)
+			}
+			readErr := errors.New("injected record read failure")
+			storage := &admissionReadErrorStore{SignerStorage: store, key: failed.Key(), err: readErr}
+			sign := &Signer{logger: log.Logger, storage: storage}
+
+			c.Assert(errors.Is(sign.storeTxOut(delivery), readErr), Equals, true)
+			for i := range delivery.TxArray {
+				item := admissionItem(delivery, i)
+				// The failure must not discard either preceding or following items.
+				c.Assert(store.Has(item.Key()), Equals, i != failedIndex || existing)
+			}
+			c.Assert(delivery.TxArray[failedIndex].OutHash.IsEmpty(), Equals, true)
+
+			// The healthy items and any existing recovery record survive restart.
+			c.Assert(store.Close(), IsNil)
+			reopened, openErr := NewSignerStore(storePath, config.LevelDBOptions{}, "")
+			c.Assert(openErr, IsNil)
+			sign.storage = reopened
+			// A redelivery after the read fault clears safely admits a missing
+			// attempt or preserves the existing signed attempt.
+			c.Assert(sign.storeTxOut(delivery), IsNil)
+			c.Assert(reopened.List(), HasLen, 3)
+			got, getErr := reopened.Get(failed.Key())
+			c.Assert(getErr, IsNil)
+			c.Assert(got.SignedTx, DeepEquals, failed.SignedTx)
+			c.Assert(got.Checkpoint, DeepEquals, failed.Checkpoint)
+			c.Assert(reopened.Close(), IsNil)
+		}
+	}
+}
+
+func (s *SignCoverageSuite) TestXMRAdmissionMalformedRecordDoesNotBlockBatch(c *C) {
+	store, err := NewSignerStore("", config.LevelDBOptions{}, "")
+	c.Assert(err, IsNil)
+	defer store.Close()
+	delivery := xmrAdmissionDelivery(c)
+	damaged := admissionItem(delivery, 1)
+	raw := []byte("unreadable existing recovery record")
+	c.Assert(store.GetInternalDb().Put([]byte(damaged.Key()), raw, nil), IsNil)
+	sign := &Signer{logger: log.Logger, storage: store}
+
+	c.Assert(sign.storeTxOut(delivery), NotNil)
+	for _, i := range []int{0, 2} {
+		item := admissionItem(delivery, i)
+		c.Assert(store.Has(item.Key()), Equals, true)
+	}
+	after, err := store.GetInternalDb().Get([]byte(damaged.Key()), nil)
+	c.Assert(err, IsNil)
+	c.Assert(after, DeepEquals, raw)
+}
+
+func (s *SignCoverageSuite) TestXMRAdmissionConsumerContinuesAndAcceptsReschedule(c *C) {
+	store, err := NewSignerStore("", config.LevelDBOptions{}, "")
+	c.Assert(err, IsNil)
+	defer store.Close()
+	delivery := xmrAdmissionDelivery(c)
+	failed := admissionItem(delivery, 1)
+	storage := &admissionReadErrorStore{
+		SignerStorage: store, key: failed.Key(), err: errors.New("one key remains unreadable"),
+	}
+	sign := &Signer{logger: log.Logger, storage: storage, wg: &sync.WaitGroup{}, stopChan: make(chan struct{})}
+	// A later delivery represents THORChain rescheduling the still-unpaid
+	// obligation at a new height. No local completion or retry queue is invented.
+	rescheduled := types.TxOut{Height: 200, TxArray: []types.TxArrayItem{delivery.TxArray[1]}}
+	ch := make(chan types.TxOut, 2)
+	ch <- delivery
+	ch <- rescheduled
+	close(ch)
+	sign.wg.Add(1)
+	go sign.processTxnOut(ch, 1)
+	sign.wg.Wait()
+
+	c.Assert(store.List(), HasLen, 3)
+	c.Assert(store.Has(failed.Key()), Equals, false)
+	retry := admissionItem(rescheduled, 0)
+	got, err := store.Get(retry.Key())
+	c.Assert(err, IsNil)
+	c.Assert(got.RetrievalKey, Equals, retry.Key())
+	c.Assert(got.TxOutItem.OutHash.IsEmpty(), Equals, true)
+}
+
+func (s *SignCoverageSuite) TestXMRAdmissionRetainsOnPolicyError(c *C) {
+	store, err := NewSignerStore("", config.LevelDBOptions{}, "")
+	c.Assert(err, IsNil)
+	defer store.Close()
+	delivery := xmrAdmissionDelivery(c)
+	for i := range delivery.TxArray {
+		delivery.TxArray[i].ToAddress = common.Address(common.XMRChecksummedDummyAddress('C'))
+	}
+	sign := &Signer{
+		logger: log.Logger, storage: store,
+		chains: map[common.Chain]chainclients.ChainClient{common.XMRChain: &admissionErrorClient{}},
+	}
+	c.Assert(sign.storeTxOut(delivery), IsNil)
+	c.Assert(store.List(), HasLen, 3)
+}
+
+func (s *SignCoverageSuite) TestXMRAdmissionPreservesSupportedRedelivery(c *C) {
+	storePath := c.MkDir()
+	store, err := NewSignerStore(storePath, config.LevelDBOptions{}, "")
+	c.Assert(err, IsNil)
+	delivery := xmrAdmissionDelivery(c)
+	protected := admissionItem(delivery, 1)
+	protected.SignedTx = []byte("persisted-signed-payload")
+	protected.Checkpoint = []byte("persisted-checkpoint")
+	protected.Observation = &types.TxInItem{Tx: strings.Repeat("C", 64)}
+	protected.Round7Retry = true
+	c.Assert(store.Set(protected), IsNil)
+	sign := &Signer{logger: log.Logger, storage: store}
+	for round := 0; round < 2; round++ {
+		// A supported destination cannot be protected accidentally by the
+		// unsupported-address filter; only preservation on redelivery protects it.
 		c.Assert(sign.storeTxOut(delivery), IsNil)
-		preserved, err := storage.Get(protected.Key())
-		c.Assert(err, IsNil)
-		c.Assert(preserved.SignedTx, DeepEquals, protected.SignedTx)
-		c.Assert(preserved.Checkpoint, DeepEquals, protected.Checkpoint)
-		c.Assert(preserved.Observation, DeepEquals, protected.Observation)
-		c.Assert(preserved.Round7Retry, Equals, true)
+		got, getErr := store.Get(protected.Key())
+		c.Assert(getErr, IsNil)
+		protected.RetrievalKey = protected.Key()
+		c.Assert(got, DeepEquals, protected)
+		c.Assert(store.Close(), IsNil)
+		if round == 0 {
+			store, err = NewSignerStore(storePath, config.LevelDBOptions{}, "")
+			c.Assert(err, IsNil)
+			sign.storage = store
+		}
 	}
 }

@@ -390,12 +390,18 @@ func (s *Signer) processTxnOut(ch <-chan types.TxOut, idx int) {
 // by an XMR redelivery.
 func (s *Signer) storeTxOut(txOut types.TxOut) error {
 	items := make([]TxOutStoreItem, 0, len(txOut.TxArray))
+	var storeErrors []error
 	for i, tx := range txOut.TxArray {
 		item := NewTxOutStoreItem(txOut.Height, tx.TxOutItem(txOut.Height), int64(i))
 		if item.TxOutItem.Chain.Equals(common.XMRChain) {
 			existing, err := s.storage.Get(item.Key())
 			if err != nil {
-				return err
+				// An unreadable record may contain recovery evidence. Leave it
+				// untouched, but do not prevent the other attempts from being
+				// saved. Nothing is marked paid: a missing attempt can return
+				// through THORChain rescheduling or redelivery after recovery.
+				storeErrors = append(storeErrors, fmt.Errorf("read XMR signer record %s: %w", item.Key(), err))
+				continue
 			}
 			if existing.RetrievalKey != "" {
 				continue
@@ -413,7 +419,10 @@ func (s *Signer) storeTxOut(txOut types.TxOut) error {
 		}
 		items = append(items, item)
 	}
-	return s.storage.Batch(items)
+	if len(items) > 0 {
+		storeErrors = append(storeErrors, s.storage.Batch(items))
+	}
+	return errors.Join(storeErrors...)
 }
 
 func (s *Signer) processKeygen(ch <-chan ttypes.KeygenBlock) {
