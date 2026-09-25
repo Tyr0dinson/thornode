@@ -795,7 +795,7 @@ func TestWaitForMasterAccountRetriesTransientSOLRPCStartupError(t *testing.T) {
 func TestSimulationTargetsUseExplicitStageDefaults(t *testing.T) {
 	makefile := readRepoFile(t, "Makefile")
 
-	wantSingle := "TEST_SIMULATION_STAGES ?= seed,bootstrap,xmr-coverage,arb,swaps,memoless-swaps,consolidate,inactive-vault-refunds,memoless-refunds,solvency,ragnarok"
+	wantSingle := "TEST_SIMULATION_STAGES ?= seed,bootstrap,xmr-coverage,arb,swaps,memoless-swaps,consolidate,memoless-refunds,solvency,ragnarok"
 	if !strings.Contains(makefile, wantSingle) {
 		t.Fatalf("missing expected single-node simulation stages: %s", wantSingle)
 	}

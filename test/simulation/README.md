@@ -16,6 +16,15 @@ make test-simulation
 
 This will internally build the simulation framework image, start mocknet, and run the tests from a Docker container with host mode networking to reach the local mocknet.
 
+### Inactive-vault refunds
+
+The cluster profile runs `inactive-vault-refunds` after churn, when eligible
+retired vaults exist. The scenario uses the same inactive-vault discovery as
+Bifrost and fails if a selected chain has no eligible destination. The single-node
+profile does not create retired vaults, so it excludes this scenario. To run it
+explicitly, include `cluster-churn` or use a cluster that has already churned.
+XMR registers a reference memo with an explicit refund address before depositing.
+
 ### Faster reruns
 
 `make test-simulation` rebuilds the mocknet images and resets chain state on every invocation, so the first run is expensive. When iterating, reuse the running mocknet instead of rebuilding it:

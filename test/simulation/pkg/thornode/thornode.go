@@ -175,6 +175,28 @@ func GetVaults() ([]openapi.Vault, error) {
 	return vaults, err
 }
 
+// GetInactiveVaults uses the same eligible inactive-vault list as Bifrost.
+// The Asgard listing omits inactive vaults without a deficit, so it cannot
+// discover destinations for the inactive-vault refund simulation.
+func GetInactiveVaults() ([]openapi.Vault, error) {
+	var keys openapi.VaultPubkeysResponse
+	if err := Get(thornodeURL+"/thorchain/vaults/pubkeys", &keys); err != nil {
+		return nil, err
+	}
+	vaults := make([]openapi.Vault, 0, len(keys.Inactive))
+	for _, key := range keys.Inactive {
+		if key.PubKey == "" {
+			return nil, fmt.Errorf("inactive vault entry has no public key")
+		}
+		vault, err := GetVault(key.PubKey)
+		if err != nil {
+			return nil, fmt.Errorf("query inactive vault %s: %w", key.PubKey, err)
+		}
+		vaults = append(vaults, vault)
+	}
+	return vaults, nil
+}
+
 func GetNetwork() (openapi.NetworkResponse, error) {
 	url := fmt.Sprintf("%s/thorchain/network", thornodeURL)
 	var network openapi.NetworkResponse
