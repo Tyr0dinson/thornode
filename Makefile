@@ -220,7 +220,11 @@ lint:
 	@./scripts/lint.sh
 	@./scripts/trunk check --no-fix --show-existing --upstream origin/develop
 
-lint-ci:
+.PHONY: test-lint-tokens
+test-lint-tokens:
+	@./scripts/tests/test-lint-tokens.bash
+
+lint-ci: test-lint-tokens
 	@./scripts/lint.sh
 	@./scripts/trunk-ci.sh
 
