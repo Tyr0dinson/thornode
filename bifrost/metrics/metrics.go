@@ -47,6 +47,9 @@ const (
 	// SolKeysignAbstain counts SOL keysign abstentions by reason. A fleet-wide spike
 	// (every node failing IsBlockhashValid, or finalization lag exceeding the margin)
 	// is otherwise invisible — the signer logs an abstain like routine non-selection.
+	// A sustained anchor_expired_dropped rate means outbounds keep outliving Solana's
+	// MAX_PROCESSING_AGE before they can be signed — most often because the RPCs no
+	// longer retain finalized blocks back to the keysign height's target.
 	SolKeysignAbstain MetricName = `sol_keysign_abstain`
 )
 
