@@ -32,7 +32,7 @@ func (s *GetNonceAccountTestSuite) TestValid(c *C) {
 	c.Assert(authority, Equals, "9aE476sH92Vz7DMPyq5WLPkrKWivxeuTKEFKd2sZZcde")
 }
 
-// TestGetNonceAccountDustedArrayData: the CRITICAL #661 regression. jsonParsed
+// TestGetNonceAccountDustedArrayData: the CRITICAL durable-nonce regression. jsonParsed
 // returns data as an ARRAY ["<base64>","base64"] for a plain/dusted account the
 // runtime can't parse as a nonce. This must be a RECOVERABLE
 // ErrNonceAccountNotProvisioned (fall through to recent-blockhash), NOT a

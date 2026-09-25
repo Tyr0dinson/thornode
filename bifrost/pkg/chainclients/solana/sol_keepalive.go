@@ -89,40 +89,34 @@ func (c *SOLClient) keepAliveLoop() {
 			if err != nil || thorHeight <= 0 {
 				continue
 			}
-			boundary := c.nextKeepAliveThorMultiple(thorHeight)
-			last := c.getKeepAliveThorMultiple()
-			if boundary <= last {
-				continue // no new boundary crossed
-			}
-			// A fresh node (last == 0, e.g. after a restart or downtime) jumps
-			// straight to the CURRENT boundary via nextKeepAliveThorMultiple; that
-			// boundary's height (boundary×cadence) can be up to a full cadence (~5 min)
-			// behind the tip, so the SOL blockhash consensusBlockHash derives from it is
-			// already past Solana's ~60s liveness — a guaranteed-expired, doomed keysign.
-			// Seed the baseline from that first boundary WITHOUT signing; the next
-			// boundary the loop crosses is fresh (≈ current height) and signs normally.
-			// Steady-state boundaries are ~current, so this only skips the one stale
-			// post-restart boundary and self-heals on the next cadence.
-			if last != 0 {
-				// Staleness reference stays in the Solana domain (newest sig slot vs
-				// current scan slot); only the keysign anchor moves to THORChain height.
-				scanSlot, err := c.solScanner.ScanHeight()
-				if err != nil || scanSlot <= 0 {
-					continue // transient; retry next tick without advancing the baseline
+			// Keep-alive on its cadence. A fresh node (last == 0) seeds the baseline
+			// from the current boundary WITHOUT signing (that boundary's height can be a
+			// full cadence behind the tip -> an already-expired blockhash), self-healing
+			// on the next boundary. A transient scan-slot read failure retries without
+			// advancing the baseline.
+			if kaBoundary := c.nextKeepAliveThorMultiple(thorHeight); kaBoundary > c.getKeepAliveThorMultiple() {
+				advance := true
+				if c.getKeepAliveThorMultiple() != 0 {
+					scanSlot, err := c.solScanner.ScanHeight()
+					if err != nil || scanSlot <= 0 {
+						advance = false
+					} else {
+						c.keepAliveCheck(scanSlot, kaBoundary*keepAliveThorBlockCadence)
+					}
 				}
-				// anchorHeight = boundary × cadence: identical across members crossing
-				// this boundary and ≤ the firing node's tip, so it is both a converged
-				// AND a valid THORChain signing_height.
-				anchorHeight := boundary * keepAliveThorBlockCadence
-				c.keepAliveCheck(scanSlot, anchorHeight)
-				// Durable-nonce (#661) provisioning + churn close share this boundary so
-				// their keysigns get the same converged, valid anchor height.
-				c.nonceProvisionCheck(anchorHeight)
+				if advance {
+					c.setKeepAliveThorMultiple(kaBoundary)
+				}
 			}
-			// Advance past this boundary so it is acted on exactly once, whether or not
-			// a keysign actually fired (fresh-node seed / disabled / inactive /
-			// not-yet-stale all legitimately no-op until the next boundary).
-			c.setKeepAliveThorMultiple(boundary)
+
+			// Durable-nonce provisioning on its OWN finer cadence, independent of the
+			// keep-alive boundary. Same fresh-node seed (skip the first stale boundary).
+			if provBoundary := c.nextNonceProvisionThorMultiple(thorHeight); provBoundary > c.getNonceProvisionThorMultiple() {
+				if c.getNonceProvisionThorMultiple() != 0 {
+					c.nonceProvisionCheck(provBoundary * nonceProvisionThorBlockCadence)
+				}
+				c.setNonceProvisionThorMultiple(provBoundary)
+			}
 		}
 	}
 }

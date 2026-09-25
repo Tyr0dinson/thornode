@@ -17,7 +17,7 @@ import (
 
 // TestSignTxDurableNonceOffLegacyShape proves that with the SOLDurableNonce mimir
 // unset (the default / disabled state), SignTx produces a recent-blockhash
-// transaction byte-shape-identical to the pre-#661 (3.20.3) path — never a
+// transaction byte-shape-identical to the pre-durable-nonce (3.20.3) path — never a
 // durable-nonce tx. The proof: the signed bytes contain no RecentBlockhashes sysvar
 // account, which every durable-nonce tx (AdvanceNonceAccount) must list. Provisioning
 // is likewise gated on the same mimir (>0), so with it off no nonce account is ever

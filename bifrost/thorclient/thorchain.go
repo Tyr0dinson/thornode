@@ -1150,7 +1150,7 @@ func (b *thorchainBridge) GetMimir(key string) (int64, error) {
 }
 
 // PendingOutbound is the minimal view of a not-yet-observed scheduled outbound
-// the SOL durable-nonce signer needs to serialize one durable tx per vault (#661,
+// the SOL durable-nonce signer needs to serialize one durable tx per vault (durable-nonce,
 // N2): its chain, vault pubkeys, and scheduled height.
 type PendingOutbound struct {
 	Chain            string `json:"chain"`
@@ -1162,12 +1162,19 @@ type PendingOutbound struct {
 
 // GetPendingOutbounds returns the outbounds currently in the outbound queue that
 // have NOT yet been observed (thornode's /thorchain/queue/outbound, which filters to
-// items whose OutHash is empty). Used by the SOL durable-nonce signer to gate a
-// durable outbound on being the lowest-height not-yet-observed item for its vault
-// (N2 serialize-with-finality): a higher-height durable outbound waits until the
-// lower-height one is observed and drops from this list.
-func (b *thorchainBridge) GetPendingOutbounds() ([]PendingOutbound, error) {
-	buf, s, err := b.getWithPath(PendingOutboundEndpoint)
+// items whose OutHash is empty). height>0 queries the queue AS OF that consensus
+// height (?height=), so every node evaluating the same boundary observes the identical
+// set — required for the deterministic provisioning create-skip; height==0 reads the
+// live queue (used by the abstain-safe SignTx serialization gate). Used by the SOL
+// durable-nonce signer to (a) gate a durable outbound on being the lowest-height
+// not-yet-observed item for its vault, and (b) skip a create at a boundary when the
+// vault has any pending SOL outbound.
+func (b *thorchainBridge) GetPendingOutbounds(height int64) ([]PendingOutbound, error) {
+	path := PendingOutboundEndpoint
+	if height > 0 {
+		path += "?height=" + strconv.FormatInt(height, 10)
+	}
+	buf, s, err := b.getWithPath(path)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get pending outbounds: %w", err)
 	}
@@ -1186,7 +1193,7 @@ func (b *thorchainBridge) GetPendingOutbounds() ([]PendingOutbound, error) {
 // GetMimirAtHeight reads a mimir value as of a specific consensus height via the
 // ?height= state query (bypassing the live one-block cache), so every keysign party
 // evaluating the same height observes the identical value. It gates the SOL
-// durable-nonce path deterministically (#661) instead of a divergent live GetMimir
+// durable-nonce path deterministically instead of a divergent live GetMimir
 // read that could fragment a keysign across a governance flip. Unlike
 // getKeysignMimirAtHeight (a safety control where null must NOT read as disabled), a
 // feature gate treats a missing/null mimir as 0 (off).

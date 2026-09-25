@@ -801,6 +801,17 @@ func (s *SOLScanner) getTxInItem(txn *rpc.TransactionResult, blockHeight int64) 
 		return accounts[i]
 	}
 
+	// A bare durable-nonce account creation (rent into a fresh network-owned nonce
+	// account, no transfer, no memo) is not an observable outbound — skip it. The
+	// filter is strict enough that a real outbound (which always carries a transfer)
+	// can never match, so it can never swallow a genuine outbound observation.
+	if isDurableNonceCreateTx(instructions, accountByIndex) {
+		s.logger.Debug().
+			Str("txID", txn.Transaction.Signatures[0]).
+			Msg("skipping durable-nonce account creation tx (not an observable outbound)")
+		return nil
+	}
+
 	for _, instruction := range instructions {
 		programID := accountByIndex(instruction.ProgramIdIndex)
 
@@ -894,6 +905,62 @@ func (s *SOLScanner) getTxInItem(txn *rpc.TransactionResult, blockHeight int64) 
 		Coins:       []common.Coin{solCoin},
 		Gas:         common.Gas{gasCoin},
 	}
+}
+
+// SystemProgram instruction discriminators (u32 little-endian, first 4 data bytes).
+const (
+	solSysCreateAccount         = 0
+	solSysTransfer              = 2
+	solSysCreateAccountWithSeed = 3
+	solSysInitializeNonce       = 6
+)
+
+// isDurableNonceCreateTx reports whether the transaction is EXACTLY a durable-nonce
+// account creation: only SystemProgram CreateAccount(WithSeed) + InitializeNonceAccount
+// instructions, where the created account IS the initialized nonce account, with NO
+// transfer, NO memo, and no other program's instructions. Such a tx moves only rent
+// into a fresh network-owned nonce account and carries no observable outbound.
+//
+// STRICT by construction so it can NEVER match a real outbound: any SystemProgram
+// Transfer (disc 2), any memo, any non-SystemProgram instruction, any other system
+// instruction, a missing create or initialize, or a mismatch between the created and
+// initialized account each make it return false — the tx is then observed normally.
+func isDurableNonceCreateTx(instructions []rpc.RPCInstruction, accountByIndex func(int) string) bool {
+	createdAccount, nonceAccount := -1, -1
+	sawCreate, sawInitNonce := false, false
+	for _, ins := range instructions {
+		programID := accountByIndex(ins.ProgramIdIndex)
+		if types.MemoProgramID.EqualsString(programID) {
+			return false // a memo -> not a bare create-nonce tx
+		}
+		if !types.SystemProgramID.EqualsString(programID) {
+			return false // any non-SystemProgram instruction
+		}
+		data, err := base58.Decode(ins.Data)
+		if err != nil || len(data) < 4 {
+			return false
+		}
+		switch binary.LittleEndian.Uint32(data[:4]) {
+		case solSysCreateAccount, solSysCreateAccountWithSeed:
+			// accounts: [funder, created, (base)] — the created account is index 1.
+			if len(ins.Accounts) < 2 {
+				return false
+			}
+			createdAccount = ins.Accounts[1]
+			sawCreate = true
+		case solSysInitializeNonce:
+			// accounts: [nonce, recentblockhashes sysvar, rent sysvar].
+			if len(ins.Accounts) < 1 {
+				return false
+			}
+			nonceAccount = ins.Accounts[0]
+			sawInitNonce = true
+		default:
+			// Transfer (disc 2) or any other system instruction -> not this shape.
+			return false
+		}
+	}
+	return sawCreate && sawInitNonce && createdAccount >= 0 && createdAccount == nonceAccount
 }
 
 // --------------------------------- helpers ---------------------------------

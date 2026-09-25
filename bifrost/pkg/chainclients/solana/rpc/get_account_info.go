@@ -21,7 +21,7 @@ var ErrNonceAccountNotProvisioned = errors.New("durable-nonce account not provis
 // account holding lamports at the address (e.g. a dusted seed address) — it returns
 // an ARRAY (["<base64>","base64"]). Typing Data as a struct would make the whole
 // response fail to decode on that array and surface as a (fail-closed) transport
-// error, letting anyone halt a vault's SOL outbounds by sending it 1 lamport (#661).
+// error, letting anyone halt a vault's SOL outbounds by sending it 1 lamport.
 type getAccountInfoResponse struct {
 	Jsonrpc string `json:"jsonrpc"`
 	Id      int    `json:"id"`
@@ -53,7 +53,7 @@ type nonceAccountData struct {
 // GetNonceAccount reads a SystemProgram durable-nonce account and returns its
 // stored nonce and its nonce authority. The stored nonce is what a durable-nonce
 // transaction bakes into the message's recentBlockhash field so the transaction
-// does not expire during the multi-party TSS keysign+broadcast window (#661).
+// does not expire during the multi-party TSS keysign+broadcast window.
 //
 // jsonParsed encoding at finalized commitment. Fails CLOSED only on a genuine
 // transport/RPC error (a wrong or empty nonce would produce a transaction the
@@ -65,7 +65,7 @@ type nonceAccountData struct {
 // (getAccountInfo returns an error on a node still behind it), so every keysign party
 // resolves the account against the same finalized frontier rather than each node's
 // own live tip — the deterministic existence/decode anchor the durable-nonce gate
-// requires (#661). Pass 0 to read the current finalized state.
+// requires. Pass 0 to read the current finalized state.
 func (s *SolRPC) GetNonceAccount(pubkey string, minContextSlot uint64) (nonce string, authority string, err error) {
 	cfg := map[string]interface{}{"encoding": "jsonParsed", "commitment": "finalized"}
 	if minContextSlot > 0 {

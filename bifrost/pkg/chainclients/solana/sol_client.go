@@ -92,6 +92,18 @@ type SOLClient struct {
 	keepAliveThorMultipleMu sync.Mutex
 	keepAliveThorMultiple   int64
 
+	// nonceProvisionThorMultiple is the last durable-nonce provisioning cadence
+	// boundary this node acted on (its own, finer cadence than keep-alive). Same
+	// shared-THORChain-height convergence discipline. Guarded by its mutex.
+	nonceProvisionThorMultipleMu sync.Mutex
+	nonceProvisionThorMultiple   int64
+
+	// vaultLocks holds a per-vault mutex, shared by the outbound signer (via the
+	// GetVaultLock hook) and durable-nonce create/close, so this node never runs an
+	// outbound keysign and a nonce keysign for the same vault concurrently (no local
+	// TSS-party contention). Mirrors the UTXO consolidate vault lock.
+	vaultLocks sync.Map // map[string]*sync.Mutex, keyed by vault pubkey
+
 	// solvencySlotMultiple is the last reported solvency cadence boundary. It is
 	// read and written from two goroutines — the block scanner's solvency reporter
 	// and the SolvencyCheckRunner, both of which reach ReportSolvency — so every
@@ -345,6 +357,45 @@ func (c *SOLClient) GetAccountByAddress(addr string, height *big.Int) (common.Ac
 
 // --------------------------------- solvency ---------------------------------
 
+// GetVaultLock returns the per-vault mutex the outbound signer (sign.go's vaultLocker
+// hook) acquires around sign+broadcast. Durable-nonce create/close acquire the SAME
+// mutex, so an outbound and a nonce keysign for one vault never run concurrently on
+// this node — no local TSS-party contention (mirrors the UTXO consolidate vault lock).
+func (c *SOLClient) GetVaultLock(vaultPubKey string) *sync.Mutex {
+	v, _ := c.vaultLocks.LoadOrStore(vaultPubKey, &sync.Mutex{})
+	return v.(*sync.Mutex)
+}
+
+// vaultNonceAccountLamports returns the lamports held by the vault's own durable-nonce
+// account, or zero. It counts ONLY the deterministic seed-derived account whose stored
+// authority is this vault (its rent is spendable by the vault on close, so solvency
+// should include it). A missing / foreign-authority / unreadable account returns zero,
+// so a vault with no nonce account (feature off) is unaffected.
+func (c *SOLClient) vaultNonceAccountLamports(vaultEddsa common.PubKey) *big.Int {
+	zero := big.NewInt(0)
+	addr, err := vaultEddsa.GetAddress(common.SOLChain)
+	if err != nil {
+		return zero
+	}
+	vaultPubKey, err := types.PublicKeyFromString(addr.String())
+	if err != nil {
+		return zero
+	}
+	nonceAddr, err := c.nonceAddressForVault(vaultPubKey)
+	if err != nil {
+		return zero
+	}
+	_, authority, err := c.rpcClient.GetNonceAccount(nonceAddr.String(), 0)
+	if err != nil || !vaultPubKey.EqualsString(authority) {
+		return zero
+	}
+	bal, err := c.rpcClient.GetBalance(nonceAddr.String(), "finalized", 0)
+	if err != nil {
+		return zero
+	}
+	return bal
+}
+
 // GetGasEstimateForSolvency returns the current gas fee estimate used by solvency checks.
 func (c *SOLClient) GetGasEstimateForSolvency() cosmos.Uint {
 	nativeCurrentFee := cosmos.NewUint(3).
@@ -403,6 +454,22 @@ func (c *SOLClient) ReportSolvency(height int64) error {
 		if err != nil {
 			c.logger.Err(err).Msg("fail to get account balance")
 			continue
+		}
+		// Include the vault's durable-nonce account rent in the solvency balance: it
+		// left the wallet unobserved (the scanner skips the create tx) but is spendable
+		// by the vault when the account is closed — the same precedent as owned token
+		// accounts. Without this the ~1.4M-lamport rent reads as a shortfall and, given
+		// SOL's near-zero solvency tolerance, would false-trip SolvencyHaltSOLChain. Only
+		// counts the vault's own deterministic nonce account (authority == vault); a
+		// missing/foreign account contributes 0, so behaviour is unchanged when the
+		// feature is off (no account exists).
+		if extra := c.vaultNonceAccountLamports(v.PubKeyEddsa); extra.Sign() > 0 {
+			extra1e8 := cosmos.NewUintFromBigInt(extra).Quo(cosmos.NewUint(10))
+			for i := range acct.Coins {
+				if acct.Coins[i].Asset.Equals(common.SOLAsset) {
+					acct.Coins[i].Amount = acct.Coins[i].Amount.Add(extra1e8)
+				}
+			}
 		}
 		msg := stypes.Solvency{
 			Height: reportHeight,
@@ -572,7 +639,7 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	// For truly memoless transactions (no Memo or OriginalMemo), default to TxOutbound
 	memoForParsing := tx.GetMemo()
 
-	// Durable-nonce path (#661). When enabled AND the vault has a usable durable-nonce
+	// Durable-nonce path. When enabled AND the vault has a usable durable-nonce
 	// account, anchor the outbound on a stored nonce (AdvanceNonceAccount as
 	// instruction[0]) instead of a recent blockhash. A durable nonce does not expire,
 	// so it removes the ~150-slot (~60s) expiry window that kills a recent-blockhash tx
@@ -588,7 +655,7 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	// split the party between the durable and legacy paths (N3/N10). The nonce
 	// existence read is likewise anchored to the consensus slot (minContextSlot). When
 	// the gate is off (default) SignTx never calls getAccountInfo and behaves exactly
-	// as the pre-#661 recent-blockhash path.
+	// as the pre-durable-nonce recent-blockhash path.
 	// Self-sends (the vault keep-alive / consolidate) must NOT take the durable-nonce
 	// branch: a nonce tx lists the vault once as fee-payer+source+authority and cannot
 	// also be the distinct recipient, so CreateTxWithNonce rejects a self-transfer. The
@@ -740,7 +807,7 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 
 // finishSign serializes the checkpoint, runs the multi-party TSS keysign, and
 // assembles the observation. It is shared by the recent-blockhash path and the
-// durable-nonce path (#661) so both produce identical downstream behaviour; the
+// durable-nonce path so both produce identical downstream behaviour; the
 // only difference between the two is how solTx was built (recent blockhash vs.
 // AdvanceNonceAccount + stored durable nonce).
 func (c *SOLClient) finishSign(solTx types.Transaction, tx stypes.TxOutItem, memoForParsing string, height int64) ([]byte, []byte, *stypes.TxInItem, error) {
@@ -1172,14 +1239,14 @@ func (c *SOLClient) CreateTx(tx stypes.TxOutItem, memoForParsing, recentBlockhas
 	return types.NewTransferTransaction(vaultPubKey, toPubkey, tx.Coins[0].Amount.Uint64(), tx.Memo, recentBlockhash), nil
 }
 
-// useSolDurableNonce enables the #661 durable-nonce outbound branch in SignTx.
+// useSolDurableNonce enables the durable-nonce durable-nonce outbound branch in SignTx.
 // When on, SignTx anchors a SOL outbound on the vault's stored nonce IF a usable
 // nonce account exists (durableNonceForVault ok); otherwise it falls through to the
 // recent-blockhash path unchanged. It is therefore SAFE to leave on in every build:
 // the effective rollout gate is MimirKeySOLDurableNonce, which controls whether the
 // provisioning loop ever creates the nonce accounts. With provisioning off, no
 // account exists, durableNonceForVault returns ok=false, and behaviour is identical
-// to the pre-#661 path — including during a mixed-version fleet rollout, since both
+// to the pre-durable-nonce path — including during a mixed-version fleet rollout, since both
 // on and off builds produce the recent-blockhash tx when no nonce account exists.
 // SignTx reads MimirKeySOLDurableNonce at the CONSENSUS keysign height
 // (durableNonceMimirAtHeight → the bridge GetMimirAtHeight ?height= query), so every
@@ -1224,7 +1291,7 @@ type mimirHeightReader interface {
 // durableNonceMimirAtHeight reads the SOLDurableNonce gate at the consensus keysign
 // height so the durable-vs-legacy choice is identical across all parties, not a
 // divergent per-node live read that could fragment a keysign across a governance flip
-// (#661, N3/N10). Falls back to the live GetMimir only for test bridges that do not
+// (N3/N10). Falls back to the live GetMimir only for test bridges that do not
 // implement the height-anchored read; production always uses the concrete bridge.
 func (c *SOLClient) durableNonceMimirAtHeight(height int64) (int64, error) {
 	if r, ok := c.bridge.(mimirHeightReader); ok {
@@ -1237,7 +1304,7 @@ func (c *SOLClient) durableNonceMimirAtHeight(height int64) (int64, error) {
 // the not-yet-observed outbound queue so the durable-nonce path can serialize one
 // tx per vault (N2). Test bridges may not implement it (the gate then fails open).
 type pendingOutboundReader interface {
-	GetPendingOutbounds() ([]thorclient.PendingOutbound, error)
+	GetPendingOutbounds(height int64) ([]thorclient.PendingOutbound, error)
 }
 
 // durableSerializeAllows reports whether tx may take the durable-nonce path now
@@ -1257,7 +1324,7 @@ func (c *SOLClient) durableSerializeAllows(tx stypes.TxOutItem, height int64) bo
 	if !ok {
 		return true
 	}
-	pending, err := r.GetPendingOutbounds()
+	pending, err := r.GetPendingOutbounds(0) // live queue; the gate is abstain-safe
 	if err != nil {
 		c.logger.Err(err).Msg("fail to read pending outbounds for durable-nonce serialization; proceeding")
 		return true
@@ -1298,7 +1365,7 @@ func (c *SOLClient) durableSerializeAllows(tx stypes.TxOutItem, height int64) bo
 // Determinism: the account address is a pure function of the vault pubkey, and the
 // existence/decode read is anchored to anchorSlot (minContextSlot) — the consensus
 // keysign anchor slot — so every party resolves the account against the same
-// finalized frontier rather than its own live tip (#661, N3/N10). The stored nonce
+// finalized frontier rather than its own live tip (N3/N10). The stored nonce
 // VALUE not moving under a live keysign is guaranteed by the serialize-with-finality
 // rule (N2), not by this read.
 //
@@ -1342,7 +1409,7 @@ func (c *SOLClient) durableNonceForVault(tx stypes.TxOutItem, anchorSlot uint64)
 }
 
 // CreateTxWithNonce builds an outbound SOL transfer anchored on a durable nonce
-// (#661) rather than a recent blockhash. It mirrors CreateTx's validation; the
+// rather than a recent blockhash. It mirrors CreateTx's validation; the
 // difference is the transaction it emits (NewNonceTransferTransaction, with
 // AdvanceNonceAccount as instruction[0] and the message's recentBlockhash field set
 // to nonceValue). Because a durable nonce does not expire, the SignTx nonce path

@@ -17,7 +17,7 @@ const (
 	MimirKeySignatureRefreshBlocks = "SignatureRefreshBlocks"
 	MimirKeyStableReserveEnabled   = "StableReserveEnabled"
 	// MimirKeySOLDurableNonce gates bifrost provisioning of per-vault Solana
-	// durable-nonce accounts (#661). Read by bifrost only (never by consensus code):
+	// durable-nonce accounts. Read by bifrost only (never by consensus code):
 	// >0 enables provisioning of a nonce account for each active SOL vault; SOL
 	// outbounds then anchor on the stored nonce (which never expires) instead of a
 	// recent blockhash, removing the ~60s keysign+broadcast expiry window. Unset/0

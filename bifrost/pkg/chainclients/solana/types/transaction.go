@@ -83,7 +83,7 @@ func NewSelfTransferTransaction(vault PublicKey, amount uint64, memo, recentBloc
 
 // NewNonceTransferTransaction builds a vault->recipient SOL transfer that uses a
 // durable nonce instead of a recent blockhash, so the transaction does not expire
-// during the multi-party TSS keysign+broadcast window (#661). The message's
+// during the multi-party TSS keysign+broadcast window. The message's
 // recentBlockhash field carries the nonce account's STORED nonce (nonceValue), and
 // an AdvanceNonceAccount instruction is prepended as instruction[0] — Solana
 // requires the nonce advance to be the first instruction. The nonce authority is
@@ -157,7 +157,7 @@ const NonceAccountSize = 80
 
 // NewCreateNonceAccountTransaction builds the bootstrap transaction that creates a
 // vault's durable-nonce account at a seed-derived address and initializes it with
-// the vault as nonce authority, in a single transaction (#661). Unlike an outbound,
+// the vault as nonce authority, in a single transaction. Unlike an outbound,
 // this transaction uses a recent blockhash (a nonce cannot anchor its own creation),
 // so its keysign is still subject to the ~150-slot expiry — it is issued at normal
 // cadence with retry-until-landed, off the churn-storm path, and never blocks an
@@ -209,7 +209,7 @@ func NewCreateNonceAccountTransaction(vault, nonceAccount PublicKey, seed string
 
 // NewCloseNonceAccountTransaction builds a transaction that withdraws a vault's
 // full durable-nonce balance to a recipient, reclaiming the rent and closing the
-// account (#661). Used at churn: the retiring vault sweeps its nonce rent to the
+// account. Used at churn: the retiring vault sweeps its nonce rent to the
 // incoming asgard (recipient != vault) or back to itself (recipient == vault). It
 // uses a recent blockhash — WithdrawNonceAccount does not require the nonce to
 // anchor it — and runs off the churn-storm path with retry-until-landed.

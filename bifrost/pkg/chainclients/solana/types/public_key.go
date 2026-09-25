@@ -62,7 +62,7 @@ var pdaMarker = []byte("ProgramDerivedAddress")
 // ASCII seed and the owning program, matching Solana's Pubkey::create_with_seed
 // (sha256(base || seed || owner)). It is the derivation used to give a vault's
 // durable-nonce account a fixed address every keysign party can compute from the
-// vault pubkey alone — no shared state, no coordination (#661).
+// vault pubkey alone — no shared state, no coordination.
 //
 // The seed must be at most MaxSeedLength bytes and the owner must not end in the
 // PDA marker, mirroring the runtime's constraints; both are satisfied by the fixed

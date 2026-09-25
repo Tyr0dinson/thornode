@@ -8,6 +8,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signing"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -16,7 +17,7 @@ import (
 )
 
 ////////////////////////////////////////////////////////////////////////////////////////
-// sol_nonce_provision.go — durable-nonce account provisioning + churn close (#661)
+// sol_nonce_provision.go — durable-nonce account provisioning + churn close
 //
 // A vault's SOL outbounds anchor on a durable nonce (AdvanceNonceAccount) instead of
 // a recent blockhash so they cannot expire during the multi-party TSS keysign +
@@ -48,6 +49,67 @@ import (
 // nonceProvisionFeeMarginLamports is the balance headroom required beyond the rent
 // funding so the create-nonce transaction fee is always payable.
 const nonceProvisionFeeMarginLamports = 100_000
+
+// nonceProvisionThorBlockCadence is the durable-nonce PROVISIONING cadence in
+// THORChain blocks (~2 min at 6s/block). Chosen below the keep-alive's 50 for faster
+// provisioning while staying safely above one create keysign's full life (keysign
+// ~45s + Solana finalization ~13s + margin): a create attempt finalizes before the
+// next boundary, so the same vault's create never overlaps itself and the idempotent
+// finalized check simply skips a re-fire. boundary × cadence is a shared consensus
+// height, so every member's create keysign converges. A create fires at most once per
+// vault (idempotent once the account exists), so the TSS load is one-shot, not recurring.
+const nonceProvisionThorBlockCadence = 20
+
+func (c *SOLClient) getNonceProvisionThorMultiple() int64 {
+	c.nonceProvisionThorMultipleMu.Lock()
+	defer c.nonceProvisionThorMultipleMu.Unlock()
+	return c.nonceProvisionThorMultiple
+}
+
+func (c *SOLClient) setNonceProvisionThorMultiple(v int64) {
+	c.nonceProvisionThorMultipleMu.Lock()
+	defer c.nonceProvisionThorMultipleMu.Unlock()
+	c.nonceProvisionThorMultiple = v
+}
+
+// nextNonceProvisionThorMultiple mirrors nextKeepAliveThorMultiple with the finer
+// provisioning cadence: a fresh node jumps to the current boundary, otherwise advances
+// one boundary at a time so members with slightly different tips converge.
+func (c *SOLClient) nextNonceProvisionThorMultiple(thorHeight int64) int64 {
+	current := c.getNonceProvisionThorMultiple()
+	if nonceProvisionThorBlockCadence <= 0 {
+		return current
+	}
+	crossed := thorHeight / nonceProvisionThorBlockCadence
+	if thorHeight%nonceProvisionThorBlockCadence == 0 {
+		crossed--
+	}
+	if crossed <= current {
+		return current
+	}
+	if current == 0 && crossed > 1 {
+		return crossed
+	}
+	return current + 1
+}
+
+// vaultHasPendingSOLOutbound reports whether any not-yet-observed SOL outbound in the
+// pending set belongs to the vault (by either pubkey). Used to skip a create keysign
+// when a vault has an outbound in flight, so the create never contends for the same
+// vault's TSS party (D). Pure so it is unit-testable.
+func vaultHasPendingSOLOutbound(pending []thorclient.PendingOutbound, vaultPubKey, vaultEddsa string) bool {
+	sol := common.SOLChain.String()
+	for _, p := range pending {
+		if p.Chain != sol {
+			continue
+		}
+		if (vaultPubKey != "" && p.VaultPubKey == vaultPubKey) ||
+			(vaultEddsa != "" && p.VaultPubKeyEddsa == vaultEddsa) {
+			return true
+		}
+	}
+	return false
+}
 
 // nonceProvisionCheck evaluates every vault this node is a member of at a shared
 // keep-alive cadence boundary (anchorHeight = boundary × cadence, identical across
@@ -96,6 +158,22 @@ func (c *SOLClient) nonceProvisionCheck(anchorHeight int64) {
 		return
 	}
 
+	// D: a create keysign must never contend with an outbound keysign for the same
+	// vault. Read the not-yet-observed outbound queue AT THE BOUNDARY HEIGHT (shared
+	// consensus state), so every member derives the same skip set — otherwise nodes
+	// would split on whether to join the create keysign. If we cannot read it, skip
+	// provisioning this boundary (fail closed: never risk a collision) and retry.
+	reader, ok := c.bridge.(pendingOutboundReader)
+	if !ok {
+		return
+	}
+	pending, perr := reader.GetPendingOutbounds(anchorHeight)
+	if perr != nil {
+		c.logger.Err(perr).Int64("anchor_height", anchorHeight).
+			Msg("fail to read pending outbounds at boundary; skipping durable-nonce provisioning this cadence")
+		return
+	}
+
 	for _, vault := range vaults {
 		if !vault.Contains(nodePubKey) {
 			// not a member of this vault, its members handle it
@@ -113,6 +191,12 @@ func (c *SOLClient) nonceProvisionCheck(anchorHeight int64) {
 		// before the final migrate. closeNonceForRetiringVault is left unreachable for
 		// that follow-up. See the MR "NOT safe to enable" section (N8/N11).
 		if vault.Status == ttypes.VaultStatus_ActiveVault && provisioningEnabled {
+			// Skip the create if the vault has any pending SOL outbound at this boundary
+			// (its outbound keysign may be in flight) — retry next boundary. Derived from
+			// the shared boundary-height queue, so all members skip identically (D).
+			if vaultHasPendingSOLOutbound(pending, vault.PubKey.String(), vault.PubKeyEddsa.String()) {
+				continue
+			}
 			if err := c.provisionNonceForVault(vault, anchorHeight); err != nil {
 				c.logger.Err(err).Str("vault_pubkey", vault.PubKey.String()).
 					Msg("fail to provision durable-nonce account")
@@ -273,6 +357,13 @@ func (c *SOLClient) closeNonceForRetiringVault(vault ttypes.Vault, anchorHeight 
 // next cadence boundary with a fresh blockhash. Returns an empty txid (nil error)
 // when this node was not selected for the keysign — another member broadcasts.
 func (c *SOLClient) signAndBroadcastNonceTx(solTx types.Transaction, vault ttypes.Vault, anchorHeight int64, memo string) (string, error) {
+	// Hold the per-vault lock through keysign+broadcast — the SAME mutex the outbound
+	// signer takes (GetVaultLock) — so a nonce keysign never runs concurrently with an
+	// outbound keysign for this vault on this node (no local TSS-party contention).
+	lock := c.GetVaultLock(vault.PubKey.String())
+	lock.Lock()
+	defer lock.Unlock()
+
 	toi := stypes.TxOutItem{
 		Chain:            common.SOLChain,
 		VaultPubKey:      vault.PubKey,

@@ -74,7 +74,7 @@ type pendingBridge struct {
 	err   error
 }
 
-func (b *pendingBridge) GetPendingOutbounds() ([]thorclient.PendingOutbound, error) {
+func (b *pendingBridge) GetPendingOutbounds(int64) ([]thorclient.PendingOutbound, error) {
 	return b.items, b.err
 }
 

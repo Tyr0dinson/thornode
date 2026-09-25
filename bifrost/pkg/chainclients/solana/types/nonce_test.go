@@ -7,7 +7,7 @@ import (
 	. "gopkg.in/check.v1"
 )
 
-// NonceTestSuite covers the #661 durable-nonce SDK primitives: the seed-derived
+// NonceTestSuite covers the durable-nonce durable-nonce SDK primitives: the seed-derived
 // address, the three SystemProgram instruction encoders, and the create/close
 // transaction builders. The instruction-data byte layouts are asserted field by
 // field because every keysign party must serialize identical bytes; a silent layout
