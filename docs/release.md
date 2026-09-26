@@ -16,7 +16,7 @@ THORNode follows a custom variation of semantic version structure: `MAJOR.MINOR.
 
 ## Stagenet Release
 
-1. Create a new RC release at https://gitlab.com/thorchain/thornode/-/releases for the version (e.g. `v3.7.0-rc1`) with the last commit for the release in `develop` as the tag target. Run `./scripts/prlog.py Release-3.7.0` to generate the output for the change log.
+1. Create a new RC release at https://gitlab.com/thorchain/thornode/-/releases for the version (e.g. `v3.7.0-rc1`) with the last commit for the release in `develop` as the tag target. Run `uv run ./scripts/release/prlog.py Release-3.7.0` to generate the output for the change log.
 2. Checkout the release commit locally, then create the `stagenet` branch from it, and push it to the remote (force push may be necessary):
 
    ```bash
