@@ -1291,3 +1291,34 @@ func (s *MempoolSwapLifecycleIntegrationSuite) TestRefundOnlyStagedRollbackResto
 	c.Check(k.HasStagedOutbound(ctx, fixture.voter.TxID), Equals, false)
 	c.Check(k.GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true)
 }
+
+func (s *MempoolSwapLifecycleIntegrationSuite) TestQuoteSimulationPreemptsOwnedPoolWithoutMutatingState(c *C) {
+	ctx, mgr, fixture := setupMempoolSwapLifecycleFixture(c)
+	c.Assert(mgr.AdvSwapQueueMgr().EndBlock(ctx, mgr, false), IsNil)
+
+	owner, found, err := mgr.Keeper().GetMempoolSwapPoolOwner(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, true)
+	liveRecord, _, err := mgr.Keeper().GetMempoolSwap(ctx, fixture.voter.TxID, 0)
+	c.Assert(err, IsNil)
+	livePool, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+
+	quote := fixture.msg
+	quote.Tx.ID = GetRandomTxHash()
+	quote.State = &types.SwapState{Quantity: 1, Interval: 0}
+	_, err = simulate(ctx, mgr, &quote)
+	c.Assert(err, IsNil)
+
+	afterOwner, found, err := mgr.Keeper().GetMempoolSwapPoolOwner(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(found, Equals, true)
+	c.Check(afterOwner, DeepEquals, owner)
+	afterRecord, _, err := mgr.Keeper().GetMempoolSwap(ctx, fixture.voter.TxID, 0)
+	c.Assert(err, IsNil)
+	c.Check(afterRecord, DeepEquals, liveRecord)
+	afterPool, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(afterPool, DeepEquals, livePool)
+	c.Check(mgr.Keeper().HasAdvSwapQueueItem(ctx, fixture.voter.TxID, 0), Equals, true)
+}

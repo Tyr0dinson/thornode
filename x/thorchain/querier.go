@@ -4354,6 +4354,18 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 	// disable logging
 	ctx = ctx.WithLogger(nullLogger)
 
+	// A finalized swap reaching the queue preempts any speculative mempool
+	// owner of its pools. Do the same inside this disposable store so an
+	// in-flight mempool swap cannot make quotes unavailable for its routes.
+	// Run it as live execution would, before the queue reset, and discard its
+	// events so they do not leak into the quote.
+	if m, ok := msg.(*MsgSwap); ok {
+		preemptCtx := ctx.WithValue(constants.CtxSimulationMode, false).WithEventManager(cosmos.NewEventManager())
+		if err = preemptMempoolSwapExecutionOwnersAtomic(preemptCtx, mgr, *m); err != nil {
+			return nil, fmt.Errorf("failed to resolve mempool swap pool owner: %w", err)
+		}
+	}
+
 	// reset the swap queues (both regular and advanced)
 	iter := mgr.Keeper().GetSwapQueueIterator(ctx)
 	for ; iter.Valid(); iter.Next() {
