@@ -3448,12 +3448,24 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 		return fmt.Errorf("fail to get staged outbounds: %w", err)
 	}
 
-	var actionsToRollback []mempoolRollbackAction
+	actionsToRollback := make([]mempoolRollbackAction, 0, len(stagedItems))
 	stagedSourceRefund := cosmos.ZeroUint()
-	if len(stagedItems) == 0 {
+	for i, staged := range stagedItems {
+		if isStagedMempoolSourceRefund(voter, sourceAsset, staged.TxOutItem) {
+			stagedSourceRefund = stagedSourceRefund.Add(staged.TxOutItem.Coin.Amount)
+			continue
+		}
+		actionsToRollback = append(actionsToRollback, mempoolRollbackAction{
+			item:        staged.TxOutItem,
+			actionIndex: i,
+		})
+	}
+	if len(actionsToRollback) == 0 {
 		// Advanced swaps can build up executed output in queue state before
-		// any staged outbound exists. Recover that output so rollback still
-		// has something real to unwind.
+		// any staged outbound exists. A partial stream whose target outbound
+		// failed to stage can also leave only its unused source refund staged,
+		// while the executed output is retained on the lifecycle. Recover that
+		// output so rollback still has something real to unwind.
 		var pendingAction *TxOutItem
 		pendingAction, err = buildPendingMempoolRollbackAction(ctx, keeper, voter)
 		if err != nil {
@@ -3463,18 +3475,6 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 			actionsToRollback = append(actionsToRollback, mempoolRollbackAction{
 				item:        *pendingAction,
 				actionIndex: 0,
-			})
-		}
-	} else {
-		actionsToRollback = make([]mempoolRollbackAction, 0, len(stagedItems))
-		for i, staged := range stagedItems {
-			if isStagedMempoolSourceRefund(voter, sourceAsset, staged.TxOutItem) {
-				stagedSourceRefund = stagedSourceRefund.Add(staged.TxOutItem.Coin.Amount)
-				continue
-			}
-			actionsToRollback = append(actionsToRollback, mempoolRollbackAction{
-				item:        staged.TxOutItem,
-				actionIndex: i,
 			})
 		}
 	}
@@ -3713,9 +3713,9 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 	// artificially inflated Spent counters, reducing their Available clout
 	// for future swaps even though the outbound never actually went out.
 	//
-	// The len(stagedItems) == 0 path above only reconstructs partial
-	// advanced-queue output from queue state before TryAddTxOutItem runs, so
-	// there is no outbound scheduling or clout spend to reclaim in that case.
+	// An output recovered from queue or lifecycle state above never reached a
+	// staged outbound, so it has no clout spend of its own; only the staged
+	// records (including any source refund) carry clout to reclaim.
 	if err = reclaimStagedClout(ctx, keeper, voter, stagedItems); err != nil {
 		return fmt.Errorf("fail to reclaim staged clout on rollback: %w", err)
 	}

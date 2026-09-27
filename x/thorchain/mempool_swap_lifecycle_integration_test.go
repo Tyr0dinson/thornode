@@ -1236,3 +1236,58 @@ func (s *MempoolSwapLifecycleIntegrationSuite) TestOutputCloutReclaimFailureIsAt
 	c.Assert(err, IsNil)
 	c.Check(recipientCloutAfter, DeepEquals, recipientCloutBefore)
 }
+
+// TestRefundOnlyStagedRollbackRestoresRetainedLifecycleOutput covers a partial
+// stream whose target outbound failed to stage while its unused source refund
+// staged successfully. Settlement retained the executed output on the lifecycle
+// and removed the queue item. The refund is filtered out of the rollback
+// actions, so rollback must still recover and unwind the lifecycle output
+// rather than only deducting the credited source.
+func (s *MempoolSwapLifecycleIntegrationSuite) TestRefundOnlyStagedRollbackRestoresRetainedLifecycleOutput(c *C) {
+	ctx, mgr, fixture := setupMempoolSwapLifecycleFixture(c)
+	k := mgr.Keeper()
+
+	deposit := fixture.voter.Tx.Tx.Coins[0].Amount
+	executedIn := deposit.QuoUint64(2)
+	runeOutput := cosmos.NewUint(common.One / 4)
+
+	record, _, err := k.GetMempoolSwap(ctx, fixture.voter.TxID, 0)
+	c.Assert(err, IsNil)
+	c.Assert(record.LatestSwap.State, NotNil)
+	record.Status = types.MempoolSwapStatus_SETTLED
+	record.LatestSwap.State.In = executedIn
+	record.LatestSwap.State.Out = runeOutput
+	c.Assert(k.SetMempoolSwap(ctx, record), IsNil)
+	c.Assert(k.RemoveAdvSwapQueueItem(ctx, fixture.voter.TxID, 0), IsNil)
+
+	pool, err := k.GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	pool.BalanceRune = pool.BalanceRune.Sub(runeOutput)
+	pool.BalanceAsset = pool.BalanceAsset.Add(executedIn)
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	refund := TxOutItem{
+		Chain:       common.BTCChain,
+		ToAddress:   fixture.voter.Tx.Tx.FromAddress,
+		VaultPubKey: fixture.vault.PubKey,
+		Coin:        common.NewCoin(common.BTCAsset, deposit.Sub(executedIn)),
+		Memo:        NewRefundMemo(fixture.voter.TxID).String(),
+		InHash:      fixture.voter.TxID,
+	}
+	voter := fixture.voter
+	voter.Actions = []TxOutItem{refund}
+	k.SetObservedTxInVoter(ctx, voter)
+	c.Assert(k.SetStagedOutbound(ctx, refund, ctx.BlockHeight()+10), IsNil)
+
+	c.Assert(rollbackMempoolSwapAtomic(ctx, k, mgr, voter), IsNil)
+
+	poolAfter, err := k.GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(poolAfter.BalanceRune.String(), Equals, fixture.sourcePool.BalanceRune.String(),
+		Commentf("retained lifecycle output must be returned to the pool"))
+	c.Check(poolAfter.BalanceAsset.String(), Equals, fixture.sourcePool.BalanceAsset.String(),
+		Commentf("only the executed source input may be deducted"))
+	c.Check(k.HasMempoolSwap(ctx, fixture.voter.TxID, 0), Equals, false)
+	c.Check(k.HasStagedOutbound(ctx, fixture.voter.TxID), Equals, false)
+	c.Check(k.GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true)
+}
