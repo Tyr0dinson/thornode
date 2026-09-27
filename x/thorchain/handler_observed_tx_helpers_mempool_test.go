@@ -2132,29 +2132,37 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizedOrphanedMempoolSwapR
 		Commentf("orphan recovery must clear the voter's reservation marker"))
 }
 
-// TestInactiveVaultSkipsMempoolSwapBeforeFinalization verifies that speculative
-// mempool processing never starts when the source vault is inactive.
-func (s *HandlerObservedTxHelpersMempoolSuite) TestInactiveVaultSkipsMempoolSwapBeforeFinalization(c *C) {
+// observeUnfinalizedMempoolSwapForAdmission seeds everything mempool admission
+// needs (pricing plus source and target pools) so a test only exercises the
+// guard it toggles, then observes an unfinalized BTC -> ETH swap.
+func observeUnfinalizedMempoolSwapForAdmission(c *C, haltTrading bool, vaultStatus VaultStatus) (cosmos.Context, *Mgrs, common.TxID) {
 	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
+	mgr.Keeper().SetMimir(ctx, "DollarsPerRune", 5_00000000)
+	if haltTrading {
+		mgr.Keeper().SetMimir(ctx, "HaltTrading", 1)
+	}
 
-	// Before finalization, an inactive vault should block mempool execution completely.
-	sourcePool := NewPool()
-	sourcePool.Asset = common.BTCAsset
-	sourcePool.BalanceRune = cosmos.NewUint(1000 * common.One)
-	sourcePool.BalanceAsset = cosmos.NewUint(1000 * common.One)
-	sourcePool.Status = PoolAvailable
-	c.Assert(mgr.Keeper().SetPool(ctx, sourcePool), IsNil)
+	for _, asset := range []common.Asset{common.BTCAsset, common.ETHAsset} {
+		pool := NewPool()
+		pool.Asset = asset
+		pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+		pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+		pool.Status = PoolAvailable
+		c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+	}
 
 	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 
-	inactiveVault := NewVault(ctx.BlockHeight(), InactiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain, common.ETHChain}.Strings(), nil)
-	inactiveVault.Coins = common.Coins{
-		common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One)),
+	vault := NewVault(ctx.BlockHeight(), vaultStatus, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain, common.ETHChain}.Strings(), nil)
+	vault.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
 	}
-	c.Assert(mgr.Keeper().SetVault(ctx, inactiveVault), IsNil)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 
-	toAddr, err := inactiveVault.PubKey.GetAddress(common.BTCChain)
+	toAddr, err := vault.PubKey.GetAddress(common.BTCChain)
 	c.Assert(err, IsNil)
 
 	inTxID := GetRandomTxHash()
@@ -2166,15 +2174,29 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestInactiveVaultSkipsMempoolSwap
 		common.Gas{common.NewCoin(common.BTCAsset, cosmos.OneUint())},
 		"SWAP:ETH.ETH:"+GetRandomETHAddress().String(),
 	)
-	observedTx := NewObservedTx(inboundTx, 12, inactiveVault.PubKey, 15)
+	observedTx := NewObservedTx(inboundTx, 12, vault.PubKey, 15)
 
 	voter := NewObservedTxVoter(inTxID, ObservedTxs{observedTx})
 	voter.Tx = observedTx
 	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 
-	// The handler should refuse to start the mempool swap.
 	err = handleObservedTxInQuorum(ctx, mgr, na.NodeAddress, NodeAccounts{na}, NewInternalHandler(mgr), observedTx, voter, []cosmos.AccAddress{na.NodeAddress}, true)
 	c.Assert(err, IsNil)
+	return ctx, mgr, inTxID
+}
+
+// TestInactiveVaultSkipsMempoolSwapBeforeFinalization verifies that speculative
+// mempool processing never starts when the source vault is inactive.
+func (s *HandlerObservedTxHelpersMempoolSuite) TestInactiveVaultSkipsMempoolSwapBeforeFinalization(c *C) {
+	// Positive control: the same fixture with an active vault is admitted, so
+	// the inactive-vault case below fails only because of the vault guard.
+	ctx, mgr, inTxID := observeUnfinalizedMempoolSwapForAdmission(c, false, ActiveVault)
+	admittedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(admittedVoter.HasReservedMempoolSwapTOR(), Equals, true, Commentf("active vault control should reserve mempool swap capacity"))
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, false, Commentf("active vault control should consume mempool swap capacity"))
+
+	ctx, mgr, inTxID = observeUnfinalizedMempoolSwapForAdmission(c, false, InactiveVault)
 
 	// Check that no mempool capacity or queue state was created.
 	updatedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
@@ -2188,46 +2210,15 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestInactiveVaultSkipsMempoolSwap
 // TestTradingHaltSkipsMempoolProcessingUntilFinalization verifies that a
 // trading halt suppresses all speculative queueing, staging, and capacity use.
 func (s *HandlerObservedTxHelpersMempoolSuite) TestTradingHaltSkipsMempoolProcessingUntilFinalization(c *C) {
-	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
-	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
-	mgr.Keeper().SetMimir(ctx, "HaltTrading", 1)
-
-	sourcePool := NewPool()
-	sourcePool.Asset = common.BTCAsset
-	sourcePool.BalanceRune = cosmos.NewUint(1000 * common.One)
-	sourcePool.BalanceAsset = cosmos.NewUint(1000 * common.One)
-	sourcePool.Status = PoolAvailable
-	c.Assert(mgr.Keeper().SetPool(ctx, sourcePool), IsNil)
-
-	na := GetRandomValidatorNode(NodeActive)
-	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
-
-	activeVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain, common.ETHChain}.Strings(), nil)
-	activeVault.Coins = common.Coins{
-		common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
-	}
-	c.Assert(mgr.Keeper().SetVault(ctx, activeVault), IsNil)
-
-	toAddr, err := activeVault.PubKey.GetAddress(common.BTCChain)
+	// Positive control: the same fixture without the halt is admitted, so the
+	// halted case below fails only because of the trading-halt guard.
+	ctx, mgr, inTxID := observeUnfinalizedMempoolSwapForAdmission(c, false, ActiveVault)
+	admittedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
 	c.Assert(err, IsNil)
+	c.Check(admittedVoter.HasReservedMempoolSwapTOR(), Equals, true, Commentf("unhalted control should reserve mempool swap capacity"))
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, false, Commentf("unhalted control should consume mempool swap capacity"))
 
-	inTxID := GetRandomTxHash()
-	inboundTx := common.NewTx(
-		inTxID,
-		GetRandomBTCAddress(),
-		toAddr,
-		common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))},
-		common.Gas{common.NewCoin(common.BTCAsset, cosmos.OneUint())},
-		"SWAP:ETH.ETH:"+GetRandomETHAddress().String(),
-	)
-	observedTx := NewObservedTx(inboundTx, 12, activeVault.PubKey, 15)
-
-	voter := NewObservedTxVoter(inTxID, ObservedTxs{observedTx})
-	voter.Tx = observedTx
-	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
-
-	err = handleObservedTxInQuorum(ctx, mgr, na.NodeAddress, NodeAccounts{na}, NewInternalHandler(mgr), observedTx, voter, []cosmos.AccAddress{na.NodeAddress}, true)
-	c.Assert(err, IsNil)
+	ctx, mgr, inTxID = observeUnfinalizedMempoolSwapForAdmission(c, true, ActiveVault)
 
 	updatedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
 	c.Assert(err, IsNil)
