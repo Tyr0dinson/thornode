@@ -553,10 +553,12 @@ func emitUnrefundableStagedSwapOutputEvent(ctx cosmos.Context, mgr Manager, item
 	}
 }
 
-// finalizeStagedTxOutItem turns one staged mempool outbound into its finalized
+// prepareStagedTxOutItem turns one staged mempool outbound into its finalized
 // form. This is where deferred outbound-fee accounting becomes real, so staged
 // mempool outputs can stay gross and rollback-safe until the inbound confirms.
-func (tos *TxOutStorage) finalizeStagedTxOutItem(ctx cosmos.Context, mgr Manager, item, cleanupItem TxOutItem, scheduledHeight int64, stagedIndex int) ([]TxOutItem, error) {
+// The caller dispatches the returned outputs with dispatchStagedTxOutItem, so
+// native payouts can run only after the voter records the finalized actions.
+func (tos *TxOutStorage) prepareStagedTxOutItem(ctx cosmos.Context, mgr Manager, item, cleanupItem TxOutItem, stagedIndex int) ([]TxOutItem, cosmos.Uint, error) {
 	// Prepare finalized fees in a nested cache. A staged gross output can
 	// collapse entirely after fee or dust handling. In that case do not commit
 	// the preparation (notably, a full RUNE fee may otherwise already have moved
@@ -568,30 +570,33 @@ func (tos *TxOutStorage) finalizeStagedTxOutItem(ctx cosmos.Context, mgr Manager
 		recordVoterActions:     false,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to prepare finalized staged tx out item: %w", err)
+		return nil, cosmos.ZeroUint(), fmt.Errorf("failed to prepare finalized staged tx out item: %w", err)
 	}
 	if len(outputs) == 0 {
 		cleanupReason := stagedUnrefundableCleanupReason(cleanupItem)
 		cleanupKey := stagedRefundCleanupKey(cleanupItem, cleanupReason, stagedIndex)
 		if err := unrefundableCoinCleanupStrictWithKey(ctx, mgr, cleanupItem, cleanupReason, cleanupKey); err != nil {
-			return nil, fmt.Errorf("fail to clean up unrefundable finalized staged outbound: %w", err)
+			return nil, cosmos.ZeroUint(), fmt.Errorf("fail to clean up unrefundable finalized staged outbound: %w", err)
 		}
 		if cleanupReason == "failed_outbound" {
 			emitUnrefundableStagedSwapOutputEvent(ctx, mgr, cleanupItem)
 		}
-		return nil, nil
+		return nil, cosmos.ZeroUint(), nil
 	}
 	commitPrepare()
+	return outputs, totalOutboundFeeRune, nil
+}
 
+// dispatchStagedTxOutItem queues (or, for native outputs, executes) outputs
+// returned by prepareStagedTxOutItem without running preparation again.
+func (tos *TxOutStorage) dispatchStagedTxOutItem(ctx cosmos.Context, mgr Manager, item TxOutItem, outputs []TxOutItem, totalOutboundFeeRune cosmos.Uint, scheduledHeight int64) error {
 	targetHeight := scheduledHeight
 	if targetHeight < ctx.BlockHeight() {
 		targetHeight = ctx.BlockHeight()
 	}
 
-	// Queue or execute the finalized outputs without running the preparation
-	// logic a second time.
 	if err := tos.addPreparedTxOutItemsAtHeight(ctx, mgr, outputs, targetHeight); err != nil {
-		return nil, err
+		return err
 	}
 
 	// Record the withheld outbound fee now that the outbound is real. The staged
@@ -602,7 +607,7 @@ func (tos *TxOutStorage) finalizeStagedTxOutItem(ctx cosmos.Context, mgr Manager
 		}
 	}
 
-	return outputs, nil
+	return nil
 }
 
 // UnSafeAddTxOutItem - blindly adds a tx out, skipping vault selection, transaction

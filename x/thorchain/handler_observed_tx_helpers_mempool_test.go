@@ -579,6 +579,21 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutboundsAppliesDefer
 		c.Assert(stagedErr, IsNil, Commentf("case %s", name))
 		c.Check(stagedItems, HasLen, 0, Commentf("case %s should clear staged outbounds on finalization", name))
 
+		// Native dispatch records the payout on the stored voter. Finalization
+		// must not overwrite that, and the finalized (net) action must match the
+		// payout so an outbound event is emitted.
+		finalVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+		c.Assert(err, IsNil, Commentf("case %s", name))
+		c.Check(finalVoter.OutTxs, HasLen, 1, Commentf("case %s should record the native payout", name))
+		c.Check(finalVoter.IsDone(), Equals, true, Commentf("case %s should complete the voter", name))
+		outboundEvents := 0
+		for _, evt := range ctx.EventManager().Events() {
+			if evt.Type == types.OutboundEventType {
+				outboundEvents++
+			}
+		}
+		c.Check(outboundEvents, Equals, 1, Commentf("case %s should emit one outbound event", name))
+
 		affiliateSwap, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, inTxID, 2)
 		c.Assert(err, IsNil, Commentf("case %s should queue affiliate sidecar on finalization", name))
 		c.Check(affiliateSwap.Tx.Coins, DeepEquals, common.Coins{common.NewCoin(finalAsset, affiliateAmount)}, Commentf("case %s should queue the deferred affiliate input", name))

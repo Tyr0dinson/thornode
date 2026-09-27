@@ -3152,54 +3152,77 @@ func finalizeOutboundsCached(ctx cosmos.Context, mgr Manager, voter ObservedTxVo
 	}
 
 	finalActions := make([]TxOutItem, 0, len(finalizedOutbounds))
+	type preparedNativeOutbound struct {
+		item            TxOutItem
+		outputs         []TxOutItem
+		fee             cosmos.Uint
+		scheduledHeight int64
+	}
+	var nativeOutbounds []preparedNativeOutbound
 
-	// Move each staged outbound to its final form.
+	// Move each staged outbound to its final form. Materializing through the
+	// finalized txout path applies outbound fees and their accounting side
+	// effects only now, not while the swap was still speculative in the
+	// mempool. External outputs are queued immediately; native outputs execute
+	// inline and match voter actions, so they wait until the voter records
+	// the finalized actions below.
 	for i, finalized := range finalizedOutbounds {
 		finalItem := finalized.item
 		if finalItem.Coin.Amount.IsZero() {
 			continue
 		}
 
-		// Materialize the staged outbound through the finalized txout path so
-		// outbound fees and their accounting side effects are applied only now,
-		// not while the swap was still speculative in the mempool.
-		materializedOutputs, materializeErr := tos.finalizeStagedTxOutItem(ctx, mgr, finalItem, finalized.cleanupItem, finalized.scheduledHeight, i)
-		if materializeErr != nil {
-			ctx.Logger().Error("fail to finalize staged outbound", "error", materializeErr, "inhash", finalItem.InHash)
-			return fmt.Errorf("fail to finalize staged outbound: %w", materializeErr)
+		outputs, fee, prepareErr := tos.prepareStagedTxOutItem(ctx, mgr, finalItem, finalized.cleanupItem, i)
+		if prepareErr != nil {
+			ctx.Logger().Error("fail to finalize staged outbound", "error", prepareErr, "inhash", finalItem.InHash)
+			return fmt.Errorf("fail to finalize staged outbound: %w", prepareErr)
 		}
-
-		// Replace the speculative gross action(s) with the finalized outputs so
-		// later outbound matching and slasher logic see the real net amounts.
-		finalActions = append(finalActions, materializedOutputs...)
-		if len(materializedOutputs) == 0 {
-			// Some staged outputs can disappear after final fee deduction or dust
-			// handling. In that case nothing remains to log or queue.
+		// Some staged outputs can disappear after final fee deduction or dust
+		// handling. In that case nothing remains to log or queue.
+		if len(outputs) == 0 {
 			continue
 		}
 
-		targetHeight := finalized.scheduledHeight
-		if targetHeight < ctx.BlockHeight() {
-			targetHeight = ctx.BlockHeight()
-		}
+		// Replace the speculative gross action(s) with the finalized outputs so
+		// outbound matching and slasher logic see the real net amounts.
+		finalActions = append(finalActions, outputs...)
 
 		if finalItem.Chain.IsTHORChain() {
-			ctx.Logger().Info("executed staged native outbound on finalization",
-				"inhash", finalItem.InHash,
-				"asset", materializedOutputs[0].Coin.Asset,
-				"amount", sumPreparedTxOutAmount(materializedOutputs))
-		} else {
-			ctx.Logger().Info("moved staged outbound to queue",
-				"inhash", finalItem.InHash,
-				"chain", finalItem.Chain,
-				"target_height", targetHeight,
-				"original_scheduled", finalized.scheduledHeight)
+			nativeOutbounds = append(nativeOutbounds, preparedNativeOutbound{
+				item:            finalItem,
+				outputs:         outputs,
+				fee:             fee,
+				scheduledHeight: finalized.scheduledHeight,
+			})
+			continue
 		}
+		if err = tos.dispatchStagedTxOutItem(ctx, mgr, finalItem, outputs, fee, finalized.scheduledHeight); err != nil {
+			ctx.Logger().Error("fail to finalize staged outbound", "error", err, "inhash", finalItem.InHash)
+			return fmt.Errorf("fail to finalize staged outbound: %w", err)
+		}
+		ctx.Logger().Info("moved staged outbound to queue",
+			"inhash", finalItem.InHash,
+			"chain", finalItem.Chain,
+			"target_height", max(finalized.scheduledHeight, ctx.BlockHeight()),
+			"original_scheduled", finalized.scheduledHeight)
 	}
 
+	// Native dispatch records OutTxs and completion on the stored voter, so
+	// persist the finalized actions first and never save this copy afterwards.
 	if len(voter.Actions) > 0 {
 		voter.Actions = finalActions
 		mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	}
+
+	for _, native := range nativeOutbounds {
+		if err = tos.dispatchStagedTxOutItem(ctx, mgr, native.item, native.outputs, native.fee, native.scheduledHeight); err != nil {
+			ctx.Logger().Error("fail to finalize staged outbound", "error", err, "inhash", native.item.InHash)
+			return fmt.Errorf("fail to finalize staged outbound: %w", err)
+		}
+		ctx.Logger().Info("executed staged native outbound on finalization",
+			"inhash", native.item.InHash,
+			"asset", native.outputs[0].Coin.Asset,
+			"amount", sumPreparedTxOutAmount(native.outputs))
 	}
 
 	incrMempoolSwapCounter("completed_total", []metrics.Label{telemetry.NewLabel("path", "staged_finalize")})
