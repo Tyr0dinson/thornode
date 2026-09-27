@@ -676,7 +676,7 @@ func nativeMempoolVerifyExactCredit(
 		candidate, err := thornode.GetTxDetails(txID)
 		if err == nil {
 			details = candidate
-			if len(candidate.Actions) > 0 && (!stagedAmount.IsZero() || len(candidate.OutTxs) > 0) {
+			if len(candidate.Actions) > 0 && len(candidate.OutTxs) > 0 {
 				break
 			}
 		}
@@ -720,12 +720,10 @@ func nativeMempoolValidateFinalSettlement(
 	if len(details.Actions) != 1 {
 		return fmt.Errorf("expected exactly one native action for %s, got %d", txID, len(details.Actions))
 	}
-	if stagedAmount.IsZero() {
-		if len(details.OutTxs) != 1 {
-			return fmt.Errorf("expected exactly one non-streaming internal THOR out tx for %s, got %d", txID, len(details.OutTxs))
-		}
-	} else if len(details.OutTxs) != 0 {
-		return fmt.Errorf("expected no streaming native out tx records for %s, got %d", txID, len(details.OutTxs))
+	// Finalization records the action before dispatching the native payout, so
+	// streaming and non-streaming settlements both record one internal out tx.
+	if len(details.OutTxs) != 1 {
+		return fmt.Errorf("expected exactly one internal THOR out tx for %s, got %d", txID, len(details.OutTxs))
 	}
 
 	expectedMemo := "OUT:" + txID
@@ -756,10 +754,6 @@ func nativeMempoolValidateFinalSettlement(
 	if !stagedAmount.IsZero() && !stagedAmount.Equal(actionAmount) {
 		return fmt.Errorf("recipient action %s does not equal staged escrow %s", actionAmount, stagedAmount)
 	}
-	if !stagedAmount.IsZero() {
-		return nil
-	}
-
 	outTx := details.OutTxs[0]
 	outTxID, err := common.NewTxID(outTx.GetId())
 	if err != nil {

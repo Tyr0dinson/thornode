@@ -8063,6 +8063,17 @@
               "msg_index": "0",
               "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
               "type": "message"
+            },
+            {
+              "chain": "THOR",
+              "coin": "48041349 ETH/ETH",
+              "from": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+              "id": "0000000000000000000000000000000000000000000000000000000000000000",
+              "in_tx_id": "0000000000000000000000000000000000000000000000000000000000000014",
+              "memo": "OUT:0000000000000000000000000000000000000000000000000000000000000014",
+              "msg_index": "0",
+              "to": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
+              "type": "outbound"
             }
           ]
         }
