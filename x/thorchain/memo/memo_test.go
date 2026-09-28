@@ -737,11 +737,6 @@ func (s *MemoSuite) TestParse(c *C) {
 	_, err = ParseMemoWithTHORNames(ctx, k, "whatever") // not support
 	c.Assert(err, NotNil)
 
-	execAddr := types.GetRandomBech32Addr().String()
-	memo, err = ParseMemoWithTHORNames(ctx, k, "x:"+execAddr+":AA==")
-	c.Assert(err, IsNil)
-	c.Check(memo.IsType(TxExec), Equals, true)
-	c.Check(memo.String(), Equals, "x:"+execAddr+":AA==")
 	_, err = ParseMemoWithTHORNames(ctx, k, "tcy:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a") // invalid thor address
 	c.Assert(err, NotNil)
 	_, err = ParseMemoWithTHORNames(ctx, k, "tcy-") // emptu bps

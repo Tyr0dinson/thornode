@@ -44,7 +44,6 @@ const (
 	TxStableReserveWithdraw
 	TxRunePoolDeposit
 	TxRunePoolWithdraw
-	TxExec
 	TxSwitch
 	TxReferenceWriteMemo
 	TxReferenceReadMemo
@@ -94,8 +93,6 @@ var stringToTxTypeMap = map[string]TxType{
 	"stable-":     TxStableReserveWithdraw,
 	"pool+":       TxRunePoolDeposit,
 	"pool-":       TxRunePoolWithdraw,
-	"x":           TxExec,
-	"exec":        TxExec,
 	"switch":      TxSwitch,
 	"tcy":         TxTCYClaim,
 	"tcy+":        TxTCYStake,
@@ -132,7 +129,6 @@ var txToStringMap = map[TxType]string{
 	TxSecuredAssetWithdraw:   "secure-",
 	TxStableReserveDeposit:   "stable+",
 	TxStableReserveWithdraw:  "stable-",
-	TxExec:                   "x",
 	TxSwitch:                 "switch",
 	TxTCYClaim:               "tcy",
 	TxTCYStake:               "tcy+",
@@ -178,7 +174,6 @@ func (tx TxType) IsInbound() bool {
 		TxReserve,
 		TxNoOp,
 		TxTHORName,
-		TxExec,
 		TxSwitch,
 		TxTCYClaim,
 		TxTCYStake,
