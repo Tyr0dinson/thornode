@@ -1591,8 +1591,8 @@ func (s *HandlerTssSuite) TestSharedKeygenBlockRotatesRegularAsgardWithoutWaitin
 	voter.Secp256K1Signatures = []string{"sig-a", "sig-a", "sig-a"}
 	helper.keeper.SetTssVoter(helper.ctx, voter)
 
-	// A non-member offender blamed during this churn. The XMR keygen is still
-	// pending, so the churn is not complete and its blame must survive.
+	// A non-member offender blamed during this churn. Bifrost may never
+	// complete the XMR keygen, so the regular rotation alone must reset blame.
 	offender := GetRandomBech32Addr()
 	c.Assert(helper.keeper.IncrementKeygenBlame(helper.ctx, offender), IsNil)
 
@@ -1606,8 +1606,8 @@ func (s *HandlerTssSuite) TestSharedKeygenBlockRotatesRegularAsgardWithoutWaitin
 
 	record, err := helper.keeper.GetNodeBlameRecord(helper.ctx, offender)
 	c.Assert(err, IsNil)
-	c.Check(record.KeygenBlameCountSinceChurn, Equals, int64(1),
-		Commentf("partial churn rotation must not reset since_churn blame"))
+	c.Check(record.KeygenBlameCountSinceChurn, Equals, int64(0),
+		Commentf("completed regular churn must reset since_churn blame while XMR is pending"))
 }
 
 // TestCompletedChurnResetsNonMemberBlame verifies that once every keygen in the
@@ -1665,6 +1665,63 @@ func (s *HandlerTssSuite) TestCompletedChurnResetsNonMemberBlame(c *C) {
 	c.Check(record.KeygenBlameCountTotal, Equals, int64(1))
 	c.Check(record.KeygenBlameCountSinceChurn, Equals, int64(0),
 		Commentf("completed churn must reset non-member since_churn blame"))
+}
+
+// TestXMROnlyCompletionDoesNotResetBlame verifies that an XMR monovault keygen
+// completing in its own keygen block does not clear since_churn blame, since a
+// separate regular churn may still be unfinished.
+func (s *HandlerTssSuite) TestXMROnlyCompletionDoesNotResetBlame(c *C) {
+	helper := newTssHandlerTestHelper(c)
+	mgr := NewDummyMgrWithKeeper(helper.keeper)
+	mgr.networkMgr = newNetworkMgr(helper.keeper, mgr.TxOutStore(), mgr.EventMgr())
+	handler := NewTssHandler(mgr)
+	c.Assert(helper.keeper.Keeper.DeleteVault(helper.ctx, helper.poolPk), IsNil)
+	members := helper.members[:4]
+
+	keygenBlock := NewKeygenBlock(helper.ctx.BlockHeight())
+	keygenBlock.Keygens = []Keygen{{Type: XMRMonovaultKeygen, Members: members.Strings()}}
+	helper.keeper.SetKeygenBlock(helper.ctx, keygenBlock)
+
+	setKeygenMemberNodeAccount(c, helper, members[0], NodeActive)
+	setKeygenMemberNodeAccount(c, helper, members[1], NodeReady)
+	setKeygenMemberNodeAccount(c, helper, members[2], NodeReady)
+	setKeygenMemberNodeAccount(c, helper, members[3], NodeReady)
+
+	xmrPoolPubKey := GetRandomPubKey()
+	xmrFrostPubKey := GetRandomEd25519PubKey()
+	observedMoneroHeight := int64(777)
+	xmrMsg, err := NewMsgTssPoolV3(
+		members.Strings(), xmrPoolPubKey, nil, nil, XMRMonovaultKeygen,
+		helper.ctx.BlockHeight(), nil, xmrMonovaultChains().Strings(), helper.signer,
+		int64(1024), common.EmptyPubKey, nil, validTssKeyshareBackup(),
+		xmrFrostPubKey, observedMoneroHeight,
+	)
+	c.Assert(err, IsNil)
+	xmrVoter := NewTssVoter(xmrMsg.ID, members.Strings(), xmrPoolPubKey, common.EmptyPubKey)
+	xmrVoter.PoolPubKeyFrost = xmrFrostPubKey
+	xmrVoter.ObservedMoneroHeight = observedMoneroHeight
+	for _, member := range members[1:3] {
+		addr, addrErr := member.GetThorAddress()
+		c.Assert(addrErr, IsNil)
+		xmrVoter.Signers = append(xmrVoter.Signers, addr.String())
+	}
+	helper.keeper.SetTssVoter(helper.ctx, xmrVoter)
+
+	offender := GetRandomBech32Addr()
+	c.Assert(helper.keeper.IncrementKeygenBlame(helper.ctx, offender), IsNil)
+
+	_, err = handler.Run(helper.ctx, xmrMsg)
+	c.Assert(err, IsNil)
+
+	xmrVault, err := helper.keeper.GetVault(helper.ctx, xmrPoolPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(xmrVault.Status, Equals, ActiveVault)
+	c.Assert(xmrVault.IsXMRMonovault(), Equals, true)
+
+	record, err := helper.keeper.GetNodeBlameRecord(helper.ctx, offender)
+	c.Assert(err, IsNil)
+	c.Check(record.KeygenBlameCountSinceChurn, Equals, int64(1),
+		Commentf("XMR-only completion must not reset since_churn blame"))
 }
 
 func (s *HandlerTssSuite) TestXMRMonovaultRotatesWithoutRegularVaultRotation(c *C) {

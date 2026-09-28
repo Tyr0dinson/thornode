@@ -954,7 +954,6 @@ func (h TssHandler) rotateReadyKeygenVaultFamilies(ctx cosmos.Context, keygenBlo
 	}
 
 	readyVaults := append(append(Vaults(nil), activeVaults...), initVaults...)
-	rotated := false
 	if keygenBlockHasType(keygenBlock, AsgardKeygen) {
 		regularInitVaults := filterVaultsByKeygenType(initVaults, keygenBlock, AsgardKeygen)
 		if keygenTypeReady(keygenBlock, readyVaults, AsgardKeygen) {
@@ -963,10 +962,21 @@ func (h TssHandler) rotateReadyKeygenVaultFamilies(ctx cosmos.Context, keygenBlo
 				if rotateErr := h.tryRotateInitVaults(ctx, regularInitVaults); rotateErr != nil {
 					return fmt.Errorf("fail to rotate regular vaults: %w", rotateErr)
 				}
-				rotated = true
 				activeVaults, err = h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
 				if err != nil {
 					return fmt.Errorf("fail to refresh active vaults: %w", err)
+				}
+				// A regular churn is complete once every Asgard keygen in the
+				// block is an active vault. Only then clear since_churn blame
+				// for all nodes, so offenders left out of the new vaults do not
+				// carry escalation into later churns. XMR monovault keygens are
+				// deliberately ignored: Bifrost may skip them, and an XMR-only
+				// completion must not wipe blame for a regular churn still in
+				// flight.
+				if keygenTypeReady(keygenBlock, activeVaults, AsgardKeygen) {
+					if errReset := h.mgr.Keeper().ResetAllSinceChurnCounters(ctx); errReset != nil {
+						ctx.Logger().Error("fail to reset blame since_churn counters", "error", errReset)
+					}
 				}
 				initVaults, err = h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, InitVault)
 				if err != nil {
@@ -987,32 +997,9 @@ func (h TssHandler) rotateReadyKeygenVaultFamilies(ctx cosmos.Context, keygenBlo
 				if rotateErr := h.tryRotateInitVaults(ctx, xmrInitVaults); rotateErr != nil {
 					return fmt.Errorf("fail to rotate xmr monovault: %w", rotateErr)
 				}
-				rotated = true
 			}
 		} else {
 			ctx.Logger().Info("not enough xmr keygen yet")
-		}
-	}
-
-	// The churn cycle is complete once every keygen in the block is an active
-	// vault. Only then clear since_churn blame for all nodes, so offenders left
-	// out of the new vaults do not carry escalation into later churns, while a
-	// partial rotation (e.g. Asgard done, XMR still failing) resets nothing.
-	if rotated {
-		activeVaults, err = h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
-		if err != nil {
-			return fmt.Errorf("fail to get active vaults: %w", err)
-		}
-		complete := true
-		for _, t := range []types.KeygenType{AsgardKeygen, XMRMonovaultKeygen} {
-			if keygenBlockHasType(keygenBlock, t) && !keygenTypeReady(keygenBlock, activeVaults, t) {
-				complete = false
-			}
-		}
-		if complete {
-			if errReset := h.mgr.Keeper().ResetAllSinceChurnCounters(ctx); errReset != nil {
-				ctx.Logger().Error("fail to reset blame since_churn counters", "error", errReset)
-			}
 		}
 	}
 
