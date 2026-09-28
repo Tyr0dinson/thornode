@@ -370,3 +370,41 @@ func TestGetTxSpentRefsUsesStoredOutboundVoter(t *testing.T) {
 		})
 	}
 }
+
+func TestGetTxResult(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		status     int
+		wantCode   uint32
+		wantError  bool
+	}{
+		{"executed", `{"tx_response":{"txhash":"ABCD","height":"123","code":0}}`, 200, 0, false},
+		{"failed", `{"tx_response":{"txhash":"ABCD","height":"123","code":99,"raw_log":"trading is halted"}}`, 200, 99, false},
+		{"pending", `{"code":5,"message":"not found"}`, 404, 0, true},
+		{"missing response", `{}`, 200, 0, true},
+		{"missing code", `{"tx_response":{"txhash":"ABCD","height":"123"}}`, 200, 0, true},
+		{"uncommitted", `{"tx_response":{"txhash":"ABCD","height":"0","code":0}}`, 200, 0, true},
+		{"wrong tx", `{"tx_response":{"txhash":"DCBA","height":"123","code":0}}`, 200, 0, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/cosmos/tx/v1beta1/txs/abcd" {
+					t.Errorf("unexpected path: %s", r.URL.Path)
+				}
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+			previous := thornodeURL
+			thornodeURL = server.URL
+			defer func() { thornodeURL = previous }()
+			result, err := GetTxResult("abcd")
+			if (err != nil) != tc.wantError {
+				t.Fatalf("want error=%t, got %v", tc.wantError, err)
+			}
+			if err == nil && (result.Height != 123 || result.Code != tc.wantCode) {
+				t.Fatalf("incorrect execution result: %+v", result)
+			}
+		})
+	}
+}

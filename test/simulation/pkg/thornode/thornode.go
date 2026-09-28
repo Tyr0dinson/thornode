@@ -268,6 +268,33 @@ func GetSwapQuote(from, to common.Asset, amount sdk.Uint, destination, refundAdd
 	return quote, err
 }
 
+// TxResult is committed Cosmos transaction execution, distinct from CheckTx.
+type TxResult struct {
+	Height int64
+	Code   uint32
+	RawLog string
+}
+
+func GetTxResult(txid string) (TxResult, error) {
+	var response struct {
+		TxResponse *struct {
+			TxHash string  `json:"txhash"`
+			Height int64   `json:"height,string"`
+			Code   *uint32 `json:"code"`
+			RawLog string  `json:"raw_log"`
+		} `json:"tx_response"`
+	}
+	err := Get(thornodeURL+"/cosmos/tx/v1beta1/txs/"+url.PathEscape(txid), &response)
+	if err != nil {
+		return TxResult{}, err
+	}
+	tx := response.TxResponse
+	if tx == nil || tx.Code == nil || tx.Height <= 0 || !strings.EqualFold(tx.TxHash, txid) {
+		return TxResult{}, fmt.Errorf("missing or invalid execution result for tx %s", txid)
+	}
+	return TxResult{Height: tx.Height, Code: *tx.Code, RawLog: tx.RawLog}, nil
+}
+
 func GetTxStages(txid string) (openapi.TxStagesResponse, error) {
 	url := fmt.Sprintf("%s/thorchain/tx/stages/%s", thornodeURL, txid)
 	var stages openapi.TxStagesResponse

@@ -1,9 +1,11 @@
 package dag
 
 import (
+	"errors"
 	rand "math/rand/v2"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"gitlab.com/thorchain/thornode/v3/config"
@@ -62,14 +64,14 @@ func TestExecute(t *testing.T) {
 	}
 }
 
-func TestExecuteIgnoresBackgroundActorsAtShutdown(t *testing.T) {
+func TestExecuteStopsBackgroundActorsAtShutdown(t *testing.T) {
 	rng := rand.New(rand.NewPCG(3, 4))
 
-	releaseBackground := make(chan struct{})
 	childRan := make(chan struct{})
 	executeDone := make(chan struct{})
 
 	background := NewActor("background", rng)
+	background.Interval = time.Hour
 	child := NewActor("child", rng)
 	root := NewActor("root", rng)
 
@@ -79,8 +81,7 @@ func TestExecuteIgnoresBackgroundActorsAtShutdown(t *testing.T) {
 			return OpResult{Continue: true}
 		},
 		func(config *OpConfig) OpResult {
-			<-releaseBackground
-			return OpResult{Finish: true}
+			return OpResult{}
 		},
 	}
 	child.Ops = []Op{
@@ -110,17 +111,19 @@ func TestExecuteIgnoresBackgroundActorsAtShutdown(t *testing.T) {
 		t.Fatal("execute waited for background actor to finish")
 	}
 
-	close(releaseBackground)
+	if !background.Finished() {
+		t.Fatal("background actor was left running after shutdown")
+	}
 }
 
 func TestExecuteBackgroundActorDoesNotConsumeParallelism(t *testing.T) {
 	rng := rand.New(rand.NewPCG(5, 6))
 
-	releaseBackground := make(chan struct{})
 	childRan := make(chan struct{})
 	executeDone := make(chan struct{})
 
 	background := NewActor("background", rng)
+	background.Interval = time.Hour
 	child := NewActor("child", rng)
 	root := NewActor("root", rng)
 
@@ -130,8 +133,7 @@ func TestExecuteBackgroundActorDoesNotConsumeParallelism(t *testing.T) {
 			return OpResult{Continue: true}
 		},
 		func(config *OpConfig) OpResult {
-			<-releaseBackground
-			return OpResult{Finish: true}
+			return OpResult{}
 		},
 	}
 	child.Ops = []Op{
@@ -161,5 +163,159 @@ func TestExecuteBackgroundActorDoesNotConsumeParallelism(t *testing.T) {
 		t.Fatal("execute waited for background actor to release a foreground slot")
 	}
 
-	close(releaseBackground)
+	if !background.Finished() {
+		t.Fatal("background actor was left running after shutdown")
+	}
+}
+
+func TestExecuteBackgroundSurvivesForegroundTeardown(t *testing.T) {
+	t.Setenv("DAG_TICK_INTERVAL", "1m")
+	synctest.Test(t, func(t *testing.T) {
+		rng := rand.New(rand.NewPCG(7, 8))
+		root := NewActor("root", rng)
+		background := NewActor("background", rng)
+		background.Timeout = time.Hour
+		background.Interval = time.Minute
+		background.BackgroundUntilCanceled = true
+		background.Ops = []Op{
+			func(*OpConfig) OpResult { background.Background(); return OpResult{Continue: true} },
+			func(*OpConfig) OpResult { return OpResult{} },
+		}
+		teardown := NewActor("teardown", rng)
+		teardown.Timeout = 3 * time.Hour
+		teardown.Interval = time.Minute
+		var started time.Time
+		teardown.Ops = []Op{func(*OpConfig) OpResult {
+			if started.IsZero() {
+				started = time.Now()
+			}
+			return OpResult{Finish: time.Since(started) > 2*time.Hour}
+		}}
+		root.Children[background] = true
+		background.Children[teardown] = true
+		if err := execute(nil, root, 1, rng); err != nil {
+			t.Fatal(err)
+		}
+		if !background.Finished() || !teardown.Finished() {
+			t.Fatal("simulation returned before actors stopped")
+		}
+	})
+}
+
+func TestExecutePreservesActorFailures(t *testing.T) {
+	t.Setenv("DAG_TICK_INTERVAL", "10ms")
+	for _, background := range []bool{false, true} {
+		synctest.Test(t, func(t *testing.T) {
+			rng := rand.New(rand.NewPCG(9, 10))
+			root := NewActor("root", rng)
+			a := NewActor("failure", rng)
+			a.BackgroundUntilCanceled = true
+			want := errors.New("terminal actor error")
+			a.Ops = []Op{func(*OpConfig) OpResult {
+				if background {
+					a.Background()
+					// Return an error after the scheduler has started shutdown.
+					time.Sleep(time.Second)
+				}
+				return OpResult{Finish: true, Error: want}
+			}}
+			root.Children[a] = true
+			if err := execute(nil, root, 1, rng); !errors.Is(err, want) {
+				t.Fatalf("lost terminal error (background=%t): %v", background, err)
+			}
+		})
+	}
+}
+
+func TestExecuteForegroundTimeoutStopsBackground(t *testing.T) {
+	t.Setenv("DAG_TICK_INTERVAL", "10ms")
+	synctest.Test(t, func(t *testing.T) {
+		rng := rand.New(rand.NewPCG(11, 12))
+		root := NewActor("root", rng)
+		background := NewActor("background", rng)
+		background.Interval = time.Hour
+		background.BackgroundUntilCanceled = true
+		background.Ops = []Op{func(*OpConfig) OpResult { background.Background(); return OpResult{} }}
+		foreground := NewActor("foreground", rng)
+		foreground.Timeout = time.Second
+		foreground.Ops = []Op{func(*OpConfig) OpResult { return OpResult{} }}
+		root.Children[background] = true
+		background.Children[foreground] = true
+		if err := execute(nil, root, 1, rng); !errors.Is(err, ErrTimeout) {
+			t.Fatalf("lost foreground deadline: %v", err)
+		}
+		if !background.Finished() {
+			t.Fatal("background actor leaked after foreground failure")
+		}
+	})
+}
+
+func TestExecuteBoundsShutdown(t *testing.T) {
+	t.Setenv("DAG_TICK_INTERVAL", "10ms")
+	for _, fail := range []bool{false, true} {
+		name := "foreground completion"
+		if fail {
+			name = "foreground failure"
+		}
+		t.Run(name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				rng := rand.New(rand.NewPCG(13, 14))
+				root := NewActor("root", rng)
+				stuck := NewActor("stuck operation", rng)
+				foreground := NewActor("foreground", rng)
+				started := make(chan struct{})
+				release := make(chan struct{})
+				stuck.Ops = []Op{func(*OpConfig) OpResult {
+					if !fail {
+						stuck.Background()
+					}
+					close(started)
+					<-release
+					return OpResult{Finish: true}
+				}}
+				var want error
+				if fail {
+					want = errors.New("foreground failed while another op was stuck")
+				}
+				foreground.Ops = []Op{func(*OpConfig) OpResult {
+					<-started
+					return OpResult{Finish: true, Error: want}
+				}}
+				root.Children[stuck] = true
+				root.Children[foreground] = true
+				type executionResult struct {
+					err     error
+					elapsed time.Duration
+				}
+				done := make(chan executionResult, 1)
+				start := time.Now()
+				go func() {
+					err := execute(nil, root, 2, rng)
+					done <- executionResult{err: err, elapsed: time.Since(start)}
+				}()
+				// In-flight ops cannot observe cancellation. Shutdown must use
+				// one 30s grace period even if an op never returns on its own.
+				time.Sleep(31 * time.Second)
+				var result executionResult
+				returned := false
+				select {
+				case result = <-done:
+					returned = true
+				default:
+					t.Error("scheduler still waiting beyond shutdown grace")
+				}
+				close(release)
+				if !returned {
+					result = <-done
+				}
+				synctest.Wait()
+				if !errors.Is(result.err, want) {
+					t.Fatalf("lost shutdown outcome: want %v, got %v", want, result.err)
+				}
+				if result.elapsed < 30*time.Second || result.elapsed >= 31*time.Second {
+					t.Fatalf("expected one bounded grace period, took %s", result.elapsed)
+				}
+			})
+		})
+	}
 }

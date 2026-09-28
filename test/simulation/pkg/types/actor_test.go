@@ -2,18 +2,26 @@ package types
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	rand "math/rand/v2"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/rs/zerolog"
+
+	"gitlab.com/thorchain/thornode/v3/config"
 	. "gopkg.in/check.v1"
 )
 
-func Test(t *testing.T) { TestingT(t) }
+func Test(t *testing.T) {
+	config.Init()
+	TestingT(t)
+}
 
 type ActorSuite struct{}
 
@@ -183,4 +191,112 @@ func (s *ActorSuite) TestTimeoutReportsTimeSpentPerOp(c *C) {
 	c.Assert(entry.Timeout, Equals, float64(30))
 	c.Assert(entry.Elapsed > entry.Timeout, Equals, true)
 	c.Assert(entry.OpElapsed < entry.Elapsed-15, Equals, true)
+}
+
+func TestActorBackgroundLifetime(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		root := NewActor("root", testRNG())
+		a := NewActor("background", testRNG())
+		a.BackgroundUntilCanceled = true
+		a.Interval = time.Minute
+		root.Children[a] = true
+		root.InitRoot()
+		if a.Timeout != 2*time.Minute {
+			t.Fatalf("setup lost its default deadline: %s", a.Timeout)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		calls := 0
+		a.Ops = []Op{
+			func(*OpConfig) OpResult { a.Background(); return OpResult{Continue: true} },
+			func(*OpConfig) OpResult { calls++; return OpResult{} },
+		}
+		done := make(chan error, 1)
+		go func() { done <- a.ExecuteContext(ctx, nil) }()
+		time.Sleep(2 * time.Hour)
+		synctest.Wait()
+		if a.Finished() || calls < 2 {
+			t.Fatal("background actor stopped at its former lifetime deadline")
+		}
+		cancel()
+		if err := <-done; err != nil || !a.Finished() {
+			t.Fatalf("expected clean cancellation, got %v", err)
+		}
+	})
+}
+
+func TestActorPreservesDeadlines(t *testing.T) {
+	for _, background := range []bool{false, true} {
+		t.Run(fmt.Sprintf("background=%t", background), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				a := NewActor("bounded", testRNG())
+				a.Timeout = time.Second
+				a.Interval = time.Millisecond
+				// Opt-in must not disable setup deadlines; other background actors
+				// must retain their existing timeout policy.
+				a.BackgroundUntilCanceled = !background
+				if background {
+					a.Background()
+				}
+				a.Ops = []Op{func(*OpConfig) OpResult { return OpResult{} }}
+				if err := a.Execute(nil); !errors.Is(err, ErrTimeout) {
+					t.Fatalf("deadline lost: %v", err)
+				}
+			})
+		})
+	}
+}
+
+func TestActorCancellationInterruptsWait(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		a := NewActor("waiting", testRNG())
+		a.Interval = time.Hour
+		calls := 0
+		a.Ops = []Op{func(*OpConfig) OpResult { calls++; return OpResult{} }}
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() { done <- a.ExecuteContext(ctx, nil) }()
+		synctest.Wait()
+		cancel()
+		start := time.Now()
+		if err := <-done; err != nil || time.Since(start) != 0 || calls != 1 {
+			t.Fatalf("cancellation did not interrupt wait: err=%v calls=%d", err, calls)
+		}
+	})
+}
+
+func TestActorCancellationPreservesTerminalError(t *testing.T) {
+	a := NewActor("failing background", testRNG())
+	a.BackgroundUntilCanceled = true
+	a.Background()
+	want := errors.New("operation failed during shutdown")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	a.Ops = []Op{func(*OpConfig) OpResult {
+		cancel()
+		return OpResult{Finish: true, Error: want}
+	}}
+	if err := a.ExecuteContext(ctx, nil); !errors.Is(err, want) {
+		t.Fatalf("lost operation error: %v", err)
+	}
+}
+
+func TestActorCancellationPreventsNextOp(t *testing.T) {
+	actor := NewActor("cancel between operations", testRNG())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	nextRan := false
+	actor.Ops = []Op{
+		func(*OpConfig) OpResult {
+			cancel()
+			return OpResult{Continue: true}
+		},
+		func(*OpConfig) OpResult {
+			nextRan = true
+			return OpResult{Finish: true}
+		},
+	}
+	if err := actor.ExecuteContext(ctx, nil); err != nil || nextRan || !actor.Finished() {
+		t.Fatalf("cancellation allowed another op: err=%v nextRan=%t", err, nextRan)
+	}
 }

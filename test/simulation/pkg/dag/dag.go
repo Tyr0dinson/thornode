@@ -3,9 +3,12 @@ package dag
 
 import (
 	"bytes"
+	"context"
+	"fmt"
 	rand "math/rand/v2"
 	"os"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -17,6 +20,15 @@ import (
 // Execute executes the actor DAG from the provided root. It is precondition that the
 // root actor points to a proper DAG and contains no cycles.
 func Execute(c *OpConfig, root *Actor, parallelism int, rng *rand.Rand) {
+	if err := execute(c, root, parallelism, rng); err != nil {
+		log.Fatal().Err(err).Msg("actor execution failed")
+	}
+}
+
+func execute(c *OpConfig, root *Actor, parallelism int, rng *rand.Rand) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var workers sync.WaitGroup
 	// determine the total number of actors in dag
 	seen := map[*Actor]bool{}
 	root.WalkDepthFirst(func(a *Actor) bool {
@@ -24,6 +36,8 @@ func Execute(c *OpConfig, root *Actor, parallelism int, rng *rand.Rand) {
 		return true
 	})
 	total := len(seen)
+	// Each actor can report one terminal error, including during shutdown.
+	failures := make(chan error, total)
 
 	// initialize dag
 	root.InitRoot()
@@ -88,16 +102,32 @@ func Execute(c *OpConfig, root *Actor, parallelism int, rng *rand.Rand) {
 	// scheduler is almost always waiting, so logging every tick floods CI logs
 	// (e.g. GitLab's 4MB trace cap). Key = the counts shown in that log line.
 	lastWaitKey := [6]int{-1, -1, -1, -1, -1, -1}
-	for range tick.C {
+	for {
+		select {
+		case err := <-failures:
+			cancel()
+			joinWorkers(&workers)
+			return err
+		case <-tick.C:
+		}
 		ready, running, backgrounded, finished := status()
 
 		// if only finished/backgrounded actors remain, foreground work is done
 		if len(running) == 0 && len(finished)+len(backgrounded) == total {
+			cancel()
+			joinWorkers(&workers)
+			// Finished state may be visible before its error reaches the channel.
+			// Collect errors returned during the grace period before declaring success.
+			select {
+			case err := <-failures:
+				return err
+			default:
+			}
 			log.Info().
 				Int("finished", len(finished)).
 				Int("backgrounded", len(backgrounded)).
 				Msg("simulation finished successfully")
-			return
+			return nil
 		}
 
 		// info log context
@@ -162,7 +192,9 @@ func Execute(c *OpConfig, root *Actor, parallelism int, rng *rand.Rand) {
 		// execute actor
 		infoLog.Str("actor", a.Name).Msg("executing actor")
 		a.Start()
+		workers.Add(1)
 		go func(a *Actor, start time.Time) {
+			defer workers.Done()
 			defer func() {
 				duration := time.Since(start) / time.Second * time.Second // round to second
 				a.Log().Info().Str("duration", duration.String()).Msg("finished")
@@ -176,7 +208,7 @@ func Execute(c *OpConfig, root *Actor, parallelism int, rng *rand.Rand) {
 				TimeFormat: time.TimeOnly,
 			}))
 
-			err := a.Execute(c)
+			err := a.ExecuteContext(ctx, c)
 			if err != nil {
 				os.Stderr.Write([]byte("\n\nFailed actor logs:\n" + buf.String() + "\n\n"))
 
@@ -191,8 +223,27 @@ func Execute(c *OpConfig, root *Actor, parallelism int, rng *rand.Rand) {
 				}
 				os.Stderr.Write([]byte("\n\n"))
 
-				a.Log().Fatal().Err(err).Msg("actor execution failed")
+				failures <- fmt.Errorf("actor %s: %w", a.Name, err)
 			}
 		}(a, time.Now())
+	}
+}
+
+// In-flight operations may not observe cancellation. Bound cleanup so a stuck
+// RPC cannot indefinitely hide an actor failure or delay successful completion.
+const shutdownGrace = 30 * time.Second
+
+func joinWorkers(workers *sync.WaitGroup) {
+	done := make(chan struct{})
+	go func() {
+		workers.Wait()
+		close(done)
+	}()
+	timer := time.NewTimer(shutdownGrace)
+	defer timer.Stop()
+	select {
+	case <-done:
+	case <-timer.C:
+		log.Warn().Dur("grace", shutdownGrace).Msg("actors still running at shutdown")
 	}
 }

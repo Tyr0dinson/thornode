@@ -1,17 +1,24 @@
 package core
 
 import (
+	"bytes"
 	"errors"
 	rand "math/rand/v2"
 	"reflect"
+	"strings"
 	"testing"
+	"time"
 	"unsafe"
 
 	sdkmath "cosmossdk.io/math"
+	"github.com/rs/zerolog"
 	. "gopkg.in/check.v1"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	openapi "gitlab.com/thorchain/thornode/v3/openapi/gen"
+	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/thornode"
 	simtypes "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 	thorchaintypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -565,5 +572,152 @@ func TestXMRReadinessFailsWhenSwapCannotBeFunded(t *testing.T) {
 			}
 			user.Release()
 		})
+	}
+}
+
+type arbBridge struct {
+	thorclient.ThorchainBridge
+	deposits []*thorchaintypes.MsgDeposit
+}
+
+func (b *arbBridge) Broadcast(msgs ...cosmos.Msg) (common.TxID, error) {
+	for _, msg := range msgs {
+		if deposit, ok := msg.(*thorchaintypes.MsgDeposit); ok {
+			b.deposits = append(b.deposits, deposit)
+		}
+	}
+	return common.TxID(strings.Repeat("A", 64)), nil
+}
+
+func TestArbSkipsHaltedPoolsAndWaitsForExecution(t *testing.T) {
+	rng := rand.New(rand.NewPCG(1, 2))
+	user := simtypes.NewUser(strings.Repeat("dog ", 23)+"fossil", nil)
+	bridge := &arbBridge{}
+	user.Thorchain = bridge
+	pools := []openapi.Pool{
+		{Asset: "BTC.BTC", BalanceRune: "1000", BalanceAsset: "100", Status: "Available", TradingHalted: openapi.PtrBool(true)},
+		{Asset: "BSC.BNB", BalanceRune: "1", BalanceAsset: "100", Status: "Available", TradingHalted: openapi.PtrBool(true)},
+		{Asset: "ETH.ETH", BalanceRune: "200", BalanceAsset: "100", Status: "Available", TradingHalted: openapi.PtrBool(false)},
+		{Asset: "LTC.LTC", BalanceRune: "100", BalanceAsset: "100", Status: "Available"},
+		{Asset: "BCH.BCH", BalanceRune: "1000", BalanceAsset: "100", Status: "Suspended"},
+		{Asset: "DOGE.DOGE", BalanceRune: "0", BalanceAsset: "100", Status: "Available"},
+		{Asset: "AVAX.AVAX", BalanceRune: "100", BalanceAsset: "0", Status: "Available"},
+	}
+	a := &ArbActor{
+		Actor: *simtypes.NewActor("arb", rng), account: user,
+		originalPools: make(map[string]thorchaintypes.Pool),
+		getPools:      func() ([]openapi.Pool, error) { return pools, nil },
+	}
+	for i := range pools {
+		pool := &pools[i]
+		pool.BalanceRune = cosmos.NewUintFromString(pool.BalanceRune).MulUint64(common.One).String()
+		pool.BalanceAsset = cosmos.NewUintFromString(pool.BalanceAsset).MulUint64(common.One).String()
+		a.originalPools[pool.Asset] = thorchaintypes.Pool{BalanceRune: cosmos.NewUint(100 * common.One), BalanceAsset: cosmos.NewUint(100 * common.One)}
+	}
+	if result := a.arb(nil); result.Error != nil || len(bridge.deposits) != 1 {
+		t.Fatalf("expected one submitted trade: result=%+v deposits=%d", result, len(bridge.deposits))
+	}
+	deposit := bridge.deposits[0]
+	if deposit.Coins[0].Asset.String() != "ETH~ETH" || deposit.Memo != "=:LTC~LTC" || !deposit.Coins[0].Amount.Equal(cosmos.NewUint(12500000)) {
+		t.Fatalf("selected an ineligible pool: %+v", deposit)
+	}
+	if a.pendingTx == "" || user.IsLocked() {
+		t.Fatal("submission must be pending with user released")
+	}
+	pending := a.pendingTx
+	a.getTxResult = func(txid string) (thornode.TxResult, error) {
+		if txid != pending.String() {
+			t.Fatalf("wrong pending tx: %s", txid)
+		}
+		return thornode.TxResult{}, errors.New("not yet indexed")
+	}
+	if !user.Acquire() {
+		t.Fatal("foreground could not reuse user")
+	}
+	result := a.arb(nil)
+	user.Release()
+	if result.Finish || result.Error != nil || len(bridge.deposits) != 1 || a.pendingTx != pending {
+		t.Fatalf("pending submission was replaced: %+v", result)
+	}
+	a.getTxResult = func(string) (thornode.TxResult, error) { return thornode.TxResult{Height: 123}, nil }
+	if result = a.arb(nil); result.Error != nil || a.pendingTx != "" || len(bridge.deposits) != 1 {
+		t.Fatalf("execution result not consumed correctly: %+v", result)
+	}
+	// All remaining pools are halted/unavailable. Wait, without terminating the
+	// background service (a temporary halt can later be lifted).
+	pools[2].TradingHalted = openapi.PtrBool(true)
+	pools[3].TradingHalted = openapi.PtrBool(true)
+	if result = a.arb(nil); result.Finish || result.Error != nil || len(bridge.deposits) != 1 {
+		t.Fatalf("traded or exited while pools halted: %+v", result)
+	}
+	pools = nil
+	if result = a.arb(nil); !result.Finish || result.Error != nil || user.IsLocked() {
+		t.Fatalf("did not finish cleanly after pools drained: %+v", result)
+	}
+}
+
+func TestArbExecutionFailuresAreBestEffort(t *testing.T) {
+	user := simtypes.NewUser(strings.Repeat("dog ", 23)+"fossil", nil)
+	for _, tc := range []struct {
+		name, rawLog string
+		queryError   error
+		age          time.Duration
+		wantPending  bool
+	}{
+		{"halt raced with selection", "failed to execute message; trading is halted: internal error", nil, time.Second, false},
+		{"unexpected execution failure", "insufficient funds", nil, time.Second, false},
+		{"unresolved submission", "", errors.New("not found"), 3 * time.Minute, false},
+		{"awaiting indexing", "", errors.New("not yet indexed"), time.Second, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			poolQueries := 0
+			a := &ArbActor{
+				Actor:     *simtypes.NewActor("arb", rand.New(rand.NewPCG(3, 4))),
+				account:   user,
+				pendingTx: "pending", submitted: time.Now().Add(-tc.age),
+				getTxResult: func(string) (thornode.TxResult, error) {
+					return thornode.TxResult{Height: 123, Code: 99, RawLog: tc.rawLog}, tc.queryError
+				},
+				getPools: func() ([]openapi.Pool, error) {
+					poolQueries++
+					return nil, nil
+				},
+			}
+			a.SetLogger(zerolog.New(&logs))
+			result := a.arb(nil)
+			if result.Finish || result.Error != nil {
+				t.Fatalf("best-effort trade stopped the simulation: %+v", result)
+			}
+			if tc.wantPending {
+				if a.pendingTx != "pending" || strings.Contains(logs.String(), `"level":"error"`) {
+					t.Fatalf("pending poll lost tracking or reported failure: tx=%q logs=%s", a.pendingTx, logs.String())
+				}
+				return
+			}
+			if a.pendingTx != "" {
+				t.Fatalf("failed or expired tx still blocks arbitrage: %q", a.pendingTx)
+			}
+			if !strings.Contains(logs.String(), `"level":"warn"`) || !strings.Contains(logs.String(), "pending") {
+				t.Fatalf("trade failure was not observable: %s", logs.String())
+			}
+			// Clearing pending state must allow the next iteration to query
+			// current pools instead of polling the same failed tx forever.
+			result = a.arb(nil)
+			if !result.Finish || result.Error != nil || poolQueries != 1 {
+				t.Fatalf("arb did not resume pool evaluation: result=%+v queries=%d", result, poolQueries)
+			}
+		})
+	}
+}
+
+func TestArbLifecycleConfiguration(t *testing.T) {
+	rng := rand.New(rand.NewPCG(5, 6))
+	root := simtypes.NewActor("root", rng)
+	actor := NewArbActor(rng)
+	root.Children[actor] = true
+	root.InitRoot()
+	if actor.Timeout != time.Hour || !actor.BackgroundUntilCanceled {
+		t.Fatalf("arb must retain bounded setup and follow simulation after backgrounding: %+v", actor)
 	}
 }

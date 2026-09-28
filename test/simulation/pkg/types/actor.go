@@ -1,6 +1,7 @@
 package types
 
 import (
+	"context"
 	"math/rand/v2"
 	"sync/atomic"
 	"time"
@@ -40,6 +41,10 @@ type Actor struct {
 
 	// Timeout is the maximum amount of time the actor is allowed to execute.
 	Timeout time.Duration
+
+	// BackgroundUntilCanceled limits Timeout to setup. After Background, execution
+	// lasts until the DAG cancels it or an operation finishes (including errors).
+	BackgroundUntilCanceled bool
 
 	// Interval is the amount of time to wait between operations.
 	Interval time.Duration
@@ -175,7 +180,14 @@ func (a *Actor) Log() *zerolog.Logger {
 }
 
 // Execute will execute the actor.
-func (a *Actor) Execute(c *OpConfig) (err error) {
+func (a *Actor) Execute(c *OpConfig) error {
+	return a.ExecuteContext(context.Background(), c)
+}
+
+// ExecuteContext stops between operations and interrupts retry waits when the
+// simulation ends. In-flight operations are not interrupted by cancellation.
+// Cancellation is normal shutdown; terminal operation errors are still returned.
+func (a *Actor) ExecuteContext(ctx context.Context, c *OpConfig) (err error) {
 	start := time.Now()
 
 	// mark finished on return
@@ -186,6 +198,11 @@ func (a *Actor) Execute(c *OpConfig) (err error) {
 	for _, op := range a.Ops {
 		opStart := time.Now()
 		for { // run each op until continue or finished
+			select {
+			case <-ctx.Done():
+				return nil
+			default:
+			}
 			result := op(c)
 			if result.Error != nil {
 				a.Log().Err(result.Error).Stringer("op", op).Msg("op failed")
@@ -196,7 +213,7 @@ func (a *Actor) Execute(c *OpConfig) (err error) {
 			if result.Continue {
 				break
 			}
-			if a.Timeout > 0 && time.Since(start) > a.Timeout {
+			if !(a.BackgroundUntilCanceled && a.Backgrounded()) && a.Timeout > 0 && time.Since(start) > a.Timeout {
 				// split the budget so slow setup is distinguishable from slow verification
 				a.Log().Err(ErrTimeout).
 					Stringer("op", op).
@@ -206,7 +223,13 @@ func (a *Actor) Execute(c *OpConfig) (err error) {
 					Msg("actor timed out")
 				return ErrTimeout
 			}
-			time.Sleep(a.Interval)
+			timer := time.NewTimer(a.Interval)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil
+			case <-timer.C:
+			}
 		}
 	}
 

@@ -30,14 +30,23 @@ type ArbActor struct {
 
 	// originalPools maps the asset to the first seen available pool state (arb target)
 	originalPools map[string]types.Pool
+
+	pendingTx common.TxID
+	submitted time.Time
+
+	getPools    func() ([]openapi.Pool, error)
+	getTxResult func(string) (thornode.TxResult, error)
 }
 
 func NewArbActor(rng *rand.Rand) *Actor {
 	a := &ArbActor{
 		Actor:         *NewActor("Arbitrage", rng),
 		originalPools: make(map[string]types.Pool),
+		getPools:      thornode.GetPools,
+		getTxResult:   thornode.GetTxResult,
 	}
-	a.Timeout = time.Hour
+	a.Timeout = time.Hour // bounded initialization, including L1 deposits
+	a.BackgroundUntilCanceled = true
 	// Once backgrounded, arbitrage can run alongside the foreground DAG. A slower
 	// retry interval keeps it from overwhelming the sim with continuous rebalance
 	// deposits while still providing ongoing pool stabilization.
@@ -55,7 +64,7 @@ func NewArbActor(rng *rand.Rand) *Actor {
 	// convert all assets to trade assets
 	a.Ops = append(a.Ops, a.bootstrapTradeAssets)
 
-	// arb until pools are drained
+	// arb until pools are drained or foreground simulation work completes
 	a.Ops = append(a.Ops, a.arb)
 
 	return &a.Actor
@@ -180,8 +189,7 @@ func (a *ArbActor) bootstrapTradeAssets(config *OpConfig) OpResult {
 	}{m: make(map[common.Chain]*sync.Mutex)}
 
 	bootstrap := func(pool openapi.Pool) {
-		var asset common.Asset
-		asset, err = common.NewAsset(pool.Asset)
+		asset, err := common.NewAsset(pool.Asset)
 		if err != nil {
 			a.Log().Fatal().Err(err).Str("asset", pool.Asset).Msg("failed to create asset")
 		}
@@ -251,6 +259,11 @@ func (a *ArbActor) bootstrapTradeAssets(config *OpConfig) OpResult {
 }
 
 func (a *ArbActor) arb(config *OpConfig) OpResult {
+	// Wait for execution or expiry of this trade's tracking window before sizing
+	// another trade. Poll without holding the user so foreground work can proceed.
+	if a.pendingTx != "" {
+		return a.checkPendingTx()
+	}
 	// Hold the arb account only while actively evaluating/broadcasting a trade so
 	// foreground actors can reuse the user between background iterations.
 	if !a.account.Acquire() {
@@ -262,7 +275,7 @@ func (a *ArbActor) arb(config *OpConfig) OpResult {
 	defer a.account.Release()
 
 	// get all pools
-	pools, err := thornode.GetPools()
+	pools, err := a.getPools()
 	if err != nil {
 		a.Log().Error().Err(err).Msg("failed to get pools")
 		return OpResult{
@@ -283,8 +296,8 @@ func (a *ArbActor) arb(config *OpConfig) OpResult {
 	// gather pools we have seen
 	arbPools := []openapi.Pool{}
 	for _, pool := range pools {
-		// skip unavailable pools and those with no liquidity
-		if pool.BalanceRune == "0" || pool.BalanceAsset == "0" || pool.Status != types.PoolStatus_Available.String() {
+		// Ragnarok halts trading before a pool becomes unavailable or drains.
+		if pool.GetTradingHalted() || pool.BalanceRune == "0" || pool.BalanceAsset == "0" || pool.Status != types.PoolStatus_Available.String() {
 			continue
 		}
 
@@ -350,9 +363,39 @@ func (a *ArbActor) arb(config *OpConfig) OpResult {
 		}
 	}
 
-	a.Log().Info().Stringer("txid", txid).Str("memo", memo).Msg("broadcasted arb tx")
+	a.pendingTx = txid
+	a.submitted = time.Now()
+	a.Log().Info().Stringer("txid", txid).Str("memo", memo).Msg("submitted arb tx; awaiting execution")
 
 	return OpResult{
 		Continue: false,
 	}
+}
+
+func (a *ArbActor) checkPendingTx() OpResult {
+	result, err := a.getTxResult(a.pendingTx.String())
+	if err != nil {
+		if time.Since(a.submitted) >= 2*time.Minute {
+			// This is a best-effort native trade, not an L1 deposit. A late trade
+			// can be corrected by evaluating current pool balances next time.
+			a.Log().Warn().Err(err).Stringer("txid", a.pendingTx).
+				Msg("arb tx execution unresolved; dropping tracking and re-evaluating pools")
+			a.pendingTx = ""
+		} else {
+			a.Log().Debug().Err(err).Stringer("txid", a.pendingTx).Msg("waiting for arb tx execution")
+		}
+		return OpResult{}
+	}
+
+	txid := a.pendingTx
+	a.pendingTx = ""
+	if result.Code != 0 {
+		// A halt can land after pool selection. Report it and other trade
+		// failures without making this helper abort foreground coverage.
+		a.Log().Warn().Stringer("txid", txid).Uint32("code", result.Code).
+			Str("log", result.RawLog).Msg("arb tx failed execution; re-evaluating pools")
+		return OpResult{}
+	}
+	a.Log().Info().Stringer("txid", txid).Int64("height", result.Height).Msg("arb tx executed")
+	return OpResult{}
 }
