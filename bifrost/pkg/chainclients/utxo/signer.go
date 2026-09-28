@@ -27,6 +27,7 @@ import (
 	dogewire "github.com/eager7/dogd/wire"
 	"github.com/eager7/dogutil"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	chainclienttypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
@@ -362,7 +363,24 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		if allNotSelectedForKeysign(utxoErr) {
 			return nil, nil, nil, nil
 		}
+		// Classify before posting: PostKeysignFailure appends to utxoErr in place.
+		partyNeverFormed := allJoinPartyFailures(utxoErr, len(signings))
 		err = utxo.PostKeysignFailure(c.bridge, tx, c.log, thorchainHeight, utxoErr)
+
+		// The checkpoint pins this outbound to one tx, so a vault never signs
+		// two different txs for it. That only matters once signing may have
+		// produced a signature. If the party never formed for any input, no
+		// signing round ran, so keep no checkpoint and rebuild next attempt.
+		// Members that built different txs (their bitcoind views of the vault
+		// UTXOs differ) otherwise keep retrying their own tx and never form a
+		// party until THORChain reschedules the outbound.
+		if tx.Checkpoint == nil && partyNeverFormed {
+			c.log.Warn().
+				Stringer("in_hash", tx.InHash).
+				Msg("keysign party did not form, discarding unsigned tx so the next attempt rebuilds it")
+			c.countPartyNotFormed()
+			return nil, nil, nil, fmt.Errorf("fail to sign the message: %w", err)
+		}
 		return nil, checkpointBytes, nil, fmt.Errorf("fail to sign the message: %w", err)
 	}
 
@@ -505,6 +523,34 @@ func allNotSelectedForKeysign(err error) bool {
 	}
 	for _, item := range merr.Errors {
 		if !errors.Is(item, tss.ErrNotSelectedForKeysign) {
+			return false
+		}
+	}
+	return true
+}
+
+// countPartyNotFormed increments the party-not-formed metric for this chain.
+// Nil-safe: directly-constructed test clients omit m.
+func (c *Client) countPartyNotFormed() {
+	if c.m == nil {
+		return
+	}
+	if cv := c.m.GetCounterVec(metrics.UTXOKeysignPartyNotFormed); cv != nil {
+		cv.WithLabelValues(c.cfg.ChainID.String()).Inc()
+	}
+}
+
+// allJoinPartyFailures reports whether every one of the inputs failed to form
+// a keysign party. An input that signed, or that failed after the party
+// formed, may have exposed a signature, so any such input returns false.
+func allJoinPartyFailures(err error, inputs int) bool {
+	var merr *multierror.Error
+	if !errors.As(err, &merr) || inputs == 0 || len(merr.Errors) != inputs {
+		return false
+	}
+	for _, item := range merr.Errors {
+		ksErr := tss.KeysignError{}
+		if !errors.As(item, &ksErr) || !ksErr.IsJoinPartyFailure() {
 			return false
 		}
 	}

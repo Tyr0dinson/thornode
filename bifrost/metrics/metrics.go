@@ -51,6 +51,12 @@ const (
 	// MAX_PROCESSING_AGE before they can be signed — most often because the RPCs no
 	// longer retain finalized blocks back to the keysign height's target.
 	SolKeysignAbstain MetricName = `sol_keysign_abstain`
+
+	// UTXOKeysignPartyNotFormed counts UTXO outbounds whose unsigned tx was
+	// discarded because the keysign party never formed. A sustained rate means
+	// vault members keep building different txs (their bitcoind views of the
+	// vault UTXOs differ) and the vault is not signing outbounds.
+	UTXOKeysignPartyNotFormed MetricName = `utxo_keysign_party_not_formed`
 )
 
 // Metrics used to provide promethus metrics
@@ -156,6 +162,14 @@ var (
 			Help:      "SOL keysign abstentions by reason",
 		}, []string{
 			"reason",
+		}),
+		UTXOKeysignPartyNotFormed: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "bifrost",
+			Subsystem: "utxo",
+			Name:      "keysign_party_not_formed_total",
+			Help:      "UTXO unsigned txs discarded because the keysign party never formed",
+		}, []string{
+			"chain",
 		}),
 		PubKeyManagerError: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "pubkey_manager",
