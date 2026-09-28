@@ -73,12 +73,14 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total btcutil.Amount) ([]b
 
 	var result []btcjson.ListUnspentResult
 	var toSpend btcutil.Amount
+	var excluded utxoExclusions
 	minUTXOAmt := btcutil.Amount(c.cfg.ChainID.DustThreshold().Uint64()).ToBTC()
 	utxosToSpend := c.getMaximumUtxosToSpend() // can be set by mimir
 
 	for _, item := range utxos {
 		if !c.isValidUTXO(item.ScriptPubKey) {
 			c.log.Warn().Str("script", item.ScriptPubKey).Msgf("invalid utxo, unable to spend")
+			excluded.invalidScript++
 			continue
 		}
 
@@ -92,6 +94,7 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total btcutil.Amount) ([]b
 				isSelfTx = c.isFromAsgard(item.TxID)
 			}
 			if !isSelfTx {
+				excluded.unconfirmedOrDust++
 				continue
 			}
 
@@ -114,6 +117,7 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total btcutil.Amount) ([]b
 						Int64("descendant_count", entry.DescendantCount).
 						Int64("max_allowed", c.cfg.UTXO.MaxMempoolAncestors).
 						Msg("skipping UTXO with too many ancestors/descendants to avoid mempool chain limit")
+					excluded.mempoolChainLimit++
 					continue
 				}
 			}
@@ -126,10 +130,12 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total btcutil.Amount) ([]b
 			found, err = c.temporalStorage.HasSpentUtxo(id)
 			if err != nil {
 				c.log.Err(err).Msg("failed to check spent utxo")
+				excluded.spentCheckFailed++
 				continue
 			}
 
 			if found {
+				excluded.alreadySpent++
 				continue
 			}
 		}
@@ -153,10 +159,49 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total btcutil.Amount) ([]b
 	// If we couldn't collect enough UTXOs to cover the required amount, return an error
 	// to avoid confusing downstream errors about negative balance
 	if toSpend < total {
-		return nil, fmt.Errorf("insufficient available UTXOs: need %d, only have %d available from %d UTXOs", total, toSpend, len(result))
+		return nil, insufficientUTXOsError(addr, total, toSpend, len(result), utxos, excluded)
 	}
 
 	return result, nil
+}
+
+// utxoExclusions counts listed UTXOs that getUtxoToSpend skipped, by reason.
+type utxoExclusions struct {
+	invalidScript     int
+	unconfirmedOrDust int
+	mempoolChainLimit int
+	spentCheckFailed  int
+	alreadySpent      int
+}
+
+// insufficientUTXOsError reports whether the daemon listed no UTXOs for the
+// vault, meaning the coins are absent from the node's view, or listed UTXOs that
+// selection excluded. The two cases need different investigations.
+func insufficientUTXOsError(
+	addr common.Address,
+	need, selectedAmount btcutil.Amount,
+	selectedCount int,
+	listed []btcjson.ListUnspentResult,
+	excluded utxoExclusions,
+) error {
+	if len(listed) == 0 {
+		return fmt.Errorf("insufficient available UTXOs: need %d, node lists no UTXOs for %s "+
+			"(coins absent from the node view: unfunded, not imported, or removed by a reorg)", need, addr)
+	}
+
+	var listedAmount btcutil.Amount
+	for _, item := range listed {
+		// best effort for diagnostics, an unparsable amount is left out of the total
+		if amt, err := btcutil.NewAmount(item.Amount); err == nil {
+			listedAmount += amt
+		}
+	}
+	return fmt.Errorf("insufficient available UTXOs: need %d, only have %d available from %d UTXOs; "+
+		"node lists %d UTXOs worth %d for %s, excluded: invalid script=%d, "+
+		"unconfirmed or dust not from asgard=%d, mempool chain limit=%d, spent check failed=%d, already spent=%d",
+		need, selectedAmount, selectedCount, len(listed), listedAmount, addr,
+		excluded.invalidScript, excluded.unconfirmedOrDust, excluded.mempoolChainLimit,
+		excluded.spentCheckFailed, excluded.alreadySpent)
 }
 
 func formatUtxoKey(txID string, vout uint32) string {
