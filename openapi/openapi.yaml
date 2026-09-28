@@ -459,6 +459,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/queryHeight"
       - $ref: "#/components/parameters/hash"
+      - $ref: "#/components/parameters/queryOutboundVoter"
     get:
       description: Deprecated - migrate to /thorchain/tx/details.
       operationId: txSignersOld
@@ -476,6 +477,7 @@ paths:
     parameters:
       - $ref: "#/components/parameters/queryHeight"
       - $ref: "#/components/parameters/hash"
+      - $ref: "#/components/parameters/queryOutboundVoter"
     get:
       description: Returns the signers for a provided inbound or outbound hash.
       operationId: txSigners
@@ -1996,6 +1998,15 @@ components:
   # ------------------------------ parameters ------------------------------
 
   parameters:
+    queryOutboundVoter:
+      name: outbound
+      in: query
+      description: Select only the outbound voter. By default, prefer the inbound voter and fall back to the outbound voter when no inbound observations exist.
+      required: false
+      schema:
+        type: boolean
+        default: false
+
     queryHeight:
       name: height
       in: query

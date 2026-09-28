@@ -751,6 +751,17 @@ paths:
           example: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
           type: string
         style: simple
+      - description: "Select only the outbound voter. By default, prefer the inbound\
+          \ voter and fall back to the outbound voter when no inbound observations\
+          \ exist."
+        explode: true
+        in: query
+        name: outbound
+        required: false
+        schema:
+          default: false
+          type: boolean
+        style: form
       responses:
         "200":
           content:
@@ -783,6 +794,17 @@ paths:
           example: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
           type: string
         style: simple
+      - description: "Select only the outbound voter. By default, prefer the inbound\
+          \ voter and fall back to the outbound voter when no inbound observations\
+          \ exist."
+        explode: true
+        in: query
+        name: outbound
+        required: false
+        schema:
+          default: false
+          type: boolean
+        style: form
       responses:
         "200":
           content:
@@ -3143,6 +3165,17 @@ paths:
       - Dynamic L1 Fees
 components:
   parameters:
+    queryOutboundVoter:
+      description: "Select only the outbound voter. By default, prefer the inbound\
+        \ voter and fall back to the outbound voter when no inbound observations exist."
+      explode: true
+      in: query
+      name: outbound
+      required: false
+      schema:
+        default: false
+        type: boolean
+      style: form
     queryHeight:
       description: "optional block height, defaults to current tip"
       explode: true

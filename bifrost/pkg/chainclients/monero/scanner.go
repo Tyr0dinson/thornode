@@ -692,7 +692,7 @@ func (s *Scanner) replayAuthenticatedInternalInbounds(_, _ int64) ([]*stypes.TxI
 				Msg("release authenticated xmr migration replay without exact durable sidecar proof")
 			continue
 		}
-		_, destinationItem, transferErr := s.authenticatedMigrationItemsFromProof(proof, record)
+		sourceItem, destinationItem, transferErr := s.authenticatedMigrationItemsFromProof(proof, record)
 		if transferErr != nil {
 			if releaseErr := s.internalReplayStore.Release(claim); releaseErr != nil {
 				return nil, handedOff, errors.Join(transferErr, releaseErr)
@@ -715,7 +715,7 @@ func (s *Scanner) replayAuthenticatedInternalInbounds(_, _ int64) ([]*stypes.TxI
 			continue
 		}
 		claimCopy := claim
-		destinationItem.OnObservedTxStored = func() {
+		onStored := func() {
 			if ackErr := s.internalReplayStore.Acknowledge(claimCopy); ackErr != nil {
 				s.logger.Error().Err(ackErr).Str("txid", claimCopy.Record.TxID).
 					Msg("failed to acknowledge persisted xmr migration replay")
@@ -725,7 +725,7 @@ func (s *Scanner) replayAuthenticatedInternalInbounds(_, _ int64) ([]*stypes.TxI
 				}
 			}
 		}
-		destinationItem.OnObservedTxRejected = func(rejectErr error) {
+		onRejected := func(rejectErr error) {
 			if releaseErr := s.internalReplayStore.Release(claimCopy); releaseErr != nil {
 				s.logger.Error().Err(releaseErr).Str("txid", claimCopy.Record.TxID).
 					Msg("failed to release rejected xmr migration replay")
@@ -734,11 +734,49 @@ func (s *Scanner) replayAuthenticatedInternalInbounds(_, _ int64) ([]*stypes.TxI
 			s.logger.Warn().Err(rejectErr).Str("txid", claimCopy.Record.TxID).
 				Msg("released rejected xmr migration replay")
 		}
-		items = append(items, destinationItem)
+		replayItems := []*stypes.TxInItem{destinationItem}
+		// A source-vault certificate can arrive after the canonical scan passed
+		// this block. Replay its independently verified source observation too;
+		// destination-only recovery leaves the migration outbound without quorum.
+		// Chain-committed pairing proofs must never create fresh source votes.
+		if proof.ObservationEligible && (proof.Origin == sidecar.OutgoingOriginLocalCombined ||
+			proof.Origin == sidecar.OutgoingOriginVaultCertified) {
+			replayItems = append(replayItems, sourceItem)
+		}
+		bindAuthenticatedMigrationHandoff(replayItems, onStored, onRejected)
+		items = append(items, replayItems...)
 		handedOff = append(handedOff, claim)
 	}
 	completed = true
 	return items, handedOff, nil
+}
+
+// bindAuthenticatedMigrationHandoff keeps the durable replay until every
+// observation is persisted. A partial handoff or crash retries the whole pair;
+// the observer already deduplicates by transaction and observed vault.
+func bindAuthenticatedMigrationHandoff(items []*stypes.TxInItem, onStored func(), onRejected func(error)) {
+	var mu sync.Mutex
+	remaining := len(items)
+	var terminal sync.Once
+	for _, item := range items {
+		var itemDone sync.Once
+		item.OnObservedTxStored = func() {
+			itemDone.Do(func() {
+				mu.Lock()
+				remaining--
+				complete := remaining == 0
+				mu.Unlock()
+				if complete {
+					terminal.Do(onStored)
+				}
+			})
+		}
+		item.OnObservedTxRejected = func(err error) {
+			itemDone.Do(func() {
+				terminal.Do(func() { onRejected(err) })
+			})
+		}
+	}
 }
 
 func (s *Scanner) releaseAuthenticatedInternalInboundClaims(claims []authenticatedInternalInboundClaim) {

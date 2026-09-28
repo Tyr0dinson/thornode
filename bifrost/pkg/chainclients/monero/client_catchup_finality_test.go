@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
+	chainclienttypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -98,7 +99,7 @@ func TestCatchupReusableAliasFinalityTransitions(t *testing.T) {
 					peer := common.NewObservedTx(tx, 100, vault, 100)
 					peer.SpentOutputRefs = []common.OutputRef{*ref}
 					peer.XmrTxKey = voter.Tx.XmrTxKey
-					applied, retry := client.applySpentOutputRefsOnce(peer)
+					applied, retry := client.applySpentOutputRefsOnce(chainclienttypes.SpentOutputRefsImport{Tx: peer, WireMemo: peer.Tx.Memo})
 					require.True(t, applied)
 					require.False(t, retry)
 					assertBlocked()

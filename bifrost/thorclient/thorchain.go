@@ -102,6 +102,7 @@ type ThorchainBridge interface {
 	GetAsgards() (stypes.Vaults, error)
 	GetVault(pubkey string) (stypes.Vault, error)
 	GetXMRSpentOutputRefs(vaultPubKey common.PubKey) ([]*common.OutputRef, error)
+	GetXMRSpentOutputRefsUncached(ctx context.Context, vaultPubKey common.PubKey) ([]*common.OutputRef, error)
 	GetConfig() config.BifrostClientConfiguration
 	GetConstants() (map[string]int64, error)
 	GetContext() client.Context
@@ -140,6 +141,8 @@ type ThorchainBridge interface {
 	GetReferenceMemo(chain common.Chain, ref string) (string, error)
 	GetReferenceMemoByTxHash(hash string) (string, error)
 	GetObservedTxVoter(txID string) (*stypes.QueryObservedTxVoter, error)
+	GetObservedTxOutVoter(txID string) (*stypes.QueryObservedTxVoter, error)
+	GetObservedTxOutVoterUncached(ctx context.Context, txID string) (*stypes.QueryObservedTxVoter, bool, error)
 }
 
 // httpResponseCache used for caching HTTP responses for less frequent querying
@@ -276,7 +279,11 @@ func (b *thorchainBridge) getRetryable(url string) ([]byte, int, error) {
 // single raw request is preferable here: it preserves the body of Cosmos query
 // errors, which is needed to distinguish an absent voter from a server outage.
 func (b *thorchainBridge) getUncached(url string) ([]byte, int, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), constants.ThorchainBlockTime)
+	return b.getUncachedContext(context.Background(), url)
+}
+
+func (b *thorchainBridge) getUncachedContext(ctx context.Context, url string) ([]byte, int, error) {
+	ctx, cancel := context.WithTimeout(ctx, constants.ThorchainBlockTime)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -859,12 +866,23 @@ func (b *thorchainBridge) GetVault(pubkey string) (stypes.Vault, error) {
 }
 
 func (b *thorchainBridge) GetXMRSpentOutputRefs(vaultPubKey common.PubKey) ([]*common.OutputRef, error) {
-	buf, s, err := b.getWithPath(fmt.Sprintf(XMRSpentOutputRefsEndpoint, vaultPubKey.String()))
+	return parseXMRSpentOutputRefsResponse(b.getWithPath(fmt.Sprintf(XMRSpentOutputRefsEndpoint, vaultPubKey.String())))
+}
+
+// GetXMRSpentOutputRefsUncached bounds both the HTTP request and response body
+// read by the caller's context and one block. It neither waits on nor updates
+// the shared cache, so a stalled cached query cannot block committed recovery.
+func (b *thorchainBridge) GetXMRSpentOutputRefsUncached(ctx context.Context, vaultPubKey common.PubKey) ([]*common.OutputRef, error) {
+	endpoint := b.getThorChainURL(fmt.Sprintf(XMRSpentOutputRefsEndpoint, vaultPubKey.String()))
+	return parseXMRSpentOutputRefsResponse(b.getUncachedContext(ctx, endpoint))
+}
+
+func parseXMRSpentOutputRefsResponse(buf []byte, status int, err error) ([]*common.OutputRef, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fail to get xmr spent output refs: %w", err)
 	}
-	if s != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code %d", s)
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code %d", status)
 	}
 	var resp struct {
 		SpentOutputRefs []*common.OutputRef `json:"spent_output_refs"`
@@ -876,7 +894,19 @@ func (b *thorchainBridge) GetXMRSpentOutputRefs(vaultPubKey common.PubKey) ([]*c
 }
 
 func (b *thorchainBridge) GetObservedTxVoter(txID string) (*stypes.QueryObservedTxVoter, error) {
-	buf, s, err := b.getWithPath(fmt.Sprintf(TxDetailEndpoint, txID))
+	return b.getObservedTxVoter(txID, b.getThorChainURL(fmt.Sprintf(TxDetailEndpoint, txID)))
+}
+
+// GetObservedTxOutVoter selects source-side consensus even when a migration's
+// destination has an inbound voter with the same ID. Its cache key is distinct.
+func (b *thorchainBridge) GetObservedTxOutVoter(txID string) (*stypes.QueryObservedTxVoter, error) {
+	// Append the query after URL construction: a host without a scheme uses
+	// url.URL.Path, which would otherwise escape '?' as part of the path.
+	return b.getObservedTxVoter(txID, b.getThorChainURL(fmt.Sprintf(TxDetailEndpoint, txID))+"?outbound=true")
+}
+
+func (b *thorchainBridge) getObservedTxVoter(txID, endpoint string) (*stypes.QueryObservedTxVoter, error) {
+	buf, s, err := b.get(endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get observed tx voter: %w", err)
 	}
@@ -895,7 +925,18 @@ func (b *thorchainBridge) GetObservedTxVoter(txID string) (*stypes.QueryObserved
 // fresh HTTP response. A missing voter is not an endpoint failure and is
 // reported as found=false; transport and server failures remain errors.
 func (b *thorchainBridge) GetObservedTxVoterUncached(txID string) (*stypes.QueryObservedTxVoter, bool, error) {
-	buf, status, err := b.getWithPathUncached(fmt.Sprintf(TxDetailEndpoint, txID))
+	return b.getObservedTxVoterUncached(context.Background(), txID, b.getThorChainURL(fmt.Sprintf(TxDetailEndpoint, txID)))
+}
+
+// GetObservedTxOutVoterUncached preserves the commit-race lookup's freshness
+// without allowing an inbound voter to hide a missing or pending outbound.
+// The caller's context bounds both the request and response body read.
+func (b *thorchainBridge) GetObservedTxOutVoterUncached(ctx context.Context, txID string) (*stypes.QueryObservedTxVoter, bool, error) {
+	return b.getObservedTxVoterUncached(ctx, txID, b.getThorChainURL(fmt.Sprintf(TxDetailEndpoint, txID))+"?outbound=true")
+}
+
+func (b *thorchainBridge) getObservedTxVoterUncached(ctx context.Context, txID, endpoint string) (*stypes.QueryObservedTxVoter, bool, error) {
+	buf, status, err := b.getUncachedContext(ctx, endpoint)
 	if missingObservedTxVoterResponse(buf, status, txID) {
 		return nil, false, nil
 	}

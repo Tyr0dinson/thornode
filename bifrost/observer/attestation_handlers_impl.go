@@ -73,7 +73,7 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 		// Every entry in this state signed the same exact observation/ref set.
 		// Copy while holding the state lock so the authorization step can count
 		// a stable source-vault certificate after the lock is released.
-		maybeApplySpentRefsAttestations = state.AttestationsCopy()
+		maybeApplySpentRefsAttestations = state.VerifiedAttestationsCopy()
 	}
 
 	// Observation quorum is independent of the keysign committee. Even future
@@ -100,10 +100,13 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 		)
 	}
 
-	var applySpentRefs *common.ObservedTx
+	var applySpentRefs *spentOutputRefsImport
 	var onApplySpentRefsOutcome func(applied bool)
-	if maybeApplySpentRefs != nil && maybeApplySpentRefsPayloadBound && s.observerApplySpentOutputRefs != nil &&
-		s.shouldApplyXMRSpentRefsFromAttestations(*maybeApplySpentRefs, maybeApplySpentRefsAttestations) {
+	if maybeApplySpentRefs != nil && maybeApplySpentRefsPayloadBound && s.observerApplySpentOutputRefs != nil {
+		wireMemo, authorized := s.shouldApplyXMRSpentRefsFromAttestations(*maybeApplySpentRefs, maybeApplySpentRefsAttestations)
+		if !authorized {
+			return
+		}
 		s.mu.Lock()
 		liveState, ok := s.observedTxs[k]
 		conflictKey := xmrSpentRefsConflictKeyFor(*maybeApplySpentRefs)
@@ -129,7 +132,10 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 				// terminal failures must leave the opportunity open for a later
 				// authorized peer attestation, and must release the conflict-map
 				// entry so a differing authorized set is not pinned out.
-				applySpentRefs = maybeApplySpentRefs
+				applySpentRefs = &spentOutputRefsImport{
+					Tx:       *maybeApplySpentRefs,
+					WireMemo: wireMemo,
+				}
 				onApplySpentRefsOutcome = func(applied bool) {
 					if applied {
 						s.markXMRSpentRefsApplied(k, maybeApplySpentRefsPayloadHash)

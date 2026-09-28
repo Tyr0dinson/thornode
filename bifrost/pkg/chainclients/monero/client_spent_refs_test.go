@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
+	chainclienttypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -185,7 +186,7 @@ func TestApplySpentOutputRefsSidecarCall(t *testing.T) {
 	obsTx.SpentOutputRefs = refs
 	obsTx.XmrTxKey = strings.Repeat("3", 64)
 
-	applied, retry := c.applySpentOutputRefsOnce(obsTx)
+	applied, retry := c.applySpentOutputRefsOnce(chainclienttypes.SpentOutputRefsImport{Tx: obsTx, WireMemo: obsTx.Tx.Memo})
 	assert.True(t, applied, "idempotent Marked=0 response must count as verified")
 	assert.False(t, retry)
 
@@ -334,7 +335,7 @@ func TestApplySpentOutputRefsAuthenticatesExactOriginBeforeMutation(t *testing.T
 			payload := testStoredSignedTxPayload(t, txHash, "deadbeef")
 			require.NoError(t, store.Set(plan, txHash, payload))
 
-			applied, retry := client.applySpentOutputRefsOnce(obsTx)
+			applied, retry := client.applySpentOutputRefsOnce(chainclienttypes.SpentOutputRefsImport{Tx: obsTx, WireMemo: obsTx.Tx.Memo})
 			assert.False(t, applied)
 			assert.False(t, retry)
 			markMu.Lock()
@@ -448,7 +449,7 @@ func TestApplySpentOutputRefsMarksImportedOutboundSignedOnlyAfterFullImport(t *t
 	require.NoError(t, payloadStore.Reserve(claimPlan))
 	require.NoError(t, payloadStore.Set(claimPlan, spendTxHash, payloadBytes))
 
-	applied, retry := c.applySpentOutputRefsOnce(obsTx)
+	applied, retry := c.applySpentOutputRefsOnce(chainclienttypes.SpentOutputRefsImport{Tx: obsTx, WireMemo: obsTx.Tx.Memo})
 	require.False(t, applied)
 	require.True(t, retry)
 	assert.False(t, signerCache.HasSigned(cacheHash), "partial import must not suppress a future exact retry")
@@ -456,7 +457,7 @@ func TestApplySpentOutputRefsMarksImportedOutboundSignedOnlyAfterFullImport(t *t
 	require.NoError(t, err)
 	assert.True(t, ok, "partial import must retain the recoverable payload")
 
-	applied, retry = c.applySpentOutputRefsOnce(obsTx)
+	applied, retry = c.applySpentOutputRefsOnce(chainclienttypes.SpentOutputRefsImport{Tx: obsTx, WireMemo: obsTx.Tx.Memo})
 	require.True(t, applied)
 	require.False(t, retry)
 	assert.True(t, signerCache.HasSigned(cacheHash))
@@ -1039,6 +1040,185 @@ func testXMRSpentRefsObservedTx(t *testing.T, vaultLabel, txLabel string) common
 	return obsTx
 }
 
+func TestApplySpentOutputRefsWithWireMemoUsesWireMemoAcrossRetry(t *testing.T) {
+	t.Parallel()
+
+	var mu sync.Mutex
+	var requests []sidecar.MarkSpentReq
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req sidecar.MarkSpentReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode mark-spent request: %v", err)
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		mu.Lock()
+		requests = append(requests, req)
+		call := len(requests)
+		mu.Unlock()
+		if call == 1 {
+			http.Error(w, "tx not mined yet", http.StatusNotFound)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(sidecar.MarkSpentResp{Marked: len(req.SpentRefs)})
+	}))
+	defer server.Close()
+
+	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+	c := &Client{
+		chain:                     common.XMRChain,
+		sidecar:                   signer,
+		logger:                    testLogger(),
+		wg:                        &sync.WaitGroup{},
+		stopchan:                  make(chan struct{}),
+		spentRefsRetryInterval:    10 * time.Millisecond,
+		spentRefsRetryMaxAttempts: 2,
+	}
+	defer func() {
+		close(c.stopchan)
+		c.wg.Wait()
+	}()
+
+	obsTx := testXMRSpentRefsObservedTx(t, "test-vault-signed-wire-memo", "signed-wire-memo")
+	obsTx.Tx.Memo = "OUT:" + strings.Repeat("A", 64)
+	expectedCertificateHash, err := xmrSpentRefsCertificateHash(obsTx)
+	require.NoError(t, err)
+	outcome := make(chan bool, 1)
+	c.ApplySpentOutputRefsWithOutcome(chainclienttypes.SpentOutputRefsImport{
+		Tx:       obsTx,
+		WireMemo: "",
+	}, func(applied bool) { outcome <- applied })
+
+	select {
+	case applied := <-outcome:
+		require.True(t, applied)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for signed spent-ref import retry")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, requests, 2)
+	for _, req := range requests {
+		assert.Empty(t, req.Memo, "sidecar must authenticate the empty wire memo")
+		assert.Equal(t, expectedCertificateHash, req.CertificateHash,
+			"certificate must remain bound to the semantic observation")
+	}
+	assert.Equal(t, "OUT:"+strings.Repeat("A", 64), obsTx.Tx.Memo)
+}
+
+func TestApplySpentOutputRefsChainCommittedOmitsOutboundClaim(t *testing.T) {
+	t.Parallel()
+
+	requests := make(chan sidecar.MarkSpentReq, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req sidecar.MarkSpentReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode mark-spent request: %v", err)
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		requests <- req
+		_ = json.NewEncoder(w).Encode(sidecar.MarkSpentResp{Marked: len(req.SpentRefs)})
+	}))
+	defer server.Close()
+
+	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+	c := &Client{chain: common.XMRChain, sidecar: signer, logger: testLogger()}
+	obsTx := testXMRSpentRefsObservedTx(t, "test-vault-chain-committed", "chain-committed")
+	obsTx.Tx.Memo = "OUT:" + strings.Repeat("B", 64)
+	obsTx.XmrTxKey = strings.Repeat("d", 64)
+
+	outcome := make(chan bool, 1)
+	c.ApplySpentOutputRefsWithOutcome(chainclienttypes.SpentOutputRefsImport{
+		Tx:             obsTx,
+		ChainCommitted: true,
+	}, func(applied bool) { outcome <- applied })
+	require.True(t, <-outcome)
+
+	req := <-requests
+	assert.Equal(t, sidecar.OutgoingOrigin(sidecar.OutgoingOriginChainCommitted), req.Origin)
+	assert.Empty(t, req.Memo)
+	assert.Empty(t, req.TxKey)
+	assert.Empty(t, req.CertificateHash)
+	assert.Equal(t, "OUT:"+strings.Repeat("B", 64), obsTx.Tx.Memo)
+}
+
+func TestApplySpentOutputRefsChainCommittedInternalCarriesPairingProof(t *testing.T) {
+	t.Parallel()
+
+	requests := make(chan sidecar.MarkSpentReq, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req sidecar.MarkSpentReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode mark-spent request: %v", err)
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		requests <- req
+		_ = json.NewEncoder(w).Encode(sidecar.MarkSpentResp{Marked: len(req.SpentRefs)})
+	}))
+	defer server.Close()
+
+	signer, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+	require.NoError(t, err)
+	c := &Client{chain: common.XMRChain, sidecar: signer, logger: testLogger()}
+
+	for _, tc := range []struct {
+		name string
+		memo string
+	}{
+		{name: "migrate", memo: "MIGRATE:100"},
+		{name: "consolidate", memo: "consolidate"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			obsTx := testXMRSpentRefsObservedTx(t, "test-vault-chain-committed-"+tc.name, "chain-committed-"+tc.name)
+			obsTx.Tx.Memo = tc.memo
+
+			applied, retry := c.applySpentOutputRefsOnce(chainclienttypes.SpentOutputRefsImport{
+				Tx:             obsTx,
+				ChainCommitted: true,
+			})
+			require.True(t, applied)
+			require.False(t, retry)
+
+			req := <-requests
+			expectedAmount, err := thorchainAmountToAtomic(obsTx.Tx.Coins.GetCoin(common.XMRAsset).Amount)
+			require.NoError(t, err)
+			expectedFee, err := thorchainAmountToAtomic(obsTx.Tx.Gas.ToCoins().GetCoin(common.XMRAsset).Amount)
+			require.NoError(t, err)
+			assert.Equal(t, obsTx.Tx.FromAddress.String(), req.FromAddress)
+			assert.Equal(t, obsTx.Tx.ToAddress.String(), req.ToAddress)
+			assert.Equal(t, obsTx.XmrTxKey, req.TxKey)
+			assert.Equal(t, expectedAmount, req.Amount)
+			assert.Equal(t, expectedFee, req.Fee)
+			assert.Equal(t, obsTx.Tx.Memo, req.Memo)
+			assert.Equal(t, sidecar.OutgoingOrigin(sidecar.OutgoingOriginChainCommitted), req.Origin)
+			assert.Empty(t, req.CertificateHash)
+
+			// Mirror the sidecar record produced from this request and pin the
+			// complete proof contract for every internal memo, not just MIGRATE.
+			proof := sidecar.Transfer{
+				TxID:                req.TxHash,
+				TxKey:               req.TxKey,
+				Address:             req.ToAddress,
+				FromAddress:         req.FromAddress,
+				VaultPubKey:         req.VaultPubKey,
+				Amount:              req.Amount,
+				Fee:                 req.Fee,
+				Height:              uint64(obsTx.BlockHeight),
+				Note:                req.Memo,
+				Origin:              string(req.Origin),
+				ObservationEligible: false,
+				SpentOutputRefs:     req.SpentRefs,
+			}
+			assert.True(t, hasCompleteChainCommittedPairingProof(proof))
+		})
+	}
+}
+
 func TestApplySpentOutputRefsOnceRetriesPartialNotFound(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -1051,7 +1231,7 @@ func TestApplySpentOutputRefsOnceRetriesPartialNotFound(t *testing.T) {
 	obsTx := testXMRSpentRefsObservedTx(t, "test-vault-partial-not-found", "partial-not-found")
 	obsTx.SpentOutputRefs = append(obsTx.SpentOutputRefs,
 		*testXMROutputRef("partial-not-found-second", 1, obsTx.Tx.ID.String()))
-	applied, retry := c.applySpentOutputRefsOnce(obsTx)
+	applied, retry := c.applySpentOutputRefsOnce(chainclienttypes.SpentOutputRefsImport{Tx: obsTx, WireMemo: obsTx.Tx.Memo})
 	assert.False(t, applied)
 	assert.True(t, retry)
 }
@@ -1079,7 +1259,9 @@ func TestApplySpentOutputRefsWithOutcomeReportsRetrySuccess(t *testing.T) {
 	c := &Client{chain: common.XMRChain, sidecar: signer, logger: testLogger(), wg: &sync.WaitGroup{}, stopchan: make(chan struct{}), spentRefsRetryInterval: 10 * time.Millisecond, spentRefsRetryMaxAttempts: 3}
 	defer func() { close(c.stopchan); c.wg.Wait() }()
 	outcome := make(chan bool, 1)
-	c.ApplySpentOutputRefsWithOutcome(testXMRSpentRefsObservedTx(t, "test-vault-outcome-retry", "outcome-retry-success"), func(applied bool) { outcome <- applied })
+	c.ApplySpentOutputRefsWithOutcome(chainclienttypes.SpentOutputRefsImport{
+		Tx: testXMRSpentRefsObservedTx(t, "test-vault-outcome-retry", "outcome-retry-success"),
+	}, func(applied bool) { outcome <- applied })
 	select {
 	case applied := <-outcome:
 		assert.True(t, applied, "outcome should report the retry success")
@@ -1104,7 +1286,9 @@ func TestApplySpentOutputRefsWithOutcomeReportsTerminalFailure(t *testing.T) {
 	c := &Client{chain: common.XMRChain, sidecar: signer, logger: testLogger(), wg: &sync.WaitGroup{}, stopchan: make(chan struct{}), spentRefsRetryInterval: 10 * time.Millisecond, spentRefsRetryMaxAttempts: 3}
 	defer func() { close(c.stopchan); c.wg.Wait() }()
 	outcome := make(chan bool, 1)
-	c.ApplySpentOutputRefsWithOutcome(testXMRSpentRefsObservedTx(t, "test-vault-outcome-terminal", "outcome-terminal"), func(applied bool) { outcome <- applied })
+	c.ApplySpentOutputRefsWithOutcome(chainclienttypes.SpentOutputRefsImport{
+		Tx: testXMRSpentRefsObservedTx(t, "test-vault-outcome-terminal", "outcome-terminal"),
+	}, func(applied bool) { outcome <- applied })
 	select {
 	case applied := <-outcome:
 		assert.False(t, applied, "terminal sidecar failure must report a failed outcome")
@@ -1132,7 +1316,9 @@ func TestApplySpentOutputRefsWithOutcomeReportsExhaustion(t *testing.T) {
 	c := &Client{chain: common.XMRChain, sidecar: signer, logger: testLogger(), wg: &sync.WaitGroup{}, stopchan: make(chan struct{}), spentRefsRetryInterval: 5 * time.Millisecond, spentRefsRetryMaxAttempts: 2}
 	defer func() { close(c.stopchan); c.wg.Wait() }()
 	outcome := make(chan bool, 1)
-	c.ApplySpentOutputRefsWithOutcome(testXMRSpentRefsObservedTx(t, "test-vault-outcome-exhausted", "outcome-exhausted"), func(applied bool) { outcome <- applied })
+	c.ApplySpentOutputRefsWithOutcome(chainclienttypes.SpentOutputRefsImport{
+		Tx: testXMRSpentRefsObservedTx(t, "test-vault-outcome-exhausted", "outcome-exhausted"),
+	}, func(applied bool) { outcome <- applied })
 	select {
 	case applied := <-outcome:
 		assert.False(t, applied, "exhausted retries must report a failed outcome")

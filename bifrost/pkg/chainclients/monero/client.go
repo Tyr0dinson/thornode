@@ -80,6 +80,7 @@ const (
 	defaultXMRConsolidationMaxLockBps          = int64(1000)        // 10.00%
 	defaultXMRConsolidationMinReserveAtomic    = uint64(50_000_000) // 0.00005 XMR (piconero)
 	defaultXMRSpentRefsRetryMaxAttempts        = 60                 // bounded peer-import retry window after the first failed attempt
+	defaultXMRCommittedRefsImportMaxAttempts   = 3                  // cover the DeliverTx-to-commit race without replacing periodic catch-up
 	defaultXMRRecoveryRetryMaxAttempts         = 0                  // zero means retry for the process lifetime
 	maxXMRRecoveryFileBytes                    = int64(1024 * 1024) // encrypted keyshare envelopes are expected to be far smaller
 	xmrSpendableConfirmations                  = uint64(10)
@@ -781,109 +782,255 @@ func (c *Client) catchupSpentOutputRefs() {
 		}
 
 		for spendTxHash, refs := range refsBySpendTx {
-			obsTx, outbound, ok := c.observedXMROutboundForSpentRefs(spendTxHash, vaultPubKey, refs)
-			if !ok {
-				continue
-			}
-			result, markErr := c.sidecar.MarkSpent(vaultPubKey.String(), spendTxHash, xmrSpentRefsToSidecar(refs), false, outbound)
-			if markErr != nil {
-				c.logger.Err(markErr).
+			// Use the same verified import path as live observations so durable
+			// signer state is committed before a migration replay is enrolled.
+			// Catch-up itself runs periodically, so do not create a per-import
+			// retry goroutine here; an incomplete import is retried on the next tick.
+			_, applied, retry := c.applyCommittedSpentOutputRefsOnce(
+				context.Background(),
+				vaultPubKey,
+				common.TxID(spendTxHash),
+				refs,
+				false,
+			)
+			switch {
+			case applied:
+				c.logger.Info().
 					Str("vault", vaultPubKey.String()).
-					Str("spend_tx_hash", spendTxHash).
-					Int("refs", len(refs)).
-					Msg("xmr catchup: failed to apply spent output refs")
-				continue
-			}
-			c.logger.Info().
-				Str("vault", vaultPubKey.String()).
-				Str("spend_tx_hash", obsTx.Tx.ID.String()).
-				Int("marked", result.Marked).
-				Int("not_found", result.NotFound).
-				Msg("xmr catchup: applied spent output refs from thorchain")
-			if !verifiedXMRMarkSpentResult(result, len(refs)) {
+					Str("tx_hash", spendTxHash).
+					Msg("xmr catchup: applied spent output refs from thorchain")
+			case retry:
 				c.logger.Warn().
-					Str("tx_hash", obsTx.Tx.ID.String()).
-					Int("marked", result.Marked).
-					Int("not_found", result.NotFound).
-					Msg("xmr catchup: mark-spent did not verify every referenced output")
-				continue
-			}
-			if markSignedErr := c.markImportedXMROutboundSigned(obsTx, true); markSignedErr != nil {
-				c.logger.Error().Err(markSignedErr).
-					Str("tx_hash", obsTx.Tx.ID.String()).
-					Msg("xmr catchup: failed to update signer cache")
-			}
-			if c.scanner != nil {
-				if _, replayErr := c.scanner.EnqueueAuthenticatedInternalInboundReplay(obsTx); replayErr != nil {
-					c.logger.Error().Err(replayErr).
-						Str("tx_hash", obsTx.Tx.ID.String()).
-						Msg("xmr catchup: failed to queue authenticated migration replay")
-				}
+					Str("vault", vaultPubKey.String()).
+					Str("tx_hash", spendTxHash).
+					Msg("xmr catchup: spent output refs import will retry on the next scan")
+			default:
+				c.logger.Warn().
+					Str("vault", vaultPubKey.String()).
+					Str("tx_hash", spendTxHash).
+					Msg("xmr catchup: spent output refs import did not apply; manual investigation may be required")
 			}
 		}
 	}
 }
 
-func (c *Client) observedXMROutboundForSpentRefs(txHash string, vaultPubKey common.PubKey, refs []common.OutputRef) (common.ObservedTx, *sidecar.OutboundMeta, bool) {
-	if c.thorchainBridge == nil {
-		return common.ObservedTx{}, nil, false
+// ApplyCommittedSpentOutputRefs treats a quorum event as a bounded wake-up hint.
+// The event contributes only the vault and transaction ID; all refs and outbound
+// metadata are reconstructed from fresh, consensus-anchored THORChain queries.
+func (c *Client) ApplyCommittedSpentOutputRefs(
+	ctx context.Context,
+	vaultPubKey common.PubKey,
+	txID common.TxID,
+) (common.ObservedTx, bool) {
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	voter, err := c.thorchainBridge.GetObservedTxVoter(txHash)
+	interval := c.spentRefsRetryInterval
+	if interval <= 0 {
+		// Give THORChain one block for the committed state to become visible.
+		interval = constants.ThorchainBlockTime
+	}
+
+	for attempt := 1; attempt <= defaultXMRCommittedRefsImportMaxAttempts; attempt++ {
+		select {
+		case <-ctx.Done():
+			return common.ObservedTx{}, false
+		case <-c.stopchan:
+			return common.ObservedTx{}, false
+		default:
+		}
+		imported, applied, retry := c.applyCommittedSpentOutputRefsHintOnce(ctx, vaultPubKey, txID)
+		if applied {
+			return imported, true
+		}
+		if !retry || ctx.Err() != nil {
+			return common.ObservedTx{}, false
+		}
+		if attempt == defaultXMRCommittedRefsImportMaxAttempts {
+			break
+		}
+
+		c.logger.Debug().
+			Str("vault", vaultPubKey.String()).
+			Str("tx_hash", txID.String()).
+			Int("attempt", attempt).
+			Msg("xmr committed spent-ref state is not ready; waiting for thornode commit")
+		timer := time.NewTimer(interval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return common.ObservedTx{}, false
+		case <-c.stopchan:
+			timer.Stop()
+			return common.ObservedTx{}, false
+		case <-timer.C:
+		}
+	}
+
+	c.logger.Warn().
+		Str("vault", vaultPubKey.String()).
+		Str("tx_hash", txID.String()).
+		Int("attempts", defaultXMRCommittedRefsImportMaxAttempts).
+		Msg("xmr committed spent-ref import did not become ready; periodic catch-up will retry")
+	return common.ObservedTx{}, false
+}
+
+func (c *Client) applyCommittedSpentOutputRefsHintOnce(
+	ctx context.Context,
+	vaultPubKey common.PubKey,
+	txID common.TxID,
+) (imported common.ObservedTx, applied, retry bool) {
+	if c.thorchainBridge == nil || c.sidecar == nil {
+		return common.ObservedTx{}, false, false
+	}
+	// Live hints must not wait on the shared cache lock held by catch-up.
+	// The uncached query bounds the request and inherits caller cancellation.
+	refs, err := c.thorchainBridge.GetXMRSpentOutputRefsUncached(ctx, vaultPubKey)
 	if err != nil {
-		c.logger.Warn().Err(err).Str("tx_hash", txHash).Msg("xmr catchup: failed to load observed tx metadata")
-		return common.ObservedTx{}, nil, false
+		level := zerolog.WarnLevel
+		if errors.Is(ctx.Err(), context.Canceled) && errors.Is(err, context.Canceled) {
+			level = zerolog.DebugLevel
+		}
+		c.logger.WithLevel(level).Err(err).
+			Str("vault", vaultPubKey.String()).
+			Str("tx_hash", txID.String()).
+			Msg("failed to load committed xmr spent output refs")
+		return common.ObservedTx{}, false, true
 	}
-	observed, ok := queryObservedXMRTx(voter, common.TxID(txHash))
+
+	matching := make([]common.OutputRef, 0, len(refs))
+	for _, ref := range refs {
+		if ref == nil || !common.TxID(strings.TrimSpace(ref.SpendTxHash)).Equals(txID) {
+			continue
+		}
+		matching = append(matching, *ref)
+	}
+	if len(matching) == 0 {
+		return common.ObservedTx{}, false, true
+	}
+	return c.applyCommittedSpentOutputRefsOnce(ctx, vaultPubKey, txID, matching, true)
+}
+
+func (c *Client) applyCommittedSpentOutputRefsOnce(
+	ctx context.Context,
+	vaultPubKey common.PubKey,
+	txID common.TxID,
+	refs []common.OutputRef,
+	uncachedVoter bool,
+) (imported common.ObservedTx, applied, retry bool) {
+	if ctx.Err() != nil {
+		return common.ObservedTx{}, false, false
+	}
+	obsTx, retry, ok := c.committedXMROutboundForSpentRefs(ctx, txID, vaultPubKey, refs, uncachedVoter)
 	if !ok {
-		c.logger.Warn().Str("tx_hash", txHash).Msg("xmr catchup: observed tx metadata missing xmr outbound")
-		return common.ObservedTx{}, nil, false
+		return common.ObservedTx{}, false, retry
+	}
+	applied, retry = c.applySpentOutputRefsOnceContext(ctx, types.SpentOutputRefsImport{
+		Tx:             obsTx,
+		ChainCommitted: true,
+	})
+	return obsTx, applied, retry
+}
+
+func (c *Client) committedXMROutboundForSpentRefs(
+	ctx context.Context,
+	txID common.TxID,
+	vaultPubKey common.PubKey,
+	refs []common.OutputRef,
+	uncachedVoter bool,
+) (observed common.ObservedTx, retry, ok bool) {
+	if c.thorchainBridge == nil {
+		return common.ObservedTx{}, false, false
+	}
+	var (
+		voter *ttypes.QueryObservedTxVoter
+		found bool
+		err   error
+	)
+	if uncachedVoter {
+		voter, found, err = c.thorchainBridge.GetObservedTxOutVoterUncached(ctx, txID.String())
+	} else {
+		voter, err = c.thorchainBridge.GetObservedTxOutVoter(txID.String())
+		found = voter != nil
+	}
+	if err != nil {
+		level := zerolog.WarnLevel
+		if errors.Is(ctx.Err(), context.Canceled) && errors.Is(err, context.Canceled) {
+			level = zerolog.DebugLevel
+		}
+		c.logger.WithLevel(level).Err(err).Str("tx_hash", txID.String()).Msg("failed to load committed xmr observed tx metadata")
+		return common.ObservedTx{}, true, false
+	}
+	if !found {
+		return common.ObservedTx{}, true, false
+	}
+	observed, retry, ok = queryConsensusObservedXMRTx(voter, txID)
+	if !ok {
+		if !retry {
+			c.logger.Warn().
+				Str("tx_hash", txID.String()).
+				Bool("reverted", voter.Reverted).
+				Msg("reject committed xmr spent refs without a matching canonical voter transaction")
+		}
+		return common.ObservedTx{}, retry, false
 	}
 	if !observed.ObservedPubKey.Equals(vaultPubKey) {
 		c.logger.Warn().
-			Str("tx_hash", txHash).
+			Str("tx_hash", txID.String()).
 			Str("observed_vault", observed.ObservedPubKey.String()).
 			Str("spent_ref_vault", vaultPubKey.String()).
-			Msg("xmr catchup: spent refs vault does not match observed tx")
-		return common.ObservedTx{}, nil, false
+			Msg("committed xmr spent refs vault does not match consensus tx")
+		return common.ObservedTx{}, false, false
 	}
 	observed.SpentOutputRefs = refs
 	if err := validateXMRSpentRefsForSidecar(observed); err != nil {
 		c.logger.Warn().
 			Err(err).
-			Str("tx_hash", txHash).
+			Str("tx_hash", txID.String()).
 			Str("vault", vaultPubKey.String()).
-			Msg("xmr catchup: skipping invalid spent output refs")
-		return common.ObservedTx{}, nil, false
+			Msg("skipping invalid committed xmr spent output refs")
+		return common.ObservedTx{}, false, false
 	}
-	outbound := xmrOutboundMeta(observed.Tx, observed.XmrTxKey)
-	outbound.Origin = sidecar.OutgoingOriginChainCommitted
-	return observed, outbound, true
+	return observed, false, true
 }
 
-func queryObservedXMRTx(voter *ttypes.QueryObservedTxVoter, txID common.TxID) (common.ObservedTx, bool) {
+// queryConsensusObservedXMRTx selects only the canonical voter transaction.
+// Non-consensus Txs entries are observations, not proof that THORChain accepted
+// their metadata. A reverted voter is a terminal rejection, while a voter that
+// has not reached consensus yet remains retryable for the short commit race.
+func queryConsensusObservedXMRTx(
+	voter *ttypes.QueryObservedTxVoter,
+	txID common.TxID,
+) (observed common.ObservedTx, retry, ok bool) {
 	if voter == nil {
-		return common.ObservedTx{}, false
+		return common.ObservedTx{}, true, false
 	}
-	candidates := append([]ttypes.QueryObservedTx{voter.GetTx()}, voter.GetTxs()...)
-	for _, candidate := range candidates {
-		tx := candidate.GetTx()
-		if !tx.ID.Equals(txID) || !tx.Chain.Equals(common.XMRChain) {
-			continue
-		}
-		return common.ObservedTx{
-			Tx:                    tx,
-			Status:                common.Status_incomplete,
-			BlockHeight:           candidate.GetBlockHeight(),
-			ObservedPubKey:        candidate.GetObservedPubKey(),
-			FinaliseHeight:        candidate.GetFinaliseHeight(),
-			Aggregator:            candidate.GetAggregator(),
-			AggregatorTarget:      candidate.GetAggregatorTarget(),
-			AggregatorTargetLimit: candidate.AggregatorTargetLimit,
-			SpentOutputRefs:       xmrOutputRefsFromPointers(candidate.GetSpentOutputRefs()),
-			XmrTxKey:              candidate.GetXmrTxKey(),
-		}, true
+	if voter.Reverted {
+		return common.ObservedTx{}, false, false
 	}
-	return common.ObservedTx{}, false
+	if voter.GetHeight() <= 0 && voter.GetFinalisedHeight() <= 0 {
+		return common.ObservedTx{}, true, false
+	}
+	if !voter.GetTxID().Equals(txID) {
+		return common.ObservedTx{}, false, false
+	}
+	candidate := voter.GetTx()
+	tx := candidate.GetTx()
+	if !tx.ID.Equals(txID) || !tx.Chain.Equals(common.XMRChain) {
+		return common.ObservedTx{}, false, false
+	}
+	return common.ObservedTx{
+		Tx:                    tx,
+		Status:                common.Status_incomplete,
+		BlockHeight:           candidate.GetBlockHeight(),
+		ObservedPubKey:        candidate.GetObservedPubKey(),
+		FinaliseHeight:        candidate.GetFinaliseHeight(),
+		Aggregator:            candidate.GetAggregator(),
+		AggregatorTarget:      candidate.GetAggregatorTarget(),
+		AggregatorTargetLimit: candidate.AggregatorTargetLimit,
+		SpentOutputRefs:       xmrOutputRefsFromPointers(candidate.GetSpentOutputRefs()),
+		XmrTxKey:              candidate.GetXmrTxKey(),
+	}, false, true
 }
 
 func xmrOutboundMeta(tx common.Tx, txKey string) *sidecar.OutboundMeta {
@@ -2600,22 +2747,30 @@ func (c *Client) restoreKeyshareContext(ctx context.Context, vaultPubKey common.
 // Callers that do not need the final outcome can use this fire-and-forget
 // wrapper; the bounded retry continues in the background when appropriate.
 func (c *Client) ApplySpentOutputRefs(tx common.ObservedTx) {
-	c.applySpentOutputRefs(tx, nil)
+	c.applySpentOutputRefs(types.SpentOutputRefsImport{
+		Tx:       tx,
+		WireMemo: tx.Tx.Memo,
+	}, nil)
 }
 
 // ApplySpentOutputRefsWithOutcome reports the import's final outcome exactly
 // once: true when the sidecar confirmed the refs, immediately or on a later
 // bounded retry; false when the import failed terminally, exhausted its
-// retries, or could not be queued. Observer latch/conflict bookkeeping needs
-// the final outcome, not just the first attempt's.
-func (c *Client) ApplySpentOutputRefsWithOutcome(tx common.ObservedTx, onOutcome func(applied bool)) {
-	c.applySpentOutputRefs(tx, onOutcome)
+// retries, or could not be queued. Vault-certified requests authenticate the
+// exact WireMemo. ChainCommitted internal transactions attach their committed
+// pairing proof; other committed transactions remain accounting-only imports.
+func (c *Client) ApplySpentOutputRefsWithOutcome(request types.SpentOutputRefsImport, onOutcome func(applied bool)) {
+	c.applySpentOutputRefs(request, onOutcome)
 }
 
 // applySpentOutputRefs centralizes the first attempt and final-outcome callback
 // so observer conflict bookkeeping can wait for retry exhaustion or success.
-func (c *Client) applySpentOutputRefs(tx common.ObservedTx, onOutcome func(applied bool)) bool {
-	applied, retry := c.applySpentOutputRefsOnce(tx)
+func (c *Client) applySpentOutputRefs(
+	request types.SpentOutputRefsImport,
+	onOutcome func(applied bool),
+) bool {
+	tx := request.Tx
+	applied, retry := c.applySpentOutputRefsOnce(request)
 	if !retry {
 		if onOutcome != nil {
 			onOutcome(applied)
@@ -2643,14 +2798,20 @@ func (c *Client) applySpentOutputRefs(tx common.ObservedTx, onOutcome func(appli
 	// callers that still need to broadcast the tx, such as local
 	// sign/consolidation paths, are not blocked waiting for the tx to appear in
 	// the Monero daemon.
-	c.queueSpentOutputRefsRetry(tx, interval, maxAttempts, onOutcome)
+	c.queueSpentOutputRefsRetry(request, interval, maxAttempts, onOutcome)
 	return applied
 }
 
 // queueSpentOutputRefsRetry owns the async retry goroutine. If the client is
 // stopping, it reports a failed outcome immediately so observer latches are
 // not left pending forever.
-func (c *Client) queueSpentOutputRefsRetry(tx common.ObservedTx, interval time.Duration, maxAttempts int, onOutcome func(applied bool)) {
+func (c *Client) queueSpentOutputRefsRetry(
+	request types.SpentOutputRefsImport,
+	interval time.Duration,
+	maxAttempts int,
+	onOutcome func(applied bool),
+) {
+	tx := request.Tx
 	if c.wg == nil || c.stopchan == nil {
 		c.logger.Warn().Str("tx_hash", tx.Tx.ID.String()).Msg("skip xmr spent output refs retry: client lifecycle is not initialized")
 		if onOutcome != nil {
@@ -2677,7 +2838,7 @@ func (c *Client) queueSpentOutputRefsRetry(tx common.ObservedTx, interval time.D
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
-		c.retrySpentOutputRefs(tx, interval, maxAttempts, onOutcome)
+		c.retrySpentOutputRefs(request, interval, maxAttempts, onOutcome)
 	}()
 }
 
@@ -2685,7 +2846,15 @@ func (c *Client) queueSpentOutputRefsRetry(tx common.ObservedTx, interval time.D
 // result is true only for transient failures where another bounded attempt can
 // still seed the sidecar, such as the spend tx not being indexed yet or the
 // sidecar being temporarily unavailable.
-func (c *Client) applySpentOutputRefsOnce(tx common.ObservedTx) (bool, bool) {
+func (c *Client) applySpentOutputRefsOnce(request types.SpentOutputRefsImport) (bool, bool) {
+	return c.applySpentOutputRefsOnceContext(context.Background(), request)
+}
+
+// applySpentOutputRefsOnceContext checks cancellation before starting new work.
+// A started MarkSpent keeps its existing sidecar timeout and completes durable
+// signer bookkeeping on success; deferred replay can retry through catch-up.
+func (c *Client) applySpentOutputRefsOnceContext(ctx context.Context, request types.SpentOutputRefsImport) (bool, bool) {
+	tx := request.Tx
 	if err := validateXMRSpentRefsForSidecar(tx); err != nil {
 		c.logger.Warn().
 			Err(err).
@@ -2702,14 +2871,32 @@ func (c *Client) applySpentOutputRefsOnce(tx common.ObservedTx) (bool, bool) {
 	}
 
 	refs := xmrSpentRefsToSidecar(tx.SpentOutputRefs)
-	certificateHash, hashErr := xmrSpentRefsCertificateHash(tx)
-	if hashErr != nil {
-		c.logger.Warn().Err(hashErr).Str("tx_hash", txHash).Msg("skip xmr spent refs with unhashable source-vault certificate")
+	var outbound *sidecar.OutboundMeta
+	if request.ChainCommitted {
+		// Internal memos are not stripped from Monero transactions, so the
+		// committed observation contains the exact wire memo needed to restore
+		// a complete migration/consolidation pairing proof. Other committed
+		// outbounds may be memoless and intentionally remain accounting-only.
+		if isInternalXMRMemo(tx.Tx.Memo) {
+			outbound = xmrOutboundMeta(tx.Tx, tx.XmrTxKey)
+			outbound.Origin = sidecar.OutgoingOriginChainCommitted
+		}
+	} else {
+		certificateHash, hashErr := xmrSpentRefsCertificateHash(tx)
+		if hashErr != nil {
+			c.logger.Warn().Err(hashErr).Str("tx_hash", txHash).Msg("skip xmr spent refs with unhashable source-vault certificate")
+			return false, false
+		}
+		outbound = xmrOutboundMeta(tx.Tx, tx.XmrTxKey)
+		// Keep the certificate and durable claim bound to tx's semantic memo;
+		// only the Sidecar metadata proof is checked against the exact wire memo.
+		outbound.Memo = request.WireMemo
+		outbound.Origin = sidecar.OutgoingOriginVaultCertified
+		outbound.CertificateHash = certificateHash
+	}
+	if ctx.Err() != nil {
 		return false, false
 	}
-	outbound := xmrOutboundMeta(tx.Tx, tx.XmrTxKey)
-	outbound.Origin = sidecar.OutgoingOriginVaultCertified
-	outbound.CertificateHash = certificateHash
 	result, err := c.sidecar.MarkSpent(vaultPubKey, txHash, refs, false, outbound)
 	if err != nil {
 		// Peer pre-quorum imports cannot rely on Thornode catchup until the refs
@@ -2729,7 +2916,7 @@ func (c *Client) applySpentOutputRefsOnce(tx common.ObservedTx) (bool, bool) {
 			Str("tx_hash", txHash).
 			Str("vault", vaultPubKey).
 			Int("refs", len(refs)).
-			Msg("failed to apply spent output refs from attestation")
+			Msg("failed to apply spent output refs import")
 		return false, false
 	}
 	c.logger.Info().
@@ -2737,7 +2924,7 @@ func (c *Client) applySpentOutputRefsOnce(tx common.ObservedTx) (bool, bool) {
 		Str("vault", vaultPubKey).
 		Int("marked", result.Marked).
 		Int("not_found", result.NotFound).
-		Msg("applied spent output refs from attestation")
+		Msg("applied spent output refs import")
 	// A ref the sidecar could not find is the same transient state as a 404:
 	// this peer's scanner may simply not have reached the funding output yet.
 	// Keep the bounded retry window open and replay the complete ref set. The
@@ -2750,11 +2937,17 @@ func (c *Client) applySpentOutputRefsOnce(tx common.ObservedTx) (bool, bool) {
 	if !verifiedXMRMarkSpentResult(result, len(refs)) {
 		return false, false
 	}
-	if err = c.markImportedXMROutboundSigned(tx, false); err != nil {
-		c.logger.Warn().Err(err).Str("tx_hash", txHash).Msg("refuse to commit unauthenticated xmr spent-ref import")
+	if err = c.markImportedXMROutboundSigned(tx, request.ChainCommitted); err != nil {
+		c.logger.Warn().Err(err).Str("tx_hash", txHash).
+			Msg("refuse to enroll xmr spent-ref import without authenticated durable signer state")
 		return false, false
 	}
 	if c.scanner != nil {
+		if ctx.Err() != nil {
+			// The refs and signer state are durable. Periodic catch-up can
+			// retry the import and enroll replay after this request is canceled.
+			return false, true
+		}
 		queued, replayErr := c.scanner.EnqueueAuthenticatedInternalInboundReplay(tx)
 		if replayErr != nil {
 			c.logger.Error().Err(replayErr).Str("tx_hash", txHash).
@@ -2990,7 +3183,13 @@ func isRetryableSpentRefsSidecarErr(err error) bool {
 // window. This covers peer pre-quorum imports where the XMR spend may not be
 // mined/indexed yet or where the local sidecar is temporarily unavailable, and
 // Thornode catchup cannot help until the refs are committed.
-func (c *Client) retrySpentOutputRefs(tx common.ObservedTx, interval time.Duration, maxAttempts int, onOutcome func(applied bool)) {
+func (c *Client) retrySpentOutputRefs(
+	request types.SpentOutputRefsImport,
+	interval time.Duration,
+	maxAttempts int,
+	onOutcome func(applied bool),
+) {
+	tx := request.Tx
 	timer := time.NewTimer(interval)
 	defer timer.Stop()
 
@@ -3006,7 +3205,7 @@ func (c *Client) retrySpentOutputRefs(tx common.ObservedTx, interval time.Durati
 		case <-timer.C:
 		}
 
-		applied, retry := c.applySpentOutputRefsOnce(tx)
+		applied, retry := c.applySpentOutputRefsOnce(request)
 		if !retry {
 			if onOutcome != nil {
 				onOutcome(applied)

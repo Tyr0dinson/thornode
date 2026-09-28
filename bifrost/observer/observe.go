@@ -959,7 +959,7 @@ func ackTxInPersisted(txIn types.TxIn, err error) {
 // historical-membership, exact-signature, and planned-outbound gates and routes
 // the result over the certificate-only protocol when this observer is inactive.
 func (o *Observer) attestHistoricalXMRSpentRefCertificates(txIn types.TxIn) error {
-	if !txIn.Chain.Equals(common.XMRChain) || txIn.MemPool || len(txIn.TxArray) == 0 {
+	if !txIn.Chain.Equals(common.XMRChain) || (txIn.MemPool && !txIn.Filtered) || len(txIn.TxArray) == 0 {
 		return nil
 	}
 
@@ -994,9 +994,16 @@ func (o *Observer) attestHistoricalXMRSpentRefCertificates(txIn types.TxIn) erro
 		rejectObservedTx(certificateItems, err)
 		return err
 	}
-	certificateTxIn.ConfirmationRequired = chainClient.GetConfirmationCount(certificateTxIn)
+	// Match the ordinary observer's phase exactly. Instant signer observations
+	// are already filtered with zero confirmations; overwriting that setting or
+	// dropping their mempool form prevents a churned-out signing member from
+	// completing the same source-vault certificate as its active peers.
+	if !txIn.Filtered {
+		certificateTxIn.ConfirmationRequired = chainClient.GetConfirmationCount(certificateTxIn)
+	}
 	finaliseHeight := certificateItems[0].BlockHeight + certificateTxIn.ConfirmationRequired
-	observed, invalidIndices, err := o.getThorchainTxIns(&certificateTxIn, false, finaliseHeight)
+	finalized := chainClient.ConfirmationCountReady(certificateTxIn) && !certificateTxIn.MemPool
+	observed, invalidIndices, err := o.getThorchainTxIns(&certificateTxIn, finalized, finaliseHeight)
 	if err != nil {
 		rejectObservedTx(certificateItems, err)
 		return err

@@ -1405,7 +1405,6 @@ func (c *Client) MarkSpent(vaultPubKey, txHash string, refs []SpentRef, skipVeri
 		req.Amount = outbound.Amount
 		req.Fee = outbound.Fee
 		req.Memo = outbound.Memo
-		req.TxKey = outbound.TxKey
 		req.Origin = outbound.Origin
 		req.CertificateHash = outbound.CertificateHash
 	}

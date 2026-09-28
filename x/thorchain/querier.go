@@ -2525,7 +2525,7 @@ func (qs queryServer) queryStableReserveContributor(ctx cosmos.Context, req *typ
 	}, nil
 }
 
-func extractVoter(ctx cosmos.Context, tx_id string, mgr *Mgrs) (common.TxID, ObservedTxVoter, error) {
+func extractVoter(ctx cosmos.Context, tx_id string, mgr *Mgrs, outbound bool) (common.TxID, ObservedTxVoter, error) {
 	if len(tx_id) == 0 {
 		return "", ObservedTxVoter{}, errors.New("tx id not provided")
 	}
@@ -2534,7 +2534,12 @@ func extractVoter(ctx cosmos.Context, tx_id string, mgr *Mgrs) (common.TxID, Obs
 		ctx.Logger().Error("fail to parse tx id", "error", err)
 		return "", ObservedTxVoter{}, fmt.Errorf("fail to parse tx id: %w", err)
 	}
-	voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, hash)
+	var voter ObservedTxVoter
+	if outbound {
+		voter, err = mgr.Keeper().GetObservedTxOutVoter(ctx, hash)
+	} else {
+		voter, err = mgr.Keeper().GetObservedTxInVoter(ctx, hash)
+	}
 	if err != nil {
 		ctx.Logger().Error("fail to get observed tx voter", "error", err)
 		return "", ObservedTxVoter{}, fmt.Errorf("fail to get observed tx voter: %w", err)
@@ -2543,19 +2548,20 @@ func extractVoter(ctx cosmos.Context, tx_id string, mgr *Mgrs) (common.TxID, Obs
 }
 
 func (qs queryServer) queryTxVoters(ctx cosmos.Context, req *types.QueryTxVotersRequest) (*types.QueryObservedTxVoter, error) {
-	hash, voter, err := extractVoter(ctx, req.TxId, qs.mgr)
+	hash, voter, err := extractVoter(ctx, req.TxId, qs.mgr, req.Outbound)
 	if err != nil {
 		return nil, err
 	}
-	// when tx in voter doesn't exist , double check tx out voter
-	if len(voter.Txs) == 0 {
+	// Migrations can have both voters under one tx ID. Explicit outbound
+	// queries must never fall back to destination-side observation metadata.
+	if !req.Outbound && len(voter.Txs) == 0 {
 		voter, err = qs.mgr.Keeper().GetObservedTxOutVoter(ctx, hash)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get observed tx out voter: %w", err)
 		}
-		if len(voter.Txs) == 0 {
-			return nil, fmt.Errorf("tx: %s doesn't exist", hash)
-		}
+	}
+	if len(voter.Txs) == 0 {
+		return nil, fmt.Errorf("tx: %s doesn't exist", hash)
 	}
 
 	var txs []types.QueryObservedTx
@@ -2784,7 +2790,7 @@ func newTxStagesResponse(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPe
 
 func (qs queryServer) queryTxStages(ctx cosmos.Context, req *types.QueryTxStagesRequest) (*types.QueryTxStagesResponse, error) {
 	// First, get the ObservedTxVoter of interest.
-	_, voter, err := extractVoter(ctx, req.TxId, qs.mgr)
+	_, voter, err := extractVoter(ctx, req.TxId, qs.mgr, false)
 	if err != nil {
 		return nil, err
 	}
@@ -2800,7 +2806,7 @@ func (qs queryServer) queryTxStages(ctx cosmos.Context, req *types.QueryTxStages
 
 func (qs queryServer) queryTxStatus(ctx cosmos.Context, req *types.QueryTxStatusRequest) (*types.QueryTxStatusResponse, error) {
 	// First, get the ObservedTxVoter of interest.
-	_, voter, err := extractVoter(ctx, req.TxId, qs.mgr)
+	_, voter, err := extractVoter(ctx, req.TxId, qs.mgr, false)
 	if err != nil {
 		return nil, err
 	}
@@ -2845,7 +2851,7 @@ func (qs queryServer) queryTxStatus(ctx cosmos.Context, req *types.QueryTxStatus
 }
 
 func (qs queryServer) queryTx(ctx cosmos.Context, req *types.QueryTxRequest) (*types.QueryTxResponse, error) {
-	hash, voter, err := extractVoter(ctx, req.TxId, qs.mgr)
+	hash, voter, err := extractVoter(ctx, req.TxId, qs.mgr, false)
 	if err != nil {
 		return nil, err
 	}
