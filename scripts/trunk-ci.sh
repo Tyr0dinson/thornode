@@ -6,7 +6,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(dirname "$0")"
 BASE_BRANCH="origin/develop"
-FLAGS=(-j8 --ci)
+# Each golangci-lint process takes ~3.2 GiB on a full-repo (--all) run; 8 at once
+# overran hedwig's 24 GiB job container (exit -9). 4 keeps it near 13 GiB.
+FLAGS=(--jobs=4 --ci)
 CHECK_EXISTING=false
 
 if [ -n "${CI_MERGE_REQUEST_ID-}" ]; then
