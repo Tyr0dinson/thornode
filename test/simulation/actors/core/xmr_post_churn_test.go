@@ -139,7 +139,7 @@ func TestXMRPostChurnSchedulesFromAPIVaultHeights(t *testing.T) {
 			if err := json.Unmarshal([]byte(tc.body), &vaults); err != nil {
 				t.Fatal(err)
 			}
-			height, found := xmrPostChurnLastActiveVaultHeight(vaults)
+			height, found := lastActiveVaultHeight(vaults)
 			if height != tc.height || found != tc.found {
 				t.Fatalf("got height=%d found=%t, want height=%d found=%t", height, found, tc.height, tc.found)
 			}
