@@ -136,6 +136,26 @@ variables:
   before_script:
     - . ./scripts/ci-go-private-auth.sh
 
+# Install $PKGS from the distro mirror. A DNS blip on the runner ("Temporary
+# failure resolving 'deb.debian.org'") only warns in `apt-get update` and then
+# fails the install as a script error, so retry and exit 75 if the mirror stays
+# unreachable. Include with `!reference [.pkg-install, before_script]`.
+.pkg-install:
+  before_script:
+    - |
+      for i in 1 2 3; do
+        if command -v apk >/dev/null; then
+          apk add --no-cache $PKGS && break
+        else
+          apt-get update && apt-get install -y --no-install-recommends $PKGS && break
+        fi
+        if [ "$i" = 3 ]; then
+          echo "package mirror unreachable, treating as an infrastructure failure"
+          exit 75
+        fi
+        sleep 15
+      done
+
 stages:
   - .pre
   - fork
@@ -157,8 +177,10 @@ fork:
   rules:
     - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
       when: always
+  variables:
+    PKGS: git jq
   before_script:
-    - apt-get update && apt-get install -y --no-install-recommends git jq
+    - !reference [.pkg-install, before_script]
   script:
     - |
       # First, check if only text files are changed in this fork MR
@@ -279,8 +301,10 @@ test-mocknet-scripts:
     - *rules
   stage: test
   image: alpine:3.21
+  variables:
+    PKGS: bash python3 jq
   before_script:
-    - apk add --no-cache bash python3 jq
+    - !reference [.pkg-install, before_script]
   script:
     - python3 -m unittest discover -s build/scripts/tests -v
 
@@ -312,8 +336,9 @@ lint:
   resource_group: trunk-lint
   variables:
     XDG_CACHE_HOME: /trunk-cache
+    PKGS: jq
   before_script:
-    - apt-get update && apt-get install -y --no-install-recommends jq
+    - !reference [.pkg-install, before_script]
     - !reference [.go-private-auth, before_script]
   script:
     - make lint-ci
