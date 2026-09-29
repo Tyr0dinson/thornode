@@ -144,8 +144,12 @@ openapi:
 	@find ./openapi/gen -type f -name '*.bak' -delete
 
 protoVer=0.13.2
-# CI sets PROTO_BUILDER_IMAGE to its registry mirror of the same version.
-protoImageName=$(or $(PROTO_BUILDER_IMAGE),ghcr.io/cosmos/proto-builder:$(protoVer))
+# Index digest of ghcr.io/cosmos/proto-builder:$(protoVer); bump it with protoVer.
+protoDigest=sha256:05f5ccdc37d6ac6856d035d37bde91d31d36cfebe3c82ac771a40c7ff2a5c4c6
+# CI sets PROTO_BUILDER_REPO to its registry mirror. The digest pins the image
+# from either repository, so a tag replaced in the mirror fails to pull rather
+# than running.
+protoImageName=$(or $(PROTO_BUILDER_REPO),ghcr.io/cosmos/proto-builder):$(protoVer)@$(protoDigest)
 
 # buf resolves its BSR dependencies from buf.build at generate/lint/breaking
 # time. When the machine running these targets is blocked by buf.build (the
