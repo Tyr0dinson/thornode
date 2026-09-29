@@ -33,7 +33,7 @@ RUN go install -tags $TAG ./tools/events
 # Deploy
 ########################################################################################
 
-FROM debian:bookworm-20260610-slim@sha256:96e378d7e6531ac9a15ad505478fcc2e69f371b10f5cdf87857c4b8188404716
+FROM ${DOCKER_MIRROR}debian:bookworm-20260610-slim@sha256:96e378d7e6531ac9a15ad505478fcc2e69f371b10f5cdf87857c4b8188404716
 
 COPY --from=build /go/bin/events /usr/bin/
 COPY --from=build /go/pkg/mod/github.com/!cosm!wasm/wasmvm/v2@v2.2.9/internal/api/libwasmvm.*.so /usr/lib

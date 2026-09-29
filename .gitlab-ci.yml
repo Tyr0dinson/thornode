@@ -78,6 +78,53 @@ variables:
         sleep 1
       done
 
+# Registry setup for dind jobs, after .wait-for-dind:
+# - Log in to Docker Hub for the higher pull rate limit. The login is only a
+#   rate-limit courtesy, so after 3 attempts carry on anonymously rather than
+#   fail (2026-09-14..28: 19 jobs died on this login alone).
+# - Export DOCKER_MIRROR, the group dependency proxy prefix, for docker builds
+#   and in-dind pulls. It stays unset when the pipeline user cannot use the
+#   proxy (users outside the thorchain group get "manifest unknown" and fall
+#   back to Docker Hub), so never use it for job or service images.
+.dind-registries:
+  before_script:
+    - |
+      for i in 1 2 3; do
+        echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin && break
+        if [ "$i" = 3 ]; then
+          echo "Docker Hub login failed 3 times; continuing with anonymous pulls"
+        else
+          sleep 10
+        fi
+      done
+    - |
+      if [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ]; then
+        export DOCKER_MIRROR="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
+        if ! echo "$CI_DEPENDENCY_PROXY_PASSWORD" | docker login "$CI_DEPENDENCY_PROXY_SERVER" -u "$CI_DEPENDENCY_PROXY_USER" --password-stdin; then
+          echo "Dependency proxy login failed; falling back to Docker Hub"
+          unset DOCKER_MIRROR
+        elif ! docker manifest inspect "${DOCKER_MIRROR}golang:1.26.4" >/dev/null 2>&1; then
+          echo "Dependency proxy missing golang:1.26.4; falling back to Docker Hub"
+          unset DOCKER_MIRROR
+        fi
+      fi
+
+# Pull proto-builder from this project's registry, where mirror-ci-images
+# copies it on protected branches, instead of ghcr.io (2026-09-14..28: 55 proto
+# job failures on ghcr.io token and manifest timeouts). Falls back to ghcr.io
+# when the mirror lacks the version the Makefile pins, e.g. in the MR that
+# bumps protoVer.
+.proto-builder-image:
+  before_script:
+    - |
+      PROTO_VER=$(sed -n 's/^protoVer=//p' Makefile)
+      PROTO_MIRROR="$CI_REGISTRY_IMAGE/ci/proto-builder:$PROTO_VER"
+      if docker pull -q "$PROTO_MIRROR" >/dev/null 2>&1; then
+        export PROTO_BUILDER_IMAGE="$PROTO_MIRROR"
+      else
+        echo "$PROTO_MIRROR unavailable; pulling proto-builder from ghcr.io"
+      fi
+
 # Authenticate git to gitlab.com so `go mod download` can fetch the private
 # module tss-lib-private, and export GO_PRIVATE_GIT_CREDENTIAL for docker
 # builds. Prefers the TSS_LIB_PRIVATE_READ_TOKEN CI/CD variable over
@@ -194,16 +241,8 @@ generate:
     - !reference [.wait-for-dind, before_script]
     - apk -U add bash curl findutils git go jq make protoc sed wget python3
     - !reference [.go-private-auth, before_script]
-    - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
-    - |
-      if [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ]; then
-        export DOCKER_MIRROR="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
-        echo "$CI_DEPENDENCY_PROXY_PASSWORD" | docker login "$CI_DEPENDENCY_PROXY_SERVER" -u "$CI_DEPENDENCY_PROXY_USER" --password-stdin
-        if ! docker manifest inspect "${DOCKER_MIRROR}golang:1.26.4" >/dev/null 2>&1; then
-          echo "Dependency proxy missing golang:1.26.4; falling back to Docker Hub"
-          unset DOCKER_MIRROR
-        fi
-      fi
+    - !reference [.dind-registries, before_script]
+    - !reference [.proto-builder-image, before_script]
   script:
     - |
       export PATH="$PATH:/root/go/bin"
@@ -286,6 +325,7 @@ proto-check-formatting:
   before_script:
     - !reference [.wait-for-dind, before_script]
     - apk -U add findutils make
+    - !reference [.proto-builder-image, before_script]
   script:
     - make proto-format-check
 
@@ -297,6 +337,7 @@ proto-lint:
   before_script:
     - !reference [.wait-for-dind, before_script]
     - apk -U add make
+    - !reference [.proto-builder-image, before_script]
   script:
     - make proto-lint
 
@@ -320,6 +361,7 @@ proto-check-breaking:
   before_script:
     - !reference [.wait-for-dind, before_script]
     - apk -U add git make
+    - !reference [.proto-builder-image, before_script]
   script:
     - make proto-check-breaking
 
@@ -343,16 +385,7 @@ build-thornode:
     - !reference [.wait-for-dind, before_script]
     - apk -U add make git jq curl protoc
     - !reference [.go-private-auth, before_script]
-    - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
-    - |
-      if [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ]; then
-        export DOCKER_MIRROR="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
-        echo "$CI_DEPENDENCY_PROXY_PASSWORD" | docker login "$CI_DEPENDENCY_PROXY_SERVER" -u "$CI_DEPENDENCY_PROXY_USER" --password-stdin
-        if ! docker manifest inspect "${DOCKER_MIRROR}golang:1.26.4" >/dev/null 2>&1; then
-          echo "Dependency proxy missing golang:1.26.4; falling back to Docker Hub"
-          unset DOCKER_MIRROR
-        fi
-      fi
+    - !reference [.dind-registries, before_script]
     - make docker-gitlab-login
   script:
     - make docker-gitlab-build
@@ -408,6 +441,39 @@ pages:
       - public
   script:
     - make docs-generate
+
+# Copy third-party images the dind jobs pull into this project's registry.
+# Protected branches only, so MR code can never write images other pipelines
+# use. It copies registry to registry with `docker buildx imagetools`, so no dind
+# daemon is involved. A tag that already exists is left alone.
+mirror-ci-images:
+  rules:
+    - if: $CI_COMMIT_BRANCH && $CI_COMMIT_REF_PROTECTED == "true"
+  stage: build
+  needs: []
+  # consumers fall back to the upstream registry, so a failed copy only
+  # costs reliability until the next protected pipeline
+  allow_failure: true
+  image: docker:28.5.2
+  variables:
+    DOCKER_HOST: ""
+    DOCKER_TLS_VERIFY: ""
+    DOCKER_CERT_PATH: ""
+  script:
+    - mkdir -p ~/.docker
+    - |
+      printf '{"auths":{"%s":{"auth":"%s"}}}' "$CI_REGISTRY" \
+        "$(printf '%s:%s' "$CI_REGISTRY_USER" "$CI_REGISTRY_PASSWORD" | base64 | tr -d '\n')" > ~/.docker/config.json
+    - |
+      mirror() {
+        if docker buildx imagetools inspect "$2" >/dev/null 2>&1; then
+          echo "$2 already mirrored"
+        else
+          docker buildx imagetools create --tag "$2" "$1"
+        fi
+      }
+      PROTO_VER=$(sed -n 's/^protoVer=//p' Makefile)
+      mirror "ghcr.io/cosmos/proto-builder:$PROTO_VER" "$CI_REGISTRY_IMAGE/ci/proto-builder:$PROTO_VER"
 
 build-thorscan:
   rules: *build-thornode-rules
@@ -468,25 +534,12 @@ test-simulation:
       - ./logs/
   environment:
     name: integration
+  # docker compose is the plugin shipped in the docker image, not a download.
   before_script:
     - !reference [.wait-for-dind, before_script]
     - apk -U add git make protoc bash go jq python3
     - !reference [.go-private-auth, before_script]
-    - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
-    - |
-      if [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ]; then
-        export DOCKER_MIRROR="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
-        echo "$CI_DEPENDENCY_PROXY_PASSWORD" | docker login "$CI_DEPENDENCY_PROXY_SERVER" -u "$CI_DEPENDENCY_PROXY_USER" --password-stdin
-        if ! docker manifest inspect "${DOCKER_MIRROR}golang:1.26.4" >/dev/null 2>&1; then
-          echo "Dependency proxy missing golang:1.26.4; falling back to Docker Hub"
-          unset DOCKER_MIRROR
-        fi
-      fi
-    - |
-      PLUGIN="$HOME/.docker/cli-plugins/docker-compose"
-      mkdir -p $(dirname $PLUGIN)
-      wget https://github.com/docker/compose/releases/download/v2.28.1/docker-compose-linux-x86_64 -O $PLUGIN
-      chmod +x $PLUGIN
+    - !reference [.dind-registries, before_script]
   script:
     - make test-simulation-cluster
   after_script:
@@ -560,16 +613,7 @@ test-regression:
     - !reference [.wait-for-dind, before_script]
     - apk -U add make git bash
     - !reference [.go-private-auth, before_script]
-    - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
-    - |
-      if [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ]; then
-        export DOCKER_MIRROR="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
-        echo "$CI_DEPENDENCY_PROXY_PASSWORD" | docker login "$CI_DEPENDENCY_PROXY_SERVER" -u "$CI_DEPENDENCY_PROXY_USER" --password-stdin
-        if ! docker manifest inspect "${DOCKER_MIRROR}golang:1.26.4" >/dev/null 2>&1; then
-          echo "Dependency proxy missing golang:1.26.4; falling back to Docker Hub"
-          unset DOCKER_MIRROR
-        fi
-      fi
+    - !reference [.dind-registries, before_script]
   script:
     - make test-regression
     - |

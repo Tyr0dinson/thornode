@@ -807,6 +807,8 @@ services:
     build:
       context: ./mocknet/monero
       dockerfile: Dockerfile
+      args:
+        DOCKER_MIRROR: ${DOCKER_MIRROR:-}
     image: thornode-monero-mocknet:latest
     restart: unless-stopped
     entrypoint: /usr/local/bin/daemon-entrypoint.sh

@@ -132,7 +132,7 @@ openapi:
 	@docker run --rm \
 		--user $(shell id -u):$(shell id -g) \
 		-v $$PWD/openapi:/mnt \
-		openapitools/openapi-generator-cli:v6.0.0@sha256:310bd0353c11863c0e51e5cb46035c9e0778d4b9c6fe6a7fc8307b3b41997a35 \
+		$(DOCKER_MIRROR)openapitools/openapi-generator-cli:v6.0.0@sha256:310bd0353c11863c0e51e5cb46035c9e0778d4b9c6fe6a7fc8307b3b41997a35 \
 		generate -i /mnt/openapi.yaml -g go -o /mnt/gen
 	@rm openapi/gen/go.mod openapi/gen/go.sum
 	@find ./openapi/gen -type f -print0 | xargs -0 sed -i.bak \
@@ -144,7 +144,8 @@ openapi:
 	@find ./openapi/gen -type f -name '*.bak' -delete
 
 protoVer=0.13.2
-protoImageName=ghcr.io/cosmos/proto-builder:$(protoVer)
+# CI sets PROTO_BUILDER_IMAGE to its registry mirror of the same version.
+protoImageName=$(or $(PROTO_BUILDER_IMAGE),ghcr.io/cosmos/proto-builder:$(protoVer))
 
 # buf resolves its BSR dependencies from buf.build at generate/lint/breaking
 # time. When the machine running these targets is blocked by buf.build (the
