@@ -731,6 +731,11 @@ func TORAnchorDrift(block *thorscan.BlockResponse) {
 		if mimirs[fmt.Sprintf("TORANCHOR-%s", asset.MimirString())] == 0 {
 			continue
 		}
+		// skip non-available (staged/suspended) anchor pools — they are excluded
+		// from the on-chain anchor median, so their price is not part of TOR.
+		if pool.Status != types.PoolStatus_Available.String() {
+			continue
+		}
 		// skip anchor pools on chains with trading halted — their stale
 		// AssetTorPrice would otherwise trigger false-positive drift alerts.
 		if isChainTradingHalted(mimirs, asset.Chain, block.Header.Height) {
