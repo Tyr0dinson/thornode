@@ -655,7 +655,14 @@ test-simulation:
     - !reference [.dind-registries, before_script]
   script:
     - make test-simulation-cluster
+  # Diagnostics for the on_failure artifacts. On a passing run nothing keeps
+  # them, and the event replay and log dump took up to 3.6 min.
   after_script:
+    - |
+      if [ "$CI_JOB_STATUS" = "success" ]; then
+        echo "test-simulation passed; skipping failure diagnostics"
+        exit 0
+      fi
     - make test-simulation-events || true
     - mkdir -p logs/xmr-debug
     - docker ps -a >./logs/ps.log 2>&1
