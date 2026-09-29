@@ -1342,7 +1342,7 @@ func (c *Client) BroadcastTx(txOutItem stypes.TxOutItem, hexTx []byte) (string, 
 	}
 	ctx, cancel := c.getContext()
 	defer cancel()
-	if err := c.client.SendTransaction(ctx, tx); err != nil && err.Error() != txpool.ErrAlreadyKnown.Error() && err.Error() != ecore.ErrNonceTooLow.Error() {
+	if err := c.client.SendTransaction(ctx, tx); err != nil && err.Error() != txpool.ErrAlreadyKnown.Error() && !strings.HasPrefix(err.Error(), ecore.ErrNonceTooLow.Error()) {
 		return "", err
 	}
 	txID := tx.Hash().String()
