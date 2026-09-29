@@ -361,16 +361,52 @@ func (s *Signer) processTxnOut(ch <-chan types.TxOut, idx int) {
 				return
 			}
 			s.logger.Info().Msgf("Received a TxOut Array of %v from the Thorchain", txOut)
-			items := make([]TxOutStoreItem, 0, len(txOut.TxArray))
-
-			for i, tx := range txOut.TxArray {
-				items = append(items, NewTxOutStoreItem(txOut.Height, tx.TxOutItem(txOut.Height), int64(i)))
-			}
-			if err := s.storage.Batch(items); err != nil {
+			if err := s.storeTxOut(txOut); err != nil {
 				s.logger.Error().Err(err).Msg("fail to save tx out items to storage")
 			}
 		}
 	}
+}
+
+// storeTxOut filters fresh impossible XMR attempts before they enter the signing
+// queue. Rescheduled obligations are checked anew; nothing is marked paid on
+// THORChain. Existing records, including recovery artifacts, are never replaced
+// by an XMR redelivery.
+func (s *Signer) storeTxOut(txOut types.TxOut) error {
+	items := make([]TxOutStoreItem, 0, len(txOut.TxArray))
+	var storeErrors []error
+	for i, tx := range txOut.TxArray {
+		item := NewTxOutStoreItem(txOut.Height, tx.TxOutItem(txOut.Height), int64(i))
+		if item.TxOutItem.Chain.Equals(common.XMRChain) {
+			existing, err := s.storage.Get(item.Key())
+			if err != nil {
+				// An unreadable record may contain recovery evidence. Leave it
+				// untouched, but do not prevent the other attempts from being
+				// saved. Nothing is marked paid: a missing attempt can return
+				// through THORChain rescheduling or redelivery after recovery.
+				storeErrors = append(storeErrors, fmt.Errorf("read XMR signer record %s: %w", item.Key(), err))
+				continue
+			}
+			if existing.RetrievalKey != "" {
+				continue
+			}
+			if admission, ok := s.chains[common.XMRChain].(interface {
+				CanSkipUnsupportedXMRDestination(types.TxOutItem) (bool, error)
+			}); ok {
+				skip, checkErr := admission.CanSkipUnsupportedXMRDestination(item.TxOutItem)
+				if checkErr != nil {
+					s.logger.Warn().Err(checkErr).Msg("retaining XMR attempt while admission state is unknown")
+				} else if skip {
+					continue
+				}
+			}
+		}
+		items = append(items, item)
+	}
+	if len(items) > 0 {
+		storeErrors = append(storeErrors, s.storage.Batch(items))
+	}
+	return errors.Join(storeErrors...)
 }
 
 func (s *Signer) processKeygen(ch <-chan ttypes.KeygenBlock) {
@@ -1235,7 +1271,9 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		startKeySign := time.Now()
 		signedTx, checkpoint, observation, err = chain.SignTx(tx, height)
 		if err != nil {
-			s.logger.Error().Err(err).Msg("fail to sign tx")
+			if !errors.Is(err, chainclienttypes.ErrUnsupportedXMRDestination) {
+				s.logger.Error().Err(err).Msg("fail to sign tx")
+			}
 			return checkpoint, nil, err
 		}
 		elapse = time.Since(startKeySign)
@@ -1381,6 +1419,23 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 	}
 
 	if err != nil {
+		if errors.Is(err, chainclienttypes.ErrUnsupportedXMRDestination) && item.TxOutItem.Chain.Equals(common.XMRChain) &&
+			!item.Round7Retry && len(item.SignedTx) == 0 && len(item.Checkpoint) == 0 && len(item.TxOutItem.Checkpoint) == 0 &&
+			item.Observation == nil && len(checkpoint) == 0 && obs == nil {
+			// Retire only this local unsigned attempt, never the on-chain
+			// obligation. A delete failure leaves it retryable; THORChain can
+			// also supply the same unsupported destination in a later schedule.
+			if removeErr := s.storage.Remove(item); removeErr != nil {
+				s.logger.Error().Err(removeErr).Str("item", item.Key()).
+					Msg("fail to retire unsupported unsigned XMR destination")
+			} else {
+				s.logger.Warn().Str("chain", item.TxOutItem.Chain.String()).Str("item", item.Key()).
+					Stringer("destination", item.TxOutItem.ToAddress).
+					Msg("retired local unsigned attempt for unsupported destination; on-chain obligation remains pending")
+			}
+			cancel()
+			return
+		}
 		// Always store the checkpoint of the built tx if we have one. This ensures the same
 		// vault will never attempt multiple txs for an outbound, as further protection
 		// against cases like https://gitlab.com/thorchain/thornode/-/merge_requests/4344.
