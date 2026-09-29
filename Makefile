@@ -178,7 +178,7 @@ proto-format:
 
 proto-format-check:
 	@echo "Checking Protobuf formatting"
-	@find ./ -name "*.proto" -print0 | xargs -0L1 $(protoImage) clang-format --dry-run -Werror
+	@$(protoImage) find ./ -name "*.proto" -exec clang-format --dry-run -Werror {} +
 
 proto-lint:
 	@$(protoImage) sh -c "cd proto/thorchain/v1 && buf lint --error-format=json"
