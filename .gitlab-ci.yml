@@ -66,6 +66,11 @@ variables:
   ARTIFACT_DOWNLOAD_ATTEMPTS: 3
   RESTORE_CACHE_ATTEMPTS: 3
   EXECUTOR_JOB_SECTION_ATTEMPTS: 3
+  # Shallow clone. The project default is a full clone (941MB of history), which
+  # averaged 78s per job, about 14% of all runner time on 2026-09-22..29. Only
+  # lint and fork need history (a merge base with the target branch) and set
+  # GIT_DEPTH 0 themselves; secret_detection sets its own 50 in the template.
+  GIT_DEPTH: "20"
   SAST_EXCLUDED_PATHS: spec, test, tests, tmp, .cache
 
 .use_dind: &use_dind
@@ -218,6 +223,7 @@ fork:
       when: always
   variables:
     PKGS: git jq
+    GIT_DEPTH: "0"
   before_script:
     - !reference [.pkg-install, before_script]
   script:
@@ -377,6 +383,8 @@ lint:
   variables:
     XDG_CACHE_HOME: /trunk-cache
     PKGS: jq
+    # trunk-ci.sh diffs against the merge base with origin/develop
+    GIT_DEPTH: "0"
   before_script:
     - !reference [.pkg-install, before_script]
     - !reference [.go-private-auth, before_script]
