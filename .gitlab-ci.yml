@@ -180,6 +180,33 @@ variables:
   before_script:
     - . ./scripts/ci-go-private-auth.sh
 
+# What test-simulation and test-regression wait for. On 2026-09-15..29 these
+# jobs caught 116 of the 122 pipelines that failed a check before the sim
+# (lint 40, generate 39, proto 37, unit-tests 14), and all of them finish in
+# about 10 min. `optional` covers pipelines where rules leave a job out (lint
+# on deployment branches, unit-tests on some merge trains). No artifacts are
+# needed from them.
+.long-test-gate:
+  needs:
+    - job: generate
+      optional: true
+      artifacts: false
+    - job: proto-check-formatting
+      optional: true
+      artifacts: false
+    - job: proto-lint
+      optional: true
+      artifacts: false
+    - job: proto-check-breaking
+      optional: true
+      artifacts: false
+    - job: lint
+      optional: true
+      artifacts: false
+    - job: unit-tests
+      optional: true
+      artifacts: false
+
 # Install $PKGS from the distro mirror. A DNS blip on the runner ("Temporary
 # failure resolving 'deb.debian.org'") only warns in `apt-get update` and then
 # fails the install as a script error, so retry and exit 75 if the mirror stays
@@ -200,6 +227,13 @@ variables:
         sleep 15
       done
 
+# Jobs start from `needs:`, not from stage order. With stage order the
+# simulation started a median 27 min after the pipeline (p90 117 min), held back
+# by whichever protobuf or test job finished last. Checks that need nothing
+# start at once. test-simulation and test-regression wait only for the checks
+# that catch most bad branches (.long-test-gate), so a branch that fails those
+# does not also spend runner time on a sim. The build jobs keep stage order, so
+# images are only pushed after every check passed.
 stages:
   - .pre
   - fork
@@ -303,6 +337,7 @@ generate:
       - data_integrity_failure
       - script_failure
   stage: protobuf
+  needs: []
   <<: *use_dind
   before_script:
     - !reference [.wait-for-dind, before_script]
@@ -323,6 +358,7 @@ unit-tests:
       when: never
     - *rules
   stage: test
+  needs: []
   coverage: /total:\s+\(statements\)\s+(\d+.\d+\%)/
   before_script:
     - !reference [.go-private-auth, before_script]
@@ -346,6 +382,7 @@ test-mocknet-scripts:
       when: never
     - *rules
   stage: test
+  needs: []
   image: alpine:3.21
   variables:
     PKGS: bash python3 jq
@@ -360,6 +397,7 @@ xmr-e2e-gates:
       when: never
     - *rules
   stage: test
+  needs: []
   before_script:
     - !reference [.go-private-auth, before_script]
   script:
@@ -378,6 +416,7 @@ lint:
     - if: $CI == "true"
       when: on_success
   stage: test
+  needs: []
   # limit to 1 concurrent execution as shared trunk cache can cause internal error
   resource_group: trunk-lint
   variables:
@@ -394,6 +433,7 @@ lint:
 proto-check-formatting:
   rules: *rules
   stage: protobuf
+  needs: []
   <<: *use_dind
   before_script:
     - !reference [.wait-for-dind, before_script]
@@ -406,6 +446,7 @@ proto-lint:
   rules: *rules
   retry: *buf_retry
   stage: protobuf
+  needs: []
   <<: *use_dind
   before_script:
     - !reference [.wait-for-dind, before_script]
@@ -431,6 +472,7 @@ proto-check-breaking:
       when: on_success
   retry: *buf_retry
   stage: protobuf
+  needs: []
   <<: *use_dind
   before_script:
     - !reference [.wait-for-dind, before_script]
@@ -478,6 +520,7 @@ chain-evm:
         paths:
           - chain/evm/**/*
   stage: test
+  needs: []
   image: node:18
   script:
     - cd chain/evm/
@@ -500,6 +543,7 @@ go-tss:
           - go.mod
           - go.sum
   stage: test
+  needs: []
   before_script:
     - !reference [.go-private-auth, before_script]
   script:
@@ -633,6 +677,7 @@ test-simulation:
       when: never
     - *rules
   timeout: 2h
+  needs: !reference [.long-test-gate, needs]
   retry:
     max: 2
     when:
@@ -701,8 +746,13 @@ unit-tests-race-bifrost:
   # long-test, not test: the race detector makes this a ~35m job, and running it
   # alongside unit-tests and lint on the shared runner starved both of CPU --
   # unit-tests failed on localhost "context deadline exceeded" and lint hit its
-  # 1h timeout at 3x its usual runtime.
+  # 1h timeout at 3x its usual runtime. It still waits for unit-tests, which now
+  # starts with the pipeline instead of after the protobuf stage.
   stage: long-test
+  needs:
+    - job: unit-tests
+      optional: true
+      artifacts: false
   timeout: 1h
   before_script:
     - !reference [.go-private-auth, before_script]
@@ -728,6 +778,7 @@ test-regression:
       - data_integrity_failure
       - script_failure
   stage: long-test
+  needs: !reference [.long-test-gate, needs]
   <<: *use_dind
   environment:
     name: integration
@@ -763,10 +814,12 @@ include:
 
 secret_detection:
   stage: test
+  needs: []
   rules: *rules
 
 semgrep:
   stage: test
+  needs: []
   rules: *rules
   image: semgrep/semgrep:1.140.0
   # --error makes findings fail the job; the previous `|| true` meant this check
@@ -782,6 +835,7 @@ semgrep:
 
 govulncheck:
   stage: test
+  needs: []
   rules: *rules
   # Informational until the baseline is cleared: on 2026-09-14 it reported 32
   # reachable vulnerabilities across 18 modules. Remove allow_failure once the
