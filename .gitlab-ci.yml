@@ -510,17 +510,21 @@ mirror-ci-images:
       PROTO_DIGEST=$(sed -n 's/^protoDigest=//p' Makefile)
       mirror ghcr.io/cosmos/proto-builder "$CI_REGISTRY_IMAGE/ci/proto-builder" "$PROTO_VER" "$PROTO_DIGEST"
 
-# Build the dind jobs' tools image (ci/Dockerfile.ci-tools) when its Dockerfile
-# changes on a protected branch, or on demand from a web pipeline. It refuses
-# to overwrite an existing tag, so a change must bump CI_TOOLS_VERSION. Any
-# Developer's CI_JOB_TOKEN can push to this registry, so jobs must reference
-# the image by the digest this job prints, never by tag alone.
+# Build the dind jobs' tools image (ci/Dockerfile.ci-tools) when a push to the
+# default branch changes its Dockerfile, or on demand from a web pipeline on a
+# protected branch. Only default-branch pushes publish automatically: promoting
+# the same Dockerfile to stagenet or mainnet, and API pipelines (where
+# rules:changes is always true), would otherwise re-run it into the
+# existing-tag error. It refuses to overwrite an existing tag, so a change must
+# bump CI_TOOLS_VERSION. Any Developer's CI_JOB_TOKEN can push to this
+# registry, so jobs must reference the image by the digest this job prints,
+# never by tag alone.
 build-ci-tools-image:
   rules:
     - if: $CI_COMMIT_BRANCH && $CI_COMMIT_REF_PROTECTED == "true" && $CI_PIPELINE_SOURCE == "web"
       when: manual
       allow_failure: true
-    - if: $CI_COMMIT_BRANCH && $CI_COMMIT_REF_PROTECTED == "true"
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_COMMIT_REF_PROTECTED == "true"
       changes:
         - ci/Dockerfile.ci-tools
   stage: build
