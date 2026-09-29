@@ -1,5 +1,27 @@
 image: golang:1.26.4
 
+# Retry jobs that failed for infrastructure reasons, never on script_failure.
+# Server-side execution timeouts are left out: those jobs really ran too long.
+# Exit code 75 (EX_TEMPFAIL) is how our own scripts flag an infrastructure
+# failure the runner cannot classify, e.g. the dind service never came up.
+# A job-level `retry:` replaces this entirely, so jobs that set their own must
+# repeat these reasons.
+default:
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - runner_external_dependency_failure
+      - runner_interrupted
+      - api_failure
+      - stuck_pending_with_matching_runners
+      - no_updates_running
+      - scheduler_failure
+      - unknown_failure
+      - data_integrity_failure
+    exit_codes:
+      - 75
+
 workflow:
   rules:
     - if: $CI_MERGE_REQUEST_IID
@@ -23,12 +45,38 @@ variables:
   # Go via `apk add go` download the toolchain pinned in go.mod (toolchain go1.26.4).
   GOTOOLCHAIN: auto
   SAST_EXCLUDED_ANALYZERS: eslint,bandit,semgrep
+  # Let the runner retry the stages it owns. A failed source fetch ("fetch-pack:
+  # unexpected disconnect", "GitLab is currently unable to handle this request
+  # due to load") is reported as script_failure, so `retry:` cannot catch it.
+  GET_SOURCES_ATTEMPTS: 3
+  ARTIFACT_DOWNLOAD_ATTEMPTS: 3
+  RESTORE_CACHE_ATTEMPTS: 3
+  EXECUTOR_JOB_SECTION_ATTEMPTS: 3
   SAST_EXCLUDED_PATHS: spec, test, tests, tmp, .cache
 
 .use_dind: &use_dind
   image: docker:28.5.2
   services:
     - docker:28.5.2-dind
+
+# Wait for the dind service before the first docker command. If it never
+# answers ("dial tcp ...:2376: connect: no route to host"), exit 75 so the
+# default retry picks the job up instead of failing it as a script error.
+# https://gitlab.com/gitlab-org/gitlab-runner/-/issues/27384#note_497228752
+.wait-for-dind:
+  before_script:
+    - |
+      i=0
+      until docker info >/dev/null 2>&1; do
+        i=$((i + 1))
+        if [ "$i" -ge 60 ]; then
+          echo "dind service at $DOCKER_HOST did not answer within 60s"
+          docker info || true
+          exit 75
+        fi
+        echo "Waiting for docker to start"
+        sleep 1
+      done
 
 # Authenticate git to gitlab.com using the per-pipeline CI_JOB_TOKEN so
 # `go mod download` can fetch private modules (tss-lib-private). Include with
@@ -128,12 +176,19 @@ generate:
     max: 2
     when:
       - runner_system_failure
-      - stuck_or_timeout_failure
+      - runner_external_dependency_failure
+      - runner_interrupted
+      - api_failure
+      - stuck_pending_with_matching_runners
+      - no_updates_running
       - scheduler_failure
+      - unknown_failure
+      - data_integrity_failure
       - script_failure
   stage: protobuf
   <<: *use_dind
   before_script:
+    - !reference [.wait-for-dind, before_script]
     - apk -U add bash curl findutils git go jq make protoc sed wget python3
     - !reference [.go-private-auth, before_script]
     - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
@@ -226,6 +281,7 @@ proto-check-formatting:
   stage: protobuf
   <<: *use_dind
   before_script:
+    - !reference [.wait-for-dind, before_script]
     - apk -U add findutils make
   script:
     - make proto-format-check
@@ -236,6 +292,7 @@ proto-lint:
   stage: protobuf
   <<: *use_dind
   before_script:
+    - !reference [.wait-for-dind, before_script]
     - apk -U add make
   script:
     - make proto-lint
@@ -258,6 +315,7 @@ proto-check-breaking:
   stage: protobuf
   <<: *use_dind
   before_script:
+    - !reference [.wait-for-dind, before_script]
     - apk -U add git make
   script:
     - make proto-check-breaking
@@ -277,14 +335,7 @@ build-thornode:
   stage: build
   <<: *use_dind
   before_script:
-    # https://gitlab.com/gitlab-org/gitlab-runner/-/issues/27384#note_497228752
-    - |
-      for i in $(seq 1 30)
-      do
-          docker info && break
-          echo "Waiting for docker to start"
-          sleep 1s
-      done
+    - !reference [.wait-for-dind, before_script]
     - apk -U add make git jq curl protoc
     - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
     - |
@@ -352,6 +403,8 @@ build-thorscan:
   rules: *build-thornode-rules
   stage: build
   <<: *use_dind
+  before_script:
+    - !reference [.wait-for-dind, before_script]
   script:
     - apk -U add make
     - make thorscan-build
@@ -361,6 +414,8 @@ build-events:
   rules: *build-thornode-rules
   stage: build
   <<: *use_dind
+  before_script:
+    - !reference [.wait-for-dind, before_script]
   script:
     - apk -U add make
     - make events-build
@@ -381,8 +436,14 @@ test-simulation:
     max: 2
     when:
       - runner_system_failure
-      - stuck_or_timeout_failure
+      - runner_external_dependency_failure
+      - runner_interrupted
+      - api_failure
+      - stuck_pending_with_matching_runners
+      - no_updates_running
       - scheduler_failure
+      - unknown_failure
+      - data_integrity_failure
       - script_failure
   stage: long-test
   <<: *use_dind
@@ -394,6 +455,7 @@ test-simulation:
   environment:
     name: integration
   before_script:
+    - !reference [.wait-for-dind, before_script]
     - apk -U add git make protoc bash go jq python3
     - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
     - |
@@ -460,8 +522,14 @@ test-regression:
     max: 2
     when:
       - runner_system_failure
-      - stuck_or_timeout_failure
+      - runner_external_dependency_failure
+      - runner_interrupted
+      - api_failure
+      - stuck_pending_with_matching_runners
+      - no_updates_running
       - scheduler_failure
+      - unknown_failure
+      - data_integrity_failure
       - script_failure
   stage: long-test
   <<: *use_dind
@@ -473,6 +541,7 @@ test-regression:
     PARALLELISM: "6"
     FAIL_FAST: "true"
   before_script:
+    - !reference [.wait-for-dind, before_script]
     - apk -U add make git bash
     - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
     - |
