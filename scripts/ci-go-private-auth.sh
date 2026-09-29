@@ -3,8 +3,12 @@
 # private module gitlab.com/thorchain/tss/tss-lib-private.
 #
 # It uses the first credential that can read tss-lib-private:
-#   1. TSS_LIB_PRIVATE_READ_TOKEN (user TSS_LIB_PRIVATE_READ_USER): a dedicated
-#      read-only deploy token, set as a CI/CD variable by a maintainer.
+#   1. TSS_LIB_PRIVATE_READ_TOKEN (user TSS_LIB_PRIVATE_READ_USER): an optional
+#      read-only deploy token, set as a CI/CD variable by a maintainer. Every
+#      job of every pipeline that receives it can read it, including fork MR
+#      pipelines run in this project, so prefer giving pipeline users Reporter
+#      on tss-lib-private; if the token is used, make it protected and
+#      short-lived.
 #   2. CI_JOB_TOKEN, which only has the permissions of the user who started
 #      the pipeline and so fails for anyone without access to tss-lib-private.
 # The winner is configured for git in this job and exported as

@@ -438,8 +438,10 @@ chain-evm:
 
 go-tss:
   rules:
-    # Needs tss-lib-private credentials, so never run fork code, including a
-    # fork MR pipeline a maintainer runs in this project.
+    # Keeps honest fork MRs from running with tss-lib-private credentials. It is
+    # not a security boundary: a fork MR pipeline a maintainer runs in this
+    # project uses the fork's .gitlab-ci.yml and receives every unprotected
+    # project variable, so review the fork's diff before running it.
     - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
       when: never
     - changes:
