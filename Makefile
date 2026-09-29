@@ -423,7 +423,7 @@ test-simulation-xmr-readiness: TEST_SIMULATION_CLUSTER_STAGES=seed,bootstrap,xmr
 test-simulation-xmr-readiness: override TEST_SIMULATION_REQUIRE_XMR=1
 test-simulation-xmr-readiness: test-simulation-cluster
 
-test-simulation-cluster: test-mocknet-startup test-xmr-readiness-config build-test-simulation build-mocknet-cluster reset-mocknet-cluster
+test-simulation-cluster: test-mocknet-startup test-xmr-readiness-config prepare-mocknet-cluster
 	@docker stop docker-midgard-1 docker-midgard-db-1 >/dev/null 2>&1 || true
 	@STAGES=$(TEST_SIMULATION_CLUSTER_STAGES) docker run --rm ${DOCKER_TTY_ARGS} \
 		-e PARALLELISM=$(PARALLELISM) -e STAGES \
@@ -578,6 +578,27 @@ ps-mocknet-cluster:
 	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster --profile midgard ps
 
 reset-mocknet-cluster: stop-mocknet-cluster build-mocknet-cluster run-mocknet-cluster
+
+# L1 chains of the cluster that run a released image, so they can start before
+# the thornode and simtest images are built.
+MOCKNET_CLUSTER_L1_SERVICES := gaia noble bitcoin bitcoin-cash dogecoin litecoin \
+	ethereum base xrp binance-smart avalanche tron-supernode tron-fullnode solana \
+	polygon zcash
+
+run-mocknet-cluster-l1:
+	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster \
+		up -d $(MOCKNET_CLUSTER_L1_SERVICES)
+
+# reset-mocknet-cluster plus the simtest image, with the L1 chains starting in
+# the background while the images build. Their image pulls and warm-up (the sim
+# waits for tron and solana to advance blocks) then overlap the build instead of
+# following it. run-mocknet-cluster finds them running and leaves them as is.
+prepare-mocknet-cluster: stop-mocknet-cluster
+	@$(MAKE) --no-print-directory run-mocknet-cluster-l1 & l1_pid=$$!; \
+	$(MAKE) --no-print-directory build-test-simulation build-mocknet-cluster; build_rc=$$?; \
+	wait $$l1_pid; l1_rc=$$?; \
+	[ $$build_rc -eq 0 ] && [ $$l1_rc -eq 0 ]
+	@$(MAKE) --no-print-directory run-mocknet-cluster
 
 # ------------------------------ Test Sync ------------------------------
 
