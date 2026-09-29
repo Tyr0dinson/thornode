@@ -560,7 +560,7 @@ func (c *SOLClient) advanceSolvencySlotMultiple(v int64) {
 // it re-claim the vault's single signing slot every pass and starve every later SOL
 // outbound for that vault. Callers pass a partially-built event so each drop can carry
 // its own fields; tx and the abstain metric are attached here.
-func (c *SOLClient) dropForReschedule(tx stypes.TxOutItem, reason string, ev *zerolog.Event, msg string) ([]byte, []byte, *stypes.TxInItem, error) {
+func (c *SOLClient) dropForReschedule(tx stypes.TxOutItem, reason string, ev *zerolog.Event, msg string) ([]byte, []byte, []*stypes.TxInItem, error) {
 	ev.Interface("tx", tx).Msg(msg)
 	c.countAbstain(reason)
 	return nil, nil, nil, nil
