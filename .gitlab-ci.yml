@@ -777,22 +777,29 @@ test-regression:
       - script_failure
   stage: long-test
   needs: !reference [.long-test-gate, needs]
-  <<: *use_dind
+  # Runs in the job container instead of building ci/Dockerfile.regtest in an
+  # empty dind daemon, so the runner's warm /go-build-cache and /go-mod-cache
+  # replace a cold `go mod download` and a cold compile of three binaries.
+  # Each suite file gets its own home and ports (offset by file index), so
+  # PARALLELISM cannot collide. The module cache is warm, so like unit-tests
+  # this only warns when no credential can read tss-lib-private.
+  # `make test-regression` still runs the same targets in docker for local use.
   environment:
     name: integration
   variables:
-    DOCKER_BUILDKIT: "1"
     TIME_FACTOR: "2"
-    PARALLELISM: "6"
+    PARALLELISM: "10"
     FAIL_FAST: "true"
-    GO_PRIVATE_AUTH_REQUIRED: "1"
+    PKGS: jq
+    REGTEST_BIN_DIR: /tmp/regtest-bin
+    REGTEST_HOME_BASE: /tmp/regtest-home
+    REGTEST_MNT_DIR: $CI_PROJECT_DIR/test/regression/mnt
   before_script:
-    - !reference [.wait-for-dind, before_script]
-    - apk -U add make git bash
+    - !reference [.pkg-install, before_script]
     - !reference [.go-private-auth, before_script]
-    - !reference [.dind-registries, before_script]
   script:
-    - make test-regression
+    - make _build-test-regression
+    - make _test-regression UID=0 GID=0
     - |
       CHANGES=$(git status --porcelain test/regression/mnt/exports/ test/regression/mnt/blocks/)
       if [ -n "$CHANGES" ]; then
