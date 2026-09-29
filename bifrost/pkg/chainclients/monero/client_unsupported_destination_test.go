@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	chainclienttypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
+	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	tssp "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
 	"gitlab.com/thorchain/thornode/v3/common"
 )
@@ -72,16 +73,16 @@ func TestSignTxUnsupportedDestinationRetirement(t *testing.T) {
 				if skip != (state == "unsigned") || (skip && skipErr != nil) {
 					t.Fatalf("unsafe admission for %s: skip=%v err=%v", state, skip, skipErr)
 				}
-				signed, checkpoint, obs, signErr := client.SignTx(tx, 12345)
+				signed, checkpoint, obs, signErr := client.SignTx([]stypes.TxOutItem{tx}, 12345)
 				if state == "signed" {
-					if signErr != nil || !bytes.Equal(signed, saved) || len(checkpoint) == 0 || obs == nil {
+					if signErr != nil || !bytes.Equal(signed, saved) || len(checkpoint) == 0 || len(obs) == 0 {
 						t.Fatalf("saved payload must recover before destination policy: %v", signErr)
 					}
 				} else {
 					if signErr == nil || errors.Is(signErr, chainclienttypes.ErrUnsupportedXMRDestination) != (state == "unsigned") {
 						t.Fatalf("unexpected disposition for %s: %v", state, signErr)
 					}
-					if len(signed) != 0 || len(checkpoint) != 0 || obs != nil {
+					if len(signed) != 0 || len(checkpoint) != 0 || len(obs) != 0 {
 						t.Fatal("unsupported request produced signing artifacts")
 					}
 				}

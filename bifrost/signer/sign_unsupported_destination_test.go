@@ -51,9 +51,13 @@ type protectedDestinationClient struct {
 
 func (c *protectedDestinationClient) GetChain() common.Chain { return c.chain }
 
-func (c *protectedDestinationClient) SignTx(tx types.TxOutItem, _ int64) ([]byte, []byte, *types.TxInItem, error) {
+func (c *protectedDestinationClient) SignTx(txs []types.TxOutItem, _ int64) ([]byte, []byte, []*types.TxInItem, error) {
 	c.signCount++
-	return nil, tx.Checkpoint, nil, chainclienttypes.ErrUnsupportedXMRDestination
+	var checkpoint []byte
+	if len(txs) > 0 {
+		checkpoint = txs[0].Checkpoint
+	}
+	return nil, checkpoint, nil, chainclienttypes.ErrUnsupportedXMRDestination
 }
 
 func (c *protectedDestinationClient) BroadcastTx(types.TxOutItem, []byte) (string, error) {
@@ -109,9 +113,11 @@ func (c *destinationChainClient) CanSkipUnsupportedXMRDestination(tx types.TxOut
 	return client.CanSkipUnsupportedXMRDestination(tx)
 }
 
-func (c *destinationChainClient) SignTx(tx types.TxOutItem, height int64) ([]byte, []byte, *types.TxInItem, error) {
-	c.attempts = append(c.attempts, tx.ToAddress)
-	return c.ChainClient.SignTx(tx, height)
+func (c *destinationChainClient) SignTx(txs []types.TxOutItem, height int64) ([]byte, []byte, []*types.TxInItem, error) {
+	for _, tx := range txs {
+		c.attempts = append(c.attempts, tx.ToAddress)
+	}
+	return c.ChainClient.SignTx(txs, height)
 }
 
 func (c *destinationChainClient) BroadcastTx(types.TxOutItem, []byte) (string, error) {
