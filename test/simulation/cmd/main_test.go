@@ -463,13 +463,28 @@ func TestSimulationWaitsForZecInitialBlocksBeforeCreatingUsers(t *testing.T) {
 	}
 }
 
-func TestMocknetZecFundingUsesCumulativeTargets(t *testing.T) {
-	mocknetGo := readRepoFile(t, "test/simulation/cmd/mocknet.go")
-	if !strings.Contains(mocknetGo, "cumulativeAmount := amount.MulUint64(uint64(i + 1))") {
-		t.Fatal("ZEC mocknet seeding should use cumulative balance targets so split funding txs actually add up")
+func TestZecFundingTransfersSplitWhatIsMissing(t *testing.T) {
+	amount := sdkmath.NewUint(5)
+	cases := []struct {
+		name    string
+		current uint64
+		want    []uint64
+	}{
+		{"fresh user gets one utxo per tx", 0, []uint64{5, 5, 5, 5}},
+		{"partial balance tops up the remainder", 7, []uint64{5, 5, 3}},
+		{"exact target sends nothing", 20, nil},
+		{"over target sends nothing", 23, nil},
 	}
-	if !strings.Contains(mocknetGo, "fundUserChainAccount(master, user, common.ZECChain, cumulativeAmount)") {
-		t.Fatal("ZEC mocknet seeding should fund users toward the cumulative target each iteration")
+	for _, tc := range cases {
+		got := zecFundingTransfers(sdkmath.NewUint(tc.current), amount, 4)
+		if len(got) != len(tc.want) {
+			t.Fatalf("%s: got %d transfers %v, want %v", tc.name, len(got), got, tc.want)
+		}
+		for i := range got {
+			if !got[i].Equal(sdkmath.NewUint(tc.want[i])) {
+				t.Fatalf("%s: transfer %d = %s, want %d", tc.name, i, got[i], tc.want[i])
+			}
+		}
 	}
 }
 
