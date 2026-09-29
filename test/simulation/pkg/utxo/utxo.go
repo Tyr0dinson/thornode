@@ -3,6 +3,7 @@ package utxo
 import (
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -77,6 +78,11 @@ type Client struct {
 var _ LiteChainClient = &Client{}
 
 const utxoStartupRPCTimeout = 5 * time.Second
+
+var (
+	utxoBroadcastAttempts   = 3
+	utxoBroadcastRetryDelay = 2 * time.Second
+)
 
 var utxoStartupImportLocks sync.Map
 
@@ -360,8 +366,7 @@ func (c *Client) BroadcastTx(payload []byte) (string, error) {
 		if err != nil {
 			// Zebra may requeue verification after cancelling the RPC. Check
 			// the original payload in the mempool/chain before retrying it.
-			raw, lookupErr := c.rpc.GetRawTransaction(txid)
-			if lookupErr == nil && strings.EqualFold(raw, payloadHex) {
+			if accepted, _ := c.payloadAccepted(txid, payloadHex); accepted {
 				c.finalizePendingSpentUtxos(payloadHex)
 				return txid, nil
 			}
@@ -388,8 +393,55 @@ func (c *Client) BroadcastTx(payload []byte) (string, error) {
 		maxFee = 10_000_000
 	}
 
-	// broadcast tx
-	return c.rpc.SendRawTransaction(redeemTx, maxFee)
+	// Rebroadcasting identical bytes is idempotent, so transport failures reuse
+	// this payload. Signing again after a timed-out broadcast that the node
+	// accepted anyway spends other inputs and sends a duplicate inbound.
+	txid := redeemTx.TxHash().String()
+	payloadHex := hex.EncodeToString(payload)
+	var err error
+	for attempt := 1; attempt <= utxoBroadcastAttempts; attempt++ {
+		var hash string
+		hash, err = c.rpc.SendRawTransaction(redeemTx, maxFee)
+		if err == nil {
+			return hash, nil
+		}
+		accepted, absent := c.payloadAccepted(txid, payloadHex)
+		if accepted {
+			return txid, nil
+		}
+
+		// the node answered: an earlier attempt was mined, or the payload was
+		// rejected. Rejection is final only when the node also denies holding
+		// the txid, since an earlier attempt or a transport retry inside
+		// rpc.Call may have been accepted without an answer. Otherwise resend.
+		var rpcErr *btcjson.RPCError
+		if errors.As(err, &rpcErr) {
+			if rpcErr.Code == btcjson.ErrRPCTxAlreadyInChain {
+				return txid, nil
+			}
+			if absent {
+				return "", fmt.Errorf("fail to broadcast %s tx %s: %w", c.chain, txid, err)
+			}
+		}
+		if attempt < utxoBroadcastAttempts {
+			time.Sleep(utxoBroadcastRetryDelay)
+		}
+	}
+	return txid, fmt.Errorf("%w: %s tx %s not found after %d broadcast attempts: %w",
+		ErrSimTxUncertain, c.chain, txid, utxoBroadcastAttempts, err)
+}
+
+// payloadAccepted reports whether the node already holds the exact payload in
+// its mempool or chain, and whether the node answered that it has no such txid.
+// absent also rules out mined transactions only with -txindex, which the
+// mocknet DOGE and LTC daemons enable.
+func (c *Client) payloadAccepted(txid, payloadHex string) (accepted, absent bool) {
+	raw, err := c.rpc.GetRawTransaction(txid)
+	if err == nil {
+		return strings.EqualFold(raw, payloadHex), false
+	}
+	var rpcErr *btcjson.RPCError
+	return false, errors.As(err, &rpcErr) && rpcErr.Code == btcjson.ErrRPCNoTxInfo
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////

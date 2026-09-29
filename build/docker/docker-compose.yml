@@ -717,6 +717,8 @@ services:
       - mocknet-cluster
     image: registry.gitlab.com/thorchain/devops/node-launcher:dogecoin-daemon-1.14.9
     restart: unless-stopped
+    # the entrypoint forwards SIGTERM so dogecoind can flush the chain on stop
+    stop_grace_period: 1m
     volumes:
       - "./mocknet:/mocknet"
     environment:
