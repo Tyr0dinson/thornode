@@ -376,23 +376,28 @@ func (s *BitcoinSignerSuite) TestSignTxCheckpointAfterKeysignFailure(c *C) {
 
 	// party never formed: no checkpoint, the next attempt rebuilds the tx
 	s.client.tssKeySigner = syncFail
-	signed, checkpoint, _, err := s.client.SignTx(txOutItem, 1)
+	signed, checkpoint, _, err := s.client.SignTx([]stypes.TxOutItem{txOutItem}, 1)
 	c.Assert(err, ErrorMatches, "(?s).*signers fail to sync.*")
 	c.Assert(signed, IsNil)
 	c.Assert(checkpoint, IsNil)
+	stored, err := s.client.signerCacheManager.GetCheckpoint(txOutItem.VaultPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(stored, IsNil)
 	c.Assert(testutil.ToFloat64(partyNotFormed), Equals, before+1)
 
 	// party formed and failed in a round: the tx is checkpointed
 	s.client.tssKeySigner = roundFail
-	signed, checkpoint, _, err = s.client.SignTx(txOutItem, 1)
+	signed, checkpoint, _, err = s.client.SignTx([]stypes.TxOutItem{txOutItem}, 1)
 	c.Assert(err, NotNil)
 	c.Assert(signed, IsNil)
 	c.Assert(checkpoint, NotNil)
+	stored, err = s.client.signerCacheManager.GetCheckpoint(txOutItem.VaultPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(stored, DeepEquals, checkpoint)
 
 	// a checkpointed tx stays pinned even if its party later fails to form
-	txOutItem.Checkpoint = checkpoint
 	s.client.tssKeySigner = syncFail
-	signed, retained, _, err := s.client.SignTx(txOutItem, 1)
+	signed, retained, _, err := s.client.SignTx([]stypes.TxOutItem{txOutItem}, 1)
 	c.Assert(err, NotNil)
 	c.Assert(signed, IsNil)
 	c.Assert(retained, DeepEquals, checkpoint)

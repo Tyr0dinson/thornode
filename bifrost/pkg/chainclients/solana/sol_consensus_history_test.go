@@ -288,7 +288,7 @@ func (s *SolTestSuite) TestSignTxStrandedHistoryRetainsThenSignsWhenHistoryRetur
 
 	txOut := newSolCacheTestTxOut(pub)
 
-	rawTx, _, _, err := e.SignTx(txOut, keysignHeight)
+	rawTx, _, _, err := e.SignTx([]stypes.TxOutItem{txOut}, keysignHeight)
 	c.Assert(err, NotNil) // retained for retry: not dropped, not signed
 	c.Assert(rawTx, IsNil)
 	c.Assert(mock.count("sendTransaction"), Equals, 0)
@@ -297,7 +297,7 @@ func (s *SolTestSuite) TestSignTxStrandedHistoryRetainsThenSignsWhenHistoryRetur
 	// The blocks the search needs are back in range: the outbound signs and broadcasts.
 	mock.setScenario(retainedHistoryScenario(target))
 
-	rawTx, _, _, err = e.SignTx(txOut, keysignHeight)
+	rawTx, _, _, err = e.SignTx([]stypes.TxOutItem{txOut}, keysignHeight)
 	c.Assert(err, IsNil)
 	c.Assert(rawTx, NotNil)
 
@@ -336,7 +336,7 @@ func (s *SolTestSuite) TestBroadcastTxExpiredAnchorRetainsSignedTx(c *C) {
 
 		txOut := newSolCacheTestTxOut(pub)
 		txOut.Height = keysignHeight
-		rawTx, _, _, err := e.SignTx(txOut, txOut.Height)
+		rawTx, _, _, err := e.SignTx([]stypes.TxOutItem{txOut}, txOut.Height)
 		c.Assert(err, IsNil, Commentf("%s", tc.name))
 		c.Assert(len(rawTx) > 0, Equals, true, Commentf("%s", tc.name))
 		rawTx = withTxBlockhash(c, rawTx, anchorHash, tc.signedHash)
@@ -410,7 +410,7 @@ func (s *SolTestSuite) TestSignTxProvenAnchorExpiryDrops(c *C) {
 		Memo:             "MIGRATE:838",
 	}
 
-	result, checkpoint, obs, err := client.SignTx(tx, keysignHeight)
+	result, checkpoint, obs, err := client.SignTx([]stypes.TxOutItem{tx}, keysignHeight)
 	c.Assert(err, IsNil) // drop for reschedule, not a retained error
 	c.Assert(result, IsNil)
 	c.Assert(checkpoint, IsNil)
