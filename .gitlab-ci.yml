@@ -134,11 +134,14 @@ variables:
 # unavailable". Keep BUF_PROXY only when this runner cannot reach api.buf.build
 # itself (HTTP 403 or no answer). Any other status, including the 404 its root
 # returns, means direct access works. Needs wget and sed (busybox has both).
+# wget exits non-zero on every outcome that matters here (403, 404, no
+# answer), and job scripts run with errexit and pipefail, so its status is
+# discarded and only the HTTP status line it printed is used.
 .buf-egress:
   before_script:
     - |
       if [ -n "${BUF_PROXY:-}" ]; then
-        BUF_STATUS=$(wget -q -S -T 10 -O /dev/null https://api.buf.build/ 2>&1 | sed -n 's/^ *HTTP\/[0-9.]* \([0-9]*\).*/\1/p' | tail -1)
+        BUF_STATUS=$( { wget -q -S -T 10 -O /dev/null https://api.buf.build/ 2>&1 || true; } | sed -n 's/^ *HTTP\/[0-9.]* \([0-9]*\).*/\1/p' | tail -1)
         if [ -n "$BUF_STATUS" ] && [ "$BUF_STATUS" != 403 ]; then
           echo "api.buf.build reachable directly (HTTP $BUF_STATUS); not using BUF_PROXY"
           unset BUF_PROXY
