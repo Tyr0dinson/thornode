@@ -127,6 +127,26 @@ variables:
         echo "$PROTO_MIRROR:$PROTO_VER@$PROTO_DIGEST unavailable; pulling proto-builder from ghcr.io"
       fi
 
+# buf.build's edge answers the Finland runner's egress IP with HTTP 403, so the
+# BUF_PROXY CI/CD variable routes buf through a proxy (see the Makefile). That
+# proxy only works from Finland: from any other runner it refuses the
+# connection and buf fails with "the server hosted at that remote is
+# unavailable". Keep BUF_PROXY only when this runner cannot reach api.buf.build
+# itself (HTTP 403 or no answer). Any other status, including the 404 its root
+# returns, means direct access works. Needs wget and sed (busybox has both).
+.buf-egress:
+  before_script:
+    - |
+      if [ -n "${BUF_PROXY:-}" ]; then
+        BUF_STATUS=$(wget -q -S -T 10 -O /dev/null https://api.buf.build/ 2>&1 | sed -n 's/^ *HTTP\/[0-9.]* \([0-9]*\).*/\1/p' | tail -1)
+        if [ -n "$BUF_STATUS" ] && [ "$BUF_STATUS" != 403 ]; then
+          echo "api.buf.build reachable directly (HTTP $BUF_STATUS); not using BUF_PROXY"
+          unset BUF_PROXY
+        else
+          echo "api.buf.build blocked or unreachable directly (${BUF_STATUS:-no response}); using BUF_PROXY"
+        fi
+      fi
+
 # Authenticate git to gitlab.com so `go mod download` can fetch the private
 # module tss-lib-private, and export GO_PRIVATE_GIT_CREDENTIAL for docker
 # builds. Prefers the TSS_LIB_PRIVATE_READ_TOKEN CI/CD variable over
@@ -267,6 +287,7 @@ generate:
     - !reference [.go-private-auth, before_script]
     - !reference [.dind-registries, before_script]
     - !reference [.proto-builder-image, before_script]
+    - !reference [.buf-egress, before_script]
   script:
     - |
       export PATH="$PATH:/root/go/bin"
@@ -365,6 +386,7 @@ proto-lint:
     - !reference [.wait-for-dind, before_script]
     - apk -U add make
     - !reference [.proto-builder-image, before_script]
+    - !reference [.buf-egress, before_script]
   script:
     - make proto-lint
 
@@ -389,6 +411,7 @@ proto-check-breaking:
     - !reference [.wait-for-dind, before_script]
     - apk -U add git make
     - !reference [.proto-builder-image, before_script]
+    - !reference [.buf-egress, before_script]
   script:
     - make proto-check-breaking
 
