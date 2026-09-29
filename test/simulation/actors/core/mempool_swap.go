@@ -706,7 +706,10 @@ func (a *MempoolSwapSimulationActor) scenarioStreamFinalityBeforeSettlement(conf
 	}
 	defer swap.release()
 
-	if err = waitForMempoolCondition("partial unfinalized streaming swap "+swap.txID, mempoolObservationTimeout, func() (bool, error) {
+	// The first leg waits for height alignment with the 10-block interval, so
+	// slow blocks can exceed the observation budget; finality still aborts early
+	// via errMempoolMissedWindow.
+	if err = waitForMempoolCondition("partial unfinalized streaming swap "+swap.txID, mempoolCompletionTimeout, func() (bool, error) {
 		if err := requireMempoolSwapUnfinalized(swap.txID); err != nil {
 			return false, err
 		}

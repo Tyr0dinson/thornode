@@ -40,7 +40,6 @@ func TestNativeMempoolValidateFinalSettlement(t *testing.T) {
 
 	streamTarget := common.BTCAsset.GetSyntheticAsset()
 	stream := nativeMempoolTestSettlement(txID, destination, streamTarget, amount)
-	stream.OutTxs = nil
 	if err := nativeMempoolValidateFinalSettlement(stream, txID, destination, streamTarget, amount, amount); err != nil {
 		t.Fatalf("valid streaming settlement rejected: %v", err)
 	}
@@ -87,15 +86,16 @@ func TestNativeMempoolValidateFinalSettlementRejectsWrongOutbound(t *testing.T) 
 	}
 }
 
-func TestNativeMempoolValidateFinalSettlementRejectsStreamingOutTx(t *testing.T) {
+func TestNativeMempoolValidateFinalSettlementRequiresStreamingOutTx(t *testing.T) {
 	txID := strings.Repeat("D", 64)
 	destination := common.Address("thor1nativecreditrecipient")
 	amount := cosmos.NewUint(42424242)
 
 	target := common.RuneAsset()
 	details := nativeMempoolTestSettlement(txID, destination, target, amount)
+	details.OutTxs = nil
 	if err := nativeMempoolValidateFinalSettlement(details, txID, destination, target, amount, amount); err == nil {
-		t.Fatal("streaming settlement must reject an out tx record")
+		t.Fatal("streaming settlement must require an out tx record")
 	}
 }
 
