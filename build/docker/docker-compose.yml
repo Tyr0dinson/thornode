@@ -784,7 +784,7 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-    image: ${DOCKER_MIRROR:-}xrpllabsofficial/xrpld:3.1.2
+    image: registry.gitlab.com/thorchain/devops/node-launcher:xrp-daemon-3.4.0@sha256:70a879d2631c8acd6052e27f5c1b0f2f6d3153bf135a689c968b15d7b941f80a
     restart: unless-stopped
     environment:
       BLOCK_TIME: ${BLOCK_TIME:-5}
