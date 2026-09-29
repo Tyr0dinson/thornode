@@ -78,13 +78,16 @@ variables:
         sleep 1
       done
 
-# Authenticate git to gitlab.com using the per-pipeline CI_JOB_TOKEN so
-# `go mod download` can fetch private modules (tss-lib-private). Include with
-# `!reference [.go-private-auth, before_script]` in any job that resolves
-# Go modules outside of a docker build.
+# Authenticate git to gitlab.com so `go mod download` can fetch the private
+# module tss-lib-private, and export GO_PRIVATE_GIT_CREDENTIAL for docker
+# builds. Prefers the TSS_LIB_PRIVATE_READ_TOKEN CI/CD variable over
+# CI_JOB_TOKEN, which only works when the pipeline user can read tss-lib-private.
+# Include with `!reference [.go-private-auth, before_script]` in any job that
+# resolves Go modules; jobs that build in dind also set
+# GO_PRIVATE_AUTH_REQUIRED=1 to fail fast when no credential works. Needs git.
 .go-private-auth:
   before_script:
-    - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com/".insteadOf "https://gitlab.com/"
+    - . ./scripts/ci-go-private-auth.sh
 
 stages:
   - .pre
@@ -334,9 +337,12 @@ build-thornode:
       when: always
   stage: build
   <<: *use_dind
+  variables:
+    GO_PRIVATE_AUTH_REQUIRED: "1"
   before_script:
     - !reference [.wait-for-dind, before_script]
     - apk -U add make git jq curl protoc
+    - !reference [.go-private-auth, before_script]
     - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
     - |
       if [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ]; then
@@ -372,6 +378,10 @@ chain-evm:
 
 go-tss:
   rules:
+    # Needs tss-lib-private credentials, so never run fork code, including a
+    # fork MR pipeline a maintainer runs in this project.
+    - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
+      when: never
     - changes:
         paths:
           - bifrost/tss/go-tss/**/*
@@ -414,10 +424,13 @@ build-events:
   rules: *build-thornode-rules
   stage: build
   <<: *use_dind
+  variables:
+    GO_PRIVATE_AUTH_REQUIRED: "1"
   before_script:
     - !reference [.wait-for-dind, before_script]
+    - apk -U add git make
+    - !reference [.go-private-auth, before_script]
   script:
-    - apk -U add make
     - make events-build
     - make events-gitlab-push
 
@@ -427,6 +440,7 @@ test-simulation:
   variables:
     DOCKER_BUILDKIT: "1"
     PARALLELISM: "4"
+    GO_PRIVATE_AUTH_REQUIRED: "1"
   rules:
     - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
       when: never
@@ -457,6 +471,7 @@ test-simulation:
   before_script:
     - !reference [.wait-for-dind, before_script]
     - apk -U add git make protoc bash go jq python3
+    - !reference [.go-private-auth, before_script]
     - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
     - |
       if [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ]; then
@@ -540,9 +555,11 @@ test-regression:
     TIME_FACTOR: "2"
     PARALLELISM: "6"
     FAIL_FAST: "true"
+    GO_PRIVATE_AUTH_REQUIRED: "1"
   before_script:
     - !reference [.wait-for-dind, before_script]
     - apk -U add make git bash
+    - !reference [.go-private-auth, before_script]
     - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
     - |
       if [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ]; then

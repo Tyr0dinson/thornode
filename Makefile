@@ -31,11 +31,19 @@ BRANCH?=$(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 GITREF?=$(shell git rev-parse --short HEAD 2>/dev/null)
 BUILDTAG?=$(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 
-# Forward CI_JOB_TOKEN into docker builds as a BuildKit secret so the
-# in-image `go mod download` can fetch tss-lib-private. Empty when running
-# locally without the token (Dockerfile mount is required=false).
+# Forward a gitlab.com credential ("user:token") into docker builds as the
+# go_private_auth BuildKit secret so the in-image `go mod download` can fetch
+# tss-lib-private. CI picks it with scripts/ci-go-private-auth.sh; without that,
+# fall back to CI_JOB_TOKEN. Empty when running locally without either
+# (Dockerfile mount is required=false).
+ifeq ($(strip $(GO_PRIVATE_GIT_CREDENTIAL)),)
 ifneq ($(strip $(CI_JOB_TOKEN)),)
-DOCKER_BUILD_SECRETS := --secret id=ci_job_token,env=CI_JOB_TOKEN
+GO_PRIVATE_GIT_CREDENTIAL := gitlab-ci-token:$(CI_JOB_TOKEN)
+endif
+endif
+export GO_PRIVATE_GIT_CREDENTIAL
+ifneq ($(strip $(GO_PRIVATE_GIT_CREDENTIAL)),)
+DOCKER_BUILD_SECRETS := --secret id=go_private_auth,env=GO_PRIVATE_GIT_CREDENTIAL
 else
 DOCKER_BUILD_SECRETS :=
 endif
