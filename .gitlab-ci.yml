@@ -181,11 +181,12 @@ variables:
     - . ./scripts/ci-go-private-auth.sh
 
 # What test-simulation and test-regression wait for. On 2026-09-15..29 these
-# jobs caught 116 of the 122 pipelines that failed a check before the sim
-# (lint 40, generate 39, proto 37, unit-tests 14), and all of them finish in
-# about 10 min. `optional` covers pipelines where rules leave a job out (lint
-# on deployment branches, unit-tests on some merge trains). No artifacts are
-# needed from them.
+# jobs caught most pipelines that failed a check before the sim (generate 39,
+# proto 37, unit-tests 14), and they finish in about 10 min. lint is left out
+# although it caught 40: resource_group trunk-lint serializes it across every
+# pipeline, and on 2026-09-29 it started 52-126 min in, which held the sim back
+# by the same amount. `optional` covers pipelines where rules leave a job out
+# (unit-tests on some merge trains). No artifacts are needed from them.
 .long-test-gate:
   needs:
     - job: generate
@@ -198,9 +199,6 @@ variables:
       optional: true
       artifacts: false
     - job: proto-check-breaking
-      optional: true
-      artifacts: false
-    - job: lint
       optional: true
       artifacts: false
     - job: unit-tests
