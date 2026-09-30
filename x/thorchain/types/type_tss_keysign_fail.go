@@ -47,7 +47,7 @@ func (m *TssKeysignFailVoter) Sign(signer cosmos.AccAddress) bool {
 
 // AddReport records a reporter's vote together with the blame list that
 // reporter submitted. With the blamed set removed from the voter id (Release
-// 3.21.0) every reporter for one failure lands on this single voter, so each
+// 3.22.0) every reporter for one failure lands on this single voter, so each
 // reporter's own (possibly divergent) blame list is accumulated here and
 // combined on consensus by deriveConsensusBlame. It dedupes on signer, keeping
 // Signers in lockstep with Reports so MemberSignerCount / HasConsensus are

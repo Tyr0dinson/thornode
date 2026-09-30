@@ -56,7 +56,7 @@ func (TssKeysignFailVoterState) EnumDescriptor() ([]byte, []int) {
 }
 
 // TssKeysignFailReport is a single reporter's blame list for a keysign
-// failure. With the blamed set removed from the voter id (Release 3.21.0),
+// failure. With the blamed set removed from the voter id (Release 3.22.0),
 // every reporter for the same failure lands on one voter, so each reporter's
 // own (possibly divergent) blame list is accumulated here and combined on
 // consensus.

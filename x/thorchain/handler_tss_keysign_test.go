@@ -564,7 +564,7 @@ func (h HandlerTssKeysignSuite) TestTerminalKeysignFailureEffectsAreAtomic(c *C)
 		// Three existing votes plus this member's vote reach the four-of-eight
 		// simple-majority threshold. Each prior reporter submits the SAME blame
 		// list as this message, so with the blamed set removed from the id
-		// (Release 3.21.0) all four reports land on one voter and a majority of
+		// (Release 3.22.0) all four reports land on one voter and a majority of
 		// members name the blamed nodes — the condition Rule A requires to jail.
 		blamedPubkeys := make([]string, 0, len(blame.BlameNodes))
 		for _, node := range blame.BlameNodes {
@@ -993,7 +993,7 @@ func (h HandlerTssKeysignSuite) TestKeysignFailureSlashTelemetryKeepsHandlerCall
 }
 
 // TestKeysignFailConvergentBlameJailsButDivergentDoesNot pins the intentional
-// Release 3.21.0 semantics (board 788, decision (a)). With the blamed set removed
+// Release 3.22.0 semantics (decision (a)). With the blamed set removed
 // from the voter id, honest reporters that legitimately disagree about who was
 // silent all land on ONE voter. Consensus fires at exactly min = ceil(members/2)
 // reporters and the jail bar is the same predicate over the same denominator, so
@@ -1124,7 +1124,7 @@ func (h HandlerTssKeysignSuite) TestTssKeysignFailHandler_accept_standby_node_me
 	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
 
-	// Release 3.21.0: the blamed set is no longer part of the voter id, so two
+	// Release 3.22.0: the blamed set is no longer part of the voter id, so two
 	// reports for the same failure that name DIFFERENT blame lists must share
 	// one id (previously they diverged into separate voters). This replaces the
 	// old assertion that mutating BlameNodes forced an id mismatch rejection.

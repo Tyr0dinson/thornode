@@ -49,7 +49,7 @@ func NewMsgTssKeysignFail(height int64, blame Blame, memo string, coins common.C
 // getMsgTssKeysignFailID identifies a keysign failure by the failing txout
 // item alone: height, memo, coins, vault pubkey and round.
 //
-// CONSENSUS (Release 3.21.0): the blamed-node list is deliberately NOT part of
+// CONSENSUS (Release 3.22.0): the blamed-node list is deliberately NOT part of
 // this id. Previously the blamed set was hashed in, so reporters that named
 // different nodes for the same failure produced different ids and split across
 // separate voters — divergent (but honest) blame lists could never combine, so
@@ -57,7 +57,7 @@ func NewMsgTssKeysignFail(height int64, blame Blame, memo string, coins common.C
 // every report for the same failure collapse onto ONE voter; each reporter's
 // blame list is accumulated on the voter and combined on consensus
 // (see deriveConsensusBlame). This changes the id for all reports and is
-// consensus-breaking (see the 3.21.0 upgrade).
+// consensus-breaking (see the 3.22.0 upgrade).
 func getMsgTssKeysignFailID(height int64, memo string, coins common.Coins, pubKey common.PubKey, round string) (string, error) {
 	sb := strings.Builder{}
 	sb.WriteString(fmt.Sprintf("%d", height))

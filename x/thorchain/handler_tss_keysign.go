@@ -362,7 +362,7 @@ const (
 	blameRuleMajorityOfMembers blameRule = iota
 	// blameRuleByzantineBound (B) jails a node blamed by at least f+1 reporters
 	// (one more than the tolerated faulty count). NOT active and NOT a fallback:
-	// measured 21/22 false jails on board 788's real data — correlated asymmetry
+	// measured 21/22 false jails on real mainnet data — correlated asymmetry
 	// clears f+1 unaided. Retained only to name the rejected option; see
 	// activeBlameRule.
 	blameRuleByzantineBound
@@ -389,7 +389,7 @@ const (
 //     from") legitimately differs per reporter, so a single differing list drops
 //     the intersection below min and nobody is jailed.
 //
-// THIS IS INTENTIONAL (board 788, Itz's call, with an explicit override option).
+// THIS IS INTENTIONAL (a maintainer decision, with an explicit override option).
 // Rationale in short:
 //   - Measured harm was 417 jails across 83/95 nodes in 19h, landing on innocent
 //     nodes via divergent Stage-B blame. The harm from convergent-only jailing is
@@ -403,13 +403,13 @@ const (
 //     hypothetical false-negative on a weak deterrent.
 //
 // NO READY-MADE FALLBACK EXISTS — both alternatives are already ruled out against
-// our 22 real jails (full tables on board 788). A supermajority-gated derive (keep
+// our 22 real jails (full tables kept with the maintainers). A supermajority-gated derive (keep
 // majority-of-members, finalize only once ~2/3 report) is refuted by MEASUREMENT:
 // on 10 of 22 jails fewer than 13 of 19 members ever reported, so its gate is
 // unreachable on ~half of all items and cannot fire; where it did fire it produced
 // 11 false jails to (a)'s 1 and still dropped a genuine catch for the same reason.
 // A majority-of-REPORTERS bar (halving the denominator, incl. blameRuleByzantineBound,
-// which measured 21/22 false) is refuted by REASONING: board 788's divergence is
+// which measured 21/22 false) is refuted by REASONING: the observed divergence is
 // CORRELATED network asymmetry, so a partially-convergent cluster clears half-of-
 // present unaided — the original false-jail in a new costume. If evidence later
 // shows real culprits escaping, the answer is a NEW design informed by these
