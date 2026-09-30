@@ -437,6 +437,168 @@ func (s *HandlerCommonOutboundSuite) TestOutboundSearchUsesMimirSigningPeriod(c 
 	c.Check(stored.TxArray[0].OutHash.Equals(outHash), check.Equals, true)
 }
 
+// An outbound rescheduled to a new vault may still be paid by a stale signed
+// tx from the previously assigned vault. When that tx lands it pays exactly
+// the scheduled item: it must fulfill the moved item rather than slash the
+// honest vault for a "missing tx out".
+func (s *HandlerCommonOutboundSuite) TestOutboundFulfilledByDifferentVault(c *check.C) {
+	ctx, k := setupKeeperForTest(c)
+	mgr := NewDummyMgrWithKeeper(k)
+	scheduledHeight := ctx.BlockHeight()
+
+	inHash := GetRandomTxHash()
+	outHash := GetRandomTxHash()
+	priorVaultPubKey := GetRandomPubKey()
+	priorVaultAddress, err := priorVaultPubKey.GetAddress(common.BTCChain)
+	c.Assert(err, check.IsNil)
+	assignedVaultPubKey := GetRandomPubKey()
+	toAddress := GetRandomBTCAddress()
+
+	coin := common.NewCoin(common.BTCAsset, cosmos.NewUint(53_258_717))
+	item := TxOutItem{
+		Chain:       common.BTCChain,
+		InHash:      inHash,
+		ToAddress:   toAddress,
+		VaultPubKey: assignedVaultPubKey,
+		Coin:        coin,
+		Memo:        NewOutboundMemo(inHash).String(),
+		MaxGas:      common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(1_000))},
+	}
+	txOut := NewTxOut(scheduledHeight)
+	txOut.TxArray = append(txOut.TxArray, item)
+	c.Assert(k.SetTxOut(ctx, txOut), check.IsNil)
+
+	for _, pk := range []common.PubKey{priorVaultPubKey, assignedVaultPubKey} {
+		vault := NewVault(1, ActiveVault, AsgardVault, pk, common.Chains{common.BTCChain}.Strings(), nil)
+		c.Assert(k.SetVault(ctx, vault), check.IsNil)
+	}
+	voter := NewObservedTxVoter(inHash, nil)
+	voter.Height = scheduledHeight
+	voter.FinalisedHeight = scheduledHeight
+	k.SetObservedTxInVoter(ctx, voter)
+
+	// the stale tx from the previously assigned vault pays exactly the item
+	observed := NewObservedTx(common.NewTx(
+		outHash,
+		priorVaultAddress,
+		toAddress,
+		common.NewCoins(coin),
+		common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(1_000))},
+		item.Memo,
+	), ctx.BlockHeight(), priorVaultPubKey, ctx.BlockHeight())
+	result, err := NewCommonOutboundTxHandler(mgr).handle(ctx, observed, inHash)
+	c.Assert(err, check.IsNil)
+
+	// fulfilled, no slash
+	c.Assert(result, check.NotNil)
+	for _, ev := range result.Events {
+		c.Check(ev.Type, check.Not(check.Equals), "vault-slash")
+	}
+	stored, err := k.GetTxOut(ctx, scheduledHeight)
+	c.Assert(err, check.IsNil)
+	c.Assert(stored.TxArray, check.HasLen, 1)
+	c.Check(stored.TxArray[0].OutHash.Equals(outHash), check.Equals, true)
+}
+
+// A payment from a different vault that does NOT match the scheduled item
+// (here: wrong amount) is still treated as theft and slashed.
+func (s *HandlerCommonOutboundSuite) TestOutboundDifferentVaultWrongAmountSlashes(c *check.C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	scheduledHeight := ctx.BlockHeight()
+
+	inHash := GetRandomTxHash()
+	outHash := GetRandomTxHash()
+	assignedVaultPubKey := GetRandomPubKey()
+	toAddress := GetRandomBTCAddress()
+
+	item := TxOutItem{
+		Chain:       common.BTCChain,
+		InHash:      inHash,
+		ToAddress:   toAddress,
+		VaultPubKey: assignedVaultPubKey,
+		Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(53_258_717)),
+		Memo:        NewOutboundMemo(inHash).String(),
+		MaxGas:      common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(1_000))},
+	}
+	txOut := NewTxOut(scheduledHeight)
+	txOut.TxArray = append(txOut.TxArray, item)
+	c.Assert(k.SetTxOut(ctx, txOut), check.IsNil)
+
+	// the paying vault: bonded membership, funded, so the slash has effect
+	nas := NodeAccounts{
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+	}
+	membership := make([]string, 0, len(nas))
+	for _, na := range nas {
+		c.Assert(k.SetNodeAccount(ctx, na), check.IsNil)
+		membership = append(membership, na.PubKeySet.Secp256k1.String())
+	}
+	initialBond := cosmos.ZeroUint()
+	for _, na := range nas {
+		initialBond = initialBond.Add(na.Bond)
+	}
+
+	otherVault := GetRandomVault()
+	otherVault.Membership = membership
+	otherVault.AddFunds(common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(100_000_000))})
+	c.Assert(k.SetVault(ctx, otherVault), check.IsNil)
+	otherVaultAddress, err := otherVault.PubKey.GetAddress(common.BTCChain)
+	c.Assert(err, check.IsNil)
+
+	assignedVault := NewVault(1, ActiveVault, AsgardVault, assignedVaultPubKey, common.Chains{common.BTCChain}.Strings(), nil)
+	c.Assert(k.SetVault(ctx, assignedVault), check.IsNil)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceAsset = cosmos.NewUint(10_000 * common.One)
+	pool.BalanceRune = cosmos.NewUint(10_000 * common.One)
+	pool.Decimals = 8
+	pool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, pool), check.IsNil)
+
+	voter := NewObservedTxVoter(inHash, nil)
+	voter.Height = scheduledHeight
+	voter.FinalisedHeight = scheduledHeight
+	k.SetObservedTxInVoter(ctx, voter)
+
+	observed := NewObservedTx(common.NewTx(
+		outHash,
+		otherVaultAddress,
+		toAddress,
+		common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(53_258_700))),
+		common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(1_000))},
+		item.Memo,
+	), ctx.BlockHeight(), otherVault.PubKey, ctx.BlockHeight())
+	result, err := NewCommonOutboundTxHandler(mgr).handle(ctx, observed, inHash)
+	c.Assert(err, check.IsNil)
+
+	// no fulfillment, vault slashed
+	slashed := false
+	for _, ev := range result.Events {
+		if ev.Type == "vault-slash" {
+			slashed = true
+		}
+	}
+	c.Check(slashed, check.Equals, true)
+	stored, err := k.GetTxOut(ctx, scheduledHeight)
+	c.Assert(err, check.IsNil)
+	c.Assert(stored.TxArray, check.HasLen, 1)
+	c.Check(stored.TxArray[0].OutHash.IsEmpty(), check.Equals, true)
+
+	finalBond := cosmos.ZeroUint()
+	for _, m := range membership {
+		pk, err := common.NewPubKey(m)
+		c.Assert(err, check.IsNil)
+		na, err := k.GetNodeAccountByPubKey(ctx, pk)
+		c.Assert(err, check.IsNil)
+		finalBond = finalBond.Add(na.Bond)
+	}
+	c.Check(finalBond.LT(initialBond), check.Equals, true)
+}
+
 // A Zcash outbound scheduled to a tex destination is broadcast to the P2PKH
 // form of the same address and observed as such. The two spellings must be
 // recognised as one destination, otherwise the payment lands but OutHash is

@@ -154,6 +154,8 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 			// one coin in it , THORNode could use that to identify which tx it
 			// is
 
+			pubKeyMatched := txOutPubKeyMatchesObserved(tx.Tx.Chain, tx.ObservedPubKey, txOutItem)
+
 			// Use deterministic case-insensitive comparison for aggregator fields.
 			// strings.EqualFold uses Unicode case folding which can have locale-specific
 			// behavior. Using strings.ToLower on both sides ensures deterministic comparison
@@ -164,8 +166,27 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 				tx.Tx.Chain.Equals(txOutItem.Chain) &&
 				common.EquivalentAddresses(txOutItem.Chain, tx.Tx.ToAddress, txOutItem.ToAddress) &&
 				strings.ToLower(tx.Aggregator) == strings.ToLower(txOutItem.Aggregator) &&
-				strings.ToLower(tx.AggregatorTarget) == strings.ToLower(txOutItem.AggregatorTargetAsset) &&
-				txOutPubKeyMatchesObserved(tx.Tx.Chain, tx.ObservedPubKey, txOutItem) {
+				strings.ToLower(tx.AggregatorTarget) == strings.ToLower(txOutItem.AggregatorTargetAsset) {
+
+				// An exact scheduled payment is fulfillment even when it arrives from a
+				// vault other than the item's current assignee. After a LackSigning
+				// reassignment, the previously assigned vault may still have a signed
+				// tx live (e.g. its broadcast was rejected locally but accepted by a
+				// peer); when that stale tx lands it pays exactly this scheduled item.
+				// Slashing it as theft punishes an honest vault and auto-halts the
+				// chain, so instead the payment fulfills the moved item - setting
+				// OutHash below also stops the new vault from paying a second time.
+				// The observing vault's existence is enforced above, a theft to a
+				// different recipient or amount still cannot match, and a true double
+				// payment (the item already fulfilled) still slashes.
+				if !pubKeyMatched {
+					ctx.Logger().Info("fulfilling outbound observed from a different vault than assigned",
+						"in_hash", inTxID,
+						"observed_vault", tx.ObservedPubKey,
+						"assigned_vault", txOutItem.VaultPubKey,
+						"chain", tx.Tx.Chain,
+						"coin", txOutItem.Coin.String())
+				}
 
 				matchCoin := tx.Tx.Coins.EqualsEx(common.Coins{txOutItem.Coin})
 				if !matchCoin {
@@ -250,6 +271,15 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 				}
 				txOut.TxArray[i].OutHash = tx.Tx.ID
 				shouldSlash = false
+				if !pubKeyMatched {
+					// Visibility into reassignment-race fulfillments: the item was
+					// paid by a vault other than its current assignee.
+					telemetry.IncrCounterWithLabels(
+						[]string{"thornode", "outbound", "fulfilled_by_different_vault"},
+						1,
+						[]metrics.Label{telemetry.NewLabel("chain", telemChain(tx.Tx.Chain))},
+					)
+				}
 				if err = h.mgr.Keeper().SetTxOut(ctx, txOut); err != nil {
 					ctx.Logger().Error("fail to save tx out", "error", err)
 					// OutHash is not persisted while shouldSlash is already false:
