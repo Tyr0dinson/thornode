@@ -1,6 +1,8 @@
 package types
 
 import (
+	"strings"
+
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
@@ -43,6 +45,24 @@ func (m *TssKeysignFailVoter) Sign(signer cosmos.AccAddress) bool {
 	return true
 }
 
+// AddReport records a reporter's vote together with the blame list that
+// reporter submitted. With the blamed set removed from the voter id (Release
+// 3.21.0) every reporter for one failure lands on this single voter, so each
+// reporter's own (possibly divergent) blame list is accumulated here and
+// combined on consensus by deriveConsensusBlame. It dedupes on signer, keeping
+// Signers in lockstep with Reports so MemberSignerCount / HasConsensus are
+// unaffected. Returns false if the signer already reported.
+func (m *TssKeysignFailVoter) AddReport(signer cosmos.AccAddress, blamed []string) bool {
+	if !m.Sign(signer) {
+		return false
+	}
+	m.Reports = append(m.Reports, &TssKeysignFailReport{
+		Signer: signer.String(),
+		Blamed: blamed,
+	})
+	return true
+}
+
 // MemberSignerCount returns the number of signers that are members of the given node accounts
 func (m *TssKeysignFailVoter) MemberSignerCount(nas NodeAccounts) int {
 	count := 0
@@ -65,4 +85,9 @@ func (m *TssKeysignFailVoter) HasConsensus(nas NodeAccounts) bool {
 // String implement fmt.Stringer , return's the ID
 func (m *TssKeysignFailVoter) String() string {
 	return m.ID
+}
+
+// String implement fmt.Stringer
+func (m *TssKeysignFailReport) String() string {
+	return m.Signer + ":" + strings.Join(m.Blamed, ",")
 }

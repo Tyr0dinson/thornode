@@ -13,6 +13,550 @@ import (
 	sync "sync"
 )
 
+var _ protoreflect.List = (*_TssKeysignFailReport_2_list)(nil)
+
+type _TssKeysignFailReport_2_list struct {
+	list *[]string
+}
+
+func (x *_TssKeysignFailReport_2_list) Len() int {
+	if x.list == nil {
+		return 0
+	}
+	return len(*x.list)
+}
+
+func (x *_TssKeysignFailReport_2_list) Get(i int) protoreflect.Value {
+	return protoreflect.ValueOfString((*x.list)[i])
+}
+
+func (x *_TssKeysignFailReport_2_list) Set(i int, value protoreflect.Value) {
+	valueUnwrapped := value.String()
+	concreteValue := valueUnwrapped
+	(*x.list)[i] = concreteValue
+}
+
+func (x *_TssKeysignFailReport_2_list) Append(value protoreflect.Value) {
+	valueUnwrapped := value.String()
+	concreteValue := valueUnwrapped
+	*x.list = append(*x.list, concreteValue)
+}
+
+func (x *_TssKeysignFailReport_2_list) AppendMutable() protoreflect.Value {
+	panic(fmt.Errorf("AppendMutable can not be called on message TssKeysignFailReport at list field Blamed as it is not of Message kind"))
+}
+
+func (x *_TssKeysignFailReport_2_list) Truncate(n int) {
+	*x.list = (*x.list)[:n]
+}
+
+func (x *_TssKeysignFailReport_2_list) NewElement() protoreflect.Value {
+	v := ""
+	return protoreflect.ValueOfString(v)
+}
+
+func (x *_TssKeysignFailReport_2_list) IsValid() bool {
+	return x.list != nil
+}
+
+var (
+	md_TssKeysignFailReport        protoreflect.MessageDescriptor
+	fd_TssKeysignFailReport_signer protoreflect.FieldDescriptor
+	fd_TssKeysignFailReport_blamed protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_types_type_tss_keysign_proto_init()
+	md_TssKeysignFailReport = File_types_type_tss_keysign_proto.Messages().ByName("TssKeysignFailReport")
+	fd_TssKeysignFailReport_signer = md_TssKeysignFailReport.Fields().ByName("signer")
+	fd_TssKeysignFailReport_blamed = md_TssKeysignFailReport.Fields().ByName("blamed")
+}
+
+var _ protoreflect.Message = (*fastReflection_TssKeysignFailReport)(nil)
+
+type fastReflection_TssKeysignFailReport TssKeysignFailReport
+
+func (x *TssKeysignFailReport) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_TssKeysignFailReport)(x)
+}
+
+func (x *TssKeysignFailReport) slowProtoReflect() protoreflect.Message {
+	mi := &file_types_type_tss_keysign_proto_msgTypes[0]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_TssKeysignFailReport_messageType fastReflection_TssKeysignFailReport_messageType
+var _ protoreflect.MessageType = fastReflection_TssKeysignFailReport_messageType{}
+
+type fastReflection_TssKeysignFailReport_messageType struct{}
+
+func (x fastReflection_TssKeysignFailReport_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_TssKeysignFailReport)(nil)
+}
+func (x fastReflection_TssKeysignFailReport_messageType) New() protoreflect.Message {
+	return new(fastReflection_TssKeysignFailReport)
+}
+func (x fastReflection_TssKeysignFailReport_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_TssKeysignFailReport
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_TssKeysignFailReport) Descriptor() protoreflect.MessageDescriptor {
+	return md_TssKeysignFailReport
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_TssKeysignFailReport) Type() protoreflect.MessageType {
+	return _fastReflection_TssKeysignFailReport_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_TssKeysignFailReport) New() protoreflect.Message {
+	return new(fastReflection_TssKeysignFailReport)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_TssKeysignFailReport) Interface() protoreflect.ProtoMessage {
+	return (*TssKeysignFailReport)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_TssKeysignFailReport) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.Signer != "" {
+		value := protoreflect.ValueOfString(x.Signer)
+		if !f(fd_TssKeysignFailReport_signer, value) {
+			return
+		}
+	}
+	if len(x.Blamed) != 0 {
+		value := protoreflect.ValueOfList(&_TssKeysignFailReport_2_list{list: &x.Blamed})
+		if !f(fd_TssKeysignFailReport_blamed, value) {
+			return
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_TssKeysignFailReport) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "types.TssKeysignFailReport.signer":
+		return x.Signer != ""
+	case "types.TssKeysignFailReport.blamed":
+		return len(x.Blamed) != 0
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.TssKeysignFailReport"))
+		}
+		panic(fmt.Errorf("message types.TssKeysignFailReport does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_TssKeysignFailReport) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "types.TssKeysignFailReport.signer":
+		x.Signer = ""
+	case "types.TssKeysignFailReport.blamed":
+		x.Blamed = nil
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.TssKeysignFailReport"))
+		}
+		panic(fmt.Errorf("message types.TssKeysignFailReport does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_TssKeysignFailReport) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "types.TssKeysignFailReport.signer":
+		value := x.Signer
+		return protoreflect.ValueOfString(value)
+	case "types.TssKeysignFailReport.blamed":
+		if len(x.Blamed) == 0 {
+			return protoreflect.ValueOfList(&_TssKeysignFailReport_2_list{})
+		}
+		listValue := &_TssKeysignFailReport_2_list{list: &x.Blamed}
+		return protoreflect.ValueOfList(listValue)
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.TssKeysignFailReport"))
+		}
+		panic(fmt.Errorf("message types.TssKeysignFailReport does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_TssKeysignFailReport) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "types.TssKeysignFailReport.signer":
+		x.Signer = value.Interface().(string)
+	case "types.TssKeysignFailReport.blamed":
+		lv := value.List()
+		clv := lv.(*_TssKeysignFailReport_2_list)
+		x.Blamed = *clv.list
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.TssKeysignFailReport"))
+		}
+		panic(fmt.Errorf("message types.TssKeysignFailReport does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_TssKeysignFailReport) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.TssKeysignFailReport.blamed":
+		if x.Blamed == nil {
+			x.Blamed = []string{}
+		}
+		value := &_TssKeysignFailReport_2_list{list: &x.Blamed}
+		return protoreflect.ValueOfList(value)
+	case "types.TssKeysignFailReport.signer":
+		panic(fmt.Errorf("field signer of message types.TssKeysignFailReport is not mutable"))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.TssKeysignFailReport"))
+		}
+		panic(fmt.Errorf("message types.TssKeysignFailReport does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_TssKeysignFailReport) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.TssKeysignFailReport.signer":
+		return protoreflect.ValueOfString("")
+	case "types.TssKeysignFailReport.blamed":
+		list := []string{}
+		return protoreflect.ValueOfList(&_TssKeysignFailReport_2_list{list: &list})
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.TssKeysignFailReport"))
+		}
+		panic(fmt.Errorf("message types.TssKeysignFailReport does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_TssKeysignFailReport) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in types.TssKeysignFailReport", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_TssKeysignFailReport) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_TssKeysignFailReport) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_TssKeysignFailReport) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_TssKeysignFailReport) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*TssKeysignFailReport)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		l = len(x.Signer)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if len(x.Blamed) > 0 {
+			for _, s := range x.Blamed {
+				l = len(s)
+				n += 1 + l + runtime.Sov(uint64(l))
+			}
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*TssKeysignFailReport)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.Blamed) > 0 {
+			for iNdEx := len(x.Blamed) - 1; iNdEx >= 0; iNdEx-- {
+				i -= len(x.Blamed[iNdEx])
+				copy(dAtA[i:], x.Blamed[iNdEx])
+				i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Blamed[iNdEx])))
+				i--
+				dAtA[i] = 0x12
+			}
+		}
+		if len(x.Signer) > 0 {
+			i -= len(x.Signer)
+			copy(dAtA[i:], x.Signer)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Signer)))
+			i--
+			dAtA[i] = 0xa
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*TssKeysignFailReport)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: TssKeysignFailReport: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: TssKeysignFailReport: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Signer", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Signer = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 2:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Blamed", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Blamed = append(x.Blamed, string(dAtA[iNdEx:postIndex]))
+				iNdEx = postIndex
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
 var _ protoreflect.List = (*_TssKeysignFailVoter_6_list)(nil)
 
 type _TssKeysignFailVoter_6_list struct {
@@ -59,6 +603,57 @@ func (x *_TssKeysignFailVoter_6_list) IsValid() bool {
 	return x.list != nil
 }
 
+var _ protoreflect.List = (*_TssKeysignFailVoter_9_list)(nil)
+
+type _TssKeysignFailVoter_9_list struct {
+	list *[]*TssKeysignFailReport
+}
+
+func (x *_TssKeysignFailVoter_9_list) Len() int {
+	if x.list == nil {
+		return 0
+	}
+	return len(*x.list)
+}
+
+func (x *_TssKeysignFailVoter_9_list) Get(i int) protoreflect.Value {
+	return protoreflect.ValueOfMessage((*x.list)[i].ProtoReflect())
+}
+
+func (x *_TssKeysignFailVoter_9_list) Set(i int, value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*TssKeysignFailReport)
+	(*x.list)[i] = concreteValue
+}
+
+func (x *_TssKeysignFailVoter_9_list) Append(value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*TssKeysignFailReport)
+	*x.list = append(*x.list, concreteValue)
+}
+
+func (x *_TssKeysignFailVoter_9_list) AppendMutable() protoreflect.Value {
+	v := new(TssKeysignFailReport)
+	*x.list = append(*x.list, v)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_TssKeysignFailVoter_9_list) Truncate(n int) {
+	for i := n; i < len(*x.list); i++ {
+		(*x.list)[i] = nil
+	}
+	*x.list = (*x.list)[:n]
+}
+
+func (x *_TssKeysignFailVoter_9_list) NewElement() protoreflect.Value {
+	v := new(TssKeysignFailReport)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_TssKeysignFailVoter_9_list) IsValid() bool {
+	return x.list != nil
+}
+
 var (
 	md_TssKeysignFailVoter                  protoreflect.MessageDescriptor
 	fd_TssKeysignFailVoter_id               protoreflect.FieldDescriptor
@@ -66,6 +661,7 @@ var (
 	fd_TssKeysignFailVoter_signers          protoreflect.FieldDescriptor
 	fd_TssKeysignFailVoter_last_round_count protoreflect.FieldDescriptor
 	fd_TssKeysignFailVoter_state            protoreflect.FieldDescriptor
+	fd_TssKeysignFailVoter_reports          protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -76,6 +672,7 @@ func init() {
 	fd_TssKeysignFailVoter_signers = md_TssKeysignFailVoter.Fields().ByName("signers")
 	fd_TssKeysignFailVoter_last_round_count = md_TssKeysignFailVoter.Fields().ByName("last_round_count")
 	fd_TssKeysignFailVoter_state = md_TssKeysignFailVoter.Fields().ByName("state")
+	fd_TssKeysignFailVoter_reports = md_TssKeysignFailVoter.Fields().ByName("reports")
 }
 
 var _ protoreflect.Message = (*fastReflection_TssKeysignFailVoter)(nil)
@@ -87,7 +684,7 @@ func (x *TssKeysignFailVoter) ProtoReflect() protoreflect.Message {
 }
 
 func (x *TssKeysignFailVoter) slowProtoReflect() protoreflect.Message {
-	mi := &file_types_type_tss_keysign_proto_msgTypes[0]
+	mi := &file_types_type_tss_keysign_proto_msgTypes[1]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -173,6 +770,12 @@ func (x *fastReflection_TssKeysignFailVoter) Range(f func(protoreflect.FieldDesc
 			return
 		}
 	}
+	if len(x.Reports) != 0 {
+		value := protoreflect.ValueOfList(&_TssKeysignFailVoter_9_list{list: &x.Reports})
+		if !f(fd_TssKeysignFailVoter_reports, value) {
+			return
+		}
+	}
 }
 
 // Has reports whether a field is populated.
@@ -198,6 +801,8 @@ func (x *fastReflection_TssKeysignFailVoter) Has(fd protoreflect.FieldDescriptor
 		return x.LastRoundCount != int64(0)
 	case "types.TssKeysignFailVoter.state":
 		return x.State != 0
+	case "types.TssKeysignFailVoter.reports":
+		return len(x.Reports) != 0
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.TssKeysignFailVoter"))
@@ -224,6 +829,8 @@ func (x *fastReflection_TssKeysignFailVoter) Clear(fd protoreflect.FieldDescript
 		x.LastRoundCount = int64(0)
 	case "types.TssKeysignFailVoter.state":
 		x.State = 0
+	case "types.TssKeysignFailVoter.reports":
+		x.Reports = nil
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.TssKeysignFailVoter"))
@@ -258,6 +865,12 @@ func (x *fastReflection_TssKeysignFailVoter) Get(descriptor protoreflect.FieldDe
 	case "types.TssKeysignFailVoter.state":
 		value := x.State
 		return protoreflect.ValueOfEnum((protoreflect.EnumNumber)(value))
+	case "types.TssKeysignFailVoter.reports":
+		if len(x.Reports) == 0 {
+			return protoreflect.ValueOfList(&_TssKeysignFailVoter_9_list{})
+		}
+		listValue := &_TssKeysignFailVoter_9_list{list: &x.Reports}
+		return protoreflect.ValueOfList(listValue)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.TssKeysignFailVoter"))
@@ -290,6 +903,10 @@ func (x *fastReflection_TssKeysignFailVoter) Set(fd protoreflect.FieldDescriptor
 		x.LastRoundCount = value.Int()
 	case "types.TssKeysignFailVoter.state":
 		x.State = (TssKeysignFailVoterState)(value.Enum())
+	case "types.TssKeysignFailVoter.reports":
+		lv := value.List()
+		clv := lv.(*_TssKeysignFailVoter_9_list)
+		x.Reports = *clv.list
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.TssKeysignFailVoter"))
@@ -315,6 +932,12 @@ func (x *fastReflection_TssKeysignFailVoter) Mutable(fd protoreflect.FieldDescri
 			x.Signers = []string{}
 		}
 		value := &_TssKeysignFailVoter_6_list{list: &x.Signers}
+		return protoreflect.ValueOfList(value)
+	case "types.TssKeysignFailVoter.reports":
+		if x.Reports == nil {
+			x.Reports = []*TssKeysignFailReport{}
+		}
+		value := &_TssKeysignFailVoter_9_list{list: &x.Reports}
 		return protoreflect.ValueOfList(value)
 	case "types.TssKeysignFailVoter.id":
 		panic(fmt.Errorf("field id of message types.TssKeysignFailVoter is not mutable"))
@@ -348,6 +971,9 @@ func (x *fastReflection_TssKeysignFailVoter) NewField(fd protoreflect.FieldDescr
 		return protoreflect.ValueOfInt64(int64(0))
 	case "types.TssKeysignFailVoter.state":
 		return protoreflect.ValueOfEnum(0)
+	case "types.TssKeysignFailVoter.reports":
+		list := []*TssKeysignFailReport{}
+		return protoreflect.ValueOfList(&_TssKeysignFailVoter_9_list{list: &list})
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.TssKeysignFailVoter"))
@@ -436,6 +1062,12 @@ func (x *fastReflection_TssKeysignFailVoter) ProtoMethods() *protoiface.Methods 
 		if x.State != 0 {
 			n += 1 + runtime.Sov(uint64(x.State))
 		}
+		if len(x.Reports) > 0 {
+			for _, e := range x.Reports {
+				l = options.Size(e)
+				n += 1 + l + runtime.Sov(uint64(l))
+			}
+		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
 		}
@@ -464,6 +1096,22 @@ func (x *fastReflection_TssKeysignFailVoter) ProtoMethods() *protoiface.Methods 
 		if x.unknownFields != nil {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.Reports) > 0 {
+			for iNdEx := len(x.Reports) - 1; iNdEx >= 0; iNdEx-- {
+				encoded, err := options.Marshal(x.Reports[iNdEx])
+				if err != nil {
+					return protoiface.MarshalOutput{
+						NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+						Buf:               input.Buf,
+					}, err
+				}
+				i -= len(encoded)
+				copy(dAtA[i:], encoded)
+				i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+				i--
+				dAtA[i] = 0x4a
+			}
 		}
 		if x.State != 0 {
 			i = runtime.EncodeVarint(dAtA, i, uint64(x.State))
@@ -666,6 +1314,40 @@ func (x *fastReflection_TssKeysignFailVoter) ProtoMethods() *protoiface.Methods 
 						break
 					}
 				}
+			case 9:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Reports", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Reports = append(x.Reports, &TssKeysignFailReport{})
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.Reports[len(x.Reports)-1]); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
 				skippy, err := runtime.Skip(dAtA[iNdEx:])
@@ -767,6 +1449,54 @@ func (TssKeysignFailVoterState) EnumDescriptor() ([]byte, []int) {
 	return file_types_type_tss_keysign_proto_rawDescGZIP(), []int{0}
 }
 
+// TssKeysignFailReport is a single reporter's blame list for a keysign
+// failure. With the blamed set removed from the voter id (Release 3.21.0),
+// every reporter for the same failure lands on one voter, so each reporter's
+// own (possibly divergent) blame list is accumulated here and combined on
+// consensus.
+type TssKeysignFailReport struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Signer string   `protobuf:"bytes,1,opt,name=signer,proto3" json:"signer,omitempty"`
+	Blamed []string `protobuf:"bytes,2,rep,name=blamed,proto3" json:"blamed,omitempty"`
+}
+
+func (x *TssKeysignFailReport) Reset() {
+	*x = TssKeysignFailReport{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_types_type_tss_keysign_proto_msgTypes[0]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *TssKeysignFailReport) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TssKeysignFailReport) ProtoMessage() {}
+
+// Deprecated: Use TssKeysignFailReport.ProtoReflect.Descriptor instead.
+func (*TssKeysignFailReport) Descriptor() ([]byte, []int) {
+	return file_types_type_tss_keysign_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *TssKeysignFailReport) GetSigner() string {
+	if x != nil {
+		return x.Signer
+	}
+	return ""
+}
+
+func (x *TssKeysignFailReport) GetBlamed() []string {
+	if x != nil {
+		return x.Blamed
+	}
+	return nil
+}
+
 type TssKeysignFailVoter struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -777,12 +1507,13 @@ type TssKeysignFailVoter struct {
 	Signers        []string                 `protobuf:"bytes,6,rep,name=signers,proto3" json:"signers,omitempty"`
 	LastRoundCount int64                    `protobuf:"varint,7,opt,name=last_round_count,json=lastRoundCount,proto3" json:"last_round_count,omitempty"`
 	State          TssKeysignFailVoterState `protobuf:"varint,8,opt,name=state,proto3,enum=types.TssKeysignFailVoterState" json:"state,omitempty"`
+	Reports        []*TssKeysignFailReport  `protobuf:"bytes,9,rep,name=reports,proto3" json:"reports,omitempty"`
 }
 
 func (x *TssKeysignFailVoter) Reset() {
 	*x = TssKeysignFailVoter{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_types_type_tss_keysign_proto_msgTypes[0]
+		mi := &file_types_type_tss_keysign_proto_msgTypes[1]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -796,7 +1527,7 @@ func (*TssKeysignFailVoter) ProtoMessage() {}
 
 // Deprecated: Use TssKeysignFailVoter.ProtoReflect.Descriptor instead.
 func (*TssKeysignFailVoter) Descriptor() ([]byte, []int) {
-	return file_types_type_tss_keysign_proto_rawDescGZIP(), []int{0}
+	return file_types_type_tss_keysign_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *TssKeysignFailVoter) GetId() string {
@@ -834,40 +1565,55 @@ func (x *TssKeysignFailVoter) GetState() TssKeysignFailVoterState {
 	return TssKeysignFailVoterState_LegacyVoter
 }
 
+func (x *TssKeysignFailVoter) GetReports() []*TssKeysignFailReport {
+	if x != nil {
+		return x.Reports
+	}
+	return nil
+}
+
 var File_types_type_tss_keysign_proto protoreflect.FileDescriptor
 
 var file_types_type_tss_keysign_proto_rawDesc = []byte{
 	0x0a, 0x1c, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x5f, 0x74, 0x73, 0x73,
 	0x5f, 0x6b, 0x65, 0x79, 0x73, 0x69, 0x67, 0x6e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x12, 0x05,
 	0x74, 0x79, 0x70, 0x65, 0x73, 0x1a, 0x14, 0x67, 0x6f, 0x67, 0x6f, 0x70, 0x72, 0x6f, 0x74, 0x6f,
-	0x2f, 0x67, 0x6f, 0x67, 0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0xc0, 0x01, 0x0a, 0x13,
-	0x54, 0x73, 0x73, 0x4b, 0x65, 0x79, 0x73, 0x69, 0x67, 0x6e, 0x46, 0x61, 0x69, 0x6c, 0x56, 0x6f,
-	0x74, 0x65, 0x72, 0x12, 0x16, 0x0a, 0x02, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x42,
-	0x06, 0xe2, 0xde, 0x1f, 0x02, 0x49, 0x44, 0x52, 0x02, 0x69, 0x64, 0x12, 0x16, 0x0a, 0x06, 0x68,
-	0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x04, 0x20, 0x01, 0x28, 0x03, 0x52, 0x06, 0x68, 0x65, 0x69,
-	0x67, 0x68, 0x74, 0x12, 0x18, 0x0a, 0x07, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x73, 0x18, 0x06,
-	0x20, 0x03, 0x28, 0x09, 0x52, 0x07, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x73, 0x12, 0x28, 0x0a,
-	0x10, 0x6c, 0x61, 0x73, 0x74, 0x5f, 0x72, 0x6f, 0x75, 0x6e, 0x64, 0x5f, 0x63, 0x6f, 0x75, 0x6e,
-	0x74, 0x18, 0x07, 0x20, 0x01, 0x28, 0x03, 0x52, 0x0e, 0x6c, 0x61, 0x73, 0x74, 0x52, 0x6f, 0x75,
-	0x6e, 0x64, 0x43, 0x6f, 0x75, 0x6e, 0x74, 0x12, 0x35, 0x0a, 0x05, 0x73, 0x74, 0x61, 0x74, 0x65,
-	0x18, 0x08, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x1f, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x54,
-	0x73, 0x73, 0x4b, 0x65, 0x79, 0x73, 0x69, 0x67, 0x6e, 0x46, 0x61, 0x69, 0x6c, 0x56, 0x6f, 0x74,
-	0x65, 0x72, 0x53, 0x74, 0x61, 0x74, 0x65, 0x52, 0x05, 0x73, 0x74, 0x61, 0x74, 0x65, 0x2a, 0x51,
-	0x0a, 0x18, 0x54, 0x73, 0x73, 0x4b, 0x65, 0x79, 0x73, 0x69, 0x67, 0x6e, 0x46, 0x61, 0x69, 0x6c,
-	0x56, 0x6f, 0x74, 0x65, 0x72, 0x53, 0x74, 0x61, 0x74, 0x65, 0x12, 0x0f, 0x0a, 0x0b, 0x4c, 0x65,
-	0x67, 0x61, 0x63, 0x79, 0x56, 0x6f, 0x74, 0x65, 0x72, 0x10, 0x00, 0x12, 0x10, 0x0a, 0x0c, 0x50,
-	0x65, 0x6e, 0x64, 0x69, 0x6e, 0x67, 0x56, 0x6f, 0x74, 0x65, 0x72, 0x10, 0x01, 0x12, 0x12, 0x0a,
-	0x0e, 0x43, 0x6f, 0x6d, 0x70, 0x6c, 0x65, 0x74, 0x65, 0x64, 0x56, 0x6f, 0x74, 0x65, 0x72, 0x10,
-	0x02, 0x42, 0x8c, 0x01, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42,
-	0x13, 0x54, 0x79, 0x70, 0x65, 0x54, 0x73, 0x73, 0x4b, 0x65, 0x79, 0x73, 0x69, 0x67, 0x6e, 0x50,
-	0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63,
-	0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f,
-	0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70,
-	0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73,
-	0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73,
-	0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54,
-	0x79, 0x70, 0x65, 0x73, 0xc8, 0xe1, 0x1e, 0x00, 0xd8, 0xe1, 0x1e, 0x00, 0x80, 0xe2, 0x1e, 0x00,
-	0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x2f, 0x67, 0x6f, 0x67, 0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0x46, 0x0a, 0x14, 0x54,
+	0x73, 0x73, 0x4b, 0x65, 0x79, 0x73, 0x69, 0x67, 0x6e, 0x46, 0x61, 0x69, 0x6c, 0x52, 0x65, 0x70,
+	0x6f, 0x72, 0x74, 0x12, 0x16, 0x0a, 0x06, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x18, 0x01, 0x20,
+	0x01, 0x28, 0x09, 0x52, 0x06, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x12, 0x16, 0x0a, 0x06, 0x62,
+	0x6c, 0x61, 0x6d, 0x65, 0x64, 0x18, 0x02, 0x20, 0x03, 0x28, 0x09, 0x52, 0x06, 0x62, 0x6c, 0x61,
+	0x6d, 0x65, 0x64, 0x22, 0xf7, 0x01, 0x0a, 0x13, 0x54, 0x73, 0x73, 0x4b, 0x65, 0x79, 0x73, 0x69,
+	0x67, 0x6e, 0x46, 0x61, 0x69, 0x6c, 0x56, 0x6f, 0x74, 0x65, 0x72, 0x12, 0x16, 0x0a, 0x02, 0x69,
+	0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x42, 0x06, 0xe2, 0xde, 0x1f, 0x02, 0x49, 0x44, 0x52,
+	0x02, 0x69, 0x64, 0x12, 0x16, 0x0a, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x04, 0x20,
+	0x01, 0x28, 0x03, 0x52, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x12, 0x18, 0x0a, 0x07, 0x73,
+	0x69, 0x67, 0x6e, 0x65, 0x72, 0x73, 0x18, 0x06, 0x20, 0x03, 0x28, 0x09, 0x52, 0x07, 0x73, 0x69,
+	0x67, 0x6e, 0x65, 0x72, 0x73, 0x12, 0x28, 0x0a, 0x10, 0x6c, 0x61, 0x73, 0x74, 0x5f, 0x72, 0x6f,
+	0x75, 0x6e, 0x64, 0x5f, 0x63, 0x6f, 0x75, 0x6e, 0x74, 0x18, 0x07, 0x20, 0x01, 0x28, 0x03, 0x52,
+	0x0e, 0x6c, 0x61, 0x73, 0x74, 0x52, 0x6f, 0x75, 0x6e, 0x64, 0x43, 0x6f, 0x75, 0x6e, 0x74, 0x12,
+	0x35, 0x0a, 0x05, 0x73, 0x74, 0x61, 0x74, 0x65, 0x18, 0x08, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x1f,
+	0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x54, 0x73, 0x73, 0x4b, 0x65, 0x79, 0x73, 0x69, 0x67,
+	0x6e, 0x46, 0x61, 0x69, 0x6c, 0x56, 0x6f, 0x74, 0x65, 0x72, 0x53, 0x74, 0x61, 0x74, 0x65, 0x52,
+	0x05, 0x73, 0x74, 0x61, 0x74, 0x65, 0x12, 0x35, 0x0a, 0x07, 0x72, 0x65, 0x70, 0x6f, 0x72, 0x74,
+	0x73, 0x18, 0x09, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x1b, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e,
+	0x54, 0x73, 0x73, 0x4b, 0x65, 0x79, 0x73, 0x69, 0x67, 0x6e, 0x46, 0x61, 0x69, 0x6c, 0x52, 0x65,
+	0x70, 0x6f, 0x72, 0x74, 0x52, 0x07, 0x72, 0x65, 0x70, 0x6f, 0x72, 0x74, 0x73, 0x2a, 0x51, 0x0a,
+	0x18, 0x54, 0x73, 0x73, 0x4b, 0x65, 0x79, 0x73, 0x69, 0x67, 0x6e, 0x46, 0x61, 0x69, 0x6c, 0x56,
+	0x6f, 0x74, 0x65, 0x72, 0x53, 0x74, 0x61, 0x74, 0x65, 0x12, 0x0f, 0x0a, 0x0b, 0x4c, 0x65, 0x67,
+	0x61, 0x63, 0x79, 0x56, 0x6f, 0x74, 0x65, 0x72, 0x10, 0x00, 0x12, 0x10, 0x0a, 0x0c, 0x50, 0x65,
+	0x6e, 0x64, 0x69, 0x6e, 0x67, 0x56, 0x6f, 0x74, 0x65, 0x72, 0x10, 0x01, 0x12, 0x12, 0x0a, 0x0e,
+	0x43, 0x6f, 0x6d, 0x70, 0x6c, 0x65, 0x74, 0x65, 0x64, 0x56, 0x6f, 0x74, 0x65, 0x72, 0x10, 0x02,
+	0x42, 0x8c, 0x01, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x13,
+	0x54, 0x79, 0x70, 0x65, 0x54, 0x73, 0x73, 0x4b, 0x65, 0x79, 0x73, 0x69, 0x67, 0x6e, 0x50, 0x72,
+	0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f,
+	0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72,
+	0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70, 0x65,
+	0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xca,
+	0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73, 0x5c,
+	0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54, 0x79,
+	0x70, 0x65, 0x73, 0xc8, 0xe1, 0x1e, 0x00, 0xd8, 0xe1, 0x1e, 0x00, 0x80, 0xe2, 0x1e, 0x00, 0x62,
+	0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -883,18 +1629,20 @@ func file_types_type_tss_keysign_proto_rawDescGZIP() []byte {
 }
 
 var file_types_type_tss_keysign_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_types_type_tss_keysign_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_types_type_tss_keysign_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_types_type_tss_keysign_proto_goTypes = []interface{}{
 	(TssKeysignFailVoterState)(0), // 0: types.TssKeysignFailVoterState
-	(*TssKeysignFailVoter)(nil),   // 1: types.TssKeysignFailVoter
+	(*TssKeysignFailReport)(nil),  // 1: types.TssKeysignFailReport
+	(*TssKeysignFailVoter)(nil),   // 2: types.TssKeysignFailVoter
 }
 var file_types_type_tss_keysign_proto_depIdxs = []int32{
 	0, // 0: types.TssKeysignFailVoter.state:type_name -> types.TssKeysignFailVoterState
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	1, // 1: types.TssKeysignFailVoter.reports:type_name -> types.TssKeysignFailReport
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_types_type_tss_keysign_proto_init() }
@@ -904,6 +1652,18 @@ func file_types_type_tss_keysign_proto_init() {
 	}
 	if !protoimpl.UnsafeEnabled {
 		file_types_type_tss_keysign_proto_msgTypes[0].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*TssKeysignFailReport); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_types_type_tss_keysign_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*TssKeysignFailVoter); i {
 			case 0:
 				return &v.state
@@ -922,7 +1682,7 @@ func file_types_type_tss_keysign_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_types_type_tss_keysign_proto_rawDesc,
 			NumEnums:      1,
-			NumMessages:   1,
+			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

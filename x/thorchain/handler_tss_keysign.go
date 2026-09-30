@@ -3,11 +3,13 @@ package thorchain
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/hashicorp/go-metrics"
+	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 	tssMessages "gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -109,7 +111,11 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 	}
 	slashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, labels))
 
-	if !voter.Sign(msg.Signer) {
+	reportedBlame := make([]string, 0, len(msg.Blame.BlameNodes))
+	for _, node := range msg.Blame.BlameNodes {
+		reportedBlame = append(reportedBlame, node.Pubkey)
+	}
+	if !voter.AddReport(msg.Signer, reportedBlame) {
 		ctx.Logger().Info("signer already signed MsgTssKeysignFail", "signer", msg.Signer.String(), "txid", msg.ID)
 		return &cosmos.Result{}, nil
 	}
@@ -209,10 +215,11 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 		}
 		return &cosmos.Result{}, nil
 	}
-	violaters := make([]string, len(msg.Blame.BlameNodes))
-	for i, node := range msg.Blame.BlameNodes {
-		violaters[i] = node.Pubkey
-	}
+	// Combine every reporter's accumulated blame list into the agreed set.
+	// A node is jailed only when a majority of members independently named it
+	// (see deriveConsensusBlame / activeBlameRule) — honest divergence between
+	// reporters' lists is therefore insufficient to jail an innocent node.
+	violaters := deriveConsensusBlame(voter.Reports, vaultMemberNodes)
 	ctx.Logger().Info(
 		"tss keysign failure",
 		"reason", msg.Blame.FailReason,
@@ -273,8 +280,8 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 	slashPoints := h.mgr.GetConstants().GetInt64Value(constants.FailKeysignSlashPoints)
 	// fail to generate a new tss key let's slash the node account
 
-	for _, node := range msg.Blame.BlameNodes {
-		nodePubKey, nodeErr := common.NewPubKey(node.Pubkey)
+	for _, blamedPubkey := range violaters {
+		nodePubKey, nodeErr := common.NewPubKey(blamedPubkey)
 		if nodeErr != nil {
 			return nil, ErrInternal(nodeErr, "fail to parse pubkey")
 		}
@@ -329,6 +336,7 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 		}
 	}
 	voter.Signers = nil
+	voter.Reports = nil
 	voter.LastRoundCount = 0
 	voter.State = thortypes.TssKeysignFailVoterState_CompletedVoter
 	err = h.mgr.Keeper().SetTssKeysignFailVoter(ctx, voter)
@@ -337,6 +345,79 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 	}
 
 	return &cosmos.Result{}, nil
+}
+
+// blameRule selects how the accumulated per-reporter blame lists on a keysign
+// failure voter are combined into the set that is slashed+jailed on consensus.
+type blameRule int
+
+const (
+	// blameRuleMajorityOfMembers (A) jails a node only when a MAJORITY of vault
+	// members independently blamed it. ACTIVE — this is the actual fix.
+	blameRuleMajorityOfMembers blameRule = iota
+	// blameRuleByzantineBound (B) jails a node blamed by at least f+1 reporters
+	// (one more than the tolerated faulty count). Kept as a documented fallback
+	// if simulation shows A's catch-rate too low; NOT active.
+	blameRuleByzantineBound
+)
+
+// activeBlameRule is A. The threat here is HONEST DIVERGENCE, not collusion: an
+// honest reporter can name an innocent X purely because network asymmetry meant
+// it never received X's round message. The f+1 rule (B) only guarantees ONE
+// honest blamer, which honest divergence trivially satisfies — so B would leave
+// the defect standing. Requiring a MAJORITY of members to independently name X
+// makes honest divergence insufficient to jail, which is the property we need.
+// To fall back to B, change this to blameRuleByzantineBound (one line).
+const activeBlameRule = blameRuleMajorityOfMembers
+
+// deriveConsensusBlame combines the accumulated per-reporter blame lists on a
+// keysign-fail voter into the agreed set of blamed pubkeys. Only reports from
+// vault members are counted, each reporter's list is de-duplicated so it counts
+// once per node, and the result is deterministically ordered.
+func deriveConsensusBlame(reports []*thortypes.TssKeysignFailReport, members NodeAccounts) []string {
+	memberAddrs := make(map[string]bool, len(members))
+	for _, na := range members {
+		memberAddrs[na.NodeAddress.String()] = true
+	}
+
+	// count how many DISTINCT member-reporters named each blamed pubkey
+	counts := make(map[string]int)
+	for _, report := range reports {
+		if report == nil || !memberAddrs[report.Signer] {
+			continue
+		}
+		seen := make(map[string]bool, len(report.Blamed))
+		for _, pk := range report.Blamed {
+			if pk == "" || seen[pk] {
+				continue
+			}
+			seen[pk] = true
+			counts[pk]++
+		}
+	}
+
+	// bound below which a node is not jailed
+	byzantineFloor := 0
+	if activeBlameRule == blameRuleByzantineBound {
+		threshold, _ := conversion.GetThreshold(len(members))
+		byzantineFloor = len(members) - threshold // f+1
+	}
+
+	blamed := make([]string, 0, len(counts))
+	for pk, count := range counts {
+		var jail bool
+		switch activeBlameRule {
+		case blameRuleByzantineBound:
+			jail = count >= byzantineFloor
+		default: // blameRuleMajorityOfMembers (A)
+			jail = HasSimpleMajority(count, len(members))
+		}
+		if jail {
+			blamed = append(blamed, pk)
+		}
+	}
+	sort.Strings(blamed)
+	return blamed
 }
 
 func validateKeysignAuth(ctx cosmos.Context, k keeper.Keeper, signers []cosmos.AccAddress) (cosmos.Context, error) {

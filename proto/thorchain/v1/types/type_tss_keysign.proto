@@ -18,10 +18,21 @@ enum TssKeysignFailVoterState {
   CompletedVoter = 2;
 }
 
+// TssKeysignFailReport is a single reporter's blame list for a keysign
+// failure. With the blamed set removed from the voter id (Release 3.21.0),
+// every reporter for the same failure lands on one voter, so each reporter's
+// own (possibly divergent) blame list is accumulated here and combined on
+// consensus.
+message TssKeysignFailReport {
+  string signer = 1;
+  repeated string blamed = 2;
+}
+
 message TssKeysignFailVoter {
   string id = 1 [ (gogoproto.customname) = "ID" ];
   int64 height = 4;
   repeated string signers = 6;
   int64 last_round_count = 7;
   TssKeysignFailVoterState state = 8;
+  repeated TssKeysignFailReport reports = 9;
 }

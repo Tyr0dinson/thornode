@@ -562,14 +562,21 @@ func (h HandlerTssKeysignSuite) TestTerminalKeysignFailureEffectsAreAtomic(c *C)
 		c.Assert(err, IsNil)
 
 		// Three existing votes plus this member's vote reach the four-of-eight
-		// simple-majority threshold.
+		// simple-majority threshold. Each prior reporter submits the SAME blame
+		// list as this message, so with the blamed set removed from the id
+		// (Release 3.21.0) all four reports land on one voter and a majority of
+		// members name the blamed nodes — the condition Rule A requires to jail.
+		blamedPubkeys := make([]string, 0, len(blame.BlameNodes))
+		for _, node := range blame.BlameNodes {
+			blamedPubkeys = append(blamedPubkeys, node.Pubkey)
+		}
 		voter := types.NewTssKeysignFailVoter(msg.ID)
 		for _, member := range helper.retiringVault.Membership[1:4] {
 			memberPubKey, memberErr := common.NewPubKey(member)
 			c.Assert(memberErr, IsNil)
 			memberAddress, memberErr := memberPubKey.GetThorAddress()
 			c.Assert(memberErr, IsNil)
-			c.Assert(voter.Sign(memberAddress), Equals, true)
+			c.Assert(voter.AddReport(memberAddress, blamedPubkeys), Equals, true)
 		}
 		if test.terminalRound {
 			voter.LastRoundCount = 1
@@ -985,6 +992,86 @@ func (h HandlerTssKeysignSuite) TestKeysignFailureSlashTelemetryKeepsHandlerCall
 		Commentf("direct keeper slash telemetry attributed %q while SlasherImpl recorded %q", handlerRecord.Caller, slasherRecord.Caller))
 }
 
+// TestKeysignFailHonestDivergenceRequiresMajorityToJail is the core Release
+// 3.21.0 regression: with the blamed set removed from the voter id, honest
+// reporters that legitimately disagree about who was silent all land on ONE
+// voter. A node must be jailed ONLY when a MAJORITY of members independently
+// named it — honest divergence (a node named by a minority) must NOT jail. This
+// models honest divergence, not a byzantine minority.
+func (h HandlerTssKeysignSuite) TestKeysignFailHonestDivergenceRequiresMajorityToJail(c *C) {
+	helper := newTssKeysignHandlerTestHelper(c)
+	handler := NewTssKeysignHandler(NewDummyMgrWithKeeper(helper.keeper))
+
+	// blamed candidates as real node accounts. majorityNode is named by all 4
+	// reporters (4 of 8 members => majority => jailed). boundaryNode by 3 of 8
+	// (below majority => not jailed). minorityA/B/C/D by a single reporter each
+	// (honest divergence => not jailed).
+	mkNode := func() NodeAccount {
+		na := GetRandomValidatorNode(NodeActive)
+		c.Assert(helper.keeper.SetNodeAccount(helper.ctx, na), IsNil)
+		return na
+	}
+	majorityNode := mkNode()
+	boundaryNode := mkNode()
+	minorityA := mkNode()
+	minorityB := mkNode()
+	minorityC := mkNode()
+	minorityD := mkNode()
+	pk := func(na NodeAccount) string { return na.PubKeySet.Secp256k1.String() }
+
+	// four member-reporters submitting DIVERGENT blame lists onto one voter.
+	reporterBlame := [][]string{
+		{pk(majorityNode), pk(boundaryNode), pk(minorityA)},
+		{pk(majorityNode), pk(boundaryNode), pk(minorityB)},
+		{pk(majorityNode), pk(boundaryNode), pk(minorityC)},
+		{pk(majorityNode), pk(minorityD)},
+	}
+	coins := common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100))}
+	var voterID string
+	for i, blamedPubkeys := range reporterBlame {
+		reporterPubKey, perr := common.NewPubKey(helper.retiringVault.Membership[i])
+		c.Assert(perr, IsNil)
+		reporterAddr, perr := reporterPubKey.GetThorAddress()
+		c.Assert(perr, IsNil)
+		blamed := make([]Node, 0, len(blamedPubkeys))
+		for _, bpk := range blamedPubkeys {
+			blamed = append(blamed, Node{Pubkey: bpk})
+		}
+		msg, merr := NewMsgTssKeysignFail(
+			helper.ctx.BlockHeight(),
+			Blame{FailReason: "divergent", Round: tssMessages.KEYSIGN1aUnicast, BlameNodes: blamed},
+			"honest-divergence",
+			coins,
+			reporterAddr,
+			helper.retiringVault.PubKey,
+		)
+		c.Assert(merr, IsNil)
+		voterID = msg.ID
+		_, runErr := handler.Run(helper.ctx, msg)
+		c.Assert(runErr, IsNil)
+	}
+
+	jailed := func(na NodeAccount) bool {
+		jail, jerr := helper.keeper.GetNodeAccountJail(helper.ctx, na.NodeAddress)
+		c.Assert(jerr, IsNil)
+		return jail.IsJailed(helper.ctx)
+	}
+
+	// only the majority-named node is jailed.
+	c.Check(jailed(majorityNode), Equals, true)
+	c.Check(jailed(boundaryNode), Equals, false) // 3 of 8 — below majority
+	c.Check(jailed(minorityA), Equals, false)
+	c.Check(jailed(minorityB), Equals, false)
+	c.Check(jailed(minorityC), Equals, false)
+	c.Check(jailed(minorityD), Equals, false)
+
+	// voter reached consensus and is a completed replay barrier.
+	stored, gerr := helper.keeper.Keeper.GetTssKeysignFailVoter(helper.ctx, voterID)
+	c.Assert(gerr, IsNil)
+	c.Check(stored.State, Equals, types.TssKeysignFailVoterState_CompletedVoter)
+	c.Check(stored.Reports, HasLen, 0)
+}
+
 func (h HandlerTssKeysignSuite) TestTssKeysignFailHandler_accept_standby_node_messages(c *C) {
 	helper := newTssKeysignHandlerTestHelper(c)
 	handler := NewTssKeysignHandler(NewDummyMgrWithKeeper(helper.keeper))
@@ -1018,13 +1105,17 @@ func (h HandlerTssKeysignSuite) TestTssKeysignFailHandler_accept_standby_node_me
 	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
 
-	msg1, err := NewMsgTssKeysignFail(helper.ctx.BlockHeight(), helper.blame, "hello", common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100))}, naStandby.NodeAddress, vault.PubKey)
-	msg1.Blame.BlameNodes = []Node{}
+	// Release 3.21.0: the blamed set is no longer part of the voter id, so two
+	// reports for the same failure that name DIFFERENT blame lists must share
+	// one id (previously they diverged into separate voters). This replaces the
+	// old assertion that mutating BlameNodes forced an id mismatch rejection.
+	differentBlame := helper.blame
+	differentBlame.BlameNodes = []Node{}
+	msg1, err := NewMsgTssKeysignFail(helper.ctx.BlockHeight(), differentBlame, "hello", common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100))}, naStandby.NodeAddress, vault.PubKey)
 	c.Assert(err, IsNil)
-	result, err = handler.Run(helper.ctx, msg1)
-	c.Assert(result, IsNil)
-	c.Assert(err, NotNil)
-	c.Assert(errors.Is(err, se.ErrUnknownRequest), Equals, true)
+	msgSameCoords, err := NewMsgTssKeysignFail(helper.ctx.BlockHeight(), helper.blame, "hello", common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100))}, naStandby.NodeAddress, vault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(msg1.ID, Equals, msgSameCoords.ID)
 }
 
 // TestTssKeysignFailHandler_TerminalRoundIncrementsLastRoundCount asserts the

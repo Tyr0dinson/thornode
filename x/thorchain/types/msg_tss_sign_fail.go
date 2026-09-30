@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"sort"
 	"strings"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -32,7 +31,7 @@ func NewMsgTssKeysignFail(height int64, blame Blame, memo string, coins common.C
 		return nil, fmt.Errorf("fail to normalize keysign fail round: %w", err)
 	}
 	blame.Round = round
-	id, err := getMsgTssKeysignFailID(blame.BlameNodes, height, memo, coins, pubKey, blame.Round)
+	id, err := getMsgTssKeysignFailID(height, memo, coins, pubKey, blame.Round)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get keysign fail id:%w", err)
 	}
@@ -47,19 +46,20 @@ func NewMsgTssKeysignFail(height int64, blame Blame, memo string, coins common.C
 	}, nil
 }
 
-// getTssKeysignFailID this method will use all the members that caused the tss
-// keysign failure , as well as the block height of the txout item to generate
-// a hash, given that , if the same party keep failing the same txout item ,
-// then we will only slash it once.
-func getMsgTssKeysignFailID(members []Node, height int64, memo string, coins common.Coins, pubKey common.PubKey, round string) (string, error) {
-	// ensure input pubkeys list is deterministically sorted
-	sort.SliceStable(members, func(i, j int) bool {
-		return members[i].Pubkey < members[j].Pubkey
-	})
+// getMsgTssKeysignFailID identifies a keysign failure by the failing txout
+// item alone: height, memo, coins, vault pubkey and round.
+//
+// CONSENSUS (Release 3.21.0): the blamed-node list is deliberately NOT part of
+// this id. Previously the blamed set was hashed in, so reporters that named
+// different nodes for the same failure produced different ids and split across
+// separate voters — divergent (but honest) blame lists could never combine, so
+// round-stage failures rarely reached consensus. Dropping the blamed set makes
+// every report for the same failure collapse onto ONE voter; each reporter's
+// blame list is accumulated on the voter and combined on consensus
+// (see deriveConsensusBlame). This changes the id for all reports and is
+// consensus-breaking (see the 3.21.0 upgrade).
+func getMsgTssKeysignFailID(height int64, memo string, coins common.Coins, pubKey common.PubKey, round string) (string, error) {
 	sb := strings.Builder{}
-	for _, item := range members {
-		sb.WriteString(item.Pubkey)
-	}
 	sb.WriteString(fmt.Sprintf("%d", height))
 	sb.WriteString(memo)
 	sb.WriteString(pubKey.String())
