@@ -2070,7 +2070,7 @@ func (c *Client) signTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		Network:                     strings.ToLower(strings.TrimSpace(c.cfg.SignerExpectedNetwork)),
 		ToAddress:                   signReqCtx.toAddress,
 		AmountAtomic:                signReqCtx.amountAtomic,
-		Memo:                        tx.Memo,
+		Memo:                        stypes.XMRWireMemo(tx.Memo, tx.OriginalMemo),
 		FeeRate:                     feeRate,
 		SignerPubKeys:               members,
 		ActiveSignerPubKeys:         activeMembers,
@@ -2401,6 +2401,9 @@ func (c *Client) validateSignTx(tx stypes.TxOutItem, thorchainHeight int64, requ
 	}
 
 	memoForParsing := tx.GetMemo()
+	if strings.TrimSpace(stypes.XMRWireMemo(tx.Memo, tx.OriginalMemo)) == "" {
+		return validatedSignRequest{}, errors.New("new xmr payout requires its original memo")
+	}
 	if memoForParsing != "" {
 		parsedMemo, err := memo.ParseMemo(common.LatestVersion, memoForParsing)
 		if err != nil {
@@ -2932,14 +2935,11 @@ func (c *Client) applySpentOutputRefsOnceContext(ctx context.Context, request ty
 	refs := xmrSpentRefsToSidecar(tx.SpentOutputRefs)
 	var outbound *sidecar.OutboundMeta
 	if request.ChainCommitted {
-		// Internal memos are not stripped from Monero transactions, so the
-		// committed observation contains the exact wire memo needed to restore
-		// a complete migration/consolidation pairing proof. Other committed
-		// outbounds may be memoless and intentionally remain accounting-only.
-		if isInternalXMRMemo(tx.Tx.Memo) {
-			outbound = xmrOutboundMeta(tx.Tx, tx.XmrTxKey)
-			outbound.Origin = sidecar.OutgoingOriginChainCommitted
-		}
+		// XMR keeps its original memo on-chain. Restore the complete verified
+		// payment so a late import can also prove that it was mined, without
+		// upgrading accounting-only evidence into a source observation.
+		outbound = xmrOutboundMeta(tx.Tx, tx.XmrTxKey)
+		outbound.Origin = sidecar.OutgoingOriginChainCommitted
 	} else {
 		certificateHash, hashErr := xmrSpentRefsCertificateHash(tx)
 		if hashErr != nil {
@@ -3001,11 +3001,30 @@ func (c *Client) applySpentOutputRefsOnceContext(ctx context.Context, request ty
 			Msg("refuse to enroll xmr spent-ref import without authenticated durable signer state")
 		return false, false
 	}
+	if request.ReplaySource && !request.ChainCommitted && c.scanner == nil {
+		return false, true
+	}
 	if c.scanner != nil {
 		if ctx.Err() != nil {
 			// The refs and signer state are durable. Periodic catch-up can
 			// retry the import and enroll replay after this request is canceled.
 			return false, true
+		}
+		if request.ChainCommitted && !isXMRTxMigrateMemo(tx.Tx.Memo) {
+			// Migrations already bind their journal and mark the source mined
+			// through the destination-replay path below. Ordinary committed
+			// payouts need the same accounting reconciliation, but no replay.
+			if reconcileErr := c.scanner.ReconcileCommittedOutbound(tx); reconcileErr != nil {
+				c.logger.Warn().Err(reconcileErr).Str("tx_hash", txHash).
+					Msg("committed xmr payout mined reconciliation will retry")
+				return false, true
+			}
+		}
+		if request.ReplaySource && !request.ChainCommitted {
+			if _, replayErr := c.scanner.EnqueueAuthenticatedOutboundReplay(tx); replayErr != nil {
+				c.logger.Error().Err(replayErr).Str("tx_hash", txHash).Msg("failed to queue authenticated xmr payout replay")
+				return false, true
+			}
 		}
 		queued, replayErr := c.scanner.EnqueueAuthenticatedInternalInboundReplay(tx)
 		if replayErr != nil {
@@ -3626,10 +3645,9 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult
 		return types.CustomKeygenResult{}, fmt.Errorf("tss server is not initialized")
 	}
 
-	xmrHeight, heightErr := c.GetHeight()
-	if heightErr != nil || xmrHeight <= 0 {
-		return types.CustomKeygenResult{}, fmt.Errorf("xmr keygen requires synced monero node (height: %d): %w", xmrHeight, heightErr)
-	}
+	// Join before querying height: round 3 collects the birthday-height quorum
+	// and treats an unavailable local height as an abstention. A preflight RPC
+	// only adds node-specific join delay; actual sidecar DKG failures still fail.
 
 	members := make([]string, 0, len(req.Members))
 	for _, member := range req.Members {
@@ -3642,19 +3660,11 @@ func (c *Client) Keygen(req types.CustomKeygenRequest) (types.CustomKeygenResult
 		return types.CustomKeygenResult{}, fmt.Errorf("xmr keygen requires non-empty member set")
 	}
 	requestedVaultKey := monovaultKeygenLabel(req.BlockHeight, req.PoolPubKey, members)
-	version := strings.TrimSpace(req.ThorchainVersion)
-	if version == "" && c.thorchainBridge != nil {
-		chainVersion, versionErr := c.thorchainBridge.GetThorchainVersion()
-		if versionErr == nil {
-			version = chainVersion.String()
-		}
-	}
 
 	frostResp, err := c.tssServer.FrostKeygen(tssp.FrostKeygenRequest{
 		VaultPubKey:   requestedVaultKey,
 		SignerPubKeys: members,
 		BlockHeight:   req.BlockHeight,
-		Version:       version,
 	}, sidecar.NewFrostAdapter(c.sidecar))
 	if err != nil {
 		c.logFailClosedCoordination("frost_tss_keygen", err)
@@ -4457,23 +4467,10 @@ func xmrSigningCacheIdentity(tx stypes.TxOutItem) (xmrSigningIdentity, error) {
 }
 
 func xmrScheduledObserveKeys(tx stypes.TxOutItem) []string {
-	memos := []string{tx.Memo, tx.GetMemo()}
-	keys := make([]string, 0, len(memos))
-	seen := make(map[string]struct{}, len(memos))
-	for _, observedMemo := range memos {
-		key := xmrScheduledObserveKey(
-			txVaultPubKey(tx),
-			tx.ToAddress.String(),
-			tx.Coins,
-			observedMemo,
-		)
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		keys = append(keys, key)
-	}
-	return keys
+	return []string{xmrScheduledObserveKey(
+		txVaultPubKey(tx), tx.ToAddress.String(), tx.Coins,
+		stypes.XMRWireMemo(tx.Memo, tx.OriginalMemo),
+	)}
 }
 
 // xmrScheduledLogicalHash is the vault-independent semantic identity of a

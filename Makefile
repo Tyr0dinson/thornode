@@ -404,10 +404,10 @@ _test-regression:
 
 test-simulation: build-mocknet reset-mocknet test-simulation-no-reset
 
-TEST_SIMULATION_STAGES ?= seed,bootstrap,xmr-coverage,arb,swaps,memoless-swaps,consolidate,inactive-vault-refunds,memoless-refunds,solvency,ragnarok
-TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,swaps,memoless-swaps,inactive-vault-refunds,memoless-refunds,cluster-churn,solvency,xmr-post-churn,ragnarok
-# Descendants that implement XMR keygen set this to 1 to require live coverage.
-TEST_SIMULATION_REQUIRE_XMR ?= 0
+TEST_SIMULATION_STAGES ?= seed,bootstrap,xmr-coverage,arb,swaps,memoless-swaps,consolidate,memoless-refunds,solvency,ragnarok
+TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,xmr-coverage,xmr-spent-refs,swaps,memoless-swaps,inactive-vault-refunds,memoless-refunds,cluster-churn,solvency,xmr-post-churn,ragnarok
+# A full cluster run must fail rather than silently omit unavailable XMR coverage.
+TEST_SIMULATION_REQUIRE_XMR ?= 1
 
 .PHONY: test-mocknet-startup test-xmr-readiness-config test-simulation-xmr-readiness
 test-mocknet-startup:
@@ -418,7 +418,7 @@ test-xmr-readiness-config:
 	@python3 -m unittest discover -s build/docker/tests -p 'test_xmr_readiness.py' -v
 
 # Exercise initial-vault creation, churn, funding, and a real BTC-to-XMR swap.
-# Requires S00's keygen dependency; see docs/xmr-readiness-baseline.md.
+# Requires enabled XMR keygen; see docs/xmr-readiness-baseline.md.
 test-simulation-xmr-readiness: TEST_SIMULATION_CLUSTER_STAGES=seed,bootstrap,xmr-post-churn
 test-simulation-xmr-readiness: override TEST_SIMULATION_REQUIRE_XMR=1
 test-simulation-xmr-readiness: test-simulation-cluster

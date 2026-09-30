@@ -63,7 +63,12 @@ type Signer struct {
 	tssKeysignMetricMgr   *metrics.TssKeysignMetricMgr
 	observer              signerObserver
 	pipeline              *pipeline
-	// Serialize worker admission with shutdown; never hold this mutex for RPCs.
+	// The normal keygen consumer is serial, but scheduled retries re-enter from
+	// independent goroutines. Signer-owned admission prevents a retry or replayed
+	// delivery from starting a second XMR sidecar DKG while one is already active.
+	xmrKeygen xmrKeygenSlot
+	// Waiting workers are joined before signer resources close. The mutex makes
+	// worker admission and shutdown atomic; it is never held during an RPC.
 	keygenWorkerMu sync.Mutex
 	keygenWorkerWG sync.WaitGroup
 	keygenRetries  sync.Map // keygenRetryID -> *keygenRetry
@@ -445,6 +450,8 @@ func (s *Signer) processKeygen(ch <-chan ttypes.KeygenBlock) {
 	}
 }
 
+// scheduleKeygenRetry retains unknown policy for all keygen types, including
+// Asgard. This is shared retry behavior, not an XMR-only execution gate.
 func (s *Signer) scheduleKeygenRetry(keygenBlock ttypes.KeygenBlock, keygenReq ttypes.Keygen) bool {
 	if s.isStopped() {
 		return false
@@ -539,21 +546,39 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 	}
 }
 
-// processKeygenRequest is shared by normal delivery and retry dispatch. Keep the
-// network-wide XMR brake here so a retry cannot bypass the block consumer.
-// S00 replaces this unconditional brake with its reviewed activation/admission.
+// processKeygenRequest is the execution choke point for one keygen request.
+// XMR ownership remains held through result construction and broadcast, while
+// non-XMR requests retain the existing direct path without guard contention.
 func (s *Signer) processKeygenRequest(keygenBlock ttypes.KeygenBlock, keygenReq ttypes.Keygen) {
-	if keygenReq.Type == ttypes.KeygenType_XMRMonovaultKeygen {
-		s.logger.Info().Int64("height", keygenBlock.Height).
-			Msg("skipping XMR monovault keygen (network-wide skip pending keygen fix)")
+	if keygenReq.Type != ttypes.KeygenType_XMRMonovaultKeygen {
+		s.runKeygenRequest(keygenBlock, keygenReq)
 		return
 	}
-	s.runKeygenRequest(keygenBlock, keygenReq)
+	s.processXMRKeygenRequest(keygenBlock, keygenReq, false)
 }
 
-// runKeygenRequest executes one request through result submission. Retrying only
-// that request preserves the original block for validity without replaying its
-// successful companions.
+// processXMRKeygenRequest admits once and transfers only the admitted
+// continuation when policy is unavailable. Retry context survives that wait.
+func (s *Signer) processXMRKeygenRequest(keygenBlock ttypes.KeygenBlock, keygenReq ttypes.Keygen, retry bool) {
+	current, disposition := s.xmrKeygen.admit(keygenBlock.Height, keygenReq, retry)
+	if current == nil {
+		s.logger.Warn().Int64("keygen_height", keygenBlock.Height).
+			Stringer("keygen_id", keygenReq.ID).Str("disposition", disposition).
+			Msg("XMR monovault keygen admission")
+		return
+	}
+	if current = s.runAdmittedXMRKeygen(current); current != nil {
+		// Transfer the admitted slot, not a new admission. Returning here leaves
+		// finishAndPromote to the worker and lets the consumer process Asgard.
+		if !s.startKeygenWorker(func() { s.retainXMRKeygen(current) }) {
+			s.runAdmittedXMRKeygen(current) // Shutdown drains ownership without DKG.
+		}
+	}
+}
+
+// runKeygenRequest executes an admitted request through result broadcast.
+// All returns come back to the admission loop, which releases or transfers XMR
+// ownership even when execution fails or the next attempt is halted.
 func (s *Signer) runKeygenRequest(keygenBlock ttypes.KeygenBlock, keygenReq ttypes.Keygen) {
 	keygenChains := s.keygenChainsForType(keygenReq.Type)
 	go s.warnOnChainsMissingFromKeygen(keygenChains, keygenReq.Type)
@@ -665,6 +690,68 @@ func (s *Signer) runKeygenRequest(keygenBlock ttypes.KeygenBlock, keygenReq ttyp
 	}})
 }
 
+// xmrMonovaultKeygenAllowed is Bifrost's execution-side keygen gate. The
+// temporary enable Mimir makes rollout opt-in; only then is the independently
+// operable halt checked. It covers records already delivered to Bifrost and
+// local retry re-entry without changing THORNode's scheduling behavior. Every
+// unknown or unavailable enable state fails closed for execution; the error
+// return lets admission retain the request instead of treating it as a halt.
+func (s *Signer) xmrMonovaultKeygenAllowed(keygenHeight int64) (bool, error) {
+	enabled, err := s.thorchainBridge.GetMimir(constants.MimirKeyEnableMonovaultKeygen)
+	if err != nil {
+		s.logger.Error().
+			Err(err).
+			Int64("keygen_height", keygenHeight).
+			Msg("skipping XMR monovault keygen: unable to verify EnableMonovaultKeygen")
+		return false, err
+	}
+	if enabled <= 0 {
+		s.logger.Info().
+			Int64("keygen_height", keygenHeight).
+			Int64("enable_mimir", enabled).
+			Msg("skipping XMR monovault keygen: EnableMonovaultKeygen is not active")
+		return false, nil
+	}
+
+	halt, err := s.thorchainBridge.GetMimir(constants.MimirKeyHaltMonovaultKeygen)
+	if err != nil {
+		s.logger.Error().
+			Err(err).
+			Int64("keygen_height", keygenHeight).
+			Msg("skipping XMR monovault keygen: unable to verify HaltMonovaultKeygen")
+		return false, err
+	}
+	if halt <= 0 {
+		return true, nil
+	}
+
+	currentHeight, err := s.keygenCurrentHeight(keygenHeight)
+	if err != nil {
+		s.logger.Error().
+			Err(err).
+			Int64("keygen_height", keygenHeight).
+			Int64("halt_mimir", halt).
+			Int64("current_height", currentHeight).
+			Msg("skipping XMR monovault keygen: unable to verify halt activation height")
+		return false, err
+	}
+	if halt <= currentHeight {
+		s.logger.Warn().
+			Int64("keygen_height", keygenHeight).
+			Int64("halt_mimir", halt).
+			Int64("current_height", currentHeight).
+			Msg("skipping XMR monovault keygen due to HaltMonovaultKeygen")
+		return false, nil
+	}
+
+	s.logger.Info().
+		Int64("keygen_height", keygenHeight).
+		Int64("halt_mimir", halt).
+		Int64("current_height", currentHeight).
+		Msg("HaltMonovaultKeygen is scheduled for a future height; allowing XMR monovault keygen")
+	return true, nil
+}
+
 func (s *Signer) flushPendingKeygenBroadcasts(pending []pendingKeygenBroadcast) {
 	if len(pending) == 0 {
 		return
@@ -769,13 +856,6 @@ func (s *Signer) runCustomKeygenHooks(
 	poolPubKey common.PubKey,
 	poolPubKeyEddsa common.PubKey,
 ) (common.PubKey, common.PubKey, string, int64, error) {
-	version := ""
-	if v, err := s.thorchainBridge.GetThorchainVersion(); err != nil {
-		s.logger.Debug().Err(err).Msg("fail to fetch thorchain version for custom keygen")
-	} else {
-		version = v.String()
-	}
-
 	var customHookErr error
 	effectivePoolPubKeyEddsa := poolPubKeyEddsa
 	var frostPoolPubKey common.PubKey
@@ -791,11 +871,10 @@ func (s *Signer) runCustomKeygenHooks(
 		}
 
 		result, err := custom.Keygen(chainclienttypes.CustomKeygenRequest{
-			Members:          keys,
-			BlockHeight:      blockHeight,
-			ThorchainVersion: version,
-			PoolPubKey:       poolPubKey,
-			PoolPubKeyEddsa:  effectivePoolPubKeyEddsa,
+			Members:         keys,
+			BlockHeight:     blockHeight,
+			PoolPubKey:      poolPubKey,
+			PoolPubKeyEddsa: effectivePoolPubKeyEddsa,
 		})
 		if err != nil {
 			s.logger.Error().Err(err).Str("chain", chainID.String()).Msg("custom keygen failed")
@@ -1564,7 +1643,7 @@ func (s *Signer) applySpentOutputRefsFromObs(ctx context.Context, tx types.TxOut
 	}
 	applier.ApplySpentOutputRefsWithOutcome(chainclienttypes.SpentOutputRefsImport{
 		Tx:       obsTx,
-		WireMemo: tx.Memo,
+		WireMemo: types.XMRWireMemo(tx.Memo, tx.OriginalMemo),
 	}, onOutcome)
 	select {
 	case applied := <-outcome:

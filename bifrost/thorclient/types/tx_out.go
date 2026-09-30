@@ -46,6 +46,16 @@ func (tx TxOutItem) GetMemo() string {
 	return tx.Memo
 }
 
+// XMRWireMemo retains the semantic memo on Monero even when THORChain plans
+// a memoless outbound. Scanners need it to distinguish change from deposits.
+// Keep the planned memo unchanged for signing identities and failure reports.
+func XMRWireMemo(planned, original string) string {
+	if planned == "" {
+		return original
+	}
+	return planned
+}
+
 // CacheHash return a hash that doesn't include VaultPubKey , thus this one can be used as cache key for txOutItem across different vaults
 func (tx TxOutItem) CacheHash() string {
 	str := fmt.Sprintf("%s|%s|%s|%s|%s", tx.Chain, tx.ToAddress, tx.Coins, tx.Memo, tx.InHash)

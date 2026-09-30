@@ -189,6 +189,9 @@ func TestApplySpentOutputRefsSidecarCall(t *testing.T) {
 	applied, retry := c.applySpentOutputRefsOnce(chainclienttypes.SpentOutputRefsImport{Tx: obsTx, WireMemo: obsTx.Tx.Memo})
 	assert.True(t, applied, "idempotent Marked=0 response must count as verified")
 	assert.False(t, retry)
+	applied, retry = c.applySpentOutputRefsOnce(chainclienttypes.SpentOutputRefsImport{Tx: obsTx, WireMemo: obsTx.Tx.Memo, ReplaySource: true})
+	assert.False(t, applied, "certificate import cannot succeed without a scanner to own replay")
+	assert.True(t, retry)
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -1108,7 +1111,7 @@ func TestApplySpentOutputRefsWithWireMemoUsesWireMemoAcrossRetry(t *testing.T) {
 	assert.Equal(t, "OUT:"+strings.Repeat("A", 64), obsTx.Tx.Memo)
 }
 
-func TestApplySpentOutputRefsChainCommittedOmitsOutboundClaim(t *testing.T) {
+func TestApplySpentOutputRefsChainCommittedCarriesMetadataWithoutCertificate(t *testing.T) {
 	t.Parallel()
 
 	requests := make(chan sidecar.MarkSpentReq, 1)
@@ -1140,8 +1143,9 @@ func TestApplySpentOutputRefsChainCommittedOmitsOutboundClaim(t *testing.T) {
 
 	req := <-requests
 	assert.Equal(t, sidecar.OutgoingOrigin(sidecar.OutgoingOriginChainCommitted), req.Origin)
-	assert.Empty(t, req.Memo)
-	assert.Empty(t, req.TxKey)
+	assert.Equal(t, obsTx.Tx.Memo, req.Memo)
+	assert.Equal(t, obsTx.XmrTxKey, req.TxKey)
+	assert.False(t, req.SkipVerification)
 	assert.Empty(t, req.CertificateHash)
 	assert.Equal(t, "OUT:"+strings.Repeat("B", 64), obsTx.Tx.Memo)
 }

@@ -48,9 +48,10 @@ combined runtime-identity/effective-birthday validation.
 
 ## Simulation guarantees
 
-- Required XMR runs wait up to eight minutes for an initial inbound address
-  before constructing actors, then fail if it is absent. Optional develop runs
-  retain a 30-second fallback and can omit XMR when no inbound address exists.
+- Full cluster runs require XMR by default. They wait up to eight minutes for
+  an initial inbound address before constructing actors, then fail if it is
+  absent. Explicitly optional local runs retain a 30-second fallback and can
+  omit XMR when no inbound address exists; they are not XMR validation.
 - `ClusterChurn` includes initial activation, Bond Yield checks, validator
   replacement, and Mimir cleanup. Select it with `cluster-churn`; `bond-yield`
   remains an alias, and selecting both runs the suite once.
@@ -124,15 +125,18 @@ This selects `seed,bootstrap,xmr-post-churn` and forces
 `XMR_POST_CHURN_REQUIRED=1`, even when a caller sets the former to `0`.
 It resets the selected Compose project's volumes: use a dedicated project.
 
-The full `make test-simulation-cluster` also runs startup/configuration checks.
-To exercise shared churn explicitly, select
-`seed,bootstrap,cluster-churn,xmr-post-churn` with
-`TEST_SIMULATION_REQUIRE_XMR=1`. Run `xmr-spent-refs` after the XMR inbound address
-exists; that stage is selected from addresses available at runner startup.
+The full `make test-simulation-cluster` runs startup/configuration checks and
+requires XMR by default with `TEST_SIMULATION_REQUIRE_XMR=1`. Its default stages
+include ordinary and memoless swaps, `xmr-spent-refs`, shared cluster churn,
+post-churn XMR verification, solvency, and Ragnarok. The CI job explicitly passes
+the requirement on the Make command line, so an inherited environment value of
+`0` cannot silently skip XMR. Branches inheriting these settings inherit that
+coverage requirement, not a guarantee that their cluster tests pass.
 
-The baseline defaults to `TEST_SIMULATION_REQUIRE_XMR=0`. Descendants enabling
-XMR must set the default to `1` to require its coverage in full cluster CI.
-A passing develop simulation does not validate live XMR keygen or replacement.
+For a deliberately optional local diagnostic run, explicitly set
+`TEST_SIMULATION_REQUIRE_XMR=0`. Such a run, or a run with a reduced stage list,
+is not a substitute for full cluster CI. The dedicated readiness target above
+is also narrower than the full cluster run.
 
 ## Registration restart protection
 

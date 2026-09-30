@@ -70,7 +70,7 @@ func TestXMRCommittedAuthorityImmediateImport(t *testing.T) {
 	select {
 	case request := <-applied:
 		require.Equal(t, observed, request.Tx)
-		require.Equal(t, planned.wireMemo, request.WireMemo)
+		require.Equal(t, observed.Tx.Memo, request.WireMemo)
 	case <-time.After(time.Second):
 		t.Fatal("three source-vault shares must authorize import even when the first two are committed")
 	}

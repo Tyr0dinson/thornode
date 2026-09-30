@@ -1,9 +1,12 @@
 package monero
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +23,243 @@ import (
 	"gitlab.com/thorchain/thornode/v3/config"
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
+
+// Model the pinned signer's accounting boundary: scanning before MarkSpent
+// cannot mark a nonexistent record mined. MarkSpent alone creates a pending
+// ChainCommitted record, and MarkObserved requires complete metadata plus a
+// canonical mined location. This does not substitute for a signer integration
+// run; it exercises Bifrost's actual scan, import, restart and reorg paths.
+func TestCommittedPayoutReconcilesAfterScanAndRestartWithoutSourceVote(t *testing.T) {
+	for _, memoPrefix := range []string{"OUT:", "REFUND:", "RAGNAROK:"} {
+		t.Run(memoPrefix, func(t *testing.T) {
+			source, _, txID, voter, refs := testXMRCatchupMigration(t, "late-committed-"+memoPrefix)
+			voter.Tx.Tx.Memo = memoPrefix + strings.Repeat("a", 64)
+			if memoPrefix == "RAGNAROK:" {
+				voter.Tx.Tx.Memo = "RAGNAROK:50"
+			}
+			voter.Tx.Tx.ToAddress = testOutboundXMRDestination()
+			// The observed heights are not the daemon's canonical mining height.
+			voter.Tx.BlockHeight, voter.Tx.FinaliseHeight = 99, 99
+			block98, block99 := testXMRHash("late-h98"), testXMRHash("late-h99")
+			block100 := testXMRHash("late-h100")
+			blocks := map[int64]sidecar.ChainBlock{
+				99:  withBlockHeader(99, defaultCoinbaseValue, block99, block98),
+				100: withBlockHeader(100, defaultCoinbaseValue, block100, block99),
+			}
+			location := sidecar.CanonicalTxLocationResp{TxHash: txID, Height: 100, BlockHash: block100, PreviousHash: block99}
+			next, last := uint64(100), uint64(99)
+			epoch := uint64(0)
+			lastHash, lastParent := block99, block98
+			var stored *sidecar.Transfer
+			var reorgStore *ReorgStore
+			failMarkObserved := true
+			markObservedCalls, rewindCalls := 0, 0
+			var serverMu sync.Mutex
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				serverMu.Lock()
+				defer serverMu.Unlock()
+				w.Header().Set("Content-Type", "application/json")
+				switch {
+				case r.URL.Path == "/v1/monero/scanner/state":
+					_ = json.NewEncoder(w).Encode(sidecar.ScannerState{ResetEpoch: epoch, NextHeight: &next, LastHeight: &last, LastBlockHash: lastHash, LastParentHash: lastParent, StrictAfterReset: epoch > 0})
+				case strings.HasPrefix(r.URL.Path, "/v1/monero/chain/block/"):
+					height, _ := strconv.ParseInt(strings.TrimPrefix(r.URL.Path, "/v1/monero/chain/block/"), 10, 64)
+					block, ok := blocks[height]
+					if !ok {
+						http.NotFound(w, r)
+						return
+					}
+					_ = json.NewEncoder(w).Encode(sidecar.ChainBlockResp(block))
+				case r.URL.Path == "/v1/monero/chain/tx/"+txID+"/location":
+					_ = json.NewEncoder(w).Encode(location)
+				case r.URL.Path == "/v1/monero/scanner/sync":
+					var req sidecar.SyncReq
+					if json.NewDecoder(r.Body).Decode(&req) != nil || uint64(req.Height) != next {
+						http.Error(w, "unexpected scan height", http.StatusConflict)
+						return
+					}
+					block := blocks[req.Height]
+					last, next = uint64(req.Height), uint64(req.Height+1)
+					lastHash, lastParent = block.Hash, block.PreviousHash
+					resp := sidecar.Transfers{}
+					if req.Height == location.Height {
+						// Change is visible even before this node imports the spend.
+						resp.Incoming = []sidecar.Transfer{{TxID: txID, Address: voter.Tx.Tx.FromAddress.String(), VaultPubKey: source.String(), Amount: 5 * moneroAtomicToThorchain, Height: uint64(req.Height), Note: voter.Tx.Tx.Memo}}
+						if stored != nil {
+							stored.Height, stored.Locked = uint64(req.Height), false
+							resp.Outgoing = []sidecar.Transfer{*stored}
+						}
+					}
+					_ = json.NewEncoder(w).Encode(resp)
+				case r.URL.Path == "/v1/monero/outputs/mark-spent":
+					var req sidecar.MarkSpentReq
+					if json.NewDecoder(r.Body).Decode(&req) != nil || req.SkipVerification || string(req.Origin) != sidecar.OutgoingOriginChainCommitted {
+						http.Error(w, "unverified import", http.StatusBadRequest)
+						return
+					}
+					if req.TxKey == "" || req.Memo != voter.Tx.Tx.Memo || req.ToAddress != voter.Tx.Tx.ToAddress.String() {
+						http.Error(w, "incomplete payment metadata", http.StatusBadRequest)
+						return
+					}
+					if stored == nil {
+						stored = &sidecar.Transfer{TxID: req.TxHash, TxKey: req.TxKey, Address: req.ToAddress, FromAddress: req.FromAddress, VaultPubKey: req.VaultPubKey, Amount: req.Amount, Fee: req.Fee, Note: req.Memo, Origin: string(req.Origin), Locked: true, SpentOutputRefs: req.SpentRefs}
+					}
+					_ = json.NewEncoder(w).Encode(sidecar.MarkSpentResp{Marked: len(req.SpentRefs)})
+				case r.URL.Path == "/v1/monero/outputs/mark-observed":
+					markObservedCalls++
+					var req sidecar.MarkObservedReq
+					if json.NewDecoder(r.Body).Decode(&req) != nil || stored == nil || req.Height != uint64(location.Height) || req.BlockHash != location.BlockHash {
+						http.Error(w, "not a canonical mined proof", http.StatusConflict)
+						return
+					}
+					meta, metaErr := reorgStore.Get(location.Height)
+					if metaErr != nil || meta == nil || !reorgMetaHasVaultOrigin(meta, txID) || meta.BlockHash != location.BlockHash {
+						http.Error(w, "mined status requested before durable journal ownership", http.StatusConflict)
+						return
+					}
+					if failMarkObserved {
+						http.Error(w, "injected lost request before mined commit", http.StatusServiceUnavailable)
+						return
+					}
+					stored.Height, stored.Locked = req.Height, false
+					_ = json.NewEncoder(w).Encode(stored)
+				case r.URL.Path == "/v1/monero/balance/"+source.String():
+					pending := 0
+					state := "reconciled"
+					if stored != nil && stored.Locked {
+						pending, state = 1, "pending_outgoing"
+					}
+					_ = json.NewEncoder(w).Encode(sidecar.Balance{Balance: 100, UnlockedBalance: 100, ReconciliationState: state, PendingOutgoingCount: &pending})
+				case r.URL.Path == "/v1/monero/scanner/rewind":
+					var req sidecar.ScannerRewindReq
+					if json.NewDecoder(r.Body).Decode(&req) != nil || req.ExpectedNextHeight != next || req.ExpectedResetEpoch != epoch || req.AnchorHash != block99 {
+						http.Error(w, "bad rewind", http.StatusConflict)
+						return
+					}
+					previous := next
+					next, last, epoch = req.TargetNextHeight, req.AnchorHeight, epoch+1
+					lastHash, lastParent = block99, block98
+					stored.Height, stored.Locked = 0, true
+					rewindCalls++
+					_ = json.NewEncoder(w).Encode(sidecar.ScannerRewindResp{Rewound: true, PreviousNextHeight: previous, NextHeight: next, ResetEpoch: epoch})
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+			dbPath := filepath.Join(t.TempDir(), "scanner")
+			var db *leveldb.DB
+			var c *Client
+			openClient := func() {
+				serverMu.Lock()
+				defer serverMu.Unlock()
+				var err error
+				db, err = leveldb.OpenFile(dbPath, nil)
+				require.NoError(t, err)
+				reorgStore = NewReorgStore(db)
+				signer, signerErr := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+				require.NoError(t, signerErr)
+				scanner := NewScanner(testLogger(), signer, &scannerMemoBridge{}, common.XMRChain, common.EmptyPubKey, 72)
+				scanner.SetManualVaultAddress(source, voter.Tx.Tx.FromAddress.String())
+				scanner.SetReorgStore(reorgStore)
+				scanner.setCurrentHeight(int64(last))
+				c = &Client{
+					chain: common.XMRChain, sidecar: signer, scanner: scanner, logger: testLogger(),
+					thorchainBridge: &mockMoneroBridge{
+						observedByTx: map[string]*ttypes.QueryObservedTxVoter{txID: voter},
+					},
+				}
+			}
+			openClient()
+			defer func() { _ = db.Close() }()
+			require.NoError(t, reorgStore.Set(&reorgBlockMeta{Height: 99, BlockHash: block99, PreviousHash: block98, ProvenanceComplete: true}))
+			initial, err := c.scanner.FetchTxs(100, 100)
+			require.NoError(t, err)
+			require.Empty(t, initial.TxArray)
+			serverMu.Lock()
+			missingBeforeImport := stored == nil
+			serverMu.Unlock()
+			require.True(t, missingBeforeImport, "the scanner must pass the block before the import")
+			meta, err := reorgStore.Get(100)
+			require.NoError(t, err)
+			require.Empty(t, meta.CustomerTransactions)
+			importOnce := func() (bool, bool) {
+				_, applied, retry := c.applyCommittedSpentOutputRefsOnce(context.Background(), source, common.TxID(txID), xmrOutputRefsFromPointers(refs), false)
+				return applied, retry
+			}
+			applied, retry := importOnce()
+			require.False(t, applied)
+			require.True(t, retry)
+			balance, err := c.sidecar.Balance(source.String())
+			require.NoError(t, err)
+			require.False(t, balance.IsReconciled())
+			require.Equal(t, 1, *balance.PendingOutgoingCount)
+			serverMu.Lock()
+			initialMarkCalls := markObservedCalls
+			serverMu.Unlock()
+			require.Equal(t, 1, initialMarkCalls)
+			// Restart Bifrost after the durable journal write but before the signer
+			// accepts MarkObserved. The periodic committed import owns the retry.
+			require.NoError(t, db.Close())
+			openClient()
+			serverMu.Lock()
+			failMarkObserved = false
+			serverMu.Unlock()
+			applied, retry = importOnce()
+			require.True(t, applied)
+			require.False(t, retry)
+			assertReconciled := func(height uint64) {
+				balance, balanceErr := c.sidecar.Balance(source.String())
+				require.NoError(t, balanceErr)
+				require.True(t, balance.IsReconciled())
+				require.Equal(t, uint64(100), balance.Balance)
+				serverMu.Lock()
+				proof := *stored
+				serverMu.Unlock()
+				require.Equal(t, height, proof.Height)
+				require.Equal(t, sidecar.OutgoingOriginChainCommitted, proof.Origin)
+				require.False(t, proof.ObservationEligible)
+				items, itemErr := c.scanner.transfersToTxInItems(sidecar.Transfers{Outgoing: []sidecar.Transfer{proof}}, int64(height))
+				require.NoError(t, itemErr)
+				require.Empty(t, items)
+				receipts, receiptErr := reorgStore.ListObservationReceipts()
+				require.NoError(t, receiptErr)
+				require.Empty(t, receipts)
+			}
+			assertReconciled(100)
+			require.NoError(t, db.Close())
+			openClient()
+			applied, retry = importOnce()
+			require.True(t, applied)
+			require.False(t, retry)
+			assertReconciled(100)
+
+			// Move the same non-expiring spend onto a replacement branch. The
+			// ordinary reorg path must reset and remine its accounting without
+			// turning the ChainCommitted record into a source observation.
+			serverMu.Lock()
+			new100, new101 := testXMRHash("late-new100"), testXMRHash("late-new101")
+			blocks[100] = withBlockHeader(100, defaultCoinbaseValue, new100, block99)
+			blocks[101] = withBlockHeader(101, defaultCoinbaseValue, new101, new100)
+			location = sidecar.CanonicalTxLocationResp{TxHash: txID, Height: 101, BlockHash: new101, PreviousHash: new100}
+			serverMu.Unlock()
+			replacement, err := c.scanner.FetchTxs(101, 101)
+			require.NoError(t, err)
+			require.Empty(t, replacement.TxArray)
+			serverMu.Lock()
+			reorgRewinds := rewindCalls
+			serverMu.Unlock()
+			require.Equal(t, 1, reorgRewinds)
+			applied, retry = importOnce()
+			require.True(t, applied)
+			require.False(t, retry)
+			assertReconciled(101)
+			meta, err = reorgStore.Get(101)
+			require.NoError(t, err)
+			require.True(t, reorgMetaHasVaultOrigin(meta, txID))
+		})
+	}
+}
 
 func TestCatchupSpentOutputRefsReadsFromQueryAndCallsSidecar(t *testing.T) {
 	t.Parallel()
@@ -103,8 +343,8 @@ func TestCatchupSpentOutputRefsReadsFromQueryAndCallsSidecar(t *testing.T) {
 
 	assert.Equal(t, frostKey.String(), capturedVault)
 	assert.Equal(t, spendTxHash, capturedTxHash)
-	assert.Empty(t, capturedTxKey)
-	assert.Empty(t, capturedMemo)
+	assert.Equal(t, voter.Tx.XmrTxKey, capturedTxKey)
+	assert.Equal(t, voter.Tx.Tx.Memo, capturedMemo)
 	assert.Equal(t, sidecar.OutgoingOrigin(sidecar.OutgoingOriginChainCommitted), capturedOrigin)
 	assert.False(t, skipVerification)
 	require.Equal(t, 3, len(capturedRefs))

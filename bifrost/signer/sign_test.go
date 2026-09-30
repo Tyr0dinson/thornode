@@ -221,8 +221,8 @@ func TestApplySpentOutputRefsFromObsUsesWireMemo(t *testing.T) {
 	if chain.applied[0].Tx.Memo != originalMemo {
 		t.Fatalf("expected semantic import memo %q, got %q", originalMemo, chain.applied[0].Tx.Memo)
 	}
-	if len(chain.wireMemos) != 1 || chain.wireMemos[0] != txOut.Memo {
-		t.Fatalf("expected sidecar wire memo %q, got %q", txOut.Memo, chain.wireMemos)
+	if len(chain.wireMemos) != 1 || chain.wireMemos[0] != originalMemo {
+		t.Fatalf("expected sidecar wire memo %q, got %q", originalMemo, chain.wireMemos)
 	}
 }
 
@@ -310,12 +310,24 @@ type batchingKeygenBridge struct {
 
 type retryAwareKeygenBridge struct {
 	batchingKeygenBridge
-	mimirs map[string]int64
+	mimirs     map[string]int64
+	mimirErrs  map[string]error
+	mimirCalls map[string]int
+}
+
+type keygenGateBridge struct {
+	*retryAwareKeygenBridge
+	blockHeight    int64
+	blockHeightErr error
 }
 
 type timingKeygenBridge struct {
 	batchingKeygenBridge
 	buildDelay time.Duration
+}
+
+func (b fakeBridge) GetAsgards() (types2.Vaults, error) {
+	return nil, nil
 }
 
 func (b fakeBridge) GetBlockHeight() (int64, error) {
@@ -396,10 +408,21 @@ func (b *batchingKeygenBridge) Broadcast(msgs ...sdktypes.Msg) (common.TxID, err
 }
 
 func (b *retryAwareKeygenBridge) GetMimir(key string) (int64, error) {
+	if b.mimirCalls == nil {
+		b.mimirCalls = make(map[string]int)
+	}
+	b.mimirCalls[key]++
+	if err, ok := b.mimirErrs[key]; ok {
+		return 0, err
+	}
 	if value, ok := b.mimirs[key]; ok {
 		return value, nil
 	}
 	return b.batchingKeygenBridge.GetMimir(key)
+}
+
+func (b *keygenGateBridge) GetBlockHeight() (int64, error) {
+	return b.blockHeight, b.blockHeightErr
 }
 
 func (b *timingKeygenBridge) GetKeygenStdTx(poolPubKey common.PubKey, secp256k1Signature, keysharesBackup []byte, blame []types2.Blame, inputPks common.PubKeys, keygenType types2.KeygenType, chains common.Chains, height, keygenTime int64, poolPubKeyEddsa common.PubKey, keysharesBackupEddsa []byte, frostExtras ...any) (sdktypes.Msg, error) {
@@ -639,21 +662,20 @@ func (b *spentRefApplyingChainClient) ApplySpentOutputRefsWithOutcome(
 
 type MockCustomKeygenChainClient struct {
 	*MockChainClient
-	mu            sync.Mutex
-	called        bool
-	callCount     int
-	calledKeys    []string
-	calledHeight  int64
-	calledVersion string
-	calledPoolPK  common.PubKey
-	calledPoolED  common.PubKey
-	retAddress    common.Address
-	retPoolED     common.PubKey
-	retPoolFrost  common.PubKey
-	retBlame      []types2.Blame
-	retErr        error
-	results       []chainclienttypes.CustomKeygenResult
-	errs          []error
+	mu           sync.Mutex
+	called       bool
+	callCount    int
+	calledKeys   []string
+	calledHeight int64
+	calledPoolPK common.PubKey
+	calledPoolED common.PubKey
+	retAddress   common.Address
+	retPoolED    common.PubKey
+	retPoolFrost common.PubKey
+	retBlame     []types2.Blame
+	retErr       error
+	results      []chainclienttypes.CustomKeygenResult
+	errs         []error
 }
 
 func (m *MockCustomKeygenChainClient) CustomKeygen() bool { return true }
@@ -666,7 +688,6 @@ func (m *MockCustomKeygenChainClient) Keygen(req chainclienttypes.CustomKeygenRe
 	m.callCount++
 	m.calledKeys = append([]string(nil), req.Members...)
 	m.calledHeight = req.BlockHeight
-	m.calledVersion = req.ThorchainVersion
 	m.calledPoolPK = req.PoolPubKey
 	m.calledPoolED = req.PoolPubKeyEddsa
 	if len(m.results) >= m.callCount {
@@ -1103,8 +1124,7 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 }
 
 func (s *SignSuite) TestRunCustomKeygenHooks(c *C) {
-	bridge := fakeBridge{s.bridge}
-
+	// Even a non-XMR custom-hook dispatch needs no bridge/version query.
 	custom := &MockCustomKeygenChainClient{
 		MockChainClient: &MockChainClient{},
 	}
@@ -1113,8 +1133,7 @@ func (s *SignSuite) TestRunCustomKeygenHooks(c *C) {
 		chains: map[common.Chain]chainclients.ChainClient{
 			common.ETHChain: custom,
 		},
-		thorchainBridge: bridge,
-		logger:          log.With().Str("module", "signer").Logger(),
+		logger: log.With().Str("module", "signer").Logger(),
 	}
 
 	poolPK := types2.GetRandomPubKey()
@@ -1124,7 +1143,6 @@ func (s *SignSuite) TestRunCustomKeygenHooks(c *C) {
 
 	c.Assert(custom.called, Equals, true)
 	c.Assert(custom.calledHeight, Equals, int64(1234))
-	c.Assert(custom.calledVersion, Equals, "1.0.0")
 	c.Assert(custom.calledPoolPK.Equals(poolPK), Equals, true)
 	c.Assert(custom.calledPoolED.IsEmpty(), Equals, true)
 	c.Assert(updatedPoolED.IsEmpty(), Equals, true)
@@ -1179,7 +1197,8 @@ func (s *SignSuite) TestRunCustomKeygenHooksCarriesFrostPubKeyWithoutOverride(c 
 }
 
 func (s *SignSuite) TestRunCustomKeygenHooksClearsEddsaForXMRFrostKeygen(c *C) {
-	bridge := fakeBridge{s.bridge}
+	// A nil bridge makes any accidental pre-join version lookup fail this
+	// test; FROST keygen must not need that API to start its custom hook.
 	frost := types2.GetRandomPubKey()
 	custom := &MockCustomKeygenChainClient{
 		MockChainClient: &MockChainClient{},
@@ -1190,8 +1209,7 @@ func (s *SignSuite) TestRunCustomKeygenHooksClearsEddsaForXMRFrostKeygen(c *C) {
 		chains: map[common.Chain]chainclients.ChainClient{
 			common.XMRChain: custom,
 		},
-		thorchainBridge: bridge,
-		logger:          log.With().Str("module", "signer").Logger(),
+		logger: log.With().Str("module", "signer").Logger(),
 	}
 
 	poolPK := types2.GetRandomPubKey()
@@ -1424,31 +1442,27 @@ func (s *SignSuite) TestOrderedKeygensForProcessingPrioritizesXMR(c *C) {
 	c.Assert(ordered[2].GetMembers(), DeepEquals, asgardA.GetMembers())
 }
 
-// TestProcessKeygenBlockSkipsXMRMonovaultKeygen verifies the temporary
-// network-wide XMR/FROST monovault keygen skip: XMR keygens in the block must
-// never reach the custom keygen hooks, schedule retries, or broadcast a
-// MsgTssPool. The mocks stay armed with results that would be consumed if the
-// keygens were processed. Remove/revert to sibling-failure coverage once the
-// FROST keygen scale fix lands and the skip is removed from processKeygenBlock.
-func (s *SignSuite) TestProcessKeygenBlockSkipsXMRMonovaultKeygen(c *C) {
-	bridge := &retryAwareKeygenBridge{
+// TestProcessKeygenBlockHonorsActiveXMRMonovaultKeygenHalt verifies the
+// execution-side gate stops every XMR request in a block before entering the
+// sidecar ceremony or broadcasting a MsgTssPool. At one height the first
+// admitted XMR ceremony owns the slot, so a distinct second ID is rejected.
+func (s *SignSuite) TestProcessKeygenBlockHonorsActiveXMRMonovaultKeygenHalt(c *C) {
+	retryBridge := &retryAwareKeygenBridge{
 		batchingKeygenBridge: batchingKeygenBridge{fakeBridge: fakeBridge{s.bridge}},
 		mimirs: map[string]int64{
-			constants.ChurnRetryInterval.String():  1000,
-			constants.KeygenRetryInterval.String(): 0,
+			constants.MimirKeyEnableMonovaultKeygen: 1,
+			constants.MimirKeyHaltMonovaultKeygen:   100,
 		},
 	}
+	bridge := &keygenGateBridge{retryAwareKeygenBridge: retryBridge, blockHeight: 2700}
 	successFrost := types2.GetRandomPubKey()
 	custom := &MockCustomKeygenChainClient{
 		MockChainClient: &MockChainClient{},
 		results: []chainclienttypes.CustomKeygenResult{
 			{PoolPubKeyFrost: successFrost},
-			{},
+			{PoolPubKeyFrost: successFrost},
 		},
-		errs: []error{
-			nil,
-			errors.New("boom"),
-		},
+		errs: []error{nil, nil},
 	}
 	sign := &Signer{
 		chains: map[common.Chain]chainclients.ChainClient{
@@ -1474,9 +1488,172 @@ func (s *SignSuite) TestProcessKeygenBlockSkipsXMRMonovaultKeygen(c *C) {
 		Keygens: []types2.Keygen{keygenA, keygenB},
 	})
 
-	// Both XMR monovault keygens are skipped: no custom keygen hook runs and
-	// no MsgTssPool broadcast is made, so no keygen result (success or blame)
-	// can ever reach consensus on thorchain.
 	c.Assert(custom.callCount, Equals, 0)
 	c.Assert(bridge.batchSizes, HasLen, 0)
+	c.Assert(bridge.mimirCalls[constants.MimirKeyEnableMonovaultKeygen], Equals, 1)
+	c.Assert(bridge.mimirCalls[constants.MimirKeyHaltMonovaultKeygen], Equals, 1)
+}
+
+func (s *SignSuite) TestProcessKeygenBlockRunsXMRMonovaultKeygenWhenGateOpen(c *C) {
+	retryBridge := &retryAwareKeygenBridge{
+		batchingKeygenBridge: batchingKeygenBridge{fakeBridge: fakeBridge{s.bridge}},
+		mimirs: map[string]int64{
+			constants.MimirKeyEnableMonovaultKeygen: 1,
+			constants.MimirKeyHaltMonovaultKeygen:   0,
+			constants.ChurnRetryInterval.String():   1000,
+			constants.KeygenRetryInterval.String():  0,
+		},
+	}
+	bridge := &keygenGateBridge{retryAwareKeygenBridge: retryBridge, blockHeight: 2700}
+	successFrost := types2.GetRandomPubKey()
+	custom := &MockCustomKeygenChainClient{
+		MockChainClient: &MockChainClient{},
+		results: []chainclienttypes.CustomKeygenResult{
+			{
+				PoolPubKeyFrost:      successFrost,
+				FrostKeyshareHex:     "abcd",
+				ObservedMoneroHeight: 12345,
+			},
+			{},
+		},
+		errs: []error{nil, errors.New("boom")},
+	}
+	sign := &Signer{
+		chains: map[common.Chain]chainclients.ChainClient{
+			common.XMRChain: custom,
+		},
+		thorchainBridge: bridge,
+		pubkeyMgr:       pubkeymanager.NewMockPoolAddressValidator(),
+		logger:          log.With().Str("module", "signer").Logger(),
+		errCounter:      s.metrics.GetCounterVec(metrics.SignerError),
+	}
+
+	memberA := types2.GetRandomPubKey()
+	memberB := types2.GetRandomPubKey()
+	memberC := types2.GetRandomPubKey()
+	memberD := types2.GetRandomPubKey()
+	keygenA, err := types2.NewKeygen(2700, []string{memberA.String(), memberB.String()}, types2.KeygenType_XMRMonovaultKeygen)
+	c.Assert(err, IsNil)
+	keygenB, err := types2.NewKeygen(2700, []string{memberC.String(), memberD.String()}, types2.KeygenType_XMRMonovaultKeygen)
+	c.Assert(err, IsNil)
+
+	sign.processKeygenBlock(types2.KeygenBlock{
+		Height:  2700,
+		Keygens: []types2.Keygen{keygenA, keygenB},
+	})
+
+	c.Assert(custom.callCount, Equals, 1)
+	c.Assert(bridge.batchSizes, DeepEquals, []int{1})
+	c.Assert(bridge.mimirCalls[constants.MimirKeyEnableMonovaultKeygen], Equals, 1)
+	c.Assert(bridge.mimirCalls[constants.MimirKeyHaltMonovaultKeygen], Equals, 1)
+}
+
+func (s *SignSuite) TestProcessKeygenBlockRechecksXMRGateOnRetry(c *C) {
+	retryBridge := &retryAwareKeygenBridge{
+		batchingKeygenBridge: batchingKeygenBridge{fakeBridge: fakeBridge{s.bridge}},
+		mimirs: map[string]int64{
+			constants.MimirKeyEnableMonovaultKeygen: 1,
+			constants.MimirKeyHaltMonovaultKeygen:   0,
+			constants.ChurnRetryInterval.String():   1000,
+			constants.KeygenRetryInterval.String():  0,
+		},
+	}
+	bridge := &keygenGateBridge{retryAwareKeygenBridge: retryBridge, blockHeight: 2700}
+	custom := &MockCustomKeygenChainClient{
+		MockChainClient: &MockChainClient{},
+		results:         []chainclienttypes.CustomKeygenResult{{}},
+		errs:            []error{errors.New("boom")},
+	}
+	sign := &Signer{
+		chains: map[common.Chain]chainclients.ChainClient{
+			common.XMRChain: custom,
+		},
+		thorchainBridge: bridge,
+		pubkeyMgr:       pubkeymanager.NewMockPoolAddressValidator(),
+		logger:          log.With().Str("module", "signer").Logger(),
+		errCounter:      s.metrics.GetCounterVec(metrics.SignerError),
+	}
+
+	memberA := types2.GetRandomPubKey()
+	memberB := types2.GetRandomPubKey()
+	keygen, err := types2.NewKeygen(2700, []string{memberA.String(), memberB.String()}, types2.KeygenType_XMRMonovaultKeygen)
+	c.Assert(err, IsNil)
+	block := types2.KeygenBlock{Height: 2700, Keygens: []types2.Keygen{keygen}}
+
+	sign.processKeygenBlock(block)
+	c.Assert(custom.callCount, Equals, 1)
+
+	// A local retry enters processKeygenBlock again and must honor a halt that
+	// became active after the original attempt.
+	retryBridge.mimirs[constants.MimirKeyHaltMonovaultKeygen] = 100
+	sign.processKeygenBlock(block)
+
+	c.Assert(custom.callCount, Equals, 1)
+	c.Assert(bridge.batchSizes, HasLen, 0)
+	c.Assert(bridge.mimirCalls[constants.MimirKeyEnableMonovaultKeygen], Equals, 2)
+	c.Assert(bridge.mimirCalls[constants.MimirKeyHaltMonovaultKeygen], Equals, 2)
+}
+
+func (s *SignSuite) TestXMRMonovaultKeygenEnableHaltAndFailures(c *C) {
+	tests := []struct {
+		name        string
+		enable      int64
+		halt        int64
+		blockHeight int64
+		enableErr   error
+		haltErr     error
+		heightErr   error
+		haltCalls   int
+		allowed     bool
+	}{
+		{name: "enable unset", enable: -1, blockHeight: 100, allowed: false},
+		{name: "enable zero", enable: 0, blockHeight: 100, allowed: false},
+		{name: "enable lookup failure", enableErr: errors.New("enable endpoint unavailable"), blockHeight: 100, allowed: false},
+		{name: "enabled with halt unset", enable: 1, halt: -1, blockHeight: 100, haltCalls: 1, allowed: true},
+		{name: "enabled with halt zero", enable: 1, halt: 0, blockHeight: 100, haltCalls: 1, allowed: true},
+		{name: "future halt activation", enable: 1, halt: 101, blockHeight: 100, haltCalls: 1, allowed: true},
+		{name: "exact halt activation height", enable: 1, halt: 100, blockHeight: 100, haltCalls: 1, allowed: false},
+		{name: "past halt activation height", enable: 1, halt: 99, blockHeight: 100, haltCalls: 1, allowed: false},
+		{name: "halt lookup failure", enable: 1, haltErr: errors.New("halt endpoint unavailable"), blockHeight: 100, haltCalls: 1, allowed: false},
+		{name: "height lookup failure", enable: 1, halt: 1, heightErr: errors.New("height endpoint unavailable"), haltCalls: 1, allowed: false},
+		{name: "invalid current height", enable: 1, halt: 1, blockHeight: 0, haltCalls: 1, allowed: false},
+	}
+
+	for _, test := range tests {
+		retryBridge := &retryAwareKeygenBridge{
+			batchingKeygenBridge: batchingKeygenBridge{fakeBridge: fakeBridge{s.bridge}},
+			mimirs: map[string]int64{
+				constants.MimirKeyEnableMonovaultKeygen: test.enable,
+				constants.MimirKeyHaltMonovaultKeygen:   test.halt,
+			},
+			mimirErrs: map[string]error{},
+		}
+		if test.enableErr != nil {
+			retryBridge.mimirErrs[constants.MimirKeyEnableMonovaultKeygen] = test.enableErr
+		}
+		if test.haltErr != nil {
+			retryBridge.mimirErrs[constants.MimirKeyHaltMonovaultKeygen] = test.haltErr
+		}
+		bridge := &keygenGateBridge{
+			retryAwareKeygenBridge: retryBridge,
+			blockHeight:            test.blockHeight,
+			blockHeightErr:         test.heightErr,
+		}
+		sign := &Signer{
+			thorchainBridge: bridge,
+			logger:          log.With().Str("module", "signer").Logger(),
+		}
+
+		allowed, err := sign.xmrMonovaultKeygenAllowed(100)
+		wantError := test.enableErr != nil || test.haltErr != nil || test.heightErr != nil || test.name == "invalid current height"
+		c.Check(err != nil, Equals, wantError, Commentf("case %q", test.name))
+		c.Check(allowed, Equals, test.allowed, Commentf("case %q", test.name))
+		c.Check(
+			bridge.mimirCalls[constants.MimirKeyEnableMonovaultKeygen],
+			Equals,
+			1,
+			Commentf("case %q", test.name),
+		)
+		c.Check(bridge.mimirCalls[constants.MimirKeyHaltMonovaultKeygen], Equals, test.haltCalls, Commentf("case %q", test.name))
+	}
 }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/v3/api/types"
 	tssMessages "gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
@@ -186,7 +187,7 @@ func jailedFallbackVaultSetupFromPolicy(vault openapi.Vault, policy thorclient.K
 // jailPreferredExcludedMember creates the first jailed member, which should
 // remain excluded while clean signers can still satisfy threshold.
 func (a *JailedKeysignFallbackActor) jailPreferredExcludedMember(config *OpConfig) OpResult {
-	done, err := broadcastKeysignFailureUntilJailed(config, a.Log(), a.vaultPubKey, a.targets[0], a.voters, a.memberCount, a.jailVotes, a.jailHeights)
+	done, err := broadcastKeysignFailureUntilJailed(config, a.Log(), a.vaultPubKey, a.targets[0], a.voters, a.memberCount, a.jailVotes, a.jailHeights, common.BTCAsset)
 	if err != nil {
 		return OpResult{Error: err, Finish: true}
 	}
@@ -246,7 +247,7 @@ func (a *JailedKeysignFallbackActor) verifyJailedPreferredExclusion(config *OpCo
 // must promote deterministic jailed fallback signers to reach threshold.
 func (a *JailedKeysignFallbackActor) jailFallbackPromotionMembers(config *OpConfig) OpResult {
 	for _, target := range a.targets[1:] {
-		done, err := broadcastKeysignFailureUntilJailed(config, a.Log(), a.vaultPubKey, target, a.voters, a.memberCount, a.jailVotes, a.jailHeights)
+		done, err := broadcastKeysignFailureUntilJailed(config, a.Log(), a.vaultPubKey, target, a.voters, a.memberCount, a.jailVotes, a.jailHeights, common.BTCAsset)
 		if err != nil {
 			return OpResult{Error: err, Finish: true}
 		}
@@ -478,6 +479,7 @@ func broadcastKeysignFailureUntilJailed(
 	memberCount int,
 	sent map[string]map[string]bool,
 	failureHeights map[string]int64,
+	asset common.Asset,
 ) (bool, error) {
 	blockHeight, err := config.NodeUsers[0].Thorchain.GetBlockHeight()
 	if err != nil {
@@ -540,7 +542,7 @@ func broadcastKeysignFailureUntilJailed(
 			},
 		}
 		memo := "SIM-JAILED-FALLBACK:" + target.pubKey.String()
-		coins := common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1))}
+		coins := common.Coins{common.NewCoin(asset, cosmos.NewUint(1))}
 		txid, err := user.Thorchain.PostKeysignFailure(blame, failureHeight, memo, coins, vaultPubKey)
 		user.Release()
 		if err != nil {
@@ -581,4 +583,52 @@ func keysignPolicyForSimulation(config *OpConfig, vaultPubKey common.PubKey) (po
 func nodeIsJailedAt(node openapi.Node, height int64) bool {
 	releaseHeight, ok := node.Jail.GetReleaseHeightOk()
 	return ok && releaseHeight != nil && *releaseHeight > height
+}
+
+// NewXMRHistoricalSignerGate excludes one active member from a retired four-member
+// vault's signing party using ordinary mocknet blame votes. Its scanner stays on.
+// A longer mocknet jail is required so it spans deposit confirmation and signing.
+func NewXMRHistoricalSignerGate(vault openapi.Vault) Op {
+	var target *forcedToLeaveNode
+	var voters []forcedToLeaveNode
+	sent := make(map[string]map[string]bool)
+	heights := make(map[string]int64)
+	return func(config *OpConfig) OpResult {
+		if len(config.NodeUsers) < 5 {
+			return OpResult{Finish: true, Error: fmt.Errorf("historical XMR recovery requires five running validators")}
+		}
+		nodes, err := thornode.GetNodes()
+		if err != nil {
+			return OpResult{Error: err}
+		}
+		height, err := config.NodeUsers[0].Thorchain.GetBlockHeight()
+		if err != nil {
+			return OpResult{Error: err}
+		}
+		if target == nil {
+			users, userErr := nodeUsersByThorAddress(config)
+			if userErr != nil {
+				return OpResult{Error: userErr}
+			}
+			candidates, activeVoters := jailableVaultMembers(vault, nodes, users, height)
+			if len(vault.Membership) != 4 || len(activeVoters) != 3 || len(candidates) == 0 {
+				return OpResult{Finish: true, Error: fmt.Errorf("historical XMR gate requires a four-member vault with exactly three active members")}
+			}
+			if !keysignFailureVotesCanReachConsensus(activeVoters, candidates[:1], len(vault.Membership)) {
+				return OpResult{Finish: true, Error: fmt.Errorf("not enough active vault members to jail the test signer")}
+			}
+			target, voters = &candidates[0], activeVoters
+		}
+		logger := log.With().Str("scenario", "xmr-historical-refund").Logger()
+		done, err := broadcastKeysignFailureUntilJailed(config, &logger, common.PubKey(vault.GetPubKeyFrost()), *target, voters, len(vault.Membership), sent, heights, common.XMRAsset)
+		if err != nil || !done {
+			return OpResult{Continue: false, Error: err}
+		}
+		current, ok := findNodeByAddress(nodes, target.node.NodeAddress)
+		if !ok || current.Jail.GetReleaseHeight()-height < 120 {
+			return OpResult{Finish: true, Error: fmt.Errorf("historical XMR recovery needs at least 120 jail blocks remaining; start the mocknet with JAIL_TIME_KEYSIGN=600")}
+		}
+		logger.Info().Stringer("excluded_active_member", target.pubKey).Strs("vault_members", vault.Membership).Msg("XMR recovery signing gate ready; scanners remain running")
+		return OpResult{Continue: true}
+	}
 }

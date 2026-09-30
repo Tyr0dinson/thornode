@@ -58,6 +58,18 @@ const (
 	// value), or with HaltSigningSOL in place.
 	MimirTemplateSOLNonceClear = "SOLNonceClear-%s"
 
+	// MimirKeyEnableMonovaultKeygen is a temporary, explicit rollout opt-in for
+	// Bifrost XMR monovault keygen. It intentionally lacks an operational-Mimir
+	// prefix, so mainnet activation requires the economic-Mimir supermajority.
+	// Unset, zero, or query failure keeps keygen disabled.
+	MimirKeyEnableMonovaultKeygen = "EnableMonovaultKeygen"
+	// MimirKeyHaltMonovaultKeygen gates only the Bifrost XMR monovault FROST
+	// keygen attempt after the explicit enable check, independently of
+	// HaltChurning. The "Halt" prefix makes it an operational Mimir. Unset or 0
+	// does not halt; an activation height at or below the current THORChain
+	// height stops keygen.
+	MimirKeyHaltMonovaultKeygen = "HaltMonovaultKeygen"
+
 	MimirTemplateEVMAllowanceCheck         = "EVMAllowanceCheck-%s"         // Use with Chain
 	MimirTemplateEVMDirectERC20Inbound     = "EVMDirectERC20Inbound-%s"     // Use with Chain
 	MimirTemplateConfMultiplierBasisPoints = "ConfMultiplierBasisPoints-%s" // Use with Chain

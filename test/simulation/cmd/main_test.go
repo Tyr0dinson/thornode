@@ -795,12 +795,12 @@ func TestWaitForMasterAccountRetriesTransientSOLRPCStartupError(t *testing.T) {
 func TestSimulationTargetsUseExplicitStageDefaults(t *testing.T) {
 	makefile := readRepoFile(t, "Makefile")
 
-	wantSingle := "TEST_SIMULATION_STAGES ?= seed,bootstrap,xmr-coverage,arb,swaps,memoless-swaps,consolidate,inactive-vault-refunds,memoless-refunds,solvency,ragnarok"
+	wantSingle := "TEST_SIMULATION_STAGES ?= seed,bootstrap,xmr-coverage,arb,swaps,memoless-swaps,consolidate,memoless-refunds,solvency,ragnarok"
 	if !strings.Contains(makefile, wantSingle) {
 		t.Fatalf("missing expected single-node simulation stages: %s", wantSingle)
 	}
 
-	wantCluster := "TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,swaps,memoless-swaps,inactive-vault-refunds,memoless-refunds,cluster-churn,solvency,xmr-post-churn,ragnarok"
+	wantCluster := "TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,xmr-coverage,xmr-spent-refs,swaps,memoless-swaps,inactive-vault-refunds,memoless-refunds,cluster-churn,solvency,xmr-post-churn,ragnarok"
 	if !strings.Contains(makefile, wantCluster) {
 		t.Fatalf("missing expected cluster simulation stages: %s", wantCluster)
 	}
@@ -921,4 +921,19 @@ type stubGetHeightClient struct {
 func (s *stubGetHeightClient) GetHeight() (int64, error) {
 	s.calls++
 	return s.height, nil
+}
+
+func TestHistoricalXMRRefundStageRequiresExplicitSelection(t *testing.T) {
+	for _, explicit := range []bool{false, true} {
+		stages := selectedSimulationStages(map[string]bool{"all": true, "xmr-historical-refund": explicit})
+		found := false
+		for _, stage := range stages {
+			if stage.name == "xmr-historical-refund" {
+				found = true
+			}
+		}
+		if found != explicit {
+			t.Fatalf("dedicated historical-refund stage: explicit=%v found=%v", explicit, found)
+		}
+	}
 }

@@ -17,8 +17,12 @@ PROFILES = {
 }
 
 
-def render(profile, token=TEST_TOKEN, *, xmr_disabled="false"):
+def render(profile, token=TEST_TOKEN, *, xmr_disabled="false", jail_time_keysign=None):
     env = os.environ.copy()
+    # Test the default independently of the caller's simulation jail override.
+    env.pop("JAIL_TIME_KEYSIGN", None)
+    if jail_time_keysign is not None:
+        env["JAIL_TIME_KEYSIGN"] = str(jail_time_keysign)
     # Validate XMR readiness even when the caller disables XMR for a cluster run.
     # Only this rendering subprocess receives the controlled setting.
     env["BIFROST_CHAINS_XMR_DISABLED"] = xmr_disabled
@@ -121,6 +125,36 @@ class XMRReadinessConfigTest(unittest.TestCase):
                 # Bifrost checks its local constant; THORNode enforces jail.
                 self.assertEqual(thornode_env.get("JAIL_TIME_KEYSIGN"), "60")
                 self.assertEqual(bifrost_env.get("JAIL_TIME_KEYSIGN"), "60")
+
+    def test_mocknet_keysign_jail_defaults_and_override_are_isolated(self):
+        setting = "JAIL_TIME_KEYSIGN"
+        for inherited in (None, "600"):
+            with patch.dict(os.environ):
+                os.environ.pop(setting, None)
+                if inherited is not None:
+                    os.environ[setting] = inherited
+                caller_env = os.environ.copy()
+                for override, expected in ((None, "60"), (600, "600")):
+                    with self.subTest(inherited=inherited, override=override):
+                        result = render("mocknet", jail_time_keysign=override)
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        self.assertTrue(
+                            os.environ == caller_env,
+                            "render must not change the caller's environment",
+                        )
+                        services = json.loads(result.stdout)["services"]
+                        for role in ("thornode", "bifrost"):
+                            nodes = {
+                                name: service
+                                for name, service in services.items()
+                                if name.startswith(role)
+                            }
+                            self.assertEqual(len(nodes), PROFILES["mocknet"][2])
+                            for name, service in nodes.items():
+                                with self.subTest(service=name):
+                                    self.assertEqual(
+                                        service["environment"].get(setting), expected
+                                    )
 
     def test_mocknet_xmr_scanner_uses_simulation_backoff(self):
         for name, service in self.models["mocknet"]["services"].items():

@@ -347,6 +347,84 @@ func (s *ReorgStore) putScannerObservationReceipt(
 	return nil
 }
 
+// PutAuthenticatedObservation atomically binds a late source observation to
+// its canonical journal, including old heights whose entries were pruned.
+// The caller holds scanMu so canonical scanning cannot race the binding.
+func (s *ReorgStore) PutAuthenticatedObservation(meta *reorgBlockMeta, item *stypes.TxInItem) error {
+	if item == nil {
+		return errors.New("authenticated xmr observation requires durable storage")
+	}
+	return s.putAuthenticatedOutbound(meta, item.Tx, item)
+}
+
+// PutAuthenticatedOutbound binds accounting-only evidence to the reorg
+// journal without creating or acknowledging any observation receipt.
+// The caller holds scanMu and has independently authenticated the spend.
+func (s *ReorgStore) PutAuthenticatedOutbound(meta *reorgBlockMeta, txID string) error {
+	return s.putAuthenticatedOutbound(meta, txID, nil)
+}
+
+func (s *ReorgStore) putAuthenticatedOutbound(meta *reorgBlockMeta, txID string, item *stypes.TxInItem) error {
+	if s == nil || s.db == nil || meta == nil || normalizeTxID(txID) == "" {
+		return errors.New("authenticated xmr outbound requires durable storage")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	reverted, err := s.IsRevertedTx(txID)
+	if err != nil {
+		return err
+	}
+	if reverted {
+		return errors.New("authenticated xmr observation is permanently reverted")
+	}
+	existing, err := s.Get(meta.Height)
+	if err != nil {
+		return err
+	}
+	if existing != nil {
+		if !strings.EqualFold(existing.BlockHash, meta.BlockHash) || !strings.EqualFold(existing.PreviousHash, meta.PreviousHash) {
+			return errors.New("authenticated xmr observation conflicts with canonical journal")
+		}
+		meta = existing
+	}
+	id := normalizeTxID(txID)
+	if !slices.ContainsFunc(meta.CustomerTransactions, func(tx string) bool { return normalizeTxID(tx) == id }) {
+		meta.CustomerTransactions = append(meta.CustomerTransactions, id)
+	}
+	addVaultOriginToMeta(meta, id)
+	value, err := json.Marshal(meta)
+	if err != nil {
+		return err
+	}
+	batch := new(leveldb.Batch)
+	if item != nil {
+		if err = s.putScannerObservationReceipt(batch, meta, []*stypes.TxInItem{item}); err != nil {
+			return err
+		}
+	}
+	batch.Put([]byte(reorgBlockMetaKey(meta.Height)), value)
+	// A relocation watch may predate the authenticated provenance. Upgrade it
+	// in the same commit so a crash cannot later classify this spend as a deposit.
+	watchKey := []byte(scannerRelocationWatchPrefix + id)
+	watchValue, watchErr := s.db.Get(watchKey, nil)
+	switch {
+	case watchErr == nil:
+		var watch scannerRelocationWatch
+		if err = json.Unmarshal(watchValue, &watch); err != nil || !watch.valid() {
+			return errors.New("existing xmr scanner relocation watch is malformed")
+		}
+		watch.VaultOrigin = true
+		watchValue, err = json.Marshal(watch)
+		if err != nil {
+			return err
+		}
+		batch.Put(watchKey, watchValue)
+	case !errors.Is(watchErr, leveldb.ErrNotFound):
+		return watchErr
+	}
+	return s.db.Write(batch, syncScannerWrite)
+}
+
 // PutObservationReceipt fsyncs sidecar observations before the scanner can
 // commit a journal which would otherwise make them unreplayable after a crash.
 func (s *ReorgStore) PutObservationReceipt(meta *reorgBlockMeta, items []*stypes.TxInItem) error {

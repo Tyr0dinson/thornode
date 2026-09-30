@@ -86,6 +86,10 @@ type SpentOutputRefsImport struct {
 	Tx             common.ObservedTx
 	WireMemo       string
 	ChainCommitted bool
+	// ReplaySource transfers a peer-certified mined payout to the scanner's
+	// durable receipt queue before the import is acknowledged. Local signing
+	// imports leave this false because they run before broadcast.
+	ReplaySource bool
 }
 
 // SpentOutputRefsApplier is the optional XMR durability hook used after a
@@ -98,11 +102,10 @@ type SpentOutputRefsApplier interface {
 
 // CustomKeygenRequest carries common keygen context for chain-specific hooks.
 type CustomKeygenRequest struct {
-	Members          []string
-	BlockHeight      int64
-	ThorchainVersion string
-	PoolPubKey       common.PubKey
-	PoolPubKeyEddsa  common.PubKey
+	Members         []string
+	BlockHeight     int64
+	PoolPubKey      common.PubKey
+	PoolPubKeyEddsa common.PubKey
 }
 
 // CustomKeygenResult carries the chain-specific outputs from a custom keygen

@@ -88,7 +88,6 @@ type FrostKeygenRequest struct {
 	VaultPubKey   string
 	SignerPubKeys []string
 	BlockHeight   int64
-	Version       string
 	ExpectedAddr  string
 }
 

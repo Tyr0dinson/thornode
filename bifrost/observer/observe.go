@@ -65,11 +65,10 @@ type errataOutcomeBridge interface {
 const networkFeeQueueCapacity = 256
 
 var (
-	errObservedTxInactive              = errors.New("observer is not active")
-	errObservedTxEmpty                 = errors.New("observed transaction has no items")
-	errObservedTxFiltered              = errors.New("observed transaction was rejected by observer filters")
-	errObservedTxErrata                = types.ErrObservedTxOrphaned
-	errHistoricalXMRCertificatePending = errors.New("historical XMR spent-ref certificate is not durably applied")
+	errObservedTxInactive = errors.New("observer is not active")
+	errObservedTxEmpty    = errors.New("observed transaction has no items")
+	errObservedTxFiltered = errors.New("observed transaction was rejected by observer filters")
+	errObservedTxErrata   = types.ErrObservedTxOrphaned
 )
 
 type txInKey struct {
@@ -203,6 +202,7 @@ func NewObserver(pubkeyMgr *pubkeymanager.PubKeyManager,
 		// Register committed-event callbacks before Start launches the gossip
 		// event client. Otherwise a fast committed event can race startup and
 		// leave a durable deck/outbox entry pending indefinitely.
+		attestationGossip.certificateObserver = observer
 		attestationGossip.SetObserverHandleObservedTxCommitted(observer)
 		attestationGossip.SetObserverHandleErrataTxCommitted(observer)
 	}
@@ -762,6 +762,13 @@ func (o *Observer) processTxIns() {
 			lastNodeStatus := o.lastNodeStatus
 			o.lastNodeStatusMu.RUnlock()
 
+			if txIn.Chain.Equals(common.XMRChain) && lastNodeStatus == stypes.NodeStatus_Unknown {
+				err := errors.New("XMR observer node status is not known yet")
+				rejectObservedTx(txIn.TxArray, err)
+				ackTxInPersisted(txIn, err)
+				continue
+			}
+
 			process := func(tx types.TxIn) error {
 				return o.processObservedTx(tx)
 			}
@@ -942,7 +949,7 @@ func (o *Observer) processObservedTx(txIn types.TxIn) error {
 			}
 			o.logger.Debug().Msgf("AddOrUpdateTx existing took %s", time.Since(setDeckStart))
 		}
-		if hasObservedTxCallbacks(duplicateTxs) {
+		if hasObservedTxCallbacks(duplicateTxs) || txIn.Persisted != nil {
 			persistErr := o.storage.addOrUpdateTxSync(in)
 			if persistErr != nil {
 				o.logger.Error().Err(persistErr).Msg("fail to sync duplicate observed tx in storage")
@@ -995,7 +1002,7 @@ func ackTxInPersisted(txIn types.TxIn, err error) {
 }
 
 // attestHistoricalXMRSpentRefCertificates converts only pre-attributed XMR
-// outbounds with spent refs. AttestObservedTx applies the retiring-vault,
+// outbounds with spent refs. AttestObservedTx applies the source-vault,
 // historical-membership, exact-signature, and planned-outbound gates and routes
 // the result over the certificate-only protocol when this observer is inactive.
 func (o *Observer) attestHistoricalXMRSpentRefCertificates(txIn types.TxIn) error {
@@ -1021,14 +1028,14 @@ func (o *Observer) attestHistoricalXMRSpentRefCertificates(txIn types.TxIn) erro
 		}
 		certificateItems = append(certificateItems, item)
 	}
-	rejectObservedTx(rejectedItems, errObservedTxInactive)
+	rejectObservedTx(rejectedItems, types.ErrObservedTxNotApplicable)
 	if len(certificateItems) == 0 {
 		return nil
 	}
 
 	certificateTxIn := txIn
 	certificateTxIn.Filtered = true
-	certificateTxIn.TxArray = certificateItems
+	certificateTxIn.TxArray = filtered
 	chainClient, err := o.getChain(common.XMRChain)
 	if err != nil {
 		rejectObservedTx(certificateItems, err)
@@ -1041,8 +1048,9 @@ func (o *Observer) attestHistoricalXMRSpentRefCertificates(txIn types.TxIn) erro
 	if !txIn.Filtered {
 		certificateTxIn.ConfirmationRequired = chainClient.GetConfirmationCount(certificateTxIn)
 	}
-	finaliseHeight := certificateItems[0].BlockHeight + certificateTxIn.ConfirmationRequired
+	finaliseHeight := filtered[0].BlockHeight + certificateTxIn.ConfirmationRequired
 	finalized := chainClient.ConfirmationCountReady(certificateTxIn) && !certificateTxIn.MemPool
+	certificateTxIn.TxArray = certificateItems
 	observed, invalidIndices, err := o.getThorchainTxIns(&certificateTxIn, finalized, finaliseHeight)
 	if err != nil {
 		rejectObservedTx(certificateItems, err)
@@ -1056,11 +1064,12 @@ func (o *Observer) attestHistoricalXMRSpentRefCertificates(txIn types.TxIn) erro
 	var resultErr error
 	for i := range observed {
 		item := certificateItems[i]
-		if err = o.attestationGossip.AttestObservedTx(
+		if err = o.attestationGossip.attestObservedTx(
 			context.Background(),
 			&observed[i],
 			false,
 			false,
+			true,
 		); err != nil {
 			// Most pre-attributed XMR outbounds are from vaults this node never
 			// controlled. They are intentionally ignored by the narrow admission
@@ -1076,14 +1085,7 @@ func (o *Observer) attestHistoricalXMRSpentRefCertificates(txIn types.TxIn) erro
 			resultErr = errors.Join(resultErr, err)
 			continue
 		}
-		if !o.attestationGossip.historicalXMRSpentRefCertificateApplied(observed[i]) {
-			// The scanner receipt is the durable delivery outbox. Retain it until
-			// the certificate reaches the sidecar-applied terminal; after a crash
-			// the scanner will replay and re-sign the same observation.
-			rejectObservedTx([]*types.TxInItem{item}, errHistoricalXMRCertificatePending)
-			resultErr = errors.Join(resultErr, errHistoricalXMRCertificatePending)
-			continue
-		}
+
 		invokeObservedTxCallbacks(takeObservedTxStoredCallbacks([]*types.TxInItem{item}))
 	}
 	return resultErr

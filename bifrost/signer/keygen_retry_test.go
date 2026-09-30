@@ -254,15 +254,15 @@ func TestCommonRetryDispatchesOnlyFailedAsgard(t *testing.T) {
 	}
 }
 
-// Both entry paths must retain develop's unconditional brake. An armed custom
-// client catches accidental bypasses even when Mimirs would enable S00.
-func TestCommonRetryPreservesXMRBrake(t *testing.T) {
+// S00 deliberately replaces Common's unconditional brake with an explicit
+// opt-in. Every execution entry must still honor a disabled XMR gate.
+func TestCommonRetryHonorsXMRGate(t *testing.T) {
 	for _, entry := range []string{"delivery", "request", "retry"} {
 		t.Run(entry, func(t *testing.T) {
 			signer, bridge, generator, block := newRetryTestSigner(t)
 			custom := &MockCustomKeygenChainClient{MockChainClient: &MockChainClient{}}
 			signer.chains = map[common.Chain]chainclients.ChainClient{common.XMRChain: custom}
-			bridge.setMimir("EnableMonovaultKeygen", 1)
+			bridge.setMimir("EnableMonovaultKeygen", 0)
 			bridge.setMimir("HaltMonovaultKeygen", 0)
 			block.Keygens[0].Type = ttypes.KeygenType_XMRMonovaultKeygen
 			switch entry {

@@ -342,7 +342,7 @@ test-mocknet-scripts:
   stage: test
   image: alpine:3.21
   variables:
-    PKGS: bash python3 jq
+    PKGS: bash python3 jq make
   before_script:
     - !reference [.pkg-install, before_script]
   script:
@@ -654,7 +654,8 @@ test-simulation:
     - !reference [.go-private-auth, before_script]
     - !reference [.dind-registries, before_script]
   script:
-    - make test-simulation-cluster
+    # Do not allow an inherited optional-XMR setting to bypass live coverage.
+    - make test-simulation-cluster TEST_SIMULATION_REQUIRE_XMR=1
   after_script:
     - make test-simulation-events || true
     - mkdir -p logs/xmr-debug

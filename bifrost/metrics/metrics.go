@@ -33,6 +33,9 @@ const (
 	SignToThorchainDuration MetricName = `sign_to_thorchain_duration`
 	SendToThorchainDuration MetricName = `send_to_thorchain_duration`
 
+	XMRPendingCertificates         MetricName = `xmr_pending_certificates`
+	XMROldestPendingCertificateAge MetricName = `xmr_oldest_pending_certificate_age`
+
 	ObserverError MetricName = `observer_error`
 	SignerError   MetricName = `signer_error`
 
@@ -222,7 +225,16 @@ var (
 		}),
 	}
 
-	gauges = map[MetricName]prometheus.Gauge{}
+	gauges = map[MetricName]prometheus.Gauge{
+		XMRPendingCertificates: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: "observer", Subsystem: "xmr_certificate_outbox", Name: "pending",
+			Help: "Pending certificates at the last successful bounded reconciliation scan, including retries in backoff.",
+		}),
+		XMROldestPendingCertificateAge: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: "observer", Subsystem: "xmr_certificate_outbox", Name: "oldest_pending_age_seconds",
+			Help: "Oldest pending certificate age at the last successful reconciliation scan; 0 if empty, -1 if any enqueue time is unknown.",
+		}),
+	}
 )
 
 // NewMetrics create a new instance of Metrics

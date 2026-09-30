@@ -525,9 +525,35 @@ func TestClientChurnRollbackCoalescesWhileValidationWaits(t *testing.T) {
 			}, storage, failClosedTestMetrics(t), changingBridge, fetcher)
 			require.NoError(t, err)
 			client := &Client{blockScanner: loop, scanner: scanner}
-			queue := make(chan stypes.TxIn, 16)
+			queue := make(chan stypes.TxIn)
+			stopConsumer := make(chan struct{})
+			consumerDone := make(chan struct{})
+			go func() {
+				// Acknowledge like Observer so replayed observations let the
+				// scanner advance past their block.
+				defer close(consumerDone)
+				for {
+					select {
+					case txIn := <-queue:
+						for _, item := range txIn.TxArray {
+							if item.OnObservedTxStored != nil {
+								item.OnObservedTxStored()
+							}
+						}
+						if txIn.Persisted != nil {
+							txIn.Persisted <- nil
+						}
+					case <-stopConsumer:
+						return
+					}
+				}
+			}()
 			loop.Start(queue, make(chan common.NetworkFee, 10))
-			defer loop.Stop()
+			defer func() {
+				loop.Stop()
+				close(stopConsumer)
+				<-consumerDone
+			}()
 
 			stateDown.Store(true)
 			require.NoError(t, client.RollbackBlockScanner())

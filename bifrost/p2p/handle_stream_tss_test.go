@@ -172,6 +172,52 @@ func TestHandleStreamTssRejectsFrameWhosePrefixAndBodyDisagree(t *testing.T) {
 	}
 }
 
+// The coordinator may discard an invalid inner vote after successful delivery.
+// Draining those messages must not replenish any of the transport allowances.
+func TestHandleStreamTssDiscardedKeygenVotesConsumeBudget(t *testing.T) {
+	topic := messages.TSSFrostVerifyMsg
+	msgID := "discarded-keygen-votes"
+	remote := peer.ID("member-peer")
+	limit := FrostKeygenVerificationMessagesPerPeer(3)
+	comm := newHandlerCommunicationWithLimit(topic, msgID, []peer.ID{remote}, limit)
+	t.Cleanup(func() { comm.CancelSubscribe(topic, msgID) })
+	subscription := comm.getSubscriber(topic, msgID)
+	frame, err := json.Marshal(messages.WrappedMessage{
+		MessageType: topic, MsgID: msgID,
+		Payload: []byte(`{"round":"frost_dkg_round3","transcript_hash":"invalid"}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range limit {
+		stream := newHandlerStream(remote, frame)
+		comm.handleStreamTss(stream)
+		select {
+		case <-subscription.channel:
+			// Delivery is complete; the protocol rejects the invalid inner vote.
+		default:
+			t.Fatal("in-budget vote was not delivered")
+		}
+	}
+	subscription.lock.Lock()
+	count, peerBytes, sessionBytes := subscription.peerCounts[remote], subscription.peerBytes[remote], subscription.sessionBytes
+	subscription.lock.Unlock()
+	wantBytes := uint64(limit) * uint64(len(frame))
+	if count != limit || peerBytes != wantBytes || sessionBytes != wantBytes {
+		t.Fatalf("discarded votes charged %d/%d/%d, want %d/%d/%d", count, peerBytes, sessionBytes, limit, wantBytes, wantBytes)
+	}
+	overLimit := newHandlerStream(remote, frame)
+	comm.handleStreamTss(overLimit)
+	if !overLimit.resetCalled.Load() {
+		t.Fatal("over-budget vote was not rejected")
+	}
+	select {
+	case <-subscription.channel:
+		t.Fatal("discarding votes allowed an over-budget delivery")
+	default:
+	}
+}
+
 // A peer-attributable failure after preflight has already caused allocation,
 // reading, or parsing work. That work must remain charged to the peer; otherwise
 // the peer can refund its allowance by failing each frame and repeat forever.
