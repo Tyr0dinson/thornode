@@ -1209,6 +1209,73 @@ func (vts *ValidatorMgrTestSuite) TestHasPendingStandaloneAsgardExpiresAfterRetr
 	c.Assert(pending, Equals, false)
 }
 
+// Rounded node shares must conserve the funded reward, independently of Bond Yield.
+// The live five-validator replacement allocated 342 + 4*1141 from only 4905.
+func (vts *ValidatorMgrTestSuite) TestBondRewardCapsRoundedNodeShares(c *C) {
+	for _, rewardUnits := range []uint64{0, 3, 4905} {
+		for _, enabled := range []int64{0, 1} {
+			ctx, k := setupKeeperForTest(c)
+			ctx = ctx.WithBlockHeight(20)
+			mgr := NewDummyMgrWithKeeper(k)
+			eventMgr, err := GetEventManager(GetCurrentVersion())
+			c.Assert(err, IsNil)
+			mgr.eventMgr = eventMgr
+			validatorMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), eventMgr)
+			k.SetMimir(ctx, constants.BondYieldEnabled.String(), enabled)
+
+			initialBonds := cosmos.ZeroUint()
+			for _, weight := range []uint64{3, 10, 10, 10, 10} {
+				na := GetRandomValidatorNode(NodeActive)
+				na.ActiveBlockHeight = 1
+				na.Bond = cosmos.NewUint(weight * common.One)
+				c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+				operator, addressErr := na.BondAddress.AccAddress()
+				c.Assert(addressErr, IsNil)
+				bp := NewBondProviders(na.NodeAddress)
+				bp.NodeOperatorFee = cosmos.NewUint(500)
+				bp.Providers = []BondProvider{NewBondProvider(operator)}
+				bp.Bond(na.Bond, operator)
+				c.Assert(bp.SetAutoClaim(operator, 4000, ""), Equals, true)
+				c.Assert(k.SetBondProviders(ctx, bp), IsNil)
+				initialBonds = initialBonds.Add(na.Bond)
+			}
+			reward := cosmos.NewUint(rewardUnits)
+			network, err := k.GetNetwork(ctx)
+			c.Assert(err, IsNil)
+			network.BondRewardRune = reward
+			c.Assert(k.SetNetwork(ctx, network), IsNil)
+			FundModule(c, ctx, k, BondName, initialBonds.Add(reward).Uint64())
+			assertBondInvariantHolds(c, ctx, k.InvariantRoutes())
+
+			c.Assert(validatorMgr.distributeBondReward(ctx, mgr), IsNil)
+			assertBondInvariantHolds(c, ctx, k.InvariantRoutes())
+			network, err = k.GetNetwork(ctx)
+			c.Assert(err, IsNil)
+			c.Check(network.BondRewardRune.IsZero(), Equals, true)
+
+			paid := cosmos.ZeroUint()
+			rewardEvents := 0
+			for _, event := range ctx.EventManager().Events() {
+				if event.Type != "bond" {
+					continue
+				}
+				attrs := make(map[string]string)
+				for _, attr := range event.Attributes {
+					attrs[attr.Key] = attr.Value
+				}
+				if attrs["bond_type"] == "bond_reward" {
+					amount, err := cosmos.ParseUint(attrs["amount"])
+					c.Assert(err, IsNil)
+					paid = paid.Add(amount)
+					rewardEvents++
+				}
+			}
+			c.Check(rewardEvents, Equals, 5)
+			c.Check(paid.Equal(reward), Equals, true, Commentf("BondYieldEnabled=%d paid=%s", enabled, paid))
+		}
+	}
+}
+
 func (vts *ValidatorMgrTestSuite) TestWeightedBondReward(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	ctx = ctx.WithBlockHeight(20)

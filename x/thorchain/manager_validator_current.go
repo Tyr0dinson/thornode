@@ -769,6 +769,13 @@ func (vm *ValidatorMgr) payNodeAccountBondAward(ctx cosmos.Context, lastChurnHei
 	reward := common.GetUncappedShare(naEffectiveBond, totalEffectiveBond, totalBondReward)
 	reward = common.GetUncappedShare(cosmos.NewUint(uint64(earnedBlocks)), cosmos.NewUint(uint64(totalActiveBlocks)), reward)
 
+	// Independently rounded node shares can exceed the original reward pool.
+	// Cap against the remaining ledger before fees, payouts, or rebonding so
+	// SafeSub below cannot hide an unfunded reward allocation.
+	if reward.GT(network.BondRewardRune) {
+		reward = network.BondRewardRune
+	}
+
 	// Load and normalize bond providers before applying this reward, so any
 	// previous rewards or legacy provider state are already accounted for.
 	bp, err := vm.k.GetBondProviders(ctx, na.NodeAddress)
