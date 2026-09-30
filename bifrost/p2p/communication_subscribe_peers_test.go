@@ -70,13 +70,13 @@ func TestSetSubscribeWithPeersCopiesAllowList(t *testing.T) {
 	}
 }
 
-// UpdateSubscribePeers narrows an existing session. It must never bring a
+// NarrowSubscribePeers narrows an existing session. It must never bring a
 // subscription into existence, or an unknown msgID would silently become an
 // authorized session.
-func TestUpdateSubscribePeersRejectsUnknownSession(t *testing.T) {
+func TestNarrowSubscribePeersRejectsUnknownSession(t *testing.T) {
 	c := newTestCommunication()
 
-	if c.UpdateSubscribePeers(messages.TSSFrostDKGRound1Msg, "never-registered", nil) {
+	if c.NarrowSubscribePeers(messages.TSSFrostDKGRound1Msg, "never-registered", nil) {
 		t.Fatal("expected false for an unknown message type")
 	}
 
@@ -84,11 +84,11 @@ func TestUpdateSubscribePeersRejectsUnknownSession(t *testing.T) {
 		messages.TSSFrostDKGRound1Msg, "msg-id", make(chan *Message, 1),
 		[]peer.ID{"member-peer"}, 8, 2,
 	)
-	if c.UpdateSubscribePeers(messages.TSSFrostDKGRound1Msg, "other-msg-id", nil) {
+	if c.NarrowSubscribePeers(messages.TSSFrostDKGRound1Msg, "other-msg-id", nil) {
 		t.Fatal("expected false for an unknown msgID on a known message type")
 	}
 	if c.getSubscriber(messages.TSSFrostDKGRound1Msg, "other-msg-id") != nil {
-		t.Fatal("UpdateSubscribePeers must not create a subscription")
+		t.Fatal("NarrowSubscribePeers must not create a subscription")
 	}
 }
 

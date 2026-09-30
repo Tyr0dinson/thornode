@@ -40,9 +40,13 @@ func (s *handlerStream) Reset() error {
 func (s *handlerStream) Conn() network.Conn { return s.conn }
 
 func newHandlerStream(remote peer.ID, frame []byte) *handlerStream {
+	return newHandlerStreamWithDeclaredLength(remote, uint32(len(frame)), frame)
+}
+
+func newHandlerStreamWithDeclaredLength(remote peer.ID, declaredLength uint32, frame []byte) *handlerStream {
 	base := NewMockNetworkStream()
 	header := make([]byte, LengthHeader)
-	binary.LittleEndian.PutUint32(header, uint32(len(frame)))
+	binary.LittleEndian.PutUint32(header, declaredLength)
 	_, _ = base.Write(header)
 	_, _ = base.Write(frame)
 	return &handlerStream{
@@ -56,13 +60,22 @@ func newHandlerCommunication(
 	msgID string,
 	allowed []peer.ID,
 ) *Communication {
+	return newHandlerCommunicationWithLimit(topic, msgID, allowed, 8)
+}
+
+func newHandlerCommunicationWithLimit(
+	topic messages.THORChainTSSMessageType,
+	msgID string,
+	allowed []peer.ID,
+	maxMessages uint32,
+) *Communication {
 	c := &Communication{
 		subscribers:      make(map[messages.THORChainTSSMessageType]*MessageIDSubscriber),
 		subscriberLocker: &sync.Mutex{},
 		streamMgr:        NewStreamMgr(),
 		stopChan:         make(chan struct{}),
 	}
-	c.SetSubscribeWithPeers(topic, msgID, make(chan *Message, 4), allowed, FrostMaxSessionPayload, 8)
+	c.SetSubscribeWithPeers(topic, msgID, make(chan *Message, 4), allowed, FrostMaxSessionPayload, maxMessages)
 	return c
 }
 
@@ -154,6 +167,99 @@ func TestHandleStreamTssRejectsFrameWhosePrefixAndBodyDisagree(t *testing.T) {
 			}
 			if !stream.resetCalled.Load() {
 				t.Fatal("a frame whose body contradicts its preflight header must be reset")
+			}
+		})
+	}
+}
+
+// A peer-attributable failure after preflight has already caused allocation,
+// reading, or parsing work. That work must remain charged to the peer; otherwise
+// the peer can refund its allowance by failing each frame and repeat forever.
+func TestHandleStreamTssPeerProtocolErrorsConsumeReservation(t *testing.T) {
+	originalApplyDeadline := ApplyDeadline.Load()
+	ApplyDeadline.Store(false)
+	t.Cleanup(func() { ApplyDeadline.Store(originalApplyDeadline) })
+
+	topic := messages.TSSFrostShareMsg
+	msgID := "peer-protocol-failure-budget"
+	remote := peer.ID("member-peer")
+	validFrame := frostTestFrame(t, topic, msgID)
+
+	truncatedPrefix := tssFramePrefix(t, topic, msgID)
+	truncatedLength := uint32(len(truncatedPrefix) + 1024)
+	malformedFrame := []byte(fmt.Sprintf(
+		`{"message_type":%d,"message_id":%q,"payload":`,
+		topic, msgID,
+	))
+	mismatchFrame := []byte(fmt.Sprintf(
+		`{"message_type":%d,"message_id":%q,"payload":%q,"message_id":"other-session"}`,
+		topic, msgID, strings.Repeat("A", 2*TSSFramePreflightBytes),
+	))
+
+	tests := []struct {
+		name         string
+		newStream    func() *handlerStream
+		chargedBytes uint64
+	}{
+		{
+			name: "truncated body",
+			newStream: func() *handlerStream {
+				return newHandlerStreamWithDeclaredLength(remote, truncatedLength, truncatedPrefix)
+			},
+			chargedBytes: uint64(truncatedLength),
+		},
+		{
+			name: "malformed JSON",
+			newStream: func() *handlerStream {
+				return newHandlerStream(remote, malformedFrame)
+			},
+			chargedBytes: uint64(len(malformedFrame)),
+		},
+		{
+			name: "preflight and body header mismatch",
+			newStream: func() *handlerStream {
+				return newHandlerStream(remote, mismatchFrame)
+			},
+			chargedBytes: uint64(len(mismatchFrame)),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			comm := newHandlerCommunicationWithLimit(topic, msgID, []peer.ID{remote}, 1)
+			t.Cleanup(func() { comm.CancelSubscribe(topic, msgID) })
+			subscription := comm.getSubscriber(topic, msgID)
+
+			stream := tc.newStream()
+			comm.handleStreamTss(stream)
+
+			if !stream.resetCalled.Load() {
+				t.Fatal("peer protocol failure must reset its stream")
+			}
+			subscription.lock.Lock()
+			peerCount := subscription.peerCounts[remote]
+			peerBytes := subscription.peerBytes[remote]
+			sessionBytes := subscription.sessionBytes
+			subscription.lock.Unlock()
+			if peerCount != 1 || peerBytes != tc.chargedBytes || sessionBytes != tc.chargedBytes {
+				t.Fatalf(
+					"protocol failure charge count=%d peerBytes=%d sessionBytes=%d, want 1/%d/%d",
+					peerCount, peerBytes, sessionBytes, tc.chargedBytes, tc.chargedBytes,
+				)
+			}
+
+			retry := newHandlerStream(remote, validFrame)
+			comm.handleStreamTss(retry)
+			if !retry.resetCalled.Load() {
+				t.Fatal("peer exceeded its cumulative message allowance but retry was not reset")
+			}
+			select {
+			case message := <-subscription.channel:
+				t.Fatalf("over-limit peer reached the session channel: %q", message.Payload)
+			default:
+			}
+			if got := parkedStreamCount(comm.streamMgr); got != 0 {
+				t.Fatalf("protocol failure left %d streams parked", got)
 			}
 		})
 	}
@@ -263,8 +369,10 @@ func TestHandleStreamTssDeliversAuthorizedFrame(t *testing.T) {
 	comm.handleStreamTss(stream)
 
 	sub := comm.getSubscriber(topic, msgID)
+	var delivered *Message
 	select {
 	case msg := <-sub.channel:
+		delivered = msg
 		if msg.PeerID != member {
 			t.Fatalf("delivered frame attributed to the wrong peer: %s", msg.PeerID)
 		}
@@ -282,8 +390,10 @@ func TestHandleStreamTssDeliversAuthorizedFrame(t *testing.T) {
 	if stream.resetCalled.Load() {
 		t.Fatal("an authorized frame's stream must not be reset")
 	}
-	// Delivered streams ARE parked, keyed by msgID, for the ceremony to release.
-	if got := parkedStreamCount(comm.streamMgr); got != 1 {
-		t.Fatalf("a delivered stream must be parked for release, got %d parked", got)
+	if got := parkedStreamCount(comm.streamMgr); got != 0 {
+		t.Fatalf("a delivered FROST stream must be closed by its handler, not parked: %d", got)
+	}
+	if delivered == nil {
+		t.Fatal("no frame delivered")
 	}
 }

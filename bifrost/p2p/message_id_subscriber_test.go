@@ -30,18 +30,17 @@ func (MessageIDSubscriberTestSuit) TestRestrictedSubscription(c *C) {
 	allowed := peer.ID("allowed-peer")
 	outsider := peer.ID("outsider-peer")
 	ms := NewMessageIDSubscriber()
-	ms.SubscribeRestricted("frost", make(chan *Message, 1), []peer.ID{allowed}, 4, 2)
+	ms.SubscribeRestricted("frost", make(chan *Message, 1), []peer.ID{allowed, outsider}, 4, 2)
 	sub := ms.GetSubscriber("frost")
 	c.Assert(sub, NotNil)
 	c.Assert(sub.maxBytesPerPeer, Equals, FrostMaxBytesPerPeer)
 	c.Assert(sub.maxSessionBytes, Equals, FrostMaxSessionBytes)
-	c.Assert(sub.accepts(outsider, 1), Equals, false)
 	c.Assert(sub.accepts(allowed, 5), Equals, false)
 	c.Assert(sub.accepts(allowed, 4), Equals, true)
 	c.Assert(sub.accepts(allowed, 4), Equals, true)
 	c.Assert(sub.accepts(allowed, 4), Equals, false)
 
-	c.Assert(ms.UpdateAllowedPeers("frost", []peer.ID{outsider}), Equals, true)
+	c.Assert(ms.NarrowAllowedPeers("frost", []peer.ID{outsider}), Equals, true)
 	c.Assert(sub.accepts(allowed, 1), Equals, false)
 	c.Assert(sub.accepts(outsider, 1), Equals, true)
 }
@@ -96,7 +95,7 @@ func TestRestrictedSubscriptionEnforcesByteBudgetsFairly(t *testing.T) {
 	}
 }
 
-func TestRestrictedSubscriptionPeerNarrowingDoesNotRestoreAllowance(t *testing.T) {
+func TestRestrictedSubscriptionNarrowingRejectsExpansionAndKeepsAllowance(t *testing.T) {
 	peerA := peer.ID("peer-a")
 	peerB := peer.ID("peer-b")
 	ms := NewMessageIDSubscriber()
@@ -113,15 +112,39 @@ func TestRestrictedSubscriptionPeerNarrowingDoesNotRestoreAllowance(t *testing.T
 	if !sub.accepts(peerA, 6) {
 		t.Fatal("initial peer A reservation failed")
 	}
-	if !ms.UpdateAllowedPeers("frost", []peer.ID{peerB}) ||
-		!ms.UpdateAllowedPeers("frost", []peer.ID{peerA, peerB}) {
-		t.Fatal("failed to update allowed peers")
+	if !sub.accepts(peerB, 6) {
+		t.Fatal("initial peer B reservation failed")
 	}
-	if !sub.accepts(peerA, 2) {
-		t.Fatal("peer A should retain its remaining allowance")
+	if !ms.NarrowAllowedPeers("frost", []peer.ID{peerB}) {
+		t.Fatal("failed to narrow allowed peers")
+	}
+	if ms.NarrowAllowedPeers("frost", []peer.ID{peerA, peerB}) {
+		t.Fatal("narrowing must reject peer re-expansion")
 	}
 	if sub.accepts(peerA, 1) {
-		t.Fatal("removing and re-adding peer A must not reset its allowance")
+		t.Fatal("rejected expansion re-authorized peer A")
+	}
+	if !ms.NarrowAllowedPeers("frost", []peer.ID{peerB}) {
+		t.Fatal("narrowing to the current set should be idempotent")
+	}
+	if !sub.accepts(peerB, 2) || sub.accepts(peerB, 1) {
+		t.Fatal("narrowing reset retained peer B's byte allowance")
+	}
+}
+
+func TestRestrictedSubscriptionWildcardCanNarrowToEmpty(t *testing.T) {
+	remote := peer.ID("remote-peer")
+	ms := NewMessageIDSubscriber()
+	ms.SubscribeRestricted("frost", make(chan *Message, 1), nil, 8, 2)
+	sub := ms.GetSubscriber("frost")
+	if !sub.accepts(remote, 1) {
+		t.Fatal("nil allow-list should initially accept an authenticated peer")
+	}
+	if !ms.NarrowAllowedPeers("frost", []peer.ID{}) {
+		t.Fatal("failed to narrow wildcard allow-list to empty")
+	}
+	if sub.accepts(remote, 1) {
+		t.Fatal("empty allow-list must reject every peer")
 	}
 }
 
@@ -161,7 +184,7 @@ func TestSubscriptionDeliveryBackpressure(t *testing.T) {
 	restrictedDelivered := make(chan bool, 1)
 	stop := make(chan struct{})
 	go func() {
-		restrictedDelivered <- restricted.GetSubscriber("frost").deliver(&Message{}, stop)
+		restrictedDelivered <- restricted.GetSubscriber("frost").deliver(&Message{PeerID: peer.ID("frost-peer")}, stop)
 	}()
 	select {
 	case <-restrictedDelivered:
@@ -185,7 +208,7 @@ func TestSubscriptionDeliveryBackpressure(t *testing.T) {
 	cancelledDelivery := make(chan bool, 1)
 	sub := restricted.GetSubscriber("frost")
 	go func() {
-		cancelledDelivery <- sub.deliver(&Message{}, stop)
+		cancelledDelivery <- sub.deliver(&Message{PeerID: peer.ID("frost-peer")}, stop)
 	}()
 	select {
 	case <-cancelledDelivery:
