@@ -28,7 +28,7 @@ count: 1
 ########################################################################################
 type: tx-tss-keysign
 signer: {{ addr_thor_dog }}
-id: "9c97754842280d53bad5135b7cdcc41a0345ce1c4cacf2a29e77e98e4ff9e3fd"
+id: "e44c908731a3f8a09f4341448cf7344dfaec5722d537944ea09d163404393df4"
 pub_key: {{ pubkey_dog }}
 height: 1
 coins:
@@ -53,7 +53,7 @@ asserts:
   - .txs[]|.result.events[]|select(.type=="tss_keysign_failure")|.pubkey == "{{ pubkey_dog }}"
   - .txs[]|.result.events[]|select(.type=="tss_keysign_failure")|.blame == "{{ pubkey_dog }}"
   - .txs[]|.result.events[]|select(.type=="tss_keysign_failure")|.height == "1"
-  - .txs[]|.result.events[]|select(.type=="tss_keysign_failure")|.id == "9c97754842280d53bad5135b7cdcc41a0345ce1c4cacf2a29e77e98e4ff9e3fd"
+  - .txs[]|.result.events[]|select(.type=="tss_keysign_failure")|.id == "e44c908731a3f8a09f4341448cf7344dfaec5722d537944ea09d163404393df4"
 ---
 ########################################################################################
 # an interior-round failure must not freeze the vault
@@ -69,7 +69,7 @@ asserts:
 ########################################################################################
 type: tx-tss-keysign
 signer: {{ addr_thor_dog }}
-id: "f340a66e6cd907decf8ba985e84624458b4e0b5b4458bd0bc43d15bcd4fda284"
+id: "7f47deed0e003ccce878f10f30d5e6fba4d54fecf9b9785994e60d413c58f6b6"
 pub_key: {{ pubkey_dog }}
 height: 1
 coins:
