@@ -116,7 +116,7 @@ func TestAminoThorchainMessages(t *testing.T) {
 				require.NoError(t, err)
 				return msg
 			},
-			expectedSignDoc: `{"account_number":"123","chain_id":"thorchain-1","fee":{"amount":[{"amount":"100","denom":"rune"}],"gas":"200000"},"memo":"memo","msgs":[{"type":"thorchain/TssKeysignFail","value":{"blame":{"blame_nodes":[{"blame_data":"YmxhbWUgZGF0YQ==","blame_signature":"YmxhbWUgc2lnbmF0dXJl","pubkey":"blame"}],"fail_reason":"fail reason","is_unicast":true,"round":"SignRound1Message1"},"coins":[{"amount":"12323142345","asset":"AVAX.AVAX"}],"height":"1234567890","id":"a564405be4a54733cf450e63c0ba1f7ab0f976f0934e1d7087ad30ff41a174f2","memo":"memo","pub_key":"pubkey","signer":"cosmos1wd5kwmn9wgr5dmap"}}],"sequence":"456"}`,
+			expectedSignDoc: `{"account_number":"123","chain_id":"thorchain-1","fee":{"amount":[{"amount":"100","denom":"rune"}],"gas":"200000"},"memo":"memo","msgs":[{"type":"thorchain/TssKeysignFail","value":{"blame":{"blame_nodes":[{"blame_data":"YmxhbWUgZGF0YQ==","blame_signature":"YmxhbWUgc2lnbmF0dXJl","pubkey":"blame"}],"fail_reason":"fail reason","is_unicast":true,"round":"SignRound1Message1"},"coins":[{"amount":"12323142345","asset":"AVAX.AVAX"}],"height":"1234567890","id":"4486a83e18aa3505222195181c30fafdc63d888080fb00b17e97b41843935734","memo":"memo","pub_key":"pubkey","signer":"cosmos1wd5kwmn9wgr5dmap"}}],"sequence":"456"}`,
 		},
 		{
 			name: "MsgTssPool",
