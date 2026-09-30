@@ -101,6 +101,7 @@ type Keeper interface {
 	KeeperPOLReserve
 	KeeperStableReserve
 	KeeperXMRSpentOutputRefs
+	KeeperSolVaultNonce
 	KeeperDynamicFee
 }
 
@@ -333,6 +334,14 @@ type KeeperVault interface {
 type KeeperXMRSpentOutputRefs interface {
 	SetXMRSpentOutputRefs(ctx cosmos.Context, vaultPubKey common.PubKey, spendTxHash common.TxID, refs []common.OutputRef, observedHeight, finalisedHeight int64) error
 	GetXMRSpentOutputRefs(ctx cosmos.Context, vaultPubKey common.PubKey) ([]common.OutputRef, error)
+}
+
+type KeeperSolVaultNonce interface {
+	SetSolVaultNonce(ctx cosmos.Context, record SolVaultNonce)
+	GetSolVaultNonce(ctx cosmos.Context, vaultPubKey common.PubKey) (SolVaultNonce, bool, error)
+	GetSolVaultNonceIterator(ctx cosmos.Context) cosmos.Iterator
+	SetSolNonceAttestVoter(ctx cosmos.Context, voter SolNonceAttestVoter)
+	GetSolNonceAttestVoter(ctx cosmos.Context, vaultPubKey common.PubKey, nonceAccount, nonce string, lastTx common.TxID, slot int64) (SolNonceAttestVoter, error)
 }
 
 type KeeperReserveContributors interface {

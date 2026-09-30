@@ -66,7 +66,13 @@ type TxInItem struct {
 	AggregatorTargetLimit *cosmos.Uint        `json:"aggregator_target_limit"`
 	SpentOutputRefs       []*common.OutputRef `json:"spent_output_refs,omitempty"`
 	TxKey                 string              `json:"tx_key,omitempty"`
-	CommittedUnFinalised  bool                `json:"committed_pre_final"`
+	// SolNonce is the post-tx state of the sending vault's durable-nonce account,
+	// attached by the SOL scanner to observations of vault txs that created or
+	// advanced it. Deliberately NOT part of Equals/EqualsObservedTx: dedup and the
+	// commit-event match must not depend on it (a committed consensus tx can carry a
+	// different observer's value, and the deck item must still clear).
+	SolNonce             *common.SolNonceUpdate `json:"sol_nonce,omitempty"`
+	CommittedUnFinalised bool                   `json:"committed_pre_final"`
 
 	// OnObservedTxStored and OnObservedTxRejected are local-only handoff
 	// callbacks used by scanners which retain a durable replay record until the
@@ -200,6 +206,7 @@ func (t *TxInItem) Copy() *TxInItem {
 		AggregatorTargetLimit: t.AggregatorTargetLimit,
 		SpentOutputRefs:       refs,
 		TxKey:                 t.TxKey,
+		SolNonce:              copySolNonce(t.SolNonce),
 		CommittedUnFinalised:  t.CommittedUnFinalised,
 		OnObservedTxStored:    t.OnObservedTxStored,
 		OnObservedTxRejected:  t.OnObservedTxRejected,
@@ -277,4 +284,12 @@ func (t TxIn) GetTotalGas() cosmos.Uint {
 
 func InboundCacheKey(vault, chain string) string {
 	return fmt.Sprintf("inbound-%s-%s", vault, chain)
+}
+
+func copySolNonce(u *common.SolNonceUpdate) *common.SolNonceUpdate {
+	if u == nil {
+		return nil
+	}
+	cp := *u
+	return &cp
 }

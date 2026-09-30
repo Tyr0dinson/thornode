@@ -256,6 +256,7 @@ var (
 	DefaultGenesis                 = types.DefaultGenesis
 	NewSolvencyVoter               = types.NewSolvencyVoter
 	NewMsgSolvency                 = types.NewMsgSolvency
+	NewMsgSolNonceAttest           = types.NewMsgSolNonceAttest
 	NewSwapperClout                = types.NewSwapperClout
 	NewMsgTCYClaim                 = types.NewMsgTCYClaim
 	NewMsgTCYStake                 = types.NewMsgTCYStake
@@ -320,6 +321,7 @@ type (
 	MsgManageTHORName         = types.MsgManageTHORName
 	MsgReferenceMemo          = types.MsgReferenceMemo
 	MsgSolvency               = types.MsgSolvency
+	MsgSolNonceAttest         = types.MsgSolNonceAttest
 	MsgRunePoolDeposit        = types.MsgRunePoolDeposit
 	MsgRunePoolWithdraw       = types.MsgRunePoolWithdraw
 	MsgSwitch                 = types.MsgSwitch
@@ -339,6 +341,8 @@ type (
 	ObservedTxs              = common.ObservedTxs
 	ObservedTx               = common.ObservedTx
 	ObservedTxVoter          = types.ObservedTxVoter
+	SolVaultNonce            = types.SolVaultNonce
+	SolNonceAttestVoter      = types.SolNonceAttestVoter
 	ObservedTxVoters         = types.ObservedTxVoters
 	BanVoter                 = types.BanVoter
 	ErrataTxVoter            = types.ErrataTxVoter

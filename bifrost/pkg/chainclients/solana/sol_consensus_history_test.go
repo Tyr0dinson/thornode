@@ -3,12 +3,15 @@ package solana
 import (
 	"bytes"
 	"errors"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/mr-tron/base58"
 	"github.com/stretchr/testify/require"
 	. "gopkg.in/check.v1"
 
+	soltypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -413,4 +416,228 @@ func (s *SolTestSuite) TestSignTxProvenAnchorExpiryDrops(c *C) {
 	c.Assert(checkpoint, IsNil)
 	c.Assert(obs, IsNil)
 	c.Assert(bridge.postCalls, HasLen, 0)
+}
+
+// committedNonceBridge serves a vault's durable nonce as committed on THORChain (or a
+// read error), on top of the legacy mock bridge. It has no GetPendingOutbounds, so the
+// serialize gate fails open.
+type committedNonceBridge struct {
+	*mockSOLThorchainBridge
+	committed thorclient.SolVaultNonce
+	latest    *thorclient.SolVaultNonce // served for height<=0 when set
+	err       error
+}
+
+func (b *committedNonceBridge) GetSolVaultNonce(_ string, height int64) (thorclient.SolVaultNonce, error) {
+	if height <= 0 && b.latest != nil {
+		return *b.latest, b.err
+	}
+	return b.committed, b.err
+}
+
+func (s *SolTestSuite) durableTestClient(c *C, bridge thorclient.ThorchainBridge, srv *httptest.Server) *SOLClient {
+	return &SOLClient{
+		bridge:             bridge,
+		localPubKey:        "not-local",
+		rpcClient:          newSolRPCForServer(srv),
+		solScanner:         &SOLScanner{},
+		tssKeyManager:      &mockSOLThorchainKeyManager{},
+		signerCacheManager: newTestSignerCacheManager(c),
+	}
+}
+
+func durableTestTx(c *C, vault common.PubKey) stypes.TxOutItem {
+	toAddr, err := types2.GetRandomEd25519PubKey().GetAddress(common.SOLChain)
+	c.Assert(err, IsNil)
+	return stypes.TxOutItem{
+		Chain:            common.SOLChain,
+		ToAddress:        toAddr,
+		VaultPubKey:      vault,
+		VaultPubKeyEddsa: vault,
+		Coins:            common.Coins{common.NewCoin(common.SOLAsset, cosmos.NewUint(11047250))},
+		MaxGas:           common.Gas{common.NewCoin(common.SOLAsset, cosmos.NewUint(15000))},
+		GasRate:          1,
+		Memo:             "MIGRATE:838",
+	}
+}
+
+// TestSignTxCommittedNonceReadErrorRetains: if the vault's committed durable nonce
+// cannot be read, SignTx RETAINS the outbound (error -> retry next pass) and never
+// falls back to a recent blockhash (invariant I: a legacy copy and a still-valid
+// durable copy of the same outbound could both land). It retains even when the
+// legacy anchor is proven expired, where the legacy path would have dropped it.
+func (s *SolTestSuite) TestSignTxCommittedNonceReadErrorRetains(c *C) {
+	target := testConsensusBlockTimeUnix - solFinalizationMarginSeconds
+	srv := strandedHistoryScenario(target).server(c)
+	defer srv.Close()
+	inner := &mockSOLThorchainBridge{}
+	cl := s.durableTestClient(c, &committedNonceBridge{mockSOLThorchainBridge: inner, err: errors.New("thornode unavailable")}, srv)
+
+	result, checkpoint, obs, err := cl.SignTx(durableTestTx(c, types2.GetRandomEd25519PubKey()), keysignHeight)
+	c.Assert(err, ErrorMatches, ".*retaining outbound.*") // retained, neither signed legacy nor dropped
+	c.Assert(result, IsNil)
+	c.Assert(checkpoint, IsNil)
+	c.Assert(obs, IsNil)
+	c.Assert(inner.postCalls, HasLen, 0)
+}
+
+// TestSignTxCommittedNonceSignsDurable: a vault with a committed durable nonce signs
+// a durable-nonce tx built from the COMMITTED value (AdvanceNonceAccount with the
+// RecentBlockhashes sysvar, the committed nonce baked in place of a recent blockhash,
+// the vault's own nonce account) — even when the recent-blockhash anchor is proven
+// expired, where the legacy path would drop the outbound. The committed vault never
+// takes the legacy path (invariant I).
+func (s *SolTestSuite) TestSignTxCommittedNonceSignsDurable(c *C) {
+	target := testConsensusBlockTimeUnix - solFinalizationMarginSeconds
+	srv := strandedHistoryScenario(target).server(c)
+	defer srv.Close()
+
+	vault := types2.GetRandomEd25519PubKey()
+	vaultAddr, err := vault.GetAddress(common.SOLChain)
+	c.Assert(err, IsNil)
+	nonceAcct, err := common.SolNonceAccountAddress(vaultAddr.String())
+	c.Assert(err, IsNil)
+	nonceAddr, err := types2.GetRandomEd25519PubKey().GetAddress(common.SOLChain)
+	c.Assert(err, IsNil)
+	committed := thorclient.SolVaultNonce{NonceAccount: nonceAcct, Nonce: nonceAddr.String(), Slot: 1000, UpdatedHeight: 10}
+
+	cl := s.durableTestClient(c, &committedNonceBridge{mockSOLThorchainBridge: &mockSOLThorchainBridge{}, committed: committed}, srv)
+	// Fail the keysign itself so SignTx hands back the checkpoint: the serialized
+	// message it built. (Reaching the keysign at all proves the outbound was neither
+	// retained nor dropped by the expired recent-blockhash anchor.)
+	cl.tssKeyManager = &mockSOLThorchainKeyManager{err: errors.New("keysign failed")}
+	// On a keysign error finishSign returns the checkpoint (message bytes) first.
+	checkpoint, _, _, err := cl.SignTx(durableTestTx(c, vault), keysignHeight)
+	c.Assert(err, ErrorMatches, ".*fail to sign tx.*")
+	c.Assert(checkpoint, NotNil)
+
+	sysvar := soltypes.SysVarRecentBlockhashesID
+	c.Assert(bytes.Contains(checkpoint, sysvar[:]), Equals, true) // AdvanceNonceAccount present
+	acct := soltypes.MustPublicKeyFromString(nonceAcct)
+	c.Assert(bytes.Contains(checkpoint, acct[:]), Equals, true) // the vault's own nonce account
+	baked := soltypes.MustPublicKeyFromString(committed.Nonce)
+	c.Assert(bytes.Contains(checkpoint, baked[:]), Equals, true) // committed nonce baked in
+}
+
+// TestSignTxCommittedNonceForeignAccountRetains: a committed record naming an
+// account other than the vault's seed-derived one is rejected (defence in depth
+// behind THORChain's commit check) and the outbound retained, not signed legacy.
+func (s *SolTestSuite) TestSignTxCommittedNonceForeignAccountRetains(c *C) {
+	target := testConsensusBlockTimeUnix - solFinalizationMarginSeconds
+	srv := strandedHistoryScenario(target).server(c)
+	defer srv.Close()
+	foreign, err := types2.GetRandomEd25519PubKey().GetAddress(common.SOLChain)
+	c.Assert(err, IsNil)
+	committed := thorclient.SolVaultNonce{NonceAccount: foreign.String(), Nonce: foreign.String(), Slot: 1000}
+	cl := s.durableTestClient(c, &committedNonceBridge{mockSOLThorchainBridge: &mockSOLThorchainBridge{}, committed: committed}, srv)
+	result, _, _, err := cl.SignTx(durableTestTx(c, types2.GetRandomEd25519PubKey()), keysignHeight)
+	c.Assert(err, ErrorMatches, ".*invalid committed durable nonce.*")
+	c.Assert(result, IsNil)
+}
+
+// durableFixture is a vault with a committed nonce and a matching durable outbound.
+type durableFixture struct {
+	vault     common.PubKey
+	nonceAcct string
+	committed thorclient.SolVaultNonce
+}
+
+func newDurableFixture(c *C) durableFixture {
+	vault := types2.GetRandomEd25519PubKey()
+	addr, err := vault.GetAddress(common.SOLChain)
+	c.Assert(err, IsNil)
+	acct, err := common.SolNonceAccountAddress(addr.String())
+	c.Assert(err, IsNil)
+	nonce, err := types2.GetRandomEd25519PubKey().GetAddress(common.SOLChain)
+	c.Assert(err, IsNil)
+	return durableFixture{
+		vault: vault, nonceAcct: acct,
+		committed: thorclient.SolVaultNonce{NonceAccount: acct, Nonce: nonce.String(), Slot: 1000, UpdatedHeight: keysignHeight},
+	}
+}
+
+// TestSignTxDropsWhenCommittedNonceAdvanced (B5): once the vault's committed nonce
+// advanced after the outbound's keysign height, the only nonce this outbound can be
+// signed with there is consumed, so SignTx DROPS it for reschedule (nil,nil,nil,nil)
+// without re-signing — never retrying dead bytes, never wedging the vault.
+func (s *SolTestSuite) TestSignTxDropsWhenCommittedNonceAdvanced(c *C) {
+	target := testConsensusBlockTimeUnix - solFinalizationMarginSeconds
+	srv := strandedHistoryScenario(target).server(c)
+	defer srv.Close()
+	f := newDurableFixture(c)
+	advanced := f.committed
+	advanced.Nonce = f.nonceAcct // any different value
+	advanced.UpdatedHeight = keysignHeight + 1
+
+	cl := s.durableTestClient(c, &committedNonceBridge{mockSOLThorchainBridge: &mockSOLThorchainBridge{}, committed: f.committed, latest: &advanced}, srv)
+	cl.tssKeyManager = &mockSOLThorchainKeyManager{err: errors.New("keysign must not be reached")}
+	result, checkpoint, obs, err := cl.SignTx(durableTestTx(c, f.vault), keysignHeight)
+	c.Assert(err, IsNil) // a drop, not an error and not a keysign
+	c.Assert(result, IsNil)
+	c.Assert(checkpoint, IsNil)
+	c.Assert(obs, IsNil)
+
+	// Not advanced past the keysign height (equal counts as not advanced): signs.
+	same := f.committed
+	cl2 := s.durableTestClient(c, &committedNonceBridge{mockSOLThorchainBridge: &mockSOLThorchainBridge{}, committed: f.committed, latest: &same}, srv)
+	cl2.tssKeyManager = &mockSOLThorchainKeyManager{err: errors.New("keysign reached")}
+	_, _, _, err = cl2.SignTx(durableTestTx(c, f.vault), keysignHeight)
+	c.Assert(err, ErrorMatches, ".*keysign reached.*")
+}
+
+// durableRawTx is a serialized durable-nonce tx carrying nonce, as a stored signed
+// copy would be (the mock RPC does not verify the signature).
+func durableRawTx(c *C, f durableFixture) []byte {
+	addr, err := f.vault.GetAddress(common.SOLChain)
+	c.Assert(err, IsNil)
+	vaultPK, err := soltypes.PublicKeyFromString(addr.String())
+	c.Assert(err, IsNil)
+	dest, err := types2.GetRandomEd25519PubKey().GetAddress(common.SOLChain)
+	c.Assert(err, IsNil)
+	destPK, err := soltypes.PublicKeyFromString(dest.String())
+	c.Assert(err, IsNil)
+	tx := soltypes.NewNonceTransferTransaction(vaultPK, destPK, 100, "MIGRATE:838", f.committed.Nonce,
+		soltypes.MustPublicKeyFromString(f.nonceAcct), vaultPK)
+	tx.Signatures = []soltypes.Signature{make(soltypes.Signature, 64)}
+	raw, err := tx.Serialize()
+	c.Assert(err, IsNil)
+	return raw
+}
+
+// TestBroadcastTxDeadDurableResigns (B5): a stored durable tx rejected with
+// "Blockhash not found" whose committed nonce has since advanced is dead; BroadcastTx
+// returns ErrResignRequired so the signer re-enters SignTx, which drops it. With the
+// committed nonce NOT advanced, the bytes are retained (plain error) — the recent-
+// blockhash expiry logic cannot confirm a nonce, so it must not re-sign it.
+func (s *SolTestSuite) TestBroadcastTxDeadDurableResigns(c *C) {
+	oldDelay := broadcastLookupDelay
+	broadcastLookupDelay = 0
+	defer func() { broadcastLookupDelay = oldDelay }()
+	target := testConsensusBlockTimeUnix - solFinalizationMarginSeconds
+
+	for _, tc := range []struct {
+		name       string
+		advanced   bool
+		wantResign bool
+	}{
+		{name: "nonce consumed", advanced: true, wantResign: true},
+		{name: "nonce still current", advanced: false, wantResign: false},
+	} {
+		mock, server := newCountingSOLRPCServer(strandedHistoryScenario(target))
+		mock.failBroadcastBlockhash.Store(true)
+		f := newDurableFixture(c)
+		latest := f.committed
+		if tc.advanced {
+			latest.Nonce = f.nonceAcct
+			latest.UpdatedHeight = keysignHeight + 1
+		}
+		cl := s.durableTestClient(c, &committedNonceBridge{mockSOLThorchainBridge: &mockSOLThorchainBridge{}, committed: f.committed, latest: &latest}, server)
+		txOut := durableTestTx(c, f.vault)
+		txOut.Height = keysignHeight
+
+		_, err := cl.BroadcastTx(txOut, durableRawTx(c, f))
+		c.Assert(err, NotNil, Commentf("%s", tc.name))
+		c.Assert(errors.Is(err, stypes.ErrResignRequired), Equals, tc.wantResign, Commentf("%s", tc.name))
+		server.Close()
+	}
 }

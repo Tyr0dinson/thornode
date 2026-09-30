@@ -53,6 +53,8 @@ const (
 	prefixVaultAsgardEDDSAIndex     types.DbPrefix = "vault_asgard_eddsa_index/"
 	prefixVaultAsgardFrostIndex     types.DbPrefix = "vault_asgard_frost_index/"
 	prefixXMRSpentOutputRef         types.DbPrefix = "xmr_spent_refs/"
+	prefixSolVaultNonce             types.DbPrefix = "sol_vault_nonce/"
+	prefixSolNonceAttestVoter       types.DbPrefix = "sol_nonce_attest/"
 	prefixNetwork                   types.DbPrefix = "network/"
 	prefixSwapperClout              types.DbPrefix = "sclout/"
 	prefixPOL                       types.DbPrefix = "pol/"

@@ -497,6 +497,37 @@ func (qs queryServer) queryXMRSpentOutputRefs(ctx cosmos.Context, req *types.Que
 	return &types.QueryXMRSpentOutputRefsResponse{SpentOutputRefs: castOutputRefs(refs)}, nil
 }
 
+// querySolVaultNonce returns a Solana vault's committed durable nonce, or an empty
+// response when it has none. Bifrost reads it at the keysign height (?height=) so
+// every keysign party builds from the same value.
+func (qs queryServer) querySolVaultNonce(ctx cosmos.Context, req *types.QuerySolVaultNonceRequest) (*types.QuerySolVaultNonceResponse, error) {
+	if len(req.VaultPubKey) < 1 {
+		return nil, errors.New("missing vault_pub_key parameter")
+	}
+	pubkey, err := common.NewPubKey(req.VaultPubKey)
+	if err != nil {
+		return nil, fmt.Errorf("%s is invalid pubkey", req.VaultPubKey)
+	}
+	// Records are keyed by the vault's canonical pubkey; accept its EdDSA key too.
+	if vault, vErr := qs.mgr.Keeper().GetVault(ctx, pubkey); vErr == nil && !vault.PubKey.IsEmpty() {
+		pubkey = vault.PubKey
+	}
+	record, found, err := activeSolVaultNonce(ctx, qs.mgr.Keeper(), pubkey)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get sol vault nonce for vault(%s),err:%w", pubkey, err)
+	}
+	if !found {
+		return &types.QuerySolVaultNonceResponse{}, nil
+	}
+	return &types.QuerySolVaultNonceResponse{
+		NonceAccount:  record.NonceAccount,
+		Nonce:         record.Nonce,
+		Slot:          record.Slot,
+		UpdatedHeight: record.UpdatedHeight,
+		SetByTx:       record.SetByTx.String(),
+	}, nil
+}
+
 func getVaultChainAddresses(ctx cosmos.Context, vault Vault) []*types.VaultAddress {
 	var result []*types.VaultAddress
 	allChains := append(vault.GetChains(), common.THORChain)

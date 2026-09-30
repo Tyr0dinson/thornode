@@ -16,6 +16,47 @@ const (
 	// consensus code). Unset defaults to ~1 day of blocks; 0 disables the keep-alive.
 	MimirKeySignatureRefreshBlocks = "SignatureRefreshBlocks"
 	MimirKeyStableReserveEnabled   = "StableReserveEnabled"
+	// MimirKeySOLDurableNonce gates bifrost PROVISIONING of per-vault Solana
+	// durable-nonce accounts, and nothing else. Read by bifrost only (never by
+	// consensus code): >0 lets each active SOL vault create its nonce account.
+	// Once a vault's nonce is committed on THORChain (by observer supermajority on
+	// the observation of its creation), that vault signs every SOL outbound durably
+	// from the committed value — anchored on the stored nonce (which never expires)
+	// instead of a recent blockhash, removing the ~60s keysign+broadcast expiry
+	// window — regardless of this mimir. Unset/0 leaves new vaults on the existing
+	// recent-blockhash path.
+	//
+	// The feature is therefore one-way per vault: setting this back to 0 stops new
+	// provisioning but does NOT return provisioned vaults to the recent-blockhash
+	// path. That is required for safety — a legacy copy of an outbound does not
+	// consume the nonce, so it and a still-valid durable copy could both land. The
+	// operator emergency stop is HaltSigningSOL; the per-vault re-anchor is
+	// MimirTemplateSOLNonceClear.
+	MimirKeySOLDurableNonce = "SOLDurableNonce"
+
+	// MimirKeySOLAnchorMarginSeconds tunes how far (seconds) bifrost steps back from
+	// the THORChain keysign block time to pick the SOL consensus blockhash anchor.
+	// Read by bifrost only, at the keysign height. Unset/<=0 = 15s; positive values
+	// are clamped to [12, 30]. Lower leaves more of the ~150-block blockhash validity
+	// for keysign + broadcast; below the fleet's finalization lag every node abstains.
+	MimirKeySOLAnchorMarginSeconds = "SOLAnchorMarginSeconds"
+
+	// MimirTemplateSOLNonceClear is the per-vault durable-nonce BREAK-GLASS
+	// (SOLNonceClear-<vault pubkey>, value = a THORChain height H). A committed
+	// SolVaultNonce with updated_height <= H is ignored everywhere (signers,
+	// LackSigning, the query), so the vault signs on the recent-blockhash path. In
+	// practice it stays legacy until it retires at churn: a voided vault sends no
+	// durable txs and is not re-attested, so nothing commits a fresh nonce for it.
+	// Use it to unwedge a vault whose committed nonce no longer matches its nonce
+	// account and that automatic re-attestation cannot recover. It is a regular
+	// (non-operational) mimir: it takes the normal 2/3 node vote.
+	//
+	// ⚠ Double-pay caveat: while the committed nonce is ignored, an outbound can be
+	// re-issued (on this or another vault) although a durable copy signed with the
+	// old value may still land. Set it only after confirming on-chain that the
+	// committed nonce value is already consumed (the nonce account holds a newer
+	// value), or with HaltSigningSOL in place.
+	MimirTemplateSOLNonceClear = "SOLNonceClear-%s"
 
 	MimirTemplateEVMAllowanceCheck         = "EVMAllowanceCheck-%s"         // Use with Chain
 	MimirTemplateEVMDirectERC20Inbound     = "EVMDirectERC20Inbound-%s"     // Use with Chain

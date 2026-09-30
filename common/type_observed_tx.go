@@ -51,6 +51,9 @@ func (m *ObservedTx) Valid() error {
 	if err := ValidateXMRTxKey(m.Tx.Chain, m.XmrTxKey); err != nil {
 		return err
 	}
+	if err := ValidateSolNonceUpdate(m.Tx.Chain, m.SolNonce); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -164,6 +167,12 @@ func (m ObservedTx) Equals(tx2 ObservedTx) bool {
 	if !m.HasEquivalentXMRTxKey(tx2) {
 		return false
 	}
+	// A different attested durable-nonce value is a different vote entry, so the
+	// nonce commit can count agreement per exact value. It is deliberately NOT part
+	// of EqualsConsensus: nonce reporting must never affect outbound consensus.
+	if !SolNonceUpdatesEqual(m.SolNonce, tx2.SolNonce) {
+		return false
+	}
 	return true
 }
 
@@ -203,7 +212,8 @@ func (m ObservedTx) EqualsConsensusIgnoreGas(tx2 ObservedTx) bool {
 }
 
 func (m ObservedTx) AttestationUniqueHash() string {
-	return observedTxXMRMetadataUniqueHash(m.Tx.Hash(m.BlockHeight), m.Tx.Chain, m.XmrTxKey, m.SpentOutputRefs)
+	base := observedTxXMRMetadataUniqueHash(m.Tx.Hash(m.BlockHeight), m.Tx.Chain, m.XmrTxKey, m.SpentOutputRefs)
+	return solNonceUniqueHash(base, m.Tx.Chain, m.SolNonce)
 }
 
 // IsFinal indicates whether ObserveTx is final.

@@ -2289,6 +2289,52 @@ func isOutboundFakeGasTx(tx ObservedTx) bool {
 	return tx.Tx.Memo == "OUT:"+tx.Tx.ID.String()
 }
 
+// activeSolVaultNonce returns a vault's committed durable nonce unless the
+// break-glass mimir SOLNonceClear-<vault pubkey> voids it (a record committed at or
+// before the mimir's height is ignored; a later commit re-anchors the vault). All
+// consensus readers of the committed nonce go through this.
+func activeSolVaultNonce(ctx cosmos.Context, k keeper.Keeper, vaultPubKey common.PubKey) (SolVaultNonce, bool, error) {
+	record, found, err := k.GetSolVaultNonce(ctx, vaultPubKey)
+	if err != nil || !found {
+		return record, found, err
+	}
+	clearHeight, err := k.GetMimir(ctx, fmt.Sprintf(constants.MimirTemplateSOLNonceClear, vaultPubKey.String()))
+	if err != nil {
+		return SolVaultNonce{}, false, err
+	}
+	if clearHeight > 0 && record.UpdatedHeight <= clearHeight {
+		return SolVaultNonce{}, false, nil
+	}
+	return record, true, nil
+}
+
+// solNonceCreateMaxRent caps the rent (1e8 units) booked as gas for a durable-nonce
+// account creation: 0.01 SOL, ~7x the current rent-exempt minimum.
+const solNonceCreateMaxRent = 1_000_000
+
+// isSolNonceCreateTx reports whether an observed vault outflow is a Solana vault's
+// durable-nonce account CREATION: no memo and a single SOL coin (the rent, capped)
+// sent to the sender's own seed-derived nonce account. Classified on these consensus
+// fields alone — not on the attested SolNonce, which EqualsConsensus ignores, so one
+// vote (whichever completed quorum) must not decide the branch. The shape alone can
+// also match a scheduled memoless payment to that address, so the caller also
+// requires agreed creation evidence (solNonceCommittedBy).
+func isSolNonceCreateTx(tx ObservedTx) bool {
+	if !tx.Tx.Chain.Equals(common.SOLChain) || strings.TrimSpace(tx.Tx.Memo) != "" {
+		return false
+	}
+	if len(tx.Tx.Coins) != 1 || !tx.Tx.Coins[0].Asset.Equals(common.SOLAsset) {
+		return false
+	}
+	// Rent for an 80-byte nonce account is ~0.0015 SOL; anything far above it is not a
+	// nonce creation and must not be written off as gas.
+	if tx.Tx.Coins[0].Amount.GT(cosmos.NewUint(solNonceCreateMaxRent)) {
+		return false
+	}
+	expected, err := common.SolNonceAccountAddress(tx.Tx.FromAddress.String())
+	return err == nil && tx.Tx.ToAddress.String() == expected
+}
+
 // isCancelOrApprovalTx returns true if the observed outbound is a cancel transaction
 // sent by bifrost to unstuck a pending transaction or an approval transaction for
 // router V6.

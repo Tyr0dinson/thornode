@@ -336,6 +336,11 @@ service Query {
     option (google.api.http).get = "/thorchain/xmr/spent_refs/{vault_pub_key}";
   }
 
+  rpc SolVaultNonce(QuerySolVaultNonceRequest)
+      returns (QuerySolVaultNonceResponse) {
+    option (google.api.http).get = "/thorchain/vault/{vault_pub_key}/sol_nonce";
+  }
+
   rpc AsgardVaults(QueryAsgardVaultsRequest)
       returns (QueryAsgardVaultsResponse) {
     option (google.api.http).get = "/thorchain/vaults/asgard";

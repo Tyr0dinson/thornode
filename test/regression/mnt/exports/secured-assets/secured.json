@@ -343,6 +343,7 @@
           "depth": "0"
         }
       ],
+      "sol_vault_nonces": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
       "swapper_clout": [

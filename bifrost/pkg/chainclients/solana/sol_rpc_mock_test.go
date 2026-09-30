@@ -111,6 +111,11 @@ type solRPCScenario struct {
 	// isBlockhashValidResp drives the per-node participation gate so SignTx abstain
 	// branches can be exercised (see blockhashValidity).
 	isBlockhashValidResp blockhashValidity
+	// Pre-sign filter reads. accounts maps an address to its getAccountInfo value
+	// JSON ("null" = missing); an unlisted address is a funded plain System account.
+	// simErr is the simulateTransaction err JSON ("" = success).
+	accounts map[string]string
+	simErr   string
 }
 
 func (sc solRPCScenario) blockTimeOf(slot uint64) int64 {
@@ -237,6 +242,34 @@ func (sc solRPCScenario) server(c *C) *httptest.Server {
 				break
 			}
 			write(result)
+		case "getMinimumBalanceForRentExemption":
+			write("890880")
+		case "getAccountInfo":
+			var p []json.RawMessage
+			c.Assert(json.Unmarshal(rpcReq.Params, &p), IsNil)
+			var addr string
+			c.Assert(json.Unmarshal(p[0], &addr), IsNil)
+			value, ok := sc.accounts[addr]
+			if value == "rpcerror" {
+				_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32005,"message":"node is behind"}}`))
+				c.Assert(err, IsNil)
+				break
+			}
+			if !ok {
+				value = `{"owner":"11111111111111111111111111111111","executable":false,"lamports":100000000000,"data":["","base64"]}`
+			}
+			write(fmt.Sprintf(`{"context":{"slot":1},"value":%s}`, value))
+		case "simulateTransaction":
+			simErr := sc.simErr
+			if simErr == "rpcerror" {
+				_, err := rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32005,"message":"node is behind"}}`))
+				c.Assert(err, IsNil)
+				break
+			}
+			if simErr == "" {
+				simErr = "null"
+			}
+			write(fmt.Sprintf(`{"context":{"slot":1},"value":{"err":%s,"logs":[]}}`, simErr))
 		default:
 			c.Fatalf("unexpected RPC method %q", rpcReq.Method)
 		}

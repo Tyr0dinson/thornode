@@ -69,6 +69,8 @@ type (
 	RagnarokWithdrawPosition = types.RagnarokWithdrawPosition
 	ChainContract            = types.ChainContract
 	SolvencyVoter            = types.SolvencyVoter
+	SolVaultNonce            = types.SolVaultNonce
+	SolNonceAttestVoter      = types.SolNonceAttestVoter
 	ReferenceMemo            = types.ReferenceMemo
 	THORName                 = types.THORName
 	AffiliateFeeCollector    = types.AffiliateFeeCollector

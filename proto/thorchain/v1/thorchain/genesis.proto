@@ -15,6 +15,7 @@ import "types/type_pol.proto";
 import "types/type_pol_reserve.proto";
 import "types/type_reserve_contributor.proto";
 import "types/type_vault.proto";
+import "types/type_sol_vault_nonce.proto";
 import "types/type_tx_out.proto";
 import "types/type_mimir.proto";
 import "types/type_node_account.proto";
@@ -137,5 +138,7 @@ message GenesisState {
       [ (gogoproto.nullable) = false ];
   int64 last_observed_dynamic_fee_epoch_blocks = 48;
   repeated StableReserveCredit stable_reserve_credits = 49
+      [ (gogoproto.nullable) = false ];
+  repeated types.SolVaultNonce sol_vault_nonces = 50
       [ (gogoproto.nullable) = false ];
 }

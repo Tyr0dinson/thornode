@@ -531,6 +531,7 @@
           "depth": "5949579831"
         }
       ],
+      "sol_vault_nonces": [],
       "stable_reserve_credits": [
         {
           "address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",

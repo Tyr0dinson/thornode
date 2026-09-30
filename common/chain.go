@@ -612,7 +612,7 @@ func (c Chain) ApproximateBlockMilliseconds() int64 {
 	case NOBLEChain:
 		return 1_500
 	case SOLChain:
-		return 400
+		return 300 // ~265-300ms measured since SIMD-0525 (was 400)
 	case TAOChain:
 		return 12_000
 	case DOTChain:

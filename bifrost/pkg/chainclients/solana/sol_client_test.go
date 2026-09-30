@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -39,6 +40,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/common/crypto/ed25519"
 	"gitlab.com/thorchain/thornode/v3/config"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	types2 "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	. "gopkg.in/check.v1"
 )
@@ -136,6 +138,18 @@ func (s *SolTestSuite) SetUpSuite(c *C) {
 			rw.Header().Set("Content-Type", "application/json")
 			_, _ = fmt.Fprintf(rw, `{"asgard":[{"pub_key_eddsa":%q}]}`, pubKey)
 		default:
+			// No vault has a committed durable nonce in these tests (legacy path).
+			if strings.HasPrefix(req.RequestURI, "/thorchain/vault/") && strings.Contains(req.RequestURI, "/sol_nonce") {
+				rw.Header().Set("Content-Type", "application/json")
+				_, _ = rw.Write([]byte(`{}`))
+				return
+			}
+			// Anchor margin unset, as a deleted mimir reads on mainnet (-1 -> 15s default).
+			if strings.HasPrefix(req.RequestURI, "/thorchain/mimir/key/"+constants.MimirKeySOLAnchorMarginSeconds) {
+				rw.Header().Set("Content-Type", "application/json")
+				_, _ = rw.Write([]byte(`-1`))
+				return
+			}
 			body, _ := io.ReadAll(req.Body)
 			var rpcRequest struct {
 				ID     json.RawMessage `json:"id"`
@@ -368,6 +382,13 @@ func (m *mockSOLThorchainBridge) GetBlockTimestamp(int64) (time.Time, error) {
 func (m *mockSOLThorchainBridge) GetBlockHeight() (int64, error) {
 	m.blockHeightCalls++
 	return m.thorHeight, nil
+}
+
+// GetMimir returns 0 (durable-nonce disabled) so SignTx takes the recent-blockhash
+// path these tests assert. Overriding the embedded nil interface avoids a nil deref
+// now that SignTx reads MimirKeySOLDurableNonce.
+func (m *mockSOLThorchainBridge) GetMimir(string) (int64, error) {
+	return 0, nil
 }
 
 func (m *mockSOLThorchainBridge) PostKeysignFailure(blame types2.Blame, height int64, memo string, coins common.Coins, pubkey common.PubKey) (common.TxID, error) {

@@ -1971,6 +1971,10 @@ func (o *Observer) getThorchainTxIns(txIn *types.TxIn, finalized bool, finaliseH
 		obsTx.AggregatorTargetLimit = item.AggregatorTargetLimit
 		obsTx.SpentOutputRefs = common.OutputRefsFromPointers(item.SpentOutputRefs)
 		obsTx.XmrTxKey = item.TxKey
+		if item.SolNonce != nil {
+			sn := *item.SolNonce
+			obsTx.SolNonce = &sn
+		}
 		obsTxs = append(obsTxs, obsTx)
 	}
 	return obsTxs, invalidIndices, nil

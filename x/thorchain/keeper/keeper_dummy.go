@@ -167,6 +167,22 @@ func (k KVStoreDummy) GetXMRSpentOutputRefs(_ cosmos.Context, _ common.PubKey) (
 	return nil, nil
 }
 
+func (k KVStoreDummy) SetSolVaultNonce(_ cosmos.Context, _ SolVaultNonce) {}
+
+func (k KVStoreDummy) GetSolVaultNonce(_ cosmos.Context, _ common.PubKey) (SolVaultNonce, bool, error) {
+	return SolVaultNonce{}, false, nil
+}
+
+func (k KVStoreDummy) GetSolVaultNonceIterator(_ cosmos.Context) cosmos.Iterator {
+	return nil
+}
+
+func (k KVStoreDummy) SetSolNonceAttestVoter(_ cosmos.Context, _ SolNonceAttestVoter) {}
+
+func (k KVStoreDummy) GetSolNonceAttestVoter(_ cosmos.Context, _ common.PubKey, _, _ string, _ common.TxID, _ int64) (SolNonceAttestVoter, error) {
+	return SolNonceAttestVoter{}, kaboom
+}
+
 func (k KVStoreDummy) GetBalanceOf(ctx cosmos.Context, addr cosmos.AccAddress, asset common.Asset) cosmos.Coin {
 	native, _ := common.NewCoin(asset, cosmos.ZeroUint()).Native()
 	return native

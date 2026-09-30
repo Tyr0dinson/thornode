@@ -17,9 +17,10 @@ import (
 )
 
 func TestKeepAliveDue(t *testing.T) {
-	// 14400 thorchain blocks * 15 slots = 216_000 slots (~1 day)
+	// 14400 thorchain blocks * 20 slots = 288_000 slots (~1 day at ~300ms)
 	refreshBlocks := int64(14400)
-	thresholdSlots := uint64(refreshBlocks) * solSlotsPerThorchainBlock
+	require.Equal(t, uint64(20), solSlotsPerThorchainBlock())
+	thresholdSlots := uint64(refreshBlocks) * solSlotsPerThorchainBlock()
 
 	// fresh signature: not due
 	require.False(t, keepAliveDue(1_000_000, 1_000_000-10, refreshBlocks))
