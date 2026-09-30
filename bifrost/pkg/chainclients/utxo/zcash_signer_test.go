@@ -465,7 +465,7 @@ func (s *ZcashSignerSuite) TestZECNilMaxGasPolicyVetoDoesNotChangeSigningPlan(c 
 	// Keep the signing failure so repeated fresh attempts can be compared.
 	s.client.minRelayFeeSats.Store(0)
 	s.client.cfg.UTXO.MaxSatsPerVByte = 1000
-	_, baseline, _, err := s.client.SignTx(tx, 1237)
+	_, baseline, _, err := s.client.SignTx([]stypes.TxOutItem{tx}, 1237)
 	c.Assert(err, ErrorMatches, "(?s).*injected signing failure.*")
 	c.Assert(fixture.signer.digests, HasLen, 1)
 	var checkpoint utxo.SignCheckpoint
@@ -493,7 +493,7 @@ func (s *ZcashSignerSuite) TestZECNilMaxGasPolicyVetoDoesNotChangeSigningPlan(c 
 		s.client.minRelayFeeSats.Store(policy.relay)
 		s.client.cfg.UTXO.MaxSatsPerVByte = policy.cap
 		digestCount := len(fixture.signer.digests)
-		raw, rejectedCheckpoint, observation, signErr := s.client.SignTx(tx, 1237)
+		raw, rejectedCheckpoint, observation, signErr := s.client.SignTx([]stypes.TxOutItem{tx}, 1237)
 		c.Assert(signErr, ErrorMatches, policy.error, Commentf("%s policy", policy.name))
 		c.Assert(raw, IsNil)
 		c.Assert(rejectedCheckpoint, IsNil)
@@ -510,7 +510,7 @@ func (s *ZcashSignerSuite) TestZECNilMaxGasPolicyVetoDoesNotChangeSigningPlan(c 
 		s.client.minRelayFeeSats.Store(fee)
 		s.client.cfg.UTXO.MaxSatsPerVByte = 1000
 		s.client.lastFeeRate.Store(999999)
-		_, resumedCheckpoint, _, signErr := s.client.SignTx(tx, 1237)
+		_, resumedCheckpoint, _, signErr := s.client.SignTx([]stypes.TxOutItem{tx}, 1237)
 		c.Assert(signErr, ErrorMatches, "(?s).*injected signing failure.*")
 		c.Assert(resumedCheckpoint, DeepEquals, baseline)
 		c.Assert(fixture.signer.digests, HasLen, digestCount+1)

@@ -22,6 +22,7 @@ import (
 
 	sharedutxo "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
 	utxorpcc "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
+	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
@@ -178,7 +179,7 @@ func (s *ZcashSignerSuite) TestZECConfirmedInputsFundPaymentWithChangeAfterRefer
 
 	// The current tip confirms the change; the old seed reference is not a
 	// historical input cutoff. Its pinned expiry must remain unchanged.
-	_, checkpointBytes, _, err := s.client.SignTx(fixture.tx, 1237)
+	_, checkpointBytes, _, err := s.client.SignTx([]stypes.TxOutItem{fixture.tx}, 1237)
 	c.Assert(err, ErrorMatches, "(?s).*injected signing failure.*")
 	var checkpoint sharedutxo.SignCheckpoint
 	c.Assert(json.Unmarshal(checkpointBytes, &checkpoint), IsNil)
@@ -187,7 +188,7 @@ func (s *ZcashSignerSuite) TestZECConfirmedInputsFundPaymentWithChangeAfterRefer
 	c.Assert(fixture.signer.digests, HasLen, 2)
 	firstDigests := []string{hex.EncodeToString(fixture.signer.digests[0]), hex.EncodeToString(fixture.signer.digests[1])}
 	fixture.localHeight.Store(reference + 32)
-	_, repeated, _, err := s.client.SignTx(fixture.tx, 1237)
+	_, repeated, _, err := s.client.SignTx([]stypes.TxOutItem{fixture.tx}, 1237)
 	c.Assert(err, ErrorMatches, "(?s).*injected signing failure.*")
 	c.Assert(repeated, DeepEquals, checkpointBytes)
 	c.Assert(fixture.signer.digests, HasLen, 4)
@@ -228,7 +229,7 @@ func (s *ZcashSignerSuite) TestZECConfirmedInputPlanAndCheckpointDigestsSurviveN
 	reference := fixture.bridge.observedHeight
 	first := makeCandidate(strings.Repeat("aa", 32), reference-100, 0, 150000000)
 	view.Store([]zecInputSelectionCandidate{first})
-	_, checkpoint1, _, err := s.client.SignTx(fixture.tx, 1237)
+	_, checkpoint1, _, err := s.client.SignTx([]stypes.TxOutItem{fixture.tx}, 1237)
 	c.Assert(err, ErrorMatches, "(?s).*injected signing failure.*")
 	c.Assert(len(checkpoint1) > 0, Equals, true)
 	view.Store([]zecInputSelectionCandidate{
@@ -237,7 +238,7 @@ func (s *ZcashSignerSuite) TestZECConfirmedInputPlanAndCheckpointDigestsSurviveN
 		first,
 	})
 	fixture.localHeight.Store(reference + 20)
-	_, checkpoint2, _, err := s.client.SignTx(fixture.tx, 1237)
+	_, checkpoint2, _, err := s.client.SignTx([]stypes.TxOutItem{fixture.tx}, 1237)
 	c.Assert(err, ErrorMatches, "(?s).*injected signing failure.*")
 	c.Assert(checkpoint2, DeepEquals, checkpoint1)
 	c.Assert(fixture.signer.digests, HasLen, 2)
@@ -256,7 +257,7 @@ func (s *ZcashSignerSuite) TestZECConfirmedInputPlanAndCheckpointDigestsSurviveN
 	fixture.bridge.err = errors.New("historical state pruned")
 	tx := fixture.tx
 	tx.Checkpoint = checkpoint1
-	_, retried, _, err := restarted.SignTx(tx, 1237)
+	_, retried, _, err := restarted.SignTx([]stypes.TxOutItem{tx}, 1237)
 	c.Assert(err, ErrorMatches, "(?s).*injected signing failure.*")
 	c.Assert(retried, DeepEquals, checkpoint1)
 	c.Assert(restartedSigner.digests, HasLen, 1)
@@ -280,7 +281,7 @@ func (s *ZcashSignerSuite) TestZECConfirmedInputTargetIncludesGasAndExtendedMemo
 	})
 	for _, maxGas := range []common.Gas{nil, {common.NewCoin(common.ZECAsset, cosmos.NewUint(30000))}} {
 		tx.MaxGas = maxGas
-		_, checkpointBytes, _, err := s.client.SignTx(tx, 1237)
+		_, checkpointBytes, _, err := s.client.SignTx([]stypes.TxOutItem{tx}, 1237)
 		c.Assert(err, ErrorMatches, "(?s).*injected signing failure.*")
 		var checkpoint sharedutxo.SignCheckpoint
 		c.Assert(json.Unmarshal(checkpointBytes, &checkpoint), IsNil)

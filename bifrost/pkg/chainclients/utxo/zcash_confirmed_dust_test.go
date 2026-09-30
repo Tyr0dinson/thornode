@@ -23,6 +23,7 @@ import (
 	sharedutxo "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
 	utxorpcc "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
+	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	types2 "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -132,7 +133,7 @@ func (s *ZcashSignerSuite) TestZECConfirmedOwnDustFundsFullBalanceAndRetiredRetr
 	s.client.bridge = membership
 	tx := fixture.tx
 	tx.Coins = common.NewCoins(common.NewCoin(common.ZECAsset, cosmos.NewUint(909000)))
-	_, checkpoint, _, err := s.client.SignTx(tx, 1237)
+	_, checkpoint, _, err := s.client.SignTx([]stypes.TxOutItem{tx}, 1237)
 	c.Assert(err, ErrorMatches, "(?s).*injected signing failure.*")
 	c.Assert(len(checkpoint) > 0, Equals, true)
 	c.Assert(fixture.signer.digests, HasLen, 2)
@@ -142,7 +143,7 @@ func (s *ZcashSignerSuite) TestZECConfirmedOwnDustFundsFullBalanceAndRetiredRetr
 	defer func() { s.client.asgardCache.Store(originalCache) }()
 	s.client.asgardCache.Store(&sharedutxo.AsgardCache{FetchedAt: time.Now()})
 	tx.Checkpoint = checkpoint
-	_, saved, _, err := s.client.SignTx(tx, 1237)
+	_, saved, _, err := s.client.SignTx([]stypes.TxOutItem{tx}, 1237)
 	c.Assert(err, ErrorMatches, "(?s).*injected signing failure.*")
 	c.Assert(saved, DeepEquals, checkpoint)
 	c.Assert(view.calls[view.inputs[0].TxID], Equals, creatingCalls)
@@ -232,7 +233,7 @@ func (s *ZcashSignerSuite) TestZECConfirmedCrossVaultDustUsesFreshMembershipOnce
 	membership.err = errors.New("membership unavailable")
 	tx := fixture.tx
 	tx.Coins = common.NewCoins(common.NewCoin(common.ZECAsset, cosmos.NewUint(909000)))
-	payload, checkpoint, _, err := s.client.SignTx(tx, 1237)
+	payload, checkpoint, _, err := s.client.SignTx([]stypes.TxOutItem{tx}, 1237)
 	c.Assert(err, ErrorMatches, "(?s).*membership unavailable.*")
 	c.Assert(payload, HasLen, 0)
 	c.Assert(checkpoint, HasLen, 0)
@@ -271,7 +272,7 @@ func (s *ZcashSignerSuite) TestZECConfirmedDustProofFailuresDeferBeforeTSS(c *C)
 		}
 		tx := fixture.tx
 		tx.Coins = common.NewCoins(common.NewCoin(common.ZECAsset, cosmos.NewUint(909000)))
-		payload, checkpoint, _, err := s.client.SignTx(tx, 1237)
+		payload, checkpoint, _, err := s.client.SignTx([]stypes.TxOutItem{tx}, 1237)
 		restore()
 		fixture.rpcServer.Close()
 		c.Assert(err, NotNil, Commentf("proof failure %s", failure))
