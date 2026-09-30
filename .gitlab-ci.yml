@@ -46,6 +46,10 @@ workflow:
     - if: $CI_PIPELINE_SOURCE == "webide"
 
 variables:
+  # Runner tag for the short jobs (see .small-runner). A project CI/CD variable
+  # overrides this, so SMALL_RUNNER_TAG=thorchain sends them back to any runner
+  # without an MR if the small runners are down.
+  SMALL_RUNNER_TAG: small
   DOCKER_HOST: tcp://docker:2376
   DOCKER_TLS_CERTDIR: /certs
   DOCKER_TLS_VERIFY: 1
@@ -180,6 +184,17 @@ variables:
   before_script:
     - . ./scripts/ci-go-private-auth.sh
 
+# Every job except the sim and the image builds runs on a runner tagged
+# `small`, with small slots (today one: hedwig-small). The project had 7 slots
+# on 2026-09-30 (Finland capped at 4, hedwig 3), and sims held 2-4 of them for
+# 30-45 min each, so 1-5 min gate jobs queued 8-29 min each, one after another. A small slot is 6 CPU / 24 GiB (lint
+# and the race tests need the memory) with a 4 CPU / 8 GiB dind service for
+# generate and the proto jobs. test-simulation, the build jobs and the image
+# mirror stay untagged and keep the sim-sized slots on Finland and hedwig.
+.small-runner:
+  tags:
+    - $SMALL_RUNNER_TAG
+
 # What test-simulation and test-regression wait for. On 2026-09-15..29 these
 # jobs caught 116 of the 122 pipelines that failed a check before the sim
 # (lint 40, generate 39, proto 37, unit-tests 14); in 33 of them lint was the
@@ -253,6 +268,7 @@ stages:
 # and fork jobs, fixing a timing issue where GitLab CI rule evaluation happened
 # before dotenv artifacts were available.
 fork:
+  tags: !reference [.small-runner, tags]
   stage: fork
   rules:
     - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
@@ -317,6 +333,7 @@ fork:
       fi
 
 generate:
+  tags: !reference [.small-runner, tags]
   rules: &rules
     - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
       when: never
@@ -355,6 +372,7 @@ generate:
       ./scripts/lint-generated.bash
 
 unit-tests:
+  tags: !reference [.small-runner, tags]
   rules:
     - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
       when: never
@@ -379,6 +397,7 @@ unit-tests:
       - coverage*
 
 test-mocknet-scripts:
+  tags: !reference [.small-runner, tags]
   rules:
     - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
       when: never
@@ -394,6 +413,7 @@ test-mocknet-scripts:
     - python3 -m unittest discover -s build/scripts/tests -v
 
 xmr-e2e-gates:
+  tags: !reference [.small-runner, tags]
   rules:
     - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
       when: never
@@ -406,6 +426,7 @@ xmr-e2e-gates:
     - make test-xmr-e2e
 
 lint:
+  tags: !reference [.small-runner, tags]
   rules:
     - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
       when: never
@@ -436,6 +457,7 @@ lint:
     - make lint-ci
 
 proto-check-formatting:
+  tags: !reference [.small-runner, tags]
   rules: *rules
   stage: protobuf
   needs: []
@@ -448,6 +470,7 @@ proto-check-formatting:
     - make proto-format-check
 
 proto-lint:
+  tags: !reference [.small-runner, tags]
   rules: *rules
   retry: *buf_retry
   stage: protobuf
@@ -462,6 +485,7 @@ proto-lint:
     - make proto-lint
 
 proto-check-breaking:
+  tags: !reference [.small-runner, tags]
   # Compares this branch's protos against upstream `develop` via `buf breaking`.
   # The long-lived deployment branches (mainnet/stagenet/chainnet) intentionally
   # lag develop's schema and will report upstream-only additions as "deletions".
@@ -520,6 +544,7 @@ build-thornode:
       fi
 
 chain-evm:
+  tags: !reference [.small-runner, tags]
   rules:
     - changes:
         paths:
@@ -533,6 +558,7 @@ chain-evm:
     - yarn hardhat test
 
 go-tss:
+  tags: !reference [.small-runner, tags]
   rules:
     # Keeps honest fork MRs from running with tss-lib-private credentials. It is
     # not a security boundary: a fork MR pipeline a maintainer runs in this
@@ -744,6 +770,7 @@ test-simulation:
         > logs/xmr-debug/sim-balance.txt 2>&1 || true
 
 unit-tests-race-bifrost:
+  tags: !reference [.small-runner, tags]
   rules:
     - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
       when: never
@@ -765,6 +792,7 @@ unit-tests-race-bifrost:
     - make test-race-bifrost
 
 test-regression:
+  tags: !reference [.small-runner, tags]
   rules:
     - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
       when: never
@@ -825,11 +853,13 @@ include:
 # workflow rule set.
 
 secret_detection:
+  tags: !reference [.small-runner, tags]
   stage: test
   needs: []
   rules: *rules
 
 semgrep:
+  tags: !reference [.small-runner, tags]
   stage: test
   needs: []
   rules: *rules
@@ -846,6 +876,7 @@ semgrep:
       sast: gl-sast-report.json
 
 govulncheck:
+  tags: !reference [.small-runner, tags]
   stage: test
   needs: []
   rules: *rules
