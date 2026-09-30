@@ -568,6 +568,14 @@ func TestRelocatedDedupeNeverSumsAndOrdersHighestFirst(t *testing.T) {
 
 func TestAdvanceSidecarCatchupChunksAndRecoversAmbiguousAdvance(t *testing.T) {
 	store := newScannerReceiptStore(t)
+	// These heights were already scanned for the retiring vault. The newly
+	// enrolled vault returns empty deltas, even across a lost response/retry.
+	for height := int64(10); height <= 15; height++ {
+		if err := store.Set(terminalReorgMeta(height, testBlockHash(height), testBlockHash(height-1),
+			testXMRHash(fmt.Sprintf("retiring-vault-%d", height)), true)); err != nil {
+			t.Fatal(err)
+		}
+	}
 	var stateMu sync.Mutex
 	nextHeight := uint64(10)
 	lastHeight := uint64(9)
@@ -719,6 +727,11 @@ func TestAdvanceSidecarCatchupChunksAndRecoversAmbiguousAdvance(t *testing.T) {
 		meta, metaErr := store.Get(height)
 		if metaErr != nil || meta == nil || meta.BlockHash != testBlockHash(height) {
 			t.Fatalf("height %d missing from accumulated journal: meta=%#v err=%v", height, meta, metaErr)
+		}
+		wantTx := testXMRHash(fmt.Sprintf("retiring-vault-%d", height))
+		if !reflect.DeepEqual(meta.CustomerTransactions, []string{wantTx}) ||
+			!reflect.DeepEqual(meta.VaultOriginTransactions, []string{wantTx}) || !meta.ProvenanceComplete {
+			t.Fatalf("partial catch-up lost retiring-vault evidence at height %d: %#v", height, meta)
 		}
 	}
 	if err = store.ClearCompletedCatchupMarker(*completed); err != nil {

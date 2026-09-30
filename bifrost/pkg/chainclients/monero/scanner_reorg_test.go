@@ -20,7 +20,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/config"
 )
 
-func TestScannerFetchTxsDetectsReorgAndEmitsErrata(t *testing.T) {
+func TestScannerFetchTxsDetectsReorgAfterEmptyCatchupAndRestart(t *testing.T) {
 	t.Parallel()
 	sourceVault := testVaultPubKey(t, "scanner-reorg-source")
 	sourceAddress, err := sourceVault.GetAddress(common.XMRChain)
@@ -177,7 +177,7 @@ func TestScannerFetchTxsDetectsReorgAndEmitsErrata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open in-memory leveldb: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	reorgStore := NewReorgStore(db)
 	for _, meta := range []*reorgBlockMeta{
@@ -208,6 +208,33 @@ func TestScannerFetchTxsDetectsReorgAndEmitsErrata(t *testing.T) {
 		}
 	}
 
+	// A newly enrolled vault contributes no observations at the older vault's
+	// already-scanned heights. Repeated catch-up must retain both the deposit
+	// needing errata and the transaction needing a relocation watch.
+	for attempt := 0; attempt < 2; attempt++ {
+		for _, delta := range []*reorgBlockMeta{
+			{Height: 99, BlockHash: old99, PreviousHash: h98, ProvenanceComplete: true},
+			{Height: 100, BlockHash: old100, PreviousHash: old99, ProvenanceComplete: true},
+		} {
+			next := scannerCatchupMarker{StartHeight: delta.Height + 1, TargetHeight: 100, AnchorHeight: delta.Height, AnchorHash: delta.BlockHash}
+			if err = reorgStore.CheckpointCatchup(next, delta, nil); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	completed := scannerCatchupMarker{StartHeight: 101, TargetHeight: 100, AnchorHeight: 100, AnchorHash: old100}
+	if err = reorgStore.ClearCompletedCatchupMarker(completed); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err = leveldb.Open(memStorage, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reorgStore = NewReorgStore(db)
+
 	scanner := NewScanner(
 		log.Logger,
 		frostSigner,
@@ -221,6 +248,7 @@ func TestScannerFetchTxsDetectsReorgAndEmitsErrata(t *testing.T) {
 	scanner.SetClaimQuarantineHandler(func(string) error { return nil })
 	errataQueue := make(chan stypes.ErrataBlock, 2)
 	scanner.SetErrataQueue(errataQueue)
+	defer close(errataQueue)
 	storedErrata := make(chan stypes.ErrataBlock, 2)
 	go func() {
 		for errata := range errataQueue {
@@ -268,6 +296,12 @@ func TestScannerFetchTxsDetectsReorgAndEmitsErrata(t *testing.T) {
 	case extra := <-storedErrata:
 		t.Fatalf("did not expect second errata block: %#v", extra)
 	default:
+	}
+
+	watches, err := reorgStore.ListRelocationWatches(0)
+	if err != nil || len(watches) != 1 || watches[0].TxID != canonicalRelocatedTxID ||
+		watches[0].OriginalHeight != 99 || watches[0].LocationHeight != 97 {
+		t.Fatalf("retained transaction did not reach relocation handling: %#v err=%v", watches, err)
 	}
 
 	meta100, err := reorgStore.Get(100)

@@ -390,9 +390,37 @@ func (s *ReorgStore) CheckpointCatchup(next scannerCatchupMarker, meta *reorgBlo
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := validateReorgBlockMeta(meta); err != nil {
+		return err
+	}
 	if !next.valid() || next.AnchorHeight != meta.Height || next.StartHeight != meta.Height+1 ||
 		!strings.EqualFold(next.AnchorHash, meta.BlockHash) {
 		return fmt.Errorf("invalid xmr scanner catch-up checkpoint at height %d", meta.Height)
+	}
+	existing, err := s.Get(meta.Height)
+	if err != nil {
+		return err
+	}
+	if existing != nil {
+		if err = validateReorgBlockMeta(existing); err != nil {
+			return err
+		}
+		if existing.Height != meta.Height {
+			return fmt.Errorf("xmr reorg journal height mismatch at height %d", meta.Height)
+		}
+		if strings.EqualFold(existing.BlockHash, meta.BlockHash) {
+			if !strings.EqualFold(existing.PreviousHash, meta.PreviousHash) {
+				return fmt.Errorf("xmr reorg journal parent mismatch at height %d", meta.Height)
+			}
+			// Registration catch-up returns only the newly enrolled vault's delta.
+			// Preserve all prior evidence for this block, including on empty retries.
+			merged := *meta
+			merged.CustomerTransactions = mergeReorgJournalTxIDs(existing.CustomerTransactions, meta.CustomerTransactions)
+			merged.VaultOriginTransactions = mergeReorgJournalTxIDs(existing.VaultOriginTransactions, meta.VaultOriginTransactions)
+			// A partial delta cannot establish the provenance of older entries.
+			merged.ProvenanceComplete = existing.ProvenanceComplete && meta.ProvenanceComplete
+			meta = &merged
+		}
 	}
 	markerValue, err := json.Marshal(next)
 	if err != nil {
@@ -412,6 +440,16 @@ func (s *ReorgStore) CheckpointCatchup(next scannerCatchupMarker, meta *reorgBlo
 		return fmt.Errorf("checkpoint xmr scanner catch-up at height %d: %w", meta.Height, err)
 	}
 	return nil
+}
+
+// mergeReorgJournalTxIDs unions already-validated normalized IDs without
+// modifying either input. Sorted unique IDs make retries byte-stable.
+func mergeReorgJournalTxIDs(existing, incoming []string) []string {
+	merged := make([]string, 0, len(existing)+len(incoming))
+	merged = append(merged, existing...)
+	merged = append(merged, incoming...)
+	slices.Sort(merged)
+	return slices.Compact(merged)
 }
 
 func (s *ReorgStore) ListObservationReceipts() ([]scannerObservationReceiptClaim, error) {
