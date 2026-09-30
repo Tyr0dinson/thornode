@@ -361,8 +361,10 @@ const (
 	// rule, despite the name.
 	blameRuleMajorityOfMembers blameRule = iota
 	// blameRuleByzantineBound (B) jails a node blamed by at least f+1 reporters
-	// (one more than the tolerated faulty count). Kept as a documented fallback
-	// if simulation shows A's catch-rate too low; NOT active.
+	// (one more than the tolerated faulty count). NOT active and NOT a fallback:
+	// measured 21/22 false jails on board 788's real data — correlated asymmetry
+	// clears f+1 unaided. Retained only to name the rejected option; see
+	// activeBlameRule.
 	blameRuleByzantineBound
 )
 
@@ -398,18 +400,20 @@ const (
 //     LackSigning reschedule-and-slash, observation slash points, and churn-out on
 //     a poor score. Keysign blame is the weakest of several deterrents.
 //   - So we trade a measured, ongoing, fleet-wide false-positive for a
-//     hypothetical false-negative on a weak deterrent — and (a) is the cheapest
-//     option to reverse: if data later shows real culprits escaping, move to a
-//     supermajority-gated derive that keeps majority-of-members (deliberately,
-//     with evidence), NOT by lowering the denominator.
+//     hypothetical false-negative on a weak deterrent.
 //
-// Why NOT a majority-of-REPORTERS bar (halving the denominator to look less
-// strict): board 788's divergence is network asymmetry, which is CORRELATED, so a
-// partially-convergent cluster of >half the present reporters on one innocent is
-// reachable on its own — that reintroduces the false-jail this closes. Same class
-// of mistake as f+1 (blameRuleByzantineBound): a bar a correlated honest event
-// clears unaided. To fall back to B anyway, change this to blameRuleByzantineBound
-// (one line) — but see above for why that is wrong here.
+// NO READY-MADE FALLBACK EXISTS — both alternatives are already ruled out against
+// our 22 real jails (full tables on board 788). A supermajority-gated derive (keep
+// majority-of-members, finalize only once ~2/3 report) is refuted by MEASUREMENT:
+// on 10 of 22 jails fewer than 13 of 19 members ever reported, so its gate is
+// unreachable on ~half of all items and cannot fire; where it did fire it produced
+// 11 false jails to (a)'s 1 and still dropped a genuine catch for the same reason.
+// A majority-of-REPORTERS bar (halving the denominator, incl. blameRuleByzantineBound,
+// which measured 21/22 false) is refuted by REASONING: board 788's divergence is
+// CORRELATED network asymmetry, so a partially-convergent cluster clears half-of-
+// present unaided — the original false-jail in a new costume. If evidence later
+// shows real culprits escaping, the answer is a NEW design informed by these
+// measurements, NOT either option above.
 const activeBlameRule = blameRuleMajorityOfMembers
 
 // deriveConsensusBlame combines the accumulated per-reporter blame lists on a
