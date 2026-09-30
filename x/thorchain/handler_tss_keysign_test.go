@@ -992,27 +992,42 @@ func (h HandlerTssKeysignSuite) TestKeysignFailureSlashTelemetryKeepsHandlerCall
 		Commentf("direct keeper slash telemetry attributed %q while SlasherImpl recorded %q", handlerRecord.Caller, slasherRecord.Caller))
 }
 
-// TestKeysignFailHonestDivergenceRequiresMajorityToJail is the core Release
-// 3.21.0 regression: with the blamed set removed from the voter id, honest
-// reporters that legitimately disagree about who was silent all land on ONE
-// voter. A node must be jailed ONLY when a MAJORITY of members independently
-// named it — honest divergence (a node named by a minority) must NOT jail. This
-// models honest divergence, not a byzantine minority.
-func (h HandlerTssKeysignSuite) TestKeysignFailHonestDivergenceRequiresMajorityToJail(c *C) {
+// TestKeysignFailConvergentBlameJailsButDivergentDoesNot pins the intentional
+// Release 3.21.0 semantics (board 788, decision (a)). With the blamed set removed
+// from the voter id, honest reporters that legitimately disagree about who was
+// silent all land on ONE voter. Consensus fires at exactly min = ceil(members/2)
+// reporters and the jail bar is the same predicate over the same denominator, so
+// the EFFECTIVE rule is UNANIMITY AMONG PRESENT REPORTERS: a node is jailed only
+// when blame CONVERGES (every present reporter named it); divergent blame jails
+// no one. This is intentional — see activeBlameRule.
+//
+// This test is also the guard rail for that decision. The nearMajorityNode case
+// (named by a clear majority of present reporters but NOT all) asserts NOT jailed;
+// if anyone later switches activeBlameRule to a majority-of-reporters (b) or a
+// supermajority-gated derive (c), that assertion FAILS LOUDLY — turning the
+// accidental property into a deliberate, defended one.
+func (h HandlerTssKeysignSuite) TestKeysignFailConvergentBlameJailsButDivergentDoesNot(c *C) {
 	helper := newTssKeysignHandlerTestHelper(c)
 	handler := NewTssKeysignHandler(NewDummyMgrWithKeeper(helper.keeper))
 
-	// blamed candidates as real node accounts. majorityNode is named by all 4
-	// reporters (4 of 8 members => majority => jailed). boundaryNode by 3 of 8
-	// (below majority => not jailed). minorityA/B/C/D by a single reporter each
-	// (honest divergence => not jailed).
+	// blamed candidates as real node accounts. The vault has 8 members, so
+	// consensus fires at min = 4 member-reporters and derive runs with exactly
+	// those 4 present. Under the effective unanimity-of-present rule:
+	//   convergentNode   — named by ALL 4 present reporters => jailed (blame converged).
+	//   nearMajorityNode — named by 3 of the 4 present reporters: a clear 75%
+	//                      majority of reporters but NOT unanimous => NOT jailed.
+	//                      This is the guard rail: it would be jailed under a
+	//                      majority-of-reporters (b) or supermajority-derive (c)
+	//                      rule, so this NOT-jailed assertion fails loudly if the
+	//                      rule is ever loosened.
+	//   minorityA/B/C/D  — named by a single reporter each (honest divergence) => NOT jailed.
 	mkNode := func() NodeAccount {
 		na := GetRandomValidatorNode(NodeActive)
 		c.Assert(helper.keeper.SetNodeAccount(helper.ctx, na), IsNil)
 		return na
 	}
-	majorityNode := mkNode()
-	boundaryNode := mkNode()
+	convergentNode := mkNode()
+	nearMajorityNode := mkNode()
 	minorityA := mkNode()
 	minorityB := mkNode()
 	minorityC := mkNode()
@@ -1021,10 +1036,10 @@ func (h HandlerTssKeysignSuite) TestKeysignFailHonestDivergenceRequiresMajorityT
 
 	// four member-reporters submitting DIVERGENT blame lists onto one voter.
 	reporterBlame := [][]string{
-		{pk(majorityNode), pk(boundaryNode), pk(minorityA)},
-		{pk(majorityNode), pk(boundaryNode), pk(minorityB)},
-		{pk(majorityNode), pk(boundaryNode), pk(minorityC)},
-		{pk(majorityNode), pk(minorityD)},
+		{pk(convergentNode), pk(nearMajorityNode), pk(minorityA)},
+		{pk(convergentNode), pk(nearMajorityNode), pk(minorityB)},
+		{pk(convergentNode), pk(nearMajorityNode), pk(minorityC)},
+		{pk(convergentNode), pk(minorityD)},
 	}
 	coins := common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100))}
 	var voterID string
@@ -1057,10 +1072,14 @@ func (h HandlerTssKeysignSuite) TestKeysignFailHonestDivergenceRequiresMajorityT
 		return jail.IsJailed(helper.ctx)
 	}
 
-	// only the majority-named node is jailed.
-	c.Check(jailed(majorityNode), Equals, true)
-	c.Check(jailed(boundaryNode), Equals, false) // 3 of 8 — below majority
-	c.Check(jailed(minorityA), Equals, false)
+	// Only the node named by ALL present reporters (convergent blame) is jailed.
+	c.Check(jailed(convergentNode), Equals, true) // 4 of 4 present — unanimous => jailed
+	// GUARD RAIL: 3 of 4 present reporters is a clear majority but not unanimous.
+	// It MUST stay not-jailed under the intentional convergent-only rule; this
+	// fails loudly if activeBlameRule is switched to (b) majority-of-reporters or
+	// (c) a supermajority-gated derive.
+	c.Check(jailed(nearMajorityNode), Equals, false) // 3 of 4 present — majority, not unanimous => NOT jailed
+	c.Check(jailed(minorityA), Equals, false)        // 1 of 4 — honest divergence => NOT jailed
 	c.Check(jailed(minorityB), Equals, false)
 	c.Check(jailed(minorityC), Equals, false)
 	c.Check(jailed(minorityD), Equals, false)

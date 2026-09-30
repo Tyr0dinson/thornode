@@ -215,10 +215,11 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 		}
 		return &cosmos.Result{}, nil
 	}
-	// Combine every reporter's accumulated blame list into the agreed set.
-	// A node is jailed only when a majority of members independently named it
-	// (see deriveConsensusBlame / activeBlameRule) — honest divergence between
-	// reporters' lists is therefore insufficient to jail an innocent node.
+	// Combine every reporter's accumulated blame list into the agreed set. With
+	// activeBlameRule = A this jails a node only when blame CONVERGES — in effect
+	// when every present reporter named it (see activeBlameRule for why the bar is
+	// unanimity-of-present, and why that is intentional). Divergent Stage-B blame
+	// therefore jails no one; convergent Stage-A leader-blame still does.
 	violaters := deriveConsensusBlame(voter.Reports, vaultMemberNodes)
 	ctx.Logger().Info(
 		"tss keysign failure",
@@ -352,8 +353,12 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 type blameRule int
 
 const (
-	// blameRuleMajorityOfMembers (A) jails a node only when a MAJORITY of vault
-	// members independently blamed it. ACTIVE — this is the actual fix.
+	// blameRuleMajorityOfMembers (A) jails a node X iff HasSimpleMajority of the
+	// vault MEMBERS named X. ACTIVE. Read activeBlameRule below for its EFFECTIVE
+	// behaviour: because this is the same predicate and denominator as the
+	// consensus gate, and derive runs at exactly `min` reporters, it reduces to
+	// unanimity among the present reporters — it is NOT a majority-of-reporters
+	// rule, despite the name.
 	blameRuleMajorityOfMembers blameRule = iota
 	// blameRuleByzantineBound (B) jails a node blamed by at least f+1 reporters
 	// (one more than the tolerated faulty count). Kept as a documented fallback
@@ -363,17 +368,57 @@ const (
 
 // activeBlameRule is A. The threat here is HONEST DIVERGENCE, not collusion: an
 // honest reporter can name an innocent X purely because network asymmetry meant
-// it never received X's round message. The f+1 rule (B) only guarantees ONE
-// honest blamer, which honest divergence trivially satisfies — so B would leave
-// the defect standing. Requiring a MAJORITY of members to independently name X
-// makes honest divergence insufficient to jail, which is the property we need.
-// To fall back to B, change this to blameRuleByzantineBound (one line).
+// it never received X's round message.
+//
+// EFFECTIVE SEMANTICS — read this before changing anything. The jail bar and the
+// consensus gate are the SAME predicate over the SAME denominator:
+//     HasConsensus       -> HasSimpleMajority(MemberSignerCount, len(members))
+//     deriveConsensusBlame -> HasSimpleMajority(count(X),        len(members))
+// Consensus fires on the report that first pushes MemberSignerCount to
+// min = ceil(len(members)/2), and derive runs immediately after that gate — so
+// at derive there are EXACTLY `min` member-reporters present, and X clears the
+// jail bar only if count(X) >= min, i.e. ALL present reporters named X. !5029's
+// terminal-voter guard then freezes the voter, so later reports never revise it.
+// The effective rule is therefore UNANIMITY AMONG THE PRESENT REPORTERS:
+//   - CONVERGENT blame jails. Stage-A leader-blame is convergent by construction
+//     (every node computes the same deterministic LeaderNode), so an unreachable
+//     leader is still jailed reliably.
+//   - DIVERGENT blame jails NO ONE. Stage-B round-blame ("members I did not hear
+//     from") legitimately differs per reporter, so a single differing list drops
+//     the intersection below min and nobody is jailed.
+//
+// THIS IS INTENTIONAL (board 788, Itz's call, with an explicit override option).
+// Rationale in short:
+//   - Measured harm was 417 jails across 83/95 nodes in 19h, landing on innocent
+//     nodes via divergent Stage-B blame. The harm from convergent-only jailing is
+//     a real culprit escaping a jail that would not have cost it its seat anyway:
+//     a keysign jail blocks churn-IN only, so an active misbehaving node keeps
+//     signing regardless.
+//   - A genuinely dead node is already caught by blame-INDEPENDENT paths:
+//     LackSigning reschedule-and-slash, observation slash points, and churn-out on
+//     a poor score. Keysign blame is the weakest of several deterrents.
+//   - So we trade a measured, ongoing, fleet-wide false-positive for a
+//     hypothetical false-negative on a weak deterrent — and (a) is the cheapest
+//     option to reverse: if data later shows real culprits escaping, move to a
+//     supermajority-gated derive that keeps majority-of-members (deliberately,
+//     with evidence), NOT by lowering the denominator.
+//
+// Why NOT a majority-of-REPORTERS bar (halving the denominator to look less
+// strict): board 788's divergence is network asymmetry, which is CORRELATED, so a
+// partially-convergent cluster of >half the present reporters on one innocent is
+// reachable on its own — that reintroduces the false-jail this closes. Same class
+// of mistake as f+1 (blameRuleByzantineBound): a bar a correlated honest event
+// clears unaided. To fall back to B anyway, change this to blameRuleByzantineBound
+// (one line) — but see above for why that is wrong here.
 const activeBlameRule = blameRuleMajorityOfMembers
 
 // deriveConsensusBlame combines the accumulated per-reporter blame lists on a
-// keysign-fail voter into the agreed set of blamed pubkeys. Only reports from
-// vault members are counted, each reporter's list is de-duplicated so it counts
-// once per node, and the result is deterministically ordered.
+// keysign-fail voter into the agreed set of blamed pubkeys under activeBlameRule.
+// Only reports from vault members are counted, each reporter's list is
+// de-duplicated so it counts once per node, and the result is deterministically
+// ordered. NOTE: with activeBlameRule = A this runs at exactly `min` present
+// reporters, so the shipped behaviour is UNANIMITY AMONG PRESENT REPORTERS
+// (convergent blame jails, divergent blame does not) — see activeBlameRule.
 func deriveConsensusBlame(reports []*thortypes.TssKeysignFailReport, members NodeAccounts) []string {
 	memberAddrs := make(map[string]bool, len(members))
 	for _, na := range members {
