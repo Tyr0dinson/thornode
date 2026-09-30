@@ -452,12 +452,42 @@ func (f durableLackFixture) solDurableOnly(c *C) bool {
 	return hold
 }
 
-// When LackSigning re-issues a durable outbound on its own vault (nonce not advanced),
-// the vault's later pending SOL outbounds move to the same reschedule height, so the
-// signer's per-height queue snapshots cannot hold each other forever.
-func (s *SlasherDurableNonceSuite) TestKeepVaultRescheduleMovesLaterSiblings(c *C) {
+// heightRecordingStore records the height each item is re-added at.
+type heightRecordingStore struct {
+	*TxOutStoreDummy
+	heights map[string]int64
+	dups    int // items re-added more than once in one pass
+}
+
+func (h *heightRecordingStore) UnSafeAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, height int64) error {
+	if _, dup := h.heights[toi.InHash.String()]; dup {
+		h.dups++
+	}
+	h.heights[toi.InHash.String()] = height
+	return h.TxOutStoreDummy.UnSafeAddTxOutItem(ctx, mgr, toi, height)
+}
+
+// runRecording runs LackSigning with a store that records re-add heights.
+func (f durableLackFixture) runRecording(c *C) (map[string]int64, int64) {
+	mgr := NewDummyMgr()
+	mgr.K = f.keeper
+	store := &heightRecordingStore{TxOutStoreDummy: f.store, heights: map[string]int64{}}
+	mgr.txOutStore = store
+	c.Assert(newSlasher(f.keeper, NewDummyEventMgr()).LackSigning(f.ctx, mgr), IsNil)
+	c.Assert(store.dups, Equals, 0)
+	resched := f.ctx.BlockHeight()
+	if f.keeper.coalesce > 1 && resched%f.keeper.coalesce != 0 {
+		resched += f.keeper.coalesce - resched%f.keeper.coalesce
+	}
+	return store.heights, resched
+}
+
+// laterSiblingFixture: toi at issuedAt plus a later pending sibling on the same vault,
+// with the vault's nonce committed before issue (keepVault).
+func laterSiblingFixture(c *C) (durableLackFixture, TxOutItem, *TxOut) {
 	f := newDurableLackFixture(c)
-	f.commitNonce(issuedAt - 1) // committed before issue: a copy may still land (keepVault)
+	f.commitNonce(issuedAt - 1)
+	f.keeper.coalesce = 7 // reschedule height differs from the current height
 	later := f.toi
 	later.InHash = GetRandomTxHash()
 	dest, err := GetRandomEd25519PubKey().GetAddress(common.SOLChain)
@@ -466,13 +496,62 @@ func (s *SlasherDurableNonceSuite) TestKeepVaultRescheduleMovesLaterSiblings(c *
 	block := NewTxOut(issuedAt + 5)
 	block.TxArray = append(block.TxArray, later)
 	f.keeper.txOutAt = map[int64]*TxOut{issuedAt + 5: block}
+	return f, later, block
+}
 
-	items := f.run(c)
-	c.Assert(items, HasLen, 2)
-	c.Assert(items[0].InHash.Equals(f.toi.InHash), Equals, true)
-	c.Assert(items[1].InHash.Equals(later.InHash), Equals, true)
-	for _, it := range items {
-		c.Assert(it.VaultPubKey.Equals(f.assigned.PubKey), Equals, true)
-	}
+// When LackSigning re-issues a durable outbound on its own vault (nonce not advanced),
+// the vault's later pending SOL outbounds move to the SAME reschedule height, so the
+// signer's per-height queue snapshots cannot hold each other forever.
+func (s *SlasherDurableNonceSuite) TestKeepVaultRescheduleMovesLaterSiblings(c *C) {
+	f, later, block := laterSiblingFixture(c)
+	heights, resched := f.runRecording(c)
+	c.Assert(resched != f.ctx.BlockHeight(), Equals, true)
+	c.Assert(heights[f.toi.InHash.String()], Equals, resched)
+	c.Assert(heights[later.InHash.String()], Equals, resched)
 	c.Assert(block.TxArray[0].OutHash.Equals(common.BlankTxID), Equals, true)
+}
+
+// The same-vault co-location moves siblings even past MaxOutboundAttempts: the
+// keepVault path has no recovery for them, so leaving one behind would deadlock.
+func (s *SlasherDurableNonceSuite) TestKeepVaultRescheduleMovesExhaustedSiblings(c *C) {
+	f, later, block := laterSiblingFixture(c)
+	f.keeper.maxOutboundAttempts = 1 // one signing period since the inbound: exhausted
+	heights, resched := f.runRecording(c)
+	c.Assert(heights[f.toi.InHash.String()], Equals, resched)
+	c.Assert(heights[later.InHash.String()], Equals, resched)
+	c.Assert(block.TxArray[0].OutHash.Equals(common.BlankTxID), Equals, true)
+}
+
+// The retired-vault branch (inactive vault that still holds the funds) re-adds on
+// the same vault too, and co-locates the later siblings the same way.
+func (s *SlasherDurableNonceSuite) TestRetiredVaultRescheduleMovesLaterSiblings(c *C) {
+	f, later, block := laterSiblingFixture(c)
+	f.keeper.vaults[0].Status = InactiveVault // still funded (fixture coins)
+	heights, resched := f.runRecording(c)
+	c.Assert(heights[f.toi.InHash.String()], Equals, resched)
+	c.Assert(heights[later.InHash.String()], Equals, resched)
+	c.Assert(block.TxArray[0].OutHash.Equals(common.BlankTxID), Equals, true)
+}
+
+// On the co-location path exhausted siblings are no longer skipped by the budget, so
+// the landed-copy hold is what stops a second payment: a later sibling whose copy
+// already landed is left where it is, unmoved and unsent.
+func (s *SlasherDurableNonceSuite) TestKeepVaultColocationSkipsLandedExhaustedSibling(c *C) {
+	f, later, block := laterSiblingFixture(c)
+	f.keeper.maxOutboundAttempts = 1
+	paidHash := GetRandomTxHash()
+	from, err := f.assigned.PubKeyEddsa.GetAddress(common.SOLChain)
+	c.Assert(err, IsNil)
+	paid := common.NewObservedTx(common.Tx{
+		ID: paidHash, Chain: common.SOLChain, FromAddress: from, ToAddress: later.ToAddress,
+		Coins: common.Coins{later.Coin}, Gas: later.MaxGas, Memo: later.Memo,
+	}, 100, f.assigned.PubKey, 100)
+	f.keeper.links = []common.TxID{paidHash}
+	f.keeper.outVoters[paidHash.String()] = ObservedTxVoter{TxID: paidHash, Tx: paid, Txs: []common.ObservedTx{paid}, FinalisedHeight: 50}
+
+	heights, resched := f.runRecording(c)
+	c.Assert(heights[f.toi.InHash.String()], Equals, resched)
+	_, moved := heights[later.InHash.String()]
+	c.Assert(moved, Equals, false)
+	c.Assert(block.TxArray[0].OutHash.IsEmpty(), Equals, true)
 }

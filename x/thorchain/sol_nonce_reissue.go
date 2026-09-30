@@ -29,13 +29,17 @@ import (
 // left for normal outbound matching. Items with a landed copy (solDurableCopyLanded)
 // and items past MaxOutboundAttempts are also left to LackSigning.
 func reissueSupersededSolDurable(ctx cosmos.Context, mgr Manager, vault Vault, prevHeight int64, consumed *common.ObservedTx) {
-	reissueSolDurableAt(ctx, mgr, vault, prevHeight, consumed, ctx.BlockHeight())
+	reissueSolDurableAt(ctx, mgr, vault, prevHeight, consumed, ctx.BlockHeight(), true, solSiblingCache{})
 }
 
 // reissueSolDurableAt is reissueSupersededSolDurable re-adding the items at height at
 // (the current height, or LackSigning's reschedule height so they share one queue
-// snapshot with the item it re-adds).
-func reissueSolDurableAt(ctx cosmos.Context, mgr Manager, vault Vault, prevHeight int64, consumed *common.ObservedTx, at int64) {
+// snapshot with the item it re-adds). respectBudget skips items past
+// MaxOutboundAttempts: right after a nonce advance LackSigning's recovery handles
+// them, but LackSigning's same-vault (keepVault) path has no such recovery, so its
+// co-location call must move them too or two exhausted siblings deadlock.
+// siblings is the landed-copy scan cache, shared with the caller's pass when it has one.
+func reissueSolDurableAt(ctx cosmos.Context, mgr Manager, vault Vault, prevHeight int64, consumed *common.ObservedTx, at int64, respectBudget bool, siblings solSiblingCache) {
 	k := mgr.Keeper()
 	now := ctx.BlockHeight()
 	signingTransPeriod := k.GetConfigInt64(ctx, constants.SigningTransactionPeriod)
@@ -49,7 +53,12 @@ func reissueSolDurableAt(ctx cosmos.Context, mgr Manager, vault Vault, prevHeigh
 		nonceAddr, _ = common.SolNonceAccountAddress(vaultAddr.String())
 	}
 	slasher := &SlasherImpl{keeper: k}
-	siblings := solSiblingCache{}
+	// Telemetry: the nonce advanced (re-issue) or LackSigning co-located siblings
+	// on a vault whose nonce has not moved.
+	reason := "durable_nonce_advanced"
+	if !respectBudget {
+		reason = "durable_nonce_colocate"
+	}
 	start := prevHeight
 	// Older heights have already been through LackSigning.
 	if signingTransPeriod > 0 && start < now-signingTransPeriod {
@@ -85,7 +94,7 @@ func reissueSolDurableAt(ctx cosmos.Context, mgr Manager, vault Vault, prevHeigh
 			}
 			// Past the attempt budget, stop refreshing the height so LackSigning's
 			// recovery (attempt limit, treasury) still reaches the item.
-			if maxOutboundAttempts > 0 && signingTransPeriod > 0 &&
+			if respectBudget && maxOutboundAttempts > 0 && signingTransPeriod > 0 &&
 				(now-inVoter.FinalisedHeight)/signingTransPeriod >= maxOutboundAttempts {
 				continue
 			}
@@ -108,7 +117,7 @@ func reissueSolDurableAt(ctx cosmos.Context, mgr Manager, vault Vault, prevHeigh
 				[]metrics.Label{
 					telemetry.NewLabel("chain", item.Chain.String()),
 					telemetry.NewLabel("asset", item.Coin.Asset.String()),
-					telemetry.NewLabel("reason", "durable_nonce_advanced"),
+					telemetry.NewLabel("reason", reason),
 				},
 			)
 		}

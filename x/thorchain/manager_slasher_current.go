@@ -518,7 +518,7 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 							if durableKeepVault {
 								// Same as the main reschedule below: keep the vault's later
 								// durable siblings on one queue snapshot.
-								reissueSolDurableAt(ctx, mgr, vault, height+1, nil, rescheduleHeight)
+								reissueSolDurableAt(ctx, mgr, vault, height+1, nil, rescheduleHeight, false, siblingOutHashes)
 							}
 						}
 						continue
@@ -799,7 +799,7 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 					// other still pending, so neither ever signs until the nonce moves.
 					// Move them to the same height so they share one snapshot; they all
 					// carry the same unconsumed nonce, so at most one copy lands.
-					reissueSolDurableAt(ctx, mgr, vault, height+1, nil, rescheduleHeight)
+					reissueSolDurableAt(ctx, mgr, vault, height+1, nil, rescheduleHeight, false, siblingOutHashes)
 				}
 			}
 		}
