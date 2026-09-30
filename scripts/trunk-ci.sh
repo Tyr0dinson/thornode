@@ -29,9 +29,13 @@ else
   FLAGS+=(--all)
 fi
 
-# run trunk, retrying once if it crashed with an internal error. That banner
-# means trunk died before reporting (2026-09-14..28: 21 lint failures, none with
-# findings), so a retry cannot hide a real finding.
+# run trunk, retrying once if it crashed with an internal error or lost a tool
+# install race. The internal-error banner means trunk died before reporting
+# (2026-09-14..28: 21 lint failures, none with findings). "lockf() failed"
+# comes from two lint jobs installing the same tool into the shared cache at
+# once, which happens when the cache is cold or .trunk/trunk.yaml bumps a tool;
+# the retry finds the tool installed. A retry reruns every linter, so it cannot
+# hide a real finding.
 run_trunk() {
   echo "Running: $SCRIPT_DIR/trunk check ${FLAGS[*]}"
   exec 3>&1
@@ -41,9 +45,9 @@ run_trunk() {
 }
 set +e
 run_trunk
-if [ "$STATUS" -ne 0 ] && echo "$OUT" | grep -q "Trunk Internal Error"; then
+if [ "$STATUS" -ne 0 ] && echo "$OUT" | grep -qE "Trunk Internal Error|lockf\(\) failed"; then
   echo
-  echo "Trunk crashed with an internal error; retrying once."
+  echo "Trunk crashed or lost a tool install race; retrying once."
   sleep 10
   run_trunk
 fi

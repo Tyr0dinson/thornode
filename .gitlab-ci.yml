@@ -183,9 +183,8 @@ variables:
 # What test-simulation and test-regression wait for. On 2026-09-15..29 these
 # jobs caught most pipelines that failed a check before the sim (generate 39,
 # proto 37, unit-tests 14), and they finish in about 10 min. lint is left out
-# although it caught 40: resource_group trunk-lint serializes it across every
-# pipeline, and on 2026-09-29 it started 52-126 min in, which held the sim back
-# by the same amount. `optional` covers pipelines where rules leave a job out
+# although it caught 40: on 2026-09-29, behind the global trunk lock it had
+# then, it started 52-126 min in and held the sim back by the same amount. `optional` covers pipelines where rules leave a job out
 # (unit-tests on some merge trains). No artifacts are needed from them.
 .long-test-gate:
   needs:
@@ -415,8 +414,11 @@ lint:
       when: on_success
   stage: test
   needs: []
-  # limit to 1 concurrent execution as shared trunk cache can cause internal error
-  resource_group: trunk-lint
+  # No resource_group: concurrent runs share /trunk-cache safely once it is warm
+  # (4 at once on one cache, 4/4 clean), and scripts/trunk-ci.sh retries the
+  # tool install race a cold cache can hit. The old global lock made lint wait
+  # 25 min at p75 and 64 at p90 (2026-09-22..29), and did not prevent the trunk
+  # internal errors it was added for: all 20 that week ran with no other lint.
   variables:
     XDG_CACHE_HOME: /trunk-cache
     PKGS: jq
