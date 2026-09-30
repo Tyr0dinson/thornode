@@ -1,10 +1,46 @@
 image: golang:1.26.4
 
+# Retry jobs that failed for infrastructure reasons, never on script_failure.
+# Server-side execution timeouts are left out: those jobs really ran too long.
+# Exit code 75 (EX_TEMPFAIL) is how our own scripts flag an infrastructure
+# failure the runner cannot classify, e.g. the dind service never came up.
+# A job-level `retry:` replaces this entirely, so jobs that set their own must
+# repeat these reasons.
+default:
+  # Auto-cancel leaves a pipeline alone once any non-interruptible job has
+  # started, so without this a superseded MR pipeline always ran to the end.
+  interruptible: true
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - runner_external_dependency_failure
+      - runner_interrupted
+      - api_failure
+      - stuck_pending_with_matching_runners
+      - no_updates_running
+      - scheduler_failure
+      - unknown_failure
+      - data_integrity_failure
+    exit_codes:
+      - 75
+
+# MR pipelines: a newer push cancels the superseded pipeline, and the first
+# failed job cancels the rest of its pipeline. Retries and allow_failure jobs
+# don't count as failed for this. Tag and protected-branch pipelines publish
+# images and docs, so they always run to completion.
 workflow:
+  auto_cancel:
+    on_new_commit: interruptible
+    on_job_failure: all
   rules:
     - if: $CI_MERGE_REQUEST_IID
     - if: $CI_COMMIT_TAG
+      auto_cancel: &no_auto_cancel
+        on_new_commit: none
+        on_job_failure: none
     - if: $CI_COMMIT_REF_PROTECTED == "true"
+      auto_cancel: *no_auto_cancel
     - if: $CI_PIPELINE_SOURCE == "api"
     - if: $CI_PIPELINE_SOURCE == "web"
     - if: $CI_PIPELINE_SOURCE == "webide"
@@ -23,6 +59,13 @@ variables:
   # Go via `apk add go` download the toolchain pinned in go.mod (toolchain go1.26.4).
   GOTOOLCHAIN: auto
   SAST_EXCLUDED_ANALYZERS: eslint,bandit,semgrep
+  # Let the runner retry the stages it owns. A failed source fetch ("fetch-pack:
+  # unexpected disconnect", "GitLab is currently unable to handle this request
+  # due to load") is reported as script_failure, so `retry:` cannot catch it.
+  GET_SOURCES_ATTEMPTS: 3
+  ARTIFACT_DOWNLOAD_ATTEMPTS: 3
+  RESTORE_CACHE_ATTEMPTS: 3
+  EXECUTOR_JOB_SECTION_ATTEMPTS: 3
   SAST_EXCLUDED_PATHS: spec, test, tests, tmp, .cache
 
 .use_dind: &use_dind
@@ -30,13 +73,127 @@ variables:
   services:
     - docker:28.5.2-dind
 
-# Authenticate git to gitlab.com using the per-pipeline CI_JOB_TOKEN so
-# `go mod download` can fetch private modules (tss-lib-private). Include with
-# `!reference [.go-private-auth, before_script]` in any job that resolves
-# Go modules outside of a docker build.
+# Wait for the dind service before the first docker command. If it never
+# answers ("dial tcp ...:2376: connect: no route to host"), exit 75 so the
+# default retry picks the job up instead of failing it as a script error.
+# https://gitlab.com/gitlab-org/gitlab-runner/-/issues/27384#note_497228752
+.wait-for-dind:
+  before_script:
+    - |
+      i=0
+      until docker info >/dev/null 2>&1; do
+        i=$((i + 1))
+        if [ "$i" -ge 60 ]; then
+          echo "dind service at $DOCKER_HOST did not answer within 60s"
+          docker info || true
+          exit 75
+        fi
+        echo "Waiting for docker to start"
+        sleep 1
+      done
+
+# Registry setup for dind jobs, after .wait-for-dind:
+# - Log in to Docker Hub for the higher pull rate limit. The login is only a
+#   rate-limit courtesy, so after 3 attempts carry on anonymously rather than
+#   fail (2026-09-14..28: 19 jobs died on this login alone).
+# - Export DOCKER_MIRROR, the group dependency proxy prefix, for docker builds
+#   and in-dind pulls. It stays unset when the pipeline user cannot use the
+#   proxy (users outside the thorchain group get "manifest unknown" and fall
+#   back to Docker Hub), so never use it for job or service images.
+.dind-registries:
+  before_script:
+    - |
+      for i in 1 2 3; do
+        echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin && break
+        if [ "$i" = 3 ]; then
+          echo "Docker Hub login failed 3 times; continuing with anonymous pulls"
+        else
+          sleep 10
+        fi
+      done
+    - |
+      if [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ]; then
+        export DOCKER_MIRROR="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
+        if ! echo "$CI_DEPENDENCY_PROXY_PASSWORD" | docker login "$CI_DEPENDENCY_PROXY_SERVER" -u "$CI_DEPENDENCY_PROXY_USER" --password-stdin; then
+          echo "Dependency proxy login failed; falling back to Docker Hub"
+          unset DOCKER_MIRROR
+        elif ! docker manifest inspect "${DOCKER_MIRROR}golang:1.26.4" >/dev/null 2>&1; then
+          echo "Dependency proxy missing golang:1.26.4; falling back to Docker Hub"
+          unset DOCKER_MIRROR
+        fi
+      fi
+
+# Pull proto-builder from this project's registry, where mirror-ci-images
+# copies it on protected branches, instead of ghcr.io (2026-09-14..28: 55 proto
+# job failures on ghcr.io token and manifest timeouts). Falls back to ghcr.io
+# when the mirror lacks the version the Makefile pins, e.g. in the MR that
+# bumps protoVer. Any Developer's CI_JOB_TOKEN can push to this registry, so
+# the image is always pulled by the Makefile's protoDigest, never by tag alone.
+.proto-builder-image:
+  before_script:
+    - |
+      PROTO_VER=$(sed -n 's/^protoVer=//p' Makefile)
+      PROTO_DIGEST=$(sed -n 's/^protoDigest=//p' Makefile)
+      PROTO_MIRROR="$CI_REGISTRY_IMAGE/ci/proto-builder"
+      if docker pull -q "$PROTO_MIRROR:$PROTO_VER@$PROTO_DIGEST" >/dev/null 2>&1; then
+        export PROTO_BUILDER_REPO="$PROTO_MIRROR"
+      else
+        echo "$PROTO_MIRROR:$PROTO_VER@$PROTO_DIGEST unavailable; pulling proto-builder from ghcr.io"
+      fi
+
+# buf.build's edge answers the Finland runner's egress IP with HTTP 403, so the
+# BUF_PROXY CI/CD variable routes buf through a proxy (see the Makefile). That
+# proxy only works from Finland: from any other runner it refuses the
+# connection and buf fails with "the server hosted at that remote is
+# unavailable". Keep BUF_PROXY only when this runner cannot reach api.buf.build
+# itself (HTTP 403 or no answer). Any other status, including the 404 its root
+# returns, means direct access works. Needs wget and sed (busybox has both).
+# wget exits non-zero on every outcome that matters here (403, 404, no
+# answer), and job scripts run with errexit and pipefail, so its status is
+# discarded and only the HTTP status line it printed is used.
+.buf-egress:
+  before_script:
+    - |
+      if [ -n "${BUF_PROXY:-}" ]; then
+        BUF_STATUS=$( { wget -q -S -T 10 -O /dev/null https://api.buf.build/ 2>&1 || true; } | sed -n 's/^ *HTTP\/[0-9.]* \([0-9]*\).*/\1/p' | tail -1)
+        if [ -n "$BUF_STATUS" ] && [ "$BUF_STATUS" != 403 ]; then
+          echo "api.buf.build reachable directly (HTTP $BUF_STATUS); not using BUF_PROXY"
+          unset BUF_PROXY
+        else
+          echo "api.buf.build blocked or unreachable directly (${BUF_STATUS:-no response}); using BUF_PROXY"
+        fi
+      fi
+
+# Authenticate git to gitlab.com so `go mod download` can fetch the private
+# module tss-lib-private, and export GO_PRIVATE_GIT_CREDENTIAL for docker
+# builds. Prefers the TSS_LIB_PRIVATE_READ_TOKEN CI/CD variable over
+# CI_JOB_TOKEN, which only works when the pipeline user can read tss-lib-private.
+# Include with `!reference [.go-private-auth, before_script]` in any job that
+# resolves Go modules; jobs that build in dind also set
+# GO_PRIVATE_AUTH_REQUIRED=1 to fail fast when no credential works. Needs git.
 .go-private-auth:
   before_script:
-    - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com/".insteadOf "https://gitlab.com/"
+    - . ./scripts/ci-go-private-auth.sh
+
+# Install $PKGS from the distro mirror. A DNS blip on the runner ("Temporary
+# failure resolving 'deb.debian.org'") only warns in `apt-get update` and then
+# fails the install as a script error, so retry and exit 75 if the mirror stays
+# unreachable. Include with `!reference [.pkg-install, before_script]`.
+.pkg-install:
+  before_script:
+    - |
+      for i in 1 2 3; do
+        if command -v apk >/dev/null; then
+          apk add --no-cache $PKGS && break
+        else
+          apt-get update && apt-get install -y --no-install-recommends $PKGS && break
+        fi
+        if [ "$i" = 3 ]; then
+          echo "package mirror unreachable, treating as an infrastructure failure"
+          exit 75
+        fi
+        sleep 15
+      done
 
 stages:
   - .pre
@@ -59,8 +216,10 @@ fork:
   rules:
     - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
       when: always
+  variables:
+    PKGS: git jq
   before_script:
-    - apt-get update && apt-get install -y --no-install-recommends git jq
+    - !reference [.pkg-install, before_script]
   script:
     - |
       # First, check if only text files are changed in this fork MR
@@ -128,24 +287,24 @@ generate:
     max: 2
     when:
       - runner_system_failure
-      - stuck_or_timeout_failure
+      - runner_external_dependency_failure
+      - runner_interrupted
+      - api_failure
+      - stuck_pending_with_matching_runners
+      - no_updates_running
       - scheduler_failure
+      - unknown_failure
+      - data_integrity_failure
       - script_failure
   stage: protobuf
   <<: *use_dind
   before_script:
+    - !reference [.wait-for-dind, before_script]
     - apk -U add bash curl findutils git go jq make protoc sed wget python3
     - !reference [.go-private-auth, before_script]
-    - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
-    - |
-      if [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ]; then
-        export DOCKER_MIRROR="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
-        echo "$CI_DEPENDENCY_PROXY_PASSWORD" | docker login "$CI_DEPENDENCY_PROXY_SERVER" -u "$CI_DEPENDENCY_PROXY_USER" --password-stdin
-        if ! docker manifest inspect "${DOCKER_MIRROR}golang:1.26.4" >/dev/null 2>&1; then
-          echo "Dependency proxy missing golang:1.26.4; falling back to Docker Hub"
-          unset DOCKER_MIRROR
-        fi
-      fi
+    - !reference [.dind-registries, before_script]
+    - !reference [.proto-builder-image, before_script]
+    - !reference [.buf-egress, before_script]
   script:
     - |
       export PATH="$PATH:/root/go/bin"
@@ -182,8 +341,10 @@ test-mocknet-scripts:
     - *rules
   stage: test
   image: alpine:3.21
+  variables:
+    PKGS: bash python3 jq
   before_script:
-    - apk add --no-cache bash python3 jq
+    - !reference [.pkg-install, before_script]
   script:
     - python3 -m unittest discover -s build/scripts/tests -v
 
@@ -215,8 +376,9 @@ lint:
   resource_group: trunk-lint
   variables:
     XDG_CACHE_HOME: /trunk-cache
+    PKGS: jq
   before_script:
-    - apt-get update && apt-get install -y --no-install-recommends jq
+    - !reference [.pkg-install, before_script]
     - !reference [.go-private-auth, before_script]
   script:
     - make lint-ci
@@ -226,7 +388,9 @@ proto-check-formatting:
   stage: protobuf
   <<: *use_dind
   before_script:
+    - !reference [.wait-for-dind, before_script]
     - apk -U add findutils make
+    - !reference [.proto-builder-image, before_script]
   script:
     - make proto-format-check
 
@@ -236,7 +400,10 @@ proto-lint:
   stage: protobuf
   <<: *use_dind
   before_script:
+    - !reference [.wait-for-dind, before_script]
     - apk -U add make
+    - !reference [.proto-builder-image, before_script]
+    - !reference [.buf-egress, before_script]
   script:
     - make proto-lint
 
@@ -258,7 +425,10 @@ proto-check-breaking:
   stage: protobuf
   <<: *use_dind
   before_script:
+    - !reference [.wait-for-dind, before_script]
     - apk -U add git make
+    - !reference [.proto-builder-image, before_script]
+    - !reference [.buf-egress, before_script]
   script:
     - make proto-check-breaking
 
@@ -276,26 +446,13 @@ build-thornode:
       when: always
   stage: build
   <<: *use_dind
+  variables:
+    GO_PRIVATE_AUTH_REQUIRED: "1"
   before_script:
-    # https://gitlab.com/gitlab-org/gitlab-runner/-/issues/27384#note_497228752
-    - |
-      for i in $(seq 1 30)
-      do
-          docker info && break
-          echo "Waiting for docker to start"
-          sleep 1s
-      done
+    - !reference [.wait-for-dind, before_script]
     - apk -U add make git jq curl protoc
-    - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
-    - |
-      if [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ]; then
-        export DOCKER_MIRROR="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
-        echo "$CI_DEPENDENCY_PROXY_PASSWORD" | docker login "$CI_DEPENDENCY_PROXY_SERVER" -u "$CI_DEPENDENCY_PROXY_USER" --password-stdin
-        if ! docker manifest inspect "${DOCKER_MIRROR}golang:1.26.4" >/dev/null 2>&1; then
-          echo "Dependency proxy missing golang:1.26.4; falling back to Docker Hub"
-          unset DOCKER_MIRROR
-        fi
-      fi
+    - !reference [.go-private-auth, before_script]
+    - !reference [.dind-registries, before_script]
     - make docker-gitlab-login
   script:
     - make docker-gitlab-build
@@ -321,6 +478,12 @@ chain-evm:
 
 go-tss:
   rules:
+    # Keeps honest fork MRs from running with tss-lib-private credentials. It is
+    # not a security boundary: a fork MR pipeline a maintainer runs in this
+    # project uses the fork's .gitlab-ci.yml and receives every unprotected
+    # project variable, so review the fork's diff before running it.
+    - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
+      when: never
     - changes:
         paths:
           - bifrost/tss/go-tss/**/*
@@ -348,10 +511,89 @@ pages:
   script:
     - make docs-generate
 
+# Copy third-party images the dind jobs pull into this project's registry,
+# registry to registry with `docker buildx imagetools`, so no dind daemon is
+# involved. Running on protected branches only is not a registry ACL: any
+# Developer's CI_JOB_TOKEN can push here too. So the copy is taken by the
+# pinned digest, consumers pull by that digest, and a tag that points anywhere
+# else is re-pointed.
+mirror-ci-images:
+  rules:
+    - if: $CI_COMMIT_BRANCH && $CI_COMMIT_REF_PROTECTED == "true"
+  stage: build
+  needs: []
+  # consumers fall back to the upstream registry, so a failed copy only
+  # costs reliability until the next protected pipeline
+  allow_failure: true
+  image: docker:28.5.2
+  variables:
+    DOCKER_HOST: ""
+    DOCKER_TLS_VERIFY: ""
+    DOCKER_CERT_PATH: ""
+  script:
+    - mkdir -p ~/.docker
+    - |
+      printf '{"auths":{"%s":{"auth":"%s"}}}' "$CI_REGISTRY" \
+        "$(printf '%s:%s' "$CI_REGISTRY_USER" "$CI_REGISTRY_PASSWORD" | base64 | tr -d '\n')" > ~/.docker/config.json
+    - |
+      # mirror <source repo> <dest repo> <tag> <digest>
+      mirror() {
+        _have=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$2:$3" 2>/dev/null || true)
+        if [ "$_have" = "$4" ]; then
+          echo "$2:$3 already mirrored at $4"
+          return
+        fi
+        [ -z "$_have" ] || echo "$2:$3 is $_have, not $4; re-pointing it"
+        docker buildx imagetools create --tag "$2:$3" "$1:$3@$4"
+      }
+      PROTO_VER=$(sed -n 's/^protoVer=//p' Makefile)
+      PROTO_DIGEST=$(sed -n 's/^protoDigest=//p' Makefile)
+      mirror ghcr.io/cosmos/proto-builder "$CI_REGISTRY_IMAGE/ci/proto-builder" "$PROTO_VER" "$PROTO_DIGEST"
+
+# Build the dind jobs' tools image (ci/Dockerfile.ci-tools) when a push to the
+# default branch changes its Dockerfile, or on demand from a web pipeline on a
+# protected branch. Only default-branch pushes publish automatically: promoting
+# the same Dockerfile to stagenet or mainnet, and API pipelines (where
+# rules:changes is always true), would otherwise re-run it into the
+# existing-tag error. It refuses to overwrite an existing tag, so a change must
+# bump CI_TOOLS_VERSION. Any Developer's CI_JOB_TOKEN can push to this
+# registry, so jobs must reference the image by the digest this job prints,
+# never by tag alone.
+build-ci-tools-image:
+  rules:
+    - if: $CI_COMMIT_BRANCH && $CI_COMMIT_REF_PROTECTED == "true" && $CI_PIPELINE_SOURCE == "web"
+      when: manual
+      allow_failure: true
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_COMMIT_REF_PROTECTED == "true"
+      changes:
+        - ci/Dockerfile.ci-tools
+  stage: build
+  needs: []
+  <<: *use_dind
+  before_script:
+    - !reference [.wait-for-dind, before_script]
+    - !reference [.dind-registries, before_script]
+    - echo "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" --password-stdin
+  script:
+    - |
+      VERSION=$(sed -n 's/^ENV CI_TOOLS_VERSION=//p' ci/Dockerfile.ci-tools)
+      IMAGE="$CI_REGISTRY_IMAGE/ci/tools:$VERSION"
+      if docker manifest inspect "$IMAGE" >/dev/null 2>&1; then
+        echo "$IMAGE already exists; bump CI_TOOLS_VERSION in ci/Dockerfile.ci-tools to publish a change."
+        exit 1
+      fi
+      docker build --pull --build-arg DOCKER_MIRROR -t "$IMAGE" - <ci/Dockerfile.ci-tools
+      docker run --rm --entrypoint sh "$IMAGE" -c \
+        'docker compose version && docker buildx version && go version && make --version && git --version && jq --version && python3 --version && protoc --version && bash --version'
+      docker push "$IMAGE"
+      echo "Pin jobs to: $(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE")"
+
 build-thorscan:
   rules: *build-thornode-rules
   stage: build
   <<: *use_dind
+  before_script:
+    - !reference [.wait-for-dind, before_script]
   script:
     - apk -U add make
     - make thorscan-build
@@ -361,8 +603,13 @@ build-events:
   rules: *build-thornode-rules
   stage: build
   <<: *use_dind
+  variables:
+    GO_PRIVATE_AUTH_REQUIRED: "1"
+  before_script:
+    - !reference [.wait-for-dind, before_script]
+    - apk -U add git make
+    - !reference [.go-private-auth, before_script]
   script:
-    - apk -U add make
     - make events-build
     - make events-gitlab-push
 
@@ -372,6 +619,7 @@ test-simulation:
   variables:
     DOCKER_BUILDKIT: "1"
     PARALLELISM: "4"
+    GO_PRIVATE_AUTH_REQUIRED: "1"
   rules:
     - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
       when: never
@@ -381,8 +629,14 @@ test-simulation:
     max: 2
     when:
       - runner_system_failure
-      - stuck_or_timeout_failure
+      - runner_external_dependency_failure
+      - runner_interrupted
+      - api_failure
+      - stuck_pending_with_matching_runners
+      - no_updates_running
       - scheduler_failure
+      - unknown_failure
+      - data_integrity_failure
       - script_failure
   stage: long-test
   <<: *use_dind
@@ -393,23 +647,12 @@ test-simulation:
       - ./logs/
   environment:
     name: integration
+  # docker compose is the plugin shipped in the docker image, not a download.
   before_script:
+    - !reference [.wait-for-dind, before_script]
     - apk -U add git make protoc bash go jq python3
-    - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
-    - |
-      if [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ]; then
-        export DOCKER_MIRROR="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
-        echo "$CI_DEPENDENCY_PROXY_PASSWORD" | docker login "$CI_DEPENDENCY_PROXY_SERVER" -u "$CI_DEPENDENCY_PROXY_USER" --password-stdin
-        if ! docker manifest inspect "${DOCKER_MIRROR}golang:1.26.4" >/dev/null 2>&1; then
-          echo "Dependency proxy missing golang:1.26.4; falling back to Docker Hub"
-          unset DOCKER_MIRROR
-        fi
-      fi
-    - |
-      PLUGIN="$HOME/.docker/cli-plugins/docker-compose"
-      mkdir -p $(dirname $PLUGIN)
-      wget https://github.com/docker/compose/releases/download/v2.28.1/docker-compose-linux-x86_64 -O $PLUGIN
-      chmod +x $PLUGIN
+    - !reference [.go-private-auth, before_script]
+    - !reference [.dind-registries, before_script]
   script:
     - make test-simulation-cluster
   after_script:
@@ -460,8 +703,14 @@ test-regression:
     max: 2
     when:
       - runner_system_failure
-      - stuck_or_timeout_failure
+      - runner_external_dependency_failure
+      - runner_interrupted
+      - api_failure
+      - stuck_pending_with_matching_runners
+      - no_updates_running
       - scheduler_failure
+      - unknown_failure
+      - data_integrity_failure
       - script_failure
   stage: long-test
   <<: *use_dind
@@ -472,18 +721,12 @@ test-regression:
     TIME_FACTOR: "2"
     PARALLELISM: "6"
     FAIL_FAST: "true"
+    GO_PRIVATE_AUTH_REQUIRED: "1"
   before_script:
+    - !reference [.wait-for-dind, before_script]
     - apk -U add make git bash
-    - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
-    - |
-      if [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ]; then
-        export DOCKER_MIRROR="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
-        echo "$CI_DEPENDENCY_PROXY_PASSWORD" | docker login "$CI_DEPENDENCY_PROXY_SERVER" -u "$CI_DEPENDENCY_PROXY_USER" --password-stdin
-        if ! docker manifest inspect "${DOCKER_MIRROR}golang:1.26.4" >/dev/null 2>&1; then
-          echo "Dependency proxy missing golang:1.26.4; falling back to Docker Hub"
-          unset DOCKER_MIRROR
-        fi
-      fi
+    - !reference [.go-private-auth, before_script]
+    - !reference [.dind-registries, before_script]
   script:
     - make test-regression
     - |

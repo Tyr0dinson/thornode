@@ -31,11 +31,19 @@ BRANCH?=$(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 GITREF?=$(shell git rev-parse --short HEAD 2>/dev/null)
 BUILDTAG?=$(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 
-# Forward CI_JOB_TOKEN into docker builds as a BuildKit secret so the
-# in-image `go mod download` can fetch tss-lib-private. Empty when running
-# locally without the token (Dockerfile mount is required=false).
+# Forward a gitlab.com credential ("user:token") into docker builds as the
+# go_private_auth BuildKit secret so the in-image `go mod download` can fetch
+# tss-lib-private. CI picks it with scripts/ci-go-private-auth.sh; without that,
+# fall back to CI_JOB_TOKEN. Empty when running locally without either
+# (Dockerfile mount is required=false).
+ifeq ($(strip $(GO_PRIVATE_GIT_CREDENTIAL)),)
 ifneq ($(strip $(CI_JOB_TOKEN)),)
-DOCKER_BUILD_SECRETS := --secret id=ci_job_token,env=CI_JOB_TOKEN
+GO_PRIVATE_GIT_CREDENTIAL := gitlab-ci-token:$(CI_JOB_TOKEN)
+endif
+endif
+export GO_PRIVATE_GIT_CREDENTIAL
+ifneq ($(strip $(GO_PRIVATE_GIT_CREDENTIAL)),)
+DOCKER_BUILD_SECRETS := --secret id=go_private_auth,env=GO_PRIVATE_GIT_CREDENTIAL
 else
 DOCKER_BUILD_SECRETS :=
 endif
@@ -124,7 +132,7 @@ openapi:
 	@docker run --rm \
 		--user $(shell id -u):$(shell id -g) \
 		-v $$PWD/openapi:/mnt \
-		openapitools/openapi-generator-cli:v6.0.0@sha256:310bd0353c11863c0e51e5cb46035c9e0778d4b9c6fe6a7fc8307b3b41997a35 \
+		$(DOCKER_MIRROR)openapitools/openapi-generator-cli:v6.0.0@sha256:310bd0353c11863c0e51e5cb46035c9e0778d4b9c6fe6a7fc8307b3b41997a35 \
 		generate -i /mnt/openapi.yaml -g go -o /mnt/gen
 	@rm openapi/gen/go.mod openapi/gen/go.sum
 	@find ./openapi/gen -type f -print0 | xargs -0 sed -i.bak \
@@ -136,13 +144,19 @@ openapi:
 	@find ./openapi/gen -type f -name '*.bak' -delete
 
 protoVer=0.13.2
-protoImageName=ghcr.io/cosmos/proto-builder:$(protoVer)
+# Index digest of ghcr.io/cosmos/proto-builder:$(protoVer); bump it with protoVer.
+protoDigest=sha256:05f5ccdc37d6ac6856d035d37bde91d31d36cfebe3c82ac771a40c7ff2a5c4c6
+# CI sets PROTO_BUILDER_REPO to its registry mirror. The digest pins the image
+# from either repository, so a tag replaced in the mirror fails to pull rather
+# than running.
+protoImageName=$(or $(PROTO_BUILDER_REPO),ghcr.io/cosmos/proto-builder):$(protoVer)@$(protoDigest)
 
 # buf resolves its BSR dependencies from buf.build at generate/lint/breaking
 # time. When the machine running these targets is blocked by buf.build (the
 # Finland CI runner's egress IP is served HTTP 403 at their edge), set BUF_PROXY
 # to a proxy with clean egress and it is forwarded into the container. Unset by
-# default, so local development and unaffected runners are untouched.
+# default, so local development and unaffected runners are untouched. In CI,
+# .buf-egress drops BUF_PROXY on runners that can reach buf.build directly.
 BUF_PROXY ?=
 ifneq ($(strip $(BUF_PROXY)),)
 protoProxyEnv := -e HTTPS_PROXY=$(BUF_PROXY) -e HTTP_PROXY=$(BUF_PROXY) -e NO_PROXY=localhost,127.0.0.1

@@ -5,14 +5,16 @@
 # tss-lib-private is a private GitLab subgroup repo. The Dockerfiles that fetch
 # Go modules (build/docker/Dockerfile, build/docker/cli/Dockerfile,
 # tools/events/Dockerfile, ci/Dockerfile.simtest, ci/Dockerfile.regtest) use
-# `--mount=type=secret,id=ci_job_token,required=false`. Pipe CI_JOB_TOKEN
-# through to every `docker compose build` here so cache-miss rebuilds work in
-# CI. Local builds without CI_JOB_TOKEN set will still work because the mount
-# is optional and falls back to anonymous fetch (which is fine for non-private
-# repos, and the dev presumably has their own git auth for the private one).
+# `--mount=type=secret,id=go_private_auth,required=false`. Pipe
+# GO_PRIVATE_GIT_CREDENTIAL ("user:token", set by the Makefile or
+# scripts/ci-go-private-auth.sh) through to every `docker compose build` here
+# so cache-miss rebuilds work in CI. Local builds without it still work because
+# the mount is optional and falls back to anonymous fetch (which is fine for
+# non-private repos, and the dev presumably has their own git auth for the
+# private one).
 secrets:
-  ci_job_token:
-    environment: CI_JOB_TOKEN
+  go_private_auth:
+    environment: GO_PRIVATE_GIT_CREDENTIAL
 
 volumes:
   cli: {}
@@ -75,7 +77,7 @@ services:
       args:
         DOCKER_MIRROR: ${DOCKER_MIRROR:-}
       secrets:
-        - ci_job_token
+        - go_private_auth
     environment:
       <<: *thorchain-environment
     entrypoint: /bin/bash
@@ -97,7 +99,7 @@ services:
         TAG: mocknet
         DOCKER_MIRROR: ${DOCKER_MIRROR:-}
       secrets:
-        - ci_job_token
+        - go_private_auth
     environment:
       CONSOLE: 1
       ENDPOINTS_THORNODE: http://thornode:1317
@@ -188,7 +190,7 @@ services:
         TAG: mocknet
         DOCKER_MIRROR: ${DOCKER_MIRROR:-}
       secrets:
-        - ci_job_token
+        - go_private_auth
     profiles:
       - thornode
       - mocknet
@@ -805,6 +807,8 @@ services:
     build:
       context: ./mocknet/monero
       dockerfile: Dockerfile
+      args:
+        DOCKER_MIRROR: ${DOCKER_MIRROR:-}
     image: thornode-monero-mocknet:latest
     restart: unless-stopped
     entrypoint: /usr/local/bin/daemon-entrypoint.sh
