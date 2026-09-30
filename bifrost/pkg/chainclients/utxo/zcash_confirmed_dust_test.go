@@ -142,7 +142,7 @@ func (s *ZcashSignerSuite) TestZECConfirmedOwnDustFundsFullBalanceAndRetiredRetr
 	originalCache := s.client.asgardCache.Load()
 	defer func() { s.client.asgardCache.Store(originalCache) }()
 	s.client.asgardCache.Store(&sharedutxo.AsgardCache{FetchedAt: time.Now()})
-	tx.Checkpoint = checkpoint
+	s.setZecCheckpoint(c, tx, checkpoint)
 	_, saved, _, err := s.client.SignTx([]stypes.TxOutItem{tx}, 1237)
 	c.Assert(err, ErrorMatches, "(?s).*injected signing failure.*")
 	c.Assert(saved, DeepEquals, checkpoint)

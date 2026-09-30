@@ -919,24 +919,24 @@ func (s *BitcoinSignerSuite) TestBatchTxInfoGasWeightsAreSignerIndependent(c *C)
 	sourceScript, err := s.client.getSourceScript(txOutItem)
 	c.Assert(err, IsNil)
 
-	_, _, first, err := s.client.buildTx([]stypes.TxOutItem{txOutItem}, sourceScript)
+	_, _, first, err := s.client.buildTx([]stypes.TxOutItem{txOutItem}, sourceScript, 0)
 	c.Assert(err, IsNil)
 	c.Assert(len(first), Equals, 1)
 	c.Assert(first[0].UnbatchedGas > 0, Equals, true)
 
 	// Stand in for a signer that has already built and cached a transaction fee.
 	c.Assert(s.client.temporalStorage.UpsertTransactionFee(0.0001, 250), IsNil)
-	_, _, second, err := s.client.buildTx([]stypes.TxOutItem{txOutItem}, sourceScript)
+	_, _, second, err := s.client.buildTx([]stypes.TxOutItem{txOutItem}, sourceScript, 0)
 	c.Assert(err, IsNil)
 	c.Assert(second, DeepEquals, first)
 
 	// A tx that asks for twice the rate still carries twice the weight, so the split
 	// remains rate-weighted rather than collapsing to a plain byte share.
 	txOutItem.GasRate = 10
-	_, _, single, err := s.client.buildTx([]stypes.TxOutItem{txOutItem}, sourceScript)
+	_, _, single, err := s.client.buildTx([]stypes.TxOutItem{txOutItem}, sourceScript, 0)
 	c.Assert(err, IsNil)
 	txOutItem.GasRate = 20
-	_, _, doubled, err := s.client.buildTx([]stypes.TxOutItem{txOutItem}, sourceScript)
+	_, _, doubled, err := s.client.buildTx([]stypes.TxOutItem{txOutItem}, sourceScript, 0)
 	c.Assert(err, IsNil)
 	c.Assert(doubled[0].UnbatchedGas, Equals, 2*single[0].UnbatchedGas)
 }

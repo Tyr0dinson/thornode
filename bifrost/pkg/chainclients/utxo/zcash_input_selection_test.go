@@ -238,6 +238,7 @@ func (s *ZcashSignerSuite) TestZECConfirmedInputPlanAndCheckpointDigestsSurviveN
 		first,
 	})
 	fixture.localHeight.Store(reference + 20)
+	s.setZecCheckpoint(c, fixture.tx, nil) // rebuild against the new deposits
 	_, checkpoint2, _, err := s.client.SignTx([]stypes.TxOutItem{fixture.tx}, 1237)
 	c.Assert(err, ErrorMatches, "(?s).*injected signing failure.*")
 	c.Assert(checkpoint2, DeepEquals, checkpoint1)
@@ -255,9 +256,8 @@ func (s *ZcashSignerSuite) TestZECConfirmedInputPlanAndCheckpointDigestsSurviveN
 	restarted.temporalStorage = s.client.temporalStorage
 	restarted.signerCacheManager = s.client.signerCacheManager
 	fixture.bridge.err = errors.New("historical state pruned")
-	tx := fixture.tx
-	tx.Checkpoint = checkpoint1
-	_, retried, _, err := restarted.SignTx([]stypes.TxOutItem{tx}, 1237)
+	s.setZecCheckpoint(c, fixture.tx, checkpoint1)
+	_, retried, _, err := restarted.SignTx([]stypes.TxOutItem{fixture.tx}, 1237)
 	c.Assert(err, ErrorMatches, "(?s).*injected signing failure.*")
 	c.Assert(retried, DeepEquals, checkpoint1)
 	c.Assert(restartedSigner.digests, HasLen, 1)

@@ -493,6 +493,7 @@ func (s *ZcashSignerSuite) TestZECNilMaxGasPolicyVetoDoesNotChangeSigningPlan(c 
 		s.client.minRelayFeeSats.Store(policy.relay)
 		s.client.cfg.UTXO.MaxSatsPerVByte = policy.cap
 		digestCount := len(fixture.signer.digests)
+		s.setZecCheckpoint(c, tx, nil) // policy is enforced when the plan is built
 		raw, rejectedCheckpoint, observation, signErr := s.client.SignTx([]stypes.TxOutItem{tx}, 1237)
 		c.Assert(signErr, ErrorMatches, policy.error, Commentf("%s policy", policy.name))
 		c.Assert(raw, IsNil)
@@ -510,6 +511,7 @@ func (s *ZcashSignerSuite) TestZECNilMaxGasPolicyVetoDoesNotChangeSigningPlan(c 
 		s.client.minRelayFeeSats.Store(fee)
 		s.client.cfg.UTXO.MaxSatsPerVByte = 1000
 		s.client.lastFeeRate.Store(999999)
+		s.setZecCheckpoint(c, tx, nil)
 		_, resumedCheckpoint, _, signErr := s.client.SignTx([]stypes.TxOutItem{tx}, 1237)
 		c.Assert(signErr, ErrorMatches, "(?s).*injected signing failure.*")
 		c.Assert(resumedCheckpoint, DeepEquals, baseline)

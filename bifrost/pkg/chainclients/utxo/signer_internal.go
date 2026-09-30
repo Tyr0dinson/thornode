@@ -576,7 +576,7 @@ func (c *Client) buildTx(txs []stypes.TxOutItem, sourceScript []byte, zecReferen
 	var txBufs [][]byte
 	// Calculate the total cost of P2WPKH outputs for extended memos
 	p2wpkhOutputsCost := int64(0)
-	for idx, tx := range txs {
+	for _, tx := range txs {
 		var buf []byte
 		var nullDataScripts [][]byte
 		switch c.cfg.ChainID {
