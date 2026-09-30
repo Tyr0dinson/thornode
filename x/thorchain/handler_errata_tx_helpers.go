@@ -335,6 +335,26 @@ func requeueInvalidatedOutbound(ctx cosmos.Context, mgr Manager, er *common.Erra
 		return
 	}
 
+	// The invalidating (conflicting) transaction may itself be a vault payment
+	// for this same outbound, e.g. a re-sign that reused the inputs. It was then
+	// observed and recorded on the inbound voter; re-queuing would pay the payee
+	// twice. The match is deliberately coarse (recipient and asset, not amount):
+	// a skipped re-queue only falls back to the re-credit-only behavior, while
+	// a wrong re-queue is a double payment.
+	if paidBy, paid := outboundPaidByOtherTx(ctx, k, inHash, er.Id, item); paid {
+		ctx.Logger().Info("outbound errata: payee already paid by another tx, not re-queuing",
+			"in_hash", inHash, "out_hash", er.Id, "paid_by", paidBy, "chain", er.Chain)
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "outbound", "errata_requeue_failed"},
+			1,
+			[]metrics.Label{
+				telemetry.NewLabel("chain", telemChain(er.Chain)),
+				telemetry.NewLabel("reason", "paid_by_other_tx"),
+			},
+		)
+		return
+	}
+
 	vault, err := k.GetVault(ctx, observed.ObservedPubKey)
 	if err != nil || vault.PubKey.IsEmpty() {
 		ctx.Logger().Error("outbound errata: fail to get observed vault, not re-queuing",
@@ -352,6 +372,9 @@ func requeueInvalidatedOutbound(ctx cosmos.Context, mgr Manager, er *common.Erra
 
 	newToi := item
 	newToi.OutHash = common.TxID("")
+	// clout spent on this item was already reclaimed when the invalidated tx
+	// was observed; the replacement must not reclaim it a second time
+	newToi.CloutSpent = nil
 
 	// refresh max gas and gas rate like a LackSigning reschedule, keeping the
 	// in-voter actions in sync so future reschedules still match. The helpers
@@ -474,4 +497,38 @@ func findTxOutItemByOutHash(ctx cosmos.Context, k keeper.Keeper, inHash, outHash
 		}
 	}
 	return TxOutItem{}, false
+}
+
+// outboundPaidByOtherTx reports whether the inbound voter records an observed
+// outbound, other than the invalidated one, that pays the item's recipient in
+// the item's asset and has not itself been reverted by an errata.
+func outboundPaidByOtherTx(ctx cosmos.Context, k keeper.Keeper, inHash, invalidated common.TxID, item TxOutItem) (common.TxID, bool) {
+	inVoter, err := k.GetObservedTxInVoter(ctx, inHash)
+	if err != nil {
+		// cannot rule out a prior payment: treat as paid, falling back to the
+		// re-credit-only behavior
+		ctx.Logger().Error("outbound errata: fail to get tx in voter", "in_hash", inHash, "error", err)
+		return common.BlankTxID, true
+	}
+	for _, out := range inVoter.OutTxs {
+		if out.ID.IsEmpty() || out.ID.Equals(invalidated) || !out.Chain.Equals(item.Chain) {
+			continue
+		}
+		if !common.EquivalentAddresses(item.Chain, out.ToAddress, item.ToAddress) {
+			continue
+		}
+		if out.Coins.GetCoin(item.Coin.Asset).IsEmpty() {
+			continue
+		}
+		outVoter, err := k.GetObservedTxOutVoter(ctx, out.ID)
+		if err != nil {
+			ctx.Logger().Error("outbound errata: fail to get tx out voter", "out_hash", out.ID, "error", err)
+			return out.ID, true
+		}
+		if outVoter.Reverted {
+			continue
+		}
+		return out.ID, true
+	}
+	return common.BlankTxID, false
 }

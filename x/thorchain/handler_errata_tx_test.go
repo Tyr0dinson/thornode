@@ -722,7 +722,8 @@ func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx_RequeuesInvalidatedUtxo
 	c.Check(requeued.VaultPubKey.Equals(vaultPubKey), Equals, true)
 	c.Check(requeued.Coin.Equals(coin), Equals, true)
 	c.Check(requeued.ToAddress.Equals(toAddress), Equals, true)
-	c.Check(requeued.Memo, Equals, item.Memo)
+	// mocknet enables memoless outbounds: the memo moves to OriginalMemo
+	c.Check(requeued.GetMemo(), Equals, item.Memo)
 	// gas was refreshed from the network fee (10 sat/vB x 1.5 overestimate x 250 vB)
 	c.Check(requeued.MaxGas.Equals(common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(3_750))}), Equals, true)
 	c.Check(requeued.GasRate, Equals, int64(15))
@@ -1056,4 +1057,122 @@ func (s *HandlerErrataTxSuite) TestObservingSlashing(c *C) {
 	checkSlashPoints(c, ctx, nas, [7]int64{2, 0, 0, 0, 0, 3, 0})
 
 	// Note that nas[6], the Standby node, remains unaffected by the Actives nodes' observations.
+}
+
+// When the transaction that invalidated the recorded outbound is itself an
+// observed payment of the same outbound (e.g. a re-sign that reused the
+// inputs), the payee was already paid: the errata must only re-credit the
+// vault, not re-queue. Once that other payment is itself reverted, the
+// re-queue proceeds, without carrying the already reclaimed clout.
+func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx_NoRequeueWhenPaidByOtherTx(c *C) {
+	setup := func(otherReverted bool) (cosmos.Context, *ErrataTxHandlerTestHelper, Manager, common.TxID, TxOutItem) {
+		ctx, mgr := setupManagerForTest(c)
+		ctx = ctx.WithBlockHeight(100)
+		helper := NewErrataTxHandlerTestHelper(mgr.Keeper())
+		mgr.K = helper
+		nodes := NodeAccounts{
+			GetRandomValidatorNode(NodeActive),
+			GetRandomValidatorNode(NodeActive),
+			GetRandomValidatorNode(NodeActive),
+		}
+		for _, na := range nodes {
+			c.Assert(helper.Keeper.SetNodeAccount(ctx, na), IsNil)
+		}
+
+		vaultPubKey := GetRandomPubKey()
+		vaultAddr, err := vaultPubKey.GetAddress(common.BTCChain)
+		c.Assert(err, IsNil)
+		toAddress := GetRandomBTCAddress()
+		inHash := GetRandomTxHash()
+		outHash := GetRandomTxHash()
+		otherHash := GetRandomTxHash()
+		coin := common.NewCoin(common.BTCAsset, cosmos.NewUint(50_000_000))
+		gas := common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(1_000))}
+
+		vault := NewVault(1, ActiveVault, AsgardVault, vaultPubKey, common.Chains{common.BTCChain}.Strings(), nil)
+		c.Assert(helper.Keeper.SetVault(ctx, vault), IsNil)
+		c.Assert(helper.Keeper.SaveNetworkFee(ctx, common.BTCChain, NetworkFee{
+			Chain:              common.BTCChain,
+			TransactionSize:    250,
+			TransactionFeeRate: 10,
+		}), IsNil)
+
+		clout := cosmos.NewUint(12345)
+		item := TxOutItem{
+			Chain:       common.BTCChain,
+			InHash:      inHash,
+			ToAddress:   toAddress,
+			VaultPubKey: vaultPubKey,
+			Coin:        coin,
+			Memo:        NewOutboundMemo(inHash).String(),
+			MaxGas:      gas,
+			GasRate:     5,
+			OutHash:     outHash,
+			CloutSpent:  &clout,
+		}
+		txOut := NewTxOut(90)
+		txOut.TxArray = append(txOut.TxArray, item)
+		c.Assert(helper.Keeper.SetTxOut(ctx, txOut), IsNil)
+
+		finalise := func(hash common.TxID) (common.Tx, ObservedTxVoter) {
+			tx := common.NewTx(hash, vaultAddr, toAddress, common.Coins{coin}, gas, item.Memo)
+			observed := []common.ObservedTx{common.NewObservedTx(tx, 95, vaultPubKey, 95)}
+			voter := NewObservedTxVoter(hash, observed)
+			voter.Add(observed[0], nodes[1].NodeAddress)
+			voter.Add(observed[0], nodes[2].NodeAddress)
+			finalised := voter.GetTx(nodes)
+			c.Assert(finalised.IsEmpty(), Equals, false)
+			voter.Tx = *finalised
+			voter.Height = 95
+			return tx, voter
+		}
+		invalidTx, invalidVoter := finalise(outHash)
+		helper.Keeper.SetObservedTxOutVoter(ctx, invalidVoter)
+		// the conflicting payment of the same outbound, observed too
+		otherTx, otherVoter := finalise(otherHash)
+		if otherReverted {
+			otherVoter.SetReverted()
+		}
+		helper.Keeper.SetObservedTxOutVoter(ctx, otherVoter)
+
+		action := item
+		action.OutHash = common.TxID("")
+		action.CloutSpent = nil
+		inVoter := NewObservedTxVoter(inHash, nil)
+		inVoter.Height = 80
+		inVoter.FinalisedHeight = 80
+		inVoter.Actions = []TxOutItem{action}
+		inVoter.OutTxs = common.Txs{invalidTx, otherTx}
+		helper.Keeper.SetObservedTxInVoter(ctx, inVoter)
+
+		return ctx, helper, mgr, outHash, item
+	}
+	requeued := func(ctx cosmos.Context, helper *ErrataTxHandlerTestHelper) []TxOutItem {
+		height := ctx.BlockHeight()
+		if rcb := helper.Keeper.GetConfigInt64(ctx, constants.RescheduleCoalesceBlocks); rcb > 1 {
+			if over := height % rcb; over != 0 {
+				height += rcb - over
+			}
+		}
+		txOut, err := helper.Keeper.GetTxOut(ctx, height)
+		c.Assert(err, IsNil)
+		return txOut.TxArray
+	}
+
+	// other payment live: re-credit only
+	ctx, helper, mgr, outHash, item := setup(false)
+	c.Assert(processErrataOutboundTx(ctx, mgr, &common.ErrataTx{Id: outHash, Chain: common.BTCChain}), IsNil)
+	v, err := helper.Keeper.GetVault(ctx, item.VaultPubKey)
+	c.Assert(err, IsNil)
+	c.Check(v.GetCoin(common.BTCAsset).Amount.Equal(item.Coin.Amount), Equals, true)
+	c.Check(requeued(ctx, helper), HasLen, 0)
+
+	// other payment reverted: re-queued, clout not carried over
+	ctx, helper, mgr, outHash, item = setup(true)
+	c.Assert(processErrataOutboundTx(ctx, mgr, &common.ErrataTx{Id: outHash, Chain: common.BTCChain}), IsNil)
+	items := requeued(ctx, helper)
+	c.Assert(items, HasLen, 1)
+	c.Check(items[0].InHash.Equals(item.InHash), Equals, true)
+	c.Check(items[0].OutHash.IsEmpty(), Equals, true)
+	c.Check(items[0].CloutSpent == nil || items[0].CloutSpent.IsZero(), Equals, true)
 }
