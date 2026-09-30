@@ -497,9 +497,7 @@ func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx(c *C) {
 		Id:    txID,
 		Chain: common.LTCChain,
 	}
-	k := mgr.Keeper()
-	eventMgr := mgr.EventMgr()
-	err := processErrataOutboundTx(ctx, k, eventMgr, er)
+	err := processErrataOutboundTx(ctx, mgr, er)
 	c.Assert(err, NotNil)
 
 	observedPubKey := GetRandomPubKey()
@@ -519,7 +517,7 @@ func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx(c *C) {
 	txOutVoter := NewObservedTxVoter(txID, observedTx)
 	helper.Keeper.SetObservedTxOutVoter(ctx, txOutVoter)
 	// Tx is empty , it should fail
-	err = processErrataOutboundTx(ctx, k, eventMgr, er)
+	err = processErrataOutboundTx(ctx, mgr, er)
 	c.Assert(err, NotNil)
 	txOutVoter.Add(observedTx[0], node2.NodeAddress)
 	txOutVoter.Add(observedTx[0], node3.NodeAddress)
@@ -533,14 +531,14 @@ func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx(c *C) {
 	helper.Keeper.SetObservedTxOutVoter(ctx, txOutVoter)
 
 	// not outbound tx , it should fail
-	err = processErrataOutboundTx(ctx, k, eventMgr, er)
+	err = processErrataOutboundTx(ctx, mgr, er)
 	c.Assert(err, NotNil)
 
 	// fail to get vault
 	txInID := GetRandomTxHash()
 	txOutVoter.Tx.Tx.Memo = "OUT:" + txInID.String()
 	helper.Keeper.SetObservedTxOutVoter(ctx, txOutVoter)
-	err = processErrataOutboundTx(ctx, k, eventMgr, er)
+	err = processErrataOutboundTx(ctx, mgr, er)
 	c.Assert(err, NotNil)
 
 	// Active Asgard vault, TxInVoter not exist
@@ -550,14 +548,14 @@ func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx(c *C) {
 		common.ETHChain.String(),
 	}, []ChainContract{})
 	c.Assert(helper.Keeper.SetVault(ctx, asgardVault), IsNil)
-	err = processErrataOutboundTx(ctx, k, eventMgr, er)
+	err = processErrataOutboundTx(ctx, mgr, er)
 	c.Assert(err, IsNil)
 
 	// inactive vault - funds are credited but vault stays InactiveVault
 	// (no resurrection to RetiringVault to avoid side effects)
 	asgardVault.UpdateStatus(types.VaultStatus_InactiveVault, 1024)
 	c.Assert(helper.Keeper.SetVault(ctx, asgardVault), IsNil)
-	err = processErrataOutboundTx(ctx, k, eventMgr, er)
+	err = processErrataOutboundTx(ctx, mgr, er)
 	c.Assert(err, IsNil)
 	// vault should remain inactive (recovery via migration)
 	v, err := helper.Keeper.GetVault(ctx, asgardVault.PubKey)
@@ -571,7 +569,7 @@ func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx(c *C) {
 	pool.BalanceRune = cosmos.NewUint(1024 * common.One)
 	pool.Status = PoolAvailable
 	c.Assert(helper.Keeper.SetPool(ctx, pool), IsNil)
-	err = processErrataOutboundTx(ctx, k, eventMgr, er)
+	err = processErrataOutboundTx(ctx, mgr, er)
 	c.Assert(err, IsNil)
 
 	txInbound := common.NewTx(txInID, GetRandomLTCAddress(), GetRandomLTCAddress(),
@@ -607,7 +605,7 @@ func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx(c *C) {
 	// clear events
 	ctx = ctx.WithEventManager(cosmos.NewEventManager())
 
-	err = processErrataOutboundTx(ctx, k, eventMgr, er)
+	err = processErrataOutboundTx(ctx, mgr, er)
 	c.Assert(err, IsNil)
 	txOut, err := helper.Keeper.GetTxOut(ctx, ctx.BlockHeight())
 	c.Assert(err, IsNil)
@@ -623,12 +621,187 @@ func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx(c *C) {
 	c.Assert(found, Equals, 1)
 }
 
+// An errata for a UTXO outbound that was finalised at mempool stage and then
+// invalidated before mining must re-queue the outbound (payee still gets paid),
+// in addition to re-crediting the vault.
+func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx_RequeuesInvalidatedUtxoOutbound(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+	helper := NewErrataTxHandlerTestHelper(mgr.Keeper())
+	mgr.K = helper
+	node1 := GetRandomValidatorNode(NodeActive)
+	node2 := GetRandomValidatorNode(NodeActive)
+	node3 := GetRandomValidatorNode(NodeActive)
+	c.Assert(helper.Keeper.SetNodeAccount(ctx, node1), IsNil)
+	c.Assert(helper.Keeper.SetNodeAccount(ctx, node2), IsNil)
+	c.Assert(helper.Keeper.SetNodeAccount(ctx, node3), IsNil)
+
+	vaultPubKey := GetRandomPubKey()
+	vaultAddr, err := vaultPubKey.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+	toAddress := GetRandomBTCAddress()
+	inHash := GetRandomTxHash()
+	outHash := GetRandomTxHash()
+	coin := common.NewCoin(common.BTCAsset, cosmos.NewUint(50_000_000))
+
+	vault := NewVault(1, ActiveVault, AsgardVault, vaultPubKey, common.Chains{common.BTCChain}.Strings(), nil)
+	c.Assert(helper.Keeper.SetVault(ctx, vault), IsNil)
+	c.Assert(helper.Keeper.SaveNetworkFee(ctx, common.BTCChain, NetworkFee{
+		Chain:              common.BTCChain,
+		TransactionSize:    250,
+		TransactionFeeRate: 10,
+	}), IsNil)
+
+	// the scheduled outbound, recorded as paid with the invalidated out tx
+	item := TxOutItem{
+		Chain:       common.BTCChain,
+		InHash:      inHash,
+		ToAddress:   toAddress,
+		VaultPubKey: vaultPubKey,
+		Coin:        coin,
+		Memo:        NewOutboundMemo(inHash).String(),
+		MaxGas:      common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(1_000))},
+		GasRate:     5,
+		OutHash:     outHash,
+	}
+	txOut := NewTxOut(90)
+	txOut.TxArray = append(txOut.TxArray, item)
+	c.Assert(helper.Keeper.SetTxOut(ctx, txOut), IsNil)
+
+	// the inbound voter, with the action matching the scheduled item
+	action := item
+	action.OutHash = common.TxID("")
+	inVoter := NewObservedTxVoter(inHash, nil)
+	inVoter.Height = 80
+	inVoter.FinalisedHeight = 80
+	inVoter.Actions = []TxOutItem{action}
+	helper.Keeper.SetObservedTxInVoter(ctx, inVoter)
+
+	// the invalidated outbound observation, finalised
+	tx := common.NewTx(outHash, vaultAddr, toAddress,
+		common.Coins{coin},
+		common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(1_000))},
+		item.Memo)
+	observedTx := []common.ObservedTx{common.NewObservedTx(tx, 95, vaultPubKey, 95)}
+	txOutVoter := NewObservedTxVoter(outHash, observedTx)
+	txOutVoter.Add(observedTx[0], node2.NodeAddress)
+	txOutVoter.Add(observedTx[0], node3.NodeAddress)
+	finalisedTx := txOutVoter.GetTx(NodeAccounts{node1, node2, node3})
+	c.Assert(finalisedTx.IsEmpty(), Equals, false)
+	txOutVoter.Tx = *finalisedTx
+	txOutVoter.Height = 95
+	helper.Keeper.SetObservedTxOutVoter(ctx, txOutVoter)
+
+	er := &common.ErrataTx{Id: outHash, Chain: common.BTCChain}
+	c.Assert(processErrataOutboundTx(ctx, mgr, er), IsNil)
+
+	// the vault was re-credited the invalidated spend
+	v, err := helper.Keeper.GetVault(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(v.GetCoin(common.BTCAsset).Amount.Equal(coin.Amount), Equals, true)
+
+	// the original item keeps its OutHash as the historical record
+	stored, err := helper.Keeper.GetTxOut(ctx, 90)
+	c.Assert(err, IsNil)
+	c.Assert(stored.TxArray, HasLen, 1)
+	c.Check(stored.TxArray[0].OutHash.Equals(outHash), Equals, true)
+
+	// a fresh item was queued, assigned to the re-credited vault
+	rescheduleHeight := ctx.BlockHeight()
+	if rcb := helper.Keeper.GetConfigInt64(ctx, constants.RescheduleCoalesceBlocks); rcb > 1 {
+		if over := rescheduleHeight % rcb; over != 0 {
+			rescheduleHeight += rcb - over
+		}
+	}
+	queued, err := helper.Keeper.GetTxOut(ctx, rescheduleHeight)
+	c.Assert(err, IsNil)
+	c.Assert(queued.TxArray, HasLen, 1)
+	requeued := queued.TxArray[0]
+	c.Check(requeued.OutHash.IsEmpty(), Equals, true)
+	c.Check(requeued.InHash.Equals(inHash), Equals, true)
+	c.Check(requeued.VaultPubKey.Equals(vaultPubKey), Equals, true)
+	c.Check(requeued.Coin.Equals(coin), Equals, true)
+	c.Check(requeued.ToAddress.Equals(toAddress), Equals, true)
+	c.Check(requeued.Memo, Equals, item.Memo)
+	// gas was refreshed from the network fee (10 sat/vB x 1.5 overestimate x 250 vB)
+	c.Check(requeued.MaxGas.Equals(common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(3_750))}), Equals, true)
+	c.Check(requeued.GasRate, Equals, int64(15))
+}
+
+// The same errata on a non-UTXO chain keeps the legacy re-credit-only
+// behavior: no re-queue.
+func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx_NoRequeueNonUtxo(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+	helper := NewErrataTxHandlerTestHelper(mgr.Keeper())
+	mgr.K = helper
+	node1 := GetRandomValidatorNode(NodeActive)
+	node2 := GetRandomValidatorNode(NodeActive)
+	node3 := GetRandomValidatorNode(NodeActive)
+	c.Assert(helper.Keeper.SetNodeAccount(ctx, node1), IsNil)
+	c.Assert(helper.Keeper.SetNodeAccount(ctx, node2), IsNil)
+	c.Assert(helper.Keeper.SetNodeAccount(ctx, node3), IsNil)
+
+	vaultPubKey := GetRandomPubKey()
+	vaultAddr, err := vaultPubKey.GetAddress(common.ETHChain)
+	c.Assert(err, IsNil)
+	toAddress := GetRandomETHAddress()
+	inHash := GetRandomTxHash()
+	outHash := GetRandomTxHash()
+	coin := common.NewCoin(common.ETHAsset, cosmos.NewUint(50_000_000))
+
+	vault := NewVault(1, ActiveVault, AsgardVault, vaultPubKey, common.Chains{common.ETHChain}.Strings(), nil)
+	c.Assert(helper.Keeper.SetVault(ctx, vault), IsNil)
+
+	item := TxOutItem{
+		Chain:       common.ETHChain,
+		InHash:      inHash,
+		ToAddress:   toAddress,
+		VaultPubKey: vaultPubKey,
+		Coin:        coin,
+		Memo:        NewOutboundMemo(inHash).String(),
+		MaxGas:      common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(1_000))},
+		OutHash:     outHash,
+	}
+	txOut := NewTxOut(90)
+	txOut.TxArray = append(txOut.TxArray, item)
+	c.Assert(helper.Keeper.SetTxOut(ctx, txOut), IsNil)
+
+	inVoter := NewObservedTxVoter(inHash, nil)
+	inVoter.Height = 80
+	inVoter.FinalisedHeight = 80
+	helper.Keeper.SetObservedTxInVoter(ctx, inVoter)
+
+	tx := common.NewTx(outHash, vaultAddr, toAddress,
+		common.Coins{coin},
+		common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(1_000))},
+		item.Memo)
+	observedTx := []common.ObservedTx{common.NewObservedTx(tx, 95, vaultPubKey, 95)}
+	txOutVoter := NewObservedTxVoter(outHash, observedTx)
+	txOutVoter.Add(observedTx[0], node2.NodeAddress)
+	txOutVoter.Add(observedTx[0], node3.NodeAddress)
+	finalisedTx := txOutVoter.GetTx(NodeAccounts{node1, node2, node3})
+	c.Assert(finalisedTx.IsEmpty(), Equals, false)
+	txOutVoter.Tx = *finalisedTx
+	txOutVoter.Height = 95
+	helper.Keeper.SetObservedTxOutVoter(ctx, txOutVoter)
+
+	er := &common.ErrataTx{Id: outHash, Chain: common.ETHChain}
+	c.Assert(processErrataOutboundTx(ctx, mgr, er), IsNil)
+
+	// vault re-credited, but nothing re-queued
+	v, err := helper.Keeper.GetVault(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(v.GetCoin(common.ETHAsset).Amount.Equal(coin.Amount), Equals, true)
+	queued, err := helper.Keeper.GetTxOut(ctx, ctx.BlockHeight())
+	c.Assert(err, IsNil)
+	c.Assert(queued.TxArray, HasLen, 0)
+}
+
 func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx_EnsureFundsAreCreditedToInactiveVault(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	helper := NewErrataTxHandlerTestHelper(mgr.Keeper())
 	mgr.K = helper
-	k := mgr.Keeper()
-	eventMgr := mgr.EventMgr()
 	handler := NewErrataTxHandler(mgr)
 	node1 := GetRandomValidatorNode(NodeActive)
 	node2 := GetRandomValidatorNode(NodeActive)
@@ -710,7 +883,7 @@ func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx_EnsureFundsAreCreditedT
 	txInVoter.Tx = *finalisedTx
 	helper.Keeper.SetObservedTxInVoter(ctx, txInVoter)
 
-	err := processErrataOutboundTx(ctx, k, eventMgr, internalErrata)
+	err := processErrataOutboundTx(ctx, mgr, internalErrata)
 	c.Assert(err, IsNil)
 	v, err := helper.Keeper.GetVault(ctx, retiredPubKey)
 	c.Assert(err, IsNil)

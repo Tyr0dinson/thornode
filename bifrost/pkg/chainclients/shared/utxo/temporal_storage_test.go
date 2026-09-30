@@ -27,6 +27,55 @@ func (s *BitcoinTemporalStorageTestSuite) TestNewTemporalStorage(c *C) {
 	c.Assert(db.Close(), IsNil)
 }
 
+func (s *BitcoinTemporalStorageTestSuite) TestPendingVaultTxTracking(c *C) {
+	memStorage := storage.NewMemStorage()
+	db, err := leveldb.Open(memStorage, nil)
+	c.Assert(err, IsNil)
+	store, err := NewTemporalStorage(db, 0)
+	c.Assert(err, IsNil)
+
+	tx1 := PendingVaultTx{
+		TxID:            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Vins:            []PendingVaultTxOutpoint{{TxID: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Vout: 1}},
+		FirstSeenHeight: 100,
+	}
+	tx2 := PendingVaultTx{
+		TxID:            "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+		Vins:            []PendingVaultTxOutpoint{{TxID: tx1.TxID, Vout: 0}},
+		FirstSeenHeight: 101,
+	}
+
+	c.Assert(store.TrackPendingVaultTx(tx1), IsNil)
+	c.Assert(store.TrackPendingVaultTx(tx2), IsNil)
+
+	// idempotent, preserves first record
+	c.Assert(store.TrackPendingVaultTx(PendingVaultTx{TxID: tx1.TxID, FirstSeenHeight: 999}), IsNil)
+
+	tracked, err := store.HasPendingVaultTx(tx1.TxID)
+	c.Assert(err, IsNil)
+	c.Check(tracked, Equals, true)
+	tracked, err = store.HasPendingVaultTx("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd")
+	c.Assert(err, IsNil)
+	c.Check(tracked, Equals, false)
+
+	pending, err := store.GetPendingVaultTxs()
+	c.Assert(err, IsNil)
+	c.Assert(pending, HasLen, 2)
+	byID := map[string]PendingVaultTx{}
+	for _, tx := range pending {
+		byID[tx.TxID] = tx
+	}
+	c.Check(byID[tx1.TxID].FirstSeenHeight, Equals, int64(100))
+	c.Check(byID[tx1.TxID].Vins, DeepEquals, tx1.Vins)
+	c.Check(byID[tx2.TxID].Vins, DeepEquals, tx2.Vins)
+
+	c.Assert(store.UntrackPendingVaultTx(tx1.TxID), IsNil)
+	pending, err = store.GetPendingVaultTxs()
+	c.Assert(err, IsNil)
+	c.Assert(pending, HasLen, 1)
+	c.Check(pending[0].TxID, Equals, tx2.TxID)
+}
+
 func (s *BitcoinTemporalStorageTestSuite) TestTemporalStorage(c *C) {
 	memStorage := storage.NewMemStorage()
 	db, err := leveldb.Open(memStorage, nil)

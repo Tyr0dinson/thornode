@@ -38,6 +38,13 @@ const (
 	// reduce time for lookup up and clean up
 	PrefixSpentUtxoById     = "spentutxobyid-"
 	PrefixSpentUtxoByHeight = "spentutxobyheight-"
+
+	// PrefixPendingVaultTx is the LevelDB key prefix used for storing vault-originated
+	// transactions observed in the mempool that have not yet been seen mined. The
+	// hash of the transaction is appended for the final key. Entries are removed once
+	// the transaction is mined or is proven invalidated (a mined transaction spent
+	// one of its inputs).
+	PrefixPendingVaultTx = "pendingvaulttx-"
 )
 
 // -------------------------------------------------------------------------------------
@@ -61,6 +68,26 @@ type TransactionFee struct {
 type SpentUtxosByHeight struct {
 	Height int64    `json:"height"`
 	Ids    []string `json:"ids"`
+}
+
+// PendingVaultTxOutpoint is a transaction input of a pending vault transaction,
+// used to prove the transaction was invalidated when an input is spent on-chain
+// by a different (conflicting) transaction.
+type PendingVaultTxOutpoint struct {
+	TxID string `json:"txid"`
+	Vout uint32 `json:"vout"`
+}
+
+// PendingVaultTx is a vault-originated transaction observed in the mempool and
+// watched until it is mined. Vault outbounds are finalised on THORChain at
+// mempool stage, so if the transaction is invalidated before mining (a
+// conflicting transaction mines and spends one of its inputs) the outbound is
+// recorded as paid but never lands. Watching the inputs lets the chain client
+// attest an errata for the invalidated transaction so THORChain can re-queue it.
+type PendingVaultTx struct {
+	TxID            string                   `json:"txid"`
+	Vins            []PendingVaultTxOutpoint `json:"vins"`
+	FirstSeenHeight int64                    `json:"first_seen_height"`
 }
 
 // -------------------------------------------------------------------------------------
@@ -268,6 +295,59 @@ func (t *TemporalStorage) UntrackObservedTx(txid string) error {
 	return t.db.Delete([]byte(key), nil)
 }
 
+// TrackPendingVaultTx records a vault-originated mempool transaction to watch
+// until it is mined. Tracking is idempotent: the first-seen height and inputs
+// are preserved if the transaction is already tracked.
+func (t *TemporalStorage) TrackPendingVaultTx(tx PendingVaultTx) error {
+	if tx.TxID == "" {
+		return nil
+	}
+	key := t.getPendingVaultTxKey(tx.TxID)
+	exist, err := t.db.Has([]byte(key), nil)
+	if err != nil {
+		return fmt.Errorf("fail to check whether pending vault tx(%s) exist: %w", key, err)
+	}
+	if exist {
+		return nil
+	}
+	buf, err := json.Marshal(tx)
+	if err != nil {
+		return fmt.Errorf("fail to marshal pending vault tx to json: %w", err)
+	}
+	return t.db.Put([]byte(key), buf, nil)
+}
+
+// UntrackPendingVaultTx stops watching the given transaction, e.g. once it is
+// mined or an errata for it has been attested.
+func (t *TemporalStorage) UntrackPendingVaultTx(txid string) error {
+	return t.db.Delete([]byte(t.getPendingVaultTxKey(txid)), nil)
+}
+
+// HasPendingVaultTx reports whether the given transaction is being watched.
+func (t *TemporalStorage) HasPendingVaultTx(txid string) (bool, error) {
+	return t.db.Has([]byte(t.getPendingVaultTxKey(txid)), nil)
+}
+
+// GetPendingVaultTxs returns all vault-originated transactions currently being
+// watched for invalidation.
+func (t *TemporalStorage) GetPendingVaultTxs() ([]PendingVaultTx, error) {
+	txs := make([]PendingVaultTx, 0)
+	iterator := t.db.NewIterator(util.BytesPrefix([]byte(PrefixPendingVaultTx)), nil)
+	defer iterator.Release()
+	for ; iterator.Next(); iterator.Valid() {
+		buf := iterator.Value()
+		if len(buf) == 0 {
+			continue
+		}
+		var tx PendingVaultTx
+		if err := json.Unmarshal(buf, &tx); err != nil {
+			return nil, fmt.Errorf("fail to unmarshal pending vault tx: %w", err)
+		}
+		txs = append(txs, tx)
+	}
+	return txs, nil
+}
+
 func (t *TemporalStorage) SetSpentUtxos(ids []string, height int64) error {
 	if len(ids) == 0 {
 		return nil
@@ -398,6 +478,10 @@ func (t *TemporalStorage) getMemPoolKey(txid string) string {
 
 func (t *TemporalStorage) getObservedTxKey(txid string) string {
 	return PrefixObservedTx + txid
+}
+
+func (t *TemporalStorage) getPendingVaultTxKey(txid string) string {
+	return PrefixPendingVaultTx + txid
 }
 
 func (t *TemporalStorage) getSpentUtxoByIdKey(utxo string) string {

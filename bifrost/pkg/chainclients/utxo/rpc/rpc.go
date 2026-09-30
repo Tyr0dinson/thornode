@@ -211,6 +211,23 @@ func (c *Client) GetRawTransaction(txid string) (string, error) {
 	return tx, extractBTCError(err)
 }
 
+// GetTxOut returns details about an unspent transaction output, or nil when the
+// output is spent (or never existed). When includeMempool is false, outputs
+// spent only by unconfirmed mempool transactions are still reported as unspent,
+// so a nil result proves the output was spent by a mined transaction.
+func (c *Client) GetTxOut(txid string, vout uint32, includeMempool bool) (*btcjson.GetTxOutResult, error) {
+	var result btcjson.GetTxOutResult
+	err := c.Call(&result, "gettxout", txid, vout, includeMempool)
+	if err != nil {
+		return nil, extractBTCError(err)
+	}
+	// bitcoind returns JSON null for spent outputs, which decodes to the zero value
+	if result.BestBlock == "" {
+		return nil, nil
+	}
+	return &result, nil
+}
+
 // BatchGetRawTransactionVerbose returns a raw transaction for given transaction ids.
 func (c *Client) BatchGetRawTransactionVerbose(txids []string) ([]*btcjson.TxRawResult, []error, error) {
 	// create batch request

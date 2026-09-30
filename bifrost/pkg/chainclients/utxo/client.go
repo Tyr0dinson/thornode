@@ -71,6 +71,11 @@ type Client struct {
 	blockScanner    *blockscanner.BlockScanner
 	temporalStorage *utxo.TemporalStorage
 
+	// pendingVaultTxCheckUnsupported is set when the daemon does not support the
+	// gettxout RPC (e.g. Zebra), disabling invalidation detection for pending
+	// vault transactions while still tracking and clearing mined ones.
+	pendingVaultTxCheckUnsupported stdatomic.Bool
+
 	// ---------- control ----------
 	globalErrataQueue     chan<- types.ErrataBlock
 	globalSolvencyQueue   chan<- types.Solvency
@@ -393,6 +398,11 @@ func (c *Client) OnObservedTxIn(txIn types.TxInItem, blockHeight int64) {
 	if c.isAsgardAddress(txIn.Sender) {
 		c.log.Debug().Int64("height", blockHeight).Msgf("add hash %s as self transaction", txIn.Tx)
 		blockMeta.AddSelfTransaction(txIn.Tx)
+		// Vault outbounds are finalised on THORChain at mempool stage: watch the
+		// transaction until it mines so an invalidation (a conflicting mined tx
+		// spending its inputs) can be errata'd and the outbound re-queued,
+		// instead of being recorded as paid while never landing.
+		c.trackPendingVaultTx(txIn.Tx)
 	} else {
 		// add the transaction to block meta
 		blockMeta.AddCustomerTransaction(txIn.Tx)
@@ -491,6 +501,10 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 	}
 
 	c.updateNetworkInfo()
+
+	// resolve watched vault outbounds against the new block: clear mined ones
+	// and attest errata for any proven to be invalidated before mining
+	c.checkPendingVaultTxs(block)
 
 	// report network fee and solvency if within flexibility blocks of tip
 	if chainHeight-height <= c.cfg.BlockScanner.ObservationFlexibilityBlocks {
