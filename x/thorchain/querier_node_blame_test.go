@@ -1,9 +1,13 @@
 package thorchain
 
 import (
+	"encoding/json"
+
+	gateway "github.com/cosmos/gogogateway"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	openapi "gitlab.com/thorchain/thornode/v3/openapi/gen"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -67,6 +71,58 @@ func (s *QuerierNodeBlameSuite) TestNodeBlame(c *C) {
 	c.Check(resp.KeysignBlameCountTotal, Equals, int64(3))
 	c.Check(resp.KeygenBlameCountSinceChurn, Equals, int64(2))
 	c.Check(resp.KeysignBlameCountSinceChurn, Equals, int64(1))
+}
+
+func (s *QuerierNodeBlameSuite) TestNodeBlameOpenAPIConformance(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	qs := &queryServer{mgr: mgr}
+	// Same options as the REST gateway marshaler in CustomGRPCGatewayRouter.
+	marshaler := &gateway.JSONPb{EmitDefaults: true, OrigName: true}
+
+	na := setupBlameRecord(c, ctx, mgr, 7, 3, 2, 1)
+	other := setupBlameRecord(c, ctx, mgr, 1, 1, 9, 4)
+
+	// Single node: counters must be JSON numbers, not proto-style strings.
+	blameResp, err := qs.queryNodeBlame(ctx, &types.QueryNodeBlameRequest{
+		Address: na.NodeAddress.String(),
+	})
+	c.Assert(err, IsNil)
+	body, err := marshaler.Marshal(blameResp)
+	c.Assert(err, IsNil)
+	var blame openapi.NodeBlameResponse
+	c.Assert(json.Unmarshal(body, &blame), IsNil)
+	c.Check(blame.NodeAddress, Equals, na.NodeAddress.String())
+	c.Check(blame.NodeOperatorAddress, Equals, na.BondAddress.String())
+	c.Check(blame.KeygenBlameCountTotal, Equals, int64(7))
+	c.Check(blame.KeysignBlameCountTotal, Equals, int64(3))
+	c.Check(blame.KeygenBlameCountSinceChurn, Equals, int64(2))
+	c.Check(blame.KeysignBlameCountSinceChurn, Equals, int64(1))
+
+	// List: must be a bare array, not {"blames": [...]}.
+	blamesResp, err := qs.queryNodeBlames(ctx, &types.QueryNodeBlamesRequest{})
+	c.Assert(err, IsNil)
+	body, err = marshaler.Marshal(blamesResp)
+	c.Assert(err, IsNil)
+	var blames []openapi.NodeBlameResponse
+	c.Assert(json.Unmarshal(body, &blames), IsNil)
+	c.Assert(len(blames), Equals, 2)
+	c.Check(blames[0].NodeAddress, Equals, other.NodeAddress.String())
+	c.Check(blames[0].NodeOperatorAddress, Equals, other.BondAddress.String())
+	c.Check(blames[0].KeygenBlameCountSinceChurn, Equals, int64(9))
+	c.Check(blames[0].KeysignBlameCountSinceChurn, Equals, int64(4))
+	c.Check(blames[1].NodeAddress, Equals, na.NodeAddress.String())
+	c.Check(blames[1].KeygenBlameCountTotal, Equals, int64(7))
+}
+
+func (s *QuerierNodeBlameSuite) TestNodeBlamesEmptyIsJSONArray(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	qs := &queryServer{mgr: mgr}
+
+	resp, err := qs.queryNodeBlames(ctx, &types.QueryNodeBlamesRequest{})
+	c.Assert(err, IsNil)
+	body, err := resp.MarshalJSONPB(nil)
+	c.Assert(err, IsNil)
+	c.Check(string(body), Equals, "[]")
 }
 
 func (s *QuerierNodeBlameSuite) TestNodeBlameUnknownAddress(c *C) {

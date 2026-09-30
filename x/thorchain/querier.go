@@ -1433,7 +1433,7 @@ func (qs queryServer) queryNodeBlames(ctx cosmos.Context, req *types.QueryNodeBl
 		operatorByNode[na.NodeAddress.String()] = na.BondAddress.String()
 	}
 
-	var result []*types.QueryNodeBlameResponse
+	result := make([]*types.QueryNodeBlameResponse, 0)
 	iter := qs.mgr.Keeper().GetNodeBlameIterator(ctx)
 	defer iter.Close()
 

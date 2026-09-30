@@ -37,6 +37,8 @@ var (
 	_ jsonpb.JSONPBMarshaler = &QueryMimirNodesValuesResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryMimirValuesResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryMimirWithKeyResponse{}
+	_ jsonpb.JSONPBMarshaler = &QueryNodeBlameResponse{}
+	_ jsonpb.JSONPBMarshaler = &QueryNodeBlamesResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryNodeResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryNodesResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryObservedTxVoter{}
@@ -237,6 +239,15 @@ func (m *QueryMimirWithKeyResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, 
 // func (m *QueryNetworkResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
 // 	return jsonify(m)
 // }
+
+// QueryNodeBlameResponse
+func (m *QueryNodeBlameResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m)
+}
+
+func (m *QueryNodeBlamesResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return jsonify(m.Blames)
+}
 
 // QueryNodeResponse
 func (m *QueryNodeResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
