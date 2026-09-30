@@ -416,7 +416,7 @@ func (c *XrpBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, error
 		MemPool:  false,
 	}
 
-	// skip reporting network fee and solvency if block more than flexibility blocks from tip
+	// skip reporting network fee if block more than flexibility blocks from tip
 	if chainHeight-height > c.cfg.ObservationFlexibilityBlocks {
 		return txIn, nil
 	}
@@ -426,13 +426,15 @@ func (c *XrpBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, error
 		c.logger.Err(err).Int64("height", height).Msg("unable to update network fee")
 	}
 
-	if c.solvencyReporter != nil {
-		if err = c.solvencyReporter(height); err != nil {
-			c.logger.Err(err).Msg("fail to send solvency to THORChain")
-		}
-	}
-
 	return txIn, nil
+}
+
+// ReportSolvency runs after the shared scanner has recomputed health.
+func (c *XrpBlockScanner) ReportSolvency(height, chainHeight int64) error {
+	if chainHeight-height > c.cfg.ObservationFlexibilityBlocks || c.solvencyReporter == nil {
+		return nil
+	}
+	return c.solvencyReporter(height)
 }
 
 const (

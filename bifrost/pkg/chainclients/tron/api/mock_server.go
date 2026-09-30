@@ -48,7 +48,6 @@ func NewMockServer() *httptest.Server {
 
 			switch height {
 			case 55088560, 69351239:
-				w.WriteHeader(http.StatusOK)
 				filename := fmt.Sprintf("test-tron/getblockbynum_%d.json", height)
 				data, _ := responses.ReadFile(filename)
 				_, _ = w.Write(data)

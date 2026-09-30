@@ -2,9 +2,11 @@ package blockscanner
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -217,6 +219,7 @@ func (s *BlockScannerExtraSuite) startStalledScanner(c *C, err error) int64 {
 	}, storage, m, &stallBridge{ThorchainBridge: s.makeBridge(c, server)}, &configFetcher{chainHeight: 1000000, fetchErr: err})
 	c.Assert(scanErr, IsNil)
 	armStall(scanner, 2801)
+	scanner.healthy.Store(true)
 
 	scanner.Start(make(chan types.TxIn, 1), make(chan common.NetworkFee, 1))
 	defer scanner.Stop()
@@ -226,6 +229,7 @@ func (s *BlockScannerExtraSuite) startStalledScanner(c *C, err error) int64 {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+	c.Check(scanner.IsHealthy(), Equals, false, Commentf("failed fetch must invalidate previous healthy state"))
 	return scanner.PreviousHeight()
 }
 
@@ -250,7 +254,206 @@ func (s *BlockScannerExtraSuite) TestScanBlocksSkipsAheadOnSustainedFetchError(c
 
 // ErrUnavailableBlock is the chain clients' "retry this exact height" signal —
 // Monero and XRP return it while holding per-height state — and the scan loop
-// already classifies it as benign. It must never authorise a cursor skip.
+// retries it without logging an error. It must never authorise a cursor skip.
 func (s *BlockScannerExtraSuite) TestScanBlocksNeverSkipsOnUnavailableBlock(c *C) {
 	c.Check(s.startStalledScanner(c, btypes.ErrUnavailableBlock), Equals, int64(2800))
+	// Receipt lookup failures add context while retaining the same retry contract.
+	wrapped := fmt.Errorf("transaction receipt unavailable: %w", btypes.ErrUnavailableBlock)
+	c.Check(s.startStalledScanner(c, wrapped), Equals, int64(2800))
+}
+
+// A failed fetch must close signing health without advancing the cursor; the
+// successful retry must recover health, which then stays healthy at the tip.
+func (s *BlockScannerExtraSuite) TestUnavailableBlockHealthRecovers(c *C) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.RequestURI, thorclient.MimirEndpoint):
+			_, _ = w.Write([]byte(`-1`))
+		case strings.HasPrefix(r.RequestURI, "/status"):
+			_, _ = w.Write([]byte(`{"result":{"sync_info":{"catching_up":false}}}`))
+		default:
+			_, _ = w.Write([]byte(`[{"chain":"ETH","last_observed_in":0,"last_signed_out":0,"thorchain":100}]`))
+		}
+	}))
+	defer server.Close()
+	storage := NewMockScannerStorage()
+	c.Assert(storage.SetScanPos(2800), IsNil)
+	fetcher := &receiptHealthFetcher{configFetcher: configFetcher{chainHeight: 2801}}
+	scanner, err := NewBlockScanner(config.BifrostBlockScannerConfiguration{
+		ChainID:                    common.ETHChain,
+		BlockScanProcessors:        1,
+		BlockHeightDiscoverBackoff: time.Millisecond,
+		BlockRetryInterval:         time.Millisecond,
+	}, storage, m, s.makeBridge(c, server), fetcher)
+	c.Assert(err, IsNil)
+	scanner.healthy.Store(true)
+	scanner.Start(make(chan types.TxIn, 1), make(chan common.NetworkFee, 1))
+	defer scanner.Stop()
+	deadline := time.Now().Add(2 * time.Second)
+	for scanner.IsHealthy() && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	c.Assert(scanner.IsHealthy(), Equals, false)
+	c.Assert(scanner.PreviousHeight(), Equals, int64(2800))
+	position, err := storage.GetScanPos()
+	c.Assert(err, IsNil)
+	c.Assert(position, Equals, int64(2800))
+	fetcher.receiptReady.Store(true)
+	deadline = time.Now().Add(2 * time.Second)
+	for scanner.PreviousHeight() != 2801 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	c.Assert(scanner.PreviousHeight(), Equals, int64(2801))
+	c.Assert(scanner.IsHealthy(), Equals, true)
+	time.Sleep(10 * time.Millisecond)
+	c.Check(scanner.IsHealthy(), Equals, true)
+}
+
+type receiptHealthFetcher struct {
+	configFetcher
+	receiptReady atomic.Bool
+}
+
+func (f *receiptHealthFetcher) FetchTxs(_, _ int64) (types.TxIn, error) {
+	if !f.receiptReady.Load() {
+		return types.TxIn{}, fmt.Errorf("transaction receipt unavailable: %w", btypes.ErrUnavailableBlock)
+	}
+	return types.TxIn{}, nil
+}
+
+// Each height is available only on its second attempt, as when an RPC/sidecar
+// reports its tip before all of that block's observation data can be served.
+type retryFeeFetcher struct {
+	configFetcher
+	lastSuccess atomic.Int64
+	attempted   int64
+	endHeight   int64
+}
+
+func (f *retryFeeFetcher) GetHeight() (int64, error) {
+	return min(f.lastSuccess.Load()+1, f.endHeight), nil
+}
+
+func (f *retryFeeFetcher) FetchTxs(height, _ int64) (types.TxIn, error) {
+	if f.attempted != height {
+		f.attempted = height
+		return types.TxIn{}, btypes.ErrUnavailableBlock
+	}
+	f.lastSuccess.Store(height)
+	return types.TxIn{}, nil
+}
+
+func (s *BlockScannerExtraSuite) TestNetworkFeeAfterAvailabilityRetries(c *C) {
+	for _, chain := range []common.Chain{common.ETHChain, common.XMRChain} {
+		for _, initial := range []bool{true, false} {
+			ms := chain.ApproximateBlockMilliseconds()
+			reportHeight := ((60 * 60 * 1000) + ms - 1) / ms
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				switch {
+				case strings.HasPrefix(req.RequestURI, thorclient.MimirEndpoint):
+					_, _ = w.Write([]byte(`-1`))
+				case strings.HasPrefix(req.RequestURI, "/thorchain/inbound_addresses"):
+					rate := 20
+					if initial {
+						rate = 0
+					}
+					_, _ = fmt.Fprintf(w, `[{"chain":%q,"outbound_tx_size":"250","observed_fee_rate":"%d"}]`, chain.String(), rate)
+				default:
+					_, _ = w.Write([]byte(`[{"chain":"","last_observed_in":0,"last_signed_out":0,"thorchain":100}]`))
+				}
+			}))
+			func() {
+				defer server.Close()
+				storage := NewMockScannerStorage()
+				c.Assert(storage.SetScanPos(reportHeight-2), IsNil)
+				fetcher := &retryFeeFetcher{configFetcher: configFetcher{networkFeeSize: 250, networkFeeRate: 30}, endHeight: reportHeight + 2}
+				fetcher.lastSuccess.Store(reportHeight - 2)
+				scanner, err := NewBlockScanner(config.BifrostBlockScannerConfiguration{
+					StartBlockHeight: reportHeight - 2, ChainID: chain, BlockHeightDiscoverBackoff: time.Millisecond,
+				}, storage, m, s.makeBridge(c, server), fetcher)
+				c.Assert(err, IsNil)
+				fees := make(chan common.NetworkFee, 8)
+				scanner.globalNetworkFeeQueue = fees
+				scanner.healthy.Store(true)
+				scanner.wg.Add(1)
+				go scanner.scanBlocks()
+				defer func() { close(scanner.stopChan); scanner.wg.Wait() }()
+				deadline := time.Now().Add(2 * time.Second)
+				for scanner.PreviousHeight() != fetcher.endHeight && time.Now().Before(deadline) {
+					time.Sleep(time.Millisecond)
+				}
+				c.Assert(scanner.PreviousHeight(), Equals, fetcher.endHeight)
+				c.Assert(len(fees) > 0, Equals, true, Commentf("%s initial=%t: successful retries suppressed fees", chain, initial))
+				fee := <-fees
+				c.Check(fee.Chain, Equals, chain)
+				c.Check(fee.TransactionSize, Equals, uint64(250))
+				c.Check(fee.TransactionRate, Equals, uint64(30))
+				expectedHeight := reportHeight
+				if initial {
+					expectedHeight--
+				}
+				c.Check(fee.Height, Equals, expectedHeight)
+			}()
+		}
+	}
+}
+
+// Prefetched blocks may complete out of order. Solvency must run only when the
+// ordered consumer accepts a healthy block, even if the reporter returns an error.
+type orderedSolvencyFetcher struct {
+	configFetcher
+	scanner    *BlockScanner
+	mu         sync.Mutex
+	attempted  map[int64]bool
+	reported   []int64
+	wrongState bool
+}
+
+func (f *orderedSolvencyFetcher) FetchTxs(height, _ int64) (types.TxIn, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.attempted[height] {
+		f.attempted[height] = true
+		return types.TxIn{}, btypes.ErrUnavailableBlock
+	}
+	return types.TxIn{}, nil
+}
+
+func (f *orderedSolvencyFetcher) ReportSolvency(height, chainHeight int64) error {
+	if !f.scanner.IsHealthy() || f.scanner.PreviousHeight() != height-1 || chainHeight != 104 {
+		f.wrongState = true
+	}
+	f.reported = append(f.reported, height)
+	return errors.New("solvency RPC unavailable")
+}
+
+func (s *BlockScannerExtraSuite) TestSolvencyHookOrderedAfterHealthRecovery(c *C) {
+	for _, prefetch := range []int64{0, 4} {
+		func() {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasPrefix(r.RequestURI, thorclient.MimirEndpoint) {
+					_, _ = w.Write([]byte(`-1`))
+					return
+				}
+				_, _ = w.Write([]byte(`[{"chain":"ETH","outbound_tx_size":"1","observed_fee_rate":"1"}]`))
+			}))
+			defer server.Close()
+			fetcher := &orderedSolvencyFetcher{configFetcher: configFetcher{chainHeight: 104}, attempted: make(map[int64]bool)}
+			scanner, err := NewBlockScanner(config.BifrostBlockScannerConfiguration{
+				ChainID: common.ETHChain, StartBlockHeight: 99, PrefetchBlocks: prefetch, BlockHeightDiscoverBackoff: time.Millisecond,
+			}, NewMockScannerStorage(), m, s.makeBridge(c, server), fetcher)
+			c.Assert(err, IsNil)
+			fetcher.scanner = scanner
+			scanner.Start(make(chan types.TxIn, 8), make(chan common.NetworkFee, 8))
+			defer scanner.Stop()
+			deadline := time.Now().Add(3 * time.Second)
+			for scanner.PreviousHeight() != 104 && time.Now().Before(deadline) {
+				time.Sleep(time.Millisecond)
+			}
+			c.Assert(scanner.PreviousHeight(), Equals, int64(104))
+			// The final cursor store follows the hook; no further block can be fetched.
+			c.Check(fetcher.wrongState, Equals, false)
+			c.Check(fetcher.reported, DeepEquals, []int64{101, 102, 103, 104}, Commentf("prefetch=%d", prefetch))
+		}()
+	}
 }

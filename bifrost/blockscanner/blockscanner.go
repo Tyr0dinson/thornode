@@ -32,6 +32,13 @@ type BlockScannerFetcher interface {
 	GetNetworkFee() (transactionSize, transactionFeeRate uint64)
 }
 
+// BlockScannerSolvencyReporter is an optional post-fetch hook. The ordered scan
+// loop calls it only after a successful fetch has restored scanner health, never
+// from prefetch workers. Reporting failures do not discard the fetched block.
+type BlockScannerSolvencyReporter interface {
+	ReportSolvency(fetchHeight, chainHeight int64) error
+}
+
 type Block struct {
 	Height int64
 	Txs    []string
@@ -616,10 +623,12 @@ func (b *BlockScanner) scanBlocks() {
 					continue
 				}
 
-				// don't log an error if its because the block doesn't exist yet
+				// This height is at or below the reported tip, but has not been fully
+				// scanned. Retrying it must not preserve stale signing health.
+				b.healthy.Store(false)
+				// Expected availability retries remain quiet and never skip a height.
 				if !errors.Is(err, btypes.ErrUnavailableBlock) {
 					b.logger.Error().Err(err).Int64("block height", currentBlock).Msg("fail to get RPCBlock")
-					b.healthy.Store(false)
 
 					// An error that never clears would otherwise retry this same height
 					// forever, so give the cursor the same catch-up bound the scanner
@@ -670,6 +679,22 @@ func (b *BlockScanner) scanBlocks() {
 
 			ms := b.cfg.ChainID.ApproximateBlockMilliseconds()
 
+			// consider 3 blocks or the configured lag time behind tip as healthy
+			lagDuration := time.Duration((chainHeight-currentBlock)*ms) * time.Millisecond
+			if chainHeight-currentBlock <= 3 || lagDuration < b.cfg.MaxHealthyLag {
+				b.healthy.Store(true)
+			} else {
+				b.healthy.Store(false)
+			}
+
+			if b.healthy.Load() {
+				if reporter, ok := b.chainScanner.(BlockScannerSolvencyReporter); ok {
+					if solvencyErr := reporter.ReportSolvency(currentBlock, chainHeight); solvencyErr != nil {
+						b.logger.Error().Err(solvencyErr).Int64("height", currentBlock).Msg("fail to report solvency after scan")
+					}
+				}
+			}
+
 			// determine how often we compare THORNode network fee to Bifrost network fee.
 			// General goal is about once per hour, but report immediately if
 			// THORChain has no fee for this chain yet (rate=0).
@@ -692,13 +717,7 @@ func (b *BlockScanner) scanBlocks() {
 					Bool("healthy", b.healthy.Load()).
 					Msg("scan block")
 			}
-			// consider 3 blocks or the configured lag time behind tip as healthy
-			lagDuration := time.Duration((chainHeight-currentBlock)*ms) * time.Millisecond
-			if chainHeight-currentBlock <= 3 || lagDuration < b.cfg.MaxHealthyLag {
-				b.healthy.Store(true)
-			} else {
-				b.healthy.Store(false)
-			}
+
 			b.logger.Debug().Msgf("the gap is %d , healthy: %+v", chainHeight-currentBlock, b.healthy.Load())
 
 			b.metrics.GetCounter(metrics.TotalBlockScanned).Inc()

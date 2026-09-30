@@ -56,7 +56,7 @@ type Scanner struct {
 	// The generic scanner can prefetch heights concurrently; a single lock keeps
 	// reorg journaling and outbox claims ordered without trusting fetch order.
 	scanMu sync.Mutex
-	// solvencyReporter is invoked once per scanned block so that wallet vs
+	// solvencyReporter is invoked after each healthy scan so that wallet vs
 	// thornode vault accounting drift is reported to thornode promptly.
 	// Without this hook, Client.ReportSolvency only fires from the
 	// auto-unhalt SolvencyCheckRunner which is gated on the chain being
@@ -122,7 +122,7 @@ func NewScanner(
 }
 
 // SetSolvencyReporter wires the solvency reporter callback used by the
-// per-block scan loop. Pass Client.ReportSolvency from the chain client.
+// ordered post-fetch hook. Pass Client.ReportSolvency from the chain client.
 func (s *Scanner) SetSolvencyReporter(fn func(int64) error) {
 	s.solvencyReporter = fn
 }
@@ -336,12 +336,7 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, error) 
 	// enrollment. Serialize only the continuity-sensitive registration, rewind,
 	// sync, and journal operations below.
 	s.scanMu.Lock()
-	locked := true
-	defer func() {
-		if locked {
-			s.scanMu.Unlock()
-		}
-	}()
+	defer s.scanMu.Unlock()
 
 	// Registration may rewind the sidecar to an older vault birthday. Refresh
 	// vaults before touching the reorg journal, emitting errata, or advancing
@@ -457,23 +452,17 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, error) 
 		}
 	}
 
-	// The continuity-sensitive work is complete. Solvency reporting may perform
-	// independent network I/O and must not hold scanMu.
-	s.scanMu.Unlock()
-	locked = false
-
-	// Report solvency once per scanned block. Without this hook, the chain
-	// client's ReportSolvency only fires from the auto-unhalt runner which
-	// requires the chain to be already halted — leaving normal operation
-	// blind to vault accounting drift. Match the XRP / Solana wiring pattern.
-	if s.solvencyReporter != nil {
-		if solErr := s.solvencyReporter(fetchHeight); solErr != nil {
-			s.logger.Err(solErr).Int64("height", fetchHeight).Msg("fail to report monero solvency")
-		}
-	}
-
 	replayHandedOff = true
 	return txIn, nil
+}
+
+// ReportSolvency runs after FetchTxs has released scanMu and the shared scanner
+// has recomputed health. XMR retains its per-height reporting eligibility.
+func (s *Scanner) ReportSolvency(height, _ int64) error {
+	if s.solvencyReporter == nil {
+		return nil
+	}
+	return s.solvencyReporter(height)
 }
 
 // EnqueueAuthenticatedInternalInboundReplay creates a bounded replay request
