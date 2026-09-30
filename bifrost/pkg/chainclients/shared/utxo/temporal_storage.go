@@ -88,6 +88,12 @@ type PendingVaultTx struct {
 	TxID            string                   `json:"txid"`
 	Vins            []PendingVaultTxOutpoint `json:"vins"`
 	FirstSeenHeight int64                    `json:"first_seen_height"`
+	// InvalidatedHeight is the block height at which the transaction was first
+	// proven invalidated, or 0 while it is not. The errata is only attested once
+	// the proof has held for a confirmation depth, so a reorg of the conflicting
+	// block cannot trigger a false errata and the conflicting transaction is
+	// observed on THORChain before the outbound is re-queued.
+	InvalidatedHeight int64 `json:"invalidated_height,omitempty"`
 }
 
 // -------------------------------------------------------------------------------------
@@ -308,6 +314,28 @@ func (t *TemporalStorage) TrackPendingVaultTx(tx PendingVaultTx) error {
 		return fmt.Errorf("fail to check whether pending vault tx(%s) exist: %w", key, err)
 	}
 	if exist {
+		return nil
+	}
+	buf, err := json.Marshal(tx)
+	if err != nil {
+		return fmt.Errorf("fail to marshal pending vault tx to json: %w", err)
+	}
+	return t.db.Put([]byte(key), buf, nil)
+}
+
+// UpdatePendingVaultTx overwrites the stored state of an already tracked
+// transaction. It is a no-op for transactions that are not tracked, so a
+// concurrent untrack is never undone.
+func (t *TemporalStorage) UpdatePendingVaultTx(tx PendingVaultTx) error {
+	if tx.TxID == "" {
+		return nil
+	}
+	key := t.getPendingVaultTxKey(tx.TxID)
+	exist, err := t.db.Has([]byte(key), nil)
+	if err != nil {
+		return fmt.Errorf("fail to check whether pending vault tx(%s) exist: %w", key, err)
+	}
+	if !exist {
 		return nil
 	}
 	buf, err := json.Marshal(tx)

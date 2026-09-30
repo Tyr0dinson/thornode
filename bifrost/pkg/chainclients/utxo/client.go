@@ -395,14 +395,10 @@ func (c *Client) OnObservedTxIn(txIn types.TxInItem, blockHeight int64) {
 	if _, err = c.temporalStorage.TrackObservedTx(txIn.Tx); err != nil {
 		c.log.Err(err).Msgf("fail to add hash (%s) to observed tx cache", txIn.Tx)
 	}
-	if c.isAsgardAddress(txIn.Sender) {
+	fromVault := c.isAsgardAddress(txIn.Sender)
+	if fromVault {
 		c.log.Debug().Int64("height", blockHeight).Msgf("add hash %s as self transaction", txIn.Tx)
 		blockMeta.AddSelfTransaction(txIn.Tx)
-		// Vault outbounds are finalised on THORChain at mempool stage: watch the
-		// transaction until it mines so an invalidation (a conflicting mined tx
-		// spending its inputs) can be errata'd and the outbound re-queued,
-		// instead of being recorded as paid while never landing.
-		c.trackPendingVaultTx(txIn.Tx)
 	} else {
 		// add the transaction to block meta
 		blockMeta.AddCustomerTransaction(txIn.Tx)
@@ -423,6 +419,15 @@ func (c *Client) OnObservedTxIn(txIn types.TxInItem, blockHeight int64) {
 	}
 	if m.GetTxID().IsEmpty() {
 		return
+	}
+	if fromVault {
+		// Vault outbounds are finalised on THORChain at mempool stage: watch the
+		// transaction until it mines so an invalidation (a conflicting mined tx
+		// spending its inputs) can be errata'd and the outbound re-queued,
+		// instead of being recorded as paid while never landing. Only outbound
+		// memos are watched; internal vault transactions (migrate, consolidate)
+		// are out of scope.
+		c.trackPendingVaultTx(txIn.Tx)
 	}
 	if err = c.signerCacheManager.SetSigned(txIn.CacheHash(c.GetChain(), m.GetTxID().String()), txIn.CacheVault(c.GetChain()), txIn.Tx); err != nil {
 		c.log.Err(err).Msg("fail to update signer cache")

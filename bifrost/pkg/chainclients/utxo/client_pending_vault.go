@@ -120,7 +120,9 @@ func (c *Client) checkPendingVaultTxs(block *btcjson.GetBlockVerboseTxResult) {
 			// mined while the scanner was not watching (e.g. downtime)
 			c.untrackPendingVaultTx(tx.TxID)
 		case err == nil:
-			// still in the mempool, still viable
+			// still in the mempool, still viable (e.g. back after a reorg of the
+			// conflicting block): drop any pending invalidation proof
+			c.clearPendingVaultTxInvalidation(tx)
 		case isRPCTxNotFound(err):
 			unknown[tx.TxID] = tx
 		default:
@@ -181,7 +183,34 @@ func (c *Client) checkPendingVaultTxs(block *btcjson.GetBlockVerboseTxResult) {
 		}
 	}
 
+	// a previously recorded proof that no longer holds (e.g. the conflicting
+	// block was reorged out and the input is unspent again) is dropped
+	for txid, tx := range unknown {
+		if !invalidated[txid] {
+			c.clearPendingVaultTxInvalidation(tx)
+		}
+	}
+
+	depth := c.pendingVaultTxErrataDepth()
 	for txid := range invalidated {
+		// Only attest once the invalidation has held for the confirmation depth:
+		// a reorg of the conflicting block within that window must not produce
+		// a false errata (the transaction could still land), and the delay lets
+		// THORChain observe the conflicting transaction first, which the re-queue
+		// relies on to detect that the payee was already paid.
+		tx := byID[txid]
+		if tx.InvalidatedHeight <= 0 || block.Height < tx.InvalidatedHeight {
+			tx.InvalidatedHeight = block.Height
+			if err := c.temporalStorage.UpdatePendingVaultTx(tx); err != nil {
+				c.log.Err(err).Str("txid", txid).Msg("fail to record pending vault tx invalidation")
+			}
+			c.log.Info().Str("txid", txid).Int64("height", block.Height).Int64("depth", depth).
+				Msg("pending vault tx invalidated before mining, waiting for confirmation depth")
+			continue
+		}
+		if block.Height-tx.InvalidatedHeight < depth {
+			continue
+		}
 		c.log.Warn().Str("txid", txid).Msg("pending vault tx invalidated before mining, attesting errata")
 		select {
 		case c.globalErrataQueue <- types.ErrataBlock{
@@ -238,6 +267,31 @@ func (c *Client) pendingVaultTxInvalidated(tx utxo.PendingVaultTx, watched map[s
 		}
 	}
 	return false, nil
+}
+
+// pendingVaultTxMinErrataDepth is the minimum number of blocks an invalidation
+// proof must hold, past the block it was first seen at, before the errata is
+// attested.
+const pendingVaultTxMinErrataDepth = 2
+
+// pendingVaultTxErrataDepth is the chain's configured MinConfirmations, floored
+// at pendingVaultTxMinErrataDepth.
+func (c *Client) pendingVaultTxErrataDepth() int64 {
+	depth := int64(c.cfg.MinConfirmations)
+	if depth < pendingVaultTxMinErrataDepth {
+		depth = pendingVaultTxMinErrataDepth
+	}
+	return depth
+}
+
+func (c *Client) clearPendingVaultTxInvalidation(tx utxo.PendingVaultTx) {
+	if tx.InvalidatedHeight == 0 {
+		return
+	}
+	tx.InvalidatedHeight = 0
+	if err := c.temporalStorage.UpdatePendingVaultTx(tx); err != nil {
+		c.log.Err(err).Str("txid", tx.TxID).Msg("fail to clear pending vault tx invalidation")
+	}
 }
 
 func (c *Client) untrackPendingVaultTx(txid string) {

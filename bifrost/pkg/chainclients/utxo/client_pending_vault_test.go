@@ -151,11 +151,19 @@ func (s *BitcoinSuite) TestCheckPendingVaultTxs(c *C) {
 	c.Assert(s.client.temporalStorage.UntrackPendingVaultTx(pendingTxA), IsNil)
 
 	// watched tx gone and its input spent on-chain by a mined transaction:
-	// invalidated, errata attested, untracked. The vin's parent resolves via the
-	// generic getrawtransaction fixture, which is mined.
+	// invalidated. The vin's parent resolves via the generic getrawtransaction
+	// fixture, which is mined. The errata is only attested once the proof has
+	// held for the confirmation depth.
 	s.trackPending(c, pendingTxA, sharedutxo.PendingVaultTxOutpoint{TxID: pendingTxP, Vout: 0})
 	btcChainRPCs["gettxout"] = rpcResult(nil)
-	s.client.checkPendingVaultTxs(block)
+	depth := s.client.pendingVaultTxErrataDepth()
+	c.Assert(depth >= pendingVaultTxMinErrataDepth, Equals, true)
+	for h := int64(100); h < 100+depth; h++ {
+		s.client.checkPendingVaultTxs(&btcjson.GetBlockVerboseTxResult{Height: h})
+		c.Check(s.pendingIDs(c)[pendingTxA], Equals, true)
+		c.Check(s.drainErrata(errataQueue), HasLen, 0)
+	}
+	s.client.checkPendingVaultTxs(&btcjson.GetBlockVerboseTxResult{Height: 100 + depth})
 	c.Check(s.pendingIDs(c)[pendingTxA], Equals, false)
 	errata := s.drainErrata(errataQueue)
 	c.Assert(errata, HasLen, 1)
@@ -184,7 +192,10 @@ func (s *BitcoinSuite) TestCheckPendingVaultTxsCascade(c *C) {
 	btcChainRPCs["gettxout"] = rpcResult(nil)
 	defer delete(btcChainRPCs, "gettxout")
 
+	depth := s.client.pendingVaultTxErrataDepth()
 	s.client.checkPendingVaultTxs(block)
+	c.Check(s.drainErrata(errataQueue), HasLen, 0)
+	s.client.checkPendingVaultTxs(&btcjson.GetBlockVerboseTxResult{Height: block.Height + depth})
 	errata := s.drainErrata(errataQueue)
 	c.Assert(errata, HasLen, 2)
 	ids := map[string]bool{}
@@ -214,4 +225,74 @@ func (s *BitcoinSuite) TestCheckPendingVaultTxsUnsupportedRPC(c *C) {
 	c.Check(s.pendingIDs(c)[pendingTxA], Equals, true)
 	c.Check(s.drainErrata(errataQueue), HasLen, 0)
 	s.client.pendingVaultTxCheckUnsupported.Store(false)
+}
+
+func (s *BitcoinSuite) TestCheckPendingVaultTxsInvalidationReverts(c *C) {
+	errataQueue := make(chan types.ErrataBlock, 10)
+	s.client.globalErrataQueue = errataQueue
+	depth := s.client.pendingVaultTxErrataDepth()
+
+	// proof recorded: tx gone, input spent on-chain
+	s.trackPending(c, pendingTxA, sharedutxo.PendingVaultTxOutpoint{TxID: pendingTxP, Vout: 0})
+	defer func() { _ = s.client.temporalStorage.UntrackPendingVaultTx(pendingTxA) }()
+	btcChainRPCs["getrawtransaction-"+pendingTxA] = rpcError(-5, "No such mempool or blockchain transaction")
+	btcChainRPCs["gettxout"] = rpcResult(nil)
+	s.client.checkPendingVaultTxs(&btcjson.GetBlockVerboseTxResult{Height: 100})
+	pending, err := s.client.temporalStorage.GetPendingVaultTxs()
+	c.Assert(err, IsNil)
+	c.Assert(pending, HasLen, 1)
+	c.Check(pending[0].InvalidatedHeight, Equals, int64(100))
+
+	// the conflicting block is reorged out: the input is unspent again, so the
+	// proof is dropped and no errata is attested once the depth passes
+	btcChainRPCs["gettxout"] = rpcResult(map[string]interface{}{"bestblock": "aa", "confirmations": 5, "value": 0.5})
+	s.client.checkPendingVaultTxs(&btcjson.GetBlockVerboseTxResult{Height: 101})
+	pending, err = s.client.temporalStorage.GetPendingVaultTxs()
+	c.Assert(err, IsNil)
+	c.Assert(pending, HasLen, 1)
+	c.Check(pending[0].InvalidatedHeight, Equals, int64(0))
+
+	// the transaction is back in the mempool: still no errata
+	btcChainRPCs["getrawtransaction-"+pendingTxA] = verboseTx(pendingTxA, "", nil)
+	s.client.checkPendingVaultTxs(&btcjson.GetBlockVerboseTxResult{Height: 101 + depth})
+	c.Check(s.drainErrata(errataQueue), HasLen, 0)
+	c.Check(s.pendingIDs(c)[pendingTxA], Equals, true)
+	delete(btcChainRPCs, "getrawtransaction-"+pendingTxA)
+	delete(btcChainRPCs, "gettxout")
+}
+
+func (s *BitcoinSuite) TestOnObservedTxInTracksOnlyVaultOutbounds(c *C) {
+	asgards, err := s.client.getAsgardAddress()
+	c.Assert(err, IsNil)
+	c.Assert(len(asgards) > 0, Equals, true)
+	vaultAddr := asgards[0].String()
+	inHash := "1111111111111111111111111111111111111111111111111111111111111111"
+
+	for _, txid := range []string{pendingTxA, pendingTxB, pendingTxC} {
+		btcChainRPCs["getrawtransaction-"+txid] = verboseTx(txid, "", []map[string]interface{}{vin(pendingTxP, 0)})
+		defer delete(btcChainRPCs, "getrawtransaction-"+txid)
+		defer func(txid string) { _ = s.client.temporalStorage.UntrackPendingVaultTx(txid) }(txid)
+	}
+
+	observe := func(txid, sender, memo string) {
+		s.client.OnObservedTxIn(types.TxInItem{
+			BlockHeight: 100,
+			Tx:          txid,
+			Sender:      sender,
+			To:          "bc1q2gjc0rnhy4nrxvuklk6ptwkcs9kcr59mcl2q9j",
+			Memo:        memo,
+		}, 100)
+	}
+
+	// vault outbound: watched
+	observe(pendingTxA, vaultAddr, "OUT:"+inHash)
+	// internal vault transaction: not watched
+	observe(pendingTxB, vaultAddr, "MIGRATE:100")
+	// customer transaction with an outbound-looking memo: not watched
+	observe(pendingTxC, "bc1q0s4mg25tu6termrk8egltfyme4q7sg3h0e56p3", "OUT:"+inHash)
+
+	ids := s.pendingIDs(c)
+	c.Check(ids[pendingTxA], Equals, true)
+	c.Check(ids[pendingTxB], Equals, false)
+	c.Check(ids[pendingTxC], Equals, false)
 }
