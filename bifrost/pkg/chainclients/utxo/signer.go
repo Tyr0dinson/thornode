@@ -221,7 +221,25 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		}
 
 	} else {
-		redeemTx, checkpoint.IndividualAmounts, err = c.buildTx(tx, sourceScript)
+		var zecReference int64
+		if c.cfg.ChainID == common.ZECChain {
+			// ZEC is deployed before activation. Resolve fixed expiry before
+			// construction; fresh inputs use the live confirmed view, while retries
+			// keep their saved VINs.
+			checkpoint.ZecExpiryHeight, err = c.getZecExpiryHeight(thorchainHeight)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			zecReference = int64(checkpoint.ZecExpiryHeight) - int64(ZecTxExpiry)
+			tip, tipErr := c.rpc.GetBlockCount()
+			if tipErr != nil {
+				return nil, nil, nil, fmt.Errorf("get ZEC tip before input selection: %w", tipErr)
+			}
+			if err = checkZecExpiry(checkpoint.ZecExpiryHeight, tip); err != nil {
+				return nil, nil, nil, err
+			}
+		}
+		redeemTx, checkpoint.IndividualAmounts, err = c.buildTx(tx, sourceScript, zecReference)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -231,13 +249,6 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 			return nil, nil, nil, fmt.Errorf("fail to serialize tx: %w", err)
 		}
 		checkpoint.UnsignedTx = buf.Bytes()
-	}
-
-	if c.cfg.ChainID == common.ZECChain && checkpoint.ZecExpiryHeight == 0 {
-		checkpoint.ZecExpiryHeight, err = c.getZecExpiryHeight(thorchainHeight)
-		if err != nil {
-			return nil, nil, nil, err
-		}
 	}
 
 	// serialize the checkpoint for later

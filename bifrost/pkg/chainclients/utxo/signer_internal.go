@@ -483,6 +483,10 @@ func (c *Client) getGasCoin(tx stypes.TxOutItem, vSize int64) common.Coin {
 }
 
 func (c *Client) getGasCoinZEC(tx *wire.MsgTx, memo string) common.Coin {
+	return common.NewCoin(common.ZECAsset, cosmos.NewUint(uint64(zecFeeForInputCount(len(tx.TxIn), memo))))
+}
+
+func zecFeeForInputCount(inputCount int, memo string) btcutil.Amount {
 	// https://zips.z.cash/zip-0317
 	// 8 bytes value + 1 byte length + OP_RETURN + OP_PUSHBYTES/DATA
 	// -> 8 + 1 + 1 + 2 (using two bytes for OP_PUSHDATA2 for simplicity)
@@ -493,38 +497,20 @@ func (c *Client) getGasCoinZEC(tx *wire.MsgTx, memo string) common.Coin {
 	}
 
 	// assume 2 tx out: one to customer + one back to self
-	amount := 5000*max(len(tx.TxIn), 2+actionsMemo) + ZecExtraFee
+	amount := 5000*max(inputCount, 2+actionsMemo) + ZecExtraFee
 
-	return common.NewCoin(common.ZECAsset, cosmos.NewUint(uint64(amount)))
+	return btcutil.Amount(amount)
 }
 
-func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx, map[string]int64, error) {
-	txes, err := c.getUtxoToSpend(tx.VaultPubKey, c.getPaymentAmount(tx))
-	if err != nil {
-		return nil, nil, fmt.Errorf("fail to get unspent UTXO: %w", err)
-	}
-	redeemTx := wire.NewMsgTx(wire.TxVersion)
-	totalAmt := int64(0)
-	individualAmounts := make(map[string]int64, len(txes))
-	for _, item := range txes {
-		var txID *chainhash.Hash
-		txID, err = chainhash.NewHashFromStr(item.TxID)
+func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte, zecReference int64) (*wire.MsgTx, map[string]int64, error) {
+	var txes []btcjson.ListUnspentResult
+	var err error
+	if c.cfg.ChainID != common.ZECChain {
+		txes, err = c.getUtxoToSpend(tx.VaultPubKey, c.getPaymentAmount(tx))
 		if err != nil {
-			return nil, nil, fmt.Errorf("fail to parse txID(%s): %w", item.TxID, err)
+			return nil, nil, fmt.Errorf("fail to get unspent UTXO: %w", err)
 		}
-		// double check that the utxo is still valid
-		outputPoint := wire.NewOutPoint(txID, item.Vout)
-		sourceTxIn := wire.NewTxIn(outputPoint, nil, nil)
-		redeemTx.AddTxIn(sourceTxIn)
-		var amt btcutil.Amount
-		amt, err = btcutil.NewAmount(item.Amount)
-		if err != nil {
-			return nil, nil, fmt.Errorf("fail to parse amount(%f): %w", item.Amount, err)
-		}
-		individualAmounts[formatUtxoKey(txID.String(), item.Vout)] = int64(amt)
-		totalAmt += int64(amt)
 	}
-
 	var buf []byte
 	var nullDataScripts [][]byte
 	switch c.cfg.ChainID {
@@ -620,6 +606,53 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 		}
 	}
 
+	if c.cfg.ChainID == common.ZECChain {
+		consolidate := memo.GetType() == mem.TxConsolidate
+		target := tx.Coins.GetCoin(common.ZECAsset).Amount
+		if !tx.MaxGas.IsEmpty() {
+			target = target.Add(tx.MaxGas.ToCoins().GetCoin(common.ZECAsset).Amount)
+		}
+		if len(nullDataScripts) > 1 {
+			target = target.AddUint64(uint64(len(nullDataScripts)-1) * uint64(tx.Chain.P2WPKHOutputValue()))
+		}
+		if !target.BigInt().IsInt64() {
+			return nil, nil, fmt.Errorf("ZEC input target exceeds the supported amount range")
+		}
+		amount := btcutil.Amount(target.BigInt().Int64())
+		if !consolidate && tx.MaxGas.IsEmpty() {
+			txes, err = c.selectZecUtxos(tx.VaultPubKey, amount, zecReference, false, func(inputCount int) btcutil.Amount {
+				return zecFeeForInputCount(inputCount, memo.String())
+			})
+		} else {
+			txes, err = c.getZecUtxoToSpend(tx.VaultPubKey, amount, zecReference, consolidate)
+		}
+		if err != nil {
+			return nil, nil, fmt.Errorf("fail to get confirmed ZEC inputs: %w", err)
+		}
+	}
+
+	redeemTx := wire.NewMsgTx(wire.TxVersion)
+	totalAmt := int64(0)
+	individualAmounts := make(map[string]int64, len(txes))
+	for _, item := range txes {
+		var txID *chainhash.Hash
+		txID, err = chainhash.NewHashFromStr(item.TxID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("fail to parse txID(%s): %w", item.TxID, err)
+		}
+		// double check that the utxo is still valid
+		outputPoint := wire.NewOutPoint(txID, item.Vout)
+		sourceTxIn := wire.NewTxIn(outputPoint, nil, nil)
+		redeemTx.AddTxIn(sourceTxIn)
+		var amt btcutil.Amount
+		amt, err = btcutil.NewAmount(item.Amount)
+		if err != nil {
+			return nil, nil, fmt.Errorf("fail to parse amount(%f): %w", item.Amount, err)
+		}
+		individualAmounts[formatUtxoKey(txID.String(), item.Vout)] = int64(amt)
+		totalAmt += int64(amt)
+	}
+
 	totalSize := c.estimateTxSize(txes, nullDataScripts, buf, sourceScript)
 
 	coinToCustomer := tx.Coins.GetCoin(c.cfg.ChainID.GetGasAsset())
@@ -639,19 +672,39 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 		p2wpkhOutputsCost = int64(len(nullDataScripts)-1) * tx.Chain.P2WPKHOutputValue()
 	}
 
-	settleFee := func(changeScript []byte) (gasAmtSats, toCustomer uint64, balance int64) {
-		gasAmtSats, toCustomer = c.applyFeeLimits(tx, memo, gasCoin.Amount.Uint64(), coinToCustomer.Amount.Uint64(),
-			c.maxFeeSats(txes, nullDataScripts, buf, changeScript))
-		return gasAmtSats, toCustomer, totalAmt - int64(toCustomer) - int64(gasAmtSats) - p2wpkhOutputsCost
-	}
+	var gasAmtSats, toCustomer uint64
+	var balance int64
+	if c.cfg.ChainID == common.ZECChain && tx.MaxGas.IsEmpty() && memo.GetType() != mem.TxConsolidate {
+		// There is no committed fee allowance. Use the same ZIP-317 fee as input
+		// selection; local relay policy can veto it but cannot change the digest.
+		gasAmtSats, toCustomer = gasCoin.Amount.Uint64(), coinToCustomer.Amount.Uint64()
+		balance = totalAmt - int64(toCustomer) - int64(gasAmtSats) - p2wpkhOutputsCost
+		changeScript := sourceScript
+		if balance == 0 {
+			changeScript = nil
+		}
+		maxFeeSats := c.maxFeeSats(txes, nullDataScripts, buf, changeScript)
+		if maxFeeSats < 0 || gasAmtSats > uint64(maxFeeSats) {
+			return nil, nil, fmt.Errorf("ZEC conventional fee %d exceeds configured cap %d", gasAmtSats, maxFeeSats)
+		}
+		if relay := c.minRelayFeeSats.Load(); gasAmtSats < relay {
+			return nil, nil, fmt.Errorf("ZEC conventional fee %d is below local relay minimum %d", gasAmtSats, relay)
+		}
+	} else {
+		settleFee := func(changeScript []byte) (gasAmtSats, toCustomer uint64, balance int64) {
+			gasAmtSats, toCustomer = c.applyFeeLimits(tx, memo, gasCoin.Amount.Uint64(), coinToCustomer.Amount.Uint64(),
+				c.maxFeeSats(txes, nullDataScripts, buf, changeScript))
+			return gasAmtSats, toCustomer, totalAmt - int64(toCustomer) - int64(gasAmtSats) - p2wpkhOutputsCost
+		}
 
-	// Cap the fee assuming a change output first. When no balance is left for change
-	// (e.g. a migration that sends everything), the signed transaction is smaller, so
-	// re-cap against the size without the change output to stay within the fee rate.
-	gasAmtSats, toCustomer, balance := settleFee(sourceScript)
-	if balance == 0 {
-		c.log.Info().Msg("no change output, capping fee against the transaction without change")
-		gasAmtSats, toCustomer, balance = settleFee(nil)
+		// Cap the fee assuming a change output first. When no balance is left for change
+		// (e.g. a migration that sends everything), the signed transaction is smaller, so
+		// re-cap against the size without the change output to stay within the fee rate.
+		gasAmtSats, toCustomer, balance = settleFee(sourceScript)
+		if balance == 0 {
+			c.log.Info().Msg("no change output, capping fee against the transaction without change")
+			gasAmtSats, toCustomer, balance = settleFee(nil)
+		}
 	}
 
 	gasAmt := btcutil.Amount(gasAmtSats)
@@ -803,9 +856,27 @@ func (c *Client) consolidateVaultUTXOs(vault types.Vault, utxosToSpend, scannedH
 	lock.Lock()
 	defer lock.Unlock()
 
-	// Probe UTXO availability for consolidation.
-	// The amount used here doesn't matter , just to see whether there are more than 15 UTXO available or not
-	utxos, err := c.getUtxoToSpend(vault.PubKey, 0)
+	var height int64
+	var utxos []btcjson.ListUnspentResult
+	var err error
+	if c.GetChain() == common.ZECChain {
+		height, err = c.bridge.GetBlockHeight()
+		if err != nil {
+			return fmt.Errorf("get THORChain block height: %w", err)
+		}
+		height, err = c.getZecConsolidationHeight(scannedHeight, height, vault.BlockHeight)
+		if err != nil {
+			return fmt.Errorf("get ZEC consolidation signing height: %w", err)
+		}
+		expiry, expiryErr := c.getZecExpiryHeight(height)
+		if expiryErr != nil {
+			return fmt.Errorf("get ZEC consolidation expiry: %w", expiryErr)
+		}
+		utxos, err = c.getZecUtxoToSpend(vault.PubKey, 0, int64(expiry)-int64(ZecTxExpiry), true)
+	} else {
+		// Probe the existing consolidation input target on other UTXO chains.
+		utxos, err = c.getUtxoToSpend(vault.PubKey, 0)
+	}
 	if err != nil {
 		return fmt.Errorf("get utxos to spend: %w", err)
 	}
@@ -820,14 +891,10 @@ func (c *Client) consolidateVaultUTXOs(vault types.Vault, utxosToSpend, scannedH
 		return err
 	}
 
-	height, err := c.bridge.GetBlockHeight()
-	if err != nil {
-		return fmt.Errorf("get THORChain block height: %w", err)
-	}
-	if c.GetChain() == common.ZECChain {
-		height, err = c.getZecConsolidationHeight(scannedHeight, height, vault.BlockHeight)
+	if c.GetChain() != common.ZECChain {
+		height, err = c.bridge.GetBlockHeight()
 		if err != nil {
-			return fmt.Errorf("get ZEC consolidation signing height: %w", err)
+			return fmt.Errorf("get THORChain block height: %w", err)
 		}
 	}
 
