@@ -244,6 +244,30 @@ variables:
         sleep 15
       done
 
+# Docker CLI, compose and buildx for a dind job on a Debian image, pinned to the
+# versions docker:28.5.2 ships, from Docker's apt repository (not Docker Hub).
+# Include before .wait-for-dind; exits 75 if the repository stays unreachable.
+.docker-cli-apt:
+  before_script:
+    - |
+      . /etc/os-release
+      install -m 0755 -d /etc/apt/keyrings
+      echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $VERSION_CODENAME stable" \
+        > /etc/apt/sources.list.d/docker.list
+      for i in 1 2 3; do
+        curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc &&
+          apt-get update &&
+          apt-get install -y --no-install-recommends $PKGS \
+            docker-ce-cli="5:28.5.2-1~debian.12~$VERSION_CODENAME" \
+            docker-compose-plugin="2.40.3-1~debian.12~$VERSION_CODENAME" \
+            docker-buildx-plugin="0.29.1-1~debian.12~$VERSION_CODENAME" && break
+        if [ "$i" = 3 ]; then
+          echo "Docker apt repository unreachable, treating as an infrastructure failure"
+          exit 75
+        fi
+        sleep 15
+      done
+
 # Jobs start from `needs:`, not from stage order. With stage order the
 # simulation started a median 27 min after the pipeline (p90 117 min), held back
 # by whichever protobuf or test job finished last. Checks that need nothing
@@ -702,7 +726,7 @@ test-simulation:
   variables:
     DOCKER_BUILDKIT: "1"
     PARALLELISM: "4"
-    GO_PRIVATE_AUTH_REQUIRED: "1"
+    PKGS: python3
   rules:
     - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
       when: never
@@ -723,7 +747,15 @@ test-simulation:
       - data_integrity_failure
       - script_failure
   stage: long-test
-  <<: *use_dind
+  # The Go binaries are built here, not in the dind daemon (see
+  # test-simulation-cluster-native in the Makefile), with the runner's warm Go
+  # caches. bookworm is the build stage of build/docker/Dockerfile, so the
+  # binaries link against the glibc of the bookworm runtime they run on; the
+  # default golang:1.26.4 is trixie. The module cache is warm, so like
+  # unit-tests this only warns when no credential can read tss-lib-private.
+  image: golang:1.26.4-bookworm
+  services:
+    - docker:28.5.2-dind
   artifacts:
     when: on_failure
     name: $CI_JOB_NAME-$CI_COMMIT_REF_NAME
@@ -731,14 +763,13 @@ test-simulation:
       - ./logs/
   environment:
     name: integration
-  # docker compose is the plugin shipped in the docker image, not a download.
   before_script:
+    - !reference [.docker-cli-apt, before_script]
     - !reference [.wait-for-dind, before_script]
-    - apk -U add git make protoc bash go jq python3
     - !reference [.go-private-auth, before_script]
     - !reference [.dind-registries, before_script]
   script:
-    - make test-simulation-cluster
+    - make test-simulation-cluster-native
   # Diagnostics for the on_failure artifacts. On a passing run nothing keeps
   # them, and the event replay and log dump took up to 3.6 min.
   after_script:
