@@ -36,6 +36,14 @@ type destinationChainClient struct {
 	broadcasts int
 }
 
+type destinationTestObserver struct{ observations atomic.Int32 }
+
+func (o *destinationTestObserver) ObserveSigned(types.TxIn) { o.observations.Add(1) }
+
+func (*destinationTestObserver) IsChainClientStarted(chain common.Chain) bool {
+	return chain.Equals(common.XMRChain)
+}
+
 type protectedDestinationClient struct {
 	MockChainClient
 	chain common.Chain
@@ -166,7 +174,10 @@ func (s *SignCoverageSuite) TestPipelineUnsupportedXMRDestination(c *C) {
 		if failDelete {
 			storage.removeFailures = 1
 		}
-		sign := &Signer{logger: log.Logger, storage: storage, thorchainBridge: bridge, constantsProvider: NewConstantsProvider(bridge), chains: map[common.Chain]chainclients.ChainClient{common.XMRChain: chain}, pubkeyMgr: pubkeymanager.NewMockPoolAddressValidator(), m: GetMetricForTest(c), localPubKeyECDSA: vaultKey}
+		// Exercise destination validation after XMR startup, while requiring
+		// every signing pass below to avoid fabricating signed observations.
+		obs := &destinationTestObserver{}
+		sign := &Signer{logger: log.Logger, observer: obs, storage: storage, thorchainBridge: bridge, constantsProvider: NewConstantsProvider(bridge), chains: map[common.Chain]chainclients.ChainClient{common.XMRChain: chain}, pubkeyMgr: pubkeymanager.NewMockPoolAddressValidator(), m: GetMetricForTest(c), localPubKeyECDSA: vaultKey}
 		bad := NewTxOutStoreItem(90, types.TxOutItem{Chain: common.XMRChain, VaultPubKey: vaultKey, VaultPubKeyFrost: frostKey, ToAddress: common.Address(common.XMRChecksummedDummyAddress('C')), Coins: common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(1))), Memo: "OUT:" + strings.Repeat("A", 64)}, 0)
 		good := bad
 		good.Index = 1
@@ -174,7 +185,11 @@ func (s *SignCoverageSuite) TestPipelineUnsupportedXMRDestination(c *C) {
 		c.Assert(storage.Batch([]TxOutStoreItem{bad, good}), IsNil)
 		pipeline, err := newPipeline(1)
 		c.Assert(err, IsNil)
-		step := func() { pipeline.SpawnSignings(sign, bridge); pipeline.Wait() }
+		step := func() {
+			pipeline.SpawnSignings(sign, bridge)
+			pipeline.Wait()
+			c.Assert(obs.observations.Load(), Equals, int32(0))
+		}
 		step()
 		c.Assert(chain.attempts, DeepEquals, []common.Address{bad.TxOutItem.ToAddress})
 		c.Assert(registrationCalls.Load(), Equals, int32(0))
@@ -209,8 +224,6 @@ func (s *SignCoverageSuite) TestPipelineUnsupportedXMRDestination(c *C) {
 		c.Assert(unexpectedCalls.Load(), Equals, int32(0))
 		c.Assert(bridge.broadcastCalls, Equals, 0)
 		c.Assert(bad.TxOutItem.OutHash.IsEmpty(), Equals, true)
-		// Observer is nil: any fabricated auto-observation would fail this test.
-
 		// Keep admitting fresh unsupported obligations while all earlier ones
 		// are redelivered. Admission keeps the queue and signing-pass work flat.
 		// The valid payout must be attempted on every pass, including after a

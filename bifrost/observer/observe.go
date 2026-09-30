@@ -51,8 +51,6 @@ const (
 	errataAttestationRetryMaxDelay   = time.Hour
 )
 
-const errataRetryInterval = 1 * time.Second
-
 // errataOutcomeBridge deliberately bypasses the normal one-block HTTP cache.
 // A cached pre-handler voter response cannot safely decide whether an XMR
 // transaction reached Thornode's permanent Reverted state.
@@ -246,6 +244,35 @@ func (o *Observer) startConfiguredChainClients(deferXMR bool) {
 	}
 }
 
+// IsChainClientStarted reports completed startup, never readiness during stop.
+func (o *Observer) IsChainClientStarted(chainID common.Chain) bool {
+	if o == nil {
+		return false
+	}
+	o.chainLifecycleMu.Lock()
+	defer o.chainLifecycleMu.Unlock()
+	_, started := o.startedChains[chainID]
+	return started && !o.stopping
+}
+
+// startRestoredChainClients validates shared history before starting any chain.
+// Only XMR waits for its historical quarantine writes and voter reconciliation.
+func (o *Observer) startRestoredChainClients() (bool, error) {
+	tombstones, err := o.storage.getErrataTombstones()
+	if err != nil {
+		return false, fmt.Errorf("load observer errata startup state: %w", err)
+	}
+	deferXMR := false
+	for _, tombstone := range tombstones {
+		if tombstone.Chain.Equals(common.XMRChain) && tombstone.Committed {
+			deferXMR = true
+			break
+		}
+	}
+	o.startConfiguredChainClients(deferXMR)
+	return deferXMR, nil
+}
+
 func (o *Observer) startedChainClientSnapshot() []chainclients.ChainClient {
 	o.chainLifecycleMu.Lock()
 	defer o.chainLifecycleMu.Unlock()
@@ -277,7 +304,7 @@ func (o *Observer) stopStartedChainClients() {
 	}
 }
 
-// startDeferredXMRChain keeps an unresolved committed errata scoped to XMR.
+// startDeferredXMRChain keeps historical quarantine and unresolved errata scoped to XMR.
 // Other chain clients remain operational while the durable voter outcome is
 // retried. Only an explicit Reverted result creates the permanent quarantine;
 // a false voter is never converted into an unsafe timeout-based terminal.
@@ -286,8 +313,9 @@ func (o *Observer) startDeferredXMRChain(ctx context.Context) {
 	if !ok || chain == nil {
 		return
 	}
-	ticker := time.NewTicker(errataRetryInterval)
+	ticker := time.NewTicker(constants.ThorchainBlockTime)
 	defer ticker.Stop()
+	replayed := false
 	for {
 		select {
 		case <-o.stopChan:
@@ -296,12 +324,29 @@ func (o *Observer) startDeferredXMRChain(ctx context.Context) {
 			return
 		default:
 		}
-		unresolved, err := o.reconcileCommittedXMRErrata()
+		// Preserve restoration of the existing durable state. Once historical
+		// quarantine writes succeed, retries need only resolve pending receipts.
+		var err error
+		if !replayed {
+			err = o.replayPermanentErrataQuarantines()
+			replayed = err == nil
+		}
+		unresolved := 0
+		if err == nil {
+			unresolved, err = o.reconcileCommittedXMRErrata()
+		}
 		if err == nil && unresolved == 0 {
-			if o.startChainClient(common.XMRChain, chain) {
-				o.logger.Info().Msg("started XMR chain client after committed errata reconciliation")
+			// A receipt can arrive during reconciliation. Do not establish
+			// readiness from a snapshot that omitted that unfinished work.
+			var pending []errataTombstone
+			pending, err = o.storage.getUnresolvedCommittedXMRErrata()
+			unresolved = len(pending)
+			if err == nil && unresolved == 0 {
+				if ctx.Err() == nil && o.startChainClient(common.XMRChain, chain) {
+					o.logger.Info().Msg("started XMR chain client after committed errata reconciliation")
+				}
+				return
 			}
-			return
 		}
 		if err != nil {
 			o.logger.Warn().Err(err).
@@ -322,24 +367,10 @@ func (o *Observer) Start(ctx context.Context) error {
 	if err := o.restoreDeck(); err != nil {
 		return fmt.Errorf("restore observer deck: %w", err)
 	}
-	// Reconcile every historical XMR tombstone before the chain client can scan
-	// or broadcast. This heals crashes between Observer's durable barrier and
-	// the chain client's two local quarantine stores, including tombstones
-	// written by older versions which were already marked committed.
-	if err := o.replayPermanentErrataQuarantines(); err != nil {
-		return fmt.Errorf("replay permanent observer errata quarantines: %w", err)
+	deferXMR, err := o.startRestoredChainClients()
+	if err != nil {
+		return err
 	}
-	// Resolve every delivered-but-unclassified XMR errata before XMR can scan or
-	// rebroadcast. An unresolved result defers only XMR; stopping every unrelated
-	// chain client would turn one partial errata vote into a global outage.
-	unresolved, err := o.reconcileCommittedXMRErrata()
-	deferXMR := err != nil || unresolved != 0
-	if deferXMR {
-		o.logger.Warn().Err(err).
-			Int("unresolved", unresolved).
-			Msg("starting non-XMR chain clients while committed XMR errata remains unresolved")
-	}
-	o.startConfiguredChainClients(deferXMR)
 	o.oracle.Start()
 	go o.processOracle()
 	go o.processTxIns()
@@ -350,7 +381,11 @@ func (o *Observer) Start(ctx context.Context) error {
 	go o.attestationGossip.Start(ctx)
 	go o.processPriceFeedQueue(ctx)
 	if deferXMR {
-		go o.startDeferredXMRChain(ctx)
+		o.wg.Add(1)
+		go func() {
+			defer o.wg.Done()
+			o.startDeferredXMRChain(ctx)
+		}()
 	}
 	return nil
 }
@@ -553,6 +588,11 @@ func (o *Observer) replayPermanentErrataQuarantines() error {
 	for _, tombstone := range tombstones {
 		if !tombstone.isPermanentlyReverted() {
 			continue
+		}
+		select {
+		case <-o.stopChan:
+			return context.Canceled
+		default:
 		}
 		if err = o.quarantinePermanentErrata(tombstone); err != nil {
 			return fmt.Errorf("quarantine %s transaction %s: %w", tombstone.Chain, tombstone.TxID, err)
@@ -2004,6 +2044,9 @@ func (o *Observer) Stop() error {
 	defer o.logger.Debug().Msg("observer stopped")
 
 	o.stopStartedChainClients()
+	// Deferred startup can still be finishing a quarantine write. Join it
+	// before closing the Observer database it uses to establish readiness.
+	o.wg.Wait()
 	o.oracle.Stop()
 	if err := o.pubkeyMgr.Stop(); err != nil {
 		o.logger.Error().Err(err).Msg("fail to stop pool address manager")

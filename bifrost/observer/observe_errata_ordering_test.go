@@ -926,12 +926,17 @@ func TestObserverStartupReplaysOnlyExplicitlyRevertedXMRBeforeChainStart(t *test
 	chain := &errataStartOrderChain{}
 	observer.chains = map[common.Chain]chainclients.ChainClient{common.XMRChain: chain}
 	stopBeforeStart := errors.New("stop after proving replay order")
+	deferred, err := observer.startRestoredChainClients()
+	require.NoError(t, err)
+	require.True(t, deferred)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	observer.permanentErrataQuarantineFn = func(common.ErrataTx, int64) error {
 		require.Zero(t, chain.starts)
+		cancel()
 		return stopBeforeStart
 	}
-	err := observer.Start(context.Background())
-	require.ErrorIs(t, err, stopBeforeStart)
+	observer.startDeferredXMRChain(ctx)
 	require.Zero(t, chain.starts)
 }
 

@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -60,7 +61,7 @@ type Signer struct {
 	localPubKeyECDSA      common.PubKey
 	localPubKeyEDDSA      common.PubKey
 	tssKeysignMetricMgr   *metrics.TssKeysignMetricMgr
-	observer              *observer.Observer
+	observer              signerObserver
 	pipeline              *pipeline
 	// Serialize worker admission with shutdown; never hold this mutex for RPCs.
 	keygenWorkerMu sync.Mutex
@@ -72,6 +73,12 @@ type Signer struct {
 // contract explicit lets retry tests observe real dispatch without a network DKG.
 type keygenGenerator interface {
 	GenerateNewKey(int64, common.PubKeys) (common.PubKeySet, []ttypes.Blame, error)
+}
+
+// signerObserver keeps readiness and signed observations on one owner.
+type signerObserver interface {
+	ObserveSigned(types.TxIn)
+	IsChainClientStarted(common.Chain) bool
 }
 
 type pendingKeygenBroadcast struct {
@@ -1378,7 +1385,15 @@ func (s *Signer) isStopped() bool {
 }
 
 func (s *Signer) storageList() []TxOutStoreItem {
-	return s.storage.List()
+	items := s.storage.List()
+	if s.observer != nil && s.observer.IsChainClientStarted(common.XMRChain) {
+		return items
+	}
+	// Filter only the materialized list. Deferred XMR, including signed retries,
+	// stays durable without consuming signing attempts or expiring in the pipeline.
+	return slices.DeleteFunc(items, func(item TxOutStoreItem) bool {
+		return item.TxOutItem.Chain.Equals(common.XMRChain)
+	})
 }
 
 func (s *Signer) processTransaction(item TxOutStoreItem) {
