@@ -563,7 +563,7 @@
             },
             {
               "after": "1",
-              "height": "7",
+              "height": "6",
               "msg": "{\"do\":\"something\"}",
               "msg_index": "0",
               "sender": "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f",
@@ -771,7 +771,7 @@
             },
             {
               "after": "1",
-              "height": "10",
+              "height": "9",
               "msg": "{\"any\":{\"type_url\": \"/thorchain.scheduler.v1.MsgScheduleExecuteContract\",\"value\": \"CkB0dGhvcjE0aGoydGF2cThmcGVzZHd4eGN1NDRydHkzaGg5MHZodWpydmNtc3RsNHpyM3R4bWZ2dzlzdzU4dTlmEAEaEnsiZG8iOiJzb21ldGhpbmcifQ==\"}}",
               "msg_index": "0",
               "sender": "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f",
@@ -817,44 +817,6 @@
     },
     "finalize_block_events": [],
     "begin_block_events": [],
-    "end_block_events": [],
-    "txs": []
-  },
-  {
-    "id": {
-      "hash": "",
-      "parts": {
-        "total": 0,
-        "hash": ""
-      }
-    },
-    "header": {
-      "version": {
-        "block": "11",
-        "app": "0"
-      },
-      "chain_id": "thorchain",
-      "height": 10,
-      "time": "",
-      "last_block_id": {
-        "hash": "",
-        "parts": {
-          "total": 0,
-          "hash": ""
-        }
-      },
-      "last_commit_hash": "",
-      "data_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
-      "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
-      "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
-      "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "last_results_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-      "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
-      "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
-    },
-    "finalize_block_events": [],
-    "begin_block_events": [],
     "end_block_events": [
       {
         "mode": "EndBlock",
@@ -869,7 +831,7 @@
       },
       {
         "after": "1",
-        "height": "12",
+        "height": "10",
         "mode": "EndBlock",
         "msg": "{\"do\":\"something\"}",
         "sender": "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f",
