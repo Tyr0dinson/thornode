@@ -134,3 +134,37 @@ func (s *KeeperMimirSuite) TestIsOperationalMimirAllowNoVault(c *C) {
 	c.Check(k.IsOperationalMimir("NoVaultAllowed-TRON"), Equals, false)
 	c.Check(k.IsOperationalMimir("AllowNoVault"), Equals, false)
 }
+
+func (s *KeeperMimirSuite) TestIsOperationalMimirXMRConsolidation(c *C) {
+	_, k := setupKeeperForTest(c)
+
+	// Keys read by bifrost's Monero client (bifrost/pkg/chainclients/monero/client.go).
+	// Consolidation locks vault liquidity for Monero's 10-block spend lock, so
+	// operators must be able to tune or disable it by plurality, not 2/3.
+	keys := []string{
+		"XMRConsolidationEnabled",
+		"XMRConsolidationCheckIntervalBlocks",
+		"XMRConsolidationCooldownBlocks",
+		"XMRConsolidationMinUnlockedOutputs",
+		"XMRConsolidationTargetOutputs",
+		"XMRConsolidationMinUnlockedAtomic",
+		"XMRConsolidationReserveBps",
+		"XMRConsolidationChurnLookaheadBlocks",
+		"XMRConsolidationMaxRetries",
+		"XMRConsolidationMaxInputs",
+		"XMRConsolidationMaxLockBps",
+	}
+	for _, key := range keys {
+		c.Check(k.IsOperationalMimir(key), Equals, true, Commentf("key=%s", key))
+		c.Check(k.IsOperationalMimir(strings.ToUpper(key)), Equals, true, Commentf("key=%s", key))
+		c.Check(k.IsOperationalMimir(strings.ToLower(key)), Equals, true, Commentf("key=%s", key))
+	}
+	c.Check(k.IsOperationalMimir("xmrCONSOLIDATIONmaxLOCKbps"), Equals, true)
+
+	// The UTXO input cap shared with the other UTXO chains stays economic, as do
+	// keys that merely mention XMR or consolidation.
+	c.Check(k.IsOperationalMimir("MaxUTXOsToSpend"), Equals, false)
+	c.Check(k.IsOperationalMimir("XMRConsolidatio"), Equals, false)
+	c.Check(k.IsOperationalMimir("ConsolidationXMREnabled"), Equals, false)
+	c.Check(k.IsOperationalMimir("BTCConsolidationEnabled"), Equals, false)
+}

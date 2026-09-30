@@ -151,6 +151,12 @@ func (k KVStore) IsOperationalMimir(key string) bool {
 	if strings.HasPrefix(key, "ALLOWNOVAULT-") {
 		return true
 	}
+	// XMRConsolidation* tunes bifrost's Monero output consolidation. Each run
+	// locks vault liquidity for Monero's 10-block spend lock, so operators must
+	// be able to tune or disable it quickly rather than wait for a supermajority.
+	if strings.HasPrefix(key, "XMRCONSOLIDATION") {
+		return true
+	}
 	partialMatches := []string{
 		"HALT",
 		"PAUSE",

@@ -145,6 +145,7 @@ Operational notes:
 - `NodePauseChainBlocks`: Number of block a node operator can pause/resume the chains for
 - `BlocksPerYear`: Blocks in a year
 - `MaxUTXOsToSpend`#: Max UTXOs to be spent in one block
+- `XMRConsolidation<Setting>`#: Tunes Bifrost's Monero output consolidation (operational Mimir, as each run locks vault liquidity for Monero's 10-block spend lock): `XMRConsolidationEnabled` (`0` disables), `XMRConsolidationCheckIntervalBlocks`, `XMRConsolidationCooldownBlocks`, `XMRConsolidationMinUnlockedOutputs`, `XMRConsolidationTargetOutputs`, `XMRConsolidationMinUnlockedAtomic`, `XMRConsolidationReserveBps`, `XMRConsolidationChurnLookaheadBlocks`, `XMRConsolidationMaxRetries`, `XMRConsolidationMaxInputs` and `XMRConsolidationMaxLockBps`. Unset or non-positive values fall back to Bifrost defaults.
 - `MinimumNodesForBFT`: Minimum node count to keep the network running. Below this, Ragnarök is performed
 - `MaxConfirmations-<Chain>`# : The maximum number of confirmations for a chain
 - `ConfMultiplierBasisPoints-<Chain>`#: Increases or decrease the inbound confirmation count block requirement for a chain
