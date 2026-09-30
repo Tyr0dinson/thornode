@@ -45,8 +45,8 @@ type reorgBlockMeta struct {
 	ProvenanceComplete      bool     `json:"provenance_complete,omitempty"`
 }
 
-// scannerCatchupMarker is written before a registration-triggered historical
-// scan advances the sidecar. StartHeight is advanced only in the same synced
+// scannerCatchupMarker is written before registration or churn recovery
+// mutates the sidecar. StartHeight is advanced only in the same synced
 // LevelDB batch which checkpoints that height's observation receipt and reorg
 // journal entry. Receipts from earlier chunks remain until Observer fsyncs the
 // complete mixed-height TxIn.
@@ -55,6 +55,10 @@ type scannerCatchupMarker struct {
 	TargetHeight int64  `json:"target_height"`
 	AnchorHeight int64  `json:"anchor_height"`
 	AnchorHash   string `json:"anchor_hash"`
+	// ChurnRollback preserves the recovery's rewind allowance across restarts
+	// and lets a later Bifrost request extend it without skipping unfinished work.
+	// Older and registration-only markers keep their existing recovery policy.
+	ChurnRollback bool `json:"churn_rollback,omitempty"`
 }
 
 func (m scannerCatchupMarker) valid() bool {
@@ -69,7 +73,8 @@ func (m scannerCatchupMarker) completed() bool {
 
 func (m scannerCatchupMarker) equal(other scannerCatchupMarker) bool {
 	return m.StartHeight == other.StartHeight && m.TargetHeight == other.TargetHeight &&
-		m.AnchorHeight == other.AnchorHeight && strings.EqualFold(m.AnchorHash, other.AnchorHash)
+		m.AnchorHeight == other.AnchorHeight && strings.EqualFold(m.AnchorHash, other.AnchorHash) &&
+		m.ChurnRollback == other.ChurnRollback
 }
 
 type scannerObservationReceipt struct {
@@ -136,6 +141,30 @@ type ReorgStore struct {
 
 func NewReorgStore(db *leveldb.DB) *ReorgStore {
 	return &ReorgStore{db: db}
+}
+
+// LatestHeight returns the highest retained journal height, or -1 if empty.
+// Journal keys are not zero-padded, so compare their numeric heights.
+func (s *ReorgStore) LatestHeight() (int64, error) {
+	if s == nil || s.db == nil {
+		return -1, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	latest := int64(-1)
+	iter := s.db.NewIterator(util.BytesPrefix([]byte(reorgBlockMetaPrefix)), nil)
+	defer iter.Release()
+	for iter.Next() {
+		height, err := strconv.ParseInt(strings.TrimPrefix(string(iter.Key()), reorgBlockMetaPrefix), 10, 64)
+		if err != nil || height < 0 {
+			return -1, fmt.Errorf("invalid xmr reorg journal key %q", iter.Key())
+		}
+		latest = max(latest, height)
+	}
+	if err := iter.Error(); err != nil {
+		return -1, fmt.Errorf("find latest xmr reorg journal height: %w", err)
+	}
+	return latest, nil
 }
 
 func (s *ReorgStore) Get(height int64) (*reorgBlockMeta, error) {

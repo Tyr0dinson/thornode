@@ -636,7 +636,12 @@ func (c *Client) RewindScanner(req ScannerRewindReq) (ScannerRewindResp, error) 
 	c.scannerSyncMu.Lock()
 	defer c.scannerSyncMu.Unlock()
 	if strings.TrimSpace(req.Network) == "" {
-		req.Network = c.chainNetwork
+		// The signer deployment label can differ from the Monero daemon's
+		// network, for example a chainnet signer using a mainnet daemon.
+		req.Network = strings.ToLower(strings.TrimSpace(c.expectedNetwork))
+		if req.Network == "" {
+			req.Network = c.chainNetwork
+		}
 	}
 	var out ScannerRewindResp
 	if err := c.call(http.MethodPost, c.scannerRewindPath, req, &out); err != nil {

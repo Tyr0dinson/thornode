@@ -3,6 +3,8 @@ package monero
 import (
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"slices"
 	"sort"
@@ -32,9 +34,12 @@ const (
 	// less likely to be blocked by fee spikes before the full MaxGas feedback and
 	// reschedule path lands.
 	typicalVaultOutboundWeight = 10000
-	// Keep Bifrost's cursor replay bound aligned with the sidecar's hard rewind
-	// limit. The configured reorg window may be smaller and wins when it is.
+	// Retain the existing ceiling for reorg replay and per-call catch-up work.
 	maxSidecarScannerRewindBlocks int64 = 256
+	// Quiet-chain churn can roll Bifrost back farther than its reorg window.
+	// The pinned signer's MAX_SCANNER_REWIND_BLOCKS permits this initial rewind;
+	// replay still proceeds in the configured, smaller catch-up batches.
+	maxChurnScannerRewindBlocks int64 = 730
 )
 
 // Scanner adapts monero daemon/wallet RPC to the generic block scanner fetcher interface.
@@ -258,6 +263,49 @@ func (s *Scanner) FetchMemPool(height int64) (stypes.TxIn, error) {
 	return txIn, nil
 }
 
+// ValidateScannerRollback rejects churn replay outside the signer's rewind
+// window before BlockScanner changes its durable cursor. XMR disables prefetch,
+// so this runs between scans; read authoritative state rather than a cache that
+// can lag a committed SyncAt whose response was lost. It does not complete or
+// discard persisted historical recovery state when rollback cannot be performed.
+func (s *Scanner) ValidateScannerRollback(nextHeight int64) error {
+	s.scanMu.Lock()
+	defer s.scanMu.Unlock()
+	if s.sidecar == nil {
+		return errors.New("monero scanner requires sidecar to validate rollback")
+	}
+	if nextHeight <= 0 {
+		return fmt.Errorf("invalid monero rollback next height %d", nextHeight)
+	}
+	state, err := s.sidecar.ScannerState()
+	if err != nil {
+		if isRetryableScannerStateError(err) {
+			return fmt.Errorf("%w: fetch sidecar scanner cursor before rollback: %w", btypes.ErrRollbackValidationUnavailable, err)
+		}
+		return fmt.Errorf("fetch sidecar scanner cursor before rollback: %w", err)
+	}
+	if state.NextHeight == nil {
+		return errors.New("sidecar scanner cursor is unknown; cannot validate rollback")
+	}
+	// SyncAt can repeat the last scanned block without rewinding, even when
+	// catch-up is disabled. Older requests need the configured rewind allowance.
+	next := int64(*state.NextHeight)
+	if distance := next - nextHeight; distance > 1 && distance > s.churnRewindLimit() {
+		return fmt.Errorf("sidecar scanner cursor %d is ahead of requested height %d beyond rewind limit %d; historical replay requires operator recovery", next, nextHeight, s.churnRewindLimit())
+	}
+	return nil
+}
+
+func isRetryableScannerStateError(err error) bool {
+	var httpErr *sidecar.HTTPError
+	if errors.As(err, &httpErr) {
+		return httpErr.Status == http.StatusRequestTimeout || httpErr.Status == http.StatusTooManyRequests ||
+			(httpErr.Status >= http.StatusInternalServerError && httpErr.Status < 600)
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)
+}
+
 func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, error) {
 	txIn := stypes.TxIn{Chain: common.XMRChain}
 	if s.sidecar == nil {
@@ -306,32 +354,13 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, error) 
 		}
 	}
 
-	// While historical registration catch-up is in flight, continuity is at
-	// the durable marker rather than the requested tip. Checking that next
-	// block makes a reorg in an already checkpointed chunk visible before any
-	// stale receipt can be handed to Observer.
-	continuityBlock := block
-	markerBefore, err := s.reorgStore.GetCatchupMarker()
-	if err != nil {
-		return txIn, err
-	}
-	if markerBefore != nil && !markerBefore.completed() && markerBefore.StartHeight <= fetchHeight {
-		continuityBlock, err = s.sidecar.ChainBlock(markerBefore.StartHeight)
-		if err != nil {
-			if errors.Is(err, sidecar.ErrUnavailableBlock) {
-				return txIn, btypes.ErrUnavailableBlock
-			}
-			return txIn, fmt.Errorf("fetch monero catch-up continuity block %d: %w", markerBefore.StartHeight, err)
-		}
-	}
-
 	// Drain a fair page before a new fork can add relocation watches. This gives
 	// stale ordinary entries a chance to resolve before the bounded anti-DoS
 	// quota is evaluated during reorg emission.
 	if err = s.reconcileRelocationWatches(); err != nil {
 		return txIn, err
 	}
-	pendingMetas, reorgErr := s.processReorg(continuityBlock, chainHeight)
+	pendingMetas, reorgErr := s.processReorg(block, chainHeight)
 	if reorgErr != nil {
 		if errors.Is(reorgErr, btypes.ErrUnavailableBlock) {
 			return txIn, btypes.ErrUnavailableBlock
@@ -390,15 +419,14 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, error) 
 	for _, claim := range receiptClaims {
 		receiptItems = append(receiptItems, claim.entry.Items...)
 	}
-	// Reorg replay items are fsynced into observation receipts before the
-	// replacement journal advances. Hand off that single durable copy only;
-	// appending processReorg's return value here would make the ordinary deduper
-	// sum the same observation twice (while genuine same-TxID outputs must still
-	// aggregate normally).
+	// Each scan response already aggregated its transaction outputs. A same-height
+	// reorg or retry can return the same complete observation through both the
+	// ordinary scan and a durable receipt. Merge those copies without adding
+	// their amounts again, including after the replacement journal is committed.
 	canonicalItems := append([]*stypes.TxInItem(nil), currentItems...)
 	canonicalItems = append(canonicalItems, receiptItems...)
 	canonicalItems = append(canonicalItems, lateItems...)
-	canonicalItems = s.dedupeTxInItemsByTxID(canonicalItems)
+	canonicalItems = s.mergeTxInItemsByTxID(canonicalItems, false)
 	orderTxInItemsHighestFirst(canonicalItems)
 	canonicalItems, err = s.prepareCanonicalObservationHandoff(
 		canonicalItems, receiptClaims, completedMarker,
@@ -1094,11 +1122,19 @@ func (s *Scanner) cursorReplayLimit() int64 {
 	return limit
 }
 
+func (s *Scanner) churnRewindLimit() int64 {
+	if s.cursorReplayLimit() == 0 {
+		return 0
+	}
+	return maxChurnScannerRewindBlocks
+}
+
 // advanceSidecarCatchup drives at most one bounded chunk of a registration-
-// triggered historical scan. The durable marker is advanced one height only
+// or rollback-triggered historical scan. The durable marker advances only
 // after that response, its observations, and its journal entry are fsynced in
 // one batch. Retrying after an ambiguous response rewinds at most one block;
-// arbitrarily large gaps therefore make progress across bounded Fetch retries.
+// birthday gaps make progress across bounded Fetch retries. The initial churn
+// rewind uses the signer's supported window independently of the batch size.
 func (s *Scanner) advanceSidecarCatchup(targetHeight, chainHeight int64) (bool, *scannerCatchupMarker, error) {
 	return s.advanceSidecarCatchupThrough(targetHeight, targetHeight, chainHeight)
 }
@@ -1128,9 +1164,6 @@ func (s *Scanner) advanceSidecarCatchupThrough(
 		if next >= targetHeight && next <= targetHeight+1 {
 			return false, nil, nil
 		}
-		if next > targetHeight+1 {
-			return false, nil, fmt.Errorf("sidecar scanner cursor %d is ahead of requested height %d", next, targetHeight)
-		}
 	}
 	state, err = s.sidecar.ScannerState()
 	if err != nil {
@@ -1141,35 +1174,75 @@ func (s *Scanner) advanceSidecarCatchupThrough(
 	}
 	nextHeight := int64(*state.NextHeight)
 
-	if marker == nil {
+	switch {
+	case marker == nil:
 		switch {
-		case nextHeight < targetHeight:
+		case nextHeight < targetHeight || nextHeight > targetHeight+1:
 			if s.reorgStore == nil {
 				return false, nil, errors.New("monero scanner cannot catch up without durable storage")
 			}
 			if nextHeight <= 0 {
 				return false, nil, fmt.Errorf("invalid sidecar catch-up start height %d", nextHeight)
 			}
-			anchor, anchorErr := s.sidecar.ChainBlock(nextHeight - 1)
+			// Churn-in rolls Bifrost back between scans while the signer retains
+			// its durable cursor. Enroll the requested block in the same recovery
+			// journal as birthday catch-up before rewinding the signer below.
+			// Same-birthday registration cannot do this, and skipping forward
+			// would lose observations needed by the newly active validator.
+			startHeight := min(nextHeight, targetHeight)
+			if limit := s.churnRewindLimit(); nextHeight-startHeight > limit {
+				return false, nil, fmt.Errorf("sidecar scanner cursor %d is ahead of requested height %d beyond rewind limit %d", nextHeight, targetHeight, limit)
+			}
+			anchor, anchorErr := s.sidecar.ChainBlock(startHeight - 1)
 			if anchorErr != nil {
-				return false, nil, fmt.Errorf("fetch xmr catch-up anchor %d: %w", nextHeight-1, anchorErr)
+				return false, nil, fmt.Errorf("fetch xmr catch-up anchor %d: %w", startHeight-1, anchorErr)
 			}
 			marker = &scannerCatchupMarker{
-				StartHeight:  nextHeight,
-				TargetHeight: targetHeight,
-				AnchorHeight: nextHeight - 1,
-				AnchorHash:   anchor.Hash,
+				StartHeight:   startHeight,
+				TargetHeight:  targetHeight,
+				AnchorHeight:  startHeight - 1,
+				AnchorHash:    anchor.Hash,
+				ChurnRollback: nextHeight > targetHeight,
 			}
 			if err = s.reorgStore.BeginCatchup(*marker); err != nil {
 				return false, nil, err
 			}
-		case nextHeight > targetHeight+1:
-			return false, nil, fmt.Errorf("sidecar scanner cursor %d is ahead of requested height %d", nextHeight, targetHeight)
 		default:
 			return false, nil, nil
 		}
-	} else if marker.TargetHeight != targetHeight {
-		if !marker.completed() || targetHeight < marker.TargetHeight {
+	case targetHeight < marker.TargetHeight:
+		// A queued churn rollback can interrupt a catch-up retry. Keep its
+		// earlier unfinished history and all receipts, but finish at Bifrost's
+		// new target so it can resume ordinary ascending scans afterwards.
+		startHeight := min(marker.StartHeight, targetHeight)
+		if limit := s.churnRewindLimit(); limit == 0 || nextHeight-startHeight > limit {
+			return true, nil, fmt.Errorf("sidecar scanner cursor %d is ahead of requested height %d beyond rewind limit %d", nextHeight, targetHeight, limit)
+		}
+		if marker.StartHeight > targetHeight {
+			anchor, anchorErr := s.sidecar.ChainBlock(targetHeight - 1)
+			if anchorErr != nil {
+				return true, nil, anchorErr
+			}
+			marker.StartHeight = targetHeight
+			marker.AnchorHeight = targetHeight - 1
+			marker.AnchorHash = anchor.Hash
+		}
+		marker.TargetHeight = targetHeight
+		marker.ChurnRollback = true
+		if err = s.reorgStore.BeginCatchup(*marker); err != nil {
+			return true, nil, err
+		}
+	case targetHeight > marker.TargetHeight && marker.ChurnRollback && !marker.completed():
+		// Startup clamping or stall recovery can move Bifrost forward while a
+		// churn rewind/replay is unfinished. Extend its destination, retaining
+		// the crash-safe start, anchor and receipts. Registration-only catch-up
+		// keeps its existing policy; arbitrary relocation is outside this fix.
+		marker.TargetHeight = targetHeight
+		if err = s.reorgStore.BeginCatchup(*marker); err != nil {
+			return true, nil, err
+		}
+	case marker.TargetHeight != targetHeight:
+		if !marker.completed() {
 			return true, nil, fmt.Errorf(
 				"xmr scanner catch-up targets height %d while blockscanner requested %d",
 				marker.TargetHeight, targetHeight,
@@ -1194,10 +1267,11 @@ func (s *Scanner) advanceSidecarCatchupThrough(
 				return true, nil, anchorErr
 			}
 			marker = &scannerCatchupMarker{
-				StartHeight:  oldTarget,
-				TargetHeight: targetHeight,
-				AnchorHeight: oldTarget - 1,
-				AnchorHash:   anchor.Hash,
+				StartHeight:   oldTarget,
+				TargetHeight:  targetHeight,
+				AnchorHeight:  oldTarget - 1,
+				AnchorHash:    anchor.Hash,
+				ChurnRollback: marker.ChurnRollback,
 			}
 		}
 		if err = s.reorgStore.BeginCatchup(*marker); err != nil {
@@ -1225,10 +1299,11 @@ func (s *Scanner) advanceSidecarCatchupThrough(
 				return true, nil, anchorErr
 			}
 			marker = &scannerCatchupMarker{
-				StartHeight:  marker.TargetHeight,
-				TargetHeight: marker.TargetHeight,
-				AnchorHeight: marker.TargetHeight - 1,
-				AnchorHash:   anchor.Hash,
+				StartHeight:   marker.TargetHeight,
+				TargetHeight:  marker.TargetHeight,
+				AnchorHeight:  marker.TargetHeight - 1,
+				AnchorHash:    anchor.Hash,
+				ChurnRollback: marker.ChurnRollback,
 			}
 			if err = s.reorgStore.BeginCatchup(*marker); err != nil {
 				return true, nil, err
@@ -1272,6 +1347,9 @@ func (s *Scanner) advanceSidecarCatchupThrough(
 	if nextHeight > marker.StartHeight {
 		distance := nextHeight - marker.StartHeight
 		limit := s.cursorReplayLimit()
+		if marker.ChurnRollback {
+			limit = s.churnRewindLimit()
+		}
 		if limit == 0 || distance > limit {
 			return true, nil, fmt.Errorf("xmr catch-up ambiguous advance %d exceeds rewind limit %d", distance, limit)
 		}
@@ -1315,10 +1393,11 @@ func (s *Scanner) advanceSidecarCatchupThrough(
 		}
 		meta := s.blockMetaForItems(canonical, height, items)
 		next := scannerCatchupMarker{
-			StartHeight:  height + 1,
-			TargetHeight: marker.TargetHeight,
-			AnchorHeight: height,
-			AnchorHash:   canonical.Hash,
+			StartHeight:   height + 1,
+			TargetHeight:  marker.TargetHeight,
+			AnchorHeight:  height,
+			AnchorHash:    canonical.Hash,
+			ChurnRollback: marker.ChurnRollback,
 		}
 		if err = s.reorgStore.CheckpointCatchup(next, meta, items); err != nil {
 			return true, nil, err
@@ -1827,19 +1906,36 @@ func (s *Scanner) processReorg(
 	if s.reorgStore == nil || block.Hash == "" || block.PreviousHash == "" {
 		return nil, nil
 	}
-	previousHeight := block.Height - 1
-	if block.Height <= 0 {
-		previousHeight = s.CurrentHeight() - 1
+	// The retained journal is the reconciliation boundary even when churn,
+	// registration or restart moves the requested block or signer cursor.
+	// Reconcile it before replay can overwrite old metadata or return receipts.
+	// This also detects reorgs in already checkpointed chunks of an unfinished
+	// registration catch-up before any stale receipt reaches Observer.
+	previousHeight, err := s.reorgStore.LatestHeight()
+	if err != nil {
+		return nil, err
 	}
 	if previousHeight < 0 {
 		return nil, nil
 	}
-
 	prevBlockMeta, err := s.reorgStore.Get(previousHeight)
 	if err != nil {
 		return nil, err
 	}
-	if prevBlockMeta == nil || strings.EqualFold(prevBlockMeta.BlockHash, block.PreviousHash) {
+	expectedHash := block.PreviousHash
+	switch previousHeight {
+	case block.Height - 1:
+		// Ordinary forward scanning already fetched the successor's header.
+	case block.Height:
+		expectedHash = block.Hash
+	default:
+		canonical, blockErr := s.sidecar.ChainBlock(previousHeight)
+		if blockErr != nil {
+			return nil, fmt.Errorf("fetch latest journal block %d during reorg check: %w", previousHeight, blockErr)
+		}
+		expectedHash = canonical.Hash
+	}
+	if prevBlockMeta == nil || strings.EqualFold(prevBlockMeta.BlockHash, expectedHash) {
 		return nil, nil
 	}
 
@@ -1847,7 +1943,7 @@ func (s *Scanner) processReorg(
 		Int64("height", previousHeight+1).
 		Int64("previous_height", previousHeight).
 		Str("expected_previous_hash", prevBlockMeta.BlockHash).
-		Str("actual_previous_hash", block.PreviousHash).
+		Str("actual_previous_hash", expectedHash).
 		Msg("monero reorg detected")
 
 	anchor, replacementBlocks, oldMetas, err := s.discoverReorgReplacement(previousHeight)
@@ -2671,6 +2767,13 @@ func (s *Scanner) echoedSpentOutputRefs(transfer sidecar.Transfer, sender string
 }
 
 func (s *Scanner) dedupeTxInItemsByTxID(items []*stypes.TxInItem) []*stypes.TxInItem {
+	return s.mergeTxInItemsByTxID(items, true)
+}
+
+// aggregateOutputs allows identical raw outputs within a scan response to add
+// their amounts. Complete observations from separate scans or receipts instead
+// keep one copy per payment while retaining every durable acknowledgement.
+func (s *Scanner) mergeTxInItemsByTxID(items []*stypes.TxInItem, aggregateOutputs bool) []*stypes.TxInItem {
 	if len(items) < 2 {
 		return items
 	}
@@ -2711,11 +2814,12 @@ func (s *Scanner) dedupeTxInItemsByTxID(items []*stypes.TxInItem) []*stypes.TxIn
 			}
 			continue
 		}
-		// A replay can coincide with a canonical reorg rescan of the same exact
-		// destination item. Preserve its observer acknowledgement without
-		// summing the same credit twice.
-		if ((item.OnObservedTxStored != nil || item.OnObservedTxRejected != nil) ||
-			(existing.OnObservedTxStored != nil || existing.OnObservedTxRejected != nil)) && existing.Equals(item) {
+		// Complete observations from separate scans or receipts describe one
+		// payment even when estimated gas differs. Keep the first copy (the fresh
+		// scan precedes receipts) and retain every acknowledgement. Within one
+		// response, only exact copies carrying callbacks bypass output aggregation.
+		if !aggregateOutputs || ((item.OnObservedTxStored != nil || item.OnObservedTxRejected != nil ||
+			existing.OnObservedTxStored != nil || existing.OnObservedTxRejected != nil) && existing.Equals(item)) {
 			composeTxInItemCallbacks(existing, item)
 			continue
 		}

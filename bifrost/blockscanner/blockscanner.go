@@ -143,8 +143,12 @@ func (b *BlockScanner) RollbackToLastObserved() error {
 		rollbackHeight = 0
 	}
 
-	b.rollbackChan <- rollbackHeight
-	return nil
+	select {
+	case b.rollbackChan <- rollbackHeight:
+		return nil
+	case <-b.stopChan:
+		return errors.New("block scanner stopped before rollback could be queued")
+	}
 }
 
 func (b *BlockScanner) rollback(height int64) error {
@@ -157,6 +161,14 @@ func (b *BlockScanner) rollback(height int64) error {
 	if b.PreviousHeight() <= height {
 		// height is already below rollback amount, proceed as normal
 		return nil
+	}
+	// Stateful chain clients may be unable to replay an arbitrarily old block.
+	// Validate on the scan loop before persisting a cursor they cannot follow.
+	// Rejection leaves the existing cursor and pending recovery state intact.
+	if validator, ok := b.chainScanner.(interface{ ValidateScannerRollback(int64) error }); ok {
+		if err := validator.ValidateScannerRollback(height + 1); err != nil {
+			return fmt.Errorf("rollback validation failed; scan position retained and requested history not replayed: %w", err)
+		}
 	}
 	if err := b.scannerStorage.SetScanPos(height); err != nil {
 		return fmt.Errorf("fail to set scan pos: %w", err)
@@ -473,15 +485,54 @@ func (b *BlockScanner) scanBlocks() {
 		case <-b.stopChan:
 			return
 		case amount := <-b.rollbackChan:
-			if err := b.rollback(amount); err != nil {
-				b.logger.Error().Err(err).Msg("fail to rollback block scanner")
+			// Retain the earliest requested height through temporary validation failures.
+			// Forward scans and skip-ahead must wait so they cannot age the replay
+			// beyond the supported window. Until rollback saves the cursor this
+			// request exists only in memory and is lost on process restart.
+			for {
+				err := b.rollback(amount)
+				if err == nil {
+					// Prefetched results belong to the abandoned cursor lineage.
+					clearPrefetch()
+					break
+				}
+				retry := errors.Is(err, btypes.ErrRollbackValidationUnavailable)
+				if retry {
+					b.healthy.Store(false)
+					b.logger.Warn().Err(err).Int64("rollback_height", amount).
+						Msg("rollback validation unavailable; retaining request for retry")
+				} else {
+					b.logger.Error().Err(err).Msg("fail to rollback block scanner")
+				}
 				b.recordError("rollback_failed")
-				time.Sleep(b.cfg.BlockHeightDiscoverBackoff)
-				continue
+				stopped := func() bool {
+					timer := time.NewTimer(b.cfg.BlockHeightDiscoverBackoff)
+					defer timer.Stop()
+					var queued <-chan int64
+					if retry {
+						// Observer sends rollbacks from the loop that submits every
+						// chain's observations. Accept later requests while waiting,
+						// keeping the lower target that covers both.
+						queued = b.rollbackChan
+					}
+					for {
+						select {
+						case <-b.stopChan:
+							return true
+						case next := <-queued:
+							amount = min(amount, next)
+						case <-timer.C:
+							return false
+						}
+					}
+				}()
+				if stopped {
+					return
+				}
+				if !retry {
+					break
+				}
 			}
-			// Results fetched before a rollback belong to the abandoned cursor
-			// lineage and must never be replayed after the cursor moves.
-			clearPrefetch()
 		default:
 			preBlockHeight := atomic.LoadInt64(&b.previousBlock)
 			currentBlock := preBlockHeight + 1
