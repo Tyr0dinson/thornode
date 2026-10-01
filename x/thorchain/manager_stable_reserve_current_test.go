@@ -1481,6 +1481,91 @@ func (s *StableReserveMgrSuite) TestDepositValueTrackedAndDecrementedOnWithdraw(
 	c.Check(depositValue.Equal(cosmos.NewUint(50*common.One)), Equals, true)
 }
 
+func stableReserveFloor(c *C, ctx cosmos.Context, mgr *Mgrs) cosmos.Uint {
+	depositValue, err := mgr.Keeper().GetStableReserveDepositValue(ctx)
+	c.Assert(err, IsNil)
+	return depositValue
+}
+
+// A below-par deposit fully withdrawn in a feed gap must release only what it
+// added, leaving the other contributor's floor intact. Valuing the withdrawal
+// at $1 instead erased the whole $100 floor and switched the underwater fee off.
+func (s *StableReserveMgrSuite) TestDepositFloorReleasesBasisNotRepricedValue(c *C) {
+	ctx, mgr, usdc, _ := setupStableReserveSuite(c)
+	stableReserveMgr := mgr.StableReserveManager()
+	alice := GetRandomETHAddress()
+	bob := GetRandomETHAddress()
+
+	c.Assert(stableReserveMgr.Deposit(ctx, usdc, cosmos.NewUint(100*common.One), alice, common.BlankTxID), IsNil)
+	c.Check(stableReserveFloor(c, ctx, mgr).Equal(cosmos.NewUint(100*common.One)), Equals, true)
+
+	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "0.995"}), IsNil)
+	c.Assert(stableReserveMgr.Deposit(ctx, usdc, cosmos.NewUint(10_000*common.One), bob, common.BlankTxID), IsNil)
+	c.Check(stableReserveFloor(c, ctx, mgr).Equal(cosmos.NewUint(10_050*common.One)), Equals, true) // 100 + 9,950
+
+	mgr.Keeper().DelPrice(ctx, usdc.Ticker.String())
+	_, filled, err := stableReserveMgr.Withdraw(ctx, usdc, cosmos.NewUint(10_000*common.One), bob, common.BlankTxID)
+	c.Assert(err, IsNil)
+	c.Check(filled, Equals, true)
+	c.Check(stableReserveFloor(c, ctx, mgr).Equal(cosmos.NewUint(100*common.One)), Equals, true)
+	bobBasis, err := mgr.Keeper().GetStableReserveCreditBasis(ctx, usdc, bob)
+	c.Assert(err, IsNil)
+	c.Check(bobBasis.IsZero(), Equals, true)
+
+	// Repeating the cycle cannot ratchet the floor: it returns to alice's $100.
+	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "0.995"}), IsNil)
+	c.Assert(stableReserveMgr.Deposit(ctx, usdc, cosmos.NewUint(10_000*common.One), bob, common.BlankTxID), IsNil)
+	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "1.005"}), IsNil)
+	_, filled, err = stableReserveMgr.Withdraw(ctx, usdc, cosmos.NewUint(10_000*common.One), bob, common.BlankTxID)
+	c.Assert(err, IsNil)
+	c.Check(filled, Equals, true)
+	c.Check(stableReserveFloor(c, ctx, mgr).Equal(cosmos.NewUint(100*common.One)), Equals, true)
+}
+
+// An above-par deposit fully withdrawn leaves no residual floor (which would
+// hold the underwater fee on permanently), and a partial withdrawal releases
+// the basis pro rata regardless of the price at withdraw time.
+func (s *StableReserveMgrSuite) TestDepositFloorAboveParReleasesProRata(c *C) {
+	ctx, mgr, usdc, _ := setupStableReserveSuite(c)
+	stableReserveMgr := mgr.StableReserveManager()
+	contributor := GetRandomETHAddress()
+
+	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "1.005"}), IsNil)
+	c.Assert(stableReserveMgr.Deposit(ctx, usdc, cosmos.NewUint(1_000*common.One), contributor, common.BlankTxID), IsNil)
+	c.Check(stableReserveFloor(c, ctx, mgr).Equal(cosmos.NewUint(1_005*common.One)), Equals, true)
+
+	// 40% withdrawn at a different live price releases 40% of the basis.
+	c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: usdc.Ticker.String(), Price: "0.995"}), IsNil)
+	_, filled, err := stableReserveMgr.Withdraw(ctx, usdc, cosmos.NewUint(400*common.One), contributor, common.BlankTxID)
+	c.Assert(err, IsNil)
+	c.Check(filled, Equals, true)
+	c.Check(stableReserveFloor(c, ctx, mgr).Equal(cosmos.NewUint(603*common.One)), Equals, true) // 1,005 - 402
+
+	mgr.Keeper().DelPrice(ctx, usdc.Ticker.String())
+	_, filled, err = stableReserveMgr.Withdraw(ctx, usdc, cosmos.NewUint(600*common.One), contributor, common.BlankTxID)
+	c.Assert(err, IsNil)
+	c.Check(filled, Equals, true)
+	c.Check(stableReserveFloor(c, ctx, mgr).IsZero(), Equals, true)
+}
+
+// A credit written before basis tracking never added to the floor, so
+// redeeming it must not subtract another contributor's floor.
+func (s *StableReserveMgrSuite) TestDepositFloorLegacyCreditReleasesNothing(c *C) {
+	ctx, mgr, usdc, _ := setupStableReserveSuite(c)
+	stableReserveMgr := mgr.StableReserveManager()
+	legacy := GetRandomETHAddress()
+	contributor := GetRandomETHAddress()
+
+	fundStableReserveSurplus(c, ctx, mgr, usdc, cosmos.NewUint(50*common.One))
+	c.Assert(mgr.Keeper().SetStableReserveCredit(ctx, usdc, legacy, cosmos.NewUint(50*common.One)), IsNil)
+	c.Assert(stableReserveMgr.Deposit(ctx, usdc, cosmos.NewUint(100*common.One), contributor, common.BlankTxID), IsNil)
+
+	_, filled, err := stableReserveMgr.Withdraw(ctx, usdc, cosmos.NewUint(50*common.One), legacy, common.BlankTxID)
+	c.Assert(err, IsNil)
+	c.Check(filled, Equals, true)
+	c.Check(stableReserveFloor(c, ctx, mgr).Equal(cosmos.NewUint(100*common.One)), Equals, true)
+}
+
 func (s *StableReserveMgrSuite) TestFreeStableSwapNoFeeWhenFullyBacked(c *C) {
 	ctx, mgr, usdc, usdt := setupStableReserveSuite(c)
 	stableReserveMgr := mgr.StableReserveManager()

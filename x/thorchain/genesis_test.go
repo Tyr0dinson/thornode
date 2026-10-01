@@ -192,6 +192,10 @@ func (GenesisTestSuite) TestGenesisStableReserveCreditRoundTrip(c *C) {
 	c.Assert(srcMgr.Keeper().SetStableReserveCredit(srcCtx, common.ETHAsset, ethAddr, cosmos.NewUint(1234*common.One)), IsNil)
 	c.Assert(srcMgr.Keeper().SetStableReserveCredit(srcCtx, common.BTCAsset, btcAddr, cosmos.NewUint(5678)), IsNil)
 	c.Assert(srcMgr.Keeper().SetStableReserveCredit(srcCtx, common.TRXAsset, tronAddr, cosmos.NewUint(9012)), IsNil)
+	// Bases sit under their own (uppercased) key; the case-sensitive TRON
+	// address must still find its basis on export via the value-held address.
+	c.Assert(srcMgr.Keeper().SetStableReserveCreditBasis(srcCtx, common.ETHAsset, ethAddr, cosmos.NewUint(1230*common.One)), IsNil)
+	c.Assert(srcMgr.Keeper().SetStableReserveCreditBasis(srcCtx, common.TRXAsset, tronAddr, cosmos.NewUint(9000)), IsNil)
 
 	exported := ExportGenesis(srcCtx, srcMgr.Keeper())
 	c.Assert(len(exported.StableReserveCredits), Equals, 3)
@@ -221,6 +225,18 @@ func (GenesisTestSuite) TestGenesisStableReserveCreditRoundTrip(c *C) {
 	gotTRON, err := dstMgr.Keeper().GetStableReserveCredit(dstCtx, common.TRXAsset, tronAddr)
 	c.Assert(err, IsNil)
 	c.Check(gotTRON.String(), Equals, cosmos.NewUint(9012).String())
+
+	// Credit bases round-trip; an unset basis (BTC, a pre-basis credit) stays
+	// zero rather than panicking on "".
+	basisETH, err := dstMgr.Keeper().GetStableReserveCreditBasis(dstCtx, common.ETHAsset, ethAddr)
+	c.Assert(err, IsNil)
+	c.Check(basisETH.String(), Equals, cosmos.NewUint(1230*common.One).String())
+	basisTRON, err := dstMgr.Keeper().GetStableReserveCreditBasis(dstCtx, common.TRXAsset, tronAddr)
+	c.Assert(err, IsNil)
+	c.Check(basisTRON.String(), Equals, cosmos.NewUint(9000).String())
+	basisBTC, err := dstMgr.Keeper().GetStableReserveCreditBasis(dstCtx, common.BTCAsset, btcAddr)
+	c.Assert(err, IsNil)
+	c.Check(basisBTC.IsZero(), Equals, true)
 }
 
 // TestGenesisStableReserveDepositValueRoundTrip covers the aggregate deposit

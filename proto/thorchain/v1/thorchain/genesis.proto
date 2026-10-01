@@ -47,6 +47,9 @@ message StableReserveCredit {
   string asset = 1;
   string address = 2;
   string amount = 3;
+  // USD value (1e8 = $1) this credit added to stable_reserve_deposit_value;
+  // released pro rata on withdrawal. Empty means zero.
+  string basis = 4;
 }
 
 message GenesisState {

@@ -648,6 +648,14 @@ func (k KVStoreDummy) GetStableReserveCreditIterator(_ cosmos.Context) cosmos.It
 	return nil
 }
 
+func (k KVStoreDummy) GetStableReserveCreditBasis(_ cosmos.Context, _ common.Asset, _ common.Address) (cosmos.Uint, error) {
+	return cosmos.ZeroUint(), kaboom
+}
+
+func (k KVStoreDummy) SetStableReserveCreditBasis(_ cosmos.Context, _ common.Asset, _ common.Address, _ cosmos.Uint) error {
+	return kaboom
+}
+
 func (k KVStoreDummy) GetStableReserveDepositValue(_ cosmos.Context) (cosmos.Uint, error) {
 	return cosmos.ZeroUint(), kaboom
 }

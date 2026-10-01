@@ -73,6 +73,7 @@ const (
 	prefixPOLReserve                types.DbPrefix = "pol_reserve/"
 	prefixStableReserveCredit       types.DbPrefix = "stable_reserve_credit/"
 	prefixStableReserveDeposit      types.DbPrefix = "stable_reserve_deposit/"
+	prefixStableReserveBasis        types.DbPrefix = "stable_reserve_basis/"
 	prefixTradeAccount              types.DbPrefix = "tr_acct/"
 	prefixSecuredAsset              types.DbPrefix = "sa/"
 	prefixRUNEProvider              types.DbPrefix = "rune_provider/"

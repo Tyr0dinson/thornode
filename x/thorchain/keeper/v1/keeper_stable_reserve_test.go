@@ -145,3 +145,33 @@ func (s *KeeperStableReserveSuite) TestStableReserveDepositValue_RoundTrip(c *C)
 	c.Assert(err, IsNil)
 	c.Check(value.IsZero(), Equals, true)
 }
+
+// TestStableReserveCreditBasis_RoundTripAndIsolation ensures a credit basis
+// reads back exactly, defaults to zero, is deleted on zero, and is independent
+// of the credit amount stored under the same (asset, address).
+func (s *KeeperStableReserveSuite) TestStableReserveCreditBasis_RoundTripAndIsolation(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	addr := GetRandomETHAddress()
+	basis, err := k.GetStableReserveCreditBasis(ctx, common.ETHAsset, addr)
+	c.Assert(err, IsNil)
+	c.Check(basis.IsZero(), Equals, true)
+
+	c.Assert(k.SetStableReserveCredit(ctx, common.ETHAsset, addr, cosmos.NewUint(100*common.One)), IsNil)
+	c.Assert(k.SetStableReserveCreditBasis(ctx, common.ETHAsset, addr, cosmos.NewUint(99*common.One)), IsNil)
+
+	basis, err = k.GetStableReserveCreditBasis(ctx, common.ETHAsset, addr)
+	c.Assert(err, IsNil)
+	c.Check(basis.Equal(cosmos.NewUint(99*common.One)), Equals, true)
+	credit, err := k.GetStableReserveCredit(ctx, common.ETHAsset, addr)
+	c.Assert(err, IsNil)
+	c.Check(credit.Equal(cosmos.NewUint(100*common.One)), Equals, true)
+
+	c.Assert(k.SetStableReserveCreditBasis(ctx, common.ETHAsset, addr, cosmos.ZeroUint()), IsNil)
+	basis, err = k.GetStableReserveCreditBasis(ctx, common.ETHAsset, addr)
+	c.Assert(err, IsNil)
+	c.Check(basis.IsZero(), Equals, true)
+	credit, err = k.GetStableReserveCredit(ctx, common.ETHAsset, addr)
+	c.Assert(err, IsNil)
+	c.Check(credit.Equal(cosmos.NewUint(100*common.One)), Equals, true)
+}

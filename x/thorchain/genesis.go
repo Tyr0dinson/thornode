@@ -422,6 +422,13 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 		if err := keeper.SetStableReserveCredit(ctx, asset, addr, cosmos.NewUintFromString(credit.Amount)); err != nil {
 			panic(err)
 		}
+		// Basis is empty on genesis states written before it existed; treat
+		// that as zero rather than passing "" to NewUintFromString, which panics.
+		if credit.Basis != "" {
+			if err := keeper.SetStableReserveCreditBasis(ctx, asset, addr, cosmos.NewUintFromString(credit.Basis)); err != nil {
+				panic(err)
+			}
+		}
 	}
 
 	// Restore committed SOL durable nonces. Without them a vault that signs durable
@@ -930,11 +937,23 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		if amount.IsZero() {
 			continue
 		}
-		stableReserveCredits = append(stableReserveCredits, StableReserveCredit{
+		credit := StableReserveCredit{
 			Asset:   parts[len(parts)-2],
 			Address: addr,
 			Amount:  amount.String(),
-		})
+		}
+		creditAsset, err := common.NewAsset(credit.Asset)
+		if err != nil {
+			panic(err)
+		}
+		basis, err := k.GetStableReserveCreditBasis(ctx, creditAsset, common.Address(addr))
+		if err != nil {
+			panic(err)
+		}
+		if !basis.IsZero() {
+			credit.Basis = basis.String()
+		}
+		stableReserveCredits = append(stableReserveCredits, credit)
 	}
 
 	solVaultNonces := make([]types.SolVaultNonce, 0)

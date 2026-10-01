@@ -64,6 +64,34 @@ func (k KVStore) GetStableReserveCreditIterator(ctx cosmos.Context) cosmos.Itera
 	return k.getIterator(ctx, prefixStableReserveCredit)
 }
 
+// GetStableReserveCreditBasis returns the USD value (1e8 = $1) a contributor's
+// outstanding credit added to the aggregate deposit value, i.e. their share of
+// the principal floor. It is stored beside (not inside) the credit so the
+// credit's value format is unchanged. Returns zero when unset, which is also the
+// correct basis for credits written before basis tracking existed: those
+// deposits never contributed to the aggregate either.
+func (k KVStore) GetStableReserveCreditBasis(ctx cosmos.Context, asset common.Asset, addr common.Address) (cosmos.Uint, error) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	key := k.GetKey(prefixStableReserveBasis, stableReserveCreditKey(asset, addr))
+	if !store.Has(key) {
+		return cosmos.ZeroUint(), nil
+	}
+	return cosmos.NewUintFromString(string(store.Get(key))), nil
+}
+
+// SetStableReserveCreditBasis stores a contributor's credit basis. A zero value
+// deletes the key so Get round-trips back to zero.
+func (k KVStore) SetStableReserveCreditBasis(ctx cosmos.Context, asset common.Asset, addr common.Address, basis cosmos.Uint) error {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	key := k.GetKey(prefixStableReserveBasis, stableReserveCreditKey(asset, addr))
+	if basis.IsZero() {
+		store.Delete(key)
+		return nil
+	}
+	store.Set(key, []byte(basis.String()))
+	return nil
+}
+
 // stableReserveDepositValueKey is the single fixed sub-key under the deposit
 // prefix: the deposit value is one aggregate reserve-wide total, not per-asset
 // or per-contributor.

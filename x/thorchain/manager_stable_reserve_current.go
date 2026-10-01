@@ -114,10 +114,12 @@ func (s *StableReserveMgr) Deposit(ctx cosmos.Context, asset common.Asset, amoun
 	}
 
 	// Track the aggregate USD value of deposits (1e8 = $1) so swaps know the
-	// principal floor. IsEligibleStable above already validated a healthy oracle
-	// price, so this fetch succeeds in practice; on the impossible error, skip the
-	// increment with a log rather than revert an otherwise-valid deposit.
-	if err = s.addDepositValue(ctx, asset, amount); err != nil {
+	// principal floor, and record the same amount as this contributor's basis so
+	// Withdraw releases exactly what this deposit added. IsEligibleStable above
+	// already validated a healthy oracle price, so this fetch succeeds in
+	// practice; on the impossible error, skip the increment with a log rather
+	// than revert an otherwise-valid deposit.
+	if err = s.addDepositValue(ctx, asset, contributor, amount); err != nil {
 		return err
 	}
 
@@ -181,16 +183,13 @@ func (s *StableReserveMgr) Withdraw(ctx cosmos.Context, asset common.Asset, amou
 	if err != nil {
 		return common.NoCoin, false, err
 	}
-	if err = s.keeper.SetStableReserveCredit(ctx, asset, contributor, common.SafeSub(credit, withdrawAmount)); err != nil {
+	// Release the redeemed share of this contributor's basis from the floor
+	// before debiting the credit (the release is pro rata to the pre-withdraw
+	// credit).
+	if err = s.subDepositValue(ctx, asset, contributor, withdrawAmount, credit); err != nil {
 		return common.NoCoin, false, err
 	}
-
-	// Decrement the aggregate deposit value by the filled amount's current USD
-	// value (SafeSub floors at zero). Withdraw does NOT run IsEligibleStable, so
-	// the oracle price may be missing if the asset depegged since deposit; on a
-	// missing/invalid price, skip the decrement and log rather than block the
-	// withdrawal or assume $1.
-	if err = s.subDepositValue(ctx, asset, withdrawAmount); err != nil {
+	if err = s.keeper.SetStableReserveCredit(ctx, asset, contributor, common.SafeSub(credit, withdrawAmount)); err != nil {
 		return common.NoCoin, false, err
 	}
 
@@ -401,10 +400,12 @@ func (s *StableReserveMgr) isTORAnchor(ctx cosmos.Context, asset common.Asset) b
 }
 
 // addDepositValue increases the aggregate USD deposit value (1e8 = $1) by the
-// current oracle value of amount. Called on STABLE+ after eligibility has
-// already validated a healthy oracle price, so a missing price here is not
-// expected; skip-with-log rather than revert a valid deposit.
-func (s *StableReserveMgr) addDepositValue(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint) error {
+// current oracle value of amount, and adds the same value to the contributor's
+// credit basis so the floor always equals the sum of outstanding bases. Called
+// on STABLE+ after eligibility has already validated a healthy oracle price, so
+// a missing price here is not expected; skip-with-log rather than revert a
+// valid deposit.
+func (s *StableReserveMgr) addDepositValue(ctx cosmos.Context, asset common.Asset, contributor common.Address, amount cosmos.Uint) error {
 	price, err := s.keeper.GetPrice(ctx, asset.Ticker.String())
 	if err != nil {
 		ctx.Logger().Error("stable reserve: missing oracle price for deposit value tracking", "asset", asset.String(), "error", err)
@@ -414,6 +415,13 @@ func (s *StableReserveMgr) addDepositValue(ctx cosmos.Context, asset common.Asse
 	if !ok || usd.IsZero() {
 		return nil
 	}
+	basis, err := s.keeper.GetStableReserveCreditBasis(ctx, asset, contributor)
+	if err != nil {
+		return err
+	}
+	if err = s.keeper.SetStableReserveCreditBasis(ctx, asset, contributor, basis.Add(usd)); err != nil {
+		return err
+	}
 	depositValue, err := s.keeper.GetStableReserveDepositValue(ctx)
 	if err != nil {
 		return err
@@ -421,36 +429,46 @@ func (s *StableReserveMgr) addDepositValue(ctx cosmos.Context, asset common.Asse
 	return s.keeper.SetStableReserveDepositValue(ctx, depositValue.Add(usd))
 }
 
-// subDepositValue decreases the aggregate USD deposit value by the withdrawn
-// amount's USD value (SafeSub floors at zero).
+// subDepositValue releases the redeemed share of a contributor's credit basis
+// from the aggregate deposit value: basis * withdrawn / credit, where credit is
+// the balance before this withdrawal (a full redemption releases the whole
+// basis). It never re-prices the withdrawal.
 //
-// Withdraw does not run the eligibility check, and oracle prices are deleted
-// every block by OracleMgr.BeginBlock — they exist only in blocks where the
-// price-feed batch landed. A withdrawal in any other block therefore sees no
-// price at all, which makes "skip the decrement" the common case rather than a
-// rare one: the floor would stay permanently inflated and the reserve would
-// read as underwater forever, charging the fee indefinitely.
+// Re-pricing at withdraw time cannot work. Withdraw does not run the
+// eligibility check, and oracle prices are deleted every block by
+// OracleMgr.BeginBlock, so a withdrawal usually sees no price at all; and when
+// one is present it has moved since deposit, or sits outside the band during a
+// depeg. Any of those subtracts a different value than the deposit added, and
+// one actor cycling deposits and withdrawals can ratchet the floor down
+// (erasing other contributors' protection and switching the underwater fee off)
+// or up (holding the fee on permanently). Releasing the recorded basis keeps the
+// floor exactly equal to the sum of outstanding contributors' bases.
 //
-// Fall back to valuing the amount at $1 instead. Deposit is gated by
-// IsEligibleStable, which admits an asset only inside $1 ± depeg tolerance, so
-// the credited floor was itself within that band of the unit count; unwinding
-// at $1 is bounded by the same tolerance (100 bps by default) instead of being
-// unbounded and permanent.
-func (s *StableReserveMgr) subDepositValue(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint) error {
-	usd := amount
-	if price, err := s.keeper.GetPrice(ctx, asset.Ticker.String()); err == nil {
-		if v, ok := stableReserveUSDValue(amount, price.Price); ok {
-			usd = v
-		}
-	}
-	if usd.IsZero() {
+// Credits written before basis tracking have a zero basis and release nothing,
+// matching the zero they never added to the aggregate.
+func (s *StableReserveMgr) subDepositValue(ctx cosmos.Context, asset common.Asset, contributor common.Address, withdrawn, credit cosmos.Uint) error {
+	if withdrawn.IsZero() || credit.IsZero() {
 		return nil
+	}
+	basis, err := s.keeper.GetStableReserveCreditBasis(ctx, asset, contributor)
+	if err != nil {
+		return err
+	}
+	if basis.IsZero() {
+		return nil
+	}
+	release := basis
+	if withdrawn.LT(credit) {
+		release = common.GetSafeShare(withdrawn, credit, basis)
+	}
+	if err = s.keeper.SetStableReserveCreditBasis(ctx, asset, contributor, common.SafeSub(basis, release)); err != nil {
+		return err
 	}
 	depositValue, err := s.keeper.GetStableReserveDepositValue(ctx)
 	if err != nil {
 		return err
 	}
-	return s.keeper.SetStableReserveDepositValue(ctx, common.SafeSub(depositValue, usd))
+	return s.keeper.SetStableReserveDepositValue(ctx, common.SafeSub(depositValue, release))
 }
 
 // currentReserveUSD sums the module's held stable inventory valued at the
