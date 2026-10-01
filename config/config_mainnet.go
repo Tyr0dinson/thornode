@@ -25,18 +25,26 @@ func getSeedAddrs() (addrs []string) {
 		return
 	}
 
-	// get nodes
+	// get nodes. A seed endpoint is a convenience: a node with an address book or
+	// configured peers can still start, so failures warn instead of exiting (an
+	// upgrading network's own API may be down while it waits for validators).
 	res, err := http.Get(config.Thornode.SeedNodesEndpoint)
 	if err != nil {
-		log.Fatal().Err(err).Msg("failed to get thorchain nodes")
+		log.Warn().Err(err).Msg("failed to get thorchain nodes, starting without seed nodes")
+		return
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		log.Warn().Int("status", res.StatusCode).Msg("seed nodes endpoint returned non-200, starting without seed nodes")
+		return
 	}
 
 	// parse nodes
 	var nodes []types.NodeAccount
 	if err = json.NewDecoder(res.Body).Decode(&nodes); err != nil {
-		log.Fatal().Err(err).Msg("failed to decode thorchain nodes")
+		log.Warn().Err(err).Msg("failed to decode thorchain nodes, starting without seed nodes")
+		return
 	}
-	res.Body.Close()
 
 	// include active nodes with an ip address
 	var seeds []string
