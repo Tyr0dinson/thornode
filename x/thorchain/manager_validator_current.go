@@ -1738,8 +1738,9 @@ func (vm *ValidatorMgr) findLowBondActor(ctx cosmos.Context) (NodeAccount, error
 func (vm *ValidatorMgr) markActor(ctx cosmos.Context, na NodeAccount, reason string) error {
 	if !na.IsEmpty() && na.LeaveScore == 0 {
 		ctx.Logger().Info("marked Validator to be churned out", "node address", na.NodeAddress, "reason", reason)
-		// reason is always one of seven compile-time string literals at the seven
-		// markActor call sites in this file, so label cardinality is fixed at 7.
+		// reason is always one of eight compile-time string literals at the eight
+		// markActor call sites in this file, so label cardinality is fixed at 8.
+		// Keep it that way: log per-call detail at the call site instead.
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "churn", "node_marked"},
 			float32(1),
@@ -1804,7 +1805,10 @@ func (vm *ValidatorMgr) markNonVotingActors(ctx cosmos.Context) error {
 
 		// One selection per ADR per churn. markActor no-ops when the node is already
 		// marked for another reason, which deliberately consumes this churn's slot.
-		if err := vm.markActor(ctx, selected, "for not voting on "+vote.Key); err != nil {
+		// The reason is a fixed literal because it becomes a telemetry label; the key
+		// goes in the log line instead.
+		ctx.Logger().Info("selected non-voter for required ADR", "node address", selected.NodeAddress, "key", vote.Key)
+		if err := vm.markActor(ctx, selected, "for not voting on ADR"); err != nil {
 			return err
 		}
 	}
