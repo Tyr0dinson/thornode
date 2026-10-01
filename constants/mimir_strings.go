@@ -158,7 +158,6 @@ func IsOperationalMimir(key string) bool {
 		P2PGateDisabled.String(),
 		EnableMemolessOutbound.String(),
 		POLReserveSystemIncomeBps.String(),
-		StableReserveOraclePricing.String(),
 		MimirKeyPreflightChainSetDisabled,
 		StableReserveUnderwaterFee.String(),
 		StableReserveRescueToleranceBps.String(),
