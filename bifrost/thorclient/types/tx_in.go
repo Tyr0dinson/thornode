@@ -220,6 +220,7 @@ func (t *TxInItem) Copy() *TxInItem {
 		SpentOutputRefs:       refs,
 		TxKey:                 t.TxKey,
 		SolNonce:              copySolNonce(t.SolNonce),
+		Bounced:               t.Bounced,
 		CommittedUnFinalised:  t.CommittedUnFinalised,
 		OnObservedTxStored:    t.OnObservedTxStored,
 		OnObservedTxRejected:  t.OnObservedTxRejected,

@@ -515,7 +515,7 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 	err = tx.UnmarshalJSON([]byte(encodedTx))
 	c.Assert(err, IsNil)
 
-	txInItem, err := bs.fromTxToTxIn(tx)
+	txInItem, err := bs.fromTxToTxIn(tx, false)
 	c.Assert(err, IsNil)
 	c.Assert(txInItem, NotNil)
 	c.Check(txInItem.Sender, Equals, "0xd58610f89265a2fb637ac40edf59141ff873b266")
@@ -549,7 +549,7 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 	encodedTx = `{"nonce":"0x4","gasPrice":"0x1","gas":"0x177b8","to":"0xe65e9d372f8cacc7b6dfcd4af6507851ed31bb44","value":"0x0","input":"0x1fece7b4000000000000000000000000d58610f89265a2fb637ac40edf59141ff873b2660000000000000000000000003b7fa4dd21c6f9ba3ca375217ead7cab9d6bf4830000000000000000000000000000000000000000000000004563918244f40000000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000634144443a4554482e544b4e2d3078336237464134646432316336663942413363613337353231374541443743416239443662463438333a7474686f72313678786e30636164727575773661327177707633356176306d6568727976647a7a6a7a3361660000000000000000000000000000000000000000000000000000000000","v":"0xa96","r":"0x6f45018cb52c8c75d71894140a6c65d8c13bdd745e6395ede8a6123ea291bc04","s":"0x56e23a0971d52079f1713cc3b8a4193c98105d2e9f9f67d050f42557a390b16b","hash":"0xe18c76466b7ad0c08d6bd6d7e4d50d2d4b86cdca4092cc7b28fbb3b6a5c2565c"}`
 	tx = etypes.NewTransaction(0, common.HexToAddress(ethToken), nil, 0, nil, nil)
 	c.Assert(tx.UnmarshalJSON([]byte(encodedTx)), IsNil)
-	txInItem, err = bs.fromTxToTxIn(tx)
+	txInItem, err = bs.fromTxToTxIn(tx, false)
 	c.Assert(err, IsNil)
 	c.Assert(txInItem, NotNil)
 	c.Assert(txInItem.Sender, Equals, "0xc96aaa54e2d44c299564da76e1cd3184a2386b8d")
@@ -573,7 +573,7 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 	encodedTx = `{"nonce":"0x4","gasPrice":"0x1","gas":"0x177b8","to":"0x81a392e6a757d58a7eb6781a775a3449da3b9df5","value":"0x0","input":"0x1fece7b4000000000000000000000000d58610f89265a2fb637ac40edf59141ff873b2660000000000000000000000003b7fa4dd21c6f9ba3ca375217ead7cab9d6bf4830000000000000000000000000000000000000000000000004563918244f40000000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000634144443a4554482e544b4e2d3078336237464134646432316336663942413363613337353231374541443743416239443662463438333a7474686f72313678786e30636164727575773661327177707633356176306d6568727976647a7a6a7a3361660000000000000000000000000000000000000000000000000000000000","v":"0xa96","r":"0x7fbfee9939a7e6de1e9dec44f4ac8cd9496de934dff9abe74c9ba2ecc69ac66e","s":"0x606c5d6510558513b6425099892fc2269663abbd11266b7087c6ecb899827b11","hash":"0xbd6e8494e18d627d2331c625203bcea6fb5acb9cdc8a82628f1bc894e90884e2"}`
 	tx = etypes.NewTransaction(0, common.HexToAddress(ethToken), nil, 0, nil, nil)
 	c.Assert(tx.UnmarshalJSON([]byte(encodedTx)), IsNil)
-	txInItem, err = bs.fromTxToTxIn(tx)
+	txInItem, err = bs.fromTxToTxIn(tx, false)
 	c.Assert(err, IsNil)
 	c.Assert(txInItem, NotNil)
 	c.Assert(txInItem.Sender, Equals, "0xc96aaa54e2d44c299564da76e1cd3184a2386b8d")
@@ -587,7 +587,7 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 	encodedTx = `{"nonce":"0x5","gasPrice":"0x1","gas":"0xe8c5","to":"0xe65e9d372f8cacc7b6dfcd4af6507851ed31bb44","value":"0x4563918244f40000","input":"0x1fece7b4000000000000000000000000d58610f89265a2fb637ac40edf59141ff873b26600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000384144443a4554482e4554483a7474686f72313678786e30636164727575773661327177707633356176306d6568727976647a7a6a7a3361660000000000000000","v":"0xa95","r":"0x9a182e8c6dbc09b6d57248ce02e0ecd84243ff1dce86fc5ed487087dcf72cc4a","s":"0x308038d1221253bcdf60829f8aa112baa152d5c3fcc72f88e662df9cd6100fc","hash":"0xf4b44594788df2b4e04ea3f23594a85cb64388220274a828aab96b083647fc59"}`
 	tx = &etypes.Transaction{}
 	c.Assert(tx.UnmarshalJSON([]byte(encodedTx)), IsNil)
-	txInItem, err = bs.fromTxToTxIn(tx)
+	txInItem, err = bs.fromTxToTxIn(tx, false)
 	c.Assert(err, IsNil)
 	c.Assert(txInItem, NotNil)
 	c.Assert(txInItem.Sender, Equals, "0xc96aaa54e2d44c299564da76e1cd3184a2386b8d")
@@ -601,7 +601,7 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 	encodedTx = `{"nonce":"0x0","gasPrice":"0x2540be400","gas":"0xecc1","to":"0xe65e9d372f8cacc7b6dfcd4af6507851ed31bb44","value":"0x31f2ffcfc1f7c00","input":"0x574da7170000000000000000000000008d8bba78a27881294b34c82fb5978596e2df66dd0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000031d13d4898b6000000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000444f55543a4332323337423935393946434332443337323434383644414641363042413139343036353030393244333135353144383538343536314236303042434246343300000000000000000000000000000000000000000000000000000000","v":"0xa96","r":"0xb27f9fff5cc936d5918aa557c9c4df559e3e4f6c4ac5b0b79d43c4e3bdcb91e","s":"0x1417cedea6a9b879bd24d547b29c05d214100bfc586a32a1c24de3a090528f62","hash":"0x4b8845b0d99c13bae6716b3c422cdb61aa141c0db04cfb18bcc031b76471595b"}`
 	tx = &etypes.Transaction{}
 	c.Assert(tx.UnmarshalJSON([]byte(encodedTx)), IsNil)
-	txInItem, err = bs.fromTxToTxIn(tx)
+	txInItem, err = bs.fromTxToTxIn(tx, false)
 	c.Assert(err, IsNil)
 	c.Assert(txInItem, NotNil)
 	c.Assert(txInItem.Sender, Equals, "0x5dcd69c5a0e2a6ccf7416c1c259063b88668a5ca")
@@ -615,7 +615,7 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 	encodedTx = `{"nonce":"0xb","gasPrice":"0x1","gas":"0xd529","to":"0xe65e9d372f8cacc7b6dfcd4af6507851ed31bb44","value":"0x0","input":"0x1b738b32000000000000000000000000e65e9d372f8cacc7b6dfcd4af6507851ed31bb440000000000000000000000009f4aab49a9cd8fc54dcb3701846f608a6f2c44da0000000000000000000000003b7fa4dd21c6f9ba3ca375217ead7cab9d6bf483000000000000000000000000000000000000000000000000ad67810426efff1800000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000000000000568656c6c6f000000000000000000000000000000000000000000000000000000","v":"0xa96","r":"0x967771b4ec53f895b6f6a2e8b4febbfd04fba079b5f1ab3c6476d9d612cc23d5","s":"0x2cc999ea73cd67cac387a0c5fa49cf6eeab8de1b4602ad376f788a3b700b97fa","hash":"0xe8d7b5ff2e2f3ae814dfd422444196a72349e03a761eda5452fcc244291fc599"}`
 	tx = &etypes.Transaction{}
 	c.Assert(tx.UnmarshalJSON([]byte(encodedTx)), IsNil)
-	txInItem, err = bs.fromTxToTxIn(tx)
+	txInItem, err = bs.fromTxToTxIn(tx, false)
 	c.Assert(err, IsNil)
 	c.Assert(txInItem, NotNil)
 	c.Assert(txInItem.Sender, Equals, "0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473")
@@ -644,7 +644,7 @@ func (s *BlockScannerTestSuite) TestFromTxToTxIn(c *C) {
 		"0xd37bbe5744d730a1d98d8dc97c42f0ca46ad7146",
 	)
 
-	txInItem, err = bs.fromTxToTxIn(tx)
+	txInItem, err = bs.fromTxToTxIn(tx, false)
 	c.Assert(err, IsNil)
 	c.Assert(txInItem, NotNil)
 	c.Assert(txInItem.Sender, Equals, "0x52d3c44dbb43dde4ed5c9bec0c8b226269057e1c")
@@ -841,7 +841,7 @@ func (s *BlockScannerTestSuite) TestDirectERC20TransferFeatureFlag(c *C) {
 		disableWhitelist = tc.disableWhitelist
 		directInbound = tc.directInbound
 
-		txInItem, txErr := scanner.fromTxToTxIn(tx)
+		txInItem, txErr := scanner.fromTxToTxIn(tx, false)
 		c.Assert(txErr, IsNil, Commentf(tc.name))
 		if !tc.expectObserved {
 			c.Assert(txInItem, IsNil, Commentf(tc.name))
@@ -860,7 +860,7 @@ func (s *BlockScannerTestSuite) TestDirectERC20TransferFeatureFlag(c *C) {
 	// Unsigned transfer(...) txs fail sender recovery. The scanner should
 	// quietly ignore them rather than re-running sender recovery and returning
 	// an error from the direct-ERC20 helper.
-	txInItem, err := scanner.fromTxToTxIn(unsignedTx)
+	txInItem, err := scanner.fromTxToTxIn(unsignedTx, false)
 	c.Assert(err, IsNil)
 	c.Assert(txInItem, IsNil)
 }
@@ -1002,7 +1002,7 @@ func (s *BlockScannerTestSuite) TestRouterValidation(c *C) {
 	// tx.To() is the aggregator (not vault, not router), so the disableWhitelist=1
 	// path routes through: IsSmartContractCall → getTxInFromSmartContract → router validation passes.
 	receiptResponse = makeReceiptJSON(correctRouter)
-	txInItem, err := bs.fromTxToTxIn(tx)
+	txInItem, err := bs.fromTxToTxIn(tx, false)
 	c.Assert(err, IsNil)
 	c.Assert(txInItem, NotNil, Commentf("aggregator deposit with correct router should be observed"))
 	c.Assert(txInItem.To, Equals, vaultAddr)
@@ -1013,7 +1013,7 @@ func (s *BlockScannerTestSuite) TestRouterValidation(c *C) {
 	// Test 2: Aggregator swap-in with wrong router — full fromTxToTxIn flow.
 	// The deposit event is emitted by the wrong router, so validation rejects it.
 	receiptResponse = makeReceiptJSON(wrongRouter)
-	txInItem, err = bs.fromTxToTxIn(tx)
+	txInItem, err = bs.fromTxToTxIn(tx, false)
 	c.Assert(err, IsNil)
 	c.Assert(txInItem, IsNil, Commentf("deposit from wrong router should be dropped"))
 }

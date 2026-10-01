@@ -884,3 +884,42 @@ func (s *HandlerErrataTxSuite) TestObservingSlashing(c *C) {
 
 	// Note that nas[6], the Standby node, remains unaffected by the Actives nodes' observations.
 }
+
+// A bounced outbound never debited the vault, so an errata must not credit it.
+func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx_BouncedNotCredited(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	txID := GetRandomTxHash()
+	pubKey := GetRandomPubKey()
+	tx := common.NewTx(txID, GetRandomETHAddress(), GetRandomETHAddress(),
+		common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100))},
+		common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(1))},
+		"OUT:"+GetRandomTxHash().String())
+	obs := common.NewObservedTx(tx, 1024, pubKey, 1024)
+	obs.Bounced = true
+	voter := NewObservedTxVoter(txID, []common.ObservedTx{obs})
+	voter.Tx = obs
+	k.SetObservedTxOutVoter(ctx, voter)
+
+	vault := NewVault(1, ActiveVault, AsgardVault, pubKey, []string{common.ETHChain.String()}, []ChainContract{})
+	vault.AddFunds(common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(500))})
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	ctx = ctx.WithEventManager(cosmos.NewEventManager())
+	er := &common.ErrataTx{Id: txID, Chain: common.ETHChain}
+	c.Assert(processErrataOutboundTx(ctx, k, mgr.EventMgr(), er), IsNil)
+
+	vault, err := k.GetVault(ctx, pubKey)
+	c.Assert(err, IsNil)
+	c.Check(vault.GetCoin(common.ETHAsset).Amount.Uint64(), Equals, uint64(500))
+	voter, err = k.GetObservedTxOutVoter(ctx, txID)
+	c.Assert(err, IsNil)
+	c.Check(voter.Reverted, Equals, true)
+	security := 0
+	for _, event := range ctx.EventManager().Events() {
+		if event.Type == "security" {
+			security++
+		}
+	}
+	c.Check(security, Equals, 1)
+}

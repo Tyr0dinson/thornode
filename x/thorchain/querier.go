@@ -4232,6 +4232,7 @@ func castObservedTx(observedTx ObservedTx) types.QueryObservedTx {
 		SpentOutputRefs:       castOutputRefs(observedTx.SpentOutputRefs),
 		XmrTxKey:              observedTx.XmrTxKey,
 		XmrMinedHeight:        observedTx.XmrMinedHeight,
+		Bounced:               observedTx.Bounced,
 	}
 }
 

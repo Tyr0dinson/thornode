@@ -79,14 +79,10 @@ type ETHScanner struct {
 	pubkeyMgr             pubkeymanager.PubKeyValidator
 	eipSigner             etypes.Signer
 	currentBlockHeight    stdatomic.Int64
-	// detectBounce caches the EVMBouncedOutbound mimir for the block being
-	// scanned (refreshed at the top of processBlock; reorg/reprocess paths reuse
-	// the last value) so it is not fetched once per router tx.
-	detectBounce       stdatomic.Bool
-	gasCache           []*big.Int
-	solvencyReporter   SolvencyReporter
-	whitelistTokens    []tokenlist.ERC20Token
-	signerCacheManager *signercache.CacheManager
+	gasCache              []*big.Int
+	solvencyReporter      SolvencyReporter
+	whitelistTokens       []tokenlist.ERC20Token
+	signerCacheManager    *signercache.CacheManager
 }
 
 // NewETHScanner create a new instance of ETHScanner
@@ -360,7 +356,9 @@ func (e *ETHScanner) updateGasPriceFromCacheLocked() {
 // processBlock extracts transactions from block
 func (e *ETHScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 	height := int64(block.NumberU64())
-	e.detectBounce.Store(e.bouncedOutboundEnabled())
+	// Fetched once per block and threaded down (not stored on the scanner):
+	// prefetch runs processBlock for several heights concurrently.
+	detectBounce := e.bouncedOutboundEnabled()
 	txIn := stypes.TxIn{
 		Chain:    common.ETHChain,
 		TxArray:  nil,
@@ -397,7 +395,7 @@ func (e *ETHScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 		return txIn, nil
 	}
 
-	txInBlock, err := e.extractTxs(block)
+	txInBlock, err := e.extractTxs(block, detectBounce)
 	if err != nil {
 		return txIn, err
 	}
@@ -407,7 +405,7 @@ func (e *ETHScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 	return txIn, nil
 }
 
-func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
+func (e *ETHScanner) extractTxs(block *etypes.Block, detectBounce bool) (stypes.TxIn, error) {
 	txInbound := stypes.TxIn{
 		Chain:    common.ETHChain,
 		Filtered: false,
@@ -451,7 +449,7 @@ func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 			e.logger.Err(err).Msgf("fail to remove signed tx item, hash:%s", tx.Hash().String())
 		}
 
-		txInItem, err := e.fromTxToTxInWithReceipts(tx, receipts)
+		txInItem, err := e.fromTxToTxInWithReceipts(tx, receipts, detectBounce)
 		if err != nil {
 			e.logger.Error().Err(err).Str("hash", tx.Hash().Hex()).Msg("fail to get one tx from server")
 			return
@@ -654,7 +652,7 @@ func (e *ETHScanner) processReorg(block *etypes.Header) ([]stypes.TxIn, error) {
 			continue
 		}
 		var txIn stypes.TxIn
-		txIn, err = e.extractTxs(block)
+		txIn, err = e.extractTxs(block, e.bouncedOutboundEnabled())
 		if err != nil {
 			e.logger.Err(err).Msgf("fail to extract txs from block (%d)", item)
 			continue
@@ -1032,7 +1030,7 @@ func (e *ETHScanner) getTxInFromDirectERC20Transfer(tx *etypes.Transaction, rece
 }
 
 // getTxInFromSmartContract returns txInItem
-func (e *ETHScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *etypes.Receipt, maxLogs int64) (*stypes.TxInItem, error) {
+func (e *ETHScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *etypes.Receipt, maxLogs int64, detectBounce bool) (*stypes.TxInItem, error) {
 	e.logger.Debug().Msg("parse tx from smart contract")
 	txInItem := &stypes.TxInItem{
 		Tx: tx.Hash().Hex()[2:],
@@ -1054,7 +1052,7 @@ func (e *ETHScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 		e.vaultABI,
 		common.ETHAsset,
 		maxLogs,
-		e.detectBounce.Load())
+		detectBounce)
 	// txInItem will be changed in p.GetTxInItem function, so if the function return an error
 	// txInItem should be abandoned
 	if _, err = p.GetTxInItem(receipt.Logs, txInItem); err != nil {
@@ -1170,14 +1168,14 @@ func (e *ETHScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *ety
 	return txInItem, nil
 }
 
-func (e *ETHScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, error) {
-	return e.fromTxToTxInWithReceipts(tx, nil)
+func (e *ETHScanner) fromTxToTxIn(tx *etypes.Transaction, detectBounce bool) (*stypes.TxInItem, error) {
+	return e.fromTxToTxInWithReceipts(tx, nil, detectBounce)
 }
 
 // fromTxToTxInWithReceipts converts the transaction to a TxInItem, taking its
 // receipt from the supplied block-receipts map when present and falling back
 // to an individual eth_getTransactionReceipt lookup otherwise.
-func (e *ETHScanner) fromTxToTxInWithReceipts(tx *etypes.Transaction, receipts map[ecommon.Hash]*etypes.Receipt) (*stypes.TxInItem, error) {
+func (e *ETHScanner) fromTxToTxInWithReceipts(tx *etypes.Transaction, receipts map[ecommon.Hash]*etypes.Receipt, detectBounce bool) (*stypes.TxInItem, error) {
 	if tx == nil || tx.To() == nil {
 		return nil, nil
 	}
@@ -1226,7 +1224,7 @@ func (e *ETHScanner) fromTxToTxInWithReceipts(tx *etypes.Transaction, receipts m
 			return e.getTxInFromTransaction(tx, receipt)
 		case e.isToValidContractAddress(destination, true):
 			// Deposit directly to router
-			return e.getTxInFromSmartContract(tx, receipt, 0)
+			return e.getTxInFromSmartContract(tx, receipt, 0, detectBounce)
 		case isFromVault:
 			// Tx from a vault (outbound, approval, cancel, etc.)
 			return e.getTxInFromTransaction(tx, receipt)
@@ -1252,7 +1250,7 @@ func (e *ETHScanner) fromTxToTxInWithReceipts(tx *etypes.Transaction, receipts m
 			return e.getTxInFromDirectERC20Transfer(tx, receipt, &sender)
 		case evm.IsSmartContractCall(tx, receipt):
 			// Tx to a different contract, attempt to parse with max allowable logs
-			return e.getTxInFromSmartContract(tx, receipt, int64(e.cfg.MaxContractTxLogs))
+			return e.getTxInFromSmartContract(tx, receipt, int64(e.cfg.MaxContractTxLogs), detectBounce)
 		default:
 			// ignore tx not involving any vault
 			return nil, nil
@@ -1260,7 +1258,7 @@ func (e *ETHScanner) fromTxToTxInWithReceipts(tx *etypes.Transaction, receipts m
 	} else {
 		// parse tx with whitelist
 		if e.isToValidContractAddress(tx.To(), true) {
-			return e.getTxInFromSmartContract(tx, receipt, 0)
+			return e.getTxInFromSmartContract(tx, receipt, 0, detectBounce)
 		}
 		// check if tx is to or from a vault
 		sender, err := etypes.Sender(e.eipSigner, tx)

@@ -90,6 +90,14 @@ asserts:
   - .coins[]|select(.asset=="ETH.ETH")|.amount|tonumber == 1000000000-960000
 ---
 ########################################################################################
+# the bounce is visible on the tx query, not just in the block events
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/tx/{{ observe_txid 1 }}
+asserts:
+  - .observed_tx.bounced == true
+---
+########################################################################################
 # The vault now holds more ETH than the pool accounts for: the pool paid the swap out
 # but the coins never left. That surplus is the truthful state and is what makes the
 # failure visible - before the fix the books balanced while the vault's recorded

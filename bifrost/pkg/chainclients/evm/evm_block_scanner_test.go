@@ -858,7 +858,7 @@ func (s *BlockScannerTestSuite) TestDirectERC20TransferFeatureFlag(c *C) {
 		disableWhitelist = tc.disableWhitelist
 		directInbound = tc.directInbound
 
-		txInItem, txErr := scanner.receiptToTxInItem(tx, receipt)
+		txInItem, txErr := scanner.receiptToTxInItem(tx, receipt, false)
 		c.Assert(txErr, IsNil, Commentf(tc.name))
 		if !tc.expectObserved {
 			c.Assert(txInItem, IsNil, Commentf(tc.name))
@@ -877,7 +877,7 @@ func (s *BlockScannerTestSuite) TestDirectERC20TransferFeatureFlag(c *C) {
 	// Unsigned transfer(...) txs fail sender recovery. The scanner should
 	// quietly ignore them rather than re-running sender recovery and returning
 	// an error from the direct-ERC20 helper.
-	txInItem, err := scanner.receiptToTxInItem(unsignedTx, receipt)
+	txInItem, err := scanner.receiptToTxInItem(unsignedTx, receipt, false)
 	c.Assert(err, IsNil)
 	c.Assert(txInItem, IsNil)
 }

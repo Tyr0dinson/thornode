@@ -70,16 +70,12 @@ type EVMScanner struct {
 	pubkeyMgr             pubkeymanager.PubKeyValidator
 	eipSigner             etypes.Signer
 	currentBlockHeight    stdatomic.Int64
-	// detectBounce caches the EVMBouncedOutbound mimir for the block being
-	// scanned (refreshed at the top of processBlock; reorg/reprocess paths reuse
-	// the last value) so it is not fetched once per router tx.
-	detectBounce       stdatomic.Bool
-	gasCache           []*big.Int
-	solvencyReporter   SolvencyReporter
-	whitelistTokens    []tokenlist.ERC20Token
-	whitelistContracts []common.Address
-	signerCacheManager *signercache.CacheManager
-	tokenManager       *evm.TokenManager
+	gasCache              []*big.Int
+	solvencyReporter      SolvencyReporter
+	whitelistTokens       []tokenlist.ERC20Token
+	whitelistContracts    []common.Address
+	signerCacheManager    *signercache.CacheManager
+	tokenManager          *evm.TokenManager
 
 	vaultABI *abi.ABI
 	erc20ABI *abi.ABI
@@ -320,7 +316,9 @@ func (e *EVMScanner) updateCurrentBlockHeight(height int64) {
 // --------------------------------- extraction ---------------------------------
 
 func (e *EVMScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
-	e.detectBounce.Store(e.bouncedOutboundEnabled())
+	// Fetched once per block and threaded down (not stored on the scanner):
+	// prefetch runs processBlock for several heights concurrently.
+	detectBounce := e.bouncedOutboundEnabled()
 	txIn := stypes.TxIn{
 		Chain:    e.cfg.ChainID,
 		TxArray:  nil,
@@ -351,7 +349,7 @@ func (e *EVMScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 	}
 
 	// collect all relevant transactions from the block and their gas prices
-	txInBlock, gasPrices, err := e.getTxIn(block)
+	txInBlock, gasPrices, err := e.getTxIn(block, detectBounce)
 	if err != nil {
 		return txIn, err
 	}
@@ -365,7 +363,7 @@ func (e *EVMScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 	return txIn, nil
 }
 
-func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block) (stypes.TxIn, []*big.Int, error) {
+func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block, detectBounce bool) (stypes.TxIn, []*big.Int, error) {
 	// Use custom method name as it varies between implementation
 	// It should be akin to: "fetch all transaction receipts within a block", e.g. getBlockReceipts
 	// This has shown to be more efficient than getTransactionReceipt in a batch call
@@ -441,7 +439,7 @@ func (e *EVMScanner) getTxInOptimized(method string, block *etypes.Block) (stype
 
 			// extract the txInItem; err must be goroutine-local, a shared one
 			// lets this goroutine drop its item on another goroutine's error
-			txInItem, err := e.receiptToTxInItem(txForReceipt, receipt)
+			txInItem, err := e.receiptToTxInItem(txForReceipt, receipt, detectBounce)
 			if err != nil {
 				e.logger.Error().Err(err).Msg("failed to convert receipt to txInItem")
 				return
@@ -590,7 +588,7 @@ func (e *EVMScanner) isPoolAddress(addr ecommon.Address) bool {
 	return ok
 }
 
-func (e *EVMScanner) getTxIn(block *etypes.Block) (stypes.TxIn, []*big.Int, error) {
+func (e *EVMScanner) getTxIn(block *etypes.Block, detectBounce bool) (stypes.TxIn, []*big.Int, error) {
 	// CHANGEME: if an EVM chain supports some way of fetching all transaction receipts
 	// within a block, register it here.
 	switch e.cfg.ChainID {
@@ -598,9 +596,9 @@ func (e *EVMScanner) getTxIn(block *etypes.Block) (stypes.TxIn, []*big.Int, erro
 		if gasPrices, ok := e.gasPricesWithoutReceipts(block); ok {
 			return stypes.TxIn{}, gasPrices, nil
 		}
-		return e.getTxInOptimized("eth_getBlockReceipts", block)
+		return e.getTxInOptimized("eth_getBlockReceipts", block, detectBounce)
 	case common.POLChain:
-		return e.getTxInOptimized("eth_getBlockReceipts", block)
+		return e.getTxInOptimized("eth_getBlockReceipts", block, detectBounce)
 	}
 
 	txInbound := stypes.TxIn{
@@ -678,7 +676,7 @@ func (e *EVMScanner) getTxIn(block *etypes.Block) (stypes.TxIn, []*big.Int, erro
 
 			// extract the txInItem
 			var txInItem *stypes.TxInItem
-			txInItem, err = e.receiptToTxInItem(batch[i], receipt)
+			txInItem, err = e.receiptToTxInItem(batch[i], receipt, detectBounce)
 			if err != nil {
 				e.logger.Error().Err(err).Msg("failed to convert receipt to txInItem")
 				continue
@@ -723,10 +721,10 @@ func (e *EVMScanner) getTxInItem(tx *etypes.Transaction) (*stypes.TxInItem, erro
 		return nil, fmt.Errorf("failed to get transaction receipt: %w", err)
 	}
 
-	return e.receiptToTxInItem(tx, receipt)
+	return e.receiptToTxInItem(tx, receipt, e.bouncedOutboundEnabled())
 }
 
-func (e *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.Receipt) (*stypes.TxInItem, error) {
+func (e *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.Receipt, detectBounce bool) (*stypes.TxInItem, error) {
 	if receipt.Status != 1 {
 		e.logger.Debug().Stringer("txid", tx.Hash()).Uint64("status", receipt.Status).Msg("tx failed")
 
@@ -762,7 +760,7 @@ func (e *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.R
 			return e.getTxInFromTransaction(tx, receipt)
 		case e.isToValidContractAddress(destination, true):
 			// Deposit directly to router
-			return e.getTxInFromSmartContract(tx, receipt, 0)
+			return e.getTxInFromSmartContract(tx, receipt, 0, detectBounce)
 		case isFromVault:
 			// Tx from a vault (outbound, approval, cancel, etc.)
 			return e.getTxInFromTransaction(tx, receipt)
@@ -788,7 +786,7 @@ func (e *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.R
 			return e.getTxInFromDirectERC20Transfer(tx, receipt, &sender)
 		case evm.IsSmartContractCall(tx, receipt):
 			// Tx to a different contract, attempt to parse with max allowable logs
-			return e.getTxInFromSmartContract(tx, receipt, int64(e.cfg.MaxContractTxLogs))
+			return e.getTxInFromSmartContract(tx, receipt, int64(e.cfg.MaxContractTxLogs), detectBounce)
 		default:
 			// ignore tx not involving any vault
 			return nil, nil
@@ -796,7 +794,7 @@ func (e *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.R
 	} else {
 		// parse tx with whitelist
 		if e.isToValidContractAddress(tx.To(), true) {
-			return e.getTxInFromSmartContract(tx, receipt, 0)
+			return e.getTxInFromSmartContract(tx, receipt, 0, detectBounce)
 		}
 		// check if tx is to or from a vault
 		sender, err := etypes.Sender(e.eipSigner, tx)
@@ -875,7 +873,7 @@ func (e *EVMScanner) processReorg(header *etypes.Header) ([]stypes.TxIn, error) 
 			continue
 		}
 		var txIn stypes.TxIn
-		txIn, _, err = e.getTxIn(block) // discard gas prices during reorg rescan
+		txIn, _, err = e.getTxIn(block, e.bouncedOutboundEnabled()) // discard gas prices during reorg rescan
 		if err != nil {
 			e.logger.Err(err).Int64("height", rescanHeight).Msg("fail to extract txs from block")
 			continue
@@ -1256,7 +1254,7 @@ func (e *EVMScanner) getTxInFromDirectERC20Transfer(tx *etypes.Transaction, rece
 }
 
 // getTxInFromSmartContract returns txInItem
-func (e *EVMScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *etypes.Receipt, maxLogs int64) (*stypes.TxInItem, error) {
+func (e *EVMScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *etypes.Receipt, maxLogs int64, detectBounce bool) (*stypes.TxInItem, error) {
 	txInItem := &stypes.TxInItem{
 		Tx: tx.Hash().Hex()[2:], // drop the "0x" prefix
 	}
@@ -1278,7 +1276,7 @@ func (e *EVMScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 		e.vaultABI,
 		e.cfg.ChainID.GetGasAsset(),
 		maxLogs,
-		e.detectBounce.Load(),
+		detectBounce,
 	)
 
 	// txInItem will be changed in p.getTxInItem function, so if the function return an

@@ -135,6 +135,7 @@ func (s *TxInTestSuite) TestTxInItemCopy(c *C) {
 		Aggregator:            "agg",
 		AggregatorTarget:      "target",
 		AggregatorTargetLimit: &limit,
+		Bounced:               true,
 		CommittedUnFinalised:  true,
 		OnObservedTxStored:    stored,
 		OnObservedTxRejected:  rejected,
@@ -152,6 +153,7 @@ func (s *TxInTestSuite) TestTxInItemCopy(c *C) {
 	c.Check(copied.AggregatorTarget, Equals, item.AggregatorTarget)
 	c.Check(copied.AggregatorTargetLimit.Equal(*item.AggregatorTargetLimit), Equals, true)
 	c.Check(copied.CommittedUnFinalised, Equals, true)
+	c.Check(copied.Bounced, Equals, true)
 	c.Check(copied.OnObservedTxStored, NotNil)
 	c.Check(copied.OnObservedTxRejected, NotNil)
 

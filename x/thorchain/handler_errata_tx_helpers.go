@@ -314,7 +314,9 @@ func processErrataOutboundTx(ctx cosmos.Context, k keeper.Keeper, eventMgr Event
 		if err != nil {
 			return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, fmt.Errorf("fail to get vault with pubkey %s: %w", vaultPubKey, err)
 		}
-		// Credit funds back to the vault so they are not lost.
+		// Credit funds back to the vault so they are not lost. A Bounced outbound
+		// was never debited (the router returned the coins), so there is nothing
+		// to credit; still mark it reverted and emit the event below.
 		// Keep a valid outbound slash and its pool compensation after a reorg.
 		// Any resulting surplus follows the normal over-solvency policy; gas
 		// remains charged.
@@ -324,10 +326,12 @@ func processErrataOutboundTx(ctx cosmos.Context, k keeper.Keeper, eventMgr Event
 		// For XMR outbound voters, UpdatedVault records a persisted principal
 		// debit. This requires activation before economic XMR observations:
 		// older voters have no debit record and receive no principal credit.
-		if !er.Chain.RequiresTerminalErrataOutcome() || txOutVoter.UpdatedVault {
+		credit := !txOutVoter.Tx.Bounced &&
+			(!er.Chain.RequiresTerminalErrataOutcome() || txOutVoter.UpdatedVault)
+		if credit {
 			v.AddFunds(tx.Coins)
 		}
-		if v.Status == InactiveVault {
+		if v.Status == InactiveVault && credit {
 			ctx.Logger().Info("Errata credited funds to inactive vault - recovery via migration needed", "vault pub key", v.PubKey)
 		}
 
