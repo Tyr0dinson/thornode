@@ -2053,14 +2053,14 @@ func (vts *ValidatorMgrTestSuite) TestNodeAccountPreflightCheckKeygenChainSet(c 
 	// No keygen report at all: nothing to judge, so a node that has never been
 	// selected is unaffected.
 	never := readyNode()
-	status, err := validatorMgr.NodeAccountPreflightCheck(ctx, never, k.GetConstants())
+	status, err := validatorMgr.NodeAccountPreflightCheck(ctx, never, nil)
 	c.Assert(err, IsNil)
 	c.Assert(status, Equals, NodeReady)
 
 	// A report covering every chain the active vaults serve.
 	complete := readyNode()
 	k.SetLastKeygenChains(ctx, complete.NodeAddress, common.Chains{common.BTCChain, common.ETHChain}, 600)
-	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, complete, k.GetConstants())
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, complete, nil)
 	c.Assert(err, IsNil)
 	c.Assert(status, Equals, NodeReady)
 
@@ -2068,14 +2068,14 @@ func (vts *ValidatorMgrTestSuite) TestNodeAccountPreflightCheckKeygenChainSet(c 
 	// vault and stall the rotation, so it is held back.
 	incomplete := readyNode()
 	k.SetLastKeygenChains(ctx, incomplete.NodeAddress, common.Chains{common.BTCChain}, 600)
-	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, incomplete, k.GetConstants())
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, incomplete, nil)
 	c.Assert(err, NotNil)
 	c.Assert(status, Equals, NodeStandby)
 	c.Assert(err.Error(), Equals, "node account keygen report at height 600 omitted chain ETH served by the active vaults")
 
 	// The mimir kill switch restores the old behaviour.
 	k.SetMimir(ctx, constants.MimirKeyPreflightChainSetDisabled, 1)
-	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, incomplete, k.GetConstants())
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, incomplete, nil)
 	c.Assert(err, IsNil)
 	c.Assert(status, Equals, NodeReady)
 	k.SetMimir(ctx, constants.MimirKeyPreflightChainSetDisabled, 0)
@@ -2085,7 +2085,7 @@ func (vts *ValidatorMgrTestSuite) TestNodeAccountPreflightCheckKeygenChainSet(c 
 	// report at the next completed churn, so no node can be locked out.
 	stale := readyNode()
 	k.SetLastKeygenChains(ctx, stale.NodeAddress, common.Chains{common.BTCChain}, 400)
-	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, stale, k.GetConstants())
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, stale, nil)
 	c.Assert(err, IsNil)
 	c.Assert(status, Equals, NodeReady)
 
@@ -2097,10 +2097,10 @@ func (vts *ValidatorMgrTestSuite) TestNodeAccountPreflightCheckKeygenChainSet(c 
 	xmrVault := NewVault(900, ActiveVault, AsgardVault, GetRandomPubKey(),
 		common.Chains{common.THORChain, common.XMRChain}.Strings(), []ChainContract{})
 	c.Assert(k.SetVault(ctx, xmrVault), IsNil)
-	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, complete, k.GetConstants())
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, complete, nil)
 	c.Assert(err, IsNil)
 	c.Assert(status, Equals, NodeReady)
-	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, incomplete, k.GetConstants())
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, incomplete, nil)
 	c.Assert(err, NotNil)
 	c.Assert(status, Equals, NodeStandby)
 	c.Assert(err.Error(), Equals, "node account keygen report at height 600 omitted chain ETH served by the active vaults")
@@ -2108,7 +2108,7 @@ func (vts *ValidatorMgrTestSuite) TestNodeAccountPreflightCheckKeygenChainSet(c 
 	// A chain being retired (RAGNAROK-<gas asset>) is dropped from the reports of the
 	// operators who set OptToRetire first, so it is not required.
 	k.SetMimir(ctx, "RAGNAROK-ETH-ETH", 1)
-	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, incomplete, k.GetConstants())
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, incomplete, nil)
 	c.Assert(err, IsNil)
 	c.Assert(status, Equals, NodeReady)
 	k.SetMimir(ctx, "RAGNAROK-ETH-ETH", 0)
