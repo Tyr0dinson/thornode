@@ -103,12 +103,12 @@ func frostStreamCount(net network.Network) int {
 }
 
 func TestSuccessfulFrostStreamsFullyCloseOnBothEndpoints(t *testing.T) {
-	senderHost, err := libp2p.New(context.Background(), libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/0"))
+	senderHost, err := libp2p.New(libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/0"))
 	if err != nil {
 		t.Fatalf("create sender host: %v", err)
 	}
 	t.Cleanup(func() { _ = senderHost.Close() })
-	receiverHost, err := libp2p.New(context.Background(), libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/0"))
+	receiverHost, err := libp2p.New(libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/0"))
 	if err != nil {
 		t.Fatalf("create receiver host: %v", err)
 	}

@@ -296,7 +296,7 @@ func TestFrostWriteShutdownDuringBackoffStopsRetries(t *testing.T) {
 	result := make(chan retryResult, 1)
 	go func() {
 		attempts, err := comm.writeToStreamWithRetryDelay(
-			peer.ID("remote-peer"), []byte("payload"), "shutdown-backoff", 3, true, time.Hour,
+			peer.ID("remote-peer"), []byte("payload"), "shutdown-backoff", 3, time.Hour,
 		)
 		result <- retryResult{attempts: attempts, err: err}
 	}()
