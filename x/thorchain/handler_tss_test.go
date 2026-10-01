@@ -1724,6 +1724,110 @@ func (s *HandlerTssSuite) TestXMROnlyCompletionDoesNotResetBlame(c *C) {
 		Commentf("XMR-only completion must not reset since_churn blame"))
 }
 
+// TestXMRSuccessPreservesDualMemberBlame verifies that an XMR monovault keygen
+// success does not reset the since_churn counters of its own members. A node
+// in both the regular and XMR committees must keep its regular-churn blame, so
+// its next regular keygen failure is still escalated.
+func (s *HandlerTssSuite) TestXMRSuccessPreservesDualMemberBlame(c *C) {
+	helper := newTssHandlerTestHelper(c)
+	mgr := NewDummyMgrWithKeeper(helper.keeper)
+	mgr.networkMgr = newNetworkMgr(helper.keeper, mgr.TxOutStore(), mgr.EventMgr())
+	handler := NewTssHandler(mgr)
+	verifySecp256K1Signature = func(_ common.PubKey, _ []byte) error { return nil }
+	c.Assert(helper.keeper.Keeper.DeleteVault(helper.ctx, helper.poolPk), IsNil)
+	xmrMembers := helper.members[:4]
+
+	keygenBlock := NewKeygenBlock(helper.ctx.BlockHeight())
+	keygenBlock.Keygens = []Keygen{
+		{Type: AsgardKeygen, Members: helper.members.Strings()},
+		{Type: XMRMonovaultKeygen, Members: xmrMembers.Strings()},
+	}
+	helper.keeper.SetKeygenBlock(helper.ctx, keygenBlock)
+
+	setKeygenMemberNodeAccount(c, helper, xmrMembers[0], NodeActive)
+	setKeygenMemberNodeAccount(c, helper, xmrMembers[1], NodeReady)
+	setKeygenMemberNodeAccount(c, helper, xmrMembers[2], NodeReady)
+	setKeygenMemberNodeAccount(c, helper, xmrMembers[3], NodeReady)
+
+	// The blamed node sits in both committees.
+	blamedPK := xmrMembers[3]
+	blamedAddr, err := blamedPK.GetThorAddress()
+	c.Assert(err, IsNil)
+	c.Assert(helper.keeper.IncrementKeygenBlame(helper.ctx, blamedAddr), IsNil)
+	c.Assert(helper.keeper.IncrementKeysignBlame(helper.ctx, blamedAddr), IsNil)
+
+	xmrPoolPubKey := GetRandomPubKey()
+	xmrFrostPubKey := GetRandomEd25519PubKey()
+	observedMoneroHeight := int64(777)
+	xmrMsg, err := NewMsgTssPoolV3(
+		xmrMembers.Strings(), xmrPoolPubKey, nil, nil, XMRMonovaultKeygen,
+		helper.ctx.BlockHeight(), nil, xmrMonovaultChains().Strings(), helper.signer,
+		int64(1024), common.EmptyPubKey, nil, validTssKeyshareBackup(),
+		xmrFrostPubKey, observedMoneroHeight,
+	)
+	c.Assert(err, IsNil)
+	xmrVoter := NewTssVoter(xmrMsg.ID, xmrMembers.Strings(), xmrPoolPubKey, common.EmptyPubKey)
+	xmrVoter.PoolPubKeyFrost = xmrFrostPubKey
+	xmrVoter.ObservedMoneroHeight = observedMoneroHeight
+	for _, member := range xmrMembers[1:3] {
+		addr, addrErr := member.GetThorAddress()
+		c.Assert(addrErr, IsNil)
+		xmrVoter.Signers = append(xmrVoter.Signers, addr.String())
+	}
+	helper.keeper.SetTssVoter(helper.ctx, xmrVoter)
+
+	_, err = handler.Run(helper.ctx, xmrMsg)
+	c.Assert(err, IsNil)
+
+	xmrVault, err := helper.keeper.GetVault(helper.ctx, xmrPoolPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(xmrVault.IsXMRMonovault(), Equals, true)
+	c.Assert(xmrVault.GetMembership().Contains(blamedPK), Equals, true)
+
+	record, err := helper.keeper.GetNodeBlameRecord(helper.ctx, blamedAddr)
+	c.Assert(err, IsNil)
+	c.Check(record.KeygenBlameCountSinceChurn, Equals, int64(1),
+		Commentf("XMR success must not reset a member's keygen since_churn blame"))
+	c.Check(record.KeysignBlameCountSinceChurn, Equals, int64(1),
+		Commentf("XMR success must not reset a member's keysign since_churn blame"))
+
+	// The regular keygen then fails, blaming the same node again.
+	failMsg, err := NewMsgTssPoolV2(
+		helper.members.Strings(), GetRandomPubKey(), []byte("fakeSignature"), nil,
+		AsgardKeygen, helper.ctx.BlockHeight(),
+		[]Blame{{FailReason: "test escalation", BlameNodes: []Node{{Pubkey: blamedPK.String()}}}},
+		common.Chains{common.RuneAsset().Chain}.Strings(), helper.signer,
+		int64(1024), GetRandomPubKey(), nil, nil, common.EmptyPubKey,
+	)
+	c.Assert(err, IsNil)
+	failVoter, err := helper.keeper.GetTssVoter(helper.ctx, failMsg.ID)
+	c.Assert(err, IsNil)
+	for _, pk := range helper.members {
+		addr, errPK := pk.GetThorAddress()
+		c.Assert(errPK, IsNil)
+		if addr.Equals(helper.signer) {
+			continue
+		}
+		failVoter.Signers = append(failVoter.Signers, addr.String())
+	}
+	helper.keeper.SetTssVoter(helper.ctx, failVoter)
+
+	_, err = handler.Run(helper.ctx, failMsg)
+	c.Assert(err, IsNil)
+
+	record, err = helper.keeper.GetNodeBlameRecord(helper.ctx, blamedAddr)
+	c.Assert(err, IsNil)
+	c.Check(record.KeygenBlameCountSinceChurn, Equals, int64(2))
+
+	// Escalated: JailTimeKeygenBase * 2, not the base penalty.
+	jailTimeKeygenBase := helper.constAccessor.GetInt64Value(constants.JailTimeKeygenBase)
+	expectedRelease := helper.ctx.BlockHeight() + jailTimeKeygenBase*2
+	jail, err := helper.keeper.GetNodeAccountJail(helper.ctx, blamedAddr)
+	c.Assert(err, IsNil)
+	c.Check(jail.ReleaseHeight, Equals, expectedRelease,
+		Commentf("expected escalated release %d, got %d", expectedRelease, jail.ReleaseHeight))
+}
+
 func (s *HandlerTssSuite) TestXMRMonovaultRotatesWithoutRegularVaultRotation(c *C) {
 	helper := newTssHandlerTestHelper(c)
 	mgr := NewDummyMgrWithKeeper(helper.keeper)
