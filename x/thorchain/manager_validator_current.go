@@ -1745,7 +1745,104 @@ func (vm *ValidatorMgr) NodeAccountPreflightCheck(ctx cosmos.Context, na NodeAcc
 		return NodeStandby, fmt.Errorf("ragnarok is currently in progress: no churning")
 	}
 
+	if err := vm.keygenChainSetCheck(ctx, na); err != nil {
+		return NodeStandby, err
+	}
+
 	return NodeReady, nil
+}
+
+// keygenChainSetCheck keeps a node out of the Ready set when its most recent asgard
+// keygen report declared a chain set that omits a chain the active vaults serve.
+//
+// A new vault keeps a chain only when a supermajority of the keygen members report it
+// (TssVoter.ConsensusChains), and tryRotateInitVaults refuses to rotate vaults whose
+// chain sets differ. One member running with a chain disabled can therefore drop that
+// chain from the vault it helped generate and stall the rotation, which retries every
+// ChurnRetryInterval with the same members - so the same report stalls every retry.
+// The report that proves the misconfiguration is already on chain in MsgTssPool.Chains
+// and is recorded per node by SetLastKeygenChains, so the next tick can leave that node
+// out of the Ready set rather than re-running a ceremony that cannot rotate.
+//
+// Only a report at or after the newest active vault's creation height is judged, which
+// bounds the check in both directions:
+//   - a node that has never reported an asgard keygen has nothing to judge, so new nodes
+//     and nodes that have never been selected are unaffected;
+//   - an older report may predate a chain being added to the vaults, so a chain missing
+//     from it is not evidence of anything;
+//   - the next completed churn creates newer vaults and so expires every recorded
+//     report. A node held back here sits out only the churn it would have stalled and is
+//     judged again on its next report, so it cannot be locked out of the set.
+//
+// A halted chain is still required: halting stops observation and signing, but the vault
+// chain set is built from the reports regardless, so omitting a halted chain stalls the
+// rotation exactly the same way. A chain under RAGNAROK is not (see chainRetiring).
+func (vm *ValidatorMgr) keygenChainSetCheck(ctx cosmos.Context, na NodeAccount) error {
+	if disabled, err := vm.k.GetMimir(ctx, constants.MimirKeyPreflightChainSetDisabled); err == nil && disabled > 0 {
+		return nil
+	}
+
+	reportHeight, declared, err := vm.k.GetLastKeygenChains(ctx, na.NodeAddress)
+	if err != nil {
+		// An unreadable record is not evidence of a missing chain. Leave the node's
+		// readiness to the other checks rather than holding back the whole Ready set on
+		// a store error.
+		ctx.Logger().Error("fail to get last keygen chains", "error", err, "node address", na.NodeAddress.String())
+		return nil
+	}
+	if reportHeight == 0 {
+		return nil
+	}
+
+	vaults, err := vm.k.GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		ctx.Logger().Error("fail to get active asgard vaults", "error", err)
+		return nil
+	}
+
+	var vaultHeight int64
+	required := make(common.Chains, 0)
+	for _, vault := range vaults {
+		// The XMR monovault keygen reports its own fixed chain set
+		// (Signer.keygenChainsForType), so an asgard report never carries XMR and its
+		// absence says nothing about the reporter. The monovault also rotates on its own
+		// schedule, so its creation height must not set the report-age bound either: a
+		// monovault newer than the asgard vaults would push the bound past every asgard
+		// report and silently disable the check. Skip it the way
+		// regularVaultMembershipNeedsKeygen does.
+		if vault.HasChain(common.XMRChain) {
+			continue
+		}
+		if vault.BlockHeight > vaultHeight {
+			vaultHeight = vault.BlockHeight
+		}
+		for _, chain := range vault.GetChains() {
+			if required.Has(chain) || vm.chainRetiring(ctx, chain) {
+				continue
+			}
+			required = append(required, chain)
+		}
+	}
+	if reportHeight < vaultHeight {
+		return nil
+	}
+
+	for _, chain := range required {
+		if !declared.Has(chain) {
+			return fmt.Errorf("node account keygen report at height %d omitted chain %s served by the active vaults", reportHeight, chain)
+		}
+	}
+
+	return nil
+}
+
+// chainRetiring reports whether a chain is being retired, signalled on chain by the
+// RAGNAROK-<gas asset> mimir. Retiring a chain has operators set OptToRetire in their
+// bifrost config, which drops the chain from their keygen reports
+// (Signer.keygenChainsForType) while the active vaults still carry it. Requiring it
+// would hold back, or churn out, exactly the nodes that adopted the retirement first.
+func (vm *ValidatorMgr) chainRetiring(ctx cosmos.Context, chain common.Chain) bool {
+	return vm.k.IsRagnarok(ctx, []common.Asset{chain.GetGasAsset()})
 }
 
 // Returns a list of nodes to include in the next pool

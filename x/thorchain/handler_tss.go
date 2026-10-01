@@ -378,6 +378,20 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 	}
 	h.mgr.Keeper().SetTssVoter(ctx, voter)
 
+	// Record this reporter's declared chain set. voter.Sign concatenates every
+	// member's chains, so per-member attribution only exists here, in the message.
+	// NodeAccountPreflightCheck reads it to keep a node that reported without a chain
+	// the active vaults serve out of the next Ready set, instead of the churn retrying
+	// the same ceremony with the same member every ChurnRetryInterval. XMR monovault
+	// reports carry a fixed chain set of their own and say nothing about the node's
+	// asgard chain config, so they are not recorded.
+	// An empty chain set is never what bifrost reports (keygenChainsForType always
+	// carries at least THORChain), so treat it as a malformed report and keep the
+	// node's previous record rather than recording a set that omits everything.
+	if declaredChains := msg.GetChains(); msg.KeygenType == AsgardKeygen && len(declaredChains) > 0 {
+		h.mgr.Keeper().SetLastKeygenChains(ctx, msg.Signer, declaredChains, msg.Height)
+	}
+
 	if !voter.HasConsensus() {
 		// Slash until 2/3rds consensus.
 		h.mgr.Slasher().IncSlashPoints(slashCtx, observeSlashPoints, msg.Signer)

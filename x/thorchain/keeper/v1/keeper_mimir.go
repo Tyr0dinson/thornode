@@ -122,6 +122,7 @@ func (k KVStore) IsOperationalMimir(key string) bool {
 		constants.EnableMemolessOutbound.String(),
 		constants.POLReserveSystemIncomeBps.String(),
 		constants.StableReserveOraclePricing.String(),
+		constants.MimirKeyPreflightChainSetDisabled,
 	}
 	for i := range exactMatches {
 		if strings.EqualFold(key, exactMatches[i]) {

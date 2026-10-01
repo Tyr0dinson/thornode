@@ -70,6 +70,11 @@ const (
 	// height stops keygen.
 	MimirKeyHaltMonovaultKeygen = "HaltMonovaultKeygen"
 
+	// MimirKeyPreflightChainSetDisabled turns off the preflight check that keeps a
+	// node out of the Ready set after it reported an asgard keygen chain set that
+	// omitted a chain the active vaults serve. Set above 0 to disable the check.
+	MimirKeyPreflightChainSetDisabled = "PreflightChainSetDisabled"
+
 	MimirTemplateEVMAllowanceCheck         = "EVMAllowanceCheck-%s"         // Use with Chain
 	MimirTemplateEVMDirectERC20Inbound     = "EVMDirectERC20Inbound-%s"     // Use with Chain
 	MimirTemplateConfMultiplierBasisPoints = "ConfMultiplierBasisPoints-%s" // Use with Chain

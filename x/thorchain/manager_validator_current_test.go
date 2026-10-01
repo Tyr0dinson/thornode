@@ -1893,3 +1893,95 @@ func (vts *ValidatorMgrTestSuite) TestMarkMissingActors_MimirDisabled(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(nodeAfter.LeaveScore, Equals, uint64(0), Commentf("Node should not be marked when MissingBlockChurnOut is disabled"))
 }
+
+// TestNodeAccountPreflightCheckKeygenChainSet covers the four outcomes of the keygen
+// chain set check: a node with no report is unaffected, a complete report passes, a
+// report that omits a chain the active vaults serve is held in Standby, and a report
+// older than the active vaults is not judged at all.
+func (vts *ValidatorMgrTestSuite) TestNodeAccountPreflightCheckKeygenChainSet(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(1000)
+	mgr := NewDummyMgrWithKeeper(k)
+
+	validatorMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(validatorMgr, NotNil)
+
+	// The active vaults serve BTC and ETH, and were created at height 500.
+	vault := NewVault(500, ActiveVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.BTCChain, common.ETHChain}.Strings(), []ChainContract{})
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+	k.SetMimir(ctx, constants.MinimumBondInRune.String(), 1000000)
+
+	readyNode := func() NodeAccount {
+		na := GetRandomValidatorNode(NodeStandby)
+		na.Bond = cosmos.NewUint(10 * common.One)
+		na.PubKeySet = GetRandomPubKeySet()
+		na.Version = constants.SWVersion.String()
+		na.IPAddress = "192.168.0.1"
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+		return na
+	}
+
+	// No keygen report at all: nothing to judge, so a node that has never been
+	// selected is unaffected.
+	never := readyNode()
+	status, err := validatorMgr.NodeAccountPreflightCheck(ctx, never, k.GetConstants())
+	c.Assert(err, IsNil)
+	c.Assert(status, Equals, NodeReady)
+
+	// A report covering every chain the active vaults serve.
+	complete := readyNode()
+	k.SetLastKeygenChains(ctx, complete.NodeAddress, common.Chains{common.BTCChain, common.ETHChain}, 600)
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, complete, k.GetConstants())
+	c.Assert(err, IsNil)
+	c.Assert(status, Equals, NodeReady)
+
+	// A report that omits ETH: this is the node that would drop ETH from the next
+	// vault and stall the rotation, so it is held back.
+	incomplete := readyNode()
+	k.SetLastKeygenChains(ctx, incomplete.NodeAddress, common.Chains{common.BTCChain}, 600)
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, incomplete, k.GetConstants())
+	c.Assert(err, NotNil)
+	c.Assert(status, Equals, NodeStandby)
+	c.Assert(err.Error(), Equals, "node account keygen report at height 600 omitted chain ETH served by the active vaults")
+
+	// The mimir kill switch restores the old behaviour.
+	k.SetMimir(ctx, constants.MimirKeyPreflightChainSetDisabled, 1)
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, incomplete, k.GetConstants())
+	c.Assert(err, IsNil)
+	c.Assert(status, Equals, NodeReady)
+	k.SetMimir(ctx, constants.MimirKeyPreflightChainSetDisabled, 0)
+
+	// A report older than the active vaults may predate a chain being added to them,
+	// so it is not evidence of a missing chain. This is also what expires a recorded
+	// report at the next completed churn, so no node can be locked out.
+	stale := readyNode()
+	k.SetLastKeygenChains(ctx, stale.NodeAddress, common.Chains{common.BTCChain}, 400)
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, stale, k.GetConstants())
+	c.Assert(err, IsNil)
+	c.Assert(status, Equals, NodeReady)
+
+	// XMR is served by a monovault keygen with its own fixed chain set, so an asgard
+	// report never carries it and its absence is not held against the reporter. The
+	// monovault rotates on its own schedule: one created after the asgard keygen must
+	// not move the report-age bound past the asgard reports, or every incomplete
+	// report would be treated as stale and the check would never fire.
+	xmrVault := NewVault(900, ActiveVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.THORChain, common.XMRChain}.Strings(), []ChainContract{})
+	c.Assert(k.SetVault(ctx, xmrVault), IsNil)
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, complete, k.GetConstants())
+	c.Assert(err, IsNil)
+	c.Assert(status, Equals, NodeReady)
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, incomplete, k.GetConstants())
+	c.Assert(err, NotNil)
+	c.Assert(status, Equals, NodeStandby)
+	c.Assert(err.Error(), Equals, "node account keygen report at height 600 omitted chain ETH served by the active vaults")
+
+	// A chain being retired (RAGNAROK-<gas asset>) is dropped from the reports of the
+	// operators who set OptToRetire first, so it is not required.
+	k.SetMimir(ctx, "RAGNAROK-ETH-ETH", 1)
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, incomplete, k.GetConstants())
+	c.Assert(err, IsNil)
+	c.Assert(status, Equals, NodeReady)
+	k.SetMimir(ctx, "RAGNAROK-ETH-ETH", 0)
+}

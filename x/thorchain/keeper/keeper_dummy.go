@@ -421,6 +421,13 @@ func (k KVStoreDummy) GetTssVoter(_ cosmos.Context, _ string) (TssVoter, error) 
 	return TssVoter{}, kaboom
 }
 
+func (k KVStoreDummy) SetLastKeygenChains(_ cosmos.Context, _ cosmos.AccAddress, _ common.Chains, _ int64) {
+}
+
+func (k KVStoreDummy) GetLastKeygenChains(_ cosmos.Context, _ cosmos.AccAddress) (int64, common.Chains, error) {
+	return 0, nil, kaboom
+}
+
 func (k KVStoreDummy) GetKeygenBlock(_ cosmos.Context, _ int64) (KeygenBlock, error) {
 	return KeygenBlock{}, kaboom
 }

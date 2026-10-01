@@ -69,6 +69,15 @@ func (s *KeeperMimirSuite) TestIsOperationalMimirPOLReserveWhitelist(c *C) {
 	c.Check(k.IsOperationalMimir("polreservewhitelist-btc-btc"), Equals, true)
 }
 
+func (s *KeeperMimirSuite) TestIsOperationalMimirPreflightChainSetDisabled(c *C) {
+	_, k := setupKeeperForTest(c)
+
+	// A kill switch for a check that holds nodes out of the Ready set must be
+	// reachable at operational threshold if the check misfires during a churn.
+	c.Check(k.IsOperationalMimir(constants.MimirKeyPreflightChainSetDisabled), Equals, true)
+	c.Check(k.IsOperationalMimir(strings.ToUpper(constants.MimirKeyPreflightChainSetDisabled)), Equals, true)
+}
+
 func (s *KeeperMimirSuite) TestIsOperationalMimirCompromisedVault(c *C) {
 	_, k := setupKeeperForTest(c)
 
