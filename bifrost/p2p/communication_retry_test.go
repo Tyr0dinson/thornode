@@ -108,7 +108,7 @@ func TestFrostWriteFirstAttemptSuccessWritesAndClosesOnce(t *testing.T) {
 	stream := newRetryWriteStream()
 	var opens atomic.Int32
 	comm := &Communication{
-		stopChan:  make(chan struct{}),
+		stopChan: make(chan struct{}),
 		connectToOnePeerFn: func(peer.ID) (network.Stream, error) {
 			opens.Add(1)
 			return stream, nil
@@ -138,7 +138,7 @@ func TestFrostEOFDrainFailureDoesNotRetryDeliveredPayload(t *testing.T) {
 	stream.readStarted = make(chan struct{})
 	var opens atomic.Int32
 	comm := &Communication{
-		stopChan:  make(chan struct{}),
+		stopChan: make(chan struct{}),
 		connectToOnePeerFn: func(peer.ID) (network.Stream, error) {
 			opens.Add(1)
 			return stream, nil
@@ -240,7 +240,7 @@ func TestFrostWriteErrorResetsWithoutTracking(t *testing.T) {
 			stream := newRetryWriteStream()
 			test.configure(stream)
 			comm := &Communication{
-				stopChan:  make(chan struct{}),
+				stopChan: make(chan struct{}),
 				connectToOnePeerFn: func(peer.ID) (network.Stream, error) {
 					return stream, nil
 				},
@@ -258,7 +258,7 @@ func TestFrostWriteErrorResetsWithoutTracking(t *testing.T) {
 func TestLegacyWriteSuccessClosesStreamImmediately(t *testing.T) {
 	stream := newRetryWriteStream()
 	comm := &Communication{
-		stopChan:  make(chan struct{}),
+		stopChan: make(chan struct{}),
 		connectToOnePeerFn: func(peer.ID) (network.Stream, error) {
 			return stream, nil
 		},
@@ -283,7 +283,7 @@ func TestFrostWriteShutdownDuringBackoffStopsRetries(t *testing.T) {
 	stream.closeStarted = make(chan struct{})
 	var opens atomic.Int32
 	comm := &Communication{
-		stopChan:  make(chan struct{}),
+		stopChan: make(chan struct{}),
 		connectToOnePeerFn: func(peer.ID) (network.Stream, error) {
 			opens.Add(1)
 			return stream, nil
