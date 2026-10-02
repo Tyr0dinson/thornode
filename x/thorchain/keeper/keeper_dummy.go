@@ -207,6 +207,12 @@ func (k KVStoreDummy) GetLastChainHeight(_ cosmos.Context, _ common.Chain) (int6
 	return 0, kaboom
 }
 
+func (k KVStoreDummy) SetChainDroppedHeight(_ cosmos.Context, _ common.Chain, _ int64) {}
+
+func (k KVStoreDummy) GetChainDroppedHeight(_ cosmos.Context, _ common.Chain) (int64, error) {
+	return 0, kaboom
+}
+
 func (k KVStoreDummy) GetLastChainHeights(ctx cosmos.Context) (map[common.Chain]int64, error) {
 	return nil, kaboom
 }

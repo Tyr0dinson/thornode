@@ -217,8 +217,10 @@ func retiringNeedsStamping(ctx cosmos.Context, k keeper.Keeper, chain common.Cha
 // The filter to activeNodes establishes who the attesters ARE, not that their
 // attestation is still current - a node that scanned the chain a year ago, is still
 // active, and has since dropped the client from its bifrost config counts the same as
-// one scanning it now. G6b is what supplies currency, by deferring to the most recent
-// keygen vote; this function deliberately supplies only identity.
+// one scanning it now. G6a is what supplies currency, by deferring to the most recent
+// keygen vote; this function deliberately supplies only identity. It also returns the
+// height the voter reached consensus at, which is what G6a dates the proof by (0 when
+// there is no usable voter).
 //
 // Known limit - the attester set cannot be refreshed on demand. Since a stable-fee chain
 // posts a fee only when the rate changes and lastFee is per-process, the set is in
@@ -230,23 +232,23 @@ func retiringNeedsStamping(ctx cosmos.Context, k keeper.Keeper, chain common.Cha
 // is needed. Where the scanner posts on a period-aligned height (XRP, Cosmos) a
 // coordinated bifrost restart refreshes it; TRON has no alignment and so no
 // operator-driven refresh at all - see docs/new-chains/new-chain-process.md.
-func chainAttesters(ctx cosmos.Context, k keeper.Keeper, chain common.Chain, activeNodes NodeAccounts) map[string]bool {
+func chainAttesters(ctx cosmos.Context, k keeper.Keeper, chain common.Chain, activeNodes NodeAccounts) (map[string]bool, int64) {
 	attesters := make(map[string]bool, len(activeNodes))
 	voter, found, err := k.GetLatestObservedNetworkFeeVoter(ctx, chain)
 	if err != nil {
 		ctx.Logger().Error("fail to get latest network fee voter", "chain", chain, "error", err)
-		return attesters
+		return attesters, 0
 	}
 	if !found {
 		if voter, found = latestConsensusNetworkFeeVoter(ctx, k, chain); !found {
-			return attesters
+			return attesters, 0
 		}
 		k.SetLatestObservedNetworkFeeVoterID(ctx, chain, voter.ID())
 	}
 	// BlockHeight is stamped only by the attestation that carried the voter to a
 	// supermajority, so an unfinished vote is not proof of anything.
 	if !voter.Chain.Equals(chain) || voter.BlockHeight <= 0 {
-		return attesters
+		return attesters, 0
 	}
 
 	isActive := make(map[string]bool, len(activeNodes))
@@ -258,7 +260,7 @@ func chainAttesters(ctx cosmos.Context, k keeper.Keeper, chain common.Chain, act
 			attesters[addr.String()] = true
 		}
 	}
-	return attesters
+	return attesters, voter.BlockHeight
 }
 
 // latestConsensusNetworkFeeVoter scans the chain's voters for the one that most recently
@@ -334,45 +336,77 @@ func chainActivationReady(ctx cosmos.Context, k keeper.Keeper, chain common.Chai
 		}
 	}
 
-	// G6a: never overrule a keygen vote that is newer than the vault set which had the
-	// chain.
+	// The nodes that proved the chain observable, restricted to those still active, and
+	// the height that proof reached consensus at. See chainAttesters for how they are
+	// found and what that does and does not prove.
+	signed, provedAt := chainAttesters(ctx, k, chain, activeNodes)
+
+	// G6b: the proof still holds across the network as it stands today. Same ceil(2n/3)
+	// bar ObservedNetworkFeeVoter.HasConsensus applies, but recomputed from the filtered
+	// attester set, so a quorum assembled by validators who have since churned out - or
+	// one propped up by members who have gone standby - no longer clears it.
+	if !HasSuperMajority(len(signed), len(activeNodes)) {
+		return false, nil, fmt.Sprintf("readiness proof lacks a current supermajority: %d of %d active nodes",
+			len(signed), len(activeNodes))
+	}
+
+	// G6a: never overrule a keygen vote that dropped the chain with a proof older than it.
+	// Checked after G6b so a missing proof is reported as missing rather than as stale.
 	//
-	// vault.Chains is written at keygen from TssVoter.ConsensusChains(), a 2/3 vote over
-	// what each bifrost reports it actually runs. So when a retiring vault holds the chain
-	// and a newer active vault does not, the churn that produced the active set was told
-	// by a supermajority that the chain is no longer run - operators disabled it in
-	// bifrost, say. Re-stamping it from the historical fee attestation would silently
-	// override that fresh vote and publish an inbound address nobody is scanning.
+	// vault.Chains is written at keygen from TssVoter.ConsensusChains(), a vote over the
+	// chains each bifrost reports it is configured to run (keygenChainsForType: every
+	// chain not Disabled or OptToRetire). So when a churn replaces a vault serving the
+	// chain with one that does not, the keygen - later than the proof - stopped carrying
+	// it because members reported they no longer run it: operators disabled it in
+	// bifrost, say. Re-stamping it from the older attestation would silently override that
+	// and publish an inbound address nobody may be scanning. Only a proof that reached
+	// consensus after the drop re-enables the chain; same-height counts as older, since
+	// DeliverTx order within a block is not something to date a vote by.
 	//
-	// This is what supplies currency to the proof - but only for a clean drop, see the
-	// funds carve-out below. The active-set filter in chainAttesters cannot supply it at
-	// all, since it establishes who the attesters are rather than that they still run the
-	// client. The signal is deliberately drawn from the vaults rather than from the
-	// mimir's effective height: that value is routinely backdated to 1 to mean "now", so
-	// it cannot date the operator's intent.
+	// The drop is recorded by RotateVault (SetChainDroppedHeight) when it retires the
+	// vault that served the chain, dated by the replacement's keygen height, so the
+	// evidence outlives that vault's migration. A retiring vault still holding the chain
+	// beside a newer active vault without it is read as the same evidence, which covers
+	// rotations that predate the record.
 	//
-	// Known limit: it lasts only while a retiring vault that held the chain is still
-	// around, i.e. the migration window after the churn that dropped it. Beyond that the
-	// evidence is gone from state and the operator is expected to unset the mimir. That
-	// window is exactly when the re-stamp would otherwise happen.
+	// Only a drop counts. A first activation is not held to it even when the active
+	// vault's keygen postdates the proof: the keygen vote finalizes on the first 2/3 of
+	// reports, so one early reporter without the client is enough to leave a chain off a
+	// vault (see refreshInitVaultChains). For a chain never served that is the default
+	// state this path exists to change, not a reversal, and on a stable-fee chain - TRON
+	// has no operator-driven refresh at all - a freshness bar there would hold a rollout
+	// up indefinitely. Nor does a stale record apply once every active vault carries the
+	// chain again, by keygen or by activation.
 	//
-	// The funds carve-out: the veto stands down when the drop stranded funds.
+	// The proof is dated by its consensus height, so a vote whose early signatures predate
+	// the drop but which completed after it still counts - a residual bounded by how long
+	// one fee vote takes to gather. And a fresh proof attests observability, not intent:
+	// OptToRetire leaves the client running and posting fees, so a chain retired that way
+	// is re-enabled by its next fee consensus for as long as the mimir stays set. Unset
+	// the mimir to retire a chain.
+	//
+	// The signal is deliberately drawn from the vaults rather than from the mimir's
+	// effective height: that value is routinely backdated to 1 to mean "now", so it
+	// cannot date the operator's intent.
+	//
+	// The funds carve-out: the rule stands down when the drop stranded funds.
 	//
 	// An orderly chain removal is ragnarok first, which drains the pools and empties the
-	// vaults, so the veto still holds there - it sees no funds. Funds still on the chain
+	// vaults, so the rule still holds there - it sees no funds. Funds still on the chain
 	// mean the drop was NOT orderly: migrateFunds has no target vault for a chain no
 	// active vault carries, so it stalls; the retiring-vault funds check in
-	// ValidatorMgr.BeginBlock then holds the churn; and with the veto in force there is
-	// no way out at all, since stamping the chain back on is the only thing that unblocks
-	// migration. A permanent network-wide churn halt is the worse outcome, and the
-	// operator setting the mimir is the explicit override. Every other gate still applies.
+	// ValidatorMgr.BeginBlock then holds the churn; and with the rule in force on a
+	// stable-fee chain there may be no way out at all, since stamping the chain back on is
+	// the only thing that unblocks migration. A permanent network-wide churn halt is the
+	// worse outcome, and the operator setting the mimir is the explicit override. Every
+	// other gate still applies.
 	//
 	// The carve-out is measured over the retiring SET, not per vault, because the deadlock
 	// it escapes is a property of the set: BeginBlock halts the churn if ANY retiring vault
 	// still holds funds, and migrateFunds can only drain any of them once the chain is back
 	// on the active set. Mainnet runs several Asgards churning out together with the same
 	// BlockHeight and the same Chains, so per-vault evaluation would let a sibling that
-	// happens to be drained re-arm the veto and leave the funded one stuck - the exact
+	// happens to be drained re-arm the rule and leave the funded one stuck - the exact
 	// topology the escape hatch exists for.
 	//
 	// Residual risk, stated plainly: if the chain really has been abandoned by every
@@ -384,48 +418,45 @@ func chainActivationReady(ctx cosmos.Context, k keeper.Keeper, chain common.Chai
 	// chainAttesters).
 	//
 	// Deliberately looser than the churn blocker, which is HasFundsAboveDust over the
-	// whole vault: any non-zero balance on this chain disarms the veto, so a sub-dust
+	// whole vault: any non-zero balance on this chain disarms the rule, so a sub-dust
 	// remainder does too even though it would not have stalled anything. The exact
 	// predicate would be per-chain-above-dust, which no helper offers.
+	holders := make(Vaults, 0, len(retiring))
 	stranded := false
 	for _, retired := range retiring {
 		if isChainActivationExempt(retired) || !retired.HasChain(chain) {
 			continue
 		}
-		if retired.HasFundsForChain(chain) {
-			stranded = true
-			break
-		}
+		holders = append(holders, retired)
+		stranded = stranded || retired.HasFundsForChain(chain)
 	}
 	if !stranded {
-		for _, retired := range retiring {
-			if isChainActivationExempt(retired) || !retired.HasChain(chain) {
+		// provedAt > 0 once G6b has passed, so droppedAt left at 0 never vetoes.
+		lacking := false
+		droppedAt := int64(0)
+		for _, vault := range active {
+			if isChainActivationExempt(vault) || vault.HasChain(chain) {
 				continue
 			}
-			for _, vault := range active {
-				if isChainActivationExempt(vault) || vault.HasChain(chain) {
-					continue
-				}
+			lacking = true
+			for _, retired := range holders {
 				if vault.BlockHeight > retired.BlockHeight {
-					return false, nil, fmt.Sprintf(
-						"vault %s was keygen'd at %d without the chain, after retiring vault %s at %d held it",
-						vault.PubKey, vault.BlockHeight, retired.PubKey, retired.BlockHeight)
+					droppedAt = max(droppedAt, vault.BlockHeight)
 				}
 			}
 		}
-	}
-
-	// The nodes that proved the chain observable, restricted to those still active.
-	// See chainAttesters for how they are found and what that does and does not prove.
-	signed := chainAttesters(ctx, k, chain, activeNodes)
-
-	// G6b: the proof still holds across the network as it stands today. Same ceil(2n/3)
-	// bar ObservedNetworkFeeVoter.HasConsensus applies, but recomputed from the filtered
-	// attester set, so a quorum assembled by validators who have since churned out - or
-	// one propped up by members who have gone standby - no longer clears it.
-	if !HasSuperMajority(len(signed), len(activeNodes)) {
-		return false, nil, fmt.Sprintf("readiness proof lacks a current supermajority: %d of %d active nodes",
-			len(signed), len(activeNodes))
+		// The record can only raise droppedAt, so skip the read once it already vetoes.
+		if lacking && droppedAt < provedAt {
+			recorded, err := k.GetChainDroppedHeight(ctx, chain)
+			if err != nil {
+				return false, nil, fmt.Sprintf("fail to get chain dropped height: %s", err)
+			}
+			droppedAt = max(droppedAt, recorded)
+		}
+		if droppedAt >= provedAt {
+			return false, nil, fmt.Sprintf(
+				"chain dropped by keygen at %d, not before the readiness proof at %d", droppedAt, provedAt)
+		}
 	}
 
 	// G7: every eligible active vault must derive an address *and* hold enough

@@ -1742,6 +1742,18 @@ func (vm *NetworkMgr) RotateVault(ctx cosmos.Context, vault Vault) error {
 		if err := vm.k.SetVault(ctx, asgard); err != nil {
 			return err
 		}
+		// A chain the outgoing vault served and its replacement does not was dropped by
+		// the replacement's keygen, so it is dated by that keygen rather than by this
+		// rotation. Recorded so chain activation cannot re-stamp it from an older readiness
+		// proof once this vault has migrated out and taken the evidence with it. The XMR
+		// family is pinned to {THOR, XMR} and never activated, so it records nothing.
+		if !isChainActivationExempt(asgard) {
+			for _, chain := range asgard.GetChains() {
+				if !chain.IsTHORChain() && !vault.HasChain(chain) {
+					vm.k.SetChainDroppedHeight(ctx, chain, vault.BlockHeight)
+				}
+			}
+		}
 
 		ctx.EventManager().EmitEvent(
 			cosmos.NewEvent(EventTypeInactiveVault,

@@ -132,6 +132,8 @@ type KeeperLastHeight interface {
 	SetLastObserveHeight(ctx cosmos.Context, chain common.Chain, address cosmos.AccAddress, height int64) error
 	ForceSetLastObserveHeight(ctx cosmos.Context, chain common.Chain, address cosmos.AccAddress, height int64)
 	GetLastObserveHeight(ctx cosmos.Context, address cosmos.AccAddress) ([]kvTypes.ChainHeight, error)
+	SetChainDroppedHeight(ctx cosmos.Context, chain common.Chain, height int64)
+	GetChainDroppedHeight(ctx cosmos.Context, chain common.Chain) (int64, error)
 }
 
 type KeeperObservationTally interface {

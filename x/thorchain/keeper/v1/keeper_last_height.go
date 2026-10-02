@@ -134,3 +134,16 @@ func (k KVStore) GetLastObserveHeight(ctx cosmos.Context, address cosmos.AccAddr
 	}
 	return result, nil
 }
+
+// SetChainDroppedHeight records the keygen height of a vault that replaced one serving
+// the chain without carrying it, i.e. the latest keygen vote that dropped it.
+func (k KVStore) SetChainDroppedHeight(ctx cosmos.Context, chain common.Chain, height int64) {
+	k.setInt64(ctx, k.GetKey(prefixChainDroppedHeight, chain.String()), height)
+}
+
+// GetChainDroppedHeight returns the height recorded by SetChainDroppedHeight, 0 if none.
+func (k KVStore) GetChainDroppedHeight(ctx cosmos.Context, chain common.Chain) (int64, error) {
+	var record int64
+	_, err := k.getInt64(ctx, k.GetKey(prefixChainDroppedHeight, chain.String()), &record)
+	return record, err
+}

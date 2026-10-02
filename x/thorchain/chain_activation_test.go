@@ -95,7 +95,8 @@ func newActivationVault(c *C, status types.VaultStatus, members NodeAccounts) Va
 // them - the same three records processNetworkFeeAttestation writes on fee consensus.
 // consensusHeight is the THORChain height the voter reached consensus at; feeHeight is
 // the chain height the fee was reported for, which is also part of the voter key.
-func setReadinessProof(ctx cosmos.Context, c *C, k keeper.Keeper, chain common.Chain, signers NodeAccounts, consensusHeight, feeHeight int64) {
+// Returns the voter's ID, for a caller that also maintains the latest-voter pointer.
+func setReadinessProof(ctx cosmos.Context, c *C, k keeper.Keeper, chain common.Chain, signers NodeAccounts, consensusHeight, feeHeight int64) string {
 	c.Assert(k.SaveNetworkFee(ctx, chain, types.NetworkFee{
 		Chain:              chain,
 		TransactionSize:    1000,
@@ -111,6 +112,7 @@ func setReadinessProof(ctx cosmos.Context, c *C, k keeper.Keeper, chain common.C
 		voter.Sign(na.NodeAddress)
 	}
 	k.SetObservedNetworkFeeVoter(ctx, voter)
+	return voter.ID()
 }
 
 // satisfyActivationGates sets everything except the enable mimir itself.
@@ -517,11 +519,12 @@ func (s *ChainActivationTestSuite) TestAttestersReadFromLatestVoterPointer(c *C)
 	older.Sign(nodes[3].NodeAddress)
 	k.SetObservedNetworkFeeVoter(ctx, older)
 
-	attesters := chainAttesters(ctx, k, activationChain, nodes)
+	attesters, provedAt := chainAttesters(ctx, k, activationChain, nodes)
 	c.Assert(attesters, DeepEquals, map[string]bool{
 		nodes[0].NodeAddress.String(): true,
 		nodes[1].NodeAddress.String(): true,
 	})
+	c.Assert(provedAt, Equals, int64(10))
 	latest, found, err := k.GetLatestObservedNetworkFeeVoter(ctx, activationChain)
 	c.Assert(err, IsNil)
 	c.Assert(found, Equals, true)
@@ -530,7 +533,8 @@ func (s *ChainActivationTestSuite) TestAttestersReadFromLatestVoterPointer(c *C)
 	// a later voter written behind the pointer's back is not scanned: the history is
 	// no longer read once the pointer exists
 	setReadinessProof(ctx, c, k, activationChain, nodes[2:3], 20, activationChainHeight+10)
-	c.Assert(chainAttesters(ctx, k, activationChain, nodes), DeepEquals, attesters)
+	again, _ := chainAttesters(ctx, k, activationChain, nodes)
+	c.Assert(again, DeepEquals, attesters)
 }
 
 // Fee consensus keeps the pointer current while activation is requested - including
@@ -896,8 +900,11 @@ func (s *ChainActivationTestSuite) TestAttestationForOtherChainDoesNotCount(c *C
 	// directly: BCH's attesters must not be visible to LTC
 	activeNodes, err := mgr.Keeper().ListActiveValidators(ctx)
 	c.Assert(err, IsNil)
-	c.Assert(len(chainAttesters(ctx, mgr.Keeper(), common.BCHChain, activeNodes)), Equals, 4)
-	c.Assert(len(chainAttesters(ctx, mgr.Keeper(), activationChain, activeNodes)), Equals, 0)
+	bchAttesters, _ := chainAttesters(ctx, mgr.Keeper(), common.BCHChain, activeNodes)
+	c.Assert(len(bchAttesters), Equals, 4)
+	ltcAttesters, ltcProvedAt := chainAttesters(ctx, mgr.Keeper(), activationChain, activeNodes)
+	c.Assert(len(ltcAttesters), Equals, 0)
+	c.Assert(ltcProvedAt, Equals, int64(0))
 
 	// and once LTC has its own proof it activates
 	satisfyActivationGates(ctx, c, mgr.Keeper(), activationChain, nodes)
@@ -905,49 +912,192 @@ func (s *ChainActivationTestSuite) TestAttestationForOtherChainDoesNotCount(c *C
 	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), vault.PubKey), activationChain.String()), Equals, true)
 }
 
-// A churn that drops the chain from the fresh keygen consensus must not be overridden
-// by the historical attester union. The retiring vault holding the chain while a newer
-// active vault does not is the signature of exactly that.
-func (s *ChainActivationTestSuite) TestNoRestampWhenNewerKeygenDroppedChain(c *C) {
-	ctx, mgr, nodes := setupActivation(c, 4)
+// G6a heights: the retiring vault that held the chain, the churn that dropped it, a
+// proof from between the two, and one from after the drop.
+const (
+	droppedRetiringHeight = int64(100)
+	droppedKeygenHeight   = int64(200)
+	staleProofHeight      = int64(150)
+	freshProofHeight      = int64(250)
+	droppedBlockHeight    = int64(300)
+)
 
-	// the pre-churn vault held the chain ...
-	retiring := newActivationVault(c, RetiringVault, nodes)
-	retiring.BlockHeight = 100
-	retiring.Chains = append(retiring.Chains, activationChain.String())
-	// ... the vault the churn produced does not, because ConsensusChains no longer had it
+// setupDroppedChain is a churn that dropped the chain from the fresh keygen consensus:
+// each retiring vault (pre-churn) held it, the active vault the churn produced does
+// not, because ConsensusChains no longer had it. The readiness proof is signed by
+// everyone but reached consensus at proofHeight.
+func setupDroppedChain(c *C, retiringCount int, proofHeight int64) (cosmos.Context, Manager, Vaults, Vault) {
+	ctx, mgr, nodes := setupActivation(c, 4)
+	ctx = ctx.WithBlockHeight(droppedBlockHeight)
+
+	retiring := make(Vaults, 0, retiringCount)
+	for range retiringCount {
+		vault := newActivationVault(c, RetiringVault, nodes)
+		vault.BlockHeight = droppedRetiringHeight
+		vault.Chains = append(vault.Chains, activationChain.String())
+		c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+		retiring = append(retiring, vault)
+	}
 	fresh := newActivationVault(c, ActiveVault, nodes)
-	fresh.BlockHeight = 200
-	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+	fresh.BlockHeight = droppedKeygenHeight
 	c.Assert(mgr.Keeper().SetVault(ctx, fresh), IsNil)
 
-	// the attester union is untouched by any of that and still covers everyone
-	satisfyActivationGates(ctx, c, mgr.Keeper(), activationChain, nodes)
+	setReadinessProof(ctx, c, mgr.Keeper(), activationChain, nodes, proofHeight, activationChainHeight)
 	mgr.Keeper().SetMimir(ctx, activationMimirKey(activationChain), 1)
+	return ctx, mgr, retiring, fresh
+}
+
+// setupRotatedDrop runs a real RotateVault at the given height: an active vault serving
+// the chain is replaced by one keygen'd at droppedKeygenHeight without it.
+func setupRotatedDrop(c *C, height int64) (cosmos.Context, Manager, *NetworkMgr, NodeAccounts, Vault, Vault) {
+	ctx, mgr, nodes := setupActivation(c, 4)
+	ctx = ctx.WithBlockHeight(height)
+	k := mgr.Keeper()
+	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+
+	old := newActivationVault(c, ActiveVault, nodes)
+	old.BlockHeight = droppedRetiringHeight
+	old.Chains = append(old.Chains, activationChain.String())
+	c.Assert(k.SetVault(ctx, old), IsNil)
+	fresh := newActivationVault(c, InitVault, nodes)
+	fresh.BlockHeight = droppedKeygenHeight
+	c.Assert(k.SetVault(ctx, fresh), IsNil)
+	c.Assert(networkMgr.RotateVault(ctx, fresh), IsNil)
+	return ctx, mgr, networkMgr, nodes, old, fresh
+}
+
+// A churn that drops the chain must not be overridden by the older attestation...
+func (s *ChainActivationTestSuite) TestNoRestampWhenNewerKeygenDroppedChain(c *C) {
+	ctx, mgr, _, fresh := setupDroppedChain(c, 1, staleProofHeight)
 
 	runActivation(ctx, c, mgr)
 
 	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), fresh.PubKey), activationChain.String()), Equals, false)
 }
 
-// ...but the veto must not survive stranded funds. With the chain off every active
+// ...but a proof that reached consensus after the drop is a newer vote than the keygen,
+// and re-enables the chain even while the retiring vault is still around.
+func (s *ChainActivationTestSuite) TestRestampAllowedWithProofNewerThanDrop(c *C) {
+	ctx, mgr, _, fresh := setupDroppedChain(c, 1, freshProofHeight)
+
+	runActivation(ctx, c, mgr)
+
+	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), fresh.PubKey), activationChain.String()), Equals, true)
+}
+
+// A proof from the same block as the keygen does not date either way, so it is stale.
+func (s *ChainActivationTestSuite) TestNoRestampWithProofAtDropHeight(c *C) {
+	ctx, mgr, _, fresh := setupDroppedChain(c, 1, droppedKeygenHeight)
+
+	runActivation(ctx, c, mgr)
+
+	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), fresh.PubKey), activationChain.String()), Equals, false)
+}
+
+// The drop decision must outlive the retiring vault that used to carry the evidence.
+// The drop comes from a real RotateVault, then NetworkMgr.EndBlock runs activation and
+// migration in their real order: the drained retiring vault is marked inactive by
+// migrateFunds in the first block, and the next block - mimir still set, stale proof
+// still the latest - must still not re-stamp. A fresh fee consensus then re-enables it.
+func (s *ChainActivationTestSuite) TestDropDecisionSurvivesRetiringVaultMigration(c *C) {
+	// rotation lands a few blocks after the keygen, and the drop is dated by the keygen
+	ctx, mgr, networkMgr, nodes, old, fresh := setupRotatedDrop(c, droppedKeygenHeight+10)
+	k := mgr.Keeper()
+	setReadinessProof(ctx, c, k, activationChain, nodes, staleProofHeight, activationChainHeight)
+	k.SetMimir(ctx, activationMimirKey(activationChain), 1)
+
+	droppedAt, err := k.GetChainDroppedHeight(ctx, activationChain)
+	c.Assert(err, IsNil)
+	c.Assert(droppedAt, Equals, droppedKeygenHeight)
+	keptAt, err := k.GetChainDroppedHeight(ctx, common.BTCChain)
+	c.Assert(err, IsNil)
+	c.Assert(keptAt, Equals, int64(0))
+
+	ctx = ctx.WithBlockHeight(droppedBlockHeight)
+	c.Assert(networkMgr.EndBlock(ctx, mgr), IsNil)
+	retired, err := k.GetVault(ctx, old.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(retired.Status, Equals, InactiveVault)
+	c.Assert(slices.Contains(vaultChains(ctx, c, k, fresh.PubKey), activationChain.String()), Equals, false)
+
+	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+	retiringNow, err := k.GetAsgardVaultsByStatus(ctx, RetiringVault)
+	c.Assert(err, IsNil)
+	c.Assert(retiringNow, HasLen, 0)
+	c.Assert(networkMgr.EndBlock(ctx, mgr), IsNil)
+	c.Assert(slices.Contains(vaultChains(ctx, c, k, fresh.PubKey), activationChain.String()), Equals, false)
+
+	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+	freshID := setReadinessProof(ctx, c, k, activationChain, nodes, ctx.BlockHeight(), activationChainHeight+1)
+	// as processNetworkFeeAttestation does on consensus while the mimir is set
+	k.SetLatestObservedNetworkFeeVoterID(ctx, activationChain, freshID)
+	c.Assert(networkMgr.EndBlock(ctx, mgr), IsNil)
+	c.Assert(slices.Contains(vaultChains(ctx, c, k, fresh.PubKey), activationChain.String()), Equals, true)
+}
+
+// A proof that reached consensus after the dropping keygen but before the rotation is
+// newer than the vote, so it re-enables the chain.
+func (s *ChainActivationTestSuite) TestProofBetweenKeygenAndRotationIsFresh(c *C) {
+	ctx, mgr, _, nodes, _, fresh := setupRotatedDrop(c, droppedBlockHeight)
+	k := mgr.Keeper()
+	setReadinessProof(ctx, c, k, activationChain, nodes, freshProofHeight, activationChainHeight)
+	k.SetMimir(ctx, activationMimirKey(activationChain), 1)
+
+	runActivation(ctx, c, mgr)
+
+	c.Assert(slices.Contains(vaultChains(ctx, c, k, fresh.PubKey), activationChain.String()), Equals, true)
+}
+
+// A first activation is not held to the drop rule: an active vault keygen'd without the
+// chain after the proof is the chain's default state, not a reversal - one early
+// reporter without the client is enough to leave it off.
+func (s *ChainActivationTestSuite) TestFirstActivationNotHeldToNewerKeygen(c *C) {
+	ctx, mgr, _, fresh := setupDroppedChain(c, 0, staleProofHeight)
+
+	runActivation(ctx, c, mgr)
+
+	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), fresh.PubKey), activationChain.String()), Equals, true)
+}
+
+// The recorded drop holds with no retiring vault left at all...
+func (s *ChainActivationTestSuite) TestNoRestampFromRecordedDropAlone(c *C) {
+	ctx, mgr, _, fresh := setupDroppedChain(c, 0, staleProofHeight)
+	mgr.Keeper().SetChainDroppedHeight(ctx, activationChain, droppedKeygenHeight)
+
+	runActivation(ctx, c, mgr)
+
+	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), fresh.PubKey), activationChain.String()), Equals, false)
+}
+
+// ...but not once every active vault carries the chain again: a retiring vault still
+// missing it is then stamped as usual, stale record or not.
+func (s *ChainActivationTestSuite) TestRecordedDropIgnoredOnceActiveCarriesChain(c *C) {
+	ctx, mgr, nodes := setupActivation(c, 4)
+	ctx = ctx.WithBlockHeight(droppedBlockHeight)
+	active := newActivationVault(c, ActiveVault, nodes)
+	active.BlockHeight = droppedKeygenHeight
+	active.Chains = append(active.Chains, activationChain.String())
+	retiring := newActivationVault(c, RetiringVault, nodes)
+	retiring.BlockHeight = droppedRetiringHeight
+	c.Assert(mgr.Keeper().SetVault(ctx, active), IsNil)
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
+	mgr.Keeper().SetChainDroppedHeight(ctx, activationChain, droppedKeygenHeight)
+	setReadinessProof(ctx, c, mgr.Keeper(), activationChain, nodes, staleProofHeight, activationChainHeight)
+	mgr.Keeper().SetMimir(ctx, activationMimirKey(activationChain), 1)
+
+	runActivation(ctx, c, mgr)
+
+	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), retiring.PubKey), activationChain.String()), Equals, true)
+}
+
+// ...but the rule must not survive stranded funds. With the chain off every active
 // vault, migrateFunds has no target and stalls, the retiring-vault funds check holds
-// the churn, and re-stamping the chain is the only way out. Same setup as the test
+// the churn, and re-stamping the chain is the only way out. Same setup as the drop test
 // above plus a balance on the chain.
 func (s *ChainActivationTestSuite) TestRestampAllowedWhenDroppedChainStrandedFunds(c *C) {
-	ctx, mgr, nodes := setupActivation(c, 4)
-
-	retiring := newActivationVault(c, RetiringVault, nodes)
-	retiring.BlockHeight = 100
-	retiring.Chains = append(retiring.Chains, activationChain.String())
-	retiring.AddFunds(common.NewCoins(common.NewCoin(activationChain.GetGasAsset(), cosmos.NewUint(100*common.One))))
-	fresh := newActivationVault(c, ActiveVault, nodes)
-	fresh.BlockHeight = 200
-	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
-	c.Assert(mgr.Keeper().SetVault(ctx, fresh), IsNil)
-
-	satisfyActivationGates(ctx, c, mgr.Keeper(), activationChain, nodes)
-	mgr.Keeper().SetMimir(ctx, activationMimirKey(activationChain), 1)
+	ctx, mgr, retiring, fresh := setupDroppedChain(c, 1, staleProofHeight)
+	retiring[0].AddFunds(common.NewCoins(common.NewCoin(activationChain.GetGasAsset(), cosmos.NewUint(100*common.One))))
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring[0]), IsNil)
 
 	runActivation(ctx, c, mgr)
 
@@ -957,29 +1107,12 @@ func (s *ChainActivationTestSuite) TestRestampAllowedWhenDroppedChainStrandedFun
 // Mainnet churns several Asgards out together, so the carve-out has to be measured over
 // the retiring set rather than per vault. Two retiring vaults with the same BlockHeight
 // and the same Chains, one still holding a balance on the chain and one already drained:
-// the drained sibling must not re-arm the veto, or the funded one stays stranded and the
+// the drained sibling must not re-arm the rule, or the funded one stays stranded and the
 // churn stays halted forever - the exact deadlock the carve-out exists to break.
 func (s *ChainActivationTestSuite) TestRestampAllowedWhenOneOfSeveralRetiringVaultsHoldsFunds(c *C) {
-	ctx, mgr, nodes := setupActivation(c, 4)
-
-	drained := newActivationVault(c, RetiringVault, nodes)
-	drained.BlockHeight = 100
-	drained.Chains = append(drained.Chains, activationChain.String())
-
-	funded := newActivationVault(c, RetiringVault, nodes)
-	funded.BlockHeight = 100
-	funded.Chains = append(funded.Chains, activationChain.String())
-	funded.AddFunds(common.NewCoins(common.NewCoin(activationChain.GetGasAsset(), cosmos.NewUint(100*common.One))))
-
-	fresh := newActivationVault(c, ActiveVault, nodes)
-	fresh.BlockHeight = 200
-
-	for _, v := range []Vault{drained, funded, fresh} {
-		c.Assert(mgr.Keeper().SetVault(ctx, v), IsNil)
-	}
-
-	satisfyActivationGates(ctx, c, mgr.Keeper(), activationChain, nodes)
-	mgr.Keeper().SetMimir(ctx, activationMimirKey(activationChain), 1)
+	ctx, mgr, retiring, fresh := setupDroppedChain(c, 2, staleProofHeight)
+	retiring[1].AddFunds(common.NewCoins(common.NewCoin(activationChain.GetGasAsset(), cosmos.NewUint(100*common.One))))
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring[1]), IsNil)
 
 	runActivation(ctx, c, mgr)
 
@@ -987,40 +1120,27 @@ func (s *ChainActivationTestSuite) TestRestampAllowedWhenOneOfSeveralRetiringVau
 }
 
 // The converse: several retiring vaults, none holding anything on the chain, is a clean
-// drop however many of them there are, so the veto still holds.
+// drop however many of them there are, so the rule still holds.
 func (s *ChainActivationTestSuite) TestNoRestampWhenAllRetiringVaultsDrained(c *C) {
-	ctx, mgr, nodes := setupActivation(c, 4)
-
-	for range 2 {
-		retiring := newActivationVault(c, RetiringVault, nodes)
-		retiring.BlockHeight = 100
-		retiring.Chains = append(retiring.Chains, activationChain.String())
-		c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
-	}
-
-	fresh := newActivationVault(c, ActiveVault, nodes)
-	fresh.BlockHeight = 200
-	c.Assert(mgr.Keeper().SetVault(ctx, fresh), IsNil)
-
-	satisfyActivationGates(ctx, c, mgr.Keeper(), activationChain, nodes)
-	mgr.Keeper().SetMimir(ctx, activationMimirKey(activationChain), 1)
+	ctx, mgr, _, fresh := setupDroppedChain(c, 2, staleProofHeight)
 
 	runActivation(ctx, c, mgr)
 
 	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), fresh.PubKey), activationChain.String()), Equals, false)
 }
 
-// The same evidence must not block an ordinary first activation: a retiring vault that
-// predates the active one and never held the chain says nothing about the keygen vote.
+// The same evidence must not block an ordinary first activation: a proof newer than the
+// active vault's keygen, with a retiring vault that never held the chain.
 func (s *ChainActivationTestSuite) TestOlderRetiringVaultDoesNotBlockFirstActivation(c *C) {
 	ctx, mgr, nodes := setupActivation(c, 4)
+	ctx = ctx.WithBlockHeight(droppedBlockHeight)
 	retiring := newActivationVault(c, RetiringVault, nodes)
-	retiring.BlockHeight = 100
+	retiring.BlockHeight = droppedRetiringHeight
 	fresh := newActivationVault(c, ActiveVault, nodes)
-	fresh.BlockHeight = 200
+	fresh.BlockHeight = droppedKeygenHeight
 	c.Assert(mgr.Keeper().SetVault(ctx, retiring), IsNil)
 	c.Assert(mgr.Keeper().SetVault(ctx, fresh), IsNil)
-	satisfyActivationGates(ctx, c, mgr.Keeper(), activationChain, nodes)
+	setReadinessProof(ctx, c, mgr.Keeper(), activationChain, nodes, freshProofHeight, activationChainHeight)
 	mgr.Keeper().SetMimir(ctx, activationMimirKey(activationChain), 1)
 
 	runActivation(ctx, c, mgr)

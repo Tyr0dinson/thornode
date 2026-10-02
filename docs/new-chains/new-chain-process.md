@@ -164,6 +164,30 @@ a current supermajority`, the recovery depends on how the chain's scanner posts:
 A voter key is `CHAIN-height-rate-size`, which is why alignment is what decides whether
 independent nodes land on the same one.
 
+**A churn that drops the chain outranks an older proof.** Bifrost reports every chain it
+is configured to run (not `Disabled`, not `OptToRetire`) at keygen. When a churn retires
+a vault that served the chain in favour of one that does not, the rotation records the
+replacement's keygen height as the drop. Activation will not re-stamp the chain from a
+readiness proof that reached consensus at or before it. The log reads:
+
+```text
+chain dropped by keygen at <height>, not before the readiness proof at <height>
+```
+
+The record outlives the retiring vault, so the drop still holds after migration has
+drained it and marked it inactive. Re-enabling needs a fee consensus newer than the
+drop, refreshed as above. The rule only applies to a chain that was dropped. A chain
+that no vault has served yet is never held to it, because a single early keygen reporter
+without the client is enough to leave a chain off a new vault. It also stops applying
+once every active vault carries the chain again. There is one exception: a drop that
+stranded funds on a retiring vault. There the stale proof is accepted, since re-stamping
+the chain is the only way to let migration and the churn proceed.
+
+A fresh proof shows the network can observe the chain, not that it wants the chain.
+`OptToRetire` leaves the client running and posting fees, so a chain retired that way
+is re-enabled by its next fee consensus while `Enable<Chain>Chain` is still set. Unset the
+mimir before retiring a chain.
+
 ## Technical Requirements
 
 ### Thornode PR

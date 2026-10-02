@@ -56,6 +56,7 @@ const (
 	prefixObservationBase           types.DbPrefix = "observation_tally_base/"
 	prefixObservationGuard          types.DbPrefix = "observation_tally_guard/"
 	prefixObservationGuardFull      types.DbPrefix = "observation_tally_guard_full/"
+	prefixChainDroppedHeight        types.DbPrefix = "chain_dropped_height/"
 	prefixNodeAccount               types.DbPrefix = "node_account/"
 	prefixBondProviders             types.DbPrefix = "bond_providers/"
 	prefixVault                     types.DbPrefix = "vault/"
