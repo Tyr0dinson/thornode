@@ -942,13 +942,13 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 			Address: addr,
 			Amount:  amount.String(),
 		}
-		creditAsset, err := common.NewAsset(credit.Asset)
-		if err != nil {
-			panic(err)
+		creditAsset, assetErr := common.NewAsset(credit.Asset)
+		if assetErr != nil {
+			panic(assetErr)
 		}
-		basis, err := k.GetStableReserveCreditBasis(ctx, creditAsset, common.Address(addr))
-		if err != nil {
-			panic(err)
+		basis, basisErr := k.GetStableReserveCreditBasis(ctx, creditAsset, common.Address(addr))
+		if basisErr != nil {
+			panic(basisErr)
 		}
 		if !basis.IsZero() {
 			credit.Basis = basis.String()
