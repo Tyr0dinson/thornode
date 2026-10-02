@@ -107,9 +107,10 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerHappyPath(c *C) {
 	keeper := &TestErrataTxKeeper{
 		na: na,
 		observedTx: ObservedTxVoter{
-			Tx:     observedTx,
-			Txs:    ObservedTxs{observedTx},
-			Height: 1024,
+			Tx:           observedTx,
+			Txs:          ObservedTxs{observedTx},
+			Height:       1024,
+			UpdatedVault: true,
 		},
 		pool: Pool{
 			Asset:        common.ETHAsset,
@@ -200,6 +201,25 @@ func (k *ErrataTxHandlerTestHelper) SetPool(ctx cosmos.Context, pool Pool) error
 		return errKaboom
 	}
 	return k.Keeper.SetPool(ctx, pool)
+}
+
+// setCreditedErrataInboundVoter stores observedTx as an inbound whose deposit was
+// credited, as handleObservedTxInQuorum leaves a processed swap or add, so the errata
+// reaches the pool unwind.
+func setCreditedErrataInboundVoter(c *C, ctx cosmos.Context, k keeper.Keeper, observedTx ObservedTx) ObservedTxVoter {
+	vault := GetRandomVault()
+	vault.PubKey = observedTx.ObservedPubKey
+	vault.AddFunds(observedTx.Tx.Coins)
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+	voter := ObservedTxVoter{
+		TxID:         observedTx.Tx.ID,
+		Tx:           observedTx,
+		Txs:          ObservedTxs{observedTx},
+		Height:       observedTx.BlockHeight,
+		UpdatedVault: true,
+	}
+	k.SetObservedTxInVoter(ctx, voter)
+	return voter
 }
 
 func (s *HandlerErrataTxSuite) TestErrataHandlerDifferentError(c *C) {
@@ -387,13 +407,7 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerDifferentError(c *C) {
 				observedTx.Tx.Chain = common.BTCChain
 				observedTx.Tx.Memo = "swap:ETH"
 				helper.failGetPool = true
-				voter := ObservedTxVoter{
-					TxID:   observedTx.Tx.ID,
-					Tx:     observedTx,
-					Txs:    ObservedTxs{observedTx},
-					Height: observedTx.BlockHeight,
-				}
-				helper.Keeper.SetObservedTxInVoter(ctx, voter)
+				voter := setCreditedErrataInboundVoter(c, ctx, helper.Keeper, observedTx)
 				return NewMsgErrataTx(voter.TxID, common.BTCChain, nodeAccount.NodeAddress)
 			},
 			validator: func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, helper *ErrataTxHandlerTestHelper, name string) {
@@ -424,13 +438,7 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerDifferentError(c *C) {
 				pool.BalanceAsset = cosmos.NewUint(common.One * 100)
 				pool.Status = PoolAvailable
 				c.Assert(helper.Keeper.SetPool(ctx, pool), IsNil)
-				voter := ObservedTxVoter{
-					TxID:   observedTx.Tx.ID,
-					Tx:     observedTx,
-					Txs:    ObservedTxs{observedTx},
-					Height: observedTx.BlockHeight,
-				}
-				helper.Keeper.SetObservedTxInVoter(ctx, voter)
+				voter := setCreditedErrataInboundVoter(c, ctx, helper.Keeper, observedTx)
 				return NewMsgErrataTx(voter.TxID, common.BTCChain, nodeAccount.NodeAddress)
 			},
 			validator: func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, helper *ErrataTxHandlerTestHelper, name string) {
@@ -454,13 +462,7 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerDifferentError(c *C) {
 				pool.BalanceAsset = cosmos.NewUint(common.One * 100)
 				pool.Status = PoolAvailable
 				c.Assert(helper.Keeper.SetPool(ctx, pool), IsNil)
-				voter := ObservedTxVoter{
-					TxID:   observedTx.Tx.ID,
-					Tx:     observedTx,
-					Txs:    ObservedTxs{observedTx},
-					Height: observedTx.BlockHeight,
-				}
-				helper.Keeper.SetObservedTxInVoter(ctx, voter)
+				voter := setCreditedErrataInboundVoter(c, ctx, helper.Keeper, observedTx)
 				return NewMsgErrataTx(voter.TxID, common.BTCChain, nodeAccount.NodeAddress)
 			},
 			validator: func(c *C, ctx cosmos.Context, result *cosmos.Result, err error, helper *ErrataTxHandlerTestHelper, name string) {
@@ -883,4 +885,83 @@ func (s *HandlerErrataTxSuite) TestObservingSlashing(c *C) {
 	checkSlashPoints(c, ctx, nas, [7]int64{2, 0, 0, 0, 0, 3, 0})
 
 	// Note that nas[6], the Standby node, remains unaffected by the Actives nodes' observations.
+}
+
+// TestErrataLeavesPoolOfNoOpedInboundUntouched drives a 10 BTC swap inbound through
+// MsgObservedTxIn and then reorgs it out. An inbound that handleObservedTxInQuorum
+// no-oped never reached the pool, so its errata must not take 10 BTC out of it; the
+// credited control shows the unwind still runs for a deposit that was accounted.
+func (s *HandlerErrataTxSuite) TestErrataLeavesPoolOfNoOpedInboundUntouched(c *C) {
+	testCases := []struct {
+		name        string
+		chains      common.Chains
+		compromised bool
+		credited    bool
+	}{
+		{name: "compromised vault", chains: common.Chains{common.BTCChain}, compromised: true},
+		{name: "unsupported chain", chains: common.Chains{common.ETHChain}},
+		{name: "credited control", chains: common.Chains{common.BTCChain}, credited: true},
+	}
+
+	for _, tc := range testCases {
+		ctx, mgr := setupManagerForTest(c)
+		ctx = ctx.WithBlockHeight(18)
+		k := mgr.Keeper()
+
+		na := GetRandomValidatorNode(NodeActive)
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+		pool := NewPool()
+		pool.Asset = common.BTCAsset
+		pool.BalanceRune = cosmos.NewUint(100 * common.One)
+		pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+		pool.Status = PoolAvailable
+		c.Assert(k.SetPool(ctx, pool), IsNil)
+
+		vaultPubKey := GetRandomPubKey()
+		vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, vaultPubKey, tc.chains.Strings(), []ChainContract{})
+		c.Assert(k.SetVault(ctx, vault), IsNil)
+		if tc.compromised {
+			k.SetMimir(ctx, compromisedVaultMimirKeyPrefix+vaultPubKey.String(), 1)
+		}
+
+		vaultAddr, err := vaultPubKey.GetAddress(common.BTCChain)
+		c.Assert(err, IsNil)
+		tx := common.NewTx(
+			GetRandomTxHash(),
+			GetRandomBTCAddress(),
+			vaultAddr,
+			common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One))),
+			common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(1000))},
+			"swap:ETH.ETH:"+GetRandomETHAddress().String(),
+		)
+		obsTx := NewObservedTx(tx, 12, vaultPubKey, 12)
+		_, err = NewObservedTxInHandler(mgr).handle(ctx, *NewMsgObservedTxIn(ObservedTxs{obsTx}, na.NodeAddress))
+		c.Assert(err, IsNil, Commentf(tc.name))
+
+		voter, err := k.GetObservedTxInVoter(ctx, tx.ID)
+		c.Assert(err, IsNil, Commentf(tc.name))
+		c.Assert(voter.UpdatedVault, Equals, tc.credited, Commentf(tc.name))
+
+		ctx = ctx.WithBlockHeight(19)
+		_, err = NewErrataTxHandler(mgr).handle(ctx, *NewMsgErrataTx(tx.ID, common.BTCChain, na.NodeAddress))
+		c.Assert(err, IsNil, Commentf(tc.name))
+
+		voter, err = k.GetObservedTxInVoter(ctx, tx.ID)
+		c.Assert(err, IsNil, Commentf(tc.name))
+		c.Check(voter.Reverted, Equals, true, Commentf(tc.name))
+
+		pool, err = k.GetPool(ctx, common.BTCAsset)
+		c.Assert(err, IsNil, Commentf(tc.name))
+		expectedAsset := cosmos.NewUint(100 * common.One)
+		if tc.credited {
+			expectedAsset = cosmos.NewUint(90 * common.One)
+		}
+		c.Check(pool.BalanceAsset.String(), Equals, expectedAsset.String(), Commentf(tc.name))
+		c.Check(pool.BalanceRune.String(), Equals, cosmos.NewUint(100*common.One).String(), Commentf(tc.name))
+
+		vault, err = k.GetVault(ctx, vaultPubKey)
+		c.Assert(err, IsNil, Commentf(tc.name))
+		c.Check(vault.GetCoin(common.BTCAsset).Amount.IsZero(), Equals, true, Commentf(tc.name))
+	}
 }

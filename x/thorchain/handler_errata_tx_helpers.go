@@ -188,6 +188,16 @@ func processErrataTx(ctx cosmos.Context, mgr Manager, er *common.ErrataTx) (comm
 		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED, nil
 	}
 
+	// A finalised swap or add that reached its handler always credited the vault first,
+	// so UpdatedVault is the record that the deposit's accounting ran. It stays false
+	// when handleObservedTxInQuorum no-oped the inbound (compromised vault, or a chain
+	// the vault does not serve): nothing reached the pool, so there is nothing to unwind,
+	// and unwinding anyway would take the deposit out of other LPs' balances.
+	if !observedVoter.UpdatedVault {
+		ctx.Logger().Info("inbound was never credited, so errata leaves the pool untouched", "tx_id", er.Id)
+		return nil
+	}
+
 	runeCoin := common.NoCoin
 	assetCoin := common.NoCoin
 	for _, coin := range tx.Coins {
