@@ -889,8 +889,9 @@ func (s *HandlerErrataTxSuite) TestObservingSlashing(c *C) {
 
 // TestErrataLeavesPoolOfNoOpedInboundUntouched drives a 10 BTC swap inbound through
 // MsgObservedTxIn and then reorgs it out. An inbound that handleObservedTxInQuorum
-// no-oped never reached the pool, so its errata must not take 10 BTC out of it; the
-// credited control shows the unwind still runs for a deposit that was accounted.
+// no-oped never reached the pool, so its errata must not take 10 BTC out of it. The
+// credited control only shows the unwind still runs once the vault was credited; its
+// swap is queued but never executed, so it says nothing about pool symmetry.
 func (s *HandlerErrataTxSuite) TestErrataLeavesPoolOfNoOpedInboundUntouched(c *C) {
 	testCases := []struct {
 		name        string

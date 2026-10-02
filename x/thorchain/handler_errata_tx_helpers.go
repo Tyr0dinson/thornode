@@ -188,11 +188,13 @@ func processErrataTx(ctx cosmos.Context, mgr Manager, er *common.ErrataTx) (comm
 		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED, nil
 	}
 
-	// A finalised swap or add that reached its handler always credited the vault first,
-	// so UpdatedVault is the record that the deposit's accounting ran. It stays false
-	// when handleObservedTxInQuorum no-oped the inbound (compromised vault, or a chain
-	// the vault does not serve): nothing reached the pool, so there is nothing to unwind,
-	// and unwinding anyway would take the deposit out of other LPs' balances.
+	// A finalised swap or add only reaches its handler after the vault is credited, so
+	// UpdatedVault false means the deposit was never accounted at all. That is the
+	// record handleObservedTxInQuorum leaves when it no-ops an inbound (compromised
+	// vault, or a chain the vault does not serve): nothing reached the pool, so
+	// unwinding anyway would take the deposit out of other LPs' balances. The converse
+	// does not hold - a credited inbound may still have been refunded - so this only
+	// closes the never-credited case.
 	if !observedVoter.UpdatedVault {
 		ctx.Logger().Info("inbound was never credited, so errata leaves the pool untouched", "tx_id", er.Id)
 		return nil
