@@ -1057,6 +1057,24 @@ func assertDropSurvivesMigration(ctx cosmos.Context, c *C, mgr Manager, networkM
 	c.Assert(slices.Contains(vaultChains(ctx, c, k, fresh.PubKey), activationChain.String()), Equals, true)
 }
 
+// The upgrade step only ever raises a record, and finds nothing to record for a chain
+// no retiring vault carries.
+func (s *ChainActivationTestSuite) TestPreUpgradeDropRecordOnlyRaises(c *C) {
+	ctx, mgr, _, _ := setupDroppedChain(c, 1, staleProofHeight)
+	k := mgr.Keeper()
+	k.SetChainDroppedHeight(ctx, activationChain, droppedBlockHeight)
+	c.Assert(NewMigrator(mgr.(*Mgrs)).Migrate19to20(ctx), IsNil)
+	droppedAt, err := k.GetChainDroppedHeight(ctx, activationChain)
+	c.Assert(err, IsNil)
+	c.Assert(droppedAt, Equals, droppedBlockHeight)
+
+	ctx, mgr, _, _ = setupDroppedChain(c, 0, staleProofHeight)
+	c.Assert(NewMigrator(mgr.(*Mgrs)).Migrate19to20(ctx), IsNil)
+	droppedAt, err = mgr.Keeper().GetChainDroppedHeight(ctx, activationChain)
+	c.Assert(err, IsNil)
+	c.Assert(droppedAt, Equals, int64(0))
+}
+
 // A proof that reached consensus after the dropping keygen but before the rotation is
 // newer than the vote, so it re-enables the chain.
 func (s *ChainActivationTestSuite) TestProofBetweenKeygenAndRotationIsFresh(c *C) {
