@@ -1254,6 +1254,149 @@ func (s *HandlerObservedTxInSuite) TestSupportedChainInboundStillCredits(c *C) {
 	c.Assert(noOpSecurityMsgFromEvents(ctx, unsupportedChainNoOpSecurityMsg), Equals, "")
 }
 
+// legacyChainlessMigrateFixture schedules a BTC migration the way the removed
+// migrateFunds fallback did: from a retiring vault that carries BTC to an active Asgard
+// that does not. The item is queued "before the upgrade" and is signed and observed after.
+type legacyChainlessMigrateFixture struct {
+	retiring    Vault
+	target      Vault
+	retiringBTC common.Address
+	targetBTC   common.Address
+	migrateTx   common.Tx
+}
+
+func setupLegacyChainlessMigrate(c *C, ctx cosmos.Context, k keeper.Keeper) legacyChainlessMigrateFixture {
+	const migrateHeight = 10
+	retiring := NewVault(1, RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain, common.ETHChain}.Strings(), []ChainContract{})
+	retiring.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One)))
+	c.Assert(k.SetVault(ctx, retiring), IsNil)
+	target := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+	c.Assert(k.SetVault(ctx, target), IsNil)
+
+	retiringBTC, err := retiring.PubKey.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+	targetBTC, err := target.PubKey.GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+
+	memo := NewMigrateMemo(migrateHeight).String()
+	txOut := NewTxOut(migrateHeight)
+	txOut.TxArray = append(txOut.TxArray, TxOutItem{
+		Chain:       common.BTCChain,
+		InHash:      common.BlankTxID,
+		ToAddress:   targetBTC,
+		VaultPubKey: retiring.PubKey,
+		Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(5*common.One)),
+		MaxGas:      common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(2000))},
+		Memo:        memo,
+	})
+	c.Assert(k.SetTxOut(ctx, txOut), IsNil)
+
+	// UTXO migrations return unspent max gas with the coin, so the delivered amount
+	// sits inside the scheduled [coin, coin+maxGas] window rather than on the coin.
+	migrateTx := common.NewTx(
+		GetRandomTxHash(),
+		retiringBTC,
+		targetBTC,
+		common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(5*common.One+1000))),
+		common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(1000))},
+		memo,
+	)
+	return legacyChainlessMigrateFixture{
+		retiring:    retiring,
+		target:      target,
+		retiringBTC: retiringBTC,
+		targetBTC:   targetBTC,
+		migrateTx:   migrateTx,
+	}
+}
+
+// TestLegacyChainlessMigrateIsCredited covers a migration the removed migrateFunds
+// fallback queued before the upgrade, into an Asgard that does not carry the chain.
+// Both legs are observed after the upgrade: the source must be debited and the
+// destination credited, otherwise the funds leave the network's books entirely.
+func (s *HandlerObservedTxInSuite) TestLegacyChainlessMigrateIsCredited(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(18)
+	k := mgr.Keeper()
+
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+	f := setupLegacyChainlessMigrate(c, ctx, k)
+
+	// Outbound leg: the retiring vault is debited for the coin and the gas.
+	outMsg := NewMsgObservedTxOut(ObservedTxs{NewObservedTx(f.migrateTx, 12, f.retiring.PubKey, 12)}, na.NodeAddress)
+	_, err := NewObservedTxOutHandler(mgr).handle(ctx, *outMsg)
+	c.Assert(err, IsNil)
+	retiring, err := k.GetVault(ctx, f.retiring.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(retiring.GetCoin(common.BTCAsset).Amount.Uint64(), Equals, uint64(5*common.One-2000))
+
+	// Inbound leg: the chainless destination is credited the delivered amount and
+	// picks up the chain, exactly as it would have under the binary that queued it.
+	inMsg := NewMsgObservedTxIn(ObservedTxs{NewObservedTx(f.migrateTx, 12, f.target.PubKey, 12)}, na.NodeAddress)
+	_, err = NewObservedTxInHandler(mgr).handle(ctx, *inMsg)
+	c.Assert(err, IsNil)
+	target, err := k.GetVault(ctx, f.target.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(target.GetCoin(common.BTCAsset).Amount.Uint64(), Equals, uint64(5*common.One+1000))
+	c.Assert(target.HasChain(common.BTCChain), Equals, true)
+	c.Assert(target.InboundTxCount, Equals, int64(1))
+	c.Assert(noOpSecurityMsgFromEvents(ctx, unsupportedChainNoOpSecurityMsg), Equals, "")
+
+	voter, err := k.GetObservedTxInVoter(ctx, f.migrateTx.ID)
+	c.Assert(err, IsNil)
+	c.Assert(voter.UpdatedVault, Equals, true)
+}
+
+// TestForgedMigrateToChainlessVaultIsNoOp is the negative control: a migrate memo alone
+// must not open the carve-out, or anyone could stamp a chain onto a live Asgard with one
+// dust transaction - the bypass vaultSupportsChain exists to close.
+func (s *HandlerObservedTxInSuite) TestForgedMigrateToChainlessVaultIsNoOp(c *C) {
+	forgeries := map[string]func(f legacyChainlessMigrateFixture) common.Tx{
+		"sender is not the source vault": func(f legacyChainlessMigrateFixture) common.Tx {
+			tx := f.migrateTx
+			tx.FromAddress = GetRandomBTCAddress()
+			return tx
+		},
+		"no txout scheduled at the memo height": func(f legacyChainlessMigrateFixture) common.Tx {
+			tx := f.migrateTx
+			tx.Memo = NewMigrateMemo(11).String()
+			return tx
+		},
+		"amount outside the scheduled window": func(f legacyChainlessMigrateFixture) common.Tx {
+			tx := f.migrateTx
+			tx.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(6*common.One)))
+			return tx
+		},
+		"not a migrate memo": func(f legacyChainlessMigrateFixture) common.Tx {
+			tx := f.migrateTx
+			tx.Memo = "swap:ETH.ETH:" + GetRandomETHAddress().String()
+			return tx
+		},
+	}
+	for name, forge := range forgeries {
+		ctx, mgr := setupManagerForTest(c)
+		ctx = ctx.WithBlockHeight(18)
+		k := mgr.Keeper()
+
+		na := GetRandomValidatorNode(NodeActive)
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+		f := setupLegacyChainlessMigrate(c, ctx, k)
+		tx := forge(f)
+		tx.ID = GetRandomTxHash()
+
+		msg := NewMsgObservedTxIn(ObservedTxs{NewObservedTx(tx, 12, f.target.PubKey, 12)}, na.NodeAddress)
+		_, err := NewObservedTxInHandler(mgr).handle(ctx, *msg)
+		c.Assert(err, IsNil, Commentf(name))
+
+		target, err := k.GetVault(ctx, f.target.PubKey)
+		c.Assert(err, IsNil, Commentf(name))
+		c.Check(target.HasChain(common.BTCChain), Equals, false, Commentf(name))
+		c.Check(target.GetCoin(common.BTCAsset).Amount.IsZero(), Equals, true, Commentf(name))
+		c.Check(noOpSecurityMsgFromEvents(ctx, unsupportedChainNoOpSecurityMsg), Not(Equals), "", Commentf(name))
+	}
+}
+
 // Test migrate memo
 func (s *HandlerObservedTxInSuite) TestMigrateMemo(c *C) {
 	var err error

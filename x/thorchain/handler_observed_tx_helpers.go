@@ -256,6 +256,45 @@ func vaultSupportsChain(vault Vault, chain common.Chain) bool {
 	return chain.IsTHORChain() || vault.HasChain(chain)
 }
 
+// isScheduledMigrateInbound reports whether an inbound on a chain the vault does not
+// carry is a migration THORChain itself scheduled to this vault, which must still be
+// credited despite vaultSupportsChain.
+//
+// Before the migrateFunds fallback was removed, a retiring vault could be migrated into
+// an Asgard that did not carry the chain, relying on AddFunds to append it on arrival.
+// Items queued that way survive the upgrade and are still signed and observed. No-oping
+// their inbound would debit the source vault on the outbound side and credit nothing, so
+// they keep the treatment they were scheduled under, chain append included.
+//
+// That is no bypass of chain_activation.go: the inbound must carry a migrate memo, come
+// from the source vault's own address - which only the vault's key can sign from - and
+// match a txout item at the memo height addressed to this vault. Nobody outside the
+// network can produce that.
+func isScheduledMigrateInbound(ctx cosmos.Context, k keeper.Keeper, tx common.ObservedTx, vault Vault) bool {
+	if !vault.IsAsgard() {
+		return false
+	}
+	memo, err := ParseMemoWithTHORNames(ctx, k, tx.Tx.Memo)
+	if err != nil || !memo.IsType(TxMigrate) {
+		return false
+	}
+	vaultAddr, err := vault.GetAddress(tx.Tx.Chain)
+	if err != nil || !common.AddressEquals(tx.Tx.Chain, vaultAddr, tx.Tx.ToAddress) {
+		return false
+	}
+	txOut, err := k.GetTxOut(ctx, memo.GetBlockHeight())
+	if err != nil {
+		ctx.Logger().Error("fail to get txout for migrate inbound", "height", memo.GetBlockHeight(), "tx", tx.Tx.ID.String(), "error", err)
+		return false
+	}
+	for _, item := range txOut.TxArray {
+		if migrateInboundMatchesTxOut(tx.Tx, item) {
+			return true
+		}
+	}
+	return false
+}
+
 // noOpSecurityMetricReason maps an operator-facing *NoOpSecurityMsg to a short, stable
 // telemetry label value.
 func noOpSecurityMetricReason(reason string) string {
@@ -354,7 +393,7 @@ func handleObservedTxInQuorum(
 	switch {
 	case compromised:
 		noOpReason = compromisedVaultNoOpSecurityMsg
-	case !vaultSupportsChain(vault, tx.Tx.Chain):
+	case !vaultSupportsChain(vault, tx.Tx.Chain) && !isScheduledMigrateInbound(ctx, k, tx, vault):
 		noOpReason = unsupportedChainNoOpSecurityMsg
 	}
 
@@ -654,7 +693,7 @@ func shouldCreditObservedInboundVault(ctx cosmos.Context, mgr Manager, tx common
 		return false
 	}
 	for _, item := range txOut.TxArray {
-		if !xmrMigrateInboundMatchesTxOut(tx.Tx, item) {
+		if !migrateInboundMatchesTxOut(tx.Tx, item) {
 			continue
 		}
 		return true
@@ -671,8 +710,11 @@ func shouldCreditObservedInboundVault(ctx cosmos.Context, mgr Manager, tx common
 	return false
 }
 
-func xmrMigrateInboundMatchesTxOut(tx common.Tx, item TxOutItem) bool {
-	if !item.Chain.Equals(common.XMRChain) {
+// migrateInboundMatchesTxOut reports whether an observed migrate inbound is the
+// delivery of the scheduled txout item: same chain, sent from the item's source vault
+// to its target, carrying the scheduled coin.
+func migrateInboundMatchesTxOut(tx common.Tx, item TxOutItem) bool {
+	if !item.Chain.Equals(tx.Chain) {
 		return false
 	}
 	if !item.InHash.Equals(common.BlankTxID) {
@@ -703,7 +745,8 @@ func xmrMigrateInboundMatchesTxOut(tx common.Tx, item TxOutItem) bool {
 	if !item.Coin.Asset.Equals(asset) {
 		return false
 	}
-	// Inbound XMR gas is observer-reported and may not equal the actual signer fee.
+	// Inbound gas is observer-reported and may not equal the actual signer fee (XMR), and
+	// UTXO migrations return unspent max gas to the target with the coin.
 	received := tx.Coins.GetCoin(asset).Amount
 	minReceived := item.Coin.Amount
 	maxReceived := item.Coin.Amount.Add(item.MaxGas.ToCoins().GetCoin(asset).Amount)

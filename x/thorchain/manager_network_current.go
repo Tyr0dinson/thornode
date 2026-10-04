@@ -804,7 +804,9 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 				// signed out of the retiring vault and never credited anywhere. It only
 				// appeared to work before because AddFunds silently appended the chain on
 				// observation - the same ungated write chain_activation.go's gates exist to
-				// prevent - so the fallback was self-healing by way of the hole.
+				// prevent - so the fallback was self-healing by way of the hole. Items the
+				// fallback queued before the upgrade are still credited on arrival; see
+				// isScheduledMigrateInbound.
 				targetVaults := filterVaultsByChain(active, chain)
 				// Keep the old explicit exclusion: a non-XMR chain must never migrate into
 				// the XMR monovault. filterVaultsByChain happens to cover this today only

@@ -876,17 +876,17 @@ func (s *HandlerObservedTxHelpersSuite) TestXMRMigrateMatchUsesCaseSensitiveAddr
 		ToAddress:   targetAddress,
 		Coins:       common.NewCoins(item.Coin),
 	}
-	c.Assert(xmrMigrateInboundMatchesTxOut(tx, item), Equals, true)
+	c.Assert(migrateInboundMatchesTxOut(tx, item), Equals, true)
 
 	wrongSourceCase := tx
 	wrongSourceCase.FromAddress = common.Address(strings.ToUpper(sourceAddress.String()))
 	c.Assert(sourceAddress.Equals(wrongSourceCase.FromAddress), Equals, true)
-	c.Assert(xmrMigrateInboundMatchesTxOut(wrongSourceCase, item), Equals, false)
+	c.Assert(migrateInboundMatchesTxOut(wrongSourceCase, item), Equals, false)
 
 	wrongTargetCase := tx
 	wrongTargetCase.ToAddress = common.Address(strings.ToUpper(targetAddress.String()))
 	c.Assert(targetAddress.Equals(wrongTargetCase.ToAddress), Equals, true)
-	c.Assert(xmrMigrateInboundMatchesTxOut(wrongTargetCase, item), Equals, false)
+	c.Assert(migrateInboundMatchesTxOut(wrongTargetCase, item), Equals, false)
 }
 
 func (s *HandlerObservedTxHelpersSuite) TestFindOriginalMemoForOutboundUsesExtendedXMRWindow(c *C) {
