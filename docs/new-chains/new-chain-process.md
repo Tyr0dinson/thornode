@@ -175,7 +175,9 @@ chain dropped by keygen at <height>, not before the readiness proof at <height>
 ```
 
 The record outlives the retiring vault, so the drop still holds after migration has
-drained it and marked it inactive. Re-enabling needs a fee consensus newer than the
+drained it and marked it inactive. A drop from a churn before this upgrade is recorded
+by the upgrade itself, from any retiring vault that still carries the chain beside a
+newer active vault without it. Re-enabling needs a fee consensus newer than the
 drop, refreshed as above. The rule only applies to a chain that was dropped. A chain
 that no vault has served yet is never held to it, because a single early keygen reporter
 without the client is enough to leave a chain off a new vault. It also stops applying
