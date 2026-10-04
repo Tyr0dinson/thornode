@@ -438,7 +438,10 @@ func chainActivationReady(ctx cosmos.Context, k keeper.Keeper, chain common.Chai
 				break
 			}
 		}
-		droppedAt := keygenDropHeight(chain, active, retiring)
+		droppedAt := int64(0)
+		if lacking {
+			droppedAt = keygenDropHeight(chain, active, retiring)
+		}
 		// The record can only raise droppedAt, so skip the read once it already vetoes.
 		if lacking && droppedAt < provedAt {
 			recorded, err := k.GetChainDroppedHeight(ctx, chain)
@@ -483,18 +486,26 @@ func chainActivationReady(ctx cosmos.Context, k keeper.Keeper, chain common.Chai
 // it, 0 if there is none. The evidence lasts only until migration marks that retiring
 // vault inactive.
 func keygenDropHeight(chain common.Chain, active, retiring Vaults) int64 {
-	droppedAt := int64(0)
+	// Newer than any holder is newer than the oldest one.
+	oldestHolder := int64(-1)
 	for _, retired := range retiring {
 		if isChainActivationExempt(retired) || !retired.HasChain(chain) {
 			continue
 		}
-		for _, vault := range active {
-			if isChainActivationExempt(vault) || vault.HasChain(chain) {
-				continue
-			}
-			if vault.BlockHeight > retired.BlockHeight {
-				droppedAt = max(droppedAt, vault.BlockHeight)
-			}
+		if oldestHolder < 0 || retired.BlockHeight < oldestHolder {
+			oldestHolder = retired.BlockHeight
+		}
+	}
+	if oldestHolder < 0 {
+		return 0
+	}
+	droppedAt := int64(0)
+	for _, vault := range active {
+		if isChainActivationExempt(vault) || vault.HasChain(chain) {
+			continue
+		}
+		if vault.BlockHeight > oldestHolder {
+			droppedAt = max(droppedAt, vault.BlockHeight)
 		}
 	}
 	return droppedAt
