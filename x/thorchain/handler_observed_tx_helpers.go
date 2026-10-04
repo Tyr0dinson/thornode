@@ -263,13 +263,17 @@ func vaultSupportsChain(vault Vault, chain common.Chain) bool {
 // Before the migrateFunds fallback was removed, a retiring vault could be migrated into
 // an Asgard that did not carry the chain, relying on AddFunds to append it on arrival.
 // Items queued that way survive the upgrade and are still signed and observed. No-oping
-// their inbound would debit the source vault on the outbound side and credit nothing, so
-// they keep the treatment they were scheduled under, chain append included.
+// their inbound would debit the source vault on the outbound side and credit nothing.
 //
-// That is no bypass of chain_activation.go: the inbound must carry a migrate memo, come
-// from the source vault's own address - which only the vault's key can sign from - and
-// match a txout item at the memo height addressed to this vault. Nobody outside the
-// network can produce that.
+// Only the coins are credited; the caller keeps the chain off vault.Chains. Appending it
+// would advertise an inbound address and demand the chain in every keygen report without
+// passing chain_activation.go's gates - possibly on a vault whose keygen dropped it.
+// Nothing needs the chain to spend the coins: outbound selection, migrateFunds and
+// chainHasVaultFunds all read vault.Coins, and Enable<CHAIN>Chain stamps it later.
+//
+// The inbound must carry a migrate memo, come from the source vault's own address -
+// which only the vault's key can sign from - and match a txout item at the memo height
+// addressed to this vault. Nobody outside the network can produce that.
 func isScheduledMigrateInbound(ctx cosmos.Context, k keeper.Keeper, tx common.ObservedTx, vault Vault) bool {
 	if !vault.IsAsgard() {
 		return false
@@ -390,11 +394,15 @@ func handleObservedTxInQuorum(
 	// move THORChain state. Compromised is checked first so an inbound that is both keeps
 	// reporting the more serious reason.
 	noOpReason := ""
+	legacyMigrate := false
 	switch {
 	case compromised:
 		noOpReason = compromisedVaultNoOpSecurityMsg
-	case !vaultSupportsChain(vault, tx.Tx.Chain) && !isScheduledMigrateInbound(ctx, k, tx, vault):
-		noOpReason = unsupportedChainNoOpSecurityMsg
+	case !vaultSupportsChain(vault, tx.Tx.Chain):
+		legacyMigrate = isScheduledMigrateInbound(ctx, k, tx, vault)
+		if !legacyMigrate {
+			noOpReason = unsupportedChainNoOpSecurityMsg
+		}
 	}
 
 	if noOpReason != "" {
@@ -459,7 +467,12 @@ func handleObservedTxInQuorum(
 				// (particularly avoid Consolidate SafeSub zeroing of vault balances).
 				voter.UpdatedVault = true
 			} else if shouldCreditObservedInboundVault(ctx, mgr, tx, memo.IsType(TxMigrate), memo.GetBlockHeight()) {
+				chains := vault.Chains
 				vault.AddFunds(tx.Tx.Coins)
+				if legacyMigrate {
+					// Credit the funds but not the chain; see isScheduledMigrateInbound.
+					vault.Chains = chains
+				}
 				vault.InboundTxCount++
 				voter.UpdatedVault = true
 			}

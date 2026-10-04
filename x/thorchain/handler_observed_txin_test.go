@@ -1331,15 +1331,15 @@ func (s *HandlerObservedTxInSuite) TestLegacyChainlessMigrateIsCredited(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(retiring.GetCoin(common.BTCAsset).Amount.Uint64(), Equals, uint64(5*common.One-2000))
 
-	// Inbound leg: the chainless destination is credited the delivered amount and
-	// picks up the chain, exactly as it would have under the binary that queued it.
+	// Inbound leg: the chainless destination is credited the delivered amount, but the
+	// chain is not stamped - that stays chain_activation.go's job.
 	inMsg := NewMsgObservedTxIn(ObservedTxs{NewObservedTx(f.migrateTx, 12, f.target.PubKey, 12)}, na.NodeAddress)
 	_, err = NewObservedTxInHandler(mgr).handle(ctx, *inMsg)
 	c.Assert(err, IsNil)
 	target, err := k.GetVault(ctx, f.target.PubKey)
 	c.Assert(err, IsNil)
 	c.Assert(target.GetCoin(common.BTCAsset).Amount.Uint64(), Equals, uint64(5*common.One+1000))
-	c.Assert(target.HasChain(common.BTCChain), Equals, true)
+	c.Assert(target.HasChain(common.BTCChain), Equals, false)
 	c.Assert(target.InboundTxCount, Equals, int64(1))
 	c.Assert(noOpSecurityMsgFromEvents(ctx, unsupportedChainNoOpSecurityMsg), Equals, "")
 
