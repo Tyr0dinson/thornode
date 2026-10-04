@@ -824,12 +824,12 @@ func TestWaitForMasterAccountRetriesTransientSOLRPCStartupError(t *testing.T) {
 func TestSimulationTargetsUseExplicitStageDefaults(t *testing.T) {
 	makefile := readRepoFile(t, "Makefile")
 
-	wantSingle := "TEST_SIMULATION_STAGES ?= seed,bootstrap,xmr-coverage,arb,swaps,memoless-swaps,consolidate,memoless-refunds,solvency,ragnarok"
+	wantSingle := "TEST_SIMULATION_STAGES ?= seed,bootstrap,alt-native-fees,xmr-coverage,arb,swaps,memoless-swaps,consolidate,memoless-refunds,solvency,ragnarok"
 	if !strings.Contains(makefile, wantSingle) {
 		t.Fatalf("missing expected single-node simulation stages: %s", wantSingle)
 	}
 
-	wantCluster := "TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,xmr-coverage,xmr-spent-refs,swaps,memoless-swaps,inactive-vault-refunds,memoless-refunds,cluster-churn,tron-solvency-fragmentation,solvency,xmr-post-churn,ragnarok"
+	wantCluster := "TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,alt-native-fees,xmr-coverage,xmr-spent-refs,swaps,memoless-swaps,inactive-vault-refunds,memoless-refunds,cluster-churn,tron-solvency-fragmentation,solvency,xmr-post-churn,ragnarok"
 	if !strings.Contains(makefile, wantCluster) {
 		t.Fatalf("missing expected cluster simulation stages: %s", wantCluster)
 	}
