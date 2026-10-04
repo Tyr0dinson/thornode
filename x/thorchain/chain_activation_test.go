@@ -1035,6 +1035,63 @@ func (s *ChainActivationTestSuite) TestDropDecisionSurvivesRetiringVaultMigratio
 	c.Assert(slices.Contains(vaultChains(ctx, c, k, fresh.PubKey), activationChain.String()), Equals, true)
 }
 
+// A drop from a rotation that ran before RotateVault recorded drops lives only in the
+// retiring vault. Migrate21to22 saves it at upgrade, so it survives migration the same
+// way: the drained vault goes inactive, the next block still must not re-stamp from the
+// stale proof, and a fresh fee consensus then re-enables the chain.
+func (s *ChainActivationTestSuite) TestPreUpgradeDropSurvivesRetiringVaultMigration(c *C) {
+	ctx, mgr, retiring, fresh := setupDroppedChain(c, 1, staleProofHeight)
+	k := mgr.Keeper()
+	nodes, err := k.ListActiveValidators(ctx)
+	c.Assert(err, IsNil)
+	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+
+	droppedAt, err := k.GetChainDroppedHeight(ctx, activationChain)
+	c.Assert(err, IsNil)
+	c.Assert(droppedAt, Equals, int64(0))
+	c.Assert(NewMigrator(mgr.(*Mgrs)).Migrate21to22(ctx), IsNil)
+	droppedAt, err = k.GetChainDroppedHeight(ctx, activationChain)
+	c.Assert(err, IsNil)
+	c.Assert(droppedAt, Equals, droppedKeygenHeight)
+	keptAt, err := k.GetChainDroppedHeight(ctx, common.BTCChain)
+	c.Assert(err, IsNil)
+	c.Assert(keptAt, Equals, int64(0))
+
+	c.Assert(networkMgr.EndBlock(ctx, mgr), IsNil)
+	retired, err := k.GetVault(ctx, retiring[0].PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(retired.Status, Equals, InactiveVault)
+	c.Assert(slices.Contains(vaultChains(ctx, c, k, fresh.PubKey), activationChain.String()), Equals, false)
+
+	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+	c.Assert(networkMgr.EndBlock(ctx, mgr), IsNil)
+	c.Assert(slices.Contains(vaultChains(ctx, c, k, fresh.PubKey), activationChain.String()), Equals, false)
+
+	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+	freshID := setReadinessProof(ctx, c, k, activationChain, nodes, ctx.BlockHeight(), activationChainHeight+1)
+	k.SetLatestObservedNetworkFeeVoterID(ctx, activationChain, freshID)
+	c.Assert(networkMgr.EndBlock(ctx, mgr), IsNil)
+	c.Assert(slices.Contains(vaultChains(ctx, c, k, fresh.PubKey), activationChain.String()), Equals, true)
+}
+
+// The upgrade step only ever raises a record, and finds nothing to record for a chain
+// no retiring vault carries.
+func (s *ChainActivationTestSuite) TestPreUpgradeDropRecordOnlyRaises(c *C) {
+	ctx, mgr, _, _ := setupDroppedChain(c, 1, staleProofHeight)
+	k := mgr.Keeper()
+	k.SetChainDroppedHeight(ctx, activationChain, droppedBlockHeight)
+	c.Assert(NewMigrator(mgr.(*Mgrs)).Migrate21to22(ctx), IsNil)
+	droppedAt, err := k.GetChainDroppedHeight(ctx, activationChain)
+	c.Assert(err, IsNil)
+	c.Assert(droppedAt, Equals, droppedBlockHeight)
+
+	ctx, mgr, _, _ = setupDroppedChain(c, 0, staleProofHeight)
+	c.Assert(NewMigrator(mgr.(*Mgrs)).Migrate21to22(ctx), IsNil)
+	droppedAt, err = mgr.Keeper().GetChainDroppedHeight(ctx, activationChain)
+	c.Assert(err, IsNil)
+	c.Assert(droppedAt, Equals, int64(0))
+}
+
 // A proof that reached consensus after the dropping keygen but before the rotation is
 // newer than the vote, so it re-enables the chain.
 func (s *ChainActivationTestSuite) TestProofBetweenKeygenAndRotationIsFresh(c *C) {

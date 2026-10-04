@@ -521,3 +521,13 @@ func (m Migrator) Migrate20to21(ctx cosmos.Context) error {
 	}
 	return m.migrate20to21Mainnet(ctx)
 }
+
+// Migrate21to22 records the keygen chain drops of rotations that ran before RotateVault
+// recorded them. Until now that drop lived only in the retiring vault still carrying the
+// chain, so it has to be saved before migration marks that vault inactive.
+func (m Migrator) Migrate21to22(ctx cosmos.Context) error {
+	if err := m.mgr.LoadManagerIfNecessary(ctx); err != nil {
+		return err
+	}
+	return recordVaultChainDrops(ctx, m.mgr.Keeper())
+}

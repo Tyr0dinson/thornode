@@ -366,8 +366,9 @@ func chainActivationReady(ctx cosmos.Context, k keeper.Keeper, chain common.Chai
 	// The drop is recorded by RotateVault (SetChainDroppedHeight) when it retires the
 	// vault that served the chain, dated by the replacement's keygen height, so the
 	// evidence outlives that vault's migration. A retiring vault still holding the chain
-	// beside a newer active vault without it is read as the same evidence, which covers
-	// rotations that predate the record.
+	// beside a newer active vault without it is read as the same evidence
+	// (keygenDropHeight). Rotations that predate the record are covered by Migrate21to22,
+	// which persists that reading at upgrade, before migration can mark the vault inactive.
 	//
 	// Only a drop counts. A first activation is not held to it even when the active
 	// vault's keygen postdates the proof: the keygen vote finalizes on the first 2/3 of
@@ -421,30 +422,23 @@ func chainActivationReady(ctx cosmos.Context, k keeper.Keeper, chain common.Chai
 	// whole vault: any non-zero balance on this chain disarms the rule, so a sub-dust
 	// remainder does too even though it would not have stalled anything. The exact
 	// predicate would be per-chain-above-dust, which no helper offers.
-	holders := make(Vaults, 0, len(retiring))
 	stranded := false
 	for _, retired := range retiring {
-		if isChainActivationExempt(retired) || !retired.HasChain(chain) {
-			continue
+		if !isChainActivationExempt(retired) && retired.HasChain(chain) && retired.HasFundsForChain(chain) {
+			stranded = true
+			break
 		}
-		holders = append(holders, retired)
-		stranded = stranded || retired.HasFundsForChain(chain)
 	}
 	if !stranded {
 		// provedAt > 0 once G6b has passed, so droppedAt left at 0 never vetoes.
 		lacking := false
-		droppedAt := int64(0)
 		for _, vault := range active {
-			if isChainActivationExempt(vault) || vault.HasChain(chain) {
-				continue
-			}
-			lacking = true
-			for _, retired := range holders {
-				if vault.BlockHeight > retired.BlockHeight {
-					droppedAt = max(droppedAt, vault.BlockHeight)
-				}
+			if !isChainActivationExempt(vault) && !vault.HasChain(chain) {
+				lacking = true
+				break
 			}
 		}
+		droppedAt := keygenDropHeight(chain, active, retiring)
 		// The record can only raise droppedAt, so skip the read once it already vetoes.
 		if lacking && droppedAt < provedAt {
 			recorded, err := k.GetChainDroppedHeight(ctx, chain)
@@ -482,6 +476,63 @@ func chainActivationReady(ctx cosmos.Context, k keeper.Keeper, chain common.Chai
 	}
 
 	return true, signed, ""
+}
+
+// keygenDropHeight reads a keygen drop off the vault set itself: the keygen height of the
+// newest active vault that left the chain off while an older retiring vault still carries
+// it, 0 if there is none. The evidence lasts only until migration marks that retiring
+// vault inactive.
+func keygenDropHeight(chain common.Chain, active, retiring Vaults) int64 {
+	droppedAt := int64(0)
+	for _, retired := range retiring {
+		if isChainActivationExempt(retired) || !retired.HasChain(chain) {
+			continue
+		}
+		for _, vault := range active {
+			if isChainActivationExempt(vault) || vault.HasChain(chain) {
+				continue
+			}
+			if vault.BlockHeight > retired.BlockHeight {
+				droppedAt = max(droppedAt, vault.BlockHeight)
+			}
+		}
+	}
+	return droppedAt
+}
+
+// recordVaultChainDrops persists every drop keygenDropHeight can read off the current
+// vault set, for rotations that ran before RotateVault recorded drops itself. Without it
+// such a drop is lost as soon as migration marks the drained retiring vault inactive,
+// and a still-set enable mimir re-stamps the chain from the older proof the next block.
+// Only ever raises a record, so it cannot weaken one RotateVault wrote.
+func recordVaultChainDrops(ctx cosmos.Context, k keeper.Keeper) error {
+	active, err := k.GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		return fmt.Errorf("fail to get active vaults: %w", err)
+	}
+	retiring, err := k.GetAsgardVaultsByStatus(ctx, RetiringVault)
+	if err != nil {
+		return fmt.Errorf("fail to get retiring vaults: %w", err)
+	}
+	// AllChains is a fixed array, and the only chains activation can ever stamp.
+	for _, chain := range common.AllChains {
+		if chain.IsTHORChain() {
+			continue
+		}
+		droppedAt := keygenDropHeight(chain, active, retiring)
+		if droppedAt == 0 {
+			continue
+		}
+		recorded, err := k.GetChainDroppedHeight(ctx, chain)
+		if err != nil {
+			return fmt.Errorf("fail to get %s dropped height: %w", chain, err)
+		}
+		if droppedAt > recorded {
+			k.SetChainDroppedHeight(ctx, chain, droppedAt)
+			ctx.Logger().Info("recorded keygen chain drop", "chain", chain, "height", droppedAt)
+		}
+	}
+	return nil
 }
 
 // vaultHasChainKeysignQuorum reports whether enough of the vault's own members proved
