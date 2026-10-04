@@ -1017,10 +1017,16 @@ func (s *ChainActivationTestSuite) TestPreUpgradeDropSurvivesRetiringVaultMigrat
 	droppedAt, err := k.GetChainDroppedHeight(ctx, activationChain)
 	c.Assert(err, IsNil)
 	c.Assert(droppedAt, Equals, int64(0))
-	c.Assert(NewMigrator(mgr.(*Mgrs)).Migrate21to22(ctx), IsNil)
+	migrate21to22(ctx, c, mgr)
 
 	networkMgr := newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
 	assertDropSurvivesMigration(ctx, c, mgr, networkMgr, nodes, retiring[0], fresh)
+}
+
+func migrate21to22(ctx cosmos.Context, c *C, mgr Manager) {
+	mgrs, ok := mgr.(*Mgrs)
+	c.Assert(ok, Equals, true)
+	c.Assert(NewMigrator(mgrs).Migrate21to22(ctx), IsNil)
 }
 
 // assertDropSurvivesMigration checks the recorded drop, then runs NetworkMgr.EndBlock:
@@ -1063,13 +1069,13 @@ func (s *ChainActivationTestSuite) TestPreUpgradeDropRecordOnlyRaises(c *C) {
 	ctx, mgr, _, _ := setupDroppedChain(c, 1, staleProofHeight)
 	k := mgr.Keeper()
 	k.SetChainDroppedHeight(ctx, activationChain, droppedBlockHeight)
-	c.Assert(NewMigrator(mgr.(*Mgrs)).Migrate19to20(ctx), IsNil)
+	migrate21to22(ctx, c, mgr)
 	droppedAt, err := k.GetChainDroppedHeight(ctx, activationChain)
 	c.Assert(err, IsNil)
 	c.Assert(droppedAt, Equals, droppedBlockHeight)
 
 	ctx, mgr, _, _ = setupDroppedChain(c, 0, staleProofHeight)
-	c.Assert(NewMigrator(mgr.(*Mgrs)).Migrate19to20(ctx), IsNil)
+	migrate21to22(ctx, c, mgr)
 	droppedAt, err = mgr.Keeper().GetChainDroppedHeight(ctx, activationChain)
 	c.Assert(err, IsNil)
 	c.Assert(droppedAt, Equals, int64(0))
