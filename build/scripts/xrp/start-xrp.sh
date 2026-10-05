@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-RIPPLED_BIN=/opt/ripple/bin/rippled
+RIPPLED_BIN="$(command -v xrpld || command -v rippled || echo /opt/ripple/bin/rippled)"
 RIPPLED_CONF=/docker/scripts/xrp/rippled.cfg
 GENESIS_SECRET=snoPBrXtMeMyMHUVTgbuqAfg1SUTb
 SIM_MASTER_ACCOUNT=r3hmW9oETcVqFWdN8jpCXgeK9km4uqNv5N
