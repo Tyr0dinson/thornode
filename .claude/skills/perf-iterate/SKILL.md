@@ -1,0 +1,78 @@
+---
+name: perf-iterate
+description: Run a round of the THORNode performance-improvement loop - refresh the mainnet usage mix, profile the mainnet-weighted benchmarks, propose 10 behavior-preserving speedups, A/B each one, guard kept ones with regtest, and commit the winners. Use whenever the user asks to make thornode faster, run a perf round, optimize hot paths, speed up block processing or the test suites, or iterate on performance.
+allowed-tools: Read, Grep, Glob, Bash, Edit, Write
+---
+
+# Perf iteration
+
+The loop makes THORNode faster **without changing behavior**. Every idea is measured on its own,
+kept only if it clears the bar, and committed one per commit with its numbers.
+
+Tooling (all under `scripts/perf/`, `make perf-*` wrappers, results in `test/performance/results/<label>/`, gitignored):
+
+| Step        | Command                                                             | Output                                                                    |
+| ----------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Mainnet mix | `LIQUIFY_API_KEY=... make perf-mix`                                 | `test/performance/mainnet-mix.json`, `testdata/mainnet-shape.json`        |
+| Profile     | `scripts/perf/profile.sh <label> [bench-re]`                        | `<bench>.top.txt` flat/cum/alloc tables (measured loop only)              |
+| A/B         | `PERF_TARGET=<re> scripts/perf/ab.sh <label> [bench-re] [base-ref]` | interleaved base/candidate, `benchstat.txt`, `verdict.txt`, exit 0 = KEEP |
+| Guard       | `scripts/perf/guard.sh <label> [base-ref]`                          | vet + unit tests of touched pkgs + unfiltered regtest diff vs base        |
+| Test times  | `scripts/perf/test-times.sh <label> [unit regtest sim]`             | `times.json`                                                              |
+
+Benchmarks live in `x/thorchain/perf_bench_test.go` (`BenchmarkPerf*`). The fixture is seeded
+from the mainnet shape (44 pools, mimir, ~100 active validators with real keys, 6 asgard vaults)
+and is deterministic, so `gas/op` is stable and any change to it is real.
+
+## Build tags matter
+
+Chain benchmarks use `PERF_TAGS=mainnet` (the release build, default). Unit tests, regtest and the
+simulation use `mocknet`, which compiles extra code that mainnet never runs (e.g. env-var mimir
+overrides in `keeper_mimir_mocknet.go`). An idea that only touches mocknet code is a **test-speed**
+idea: A/B it with `PERF_TAGS=mocknet` and measure it with `test-times.sh`, never claim it as a chain win.
+
+## The round
+
+1. **Refresh the mix** if the committed one is older than ~2 weeks (`make perf-mix`; key in env,
+   never committed). Note shifts in the top message types.
+2. **Profile**: `scripts/perf/profile.sh r<N>-prof`. Rank functions by cumulative CPU in the
+   handlers/EndBlock, weighted by the mix (MsgObservedTxQuorum ~68% of tx gas, then
+   MsgTssKeysignFail, MsgPriceFeedQuorumBatch; streaming swaps dominate EndBlock).
+3. **Write 10 ideas** into `test/performance/results/rounds/round-<N>.md` (scratch, not committed). Each:
+   target function, target benchmark regex, why it is faster, why behavior is identical,
+   whether it changes store access inside a tx (=> gas_used changes, see below).
+4. **For each idea, one at a time, on a clean tree at the current base commit:**
+   1. implement it, minimal diff, matching surrounding style;
+   2. `go build ./... && go vet -tags=mocknet <pkg>`;
+   3. `PERF_TARGET='<target-re>' scripts/perf/ab.sh r<N>-i<k> '<bench-re>'` (include at least
+      one non-target heavy benchmark, e.g. `EndBlock`, to catch regressions);
+   4. REVERT verdict -> `git checkout -- . && git clean -fd -- <new files>`; log why;
+   5. KEEP verdict -> `scripts/perf/guard.sh r<N>-i<k>`; run the `blockchain-code-review` skill
+      on the diff; then commit:
+      `perf(<area>): <idea>` with the benchstat sec/op + allocs/op table in the body, and if the
+      verdict or guard flagged gas: a line `Consensus: changes gas_used (LastResultsHash); ship in a coordinated upgrade.`
+   6. the new commit is the base for the next idea.
+5. **Round end**: `scripts/perf/test-times.sh r<N>-end unit regtest` vs the round's start, plus
+   one `make test-simulation` on the final commit. Summarize: idea -> delta sec/op, delta allocs, kept/reverted.
+
+## Keep bar
+
+`verdict.py`: at least one target benchmark improves >= 5% in sec/op or allocs/op with p < 0.05,
+and no benchmark's sec/op regresses significantly by > 3%. Use `ROUNDS=10` (default). Micro
+benchmarks are noisier than handler ones; if a micro win does not show up in any handler or
+EndBlock benchmark, it is not worth the churn.
+
+## Behavior must not change
+
+The guard fails on any difference in regtest exports, block events, or app_hash. Rules for ideas:
+
+- Never change protobuf/amino wire formats, store keys, event types/attributes or their order,
+  error strings that reach events, or iteration order of anything that feeds state or events.
+- No map iteration feeding state, no floats, no wall-clock time, no goroutines in the state machine.
+- Caches must be pure (input -> output, e.g. bech32 decode, constant-name -> key) or scoped to a
+  context that is discarded with it. A cache over keeper state must be invalidated on writes and on
+  cache-context discard; prefer not to.
+- **Gas**: the ante handler installs an infinite gas meter, but gas is still counted and
+  `gas_used` is hashed into the next header's LastResultsHash. Fewer/more store reads, writes,
+  iterator steps or bytes inside a **tx** changes gas_used: allowed, but the commit must carry the
+  consensus line above. BeginBlock/EndBlock store access does not affect gas_used.
+- Version-gated or mainnet-only behavior stays exactly as is.

@@ -548,7 +548,9 @@ func (op *OpCreateBlocks) Execute(out io.Writer, path string, _, routine int, p 
 
 	for i := 0; i < op.Count; i++ {
 		// http request to localhost to unblock block creation
+		blockStart := time.Now()
 		newBlockRes, err := httpClient.Get(fmt.Sprintf("http://localhost:%d/newBlock", regtestCreateBlockPort(routine)))
+		blockElapsed := time.Since(blockStart)
 		if err != nil {
 			// if exit code is not set this was unexpected
 			if op.Exit == nil {
@@ -590,6 +592,7 @@ func (op *OpCreateBlocks) Execute(out io.Writer, path string, _, routine int, p 
 			localLog.Err(err).Msg("failed to parse new block response")
 			return err
 		}
+		recordBlockTime(path, height, blockElapsed)
 
 		// determine path for block output
 		path = strings.TrimPrefix(path, "suites/")
@@ -1394,4 +1397,19 @@ func sendMsg(out io.Writer, routine int, msg sdk.Msg, signer sdk.AccAddress, txM
 	}
 
 	return nil
+}
+
+// recordBlockTime appends "suite,height,microseconds" to REGTEST_BLOCK_TIMES when
+// set, for perf analysis of per-block processing time (see scripts/perf).
+func recordBlockTime(suite string, height int, elapsed time.Duration) {
+	path := os.Getenv("REGTEST_BLOCK_TIMES")
+	if path == "" {
+		return
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = fmt.Fprintf(f, "%s,%d,%d\n", suite, height, elapsed.Microseconds())
 }

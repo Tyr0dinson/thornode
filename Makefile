@@ -11,7 +11,7 @@ endif
 # Config
 ########################################################################################
 
-.PHONY: build test test-xmr-frost-e2e tools export healthcheck run-mocknet build-mocknet stop-mocknet halt-mocknet ps-mocknet reset-mocknet logs-mocknet openapi test-performance test-performance-quick test-performance-all test-performance-analyze test-performance-profile-cpu test-performance-profile-mem test-performance-trace test-performance-clean test-xmr-e2e
+.PHONY: build test test-xmr-frost-e2e tools export healthcheck run-mocknet build-mocknet stop-mocknet halt-mocknet ps-mocknet reset-mocknet logs-mocknet openapi test-performance test-performance-quick test-performance-all test-performance-analyze test-performance-profile-cpu test-performance-profile-mem test-performance-trace test-performance-clean test-xmr-e2e perf-mix perf-bench perf-ab perf-profile perf-guard perf-times
 
 # mocknet docker compose files and overrides for macOS
 DOCKER_COMPOSE_FILES ?= -f build/docker/docker-compose.yml
@@ -354,6 +354,31 @@ test-performance-clean:
 	@echo "Cleaning performance test results..."
 	@rm -rf test/performance/results/*
 	@echo "Performance results cleaned."
+
+# ------------------------------ Perf Iteration ------------------------------
+# Mainnet-weighted perf framework; see test/performance/README.md "Perf iteration".
+# LABEL names the results dir under test/performance/results; BENCH filters benchmarks.
+
+LABEL ?= $(shell git rev-parse --short HEAD)
+BENCH ?= ^BenchmarkPerf
+
+perf-mix:
+	@go run ./tools/perf/mainnet-mix
+
+perf-bench:
+	@./scripts/perf/bench.sh $(LABEL) '$(BENCH)'
+
+perf-ab:
+	@./scripts/perf/ab.sh $(LABEL) '$(BENCH)' $(BASE)
+
+perf-profile:
+	@./scripts/perf/profile.sh $(LABEL) '$(BENCH)'
+
+perf-guard:
+	@./scripts/perf/guard.sh $(LABEL) $(BASE)
+
+perf-times:
+	@./scripts/perf/test-times.sh $(LABEL)
 
 # ------------------------------ Regression Tests ------------------------------
 

@@ -107,6 +107,8 @@ func setupBenchmarkManager(b testing.TB) (cosmos.Context, *Mgrs) {
 			types.RUNEPoolName:           {},
 			types.TCYStakeName:           {},
 			types.TCYClaimingName:        {},
+			types.POLReserveName:         {},
+			types.StableReserveName:      {},
 		},
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32AccountAddrPrefix()),
 		sdk.GetConfig().GetBech32AccountAddrPrefix(),

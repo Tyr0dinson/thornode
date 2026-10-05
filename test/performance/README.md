@@ -481,3 +481,29 @@ go tool pprof -base=cpu.prof cpu_after.prof
 - [Go Profiling Documentation](https://go.dev/doc/diagnostics)
 - [pprof User Guide](https://github.com/google/pprof/blob/main/doc/README.md)
 - [High Performance Go Workshop](https://dave.cheney.net/high-performance-go-workshop/gopherchina-2019.html)
+
+## Perf iteration (mainnet-weighted)
+
+A second framework targets the code mainnet actually runs, for the behavior-preserving
+speedup loop driven by the `perf-iterate` Claude skill (`.claude/skills/perf-iterate/SKILL.md`).
+
+- `tools/perf/mainnet-mix` samples recent mainnet blocks (message types, memo classes, gas
+  share, EndBlock events) into `mainnet-mix.json`, and snapshots the network's state shape
+  (pools, mimir, node and vault counts) into `testdata/mainnet-shape.json`.
+  Run with `LIQUIFY_API_KEY=... make perf-mix`.
+- `x/thorchain/perf_bench_test.go` holds the `BenchmarkPerf*` benchmarks: the quorum
+  observation, keysign-fail, price-feed and deposit handlers and EndBlock, on a deterministic
+  fixture seeded from the shape. Each reports `gas/op`; a change there is consensus-visible.
+- `scripts/perf/`:
+  - `bench.sh <label> [re]` benchmarks the working tree (`make perf-bench`).
+  - `ab.sh <label> [re] [base]` runs base and working tree interleaved and prints a KEEP/REVERT
+    verdict (`verdict.py`: >= 5% faster or fewer allocs with p < 0.05, no > 3% regression).
+  - `profile.sh <label> [re]` writes CPU/alloc profiles and top tables of the measured loops.
+  - `guard.sh <label> [base]` builds, unit-tests touched packages, and diffs unfiltered regtest
+    runs (exports, events, app_hash, gas_used) of base vs working tree (`regtest_diff.py`).
+  - `test-times.sh <label> [unit regtest sim]` records suite wall times and regtest per-block latency.
+
+Benchmarks build with `PERF_TAGS=mainnet` (the release tag) by default and run pinned to
+`PERF_CPUS` (8-15) with `GOMAXPROCS=8`. Regtest supports two opt-in env vars for this:
+`REGTEST_BLOCK_TIMES=<csv>` (per-block latency) and `REGTEST_CPUPROFILE_DIR=<dir>` (CPU
+profile of each node under test).
