@@ -6,6 +6,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 type KeeperNodeAccountSuite struct{}
@@ -440,4 +441,39 @@ func (s *KeeperNodeAccountSuite) TestRemoveLowBondValidatorAccounts_NoBondProvid
 		Commentf("node account should be preserved when send fails with no bond providers"))
 	c.Check(naStore.Bond.Equal(na.Bond), Equals, true,
 		Commentf("bond should remain unchanged, got %s", naStore.Bond))
+}
+
+func (s *KeeperNodeAccountSuite) TestPeekNodeAccountStatusType(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	for _, status := range []NodeStatus{types.NodeStatus_Unknown, types.NodeStatus_Whitelisted, types.NodeStatus_Standby, types.NodeStatus_Ready, types.NodeStatus_Active, types.NodeStatus_Disabled} {
+		for _, typ := range []NodeType{NodeTypeValidator, NodeTypeVault, NodeTypeUnknown} {
+			na := GetRandomValidatorNode(status)
+			na.Type = typ
+			bz, err := k.Cdc().Marshal(&na)
+			c.Assert(err, IsNil)
+			gotStatus, gotType, ok := peekNodeAccountStatusType(bz)
+			c.Assert(ok, Equals, true)
+			c.Check(gotStatus, Equals, status)
+			c.Check(gotType, Equals, typ)
+		}
+	}
+	_, _, ok := peekNodeAccountStatusType([]byte{0x10}) // status tag without a value
+	c.Check(ok, Equals, false)
+
+	// ListValidatorsByStatus still returns exactly the matching validators
+	for _, status := range []NodeStatus{NodeActive, NodeStandby, types.NodeStatus_Disabled} {
+		for i := 0; i < 3; i++ {
+			c.Assert(k.SetNodeAccount(ctx, GetRandomValidatorNode(status)), IsNil)
+		}
+	}
+	vault := GetRandomValidatorNode(NodeActive)
+	vault.Type = NodeTypeVault
+	c.Assert(k.SetNodeAccount(ctx, vault), IsNil)
+	active, err := k.ListValidatorsByStatus(ctx, NodeActive)
+	c.Assert(err, IsNil)
+	c.Check(active, HasLen, 3)
+	for _, na := range active {
+		c.Check(na.Status, Equals, NodeActive)
+		c.Check(na.Type, Equals, NodeTypeValidator)
+	}
 }

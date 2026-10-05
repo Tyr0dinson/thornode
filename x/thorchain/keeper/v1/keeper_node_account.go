@@ -10,6 +10,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/runtime"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/hashicorp/go-metrics"
+	"google.golang.org/protobuf/encoding/protowire"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -71,6 +72,13 @@ func (k KVStore) ListValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (
 	naIterator := k.GetNodeAccountIterator(ctx)
 	defer naIterator.Close()
 	for ; naIterator.Valid(); naIterator.Next() {
+		// Most node accounts do not match (e.g. ~100 of ~190 are active), so
+		// read status and type from the wire bytes and skip unmarshalling the
+		// rest. The iteration, and so the store access, is unchanged.
+		if naStatus, naType, ok := peekNodeAccountStatusType(naIterator.Value()); ok &&
+			(naType != NodeTypeValidator || naStatus != status) {
+			continue
+		}
 		var na NodeAccount
 		if err := k.cdc.Unmarshal(naIterator.Value(), &na); err != nil {
 			return nodeAccounts, dbError(ctx, "Unmarshal: node account", err)
@@ -80,6 +88,48 @@ func (k KVStore) ListValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (
 		}
 	}
 	return nodeAccounts, nil
+}
+
+// NodeAccount protobuf field numbers of the fields peekNodeAccountStatusType reads.
+const (
+	nodeAccountStatusField protowire.Number = 2
+	nodeAccountTypeField   protowire.Number = 15
+)
+
+// peekNodeAccountStatusType returns the status and type encoded in a NodeAccount's
+// protobuf bytes without unmarshalling it. Like Unmarshal, absent fields are zero
+// and the last occurrence of a field wins. ok is false if the bytes are not
+// well-formed for those fields, in which case the caller must fully unmarshal.
+func peekNodeAccountStatusType(bz []byte) (status NodeStatus, typ NodeType, ok bool) {
+	for len(bz) > 0 {
+		num, wtype, n := protowire.ConsumeTag(bz)
+		if n < 0 {
+			return 0, 0, false
+		}
+		bz = bz[n:]
+		if num == nodeAccountStatusField || num == nodeAccountTypeField {
+			if wtype != protowire.VarintType {
+				return 0, 0, false
+			}
+			v, m := protowire.ConsumeVarint(bz)
+			if m < 0 {
+				return 0, 0, false
+			}
+			bz = bz[m:]
+			if num == nodeAccountStatusField {
+				status = NodeStatus(int32(v))
+			} else {
+				typ = NodeType(int32(v))
+			}
+			continue
+		}
+		m := protowire.ConsumeFieldValue(num, wtype, bz)
+		if m < 0 {
+			return 0, 0, false
+		}
+		bz = bz[m:]
+	}
+	return status, typ, true
 }
 
 // ListActiveValidators - get a list of active validator node accounts
