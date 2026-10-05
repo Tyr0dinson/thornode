@@ -51,8 +51,19 @@ idea: A/B it with `PERF_TAGS=mocknet` and measure it with `test-times.sh`, never
       `perf(<area>): <idea>` with the benchstat sec/op + allocs/op table in the body, and if the
       verdict or guard flagged gas: a line `Consensus: changes gas_used (LastResultsHash); ship in a coordinated upgrade.`
    6. the new commit is the base for the next idea.
-5. **Round end**: `scripts/perf/test-times.sh r<N>-end unit regtest` vs the round's start, plus
-   one `make test-simulation` on the final commit. Summarize: idea -> delta sec/op, delta allocs, kept/reverted.
+5. **Round end**: cumulative `CONFIRM=0 scripts/perf/ab.sh r<N>-total '^BenchmarkPerf' <round-base>` on
+   both `PERF_TAGS=mainnet` and `mocknet`; `scripts/perf/test-times.sh` for unit (run the base side
+   from its cached worktree); then one simulation on the final commit. If the `thornode-simtest`
+   image build fails fetching tss-lib ("no secure protocol found": the final RUN's /go/pkg/mod cache
+   mount hides the modules the authenticated stages downloaded), run it natively instead:
+   `GO_PRIVATE_GIT_CREDENTIAL=oauth2:$(glab config get token --host gitlab.com) make build-mocknet reset-mocknet`,
+   `docker stop docker-midgard-1 docker-midgard-db-1`, then from `test/simulation`:
+   `go build -tags mocknet -o <scratch>/simtest ./cmd && CI=1 PARALLELISM=1 STAGES=<TEST_SIMULATION_STAGES> <scratch>/simtest`,
+   and `make stop-mocknet` afterwards. Summarize: idea -> delta sec/op, delta allocs, kept/reverted.
+
+   Regtest wall time is bound by consensus pacing (~1.75s/block from timeout_commit), and total
+   unit wall time by bifrost/p2p and other timer-bound packages, so CPU wins show up in the
+   per-package times (x/thorchain) and `block-times.csv`, not the totals.
 
 ## Keep bar
 
