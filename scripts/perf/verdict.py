@@ -4,7 +4,7 @@
 KEEP when, for at least one target benchmark, sec/op or allocs/op improves by at
 least --min-gain (default 5%) with p < --alpha (benchstat's own significance
 test, default 0.05), and no benchmark's sec/op regresses significantly by more
-than --max-regress (default 3%).
+than --max-regress (default 5%).
 
 Any gas/op difference is reported as CONSENSUS-VISIBLE: gas_used is hashed into
 LastResultsHash, so such a change must ship as a coordinated upgrade. It does
@@ -55,7 +55,7 @@ def main():
         help="regex of benchmarks the idea targets (default: all)",
     )
     ap.add_argument("--min-gain", type=float, default=5.0)
-    ap.add_argument("--max-regress", type=float, default=3.0)
+    ap.add_argument("--max-regress", type=float, default=5.0)
     ap.add_argument("--alpha", type=float, default=0.05)
     args = ap.parse_args()
 

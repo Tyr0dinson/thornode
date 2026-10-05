@@ -497,7 +497,7 @@ speedup loop driven by the `perf-iterate` Claude skill (`.claude/skills/perf-ite
 - `scripts/perf/`:
   - `bench.sh <label> [re]` benchmarks the working tree (`make perf-bench`).
   - `ab.sh <label> [re] [base]` runs base and working tree interleaved and prints a KEEP/REVERT
-    verdict (`verdict.py`: >= 5% faster or fewer allocs with p < 0.05, no > 3% regression).
+    verdict (`verdict.py`: >= 5% faster or fewer allocs with p < 0.05, no > 5% regression, reproduced on a confirmation pass).
   - `profile.sh <label> [re]` writes CPU/alloc profiles and top tables of the measured loops.
   - `guard.sh <label> [base]` builds, unit-tests touched packages, and diffs unfiltered regtest
     runs (exports, events, app_hash, gas_used) of base vs working tree (`regtest_diff.py`).

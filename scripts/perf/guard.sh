@@ -9,7 +9,7 @@
 #    regtest_diff.py: any state/event/app_hash difference FAILS; gas_used or
 #    last_results_hash-only differences PASS but are flagged consensus-visible.
 #
-# Env: SKIP_REGTEST=1, RUN=<suite-regex>, REGTEST_PARALLELISM (default 12).
+# Env: SKIP_REGTEST=1, RUN=<suite-regex>, REGTEST_PARALLELISM (default 8), REGTEST_TIMEOUT (default 2400s).
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 

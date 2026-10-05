@@ -372,16 +372,26 @@ func perfLoop(b *testing.B, fn func(i int)) {
 // perf=measured so scripts/perf/profile.sh can drop fixture setup from profiles.
 func (f *perfFixture) measure(b *testing.B, height int64, op func(ctx cosmos.Context) error) {
 	b.Helper()
+	run := func() uint64 {
+		ctx := f.branch(height)
+		// managers keep per-block state in memory (gas events, observers);
+		// start every op from an empty block like BeginBlock would
+		f.mgr.gasMgr.BeginBlock()
+		f.mgr.obMgr = newObserverMgr()
+		if err := op(ctx); err != nil {
+			b.Fatal(err)
+		}
+		return ctx.GasMeter().GasConsumed()
+	}
+	// one untimed op warms lazily initialised state so every measured op,
+	// and so gas/op, is identical regardless of b.N
+	run()
 	var gas uint64
 	b.ReportAllocs()
 	b.ResetTimer()
 	pprof.Do(context.Background(), pprof.Labels("perf", "measured"), func(context.Context) {
 		for i := 0; i < b.N; i++ {
-			ctx := f.branch(height)
-			if err := op(ctx); err != nil {
-				b.Fatal(err)
-			}
-			gas += ctx.GasMeter().GasConsumed()
+			gas += run()
 		}
 	})
 	b.ReportMetric(float64(gas)/float64(b.N), "gas/op")

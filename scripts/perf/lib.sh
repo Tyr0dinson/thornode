@@ -58,12 +58,16 @@ perf_run_bench() {
 }
 
 # perf_tree_hash <src-tree>: content hash of the tree including uncommitted and
-# untracked files, used to cache regtest results per exact source state.
+# untracked files, minus tests/docs/perf tooling, used to cache regtest results
+# per source state that regtest can observe.
 perf_tree_hash() {
   local idx
   idx=$(mktemp)
   cp "$(git -C "$1" rev-parse --git-path index)" "$idx" 2>/dev/null || true
   GIT_INDEX_FILE=$idx git -C "$1" add -A >/dev/null 2>&1
+  # files that cannot change what regtest builds or runs
+  GIT_INDEX_FILE=$idx git -C "$1" rm -r -q --cached --ignore-unmatch -- \
+    ':(glob)**/*_test.go' ':(glob)**/*.md' scripts/perf test/performance .claude >/dev/null 2>&1
   GIT_INDEX_FILE=$idx git -C "$1" write-tree
   rm -f "$idx"
 }
@@ -85,11 +89,11 @@ perf_regtest() {
   mkdir -p "$out/mnt/exports" "$out/mnt/blocks" "$out/mnt/coverage"
   perf_log "building regtest binaries from $src"
   (cd "$src" && GOBIN="$out/bin" REGTEST_BIN_DIR="$out/bin" make _build-test-regression) >"$out/build.log" 2>&1
-  perf_log "running regtest (RUN=${RUN:-all}, PARALLELISM=${REGTEST_PARALLELISM:-12}) -> $out/regtest.log"
+  perf_log "running regtest (RUN=${RUN:-all}, PARALLELISM=${REGTEST_PARALLELISM:-8}) -> $out/regtest.log"
   local start end rc=0
   start=$(date +%s)
   local vars=(
-    PATH="$out/bin:$PATH" RUN="${RUN-}" PARALLELISM="${REGTEST_PARALLELISM:-12}" TIME_FACTOR=2 CI=1
+    PATH="$out/bin:$PATH" RUN="${RUN-}" PARALLELISM="${REGTEST_PARALLELISM:-8}" TIME_FACTOR=2 CI=1
     EXPORT=1 UNFILTER_EXPORT=1
     REGTEST_HOME_BASE="$out/home" REGTEST_CREATE_BLOCK_PORT_BASE="${REGTEST_CREATE_BLOCK_PORT_BASE:-21080}"
     REGTEST_BIN_DIR="$out/bin" REGTEST_MNT_DIR="$out/mnt" GOCOVERDIR="$out/mnt/coverage"
@@ -98,7 +102,8 @@ perf_regtest() {
   if [[ -n ${PERF_REGTEST_PROFILE-} ]]; then
     vars+=(REGTEST_CPUPROFILE_DIR="$out/pprof")
   fi
-  (cd "$src/test/regression" && env "${vars[@]}" "$out/bin/regtest") >"$out/regtest.log" 2>&1 || rc=$?
+  # a harness whose node died at startup can wait forever; bound the run
+  (cd "$src/test/regression" && timeout "${REGTEST_TIMEOUT:-2400}" env "${vars[@]}" "$out/bin/regtest") >"$out/regtest.log" 2>&1 || rc=$?
   end=$(date +%s)
   echo "$((end - start))" >"$out/seconds"
   echo "$rc" >"$out/rc"

@@ -35,19 +35,36 @@ perf_build_test_binary "$PERF_ROOT" "$out/candidate.test"
 
 echo "$base_sha" >"$out/base-commit"
 git -C "$PERF_ROOT" diff "$base_sha" >"$out/diff.patch"
-: >"$out/base.txt"
-: >"$out/new.txt"
-for ((i = 1; i <= rounds; i++)); do
-  perf_log "round $i/$rounds"
-  perf_run_bench "$base_tree" "$base_bin" "$bench" 1 >>"$out/base.txt"
-  perf_run_bench "$PERF_ROOT" "$out/candidate.test" "$bench" 1 >>"$out/new.txt"
-done
-if grep -qE '^(--- FAIL|FAIL|panic)' "$out/base.txt" "$out/new.txt"; then
-  perf_log "benchmark failures; see $out/{base,new}.txt"
-  exit 2
-fi
+# ab_pass <suffix>: ROUNDS interleaved base/candidate samples, benchstat, verdict
+ab_pass() {
+  local sfx=$1
+  : >"$out/base$sfx.txt"
+  : >"$out/new$sfx.txt"
+  for ((i = 1; i <= rounds; i++)); do
+    perf_log "pass${sfx:-1} round $i/$rounds"
+    perf_run_bench "$base_tree" "$base_bin" "$bench" 1 >>"$out/base$sfx.txt"
+    perf_run_bench "$PERF_ROOT" "$out/candidate.test" "$bench" 1 >>"$out/new$sfx.txt"
+  done
+  if grep -qE '^(--- FAIL|FAIL|panic)' "$out/base$sfx.txt" "$out/new$sfx.txt"; then
+    perf_log "benchmark failures; see $out/{base,new}$sfx.txt"
+    exit 2
+  fi
+  (cd "$out" && $BENCHSTAT "base$sfx.txt" "new$sfx.txt" | tee "benchstat$sfx.txt")
+  (cd "$out" && $BENCHSTAT -format csv "base$sfx.txt" "new$sfx.txt" >"benchstat$sfx.csv" 2>/dev/null)
+  python3 "$(dirname "$0")/verdict.py" "$out/benchstat$sfx.csv" ${PERF_TARGET:+--target "$PERF_TARGET"} | tee "$out/verdict$sfx.txt"
+  return "${PIPESTATUS[0]}"
+}
 
-(cd "$out" && $BENCHSTAT base.txt new.txt | tee benchstat.txt)
-(cd "$out" && $BENCHSTAT -format csv base.txt new.txt >benchstat.csv 2>/dev/null)
-python3 "$(dirname "$0")/verdict.py" "$out/benchstat.csv" ${PERF_TARGET:+--target "$PERF_TARGET"} | tee "$out/verdict.txt"
-exit "${PIPESTATUS[0]}"
+# With ~20 benchmarks per run some comparisons come out "significant" by chance
+# (seen at +/-5% on identical code), so a KEEP must reproduce on a second,
+# independent pass. CONFIRM=0 skips it.
+rc=0
+ab_pass "" || rc=$?
+if [[ $rc -eq 0 && ${CONFIRM:-1} != 0 ]]; then
+  perf_log "KEEP on pass 1; confirming with an independent pass"
+  ab_pass "-confirm" || rc=$?
+  if [[ $rc -ne 0 ]]; then
+    perf_log "pass 1 KEEP did not reproduce: REVERT"
+  fi
+fi
+exit "$rc"

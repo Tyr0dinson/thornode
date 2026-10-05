@@ -57,7 +57,9 @@ idea: A/B it with `PERF_TAGS=mocknet` and measure it with `test-times.sh`, never
 ## Keep bar
 
 `verdict.py`: at least one target benchmark improves >= 5% in sec/op or allocs/op with p < 0.05,
-and no benchmark's sec/op regresses significantly by > 3%. Use `ROUNDS=10` (default). Micro
+and no benchmark's sec/op regresses significantly by > 5%, and the KEEP must reproduce on an
+independent confirmation pass (`ab.sh` does this; identical code shows chance "significant" ±5%
+results across ~20 benchmarks). Use `ROUNDS=10` (default). Micro
 benchmarks are noisier than handler ones; if a micro win does not show up in any handler or
 EndBlock benchmark, it is not worth the churn.
 
