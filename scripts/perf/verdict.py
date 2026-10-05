@@ -6,9 +6,11 @@ least --min-gain (default 5%) with p < --alpha (benchstat's own significance
 test, default 0.05), and no benchmark's sec/op regresses significantly by more
 than --max-regress (default 5%).
 
-Any gas/op difference is reported as CONSENSUS-VISIBLE: gas_used is hashed into
-LastResultsHash, so such a change must ship as a coordinated upgrade. It does
-not by itself block KEEP.
+A gas/op difference in a tx-level benchmark is reported as CONSENSUS-VISIBLE:
+gas_used is hashed into LastResultsHash, so such a change must ship as a
+coordinated upgrade. In block-level benchmarks (--block-bench, EndBlock and
+BeginBlock) gas is not reported in any tx result, so it is informational only.
+Neither blocks KEEP.
 
 Exit status: 0 KEEP, 1 REVERT.
 """
@@ -57,18 +59,25 @@ def main():
     ap.add_argument("--min-gain", type=float, default=5.0)
     ap.add_argument("--max-regress", type=float, default=5.0)
     ap.add_argument("--alpha", type=float, default=0.05)
+    ap.add_argument(
+        "--block-bench",
+        default="EndBlock|BeginBlock",
+        help="regex of block-level benchmarks whose gas is not part of gas_used",
+    )
     args = ap.parse_args()
 
     data = parse(args.csv)
     target = re.compile(args.target) if args.target else None
-    wins, regressions, gas = [], [], []
+    block = re.compile(args.block_bench)
+    wins, regressions, gas, block_gas = [], [], [], []
 
     for unit, rows in data.items():
         for name, (base, new, d, p) in rows.items():
             is_target = target is None or target.search(name)
             if unit == "gas/op":
                 if base != new:
-                    gas.append(f"{name}: gas/op {base:.0f} -> {new:.0f}")
+                    line = f"{name}: gas/op {base:.0f} -> {new:.0f}"
+                    (block_gas if block.search(name) else gas).append(line)
                 continue
             if d is None or p >= args.alpha:
                 continue
@@ -92,7 +101,11 @@ def main():
         for g in gas:
             print("   ", g)
     else:
-        print("  gas/op unchanged")
+        print("  tx gas/op unchanged")
+    if block_gas:
+        print("  block-level store access changed (not in gas_used, informational):")
+        for g in block_gas:
+            print("   ", g)
     return 0 if keep else 1
 
 
