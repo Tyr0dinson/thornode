@@ -47,7 +47,14 @@ var (
 	EmptyPubKeySet         PubKeySet
 	pubkeyToAddressCache   = make(map[string]Address)
 	pubkeyToAddressCacheMu = &sync.RWMutex{}
+
+	// validPubKeyCache holds strings NewPubKey has accepted (bounded; failures
+	// are never cached)
+	validPubKeyCache   = make(map[string]struct{})
+	validPubKeyCacheMu sync.RWMutex
 )
+
+const validPubKeyCacheMax = 8192
 
 ////////////////////////////////////////////////////////////////////////////////////////
 // PubKey
@@ -59,10 +66,24 @@ func NewPubKey(key string) (PubKey, error) {
 	if len(key) == 0 {
 		return EmptyPubKey, nil
 	}
+	// validation is a pure function of the string and the account pubkey prefix;
+	// vault memberships re-validate the same keys constantly
+	cacheKey := cosmos.GetConfig().GetBech32AccountPubPrefix() + "|" + key
+	validPubKeyCacheMu.RLock()
+	_, ok := validPubKeyCache[cacheKey]
+	validPubKeyCacheMu.RUnlock()
+	if ok {
+		return PubKey(key), nil
+	}
 	_, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, key)
 	if err != nil {
 		return EmptyPubKey, fmt.Errorf("%s is not bech32 encoded pub key,err : %w", key, err)
 	}
+	validPubKeyCacheMu.Lock()
+	if len(validPubKeyCache) < validPubKeyCacheMax {
+		validPubKeyCache[cacheKey] = struct{}{}
+	}
+	validPubKeyCacheMu.Unlock()
 	return PubKey(key), nil
 }
 

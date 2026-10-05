@@ -294,3 +294,22 @@ func (s *PubKeyTestSuite) TestSOLPubKey(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(pk2.Equals(pk), Equals, true)
 }
+
+func (s *PubKeyTestSuite) TestNewPubKeyValidationCache(c *C) {
+	valid := "tthorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcycgtrnv"
+	_, ref := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, valid)
+	for i := 0; i < 2; i++ { // second pass is served from the cache
+		pk, err := NewPubKey(valid)
+		if ref != nil {
+			c.Check(err, NotNil)
+			c.Check(pk, Equals, EmptyPubKey)
+		} else {
+			c.Check(err, IsNil)
+			c.Check(pk.String(), Equals, valid)
+		}
+	}
+	for i := 0; i < 2; i++ { // failures are never cached
+		_, err := NewPubKey("tthorpub1invalid")
+		c.Check(err, NotNil)
+	}
+}
