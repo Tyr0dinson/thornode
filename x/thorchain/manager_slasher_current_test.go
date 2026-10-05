@@ -3695,7 +3695,6 @@ func (s *SlashingSuite) TestInactiveVaultRecoveryFailureDoesNotStarveLaterRecord
 		Commentf("only the failed record's reservation should remain"))
 }
 
-
 func (s *SlashingSuite) TestRecoverySwapsForSiblingOutboundsDoNotCollide(c *C) {
 	for _, advQueue := range []int64{0, 1} {
 		c.Logf("EnableAdvSwapQueue=%d", advQueue)
