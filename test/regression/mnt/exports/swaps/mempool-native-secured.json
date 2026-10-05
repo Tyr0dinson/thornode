@@ -430,6 +430,7 @@
           "depth": "341853374"
         }
       ],
+      "sol_vault_nonces": [],
       "staged_outbounds": [],
       "streaming_swaps": [],
       "swap_queue_items": [],

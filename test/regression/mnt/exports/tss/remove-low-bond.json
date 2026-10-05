@@ -338,6 +338,7 @@
       },
       "rune_providers": [],
       "secured_assets": [],
+      "sol_vault_nonces": [],
       "staged_outbounds": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
