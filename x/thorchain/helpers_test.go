@@ -2742,3 +2742,43 @@ func (s *HelperSuite) TestEmitMimirTelemetryKeys(c *C) {
 	c.Assert(got["MAXSYNTHPERPOOLDEPTH"], Equals, int64(1700))
 	c.Assert(got["HALTBTCCHAIN"], Equals, int64(42))
 }
+
+// isStableToStable must agree with membership of both layer-1 assets in
+// GetAnchors(TOR), which it no longer calls.
+func (s *HelperSuite) TestIsStableToStableMatchesGetAnchors(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	usdc, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	c.Assert(err, IsNil)
+	usdt, err := common.NewAsset("ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7")
+	c.Assert(err, IsNil)
+	dai, err := common.NewAsset("ETH.DAI-0X6B175474E89094C44DA98B954EEDEAC495271D0F")
+	c.Assert(err, IsNil)
+	for _, asset := range []common.Asset{usdc, usdt, common.BTCAsset} { // dai has a mimir but no pool
+		pool := NewPool()
+		pool.Asset = asset
+		pool.Status = PoolAvailable
+		c.Assert(k.SetPool(ctx, pool), IsNil)
+	}
+	k.SetMimir(ctx, "TorAnchor-ETH-USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48", 1)
+	k.SetMimir(ctx, "TorAnchor-ETH-USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7", 1)
+	k.SetMimir(ctx, "TorAnchor-ETH-DAI-0X6B175474E89094C44DA98B954EEDEAC495271D0F", 1)
+	k.SetMimir(ctx, "TorAnchor-BTC-BTC", 0)
+
+	anchors := k.GetAnchors(ctx, common.TOR)
+	isAnchor := func(a common.Asset) bool {
+		for _, anchor := range anchors {
+			if anchor.Equals(a.GetLayer1Asset()) {
+				return true
+			}
+		}
+		return false
+	}
+	assets := []common.Asset{usdc, usdt, dai, common.BTCAsset, usdc.GetSyntheticAsset(), usdt.GetTradeAsset(), common.RuneAsset()}
+	for _, a := range assets {
+		for _, b := range assets {
+			c.Check(isStableToStable(ctx, k, a, b), Equals, isAnchor(a) && isAnchor(b), Commentf("%s -> %s", a, b))
+		}
+	}
+	c.Check(isStableToStable(ctx, k, usdc, usdt), Equals, true)
+}

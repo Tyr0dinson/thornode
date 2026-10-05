@@ -500,22 +500,21 @@ func getMaxSwapQuantity(ctx cosmos.Context, mgr Manager, sourceAsset, targetAsse
 
 // isStableToStable returns true if both source and target L1 assets are TOR anchors (stablecoins).
 func isStableToStable(ctx cosmos.Context, k keeper.Keeper, source, target common.Asset) bool {
-	anchors := k.GetAnchors(ctx, common.TOR)
-	if len(anchors) == 0 {
+	// Same answer as checking both layer-1 assets against GetAnchors(TOR), which
+	// unmarshals every pool and reads a mimir per pool: an asset is a TOR anchor
+	// iff its pool exists and its TorAnchor-<asset> mimir is positive (as in
+	// StableReserveMgr.isTORAnchor). Reads only the two candidates.
+	return isTORAnchorAsset(ctx, k, source.GetLayer1Asset()) && isTORAnchorAsset(ctx, k, target.GetLayer1Asset())
+}
+
+// isTORAnchorAsset reports whether GetAnchors(TOR) would include the layer-1 asset.
+func isTORAnchorAsset(ctx cosmos.Context, k keeper.Keeper, l1 common.Asset) bool {
+	if !k.PoolExist(ctx, l1) {
 		return false
 	}
-	sourceL1 := source.GetLayer1Asset()
-	targetL1 := target.GetLayer1Asset()
-	var sourceIsAnchor, targetIsAnchor bool
-	for _, anchor := range anchors {
-		if anchor.Equals(sourceL1) {
-			sourceIsAnchor = true
-		}
-		if anchor.Equals(targetL1) {
-			targetIsAnchor = true
-		}
-	}
-	return sourceIsAnchor && targetIsAnchor
+	anchorKey := strings.ReplaceAll(fmt.Sprintf("TorAnchor-%s", l1.String()), ".", "-")
+	val, err := k.GetMimir(ctx, anchorKey)
+	return err == nil && val > 0
 }
 
 // getMinSlipBps returns artificial slip floor, expressed in basis points (10000).
