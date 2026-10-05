@@ -332,3 +332,29 @@ func (s ObservedTxSuite) TestSignerAddressCache(c *C) {
 	c.Check(tx.GetSigners(), HasLen, 2)
 	c.Check(tx.HasSigned(addr), Equals, true)
 }
+
+func (s ObservedTxSuite) TestHasSignedMatchesDecodedSigners(c *C) {
+	addr := cosmos.AccAddress([]byte("perf-has-signed-0001"))
+	other := cosmos.AccAddress([]byte("perf-has-signed-0002"))
+	upper := strings.ToUpper(addr.String()) // bech32 decodes all-uppercase too
+
+	for _, signers := range [][]string{
+		{addr.String()},
+		{upper},
+		{"bogus", other.String(), upper},
+		{other.String()},
+		{"bogus", ""},
+		nil,
+	} {
+		tx := ObservedTx{Signers: signers}
+		want := false
+		for _, signer := range tx.GetSigners() {
+			if signer.Equals(addr) {
+				want = true
+			}
+		}
+		c.Check(tx.HasSigned(addr), Equals, want, Commentf("signers %v", signers))
+	}
+	c.Check((&ObservedTx{Signers: []string{upper}}).HasSigned(addr), Equals, true)
+	c.Check((&ObservedTx{Signers: []string{""}}).HasSigned(cosmos.AccAddress{}), Equals, false)
+}

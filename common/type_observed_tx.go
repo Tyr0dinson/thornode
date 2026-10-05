@@ -287,8 +287,16 @@ func (m *ObservedTx) String() string {
 
 // HasSigned - check if given address has signed
 func (m *ObservedTx) HasSigned(signer cosmos.AccAddress) bool {
-	for _, sign := range m.GetSigners() {
-		if sign.Equals(signer) {
+	// Same result as scanning GetSigners(): a signer string can only decode to
+	// signer if it equals signer's bech32 encoding up to case, so only such
+	// strings need decoding.
+	encoded := signer.String()
+	for _, a := range m.Signers {
+		if !strings.EqualFold(a, encoded) {
+			continue
+		}
+		addr, err := signerAddress(a)
+		if err == nil && addr.Equals(signer) {
 			return true
 		}
 	}

@@ -122,10 +122,8 @@ func (m *ObservedTxVoter) Add(observedTx common.ObservedTx, signer cosmos.AccAdd
 		}
 		votedIdx = idx
 		// check whether the signer is already in the list
-		for _, siggy := range transaction.GetSigners() {
-			if siggy.Equals(signer) {
-				return false
-			}
+		if transaction.HasSigned(signer) {
+			return false
 		}
 	}
 	if votedIdx != -1 {
