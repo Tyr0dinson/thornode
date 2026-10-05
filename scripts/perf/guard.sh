@@ -23,7 +23,11 @@ mapfile -t changed < <(
   git -C "$PERF_ROOT" diff --name-only "$base_sha" -- '*.go'
   git -C "$PERF_ROOT" ls-files --others --exclude-standard -- '*.go'
 )
-mapfile -t pkgs < <(printf '%s\n' "${changed[@]}" | grep -v '^$' | xargs -r -n1 dirname | sort -u | sed 's|^|./|')
+# touched packages plus the two that exercise nearly all consensus code (~1 min)
+mapfile -t pkgs < <({
+  printf '%s\n' "${changed[@]}" | grep -v '^$' | xargs -r -n1 dirname | sed 's|^|./|'
+  if ((${#changed[@]})); then printf '%s\n' ./x/thorchain ./common/...; fi
+} | sort -u)
 perf_log "touched packages: ${pkgs[*]:-none}"
 
 perf_log "build + vet"
