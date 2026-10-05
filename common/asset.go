@@ -330,7 +330,7 @@ func (a Asset) String() string {
 	if a.Secured {
 		div = "-"
 	}
-	return fmt.Sprintf("%s%s%s", a.Chain.String(), div, a.Symbol.String())
+	return a.Chain.String() + div + a.Symbol.String()
 }
 
 // ShortCode returns the short code for the asset.
