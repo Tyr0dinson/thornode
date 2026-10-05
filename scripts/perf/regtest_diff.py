@@ -99,6 +99,16 @@ def main():
     )
 
     if fails:
+        suites = set()
+        for f in fails:
+            rel = f.split(":", 1)[0]
+            m = re.match(r"(?:exports|blocks)/(.+?)(?:/\d+)?\.json", rel)
+            if m:
+                suites.add(m.group(1))
+            m = re.match(r"suite failed only on candidate: suites/(.+)\.yaml", f)
+            if m:
+                suites.add(m.group(1))
+        print("FAILED_SUITES:", " ".join(sorted(suites)))
         print(f"GUARD: FAIL ({len(fails)} behavior differences)")
         for f in fails[:50]:
             print("  ", f)

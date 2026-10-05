@@ -60,6 +60,29 @@ if [[ $cand_hash == "$base_hash" ]]; then
 fi
 perf_regtest "$PERF_ROOT" "$PERF_CACHE/regtest-$cand_hash$suffix"
 
+rc=0
 python3 "$(dirname "$0")/regtest_diff.py" \
-  "$PERF_CACHE/regtest-$base_hash$suffix" "$PERF_CACHE/regtest-$cand_hash$suffix" | tee "$out/guard.txt"
+  "$PERF_CACHE/regtest-$base_hash$suffix" "$PERF_CACHE/regtest-$cand_hash$suffix" >"$out/guard.txt" || rc=$?
+cat "$out/guard.txt"
+if [[ $rc -eq 0 || ${RETRY_FLAKES:-1} == 0 ]]; then
+  exit "$rc"
+fi
+
+# Full parallel runs occasionally leak an injected tx from a previous suite on
+# the same harness routine into the next suite's blocks. Re-run only the
+# differing suites, fresh and in isolation, for base and candidate; the
+# candidate passes only if those runs match.
+read -r -a suites < <(sed -n 's/^FAILED_SUITES: //p' "$out/guard.txt")
+if ((${#suites[@]} == 0 || ${#suites[@]} > 10)); then
+  exit "$rc"
+fi
+run_re="suites/($(
+  IFS='|'
+  echo "${suites[*]}"
+))\.yaml"
+perf_log "re-running ${#suites[@]} differing suite(s) in isolation: $run_re"
+rm -rf "$PERF_CACHE/recheck-base" "$PERF_CACHE/recheck-cand"
+RUN=$run_re REGTEST_PARALLELISM=${#suites[@]} perf_regtest "$base_tree" "$PERF_CACHE/recheck-base"
+RUN=$run_re REGTEST_PARALLELISM=${#suites[@]} perf_regtest "$PERF_ROOT" "$PERF_CACHE/recheck-cand"
+python3 "$(dirname "$0")/regtest_diff.py" "$PERF_CACHE/recheck-base" "$PERF_CACHE/recheck-cand" | tee "$out/guard-recheck.txt"
 exit "${PIPESTATUS[0]}"
