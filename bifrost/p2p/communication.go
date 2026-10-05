@@ -38,6 +38,11 @@ var (
 	joinPartyProtocolWithLeader protocol.ID = "/p2p/join-party-leader"
 )
 
+// bootstrapRetrySleep is the wait between bootstrap connection rounds. Tests of
+// unreachable bootstrap peers shorten it; the number of rounds still derives
+// from bootstrapRetryInterval.
+var bootstrapRetrySleep = bootstrapRetryInterval
+
 // TSSProtocolID protocol id used for tss
 var (
 	TSSProtocolID        protocol.ID = "/p2p/tss"
@@ -817,8 +822,8 @@ func (c *Communication) startChannel(privKeyBytes []byte) error {
 		if connectionErr == nil {
 			break
 		}
-		c.logger.Warn().Err(connectionErr).Msgf("cannot connect to any bootstrap node, retry in %s", bootstrapRetryInterval)
-		time.Sleep(bootstrapRetryInterval)
+		c.logger.Warn().Err(connectionErr).Msgf("cannot connect to any bootstrap node, retry in %s", bootstrapRetrySleep)
+		time.Sleep(bootstrapRetrySleep)
 	}
 	if connectionErr != nil {
 		if requireBootstrapConnectivity {
