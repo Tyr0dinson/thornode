@@ -10,6 +10,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	"gitlab.com/thorchain/thornode/v3/test/simulation/actors/core"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/thornode"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain"
@@ -132,6 +133,7 @@ func NewBondYieldChurnOutActor(state *BondYieldState, rng *rand.Rand) *Actor {
 	a.Timeout = 35 * time.Minute
 	a.Ops = append(a.Ops, a.skipIfRequired)
 	a.Ops = append(a.Ops, a.requestTargetLeave)
+	a.Ops = append(a.Ops, a.scheduleTargetChurnOut)
 	a.Ops = append(a.Ops, a.waitTargetChurnedOut)
 	return &a.Actor
 }
@@ -150,6 +152,8 @@ func NewBondYieldCleanupActor(rng *rand.Rand) *Actor {
 		{constants.BondYieldEnabled.String(), defaults.GetInt64Value(constants.BondYieldEnabled)},
 		{bondYieldMinL1OutboundFeeUSDKey, defaults.GetInt64Value(constants.MinimumL1OutboundFeeUSD)},
 		{bondYieldMinOutboundFeeMultKey, defaults.GetInt64Value(constants.MinOutboundFeeMultiplierBasisPoints)},
+		// set by core.ScheduleChurn for the cluster churn and the churn-out
+		{constants.ChurnInterval.String(), defaults.GetInt64Value(constants.ChurnInterval)},
 	} {
 		a.Append(newMultiNodeMimirActor(setting.key, setting.value, rng))
 	}
@@ -581,6 +585,17 @@ func (a *BondYieldChurnOutActor) requestTargetLeave(config *OpConfig) OpResult {
 		return OpResult{Continue: false}
 	}
 	a.Log().Info().Str("txid", txid).Stringer("node", a.state.nodeAddress).Msg("broadcasted target leave")
+	return OpResult{Continue: true}
+}
+
+// scheduleTargetChurnOut makes the churn that removes the target fire soon. The
+// previous churn's migration is still running at lastChurn+ChurnInterval, so
+// without this the leave waits for a ChurnRetryInterval tick.
+func (a *BondYieldChurnOutActor) scheduleTargetChurnOut(config *OpConfig) OpResult {
+	if _, err := core.ScheduleChurn(a.Log(), config); err != nil {
+		a.Log().Error().Err(err).Msg("failed to schedule target churn-out")
+		return OpResult{Continue: false}
+	}
 	return OpResult{Continue: true}
 }
 

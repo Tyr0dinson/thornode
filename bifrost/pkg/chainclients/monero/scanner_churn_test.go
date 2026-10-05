@@ -441,8 +441,10 @@ func TestClientChurnRollbackRetriesValidation(t *testing.T) {
 				require.Zero(t, rewinds)
 				failuresLeft.Store(0)
 			}
+			// The exact-limit case rescans about 800 blocks, which takes over 30s on
+			// a small CI runner.
 			require.Eventually(t, func() bool { return loop.PreviousHeight() == previous+1 },
-				30*time.Second, time.Millisecond, "scanning must resume after validation finishes")
+				2*time.Minute, time.Millisecond, "scanning must resume after validation finishes")
 			require.Positive(t, failedReads.Load())
 			position, err := storage.GetScanPos()
 			require.NoError(t, err)

@@ -39,6 +39,8 @@ class SimulationConfigTest(unittest.TestCase):
                 "-o",
                 "build-mocknet-cluster",
                 "-o",
+                "build-mocknet-cluster-native",
+                "-o",
                 "reset-mocknet-cluster",
                 *args,
             ],

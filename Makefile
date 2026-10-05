@@ -178,7 +178,7 @@ proto-format:
 
 proto-format-check:
 	@echo "Checking Protobuf formatting"
-	@find ./ -name "*.proto" -print0 | xargs -0L1 $(protoImage) clang-format --dry-run -Werror
+	@$(protoImage) find ./ -name "*.proto" -exec clang-format --dry-run -Werror {} +
 
 proto-lint:
 	@$(protoImage) sh -c "cd proto/thorchain/v1 && buf lint --error-format=json"
@@ -423,7 +423,7 @@ test-simulation-xmr-readiness: TEST_SIMULATION_CLUSTER_STAGES=seed,bootstrap,xmr
 test-simulation-xmr-readiness: override TEST_SIMULATION_REQUIRE_XMR=1
 test-simulation-xmr-readiness: test-simulation-cluster
 
-test-simulation-cluster: test-mocknet-startup test-xmr-readiness-config build-test-simulation build-mocknet-cluster reset-mocknet-cluster
+test-simulation-cluster: test-mocknet-startup test-xmr-readiness-config prepare-mocknet-cluster
 	@docker stop docker-midgard-1 docker-midgard-db-1 >/dev/null 2>&1 || true
 	@STAGES=$(TEST_SIMULATION_CLUSTER_STAGES) docker run --rm ${DOCKER_TTY_ARGS} \
 		-e PARALLELISM=$(PARALLELISM) -e STAGES \
@@ -556,13 +556,17 @@ reset-mocknet-fork-%: stop-mocknet
 
 # ------------------------------ Multi Node Mocknet ------------------------------
 
+# test-simulation-cluster stops midgard before the sim starts; the CI path
+# (test-simulation-cluster-native) empties this so midgard is never pulled.
+MOCKNET_CLUSTER_MIDGARD ?= --profile midgard
+
 run-mocknet-cluster:
 	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster \
-		--profile midgard up -d
+		$(MOCKNET_CLUSTER_MIDGARD) up -d
 	@# Compose can leave dependent validator thornodes in Created under detached
 	@# startup when the primary thornode healthcheck is not yet satisfied.
 	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster \
-		--profile midgard up -d thornode-cat thornode-fox thornode-pig thornode-frog
+		$(MOCKNET_CLUSTER_MIDGARD) up -d thornode-cat thornode-fox thornode-pig thornode-frog
 
 stop-mocknet-cluster:
 	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster --profile midgard down -v
@@ -578,6 +582,93 @@ ps-mocknet-cluster:
 	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster --profile midgard ps
 
 reset-mocknet-cluster: stop-mocknet-cluster build-mocknet-cluster run-mocknet-cluster
+
+# L1 chains of the cluster that run a released image, so they can start before
+# the thornode and simtest images are built.
+MOCKNET_CLUSTER_L1_SERVICES := gaia noble bitcoin bitcoin-cash dogecoin litecoin \
+	ethereum base xrp binance-smart avalanche tron-supernode tron-fullnode solana \
+	polygon zcash
+
+run-mocknet-cluster-l1:
+	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster \
+		up -d $(MOCKNET_CLUSTER_L1_SERVICES)
+
+# reset-mocknet-cluster plus the simtest image, with the L1 chains starting in
+# the background while the images build. Their image pulls and warm-up (the sim
+# waits for tron and solana to advance blocks) then overlap the build instead of
+# following it. run-mocknet-cluster finds them running and leaves them as is.
+prepare-mocknet-cluster: stop-mocknet-cluster
+	@$(MAKE) --no-print-directory run-mocknet-cluster-l1 & l1_pid=$$!; \
+	$(MAKE) --no-print-directory build-test-simulation build-mocknet-cluster; build_rc=$$?; \
+	wait $$l1_pid; l1_rc=$$?; \
+	[ $$build_rc -eq 0 ] && [ $$l1_rc -eq 0 ]
+	@$(MAKE) --no-print-directory run-mocknet-cluster
+
+# ------------------------------ CI: native sim build ------------------------------
+#
+# CI's test-simulation builds the Go binaries in the job container, with the
+# runner's warm Go caches, and only copies them into thin images
+# (build/docker/Dockerfile.native). The in-image builds started from an empty
+# dind every run: `go mod download` (the tss-lib-private fetch) plus a cold
+# compile of simtest, thornode and events, 6-8 min before the cluster could
+# start. The job must run on golang:1.26.4-bookworm, the build stage of
+# build/docker/Dockerfile, so the binaries link against the same glibc as the
+# bookworm runtime. Local `make test-simulation-cluster` is unchanged.
+NATIVE_SIM_DIR ?= $(CURDIR)/tmp/native-sim
+
+# Same flags as `make install` in build/docker/Dockerfile. That build has no .git
+# and takes COMMIT from its `ARG COMMIT=unknown`, so match it.
+_build-native-thornode: COMMIT=unknown
+_build-native-thornode: TAG=mocknet
+_build-native-thornode:
+	@go build -ldflags '$(ldflags)' -tags mocknet -trimpath -buildmode=pie \
+		-o $(NATIVE_SIM_DIR)/ $(BINARIES)
+	@# Same as tools/events/Dockerfile: `go install -tags $$TAG ./tools/events`.
+	@go build -tags mocknet -o $(NATIVE_SIM_DIR)/events ./tools/events
+
+# Same as _build-test-simulation in ci/Dockerfile.simtest, whose context has no
+# .git, so COMMIT is empty there.
+_build-native-simtest: COMMIT=
+_build-native-simtest: TAG=mocknet
+_build-native-simtest:
+	@cd test/simulation && \
+		go build -ldflags '$(ldflags)' -tags mocknet -o $(NATIVE_SIM_DIR)/simtest ./cmd
+
+build-mocknet-cluster-native:
+	@rm -rf $(NATIVE_SIM_DIR) && mkdir -p $(NATIVE_SIM_DIR)
+	@$(MAKE) --no-print-directory _build-native-thornode _build-native-simtest
+	@cp $$(go list -m -f '{{.Dir}}' github.com/CosmWasm/wasmvm/v2)/internal/api/libwasmvm.*.so $(NATIVE_SIM_DIR)/
+	@chmod u+w $(NATIVE_SIM_DIR)/libwasmvm.*.so
+	@cp -r build/scripts $(NATIVE_SIM_DIR)/scripts
+	@DOCKER_BUILDKIT=1 docker build build/docker -f build/docker/Dockerfile \
+		--target runtime -t thornode-runtime:mocknet --build-arg DOCKER_MIRROR
+	@for t in thornode:thornode:mocknet events:docker-events simtest:thornode-simtest-native; do \
+		DOCKER_BUILDKIT=1 docker build $(NATIVE_SIM_DIR) -f build/docker/Dockerfile.native \
+			--target $${t%%:*} -t $${t#*:} || exit 1; \
+	done
+	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster build monero-daemon
+
+# prepare-mocknet-cluster with the native build, and without midgard.
+prepare-mocknet-cluster-native: stop-mocknet-cluster
+	@$(MAKE) --no-print-directory run-mocknet-cluster-l1 & l1_pid=$$!; \
+	$(MAKE) --no-print-directory build-mocknet-cluster-native; build_rc=$$?; \
+	wait $$l1_pid; l1_rc=$$?; \
+	[ $$build_rc -eq 0 ] && [ $$l1_rc -eq 0 ]
+	@$(MAKE) --no-print-directory run-mocknet-cluster MOCKNET_CLUSTER_MIDGARD=
+
+# test-simulation-cluster for CI: same stages, PARALLELISM and environment. The
+# mocknet startup unit tests are left to CI's test-mocknet-scripts job, which
+# runs the same suite; the XMR readiness config test still runs here.
+test-simulation-cluster-native: test-xmr-readiness-config prepare-mocknet-cluster-native
+	@STAGES=$(TEST_SIMULATION_CLUSTER_STAGES) docker run --rm ${DOCKER_TTY_ARGS} \
+		-e PARALLELISM=$(PARALLELISM) -e STAGES \
+		-e XMR_POST_CHURN_REQUIRED=$(TEST_SIMULATION_REQUIRE_XMR) \
+		-e RANDOM_SEED_HEX \
+		-e SIMULATION_PPROF_ADDRESS \
+		-e XMR_SIM_HELPER_ENDPOINT -e XMR_SIM_HELPER_AUTH_BEARER \
+		-e XMR_FROST_ENDPOINT -e XMR_FROST_AUTH_BEARER \
+		--network host \
+		thornode-simtest-native
 
 # ------------------------------ Test Sync ------------------------------
 

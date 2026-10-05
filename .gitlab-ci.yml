@@ -46,6 +46,10 @@ workflow:
     - if: $CI_PIPELINE_SOURCE == "webide"
 
 variables:
+  # Runner tag for the short jobs (see .small-runner). A project CI/CD variable
+  # overrides this, so SMALL_RUNNER_TAG=thorchain sends them back to any runner
+  # without an MR if the small runners are down.
+  SMALL_RUNNER_TAG: small
   DOCKER_HOST: tcp://docker:2376
   DOCKER_TLS_CERTDIR: /certs
   DOCKER_TLS_VERIFY: 1
@@ -66,6 +70,11 @@ variables:
   ARTIFACT_DOWNLOAD_ATTEMPTS: 3
   RESTORE_CACHE_ATTEMPTS: 3
   EXECUTOR_JOB_SECTION_ATTEMPTS: 3
+  # Shallow clone. The project default is a full clone (941MB of history), which
+  # averaged 78s per job, about 14% of all runner time on 2026-09-22..29. Only
+  # lint and fork need history (a merge base with the target branch) and set
+  # GIT_DEPTH 0 themselves; secret_detection sets its own 50 in the template.
+  GIT_DEPTH: "20"
   SAST_EXCLUDED_PATHS: spec, test, tests, tmp, .cache
 
 .use_dind: &use_dind
@@ -175,6 +184,46 @@ variables:
   before_script:
     - . ./scripts/ci-go-private-auth.sh
 
+# Every job except the sim and the image builds runs on a runner tagged
+# `small`, with small slots (today one: hedwig-small). The project had 7 slots
+# on 2026-09-30 (Finland capped at 4, hedwig 3), and sims held 2-4 of them for
+# 30-45 min each, so 1-5 min gate jobs queued 8-29 min each, one after another. A small slot is 6 CPU / 24 GiB (lint
+# and the race tests need the memory) with a 4 CPU / 8 GiB dind service for
+# generate and the proto jobs. test-simulation, the build jobs and the image
+# mirror stay untagged and keep the sim-sized slots on Finland and hedwig.
+.small-runner:
+  tags:
+    - $SMALL_RUNNER_TAG
+
+# What test-simulation and test-regression wait for. On 2026-09-15..29 these
+# jobs caught 116 of the 122 pipelines that failed a check before the sim
+# (lint 40, generate 39, proto 37, unit-tests 14); in 33 of them lint was the
+# only failing check. With no trunk lock, lint starts with the pipeline and
+# takes about as long as unit-tests, so gating on it costs little and keeps a
+# lint-only failure from spending a sim. `optional` covers pipelines where
+# rules leave a job out (lint on deployment branches, unit-tests on some merge
+# trains). No artifacts are needed from them.
+.long-test-gate:
+  needs:
+    - job: lint
+      optional: true
+      artifacts: false
+    - job: generate
+      optional: true
+      artifacts: false
+    - job: proto-check-formatting
+      optional: true
+      artifacts: false
+    - job: proto-lint
+      optional: true
+      artifacts: false
+    - job: proto-check-breaking
+      optional: true
+      artifacts: false
+    - job: unit-tests
+      optional: true
+      artifacts: false
+
 # Install $PKGS from the distro mirror. A DNS blip on the runner ("Temporary
 # failure resolving 'deb.debian.org'") only warns in `apt-get update` and then
 # fails the install as a script error, so retry and exit 75 if the mirror stays
@@ -195,6 +244,39 @@ variables:
         sleep 15
       done
 
+# Docker CLI, compose and buildx for a dind job on a Debian image, pinned to the
+# versions docker:28.5.2 ships, from Docker's apt repository (not Docker Hub).
+# Include before .wait-for-dind; exits 75 if the repository stays unreachable.
+.docker-cli-apt:
+  before_script:
+    - |
+      . /etc/os-release
+      install -m 0755 -d /etc/apt/keyrings
+      echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $VERSION_CODENAME stable" \
+        > /etc/apt/sources.list.d/docker.list
+      for i in 1 2 3; do
+        curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc &&
+          apt-get update &&
+          apt-get install -y --no-install-recommends $PKGS \
+            docker-ce-cli="5:28.5.2-1~debian.12~$VERSION_CODENAME" \
+            docker-compose-plugin="2.40.3-1~debian.12~$VERSION_CODENAME" \
+            docker-buildx-plugin="0.29.1-1~debian.12~$VERSION_CODENAME" && break
+        if [ "$i" = 3 ]; then
+          echo "Docker apt repository unreachable, treating as an infrastructure failure"
+          exit 75
+        fi
+        sleep 15
+      done
+
+# Jobs start from `needs:`, not from stage order. With stage order the
+# simulation started a median 27 min after the pipeline (p90 117 min), held back
+# by whichever protobuf or test job finished last. Checks that need nothing
+# start at once. test-simulation and test-regression wait only for the checks
+# that catch most bad branches (.long-test-gate), so a branch that fails those
+# does not also spend runner time on a sim. The build jobs keep their existing
+# stage order and publication rules: `build` comes before `long-test`, and the
+# build rules use `when: always`, so images do not wait for the sim, regression
+# or a failed check.
 stages:
   - .pre
   - fork
@@ -212,12 +294,14 @@ stages:
 # and fork jobs, fixing a timing issue where GitLab CI rule evaluation happened
 # before dotenv artifacts were available.
 fork:
+  tags: !reference [.small-runner, tags]
   stage: fork
   rules:
     - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
       when: always
   variables:
     PKGS: git jq
+    GIT_DEPTH: "0"
   before_script:
     - !reference [.pkg-install, before_script]
   script:
@@ -275,6 +359,7 @@ fork:
       fi
 
 generate:
+  tags: !reference [.small-runner, tags]
   rules: &rules
     - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
       when: never
@@ -297,6 +382,7 @@ generate:
       - data_integrity_failure
       - script_failure
   stage: protobuf
+  needs: []
   <<: *use_dind
   before_script:
     - !reference [.wait-for-dind, before_script]
@@ -312,11 +398,13 @@ generate:
       ./scripts/lint-generated.bash
 
 unit-tests:
+  tags: !reference [.small-runner, tags]
   rules:
     - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
       when: never
     - *rules
   stage: test
+  needs: []
   coverage: /total:\s+\(statements\)\s+(\d+.\d+\%)/
   before_script:
     - !reference [.go-private-auth, before_script]
@@ -335,11 +423,13 @@ unit-tests:
       - coverage*
 
 test-mocknet-scripts:
+  tags: !reference [.small-runner, tags]
   rules:
     - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
       when: never
     - *rules
   stage: test
+  needs: []
   image: alpine:3.21
   variables:
     PKGS: bash python3 jq make
@@ -349,17 +439,20 @@ test-mocknet-scripts:
     - python3 -m unittest discover -s build/scripts/tests -v
 
 xmr-e2e-gates:
+  tags: !reference [.small-runner, tags]
   rules:
     - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
       when: never
     - *rules
   stage: test
+  needs: []
   before_script:
     - !reference [.go-private-auth, before_script]
   script:
     - make test-xmr-e2e
 
 lint:
+  tags: !reference [.small-runner, tags]
   rules:
     - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
       when: never
@@ -372,11 +465,17 @@ lint:
     - if: $CI == "true"
       when: on_success
   stage: test
-  # limit to 1 concurrent execution as shared trunk cache can cause internal error
-  resource_group: trunk-lint
+  needs: []
+  # No resource_group: concurrent runs share /trunk-cache safely once it is warm
+  # (4 at once on one cache, 4/4 clean), and scripts/trunk-ci.sh retries the
+  # tool install race a cold cache can hit. The old global lock made lint wait
+  # 25 min at p75 and 64 at p90 (2026-09-22..29), and did not prevent the trunk
+  # internal errors it was added for: all 20 that week ran with no other lint.
   variables:
     XDG_CACHE_HOME: /trunk-cache
     PKGS: jq
+    # trunk-ci.sh diffs against the merge base with origin/develop
+    GIT_DEPTH: "0"
   before_script:
     - !reference [.pkg-install, before_script]
     - !reference [.go-private-auth, before_script]
@@ -384,8 +483,10 @@ lint:
     - make lint-ci
 
 proto-check-formatting:
+  tags: !reference [.small-runner, tags]
   rules: *rules
   stage: protobuf
+  needs: []
   <<: *use_dind
   before_script:
     - !reference [.wait-for-dind, before_script]
@@ -395,9 +496,11 @@ proto-check-formatting:
     - make proto-format-check
 
 proto-lint:
+  tags: !reference [.small-runner, tags]
   rules: *rules
   retry: *buf_retry
   stage: protobuf
+  needs: []
   <<: *use_dind
   before_script:
     - !reference [.wait-for-dind, before_script]
@@ -408,6 +511,7 @@ proto-lint:
     - make proto-lint
 
 proto-check-breaking:
+  tags: !reference [.small-runner, tags]
   # Compares this branch's protos against upstream `develop` via `buf breaking`.
   # The long-lived deployment branches (mainnet/stagenet/chainnet) intentionally
   # lag develop's schema and will report upstream-only additions as "deletions".
@@ -423,6 +527,7 @@ proto-check-breaking:
       when: on_success
   retry: *buf_retry
   stage: protobuf
+  needs: []
   <<: *use_dind
   before_script:
     - !reference [.wait-for-dind, before_script]
@@ -465,11 +570,13 @@ build-thornode:
       fi
 
 chain-evm:
+  tags: !reference [.small-runner, tags]
   rules:
     - changes:
         paths:
           - chain/evm/**/*
   stage: test
+  needs: []
   image: node:18
   script:
     - cd chain/evm/
@@ -477,6 +584,7 @@ chain-evm:
     - yarn hardhat test
 
 go-tss:
+  tags: !reference [.small-runner, tags]
   rules:
     # Keeps honest fork MRs from running with tss-lib-private credentials. It is
     # not a security boundary: a fork MR pipeline a maintainer runs in this
@@ -492,6 +600,7 @@ go-tss:
           - go.mod
           - go.sum
   stage: test
+  needs: []
   before_script:
     - !reference [.go-private-auth, before_script]
   script:
@@ -619,12 +728,13 @@ test-simulation:
   variables:
     DOCKER_BUILDKIT: "1"
     PARALLELISM: "4"
-    GO_PRIVATE_AUTH_REQUIRED: "1"
+    PKGS: python3
   rules:
     - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
       when: never
     - *rules
   timeout: 2h
+  needs: !reference [.long-test-gate, needs]
   retry:
     max: 2
     when:
@@ -639,7 +749,15 @@ test-simulation:
       - data_integrity_failure
       - script_failure
   stage: long-test
-  <<: *use_dind
+  # The Go binaries are built here, not in the dind daemon (see
+  # test-simulation-cluster-native in the Makefile), with the runner's warm Go
+  # caches. bookworm is the build stage of build/docker/Dockerfile, so the
+  # binaries link against the glibc of the bookworm runtime they run on; the
+  # default golang:1.26.4 is trixie. The module cache is warm, so like
+  # unit-tests this only warns when no credential can read tss-lib-private.
+  image: golang:1.26.4-bookworm
+  services:
+    - docker:28.5.2-dind
   artifacts:
     when: on_failure
     name: $CI_JOB_NAME-$CI_COMMIT_REF_NAME
@@ -647,16 +765,22 @@ test-simulation:
       - ./logs/
   environment:
     name: integration
-  # docker compose is the plugin shipped in the docker image, not a download.
   before_script:
+    - !reference [.docker-cli-apt, before_script]
     - !reference [.wait-for-dind, before_script]
-    - apk -U add git make protoc bash go jq python3
     - !reference [.go-private-auth, before_script]
     - !reference [.dind-registries, before_script]
   script:
     # Do not allow an inherited optional-XMR setting to bypass live coverage.
-    - make test-simulation-cluster TEST_SIMULATION_REQUIRE_XMR=1
+    - make test-simulation-cluster-native TEST_SIMULATION_REQUIRE_XMR=1
+  # Diagnostics for the on_failure artifacts. On a passing run nothing keeps
+  # them, and the event replay and log dump took up to 3.6 min.
   after_script:
+    - |
+      if [ "$CI_JOB_STATUS" = "success" ]; then
+        echo "test-simulation passed; skipping failure diagnostics"
+        exit 0
+      fi
     - make test-simulation-events || true
     - mkdir -p logs/xmr-debug
     - docker ps -a >./logs/ps.log 2>&1
@@ -680,6 +804,7 @@ test-simulation:
         > logs/xmr-debug/sim-balance.txt 2>&1 || true
 
 unit-tests-race-bifrost:
+  tags: !reference [.small-runner, tags]
   rules:
     - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
       when: never
@@ -687,8 +812,13 @@ unit-tests-race-bifrost:
   # long-test, not test: the race detector makes this a ~35m job, and running it
   # alongside unit-tests and lint on the shared runner starved both of CPU --
   # unit-tests failed on localhost "context deadline exceeded" and lint hit its
-  # 1h timeout at 3x its usual runtime.
+  # 1h timeout at 3x its usual runtime. It still waits for unit-tests, which now
+  # starts with the pipeline instead of after the protobuf stage.
   stage: long-test
+  needs:
+    - job: unit-tests
+      optional: true
+      artifacts: false
   timeout: 1h
   before_script:
     - !reference [.go-private-auth, before_script]
@@ -696,6 +826,7 @@ unit-tests-race-bifrost:
     - make test-race-bifrost
 
 test-regression:
+  tags: !reference [.small-runner, tags]
   rules:
     - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
       when: never
@@ -714,22 +845,30 @@ test-regression:
       - data_integrity_failure
       - script_failure
   stage: long-test
-  <<: *use_dind
+  needs: !reference [.long-test-gate, needs]
+  # Runs in the job container instead of building ci/Dockerfile.regtest in an
+  # empty dind daemon, so the runner's warm /go-build-cache and /go-mod-cache
+  # replace a cold `go mod download` and a cold compile of three binaries.
+  # Each suite file gets its own home and ports (offset by file index), so
+  # PARALLELISM cannot collide. The module cache is warm, so like unit-tests
+  # this only warns when no credential can read tss-lib-private.
+  # `make test-regression` still runs the same targets in docker for local use.
   environment:
     name: integration
   variables:
-    DOCKER_BUILDKIT: "1"
     TIME_FACTOR: "2"
-    PARALLELISM: "6"
+    PARALLELISM: "10"
     FAIL_FAST: "true"
-    GO_PRIVATE_AUTH_REQUIRED: "1"
+    PKGS: jq
+    REGTEST_BIN_DIR: /tmp/regtest-bin
+    REGTEST_HOME_BASE: /tmp/regtest-home
+    REGTEST_MNT_DIR: $CI_PROJECT_DIR/test/regression/mnt
   before_script:
-    - !reference [.wait-for-dind, before_script]
-    - apk -U add make git bash
+    - !reference [.pkg-install, before_script]
     - !reference [.go-private-auth, before_script]
-    - !reference [.dind-registries, before_script]
   script:
-    - make test-regression
+    - make _build-test-regression
+    - make _test-regression UID=0 GID=0
     - |
       CHANGES=$(git status --porcelain test/regression/mnt/exports/ test/regression/mnt/blocks/)
       if [ -n "$CHANGES" ]; then
@@ -748,11 +887,15 @@ include:
 # workflow rule set.
 
 secret_detection:
+  tags: !reference [.small-runner, tags]
   stage: test
+  needs: []
   rules: *rules
 
 semgrep:
+  tags: !reference [.small-runner, tags]
   stage: test
+  needs: []
   rules: *rules
   image: semgrep/semgrep:1.140.0
   # --error makes findings fail the job; the previous `|| true` meant this check
@@ -767,7 +910,9 @@ semgrep:
       sast: gl-sast-report.json
 
 govulncheck:
+  tags: !reference [.small-runner, tags]
   stage: test
+  needs: []
   rules: *rules
   # Informational until the baseline is cleared: on 2026-09-14 it reported 32
   # reachable vulnerabilities across 18 modules. Remove allow_failure once the
