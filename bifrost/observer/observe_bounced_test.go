@@ -271,3 +271,52 @@ func TestDeckCorrectionReplacesGasAndBounceTogether(t *testing.T) {
 	require.Len(t, deck.TxArray, 1)
 	require.True(t, deck.TxArray[0].Gas.Equals(newerGas))
 }
+
+// TestDeckBounceCorrectionAcrossRescanBuckets: a reorg rescan merges every
+// re-read height into one TxIn keyed by its first item, so the corrected copy
+// of an outbound at height 101 can arrive in a batch keyed at height 100. It
+// must still replace the stale verdict in the 101 bucket rather than land beside
+// it, while a new item in the same batch goes to the batch's own bucket.
+func TestDeckBounceCorrectionAcrossRescanBuckets(t *testing.T) {
+	dir := t.TempDir()
+	obs := newBounceDeckObserver(t, dir)
+	defer func() { require.NoError(t, obs.storage.Close()) }()
+
+	vault := stypes.GetRandomPubKey()
+	vaultAddr, err := vault.GetAddress(common.ETHChain)
+	require.NoError(t, err)
+
+	stale := bounceDeckTxIn(stypes.GetRandomTxHash().String(), vault, vaultAddr, false)
+	stale.TxArray[0].BlockHeight = 101
+	staleKey := TxInKey(&stale)
+	require.NoError(t, obs.processObservedTx(stale))
+	obs.onDeck[staleKey].TxArray[0].CommittedUnFinalised = true
+
+	rescan := bounceDeckTxIn(stypes.GetRandomTxHash().String(), vault, vaultAddr, false)
+	corrected := *stale.TxArray[0]
+	corrected.Bounced = true
+	corrected.CommittedUnFinalised = false
+	rescan.TxArray = append(rescan.TxArray, &corrected)
+	rescanKey := TxInKey(&rescan)
+	require.NotEqual(t, staleKey, rescanKey)
+	require.NoError(t, obs.processObservedTx(rescan))
+
+	require.Len(t, obs.onDeck, 2)
+	staleDeck := obs.onDeck[staleKey]
+	require.Len(t, staleDeck.TxArray, 1, "correction must replace, not append")
+	require.True(t, staleDeck.TxArray[0].Bounced)
+	require.False(t, staleDeck.TxArray[0].CommittedUnFinalised)
+	rescanDeck := obs.onDeck[rescanKey]
+	require.Len(t, rescanDeck.TxArray, 1, "only the new item belongs to the rescan bucket")
+	require.Equal(t, rescan.TxArray[0].Tx, rescanDeck.TxArray[0].Tx)
+
+	// The signer's instant observation lives in a future-observation bucket and
+	// is never treated as a correction of the scanner's entry, or vice versa.
+	instant := bounceDeckTxIn(stale.TxArray[0].Tx, vault, vaultAddr, false)
+	*instant.TxArray[0] = *stale.TxArray[0]
+	instant.TxArray[0].Bounced = false
+	instant.AllowFutureObservation = true
+	require.NoError(t, obs.processObservedTx(instant))
+	require.Len(t, obs.onDeck, 3)
+	require.True(t, obs.onDeck[staleKey].TxArray[0].Bounced)
+}
