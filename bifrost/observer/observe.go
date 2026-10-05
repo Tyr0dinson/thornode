@@ -1021,6 +1021,23 @@ func (o *Observer) processObservedTx(txIn types.TxIn) error {
 			persistFailure = err
 		}
 	}
+	if len(newBucketItems) > 0 {
+		// The deck and storage both key a bucket by its first item, so when this
+		// TxIn's first item was routed to an older bucket, the items left over
+		// need the key their own first item gives. Keep the batch's confirmation
+		// count: it covers their value, so finalising on fewer would be unsafe.
+		txIn.TxArray = newBucketItems
+		k = TxInKey(&txIn)
+		if in, ok := o.onDeck[k]; ok {
+			rejected, stored, err := o.mergeIntoDeckLocked(in, newBucketItems, txIn.Persisted != nil)
+			rejectedCallbacks = append(rejectedCallbacks, rejected...)
+			storedCallbacks = append(storedCallbacks, stored...)
+			if err != nil && persistFailure == nil {
+				persistFailure = err
+			}
+			newBucketItems = nil
+		}
+	}
 	if len(newBucketItems) == 0 {
 		o.lock.Unlock()
 		invokeObservedTxCallbacks(errataRejected)
@@ -1028,7 +1045,6 @@ func (o *Observer) processObservedTx(txIn types.TxIn) error {
 		invokeObservedTxCallbacks(storedCallbacks)
 		return persistFailure
 	}
-	txIn.TxArray = newBucketItems
 
 	setDeckStart := time.Now()
 	persistErr := o.storage.AddOrUpdateTx(&txIn)

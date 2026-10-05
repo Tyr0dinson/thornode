@@ -320,3 +320,73 @@ func TestDeckBounceCorrectionAcrossRescanBuckets(t *testing.T) {
 	require.Len(t, obs.onDeck, 3)
 	require.True(t, obs.onDeck[staleKey].TxArray[0].Bounced)
 }
+
+// TestDeckRescanRemainderKeyedByItsOwnFirstItem: when a rescan batch's first
+// item is routed to the bucket that already holds it, the rest of the batch
+// must be keyed by its own first item - the key storage derives on persist - so
+// the in-memory and stored buckets agree, and a remainder whose key is already
+// on deck merges into that bucket instead of overwriting its stored row.
+func TestDeckRescanRemainderKeyedByItsOwnFirstItem(t *testing.T) {
+	dir := t.TempDir()
+	obs := newBounceDeckObserver(t, dir)
+
+	vault := stypes.GetRandomPubKey()
+	vaultAddr, err := vault.GetAddress(common.ETHChain)
+	require.NoError(t, err)
+
+	// A@100 was first observed alone, with 2 confirmations.
+	first := bounceDeckTxIn(stypes.GetRandomTxHash().String(), vault, vaultAddr, false)
+	first.ConfirmationRequired = 2
+	firstKey := TxInKey(&first)
+	require.NoError(t, obs.processObservedTx(first))
+
+	// C@110 already sits in the bucket the remainder below will key to.
+	existing := bounceDeckTxIn(stypes.GetRandomTxHash().String(), vault, vaultAddr, false)
+	existing.TxArray[0].BlockHeight = 110
+	existing.ConfirmationRequired = 5
+	existingKey := TxInKey(&existing)
+	require.NoError(t, obs.processObservedTx(existing))
+
+	// The rescan re-reads A and reads B@110 and D@110; the batch's total value
+	// needs 5 confirmations, so its own key (100+5) matches neither bucket.
+	rescan := bounceDeckTxIn(stypes.GetRandomTxHash().String(), vault, vaultAddr, false)
+	a := *first.TxArray[0]
+	b := *rescan.TxArray[0]
+	b.BlockHeight = 110
+	d := b
+	d.Tx = stypes.GetRandomTxHash().String()
+	rescan.TxArray = []*types.TxInItem{&a, &b, &d}
+	rescan.ConfirmationRequired = 5
+	require.NoError(t, obs.processObservedTx(rescan))
+
+	require.Len(t, obs.onDeck, 2, "no bucket under the batch's stale key")
+	require.Len(t, obs.onDeck[firstKey].TxArray, 1)
+	require.Len(t, obs.onDeck[existingKey].TxArray, 3)
+
+	// Restart: every bucket comes back under the key it had in memory.
+	require.NoError(t, obs.storage.Close())
+	restarted := newBounceDeckObserver(t, dir)
+	require.NoError(t, restarted.restoreDeck())
+	require.Len(t, restarted.onDeck, 2)
+	require.Len(t, restarted.onDeck[firstKey].TxArray, 1)
+	require.Len(t, restarted.onDeck[existingKey].TxArray, 3)
+
+	// Without an existing bucket, the remainder gets a new one keyed by its own
+	// first item, and storage agrees after a restart.
+	lone := bounceDeckTxIn(stypes.GetRandomTxHash().String(), vault, vaultAddr, false)
+	e := *lone.TxArray[0]
+	e.BlockHeight = 120
+	a2 := *first.TxArray[0]
+	lone.TxArray = []*types.TxInItem{&a2, &e}
+	lone.ConfirmationRequired = 5
+	require.NoError(t, restarted.processObservedTx(lone))
+	loneKey := txInKey{chain: common.ETHChain, height: 125}
+	require.Len(t, restarted.onDeck, 3)
+	require.Len(t, restarted.onDeck[loneKey].TxArray, 1)
+	require.NoError(t, restarted.storage.Close())
+	again := newBounceDeckObserver(t, dir)
+	defer func() { require.NoError(t, again.storage.Close()) }()
+	require.NoError(t, again.restoreDeck())
+	require.Len(t, again.onDeck, 3)
+	require.Len(t, again.onDeck[loneKey].TxArray, 1)
+}
