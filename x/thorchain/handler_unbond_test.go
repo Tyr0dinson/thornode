@@ -515,3 +515,54 @@ func (HandlerUnBondSuite) TestRemoveZeroBalanceProviderFromReadyNode(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(bp.Has(zeroProvider.BondAddress), Equals, false)
 }
+
+func (HandlerUnBondSuite) TestZeroStoredOperatorBondWithAccruedFeeHitsRetiringVaultWall(c *C) {
+	// A standby node operator whose stored provider bond is zero still has
+	// accrued rewards and the operator fee credited by BondProviders.Adjust in
+	// refundBond, so the zero-balance carve-out must not skip the
+	// retiring-vault wall for them.
+	ctx, k := setupKeeperForTest(c)
+	standbyNodeAccount := GetRandomValidatorNode(NodeStandby)
+	standbyNodeAccount.Bond = cosmos.NewUint(1100 * common.One)
+	c.Assert(k.SetNodeAccount(ctx, standbyNodeAccount), IsNil)
+	FundModule(c, ctx, k, BondName, standbyNodeAccount.Bond.Uint64())
+
+	retiringVault := NewVault(12, RetiringVault, AsgardVault, GetRandomPubKey(), nil, []ChainContract{})
+	retiringVault.Membership = []string{standbyNodeAccount.PubKeySet.Secp256k1.String()}
+	c.Assert(k.SetVault(ctx, retiringVault), IsNil)
+
+	operator, err := standbyNodeAccount.BondAddress.AccAddress()
+	c.Assert(err, IsNil)
+	zeroProvider := NewBondProvider(GetRandomBech32Addr())
+	otherProvider := NewBondProvider(GetRandomBech32Addr())
+	otherProvider.Bond = cosmos.NewUint(1000 * common.One)
+	bp := NewBondProviders(standbyNodeAccount.NodeAddress)
+	bp.NodeOperatorFee = cosmos.NewUint(2000)
+	bp.Providers = []BondProvider{NewBondProvider(operator), otherProvider, zeroProvider}
+	c.Assert(k.SetBondProviders(ctx, bp), IsNil)
+
+	handler := NewUnBondHandler(NewDummyMgrWithKeeper(k))
+	txIn := GetRandomTx()
+	txIn.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.ZeroUint()))
+
+	// operator targeting their own zero stored bond is rejected
+	msg := NewMsgUnBond(txIn, standbyNodeAccount.NodeAddress, cosmos.ZeroUint(), standbyNodeAccount.BondAddress, operator, standbyNodeAccount.NodeAddress)
+	_, err = handler.Run(ctx, msg)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, ".*still part of the retiring vault.*")
+	c.Check(k.GetBalance(ctx, operator).AmountOf(common.RuneNative.Native()).IsZero(), Equals, true)
+	na, err := k.GetNodeAccount(ctx, standbyNodeAccount.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(na.Bond.Equal(standbyNodeAccount.Bond), Equals, true)
+
+	// a non-operator provider with zero bond can still be removed
+	msg = NewMsgUnBond(txIn, standbyNodeAccount.NodeAddress, cosmos.ZeroUint(), standbyNodeAccount.BondAddress, zeroProvider.BondAddress, standbyNodeAccount.NodeAddress)
+	_, err = handler.Run(ctx, msg)
+	c.Assert(err, IsNil)
+	bp, err = k.GetBondProviders(ctx, standbyNodeAccount.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(bp.Has(zeroProvider.BondAddress), Equals, false)
+	na, err = k.GetNodeAccount(ctx, standbyNodeAccount.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(na.Bond.Equal(standbyNodeAccount.Bond), Equals, true)
+}

@@ -97,18 +97,13 @@ func (h UnBondHandler) handle(ctx cosmos.Context, msg MsgUnBond) error {
 
 	// Detect the zero-balance bond provider removal path. validate() permits
 	// this even when the node is active or ready; handle() must likewise skip
-	// the bond-lockup and retiring-vault walls because no funds are moving.
-	isZeroBalanceProviderRemoval := false
-	if msg.BondAddress.Equals(na.BondAddress) && !msg.BondProviderAddress.Empty() {
-		var bp BondProviders
-		bp, err = h.mgr.Keeper().GetBondProviders(ctx, msg.NodeAddress)
-		if err != nil {
-			return ErrInternal(err, fmt.Sprintf("fail to get bond providers(%s)", msg.NodeAddress))
-		}
-		provider := bp.Get(msg.BondProviderAddress)
-		if !provider.IsEmpty() && provider.Bond.IsZero() {
-			isZeroBalanceProviderRemoval = true
-		}
+	// the bond-lockup and retiring-vault walls, but only when no funds will
+	// move. The provider's bond is checked after the same backfill and
+	// redistribution refundBond applies, since Adjust can credit accrued
+	// rewards and the operator fee to a provider whose stored bond is zero.
+	isZeroBalanceProviderRemoval, err := h.isZeroBalanceProviderRemoval(ctx, na, msg)
+	if err != nil {
+		return err
 	}
 
 	if !isZeroBalanceProviderRemoval {
@@ -182,4 +177,23 @@ func (h UnBondHandler) handle(ctx cosmos.Context, msg MsgUnBond) error {
 	}
 
 	return nil
+}
+
+// isZeroBalanceProviderRemoval reports whether msg is the node operator
+// removing a bond provider whose bond is zero after passiveBackfill and
+// Adjust, i.e. a request for which refundBond moves no funds.
+func (h UnBondHandler) isZeroBalanceProviderRemoval(ctx cosmos.Context, na NodeAccount, msg MsgUnBond) (bool, error) {
+	if !msg.BondAddress.Equals(na.BondAddress) || msg.BondProviderAddress.Empty() {
+		return false, nil
+	}
+	bp, err := h.mgr.Keeper().GetBondProviders(ctx, msg.NodeAddress)
+	if err != nil {
+		return false, ErrInternal(err, fmt.Sprintf("fail to get bond providers(%s)", msg.NodeAddress))
+	}
+	if err = passiveBackfill(ctx, h.mgr, na, &bp); err != nil {
+		return false, err
+	}
+	bp.Adjust(na.Bond)
+	provider := bp.Get(msg.BondProviderAddress)
+	return !provider.IsEmpty() && provider.Bond.IsZero(), nil
 }
