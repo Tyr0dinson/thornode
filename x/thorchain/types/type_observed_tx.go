@@ -114,6 +114,11 @@ func (m *ObservedTxVoter) AddOutTx(in common.Tx) bool {
 // signer can never re-file an entry it already signed, even after moving away
 // from it. Quorum attestations sign the payload only, so a re-file is
 // indistinguishable from a proposer replaying the original attestations.
+//
+// The record is written only once a signer has signed a second entry at a
+// finality level. A signer with a single signature there counts where it signed,
+// which is the same answer the record would give, so ordinary outbounds (one
+// variant per signer per level, on every chain) store no records at all.
 func (m *ObservedTxVoter) AddLatest(observedTx common.ObservedTx, signer cosmos.AccAddress) bool {
 	idx := -1
 	for i, transaction := range m.Txs {
@@ -166,6 +171,18 @@ func (m *ObservedTxVoter) setLatestVote(signer cosmos.AccAddress, final bool, id
 			continue
 		}
 		m.LatestVotes[i].TxIndex = int64(idx)
+		return
+	}
+	// No record yet: the signer counts where it signed, which is still exact
+	// unless it has also signed another entry at this level.
+	signedOther := false
+	for i, transaction := range m.Txs {
+		if i != idx && transaction.IsFinal() == final && transaction.HasSigned(signer) {
+			signedOther = true
+			break
+		}
+	}
+	if !signedOther {
 		return
 	}
 	m.LatestVotes = append(m.LatestVotes, ObservedTxVote{Signer: signer.String(), TxIndex: int64(idx)})

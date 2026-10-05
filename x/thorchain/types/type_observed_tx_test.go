@@ -1265,3 +1265,42 @@ func (s TypeObservedTxSuite) TestVoterBouncedSplitsConsensus(c *C) {
 	c.Assert(voter.HasConsensus(nas), Equals, true)
 	c.Assert(voter.GetTx(nas).Bounced, Equals, false)
 }
+
+// AddLatest records a signer's latest vote only once it has signed a second
+// entry at a finality level; until then it counts where it signed, so the
+// common one-variant outbound stores no records, and counting is unchanged.
+func (s TypeObservedTxSuite) TestAddLatestRecordsOnlyMovedVotes(c *C) {
+	nas := NodeAccounts{GetRandomValidatorNode(NodeStatus_Active), GetRandomValidatorNode(NodeStatus_Active), GetRandomValidatorNode(NodeStatus_Active)}
+	tx := common.NewObservedTx(GetRandomTx(), 12, GetRandomPubKey(), 12)
+	bounced := tx
+	bounced.Bounced = true
+	pending := common.NewObservedTx(tx.Tx, 12, tx.ObservedPubKey, 13)
+
+	voter := NewObservedTxVoter(tx.Tx.ID, nil)
+	for _, na := range nas {
+		c.Assert(voter.AddLatest(tx, na.NodeAddress), Equals, true)
+	}
+	// A different finality level is not a moved vote either.
+	c.Assert(voter.AddLatest(pending, nas[0].NodeAddress), Equals, true)
+	c.Check(voter.LatestVotes, HasLen, 0)
+	c.Check(voter.GetTx(nas).Bounced, Equals, false)
+	idx, ok := voter.LatestVote(nas[0].NodeAddress, true)
+	c.Check(ok, Equals, false)
+	c.Check(idx, Equals, 0)
+
+	// Two nodes move to the bounced variant: only they get records, and the
+	// verdict they left keeps one current vote of three.
+	c.Assert(voter.AddLatest(bounced, nas[0].NodeAddress), Equals, true)
+	c.Assert(voter.AddLatest(bounced, nas[1].NodeAddress), Equals, true)
+	c.Check(voter.LatestVotes, HasLen, 2)
+	c.Check(voter.GetTx(nas).Bounced, Equals, true)
+	idx, ok = voter.LatestVote(nas[1].NodeAddress, true)
+	c.Assert(ok, Equals, true)
+	c.Check(voter.Txs[idx].Bounced, Equals, true)
+	_, ok = voter.LatestVote(nas[2].NodeAddress, true)
+	c.Check(ok, Equals, false)
+
+	// Re-filing an entry already signed is a duplicate and records nothing.
+	c.Check(voter.AddLatest(tx, nas[0].NodeAddress), Equals, false)
+	c.Check(voter.LatestVotes, HasLen, 2)
+}

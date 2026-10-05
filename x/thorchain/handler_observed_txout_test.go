@@ -1398,6 +1398,8 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionRecordsLatestVote(
 		f.vote(c, i, true)
 	}
 	c.Check(bouncedSigners(f), Equals, 6)
+	// One entry per signer: each counts where it signed, so nothing is recorded.
+	c.Check(f.keeper.voter.LatestVotes, HasLen, 0)
 
 	for i := 0; i < 6; i++ {
 		f.vote(c, i, false)
