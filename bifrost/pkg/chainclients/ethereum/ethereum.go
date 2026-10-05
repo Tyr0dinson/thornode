@@ -47,6 +47,10 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
+// waitForApprovalMined is how SignTx waits for a token approval to be mined;
+// tests against a mock RPC replace it to skip the real multi-block wait.
+var waitForApprovalMined = time.Sleep
+
 const (
 	ethBlockRewardAndFee = 3 * 1e18
 )
@@ -861,7 +865,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		// If the approval is still not mined in time, the outbound will be rescheduled.
 		wait := time.Duration(c.cfg.ChainID.ApproximateBlockMilliseconds()*3) * time.Millisecond
 		c.logger.Info().Dur("wait", wait).Msg("waiting for approval transaction to be mined")
-		time.Sleep(wait)
+		waitForApprovalMined(wait)
 	}
 
 	// Convert TxOutItem gas rate units to Wei.
