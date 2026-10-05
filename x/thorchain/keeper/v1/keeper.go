@@ -173,15 +173,25 @@ func (k *KVStore) SetVersion(ver semver.Version) {
 
 // GetKey return a key that can be used to store into key value store
 func (k KVStore) GetKey(prefix types.DbPrefix, key string, other ...string) []byte {
-	newKey := fmt.Sprintf("%s/%s", prefix, strings.ToUpper(key))
+	// prefix + "/" + upper(key) + upper(other...), built in one buffer: this runs
+	// for every keeper read and write
+	upper := strings.ToUpper(key)
+	size := len(prefix) + 1 + len(upper)
+	for _, item := range other {
+		size += len(item)
+	}
+	newKey := make([]byte, 0, size)
+	newKey = append(newKey, prefix...)
+	newKey = append(newKey, '/')
+	newKey = append(newKey, upper...)
 
 	// TODO: should this handle the slashes automatically?
 	// ref: x/thorchain/keeper/v1/keeper_last_height.go#GetLastObserveHeight
 	for _, item := range other {
-		newKey += strings.ToUpper(item)
+		newKey = append(newKey, strings.ToUpper(item)...)
 	}
 
-	return []byte(newKey)
+	return newKey
 }
 
 // getIterator - get an iterator for given prefix
