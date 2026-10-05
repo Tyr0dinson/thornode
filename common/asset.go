@@ -3,7 +3,6 @@ package common
 import (
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/blang/semver"
@@ -76,9 +75,13 @@ func NewAsset(input string) (Asset, error) {
 	var asset Asset
 	var sym string
 	var parts []string
-	re := regexp.MustCompile("[~./-]")
 
-	match := re.FindString(input)
+	// first separator, as regexp "[~./-]" FindString did (without compiling a
+	// regexp on every call)
+	match := ""
+	if i := strings.IndexAny(input, "~./-"); i >= 0 {
+		match = input[i : i+1]
+	}
 
 	switch match {
 	case "~":
