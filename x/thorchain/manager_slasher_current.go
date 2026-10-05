@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -234,6 +235,15 @@ const xmrSigningPeriodMultiplier = types.ExtendedOutboundSigningPeriodMultiplier
 // staleOutboundObservationSigningPeriods bounds how long a non-finalised
 // observed outbound can pin reassignment or treasury recovery.
 const staleOutboundObservationSigningPeriods = 3
+
+// maxRecoveryTxIDNonce bounds the free-key search in generateRecoveryTxID so a
+// misbehaving swap queue lookup cannot spin EndBlock.
+const maxRecoveryTxIDNonce = 100
+
+// errRecoveryTxIDExhausted marks a recovery that found no free swap ID. The
+// ID includes the block height, so LackSigning reschedules the item to retry
+// at a later height instead of stranding it.
+var errRecoveryTxIDExhausted = errors.New("recovery swap id space exhausted")
 
 // evmAggregatorSigningPeriodMultiplier scales SigningTransactionPeriod for
 // EVM swap-out aggregator outbounds. The signer broadcasts a transferOutAndCall
@@ -569,7 +579,19 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 						// For user-facing outbounds (refund, outbound, ragnarok), send to treasury recovery
 						if memo.IsOutbound() {
 							treasuryErr := s.sendFailedOutboundToTreasury(ctx, mgr, toi, vault, memo)
-							if treasuryErr != nil {
+							switch {
+							case errors.Is(treasuryErr, errRecoveryTxIDExhausted):
+								// Every recovery ID for this height is taken; reschedule so
+								// recovery is retried at a later height with fresh IDs.
+								ctx.Logger().Info("recovery swap ids exhausted, rescheduling for retry", "hash", toi.InHash)
+								err = mgr.TxOutStore().UnSafeAddTxOutItem(ctx, mgr, toi, rescheduleHeight)
+								if err != nil {
+									ctx.Logger().Error("fail to add outbound to queue for recovery retry", "error", err)
+									resultErr = fmt.Errorf("failed to add outbound to queue for recovery retry: %w", err)
+								} else {
+									txs.TxArray[i].OutHash = common.BlankTxID
+								}
+							case treasuryErr != nil:
 								ctx.Logger().Error("failed to send outbound to treasury recovery", "error", treasuryErr, "hash", toi.InHash)
 								// max attempts reached AND recovery could not be
 								// queued: the funds are stranded with no further
@@ -582,7 +604,7 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 										telemetry.NewLabel("asset", toi.Coin.Asset.String()),
 									},
 								)
-							} else {
+							default:
 								txs.TxArray[i].OutHash = common.BlankTxID
 							}
 						} else {
@@ -847,15 +869,28 @@ func (s *SlasherImpl) getOriginalSwapDetails(ctx cosmos.Context, mgr Manager, in
 }
 
 // generateRecoveryTxID creates a unique transaction ID for a recovery swap by hashing
-// the original transaction ID with the recovery type suffix and block height. This prevents
-// collisions with the original swap in the swap queue, especially important for streaming swaps
-// that may still be in progress when the recovery is triggered.
-func (s *SlasherImpl) generateRecoveryTxID(ctx cosmos.Context, originalTxID common.TxID, recoveryType string) common.TxID {
-	// Create a unique hash by combining original txID + recovery type + block height
-	// This ensures no collision with the original swap queue entry
-	hashInput := fmt.Sprintf("%s:%s:%d", originalTxID.String(), recoveryType, ctx.BlockHeight())
-	hash := crypto.Sha256([]byte(hashInput))
-	return common.TxID(fmt.Sprintf("%X", hash))
+// the original transaction ID with the recovery type suffix, block height and the
+// failed TxOutItem's identity. The block height and recovery type prevent collisions
+// with the original swap in the swap queue, especially important for streaming swaps
+// that may still be in progress when the recovery is triggered. The TxOutItem hash
+// distinguishes sibling items that share one inbound hash (split outbounds, multi-coin
+// refunds, Ragnarok payouts with a blank InHash) and are recovered in the same block.
+// Should the ID still be taken in a swap queue (e.g. byte-identical
+// TxOutItems), a nonce is mixed in until a free key is found, so a queued
+// recovery swap is never silently overwritten.
+func (s *SlasherImpl) generateRecoveryTxID(ctx cosmos.Context, mgr Manager, originalTxID common.TxID, recoveryType string, toi TxOutItem) (common.TxID, error) {
+	base := fmt.Sprintf("%s:%s:%d:%s", originalTxID.String(), recoveryType, ctx.BlockHeight(), toi.Hash())
+	for nonce := 0; nonce < maxRecoveryTxIDNonce; nonce++ {
+		hashInput := base
+		if nonce > 0 {
+			hashInput = fmt.Sprintf("%s:%d", base, nonce)
+		}
+		txID := common.TxID(fmt.Sprintf("%X", crypto.Sha256([]byte(hashInput))))
+		if !mgr.Keeper().HasSwapQueueItem(ctx, txID, 0) && !mgr.Keeper().HasAdvSwapQueueItem(ctx, txID, 0) {
+			return txID, nil
+		}
+	}
+	return "", fmt.Errorf("no free %s recovery swap id for %s: %w", recoveryType, originalTxID, errRecoveryTxIDExhausted)
 }
 
 // queueRecoverySwap is a helper function that queues a swap for failed outbound recovery.
@@ -872,14 +907,17 @@ func (s *SlasherImpl) queueRecoverySwap(
 	memo string,
 	recoveryType string,
 ) error {
-	// Generate a unique transaction ID for the recovery swap to prevent collisions
-	// with the original swap in the queue (especially important for streaming swaps)
-	recoveryTxID := s.generateRecoveryTxID(ctx, txID, recoveryType)
-
 	// Get vault's address for the chain of this coin for tracking purposes.
 	vaultAddr, err := vault.GetAddress(toi.Coin.Asset.GetChain())
 	if err != nil {
 		return fmt.Errorf("failed to get vault address for chain %s: %w", toi.Coin.Asset.GetChain(), err)
+	}
+
+	// Generate a unique transaction ID for the recovery swap to prevent collisions
+	// with the original swap and with sibling recoveries in the queue
+	recoveryTxID, err := s.generateRecoveryTxID(ctx, mgr, txID, recoveryType, toi)
+	if err != nil {
+		return err
 	}
 
 	// Create Tx for the swap.
@@ -932,6 +970,14 @@ func (s *SlasherImpl) queueRecoverySwap(
 		swapVersion,       // v1 for legacy queue, v2 for advanced queue
 		asgardAddr,        // Asgard module account as signer
 	)
+
+	// The advanced queue validates on insert, but the legacy queue would
+	// persist an invalid swap (e.g. a failed swap refund reverse-swapping into
+	// its own asset) that only fails on execution. Reject it here for both so
+	// the caller can fall back.
+	if err := swapMsg.ValidateBasic(); err != nil {
+		return fmt.Errorf("invalid %s recovery swap: %w", recoveryType, err)
+	}
 
 	// Add to swap queue
 	if enableAdvQueue > 0 {
@@ -1058,6 +1104,11 @@ func (s *SlasherImpl) sendFailedOutboundToTreasury(ctx cosmos.Context, mgr Manag
 		if reverseErr == nil {
 			// Reverse swap succeeded
 			return nil
+		}
+		// ID exhaustion is transient: hand it back so the caller reschedules
+		// and the sender is refunded at a later height, not the treasury.
+		if errors.Is(reverseErr, errRecoveryTxIDExhausted) {
+			return reverseErr
 		}
 		// Reverse swap failed, log error and fall back to treasury recovery
 		ctx.Logger().Error("reverse swap failed, falling back to treasury recovery",
