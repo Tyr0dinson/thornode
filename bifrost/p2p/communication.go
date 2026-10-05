@@ -546,7 +546,7 @@ func (c *Communication) writeToStream(pID peer.ID, msg []byte) error {
 	}
 	// Each stream carries one frame and no response. Retaining it until
 	// ceremony completion exhausts go-libp2p's resource-manager stream budget.
-	if err := closeStreamAndDrain(stream); err != nil {
+	if err := closeStream(stream); err != nil {
 		return fmt.Errorf("fail to close TSS stream: %w", err)
 	}
 	return nil
@@ -647,7 +647,7 @@ func (c *Communication) handleStreamTss(stream network.Stream) {
 		}
 		// Deliver first: a slow Close then delays only this handler goroutine,
 		// never the coordinator that is already processing the message.
-		if err := closeStreamAndDrain(stream); err != nil {
+		if err := closeStream(stream); err != nil {
 			c.logger.Debug().Err(err).Msg("fail to close delivered TSS stream")
 		}
 	}

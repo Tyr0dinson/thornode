@@ -90,46 +90,16 @@ func (sm *StreamMgr) AddStream(msgID string, stream network.Stream) {
 	}
 }
 
-// closeStreamAndDrain closes the local write side before returning, then
-// observes the peer EOF in the background. AwaitEOF resets the stream on
-// timeout or protocol error, so callers do not need to retain another owner.
-func closeStreamAndDrain(stream network.Stream) error {
+// closeStream releases a single-frame TSS stream once its frame is written or
+// delivered. In go-libp2p v0.48 Close flushes buffered writes, sends FIN and
+// closes the read side without waiting for the peer, so there is no peer EOF
+// left to observe; a failed Close resets the stream so it is never leaked.
+func closeStream(stream network.Stream) error {
 	if stream == nil {
 		return nil
 	}
 	if err := stream.Close(); err != nil {
 		_ = stream.Reset()
-		return err
-	}
-	// The drain can outlive its caller. Own the logger value so a later
-	// reconfiguration of the package-global logger cannot race with it.
-	drainLogger := log.Logger
-	go func(logger zerolog.Logger) {
-		if err := awaitEOF(stream); err != nil {
-			logger.Debug().Err(err).Msg("fail to drain peer EOF after stream close")
-		}
-	}(drainLogger)
-	return nil
-}
-
-// eofTimeout bounds how long awaitEOF waits to observe the peer's EOF.
-const eofTimeout = time.Minute
-
-// errExpectedEOF is returned when the peer sends data where an EOF was expected.
-var errExpectedEOF = errors.New("read data when expecting EOF")
-
-// awaitEOF waits for the peer to close its write side, resetting the stream on
-// timeout or unexpected data so it is never leaked. It replaces
-// go-libp2p-core/helpers.AwaitEOF, which go-libp2p v0.48 no longer ships.
-func awaitEOF(s network.Stream) error {
-	_ = s.SetDeadline(time.Now().Add(eofTimeout))
-	n, err := s.Read([]byte{0})
-	if n > 0 || err == nil {
-		_ = s.Reset()
-		return errExpectedEOF
-	}
-	if !errors.Is(err, io.EOF) {
-		_ = s.Reset()
 		return err
 	}
 	return nil

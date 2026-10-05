@@ -21,8 +21,6 @@ type retryWriteStream struct {
 	*MockNetworkStream
 	written      bytes.Buffer
 	writeErr     error
-	readErr      error
-	readStarted  chan struct{}
 	closeErr     error
 	closeStarted chan struct{}
 	closeCount   atomic.Int32
@@ -31,16 +29,6 @@ type retryWriteStream struct {
 
 func newRetryWriteStream() *retryWriteStream {
 	return &retryWriteStream{MockNetworkStream: NewMockNetworkStream()}
-}
-
-func (s *retryWriteStream) Read([]byte) (int, error) {
-	if s.readStarted != nil {
-		close(s.readStarted)
-	}
-	if s.readErr != nil {
-		return 0, s.readErr
-	}
-	return 0, io.EOF
 }
 
 func (s *retryWriteStream) Write(payload []byte) (int, error) {
@@ -128,34 +116,6 @@ func TestFrostWriteFirstAttemptSuccessWritesAndClosesOnce(t *testing.T) {
 		t.Fatalf("written bytes=%x, want %x", stream.written.Bytes(), framedPayload(payload))
 	}
 	if stream.closeCount.Load() != 1 || stream.resetCount.Load() != 0 {
-		t.Fatalf("terminal actions close=%d reset=%d", stream.closeCount.Load(), stream.resetCount.Load())
-	}
-}
-
-func TestFrostEOFDrainFailureDoesNotRetryDeliveredPayload(t *testing.T) {
-	stream := newRetryWriteStream()
-	stream.readErr = errors.New("peer EOF unavailable")
-	stream.readStarted = make(chan struct{})
-	var opens atomic.Int32
-	comm := &Communication{
-		stopChan: make(chan struct{}),
-		connectToOnePeerFn: func(peer.ID) (network.Stream, error) {
-			opens.Add(1)
-			return stream, nil
-		},
-	}
-	attempts, err := comm.writeToStreamWithRetryDelay(
-		peer.ID("remote-peer"), []byte("delivered-before-eof-error"), "eof-error", 3, time.Millisecond,
-	)
-	if err != nil || attempts != 1 || opens.Load() != 1 {
-		t.Fatalf("attempts=%d opens=%d err=%v, want one successful write", attempts, opens.Load(), err)
-	}
-	waitForTestSignal(t, stream.readStarted, "asynchronous peer EOF drain")
-	deadline := time.Now().Add(time.Second)
-	for stream.resetCount.Load() != 1 && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
-	if stream.closeCount.Load() != 1 || stream.resetCount.Load() != 1 {
 		t.Fatalf("terminal actions close=%d reset=%d", stream.closeCount.Load(), stream.resetCount.Load())
 	}
 }
