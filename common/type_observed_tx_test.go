@@ -303,3 +303,32 @@ func (s ObservedTxSuite) TestAttestationUniqueHash_DiffersOnDifferentRefs(c *C) 
 	tx2 := makeXMRObservedTx(c, []OutputRef{b})
 	c.Assert(tx1.AttestationUniqueHash() != tx2.AttestationUniqueHash(), Equals, true)
 }
+
+func (s ObservedTxSuite) TestSignerAddressCache(c *C) {
+	addr := cosmos.AccAddress([]byte("perf-signer-cache-01"))
+	signer := addr.String()
+
+	// cached and uncached decodes agree
+	first, err := signerAddress(signer)
+	c.Assert(err, IsNil)
+	second, err := signerAddress(signer)
+	c.Assert(err, IsNil)
+	c.Check(first.Equals(addr), Equals, true)
+	c.Check(second.Equals(addr), Equals, true)
+
+	// callers get their own copy
+	second[0] ^= 0xff
+	third, err := signerAddress(signer)
+	c.Assert(err, IsNil)
+	c.Check(third.Equals(addr), Equals, true)
+
+	// failures are not cached and still fail
+	_, err = signerAddress("bogus")
+	c.Check(err, NotNil)
+	_, err = signerAddress("bogus")
+	c.Check(err, NotNil)
+
+	tx := ObservedTx{Signers: []string{signer, "bogus", signer}}
+	c.Check(tx.GetSigners(), HasLen, 2)
+	c.Check(tx.HasSigned(addr), Equals, true)
+}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
@@ -233,11 +234,44 @@ func (m *ObservedTx) GetOutHashes() TxIDs {
 	return txIDs
 }
 
+// signerAddressCache memoizes bech32 signer string -> address decoding. Voters
+// re-decode the same ~100 node addresses on every attestation, and decoding is a
+// pure function of the string and the account prefix, so the cache cannot change
+// results. Bounded: once full, new strings are decoded without being stored.
+var (
+	signerAddressCache   = make(map[string]cosmos.AccAddress)
+	signerAddressCacheMu sync.RWMutex
+)
+
+const signerAddressCacheMax = 4096
+
+// signerAddress is cosmos.AccAddressFromBech32 with memoization of successes.
+// The returned address is a fresh copy the caller may modify.
+func signerAddress(signer string) (cosmos.AccAddress, error) {
+	key := cosmos.GetConfig().GetBech32AccountAddrPrefix() + "|" + signer
+	signerAddressCacheMu.RLock()
+	addr, ok := signerAddressCache[key]
+	signerAddressCacheMu.RUnlock()
+	if ok {
+		return append(cosmos.AccAddress(nil), addr...), nil
+	}
+	addr, err := cosmos.AccAddressFromBech32(signer)
+	if err != nil {
+		return nil, err
+	}
+	signerAddressCacheMu.Lock()
+	if len(signerAddressCache) < signerAddressCacheMax {
+		signerAddressCache[key] = append(cosmos.AccAddress(nil), addr...)
+	}
+	signerAddressCacheMu.Unlock()
+	return addr, nil
+}
+
 // GetSigners return all the node address that had sign the tx
 func (m *ObservedTx) GetSigners() []cosmos.AccAddress {
 	addrs := make([]cosmos.AccAddress, 0)
 	for _, a := range m.Signers {
-		addr, err := cosmos.AccAddressFromBech32(a)
+		addr, err := signerAddress(a)
 		if err != nil {
 			continue
 		}
