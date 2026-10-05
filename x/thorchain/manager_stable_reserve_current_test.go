@@ -1144,6 +1144,45 @@ func (s *StableReserveMgrSuite) TestDepegRescueFiresOnDeAnchoredInventory(c *C) 
 	c.Check(rescue.Tx.Coins[0].Equals(common.NewCoin(usdc.GetSecuredAsset(), amount)), Equals, true)
 }
 
+// A held asset whose own pool dislocates while the ticker oracle stays in band
+// (chain-local failure) is not auto-rescued: the pool price is a reject-only
+// gate, and as a trigger a single pool push could force a no-min-out
+// liquidation. That includes the hold band, where nothing would abort it.
+// De-anchoring the asset is the remedy and does rescue it.
+func (s *StableReserveMgrSuite) TestDepegRescueIgnoresPoolDislocationUntilDeAnchored(c *C) {
+	ctx, mgr, _, _ := setupStableReserveSuite(c)
+	stableReserveMgr := mgr.StableReserveManager()
+	avaxUSDC, err := common.NewAsset("AVAX.USDC-0XB97EF9EF8734C71904D8002F8B6BC66DD9C48A6E")
+	c.Assert(err, IsNil)
+	setupStableReserveAsset(c, ctx, mgr, avaxUSDC, "1.00")
+	amount := cosmos.NewUint(100 * common.One)
+	fundStableReserveSurplus(c, ctx, mgr, avaxUSDC, amount)
+	dislocateChainPool(c, ctx, mgr, avaxUSDC)
+	moduleAddr := mgr.Keeper().GetModuleAccAddress(StableReserveName)
+
+	ok, reason := stableReserveMgr.IsEligibleStable(ctx, avaxUSDC)
+	c.Check(ok, Equals, false)
+	c.Check(reason, Equals, "unhealthy pool price") // new exposure is blocked
+
+	// Oracle in band, and oracle in the hold band: no pool-triggered rescue.
+	for _, price := range []string{"1.00", "0.98"} {
+		c.Assert(mgr.Keeper().SetPrice(ctx, OraclePrice{Symbol: avaxUSDC.Ticker.String(), Price: price}), IsNil)
+		c.Assert(stableReserveMgr.EndBlock(ctx, mgr), IsNil)
+		_, err = firstQueuedSwapWithMemoPrefix(ctx, mgr, types.StableReserveRescueMemoPrefix)
+		c.Check(err, NotNil)
+		c.Check(mgr.SecuredAssetManager().BalanceOf(ctx, avaxUSDC, moduleAddr).Equal(amount), Equals, true)
+	}
+
+	// Governance de-anchors the compromised asset: the held position is rescued
+	// into a healthy anchor.
+	mgr.Keeper().SetMimir(ctx, "TorAnchor-"+strings.ReplaceAll(avaxUSDC.String(), ".", "-"), 0)
+	c.Assert(stableReserveMgr.EndBlock(ctx, mgr), IsNil)
+	rescue, err := firstQueuedSwapWithMemoPrefix(ctx, mgr, types.StableReserveRescueMemoPrefix)
+	c.Assert(err, IsNil)
+	c.Check(rescue.Tx.Coins[0].Equals(common.NewCoin(avaxUSDC.GetSecuredAsset(), amount)), Equals, true)
+	c.Check(rescue.TargetAsset.Equals(avaxUSDC), Equals, false)
+}
+
 func (s *StableReserveMgrSuite) TestDepositFloorUnwindsWithoutALivePrice(c *C) {
 	ctx, mgr, usdc, _ := setupStableReserveSuite(c)
 	stableReserveMgr := mgr.StableReserveManager()

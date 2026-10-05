@@ -671,6 +671,19 @@ func (s *StableReserveMgr) IsOraclePegged(ctx cosmos.Context, asset common.Asset
 // price. The module only receives anchors (deposits, fills and deploys all pass
 // IsEligibleStable), so this is inventory governance de-anchored, typically a
 // collapsing stable. Nothing else would ever sell it.
+//
+// That is also the remedy for a chain-local failure the ticker oracle cannot
+// see (bridge compromise, wrapper depeg): IsEligibleStable's pool-price gate
+// stops new exposure at once, and de-anchoring the asset (TorAnchor-<asset> = 0)
+// liquidates what is already held. The pool price is deliberately NOT a rescue
+// trigger. That gate is safe only because it can never do more than reject; as a
+// trigger, one swap that pushes an anchor's own pool outside the rescue band
+// would queue a market liquidation of the whole position with no min-out. Once
+// queued, the rescue is aborted only by the oracle returning to the fill band
+// (IsOraclePegged), never by the pool recovering. In the hold band the
+// liquidation would outlive the push and sell into the depressed pool. With the
+// oracle in band, every rescue would abort on its first sub-swap and re-queue
+// each block.
 func (s *StableReserveMgr) isDepegged(ctx cosmos.Context, asset common.Asset) bool {
 	if !asset.IsExternalL1Asset() {
 		return false
