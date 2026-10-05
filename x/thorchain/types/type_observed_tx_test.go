@@ -1047,3 +1047,36 @@ func (s TypeObservedTxSuite) TestRecordObserveSignersNoAliasing(c *C) {
 	voter.Txs[0].Signers = append(voter.Txs[0].Signers, accC.String())
 	c.Assert(voter.Tx.Signers[1], Equals, accB.String())
 }
+
+// getConsensusTx counts each active validator signer once, ignoring non-active
+// accounts, exactly like the linear NodeAccounts.IsNodeKeys scan it replaced.
+func (s *TypeObservedTxSuite) TestGetConsensusTxCountsActiveSignersOnce(c *C) {
+	active := NodeAccounts{}
+	for i := 0; i < 4; i++ {
+		active = append(active, GetRandomValidatorNode(NodeStatus_Active))
+	}
+	standby := GetRandomValidatorNode(NodeStatus_Standby)
+	accounts := append(NodeAccounts{standby}, active...)
+
+	tx := GetRandomObservedTx()
+	tx.BlockHeight, tx.FinaliseHeight = 10, 10
+
+	vote := func(voters ...NodeAccount) ObservedTxVoter {
+		voter := NewObservedTxVoter(tx.Tx.ID, nil)
+		for _, na := range voters {
+			voter.Add(tx, na.NodeAddress)
+		}
+		return voter
+	}
+
+	// 3 distinct active of 5 accounts (+ a repeat) is short of 2/3; counting
+	// the standby or the repeat would reach it
+	voter := vote(active[0], active[1], active[2], standby, active[1])
+	c.Check(voter.HasFinalised(accounts), Equals, false)
+	// 4 distinct active of 5 accounts reaches it
+	voter = vote(active[0], active[1], active[2], active[3], standby)
+	c.Check(voter.HasFinalised(accounts), Equals, true)
+	for _, signer := range voter.Txs[0].GetSigners() {
+		c.Check(accounts.IsNodeKeys(signer), Equals, !signer.Equals(standby.NodeAddress))
+	}
+}

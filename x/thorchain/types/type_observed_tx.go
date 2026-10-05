@@ -171,10 +171,22 @@ func sameConsensusObservation(lhs, rhs common.ObservedTx) bool {
 }
 
 func (m *ObservedTxVoter) getConsensusTx(accounts NodeAccounts, final bool) common.ObservedTx {
+	// accounts.IsNodeKeys(signer) for every signer is a linear scan; index the
+	// active node addresses once. Signers decode to non-empty addresses, for
+	// which AccAddress.Equals is byte equality.
+	var activeNodes map[string]struct{}
 	for _, txFinal := range m.Txs {
 		voters := make(map[string]bool)
 		if txFinal.IsFinal() != final {
 			continue
+		}
+		if activeNodes == nil {
+			activeNodes = make(map[string]struct{}, len(accounts))
+			for _, na := range accounts {
+				if na.Status == NodeStatus_Active {
+					activeNodes[string(na.NodeAddress)] = struct{}{}
+				}
+			}
 		}
 		for _, txIn := range m.Txs {
 			if txIn.IsFinal() != final {
@@ -184,9 +196,12 @@ func (m *ObservedTxVoter) getConsensusTx(accounts NodeAccounts, final bool) comm
 				continue
 			}
 			for _, signer := range txIn.GetSigners() {
-				_, exist := voters[signer.String()]
-				if !exist && accounts.IsNodeKeys(signer) {
-					voters[signer.String()] = true
+				key := string(signer)
+				if _, exist := voters[key]; exist {
+					continue
+				}
+				if _, active := activeNodes[key]; active {
+					voters[key] = true
 				}
 			}
 		}
