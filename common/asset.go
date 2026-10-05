@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/blang/semver"
 	"github.com/gogo/protobuf/jsonpb"
@@ -127,7 +128,9 @@ func NewAssetWithShortCodes(version semver.Version, input string) (Asset, error)
 	return NewAssetWithShortCodesV3_1_0(input)
 }
 
-func NewAssetWithShortCodesV3_1_0(input string) (Asset, error) {
+// assetShortCodes maps short codes to the asset strings they expand to. The
+// assets are fixed package values, so the map is built once.
+var assetShortCodes = sync.OnceValue(func() map[string]string {
 	shorts := make(map[string]string)
 
 	shorts[ATOMAsset.ShortCode()] = ATOMAsset.String()
@@ -151,7 +154,11 @@ func NewAssetWithShortCodesV3_1_0(input string) (Asset, error) {
 	shorts[TAOAsset.ShortCode()] = TAOAsset.String()
 	shorts[DOTAsset.ShortCode()] = DOTAsset.String()
 
-	long, ok := shorts[input]
+	return shorts
+})
+
+func NewAssetWithShortCodesV3_1_0(input string) (Asset, error) {
+	long, ok := assetShortCodes()[input]
 	if ok {
 		input = long
 	}
