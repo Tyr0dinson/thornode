@@ -270,11 +270,11 @@ func handleObservedTxInQuorum(
 	k := mgr.Keeper()
 
 	// An XMR errata can reach consensus while the original inbound has only
-	// partial observations. processErrataTxAttestation now marks such a pending
-	// inbound Reverted directly, but an errata committed before that change left
-	// it un-reverted, and later errata votes short-circuit on BlockHeight.
-	// Re-apply that monotonic outcome at the inbound's first quorum, before any
-	// vault, pool, memo, or swap side effect can run.
+	// partial observations. processErrataTxAttestation marks such a pending
+	// inbound Reverted, but versions that did not left it un-reverted, and later
+	// errata votes short-circuit on BlockHeight. Re-apply that monotonic outcome
+	// at the inbound's first quorum, before any vault, pool, memo, or swap side
+	// effect can run.
 	if err := applyCommittedXMRErrataToInboundConsensus(ctx, k, &voter); err != nil {
 		return err
 	}

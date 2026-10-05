@@ -90,16 +90,12 @@ func processErrataTxAttestation(
 		return processErrataOutboundTx(ctx, k, eventMgr, er)
 	}
 	if observedVoter.Tx.IsEmpty() {
-		// The inbound has observations but no consensus yet, so nothing has been
-		// credited and there is no accounting to unwind. The errata voter is now
-		// marked processed (BlockHeight above), so later errata votes no-op; mark
-		// the pending inbound Reverted so it cannot be acted on if it reaches
-		// consensus afterwards.
-		if !observedVoterHasChain(observedVoter, er.Chain) {
-			return nil
+		// No consensus yet, so nothing to unwind; mark Reverted so a later quorum
+		// is ignored, as later errata votes no-op on BlockHeight.
+		if observedVoterHasChain(observedVoter, er.Chain) {
+			ctx.Logger().Info("tx has not reached consensus yet, marking pending inbound reverted", "tx_id", er.Id)
+			revertObservedTxInVoter(ctx, k, &observedVoter, er.Chain)
 		}
-		ctx.Logger().Info("tx has not reached consensus yet, marking pending inbound reverted", "tx_id", er.Id)
-		revertObservedTxInVoter(ctx, k, &observedVoter, er.Chain)
 		return nil
 	}
 
