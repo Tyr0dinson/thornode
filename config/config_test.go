@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	. "gopkg.in/check.v1"
 	"gopkg.in/yaml.v2"
@@ -23,6 +24,11 @@ func TestPackage(t *testing.T) { TestingT(t) }
 type Test struct{}
 
 var _ = Suite(&Test{})
+
+func (Test) SetUpSuite(c *C) {
+	// failure-path fetch tests retry MaxRetries times; keep the retries, skip the waiting
+	RetryBackoff = time.Millisecond
+}
 
 func (Test) TestAllChainsReturned(c *C) {
 	b := Bifrost{}

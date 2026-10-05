@@ -32,10 +32,11 @@ import (
 // Config
 // -------------------------------------------------------------------------------------
 
-const (
-	MaxRetries   = 3
-	RetryBackoff = time.Second * 5
-)
+const MaxRetries = 3
+
+// RetryBackoff is the wait between seed/genesis fetch attempts. A variable so
+// tests of the failure paths need not sleep for real.
+var RetryBackoff = time.Second * 5
 
 var (
 	//go:embed default.yaml
