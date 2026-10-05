@@ -90,7 +90,16 @@ func processErrataTxAttestation(
 		return processErrataOutboundTx(ctx, k, eventMgr, er)
 	}
 	if observedVoter.Tx.IsEmpty() {
-		ctx.Logger().Info("tx has not reach consensus yet, so nothing need to be done", "tx_id", er.Id)
+		// The inbound has observations but no consensus yet, so nothing has been
+		// credited and there is no accounting to unwind. The errata voter is now
+		// marked processed (BlockHeight above), so later errata votes no-op; mark
+		// the pending inbound Reverted so it cannot be acted on if it reaches
+		// consensus afterwards.
+		if !observedVoterHasChain(observedVoter, er.Chain) {
+			return nil
+		}
+		ctx.Logger().Info("tx has not reached consensus yet, marking pending inbound reverted", "tx_id", er.Id)
+		revertObservedTxInVoter(ctx, k, &observedVoter, er.Chain)
 		return nil
 	}
 
@@ -101,16 +110,7 @@ func processErrataTxAttestation(
 	}
 
 	// set the observed Tx to reverted only after chain validation passes
-	observedVoter.SetReverted()
-	telemetry.IncrCounterWithLabels(
-		[]string{"thornode", "errata", "reverted"},
-		1,
-		[]metrics.Label{
-			telemetry.NewLabel("chain", telemChain(er.Chain)),
-			telemetry.NewLabel("direction", "in"),
-		},
-	)
-	k.SetObservedTxInVoter(ctx, observedVoter)
+	revertObservedTxInVoter(ctx, k, &observedVoter, er.Chain)
 	if observedVoter.UpdatedVault {
 		vaultPubKey := observedVoter.Tx.ObservedPubKey
 		if !vaultPubKey.IsEmpty() {
@@ -209,6 +209,30 @@ func processErrataTxAttestation(
 		return ErrInternal(err, "fail to emit errata event")
 	}
 	return nil
+}
+
+func revertObservedTxInVoter(ctx cosmos.Context, k keeper.Keeper, voter *ObservedTxVoter, chain common.Chain) {
+	voter.SetReverted()
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "errata", "reverted"},
+		1,
+		[]metrics.Label{
+			telemetry.NewLabel("chain", telemChain(chain)),
+			telemetry.NewLabel("direction", "in"),
+		},
+	)
+	k.SetObservedTxInVoter(ctx, *voter)
+}
+
+// observedVoterHasChain reports whether any of the voter's observations is for
+// chain, so an errata only reverts a pending inbound observed on its own chain.
+func observedVoterHasChain(voter ObservedTxVoter, chain common.Chain) bool {
+	for _, tx := range voter.Txs {
+		if tx.Tx.Chain.Equals(chain) {
+			return true
+		}
+	}
+	return false
 }
 
 // processErrataOutboundTx handles an errata for an outbound tx that was sent but later reorged out.

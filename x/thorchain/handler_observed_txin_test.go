@@ -71,26 +71,13 @@ func (s *HandlerObservedTxInSuite) TestCommittedXMRErrataIsAppliedWhenInboundLat
 	tx.Tx.Chain = common.XMRChain
 	tx.Tx.Coins = common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(common.One)))
 
-	// Partial inbound state exists when the errata reaches consensus, so the
-	// errata handler cannot mark the selected transaction yet.
+	// Partial inbound state with an errata committed by a version that did not
+	// mark the pending inbound Reverted: the errata voter is processed, but the
+	// inbound voter is not.
 	voter := NewObservedTxVoter(tx.Tx.ID, ObservedTxs{tx})
 	w.keeper.SetObservedTxInVoter(w.ctx, voter)
 	errataVoter := NewErrataTxVoter(tx.Tx.ID, common.XMRChain)
-	err := processErrataTxAttestation(
-		w.ctx,
-		w.mgr,
-		&errataVoter,
-		w.activeNodeAccount.NodeAddress,
-		NodeAccounts{w.activeNodeAccount},
-		&common.ErrataTx{Id: tx.Tx.ID, Chain: common.XMRChain},
-		true,
-	)
-	c.Assert(err, IsNil)
-	c.Check(errataVoter.BlockHeight, Equals, w.ctx.BlockHeight())
-	pending, err := w.keeper.GetObservedTxInVoter(w.ctx, tx.Tx.ID)
-	c.Assert(err, IsNil)
-	c.Check(pending.Tx.IsEmpty(), Equals, true)
-	c.Check(pending.Reverted, Equals, false)
+	errataVoter.BlockHeight = w.ctx.BlockHeight()
 	w.keeper.SetErrataTxVoter(w.ctx, errataVoter)
 
 	// Model processTxInAttestation selecting and persisting the transaction at
@@ -100,7 +87,7 @@ func (s *HandlerObservedTxInSuite) TestCommittedXMRErrataIsAppliedWhenInboundLat
 	voter.FinalisedHeight = w.ctx.BlockHeight()
 	w.keeper.SetObservedTxInVoter(w.ctx, voter)
 
-	err = handleObservedTxInQuorum(
+	err := handleObservedTxInQuorum(
 		w.ctx,
 		w.mgr,
 		w.activeNodeAccount.NodeAddress,
@@ -123,6 +110,72 @@ func (s *HandlerObservedTxInSuite) TestCommittedXMRErrataIsAppliedWhenInboundLat
 	err = applyCommittedXMRErrataToInboundConsensus(w.ctx, w.keeper, &stored)
 	c.Assert(err, IsNil)
 	c.Check(stored.Reverted, Equals, true)
+}
+
+// TestErrataBeforeInboundQuorumRevertsPendingInbound covers an errata reaching
+// consensus while the inbound has only partial observations. The errata voter
+// is marked processed, so the pending inbound must be marked Reverted at that
+// point; otherwise its later quorum would be credited and acted on.
+func (s *HandlerObservedTxInSuite) TestErrataBeforeInboundQuorumRevertsPendingInbound(c *C) {
+	w := getHandlerTestWrapper(c, 20, true, false)
+	vault := GetRandomVault()
+	c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil)
+	tx := NewObservedTx(GetRandomTx(), 10, vault.PubKey, 10)
+	tx.Tx.Chain = common.ETHChain
+	nas := NodeAccounts{w.activeNodeAccount}
+
+	w.keeper.SetObservedTxInVoter(w.ctx, NewObservedTxVoter(tx.Tx.ID, ObservedTxs{tx}))
+	errataVoter := NewErrataTxVoter(tx.Tx.ID, common.ETHChain)
+	err := processErrataTxAttestation(
+		w.ctx,
+		w.mgr,
+		&errataVoter,
+		w.activeNodeAccount.NodeAddress,
+		nas,
+		&common.ErrataTx{Id: tx.Tx.ID, Chain: common.ETHChain},
+		true,
+	)
+	c.Assert(err, IsNil)
+	c.Check(errataVoter.BlockHeight, Equals, w.ctx.BlockHeight())
+	pending, err := w.keeper.GetObservedTxInVoter(w.ctx, tx.Tx.ID)
+	c.Assert(err, IsNil)
+	c.Check(pending.Tx.IsEmpty(), Equals, true)
+	c.Check(pending.Reverted, Equals, true)
+
+	// The inbound now reaches quorum through the normal attestation path.
+	voter, isQuorum := processTxInAttestation(w.ctx, w.mgr, pending, nas, tx, w.activeNodeAccount.NodeAddress, true)
+	c.Assert(isQuorum, Equals, true)
+	c.Assert(voter.Tx.IsEmpty(), Equals, false)
+	err = handleObservedTxInQuorum(w.ctx, w.mgr, w.activeNodeAccount.NodeAddress, nas, nil, tx, voter, voter.Tx.GetSigners(), isQuorum)
+	c.Assert(err, IsNil)
+
+	stored, err := w.keeper.GetObservedTxInVoter(w.ctx, tx.Tx.ID)
+	c.Assert(err, IsNil)
+	c.Check(stored.Reverted, Equals, true)
+	c.Check(stored.UpdatedVault, Equals, false)
+	c.Assert(stored.Actions, HasLen, 0)
+	storedVault, err := w.keeper.GetVault(w.ctx, vault.PubKey)
+	c.Assert(err, IsNil)
+	c.Check(storedVault.Coins.EqualsEx(vault.Coins), Equals, true)
+
+	// An errata for a different chain must not revert this pending inbound.
+	tx = NewObservedTx(GetRandomTx(), 10, vault.PubKey, 10)
+	tx.Tx.Chain = common.ETHChain
+	w.keeper.SetObservedTxInVoter(w.ctx, NewObservedTxVoter(tx.Tx.ID, ObservedTxs{tx}))
+	errataVoter = NewErrataTxVoter(tx.Tx.ID, common.BTCChain)
+	err = processErrataTxAttestation(
+		w.ctx,
+		w.mgr,
+		&errataVoter,
+		w.activeNodeAccount.NodeAddress,
+		nas,
+		&common.ErrataTx{Id: tx.Tx.ID, Chain: common.BTCChain},
+		true,
+	)
+	c.Assert(err, IsNil)
+	pending, err = w.keeper.GetObservedTxInVoter(w.ctx, tx.Tx.ID)
+	c.Assert(err, IsNil)
+	c.Check(pending.Reverted, Equals, false)
 }
 
 func (s *HandlerObservedTxInSuite) TestUncommittedOrForeignErrataDoesNotRevertXMRInbound(c *C) {
