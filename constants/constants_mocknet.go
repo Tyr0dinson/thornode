@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -17,10 +18,20 @@ var ThorchainBlockTime = time.Second
 // CamelToSnakeUpper converts a camelCase string to SNAKE_CASE.
 // Examples: "PoolCycle" -> "POOL_CYCLE", "L1SlipMinBps" -> "L1_SLIP_MIN_BPS"
 func CamelToSnakeUpper(s string) string {
-	re := regexp.MustCompile(`([a-z0-9])([A-Z])|([A-Z]+)([A-Z][a-z])`)
-	snake := re.ReplaceAllString(s, `${1}${3}_${2}${4}`)
-	return strings.ToUpper(snake)
+	// GetMimir calls this for every lookup in mocknet builds (unit tests,
+	// regtest, simulation); the conversion is pure, so memoize it
+	if v, ok := camelToSnakeCache.Load(s); ok {
+		return v.(string)
+	}
+	snake := strings.ToUpper(camelToSnakeRe.ReplaceAllString(s, `${1}${3}_${2}${4}`))
+	camelToSnakeCache.Store(s, snake)
+	return snake
 }
+
+var (
+	camelToSnakeRe    = regexp.MustCompile(`([a-z0-9])([A-Z])|([A-Z]+)([A-Z][a-z])`)
+	camelToSnakeCache sync.Map
+)
 
 func init() {
 	int64Overrides = map[ConstantName]int64{
