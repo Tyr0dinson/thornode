@@ -1199,9 +1199,9 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 
 	// A deferred errata pool correction lives on its reverted inbound voter,
 	// which none of the sources above necessarily reach.
-	errataPools, err := k.GetErrataPoolCorrectionPools(ctx)
-	if err != nil {
-		panic(fmt.Errorf("fail to list errata pool corrections: %w", err))
+	errataPools, poolsErr := k.GetErrataPoolCorrectionPools(ctx)
+	if poolsErr != nil {
+		panic(fmt.Errorf("fail to list errata pool corrections: %w", poolsErr))
 	}
 	for _, asset := range errataPools {
 		txIDs, listErr := k.GetErrataPoolCorrections(ctx, asset)
