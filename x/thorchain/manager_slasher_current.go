@@ -1365,11 +1365,15 @@ func (s *SlasherImpl) updatePoolFromSlash(ctx cosmos.Context, pool types.Pool, s
 }
 
 // hasActiveOutboundObservation reports whether an observed link should still
-// block MaxOutboundAttempts recovery of toi. Finalised observations remain a
-// double-send guard. A link is written on the first attestation, before the
-// outbound voter reaches consensus, so a non-finalised voter only counts when
-// it carries the same weight needsNewVault demands of it: a simple majority of
-// the assigned vault, or matching signers still inside their bounded window.
+// block MaxOutboundAttempts recovery of toi.
+//
+// A link is written on the first attestation, before the outbound voter
+// reaches consensus, so a link proves nothing by itself. A finalised voter
+// remains a double-send guard only when its consensus tx - not whichever
+// variant wrote the link - names toi's inbound and pays toi. A non-finalised
+// voter only counts when it carries the same weight needsNewVault demands of
+// it: a simple majority of the assigned vault, or matching signers still
+// inside their bounded window.
 func (s *SlasherImpl) hasActiveOutboundObservation(ctx cosmos.Context, mgr Manager, vault Vault, signingTransPeriod, startHeight int64, toi TxOutItem) bool {
 	for _, hash := range mgr.Keeper().GetObservedLink(ctx, toi.InHash) {
 		voter, err := mgr.Keeper().GetObservedTxOutVoter(ctx, hash)
@@ -1378,7 +1382,10 @@ func (s *SlasherImpl) hasActiveOutboundObservation(ctx cosmos.Context, mgr Manag
 			return true
 		}
 		if voter.FinalisedHeight > 0 {
-			return true
+			if consensusOutboundPaysItem(ctx, mgr, voter.Tx, toi) {
+				return true
+			}
+			continue
 		}
 		if s.pendingVaultObservation(ctx, mgr, vault, signingTransPeriod, startHeight, toi, hash, voter,
 			"ignoring stale non-finalised outbound observation for treasury recovery") {
@@ -1459,6 +1466,30 @@ func outboundObservationFulfils(ctx cosmos.Context, mgr Manager, tx ObservedTx, 
 		tx.Tx.Coins[0].Asset.Equals(toi.Coin.Asset) &&
 		common.EquivalentAddresses(toi.Chain, tx.Tx.ToAddress, toi.ToAddress) &&
 		outboundObservationAmountMatches(ctx, mgr, tx.Tx, toi)
+}
+
+// consensusOutboundPaysItem reports whether an outbound voter's consensus tx
+// is a payment of toi from any vault: its memo names toi's inbound and its
+// payload fulfils toi. Only the consensus tx is trusted; the other variants in
+// a voter are single-node claims.
+func consensusOutboundPaysItem(ctx cosmos.Context, mgr Manager, tx ObservedTx, toi TxOutItem) bool {
+	return !tx.IsEmpty() &&
+		outboundMemoNamesInbound(ctx, mgr.Keeper(), tx.Tx.Memo, toi.InHash) &&
+		outboundObservationFulfils(ctx, mgr, tx, toi)
+}
+
+// outboundMemoNamesInbound reports whether an outbound memo names inHash as the
+// inbound it pays. A memoless outbound names no inbound, so it does not rule
+// one out either; its payload has to stand on its own.
+func outboundMemoNamesInbound(ctx cosmos.Context, k keeper.Keeper, memo string, inHash common.TxID) bool {
+	if memo == "" {
+		return true
+	}
+	parsed, err := ParseMemoWithTHORNames(ctx, k, memo)
+	if err != nil {
+		return false
+	}
+	return parsed.GetTxID().Equals(inHash)
 }
 
 // outboundObservationAmountMatches applies the amount tolerances

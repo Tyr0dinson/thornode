@@ -727,10 +727,20 @@ func processTxOutAttestation(
 	// Outbound memos can have | data passthrough,
 	// so linked TxID extracted with memo parsing and GetTxID
 	// rather than strings.Split .
-	if memo, err := ParseMemoWithTHORNames(ctx, k, tx.Tx.Memo); err != nil {
-		ctx.Logger().Error("fail to parse outbound memo", "error", err, "memo", tx.Tx.Memo)
-	} else if inhash := memo.GetTxID(); !inhash.IsEmpty() {
-		k.SetObservedLink(ctx, inhash, tx.Tx.ID)
+	//
+	// The link is recorded before consensus on purpose: needsNewVault relies on
+	// the assigned vault's own observations to avoid reassigning an outbound
+	// that is already in flight. Once the voter has consensus though, the
+	// observations that formed it have already linked its tx, and any variant
+	// added afterwards can only disagree with the consensus tx - recording its
+	// memo would let one node attach an already-final outbound to an unrelated
+	// inbound.
+	if voter.Height == 0 && voter.FinalisedHeight == 0 {
+		if memo, err := ParseMemoWithTHORNames(ctx, k, tx.Tx.Memo); err != nil {
+			ctx.Logger().Error("fail to parse outbound memo", "error", err, "memo", tx.Tx.Memo)
+		} else if inhash := memo.GetTxID(); !inhash.IsEmpty() {
+			k.SetObservedLink(ctx, inhash, tx.Tx.ID)
+		}
 	}
 
 	if voter.HasFinalised(nas) {

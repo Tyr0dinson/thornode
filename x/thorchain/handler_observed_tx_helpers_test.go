@@ -2400,3 +2400,58 @@ func (s *HandlerObservedTxHelpersSuite) TestXMRSpentOutputRefsStoreAccumulation(
 	c.Assert(err, IsNil)
 	c.Assert(len(refs), Equals, 3, Commentf("duplicate ref should be deduped"))
 }
+
+// A link written after the voter has consensus can only come from a variant
+// that disagrees with the consensus tx. Re-observing an already-final outbound
+// under another inbound's memo must not link that outbound to the victim
+// inbound, where it would pin MaxOutboundAttempts recovery forever (#3207).
+func (s *HandlerObservedTxHelpersSuite) TestTxOutAttestationLinksOnlyBeforeConsensus(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	nas := NodeAccounts{
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+	}
+
+	paidInHash := GetRandomTxHash()
+	victimInHash := GetRandomTxHash()
+	observation := func(memo string) ObservedTx {
+		obs := GetRandomObservedTx()
+		obs.Tx.Memo = memo
+		return obs
+	}
+
+	// Before consensus the first attestation records the link: needsNewVault
+	// relies on it to see the assigned vault's in-flight outbound.
+	first := observation("OUT:" + victimInHash.String())
+	voter := NewObservedTxVoter(first.Tx.ID, nil)
+	_, _ = processTxOutAttestation(ctx, mgr, voter, nas, first, nas[0].NodeAddress, true)
+	c.Check(mgr.Keeper().GetObservedLink(ctx, victimInHash), DeepEquals, []common.TxID{first.Tx.ID})
+
+	for _, tc := range []struct {
+		name      string
+		finalised bool
+	}{
+		{"finalised", true},
+		{"non-final consensus", false},
+	} {
+		victimInHash = GetRandomTxHash()
+		paid := observation("OUT:" + paidInHash.String())
+		paid.Signers = []string{nas[0].NodeAddress.String(), nas[1].NodeAddress.String(), nas[2].NodeAddress.String()}
+		voter = NewObservedTxVoter(paid.Tx.ID, ObservedTxs{paid})
+		voter.Tx = paid
+		voter.Height = ctx.BlockHeight()
+		voter.UnfinalizedHeight = ctx.BlockHeight()
+		if tc.finalised {
+			voter.FinalisedHeight = ctx.BlockHeight()
+		}
+		mgr.Keeper().SetObservedTxOutVoter(ctx, voter)
+
+		forged := paid
+		forged.Signers = nil
+		forged.Tx.Memo = "OUT:" + victimInHash.String()
+		voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, forged, nas[0].NodeAddress, true)
+		c.Assert(voter.Txs, HasLen, 2, Commentf("case %q", tc.name))
+		c.Check(mgr.Keeper().GetObservedLink(ctx, victimInHash), HasLen, 0, Commentf("case %q", tc.name))
+	}
+}

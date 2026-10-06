@@ -1514,6 +1514,81 @@ func (s *SlashingSuite) TestActiveOutboundObservationWeighsSubConsensusLinks(c *
 	c.Check(slasher.hasActiveOutboundObservation(ctx, mgr, f.vault, signingTransPeriod, startHeight, f.toi), Equals, false)
 }
 
+// A finalised voter holds treasury recovery only through its consensus tx.
+// A single node can add a variant to an already-final outbound naming another
+// inbound, and that variant must not stand in for the consensus tx (#3207).
+func (s *SlashingSuite) TestActiveOutboundObservationTrustsOnlyConsensusTx(c *C) {
+	const (
+		signingTransPeriod = int64(300)
+		startHeight        = int64(100)
+	)
+
+	for _, tc := range []struct {
+		name      string
+		consensus func(f recoveryLinkFixture) common.ObservedTx
+		active    bool
+	}{
+		{
+			name:      "consensus tx pays the item",
+			consensus: func(f recoveryLinkFixture) common.ObservedTx { return f.observation(f.memberSigners...) },
+			active:    true,
+		},
+		{
+			name: "memoless consensus tx pays the item",
+			consensus: func(f recoveryLinkFixture) common.ObservedTx {
+				obs := f.observation(f.memberSigners...)
+				obs.Tx.Memo = ""
+				return obs
+			},
+			active: true,
+		},
+		{
+			name: "consensus tx pays another inbound",
+			consensus: func(f recoveryLinkFixture) common.ObservedTx {
+				obs := f.observation(f.memberSigners...)
+				obs.Tx.Memo = "OUT:" + GetRandomTxHash().String()
+				return obs
+			},
+			active: false,
+		},
+		{
+			name: "consensus tx pays another destination",
+			consensus: func(f recoveryLinkFixture) common.ObservedTx {
+				obs := f.observation(f.memberSigners...)
+				obs.Tx.ToAddress = GetRandomBTCAddress()
+				return obs
+			},
+			active: false,
+		},
+		{
+			name:      "no consensus tx recorded",
+			consensus: func(f recoveryLinkFixture) common.ObservedTx { return common.ObservedTx{} },
+			active:    false,
+		},
+	} {
+		ctx, mgr := setupManagerForTest(c)
+		slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+		f := newRecoveryLinkFixture(c)
+
+		consensus := tc.consensus(f)
+		hash := GetRandomTxHash()
+		consensus.Tx.ID = hash
+		// The forged variant names this item and matches it in every field.
+		forged := f.observation(f.memberSigners...)
+		forged.Tx.ID = hash
+		voter := NewObservedTxVoter(hash, []common.ObservedTx{consensus, forged})
+		voter.Tx = consensus
+		voter.Height = startHeight
+		voter.FinalisedHeight = startHeight
+		f.link(ctx, mgr, voter)
+
+		// Long past any stale window: a finalised voter never goes stale.
+		ctx = ctx.WithBlockHeight(startHeight + 100*signingTransPeriod)
+		c.Check(slasher.hasActiveOutboundObservation(ctx, mgr, f.vault, signingTransPeriod, startHeight, f.toi),
+			Equals, tc.active, Commentf("case %q", tc.name))
+	}
+}
+
 func (s *SlashingSuite) TestTreasuryRecoveryForMaxAttempts(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
