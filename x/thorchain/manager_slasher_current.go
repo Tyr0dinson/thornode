@@ -560,6 +560,8 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 						)
 					}
 				}
+				// Set when treasury recovery waits on an outbound that may still land.
+				recoveryDeferred := false
 				if maxOutboundAttempts > 0 && !durableKeepVault {
 					age := ctx.BlockHeight() - voter.FinalisedHeight
 					attempts := age / itemSigningTransPeriod
@@ -568,7 +570,10 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 						// Skip treasury recovery if there's already an outbound associated or
 						// a finalised payment of this item.
 						hasOutboundAssociated := len(voter.OutTxs) > 0
-						progress := s.linkedOutboundProgress(ctx, mgr, vault, itemSigningTransPeriod, voter.FinalisedHeight, toi)
+						progress := outboundNotObserved
+						if !hasOutboundAssociated {
+							progress = s.linkedOutboundProgress(ctx, mgr, vault, itemSigningTransPeriod, voter.FinalisedHeight, toi)
+						}
 						if hasOutboundAssociated || progress == outboundSent {
 							ctx.Logger().Info("skipping treasury recovery, outbound sent",
 								"hash", toi.InHash,
@@ -580,10 +585,12 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 							// A non-finalised observation may still land, so recovering now
 							// could pay twice. Dropping the item is no better: LackSigning
 							// examines each TxOut height once, so an observation that never
-							// finalises would strand it. Reschedule it below instead and look
-							// again once the observation has finalised or gone stale.
+							// finalises would strand it. Reschedule it below on the same vault
+							// - reassigning would pay twice just the same - and look again once
+							// the observation has finalised or gone stale.
 							ctx.Logger().Info("deferring treasury recovery, outbound in progress", "hash", toi.InHash)
 							recoverOutbound = false
+							recoveryDeferred = true
 						}
 					}
 					if recoverOutbound {
@@ -635,7 +642,7 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 					}
 				}
 
-				if !frozen && !durableKeepVault && s.needsNewVault(ctx, mgr, vault, itemSigningTransPeriod, voter.FinalisedHeight, toi) {
+				if !frozen && !durableKeepVault && !recoveryDeferred && s.needsNewVault(ctx, mgr, vault, itemSigningTransPeriod, voter.FinalisedHeight, toi) {
 					var active types.Vaults
 					active, err = s.keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
 					if err != nil {
@@ -1529,13 +1536,14 @@ func outboundObservationFulfils(ctx cosmos.Context, mgr Manager, tx ObservedTx, 
 // a voter are single-node claims.
 func consensusOutboundPaysItem(ctx cosmos.Context, mgr Manager, tx ObservedTx, toi TxOutItem) bool {
 	return !tx.IsEmpty() &&
-		outboundMemoNamesInbound(ctx, mgr.Keeper(), tx.Tx.Memo, toi.InHash) &&
-		outboundObservationFulfils(ctx, mgr, tx, toi)
+		outboundObservationFulfils(ctx, mgr, tx, toi) &&
+		outboundMemoNamesInbound(ctx, mgr.Keeper(), tx.Tx.Memo, toi.InHash)
 }
 
 // outboundMemoNamesInbound reports whether an outbound memo names inHash as the
-// inbound it pays. A memoless outbound names no inbound, so it does not rule
-// one out either; its payload has to stand on its own.
+// inbound it pays - CommonOutboundTxHandler only marks an item done for the
+// inbound its memo names. A memoless outbound names no inbound, so it does not
+// rule one out either; its payload has to stand on its own.
 func outboundMemoNamesInbound(ctx cosmos.Context, k keeper.Keeper, memo string, inHash common.TxID) bool {
 	if memo == "" {
 		return true
@@ -1644,8 +1652,8 @@ func (s *SlasherImpl) pendingVaultObservation(ctx cosmos.Context, mgr Manager, v
 	signers := make(map[string]bool)
 	for _, tx1 := range voter.Txs {
 		if !txOutPubKeyMatchesObserved(toi.Chain, tx1.ObservedPubKey, toi) ||
-			!outboundMemoNamesInbound(ctx, mgr.Keeper(), tx1.Tx.Memo, toi.InHash) ||
-			!outboundObservationFulfils(ctx, mgr, tx1, toi) {
+			!outboundObservationFulfils(ctx, mgr, tx1, toi) ||
+			!outboundMemoNamesInbound(ctx, mgr.Keeper(), tx1.Tx.Memo, toi.InHash) {
 			continue
 		}
 

@@ -1733,18 +1733,23 @@ func (unreadableOutVoterKeeper) GetObservedTxOutVoter(_ cosmos.Context, _ common
 // An outbound past MaxOutboundAttempts whose assigned vault reports it in
 // flight must neither be recovered (it may still land) nor dropped (LackSigning
 // examines each TxOut height once, so an observation that never finalises would
-// strand it). It is rescheduled, and recovered once the observation is stale
-// (#3062).
+// strand it). It is rescheduled on the same vault, and recovered once the
+// observation is stale (#3062).
 func (s *SlashingSuite) TestLackSigningDefersRecoveryForPendingOutbound(c *C) {
 	for _, tc := range []struct {
 		name      string
 		height    int64
 		recovered bool
+		// previousVault sends the observed payment from the vault the item was
+		// assigned to before a reassignment, with non-final consensus.
+		previousVault bool
 	}{
 		// The observation is pinned to the inbound's height 1 and goes stale
 		// after three signing periods.
 		{name: "pending observation", height: 500, recovered: false},
 		{name: "stale observation", height: 1000, recovered: true},
+		// Reassigning would pay twice just like recovering would.
+		{name: "previous vault in flight", height: 1000, recovered: false, previousVault: true},
 	} {
 		ctx, mgr := setupManagerForTest(c)
 		ctx = ctx.WithBlockHeight(tc.height)
@@ -1767,6 +1772,12 @@ func (s *SlashingSuite) TestLackSigningDefersRecoveryForPendingOutbound(c *C) {
 		f.vault.Status = ActiveVault
 		f.vault.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One))}
 		c.Assert(mgr.Keeper().SetVault(ctx, f.vault), IsNil)
+		// Another funded vault a reassignment could pick.
+		other := GetRandomVault()
+		other.Type = AsgardVault
+		other.Status = ActiveVault
+		other.Coins = f.vault.Coins
+		c.Assert(mgr.Keeper().SetVault(ctx, other), IsNil)
 
 		txOut := NewTxOut(scheduledHeight)
 		txOut.TxArray = append(txOut.TxArray, f.toi)
@@ -1777,7 +1788,14 @@ func (s *SlashingSuite) TestLackSigningDefersRecoveryForPendingOutbound(c *C) {
 		mgr.Keeper().SetObservedTxInVoter(ctx, inVoter)
 
 		obs := f.observation(f.memberSigners[:2]...)
-		f.link(ctx, mgr, NewObservedTxVoter(obs.Tx.ID, []common.ObservedTx{obs}))
+		outVoter := NewObservedTxVoter(obs.Tx.ID, []common.ObservedTx{obs})
+		if tc.previousVault {
+			outVoter.Txs[0].ObservedPubKey = GetRandomPubKey()
+			outVoter.Tx = outVoter.Txs[0]
+			outVoter.Height = ctx.BlockHeight() - 1
+			outVoter.UnfinalizedHeight = outVoter.Height
+		}
+		f.link(ctx, mgr, outVoter)
 
 		slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
 		c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
@@ -1798,8 +1816,7 @@ func (s *SlashingSuite) TestLackSigningDefersRecoveryForPendingOutbound(c *C) {
 		c.Check(swaps, HasLen, 0, Commentf("case %q", tc.name))
 		c.Assert(rescheduled.TxArray, HasLen, 1, Commentf("case %q", tc.name))
 		c.Check(rescheduled.TxArray[0].InHash.Equals(f.toi.InHash), Equals, true)
-		// The vault's own majority says it is in flight: it stays on that vault.
-		c.Check(rescheduled.TxArray[0].VaultPubKey.Equals(f.vault.PubKey), Equals, true)
+		c.Check(rescheduled.TxArray[0].VaultPubKey.Equals(f.vault.PubKey), Equals, true, Commentf("case %q", tc.name))
 	}
 }
 
