@@ -1,7 +1,7 @@
 ########################################################################################
 # Thin mocknet images for CI's test-simulation (make test-simulation-cluster-native).
 #
-# The Go binaries are built natively in the CI job, on golang:1.26.4-bookworm with
+# The Go binaries are built natively in the CI job, on golang:1.26.6-bookworm with
 # the runner's warm Go caches, with the same flags as the in-image builds:
 #   thornode, bifrost, recover-keyshare-backup: build/docker/Dockerfile (make install)
 #   events: tools/events/Dockerfile
