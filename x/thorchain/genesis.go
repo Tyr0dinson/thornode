@@ -271,25 +271,24 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 		}
 	}
 
-	// Legacy swap queue items from an older genesis export: the legacy queue no
-	// longer exists, so route them at the advanced queue the same way the
-	// Migrate18to19 drain does.
-	for _, item := range data.SwapQueueItems {
-		item.Version = types.SwapVersion_v2
-		if item.State == nil {
-			item.State = &types.SwapState{}
-		}
-		if item.State.Quantity == 0 {
-			item.State.Quantity = 1
-			item.State.Interval = 0
-		}
-		if err := keeper.SetAdvSwapQueueItem(ctx, item); err != nil {
-			panic(err)
-		}
-	}
-
 	for _, item := range data.StreamingSwaps {
 		keeper.SetStreamingSwap(ctx, item)
+	}
+
+	// Legacy swap queue items from an older genesis export. The legacy queue no
+	// longer exists, so convert them exactly as the Migrate20to21 drain does. This
+	// must follow the streaming swap import: a legacy streaming swap's progress
+	// lives in its StreamingSwap record, which the conversion folds into State
+	// and then removes. The export dropped the sub-swap index (the legacy queue
+	// kept it only in the key), so items sharing a TxID take the next free index
+	// rather than overwriting each other at <txid>-0.
+	for _, item := range data.SwapQueueItems {
+		for keeper.HasAdvSwapQueueItem(ctx, item.Tx.ID, int(item.Index)) {
+			item.Index++
+		}
+		if _, err := queueLegacySwapItem(ctx, keeper, item); err != nil {
+			panic(err)
+		}
 	}
 
 	for _, nf := range data.NetworkFees {
@@ -712,7 +711,7 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		swapMsgs = append(swapMsgs, m)
 	}
 
-	// The legacy swap queue is drained by Migrate18to19 and has no producers, so this
+	// The legacy swap queue is drained by Migrate20to21 and has no producers, so this
 	// is always empty in practice. It is still exported so the genesis field keeps
 	// round-tripping, and so anything left behind on an unmigrated node is preserved
 	// rather than silently dropped. initGenesis routes these to the advanced queue.

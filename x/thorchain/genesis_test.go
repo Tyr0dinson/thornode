@@ -433,3 +433,84 @@ func (GenesisTestSuite) TestExportSwapperCloutBase58(c *C) {
 	c.Check(gs.SwapperClout[0].Address, Equals, transparent)
 	c.Check(gs.SwapperClout[0].Score.String(), Equals, "1000")
 }
+
+// An export from before the legacy swap queue was removed carries its items in
+// SwapQueueItems, with a streaming swap's progress in StreamingSwaps. Import must
+// convert them as the Migrate20to21 drain does.
+func (GenesisTestSuite) TestGenesisImportsLegacySwapQueueItems(c *C) {
+	SetupConfigForTest()
+	srcCtx, srcMgr := setupManagerForTest(c)
+	exported := ExportGenesis(srcCtx, srcMgr.Keeper())
+
+	newTx := func() common.Tx {
+		tx := GetRandomTx()
+		tx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One)))
+		return tx
+	}
+	legacySwap := func(tx common.Tx) MsgSwap {
+		msg := NewMsgSwap(tx, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketSwap, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr())
+		msg.State = nil
+		return *msg
+	}
+
+	// a streaming swap part way through, with its progress in the side record
+	streamTx := newTx()
+	streaming := legacySwap(streamTx)
+	streaming.StreamInterval = 10
+	streaming.Version = types.SwapVersion_v1
+	exported.SwapQueueItems = append(exported.SwapQueueItems, streaming)
+	swp := NewStreamingSwap(streamTx.ID, 5, 10, cosmos.ZeroUint(), cosmos.NewUint(100*common.One))
+	swp.Count = 2
+	swp.In = cosmos.NewUint(40 * common.One)
+	swp.Out = cosmos.NewUint(7 * common.One)
+	exported.StreamingSwaps = append(exported.StreamingSwaps, swp)
+
+	// an item written by an older binary without a State
+	nilStateTx := newTx()
+	exported.SwapQueueItems = append(exported.SwapQueueItems, legacySwap(nilStateTx))
+
+	// two sub-swaps sharing a TxID; the export dropped their key indexes
+	subTx := newTx()
+	for i := 0; i < 2; i++ {
+		exported.SwapQueueItems = append(exported.SwapQueueItems, legacySwap(subTx))
+	}
+	c.Assert(ValidateGenesis(exported), IsNil)
+
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	InitGenesis(ctx, k, exported)
+
+	// streaming progress is carried onto the message, not restarted
+	gotStream, err := k.GetAdvSwapQueueItem(ctx, streamTx.ID, 0)
+	c.Assert(err, IsNil)
+	c.Check(gotStream.Version, Equals, types.SwapVersion_v2)
+	c.Check(gotStream.State.Quantity, Equals, uint64(5))
+	c.Check(gotStream.State.Interval, Equals, uint64(10))
+	c.Check(gotStream.State.Count, Equals, uint64(2))
+	c.Check(gotStream.State.Deposit.Equal(cosmos.NewUint(100*common.One)), Equals, true)
+	c.Check(gotStream.State.In.Equal(cosmos.NewUint(40*common.One)), Equals, true)
+	c.Check(gotStream.State.Out.Equal(cosmos.NewUint(7*common.One)), Equals, true)
+	c.Check(k.StreamingSwapExists(ctx, streamTx.ID), Equals, false)
+
+	// a missing State gets the inbound amount as its deposit, not zero
+	gotNil, err := k.GetAdvSwapQueueItem(ctx, nilStateTx.ID, 0)
+	c.Assert(err, IsNil)
+	c.Assert(gotNil.State, NotNil)
+	c.Check(gotNil.State.Deposit.Equal(cosmos.NewUint(100*common.One)), Equals, true)
+	c.Check(gotNil.State.Quantity, Equals, uint64(1))
+	c.Check(gotNil.IsStreaming(), Equals, false)
+
+	// sub-swaps sharing a TxID both survive
+	for i := 0; i < 2; i++ {
+		sub, subErr := k.GetAdvSwapQueueItem(ctx, subTx.ID, i)
+		c.Assert(subErr, IsNil)
+		c.Check(int(sub.Index), Equals, i)
+	}
+
+	idx, err := k.GetAdvSwapQueueIndex(ctx, MsgSwap{SwapType: MarketSwap})
+	c.Assert(err, IsNil)
+	c.Check(len(idx), Equals, 4)
+	legacyIter := k.GetSwapQueueIterator(ctx)
+	c.Check(legacyIter.Valid(), Equals, false)
+	legacyIter.Close()
+}

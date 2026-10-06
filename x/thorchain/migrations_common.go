@@ -11,6 +11,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -536,6 +537,83 @@ func (m Migrator) Migrate20to21(ctx cosmos.Context) error {
 	return m.drainLegacySwapQueue(ctx)
 }
 
+// queueLegacySwapItem converts a legacy (v1) swap queue item to the advanced
+// queue's form and writes it there, keyed by msg.Index. A legacy streaming swap
+// keeps its progress in a separate StreamingSwap record; that progress is folded
+// into State and the record is removed. Used by the Migrate20to21 drain and by
+// InitGenesis for legacy items in an older export.
+func queueLegacySwapItem(ctx cosmos.Context, k keeper.Keeper, msg MsgSwap) (MsgSwap, error) {
+	// State is a pointer and IsStreaming()/NextSize() dereference it; an item
+	// written by an older binary can decode with a nil State. Normalise first.
+	if msg.State == nil {
+		msg.State = &types.SwapState{}
+	}
+	for _, f := range []*cosmos.Uint{&msg.State.Deposit, &msg.State.Withdrawn, &msg.State.In, &msg.State.Out} {
+		if f.IsNil() {
+			*f = cosmos.ZeroUint()
+		}
+	}
+	if msg.State.Deposit.IsZero() {
+		msg.State.Deposit = msg.Tx.Coins[0].Amount
+	}
+
+	// Fold the legacy StreamingSwap record into State: the legacy queue kept
+	// execution progress in a side record, the advanced queue keeps it on the
+	// message. MUST run before Version is flipped below - the predicate is
+	// false once the message is v2, which would make this branch dead. The
+	// predicate is inlined rather than calling IsLegacyStreaming() because
+	// this code reads legacy-encoded data and that helper is being retired.
+	if msg.StreamInterval > 0 && msg.Version == types.SwapVersion_v1 && k.StreamingSwapExists(ctx, msg.Tx.ID) {
+		swp, err := k.GetStreamingSwap(ctx, msg.Tx.ID)
+		if err != nil {
+			return msg, fmt.Errorf("get streaming swap %s: %w", msg.Tx.ID, err)
+		}
+		msg.State.Quantity = swp.Quantity
+		msg.State.Interval = swp.Interval
+		msg.State.Count = swp.Count
+		msg.State.LastHeight = swp.LastHeight
+		msg.State.Deposit = swp.Deposit
+		msg.State.In = swp.In
+		msg.State.Out = swp.Out
+		msg.State.FailedSwaps = swp.FailedSwaps
+		msg.State.FailedSwapReasons = swp.FailedSwapReasons
+		// The queue item is now the sole source of truth. An orphaned record
+		// breaks the streaming_swaps invariant ("swap not found for stream").
+		k.RemoveStreamingSwap(ctx, msg.Tx.ID)
+	}
+
+	// A legacy item that never streamed is a one-shot. Pin it: Quantity == 0
+	// makes NextSize() return zero, and any later pass through
+	// AddSwapQueueItem would expand it into a streaming swap.
+	if msg.State.Quantity == 0 {
+		msg.State.Quantity = 1
+		msg.State.Interval = 0
+	}
+
+	// Route it at the advanced queue from here on.
+	msg.Version = types.SwapVersion_v2
+
+	// Limit swaps age out on InitialBlockHeight; give migrated items a fresh
+	// clock, and the TTL entry the legacy queue never had.
+	if msg.InitialBlockHeight == 0 {
+		msg.InitialBlockHeight = ctx.BlockHeight()
+	}
+
+	if err := k.SetAdvSwapQueueItem(ctx, msg); err != nil {
+		// Only fails on coin/txid shape, which callers exclude.
+		return msg, fmt.Errorf("set adv item %s-%d: %w", msg.Tx.ID, msg.Index, err)
+	}
+	if msg.IsLimitSwap() {
+		maxAge := k.GetConfigInt64(ctx, constants.StreamingLimitSwapMaxAge)
+		if ttl := getLimitSwapTTL(msg, maxAge); ttl > 0 {
+			if err := k.AddToLimitSwapTTL(ctx, msg.InitialBlockHeight+ttl, msg.Tx.ID); err != nil {
+				ctx.Logger().Error("fail to add limit swap TTL for legacy swap queue item", "tx", msg.Tx.ID, "error", err)
+			}
+		}
+	}
+	return msg, nil
+}
+
 // drainLegacySwapQueue moves every remaining legacy ("OG") swap queue item
 // (prefix swapitem/) into the advanced swap queue (prefix aq/). The legacy
 // queue and its EndBlock are removed in this release, so anything left behind
@@ -619,73 +697,9 @@ func (m Migrator) drainLegacySwapQueue(ctx sdk.Context) error {
 			continue
 		}
 
-		// State is a pointer and IsStreaming()/NextSize() dereference it; an item
-		// written by an older binary can decode with a nil State. Normalise first.
-		if msg.State == nil {
-			msg.State = &types.SwapState{}
-		}
-		for _, f := range []*cosmos.Uint{&msg.State.Deposit, &msg.State.Withdrawn, &msg.State.In, &msg.State.Out} {
-			if f.IsNil() {
-				*f = cosmos.ZeroUint()
-			}
-		}
-		if msg.State.Deposit.IsZero() {
-			msg.State.Deposit = msg.Tx.Coins[0].Amount
-		}
-
-		// Fold the legacy StreamingSwap record into State: the legacy queue kept
-		// execution progress in a side record, the advanced queue keeps it on the
-		// message. MUST run before Version is flipped below - the predicate is
-		// false once the message is v2, which would make this branch dead. The
-		// predicate is inlined rather than calling IsLegacyStreaming() because
-		// this code reads legacy-encoded data and that helper is being retired.
-		if msg.StreamInterval > 0 && msg.Version == types.SwapVersion_v1 && k.StreamingSwapExists(ctx, msg.Tx.ID) {
-			swp, err := k.GetStreamingSwap(ctx, msg.Tx.ID)
-			if err != nil {
-				return fmt.Errorf("drain legacy swap queue: get streaming swap %s: %w", msg.Tx.ID, err)
-			}
-			msg.State.Quantity = swp.Quantity
-			msg.State.Interval = swp.Interval
-			msg.State.Count = swp.Count
-			msg.State.LastHeight = swp.LastHeight
-			msg.State.Deposit = swp.Deposit
-			msg.State.In = swp.In
-			msg.State.Out = swp.Out
-			msg.State.FailedSwaps = swp.FailedSwaps
-			msg.State.FailedSwapReasons = swp.FailedSwapReasons
-			// The queue item is now the sole source of truth. An orphaned record
-			// breaks the streaming_swaps invariant ("swap not found for stream").
-			k.RemoveStreamingSwap(ctx, msg.Tx.ID)
-		}
-
-		// A legacy item that never streamed is a one-shot. Pin it: Quantity == 0
-		// makes NextSize() return zero, and any later pass through
-		// AddSwapQueueItem would expand it into a streaming swap.
-		if msg.State.Quantity == 0 {
-			msg.State.Quantity = 1
-			msg.State.Interval = 0
-		}
-
-		// Route it at the advanced queue from here on.
-		msg.Version = types.SwapVersion_v2
-
-		// Limit swaps age out on InitialBlockHeight; give migrated items a fresh
-		// clock, and the TTL entry the legacy queue never had.
-		if msg.InitialBlockHeight == 0 {
-			msg.InitialBlockHeight = ctx.BlockHeight()
-		}
-
-		if err := k.SetAdvSwapQueueItem(ctx, msg); err != nil {
-			// Only fails on coin/txid shape, both already excluded above.
-			return fmt.Errorf("drain legacy swap queue: set adv item %s-%d: %w", msg.Tx.ID, idx, err)
-		}
-		if msg.IsLimitSwap() {
-			maxAge := k.GetConfigInt64(ctx, constants.StreamingLimitSwapMaxAge)
-			if ttl := getLimitSwapTTL(msg, maxAge); ttl > 0 {
-				if err := k.AddToLimitSwapTTL(ctx, msg.InitialBlockHeight+ttl, msg.Tx.ID); err != nil {
-					ctx.Logger().Error("drain legacy swap queue: fail to add limit swap TTL", "tx", msg.Tx.ID, "error", err)
-				}
-			}
+		msg, err := queueLegacySwapItem(ctx, k, msg)
+		if err != nil {
+			return fmt.Errorf("drain legacy swap queue: %w", err)
 		}
 		k.DeleteKey(ctx, item.key)
 		migrated++
