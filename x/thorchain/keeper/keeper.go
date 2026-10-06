@@ -434,11 +434,14 @@ type KeeperSwapQueue interface {
 type KeeperAdvSwapQueues interface {
 	AdvSwapQueueEnabled(ctx cosmos.Context) bool
 	SetAdvSwapQueueItem(ctx cosmos.Context, msg MsgSwap) error
+	SetAdvSwapQueueItemState(ctx cosmos.Context, msg MsgSwap) error
 	GetAdvSwapQueueItemIterator(ctx cosmos.Context) cosmos.Iterator
 	GetAdvSwapQueueItem(ctx cosmos.Context, txID common.TxID, index int) (MsgSwap, error)
 	HasAdvSwapQueueItem(ctx cosmos.Context, txID common.TxID, index int) bool
 	RemoveAdvSwapQueueItem(ctx cosmos.Context, txID common.TxID, index int) error
+	RemoveAdvSwapQueueItemMsg(ctx cosmos.Context, msg MsgSwap) error
 	GetAdvSwapQueueIndexIterator(_ cosmos.Context, _ types.SwapType, _, _ common.Asset) cosmos.Iterator
+	GetAdvSwapQueueLimitIndexIterator(ctx cosmos.Context) cosmos.Iterator
 	SetAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) error
 	GetAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) ([]types.AdvSwapQueueIndexItem, error)
 	HasAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) (bool, error)

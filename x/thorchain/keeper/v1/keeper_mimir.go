@@ -7,6 +7,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
 // GetMimirWithRef is a helper function to more readably insert references (such as Asset MimirString or Chain) into Mimir key templates.
@@ -19,6 +20,7 @@ func (k KVStore) GetMimirWithRef(ctx cosmos.Context, template string, ref ...any
 
 // SetMimir save a mimir value to key value store
 func (k KVStore) SetMimir(ctx cosmos.Context, key string, value int64) {
+	keeper.MimirCacheFromContext(ctx).Disable()
 	k.setInt64(ctx, k.GetKey(prefixMimir, key), value)
 }
 
@@ -89,6 +91,7 @@ func (k KVStore) GetNodeMimirIterator(ctx cosmos.Context) cosmos.Iterator {
 }
 
 func (k KVStore) DeleteMimir(ctx cosmos.Context, key string) error {
+	keeper.MimirCacheFromContext(ctx).Disable()
 	k.del(ctx, k.GetKey(prefixMimir, key))
 	return nil
 }

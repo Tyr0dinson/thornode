@@ -77,7 +77,7 @@ func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 
 	// For external-origin (here valid) memos, do not allow a network module as the final destination.
 	// If unable to parse the memo, here assume it to be internal.
-	memo, _ := ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), msg.Tx.Memo)
+	memo, _ := ParseMemoWithTHORNamesCached(ctx, h.mgr.Keeper(), msg.Tx.Memo)
 	mem, isSwapMemo := memo.(SwapMemo)
 	target := msg.TargetAsset
 	if isSwapMemo {
@@ -355,7 +355,7 @@ func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cos
 
 	// Parsed up here so sub-swap sizing in getMaxSwapQuantity can honor the
 	// affiliate's dynamic floor; also used below for swap accounting.
-	mem, parseMemoErr := ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), msg.Tx.Memo)
+	mem, parseMemoErr := ParseMemoWithTHORNamesCached(ctx, h.mgr.Keeper(), msg.Tx.Memo)
 	var swapAffiliates []string
 	var swapAffiliateBps []cosmos.Uint
 	if parseMemoErr == nil {

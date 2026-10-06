@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"sync"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -333,6 +334,56 @@ func ParseMemoWithTHORNames(ctx cosmos.Context, keeper keeper.Keeper, memo strin
 	}
 
 	return parser.parse()
+}
+
+type memoCacheKey struct{}
+
+type memoCacheEntry struct {
+	mem Memo
+	err error
+}
+
+// ParseMemoCache memoizes memo parsing for a context-scoped execution phase.
+// Keeper state and version are invariant during advanced swap queue EndBlock,
+// while validate, execution, and settlement otherwise parse the same memo.
+//
+// Invariants:
+//   - Entries are keyed by the raw memo string only. Parsing also depends on
+//     THORName lookups and the MultipleAffiliatesMaxCount Mimir, which is safe
+//     only because neither is written during advanced swap queue EndBlock. A
+//     cache must not span a phase that can change them.
+//   - Cached Memo values are shared between callers. Slice fields (e.g. the
+//     SwapMemo Affiliates and AffiliatesBasisPoints slices) alias the cached
+//     backing arrays, so callers must treat them as read-only.
+//   - Parse errors are cached as well: a memo that fails to parse returns the
+//     same error for every subsequent lookup within the cache's lifetime.
+type ParseMemoCache struct {
+	mu      sync.Mutex
+	entries map[string]memoCacheEntry
+}
+
+func WithMemoCache(ctx cosmos.Context) cosmos.Context {
+	return ctx.WithValue(memoCacheKey{}, &ParseMemoCache{entries: make(map[string]memoCacheEntry)})
+}
+
+func ParseMemoWithTHORNamesCached(ctx cosmos.Context, k keeper.Keeper, memo string) (Memo, error) {
+	cache, _ := ctx.Value(memoCacheKey{}).(*ParseMemoCache)
+	if cache == nil {
+		return ParseMemoWithTHORNames(ctx, k, memo)
+	}
+
+	cache.mu.Lock()
+	entry, ok := cache.entries[memo]
+	cache.mu.Unlock()
+	if ok {
+		return entry.mem, entry.err
+	}
+
+	mem, err := ParseMemoWithTHORNames(ctx, k, memo)
+	cache.mu.Lock()
+	cache.entries[memo] = memoCacheEntry{mem: mem, err: err}
+	cache.mu.Unlock()
+	return mem, err
 }
 
 func FetchAddress(ctx cosmos.Context, keeper keeper.Keeper, name string, chain common.Chain) (common.Address, error) {

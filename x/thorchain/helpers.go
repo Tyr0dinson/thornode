@@ -1941,7 +1941,7 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 	// completed swap outbound, even after multiple sub-swaps have already run.
 	if !msg.State.Out.IsZero() && !stableReserveInternal && !collectorConversion && !collectorPayout {
 		// Parse memo to check if this is a savers add
-		memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), msg.Tx.Memo)
+		memo, err := ParseMemoWithTHORNamesCached(ctx, mgr.Keeper(), msg.Tx.Memo)
 		if err != nil {
 			ctx.Logger().Error("fail to parse memo", "error", err)
 			// Continue with outbound even if memo parsing fails
@@ -2042,14 +2042,9 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 		}
 	}
 
-	// Remove from advanced swap queue index
-	if err := mgr.Keeper().RemoveAdvSwapQueueIndex(ctx, msg); err != nil {
-		// Log but don't fail - it might not exist in index
-		ctx.Logger().Debug("fail to remove swap from adv queue index", "error", err)
-	}
-
-	// Remove from advanced swap queue
-	if err := mgr.Keeper().RemoveAdvSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index)); err != nil {
+	// Remove the item and its index entry together, reusing the message already
+	// loaded by EndBlock instead of fetching and decoding it again.
+	if err := mgr.Keeper().RemoveAdvSwapQueueItemMsg(ctx, msg); err != nil {
 		// Log but don't fail
 		ctx.Logger().Debug("fail to remove swap from adv queue", "error", err)
 	}

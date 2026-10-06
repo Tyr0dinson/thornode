@@ -640,9 +640,15 @@ func (k KVStoreDummy) AdvSwapQueueEnabled(ctx cosmos.Context) bool {
 	return false
 }
 
-func (k KVStoreDummy) SetAdvSwapQueueItem(ctx cosmos.Context, msg MsgSwap) error      { return kaboom }
+func (k KVStoreDummy) SetAdvSwapQueueItem(ctx cosmos.Context, msg MsgSwap) error { return kaboom }
+
+func (k KVStoreDummy) SetAdvSwapQueueItemState(ctx cosmos.Context, msg MsgSwap) error { return kaboom }
 func (k KVStoreDummy) GetAdvSwapQueueItemIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
 func (k KVStoreDummy) RemoveAdvSwapQueueItem(ctx cosmos.Context, _ common.TxID, _ int) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) RemoveAdvSwapQueueItemMsg(ctx cosmos.Context, _ MsgSwap) error {
 	return kaboom
 }
 
@@ -655,6 +661,10 @@ func (k KVStoreDummy) HasAdvSwapQueueItem(ctx cosmos.Context, txID common.TxID, 
 }
 
 func (k KVStoreDummy) GetAdvSwapQueueIndexIterator(_ cosmos.Context, _ types.SwapType, _, _ common.Asset) cosmos.Iterator {
+	return nil
+}
+
+func (k KVStoreDummy) GetAdvSwapQueueLimitIndexIterator(ctx cosmos.Context) cosmos.Iterator {
 	return nil
 }
 
