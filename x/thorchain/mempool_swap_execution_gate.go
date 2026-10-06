@@ -163,10 +163,23 @@ func ensureMempoolSwapExecutionPoolAvailable(
 	if err != nil {
 		return fmt.Errorf("fail to load mempool swap synth ownership for %s: %w", asset, err)
 	}
-	if mempoolSwapPoolBalanceOverlayIsZero(poolOverlay) && mempoolSwapNativeSupplyOverlayIsZero(synthOverlay) {
-		return nil
+	if !mempoolSwapPoolBalanceOverlayIsZero(poolOverlay) || !mempoolSwapNativeSupplyOverlayIsZero(synthOverlay) {
+		return fmt.Errorf("mempool swap pool %s has an active overlay without an owner", asset)
 	}
-	return fmt.Errorf("mempool swap pool %s has an active overlay without an owner", asset)
+	// A lifecycle entering the pool would become a new owner and hold back a
+	// deferred errata correction again. Speculative swaps wait for recovery to
+	// settle it; finalized streams reach preemption, which settles it first.
+	// Ordinary swaps own no reversible state and are not held back.
+	if owner != nil {
+		pending, err := hasErrataPoolCorrection(ctx, k, asset)
+		if err != nil {
+			return err
+		}
+		if pending {
+			return fmt.Errorf("%w: %s has a pending errata pool correction", errMempoolSwapPoolExecutionPending, asset)
+		}
+	}
+	return nil
 }
 
 func mempoolSwapExecutionOwner(

@@ -38,6 +38,9 @@ message ObservedTxVoter {
     (gogoproto.customname) = "MempoolSwapTOR",
     (gogoproto.nullable) = false
   ];
+  // Memo type (swap or add) of a reverted inbound whose errata pool
+  // correction is waiting for a speculative pool owner to be resolved.
+  string errata_pool_correction = 13;
   // Nodes spared LackOfObservationPenalty at non-final consensus, or refunded
   // it within its flex window, because they observed the tx in the final tier.
   // Cleared at final consensus.

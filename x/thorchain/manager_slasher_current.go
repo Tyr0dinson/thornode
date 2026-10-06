@@ -898,6 +898,14 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 			resultErr = err
 		}
 	}
+	// Retry errata pool corrections deferred behind a speculative owner after
+	// the passes above have had their chance to roll that owner back.
+	if err := recoverErrataPoolCorrections(ctx, mgr); err != nil {
+		ctx.Logger().Error("fail to recover deferred errata pool corrections", "error", err)
+		if resultErr == nil {
+			resultErr = err
+		}
+	}
 
 	return resultErr
 }

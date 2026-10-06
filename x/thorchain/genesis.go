@@ -307,6 +307,12 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 
 	for _, voter := range data.ObservedTxInVoters {
 		keeper.SetObservedTxInVoter(ctx, voter)
+		// The voter is authoritative for a deferred errata pool correction;
+		// rebuild the per-pool index the pool gates and recovery read.
+		if voter.ErrataPoolCorrection != "" {
+			_, assetCoin := splitErrataPoolCoins(voter.Tx.Tx.Coins)
+			keeper.SetErrataPoolCorrection(ctx, assetCoin.Asset, voter.TxID)
+		}
 	}
 
 	for _, voter := range data.ObservedTxOutVoters {

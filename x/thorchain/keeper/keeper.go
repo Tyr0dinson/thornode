@@ -663,6 +663,10 @@ type KeeperMempoolSwap interface {
 	GetMempoolSwapVaultRecovery(ctx cosmos.Context, vaultPubKey common.PubKey) (string, error)
 	DeleteMempoolSwapVaultRecovery(ctx cosmos.Context, vaultPubKey common.PubKey)
 	GetMempoolSwapVaultRecoveries(ctx cosmos.Context, limit int) ([]common.PubKey, error)
+	SetErrataPoolCorrection(ctx cosmos.Context, asset common.Asset, txID common.TxID)
+	DeleteErrataPoolCorrection(ctx cosmos.Context, asset common.Asset, txID common.TxID)
+	GetErrataPoolCorrections(ctx cosmos.Context, asset common.Asset) ([]common.TxID, error)
+	GetErrataPoolCorrectionPools(ctx cosmos.Context) ([]common.Asset, error)
 }
 
 type StagedOutboundSummary struct {

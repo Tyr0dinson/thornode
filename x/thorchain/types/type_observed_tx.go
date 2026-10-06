@@ -49,7 +49,8 @@ func (m *ObservedTxVoter) IsEmpty() bool {
 		!m.Reverted &&
 		m.OutboundHeight == 0 &&
 		m.UnfinalizedHeight == 0 &&
-		!m.HasReservedMempoolSwapTOR()
+		!m.HasReservedMempoolSwapTOR() &&
+		m.ErrataPoolCorrection == ""
 }
 
 // Key is to get the txid

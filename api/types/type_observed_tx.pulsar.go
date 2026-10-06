@@ -214,20 +214,21 @@ func (x *_ObservedTxVoter_16_list) IsValid() bool {
 }
 
 var (
-	md_ObservedTxVoter                    protoreflect.MessageDescriptor
-	fd_ObservedTxVoter_tx_id              protoreflect.FieldDescriptor
-	fd_ObservedTxVoter_tx                 protoreflect.FieldDescriptor
-	fd_ObservedTxVoter_height             protoreflect.FieldDescriptor
-	fd_ObservedTxVoter_txs                protoreflect.FieldDescriptor
-	fd_ObservedTxVoter_actions            protoreflect.FieldDescriptor
-	fd_ObservedTxVoter_out_txs            protoreflect.FieldDescriptor
-	fd_ObservedTxVoter_finalised_height   protoreflect.FieldDescriptor
-	fd_ObservedTxVoter_updated_vault      protoreflect.FieldDescriptor
-	fd_ObservedTxVoter_reverted           protoreflect.FieldDescriptor
-	fd_ObservedTxVoter_outbound_height    protoreflect.FieldDescriptor
-	fd_ObservedTxVoter_unfinalized_height protoreflect.FieldDescriptor
-	fd_ObservedTxVoter_mempool_swap_tor   protoreflect.FieldDescriptor
-	fd_ObservedTxVoter_excused_observers  protoreflect.FieldDescriptor
+	md_ObservedTxVoter                        protoreflect.MessageDescriptor
+	fd_ObservedTxVoter_tx_id                  protoreflect.FieldDescriptor
+	fd_ObservedTxVoter_tx                     protoreflect.FieldDescriptor
+	fd_ObservedTxVoter_height                 protoreflect.FieldDescriptor
+	fd_ObservedTxVoter_txs                    protoreflect.FieldDescriptor
+	fd_ObservedTxVoter_actions                protoreflect.FieldDescriptor
+	fd_ObservedTxVoter_out_txs                protoreflect.FieldDescriptor
+	fd_ObservedTxVoter_finalised_height       protoreflect.FieldDescriptor
+	fd_ObservedTxVoter_updated_vault          protoreflect.FieldDescriptor
+	fd_ObservedTxVoter_reverted               protoreflect.FieldDescriptor
+	fd_ObservedTxVoter_outbound_height        protoreflect.FieldDescriptor
+	fd_ObservedTxVoter_unfinalized_height     protoreflect.FieldDescriptor
+	fd_ObservedTxVoter_mempool_swap_tor       protoreflect.FieldDescriptor
+	fd_ObservedTxVoter_errata_pool_correction protoreflect.FieldDescriptor
+	fd_ObservedTxVoter_excused_observers      protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -245,6 +246,7 @@ func init() {
 	fd_ObservedTxVoter_outbound_height = md_ObservedTxVoter.Fields().ByName("outbound_height")
 	fd_ObservedTxVoter_unfinalized_height = md_ObservedTxVoter.Fields().ByName("unfinalized_height")
 	fd_ObservedTxVoter_mempool_swap_tor = md_ObservedTxVoter.Fields().ByName("mempool_swap_tor")
+	fd_ObservedTxVoter_errata_pool_correction = md_ObservedTxVoter.Fields().ByName("errata_pool_correction")
 	fd_ObservedTxVoter_excused_observers = md_ObservedTxVoter.Fields().ByName("excused_observers")
 }
 
@@ -385,6 +387,12 @@ func (x *fastReflection_ObservedTxVoter) Range(f func(protoreflect.FieldDescript
 			return
 		}
 	}
+	if x.ErrataPoolCorrection != "" {
+		value := protoreflect.ValueOfString(x.ErrataPoolCorrection)
+		if !f(fd_ObservedTxVoter_errata_pool_correction, value) {
+			return
+		}
+	}
 	if len(x.ExcusedObservers) != 0 {
 		value := protoreflect.ValueOfList(&_ObservedTxVoter_16_list{list: &x.ExcusedObservers})
 		if !f(fd_ObservedTxVoter_excused_observers, value) {
@@ -430,6 +438,8 @@ func (x *fastReflection_ObservedTxVoter) Has(fd protoreflect.FieldDescriptor) bo
 		return x.UnfinalizedHeight != int64(0)
 	case "types.ObservedTxVoter.mempool_swap_tor":
 		return x.MempoolSwapTor != ""
+	case "types.ObservedTxVoter.errata_pool_correction":
+		return x.ErrataPoolCorrection != ""
 	case "types.ObservedTxVoter.excused_observers":
 		return len(x.ExcusedObservers) != 0
 	default:
@@ -472,6 +482,8 @@ func (x *fastReflection_ObservedTxVoter) Clear(fd protoreflect.FieldDescriptor) 
 		x.UnfinalizedHeight = int64(0)
 	case "types.ObservedTxVoter.mempool_swap_tor":
 		x.MempoolSwapTor = ""
+	case "types.ObservedTxVoter.errata_pool_correction":
+		x.ErrataPoolCorrection = ""
 	case "types.ObservedTxVoter.excused_observers":
 		x.ExcusedObservers = nil
 	default:
@@ -535,6 +547,9 @@ func (x *fastReflection_ObservedTxVoter) Get(descriptor protoreflect.FieldDescri
 	case "types.ObservedTxVoter.mempool_swap_tor":
 		value := x.MempoolSwapTor
 		return protoreflect.ValueOfString(value)
+	case "types.ObservedTxVoter.errata_pool_correction":
+		value := x.ErrataPoolCorrection
+		return protoreflect.ValueOfString(value)
 	case "types.ObservedTxVoter.excused_observers":
 		if len(x.ExcusedObservers) == 0 {
 			return protoreflect.ValueOfList(&_ObservedTxVoter_16_list{})
@@ -591,6 +606,8 @@ func (x *fastReflection_ObservedTxVoter) Set(fd protoreflect.FieldDescriptor, va
 		x.UnfinalizedHeight = value.Int()
 	case "types.ObservedTxVoter.mempool_swap_tor":
 		x.MempoolSwapTor = value.Interface().(string)
+	case "types.ObservedTxVoter.errata_pool_correction":
+		x.ErrataPoolCorrection = value.Interface().(string)
 	case "types.ObservedTxVoter.excused_observers":
 		lv := value.List()
 		clv := lv.(*_ObservedTxVoter_16_list)
@@ -660,6 +677,8 @@ func (x *fastReflection_ObservedTxVoter) Mutable(fd protoreflect.FieldDescriptor
 		panic(fmt.Errorf("field unfinalized_height of message types.ObservedTxVoter is not mutable"))
 	case "types.ObservedTxVoter.mempool_swap_tor":
 		panic(fmt.Errorf("field mempool_swap_tor of message types.ObservedTxVoter is not mutable"))
+	case "types.ObservedTxVoter.errata_pool_correction":
+		panic(fmt.Errorf("field errata_pool_correction of message types.ObservedTxVoter is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.ObservedTxVoter"))
@@ -700,6 +719,8 @@ func (x *fastReflection_ObservedTxVoter) NewField(fd protoreflect.FieldDescripto
 	case "types.ObservedTxVoter.unfinalized_height":
 		return protoreflect.ValueOfInt64(int64(0))
 	case "types.ObservedTxVoter.mempool_swap_tor":
+		return protoreflect.ValueOfString("")
+	case "types.ObservedTxVoter.errata_pool_correction":
 		return protoreflect.ValueOfString("")
 	case "types.ObservedTxVoter.excused_observers":
 		list := []string{}
@@ -821,6 +842,10 @@ func (x *fastReflection_ObservedTxVoter) ProtoMethods() *protoiface.Methods {
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
+		l = len(x.ErrataPoolCorrection)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
 		if len(x.ExcusedObservers) > 0 {
 			for _, s := range x.ExcusedObservers {
 				l = len(s)
@@ -866,6 +891,13 @@ func (x *fastReflection_ObservedTxVoter) ProtoMethods() *protoiface.Methods {
 				i--
 				dAtA[i] = 0x82
 			}
+		}
+		if len(x.ErrataPoolCorrection) > 0 {
+			i -= len(x.ErrataPoolCorrection)
+			copy(dAtA[i:], x.ErrataPoolCorrection)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.ErrataPoolCorrection)))
+			i--
+			dAtA[i] = 0x6a
 		}
 		if len(x.MempoolSwapTor) > 0 {
 			i -= len(x.MempoolSwapTor)
@@ -1350,6 +1382,38 @@ func (x *fastReflection_ObservedTxVoter) ProtoMethods() *protoiface.Methods {
 				}
 				x.MempoolSwapTor = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
+			case 13:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field ErrataPoolCorrection", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.ErrataPoolCorrection = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
 			case 16:
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field ExcusedObservers", wireType)
@@ -1448,6 +1512,9 @@ type ObservedTxVoter struct {
 	UnfinalizedHeight int64                `protobuf:"varint,11,opt,name=unfinalized_height,json=unfinalizedHeight,proto3" json:"unfinalized_height,omitempty"`
 	// TOR value tracked for mempool swap cap enforcement
 	MempoolSwapTor string `protobuf:"bytes,12,opt,name=mempool_swap_tor,json=mempoolSwapTor,proto3" json:"mempool_swap_tor,omitempty"`
+	// Memo type (swap or add) of a reverted inbound whose errata pool
+	// correction is waiting for a speculative pool owner to be resolved.
+	ErrataPoolCorrection string `protobuf:"bytes,13,opt,name=errata_pool_correction,json=errataPoolCorrection,proto3" json:"errata_pool_correction,omitempty"`
 	// Nodes spared LackOfObservationPenalty at non-final consensus, or refunded
 	// it within its flex window, because they observed the tx in the final tier.
 	// Cleared at final consensus.
@@ -1558,6 +1625,13 @@ func (x *ObservedTxVoter) GetMempoolSwapTor() string {
 	return ""
 }
 
+func (x *ObservedTxVoter) GetErrataPoolCorrection() string {
+	if x != nil {
+		return x.ErrataPoolCorrection
+	}
+	return ""
+}
+
 func (x *ObservedTxVoter) GetExcusedObservers() []string {
 	if x != nil {
 		return x.ExcusedObservers
@@ -1574,7 +1648,7 @@ var file_types_type_observed_tx_proto_rawDesc = []byte{
 	0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x17, 0x74, 0x79, 0x70, 0x65,
 	0x73, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x5f, 0x74, 0x78, 0x5f, 0x6f, 0x75, 0x74, 0x2e, 0x70, 0x72,
 	0x6f, 0x74, 0x6f, 0x1a, 0x14, 0x67, 0x6f, 0x67, 0x6f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x67,
-	0x6f, 0x67, 0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0xb1, 0x05, 0x0a, 0x0f, 0x4f, 0x62,
+	0x6f, 0x67, 0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0xe7, 0x05, 0x0a, 0x0f, 0x4f, 0x62,
 	0x73, 0x65, 0x72, 0x76, 0x65, 0x64, 0x54, 0x78, 0x56, 0x6f, 0x74, 0x65, 0x72, 0x12, 0x4d, 0x0a,
 	0x05, 0x74, 0x78, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x42, 0x38, 0xe2, 0xde,
 	0x1f, 0x04, 0x54, 0x78, 0x49, 0x44, 0xfa, 0xde, 0x1f, 0x2c, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62,
@@ -1617,17 +1691,20 @@ var file_types_type_observed_tx_proto_rawDesc = []byte{
 	0x00, 0xda, 0xde, 0x1f, 0x16, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64, 0x6b, 0x2e, 0x69,
 	0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74, 0xe2, 0xde, 0x1f, 0x0e, 0x4d,
 	0x65, 0x6d, 0x70, 0x6f, 0x6f, 0x6c, 0x53, 0x77, 0x61, 0x70, 0x54, 0x4f, 0x52, 0x52, 0x0e, 0x6d,
-	0x65, 0x6d, 0x70, 0x6f, 0x6f, 0x6c, 0x53, 0x77, 0x61, 0x70, 0x54, 0x6f, 0x72, 0x42, 0x8c, 0x01,
-	0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x13, 0x54, 0x79, 0x70,
-	0x65, 0x4f, 0x62, 0x73, 0x65, 0x72, 0x76, 0x65, 0x64, 0x54, 0x78, 0x50, 0x72, 0x6f, 0x74, 0x6f,
-	0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74,
-	0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64,
-	0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0xa2, 0x02,
-	0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xca, 0x02, 0x05, 0x54,
-	0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73, 0x5c, 0x47, 0x50, 0x42,
-	0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73,
-	0xc8, 0xe1, 0x1e, 0x00, 0xd8, 0xe1, 0x1e, 0x00, 0x80, 0xe2, 0x1e, 0x00, 0x62, 0x06, 0x70, 0x72,
-	0x6f, 0x74, 0x6f, 0x33,
+	0x65, 0x6d, 0x70, 0x6f, 0x6f, 0x6c, 0x53, 0x77, 0x61, 0x70, 0x54, 0x6f, 0x72, 0x12, 0x34, 0x0a,
+	0x16, 0x65, 0x72, 0x72, 0x61, 0x74, 0x61, 0x5f, 0x70, 0x6f, 0x6f, 0x6c, 0x5f, 0x63, 0x6f, 0x72,
+	0x72, 0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x18, 0x0d, 0x20, 0x01, 0x28, 0x09, 0x52, 0x14, 0x65,
+	0x72, 0x72, 0x61, 0x74, 0x61, 0x50, 0x6f, 0x6f, 0x6c, 0x43, 0x6f, 0x72, 0x72, 0x65, 0x63, 0x74,
+	0x69, 0x6f, 0x6e, 0x42, 0x8c, 0x01, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65,
+	0x73, 0x42, 0x13, 0x54, 0x79, 0x70, 0x65, 0x4f, 0x62, 0x73, 0x65, 0x72, 0x76, 0x65, 0x64, 0x54,
+	0x78, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62,
+	0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74,
+	0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74,
+	0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70,
+	0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70,
+	0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02,
+	0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xc8, 0xe1, 0x1e, 0x00, 0xd8, 0xe1, 0x1e, 0x00, 0x80, 0xe2,
+	0x1e, 0x00, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (

@@ -139,6 +139,7 @@ const (
 	prefixMempoolSwapVault          types.DbPrefix = "mempool_swap_vault/"
 	prefixMempoolSwapTimeout        types.DbPrefix = "mempool_swap_timeout/"
 	prefixMempoolSwapVaultRecovery  types.DbPrefix = "mempool_swap_vault_recovery/"
+	prefixErrataPoolCorrection      types.DbPrefix = "errata_pool_correction/"
 	prefixStagedOutbound            types.DbPrefix = "staged_outbound/"
 	prefixStagedOutboundCoinTotal   types.DbPrefix = "staged_outbound_coin_total/"
 	prefixStagedOutboundCloutTotal  types.DbPrefix = "staged_outbound_clout_total/"

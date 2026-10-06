@@ -16,8 +16,34 @@ var errMempoolSwapPoolFinalityPending = errors.New("pool has active unfinalized 
 // mempoolSwapPoolFinalityAffected reports whether an irreversible pool
 // operation would observe either speculative L1 pool balances or speculative
 // synth supply. Both overlays are gross rather than net: opposing active swaps
-// must not make an affected pool appear safe to mutate.
+// must not make an affected pool appear safe to mutate. A deferred errata
+// correction also leaves the pool balance unsettled.
 func mempoolSwapPoolFinalityAffected(
+	ctx cosmos.Context,
+	k keeper.Keeper,
+	asset common.Asset,
+) (balanceAffected, synthSupplyAffected bool, err error) {
+	balanceAffected, synthSupplyAffected, err = mempoolSwapPoolOverlaysAffected(ctx, k, asset)
+	if err != nil || balanceAffected {
+		return balanceAffected, synthSupplyAffected, err
+	}
+	balanceAffected, err = hasErrataPoolCorrection(ctx, k, asset)
+	return balanceAffected, synthSupplyAffected, err
+}
+
+// hasErrataPoolCorrection reports whether an errata pool correction is
+// waiting on the asset's L1 pool.
+func hasErrataPoolCorrection(ctx cosmos.Context, k keeper.Keeper, asset common.Asset) (bool, error) {
+	txIDs, err := k.GetErrataPoolCorrections(ctx, asset)
+	if err != nil {
+		return false, fmt.Errorf("fail to get errata pool corrections for %s: %w", asset.GetLayer1Asset(), err)
+	}
+	return len(txIDs) > 0, nil
+}
+
+// mempoolSwapPoolOverlaysAffected reports only the speculative overlays which
+// a pool owner's rollback or completion can clear.
+func mempoolSwapPoolOverlaysAffected(
 	ctx cosmos.Context,
 	k keeper.Keeper,
 	asset common.Asset,
@@ -41,9 +67,24 @@ func mempoolSwapPoolFinalityAffected(
 }
 
 // ensureMempoolSwapPoolFinalized rejects irreversible LP/pool mutations while
-// a lifecycle still owns reversible state for the relevant L1 pool.
+// a lifecycle still owns reversible state for the relevant L1 pool, or while an
+// errata correction for the pool is still pending.
 func ensureMempoolSwapPoolFinalized(ctx cosmos.Context, k keeper.Keeper, asset common.Asset) error {
-	balanceAffected, synthSupplyAffected, err := mempoolSwapPoolFinalityAffected(ctx, k, asset)
+	if err := ensureMempoolSwapPoolOverlaysFinalized(ctx, k, asset); err != nil {
+		return err
+	}
+	pending, err := hasErrataPoolCorrection(ctx, k, asset)
+	if err != nil {
+		return err
+	}
+	if pending {
+		return fmt.Errorf("%w for %s: errata pool correction is pending", errMempoolSwapPoolFinalityPending, asset.GetLayer1Asset())
+	}
+	return nil
+}
+
+func ensureMempoolSwapPoolOverlaysFinalized(ctx cosmos.Context, k keeper.Keeper, asset common.Asset) error {
+	balanceAffected, synthSupplyAffected, err := mempoolSwapPoolOverlaysAffected(ctx, k, asset)
 	if err != nil {
 		return err
 	}
@@ -68,6 +109,9 @@ func ensureMempoolSwapPoolFinalized(ctx cosmos.Context, k keeper.Keeper, asset c
 // confirms. A finalized owner is completed instead; rolling it back without a
 // refund would strand an inbound which is already in the vault.
 //
+// Once the owner is gone, any errata correction deferred behind it is applied
+// first, so the caller's mutation never runs ahead of that correction.
+//
 // Mutation handlers should run this together with their subsequent write in
 // one cache transaction, making preemption conditional on that write. A caller
 // may instead commit resolution independently when rollback or completion is
@@ -77,8 +121,21 @@ func preemptMempoolSwapPoolOwnerCached(
 	mgr Manager,
 	asset common.Asset,
 ) error {
+	if err := resolveMempoolSwapPoolOwnerCached(ctx, mgr, asset); err != nil {
+		return err
+	}
+	return settleErrataPoolCorrectionsCached(ctx, mgr, asset)
+}
+
+// resolveMempoolSwapPoolOwnerCached rolls back or completes the speculative
+// owner of a pool, leaving any deferred errata correction in place.
+func resolveMempoolSwapPoolOwnerCached(
+	ctx cosmos.Context,
+	mgr Manager,
+	asset common.Asset,
+) error {
 	k := mgr.Keeper()
-	if err := ensureMempoolSwapPoolFinalized(ctx, k, asset); err == nil {
+	if err := ensureMempoolSwapPoolOverlaysFinalized(ctx, k, asset); err == nil {
 		return nil
 	} else if !errors.Is(err, errMempoolSwapPoolFinalityPending) {
 		return err
@@ -114,7 +171,7 @@ func preemptMempoolSwapPoolOwnerCached(
 		}
 	}
 
-	if err = ensureMempoolSwapPoolFinalized(ctx, k, asset); err != nil {
+	if err = ensureMempoolSwapPoolOverlaysFinalized(ctx, k, asset); err != nil {
 		return fmt.Errorf("mempool swap pool owner preemption did not clear %s: %w", asset.GetLayer1Asset(), err)
 	}
 	return nil

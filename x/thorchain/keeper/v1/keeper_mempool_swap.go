@@ -795,3 +795,87 @@ func (k KVStore) GetMempoolSwapsDue(ctx cosmos.Context, maxHeight int64, limit i
 	}
 	return records, nil
 }
+
+// errataPoolCorrectionKey indexes a deferred errata pool correction under its
+// L1 pool, so pool gates can find pending work for one pool without scanning
+// every inbound voter. The voter's ErrataPoolCorrection field is authoritative.
+func (k KVStore) errataPoolCorrectionKey(asset common.Asset, txID common.TxID) []byte {
+	return k.GetKey(prefixErrataPoolCorrection, asset.GetLayer1Asset().String()+"/"+txID.String())
+}
+
+// SetErrataPoolCorrection records that an errata pool correction for txID is
+// waiting on the asset's L1 pool.
+func (k KVStore) SetErrataPoolCorrection(ctx cosmos.Context, asset common.Asset, txID common.TxID) {
+	if asset.IsEmpty() || txID.IsEmpty() {
+		ctx.Logger().Error("cannot set errata pool correction with empty asset or tx id", "asset", asset, "tx_id", txID)
+		return
+	}
+	l1Asset := asset.GetLayer1Asset()
+	k.setStrings(ctx, k.errataPoolCorrectionKey(l1Asset, txID), []string{l1Asset.String(), txID.String()})
+}
+
+// DeleteErrataPoolCorrection removes an applied errata pool correction.
+func (k KVStore) DeleteErrataPoolCorrection(ctx cosmos.Context, asset common.Asset, txID common.TxID) {
+	if asset.IsEmpty() || txID.IsEmpty() {
+		return
+	}
+	k.del(ctx, k.errataPoolCorrectionKey(asset, txID))
+}
+
+// GetErrataPoolCorrections returns the inbound tx ids whose errata correction
+// is pending on the asset's L1 pool, in deterministic tx-id order.
+func (k KVStore) GetErrataPoolCorrections(ctx cosmos.Context, asset common.Asset) ([]common.TxID, error) {
+	if asset.IsEmpty() {
+		return []common.TxID{}, nil
+	}
+	prefix := k.GetKey(prefixErrataPoolCorrection, asset.GetLayer1Asset().String()+"/")
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	iter := store.Iterator(prefix, storetypes.PrefixEndBytes(prefix))
+	defer iter.Close()
+	txIDs := make([]common.TxID, 0)
+	for ; iter.Valid(); iter.Next() {
+		_, txID, err := k.unmarshalErrataPoolCorrection(ctx, iter)
+		if err != nil {
+			return nil, err
+		}
+		txIDs = append(txIDs, txID)
+	}
+	return txIDs, nil
+}
+
+// GetErrataPoolCorrectionPools returns each L1 pool with at least one pending
+// errata correction, in deterministic asset order.
+func (k KVStore) GetErrataPoolCorrectionPools(ctx cosmos.Context) ([]common.Asset, error) {
+	iter := k.getIterator(ctx, prefixErrataPoolCorrection)
+	defer iter.Close()
+	pools := make([]common.Asset, 0)
+	for ; iter.Valid(); iter.Next() {
+		asset, _, err := k.unmarshalErrataPoolCorrection(ctx, iter)
+		if err != nil {
+			return nil, err
+		}
+		if len(pools) == 0 || !pools[len(pools)-1].Equals(asset) {
+			pools = append(pools, asset)
+		}
+	}
+	return pools, nil
+}
+
+func (k KVStore) unmarshalErrataPoolCorrection(ctx cosmos.Context, iter cosmos.Iterator) (common.Asset, common.TxID, error) {
+	var entry ProtoStrings
+	if err := k.cdc.Unmarshal(iter.Value(), &entry); err != nil {
+		return common.EmptyAsset, "", dbError(ctx, "failed to unmarshal errata pool correction", err)
+	}
+	if len(entry.Value) != 2 {
+		return common.EmptyAsset, "", fmt.Errorf("invalid errata pool correction: %s", iter.Key())
+	}
+	asset, err := common.NewAsset(entry.Value[0])
+	if err != nil {
+		return common.EmptyAsset, "", fmt.Errorf("invalid errata pool correction asset: %w", err)
+	}
+	txID, err := common.NewTxID(entry.Value[1])
+	if err != nil {
+		return common.EmptyAsset, "", fmt.Errorf("invalid errata pool correction tx id: %w", err)
+	}
+	return asset, txID, nil
+}

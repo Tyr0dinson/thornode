@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/cosmos/cosmos-sdk/telemetry"
@@ -11,6 +12,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
 
 func processErrataTxAttestation(
@@ -169,22 +171,20 @@ func processErrataTx(ctx cosmos.Context, mgr Manager, er *common.ErrataTx) (comm
 	// set the observed Tx to reverted only after chain validation passes
 	observedVoter.SetReverted()
 	incrErrataRevertedIn(er.Chain)
-	k.SetObservedTxInVoter(ctx, observedVoter)
-	// The inbound path marks a self-send as updated without crediting it.
-	if observedVoter.UpdatedVault && (!er.Chain.RequiresTerminalErrataOutcome() || !tx.FromAddress.Equals(tx.ToAddress)) {
-		vaultPubKey := observedVoter.Tx.ObservedPubKey
-		if !vaultPubKey.IsEmpty() {
-			// try to deduct the asset from asgard
-			var vault Vault
-			vault, err = k.GetVault(ctx, vaultPubKey)
-			if err != nil {
-				return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, fmt.Errorf("fail to get active asgard vaults: %w", err)
-			}
-			debitVault(ctx, mgr, &vault, observedVoter.Tx, tx.Coins, vaultDeficitReasonInboundErrataReversal)
-			if err = k.SetVault(ctx, vault); err != nil {
-				return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, fmt.Errorf("fail to save vault, err: %w", err)
-			}
+
+	memo, _ := ParseMemoWithTHORNames(ctx, k, tx.Memo)
+	// A finalized swap or add credited the pool as well as the vault; both are
+	// unwound by one pool correction.
+	if observedVoter.Tx.IsFinal() && (memo.IsType(TxSwap) || memo.IsType(TxAdd)) {
+		if err = correctOrDeferErrataPool(ctx, mgr, observedVoter, memo.GetType()); err != nil {
+			return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, err
 		}
+		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED, nil
+	}
+
+	k.SetObservedTxInVoter(ctx, observedVoter)
+	if err = debitErrataVault(ctx, mgr, observedVoter); err != nil {
+		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, err
 	}
 
 	if !observedVoter.Tx.IsFinal() {
@@ -192,7 +192,6 @@ func processErrataTx(ctx cosmos.Context, mgr Manager, er *common.ErrataTx) (comm
 		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED, nil
 	}
 
-	memo, _ := ParseMemoWithTHORNames(ctx, k, tx.Memo)
 	// if the tx is a migration , from old valut to new vault , then the inbound tx must have a related outbound tx as well
 	if memo.IsInternal() {
 		_, outboundErr := processErrataOutboundTx(ctx, k, eventMgr, er)
@@ -201,35 +200,154 @@ func processErrataTx(ctx cosmos.Context, mgr Manager, er *common.ErrataTx) (comm
 		}
 		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED, nil
 	}
+	return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED, nil
+}
 
-	if !memo.IsType(TxSwap) && !memo.IsType(TxAdd) {
-		// must be a swap or add transaction
-		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED, nil
+// errErrataPoolCorrectionBlocked marks an errata pool correction which cannot
+// run until the speculative owner of the pool is resolved.
+var errErrataPoolCorrectionBlocked = errors.New("errata pool correction is blocked by an unresolved mempool swap pool owner")
+
+// correctOrDeferErrataPool applies an errata pool correction atomically. When
+// the pool's speculative owner cannot be resolved, the correction is recorded
+// on the reverted voter instead of failing the attestation: an error here would
+// discard the errata vote, slash accounting and the Reverted stop marker along
+// with it. Pool gates then hold conflicting mutations back until a pool
+// preemption or the LackSigning recovery pass applies the correction.
+func correctOrDeferErrataPool(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter, txType mem.TxType) error {
+	correctionCtx, commit := ctx.CacheContext()
+	err := applyErrataPoolCorrectionCached(correctionCtx, mgr, voter, txType)
+	if err == nil {
+		commit()
+		return nil
+	}
+	if !errors.Is(err, errErrataPoolCorrectionBlocked) {
+		return err
 	}
 
-	runeCoin := common.NoCoin
-	assetCoin := common.NoCoin
-	for _, coin := range tx.Coins {
+	ctx.Logger().Error("deferring errata pool correction behind unresolved mempool swap owner", "tx_id", voter.TxID, "error", err)
+	_, assetCoin := splitErrataPoolCoins(voter.Tx.Tx.Coins)
+	voter.ErrataPoolCorrection = txType.String()
+	k := mgr.Keeper()
+	k.SetObservedTxInVoter(ctx, voter)
+	k.SetErrataPoolCorrection(ctx, assetCoin.Asset, voter.TxID)
+	return nil
+}
+
+// settleErrataPoolCorrectionsCached applies every errata correction deferred
+// on the asset's pool. The caller must already have resolved the pool owner.
+func settleErrataPoolCorrectionsCached(ctx cosmos.Context, mgr Manager, asset common.Asset) error {
+	k := mgr.Keeper()
+	txIDs, err := k.GetErrataPoolCorrections(ctx, asset)
+	if err != nil {
+		return fmt.Errorf("fail to get errata pool corrections for %s: %w", asset.GetLayer1Asset(), err)
+	}
+	for _, txID := range txIDs {
+		voter, err := k.GetObservedTxInVoter(ctx, txID)
+		if err != nil {
+			return fmt.Errorf("fail to get errata pool correction voter %s: %w", txID, err)
+		}
+		if voter.ErrataPoolCorrection == "" {
+			return fmt.Errorf("errata pool correction index for %s has no pending voter", txID)
+		}
+		txType, err := StringToTxType(voter.ErrataPoolCorrection)
+		if err != nil {
+			return fmt.Errorf("invalid errata pool correction type for %s: %w", txID, err)
+		}
+		if err = applyErrataPoolCorrectionCached(ctx, mgr, voter, txType); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// recoverErrataPoolCorrections retries deferred errata pool corrections once
+// per pool. Each pool commits independently so one stuck owner cannot hold
+// back another pool's correction.
+func recoverErrataPoolCorrections(ctx cosmos.Context, mgr Manager) error {
+	pools, err := mgr.Keeper().GetErrataPoolCorrectionPools(ctx)
+	if err != nil {
+		return fmt.Errorf("fail to list errata pool corrections: %w", err)
+	}
+	for _, asset := range pools {
+		cacheCtx, commit := ctx.CacheContext()
+		if err = preemptMempoolSwapPoolOwnerCached(cacheCtx, mgr, asset); err != nil {
+			ctx.Logger().Error("fail to settle deferred errata pool correction", "pool", asset, "error", err)
+			continue
+		}
+		commit()
+	}
+	return nil
+}
+
+func splitErrataPoolCoins(coins common.Coins) (runeCoin, assetCoin common.Coin) {
+	runeCoin = common.NoCoin
+	assetCoin = common.NoCoin
+	for _, coin := range coins {
 		if coin.IsRune() {
 			runeCoin = coin
 		} else {
 			assetCoin = coin
 		}
 	}
+	return runeCoin, assetCoin
+}
+
+// debitErrataVault removes a reverted inbound from the vault it credited.
+func debitErrataVault(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter) error {
+	tx := voter.Tx.Tx
+	// The inbound path marks a self-send as updated without crediting it.
+	if !voter.UpdatedVault || (tx.Chain.RequiresTerminalErrataOutcome() && tx.FromAddress.Equals(tx.ToAddress)) {
+		return nil
+	}
+	vaultPubKey := voter.Tx.ObservedPubKey
+	if vaultPubKey.IsEmpty() {
+		return nil
+	}
+	// try to deduct the asset from asgard
+	k := mgr.Keeper()
+	vault, err := k.GetVault(ctx, vaultPubKey)
+	if err != nil {
+		return fmt.Errorf("fail to get active asgard vaults: %w", err)
+	}
+	debitVault(ctx, mgr, &vault, voter.Tx, voter.Tx.Tx.Coins, vaultDeficitReasonInboundErrataReversal)
+	if err = k.SetVault(ctx, vault); err != nil {
+		return fmt.Errorf("fail to save vault, err: %w", err)
+	}
+	return nil
+}
+
+// applyErrataPoolCorrectionCached unwinds a reverted swap or add from its vault
+// and pool, clearing any pending marker in the same transaction so the
+// correction applies exactly once.
+func applyErrataPoolCorrectionCached(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter, txType mem.TxType) error {
+	if txType != TxSwap && txType != TxAdd {
+		return fmt.Errorf("invalid errata pool correction type %q for %s", txType, voter.TxID)
+	}
+	k := mgr.Keeper()
+	tx := voter.Tx.Tx
+	runeCoin, assetCoin := splitErrataPoolCoins(tx.Coins)
 
 	// Ordinary errata is an irreversible pool mutation. Keep it atomic with
 	// removal of any unrelated speculative owner so the debit cannot consume
 	// balances still needed by a later lifecycle rollback.
-	errataCtx, commitErrata := ctx.CacheContext()
-	if err = preemptMempoolSwapPoolOwnerCached(errataCtx, mgr, assetCoin.Asset); err != nil {
-		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, fmt.Errorf("fail to preempt mempool swap owner for errata: %w", err)
+	if err := resolveMempoolSwapPoolOwnerCached(ctx, mgr, assetCoin.Asset); err != nil {
+		return fmt.Errorf("%w: %w", errErrataPoolCorrectionBlocked, err)
+	}
+
+	if voter.ErrataPoolCorrection != "" {
+		k.DeleteErrataPoolCorrection(ctx, assetCoin.Asset, voter.TxID)
+		voter.ErrataPoolCorrection = ""
+	}
+	k.SetObservedTxInVoter(ctx, voter)
+	if err := debitErrataVault(ctx, mgr, voter); err != nil {
+		return err
 	}
 
 	// fetch pool from memo
-	pool, err := k.GetPool(errataCtx, assetCoin.Asset)
+	pool, err := k.GetPool(ctx, assetCoin.Asset)
 	if err != nil {
 		ctx.Logger().Error("fail to get pool for errata tx", "error", err)
-		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, err
+		return err
 	}
 
 	// subtract amounts from pool balances
@@ -241,10 +359,10 @@ func processErrataTx(ctx cosmos.Context, mgr Manager, er *common.ErrataTx) (comm
 	}
 	pool.BalanceRune = common.SafeSub(pool.BalanceRune, runeCoin.Amount)
 	pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, assetCoin.Amount)
-	if memo.IsType(TxAdd) {
-		lp, err := k.GetLiquidityProvider(errataCtx, pool.Asset, tx.FromAddress)
+	if txType == TxAdd {
+		lp, err := k.GetLiquidityProvider(ctx, pool.Asset, tx.FromAddress)
 		if err != nil {
-			return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, fmt.Errorf("fail to get liquidity provider: %w", err)
+			return fmt.Errorf("fail to get liquidity provider: %w", err)
 		}
 
 		// since this address is being malicious, zero their liquidity provider units
@@ -252,11 +370,11 @@ func processErrataTx(ctx cosmos.Context, mgr Manager, er *common.ErrataTx) (comm
 		lp.Units = cosmos.ZeroUint()
 		lp.LastAddHeight = ctx.BlockHeight()
 
-		k.SetLiquidityProvider(errataCtx, lp)
+		k.SetLiquidityProvider(ctx, lp)
 	}
 
-	if err := k.SetPool(errataCtx, pool); err != nil {
-		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, fmt.Errorf("fail to save pool: %w", err)
+	if err := k.SetPool(ctx, pool); err != nil {
+		return fmt.Errorf("fail to save pool: %w", err)
 	}
 
 	// The errata has been applied: pool balances (and possibly LP units) were
@@ -266,7 +384,7 @@ func processErrataTx(ctx cosmos.Context, mgr Manager, er *common.ErrataTx) (comm
 		[]string{"thornode", "errata", "applied"},
 		1,
 		[]metrics.Label{
-			telemetry.NewLabel("chain", telemChain(er.Chain)),
+			telemetry.NewLabel("chain", telemChain(tx.Chain)),
 			telemetry.NewLabel("asset", pool.Asset.String()),
 		},
 	)
@@ -276,12 +394,11 @@ func processErrataTx(ctx cosmos.Context, mgr Manager, er *common.ErrataTx) (comm
 		NewPoolMod(pool.Asset, runeCoin.Amount, false, assetCoin.Amount, false),
 	}
 
-	eventErrata := NewEventErrata(er.Id, mods)
-	if err := mgr.EventMgr().EmitEvent(errataCtx, eventErrata); err != nil {
-		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED, ErrInternal(err, "fail to emit errata event")
+	eventErrata := NewEventErrata(voter.TxID, mods)
+	if err := mgr.EventMgr().EmitEvent(ctx, eventErrata); err != nil {
+		return ErrInternal(err, "fail to emit errata event")
 	}
-	commitErrata()
-	return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED, nil
+	return nil
 }
 
 // processErrataOutboundTx handles an errata for an outbound tx that was sent but later reorged out.

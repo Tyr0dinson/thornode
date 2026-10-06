@@ -1265,6 +1265,16 @@ func (k KVStoreDummy) GetMempoolSwapVaultRecoveries(_ cosmos.Context, _ int) ([]
 	return []common.PubKey{}, nil
 }
 
+func (k KVStoreDummy) SetErrataPoolCorrection(_ cosmos.Context, _ common.Asset, _ common.TxID)    {}
+func (k KVStoreDummy) DeleteErrataPoolCorrection(_ cosmos.Context, _ common.Asset, _ common.TxID) {}
+func (k KVStoreDummy) GetErrataPoolCorrections(_ cosmos.Context, _ common.Asset) ([]common.TxID, error) {
+	return []common.TxID{}, nil
+}
+
+func (k KVStoreDummy) GetErrataPoolCorrectionPools(_ cosmos.Context) ([]common.Asset, error) {
+	return []common.Asset{}, nil
+}
+
 func (k KVStoreDummy) SetStagedOutbound(_ cosmos.Context, _ TxOutItem, _ int64) error {
 	return kaboom
 }

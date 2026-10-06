@@ -230,6 +230,182 @@ func (s *MempoolSwapPoolGateSuite) TestErrataPreemptsUnrelatedPoolOwner(c *C) {
 	c.Check(err, IsNil)
 }
 
+type deferredErrataFixture struct {
+	owner      types.MempoolSwap
+	ownerVoter ObservedTxVoter
+	basePool   Pool
+	livePool   Pool
+	node       NodeAccount
+	errataTx   common.Tx
+	amount     cosmos.Uint
+	vault      Vault
+}
+
+// deferErrataBehindBrokenPoolOwner reaches errata consensus for a finalized
+// BTC swap while the pool's speculative owner cannot be rolled back. The
+// attestation runs in its own cache context and is committed only on success,
+// as the SDK does for a message.
+func deferErrataBehindBrokenPoolOwner(c *C, ctx cosmos.Context, mgr *Mgrs) deferredErrataFixture {
+	owner, ownerVoter, basePool := setExecutedMempoolSwapPoolOwner(c, ctx, mgr)
+	livePool, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Assert(livePool.BalanceAsset.Equal(basePool.BalanceAsset), Equals, false)
+
+	// Missing inbound coins make the owner's rollback fail.
+	broken := ownerVoter
+	broken.Tx.Tx.Coins = nil
+	mgr.Keeper().SetObservedTxInVoter(ctx, broken)
+
+	node := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, node), IsNil)
+	amount := cosmos.NewUint(common.One)
+	vault := GetRandomVault()
+	vault.AddFunds(common.NewCoins(common.NewCoin(common.BTCAsset, amount.MulUint64(10))))
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	errataTx := common.NewTx(
+		GetRandomTxHash(),
+		GetRandomBTCAddress(),
+		GetRandomBTCAddress(),
+		common.NewCoins(common.NewCoin(common.BTCAsset, amount)),
+		common.Gas{common.NewCoin(common.BTCAsset, cosmos.OneUint())},
+		"=:THOR.RUNE:"+GetRandomTHORAddress().String(),
+	)
+	errataTx.Chain = common.BTCChain
+	observed := NewObservedTx(errataTx, ctx.BlockHeight(), vault.PubKey, ctx.BlockHeight())
+	observed.Status = common.Status_done
+	observed.Signers = []string{node.NodeAddress.String()}
+	errataObservedVoter := NewObservedTxVoter(errataTx.ID, ObservedTxs{observed})
+	errataObservedVoter.Tx = observed
+	errataObservedVoter.Height = ctx.BlockHeight()
+	errataObservedVoter.FinalisedHeight = ctx.BlockHeight()
+	errataObservedVoter.UpdatedVault = true
+	mgr.Keeper().SetObservedTxInVoter(ctx, errataObservedVoter)
+
+	msgCtx, commit := ctx.CacheContext()
+	_, err = NewErrataTxHandler(mgr).Run(msgCtx, NewMsgErrataTx(errataTx.ID, common.BTCChain, node.NodeAddress))
+	c.Assert(err, IsNil)
+	commit()
+
+	return deferredErrataFixture{
+		owner:      owner,
+		ownerVoter: ownerVoter,
+		basePool:   basePool,
+		livePool:   livePool,
+		node:       node,
+		errataTx:   errataTx,
+		amount:     amount,
+		vault:      vault,
+	}
+}
+
+func checkDeferredErrataApplied(c *C, ctx cosmos.Context, mgr *Mgrs, f deferredErrataFixture) {
+	pool, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(pool.BalanceAsset.String(), Equals, common.SafeSub(f.basePool.BalanceAsset, f.amount).String())
+	c.Check(pool.BalanceRune.String(), Equals, f.basePool.BalanceRune.String())
+	vault, err := mgr.Keeper().GetVault(ctx, f.vault.PubKey)
+	c.Assert(err, IsNil)
+	c.Check(vault.GetCoin(common.BTCAsset).Amount.String(), Equals, f.amount.MulUint64(9).String())
+	voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, f.errataTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(voter.Reverted, Equals, true)
+	c.Check(voter.ErrataPoolCorrection, Equals, "")
+	pending, err := mgr.Keeper().GetErrataPoolCorrections(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(pending, HasLen, 0)
+	c.Check(ensureMempoolSwapPoolFinalized(ctx, mgr.Keeper(), common.BTCAsset), IsNil)
+}
+
+func (s *MempoolSwapPoolGateSuite) TestErrataDeferredBehindUnresolvablePoolOwnerAppliesOnce(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	f := deferErrataBehindBrokenPoolOwner(c, ctx, mgr)
+
+	// The attestation reached consensus and was kept.
+	errataVoter, err := mgr.Keeper().GetErrataTxVoter(ctx, f.errataTx.ID, common.BTCChain)
+	c.Assert(err, IsNil)
+	c.Check(errataVoter.BlockHeight, Equals, ctx.BlockHeight())
+	c.Check(errataVoter.HasSigned(f.node.NodeAddress), Equals, true)
+
+	// The correction is durably pending and nothing was half-applied.
+	voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, f.errataTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(voter.Reverted, Equals, true)
+	c.Check(voter.ErrataPoolCorrection, Equals, TxSwap.String())
+	pending, err := mgr.Keeper().GetErrataPoolCorrections(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(pending, DeepEquals, []common.TxID{f.errataTx.ID})
+	pool, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(pool, DeepEquals, f.livePool)
+	vault, err := mgr.Keeper().GetVault(ctx, f.vault.PubKey)
+	c.Assert(err, IsNil)
+	c.Check(vault.GetCoin(common.BTCAsset).Amount.String(), Equals, f.amount.MulUint64(10).String())
+	c.Check(mgr.Keeper().HasMempoolSwap(ctx, f.owner.TxId, f.owner.Index), Equals, true)
+
+	// Recovery cannot apply it while the owner stays unresolvable.
+	c.Assert(recoverErrataPoolCorrections(ctx, mgr), IsNil)
+	pool, err = mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(pool, DeepEquals, f.livePool)
+	pending, err = mgr.Keeper().GetErrataPoolCorrections(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(pending, HasLen, 1)
+
+	// Once the owner is gone, the pending correction still blocks other
+	// irreversible pool mutations and new speculative owners.
+	mgr.Keeper().SetObservedTxInVoter(ctx, f.ownerVoter)
+	resolveCtx, commit := ctx.CacheContext()
+	c.Assert(resolveMempoolSwapPoolOwnerCached(resolveCtx, mgr, common.BTCAsset), IsNil)
+	commit()
+	c.Check(mgr.Keeper().HasMempoolSwap(ctx, f.owner.TxId, f.owner.Index), Equals, false)
+	balanceAffected, supplyAffected, err := mempoolSwapPoolFinalityAffected(ctx, mgr.Keeper(), common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(balanceAffected, Equals, true)
+	c.Check(supplyAffected, Equals, false)
+	err = ensureMempoolSwapPoolFinalized(ctx, mgr.Keeper(), common.BTCAsset)
+	c.Assert(errors.Is(err, errMempoolSwapPoolFinalityPending), Equals, true)
+	c.Check(err.Error(), Equals, fmt.Sprintf(
+		"pool has active unfinalized mempool swap effects for %s: errata pool correction is pending",
+		common.BTCAsset,
+	))
+	speculative := f.owner
+	err = ensureMempoolSwapExecutionPoolAvailable(ctx, mgr.Keeper(), common.BTCAsset, &speculative)
+	c.Check(errors.Is(err, errMempoolSwapPoolExecutionPending), Equals, true)
+	c.Check(ensureMempoolSwapExecutionPoolAvailable(ctx, mgr.Keeper(), common.BTCAsset, nil), IsNil)
+
+	c.Assert(recoverErrataPoolCorrections(ctx, mgr), IsNil)
+	checkDeferredErrataApplied(c, ctx, mgr, f)
+
+	// Further recovery passes, preemptions and attestations change nothing.
+	c.Assert(recoverErrataPoolCorrections(ctx, mgr), IsNil)
+	preemptCtx, commit := ctx.CacheContext()
+	c.Assert(preemptMempoolSwapPoolOwnerCached(preemptCtx, mgr, common.BTCAsset), IsNil)
+	commit()
+	_, err = NewErrataTxHandler(mgr).Run(ctx, NewMsgErrataTx(f.errataTx.ID, common.BTCChain, f.node.NodeAddress))
+	c.Assert(err, IsNil)
+	checkDeferredErrataApplied(c, ctx, mgr, f)
+}
+
+func (s *MempoolSwapPoolGateSuite) TestAddLiquiditySettlesDeferredErrataFirst(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	f := deferErrataBehindBrokenPoolOwner(c, ctx, mgr)
+	mgr.Keeper().SetObservedTxInVoter(ctx, f.ownerVoter)
+
+	assetAmount := cosmos.NewUint(common.One)
+	msg := newPoolGateAssetAddMsg(assetAmount, GetRandomRUNEAddress(), GetRandomBTCAddress())
+	_, err := NewAddLiquidityHandler(mgr).Run(ctx, msg)
+	c.Assert(err, IsNil)
+	c.Check(mgr.Keeper().HasMempoolSwap(ctx, f.owner.TxId, f.owner.Index), Equals, false)
+	checkDeferredErrataApplied(c, ctx, mgr, f)
+	pool, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(pool.PendingInboundAsset.Equal(assetAmount), Equals, true)
+
+	c.Assert(recoverErrataPoolCorrections(ctx, mgr), IsNil)
+	checkDeferredErrataApplied(c, ctx, mgr, f)
+}
+
 func (s *MempoolSwapPoolGateSuite) TestWithdrawPreemptsUnfinalizedPoolOwner(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	seedActiveAdvSwapVault(c, ctx, mgr)
