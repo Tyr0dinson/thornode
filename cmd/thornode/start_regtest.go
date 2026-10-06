@@ -66,7 +66,7 @@ func regtestStart(svrCtx *server.Context, clientCtx client.Context, appCreator s
 	if err != nil {
 		return err
 	}
-	app := appCreator(svrCtx.Logger, db, nil, svrCtx.Viper)
+	app := appCreator(svrCtx.Logger, db, svrCtx.Viper)
 	defer func() {
 		if cerr := app.Close(); cerr != nil {
 			svrCtx.Logger.Error(cerr.Error())
