@@ -326,14 +326,14 @@ func (AffiliateCollectorQueueSuite) TestPayoutCreationRollsBackVoterQueueAndFund
 		// The queue manager holds its own keeper reference, so it has to be
 		// rebuilt for the injected queue-write failure to be reached.
 		mgr.advSwapQueue = newSwapQueueAdv(fault)
-		c.Assert(triggerPreferredAssetSwap(ctx, mgr, few, col, 3), NotNil)
+		c.Assert(triggerPreferredAssetSwap(ctx, mgr, few, col), NotNil)
 		assertNamedAffiliateBalance(c, ctx, k, "few", 1000)
 		c.Assert(k.GetRuneBalanceOfModule(ctx, AffiliateCollectorName).String(), Equals, "1000")
 		c.Assert(k.GetRuneBalanceOfModule(ctx, AsgardName).Equal(beforeAsgard), Equals, true)
 		c.Assert(affiliateIntegrationQueuedSwaps(c, ctx, k), HasLen, 0)
 		// The same hash can be retried only if the failed voter write rolled back.
 		fault.failQueue, fault.failTransfer, fault.failWrite = false, false, false
-		c.Assert(triggerPreferredAssetSwap(ctx, mgr, few, col, 3), IsNil)
+		c.Assert(triggerPreferredAssetSwap(ctx, mgr, few, col), IsNil)
 		c.Assert(affiliateIntegrationQueuedSwaps(c, ctx, k), HasLen, 1)
 		assertAffiliateIntegrationInvariant(c, ctx, k)
 	}
@@ -374,7 +374,7 @@ func (AffiliateCollectorQueueSuite) TestAdvancedRestorationWriteFailureRetries(c
 	k := mgr.Keeper()
 	k.SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 1)
 	col := fundNamedCollector(c, ctx, k, "few", 1000)
-	c.Assert(triggerPreferredAssetSwap(ctx, mgr, few, col, 3), IsNil)
+	c.Assert(triggerPreferredAssetSwap(ctx, mgr, few, col), IsNil)
 	queued := affiliateIntegrationQueuedSwaps(c, ctx, k)
 	c.Assert(queued, HasLen, 1)
 	msg := queued[0]
@@ -403,7 +403,7 @@ func (AffiliateCollectorQueueSuite) TestAdvancedRestorationConservesRUNEAndRetri
 		col := fundNamedCollector(c, ctx, k, name, 1000)
 		beforeAsgard := k.GetRuneBalanceOfModule(ctx, AsgardName)
 		beforeReserve := k.GetRuneBalanceOfModule(ctx, ReserveName)
-		c.Assert(triggerPreferredAssetSwap(ctx, mgr, few, col, 3), IsNil)
+		c.Assert(triggerPreferredAssetSwap(ctx, mgr, few, col), IsNil)
 		queued := affiliateIntegrationQueuedSwaps(c, ctx, k)
 		c.Assert(queued, HasLen, 1)
 		msg := queued[0]
@@ -431,7 +431,7 @@ func (AffiliateCollectorQueueSuite) TestPartialPayoutRestoresOnlyUnspentRUNE(c *
 	k := mgr.Keeper()
 	k.SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 1)
 	col := fundNamedCollector(c, ctx, k, "few", 1000)
-	c.Assert(triggerPreferredAssetSwap(ctx, mgr, few, col, 3), IsNil)
+	c.Assert(triggerPreferredAssetSwap(ctx, mgr, few, col), IsNil)
 	msg := affiliateIntegrationQueuedSwaps(c, ctx, k)[0]
 	msg.State.In = cosmos.NewUint(300)
 	msg.State.Out = cosmos.NewUint(200)
@@ -458,4 +458,32 @@ func (AffiliateCollectorQueueSuite) TestPartialPayoutRestoresOnlyUnspentRUNE(c *
 	assertNamedAffiliateBalance(c, ctx, k, "few", 717)
 	c.Assert(k.GetRuneBalanceOfModule(ctx, AsgardName).Equal(before.SubUint64(700)), Equals, true)
 	assertAffiliateIntegrationInvariant(c, ctx, k)
+}
+
+// A preferred-asset payout reached from the skim path, where the caller's sub-swap
+// counter is already past zero, must still be queued at <paTxID>-0 so the swap
+// details and tx status queries find it.
+func (AffiliateCollectorQueueSuite) TestPreferredAssetPayoutIsQueryable(c *C) {
+	ctx, mgr, few, _ := setupAffiliateCollectorPartners(c)
+	k := mgr.Keeper()
+	fundNamedCollector(c, ctx, k, "few", 1000)
+	index := 3
+	coin := common.NewCoin(common.RuneAsset(), cosmos.NewUint(10))
+	c.Assert(addRuneToAffiliateCollector(ctx, mgr, coin, &few, &index), IsNil)
+	queued := affiliateIntegrationQueuedSwaps(c, ctx, k)
+	c.Assert(queued, HasLen, 1)
+	payout := queued[0]
+	c.Assert(isPreferredAssetCollectorSwap(k, payout), Equals, true)
+
+	qs := queryServer{mgr: mgr}
+	details, err := qs.querySwapDetails(ctx, &types.QuerySwapDetailsRequest{TxId: payout.Tx.ID.String()})
+	c.Assert(err, IsNil)
+	c.Assert(details.Status, Equals, SwapStatusQueued)
+	c.Assert(details.Swap.Tx.ID.Equals(payout.Tx.ID), Equals, true)
+
+	voter, err := k.GetObservedTxInVoter(ctx, payout.Tx.ID)
+	c.Assert(err, IsNil)
+	_, _, pending, _ := checkPending(ctx, k, voter)
+	c.Assert(pending, Equals, true)
+	c.Assert(payout.Index, Equals, uint32(0))
 }

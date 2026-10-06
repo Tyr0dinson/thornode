@@ -2491,12 +2491,11 @@ func (vm *NetworkMgr) processRevShare(ctx cosmos.Context, mgr Manager) cosmos.Ui
 				multiplier := getEffectiveMultiplier(ctx, mgr, tn)
 				threshold := ofRune.Mul(cosmos.NewUint(uint64(multiplier)))
 				if col.RuneAmount.GT(threshold) {
-					// triggerPreferredAssetSwap builds the swap-queue key from
-					// (txID, queueIndex) where txID is sha256(name|coin|height) —
-					// already unique per thorname per block, so queueIndex=0 is
-					// safe and cannot collide with skim-path items (which use
+					// triggerPreferredAssetSwap keys the swap at <txID>-0 where
+					// txID is sha256(name|coin|height) — unique per thorname per
+					// block, so it cannot collide with skim-path items (which use
 					// the user-tx ID).
-					if triggerErr := triggerPreferredAssetSwap(ctx, mgr, tn, col, 0); triggerErr != nil {
+					if triggerErr := triggerPreferredAssetSwap(ctx, mgr, tn, col); triggerErr != nil {
 						ctx.Logger().Error("fail to trigger preferred asset swap from revshare",
 							"thorname", entry.Thorname, "err", triggerErr)
 					}

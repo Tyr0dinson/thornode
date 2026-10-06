@@ -543,7 +543,7 @@ func (s *HandlerManageTHORNameSuite) TestRejectsModuleOwnerTransferWithPendingPa
 	ctx, mgr, few, _ := setupAffiliateCollectorPartners(c)
 	k := mgr.Keeper()
 	collector := fundNamedCollector(c, ctx, k, few.Name, 1000)
-	c.Assert(triggerPreferredAssetSwap(ctx, mgr, few, collector, 1), IsNil)
+	c.Assert(triggerPreferredAssetSwap(ctx, mgr, few, collector), IsNil)
 	queuedBefore := affiliateIntegrationQueuedSwaps(c, ctx, k)
 	c.Assert(queuedBefore, HasLen, 1)
 	assertNamedAffiliateBalance(c, ctx, k, few.Name, 0)

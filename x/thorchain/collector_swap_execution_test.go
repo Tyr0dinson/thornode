@@ -222,7 +222,7 @@ func (CollectorSwapExecutionSuite) TestPreferredPayoutDeliveryFailurePreservesSo
 	compromisedKey := compromisedVaultMimirKeyPrefix + vaults[0].PubKey.String()
 	k.SetMimir(ctx, compromisedKey, 1)
 	collector := fundNamedCollector(c, ctx, k, few.Name, 10*common.One)
-	c.Assert(triggerPreferredAssetSwap(ctx, mgr, few, collector, 1), IsNil)
+	c.Assert(triggerPreferredAssetSwap(ctx, mgr, few, collector), IsNil)
 	c.Assert(mgr.AdvSwapQueueMgr().EndBlock(ctx, mgr, false), IsNil)
 	queued := affiliateIntegrationQueuedSwaps(c, ctx, k)
 	c.Assert(queued, HasLen, 1)
@@ -276,7 +276,7 @@ func (CollectorSwapExecutionSuite) TestPreferredPayoutBelowFeeOrDustFinishes(c *
 		k := mgr.Keeper()
 		k.SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 1)
 		collector := fundNamedCollector(c, ctx, k, few.Name, 10*common.One)
-		c.Assert(triggerPreferredAssetSwap(ctx, mgr, few, collector, 1), IsNil)
+		c.Assert(triggerPreferredAssetSwap(ctx, mgr, few, collector), IsNil)
 		queued := affiliateIntegrationQueuedSwaps(c, ctx, k)
 		c.Assert(queued, HasLen, 1)
 		msg := queued[0]

@@ -30,7 +30,7 @@ func getEffectiveMultiplier(ctx cosmos.Context, mgr Manager, tn THORName) int64 
 	return multiplier
 }
 
-func triggerPreferredAssetSwap(ctx cosmos.Context, mgr Manager, tn THORName, affcol AffiliateFeeCollector, queueIndex int) error {
+func triggerPreferredAssetSwap(ctx cosmos.Context, mgr Manager, tn THORName, affcol AffiliateFeeCollector) error {
 	// Callers log payout failures and continue, so roll back the voter, queue and
 	// funds together here if any step fails.
 	ctx, commit := ctx.CacheContext()
@@ -99,8 +99,6 @@ func triggerPreferredAssetSwap(ctx cosmos.Context, mgr Manager, tn THORName, aff
 		networkMemo,
 	)
 
-	// Determine version based on configuration
-
 	preferredAssetSwap := NewMsgSwap(
 		tx,
 		tn.PreferredAsset,
@@ -124,11 +122,8 @@ func triggerPreferredAssetSwap(ctx cosmos.Context, mgr Manager, tn THORName, aff
 	txInVoter.Tx = txIn
 	mgr.Keeper().SetObservedTxInVoter(ctx, txInVoter)
 
-	// Queue the preferred asset swap. The index must be set explicitly: the
-	// advanced queue keys off msg.Index, and this swap shares a TxID with the
-	// affiliate swap queued by the caller - without it both key at <txid>-0 and
-	// the second write silently overwrites the first.
-	preferredAssetSwap.Index = uint32(queueIndex) // nolint:gosec // small sub-swap counter
+	// Queue the preferred asset swap. It keeps index 0: paTxID is unique to this
+	// payout, and the tx status/details queries look it up at <paTxID>-0.
 	if err = mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, mgr, preferredAssetSwap); err != nil {
 		ctx.Logger().Error("fail to add preferred asset swap to advanced queue", "error", err)
 		return err
@@ -398,8 +393,6 @@ func affiliateSwapToRune(ctx cosmos.Context, mgr Manager, mainTx common.Tx, sign
 	memoStr := NewSwapMemo(ctx, mgr, common.RuneAsset(), affAddr, cosmos.ZeroUint(), tnMemo, cosmos.ZeroUint())
 	mainTx.Memo = memoStr
 
-	// Determine version based on configuration
-
 	affiliateSwap := NewMsgSwap(
 		mainTx,
 		common.RuneAsset(),
@@ -457,7 +450,7 @@ func affiliateSwapToRune(ctx cosmos.Context, mgr Manager, mainTx common.Tx, sign
 
 		if err == nil && affCol.RuneAmount.GT(threshold) {
 			*swapIndex++
-			if err = triggerPreferredAssetSwap(ctx, mgr, *tn, affCol, *swapIndex); err != nil {
+			if err = triggerPreferredAssetSwap(ctx, mgr, *tn, affCol); err != nil {
 				ctx.Logger().Error("fail to swap to preferred asset", "thorname", tn.Name, "err", err)
 			}
 		}
@@ -521,7 +514,7 @@ func addRuneToAffiliateCollectorFromModule(ctx cosmos.Context, mgr Manager, modu
 	threshold := ofRune.Mul(cosmos.NewUint(uint64(multiplier)))
 	if affcol.RuneAmount.GT(threshold) {
 		*swapIndex++
-		if err = triggerPreferredAssetSwap(ctx, mgr, *thorname, affcol, *swapIndex); err != nil {
+		if err = triggerPreferredAssetSwap(ctx, mgr, *thorname, affcol); err != nil {
 			ctx.Logger().Error("fail to swap to preferred asset", "thorname", thorname.Name, "err", err)
 		}
 	}
