@@ -16,6 +16,7 @@ import (
 	cryptokeysed25519 "github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	cryptokeyssecp256k1 "github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/crypto/ed25519"
 )
 
@@ -124,7 +125,14 @@ func (k *Keys) GetPrivateKeyEDDSA() (*cryptokeysed25519.PrivKey, error) {
 	// return k.kb.ExportPrivateKeyObject(k.signerName)
 	privKeyArmor, err := k.kb.ExportPrivKeyArmor(signerNameEDDSA, k.password)
 	if err != nil {
-		return nil, err
+		// `thornode ed25519` no longer persists the ed-<signer> key to the
+		// keyring (it is now a pure stdin->pubkey tool), so nodes created with
+		// that flow have no key to export. Derive it from the signer seed
+		// phrase instead — the identical derivation set-node-keys used to
+		// register the on-chain pubkey, so the loaded key matches. Existing
+		// nodes that still hold the keyring key keep using it (above) and are
+		// unaffected.
+		return k.deriveEDDSAFromSeed(err)
 	}
 	priKey, _, err := crypto.UnarmorDecryptPrivKey(privKeyArmor, k.password)
 	if err != nil {
@@ -135,6 +143,21 @@ func (k *Keys) GetPrivateKeyEDDSA() (*cryptokeysed25519.PrivKey, error) {
 		return nil, fmt.Errorf("fail to cast private key to eddsa private key")
 	}
 	return eddsaKey, nil
+}
+
+// deriveEDDSAFromSeed derives the node's eddsa private key from the signer seed
+// phrase when the ed-<signer> key is absent from the keyring. exportErr is the
+// original keyring error, surfaced if the seed phrase is unavailable.
+func (k *Keys) deriveEDDSAFromSeed(exportErr error) (*cryptokeysed25519.PrivKey, error) {
+	seedPhrase, seedErr := common.GetSignerSeedPhrase()
+	if seedErr != nil {
+		return nil, fmt.Errorf("eddsa key not in keyring (%v) and no seed phrase to derive it: %w", exportErr, seedErr)
+	}
+	keyBytes, err := ed25519.DeriveSignerEDDSAKeyBytes(seedPhrase, k.password)
+	if err != nil {
+		return nil, fmt.Errorf("fail to derive eddsa private key from seed phrase: %w", err)
+	}
+	return &cryptokeysed25519.PrivKey{Key: keyBytes}, nil
 }
 
 // GetKeybase return the keybase
