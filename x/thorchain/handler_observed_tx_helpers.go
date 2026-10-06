@@ -3318,6 +3318,47 @@ func deductMempoolRollbackSourceAsset(ctx cosmos.Context, mgr Manager, sourceAss
 	return nil
 }
 
+// getMempoolRollbackSwapPools snapshots every pool an inline reverse swap from
+// fromAsset to toAsset can touch, deduplicated for single-pool swaps.
+func getMempoolRollbackSwapPools(ctx cosmos.Context, k keeper.Keeper, fromAsset, toAsset common.Asset) ([]Pool, error) {
+	pools := make([]Pool, 0, 2)
+	for _, asset := range []common.Asset{fromAsset.GetLayer1Asset(), toAsset.GetLayer1Asset()} {
+		if len(pools) > 0 && pools[0].Asset.Equals(asset) {
+			continue
+		}
+		pool, err := k.GetPool(ctx, asset)
+		if err != nil {
+			return nil, fmt.Errorf("fail to get pool %s before inline rollback swap: %w", asset, err)
+		}
+		pools = append(pools, pool)
+	}
+	return pools, nil
+}
+
+// emitMempoolRollbackSwapPoolChanges reports each snapshotted pool's net
+// RUNE and asset movement since the snapshot as a pool balance change.
+func emitMempoolRollbackSwapPoolChanges(ctx cosmos.Context, mgr Manager, before []Pool) error {
+	for _, prev := range before {
+		pool, err := mgr.Keeper().GetPool(ctx, prev.Asset)
+		if err != nil {
+			return fmt.Errorf("fail to get pool %s after inline rollback swap: %w", prev.Asset, err)
+		}
+		// At most one SafeSub per side is non-zero, so each sum is |after-before|.
+		runeAdd := pool.BalanceRune.GTE(prev.BalanceRune)
+		runeAmt := common.SafeSub(pool.BalanceRune, prev.BalanceRune).Add(common.SafeSub(prev.BalanceRune, pool.BalanceRune))
+		assetAdd := pool.BalanceAsset.GTE(prev.BalanceAsset)
+		assetAmt := common.SafeSub(pool.BalanceAsset, prev.BalanceAsset).Add(common.SafeSub(prev.BalanceAsset, pool.BalanceAsset))
+		if runeAmt.IsZero() && assetAmt.IsZero() {
+			continue
+		}
+		emitPoolBalanceChangedEvent(ctx,
+			NewPoolMod(pool.Asset, runeAmt, runeAdd, assetAmt, assetAdd),
+			"mempool swap rollback",
+			mgr)
+	}
+	return nil
+}
+
 // rollbackMempoolSwapAtomic rolls back mempool-swap execution by
 // executing the reverse swap inline against live pool state and donating the
 // recovered source asset back into the original source pool inside the same
@@ -3714,9 +3755,20 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 		if buildErr != nil {
 			return buildErr
 		}
+		// The reverse swap suppresses its canonical swap events, so report the
+		// pool depths it moved directly. Measure only the swap itself: the
+		// phantom-credit deduction and donation below emit their own events.
+		var poolsBeforeSwap []Pool
+		poolsBeforeSwap, err = getMempoolRollbackSwapPools(ctx, keeper, action.Coin.Asset, sourceAsset)
+		if err != nil {
+			return err
+		}
 		rollbackCtx := withMempoolSwapExecutionMode(ctx, mempoolSwapExecutionRollback)
 		if err = executeSwapWithoutOutboundsCached(rollbackCtx, mgr, &rollbackSwap); err != nil {
 			return fmt.Errorf("fail to execute inline rollback swap: %w", err)
+		}
+		if err = emitMempoolRollbackSwapPoolChanges(ctx, mgr, poolsBeforeSwap); err != nil {
+			return err
 		}
 		if !assetRemovedFromPool {
 			// Deduct the phantom source asset only after the first rollback swap

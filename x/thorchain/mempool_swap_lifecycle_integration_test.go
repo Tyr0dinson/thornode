@@ -1322,3 +1322,119 @@ func (s *MempoolSwapLifecycleIntegrationSuite) TestQuoteSimulationPreemptsOwnedP
 	c.Check(afterPool, DeepEquals, livePool)
 	c.Check(mgr.Keeper().HasAdvSwapQueueItem(ctx, fixture.voter.TxID, 0), Equals, true)
 }
+
+type recordingMempoolEventManager struct {
+	EventManager
+	items []EmitEventItem
+}
+
+func (m *recordingMempoolEventManager) EmitEvent(ctx cosmos.Context, evt EmitEventItem) error {
+	m.items = append(m.items, evt)
+	return m.EventManager.EmitEvent(ctx, evt)
+}
+
+// TestRollbackPoolEventsMatchPoolBalanceChanges replays every pool-changing
+// event a complete rollback emits and checks that the sum reproduces the
+// actual before/after balances of each pool. Canonical swap events are
+// suppressed for the reverse swap, so any pool movement left unreported
+// (reverse swap, fee restoration) would leave indexers with drifted depths.
+func (s *MempoolSwapLifecycleIntegrationSuite) TestRollbackPoolEventsMatchPoolBalanceChanges(c *C) {
+	type poolFlow struct{ runeIn, runeOut, assetIn, assetOut cosmos.Uint }
+	for _, crossAsset := range []bool{false, true} {
+		label := fmt.Sprintf("crossAsset=%t", crossAsset)
+		comment := Commentf("%s", label)
+		ctx, mgr, fixture := setupMempoolSwapLifecycleFixture(c)
+		pools := []common.Asset{common.BTCAsset}
+		queued, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, fixture.voter.TxID, 0)
+		c.Assert(err, IsNil)
+		if crossAsset {
+			// One executed slice of a two-slice BTC->ETH stream leaves an ETH
+			// output that only an inline reverse swap can unwind.
+			targetPool := fixture.sourcePool
+			targetPool.Asset = common.ETHAsset
+			c.Assert(mgr.Keeper().SetPool(ctx, targetPool), IsNil)
+			pools = append(pools, common.ETHAsset)
+			queued.TargetAsset = common.ETHAsset
+			queued.Destination = GetRandomETHAddress()
+			queued.Tx.Memo = fmt.Sprintf("=:ETH.ETH:%s:0/1/2", queued.Destination)
+			fixture.voter.Tx.Tx = queued.Tx
+			mgr.Keeper().SetObservedTxInVoter(ctx, fixture.voter)
+			c.Assert(mgr.Keeper().SetMempoolSwap(ctx, newMempoolSwapLifecycle(ctx, mgr.Keeper(), fixture.voter, queued, fixture.reservedTOR)), IsNil)
+		} else {
+			// A fully staged native RUNE output unwinds directly.
+			queued.State.Quantity = 1
+			queued.State.Interval = 1
+			queued.State.Deposit = queued.Tx.Coins[0].Amount
+		}
+		c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, queued), IsNil)
+		c.Assert(mgr.AdvSwapQueueMgr().EndBlock(ctx, mgr, false), IsNil)
+
+		record, found, err := mgr.Keeper().GetMempoolSwap(ctx, fixture.voter.TxID, 0)
+		c.Assert(err, IsNil)
+		c.Assert(found, Equals, true)
+		c.Assert(record.PendingEffects.Pools, HasLen, len(pools), comment)
+		for _, effect := range record.PendingEffects.Pools {
+			c.Assert(effect.ReserveRune.IsZero(), Equals, false, Commentf("fee restoration must be exercised for %s", effect.Asset))
+		}
+
+		before := make(map[string]Pool, len(pools))
+		for _, asset := range pools {
+			before[asset.String()], err = mgr.Keeper().GetPool(ctx, asset)
+			c.Assert(err, IsNil)
+		}
+		voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, fixture.voter.TxID)
+		c.Assert(err, IsNil)
+		recorder := &recordingMempoolEventManager{EventManager: mgr.EventMgr()}
+		rollbackMgr := mempoolSwapEventManagerOverride{Manager: mgr, eventMgr: recorder}
+		c.Assert(rollbackMempoolSwapAtomic(ctx, mgr.Keeper(), rollbackMgr, voter), IsNil, comment)
+		c.Assert(mgr.Keeper().HasMempoolSwap(ctx, fixture.voter.TxID, 0), Equals, false, comment)
+
+		flows := make(map[string]*poolFlow, len(pools))
+		for _, asset := range pools {
+			flows[asset.String()] = &poolFlow{cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint()}
+		}
+		flowFor := func(asset common.Asset) *poolFlow {
+			flow, ok := flows[asset.String()]
+			c.Assert(ok, Equals, true, Commentf("rollback reported a change to unexpected pool %s", asset))
+			return flow
+		}
+		for _, item := range recorder.items {
+			switch evt := item.(type) {
+			case *EventSwap:
+				c.Errorf("rollback emitted a canonical swap event for pool %s (%s)", evt.Pool, label)
+			case *types.EventPoolBalanceChanged:
+				flow := flowFor(evt.PoolChange.Asset)
+				if evt.PoolChange.RuneAdd {
+					flow.runeIn = flow.runeIn.Add(evt.PoolChange.RuneAmt)
+				} else {
+					flow.runeOut = flow.runeOut.Add(evt.PoolChange.RuneAmt)
+				}
+				if evt.PoolChange.AssetAdd {
+					flow.assetIn = flow.assetIn.Add(evt.PoolChange.AssetAmt)
+				} else {
+					flow.assetOut = flow.assetOut.Add(evt.PoolChange.AssetAmt)
+				}
+			case *EventDonate:
+				flow := flowFor(evt.Pool)
+				for _, coin := range evt.InTx.Coins {
+					if coin.IsRune() {
+						flow.runeIn = flow.runeIn.Add(coin.Amount)
+					} else {
+						flow.assetIn = flow.assetIn.Add(coin.Amount)
+					}
+				}
+			}
+		}
+
+		for _, asset := range pools {
+			after, err := mgr.Keeper().GetPool(ctx, asset)
+			c.Assert(err, IsNil)
+			flow := flows[asset.String()]
+			prev := before[asset.String()]
+			c.Check(prev.BalanceRune.Add(flow.runeIn).String(), Equals, after.BalanceRune.Add(flow.runeOut).String(),
+				Commentf("%s rune: before=%s after=%s reported +%s -%s (%s)", asset, prev.BalanceRune, after.BalanceRune, flow.runeIn, flow.runeOut, label))
+			c.Check(prev.BalanceAsset.Add(flow.assetIn).String(), Equals, after.BalanceAsset.Add(flow.assetOut).String(),
+				Commentf("%s asset: before=%s after=%s reported +%s -%s (%s)", asset, prev.BalanceAsset, after.BalanceAsset, flow.assetIn, flow.assetOut, label))
+		}
+	}
+}

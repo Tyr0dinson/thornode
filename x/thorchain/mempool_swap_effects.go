@@ -604,6 +604,11 @@ func prepareMempoolSwapRollbackEffectsCached(ctx cosmos.Context, mgr Manager, re
 		if err := mgr.Keeper().SetPool(cacheCtx, pool); err != nil {
 			return fmt.Errorf("fail to restore speculative fee to pool %s: %w", effect.Asset, err)
 		}
+		// The forward swap event reported this fee as leaving pool depth.
+		emitPoolBalanceChangedEvent(cacheCtx,
+			NewPoolMod(effect.Asset, restoreRune, true, cosmos.ZeroUint(), false),
+			"mempool swap rollback",
+			mgr)
 	}
 
 	current.PendingEffects = types.MempoolSwapPendingEffects{}
