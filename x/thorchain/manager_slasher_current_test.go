@@ -2746,7 +2746,7 @@ func (s *SlashingSuite) TestNeedsNewVaultWeighsEveryLink(c *C) {
 			expects: true,
 		},
 		{
-			name:    "majority with an unparseable memo",
+			name:    "majority with an unparsable memo",
 			height:  liveHeight,
 			links:   []link{{signers: memberSigners[:3], memo: "OUT:xyz"}},
 			expects: true,
