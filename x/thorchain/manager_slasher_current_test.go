@@ -1400,7 +1400,7 @@ func (f recoveryLinkFixture) link(ctx cosmos.Context, mgr Manager, voter Observe
 	mgr.Keeper().SetObservedLink(ctx, f.toi.InHash, voter.TxID)
 }
 
-func (s *SlashingSuite) TestActiveOutboundObservationExpiresStaleNonFinalized(c *C) {
+func (s *SlashingSuite) TestLinkedOutboundProgressExpiresStaleNonFinalized(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
 	f := newRecoveryLinkFixture(c)
@@ -1413,8 +1413,8 @@ func (s *SlashingSuite) TestActiveOutboundObservationExpiresStaleNonFinalized(c 
 
 	expiryHeight := startHeight + staleOutboundObservationSigningPeriods*signingTransPeriod
 	firstStaleHeight := expiryHeight + 1
-	active := func() bool {
-		return slasher.hasActiveOutboundObservation(ctx, mgr, f.vault, signingTransPeriod, startHeight, f.toi)
+	progress := func() outboundProgress {
+		return slasher.linkedOutboundProgress(ctx, mgr, f.vault, signingTransPeriod, startHeight, f.toi)
 	}
 
 	ctx = ctx.WithBlockHeight(expiryHeight)
@@ -1423,37 +1423,37 @@ func (s *SlashingSuite) TestActiveOutboundObservationExpiresStaleNonFinalized(c 
 	c.Check(status.firstStaleWindow, Equals, false)
 	c.Check(status.observationHeight, Equals, startHeight)
 	c.Check(status.staleSinceHeight, Equals, firstStaleHeight)
-	c.Check(active(), Equals, true)
+	c.Check(progress(), Equals, outboundPending)
 
 	ctx = ctx.WithBlockHeight(firstStaleHeight)
 	status = slasher.staleNonFinalOutboundObservation(ctx, voter, signingTransPeriod, startHeight)
 	c.Check(status.stale, Equals, true)
 	c.Check(status.firstStaleWindow, Equals, true)
 	c.Check(status.staleSinceHeight, Equals, firstStaleHeight)
-	c.Check(active(), Equals, false)
+	c.Check(progress(), Equals, outboundNotObserved)
 
 	ctx = ctx.WithBlockHeight(firstStaleHeight + signingTransPeriod)
 	status = slasher.staleNonFinalOutboundObservation(ctx, voter, signingTransPeriod, startHeight)
 	c.Check(status.stale, Equals, true)
 	c.Check(status.firstStaleWindow, Equals, false)
-	c.Check(active(), Equals, false)
+	c.Check(progress(), Equals, outboundNotObserved)
 
 	voter.UnfinalizedHeight = ctx.BlockHeight()
 	mgr.Keeper().SetObservedTxOutVoter(ctx, voter)
-	c.Check(active(), Equals, true)
+	c.Check(progress(), Equals, outboundPending)
 
 	voter.UnfinalizedHeight = 0
 	voter.FinalisedHeight = startHeight
 	voter.Tx = obs
 	mgr.Keeper().SetObservedTxOutVoter(ctx, voter)
-	c.Check(active(), Equals, true)
+	c.Check(progress(), Equals, outboundSent)
 }
 
 // A link is written on the first attestation, before the outbound voter has
 // consensus, so one active node can link any outbound-shaped observation to an
 // inbound. Treasury recovery must weigh such a link the way needsNewVault does
 // instead of treating its mere existence as an outbound in progress (#2929).
-func (s *SlashingSuite) TestActiveOutboundObservationWeighsSubConsensusLinks(c *C) {
+func (s *SlashingSuite) TestLinkedOutboundProgressWeighsSubConsensusLinks(c *C) {
 	const (
 		signingTransPeriod = int64(300)
 		startHeight        = int64(100)
@@ -1465,31 +1465,31 @@ func (s *SlashingSuite) TestActiveOutboundObservationWeighsSubConsensusLinks(c *
 		name    string
 		signers func(f recoveryLinkFixture) []string
 		height  int64
-		active  bool
+		want    outboundProgress
 	}{
 		{
 			name:    "lone outsider inside its window",
 			signers: func(f recoveryLinkFixture) []string { return []string{f.outsiderSigner} },
 			height:  startHeight + 2*signingTransPeriod,
-			active:  true,
+			want:    outboundPending,
 		},
 		{
 			name:    "lone outsider past its window",
 			signers: func(f recoveryLinkFixture) []string { return []string{f.outsiderSigner} },
 			height:  liveHeight,
-			active:  false,
+			want:    outboundNotObserved,
 		},
 		{
 			name:    "lone vault member past its window",
 			signers: func(f recoveryLinkFixture) []string { return f.memberSigners[:1] },
 			height:  liveHeight,
-			active:  false,
+			want:    outboundNotObserved,
 		},
 		{
 			name:    "vault majority",
 			signers: func(f recoveryLinkFixture) []string { return f.memberSigners[:2] },
 			height:  liveHeight,
-			active:  true,
+			want:    outboundPending,
 		},
 	} {
 		ctx, mgr := setupManagerForTest(c)
@@ -1499,8 +1499,8 @@ func (s *SlashingSuite) TestActiveOutboundObservationWeighsSubConsensusLinks(c *
 		f.link(ctx, mgr, NewObservedTxVoter(obs.Tx.ID, []common.ObservedTx{obs}))
 
 		ctx = ctx.WithBlockHeight(tc.height)
-		c.Check(slasher.hasActiveOutboundObservation(ctx, mgr, f.vault, signingTransPeriod, startHeight, f.toi),
-			Equals, tc.active, Commentf("case %q", tc.name))
+		c.Check(slasher.linkedOutboundProgress(ctx, mgr, f.vault, signingTransPeriod, startHeight, f.toi),
+			Equals, tc.want, Commentf("case %q", tc.name))
 	}
 
 	// A majority observation of some other payment does not hold this item.
@@ -1511,13 +1511,13 @@ func (s *SlashingSuite) TestActiveOutboundObservationWeighsSubConsensusLinks(c *
 	obs.Tx.ToAddress = GetRandomBTCAddress()
 	f.link(ctx, mgr, NewObservedTxVoter(obs.Tx.ID, []common.ObservedTx{obs}))
 	ctx = ctx.WithBlockHeight(liveHeight)
-	c.Check(slasher.hasActiveOutboundObservation(ctx, mgr, f.vault, signingTransPeriod, startHeight, f.toi), Equals, false)
+	c.Check(slasher.linkedOutboundProgress(ctx, mgr, f.vault, signingTransPeriod, startHeight, f.toi), Equals, outboundNotObserved)
 }
 
 // A finalised voter holds treasury recovery only through its consensus tx.
 // A single node can add a variant to an already-final outbound naming another
 // inbound, and that variant must not stand in for the consensus tx (#3207).
-func (s *SlashingSuite) TestActiveOutboundObservationTrustsOnlyConsensusTx(c *C) {
+func (s *SlashingSuite) TestLinkedOutboundProgressTrustsOnlyConsensusTx(c *C) {
 	const (
 		signingTransPeriod = int64(300)
 		startHeight        = int64(100)
@@ -1526,12 +1526,12 @@ func (s *SlashingSuite) TestActiveOutboundObservationTrustsOnlyConsensusTx(c *C)
 	for _, tc := range []struct {
 		name      string
 		consensus func(f recoveryLinkFixture) common.ObservedTx
-		active    bool
+		want      outboundProgress
 	}{
 		{
 			name:      "consensus tx pays the item",
 			consensus: func(f recoveryLinkFixture) common.ObservedTx { return f.observation(f.memberSigners...) },
-			active:    true,
+			want:      outboundSent,
 		},
 		{
 			name: "memoless consensus tx pays the item",
@@ -1540,7 +1540,7 @@ func (s *SlashingSuite) TestActiveOutboundObservationTrustsOnlyConsensusTx(c *C)
 				obs.Tx.Memo = ""
 				return obs
 			},
-			active: true,
+			want: outboundSent,
 		},
 		{
 			name: "consensus tx pays another inbound",
@@ -1549,7 +1549,7 @@ func (s *SlashingSuite) TestActiveOutboundObservationTrustsOnlyConsensusTx(c *C)
 				obs.Tx.Memo = "OUT:" + GetRandomTxHash().String()
 				return obs
 			},
-			active: false,
+			want: outboundNotObserved,
 		},
 		{
 			name: "consensus tx pays another destination",
@@ -1558,12 +1558,12 @@ func (s *SlashingSuite) TestActiveOutboundObservationTrustsOnlyConsensusTx(c *C)
 				obs.Tx.ToAddress = GetRandomBTCAddress()
 				return obs
 			},
-			active: false,
+			want: outboundNotObserved,
 		},
 		{
 			name:      "no consensus tx recorded",
 			consensus: func(f recoveryLinkFixture) common.ObservedTx { return common.ObservedTx{} },
-			active:    false,
+			want:      outboundNotObserved,
 		},
 	} {
 		ctx, mgr := setupManagerForTest(c)
@@ -1584,8 +1584,81 @@ func (s *SlashingSuite) TestActiveOutboundObservationTrustsOnlyConsensusTx(c *C)
 
 		// Long past any stale window: a finalised voter never goes stale.
 		ctx = ctx.WithBlockHeight(startHeight + 100*signingTransPeriod)
-		c.Check(slasher.hasActiveOutboundObservation(ctx, mgr, f.vault, signingTransPeriod, startHeight, f.toi),
-			Equals, tc.active, Commentf("case %q", tc.name))
+		c.Check(slasher.linkedOutboundProgress(ctx, mgr, f.vault, signingTransPeriod, startHeight, f.toi),
+			Equals, tc.want, Commentf("case %q", tc.name))
+	}
+}
+
+// An outbound past MaxOutboundAttempts whose assigned vault reports it in
+// flight must neither be recovered (it may still land) nor dropped (LackSigning
+// examines each TxOut height once, so an observation that never finalises would
+// strand it). It is rescheduled, and recovered once the observation is stale
+// (#3062).
+func (s *SlashingSuite) TestLackSigningDefersRecoveryForPendingOutbound(c *C) {
+	for _, tc := range []struct {
+		name      string
+		height    int64
+		recovered bool
+	}{
+		// The observation is pinned to the inbound's height 1 and goes stale
+		// after three signing periods.
+		{name: "pending observation", height: 500, recovered: false},
+		{name: "stale observation", height: 1000, recovered: true},
+	} {
+		ctx, mgr := setupManagerForTest(c)
+		ctx = ctx.WithBlockHeight(tc.height)
+		mgr.Keeper().SetMimir(ctx, constants.MaxOutboundAttempts.String(), 1)
+
+		pool := NewPool()
+		pool.Asset = common.BTCAsset
+		pool.Decimals = 8
+		pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+		pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+		pool.Status = PoolAvailable
+		c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+		signingTransPeriod := mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
+		c.Assert(signingTransPeriod, Equals, int64(300))
+		scheduledHeight := ctx.BlockHeight() - signingTransPeriod
+
+		f := newRecoveryLinkFixture(c)
+		f.vault.Type = AsgardVault
+		f.vault.Status = ActiveVault
+		f.vault.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One))}
+		c.Assert(mgr.Keeper().SetVault(ctx, f.vault), IsNil)
+
+		txOut := NewTxOut(scheduledHeight)
+		txOut.TxArray = append(txOut.TxArray, f.toi)
+		c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+		inVoter := NewObservedTxVoter(f.toi.InHash, nil)
+		inVoter.FinalisedHeight = 1
+		inVoter.Actions = []TxOutItem{f.toi}
+		mgr.Keeper().SetObservedTxInVoter(ctx, inVoter)
+
+		obs := f.observation(f.memberSigners[:2]...)
+		f.link(ctx, mgr, NewObservedTxVoter(obs.Tx.ID, []common.ObservedTx{obs}))
+
+		slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+		c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
+
+		after, err := mgr.Keeper().GetTxOut(ctx, scheduledHeight)
+		c.Assert(err, IsNil)
+		c.Assert(after.TxArray, HasLen, 1)
+		c.Check(after.TxArray[0].OutHash.Equals(common.BlankTxID), Equals, true, Commentf("case %q", tc.name))
+
+		swaps := affiliateIntegrationQueuedSwaps(c, ctx, mgr.Keeper())
+		rescheduled, err := mgr.Keeper().GetTxOut(ctx, ctx.BlockHeight())
+		c.Assert(err, IsNil)
+		if tc.recovered {
+			c.Check(swaps, HasLen, 1, Commentf("case %q", tc.name))
+			c.Check(rescheduled.TxArray, HasLen, 0, Commentf("case %q", tc.name))
+			continue
+		}
+		c.Check(swaps, HasLen, 0, Commentf("case %q", tc.name))
+		c.Assert(rescheduled.TxArray, HasLen, 1, Commentf("case %q", tc.name))
+		c.Check(rescheduled.TxArray[0].InHash.Equals(f.toi.InHash), Equals, true)
+		// The vault's own majority says it is in flight: it stays on that vault.
+		c.Check(rescheduled.TxArray[0].VaultPubKey.Equals(f.vault.PubKey), Equals, true)
 	}
 }
 

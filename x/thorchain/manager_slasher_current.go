@@ -563,19 +563,30 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				if maxOutboundAttempts > 0 && !durableKeepVault {
 					age := ctx.BlockHeight() - voter.FinalisedHeight
 					attempts := age / itemSigningTransPeriod
-					if attempts >= maxOutboundAttempts {
+					recoverOutbound := attempts >= maxOutboundAttempts
+					if recoverOutbound {
 						// Skip treasury recovery if there's already an outbound associated or
-						// a non-stale observation of the outbound (outbound is in progress).
+						// a finalised payment of this item.
 						hasOutboundAssociated := len(voter.OutTxs) > 0
-						hasOutboundObservation := s.hasActiveOutboundObservation(ctx, mgr, vault, itemSigningTransPeriod, voter.FinalisedHeight, toi)
-						if hasOutboundAssociated || hasOutboundObservation {
-							ctx.Logger().Info("skipping treasury recovery, outbound in progress",
+						progress := s.linkedOutboundProgress(ctx, mgr, vault, itemSigningTransPeriod, voter.FinalisedHeight, toi)
+						if hasOutboundAssociated || progress == outboundSent {
+							ctx.Logger().Info("skipping treasury recovery, outbound sent",
 								"hash", toi.InHash,
 								"has_outbound", hasOutboundAssociated,
-								"has_observation", hasOutboundObservation)
+								"has_observation", progress == outboundSent)
 							continue
 						}
-
+						if progress == outboundPending {
+							// A non-finalised observation may still land, so recovering now
+							// could pay twice. Dropping the item is no better: LackSigning
+							// examines each TxOut height once, so an observation that never
+							// finalises would strand it. Reschedule it below instead and look
+							// again once the observation has finalised or gone stale.
+							ctx.Logger().Info("deferring treasury recovery, outbound in progress", "hash", toi.InHash)
+							recoverOutbound = false
+						}
+					}
+					if recoverOutbound {
 						// For user-facing outbounds (refund, outbound, ragnarok), send to treasury recovery
 						if memo.IsOutbound() {
 							treasuryErr := s.sendFailedOutboundToTreasury(ctx, mgr, toi, vault, memo)
@@ -1364,35 +1375,50 @@ func (s *SlasherImpl) updatePoolFromSlash(ctx cosmos.Context, pool types.Pool, s
 	}
 }
 
-// hasActiveOutboundObservation reports whether an observed link should still
-// block MaxOutboundAttempts recovery of toi.
+// outboundProgress is what the observed links of an inbound show about one of
+// its scheduled outbounds, for MaxOutboundAttempts recovery.
+type outboundProgress int
+
+const (
+	// outboundNotObserved: no link credibly shows the outbound leaving a vault.
+	outboundNotObserved outboundProgress = iota
+	// outboundPending: a credible observation has not finalised yet and may
+	// still land, so recovery waits.
+	outboundPending
+	// outboundSent: a finalised consensus tx pays the item.
+	outboundSent
+)
+
+// linkedOutboundProgress weighs every observed link of toi's inbound for
+// MaxOutboundAttempts recovery.
 //
 // A link is written on the first attestation, before the outbound voter
 // reaches consensus, so a link proves nothing by itself. A finalised voter
-// remains a double-send guard only when its consensus tx - not whichever
-// variant wrote the link - names toi's inbound and pays toi. A non-finalised
-// voter only counts when it carries the same weight needsNewVault demands of
+// shows the item sent only when its consensus tx - not whichever variant wrote
+// the link - names toi's inbound and pays toi. A non-finalised voter only
+// shows it pending when it carries the same weight needsNewVault demands of
 // it: a simple majority of the assigned vault, or matching signers still
 // inside their bounded window.
-func (s *SlasherImpl) hasActiveOutboundObservation(ctx cosmos.Context, mgr Manager, vault Vault, signingTransPeriod, startHeight int64, toi TxOutItem) bool {
+func (s *SlasherImpl) linkedOutboundProgress(ctx cosmos.Context, mgr Manager, vault Vault, signingTransPeriod, startHeight int64, toi TxOutItem) outboundProgress {
+	progress := outboundNotObserved
 	for _, hash := range mgr.Keeper().GetObservedLink(ctx, toi.InHash) {
 		voter, err := mgr.Keeper().GetObservedTxOutVoter(ctx, hash)
 		if err != nil {
 			ctx.Logger().Error("fail to get txout voter", "hash", hash, "error", err)
-			return true
+			return outboundSent
 		}
 		if voter.FinalisedHeight > 0 {
 			if consensusOutboundPaysItem(ctx, mgr, voter.Tx, toi) {
-				return true
+				return outboundSent
 			}
 			continue
 		}
 		if s.pendingVaultObservation(ctx, mgr, vault, signingTransPeriod, startHeight, toi, hash, voter,
 			"ignoring stale non-finalised outbound observation for treasury recovery") {
-			return true
+			progress = outboundPending
 		}
 	}
-	return false
+	return progress
 }
 
 // staleOutboundObservationStatus carries the height metadata used to decide
