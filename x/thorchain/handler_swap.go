@@ -461,11 +461,10 @@ func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cos
 	// Credit dynamic fee tracking for eligible affiliates. Per-leg, with
 	// RUNE→TOR conversion so the closed-loop gradient signal is not corrupted
 	// by RUNE price moves.
-	// swp.Count is still pre-increment here (both queues bump it after the
-	// handler returns), so Count == 0 marks the first sub-swap of a stream —
-	// and every non-streaming swap. This keeps the liquidity gate's swap count
-	// a count of user swaps rather than of streaming intervals.
-	creditDynamicFeeForLegs(ctx, h.mgr, swapEvents, swapAffiliates, swapAffiliateBps, swp.Count == 0)
+	// Count the user swap once, on the stream's first successful sub-swap
+	// (and on every non-streaming swap). This keeps the liquidity gate's swap
+	// count a count of user swaps rather than of streaming intervals.
+	creditDynamicFeeForLegs(ctx, h.mgr, swapEvents, swapAffiliates, swapAffiliateBps, isFirstSuccessfulSubSwap(msg, swp))
 
 	stableReserveInternalSettled := false
 	if settled, settleErr := settleStableReserveInternalSwap(ctx, h.mgr, msg, emit); settleErr != nil {
@@ -562,4 +561,21 @@ func (h SwapHandler) getTotalLiquidityRUNE(ctx cosmos.Context) (cosmos.Uint, err
 		total = total.Add(p.BalanceRune)
 	}
 	return total, nil
+}
+
+// isFirstSuccessfulSubSwap reports whether no earlier sub-swap of this swap has
+// succeeded. Both queues bump the attempt count after the handler returns, so
+// it is still pre-increment here, but it counts failed attempts too: a failed
+// attempt's handler writes are discarded while the queue still records it in
+// FailedSwaps and bumps Count. Every prior attempt having failed is therefore
+// the test, not Count == 0. Legacy streaming swaps track this in the keeper's
+// StreamingSwap; everything else tracks it in msg.State.
+func isFirstSuccessfulSubSwap(msg MsgSwap, swp StreamingSwap) bool {
+	if msg.IsLegacyStreaming() && !msg.IsLimitSwap() {
+		return uint64(len(swp.FailedSwaps)) >= swp.Count
+	}
+	if msg.State == nil {
+		return true
+	}
+	return msg.FailCount() >= msg.State.Count
 }

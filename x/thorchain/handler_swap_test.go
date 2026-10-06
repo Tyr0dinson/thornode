@@ -981,3 +981,34 @@ func (s *HandlerSwapSuite) TestSwapDynamicFeeIntegration(c *C) {
 		Commentf("whitelisted affiliate must surface its sealed dynamic bps to getMaxSwapQuantity (got %d vs %d)",
 			qWithAffiliate, qWithoutAffiliate))
 }
+
+// TestIsFirstSuccessfulSubSwap pins that the dynamic-fee swap count keys off
+// prior successes, not prior attempts: both queues bump Count on a failed
+// attempt, so a stream whose first attempt failed must still count on its
+// first success.
+func (s *HandlerSwapSuite) TestIsFirstSuccessfulSubSwap(c *C) {
+	advMsg := func(count uint64, failed ...uint64) MsgSwap {
+		msg := MsgSwap{Version: types.SwapVersion_v2, State: &types.SwapState{Quantity: 5, Count: count}}
+		msg.State.FailedSwaps = failed
+		return msg
+	}
+	legacyMsg := MsgSwap{Version: types.SwapVersion_v1, StreamInterval: 1, State: &types.SwapState{}}
+	legacySwp := func(count uint64, failed ...uint64) StreamingSwap {
+		return StreamingSwap{Quantity: 5, Count: count, FailedSwaps: failed}
+	}
+
+	// Advanced queue: FailedSwaps records the pre-increment count.
+	c.Check(isFirstSuccessfulSubSwap(advMsg(0), StreamingSwap{}), Equals, true, Commentf("non-streaming / first attempt"))
+	c.Check(isFirstSuccessfulSubSwap(advMsg(1, 0), StreamingSwap{}), Equals, true, Commentf("first attempt failed"))
+	c.Check(isFirstSuccessfulSubSwap(advMsg(2, 0, 1), StreamingSwap{}), Equals, true, Commentf("first two attempts failed"))
+	c.Check(isFirstSuccessfulSubSwap(advMsg(1), StreamingSwap{}), Equals, false, Commentf("first attempt succeeded"))
+	c.Check(isFirstSuccessfulSubSwap(advMsg(2, 1), StreamingSwap{}), Equals, false, Commentf("success then failure"))
+	c.Check(isFirstSuccessfulSubSwap(MsgSwap{Version: types.SwapVersion_v2}, StreamingSwap{}), Equals, true, Commentf("nil state"))
+
+	// Legacy queue: tracked on the keeper's StreamingSwap (FailedSwaps records
+	// the post-increment count), and msg.State is ignored.
+	c.Check(isFirstSuccessfulSubSwap(legacyMsg, legacySwp(0)), Equals, true)
+	c.Check(isFirstSuccessfulSubSwap(legacyMsg, legacySwp(1, 1)), Equals, true, Commentf("first attempt failed"))
+	c.Check(isFirstSuccessfulSubSwap(legacyMsg, legacySwp(1)), Equals, false, Commentf("first attempt succeeded"))
+	c.Check(isFirstSuccessfulSubSwap(legacyMsg, legacySwp(3, 2)), Equals, false, Commentf("success, failure, success"))
+}
