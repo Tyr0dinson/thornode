@@ -459,8 +459,9 @@ func NewChainApp(
 		defaultProposalHandler.ProcessProposalHandler(),
 	)
 
-	bApp.SetPrepareProposal(eBifrostProposalHandler.PrepareProposal)
+	bApp.SetPrepareProposal(wrapPrepareProposal(eBifrostProposalHandler.PrepareProposal))
 	bApp.SetProcessProposal(eBifrostProposalHandler.ProcessProposal)
+	setPrepareCheckStater(bApp)
 
 	// NOTE: Any module instantiated in the module manager that is later modified
 	// must be passed by reference here.

@@ -136,7 +136,10 @@ func initRootCmd(
 		cmd.GetValidateSeedPhraseCmd(),
 	)
 
-	server.AddCommands(rootCmd, app.DefaultNodeHome, newApp, appExport, addModuleInitFlags)
+	// AddCommandsWithStartCmdOptions, unlike AddCommands, does not register
+	// module-hash-by-height, so add it here to keep it in every build.
+	server.AddCommandsWithStartCmdOptions(rootCmd, app.DefaultNodeHome, newApp, appExport, startCmdOptions(addModuleInitFlags))
+	rootCmd.AddCommand(server.ModuleHashByHeightQuery(newApp))
 	wasmcli.ExtendUnsafeResetAllCmd(rootCmd)
 
 	// add keybase, auxiliary RPC, query, genesis, and tx child commands
