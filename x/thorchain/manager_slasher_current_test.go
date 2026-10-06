@@ -1599,6 +1599,62 @@ func (s *SlashingSuite) TestLinkedOutboundProgressTrustsOnlyConsensusTx(c *C) {
 	}
 }
 
+// Links are kept in first-seen order, and one node can plant the first one.
+// Recovery, like needsNewVault, must weigh every link rather than stop at the
+// first: a stray expired link must not hide a later live vault majority, and a
+// pending link must not hide a later finalised payment (#3100).
+func (s *SlashingSuite) TestLinkedOutboundProgressWeighsEveryLink(c *C) {
+	const (
+		signingTransPeriod = int64(300)
+		startHeight        = int64(100)
+	)
+	// Past the window a lone signer earns, inside the stale window.
+	liveHeight := startHeight + 2*signingTransPeriod + 1
+
+	pending := func(f recoveryLinkFixture) ObservedTxVoter {
+		obs := f.observation(f.memberSigners[:2]...)
+		return NewObservedTxVoter(obs.Tx.ID, []common.ObservedTx{obs})
+	}
+	stray := func(f recoveryLinkFixture) ObservedTxVoter {
+		obs := f.observation(f.outsiderSigner)
+		return NewObservedTxVoter(obs.Tx.ID, []common.ObservedTx{obs})
+	}
+	sent := func(f recoveryLinkFixture) ObservedTxVoter {
+		voter := pending(f)
+		voter.Tx = voter.Txs[0]
+		voter.Height = startHeight
+		voter.FinalisedHeight = startHeight
+		return voter
+	}
+
+	for _, tc := range []struct {
+		name  string
+		links []func(f recoveryLinkFixture) ObservedTxVoter
+		want  outboundProgress
+	}{
+		{"stray link ahead of a vault majority", []func(recoveryLinkFixture) ObservedTxVoter{stray, pending}, outboundPending},
+		{"vault majority ahead of a stray link", []func(recoveryLinkFixture) ObservedTxVoter{pending, stray}, outboundPending},
+		{"pending link ahead of a finalised payment", []func(recoveryLinkFixture) ObservedTxVoter{pending, sent}, outboundSent},
+		{"stray links only", []func(recoveryLinkFixture) ObservedTxVoter{stray, stray}, outboundNotObserved},
+	} {
+		ctx, mgr := setupManagerForTest(c)
+		slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+		f := newRecoveryLinkFixture(c)
+		for _, voter := range tc.links {
+			f.link(ctx, mgr, voter(f))
+		}
+		c.Assert(mgr.Keeper().GetObservedLink(ctx, f.toi.InHash), HasLen, len(tc.links))
+
+		ctx = ctx.WithBlockHeight(liveHeight)
+		c.Check(slasher.linkedOutboundProgress(ctx, mgr, f.vault, signingTransPeriod, startHeight, f.toi),
+			Equals, tc.want, Commentf("case %q", tc.name))
+		// Reassignment agrees: a live vault majority under any link keeps the
+		// item on its vault, whatever was linked ahead of it.
+		c.Check(slasher.needsNewVault(ctx, mgr, f.vault, signingTransPeriod, startHeight, f.toi),
+			Equals, tc.want == outboundNotObserved, Commentf("case %q", tc.name))
+	}
+}
+
 // Recovery evaluates a voter with consensus through its consensus tx alone,
 // whichever vault sent it, and treats an unreadable voter as pending rather
 // than as a payment that would end recovery for good (#3198).
