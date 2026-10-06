@@ -1393,28 +1393,40 @@ const (
 // MaxOutboundAttempts recovery.
 //
 // A link is written on the first attestation, before the outbound voter
-// reaches consensus, so a link proves nothing by itself. A finalised voter
-// shows the item sent only when its consensus tx - not whichever variant wrote
-// the link - names toi's inbound and pays toi. A non-finalised voter only
-// shows it pending when it carries the same weight needsNewVault demands of
-// it: a simple majority of the assigned vault, or matching signers still
-// inside their bounded window.
+// reaches consensus, so a link proves nothing by itself. Once a voter has
+// consensus only its consensus tx - not whichever variant wrote the link -
+// counts, and only when it names toi's inbound and pays toi: finalised, the
+// item is sent; not yet final, it is pending until the observation goes stale.
+// The sending vault does not matter here, since any vault paying the item makes
+// recovery a second payment. A voter without consensus only shows the item
+// pending when it carries the same weight needsNewVault demands of it: a
+// simple majority of the assigned vault, or matching signers still inside
+// their bounded window.
 func (s *SlasherImpl) linkedOutboundProgress(ctx cosmos.Context, mgr Manager, vault Vault, signingTransPeriod, startHeight int64, toi TxOutItem) outboundProgress {
+	const staleMsg = "ignoring stale non-finalised outbound observation for treasury recovery"
 	progress := outboundNotObserved
 	for _, hash := range mgr.Keeper().GetObservedLink(ctx, toi.InHash) {
 		voter, err := mgr.Keeper().GetObservedTxOutVoter(ctx, hash)
 		if err != nil {
+			// Unknown: hold recovery, but keep the item rescheduling rather than
+			// treating an unreadable voter as a payment.
 			ctx.Logger().Error("fail to get txout voter", "hash", hash, "error", err)
-			return outboundSent
+			progress = outboundPending
+			continue
 		}
-		if voter.FinalisedHeight > 0 {
-			if consensusOutboundPaysItem(ctx, mgr, voter.Tx, toi) {
+		if voter.FinalisedHeight > 0 || voter.Height > 0 {
+			if !consensusOutboundPaysItem(ctx, mgr, voter.Tx, toi) {
+				continue
+			}
+			if voter.FinalisedHeight > 0 {
 				return outboundSent
+			}
+			if !s.isStaleOutboundObservation(ctx, voter, signingTransPeriod, startHeight, toi, hash, staleMsg) {
+				progress = outboundPending
 			}
 			continue
 		}
-		if s.pendingVaultObservation(ctx, mgr, vault, signingTransPeriod, startHeight, toi, hash, voter,
-			"ignoring stale non-finalised outbound observation for treasury recovery") {
+		if s.pendingVaultObservation(ctx, mgr, vault, signingTransPeriod, startHeight, toi, hash, voter, staleMsg) {
 			progress = outboundPending
 		}
 	}
@@ -1464,6 +1476,23 @@ func (s *SlasherImpl) staleNonFinalOutboundObservation(ctx cosmos.Context, voter
 	// so an exact expiryHeight+1 check could miss the first actionable check.
 	status.firstStaleWindow = ctx.BlockHeight() <= expiryHeight+signingTransPeriod
 	return status
+}
+
+// isStaleOutboundObservation reports whether the linked outbound voter hash
+// has gone stale for toi, logging msg when it has.
+func (s *SlasherImpl) isStaleOutboundObservation(ctx cosmos.Context, voter ObservedTxVoter, signingTransPeriod, startHeight int64, toi TxOutItem, hash common.TxID, msg string) bool {
+	staleStatus := s.staleNonFinalOutboundObservation(ctx, voter, signingTransPeriod, startHeight)
+	if staleStatus.stale {
+		logStaleOutboundObservation(ctx, staleStatus, msg,
+			"inhash", toi.InHash,
+			"outhash", hash,
+			"start_height", startHeight,
+			"observation_height", staleStatus.observationHeight,
+			"voter_height", voter.Height,
+			"unfinalized_height", voter.UnfinalizedHeight,
+			"stale_since_height", staleStatus.staleSinceHeight)
+	}
+	return staleStatus.stale
 }
 
 // logStaleOutboundObservation emits Info only while the stale condition first
@@ -1627,16 +1656,7 @@ func (s *SlasherImpl) pendingVaultObservation(ctx cosmos.Context, mgr Manager, v
 		return false
 	}
 
-	staleStatus := s.staleNonFinalOutboundObservation(ctx, voter, signingTransPeriod, startHeight)
-	if staleStatus.stale {
-		logStaleOutboundObservation(ctx, staleStatus, staleMsg,
-			"inhash", toi.InHash,
-			"outhash", hash,
-			"start_height", startHeight,
-			"observation_height", staleStatus.observationHeight,
-			"voter_height", voter.Height,
-			"unfinalized_height", voter.UnfinalizedHeight,
-			"stale_since_height", staleStatus.staleSinceHeight)
+	if s.isStaleOutboundObservation(ctx, voter, signingTransPeriod, startHeight, toi, hash, staleMsg) {
 		return false
 	}
 

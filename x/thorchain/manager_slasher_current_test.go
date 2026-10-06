@@ -6,6 +6,7 @@ import (
 
 	. "gopkg.in/check.v1"
 
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
 	types2 "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 
@@ -1587,6 +1588,81 @@ func (s *SlashingSuite) TestLinkedOutboundProgressTrustsOnlyConsensusTx(c *C) {
 		c.Check(slasher.linkedOutboundProgress(ctx, mgr, f.vault, signingTransPeriod, startHeight, f.toi),
 			Equals, tc.want, Commentf("case %q", tc.name))
 	}
+}
+
+// Recovery evaluates a voter with consensus through its consensus tx alone,
+// whichever vault sent it, and treats an unreadable voter as pending rather
+// than as a payment that would end recovery for good (#3198).
+func (s *SlashingSuite) TestLinkedOutboundProgressNonFinalConsensus(c *C) {
+	const (
+		signingTransPeriod = int64(300)
+		startHeight        = int64(100)
+	)
+	consensusHeight := startHeight + 5*signingTransPeriod
+
+	for _, tc := range []struct {
+		name   string
+		mutate func(consensus *common.ObservedTx)
+		height int64
+		want   outboundProgress
+	}{
+		{
+			// Sent by the vault the item was assigned to before a reassignment.
+			name:   "previous vault in flight",
+			mutate: func(consensus *common.ObservedTx) { consensus.ObservedPubKey = GetRandomPubKey() },
+			height: consensusHeight + signingTransPeriod,
+			want:   outboundPending,
+		},
+		{
+			name:   "stale consensus",
+			mutate: func(consensus *common.ObservedTx) {},
+			height: consensusHeight + staleOutboundObservationSigningPeriods*signingTransPeriod + 1,
+			want:   outboundNotObserved,
+		},
+		{
+			// A forged majority variant names the item; the consensus tx does not.
+			name: "consensus tx pays another inbound",
+			mutate: func(consensus *common.ObservedTx) {
+				consensus.Tx.Memo = "OUT:" + GetRandomTxHash().String()
+			},
+			height: consensusHeight + signingTransPeriod,
+			want:   outboundNotObserved,
+		},
+	} {
+		ctx, mgr := setupManagerForTest(c)
+		slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+		f := newRecoveryLinkFixture(c)
+
+		consensus := f.observation(f.outsiderSigner)
+		tc.mutate(&consensus)
+		forged := f.observation(f.memberSigners...)
+		forged.Tx.ID = consensus.Tx.ID
+		voter := NewObservedTxVoter(consensus.Tx.ID, []common.ObservedTx{consensus, forged})
+		voter.Tx = consensus
+		voter.Height = consensusHeight
+		voter.UnfinalizedHeight = consensusHeight
+		f.link(ctx, mgr, voter)
+
+		ctx = ctx.WithBlockHeight(tc.height)
+		c.Check(slasher.linkedOutboundProgress(ctx, mgr, f.vault, signingTransPeriod, startHeight, f.toi),
+			Equals, tc.want, Commentf("case %q", tc.name))
+	}
+
+	ctx, mgr := setupManagerForTest(c)
+	f := newRecoveryLinkFixture(c)
+	mgr.Keeper().SetObservedLink(ctx, f.toi.InHash, GetRandomTxHash())
+	broken := NewDummyMgrWithKeeper(unreadableOutVoterKeeper{Keeper: mgr.Keeper()})
+	slasher := newSlasher(broken.Keeper(), broken.EventMgr())
+	c.Check(slasher.linkedOutboundProgress(ctx, broken, f.vault, signingTransPeriod, startHeight, f.toi), Equals, outboundPending)
+}
+
+// unreadableOutVoterKeeper fails every outbound voter read.
+type unreadableOutVoterKeeper struct {
+	keeper.Keeper
+}
+
+func (unreadableOutVoterKeeper) GetObservedTxOutVoter(_ cosmos.Context, _ common.TxID) (ObservedTxVoter, error) {
+	return ObservedTxVoter{}, errors.New("kaboom")
 }
 
 // An outbound past MaxOutboundAttempts whose assigned vault reports it in
