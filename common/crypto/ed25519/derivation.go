@@ -178,3 +178,19 @@ func GetPrivateKeyFromMnemonic(mnemonic, passphrase, path string) ([]byte, error
 
 	return DeriveKeypairFromMnemonic(mnemonic, passphrase, path)
 }
+
+// DeriveSignerEDDSAKeyBytes derives the node's ed25519 signing key (64-byte
+// seed||pub form) from its BIP39 mnemonic and the signer passphrase, using the
+// standard ed25519 HD path. Both inputs are trimmed so the result matches the
+// key the keyring previously stored: the keyring passphrase came through
+// SignerCreds, which TrimSpace's it, so a raw env value carrying a trailing
+// newline must not silently derive a different key. This is the single
+// derivation used by both `thornode ed25519` (pubkey for set-node-keys) and
+// bifrost's eddsa fallback, keeping the registered and the loaded key identical.
+func DeriveSignerEDDSAKeyBytes(mnemonic, passphrase string) ([]byte, error) {
+	mnemonic = strings.TrimSpace(mnemonic)
+	if mnemonic == "" {
+		return nil, fmt.Errorf("mnemonic is required")
+	}
+	return GetPrivateKeyFromMnemonic(mnemonic, strings.TrimSpace(passphrase), HDPath)
+}

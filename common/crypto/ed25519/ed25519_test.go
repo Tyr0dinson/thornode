@@ -153,6 +153,37 @@ func (s *Ed25519Suite) TestGetLegacyKeypairFromMnemonic(c *C) {
 	c.Assert(err, ErrorMatches, ".*invalid mnemonic.*")
 }
 
+func (s *Ed25519Suite) TestDeriveSignerEDDSAKeyBytes(c *C) {
+	mnemonic := "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
+
+	// Must match the keyring algo derivation (Ed25519.Derive == the DeriveFn the
+	// old `NewAccount(ed-<signer>, ...)` used), so an existing node's on-chain
+	// pubkey and a freshly-derived fallback key are identical.
+	want, err := Ed25519.Derive()(mnemonic, "", HDPath)
+	c.Assert(err, IsNil)
+	got, err := DeriveSignerEDDSAKeyBytes(mnemonic, "")
+	c.Assert(err, IsNil)
+	c.Assert(got, DeepEquals, want)
+
+	// Passphrase and mnemonic are trimmed: a trailing newline (common when a
+	// value is sourced from a file or env) must not change the derived key.
+	trimmed, err := DeriveSignerEDDSAKeyBytes(mnemonic, "secret")
+	c.Assert(err, IsNil)
+	untrimmed, err := DeriveSignerEDDSAKeyBytes("  "+mnemonic+"\n", "secret\n")
+	c.Assert(err, IsNil)
+	c.Assert(untrimmed, DeepEquals, trimmed)
+
+	// A different (non-whitespace) passphrase must still change the key.
+	other, err := DeriveSignerEDDSAKeyBytes(mnemonic, "different")
+	c.Assert(err, IsNil)
+	c.Assert(string(other) == string(trimmed), Equals, false)
+
+	// Empty mnemonic is rejected.
+	_, err = DeriveSignerEDDSAKeyBytes("   \n", "")
+	c.Assert(err, NotNil)
+	c.Assert(err, ErrorMatches, ".*mnemonic is required.*")
+}
+
 func (s *Ed25519Suite) TestGetPrivateKeyFromMnemonic(c *C) {
 	mnemonic := "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
 

@@ -39,11 +39,13 @@ func ed25519Keys(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("mnemonic is required on stdin")
 	}
 
-	// Use SIGNER_PASSWD env var as BIP39 passphrase for key derivation
+	// Use SIGNER_PASSWD env var as BIP39 passphrase for key derivation. The
+	// shared helper trims it (as the keyring path did) so the derived pubkey
+	// matches the one bifrost loads at runtime.
 	passphrase := os.Getenv(cosmos.EnvSignerPassword)
 
 	// Derive ed25519 private key directly from mnemonic (no keyring needed)
-	privKeyBytes, err := ed25519.GetPrivateKeyFromMnemonic(mnemonic, passphrase, ed25519.HDPath)
+	privKeyBytes, err := ed25519.DeriveSignerEDDSAKeyBytes(mnemonic, passphrase)
 	if err != nil {
 		return fmt.Errorf("fail to derive ed25519 key: %w", err)
 	}
