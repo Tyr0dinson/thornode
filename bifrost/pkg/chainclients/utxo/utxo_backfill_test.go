@@ -73,6 +73,8 @@ func (s *CoverageBackfillSuite) SetUpTest(c *C) {
 		DisableTLS:  true,
 		HTTPostMode: true,
 		BlockScanner: config.BifrostBlockScannerConfiguration{
+			// Bound mock RPC calls without depending on short CI scheduling windows.
+			HTTPRequestTimeout:           30 * time.Second,
 			StartBlockHeight:             1,
 			MaxReorgRescanBlocks:         1,
 			GasCacheBlocks:               3,
