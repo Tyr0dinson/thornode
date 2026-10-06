@@ -19,8 +19,8 @@ type Account struct {
 	Type *string `json:"type,omitempty"`
 	Address *string `json:"address,omitempty"`
 	Pubkey *string `json:"pubkey,omitempty"`
-	Sequence *int64 `json:"sequence,omitempty"`
-	AccountNumber *int64 `json:"account_number,omitempty"`
+	Sequence *string `json:"sequence,omitempty"`
+	AccountNumber *string `json:"account_number,omitempty"`
 }
 
 // NewAccount instantiates a new Account object
@@ -137,9 +137,9 @@ func (o *Account) SetPubkey(v string) {
 }
 
 // GetSequence returns the Sequence field value if set, zero value otherwise.
-func (o *Account) GetSequence() int64 {
+func (o *Account) GetSequence() string {
 	if o == nil || o.Sequence == nil {
-		var ret int64
+		var ret string
 		return ret
 	}
 	return *o.Sequence
@@ -147,7 +147,7 @@ func (o *Account) GetSequence() int64 {
 
 // GetSequenceOk returns a tuple with the Sequence field value if set, nil otherwise
 // and a boolean to check if the value has been set.
-func (o *Account) GetSequenceOk() (*int64, bool) {
+func (o *Account) GetSequenceOk() (*string, bool) {
 	if o == nil || o.Sequence == nil {
 		return nil, false
 	}
@@ -163,15 +163,15 @@ func (o *Account) HasSequence() bool {
 	return false
 }
 
-// SetSequence gets a reference to the given int64 and assigns it to the Sequence field.
-func (o *Account) SetSequence(v int64) {
+// SetSequence gets a reference to the given string and assigns it to the Sequence field.
+func (o *Account) SetSequence(v string) {
 	o.Sequence = &v
 }
 
 // GetAccountNumber returns the AccountNumber field value if set, zero value otherwise.
-func (o *Account) GetAccountNumber() int64 {
+func (o *Account) GetAccountNumber() string {
 	if o == nil || o.AccountNumber == nil {
-		var ret int64
+		var ret string
 		return ret
 	}
 	return *o.AccountNumber
@@ -179,7 +179,7 @@ func (o *Account) GetAccountNumber() int64 {
 
 // GetAccountNumberOk returns a tuple with the AccountNumber field value if set, nil otherwise
 // and a boolean to check if the value has been set.
-func (o *Account) GetAccountNumberOk() (*int64, bool) {
+func (o *Account) GetAccountNumberOk() (*string, bool) {
 	if o == nil || o.AccountNumber == nil {
 		return nil, false
 	}
@@ -195,8 +195,8 @@ func (o *Account) HasAccountNumber() bool {
 	return false
 }
 
-// SetAccountNumber gets a reference to the given int64 and assigns it to the AccountNumber field.
-func (o *Account) SetAccountNumber(v int64) {
+// SetAccountNumber gets a reference to the given string and assigns it to the AccountNumber field.
+func (o *Account) SetAccountNumber(v string) {
 	o.AccountNumber = &v
 }
 

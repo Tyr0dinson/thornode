@@ -3836,13 +3836,11 @@ components:
           type: string
           example: "thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe"
         sequence:
-          type: integer
-          format: int64
-          example: 1234
+          type: string
+          example: "1234"
         account_number:
-          type: integer
-          format: int64
-          example: 1234
+          type: string
+          example: "1234"
 
     Amount:
       type: object

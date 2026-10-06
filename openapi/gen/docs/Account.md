@@ -7,8 +7,8 @@ Name | Type | Description | Notes
 **Type** | Pointer to **string** |  | [optional] 
 **Address** | Pointer to **string** |  | [optional] 
 **Pubkey** | Pointer to **string** |  | [optional] 
-**Sequence** | Pointer to **int64** |  | [optional] 
-**AccountNumber** | Pointer to **int64** |  | [optional] 
+**Sequence** | Pointer to **string** |  | [optional] 
+**AccountNumber** | Pointer to **string** |  | [optional] 
 
 ## Methods
 
@@ -106,20 +106,20 @@ HasPubkey returns a boolean if a field has been set.
 
 ### GetSequence
 
-`func (o *Account) GetSequence() int64`
+`func (o *Account) GetSequence() string`
 
 GetSequence returns the Sequence field if non-nil, zero value otherwise.
 
 ### GetSequenceOk
 
-`func (o *Account) GetSequenceOk() (*int64, bool)`
+`func (o *Account) GetSequenceOk() (*string, bool)`
 
 GetSequenceOk returns a tuple with the Sequence field if it's non-nil, zero value otherwise
 and a boolean to check if the value has been set.
 
 ### SetSequence
 
-`func (o *Account) SetSequence(v int64)`
+`func (o *Account) SetSequence(v string)`
 
 SetSequence sets Sequence field to given value.
 
@@ -131,20 +131,20 @@ HasSequence returns a boolean if a field has been set.
 
 ### GetAccountNumber
 
-`func (o *Account) GetAccountNumber() int64`
+`func (o *Account) GetAccountNumber() string`
 
 GetAccountNumber returns the AccountNumber field if non-nil, zero value otherwise.
 
 ### GetAccountNumberOk
 
-`func (o *Account) GetAccountNumberOk() (*int64, bool)`
+`func (o *Account) GetAccountNumberOk() (*string, bool)`
 
 GetAccountNumberOk returns a tuple with the AccountNumber field if it's non-nil, zero value otherwise
 and a boolean to check if the value has been set.
 
 ### SetAccountNumber
 
-`func (o *Account) SetAccountNumber(v int64)`
+`func (o *Account) SetAccountNumber(v string)`
 
 SetAccountNumber sets AccountNumber field to given value.
 

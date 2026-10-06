@@ -5554,8 +5554,8 @@ components:
       type: object
     Account:
       example:
-        sequence: 1234
-        account_number: 1234
+        sequence: "1234"
+        account_number: "1234"
         address: thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
         type: /cosmos.auth.v1beta1.BaseAccount
         pubkey: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
@@ -5570,13 +5570,11 @@ components:
           example: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           type: string
         sequence:
-          example: 1234
-          format: int64
-          type: integer
+          example: "1234"
+          type: string
         account_number:
-          example: 1234
-          format: int64
-          type: integer
+          example: "1234"
+          type: string
       type: object
     Amount:
       example:
@@ -5615,8 +5613,8 @@ components:
       example:
         result:
           value:
-            sequence: 1234
-            account_number: 1234
+            sequence: "1234"
+            account_number: "1234"
             address: thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
             type: /cosmos.auth.v1beta1.BaseAccount
             pubkey: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
@@ -9227,8 +9225,8 @@ components:
     AccountResponse_result:
       example:
         value:
-          sequence: 1234
-          account_number: 1234
+          sequence: "1234"
+          account_number: "1234"
           address: thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
           type: /cosmos.auth.v1beta1.BaseAccount
           pubkey: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
