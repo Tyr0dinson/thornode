@@ -406,6 +406,37 @@ func (s *MempoolSwapPoolGateSuite) TestAddLiquiditySettlesDeferredErrataFirst(c 
 	checkDeferredErrataApplied(c, ctx, mgr, f)
 }
 
+func (s *MempoolSwapPoolGateSuite) TestMalformedErrataPoolCorrectionDoesNotWedgePool(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	stale := GetRandomTxHash()
+	mgr.Keeper().SetErrataPoolCorrection(ctx, common.BTCAsset, stale)
+
+	invalid := GetRandomTx()
+	invalid.Chain = common.BTCChain
+	invalid.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One)))
+	observed := NewObservedTx(invalid, ctx.BlockHeight(), GetRandomPubKey(), ctx.BlockHeight())
+	voter := NewObservedTxVoter(invalid.ID, ObservedTxs{observed})
+	voter.Tx = observed
+	voter.SetReverted()
+	voter.ErrataPoolCorrection = TxWithdraw.String()
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+	mgr.Keeper().SetErrataPoolCorrection(ctx, common.BTCAsset, invalid.ID)
+	poolBefore, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+
+	c.Assert(recoverErrataPoolCorrections(ctx, mgr), IsNil)
+	pending, err := mgr.Keeper().GetErrataPoolCorrections(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(pending, HasLen, 0)
+	stored, err := mgr.Keeper().GetObservedTxInVoter(ctx, invalid.ID)
+	c.Assert(err, IsNil)
+	c.Check(stored.ErrataPoolCorrection, Equals, "")
+	poolAfter, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(poolAfter, DeepEquals, poolBefore)
+	c.Check(ensureMempoolSwapPoolFinalized(ctx, mgr.Keeper(), common.BTCAsset), IsNil)
+}
+
 func (s *MempoolSwapPoolGateSuite) TestWithdrawPreemptsUnfinalizedPoolOwner(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	seedActiveAdvSwapVault(c, ctx, mgr)

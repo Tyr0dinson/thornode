@@ -1197,6 +1197,31 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		voterSeen[voterKey] = true
 	}
 
+	// A deferred errata pool correction lives on its reverted inbound voter,
+	// which none of the sources above necessarily reach.
+	errataPools, err := k.GetErrataPoolCorrectionPools(ctx)
+	if err != nil {
+		panic(fmt.Errorf("fail to list errata pool corrections: %w", err))
+	}
+	for _, asset := range errataPools {
+		txIDs, listErr := k.GetErrataPoolCorrections(ctx, asset)
+		if listErr != nil {
+			panic(fmt.Errorf("fail to list errata pool corrections for %s: %w", asset, listErr))
+		}
+		for _, txID := range txIDs {
+			voterKey := canonicalGenesisTxID(txID)
+			if voterSeen[voterKey] {
+				continue
+			}
+			txInVoter, voterErr := k.GetObservedTxInVoter(ctx, txID)
+			if voterErr != nil {
+				panic(fmt.Errorf("fail to get voter for errata pool correction %s: %w", txID, voterErr))
+			}
+			observedTxInVoters = append(observedTxInVoters, txInVoter)
+			voterSeen[voterKey] = true
+		}
+	}
+
 	solVaultNonces := make([]types.SolVaultNonce, 0)
 	iterSolVaultNonce := k.GetSolVaultNonceIterator(ctx)
 	defer iterSolVaultNonce.Close()

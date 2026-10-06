@@ -214,8 +214,16 @@ var errErrataPoolCorrectionBlocked = errors.New("errata pool correction is block
 // with it. Pool gates then hold conflicting mutations back until a pool
 // preemption or the LackSigning recovery pass applies the correction.
 func correctOrDeferErrataPool(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter, txType mem.TxType) error {
+	_, assetCoin := splitErrataPoolCoins(voter.Tx.Tx.Coins)
 	correctionCtx, commit := ctx.CacheContext()
-	err := applyErrataPoolCorrectionCached(correctionCtx, mgr, voter, txType)
+	// Settle corrections already pending on the pool first, preserving errata
+	// order for the balance clamps.
+	err := preemptMempoolSwapPoolOwnerCached(correctionCtx, mgr, assetCoin.Asset)
+	if err != nil {
+		err = fmt.Errorf("%w: %w", errErrataPoolCorrectionBlocked, err)
+	} else {
+		err = applyErrataPoolCorrectionCached(correctionCtx, mgr, voter, txType)
+	}
 	if err == nil {
 		commit()
 		return nil
@@ -225,7 +233,6 @@ func correctOrDeferErrataPool(ctx cosmos.Context, mgr Manager, voter ObservedTxV
 	}
 
 	ctx.Logger().Error("deferring errata pool correction behind unresolved mempool swap owner", "tx_id", voter.TxID, "error", err)
-	_, assetCoin := splitErrataPoolCoins(voter.Tx.Tx.Coins)
 	voter.ErrataPoolCorrection = txType.String()
 	k := mgr.Keeper()
 	k.SetObservedTxInVoter(ctx, voter)
@@ -246,12 +253,20 @@ func settleErrataPoolCorrectionsCached(ctx cosmos.Context, mgr Manager, asset co
 		if err != nil {
 			return fmt.Errorf("fail to get errata pool correction voter %s: %w", txID, err)
 		}
+		// Malformed entries can never apply. Drop them rather than holding
+		// every later mutation of the pool behind them.
 		if voter.ErrataPoolCorrection == "" {
-			return fmt.Errorf("errata pool correction index for %s has no pending voter", txID)
+			ctx.Logger().Error("dropping errata pool correction index without a pending voter", "tx_id", txID)
+			k.DeleteErrataPoolCorrection(ctx, asset, txID)
+			continue
 		}
 		txType, err := StringToTxType(voter.ErrataPoolCorrection)
-		if err != nil {
-			return fmt.Errorf("invalid errata pool correction type for %s: %w", txID, err)
+		if err != nil || (txType != TxSwap && txType != TxAdd) {
+			ctx.Logger().Error("dropping invalid errata pool correction", "tx_id", txID, "type", voter.ErrataPoolCorrection)
+			k.DeleteErrataPoolCorrection(ctx, asset, txID)
+			voter.ErrataPoolCorrection = ""
+			k.SetObservedTxInVoter(ctx, voter)
+			continue
 		}
 		if err = applyErrataPoolCorrectionCached(ctx, mgr, voter, txType); err != nil {
 			return err

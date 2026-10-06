@@ -860,3 +860,36 @@ func (GenesisTestSuite) TestExportSwapperCloutBase58(c *C) {
 	c.Check(gs.SwapperClout[0].Address, Equals, transparent)
 	c.Check(gs.SwapperClout[0].Score.String(), Equals, "1000")
 }
+
+func (GenesisTestSuite) TestGenesisDeferredErrataPoolCorrectionRoundTrip(c *C) {
+	SetupConfigForTest()
+
+	srcCtx, srcMgr := setupManagerForTest(c)
+	tx := GetRandomTx()
+	tx.Chain = common.BTCChain
+	tx.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One)))
+	observed := NewObservedTx(tx, srcCtx.BlockHeight(), GetRandomPubKey(), srcCtx.BlockHeight())
+	voter := NewObservedTxVoter(tx.ID, ObservedTxs{observed})
+	voter.Tx = observed
+	voter.FinalisedHeight = srcCtx.BlockHeight()
+	voter.SetReverted()
+	voter.ErrataPoolCorrection = TxSwap.String()
+	srcMgr.Keeper().SetObservedTxInVoter(srcCtx, voter)
+	srcMgr.Keeper().SetErrataPoolCorrection(srcCtx, common.BTCAsset, tx.ID)
+
+	exported := ExportGenesis(srcCtx, srcMgr.Keeper())
+	found := false
+	for _, exportedVoter := range exported.ObservedTxInVoters {
+		if exportedVoter.TxID.Equals(tx.ID) {
+			found = true
+			c.Check(exportedVoter.ErrataPoolCorrection, Equals, TxSwap.String())
+		}
+	}
+	c.Assert(found, Equals, true)
+
+	dstCtx, dstMgr := setupManagerForTest(c)
+	InitGenesis(dstCtx, dstMgr.Keeper(), exported)
+	pending, err := dstMgr.Keeper().GetErrataPoolCorrections(dstCtx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(pending, DeepEquals, []common.TxID{tx.ID})
+}
