@@ -503,24 +503,34 @@ func TestRewindScannerUsesExpectedSignerNetwork(t *testing.T) {
 	defer server.Close()
 
 	client, err := NewClientWithEndpoint(config.BifrostChainConfiguration{
+		// A real Monero daemon still reports mainnet in chainnet deployments.
+		// The signer protocol identity is deliberately independent.
 		ChainNetwork:          "mainnet",
 		SignerExpectedNetwork: "chainnet",
 	}, server.URL)
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
-	_, err = client.RewindScanner(ScannerRewindReq{
+
+	req := ScannerRewindReq{
 		ExpectedResetEpoch: 3,
 		ExpectedNextHeight: 100,
 		TargetNextHeight:   90,
 		AnchorHeight:       89,
 		AnchorHash:         anchorHash,
-	})
+	}
+	_, err = client.RewindScanner(req)
 	if err != nil {
 		t.Fatalf("rewind scanner: %v", err)
 	}
 	if received.Network != "chainnet" {
 		t.Fatalf("rewind network = %q, want chainnet", received.Network)
+	}
+
+	req.Network = "mainnet"
+	_, err = client.RewindScanner(req)
+	if err == nil || !strings.Contains(err.Error(), "does not match expected sidecar network") {
+		t.Fatalf("expected network mismatch, got %v", err)
 	}
 }
 

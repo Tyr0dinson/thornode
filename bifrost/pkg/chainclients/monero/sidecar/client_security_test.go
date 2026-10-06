@@ -1,13 +1,16 @@
 package sidecar
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"gitlab.com/thorchain/thornode/v3/config"
 )
@@ -150,15 +153,18 @@ func TestRequireCompatibilityFailsClosed(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(Info{
-			Protocol:    ProtocolName,
-			APIMajor:    APIMajorV2,
-			GitCommit:   strings.Repeat("b", 40),
-			Network:     "chainnet",
-			StateSchema: StateSchemaV4,
+			Protocol:          ProtocolName,
+			APIMajor:          APIMajorV2,
+			GitCommit:         strings.Repeat("b", 40),
+			Network:           "chainnet",
+			MoneroNettype:     "mainnet",
+			MoneroGenesisHash: MoneroMainnetGenesisHash,
+			StateSchema:       StateSchemaV4,
 			Capabilities: []string{
 				CapabilityBalanceReconciliation,
 				CapabilityScannerBoundedRewind,
 				CapabilitySharePlanQuarantine,
+				CapabilityMoneroNetworkIdentity,
 			},
 		})
 	}))
@@ -167,6 +173,7 @@ func TestRequireCompatibilityFailsClosed(t *testing.T) {
 	client, err := NewClientWithEndpoint(config.BifrostChainConfiguration{
 		SignerExpectedNetwork: "chainnet",
 		SignerExpectedCommit:  strings.Repeat("b", 40),
+		ChainNetwork:          "mainnet",
 	}, server.URL)
 	if err != nil {
 		t.Fatalf("new client: %v", err)
@@ -188,7 +195,8 @@ func TestRequireCompatibilityTreatsRevisionAsMetadataAndRejectsSchemaMismatch(t 
 
 	info := Info{
 		Protocol: ProtocolName, APIMajor: APIMajorV2, GitCommit: strings.Repeat("c", 40),
-		Network: "chainnet", StateSchema: StateSchemaV4,
+		Network: "chainnet", MoneroNettype: "mainnet", MoneroGenesisHash: MoneroMainnetGenesisHash,
+		StateSchema:  StateSchemaV4,
 		Capabilities: []string{CapabilityBalanceReconciliation},
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -199,6 +207,7 @@ func TestRequireCompatibilityTreatsRevisionAsMetadataAndRejectsSchemaMismatch(t 
 	client, err := NewClientWithEndpoint(config.BifrostChainConfiguration{
 		SignerExpectedNetwork: "chainnet",
 		SignerExpectedCommit:  strings.Repeat("d", 40),
+		ChainNetwork:          "mainnet",
 	}, server.URL)
 	if err != nil {
 		t.Fatalf("new client: %v", err)
@@ -210,6 +219,196 @@ func TestRequireCompatibilityTreatsRevisionAsMetadataAndRejectsSchemaMismatch(t 
 	info.StateSchema = 2
 	if _, err = client.RequireCompatibility(CapabilityBalanceReconciliation); err == nil {
 		t.Fatal("expected unreviewed state schema rejection")
+	}
+}
+
+func TestRequireCompatibilityAcceptsConfiguredDaemonIdentities(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name        string
+		chain       string
+		nettype     string
+		genesisHash string
+	}{
+		{name: "mocknet", chain: "mocknet", nettype: "fakechain", genesisHash: MoneroMainnetGenesisHash},
+		{name: "mainnet", chain: "mainnet", nettype: "mainnet", genesisHash: MoneroMainnetGenesisHash},
+		{name: "stagenet", chain: "stagenet", nettype: "stagenet", genesisHash: MoneroStagenetGenesisHash},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			info := Info{
+				Protocol:          ProtocolName,
+				APIMajor:          APIMajorV2,
+				GitCommit:         strings.Repeat("e", 40),
+				Network:           tc.name,
+				MoneroNettype:     tc.nettype,
+				MoneroGenesisHash: tc.genesisHash,
+				StateSchema:       StateSchemaV4,
+				Capabilities:      []string{CapabilityMoneroNetworkIdentity},
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_ = json.NewEncoder(w).Encode(info)
+			}))
+			defer server.Close()
+
+			client, err := NewClientWithEndpoint(config.BifrostChainConfiguration{
+				SignerExpectedNetwork: tc.name,
+				ChainNetwork:          tc.chain,
+			}, server.URL)
+			if err != nil {
+				t.Fatalf("new client: %v", err)
+			}
+			if _, err = client.RequireCompatibility(CapabilityMoneroNetworkIdentity); err != nil {
+				t.Fatalf("expected %s daemon identity to pass: %v", tc.name, err)
+			}
+		})
+	}
+}
+
+func TestRequireCompatibilityRejectsDaemonIdentityMismatch(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name        string
+		nettype     string
+		genesisHash string
+		want        string
+	}{
+		{name: "wrong nettype", nettype: "stagenet", genesisHash: MoneroStagenetGenesisHash, want: "Monero nettype"},
+		{name: "wrong genesis", nettype: "mainnet", genesisHash: MoneroStagenetGenesisHash, want: "Monero genesis hash"},
+		{name: "malformed genesis", nettype: "mainnet", genesisHash: "not-a-hash", want: "64 hex characters"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			info := Info{
+				Protocol:          ProtocolName,
+				APIMajor:          APIMajorV2,
+				GitCommit:         strings.Repeat("f", 40),
+				Network:           "mainnet",
+				MoneroNettype:     tc.nettype,
+				MoneroGenesisHash: tc.genesisHash,
+				StateSchema:       StateSchemaV4,
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_ = json.NewEncoder(w).Encode(info)
+			}))
+			defer server.Close()
+
+			client, err := NewClientWithEndpoint(config.BifrostChainConfiguration{
+				SignerExpectedNetwork: "mainnet",
+				ChainNetwork:          "mainnet",
+			}, server.URL)
+			if err != nil {
+				t.Fatalf("new client: %v", err)
+			}
+			if _, err = client.RequireCompatibility(); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected %q identity rejection, got %v", tc.want, err)
+			}
+		})
+	}
+}
+
+func TestExpectedMoneroIdentity(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		configured string
+		nettype    string
+		genesis    string
+	}{
+		{configured: "mocknet", nettype: "fakechain", genesis: MoneroMainnetGenesisHash},
+		{configured: "mainnet", nettype: "mainnet", genesis: MoneroMainnetGenesisHash},
+		{configured: "stagenet", nettype: "stagenet", genesis: MoneroStagenetGenesisHash},
+		{configured: "testnet", nettype: "testnet", genesis: MoneroTestnetGenesisHash},
+	} {
+		t.Run(tc.configured, func(t *testing.T) {
+			nettype, genesis, err := expectedMoneroIdentity(tc.configured)
+			if err != nil {
+				t.Fatalf("expected identity: %v", err)
+			}
+			if nettype != tc.nettype || genesis != tc.genesis {
+				t.Fatalf("identity = (%q, %q), want (%q, %q)", nettype, genesis, tc.nettype, tc.genesis)
+			}
+		})
+	}
+	for _, configured := range []string{"", "unknown", "fakechain", "regtest", "chainnet"} {
+		if _, _, err := expectedMoneroIdentity(configured); err == nil {
+			t.Fatalf("expected chain network %q to be rejected", configured)
+		} else if !strings.Contains(err.Error(), "accepted values: mocknet, mainnet, stagenet, testnet") {
+			t.Fatalf("chain network %q rejection does not enumerate the contract: %v", configured, err)
+		}
+	}
+}
+
+func TestCompatibilityTimeoutDoesNotRetainPartialState(t *testing.T) {
+	t.Parallel()
+
+	var calls atomic.Int32
+	requestStarted := make(chan int, 1)
+	requestCanceled := make(chan int, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := int(calls.Add(1))
+		if call == 1 {
+			requestStarted <- call
+			<-r.Context().Done()
+			requestCanceled <- call
+			return
+		}
+		_ = json.NewEncoder(w).Encode(Info{
+			Protocol:          ProtocolName,
+			APIMajor:          APIMajorV2,
+			GitCommit:         strings.Repeat("a", 40),
+			Network:           "mocknet",
+			MoneroNettype:     "fakechain",
+			MoneroGenesisHash: MoneroMainnetGenesisHash,
+			StateSchema:       StateSchemaV4,
+			Capabilities:      []string{CapabilityMoneroNetworkIdentity},
+		})
+	}))
+	defer server.Close()
+
+	client, err := NewClientWithEndpoint(config.BifrostChainConfiguration{
+		SignerExpectedNetwork: "mocknet",
+		ChainNetwork:          "mocknet",
+		BlockScanner: config.BifrostBlockScannerConfiguration{
+			HTTPRequestTimeout: time.Second,
+		},
+	}, server.URL)
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+
+	client.client.Timeout = 500 * time.Millisecond
+	result := make(chan error, 1)
+	go func() {
+		_, callErr := client.RequireCompatibility(CapabilityMoneroNetworkIdentity)
+		result <- callErr
+	}()
+	select {
+	case call := <-requestStarted:
+		if call != 1 {
+			t.Fatalf("timed-out request number = %d, want 1", call)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed compatibility request did not reach the signer")
+	}
+	if err = <-result; !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected compatibility HTTP timeout, got %v", err)
+	}
+	select {
+	case call := <-requestCanceled:
+		if call != 1 {
+			t.Fatalf("timed-out handler number = %d, want 1", call)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed-out compatibility request remained active")
+	}
+
+	client.client.Timeout = time.Second
+	if _, err = client.RequireCompatibility(CapabilityMoneroNetworkIdentity); err != nil {
+		t.Fatalf("fresh compatibility check retained partial state after timeout: %v", err)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("compatibility calls = %d, want timed-out and fresh", got)
 	}
 }
 

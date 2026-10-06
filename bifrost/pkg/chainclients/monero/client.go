@@ -223,6 +223,20 @@ type Client struct {
 // not a runtime assertion miss which lets the signer discard the outbound.
 var _ types.SpentOutputRefsApplier = (*Client)(nil)
 
+// validateMoneroDaemonNetwork binds THORChain mainnet builds to Monero mainnet.
+// Other deployments may choose a different daemon network; the sidecar
+// compatibility check validates its supported value and reported identity.
+func validateMoneroDaemonNetwork(thorNetwork common.ChainNetwork, chainNetwork string) error {
+	network := strings.ToLower(strings.TrimSpace(chainNetwork))
+	if network == "" {
+		return errors.New("xmr chain_network is required for daemon identity verification")
+	}
+	if thorNetwork == common.MainNet && network != "mainnet" {
+		return fmt.Errorf("xmr chain_network must be mainnet for a THORChain mainnet build, got %q", network)
+	}
+	return nil
+}
+
 // NewClient creates a monero chain client backed by the shared block scanner.
 func NewClient(
 	thorKeys *thorclient.Keys,
@@ -246,6 +260,9 @@ func NewClient(
 	if tssServer == nil {
 		return nil, errors.New("tss server is nil")
 	}
+	if err := validateMoneroDaemonNetwork(common.CurrentChainNetwork, cfg.ChainNetwork); err != nil {
+		return nil, err
+	}
 	logger := log.With().Str("module", cfg.ChainID.String()).Logger()
 	sc, err := sidecar.NewClient(cfg)
 	if err != nil {
@@ -267,6 +284,9 @@ func NewClient(
 		sidecar.CapabilityScannerBoundedRewind,
 		sidecar.CapabilitySharePlanQuarantine,
 		sidecar.CapabilityVerifiedAbsenceBalance,
+		sidecar.CapabilityCanonicalObservation,
+		sidecar.CapabilityCanonicalTxLocation,
+		sidecar.CapabilityMoneroNetworkIdentity,
 	)
 	if compatibilityErr != nil {
 		return nil, fmt.Errorf("xmr signer compatibility check failed: %w", compatibilityErr)
@@ -279,6 +299,8 @@ func NewClient(
 	logger.Info().
 		Str("signer_revision", info.GitCommit).
 		Str("signer_network", info.Network).
+		Str("monero_nettype", info.MoneroNettype).
+		Str("monero_genesis_hash", info.MoneroGenesisHash).
 		Int("signer_state_schema", info.StateSchema).
 		Bool("idempotent_combine", idempotentCombine).
 		Msg("verified xmr signer compatibility contract")

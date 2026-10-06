@@ -478,6 +478,7 @@ bifrost:
       <<: *default-chain
       disabled: true
       chain_id: XMR
+      chain_network: "" # required daemon identity: mocknet, mainnet, stagenet, or testnet
       min_confirmations: 10
       signer_backend: "tss" # monero signer backend
       signer_endpoint: "http://127.0.0.1:8283" # this node's xmr tss signer endpoint

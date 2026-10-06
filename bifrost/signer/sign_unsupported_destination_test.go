@@ -141,8 +141,9 @@ func (s *SignCoverageSuite) TestPipelineUnsupportedXMRDestination(c *C) {
 			case "/v1/monero/info":
 				_ = json.NewEncoder(w).Encode(sidecar.Info{
 					Protocol: sidecar.ProtocolName, APIMajor: sidecar.APIMajorV2, StateSchema: sidecar.StateSchemaV4,
-					Network: "mainnet", GitCommit: strings.Repeat("a", 40),
-					Capabilities: []string{sidecar.CapabilityAtomicOutgoingV2, sidecar.CapabilityBalanceReconciliation, sidecar.CapabilityBoundRecovery, sidecar.CapabilityPerVaultKeyStatus, sidecar.CapabilityRestartReservation, sidecar.CapabilityDeadOutgoingQuarantine, sidecar.CapabilityScannerContinuity, sidecar.CapabilityDurableInboundReplay, sidecar.CapabilityScannerBoundedRewind, sidecar.CapabilitySharePlanQuarantine, sidecar.CapabilityVerifiedAbsenceBalance},
+					Network: "mainnet", MoneroNettype: "mainnet", MoneroGenesisHash: sidecar.MoneroMainnetGenesisHash,
+					GitCommit:    strings.Repeat("a", 40),
+					Capabilities: []string{sidecar.CapabilityAtomicOutgoingV2, sidecar.CapabilityBalanceReconciliation, sidecar.CapabilityBoundRecovery, sidecar.CapabilityPerVaultKeyStatus, sidecar.CapabilityRestartReservation, sidecar.CapabilityDeadOutgoingQuarantine, sidecar.CapabilityScannerContinuity, sidecar.CapabilityDurableInboundReplay, sidecar.CapabilityScannerBoundedRewind, sidecar.CapabilitySharePlanQuarantine, sidecar.CapabilityVerifiedAbsenceBalance, sidecar.CapabilityCanonicalObservation, sidecar.CapabilityCanonicalTxLocation, sidecar.CapabilityMoneroNetworkIdentity},
 				})
 			case "/v1/monero/sessions/clear":
 				_, _ = w.Write([]byte(`{"cleared_sessions":0}`))
@@ -160,7 +161,7 @@ func (s *SignCoverageSuite) TestPipelineUnsupportedXMRDestination(c *C) {
 		frostKey := ttypes.GetRandomEd25519PubKey()
 		bridge := &mockSignBridge{blockHeight: 100, constants: map[string]int64{constants.SigningTransactionPeriod.String(): 300}, vault: ttypes.Vault{PubKey: vaultKey, PubKeyFrost: frostKey, Status: ttypes.VaultStatus_ActiveVault}}
 		client, err := monero.NewClient(nil, config.BifrostChainConfiguration{
-			ChainID: common.XMRChain, SignerEndpoint: server.URL, SignerExpectedNetwork: "mainnet",
+			ChainID: common.XMRChain, ChainNetwork: "mainnet", SignerEndpoint: server.URL, SignerExpectedNetwork: "mainnet",
 			BlockScanner: config.BifrostBlockScannerConfiguration{ChainID: common.XMRChain, StartBlockHeight: 1},
 		}, &tssp.TssServer{}, bridge, GetMetricForTest(c))
 		c.Assert(err, IsNil)

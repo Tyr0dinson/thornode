@@ -20,7 +20,6 @@ import (
 	"sync"
 	"time"
 
-	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
 )
 
@@ -81,20 +80,17 @@ type Client struct {
 	chainBlockPath    string
 	chainTxPath       string
 
-	client          *http.Client
-	daemonClient    *http.Client
-	signClient      *http.Client
-	signerUsername  string
-	signerPassword  string
-	signerBearer    string
-	daemonUsername  string
-	daemonPassword  string
-	expectedNetwork string
-	// chainNetwork is the Monero network this Bifrost is configured for. It is
-	// the compare-and-set token sent on a scanner rewind and is distinct from
-	// expectedNetwork, which is what the signer must prove it is running.
-	chainNetwork string
-
+	client                    *http.Client
+	daemonClient              *http.Client
+	signClient                *http.Client
+	signerUsername            string
+	signerPassword            string
+	signerBearer              string
+	daemonUsername            string
+	daemonPassword            string
+	expectedNetwork           string
+	expectedMoneroNettype     string
+	expectedMoneroGenesisHash string
 	// Sync calls remain serialized, while registration/reset responses may
 	// update the continuity cache as soon as they arrive. Keeping those locks
 	// separate lets a completed registration rewind stop a stale sync before
@@ -158,13 +154,11 @@ func NewClientWithEndpoint(cfg config.BifrostChainConfiguration, endpoint string
 	}
 
 	endpoint = strings.TrimSuffix(parsedEndpoint.String(), "/")
-	chainNetwork := normalizeChainNetwork(cfg.ChainNetwork)
-
 	daemonEndpoint := ""
 	if strings.TrimSpace(cfg.RPCHost) != "" {
-		parsedDaemon, err := parseDaemonEndpointURL(cfg.RPCHost)
-		if err != nil {
-			return nil, err
+		parsedDaemon, daemonParseErr := parseDaemonEndpointURL(cfg.RPCHost)
+		if daemonParseErr != nil {
+			return nil, daemonParseErr
 		}
 		daemonEndpoint = normalizeDaemonEndpoint(parsedDaemon)
 	}
@@ -176,6 +170,14 @@ func NewClientWithEndpoint(cfg config.BifrostChainConfiguration, endpoint string
 	signTimeout := timeout
 	if signTimeout < 120*time.Second {
 		signTimeout = 120 * time.Second
+	}
+	expectedMoneroNettype := ""
+	expectedMoneroGenesisHash := ""
+	if strings.TrimSpace(cfg.ChainNetwork) != "" {
+		expectedMoneroNettype, expectedMoneroGenesisHash, err = expectedMoneroIdentity(cfg.ChainNetwork)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &Client{
@@ -205,36 +207,42 @@ func NewClientWithEndpoint(cfg config.BifrostChainConfiguration, endpoint string
 		chainBlockPath:    "/v1/monero/chain/block",
 		chainTxPath:       "/v1/monero/chain/tx",
 
-		client:          &http.Client{Timeout: timeout},
-		daemonClient:    &http.Client{Timeout: timeout},
-		signClient:      &http.Client{Timeout: signTimeout},
-		signerUsername:  signerUsername,
-		signerPassword:  signerPassword,
-		signerBearer:    signerBearer,
-		daemonUsername:  daemonUsername,
-		daemonPassword:  daemonPassword,
-		expectedNetwork: strings.TrimSpace(cfg.SignerExpectedNetwork),
-		chainNetwork:    chainNetwork,
-
+		client:                    &http.Client{Timeout: timeout},
+		daemonClient:              &http.Client{Timeout: timeout},
+		signClient:                &http.Client{Timeout: signTimeout},
+		signerUsername:            signerUsername,
+		signerPassword:            signerPassword,
+		signerBearer:              signerBearer,
+		daemonUsername:            daemonUsername,
+		daemonPassword:            daemonPassword,
+		expectedNetwork:           strings.TrimSpace(cfg.SignerExpectedNetwork),
+		expectedMoneroNettype:     expectedMoneroNettype,
+		expectedMoneroGenesisHash: expectedMoneroGenesisHash,
 		signCombineMaxAttempts:    defaultSignCombineMaxAttempts,
 		signCombineInitialBackoff: defaultSignCombineInitialBackoff,
 		signCombineMaxBackoff:     defaultSignCombineMaxBackoff,
 	}, nil
 }
 
-func normalizeChainNetwork(configured string) string {
-	if network := strings.ToLower(strings.TrimSpace(configured)); network != "" {
-		return network
-	}
-	switch common.CurrentChainNetwork {
-	case common.MainNet:
-		return "mainnet"
-	case common.ChainNet:
-		return "chainnet"
-	case common.StageNet:
-		return "stagenet"
+// expectedMoneroIdentity maps the configured XMR chain network to the
+// daemon identity the signer must derive from monerod. Checking both fields
+// prevents a deployment label from hiding a signer attached to another chain.
+func expectedMoneroIdentity(chainNetwork string) (string, string, error) {
+	switch strings.ToLower(strings.TrimSpace(chainNetwork)) {
+	case "mocknet":
+		// Monero's FAKECHAIN mode deliberately reuses the mainnet genesis block.
+		return "fakechain", MoneroMainnetGenesisHash, nil
+	case "mainnet":
+		return "mainnet", MoneroMainnetGenesisHash, nil
+	case "stagenet":
+		return "stagenet", MoneroStagenetGenesisHash, nil
+	case "testnet":
+		return "testnet", MoneroTestnetGenesisHash, nil
 	default:
-		return "mocknet"
+		return "", "", fmt.Errorf(
+			"unsupported xmr chain_network %q (accepted values: mocknet, mainnet, stagenet, testnet)",
+			strings.TrimSpace(chainNetwork),
+		)
 	}
 }
 
@@ -635,14 +643,24 @@ func (c *Client) ScannerState() (ScannerState, error) {
 func (c *Client) RewindScanner(req ScannerRewindReq) (ScannerRewindResp, error) {
 	c.scannerSyncMu.Lock()
 	defer c.scannerSyncMu.Unlock()
-	if strings.TrimSpace(req.Network) == "" {
-		// The signer deployment label can differ from the Monero daemon's
-		// network, for example a chainnet signer using a mainnet daemon.
-		req.Network = strings.ToLower(strings.TrimSpace(c.expectedNetwork))
-		if req.Network == "" {
-			req.Network = c.chainNetwork
-		}
+	expectedNetwork := strings.ToLower(strings.TrimSpace(c.expectedNetwork))
+	if expectedNetwork == "" {
+		return ScannerRewindResp{}, fmt.Errorf("expected sidecar network is not configured")
 	}
+	requestNetwork := strings.ToLower(strings.TrimSpace(req.Network))
+	if requestNetwork != "" && requestNetwork != expectedNetwork {
+		return ScannerRewindResp{}, fmt.Errorf(
+			"scanner rewind network %q does not match expected sidecar network %q",
+			requestNetwork,
+			expectedNetwork,
+		)
+	}
+	// The rewind compare-and-set token is the THOR deployment identity exposed
+	// by /info and XMR_FROST_CHAIN_NETWORK (chainnet/mocknet/etc.), not the
+	// Monero daemon network configured in ChainNetwork. Derive it here so every
+	// ordinary scanner recovery path uses the same fail-closed identity as the
+	// bounded reorg helper.
+	req.Network = expectedNetwork
 	var out ScannerRewindResp
 	if err := c.call(http.MethodPost, c.scannerRewindPath, req, &out); err != nil {
 		return ScannerRewindResp{}, fmt.Errorf("fail to call scanner rewind endpoint: %w", err)
@@ -1489,6 +1507,12 @@ func (c *Client) Info() (Info, error) {
 // protocol/schema/capability shape. The immutable image digest and provenance
 // are still verified by deployment tooling rather than this self-report.
 func (c *Client) RequireCompatibility(requiredCapabilities ...string) (Info, error) {
+	if c.expectedNetwork == "" {
+		return Info{}, fmt.Errorf("expected sidecar network is not configured")
+	}
+	if c.expectedMoneroNettype == "" || c.expectedMoneroGenesisHash == "" {
+		return Info{}, fmt.Errorf("expected Monero chain network is not configured")
+	}
 	info, err := c.Info()
 	if err != nil {
 		return Info{}, err
@@ -1502,11 +1526,28 @@ func (c *Client) RequireCompatibility(requiredCapabilities ...string) (Info, err
 	if info.StateSchema != StateSchemaV4 {
 		return Info{}, fmt.Errorf("unsupported sidecar state schema %d", info.StateSchema)
 	}
-	if c.expectedNetwork == "" {
-		return Info{}, fmt.Errorf("expected sidecar network is not configured")
-	}
 	if info.Network != c.expectedNetwork {
 		return Info{}, fmt.Errorf("sidecar network %q does not match expected %q", info.Network, c.expectedNetwork)
+	}
+	actualNettype := strings.ToLower(strings.TrimSpace(info.MoneroNettype))
+	if actualNettype != c.expectedMoneroNettype {
+		return Info{}, fmt.Errorf(
+			"sidecar Monero nettype %q does not match expected %q",
+			actualNettype,
+			c.expectedMoneroNettype,
+		)
+	}
+	actualGenesisHash := strings.ToLower(strings.TrimSpace(info.MoneroGenesisHash))
+	decodedGenesisHash, decodeGenesisErr := hex.DecodeString(actualGenesisHash)
+	if decodeGenesisErr != nil || len(decodedGenesisHash) != 32 {
+		return Info{}, fmt.Errorf("sidecar Monero genesis hash must be 64 hex characters")
+	}
+	if actualGenesisHash != c.expectedMoneroGenesisHash {
+		return Info{}, fmt.Errorf(
+			"sidecar Monero genesis hash %q does not match expected %q",
+			actualGenesisHash,
+			c.expectedMoneroGenesisHash,
+		)
 	}
 	commit := strings.TrimSpace(info.GitCommit)
 	decodedCommit, decodeErr := hex.DecodeString(commit)

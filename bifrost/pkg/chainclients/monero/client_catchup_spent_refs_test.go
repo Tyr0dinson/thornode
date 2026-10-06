@@ -157,7 +157,9 @@ func TestCommittedPayoutReconcilesAfterScanAndRestartWithoutSourceVote(t *testin
 				db, err = leveldb.OpenFile(dbPath, nil)
 				require.NoError(t, err)
 				reorgStore = NewReorgStore(db)
-				signer, signerErr := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
+				signer, signerErr := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{
+					SignerExpectedNetwork: "mocknet",
+				}, server.URL)
 				require.NoError(t, signerErr)
 				scanner := NewScanner(testLogger(), signer, &scannerMemoBridge{}, common.XMRChain, common.EmptyPubKey, 72)
 				scanner.SetManualVaultAddress(source, voter.Tx.Tx.FromAddress.String())

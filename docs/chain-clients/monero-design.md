@@ -282,6 +282,20 @@ required capability) over `/v1/monero/info`. An old or partially-featured signer
 is rejected at construction rather than at first use, so the signer image must be
 upgraded in lockstep with Bifrost.
 
+The deployment label above is not the Monero daemon identity. Bifrost separately maps
+the XMR chain's `chain_network` to the canonical daemon nettype and genesis block:
+`mocknet` expects `fakechain`, `mainnet` expects `mainnet`, `stagenet` expects
+`stagenet`, and `testnet` expects `testnet`. The signer queries `get_info` and
+block height zero for `/v1/monero/info` and reports `monero_nettype` plus
+`monero_genesis_hash`. Bifrost requires both values and the
+`monero-network-identity-v1` capability, so a matching deployment label cannot hide
+a signer connected to the wrong Monero chain.
+
+This compatibility and daemon-identity check is one-shot during XMR client
+construction. Replacing the signer or changing its daemon while Bifrost is running is
+unsupported; restart Bifrost to re-run the startup contract before scanning or signing.
+There is no compatibility cache, periodic poller, or background revalidation worker.
+
 One capability is optional rather than required: `durable-sign-result-recovery-v1`.
 It asserts that the signer durably replays combine by `(msg_id, session_id,
 all_shares)` -- the signer advertises it alongside the `durable_combine_response`
