@@ -8,6 +8,7 @@ package openapi
 // responses to ensure the API spec is accurate and can be used to generate clients.
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -57,6 +58,20 @@ func (Test) TestJSONSpec(c *C) {
 
 	// miscellaneous
 	assertJSONStructTagsMatch(c, types.BanVoter{}, gen.BanResponse{})
+}
+
+func (Test) TestAccountOpenAPIContract(c *C) {
+	thor := &types.QueryAccountResponse{
+		AccountNumber: "18446744073709551615", // exceeds int64
+		Sequence:      "7",
+	}
+	bz, err := thor.MarshalJSONPB(nil)
+	c.Assert(err, IsNil)
+
+	var spec gen.AccountResponse
+	c.Assert(json.Unmarshal(bz, &spec), IsNil)
+	c.Assert(spec.Result.Value.GetAccountNumber(), Equals, thor.AccountNumber)
+	c.Assert(spec.Result.Value.GetSequence(), Equals, thor.Sequence)
 }
 
 func (Test) TestSwapQueueOpenAPIContract(c *C) {
