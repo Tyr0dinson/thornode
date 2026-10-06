@@ -4357,6 +4357,16 @@
       {
         "asset": "BTC.BTC",
         "asset_add": "false",
+        "asset_amt": "0",
+        "mode": "EndBlock",
+        "reason": "mempool swap rollback",
+        "rune_add": "true",
+        "rune_amt": "194577573",
+        "type": "pool_balance_change"
+      },
+      {
+        "asset": "BTC.BTC",
+        "asset_add": "false",
         "asset_amt": "10000000",
         "mode": "EndBlock",
         "reason": "mempool swap rollback",

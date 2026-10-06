@@ -1567,6 +1567,46 @@
             {
               "asset": "BTC.BTC",
               "asset_add": "false",
+              "asset_amt": "0",
+              "msg_index": "0",
+              "reason": "mempool swap rollback",
+              "rune_add": "true",
+              "rune_amt": "25000665906",
+              "type": "pool_balance_change"
+            },
+            {
+              "asset": "ETH.ETH",
+              "asset_add": "false",
+              "asset_amt": "0",
+              "msg_index": "0",
+              "reason": "mempool swap rollback",
+              "rune_add": "true",
+              "rune_amt": "5952539501",
+              "type": "pool_balance_change"
+            },
+            {
+              "asset": "ETH.ETH",
+              "asset_add": "true",
+              "asset_amt": "160000000",
+              "msg_index": "0",
+              "reason": "mempool swap rollback",
+              "rune_add": "false",
+              "rune_amt": "16800519086",
+              "type": "pool_balance_change"
+            },
+            {
+              "asset": "BTC.BTC",
+              "asset_add": "false",
+              "asset_amt": "29902974",
+              "msg_index": "0",
+              "reason": "mempool swap rollback",
+              "rune_add": "true",
+              "rune_amt": "16800519086",
+              "type": "pool_balance_change"
+            },
+            {
+              "asset": "BTC.BTC",
+              "asset_add": "false",
               "asset_amt": "100000000",
               "msg_index": "0",
               "reason": "mempool swap rollback",
