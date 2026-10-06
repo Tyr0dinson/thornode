@@ -565,35 +565,30 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				if maxOutboundAttempts > 0 && !durableKeepVault {
 					age := ctx.BlockHeight() - voter.FinalisedHeight
 					attempts := age / itemSigningTransPeriod
-					recoverOutbound := attempts >= maxOutboundAttempts
-					if recoverOutbound {
+					if attempts >= maxOutboundAttempts {
 						// Skip treasury recovery if there's already an outbound associated or
 						// a finalised payment of this item.
-						hasOutboundAssociated := len(voter.OutTxs) > 0
-						progress := outboundNotObserved
-						if !hasOutboundAssociated {
-							progress = s.linkedOutboundProgress(ctx, mgr, vault, itemSigningTransPeriod, voter.FinalisedHeight, toi)
-						}
-						if hasOutboundAssociated || progress == outboundSent {
-							ctx.Logger().Info("skipping treasury recovery, outbound sent",
-								"hash", toi.InHash,
-								"has_outbound", hasOutboundAssociated,
-								"has_observation", progress == outboundSent)
+						if len(voter.OutTxs) > 0 {
+							ctx.Logger().Info("skipping treasury recovery, outbound associated", "hash", toi.InHash)
 							continue
 						}
-						if progress == outboundPending {
-							// A non-finalised observation may still land, so recovering now
-							// could pay twice. Dropping the item is no better: LackSigning
-							// examines each TxOut height once, so an observation that never
-							// finalises would strand it. Reschedule it below on the same vault
-							// - reassigning would pay twice just the same - and look again once
-							// the observation has finalised or gone stale.
+						progress := s.linkedOutboundProgress(ctx, mgr, vault, itemSigningTransPeriod, voter.FinalisedHeight, toi)
+						if progress == outboundSent {
+							ctx.Logger().Info("skipping treasury recovery, outbound sent", "hash", toi.InHash)
+							continue
+						}
+						// A non-finalised observation may still land, so recovering now
+						// could pay twice. Dropping the item is no better: LackSigning
+						// examines each TxOut height once, so an observation that never
+						// finalises would strand it. Reschedule it below on the same vault
+						// - reassigning would pay twice just the same - and look again once
+						// the observation has finalised or gone stale.
+						recoveryDeferred = progress == outboundPending
+						if recoveryDeferred {
 							ctx.Logger().Info("deferring treasury recovery, outbound in progress", "hash", toi.InHash)
-							recoverOutbound = false
-							recoveryDeferred = true
 						}
 					}
-					if recoverOutbound {
+					if attempts >= maxOutboundAttempts && !recoveryDeferred {
 						// For user-facing outbounds (refund, outbound, ragnarok), send to treasury recovery
 						if memo.IsOutbound() {
 							treasuryErr := s.sendFailedOutboundToTreasury(ctx, mgr, toi, vault, memo)

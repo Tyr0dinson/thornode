@@ -6,7 +6,6 @@ import (
 
 	. "gopkg.in/check.v1"
 
-	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
 	types2 "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 
@@ -1716,18 +1715,11 @@ func (s *SlashingSuite) TestLinkedOutboundProgressNonFinalConsensus(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	f := newRecoveryLinkFixture(c)
 	mgr.Keeper().SetObservedLink(ctx, f.toi.InHash, GetRandomTxHash())
-	broken := NewDummyMgrWithKeeper(unreadableOutVoterKeeper{Keeper: mgr.Keeper()})
+	unreadable := NewHandlerObservedTxOutHelper(mgr.Keeper())
+	unreadable.failGetObservedTxOutVote = true
+	broken := NewDummyMgrWithKeeper(unreadable)
 	slasher := newSlasher(broken.Keeper(), broken.EventMgr())
 	c.Check(slasher.linkedOutboundProgress(ctx, broken, f.vault, signingTransPeriod, startHeight, f.toi), Equals, outboundPending)
-}
-
-// unreadableOutVoterKeeper fails every outbound voter read.
-type unreadableOutVoterKeeper struct {
-	keeper.Keeper
-}
-
-func (unreadableOutVoterKeeper) GetObservedTxOutVoter(_ cosmos.Context, _ common.TxID) (ObservedTxVoter, error) {
-	return ObservedTxVoter{}, errors.New("kaboom")
 }
 
 // An outbound past MaxOutboundAttempts whose assigned vault reports it in
