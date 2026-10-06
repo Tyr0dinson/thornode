@@ -1131,7 +1131,9 @@ func (s *StableReserveMgrSuite) TestStableReserveOracleRatioOutput(c *C) {
 // If handleWithEmit does not return before the memo-driven follow-on handlers,
 // the swap errors, the advanced queue discards its cache context and settleSwap
 // refunds the fee to the contributor -- the Reserve never receives it.
-func (s *StableReserveMgrSuite) TestStableReserveWithdrawalFeeSwapCreditsReserve(c *C) {
+// setupStableReserveFeeWithdrawal returns a filled stable reserve withdrawal
+// whose request coin is charged as a fee swap to the Reserve.
+func setupStableReserveFeeWithdrawal(c *C) (cosmos.Context, *Mgrs, cosmos.Msg) {
 	ctx, mgr, usdc, _ := setupStableReserveSuite(c)
 	contributor := GetRandomETHAddress()
 	signer := GetRandomBech32Addr()
@@ -1159,8 +1161,12 @@ func (s *StableReserveMgrSuite) TestStableReserveWithdrawalFeeSwapCreditsReserve
 	}
 	withdrawMsg, err := processOneTxIn(ctx, mgr.Keeper(), NewObservedTx(withdrawTx, ctx.BlockHeight(), GetRandomPubKey(), ctx.BlockHeight()), signer)
 	c.Assert(err, IsNil)
+	return ctx, mgr, withdrawMsg
+}
 
-	_, err = NewSecuredAssetWithdrawHandler(mgr).Run(ctx, withdrawMsg)
+func (s *StableReserveMgrSuite) TestStableReserveWithdrawalFeeSwapCreditsReserve(c *C) {
+	ctx, mgr, withdrawMsg := setupStableReserveFeeWithdrawal(c)
+	_, err := NewSecuredAssetWithdrawHandler(mgr).Run(ctx, withdrawMsg)
 	c.Assert(err, IsNil)
 
 	feeSwap, err := firstQueuedSwapWithMemoPrefix(ctx, mgr, types.StableReserveWithdrawFeeMemoPrefix)
@@ -1176,6 +1182,39 @@ func (s *StableReserveMgrSuite) TestStableReserveWithdrawalFeeSwapCreditsReserve
 	// after slip) -- a floor rather than an equality so pool sizing in
 	// setupStableReserveAsset stays free to move. A bare GT would also pass on
 	// unrelated module income.
+	c.Check(after.Sub(before).GTE(cosmos.NewUint(9_000)), Equals, true, Commentf("reserve rune %s -> %s", before, after))
+	_, err = firstQueuedSwapWithMemoPrefix(ctx, mgr, types.StableReserveWithdrawFeeMemoPrefix)
+	c.Check(err, NotNil)
+}
+
+// A trading halt on the withdrawal asset's chain must not block the withdrawal:
+// the fee swap stays queued and credits the Reserve once trading resumes.
+func (s *StableReserveMgrSuite) TestStableReserveWithdrawalFeeSwapWaitsOutTradingHalt(c *C) {
+	ctx, mgr, withdrawMsg := setupStableReserveFeeWithdrawal(c)
+	mgr.Keeper().SetMimir(ctx, "HaltETHTrading", 1)
+	_, err := NewSecuredAssetWithdrawHandler(mgr).Run(ctx, withdrawMsg)
+	c.Assert(err, IsNil)
+
+	outbounds, err := mgr.TxOutStore().GetOutboundItems(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(outbounds, HasLen, 1)
+	c.Check(outbounds[0].Chain, Equals, common.ETHChain)
+
+	feeSwap, err := firstQueuedSwapWithMemoPrefix(ctx, mgr, types.StableReserveWithdrawFeeMemoPrefix)
+	c.Assert(err, IsNil)
+	c.Check(feeSwap.State.Quantity, Equals, uint64(1))
+	c.Check(feeSwap.State.Deposit.Equal(feeSwap.Tx.Coins[0].Amount), Equals, true)
+
+	before := mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName)
+	c.Assert(processSwapQueues(ctx, mgr), IsNil)
+	_, err = firstQueuedSwapWithMemoPrefix(ctx, mgr, types.StableReserveWithdrawFeeMemoPrefix)
+	c.Assert(err, IsNil, Commentf("fee swap must stay queued while trading is halted"))
+	c.Check(mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName).Equal(before), Equals, true)
+
+	mgr.Keeper().SetMimir(ctx, "HaltETHTrading", 0)
+	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+	c.Assert(processSwapQueues(ctx, mgr), IsNil)
+	after := mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName)
 	c.Check(after.Sub(before).GTE(cosmos.NewUint(9_000)), Equals, true, Commentf("reserve rune %s -> %s", before, after))
 	_, err = firstQueuedSwapWithMemoPrefix(ctx, mgr, types.StableReserveWithdrawFeeMemoPrefix)
 	c.Check(err, NotNil)

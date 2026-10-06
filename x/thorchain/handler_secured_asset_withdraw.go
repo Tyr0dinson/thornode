@@ -137,5 +137,13 @@ func scheduleStableReserveWithdrawalFeeSwap(ctx cosmos.Context, mgr Manager, msg
 	// schedules the outbound - the memo does not parse as a THORChain memo, so
 	// settleSwap takes its outbound path rather than a module transfer.
 	feeSwap := NewMsgSwap(feeTx, common.RuneAsset(), reserveAddress, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketSwap, 1, 0, types.SwapVersion_v2, msg.Signer)
+	if mgr.Keeper().IsTradingHalt(ctx, feeSwap) {
+		// AddSwapQueueItem validates the swap, which rejects a halted swap and
+		// would fail the whole withdrawal. Queue the fee directly instead: the
+		// queue skips halted items, so it executes once trading resumes.
+		feeSwap.InitialBlockHeight = ctx.BlockHeight()
+		feeSwap.State.Deposit = requestCoin.Amount
+		return mgr.Keeper().SetAdvSwapQueueItem(ctx, *feeSwap)
+	}
 	return mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, mgr, feeSwap)
 }
