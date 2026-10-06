@@ -38,7 +38,6 @@ type SignatureNotifier struct {
 	host         host.Host
 	notifierLock *sync.Mutex
 	notifiers    map[string]*notifier
-	streamMgr    *p2p.StreamMgr
 }
 
 // NewSignatureNotifier create a new instance of SignatureNotifier
@@ -51,7 +50,6 @@ func NewSignatureNotifier(host host.Host) *SignatureNotifier {
 		host:         host,
 		notifierLock: &sync.Mutex{},
 		notifiers:    make(map[string]*notifier),
-		streamMgr:    p2p.NewStreamMgr(),
 	}
 	host.SetStreamHandler(signatureNotifierProtocol, s.handleStream)
 	return s
@@ -75,7 +73,6 @@ func (s *SignatureNotifier) Stop() {
 func (s *SignatureNotifier) cleanupStaleNotifiers() {
 	doCleanup := func() {
 		s.notifierLock.Lock()
-		var expired []string
 		for messageID, notifier := range s.notifiers {
 			notifier.mu.Lock()
 			lastUpdated := notifier.lastUpdated
@@ -83,21 +80,9 @@ func (s *SignatureNotifier) cleanupStaleNotifiers() {
 			notifier.mu.Unlock()
 			if time.Since(lastUpdated) > ttl {
 				delete(s.notifiers, messageID)
-				expired = append(expired, messageID)
 			}
 		}
 		s.notifierLock.Unlock()
-		// Streams parked under a msgID (handleStream/sendOneMsgToPeer) are
-		// otherwise only swept by ReleaseStream at local keysign completion.
-		// For notifications about keysigns this node never ran — the same
-		// broadcasts that create the notifiers cleaned up here — nothing else
-		// releases them and they leak. Sweep them with their expired
-		// notifier: parked streams are read+acked and never reused, so a
-		// late reset is safe. (Failed-status notifications create no
-		// notifier; their streams still leak — negligible volume.)
-		for _, messageID := range expired {
-			s.streamMgr.ReleaseStream(messageID)
-		}
 	}
 	ticker := time.NewTicker(time.Second * 15)
 	defer ticker.Stop()
@@ -116,7 +101,12 @@ func (s *SignatureNotifier) cleanupStaleNotifiers() {
 	}
 }
 
-// HandleStream handle signature notify stream
+// handleStream handles one signature notification. Each notification stream
+// carries exactly one message and one ack, so the stream is released as soon
+// as the ack is written. It must not wait for a local keysign to complete:
+// Failed notifications reach peers outside the keysign party, which never run
+// that keysign, and a retained stream counts against go-libp2p's per-peer
+// stream budget until it blocks every later notification from that peer.
 func (s *SignatureNotifier) handleStream(stream network.Stream) {
 	remotePeer := stream.Conn().RemotePeer()
 	logger := s.logger.With().Str("remote peer", remotePeer.String()).Logger()
@@ -124,21 +114,22 @@ func (s *SignatureNotifier) handleStream(stream network.Stream) {
 	payload, err := p2p.ReadStreamWithBuffer(stream)
 	if err != nil {
 		logger.Err(err).Msgf("fail to read payload from stream")
-		s.streamMgr.AddStream(p2p.StreamUnknown, stream)
+		_ = stream.Reset()
 		return
 	}
 	// we tell the sender we have received the message
-	err = p2p.WriteStreamWithBuffer([]byte(p2p.StreamMsgDone), stream)
-	if err != nil {
+	if err = p2p.WriteStreamWithBuffer([]byte(p2p.StreamMsgDone), stream); err != nil {
 		logger.Error().Err(err).Msgf("fail to write the reply to peer: %s", remotePeer)
+		_ = stream.Reset()
+	} else if err = stream.Close(); err != nil {
+		logger.Debug().Err(err).Msg("fail to close signature notifier stream")
+		_ = stream.Reset()
 	}
 	var msg messages.KeysignSignature
 	if err := proto.Unmarshal(payload, &msg); err != nil {
 		logger.Err(err).Msg("fail to unmarshal join party request")
-		s.streamMgr.AddStream(p2p.StreamUnknown, stream)
 		return
 	}
-	s.streamMgr.AddStream(msg.ID, stream)
 	if len(msg.Signatures) > 0 && msg.KeysignStatus == messages.KeysignSignature_Success {
 		signatures := make([]*common.SignatureData, len(msg.Signatures))
 		for i, el := range msg.Signatures {
@@ -157,7 +148,7 @@ func (s *SignatureNotifier) handleStream(stream network.Stream) {
 	}
 }
 
-func (s *SignatureNotifier) sendOneMsgToPeer(m *signatureItem) error {
+func (s *SignatureNotifier) sendOneMsgToPeer(m *signatureItem) (err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
 	defer cancel()
 	stream, err := s.host.NewStream(ctx, m.peerID, signatureNotifierProtocol)
@@ -165,8 +156,16 @@ func (s *SignatureNotifier) sendOneMsgToPeer(m *signatureItem) error {
 		return fmt.Errorf("fail to create stream to peer(%s):%w", m.peerID, err)
 	}
 	s.logger.Debug().Msgf("open stream to (%s) successfully", m.peerID)
+	// The stream carries one message and one ack: close it once acked, reset
+	// it on any failure, and never retain it past this exchange.
 	defer func() {
-		s.streamMgr.AddStream(m.messageID, stream)
+		if err != nil {
+			_ = stream.Reset()
+			return
+		}
+		if closeErr := stream.Close(); closeErr != nil {
+			_ = stream.Reset()
+		}
 	}()
 	ks := &messages.KeysignSignature{
 		ID:            m.messageID,
@@ -332,8 +331,4 @@ func (s *SignatureNotifier) WaitForSignature(messageID string, messages [][]byte
 		s.logger.Debug().Msg("got signature generated signal")
 		return nil, p2p.ErrSigGenerated
 	}
-}
-
-func (s *SignatureNotifier) ReleaseStream(msgID string) {
-	s.streamMgr.ReleaseStream(msgID)
 }
