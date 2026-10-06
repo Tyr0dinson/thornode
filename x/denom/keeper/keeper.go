@@ -17,8 +17,9 @@ type (
 		cdc          codec.Codec
 		storeService storetypes.KVStoreService
 
-		accountKeeper types.AccountKeeper
-		bankKeeper    types.BankKeeper
+		accountKeeper  types.AccountKeeper
+		bankKeeper     types.BankKeeper
+		contractKeeper types.ContractKeeper
 
 		authority string
 	}
@@ -30,14 +31,16 @@ func NewKeeper(
 	storeService storetypes.KVStoreService,
 	accountKeeper types.AccountKeeper,
 	bankKeeper types.BankKeeper,
+	contractKeeper types.ContractKeeper,
 	authority string,
 ) Keeper {
 	return Keeper{
 		cdc:          cdc,
 		storeService: storeService,
 
-		accountKeeper: accountKeeper,
-		bankKeeper:    bankKeeper,
+		accountKeeper:  accountKeeper,
+		bankKeeper:     bankKeeper,
+		contractKeeper: contractKeeper,
 
 		authority: authority,
 	}

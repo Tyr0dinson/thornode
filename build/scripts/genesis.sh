@@ -9,6 +9,8 @@ if [ "$NET" = "mocknet" ]; then
   . "$(dirname "$0")/core-unsafe.sh"
 fi
 
+resolve_signer_seed_phrase
+
 ########################################################################################
 # Genesis Init
 ########################################################################################
@@ -45,6 +47,7 @@ genesis_init() {
     add_account tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m rune 200000000000000 # dog
     add_account tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr rune 200000000000000 # fox
     add_account tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u rune 200000000000000 # pig
+    add_account tthor1necf5u8h6eeazm4449pxwhrr5h46eg7hc6zuq5 rune 200000000000000 # frog
 
     # simulation master
     add_account tthor1f4l5dlqhaujgkxxqmug4stfvmvt58vx2tspx4g rune 100000000000000 # master
@@ -135,9 +138,26 @@ genesis_init() {
 # Main
 ########################################################################################
 
+# A failed deployment may leave both genesis.json and contracts on other chains.
+# Persist the incomplete state across container restarts; neither starting from
+# that genesis nor blindly deploying again is safe.
+MOCKNET_GENESIS_INIT_MARKER="$HOME/.thornode/.mocknet-genesis-in-progress"
+if [ "$NET" = "mocknet" ] && [ -e "$MOCKNET_GENESIS_INIT_MARKER" ]; then
+  echo "Incomplete mocknet genesis initialization: $MOCKNET_GENESIS_INIT_MARKER" >&2
+  echo "Refusing to start or redeploy. Inspect the startup logs and recreate the disposable mocknet volumes together." >&2
+  exit 1
+fi
+
 # genesis on first init if we are the genesis node
 if [ ! -f ~/.thornode/config/genesis.json ]; then
-  genesis_init
+  if [ "$NET" = "mocknet" ]; then
+    mkdir -p "$HOME/.thornode" || exit 1
+    mkdir "$MOCKNET_GENESIS_INIT_MARKER" || exit 1
+  fi
+  genesis_init || exit 1
+  if [ "$NET" = "mocknet" ]; then
+    rmdir "$MOCKNET_GENESIS_INIT_MARKER" || exit 1
+  fi
 fi
 
 # render tendermint and cosmos configuration files

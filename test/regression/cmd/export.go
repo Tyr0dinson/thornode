@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/google/go-cmp/cmp"
@@ -25,7 +24,7 @@ import (
 
 func export(out io.Writer, path string, routine int, failExportInvariants bool) error {
 	localLog := consoleLogger(out)
-	home := "/" + strconv.Itoa(routine)
+	home := regtestHome(routine)
 
 	// export blocks
 	err := exportBlocks(out, path)
@@ -57,8 +56,10 @@ func export(out io.Writer, path string, routine int, failExportInvariants bool) 
 	appState, _ := export["app_state"].(map[string]any)
 	thorchain, _ := appState["thorchain"].(map[string]any)
 	delete(thorchain, "store_version")
-	deleteEmptySpentOutputRefs(thorchain)
+	deleteEmptyXMROutboundMetadata(thorchain)
 	deleteEmptyPOLReserveDeposits(thorchain)
+	deleteEmptyStableReserveCredits(thorchain)
+	deleteEmptyVaultDeficits(thorchain)
 
 	// ignore node account version for comparison
 	nodeAccounts, _ := thorchain["node_accounts"].([]interface{})
@@ -77,7 +78,7 @@ func export(out io.Writer, path string, routine int, failExportInvariants bool) 
 	// base path without extension and replace path separators with underscores
 	path = strings.TrimPrefix(path, "suites/")
 	exportName := strings.TrimSuffix(path, filepath.Ext(path))
-	exportPath := fmt.Sprintf("/mnt/exports/%s.json", exportName)
+	exportPath := filepath.Join(regtestMntDir(), "exports", exportName+".json")
 
 	// check whether existing export exists
 	_, err = os.Stat(exportPath)
@@ -123,7 +124,7 @@ func exportBlocks(out io.Writer, path string) error {
 	// determine path for the export
 	path = strings.TrimPrefix(path, "suites/")
 	path = strings.TrimSuffix(path, filepath.Ext(path))
-	blocksPath := fmt.Sprintf("/mnt/blocks/%s.json", path)
+	blocksPath := filepath.Join(regtestMntDir(), "blocks", path+".json")
 	blocksDir := strings.TrimSuffix(blocksPath, filepath.Ext(blocksPath))
 
 	// read all block exports in the blocks directory
@@ -147,7 +148,7 @@ func exportBlocks(out io.Writer, path string) error {
 		blocks = append(blocks, block)
 		f.Close()
 	}
-	deleteEmptyBlockSpentOutputRefs(blocks)
+	deleteEmptyBlockXMROutboundMetadata(blocks)
 
 	// check whether existing blocks export exists
 	_, err = os.Stat(blocksPath)
@@ -306,8 +307,9 @@ func checkExportChanges(out io.Writer, newExport map[string]any, path string) er
 	}
 	if appState, ok := oldExport["app_state"].(map[string]any); ok {
 		if thorchain, ok := appState["thorchain"].(map[string]any); ok {
-			deleteEmptySpentOutputRefs(thorchain)
+			deleteEmptyXMROutboundMetadata(thorchain)
 			deleteEmptyPOLReserveDeposits(thorchain)
+			deleteEmptyVaultDeficits(thorchain)
 		}
 	}
 
@@ -342,8 +344,8 @@ func checkBlocksChanges(out io.Writer, newBlocks []openapi.BlockResponse, path s
 	if err != nil {
 		localLog.Err(err).Msg("failed to decode existing blocks")
 	}
-	deleteEmptyBlockSpentOutputRefs(oldBlocks)
-	deleteEmptyBlockSpentOutputRefs(newBlocks)
+	deleteEmptyBlockXMROutboundMetadata(oldBlocks)
+	deleteEmptyBlockXMROutboundMetadata(newBlocks)
 
 	// compare blocks
 	diff := cmp.Diff(oldBlocks, newBlocks)
@@ -356,26 +358,29 @@ func checkBlocksChanges(out io.Writer, newBlocks []openapi.BlockResponse, path s
 	return nil
 }
 
-func deleteEmptyBlockSpentOutputRefs(blocks []openapi.BlockResponse) {
+func deleteEmptyBlockXMROutboundMetadata(blocks []openapi.BlockResponse) {
 	for i := range blocks {
 		for j := range blocks[i].Txs {
-			deleteEmptySpentOutputRefs(blocks[i].Txs[j].Tx)
+			deleteEmptyXMROutboundMetadata(blocks[i].Txs[j].Tx)
 		}
 	}
 }
 
-func deleteEmptySpentOutputRefs(value any) {
+func deleteEmptyXMROutboundMetadata(value any) {
 	switch v := value.(type) {
 	case map[string]interface{}:
 		if refs, ok := v["spent_output_refs"]; ok && isEmptyJSONList(refs) {
 			delete(v, "spent_output_refs")
 		}
+		if txKey, ok := v["xmr_tx_key"].(string); ok && strings.TrimSpace(txKey) == "" {
+			delete(v, "xmr_tx_key")
+		}
 		for _, child := range v {
-			deleteEmptySpentOutputRefs(child)
+			deleteEmptyXMROutboundMetadata(child)
 		}
 	case []interface{}:
 		for _, child := range v {
-			deleteEmptySpentOutputRefs(child)
+			deleteEmptyXMROutboundMetadata(child)
 		}
 	}
 }
@@ -383,6 +388,22 @@ func deleteEmptySpentOutputRefs(value any) {
 func deleteEmptyPOLReserveDeposits(thorchain map[string]any) {
 	if deposits, ok := thorchain["pol_reserve_deposits"]; ok && isEmptyJSONList(deposits) {
 		delete(thorchain, "pol_reserve_deposits")
+	}
+}
+
+func deleteEmptyStableReserveCredits(thorchain map[string]any) {
+	if credits, ok := thorchain["stable_reserve_credits"]; ok && isEmptyJSONList(credits) {
+		delete(thorchain, "stable_reserve_credits")
+	}
+}
+
+func deleteEmptyVaultDeficits(thorchain map[string]any) {
+	vaults, _ := thorchain["vaults"].([]interface{})
+	for _, value := range vaults {
+		vault, _ := value.(map[string]interface{})
+		if vault["deficit"] == nil {
+			delete(vault, "deficit")
+		}
 	}
 }
 

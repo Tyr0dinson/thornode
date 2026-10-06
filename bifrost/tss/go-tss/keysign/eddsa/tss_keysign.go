@@ -87,7 +87,7 @@ func (tKeySign *EDDSAKeySign) startBatchSigning(keySignPartyMap *sync.Map, msgNu
 }
 
 // signMessage
-func (tKeySign *EDDSAKeySign) SignMessage(msgsToSign [][]byte, localStateItem storage.KeygenLocalState, parties []string) ([]*tsslibcommon.SignatureData, error) {
+func (tKeySign *EDDSAKeySign) SignMessage(msgsToSign [][]byte, localStateItem storage.KeygenLocalState, parties []string, version string) ([]*tsslibcommon.SignatureData, error) {
 	partiesID, localPartyID, err := conversion.GetParties(parties, localStateItem.LocalPartyKey)
 	tKeySign.localParty = localPartyID
 	if err != nil {
@@ -136,6 +136,13 @@ func (tKeySign *EDDSAKeySign) SignMessage(msgsToSign [][]byte, localStateItem st
 		eachLocalPartyID.Index = localPartyID.Index // Set the index from the local party ID
 
 		params := tss.NewParameters(tss.Edwards(), ctx, eachLocalPartyID, len(partiesID), threshold)
+		// Bind the SSID to this message's sub-session so proofs cannot be
+		// replayed across sessions; msgsToSign is sorted by digest before
+		// this loop, so (m, i) is identical on every signer. Version-gated
+		// so the nonce activates on the whole network at once.
+		if common.SessionNonceEnabled(version) {
+			params.SetSessionNonce(common.KeysignSessionNonce(localStateItem.PubKey, m.String(), i, parties))
+		}
 		keySignParty := signing.NewLocalParty(m, params, localData, outCh, endCh)
 		keySignPartyMap.Store(moniker, keySignParty)
 	}
@@ -219,7 +226,7 @@ func (tKeySign *EDDSAKeySign) processKeySign(reqNum int, errChan chan struct{}, 
 			if lastMsg == nil {
 				return nil, blame.ErrTssTimeOut
 			}
-			failReason := blameMgr.GetBlame().FailReason
+			failReason := blameMgr.GetBlame().GetFailReason()
 			if failReason == "" {
 				failReason = blame.TssTimeout
 			}
@@ -255,7 +262,7 @@ func (tKeySign *EDDSAKeySign) processKeySign(reqNum int, errChan chan struct{}, 
 			blameMgr.GetBlame().AddBlameNodes(blameNodesBroadcast...)
 
 			// if we cannot find the blame node, we check whether everyone send me the share
-			if len(blameMgr.GetBlame().BlameNodes) == 0 {
+			if blameMgr.GetBlame().BlameNodesCount() == 0 {
 				blameNodesMisingShare, isUnicast, err := blameMgr.TssMissingShareBlame(messages.EDDSAKEYSIGNROUNDS, messages.EDDSAKEYSIGN)
 				if err != nil {
 					tKeySign.logger.Error().Err(err).Msg("fail to get the node of missing share ")
@@ -263,7 +270,7 @@ func (tKeySign *EDDSAKeySign) processKeySign(reqNum int, errChan chan struct{}, 
 
 				if len(blameNodesMisingShare) > 0 && len(blameNodesMisingShare) <= threshold {
 					blameMgr.GetBlame().AddBlameNodes(blameNodesMisingShare...)
-					blameMgr.GetBlame().IsUnicast = isUnicast
+					blameMgr.GetBlame().SetIsUnicast(isUnicast)
 				}
 			}
 

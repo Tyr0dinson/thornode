@@ -13,6 +13,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
@@ -38,9 +39,11 @@ func (h BankSendHandler) Send(goCtx context.Context, msg *bank.MsgSend) (*bank.M
 	return &bank.MsgSendResponse{}, nil
 }
 
-// MultiSend not allowed by ante handler, but necessary to satisfy MsgServer interface for bank send bank.MsgMultiSend.
+// MultiSend is rejected by the ante handler, but necessary to satisfy MsgServer
+// interface for bank send bank.MsgMultiSend. Nothing here implements it, so it
+// is refused rather than reported as a transfer that never happened.
 func (h BankSendHandler) MultiSend(ctx context.Context, msg *bank.MsgMultiSend) (*bank.MsgMultiSendResponse, error) {
-	return &bank.MsgMultiSendResponse{}, nil
+	return nil, cosmos.ErrUnknownRequest("bank multi sends are not supported")
 }
 
 // UpdateParams defines a governance operation for updating the x/bank module parameters.
@@ -109,6 +112,18 @@ func getThorSend(msg sdk.Msg) (*MsgSend, error) {
 }
 
 func getDeposit(ctx cosmos.Context, fromAddress sdk.AccAddress, sdkCoins sdk.Coins) (*MsgDeposit, error) {
+	// The memo belongs to the transaction body, which is signed by the
+	// transaction signers - not necessarily by fromAddress. Converting a send
+	// that fromAddress did not sign into a deposit would execute a memo chosen
+	// by somebody else with fromAddress' authority: an arbitrary THORChain
+	// command (swap, withdraw, unbond, THORName transfer) in place of the plain
+	// value transfer the sender authorised. Only convert directly signed sends;
+	// anything dispatched on behalf of fromAddress must use MsgDeposit, which
+	// carries its own memo.
+	if !TxSignedBy(ctx, fromAddress) {
+		return nil, fmt.Errorf("cannot convert send to deposit: %s did not sign the transaction", fromAddress)
+	}
+
 	var memo string
 	ctxTxMemo := ctx.Context().Value(ContextKeyTxMemo)
 	if ctxTxMemo != nil {
@@ -125,6 +140,17 @@ func getDeposit(ctx cosmos.Context, fromAddress sdk.AccAddress, sdkCoins sdk.Coi
 		)
 		if err != nil {
 			return nil, err
+		}
+
+		// The asset is converted back to a bank denom further down the deposit
+		// path, and the conversion is not injective: "x/rune" and "RUNE" both
+		// parse to THOR.RUNE, whose native denom is "rune". A coin that does not
+		// survive the round trip would debit a denom other than the one that was
+		// sent, so only accept those that do. Zero amount coins are exempt: they
+		// only carry the memo of a deposit (MsgUnbond and friends) and move no
+		// value, whatever they name.
+		if coin.Amount.IsPositive() && asset.Native() != coin.Denom {
+			return nil, fmt.Errorf("invalid denom: %s does not match asset %s", coin.Denom, asset)
 		}
 
 		coins[i] = common.Coin{
@@ -154,6 +180,28 @@ func MsgSendValidate(ctx cosmos.Context, mgr Manager, m sdk.Msg) error {
 
 	if err := msg.ValidateBasic(); err != nil {
 		return err
+	}
+
+	// A send must either be signed by its sender - in which case the ante
+	// handler has run, deducting the native tx fee and applying the bank send
+	// gate and the one-deposit-per-tx rule - or be dispatched by a CosmWasm
+	// contract moving its own funds, which pays for execution through the
+	// wrapping transaction. Any other dispatch path spends an account's balance
+	// without the sender ever having been charged or checked.
+	fromContract := mgr.WasmManager().HasContract(ctx, msg.FromAddress)
+	if !fromContract && !TxSignedBy(ctx, msg.FromAddress) {
+		return fmt.Errorf("send from %s was not signed by its sender", msg.FromAddress)
+	}
+
+	// The ante handler gates cosmos bank sends on BankSendEnabled, but it only
+	// sees the top level messages of a transaction. Applying the switch here as
+	// well, on the path every bank send takes, means no dispatch path can move
+	// funds with bank sends turned off. Contracts are exempt: they move funds on
+	// behalf of their users while executing an already permissioned contract.
+	if _, isBankSend := m.(*bank.MsgSend); isBankSend && !fromContract {
+		if mgr.Keeper().GetConfigInt64(ctx, constants.BankSendEnabled) <= 0 {
+			return cosmos.ErrUnknownRequest("bank sends are disabled")
+		}
 	}
 
 	k := mgr.Keeper()

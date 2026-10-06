@@ -63,11 +63,57 @@ func (p *policyTestSuite) SetUpTest(c *C) {
 	p.blameMgr.SetPartyInfo(testPartyMap, partyIDMap)
 }
 
-func (p *policyTestSuite) TestGetUnicastBlame(c *C) {
+func decodeTestPeerIDs(c *C) []peer.ID {
+	peers := make([]peer.ID, 0, len(testPeers))
+	for _, rawPeerID := range testPeers {
+		peerID, err := peer.Decode(rawPeerID)
+		c.Assert(err, IsNil)
+		peers = append(peers, peerID)
+	}
+	return peers
+}
+
+func (p *policyTestSuite) TestGetUnicastBlameExactName(c *C) {
 	_, err := p.blameMgr.GetUnicastBlame("testTypeWrong")
 	c.Assert(err, NotNil)
-	_, err = p.blameMgr.GetUnicastBlame("testType")
+
+	peers := decodeTestPeerIDs(c)
+	p.blameMgr.SetLastUnicastPeer(peers[3], "testType")
+	blameNodes, err := p.blameMgr.GetUnicastBlame("testType")
 	c.Assert(err, IsNil)
+	c.Assert(blameNodes, HasLen, 0)
+}
+
+func (p *policyTestSuite) TestGetUnicastBlameShortNameMatchesFullyQualifiedName(c *C) {
+	shortName := messages.KEYGEN2aUnicast
+	fullName := "binance.tsslib.ecdsa.keygen." + shortName
+	for _, peerID := range decodeTestPeerIDs(c) {
+		p.blameMgr.SetLastUnicastPeer(peerID, fullName)
+	}
+
+	blameNodes, err := p.blameMgr.GetUnicastBlame(shortName)
+	c.Assert(err, IsNil)
+	c.Assert(blameNodes, HasLen, 0)
+}
+
+func (p *policyTestSuite) TestGetUnicastBlameUnionsBothNameFormats(c *C) {
+	shortName := messages.KEYGEN2aUnicast
+	fullName := "binance.tsslib.ecdsa.keygen." + shortName
+	peers := decodeTestPeerIDs(c)
+
+	p.blameMgr.SetLastUnicastPeer(peers[0], shortName)
+	p.blameMgr.SetLastUnicastPeer(peers[1], shortName)
+	p.blameMgr.SetLastUnicastPeer(peers[1], fullName)
+	p.blameMgr.SetLastUnicastPeer(peers[2], fullName)
+	p.blameMgr.SetLastUnicastPeer(peers[3], fullName)
+
+	blameNodes, err := p.blameMgr.GetUnicastBlame(shortName)
+	c.Assert(err, IsNil)
+	c.Assert(blameNodes, HasLen, 0)
+
+	blameNodes, err = p.blameMgr.GetUnicastBlame(fullName)
+	c.Assert(err, IsNil)
+	c.Assert(blameNodes, HasLen, 0)
 }
 
 func (p *policyTestSuite) TestGetBroadcastBlame(c *C) {
@@ -141,6 +187,85 @@ func (p *policyTestSuite) TestTssMissingShareBlame(c *C) {
 	results := []string{nodes[0].Pubkey, nodes[1].Pubkey}
 	sort.Strings(results)
 	c.Assert(results, DeepEquals, localTestPubKeys[2:])
+}
+
+func sortedBlamePubkeys(nodes []Node) []string {
+	out := make([]string, 0, len(nodes))
+	for _, n := range nodes {
+		out = append(out, n.Pubkey)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// A two-message batch with different missing parties must produce the
+// order-independent union of the per-message blame, regardless of Go map
+// iteration order. Pre-fix, the accumulating peers slice made the result depend
+// on map order (a different culprit on each run), which diverged the consensus
+// ID and prevented the slashing vote from converging.
+func (p *policyTestSuite) TestTssMissingShareBlameDeterministicUnion(c *C) {
+	localTestPubKeys := testPubKeys[:]
+	sort.Strings(localTestPubKeys)
+	blameMgr := p.blameMgr
+
+	// party "0" is local; msgA missing party 3, msgB missing party 2.
+	setShares := func() {
+		blameMgr.acceptShareLocker.Lock()
+		blameMgr.acceptedShares = make(map[RoundInfo][]string)
+		blameMgr.acceptedShares[RoundInfo{0, "testRound", "msgA"}] = []string{"1", "2"}
+		blameMgr.acceptedShares[RoundInfo{0, "testRound", "msgB"}] = []string{"1", "3"}
+		blameMgr.acceptShareLocker.Unlock()
+	}
+
+	expected := []string{localTestPubKeys[2], localTestPubKeys[3]}
+	sort.Strings(expected)
+
+	// Run many times so the randomized map iteration exercises both orders.
+	for i := 0; i < 100; i++ {
+		setShares()
+		nodes, _, err := blameMgr.TssMissingShareBlame(1, messages.ECDSAKEYGEN)
+		c.Assert(err, IsNil)
+		c.Assert(sortedBlamePubkeys(nodes), DeepEquals, expected)
+	}
+}
+
+// A party missing in more than one message of the batch must be blamed exactly
+// once; otherwise it is double-counted in both the consensus hash and the
+// caller's <= threshold gate.
+func (p *policyTestSuite) TestTssMissingShareBlameDedup(c *C) {
+	localTestPubKeys := testPubKeys[:]
+	sort.Strings(localTestPubKeys)
+	blameMgr := p.blameMgr
+
+	blameMgr.acceptShareLocker.Lock()
+	blameMgr.acceptedShares = make(map[RoundInfo][]string)
+	blameMgr.acceptedShares[RoundInfo{0, "testRound", "msgA"}] = []string{"1", "2"}
+	blameMgr.acceptedShares[RoundInfo{0, "testRound", "msgB"}] = []string{"1", "2"}
+	blameMgr.acceptShareLocker.Unlock()
+
+	nodes, _, err := blameMgr.TssMissingShareBlame(1, messages.ECDSAKEYGEN)
+	c.Assert(err, IsNil)
+	c.Assert(sortedBlamePubkeys(nodes), DeepEquals, []string{localTestPubKeys[3]})
+}
+
+// A message in the batch with no missing share (every round complete) must
+// blame nobody; only the genuinely-incomplete message contributes.
+func (p *policyTestSuite) TestTssMissingShareBlameCompleteMessageBlamesNobody(c *C) {
+	localTestPubKeys := testPubKeys[:]
+	sort.Strings(localTestPubKeys)
+	blameMgr := p.blameMgr
+
+	blameMgr.acceptShareLocker.Lock()
+	blameMgr.acceptedShares = make(map[RoundInfo][]string)
+	// msgComplete: every non-local party sent -> no missing share.
+	blameMgr.acceptedShares[RoundInfo{0, "testRound", "msgComplete"}] = []string{"1", "2", "3"}
+	// msgIncomplete: party 3 missing.
+	blameMgr.acceptedShares[RoundInfo{0, "testRound", "msgIncomplete"}] = []string{"1", "2"}
+	blameMgr.acceptShareLocker.Unlock()
+
+	nodes, _, err := blameMgr.TssMissingShareBlame(1, messages.ECDSAKEYGEN)
+	c.Assert(err, IsNil)
+	c.Assert(sortedBlamePubkeys(nodes), DeepEquals, []string{localTestPubKeys[3]})
 }
 
 func (p *policyTestSuite) TestManagerGetters(c *C) {

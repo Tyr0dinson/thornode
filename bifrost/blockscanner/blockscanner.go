@@ -32,6 +32,13 @@ type BlockScannerFetcher interface {
 	GetNetworkFee() (transactionSize, transactionFeeRate uint64)
 }
 
+// BlockScannerSolvencyReporter is an optional post-fetch hook. The ordered scan
+// loop calls it only after a successful fetch has restored scanner health, never
+// from prefetch workers. Reporting failures do not discard the fetched block.
+type BlockScannerSolvencyReporter interface {
+	ReportSolvency(fetchHeight, chainHeight int64) error
+}
+
 type Block struct {
 	Height int64
 	Txs    []string
@@ -54,6 +61,10 @@ type BlockScanner struct {
 	thorchainBridge       thorclient.ThorchainBridge
 	chainScanner          BlockScannerFetcher
 	healthy               *atomic.Bool
+
+	// stall tracking, only touched from the scanBlocks goroutine
+	stallHeight int64
+	stallSince  time.Time
 }
 
 // NewBlockScanner create a new instance of BlockScanner
@@ -139,8 +150,12 @@ func (b *BlockScanner) RollbackToLastObserved() error {
 		rollbackHeight = 0
 	}
 
-	b.rollbackChan <- rollbackHeight
-	return nil
+	select {
+	case b.rollbackChan <- rollbackHeight:
+		return nil
+	case <-b.stopChan:
+		return errors.New("block scanner stopped before rollback could be queued")
+	}
 }
 
 func (b *BlockScanner) rollback(height int64) error {
@@ -154,12 +169,159 @@ func (b *BlockScanner) rollback(height int64) error {
 		// height is already below rollback amount, proceed as normal
 		return nil
 	}
+	// Stateful chain clients may be unable to replay an arbitrarily old block.
+	// Validate on the scan loop before persisting a cursor they cannot follow.
+	// Rejection leaves the existing cursor and pending recovery state intact.
+	if validator, ok := b.chainScanner.(interface{ ValidateScannerRollback(int64) error }); ok {
+		if err := validator.ValidateScannerRollback(height + 1); err != nil {
+			return fmt.Errorf("rollback validation failed; scan position retained and requested history not replayed: %w", err)
+		}
+	}
 	if err := b.scannerStorage.SetScanPos(height); err != nil {
 		return fmt.Errorf("fail to set scan pos: %w", err)
 	}
 	// set the previous block to height
 	atomic.StoreInt64(&b.previousBlock, height)
 	return nil
+}
+
+// rewindToNextHeight durably positions the scanner immediately before
+// nextHeight. Unlike operator-driven rollback, a chain-client cursor rewind is
+// never clamped: every bound must be satisfied exactly or the request fails.
+func (b *BlockScanner) rewindToNextHeight(currentHeight, nextHeight int64) error {
+	if nextHeight <= 0 {
+		return fmt.Errorf("invalid cursor rewind next height %d: must be positive", nextHeight)
+	}
+	if nextHeight >= currentHeight {
+		return fmt.Errorf("invalid cursor rewind next height %d: must be below current height %d", nextHeight, currentHeight)
+	}
+	if currentHeight-nextHeight > btypes.MaxCursorRewindBlocks {
+		return fmt.Errorf(
+			"cursor rewind from %d to %d exceeds hard limit of %d blocks",
+			currentHeight,
+			nextHeight,
+			btypes.MaxCursorRewindBlocks,
+		)
+	}
+
+	previousHeight := nextHeight - 1
+	if previousHeight < b.cfg.FloorBlockHeight {
+		return fmt.Errorf(
+			"cursor rewind next height %d would move previous height %d below floor %d",
+			nextHeight,
+			previousHeight,
+			b.cfg.FloorBlockHeight,
+		)
+	}
+
+	// LevelDBScannerStorage performs a synchronous write. Publish the in-memory
+	// cursor only after that durable write succeeds so a restart and the running
+	// process always agree on the next block to fetch.
+	if err := b.scannerStorage.SetScanPos(previousHeight); err != nil {
+		return fmt.Errorf("fail to persist cursor rewind to %d: %w", previousHeight, err)
+	}
+	atomic.StoreInt64(&b.previousBlock, previousHeight)
+	return nil
+}
+
+// maxResumeLagBlocks converts MaxResumeBlockLag into a block count for this
+// chain, or 0 when catch-up is disabled or the chain has no known block time.
+func (b *BlockScanner) maxResumeLagBlocks() int64 {
+	if b.cfg.MaxResumeBlockLag <= 0 {
+		return 0
+	}
+	ms := b.cfg.ChainID.ApproximateBlockMilliseconds()
+	if ms <= 0 {
+		return 0
+	}
+	return b.cfg.MaxResumeBlockLag.Milliseconds() / ms
+}
+
+// skipAheadIfStalled moves a wedged cursor forward to the catch-up window and
+// reports whether it moved. GetStartHeight applies the same MaxResumeBlockLag
+// bound when the scanner starts, but a scanner that wedges while running — a
+// pruned or permanently unavailable block, a fetch that fails deterministically
+// — would otherwise retry the same height until an operator restarts it, and
+// stay unhealthy (so refuse to sign) the whole time.
+//
+// The skip target is derived from the chain's last observed height on
+// THORChain, which is a consensus value, so every block passed over was already
+// observed to supermajority by the rest of the network. That is what makes this
+// safe to do unilaterally, unlike the operator-chosen FloorBlockHeight.
+func (b *BlockScanner) skipAheadIfStalled(currentBlock int64) bool {
+	maxLag := b.maxResumeLagBlocks()
+	if maxLag <= 0 || b.thorchainBridge == nil || b.cfg.ChainID.Equals(common.THORChain) {
+		return false
+	}
+
+	// A single failure is not a stall. Only skip once this exact height has been
+	// failing for longer than MaxResumeBlockLag, which is the same window that
+	// decides the skip target: a scanner stuck on one block for that long is by
+	// definition past the lag the operator agreed to tolerate. Reusing it needs
+	// no new config, and no transient RPC error or daemon restart trips it.
+	if b.stallHeight != currentBlock {
+		b.stallHeight, b.stallSince = currentBlock, time.Now()
+		return false
+	}
+	if time.Since(b.stallSince) < b.cfg.MaxResumeBlockLag {
+		return false
+	}
+
+	observed, err := b.thorchainBridge.GetLastObservedInHeight(b.cfg.ChainID)
+	if err != nil || observed <= 0 {
+		return false
+	}
+
+	// Forward-only: a cursor inside the catch-up window is not stalled, it is
+	// just behind, and must keep scanning every block it has not seen.
+	target := observed - maxLag
+	if target <= b.PreviousHeight() {
+		return false
+	}
+
+	// Publish the in-memory cursor only after the durable write succeeds, so a
+	// restart and the running process agree on the next block to fetch.
+	if err := b.scannerStorage.SetScanPos(target); err != nil {
+		b.logger.Error().Err(err).Int64("target", target).Msg("fail to persist stall skip ahead")
+		return false
+	}
+	previous := atomic.SwapInt64(&b.previousBlock, target)
+	b.logger.Warn().
+		Int64("from", previous).
+		Int64("to", target).
+		Int64("last_observed_in", observed).
+		Msg("block scanner stalled beyond max resume lag, skipping ahead to consensus observed height")
+	b.recordError("stalled_scanner_skip_ahead")
+	return true
+}
+
+func rewindRequiredNextHeight(err error) (int64, bool) {
+	// RewindRequiredError intentionally has a value receiver, so tolerate both
+	// value and pointer construction by chain scanners, including wrapped errors.
+	var value btypes.RewindRequiredError
+	if errors.As(err, &value) {
+		return value.NextHeight, true
+	}
+	var pointer *btypes.RewindRequiredError
+	if errors.As(err, &pointer) && pointer != nil {
+		return pointer.NextHeight, true
+	}
+	return 0, false
+}
+
+func scannerRecoveryRequired(err error) (*btypes.ScannerRecoveryRequiredError, bool) {
+	// ScannerRecoveryRequiredError also has a value receiver. Accept both forms
+	// so a producer cannot accidentally turn an operator fail-stop into an
+	// endlessly retried transient error merely by returning a value.
+	var value btypes.ScannerRecoveryRequiredError
+	if errors.As(err, &value) {
+		return &value, true
+	}
+	var pointer *btypes.ScannerRecoveryRequiredError
+	if errors.As(err, &pointer) && pointer != nil {
+		return pointer, true
+	}
+	return nil, false
 }
 
 // GetMessages return the channel
@@ -308,7 +470,21 @@ func (b *BlockScanner) scanBlocks() {
 		txIn types.TxIn
 		err  error
 	}
-	prefetch := map[int64]chan fetchTxsResult{}
+	type prefetchedFetch struct {
+		result    chan fetchTxsResult
+		abandoned chan struct{}
+	}
+	prefetch := map[int64]*prefetchedFetch{}
+	clearPrefetch := func() {
+		abandoned := prefetch
+		prefetch = make(map[int64]*prefetchedFetch)
+		for _, fetch := range abandoned {
+			// Signal the existing bounded fetch goroutine rather than creating
+			// an unbounded set of drain goroutines on repeated rewinds.
+			close(fetch.abandoned)
+		}
+	}
+	defer clearPrefetch()
 
 	// start up to grab those blocks
 	for {
@@ -316,11 +492,53 @@ func (b *BlockScanner) scanBlocks() {
 		case <-b.stopChan:
 			return
 		case amount := <-b.rollbackChan:
-			if err := b.rollback(amount); err != nil {
-				b.logger.Error().Err(err).Msg("fail to rollback block scanner")
-				b.errorCounter.WithLabelValues(b.cfg.ChainID.String()).Inc()
-				time.Sleep(b.cfg.BlockHeightDiscoverBackoff)
-				continue
+			// Retain the earliest requested height through temporary validation failures.
+			// Forward scans and skip-ahead must wait so they cannot age the replay
+			// beyond the supported window. Until rollback saves the cursor this
+			// request exists only in memory and is lost on process restart.
+			for {
+				err := b.rollback(amount)
+				if err == nil {
+					// Prefetched results belong to the abandoned cursor lineage.
+					clearPrefetch()
+					break
+				}
+				retry := errors.Is(err, btypes.ErrRollbackValidationUnavailable)
+				if retry {
+					b.healthy.Store(false)
+					b.logger.Warn().Err(err).Int64("rollback_height", amount).
+						Msg("rollback validation unavailable; retaining request for retry")
+				} else {
+					b.logger.Error().Err(err).Msg("fail to rollback block scanner")
+				}
+				b.recordError("rollback_failed")
+				stopped := func() bool {
+					timer := time.NewTimer(b.cfg.BlockHeightDiscoverBackoff)
+					defer timer.Stop()
+					var queued <-chan int64
+					if retry {
+						// Observer sends rollbacks from the loop that submits every
+						// chain's observations. Accept later requests while waiting,
+						// keeping the lower target that covers both.
+						queued = b.rollbackChan
+					}
+					for {
+						select {
+						case <-b.stopChan:
+							return true
+						case next := <-queued:
+							amount = min(amount, next)
+						case <-timer.C:
+							return false
+						}
+					}
+				}()
+				if stopped {
+					return
+				}
+				if !retry {
+					break
+				}
 			}
 		default:
 			preBlockHeight := atomic.LoadInt64(&b.previousBlock)
@@ -351,9 +569,14 @@ func (b *BlockScanner) scanBlocks() {
 
 			// get the prefetched result or call FetchTxs for the block
 			var txIn types.TxIn
-			if resultChan, ok := prefetch[currentBlock]; ok {
+			if fetch, ok := prefetch[currentBlock]; ok {
 				// already prefetched, just wait for the result
-				result := <-resultChan
+				var result fetchTxsResult
+				select {
+				case result = <-fetch.result:
+				case <-b.stopChan:
+					return
+				}
 				delete(prefetch, currentBlock)
 				txIn, err = result.txIn, result.err
 			} else {
@@ -361,31 +584,116 @@ func (b *BlockScanner) scanBlocks() {
 			}
 
 			if err != nil {
-				// don't log an error if its because the block doesn't exist yet
+				// A fetcher may reserve durable replay state before it discovers a
+				// later error. Release that in-process reservation on every failed
+				// fetch; its synced journal remains available for the retry.
+				if txIn.AbortPersistence != nil {
+					txIn.AbortPersistence()
+				}
+
+				if recoveryRequired, recovery := scannerRecoveryRequired(err); recovery {
+					clearPrefetch()
+					b.logger.Error().Err(err).
+						Int64("current_height", recoveryRequired.CurrentHeight).
+						Int64("next_height", recoveryRequired.NextHeight).
+						Msg("chain scanner stopped pending operator recovery")
+					b.healthy.Store(false)
+					b.recordError("operator_recovery_required")
+					return
+				}
+
+				if nextHeight, rewindRequired := rewindRequiredNextHeight(err); rewindRequired {
+					// Even a rejected rewind proves the prefetched results were
+					// produced against a cursor lineage the chain client abandoned.
+					clearPrefetch()
+					if rewindErr := b.rewindToNextHeight(currentBlock, nextHeight); rewindErr != nil {
+						b.logger.Error().Err(rewindErr).
+							Int64("current_height", currentBlock).
+							Int64("next_height", nextHeight).
+							Msg("reject chain scanner cursor rewind")
+						b.healthy.Store(false)
+						b.recordError("cursor_rewind_rejected")
+						time.Sleep(b.cfg.BlockHeightDiscoverBackoff)
+						continue
+					}
+					b.logger.Warn().
+						Int64("current_height", currentBlock).
+						Int64("next_height", nextHeight).
+						Msg("rewound block scanner to chain client cursor")
+					continue
+				}
+
+				// This height is at or below the reported tip, but has not been fully
+				// scanned. Retrying it must not preserve stale signing health.
+				b.healthy.Store(false)
+				// Expected availability retries remain quiet and never skip a height.
 				if !errors.Is(err, btypes.ErrUnavailableBlock) {
 					b.logger.Error().Err(err).Int64("block height", currentBlock).Msg("fail to get RPCBlock")
-					b.healthy.Store(false)
+
+					// An error that never clears would otherwise retry this same height
+					// forever, so give the cursor the same catch-up bound the scanner
+					// gets at startup before backing off. ErrUnavailableBlock is
+					// excluded: chain clients return it to ask for a retry of this
+					// exact height while they keep per-height state, and their
+					// terminal cases already use ScannerRecoveryRequiredError.
+					if b.skipAheadIfStalled(currentBlock) {
+						clearPrefetch()
+						continue
+					}
 				}
 				time.Sleep(b.cfg.BlockHeightDiscoverBackoff)
 				continue
 			}
+
+			// a height that fetched is not stalled, so a later rewind back to it
+			// starts its stall clock fresh rather than inheriting an old one
+			b.stallHeight = 0
 
 			// start prefetching next blocks if configured
 			if b.cfg.PrefetchBlocks > 1 {
 				for i := int64(1); i < b.cfg.PrefetchBlocks; i++ {
 					prefetchHeight := currentBlock + i
 					if _, ok := prefetch[prefetchHeight]; !ok && prefetchHeight <= chainHeight {
-						resultChan := make(chan fetchTxsResult, 1)
-						prefetch[prefetchHeight] = resultChan
-						go func(height int64, resultChan chan fetchTxsResult) {
+						fetch := &prefetchedFetch{
+							result:    make(chan fetchTxsResult),
+							abandoned: make(chan struct{}),
+						}
+						prefetch[prefetchHeight] = fetch
+						go func(height int64, fetch *prefetchedFetch) {
 							fetchTxIn, fetchErr := b.chainScanner.FetchTxs(height, chainHeight)
-							resultChan <- fetchTxsResult{txIn: fetchTxIn, err: fetchErr}
-						}(prefetchHeight, resultChan)
+							select {
+							case fetch.result <- fetchTxsResult{txIn: fetchTxIn, err: fetchErr}:
+							case <-fetch.abandoned:
+								if fetchTxIn.AbortPersistence != nil {
+									fetchTxIn.AbortPersistence()
+								}
+							case <-b.stopChan:
+								if fetchTxIn.AbortPersistence != nil {
+									fetchTxIn.AbortPersistence()
+								}
+							}
+						}(prefetchHeight, fetch)
 					}
 				}
 			}
 
 			ms := b.cfg.ChainID.ApproximateBlockMilliseconds()
+
+			// consider 3 blocks or the configured lag time behind tip as healthy
+			lagDuration := time.Duration((chainHeight-currentBlock)*ms) * time.Millisecond
+			if chainHeight-currentBlock <= 3 || lagDuration < b.cfg.MaxHealthyLag {
+				b.healthy.Store(true)
+			} else {
+				b.healthy.Store(false)
+			}
+
+			if b.healthy.Load() {
+				if reporter, ok := b.chainScanner.(BlockScannerSolvencyReporter); ok {
+					if solvencyErr := reporter.ReportSolvency(currentBlock, chainHeight); solvencyErr != nil {
+						b.logger.Error().Err(solvencyErr).Int64("height", currentBlock).Msg("fail to report solvency after scan")
+					}
+				}
+			}
 
 			// determine how often we compare THORNode network fee to Bifrost network fee.
 			// General goal is about once per hour, but report immediately if
@@ -409,31 +717,90 @@ func (b *BlockScanner) scanBlocks() {
 					Bool("healthy", b.healthy.Load()).
 					Msg("scan block")
 			}
-			atomic.AddInt64(&b.previousBlock, 1)
 
-			// consider 3 blocks or the configured lag time behind tip as healthy
-			lagDuration := time.Duration((chainHeight-currentBlock)*ms) * time.Millisecond
-			if chainHeight-currentBlock <= 3 || lagDuration < b.cfg.MaxHealthyLag {
-				b.healthy.Store(true)
-			} else {
-				b.healthy.Store(false)
-			}
 			b.logger.Debug().Msgf("the gap is %d , healthy: %+v", chainHeight-currentBlock, b.healthy.Load())
 
 			b.metrics.GetCounter(metrics.TotalBlockScanned).Inc()
-			if len(txIn.TxArray) > 0 {
+			// A scanner may need Observer to acknowledge durable metadata even when
+			// the delivery contains no transaction items. Enqueue those handshakes so
+			// Observer's empty-TxIn acknowledgement path remains reachable.
+			if len(txIn.TxArray) > 0 || txIn.Persisted != nil {
 				select {
 				case <-b.stopChan:
 					return
 				case b.globalTxsQueue <- txIn:
 				}
 			}
-			if err = b.scannerStorage.SetScanPos(b.previousBlock); err != nil {
-				b.logger.Error().Err(err).Msg("fail to save block scan pos")
-				// alert!!
+			if err = waitTxInPersistence(txIn, b.stopChan); err != nil {
+				if txIn.AbortPersistence != nil {
+					txIn.AbortPersistence()
+				}
+				if !b.backoffAfterPersistenceFailure(err, "observation_persistence_failed", "observer failed to persist scanned transactions") {
+					return
+				}
 				continue
 			}
+			if txIn.FinalizePersistence != nil {
+				if err = txIn.FinalizePersistence(); err != nil {
+					if !b.backoffAfterPersistenceFailure(err, "persistence_finalize_failed", "chain scanner failed to finalize persisted transactions") {
+						return
+					}
+					continue
+				}
+			}
+			if err = b.scannerStorage.SetScanPos(currentBlock); err != nil {
+				if !b.backoffAfterPersistenceFailure(err, "scan_position_persistence_failed", "fail to save block scan pos") {
+					return
+				}
+				continue
+			}
+			atomic.StoreInt64(&b.previousBlock, currentBlock)
 		}
+	}
+}
+
+// backoffAfterPersistenceFailure makes a durable-progress failure visible and
+// prevents the scanner from hammering the same block and re-enqueuing its
+// observations in a tight loop. The wait is cancellable so Stop remains prompt.
+func (b *BlockScanner) backoffAfterPersistenceFailure(err error, errorName, message string) bool {
+	b.logger.Error().Err(err).Msg(message)
+	b.healthy.Store(false)
+	b.recordError(errorName)
+
+	backoff := b.cfg.BlockHeightDiscoverBackoff
+	if backoff <= 0 {
+		backoff = constants.ThorchainBlockTime
+	}
+	timer := time.NewTimer(backoff)
+	defer timer.Stop()
+	select {
+	case <-b.stopChan:
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
+func (b *BlockScanner) recordError(errorName string) {
+	if b.errorCounter == nil {
+		return
+	}
+	b.errorCounter.WithLabelValues(errorName, b.cfg.ChainID.String()).Inc()
+}
+
+func waitTxInPersistence(txIn types.TxIn, stop <-chan struct{}) error {
+	if txIn.Persisted == nil {
+		return nil
+	}
+	timer := time.NewTimer(2 * constants.ThorchainBlockTime)
+	defer timer.Stop()
+	select {
+	case err := <-txIn.Persisted:
+		return err
+	case <-stop:
+		return fmt.Errorf("block scanner stopped before observation persistence")
+	case <-timer.C:
+		return fmt.Errorf("timed out waiting for observation persistence")
 	}
 }
 
@@ -505,13 +872,23 @@ func (b *BlockScanner) GetStartHeight() (int64, error) {
 	}
 
 	if b.thorchainBridge != nil && b.cfg.ChainID != common.THORChain {
-		height, _ := b.thorchainBridge.GetLastObservedInHeight(b.cfg.ChainID)
+		// A failure here is not fatal: THORChain legitimately has no lastblock row
+		// for a chain it has never observed. But it does mean the max-lag bound
+		// below is skipped and the stale local cursor is returned verbatim, so say
+		// so rather than dropping the error on the floor. skipAheadIfStalled
+		// re-applies the bound once scanning is running.
+		height, err := b.thorchainBridge.GetLastObservedInHeight(b.cfg.ChainID)
+		if err != nil {
+			clog.Warn().Err(err).
+				Int64("scan_pos", currentPos).
+				Msg("no consensus observed height, starting without the max resume lag bound")
+		}
 		if height > 0 {
 
 			// 2.a) Use local scanner storage height if available, up to the max lag from lastblock.
 			if currentPos > 0 {
 				// calculate the max lag
-				maxLagBlocks := b.cfg.MaxResumeBlockLag.Milliseconds() / b.cfg.ChainID.ApproximateBlockMilliseconds()
+				maxLagBlocks := b.maxResumeLagBlocks()
 
 				// return the position up to the max block lag behind the consensus height
 				if height <= currentPos+maxLagBlocks {
@@ -553,7 +930,7 @@ func (b *BlockScanner) GetStartHeight() (int64, error) {
 		return 0, err
 	}
 	if b.cfg.ChainID == common.THORChain && b.cfg.MaxResumeBlockLag > 0 {
-		maxLagBlocks := b.cfg.MaxResumeBlockLag.Milliseconds() / b.cfg.ChainID.ApproximateBlockMilliseconds()
+		maxLagBlocks := b.maxResumeLagBlocks()
 		if maxLagBlocks > 0 {
 			startHeight := height - maxLagBlocks
 			if startHeight < 1 {

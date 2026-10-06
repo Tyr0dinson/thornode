@@ -32,8 +32,8 @@ func TestXMRFrostChurnReadinessAllowsPreChurnStandbyValidators(t *testing.T) {
 	deps := readyXMRFrostChurnDeps(t)
 	deps.nodes = func() ([]openapi.Node, error) {
 		return []openapi.Node{
-			{NodeAddress: "tthor1dog", Status: atypes.NodeStatus_Active.String(), PeerId: "dog-peer"},
-			{NodeAddress: "tthor1cat", Status: atypes.NodeStatus_Standby.String(), PeerId: "cat-peer"},
+			{NodeAddress: "tthor1dog", Status: atypes.NodeStatus_Active.String(), PeerId: "dog-peer", IpAddress: "172.19.0.2"},
+			{NodeAddress: "tthor1cat", Status: atypes.NodeStatus_Standby.String(), PeerId: "cat-peer", IpAddress: "172.19.0.3"},
 		}, nil
 	}
 
@@ -47,8 +47,8 @@ func TestXMRFrostChurnReadinessRequiresValidatorPeerIDs(t *testing.T) {
 	deps := readyXMRFrostChurnDeps(t)
 	deps.nodes = func() ([]openapi.Node, error) {
 		return []openapi.Node{
-			{NodeAddress: "tthor1dog", Status: atypes.NodeStatus_Active.String(), PeerId: "dog-peer"},
-			{NodeAddress: "tthor1cat", Status: atypes.NodeStatus_Ready.String()},
+			{NodeAddress: "tthor1dog", Status: atypes.NodeStatus_Active.String(), PeerId: "dog-peer", IpAddress: "172.19.0.2"},
+			{NodeAddress: "tthor1cat", Status: atypes.NodeStatus_Ready.String(), IpAddress: "172.19.0.3"},
 		}, nil
 	}
 
@@ -61,6 +61,46 @@ func TestXMRFrostChurnReadinessRequiresValidatorPeerIDs(t *testing.T) {
 	}
 	if len(result.pendingValidators) != 1 || !strings.Contains(result.pendingValidators[0], "no_peer_id") {
 		t.Fatalf("expected missing peer id in pending validators, got %v", result.pendingValidators)
+	}
+}
+
+func TestXMRFrostChurnReadinessRequiresRegisteredIP(t *testing.T) {
+	for _, status := range []atypes.NodeStatus{atypes.NodeStatus_Active, atypes.NodeStatus_Ready, atypes.NodeStatus_Standby} {
+		for _, tc := range []struct {
+			name  string
+			ip    string
+			valid bool
+		}{
+			{name: "missing"},
+			{name: "whitespace", ip: " "},
+			{name: "hostname", ip: "thornode-cat"},
+			{name: "malformed", ip: "172.19.0.999"},
+			{name: "port", ip: "172.19.0.3:26656"},
+			{name: "padded", ip: " 172.19.0.3 "},
+			{name: "ipv4", ip: "172.19.0.3", valid: true},
+			{name: "ipv6", ip: "fd00::3", valid: true},
+		} {
+			t.Run(status.String()+"/"+tc.name, func(t *testing.T) {
+				deps := readyXMRFrostChurnDeps(t)
+				deps.nodes = func() ([]openapi.Node, error) {
+					return []openapi.Node{
+						{NodeAddress: "tthor1dog", Status: atypes.NodeStatus_Active.String(), PeerId: "dog-peer", IpAddress: "172.19.0.2"},
+						{NodeAddress: "tthor1cat", Status: status.String(), PeerId: "cat-peer", IpAddress: tc.ip},
+					}, nil
+				}
+				result := checkXMRFrostChurnReadiness(&OpConfig{}, deps)
+				if result.ready != tc.valid {
+					t.Fatalf("ready=%v for registered IP %q, want %v", result.ready, tc.ip, tc.valid)
+				}
+				if !tc.valid {
+					pending := "tthor1cat:" + status.String() + ":invalid_ip_address"
+					if result.readyValidators != 1 || result.reason != "validator nodes not ready" ||
+						len(result.pendingValidators) != 1 || result.pendingValidators[0] != pending {
+						t.Fatalf("expected invalid registered IP diagnostic, got %+v", result)
+					}
+				}
+			})
+		}
 	}
 }
 
@@ -121,6 +161,38 @@ func TestXMRFrostChurnReadinessSurfacesMoneroHeightErrors(t *testing.T) {
 	}
 }
 
+func TestReadinessEndpointsFromEnvFallbackAndOverrides(t *testing.T) {
+	defaults := []readinessEndpoint{
+		{name: "default-a", url: "http://default-a/ready"},
+		{name: "default-b", url: "http://default-b/ready"},
+	}
+	envName := "TEST_XMR_FROST_READINESS_ENDPOINTS"
+
+	t.Setenv(envName, "")
+	got := readinessEndpointsFromEnv(envName, defaults)
+	if len(got) != len(defaults) || got[0] != defaults[0] || got[1] != defaults[1] {
+		t.Fatalf("expected defaults for empty env, got %+v", got)
+	}
+
+	t.Setenv(envName, " , ,, ")
+	got = readinessEndpointsFromEnv(envName, defaults)
+	if len(got) != len(defaults) || got[0] != defaults[0] || got[1] != defaults[1] {
+		t.Fatalf("expected defaults for separator-only env, got %+v", got)
+	}
+
+	t.Setenv(envName, "http://node-a/ready, ,http://node-b/ready")
+	got = readinessEndpointsFromEnv(envName, defaults)
+	if len(got) != 2 {
+		t.Fatalf("expected two override endpoints, got %+v", got)
+	}
+	if got[0].url != "http://node-a/ready" || got[1].url != "http://node-b/ready" {
+		t.Fatalf("unexpected override urls: %+v", got)
+	}
+	if got[0].name == "" || got[1].name == "" {
+		t.Fatalf("expected generated endpoint names, got %+v", got)
+	}
+}
+
 func readyXMRFrostChurnDeps(t *testing.T) xmrFrostChurnReadinessDeps {
 	t.Helper()
 
@@ -130,8 +202,8 @@ func readyXMRFrostChurnDeps(t *testing.T) xmrFrostChurnReadinessDeps {
 		},
 		nodes: func() ([]openapi.Node, error) {
 			return []openapi.Node{
-				{NodeAddress: "tthor1dog", Status: atypes.NodeStatus_Active.String(), PeerId: "dog-peer"},
-				{NodeAddress: "tthor1cat", Status: atypes.NodeStatus_Ready.String(), PeerId: "cat-peer"},
+				{NodeAddress: "tthor1dog", Status: atypes.NodeStatus_Active.String(), PeerId: "dog-peer", IpAddress: "172.19.0.2"},
+				{NodeAddress: "tthor1cat", Status: atypes.NodeStatus_Ready.String(), PeerId: "cat-peer", IpAddress: "172.19.0.3"},
 			}, nil
 		},
 		httpGet: func(string) (*http.Response, error) {

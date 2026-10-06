@@ -19,100 +19,103 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Query_Account_FullMethodName                 = "/types.Query/Account"
-	Query_Balances_FullMethodName                = "/types.Query/Balances"
-	Query_Export_FullMethodName                  = "/types.Query/Export"
-	Query_Pool_FullMethodName                    = "/types.Query/Pool"
-	Query_Pools_FullMethodName                   = "/types.Query/Pools"
-	Query_DerivedPool_FullMethodName             = "/types.Query/DerivedPool"
-	Query_DerivedPools_FullMethodName            = "/types.Query/DerivedPools"
-	Query_LiquidityProvider_FullMethodName       = "/types.Query/LiquidityProvider"
-	Query_LiquidityProviders_FullMethodName      = "/types.Query/LiquidityProviders"
-	Query_Saver_FullMethodName                   = "/types.Query/Saver"
-	Query_Savers_FullMethodName                  = "/types.Query/Savers"
-	Query_TradeUnit_FullMethodName               = "/types.Query/TradeUnit"
-	Query_TradeUnits_FullMethodName              = "/types.Query/TradeUnits"
-	Query_TradeAccount_FullMethodName            = "/types.Query/TradeAccount"
-	Query_TradeAccounts_FullMethodName           = "/types.Query/TradeAccounts"
-	Query_SecuredAsset_FullMethodName            = "/types.Query/SecuredAsset"
-	Query_SecuredAssets_FullMethodName           = "/types.Query/SecuredAssets"
-	Query_Node_FullMethodName                    = "/types.Query/Node"
-	Query_Nodes_FullMethodName                   = "/types.Query/Nodes"
-	Query_PoolSlip_FullMethodName                = "/types.Query/PoolSlip"
-	Query_PoolSlips_FullMethodName               = "/types.Query/PoolSlips"
-	Query_OutboundFee_FullMethodName             = "/types.Query/OutboundFee"
-	Query_OutboundFees_FullMethodName            = "/types.Query/OutboundFees"
-	Query_StreamingSwap_FullMethodName           = "/types.Query/StreamingSwap"
-	Query_StreamingSwaps_FullMethodName          = "/types.Query/StreamingSwaps"
-	Query_Ban_FullMethodName                     = "/types.Query/Ban"
-	Query_Ragnarok_FullMethodName                = "/types.Query/Ragnarok"
-	Query_RunePool_FullMethodName                = "/types.Query/RunePool"
-	Query_RuneProvider_FullMethodName            = "/types.Query/RuneProvider"
-	Query_RuneProviders_FullMethodName           = "/types.Query/RuneProviders"
-	Query_MimirValues_FullMethodName             = "/types.Query/MimirValues"
-	Query_MimirWithKey_FullMethodName            = "/types.Query/MimirWithKey"
-	Query_MimirAdminValues_FullMethodName        = "/types.Query/MimirAdminValues"
-	Query_MimirNodesAllValues_FullMethodName     = "/types.Query/MimirNodesAllValues"
-	Query_MimirNodesValues_FullMethodName        = "/types.Query/MimirNodesValues"
-	Query_MimirNodeValues_FullMethodName         = "/types.Query/MimirNodeValues"
-	Query_InboundAddresses_FullMethodName        = "/types.Query/InboundAddresses"
-	Query_Version_FullMethodName                 = "/types.Query/Version"
-	Query_Thorname_FullMethodName                = "/types.Query/Thorname"
-	Query_Invariant_FullMethodName               = "/types.Query/Invariant"
-	Query_Invariants_FullMethodName              = "/types.Query/Invariants"
-	Query_Network_FullMethodName                 = "/types.Query/Network"
-	Query_BalanceModule_FullMethodName           = "/types.Query/BalanceModule"
-	Query_QuoteSwap_FullMethodName               = "/types.Query/QuoteSwap"
-	Query_QuoteLimit_FullMethodName              = "/types.Query/QuoteLimit"
-	Query_ConstantValues_FullMethodName          = "/types.Query/ConstantValues"
-	Query_SwapQueue_FullMethodName               = "/types.Query/SwapQueue"
-	Query_SwapQueuePaginated_FullMethodName      = "/types.Query/SwapQueuePaginated"
-	Query_SwapDetails_FullMethodName             = "/types.Query/SwapDetails"
-	Query_LimitSwaps_FullMethodName              = "/types.Query/LimitSwaps"
-	Query_LimitSwapsSummary_FullMethodName       = "/types.Query/LimitSwapsSummary"
-	Query_LastBlocks_FullMethodName              = "/types.Query/LastBlocks"
-	Query_ChainsLastBlock_FullMethodName         = "/types.Query/ChainsLastBlock"
-	Query_Vault_FullMethodName                   = "/types.Query/Vault"
-	Query_KeysignParty_FullMethodName            = "/types.Query/KeysignParty"
-	Query_XMRSpentOutputRefs_FullMethodName      = "/types.Query/XMRSpentOutputRefs"
-	Query_AsgardVaults_FullMethodName            = "/types.Query/AsgardVaults"
-	Query_VaultsPubkeys_FullMethodName           = "/types.Query/VaultsPubkeys"
-	Query_VaultSolvency_FullMethodName           = "/types.Query/VaultSolvency"
-	Query_TxStages_FullMethodName                = "/types.Query/TxStages"
-	Query_TxStatus_FullMethodName                = "/types.Query/TxStatus"
-	Query_Tx_FullMethodName                      = "/types.Query/Tx"
-	Query_TxVoters_FullMethodName                = "/types.Query/TxVoters"
-	Query_TxVotersOld_FullMethodName             = "/types.Query/TxVotersOld"
-	Query_Clout_FullMethodName                   = "/types.Query/Clout"
-	Query_Queue_FullMethodName                   = "/types.Query/Queue"
-	Query_ScheduledOutbound_FullMethodName       = "/types.Query/ScheduledOutbound"
-	Query_PendingOutbound_FullMethodName         = "/types.Query/PendingOutbound"
-	Query_Block_FullMethodName                   = "/types.Query/Block"
-	Query_TssKeygenMetric_FullMethodName         = "/types.Query/TssKeygenMetric"
-	Query_TssMetric_FullMethodName               = "/types.Query/TssMetric"
-	Query_Keysign_FullMethodName                 = "/types.Query/Keysign"
-	Query_KeysignPubkey_FullMethodName           = "/types.Query/KeysignPubkey"
-	Query_Keygen_FullMethodName                  = "/types.Query/Keygen"
-	Query_UpgradeProposals_FullMethodName        = "/types.Query/UpgradeProposals"
-	Query_UpgradeProposal_FullMethodName         = "/types.Query/UpgradeProposal"
-	Query_UpgradeVotes_FullMethodName            = "/types.Query/UpgradeVotes"
-	Query_TCYStaker_FullMethodName               = "/types.Query/TCYStaker"
-	Query_TCYStakers_FullMethodName              = "/types.Query/TCYStakers"
-	Query_TCYClaimer_FullMethodName              = "/types.Query/TCYClaimer"
-	Query_TCYClaimers_FullMethodName             = "/types.Query/TCYClaimers"
-	Query_TCYProtocolOwned_FullMethodName        = "/types.Query/TCYProtocolOwned"
-	Query_OraclePrices_FullMethodName            = "/types.Query/OraclePrices"
-	Query_OraclePrice_FullMethodName             = "/types.Query/OraclePrice"
-	Query_Eip712TypedData_FullMethodName         = "/types.Query/Eip712TypedData"
-	Query_ReferenceMemo_FullMethodName           = "/types.Query/ReferenceMemo"
-	Query_ReferenceMemoByHash_FullMethodName     = "/types.Query/ReferenceMemoByHash"
-	Query_ReferenceMemoPreflight_FullMethodName  = "/types.Query/ReferenceMemoPreflight"
-	Query_Supply_FullMethodName                  = "/types.Query/Supply"
-	Query_ContractInfos_FullMethodName           = "/types.Query/ContractInfos"
-	Query_ContractInfo_FullMethodName            = "/types.Query/ContractInfo"
-	Query_DynamicL1Fees_FullMethodName           = "/types.Query/DynamicL1Fees"
-	Query_DynamicL1FeesByThorname_FullMethodName = "/types.Query/DynamicL1FeesByThorname"
-	Query_DynamicL1FeesCurrent_FullMethodName    = "/types.Query/DynamicL1FeesCurrent"
+	Query_Account_FullMethodName                  = "/types.Query/Account"
+	Query_Balances_FullMethodName                 = "/types.Query/Balances"
+	Query_Export_FullMethodName                   = "/types.Query/Export"
+	Query_Pool_FullMethodName                     = "/types.Query/Pool"
+	Query_Pools_FullMethodName                    = "/types.Query/Pools"
+	Query_DerivedPool_FullMethodName              = "/types.Query/DerivedPool"
+	Query_DerivedPools_FullMethodName             = "/types.Query/DerivedPools"
+	Query_LiquidityProvider_FullMethodName        = "/types.Query/LiquidityProvider"
+	Query_LiquidityProviders_FullMethodName       = "/types.Query/LiquidityProviders"
+	Query_Saver_FullMethodName                    = "/types.Query/Saver"
+	Query_Savers_FullMethodName                   = "/types.Query/Savers"
+	Query_TradeUnit_FullMethodName                = "/types.Query/TradeUnit"
+	Query_TradeUnits_FullMethodName               = "/types.Query/TradeUnits"
+	Query_TradeAccount_FullMethodName             = "/types.Query/TradeAccount"
+	Query_TradeAccounts_FullMethodName            = "/types.Query/TradeAccounts"
+	Query_SecuredAsset_FullMethodName             = "/types.Query/SecuredAsset"
+	Query_SecuredAssets_FullMethodName            = "/types.Query/SecuredAssets"
+	Query_StableReserve_FullMethodName            = "/types.Query/StableReserve"
+	Query_StableReserveContributor_FullMethodName = "/types.Query/StableReserveContributor"
+	Query_Node_FullMethodName                     = "/types.Query/Node"
+	Query_Nodes_FullMethodName                    = "/types.Query/Nodes"
+	Query_PoolSlip_FullMethodName                 = "/types.Query/PoolSlip"
+	Query_PoolSlips_FullMethodName                = "/types.Query/PoolSlips"
+	Query_OutboundFee_FullMethodName              = "/types.Query/OutboundFee"
+	Query_OutboundFees_FullMethodName             = "/types.Query/OutboundFees"
+	Query_StreamingSwap_FullMethodName            = "/types.Query/StreamingSwap"
+	Query_StreamingSwaps_FullMethodName           = "/types.Query/StreamingSwaps"
+	Query_Ban_FullMethodName                      = "/types.Query/Ban"
+	Query_Ragnarok_FullMethodName                 = "/types.Query/Ragnarok"
+	Query_RunePool_FullMethodName                 = "/types.Query/RunePool"
+	Query_RuneProvider_FullMethodName             = "/types.Query/RuneProvider"
+	Query_RuneProviders_FullMethodName            = "/types.Query/RuneProviders"
+	Query_MimirValues_FullMethodName              = "/types.Query/MimirValues"
+	Query_MimirWithKey_FullMethodName             = "/types.Query/MimirWithKey"
+	Query_MimirAdminValues_FullMethodName         = "/types.Query/MimirAdminValues"
+	Query_MimirNodesAllValues_FullMethodName      = "/types.Query/MimirNodesAllValues"
+	Query_MimirNodesValues_FullMethodName         = "/types.Query/MimirNodesValues"
+	Query_MimirNodeValues_FullMethodName          = "/types.Query/MimirNodeValues"
+	Query_InboundAddresses_FullMethodName         = "/types.Query/InboundAddresses"
+	Query_Version_FullMethodName                  = "/types.Query/Version"
+	Query_Thorname_FullMethodName                 = "/types.Query/Thorname"
+	Query_Invariant_FullMethodName                = "/types.Query/Invariant"
+	Query_Invariants_FullMethodName               = "/types.Query/Invariants"
+	Query_Network_FullMethodName                  = "/types.Query/Network"
+	Query_BalanceModule_FullMethodName            = "/types.Query/BalanceModule"
+	Query_QuoteSwap_FullMethodName                = "/types.Query/QuoteSwap"
+	Query_QuoteLimit_FullMethodName               = "/types.Query/QuoteLimit"
+	Query_ConstantValues_FullMethodName           = "/types.Query/ConstantValues"
+	Query_SwapQueue_FullMethodName                = "/types.Query/SwapQueue"
+	Query_SwapQueuePaginated_FullMethodName       = "/types.Query/SwapQueuePaginated"
+	Query_SwapDetails_FullMethodName              = "/types.Query/SwapDetails"
+	Query_LimitSwaps_FullMethodName               = "/types.Query/LimitSwaps"
+	Query_LimitSwapsSummary_FullMethodName        = "/types.Query/LimitSwapsSummary"
+	Query_LastBlocks_FullMethodName               = "/types.Query/LastBlocks"
+	Query_ChainsLastBlock_FullMethodName          = "/types.Query/ChainsLastBlock"
+	Query_Vault_FullMethodName                    = "/types.Query/Vault"
+	Query_KeysignParty_FullMethodName             = "/types.Query/KeysignParty"
+	Query_XMRSpentOutputRefs_FullMethodName       = "/types.Query/XMRSpentOutputRefs"
+	Query_SolVaultNonce_FullMethodName            = "/types.Query/SolVaultNonce"
+	Query_AsgardVaults_FullMethodName             = "/types.Query/AsgardVaults"
+	Query_VaultsPubkeys_FullMethodName            = "/types.Query/VaultsPubkeys"
+	Query_VaultSolvency_FullMethodName            = "/types.Query/VaultSolvency"
+	Query_TxStages_FullMethodName                 = "/types.Query/TxStages"
+	Query_TxStatus_FullMethodName                 = "/types.Query/TxStatus"
+	Query_Tx_FullMethodName                       = "/types.Query/Tx"
+	Query_TxVoters_FullMethodName                 = "/types.Query/TxVoters"
+	Query_TxVotersOld_FullMethodName              = "/types.Query/TxVotersOld"
+	Query_Clout_FullMethodName                    = "/types.Query/Clout"
+	Query_Queue_FullMethodName                    = "/types.Query/Queue"
+	Query_ScheduledOutbound_FullMethodName        = "/types.Query/ScheduledOutbound"
+	Query_PendingOutbound_FullMethodName          = "/types.Query/PendingOutbound"
+	Query_Block_FullMethodName                    = "/types.Query/Block"
+	Query_TssKeygenMetric_FullMethodName          = "/types.Query/TssKeygenMetric"
+	Query_TssMetric_FullMethodName                = "/types.Query/TssMetric"
+	Query_Keysign_FullMethodName                  = "/types.Query/Keysign"
+	Query_KeysignPubkey_FullMethodName            = "/types.Query/KeysignPubkey"
+	Query_Keygen_FullMethodName                   = "/types.Query/Keygen"
+	Query_UpgradeProposals_FullMethodName         = "/types.Query/UpgradeProposals"
+	Query_UpgradeProposal_FullMethodName          = "/types.Query/UpgradeProposal"
+	Query_UpgradeVotes_FullMethodName             = "/types.Query/UpgradeVotes"
+	Query_TCYStaker_FullMethodName                = "/types.Query/TCYStaker"
+	Query_TCYStakers_FullMethodName               = "/types.Query/TCYStakers"
+	Query_TCYClaimer_FullMethodName               = "/types.Query/TCYClaimer"
+	Query_TCYClaimers_FullMethodName              = "/types.Query/TCYClaimers"
+	Query_TCYProtocolOwned_FullMethodName         = "/types.Query/TCYProtocolOwned"
+	Query_OraclePrices_FullMethodName             = "/types.Query/OraclePrices"
+	Query_OraclePrice_FullMethodName              = "/types.Query/OraclePrice"
+	Query_Eip712TypedData_FullMethodName          = "/types.Query/Eip712TypedData"
+	Query_ReferenceMemo_FullMethodName            = "/types.Query/ReferenceMemo"
+	Query_ReferenceMemoByHash_FullMethodName      = "/types.Query/ReferenceMemoByHash"
+	Query_ReferenceMemoPreflight_FullMethodName   = "/types.Query/ReferenceMemoPreflight"
+	Query_Supply_FullMethodName                   = "/types.Query/Supply"
+	Query_ContractInfos_FullMethodName            = "/types.Query/ContractInfos"
+	Query_ContractInfo_FullMethodName             = "/types.Query/ContractInfo"
+	Query_DynamicL1Fees_FullMethodName            = "/types.Query/DynamicL1Fees"
+	Query_DynamicL1FeesByThorname_FullMethodName  = "/types.Query/DynamicL1FeesByThorname"
+	Query_DynamicL1FeesCurrent_FullMethodName     = "/types.Query/DynamicL1FeesCurrent"
 )
 
 // QueryClient is the client API for Query service.
@@ -145,6 +148,8 @@ type QueryClient interface {
 	TradeAccounts(ctx context.Context, in *QueryTradeAccountsRequest, opts ...grpc.CallOption) (*QueryTradeAccountsResponse, error)
 	SecuredAsset(ctx context.Context, in *QuerySecuredAssetRequest, opts ...grpc.CallOption) (*QuerySecuredAssetResponse, error)
 	SecuredAssets(ctx context.Context, in *QuerySecuredAssetsRequest, opts ...grpc.CallOption) (*QuerySecuredAssetsResponse, error)
+	StableReserve(ctx context.Context, in *QueryStableReserveRequest, opts ...grpc.CallOption) (*QueryStableReserveResponse, error)
+	StableReserveContributor(ctx context.Context, in *QueryStableReserveContributorRequest, opts ...grpc.CallOption) (*QueryStableReserveContributorResponse, error)
 	Node(ctx context.Context, in *QueryNodeRequest, opts ...grpc.CallOption) (*QueryNodeResponse, error)
 	Nodes(ctx context.Context, in *QueryNodesRequest, opts ...grpc.CallOption) (*QueryNodesResponse, error)
 	PoolSlip(ctx context.Context, in *QueryPoolSlipRequest, opts ...grpc.CallOption) (*QueryPoolSlipsResponse, error)
@@ -184,6 +189,7 @@ type QueryClient interface {
 	Vault(ctx context.Context, in *QueryVaultRequest, opts ...grpc.CallOption) (*QueryVaultResponse, error)
 	KeysignParty(ctx context.Context, in *QueryKeysignPartyRequest, opts ...grpc.CallOption) (*QueryKeysignPartyResponse, error)
 	XMRSpentOutputRefs(ctx context.Context, in *QueryXMRSpentOutputRefsRequest, opts ...grpc.CallOption) (*QueryXMRSpentOutputRefsResponse, error)
+	SolVaultNonce(ctx context.Context, in *QuerySolVaultNonceRequest, opts ...grpc.CallOption) (*QuerySolVaultNonceResponse, error)
 	AsgardVaults(ctx context.Context, in *QueryAsgardVaultsRequest, opts ...grpc.CallOption) (*QueryAsgardVaultsResponse, error)
 	VaultsPubkeys(ctx context.Context, in *QueryVaultsPubkeysRequest, opts ...grpc.CallOption) (*QueryVaultsPubkeysResponse, error)
 	VaultSolvency(ctx context.Context, in *QueryVaultSolvencyRequest, opts ...grpc.CallOption) (*QueryVaultSolvencyResponse, error)
@@ -379,6 +385,24 @@ func (c *queryClient) SecuredAsset(ctx context.Context, in *QuerySecuredAssetReq
 func (c *queryClient) SecuredAssets(ctx context.Context, in *QuerySecuredAssetsRequest, opts ...grpc.CallOption) (*QuerySecuredAssetsResponse, error) {
 	out := new(QuerySecuredAssetsResponse)
 	err := c.cc.Invoke(ctx, Query_SecuredAssets_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) StableReserve(ctx context.Context, in *QueryStableReserveRequest, opts ...grpc.CallOption) (*QueryStableReserveResponse, error) {
+	out := new(QueryStableReserveResponse)
+	err := c.cc.Invoke(ctx, Query_StableReserve_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) StableReserveContributor(ctx context.Context, in *QueryStableReserveContributorRequest, opts ...grpc.CallOption) (*QueryStableReserveContributorResponse, error) {
+	out := new(QueryStableReserveContributorResponse)
+	err := c.cc.Invoke(ctx, Query_StableReserveContributor_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -730,6 +754,15 @@ func (c *queryClient) KeysignParty(ctx context.Context, in *QueryKeysignPartyReq
 func (c *queryClient) XMRSpentOutputRefs(ctx context.Context, in *QueryXMRSpentOutputRefsRequest, opts ...grpc.CallOption) (*QueryXMRSpentOutputRefsResponse, error) {
 	out := new(QueryXMRSpentOutputRefsResponse)
 	err := c.cc.Invoke(ctx, Query_XMRSpentOutputRefs_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) SolVaultNonce(ctx context.Context, in *QuerySolVaultNonceRequest, opts ...grpc.CallOption) (*QuerySolVaultNonceResponse, error) {
+	out := new(QuerySolVaultNonceResponse)
+	err := c.cc.Invoke(ctx, Query_SolVaultNonce_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1108,6 +1141,8 @@ type QueryServer interface {
 	TradeAccounts(context.Context, *QueryTradeAccountsRequest) (*QueryTradeAccountsResponse, error)
 	SecuredAsset(context.Context, *QuerySecuredAssetRequest) (*QuerySecuredAssetResponse, error)
 	SecuredAssets(context.Context, *QuerySecuredAssetsRequest) (*QuerySecuredAssetsResponse, error)
+	StableReserve(context.Context, *QueryStableReserveRequest) (*QueryStableReserveResponse, error)
+	StableReserveContributor(context.Context, *QueryStableReserveContributorRequest) (*QueryStableReserveContributorResponse, error)
 	Node(context.Context, *QueryNodeRequest) (*QueryNodeResponse, error)
 	Nodes(context.Context, *QueryNodesRequest) (*QueryNodesResponse, error)
 	PoolSlip(context.Context, *QueryPoolSlipRequest) (*QueryPoolSlipsResponse, error)
@@ -1147,6 +1182,7 @@ type QueryServer interface {
 	Vault(context.Context, *QueryVaultRequest) (*QueryVaultResponse, error)
 	KeysignParty(context.Context, *QueryKeysignPartyRequest) (*QueryKeysignPartyResponse, error)
 	XMRSpentOutputRefs(context.Context, *QueryXMRSpentOutputRefsRequest) (*QueryXMRSpentOutputRefsResponse, error)
+	SolVaultNonce(context.Context, *QuerySolVaultNonceRequest) (*QuerySolVaultNonceResponse, error)
 	AsgardVaults(context.Context, *QueryAsgardVaultsRequest) (*QueryAsgardVaultsResponse, error)
 	VaultsPubkeys(context.Context, *QueryVaultsPubkeysRequest) (*QueryVaultsPubkeysResponse, error)
 	VaultSolvency(context.Context, *QueryVaultSolvencyRequest) (*QueryVaultSolvencyResponse, error)
@@ -1242,6 +1278,12 @@ func (UnimplementedQueryServer) SecuredAsset(context.Context, *QuerySecuredAsset
 }
 func (UnimplementedQueryServer) SecuredAssets(context.Context, *QuerySecuredAssetsRequest) (*QuerySecuredAssetsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SecuredAssets not implemented")
+}
+func (UnimplementedQueryServer) StableReserve(context.Context, *QueryStableReserveRequest) (*QueryStableReserveResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StableReserve not implemented")
+}
+func (UnimplementedQueryServer) StableReserveContributor(context.Context, *QueryStableReserveContributorRequest) (*QueryStableReserveContributorResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StableReserveContributor not implemented")
 }
 func (UnimplementedQueryServer) Node(context.Context, *QueryNodeRequest) (*QueryNodeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Node not implemented")
@@ -1359,6 +1401,9 @@ func (UnimplementedQueryServer) KeysignParty(context.Context, *QueryKeysignParty
 }
 func (UnimplementedQueryServer) XMRSpentOutputRefs(context.Context, *QueryXMRSpentOutputRefsRequest) (*QueryXMRSpentOutputRefsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method XMRSpentOutputRefs not implemented")
+}
+func (UnimplementedQueryServer) SolVaultNonce(context.Context, *QuerySolVaultNonceRequest) (*QuerySolVaultNonceResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SolVaultNonce not implemented")
 }
 func (UnimplementedQueryServer) AsgardVaults(context.Context, *QueryAsgardVaultsRequest) (*QueryAsgardVaultsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AsgardVaults not implemented")
@@ -1789,6 +1834,42 @@ func _Query_SecuredAssets_Handler(srv interface{}, ctx context.Context, dec func
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(QueryServer).SecuredAssets(ctx, req.(*QuerySecuredAssetsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_StableReserve_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryStableReserveRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).StableReserve(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_StableReserve_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).StableReserve(ctx, req.(*QueryStableReserveRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_StableReserveContributor_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryStableReserveContributorRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).StableReserveContributor(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_StableReserveContributor_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).StableReserveContributor(ctx, req.(*QueryStableReserveContributorRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2491,6 +2572,24 @@ func _Query_XMRSpentOutputRefs_Handler(srv interface{}, ctx context.Context, dec
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(QueryServer).XMRSpentOutputRefs(ctx, req.(*QueryXMRSpentOutputRefsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_SolVaultNonce_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QuerySolVaultNonceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).SolVaultNonce(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_SolVaultNonce_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).SolVaultNonce(ctx, req.(*QuerySolVaultNonceRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3255,6 +3354,14 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Query_SecuredAssets_Handler,
 		},
 		{
+			MethodName: "StableReserve",
+			Handler:    _Query_StableReserve_Handler,
+		},
+		{
+			MethodName: "StableReserveContributor",
+			Handler:    _Query_StableReserveContributor_Handler,
+		},
+		{
 			MethodName: "Node",
 			Handler:    _Query_Node_Handler,
 		},
@@ -3409,6 +3516,10 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "XMRSpentOutputRefs",
 			Handler:    _Query_XMRSpentOutputRefs_Handler,
+		},
+		{
+			MethodName: "SolVaultNonce",
+			Handler:    _Query_SolVaultNonce_Handler,
 		},
 		{
 			MethodName: "AsgardVaults",

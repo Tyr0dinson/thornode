@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"reflect"
 )
 
 
@@ -521,6 +522,164 @@ func (a *NetworkApiService) LastblockChainExecute(r ApiLastblockChainRequest) ([
 
 	if r.height != nil {
 		localVarQueryParams.Add("height", parameterToString(*r.height, ""))
+	}
+	// to determine the Content-Type header
+	localVarHTTPContentTypes := []string{}
+
+	// set Content-Type header
+	localVarHTTPContentType := selectHeaderContentType(localVarHTTPContentTypes)
+	if localVarHTTPContentType != "" {
+		localVarHeaderParams["Content-Type"] = localVarHTTPContentType
+	}
+
+	// to determine the Accept header
+	localVarHTTPHeaderAccepts := []string{"application/json"}
+
+	// set Accept header
+	localVarHTTPHeaderAccept := selectHeaderAccept(localVarHTTPHeaderAccepts)
+	if localVarHTTPHeaderAccept != "" {
+		localVarHeaderParams["Accept"] = localVarHTTPHeaderAccept
+	}
+	req, err := a.client.prepareRequest(r.ctx, localVarPath, localVarHTTPMethod, localVarPostBody, localVarHeaderParams, localVarQueryParams, localVarFormParams, formFiles)
+	if err != nil {
+		return localVarReturnValue, nil, err
+	}
+
+	localVarHTTPResponse, err := a.client.callAPI(req)
+	if err != nil || localVarHTTPResponse == nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	localVarBody, err := ioutil.ReadAll(localVarHTTPResponse.Body)
+	localVarHTTPResponse.Body.Close()
+	localVarHTTPResponse.Body = ioutil.NopCloser(bytes.NewBuffer(localVarBody))
+	if err != nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	if localVarHTTPResponse.StatusCode >= 300 {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: localVarHTTPResponse.Status,
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	err = a.client.decode(&localVarReturnValue, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+	if err != nil {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: err.Error(),
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	return localVarReturnValue, localVarHTTPResponse, nil
+}
+
+type ApiLogsRequest struct {
+	ctx context.Context
+	ApiService *NetworkApiService
+	start *int64
+	end *int64
+	level *string
+	modules *[]string
+}
+
+// first block height to include, defaults to the last block capture closed
+func (r ApiLogsRequest) Start(start int64) ApiLogsRequest {
+	r.start = &start
+	return r
+}
+
+// last block height to include, defaults to the last block capture closed
+func (r ApiLogsRequest) End(end int64) ApiLogsRequest {
+	r.end = &end
+	return r
+}
+
+// lowest log level to include, along with every more severe level, defaults to info
+func (r ApiLogsRequest) Level(level string) ApiLogsRequest {
+	r.level = &level
+	return r
+}
+
+// modules to include, repeat the parameter for more than one (x/thorchain, x/bank, x/wasm, x/upgrade, ...), defaults to x/thorchain, pass * for every module
+func (r ApiLogsRequest) Modules(modules []string) ApiLogsRequest {
+	r.modules = &modules
+	return r
+}
+
+func (r ApiLogsRequest) Execute() ([]LogEntry, *http.Response, error) {
+	return r.ApiService.LogsExecute(r)
+}
+
+/*
+Logs Method for Logs
+
+Returns the module log lines this node captured while executing the
+requested blocks. Node-local, never consensus data, and only available when
+the operator has set thor.api.logs.retain_blocks above zero. start and end
+default to the last block capture closed, which this route reads from the
+capture store rather than from consensus, so it can briefly trail the last
+committed height; both are clamped to the blocks still on disk, so a range outside that window returns an empty array rather than an
+error. A block can be absent for three reasons: it fell out of
+retain_blocks, it was dropped oldest-first to keep the log directory under
+its 1 GiB ceiling, or writing it failed and the rest of that block was
+skipped. An empty result therefore does not mean the node logged nothing at
+that level. Unauthenticated like every other endpoint here.
+
+
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ApiLogsRequest
+*/
+func (a *NetworkApiService) Logs(ctx context.Context) ApiLogsRequest {
+	return ApiLogsRequest{
+		ApiService: a,
+		ctx: ctx,
+	}
+}
+
+// Execute executes the request
+//  @return []LogEntry
+func (a *NetworkApiService) LogsExecute(r ApiLogsRequest) ([]LogEntry, *http.Response, error) {
+	var (
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  []LogEntry
+	)
+
+	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "NetworkApiService.Logs")
+	if err != nil {
+		return localVarReturnValue, nil, &GenericOpenAPIError{error: err.Error()}
+	}
+
+	localVarPath := localBasePath + "/thorchain/logs"
+
+	localVarHeaderParams := make(map[string]string)
+	localVarQueryParams := url.Values{}
+	localVarFormParams := url.Values{}
+
+	if r.start != nil {
+		localVarQueryParams.Add("start", parameterToString(*r.start, ""))
+	}
+	if r.end != nil {
+		localVarQueryParams.Add("end", parameterToString(*r.end, ""))
+	}
+	if r.level != nil {
+		localVarQueryParams.Add("level", parameterToString(*r.level, ""))
+	}
+	if r.modules != nil {
+		t := *r.modules
+		if reflect.TypeOf(t).Kind() == reflect.Slice {
+			s := reflect.ValueOf(t)
+			for i := 0; i < s.Len(); i++ {
+				localVarQueryParams.Add("modules", parameterToString(s.Index(i), "multi"))
+			}
+		} else {
+			localVarQueryParams.Add("modules", parameterToString(t, "multi"))
+		}
 	}
 	// to determine the Content-Type header
 	localVarHTTPContentTypes := []string{}

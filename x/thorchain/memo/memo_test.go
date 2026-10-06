@@ -27,6 +27,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	kv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -284,6 +285,15 @@ func (s *MemoSuite) TestParseWithAbbreviated(c *C) {
 	_, err = ParseMemoWithTHORNames(ctx, k, fmt.Sprintf("=:%s:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a:1200/102103980982304982058230492830429384080/20", common.RuneAsset()))
 	c.Assert(err, NotNil)
 
+	// a price limit that overflows big.Float to +Inf must be rejected (refund),
+	// not silently parsed as a zero limit that disables price protection
+	_, err = ParseMemoWithTHORNames(ctx, k, fmt.Sprintf("=:%s:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a:1e700000000/10/20", common.RuneAsset()))
+	c.Assert(err, NotNil)
+	// a negative price limit is rejected as a parse error, not via panic recovery
+	_, err = ParseMemoWithTHORNames(ctx, k, fmt.Sprintf("=:%s:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a:-1/10/20", common.RuneAsset()))
+	c.Assert(err, NotNil)
+	c.Check(strings.Contains(err.Error(), "panicked"), Equals, false, Commentf("%s", err))
+
 	memo, err = ParseMemoWithTHORNames(ctx, k, "=:"+common.RuneAsset().String()+":0x90f2b1ae50e6018230e90a33f98c7844a0ab635a")
 	c.Assert(err, IsNil)
 	c.Check(memo.GetAsset().String(), Equals, common.RuneAsset().String())
@@ -407,6 +417,50 @@ func (s *MemoSuite) TestParseWithAbbreviated(c *C) {
 	c.Assert(err, NotNil)
 }
 
+// TestAddLiquidityMemoCompositeAddressParsing keeps keeper-backed and keeperless
+// parsing aligned while treating an invalid optional asset address as absent.
+func (s *MemoSuite) TestAddLiquidityMemoCompositeAddressParsing(c *C) {
+	pairAddr := types.GetRandomTHORAddress()
+	assetAddr := "45v8VYPut8S9wY9fTvn1gKiGN5AMMzsCK9kLNcEpEESygy4vU3Jf3uE4Zyqv2bDLwTToH8ArrsZ3W28kmKUKJkjY8fN9anA"
+	validMemo := fmt.Sprintf("+:XMR.XMR:%s/%s", pairAddr, assetAddr)
+	invalidMemo := fmt.Sprintf("+:XMR.XMR:%s/not-an-address", pairAddr)
+	missingPairMemo := fmt.Sprintf("+:XMR.XMR:/%s", assetAddr)
+	nonExplicitChainMemo := fmt.Sprintf("+:BTC.BTC:%s/%s", pairAddr, types.GetRandomBTCAddress())
+
+	parsers := []func(string) (Memo, error){
+		func(memo string) (Memo, error) {
+			return ParseMemo(types.GetCurrentVersion(), memo)
+		},
+		func(memo string) (Memo, error) {
+			return ParseMemoWithTHORNames(s.ctx, s.k, memo)
+		},
+	}
+
+	for _, parse := range parsers {
+		parsed, err := parse(validMemo)
+		c.Assert(err, IsNil)
+		addMemo, ok := parsed.(AddLiquidityMemo)
+		c.Assert(ok, Equals, true)
+		c.Check(addMemo.GetDestination(), Equals, pairAddr)
+		c.Check(addMemo.GetAssetAddress().String(), Equals, assetAddr)
+
+		parsed, err = parse(invalidMemo)
+		c.Assert(err, IsNil)
+		addMemo, ok = parsed.(AddLiquidityMemo)
+		c.Assert(ok, Equals, true)
+		c.Check(addMemo.GetDestination(), Equals, pairAddr)
+		c.Check(addMemo.GetAssetAddress().IsEmpty(), Equals, true)
+
+		_, err = parse(missingPairMemo)
+		c.Assert(err, NotNil)
+
+		// ADD composite addresses are XMR-scoped. On chains with an observable
+		// sender, accepting this field would silently discard the asset address.
+		_, err = parse(nonExplicitChainMemo)
+		c.Assert(err, NotNil)
+	}
+}
+
 func (s *MemoSuite) TestParse(c *C) {
 	ctx := s.ctx
 	k := s.k
@@ -521,6 +575,22 @@ func (s *MemoSuite) TestParse(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(mem.BondProviderAddress.String(), Equals, bondProvider.String())
 	c.Assert(mem.NodeOperatorFee, Equals, int64(1000))
+
+	memo, err = ParseMemoWithTHORNames(ctx, k, fmt.Sprintf("BONDYIELD:%s:%d", whiteListAddr, constants.MaxBasisPts))
+	c.Assert(err, IsNil)
+	c.Assert(memo.IsType(TxBondYield), Equals, true)
+	c.Assert(memo.GetAccAddress().String(), Equals, whiteListAddr.String())
+	bondYieldMemo, ok := memo.(BondYieldMemo)
+	c.Assert(ok, Equals, true)
+	c.Assert(bondYieldMemo.GetBps(), Equals, constants.MaxBasisPts)
+	memoParser, _ := newParser(ctx, k, k.GetVersion(), fmt.Sprintf("BONDYIELD:%s:2500:yieldname", whiteListAddr.String()))
+	bondYieldMemo, err = memoParser.ParseBondYieldMemo()
+	c.Assert(err, IsNil)
+	c.Assert(bondYieldMemo.GetBps(), Equals, uint64(2500))
+	c.Assert(bondYieldMemo.PayoutTarget, Equals, "yieldname")
+	memoParser, _ = newParser(ctx, k, k.GetVersion(), fmt.Sprintf("BONDYIELD:%s:AUTO:2500:yieldname", whiteListAddr.String()))
+	_, err = memoParser.ParseBondYieldMemo()
+	c.Assert(err, NotNil)
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "leave:"+types.GetRandomBech32Addr().String())
 	c.Assert(err, IsNil)
@@ -667,11 +737,6 @@ func (s *MemoSuite) TestParse(c *C) {
 	_, err = ParseMemoWithTHORNames(ctx, k, "whatever") // not support
 	c.Assert(err, NotNil)
 
-	execAddr := types.GetRandomBech32Addr().String()
-	memo, err = ParseMemoWithTHORNames(ctx, k, "x:"+execAddr+":AA==")
-	c.Assert(err, IsNil)
-	c.Check(memo.IsType(TxExec), Equals, true)
-	c.Check(memo.String(), Equals, "x:"+execAddr+":AA==")
 	_, err = ParseMemoWithTHORNames(ctx, k, "tcy:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a") // invalid thor address
 	c.Assert(err, NotNil)
 	_, err = ParseMemoWithTHORNames(ctx, k, "tcy-") // emptu bps

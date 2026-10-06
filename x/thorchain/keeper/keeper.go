@@ -29,9 +29,11 @@ type Keeper interface {
 	SendFromModuleToAccount(ctx cosmos.Context, from string, to cosmos.AccAddress, coin common.Coins) error
 	MintToModule(ctx cosmos.Context, module string, coin common.Coin) error
 	BurnFromModule(ctx cosmos.Context, module string, coin common.Coin) error
+	BurnEntireSynthSupply(ctx cosmos.Context, synthAsset common.Asset) (cosmos.Uint, error)
 	MintAndSendToAccount(ctx cosmos.Context, to cosmos.AccAddress, coin common.Coin) error
 	GetModuleAddress(module string) (common.Address, error)
 	GetModuleAccAddress(module string) cosmos.AccAddress
+	IsModuleAccount(ctx cosmos.Context, addr cosmos.AccAddress) bool
 	GetBalance(ctx cosmos.Context, addr cosmos.AccAddress) cosmos.Coins
 	GetBalanceOf(ctx cosmos.Context, addr cosmos.AccAddress, asset common.Asset) cosmos.Coin
 	HasCoins(ctx cosmos.Context, addr cosmos.AccAddress, coins cosmos.Coins) bool
@@ -97,7 +99,9 @@ type Keeper interface {
 	KeeperTCYStaker
 	KeeperVolume
 	KeeperPOLReserve
+	KeeperStableReserve
 	KeeperXMRSpentOutputRefs
+	KeeperSolVaultNonce
 	KeeperDynamicFee
 }
 
@@ -126,7 +130,7 @@ type KeeperLastHeight interface {
 	GetLastChainHeights(ctx cosmos.Context) (map[common.Chain]int64, error)
 	SetLastObserveHeight(ctx cosmos.Context, chain common.Chain, address cosmos.AccAddress, height int64) error
 	ForceSetLastObserveHeight(ctx cosmos.Context, chain common.Chain, address cosmos.AccAddress, height int64)
-	GetLastObserveHeight(ctx cosmos.Context, address cosmos.AccAddress) (map[common.Chain]int64, error)
+	GetLastObserveHeight(ctx cosmos.Context, address cosmos.AccAddress) ([]kvTypes.ChainHeight, error)
 }
 
 type KeeperSwapperClout interface {
@@ -211,6 +215,9 @@ type KeeperObservedTx interface {
 	GetObservedTxOutVoter(ctx cosmos.Context, hash common.TxID) (ObservedTxVoter, error)
 	SetObservedLink(ctx cosmos.Context, _, _ common.TxID)
 	GetObservedLink(ctx cosmos.Context, inhash common.TxID) []common.TxID
+	SetRefundCleanup(ctx cosmos.Context, key string)
+	HasRefundCleanup(ctx cosmos.Context, key string) bool
+	PruneRefundCleanups(ctx cosmos.Context)
 }
 
 type KeeperTxOut interface {
@@ -329,6 +336,14 @@ type KeeperXMRSpentOutputRefs interface {
 	GetXMRSpentOutputRefs(ctx cosmos.Context, vaultPubKey common.PubKey) ([]common.OutputRef, error)
 }
 
+type KeeperSolVaultNonce interface {
+	SetSolVaultNonce(ctx cosmos.Context, record SolVaultNonce)
+	GetSolVaultNonce(ctx cosmos.Context, vaultPubKey common.PubKey) (SolVaultNonce, bool, error)
+	GetSolVaultNonceIterator(ctx cosmos.Context) cosmos.Iterator
+	SetSolNonceAttestVoter(ctx cosmos.Context, voter SolNonceAttestVoter)
+	GetSolNonceAttestVoter(ctx cosmos.Context, vaultPubKey common.PubKey, nonceAccount, nonce string, lastTx common.TxID, slot int64) (SolNonceAttestVoter, error)
+}
+
 type KeeperReserveContributors interface {
 	AddPoolFeeToReserve(ctx cosmos.Context, fee cosmos.Uint) error
 	AddBondFeeToReserve(ctx cosmos.Context, fee cosmos.Uint) error
@@ -350,6 +365,12 @@ type KeeperPOLReserve interface {
 	IsPOLReserveEligiblePool(ctx cosmos.Context, asset common.Asset) bool
 }
 
+type KeeperStableReserve interface {
+	GetStableReserveCredit(ctx cosmos.Context, asset common.Asset, addr common.Address) (cosmos.Uint, error)
+	SetStableReserveCredit(ctx cosmos.Context, asset common.Asset, addr common.Address, amount cosmos.Uint) error
+	GetStableReserveCreditIterator(ctx cosmos.Context) cosmos.Iterator
+}
+
 type KeeperTss interface {
 	SetTssVoter(_ cosmos.Context, tss TssVoter)
 	GetTssVoterIterator(_ cosmos.Context) cosmos.Iterator
@@ -359,11 +380,12 @@ type KeeperTss interface {
 	SetTssKeysignMetric(_ cosmos.Context, metric *TssKeysignMetric)
 	GetTssKeysignMetric(_ cosmos.Context, txID common.TxID) (*TssKeysignMetric, error)
 	GetLatestTssKeysignMetric(_ cosmos.Context) (*TssKeysignMetric, error)
+	SetLastKeygenChains(_ cosmos.Context, _ cosmos.AccAddress, _ common.Chains, _ int64)
+	GetLastKeygenChains(_ cosmos.Context, _ cosmos.AccAddress) (int64, common.Chains, error)
 }
 
 type KeeperTssKeysignFail interface {
-	SetTssKeysignFailVoter(_ cosmos.Context, tss TssKeysignFailVoter)
-	GetTssKeysignFailVoterIterator(_ cosmos.Context) cosmos.Iterator
+	SetTssKeysignFailVoter(_ cosmos.Context, tss TssKeysignFailVoter) error
 	GetTssKeysignFailVoter(_ cosmos.Context, _ string) (TssKeysignFailVoter, error)
 }
 
@@ -421,6 +443,8 @@ type KeeperAdvSwapQueues interface {
 	GetAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) ([]types.AdvSwapQueueIndexItem, error)
 	HasAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) (bool, error)
 	RemoveAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) error
+	RemoveMarketAdvSwapQueueIndexEntry(_ cosmos.Context, _ common.TxID, _ int) error
+	RemoveLimitAdvSwapQueueIndexEntry(_ cosmos.Context, _ []byte, _ common.TxID, _ int) error
 	SetLimitSwapTTL(ctx cosmos.Context, blockHeight int64, txHashes []common.TxID) error
 	GetLimitSwapTTL(ctx cosmos.Context, blockHeight int64) ([]common.TxID, error)
 	RemoveLimitSwapTTL(ctx cosmos.Context, blockHeight int64)
@@ -507,17 +531,20 @@ type KeeperReferenceMemo interface {
 	DeleteReferenceMemo(ctx cosmos.Context, _ common.Asset, _ string) error
 	GetLastReferenceNumber(ctx cosmos.Context, _ common.Asset) string
 	SetLastReferenceNumber(ctx cosmos.Context, _ common.Asset, _ string)
+	GetReferenceMemoWindow(ctx cosmos.Context, _ common.Asset) (start, cur, prev, width int64)
+	SetReferenceMemoWindow(ctx cosmos.Context, _ common.Asset, start, cur, prev, width int64)
 }
 
 // NewKeeper creates new instances of the thorchain Keeper
 type KeeperTHORName interface {
 	THORNameExists(ctx cosmos.Context, _ string) bool
 	GetTHORName(ctx cosmos.Context, _ string) (THORName, error)
+	GetTHORNameRecord(ctx cosmos.Context, _ string) (THORName, error)
 	SetTHORName(ctx cosmos.Context, name THORName)
 	GetTHORNameIterator(ctx cosmos.Context) cosmos.Iterator
 	DeleteTHORName(ctx cosmos.Context, _ string) error
-	SetAffiliateCollector(_ cosmos.Context, _ AffiliateFeeCollector)
-	GetAffiliateCollector(_ cosmos.Context, _ cosmos.AccAddress) (AffiliateFeeCollector, error)
+	SetAffiliateCollector(_ cosmos.Context, _ AffiliateFeeCollector) error
+	GetAffiliateCollector(_ cosmos.Context, _ string) (AffiliateFeeCollector, error)
 	GetAffiliateCollectorIterator(_ cosmos.Context) cosmos.Iterator
 	GetAffiliateCollectors(_ cosmos.Context) ([]AffiliateFeeCollector, error)
 }

@@ -51,24 +51,38 @@ Mimirs have a maximum length of 128 bytes (see MaxMimirLength in THORNode code).
 - `AdvSwapQueueRapidSwapMax`: Maximum number of rapid swap iterations per block
 - `StreamingLimitSwapMaxAge`: Maximum number of blocks a limit swap can exist before expiring
 - `ModifyLimitSwapMaxIterations`: Maximum iterations when searching for a user's swap to modify or cancel
+
+### [Swap Fee Minimums](./concepts/fees.md#minimum-swap-fee)
+
 - `L1SlipMinBps`: Minimum L1 asset swap fee in basis points
 - `TradeAccountsSlipMinBps`: Minimum trade asset swap fee in basis points
 - `SecuredAssetSlipMinBps`: Minimum secured asset swap fee in basis points
 - `SynthSlipMinBps`: Minimum synth asset swap fee in basis points
 - `DerivedSlipMinBps`: Minimum derived asset swap fee in basis points
+- `StableSlipMinBps`: Minimum swap fee in basis points for stable-to-stable swaps
+- `WasmArbSlipMinBps`: Minimum swap fee in basis points for swaps from the WASM arbitrage contract
+- `SlipMinBpsMax`: Upper limit accepted for any of the minimum swap fee mimirs
+- `L1DynamicFeeEnabled`: Enable/disable the per-thorname [dynamic L1 minimum fee](./concepts/fees.md#dynamic-l1-minimum-fee)
+- `L1DynamicFeeEpochBlocks`: Number of blocks per dynamic fee epoch
+- `L1DynamicFeeFloorBPS`: Lower bound of the dynamic minimum, and the value a new record starts at
+- `L1DynamicFeeCeilingBPS`: Upper bound of the dynamic minimum
+- `L1DynamicFeeStepBPS`: Basis points the dynamic minimum moves per epoch
+- `L1DynamicFeeDeadbandBPS`: Percentage change in fees (in basis points) below which the floor is left unchanged
+- `L1DynamicFeeWindowEpochs`: Epochs averaged either side of the last change when measuring the fee response
 
 ## Memoless Transactions
 
-- `MemolessTxnTTL`\*: Number of blocks before a registered reference memo expires (default: 3600 blocks ≈ 6 hours)
+- `MemolessTxnTTL`\*: Number of blocks before a registered reference memo expires (default: 3600 blocks ≈ 6 hours). **CAUTION:** Expiry is evaluated against the current value, so _raising_ it brings already-expired references back to life. The occupancy estimate behind `MemolessTxnCostSlopeBPS` cannot see those, and so undercharges until every pre-change reference has expired — at most one (new) `MemolessTxnTTL` after the change. Lowering it is safe; the estimate errs high instead.
 - `MemolessTxnRefCount`\*: Maximum number of reference IDs available per chain (default: 99,999). Reference numbers range from 1 to this value. **CAUTION:** Changing this value alters the zero-padding length used to normalize reference keys in the KV store. All existing (non-expired) references will become inaccessible under the new normalization. Only change this value after all current references have expired (see `MemolessTxnTTL`), or coordinate a store migration.
 - `MemolessTxnCost`\*: Optional RUNE cost for registering reference memos (default: 0, in 1e8 notation). Only charged on successful registration.
 - `MemolessTxnMaxUse`\*: Maximum number of times a reference can be used before being invalidated (default: 1). Set to 0 for unlimited usage.
+- `MemolessTxnCostSlopeBPS`\*: Steepness of the memoless registration cost curve as an asset's reference slots fill up (default: 0). The charged cost is `MemolessTxnCost * (1 + slope * used / free)` where `slope = MemolessTxnCostSlopeBPS / 10,000`, `used` is an estimate of the asset's occupied reference slots and `free` is the remainder of `MemolessTxnRefCount` (floored at 1). `used` is deliberately conservative: it is counted over two `MemolessTxnTTL`-wide buckets, so it never undercounts, but it keeps counting a registration for up to one extra `MemolessTxnTTL` after that registration has actually expired — the cost can therefore stay elevated for that long after a burst drains. (The `MemolessTxnTTL` caveat above is the one case where it undercounts instead.) `0` disables the curve and charges a flat `MemolessTxnCost`. `10,000` gives `cost = MemolessTxnCost / (1 - occupancy)`: 2x at half full, 10x at 90% full. Higher values make the cost climb sooner, lower values keep it cheap until the ring is nearly exhausted.
 - `HaltMemoless`#: Emergency halt for all memoless transaction functionality (registration and usage)
 
 ## TCY Management
 
 - `MinRuneForTCYStakeDistribution`: Minimum RUNE required in the TCY fund to be eligible for distribution (default: 2,100 RUNE (210000000000 in 1e8 notation))
-- `MinTCYForTCYStakeDistribution`: Minimum TCY required in the TCY fund to be eligible for distribution (default: 100,000 TCY)
+- `MinTCYForTCYStakeDistribution`: Minimum TCY a staker must have staked to be included in a RUNE distribution (default: 0.001 TCY (100000 in 1e8 notation))
 - `TCYStakeSystemIncomeBps`: Percentage (in basis points) of system income allocated to the TCY fund (default: 1000 bps = 10%)
 - `TCYClaimingSwapHalt`: Enables/disables RUNE-to-TCY swaps in the claiming module (default: 1, halted)
 - `TCYStakeDistributionHalt`: Enables/disables distribution of RUNE revenue to TCY stakers (default: 1, halted)
@@ -81,6 +95,20 @@ Mimirs have a maximum length of 128 bytes (see MaxMimirLength in THORNode code).
 - `HaltSecuredGlobal`#: Halts operations for all secured assets across both the Base and App Layers
 - `HaltSecuredDeposit-<Chain>`#: Disables deposit of secured assets on the specified chain
 - `HaltSecuredWithdraw-<Chain>`#: Disables withdrawal of secured asset on the specified chain
+
+## Stable Reserve
+
+- `StableReserveEnabled`: Enable/disable Stable Reserve. Defaults to `0`.
+- `StableReserveDepegToleranceBps`: Maximum stable oracle deviation from $1 in basis points.
+- `StableReservePOLShareBps`: Share of `POLReserveSystemIncomeBps` routed to the Stable Reserve module while `StableReserveEnabled > 0`.
+- `StableReserveWithdrawalRequestMax`: Maximum request-coin amount accepted for `STABLE-` withdrawals.
+
+Operational notes:
+
+- RUNE is diverted to the Stable Reserve only when `StableReserveEnabled > 0`, `POLReserveSystemIncomeBps > 0`, and `StableReservePOLShareBps > 0`. If there are no healthy TOR-anchor stable targets, diverted RUNE stays idle in the Stable Reserve module balance until deployment becomes possible.
+- Contributor credits are same-asset obligations. Stable Reserve automation treats outstanding contributor credits as reserved inventory; free stable-to-stable fills and depeg rescue can use only surplus inventory above total credits for that asset.
+- Unfilled `STABLE-` withdrawals preserve contributor credit and return an error so normal refund handling can return the request coin.
+- Every swap event includes the `stable_reserve` attribute. It is `true` only for Stable Reserve fills and `false` for normal swaps.
 
 ## App Layer Management
 
@@ -117,6 +145,7 @@ Mimirs have a maximum length of 128 bytes (see MaxMimirLength in THORNode code).
 - `NodePauseChainBlocks`: Number of block a node operator can pause/resume the chains for
 - `BlocksPerYear`: Blocks in a year
 - `MaxUTXOsToSpend`#: Max UTXOs to be spent in one block
+- `XMRConsolidation<Setting>`#: Tunes Bifrost's Monero output consolidation (operational Mimir, as each run locks vault liquidity for Monero's 10-block spend lock): `XMRConsolidationEnabled` (`0` disables), `XMRConsolidationCheckIntervalBlocks`, `XMRConsolidationCooldownBlocks`, `XMRConsolidationMinUnlockedOutputs`, `XMRConsolidationTargetOutputs`, `XMRConsolidationMinUnlockedAtomic`, `XMRConsolidationReserveBps`, `XMRConsolidationChurnLookaheadBlocks`, `XMRConsolidationMaxRetries`, `XMRConsolidationMaxInputs` and `XMRConsolidationMaxLockBps`. Unset or non-positive values fall back to Bifrost defaults.
 - `MinimumNodesForBFT`: Minimum node count to keep the network running. Below this, Ragnarök is performed
 - `MaxConfirmations-<Chain>`# : The maximum number of confirmations for a chain
 - `ConfMultiplierBasisPoints-<Chain>`#: Increases or decrease the inbound confirmation count block requirement for a chain
@@ -132,12 +161,15 @@ Mimirs have a maximum length of 128 bytes (see MaxMimirLength in THORNode code).
 - `MaxOutboundFeeMultiplierBasisPoints`\*: Maximum outbound fee multiplier in basis points
 - `MinOutboundFeeMultiplierBasisPoints`\*: Minimum outbound fee multiplier in basis points
 - `PreferredAssetOutboundFeeMultiplier`\*: Multiplier of preferred asset outbound fee for triggering preferred asset swaps
-- `REVSHARE-<thorname>`#: Per-thorname share (in basis points, capped at 5000) of attributed swap liquidity fees that the protocol pays from the reserve to the affiliate's `AffiliateCollector` balance at end of block. Operational mimir; only valid for existing thornames whose name uses characters `[a-zA-Z0-9-]`. See [ADR 027](./architecture/adr-027-affiliate-revshare.md) and the [Affiliate Fee Guide](./affiliate-guide/affiliate-fee-guide.md#revenue-share-revshare).
+- `DYNAMICFEE-WHITELIST-<thorname>`#: Per-thorname [enrollment](./concepts/fees.md#dynamic-l1-minimum-fee) in the dynamic L1 minimum fee
+- `REVSHARE-<thorname>`#: Per-thorname [share of swap liquidity fees](./affiliate-guide/affiliate-fee-guide.md#revenue-share-revshare) paid to the affiliate from the reserve, in basis points (max 5000)
 
 ### Solvency Checker
 
 - `StopSolvencyCheck`#: Enable/Disable Solvency Checker
 - `StopSolvencyCheck<chain>`#: Enable/Disable Solvency Checker, per chain
+- `AllowNoVault-<Chain>`#: Authorizes `NOOP:NOVAULT` vault debits on the chain, used for a brief, coordinated insolvency correction (operational Mimir). Prefer setting it to a future block height so the window closes itself (agree the exact height off-chain first: operational votes only count when the values match, and a tie sets nothing); `1` holds it open until it is reset to `0`, and because churn purges operational node votes while keeping the effective value, a `1` gate outlives churn still listed in `/thorchain/mimir` but with no vote trail left in `/thorchain/mimir/nodes_all`.
+- `OverSolvencyToTreasuryBps-<asset>`#: Per-asset basis points (0-10000) of over-solvent liquidity to swap to RUNE and transfer to the over-solvency sweep destination address, for example `OverSolvencyToTreasuryBps-BTC-BTC`. Falls back to `OverSolvencyToTreasuryBps` when unset.
 - `PermittedSolvencyGap`: (deprecated) The amount of funds permitted to be "insolvent" as a percentage (basis points). Replaced by `PermittedSolvencyGapUSD`.
 - `PermittedSolvencyGapUSD`: The permitted solvency gap in USD (1e8 notation). Vault insolvency below this USD value will not trigger a chain halt. Default is $500 (500_00000000).
 
@@ -147,6 +179,7 @@ Mimirs have a maximum length of 128 bytes (see MaxMimirLength in THORNode code).
 - `ValidatorMaxRewardRatio`\*: the ratio to MinimumBondInRune at which validators stop receiving rewards proportional to their bond
 - `MaxBondProviders`\*: Maximum number of bond providers per mode
 - `NodeOperatorFee`\*: Minimum node operator fee
+- `BondYieldEnabled`\*: Enables automatic bond-yield payouts during reward distribution
 - `SignerConcurrency`\*: Number of concurrent signers for active and retiring vaults
 
 ### Slashing Management
@@ -190,7 +223,7 @@ Mimirs have a maximum length of 128 bytes (see MaxMimirLength in THORNode code).
 - `MinimumPoolLiquidityFee`: Minimum liquidity fee an active pool should accumulate to avoid being demoted, set to 0 to disable demote pool based on liquidity fee
 - `MaxRuneSupply`\*: Maximum supply of RUNE
 - `PendulumUseEffectiveSecurity`: Determines the [Incentive Pendulum](./concepts/incentive-pendulum.md) perception of the `securing`. If set to 1, `Effective Security Bond` is used; otherwise `Total Effective Bond` is applied.
-- `PendulumUseVaultAssets`: Determines the [Incentive Pendulum](./concepts/incentive-pendulum.md) perception of the `securing`. If set to 1, `Total Pooled` is used; otherwise `Vaulted Assets` is applied.
+- `PendulumUseVaultAssets`: Determines the [Incentive Pendulum](./concepts/incentive-pendulum.md) perception of the `secured`. If set to 1, `Vaulted Assets` is used; otherwise `Total Pooled` is applied.
 - `PendulumAssetsBasisPoints`: Scales the Incentive Pendulum perception of the `secured` L1 asset size, where values above 100% overestimate and values below 100% underestimate the amount of `secured` assets.
 - `TVLCapBasisPoints`\*: If 0, TVL Cap is set to the effective active bond. If non-zero, the value is interrupted as basis points relative to total active bond.
 
@@ -203,6 +236,7 @@ Mimirs have a maximum length of 128 bytes (see MaxMimirLength in THORNode code).
 ## Miscellaneous
 
 - `DollarsPerRune`: Manual override of number of dollars per one RUNE. Used for metrics data collection and RUNE calculation from MinimumL1OutboundFeeUSD
+- `TorAnchor-<asset>`#: Set above zero to include a stablecoin pool in the [TOR](https://docs.thorchain.org/technical-documentation/thorchain-finance/tor) anchor set, e.g. `TorAnchor-ETH-USDC-0XA0B8...`. The median of these pools prices RUNE in USD, and a swap between two anchors uses `StableSlipMinBps`
 - `THORNames`: Enable/Disable THORNames
 - `TNSRegisterFee`: TNS registration fee of new names
 - `TNSFeePerBlock`: TNS cost per block to retain ownership of a name

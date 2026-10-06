@@ -1,6 +1,7 @@
 package tss
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	. "gopkg.in/check.v1"
 
+	tssMessages "gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	tctypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/blame"
@@ -149,9 +151,29 @@ func (m *mockBridgeForKeysign) GetObservedTxVoter(string) (*stypes.QueryObserved
 	return nil, nil
 }
 
+func (m *mockBridgeForKeysign) GetObservedTxOutVoter(txID string) (*stypes.QueryObservedTxVoter, error) {
+	return m.GetObservedTxVoter(txID)
+}
+
+func (m *mockBridgeForKeysign) GetObservedTxOutVoterUncached(ctx context.Context, txID string) (*stypes.QueryObservedTxVoter, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
+	voter, err := m.GetObservedTxVoter(txID)
+	return voter, voter != nil, err
+}
+
 func (m *mockBridgeForKeysign) GetXMRSpentOutputRefs(common.PubKey) ([]*common.OutputRef, error) {
 	return nil, nil
 }
+
+func (m *mockBridgeForKeysign) GetXMRSpentOutputRefsUncached(ctx context.Context, vaultPubKey common.PubKey) ([]*common.OutputRef, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return m.GetXMRSpentOutputRefs(vaultPubKey)
+}
+
 func (m *mockBridgeForKeysign) WaitToCatchUp() error { return nil }
 func (m *mockBridgeForKeysign) GetBlockHeight() (int64, error) {
 	return m.blockHeight, m.blockErr
@@ -162,6 +184,10 @@ func (m *mockBridgeForKeysign) GetBlockTimestamp(int64) (time.Time, error) {
 }
 
 func (m *mockBridgeForKeysign) GetLastObservedInHeight(common.Chain) (int64, error) { return 0, nil }
+
+func (m *mockBridgeForKeysign) GetLastObservedInHeightAtHeight(common.Chain, int64) (int64, error) {
+	return 0, nil
+}
 
 func (m *mockBridgeForKeysign) GetLastSignedOutHeight(common.Chain) (int64, error) { return 0, nil }
 
@@ -220,11 +246,10 @@ func (s *KeysignErrorSuite) TestKeysignErrorString(c *C) {
 }
 
 func (s *KeysignErrorSuite) TestIsTerminalRound(c *C) {
-	// IsTerminalRound is true only for the v3 secp256k1 terminal round
-	// (SignRound9Message) and the ed25519 terminal round (SignRound3Message).
-	// v1's SignRound7Message is no longer accepted — a v3 node will never
-	// emit it for its own terminal failure, and legacy on-chain markers are
-	// not consumed by the per-signer retry path.
+	// This legacy-name coverage complements the protocol-specific secp256k1,
+	// ed25519, and FROST terminal-boundary cases in round_normalizer_test.go.
+	// v1's SignRound7Message is no longer accepted — a v3 node will never emit
+	// it for its own terminal failure.
 	ke := NewKeysignError(stypes.Blame{Round: "SignRound9Message"})
 	c.Assert(ke.IsTerminalRound(), Equals, true)
 
@@ -236,6 +261,9 @@ func (s *KeysignErrorSuite) TestIsTerminalRound(c *C) {
 
 	ke4 := NewKeysignError(stypes.Blame{})
 	c.Assert(ke4.IsTerminalRound(), Equals, false)
+
+	ke5 := NewKeysignError(stypes.Blame{Round: tssMessages.FROSTKEYSIGNSHARE})
+	c.Assert(ke5.IsTerminalRound(), Equals, true)
 }
 
 // ---------------------------------------------------------------------------
@@ -799,6 +827,34 @@ func (s *KeySignTestSuite) TestToLocalTSSSignerMissingHeightError(c *C) {
 	result := <-tasks[0].Resp
 	c.Assert(result.Err, NotNil)
 	c.Assert(result.Err.Error(), Matches, ".*keysign task height must be positive.*")
+}
+
+// A local history/control failure must never enter TSS or become peer blame.
+// A subsequent retry at the same item height must remain possible.
+func (s *KeySignTestSuite) TestToLocalTSSSignerPolicyReadFailure(c *C) {
+	for _, algo := range []common.SigningAlgo{common.SigningAlgoSecp256k1, common.SigningAlgoEd25519} {
+		readErr := errors.New("historical store unavailable at height 100")
+		server := &mockTssServer{}
+		bridge := &mockBridgeForKeysign{keysignPartyErr: readErr}
+		ks, err := NewKeySign(server, bridge)
+		c.Assert(err, IsNil)
+		task := &tssKeySignTask{PoolPubKey: "poolpub", Algo: algo, Msg: "msg1", Height: 100, Resp: make(chan tssKeySignResult, 1)}
+		ks.wg.Add(1)
+		ks.toLocalTSSSigner("poolpub", algo, []*tssKeySignTask{task})
+		result := <-task.Resp
+		c.Assert(errors.Is(result.Err, readErr), Equals, true)
+		var blameErr KeysignError
+		c.Assert(errors.As(result.Err, &blameErr), Equals, false)
+		c.Assert(server.lastReq.PoolPubKey, Equals, "")
+		c.Assert(bridge.lastKeysignPartyBlock, Equals, int64(100))
+
+		bridge.keysignPartyErr = nil
+		ks.wg.Add(1)
+		ks.toLocalTSSSigner("poolpub", algo, []*tssKeySignTask{task})
+		c.Assert((<-task.Resp).Err, IsNil)
+		c.Assert(server.lastReq.PoolPubKey, Equals, "poolpub")
+		c.Assert(server.lastReq.BlockHeight, Equals, int64(100))
+	}
 }
 
 // ---------------------------------------------------------------------------

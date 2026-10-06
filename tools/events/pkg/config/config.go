@@ -42,6 +42,11 @@ func Get() Config {
 	return config
 }
 
+// Set sets the global configuration (for testing).
+func Set(c Config) {
+	config = c
+}
+
 // Config contains all configuration for the application.
 type Config struct {
 	// StoragePath is parent directory for any persisted state.
@@ -133,6 +138,15 @@ type Config struct {
 		// MaxRescheduledAge is the maximum age of a rescheduled outbound that will trigger
 		// an alert. This avoids ongoing noise from known stuck outbounds.
 		MaxRescheduledAge time.Duration `mapstructure:"max_rescheduled_age"`
+
+		// TssKeysignFailure configures statistical alerting on tss_keysign_failure
+		// events (moving window with mean + sigma * stddev thresholds).
+		TssKeysignFailure struct {
+			WindowBlocks int64   `mapstructure:"window_blocks"`
+			Sigma        float64 `mapstructure:"sigma"`
+			MinSnapshots int     `mapstructure:"min_snapshots"`
+			MaxSnapshots int     `mapstructure:"max_snapshots"`
+		} `mapstructure:"tss_keysign_failure"`
 	} `mapstructure:"thresholds"`
 
 	// RateLimits contain alert rate limits.
@@ -228,6 +242,10 @@ func init() {
 	config.Thresholds.SwapSlipBasisPoints = 100
 	config.Thresholds.TORAnchorDriftBasisPoints = 500
 	config.Thresholds.MaxRescheduledAge = 3 * 24 * time.Hour
+	config.Thresholds.TssKeysignFailure.WindowBlocks = 720 // ~1 hour
+	config.Thresholds.TssKeysignFailure.Sigma = 3.0        // 3 sigma detection
+	config.Thresholds.TssKeysignFailure.MinSnapshots = 60  // ~3 days
+	config.Thresholds.TssKeysignFailure.MaxSnapshots = 140 // ~7 days
 
 	// rate limits
 	config.RateLimits.FailedTransactions.Burst = 10

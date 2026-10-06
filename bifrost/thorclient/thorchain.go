@@ -1,6 +1,7 @@
 package thorclient
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -52,6 +53,7 @@ const (
 	XMRSpentOutputRefsEndpoint  = "/thorchain/xmr/spent_refs/%s"
 	AsgardVault                 = "/thorchain/vaults/asgard"
 	PubKeysEndpoint             = "/thorchain/vaults/pubkeys"
+	PendingOutboundEndpoint     = "/thorchain/queue/outbound"
 	ThorchainConstants          = "/thorchain/constants"
 	RagnarokEndpoint            = "/thorchain/ragnarok"
 	MimirEndpoint               = "/thorchain/mimir"
@@ -101,6 +103,7 @@ type ThorchainBridge interface {
 	GetAsgards() (stypes.Vaults, error)
 	GetVault(pubkey string) (stypes.Vault, error)
 	GetXMRSpentOutputRefs(vaultPubKey common.PubKey) ([]*common.OutputRef, error)
+	GetXMRSpentOutputRefsUncached(ctx context.Context, vaultPubKey common.PubKey) ([]*common.OutputRef, error)
 	GetConfig() config.BifrostClientConfiguration
 	GetConstants() (map[string]int64, error)
 	GetContext() client.Context
@@ -128,6 +131,7 @@ type ThorchainBridge interface {
 	GetBlockHeight() (int64, error)
 	GetBlockTimestamp(height int64) (time.Time, error)
 	GetLastObservedInHeight(chain common.Chain) (int64, error)
+	GetLastObservedInHeightAtHeight(chain common.Chain, thorchainHeight int64) (int64, error)
 	GetLastSignedOutHeight(chain common.Chain) (int64, error)
 	Broadcast(msgs ...sdk.Msg) (common.TxID, error)
 	BroadcastWithBlocking(msgs ...sdk.Msg) (common.TxID, error)
@@ -138,6 +142,8 @@ type ThorchainBridge interface {
 	GetReferenceMemo(chain common.Chain, ref string) (string, error)
 	GetReferenceMemoByTxHash(hash string) (string, error)
 	GetObservedTxVoter(txID string) (*stypes.QueryObservedTxVoter, error)
+	GetObservedTxOutVoter(txID string) (*stypes.QueryObservedTxVoter, error)
+	GetObservedTxOutVoterUncached(ctx context.Context, txID string) (*stypes.QueryObservedTxVoter, bool, error)
 }
 
 // httpResponseCache used for caching HTTP responses for less frequent querying
@@ -223,6 +229,13 @@ func (b *thorchainBridge) getWithPath(path string) ([]byte, int, error) {
 	return b.get(b.getThorChainURL(path))
 }
 
+// getWithPathUncached performs a fresh request without consulting or updating
+// the shared one-block response cache. It is reserved for queries whose answer
+// is used to make an irreversible local security decision.
+func (b *thorchainBridge) getWithPathUncached(path string) ([]byte, int, error) {
+	return b.getUncached(b.getThorChainURL(path))
+}
+
 // get handle all the low level http GET calls using retryablehttp.ThorchainBridge
 func (b *thorchainBridge) get(url string) ([]byte, int, error) {
 	// To reduce querying time and chance of "429 Too Many Requests",
@@ -245,10 +258,49 @@ func (b *thorchainBridge) get(url string) ([]byte, int, error) {
 		return respCachePointer.httpResponse, http.StatusOK, nil
 	}
 
+	buf, status, err := b.getRetryable(url)
+	if err != nil {
+		return buf, status, err
+	}
+
+	// All being well with the response, save it to the cache.
+	respCachePointer.httpResponse = buf
+	respCachePointer.httpResponseChecked = time.Now()
+
+	return buf, status, nil
+}
+
+func (b *thorchainBridge) getRetryable(url string) ([]byte, int, error) {
 	resp, err := b.httpClient.Get(url)
+	return b.readThorchainResponse(resp, err)
+}
+
+// getUncached handles one low-level HTTP GET without consulting or updating
+// the shared response cache. Outcome reconciliation owns durable retries, so a
+// single raw request is preferable here: it preserves the body of Cosmos query
+// errors, which is needed to distinguish an absent voter from a server outage.
+func (b *thorchainBridge) getUncached(url string) ([]byte, int, error) {
+	return b.getUncachedContext(context.Background(), url)
+}
+
+func (b *thorchainBridge) getUncachedContext(ctx context.Context, url string) ([]byte, int, error) {
+	ctx, cancel := context.WithTimeout(ctx, constants.ThorchainBlockTime)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, 0, fmt.Errorf("create uncached thornode request: %w", err)
+	}
+	resp, err := b.httpClient.HTTPClient.Do(req)
+	return b.readThorchainResponse(resp, err)
+}
+
+func (b *thorchainBridge) readThorchainResponse(resp *http.Response, err error) ([]byte, int, error) {
 	if err != nil {
 		b.errCounter.WithLabelValues("fail_get_from_thorchain", "").Inc()
 		return nil, 0, fmt.Errorf("%w: failed to GET from thorchain: %w", errThorchainTransport, err)
+	}
+	if resp == nil {
+		return nil, 0, fmt.Errorf("%w: empty response from thornode", errThorchainTransport)
 	}
 	defer func() {
 		if closeErr := resp.Body.Close(); closeErr != nil {
@@ -265,10 +317,6 @@ func (b *thorchainBridge) get(url string) ([]byte, int, error) {
 		b.errCounter.WithLabelValues("fail_read_thorchain_resp", "").Inc()
 		return nil, resp.StatusCode, fmt.Errorf("failed to read response body: %w", err)
 	}
-
-	// All being well with the response, save it to the cache.
-	respCachePointer.httpResponse = buf
-	respCachePointer.httpResponseChecked = time.Now()
 
 	return buf, resp.StatusCode, nil
 }
@@ -332,6 +380,20 @@ func (b *thorchainBridge) PostKeysignFailure(blame stypes.Blame, height int64, m
 	msg, err := stypes.NewMsgTssKeysignFail(height, blame, memo, coins, signerAddr, pubkey)
 	if err != nil {
 		return common.BlankTxID, fmt.Errorf("fail to create keysign fail message: %w", err)
+	}
+	return b.Broadcast(msg)
+}
+
+// PostSolNonceAttest broadcasts this validator's re-attestation of a Solana vault's
+// durable-nonce account (see MsgSolNonceAttest).
+func (b *thorchainBridge) PostSolNonceAttest(vaultPubKey common.PubKey, nonceAccount, nonce string, slot int64, lastTx common.TxID) (common.TxID, error) {
+	signerAddr, err := b.keys.GetSignerInfo().GetAddress()
+	if err != nil {
+		return common.BlankTxID, fmt.Errorf("failed to get signer address: %w", err)
+	}
+	msg := stypes.NewMsgSolNonceAttest(vaultPubKey, nonceAccount, nonce, slot, lastTx, signerAddr)
+	if err := msg.ValidateBasic(); err != nil {
+		return common.BlankTxID, fmt.Errorf("invalid sol nonce attestation: %w", err)
 	}
 	return b.Broadcast(msg)
 }
@@ -468,21 +530,23 @@ func (b *thorchainBridge) GetInboundOutbound(txIns common.ObservedTxs) (common.O
 	return inbound, outbound, nil
 }
 
-// EnsureNodeWhitelistedWithTimeout check node is whitelisted with timeout retry
+// EnsureNodeWhitelistedWithTimeout loops until the node is whitelisted (any
+// status other than Unknown). Unknown means no node account exists for this
+// signer address: never bonded, fully unbonded, or the signer key does not
+// match the bonded address. Any non-zero bond creates the account as
+// Whitelisted; a below-minimum bond only prevents churning in (Standby),
+// and both pass this check. Bonding happens on a human timescale, so retry
+// indefinitely. (The prior 1-hour timeout was never enforced: time.After
+// was re-evaluated each iteration, so the wait was already indefinite. The
+// behavioral change here is the retry interval, 5s to 30s.)
 func (b *thorchainBridge) EnsureNodeWhitelistedWithTimeout() error {
 	for {
-		select {
-		case <-time.After(time.Hour):
-			return errors.New("Observer is not whitelisted yet")
-		default:
-			err := b.EnsureNodeWhitelisted()
-			if err == nil {
-				// node had been whitelisted
-				return nil
-			}
-			b.logger.Error().Err(err).Msg("observer is not whitelisted , will retry a bit later")
-			time.Sleep(time.Second * 5)
+		err := b.EnsureNodeWhitelisted()
+		if err == nil {
+			return nil
 		}
+		b.logger.Error().Err(err).Msg("observer is not whitelisted, will retry in 30s")
+		time.Sleep(time.Second * 30)
 	}
 }
 
@@ -530,89 +594,118 @@ func (b *thorchainBridge) FetchNodeStatus() (stypes.NodeStatus, error) {
 	return na.Status, nil
 }
 
-// GetKeysignPolicy fetches the keysign signer policy for the vault. A positive
-// blockHeight pins jail and leave-state evaluation to that signing height.
+// GetKeysignPolicy reads the party from committed state at the item's signing
+// height H. signing_height alone only changes jail evaluation, not the store.
+// Current safety controls are read first, together at a fresh committed T >= H.
+// Errors remain local and retryable: only the explicit override may widen the
+// party to full vault membership, including when H is no longer available.
 func (b *thorchainBridge) GetKeysignPolicy(vaultPubKey common.PubKey, blockHeight int64) (KeysignPolicy, error) {
-	path := fmt.Sprintf(KeysignPartyEndpoint, vaultPubKey.String())
-	uri := b.getThorChainURL(path)
-	if blockHeight > 0 {
-		uri += "?signing_height=" + strconv.FormatInt(blockHeight, 10)
+	if blockHeight <= 0 {
+		return KeysignPolicy{}, fmt.Errorf("key sign policy requires a positive signing height: %d", blockHeight)
 	}
-	buf, s, err := b.get(uri)
+	currentHeight, err := b.GetBlockHeightUncached()
 	if err != nil {
-		if errors.Is(err, errThorchainTransport) {
-			return KeysignPolicy{}, fmt.Errorf("fail to get key sign policy from thorchain: %w", err)
-		}
-		if len(buf) > 0 {
-			body := responseBodySnippet(buf)
-			// Compromised vaults are a hard stop; never fall back to full vault
-			// membership when thornode explicitly marks the vault unsafe.
-			if IsCompromisedVaultError(errors.New(body)) {
-				return KeysignPolicy{}, fmt.Errorf("fail to get key sign policy from %s: status code %d: %w: %s", path, s, common.ErrCompromisedVault, body)
-			}
-			// 404/501 are treated as upgrade compatibility only. Other status
-			// bodies remain errors so real policy failures do not silently widen.
-			if keysignPolicyEndpointUnavailable(s) {
-				return b.getKeysignPolicyFromVaultMembership(vaultPubKey, blockHeight)
-			}
-			return KeysignPolicy{}, fmt.Errorf("fail to get key sign policy from %s: status code %d: %s", path, s, body)
-		}
-		// Preserve signing on older thornode versions that do not implement the
-		// endpoint yet, but do not mask transport errors from implemented nodes.
-		if keysignPolicyEndpointUnavailable(s) {
-			return b.getKeysignPolicyFromVaultMembership(vaultPubKey, blockHeight)
-		}
-		return KeysignPolicy{}, fmt.Errorf("fail to get key sign policy from thorchain: %w", err)
+		return KeysignPolicy{}, fmt.Errorf("fail to get current key sign control height: %w", err)
 	}
+	if currentHeight < blockHeight {
+		return KeysignPolicy{}, fmt.Errorf("key sign control height %d is behind signing height %d", currentHeight, blockHeight)
+	}
+
+	// Resolve alternate EdDSA/FROST pubkeys to the canonical vault key before
+	// looking up its compromised flag. Membership is fixed at keygen, including
+	// for retiring vaults which still have recovery work.
+	var vault stypes.Vault
+	if err = b.getKeysignStateAtHeight(fmt.Sprintf(VaultEndpoint, vaultPubKey), currentHeight, &vault); err != nil {
+		return KeysignPolicy{}, err
+	}
+	members := vault.GetMembership()
+	if vault.PubKey.IsEmpty() || len(members) == 0 {
+		return KeysignPolicy{}, fmt.Errorf("vault %s has no canonical pubkey or signer membership at height %d", vaultPubKey, currentHeight)
+	}
+	compromised, err := b.getKeysignMimirAtHeight("CompromisedVault-"+vault.PubKey.String(), currentHeight)
+	if err != nil {
+		return KeysignPolicy{}, err
+	}
+	if compromised > 0 {
+		return KeysignPolicy{}, fmt.Errorf("vault %s is %w at height %d", vault.PubKey, common.ErrCompromisedVault, currentHeight)
+	}
+	disableAt, err := b.getKeysignMimirAtHeight(constants.MimirKeyDisableTSSSignerFiltering, currentHeight)
+	if err != nil {
+		return KeysignPolicy{}, err
+	}
+	threshold, err := conversion.GetThreshold(len(members))
+	if err != nil {
+		return KeysignPolicy{}, fmt.Errorf("fail to calculate key sign threshold: %w", err)
+	}
+	// Match the existing query's activation rule, evaluated at signing height.
+	if disableAt > 0 && disableAt <= blockHeight {
+		return KeysignPolicy{
+			PubKey: vault.PubKey, Signers: members, Height: blockHeight,
+			Threshold: threshold, RequiredSigners: threshold + 1, ActiveSignerCount: len(members),
+		}, nil
+	}
+
+	path := fmt.Sprintf(KeysignPartyEndpoint, vaultPubKey) + "?signing_height=" + strconv.FormatInt(blockHeight, 10)
 	var policy KeysignPolicy
-	if err = json.Unmarshal(buf, &policy); err != nil {
-		return KeysignPolicy{}, fmt.Errorf("fail to unmarshal key sign policy from json: %w", err)
+	if err := b.getKeysignStateAtHeight(path, blockHeight, &policy); err != nil {
+		// Missing history and endpoint absence must not silently choose a
+		// different party. Historical compromised-vault errors also stay fatal.
+		return KeysignPolicy{}, err
 	}
-	if len(policy.Signers) == 0 {
-		return KeysignPolicy{}, fmt.Errorf("vault %s has empty signer membership", vaultPubKey.String())
+	if policy.Height != blockHeight || !policy.PubKey.Equals(vault.PubKey) {
+		return KeysignPolicy{}, fmt.Errorf("key sign policy snapshot does not match vault %s at height %d", vault.PubKey, blockHeight)
 	}
-	if policy.PubKey.IsEmpty() {
-		policy.PubKey = vaultPubKey
+	if policy.Threshold != threshold || policy.RequiredSigners != threshold+1 || len(policy.Signers) < threshold+1 {
+		return KeysignPolicy{}, fmt.Errorf("key sign policy for vault %s at height %d does not satisfy the original vault threshold", vault.PubKey, blockHeight)
+	}
+	allowed := make(map[common.PubKey]bool, len(members))
+	for _, member := range members {
+		allowed[member] = true
+	}
+	for _, signer := range policy.Signers {
+		if !allowed[signer] {
+			return KeysignPolicy{}, fmt.Errorf("key sign policy for vault %s at height %d contains a duplicate or non-member signer %s", vault.PubKey, blockHeight, signer)
+		}
+		allowed[signer] = false
 	}
 	return policy, nil
 }
 
-// keysignPolicyEndpointUnavailable identifies endpoint absence during rolling
-// upgrades; these are the only errors allowed to use the vault-membership
-// compatibility fallback.
-func keysignPolicyEndpointUnavailable(status int) bool {
-	return status == http.StatusNotFound || status == http.StatusNotImplemented
+// getKeysignStateAtHeight bypasses the shared one-block cache. Control reads
+// must observe the fresh visibility barrier, and height-specific URLs must not
+// accumulate forever in that cache. The gateway maps height to the SDK store.
+func (b *thorchainBridge) getKeysignStateAtHeight(path string, height int64, result any) error {
+	u, err := url.Parse(path)
+	if err != nil {
+		return err
+	}
+	query := u.Query()
+	query.Set("height", strconv.FormatInt(height, 10))
+	buf, status, err := b.getUncached(b.getThorChainURL(u.Path) + "?" + query.Encode())
+	if err != nil {
+		body := responseBodySnippet(buf)
+		if IsCompromisedVaultError(err) || IsCompromisedVaultError(errors.New(body)) {
+			return fmt.Errorf("fail to get key sign state from %s at height %d: status %d: %w: %s", path, height, status, common.ErrCompromisedVault, body)
+		}
+		return fmt.Errorf("fail to get key sign state from %s at height %d: status %d: %w: %s", path, height, status, err, body)
+	}
+	if err := json.Unmarshal(buf, result); err != nil {
+		return fmt.Errorf("fail to decode key sign state from %s at height %d: %w", path, height, err)
+	}
+	return nil
 }
 
-// getKeysignPolicyFromVaultMembership preserves signing compatibility with
-// thornode versions that have vault membership but no keysign-party endpoint.
-func (b *thorchainBridge) getKeysignPolicyFromVaultMembership(vaultPubKey common.PubKey, blockHeight int64) (KeysignPolicy, error) {
-	vault, err := b.GetVault(vaultPubKey.String())
-	if err != nil {
-		return KeysignPolicy{}, fmt.Errorf("fail to fallback to vault membership for key sign policy: %w", err)
+func (b *thorchainBridge) getKeysignMimirAtHeight(key string, height int64) (int64, error) {
+	// A missing Mimir is encoded as -1. null is not evidence that a safety
+	// control is disabled, so reject it along with other malformed responses.
+	var value *int64
+	if err := b.getKeysignStateAtHeight(MimirEndpoint+"/key/"+key, height, &value); err != nil {
+		return 0, err
 	}
-	members := vault.GetMembership()
-	if len(members) == 0 {
-		return KeysignPolicy{}, fmt.Errorf("vault %s has empty signer membership", vaultPubKey.String())
+	if value == nil {
+		return 0, fmt.Errorf("missing key sign control %s at height %d", key, height)
 	}
-	threshold, err := conversion.GetThreshold(len(members))
-	if err != nil {
-		return KeysignPolicy{}, fmt.Errorf("fail to calculate fallback key sign threshold: %w", err)
-	}
-	pubKey := vault.PubKey
-	if pubKey.IsEmpty() {
-		// FROST callers may query by a vault-specific alternate pubkey; retain
-		// the requested key when the legacy vault record lacks a secp key.
-		pubKey = vaultPubKey
-	}
-	return KeysignPolicy{
-		PubKey:            pubKey,
-		Signers:           members,
-		Height:            blockHeight,
-		Threshold:         threshold,
-		RequiredSigners:   threshold + 1,
-		ActiveSignerCount: len(members),
-	}, nil
+	return *value, nil
 }
 
 // GetKeysignParty keeps the legacy bridge helper for callers that still need
@@ -788,12 +881,23 @@ func (b *thorchainBridge) GetVault(pubkey string) (stypes.Vault, error) {
 }
 
 func (b *thorchainBridge) GetXMRSpentOutputRefs(vaultPubKey common.PubKey) ([]*common.OutputRef, error) {
-	buf, s, err := b.getWithPath(fmt.Sprintf(XMRSpentOutputRefsEndpoint, vaultPubKey.String()))
+	return parseXMRSpentOutputRefsResponse(b.getWithPath(fmt.Sprintf(XMRSpentOutputRefsEndpoint, vaultPubKey.String())))
+}
+
+// GetXMRSpentOutputRefsUncached bounds both the HTTP request and response body
+// read by the caller's context and one block. It neither waits on nor updates
+// the shared cache, so a stalled cached query cannot block committed recovery.
+func (b *thorchainBridge) GetXMRSpentOutputRefsUncached(ctx context.Context, vaultPubKey common.PubKey) ([]*common.OutputRef, error) {
+	endpoint := b.getThorChainURL(fmt.Sprintf(XMRSpentOutputRefsEndpoint, vaultPubKey.String()))
+	return parseXMRSpentOutputRefsResponse(b.getUncachedContext(ctx, endpoint))
+}
+
+func parseXMRSpentOutputRefsResponse(buf []byte, status int, err error) ([]*common.OutputRef, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fail to get xmr spent output refs: %w", err)
 	}
-	if s != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code %d", s)
+	if status != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code %d", status)
 	}
 	var resp struct {
 		SpentOutputRefs []*common.OutputRef `json:"spent_output_refs"`
@@ -805,7 +909,19 @@ func (b *thorchainBridge) GetXMRSpentOutputRefs(vaultPubKey common.PubKey) ([]*c
 }
 
 func (b *thorchainBridge) GetObservedTxVoter(txID string) (*stypes.QueryObservedTxVoter, error) {
-	buf, s, err := b.getWithPath(fmt.Sprintf(TxDetailEndpoint, txID))
+	return b.getObservedTxVoter(txID, b.getThorChainURL(fmt.Sprintf(TxDetailEndpoint, txID)))
+}
+
+// GetObservedTxOutVoter selects source-side consensus even when a migration's
+// destination has an inbound voter with the same ID. Its cache key is distinct.
+func (b *thorchainBridge) GetObservedTxOutVoter(txID string) (*stypes.QueryObservedTxVoter, error) {
+	// Append the query after URL construction: a host without a scheme uses
+	// url.URL.Path, which would otherwise escape '?' as part of the path.
+	return b.getObservedTxVoter(txID, b.getThorChainURL(fmt.Sprintf(TxDetailEndpoint, txID))+"?outbound=true")
+}
+
+func (b *thorchainBridge) getObservedTxVoter(txID, endpoint string) (*stypes.QueryObservedTxVoter, error) {
+	buf, s, err := b.get(endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get observed tx voter: %w", err)
 	}
@@ -818,6 +934,51 @@ func (b *thorchainBridge) GetObservedTxVoter(txID string) (*stypes.QueryObserved
 		return nil, fmt.Errorf("fail to unmarshal observed tx voter: %w", err)
 	}
 	return &voter, nil
+}
+
+// GetObservedTxVoterUncached returns the current on-chain voter state from a
+// fresh HTTP response. A missing voter is not an endpoint failure and is
+// reported as found=false; transport and server failures remain errors.
+func (b *thorchainBridge) GetObservedTxVoterUncached(txID string) (*stypes.QueryObservedTxVoter, bool, error) {
+	return b.getObservedTxVoterUncached(context.Background(), txID, b.getThorChainURL(fmt.Sprintf(TxDetailEndpoint, txID)))
+}
+
+// GetObservedTxOutVoterUncached preserves the commit-race lookup's freshness
+// without allowing an inbound voter to hide a missing or pending outbound.
+// The caller's context bounds both the request and response body read.
+func (b *thorchainBridge) GetObservedTxOutVoterUncached(ctx context.Context, txID string) (*stypes.QueryObservedTxVoter, bool, error) {
+	return b.getObservedTxVoterUncached(ctx, txID, b.getThorChainURL(fmt.Sprintf(TxDetailEndpoint, txID))+"?outbound=true")
+}
+
+func (b *thorchainBridge) getObservedTxVoterUncached(ctx context.Context, txID, endpoint string) (*stypes.QueryObservedTxVoter, bool, error) {
+	buf, status, err := b.getUncachedContext(ctx, endpoint)
+	if missingObservedTxVoterResponse(buf, status, txID) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("fail to get observed tx voter: %w", err)
+	}
+	if status != http.StatusOK {
+		return nil, false, fmt.Errorf("unexpected status code %d for tx %s", status, txID)
+	}
+
+	var voter stypes.QueryObservedTxVoter
+	if err = json.Unmarshal(buf, &voter); err != nil {
+		return nil, false, fmt.Errorf("fail to unmarshal observed tx voter: %w", err)
+	}
+	return &voter, true, nil
+}
+
+func missingObservedTxVoterResponse(body []byte, status int, txID string) bool {
+	if status < http.StatusBadRequest || status >= http.StatusInternalServerError+100 {
+		return false
+	}
+	// The tx-details query currently surfaces a missing voter as a Cosmos query
+	// error rather than consistently mapping it to HTTP 404. Match only the
+	// endpoint's exact transaction-specific error so genuine 4xx/5xx failures
+	// remain retryable and cannot be mistaken for an authoritative absence.
+	want := fmt.Sprintf("tx: %s doesn't exist", strings.ToLower(strings.TrimSpace(txID)))
+	return strings.Contains(strings.ToLower(string(body)), want)
 }
 
 func (b *thorchainBridge) getVaultPubkeys() ([]byte, error) {
@@ -1024,7 +1185,7 @@ func (b *thorchainBridge) GetThorchainVersion() (semver.Version, error) {
 	if err = json.Unmarshal(buf, &version); err != nil {
 		return semver.Version{}, fmt.Errorf("fail to unmarshal THORChain version : %w", err)
 	}
-	return semver.MustParse(version.Current), nil
+	return parseThorchainVersion(version.Current)
 }
 
 // GetMimir - get mimir settings
@@ -1041,6 +1202,125 @@ func (b *thorchainBridge) GetMimir(key string) (int64, error) {
 		return 0, fmt.Errorf("fail to unmarshal mimir: %w", err)
 	}
 	return value, nil
+}
+
+// PendingOutbound is the minimal view of a not-yet-observed scheduled outbound
+// the SOL durable-nonce signer needs to serialize one durable tx per vault (durable-nonce,
+// N2): its chain, vault pubkeys, and scheduled height.
+type PendingOutbound struct {
+	Chain            string              `json:"chain"`
+	ToAddress        string              `json:"to_address"`
+	VaultPubKey      string              `json:"vault_pub_key"`
+	VaultPubKeyEddsa string              `json:"vault_pub_key_eddsa"`
+	Coin             PendingOutboundCoin `json:"coin"`
+	Memo             string              `json:"memo"`
+	InHash           string              `json:"in_hash"`
+	Height           int64               `json:"height"`
+}
+
+// PendingOutboundCoin is the coin of a queued outbound as the queue endpoint serves it.
+type PendingOutboundCoin struct {
+	Asset  string `json:"asset"`
+	Amount string `json:"amount"`
+}
+
+// GetPendingOutbounds returns the outbounds currently in the outbound queue that
+// have NOT yet been observed (thornode's /thorchain/queue/outbound, which filters to
+// items whose OutHash is empty). height>0 queries the queue AS OF that consensus
+// height (?height=), so every node evaluating the same height observes the identical
+// set — used by the provisioning create-skip at its boundary height (a one-shot,
+// idempotent decision that must be deterministic across members). height==0 reads the
+// LIVE queue, used by the SignTx serialization gate, which must see the queue shrink
+// over retries to release a waiting sibling (a fixed-height snapshot would deadlock
+// it). The endpoint serialises as a BARE JSON array (QueryOutboundResponse
+// .MarshalJSONPB emits its TxOutItems slice directly), so the body decodes into a
+// slice, not a wrapping object.
+func (b *thorchainBridge) GetPendingOutbounds(height int64) ([]PendingOutbound, error) {
+	var items []PendingOutbound
+	if height > 0 {
+		// The ?height= query must be appended AFTER the path (getKeysignStateAtHeight
+		// builds it that way, uncached); embedding it in the path string makes
+		// getThorChainURL escape the '?' to %3F when ChainHost has no scheme.
+		if err := b.getKeysignStateAtHeight(PendingOutboundEndpoint, height, &items); err != nil {
+			return nil, fmt.Errorf("fail to get pending outbounds at height %d: %w", height, err)
+		}
+		return items, nil
+	}
+	buf, s, err := b.getWithPath(PendingOutboundEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get pending outbounds: %w", err)
+	}
+	if s != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code %d", s)
+	}
+	if err := json.Unmarshal(buf, &items); err != nil {
+		return nil, fmt.Errorf("fail to unmarshal pending outbounds: %w", err)
+	}
+	return items, nil
+}
+
+// SolVaultNonce is a Solana vault's durable nonce as committed on THORChain by
+// observer supermajority. Empty (Nonce == "") when the vault has none.
+type SolVaultNonce struct {
+	NonceAccount  string `json:"nonce_account"`
+	Nonce         string `json:"nonce"`
+	Slot          int64  `json:"slot"`
+	UpdatedHeight int64  `json:"updated_height"`
+	SetByTx       string `json:"set_by_tx"`
+}
+
+// IsEmpty reports whether no durable nonce is committed.
+func (n SolVaultNonce) IsEmpty() bool { return n.Nonce == "" || n.NonceAccount == "" }
+
+// SolVaultNonceEndpoint is formatted with the vault pubkey.
+const SolVaultNonceEndpoint = "/thorchain/vault/%s/sol_nonce"
+
+// GetSolVaultNonce returns a vault's committed durable nonce. height>0 reads it AS OF
+// that consensus height (?height=, uncached), so every keysign party evaluating the
+// same height builds from the identical value; height<=0 reads the latest committed
+// value (uncached). An empty result means the vault has no committed nonce; an error
+// means the value is unknown and the caller must not guess.
+func (b *thorchainBridge) GetSolVaultNonce(vaultPubKey string, height int64) (SolVaultNonce, error) {
+	var out SolVaultNonce
+	path := fmt.Sprintf(SolVaultNonceEndpoint, vaultPubKey)
+	if height > 0 {
+		if err := b.getKeysignStateAtHeight(path, height, &out); err != nil {
+			return SolVaultNonce{}, fmt.Errorf("fail to get sol vault nonce at height %d: %w", height, err)
+		}
+		return out, nil
+	}
+	buf, s, err := b.getWithPathUncached(path)
+	if err != nil {
+		return SolVaultNonce{}, fmt.Errorf("fail to get sol vault nonce: %w", err)
+	}
+	if s != http.StatusOK {
+		return SolVaultNonce{}, fmt.Errorf("unexpected status code %d", s)
+	}
+	if err := json.Unmarshal(buf, &out); err != nil {
+		return SolVaultNonce{}, fmt.Errorf("fail to unmarshal sol vault nonce: %w", err)
+	}
+	return out, nil
+}
+
+// GetMimirAtHeight reads a mimir value as of a specific consensus height via the
+// ?height= state query (bypassing the live one-block cache), so every keysign party
+// evaluating the same height observes the identical value. It gates the SOL
+// durable-nonce path deterministically instead of a divergent live GetMimir
+// read that could fragment a keysign across a governance flip. Unlike
+// getKeysignMimirAtHeight (a safety control where null must NOT read as disabled), a
+// feature gate treats a missing/null mimir as 0 (off).
+func (b *thorchainBridge) GetMimirAtHeight(key string, height int64) (int64, error) {
+	if height <= 0 {
+		return 0, fmt.Errorf("mimir-at-height requires a positive height: %d", height)
+	}
+	var value *int64
+	if err := b.getKeysignStateAtHeight(MimirEndpoint+"/key/"+key, height, &value); err != nil {
+		return 0, err
+	}
+	if value == nil {
+		return 0, nil // unset/null mimir = feature disabled
+	}
+	return *value, nil
 }
 
 // GetMimirWithRef is a helper function to more readably insert references (such as Asset MimirString or Chain) into Mimir key templates.

@@ -30,6 +30,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	sutxo "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	btctxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/txscript"
@@ -188,13 +189,15 @@ func (s *CoverageBackfillSuite) SetUpTest(c *C) {
 	c.Assert(err, IsNil)
 	s.cfg.RPCHost = s.server.Listener.Addr().String()
 	s.client, err = NewClient(s.keys, s.cfg, nil, s.bridge, s.m, nil)
+	// Check initialization before accessing client fields so a wallet RPC error
+	// is reported instead of being masked by a nil-pointer panic.
+	c.Assert(err, IsNil)
+	c.Assert(s.client, NotNil)
 	s.client.disableVinZeroBatch = true
 	netFeeQueue := make(chan common.NetworkFee, 100)
 	s.client.globalNetworkFeeQueue = netFeeQueue
 	s.client.globalErrataQueue = make(chan stypes.ErrataBlock, 10)
 	s.client.globalSolvencyQueue = make(chan stypes.Solvency, 10)
-	c.Assert(err, IsNil)
-	c.Assert(s.client, NotNil)
 }
 
 func (s *CoverageBackfillSuite) TearDownTest(_ *C) {
@@ -870,6 +873,17 @@ func (s *CoverageBackfillSuite) TestMemoToScripts(c *C) {
 	memoTooLong := strings.Repeat("X", 1000)
 	_, err = MemoToScripts(memoTooLong, 80, btctxscript.NullDataScript, btctxscript.PayToWitnessScript)
 	c.Assert(err, NotNil)
+}
+
+func (s *CoverageBackfillSuite) TestZECMemoContinuationUsesTransparentP2PKH(c *C) {
+	scripts, err := MemoToScripts(strings.Repeat("Z", 100), btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, zecutil.PayToPubKeyHashScript)
+	c.Assert(err, IsNil)
+	c.Assert(len(scripts), Equals, 3)
+
+	asm, err := btctxscript.DisasmString(scripts[1])
+	c.Assert(err, IsNil)
+	c.Assert(strings.HasPrefix(asm, "OP_DUP OP_HASH160 "), Equals, true)
+	c.Assert(strings.HasSuffix(asm, " OP_EQUALVERIFY OP_CHECKSIG"), Equals, true)
 }
 
 func (s *CoverageBackfillSuite) TestGetSourceScript(c *C) {

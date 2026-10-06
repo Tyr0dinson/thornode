@@ -360,11 +360,9 @@ func (s *HelperSuite) TestAddGasFees(c *C) {
 	}
 }
 
-// TestAddGasFeesClampDetection asserts that addGasFees runs the clamp detector
-// before vault.SubFunds, so silent gas-debit clamps on the cancel/approval and
-// non-slash outbound paths trigger HaltSigning + HaltTrading just like the
-// vault-slash branch already does.
-func (s *HelperSuite) TestAddGasFeesClampDetection(c *C) {
+// TestAddGasFeesDeficit asserts that addGasFees records gas deficits
+// and halts when the gas deficit crosses the max-gas-based threshold.
+func (s *HelperSuite) TestAddGasFeesDeficit(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockHeight(4444)
 	k := mgr.Keeper()
@@ -397,14 +395,19 @@ func (s *HelperSuite) TestAddGasFeesClampDetection(c *C) {
 
 	c.Assert(addGasFees(ctx, mgr, tx), IsNil)
 
+	updated, err := k.GetVault(ctx, vault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(updated.GetCoin(common.ETHAsset).Amount.Equal(cosmos.ZeroUint()), Equals, true)
+	c.Assert(updated.GetDeficit(common.ETHAsset).Amount.Equal(cosmos.NewUint(common.One-100)), Equals, true)
+
 	haltSigning, err := k.GetMimir(ctx, "HaltSigningETH")
 	c.Assert(err, IsNil)
 	c.Assert(haltSigning, Equals, ctx.BlockHeight(),
-		Commentf("HaltSigningETH should fire when addGasFees would clamp"))
+		Commentf("HaltSigningETH should fire when addGasFees creates deficit"))
 	haltTrading, err := k.GetMimir(ctx, "HaltETHTrading")
 	c.Assert(err, IsNil)
 	c.Assert(haltTrading, Equals, ctx.BlockHeight(),
-		Commentf("HaltETHTrading should fire when addGasFees would clamp"))
+		Commentf("HaltETHTrading should fire when addGasFees creates deficit"))
 }
 
 func (s *HelperSuite) TestEmitPoolStageCostEvent(c *C) {
@@ -1542,7 +1545,7 @@ func (HelperSuite) TestRefundTxKeepsInactiveObservedVaultWithExactRefundFunds(c 
 //   - the older outbound drains the original observed vault balance
 //   - the refund outbound is observed from the replacement vault selected by
 //     txout discovery
-//   - no Vault.SubFunds clamp happens and HaltSigningETH/HaltETHTrading stay unset
+//   - no Vault.SubFundsWithClamping clamp happens and HaltSigningETH/HaltETHTrading stay unset
 //
 // This demonstrates the practical fix: once refundTx stops forcing the refund
 // from the effectively-drained observed vault, the later L1 observation no
@@ -1602,7 +1605,7 @@ func (HelperSuite) TestRefundTxReroutePreventsObservedOutboundClamp(c *C) {
 	//   - drainAmount reduces observedVault to 16.60108653 ETH after gas
 	//   - refundAmount is 169.23065786 ETH
 	// If the refund stayed on observedVault, observing it after the drain would
-	// hit the Vault.SubFunds clamp. The fix should route it to availableVault.
+	// hit the Vault.SubFundsWithClamping clamp. The fix should route it to availableVault.
 	drainInHash := GetRandomTxHash()
 	refundInHash := GetRandomTxHash()
 	drainAmount := cosmos.NewUint(18_339_891_346)  // Leaves 16.60108653 ETH after 1 wei gas.
@@ -1800,7 +1803,7 @@ func (HelperSuite) TestRefundTxReroutePreventsObservedOutboundClamp(c *C) {
 //   - another outbound is observed first and drains the vault balance to about
 //     16.60108653 ETH
 //   - the refund L1 tx is observed later
-//   - addGasFees deducts gas, then Vault.SubFunds tries to debit 169.23065786
+//   - addGasFees deducts gas, then Vault.SubFundsWithClamping tries to debit 169.23065786
 //     ETH from only 16.60108652 ETH
 //   - SafeSub clamps the vault balance to zero
 //   - the MR 4802 clamp detector sets HaltSigningETH and HaltETHTrading so the
@@ -1941,7 +1944,7 @@ func (HelperSuite) TestHandleRefundOutboundWithDrainedVaultBalanceRecreatesIncid
 			Memo: item.Memo,
 		}, observeCtx.BlockHeight(), vault.PubKey, observeCtx.BlockHeight())
 
-		// Calling the handler, instead of directly calling Vault.SubFunds, keeps
+		// Calling the handler, instead of directly calling Vault.SubFundsWithClamping, keeps
 		// the test on the real path: consensus processing, outbound matching,
 		// gas accounting, clamp detection, coin debit, and txout OutHash update.
 		msg := NewMsgObservedTxOut(ObservedTxs{observedTx}, na.NodeAddress)
@@ -1971,14 +1974,14 @@ func (HelperSuite) TestHandleRefundOutboundWithDrainedVaultBalanceRecreatesIncid
 	c.Assert(err, IsNil)
 	haltTrading, err := k.GetMimir(ctx, "HaltETHTrading")
 	c.Assert(err, IsNil)
-	// No clamp has happened yet. A low vault balance while the refund is still
-	// pending is not enough by itself. The bug surfaces when the refund L1 tx is
-	// later observed and accounting tries to debit it.
+	// No deficit has been recorded yet. A low vault balance while the refund is
+	// still pending is not enough by itself. The accounting gap surfaces when
+	// the refund L1 tx is later observed and accounting tries to debit it.
 	c.Assert(haltSigning <= 0, Equals, true)
 	c.Assert(haltTrading <= 0, Equals, true)
 
 	// Second L1 observation: the refund has now really left the L1 wallet and
-	// is observed by THORNode. This is where addGasFees and Vault.SubFunds run
+	// is observed by THORNode. This is where addGasFees and debitVault run
 	// against an already-drained vault balance.
 	//
 	// This call is also where the test models the "extra funds in the L1 wallet"
@@ -1992,7 +1995,7 @@ func (HelperSuite) TestHandleRefundOutboundWithDrainedVaultBalanceRecreatesIncid
 	vaultBeforeRefund, err = k.GetVault(ctx, vault.PubKey)
 	c.Assert(err, IsNil)
 	// Capture the pre-refund vault balance so the test can explicitly calculate
-	// the final accounting gap created by SafeSub clamping.
+	// the final accounting gap recorded as vault deficit.
 	vaultBalanceBeforeRefund := vaultBeforeRefund.GetCoin(common.ETHAsset).Amount
 
 	refundOutHash := observeOutbound(ctx, refundItem)
@@ -2000,20 +2003,20 @@ func (HelperSuite) TestHandleRefundOutboundWithDrainedVaultBalanceRecreatesIncid
 	var vaultAfterRefund Vault
 	vaultAfterRefund, err = k.GetVault(ctx, vault.PubKey)
 	c.Assert(err, IsNil)
-	// This is the historical bad behavior of Vault.SubFunds: it clamps instead
-	// of recording debt. The MR 4802 behavior does not change the clamp, it
-	// detects the clamp and halts so operators can reconcile the phantom credit.
+	// The tracked coin balance is drained, and the missed debit is recorded as
+	// vault deficit rather than disappearing as phantom credit.
 	c.Assert(vaultAfterRefund.GetCoin(common.ETHAsset).Amount.IsZero(), Equals, true)
 
 	// addGasFees debits gas before the coin debit. The accounting gap is the
-	// refund coin amount that Vault.SubFunds could not subtract because only the
-	// remaining post-gas vault balance was available.
+	// refund coin amount that debitVault could not subtract from settled coins
+	// because only the remaining post-gas vault balance was available.
 	availableForRefundCoinDebit := common.SafeSub(vaultBalanceBeforeRefund, l1Gas)
 	accountingGap := common.SafeSub(refundAmount, availableForRefundCoinDebit)
 	c.Assert(accountingGap.Equal(cosmos.NewUint(15_262_957_134)), Equals, true)
+	c.Assert(vaultAfterRefund.GetDeficit(common.ETHAsset).Amount.Equal(accountingGap), Equals, true)
 
-	// The critical assertion for MR 4802: once the clamp would happen, signing
-	// and trading are halted while Bifrost can continue observing the chain.
+	// Once the deficit is recorded, signing and trading are halted while
+	// Bifrost can continue observing the chain.
 	haltSigning, err = k.GetMimir(ctx, "HaltSigningETH")
 	c.Assert(err, IsNil)
 	c.Assert(haltSigning, Equals, ctx.BlockHeight())
@@ -2585,14 +2588,14 @@ func (s *HelperSuite) TestGetMinSlipBpsDynamicOverridesStable(c *C) {
 	result = getMinSlipBps(ctx, k, common.NoAddress, btc, false, affiliates, affBps, btc, common.RuneAsset(), dfm)
 	c.Assert(result.Uint64(), Equals, uint64(25))
 
-	// Clear dynamic record → stable override should now apply (3).
+	// Clear dynamic record → dynamic floor still applies for the active thorname.
 	c.Assert(k.DeleteDynamicFeeRecord(ctx, "mytn", pairA, pairB), IsNil)
 	result = getMinSlipBps(ctx, k, common.NoAddress, btc, true, affiliates, affBps, btc, common.RuneAsset(), dfm)
-	c.Assert(result.Uint64(), Equals, uint64(3))
+	c.Assert(result.Uint64(), Equals, uint64(1))
 
-	// No dynamic record, no stable override → L1 default (10).
+	// No dynamic record, no stable override → dynamic floor (1) for the active thorname.
 	result = getMinSlipBps(ctx, k, common.NoAddress, btc, false, affiliates, affBps, btc, common.RuneAsset(), dfm)
-	c.Assert(result.Uint64(), Equals, uint64(10))
+	c.Assert(result.Uint64(), Equals, uint64(1))
 }
 
 // TestGetMinSlipBpsNonL1IgnoresDynamic verifies that synth, trade and derived
@@ -2652,4 +2655,90 @@ func (s *HelperSuite) TestGetMinSlipBpsNonL1IgnoresDynamic(c *C) {
 
 	result = getMinSlipBps(ctx, k, common.NoAddress, derivedBTC, false, affiliates, affBps, btc, common.RuneAsset(), dfm)
 	c.Assert(result.Uint64(), Equals, uint64(40))
+}
+
+func (s *HelperSuite) TestEmitEndBlockTelemetry(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+
+	// pool with liquidity, so the pool loop actually runs
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(10 * common.One)
+	pool.LPUnits = cosmos.NewUint(100 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	// active node
+	na := GetRandomValidatorNode(NodeActive)
+	na.Bond = cosmos.NewUint(1000 * common.One)
+	na.Version = "3.0.0"
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	// active asgard holding the pool asset
+	vault := GetRandomVault()
+	vault.Status = ActiveVault
+	vault.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One)))
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	// chain observation state + network fee
+	c.Assert(k.SetLastChainHeight(ctx, common.BTCChain, 900000), IsNil)
+	c.Assert(k.SaveNetworkFee(ctx, common.BTCChain, NetworkFee{
+		Chain: common.BTCChain, TransactionSize: 1000, TransactionFeeRate: 10,
+	}), IsNil)
+
+	// in-flight streaming swap and a secured asset
+	k.SetStreamingSwap(ctx, StreamingSwap{
+		TxID:     GetRandomTxHash(),
+		Quantity: 10,
+		Count:    3,
+		Deposit:  cosmos.NewUint(5 * common.One),
+		In:       cosmos.NewUint(1 * common.One),
+		Out:      cosmos.NewUint(1 * common.One),
+	})
+	k.SetSecuredAsset(ctx, SecuredAsset{Asset: common.BTCAsset, Depth: cosmos.NewUint(common.One)})
+
+	// mimir: a plain value and a block-height-valued halt key
+	k.SetMimir(ctx, "MaxSynthPerPoolDepth", 1700)
+	k.SetMimir(ctx, "HaltBTCChain", ctx.BlockHeight())
+
+	// emitEndBlockTelemetry recovers panics internally, so also exercise the
+	// sub-emitters directly - a nil deref there fails the test loudly.
+	c.Assert(emitEndBlockTelemetry(ctx, mgr), IsNil)
+	emitChainTelemetry(ctx, mgr)
+	emitNetworkStateTelemetry(ctx, mgr)
+	emitStreamingSwapTelemetry(ctx, mgr)
+	emitSecuredAssetTelemetry(ctx, mgr)
+	emitMimirTelemetry(ctx, mgr)
+	emitVaultDetailTelemetry(ctx, mgr)
+	emitSolvencyTelemetry(ctx, mgr)
+	emitChainDetailTelemetry(ctx, mgr)
+	emitQueueDetailTelemetry(ctx, mgr)
+	emitTCYTelemetry(ctx, mgr)
+}
+
+// The mimir gauge is keyed by the store key with its prefix trimmed; if that
+// trimming regresses every mimir series silently renames itself.
+func (s *HelperSuite) TestEmitMimirTelemetryKeys(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+
+	k.SetMimir(ctx, "MaxSynthPerPoolDepth", 1700)
+	k.SetMimir(ctx, "HaltBTCChain", 42)
+
+	got := map[string]int64{}
+	iter := k.GetMimirIterator(ctx)
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		value := types.ProtoInt64{}
+		c.Assert(k.Cdc().Unmarshal(iter.Value(), &value), IsNil)
+		got[trimKeyPrefix(iter.Key())] = value.GetValue()
+	}
+
+	// KVStore.GetKey uppercases, so the gauge label is the upper-cased key. That
+	// matches the label on the thornode_mimir_changed counter and on EventSetMimir,
+	// so a PromQL join across the three lines up.
+	c.Assert(got["MAXSYNTHPERPOOLDEPTH"], Equals, int64(1700))
+	c.Assert(got["HALTBTCCHAIN"], Equals, int64(42))
 }

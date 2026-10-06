@@ -3,8 +3,10 @@ package utxo
 import (
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -69,13 +71,19 @@ type Client struct {
 	address common.Address
 
 	// chain specific
-	mtx        sync.Mutex
-	spentUtxos map[string]bool
+	mtx               sync.Mutex
+	spentUtxos        map[string]bool
+	pendingSpentUtxos map[string][]string
 }
 
 var _ LiteChainClient = &Client{}
 
 const utxoStartupRPCTimeout = 5 * time.Second
+
+var (
+	utxoBroadcastAttempts   = 3
+	utxoBroadcastRetryDelay = 2 * time.Second
+)
 
 var utxoStartupImportLocks sync.Map
 
@@ -138,14 +146,15 @@ func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (LiteChai
 	}
 
 	return &Client{
-		chain:      chain,
-		rpc:        rpc,
-		keys:       keys,
-		privKey:    privKey,
-		pubKey:     pubkey,
-		address:    address,
-		spentUtxos: make(map[string]bool),
-		mtx:        sync.Mutex{},
+		chain:             chain,
+		rpc:               rpc,
+		keys:              keys,
+		privKey:           privKey,
+		pubKey:            pubkey,
+		address:           address,
+		spentUtxos:        make(map[string]bool),
+		pendingSpentUtxos: make(map[string][]string),
+		mtx:               sync.Mutex{},
 	}, nil
 }
 
@@ -346,6 +355,7 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 		return nil, fmt.Errorf("fail to serialize tx to bytes: %w", err)
 	}
 
+	c.rememberPendingSpentUtxos(signedTx.Bytes(), amounts)
 	return signedTx.Bytes(), nil
 }
 
@@ -356,9 +366,27 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 func (c *Client) BroadcastTx(payload []byte) (string, error) {
 	if c.chain.Equals(common.ZECChain) {
 		var hash string
-		args := []any{hex.EncodeToString(payload)}
+		payloadHex := hex.EncodeToString(payload)
+		txid := chainhash.DoubleHashH(payload).String() // Our ZEC encoder emits v4.
+		args := []any{payloadHex}
 		err := c.rpc.Call(&hash, "sendrawtransaction", args...)
-		return hash, err
+		if err == nil && !strings.EqualFold(hash, txid) {
+			err = fmt.Errorf("unexpected ZEC broadcast txid: got %q, expected %s", hash, txid)
+		}
+		if err != nil {
+			// Zebra may requeue verification after cancelling the RPC. Check
+			// the original payload in the mempool/chain before retrying it.
+			if accepted, _ := c.payloadAccepted(txid, payloadHex); accepted {
+				c.finalizePendingSpentUtxos(payloadHex)
+				return txid, nil
+			}
+			// Keep these inputs reserved on an ambiguous result, including
+			// exhausted retries. They become spent only after acceptance; a
+			// failed simulation must not reuse possibly consumed inputs.
+			return "", err
+		}
+		c.finalizePendingSpentUtxos(payloadHex)
+		return hash, nil
 	}
 
 	redeemTx := btcwire.NewMsgTx(btcwire.TxVersion)
@@ -375,8 +403,55 @@ func (c *Client) BroadcastTx(payload []byte) (string, error) {
 		maxFee = 10_000_000
 	}
 
-	// broadcast tx
-	return c.rpc.SendRawTransaction(redeemTx, maxFee)
+	// Rebroadcasting identical bytes is idempotent, so transport failures reuse
+	// this payload. Signing again after a timed-out broadcast that the node
+	// accepted anyway spends other inputs and sends a duplicate inbound.
+	txid := redeemTx.TxHash().String()
+	payloadHex := hex.EncodeToString(payload)
+	var err error
+	for attempt := 1; attempt <= utxoBroadcastAttempts; attempt++ {
+		var hash string
+		hash, err = c.rpc.SendRawTransaction(redeemTx, maxFee)
+		if err == nil {
+			return hash, nil
+		}
+		accepted, absent := c.payloadAccepted(txid, payloadHex)
+		if accepted {
+			return txid, nil
+		}
+
+		// the node answered: an earlier attempt was mined, or the payload was
+		// rejected. Rejection is final only when the node also denies holding
+		// the txid, since an earlier attempt or a transport retry inside
+		// rpc.Call may have been accepted without an answer. Otherwise resend.
+		var rpcErr *btcjson.RPCError
+		if errors.As(err, &rpcErr) {
+			if rpcErr.Code == btcjson.ErrRPCTxAlreadyInChain {
+				return txid, nil
+			}
+			if absent {
+				return "", fmt.Errorf("fail to broadcast %s tx %s: %w", c.chain, txid, err)
+			}
+		}
+		if attempt < utxoBroadcastAttempts {
+			time.Sleep(utxoBroadcastRetryDelay)
+		}
+	}
+	return txid, fmt.Errorf("%w: %s tx %s not found after %d broadcast attempts: %w",
+		ErrSimTxUncertain, c.chain, txid, utxoBroadcastAttempts, err)
+}
+
+// payloadAccepted reports whether the node already holds the exact payload in
+// its mempool or chain, and whether the node answered that it has no such txid.
+// absent also rules out mined transactions only with -txindex, which the
+// mocknet DOGE and LTC daemons enable.
+func (c *Client) payloadAccepted(txid, payloadHex string) (accepted, absent bool) {
+	raw, err := c.rpc.GetRawTransaction(txid)
+	if err == nil {
+		return strings.EqualFold(raw, payloadHex), false
+	}
+	var rpcErr *btcjson.RPCError
+	return false, errors.As(err, &rpcErr) && rpcErr.Code == btcjson.ErrRPCNoTxInfo
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -463,12 +538,10 @@ func (c *Client) getUtxoToSpend(total float64) ([]btcjson.ListUnspentResult, err
 		if c.chain.Equals(common.ZECChain) {
 			key := fmt.Sprintf("%s-%d", item.TxID, item.Vout)
 
-			_, found := c.spentUtxos[key]
-			if found {
+			if c.spentUtxos[key] || c.pendingSpentUtxoLocked(key) {
 				continue
 			}
 
-			c.spentUtxos[key] = true
 		}
 
 		result = append(result, item)
@@ -538,15 +611,17 @@ func (c *Client) getMemoScripts(memo string) ([][]byte, error) {
 		return memoToScripts(memo, bchtxscript.MaxDataCarrierSize, bchtxscript.NullDataScript, bchtxscript.PayToWitnessScript)
 	case common.LTCChain:
 		return memoToScripts(memo, ltctxscript.MaxDataCarrierSize, ltctxscript.NullDataScript, ltctxscript.PayToWitnessScript)
-	case common.BTCChain, common.ZECChain, common.DASHChain:
+	case common.BTCChain, common.DASHChain:
 		return memoToScripts(memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, btctxscript.PayToWitnessScript)
+	case common.ZECChain:
+		return memoToScripts(memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, zecutil.PayToPubKeyHashScript)
 	default:
 		log.Fatal().Msg("unsupported chain")
 		return nil, nil
 	}
 }
 
-func memoToScripts(memo string, maxDataCarrierSize int, nullDataScript, payToWitnessKeyHashScript func([]byte) ([]byte, error)) ([][]byte, error) {
+func memoToScripts(memo string, maxDataCarrierSize int, nullDataScript, payToContinuationScript func([]byte) ([]byte, error)) ([][]byte, error) {
 	if len(memo) == 0 {
 		return nil, nil
 	}
@@ -596,16 +671,64 @@ func memoToScripts(memo string, maxDataCarrierSize int, nullDataScript, payToWit
 			hash := make([]byte, 20)
 			copy(hash, remainingData[:chunkSize])
 
-			p2wpkhScript, err := payToWitnessKeyHashScript(hash)
+			continuationScript, err := payToContinuationScript(hash)
 			if err != nil {
-				return nil, fmt.Errorf("fail to create P2WPKH script at index %d: %w", i, err)
+				return nil, fmt.Errorf("fail to create memo continuation script at index %d: %w", i, err)
 			}
-			scripts = append(scripts, p2wpkhScript)
+			scripts = append(scripts, continuationScript)
 			remainingData = remainingData[chunkSize:]
 		}
 	}
 
 	return scripts, nil
+}
+
+func (c *Client) rememberPendingSpentUtxos(payload []byte, amounts map[string]int64) {
+	if !c.chain.Equals(common.ZECChain) || len(amounts) == 0 {
+		return
+	}
+
+	keys := make([]string, 0, len(amounts))
+	for key := range amounts {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+	if c.pendingSpentUtxos == nil {
+		c.pendingSpentUtxos = make(map[string][]string)
+	}
+	c.pendingSpentUtxos[hex.EncodeToString(payload)] = keys
+}
+
+func (c *Client) finalizePendingSpentUtxos(payloadHex string) {
+	if !c.chain.Equals(common.ZECChain) {
+		return
+	}
+
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+	keys := c.pendingSpentUtxos[payloadHex]
+	delete(c.pendingSpentUtxos, payloadHex)
+
+	for _, key := range keys {
+		if c.spentUtxos == nil {
+			c.spentUtxos = make(map[string]bool)
+		}
+		c.spentUtxos[key] = true
+	}
+}
+
+func (c *Client) pendingSpentUtxoLocked(key string) bool {
+	for _, keys := range c.pendingSpentUtxos {
+		for _, pendingKey := range keys {
+			if pendingKey == key {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (c *Client) buildTx(tx SimTx, sourceScript []byte) (

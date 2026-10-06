@@ -31,7 +31,7 @@ func processErrataTxAttestation(
 
 	slashCtx := ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{ // nolint
 		telemetry.NewLabel("reason", "failed_observe_errata"),
-		telemetry.NewLabel("chain", string(er.Chain)),
+		telemetry.NewLabel("chain", telemChain(er.Chain)),
 	}))
 
 	slasher := mgr.Slasher()
@@ -64,6 +64,15 @@ func processErrataTxAttestation(
 
 	voter.BlockHeight = ctx.BlockHeight()
 
+	// An errata reaching consensus means a tx the network already acted on was
+	// reorged out of the source chain. Every path above returns early (duplicate
+	// signer, pre-consensus, already-processed), so this fires once per errata.
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "errata", "consensus"},
+		1,
+		[]metrics.Label{telemetry.NewLabel("chain", telemChain(er.Chain))},
+	)
+
 	// This signer brings the voter to consensus; increment the signer's slash points like the before-consensus signers,
 	// then decrement all the signers' slash points and increment the non-signers' slash points.
 	slasher.IncSlashPoints(slashCtx, observeSlashPoints, attester)
@@ -93,6 +102,14 @@ func processErrataTxAttestation(
 
 	// set the observed Tx to reverted only after chain validation passes
 	observedVoter.SetReverted()
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "errata", "reverted"},
+		1,
+		[]metrics.Label{
+			telemetry.NewLabel("chain", telemChain(er.Chain)),
+			telemetry.NewLabel("direction", "in"),
+		},
+	)
 	k.SetObservedTxInVoter(ctx, observedVoter)
 	if observedVoter.UpdatedVault {
 		vaultPubKey := observedVoter.Tx.ObservedPubKey
@@ -103,7 +120,7 @@ func processErrataTxAttestation(
 			if err != nil {
 				return fmt.Errorf("fail to get active asgard vaults: %w", err)
 			}
-			vault.SubFunds(tx.Coins)
+			debitVault(ctx, mgr, &vault, observedVoter.Tx, tx.Coins, vaultDeficitReasonInboundErrataReversal)
 			if err = k.SetVault(ctx, vault); err != nil {
 				return fmt.Errorf("fail to save vault, err: %w", err)
 			}
@@ -170,6 +187,18 @@ func processErrataTxAttestation(
 		return fmt.Errorf("fail to save pool: %w", err)
 	}
 
+	// The errata has been applied: pool balances (and possibly LP units) were
+	// unwound. SetPool above rejects an empty asset, so pool.Asset is a real
+	// stored pool here and the label stays bounded by the pool set.
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "errata", "applied"},
+		1,
+		[]metrics.Label{
+			telemetry.NewLabel("chain", telemChain(er.Chain)),
+			telemetry.NewLabel("asset", pool.Asset.String()),
+		},
+	)
+
 	// send errata event
 	mods := PoolMods{
 		NewPoolMod(pool.Asset, runeCoin.Amount, false, assetCoin.Amount, false),
@@ -235,8 +264,26 @@ func processErrataOutboundTx(ctx cosmos.Context, k keeper.Keeper, eventMgr Event
 	if err := eventMgr.EmitEvent(ctx, event); err != nil {
 		return ErrInternal(err, "fail to emit security event")
 	}
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "security", "event"},
+		1,
+		[]metrics.Label{
+			telemetry.NewLabel("reason", "outbound_errata"),
+			telemetry.NewLabel("chain", telemChain(er.Chain)),
+		},
+	)
 
 	txOutVoter.SetReverted()
+	// An outbound was reorged out and its funds re-credited to the vault above;
+	// if that vault is already inactive the funds need a manual migration.
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "errata", "reverted"},
+		1,
+		[]metrics.Label{
+			telemetry.NewLabel("chain", telemChain(er.Chain)),
+			telemetry.NewLabel("direction", "out"),
+		},
+	)
 	k.SetObservedTxOutVoter(ctx, txOutVoter)
 	return nil
 }

@@ -4,12 +4,15 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	kvTypes "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
+	thortypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 type VaultSecurity struct {
@@ -218,16 +221,45 @@ func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signi
 }
 
 // GetPendingOutbounds selects txouts in the outbound and scheduled outbound queues (for deduction to leave only 'available' balances),
-// as the amounts of both types of txout items are yet to be deducted from the vault balances
+// as the amounts of both types of txout items are yet to be deducted from the vault balances.
 func (k KVStore) GetPendingOutbounds(ctx cosmos.Context, asset common.Asset) []TxOutItem {
-	signingPeriod := k.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
-	startHeight := ctx.BlockHeight() - signingPeriod
+	signingPeriod := k.GetConfigInt64(ctx, constants.SigningTransactionPeriod)
+	standardStartHeight := ctx.BlockHeight() - signingPeriod
+	if standardStartHeight < 1 {
+		standardStartHeight = 1
+	}
+	// Use the longest period the requested asset's underlying chain can contain.
+	// GetChain reports THOR for synth, trade, and secured assets, so use the L1
+	// chain to retain any EVM/XMR-backed liabilities conservatively.
+	scanPeriod := thortypes.MaxTxOutSigningTransactionPeriodForChain(asset.GetLayer1Asset().Chain, signingPeriod)
+	startHeight := ctx.BlockHeight() - scanPeriod
 	if startHeight < 1 {
 		startHeight = 1
 	}
 	txOutDelayMax := k.GetConfigInt64(ctx, constants.TxOutDelayMax)
 	maxTxOutOffset := k.GetConfigInt64(ctx, constants.MaxTxOutOffset)
 	var outbounds []TxOutItem
+	seen := make(map[string]struct{})
+	// The rolling window spans the longest timing class, while each item retains
+	// only its own signing period. Durable stale migrate markers are added below.
+	appendPendingOutbounds := func(blockOut *TxOut) {
+		for i, txOutItem := range blockOut.TxArray {
+			// only need to look at outbounds for the same asset
+			if !txOutItem.Coin.Asset.Equals(asset) {
+				continue
+			}
+			// only still outstanding txout will be considered
+			if !txOutItem.OutHash.IsEmpty() {
+				continue
+			}
+			if ctx.BlockHeight()-blockOut.Height > txOutItem.SigningTransactionPeriod(signingPeriod) {
+				continue
+			}
+			itemKey := strconv.FormatInt(blockOut.Height, 10) + "/" + strconv.Itoa(i)
+			seen[itemKey] = struct{}{}
+			outbounds = append(outbounds, txOutItem)
+		}
+	}
 	for height := startHeight; height <= ctx.BlockHeight()+txOutDelayMax; height++ {
 		blockOut, err := k.GetTxOut(ctx, height)
 		if err != nil {
@@ -238,19 +270,87 @@ func (k KVStore) GetPendingOutbounds(ctx cosmos.Context, asset common.Asset) []T
 			// rest will be empty as well
 			break
 		}
-		for _, txOutItem := range blockOut.TxArray {
-			// only need to look at outbounds for the same asset
-			if !txOutItem.Coin.Asset.Equals(asset) {
+		appendPendingOutbounds(blockOut)
+	}
+
+	if signingPeriod <= 0 {
+		return outbounds
+	}
+
+	staleMigratePendingBlocks := signingPeriod * constants.StaleMigratePendingSigningPeriodMultiplier
+	// Build a unique set of old pending migrate heights before loading txouts.
+	// The same height can appear multiple times for multi-asset migration, but
+	// processing a txout block more than once would double-deduct availability.
+	stalePendingVaultsByHeight := make(map[int64]map[common.PubKey]struct{})
+	stalePendingHeights := make([]int64, 0)
+	retiring, err := k.GetAsgardVaultsByStatus(ctx, RetiringVault)
+	if err != nil {
+		ctx.Logger().Error("fail to get retiring vaults for pending outbounds", "error", err)
+		return outbounds
+	}
+	for _, vault := range retiring {
+		for _, height := range vault.PendingTxBlockHeights {
+			if height < 1 || height >= standardStartHeight {
 				continue
 			}
-			// only still outstanding txout will be considered
-			if !txOutItem.OutHash.IsEmpty() {
+			// Pending migrate heights are durable references beyond the rolling
+			// signing window, but expired ones are retry-eligible in migrateFunds
+			// and must not reserve funds forever.
+			if ctx.BlockHeight()-height > staleMigratePendingBlocks {
 				continue
 			}
+			eligibleVaults, ok := stalePendingVaultsByHeight[height]
+			if !ok {
+				eligibleVaults = make(map[common.PubKey]struct{})
+				stalePendingVaultsByHeight[height] = eligibleVaults
+				stalePendingHeights = append(stalePendingHeights, height)
+			}
+			eligibleVaults[vault.PubKey] = struct{}{}
+		}
+	}
+	// Sort for deterministic accounting. This helper feeds vault-selection logic,
+	// so consensus-sensitive callers must not depend on map iteration order.
+	sort.Slice(stalePendingHeights, func(i, j int) bool {
+		return stalePendingHeights[i] < stalePendingHeights[j]
+	})
+	for _, height := range stalePendingHeights {
+		blockOut, err := k.GetTxOut(ctx, height)
+		if err != nil {
+			ctx.Logger().Error("fail to get stale pending migrate tx out", "error", err, "height", height)
+			continue
+		}
+		eligibleVaults := stalePendingVaultsByHeight[height]
+		for i, txOutItem := range blockOut.TxArray {
+			if !txOutItem.Coin.Asset.Equals(asset) || !txOutItem.OutHash.IsEmpty() {
+				continue
+			}
+			if _, ok := eligibleVaults[txOutItem.VaultPubKey]; !ok {
+				continue
+			}
+			// Only count the exact migrate item referenced by the durable marker.
+			// Other old txouts at the same height should not reserve this vault's funds.
+			if !isMigrateMemoForHeight(txOutItem.Memo, height) {
+				continue
+			}
+			itemKey := strconv.FormatInt(blockOut.Height, 10) + "/" + strconv.Itoa(i)
+			if _, ok := seen[itemKey]; ok {
+				continue
+			}
+			seen[itemKey] = struct{}{}
 			outbounds = append(outbounds, txOutItem)
 		}
 	}
 	return outbounds
+}
+
+func isMigrateMemoForHeight(memo string, height int64) bool {
+	base, _, _ := strings.Cut(memo, "|")
+	parts := strings.SplitN(base, ":", 3)
+	if len(parts) < 2 || !strings.EqualFold(parts[0], "migrate") {
+		return false
+	}
+	memoHeight, err := strconv.ParseInt(parts[1], 10, 64)
+	return err == nil && memoHeight == height
 }
 
 // SetVault save the Vault object to store
@@ -339,7 +439,7 @@ func (k KVStore) HasValidVaultPools(ctx cosmos.Context) (bool, error) {
 		if err := k.cdc.Unmarshal(iterator.Value(), &vault); err != nil {
 			return false, dbError(ctx, "fail to unmarshal vault", err)
 		}
-		if vault.HasFunds() {
+		if vault.HasFundsOrDeficit() {
 			return true, nil
 		}
 	}
@@ -471,8 +571,8 @@ func (k KVStore) DeleteVault(ctx cosmos.Context, pubkey common.PubKey) error {
 		return err
 	}
 
-	if vault.HasFunds() {
-		return errors.New("unable to delete vault: it still contains funds")
+	if vault.HasFundsOrDeficit() {
+		return errors.New("unable to delete vault: it still contains funds or deficit")
 	}
 
 	if vault.IsAsgard() {

@@ -2,6 +2,7 @@ package utxo
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"testing"
@@ -10,9 +11,14 @@ import (
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/hashicorp/go-multierror"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	tssMessages "gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc/zec"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
+	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/blame"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
+	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	. "gopkg.in/check.v1"
 )
 
@@ -24,6 +30,60 @@ const (
 var m *metrics.Metrics
 
 func TestPackage(t *testing.T) { TestingT(t) }
+
+func TestIsUTXOTxNotFoundErr(t *testing.T) {
+	// bitcoind/litecoind/dogecoind return RPC error -5 (ErrRPCInvalidAddressOrKey)
+	// for a genuinely-absent tx; that is the ONLY shape treated as "not found" —
+	// the linchpin of BTC dropped-broadcast recovery. Everything else must fail
+	// closed so a still-live broadcast is never mistaken for absent and re-signed.
+	if !isUTXOTxNotFoundErr(&btcjson.RPCError{Code: btcjson.ErrRPCInvalidAddressOrKey}) {
+		t.Fatal("code -5 RPCError should be recognized as not-found")
+	}
+	// zebrad (ZEC) surfaces the same not-found as a *zec.Error with code -5, not a
+	// *btcjson.RPCError — this is the shape that previously slipped through.
+	if !isUTXOTxNotFoundErr(&zec.Error{Code: -5, Message: "No such mempool or blockchain transaction"}) {
+		t.Fatal("zec.Error code -5 should be recognized as not-found")
+	}
+	for _, e := range []error{
+		nil,
+		errors.New("connection refused"),
+		&btcjson.RPCError{Code: btcjson.RPCErrorCode(-99)},
+		&zec.Error{Code: -8, Message: "parameter must be hexadecimal"},
+	} {
+		if isUTXOTxNotFoundErr(e) {
+			t.Fatalf("error %v should NOT be recognized as not-found", e)
+		}
+	}
+}
+
+func TestUTXOVerifyPresence(t *testing.T) {
+	notFoundErr := &btcjson.RPCError{Code: btcjson.ErrRPCInvalidAddressOrKey}
+	for _, tc := range []struct {
+		name    string
+		verbose *btcjson.TxRawResult
+		err     error
+		want    signercache.LookupResult
+	}{
+		// Canonical (mined) tx -> present, respect the cache.
+		{"confirmed canonical", &btcjson.TxRawResult{Confirmations: 6, BlockHash: "blockhash"}, nil, signercache.LookupFound},
+		// Still pending in mempool (no block yet) -> present, could still land.
+		{"mempool pending", &btcjson.TxRawResult{Confirmations: 0, BlockHash: ""}, nil, signercache.LookupFound},
+		// Retained by txindex but its block was orphaned (0 confs, block hash set) ->
+		// not canonical, surface as absent so mimir+expiry can re-sign. (Confirmations
+		// is uint64, so a non-canonical tx reports 0 rather than a negative value.)
+		{"orphaned block zero conf", &btcjson.TxRawResult{Confirmations: 0, BlockHash: "orphanhash"}, nil, signercache.LookupNotFound},
+		// Defensive: nil result with no error -> respect the cache (fail closed).
+		{"nil verbose no error", nil, nil, signercache.LookupFound},
+		// Definitive not-found error -> absent.
+		{"not found error", nil, notFoundErr, signercache.LookupNotFound},
+		// Any other error -> ambiguous, respect the cache.
+		{"transport error", nil, errors.New("connection refused"), signercache.LookupAmbiguous},
+	} {
+		if got := utxoVerifyPresence(tc.verbose, tc.err); got != tc.want {
+			t.Fatalf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
 
 func TestUpdateCurrentBlockHeightMonotonic(t *testing.T) {
 	client := &Client{}
@@ -51,6 +111,28 @@ func (s *HelpersSuite) TestAllNotSelectedForKeysign(c *C) {
 
 	mixed := multierror.Append(nil, tss.ErrNotSelectedForKeysign, errors.New("signature failed"))
 	c.Assert(allNotSelectedForKeysign(mixed), Equals, false)
+}
+
+// TestAllJoinPartyFailures covers the helper that decides whether a failed
+// UTXO keysign exposed no signature and may be rebuilt on the next attempt.
+func (s *HelpersSuite) TestAllJoinPartyFailures(c *C) {
+	syncFail := tss.NewKeysignError(ttypes.Blame{FailReason: blame.TssSyncFail})
+	roundFail := tss.NewKeysignError(ttypes.Blame{FailReason: blame.TssTimeout, Round: tssMessages.KEYSIGN2Unicast})
+	wrapped := fmt.Errorf("fail to get witness: %w", fmt.Errorf("cannot sign tx input: %w", syncFail))
+
+	c.Assert(allJoinPartyFailures(nil, 1), Equals, false)
+	c.Assert(allJoinPartyFailures(syncFail, 1), Equals, false)
+	c.Assert(allJoinPartyFailures(multierror.Append(nil, wrapped), 0), Equals, false)
+
+	c.Assert(allJoinPartyFailures(multierror.Append(nil, wrapped), 1), Equals, true)
+	c.Assert(allJoinPartyFailures(multierror.Append(nil, wrapped, syncFail), 2), Equals, true)
+
+	// one input signed or was never attempted
+	c.Assert(allJoinPartyFailures(multierror.Append(nil, wrapped), 2), Equals, false)
+	// the party formed for one input
+	c.Assert(allJoinPartyFailures(multierror.Append(nil, wrapped, roundFail), 2), Equals, false)
+	c.Assert(allJoinPartyFailures(multierror.Append(nil, wrapped, tss.ErrNotSelectedForKeysign), 2), Equals, false)
+	c.Assert(allJoinPartyFailures(multierror.Append(nil, wrapped, errors.New("rpc failed")), 2), Equals, false)
 }
 
 func GetMetricForTest(c *C, chain common.Chain) *metrics.Metrics {

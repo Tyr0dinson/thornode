@@ -184,6 +184,7 @@ func (a *Actor) Execute(c *OpConfig) (err error) {
 	}()
 
 	for _, op := range a.Ops {
+		opStart := time.Now()
 		for { // run each op until continue or finished
 			result := op(c)
 			if result.Error != nil {
@@ -196,7 +197,13 @@ func (a *Actor) Execute(c *OpConfig) (err error) {
 				break
 			}
 			if a.Timeout > 0 && time.Since(start) > a.Timeout {
-				a.Log().Err(ErrTimeout).Stringer("op", op).Msg("actor timed out")
+				// split the budget so slow setup is distinguishable from slow verification
+				a.Log().Err(ErrTimeout).
+					Stringer("op", op).
+					Dur("op_elapsed", time.Since(opStart)).
+					Dur("elapsed", time.Since(start)).
+					Dur("timeout", a.Timeout).
+					Msg("actor timed out")
 				return ErrTimeout
 			}
 			time.Sleep(a.Interval)

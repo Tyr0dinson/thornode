@@ -28,16 +28,19 @@ import (
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	sdktypes "github.com/cosmos/cosmos-sdk/types"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
+	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/blame"
 	txscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/txscript"
 	"gitlab.com/thorchain/thornode/v3/cmd"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -327,6 +330,75 @@ func (s *BitcoinSignerSuite) TestSignTxHappyPathWithPrivateKey(c *C) {
 	c.Assert(buf, NotNil)
 }
 
+// keysignFailKeyManager fails every remote sign with the configured blame.
+type keysignFailKeyManager struct {
+	errorThorchainKeyManager
+	blame types2.Blame
+}
+
+func (m *keysignFailKeyManager) RemoteSign(msg []byte, algo common.SigningAlgo, poolPubKey string, thorchainHeight int64) ([]byte, []byte, error) {
+	return nil, nil, tss.NewKeysignError(m.blame)
+}
+
+// TestSignTxCheckpointAfterKeysignFailure verifies an unsigned tx is only
+// checkpointed once a keysign got past forming its party. A tx whose party
+// never formed exposed no signature and must be rebuilt on the next attempt.
+func (s *BitcoinSignerSuite) TestSignTxCheckpointAfterKeysignFailure(c *C) {
+	addr, err := types2.GetRandomPubKey().GetAddress(common.BTCChain)
+	c.Assert(err, IsNil)
+	inHash := thorchain.GetRandomTxHash()
+	txOutItem := stypes.TxOutItem{
+		Chain:       common.BTCChain,
+		ToAddress:   addr,
+		VaultPubKey: types2.GetRandomPubKey(),
+		Coins: common.Coins{
+			common.NewCoin(common.BTCAsset, cosmos.NewUint(10)),
+		},
+		MaxGas: common.Gas{
+			common.NewCoin(common.BTCAsset, cosmos.NewUint(1000)),
+		},
+		InHash: inHash,
+		Memo:   "OUT:" + inHash.String(),
+	}
+	blockMeta := utxo.NewBlockMeta("000000000000008a0da55afa8432af3b15c225cc7e04d32f0de912702dd9e2ae",
+		100,
+		"0000000000000068f0710c510e94bd29aa624745da43e32a1de887387306bfda")
+	blockMeta.AddCustomerTransaction("256222fb25a9950479bb26049a2c00e75b89abbb7f0cf646c623b93e942c4c34")
+	c.Assert(s.client.temporalStorage.SaveBlockMeta(blockMeta.Height, blockMeta), IsNil)
+
+	syncFail := &keysignFailKeyManager{blame: types2.Blame{FailReason: blame.TssSyncFail}}
+	roundFail := &keysignFailKeyManager{blame: types2.Blame{FailReason: blame.TssTimeout, Round: messages.KEYSIGN2Unicast}}
+
+	partyNotFormed := s.m.GetCounterVec(metrics.UTXOKeysignPartyNotFormed).WithLabelValues(common.BTCChain.String())
+	before := testutil.ToFloat64(partyNotFormed)
+
+	// party never formed: no checkpoint, the next attempt rebuilds the tx
+	s.client.tssKeySigner = syncFail
+	signed, checkpoint, _, err := s.client.SignTx(txOutItem, 1)
+	c.Assert(err, ErrorMatches, "(?s).*signers fail to sync.*")
+	c.Assert(signed, IsNil)
+	c.Assert(checkpoint, IsNil)
+	c.Assert(testutil.ToFloat64(partyNotFormed), Equals, before+1)
+
+	// party formed and failed in a round: the tx is checkpointed
+	s.client.tssKeySigner = roundFail
+	signed, checkpoint, _, err = s.client.SignTx(txOutItem, 1)
+	c.Assert(err, NotNil)
+	c.Assert(signed, IsNil)
+	c.Assert(checkpoint, NotNil)
+
+	// a checkpointed tx stays pinned even if its party later fails to form
+	txOutItem.Checkpoint = checkpoint
+	s.client.tssKeySigner = syncFail
+	signed, retained, _, err := s.client.SignTx(txOutItem, 1)
+	c.Assert(err, NotNil)
+	c.Assert(signed, IsNil)
+	c.Assert(retained, DeepEquals, checkpoint)
+
+	// only the discard path counts
+	c.Assert(testutil.ToFloat64(partyNotFormed), Equals, before+1)
+}
+
 func (s *BitcoinSignerSuite) TestSignTxWithoutPredefinedMaxGas(c *C) {
 	addr, err := types2.GetRandomPubKey().GetAddress(common.BTCChain)
 	c.Assert(err, IsNil)
@@ -414,7 +486,7 @@ func (s *BitcoinSignerSuite) TestConsolidateVaultUTXOsSkipsBelowThreshold(c *C) 
 	vault := types2.Vault{PubKey: s.client.nodePubKey}
 	cacheKey := stypes.BroadcastCacheKey(vault.PubKey.String(), s.client.GetChain().String())
 
-	err := s.client.consolidateVaultUTXOs(vault, 3)
+	err := s.client.consolidateVaultUTXOs(vault, 3, 0)
 	c.Assert(err, IsNil)
 
 	latestTx, err := s.client.signerCacheManager.GetLatestRecordedTx(cacheKey)
@@ -458,7 +530,7 @@ func (s *BitcoinSignerSuite) TestConsolidateVaultUTXOsReturnsSignError(c *C) {
 	s.client.tssKeySigner = &errorThorchainKeyManager{}
 	vault := types2.Vault{PubKey: types2.GetRandomPubKey()}
 
-	err := s.client.consolidateVaultUTXOs(vault, 2)
+	err := s.client.consolidateVaultUTXOs(vault, 2, 0)
 	c.Assert(err, ErrorMatches, "(?s)sign consolidate txout item: .*mock remote sign failure.*")
 }
 
@@ -492,7 +564,7 @@ func (s *BitcoinSignerSuite) TestConsolidateVaultUTXOsReturnsBroadcastError(c *C
 		s.client.rpc = originalRPC
 	}()
 
-	err = s.client.consolidateVaultUTXOs(vault, 2)
+	err = s.client.consolidateVaultUTXOs(vault, 2, 0)
 	c.Assert(err, ErrorMatches, "broadcast consolidate tx: fail to broadcast transaction to chain: .*broadcast failed.*")
 }
 

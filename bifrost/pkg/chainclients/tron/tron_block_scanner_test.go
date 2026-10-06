@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/tron/api"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/tokenlist"
 	"gitlab.com/thorchain/thornode/v3/config"
 
@@ -32,8 +32,10 @@ func (s *BlockScannerTestSuite) SetUpSuite(c *C) {
 	}
 
 	chainConfig := config.BifrostChainConfiguration{
+		ChainID: common.TRONChain,
 		APIHost: s.api.URL,
 		BlockScanner: config.BifrostBlockScannerConfiguration{
+			ChainID:            common.TRONChain,
 			HTTPRequestTimeout: time.Second * 2,
 		},
 	}
@@ -43,7 +45,9 @@ func (s *BlockScannerTestSuite) SetUpSuite(c *C) {
 	)
 	c.Assert(err, IsNil)
 
-	pubkeyMgr := &pubkeymanager.MockPoolAddressValidator{}
+	vaultAddress, err := api.ConvertAddress("412867f90e345015cd2234f562c5767296b717157b")
+	c.Assert(err, IsNil)
+	pubkeyMgr := receiptRetryVaultValidator{address: vaultAddress}
 
 	s.scanner, err = NewTronBlockScanner(
 		chainConfig,

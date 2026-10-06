@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -91,12 +92,14 @@ func defaultXMRFrostChurnReadinessDeps() xmrFrostChurnReadinessDeps {
 			{name: "cat-bifrost", url: "http://127.0.0.1:6041/p2pid"},
 			{name: "fox-bifrost", url: "http://127.0.0.1:6042/p2pid"},
 			{name: "pig-bifrost", url: "http://127.0.0.1:6043/p2pid"},
+			{name: "frog-bifrost", url: "http://127.0.0.1:6044/p2pid"},
 		}),
 		frostEndpoints: readinessEndpointsFromEnv("SIMULATION_XMR_FROST_READINESS_ENDPOINTS", []readinessEndpoint{
 			{name: "dog-xmr-frost", url: "http://127.0.0.1:8283/health"},
 			{name: "cat-xmr-frost", url: "http://127.0.0.1:8285/health"},
 			{name: "fox-xmr-frost", url: "http://127.0.0.1:8286/health"},
 			{name: "pig-xmr-frost", url: "http://127.0.0.1:8287/health"},
+			{name: "frog-xmr-frost", url: "http://127.0.0.1:8288/health"},
 		}),
 		moneroRPC: envOrDefault("SIMULATION_XMR_DAEMON_RPC", defaultXMRDaemonRPC),
 	}
@@ -227,6 +230,12 @@ func readyXMRChurnValidators(expected []common.Address, nodes []openapi.Node) (i
 			pending = append(pending, fmt.Sprintf("%s:%s:no_peer_id", address, node.Status))
 			continue
 		}
+		// Match NodeAccountPreflightCheck's registered-IP requirement. Standby
+		// remains valid here because HaltChurning also pauses markReadyActors.
+		if net.ParseIP(node.IpAddress) == nil {
+			pending = append(pending, fmt.Sprintf("%s:%s:invalid_ip_address", address, node.Status))
+			continue
+		}
 		ready++
 	}
 	return ready, pending
@@ -295,6 +304,9 @@ func readinessEndpointsFromEnv(envName string, defaults []readinessEndpoint) []r
 			name: fmt.Sprintf("%s-%d", strings.ToLower(envName), i+1),
 			url:  part,
 		})
+	}
+	if len(endpoints) == 0 {
+		return defaults
 	}
 	return endpoints
 }

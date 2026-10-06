@@ -31,11 +31,19 @@ BRANCH?=$(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 GITREF?=$(shell git rev-parse --short HEAD 2>/dev/null)
 BUILDTAG?=$(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 
-# Forward CI_JOB_TOKEN into docker builds as a BuildKit secret so the
-# in-image `go mod download` can fetch tss-lib-private. Empty when running
-# locally without the token (Dockerfile mount is required=false).
+# Forward a gitlab.com credential ("user:token") into docker builds as the
+# go_private_auth BuildKit secret so the in-image `go mod download` can fetch
+# tss-lib-private. CI picks it with scripts/ci-go-private-auth.sh; without that,
+# fall back to CI_JOB_TOKEN. Empty when running locally without either
+# (Dockerfile mount is required=false).
+ifeq ($(strip $(GO_PRIVATE_GIT_CREDENTIAL)),)
 ifneq ($(strip $(CI_JOB_TOKEN)),)
-DOCKER_BUILD_SECRETS := --secret id=ci_job_token,env=CI_JOB_TOKEN
+GO_PRIVATE_GIT_CREDENTIAL := gitlab-ci-token:$(CI_JOB_TOKEN)
+endif
+endif
+export GO_PRIVATE_GIT_CREDENTIAL
+ifneq ($(strip $(GO_PRIVATE_GIT_CREDENTIAL)),)
+DOCKER_BUILD_SECRETS := --secret id=go_private_auth,env=GO_PRIVATE_GIT_CREDENTIAL
 else
 DOCKER_BUILD_SECRETS :=
 endif
@@ -75,7 +83,12 @@ ifeq (test,$(firstword $(MAKECMDGOALS)))
 endif
 
 TEST_DIR?=${TEST_PATHS}
-BUILD_FLAGS := -ldflags '$(ldflags)' -tags ${TAG} -trimpath
+# -buildmode=pie builds a position-independent executable (ET_DYN) so host ASLR can
+# randomize the binary's own text/data, not just the shared libraries it loads. It
+# needs external linking, which the cgo build (wasmvm) already uses, and the release
+# toolchain (golang bookworm image) ships gcc. Covers the shipped
+# thornode/bifrost/recover-keyshare-backup (BINARIES) via the build/install targets.
+BUILD_FLAGS := -ldflags '$(ldflags)' -tags ${TAG} -trimpath -buildmode=pie
 PARALLELISM ?= 1
 TEST_BUILD_FLAGS := -parallel=$(PARALLELISM) -tags=mocknet
 ifdef RUN
@@ -119,7 +132,7 @@ openapi:
 	@docker run --rm \
 		--user $(shell id -u):$(shell id -g) \
 		-v $$PWD/openapi:/mnt \
-		openapitools/openapi-generator-cli:v6.0.0@sha256:310bd0353c11863c0e51e5cb46035c9e0778d4b9c6fe6a7fc8307b3b41997a35 \
+		$(DOCKER_MIRROR)openapitools/openapi-generator-cli:v6.0.0@sha256:310bd0353c11863c0e51e5cb46035c9e0778d4b9c6fe6a7fc8307b3b41997a35 \
 		generate -i /mnt/openapi.yaml -g go -o /mnt/gen
 	@rm openapi/gen/go.mod openapi/gen/go.sum
 	@find ./openapi/gen -type f -print0 | xargs -0 sed -i.bak \
@@ -131,8 +144,27 @@ openapi:
 	@find ./openapi/gen -type f -name '*.bak' -delete
 
 protoVer=0.13.2
-protoImageName=ghcr.io/cosmos/proto-builder:$(protoVer)
-protoImage=docker run --rm -v $(CURDIR):/workspace --workdir /workspace $(protoImageName)
+# Index digest of ghcr.io/cosmos/proto-builder:$(protoVer); bump it with protoVer.
+protoDigest=sha256:05f5ccdc37d6ac6856d035d37bde91d31d36cfebe3c82ac771a40c7ff2a5c4c6
+# CI sets PROTO_BUILDER_REPO to its registry mirror. The digest pins the image
+# from either repository, so a tag replaced in the mirror fails to pull rather
+# than running.
+protoImageName=$(or $(PROTO_BUILDER_REPO),ghcr.io/cosmos/proto-builder):$(protoVer)@$(protoDigest)
+
+# buf resolves its BSR dependencies from buf.build at generate/lint/breaking
+# time. When the machine running these targets is blocked by buf.build (the
+# Finland CI runner's egress IP is served HTTP 403 at their edge), set BUF_PROXY
+# to a proxy with clean egress and it is forwarded into the container. Unset by
+# default, so local development and unaffected runners are untouched. In CI,
+# .buf-egress drops BUF_PROXY on runners that can reach buf.build directly.
+BUF_PROXY ?=
+ifneq ($(strip $(BUF_PROXY)),)
+protoProxyEnv := -e HTTPS_PROXY=$(BUF_PROXY) -e HTTP_PROXY=$(BUF_PROXY) -e NO_PROXY=localhost,127.0.0.1
+else
+protoProxyEnv :=
+endif
+
+protoImage=docker run --rm -v $(CURDIR):/workspace $(protoProxyEnv) --workdir /workspace $(protoImageName)
 
 proto-all: proto-format proto-lint proto-gen format
 
@@ -146,7 +178,7 @@ proto-format:
 
 proto-format-check:
 	@echo "Checking Protobuf formatting"
-	@find ./ -name "*.proto" -print0 | xargs -0L1 $(protoImage) clang-format --dry-run -Werror
+	@$(protoImage) find ./ -name "*.proto" -exec clang-format --dry-run -Werror {} +
 
 proto-lint:
 	@$(protoImage) sh -c "cd proto/thorchain/v1 && buf lint --error-format=json"
@@ -177,7 +209,7 @@ build:
 	go build ${BUILD_FLAGS} ${BINARIES}
 
 test-xmr-frost-e2e:
-	GOTOOLCHAIN=go1.23.10 go test -count=1 -tags=mocknet ./bifrost/pkg/chainclients/monero/... -run '$${XMR_FROST_E2E_RUN}'
+	go test -count=1 -tags=mocknet ./bifrost/pkg/chainclients/monero/... -run '$${XMR_FROST_E2E_RUN}'
 
 install:
 	go install ${BUILD_FLAGS} ${BINARIES}
@@ -216,12 +248,14 @@ test-coverage: test-network-specific
 coverage-report: test-coverage
 	@go tool cover -html=coverage.txt
 
+# only print the coverage total: the full per-function dump pushed the CI job log
+# past GitLab's 4MB cap, truncating the "total:" line the coverage regex reads
 test-coverage-sum: test-network-specific
 	@go run gotest.tools/gotestsum@v1.13.0 --junitfile report.xml --format testname -- ${TEST_BUILD_FLAGS} -v -coverprofile=coverage.txt -covermode count ${TEST_DIR}
 	sed -i.bak '/\.pb\.go:/d' coverage.txt
 	@rm -f coverage.txt.bak
 	@GOFLAGS='${TEST_BUILD_FLAGS}' go run github.com/boumenot/gocover-cobertura@v1.4.0 < coverage.txt > coverage.xml
-	@go tool cover -func=coverage.txt
+	@go tool cover -func=coverage.txt | tail -n 1
 	@go tool cover -html=coverage.txt -o coverage.html
 
 test:
@@ -244,10 +278,15 @@ test-network-specific:
 	@go test -tags stagenet ${RUN_FLAG} ./common
 	@go test -tags chainnet ${RUN_FLAG} ./common
 	@go test -tags mainnet ${RUN_FLAG} ./common ./bifrost/pkg/chainclients/utxo/...
+	@go test -tags mainnet ./x/thorchain -run TestPackage -check.f Migrate # mainnet store-migration tests are mainnet-tagged; otherwise they never run in CI (unit-tests job is mocknet-only)
 	@go test -tags mocknet ${RUN_FLAG} ./common ./bifrost/pkg/chainclients/utxo/...
 
 test-race:
 	@go test -race ${TEST_BUILD_FLAGS} ${RUN_FLAG} ${TEST_DIR}
+
+# bifrost is the concurrent half of the system; go-tss is covered by test-go-tss.
+test-race-bifrost:
+	@go test -race -timeout 20m ${TEST_BUILD_FLAGS} ${RUN_FLAG} $$(go list ./bifrost/... | grep -v bifrost/tss/go-tss)
 
 # ------------------------------ Performance Tests ------------------------------
 
@@ -318,6 +357,9 @@ test-performance-clean:
 
 # ------------------------------ Regression Tests ------------------------------
 
+REGTEST_BIN_DIR ?= /regtest
+REGTEST_MNT_DIR ?= /mnt
+
 test-regression: build-test-regression
 	@docker run --rm ${DOCKER_TTY_ARGS} \
 		-e DEBUG -e RUN -e EXPORT -e TIME_FACTOR -e PARALLELISM -e FAIL_FAST \
@@ -344,30 +386,95 @@ test-regression-coverage:
 _build-test-regression:
 	@go install -ldflags '$(ldflags)' -tags=mocknet,regtest ./cmd/thornode
 	@go build -ldflags '$(ldflags) -X gitlab.com/thorchain/thornode/v3/constants.Version=9.999.0' \
-		-cover -tags=mocknet,regtest -o /regtest/cover-thornode ./cmd/thornode
+		-cover -tags=mocknet,regtest -o $(REGTEST_BIN_DIR)/cover-thornode ./cmd/thornode
 	@go build -ldflags '$(ldflags) -X gitlab.com/thorchain/thornode/v3/constants.Version=9.999.0' \
-		-tags mocknet -o /regtest/regtest ./test/regression/cmd
+		-tags mocknet -o $(REGTEST_BIN_DIR)/regtest ./test/regression/cmd
 
 # internal target used in test run
 _test-regression:
-	@rm -rf /mnt/coverage && mkdir -p /mnt/coverage
-	@cd test/regression && /regtest/regtest
-	@go tool covdata textfmt -i /mnt/coverage -o /mnt/coverage/coverage.txt
-	@grep -v -E -e archive.go -e 'v[0-9]+.go' -e openapi/gen /mnt/coverage/coverage.txt > /mnt/coverage/coverage-filtered.txt
-	@go tool cover -func /mnt/coverage/coverage-filtered.txt > /mnt/coverage/func-coverage.txt
-	@awk '/^total:/ {print "Regression Coverage: " $$3}' /mnt/coverage/func-coverage.txt
-	@chown -R ${UID}:${GID} /mnt
+	@rm -rf $(REGTEST_MNT_DIR)/coverage && mkdir -p $(REGTEST_MNT_DIR)/coverage
+	@cd test/regression && REGTEST_BIN_DIR=$(REGTEST_BIN_DIR) REGTEST_MNT_DIR=$(REGTEST_MNT_DIR) $(REGTEST_BIN_DIR)/regtest
+	@go tool covdata textfmt -i $(REGTEST_MNT_DIR)/coverage -o $(REGTEST_MNT_DIR)/coverage/coverage.txt
+	@grep -v -E -e archive.go -e 'v[0-9]+.go' -e openapi/gen $(REGTEST_MNT_DIR)/coverage/coverage.txt > $(REGTEST_MNT_DIR)/coverage/coverage-filtered.txt
+	@go tool cover -func $(REGTEST_MNT_DIR)/coverage/coverage-filtered.txt > $(REGTEST_MNT_DIR)/coverage/func-coverage.txt
+	@awk '/^total:/ {print "Regression Coverage: " $$3}' $(REGTEST_MNT_DIR)/coverage/func-coverage.txt
+	@chown -R ${UID}:${GID} $(REGTEST_MNT_DIR)
 
 # ------------------------------ Simulation Tests ------------------------------
 
 test-simulation: build-mocknet reset-mocknet test-simulation-no-reset
 
-TEST_SIMULATION_STAGES ?= seed,bootstrap,xmr-coverage,arb,swaps,memoless-swaps,consolidate,inactive-vault-refunds,solvency,ragnarok
-TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,swaps,memoless-swaps,dash-instantsend,inactive-vault-refunds,solvency,ragnarok,xmr-post-churn
+TEST_SIMULATION_STAGES ?= seed,bootstrap,xmr-coverage,arb,swaps,memoless-swaps,consolidate,memoless-refunds,solvency,ragnarok
+TEST_SIMULATION_CLUSTER_STAGES ?= seed,bootstrap,xmr-coverage,xmr-spent-refs,swaps,memoless-swaps,dash-instantsend,inactive-vault-refunds,memoless-refunds,cluster-churn,solvency,xmr-post-churn,ragnarok
+# A full cluster run must fail rather than silently omit unavailable XMR coverage.
+TEST_SIMULATION_REQUIRE_XMR ?= 1
 
-test-simulation-cluster: build-test-simulation build-mocknet-cluster reset-mocknet-cluster
+.PHONY: test-mocknet-startup test-xmr-readiness-config test-simulation-xmr-readiness
+test-mocknet-startup:
+	@python3 -m unittest discover -s build/scripts/tests -v
+
+# Render every XMR profile and check the effective per-validator settings.
+test-xmr-readiness-config:
+	@python3 -m unittest discover -s build/docker/tests -p 'test_xmr_readiness.py' -v
+
+# Exercise initial-vault creation, churn, funding, and a real BTC-to-XMR swap.
+# Requires enabled XMR keygen; see docs/xmr-readiness-baseline.md.
+test-simulation-xmr-readiness: TEST_SIMULATION_CLUSTER_STAGES=seed,bootstrap,xmr-post-churn
+test-simulation-xmr-readiness: override TEST_SIMULATION_REQUIRE_XMR=1
+test-simulation-xmr-readiness: test-simulation-cluster
+
+test-simulation-cluster: test-mocknet-startup test-xmr-readiness-config prepare-mocknet-cluster
 	@docker stop docker-midgard-1 docker-midgard-db-1 >/dev/null 2>&1 || true
 	@STAGES=$(TEST_SIMULATION_CLUSTER_STAGES) docker run --rm ${DOCKER_TTY_ARGS} \
+		-e PARALLELISM=$(PARALLELISM) -e STAGES \
+		-e XMR_POST_CHURN_REQUIRED=$(TEST_SIMULATION_REQUIRE_XMR) \
+		-e RANDOM_SEED_HEX \
+		-e SIMULATION_PPROF_ADDRESS \
+		-e XMR_SIM_HELPER_ENDPOINT -e XMR_SIM_HELPER_AUTH_BEARER \
+		-e XMR_FROST_ENDPOINT -e XMR_FROST_AUTH_BEARER \
+		--network host -w /app \
+		thornode-simtest sh -c 'make _test-simulation'
+
+# Reproduce the XMR monovault keygen mass-jailing (issue: keygen timing skew
+# jails members that participated). One bifrost (pig) gets a test-only
+# shortened FROST round-3 wait via XMR_KEYGEN_JAIL_ROUND3_TIMEOUT_MS, and
+# netem adds symmetric latency on every bifrost's p2p port so transcript
+# verifications lag round payloads by one hop. The victim then abandons a DKG
+# its peers can finish, and the xmr-keygen-jail actor asserts the resulting
+# split: new XMR vault created AND a member jailed for "failed to vote keygen
+# in time". Tune the two knobs if the split does not reproduce: the round-3
+# timeout must sit between one and two netem delays after round-3 start.
+# The delay must be small enough that the regular Asgard go-tss keygen (n-of-n
+# over the same p2p port, much chattier than FROST) still succeeds, or the new
+# XMR monovault is never activated ("waiting for regular vault rotation before
+# activating xmr monovault") and the repro stalls. 500ms is mainnet-realistic;
+# the round-3 timeout must sit between one and two netem delays.
+XMR_KEYGEN_JAIL_ROUND3_TIMEOUT_MS ?= 750
+XMR_KEYGEN_JAIL_NETEM_DELAY_MS ?= 500
+
+test-simulation-keygen-jail: export XMR_KEYGEN_JAIL_ROUND3_TIMEOUT_MS := $(XMR_KEYGEN_JAIL_ROUND3_TIMEOUT_MS)
+test-simulation-keygen-jail: build-test-simulation build-mocknet-cluster reset-mocknet-cluster
+	@docker stop docker-midgard-1 docker-midgard-db-1 >/dev/null 2>&1 || true
+	@echo "running seed+bootstrap BEFORE latency injection so the bifrost p2p mesh can form"
+	@echo "(netem-from-start makes the multi-round-trip libp2p handshake exceed the dial"
+	@echo " timeout, so no p2p connection ever forms and every churn keygen times out)"
+	@STAGES=seed,bootstrap docker run --rm ${DOCKER_TTY_ARGS} \
+		-e PARALLELISM=$(PARALLELISM) -e STAGES \
+		-e XMR_SIM_HELPER_ENDPOINT -e XMR_SIM_HELPER_AUTH_BEARER \
+		-e XMR_FROST_ENDPOINT -e XMR_FROST_AUTH_BEARER \
+		--network host -w /app \
+		thornode-simtest sh -c 'make _test-simulation'
+	@echo "applying netem delay $(XMR_KEYGEN_JAIL_NETEM_DELAY_MS)ms to bifrost p2p (port 5040)"
+	@for c in docker-bifrost-1 docker-bifrost-cat-1 docker-bifrost-fox-1 docker-bifrost-pig-1 docker-bifrost-frog-1; do \
+		docker run --rm --net container:$$c --cap-add NET_ADMIN alpine:3.20 sh -c "\
+			apk add -q iproute2 && \
+			tc qdisc replace dev eth0 root handle 1: prio bands 4 priomap 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 && \
+			tc qdisc add dev eth0 parent 1:4 handle 40: netem delay $(XMR_KEYGEN_JAIL_NETEM_DELAY_MS)ms && \
+			tc filter add dev eth0 parent 1: protocol ip u32 match ip dport 5040 0xffff flowid 1:4 && \
+			tc filter add dev eth0 parent 1: protocol ip u32 match ip sport 5040 0xffff flowid 1:4" \
+			|| exit 1; \
+	done
+	@STAGES=xmr-keygen-jail docker run --rm ${DOCKER_TTY_ARGS} \
 		-e PARALLELISM=$(PARALLELISM) -e STAGES \
 		-e XMR_SIM_HELPER_ENDPOINT -e XMR_SIM_HELPER_AUTH_BEARER \
 		-e XMR_FROST_ENDPOINT -e XMR_FROST_AUTH_BEARER \
@@ -378,6 +485,8 @@ test-simulation-no-reset: build-test-simulation
 	@docker stop docker-midgard-1 docker-midgard-db-1 >/dev/null 2>&1 || true
 	@STAGES=$(TEST_SIMULATION_STAGES) docker run --rm ${DOCKER_TTY_ARGS} \
 		-e PARALLELISM=$(PARALLELISM) -e STAGES \
+		-e RANDOM_SEED_HEX \
+		-e SIMULATION_PPROF_ADDRESS \
 		-e XMR_SIM_HELPER_ENDPOINT -e XMR_SIM_HELPER_AUTH_BEARER \
 		-e XMR_FROST_ENDPOINT -e XMR_FROST_AUTH_BEARER \
 		--network host -w /app \
@@ -447,13 +556,17 @@ reset-mocknet-fork-%: stop-mocknet
 
 # ------------------------------ Multi Node Mocknet ------------------------------
 
+# test-simulation-cluster stops midgard before the sim starts; the CI path
+# (test-simulation-cluster-native) empties this so midgard is never pulled.
+MOCKNET_CLUSTER_MIDGARD ?= --profile midgard
+
 run-mocknet-cluster:
 	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster \
-		--profile midgard up -d
+		$(MOCKNET_CLUSTER_MIDGARD) up -d
 	@# Compose can leave dependent validator thornodes in Created under detached
 	@# startup when the primary thornode healthcheck is not yet satisfied.
 	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster \
-		--profile midgard up -d thornode-cat thornode-fox thornode-pig
+		$(MOCKNET_CLUSTER_MIDGARD) up -d thornode-cat thornode-fox thornode-pig thornode-frog
 
 stop-mocknet-cluster:
 	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster --profile midgard down -v
@@ -469,6 +582,93 @@ ps-mocknet-cluster:
 	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster --profile midgard ps
 
 reset-mocknet-cluster: stop-mocknet-cluster build-mocknet-cluster run-mocknet-cluster
+
+# L1 chains of the cluster that run a released image, so they can start before
+# the thornode and simtest images are built.
+MOCKNET_CLUSTER_L1_SERVICES := gaia noble bitcoin bitcoin-cash dogecoin litecoin \
+	ethereum base xrp binance-smart avalanche tron-supernode tron-fullnode solana \
+	polygon zcash
+
+run-mocknet-cluster-l1:
+	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster \
+		up -d $(MOCKNET_CLUSTER_L1_SERVICES)
+
+# reset-mocknet-cluster plus the simtest image, with the L1 chains starting in
+# the background while the images build. Their image pulls and warm-up (the sim
+# waits for tron and solana to advance blocks) then overlap the build instead of
+# following it. run-mocknet-cluster finds them running and leaves them as is.
+prepare-mocknet-cluster: stop-mocknet-cluster
+	@$(MAKE) --no-print-directory run-mocknet-cluster-l1 & l1_pid=$$!; \
+	$(MAKE) --no-print-directory build-test-simulation build-mocknet-cluster; build_rc=$$?; \
+	wait $$l1_pid; l1_rc=$$?; \
+	[ $$build_rc -eq 0 ] && [ $$l1_rc -eq 0 ]
+	@$(MAKE) --no-print-directory run-mocknet-cluster
+
+# ------------------------------ CI: native sim build ------------------------------
+#
+# CI's test-simulation builds the Go binaries in the job container, with the
+# runner's warm Go caches, and only copies them into thin images
+# (build/docker/Dockerfile.native). The in-image builds started from an empty
+# dind every run: `go mod download` (the tss-lib-private fetch) plus a cold
+# compile of simtest, thornode and events, 6-8 min before the cluster could
+# start. The job must run on golang:1.26.4-bookworm, the build stage of
+# build/docker/Dockerfile, so the binaries link against the same glibc as the
+# bookworm runtime. Local `make test-simulation-cluster` is unchanged.
+NATIVE_SIM_DIR ?= $(CURDIR)/tmp/native-sim
+
+# Same flags as `make install` in build/docker/Dockerfile. That build has no .git
+# and takes COMMIT from its `ARG COMMIT=unknown`, so match it.
+_build-native-thornode: COMMIT=unknown
+_build-native-thornode: TAG=mocknet
+_build-native-thornode:
+	@go build -ldflags '$(ldflags)' -tags mocknet -trimpath -buildmode=pie \
+		-o $(NATIVE_SIM_DIR)/ $(BINARIES)
+	@# Same as tools/events/Dockerfile: `go install -tags $$TAG ./tools/events`.
+	@go build -tags mocknet -o $(NATIVE_SIM_DIR)/events ./tools/events
+
+# Same as _build-test-simulation in ci/Dockerfile.simtest, whose context has no
+# .git, so COMMIT is empty there.
+_build-native-simtest: COMMIT=
+_build-native-simtest: TAG=mocknet
+_build-native-simtest:
+	@cd test/simulation && \
+		go build -ldflags '$(ldflags)' -tags mocknet -o $(NATIVE_SIM_DIR)/simtest ./cmd
+
+build-mocknet-cluster-native:
+	@rm -rf $(NATIVE_SIM_DIR) && mkdir -p $(NATIVE_SIM_DIR)
+	@$(MAKE) --no-print-directory _build-native-thornode _build-native-simtest
+	@cp $$(go list -m -f '{{.Dir}}' github.com/CosmWasm/wasmvm/v2)/internal/api/libwasmvm.*.so $(NATIVE_SIM_DIR)/
+	@chmod u+w $(NATIVE_SIM_DIR)/libwasmvm.*.so
+	@cp -r build/scripts $(NATIVE_SIM_DIR)/scripts
+	@DOCKER_BUILDKIT=1 docker build build/docker -f build/docker/Dockerfile \
+		--target runtime -t thornode-runtime:mocknet --build-arg DOCKER_MIRROR
+	@for t in thornode:thornode:mocknet events:docker-events simtest:thornode-simtest-native; do \
+		DOCKER_BUILDKIT=1 docker build $(NATIVE_SIM_DIR) -f build/docker/Dockerfile.native \
+			--target $${t%%:*} -t $${t#*:} || exit 1; \
+	done
+	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster build monero-daemon
+
+# prepare-mocknet-cluster with the native build, and without midgard.
+prepare-mocknet-cluster-native: stop-mocknet-cluster
+	@$(MAKE) --no-print-directory run-mocknet-cluster-l1 & l1_pid=$$!; \
+	$(MAKE) --no-print-directory build-mocknet-cluster-native; build_rc=$$?; \
+	wait $$l1_pid; l1_rc=$$?; \
+	[ $$build_rc -eq 0 ] && [ $$l1_rc -eq 0 ]
+	@$(MAKE) --no-print-directory run-mocknet-cluster MOCKNET_CLUSTER_MIDGARD=
+
+# test-simulation-cluster for CI: same stages, PARALLELISM and environment. The
+# mocknet startup unit tests are left to CI's test-mocknet-scripts job, which
+# runs the same suite; the XMR readiness config test still runs here.
+test-simulation-cluster-native: test-xmr-readiness-config prepare-mocknet-cluster-native
+	@STAGES=$(TEST_SIMULATION_CLUSTER_STAGES) docker run --rm ${DOCKER_TTY_ARGS} \
+		-e PARALLELISM=$(PARALLELISM) -e STAGES \
+		-e XMR_POST_CHURN_REQUIRED=$(TEST_SIMULATION_REQUIRE_XMR) \
+		-e RANDOM_SEED_HEX \
+		-e SIMULATION_PPROF_ADDRESS \
+		-e XMR_SIM_HELPER_ENDPOINT -e XMR_SIM_HELPER_AUTH_BEARER \
+		-e XMR_FROST_ENDPOINT -e XMR_FROST_AUTH_BEARER \
+		--network host \
+		thornode-simtest-native
 
 # ------------------------------ Test Sync ------------------------------
 

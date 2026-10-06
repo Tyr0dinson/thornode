@@ -10,6 +10,33 @@ type AddressSuite struct{}
 
 var _ = Suite(&AddressSuite{})
 
+// TestAddressEqualsXMRIsCaseSensitive documents that case is part of Monero
+// base58 address identity.
+func (s *AddressSuite) TestAddressEqualsXMRIsCaseSensitive(c *C) {
+	original := Address("4abcDEF")
+	caseVariant := Address("4Abcdef")
+
+	c.Check(AddressEquals(XMRChain, original, original), Equals, true)
+	c.Check(AddressEquals(XMRChain, original, caseVariant), Equals, false)
+	c.Check(AddressEquals(XMRChain, original, Address(" "+original.String())), Equals, false)
+}
+
+// TestAddressEqualsNonXMRPreservesLegacyBehavior protects the case-insensitive
+// fallback used before the chain-aware helper was introduced.
+func (s *AddressSuite) TestAddressEqualsNonXMRPreservesLegacyBehavior(c *C) {
+	c.Check(AddressEquals(BTCChain, Address("legacyAddress"), Address("LEGACYaddress")), Equals, true)
+}
+
+// TestEquivalentAddressesDefersToAddressEquals documents that off the Zcash
+// path the equivalence is exactly AddressEquals - notably the case-sensitive
+// Monero comparison.
+func (s *AddressSuite) TestEquivalentAddressesDefersToAddressEquals(c *C) {
+	c.Check(EquivalentAddresses(XMRChain, Address("4abcDEF"), Address("4abcDEF")), Equals, true)
+	c.Check(EquivalentAddresses(XMRChain, Address("4abcDEF"), Address("4Abcdef")), Equals, false)
+	c.Check(EquivalentAddresses(BTCChain, Address("legacyAddress"), Address("LEGACYaddress")), Equals, true)
+	c.Check(EquivalentAddresses(BTCChain, Address("legacyAddress"), Address("other")), Equals, false)
+}
+
 func (s *AddressSuite) TestAddress(c *C) {
 	c.Assert(AllChains, HasLen, 20)
 

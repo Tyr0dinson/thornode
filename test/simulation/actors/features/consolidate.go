@@ -155,9 +155,7 @@ func (a *ConsolidateActor) donate(config *OpConfig) OpResult {
 	txid, err := DepositL1(a.Log(), client, a.asset, memo, a.donateAmount)
 	if err != nil {
 		a.Log().Error().Err(err).Msg("failed to deposit L1")
-		return OpResult{
-			Continue: false,
-		}
+		return SimTxErrorResult(err)
 	}
 
 	a.Log().Info().Str("txid", txid).Msg("broadcasted donate")

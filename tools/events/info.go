@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -11,6 +12,8 @@ import (
 	"gopkg.in/yaml.v2"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	tssMessages "gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -36,6 +39,7 @@ func ScanInfo(block *thorscan.BlockResponse) {
 	KeygenFailure(block)
 	TORAnchorDrift(block)
 	UpgradeProposalAndApproval(block)
+	TssKeysignFailure(block)
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -849,4 +853,321 @@ func UpgradeProposalAndApproval(block *thorscan.BlockResponse) {
 			notify.Notify(config.Get().Notifications.Info, title, block.Header.Height, lines, level, fields)
 		}
 	}
+}
+
+////////////////////////////////////////////////////////////////////////////////////////
+// TSS Keysign Failure
+////////////////////////////////////////////////////////////////////////////////////////
+
+// terminalKeysignRounds mirrors the acceptance set in the TssKeysignHandler
+// freeze path: a consensus failure at one of these rounds means enough signing
+// material may have escaped that the network may freeze the vault. Used only
+// to annotate the round histogram in rate alerts — the per-report terminal
+// Security alert is owned by LastRoundFailures in security.go.
+var terminalKeysignRounds = map[string]bool{
+	tssMessages.KEYSIGN9:           true,
+	tssMessages.EDDSAKEYSIGN3:      true,
+	tssMessages.FROSTKEYSIGNSHARE:  true,
+	tssMessages.FROSTKEYSIGNRESULT: true,
+}
+
+// maxBlameSummaryNodes caps the number of blamed nodes listed in rate alerts.
+const maxBlameSummaryNodes = 5
+
+// TssKeysignFailureRecord is one confirmed keysign failure within the window.
+type TssKeysignFailureRecord struct {
+	Height int64    `json:"height"`
+	Round  string   `json:"round"`
+	Blame  []string `json:"blame,omitempty"`
+	// ID is the MsgTssKeysignFail consensus id from the event, used to keep
+	// failure accounting idempotent when a block is re-scanned after a crash.
+	ID string `json:"id,omitempty"`
+}
+
+type TssKeysignFailureHistory struct {
+	VaultFailures      map[string][]TssKeysignFailureRecord `json:"vault_failures"`
+	VaultPastCounts    map[string][]int                     `json:"vault_past_counts"`
+	NetworkPastCounts  []int                                `json:"network_past_counts"`
+	LastSnapshotHeight int64                                `json:"last_snapshot_height"`
+}
+
+func TssKeysignFailure(block *thorscan.BlockResponse) {
+	// load history
+	history := TssKeysignFailureHistory{}
+	err := util.Load("tss_keysign_failure", &history)
+	if err != nil {
+		log.Debug().Err(err).Msg("failed to load tss keysign failure history")
+	}
+	if history.VaultFailures == nil {
+		history.VaultFailures = make(map[string][]TssKeysignFailureRecord)
+	}
+	if history.VaultPastCounts == nil {
+		history.VaultPastCounts = make(map[string][]int)
+	}
+	if history.LastSnapshotHeight == 0 {
+		history.LastSnapshotHeight = block.Header.Height
+	}
+
+	// constants
+	window := config.Get().Thresholds.TssKeysignFailure.WindowBlocks
+	sigma := config.Get().Thresholds.TssKeysignFailure.Sigma
+	minSnapshots := config.Get().Thresholds.TssKeysignFailure.MinSnapshots
+	maxSnapshots := config.Get().Thresholds.TssKeysignFailure.MaxSnapshots
+
+	// capture previous counts for edge trigger
+	prevVaultCounts := make(map[string]int)
+	prevNetworkCount := 0
+	for k, v := range history.VaultFailures {
+		prevVaultCounts[k] = len(v)
+		prevNetworkCount += len(v)
+	}
+
+	// track current block failures — the event is self-contained (vault
+	// pubkey, canonical round and blamed nodes are attributes), no need to
+	// decode the tx messages
+	for _, tx := range block.Txs {
+		for _, event := range tx.Result.Events {
+			if event["type"] != types.TSSKeysignFailure {
+				continue
+			}
+
+			vaultPubKey := event["pubkey"]
+			if vaultPubKey == "" {
+				log.Error().Msg("tss_keysign_failure event missing vault pubkey")
+				continue
+			}
+
+			record := TssKeysignFailureRecord{
+				Height: block.Header.Height,
+				Round:  event["round"],
+				Blame:  parseKeysignBlameNodes(event["blame"]),
+				ID:     event["id"],
+			}
+
+			// skip failures already recorded in the window — history is
+			// persisted before the scan height cursor, so a crash can replay
+			// a block, and the consensus id is stable per failure instance
+			duplicate := false
+			if record.ID != "" {
+				for _, f := range history.VaultFailures[vaultPubKey] {
+					if f.ID == record.ID {
+						duplicate = true
+						break
+					}
+				}
+			}
+			if duplicate {
+				continue
+			}
+
+			history.VaultFailures[vaultPubKey] = append(history.VaultFailures[vaultPubKey], record)
+		}
+	}
+
+	// prune history (moving window)
+	prune := func(failures []TssKeysignFailureRecord) []TssKeysignFailureRecord {
+		valid := []TssKeysignFailureRecord{}
+		for _, f := range failures {
+			if block.Header.Height-f.Height <= window {
+				valid = append(valid, f)
+			}
+		}
+		return valid
+	}
+
+	// snapshot counts for statistics every window
+	if block.Header.Height-history.LastSnapshotHeight >= window {
+		networkCount := 0
+		for _, failures := range history.VaultFailures {
+			networkCount += len(failures)
+		}
+		history.NetworkPastCounts = append(history.NetworkPastCounts, networkCount)
+		if len(history.NetworkPastCounts) > maxSnapshots {
+			history.NetworkPastCounts = history.NetworkPastCounts[1:]
+		}
+
+		for pubKey, failures := range history.VaultFailures {
+			history.VaultPastCounts[pubKey] = append(history.VaultPastCounts[pubKey], len(failures))
+			if len(history.VaultPastCounts[pubKey]) > maxSnapshots {
+				history.VaultPastCounts[pubKey] = history.VaultPastCounts[pubKey][1:]
+			}
+		}
+		history.LastSnapshotHeight = block.Header.Height
+	}
+
+	// helper to calculate threshold
+	getStatsThreshold := func(history []int) (float64, bool) {
+		if len(history) < minSnapshots { // need minimum history for meaningful stats
+			return 0, false
+		}
+		sum := 0
+		for _, v := range history {
+			sum += v
+		}
+		mean := float64(sum) / float64(len(history))
+
+		variance := 0.0
+		for _, v := range history {
+			variance += (float64(v) - mean) * (float64(v) - mean)
+		}
+		stdDev := math.Sqrt(variance / float64(len(history)))
+
+		return mean + (sigma * stdDev), true
+	}
+
+	// prune vault failures and gather the current network window
+	networkFailures := []TssKeysignFailureRecord{}
+	for pubKey, failures := range history.VaultFailures {
+		history.VaultFailures[pubKey] = prune(failures)
+		networkFailures = append(networkFailures, history.VaultFailures[pubKey]...)
+	}
+	currNetworkCount := len(networkFailures)
+
+	// check network alert
+	netStatsThreshold, netStatsOk := getStatsThreshold(history.NetworkPastCounts)
+	if netStatsOk {
+		// analyze-ignore(float-comparison)
+		if float64(currNetworkCount) > netStatsThreshold && float64(prevNetworkCount) <= netStatsThreshold {
+			notifyTSSKeysignFailure(block.Header.Height, "Network High TSS Keysign Failure Rate", "", currNetworkCount, int(netStatsThreshold), networkFailures)
+		}
+	}
+
+	// check vault alerts
+	for pubKey, failures := range history.VaultFailures {
+		prevVaultCount := prevVaultCounts[pubKey]
+		currVaultCount := len(failures)
+
+		// calculate threshold: use vault stats if available, else fallback to network stats
+		threshold, ok := getStatsThreshold(history.VaultPastCounts[pubKey])
+		if !ok {
+			threshold, ok = netStatsThreshold, netStatsOk
+		}
+
+		// only alert if we have a valid threshold (from vault or network)
+		if ok {
+			// analyze-ignore(float-comparison)
+			if float64(currVaultCount) > threshold && float64(prevVaultCount) <= threshold {
+				notifyTSSKeysignFailure(block.Header.Height, "Vault High TSS Keysign Failure Rate", pubKey, currVaultCount, int(threshold), failures)
+			}
+		}
+	}
+
+	// save history
+	err = util.Store("tss_keysign_failure", history)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to save tss keysign failure history")
+	}
+}
+
+// parseKeysignBlameNodes splits the event blame attribute (pubkeys joined by
+// ", ") into a list of blamed node pubkeys.
+func parseKeysignBlameNodes(blame string) []string {
+	nodes := []string{}
+	for _, node := range strings.Split(blame, ",") {
+		node = strings.TrimSpace(node)
+		if node == "" {
+			continue
+		}
+		nodes = append(nodes, node)
+	}
+	return nodes
+}
+
+// shortKeysignPubKey renders the conventional last-4-character node shorthand.
+func shortKeysignPubKey(pk string) string {
+	if len(pk) <= 4 {
+		return pk
+	}
+	return pk[len(pk)-4:]
+}
+
+// summarizeKeysignRounds renders a per-round histogram of the given failures.
+func summarizeKeysignRounds(failures []TssKeysignFailureRecord) string {
+	counts := map[string]int{}
+	for _, f := range failures {
+		round := f.Round
+		if round == "" {
+			round = "unknown"
+		}
+		counts[round]++
+	}
+	if len(counts) == 0 {
+		return ""
+	}
+	type roundCount struct {
+		round string
+		count int
+	}
+	sorted := []roundCount{}
+	for round, count := range counts {
+		sorted = append(sorted, roundCount{round, count})
+	}
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].count != sorted[j].count {
+			return sorted[i].count > sorted[j].count
+		}
+		return sorted[i].round < sorted[j].round
+	})
+	lines := []string{}
+	for _, rc := range sorted {
+		line := fmt.Sprintf("`%s`: %d", rc.round, rc.count)
+		if terminalKeysignRounds[rc.round] {
+			line += " (terminal)"
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// summarizeKeysignBlame renders the most-blamed nodes across the given failures.
+func summarizeKeysignBlame(failures []TssKeysignFailureRecord) string {
+	counts := map[string]int{}
+	for _, f := range failures {
+		for _, node := range f.Blame {
+			counts[node]++
+		}
+	}
+	if len(counts) == 0 {
+		return ""
+	}
+	type blameCount struct {
+		node  string
+		count int
+	}
+	sorted := []blameCount{}
+	for node, count := range counts {
+		sorted = append(sorted, blameCount{node, count})
+	}
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].count != sorted[j].count {
+			return sorted[i].count > sorted[j].count
+		}
+		return sorted[i].node < sorted[j].node
+	})
+	lines := []string{}
+	for i, bc := range sorted {
+		if i == maxBlameSummaryNodes {
+			lines = append(lines, fmt.Sprintf("…and %d more", len(sorted)-maxBlameSummaryNodes))
+			break
+		}
+		lines = append(lines, fmt.Sprintf("`%s`: %d", shortKeysignPubKey(bc.node), bc.count))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func notifyTSSKeysignFailure(height int64, title, pubKey string, count, threshold int, failures []TssKeysignFailureRecord) {
+	fields := util.NewOrderedMap()
+	if pubKey != "" {
+		fields.Set("Vault", fmt.Sprintf("`%s`", shortKeysignPubKey(pubKey)))
+	}
+	fields.Set("Failures (window)", fmt.Sprintf("%d", count))
+	fields.Set("Expected Rate (Avg + Nσ)", fmt.Sprintf("%d", threshold))
+	if rounds := summarizeKeysignRounds(failures); rounds != "" {
+		fields.Set("Rounds", rounds)
+	}
+	if blame := summarizeKeysignBlame(failures); blame != "" {
+		fields.Set("Blame", blame)
+	}
+
+	notify.Notify(config.Get().Notifications.Info, title, height, nil, notify.Danger, fields)
 }

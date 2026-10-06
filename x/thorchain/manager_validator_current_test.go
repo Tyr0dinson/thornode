@@ -16,6 +16,14 @@ type ValidatorMgrTestSuite struct{}
 
 var _ = Suite(&ValidatorMgrTestSuite{})
 
+type bondYieldRewardTestGasManager struct {
+	*DummyGasManager
+}
+
+func (bondYieldRewardTestGasManager) GetAssetOutboundFee(_ cosmos.Context, _ common.Asset, _ bool) (cosmos.Uint, error) {
+	return cosmos.NewUint(common.One), nil
+}
+
 func (vts *ValidatorMgrTestSuite) SetUpSuite(_ *C) {
 	SetupConfigForTest()
 }
@@ -60,6 +68,152 @@ func (vts *ValidatorMgrTestSuite) TestChurnWithChainHalt(c *C) {
 	ready, err = k.ListValidatorsByStatus(ctx, NodeReady)
 	c.Assert(err, IsNil)
 	c.Assert(len(ready), Equals, 1) // standby node should be ready if churn started
+}
+
+func (vts *ValidatorMgrTestSuite) TestChurnWithRetiringVaultDust(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	mgr := NewDummyMgr()
+	mgr.K = k
+	networkMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(networkMgr, NotNil)
+	minBond := constants.GetConstantValues(GetCurrentVersion()).GetInt64Value(constants.MinimumBondInRune)
+
+	// 1 standby node
+	standbyNode := GetRandomValidatorNode(NodeStandby)
+	standbyNode.Bond = cosmos.NewUint(uint64(minBond))
+	c.Assert(k.SetNodeAccount(ctx, standbyNode), IsNil)
+
+	// 1 active vault with btc, created at block 1 (so lastChurnHeight=1)
+	vault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	vault.Membership = append(vault.Membership, standbyNode.PubKeySet.Secp256k1.String())
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	// 1 retiring vault still holding XMR above the dust threshold
+	dust := common.XMRChain.DustThreshold()
+	retiringVault := NewVault(1, RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{common.XMRChain}.Strings(), []ChainContract{})
+	retiringVault.Coins = common.Coins{common.NewCoin(common.XMRAsset, dust.Add(cosmos.NewUint(1)))}
+	c.Assert(k.SetVault(ctx, retiringVault), IsNil)
+
+	// Set block height to churn interval after vault creation (1 + 60 = 61)
+	mgr.Keeper().SetMimir(ctx, constants.ChurnInterval.String(), 60)
+	ctx = ctx.WithBlockHeight(61)
+
+	// should not start churn while a retiring vault has funds above dust
+	c.Assert(networkMgr.BeginBlock(ctx, mgr, nil), IsNil)
+	ready, err := k.ListValidatorsByStatus(ctx, NodeReady)
+	c.Assert(err, IsNil)
+	c.Assert(len(ready), Equals, 0)
+
+	// A non-gas balance remains migration work even when its amount is below
+	// that chain's gas-asset dust threshold.
+	tokenAsset := common.Asset{Chain: common.ETHChain, Symbol: "TOKEN", Ticker: "TOKEN"}
+	retiringVault.Coins = common.Coins{common.NewCoin(tokenAsset, cosmos.OneUint())}
+	c.Assert(k.SetVault(ctx, retiringVault), IsNil)
+	c.Assert(networkMgr.BeginBlock(ctx, mgr, nil), IsNil)
+	ready, err = k.ListValidatorsByStatus(ctx, NodeReady)
+	c.Assert(err, IsNil)
+	c.Assert(len(ready), Equals, 0)
+
+	// only a sub-dust remainder left (e.g. the XMR migration buffer awaiting
+	// its post-final-round burn); rotation should no longer be blocked, even
+	// when the vault retains a separate accounting deficit
+	retiringVault.Coins = common.Coins{common.NewCoin(common.XMRAsset, dust)}
+	retiringVault.Deficit = common.Coins{common.NewCoin(common.ETHAsset, cosmos.OneUint())}
+	c.Assert(k.SetVault(ctx, retiringVault), IsNil)
+
+	c.Assert(networkMgr.BeginBlock(ctx, mgr, nil), IsNil)
+	ready, err = k.ListValidatorsByStatus(ctx, NodeReady)
+	c.Assert(err, IsNil)
+	c.Assert(len(ready), Equals, 1)
+}
+
+// TestChurnAfterDeficitOnlyRetiringVaultGoesInactive covers the normal block
+// flow where migration cleanup inactivates a deficit-only retiring vault before
+// the churn gate runs.
+func (vts *ValidatorMgrTestSuite) TestChurnAfterDeficitOnlyRetiringVaultGoesInactive(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	validatorMgr := newValidatorMgr(mgr.Keeper(), mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(validatorMgr, NotNil)
+	c.Assert(networkMgr, NotNil)
+
+	minBond := constants.GetConstantValues(GetCurrentVersion()).GetInt64Value(constants.MinimumBondInRune)
+	standbyNode := GetRandomValidatorNode(NodeStandby)
+	standbyNode.Bond = cosmos.NewUint(uint64(minBond))
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, standbyNode), IsNil)
+
+	activeVault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	activeVault.Membership = append(activeVault.Membership, standbyNode.PubKeySet.Secp256k1.String())
+	c.Assert(mgr.Keeper().SetVault(ctx, activeVault), IsNil)
+
+	// The deficit-bearing vault starts as RetiringVault to mirror the state
+	// created by vault debit underflow during churn settlement.
+	retiringVault := NewVault(1, RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	retiringVault.Deficit = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1)))
+	c.Assert(mgr.Keeper().SetVault(ctx, retiringVault), IsNil)
+
+	mgr.Keeper().SetMimir(ctx, constants.FundMigrationInterval.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.ChurnInterval.String(), 60)
+	ctx = ctx.WithBlockHeight(61)
+
+	c.Assert(networkMgr.migrateFunds(ctx, mgr), IsNil)
+	// Migration cleanup should move the vault out of the status set that blocks
+	// rotation, without writing off or deleting the deficit.
+	updatedVault, err := mgr.Keeper().GetVault(ctx, retiringVault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(updatedVault.Status, Equals, InactiveVault)
+	c.Assert(updatedVault.GetDeficit(common.BTCAsset).Amount.Equal(cosmos.NewUint(1)), Equals, true)
+
+	retiringVaults, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, RetiringVault)
+	c.Assert(err, IsNil)
+	c.Assert(retiringVaults, HasLen, 0)
+
+	c.Assert(validatorMgr.BeginBlock(ctx, mgr, nil), IsNil)
+	// A successful churn marks the standby validator as ready for the new vault.
+	ready, err := mgr.Keeper().ListValidatorsByStatus(ctx, NodeReady)
+	c.Assert(err, IsNil)
+	c.Assert(ready, HasLen, 1)
+}
+
+// TestChurnWithDeficitOnlyRetiringVault exercises the churn gate directly with
+// a deficit-bearing RetiringVault still present, proving that deficit alone does
+// not block rotation.
+func (vts *ValidatorMgrTestSuite) TestChurnWithDeficitOnlyRetiringVault(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	validatorMgr := newValidatorMgr(mgr.Keeper(), mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(validatorMgr, NotNil)
+
+	minBond := constants.GetConstantValues(GetCurrentVersion()).GetInt64Value(constants.MinimumBondInRune)
+	standbyNode := GetRandomValidatorNode(NodeStandby)
+	standbyNode.Bond = cosmos.NewUint(uint64(minBond))
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, standbyNode), IsNil)
+
+	activeVault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	activeVault.Membership = append(activeVault.Membership, standbyNode.PubKeySet.Secp256k1.String())
+	c.Assert(mgr.Keeper().SetVault(ctx, activeVault), IsNil)
+
+	// Leave the vault in RetiringVault for this test instead of running
+	// migrateFunds, so BeginBlock must make the funds-vs-deficit distinction.
+	retiringVault := NewVault(1, RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	retiringVault.Deficit = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1)))
+	c.Assert(mgr.Keeper().SetVault(ctx, retiringVault), IsNil)
+
+	mgr.Keeper().SetMimir(ctx, constants.ChurnInterval.String(), 60)
+	ctx = ctx.WithBlockHeight(61)
+
+	c.Assert(validatorMgr.BeginBlock(ctx, mgr, nil), IsNil)
+	// If the churn gate treated any RetiringVault as blocking, this node would
+	// still be standby.
+	ready, err := mgr.Keeper().ListValidatorsByStatus(ctx, NodeReady)
+	c.Assert(err, IsNil)
+	c.Assert(ready, HasLen, 1)
+
+	// BeginBlock only proves the gate allows rotation; lifecycle cleanup is
+	// covered by TestChurnAfterDeficitOnlyRetiringVaultGoesInactive.
+	updatedVault, err := mgr.Keeper().GetVault(ctx, retiringVault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(updatedVault.Status, Equals, RetiringVault)
+	c.Assert(updatedVault.GetDeficit(common.BTCAsset).Amount.Equal(cosmos.NewUint(1)), Equals, true)
 }
 
 func (vts *ValidatorMgrTestSuite) TestSetupValidatorNodes(c *C) {
@@ -852,6 +1006,50 @@ func (vts *ValidatorMgrTestSuite) TestFindNextVaultNodeAccountsBFT(c *C) {
 	c.Assert(nasAfter, HasLen, 4, Commentf("%d", len(nasAfter)))
 }
 
+func (vts *ValidatorMgrTestSuite) TestRegularVaultMembershipNeedsKeygenWhenActiveVaultMembershipStale(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	k.SetMimir(ctx, constants.AsgardSize.String(), 10)
+	mgr := NewDummyMgrWithKeeper(k)
+	validatorMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+
+	active := make(NodeAccounts, 0, 3)
+	expectedMembers := make(common.PubKeys, 0, 3)
+	for i := 0; i < 3; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		active = append(active, na)
+		expectedMembers = append(expectedMembers, na.PubKeySet.Secp256k1)
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+	}
+
+	needsKeygen, err := validatorMgr.regularVaultMembershipNeedsKeygen(ctx, active)
+	c.Assert(err, IsNil)
+	c.Assert(needsKeygen, Equals, false)
+
+	xmr := NewVaultV2(1, ActiveVault, AsgardVault, GetRandomPubKey(), xmrMonovaultChains().Strings(), nil, GetRandomPubKey())
+	xmr.Membership = expectedMembers.Strings()
+	xmr.PubKeyFrost = GetRandomEd25519PubKey()
+	c.Assert(k.SetVault(ctx, xmr), IsNil)
+
+	needsKeygen, err = validatorMgr.regularVaultMembershipNeedsKeygen(ctx, active)
+	c.Assert(err, IsNil)
+	c.Assert(needsKeygen, Equals, true)
+
+	regular := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.THORChain}.Strings(), nil)
+	regular.Membership = expectedMembers[:2].Strings()
+	c.Assert(k.SetVault(ctx, regular), IsNil)
+
+	needsKeygen, err = validatorMgr.regularVaultMembershipNeedsKeygen(ctx, active)
+	c.Assert(err, IsNil)
+	c.Assert(needsKeygen, Equals, true)
+
+	regular.Membership = expectedMembers.Strings()
+	c.Assert(k.SetVault(ctx, regular), IsNil)
+
+	needsKeygen, err = validatorMgr.regularVaultMembershipNeedsKeygen(ctx, active)
+	c.Assert(err, IsNil)
+	c.Assert(needsKeygen, Equals, false)
+}
+
 func (vts *ValidatorMgrTestSuite) TestChurnInnerSchedulesReplacementXMRKeygen(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	mgr := NewDummyMgrWithKeeper(k)
@@ -894,13 +1092,201 @@ func (vts *ValidatorMgrTestSuite) TestChurnInnerSchedulesReplacementXMRKeygen(c 
 	c.Assert(networkDummy.xmrNas.Contains(ready), Equals, true)
 }
 
+func (vts *ValidatorMgrTestSuite) TestChurnInnerRecoversMissingXMRAtBFTFloor(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	mgr := NewDummyMgrWithKeeper(k)
+	networkDummy, ok := mgr.NetworkMgr().(*NetworkMgrDummy)
+	c.Assert(ok, Equals, true)
+	validatorMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+
+	k.SetMimir(ctx, constants.DesiredValidatorSet.String(), 4)
+	k.SetMimir(ctx, constants.AsgardSize.String(), 10)
+	membership := make([]string, 0, 4)
+	active := make(NodeAccounts, 0, 4)
+	for i := 0; i < 4; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+		membership = append(membership, na.PubKeySet.Secp256k1.String())
+		active = append(active, na)
+	}
+
+	// The ordinary vault already matches the stable four-node set. With no
+	// ready node there is no regular rotation to incidentally trigger XMR.
+	regular := NewVault(
+		1,
+		ActiveVault,
+		AsgardVault,
+		GetRandomPubKey(),
+		common.Chains{common.THORChain, common.BTCChain}.Strings(),
+		nil,
+	)
+	regular.Membership = append(regular.Membership, membership...)
+	c.Assert(k.SetVault(ctx, regular), IsNil)
+
+	c.Assert(validatorMgr.churnInner(ctx), IsNil)
+	c.Assert(networkDummy.nas, HasLen, 0, Commentf("must not schedule an unnecessary regular keygen"))
+	c.Assert(networkDummy.xmrNas, HasLen, 4)
+	for _, member := range active {
+		c.Assert(networkDummy.xmrNas.Contains(member), Equals, true)
+	}
+}
+
+func (vts *ValidatorMgrTestSuite) TestHasPendingCoScheduledKeygenUsesExtendedValidity(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	const retryBlocks int64 = 2
+	k.SetMimir(ctx, constants.ChurnRetryInterval.String(), retryBlocks)
+	mgr := NewDummyMgrWithKeeper(k)
+	validatorMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+
+	const keygenHeight int64 = 2
+	members := common.PubKeys{GetRandomPubKey(), GetRandomPubKey(), GetRandomPubKey()}
+	keygen, err := NewKeygen(keygenHeight, members.Strings(), AsgardKeygen)
+	c.Assert(err, IsNil)
+	xmrKeygen, err := NewKeygen(keygenHeight, members.Strings(), XMRMonovaultKeygen)
+	c.Assert(err, IsNil)
+	keygenBlock := NewKeygenBlock(keygenHeight)
+	keygenBlock.Keygens = []Keygen{keygen, xmrKeygen}
+	k.SetKeygenBlock(ctx, keygenBlock)
+
+	unrelatedVault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.THORChain}.Strings(), nil)
+	unrelatedVault.Membership = common.PubKeys{GetRandomPubKey()}.Strings()
+	c.Assert(k.SetVault(ctx, unrelatedVault), IsNil)
+
+	extendedValidity := keygenResultValidityBlocks(ctx, k, XMRMonovaultKeygen)
+	c.Assert(extendedValidity > retryBlocks, Equals, true)
+
+	// The co-scheduled Asgard keygen remains pending beyond its plain retry
+	// window because the TSS handler still accepts its reports through the XMR
+	// window. The second height also proves the scan lookback was widened.
+	for _, height := range []int64{
+		keygenHeight + retryBlocks,
+		keygenHeight + retryBlocks + 1,
+		keygenHeight + extendedValidity - 1,
+	} {
+		pending, pendingErr := validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(height), AsgardKeygen)
+		c.Assert(pendingErr, IsNil)
+		c.Assert(pending, Equals, true, Commentf("height %d", height))
+	}
+
+	pending, err := validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+extendedValidity), AsgardKeygen)
+	c.Assert(err, IsNil)
+	c.Assert(pending, Equals, true)
+
+	pending, err = validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+extendedValidity), XMRMonovaultKeygen)
+	c.Assert(err, IsNil)
+	c.Assert(pending, Equals, true)
+
+	pending, err = validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+extendedValidity+1), XMRMonovaultKeygen)
+	c.Assert(err, IsNil)
+	c.Assert(pending, Equals, false)
+}
+
+func (vts *ValidatorMgrTestSuite) TestHasPendingStandaloneAsgardExpiresAfterRetryBoundary(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	const retryBlocks int64 = 2
+	k.SetMimir(ctx, constants.ChurnRetryInterval.String(), retryBlocks)
+	mgr := NewDummyMgrWithKeeper(k)
+	validatorMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+
+	const keygenHeight int64 = 2
+	members := common.PubKeys{GetRandomPubKey(), GetRandomPubKey(), GetRandomPubKey()}
+	keygen, err := NewKeygen(keygenHeight, members.Strings(), AsgardKeygen)
+	c.Assert(err, IsNil)
+	keygenBlock := NewKeygenBlock(keygenHeight)
+	keygenBlock.Keygens = []Keygen{keygen}
+	k.SetKeygenBlock(ctx, keygenBlock)
+
+	pending, err := validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+retryBlocks-1), AsgardKeygen)
+	c.Assert(err, IsNil)
+	c.Assert(pending, Equals, true)
+
+	pending, err = validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+retryBlocks), AsgardKeygen)
+	c.Assert(err, IsNil)
+	c.Assert(pending, Equals, true)
+
+	pending, err = validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+retryBlocks+1), AsgardKeygen)
+	c.Assert(err, IsNil)
+	c.Assert(pending, Equals, false)
+}
+
+// Rounded node shares must conserve the funded reward, independently of Bond Yield.
+// The live five-validator replacement allocated 342 + 4*1141 from only 4905.
+func (vts *ValidatorMgrTestSuite) TestBondRewardCapsRoundedNodeShares(c *C) {
+	for _, rewardUnits := range []uint64{0, 3, 4905} {
+		for _, enabled := range []int64{0, 1} {
+			ctx, k := setupKeeperForTest(c)
+			ctx = ctx.WithBlockHeight(20)
+			mgr := NewDummyMgrWithKeeper(k)
+			eventMgr, err := GetEventManager(GetCurrentVersion())
+			c.Assert(err, IsNil)
+			mgr.eventMgr = eventMgr
+			validatorMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), eventMgr)
+			k.SetMimir(ctx, constants.BondYieldEnabled.String(), enabled)
+
+			initialBonds := cosmos.ZeroUint()
+			for _, weight := range []uint64{3, 10, 10, 10, 10} {
+				na := GetRandomValidatorNode(NodeActive)
+				na.ActiveBlockHeight = 1
+				na.Bond = cosmos.NewUint(weight * common.One)
+				c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+				operator, addressErr := na.BondAddress.AccAddress()
+				c.Assert(addressErr, IsNil)
+				bp := NewBondProviders(na.NodeAddress)
+				bp.NodeOperatorFee = cosmos.NewUint(500)
+				bp.Providers = []BondProvider{NewBondProvider(operator)}
+				bp.Bond(na.Bond, operator)
+				c.Assert(bp.SetAutoClaim(operator, 4000, ""), Equals, true)
+				c.Assert(k.SetBondProviders(ctx, bp), IsNil)
+				initialBonds = initialBonds.Add(na.Bond)
+			}
+			reward := cosmos.NewUint(rewardUnits)
+			network, err := k.GetNetwork(ctx)
+			c.Assert(err, IsNil)
+			network.BondRewardRune = reward
+			c.Assert(k.SetNetwork(ctx, network), IsNil)
+			FundModule(c, ctx, k, BondName, initialBonds.Add(reward).Uint64())
+			assertBondInvariantHolds(c, ctx, k.InvariantRoutes())
+
+			c.Assert(validatorMgr.distributeBondReward(ctx, mgr), IsNil)
+			assertBondInvariantHolds(c, ctx, k.InvariantRoutes())
+			network, err = k.GetNetwork(ctx)
+			c.Assert(err, IsNil)
+			c.Check(network.BondRewardRune.IsZero(), Equals, true)
+
+			paid := cosmos.ZeroUint()
+			rewardEvents := 0
+			for _, event := range ctx.EventManager().Events() {
+				if event.Type != "bond" {
+					continue
+				}
+				attrs := make(map[string]string)
+				for _, attr := range event.Attributes {
+					attrs[attr.Key] = attr.Value
+				}
+				if attrs["bond_type"] == "bond_reward" {
+					amount, err := cosmos.ParseUint(attrs["amount"])
+					c.Assert(err, IsNil)
+					paid = paid.Add(amount)
+					rewardEvents++
+				}
+			}
+			c.Check(rewardEvents, Equals, 5)
+			c.Check(paid.Equal(reward), Equals, true, Commentf("BondYieldEnabled=%d paid=%s", enabled, paid))
+		}
+	}
+}
+
 func (vts *ValidatorMgrTestSuite) TestWeightedBondReward(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	ctx = ctx.WithBlockHeight(20)
 
 	mgr := NewDummyMgrWithKeeper(k)
-	networkMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	eventMgr, err := GetEventManager(GetCurrentVersion())
+	c.Assert(err, IsNil)
+	mgr.eventMgr = eventMgr
+	networkMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), eventMgr)
 	c.Assert(networkMgr, NotNil)
+	k.SetMimir(ctx, constants.BondYieldEnabled.String(), 1)
 
 	na1 := GetRandomValidatorNode(NodeActive)
 	na1.Bond = cosmos.NewUint(4 * common.One)
@@ -938,6 +1324,355 @@ func (vts *ValidatorMgrTestSuite) TestWeightedBondReward(c *C) {
 	// na3.Bond is below the hard cap, it should have a smaller reward accordingly (2/8ths)
 	// (5% of 25000000 is 1250000)
 	c.Check(nodeOperator3Balance.AmountOf(common.RuneNative.Native()).String(), Equals, strconv.FormatInt(1250000, 10))
+
+	bondYieldEvents := 0
+	for _, event := range ctx.EventManager().Events() {
+		if event.Type != "bond_yield" {
+			continue
+		}
+		bondYieldEvents++
+	}
+	c.Check(bondYieldEvents, Equals, 0)
+}
+
+func (vts *ValidatorMgrTestSuite) TestBondYieldDisabledRebondsRewards(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(20)
+
+	mgr := NewDummyMgrWithKeeper(k)
+	eventMgr, err := GetEventManager(GetCurrentVersion())
+	c.Assert(err, IsNil)
+	mgr.eventMgr = eventMgr
+	networkMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), eventMgr)
+	c.Assert(networkMgr, NotNil)
+
+	na := GetRandomValidatorNode(NodeActive)
+	na.Bond = cosmos.NewUint(4 * common.One)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	network, _ := networkMgr.k.GetNetwork(ctx)
+	network.BondRewardRune = cosmos.NewUint(1 * common.One)
+	c.Assert(mgr.Keeper().SetNetwork(ctx, network), IsNil)
+
+	FundModule(c, ctx, mgr.Keeper(), BondName, 10*common.One)
+
+	c.Assert(networkMgr.distributeBondReward(ctx, mgr), IsNil)
+
+	updated, err := mgr.Keeper().GetNodeAccount(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(updated.Bond.GT(na.Bond), Equals, true)
+
+	bp, err := mgr.Keeper().GetBondProviders(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	providerAcc, err := na.BondAddress.AccAddress()
+	c.Assert(err, IsNil)
+	provider := bp.Get(providerAcc)
+	c.Assert(provider.IsEmpty(), Equals, false)
+
+	for _, event := range ctx.EventManager().Events() {
+		c.Check(event.Type, Not(Equals), "bond_yield")
+	}
+}
+
+func (vts *ValidatorMgrTestSuite) TestBondRewardNormalizesLegacyProviderOrdering(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(20)
+
+	mgr := NewDummyMgrWithKeeper(k)
+	eventMgr, err := GetEventManager(GetCurrentVersion())
+	c.Assert(err, IsNil)
+	mgr.eventMgr = eventMgr
+	networkMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), eventMgr)
+	c.Assert(networkMgr, NotNil)
+
+	na := GetRandomValidatorNode(NodeActive)
+	na.Bond = cosmos.NewUint(4 * common.One)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	operator, err := na.BondAddress.AccAddress()
+	c.Assert(err, IsNil)
+	provider := GetRandomBech32Addr()
+	bp := NewBondProviders(na.NodeAddress)
+	bp.Providers = []BondProvider{
+		NewBondProvider(provider),
+		NewBondProvider(operator),
+	}
+	bp.Bond(cosmos.NewUint(common.One), provider)
+	bp.Bond(cosmos.NewUint(3*common.One), operator)
+	c.Assert(k.SetBondProviders(ctx, bp), IsNil)
+
+	network, err := k.GetNetwork(ctx)
+	c.Assert(err, IsNil)
+	network.BondRewardRune = cosmos.NewUint(common.One)
+	c.Assert(k.SetNetwork(ctx, network), IsNil)
+	FundModule(c, ctx, k, BondName, 5*common.One)
+
+	c.Assert(networkMgr.distributeBondReward(ctx, mgr), IsNil)
+
+	stored, err := k.GetBondProviders(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(stored.Providers, HasLen, 2)
+	c.Check(stored.Providers[0].BondAddress.Equals(operator), Equals, true)
+	c.Check(stored.Providers[1].BondAddress.Equals(provider), Equals, true)
+
+	updated, err := k.GetNodeAccount(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(updated.Bond.Equal(cosmos.NewUint(5*common.One)), Equals, true)
+}
+
+func (vts *ValidatorMgrTestSuite) TestBondYieldAutoClaimPaysAndRebondsRemainder(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(20)
+
+	mgr := NewDummyMgrWithKeeper(k)
+	eventMgr, err := GetEventManager(GetCurrentVersion())
+	c.Assert(err, IsNil)
+	mgr.eventMgr = eventMgr
+	networkMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), eventMgr)
+	c.Assert(networkMgr, NotNil)
+	k.SetMimir(ctx, constants.BondYieldEnabled.String(), 1)
+
+	initialBond := cosmos.NewUint(4 * common.One)
+	reward := cosmos.NewUint(common.One)
+	expectedPayout := cosmos.NewUint(40 * common.One / 100)
+	expectedRebond := cosmos.NewUint(60 * common.One / 100)
+	expectedBond := initialBond.Add(expectedRebond)
+
+	na := GetRandomValidatorNode(NodeActive)
+	na.Bond = initialBond
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	providerAcc, err := na.BondAddress.AccAddress()
+	c.Assert(err, IsNil)
+	bp := NewBondProviders(na.NodeAddress)
+	bp.Providers = []BondProvider{NewBondProvider(providerAcc)}
+	bp.Bond(na.Bond, providerAcc)
+	c.Assert(bp.SetAutoClaim(providerAcc, 4000, ""), Equals, true)
+	c.Assert(mgr.Keeper().SetBondProviders(ctx, bp), IsNil)
+
+	network, _ := networkMgr.k.GetNetwork(ctx)
+	network.BondRewardRune = reward
+	c.Assert(mgr.Keeper().SetNetwork(ctx, network), IsNil)
+
+	FundModule(c, ctx, mgr.Keeper(), BondName, initialBond.Add(reward).Uint64())
+	assertBondInvariantHolds(c, ctx, mgr.Keeper().InvariantRoutes())
+
+	c.Assert(networkMgr.distributeBondReward(ctx, mgr), IsNil)
+
+	updated, err := mgr.Keeper().GetNodeAccount(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(updated.Bond.Equal(expectedBond), Equals, true)
+
+	stored, err := mgr.Keeper().GetBondProviders(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	provider := stored.Get(providerAcc)
+	c.Assert(provider.IsEmpty(), Equals, false)
+	c.Check(provider.Bond.Equal(expectedBond), Equals, true)
+	c.Check(provider.Bps, Equals, uint64(4000))
+	c.Check(provider.PayoutTarget, Equals, "")
+
+	balance := mgr.Keeper().GetBalanceOf(ctx, providerAcc, common.RuneNative).Amount
+	c.Check(balance.Equal(cosmos.NewInt(int64(expectedPayout.Uint64()))), Equals, true)
+
+	updatedNetwork, err := mgr.Keeper().GetNetwork(ctx)
+	c.Assert(err, IsNil)
+	c.Check(updatedNetwork.BondRewardRune.IsZero(), Equals, true)
+	c.Check(mgr.Keeper().GetRuneBalanceOfModule(ctx, BondName).Equal(expectedBond), Equals, true)
+	assertBondInvariantHolds(c, ctx, mgr.Keeper().InvariantRoutes())
+
+	attrs := singleBondYieldEventAttributes(c, ctx)
+	c.Check(attrs["provider_address"], Equals, providerAcc.String())
+	c.Check(attrs["reward_share"], Equals, reward.String())
+	c.Check(attrs["payout_amount"], Equals, expectedPayout.String())
+	c.Check(attrs["rebonded_amount"], Equals, expectedRebond.String())
+	c.Check(attrs["bps"], Equals, "4000")
+	c.Check(attrs["payout_target"], Equals, "")
+}
+
+func (vts *ValidatorMgrTestSuite) TestBondYieldPreferredAssetPayoutAtRewardTime(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(20)
+
+	mgr := NewDummyMgrWithKeeper(k)
+	mgr.gasMgr = bondYieldRewardTestGasManager{DummyGasManager: NewDummyGasManager()}
+	eventMgr, err := GetEventManager(GetCurrentVersion())
+	c.Assert(err, IsNil)
+	mgr.eventMgr = eventMgr
+	networkMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), eventMgr)
+	c.Assert(networkMgr, NotNil)
+	k.SetMimir(ctx, constants.BondYieldEnabled.String(), 1)
+
+	initialBond := cosmos.NewUint(4 * common.One)
+	reward := cosmos.NewUint(common.One)
+	expectedPayout := cosmos.NewUint(40 * common.One / 100)
+	expectedRebond := cosmos.NewUint(60 * common.One / 100)
+	expectedBond := initialBond.Add(expectedRebond)
+
+	na := GetRandomValidatorNode(NodeActive)
+	na.Bond = initialBond
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	providerAcc, err := na.BondAddress.AccAddress()
+	c.Assert(err, IsNil)
+	const payoutTarget = "yieldname"
+	bp := NewBondProviders(na.NodeAddress)
+	bp.Providers = []BondProvider{NewBondProvider(providerAcc)}
+	bp.Bond(initialBond, providerAcc)
+	c.Assert(bp.SetAutoClaim(providerAcc, 4000, payoutTarget), Equals, true)
+	c.Assert(k.SetBondProviders(ctx, bp), IsNil)
+
+	tn := NewTHORName(payoutTarget, 1000, []THORNameAlias{
+		{Chain: common.BTCChain, Address: GetRandomBTCAddress()},
+	})
+	tn.Owner = providerAcc
+	tn.PreferredAsset = common.BTCAsset
+	tn.PreferredAssetOutboundFeeMultiplier = 1
+	k.SetTHORName(ctx, tn)
+
+	network, err := k.GetNetwork(ctx)
+	c.Assert(err, IsNil)
+	network.BondRewardRune = reward
+	c.Assert(k.SetNetwork(ctx, network), IsNil)
+
+	FundModule(c, ctx, k, BondName, initialBond.Add(reward).Uint64())
+	assertBondInvariantHolds(c, ctx, k.InvariantRoutes())
+
+	c.Assert(networkMgr.payNodeAccountBondAward(
+		ctx,
+		na.ActiveBlockHeight,
+		na,
+		reward,
+		initialBond,
+		initialBond,
+		mgr,
+	), IsNil)
+
+	updated, err := k.GetNodeAccount(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(updated.Bond.Equal(expectedBond), Equals, true)
+
+	stored, err := k.GetBondProviders(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	provider := stored.Get(providerAcc)
+	c.Assert(provider.IsEmpty(), Equals, false)
+	c.Check(provider.Bond.Equal(expectedBond), Equals, true)
+	c.Check(provider.Bps, Equals, uint64(4000))
+	c.Check(provider.PayoutTarget, Equals, payoutTarget)
+
+	collector, err := k.GetAffiliateCollector(ctx, tn.Name)
+	c.Assert(err, IsNil)
+	c.Check(collector.Name, Equals, tn.Name)
+	c.Check(collector.RuneAmount.Equal(expectedPayout), Equals, true)
+	c.Check(k.GetRuneBalanceOfModule(ctx, AffiliateCollectorName).Equal(expectedPayout), Equals, true)
+	c.Check(k.GetBalanceOf(ctx, providerAcc, common.RuneNative).Amount.IsZero(), Equals, true)
+
+	updatedNetwork, err := k.GetNetwork(ctx)
+	c.Assert(err, IsNil)
+	c.Check(updatedNetwork.BondRewardRune.IsZero(), Equals, true)
+	c.Check(k.GetRuneBalanceOfModule(ctx, BondName).Equal(expectedBond), Equals, true)
+	assertBondInvariantHolds(c, ctx, k.InvariantRoutes())
+
+	attrs := singleBondYieldEventAttributes(c, ctx)
+	c.Check(attrs["provider_address"], Equals, providerAcc.String())
+	c.Check(attrs["reward_share"], Equals, reward.String())
+	c.Check(attrs["payout_amount"], Equals, expectedPayout.String())
+	c.Check(attrs["rebonded_amount"], Equals, expectedRebond.String())
+	c.Check(attrs["bps"], Equals, "4000")
+	c.Check(attrs["payout_target"], Equals, payoutTarget)
+}
+
+func assertBondInvariantHolds(c *C, ctx cosmos.Context, routes []common.InvariantRoute) {
+	for _, route := range routes {
+		if route.Route != "bond" {
+			continue
+		}
+		messages, broken := route.Invariant(ctx)
+		c.Check(broken, Equals, false, Commentf("bond invariant messages: %v", messages))
+		c.Check(messages, IsNil)
+		return
+	}
+	c.Fatalf("bond invariant route not found")
+}
+
+func singleBondYieldEventAttributes(c *C, ctx cosmos.Context) map[string]string {
+	var result map[string]string
+	for _, event := range ctx.EventManager().Events() {
+		if event.Type != "bond_yield" {
+			continue
+		}
+		c.Assert(result, IsNil, Commentf("expected exactly one bond_yield event"))
+		result = make(map[string]string)
+		for _, attr := range event.Attributes {
+			result[attr.Key] = attr.Value
+		}
+	}
+	c.Assert(result, NotNil, Commentf("expected one bond_yield event"))
+	return result
+}
+
+func (vts *ValidatorMgrTestSuite) TestBondYieldFailedPayoutRebondsFallback(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(20)
+
+	mgr := NewDummyMgrWithKeeper(k)
+	eventMgr, err := GetEventManager(GetCurrentVersion())
+	c.Assert(err, IsNil)
+	mgr.eventMgr = eventMgr
+	networkMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), eventMgr)
+	c.Assert(networkMgr, NotNil)
+	k.SetMimir(ctx, constants.BondYieldEnabled.String(), 1)
+
+	na := GetRandomValidatorNode(NodeActive)
+	na.Bond = cosmos.NewUint(4 * common.One)
+	c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+
+	providerAcc, err := na.BondAddress.AccAddress()
+	c.Assert(err, IsNil)
+	payoutTarget := k.GetModuleAccAddress(AsgardName).String()
+	bp := NewBondProviders(na.NodeAddress)
+	bp.Providers = []BondProvider{NewBondProvider(providerAcc)}
+	bp.Bond(na.Bond, providerAcc)
+	c.Assert(bp.SetAutoClaim(providerAcc, 4000, payoutTarget), Equals, true)
+	c.Assert(k.SetBondProviders(ctx, bp), IsNil)
+
+	reward := cosmos.NewUint(1 * common.One)
+	network, err := k.GetNetwork(ctx)
+	c.Assert(err, IsNil)
+	network.BondRewardRune = reward
+	c.Assert(k.SetNetwork(ctx, network), IsNil)
+
+	FundModule(c, ctx, k, BondName, 10*common.One)
+
+	c.Assert(networkMgr.distributeBondReward(ctx, mgr), IsNil)
+
+	updated, err := k.GetNodeAccount(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Check(updated.Bond.Equal(na.Bond.Add(reward)), Equals, true)
+
+	stored, err := k.GetBondProviders(ctx, na.NodeAddress)
+	c.Assert(err, IsNil)
+	provider := stored.Get(providerAcc)
+	c.Check(provider.Bond.Equal(na.Bond.Add(reward)), Equals, true)
+	c.Check(k.GetBalanceOf(ctx, providerAcc, common.RuneNative).Amount.IsZero(), Equals, true)
+
+	var bondYieldAttrs map[string]string
+	for _, event := range ctx.EventManager().Events() {
+		if event.Type != "bond_yield" {
+			continue
+		}
+		c.Check(bondYieldAttrs, IsNil, Commentf("expected exactly one bond_yield event"))
+		bondYieldAttrs = make(map[string]string)
+		for _, attr := range event.Attributes {
+			bondYieldAttrs[attr.Key] = attr.Value
+		}
+	}
+	c.Assert(bondYieldAttrs, NotNil)
+	c.Check(bondYieldAttrs["provider_address"], Equals, providerAcc.String())
+	c.Check(bondYieldAttrs["reward_share"], Equals, reward.String())
+	c.Check(bondYieldAttrs["payout_amount"], Equals, cosmos.ZeroUint().String())
+	c.Check(bondYieldAttrs["rebonded_amount"], Equals, reward.String())
+	c.Check(bondYieldAttrs["bps"], Equals, "4000")
+	c.Check(bondYieldAttrs["payout_target"], Equals, payoutTarget)
 }
 
 func (vts *ValidatorMgrTestSuite) TestNodeAccountPreflightCheckMaintenance(c *C) {
@@ -1157,4 +1892,96 @@ func (vts *ValidatorMgrTestSuite) TestMarkMissingActors_MimirDisabled(c *C) {
 	nodeAfter, err := mgr.Keeper().GetNodeAccount(ctx, activeNode.NodeAddress)
 	c.Assert(err, IsNil)
 	c.Assert(nodeAfter.LeaveScore, Equals, uint64(0), Commentf("Node should not be marked when MissingBlockChurnOut is disabled"))
+}
+
+// TestNodeAccountPreflightCheckKeygenChainSet covers the four outcomes of the keygen
+// chain set check: a node with no report is unaffected, a complete report passes, a
+// report that omits a chain the active vaults serve is held in Standby, and a report
+// older than the active vaults is not judged at all.
+func (vts *ValidatorMgrTestSuite) TestNodeAccountPreflightCheckKeygenChainSet(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	ctx = ctx.WithBlockHeight(1000)
+	mgr := NewDummyMgrWithKeeper(k)
+
+	validatorMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	c.Assert(validatorMgr, NotNil)
+
+	// The active vaults serve BTC and ETH, and were created at height 500.
+	vault := NewVault(500, ActiveVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.BTCChain, common.ETHChain}.Strings(), []ChainContract{})
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+	k.SetMimir(ctx, constants.MinimumBondInRune.String(), 1000000)
+
+	readyNode := func() NodeAccount {
+		na := GetRandomValidatorNode(NodeStandby)
+		na.Bond = cosmos.NewUint(10 * common.One)
+		na.PubKeySet = GetRandomPubKeySet()
+		na.Version = constants.SWVersion.String()
+		na.IPAddress = "192.168.0.1"
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+		return na
+	}
+
+	// No keygen report at all: nothing to judge, so a node that has never been
+	// selected is unaffected.
+	never := readyNode()
+	status, err := validatorMgr.NodeAccountPreflightCheck(ctx, never, k.GetConstants())
+	c.Assert(err, IsNil)
+	c.Assert(status, Equals, NodeReady)
+
+	// A report covering every chain the active vaults serve.
+	complete := readyNode()
+	k.SetLastKeygenChains(ctx, complete.NodeAddress, common.Chains{common.BTCChain, common.ETHChain}, 600)
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, complete, k.GetConstants())
+	c.Assert(err, IsNil)
+	c.Assert(status, Equals, NodeReady)
+
+	// A report that omits ETH: this is the node that would drop ETH from the next
+	// vault and stall the rotation, so it is held back.
+	incomplete := readyNode()
+	k.SetLastKeygenChains(ctx, incomplete.NodeAddress, common.Chains{common.BTCChain}, 600)
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, incomplete, k.GetConstants())
+	c.Assert(err, NotNil)
+	c.Assert(status, Equals, NodeStandby)
+	c.Assert(err.Error(), Equals, "node account keygen report at height 600 omitted chain ETH served by the active vaults")
+
+	// The mimir kill switch restores the old behaviour.
+	k.SetMimir(ctx, constants.MimirKeyPreflightChainSetDisabled, 1)
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, incomplete, k.GetConstants())
+	c.Assert(err, IsNil)
+	c.Assert(status, Equals, NodeReady)
+	k.SetMimir(ctx, constants.MimirKeyPreflightChainSetDisabled, 0)
+
+	// A report older than the active vaults may predate a chain being added to them,
+	// so it is not evidence of a missing chain. This is also what expires a recorded
+	// report at the next completed churn, so no node can be locked out.
+	stale := readyNode()
+	k.SetLastKeygenChains(ctx, stale.NodeAddress, common.Chains{common.BTCChain}, 400)
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, stale, k.GetConstants())
+	c.Assert(err, IsNil)
+	c.Assert(status, Equals, NodeReady)
+
+	// XMR is served by a monovault keygen with its own fixed chain set, so an asgard
+	// report never carries it and its absence is not held against the reporter. The
+	// monovault rotates on its own schedule: one created after the asgard keygen must
+	// not move the report-age bound past the asgard reports, or every incomplete
+	// report would be treated as stale and the check would never fire.
+	xmrVault := NewVault(900, ActiveVault, AsgardVault, GetRandomPubKey(),
+		common.Chains{common.THORChain, common.XMRChain}.Strings(), []ChainContract{})
+	c.Assert(k.SetVault(ctx, xmrVault), IsNil)
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, complete, k.GetConstants())
+	c.Assert(err, IsNil)
+	c.Assert(status, Equals, NodeReady)
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, incomplete, k.GetConstants())
+	c.Assert(err, NotNil)
+	c.Assert(status, Equals, NodeStandby)
+	c.Assert(err.Error(), Equals, "node account keygen report at height 600 omitted chain ETH served by the active vaults")
+
+	// A chain being retired (RAGNAROK-<gas asset>) is dropped from the reports of the
+	// operators who set OptToRetire first, so it is not required.
+	k.SetMimir(ctx, "RAGNAROK-ETH-ETH", 1)
+	status, err = validatorMgr.NodeAccountPreflightCheck(ctx, incomplete, k.GetConstants())
+	c.Assert(err, IsNil)
+	c.Assert(status, Equals, NodeReady)
+	k.SetMimir(ctx, "RAGNAROK-ETH-ETH", 0)
 }

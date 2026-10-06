@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	tssMessages "gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
+	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/blame"
 	"gitlab.com/thorchain/thornode/v3/common"
 	thorchaintypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -50,9 +51,10 @@ func TestCanonicalTssRoundEd25519(t *testing.T) {
 }
 
 // TestKeysignErrorIsTerminalRound verifies the signer retry path recognises
-// both the canonical and raw final-round names for secp256k1 (v3 KEYSIGN9
-// only) and ed25519 (EDDSAKEYSIGN3). The legacy v1 KEYSIGN7 marker is
-// intentionally not accepted on the signer side.
+// final-round names for secp256k1 (v3 KEYSIGN9 only), ed25519
+// (EDDSAKEYSIGN3), and FROST's share-exposure boundary (frost_share and
+// frost_result). The legacy v1 KEYSIGN7 marker is intentionally not accepted
+// on the signer side.
 func TestKeysignErrorIsTerminalRound(t *testing.T) {
 	t.Parallel()
 
@@ -80,6 +82,16 @@ func TestKeysignErrorIsTerminalRound(t *testing.T) {
 		{
 			name:  "raw eddsa last round",
 			round: "thorchain.tsslib.eddsa.signing.SignRound3Message",
+			want:  true,
+		},
+		{
+			name:  "frost share exposure boundary",
+			round: tssMessages.FROSTKEYSIGNSHARE,
+			want:  true,
+		},
+		{
+			name:  "frost terminal result",
+			round: tssMessages.FROSTKEYSIGNRESULT,
 			want:  true,
 		},
 		{
@@ -115,6 +127,11 @@ func TestKeysignErrorIsTerminalRound(t *testing.T) {
 		{
 			name:  "non-terminal eddsa round 2",
 			round: tssMessages.EDDSAKEYSIGN2,
+			want:  false,
+		},
+		{
+			name:  "non-terminal frost preprocess",
+			round: tssMessages.FROSTKEYSIGNPREPROCESS,
 			want:  false,
 		},
 		// Keygen rounds are never terminal-keysign even though they share a
@@ -154,6 +171,37 @@ func TestKeysignErrorIsTerminalRound(t *testing.T) {
 			err := NewKeysignError(thorchaintypes.Blame{Round: tc.round})
 			if got := err.IsTerminalRound(); got != tc.want {
 				t.Fatalf("IsTerminalRound(%q) = %v, want %v", tc.round, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestKeysignErrorIsJoinPartyFailure verifies only a sync failure before any
+// round ran counts as a failure to form the keysign party.
+func TestKeysignErrorIsJoinPartyFailure(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		reason string
+		round  string
+		want   bool
+	}{
+		{name: "sync failure before any round", reason: blame.TssSyncFail, want: true},
+		{name: "sync failure with a round", reason: blame.TssSyncFail, round: tssMessages.KEYSIGN2Unicast, want: false},
+		{name: "timeout in a round", reason: blame.TssTimeout, round: tssMessages.KEYSIGN2Unicast, want: false},
+		{name: "timeout without a round", reason: blame.TssTimeout, want: false},
+		{name: "terminal round", reason: blame.TssTimeout, round: tssMessages.KEYSIGN9, want: false},
+		{name: "internal error", reason: blame.InternalError, want: false},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := NewKeysignError(thorchaintypes.Blame{FailReason: tc.reason, Round: tc.round})
+			if got := err.IsJoinPartyFailure(); got != tc.want {
+				t.Fatalf("IsJoinPartyFailure(%q, %q) = %v, want %v", tc.reason, tc.round, got, tc.want)
 			}
 		})
 	}

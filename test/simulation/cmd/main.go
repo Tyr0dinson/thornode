@@ -22,6 +22,7 @@ import (
 	"golang.org/x/term"
 
 	"gitlab.com/thorchain/thornode/v3/common"
+	acommon "gitlab.com/thorchain/thornode/v3/test/simulation/actors/common"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/actors/core"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/actors/features"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/actors/suites"
@@ -31,6 +32,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/evm"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/monero"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/solana"
+	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/thornode"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/tron"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/utxo"
@@ -49,6 +51,9 @@ const (
 	tronRPCReadinessTimeout   = 4 * time.Minute
 	solanaRPCReadinessTimeout = 4 * time.Minute
 	zecRPCReadinessTimeout    = 8 * time.Minute
+	xmrSimulationWaitTimeout  = 30 * time.Second
+	// Required coverage must allow the initial FROST ceremony to finish.
+	xmrRequiredSimulationWaitTimeout = 8 * time.Minute
 )
 
 var bifrostReadinessEndpoints = []string{
@@ -92,14 +97,21 @@ func simulationStages() []simulationStage {
 		{name: "memoless-swaps", defaultOn: true, constructor: suites.MemolessSwaps},
 		{name: "consolidate", defaultOn: true, constructor: features.Consolidate},
 		{name: "dash-instantsend", defaultOn: true, constructor: features.DashInstantSend},
-		{name: "churn", defaultOn: false, constructor: core.NewChurnActor},
-		{name: "xmr-post-churn", defaultOn: false, constructor: suites.XMRPostChurn},
+		// memoless-refunds runs before every churn-triggering stage so the refund
+		// actors exercise the pre-churn vault set, per issue #2839 Section B.
+		{name: "memoless-refunds", defaultOn: false, constructor: features.MemolessRefunds},
+		{name: "cluster-churn", defaultOn: false, constructor: suites.ClusterChurn},
+		{name: "churn", defaultOn: false, constructor: suites.Churn},
+		{name: "xmr-keygen-jail", defaultOn: false, constructor: suites.XMRKeygenJail},
 		{name: "xmr-spent-refs", defaultOn: false, constructor: suites.XMRSpentRefTracking},
 		{name: "forced-to-leave-keygen", defaultOn: false, constructor: core.NewForcedToLeaveKeygenActor},
 		{name: "forced-to-leave-keysign", defaultOn: false, constructor: core.NewForcedToLeaveKeysignActor},
 		{name: "jailed-keysign-fallback", defaultOn: false, constructor: core.NewJailedKeysignFallbackActor},
+		{name: "churn-balance", defaultOn: false, constructor: suites.ChurnBalance},
+		{name: "xmr-historical-refund", defaultOn: false, constructor: features.XMRHistoricalRefund},
 		{name: "inactive-vault-refunds", defaultOn: false, constructor: features.InactiveVaultRefunds},
 		{name: "solvency", defaultOn: true, constructor: core.NewSolvencyCheckActor},
+		{name: "xmr-post-churn", defaultOn: false, constructor: suites.XMRPostChurn},
 		{name: "ragnarok", defaultOn: true, constructor: suites.Ragnarok},
 	}
 }
@@ -114,17 +126,107 @@ func simulationStageOptions() []cli.Option {
 }
 
 func appendSimulationStages(root *Actor, enabledStages map[string]bool, rng *rand.Rand) {
-	appendIfEnabled := func(key string, constructor func(rng *rand.Rand) *Actor) {
-		if constructor == nil {
-			return
-		}
-		if enabledStages[key] || enabledStages["all"] {
-			root.Append(constructor(rng))
-		}
+	for _, stage := range selectedSimulationStages(enabledStages) {
+		root.Append(stage.constructor(rng))
 	}
+}
 
+func selectedSimulationStages(enabledStages map[string]bool) []simulationStage {
+	var selected []simulationStage
+	// Keep the old STAGES selector as an alias without registering a second
+	// suite, so selecting both names (or all) still performs one churn sequence.
+	enabled := func(name string) bool {
+		return enabledStages[name] || enabledStages["all"] ||
+			(name == "cluster-churn" && enabledStages["bond-yield"])
+	}
 	for _, stage := range simulationStages() {
-		appendIfEnabled(stage.name, stage.constructor)
+		if stage.constructor == nil || !enabled(stage.name) {
+			continue
+		}
+		switch stage.name {
+		case "xmr-historical-refund":
+			// Requires the dedicated long-jail mocknet setup; keep generic "all"
+			// runs unchanged unless this scenario is explicitly requested as well.
+			if !enabledStages[stage.name] {
+				continue
+			}
+		case "churn":
+			// ClusterChurn already activates the cluster and requests a leave.
+			if enabled("cluster-churn") {
+				continue
+			}
+		case "cluster-churn":
+			if enabled("xmr-post-churn") {
+				stage.constructor = suites.ClusterChurnWithXMRPostChurn
+			}
+		case "xmr-post-churn":
+			if enabled("cluster-churn") {
+				continue
+			}
+		}
+		selected = append(selected, stage)
+	}
+	return selected
+}
+
+// configureXMRSimulationProfile permits optional XMR coverage to fall back,
+// but required runs must establish the inbound address before building the DAG.
+func configureXMRSimulationProfile(required bool, wait func(time.Duration) (common.Address, error)) error {
+	timeout := xmrSimulationWaitTimeout
+	if required {
+		timeout = xmrRequiredSimulationWaitTimeout
+	}
+	inboundAddress, err := wait(timeout)
+	if err == nil && !inboundAddress.IsEmpty() {
+		acommon.SetXMRChainEnabled(true)
+		log.Info().
+			Stringer("inbound_address", inboundAddress).
+			Msg("XMR inbound address available; enabling XMR simulation coverage")
+		return nil
+	}
+	if err == nil {
+		err = fmt.Errorf("empty XMR inbound address")
+	}
+	acommon.SetXMRChainEnabled(false)
+	if required {
+		return fmt.Errorf("required XMR inbound address unavailable after %s: %w", timeout, err)
+	}
+	log.Warn().
+		Err(err).
+		Dur("timeout", timeout).
+		Msg("XMR inbound address unavailable; skipping XMR simulation coverage")
+	return nil
+}
+
+type inboundAddressGetter func(common.Chain) (common.Address, *common.Address, error)
+
+// waitForXMRSimulationInbound waits for the XMR inbound address required by XMR simulation actors.
+func waitForXMRSimulationInbound(timeout time.Duration, get inboundAddressGetter, sleep func(time.Duration)) (common.Address, error) {
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for {
+		inboundAddress, _, err := get(common.XMRChain)
+		if err == nil && !inboundAddress.IsEmpty() {
+			return inboundAddress, nil
+		}
+		if err != nil {
+			lastErr = err
+		} else {
+			lastErr = fmt.Errorf("empty XMR inbound address")
+		}
+
+		if timeout <= 0 || !time.Now().Before(deadline) {
+			return common.NoAddress, lastErr
+		}
+
+		delay := time.Second
+		if remaining := time.Until(deadline); remaining < delay {
+			delay = remaining
+		}
+		if delay <= 0 {
+			return common.NoAddress, lastErr
+		}
+		sleep(delay)
 	}
 }
 
@@ -145,12 +247,20 @@ func init() {
 
 func main() {
 	// start pprof server
-	go func() {
-		log.Info().Msg("starting pprof server on :6061")
-		if err := http.ListenAndServe(":6061", nil); err != nil {
-			log.Fatal().Err(err).Msg("pprof server failed")
-		}
-	}()
+	pprofAddress := os.Getenv("SIMULATION_PPROF_ADDRESS")
+	if pprofAddress == "" {
+		pprofAddress = ":6061"
+	}
+	if !strings.EqualFold(pprofAddress, "off") {
+		go func() {
+			log.Info().Str("address", pprofAddress).Msg("starting pprof server")
+			if err := http.ListenAndServe(pprofAddress, nil); err != nil {
+				log.Fatal().Err(err).Msg("pprof server failed")
+			}
+		}()
+	} else {
+		log.Info().Msg("pprof server disabled")
+	}
 
 	// prompt to filter run stages if connected to a terminal
 	enabledStages := map[string]bool{}
@@ -214,10 +324,6 @@ func main() {
 	log.Info().Msgf("Random seed set to `%s`", new(big.Int).SetBytes(randSeed[:]).Text(16))
 	rng := rand.New(rand.NewChaCha8(randSeed))
 
-	// combine all actor dags for the complete test run
-	root := NewActor("Root", rng)
-	appendSimulationStages(root, enabledStages, rng)
-
 	// gather config from the environment
 	parallelism := os.Getenv("PARALLELISM")
 	if parallelism == "" {
@@ -229,6 +335,15 @@ func main() {
 	}
 
 	cfg := InitConfig(parallelismInt, enabledStages["seed"] || enabledStages["all"], rng)
+	if err := configureXMRSimulationProfile(os.Getenv("XMR_POST_CHURN_REQUIRED") == "1", func(timeout time.Duration) (common.Address, error) {
+		return waitForXMRSimulationInbound(timeout, thornode.GetInboundAddress, time.Sleep)
+	}); err != nil {
+		log.Fatal().Err(err).Msg("failed waiting for required XMR simulation readiness")
+	}
+
+	// combine all actor dags for the complete test run
+	root := NewActor("Root", rng)
+	appendSimulationStages(root, enabledStages, rng)
 
 	// start watchers
 	enabledWatchers := []*Watcher{
@@ -468,45 +583,29 @@ func waitForZecRPCReadinessWithClock(
 	sleep func(time.Duration),
 	timeout time.Duration,
 ) error {
-	const requiredHeight int64 = 250
-	const requiredAdvances = 1
-
+	// The container is the sole miner. Wait past its 400-block warm-up and
+	// observe continued block production before funding simulation users.
+	const initialBlocks int64 = 400
 	lastHeight := int64(-1)
-	advances := 0
 	deadline := now().Add(timeout)
-
-	for {
-		if now().After(deadline) {
-			return fmt.Errorf("zec readiness timed out after %s with height=%d advances=%d", timeout, lastHeight, advances)
-		}
-
+	for now().Before(deadline) {
 		height, err := getBlockCount(endpoint)
-		switch {
-		case err == nil && height >= requiredHeight && lastHeight >= 0 && height > lastHeight:
-			advances++
-			lastHeight = height
-			if advances >= requiredAdvances {
+		if err == nil {
+			if height > initialBlocks && lastHeight >= 0 && height > lastHeight {
 				return nil
 			}
-		case err == nil && lastHeight < 0:
-			lastHeight = height
-		case err == nil && height < lastHeight:
-			lastHeight = height
-			advances = 0
-		case err == nil:
 			lastHeight = height
 		}
-
-		log.Info().
-			Int64("height", lastHeight).
-			Int("advances", advances).
-			Msg("waiting for zec to be ready")
+		log.Info().Err(err).Int64("height", lastHeight).Msg("waiting for zec to be ready")
 		sleep(time.Second)
 	}
+	return fmt.Errorf("zec readiness timed out after %s with height=%d", timeout, lastHeight)
 }
 
+var zecReadinessHTTPClient = &http.Client{Timeout: 5 * time.Second}
+
 func getZecBlockCount(endpoint string) (int64, error) {
-	res, err := http.Post(
+	res, err := zecReadinessHTTPClient.Post(
 		endpoint,
 		"application/json",
 		strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"getblockcount","params":[]}`),

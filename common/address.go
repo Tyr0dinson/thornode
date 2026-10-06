@@ -584,6 +584,46 @@ func (addr Address) Equals(addr2 Address) bool {
 	return strings.EqualFold(addr.String(), addr2.String())
 }
 
+// AddressEquals compares addresses using the identity rules of their chain.
+// Monero base58 is case-sensitive; legacy chains retain Address.Equals.
+func AddressEquals(chain Chain, addr, addr2 Address) bool {
+	if chain.Equals(XMRChain) {
+		return addr.String() == addr2.String()
+	}
+	return addr.Equals(addr2)
+}
+
+// EquivalentAddresses reports whether two addresses name the same destination
+// on the given chain, allowing for chain specific alternative encodings of the
+// same address.
+//
+// A Zcash P2PKH destination has an equivalent tex encoding, and the two sides
+// of an outbound legitimately carry different spellings of it: the signer
+// deliberately leaves tex destinations unencoded, while observers report the
+// daemon decoded t1 form. Every comparison deciding whether an observed
+// outbound fulfils a scheduled one must treat the two spellings as one address,
+// otherwise the outbound is at once stranded (never marked complete, and never
+// recoverable) and at risk of being sent twice.
+func EquivalentAddresses(chain Chain, addr, addr2 Address) bool {
+	if AddressEquals(chain, addr, addr2) {
+		return true
+	}
+	if !chain.Equals(ZECChain) {
+		return false
+	}
+	return texAddressOrSelf(addr).Equals(texAddressOrSelf(addr2))
+}
+
+// texAddressOrSelf returns the tex encoding of a Zcash P2PKH address, or the
+// address unchanged when it has no tex form (it may already be one).
+func texAddressOrSelf(addr Address) Address {
+	tex, err := addr.ToTexAddress()
+	if err != nil {
+		return addr
+	}
+	return tex
+}
+
 func (addr Address) IsEmpty() bool {
 	return strings.TrimSpace(addr.String()) == ""
 }

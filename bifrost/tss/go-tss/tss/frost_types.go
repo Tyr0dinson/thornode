@@ -6,13 +6,20 @@ import (
 	"strconv"
 	"strings"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/blame"
 	tcommon "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/common"
 )
 
+// FrostFailReasonXMRMaxGasExceeded is intentionally a stable machine-readable
+// prefix so Bifrost can recognize the local fee-cap failure without depending
+// on the full human-readable blame text.
+const FrostFailReasonXMRMaxGasExceeded = "xmr_max_gas_exceeded"
+
 // FrostKeySignRequest is the canonical request context for a FROST signing ceremony.
 type FrostKeySignRequest struct {
 	VaultPubKey   string
+	Network       string
 	ToAddress     string
 	AmountAtomic  uint64
 	Memo          string
@@ -32,18 +39,31 @@ type FrostKeySignRequest struct {
 	// MaxSelectedInputValueAtomic caps the total value of selected inputs for
 	// management transactions such as XMR consolidation.
 	MaxSelectedInputValueAtomic uint64
+	// MaxGasAtomic is the scheduled THORChain MaxGas cap converted to Monero
+	// atomic units. The sidecar uses it to bound the fee and, for migrations,
+	// sweep unused gas into the destination vault.
+	MaxGasAtomic uint64
+	// ReserveSigningClaim is a local durability barrier excluded from canonical
+	// request hashing. It runs after party selection and before sidecar signing.
+	ReserveSigningClaim func() error `json:"-"`
+	// ReleaseSigningClaim removes the exact reservation only when local signing
+	// failed before a signature share could have escaped.
+	ReleaseSigningClaim func() error `json:"-"`
 }
 
 // FrostKeySignResponse is the result of a FROST signing ceremony.
 type FrostKeySignResponse struct {
 	TxHash          string
 	TxHex           string
+	TxKey           string
 	FeeAtomic       uint64
 	MsgID           string
 	Eventuality     FrostEventuality
 	SpentOutputRefs []FrostSpentOutputRef
 	Status          tcommon.Status
 	Blame           blame.Blame
+	// releaseSigningClaim is local coordinator state, never result gossip.
+	releaseSigningClaim bool
 }
 
 // FrostEventuality is the sidecar-verified commitment used to prove the same
@@ -52,6 +72,7 @@ type FrostEventuality struct {
 	Version       uint8  `json:"version"`
 	PlanHash      string `json:"plan_hash"`
 	TxHexHash     string `json:"tx_hex_hash"`
+	TxKeyHash     string `json:"tx_key_hash"`
 	EventualityID string `json:"eventuality_id"`
 }
 
@@ -67,7 +88,6 @@ type FrostKeygenRequest struct {
 	VaultPubKey   string
 	SignerPubKeys []string
 	BlockHeight   int64
-	Version       string
 	ExpectedAddr  string
 }
 
@@ -145,11 +165,15 @@ type FrostSidecarPrepareReq struct {
 	MaxInputs                   int64                 `json:"max_inputs,omitempty"`
 	DustThreshold               uint64                `json:"dust_threshold,omitempty"`
 	MaxSelectedInputValueAtomic uint64                `json:"max_selected_input_value_atomic,omitempty"`
+	// MaxGasAtomic keeps the Rust signer bound to THORChain's scheduled gas
+	// cap while staying optional for older 3.19-compatible sidecar payloads.
+	MaxGasAtomic uint64 `json:"max_gas_atomic,omitempty"`
 }
 
 type FrostSidecarPrepareResp struct {
-	SessionID  string `json:"session_id"`
-	Preprocess string `json:"preprocess"`
+	SessionID      string                `json:"session_id"`
+	Preprocess     string                `json:"preprocess"`
+	SelectedInputs []FrostSpentOutputRef `json:"selected_inputs"`
 }
 
 type FrostSidecarPartialReq struct {
@@ -171,6 +195,7 @@ type FrostSidecarCombineReq struct {
 type FrostSidecarCombineResp struct {
 	TxHash          string                `json:"tx_hash"`
 	TxHex           string                `json:"tx_hex"`
+	TxKey           string                `json:"tx_key"`
 	FeeAtomic       uint64                `json:"fee_atomic"`
 	SpentOutputRefs []FrostSpentOutputRef `json:"spent_output_refs,omitempty"`
 }
@@ -183,23 +208,30 @@ type FrostSpentOutputRef struct {
 }
 
 type FrostPreprocessPayload struct {
+	ProtocolVersion  uint16 `json:"protocol_version,omitempty"`
 	SenderPubKey     string `json:"sender_pub_key"`
 	ParticipantIndex uint32 `json:"participant_index"`
 	PreprocessHex    string `json:"preprocess_hex"`
+	Signature        []byte `json:"signature,omitempty"`
 }
 
 type FrostSharePayload struct {
+	ProtocolVersion  uint16 `json:"protocol_version,omitempty"`
 	SenderPubKey     string `json:"sender_pub_key"`
 	ParticipantIndex uint32 `json:"participant_index"`
 	ShareHex         string `json:"share_hex"`
+	Signature        []byte `json:"signature,omitempty"`
 }
 
 type FrostVerifyPayload struct {
+	ProtocolVersion        uint16 `json:"protocol_version,omitempty"`
 	SenderPubKey           string `json:"sender_pub_key"`
 	Round                  string `json:"round"`
 	TargetSenderPubKey     string `json:"target_sender_pub_key"`
 	TargetParticipantIndex uint32 `json:"target_participant_index"`
 	PayloadHash            string `json:"payload_hash"`
+	TargetSignature        []byte `json:"target_signature,omitempty"`
+	AttesterSignature      []byte `json:"attester_signature,omitempty"`
 }
 
 type FrostResultPayload struct {
@@ -211,6 +243,7 @@ type FrostResult struct {
 	MsgID           string                `json:"msg_id"`
 	TxHash          string                `json:"tx_hash,omitempty"`
 	TxHex           string                `json:"tx_hex,omitempty"`
+	TxKey           string                `json:"tx_key,omitempty"`
 	FeeAtomic       uint64                `json:"fee_atomic,omitempty"`
 	Eventuality     FrostEventuality      `json:"eventuality"`
 	SpentOutputRefs []FrostSpentOutputRef `json:"spent_output_refs,omitempty"`
@@ -259,7 +292,7 @@ func FrostTranscriptPreprocessHash(msgID string, payload FrostPreprocessPayload)
 		return "", fmt.Errorf("preprocess payload is empty")
 	}
 	return frostTranscriptHash(
-		frostRoundPreprocess,
+		messages.FROSTKEYSIGNPREPROCESS,
 		msgID,
 		payload.SenderPubKey,
 		payload.ParticipantIndex,
@@ -275,7 +308,7 @@ func FrostTranscriptShareHash(msgID string, payload FrostSharePayload) (string, 
 		return "", fmt.Errorf("share payload is empty")
 	}
 	return frostTranscriptHash(
-		frostRoundShare,
+		messages.FROSTKEYSIGNSHARE,
 		msgID,
 		payload.SenderPubKey,
 		payload.ParticipantIndex,
@@ -344,7 +377,7 @@ func FrostTranscriptDKGRound2Hash(msgID string, payload FrostDKGRound2Payload) (
 }
 
 // FrostTranscriptDKGRound3Hash returns the signed transcript hash for the DKG
-// final address and group key announcement.
+// final address, group key, and observed Monero height announcement.
 func FrostTranscriptDKGRound3Hash(msgID string, payload FrostDKGRound3Payload) (string, error) {
 	address := strings.TrimSpace(payload.Address)
 	groupKey := strings.ToLower(strings.TrimSpace(payload.GroupKey))
@@ -354,6 +387,9 @@ func FrostTranscriptDKGRound3Hash(msgID string, payload FrostDKGRound3Payload) (
 	if groupKey == "" {
 		return "", fmt.Errorf("round3 group key is empty")
 	}
+	if payload.ObservedMoneroHeight < 0 {
+		return "", fmt.Errorf("round3 observed monero height cannot be negative")
+	}
 	return frostTranscriptHash(
 		frostDKGRound3,
 		msgID,
@@ -362,6 +398,7 @@ func FrostTranscriptDKGRound3Hash(msgID string, payload FrostDKGRound3Payload) (
 		[]string{
 			"address=" + address,
 			"group_key=" + groupKey,
+			"observed_monero_height=" + strconv.FormatInt(payload.ObservedMoneroHeight, 10),
 		},
 	)
 }
@@ -386,6 +423,7 @@ func frostTranscriptHash(round, msgID, targetSenderPubKey string, participantInd
 	}
 	canonical := []string{
 		"domain=" + frostTranscriptHashDomain,
+		"protocol_version=" + strconv.FormatUint(uint64(frostWireProtocolVersion), 10),
 		"msg_id=" + msgID,
 		"round=" + round,
 		"target_sender_pub_key=" + targetSenderNorm,

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"math/big"
 	rand "math/rand/v2"
@@ -45,16 +46,30 @@ type SwapActor struct {
 	minExpected           sdkmath.Uint
 	maxExpected           sdkmath.Uint
 	// expectedOutboundVault lets specialized swap actors prove a specific vault
-	// produced the outbound instead of only checking the final amount.
+	// produced the outbound instead of only checking the final amount. It is the
+	// FROST key for XMR and the primary vault key for other chains.
 	expectedOutboundVault common.PubKey
 
-	targetXMRSwapSlotAcquired bool
+	// Required verification actors must fail rather than skip an unfunded swap.
+	requireOutbound bool
+
+	xmrSwapSlotAcquired bool
+
+	getSwapStages  func(string) (openapi.TxStagesResponse, error)
+	getSwapDetails func(string) (openapi.TxDetailsResponse, error)
 }
 
 var (
 	recommendedMinAmountInPattern = regexp.MustCompile(`recommended_min_amount_in:\s*(\d+)`)
-	targetXMRSwapSlot             = make(chan struct{}, 1)
+	xmrSwapSlot                   = make(chan struct{}, 1)
 )
+
+func swapQuoteRecommendedMinAttempts(from, to common.Asset) int {
+	if from.Chain.Equals(common.XMRChain) || to.Chain.Equals(common.XMRChain) {
+		return 64
+	}
+	return 4
+}
 
 func NewSwapActor(from, to common.Asset, rng *rand.Rand) *Actor {
 	a := &SwapActor{
@@ -124,14 +139,18 @@ func retryAmountAtRecommendedMin(currentAmount, minAmount sdkmath.Uint) sdkmath.
 	return base.Add(buffer)
 }
 
-func getSwapQuoteWithRecommendedMin(from, to common.Asset, amount sdkmath.Uint, destination common.Address, extended bool) (openapi.QuoteSwapResponse, sdkmath.Uint, error) {
+func getSwapQuoteWithRecommendedMin(from, to common.Asset, amount, maxAmount sdkmath.Uint, destination, refundAddress common.Address, extended bool) (openapi.QuoteSwapResponse, sdkmath.Uint, error) {
 	currentAmount := amount
-	for attempt := 0; attempt < 4; attempt++ {
-		quote, err := thornode.GetSwapQuote(from, to, currentAmount, destination, extended)
+	for attempt := 0; attempt < swapQuoteRecommendedMinAttempts(from, to); attempt++ {
+		quote, err := thornode.GetSwapQuote(from, to, currentAmount, destination, refundAddress, extended)
 		if err != nil {
 			minAmount, ok := getRecommendedMinAmountInFromError(err)
 			if ok {
-				currentAmount = retryAmountAtRecommendedMin(currentAmount, minAmount)
+				nextAmount := retryAmountAtRecommendedMin(currentAmount, minAmount)
+				if !maxAmount.IsZero() && nextAmount.GT(maxAmount) {
+					return openapi.QuoteSwapResponse{}, nextAmount, fmt.Errorf("recommended minimum swap amount exceeds spendable balance")
+				}
+				currentAmount = nextAmount
 				continue
 			}
 			return openapi.QuoteSwapResponse{}, currentAmount, err
@@ -139,6 +158,9 @@ func getSwapQuoteWithRecommendedMin(from, to common.Asset, amount sdkmath.Uint, 
 
 		minAmount, ok := getRecommendedMinAmountIn(quote)
 		if ok && currentAmount.LT(minAmount) {
+			if !maxAmount.IsZero() && minAmount.GT(maxAmount) {
+				return openapi.QuoteSwapResponse{}, minAmount, fmt.Errorf("recommended minimum swap amount exceeds spendable balance")
+			}
 			currentAmount = minAmount
 			continue
 		}
@@ -162,6 +184,13 @@ func swapSpendableBalance(asset common.Asset, balance sdkmath.Uint) sdkmath.Uint
 	// chain dust/reserve requirements while still allowing late-stage swaps to use
 	// whatever balance remains.
 	reserve := asset.Chain.DustThreshold()
+	if asset.Chain.IsUTXO() {
+		if !balance.GT(reserve) {
+			return sdkmath.ZeroUint()
+		}
+		return balance.Sub(reserve)
+	}
+
 	fivePercent := balance.QuoUint64(20)
 	if fivePercent.GT(reserve) {
 		reserve = fivePercent
@@ -211,6 +240,32 @@ func swapQuoteExpectedRange(quote openapi.QuoteSwapResponse) (sdkmath.Uint, sdkm
 	return quoteOut, common.SafeSub(quoteOut, tolerance), quoteOut.Add(tolerance)
 }
 
+func swapQuoteDriftRange(from, to common.Asset, originalMin, originalMax, currentMin, currentMax sdkmath.Uint) (sdkmath.Uint, sdkmath.Uint) {
+	// Parallel simulation actors can move pools between outbound execution and
+	// the refreshed quote, so leave a narrow margin around the current quote.
+	buffer := currentMax.QuoUint64(100)
+	if buffer.IsZero() {
+		buffer = sdkmath.OneUint()
+	}
+
+	// XMR inbounds/outbounds have materially longer finality in the simulator.
+	// The refreshed quote is taken after the finalized swap may already have
+	// moved pools, so accept the full pre/post quote envelope for XMR paths.
+	if !from.Chain.Equals(common.XMRChain) && !to.Chain.Equals(common.XMRChain) {
+		return common.SafeSub(currentMin, buffer), currentMax.Add(buffer)
+	}
+
+	minExpected := originalMin
+	if currentMin.LT(minExpected) {
+		minExpected = currentMin
+	}
+	maxExpected := originalMax
+	if currentMax.GT(maxExpected) {
+		maxExpected = currentMax
+	}
+	return minExpected, maxExpected
+}
+
 func setQuoteExpectations(a *SwapActor, quote openapi.QuoteSwapResponse) {
 	a.requiredOutboundSpend, a.minExpected, a.maxExpected = swapQuoteExpectedRange(quote)
 }
@@ -224,16 +279,10 @@ func outboundAmountPlusGas(out openapi.Tx, action openapi.TxOutItem, to common.A
 	}
 
 	for _, gasCoin := range gasCoins {
-		if gasCoin.Asset == to.String() {
-			outAmountPlusGas = outAmountPlusGas.Add(cosmos.NewUintFromString(gasCoin.Amount))
+		if gasCoin.Asset != to.String() {
 			continue
 		}
-
-		gasAssetValue, err := thornode.ConvertAssetAmount(gasCoin, to.String())
-		if err != nil {
-			return sdkmath.ZeroUint(), err
-		}
-		outAmountPlusGas = outAmountPlusGas.Add(gasAssetValue)
+		outAmountPlusGas = outAmountPlusGas.Add(cosmos.NewUintFromString(gasCoin.Amount))
 	}
 
 	return outAmountPlusGas, nil
@@ -271,35 +320,38 @@ func (a *SwapActor) releaseUserSelection() {
 	a.maxExpected = sdkmath.ZeroUint()
 }
 
-func (a *SwapActor) acquireTargetXMRSwapSlot(config *OpConfig) OpResult {
-	if !a.to.Chain.Equals(common.XMRChain) || a.targetXMRSwapSlotAcquired {
+func (a *SwapActor) acquireXMRSwapSlot(config *OpConfig) OpResult {
+	if (!a.from.Chain.Equals(common.XMRChain) && !a.to.Chain.Equals(common.XMRChain)) || a.xmrSwapSlotAcquired {
 		return OpResult{Continue: true}
 	}
 
 	select {
-	case targetXMRSwapSlot <- struct{}{}:
-		a.targetXMRSwapSlotAcquired = true
-		a.Log().Info().Msg("acquired target XMR swap slot")
+	case xmrSwapSlot <- struct{}{}:
+		a.xmrSwapSlotAcquired = true
+		a.Log().Info().Msg("acquired XMR swap slot")
 		return OpResult{Continue: true}
 	default:
-		a.Log().Info().Msg("waiting for target XMR swap slot")
+		a.Log().Info().Msg("waiting for XMR swap slot")
 		return OpResult{Continue: false}
 	}
 }
 
-func (a *SwapActor) releaseTargetXMRSwapSlot() {
-	if !a.targetXMRSwapSlotAcquired {
+func (a *SwapActor) releaseXMRSwapSlot() {
+	if !a.xmrSwapSlotAcquired {
 		return
 	}
 
-	<-targetXMRSwapSlot
-	a.targetXMRSwapSlotAcquired = false
-	a.Log().Info().Msg("released target XMR swap slot")
+	<-xmrSwapSlot
+	a.xmrSwapSlotAcquired = false
+	a.Log().Info().Msg("released XMR swap slot")
 }
 
 // isPostSelectionFundingError detects balance failures that can happen after a
 // simulation user is selected but before the swap is submitted.
 func isPostSelectionFundingError(err error) bool {
+	if errors.Is(err, ErrSimTxUncertain) {
+		return false
+	}
 	if err == nil {
 		return false
 	}
@@ -312,10 +364,27 @@ func isPostSelectionFundingError(err error) bool {
 // finishAfterPostSelectionFundingError releases any acquired simulation slots
 // and ends this actor when its selected user can no longer fund the swap.
 func (a *SwapActor) finishAfterPostSelectionFundingError(err error) OpResult {
-	a.Log().Warn().Err(err).Msg("selected user can no longer fund swap; skipping actor")
 	a.releaseUserSelection()
-	a.releaseTargetXMRSwapSlot()
+	a.releaseXMRSwapSlot()
+	if a.requireOutbound {
+		return OpResult{Finish: true, Error: fmt.Errorf("required swap cannot be funded: %w", err)}
+	}
+	a.Log().Warn().Err(err).Msg("selected user can no longer fund swap; skipping actor")
 	return OpResult{Finish: true}
+}
+
+func (a *SwapActor) userSpendableBalance(user *User) (sdkmath.Uint, error) {
+	client, ok := user.ChainClients[a.from.Chain]
+	if !ok {
+		return sdkmath.ZeroUint(), fmt.Errorf("missing chain client for %s", a.from.Chain)
+	}
+
+	fromAcct, err := client.GetAccount(nil)
+	if err != nil {
+		return sdkmath.ZeroUint(), err
+	}
+	fromBalance := accountAssetAmount(fromAcct, a.from)
+	return swapSpendableBalance(a.from, fromBalance), nil
 }
 
 func (a *SwapActor) acquireUserForAmount(config *OpConfig, targetAmount sdkmath.Uint, allowPartial bool) OpResult {
@@ -331,11 +400,25 @@ func (a *SwapActor) acquireUserForAmount(config *OpConfig, targetAmount sdkmath.
 	availableUsers := 0
 	insufficientBalanceUsers := 0
 	accountErrorUsers := 0
+	strictReadableUsers := 0
+	strictInsufficientUsers := 0
 
 	for _, user := range config.Users {
 		// skip users already being used
 		if !user.Acquire() {
 			lockedUsers++
+			if !allowPartial {
+				spendableBalance, err := a.userSpendableBalance(user)
+				if err != nil {
+					a.Log().Error().Err(err).Msg("failed to get locked user from account")
+					accountErrorUsers++
+					continue
+				}
+				strictReadableUsers++
+				if spendableBalance.LT(targetAmount) {
+					strictInsufficientUsers++
+				}
+			}
 			continue
 		}
 		availableUsers++
@@ -358,6 +441,12 @@ func (a *SwapActor) acquireUserForAmount(config *OpConfig, targetAmount sdkmath.
 		fromBalance := accountAssetAmount(fromAcct, a.from)
 		spendableBalance := swapSpendableBalance(a.from, fromBalance)
 		candidateAmount := swapAmountForBalance(a.from, targetAmount, fromBalance)
+		if !allowPartial {
+			strictReadableUsers++
+			if spendableBalance.LT(targetAmount) {
+				strictInsufficientUsers++
+			}
+		}
 		if candidateAmount.IsZero() {
 			a.Log().Error().Msg("user has insufficient from balance")
 			insufficientBalanceUsers++
@@ -440,9 +529,16 @@ func (a *SwapActor) acquireUserForAmount(config *OpConfig, targetAmount sdkmath.
 		}
 	}
 
-	if !allowPartial && availableUsers > 0 && lockedUsers == 0 && accountErrorUsers == 0 && insufficientBalanceUsers == availableUsers {
+	if !allowPartial && strictReadableUsers > 0 && accountErrorUsers == 0 && strictInsufficientUsers == strictReadableUsers {
+		if a.requireOutbound {
+			a.releaseUserSelection()
+			a.releaseXMRSwapSlot()
+			return OpResult{Finish: true, Error: fmt.Errorf("required swap amount %s exceeds every available user balance", targetAmount)}
+		}
 		a.Log().Info().
 			Int("available_users", availableUsers).
+			Int("locked_users", lockedUsers).
+			Int("strict_readable_users", strictReadableUsers).
 			Stringer("target_amount", targetAmount).
 			Msg("skipping swap because required amount exceeds every available user balance")
 		return OpResult{
@@ -469,20 +565,21 @@ func (a *SwapActor) getQuoteWithUserRetry(config *OpConfig) (openapi.QuoteSwapRe
 		if a.user == nil {
 			result := a.acquireUserForAmount(config, a.swapAmount, false)
 			if !result.Continue || result.Finish {
-				a.releaseTargetXMRSwapSlot()
+				a.releaseXMRSwapSlot()
 				return openapi.QuoteSwapResponse{}, result
 			}
 		}
 
-		// XMR outbounds carry high fees relative to the small mocknet pools.
-		// Hold the slot from quote through finalisation, but not while selecting
-		// a source user, so an unsatisfiable quote cannot block all XMR targets.
-		if result := a.acquireTargetXMRSwapSlot(config); !result.Continue || result.Finish {
+		// XMR paths carry high fees and longer finality relative to the small
+		// mocknet pools. Hold the slot from quote through finalisation, but not
+		// while selecting a source user, so an unsatisfiable quote cannot block
+		// all XMR paths.
+		if result := a.acquireXMRSwapSlot(config); !result.Continue || result.Finish {
 			a.releaseUserSelection()
 			return openapi.QuoteSwapResponse{}, result
 		}
 
-		quote, quoteAmount, err := getSwapQuoteWithRecommendedMin(a.from, a.to, a.swapAmount, a.toAddress, a.from.Chain.IsUTXO())
+		quote, quoteAmount, err := getSwapQuoteWithRecommendedMin(a.from, a.to, a.swapAmount, a.fromBalance, a.toAddress, a.fromAddress, a.from.Chain.IsUTXO())
 		if err != nil {
 			if quoteAmount.GT(a.fromBalance) {
 				a.Log().Info().
@@ -490,7 +587,7 @@ func (a *SwapActor) getQuoteWithUserRetry(config *OpConfig) (openapi.QuoteSwapRe
 					Stringer("user_balance", a.fromBalance).
 					Msg("quote minimum exceeds selected user balance, retrying user selection")
 				a.releaseUserSelection()
-				a.releaseTargetXMRSwapSlot()
+				a.releaseXMRSwapSlot()
 				a.swapAmount = quoteAmount
 				continue
 			}
@@ -498,7 +595,7 @@ func (a *SwapActor) getQuoteWithUserRetry(config *OpConfig) (openapi.QuoteSwapRe
 			if !quoteAmount.Equal(a.swapAmount) {
 				if updateErr := a.updateSwapAmount(quoteAmount, "recommended minimum inbound amount"); updateErr != nil {
 					a.releaseUserSelection()
-					a.releaseTargetXMRSwapSlot()
+					a.releaseXMRSwapSlot()
 					return openapi.QuoteSwapResponse{}, OpResult{
 						Error:  updateErr,
 						Finish: true,
@@ -509,7 +606,7 @@ func (a *SwapActor) getQuoteWithUserRetry(config *OpConfig) (openapi.QuoteSwapRe
 
 			a.Log().Error().Err(err).Str("amount", a.swapAmount.String()).Msg("failed to get swap quote")
 			a.releaseUserSelection()
-			a.releaseTargetXMRSwapSlot()
+			a.releaseXMRSwapSlot()
 			return openapi.QuoteSwapResponse{}, OpResult{
 				Continue: false,
 			}
@@ -521,14 +618,14 @@ func (a *SwapActor) getQuoteWithUserRetry(config *OpConfig) (openapi.QuoteSwapRe
 				Stringer("user_balance", a.fromBalance).
 				Msg("quote minimum exceeds selected user balance, retrying user selection")
 			a.releaseUserSelection()
-			a.releaseTargetXMRSwapSlot()
+			a.releaseXMRSwapSlot()
 			a.swapAmount = quoteAmount
 			continue
 		}
 
 		if err := a.updateSwapAmount(quoteAmount, "recommended minimum inbound amount"); err != nil {
 			a.releaseUserSelection()
-			a.releaseTargetXMRSwapSlot()
+			a.releaseXMRSwapSlot()
 			return openapi.QuoteSwapResponse{}, OpResult{
 				Error:  err,
 				Finish: true,
@@ -544,7 +641,7 @@ func (a *SwapActor) getQuoteWithUserRetry(config *OpConfig) (openapi.QuoteSwapRe
 		Stringer("amount", a.swapAmount).
 		Msg("waiting for user that can satisfy the quoted minimum amount")
 	a.releaseUserSelection()
-	a.releaseTargetXMRSwapSlot()
+	a.releaseXMRSwapSlot()
 	return openapi.QuoteSwapResponse{}, OpResult{
 		Continue: false,
 	}
@@ -555,6 +652,11 @@ func (a *SwapActor) getQuoteWithUserRetry(config *OpConfig) (openapi.QuoteSwapRe
 ////////////////////////////////////////////////////////////////////////////////////////
 
 func (a *SwapActor) acquireUser(config *OpConfig) OpResult {
+	if a.from.Chain.Equals(common.XMRChain) || a.to.Chain.Equals(common.XMRChain) {
+		if result := waitForXMRNetworkFee(a.Log(), config); !result.Continue {
+			return result
+		}
+	}
 	// swap 0.25% of from pool depth
 	pool, err := thornode.GetPool(a.from)
 	if err != nil {
@@ -570,7 +672,7 @@ func (a *SwapActor) getQuote(config *OpConfig) OpResult {
 	quote, result := a.getQuoteWithUserRetry(config)
 	if !result.Continue || result.Finish {
 		if result.Finish {
-			a.releaseTargetXMRSwapSlot()
+			a.releaseXMRSwapSlot()
 		}
 		return result
 	}
@@ -617,9 +719,7 @@ func (a *SwapActor) sendSwap(config *OpConfig) OpResult {
 			return a.finishAfterPostSelectionFundingError(err)
 		}
 		a.Log().Error().Err(err).Msg("failed to broadcast tx")
-		return OpResult{
-			Continue: false,
-		}
+		return SimTxErrorResult(err)
 	}
 	a.swapTxID = txid
 
@@ -743,8 +843,16 @@ func (a *SwapActor) sendTokenSwap(config *OpConfig) OpResult {
 }
 
 func (a *SwapActor) verifyOutbound(config *OpConfig) OpResult {
+	getStages, getDetails := a.getSwapStages, a.getSwapDetails
+	if getStages == nil {
+		getStages = thornode.GetTxStages
+	}
+	if getDetails == nil {
+		getDetails = thornode.GetTxDetails
+	}
+
 	// get swap stages
-	stages, err := thornode.GetTxStages(a.swapTxID)
+	stages, err := getStages(a.swapTxID)
 	if err != nil {
 		a.Log().Warn().Err(err).Msg("failed to get tx stages")
 		return OpResult{
@@ -754,7 +862,7 @@ func (a *SwapActor) verifyOutbound(config *OpConfig) OpResult {
 
 	// wait for outbound to be marked complete
 	if stages.SwapFinalised != nil && stages.SwapFinalised.Completed {
-		a.releaseTargetXMRSwapSlot()
+		a.releaseXMRSwapSlot()
 	}
 	if stages.OutboundSigned == nil || !stages.OutboundSigned.Completed {
 		return OpResult{
@@ -763,7 +871,7 @@ func (a *SwapActor) verifyOutbound(config *OpConfig) OpResult {
 	}
 
 	// get tx details
-	details, err := thornode.GetTxDetails(a.swapTxID)
+	details, err := getDetails(a.swapTxID)
 	if err != nil {
 		a.Log().Warn().Err(err).Msg("failed to get tx details")
 		return OpResult{
@@ -806,10 +914,14 @@ func (a *SwapActor) verifyOutbound(config *OpConfig) OpResult {
 	action := details.Actions[0]
 	out := details.OutTxs[0]
 	if !a.expectedOutboundVault.IsEmpty() {
-		if action.VaultPubKey == nil {
+		vaultPubKey := action.GetVaultPubKey()
+		if a.to.Chain.Equals(common.XMRChain) {
+			vaultPubKey = action.GetVaultPubKeyFrost()
+		}
+		if vaultPubKey == "" {
 			err = fmt.Errorf("expected outbound vault %s, got empty vault pubkey", a.expectedOutboundVault)
-		} else if *action.VaultPubKey != a.expectedOutboundVault.String() {
-			err = fmt.Errorf("expected outbound vault %s, got %s", a.expectedOutboundVault, *action.VaultPubKey)
+		} else if vaultPubKey != a.expectedOutboundVault.String() {
+			err = fmt.Errorf("expected outbound vault %s, got %s", a.expectedOutboundVault, vaultPubKey)
 		}
 	}
 	outAmountPlusGas, convertErr := outboundAmountPlusGas(out, action, a.to)
@@ -842,24 +954,27 @@ func (a *SwapActor) verifyOutbound(config *OpConfig) OpResult {
 
 	// fail if received amount is outside expected range
 	if outAmountPlusGas.LT(a.minExpected) || outAmountPlusGas.GT(a.maxExpected) {
-		currentQuote, quoteErr := thornode.GetSwapQuote(a.from, a.to, a.swapAmount, a.toAddress, a.from.Chain.IsUTXO())
+		currentQuote, quoteErr := thornode.GetSwapQuote(a.from, a.to, a.swapAmount, a.toAddress, a.fromAddress, a.from.Chain.IsUTXO())
 		if quoteErr != nil {
 			a.Log().Warn().Err(quoteErr).Msg("failed to refresh quote after original expectation drifted")
 			err = fmt.Errorf("out amount plus gas outside tolerance")
 		} else {
 			_, currentMinExpected, currentMaxExpected := swapQuoteExpectedRange(currentQuote)
+			minExpected, maxExpected := swapQuoteDriftRange(a.from, a.to, a.minExpected, a.maxExpected, currentMinExpected, currentMaxExpected)
 			a.Log().Info().
 				Stringer("currentMinExpected", currentMinExpected).
 				Stringer("currentMaxExpected", currentMaxExpected).
+				Stringer("driftMinExpected", minExpected).
+				Stringer("driftMaxExpected", maxExpected).
 				Msg("refreshed quote after original expectation drifted")
-			if outAmountPlusGas.LT(currentMinExpected) || outAmountPlusGas.GT(currentMaxExpected) {
+			if outAmountPlusGas.LT(minExpected) || outAmountPlusGas.GT(maxExpected) {
 				err = fmt.Errorf("out amount plus gas outside tolerance")
 			}
 		}
 	}
 
 	// release user
-	a.releaseTargetXMRSwapSlot()
+	a.releaseXMRSwapSlot()
 	a.user.Release()
 
 	return OpResult{

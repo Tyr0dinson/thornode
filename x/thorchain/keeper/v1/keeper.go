@@ -9,6 +9,8 @@ import (
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/runtime"
+	"github.com/cosmos/cosmos-sdk/telemetry"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 
@@ -30,6 +32,8 @@ const (
 	prefixObservedTxIn              types.DbPrefix = "observed_tx_in/"
 	prefixObservedTxOut             types.DbPrefix = "observed_tx_out/"
 	prefixObservedLink              types.DbPrefix = "ob_link/"
+	prefixRefundCleanup             types.DbPrefix = "refund_cleanup/"
+	prefixRefundCleanupExpiry       types.DbPrefix = "refund_cleanup_expiry/"
 	prefixPool                      types.DbPrefix = "pool/"
 	prefixPoolLUVI                  types.DbPrefix = "luvi/"
 	prefixTxOut                     types.DbPrefix = "txout/"
@@ -42,6 +46,8 @@ const (
 	prefixLastChainHeight           types.DbPrefix = "last_chain_height/"
 	prefixLastSignedHeight          types.DbPrefix = "last_signed_height/"
 	prefixLastObserveHeight         types.DbPrefix = "last_observe_height/"
+	prefixLastKeygenChain           types.DbPrefix = "last_keygen_chain/"
+	prefixLastKeygenReport          types.DbPrefix = "last_keygen_report/"
 	prefixNodeAccount               types.DbPrefix = "node_account/"
 	prefixBondProviders             types.DbPrefix = "bond_providers/"
 	prefixVault                     types.DbPrefix = "vault/"
@@ -49,10 +55,13 @@ const (
 	prefixVaultAsgardEDDSAIndex     types.DbPrefix = "vault_asgard_eddsa_index/"
 	prefixVaultAsgardFrostIndex     types.DbPrefix = "vault_asgard_frost_index/"
 	prefixXMRSpentOutputRef         types.DbPrefix = "xmr_spent_refs/"
+	prefixSolVaultNonce             types.DbPrefix = "sol_vault_nonce/"
+	prefixSolNonceAttestVoter       types.DbPrefix = "sol_nonce_attest/"
 	prefixNetwork                   types.DbPrefix = "network/"
 	prefixSwapperClout              types.DbPrefix = "sclout/"
 	prefixPOL                       types.DbPrefix = "pol/"
 	prefixPOLReserve                types.DbPrefix = "pol_reserve/"
+	prefixStableReserveCredit       types.DbPrefix = "stable_reserve_credit/"
 	prefixTradeAccount              types.DbPrefix = "tr_acct/"
 	prefixSecuredAsset              types.DbPrefix = "sa/"
 	prefixRUNEProvider              types.DbPrefix = "rune_provider/"
@@ -91,11 +100,12 @@ const (
 	prefixChainContract             types.DbPrefix = "chain_contract/"
 	prefixSolvencyVoter             types.DbPrefix = "solvency_voter/"
 	prefixTHORName                  types.DbPrefix = "thorname/"
-	prefixAffiliateCollector        types.DbPrefix = "affcol/"
+	prefixAffiliateCollector        types.DbPrefix = "affcol_name/"
 	prefixAffiliateLiquidityFee     types.DbPrefix = "affiliate_liquidity_fee/"
 	prefixReferenceMemo             types.DbPrefix = "refm/"
 	prefixReferenceMemoIndex        types.DbPrefix = "refmi/"
 	prefixReferenceMemoHash         types.DbPrefix = "refmh/"
+	prefixReferenceMemoWindow       types.DbPrefix = "refmw/"
 	prefixRollingPoolLiquidityFee   types.DbPrefix = "rolling_pool_liquidity_fee/"
 	prefixPrevCyclePoolLiquidityFee types.DbPrefix = "prev_cycle_pool_liquidity_fee/"
 	prefixVersion                   types.DbPrefix = "version/"
@@ -410,6 +420,37 @@ func (k KVStore) BurnFromModule(ctx cosmos.Context, module string, coin common.C
 	return nil
 }
 
+// BurnEntireSynthSupply burns every unit of the given synth denom from every
+// holder account, reducing the bank supply to zero. Used by store migrations to
+// write off settled ThorFi-era synth residuals. For each holder it sends the
+// balance to the thorchain module and burns it.
+func (k KVStore) BurnEntireSynthSupply(ctx cosmos.Context, synthAsset common.Asset) (cosmos.Uint, error) {
+	denom := synthAsset.Native()
+	type holderBalance struct {
+		addr cosmos.AccAddress
+		amt  cosmos.Coin
+	}
+	var holders []holderBalance
+	k.coinKeeper.IterateAllBalances(ctx, func(addr cosmos.AccAddress, coin cosmos.Coin) bool {
+		if coin.Denom == denom && coin.Amount.IsPositive() {
+			holders = append(holders, holderBalance{addr: addr, amt: coin})
+		}
+		return false
+	})
+	total := cosmos.ZeroUint()
+	for _, h := range holders {
+		coins := cosmos.NewCoins(h.amt)
+		if err := k.coinKeeper.SendCoinsFromAccountToModule(ctx, h.addr, ModuleName, coins); err != nil {
+			return total, fmt.Errorf("fail to send %s synth from %s to module: %w", synthAsset, h.addr, err)
+		}
+		if err := k.coinKeeper.BurnCoins(ctx, ModuleName, coins); err != nil {
+			return total, fmt.Errorf("fail to burn %s synth from module: %w", synthAsset, err)
+		}
+		total = total.Add(cosmos.NewUintFromBigInt(h.amt.Amount.BigInt()))
+	}
+	return total, nil
+}
+
 func (k KVStore) MintToModule(ctx cosmos.Context, module string, coin common.Coin) error {
 	// circuit breaker
 	// mint new rune coins until we hit the cap. Once we do, borrow
@@ -432,6 +473,20 @@ func (k KVStore) MintToModule(ctx cosmos.Context, module string, coin common.Coi
 				// If unable to move the needed surplus coin from the Reserve, error out without any minting.
 				ctx.Logger().Error("fail to move coins during circuit breaker", "error", err)
 				return err
+			}
+
+			// The supply cap has begun converting minting into Reserve drainage.
+			// Guard the uint64 conversion: this is a handler path with no
+			// recover(), and cosmos.Uint.Uint64() panics when out of range.
+			borrowTelem := float32(0)
+			if borrowReserveAmt.BigInt().IsUint64() {
+				borrowTelem = float32(borrowReserveAmt.Uint64()) / 100000000
+			}
+			// Quote simulation reaches this through synth->RUNE swaps; counters
+			// are process-local, so API traffic must not count as borrowing.
+			if sim, _ := ctx.Value(constants.CtxSimulationMode).(bool); !sim {
+				telemetry.IncrCounter(1, "thornode", "rune_supply", "reserve_borrow")
+				telemetry.IncrCounter(borrowTelem, "thornode", "rune_supply", "reserve_borrow_amount")
 			}
 		}
 	}
@@ -480,6 +535,22 @@ func (k KVStore) GetModuleAddress(module string) (common.Address, error) {
 
 func (k KVStore) GetModuleAccAddress(module string) cosmos.AccAddress {
 	return k.accountKeeper.GetModuleAddress(module)
+}
+
+// IsModuleAccount includes configured modules whose accounts are not yet created.
+func (k KVStore) IsModuleAccount(ctx cosmos.Context, addr cosmos.AccAddress) bool {
+	if addr.Empty() {
+		return false
+	}
+	// This loop and the methods it calls perform no gas-metered operations.
+	// analyze-ignore(map-iteration) - membership only; order cannot change the result or gas usage.
+	for _, permissions := range k.accountKeeper.GetModulePermissions() {
+		if permissions.GetAddress().Equals(addr) {
+			return true
+		}
+	}
+	_, module := k.accountKeeper.GetAccount(ctx, addr).(sdk.ModuleAccountI)
+	return module
 }
 
 func (k KVStore) GetBalance(ctx cosmos.Context, addr cosmos.AccAddress) cosmos.Coins {
@@ -586,4 +657,8 @@ func (k KVStore) RagnarokAccount(ctx cosmos.Context, addr cosmos.AccAddress) {
 		}
 		k.accountKeeper.RemoveAccount(ctx, acc)
 	}
+}
+
+func kvPrefix(key []byte) types.DbPrefix {
+	return types.DbPrefix(key)
 }

@@ -73,6 +73,7 @@ func (s CommonSuite) TestObservedTxSignablePayloadFieldCoverage(c *C) {
 		AggregatorTarget:      "target",
 		AggregatorTargetLimit: &limit,
 		SpentOutputRefs:       []OutputRef{{TxHash: "abc", OutputIndex: 0, KeyImage: "ki1", SpendTxHash: "sp1"}},
+		XmrTxKey:              "abc123",
 	}
 	basePayload, err := base.GetSignablePayloadWithInbound(false)
 	c.Assert(err, IsNil)
@@ -92,6 +93,10 @@ func (s CommonSuite) TestObservedTxSignablePayloadFieldCoverage(c *C) {
 		"AggregatorTarget":      func(o *ObservedTx) { o.AggregatorTarget = "changed" },
 		"AggregatorTargetLimit": func(o *ObservedTx) { l := cosmos.NewUint(2000); o.AggregatorTargetLimit = &l },
 		"SpentOutputRefs":       func(o *ObservedTx) { o.SpentOutputRefs = []OutputRef{{TxHash: "different"}} },
+		"XmrTxKey":              func(o *ObservedTx) { o.XmrTxKey = "def456" },
+		// The attested durable-nonce update is committed on-chain, so it must be
+		// signed: a proposer must not be able to swap the value observers attested.
+		"SolNonce": func(o *ObservedTx) { o.SolNonce = &SolNonceUpdate{NonceAccount: "acct", Nonce: "nonce", Slot: 1} },
 	}
 	for name, mutate := range covered {
 		mutated := base
@@ -155,4 +160,23 @@ func (s CommonSuite) TestObservedTxSignablePayloadFieldCoverage(c *C) {
 		c.Assert(accountedFor[f], Equals, true,
 			Commentf("ObservedTx field %q is not classified — decide whether it must be signature-covered or excluded and add it to the appropriate map in this test", f))
 	}
+}
+
+func (s CommonSuite) TestXMRObservedTxPayloadIsNetworkBound(c *C) {
+	observed := ObservedTx{Tx: Tx{ID: "tx1", Chain: XMRChain}}
+	for _, inbound := range []bool{false, true} {
+		chainnet, err := observed.getSignablePayloadWithInboundForNetwork(inbound, ChainNet)
+		c.Assert(err, IsNil)
+		mainnet, err := observed.getSignablePayloadWithInboundForNetwork(inbound, MainNet)
+		c.Assert(err, IsNil)
+		c.Assert(chainnet, Not(DeepEquals), mainnet)
+	}
+
+	// Other chains retain the established payload format.
+	observed.Tx.Chain = BTCChain
+	chainnet, err := observed.getSignablePayloadWithInboundForNetwork(false, ChainNet)
+	c.Assert(err, IsNil)
+	mainnet, err := observed.getSignablePayloadWithInboundForNetwork(false, MainNet)
+	c.Assert(err, IsNil)
+	c.Assert(chainnet, DeepEquals, mainnet)
 }

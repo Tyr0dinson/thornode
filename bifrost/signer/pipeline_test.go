@@ -56,6 +56,21 @@ func (m *mockPipelineSigner) processTransaction(item TxOutStoreItem) {
 	}
 }
 
+// immediatePipelineSigner leaves its input immutable and reports completions
+// through a channel, so signings can finish while SpawnSignings is still running.
+type immediatePipelineSigner struct {
+	items     []TxOutStoreItem
+	completed chan TxOutStoreItem
+}
+
+func (m *immediatePipelineSigner) isStopped() bool { return false }
+
+func (m *immediatePipelineSigner) storageList() []TxOutStoreItem { return m.items }
+
+func (m *immediatePipelineSigner) processTransaction(item TxOutStoreItem) {
+	m.completed <- item
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////
 // Test Data
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -243,6 +258,48 @@ func (s *PipelineSuite) TestPipelineConcurrent(c *C) {
 	c.Assert(len(pipeline.vaultStatusConcurrency[ttypes.VaultStatus_ActiveVault]), Equals, 0)
 	c.Assert(len(mockSigner.processed), Equals, 5)
 	c.Assert(len(mockSigner.storageListItems), Equals, 0)
+}
+
+func (s *PipelineSuite) TestPipelineConcurrentLockCreation(c *C) {
+	var items []TxOutStoreItem
+	for i := 0; i < 16; i++ {
+		vault := ttypes.GetRandomPubKey()
+		for _, chain := range []common.Chain{common.BTCChain, common.ETHChain} {
+			items = append(items, TxOutStoreItem{
+				Index: int64(len(items)),
+				TxOutItem: types.TxOutItem{
+					VaultPubKey: vault,
+					Chain:       chain,
+				},
+			})
+		}
+	}
+	pipeline, err := newPipeline(int64(len(items)))
+	c.Assert(err, IsNil)
+	mockSigner := &immediatePipelineSigner{
+		items:     items,
+		completed: make(chan TxOutStoreItem, len(items)),
+	}
+
+	// Workers must be free to release their locks while the loop adds other
+	// vault/chain entries. A shared mock mutex would hide the map access race.
+	pipeline.SpawnSignings(mockSigner, fakeBridge{nil})
+	pipeline.Wait()
+
+	c.Assert(len(mockSigner.completed), Equals, len(items))
+	completed := make(map[vaultChain]int)
+	for range items {
+		item := <-mockSigner.completed
+		completed[vaultChain{item.TxOutItem.VaultPubKey, item.TxOutItem.Chain}]++
+	}
+	for _, item := range items {
+		vc := vaultChain{item.TxOutItem.VaultPubKey, item.TxOutItem.Chain}
+		c.Assert(completed[vc], Equals, 1)
+		c.Assert(len(pipeline.vaultChainLock[vc]), Equals, 0)
+	}
+	for _, sem := range pipeline.vaultStatusConcurrency {
+		c.Assert(len(sem), Equals, 0)
+	}
 }
 
 func (s *PipelineSuite) TestPipelineConcurrentStop(c *C) {

@@ -11,9 +11,23 @@ import (
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/magiconair/properties/assert"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 var testProtocolID protocol.ID = "/p2p/test-stream"
+
+func TestPayloadDeadlineRelationship(t *testing.T) {
+	if TimeoutReadPayload != 40*time.Second {
+		t.Fatalf("TimeoutReadPayload = %s, want 40s", TimeoutReadPayload)
+	}
+	if TimeoutWritePayload != 40*time.Second {
+		t.Fatalf("TimeoutWritePayload = %s, want 40s", TimeoutWritePayload)
+	}
+	if TimeoutReadPayload < TimeoutWritePayload {
+		t.Fatalf("read timeout (%s) must be at least write timeout (%s)", TimeoutReadPayload, TimeoutWritePayload)
+	}
+}
 
 type MockNetworkStream struct {
 	*bytes.Buffer
@@ -83,6 +97,69 @@ func (m MockNetworkStream) Stat() network.Stat {
 
 func (m MockNetworkStream) Conn() network.Conn {
 	return nil
+}
+
+type gatedDrainErrorStream struct {
+	*MockNetworkStream
+	readStarted chan struct{}
+	readGate    <-chan struct{}
+}
+
+func (s *gatedDrainErrorStream) Read([]byte) (int, error) {
+	close(s.readStarted)
+	<-s.readGate
+	return 0, errors.New("forced drain error")
+}
+
+type drainLogWriter chan string
+
+func (w drainLogWriter) Write(p []byte) (int, error) {
+	w <- string(p)
+	return len(p), nil
+}
+
+func TestCloseStreamAndDrainOwnsLogger(t *testing.T) {
+	originalLogger := log.Logger
+	t.Cleanup(func() { log.Logger = originalLogger })
+
+	ownedOutput := make(drainLogWriter, 1)
+	log.Logger = zerolog.New(ownedOutput)
+
+	readGate := make(chan struct{})
+	stream := &gatedDrainErrorStream{
+		MockNetworkStream: NewMockNetworkStream(),
+		readStarted:       make(chan struct{}),
+		readGate:          readGate,
+	}
+	if err := closeStreamAndDrain(stream); err != nil {
+		t.Fatalf("close stream and drain: %v", err)
+	}
+
+	select {
+	case <-stream.readStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for background drain to start")
+	}
+
+	replacementOutput := make(drainLogWriter, 1)
+	log.Logger = zerolog.New(replacementOutput)
+	close(readGate)
+
+	select {
+	case output := <-ownedOutput:
+		if !bytes.Contains([]byte(output), []byte("fail to drain peer EOF after stream close")) {
+			t.Fatalf("owned logger output %q does not contain drain failure", output)
+		}
+	case <-replacementOutput:
+		t.Fatal("background drain used the reconfigured global logger")
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for background drain log")
+	}
+	select {
+	case output := <-replacementOutput:
+		t.Fatalf("reconfigured global logger unexpectedly received %q", output)
+	default:
+	}
 }
 
 func TestReadLength(t *testing.T) {

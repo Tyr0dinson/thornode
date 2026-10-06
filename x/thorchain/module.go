@@ -16,12 +16,14 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/server/api"
+	"github.com/cosmos/cosmos-sdk/telemetry"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkgrpc "github.com/cosmos/cosmos-sdk/types/grpc"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	gateway "github.com/cosmos/gogogateway"
 	"github.com/gorilla/mux"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
+	"github.com/hashicorp/go-metrics"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc/metadata"
 
@@ -144,7 +146,7 @@ func (AppModule) IsAppModule() {}
 func (AppModule) IsOnePerModuleType() {}
 
 func (AppModule) ConsensusVersion() uint64 {
-	return 16
+	return 19
 }
 
 func (am AppModule) RegisterInvariants(_ sdk.InvariantRegistry) {}
@@ -163,12 +165,21 @@ func (am AppModule) RegisterServices(cfg module.Configurator) {
 	if err := cfg.RegisterMigration(types.ModuleName, 15, m.Migrate15to16); err != nil {
 		panic(fmt.Sprintf("failed to migrate x/thorchain from version 15 to 16: %v", err))
 	}
+	if err := cfg.RegisterMigration(types.ModuleName, 16, m.Migrate16to17); err != nil {
+		panic(fmt.Sprintf("failed to migrate x/thorchain from version 16 to 17: %v", err))
+	}
+	if err := cfg.RegisterMigration(types.ModuleName, 17, m.Migrate17to18); err != nil {
+		panic(fmt.Sprintf("failed to migrate x/thorchain from version 17 to 18: %v", err))
+	}
+	if err := cfg.RegisterMigration(types.ModuleName, 18, m.Migrate18to19); err != nil {
+		panic(fmt.Sprintf("failed to migrate x/thorchain from version 18 to 19: %v", err))
+	}
 }
 
 // BeginBlock called when a block get proposed
 func (am AppModule) BeginBlock(goCtx context.Context) error {
 	ctx := sdk.UnwrapSDKContext(goCtx)
-	ctx = ctx.WithLogger(ctx.Logger().With("height", ctx.BlockHeight()))
+	ctx = ctx.WithLogger(ctx.Logger().With("module", "x/"+ModuleName, "height", ctx.BlockHeight()))
 
 	votes := ctx.CometInfo().GetLastCommit().Votes()
 	var existingValidators []string
@@ -216,64 +227,166 @@ func (am AppModule) BeginBlock(goCtx context.Context) error {
 // EndBlock called when a block get committed
 func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
-	ctx = ctx.WithLogger(ctx.Logger().With("height", ctx.BlockHeight()))
+	ctx = ctx.WithLogger(ctx.Logger().With("module", "x/"+ModuleName, "height", ctx.BlockHeight()))
 
 	ctx.Logger().Debug("End Block")
 
+	// Per-manager timing and error counters below are leaf, process-local
+	// telemetry: telemetry.Now() and ModuleMeasureSince are no-ops when the SDK
+	// telemetry sink is disabled, and neither reads nor writes keeper state. The
+	// order of the manager calls and their error handling are unchanged.
+	start := telemetry.Now()
 	if err := am.mgr.SwapQ().EndBlock(ctx, am.mgr); err != nil {
 		ctx.Logger().Error("fail to process swap queue", "error", err)
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "endblock", "manager_error"},
+			float32(1),
+			[]metrics.Label{telemetry.NewLabel("manager", "swap_queue")},
+		)
 	}
+	telemetry.ModuleMeasureSince("swap_queue", start, "thornode", "block", "endblock")
 
+	start = telemetry.Now()
 	if err := am.mgr.AdvSwapQueueMgr().EndBlock(ctx, am.mgr, am.telemetryEnabled); err != nil {
 		ctx.Logger().Error("fail to process adv swap queue", "error", err)
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "endblock", "manager_error"},
+			float32(1),
+			[]metrics.Label{telemetry.NewLabel("manager", "adv_swap_queue")},
+		)
 	}
+	telemetry.ModuleMeasureSince("adv_swap_queue", start, "thornode", "block", "endblock")
 
+	start = telemetry.Now()
 	if err := am.mgr.Slasher().LackSigning(ctx, am.mgr); err != nil {
 		ctx.Logger().Error("Unable to slash for lack of signing:", "error", err)
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "endblock", "manager_error"},
+			float32(1),
+			[]metrics.Label{telemetry.NewLabel("manager", "lack_signing")},
+		)
 	}
+	telemetry.ModuleMeasureSince("lack_signing", start, "thornode", "block", "endblock")
 
+	start = telemetry.Now()
 	if err := am.mgr.PoolMgr().EndBlock(ctx, am.mgr); err != nil {
 		ctx.Logger().Error("fail to process pools", "error", err)
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "endblock", "manager_error"},
+			float32(1),
+			[]metrics.Label{telemetry.NewLabel("manager", "pool")},
+		)
 	}
+	telemetry.ModuleMeasureSince("pool", start, "thornode", "block", "endblock")
 
+	start = telemetry.Now()
 	am.mgr.ObMgr().EndBlock(ctx, am.mgr.Keeper())
+	telemetry.ModuleMeasureSince("observer", start, "thornode", "block", "endblock")
 
 	// update network data to account for block rewards and reward units
+	start = telemetry.Now()
 	if err := am.mgr.NetworkMgr().UpdateNetwork(ctx, am.mgr); err != nil {
 		ctx.Logger().Error("fail to update network data", "error", err)
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "endblock", "manager_error"},
+			float32(1),
+			[]metrics.Label{telemetry.NewLabel("manager", "update_network")},
+		)
 	}
+	telemetry.ModuleMeasureSince("update_network", start, "thornode", "block", "endblock")
 
+	start = telemetry.Now()
+	if err := am.mgr.StableReserveManager().EndBlock(ctx, am.mgr); err != nil {
+		ctx.Logger().Error("fail to process stable reserve", "error", err)
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "endblock", "manager_error"},
+			float32(1),
+			[]metrics.Label{telemetry.NewLabel("manager", "stable_reserve")},
+		)
+	}
+	telemetry.ModuleMeasureSince("stable_reserve", start, "thornode", "block", "endblock")
+
+	start = telemetry.Now()
 	if err := am.mgr.NetworkMgr().EndBlock(ctx, am.mgr); err != nil {
 		ctx.Logger().Error("fail to end block for vault manager", "error", err)
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "endblock", "manager_error"},
+			float32(1),
+			[]metrics.Label{telemetry.NewLabel("manager", "network")},
+		)
 	}
+	telemetry.ModuleMeasureSince("network", start, "thornode", "block", "endblock")
 
+	start = telemetry.Now()
 	validators := am.mgr.ValidatorMgr().EndBlock(ctx, am.mgr)
+	telemetry.ModuleMeasureSince("validator", start, "thornode", "block", "endblock")
 
+	start = telemetry.Now()
 	if err := am.mgr.TxOutStore().EndBlock(ctx, am.mgr); err != nil {
 		ctx.Logger().Error("fail to process txout endblock", "error", err)
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "endblock", "manager_error"},
+			float32(1),
+			[]metrics.Label{telemetry.NewLabel("manager", "txout")},
+		)
 	}
+	telemetry.ModuleMeasureSince("txout", start, "thornode", "block", "endblock")
 
+	start = telemetry.Now()
 	am.mgr.GasMgr().EndBlock(ctx, am.mgr.Keeper(), am.mgr.EventMgr())
+	telemetry.ModuleMeasureSince("gas", start, "thornode", "block", "endblock")
 
 	// telemetry
 	if am.telemetryEnabled {
+		start = telemetry.Now()
 		if err := emitEndBlockTelemetry(ctx, am.mgr); err != nil {
 			ctx.Logger().Error("unable to emit end block telemetry", "error", err)
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "endblock", "manager_error"},
+				float32(1),
+				[]metrics.Label{telemetry.NewLabel("manager", "telemetry")},
+			)
 		}
+		telemetry.ModuleMeasureSince("telemetry", start, "thornode", "block", "endblock")
 	}
 
 	// update volumes
+	start = telemetry.Now()
 	if err := am.mgr.VolumeManager().EndBlock(ctx); err != nil {
 		ctx.Logger().Error("fail update volumes", "error", err)
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "endblock", "manager_error"},
+			float32(1),
+			[]metrics.Label{telemetry.NewLabel("manager", "volume")},
+		)
 	}
+	telemetry.ModuleMeasureSince("volume", start, "thornode", "block", "endblock")
 
+	start = telemetry.Now()
 	if err := am.mgr.DynamicFeeMgr().EndBlock(ctx); err != nil {
 		ctx.Logger().Error("fail to end block for dynamic fee manager", "error", err)
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "endblock", "manager_error"},
+			float32(1),
+			[]metrics.Label{telemetry.NewLabel("manager", "dynamic_fee")},
+		)
 	}
+	telemetry.ModuleMeasureSince("dynamic_fee", start, "thornode", "block", "endblock")
 
+	start = telemetry.Now()
 	if err := am.mgr.ScheduledMigrationManager().EndBlock(ctx, am.mgr); err != nil {
 		ctx.Logger().Error("fail to process scheduled migration", "error", err)
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "endblock", "manager_error"},
+			float32(1),
+			[]metrics.Label{telemetry.NewLabel("manager", "scheduled_migration")},
+		)
 	}
+	telemetry.ModuleMeasureSince("scheduled_migration", start, "thornode", "block", "endblock")
+
+	start = telemetry.Now()
+	am.mgr.Keeper().PruneRefundCleanups(ctx)
+	telemetry.ModuleMeasureSince("prune_refund_cleanups", start, "thornode", "block", "endblock")
 
 	return validators, nil
 }

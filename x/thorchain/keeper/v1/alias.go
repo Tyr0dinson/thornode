@@ -15,6 +15,7 @@ const (
 	TCYClaimingName        = types.TCYClaimingName
 	TCYStakeName           = types.TCYStakeName
 	POLReserveName         = types.POLReserveName
+	StableReserveName      = types.StableReserveName
 	BondName               = types.BondName
 	LendingName            = types.LendingName
 	StoreKey               = types.StoreKey
@@ -143,6 +144,8 @@ type (
 	THORNameAlias            = types.THORNameAlias
 	AffiliateFeeCollector    = types.AffiliateFeeCollector
 	SolvencyVoter            = types.SolvencyVoter
+	SolVaultNonce            = types.SolVaultNonce
+	SolNonceAttestVoter      = types.SolNonceAttestVoter
 	MinJoinLast              = types.MinJoinLast
 	NodeMimir                = types.NodeMimir
 	NodeMimirs               = types.NodeMimirs

@@ -119,6 +119,7 @@ func NewConstantValue() *ConstantVals {
 			MemolessTxnRefCount:                 99_999,             // max number of reference ids per chain
 			MemolessTxnCost:                     0,                  // additional cost in RUNE to register a memoless txn (operational mimir)
 			MemolessTxnMaxUse:                   1,                  // maximum times a reference id can be utilized before refunding (operational mimir)
+			MemolessTxnCostSlopeBPS:             0,                  // steepness of the memoless cost curve as reference slots fill, 0 = flat MemolessTxnCost (operational mimir)
 			L1SlipMinBps:                        0,                  // Minimum L1 asset swap fee in basis points
 			TradeAccountsSlipMinBps:             0,                  // Minimum trade asset swap fee in basis points
 			SecuredAssetSlipMinBps:              5,                  // Minimum secured asset swap fee in basis points
@@ -159,6 +160,11 @@ func NewConstantValue() *ConstantVals {
 			ModifyLimitSwapMaxIterations:        100,                // maximum iterations when searching for a user's swap in a ratio-grouped index
 			POLReserveSystemIncomeBps:           0,                  // basis points of system income routed to POL reserve, 0 = disabled
 			POLReserveMaxDeployment:             10_000_000_000,     // maximum RUNE deployed per pool per block (100 RUNE in 1e8 units)
+			StableReserveEnabled:                0,                  // enable/disable Stable Reserve
+			StableReserveDepegToleranceBps:      100,                // maximum stable oracle deviation from $1 in basis points
+			StableReservePOLShareBps:            0,                  // share of POLReserveSystemIncomeBps routed to Stable Reserve
+			StableReserveWithdrawalRequestMax:   10_000,             // maximum request coin amount accepted for Stable Reserve withdrawals
+			StableReserveOraclePricing:          0,                  // 0 = fill stable reserve swaps 1:1, 1 = scale the fill by the oracle price ratio
 			L1DynamicFeeEnabled:                 0,                  // enable/disable dynamic L1 min fee
 			L1DynamicFeeEpochBlocks:             14400,              // number of blocks per dynamic fee epoch
 			L1DynamicFeeFloorBPS:                1,                  // floor basis points for dynamic L1 min fee
@@ -166,7 +172,9 @@ func NewConstantValue() *ConstantVals {
 			L1DynamicFeeStepBPS:                 1,                  // step basis points for dynamic L1 min fee adjustment
 			L1DynamicFeeDeadbandBPS:             1000,               // % change in fees_rune (in bps, 10000 = 100%) below which the dynamic L1 fee controller holds
 			L1DynamicFeeWindowEpochs:            3,                  // epochs averaged on each side of the last bps change when measuring the fees_rune gradient (clamped into [1, MaxDynamicFeeHistory])
+			VaultDeficitGasHaltMaxGasMultiplier: 30,                 // multiple of current max gas at which gas-related vault deficits halt signing and trading
 			MaxAbsentKeygenReporters:            1,                  // number of keygen members allowed to skip MsgTssPool reporting before a successful keygen finalizes (mainnet default)
+			BondYieldEnabled:                    0,                  // enable/disable automatic bond-yield payouts
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

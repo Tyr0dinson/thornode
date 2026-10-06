@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -53,15 +54,36 @@ type Signer struct {
 	storage               SignerStorage
 	m                     *metrics.Metrics
 	errCounter            *prometheus.CounterVec
-	tssKeygen             *tss.KeyGen
+	tssKeygen             keygenGenerator
 	tssServer             *tssp.TssServer
 	pubkeyMgr             pubkeymanager.PubKeyValidator
 	constantsProvider     *ConstantsProvider
 	localPubKeyECDSA      common.PubKey
 	localPubKeyEDDSA      common.PubKey
 	tssKeysignMetricMgr   *metrics.TssKeysignMetricMgr
-	observer              *observer.Observer
+	observer              signerObserver
 	pipeline              *pipeline
+	// The normal keygen consumer is serial, but scheduled retries re-enter from
+	// independent goroutines. Signer-owned admission prevents a retry or replayed
+	// delivery from starting a second XMR sidecar DKG while one is already active.
+	xmrKeygen xmrKeygenSlot
+	// Waiting workers are joined before signer resources close. The mutex makes
+	// worker admission and shutdown atomic; it is never held during an RPC.
+	keygenWorkerMu sync.Mutex
+	keygenWorkerWG sync.WaitGroup
+	keygenRetries  sync.Map // keygenRetryID -> *keygenRetry
+}
+
+// keygenGenerator is the ordinary TSS execution boundary. Keeping its narrow
+// contract explicit lets retry tests observe real dispatch without a network DKG.
+type keygenGenerator interface {
+	GenerateNewKey(int64, common.PubKeys) (common.PubKeySet, []ttypes.Blame, error)
+}
+
+// signerObserver keeps readiness and signed observations on one owner.
+type signerObserver interface {
+	ObserveSigned(types.TxIn)
+	IsChainClientStarted(common.Chain) bool
 }
 
 type pendingKeygenBroadcast struct {
@@ -100,7 +122,10 @@ type keygenBackups struct {
 var (
 	encryptKeysharesFn    = tss.EncryptKeyshares
 	encryptRawKeysharesFn = tss.EncryptRawKeyshares
+	keygenNowFn           = time.Now
 )
+
+const secp256k1VerificationSignatureTimeout = tss.RemoteSignTimeout + 30*time.Second
 
 type vaultLocker interface {
 	GetVaultLock(vaultPubKey string) *sync.Mutex
@@ -128,6 +153,16 @@ func chainVaultLockKey(chain chainclients.ChainClient, tx types.TxOutItem) strin
 		return tx.VaultPubKey.String()
 	}
 	return key
+}
+
+func txOutItemEqualsIgnoringGas(a, b types.TxOutItem) bool {
+	a.MaxGas = b.MaxGas
+	a.GasRate = b.GasRate
+	return a.Equals(b)
+}
+
+func txOutItemGasChanged(a, b types.TxOutItem) bool {
+	return a.GasRate != b.GasRate || !a.MaxGas.Equals(b.MaxGas)
 }
 
 // NewSigner create a new instance of signer
@@ -251,7 +286,14 @@ func (s *Signer) shouldAutoObserve(tx types.TxOutItem) bool {
 	// Monero outbounds need sign-time observation even when global auto-observe is disabled.
 	// The chain scanner can later see the mined tx as an incoming change output, which is
 	// insufficient to attribute the scheduled outbound on THORChain.
-	return s.cfg.Signer.AutoObserve || tx.Chain.Equals(common.XMRChain)
+	if tx.Chain.Equals(common.XMRChain) {
+		return true
+	}
+
+	// Memoless outbounds are intentionally broadcast without the canonical memo on-chain.
+	// The signer still has OriginalMemo, so submit the observation directly instead of
+	// waiting for a scanner observation that cannot reconstruct the inbound linkage.
+	return s.cfg.Signer.AutoObserve || (tx.Memo == "" && tx.OriginalMemo != "")
 }
 
 // signTransactions - looks for work to do by getting a list of all unsigned
@@ -342,16 +384,52 @@ func (s *Signer) processTxnOut(ch <-chan types.TxOut, idx int) {
 				return
 			}
 			s.logger.Info().Msgf("Received a TxOut Array of %v from the Thorchain", txOut)
-			items := make([]TxOutStoreItem, 0, len(txOut.TxArray))
-
-			for i, tx := range txOut.TxArray {
-				items = append(items, NewTxOutStoreItem(txOut.Height, tx.TxOutItem(txOut.Height), int64(i)))
-			}
-			if err := s.storage.Batch(items); err != nil {
+			if err := s.storeTxOut(txOut); err != nil {
 				s.logger.Error().Err(err).Msg("fail to save tx out items to storage")
 			}
 		}
 	}
+}
+
+// storeTxOut filters fresh impossible XMR attempts before they enter the signing
+// queue. Rescheduled obligations are checked anew; nothing is marked paid on
+// THORChain. Existing records, including recovery artifacts, are never replaced
+// by an XMR redelivery.
+func (s *Signer) storeTxOut(txOut types.TxOut) error {
+	items := make([]TxOutStoreItem, 0, len(txOut.TxArray))
+	var storeErrors []error
+	for i, tx := range txOut.TxArray {
+		item := NewTxOutStoreItem(txOut.Height, tx.TxOutItem(txOut.Height), int64(i))
+		if item.TxOutItem.Chain.Equals(common.XMRChain) {
+			existing, err := s.storage.Get(item.Key())
+			if err != nil {
+				// An unreadable record may contain recovery evidence. Leave it
+				// untouched, but do not prevent the other attempts from being
+				// saved. Nothing is marked paid: a missing attempt can return
+				// through THORChain rescheduling or redelivery after recovery.
+				storeErrors = append(storeErrors, fmt.Errorf("read XMR signer record %s: %w", item.Key(), err))
+				continue
+			}
+			if existing.RetrievalKey != "" {
+				continue
+			}
+			if admission, ok := s.chains[common.XMRChain].(interface {
+				CanSkipUnsupportedXMRDestination(types.TxOutItem) (bool, error)
+			}); ok {
+				skip, checkErr := admission.CanSkipUnsupportedXMRDestination(item.TxOutItem)
+				if checkErr != nil {
+					s.logger.Warn().Err(checkErr).Msg("retaining XMR attempt while admission state is unknown")
+				} else if skip {
+					continue
+				}
+			}
+		}
+		items = append(items, item)
+	}
+	if len(items) > 0 {
+		storeErrors = append(storeErrors, s.storage.Batch(items))
+	}
+	return errors.Join(storeErrors...)
 }
 
 func (s *Signer) processKeygen(ch <-chan ttypes.KeygenBlock) {
@@ -372,66 +450,53 @@ func (s *Signer) processKeygen(ch <-chan ttypes.KeygenBlock) {
 	}
 }
 
-func (s *Signer) scheduleKeygenRetry(keygenBlock ttypes.KeygenBlock) bool {
-	churnRetryInterval, err := s.thorchainBridge.GetMimir(constants.ChurnRetryInterval.String())
+// scheduleKeygenRetry retains unknown policy for all keygen types, including
+// Asgard. This is shared retry behavior, not an XMR-only execution gate.
+func (s *Signer) scheduleKeygenRetry(keygenBlock ttypes.KeygenBlock, keygenReq ttypes.Keygen) bool {
+	if s.isStopped() {
+		return false
+	}
+	retry := &keygenRetry{block: keygenBlock, keygen: keygenReq}
+	id := retryID(keygenBlock, keygenReq)
+	if _, loaded := s.keygenRetries.LoadOrStore(id, retry); loaded {
+		return true // One waiting worker already owns this retry intent.
+	}
+	finished, err := s.prepareKeygenRetry(retry)
+	if finished {
+		s.keygenRetries.CompareAndDelete(id, retry)
+		return false
+	}
 	if err != nil {
-		s.logger.Error().Err(err).Msg("fail to get churn retry mimir")
-		return false
+		s.logger.Warn().Err(err).Msg("retaining keygen retry while policy is unavailable")
 	}
-	if churnRetryInterval <= 0 {
-		churnRetryInterval = constants.NewConstantValue().GetInt64Value(constants.ChurnRetryInterval)
-	}
-	keygenRetryInterval, err := s.thorchainBridge.GetMimir(constants.KeygenRetryInterval.String())
-	if err != nil {
-		s.logger.Error().Err(err).Msg("fail to get keygen retries mimir")
-		return false
-	}
-	if keygenRetryInterval <= 0 {
-		return false
-	}
-
-	// sanity check the retry interval is at least 1.5x the timeout
-	retryIntervalDuration := time.Duration(keygenRetryInterval) * constants.ThorchainBlockTime
-	if retryIntervalDuration <= s.cfg.Signer.KeygenTimeout*3/2 {
-		s.logger.Error().
-			Stringer("retryInterval", retryIntervalDuration).
-			Stringer("keygenTimeout", s.cfg.Signer.KeygenTimeout).
-			Msg("retry interval too short")
-		return false
-	}
-
-	height, err := s.thorchainBridge.GetBlockHeight()
-	if err != nil {
-		s.logger.Error().Err(err).Msg("fail to get last chain height")
-		return false
-	}
-
-	// target retry height is the next keygen retry interval over the keygen block height
-	targetRetryHeight := (keygenRetryInterval - ((height - keygenBlock.Height) % keygenRetryInterval)) + height
-
-	// skip trying close to churn retry
-	if targetRetryHeight > keygenBlock.Height+churnRetryInterval-keygenRetryInterval {
-		return false
-	}
-
-	go func() {
-		// every block, try to start processing again
+	targetRetryHeight := retry.targetHeight
+	if !s.startKeygenWorker(func() {
+		defer s.keygenRetries.CompareAndDelete(id, retry)
+		ticker := time.NewTicker(constants.ThorchainBlockTime)
+		defer ticker.Stop()
 		for {
-			time.Sleep(constants.ThorchainBlockTime)
-			currentHeight, err := s.thorchainBridge.GetBlockHeight()
-			if err != nil {
-				s.logger.Error().Err(err).Msg("fail to get last chain height")
-			}
-			if currentHeight >= targetRetryHeight {
-				s.logger.Info().
-					Interface("keygenBlock", keygenBlock).
-					Int64("currentHeight", currentHeight).
-					Msg("retrying keygen")
-				s.processKeygenBlock(keygenBlock)
+			select {
+			case <-s.stopChan:
 				return
+			case <-ticker.C:
+				if retry.targetHeight == 0 {
+					finished, err := s.prepareKeygenRetry(retry)
+					if finished {
+						return
+					}
+					if err != nil {
+						continue
+					}
+				}
+				if s.tryKeygenRetry(retry) {
+					return
+				}
 			}
 		}
-	}()
+	}) {
+		s.keygenRetries.CompareAndDelete(id, retry)
+		return false
+	}
 
 	s.logger.Info().
 		Interface("keygenBlock", keygenBlock).
@@ -477,112 +542,214 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 	// Process XMR/FROST keygens before regular TSS keygens so every node enters
 	// the sidecar ceremony before regular keygen self-checks can delay a leader.
 	for _, keygenReq := range orderedKeygensForProcessing(keygenBlock.Keygens) {
-		keygenStart := time.Now()
-		keygenTime := time.Since(keygenStart).Milliseconds()
-		keygenChains := s.keygenChainsForType(keygenReq.Type)
-		var pubKey common.PubKeySet
-		var blame []ttypes.Blame
-		var frostPubKey common.PubKey
-		var frostKeyshareHex string
-		var observedMoneroHeight int64
-		var err error
-		var secp256k1Sig []byte
-
-		switch keygenReq.Type {
-		case ttypes.KeygenType_XMRMonovaultKeygen:
-			pubKey.Ed25519, frostPubKey, frostKeyshareHex, observedMoneroHeight, err = s.runCustomKeygenHooks(
-				keygenChains,
-				keygenReq.GetMembers().Strings(),
-				keygenBlock.Height,
-				common.EmptyPubKey,
-				common.EmptyPubKey,
-			)
-			if err != nil {
-				s.errCounter.WithLabelValues("fail_custom_keygen_hook", "").Inc()
-				s.logger.Error().Err(err).Interface("keygenBlock", keygenBlock).Msg("xmr monovault keygen hooks failed")
-				if s.scheduleKeygenRetry(singleKeygenBlock(keygenBlock.Height, keygenReq)) {
-					continue
-				}
-				s.logger.Error().Interface("keygen", keygenReq).Msg("done with keygen retries after xmr monovault keygen failure")
-				continue
-			}
-			if pubKey.Ed25519.IsEmpty() {
-				pubKey.Ed25519 = frostPubKey
-			}
-			if frostPubKey.IsEmpty() {
-				frostPubKey = pubKey.Ed25519
-			}
-			pubKey.Secp256k1 = frostPubKey
-		default:
-			pubKey, blame, err = s.tssKeygen.GenerateNewKey(keygenBlock.Height, keygenReq.GetMembers())
-			if len(blame) > 0 {
-				for _, b := range blame {
-					s.logger.Error().
-						Str("reason", b.FailReason).
-						Interface("nodes", b.BlameNodes).
-						Msg("keygen blame")
-				}
-			}
-			if err != nil {
-				s.errCounter.WithLabelValues("fail_to_keygen_pubkey", "").Inc()
-				s.logger.Error().Err(err).Msg("fail to generate new pubkey")
-			}
-
-			// re-enqueue the keygen block to retry if we failed to generate a key
-			if pubKey.Secp256k1.IsEmpty() || pubKey.Ed25519.IsEmpty() {
-				if s.scheduleKeygenRetry(singleKeygenBlock(keygenBlock.Height, keygenReq)) {
-					continue
-				}
-				s.logger.Error().Interface("keygen", keygenReq).Msg("done with keygen retries")
-				continue
-			}
-
-			// Give chain clients with custom keygen logic a chance to initialize chain-specific
-			// signer state (for example Monero multisig address mapping) before keygen is finalized.
-			pubKey.Ed25519, frostPubKey, frostKeyshareHex, observedMoneroHeight, err = s.runCustomKeygenHooks(
-				keygenChains,
-				keygenReq.GetMembers().Strings(),
-				keygenBlock.Height,
-				pubKey.Secp256k1,
-				pubKey.Ed25519,
-			)
-			if err != nil {
-				s.errCounter.WithLabelValues("fail_custom_keygen_hook", "").Inc()
-				s.logger.Error().Err(err).Interface("keygenBlock", keygenBlock).Msg("custom keygen hooks failed")
-				if s.scheduleKeygenRetry(singleKeygenBlock(keygenBlock.Height, keygenReq)) {
-					continue
-				}
-				s.logger.Error().Interface("keygen", keygenReq).Msg("done with keygen retries after custom keygen hook failure")
-				continue
-			}
-
-			// generate a verification signature to ensure we can sign with the new key
-			secp256k1Sig = s.secp256k1VerificationSignature(pubKey.Secp256k1, keygenBlock.Height)
-		}
-
-		if pubKey.Secp256k1.IsEmpty() || pubKey.Ed25519.IsEmpty() {
-			if s.scheduleKeygenRetry(singleKeygenBlock(keygenBlock.Height, keygenReq)) {
-				continue
-			}
-			s.logger.Error().Interface("keygen", keygenReq).Msg("done with keygen retries after empty keygen result")
-			continue
-		}
-
-		s.flushPendingKeygenBroadcasts([]pendingKeygenBroadcast{{
-			height:               keygenBlock.Height,
-			poolPk:               pubKey.Secp256k1,
-			secp256k1Signature:   secp256k1Sig,
-			blame:                blame,
-			input:                keygenReq.GetMembers(),
-			keygenType:           keygenReq.Type,
-			chains:               keygenChains,
-			keygenTime:           keygenTime,
-			poolPubKeyEddsa:      pubKey.Ed25519,
-			poolPubKeyFrost:      frostPubKey,
-			frostKeyshareHex:     frostKeyshareHex,
-			observedMoneroHeight: observedMoneroHeight,
-		}})
+		s.processKeygenRequest(keygenBlock, keygenReq)
 	}
+}
+
+// processKeygenRequest is the execution choke point for one keygen request.
+// XMR ownership remains held through result construction and broadcast, while
+// non-XMR requests retain the existing direct path without guard contention.
+func (s *Signer) processKeygenRequest(keygenBlock ttypes.KeygenBlock, keygenReq ttypes.Keygen) {
+	if keygenReq.Type != ttypes.KeygenType_XMRMonovaultKeygen {
+		s.runKeygenRequest(keygenBlock, keygenReq)
+		return
+	}
+	s.processXMRKeygenRequest(keygenBlock, keygenReq, false)
+}
+
+// processXMRKeygenRequest admits once and transfers only the admitted
+// continuation when policy is unavailable. Retry context survives that wait.
+func (s *Signer) processXMRKeygenRequest(keygenBlock ttypes.KeygenBlock, keygenReq ttypes.Keygen, retry bool) {
+	current, disposition := s.xmrKeygen.admit(keygenBlock.Height, keygenReq, retry)
+	if current == nil {
+		s.logger.Warn().Int64("keygen_height", keygenBlock.Height).
+			Stringer("keygen_id", keygenReq.ID).Str("disposition", disposition).
+			Msg("XMR monovault keygen admission")
+		return
+	}
+	if current = s.runAdmittedXMRKeygen(current); current != nil {
+		// Transfer the admitted slot, not a new admission. Returning here leaves
+		// finishAndPromote to the worker and lets the consumer process Asgard.
+		if !s.startKeygenWorker(func() { s.retainXMRKeygen(current) }) {
+			s.runAdmittedXMRKeygen(current) // Shutdown drains ownership without DKG.
+		}
+	}
+}
+
+// runKeygenRequest executes an admitted request through result broadcast.
+// All returns come back to the admission loop, which releases or transfers XMR
+// ownership even when execution fails or the next attempt is halted.
+func (s *Signer) runKeygenRequest(keygenBlock ttypes.KeygenBlock, keygenReq ttypes.Keygen) {
+	keygenChains := s.keygenChainsForType(keygenReq.Type)
+	go s.warnOnChainsMissingFromKeygen(keygenChains, keygenReq.Type)
+	var keygenStart time.Time
+	var pubKey common.PubKeySet
+	var blame []ttypes.Blame
+	var frostPubKey common.PubKey
+	var frostKeyshareHex string
+	var observedMoneroHeight int64
+	var err error
+	var secp256k1Sig []byte
+
+	switch keygenReq.Type {
+	case ttypes.KeygenType_XMRMonovaultKeygen:
+		keygenStart = keygenNowFn()
+		pubKey.Ed25519, frostPubKey, frostKeyshareHex, observedMoneroHeight, err = s.runCustomKeygenHooks(
+			keygenChains,
+			keygenReq.GetMembers().Strings(),
+			keygenBlock.Height,
+			common.EmptyPubKey,
+			common.EmptyPubKey,
+		)
+		if err != nil {
+			s.errCounter.WithLabelValues("fail_custom_keygen_hook", "").Inc()
+			s.logger.Error().Err(err).Interface("keygenBlock", keygenBlock).Msg("xmr monovault keygen hooks failed")
+			if s.scheduleKeygenRetry(keygenBlock, keygenReq) {
+				return
+			}
+			s.logger.Error().Interface("keygen", keygenReq).Msg("done with keygen retries after xmr monovault keygen failure")
+			return
+		}
+		if pubKey.Ed25519.IsEmpty() {
+			pubKey.Ed25519 = frostPubKey
+		}
+		if frostPubKey.IsEmpty() {
+			frostPubKey = pubKey.Ed25519
+		}
+		pubKey.Secp256k1 = frostPubKey
+	default:
+		keygenStart = keygenNowFn()
+		pubKey, blame, err = s.tssKeygen.GenerateNewKey(keygenBlock.Height, keygenReq.GetMembers())
+		if len(blame) > 0 {
+			for _, b := range blame {
+				s.logger.Error().
+					Str("reason", b.FailReason).
+					Interface("nodes", b.BlameNodes).
+					Msg("keygen blame")
+			}
+		}
+		if err != nil {
+			s.errCounter.WithLabelValues("fail_to_keygen_pubkey", "").Inc()
+			s.logger.Error().Err(err).Msg("fail to generate new pubkey")
+		}
+
+		// re-enqueue the keygen block to retry if we failed to generate a key
+		if pubKey.Secp256k1.IsEmpty() || pubKey.Ed25519.IsEmpty() {
+			if s.scheduleKeygenRetry(keygenBlock, keygenReq) {
+				return
+			}
+			s.logger.Error().Interface("keygen", keygenReq).Msg("done with keygen retries")
+			return
+		}
+
+		// Give chain clients with custom keygen logic a chance to initialize chain-specific
+		// signer state (for example Monero multisig address mapping) before keygen is finalized.
+		pubKey.Ed25519, frostPubKey, frostKeyshareHex, observedMoneroHeight, err = s.runCustomKeygenHooks(
+			keygenChains,
+			keygenReq.GetMembers().Strings(),
+			keygenBlock.Height,
+			pubKey.Secp256k1,
+			pubKey.Ed25519,
+		)
+		if err != nil {
+			s.errCounter.WithLabelValues("fail_custom_keygen_hook", "").Inc()
+			s.logger.Error().Err(err).Interface("keygenBlock", keygenBlock).Msg("custom keygen hooks failed")
+			if s.scheduleKeygenRetry(keygenBlock, keygenReq) {
+				return
+			}
+			s.logger.Error().Interface("keygen", keygenReq).Msg("done with keygen retries after custom keygen hook failure")
+			return
+		}
+
+		// generate a verification signature to ensure we can sign with the new key
+		secp256k1Sig = s.secp256k1VerificationSignature(pubKey.Secp256k1, keygenBlock.Height)
+	}
+	keygenTime := keygenNowFn().Sub(keygenStart).Milliseconds()
+
+	if pubKey.Secp256k1.IsEmpty() || pubKey.Ed25519.IsEmpty() {
+		if s.scheduleKeygenRetry(keygenBlock, keygenReq) {
+			return
+		}
+		s.logger.Error().Interface("keygen", keygenReq).Msg("done with keygen retries after empty keygen result")
+		return
+	}
+
+	s.flushPendingKeygenBroadcasts([]pendingKeygenBroadcast{{
+		height:               keygenBlock.Height,
+		poolPk:               pubKey.Secp256k1,
+		secp256k1Signature:   secp256k1Sig,
+		blame:                blame,
+		input:                keygenReq.GetMembers(),
+		keygenType:           keygenReq.Type,
+		chains:               keygenChains,
+		keygenTime:           keygenTime,
+		poolPubKeyEddsa:      pubKey.Ed25519,
+		poolPubKeyFrost:      frostPubKey,
+		frostKeyshareHex:     frostKeyshareHex,
+		observedMoneroHeight: observedMoneroHeight,
+	}})
+}
+
+// xmrMonovaultKeygenAllowed is Bifrost's execution-side keygen gate. The
+// temporary enable Mimir makes rollout opt-in; only then is the independently
+// operable halt checked. It covers records already delivered to Bifrost and
+// local retry re-entry without changing THORNode's scheduling behavior. Every
+// unknown or unavailable enable state fails closed for execution; the error
+// return lets admission retain the request instead of treating it as a halt.
+func (s *Signer) xmrMonovaultKeygenAllowed(keygenHeight int64) (bool, error) {
+	enabled, err := s.thorchainBridge.GetMimir(constants.MimirKeyEnableMonovaultKeygen)
+	if err != nil {
+		s.logger.Error().
+			Err(err).
+			Int64("keygen_height", keygenHeight).
+			Msg("skipping XMR monovault keygen: unable to verify EnableMonovaultKeygen")
+		return false, err
+	}
+	if enabled <= 0 {
+		s.logger.Info().
+			Int64("keygen_height", keygenHeight).
+			Int64("enable_mimir", enabled).
+			Msg("skipping XMR monovault keygen: EnableMonovaultKeygen is not active")
+		return false, nil
+	}
+
+	halt, err := s.thorchainBridge.GetMimir(constants.MimirKeyHaltMonovaultKeygen)
+	if err != nil {
+		s.logger.Error().
+			Err(err).
+			Int64("keygen_height", keygenHeight).
+			Msg("skipping XMR monovault keygen: unable to verify HaltMonovaultKeygen")
+		return false, err
+	}
+	if halt <= 0 {
+		return true, nil
+	}
+
+	currentHeight, err := s.keygenCurrentHeight(keygenHeight)
+	if err != nil {
+		s.logger.Error().
+			Err(err).
+			Int64("keygen_height", keygenHeight).
+			Int64("halt_mimir", halt).
+			Int64("current_height", currentHeight).
+			Msg("skipping XMR monovault keygen: unable to verify halt activation height")
+		return false, err
+	}
+	if halt <= currentHeight {
+		s.logger.Warn().
+			Int64("keygen_height", keygenHeight).
+			Int64("halt_mimir", halt).
+			Int64("current_height", currentHeight).
+			Msg("skipping XMR monovault keygen due to HaltMonovaultKeygen")
+		return false, nil
+	}
+
+	s.logger.Info().
+		Int64("keygen_height", keygenHeight).
+		Int64("halt_mimir", halt).
+		Int64("current_height", currentHeight).
+		Msg("HaltMonovaultKeygen is scheduled for a future height; allowing XMR monovault keygen")
+	return true, nil
 }
 
 func (s *Signer) flushPendingKeygenBroadcasts(pending []pendingKeygenBroadcast) {
@@ -648,6 +815,40 @@ func (s *Signer) keygenChainsForType(keygenType ttypes.KeygenType) common.Chains
 	return chains.Distinct()
 }
 
+// warnOnChainsMissingFromKeygen reports chains the active vaults serve that this
+// bifrost is not configured for. THORNode keeps a chain in a new vault only when
+// a supermajority of the keygen members report it, so a node running with a
+// chain disabled can drop that chain from its vault and stall the churn on the
+// init vault chain set guard. Log only - never block or alter the report.
+//
+// Runs off the keygen goroutine: GetAsgards goes through the retrying HTTP
+// client with no overall deadline, so a stalled thornode must not delay this
+// node's entry into the ceremony past the party timeout.
+func (s *Signer) warnOnChainsMissingFromKeygen(keygenChains common.Chains, keygenType ttypes.KeygenType) {
+	if keygenType == ttypes.KeygenType_XMRMonovaultKeygen {
+		return // fixed chain set, not derived from local config
+	}
+	asgards, err := s.thorchainBridge.GetAsgards()
+	if err != nil {
+		s.logger.Debug().Err(err).Msg("fail to fetch asgards for keygen chain check")
+		return
+	}
+	var missing common.Chains
+	for _, vault := range asgards {
+		for _, chain := range vault.GetChains() {
+			if chain.Equals(common.XMRChain) || keygenChains.Has(chain) || missing.Has(chain) {
+				continue
+			}
+			missing = append(missing, chain)
+		}
+	}
+	for _, chain := range missing {
+		s.logger.Error().
+			Stringer("chain", chain).
+			Msg("chain is served by the active vaults but disabled in this bifrost - keygen will report without it and may stall the churn")
+	}
+}
+
 func (s *Signer) runCustomKeygenHooks(
 	chains common.Chains,
 	keys []string,
@@ -655,13 +856,6 @@ func (s *Signer) runCustomKeygenHooks(
 	poolPubKey common.PubKey,
 	poolPubKeyEddsa common.PubKey,
 ) (common.PubKey, common.PubKey, string, int64, error) {
-	version := ""
-	if v, err := s.thorchainBridge.GetThorchainVersion(); err != nil {
-		s.logger.Debug().Err(err).Msg("fail to fetch thorchain version for custom keygen")
-	} else {
-		version = v.String()
-	}
-
 	var customHookErr error
 	effectivePoolPubKeyEddsa := poolPubKeyEddsa
 	var frostPoolPubKey common.PubKey
@@ -677,11 +871,10 @@ func (s *Signer) runCustomKeygenHooks(
 		}
 
 		result, err := custom.Keygen(chainclienttypes.CustomKeygenRequest{
-			Members:          keys,
-			BlockHeight:      blockHeight,
-			ThorchainVersion: version,
-			PoolPubKey:       poolPubKey,
-			PoolPubKeyEddsa:  effectivePoolPubKeyEddsa,
+			Members:         keys,
+			BlockHeight:     blockHeight,
+			PoolPubKey:      poolPubKey,
+			PoolPubKeyEddsa: effectivePoolPubKeyEddsa,
 		})
 		if err != nil {
 			s.logger.Error().Err(err).Str("chain", chainID.String()).Msg("custom keygen failed")
@@ -725,11 +918,48 @@ func (s *Signer) runCustomKeygenHooks(
 	return effectivePoolPubKeyEddsa, frostPoolPubKey, frostKeyshareHex, observedMoneroHeight, customHookErr
 }
 
-// secp256k1VerificationSignature will make a best effort to sign the public key with
-// its own private key as a sanity check to ensure parties are able to sign. The
-// signature will be included in the TssPool message if successful, and verified by
-// THORNode before the keygen is accepted.
+// secp256k1VerificationSignature signs the public key with its own private key as a
+// sanity check that the parties can sign. Asgard keygen requires a quorum on this
+// check signature before THORNode accepts the keygen. Nodes outside the signing
+// party may legitimately return no signature.
 func (s *Signer) secp256k1VerificationSignature(pk common.PubKey, thorchainHeight int64) []byte {
+	return s.secp256k1VerificationSignatureWithTimeout(
+		pk,
+		thorchainHeight,
+		secp256k1VerificationSignatureTimeout,
+		s.secp256k1VerificationSignatureSync,
+	)
+}
+
+func (s *Signer) secp256k1VerificationSignatureWithTimeout(
+	pk common.PubKey,
+	thorchainHeight int64,
+	timeout time.Duration,
+	sign func(common.PubKey, int64) []byte,
+) []byte {
+	type verificationResult struct {
+		sig []byte
+	}
+	resultCh := make(chan verificationResult, 1)
+	go func() {
+		resultCh <- verificationResult{sig: sign(pk, thorchainHeight)}
+	}()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	select {
+	case result := <-resultCh:
+		return result.sig
+	case <-timer.C:
+		s.logger.Warn().
+			Stringer("pubkey", pk).
+			Stringer("timeout", timeout).
+			Msg("timed out generating secp256k1 keygen check signature")
+		return nil
+	}
+}
+
+func (s *Signer) secp256k1VerificationSignatureSync(pk common.PubKey, thorchainHeight int64) []byte {
 	// create keysign instance
 	ks, err := tss.NewKeySign(s.tssServer, keygenCheckBridge{ThorchainBridge: s.thorchainBridge})
 	if err != nil {
@@ -840,6 +1070,16 @@ func (s *Signer) buildKeygenBackups(secpKeysharePath, eddsaKeysharePath, frostKe
 	seedPhrase, seedErr := common.GetSignerSeedPhrase()
 	if seedErr != nil {
 		s.logger.Error().Err(seedErr).Msg("fail to get signer seed phrase")
+		return keygenBackups{}
+	}
+	// The seed encrypts the keyshare disaster-recovery backup, and EncryptKeyshares
+	// requires a 24-word (256-bit) seed. A shorter — but still valid BIP39 — seed is
+	// accepted at startup so the node can run and sign, but it cannot produce a DR
+	// backup. Surface that loudly on every keygen instead of failing each encrypt
+	// attempt with an opaque "not 24 words" error.
+	if wordCount := len(strings.Fields(seedPhrase)); wordCount < 24 {
+		s.logger.Error().Int("seed_words", wordCount).Msgf(
+			"signer seed is %d words: NO keyshare disaster-recovery backup written — regenerate as a 24-word seed to enable DR", wordCount)
 		return keygenBackups{}
 	}
 	expected := 0
@@ -986,11 +1226,22 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		inactiveVaultRound7Retry = vault.Status == ttypes.VaultStatus_InactiveVault
 	}
 
-	// if not in round 7 retry or the round 7 retry is on an inactive vault, discard
-	// outbound if within configured blocks of reschedule
-	if !item.Round7Retry || inactiveVaultRound7Retry {
-		if blockHeight-signingTransactionPeriod > height-s.cfg.Signer.RescheduleBufferBlocks {
-			s.logger.Error().Msgf("tx was created at block height(%d), now it is (%d), it is older than (%d) blocks, skip it", height, blockHeight, signingTransactionPeriod)
+	// Stale items must stop here so an old transaction cannot be broadcast after
+	// THORChain has rescheduled the outbound. XMR is the only exception: its
+	// vault-independent durable claim prevents a replacement signing ceremony,
+	// so a persisted payload can safely rebroadcast the exact same transaction.
+	hasSignedRetry := len(item.SignedTx) > 0
+	allowStaleSignedRetry := hasSignedRetry && tx.Chain.Equals(common.XMRChain)
+	signingWindow := signingTransactionPeriod
+	if tx.Chain.Equals(common.XMRChain) {
+		// Match THORChain's XMR outbound lifetime. Scanner catch-up and a failed
+		// FROST join can consume the base period before all participants retry.
+		// Keep the reschedule buffer and completed-request check below intact.
+		signingWindow = ttypes.MaxTxOutSigningTransactionPeriod(signingTransactionPeriod)
+	}
+	if !allowStaleSignedRetry && (!item.Round7Retry || inactiveVaultRound7Retry) {
+		if blockHeight-signingWindow > height-s.cfg.Signer.RescheduleBufferBlocks {
+			s.logger.Error().Msgf("tx was created at block height(%d), now it is (%d), it is older than (%d) blocks, skip it", height, blockHeight, signingWindow)
 			return nil, nil, nil
 		}
 	}
@@ -1054,11 +1305,36 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		return nil, nil, err
 	}
 	for _, txArray := range txOut.TxArray {
-		if txArray.TxOutItem(item.TxOutItem.Height).Equals(tx) && !txArray.OutHash.IsEmpty() {
+		latestTx := txArray.TxOutItem(item.TxOutItem.Height)
+		if !txOutItemEqualsIgnoringGas(latestTx, tx) {
+			continue
+		}
+		if !latestTx.OutHash.IsEmpty() {
 			// already been signed, we can skip it
-			s.logger.Info().Str("tx_id", tx.OutHash.String()).Msgf("already signed. skipping...")
+			s.logger.Info().Str("tx_id", latestTx.OutHash.String()).Msgf("already signed. skipping...")
 			return nil, nil, nil
 		}
+		// Signed bytes, a checkpoint, or a terminal-round marker all cross the
+		// transaction-immutability boundary. Gas may be part of the chain tx hash,
+		// so only a wholly unexposed attempt may adopt refreshed gas.
+		if len(item.SignedTx) == 0 && len(item.Checkpoint) == 0 && !item.Round7Retry && txOutItemGasChanged(latestTx, tx) {
+			s.logger.Info().
+				Str("chain", tx.Chain.String()).
+				Str("memo", tx.Memo).
+				Int64("old_gas_rate", tx.GasRate).
+				Int64("new_gas_rate", latestTx.GasRate).
+				Msg("refreshing signer txout gas from latest keysign")
+			tx.MaxGas = latestTx.MaxGas
+			tx.GasRate = latestTx.GasRate
+			item.TxOutItem.MaxGas = latestTx.MaxGas
+			item.TxOutItem.GasRate = latestTx.GasRate
+			if s.storage != nil {
+				if storeErr := s.storage.Set(item); storeErr != nil {
+					s.logger.Error().Err(storeErr).Msg("fail to persist refreshed txout gas")
+				}
+			}
+		}
+		break
 	}
 
 	// If the chain client exposes a vault lock, hold it for sign+broadcast so
@@ -1073,7 +1349,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	var signedTx, checkpoint []byte
 	var elapse time.Duration
 	var observation *types.TxInItem
-	if len(item.SignedTx) > 0 {
+	if hasSignedRetry {
 		s.logger.Info().Str("memo", tx.Memo).Msg("retrying broadcast of already signed tx")
 		signedTx = item.SignedTx
 		observation = item.Observation
@@ -1082,13 +1358,19 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		startKeySign := time.Now()
 		signedTx, checkpoint, observation, err = chain.SignTx(tx, height)
 		if err != nil {
-			s.logger.Error().Err(err).Msg("fail to sign tx")
+			if !errors.Is(err, chainclienttypes.ErrUnsupportedXMRDestination) {
+				s.logger.Error().Err(err).Msg("fail to sign tx")
+			}
 			return checkpoint, nil, err
 		}
 		elapse = time.Since(startKeySign)
 
-		// store immediately after a successful sign so the signed payload is saved even if broadcast crashes
+		// Store the signed payload before broadcast so a restart can retry the
+		// same transaction. Persist the chain-provided observation with it:
+		// most chains return nil, while XMR uses the observation to carry spent
+		// refs that must survive until import/observation is durable.
 		item.SignedTx = signedTx
+		item.Observation = observation
 		if storeErr := s.storage.Set(item); storeErr != nil {
 			s.logger.Error().Err(storeErr).Msg("fail to persist signed tx before broadcast")
 		}
@@ -1104,6 +1386,23 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	hash, err := chain.BroadcastTx(tx, signedTx)
 	if err != nil {
 		s.logger.Error().Err(err).Str("memo", tx.Memo).Msg("fail to broadcast tx to chain")
+
+		// A chain client returns ErrResignRequired when the signed bytes can never
+		// land (e.g. a SOL tx whose blockhash expired mid-keysign): re-broadcasting
+		// the same bytes loops forever. Clear the stored signed tx + checkpoint so
+		// the next pass re-enters SignTx, where the chain's sign-time validity gate
+		// re-evaluates (for SOL, dropping the item for a deterministic fresh-height
+		// reschedule). Every other broadcast error keeps the signed tx for a plain
+		// broadcast retry, since re-signing wastes a keysign and risks a double
+		// broadcast when the tx may still land.
+		if errors.Is(err, types.ErrResignRequired) {
+			item.SignedTx = nil
+			item.Checkpoint = nil
+			if storeErr := s.storage.Set(item); storeErr != nil {
+				s.logger.Error().Err(storeErr).Msg("fail to clear signed tx for re-sign")
+			}
+			return nil, observation, err
+		}
 
 		// store the signed tx for the next retry
 		item.SignedTx = signedTx
@@ -1135,8 +1434,15 @@ func (s *Signer) isTssKeysign(pubKey common.PubKey) bool {
 func (s *Signer) Stop() error {
 	s.logger.Info().Msg("receive request to stop signer")
 	defer s.logger.Info().Msg("signer stopped successfully")
+	s.keygenWorkerMu.Lock()
 	close(s.stopChan)
+	s.keygenWorkerMu.Unlock()
 	s.wg.Wait()
+	// Retry execution must finish before its resources close, just like the
+	// normal consumer. This is not bounded by one keygen timeout: phase timers,
+	// sidecar calls and result waits are separate until active DKG cancellation
+	// is implemented.
+	s.keygenWorkerWG.Wait()
 	if err := s.m.Stop(); err != nil {
 		s.logger.Error().Err(err).Msg("fail to stop metric server")
 	}
@@ -1158,7 +1464,15 @@ func (s *Signer) isStopped() bool {
 }
 
 func (s *Signer) storageList() []TxOutStoreItem {
-	return s.storage.List()
+	items := s.storage.List()
+	if s.observer != nil && s.observer.IsChainClientStarted(common.XMRChain) {
+		return items
+	}
+	// Filter only the materialized list. Deferred XMR, including signed retries,
+	// stays durable without consuming signing attempts or expiring in the pipeline.
+	return slices.DeleteFunc(items, func(item TxOutStoreItem) bool {
+		return item.TxOutItem.Chain.Equals(common.XMRChain)
+	})
 }
 
 func (s *Signer) processTransaction(item TxOutStoreItem) {
@@ -1174,28 +1488,67 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 		return s.signAndBroadcast(item)
 	})
 
+	if errors.Is(err, chainclienttypes.ErrTxExpired) {
+		// Expiry is terminal for this attempt, including saved payloads and
+		// terminal-round retries. Never auto-observe it as a successful outbound.
+		s.logger.Warn().Err(err).Interface("tx", item.TxOutItem).
+			Msg("retiring expired transaction; awaiting THORChain rescheduling")
+		if removeErr := s.storage.Remove(item); removeErr != nil {
+			s.logger.Error().Err(removeErr).Msg("fail to remove expired tx out store item")
+		}
+		cancel()
+		return
+	}
+
 	// Apply spent output refs from the signing observation before handling
 	// errors. The observation is populated during FROST signing and contains
 	// the real inputs consumed. Applying immediately ensures the sidecar
 	// marks outputs spent even when broadcast fails (another signer may have
 	// broadcast the same tx successfully).
+	// If the chain client can report import durability, keep the txout item
+	// until refs are applied so a restart can retry the same signed payload.
 	// Fall back to the stored observation from a prior signing attempt.
 	obsForRefs := obs
 	if obsForRefs == nil {
 		obsForRefs = item.Observation
 	}
-	s.applySpentOutputRefsFromObs(item.TxOutItem, obsForRefs)
+	if !s.applySpentOutputRefsFromObs(ctx, item.TxOutItem, obsForRefs) {
+		s.logger.Warn().
+			Interface("tx", item.TxOutItem).
+			Msg("xmr spent output refs not durable; keeping tx out store item for retry")
+		cancel()
+		return
+	}
 
 	if err != nil {
+		if errors.Is(err, chainclienttypes.ErrUnsupportedXMRDestination) && item.TxOutItem.Chain.Equals(common.XMRChain) &&
+			!item.Round7Retry && len(item.SignedTx) == 0 && len(item.Checkpoint) == 0 && len(item.TxOutItem.Checkpoint) == 0 &&
+			item.Observation == nil && len(checkpoint) == 0 && obs == nil {
+			// Retire only this local unsigned attempt, never the on-chain
+			// obligation. A delete failure leaves it retryable; THORChain can
+			// also supply the same unsupported destination in a later schedule.
+			if removeErr := s.storage.Remove(item); removeErr != nil {
+				s.logger.Error().Err(removeErr).Str("item", item.Key()).
+					Msg("fail to retire unsupported unsigned XMR destination")
+			} else {
+				s.logger.Warn().Str("chain", item.TxOutItem.Chain.String()).Str("item", item.Key()).
+					Stringer("destination", item.TxOutItem.ToAddress).
+					Msg("retired local unsigned attempt for unsupported destination; on-chain obligation remains pending")
+			}
+			cancel()
+			return
+		}
 		// Always store the checkpoint of the built tx if we have one. This ensures the same
 		// vault will never attempt multiple txs for an outbound, as further protection
 		// against cases like https://gitlab.com/thorchain/thornode/-/merge_requests/4344.
 		// In tradeoff, we accept a higher likelihood of temporary stuck outbounds.
 		ksErr := tss.KeysignError{}
-		// Terminal-round failure = the keysign died at the round that emits the
-		// signature share (secp256k1 KEYSIGN9 under tss-lib v3, EDDSAKEYSIGN3
-		// under ed25519). Round7Retry persists on the item — its name is the
-		// legacy v1 label and is kept stable for on-disk schema compatibility.
+		// Terminal-round failure = the keysign crossed a signature-exposure
+		// boundary (secp256k1 KEYSIGN9 under tss-lib v3, EDDSAKEYSIGN3 under
+		// ed25519, or FROST frost_share/frost_result). FROST preprocess remains
+		// non-terminal because no signature share has been broadcast yet.
+		// Round7Retry persists on the item — its name is the legacy v1 label and
+		// is kept stable for on-disk schema compatibility.
 		isTerminalRound := errors.As(err, &ksErr) && ksErr.IsTerminalRound()
 		if checkpoint != nil || isTerminalRound {
 			item.Checkpoint = checkpoint
@@ -1246,20 +1599,13 @@ func signingTimeoutForChain(chain common.Chain) time.Duration {
 	return 5 * time.Minute
 }
 
-func (s *Signer) applySpentOutputRefsFromObs(tx types.TxOutItem, obs *types.TxInItem) {
+func (s *Signer) applySpentOutputRefsFromObs(ctx context.Context, tx types.TxOutItem, obs *types.TxInItem) bool {
 	if obs == nil || len(obs.SpentOutputRefs) == 0 {
-		return
+		return true
 	}
 	chain, ok := s.chains[tx.Chain]
 	if !ok {
-		return
-	}
-	type spentRefApplier interface {
-		ApplySpentOutputRefs(common.ObservedTx)
-	}
-	applier, ok := chain.(spentRefApplier)
-	if !ok {
-		return
+		return !tx.Chain.Equals(common.XMRChain)
 	}
 	obsTx := common.NewObservedTx(
 		common.NewTx(
@@ -1275,9 +1621,36 @@ func (s *Signer) applySpentOutputRefsFromObs(tx types.TxOutItem, obs *types.TxIn
 		obs.BlockHeight,
 	)
 	obsTx.SpentOutputRefs = common.OutputRefsFromPointers(obs.SpentOutputRefs)
+	obsTx.XmrTxKey = obs.TxKey
 	s.logger.Info().
 		Str("tx_hash", obs.Tx).
 		Int("refs", len(obs.SpentOutputRefs)).
 		Msg("applying spent output refs from signing observation")
-	applier.ApplySpentOutputRefs(obsTx)
+	outcome := make(chan bool, 1)
+	onOutcome := func(applied bool) {
+		// The contract is exactly-once, but keep a misbehaving implementation
+		// from blocking its retry goroutine after the signer has timed out.
+		select {
+		case outcome <- applied:
+		default:
+		}
+	}
+	applier, ok := chain.(chainclienttypes.SpentOutputRefsApplier)
+	if !ok {
+		// Exact spent refs and wire-memo authentication are XMR signing
+		// invariants. Never discard an XMR TxOut without the production hook.
+		return !tx.Chain.Equals(common.XMRChain)
+	}
+	applier.ApplySpentOutputRefsWithOutcome(chainclienttypes.SpentOutputRefsImport{
+		Tx:       obsTx,
+		WireMemo: types.XMRWireMemo(tx.Memo, tx.OriginalMemo),
+	}, onOutcome)
+	select {
+	case applied := <-outcome:
+		return applied
+	case <-ctx.Done():
+		return false
+	case <-s.stopChan:
+		return false
+	}
 }

@@ -1,6 +1,9 @@
 package thorchain
 
 import (
+	"github.com/cosmos/cosmos-sdk/telemetry"
+	"github.com/hashicorp/go-metrics"
+
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -56,6 +59,48 @@ func (h ObservedTxQuorumHandler) handle(ctx cosmos.Context, msg types.MsgObserve
 	obsTx := quoTx.ObsTx
 	inbound := quoTx.Inbound
 
+	signBz, err := obsTx.GetSignablePayloadWithInbound(inbound)
+	if err != nil {
+		ctx.Logger().Error("fail to marshal tx sign payload", "error", err)
+		return &cosmos.Result{}, nil
+	}
+
+	var accAddrs []cosmos.AccAddress
+	attestations := deduplicateAttestations(msg.QuoTx.Attestations, len(activeNodeAccounts))
+	for _, att := range attestations {
+		accAddr, verifyErr := verifyQuorumAttestation(activeNodeAccounts, signBz, att)
+		if verifyErr != nil {
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "quorum", "attestation_invalid"}, 1,
+				[]metrics.Label{telemetry.NewLabel("kind", "tx")},
+			)
+			ctx.Logger().Error("fail to verify quorum tx in attestation", "error", verifyErr)
+			continue
+		}
+		accAddrs = append(accAddrs, accAddr)
+	}
+	if len(accAddrs) == 0 {
+		direction := "out"
+		if inbound {
+			direction = "in"
+		}
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "quorum", "tx_no_valid_attestations"}, 1,
+			[]metrics.Label{
+				telemetry.NewLabel("chain", telemChain(obsTx.Tx.Chain)),
+				telemetry.NewLabel("direction", direction),
+			},
+		)
+		ctx.Logger().Info(
+			"quorum tx has no active attestations",
+			"chain", obsTx.Tx.Chain,
+			"txid", obsTx.Tx.ID,
+			"inbound", inbound,
+			"attestations", len(msg.QuoTx.Attestations),
+		)
+		return &cosmos.Result{}, nil
+	}
+
 	// check we are sending to a valid vault
 	var voter types.ObservedTxVoter
 	if inbound {
@@ -65,31 +110,15 @@ func (h ObservedTxQuorumHandler) handle(ctx cosmos.Context, msg types.MsgObserve
 			return &cosmos.Result{}, nil
 		}
 	} else {
-		voter, err = ensureVaultAndGetTxOutVoter(ctx, k, obsTx.ObservedPubKey, obsTx.Tx.ID, msg.GetSigners(), obsTx.KeysignMs)
+		voter, err = ensureVaultAndGetTxOutVoter(ctx, k, obsTx.ObservedPubKey, obsTx.Tx.ID, accAddrs, obsTx.KeysignMs)
 		if err != nil {
 			ctx.Logger().Error("fail to ensure vault and get tx out voter", "error", err)
 			return &cosmos.Result{}, nil
 		}
 	}
 
-	signBz, err := obsTx.GetSignablePayloadWithInbound(inbound)
-	if err != nil {
-		ctx.Logger().Error("fail to marshal tx sign payload", "error", err)
-		return &cosmos.Result{}, nil
-	}
-
 	var crossedQuorum bool
-	var accAddrs []cosmos.AccAddress
-	attestations := deduplicateAttestations(msg.QuoTx.Attestations, len(activeNodeAccounts))
-	for _, att := range attestations {
-		accAddr, err := verifyQuorumAttestation(activeNodeAccounts, signBz, att)
-		if err != nil {
-			ctx.Logger().Error("fail to verify quorum tx in attestation", "error", err)
-			continue
-		}
-
-		accAddrs = append(accAddrs, accAddr)
-
+	for _, accAddr := range accAddrs {
 		var isQuorum bool
 		if inbound {
 			voter, isQuorum = processTxInAttestation(ctx, h.mgr, voter, activeNodeAccounts, obsTx, accAddr, false)

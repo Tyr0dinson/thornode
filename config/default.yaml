@@ -78,22 +78,6 @@ bifrost:
     keysign_timeout: 45s
     party_timeout: 45s
     pre_param_timeout: 5m
-    # keyverify scheduler — independent of keygen/keysign budgets. Set
-    # via BIFROST_SIGNER_KEYVERIFY_ROUND_TIMEOUT /
-    # BIFROST_SIGNER_KEYVERIFY_PER_VAULT_TIMEOUT to adjust on a live
-    # bifrost without a release cut. round < per_vault so per-peer blame
-    # attribution wins over outer ctx-cancellation.
-    keyverify_round_timeout: 2m
-    keyverify_per_vault_timeout: 3m
-    # per-attempt recovery ticker: re-send dropped round messages/confirms
-    # every interval, at most max_retries times per artifact.
-    keyverify_retry_interval: 5s
-    keyverify_max_retries: 3
-    # set true to disable the keyverify scheduler entirely (stops the
-    # every-100-blocks TSS re-attestation load; inbound keyverify streams
-    # from peers that still run it are swept by a background timer). Can also
-    # be set via BIFROST_SIGNER_KEYVERIFY_DISABLED without a release cut.
-    keyverify_disabled: false
   tss:
     rendezvous: asgard
     p2p_port: 5040
@@ -104,6 +88,7 @@ bifrost:
   chains:
     btc: &default-chain
       disabled: false
+      signer_cache_expiry: 72h # 3 days - for chains without embedded block hashes
       chain_id: BTC
       cosmos_chain_id: ""
       username: thorchain
@@ -126,6 +111,12 @@ bifrost:
       wallet_authorization_bearer: ""
       signer_backend: ""
       signer_endpoint: ""
+      signer_authorization_bearer: ""
+      signer_username: ""
+      signer_password: ""
+      signer_expected_network: ""
+      signer_expected_commit: ""
+      signer_allow_insecure_http: false
       xmr_consolidation_enabled: false
       xmr_consolidation_check_interval_blocks: 0
       xmr_consolidation_cooldown_blocks: 0
@@ -273,6 +264,7 @@ bifrost:
           - 0xcbd06e5a2b0c65597161de254aa074e489deb510 # cbDOGE
           - 0xcb17c9db87b595717c857a08468793f5bab6445f # cbLTC
           - 0xcb585250f852c6c6bf90434ab21a00f02833a4af # cbXRP
+          - 0x7431ada8a591c955a994a21710752ef9b882b8e3 # MOR
       mempool_tx_id_cache_size: 0
       scanner_leveldb: *default-leveldb
 
@@ -302,6 +294,7 @@ bifrost:
 
     tron:
       <<: *default-chain
+      signer_cache_expiry: 2h # TRON keysigns embed a recent ref block; a long window is unnecessary
       chain_id: TRON
       block_scanner:
         <<: *default-block-scanner
@@ -491,8 +484,15 @@ bifrost:
       <<: *default-chain
       disabled: true
       chain_id: XMR
+      min_confirmations: 10
       signer_backend: "tss" # monero signer backend
       signer_endpoint: "http://127.0.0.1:8283" # this node's xmr tss signer endpoint
+      signer_authorization_bearer: "" # xmr-frost-signer bearer only; never sent to monerod
+      signer_username: "" # xmr-frost-signer basic auth username (mutually exclusive with bearer)
+      signer_password: "" # xmr-frost-signer basic auth password
+      signer_expected_network: "" # required on every network: mocknet, chainnet, stagenet, or mainnet
+      signer_expected_commit: "" # optional release metadata; enforce the immutable image digest in deployment tooling
+      signer_allow_insecure_http: false # development-only isolated compose escape hatch
       xmr_consolidation_enabled: true
       xmr_consolidation_check_interval_blocks: 10
       xmr_consolidation_cooldown_blocks: 30
@@ -559,6 +559,7 @@ bifrost:
 
     sol:
       <<: *default-chain
+      signer_cache_expiry: 2h # SOL keysigns embed a recent blockhash (~60s validity); a long window is unnecessary
       chain_id: SOL
       block_scanner:
         <<: *default-block-scanner
@@ -572,7 +573,7 @@ bifrost:
         max_contract_tx_logs: 0
       mempool_tx_id_cache_size: 0
       scanner_leveldb: *default-leveldb
-      solvency_blocks: 50
+      solvency_blocks: 500
 
     zec:
       <<: *default-chain
@@ -1059,10 +1060,22 @@ thor:
     pagination:
       default_page_size: 100
       max_page_size: 1000
+    logs:
+      # blocks of module logs (all levels, thorchain and cosmos sdk) kept for
+      # /thorchain/logs, 0 disables and leaves existing files in place; the
+      # directory is also capped at 1GiB. Capture records every level whatever
+      # --log_level is, so enabling this adds per-line work (stringify, JSON
+      # encode, a mutex) to block execution proportional to debug log volume:
+      # prefer a non-validating node. /thorchain/logs is served unauthenticated
+      # on the api port and reads off the state disk, so do not leave this on
+      # with the api port publicly reachable.
+      retain_blocks: 0
   telemetry:
     slash_points: false
     price_per_node: false
 
+  # these suppress stdout only: api.logs capture records a line before the
+  # filter runs, so a filtered module still appears in /thorchain/logs
   log_filter:
     modules:
       - api-server
@@ -1096,6 +1109,14 @@ thor:
       enabled_unsafe_cors: true
       enabled_swagger: true
       address: tcp://0.0.0.0:1317
+      # When the gRPC server is enabled, route REST (grpc-gateway) queries
+      # through it in-process, off the comet ABCI query path whose global lock
+      # serializes queries behind block execution. With grpc.enable false
+      # (default) REST queries use the legacy ABCI path regardless; set false to
+      # keep ABCI routing even with the gRPC server running.
+      query_via_grpc: true
+    # Enabling gRPC also reroutes REST queries via api.query_via_grpc above.
+    # External exposure is governed by the operator's published ports.
     grpc:
       enable: false
       address: 0.0.0.0:9090

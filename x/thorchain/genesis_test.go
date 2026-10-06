@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"fmt"
 	"os"
 	"regexp"
 	"strings"
@@ -11,6 +12,8 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/common/tcysmartcontract"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -102,6 +105,135 @@ func (GenesisTestSuite) TestGenesisPOLReserveDepositRoundTrip(c *C) {
 	c.Check(gotUSDC.RuneDeposited.String(), Equals, usdcDeposit.RuneDeposited.String())
 }
 
+func (GenesisTestSuite) TestGenesisInactiveAsgardDeficitRoundTrip(c *C) {
+	SetupConfigForTest()
+
+	srcCtx, srcMgr := setupManagerForTest(c)
+	deficitVault := GetRandomVault()
+	deficitVault.Status = InactiveVault
+	deficitVault.StatusSince = srcCtx.BlockHeight()
+	deficitVault.Coins = common.Coins{}
+	deficitVault.Deficit = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(12345)))
+	c.Assert(srcMgr.Keeper().SetVault(srcCtx, deficitVault), IsNil)
+	c.Assert(srcMgr.Keeper().RemoveFromAsgardIndex(srcCtx, deficitVault.PubKey), IsNil)
+	initDeficitVault := GetRandomVault()
+	initDeficitVault.Status = InitVault
+	initDeficitVault.StatusSince = srcCtx.BlockHeight()
+	initDeficitVault.Coins = common.Coins{}
+	initDeficitVault.Deficit = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(67890)))
+	c.Assert(srcMgr.Keeper().SetVault(srcCtx, initDeficitVault), IsNil)
+	c.Assert(srcMgr.Keeper().RemoveFromAsgardIndex(srcCtx, initDeficitVault.PubKey), IsNil)
+
+	abandonedVault := GetRandomVault()
+	abandonedVault.Status = InactiveVault
+	abandonedVault.Coins = common.Coins{}
+	abandonedVault.Deficit = common.Coins{}
+	c.Assert(srcMgr.Keeper().SetVault(srcCtx, abandonedVault), IsNil)
+	c.Assert(srcMgr.Keeper().RemoveFromAsgardIndex(srcCtx, abandonedVault.PubKey), IsNil)
+
+	exported := ExportGenesis(srcCtx, srcMgr.Keeper())
+	findVault := func(vaults Vaults, pubKey common.PubKey) (Vault, bool) {
+		for _, vault := range vaults {
+			if vault.PubKey.Equals(pubKey) {
+				return vault, true
+			}
+		}
+		return Vault{}, false
+	}
+
+	exportedDeficitVault, found := findVault(exported.Vaults, deficitVault.PubKey)
+	c.Assert(found, Equals, true)
+	c.Check(exportedDeficitVault.GetDeficit(common.ETHAsset).Amount.Equal(cosmos.NewUint(12345)), Equals, true)
+	exportedInitDeficitVault, found := findVault(exported.Vaults, initDeficitVault.PubKey)
+	c.Assert(found, Equals, true)
+	c.Check(exportedInitDeficitVault.GetDeficit(common.BTCAsset).Amount.Equal(cosmos.NewUint(67890)), Equals, true)
+	_, found = findVault(exported.Vaults, abandonedVault.PubKey)
+	c.Check(found, Equals, false)
+
+	dstCtx, dstMgr := setupManagerForTest(c)
+	InitGenesis(dstCtx, dstMgr.Keeper(), exported)
+
+	restored, err := dstMgr.Keeper().GetVault(dstCtx, deficitVault.PubKey)
+	c.Assert(err, IsNil)
+	c.Check(restored.Status, Equals, InactiveVault)
+	c.Check(restored.GetDeficit(common.ETHAsset).Amount.Equal(cosmos.NewUint(12345)), Equals, true)
+	restoredInit, err := dstMgr.Keeper().GetVault(dstCtx, initDeficitVault.PubKey)
+	c.Assert(err, IsNil)
+	c.Check(restoredInit.Status, Equals, InitVault)
+	c.Check(restoredInit.GetDeficit(common.BTCAsset).Amount.Equal(cosmos.NewUint(67890)), Equals, true)
+
+	reExported := ExportGenesis(dstCtx, dstMgr.Keeper())
+	reExportedDeficitVault, found := findVault(reExported.Vaults, deficitVault.PubKey)
+	c.Assert(found, Equals, true)
+	c.Check(reExportedDeficitVault.GetDeficit(common.ETHAsset).Amount.Equal(cosmos.NewUint(12345)), Equals, true)
+	reExportedInitDeficitVault, found := findVault(reExported.Vaults, initDeficitVault.PubKey)
+	c.Assert(found, Equals, true)
+	c.Check(reExportedInitDeficitVault.GetDeficit(common.BTCAsset).Amount.Equal(cosmos.NewUint(67890)), Equals, true)
+}
+
+// TestGenesisStableReserveCreditRoundTrip seeds per-contributor stable reserve
+// credits, exports them, and imports into a fresh keeper. Without genesis
+// wiring the credits are lost on a state export/import and every prior
+// contributor's STABLE- withdrawal would fail with "insufficient credit".
+func (GenesisTestSuite) TestGenesisStableReserveCreditRoundTrip(c *C) {
+	SetupConfigForTest()
+
+	srcCtx, srcMgr := setupManagerForTest(c)
+	ethAddr, err := common.NewAddress("0x3021c479f7f8c9f1d5c7d8523ba5e22c0bcb5430")
+	c.Assert(err, IsNil)
+	btcAddr, err := common.NewAddress("bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq")
+	c.Assert(err, IsNil)
+	// A case-sensitive base58check (TRON) address: uppercasing it — as the store
+	// key does — corrupts the checksum, so it can only survive export/import if the
+	// original case is preserved in the value.
+	tronAddr, err := common.NewAddress("TWcDDx1Q6QEoBrJi9qehtZnD4vcXXuVLer")
+	c.Assert(err, IsNil)
+
+	c.Assert(srcMgr.Keeper().SetStableReserveCredit(srcCtx, common.ETHAsset, ethAddr, cosmos.NewUint(1234*common.One)), IsNil)
+	c.Assert(srcMgr.Keeper().SetStableReserveCredit(srcCtx, common.BTCAsset, btcAddr, cosmos.NewUint(5678)), IsNil)
+	c.Assert(srcMgr.Keeper().SetStableReserveCredit(srcCtx, common.TRXAsset, tronAddr, cosmos.NewUint(9012)), IsNil)
+
+	exported := ExportGenesis(srcCtx, srcMgr.Keeper())
+	c.Assert(len(exported.StableReserveCredits), Equals, 3)
+
+	// Exercise the binary proto round-trip explicitly so the marshal/unmarshal
+	// path for the new field is covered, not just the in-memory export.
+	bz, err := exported.Marshal()
+	c.Assert(err, IsNil)
+	var decoded GenesisState
+	c.Assert(decoded.Unmarshal(bz), IsNil)
+	c.Assert(len(decoded.StableReserveCredits), Equals, 3)
+
+	dstCtx, dstMgr := setupManagerForTest(c)
+	InitGenesis(dstCtx, dstMgr.Keeper(), decoded)
+
+	gotETH, err := dstMgr.Keeper().GetStableReserveCredit(dstCtx, common.ETHAsset, ethAddr)
+	c.Assert(err, IsNil)
+	c.Check(gotETH.String(), Equals, cosmos.NewUint(1234*common.One).String())
+
+	gotBTC, err := dstMgr.Keeper().GetStableReserveCredit(dstCtx, common.BTCAsset, btcAddr)
+	c.Assert(err, IsNil)
+	c.Check(gotBTC.String(), Equals, cosmos.NewUint(5678).String())
+
+	// The base58check address must survive with its original case intact so the
+	// credit is still keyed to (and withdrawable by) the real contributor.
+	c.Check(exportedAddress(exported, common.TRXAsset), Equals, "TWcDDx1Q6QEoBrJi9qehtZnD4vcXXuVLer")
+	gotTRON, err := dstMgr.Keeper().GetStableReserveCredit(dstCtx, common.TRXAsset, tronAddr)
+	c.Assert(err, IsNil)
+	c.Check(gotTRON.String(), Equals, cosmos.NewUint(9012).String())
+}
+
+// exportedAddress returns the exported stable-reserve credit address for a given
+// layer-1 asset, or "" if absent.
+func exportedAddress(g GenesisState, asset common.Asset) string {
+	for _, c := range g.StableReserveCredits {
+		if a, err := common.NewAsset(c.Asset); err == nil && a.Equals(asset) {
+			return c.Address
+		}
+	}
+	return ""
+}
+
 // TestGenesisDynamicFeeRoundtrip seeds a DynamicFeeRecord, accumulator, and
 // last-observed-epoch-blocks value into one keeper, exports the state,
 // imports into a fresh keeper, and re-exports. It then asserts the two
@@ -169,4 +301,121 @@ func (GenesisTestSuite) TestGenesisDynamicFeeRoundtrip(c *C) {
 	c.Check(len(reExported.DynamicFeeRecords), Equals, 1)
 	c.Check(len(reExported.DynamicFeeAccumulators), Equals, 1)
 	c.Check(reExported.LastObservedDynamicFeeEpochBlocks, Equals, int64(1337))
+}
+
+func (GenesisTestSuite) TestGenesisReferenceMemoWindowRoundTrip(c *C) {
+	SetupConfigForTest()
+
+	srcCtx, srcMgr := setupManagerForTest(c)
+	srcCtx = srcCtx.WithBlockHeight(1000)
+	ttl := srcMgr.Keeper().GetConfigInt64(srcCtx, constants.MemolessTxnTTL)
+
+	for i := 1; i <= 3; i++ {
+		srcMgr.Keeper().SetReferenceMemo(srcCtx, types.ReferenceMemo{
+			Asset:     common.BTCAsset,
+			Reference: fmt.Sprintf("0000%d", i),
+			Memo:      "+:BTC.BTC",
+			Height:    srcCtx.BlockHeight(),
+		})
+	}
+	srcMgr.Keeper().SetReferenceMemo(srcCtx, types.ReferenceMemo{
+		Asset:     common.ETHAsset,
+		Reference: "00001",
+		Memo:      "+:ETH.ETH",
+		Height:    srcCtx.BlockHeight(),
+	})
+
+	exported := ExportGenesis(srcCtx, srcMgr.Keeper())
+
+	dstCtx, dstMgr := setupManagerForTest(c)
+	dstCtx = dstCtx.WithBlockHeight(srcCtx.BlockHeight())
+	InitGenesis(dstCtx, dstMgr.Keeper(), exported)
+
+	// the window is not a genesis field, it is rebuilt from the imported memos so
+	// the congestion price does not reset to "empty ring" across a fork
+	c.Check(memolessLiveRefs(dstCtx, dstMgr.Keeper(), common.BTCAsset, ttl), Equals, int64(3))
+	c.Check(memolessLiveRefs(dstCtx, dstMgr.Keeper(), common.ETHAsset, ttl), Equals, int64(1))
+
+	// and it decays away as the imported memos expire
+	c.Check(memolessLiveRefs(dstCtx.WithBlockHeight(dstCtx.BlockHeight()+ttl), dstMgr.Keeper(), common.BTCAsset, ttl), Equals, int64(0))
+}
+
+// TCY smart contract addresses are surfaced by ListTCYStakers as synthetic stakers whose
+// amount is the contract's own TCY balance. That balance is exported by the bank module,
+// so exporting it again as a staker record would double count it and, if the smart
+// contract address list ever changed, import as real TCYStake module backed stake.
+func (GenesisTestSuite) TestGenesisExportSkipsTCYSmartContractStakers(c *C) {
+	SetupConfigForTest()
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+
+	scAddr, _ := tcySmartContractStaker(c, ctx, k, cosmos.NewUint(1234))
+
+	staker := GetRandomRUNEAddress()
+	c.Assert(k.SetTCYStaker(ctx, types.NewTCYStaker(staker, cosmos.NewUint(500))), IsNil)
+
+	// the synthetic staker is visible through the keeper
+	stakers, err := k.ListTCYStakers(ctx)
+	c.Assert(err, IsNil)
+	foundSC := false
+	for _, s := range stakers {
+		if s.Address.Equals(scAddr) {
+			foundSC = true
+		}
+	}
+	c.Assert(foundSC, Equals, true)
+
+	// ...but not through the genesis export
+	exported := ExportGenesis(ctx, k)
+	foundStaker := false
+	for _, s := range exported.TcyStakers {
+		c.Assert(tcysmartcontract.IsTCYSmartContractAddress(s.Address), Equals, false)
+		if s.Address.Equals(staker) {
+			foundStaker = true
+			c.Assert(s.Amount.Equal(cosmos.NewUint(500)), Equals, true)
+		}
+	}
+	c.Assert(foundStaker, Equals, true)
+}
+
+// TestGenesisSolVaultNonceRoundTrip: a vault's committed durable nonce survives
+// export/import (case-sensitive base58 values intact), so the vault is not treated as
+// legacy afterwards; invalid records fail genesis validation.
+func (GenesisTestSuite) TestGenesisSolVaultNonceRoundTrip(c *C) {
+	SetupConfigForTest()
+
+	srcCtx, srcMgr := setupManagerForTest(c)
+	vaultPK := GetRandomPubKey()
+	record := SolVaultNonce{
+		VaultPubKey:   vaultPK,
+		NonceAccount:  "9rAtxuhtKn8qagc3UtZFyhLrw5zkh6etv43TibaXuSKo",
+		Nonce:         "C8976AEb5Q4QFVZQQZ7rNY3u2j4n83PPHNagHeJLeCkH",
+		Slot:          1000,
+		UpdatedHeight: 42,
+		SetByTx:       GetRandomTxHash(),
+	}
+	srcMgr.Keeper().SetSolVaultNonce(srcCtx, record)
+
+	exported := ExportGenesis(srcCtx, srcMgr.Keeper())
+	c.Assert(exported.SolVaultNonces, HasLen, 1)
+	c.Assert(ValidateGenesis(exported), IsNil)
+	bz, err := exported.Marshal()
+	c.Assert(err, IsNil)
+	var decoded GenesisState
+	c.Assert(decoded.Unmarshal(bz), IsNil)
+
+	dstCtx, dstMgr := setupManagerForTest(c)
+	InitGenesis(dstCtx, dstMgr.Keeper(), decoded)
+	got, found, err := dstMgr.Keeper().GetSolVaultNonce(dstCtx, vaultPK)
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, true)
+	c.Check(got.NonceAccount, Equals, record.NonceAccount)
+	c.Check(got.Nonce, Equals, record.Nonce)
+	c.Check(got.Slot, Equals, record.Slot)
+	c.Check(got.UpdatedHeight, Equals, record.UpdatedHeight)
+	c.Check(got.SetByTx.Equals(record.SetByTx), Equals, true)
+
+	bad := decoded
+	bad.SolVaultNonces = []SolVaultNonce{{VaultPubKey: vaultPK, NonceAccount: record.NonceAccount, Slot: 1}}
+	c.Assert(ValidateGenesis(bad), NotNil)
 }

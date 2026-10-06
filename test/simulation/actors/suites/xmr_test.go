@@ -4,6 +4,7 @@ import (
 	rand "math/rand/v2"
 	"testing"
 
+	acommon "gitlab.com/thorchain/thornode/v3/test/simulation/actors/common"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 )
 
@@ -23,10 +24,29 @@ func TestXMRCoverageIncludesExpectedActors(t *testing.T) {
 	}
 }
 
-func TestXMRPostChurnIncludesExpectedActor(t *testing.T) {
-	names := actorNames(XMRPostChurn(rand.New(rand.NewPCG(3, 4))))
-	if !names["XMRPostChurn BTC.BTC => XMR.XMR"] {
-		t.Fatal("expected post-churn XMR swap actor in cluster suite")
+func TestXMRPostChurnRespectsCoverageAndRequiredMode(t *testing.T) {
+	previous := acommon.XMRChainEnabled()
+	defer acommon.SetXMRChainEnabled(previous)
+
+	for _, tc := range []struct {
+		name     string
+		enabled  bool
+		required string
+		want     bool
+	}{
+		{name: "no inbound skips optional coverage", required: "0"},
+		{name: "unset requirement skips optional coverage"},
+		{name: "inbound enables coverage", enabled: true, want: true},
+		{name: "required creates first vault", required: "1", want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			acommon.SetXMRChainEnabled(tc.enabled)
+			t.Setenv("XMR_POST_CHURN_REQUIRED", tc.required)
+			names := actorNames(XMRPostChurn(rand.New(rand.NewPCG(3, 4))))
+			if got := names["XMRPostChurn BTC.BTC => XMR.XMR"]; got != tc.want {
+				t.Fatalf("post-churn actor present = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 

@@ -61,8 +61,10 @@ type SOLScanner struct {
 	globalTxsQueue        chan stypes.TxIn
 
 	// fee rate
+	// Guards feeRateCache/netFeeInit across startup and scan fee-refresh helpers.
+	networkFeeMu sync.Mutex
 	feeRateCache []uint64
-	lastFeeRate  uint64
+	lastFeeRate  atomic.Uint64
 
 	healthy *atomic.Bool
 
@@ -73,11 +75,6 @@ type SOLScanner struct {
 	// evmScanner.currentBlockHeight, and is kept separate from lastHeight (the
 	// persisted resume cursor, which is only advanced after a scan completes).
 	currentScanSlot atomic.Int64
-
-	// recent block hash (needed for tx construction / signing)
-	// needs to be in consensus between validators
-	recentBlockHash   string
-	recentBlockHashMu sync.Mutex
 
 	// network fee state
 	netFeeSlotMultiple uint64
@@ -90,8 +87,9 @@ type SOLScanner struct {
 	stopChan chan struct{}
 
 	// state for if we've successfully processed the initial height
-	initialHeight     map[string]struct{}
-	lastHeight        uint64
+	initialHeight map[string]struct{}
+	lastHeight    uint64
+	// Guards lastHeight between scan progress writes and height/solvency runner reads.
 	lastHeightMu      sync.RWMutex
 	vaultScanStatuses map[string]vaultScanStatus
 
@@ -138,8 +136,6 @@ func NewSOLScanner(
 		bridge:             bridge,
 		solvencyReporter:   solvencyReporter,
 		signerCacheManager: signerCacheManager,
-		recentBlockHash:    "",
-		lastFeeRate:        0,
 		feeRateCache:       make([]uint64, 0),
 		stopChan:           stopChan,
 		healthy:            &atomic.Bool{},
@@ -152,9 +148,9 @@ func (s *SOLScanner) Start() {
 	s.lastMimirCheck = time.Now().Add(-constants.ThorchainBlockTime)
 	s.isChainPaused = false
 
-	initialSlot, err := s.solRpc.GetSlot()
-	if err != nil {
-		s.logger.Error().Err(err).Msg("failed to get initial slot")
+	initialSlot, ok := waitForInitialSlot(s.solRpc, s.stopChan, s.cfg.Solana.ScanInterval, s.logger)
+	if !ok {
+		s.logger.Info().Msg("stopping SOL scanner")
 		return
 	}
 
@@ -176,9 +172,7 @@ func (s *SOLScanner) Start() {
 			s.logger.Error().Err(err).Msg("failed to persist floor block height")
 		}
 	}
-	s.lastHeightMu.Lock()
-	s.lastHeight = lastHeight
-	s.lastHeightMu.Unlock()
+	s.setLastHeight(lastHeight)
 
 	// initialize the network fee slot multiple to the closest multiple of NetFeeUpdateInterval beneath the initial slot
 	s.netFeeSlotMultiple = initialSlot / s.cfg.Solana.FeeUpdateInterval
@@ -237,7 +231,7 @@ func (s *SOLScanner) scan() {
 		if err != nil {
 			s.logger.Error().Err(err).Msg("failed to get network fee")
 		} else {
-			s.lastFeeRate = thorRate
+			s.lastFeeRate.Store(thorRate)
 		}
 
 		// we crossed the threshold for updating the network fee, so check the last N blocks
@@ -248,9 +242,7 @@ func (s *SOLScanner) scan() {
 		}
 	}
 
-	s.lastHeightMu.RLock()
-	lastSlot := s.lastHeight
-	s.lastHeightMu.RUnlock()
+	lastSlot := s.getLastHeight()
 
 	// skip if rpc slot is behind last scanned slot
 	if currentSlot <= lastSlot {
@@ -374,14 +366,18 @@ func (s *SOLScanner) scan() {
 
 			// update the db in a goroutine, we don't need to block here
 			go func() {
-				if err = s.db.SetScanStatus(vaultAddr, lastSig, currentSlot); err != nil {
-					s.logger.Error().Err(err).Str("vault", vaultAddr).Msg("failed to set vault scan status")
+				if scanStatusErr := s.db.SetScanStatus(vaultAddr, lastSig, currentSlot); scanStatusErr != nil {
+					s.logger.Error().Err(scanStatusErr).Str("vault", vaultAddr).Msg("failed to set vault scan status")
 				}
 			}()
 		}
 	}
 
-	if !s.netFeeInit && numTxs > 0 {
+	// The SOL scan goroutine reads netFeeInit here, sendNetworkFeeIfNecessary writes it during fee refresh.
+	s.networkFeeMu.Lock()
+	shouldInitNetworkFee := !s.netFeeInit && numTxs > 0
+	s.networkFeeMu.Unlock()
+	if shouldInitNetworkFee {
 		// this should really only happen (and is only necessary) in test environments to initialize the network fee,
 		// because we expect to have enough observed txs in the checkRecentBlocksAndUpdateNetworkFee above.
 		s.sendNetworkFeeIfNecessary(currentSlot)
@@ -411,9 +407,7 @@ func (s *SOLScanner) scan() {
 		s.m.GetCounter(metrics.TotalBlockScanned).Add(float64(currentSlot - lastSlot))
 	}
 
-	s.lastHeightMu.Lock()
-	s.lastHeight = currentSlot
-	s.lastHeightMu.Unlock()
+	s.setLastHeight(currentSlot)
 
 	// update the db in a goroutine, we don't need to block here
 	go func() {
@@ -445,13 +439,23 @@ func (s *SOLScanner) scanVault(
 	var newestSig string
 	before := ""
 	for {
-		res, err := s.solRpc.GetSignaturesForAddressUntil(vaultAddr, rpc.GetSignaturesForAddressUntilParams{
-			Commitment:     "finalized",
-			MinContextSlot: minContextSlot,
-			Before:         before,
-			Until:          queryLastSig,
-			Limit:          transactionQueryLimit,
-		})
+		params := rpc.GetSignaturesForAddressUntilParams{
+			Commitment: "finalized",
+			Before:     before,
+			Until:      queryLastSig,
+			Limit:      transactionQueryLimit,
+		}
+		// Only pin minContextSlot when there is no until-cursor. With an until-cursor,
+		// minContextSlot tracks the scanner's near-tip position, which for an idle
+		// vault (no new tx) can exceed the cursor signature's slot. The RPC then
+		// returns -32020 "Transaction not found" trying to resolve a cursor below the
+		// required context, which marks the whole scanner unhealthy and halts signing
+		// and observation for the chain. The until-cursor already bounds the query, so
+		// minContextSlot is redundant once a cursor is set.
+		if queryLastSig == "" {
+			params.MinContextSlot = minContextSlot
+		}
+		res, err := s.solRpc.GetSignaturesForAddressUntil(vaultAddr, params)
 		if err != nil {
 			s.logger.Error().Err(err).Msgf("failed to get signatures for address %s", vaultAddr)
 			setUnhealthy()
@@ -486,7 +490,12 @@ func (s *SOLScanner) scanVault(
 					return nil
 				}
 
-				s.globalTxsQueue <- s.getTxIn(sig.Slot, []*rpc.TransactionResult{tx})
+				txIn, err := s.getTxIn(sig.Slot, []*rpc.TransactionResult{tx})
+				if err != nil {
+					// Leave the cursor where it is: the scan fails and this tx is re-read.
+					return fmt.Errorf("failed to observe transaction %s: %w", sig.Signature, err)
+				}
+				s.globalTxsQueue <- txIn
 				return nil
 			})
 		}
@@ -530,7 +539,6 @@ func (s *SOLScanner) checkRecentBlocksAndUpdateNetworkFee(slot uint64) error {
 	// reverse the blocks to get the most recent first
 	slices.Reverse(blocks)
 
-	setBlockHash := false
 	for _, b := range blocks {
 		block, err := s.solRpc.GetBlock(b)
 		if err != nil {
@@ -544,10 +552,6 @@ func (s *SOLScanner) checkRecentBlocksAndUpdateNetworkFee(slot uint64) error {
 		if block == nil {
 			s.logger.Debug().Msgf("block %d is nil", b)
 			continue
-		}
-		if !setBlockHash {
-			s.setRecentBlockHash(block.Blockhash)
-			setBlockHash = true
 		}
 		if lastSlot == 0 {
 			lastSlot = b
@@ -586,11 +590,21 @@ func (s *SOLScanner) CurrentScanSlot() int64 {
 	return s.currentScanSlot.Load()
 }
 
+func (s *SOLScanner) getLastHeight() uint64 {
+	s.lastHeightMu.RLock()
+	defer s.lastHeightMu.RUnlock()
+	return s.lastHeight
+}
+
+func (s *SOLScanner) setLastHeight(height uint64) {
+	s.lastHeightMu.Lock()
+	defer s.lastHeightMu.Unlock()
+	s.lastHeight = height
+}
+
 // ScanHeight returns the current scanned height
 func (s *SOLScanner) ScanHeight() (int64, error) {
-	s.lastHeightMu.RLock()
-	lastHeight := s.lastHeight
-	s.lastHeightMu.RUnlock()
+	lastHeight := s.getLastHeight()
 
 	if lastHeight > 0 {
 		return int64(lastHeight), nil
@@ -611,71 +625,67 @@ func (s *SOLScanner) IsHealthy() bool {
 	return s.healthy.Load()
 }
 
-// GetrecentBlockHash returns the latest block hash
-func (s *SOLScanner) getRecentBlockHash() string {
-	s.recentBlockHashMu.Lock()
-	defer s.recentBlockHashMu.Unlock()
-	return s.recentBlockHash
-}
-
-// UpdaterecentBlockHash updates the local latest block hash to be used in tx signing
-func (s *SOLScanner) setRecentBlockHash(hash string) {
-	s.recentBlockHashMu.Lock()
-	defer s.recentBlockHashMu.Unlock()
-	s.recentBlockHash = hash
-}
-
 // GetNetworkFee returns current chain network fee according to Bifrost.
 func (s *SOLScanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
-	return 1, s.lastFeeRate
+	return 1, s.lastFeeRate.Load()
 }
 
 func (s *SOLScanner) sendNetworkFeeIfNecessary(height uint64) {
-	if len(s.feeRateCache) == 0 {
-		// Not enough txs yet
+	networkFee, roundedFeeRate, postNetworkFee := func() (common.NetworkFee, uint64, bool) {
+		// Startup and scan fee-refresh paths publish from feeRateCache and mark netFeeInit here.
+		s.networkFeeMu.Lock()
+		defer s.networkFeeMu.Unlock()
+
+		if len(s.feeRateCache) == 0 {
+			// Not enough txs yet
+			return common.NetworkFee{}, 0, false
+		}
+
+		if len(s.feeRateCache) < s.cfg.GasCacheBlocks && s.netFeeInit {
+			// We are beyond the initial fee post, but not enough txs yet
+			return common.NetworkFee{}, 0, false
+		}
+
+		// Calculate the median fee rate from the gas cache
+		medianFeeRate := calculateMedian(s.feeRateCache)
+
+		// round medianFeeRate to the nearest resolution
+		resolution := uint64(s.cfg.GasPriceResolution)
+		roundedFeeRate := ((medianFeeRate + (resolution / 2)) / resolution) * resolution
+
+		// truncate gas prices older than our max cached transactions
+		if len(s.feeRateCache) > s.cfg.GasCacheBlocks {
+			s.feeRateCache = s.feeRateCache[(len(s.feeRateCache) - s.cfg.GasCacheBlocks):]
+		}
+
+		if roundedFeeRate == 0 {
+			s.logger.Debug().Msg("network fee is 0")
+			return common.NetworkFee{}, 0, false
+		}
+
+		s.netFeeInit = true
+
+		// Update the fee rate if it has changed
+		if roundedFeeRate == s.lastFeeRate.Load() {
+			s.logger.Info().Uint64("fee", roundedFeeRate).Msg("network fee is already up to date")
+			return common.NetworkFee{}, 0, false
+		}
+
+		s.lastFeeRate.Store(roundedFeeRate)
+		return common.NetworkFee{
+			Chain:           common.SOLChain,
+			Height:          int64(height),
+			TransactionSize: 1,
+			TransactionRate: roundedFeeRate,
+		}, roundedFeeRate, true
+	}()
+	if !postNetworkFee {
 		return
 	}
 
-	if len(s.feeRateCache) < s.cfg.GasCacheBlocks && s.netFeeInit {
-		// We are beyond the initial fee post, but not enough txs yet
-		return
-	}
-
-	// Calculate the median fee rate from the gas cache
-
-	medianFeeRate := calculateMedian(s.feeRateCache)
-
-	// round medianFeeRate to the nearest resolution
-	resolution := uint64(s.cfg.GasPriceResolution)
-	roundedFeeRate := ((medianFeeRate + (resolution / 2)) / resolution) * resolution
-
-	// truncate gas prices older than our max cached transactions
-	if len(s.feeRateCache) > s.cfg.GasCacheBlocks {
-		s.feeRateCache = s.feeRateCache[(len(s.feeRateCache) - s.cfg.GasCacheBlocks):]
-	}
-
-	if roundedFeeRate == 0 {
-		s.logger.Debug().Msg("network fee is 0")
-		return
-	}
-
-	s.netFeeInit = true
-
-	// Update the fee rate if it has changed
-	if roundedFeeRate == s.lastFeeRate {
-		s.logger.Info().Uint64("fee", roundedFeeRate).Msg("network fee is already up to date")
-		return
-	}
-
-	s.lastFeeRate = roundedFeeRate
-
-	s.globalNetworkFeeQueue <- common.NetworkFee{
-		Chain:           common.SOLChain,
-		Height:          int64(height),
-		TransactionSize: 1,
-		TransactionRate: roundedFeeRate,
-	}
-
+	// The fee decision is made while holding networkFeeMu above, but the channel send
+	// happens after releasing the lock so blocked consumers cannot stall fee-state updates.
+	s.globalNetworkFeeQueue <- networkFee
 	s.logger.Info().
 		Uint64("fee", roundedFeeRate).
 		Uint64("height", height).
@@ -685,7 +695,7 @@ func (s *SOLScanner) sendNetworkFeeIfNecessary(height uint64) {
 // --------------------------------- extraction ---------------------------------
 
 // Gets the TxIn struct for a block
-func (s *SOLScanner) getTxIn(slot uint64, transactions []*rpc.TransactionResult) stypes.TxIn {
+func (s *SOLScanner) getTxIn(slot uint64, transactions []*rpc.TransactionResult) (stypes.TxIn, error) {
 	txIn := stypes.TxIn{
 		Chain:                s.cfg.ChainID,
 		TxArray:              make([]*stypes.TxInItem, 0),
@@ -699,7 +709,10 @@ func (s *SOLScanner) getTxIn(slot uint64, transactions []*rpc.TransactionResult)
 			continue
 		}
 
-		txItem := s.getTxInItem(txn, int64(slot))
+		txItem, err := s.txInItem(txn, int64(slot))
+		if err != nil {
+			return stypes.TxIn{}, err
+		}
 		if txItem == nil {
 			continue
 		}
@@ -707,7 +720,7 @@ func (s *SOLScanner) getTxIn(slot uint64, transactions []*rpc.TransactionResult)
 		txIn.TxArray = append(txIn.TxArray, txItem)
 	}
 
-	return txIn
+	return txIn, nil
 }
 
 // Calculates the median of a slice of uint64.
@@ -753,6 +766,10 @@ func (s *SOLScanner) calculateFeeRatesFromTransactions(transactions []*rpc.Trans
 		txFeeRates = append(txFeeRates, feeRate)
 	}
 
+	// Startup and scan fee-refresh paths append block fee samples before publishing network fee.
+	s.networkFeeMu.Lock()
+	defer s.networkFeeMu.Unlock()
+
 	// update the fee rate cache
 	switch {
 	case len(txFeeRates) == 1:
@@ -772,16 +789,48 @@ func (s *SOLScanner) calculateFeeRatesFromTransactions(transactions []*rpc.Trans
 // TxInItem if the transaction contains exactly one SOL transfer instruction to the vault.
 // Otherwise, it will return nil.
 func (s *SOLScanner) getTxInItem(txn *rpc.TransactionResult, blockHeight int64) *stypes.TxInItem {
+	item, _ := s.txInItem(txn, blockHeight)
+	return item
+}
+
+// txInItem is getTxInItem that also reports a transient RPC failure that must not
+// drop the observation: the caller fails the scan so the cursor is not advanced
+// and the transaction is re-read on the next pass.
+func (s *SOLScanner) txInItem(txn *rpc.TransactionResult, blockHeight int64) (*stypes.TxInItem, error) {
 	memo := ""
 	var transferCount int
 	var fromAccount, toAccount string
+	// advancedNonceAcct is the account an AdvanceNonceAccount instruction advanced,
+	// if any; attested below when it is the sender vault's own nonce account.
+	var advancedNonceAcct string
 	var amountMoved uint64
 	fee := txn.Meta.Fee
 
 	instructions := txn.Transaction.GetInstructions()
 
+	// Resolve instruction account indices against the full account list: the
+	// static account keys followed by any addresses loaded from address lookup
+	// tables (versioned/v0+ transactions). Legacy transactions carry no loaded
+	// addresses, so this is identical to the static account keys for them.
+	accounts := txn.Transaction.ResolvedAccounts(txn.Meta.LoadedAddresses)
+	accountByIndex := func(i int) string {
+		if i < 0 || i >= len(accounts) {
+			return ""
+		}
+		return accounts[i]
+	}
+
+	// A bare durable-nonce account creation (rent into the vault's fresh nonce
+	// account, no transfer, no memo) is observed as its own shape so THORChain can book
+	// the rent and fee as vault gas and commit the vault's initial nonce. The classifier
+	// is strict enough that a real outbound (which always carries a transfer) can never
+	// match, so it can never swallow a genuine outbound observation.
+	if isDurableNonceCreateTx(instructions, accountByIndex) {
+		return s.nonceCreateTxInItem(txn, blockHeight, instructions, accountByIndex)
+	}
+
 	for _, instruction := range instructions {
-		programID := txn.Transaction.GetAccountAtIndex(instruction.ProgramIdIndex)
+		programID := accountByIndex(instruction.ProgramIdIndex)
 
 		// Handle memo
 		if types.MemoProgramID.EqualsString(programID) {
@@ -806,6 +855,12 @@ func (s *SOLScanner) getTxInItem(txn *rpc.TransactionResult, blockHeight int64) 
 			continue
 		}
 
+		// AdvanceNonceAccount (u32 LE 4): accounts[0] is the nonce account.
+		if len(data) >= 4 && binary.LittleEndian.Uint32(data[:4]) == solSysAdvanceNonce && len(instruction.Accounts) >= 1 {
+			advancedNonceAcct = accountByIndex(instruction.Accounts[0])
+			continue
+		}
+
 		// Check for transfer instruction
 		if len(data) >= 1 && data[0] == 2 { // `2` indicates a System Program transfer instruction
 			transferCount++
@@ -814,30 +869,28 @@ func (s *SOLScanner) getTxInItem(txn *rpc.TransactionResult, blockHeight int64) 
 					Int("transferCount", transferCount).
 					Str("txID", txn.Transaction.Signatures[0]).
 					Msg("Rejected transaction with multiple transfer instructions")
-				return nil
+				return nil, nil
 			}
 
 			if len(instruction.Accounts) < 2 {
 				s.logger.Debug().Msg("Instruction does not contain enough accounts for transfer")
-				return nil
+				return nil, nil
 			}
 
 			fromIdx := instruction.Accounts[0]
 			toIdx := instruction.Accounts[1]
-			// TODO: V0 transactions using Address Lookup Tables (ALTs) can have account
-			// indices that reference addresses in Meta.LoadedAddresses rather than
-			// Message.AccountKeys. These transactions are silently dropped here. To
-			// support them, parse LoadedAddresses and extend the account resolution.
-			if fromIdx >= len(txn.Transaction.Message.AccountKeys) || toIdx >= len(txn.Transaction.Message.AccountKeys) {
+			// Indices may reference addresses loaded from address lookup tables
+			// (versioned txs); accounts (built above) already includes them.
+			if fromIdx < 0 || toIdx < 0 || fromIdx >= len(accounts) || toIdx >= len(accounts) {
 				s.logger.Debug().Msg("Account index out of range")
-				return nil
+				return nil, nil
 			}
-			fromAccount = txn.Transaction.Message.AccountKeys[fromIdx]
-			toAccount = txn.Transaction.Message.AccountKeys[toIdx]
+			fromAccount = accounts[fromIdx]
+			toAccount = accounts[toIdx]
 
 			if len(data) < 12 {
 				s.logger.Debug().Msg("Transfer instruction data too short")
-				return nil
+				return nil, nil
 			}
 			amountMoved = binary.LittleEndian.Uint64(data[4:12])
 		}
@@ -848,7 +901,7 @@ func (s *SOLScanner) getTxInItem(txn *rpc.TransactionResult, blockHeight int64) 
 		s.logger.Debug().
 			Str("txID", txn.Transaction.Signatures[0]).
 			Msg("No valid transfer found or amount is zero")
-		return nil
+		return nil, nil
 	}
 
 	solAmount := convertLamportsToTHORChain(amountMoved)
@@ -858,7 +911,7 @@ func (s *SOLScanner) getTxInItem(txn *rpc.TransactionResult, blockHeight int64) 
 			Str("amount", solAmount.String()).
 			Str("dustThreshold", s.cfg.ChainID.DustThreshold().String()).
 			Msg("Transfer amount below dust threshold")
-		return nil
+		return nil, nil
 	}
 
 	solCoin := common.NewCoin(common.SOLAsset, solAmount)
@@ -874,6 +927,211 @@ func (s *SOLScanner) getTxInItem(txn *rpc.TransactionResult, blockHeight int64) 
 		To:          toAccount,
 		Coins:       []common.Coin{solCoin},
 		Gas:         common.Gas{gasCoin},
+		SolNonce:    s.observedSolNonce(advancedNonceAcct, fromAccount, blockHeight, txn.Transaction.Signatures[0]),
+	}, nil
+}
+
+// observedSolNonce returns the post-tx durable-nonce state to attest with this
+// observation when the tx advanced the SENDING vault's own seed-derived nonce
+// account (authority == sender), or nil. THORChain commits it as the vault's current
+// nonce once a supermajority of final observations agree on it exactly.
+//
+// The read is deterministic across observers even though each reads its own RPC:
+// only the vault's TSS can advance its nonce (the authority must sign), and the
+// vault signs durable txs only with the value committed on THORChain, which changes
+// only when THIS observation is committed. So between this tx's slot and that commit
+// no other tx can advance the account, and every honest observer reading at a slot
+// >= this one (minContextSlot) sees the same value.
+func (s *SOLScanner) observedSolNonce(nonceAcct, sender string, slot int64, txID string) *common.SolNonceUpdate {
+	nonce, err := s.readSolNonce(nonceAcct, sender, slot)
+	if err != nil {
+		s.logger.Warn().Err(err).Str("txID", txID).Str("nonce_account", nonceAcct).
+			Msg("fail to read advanced durable nonce; observing without it")
+		return nil
+	}
+	return nonce
+}
+
+// readSolNonce reads sender's own seed-derived nonce account at slot. It returns
+// (nil, nil) when the account is not sender's own nonce account (wrong address or
+// authority), and an error only when the RPC read itself failed.
+func (s *SOLScanner) readSolNonce(nonceAcct, sender string, slot int64) (*common.SolNonceUpdate, error) {
+	if nonceAcct == "" || sender == "" || slot <= 0 || s.solRpc == nil {
+		return nil, nil
+	}
+	expected, err := common.SolNonceAccountAddress(sender)
+	if err != nil || expected != nonceAcct {
+		return nil, nil
+	}
+	nonce, authority, err := s.solRpc.GetNonceAccount(nonceAcct, uint64(slot))
+	if err != nil {
+		return nil, err
+	}
+	if authority != sender {
+		return nil, nil
+	}
+	return &common.SolNonceUpdate{NonceAccount: nonceAcct, Nonce: nonce, Slot: slot}, nil
+}
+
+// SystemProgram instruction discriminators (u32 little-endian, first 4 data bytes).
+const (
+	solSysCreateAccount         = 0
+	solSysTransfer              = 2
+	solSysCreateAccountWithSeed = 3
+	solSysAdvanceNonce          = 4
+	solSysInitializeNonce       = 6
+	solSysAllocateWithSeed      = 9
+)
+
+// nonceCreateTxInItem observes a vault's durable-nonce account creation (see
+// isDurableNonceCreateTx): the funding vault sends the rent into its nonce account.
+// THORChain books the rent and fee as vault gas and commits the vault's initial
+// durable nonce from it. It is observed ONLY when the created account is the funding
+// vault's own seed-derived nonce account and its post-creation nonce (authority ==
+// funder) can be read; otherwise it is not observed at all, because without an
+// attested nonce it would reach THORChain as an unmatched vault outflow.
+func (s *SOLScanner) nonceCreateTxInItem(txn *rpc.TransactionResult, blockHeight int64, instructions []rpc.RPCInstruction, accountByIndex func(int) string) (*stypes.TxInItem, error) {
+	var funder, created string
+	var rent uint64
+	creates := 0
+	for _, ins := range instructions {
+		data, err := base58.Decode(ins.Data)
+		if err != nil || len(data) < 4 || len(ins.Accounts) < 2 {
+			continue
+		}
+		switch binary.LittleEndian.Uint32(data[:4]) {
+		case solSysCreateAccountWithSeed:
+			// disc | base(32) | seed len(u64) | seed | lamports(u64) | space(u64) | owner(32)
+			if len(data) < 44 {
+				return nil, nil
+			}
+			seedLen := binary.LittleEndian.Uint64(data[36:44])
+			if seedLen > types.MaxSeedLength || len(data) < 44+int(seedLen)+8 {
+				return nil, nil
+			}
+			off := 44 + int(seedLen)
+			rent = binary.LittleEndian.Uint64(data[off : off+8])
+		case solSysCreateAccount:
+			// disc | lamports(u64) | space(u64) | owner(32)
+			if len(data) < 12 {
+				return nil, nil
+			}
+			rent = binary.LittleEndian.Uint64(data[4:12])
+		case solSysTransfer:
+			// the adopt shape's funding transfer: disc | lamports(u64)
+			if len(data) < 12 {
+				return nil, nil
+			}
+			rent = binary.LittleEndian.Uint64(data[4:12])
+		default:
+			continue
+		}
+		funder = accountByIndex(ins.Accounts[0])
+		created = accountByIndex(ins.Accounts[1])
+		creates++
+	}
+	// Exactly one funding instruction (the create, or the adopt shape's transfer): a
+	// second would move rent this item does not book.
+	if creates != 1 || funder == "" || created == "" || rent == 0 || len(txn.Transaction.Signatures) == 0 {
+		return nil, nil
+	}
+	txID := txn.Transaction.Signatures[0]
+	nonce, err := s.readSolNonce(created, funder, blockHeight)
+	if err != nil {
+		// A transient read failure must not drop the creation: without it the vault's
+		// nonce never commits and its rent is never booked. Fail the scan instead.
+		return nil, fmt.Errorf("fail to read durable nonce of created account %s: %w", created, err)
+	}
+	if nonce == nil {
+		s.logger.Warn().Str("txID", txID).Str("nonce_account", created).
+			Msg("not observing durable-nonce account creation: not the funder's own nonce account, or its nonce is unreadable")
+		return nil, nil
+	}
+	rentCoin := common.NewCoin(common.SOLAsset, convertLamportsToTHORChain(rent))
+	gasCoin := common.NewCoin(common.SOLAsset, convertLamportsToTHORChain(txn.Meta.Fee))
+	rentCoin.Decimals = 9
+	gasCoin.Decimals = 9
+	return &stypes.TxInItem{
+		BlockHeight: blockHeight,
+		Tx:          txID,
+		Memo:        "",
+		Sender:      funder,
+		To:          created,
+		Coins:       []common.Coin{rentCoin},
+		Gas:         common.Gas{gasCoin},
+		SolNonce:    nonce,
+	}, nil
+}
+
+// isDurableNonceCreateTx reports whether the transaction is EXACTLY a durable-nonce
+// account creation: only SystemProgram CreateAccount(WithSeed) + InitializeNonceAccount
+// instructions, where the created account IS the initialized nonce account, with NO
+// transfer, NO memo, and no other program's instructions. Such a tx moves only rent
+// into a fresh network-owned nonce account and carries no observable outbound.
+//
+// STRICT by construction so it can NEVER match a real outbound: any SystemProgram
+// Transfer (disc 2), any memo, any non-SystemProgram instruction, any other system
+// instruction, a missing create or initialize, or a mismatch between the created and
+// initialized account each make it return false — the tx is then observed normally.
+func isDurableNonceCreateTx(instructions []rpc.RPCInstruction, accountByIndex func(int) string) bool {
+	createdAccount, nonceAccount, allocated, transferTo := -1, -1, -1, -1
+	creates, allocates, transfers, inits := 0, 0, 0, 0
+	for _, ins := range instructions {
+		programID := accountByIndex(ins.ProgramIdIndex)
+		if types.MemoProgramID.EqualsString(programID) {
+			return false // a memo -> not a bare create-nonce tx
+		}
+		if !types.SystemProgramID.EqualsString(programID) {
+			return false // any non-SystemProgram instruction
+		}
+		data, err := base58.Decode(ins.Data)
+		if err != nil || len(data) < 4 {
+			return false
+		}
+		switch binary.LittleEndian.Uint32(data[:4]) {
+		case solSysCreateAccount, solSysCreateAccountWithSeed:
+			// accounts: [funder, created, (base)] — the created account is index 1.
+			if len(ins.Accounts) < 2 {
+				return false
+			}
+			createdAccount = ins.Accounts[1]
+			creates++
+		case solSysAllocateWithSeed:
+			// accounts: [allocated, base] — a pre-funded address adopted in place.
+			if len(ins.Accounts) < 1 {
+				return false
+			}
+			allocated = ins.Accounts[0]
+			allocates++
+		case solSysTransfer:
+			// Only the adopt shape funds the account with a transfer.
+			if len(ins.Accounts) < 2 {
+				return false
+			}
+			transferTo = ins.Accounts[1]
+			transfers++
+		case solSysInitializeNonce:
+			// accounts: [nonce, recentblockhashes sysvar, rent sysvar].
+			if len(ins.Accounts) < 1 {
+				return false
+			}
+			nonceAccount = ins.Accounts[0]
+			inits++
+		default:
+			return false // any other system instruction -> not this shape
+		}
+	}
+	if inits != 1 || nonceAccount < 0 {
+		return false
+	}
+	switch {
+	case creates == 1 && allocates == 0 && transfers == 0:
+		return createdAccount == nonceAccount
+	case creates == 0 && allocates == 1 && transfers == 1:
+		// the transfer must fund the adopted account, nothing else
+		return allocated == nonceAccount && transferTo == nonceAccount
+	default:
+		return false
 	}
 }
 

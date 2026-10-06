@@ -1,9 +1,11 @@
 package thorchain
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 
+	"github.com/cosmos/cosmos-sdk/runtime"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -299,5 +301,148 @@ func (m Migrator) BurnReserveAndReduceMaxSupply(ctx sdk.Context) error {
 	m.mgr.Keeper().SetMimir(ctx, constants.MaxRuneSupply.String(), newMaxSupply)
 	ctx.Logger().Info("ADR-023: set MaxRuneSupply to post-burn total supply", "new_max_supply", newMaxSupply)
 
+	return nil
+}
+
+// Migrate18to19 replaces owner-based affiliate collectors with THORName collectors.
+// Keep the balance in the owner's sole stored THORName if its spelling still meets
+// registration rules; otherwise pay the owner in RUNE. Module-owned balances go
+// to Reserve. The old ledger cannot split earnings.
+func (m Migrator) Migrate18to19(ctx cosmos.Context) error {
+	ctx, commit := ctx.CacheContext()
+	if err := m.mgr.LoadManagerIfNecessary(ctx); err != nil {
+		return err
+	}
+	k := m.mgr.Keeper()
+	// Keep the old key layout confined to this migration. The deprecated owner
+	// field is ignored; the store key identifies the owner of each legacy balance.
+	const legacyCollectorPrefix = "affcol/" // Retire with migration 18 to 19.
+	legacyPrefix := k.GetKey(legacyCollectorPrefix, "")
+	type entry struct {
+		key    []byte
+		owner  cosmos.AccAddress
+		amount cosmos.Uint
+	}
+	var entries []entry
+	totalRune := cosmos.ZeroUint()
+	store := runtime.KVStoreAdapter(m.mgr.storeService.OpenKVStore(ctx))
+	collectors := cosmos.KVStorePrefixIterator(store, []byte(legacyCollectorPrefix))
+	for ; collectors.Valid(); collectors.Next() {
+		key := collectors.Key()
+		owner, err := cosmos.AccAddressFromBech32(strings.ToLower(strings.TrimPrefix(string(key), string(legacyPrefix))))
+		if err != nil || !bytes.Equal(key, k.GetKey(legacyCollectorPrefix, owner.String())) {
+			collectors.Close()
+			return fmt.Errorf("invalid owner collector key %q", key)
+		}
+		var collector AffiliateFeeCollector
+		if err := k.Cdc().Unmarshal(collectors.Value(), &collector); err != nil {
+			collectors.Close()
+			return fmt.Errorf("read collector for %s: %w", owner, err)
+		}
+		if collector.RuneAmount.IsNil() || collector.Name != "" {
+			collectors.Close()
+			return fmt.Errorf("invalid owner collector for %s", owner)
+		}
+		entries = append(entries, entry{append([]byte(nil), key...), owner, collector.RuneAmount})
+		totalRune = totalRune.Add(collector.RuneAmount)
+	}
+	collectors.Close()
+	// Reconcile only during the upgrade, never against later changes in funds.
+	if len(entries) == 0 {
+		return nil
+	}
+
+	// Count all stored THORNames, including expired THORNames and those accepted
+	// under older registration rules. Pay the owner if there are multiple THORNames
+	// or the spelling cannot be renewed or re-registered; preserve the THORName records.
+	// Only look up map entries; store iteration determines the write order.
+	singleNames := make(map[string]string)
+	names := k.GetTHORNameIterator(ctx)
+	for ; names.Valid(); names.Next() {
+		var tn THORName
+		if err := k.Cdc().Unmarshal(names.Value(), &tn); err != nil {
+			names.Close()
+			return fmt.Errorf("read THORName during collector migration: %w", err)
+		}
+		if tn.Owner.Empty() {
+			continue
+		}
+		owner := tn.Owner.String()
+		if _, exists := singleNames[owner]; exists || len(tn.Name) > 30 || !IsValidTHORName(tn.Name) {
+			singleNames[owner] = ""
+		} else {
+			singleNames[owner] = strings.ToLower(tn.Name)
+		}
+	}
+	names.Close()
+
+	// Treat recorded claims as authoritative. Reserve covers any deficit or
+	// receives surplus before payouts. Include existing THORName claims too.
+	namedCollectors, err := k.GetAffiliateCollectors(ctx)
+	if err != nil {
+		return err
+	}
+	for _, collector := range namedCollectors {
+		if collector.RuneAmount.IsNil() {
+			return fmt.Errorf("invalid named collector amount for %s", collector.Name)
+		}
+		totalRune = totalRune.Add(collector.RuneAmount)
+	}
+	balance := k.GetRuneBalanceOfModule(ctx, AffiliateCollectorName)
+	from, to := ReserveName, AffiliateCollectorName
+	amount := common.SafeSub(totalRune, balance)
+	if balance.GT(totalRune) {
+		from, to = to, from
+		amount = balance.Sub(totalRune)
+	}
+	if !amount.IsZero() {
+		coins := common.NewCoins(common.NewCoin(common.RuneAsset(), amount))
+		if err := k.SendFromModuleToModule(ctx, from, to, coins); err != nil {
+			return fmt.Errorf("reconcile affiliate collector balance from %s to %s: %w", from, to, err)
+		}
+		ctx.EventManager().EmitEvent(cosmos.NewEvent("affiliate_collector_migration_reconcile",
+			cosmos.NewAttribute("from_module", from),
+			cosmos.NewAttribute("to_module", to),
+			cosmos.NewAttribute("rune_amount", amount.String()),
+		))
+	}
+
+	// Iterators are closed before writes. The cache makes reconciliation, THORName
+	// credits, payouts and old-key deletions succeed or roll back together.
+	for _, item := range entries {
+		if !item.amount.IsZero() {
+			event := cosmos.NewEvent("affiliate_collector_migration",
+				cosmos.NewAttribute("owner", item.owner.String()),
+				cosmos.NewAttribute("rune_amount", item.amount.String()),
+			)
+			if k.IsModuleAccount(ctx, item.owner) {
+				// Old ownership transfers could leave fees assigned to a module.
+				// Move them to Reserve rather than creating an unusable collector.
+				coins := common.NewCoins(common.NewCoin(common.RuneAsset(), item.amount))
+				if err := k.SendFromModuleToModule(ctx, AffiliateCollectorName, ReserveName, coins); err != nil {
+					return fmt.Errorf("move affiliate collector for %s to Reserve: %w", item.owner, err)
+				}
+				event = event.AppendAttributes(cosmos.NewAttribute("destination", k.GetModuleAccAddress(ReserveName).String()))
+			} else if name := singleNames[item.owner.String()]; name != "" {
+				collector, err := k.GetAffiliateCollector(ctx, name)
+				if err != nil {
+					return err
+				}
+				collector.RuneAmount = collector.RuneAmount.Add(item.amount)
+				if err = k.SetAffiliateCollector(ctx, collector); err != nil {
+					return err
+				}
+				event = event.AppendAttributes(cosmos.NewAttribute("thorname", name))
+			} else {
+				coins := common.NewCoins(common.NewCoin(common.RuneAsset(), item.amount))
+				if err := k.SendFromModuleToAccount(ctx, AffiliateCollectorName, item.owner, coins); err != nil {
+					return fmt.Errorf("pay affiliate collector to %s: %w", item.owner, err)
+				}
+			}
+			ctx.EventManager().EmitEvent(event)
+		}
+		k.DeleteKey(ctx, item.key)
+	}
+	commit()
 	return nil
 }

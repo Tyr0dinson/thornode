@@ -157,7 +157,7 @@ func TestValidateXMRSignTxRejectsInsufficientBalance(t *testing.T) {
 	balanceServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register" {
-			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{Registered: true})
+			_ = json.NewEncoder(w).Encode(testRegisterVaultResponse(0))
 			return
 		}
 		if strings.Contains(r.URL.Path, "/v1/monero/balance/") {
@@ -216,7 +216,7 @@ func TestValidateXMRSignTxRejectsLockedOnlyBalance(t *testing.T) {
 	balanceServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register" {
-			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{Registered: true})
+			_ = json.NewEncoder(w).Encode(testRegisterVaultResponse(0))
 			return
 		}
 		if strings.Contains(r.URL.Path, "/v1/monero/balance/") {
@@ -388,8 +388,26 @@ func newFrostBalanceServer(t *testing.T, balanceByPubKey map[string]sidecar.Bala
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet && r.URL.Path == "/v1/monero/keys" {
+			vaults := make([]sidecar.VaultKey, 0, len(balanceByPubKey))
+			for pubKey := range balanceByPubKey {
+				vault, err := common.NewPubKey(pubKey)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				groupKey, err := groupKeyHexFromVaultPubKey(vault)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				vaults = append(vaults, sidecar.VaultKey{VaultPubKey: pubKey, GroupKey: groupKey, HasFrostKeys: true, Signable: true})
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"vaults": vaults})
+			return
+		}
 		if r.Method == http.MethodPost && r.URL.Path == "/v1/monero/vaults/register" {
-			_ = json.NewEncoder(w).Encode(sidecar.RegisterVaultResp{Registered: true})
+			_ = json.NewEncoder(w).Encode(testRegisterVaultResponse(0))
 			return
 		}
 		// Path format: /v1/monero/balance/{vault_pub_key}
@@ -409,4 +427,12 @@ func newFrostBalanceServer(t *testing.T, balanceByPubKey map[string]sidecar.Bala
 
 func uint64Ptr(v uint64) *uint64 {
 	return &v
+}
+
+func TestValidateXMRSignTxRequiresOriginalMemoForNewPayout(t *testing.T) {
+	client := &Client{chain: common.XMRChain}
+	_, err := client.validateSignTx(stypes.TxOutItem{Chain: common.XMRChain, ToAddress: testOutboundXMRDestination()}, 100, true)
+	if err == nil || !strings.Contains(err.Error(), "requires its original memo") {
+		t.Fatalf("missing memo admitted: %v", err)
+	}
 }

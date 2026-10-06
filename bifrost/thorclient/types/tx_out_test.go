@@ -256,3 +256,10 @@ func (TxOutTestSuite) TestTxArrayItemToTxOutItem(c *C) {
 	c.Check(txOut.Height, Equals, int64(42))
 	c.Check(txOut.VaultPubKeyEddsa, Equals, common.PubKey("eddsapub1"))
 }
+
+func (TxOutTestSuite) TestXMRWireMemo(c *C) {
+	c.Check(XMRWireMemo("", "REFUND:abc"), Equals, "REFUND:abc")
+	c.Check(XMRWireMemo("OUT:abc", "REFUND:def"), Equals, "OUT:abc")
+	c.Check(XMRWireMemo("MIGRATE:123", ""), Equals, "MIGRATE:123")
+	c.Check(XMRWireMemo("", ""), Equals, "")
+}

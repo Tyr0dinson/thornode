@@ -76,6 +76,13 @@ func (tos *TxOutStorage) EndBlock(ctx cosmos.Context, mgr Manager) error {
 			if err != nil {
 				ctx.Logger().Error("fail to get gas details", "chain", tx.Chain, "error", err)
 				gasDetailsFailed[tx.Chain] = true
+				// every queued outbound on this chain now keeps a stale MaxGas and can
+				// underpay and stall - the "stuck after a gas spike" incident class
+				telemetry.IncrCounterWithLabels(
+					[]string{"thornode", "txout", "gas_details_failed"},
+					float32(1),
+					[]metrics.Label{telemetry.NewLabel("chain", tx.Chain.String())},
+				)
 				continue
 			}
 			maxGasCache[tx.Chain] = maxGasCoin
@@ -589,6 +596,19 @@ func (tos *TxOutStorage) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAmo
 			}
 		}
 
+		// SOL Ragnarok sweeps must leave enough balance for the source account to
+		// remain rent-exempt. Without this cap, the txout item can drain the vault
+		// down to gas-sized dust: signing succeeds, but Solana rejects every
+		// broadcast with "insufficient funds for rent" and Ragnarok cannot finish.
+		// Reuse the chain dust threshold here because migration already treats it
+		// as SOL's account-reserve amount when draining retiring vaults.
+		if isRagnarok && toi.Coin.Asset.Equals(common.SOLAsset) {
+			vaultCoinAmount = common.SafeSub(vaultCoinAmount, common.SOLChain.DustThreshold())
+			if vaultCoinAmount.IsZero() {
+				continue
+			}
+		}
+
 		toi.VaultPubKey = vault.PubKey
 		toi.VaultPubKeyEddsa = txOutVaultPubKeyEddsa(toi.Chain, vault.PubKeyEddsa)
 		toi.VaultPubKeyFrost = vault.PubKeyFrost
@@ -606,7 +626,8 @@ func (tos *TxOutStorage) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAmo
 	}
 
 	// Ragnarok can intentionally leave a chain-specific residual behind, such as
-	// XRP's account reserve. Do not route that non-spendable remainder through
+	// XRP's account reserve or SOL's rent reserve. Do not route that
+	// non-spendable remainder through
 	// fallback/recovery, because the pool is being closed and the residual is not
 	// an actionable outbound deficit.
 	if isRagnarok && !toi.Coin.Amount.IsZero() && len(outputs) > 0 {
@@ -635,6 +656,19 @@ func (tos *TxOutStorage) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAmo
 				outputs = append(outputs, toi)
 				if !isRagnarok {
 					tos.emitInsufficientAvailableBalanceSecurityEvent(ctx, toi, maxGasCoin)
+					// quote endpoints replay this whole path under simulate(); counting
+					// those would drown the real signal in API traffic.
+					if !isSimulationMode(ctx) {
+						telemetry.IncrCounterWithLabels(
+							[]string{"thornode", "outbound", "insufficient_vault_balance"},
+							float32(1),
+							[]metrics.Label{
+								telemetry.NewLabel("chain", toi.Chain.String()),
+								telemetry.NewLabel("asset", toi.Coin.Asset.String()),
+								telemetry.NewLabel("reason", "fallback_vault"),
+							},
+						)
+					}
 				}
 				toi.Coin.Amount = cosmos.ZeroUint()
 			}
@@ -658,6 +692,19 @@ func (tos *TxOutStorage) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAmo
 				"remainder", toi.Coin.Amount.String())
 			outputs[smallestIdx].Coin.Amount = outputs[smallestIdx].Coin.Amount.Add(toi.Coin.Amount)
 			tos.emitInsufficientAvailableBalanceSecurityEvent(ctx, outputs[smallestIdx], maxGasCoin)
+			// quote endpoints replay this whole path under simulate(); counting
+			// those would drown the real signal in API traffic.
+			if !isSimulationMode(ctx) {
+				telemetry.IncrCounterWithLabels(
+					[]string{"thornode", "outbound", "insufficient_vault_balance"},
+					float32(1),
+					[]metrics.Label{
+						telemetry.NewLabel("chain", toi.Chain.String()),
+						telemetry.NewLabel("asset", toi.Coin.Asset.String()),
+						telemetry.NewLabel("reason", "partial_remainder"),
+					},
+				)
+			}
 			toi.Coin.Amount = cosmos.ZeroUint()
 		}
 	}
@@ -830,6 +877,24 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 		memo, err := ParseMemoWithTHORNames(ctx, tos.keeper, outputs[i].GetMemo())
 		feeDeduction := (err == nil && !memo.IsType(TxRagnarok))
 
+		// Every `continue` below abandons this output. Quote endpoints replay this
+		// whole path under simulate(), so those are not counted or every API request
+		// would report a phantom drop.
+		dropped := func(reason string) {
+			if isSimulationMode(ctx) {
+				return
+			}
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "outbound", "dropped"},
+				float32(1),
+				[]metrics.Label{
+					telemetry.NewLabel("chain", toi.Chain.String()),
+					telemetry.NewLabel("asset", outputs[i].Coin.Asset.String()),
+					telemetry.NewLabel("reason", reason),
+				},
+			)
+		}
+
 		// THORChain txouts by nature allow fee deduction, but InactiveVault outbounds
 		// require either no deduction or gas cost deduction instead.
 		if !outputs[i].Chain.IsTHORChain() {
@@ -884,6 +949,7 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 						With("amount", coinAmountAfterFee).
 						With("fee", transactionFeeAmount).
 						Error("dropping gas asset output below dust threshold")
+					dropped("below_dust")
 					continue
 				}
 
@@ -896,20 +962,24 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 						inboundVoter, err := tos.keeper.GetObservedTxInVoter(ctx, outputs[i].InHash)
 						if err != nil {
 							ctx.Logger().Error("fail to get observed txin voter", "error", err)
+							dropped("voter_lookup_failed")
 							continue
 						}
 						if inboundVoter.Tx.IsEmpty() {
+							dropped("voter_empty")
 							continue
 						}
 						inboundMemo, err := ParseMemoWithTHORNames(ctx, tos.keeper, inboundVoter.Tx.Tx.Memo)
 						if err != nil {
 							ctx.Logger().Error("fail to parse inbound transaction memo", "error", err)
+							dropped("memo_parse_failed")
 							continue
 						}
 						if inboundMemo.IsType(TxWithdraw) {
 							return nil, cosmos.ZeroUint(), errors.New("tx out item has zero coin")
 						}
 					}
+					dropped("zero_coin_after_fee")
 					continue
 				}
 
@@ -964,20 +1034,24 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 				inboundVoter, err := tos.keeper.GetObservedTxInVoter(ctx, outputs[i].InHash)
 				if err != nil {
 					ctx.Logger().Error("fail to get observed txin voter", "error", err)
+					dropped("voter_lookup_failed")
 					continue
 				}
 				if inboundVoter.Tx.IsEmpty() {
+					dropped("voter_empty")
 					continue
 				}
 				inboundMemo, err := ParseMemoWithTHORNames(ctx, tos.keeper, inboundVoter.Tx.Tx.Memo)
 				if err != nil {
 					ctx.Logger().Error("fail to parse inbound transaction memo", "error", err)
+					dropped("memo_parse_failed")
 					continue
 				}
 				if inboundMemo.IsType(TxWithdraw) {
 					return nil, cosmos.ZeroUint(), errors.New("tx out item has zero coin")
 				}
 			}
+			dropped("zero_coin")
 			continue
 		}
 
@@ -1079,17 +1153,37 @@ func (tos *TxOutStorage) addToBlockOut(ctx cosmos.Context, mgr Manager, item TxO
 		telemetry.NewLabel("memo_type", memo.GetType().String()),
 	}
 	telemetry.SetGaugeWithLabels([]string{"thornode", "vault", "out_txn"}, float32(1), labels)
-
 	if err := tos.eventMgr.EmitEvent(ctx, NewEventScheduledOutbound(item)); err != nil {
 		ctx.Logger().Error("fail to emit scheduled outbound event", "error", err)
 	}
 
-	return tos.keeper.AppendTxOut(ctx, outboundHeight, item)
+	if err := tos.keeper.AppendTxOut(ctx, outboundHeight, item); err != nil {
+		return err
+	}
+	// the gauge above is pinned at 1 and carries no rate; a counter here gives
+	// outbounds-scheduled-per-chain, whose drop to zero on one chain while inbounds
+	// continue is the wedged-outbound-path detector. Emitted only after AppendTxOut
+	// succeeds so a failed append is not counted as scheduled (a later failure in the
+	// enclosing CacheContext still cannot roll it back - counters are process-local).
+	// Quote endpoints replay this path under simulate(), so exclude them or API
+	// traffic hides the wedge.
+	if !isSimulationMode(ctx) {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "outbound", "scheduled"},
+			float32(1),
+			[]metrics.Label{
+				telemetry.NewLabel("chain", item.Chain.String()),
+				telemetry.NewLabel("memo_type", memo.GetType().String()),
+				telemetry.NewLabel("vault_type", vault.Type.String()),
+			},
+		)
+	}
+	return nil
 }
 
 func (tos *TxOutStorage) calcClout(ctx cosmos.Context, runeValue cosmos.Uint, toi TxOutItem) (cosmos.Uint, cosmos.Uint) {
 	// disable swapper clout for dex agg txs
-	if toi.Aggregator != "" || toi.AggregatorTargetAsset != "" || toi.AggregatorTargetLimit != nil {
+	if txOutHasAggregator(toi) {
 		return runeValue, cosmos.ZeroUint()
 	}
 

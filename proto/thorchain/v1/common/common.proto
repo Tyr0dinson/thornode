@@ -91,6 +91,19 @@ message OutputRef {
   string spend_tx_hash = 4;
 }
 
+// SolNonceUpdate is the post-transaction state of a Solana vault's
+// durable-nonce account, attested with the observation of the vault transaction
+// that created or advanced it. THORChain commits it as the vault's current
+// durable nonce once a supermajority of final observations of that transaction
+// agree on it exactly.
+message SolNonceUpdate {
+  option (gogoproto.stringer) = true;
+
+  string nonce_account = 1;
+  string nonce = 2;
+  int64 slot = 3;
+}
+
 message ObservedTx {
   Tx tx = 1 [ (gogoproto.nullable) = false ];
   Status status = 2;
@@ -107,6 +120,8 @@ message ObservedTx {
     (gogoproto.nullable) = true
   ];
   repeated OutputRef spent_output_refs = 12 [ (gogoproto.nullable) = false ];
+  string xmr_tx_key = 13;
+  SolNonceUpdate sol_nonce = 14;
 }
 
 message Attestation {

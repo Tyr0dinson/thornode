@@ -3,7 +3,14 @@
 set -uo pipefail
 
 LEDGER_DIR="${LEDGER_DIR:-/tmp/test-ledger}"
-LEDGER_SHRED_LIMIT="${LEDGER_SHRED_LIMIT:-500}"
+# Finalized-history retention for the validator's ledger. Bifrost derives the SOL
+# keysign blockhash from the finalized slot at (THORChain block time of the keysign
+# height - finalization margin), so the RPC must still hold blocks back to that point.
+# A 500-shred ledger keeps only seconds of history — unlike any real RPC — and purges
+# faster than an outbound can be signed, which stalled a SOL migration for its whole
+# signing window in #3344. Keep minutes of history instead; 100k shreds is a few
+# hundred MB on a near-empty test validator, and 2000x below agave's own default.
+LEDGER_SHRED_LIMIT="${LEDGER_SHRED_LIMIT:-100000}"
 VALIDATOR_RESTART_DELAY="${VALIDATOR_RESTART_DELAY:-5}"
 
 start_validator() {

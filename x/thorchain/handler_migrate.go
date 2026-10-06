@@ -128,7 +128,7 @@ func (h MigrateHandler) slash(ctx cosmos.Context, tx ObservedTx) error {
 
 	ctx = ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{
 		telemetry.NewLabel("reason", "failed_migration"),
-		telemetry.NewLabel("chain", string(tx.Tx.Chain)),
+		telemetry.NewLabel("chain", telemChain(tx.Tx.Chain)),
 	}))
 
 	return h.mgr.Slasher().SlashVault(ctx, tx.ObservedPubKey, toSlash, h.mgr)

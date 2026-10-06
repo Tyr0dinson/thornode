@@ -102,6 +102,7 @@ Class | Method | HTTP request | Description
 *NetworkApi* | [**InboundAddresses**](docs/NetworkApi.md#inboundaddresses) | **Get** /thorchain/inbound_addresses | 
 *NetworkApi* | [**Lastblock**](docs/NetworkApi.md#lastblock) | **Get** /thorchain/lastblock | 
 *NetworkApi* | [**LastblockChain**](docs/NetworkApi.md#lastblockchain) | **Get** /thorchain/lastblock/{chain} | 
+*NetworkApi* | [**Logs**](docs/NetworkApi.md#logs) | **Get** /thorchain/logs | 
 *NetworkApi* | [**Network**](docs/NetworkApi.md#network) | **Get** /thorchain/network | 
 *NetworkApi* | [**OutboundFeeAsset**](docs/NetworkApi.md#outboundfeeasset) | **Get** /thorchain/outbound_fee/{asset} | 
 *NetworkApi* | [**OutboundFees**](docs/NetworkApi.md#outboundfees) | **Get** /thorchain/outbound_fees | 
@@ -140,6 +141,8 @@ Class | Method | HTTP request | Description
 *SecuredAssetsApi* | [**SecuredAssets**](docs/SecuredAssetsApi.md#securedassets) | **Get** /thorchain/securedassets | 
 *SmartContractsApi* | [**ContractInfo**](docs/SmartContractsApi.md#contractinfo) | **Get** /thorchain/contract/{address} | 
 *SmartContractsApi* | [**ContractInfos**](docs/SmartContractsApi.md#contractinfos) | **Get** /thorchain/contracts | 
+*StableReserveApi* | [**StableReserve**](docs/StableReserveApi.md#stablereserve) | **Get** /thorchain/stable_reserve | 
+*StableReserveApi* | [**StableReserveContributor**](docs/StableReserveApi.md#stablereservecontributor) | **Get** /thorchain/stable_reserve/contributor/{asset}/{address} | 
 *StreamingSwapApi* | [**StreamSwap**](docs/StreamingSwapApi.md#streamswap) | **Get** /thorchain/swap/streaming/{hash} | 
 *StreamingSwapApi* | [**StreamSwaps**](docs/StreamingSwapApi.md#streamswaps) | **Get** /thorchain/swaps/streaming | 
 *SupplyApi* | [**Supply**](docs/SupplyApi.md#supply) | **Get** /thorchain/supply | 
@@ -227,6 +230,7 @@ Class | Method | HTTP request | Description
  - [LiquidityProvider](docs/LiquidityProvider.md)
  - [LiquidityProviderSummary](docs/LiquidityProviderSummary.md)
  - [LockedSupply](docs/LockedSupply.md)
+ - [LogEntry](docs/LogEntry.md)
  - [MetricsResponse](docs/MetricsResponse.md)
  - [MimirNodesResponse](docs/MimirNodesResponse.md)
  - [MimirVote](docs/MimirVote.md)
@@ -246,6 +250,7 @@ Class | Method | HTTP request | Description
  - [OutboundDelayStage](docs/OutboundDelayStage.md)
  - [OutboundFee](docs/OutboundFee.md)
  - [OutboundSignedStage](docs/OutboundSignedStage.md)
+ - [OutputRef](docs/OutputRef.md)
  - [POL](docs/POL.md)
  - [PaginationMeta](docs/PaginationMeta.md)
  - [Ping](docs/Ping.md)
@@ -266,6 +271,10 @@ Class | Method | HTTP request | Description
  - [ReferenceMemoResponse](docs/ReferenceMemoResponse.md)
  - [Saver](docs/Saver.md)
  - [SecuredAssetResponse](docs/SecuredAssetResponse.md)
+ - [StableReserveContributorResponse](docs/StableReserveContributorResponse.md)
+ - [StableReserveInventory](docs/StableReserveInventory.md)
+ - [StableReserveResponse](docs/StableReserveResponse.md)
+ - [StableReserveStreamingSwap](docs/StableReserveStreamingSwap.md)
  - [StreamingStatus](docs/StreamingStatus.md)
  - [StreamingSwap](docs/StreamingSwap.md)
  - [SupplyResponse](docs/SupplyResponse.md)

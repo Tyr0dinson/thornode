@@ -116,9 +116,13 @@ func (k KVStore) IsOperationalMimir(key string) bool {
 		constants.OverSolvencyCheckInterval.String(),
 		constants.OverSolvencyToTreasuryBps.String(),
 		constants.MimirKeyScheduledMigration,
+		constants.MimirKeyDisableTSSSignerFiltering,
 		constants.MaxRetiredVaultRecoveryAttempts.String(),
 		constants.P2PGateDisabled.String(),
 		constants.EnableMemolessOutbound.String(),
+		constants.POLReserveSystemIncomeBps.String(),
+		constants.StableReserveOraclePricing.String(),
+		constants.MimirKeyPreflightChainSetDisabled,
 	}
 	for i := range exactMatches {
 		if strings.EqualFold(key, exactMatches[i]) {
@@ -141,6 +145,19 @@ func (k KVStore) IsOperationalMimir(key string) bool {
 	if strings.HasPrefix(key, "COMPROMISEDVAULT-") {
 		return true
 	}
+	// AllowNoVault-<CHAIN> opens the noop:novault debit for a brief, coordinated
+	// insolvency-correction window. That is a time-critical operator action (a
+	// gas top-up to a retiring vault must not be credited before the next
+	// migration round), so it is operational rather than economic.
+	if strings.HasPrefix(key, "ALLOWNOVAULT-") {
+		return true
+	}
+	// XMRConsolidation* tunes bifrost's Monero output consolidation. Each run
+	// locks vault liquidity for Monero's 10-block spend lock, so operators must
+	// be able to tune or disable it quickly rather than wait for a supermajority.
+	if strings.HasPrefix(key, "XMRCONSOLIDATION") {
+		return true
+	}
 	partialMatches := []string{
 		"HALT",
 		"PAUSE",
@@ -148,8 +165,11 @@ func (k KVStore) IsOperationalMimir(key string) bool {
 		"MIMIRUPGRADECONTRACT",
 		"EVMALLOWANCECHECK",
 		"POLRESERVEBLACKLIST",
+		"POLRESERVEWHITELIST",
 		"DYNAMICFEE-WHITELIST",
 		"REVSHARE",
+		"EVMDIRECTERC20INBOUND",
+		"SKIPSIGNERCACHE",
 	}
 	for i := range partialMatches {
 		// Contains rather than HasPrefix to include cases like StreamingSwapPause.
@@ -159,6 +179,9 @@ func (k KVStore) IsOperationalMimir(key string) bool {
 	}
 
 	if strings.HasPrefix(key, "L1DYNAMICFEE") {
+		return true
+	}
+	if strings.HasPrefix(key, "OVERSOLVENCYTOTREASURYBPS-") {
 		return true
 	}
 

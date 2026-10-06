@@ -1,8 +1,10 @@
 # BFT Chain Clients
 
+THORChain supports Cosmos SDK-based (BFT) chains via a shared `CosmosClient` implementation in `/bifrost/pkg/chainclients/gaia/cosmos_client.go`. Currently supported chains are Cosmos Hub (GAIA) and Noble. The same client handles both, differentiated by `ChainID` and `CosmosChainID` configuration. The client requires two endpoints on the node: a Cosmos SDK gRPC endpoint (`cosmos_grpc_host`, TLS via `cosmos_grpc_tls`) for transaction broadcast, transaction lookup, and account/balance queries; and a CometBFT RPC endpoint (`rpc_host`) for block scanning and mempool checks.
+
 ## Inbound Observations
 
-Inbound transactions on BFT chains (e.g. Cosmos-based) are observed by scanning finalized blocks via RPC/WebSocket APIs. A transaction is valid for observation if:
+Inbound transactions on BFT chains are observed by scanning finalized blocks over the CometBFT RPC endpoint (`Block` and `BlockResults`). A transaction is valid for observation if:
 
 - It includes a `MsgSend` to an Asgard vault address
 - It includes a valid memo matching THORChain memo structure

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/rs/zerolog/log"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -396,5 +397,22 @@ func TestTssKeysignMetricMgr_MultipleKeys(t *testing.T) {
 	// All consumed
 	if v := mgr.GetTssKeysignMetric("a"); v != 0 {
 		t.Fatalf("expected 0, got %d", v)
+	}
+}
+
+func TestXMRCertificateOutboxGaugesHaveNoLabels(t *testing.T) {
+	m := &Metrics{}
+	for _, name := range []MetricName{XMRPendingCertificates, XMROldestPendingCertificateAge} {
+		gauge := m.GetGauge(name)
+		if gauge == nil {
+			t.Fatalf("missing gauge %s", name)
+		}
+		var metric dto.Metric
+		if err := gauge.Write(&metric); err != nil {
+			t.Fatal(err)
+		}
+		if len(metric.GetLabel()) != 0 {
+			t.Fatalf("outbox gauge %s must not have labels", name)
+		}
 	}
 }

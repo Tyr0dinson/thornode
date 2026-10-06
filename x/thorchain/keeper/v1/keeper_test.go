@@ -78,10 +78,13 @@ func setupKeeperForTest(c *C) (cosmos.Context, KVStore) {
 		ModuleName:                     {authtypes.Minter, authtypes.Burner},
 		ReserveName:                    {},
 		AsgardName:                     {},
+		AffiliateCollectorName:         {},
 		TreasuryName:                   {},
 		RUNEPoolName:                   {},
 		BondName:                       {authtypes.Staking},
 		TCYClaimingName:                {},
+		TCYStakeName:                   {},
+		StableReserveName:              {},
 	}
 	ak := authkeeper.NewAccountKeeper(
 		encodingConfig.Codec,
@@ -121,6 +124,33 @@ func setupKeeperForTest(c *C) (cosmos.Context, KVStore) {
 type KeeperTestSuit struct{}
 
 var _ = Suite(&KeeperTestSuit{})
+
+func (s *KeeperTestSuit) TestIsModuleAccount(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	moduleAddr := k.GetModuleAccAddress(StableReserveName)
+	c.Assert(moduleAddr.Empty(), Equals, false)
+	c.Assert(k.GetAccount(ctx, moduleAddr), IsNil)
+	c.Assert(k.IsModuleAccount(ctx, moduleAddr), Equals, true)
+	// Detection must not create the account during validation.
+	c.Assert(k.GetAccount(ctx, moduleAddr), IsNil)
+
+	// Configuration is authoritative even if an ordinary account was stored at
+	// the reserved address before the module account was initialized.
+	k.accountKeeper.SetAccount(ctx, k.accountKeeper.NewAccountWithAddress(ctx, moduleAddr))
+	c.Assert(k.IsModuleAccount(ctx, moduleAddr), Equals, true)
+
+	// Preserve detection of stored module accounts outside today's configuration.
+	custom := authtypes.NewEmptyModuleAccount("legacy_custom_module")
+	c.Assert(k.GetModuleAccAddress(custom.Name).Empty(), Equals, true)
+	k.accountKeeper.SetAccount(ctx, k.accountKeeper.NewAccount(ctx, custom))
+	c.Assert(k.IsModuleAccount(ctx, custom.GetAddress()), Equals, true)
+
+	ordinary := GetRandomBech32Addr()
+	c.Assert(k.IsModuleAccount(ctx, ordinary), Equals, false)
+	k.accountKeeper.SetAccount(ctx, k.accountKeeper.NewAccountWithAddress(ctx, ordinary))
+	c.Assert(k.IsModuleAccount(ctx, ordinary), Equals, false)
+	c.Assert(k.IsModuleAccount(ctx, nil), Equals, false)
+}
 
 func (KeeperTestSuit) TestKeeperVersion(c *C) {
 	ctx, k := setupKeeperForTest(c)

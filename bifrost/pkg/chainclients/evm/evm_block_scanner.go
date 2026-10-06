@@ -47,14 +47,19 @@ import (
 ////////////////////////////////////////////////////////////////////////////////////////
 
 type EVMScanner struct {
-	cfg                   config.BifrostBlockScannerConfiguration
-	logger                zerolog.Logger
-	db                    blockscanner.ScannerStorage
-	m                     *metrics.Metrics
-	errCounter            *prometheus.CounterVec
-	gasPriceChanged       bool
-	gasPrice              *big.Int
-	lastReportedGasPrice  uint64
+	cfg             config.BifrostBlockScannerConfiguration
+	logger          zerolog.Logger
+	db              blockscanner.ScannerStorage
+	m               *metrics.Metrics
+	errCounter      *prometheus.CounterVec
+	gasPriceChanged bool
+	// Guards gasCache while FetchTxs prefetch goroutines append samples and refresh the atomic gasPrice snapshot.
+	gasCacheMu sync.Mutex
+	// Atomic gasPrice snapshot read by signer/unstuck/network-fee goroutines.
+	gasPrice stdatomic.Pointer[big.Int]
+	// Serializes FetchTxs/prefetch network-fee compare and lastReportedGasPrice update.
+	networkFeeMu          sync.Mutex
+	lastReportedGasPrice  stdatomic.Uint64
 	ethClient             *ethclient.Client
 	ethRpc                *evm.EthRPC
 	blockMetaAccessor     evm.BlockMetaAccessor
@@ -172,30 +177,30 @@ func NewEVMScanner(cfg config.BifrostBlockScannerConfiguration,
 		}
 	}
 
-	return &EVMScanner{
-		cfg:                  cfg,
-		logger:               log.Logger.With().Stringer("chain", cfg.ChainID).Logger(),
-		errCounter:           m.GetCounterVec(metrics.BlockScanError(cfg.ChainID)),
-		ethRpc:               ethRpc,
-		ethClient:            ethClient,
-		db:                   storage,
-		m:                    m,
-		gasPrice:             big.NewInt(0),
-		lastReportedGasPrice: 0,
-		gasPriceChanged:      false,
-		blockMetaAccessor:    blockMetaAccessor,
-		bridge:               bridge,
-		vaultABI:             vaultABI,
-		erc20ABI:             erc20ABI,
-		eipSigner:            etypes.NewPragueSigner(chainID),
-		pubkeyMgr:            pubkeyMgr,
-		gasCache:             make([]*big.Int, 0),
-		solvencyReporter:     solvencyReporter,
-		whitelistTokens:      whitelistTokens,
-		whitelistContracts:   whitelistContracts,
-		signerCacheManager:   signerCacheManager,
-		tokenManager:         tokenManager,
-	}, nil
+	scanner := &EVMScanner{
+		cfg:                cfg,
+		logger:             log.Logger.With().Stringer("chain", cfg.ChainID).Logger(),
+		errCounter:         m.GetCounterVec(metrics.BlockScanError(cfg.ChainID)),
+		ethRpc:             ethRpc,
+		ethClient:          ethClient,
+		db:                 storage,
+		m:                  m,
+		gasPriceChanged:    false,
+		blockMetaAccessor:  blockMetaAccessor,
+		bridge:             bridge,
+		vaultABI:           vaultABI,
+		erc20ABI:           erc20ABI,
+		eipSigner:          etypes.NewPragueSigner(chainID),
+		pubkeyMgr:          pubkeyMgr,
+		gasCache:           make([]*big.Int, 0),
+		solvencyReporter:   solvencyReporter,
+		whitelistTokens:    whitelistTokens,
+		whitelistContracts: whitelistContracts,
+		signerCacheManager: signerCacheManager,
+		tokenManager:       tokenManager,
+	}
+	scanner.gasPrice.Store(big.NewInt(0))
+	return scanner, nil
 }
 
 // --------------------------------- exported ---------------------------------
@@ -205,12 +210,17 @@ func (e *EVMScanner) GetGasPrice() *big.Int {
 	if e.cfg.FixedGasRate > 0 {
 		return big.NewInt(e.cfg.FixedGasRate)
 	}
-	return e.gasPrice
+	// Return a copy because callers mutate gas prices while this atomic snapshot is shared.
+	gasPrice := e.gasPrice.Load()
+	if gasPrice == nil {
+		return big.NewInt(0)
+	}
+	return new(big.Int).Set(gasPrice)
 }
 
 // GetNetworkFee returns current chain network fee according to Bifrost.
 func (e *EVMScanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
-	return e.cfg.MaxGasLimit, e.lastReportedGasPrice
+	return e.cfg.MaxGasLimit, e.lastReportedGasPrice.Load()
 }
 
 // GetNonce returns the nonce (including pending) for the given address.
@@ -627,6 +637,26 @@ func (e *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.R
 		case isFromVault:
 			// Tx from a vault (outbound, approval, cancel, etc.)
 			return e.getTxInFromTransaction(tx, receipt)
+		case evm.HasERC20TransferSelector(tx):
+			// Reject unknown tokens before the cached Mimir gate.
+			if !e.isRelevantERC20Token(destination) {
+				return nil, nil
+			}
+			// Confirm this is a successful top-level ERC20 transfer from tx.To().
+			if !evm.IsERC20Transfer(tx, receipt) {
+				return nil, nil
+			}
+			// Keep direct inbounds behind the per-chain operator flag.
+			if !e.directERC20InboundEnabled() {
+				return nil, nil
+			}
+			if senderErr != nil {
+				// Match the whitelist-enabled path: ignore txs whose sender we
+				// cannot determine rather than surfacing scanner noise.
+				return nil, nil
+			}
+			// Reuse the sender recovered above to avoid a second ecrecover.
+			return e.getTxInFromDirectERC20Transfer(tx, receipt, &sender)
 		case evm.IsSmartContractCall(tx, receipt):
 			// Tx to a different contract, attempt to parse with max allowable logs
 			return e.getTxInFromSmartContract(tx, receipt, int64(e.cfg.MaxContractTxLogs))
@@ -649,7 +679,22 @@ func (e *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.R
 		if isFromVault || isToVault {
 			return e.getTxInFromTransaction(tx, receipt)
 		}
-		// ignore tx not involving any vault
+		if evm.HasERC20TransferSelector(tx) {
+			// Reject unknown tokens before the cached Mimir gate.
+			if !e.isRelevantERC20Token(tx.To()) {
+				return nil, nil
+			}
+			// Confirm this is a successful top-level ERC20 transfer from tx.To().
+			if !evm.IsERC20Transfer(tx, receipt) {
+				return nil, nil
+			}
+			// Keep direct inbounds behind the per-chain operator flag.
+			if !e.directERC20InboundEnabled() {
+				return nil, nil
+			}
+			// Reuse the sender recovered above to avoid a second ecrecover.
+			return e.getTxInFromDirectERC20Transfer(tx, receipt, &sender)
+		}
 		return nil, nil
 	}
 }
@@ -799,7 +844,11 @@ func (e *EVMScanner) updateGasPrice(prices []*big.Int) {
 
 	// find the median gas price in the block
 	sort.Slice(validPrices, func(i, j int) bool { return validPrices[i].Cmp(validPrices[j]) == -1 })
-	gasPrice := validPrices[len(validPrices)/2]
+	gasPrice := new(big.Int).Set(validPrices[len(validPrices)/2])
+
+	// FetchTxs can run in prefetch goroutines, so serialize gasCache updates before publishing gasPrice.
+	e.gasCacheMu.Lock()
+	defer e.gasCacheMu.Unlock()
 
 	// add to the cache
 	e.gasCache = append(e.gasCache, gasPrice)
@@ -813,7 +862,7 @@ func (e *EVMScanner) updateGasPrice(prices []*big.Int) {
 	}
 
 	// compute the median of the median prices in the cache
-	medians := []*big.Int{}
+	medians := make([]*big.Int, 0, len(e.gasCache))
 	for _, price := range e.gasCache {
 		if price != nil {
 			medians = append(medians, price)
@@ -823,7 +872,7 @@ func (e *EVMScanner) updateGasPrice(prices []*big.Int) {
 		return
 	}
 	sort.Slice(medians, func(i, j int) bool { return medians[i].Cmp(medians[j]) == -1 })
-	median := medians[len(medians)/2]
+	median := new(big.Int).Set(medians[len(medians)/2])
 
 	// round the price up to nearest configured resolution, converting gas rate units to wei
 	_, gasRateUnitsPerOne := e.cfg.ChainID.GetGasUnits()
@@ -831,10 +880,10 @@ func (e *EVMScanner) updateGasPrice(prices []*big.Int) {
 	median.Add(median, new(big.Int).Sub(resolution, big.NewInt(1)))
 	median = median.Div(median, resolution)
 	median = median.Mul(median, resolution)
-	e.gasPrice = median
+	e.gasPrice.Store(median)
 
 	// record metrics
-	gasPriceFloat, _ := new(big.Float).SetInt64(e.gasPrice.Int64()).Float64()
+	gasPriceFloat, _ := new(big.Float).SetInt(median).Float64()
 	e.m.GetGauge(metrics.GasPrice(e.cfg.ChainID)).Set(gasPriceFloat)
 	e.m.GetCounter(metrics.GasPriceChange(e.cfg.ChainID)).Inc()
 }
@@ -844,7 +893,7 @@ func (e *EVMScanner) reportNetworkFee(height int64) {
 	gasPrice := e.GetGasPrice()
 
 	// skip posting if there is not yet a fee
-	if gasPrice.Cmp(big.NewInt(0)) == 0 {
+	if gasPrice.Sign() == 0 {
 		return
 	}
 
@@ -855,35 +904,65 @@ func (e *EVMScanner) reportNetworkFee(height int64) {
 		gasRate = 1
 	}
 
-	// skip fee if less than 1 resolution away from the last
-	var feeDelta uint64
-	if gasRate >= e.lastReportedGasPrice {
-		feeDelta = gasRate - e.lastReportedGasPrice
-	} else {
-		feeDelta = e.lastReportedGasPrice - gasRate
-	}
-	if e.lastReportedGasPrice != 0 && feeDelta <= uint64(e.cfg.GasPriceResolution) {
-		skip := true
-
-		// every 100 blocks send the fee if none is set
-		if height%100 == 0 {
-			hasNetworkFee, err := e.bridge.HasNetworkFee(e.cfg.ChainID)
-			skip = err != nil || hasNetworkFee
-		}
-
-		if skip {
+	networkFee, postNetworkFee, checkThorchainFee := e.prepareNetworkFeeReport(height, gasRate, nil)
+	if checkThorchainFee {
+		hasNetworkFee, err := e.bridge.HasNetworkFee(e.cfg.ChainID)
+		if err != nil || hasNetworkFee {
 			return
 		}
+
+		// A concurrent scanner may post the same fee between HasNetworkFee and this
+		// retry. Duplicate network-fee observations are harmless because THORChain
+		// handles them idempotently.
+		networkFee, postNetworkFee, _ = e.prepareNetworkFeeReport(height, gasRate, &hasNetworkFee)
 	}
 
-	// post to thorchain
-	e.globalNetworkFeeQueue <- common.NetworkFee{
+	if postNetworkFee {
+		e.globalNetworkFeeQueue <- networkFee
+	}
+}
+
+// prepareNetworkFeeReport decides whether the current gas rate should be reported.
+// It returns the fee to post, whether it should be posted, and whether the caller
+// must check THORNode for an existing network fee before deciding.
+func (e *EVMScanner) prepareNetworkFeeReport(height int64, gasRate uint64, hasNetworkFee *bool) (common.NetworkFee, bool, bool) {
+	// FetchTxs can run in prefetch goroutines. Keep the fee comparison and
+	// lastReportedGasPrice update atomic, but leave THORNode RPCs to the caller.
+	e.networkFeeMu.Lock()
+	defer e.networkFeeMu.Unlock()
+
+	// skip fee if less than 1 resolution away from the last
+	lastReportedGasPrice := e.lastReportedGasPrice.Load()
+	var feeDelta uint64
+	if gasRate >= lastReportedGasPrice {
+		feeDelta = gasRate - lastReportedGasPrice
+	} else {
+		feeDelta = lastReportedGasPrice - gasRate
+	}
+	if lastReportedGasPrice != 0 && feeDelta <= uint64(e.cfg.GasPriceResolution) {
+		if height%100 != 0 {
+			return common.NetworkFee{}, false, false
+		}
+
+		// every 100 blocks send the fee if none is set
+		if hasNetworkFee == nil {
+			// The caller must perform HasNetworkFee outside networkFeeMu and retry
+			// this decision with the result.
+			return common.NetworkFee{}, false, true
+		}
+		if *hasNetworkFee {
+			return common.NetworkFee{}, false, false
+		}
+	}
+
+	e.lastReportedGasPrice.Store(gasRate)
+	// build the network fee to post to THORChain after releasing networkFeeMu
+	return common.NetworkFee{
 		Chain:           e.cfg.ChainID,
 		Height:          height,
 		TransactionSize: e.cfg.MaxGasLimit,
 		TransactionRate: gasRate,
-	}
-	e.lastReportedGasPrice = gasRate
+	}, true, false
 }
 
 // --------------------------------- parse transaction ---------------------------------
@@ -976,6 +1055,50 @@ func (e *EVMScanner) isToValidContractAddress(addr *ecommon.Address, includeWhit
 		}
 	}
 	return false
+}
+
+func (e *EVMScanner) isRelevantERC20Token(addr *ecommon.Address) bool {
+	if addr == nil || e.tokenManager == nil {
+		return false
+	}
+	return e.tokenManager.IsRelevantToken(addr.String())
+}
+
+func (e *EVMScanner) directERC20InboundEnabled() bool {
+	enabled, err := e.bridge.GetMimirWithRef(
+		constants.MimirTemplateEVMDirectERC20Inbound,
+		e.cfg.ChainID.String(),
+	)
+	if err != nil {
+		e.logger.Err(err).
+			Str("mimir_template", constants.MimirTemplateEVMDirectERC20Inbound).
+			Str("chain", e.cfg.ChainID.String()).
+			Msg("fail to get direct ERC20 inbound mimir")
+		return false
+	}
+	return enabled > 0
+}
+
+// getTxInFromDirectERC20Transfer observes direct ERC20 token transfers sent to
+// active vault addresses. These txs bypass the router, so they are emitted as
+// memo-less inbounds and left to THORNode's normal memoless/refund handling.
+func (e *EVMScanner) getTxInFromDirectERC20Transfer(tx *etypes.Transaction, receipt *etypes.Receipt, sender *ecommon.Address) (*stypes.TxInItem, error) {
+	var l1Fee *big.Int
+	if receipt != nil {
+		l1Fee = receipt.L1Fee
+	}
+	return evm.GetTxInFromDirectERC20Transfer(tx, receipt, evm.DirectERC20TransferTxInOptions{
+		Chain:                 e.cfg.ChainID,
+		Signer:                e.eipSigner,
+		Sender:                sender,
+		MaxContractTxLogs:     int64(e.cfg.MaxContractTxLogs),
+		L1Fee:                 l1Fee,
+		PoolAddressProvider:   e.pubkeyMgr,
+		TokenResolver:         e.tokenManager,
+		Logger:                e.logger,
+		SenderErrorMessage:    "failed to get sender",
+		ParseLogsErrorMessage: "failed to parse direct ERC20 transfer logs",
+	})
 }
 
 // getTxInFromSmartContract returns txInItem

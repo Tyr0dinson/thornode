@@ -55,6 +55,7 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[sdk.MsgTypeURL(&MsgSwap{})] = NewSwapHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgReserveContributor{})] = NewReserveContributorHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgBond{})] = NewBondHandler(mgr)
+	m[sdk.MsgTypeURL(&MsgBondYield{})] = NewBondYieldHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgUnBond{})] = NewUnBondHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgReBond{})] = NewReBondHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgLeave{})] = NewLeaveHandler(mgr)
@@ -76,7 +77,6 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[sdk.MsgTypeURL(&MsgRunePoolDeposit{})] = NewRunePoolDepositHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgRunePoolWithdraw{})] = NewRunePoolWithdrawHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgModifyLimitSwap{})] = NewModifyLimitSwapHandler(mgr)
-	m[sdk.MsgTypeURL(&MsgWasmExec{})] = NewWasmExecHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgSwitch{})] = NewSwitchHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgTCYClaim{})] = NewTCYClaimHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgTCYStake{})] = NewTCYStakeHandler(mgr)
@@ -126,11 +126,17 @@ func getMsgAddLiquidityFromMemo(ctx cosmos.Context, memo AddLiquidityMemo, tx Ob
 		runeAddr = memo.GetDestination()
 		assetAddr = tx.Tx.FromAddress
 		assetSender := tx.Tx.ObservedSender()
-		if memo.GetAsset().GetLayer1Asset().GetChain().Equals(common.XMRChain) && assetSender.RefundAddressRequired {
-			// Monero inbound observations cannot recover the sender address, so
+		if assetSender.RefundAddressRequired {
+			// Some inbound observations cannot recover the sender address. Use the
+			// asset address explicitly registered in the memo; otherwise
 			// treat the asset-side address as absent and let staged liquidity
 			// resolution reuse the real address supplied on the RUNE-side memo.
-			assetAddr = assetSender.Address
+			memoAssetAddr := memo.GetAssetAddress()
+			if !memoAssetAddr.IsEmpty() && memoAssetAddr.IsChain(memo.GetAsset().GetLayer1Asset().GetChain()) {
+				assetAddr = memoAssetAddr
+			} else {
+				assetAddr = assetSender.Address
+			}
 		}
 	}
 	// in case we are providing native rune and another native asset
@@ -181,6 +187,10 @@ func getMsgLeaveFromMemo(memo LeaveMemo, tx ObservedTx, signer cosmos.AccAddress
 func getMsgBondFromMemo(memo BondMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
 	coin := tx.Tx.Coins.GetCoin(common.RuneAsset())
 	return NewMsgBond(tx.Tx, memo.GetAccAddress(), coin.Amount, tx.Tx.FromAddress, memo.BondProviderAddress, signer, memo.NodeOperatorFee), nil
+}
+
+func getMsgBondYieldFromMemo(memo BondYieldMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+	return NewMsgBondYield(tx.Tx, memo.GetAccAddress(), memo.GetBps(), memo.PayoutTarget, signer), nil
 }
 
 func getMsgUnbondFromMemo(memo UnbondMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
@@ -241,6 +251,8 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 		newMsg, err = getMsgMigrateFromMemo(m, tx, signer)
 	case BondMemo:
 		newMsg, err = getMsgBondFromMemo(m, tx, signer)
+	case BondYieldMemo:
+		newMsg, err = getMsgBondYieldFromMemo(m, tx, signer)
 	case UnbondMemo:
 		newMsg, err = getMsgUnbondFromMemo(m, tx, signer)
 	case RebondMemo:
@@ -272,18 +284,16 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 	case SecuredAssetWithdrawMemo:
 		coin := tx.Tx.Coins[0]
 		newMsg = NewMsgSecuredAssetWithdraw(coin.Asset, coin.Amount, m.GetAddress(), signer, tx.Tx)
+	case StableReserveDepositMemo:
+		coin := tx.Tx.Coins[0]
+		newMsg = NewMsgSecuredAssetDeposit(coin.Asset, coin.Amount, signer, signer, tx.Tx)
+	case StableReserveWithdrawMemo:
+		coin := tx.Tx.Coins[0]
+		newMsg = NewMsgSecuredAssetWithdraw(coin.Asset.GetSecuredAsset(), m.GetAmount(), tx.Tx.FromAddress, signer, tx.Tx)
 	case RunePoolDepositMemo:
 		newMsg = NewMsgRunePoolDeposit(signer, tx.Tx)
 	case RunePoolWithdrawMemo:
 		newMsg = NewMsgRunePoolWithdraw(signer, tx.Tx, m.GetBasisPts(), m.GetAffiliateAddress(), m.GetAffiliateBasisPoints())
-	case ExecMemo:
-		coin := tx.Tx.Coins[0]
-		var sender cosmos.AccAddress
-		sender, err = tx.Tx.FromAddress.MappedAccAddress()
-		if err != nil {
-			return nil, err
-		}
-		newMsg = NewMsgWasmExec(coin.Asset, coin.Amount, m.ContractAddress, sender, signer, m.Msg, tx.Tx)
 	case SwitchMemo:
 		coin := tx.Tx.Coins[0]
 		newMsg = NewMsgSwitch(coin.Asset, coin.Amount, m.GetAccAddress(), signer, tx.Tx)

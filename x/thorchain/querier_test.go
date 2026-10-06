@@ -3,6 +3,7 @@ package thorchain
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -830,6 +831,29 @@ func (s *QuerierSuite) TestQueryConstantValues(c *C) {
 	queryConstantValResp, err := s.queryServer.ConstantValues(s.ctx, &types.QueryConstantValuesRequest{})
 	c.Assert(queryConstantValResp, NotNil)
 	c.Assert(err, IsNil)
+	c.Assert(sort.SliceIsSorted(queryConstantValResp.Int_64Values, func(i, j int) bool {
+		return queryConstantValResp.Int_64Values[i].Name < queryConstantValResp.Int_64Values[j].Name
+	}), Equals, true)
+	c.Assert(sort.SliceIsSorted(queryConstantValResp.BoolValues, func(i, j int) bool {
+		return queryConstantValResp.BoolValues[i].Name < queryConstantValResp.BoolValues[j].Name
+	}), Equals, true)
+	c.Assert(sort.SliceIsSorted(queryConstantValResp.StringValues, func(i, j int) bool {
+		return queryConstantValResp.StringValues[i].Name < queryConstantValResp.StringValues[j].Name
+	}), Equals, true)
+
+	cv := s.mgr.GetConstants().GetConstantValsByKeyname()
+	c.Assert(queryConstantValResp.Int_64Values, HasLen, len(cv.Int64Values))
+	c.Assert(queryConstantValResp.BoolValues, HasLen, len(cv.BoolValues))
+	c.Assert(queryConstantValResp.StringValues, HasLen, len(cv.StringValues))
+	for _, kv := range queryConstantValResp.Int_64Values {
+		c.Assert(kv.Value, Equals, cv.Int64Values[kv.Name])
+	}
+	for _, kv := range queryConstantValResp.BoolValues {
+		c.Assert(kv.Value, Equals, cv.BoolValues[kv.Name])
+	}
+	for _, kv := range queryConstantValResp.StringValues {
+		c.Assert(kv.Value, Equals, cv.StringValues[kv.Name])
+	}
 
 	_, err = queryConstantValResp.MarshalJSONPB(nil)
 	c.Assert(err, IsNil)
@@ -958,6 +982,84 @@ func (s *QuerierSuite) TestQueryNodeAccount(c *C) {
 	// Second node has 75% of bond, should have 75% of the rewards
 	c.Assert(r3.TotalBond, Equals, cosmos.NewUint(common.One*3000).String())
 	c.Assert(r3.CurrentAward, Equals, cosmos.NewUint(common.One*750).String())
+}
+
+func (s *QuerierSuite) TestQueryNodeWasmResponseIsDeterministic(c *C) {
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(s.k.SetNodeAccount(s.ctx, na), IsNil)
+
+	vault := GetRandomVault()
+	vault.Status = ActiveVault
+	vault.StatusSince = 1
+	c.Assert(s.k.SetVault(s.ctx, vault), IsNil)
+
+	chains := common.Chains{
+		common.BTCChain,
+		common.ETHChain,
+		common.LTCChain,
+		common.BCHChain,
+		common.DOGEChain,
+		common.GAIAChain,
+		common.AVAXChain,
+		common.TRONChain,
+	}
+	for i, chain := range chains {
+		c.Assert(s.k.SetLastObserveHeight(s.ctx, chain, na.NodeAddress, int64(1000+i)), IsNil)
+	}
+
+	const attempts = 10
+	wasmCtx := s.ctx.WithValue(constants.CtxWASMQuery, true)
+	expectedOrder := chains.Strings()
+	sort.Strings(expectedOrder)
+	expectedOrderString := strings.Join(expectedOrder, ",")
+	var firstEncoding string
+	for attempt := 1; attempt <= attempts; attempt++ {
+		response, err := s.queryServer.Node(wasmCtx, &types.QueryNodeRequest{
+			Address: na.NodeAddress.String(),
+		})
+		c.Assert(err, IsNil)
+
+		encoding, err := response.Marshal()
+		c.Assert(err, IsNil)
+
+		order := make([]string, len(response.ObserveChains))
+		for i, chainHeight := range response.ObserveChains {
+			order[i] = chainHeight.Chain
+		}
+		currentOrder := strings.Join(order, ",")
+		c.Assert(currentOrder, Equals, expectedOrderString)
+
+		if attempt == 1 {
+			firstEncoding = string(encoding)
+			continue
+		}
+
+		c.Assert(string(encoding), Equals, firstEncoding,
+			Commentf("QueryNode response changed on attempt %d", attempt))
+	}
+
+	var firstNodesEncoding string
+	for attempt := 1; attempt <= attempts; attempt++ {
+		response, err := s.queryServer.Nodes(wasmCtx, &types.QueryNodesRequest{})
+		c.Assert(err, IsNil)
+		c.Assert(response.Nodes, HasLen, 1)
+
+		encoding, err := response.Marshal()
+		c.Assert(err, IsNil)
+
+		order := make([]string, len(response.Nodes[0].ObserveChains))
+		for i, chainHeight := range response.Nodes[0].ObserveChains {
+			order[i] = chainHeight.Chain
+		}
+		c.Assert(strings.Join(order, ","), Equals, expectedOrderString)
+
+		if attempt == 1 {
+			firstNodesEncoding = string(encoding)
+			continue
+		}
+		c.Assert(string(encoding), Equals, firstNodesEncoding,
+			Commentf("QueryNodes response changed on attempt %d", attempt))
+	}
 }
 
 func (s *QuerierSuite) TestQueryPoolAddresses(c *C) {
@@ -1313,6 +1415,72 @@ func (s *QuerierSuite) TestQueryInboundAddressesExcludesCompromisedVault(c *C) {
 	c.Assert(btcPubKey, Equals, compromisedPubKey.String(), Commentf("WASM path must expose the compromised vault unchanged"))
 }
 
+func (s *QuerierSuite) TestQueryInboundAddressesExcludesInsolventVault(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// The insolvent vault serves BTC and ETH but is flagged insolvent on BTC
+	// only. A compromised key that drains BTC leaves ETH exposed, so the whole
+	// vault must disappear from inbound election - both BTC and ETH.
+	insolventPubKey := GetRandomPubKey()
+	mgr.Keeper().SetMimir(ctx, solvencyHaltVaultKey(insolventPubKey, common.BTCChain), ctx.BlockHeight())
+	insolvent := NewVault(ctx.BlockHeight()-1, ActiveVault, AsgardVault, insolventPubKey, common.Chains{common.BTCChain, common.ETHChain}.Strings(), nil)
+	c.Assert(mgr.Keeper().SetVault(ctx, insolvent), IsNil)
+
+	// A safe vault serves LTC so it remains the sole candidate for its chain.
+	safePubKey := GetRandomPubKey()
+	safeVault := NewVault(ctx.BlockHeight()-1, ActiveVault, AsgardVault, safePubKey, common.Chains{common.LTCChain}.Strings(), nil)
+	c.Assert(mgr.Keeper().SetVault(ctx, safeVault), IsNil)
+
+	txConfig, err := params.TxConfig(s.mgr.cdc, nil)
+	c.Assert(err, IsNil)
+	queryServer := NewQueryServerImpl(mgr, txConfig, s.kb)
+
+	// Non-WASM path: neither BTC nor ETH (the insolvent vault's chains) may
+	// appear; LTC must show the safe vault.
+	resp, err := queryServer.InboundAddresses(ctx, &types.QueryInboundAddressesRequest{})
+	c.Assert(err, IsNil)
+	var ltcPubKey string
+	for _, inbound := range resp.InboundAddresses {
+		c.Assert(inbound.Chain, Not(Equals), common.BTCChain.String(), Commentf("insolvent vault's halted chain must be absent"))
+		c.Assert(inbound.Chain, Not(Equals), common.ETHChain.String(), Commentf("insolvent vault's other chains must also be absent"))
+		if inbound.Chain == common.LTCChain.String() {
+			ltcPubKey = inbound.PubKey
+		}
+	}
+	c.Assert(ltcPubKey, Equals, safePubKey.String())
+
+	// WASM path: the filter must be skipped so the insolvent vault's chains
+	// still appear, preserving deterministic contract responses.
+	wasmCtx := ctx.WithValue(constants.CtxWASMQuery, true)
+	wasmResp, err := queryServer.InboundAddresses(wasmCtx, &types.QueryInboundAddressesRequest{})
+	c.Assert(err, IsNil)
+	var btcPubKey string
+	for _, inbound := range wasmResp.InboundAddresses {
+		if inbound.Chain == common.BTCChain.String() {
+			btcPubKey = inbound.PubKey
+			break
+		}
+	}
+	c.Assert(btcPubKey, Equals, insolventPubKey.String(), Commentf("WASM path must expose the insolvent vault unchanged"))
+
+	// Once the vault is observed solvent again on BTC, the flag clears and the
+	// vault is re-elected for its chains.
+	clearVaultInsolvent(ctx, mgr.Keeper(), insolventPubKey, common.BTCChain)
+	respAfter, err := queryServer.InboundAddresses(ctx, &types.QueryInboundAddressesRequest{})
+	c.Assert(err, IsNil)
+	var btcAfter, ethAfter string
+	for _, inbound := range respAfter.InboundAddresses {
+		switch inbound.Chain {
+		case common.BTCChain.String():
+			btcAfter = inbound.PubKey
+		case common.ETHChain.String():
+			ethAfter = inbound.PubKey
+		}
+	}
+	c.Assert(btcAfter, Equals, insolventPubKey.String())
+	c.Assert(ethAfter, Equals, insolventPubKey.String())
+}
+
 func (s *QuerierSuite) TestQueryAsgardVault(c *C) {
 	ctx, _ := setupKeeperForTest(c)
 	_, mgr := setupManagerForTest(c)
@@ -1346,6 +1514,51 @@ func (s *QuerierSuite) TestQueryAsgardVault(c *C) {
 	c.Assert(openapiVaults[0].Status, Equals, queryAsgardVaultResp.AsgardVaults[0].Status)
 	c.Assert(*openapiVaults[0].StatusSince, Equals, queryAsgardVaultResp.AsgardVaults[0].StatusSince)
 	c.Assert(len(openapiVaults[0].Chains), Equals, len(queryAsgardVaultResp.AsgardVaults[0].Chains))
+	c.Assert(len(openapiVaults[0].Deficit), Equals, len(queryAsgardVaultResp.AsgardVaults[0].Deficit))
+}
+
+func (s *QuerierSuite) TestQueryAsgardVaultIncludesInactiveDeficit(c *C) {
+	deficitVault := GetRandomVault()
+	deficitVault.Status = InactiveVault
+	deficitVault.Coins = common.Coins{}
+	deficitVault.Deficit = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(12345)))
+	c.Assert(s.k.SetVault(s.ctx, deficitVault), IsNil)
+	c.Assert(s.k.RemoveFromAsgardIndex(s.ctx, deficitVault.PubKey), IsNil)
+	initDeficitVault := GetRandomVault()
+	initDeficitVault.Status = InitVault
+	initDeficitVault.Coins = common.Coins{}
+	initDeficitVault.Deficit = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(67890)))
+	c.Assert(s.k.SetVault(s.ctx, initDeficitVault), IsNil)
+	c.Assert(s.k.RemoveFromAsgardIndex(s.ctx, initDeficitVault.PubKey), IsNil)
+
+	abandonedVault := GetRandomVault()
+	abandonedVault.Status = InactiveVault
+	abandonedVault.Coins = common.Coins{}
+	abandonedVault.Deficit = common.Coins{}
+	c.Assert(s.k.SetVault(s.ctx, abandonedVault), IsNil)
+	c.Assert(s.k.RemoveFromAsgardIndex(s.ctx, abandonedVault.PubKey), IsNil)
+
+	resp, err := s.queryServer.AsgardVaults(s.ctx, &types.QueryAsgardVaultsRequest{})
+	c.Assert(err, IsNil)
+
+	var foundDeficit, foundInitDeficit, foundAbandoned bool
+	for _, vault := range resp.AsgardVaults {
+		switch vault.PubKey {
+		case deficitVault.PubKey.String():
+			foundDeficit = true
+			c.Check(vault.Status, Equals, InactiveVault.String())
+			c.Check(vault.Deficit.GetCoin(common.ETHAsset).Amount.Equal(cosmos.NewUint(12345)), Equals, true)
+		case initDeficitVault.PubKey.String():
+			foundInitDeficit = true
+			c.Check(vault.Status, Equals, InitVault.String())
+			c.Check(vault.Deficit.GetCoin(common.BTCAsset).Amount.Equal(cosmos.NewUint(67890)), Equals, true)
+		case abandonedVault.PubKey.String():
+			foundAbandoned = true
+		}
+	}
+	c.Check(foundDeficit, Equals, true)
+	c.Check(foundInitDeficit, Equals, true)
+	c.Check(foundAbandoned, Equals, false)
 }
 
 func (s *QuerierSuite) TestQueryVaultPubKeys(c *C) {
@@ -2061,13 +2274,12 @@ func (s *QuerierSuite) TestQuerySwap(c *C) {
 	c.Assert(queryPoolsResp.Memo, Equals, "")
 
 	longDest := "43hSSzguniAQWhHnwk1rcYH51z2thnf6AVfNaMwg9t99S78LtMrjrKdJZCnLTnFVzS9hQNjVXdJi3hUxMwmPrPDkRY3YMUb"
-	longRefund := "46QDeeLcyrEGkn7NyaJCsD3NJbDgjJk1BXiopzvU6aejK5g6JTU2K5uJZCnLTnFVzS9hQNjVXdJi3hUxMwmPrPDkRXBN2hK"
 	queryPoolsResp, err = s.queryServer.QuoteSwap(s.ctx, &types.QueryQuoteSwapRequest{
 		FromAsset:         common.BTCAsset.String(),
 		ToAsset:           common.XMRAsset.String(),
 		Amount:            "100000000",
 		Destination:       longDest,
-		RefundAddress:     longRefund,
+		RefundAddress:     addressBTC,
 		Affiliate:         GetRandomTHORAddress().String() + "/" + GetRandomTHORAddress().String() + "/" + GetRandomTHORAddress().String(),
 		AffiliateBps:      "10/10/10",
 		StreamingInterval: "2",

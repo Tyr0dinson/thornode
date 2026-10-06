@@ -51,7 +51,7 @@ func (h ConsolidateHandler) slash(ctx cosmos.Context, tx ObservedTx) error {
 
 	ctx = ctx.WithContext(context.WithValue(ctx.Context(), constants.CtxMetricLabels, []metrics.Label{ // nolint
 		telemetry.NewLabel("reason", "failed_consolidation"),
-		telemetry.NewLabel("chain", string(tx.Tx.Chain)),
+		telemetry.NewLabel("chain", telemChain(tx.Tx.Chain)),
 	}))
 
 	return h.mgr.Slasher().SlashVault(ctx, tx.ObservedPubKey, toSlash, h.mgr)

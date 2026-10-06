@@ -1,6 +1,8 @@
 package keeperv1
 
 import (
+	"fmt"
+
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -133,6 +135,178 @@ func (s *KeeperVaultSuite) TestVaultFrostIndexMissingForNonFrostVault(c *C) {
 	// Looking up by some random pubkey must not return this vault.
 	stranger := GetRandomPubKey()
 	c.Check(k.VaultExists(ctx, stranger), Equals, false)
+}
+
+// TestGetPendingOutboundsIncludesUnexpiredDurableMigrateHeights proves that
+// pending migrate txouts older than the rolling signing window still reserve
+// funds until they reach the bounded retry window.
+func (s *KeeperVaultSuite) TestGetPendingOutboundsIncludesUnexpiredDurableMigrateHeights(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	signingPeriod := k.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	c.Assert(signingPeriod > 0, Equals, true)
+	ctx = ctx.WithBlockHeight(signingPeriod*2 + 10)
+	staleHeight := ctx.BlockHeight() - signingPeriod - 1
+
+	retiring := NewVault(ctx.BlockHeight()-1, RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{common.XRPChain}.Strings(), nil)
+	// Duplicate markers model multiple migrate txouts scheduled in the same block.
+	// GetPendingOutbounds must load that height once and count matching txouts,
+	// not count the whole txout block once per marker.
+	retiring.PendingTxBlockHeights = []int64{staleHeight, staleHeight}
+	c.Assert(k.SetVault(ctx, retiring), IsNil)
+
+	txOut := NewTxOut(staleHeight)
+	// Mix valid and invalid txouts at the stale height so the test locks the
+	// intended filter: same asset, same retiring vault, migrate memo, exact height.
+	txOut.TxArray = []TxOutItem{
+		{
+			Chain:       common.XRPChain,
+			ToAddress:   GetRandomTHORAddress(),
+			VaultPubKey: retiring.PubKey,
+			Coin:        common.NewCoin(common.XRPAsset, cosmos.NewUint(common.One)),
+			Memo:        fmt.Sprintf("MIGRATE:%d", staleHeight),
+		},
+		{
+			Chain:       common.XRPChain,
+			ToAddress:   GetRandomTHORAddress(),
+			VaultPubKey: retiring.PubKey,
+			Coin:        common.NewCoin(common.XRPAsset, cosmos.NewUint(2*common.One)),
+			Memo:        fmt.Sprintf("MIGRATE:%d", staleHeight),
+		},
+		{
+			Chain:       common.XRPChain,
+			ToAddress:   GetRandomTHORAddress(),
+			VaultPubKey: retiring.PubKey,
+			Coin:        common.NewCoin(common.XRPAsset, cosmos.NewUint(3*common.One)),
+			Memo:        fmt.Sprintf("MIGRATE:%d", staleHeight-1),
+		},
+		{
+			Chain:       common.XRPChain,
+			ToAddress:   GetRandomTHORAddress(),
+			VaultPubKey: GetRandomPubKey(),
+			Coin:        common.NewCoin(common.XRPAsset, cosmos.NewUint(4*common.One)),
+			Memo:        fmt.Sprintf("MIGRATE:%d", staleHeight),
+		},
+		{
+			Chain:       common.ETHChain,
+			ToAddress:   GetRandomETHAddress(),
+			VaultPubKey: retiring.PubKey,
+			Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(5*common.One)),
+			Memo:        fmt.Sprintf("MIGRATE:%d", staleHeight),
+		},
+	}
+	c.Assert(k.SetTxOut(ctx, txOut), IsNil)
+
+	outbounds := k.GetPendingOutbounds(ctx, common.XRPAsset)
+	// Only the two exact-height XRP MIGRATE items for the marked retiring vault
+	// should be returned; mismatch, unrelated vault, and other-asset items stay out.
+	c.Assert(outbounds, HasLen, 2)
+	c.Assert(outbounds[0].Coin.Amount.Equal(cosmos.NewUint(common.One)), Equals, true)
+	c.Assert(outbounds[1].Coin.Amount.Equal(cosmos.NewUint(2*common.One)), Equals, true)
+}
+
+// TestGetPendingOutboundsSkipsExpiredDurableMigrateHeights keeps the helper
+// aligned with migrateFunds: expired stale migrate txouts are retry-eligible and
+// must not keep reserving vault funds forever.
+func (s *KeeperVaultSuite) TestGetPendingOutboundsSkipsExpiredDurableMigrateHeights(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	signingPeriod := k.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	c.Assert(signingPeriod > 0, Equals, true)
+	ctx = ctx.WithBlockHeight(signingPeriod*(constants.StaleMigratePendingSigningPeriodMultiplier+1) + 10)
+	staleHeight := ctx.BlockHeight() - signingPeriod*constants.StaleMigratePendingSigningPeriodMultiplier - 1
+
+	retiring := NewVault(ctx.BlockHeight()-1, RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{common.XRPChain}.Strings(), nil)
+	// This marker points to a valid migrate txout, but it is just beyond the
+	// shared stale-migrate timeout and should be left for migrateFunds to retry.
+	retiring.PendingTxBlockHeights = []int64{staleHeight}
+	c.Assert(k.SetVault(ctx, retiring), IsNil)
+
+	txOut := NewTxOut(staleHeight)
+	txOut.TxArray = []TxOutItem{
+		{
+			Chain:       common.XRPChain,
+			ToAddress:   GetRandomTHORAddress(),
+			VaultPubKey: retiring.PubKey,
+			Coin:        common.NewCoin(common.XRPAsset, cosmos.NewUint(common.One)),
+			Memo:        fmt.Sprintf("MIGRATE:%d", staleHeight),
+		},
+	}
+	c.Assert(k.SetTxOut(ctx, txOut), IsNil)
+
+	outbounds := k.GetPendingOutbounds(ctx, common.XRPAsset)
+	c.Assert(outbounds, HasLen, 0)
+}
+
+func (s *KeeperVaultSuite) TestGetPendingOutboundsRetainsExtendedClasses(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	defaultSigningPeriod := k.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	overrideSigningPeriod := defaultSigningPeriod * 2
+	k.SetMimir(ctx, constants.SigningTransactionPeriod.String(), overrideSigningPeriod)
+	signingPeriod := k.GetConfigInt64(ctx, constants.SigningTransactionPeriod)
+	c.Assert(signingPeriod, Equals, overrideSigningPeriod)
+	c.Assert(signingPeriod > 0, Equals, true)
+	ctx = ctx.WithBlockHeight(signingPeriod*4 + 10)
+	usdc, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	c.Assert(err, IsNil)
+	tradeUSDC := usdc.GetTradeAsset()
+	vaultPubKey := GetRandomPubKey()
+
+	addTxOut := func(height int64, items ...TxOutItem) {
+		txOut := NewTxOut(height)
+		txOut.TxArray = items
+		c.Assert(k.SetTxOut(ctx, txOut), IsNil)
+	}
+	extendedItem := func(height int64, token bool) TxOutItem {
+		item := TxOutItem{
+			Chain:       common.ETHChain,
+			VaultPubKey: vaultPubKey,
+			Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(uint64(height))),
+		}
+		if token {
+			item.Coin = common.NewCoin(usdc, cosmos.NewUint(uint64(height)))
+		} else {
+			item.Aggregator = "0xaggregator"
+		}
+		return item
+	}
+
+	justPastStandard := ctx.BlockHeight() - signingPeriod - 1
+	justInsideExtended := ctx.BlockHeight() - signingPeriod*3 + 1
+	atExtendedBoundary := ctx.BlockHeight() - signingPeriod*3
+	justPastExtended := ctx.BlockHeight() - signingPeriod*3 - 1
+	addTxOut(justPastStandard,
+		extendedItem(justPastStandard, false),
+		extendedItem(justPastStandard, true),
+		TxOutItem{Chain: common.ETHChain, VaultPubKey: vaultPubKey, Coin: common.NewCoin(tradeUSDC, cosmos.NewUint(uint64(justPastStandard)))},
+		TxOutItem{Chain: common.XMRChain, VaultPubKey: vaultPubKey, Coin: common.NewCoin(common.XMRAsset, cosmos.NewUint(uint64(justPastStandard)))},
+		TxOutItem{Chain: common.ETHChain, VaultPubKey: vaultPubKey, Coin: common.NewCoin(common.ETHAsset, cosmos.OneUint())},
+	)
+	addTxOut(justInsideExtended,
+		extendedItem(justInsideExtended, false),
+		extendedItem(justInsideExtended, true),
+		TxOutItem{Chain: common.ETHChain, VaultPubKey: vaultPubKey, Coin: common.NewCoin(tradeUSDC, cosmos.NewUint(uint64(justInsideExtended)))},
+		TxOutItem{Chain: common.XMRChain, VaultPubKey: vaultPubKey, Coin: common.NewCoin(common.XMRAsset, cosmos.NewUint(uint64(justInsideExtended)))},
+	)
+	addTxOut(atExtendedBoundary,
+		extendedItem(atExtendedBoundary, false),
+		extendedItem(atExtendedBoundary, true),
+		TxOutItem{Chain: common.ETHChain, VaultPubKey: vaultPubKey, Coin: common.NewCoin(tradeUSDC, cosmos.NewUint(uint64(atExtendedBoundary)))},
+		TxOutItem{Chain: common.XMRChain, VaultPubKey: vaultPubKey, Coin: common.NewCoin(common.XMRAsset, cosmos.NewUint(uint64(atExtendedBoundary)))},
+	)
+	addTxOut(justPastExtended,
+		extendedItem(justPastExtended, false),
+		extendedItem(justPastExtended, true),
+		TxOutItem{Chain: common.ETHChain, VaultPubKey: vaultPubKey, Coin: common.NewCoin(tradeUSDC, cosmos.NewUint(uint64(justPastExtended)))},
+		TxOutItem{Chain: common.XMRChain, VaultPubKey: vaultPubKey, Coin: common.NewCoin(common.XMRAsset, cosmos.NewUint(uint64(justPastExtended)))},
+	)
+
+	ethOutbounds := k.GetPendingOutbounds(ctx, common.ETHAsset)
+	c.Assert(ethOutbounds, HasLen, 3)
+	for _, outbound := range ethOutbounds {
+		c.Assert(outbound.Aggregator, Equals, "0xaggregator")
+	}
+	c.Assert(k.GetPendingOutbounds(ctx, usdc), HasLen, 3)
+	c.Assert(k.GetPendingOutbounds(ctx, tradeUSDC), HasLen, 3)
+	c.Assert(k.GetPendingOutbounds(ctx, common.XMRAsset), HasLen, 3)
 }
 
 func (s *KeeperVaultSuite) TestVaultSorBySecurity(c *C) {

@@ -675,8 +675,12 @@ func TestXMRNonSignerDoesNotBlindCoAttest(t *testing.T) {
 	}
 
 	var importedTx *common.ObservedTx
-	ag.SetObserverApplySpentOutputRefs(func(tx common.ObservedTx) {
+	ag.SetObserverApplySpentOutputRefs(func(request spentOutputRefsImport, onOutcome func(applied bool)) {
+		tx := request.Tx
 		importedTx = &tx
+		if onOutcome != nil {
+			onOutcome(true)
+		}
 	})
 
 	obsTx := common.ObservedTx{

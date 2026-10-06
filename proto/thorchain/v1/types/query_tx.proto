@@ -87,6 +87,7 @@ message QueryObservedTx {
     (gogoproto.nullable) = true
   ];
   repeated common.OutputRef spent_output_refs = 12;
+  string xmr_tx_key = 13;
 }
 
 // Same as ObservedTxVoter, but changes height (openapi spec)
@@ -115,6 +116,8 @@ message QueryObservedTxVoter {
 message QueryTxVotersRequest {
   string tx_id = 1;
   string height = 2;
+  // Select only the outbound voter. The default keeps inbound-first lookup.
+  bool outbound = 3;
 }
 
 message PlannedOutTx {

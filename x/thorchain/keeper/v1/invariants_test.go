@@ -7,12 +7,28 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/common/tcysmartcontract"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 type InvariantsSuite struct{}
 
 var _ = Suite(&InvariantsSuite{})
+
+func (s *InvariantsSuite) TestAffiliateCollectorInvariantRejectsEmptyTHORName(c *C) {
+	for _, amount := range []uint64{0, 100} {
+		ctx, k := setupKeeperForTest(c)
+		if amount > 0 {
+			FundModule(c, ctx, k, AffiliateCollectorName, amount)
+		}
+		// Bypass the public setter to simulate invalid persisted state. Even a
+		// fully funded unnamed collector must fail the invariant.
+		k.setAffiliateCollector(ctx, k.GetKey(prefixAffiliateCollector, ""), AffiliateFeeCollector{RuneAmount: cosmos.NewUint(amount)})
+		messages, broken := AffilliateCollectorInvariant(k)(ctx)
+		c.Assert(broken, Equals, true)
+		c.Assert(messages, DeepEquals, []string{"affiliate collector THORName cannot be empty"})
+	}
+}
 
 func (s *InvariantsSuite) TestAsgardInvariant(c *C) {
 	ctx, k := setupKeeperForTest(c)
@@ -86,6 +102,56 @@ func (s *InvariantsSuite) TestAsgardInvariant(c *C) {
 	c.Assert(broken, Equals, true)
 	c.Assert(len(msg), Equals, 1)
 	c.Assert(msg[0], Equals, "oversolvent: 1rune")
+}
+
+// TestVaultDeficitInvariant verifies same-asset coins and deficit break the invariant.
+func (s *InvariantsSuite) TestVaultDeficitInvariant(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+	vault.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(10)))
+	vault.Deficit = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1)))
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	msg, broken := VaultDeficitInvariant(k)(ctx)
+	c.Assert(broken, Equals, true)
+	c.Assert(msg, HasLen, 1)
+	c.Assert(msg[0], Equals, fmt.Sprintf("vault_deficit: vault %s has both coins and deficit for ETH.ETH: coins=10 deficit=1", vault.PubKey))
+}
+
+// TestVaultDeficitInvariantAllowsDifferentAssets verifies different assets do not break the invariant.
+func (s *InvariantsSuite) TestVaultDeficitInvariantAllowsDifferentAssets(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.ETHChain, common.BTCChain}.Strings(), []ChainContract{})
+	vault.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(10)))
+	vault.Deficit = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1)))
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	msg, broken := VaultDeficitInvariant(k)(ctx)
+	c.Assert(broken, Equals, false)
+	c.Assert(msg, IsNil)
+}
+
+// TestVaultDeficitInvariantAggregatesDuplicates verifies duplicate entries are summed by asset.
+func (s *InvariantsSuite) TestVaultDeficitInvariantAggregatesDuplicates(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+	vault.Coins = common.Coins{
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(4)),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(6)),
+	}
+	vault.Deficit = common.Coins{
+		common.NewCoin(common.ETHAsset, cosmos.ZeroUint()),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(1)),
+	}
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	msg, broken := VaultDeficitInvariant(k)(ctx)
+	c.Assert(broken, Equals, true)
+	c.Assert(msg, HasLen, 1)
+	c.Assert(msg[0], Equals, fmt.Sprintf("vault_deficit: vault %s has both coins and deficit for ETH.ETH: coins=10 deficit=1", vault.PubKey))
 }
 
 func (s *InvariantsSuite) TestBondInvariant(c *C) {
@@ -192,6 +258,74 @@ func (s *InvariantsSuite) TestTCYClaimInvariant(c *C) {
 	c.Assert(broken, Equals, true)
 	c.Assert(len(msg), Equals, 1)
 	c.Assert(msg[0], Equals, "insolvent: 50tcy")
+}
+
+func (s *InvariantsSuite) TestTCYStakeInvariant(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	invariant := TCYStakeInvariant(k)
+
+	// empty state: no module balance, no stakers -> not broken
+	msg, broken := invariant(ctx)
+	c.Assert(broken, Equals, false)
+	c.Assert(msg, IsNil)
+
+	// stake module TCY exactly backing the staker records -> not broken
+	balance := cosmos.NewUint(1000)
+	tcyCoin := common.NewCoin(common.TCY, balance)
+	c.Assert(k.MintToModule(ctx, ModuleName, tcyCoin), IsNil)
+	c.Assert(k.SendFromModuleToModule(ctx, ModuleName, TCYStakeName, common.NewCoins(tcyCoin)), IsNil)
+	c.Assert(k.SetTCYStaker(ctx, types.NewTCYStaker(GetRandomRUNEAddress(), cosmos.NewUint(600))), IsNil)
+	c.Assert(k.SetTCYStaker(ctx, types.NewTCYStaker(GetRandomRUNEAddress(), cosmos.NewUint(400))), IsNil)
+
+	msg, broken = invariant(ctx)
+	c.Assert(broken, Equals, false)
+	c.Assert(msg, IsNil)
+
+	// TCY in the module with no record to redeem it - the #2870 fingerprint,
+	// where the funds moved but the credit was dropped
+	stranded := common.NewCoin(common.TCY, cosmos.NewUint(250))
+	c.Assert(k.MintToModule(ctx, ModuleName, stranded), IsNil)
+	c.Assert(k.SendFromModuleToModule(ctx, ModuleName, TCYStakeName, common.NewCoins(stranded)), IsNil)
+
+	msg, broken = invariant(ctx)
+	c.Assert(broken, Equals, true)
+	c.Assert(len(msg), Equals, 1)
+	c.Assert(msg[0], Equals, "oversolvent: 250tcy")
+
+	// records the module cannot pay out
+	c.Assert(k.SetTCYStaker(ctx, types.NewTCYStaker(GetRandomRUNEAddress(), cosmos.NewUint(500))), IsNil)
+
+	msg, broken = invariant(ctx)
+	c.Assert(broken, Equals, true)
+	c.Assert(len(msg), Equals, 1)
+	c.Assert(msg[0], Equals, "insolvent: 250tcy")
+}
+
+// A TCY smart contract address holds its TCY in its own account, never in the stake
+// module, so it must not count towards the backing the module has to provide.
+func (s *InvariantsSuite) TestTCYStakeInvariantIgnoresSmartContractStakers(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	addresses, err := tcysmartcontract.GetTCYSmartContractAddresses()
+	c.Assert(err, IsNil)
+	c.Assert(len(addresses) > 0, Equals, true)
+	scAcc, err := addresses[0].AccAddress()
+	c.Assert(err, IsNil)
+
+	coin := common.NewCoin(common.TCY, cosmos.NewUint(777))
+	c.Assert(k.MintToModule(ctx, ModuleName, coin), IsNil)
+	c.Assert(k.SendFromModuleToAccount(ctx, ModuleName, scAcc, common.NewCoins(coin)), IsNil)
+
+	// ListTCYStakers surfaces it as a staker...
+	stakers, err := k.ListTCYStakers(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(len(stakers) > 0, Equals, true)
+
+	// ...but the empty stake module is still consistent
+	msg, broken := TCYStakeInvariant(k)(ctx)
+	c.Assert(broken, Equals, false)
+	c.Assert(msg, IsNil)
 }
 
 func (s *InvariantsSuite) TestStreamingSwapsInvariant(c *C) {

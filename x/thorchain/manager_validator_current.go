@@ -8,12 +8,15 @@ import (
 
 	abci "github.com/cometbft/cometbft/abci/types"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
+	"github.com/cosmos/cosmos-sdk/telemetry"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/hashicorp/go-metrics"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	thortypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // ValidatorMgr is to manage a list of validators , and rotate them
@@ -66,6 +69,11 @@ func (vm *ValidatorMgr) BeginBlock(ctx cosmos.Context, mgr Manager, existingVali
 	halt, err := vm.k.GetMimir(ctx, "HaltChurning")
 	if halt > 0 && halt <= ctx.BlockHeight() && err == nil {
 		ctx.Logger().Info("churn event skipped due to mimir has halted churning")
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "churn", "skipped"},
+			float32(1),
+			[]metrics.Label{telemetry.NewLabel("reason", "halt_churning")},
+		)
 		return nil
 	}
 
@@ -114,26 +122,143 @@ func (vm *ValidatorMgr) BeginBlock(ctx cosmos.Context, mgr Manager, existingVali
 	for _, chain := range activeChains {
 		if mgr.Keeper().IsChainHalted(ctx, chain) {
 			ctx.Logger().Info("Skipping node account rotation for halted chain", "chain", chain)
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "churn", "skipped"},
+				float32(1),
+				[]metrics.Label{
+					telemetry.NewLabel("reason", "chain_halted"),
+					telemetry.NewLabel("chain", chain.String()),
+				},
+			)
 			return nil
 		}
 	}
 
-	// don't churn if we have retiring asgard vaults that still have funds
+	// Do not churn while a RetiringVault still has real funds to migrate.
+	// Deficit-only retiring vaults are accounting records, not migration work,
+	// so they must not block validator rotation.
 	retiringVaults, err := vm.k.GetAsgardVaultsByStatus(ctx, RetiringVault)
 	if err != nil {
 		return err
 	}
-	if len(retiringVaults) > 0 {
-		ctx.Logger().Info("Skipping rotation due to retiring vaults still have funds.")
-		return nil
+	for _, vault := range retiringVaults {
+		// Sub-dust remainders (e.g. the XMR final-round migration buffer) cannot
+		// be migrated and are only burned once nth exceeds ChurnMigrateRounds,
+		// which can be long after the last real migration; they must not block
+		// rotation until then.
+		if vault.HasFundsAboveDust() {
+			ctx.Logger().Info("Skipping rotation due to retiring vaults still have funds.")
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "churn", "skipped"},
+				float32(1),
+				[]metrics.Label{telemetry.NewLabel("reason", "retiring_vault_has_funds")},
+			)
+			return nil
+		}
 	}
 
 	if retryChurn {
 		ctx.Logger().Info("Checking for node account rotation... (retry)")
+		if oldVaultCheck {
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "churn", "retry"},
+				float32(1),
+				[]metrics.Label{telemetry.NewLabel("reason", "old_vault")},
+			)
+		}
+		if incompleteChurnCheck {
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "churn", "retry"},
+				float32(1),
+				[]metrics.Label{telemetry.NewLabel("reason", "incomplete_vaults")},
+			)
+		}
 	} else {
 		ctx.Logger().Info("Checking for node account rotation...")
 	}
-	return vm.churn(ctx)
+
+	// churn is called exactly once here; the returned error is propagated
+	// unchanged on every path. The counters are leaf, process-local side effects.
+	if churnErr := vm.churn(ctx); churnErr != nil {
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "churn", "attempt"},
+			float32(1),
+			[]metrics.Label{telemetry.NewLabel("status", "failed")},
+		)
+		return churnErr
+	}
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "churn", "attempt"},
+		float32(1),
+		[]metrics.Label{telemetry.NewLabel("status", "ok")},
+	)
+	return nil
+}
+
+func (vm *ValidatorMgr) hasPendingKeygen(ctx cosmos.Context, keygenType thortypes.KeygenType) (bool, error) {
+	lookback := keygenResultValidityBlocks(ctx, vm.k, keygenType)
+	// A regular Asgard keygen shares the longer XMR validity window when both
+	// types are co-scheduled in one block. Scan that full possible window, then
+	// use the actual block contents below to select the precise expiry.
+	if keygenType == AsgardKeygen {
+		lookback = max(lookback, keygenResultValidityBlocks(ctx, vm.k, XMRMonovaultKeygen))
+	}
+	startHeight := ctx.BlockHeight() - lookback
+	if startHeight < genesisBlockHeight {
+		startHeight = genesisBlockHeight
+	}
+
+	activeVaults, err := vm.k.GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		return false, fmt.Errorf("fail to get active vaults: %w", err)
+	}
+	initVaults, err := vm.k.GetAsgardVaultsByStatus(ctx, InitVault)
+	if err != nil {
+		return false, fmt.Errorf("fail to get init vaults: %w", err)
+	}
+	readyVaults := append(append(Vaults(nil), activeVaults...), initVaults...)
+
+	for height := ctx.BlockHeight(); height >= startHeight; height-- {
+		keygenBlock, err := vm.k.GetKeygenBlock(ctx, height)
+		if err != nil {
+			return false, fmt.Errorf("fail to get keygen block: %w", err)
+		}
+		for _, keygen := range keygenBlock.Keygens {
+			if keygen.Type != keygenType {
+				continue
+			}
+			// Reports remain valid through the exact retry boundary. Keep the
+			// keygen pending through that block so BeginBlock cannot schedule a
+			// replacement which overlaps a still-valid DeliverTx result.
+			if ctx.BlockHeight()-height > keygenResultValidityBlocksForBlock(ctx, vm.k, keygen.Type, keygenBlock) {
+				continue
+			}
+			if !keygenResolvedByVaults(keygen, readyVaults) {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+func keygenResolvedByVaults(keygen Keygen, vaults Vaults) bool {
+	members := keygen.GetMembers()
+	for _, vault := range vaults {
+		if !vault.MembershipEquals(members) {
+			continue
+		}
+		switch keygen.Type {
+		case XMRMonovaultKeygen:
+			if vault.HasChain(common.XMRChain) {
+				return true
+			}
+		case AsgardKeygen:
+			if !vault.HasChain(common.XMRChain) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (vm *ValidatorMgr) churn(ctx cosmos.Context) error {
@@ -194,30 +319,43 @@ func (vm *ValidatorMgr) churnInner(ctx cosmos.Context) error {
 	}
 	if ok {
 		splitGroups := vm.splitNext(ctx, next, asgardSize)
-		for i, nodeAccSet := range splitGroups {
-			// Churn scheduling is intentionally all-or-nothing under the churn
-			// CacheContext. If any split cannot form a threshold-safe keygen after
-			// member filtering, abort the whole churn so earlier split keygens and
-			// mark/reset changes roll back together. Scheduling only surviving
-			// splits would create a partial replacement vault set for this churn.
-			if err := vm.networkMgr.TriggerKeygen(ctx, nodeAccSet); err != nil {
-				return fmt.Errorf("fail to trigger keygen for split %d/%d: %w", i+1, len(splitGroups), err)
+		pendingAsgard, pendingErr := vm.hasPendingKeygen(ctx, AsgardKeygen)
+		if pendingErr != nil {
+			return pendingErr
+		}
+		if pendingAsgard {
+			ctx.Logger().Info("Skipping regular Asgard keygen due to pending keygen")
+		} else {
+			for i, nodeAccSet := range splitGroups {
+				// Churn scheduling is intentionally all-or-nothing under the churn
+				// CacheContext. If any split cannot form a threshold-safe keygen after
+				// member filtering, abort the whole churn so earlier split keygens and
+				// mark/reset changes roll back together. Scheduling only surviving
+				// splits would create a partial replacement vault set for this churn.
+				if triggerErr := vm.networkMgr.TriggerKeygen(ctx, nodeAccSet); triggerErr != nil {
+					return fmt.Errorf("fail to trigger keygen for split %d/%d: %w", i+1, len(splitGroups), triggerErr)
+				}
 			}
 		}
-		allVaults, err := vm.k.GetAsgardVaults(ctx)
+	}
+
+	// XMR monovault maintenance is independent from ordinary vault rotation.
+	// At the BFT floor the validator membership can be stable (ok == false)
+	// while the XMR vault is missing or its last keygen has expired. Recover the
+	// monovault without scheduling an unnecessary regular Asgard keygen.
+	needsXMR, err := vm.xmrVaultMembershipNeedsKeygen(ctx, next)
+	if err != nil {
+		return err
+	}
+	if needsXMR {
+		pendingXMR, err := vm.hasPendingKeygen(ctx, XMRMonovaultKeygen)
 		if err != nil {
 			return err
 		}
-		if shouldMaintainXMRMonovault(allVaults, len(next)) {
-			// Keep the dedicated XMR monovault in the same keygen block as the
-			// regular churn so both vault families are ready together at rotation
-			// time. Once an XMR monovault already exists, later churns still need a
-			// replacement monovault whenever the validator membership changes.
-			// triggerKeygen's membership-aware dedupe keeps same-membership rounds
-			// from being rescheduled.
-			if err := vm.networkMgr.TriggerXMRKeygen(ctx, next); err != nil {
-				return err
-			}
+		if pendingXMR {
+			ctx.Logger().Info("Skipping XMR FROST keygen due to pending keygen")
+		} else if err := vm.networkMgr.TriggerXMRKeygen(ctx, next); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -296,11 +434,21 @@ func (vm *ValidatorMgr) splitNext(ctx cosmos.Context, nas NodeAccounts, asgardSi
 		// ensure no group is more than the max
 		if int64(len(group)) > asgardSize {
 			ctx.Logger().Info("Skipping rotation due to an Asgard group is larger than the max size.")
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "churn", "split_aborted"},
+				float32(1),
+				[]metrics.Label{telemetry.NewLabel("reason", "group_too_large")},
+			)
 			return nil
 		}
 		// ensure no group is less than the min
 		if int64(len(group)) < 2 {
 			ctx.Logger().Info("Skipping rotation due to an Asgard group is smaller than the min size.")
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "churn", "split_aborted"},
+				float32(1),
+				[]metrics.Label{telemetry.NewLabel("reason", "group_too_small")},
+			)
 			return nil
 		}
 		// ensure a single group is significantly larger than another
@@ -311,6 +459,11 @@ func (vm *ValidatorMgr) splitNext(ctx cosmos.Context, nas NodeAccounts, asgardSi
 			}
 			if diff > 1 {
 				ctx.Logger().Info("Skipping rotation due to an Asgard groups having dissimilar membership size.")
+				telemetry.IncrCounterWithLabels(
+					[]string{"thornode", "churn", "split_aborted"},
+					float32(1),
+					[]metrics.Label{telemetry.NewLabel("reason", "dissimilar_group_size")},
+				)
 				return nil
 			}
 		}
@@ -375,6 +528,17 @@ func (vm *ValidatorMgr) EndBlock(ctx cosmos.Context, mgr Manager) []abci.Validat
 		return nil
 	}
 
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "churn", "nodes_changed"},
+		float32(len(newNodes)),
+		[]metrics.Label{telemetry.NewLabel("status", "churned_in")},
+	)
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "churn", "nodes_changed"},
+		float32(len(removedNodes)),
+		[]metrics.Label{telemetry.NewLabel("status", "churned_out")},
+	)
+
 	// remove low bond node accounts
 	if err = vm.k.RemoveLowBondValidatorAccounts(ctx); err != nil {
 		ctx.Logger().Error("fail to remove low bond node accounts", "error", err)
@@ -402,6 +566,14 @@ func (vm *ValidatorMgr) EndBlock(ctx cosmos.Context, mgr Manager) []abci.Validat
 				cosmos.NewAttribute("Address", na.NodeAddress.String()),
 				cosmos.NewAttribute("Former:", na.Status.String()),
 				cosmos.NewAttribute("Current:", NodeActive.String())),
+		)
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "node", "status_change"},
+			float32(1),
+			[]metrics.Label{
+				telemetry.NewLabel("from", na.Status.String()),
+				telemetry.NewLabel("to", NodeActive.String()),
+			},
 		)
 		na.UpdateStatus(NodeActive, height)
 		na.LeaveScore = 0
@@ -442,6 +614,14 @@ func (vm *ValidatorMgr) EndBlock(ctx cosmos.Context, mgr Manager) []abci.Validat
 				cosmos.NewAttribute("Address", nodeRemove.NodeAddress.String()),
 				cosmos.NewAttribute("Former:", nodeRemove.Status.String()),
 				cosmos.NewAttribute("Current:", status.String())),
+		)
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "node", "status_change"},
+			float32(1),
+			[]metrics.Label{
+				telemetry.NewLabel("from", nodeRemove.Status.String()),
+				telemetry.NewLabel("to", status.String()),
+			},
 		)
 		nodeRemove.UpdateStatus(status, height)
 		if err = vm.k.SetNodeAccount(ctx, nodeRemove); err != nil {
@@ -565,7 +745,8 @@ func (vm *ValidatorMgr) payNodeAccountBondAward(ctx cosmos.Context, lastChurnHei
 		return fmt.Errorf("fail to get network: %w", err)
 	}
 
-	slashPts, err := vm.k.GetNodeAccountSlashPoints(ctx, na.NodeAddress)
+	var slashPts int64
+	slashPts, err = vm.k.GetNodeAccountSlashPoints(ctx, na.NodeAddress)
 	if err != nil {
 		return fmt.Errorf("fail to get node slash points: %w", err)
 	}
@@ -588,7 +769,15 @@ func (vm *ValidatorMgr) payNodeAccountBondAward(ctx cosmos.Context, lastChurnHei
 	reward := common.GetUncappedShare(naEffectiveBond, totalEffectiveBond, totalBondReward)
 	reward = common.GetUncappedShare(cosmos.NewUint(uint64(earnedBlocks)), cosmos.NewUint(uint64(totalActiveBlocks)), reward)
 
-	// Record the node operator's bond (in bond provider form) before the reward
+	// Independently rounded node shares can exceed the original reward pool.
+	// Cap against the remaining ledger before fees, payouts, or rebonding so
+	// SafeSub below cannot hide an unfunded reward allocation.
+	if reward.GT(network.BondRewardRune) {
+		reward = network.BondRewardRune
+	}
+
+	// Load and normalize bond providers before applying this reward, so any
+	// previous rewards or legacy provider state are already accounted for.
 	bp, err := vm.k.GetBondProviders(ctx, na.NodeAddress)
 	if err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to get bond providers(%s)", na.NodeAddress))
@@ -601,41 +790,38 @@ func (vm *ValidatorMgr) payNodeAccountBondAward(ctx cosmos.Context, lastChurnHei
 	if err != nil {
 		return err
 	}
+	if err = normalizeBondProviderOperator(&bp, nodeOperatorAccAddr); err != nil {
+		return ErrInternal(err, "invalid bond provider operator invariant")
+	}
 	// Ensure that previous rewards are already accounted for
 	bp.Adjust(na.Bond)
-	nodeOperatorProvider := bp.Get(nodeOperatorAccAddr)
-	// Sanity check that the node operator is accounted for
-	if nodeOperatorProvider.IsEmpty() {
-		return ErrInternal(fmt.Errorf("node operator not found"), fmt.Sprintf("node operator address(%s) not listed in bond providers", na.BondAddress))
-	}
-	lastNodeOperatorProviderBond := nodeOperatorProvider.Bond
 
-	// Compute all state changes in memory first; do not commit anything to the
-	// store until after the irreversible operator-fee transfer has succeeded.
-	// This pairs with the per-node CacheContext in distributeBondReward to make
-	// the whole payout atomic even if a future caller invokes this function
-	// without an outer cache wrap.
-	na.Bond = na.Bond.Add(reward)
+	// Remove the NodeOperatorFee portion from the reward before distributing
+	// the remaining reward to bond providers.
+	nodeOperatorFees := common.GetSafeShare(bp.NodeOperatorFee, cosmos.NewUint(constants.MaxBasisPts), reward)
+	if nodeOperatorFees.GT(reward) {
+		nodeOperatorFees = reward
+	}
+	providerReward := common.SafeSub(reward, nodeOperatorFees)
+
+	// Distribute provider reward to bond providers. With Bond Yield disabled,
+	// the full provider reward is rebonded; with it enabled, the configured
+	// payout portions are paid out and only the remainder is rebonded.
+	bondYieldEnabled := isBondYieldEnabled(ctx, mgr)
+	rebondedReward, rewardAllocations, err := applyBondReward(&bp, nodeOperatorAccAddr, providerReward, bondYieldEnabled)
+	if err != nil {
+		return ErrInternal(err, "fail to apply bond reward")
+	}
+	// Add only the rebonded reward to the slashable node bond.
+	na.Bond = na.Bond.Add(rebondedReward)
+
+	// Minus the number of RUNE THORNode has awarded them.
 	network.BondRewardRune = common.SafeSub(network.BondRewardRune, reward)
+	// Minus the number of units na has (do not include slash points).
 	network.TotalBondUnits = common.SafeSub(
 		network.TotalBondUnits,
 		cosmos.NewUint(uint64(totalActiveBlocks)),
 	)
-
-	// Distribute reward to bond providers and remove the NodeOperatorFee portion for node operator payout.
-	// (This is the full fee from other bond providers' rewards, plus an equivalent proportion of the node operator's rewards.)
-	bp.Adjust(na.Bond)
-	nodeOperatorProvider = bp.Get(nodeOperatorAccAddr)
-	nodeOperatorFees := common.GetSafeShare(bp.NodeOperatorFee, cosmos.NewUint(10000), reward)
-	// Sanity check:  Fees to pay out should never exceed the increase of the node operator's bond.
-	nodeOperatorBondIncrease := common.SafeSub(nodeOperatorProvider.Bond, lastNodeOperatorProviderBond)
-	if nodeOperatorFees.GT(nodeOperatorBondIncrease) {
-		nodeOperatorFees = nodeOperatorBondIncrease
-	}
-	if !nodeOperatorFees.IsZero() {
-		na.Bond = common.SafeSub(na.Bond, nodeOperatorFees)
-		bp.Unbond(nodeOperatorFees, nodeOperatorAccAddr)
-	}
 
 	// Transfer node operator fees BEFORE persisting accounting updates.
 	// If the bank send fails, the in-memory bond/network changes above are
@@ -648,12 +834,39 @@ func (vm *ValidatorMgr) payNodeAccountBondAward(ctx cosmos.Context, lastChurnHei
 		}
 	}
 
+	if bondYieldEnabled {
+		for i := range rewardAllocations {
+			allocation := &rewardAllocations[i]
+			if allocation.PayoutAmount.IsZero() {
+				continue
+			}
+			provider := bp.Get(allocation.ProviderAddress)
+			// A failed provider payout must not strand funds. Rebond the failed
+			// payout amount so funds remain slashable and recoverable.
+			if err = payBondYield(ctx, mgr, common.Tx{}, &na, provider, allocation.PayoutAmount); err != nil {
+				ctx.Logger().Error("fail to pay bond yield",
+					"node_address", na.NodeAddress.String(),
+					"provider_address", allocation.ProviderAddress.String(),
+					"amount", allocation.PayoutAmount.String(),
+					"error", err,
+				)
+				rebonded := allocation.PayoutAmount
+				bp.Bond(rebonded, allocation.ProviderAddress)
+				na.Bond = na.Bond.Add(rebonded)
+				allocation.RebondedAmount = allocation.RebondedAmount.Add(rebonded)
+				allocation.PayoutAmount = common.SafeSub(allocation.PayoutAmount, rebonded)
+				continue
+			}
+		}
+	}
+
 	// Now commit the accounting updates. SetNetwork/SetNodeAccount/SetBondProviders
 	// in the THORChain keeper always return nil, so reaching this point means
 	// the payout is fully consistent.
 	if err := vm.k.SetNetwork(ctx, network); err != nil {
 		return fmt.Errorf("fail to save network data: %w", err)
 	}
+	// Minus slash points used in this calculation.
 	vm.k.SetNodeAccountSlashPoints(ctx, na.NodeAddress, slashPts-totalActiveBlocks)
 	if err := vm.k.SetNodeAccount(ctx, na); err != nil {
 		return fmt.Errorf("fail to save node account: %w", err)
@@ -662,15 +875,39 @@ func (vm *ValidatorMgr) payNodeAccountBondAward(ctx cosmos.Context, lastChurnHei
 		return ErrInternal(err, fmt.Sprintf("fail to save bond providers(%s)", bp.NodeAddress.String()))
 	}
 
+	if bondYieldEnabled {
+		for _, allocation := range rewardAllocations {
+			if allocation.Bps == 0 && allocation.PayoutAmount.IsZero() {
+				continue
+			}
+			provider := bp.Get(allocation.ProviderAddress)
+			bondYieldEvent := NewEventBondYield(
+				na.NodeAddress,
+				allocation.ProviderAddress,
+				allocation.RewardShare,
+				allocation.PayoutAmount,
+				allocation.RebondedAmount,
+				allocation.Bps,
+				provider.PayoutTarget,
+			)
+			if err := mgr.EventMgr().EmitEvent(ctx, bondYieldEvent); err != nil {
+				ctx.Logger().Error("fail to emit bond yield event", "error", err)
+			}
+		}
+	}
+
+	// Emit BondReward event for the full pre-payout reward.
 	bondRewardEvent := NewEventBond(reward, BondReward, common.Tx{}, &na, nil)
 	if err := mgr.EventMgr().EmitEvent(ctx, bondRewardEvent); err != nil {
 		ctx.Logger().Error("fail to emit bond event", "error", err)
 	}
 	if !nodeOperatorFees.IsZero() {
 		// TODO: Remove this NewAddress call entirely in the next version of this manager.
-		if _, err := common.NewAddress(na.NodeAddress.String()); err != nil {
+		_, err := common.NewAddress(na.NodeAddress.String())
+		if err != nil {
 			return fmt.Errorf("fail to parse node address: %w", err)
 		}
+		// Emit BondReturned event for the node operator fee payout.
 		bondReturnedEvent := NewEventBond(nodeOperatorFees, BondReturned, common.Tx{}, &na, nodeOperatorAccAddr)
 		if err := mgr.EventMgr().EmitEvent(ctx, bondReturnedEvent); err != nil {
 			ctx.Logger().Error("fail to emit bond event", "error", err)
@@ -826,6 +1063,9 @@ func (vm *ValidatorMgr) distributeBondReward(ctx cosmos.Context, mgr Manager) er
 		if err := vm.payNodeAccountBondAward(cacheCtx, lastChurnHeight, item, network.BondRewardRune, totalEffectiveBond, bondHardCap, mgr); err != nil {
 			resultErr = errors.Join(resultErr, err)
 			ctx.Logger().Error("fail to pay node account bond award", "node address", item.NodeAddress.String(), "error", err)
+			// No per-node label: a node bech32 address is unbounded-cardinality
+			// label material. The failing node address is already in the log line.
+			telemetry.IncrCounter(float32(1), "thornode", "churn", "bond_reward_failed")
 		} else {
 			commit()
 		}
@@ -1292,6 +1532,13 @@ func (vm *ValidatorMgr) findLowBondActor(ctx cosmos.Context) (NodeAccount, error
 func (vm *ValidatorMgr) markActor(ctx cosmos.Context, na NodeAccount, reason string) error {
 	if !na.IsEmpty() && na.LeaveScore == 0 {
 		ctx.Logger().Info("marked Validator to be churned out", "node address", na.NodeAddress, "reason", reason)
+		// reason is always one of five compile-time string literals at the five
+		// markActor call sites in this file, so label cardinality is fixed at 5.
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "churn", "node_marked"},
+			float32(1),
+			[]metrics.Label{telemetry.NewLabel("reason", reason)},
+		)
 		slashPts, err := vm.k.GetNodeAccountSlashPoints(ctx, na.NodeAddress)
 		if err != nil {
 			return fmt.Errorf("fail to get node account(%s) slash points: %w", na.NodeAddress, err)
@@ -1498,7 +1745,104 @@ func (vm *ValidatorMgr) NodeAccountPreflightCheck(ctx cosmos.Context, na NodeAcc
 		return NodeStandby, fmt.Errorf("ragnarok is currently in progress: no churning")
 	}
 
+	if err := vm.keygenChainSetCheck(ctx, na); err != nil {
+		return NodeStandby, err
+	}
+
 	return NodeReady, nil
+}
+
+// keygenChainSetCheck keeps a node out of the Ready set when its most recent asgard
+// keygen report declared a chain set that omits a chain the active vaults serve.
+//
+// A new vault keeps a chain only when a supermajority of the keygen members report it
+// (TssVoter.ConsensusChains), and tryRotateInitVaults refuses to rotate vaults whose
+// chain sets differ. One member running with a chain disabled can therefore drop that
+// chain from the vault it helped generate and stall the rotation, which retries every
+// ChurnRetryInterval with the same members - so the same report stalls every retry.
+// The report that proves the misconfiguration is already on chain in MsgTssPool.Chains
+// and is recorded per node by SetLastKeygenChains, so the next tick can leave that node
+// out of the Ready set rather than re-running a ceremony that cannot rotate.
+//
+// Only a report at or after the newest active vault's creation height is judged, which
+// bounds the check in both directions:
+//   - a node that has never reported an asgard keygen has nothing to judge, so new nodes
+//     and nodes that have never been selected are unaffected;
+//   - an older report may predate a chain being added to the vaults, so a chain missing
+//     from it is not evidence of anything;
+//   - the next completed churn creates newer vaults and so expires every recorded
+//     report. A node held back here sits out only the churn it would have stalled and is
+//     judged again on its next report, so it cannot be locked out of the set.
+//
+// A halted chain is still required: halting stops observation and signing, but the vault
+// chain set is built from the reports regardless, so omitting a halted chain stalls the
+// rotation exactly the same way. A chain under RAGNAROK is not (see chainRetiring).
+func (vm *ValidatorMgr) keygenChainSetCheck(ctx cosmos.Context, na NodeAccount) error {
+	if disabled, err := vm.k.GetMimir(ctx, constants.MimirKeyPreflightChainSetDisabled); err == nil && disabled > 0 {
+		return nil
+	}
+
+	reportHeight, declared, err := vm.k.GetLastKeygenChains(ctx, na.NodeAddress)
+	if err != nil {
+		// An unreadable record is not evidence of a missing chain. Leave the node's
+		// readiness to the other checks rather than holding back the whole Ready set on
+		// a store error.
+		ctx.Logger().Error("fail to get last keygen chains", "error", err, "node address", na.NodeAddress.String())
+		return nil
+	}
+	if reportHeight == 0 {
+		return nil
+	}
+
+	vaults, err := vm.k.GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		ctx.Logger().Error("fail to get active asgard vaults", "error", err)
+		return nil
+	}
+
+	var vaultHeight int64
+	required := make(common.Chains, 0)
+	for _, vault := range vaults {
+		// The XMR monovault keygen reports its own fixed chain set
+		// (Signer.keygenChainsForType), so an asgard report never carries XMR and its
+		// absence says nothing about the reporter. The monovault also rotates on its own
+		// schedule, so its creation height must not set the report-age bound either: a
+		// monovault newer than the asgard vaults would push the bound past every asgard
+		// report and silently disable the check. Skip it the way
+		// regularVaultMembershipNeedsKeygen does.
+		if vault.HasChain(common.XMRChain) {
+			continue
+		}
+		if vault.BlockHeight > vaultHeight {
+			vaultHeight = vault.BlockHeight
+		}
+		for _, chain := range vault.GetChains() {
+			if required.Has(chain) || vm.chainRetiring(ctx, chain) {
+				continue
+			}
+			required = append(required, chain)
+		}
+	}
+	if reportHeight < vaultHeight {
+		return nil
+	}
+
+	for _, chain := range required {
+		if !declared.Has(chain) {
+			return fmt.Errorf("node account keygen report at height %d omitted chain %s served by the active vaults", reportHeight, chain)
+		}
+	}
+
+	return nil
+}
+
+// chainRetiring reports whether a chain is being retired, signalled on chain by the
+// RAGNAROK-<gas asset> mimir. Retiring a chain has operators set OptToRetire in their
+// bifrost config, which drops the chain from their keygen reports
+// (Signer.keygenChainsForType) while the active vaults still carry it. Requiring it
+// would hold back, or churn out, exactly the nodes that adopted the retirement first.
+func (vm *ValidatorMgr) chainRetiring(ctx cosmos.Context, chain common.Chain) bool {
+	return vm.k.IsRagnarok(ctx, []common.Asset{chain.GetGasAsset()})
 }
 
 // Returns a list of nodes to include in the next pool
@@ -1588,5 +1932,85 @@ func (vm *ValidatorMgr) nextVaultNodeAccounts(ctx cosmos.Context, targetCount in
 		}
 	}
 
+	if !rotation {
+		needsKeygen, keygenErr := vm.regularVaultMembershipNeedsKeygen(ctx, active)
+		if keygenErr != nil {
+			return nil, false, keygenErr
+		}
+		rotation = needsKeygen
+	}
+
 	return active, rotation, nil
+}
+
+func (vm *ValidatorMgr) regularVaultMembershipNeedsKeygen(ctx cosmos.Context, active NodeAccounts) (bool, error) {
+	asgardSize := vm.k.GetConfigInt64(ctx, constants.AsgardSize)
+	if asgardSize <= 0 {
+		return false, nil
+	}
+	expectedGroups := vm.splitNext(ctx, active, asgardSize)
+	if len(expectedGroups) == 0 {
+		return false, nil
+	}
+
+	activeVaults, err := vm.k.GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		return false, fmt.Errorf("fail to get active asgards: %w", err)
+	}
+	if len(activeVaults) == 0 {
+		return false, nil
+	}
+	regularVaults := make(Vaults, 0, len(activeVaults))
+	for _, vault := range activeVaults {
+		if vault.HasChain(common.XMRChain) {
+			continue
+		}
+		regularVaults = append(regularVaults, vault)
+	}
+	if len(regularVaults) != len(expectedGroups) {
+		return true, nil
+	}
+
+	for _, group := range expectedGroups {
+		members := make(common.PubKeys, 0, len(group))
+		for _, na := range group {
+			members = append(members, na.PubKeySet.Secp256k1)
+		}
+		found := false
+		for _, vault := range regularVaults {
+			if vault.MembershipEquals(members) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (vm *ValidatorMgr) xmrVaultMembershipNeedsKeygen(ctx cosmos.Context, active NodeAccounts) (bool, error) {
+	if len(active) == 0 {
+		return false, nil
+	}
+	allVaults, err := vm.k.GetAsgardVaults(ctx)
+	if err != nil {
+		return false, fmt.Errorf("fail to get Asgard vaults: %w", err)
+	}
+	if !shouldMaintainXMRMonovault(allVaults, len(active)) {
+		return false, nil
+	}
+
+	members := make(common.PubKeys, 0, len(active))
+	for _, na := range active {
+		members = append(members, na.PubKeySet.Secp256k1)
+	}
+	for _, vault := range allVaults {
+		if (vault.Status == ActiveVault || vault.Status == InitVault) &&
+			vault.HasChain(common.XMRChain) && vault.MembershipEquals(members) {
+			return false, nil
+		}
+	}
+	return true, nil
 }

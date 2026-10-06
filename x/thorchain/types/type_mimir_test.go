@@ -53,6 +53,24 @@ func (MimirTestSuite) TestNodeMimir(c *C) {
 	c.Check(ok, Equals, true)
 }
 
+func (MimirTestSuite) TestNodeMimirSimpleMajorityTie(c *C) {
+	key := "foo"
+	active := []cosmos.AccAddress{
+		GetRandomBech32Addr(),
+		GetRandomBech32Addr(),
+		GetRandomBech32Addr(),
+		GetRandomBech32Addr(),
+	}
+	m := NodeMimirs{}
+	m.Set(key, 1, active[0])
+	m.Set(key, 1, active[1])
+	m.Set(key, 2, active[2])
+	m.Set(key, 2, active[3])
+
+	_, ok := m.HasSimpleMajority(key, active)
+	c.Check(ok, Equals, false)
+}
+
 func (s *MimirTestSuite) TestValueOfOperational(c *C) {
 	var m NodeMimirs
 	key := "testKey"

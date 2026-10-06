@@ -76,7 +76,11 @@ func (m *MsgSwap) IsDone() bool {
 	case SwapType_market:
 		return m.State.Count >= m.State.Quantity
 	case SwapType_limit:
-		return m.State.In.Equal(m.State.Deposit)
+		// Account-share rounding can consume less than a requested sub-swap.
+		// Settle after the configured number of successes even if input remains;
+		// failed price-limit attempts do not consume that allowance.
+		return m.State.In.Equal(m.State.Deposit) ||
+			(m.State.Quantity > 0 && m.SuccessCount() >= m.State.Quantity)
 	default:
 		return false
 	}

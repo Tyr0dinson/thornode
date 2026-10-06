@@ -2,9 +2,12 @@ package thorchain
 
 import (
 	"fmt"
+	"math/big"
 
 	errorsmod "cosmossdk.io/errors"
 	"github.com/blang/semver"
+	"github.com/cosmos/cosmos-sdk/telemetry"
+	"github.com/hashicorp/go-metrics"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -114,9 +117,10 @@ func (h BanHandler) handle(ctx cosmos.Context, msg MsgBan) (*cosmos.Result, erro
 
 	// slash the bond of the banned node
 	slash := h.mgr.Keeper().GetConfigInt64(ctx, constants.BondSlashBan)
+	slashAmt := cosmos.ZeroUint()
 	if slash > 0 {
 		// compute slash and decrement banned node bond
-		slashAmt := cosmos.NewUint(uint64(slash))
+		slashAmt = cosmos.NewUint(uint64(slash))
 		if slashAmt.GT(toBan.Bond) {
 			slashAmt = toBan.Bond
 		}
@@ -139,6 +143,32 @@ func (h BanHandler) handle(ctx cosmos.Context, msg MsgBan) (*cosmos.Result, erro
 	if err := h.mgr.Keeper().SetNodeAccount(ctx, toBan); err != nil {
 		err = fmt.Errorf("fail to save node account: %w", err)
 		return nil, err
+	}
+
+	// Counters are process-local and do not roll back with the transaction, so
+	// they are emitted only once every fallible step above has succeeded - past
+	// the consensus and already-processed guards, the module transfer, the event
+	// and the node account write. A ban is the most severe action validators can
+	// take against a peer and this handler emits no telemetry otherwise.
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "node", "banned"},
+		1,
+		[]metrics.Label{telemetry.NewLabel("node_address", toBan.NodeAddress.String())},
+	)
+	if !slashAmt.IsZero() {
+		// Count the ban slash into the shared bond_slash counter; without it
+		// thornode_node_bond drops by BondSlashBan with no slash counter to
+		// explain the gap. Raw base units, matching handler_tss.go and
+		// manager_slasher_current.go.
+		slashFloat, _ := new(big.Float).SetInt(slashAmt.BigInt()).Float32()
+		telemetry.IncrCounterWithLabels(
+			[]string{"thornode", "bond_slash"},
+			slashFloat,
+			[]metrics.Label{
+				telemetry.NewLabel("address", toBan.NodeAddress.String()),
+				telemetry.NewLabel("reason", "banned"),
+			},
+		)
 	}
 
 	return &cosmos.Result{}, nil

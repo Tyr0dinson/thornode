@@ -5,13 +5,14 @@ import (
 )
 
 const (
-	ModuleName   = types.ModuleName
-	ReserveName  = types.ReserveName
-	AsgardName   = types.AsgardName
-	TreasuryName = types.TreasuryName
-	RUNEPoolName = types.RUNEPoolName
-	BondName     = types.BondName
-	StoreKey     = types.StoreKey
+	ModuleName        = types.ModuleName
+	ReserveName       = types.ReserveName
+	AsgardName        = types.AsgardName
+	TreasuryName      = types.TreasuryName
+	RUNEPoolName      = types.RUNEPoolName
+	StableReserveName = types.StableReserveName
+	BondName          = types.BondName
+	StoreKey          = types.StoreKey
 
 	ActiveVault = types.VaultStatus_ActiveVault
 
@@ -68,6 +69,8 @@ type (
 	RagnarokWithdrawPosition = types.RagnarokWithdrawPosition
 	ChainContract            = types.ChainContract
 	SolvencyVoter            = types.SolvencyVoter
+	SolVaultNonce            = types.SolVaultNonce
+	SolNonceAttestVoter      = types.SolNonceAttestVoter
 	ReferenceMemo            = types.ReferenceMemo
 	THORName                 = types.THORName
 	AffiliateFeeCollector    = types.AffiliateFeeCollector

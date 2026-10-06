@@ -3,6 +3,7 @@ package observer
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"sync"
 	"time"
@@ -18,7 +19,9 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
+	chainclienttypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -62,8 +65,9 @@ const (
 )
 
 var (
-	attestationStateProtocol   protocol.ID = "/p2p/attestation-state/v2"
-	batchedAttestationProtocol protocol.ID = "/p2p/batched-attestations"
+	attestationStateProtocol       protocol.ID = "/p2p/attestation-state/v2"
+	batchedAttestationProtocol     protocol.ID = "/p2p/batched-attestations"
+	xmrSpentRefCertificateProtocol protocol.ID = "/p2p/xmr-spent-ref-certificate/v2"
 
 	// AttestationState protocol prefixes
 	prefixSendState = []byte{0x01} // request
@@ -73,9 +77,53 @@ var (
 	prefixBatchData   = []byte{0x04} // data of a batch
 	prefixBatchEnd    = []byte{0x05} // end of a batch
 
-	// Maximum number of QuorumTxs to send in a single batch when sending attestation state.
-	maxQuorumTxsPerBatch = 100
+	// maxAttestationBatchBytes bounds the serialized size of any single
+	// attestation frame written to a p2p stream (state-sync batches and live
+	// gossip broadcasts). Batches are packed by bytes rather than item count,
+	// so honest frames stay under the wire-level p2p.MaxPayload read cap
+	// regardless of validator-set size or mimir batch settings. Var rather
+	// than const so tests can lower it to force splitting.
+	maxAttestationBatchBytes = p2p.MaxPayload / 2
+
+	// maxAllowedBatchSize caps mimir-driven MaxBatchSize growth. Frame size
+	// is bound by maxAttestationBatchBytes, so larger item counts only add
+	// per-flush latency and pool memory.
+	maxAllowedBatchSize int64 = 1000
 )
+
+// quorumStateBatcher greedily packs items into QuorumState batches whose
+// serialized size stays under maxAttestationBatchBytes.
+type quorumStateBatcher struct {
+	batches []common.QuorumState
+	current common.QuorumState
+	size    int
+}
+
+// protoItemOverhead over-estimates the per-item proto framing cost inside a
+// QuorumState: one byte for the repeated-field tag plus up to four bytes for
+// the length varint.
+const protoItemOverhead = 5
+
+func (q *quorumStateBatcher) add(itemSize int, appendItem func(*common.QuorumState)) {
+	sz := itemSize + protoItemOverhead
+	// Flush before adding if this item would push the current batch over the
+	// budget. A single item larger than the budget still gets its own batch:
+	// dropping it silently would be worse, and honest items never approach
+	// the budget.
+	if q.size > 0 && q.size+sz > maxAttestationBatchBytes {
+		q.flush()
+	}
+	appendItem(&q.current)
+	q.size += sz
+}
+
+func (q *quorumStateBatcher) flush() {
+	if q.size > 0 {
+		q.batches = append(q.batches, q.current)
+		q.current = common.QuorumState{}
+		q.size = 0
+	}
+}
 
 // txKey contains the properties that are required to uniquely identify an observed tx
 type txKey struct {
@@ -145,7 +193,24 @@ type AttestationGossip struct {
 	solvencies  map[common.TxID]*AttestationState[*common.Solvency]
 	errataTxs   map[common.ErrataTx]*AttestationState[*common.ErrataTx]
 	priceFeeds  map[string]*AttestationState[*common.PriceFeed]
-	mu          sync.Mutex
+	// authorizedXMRSpentRefs remembers the source-vault-certified, pre-chain
+	// ref set admitted for an XMR outbound so later certified disagreements do
+	// not race a conflicting sidecar import. Entries track the import outcome:
+	// a set whose import failed terminally may be replaced by a differing
+	// certified set, and entries expire so a failed certificate cannot pin a
+	// txid for the life of the process.
+	authorizedXMRSpentRefs map[xmrSpentRefsConflictKey]*xmrSpentRefsConflictEntry
+	// historicalXMRSpentRefCertificates is deliberately separate from
+	// observedTxs. Retiring-vault members that have churned out may contribute a
+	// source-vault certificate share, but that share must never count toward the
+	// active-validator observation quorum sent to Thornode.
+	historicalXMRSpentRefCertificates        map[[32]byte]*historicalXMRSpentRefCertificateBucket
+	historicalXMRCertificateSignerUse        map[string]int
+	historicalXMRCertificateSendSem          chan struct{}
+	historicalXMRCertificateRPC              *historicalXMRCertificateRPCControl
+	historicalXMRCertificateReconcileRunning bool
+	pendingXMRSpentRefsReconcileRunning      bool
+	mu                                       sync.Mutex
 
 	observedTxsPool *AttestationStatePool[*attestableObservedTx]
 	networkFeesPool *AttestationStatePool[*common.NetworkFee]
@@ -158,9 +223,15 @@ type AttestationGossip struct {
 	activeVals map[peer.ID]bool // active val peer IDs
 	avMu       sync.Mutex
 
+	certificateObserver               *Observer
 	observerHandleObservedTxCommitted func(tx common.ObservedTx, allowFutureObservation bool)
-	observerApplySpentOutputRefs      func(tx common.ObservedTx)
+	observerHandleErrataTxCommitted   func(errata common.ErrataTx) error
+	observerApplySpentOutputRefs      func(request spentOutputRefsImport, onOutcome func(applied bool))
+	observerApplyCommittedSpentRefs   func(context.Context, common.PubKey, common.TxID) (common.ObservedTx, bool)
 	applySpentRefsSem                 chan struct{}
+	applyCommittedSpentRefsSem        chan struct{}
+	runCtxMu                          sync.RWMutex
+	runCtx                            context.Context
 
 	batcher *AttestationBatcher
 
@@ -218,11 +289,15 @@ func NewAttestationGossip(
 		eventClient: eventClient,
 
 		// Initialize generic maps
-		observedTxs: make(map[txKey]*AttestationState[*attestableObservedTx]),
-		networkFees: make(map[common.NetworkFee]*AttestationState[*common.NetworkFee]),
-		solvencies:  make(map[common.TxID]*AttestationState[*common.Solvency]),
-		errataTxs:   make(map[common.ErrataTx]*AttestationState[*common.ErrataTx]),
-		priceFeeds:  make(map[string]*AttestationState[*common.PriceFeed]),
+		observedTxs:                       make(map[txKey]*AttestationState[*attestableObservedTx]),
+		networkFees:                       make(map[common.NetworkFee]*AttestationState[*common.NetworkFee]),
+		solvencies:                        make(map[common.TxID]*AttestationState[*common.Solvency]),
+		errataTxs:                         make(map[common.ErrataTx]*AttestationState[*common.ErrataTx]),
+		priceFeeds:                        make(map[string]*AttestationState[*common.PriceFeed]),
+		authorizedXMRSpentRefs:            make(map[xmrSpentRefsConflictKey]*xmrSpentRefsConflictEntry),
+		historicalXMRSpentRefCertificates: make(map[[32]byte]*historicalXMRSpentRefCertificateBucket),
+		historicalXMRCertificateSignerUse: make(map[string]int),
+		historicalXMRCertificateSendSem:   make(chan struct{}, historicalXMRCertificateSendConcurrency),
 
 		peerMgr: newPeerManager(logger, config.PeerConcurrentReceives),
 
@@ -233,11 +308,14 @@ func NewAttestationGossip(
 		priceFeedsPool:  NewAttestationStatePool[*common.PriceFeed](),
 
 		priceFeedsDelay: NewDelay(),
+		runCtx:          context.Background(),
 
 		batcher: batcher,
 
-		// Bound concurrent sidecar mark-spent calls so a slow signer does not leak goroutines.
-		applySpentRefsSem: make(chan struct{}, 16),
+		// Bound concurrent sidecar mark-spent calls. Committed catch-up has a
+		// separate reserve so pre-quorum gossip cannot consume all capacity.
+		applySpentRefsSem:          make(chan struct{}, 16),
+		applyCommittedSpentRefsSem: make(chan struct{}, 4),
 	}
 	batcher.setActiveValGetter(s.getActiveValidators)
 	// Register event handlers
@@ -249,6 +327,7 @@ func NewAttestationGossip(
 	// Register stream handlers
 	host.SetStreamHandler(attestationStateProtocol, s.handleStreamAttestationState)
 	host.SetStreamHandler(batchedAttestationProtocol, s.handleStreamBatchedAttestations)
+	host.SetStreamHandler(xmrSpentRefCertificateProtocol, s.handleStreamXMRSpentRefCertificate)
 
 	return s, nil
 }
@@ -341,23 +420,115 @@ func (s *AttestationGossip) SetObserverHandleObservedTxCommitted(o *Observer) {
 	s.observerHandleObservedTxCommitted = o.handleObservedTxCommitted
 }
 
-func (s *AttestationGossip) SetObserverApplySpentOutputRefs(fn func(tx common.ObservedTx)) {
+func (s *AttestationGossip) SetObserverHandleErrataTxCommitted(o *Observer) {
+	s.observerHandleErrataTxCommitted = o.handleErrataTxCommitted
+}
+
+type spentOutputRefsImport = chainclienttypes.SpentOutputRefsImport
+
+// SetObserverApplySpentOutputRefs wires the XMR sidecar import. The import
+// reports its final outcome through onOutcome exactly once, which may happen
+// after the call returns when the client retries transient failures.
+func (s *AttestationGossip) SetObserverApplySpentOutputRefs(fn func(request spentOutputRefsImport, onOutcome func(applied bool))) {
 	s.observerApplySpentOutputRefs = fn
 }
 
-func (s *AttestationGossip) applySpentRefsAsync(tx common.ObservedTx) {
+// SetObserverApplyCommittedSpentRefs wires the consensus-backed import used by
+// live quorum notifications. The notification supplies only a vault and tx ID;
+// the client must return the canonical transaction it reconstructed and applied.
+func (s *AttestationGossip) SetObserverApplyCommittedSpentRefs(
+	fn func(context.Context, common.PubKey, common.TxID) (common.ObservedTx, bool),
+) {
+	s.observerApplyCommittedSpentRefs = fn
+}
+
+// applySpentRefsAsync keeps pre-quorum sidecar imports off the attestation hot
+// path while preserving the final outcome callback through the concurrency
+// limiter. Capacity is acquired before spawning so an attacker cannot turn a
+// full limiter into an unbounded population of blocked goroutines. Saturated
+// work is rejected immediately; reconciliation can retry it later.
+func (s *AttestationGossip) applySpentRefsAsync(request spentOutputRefsImport, onOutcome func(applied bool)) {
+	request.ReplaySource = !request.ChainCommitted
+	s.applySpentRefsAsyncWithLimit(request, onOutcome, s.applySpentRefsSem, "pre-quorum")
+}
+
+func (s *AttestationGossip) applySpentRefsAsyncWithLimit(
+	request spentOutputRefsImport,
+	onOutcome func(applied bool),
+	sem chan struct{},
+	origin string,
+) {
 	if s.observerApplySpentOutputRefs == nil {
+		if onOutcome != nil {
+			onOutcome(false)
+		}
 		return
 	}
-	if s.applySpentRefsSem == nil {
-		go s.observerApplySpentOutputRefs(tx)
+	s.runSpentRefsAsyncWithLimit(request.Tx.Tx.ID, sem, origin, onOutcome, func() {
+		s.observerApplySpentOutputRefs(request, onOutcome)
+	})
+}
+
+// applyCommittedSpentRefsAsync retains the separate committed-work capacity
+// while keeping event metadata out of the sidecar import request by type.
+func (s *AttestationGossip) applyCommittedSpentRefsAsync(
+	vaultPubKey common.PubKey,
+	txID common.TxID,
+	onOutcome func(common.ObservedTx, bool),
+) {
+	if s.observerApplyCommittedSpentRefs == nil {
+		if onOutcome != nil {
+			onOutcome(common.ObservedTx{}, false)
+		}
+		return
+	}
+	onRejected := func(bool) {
+		if onOutcome != nil {
+			onOutcome(common.ObservedTx{}, false)
+		}
+	}
+	s.runSpentRefsAsyncWithLimit(txID, s.applyCommittedSpentRefsSem, "committed", onRejected, func() {
+		imported, applied := s.observerApplyCommittedSpentRefs(s.lifecycleContext(), vaultPubKey, txID)
+		if onOutcome != nil {
+			onOutcome(imported, applied)
+		}
+	})
+}
+
+func (s *AttestationGossip) runSpentRefsAsyncWithLimit(
+	txID common.TxID,
+	sem chan struct{},
+	origin string,
+	onRejected func(bool),
+	work func(),
+) {
+	if sem == nil {
+		if onRejected != nil {
+			onRejected(false)
+		}
+		return
+	}
+	select {
+	case sem <- struct{}{}:
+		// Capacity is owned before the goroutine exists.
+	default:
+		s.logger.Warn().Str("tx_id", txID.String()).Str("origin", origin).
+			Msg("xmr spent-ref import capacity exhausted; reconciliation may retry")
+		if onRejected != nil {
+			onRejected(false)
+		}
 		return
 	}
 	go func() {
-		s.applySpentRefsSem <- struct{}{}
-		defer func() { <-s.applySpentRefsSem }()
-		s.observerApplySpentOutputRefs(tx)
+		defer func() { <-sem }()
+		work()
 	}()
+}
+
+func (s *AttestationGossip) lifecycleContext() context.Context {
+	s.runCtxMu.RLock()
+	defer s.runCtxMu.RUnlock()
+	return s.runCtx
 }
 
 // Handle a committed quorum transaction event
@@ -382,12 +553,47 @@ func (s *AttestationGossip) handleQuorumTxCommitted(en *ebifrost.EventNotificati
 		}
 	}
 
-	if s.observerApplySpentOutputRefs != nil &&
+	if s.observerApplyCommittedSpentRefs != nil &&
 		!qtx.Inbound &&
-		qtx.ObsTx.Tx.Chain.Equals(common.XMRChain) &&
-		len(qtx.ObsTx.SpentOutputRefs) > 0 &&
-		len(qtx.ObsTx.SpentOutputRefs) <= common.MaxXMRSpentOutputRefs {
-		s.applySpentRefsAsync(qtx.ObsTx)
+		qtx.ObsTx.Tx.Chain.Equals(common.XMRChain) {
+		// DeliverTx can emit before the HTTP query exposes the committed voter.
+		// The client owns a short bounded retry; periodic catch-up remains the
+		// durable fallback. Nothing except the hint's vault and tx ID crosses
+		// this boundary until the client returns consensus-backed metadata.
+		hintVault := qtx.ObsTx.ObservedPubKey
+		hintTxID := qtx.ObsTx.Tx.ID
+		if hintVault.IsEmpty() || hintTxID.IsEmpty() {
+			s.logger.Warn().Msg("ignore committed xmr spent-ref hint without vault or transaction ID")
+		} else {
+			s.applyCommittedSpentRefsAsync(hintVault, hintTxID, func(imported common.ObservedTx, applied bool) {
+				if !applied {
+					return
+				}
+				if !imported.Tx.ID.Equals(hintTxID) ||
+					!imported.Tx.Chain.Equals(common.XMRChain) ||
+					!imported.ObservedPubKey.Equals(hintVault) {
+					s.logger.Error().Str("tx_id", hintTxID.String()).
+						Msg("committed xmr spent-ref importer returned mismatched consensus transaction")
+					return
+				}
+
+				payload, err := imported.GetSignablePayloadWithInbound(false)
+				if err != nil {
+					s.logger.Error().Err(err).Str("tx_id", imported.Tx.ID.String()).
+						Msg("cannot bind committed xmr spent refs to consensus observation payload")
+					return
+				}
+				payloadHash := sha256.Sum256(payload)
+				// Consensus-backed refs outrank pre-quorum conflict memory only after
+				// the sidecar accepts the exact canonical transaction returned above.
+				s.recordCommittedXMRSpentRefs(
+					xmrSpentRefsConflictKeyFor(imported),
+					xmrSpentRefsIdentity(imported.SpentOutputRefs),
+				)
+				s.markXMRSpentRefsAppliedByPayload(imported, payloadHash)
+				s.markHistoricalXMRSpentRefCertificateApplied(payloadHash)
+			})
+		}
 	}
 
 	k := observedTxKey(qtx.ObsTx, qtx.Inbound, qtx.AllowFutureObservation)
@@ -469,6 +675,30 @@ func (s *AttestationGossip) handleQuorumErrataTxCommitted(en *ebifrost.EventNoti
 		s.logger.Error().Err(err).Msg("fail to unmarshal quorum errata")
 		return
 	}
+	if qe.ErrataTx == nil || qe.ErrataTx.Chain.IsEmpty() || qe.ErrataTx.Id.IsEmpty() {
+		s.logger.Error().Msg("committed quorum errata is missing chain or transaction id")
+		return
+	}
+
+	// A committed batch can contain only another node's vote. Clear this
+	// observer's durable outbox only when Thornode confirms that this node's
+	// exact attestation was included in the delivered message.
+	localAttestationCommitted := false
+	for _, attestation := range qe.Attestations {
+		if attestation != nil && bytes.Equal(attestation.PubKey, s.pubKey) {
+			localAttestationCommitted = true
+			break
+		}
+	}
+	if localAttestationCommitted && s.observerHandleErrataTxCommitted != nil {
+		if err := s.observerHandleErrataTxCommitted(*qe.ErrataTx); err != nil {
+			s.logger.Error().Err(err).
+				Str("chain", qe.ErrataTx.Chain.String()).
+				Str("txid", qe.ErrataTx.Id.String()).
+				Msg("fail to durably apply committed errata; retain retryable attestations")
+			return
+		}
+	}
 
 	s.mu.Lock()
 	as, ok := s.errataTxs[*qe.ErrataTx]
@@ -488,6 +718,10 @@ func (s *AttestationGossip) handleQuorumErrataTxCommitted(en *ebifrost.EventNoti
 
 // Start the attestation gossip service
 func (s *AttestationGossip) Start(ctx context.Context) {
+	s.runCtxMu.Lock()
+	s.runCtx = ctx
+	s.runCtxMu.Unlock()
+
 	ticker := time.NewTicker(s.config.ObserveReconcileInterval)
 
 	startupDelay := s.config.AskPeersDelay
@@ -508,6 +742,7 @@ func (s *AttestationGossip) Start(ctx context.Context) {
 		select {
 		case <-ticker.C:
 			// prune old attestations and check for late ones to send
+			now := time.Now()
 			s.mu.Lock()
 
 			// Prune observed transactions
@@ -566,7 +801,13 @@ func (s *AttestationGossip) Start(ctx context.Context) {
 			// Prune price feeds
 			s.priceFeeds = make(map[string]*AttestationState[*common.PriceFeed])
 
+			// Prune XMR spent-ref conflict memory
+			s.pruneAuthorizedXMRSpentRefsLocked(now)
+			s.pruneHistoricalXMRSpentRefCertificatesLocked(now)
+
 			s.mu.Unlock()
+			s.triggerPendingObservedXMRSpentRefsReconcile(ctx)
+			s.triggerHistoricalXMRSpentRefCertificateReconcile(ctx)
 			s.reconcileMimirConfigs()
 
 		case <-delayTimer.C:

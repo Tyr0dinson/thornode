@@ -84,7 +84,7 @@ func TestBroadcastEmptyPeers(t *testing.T) {
 	comm, err := NewCommunication(&Config{Port: 7791, RendezvousString: "test"}, nil, nil)
 	assert.NoError(t, err)
 	// Should return immediately without panicking
-	comm.Broadcast(nil, []byte("hello"), "test")
+	comm.Broadcast(nil, []byte("hello"), "test", messages.TSSKeyGenMsg)
 }
 
 func TestReleaseStream(t *testing.T) {
@@ -98,27 +98,6 @@ func TestReleaseStream(t *testing.T) {
 	// Verify stream was released
 	_, ok := comm.streamMgr.unusedStreams["test-msg"]
 	assert.False(t, ok)
-}
-
-func TestReleaseStreamsByPrefix(t *testing.T) {
-	comm, err := NewCommunication(&Config{Port: 7796, RendezvousString: "test"}, nil, nil)
-	assert.NoError(t, err)
-
-	comm.streamMgr.AddStream("keyverify-pk1-100", NewMockNetworkStream())
-	comm.streamMgr.AddStream("keyverify-pk1-100", NewMockNetworkStream())
-	comm.streamMgr.AddStream("keyverify-pk2-200", NewMockNetworkStream())
-	comm.streamMgr.AddStream(StreamUnknown, NewMockNetworkStream())
-	// Keygen/keysign-style hex msgIDs must survive the sweep — resetting a
-	// parked outbound stream races the remote peer's read of its payload.
-	comm.streamMgr.AddStream("deadbeef", NewMockNetworkStream())
-	comm.ReleaseStreamsByPrefix("keyverify-")
-
-	assert.Len(t, comm.streamMgr.unusedStreams, 1)
-	assert.Contains(t, comm.streamMgr.unusedStreams, "deadbeef")
-
-	// Idempotent when nothing matches.
-	comm.ReleaseStreamsByPrefix("keyverify-")
-	assert.Len(t, comm.streamMgr.unusedStreams, 1)
 }
 
 func TestGetPeersWithNoStateManager(t *testing.T) {
@@ -176,11 +155,11 @@ func (CommunicationTestSuite) TestBroadcastAndProcessBroadcast(c *C) {
 	}()
 
 	// Broadcast with no peers should return immediately
-	comm.Broadcast(nil, []byte("hello"), "test")
-	comm.Broadcast([]peer.ID{}, []byte("hello"), "test")
+	comm.Broadcast(nil, []byte("hello"), "test", messages.TSSKeyGenMsg)
+	comm.Broadcast([]peer.ID{}, []byte("hello"), "test", messages.TSSKeyGenMsg)
 
 	// Broadcast to self should silently succeed (writeToStream skips self)
-	comm.Broadcast([]peer.ID{comm.host.ID()}, []byte("hello"), "test-self")
+	comm.Broadcast([]peer.ID{comm.host.ID()}, []byte("hello"), "test-self", messages.TSSKeyGenMsg)
 	// Give it a moment for the goroutine
 	time.Sleep(time.Millisecond * 100)
 }

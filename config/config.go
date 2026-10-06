@@ -217,6 +217,35 @@ func Init() {
 		"XMR_SIGNER_ENDPOINT",
 	))
 	assert(viper.BindEnv(
+		"bifrost.chains.XMR.signer_authorization_bearer",
+		"XMR_FROST_AUTH_BEARER",
+		"BIFROST_CHAINS_XMR_SIGNER_AUTHORIZATION_BEARER",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XMR.signer_username",
+		"XMR_FROST_AUTH_USERNAME",
+		"BIFROST_CHAINS_XMR_SIGNER_USERNAME",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XMR.signer_password",
+		"XMR_FROST_AUTH_PASSWORD",
+		"BIFROST_CHAINS_XMR_SIGNER_PASSWORD",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XMR.signer_expected_network",
+		"XMR_FROST_CHAIN_NETWORK",
+		"BIFROST_CHAINS_XMR_SIGNER_EXPECTED_NETWORK",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XMR.signer_expected_commit",
+		"XMR_FROST_EXPECTED_COMMIT",
+		"BIFROST_CHAINS_XMR_SIGNER_EXPECTED_COMMIT",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.XMR.signer_allow_insecure_http",
+		"BIFROST_CHAINS_XMR_SIGNER_ALLOW_INSECURE_HTTP",
+	))
+	assert(viper.BindEnv(
 		"bifrost.chains.XMR.xmr_consolidation_enabled",
 		"XMR_CONSOLIDATION_ENABLED",
 	))
@@ -382,26 +411,36 @@ func InitThornode(ctx context.Context) {
 	tendermintPath := filepath.Join(home, "config", "config.toml")
 	cosmosPath := filepath.Join(home, "config", "app.toml")
 
-	// template tendermint config into place
+	// template config files into place
 	t := template.Must(template.ParseFS(templates, "*.tmpl"))
-	tendermintFile, err := os.OpenFile(tendermintPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to open config.toml")
-	}
-	err = t.ExecuteTemplate(tendermintFile, "config.toml.tmpl", config.Thornode.Tendermint)
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to render config.toml")
+
+	// renderConfigFile templates tmpl into path, truncating any existing file.
+	// When preserve is set and the target already exists, the existing file is
+	// left untouched so operators can manage it themselves across restarts
+	// (render-config runs on every boot from Docker). Each file has its own
+	// toggle: THORNODE_PRESERVE_CONFIG_TOML and THORNODE_PRESERVE_APP_TOML.
+	// NOTE: preserving config.toml opts out of the dynamic seed and external
+	// address injection above, so the operator becomes responsible for
+	// maintaining seeds/persistent_peers/external_address.
+	renderConfigFile := func(path, tmpl string, data any, preserve bool) {
+		if preserve {
+			if _, statErr := os.Stat(path); statErr == nil {
+				log.Info().Str("path", path).Msg("preserve env var set and file exists, skipping render")
+				return
+			}
+		}
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+		if err != nil {
+			log.Fatal().Err(err).Msgf("failed to open %s", filepath.Base(path))
+		}
+		defer f.Close()
+		if err = t.ExecuteTemplate(f, tmpl, data); err != nil {
+			log.Fatal().Err(err).Msgf("failed to render %s", filepath.Base(path))
+		}
 	}
 
-	// template cosmos config into place
-	cosmosFile, err := os.OpenFile(cosmosPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to open app.toml")
-	}
-	err = t.ExecuteTemplate(cosmosFile, "app.toml.tmpl", config.Thornode.Cosmos)
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to render app.toml")
-	}
+	renderConfigFile(tendermintPath, "config.toml.tmpl", config.Thornode.Tendermint, envToBool("THORNODE_PRESERVE_CONFIG_TOML"))
+	renderConfigFile(cosmosPath, "app.toml.tmpl", config.Thornode.Cosmos, envToBool("THORNODE_PRESERVE_APP_TOML"))
 
 	// fetch genesis
 	if len(seedAddrs) > 0 {
@@ -409,6 +448,20 @@ func InitThornode(ctx context.Context) {
 	} else {
 		log.Warn().Msg("no seeds, skipping genesis fetch")
 	}
+}
+
+func envToBool(name string) bool {
+	v := os.Getenv(name)
+	if v == "" {
+		// env doesn't exist return false
+		return false
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		log.Warn().Str("env", name).Str("value", v).Msg("invalid boolean, ignoring (treating as false)")
+		return false
+	}
+	return b
 }
 
 // -------------------------------------------------------------------------------------
@@ -457,6 +510,16 @@ type Thornode struct {
 			// MaxPageSize is the maximum page size for paginated endpoints.
 			MaxPageSize uint64 `mapstructure:"max_page_size"`
 		} `mapstructure:"pagination"`
+
+		// Logs configures the /thorchain/logs endpoint.
+		Logs struct {
+			// RetainBlocks is how many blocks of thorchain module logs to keep on disk
+			// under <home>/data/thorchain_logs. Zero (default) disables capture and the
+			// endpoint. Capture is synchronous on the block-execution goroutine and
+			// records every level regardless of --log_level, so this is not free on a
+			// validator; the endpoint is also unauthenticated. See default.yaml.
+			RetainBlocks int64 `mapstructure:"retain_blocks"`
+		} `mapstructure:"logs"`
 	} `mapstructure:"api"`
 
 	// Telemetry contains THORnode-specific telemetry configuration.
@@ -512,6 +575,7 @@ type Thornode struct {
 			EnabledUnsafeCORS bool   `mapstructure:"enabled_unsafe_cors"`
 			EnabledSwagger    bool   `mapstructure:"enabled_swagger"`
 			Address           string `mapstructure:"address"`
+			QueryViaGRPC      bool   `mapstructure:"query_via_grpc"`
 		} `mapstructure:"api"`
 
 		GRPC struct {
@@ -736,8 +800,9 @@ type BifrostSignerConfiguration struct {
 
 	// RescheduleBufferBlocks is the number of blocks before reschedule we will stop
 	// attempting to sign and broadcast (for outbounds not in round 7 retry).
-	RescheduleBufferBlocks int64          `mapstructure:"reschedule_buffer_blocks"`
-	LevelDB                LevelDBOptions `mapstructure:"leveldb"`
+	RescheduleBufferBlocks int64 `mapstructure:"reschedule_buffer_blocks"`
+
+	LevelDB LevelDBOptions `mapstructure:"leveldb"`
 
 	// AutoObserve will automatically submit the observation for outbound transactions once
 	// they are signed - regardless of broadcast success.
@@ -750,40 +815,6 @@ type BifrostSignerConfiguration struct {
 	KeysignTimeout     time.Duration `mapstructure:"keysign_timeout"`
 	PartyTimeout       time.Duration `mapstructure:"party_timeout"`
 	PreParamTimeout    time.Duration `mapstructure:"pre_param_timeout"`
-
-	// -------------------- keyverify timeouts --------------------
-	// Keyverify is bifrost/tss/keyverify's transitional scheduler with its
-	// own round + outer budget independent of KeyGen/KeySign above. These
-	// surfaced as a knob so proxy-fronted operators can adjust without a
-	// release cut. Zero falls back to the package defaults in
-	// bifrost/tss/keyverify (DefaultPerVaultTimeout, 180s) and
-	// bifrost/tss/go-tss/keyverify/ecdsa (DefaultKeyverifyRoundTimeout, 120s).
-
-	// KeyverifyRoundTimeout — inner per-round wait inside processVerify.
-	// Must remain strictly less than KeyverifyPerVaultTimeout so the inner
-	// timeout fires first and the protocol can attribute the failure to
-	// specific culprits — otherwise an outer ctx-cancellation preempts the
-	// per-peer blame path.
-	KeyverifyRoundTimeout time.Duration `mapstructure:"keyverify_round_timeout"`
-	// KeyverifyPerVaultTimeout — outer safety-net bound around each per-
-	// vault verify attempt. Sized as KeyverifyRoundTimeout + slack for
-	// stagger and teardown.
-	KeyverifyPerVaultTimeout time.Duration `mapstructure:"keyverify_per_vault_timeout"`
-	// KeyverifyRetryInterval — cadence of the per-attempt recovery ticker
-	// (unicast re-send, confirm re-broadcast, share re-request). Zero falls
-	// back to DefaultKeyverifyRetryInterval (5s) in go-tss/keyverify/ecdsa.
-	KeyverifyRetryInterval time.Duration `mapstructure:"keyverify_retry_interval"`
-	// KeyverifyMaxRetries — per-artifact cap on recovery re-sends within one
-	// attempt. Zero falls back to DefaultKeyverifyMaxRetries (3).
-	KeyverifyMaxRetries int `mapstructure:"keyverify_max_retries"`
-	// KeyverifyDisabled lets an operator turn the keyverify scheduler off
-	// entirely so it stops generating its every-100-blocks TSS load. Default
-	// (false) preserves the current always-on behavior; absent from an older
-	// config it also decodes to false, so existing nodes are unaffected.
-	// Disabled nodes still receive keyverify traffic from enabled peers; a
-	// background sweeper releases those parked streams so they don't
-	// accumulate.
-	KeyverifyDisabled bool `mapstructure:"keyverify_disabled"`
 }
 
 type BifrostAttestationGossipConfig struct {
@@ -892,6 +923,13 @@ type BifrostChainConfiguration struct {
 	// observed inbound transaction is considered valid.
 	MinConfirmations uint64 `mapstructure:"min_confirmations"`
 
+	// SignerCacheExpiry is the duration after broadcast during which the signer
+	// cache entry is respected unconditionally. After expiry, the cache can be
+	// bypassed if the operational mimir SkipSignerCache<Chain> is set and the
+	// broadcast tx is not found on chain. Chains that embed a recent block hash
+	// (e.g. Solana) use their own shorter expiry. Default: 72h (3 days).
+	SignerCacheExpiry time.Duration `mapstructure:"signer_cache_expiry"`
+
 	// MaxRPCRetries is the maximum number of retries for RPC requests.
 	MaxRPCRetries int `mapstructure:"max_rpc_retries"`
 
@@ -913,6 +951,24 @@ type BifrostChainConfiguration struct {
 	// SignerEndpoint configures an optional endpoint for remote signer backends.
 	// The XMR TSS signer uses this endpoint when configured.
 	SignerEndpoint string `mapstructure:"signer_endpoint"`
+	// SignerAuthorizationBearer is exclusively used for the signer sidecar. It
+	// must never be copied to a chain daemon or wallet endpoint.
+	SignerAuthorizationBearer string `mapstructure:"signer_authorization_bearer"`
+	// SignerUserName and SignerPassword are the sidecar-only Basic credentials.
+	// They are mutually exclusive with SignerAuthorizationBearer.
+	SignerUserName string `mapstructure:"signer_username"`
+	SignerPassword string `mapstructure:"signer_password"`
+	// SignerExpectedNetwork binds the local sidecar to the intended deployment
+	// network (mocknet, chainnet, stagenet, or mainnet).
+	SignerExpectedNetwork string `mapstructure:"signer_expected_network"`
+	// SignerExpectedCommit is optional release metadata for comparing the
+	// sidecar's reported source revision. Deployment tooling must enforce the
+	// immutable image digest; this self-report is not a runtime trust root.
+	SignerExpectedCommit string `mapstructure:"signer_expected_commit"`
+	// SignerAllowInsecureHTTP is a development-only escape hatch for isolated
+	// mocknet/chainnet compose networks. Production deployments should use TLS
+	// or loopback and leave it false.
+	SignerAllowInsecureHTTP bool `mapstructure:"signer_allow_insecure_http"`
 
 	// XMRConsolidationEnabled toggles periodic Monero output consolidation.
 	XMRConsolidationEnabled bool `mapstructure:"xmr_consolidation_enabled"`
