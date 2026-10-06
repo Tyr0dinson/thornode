@@ -389,7 +389,13 @@ func handleObservedTxInQuorum(
 			ctx.Logger().Info("observed tx in to compromised vault pending confirmation counting", "pub_key", vault.PubKey.String(), "tx", tx.Tx.ID.String())
 		}
 		k.SetObservedTxInVoter(ctx, voter)
-		return cancelCompromisedVaultMempoolSwap(ctx, mgr, voter)
+		// Like the other mempool lifecycle failures below, do not return the
+		// error: it would roll back the no-op recorded above, including the
+		// Reverted marker that blocks payout. The recovery worker retries.
+		if cancelErr := cancelCompromisedVaultMempoolSwap(ctx, mgr, voter); cancelErr != nil {
+			ctx.Logger().Error("fail to cancel compromised-vault mempool swap", "error", cancelErr, "hash", voter.TxID)
+		}
+		return nil
 	}
 
 	// add memo for memoless transactions (after consensus is reached)

@@ -1,10 +1,13 @@
 package thorchain
 
 import (
+	"errors"
+
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -146,5 +149,49 @@ func (s *MempoolSwapLifecycleIntegrationSuite) TestCompromisedVaultRollbackFailu
 	c.Assert(newSlasher(mgr.Keeper(), mgr.EventMgr()).recoverDueMempoolSwaps(ctx, mgr, 300, 2700), IsNil)
 	checkCancelledMempoolSwap(c, ctx, mgr, fixture)
 	c.Assert(newSlasher(mgr.Keeper(), mgr.EventMgr()).recoverDueMempoolSwaps(ctx, mgr, 300, 2700), IsNil)
+	checkCancelledMempoolSwap(c, ctx, mgr, fixture)
+}
+
+type mempoolSwapReadFailingKeeper struct {
+	keeper.Keeper
+}
+
+func (k *mempoolSwapReadFailingKeeper) GetMempoolSwap(_ cosmos.Context, _ common.TxID, _ uint32) (types.MempoolSwap, bool, error) {
+	return types.MempoolSwap{}, false, errors.New("injected mempool swap read failure")
+}
+
+// A failed compromised-vault cancellation must not fail the quorum message:
+// that would roll back the no-op itself (done status, security event, and the
+// Reverted marker that blocks every payout path) along with the cancellation.
+func (s *MempoolSwapLifecycleIntegrationSuite) TestCompromisedVaultCancelFailureKeepsQuorumNoOp(c *C) {
+	ctx, mgr, fixture := setupMempoolSwapLifecycleFixture(c)
+	c.Assert(mgr.AdvSwapQueueMgr().EndBlock(ctx, mgr, false), IsNil)
+	queueItem, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, fixture.voter.TxID, 0)
+	c.Assert(err, IsNil)
+	mgr.Keeper().SetMimir(ctx, compromisedVaultMimirKeyPrefix+fixture.vault.PubKey.String(), 1)
+
+	voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, fixture.voter.TxID)
+	c.Assert(err, IsNil)
+	voter.Tx.FinaliseHeight = voter.Tx.BlockHeight
+	baseKeeper := mgr.K
+	mgr.K = &mempoolSwapReadFailingKeeper{Keeper: baseKeeper}
+	err = handleObservedTxInQuorum(ctx, mgr, fixture.node.NodeAddress, NodeAccounts{fixture.node}, NewInternalHandler(mgr), voter.Tx, voter, voter.Tx.GetSigners(), true)
+	mgr.K = baseKeeper
+	c.Assert(err, IsNil)
+
+	voter, err = mgr.Keeper().GetObservedTxInVoter(ctx, fixture.voter.TxID)
+	c.Assert(err, IsNil)
+	c.Check(voter.IsDone(), Equals, true)
+	c.Check(voter.Reverted, Equals, true)
+	c.Check(voter.UpdatedVault, Equals, false)
+	c.Check(compromisedVaultNoOpSecurityMsgFromEvents(ctx), Not(Equals), "")
+	c.Check(newSwapQueueAdv(mgr.Keeper()).isSwapReady(ctx, queueItem), Equals, false)
+
+	// Once the store recovers, the recovery worker finishes the cancellation.
+	for _, height := range []int64{ctx.BlockHeight() + 900, ctx.BlockHeight() + 901, ctx.BlockHeight() + 2701} {
+		ctx = ctx.WithBlockHeight(height)
+		c.Assert(newSlasher(mgr.Keeper(), mgr.EventMgr()).recoverDueMempoolSwaps(ctx, mgr, 300, 2700), IsNil)
+		c.Assert(mgr.AdvSwapQueueMgr().EndBlock(ctx, mgr, false), IsNil)
+	}
 	checkCancelledMempoolSwap(c, ctx, mgr, fixture)
 }
