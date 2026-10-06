@@ -691,6 +691,134 @@ func (*NetworkManagerTestSuite) TestProcessGenesisSetup(c *C) {
 	helper.failGetActiveAsgardVault = false
 }
 
+func (*NetworkManagerTestSuite) TestProcessGenesisSetupExistingVaultSkipsDelayedXMRKeygen(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(genesisBlockHeight)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	existing := NewVault(
+		genesisBlockHeight,
+		ActiveVault,
+		AsgardVault,
+		GetRandomPubKey(),
+		common.Chains{common.THORChain, common.BTCChain}.Strings(),
+		nil,
+	)
+	c.Assert(mgr.Keeper().SetVault(ctx, existing), IsNil)
+
+	c.Assert(networkMgr.processGenesisSetup(ctx), IsNil)
+
+	keygenBlock, err := mgr.Keeper().GetKeygenBlock(ctx, xmrMonovaultGenesisKeygenHeight(ctx.BlockHeight()))
+	c.Assert(err, IsNil)
+	c.Assert(keygenBlock.Keygens, HasLen, 0)
+
+	vaults, err := mgr.Keeper().GetAsgardVaults(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(vaults, HasLen, 1)
+	c.Assert(vaults[0].PubKey.Equals(existing.PubKey), Equals, true)
+}
+
+// TestFreshGenesisEarlyXMRKeygensRotateSequentially characterizes a fresh
+// mocknet chain where churn at height 61 can schedule XMR before the delayed
+// genesis keygen at height 129. The records are in distinct keygen blocks, so
+// the TSS activation boundary evaluates and rotates each generation on its own.
+// This pins the current fresh-chain behavior, not a requirement to retain two
+// generations: if future pending-keygen suppression is added, replace the
+// early-generation assertions with the new single-generation contract.
+func (*NetworkManagerTestSuite) TestFreshGenesisEarlyXMRKeygensRotateSequentially(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(genesisBlockHeight)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	membership := make(common.PubKeys, 0, 4)
+	for i := 0; i < 4; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+		membership = append(membership, na.PubKeySet.Secp256k1)
+	}
+
+	c.Assert(networkMgr.processGenesisSetup(ctx), IsNil)
+	delayedHeight := xmrMonovaultGenesisKeygenHeight(ctx.BlockHeight())
+	delayedBlock, err := mgr.Keeper().GetKeygenBlock(ctx, delayedHeight)
+	c.Assert(err, IsNil)
+	c.Assert(delayedBlock.Keygens, HasLen, 1)
+	c.Assert(delayedBlock.Keygens[0].Type, Equals, XMRMonovaultKeygen)
+
+	regular := NewVault(
+		genesisBlockHeight,
+		ActiveVault,
+		AsgardVault,
+		GetRandomPubKey(),
+		common.Chains{common.THORChain, common.BTCChain}.Strings(),
+		nil,
+	)
+	regular.Membership = membership.Strings()
+	c.Assert(mgr.Keeper().SetVault(ctx, regular), IsNil)
+
+	earlyCtx := ctx.WithBlockHeight(61)
+	mgr.Keeper().SetMimir(earlyCtx, constants.ChurnInterval.String(), 60)
+	mgr.Keeper().SetMimir(earlyCtx, constants.DesiredValidatorSet.String(), 4)
+	mgr.Keeper().SetMimir(earlyCtx, constants.AsgardSize.String(), 10)
+	c.Assert(mgr.ValidatorMgr().BeginBlock(earlyCtx, mgr, nil), IsNil)
+	earlyBlock, err := mgr.Keeper().GetKeygenBlock(earlyCtx, earlyCtx.BlockHeight())
+	c.Assert(err, IsNil)
+	c.Assert(earlyBlock.Keygens, HasLen, 1)
+	c.Assert(earlyBlock.Keygens[0].Type, Equals, XMRMonovaultKeygen)
+	c.Assert(earlyBlock.Keygens[0].ID, Not(Equals), delayedBlock.Keygens[0].ID)
+
+	handler := NewTssHandler(mgr)
+	earlyVault := NewVaultV2(
+		earlyCtx.BlockHeight(),
+		InitVault,
+		AsgardVault,
+		GetRandomPubKey(),
+		xmrMonovaultChains().Strings(),
+		nil,
+		common.EmptyPubKey,
+	)
+	earlyVault.Membership = earlyBlock.Keygens[0].Members
+	earlyVault.PubKeyFrost = GetRandomEd25519PubKey()
+	c.Assert(mgr.Keeper().SetVault(earlyCtx, earlyVault), IsNil)
+	c.Assert(handler.rotateReadyKeygenVaultFamilies(earlyCtx, earlyBlock), IsNil)
+
+	earlyVault, err = mgr.Keeper().GetVault(earlyCtx, earlyVault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(earlyVault.Status, Equals, ActiveVault)
+
+	delayedCtx := ctx.WithBlockHeight(delayedHeight)
+	delayedVault := NewVaultV2(
+		delayedCtx.BlockHeight(),
+		InitVault,
+		AsgardVault,
+		GetRandomPubKey(),
+		xmrMonovaultChains().Strings(),
+		nil,
+		common.EmptyPubKey,
+	)
+	delayedVault.Membership = delayedBlock.Keygens[0].Members
+	delayedVault.PubKeyFrost = GetRandomEd25519PubKey()
+	c.Assert(mgr.Keeper().SetVault(delayedCtx, delayedVault), IsNil)
+	c.Assert(handler.rotateReadyKeygenVaultFamilies(delayedCtx, delayedBlock), IsNil)
+
+	activeVaults, err := mgr.Keeper().GetAsgardVaultsByStatus(delayedCtx, ActiveVault)
+	c.Assert(err, IsNil)
+	c.Assert(activeVaults, HasLen, 2)
+	activeXMR := filterVaultsByChain(activeVaults, common.XMRChain)
+	c.Assert(activeXMR, HasLen, 1)
+	c.Assert(activeXMR[0].PubKey.Equals(delayedVault.PubKey), Equals, true)
+
+	initVaults, err := mgr.Keeper().GetAsgardVaultsByStatus(delayedCtx, InitVault)
+	c.Assert(err, IsNil)
+	c.Assert(filterVaultsByChain(initVaults, common.XMRChain), HasLen, 0)
+
+	earlyVault, err = mgr.Keeper().GetVault(delayedCtx, earlyVault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(earlyVault.Status, Equals, RetiringVault)
+	delayedVault, err = mgr.Keeper().GetVault(delayedCtx, delayedVault.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(delayedVault.Status, Equals, ActiveVault)
+}
+
 func (*NetworkManagerTestSuite) TestMigrateFundsPropagatesVaultPubKeyFrost(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())

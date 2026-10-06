@@ -1131,6 +1131,80 @@ func (vts *ValidatorMgrTestSuite) TestChurnInnerRecoversMissingXMRAtBFTFloor(c *
 	}
 }
 
+// TestBannedActiveNodeCannotEnterNextXMRKeygen follows the production block
+// lifecycle rather than constructing an impossible churn input. A ban reaches
+// consensus during transaction delivery, ValidatorMgr.EndBlock removes the
+// forced node from the active set and disables it, and only the following
+// BeginBlock derives the membership for replacement keygens.
+func (vts *ValidatorMgrTestSuite) TestBannedActiveNodeCannotEnterNextXMRKeygen(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(60)
+	k := mgr.Keeper()
+
+	k.SetMimir(ctx, constants.BondSlashBan.String(), 0)
+	k.SetMimir(ctx, constants.ChurnInterval.String(), 60)
+	k.SetMimir(ctx, constants.DesiredValidatorSet.String(), 4)
+	k.SetMimir(ctx, constants.AsgardSize.String(), 10)
+
+	active := make(NodeAccounts, 0, 5)
+	membership := make(common.PubKeys, 0, 5)
+	for i := 0; i < 5; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+		active = append(active, na)
+		membership = append(membership, na.PubKeySet.Secp256k1)
+	}
+
+	regular := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.THORChain, common.BTCChain}.Strings(), nil)
+	regular.Membership = membership.Strings()
+	c.Assert(k.SetVault(ctx, regular), IsNil)
+
+	xmr := NewVaultV2(1, ActiveVault, AsgardVault, GetRandomPubKey(), xmrMonovaultChains().Strings(), nil, common.EmptyPubKey)
+	xmr.Membership = membership.Strings()
+	xmr.PubKeyFrost = GetRandomEd25519PubKey()
+	c.Assert(k.SetVault(ctx, xmr), IsNil)
+
+	banned := active[0]
+	banHandler := NewBanHandler(mgr)
+	for _, banner := range active[1:] {
+		_, err := banHandler.Run(ctx, NewMsgBan(banned.NodeAddress, banner.NodeAddress))
+		c.Assert(err, IsNil)
+	}
+
+	bannedAfterVote, err := k.GetNodeAccount(ctx, banned.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(bannedAfterVote.Status, Equals, NodeActive)
+	c.Assert(bannedAfterVote.ForcedToLeave, Equals, true)
+
+	mgr.ValidatorMgr().EndBlock(ctx, mgr)
+	bannedAfterEndBlock, err := k.GetNodeAccount(ctx, banned.NodeAddress)
+	c.Assert(err, IsNil)
+	c.Assert(bannedAfterEndBlock.Status, Equals, NodeDisabled)
+
+	remaining, err := k.ListActiveValidators(ctx)
+	c.Assert(err, IsNil)
+	c.Assert(remaining, HasLen, 4)
+	c.Assert(remaining.Contains(banned), Equals, false)
+
+	nextCtx := ctx.WithBlockHeight(61)
+	c.Assert(mgr.ValidatorMgr().BeginBlock(nextCtx, mgr, nil), IsNil)
+
+	keygenBlock, err := k.GetKeygenBlock(nextCtx, nextCtx.BlockHeight())
+	c.Assert(err, IsNil)
+	var xmrKeygens []Keygen
+	for _, keygen := range keygenBlock.Keygens {
+		if keygen.Type == XMRMonovaultKeygen {
+			xmrKeygens = append(xmrKeygens, keygen)
+		}
+	}
+	c.Assert(xmrKeygens, HasLen, 1)
+	c.Assert(xmrKeygens[0].GetMembers(), HasLen, 4)
+	c.Assert(xmrKeygens[0].GetMembers().Contains(banned.PubKeySet.Secp256k1), Equals, false)
+	for _, na := range remaining {
+		c.Assert(xmrKeygens[0].GetMembers().Contains(na.PubKeySet.Secp256k1), Equals, true)
+	}
+}
+
 func (vts *ValidatorMgrTestSuite) TestHasPendingCoScheduledKeygenUsesExtendedValidity(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	const retryBlocks int64 = 2
