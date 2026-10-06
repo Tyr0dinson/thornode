@@ -1505,14 +1505,23 @@ func (s *SlashingSuite) TestLinkedOutboundProgressWeighsSubConsensusLinks(c *C) 
 	}
 
 	// A majority observation of some other payment does not hold this item.
-	ctx, mgr := setupManagerForTest(c)
-	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
-	f := newRecoveryLinkFixture(c)
-	obs := f.observation(f.memberSigners...)
-	obs.Tx.ToAddress = GetRandomBTCAddress()
-	f.link(ctx, mgr, NewObservedTxVoter(obs.Tx.ID, []common.ObservedTx{obs}))
-	ctx = ctx.WithBlockHeight(liveHeight)
-	c.Check(slasher.linkedOutboundProgress(ctx, mgr, f.vault, signingTransPeriod, startHeight, f.toi), Equals, outboundNotObserved)
+	for _, other := range []struct {
+		name   string
+		mutate func(obs *common.ObservedTx)
+	}{
+		{"another destination", func(obs *common.ObservedTx) { obs.Tx.ToAddress = GetRandomBTCAddress() }},
+		{"another inbound", func(obs *common.ObservedTx) { obs.Tx.Memo = "OUT:" + GetRandomTxHash().String() }},
+	} {
+		ctx, mgr := setupManagerForTest(c)
+		slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+		f := newRecoveryLinkFixture(c)
+		obs := f.observation(f.memberSigners...)
+		other.mutate(&obs)
+		f.link(ctx, mgr, NewObservedTxVoter(obs.Tx.ID, []common.ObservedTx{obs}))
+		ctx = ctx.WithBlockHeight(liveHeight)
+		c.Check(slasher.linkedOutboundProgress(ctx, mgr, f.vault, signingTransPeriod, startHeight, f.toi),
+			Equals, outboundNotObserved, Commentf("case %q", other.name))
+	}
 }
 
 // A finalised voter holds treasury recovery only through its consensus tx.
@@ -2526,6 +2535,8 @@ func (s *SlashingSuite) TestNeedsNewVaultWeighsEveryLink(c *C) {
 	// link describes one observed link to record for the item under test.
 	type link struct {
 		signers        []string
+		memo           string
+		namesInbound   bool
 		toAddress      common.Address
 		amount         *cosmos.Uint
 		finalised      bool
@@ -2557,6 +2568,10 @@ func (s *SlashingSuite) TestNeedsNewVaultWeighsEveryLink(c *C) {
 			tx.ID = outhash
 			tx.Chain = toi.Chain
 			tx.ToAddress = toi.ToAddress
+			tx.Memo = l.memo
+			if l.namesInbound {
+				tx.Memo = "OUT:" + inhash.String()
+			}
 			if !l.toAddress.IsEmpty() {
 				tx.ToAddress = l.toAddress
 			}
@@ -2659,6 +2674,25 @@ func (s *SlashingSuite) TestNeedsNewVaultWeighsEveryLink(c *C) {
 			name:    "majority reporting an unrelated amount",
 			height:  liveHeight,
 			links:   []link{{signers: memberSigners[:3], amount: &unrelatedAmount}},
+			expects: true,
+		},
+		{
+			name:    "majority with a memo naming this inbound",
+			height:  liveHeight,
+			links:   []link{{signers: memberSigners[:3], namesInbound: true}},
+			expects: false,
+		},
+		{
+			// The payload matches, but the memo says it pays another inbound.
+			name:    "majority with a memo naming another inbound",
+			height:  liveHeight,
+			links:   []link{{signers: memberSigners[:3], memo: "OUT:" + GetRandomTxHash().String()}},
+			expects: true,
+		},
+		{
+			name:    "majority with an unparseable memo",
+			height:  liveHeight,
+			links:   []link{{signers: memberSigners[:3], memo: "OUT:xyz"}},
 			expects: true,
 		},
 		{

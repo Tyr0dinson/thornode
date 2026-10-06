@@ -1639,11 +1639,12 @@ func (s *SlasherImpl) needsNewVault(ctx cosmos.Context, mgr Manager, vault Vault
 func (s *SlasherImpl) pendingVaultObservation(ctx cosmos.Context, mgr Manager, vault Vault, signingTransPeriod, startHeight int64, toi TxOutItem, hash common.TxID, voter ObservedTxVoter, staleMsg string) bool {
 	// in the event there are multiple observed txouts for a given inhash, we
 	// focus on the observations that could actually be this outbound: the
-	// assigned vault as sender, and a payload the handlers would accept as
-	// fulfilling the item.
+	// assigned vault as sender, a memo naming this inbound, and a payload the
+	// handlers would accept as fulfilling the item.
 	signers := make(map[string]bool)
 	for _, tx1 := range voter.Txs {
 		if !txOutPubKeyMatchesObserved(toi.Chain, tx1.ObservedPubKey, toi) ||
+			!outboundMemoNamesInbound(ctx, mgr.Keeper(), tx1.Tx.Memo, toi.InHash) ||
 			!outboundObservationFulfils(ctx, mgr, tx1, toi) {
 			continue
 		}
