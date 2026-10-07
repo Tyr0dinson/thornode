@@ -291,6 +291,25 @@ outer:
 		}
 		f.vaults = append(f.vaults, vault)
 	}
+
+	// signer membership: nodes keep every vault they were ever a member of
+	// (mainnet 2026-10: median 104 per active node, ~160 distinct vaults)
+	const historicalVaults, membershipPerNode = 160, 104
+	history := make([]string, historicalVaults)
+	for i := range history {
+		history[i] = perfPubKey(b, fmt.Sprintf("retired-vault-%d", i)).String()
+	}
+	for i := range f.nodes {
+		na := f.nodes[i].na
+		for j := 0; j < membershipPerNode-1; j++ {
+			na.SignerMembership = append(na.SignerMembership, history[(i+j)%historicalVaults])
+		}
+		na.SignerMembership = append(na.SignerMembership, f.vaults[i%nVaults].PubKey.String())
+		if err := k.SetNodeAccount(ctx, na); err != nil {
+			b.Fatal(err)
+		}
+		f.nodes[i].na = na
+	}
 	return f
 }
 
