@@ -849,6 +849,27 @@ func MemoToScripts(memo string, maxDataCarrierSize int, nullDataScript, payToCon
 // UTXO Consolidation
 ////////////////////////////////////////////////////////////////////////////////////////
 
+// consolidateKeysignBlockCadence is the spacing, in THORChain blocks, of the
+// shared boundaries that UTXO-consolidation keysigns anchor on (~5 min at
+// 6s/block). A consolidation signed anywhere within one cadence window hands
+// go-tss boundary×cadence as its signing height, so every vault member converges
+// on one leader and one keysign session instead of splitting across per-node
+// tips. Matches keepAliveThorBlockCadence used by the SOL keep-alive anchor.
+const consolidateKeysignBlockCadence = 50
+
+// anchorConsolidateHeight quantizes a raw THORChain tip to the shared cadence
+// boundary that every vault member converges on for a consolidation keysign. The
+// result is ≤ height (so it stays a valid signing_height the keysign-party query
+// accepts — future heights are rejected) and equal for any two tips in the same
+// cadence window. Below one cadence it returns the height unchanged so an early
+// chain cannot anchor to 0.
+func anchorConsolidateHeight(height int64) int64 {
+	if height < consolidateKeysignBlockCadence {
+		return height
+	}
+	return height / consolidateKeysignBlockCadence * consolidateKeysignBlockCadence
+}
+
 func (c *Client) consolidateVaultUTXOs(vault types.Vault, utxosToSpend, scannedHeight int64) error {
 	lock := c.GetVaultLock(vault.PubKey.String())
 
@@ -896,6 +917,17 @@ func (c *Client) consolidateVaultUTXOs(vault types.Vault, utxosToSpend, scannedH
 		if err != nil {
 			return fmt.Errorf("get THORChain block height: %w", err)
 		}
+		// A consolidation is not a consensus txOut, so unlike a scheduled outbound
+		// it carries no agreed signing height — every vault member reads its own
+		// tip here, which differs by a few blocks across the fleet. The keysign
+		// leader is derived from this height (sha256(msgID‖height‖peer)) and go-tss
+		// batches keysign tasks by {algo, height}, so a per-node tip splits members
+		// across different leaders and keysign sessions: the consolidate
+		// leader-blame race that jails whichever node a sub-party elects. Anchoring
+		// to the shared cadence boundary gives every member the same, valid height,
+		// exactly the convergence a scheduled outbound gets from its consensus
+		// txOut.Height. (ZEC derives its height from the expiry window above.)
+		height = anchorConsolidateHeight(height)
 	}
 
 	rawTx, _, _, err := c.SignTx(txOutItem, height)
