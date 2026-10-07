@@ -176,6 +176,10 @@ func perfNodeAccount(b testing.TB, label string, status NodeStatus) (NodeAccount
 // fixture
 // ---------------------------------------------------------------------------
 
+// perfMinJoinLastAge is how many blocks before the fixture height the
+// MinJoinVersion last changed (mainnet: 28,114,071 - 27,937,292).
+const perfMinJoinLastAge = 176_779
+
 type perfNode struct {
 	na   NodeAccount
 	priv secp256k1.PrivKey
@@ -275,6 +279,12 @@ outer:
 			}
 		}
 	}
+
+	// MinJoinLast is stored on mainnet (SetMinJoinLast runs on every version
+	// change); unset, GetMinJoinLast falls back to GetMinJoinVersion and scans
+	// the active set on every call. Mainnet 2026-10: next_since_height
+	// 27,937,292 at shape height 28,114,071.
+	k.SetMinJoinLast(ctx.WithBlockHeight(ctx.BlockHeight() - perfMinJoinLastAge))
 
 	// asgard vaults: active nodes split across vaults like mainnet
 	nVaults := len(shape.AsgardVaults)
@@ -381,28 +391,44 @@ func (f *perfFixture) inboundSwap(b testing.TB, vault int, height int64, label s
 	)
 }
 
-// seedPendingOutbounds fills the signing-period window ending at height with a few
-// unsent ETH outbounds per block, spread over the asgard vaults. Vault selection
-// (GetPendingOutbounds -> SortBySecurity) weighs every one of them on mainnet.
+// seedPendingOutbounds fills the signing-period window ending at height with a
+// mainnet-like txout backlog. Mainnet 2026-10 (four 300-block windows of the
+// txout store): 62-127 items in 52-90 non-empty blocks, all but the last few
+// blocks' items already signed (OutHash set; 0-6 unsigned, the outbound queue
+// held 4 at shape time). Here: one ETH outbound every third block, two every
+// ninth (134 items), signed except in the last 10 blocks (4 items), spread
+// over the asgard vaults. Vault selection (GetPendingOutbounds ->
+// SortBySecurity) reads every one of them and weighs the unsigned ones.
 func (f *perfFixture) seedPendingOutbounds(b testing.TB, height int64) {
 	b.Helper()
+	const unsignedBlocks = 10
 	period := f.mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	n := 0
 	f.commitInto(func(ctx cosmos.Context) {
 		for h := height - period; h <= height; h++ {
-			if h < 1 {
+			if h < 1 || h%3 != 0 {
 				continue
 			}
+			items := 1
+			if h%9 == 0 {
+				items = 2
+			}
 			txOut := NewTxOut(h)
-			for j := 0; j < 3; j++ {
+			for j := 0; j < items; j++ {
 				label := fmt.Sprintf("pending/%d/%d", h, j)
-				txOut.TxArray = append(txOut.TxArray, TxOutItem{
+				item := TxOutItem{
 					Chain:       common.ETHChain,
 					ToAddress:   perfAddr(b, common.ETHChain, label),
-					VaultPubKey: f.vaults[j%len(f.vaults)].PubKey,
+					VaultPubKey: f.vaults[n%len(f.vaults)].PubKey,
 					Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)),
 					Memo:        "OUT:" + perfTxID(b, label).String(),
 					InHash:      perfTxID(b, label),
-				})
+				}
+				if h <= height-unsignedBlocks {
+					item.OutHash = perfTxID(b, label+"/out")
+				}
+				txOut.TxArray = append(txOut.TxArray, item)
+				n++
 			}
 			if err := f.mgr.Keeper().SetTxOut(ctx, txOut); err != nil {
 				b.Fatal(err)
@@ -812,8 +838,8 @@ func BenchmarkPerfCommonHelpers(b *testing.B) {
 func BenchmarkPerfTxOut(b *testing.B) {
 	f := newPerfFixture(b)
 	height := f.ctx.BlockHeight() + 1
-	// vault selection weighs every unsent item of the signing period
-	// against each vault; mainnet carries a few per block
+	// vault selection reads every txout item of the signing period and
+	// weighs the unsent ones against each vault
 	f.seedPendingOutbounds(b, height)
 	f.commitInto(func(ctx cosmos.Context) {
 		if err := f.mgr.Keeper().MintToModule(ctx, ModuleName, common.NewCoin(common.RuneNative, cosmos.NewUint(1000*common.One))); err != nil {
