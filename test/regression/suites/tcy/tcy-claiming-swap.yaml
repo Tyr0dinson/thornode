@@ -1,18 +1,6 @@
-# TCY Claiming Swap Regression Test
-#
-# This test validates the TCY claiming module's streaming swap functionality.
-# The claiming module periodically swaps accumulated RUNE for TCY using streaming
-# swaps to prevent price manipulation attacks.
-#
-# NOTE: This test uses relaxed balance assertions (> 0 instead of exact amounts)
-# because streaming swaps change pool dynamics differently than the old direct swap
-# method. The core functionality is thoroughly tested in unit tests
-# (x/thorchain/manager_network_current_test.go). This regression test validates:
-# - Streaming swap initiation (RUNE transfers from claiming module)
-# - Pool availability maintenance
-# - Swap fee collection to claiming module
-# - Affiliate fee handling
-#
+# TCY claiming swap: every distribution cycle (BLOCKS_PER_YEAR=1825 -> every 5
+# blocks) the claiming module's RUNE is swapped to TCY with a streaming swap,
+# and the TCY must land back in the claiming module.
 type: env
 key: BLOCKS_PER_YEAR
 value: "1825"
@@ -119,16 +107,15 @@ asserts:
   - .pool_units == "25000000000000"
   - .LP_units == "25000000000000"
 ---
-# Configure claiming swap parameters via mimir
-type: tx-mimir
-key: TCYClaimingSwapHalt
-value: 0
-signer: {{ addr_thor_dog }}
----
+# Configure claiming swap parameters via mimir (one tx-mimir per signer per
+# block); unhalt last so the first claiming swap uses these stream parameters
 type: tx-mimir
 key: TCYClaimingSwapQuantity
 value: 2
 signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
 ---
 type: tx-mimir
 key: TCYClaimingSwapInterval
@@ -138,37 +125,87 @@ signer: {{ addr_thor_dog }}
 type: create-blocks
 count: 1
 ---
-# NOTE: The claiming swap now uses streaming swaps for security (see ADR-XXX).
-# The regression test framework currently has limitations testing streaming swaps with module-to-module
-# destinations, particularly around outbound processing. The unit tests in manager_network_current_test.go
-# provide comprehensive coverage of the streaming swap functionality.
-# TODO: Update this regression test once streaming swap + module outbound handling is improved.
-#
-# For now, we just verify the swap is initiated (RUNE transferred to Asgard)
-type: create-blocks
-count: 5
+type: tx-mimir
+key: TCYClaimingSwapHalt
+value: 0
+signer: {{ addr_thor_dog }}
 ---
-# Verify claiming module RUNE was transferred (swap initiated)
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .TCYCLAIMINGSWAPHALT == 0
+  - .TCYCLAIMINGSWAPQUANTITY == 2
+  - .TCYCLAIMINGSWAPINTERVAL == 1
+---
+type: create-blocks
+count: 3
+---
+# The distribution at height 10 moves the claiming RUNE to Asgard and queues
+# a streaming swap that pays TCY back to the claiming module
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_claim }}
 asserts:
   - .balances|length == 0
 ---
+type: check
+endpoint: http://localhost:1317/thorchain/swaps/streaming
+asserts:
+  - length == 1
+  - .[0].source_asset == "THOR.RUNE"
+  - .[0].target_asset == "THOR.TCY"
+  - .[0].destination == "{{ addr_module_tcy_claim }}"
+  - .[0].deposit == "${INIT_CLAIMING_RUNE}"
+  - .[0].quantity == 2
+  - .[0].interval == 1
+---
+type: create-blocks
+count: 3
+---
+# The stream completed: the claiming module holds the swapped TCY plus the TCY
+# pool's liquidity fee (in RUNE), which is routed to the claiming module.
+type: check
+endpoint: http://localhost:1317/thorchain/swaps/streaming
+asserts:
+  - length == 0
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_claim }}
+asserts:
+  - .balances|length == 2
+  - .balances[]|select(.denom == "tcy")|.amount|tonumber == 34744723897057
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 121887610511
+---
 # No claimer records exist in this suite, so all TCY in the claim module is protocol-owned.
 type: check
 endpoint: http://localhost:1317/thorchain/tcy_protocol_owned
 asserts:
-  - .amount|tonumber == 36363636363636
+  - .amount|tonumber == 34744723897057
 ---
-type: create-blocks
-count: 5
----
-# Skip exact balance check due to streaming swap timing in regression framework
-# The swap may still be in progress or completing. Unit tests verify exact amounts.
 type: check
 endpoint: http://localhost:1317/thorchain/pool/THOR.TCY
 asserts:
   - .status == "Available"
+  - .balance_asset == "365255276102943"
+  - .balance_rune == "27378112389489"
+---
+# The next distribution (height 15) swaps the accrued liquidity fee as well
+type: create-blocks
+count: 5
+---
+type: check
+endpoint: http://localhost:1317/thorchain/swaps/streaming
+asserts:
+  - length == 0
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_claim }}
+asserts:
+  - .balances|length == 2
+  - .balances[]|select(.denom == "tcy")|.amount|tonumber == 36360052587386
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 271020408
 ---
 # Swap RUNE -> TCY and verify fees goes to Claiming module
 type: tx-deposit
@@ -184,14 +221,14 @@ count: 1
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_claim }}
 asserts:
-  - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${CLAIM_RUNE_AFTER_FIRST_SWAP=3999999}
+  - .balances|length == 2
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 274656807
 ---
 # RUNE swap fees accumulating in the claim module don't change protocol-owned TCY.
 type: check
 endpoint: http://localhost:1317/thorchain/tcy_protocol_owned
 asserts:
-  - .amount|tonumber == ${CLAIM_SWAP_TCY_AMT}
+  - .amount|tonumber == 36360052587386
 ---
 # Swap TCY -> RUNE and verify fees goes to Claiming module
 type: tx-deposit
@@ -204,11 +241,20 @@ memo: "SWAP:THOR.RUNE:{{ addr_thor_fish }}"
 type: create-blocks
 count: 1
 ---
+# The distribution at height 20 sweeps the accrued swap fees into the next
+# claiming swap in the same block
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_tcy_claim }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${CLAIM_RUNE_AFTER_SECOND_SWAP=4000155}
+  - .balances[]|select(.denom == "tcy")|.amount|tonumber == 36360052587386
+---
+type: check
+endpoint: http://localhost:1317/thorchain/swaps/streaming
+asserts:
+  - length == 1
+  - .[0].destination == "{{ addr_module_tcy_claim }}"
+  - .[0].deposit == "274657015"
 ---
 # Swap RUNE -> TCY with affiliate fees
 type: check
@@ -220,8 +266,8 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fish }}
 asserts:
   - .balances|length == 2
-  - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${FISH_TCY_AFTER_SWAPS=159872076759}
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${FISH_RUNE_AFTER_SWAPS=858549677}
+  - .balances[]|select(.denom == "tcy")|.amount|tonumber == 132137892648
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 871678082
 ---
 type: tx-deposit
 signer: {{ addr_thor_fish }}
@@ -237,14 +283,14 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${PIG_RUNE_AFTER_FIRST_AFF=4999998}
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 5000098
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fish }}
 asserts:
   - .balances|length == 2
-  - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${FISH_TCY_AFTER_FIRST_AFF=167785470260}
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${FISH_RUNE_AFTER_FIRST_AFF=356549677}
+  - .balances[]|select(.denom == "tcy")|.amount|tonumber == 138678518290
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 369678082
 ---
 # Swap TCY -> RUNE with affiliate fees
 type: tx-deposit
@@ -261,11 +307,11 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${PIG_RUNE_AFTER_SECOND_AFF=8127527}
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 8784110
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fish }}
 asserts:
   - .balances|length == 2
-  - .balances[]|select(.denom == "tcy")|.amount|tonumber == ${FISH_TCY_FINAL=162785470260}
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${FISH_RUNE_FINAL=664175091}
+  - .balances[]|select(.denom == "tcy")|.amount|tonumber == 133678518290
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 742295245
