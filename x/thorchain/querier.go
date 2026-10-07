@@ -57,7 +57,7 @@ var (
 	queryExport = func(_ sdk.Context, _ *Mgrs) ([]byte, error) {
 		return nil, fmt.Errorf("export query not supported")
 	}
-	tendermintClient    *tmhttp.HTTP
+	tendermintClient    *tmhttp.HTTP // fallback when no in-process client is set
 	tendermintClientErr error
 	initTendermintOnce  = sync.Once{}
 )
@@ -3889,9 +3889,9 @@ func (qs queryServer) queryInvariant(ctx cosmos.Context, req *types.QueryInvaria
 }
 
 func (qs queryServer) queryBlock(ctx cosmos.Context, req *types.QueryBlockRequest) (*types.QueryBlockResponse, error) {
-	initTendermintOnce.Do(initTendermint)
-	if tendermintClientErr != nil {
-		return nil, tendermintClientErr
+	tmClient, err := getTendermintClient()
+	if err != nil {
+		return nil, err
 	}
 	height := ctx.BlockHeight()
 	if parsed, err := strconv.ParseInt(req.Height, 10, 64); err == nil {
@@ -3899,11 +3899,11 @@ func (qs queryServer) queryBlock(ctx cosmos.Context, req *types.QueryBlockReques
 	}
 
 	// get the block and results from tendermint rpc
-	block, err := tendermintClient.Block(ctx.Context(), &height)
+	block, err := tmClient.Block(ctx.Context(), &height)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get block from tendermint rpc: %w", err)
 	}
-	results, err := tendermintClient.BlockResults(ctx.Context(), &height)
+	results, err := tmClient.BlockResults(ctx.Context(), &height)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get block results from tendermint rpc: %w", err)
 	}

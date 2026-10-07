@@ -2,10 +2,10 @@ package thorchain
 
 import (
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
-	"testing"
 
 	dbm "github.com/cometbft/cometbft-db"
 	abci "github.com/cometbft/cometbft/abci/types"
@@ -15,6 +15,7 @@ import (
 	"github.com/cometbft/cometbft/rpc/core"
 	ctypes "github.com/cometbft/cometbft/rpc/core/types"
 	rpcserver "github.com/cometbft/cometbft/rpc/jsonrpc/server"
+	rpctypes "github.com/cometbft/cometbft/rpc/jsonrpc/types"
 	sm "github.com/cometbft/cometbft/state"
 	"github.com/cometbft/cometbft/store"
 	cmttypes "github.com/cometbft/cometbft/types"
@@ -26,8 +27,7 @@ import (
 const perfMainnetBlockFile = "../../test/performance/testdata/mainnet-block-28143210.json.gz"
 
 // loadPerfMainnetBlock returns the mainnet block and its FinalizeBlock response.
-func loadPerfMainnetBlock(b testing.TB) (*cmttypes.Block, *abci.ResponseFinalizeBlock) {
-	b.Helper()
+func loadPerfMainnetBlock(b interface{ Fatal(args ...any) }) (*cmttypes.Block, *abci.ResponseFinalizeBlock) {
 	f, err := os.Open(perfMainnetBlockFile)
 	if err != nil {
 		b.Fatal(err)
@@ -124,13 +124,28 @@ func serveBlockRPC(routes map[string]*rpcserver.RPCFunc) (*tmhttp.HTTP, func(), 
 }
 
 // connectNodeRPC wires queryBlock to the CometBFT node the way a running
-// THORNode does: through the node's own RPC server (httpClient). It returns a
-// function restoring the previous wiring.
-func connectNodeRPC(_ *core.Environment, httpClient *tmhttp.HTTP) func() {
+// THORNode does: the HTTP client to the node's own RPC server is the fallback,
+// and app.RegisterTendermintService hands queryBlock the SDK's in-process
+// client (rpc/client/local, which calls the RPC environment directly, as
+// envClient does). It returns a function restoring the previous wiring.
+func connectNodeRPC(env *core.Environment, httpClient *tmhttp.HTTP) func() {
 	initTendermintOnce.Do(func() {})
-	prevClient, prevErr := tendermintClient, tendermintClientErr
+	prevClient, prevErr, prevLocal := tendermintClient, tendermintClientErr, localTendermintClient.Load()
 	tendermintClient, tendermintClientErr = httpClient, nil
+	SetLocalTendermintClient(envClient{env})
 	return func() {
 		tendermintClient, tendermintClientErr = prevClient, prevErr
+		localTendermintClient.Store(prevLocal)
 	}
+}
+
+// envClient calls the RPC environment directly, as rpc/client/local does.
+type envClient struct{ env *core.Environment }
+
+func (e envClient) Block(_ context.Context, height *int64) (*ctypes.ResultBlock, error) {
+	return e.env.Block(&rpctypes.Context{}, height)
+}
+
+func (e envClient) BlockResults(_ context.Context, height *int64) (*ctypes.ResultBlockResults, error) {
+	return e.env.BlockResults(&rpctypes.Context{}, height)
 }
