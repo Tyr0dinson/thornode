@@ -59,6 +59,7 @@
   - [Economic Model](concepts/economic-model.md)
   - [Incentive Pendulum](concepts/incentive-pendulum.md)
   - [Network Halts](concepts/network-halts.md)
+  - [Request for Ragnarok](concepts/ragnarok-request.md)
   - [Constants and Mimirs](mimir.md)
   - [Fees](concepts/fees.md)
   - [Delays](concepts/delays.md)
