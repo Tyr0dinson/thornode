@@ -251,6 +251,7 @@
           "units": "100000000000"
         }
       ],
+      "mempool_swaps": [],
       "mimirs": [
         {
           "key": "ADVSWAPQUEUERAPIDSWAPMAX",
@@ -350,6 +351,7 @@
           ],
           "finalised_height": "16",
           "height": "6",
+          "mempool_swap_tor": "0",
           "out_txs": null,
           "outbound_height": "16",
           "tx": {
@@ -458,6 +460,7 @@
       "rune_providers": [],
       "secured_assets": [],
       "sol_vault_nonces": [],
+      "staged_outbounds": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
       "swapper_clout": [
