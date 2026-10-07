@@ -138,7 +138,9 @@ func initRootCmd(
 
 	// AddCommandsWithStartCmdOptions, unlike AddCommands, does not register
 	// module-hash-by-height, so add it here to keep it in every build.
-	server.AddCommandsWithStartCmdOptions(rootCmd, app.DefaultNodeHome, newApp, appExport, startCmdOptions(addModuleInitFlags))
+	startOpts := startCmdOptions(addModuleInitFlags)
+	startOpts.DBOpener = openAppDB
+	server.AddCommandsWithStartCmdOptions(rootCmd, app.DefaultNodeHome, newApp, appExport, startOpts)
 	rootCmd.AddCommand(server.ModuleHashByHeightQuery(newApp))
 	wasmcli.ExtendUnsafeResetAllCmd(rootCmd)
 
