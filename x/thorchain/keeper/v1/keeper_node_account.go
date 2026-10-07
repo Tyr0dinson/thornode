@@ -93,28 +93,33 @@ func (k KVStore) ListValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (
 // order, keeping at most limit of them (limit < 0: all). The whole node
 // account store is iterated whatever the limit, so store access, and so gas,
 // is the same as for an unlimited listing; past the limit, matching records
-// are just not unmarshalled.
+// are just not copied out.
 func (k KVStore) listValidatorsByStatus(ctx cosmos.Context, status NodeStatus, limit int) (NodeAccounts, error) {
 	nodeAccounts := make(NodeAccounts, 0)
 	naIterator := k.GetNodeAccountIterator(ctx)
 	defer naIterator.Close()
 	for ; naIterator.Valid(); naIterator.Next() {
-		// Most node accounts do not match (e.g. ~100 of ~190 are active), so
-		// read status and type from the wire bytes and skip unmarshalling the
-		// rest. The iteration, and so the store access, is unchanged.
-		naStatus, naType, ok := peekNodeAccountStatusType(naIterator.Value())
-		if ok && (naType != NodeTypeValidator || naStatus != status) {
+		full := limit >= 0 && len(nodeAccounts) >= limit
+		// Node accounts rarely change, so the decoding of nearly every record,
+		// matching or not (e.g. ~100 of ~190 are active), is memoized under its
+		// exact bytes: filter on it and copy out only the matches. The
+		// iteration, and so the store access, is unchanged.
+		if na := nodeAccountDecodeMemo.shared(k, naIterator.Key(), naIterator.Value()); na != nil {
+			if !full && na.Type == NodeTypeValidator && na.Status == status {
+				nodeAccounts = append(nodeAccounts, keeper.CloneNodeAccount(*na))
+			}
 			continue
 		}
-		full := limit >= 0 && len(nodeAccounts) >= limit
-		if ok && full {
+		// Bytes that do not decode: as before, a record whose status and type
+		// can be read from the wire and do not match (or that is past the
+		// limit) is skipped; any other one is unmarshalled for its error.
+		naStatus, naType, ok := peekNodeAccountStatusType(naIterator.Value())
+		if ok && (naType != NodeTypeValidator || naStatus != status || full) {
 			continue
 		}
 		var na NodeAccount
-		if !k.memoDecodeNodeAccount(naIterator.Key(), naIterator.Value(), &na) {
-			if err := k.unmarshalNodeAccount(naIterator.Value(), &na); err != nil {
-				return nodeAccounts, dbError(ctx, "Unmarshal: node account", err)
-			}
+		if err := k.unmarshalNodeAccount(naIterator.Value(), &na); err != nil {
+			return nodeAccounts, dbError(ctx, "Unmarshal: node account", err)
 		}
 		if !full && na.Type == NodeTypeValidator && na.Status == status {
 			nodeAccounts = append(nodeAccounts, na)

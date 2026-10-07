@@ -2,6 +2,7 @@ package keeperv1
 
 import (
 	"bytes"
+	"fmt"
 
 	storetypes "cosmossdk.io/store/types"
 	"github.com/blang/semver"
@@ -642,4 +643,91 @@ func (s *KeeperNodeAccountSuite) TestListActiveValidatorsUpTo(c *C) {
 		// same store access, so the same gas
 		c.Check(upToCtx.GasMeter().GasConsumed(), Equals, allCtx.GasMeter().GasConsumed(), Commentf("n=%d", n))
 	}
+}
+
+// listValidatorsByStatusOracle is listValidatorsByStatus before it filtered on
+// memoized decodings: status and type peeked from the wire, the rest
+// unmarshalled.
+func listValidatorsByStatusOracle(ctx cosmos.Context, k KVStore, status NodeStatus, limit int) (NodeAccounts, error) {
+	nodeAccounts := make(NodeAccounts, 0)
+	naIterator := k.GetNodeAccountIterator(ctx)
+	defer naIterator.Close()
+	for ; naIterator.Valid(); naIterator.Next() {
+		naStatus, naType, ok := peekNodeAccountStatusType(naIterator.Value())
+		if ok && (naType != NodeTypeValidator || naStatus != status) {
+			continue
+		}
+		full := limit >= 0 && len(nodeAccounts) >= limit
+		if ok && full {
+			continue
+		}
+		var na NodeAccount
+		if err := k.cdc.Unmarshal(naIterator.Value(), &na); err != nil {
+			return nodeAccounts, dbError(ctx, "Unmarshal: node account", err)
+		}
+		if !full && na.Type == NodeTypeValidator && na.Status == status {
+			nodeAccounts = append(nodeAccounts, na)
+		}
+	}
+	return nodeAccounts, nil
+}
+
+func (s *KeeperNodeAccountSuite) TestListValidatorsByStatusMatchesOracle(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	statuses := []NodeStatus{types.NodeStatus_Unknown, types.NodeStatus_Whitelisted, NodeStandby, types.NodeStatus_Ready, NodeActive, types.NodeStatus_Disabled}
+	var nodes NodeAccounts
+	for i := 0; i < 40; i++ {
+		na := GetRandomValidatorNode(statuses[i%len(statuses)])
+		if i%7 == 0 {
+			na.Type = NodeTypeVault
+		}
+		na.SignerMembership = []string{GetRandomPubKey().String(), GetRandomPubKey().String()}
+		c.Assert(k.SetNodeAccount(ctx, na), IsNil)
+		nodes = append(nodes, na)
+	}
+
+	check := func(step string) {
+		for _, status := range statuses {
+			for _, limit := range []int{-1, 0, 1, 3, 100} {
+				wantCtx := ctx.WithGasMeter(storetypes.NewInfiniteGasMeter())
+				want, wantErr := listValidatorsByStatusOracle(wantCtx, k, status, limit)
+				for pass := 0; pass < 2; pass++ { // memo miss, then hit
+					gotCtx := ctx.WithGasMeter(storetypes.NewInfiniteGasMeter())
+					got, gotErr := k.listValidatorsByStatus(gotCtx, status, limit)
+					comment := Commentf("%s status=%s limit=%d pass=%d", step, status, limit, pass)
+					c.Assert(gotErr == nil, Equals, wantErr == nil, comment)
+					c.Assert(got, DeepEquals, want, comment)
+					c.Assert(gotCtx.GasMeter().GasConsumed(), Equals, wantCtx.GasMeter().GasConsumed(), comment)
+					if len(got) > 0 { // results are copies, not the memoized values
+						got[0].NodeAddress[0] ^= 0xff
+						got[0].SignerMembership[0] = "changed"
+						got[0].Bond.BigIntMut().SetInt64(1)
+					}
+				}
+			}
+		}
+	}
+	check("initial")
+
+	// changed records are seen
+	for i := 0; i < len(nodes); i += 3 {
+		nodes[i].Status = statuses[(i+1)%len(statuses)]
+		nodes[i].Bond = nodes[i].Bond.AddUint64(1)
+		c.Assert(k.SetNodeAccount(ctx, nodes[i]), IsNil)
+	}
+	check("changed")
+
+	// records whose bytes are unusual or do not decode; one that does not
+	// decode but peeks as not matching is skipped, the others are errors
+	store := k.kvStore(ctx)
+	for i, bz := range nodeAccountTestBlobs(c, k) {
+		if len(bz) == 0 {
+			continue // an empty value cannot be stored
+		}
+		store.Set(k.GetKey(prefixNodeAccount, fmt.Sprintf("zz-blob-%02d", i)), bz)
+	}
+	standby := protowire.AppendTag(nil, nodeAccountStatusField, protowire.VarintType)
+	standby = protowire.AppendVarint(standby, uint64(NodeStandby))
+	store.Set(k.GetKey(prefixNodeAccount, "zz-a-undecodable-standby"), append(standby, 0x4a, 0x05, 'a'))
+	check("blobs")
 }

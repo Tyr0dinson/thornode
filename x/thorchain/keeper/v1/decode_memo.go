@@ -47,17 +47,29 @@ func newDecodeMemo[T any](maxEntries int, decode func(KVStore, []byte, *T) error
 // freely. It returns false, leaving *out untouched, if bz does not decode; the
 // caller then decodes bz itself to get the error.
 func (m *decodeMemo[T]) get(k KVStore, key, bz []byte, out *T) bool {
+	v := m.shared(k, key, bz)
+	if v == nil {
+		return false
+	}
+	*out = m.clone(*v)
+	return true
+}
+
+// shared is get without the copy: it returns the memoized decoding of bz, the
+// value stored under key, or nil if bz does not decode. The value is shared
+// with the memo and every other caller, so it must only be read; hand out a
+// clone of it, never the value itself.
+func (m *decodeMemo[T]) shared(k KVStore, key, bz []byte) *T {
 	m.mu.RLock()
 	e := m.m[string(key)]
 	m.mu.RUnlock()
 	if e != nil && bytes.Equal(e.raw, bz) {
-		*out = m.clone(e.v)
-		return true
+		return &e.v
 	}
 
 	e = &decodeMemoEntry[T]{raw: bytes.Clone(bz)}
 	if err := m.decode(k, e.raw, &e.v); err != nil {
-		return false
+		return nil
 	}
 	m.mu.Lock()
 	if _, ok := m.m[string(key)]; !ok && len(m.m) >= m.maxEntries {
@@ -65,8 +77,7 @@ func (m *decodeMemo[T]) get(k KVStore, key, bz []byte, out *T) bool {
 	}
 	m.m[string(key)] = e
 	m.mu.Unlock()
-	*out = m.clone(e.v)
-	return true
+	return &e.v
 }
 
 // len returns the number of memoized entries.
