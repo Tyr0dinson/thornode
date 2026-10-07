@@ -4,10 +4,11 @@
 package thorchain
 
 // RouterV6.1 stagenet deployment (CREATE2, same address on ETH/AVAX/BSC/BASE):
-//   https://etherscan.io/address/0x0DC6108C9225Ce93Da589B4CE83c104b34693117
-//   https://snowtrace.io/address/0x0DC6108C9225Ce93Da589B4CE83c104b34693117
-//   https://bscscan.com/address/0x0DC6108C9225Ce93Da589B4CE83c104b34693117
-//   https://basescan.org/address/0x0DC6108C9225Ce93Da589B4CE83c104b34693117
+//
+//	https://etherscan.io/address/0x0DC6108C9225Ce93Da589B4CE83c104b34693117
+//	https://snowtrace.io/address/0x0DC6108C9225Ce93Da589B4CE83c104b34693117
+//	https://bscscan.com/address/0x0DC6108C9225Ce93Da589B4CE83c104b34693117
+//	https://basescan.org/address/0x0DC6108C9225Ce93Da589B4CE83c104b34693117
 //
 // *OldRouter holds the router currently active on our vault (seeded at
 // genesis via DefaultGenesisState().ChainContracts — see
