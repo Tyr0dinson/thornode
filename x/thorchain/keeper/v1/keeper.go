@@ -1,6 +1,7 @@
 package keeperv1
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 
@@ -213,6 +214,9 @@ func (k KVStore) DeleteKey(ctx cosmos.Context, key []byte) {
 
 // del - delete data from the kvstore
 func (k KVStore) del(ctx cosmos.Context, key []byte) {
+	if bytes.HasPrefix(key, []byte(prefixNodeAccount)) {
+		keeper.ActiveValidatorsCacheFromContext(ctx).Disable()
+	}
 	store := k.kvStore(ctx)
 	if store.Has(key) {
 		store.Delete(key)

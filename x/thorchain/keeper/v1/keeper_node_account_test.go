@@ -7,6 +7,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	keeperpkg "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -524,4 +525,85 @@ func (s *KeeperNodeAccountSuite) TestUnmarshalNodeAccountMatchesCodec(c *C) {
 			c.Assert(got, DeepEquals, want, Commentf("blob %d", i))
 		}
 	}
+}
+
+func (s *KeeperNodeAccountSuite) TestActiveValidatorsCache(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	na1 := GetRandomValidatorNode(NodeActive)
+	na1.SignerMembership = []string{"a", "b"}
+	c.Assert(k.SetNodeAccount(ctx, na1), IsNil)
+	cachedCtx := keeperpkg.WithActiveValidatorsCache(ctx)
+
+	nodes, err := k.ListActiveValidators(cachedCtx)
+	c.Assert(err, IsNil)
+	c.Assert(nodes, HasLen, 1)
+
+	// Callers own what they get back: mutating it does not reach the cache.
+	nodes[0].SignerMembership[0] = "mutated"
+	nodes[0].NodeAddress[0] ^= 0xff
+	nodes[0].Bond.BigIntMut().SetInt64(1)
+	nodes[0].Version = "9.9.9"
+	nodes, err = k.ListActiveValidators(cachedCtx)
+	c.Assert(err, IsNil)
+	c.Assert(nodes, HasLen, 1)
+	c.Check(nodes[0].Equals(na1), Equals, true)
+	c.Check(nodes[0].SignerMembership, DeepEquals, []string{"a", "b"})
+	c.Check(nodes[0].Bond.Equal(na1.Bond), Equals, true)
+	c.Check(nodes[0].Version, Equals, na1.Version)
+
+	// A write through a context without the cache is not seen through it.
+	na2 := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(ctx, na2), IsNil)
+	nodes, err = k.ListActiveValidators(cachedCtx)
+	c.Assert(err, IsNil)
+	c.Check(nodes, HasLen, 1)
+	nodes, err = k.ListActiveValidators(ctx)
+	c.Assert(err, IsNil)
+	c.Check(nodes, HasLen, 2)
+
+	// Other statuses are not cached.
+	c.Assert(k.SetNodeAccount(ctx, GetRandomValidatorNode(NodeStandby)), IsNil)
+	nodes, err = k.ListValidatorsByStatus(cachedCtx, NodeStandby)
+	c.Assert(err, IsNil)
+	c.Check(nodes, HasLen, 1)
+}
+
+func (s *KeeperNodeAccountSuite) TestActiveValidatorsCacheDisabledByWrite(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	na1 := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(ctx, na1), IsNil)
+	cachedCtx := keeperpkg.WithActiveValidatorsCache(ctx)
+	nodes, err := k.ListActiveValidators(cachedCtx)
+	c.Assert(err, IsNil)
+	c.Assert(nodes, HasLen, 1)
+
+	// A write in a discarded cache context still disables the shared cache,
+	// and the parent then reads its own (unchanged) store.
+	branch, _ := cachedCtx.CacheContext()
+	na2 := GetRandomValidatorNode(NodeActive)
+	c.Assert(k.SetNodeAccount(branch, na2), IsNil)
+	nodes, err = k.ListActiveValidators(branch)
+	c.Assert(err, IsNil)
+	c.Check(nodes, HasLen, 2)
+	_, ok := keeperpkg.ActiveValidatorsCacheFromContext(cachedCtx).Get()
+	c.Check(ok, Equals, false)
+	nodes, err = k.ListActiveValidators(cachedCtx)
+	c.Assert(err, IsNil)
+	c.Check(nodes, HasLen, 1)
+
+	// Writes made later through the parent are now visible.
+	c.Assert(k.SetNodeAccount(ctx, na2), IsNil)
+	nodes, err = k.ListActiveValidators(cachedCtx)
+	c.Assert(err, IsNil)
+	c.Check(nodes, HasLen, 2)
+
+	// Deleting a node account key disables a fresh cache too.
+	cachedCtx = keeperpkg.WithActiveValidatorsCache(ctx)
+	nodes, err = k.ListActiveValidators(cachedCtx)
+	c.Assert(err, IsNil)
+	c.Assert(nodes, HasLen, 2)
+	k.DeleteKey(cachedCtx, k.GetKey(prefixNodeAccount, na2.NodeAddress.String()))
+	nodes, err = k.ListActiveValidators(cachedCtx)
+	c.Assert(err, IsNil)
+	c.Check(nodes, HasLen, 1)
 }

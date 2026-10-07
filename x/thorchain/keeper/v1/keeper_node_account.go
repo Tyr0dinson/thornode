@@ -16,10 +16,12 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
 )
 
 func (k KVStore) setNodeAccount(ctx cosmos.Context, key []byte, record NodeAccount) {
+	keeper.ActiveValidatorsCacheFromContext(ctx).Disable()
 	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
@@ -68,6 +70,21 @@ func (k KVStore) ListValidatorsWithBond(ctx cosmos.Context) (NodeAccounts, error
 
 // ListValidatorsByStatus - get a list of validator node accounts with the given status
 func (k KVStore) ListValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (NodeAccounts, error) {
+	var cache *keeper.ActiveValidatorsCache
+	if status == NodeActive {
+		cache = keeper.ActiveValidatorsCacheFromContext(ctx)
+		if nodeAccounts, ok := cache.Get(); ok {
+			return nodeAccounts, nil
+		}
+	}
+	nodeAccounts, err := k.listValidatorsByStatus(ctx, status)
+	if err == nil {
+		cache.Set(nodeAccounts)
+	}
+	return nodeAccounts, err
+}
+
+func (k KVStore) listValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (NodeAccounts, error) {
 	nodeAccounts := make(NodeAccounts, 0)
 	naIterator := k.GetNodeAccountIterator(ctx)
 	defer naIterator.Close()
