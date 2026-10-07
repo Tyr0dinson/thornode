@@ -22,8 +22,9 @@ const (
 )
 
 // openAppDB opens the application db like the SDK default, but with larger
-// goleveldb read caches. Cache sizes only change memory use and speed; the
-// stored data and every read result are the same.
+// goleveldb read caches and no seek-triggered compaction. These options are
+// not persisted and do not change the table format; the stored data and every
+// read result are the same.
 func openAppDB(rootDir string, backendType dbm.BackendType) (dbm.DB, error) {
 	dataDir := filepath.Join(rootDir, "data")
 	if backendType != dbm.GoLevelDBBackend {
@@ -33,6 +34,13 @@ func openAppDB(rootDir string, backendType dbm.BackendType) (dbm.DB, error) {
 		Filter:                 filter.NewBloomFilter(10), // as dbm.NewGoLevelDB
 		BlockCacheCapacity:     appDBBlockCacheBytes,
 		OpenFilesCacheCapacity: maxOpenFiles(),
+		// Reads that probe a table without finding the key spend its seek
+		// budget; when it runs out the table is compacted. Every block writes
+		// keys across the whole keyspace, so each flushed L0 table overlaps
+		// all of L1, runs out of seeks quickly and is merged into all of L1.
+		// Bloom filters already make those probes cheap, so the compaction
+		// costs far more than it saves.
+		DisableSeeksCompaction: true,
 	})
 }
 
