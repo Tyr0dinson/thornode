@@ -267,6 +267,8 @@ run)
         mkdir -p "$REPLAY_CPUPROFILE_DIR"
         profile_args=(--cpu-profile "$REPLAY_CPUPROFILE_DIR/cpu-$side-$r.pprof")
       fi
+      # off the default pprof port (6060), which a local mocknet or regtest may hold
+      profile_args+=(--rpc.pprof_laddr "127.0.0.1:$((PORT_BASE + 60))")
       perf_log "round $r side $side: $(basename "$bin")"
       # every log line gets a wall-clock prefix (node log times have minute resolution)
       setsid bash -c 'exec "$@" 2>&1 | python3 -u -c "import sys,time
@@ -289,8 +291,9 @@ for l in sys.stdin: sys.stdout.write(f\"{time.time():.3f} {l}\")"' _ \
         sleep 0.5
       done
       # stop the node first so it exits cleanly (flushes a CPU profile) while its
-      # log pipe is still open, then the rest of the session
-      node=$(pgrep -s "$pid" -f "$bin start" | head -1 || true)
+      # log pipe is still open, then the rest of the session. Anchored: the
+      # session's bash wrapper also has "$bin start" in its command line.
+      node=$(pgrep -s "$pid" -f "^$bin start" | head -1 || true)
       if [[ -n $node ]]; then
         kill -TERM "$node" 2>/dev/null || true
         for _ in $(seq 240); do
