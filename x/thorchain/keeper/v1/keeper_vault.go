@@ -41,6 +41,9 @@ func (k KVStore) getVault(ctx cosmos.Context, key []byte, record *Vault) (bool, 
 	}
 
 	bz := store.Get(key)
+	if k.memoDecodeVault(key, bz, record) {
+		return true, nil
+	}
 	if err := k.cdc.Unmarshal(bz, record); err != nil {
 		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
@@ -598,8 +601,10 @@ func (k KVStore) HasValidVaultPools(ctx cosmos.Context) (bool, error) {
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
 		var vault Vault
-		if err := k.cdc.Unmarshal(iterator.Value(), &vault); err != nil {
-			return false, dbError(ctx, "fail to unmarshal vault", err)
+		if !k.memoDecodeVault(iterator.Key(), iterator.Value(), &vault) {
+			if err := k.cdc.Unmarshal(iterator.Value(), &vault); err != nil {
+				return false, dbError(ctx, "fail to unmarshal vault", err)
+			}
 		}
 		if vault.HasFundsOrDeficit() {
 			return true, nil

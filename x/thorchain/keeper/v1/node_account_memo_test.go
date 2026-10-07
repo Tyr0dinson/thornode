@@ -120,10 +120,7 @@ func (s *NodeAccountMemoSuite) TestBounded(c *C) {
 	for i := 0; i < nodeAccountMemoMaxEntries+10; i++ {
 		var got NodeAccount
 		c.Assert(k.memoDecodeNodeAccount([]byte(fmt.Sprintf("memo-test/bound/%d", i)), bz, &got), Equals, true)
-		nodeAccountMemo.RLock()
-		n := len(nodeAccountMemo.m)
-		nodeAccountMemo.RUnlock()
-		c.Assert(n <= nodeAccountMemoMaxEntries, Equals, true)
+		c.Assert(nodeAccountDecodeMemo.len() <= nodeAccountMemoMaxEntries, Equals, true)
 	}
 }
 
