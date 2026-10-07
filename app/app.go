@@ -367,7 +367,7 @@ func NewChainApp(
 	)
 
 	app.ThorchainKeeper = thorchainkeeperv1.NewKeeper(
-		app.appCodec, runtime.NewKVStoreService(keys[thorchaintypes.StoreKey]), app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper,
+		app.appCodec, keys[thorchaintypes.StoreKey], app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper,
 	)
 
 	wasmDir := filepath.Join(homePath, "data") // "wasm" subdirectory created here
@@ -444,7 +444,7 @@ func NewChainApp(
 		app.restQueryViaGRPC = cast.ToBool(v)
 	}
 
-	mgrs := thorchain.NewManagers(app.ThorchainKeeper, app.appCodec, runtime.NewKVStoreService(keys[thorchaintypes.StoreKey]), app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper, app.WasmKeeper)
+	mgrs := thorchain.NewManagers(app.ThorchainKeeper, app.appCodec, keys[thorchaintypes.StoreKey], app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper, app.WasmKeeper)
 	app.msgServiceRouter.AddCustomRoute("cosmos.bank.v1beta1.Msg", thorchain.NewBankSendHandler(thorchain.NewSendHandler(mgrs)))
 
 	thorchainModule := thorchain.NewAppModule(mgrs, telemetryEnabled, testApp)

@@ -3,13 +3,12 @@ package keeperv1
 import (
 	"fmt"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 func (k KVStore) setPOLReserveDeposit(ctx cosmos.Context, key []byte, record POLReserveDeposit) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -19,7 +18,7 @@ func (k KVStore) setPOLReserveDeposit(ctx cosmos.Context, key []byte, record POL
 }
 
 func (k KVStore) getPOLReserveDeposit(ctx cosmos.Context, key []byte, record *POLReserveDeposit) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}

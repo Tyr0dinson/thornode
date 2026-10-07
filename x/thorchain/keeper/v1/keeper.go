@@ -4,11 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	storetypes "cosmossdk.io/core/store"
+	storetypes "cosmossdk.io/store/types"
 	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/codec"
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
@@ -133,18 +132,18 @@ type KVStore struct {
 	coinKeeper    bankkeeper.Keeper
 	accountKeeper authkeeper.AccountKeeper
 	upgradeKeeper *upgradekeeper.Keeper
-	storeService  storetypes.KVStoreService
+	storeKey      *storetypes.KVStoreKey
 	version       semver.Version
 	constAccessor constants.ConstantValues
 }
 
 // NewKVStore creates new instances of the thorchain Keeper
-func NewKVStore(cdc codec.BinaryCodec, storeService storetypes.KVStoreService, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, upgradeKeeper *upgradekeeper.Keeper, version semver.Version) KVStore {
+func NewKVStore(cdc codec.BinaryCodec, storeKey *storetypes.KVStoreKey, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, upgradeKeeper *upgradekeeper.Keeper, version semver.Version) KVStore {
 	return KVStore{
 		coinKeeper:    coinKeeper,
 		accountKeeper: accountKeeper,
 		upgradeKeeper: upgradeKeeper,
-		storeService:  storeService,
+		storeKey:      storeKey,
 		cdc:           cdc,
 		version:       version,
 		constAccessor: constants.GetConstantValues(version),
@@ -152,9 +151,17 @@ func NewKVStore(cdc codec.BinaryCodec, storeService storetypes.KVStoreService, c
 }
 
 // NewKeeper creates new instances of the thorchain Keeper
-func NewKeeper(cdc codec.BinaryCodec, storeService storetypes.KVStoreService, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, upgradeKeeper *upgradekeeper.Keeper) keeper.Keeper {
+func NewKeeper(cdc codec.BinaryCodec, storeKey *storetypes.KVStoreKey, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, upgradeKeeper *upgradekeeper.Keeper) keeper.Keeper {
 	version := semver.MustParse("0.0.0")
-	return NewKVStore(cdc, storeService, coinKeeper, accountKeeper, upgradeKeeper, version)
+	return NewKVStore(cdc, storeKey, coinKeeper, accountKeeper, upgradeKeeper, version)
+}
+
+// kvStore returns the thorchain module store for ctx. It is the same gas-metered
+// store that runtime.KVStoreAdapter(storeService.OpenKVStore(ctx)) returns, opened
+// directly from the sdk.Context so the context is not boxed into a
+// context.Context (a heap copy of the whole struct) on every store access.
+func (k KVStore) kvStore(ctx cosmos.Context) storetypes.KVStore {
+	return ctx.KVStore(k.storeKey)
 }
 
 // Cdc return the amino codec
@@ -196,7 +203,7 @@ func (k KVStore) GetKey(prefix types.DbPrefix, key string, other ...string) []by
 
 // getIterator - get an iterator for given prefix
 func (k KVStore) getIterator(ctx cosmos.Context, prefix types.DbPrefix) cosmos.Iterator {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	return cosmos.KVStorePrefixIterator(store, []byte(prefix))
 }
 
@@ -206,7 +213,7 @@ func (k KVStore) DeleteKey(ctx cosmos.Context, key []byte) {
 
 // del - delete data from the kvstore
 func (k KVStore) del(ctx cosmos.Context, key []byte) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if store.Has(key) {
 		store.Delete(key)
 	}
@@ -214,12 +221,12 @@ func (k KVStore) del(ctx cosmos.Context, key []byte) {
 
 // has - kvstore has key
 func (k KVStore) has(ctx cosmos.Context, key []byte) bool {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	return store.Has(key)
 }
 
 func (k KVStore) setInt64(ctx cosmos.Context, key []byte, record int64) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	value := ProtoInt64{Value: record}
 	buf := k.cdc.MustMarshal(&value)
 	if buf == nil {
@@ -230,7 +237,7 @@ func (k KVStore) setInt64(ctx cosmos.Context, key []byte, record int64) {
 }
 
 func (k KVStore) getInt64(ctx cosmos.Context, key []byte, record *int64) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
@@ -245,7 +252,7 @@ func (k KVStore) getInt64(ctx cosmos.Context, key []byte, record *int64) (bool, 
 }
 
 func (k KVStore) setUint64(ctx cosmos.Context, key []byte, record uint64) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	value := ProtoUint64{Value: record}
 	buf := k.cdc.MustMarshal(&value)
 	if buf == nil {
@@ -256,7 +263,7 @@ func (k KVStore) setUint64(ctx cosmos.Context, key []byte, record uint64) {
 }
 
 func (k KVStore) getUint64(ctx cosmos.Context, key []byte, record *uint64) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
@@ -271,7 +278,7 @@ func (k KVStore) getUint64(ctx cosmos.Context, key []byte, record *uint64) (bool
 }
 
 func (k KVStore) setAccAddresses(ctx cosmos.Context, key []byte, record []cosmos.AccAddress) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	value := ProtoAccAddresses{Value: record}
 	buf := k.cdc.MustMarshal(&value)
 	if buf == nil {
@@ -282,7 +289,7 @@ func (k KVStore) setAccAddresses(ctx cosmos.Context, key []byte, record []cosmos
 }
 
 func (k KVStore) getAccAddresses(ctx cosmos.Context, key []byte, record *[]cosmos.AccAddress) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
@@ -297,7 +304,7 @@ func (k KVStore) getAccAddresses(ctx cosmos.Context, key []byte, record *[]cosmo
 }
 
 func (k KVStore) setString(ctx cosmos.Context, key, record string) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	value := ProtoString{Value: record}
 	buf := k.cdc.MustMarshal(&value)
 	if buf == nil {
@@ -308,7 +315,7 @@ func (k KVStore) setString(ctx cosmos.Context, key, record string) {
 }
 
 func (k KVStore) getString(ctx cosmos.Context, key string, record *string) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has([]byte(key)) {
 		return false, nil
 	}
@@ -323,7 +330,7 @@ func (k KVStore) getString(ctx cosmos.Context, key string, record *string) (bool
 }
 
 func (k KVStore) setStrings(ctx cosmos.Context, key []byte, record []string) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if len(record) == 0 {
 		store.Delete(key)
 		return
@@ -334,7 +341,7 @@ func (k KVStore) setStrings(ctx cosmos.Context, key []byte, record []string) {
 }
 
 func (k KVStore) getStrings(ctx cosmos.Context, key []byte, record *[]string) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
@@ -349,7 +356,7 @@ func (k KVStore) getStrings(ctx cosmos.Context, key []byte, record *[]string) (b
 }
 
 func (k KVStore) setUint(ctx cosmos.Context, key []byte, record cosmos.Uint) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	value := ProtoUint{Value: record}
 	buf := k.cdc.MustMarshal(&value)
 	if buf == nil {
@@ -360,7 +367,7 @@ func (k KVStore) setUint(ctx cosmos.Context, key []byte, record cosmos.Uint) {
 }
 
 func (k KVStore) getUint(ctx cosmos.Context, key []byte, record *cosmos.Uint) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}

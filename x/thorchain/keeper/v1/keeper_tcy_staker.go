@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"cosmossdk.io/math"
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/common/tcysmartcontract"
@@ -12,7 +11,7 @@ import (
 )
 
 func (k KVStore) setTCYStaker(ctx cosmos.Context, key []byte, record TCYStaker) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -22,7 +21,7 @@ func (k KVStore) setTCYStaker(ctx cosmos.Context, key []byte, record TCYStaker) 
 }
 
 func (k KVStore) getTCYStaker(ctx cosmos.Context, key []byte, record *TCYStaker) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
@@ -106,7 +105,7 @@ func (k KVStore) TCYStakerExists(ctx cosmos.Context, address common.Address) boo
 		return true
 	}
 
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	key := k.GetKey(prefixTCYStaker, address.String())
 	return store.Has(key)
 }

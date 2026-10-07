@@ -8,7 +8,6 @@ import (
 	"unsafe"
 
 	"github.com/blang/semver"
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/hashicorp/go-metrics"
 	"google.golang.org/protobuf/encoding/protowire"
@@ -21,7 +20,7 @@ import (
 )
 
 func (k KVStore) setNodeAccount(ctx cosmos.Context, key []byte, record NodeAccount) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -31,7 +30,7 @@ func (k KVStore) setNodeAccount(ctx cosmos.Context, key []byte, record NodeAccou
 }
 
 func (k KVStore) getNodeAccount(ctx cosmos.Context, key []byte, record *NodeAccount) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
@@ -532,7 +531,7 @@ func (k KVStore) DecNodeAccountSlashPoints(ctx cosmos.Context, addr cosmos.AccAd
 }
 
 func (k KVStore) setJail(ctx cosmos.Context, key []byte, record Jail) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -542,7 +541,7 @@ func (k KVStore) setJail(ctx cosmos.Context, key []byte, record Jail) {
 }
 
 func (k KVStore) getJail(ctx cosmos.Context, key []byte, record *Jail) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
@@ -591,7 +590,7 @@ func (k KVStore) ReleaseNodeAccountFromJail(ctx cosmos.Context, addr cosmos.AccA
 }
 
 func (k KVStore) setBondProviders(ctx cosmos.Context, key []byte, record BondProviders) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -601,7 +600,7 @@ func (k KVStore) setBondProviders(ctx cosmos.Context, key []byte, record BondPro
 }
 
 func (k KVStore) getBondProviders(ctx cosmos.Context, key []byte, record *BondProviders) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}

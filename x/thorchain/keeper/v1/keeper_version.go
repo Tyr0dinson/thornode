@@ -2,7 +2,6 @@ package keeperv1
 
 import (
 	"github.com/blang/semver"
-	"github.com/cosmos/cosmos-sdk/runtime"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
@@ -11,7 +10,7 @@ import (
 // and returns true if the version was found in the store
 func (k KVStore) GetVersionWithCtx(ctx cosmos.Context) (semver.Version, bool) {
 	key := k.GetKey(prefixVersion, "")
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	val := store.Get(key)
 	if val == nil {
 		return semver.Version{}, false
@@ -22,14 +21,14 @@ func (k KVStore) GetVersionWithCtx(ctx cosmos.Context) (semver.Version, bool) {
 // SetVersionWithCtx stores the version
 func (k KVStore) SetVersionWithCtx(ctx cosmos.Context, v semver.Version) {
 	key := k.GetKey(prefixVersion, "")
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	store.Set(key, []byte(v.String()))
 }
 
 // getMinJoinLast returns the last stored MinJoinVersion
 func (k KVStore) getMinJoinLast(ctx cosmos.Context) MinJoinLast {
 	key := k.GetKey(prefixMinJoinLast, "")
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	minJoinLastBytes := store.Get(key)
 	record := MinJoinLast{}
 	if err := k.cdc.Unmarshal(minJoinLastBytes, &record); err != nil {
@@ -42,7 +41,7 @@ func (k KVStore) getMinJoinLast(ctx cosmos.Context) MinJoinLast {
 // setMinJoinLast stores the MinJoinVersion
 func (k KVStore) setMinJoinLast(ctx cosmos.Context, record MinJoinLast) {
 	key := k.GetKey(prefixMinJoinLast, "")
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)

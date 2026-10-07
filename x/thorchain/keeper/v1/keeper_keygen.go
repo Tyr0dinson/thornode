@@ -4,12 +4,11 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
 	cosmos "gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 func (k KVStore) setKeygenBlock(ctx cosmos.Context, key []byte, record KeygenBlock) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -19,7 +18,7 @@ func (k KVStore) setKeygenBlock(ctx cosmos.Context, key []byte, record KeygenBlo
 }
 
 func (k KVStore) getKeygenBlock(ctx cosmos.Context, key []byte, record *KeygenBlock) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}

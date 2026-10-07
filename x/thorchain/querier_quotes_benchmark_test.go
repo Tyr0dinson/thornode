@@ -35,10 +35,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
-var (
-	keyThornodeBench     = storetypes.NewKVStoreKey(StoreKey)
-	serviceThornodeBench = runtime.NewKVStoreService(keyThornodeBench)
-)
+var keyThornodeBench = storetypes.NewKVStoreKey(StoreKey)
 
 // fundModuleBench funds a module for benchmarking (no check.C dependency)
 func fundModuleBench(b testing.TB, ctx cosmos.Context, k keeper.Keeper, name string, amt uint64) {
@@ -158,7 +155,7 @@ func setupBenchmarkManager(b testing.TB) (cosmos.Context, *Mgrs) {
 		authtypes.NewModuleAddress(ModuleName).String(),
 	)
 
-	k := kv1.NewKeeper(encodingConfig.Codec, serviceThornodeBench, bk, ak, uk)
+	k := kv1.NewKeeper(encodingConfig.Codec, keyThornodeBench, bk, ak, uk)
 
 	// Set up a validator node account (required for swap simulations)
 	err = k.SetNodeAccount(ctx, GetRandomValidatorNode(NodeActive))
@@ -188,7 +185,7 @@ func setupBenchmarkManager(b testing.TB) (cosmos.Context, *Mgrs) {
 		b.Fatal(err)
 	}
 
-	mgr := NewManagers(k, encodingConfig.Codec, serviceThornodeBench, bk, ak, uk, wk)
+	mgr := NewManagers(k, encodingConfig.Codec, keyThornodeBench, bk, ak, uk, wk)
 
 	err = mgr.LoadManagerIfNecessary(ctx)
 	if err != nil {

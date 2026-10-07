@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
@@ -23,7 +22,7 @@ type VaultSecurity struct {
 }
 
 func (k KVStore) setVault(ctx cosmos.Context, key []byte, record Vault) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -33,7 +32,7 @@ func (k KVStore) setVault(ctx cosmos.Context, key []byte, record Vault) {
 }
 
 func (k KVStore) getVault(ctx cosmos.Context, key []byte, record *Vault) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
