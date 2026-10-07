@@ -2,6 +2,9 @@ package thorchain
 
 import (
 	"fmt"
+	"runtime"
+	"sync"
+	"sync/atomic"
 
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"github.com/cosmos/cosmos-sdk/telemetry"
@@ -37,7 +40,99 @@ func deduplicateAttestations(attestations []*common.Attestation, maxCount int) [
 	return result
 }
 
-func verifyQuorumAttestation(activeNodeAccounts NodeAccounts, signBz []byte, att *common.Attestation) (cosmos.AccAddress, error) {
+// attestationCheck is one attestation and the payload it must sign.
+type attestationCheck struct {
+	att    *common.Attestation
+	signBz []byte
+}
+
+// attestationChecks pairs each attestation with the shared payload.
+func attestationChecks(atts []*common.Attestation, signBz []byte) []attestationCheck {
+	checks := make([]attestationCheck, len(atts))
+	for i, att := range atts {
+		checks[i] = attestationCheck{att: att, signBz: signBz}
+	}
+	return checks
+}
+
+// minParallelAttestations is the smallest batch preverifyAttestations runs.
+const minParallelAttestations = 4
+
+// attestationSigs holds secp256k1 results computed ahead of a handler's
+// sequential attestation loop, by attestation.
+type attestationSigs map[*common.Attestation]bool
+
+// preverifyAttestations verifies the signatures of the attestations signed by
+// an active node concurrently. Verification is a pure function of (pubkey,
+// payload, signature) and dominates quorum message handling, so this changes
+// nothing but wall time: verifyQuorumAttestation still runs every check in
+// order and only takes the signature result from here.
+func preverifyAttestations(activeNodeAccounts NodeAccounts, checks []attestationCheck) attestationSigs {
+	// a handful of signatures is not worth the setup; verify them in order
+	if len(checks) < minParallelAttestations {
+		return nil
+	}
+	active := make(map[string]struct{}, len(activeNodeAccounts))
+	for _, na := range activeNodeAccounts {
+		active[na.PubKeySet.Secp256k1.String()] = struct{}{}
+	}
+	todo := make([]attestationCheck, 0, len(checks))
+	for _, c := range checks {
+		if c.att == nil || len(c.att.PubKey) == 0 || len(c.att.Signature) == 0 {
+			continue
+		}
+		pk := secp256k1.PubKey{Key: c.att.PubKey}
+		bech32Pub, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, &pk)
+		if err != nil {
+			continue
+		}
+		if _, ok := active[bech32Pub]; ok {
+			todo = append(todo, c)
+		}
+	}
+
+	results := make([]bool, len(todo))
+	done := make([]bool, len(todo))
+	var next atomic.Int64
+	var wg sync.WaitGroup
+	for w := min(runtime.GOMAXPROCS(0), len(todo)); w > 0; w-- {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				i := int(next.Add(1)) - 1
+				if i >= len(todo) {
+					return
+				}
+				results[i], done[i] = verifyAttestationSig(todo[i])
+			}
+		}()
+	}
+	wg.Wait()
+
+	sigs := make(attestationSigs, len(todo))
+	for i, c := range todo {
+		if done[i] {
+			sigs[c.att] = results[i]
+		}
+	}
+	return sigs
+}
+
+// verifyAttestationSig reports ok=false if verification panics, leaving that
+// attestation to verifyQuorumAttestation in the handler goroutine, where a
+// panic is recovered by the tx runner exactly as before.
+func verifyAttestationSig(c attestationCheck) (verified, ok bool) {
+	defer func() {
+		if recover() != nil {
+			verified, ok = false, false
+		}
+	}()
+	pk := secp256k1.PubKey{Key: c.att.PubKey}
+	return pk.VerifySignature(c.signBz, c.att.Signature), true
+}
+
+func verifyQuorumAttestation(activeNodeAccounts NodeAccounts, signBz []byte, att *common.Attestation, sigs attestationSigs) (cosmos.AccAddress, error) {
 	if att == nil {
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "quorum", "attestation_rejected"},
@@ -93,7 +188,11 @@ func verifyQuorumAttestation(activeNodeAccounts NodeAccounts, signBz []byte, att
 		return nil, fmt.Errorf("signer is not an active node account: %s", pk.String())
 	}
 
-	if !pk.VerifySignature(signBz, att.Signature) {
+	verified, ok := sigs[att]
+	if !ok {
+		verified = pk.VerifySignature(signBz, att.Signature)
+	}
+	if !verified {
 		// A node signing payloads the rest of the network cannot verify is on a
 		// mismatched build or malfunctioning; its observations are discarded.
 		telemetry.IncrCounterWithLabels(

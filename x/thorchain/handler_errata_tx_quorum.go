@@ -64,8 +64,9 @@ func (h ErrataTxQuorumHandler) handle(ctx cosmos.Context, msg types.MsgErrataTxQ
 	}
 
 	attestations := deduplicateAttestations(msg.QuoErrata.Attestations, len(active))
+	sigs := preverifyAttestations(active, attestationChecks(attestations, signBz))
 	for _, att := range attestations {
-		accAddr, err := verifyQuorumAttestation(active, signBz, att)
+		accAddr, err := verifyQuorumAttestation(active, signBz, att, sigs)
 		if err != nil {
 			ctx.Logger().Error("fail to verify quorum errata tx attestation", "error", err)
 			continue
