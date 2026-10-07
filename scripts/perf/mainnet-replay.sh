@@ -39,11 +39,12 @@
 # Env: REPLAY_DIR (default ~/.cache/thornode-perf/mainnet-replay)
 #      STATESYNC_TRUST_HEIGHT (a height just below the snapshot peers offer),
 #      STATESYNC_RPC (light client RPC; may carry an api key, stays in local config)
+#      REPLAY_CPUPROFILE_DIR (run: write a CPU profile per replay, cpu-<side>-<round>.pprof)
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
 REPLAY_DIR=${REPLAY_DIR:-$PERF_CACHE/mainnet-replay}
-NODE_HOME=$REPLAY_DIR/home   # node uses $NODE_HOME/.thornode
+NODE_HOME=$REPLAY_DIR/home # node uses $NODE_HOME/.thornode
 PRISTINE=$REPLAY_DIR/pristine-application.db
 PORT_BASE=${REPLAY_PORT_BASE:-36000}
 
@@ -154,7 +155,10 @@ statesync)
         python3 -c "import json,sys; print(json.load(sys.stdin)['result']['block_id']['hash'])" 2>/dev/null) && break
       sleep 2
     done
-    [[ -n $hash ]] || { perf_log "no block $STATESYNC_TRUST_HEIGHT at $base"; exit 1; }
+    [[ -n $hash ]] || {
+      perf_log "no block $STATESYNC_TRUST_HEIGHT at $base"
+      exit 1
+    }
     sed -i -E "/^\[statesync\]/,/^\[/ { s|^trust_height = .*|trust_height = $STATESYNC_TRUST_HEIGHT|; s|^trust_hash = .*|trust_hash = \"$hash\"|; s|^rpc_servers = .*|rpc_servers = \"$rpc,$rpc\"| }" "$CONFIG"
   fi
   # the state-sync peers are few and flaky: discover longer, wait longer per chunk
@@ -257,6 +261,11 @@ run)
       done
       sync
       log="$out/replay-$side-$r.log"
+      profile_args=()
+      if [[ -n ${REPLAY_CPUPROFILE_DIR:-} ]]; then
+        mkdir -p "$REPLAY_CPUPROFILE_DIR"
+        profile_args=(--cpu-profile "$REPLAY_CPUPROFILE_DIR/cpu-$side-$r.pprof")
+      fi
       perf_log "round $r side $side: $(basename "$bin")"
       # every log line gets a wall-clock prefix (node log times have minute resolution)
       setsid bash -c 'exec "$@" 2>&1 | python3 -u -c "import sys,time
@@ -269,7 +278,7 @@ for l in sys.stdin: sys.stdout.write(f\"{time.time():.3f} {l}\")"' _ \
         THOR_TENDERMINT_RPC_LISTEN_ADDRESS="tcp://127.0.0.1:$((PORT_BASE + 657))" \
         THOR_TENDERMINT_P2P_LISTEN_ADDRESS="tcp://0.0.0.0:$((PORT_BASE + 656))" \
         THOR_TENDERMINT_INSTRUMENTATION_PROMETHEUS=false THOR_LOG_FILTER_MODULES=p2p,pex \
-        taskset -c "${REPLAY_CPUS:-8-23}" "$bin" start </dev/null >"$log" &
+        taskset -c "${REPLAY_CPUS:-8-23}" "$bin" start "${profile_args[@]}" </dev/null >"$log" &
       pid=$!
       # wait for the handshake to finish (or the node to die)
       while kill -0 "$pid" 2>/dev/null; do
@@ -278,6 +287,16 @@ for l in sys.stdin: sys.stdout.write(f\"{time.time():.3f} {l}\")"' _ \
         fi
         sleep 0.5
       done
+      # stop the node first so it exits cleanly (flushes a CPU profile) while its
+      # log pipe is still open, then the rest of the session
+      node=$(pgrep -s "$pid" -f "$bin start" | head -1 || true)
+      if [[ -n $node ]]; then
+        kill -TERM "$node" 2>/dev/null || true
+        for _ in $(seq 240); do
+          kill -0 "$node" 2>/dev/null || break
+          sleep 0.5
+        done
+      fi
       kill -- -"$pid" 2>/dev/null || true
       wait "$pid" 2>/dev/null || true
       # the node may still be flushing its dbs; the next run replaces them
