@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"runtime/pprof"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -372,6 +373,36 @@ func (f *perfFixture) inboundSwap(b testing.TB, vault int, height int64, label s
 		},
 		height, f.vaults[vault].PubKey, height,
 	)
+}
+
+// seedPendingOutbounds fills the signing-period window ending at height with a few
+// unsent ETH outbounds per block, spread over the asgard vaults. Vault selection
+// (GetPendingOutbounds -> SortBySecurity) weighs every one of them on mainnet.
+func (f *perfFixture) seedPendingOutbounds(b testing.TB, height int64) {
+	b.Helper()
+	period := f.mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	f.commitInto(func(ctx cosmos.Context) {
+		for h := height - period; h <= height; h++ {
+			if h < 1 {
+				continue
+			}
+			txOut := NewTxOut(h)
+			for j := 0; j < 3; j++ {
+				label := fmt.Sprintf("pending/%d/%d", h, j)
+				txOut.TxArray = append(txOut.TxArray, TxOutItem{
+					Chain:       common.ETHChain,
+					ToAddress:   perfAddr(b, common.ETHChain, label),
+					VaultPubKey: f.vaults[j%len(f.vaults)].PubKey,
+					Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)),
+					Memo:        "OUT:" + perfTxID(b, label).String(),
+					InHash:      perfTxID(b, label),
+				})
+			}
+			if err := f.mgr.Keeper().SetTxOut(ctx, txOut); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }
 
 // perfLoop runs fn b.N times under the perf=measured pprof label.
@@ -777,28 +808,8 @@ func BenchmarkPerfTxOut(b *testing.B) {
 	height := f.ctx.BlockHeight() + 1
 	// vault selection weighs every unsent item of the signing period
 	// against each vault; mainnet carries a few per block
-	period := f.mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	f.seedPendingOutbounds(b, height)
 	f.commitInto(func(ctx cosmos.Context) {
-		for h := height - period; h <= height; h++ {
-			if h < 1 {
-				continue
-			}
-			txOut := NewTxOut(h)
-			for j := 0; j < 3; j++ {
-				label := fmt.Sprintf("pending/%d/%d", h, j)
-				txOut.TxArray = append(txOut.TxArray, TxOutItem{
-					Chain:       common.ETHChain,
-					ToAddress:   perfAddr(b, common.ETHChain, label),
-					VaultPubKey: f.vaults[j%len(f.vaults)].PubKey,
-					Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)),
-					Memo:        "OUT:" + perfTxID(b, label).String(),
-					InHash:      perfTxID(b, label),
-				})
-			}
-			if err := f.mgr.Keeper().SetTxOut(ctx, txOut); err != nil {
-				b.Fatal(err)
-			}
-		}
 		if err := f.mgr.Keeper().MintToModule(ctx, ModuleName, common.NewCoin(common.RuneNative, cosmos.NewUint(1000*common.One))); err != nil {
 			b.Fatal(err)
 		}
@@ -830,6 +841,69 @@ func BenchmarkPerfTxOut(b *testing.B) {
 				ok, err := f.mgr.TxOutStore().TryAddTxOutItem(ctx, f.mgr, tc.toi, cosmos.ZeroUint())
 				if err == nil && !ok {
 					return fmt.Errorf("txout not added")
+				}
+				return err
+			})
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Queries: QuoteSwap (~10% of full-node CPU and ~42% of allocated bytes on a
+// mainnet full node serving the public API)
+// ---------------------------------------------------------------------------
+
+func BenchmarkPerfQuoteSwap(b *testing.B) {
+	f := newPerfFixture(b)
+	height := f.ctx.BlockHeight() + 1
+	// the outbound simulation and delay estimate walk the pending txout window
+	f.seedPendingOutbounds(b, height)
+	qs := NewQueryServerImpl(f.mgr, nil, cosmos.KeybaseStore{})
+	// an explicit height skips the stale-state guard (the fixture block time is
+	// pinned in the past); it does not change the work the quote does
+	h := strconv.FormatInt(height, 10)
+
+	cases := []struct {
+		name string
+		req  types.QueryQuoteSwapRequest
+	}{
+		{"l1-to-l1", types.QueryQuoteSwapRequest{
+			FromAsset:   "BTC.BTC",
+			ToAsset:     "ETH.ETH",
+			Amount:      "10000000", // 0.1 BTC
+			Destination: perfAddr(b, common.ETHChain, "quote/l1-to-l1").String(),
+		}},
+		{"rune-to-l1", types.QueryQuoteSwapRequest{
+			FromAsset:   "THOR.RUNE",
+			ToAsset:     "BTC.BTC",
+			Amount:      "100000000000", // 1000 RUNE
+			Destination: perfAddr(b, common.BTCChain, "quote/rune-to-l1").String(),
+		}},
+		{"l1-to-rune", types.QueryQuoteSwapRequest{
+			FromAsset:   "ETH.ETH",
+			ToAsset:     "THOR.RUNE",
+			Amount:      "100000000", // 1 ETH
+			Destination: perfAddr(b, common.THORChain, "quote/l1-to-rune").String(),
+		}},
+		{"streaming", types.QueryQuoteSwapRequest{
+			FromAsset:         "BTC.BTC",
+			ToAsset:           "ETH.ETH",
+			Amount:            "100000000", // 1 BTC
+			Destination:       perfAddr(b, common.ETHChain, "quote/streaming").String(),
+			StreamingInterval: "1",
+			StreamingQuantity: "0", // let the quote pick the max quantity
+		}},
+	}
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			req := tc.req
+			req.Height = h
+			// queries are served from a branch of committed state; each op gets
+			// its own so the simulated swaps never leak into the next one
+			f.measure(b, height, func(ctx cosmos.Context) error {
+				res, err := qs.QuoteSwap(ctx, &req)
+				if err == nil && res.ExpectedAmountOut == "" {
+					return fmt.Errorf("empty quote")
 				}
 				return err
 			})
