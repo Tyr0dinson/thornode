@@ -1,6 +1,8 @@
 package keeperv1
 
 import (
+	"bytes"
+
 	storetypes "cosmossdk.io/store/types"
 	"github.com/blang/semver"
 	"google.golang.org/protobuf/encoding/protowire"
@@ -481,8 +483,9 @@ func (s *KeeperNodeAccountSuite) TestPeekNodeAccountStatusType(c *C) {
 	}
 }
 
-func (s *KeeperNodeAccountSuite) TestUnmarshalNodeAccountMatchesCodec(c *C) {
-	_, k := setupKeeperForTest(c)
+// nodeAccountTestBlobs returns well-formed node account encodings plus
+// unusual and malformed ones, for decoders that must match k.cdc.Unmarshal.
+func nodeAccountTestBlobs(c *C, k KVStore) [][]byte {
 	vaults := make([]string, 8)
 	for i := range vaults {
 		vaults[i] = GetRandomPubKey().String()
@@ -517,13 +520,21 @@ func (s *KeeperNodeAccountSuite) TestUnmarshalNodeAccountMatchesCodec(c *C) {
 		[]byte{0xff},
 		nil,
 	)
-	for i, bz := range blobs {
-		var want, got NodeAccount
+	return blobs
+}
+
+func (s *KeeperNodeAccountSuite) TestUnmarshalNodeAccountMatchesCodec(c *C) {
+	_, k := setupKeeperForTest(c)
+	for i, bz := range nodeAccountTestBlobs(c, k) {
+		var want, got, gotShared NodeAccount
 		wantErr := k.cdc.Unmarshal(bz, &want)
 		gotErr := k.unmarshalNodeAccount(bz, &got)
 		c.Assert(gotErr == nil, Equals, wantErr == nil, Commentf("blob %d", i))
+		sharedErr := k.decodeNodeAccount(bytes.Clone(bz), &gotShared, true)
+		c.Assert(sharedErr == nil, Equals, wantErr == nil, Commentf("blob %d", i))
 		if wantErr == nil {
 			c.Assert(got, DeepEquals, want, Commentf("blob %d", i))
+			c.Assert(gotShared, DeepEquals, want, Commentf("blob %d", i))
 		}
 	}
 }

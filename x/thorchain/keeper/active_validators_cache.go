@@ -77,19 +77,23 @@ func (c *ActiveValidatorsCache) Disable() {
 	c.mu.Unlock()
 }
 
-// cloneNodeAccounts deep-copies the mutable parts of each NodeAccount (byte and
-// string slices, the Bond big.Int) so copies share nothing a caller can change.
-// Strings are immutable and are shared.
+// cloneNodeAccounts returns CloneNodeAccount of each element.
 func cloneNodeAccounts(src types.NodeAccounts) types.NodeAccounts {
 	out := make(types.NodeAccounts, len(src))
 	for i := range src {
-		na := src[i]
-		na.NodeAddress = slices.Clone(na.NodeAddress)
-		na.SignerMembership = slices.Clone(na.SignerMembership)
-		if !na.Bond.IsNil() {
-			na.Bond = cosmos.NewUintFromBigInt(na.Bond.BigIntMut())
-		}
-		out[i] = na
+		out[i] = CloneNodeAccount(src[i])
 	}
 	return out
+}
+
+// CloneNodeAccount deep-copies the mutable parts of a NodeAccount (byte and
+// string slices, the Bond big.Int) so the copy shares nothing a caller can
+// change. Strings are immutable and are shared; every other field is a value.
+func CloneNodeAccount(na types.NodeAccount) types.NodeAccount {
+	na.NodeAddress = slices.Clone(na.NodeAddress)
+	na.SignerMembership = slices.Clone(na.SignerMembership)
+	if !na.Bond.IsNil() {
+		na.Bond = cosmos.NewUintFromBigInt(na.Bond.BigIntMut())
+	}
+	return na
 }

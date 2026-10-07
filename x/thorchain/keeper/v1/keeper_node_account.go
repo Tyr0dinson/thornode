@@ -38,6 +38,9 @@ func (k KVStore) getNodeAccount(ctx cosmos.Context, key []byte, record *NodeAcco
 	}
 
 	bz := store.Get(key)
+	if k.memoDecodeNodeAccount(key, bz, record) {
+		return true, nil
+	}
 	if err := k.cdc.Unmarshal(bz, record); err != nil {
 		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
@@ -58,8 +61,10 @@ func (k KVStore) ListValidatorsWithBond(ctx cosmos.Context) (NodeAccounts, error
 	defer naIterator.Close()
 	for ; naIterator.Valid(); naIterator.Next() {
 		var na NodeAccount
-		if err := k.cdc.Unmarshal(naIterator.Value(), &na); err != nil {
-			return nodeAccounts, dbError(ctx, "Unmarshal: node account", err)
+		if !k.memoDecodeNodeAccount(naIterator.Key(), naIterator.Value(), &na) {
+			if err := k.cdc.Unmarshal(naIterator.Value(), &na); err != nil {
+				return nodeAccounts, dbError(ctx, "Unmarshal: node account", err)
+			}
 		}
 		if na.Type == NodeTypeValidator && !na.Bond.IsZero() {
 			nodeAccounts = append(nodeAccounts, na)
@@ -106,8 +111,10 @@ func (k KVStore) listValidatorsByStatus(ctx cosmos.Context, status NodeStatus, l
 			continue
 		}
 		var na NodeAccount
-		if err := k.unmarshalNodeAccount(naIterator.Value(), &na); err != nil {
-			return nodeAccounts, dbError(ctx, "Unmarshal: node account", err)
+		if !k.memoDecodeNodeAccount(naIterator.Key(), naIterator.Value(), &na) {
+			if err := k.unmarshalNodeAccount(naIterator.Value(), &na); err != nil {
+				return nodeAccounts, dbError(ctx, "Unmarshal: node account", err)
+			}
 		}
 		if !full && na.Type == NodeTypeValidator && na.Status == status {
 			nodeAccounts = append(nodeAccounts, na)
@@ -167,6 +174,13 @@ const nodeAccountSignerMembershipField protowire.Number = 9
 // is never written after the strings are made. The other fields go through
 // Unmarshal unchanged; bytes it cannot split are left to Unmarshal whole.
 func (k KVStore) unmarshalNodeAccount(bz []byte, na *NodeAccount) error {
+	return k.decodeNodeAccount(bz, na, false)
+}
+
+// decodeNodeAccount is unmarshalNodeAccount; if immutable, the caller
+// guarantees bz is never written, and the signer_membership strings point
+// into bz instead of a copy.
+func (k KVStore) decodeNodeAccount(bz []byte, na *NodeAccount, immutable bool) error {
 	count, size := 0, 0
 	for rest := bz; len(rest) > 0; {
 		num, wtype, n := protowire.ConsumeTag(rest)
@@ -191,16 +205,22 @@ func (k KVStore) unmarshalNodeAccount(bz []byte, na *NodeAccount) error {
 	}
 
 	other := make([]byte, 0, len(bz)-size)
-	buf := make([]byte, 0, size)
+	var buf []byte
+	if !immutable {
+		buf = make([]byte, 0, size)
+	}
 	members := make([]string, 0, count)
 	for rest := bz; len(rest) > 0; {
 		num, wtype, n := protowire.ConsumeTag(rest)
 		m := protowire.ConsumeFieldValue(num, wtype, rest[n:])
 		if num == nodeAccountSignerMembershipField {
 			v, _ := protowire.ConsumeBytes(rest[n:])
-			start := len(buf)
-			buf = append(buf, v...)
-			members = append(members, unsafe.String(unsafe.SliceData(buf[start:]), len(v)))
+			if !immutable {
+				start := len(buf)
+				buf = append(buf, v...)
+				v = buf[start:]
+			}
+			members = append(members, unsafe.String(unsafe.SliceData(v), len(v)))
 		} else {
 			other = append(other, rest[:n+m]...)
 		}
@@ -232,8 +252,10 @@ func (k KVStore) RemoveLowBondValidatorAccounts(ctx cosmos.Context) error {
 	defer naIterator.Close()
 	for ; naIterator.Valid(); naIterator.Next() {
 		var na NodeAccount
-		if err := k.cdc.Unmarshal(naIterator.Value(), &na); err != nil {
-			return dbError(ctx, "Unmarshal: node account", err)
+		if !k.memoDecodeNodeAccount(naIterator.Key(), naIterator.Value(), &na) {
+			if err := k.cdc.Unmarshal(naIterator.Value(), &na); err != nil {
+				return dbError(ctx, "Unmarshal: node account", err)
+			}
 		}
 		if na.Type == NodeTypeVault || na.Status == NodeActive {
 			continue
@@ -446,8 +468,10 @@ func (k KVStore) EnsureNodeKeysUnique(ctx cosmos.Context, consensusPubKey string
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
 		var na NodeAccount
-		if err := k.cdc.Unmarshal(iter.Value(), &na); err != nil {
-			return dbError(ctx, "Unmarshal: node account", err)
+		if !k.memoDecodeNodeAccount(iter.Key(), iter.Value(), &na) {
+			if err := k.cdc.Unmarshal(iter.Value(), &na); err != nil {
+				return dbError(ctx, "Unmarshal: node account", err)
+			}
 		}
 		if na.ValidatorConsPubKey == consensusPubKey {
 			return dbError(ctx, "", fmt.Errorf("%s already exist", na.ValidatorConsPubKey))
