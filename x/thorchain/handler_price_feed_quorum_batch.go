@@ -145,9 +145,11 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 			if rate.Decimals > 18 {
 				continue
 			}
-			pricesByAsset[symbol][nodeAddress] = rate.BigFloat()
+			price := rate.BigFloat()
+			pricesByAsset[symbol][nodeAddress] = price
 			if found {
-				pricesByBondAddress[bondAddress][symbol] = rate.BigFloat()
+				// Copy keeps the value, precision, mode and accuracy
+				pricesByBondAddress[bondAddress][symbol] = new(big.Float).Copy(price)
 			}
 		}
 	}

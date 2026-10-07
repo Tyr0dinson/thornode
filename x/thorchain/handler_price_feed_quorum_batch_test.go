@@ -541,3 +541,118 @@ func (s *HandlerPriceFeedQuorumBatchSuite) setUp(
 
 	return privKey, quoPriceFeed, nodeAccount, nil
 }
+
+// TestBondAddressPriceCopy checks that copying a rate's big.Float for the
+// bond-address fallback yields exactly what a second BigFloat() call did, so
+// stored prices and emitted events are unchanged.
+func (s *HandlerPriceFeedQuorumBatchSuite) TestBondAddressPriceCopy(c *C) {
+	for _, amount := range []uint64{1, 7, 99999, 123456789, 11114912345678, 1<<63 + 12345, ^uint64(0)} {
+		for decimals := uint32(0); decimals <= 18; decimals++ {
+			rate := common.OraclePrice{Amount: amount, Decimals: decimals}
+			fresh := rate.BigFloat()
+			copied := new(big.Float).Copy(rate.BigFloat())
+			c.Assert(copied.Text('p', 0), Equals, fresh.Text('p', 0))
+			c.Assert(copied.Text('f', -1), Equals, fresh.Text('f', -1))
+			c.Assert(copied.Prec(), Equals, fresh.Prec())
+			c.Assert(copied.Mode(), Equals, fresh.Mode())
+			c.Assert(copied.Acc(), Equals, fresh.Acc())
+		}
+	}
+
+	ctx, mgr := setupManagerForTest(c)
+	handler := NewPriceFeedQuorumBatchHandler(mgr)
+
+	// fractional prices with mixed decimals; node4 shares node3's bond
+	// address and reports no BTC, node5 shares it and reports nothing
+	btc := []common.OraclePrice{
+		{Amount: 11114912345678, Decimals: 8},
+		{Amount: 1109981, Decimals: 1},
+		{Amount: 110963333333333333, Decimals: 12},
+		{},
+	}
+	eth := []common.OraclePrice{
+		{Amount: 276912, Decimals: 2},
+		{Amount: 2785123456789, Decimals: 9},
+		{Amount: 2777, Decimals: 0},
+		{Amount: 2790000000000000001, Decimals: 15},
+	}
+	var feeds []*common.QuorumPriceFeed
+	var nodes NodeAccounts
+	for i := 0; i < 6; i++ {
+		privKey := secp256k1.GenPrivKey()
+		node, err := s.getNodeAccount(privKey)
+		c.Assert(err, IsNil)
+		if i == 3 || i == 4 {
+			node.BondAddress = nodes[2].BondAddress
+		}
+		nodes = append(nodes, node)
+		c.Assert(mgr.K.SetNodeAccount(ctx, node), IsNil)
+		if i >= len(btc) {
+			continue
+		}
+		rates := make([]*common.OraclePrice, len(s.symbols))
+		for j, symbol := range s.symbols {
+			rates[j] = &common.OraclePrice{}
+			switch symbol {
+			case "BTC":
+				rates[j] = &btc[i]
+			case "ETH":
+				rates[j] = &eth[i]
+			}
+		}
+		pf := &common.PriceFeed{Version: s.version, Time: time.Now().UnixMilli(), Rates: rates}
+		att, err := s.attestPriceFeed(privKey, pf)
+		c.Assert(err, IsNil)
+		feeds = append(feeds, &common.QuorumPriceFeed{PriceFeed: pf, Attestations: []*common.Attestation{att}})
+	}
+
+	// reference: the handler's aggregation with a fresh BigFloat() per use
+	active, err := mgr.K.ListActiveValidators(ctx)
+	c.Assert(err, IsNil)
+	expected := map[string]string{}
+	for symbol, rates := range map[string][]common.OraclePrice{"BTC": btc, "ETH": eth} {
+		byNode := map[string]*big.Float{}
+		byBond := map[string]*big.Float{}
+		for i, rate := range rates {
+			if rate.Amount == 0 {
+				continue
+			}
+			byNode[nodes[i].NodeAddress.String()] = rate.BigFloat()
+			byBond[nodes[i].BondAddress.String()] = rate.BigFloat()
+		}
+		var all []*big.Float
+		for _, na := range active {
+			price, ok := byNode[na.NodeAddress.String()]
+			if !ok {
+				if price, ok = byBond[na.BondAddress.String()]; !ok {
+					continue
+				}
+			}
+			all = append(all, price)
+		}
+		_, median, err := common.MedianAbsoluteDeviation(all)
+		c.Assert(err, IsNil)
+		expected[symbol] = median.Text('f', -1)
+	}
+
+	_, err = handler.Run(ctx, types.NewMsgPriceFeedQuorumBatch(feeds, GetRandomBech32Addr()))
+	c.Assert(err, IsNil)
+
+	emitted := map[string]string{}
+	for _, evt := range ctx.EventManager().Events() {
+		if evt.Type != types.OraclePriceEvent {
+			continue
+		}
+		attrs := map[string]string{}
+		for _, attr := range evt.Attributes {
+			attrs[attr.Key] = attr.Value
+		}
+		emitted[attrs["symbol"]] = attrs["price"]
+	}
+	for symbol, want := range expected {
+		price, err := mgr.K.GetPrice(ctx, symbol)
+		c.Assert(err, IsNil)
+		c.Check(price.Price, Equals, want, Commentf("%s", symbol))
+		c.Check(emitted[symbol], Equals, want, Commentf("%s", symbol))
+	}
+}
