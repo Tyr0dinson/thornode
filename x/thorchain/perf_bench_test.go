@@ -31,11 +31,17 @@ import (
 	"time"
 
 	storetypes "cosmossdk.io/store/types"
+	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cometbft/cometbft/crypto/ed25519"
 	"github.com/cometbft/cometbft/crypto/secp256k1"
+	cmttypes "github.com/cometbft/cometbft/types"
+	"github.com/cosmos/cosmos-sdk/codec"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdked25519 "github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
+	"github.com/cosmos/cosmos-sdk/std"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
+	"gitlab.com/thorchain/thornode/v3/app/params"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
@@ -909,4 +915,51 @@ func BenchmarkPerfQuoteSwap(b *testing.B) {
 			})
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// /thorchain/block query on a real mainnet block
+// ---------------------------------------------------------------------------
+
+// BenchmarkPerfQueryBlock serves /thorchain/block for a real mainnet block
+// (test/performance/testdata/mainnet-block-28143210.json.gz) from CometBFT
+// block and state stores, wired to queryBlock as a running node wires it
+// (connectNodeRPC).
+func BenchmarkPerfQueryBlock(b *testing.B) {
+	ctx, mgr := setupBenchmarkManager(b)
+	registry := codectypes.NewInterfaceRegistry()
+	std.RegisterInterfaces(registry)
+	types.RegisterInterfaces(registry)
+	mgr.cdc = codec.NewProtoCodec(registry)
+	txConfig, err := params.TxConfig(mgr.cdc, nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+	qs := &queryServer{mgr: mgr, txConfig: txConfig}
+
+	block, results := loadPerfMainnetBlock(b)
+	env, err := newBlockRPCEnv([]*cmttypes.Block{block}, map[int64]*abci.ResponseFinalizeBlock{block.Height: results})
+	if err != nil {
+		b.Fatal(err)
+	}
+	httpClient, stop, err := serveBlockRPC(blockRoutes(env))
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer stop()
+	defer connectNodeRPC(env, httpClient)()
+
+	ctx = ctx.WithBlockHeight(block.Height)
+	req := &types.QueryBlockRequest{Height: strconv.FormatInt(block.Height, 10)}
+	query := func() {
+		res, err := qs.queryBlock(ctx, req)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if len(res.Txs) != len(block.Txs) {
+			b.Fatalf("got %d txs, want %d", len(res.Txs), len(block.Txs))
+		}
+	}
+	query()
+	perfLoop(b, func(int) { query() })
 }
