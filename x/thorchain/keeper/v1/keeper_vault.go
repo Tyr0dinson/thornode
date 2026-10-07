@@ -116,6 +116,23 @@ func (k KVStore) SortBySecurity(ctx cosmos.Context, vaults Vaults, signingTransP
 func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signingTransPeriod int64) []VaultSecurity {
 	vaultSecurity := make([]VaultSecurity, len(vaults))
 
+	// recent txout items count against every vault; read them once
+	var txOuts []*TxOut
+	if len(vaults) > 0 {
+		h := ctx.BlockHeight() - signingTransPeriod
+		if h < 1 {
+			h = 1
+		}
+		for height := h; height <= ctx.BlockHeight(); height += 1 {
+			txOut, err := k.GetTxOut(ctx, height)
+			if err != nil {
+				ctx.Logger().Error("unable to get txout", "error", err)
+				continue
+			}
+			txOuts = append(txOuts, txOut)
+		}
+	}
+
 	for i, vault := range vaults {
 		// get total bond
 		totalBond := cosmos.ZeroUint()
@@ -146,16 +163,8 @@ func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signi
 		}
 
 		// add recent unsent txout items to totalValue
-		h := ctx.BlockHeight() - signingTransPeriod
-		if h < 1 {
-			h = 1
-		}
-		for height := h; height <= ctx.BlockHeight(); height += 1 {
-			txOut, err := k.GetTxOut(ctx, height)
-			if err != nil {
-				ctx.Logger().Error("unable to get txout", "error", err)
-				continue
-			}
+		for _, txOut := range txOuts {
+			var err error
 			for _, item := range txOut.TxArray {
 				if item.OutHash.IsEmpty() {
 					var toAddress common.Address
