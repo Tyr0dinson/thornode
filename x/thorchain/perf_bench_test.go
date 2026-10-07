@@ -747,3 +747,72 @@ func BenchmarkPerfCommonHelpers(b *testing.B) {
 		})
 	})
 }
+
+// ---------------------------------------------------------------------------
+// Outbounds: TryAddTxOutItem with a mainnet-like window of pending txouts
+// ---------------------------------------------------------------------------
+
+func BenchmarkPerfTxOut(b *testing.B) {
+	f := newPerfFixture(b)
+	height := f.ctx.BlockHeight() + 1
+	// vault selection weighs every unsent item of the signing period
+	// against each vault; mainnet carries a few per block
+	period := f.mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	f.commitInto(func(ctx cosmos.Context) {
+		for h := height - period; h <= height; h++ {
+			if h < 1 {
+				continue
+			}
+			txOut := NewTxOut(h)
+			for j := 0; j < 3; j++ {
+				label := fmt.Sprintf("pending/%d/%d", h, j)
+				txOut.TxArray = append(txOut.TxArray, TxOutItem{
+					Chain:       common.ETHChain,
+					ToAddress:   perfAddr(b, common.ETHChain, label),
+					VaultPubKey: f.vaults[j%len(f.vaults)].PubKey,
+					Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)),
+					Memo:        "OUT:" + perfTxID(b, label).String(),
+					InHash:      perfTxID(b, label),
+				})
+			}
+			if err := f.mgr.Keeper().SetTxOut(ctx, txOut); err != nil {
+				b.Fatal(err)
+			}
+		}
+		if err := f.mgr.Keeper().MintToModule(ctx, ModuleName, common.NewCoin(common.RuneNative, cosmos.NewUint(1000*common.One))); err != nil {
+			b.Fatal(err)
+		}
+		if err := f.mgr.Keeper().SendFromModuleToModule(ctx, ModuleName, AsgardName, common.NewCoins(common.NewCoin(common.RuneNative, cosmos.NewUint(1000*common.One)))); err != nil {
+			b.Fatal(err)
+		}
+	})
+
+	cases := []struct {
+		name string
+		toi  TxOutItem
+	}{
+		{"native", TxOutItem{
+			Chain:     common.THORChain,
+			ToAddress: perfAddr(b, common.THORChain, "out/native"),
+			Coin:      common.NewCoin(common.RuneNative, cosmos.NewUint(10*common.One)),
+			InHash:    perfTxID(b, "out/native"),
+		}},
+		{"l1", TxOutItem{
+			Chain:     common.ETHChain,
+			ToAddress: perfAddr(b, common.ETHChain, "out/l1"),
+			Coin:      common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One)),
+			InHash:    perfTxID(b, "out/l1"),
+		}},
+	}
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			f.measure(b, height, func(ctx cosmos.Context) error {
+				ok, err := f.mgr.TxOutStore().TryAddTxOutItem(ctx, f.mgr, tc.toi, cosmos.ZeroUint())
+				if err == nil && !ok {
+					return fmt.Errorf("txout not added")
+				}
+				return err
+			})
+		})
+	}
+}
