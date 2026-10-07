@@ -160,6 +160,7 @@ type KeeperNodeAccount interface {
 	ListValidatorsWithBond(ctx cosmos.Context) (NodeAccounts, error)
 	ListValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (NodeAccounts, error)
 	ListActiveValidators(ctx cosmos.Context) (NodeAccounts, error)
+	ListActiveValidatorsUpTo(ctx cosmos.Context, n int) (NodeAccounts, error)
 	GetLowestActiveVersion(ctx cosmos.Context) semver.Version
 	GetMinJoinVersion(ctx cosmos.Context) semver.Version
 	GetNodeAccount(ctx cosmos.Context, addr cosmos.AccAddress) (NodeAccount, error)

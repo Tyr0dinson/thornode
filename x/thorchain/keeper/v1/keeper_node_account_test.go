@@ -1,6 +1,7 @@
 package keeperv1
 
 import (
+	storetypes "cosmossdk.io/store/types"
 	"github.com/blang/semver"
 	"google.golang.org/protobuf/encoding/protowire"
 	. "gopkg.in/check.v1"
@@ -606,4 +607,28 @@ func (s *KeeperNodeAccountSuite) TestActiveValidatorsCacheDisabledByWrite(c *C) 
 	nodes, err = k.ListActiveValidators(cachedCtx)
 	c.Assert(err, IsNil)
 	c.Check(nodes, HasLen, 1)
+}
+
+func (s *KeeperNodeAccountSuite) TestListActiveValidatorsUpTo(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	for _, status := range []NodeStatus{NodeStandby, NodeActive, NodeActive, types.NodeStatus_Ready, NodeActive, NodeActive} {
+		c.Assert(k.SetNodeAccount(ctx, GetRandomValidatorNode(status)), IsNil)
+	}
+	vault := GetRandomValidatorNode(NodeActive)
+	vault.Type = NodeTypeVault
+	c.Assert(k.SetNodeAccount(ctx, vault), IsNil)
+
+	gasCtx := func() cosmos.Context { return ctx.WithGasMeter(storetypes.NewInfiniteGasMeter()) }
+	allCtx := gasCtx()
+	all, err := k.ListActiveValidators(allCtx)
+	c.Assert(err, IsNil)
+	c.Assert(all, HasLen, 4)
+	for _, n := range []int{0, 1, 3, 4, 10} {
+		upToCtx := gasCtx()
+		got, err := k.ListActiveValidatorsUpTo(upToCtx, n)
+		c.Assert(err, IsNil)
+		c.Assert(got, DeepEquals, all[:min(n, len(all))], Commentf("n=%d", n))
+		// same store access, so the same gas
+		c.Check(upToCtx.GasMeter().GasConsumed(), Equals, allCtx.GasMeter().GasConsumed(), Commentf("n=%d", n))
+	}
 }

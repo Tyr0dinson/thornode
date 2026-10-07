@@ -77,14 +77,19 @@ func (k KVStore) ListValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (
 			return nodeAccounts, nil
 		}
 	}
-	nodeAccounts, err := k.listValidatorsByStatus(ctx, status)
+	nodeAccounts, err := k.listValidatorsByStatus(ctx, status, -1)
 	if err == nil {
 		cache.Set(nodeAccounts)
 	}
 	return nodeAccounts, err
 }
 
-func (k KVStore) listValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (NodeAccounts, error) {
+// listValidatorsByStatus lists validators with the given status in store
+// order, keeping at most limit of them (limit < 0: all). The whole node
+// account store is iterated whatever the limit, so store access, and so gas,
+// is the same as for an unlimited listing; past the limit, matching records
+// are just not unmarshalled.
+func (k KVStore) listValidatorsByStatus(ctx cosmos.Context, status NodeStatus, limit int) (NodeAccounts, error) {
 	nodeAccounts := make(NodeAccounts, 0)
 	naIterator := k.GetNodeAccountIterator(ctx)
 	defer naIterator.Close()
@@ -92,15 +97,19 @@ func (k KVStore) listValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (
 		// Most node accounts do not match (e.g. ~100 of ~190 are active), so
 		// read status and type from the wire bytes and skip unmarshalling the
 		// rest. The iteration, and so the store access, is unchanged.
-		if naStatus, naType, ok := peekNodeAccountStatusType(naIterator.Value()); ok &&
-			(naType != NodeTypeValidator || naStatus != status) {
+		naStatus, naType, ok := peekNodeAccountStatusType(naIterator.Value())
+		if ok && (naType != NodeTypeValidator || naStatus != status) {
+			continue
+		}
+		full := limit >= 0 && len(nodeAccounts) >= limit
+		if ok && full {
 			continue
 		}
 		var na NodeAccount
 		if err := k.unmarshalNodeAccount(naIterator.Value(), &na); err != nil {
 			return nodeAccounts, dbError(ctx, "Unmarshal: node account", err)
 		}
-		if na.Type == NodeTypeValidator && na.Status == status {
+		if !full && na.Type == NodeTypeValidator && na.Status == status {
 			nodeAccounts = append(nodeAccounts, na)
 		}
 	}
@@ -207,6 +216,13 @@ func (k KVStore) unmarshalNodeAccount(bz []byte, na *NodeAccount) error {
 // ListActiveValidators - get a list of active validator node accounts
 func (k KVStore) ListActiveValidators(ctx cosmos.Context) (NodeAccounts, error) {
 	return k.ListValidatorsByStatus(ctx, NodeActive)
+}
+
+// ListActiveValidatorsUpTo returns the first n active validators of
+// ListActiveValidators, with the same store access (the whole node account
+// store is iterated), without unmarshalling the rest.
+func (k KVStore) ListActiveValidatorsUpTo(ctx cosmos.Context, n int) (NodeAccounts, error) {
+	return k.listValidatorsByStatus(ctx, NodeActive, n)
 }
 
 func (k KVStore) RemoveLowBondValidatorAccounts(ctx cosmos.Context) error {

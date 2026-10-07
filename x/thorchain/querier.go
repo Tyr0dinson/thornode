@@ -4111,8 +4111,9 @@ func eventMap(e sdk.Event) map[string]string {
 }
 
 func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) {
-	// use the first active node account as the signer
-	nodeAccounts, err := mgr.Keeper().ListActiveValidators(ctx)
+	// use the first active node account as the signer (same store access as
+	// ListActiveValidators, without unmarshalling the other active nodes)
+	nodeAccounts, err := mgr.Keeper().ListActiveValidatorsUpTo(ctx, 1)
 	if err != nil {
 		return nil, fmt.Errorf("no active node accounts: %w", err)
 	}
