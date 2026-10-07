@@ -4142,6 +4142,9 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 	cms := ctx.MultiStore().CacheMultiStore() // never call cms.Write()
 	em := cosmos.NewEventManager()
 	ctx = ctx.WithMultiStore(cms).WithEventManager(em)
+	// cms is discarded, so its txout writes need not disable the caller's
+	// txout cache (if any) for the caller's later simulations
+	ctx = keeper.ForkTxOutCache(ctx)
 
 	// disable logging
 	ctx = ctx.WithLogger(nullLogger)

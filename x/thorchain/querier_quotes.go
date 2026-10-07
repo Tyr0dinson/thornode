@@ -30,6 +30,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -842,6 +843,13 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 	isWasm, _ := ctx.Value(constants.CtxWASMQuery).(bool)
 	if !isWasm && req.Height == "" && ctx.BlockTime().Before(time.Now().Add(-config.GetThornode().API.Quote.MaxLag)) {
 		return nil, fmt.Errorf("refusing quote on node with stale state")
+	}
+	// The vault security sorts and pending outbound scans of one quote walk
+	// the same window of txout heights several times; share the store reads.
+	// Not for contracts: their quotes run inside a tx, where store reads are
+	// gas and gas is consensus-visible.
+	if !isWasm {
+		ctx = keeper.WithTxOutCache(ctx)
 	}
 
 	// parse assets

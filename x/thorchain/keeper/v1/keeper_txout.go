@@ -6,9 +6,11 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
 func (k KVStore) setTxOut(ctx cosmos.Context, key []byte, record TxOut) {
+	keeper.TxOutCacheFromContext(ctx).Disable()
 	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
@@ -64,8 +66,32 @@ func (k KVStore) GetTxOutIterator(ctx cosmos.Context) cosmos.Iterator {
 // GetTxOut - write the given txout information to key value store
 func (k KVStore) GetTxOut(ctx cosmos.Context, height int64) (*TxOut, error) {
 	record := NewTxOut(height)
-	_, err := k.getTxOut(ctx, k.GetKey(prefixTxOut, strconv.FormatInt(height, 10)), record)
-	return record, err
+	cache := keeper.TxOutCacheFromContext(ctx)
+	if cache == nil {
+		_, err := k.getTxOut(ctx, k.GetKey(prefixTxOut, strconv.FormatInt(height, 10)), record)
+		return record, err
+	}
+
+	// same store reads and decode as getTxOut, sharing the stored bytes (or
+	// their absence) of each height between the reads of one query
+	bz, present, ok := cache.Get(height)
+	if !ok {
+		store := k.kvStore(ctx)
+		key := k.GetKey(prefixTxOut, strconv.FormatInt(height, 10))
+		present = store.Has(key)
+		if present {
+			bz = store.Get(key)
+		}
+		cache.Set(height, bz, present)
+	}
+	if !present {
+		return record, nil
+	}
+	if err := k.cdc.Unmarshal(bz, record); err != nil {
+		key := k.GetKey(prefixTxOut, strconv.FormatInt(height, 10))
+		return record, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
+	}
+	return record, nil
 }
 
 func (k KVStore) GetTxOutValue(ctx cosmos.Context, height int64) (cosmos.Uint, cosmos.Uint, error) {

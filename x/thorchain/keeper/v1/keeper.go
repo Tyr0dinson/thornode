@@ -217,6 +217,9 @@ func (k KVStore) del(ctx cosmos.Context, key []byte) {
 	if bytes.HasPrefix(key, []byte(prefixNodeAccount)) {
 		keeper.ActiveValidatorsCacheFromContext(ctx).Disable()
 	}
+	if bytes.HasPrefix(key, []byte(prefixTxOut)) {
+		keeper.TxOutCacheFromContext(ctx).Disable()
+	}
 	store := k.kvStore(ctx)
 	if store.Has(key) {
 		store.Delete(key)
