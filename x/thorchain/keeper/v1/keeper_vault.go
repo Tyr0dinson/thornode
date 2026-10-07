@@ -1,6 +1,7 @@
 package keeperv1
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"sort"
@@ -112,6 +113,34 @@ func (k KVStore) SortBySecurity(ctx cosmos.Context, vaults Vaults, signingTransP
 	return final
 }
 
+// poolMemo is a pool decoded by getPoolMemo, with the bytes it was decoded from.
+type poolMemo struct {
+	bz   []byte
+	pool Pool
+}
+
+// getPoolMemo is GetPool with the same store access (Has, then Get of the
+// pool key), returning the pool decoded earlier from memo when the stored
+// bytes are the same rather than unmarshalling them again. Callers share the
+// returned pool's Uints, so they must not modify them.
+func (k KVStore) getPoolMemo(ctx cosmos.Context, asset common.Asset, memo map[string]poolMemo) (Pool, error) {
+	key := k.GetKey(prefixPool, asset.String())
+	store := k.kvStore(ctx)
+	if !store.Has(key) {
+		return NewPool(), nil
+	}
+	bz := store.Get(key)
+	if m, ok := memo[string(key)]; ok && bytes.Equal(m.bz, bz) {
+		return m.pool, nil
+	}
+	record := NewPool()
+	if err := k.cdc.Unmarshal(bz, &record); err != nil {
+		return record, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", &record, key), err)
+	}
+	memo[string(key)] = poolMemo{bz: bz, pool: record}
+	return record, nil
+}
+
 func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signingTransPeriod int64) []VaultSecurity {
 	vaultSecurity := make([]VaultSecurity, len(vaults))
 
@@ -131,6 +160,10 @@ func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signi
 			txOuts = append(txOuts, txOut)
 		}
 	}
+
+	// the vaults hold, and the pending window pays out, the same few dozen
+	// pools many times over: decode each stored pool once
+	pools := make(map[string]poolMemo)
 
 	for i, vault := range vaults {
 		// get total bond
@@ -152,7 +185,7 @@ func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signi
 			if coin.IsRune() {
 				continue
 			} else {
-				pool, err := k.GetPool(ctx, coin.Asset)
+				pool, err := k.getPoolMemo(ctx, coin.Asset, pools)
 				if err != nil {
 					ctx.Logger().Error("failed to get pool", "error", err)
 					continue
@@ -177,7 +210,7 @@ func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signi
 							totalValue = common.SafeSub(totalValue, item.Coin.Amount)
 						} else {
 							var pool Pool
-							pool, err = k.GetPool(ctx, item.Coin.Asset)
+							pool, err = k.getPoolMemo(ctx, item.Coin.Asset, pools)
 							if err != nil {
 								ctx.Logger().Error("failed to get pool", "error", err)
 								continue
@@ -189,7 +222,7 @@ func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signi
 							totalValue = totalValue.Add(item.Coin.Amount)
 						} else {
 							var pool Pool
-							pool, err = k.GetPool(ctx, item.Coin.Asset)
+							pool, err = k.getPoolMemo(ctx, item.Coin.Asset, pools)
 							if err != nil {
 								ctx.Logger().Error("failed to get pool", "error", err)
 								continue
