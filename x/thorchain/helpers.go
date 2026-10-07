@@ -2177,6 +2177,36 @@ func runePoolValue(ctx cosmos.Context, mgr Manager) (cosmos.Uint, error) {
 	return polValue.Add(pending), nil
 }
 
+// polValueMemo caches polPoolValue across a run of POL operations. Callers
+// reset it after anything that can change pools, synth supply or the POL
+// liquidity provider. A nil memo computes every time.
+type polValueMemo struct {
+	value cosmos.Uint
+	ok    bool
+}
+
+func (m *polValueMemo) reset() {
+	if m != nil {
+		m.ok = false
+	}
+}
+
+// runePoolValue is runePoolValue with the POL part taken from the memo.
+func (m *polValueMemo) runePoolValue(ctx cosmos.Context, mgr Manager) (cosmos.Uint, error) {
+	if m == nil {
+		return runePoolValue(ctx, mgr)
+	}
+	if !m.ok {
+		value, err := polPoolValue(ctx, mgr)
+		if err != nil {
+			return cosmos.ZeroUint(), err
+		}
+		m.value, m.ok = value, true
+	}
+	pending := mgr.Keeper().GetRuneBalanceOfModule(ctx, RUNEPoolName)
+	return m.value.Add(pending), nil
+}
+
 // polPoolValue - calculates how much the POL is worth in rune
 func polPoolValue(ctx cosmos.Context, mgr Manager) (cosmos.Uint, error) {
 	total := cosmos.ZeroUint()
