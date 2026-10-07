@@ -352,3 +352,62 @@ func (s *PubKeyTestSuite) TestValidPubKeyCacheGenerations(c *C) {
 	_, err = NewPubKey("not-a-pubkey")
 	c.Assert(err, NotNil)
 }
+
+func (s *PubKeyTestSuite) TestGetThorAddressCache(c *C) {
+	// the uncached computation
+	reference := func(pk PubKey) (cosmos.AccAddress, error) {
+		addr, err := pk.GetAddress(THORChain)
+		if err != nil {
+			return nil, err
+		}
+		return cosmos.AccAddressFromBech32(addr.String())
+	}
+
+	// THORChain account prefixes of the current network, restored afterwards
+	config := cosmos.GetConfig()
+	accPrefix, pubPrefix := config.GetBech32AccountAddrPrefix(), config.GetBech32AccountPubPrefix()
+	defer config.SetBech32PrefixForAccount(accPrefix, pubPrefix)
+	config.SetBech32PrefixForAccount("tthor", "tthorpub") // mocknet takes THORChain's prefix from the config
+	thorPrefix := THORChain.AddressPrefix(CurrentChainNetwork)
+	config.SetBech32PrefixForAccount(thorPrefix, thorPrefix+"pub")
+
+	_, pub, _ := testdata.KeyTestPubAddr()
+	bech32Pub, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, pub)
+	c.Assert(err, IsNil)
+	pk := PubKey(bech32Pub)
+	want, err := reference(pk)
+	c.Assert(err, IsNil)
+	c.Assert(want.Empty(), Equals, false)
+	for i := 0; i < 2; i++ { // second pass is served from the cache
+		got, err := pk.GetThorAddress()
+		c.Assert(err, IsNil)
+		c.Check(got, DeepEquals, want)
+		got[0] ^= 0xff // callers get their own copy
+	}
+	got, err := pk.GetThorAddress()
+	c.Assert(err, IsNil)
+	c.Check(got, DeepEquals, want)
+
+	// the entry is keyed by the account address prefix: under another prefix
+	// the decode fails exactly as it does uncached
+	config.SetBech32PrefixForAccount("cosmos", thorPrefix+"pub")
+	wantAddr, wantErr := reference(pk)
+	c.Assert(wantErr, NotNil)
+	gotAddr, gotErr := pk.GetThorAddress()
+	c.Assert(gotErr, NotNil)
+	c.Check(gotErr.Error(), Equals, wantErr.Error())
+	c.Check(gotAddr, DeepEquals, wantAddr)
+	config.SetBech32PrefixForAccount(thorPrefix, thorPrefix+"pub")
+
+	// failures are never cached and match the uncached result exactly
+	for _, bad := range []PubKey{EmptyPubKey, PubKey("tthorpub1invalid")} {
+		wantAddr, wantErr := reference(bad)
+		c.Assert(wantErr, NotNil)
+		for i := 0; i < 2; i++ {
+			gotAddr, gotErr := bad.GetThorAddress()
+			c.Assert(gotErr, NotNil)
+			c.Check(gotErr.Error(), Equals, wantErr.Error())
+			c.Check(gotAddr, DeepEquals, wantAddr)
+		}
+	}
+}

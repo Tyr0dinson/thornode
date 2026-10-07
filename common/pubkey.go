@@ -378,12 +378,49 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 	return address, nil
 }
 
+// thorAddressCacheKey identifies a GetThorAddress result: the decode checks
+// the address against the account address prefix of the SDK config.
+type thorAddressCacheKey struct {
+	prefix string
+	pubKey PubKey
+}
+
+// thorAddressCache memoizes successful GetThorAddress results. GetAddress
+// pins a pubkey's THORChain address for the life of the process
+// (pubkeyToAddressCache is never cleared) and decoding it is a pure function
+// of that string and the account prefix, so the cache cannot change results.
+// Bounded: once full, results are computed without being stored.
+var (
+	thorAddressCache   = make(map[thorAddressCacheKey]cosmos.AccAddress)
+	thorAddressCacheMu sync.RWMutex
+)
+
+const thorAddressCacheMax = 8192
+
+// GetThorAddress returns the THORChain account address of the pubkey. The
+// returned address is a fresh copy the caller may modify.
 func (p PubKey) GetThorAddress() (cosmos.AccAddress, error) {
+	key := thorAddressCacheKey{prefix: cosmos.GetConfig().GetBech32AccountAddrPrefix(), pubKey: p}
+	thorAddressCacheMu.RLock()
+	cached, ok := thorAddressCache[key]
+	thorAddressCacheMu.RUnlock()
+	if ok {
+		return append(cosmos.AccAddress(nil), cached...), nil
+	}
 	addr, err := p.GetAddress(THORChain)
 	if err != nil {
 		return nil, err
 	}
-	return cosmos.AccAddressFromBech32(addr.String())
+	accAddr, err := cosmos.AccAddressFromBech32(addr.String())
+	if err != nil {
+		return accAddr, err
+	}
+	thorAddressCacheMu.Lock()
+	if len(thorAddressCache) < thorAddressCacheMax {
+		thorAddressCache[key] = append(cosmos.AccAddress(nil), accAddr...)
+	}
+	thorAddressCacheMu.Unlock()
+	return accAddr, nil
 }
 
 // MarshalJSON to Marshals to JSON using Bech32
