@@ -1,6 +1,9 @@
 package types
 
 import (
+	"math/rand"
+	"strings"
+
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -1083,4 +1086,149 @@ func (s *TypeObservedTxSuite) TestGetConsensusTxCountsActiveSignersOnce(c *C) {
 	for _, signer := range voter.Txs[0].GetSigners() {
 		c.Check(accounts.IsNodeKeys(signer), Equals, !signer.Equals(standby.NodeAddress))
 	}
+}
+
+// oldGetTx is GetTx before the active-node index was shared between passes;
+// it is the oracle for TestGetTxMatchesOracle.
+func oldGetTx(m *ObservedTxVoter, nodeAccounts NodeAccounts) *common.ObservedTx {
+	if !m.Tx.IsEmpty() && m.Tx.IsFinal() {
+		return &m.Tx
+	}
+	finalTx := oldGetConsensusTx(m, nodeAccounts, true)
+	if !finalTx.IsEmpty() {
+		return &finalTx
+	}
+	discoverTx := oldGetConsensusTx(m, nodeAccounts, false)
+	if !discoverTx.IsEmpty() {
+		return &discoverTx
+	}
+	return &m.Tx
+}
+
+func oldGetConsensusTx(m *ObservedTxVoter, accounts NodeAccounts, final bool) common.ObservedTx {
+	var activeNodes map[string]struct{}
+	for _, txFinal := range m.Txs {
+		voters := make(map[string]bool)
+		if txFinal.IsFinal() != final {
+			continue
+		}
+		if activeNodes == nil {
+			activeNodes = make(map[string]struct{}, len(accounts))
+			for _, na := range accounts {
+				if na.Status == NodeStatus_Active {
+					activeNodes[string(na.NodeAddress)] = struct{}{}
+				}
+			}
+		}
+		for _, txIn := range m.Txs {
+			if txIn.IsFinal() != final {
+				continue
+			}
+			if !sameConsensusObservation(txFinal, txIn) {
+				continue
+			}
+			for _, signer := range txIn.GetSigners() {
+				key := string(signer)
+				if _, exist := voters[key]; exist {
+					continue
+				}
+				if _, active := activeNodes[key]; active {
+					voters[key] = true
+				}
+			}
+		}
+		if HasSuperMajority(len(voters), len(accounts)) {
+			return txFinal
+		}
+	}
+	return common.ObservedTx{}
+}
+
+// GetTx, HasConsensus and HasFinalised agree with the oracle on randomized
+// voters: mixed finality, consensus-equal and -unequal observations, repeated,
+// non-active, unknown, upper-case and undecodable signers, and repeated or
+// non-active accounts.
+func (s *TypeObservedTxSuite) TestGetTxMatchesOracle(c *C) {
+	r := rand.New(rand.NewSource(42)) // #nosec G404 test only
+	pool := make([]cosmos.AccAddress, 7)
+	for i := range pool {
+		pool[i] = GetRandomBech32Addr()
+	}
+	statuses := []NodeStatus{NodeStatus_Active, NodeStatus_Active, NodeStatus_Active, NodeStatus_Standby, NodeStatus_Disabled}
+
+	base := GetRandomObservedTx()
+	base.BlockHeight, base.FinaliseHeight = 10, 10
+	var primary common.ObservedTx // most observations per voter
+	variant := func() common.ObservedTx {
+		tx := primary
+		tx.Signers = nil
+		switch r.Intn(8) {
+		case 1: // other finality
+			if tx.IsFinal() {
+				tx.FinaliseHeight = 20
+			} else {
+				tx.FinaliseHeight = tx.BlockHeight
+			}
+		case 2: // consensus-equal, different block height
+			tx.BlockHeight, tx.FinaliseHeight = 11, tx.FinaliseHeight-tx.BlockHeight+11
+		case 3: // different gas: not consensus-equal
+			tx.Tx.Gas = common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(uint64(1+r.Intn(3))))}
+		case 4: // different memo, maybe not final
+			tx.Tx.Memo = "memo"
+			if r.Intn(2) == 0 {
+				tx.FinaliseHeight = 20
+			}
+		}
+		return tx
+	}
+
+	selected := map[bool]int{} // consensus selections by finality
+	for iter := 0; iter < 5000; iter++ {
+		primary = base
+		if r.Intn(2) == 0 {
+			primary.FinaliseHeight = 20
+		}
+		var accounts NodeAccounts
+		for i, n := 0, r.Intn(7); i < n; i++ {
+			accounts = append(accounts, NodeAccount{
+				NodeAddress: pool[r.Intn(len(pool))],
+				Status:      statuses[r.Intn(len(statuses))],
+			})
+		}
+		voter := NewObservedTxVoter(base.Tx.ID, nil)
+		for i, n := 0, r.Intn(5); i < n; i++ {
+			tx := variant()
+			for j, k := 0, r.Intn(10); j < k; j++ {
+				signer := pool[r.Intn(len(pool))].String()
+				switch r.Intn(10) {
+				case 0:
+					signer = strings.ToUpper(signer)
+				case 1:
+					signer = "garbage"
+				}
+				tx.Signers = append(tx.Signers, signer)
+			}
+			voter.Txs = append(voter.Txs, tx)
+		}
+		switch r.Intn(4) {
+		case 1:
+			voter.Tx = variant()
+		case 2:
+			if len(voter.Txs) > 0 {
+				voter.Tx = voter.Txs[r.Intn(len(voter.Txs))]
+			}
+		}
+
+		want := oldGetTx(&voter, accounts)
+		got := voter.GetTx(accounts)
+		c.Assert(got, DeepEquals, want, Commentf("iteration %d", iter))
+		c.Assert(got == &voter.Tx, Equals, want == &voter.Tx, Commentf("iteration %d", iter))
+		c.Assert(voter.HasConsensus(accounts), Equals, !want.IsEmpty())
+		c.Assert(voter.HasFinalised(accounts), Equals, !want.IsEmpty() && want.IsFinal())
+		if !want.IsEmpty() && want != &voter.Tx {
+			selected[want.IsFinal()]++
+		}
+	}
+	// the generator must reach both kinds of consensus often enough to matter
+	c.Assert(selected[true] > 150 && selected[false] > 150, Equals, true, Commentf("selections: %v", selected))
 }
