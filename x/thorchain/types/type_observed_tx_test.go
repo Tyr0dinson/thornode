@@ -4,6 +4,7 @@ import (
 	"math/rand"
 	"strings"
 
+	"github.com/cosmos/cosmos-sdk/types/bech32"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -1155,6 +1156,12 @@ func (s *TypeObservedTxSuite) TestGetTxMatchesOracle(c *C) {
 		pool[i] = GetRandomBech32Addr()
 	}
 	statuses := []NodeStatus{NodeStatus_Active, NodeStatus_Active, NodeStatus_Active, NodeStatus_Standby, NodeStatus_Disabled}
+	otherPrefix := make([]string, len(pool))
+	for i := range pool {
+		var err error
+		otherPrefix[i], err = bech32.ConvertAndEncode("cosmos", pool[i])
+		c.Assert(err, IsNil)
+	}
 
 	base := GetRandomObservedTx()
 	base.BlockHeight, base.FinaliseHeight = 10, 10
@@ -1183,7 +1190,7 @@ func (s *TypeObservedTxSuite) TestGetTxMatchesOracle(c *C) {
 	}
 
 	selected := map[bool]int{} // consensus selections by finality
-	for iter := 0; iter < 5000; iter++ {
+	for iter := 0; iter < 8000; iter++ {
 		primary = base
 		if r.Intn(2) == 0 {
 			primary.FinaliseHeight = 20
@@ -1205,6 +1212,10 @@ func (s *TypeObservedTxSuite) TestGetTxMatchesOracle(c *C) {
 					signer = strings.ToUpper(signer)
 				case 1:
 					signer = "garbage"
+				case 2: // mixed case: not valid bech32
+					signer = strings.ToUpper(signer[:1]) + signer[1:]
+				case 3: // valid bech32 under another prefix
+					signer = otherPrefix[r.Intn(len(otherPrefix))]
 				}
 				tx.Signers = append(tx.Signers, signer)
 			}

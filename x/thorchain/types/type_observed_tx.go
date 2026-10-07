@@ -182,6 +182,18 @@ type activeNodeIndex struct {
 	voted []bool // scratch, one flag per slot
 }
 
+// signerSlot is the slot of the address signer decodes to, exactly as
+// GetSigners decodes it, or -1 if GetSigners skips signer or the address is
+// not active. Unlike GetSigners, it allocates nothing for a memoized signer.
+func (idx *activeNodeIndex) signerSlot(signer string) int {
+	if addr, ok := common.SignerAddressString(signer); ok {
+		if slot, active := idx.slots[addr]; active {
+			return slot
+		}
+	}
+	return -1
+}
+
 func (idx *activeNodeIndex) build(accounts NodeAccounts) {
 	idx.built = true
 	size, count := 0, 0
@@ -239,9 +251,9 @@ func (m *ObservedTxVoter) getConsensusTx(accounts NodeAccounts, final bool, idx 
 			if !sameConsensusObservation(txFinal, *txIn) {
 				continue
 			}
-			for _, signer := range txIn.GetSigners() {
-				slot, active := idx.slots[string(signer)]
-				if active && !idx.voted[slot] {
+			for _, signer := range txIn.Signers {
+				slot := idx.signerSlot(signer)
+				if slot >= 0 && !idx.voted[slot] {
 					idx.voted[slot] = true
 					voters++
 				}

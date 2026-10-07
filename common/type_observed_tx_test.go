@@ -331,6 +331,27 @@ func (s ObservedTxSuite) TestSignerAddressCache(c *C) {
 	tx := ObservedTx{Signers: []string{signer, "bogus", signer}}
 	c.Check(tx.GetSigners(), HasLen, 2)
 	c.Check(tx.HasSigned(addr), Equals, true)
+
+	// SignerAddressString agrees with signerAddress, memoized or not, and is
+	// not affected by callers modifying their copies
+	fresh := cosmos.AccAddress([]byte("perf-signer-cache-02")).String()
+	for _, s := range []string{fresh, fresh, signer, strings.ToUpper(signer)} {
+		got, ok := SignerAddressString(s)
+		c.Assert(ok, Equals, true)
+		want, err := signerAddress(s)
+		c.Assert(err, IsNil)
+		c.Check(got, Equals, string(want))
+		want[0] ^= 0xff
+		again, _ := SignerAddressString(s)
+		c.Check(again, Equals, got)
+	}
+	for _, s := range []string{"bogus", "", strings.ToUpper(signer[:1]) + signer[1:]} {
+		got, ok := SignerAddressString(s)
+		c.Check(ok, Equals, false)
+		c.Check(got, Equals, "")
+		_, err := signerAddress(s)
+		c.Check(err, NotNil)
+	}
 }
 
 func (s ObservedTxSuite) TestHasSignedMatchesDecodedSigners(c *C) {
