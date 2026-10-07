@@ -6730,7 +6730,7 @@ func (s *NetworkManagerTestSuite) TestClaimingSwapStreamingSwapCreation(c *C) {
 	for ; iterator.Valid(); iterator.Next() {
 		var voter types.ObservedTxVoter
 		helper.Cdc().MustUnmarshal(iterator.Value(), &voter)
-		if voter.Tx.Tx.Memo == "SWAP:TCY:claiming-swap" {
+		if voter.Tx.Tx.Memo == TCYClaimingSwapMemo {
 			foundVoter = true
 			c.Assert(voter.Tx.Tx.Coins[0].Amount.Equal(claimingAmount), Equals, true)
 			c.Assert(voter.Tx.Tx.Coins[0].Asset.Equals(common.RuneNative), Equals, true)
@@ -6751,7 +6751,7 @@ func (s *NetworkManagerTestSuite) TestClaimingSwapStreamingSwapCreation(c *C) {
 		for ; iter.Valid(); iter.Next() {
 			var msg types.MsgSwap
 			mgr.Keeper().Cdc().MustUnmarshal(iter.Value(), &msg)
-			if msg.Tx.Memo == "SWAP:TCY:claiming-swap" {
+			if msg.Tx.Memo == TCYClaimingSwapMemo {
 				foundSwap = true
 				c.Assert(msg.TargetAsset.Equals(common.TCY), Equals, true)
 				c.Assert(msg.StreamQuantity, Equals, uint64(10)) // Default quantity
@@ -6765,7 +6765,7 @@ func (s *NetworkManagerTestSuite) TestClaimingSwapStreamingSwapCreation(c *C) {
 		for ; iter.Valid(); iter.Next() {
 			var msg types.MsgSwap
 			mgr.Keeper().Cdc().MustUnmarshal(iter.Value(), &msg)
-			if msg.Tx.Memo == "SWAP:TCY:claiming-swap" {
+			if msg.Tx.Memo == TCYClaimingSwapMemo {
 				foundSwap = true
 				c.Assert(msg.TargetAsset.Equals(common.TCY), Equals, true)
 				c.Assert(msg.StreamQuantity, Equals, uint64(10)) // Default quantity
@@ -6921,7 +6921,7 @@ func (s *NetworkManagerTestSuite) TestClaimingSwapCustomParameters(c *C) {
 		for ; iter.Valid(); iter.Next() {
 			var msg types.MsgSwap
 			mgr.Keeper().Cdc().MustUnmarshal(iter.Value(), &msg)
-			if msg.Tx.Memo == "SWAP:TCY:claiming-swap" {
+			if msg.Tx.Memo == TCYClaimingSwapMemo {
 				foundSwap = true
 				c.Assert(msg.StreamQuantity, Equals, uint64(20), Commentf("Should use custom quantity"))
 				c.Assert(msg.StreamInterval, Equals, uint64(5), Commentf("Should use custom interval"))
@@ -6934,7 +6934,7 @@ func (s *NetworkManagerTestSuite) TestClaimingSwapCustomParameters(c *C) {
 		for ; iter.Valid(); iter.Next() {
 			var msg types.MsgSwap
 			mgr.Keeper().Cdc().MustUnmarshal(iter.Value(), &msg)
-			if msg.Tx.Memo == "SWAP:TCY:claiming-swap" {
+			if msg.Tx.Memo == TCYClaimingSwapMemo {
 				foundSwap = true
 				c.Assert(msg.StreamQuantity, Equals, uint64(20), Commentf("Should use custom quantity"))
 				c.Assert(msg.StreamInterval, Equals, uint64(5), Commentf("Should use custom interval"))
@@ -6976,4 +6976,128 @@ func (s *NetworkManagerTestSuite) TestClaimingSwapDuplicatePrevention(c *C) {
 	err = nmgr.claimingSwapRuneToTCY(ctx, mgr)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Matches, ".*claiming swap already exists.*")
+}
+
+// setupClaimingSwapE2E prepares a TCY pool backed by real Asgard balances, an
+// active vault for native outbounds and a funded claiming module.
+func setupClaimingSwapE2E(c *C, advQueue bool) (cosmos.Context, *Mgrs, *NetworkMgr) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+
+	vault := GetRandomVault()
+	vault.Status = ActiveVault
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+
+	tcyPool := NewPool()
+	tcyPool.Asset = common.TCY
+	tcyPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	tcyPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	tcyPool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, tcyPool), IsNil)
+	FundModule(c, ctx, k, AsgardName, 1000*common.One)
+	tcyCoins := common.NewCoins(common.NewCoin(common.TCY, cosmos.NewUint(1000*common.One)))
+	c.Assert(k.MintToModule(ctx, ModuleName, tcyCoins[0]), IsNil)
+	c.Assert(k.SendFromModuleToModule(ctx, ModuleName, AsgardName, tcyCoins), IsNil)
+
+	FundModule(c, ctx, k, TCYClaimingName, 100*common.One)
+	k.SetMimir(ctx, constants.TCYClaimingSwapHalt.String(), 0)
+	k.SetMimir(ctx, constants.TCYClaimingSwapQuantity.String(), 2)
+	k.SetMimir(ctx, constants.TCYClaimingSwapInterval.String(), 1)
+	advQueueMimir := int64(0)
+	if advQueue {
+		advQueueMimir = 1
+	}
+	k.SetMimir(ctx, constants.EnableAdvSwapQueue.String(), advQueueMimir)
+	c.Assert(k.AdvSwapQueueEnabled(ctx), Equals, advQueue)
+
+	return ctx, mgr, newNetworkMgr(k, mgr.TxOutStore(), mgr.EventMgr())
+}
+
+func runClaimingSwapQueue(c *C, ctx cosmos.Context, mgr *Mgrs, blocks int) cosmos.Context {
+	for i := 0; i < blocks; i++ {
+		ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+		if mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+			c.Assert(mgr.AdvSwapQueueMgr().EndBlock(ctx, mgr, false), IsNil)
+		} else {
+			c.Assert(mgr.SwapQ().EndBlock(ctx, mgr), IsNil)
+		}
+	}
+	return ctx
+}
+
+func claimingSwapTxID(c *C, ctx cosmos.Context, mgr *Mgrs) common.TxID {
+	iter := mgr.Keeper().GetObservedTxInVoterIterator(ctx)
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		var voter ObservedTxVoter
+		mgr.Keeper().Cdc().MustUnmarshal(iter.Value(), &voter)
+		if voter.Tx.Tx.Memo == TCYClaimingSwapMemo {
+			return voter.TxID
+		}
+	}
+	c.Fatal("claiming swap voter not found")
+	return ""
+}
+
+func (s *NetworkManagerTestSuite) TestClaimingSwapDeliversTCY(c *C) {
+	// The V1 queue sizes this deposit as a single sub-swap at these depths, so
+	// it pays more slip (and therefore more liquidity fee) than the V2 queue.
+	for _, tc := range []struct {
+		advQueue          bool
+		claimTCY, runeFee string
+	}{
+		{advQueue: false, claimTCY: "8264462809", runeFee: "990990990"},
+		{advQueue: true, claimTCY: "8686180973", runeFee: "487550441"},
+	} {
+		advQueue := tc.advQueue
+		ctx, mgr, nmgr := setupClaimingSwapE2E(c, advQueue)
+		k := mgr.Keeper()
+
+		c.Assert(nmgr.claimingSwapRuneToTCY(ctx, mgr), IsNil)
+		c.Assert(k.GetRuneBalanceOfModule(ctx, TCYClaimingName).IsZero(), Equals, true)
+		txID := claimingSwapTxID(c, ctx, mgr)
+
+		ctx = runClaimingSwapQueue(c, ctx, mgr, 5)
+
+		// the streaming swap must have run to completion and paid TCY into the
+		// claiming module; the only RUNE back in the module is the TCY pool's
+		// liquidity fee, which is routed to the claiming module by design
+		c.Check(k.GetBalanceOfModule(ctx, TCYClaimingName, common.TCY.Native()).String(), Equals, tc.claimTCY, Commentf("adv queue %v", advQueue))
+		c.Check(k.GetRuneBalanceOfModule(ctx, TCYClaimingName).String(), Equals, tc.runeFee, Commentf("adv queue %v", advQueue))
+		c.Check(k.StreamingSwapExists(ctx, txID), Equals, false, Commentf("adv queue %v", advQueue))
+
+		pool, err := k.GetPool(ctx, common.TCY)
+		c.Assert(err, IsNil)
+		c.Check(pool.BalanceRune.Add(cosmos.NewUintFromString(tc.runeFee)).String(), Equals, cosmos.NewUint(1100*common.One).String(), Commentf("adv queue %v", advQueue))
+	}
+}
+
+func (s *NetworkManagerTestSuite) TestClaimingSwapFailureReturnsRune(c *C) {
+	for _, advQueue := range []bool{false, true} {
+		ctx, mgr, nmgr := setupClaimingSwapE2E(c, advQueue)
+		k := mgr.Keeper()
+
+		c.Assert(nmgr.claimingSwapRuneToTCY(ctx, mgr), IsNil)
+		c.Assert(k.GetRuneBalanceOfModule(ctx, TCYClaimingName).IsZero(), Equals, true)
+		asgardRune := k.GetRuneBalanceOfModule(ctx, AsgardName)
+
+		// make every sub-swap fail
+		pool, err := k.GetPool(ctx, common.TCY)
+		c.Assert(err, IsNil)
+		pool.Status = PoolStaged
+		c.Assert(k.SetPool(ctx, pool), IsNil)
+
+		ctx = runClaimingSwapQueue(c, ctx, mgr, 5)
+
+		// the full deposit is refunded to the claiming module (native outbounds
+		// are processed in-block and carry no outbound fee)
+		c.Check(k.GetRuneBalanceOfModule(ctx, TCYClaimingName).Equal(cosmos.NewUint(100*common.One)), Equals, true,
+			Commentf("adv queue %v: %s", advQueue, k.GetRuneBalanceOfModule(ctx, TCYClaimingName)))
+		c.Check(k.GetRuneBalanceOfModule(ctx, AsgardName).Equal(common.SafeSub(asgardRune, cosmos.NewUint(100*common.One))), Equals, true,
+			Commentf("adv queue %v", advQueue))
+		items, err := mgr.TxOutStore().GetOutboundItems(ctx)
+		c.Assert(err, IsNil)
+		c.Check(items, HasLen, 0, Commentf("adv queue %v", advQueue))
+		c.Check(k.GetBalanceOfModule(ctx, TCYClaimingName, common.TCY.Native()).IsZero(), Equals, true, Commentf("adv queue %v", advQueue))
+	}
 }

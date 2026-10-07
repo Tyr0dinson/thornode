@@ -204,7 +204,7 @@ func (tos *TxOutStorage) isAffiliateFeeExemptOutbound(memo string) bool {
 // isAffiliateFeeExemptInbound returns true if the inbound memo indicates a transaction
 // type that is exempt from affiliate fees.
 func (tos *TxOutStorage) isAffiliateFeeExemptInbound(memo string) bool {
-	return memo == "" || strings.HasPrefix(memo, constants.MemoPrefixPreferredAssetSwap)
+	return memo == "" || memo == TCYClaimingSwapMemo || strings.HasPrefix(memo, constants.MemoPrefixPreferredAssetSwap)
 }
 
 // takeAffiliateFee - take affiliate fee from outbound amount using the inbound memo.

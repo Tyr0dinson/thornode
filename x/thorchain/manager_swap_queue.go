@@ -6,9 +6,29 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
 const PreferredAssetSwapMemoPrefix = "THOR-PREFERRED-ASSET"
+
+// TCYClaimingSwapMemo is the internal memo of the claiming module's RUNE -> TCY
+// streaming swap. It does not parse as a user memo and is only honoured on a
+// swap sent from the claiming module (see isTCYClaimingSwap).
+const TCYClaimingSwapMemo = "THOR-TCY-CLAIMING-SWAP"
+
+// isTCYClaimingSwap reports whether msg is the protocol-originated claiming
+// module RUNE -> TCY swap queued by NetworkMgr.createClaimingStreamingSwap.
+func isTCYClaimingSwap(ctx cosmos.Context, k keeper.Keeper, msg MsgSwap) bool {
+	if msg.Tx.Memo != TCYClaimingSwapMemo {
+		return false
+	}
+	claimingAddr, err := k.GetModuleAddress(TCYClaimingName)
+	if err != nil {
+		ctx.Logger().Error("fail to get claiming module address", "error", err)
+		return false
+	}
+	return msg.Tx.FromAddress.Equals(claimingAddr)
+}
 
 type swapItem struct {
 	index int

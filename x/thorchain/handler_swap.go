@@ -511,6 +511,12 @@ func (h SwapHandler) handleWithSwapResult(ctx cosmos.Context, msg MsgSwap) (*cos
 		return &cosmos.Result{}, finalEmit, effectiveInput, nil
 	}
 
+	// the claiming module swap has no follow-on handlers either; its memo is
+	// internal and intentionally not parseable
+	if isTCYClaimingSwap(ctx, h.mgr.Keeper(), msg) {
+		return &cosmos.Result{}, finalEmit, nil
+	}
+
 	if parseMemoErr != nil {
 		ctx.Logger().Error("swap handler failed to parse memo", "memo", msg.Tx.Memo, "error", parseMemoErr)
 		return nil, cosmos.ZeroUint(), cosmos.ZeroUint(), parseMemoErr
