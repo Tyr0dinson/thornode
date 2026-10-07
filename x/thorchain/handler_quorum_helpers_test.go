@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/cometbft/cometbft/crypto/secp256k1"
+	gosecp256k1 "github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -250,4 +251,46 @@ func (s *HandlerQuorumHelpersSuite) TestPreverifyAttestationsMatchesSequential(c
 	}
 	// inactive signers are never verified ahead of the checks
 	c.Assert(len(sigs), Equals, 32)
+}
+
+func (s *HandlerQuorumHelpersSuite) TestAttestationBech32PubCache(c *C) {
+	encode := func(key []byte) (string, error) {
+		pk := gosecp256k1.PubKey{Key: key}
+		return cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, &pk)
+	}
+	privKey := secp256k1.GenPrivKey()
+	node := makeActiveNode(c, privKey)
+	key := privKey.PubKey().Bytes()
+	want, err := encode(key)
+	c.Assert(err, IsNil)
+	c.Assert(want, Equals, node.PubKeySet.Secp256k1.String())
+
+	// an active signer is stored once verified; cached and uncached agree
+	signBz := []byte("payload")
+	att := signAttestation(c, privKey, signBz)
+	_, err = verifyQuorumAttestation(NodeAccounts{node}, signBz, att, nil)
+	c.Assert(err, IsNil)
+	attestationBech32CacheMu.RLock()
+	cached, ok := attestationBech32Cache[attestationBech32CacheKey(key)]
+	attestationBech32CacheMu.RUnlock()
+	c.Assert(ok, Equals, true)
+	c.Assert(cached, Equals, want)
+	got, err := attestationBech32Pub(key)
+	c.Assert(err, IsNil)
+	c.Assert(got, Equals, want)
+
+	// keys of inactive signers are encoded but never stored
+	other := secp256k1.GenPrivKey()
+	otherAtt := signAttestation(c, other, signBz)
+	_, err = verifyQuorumAttestation(NodeAccounts{node}, signBz, otherAtt, nil)
+	c.Assert(err, NotNil)
+	attestationBech32CacheMu.RLock()
+	_, ok = attestationBech32Cache[attestationBech32CacheKey(otherAtt.PubKey)]
+	attestationBech32CacheMu.RUnlock()
+	c.Assert(ok, Equals, false)
+	wantOther, err := encode(otherAtt.PubKey)
+	c.Assert(err, IsNil)
+	gotOther, err := attestationBech32Pub(otherAtt.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(gotOther, Equals, wantOther)
 }

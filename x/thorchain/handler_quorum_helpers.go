@@ -40,6 +40,48 @@ func deduplicateAttestations(attestations []*common.Attestation, maxCount int) [
 	return result
 }
 
+// attestationBech32Cache memoizes the account bech32 encoding of attestation
+// secp256k1 pubkeys. Every quorum message re-encodes the same ~100 active
+// validator keys (twice: preverifyAttestations and verifyQuorumAttestation),
+// and the encoding is a pure function of the key bytes and the account pubkey
+// prefix, so the cache cannot change results. Only keys that matched an active
+// node are stored, so attestations from arbitrary keys cannot crowd out the
+// validators; bounded: once full, keys are encoded without being stored.
+var (
+	attestationBech32Cache   = make(map[string]string)
+	attestationBech32CacheMu sync.RWMutex
+)
+
+const attestationBech32CacheMax = 4096
+
+func attestationBech32CacheKey(key []byte) string {
+	return cosmos.GetConfig().GetBech32AccountPubPrefix() + "|" + string(key)
+}
+
+// attestationBech32Pub is cosmos.Bech32ifyPubKey(Bech32PubKeyTypeAccPub) of the
+// secp256k1 key, served from attestationBech32Cache when present.
+func attestationBech32Pub(key []byte) (string, error) {
+	attestationBech32CacheMu.RLock()
+	bech32Pub, ok := attestationBech32Cache[attestationBech32CacheKey(key)]
+	attestationBech32CacheMu.RUnlock()
+	if ok {
+		return bech32Pub, nil
+	}
+	pk := secp256k1.PubKey{Key: key}
+	return cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, &pk)
+}
+
+// rememberAttestationBech32Pub stores a successful encoding of an active
+// node's key.
+func rememberAttestationBech32Pub(key []byte, bech32Pub string) {
+	cacheKey := attestationBech32CacheKey(key)
+	attestationBech32CacheMu.Lock()
+	if _, ok := attestationBech32Cache[cacheKey]; !ok && len(attestationBech32Cache) < attestationBech32CacheMax {
+		attestationBech32Cache[cacheKey] = bech32Pub
+	}
+	attestationBech32CacheMu.Unlock()
+}
+
 // attestationCheck is one attestation and the payload it must sign.
 type attestationCheck struct {
 	att    *common.Attestation
@@ -81,12 +123,12 @@ func preverifyAttestations(activeNodeAccounts NodeAccounts, checks []attestation
 		if c.att == nil || len(c.att.PubKey) == 0 || len(c.att.Signature) == 0 {
 			continue
 		}
-		pk := secp256k1.PubKey{Key: c.att.PubKey}
-		bech32Pub, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, &pk)
+		bech32Pub, err := attestationBech32Pub(c.att.PubKey)
 		if err != nil {
 			continue
 		}
 		if _, ok := active[bech32Pub]; ok {
+			rememberAttestationBech32Pub(c.att.PubKey, bech32Pub)
 			todo = append(todo, c)
 		}
 	}
@@ -160,7 +202,7 @@ func verifyQuorumAttestation(activeNodeAccounts NodeAccounts, signBz []byte, att
 
 	pk := secp256k1.PubKey{Key: att.PubKey}
 
-	bech32Pub, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, &pk)
+	bech32Pub, err := attestationBech32Pub(att.PubKey)
 	if err != nil {
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "quorum", "attestation_rejected"},
@@ -178,7 +220,9 @@ func verifyQuorumAttestation(activeNodeAccounts NodeAccounts, signBz []byte, att
 			break
 		}
 	}
-	if !found {
+	if found {
+		rememberAttestationBech32Pub(att.PubKey, bech32Pub)
+	} else {
 		// can occur if a node account churns out before the tx is processed.
 		telemetry.IncrCounterWithLabels(
 			[]string{"thornode", "quorum", "attestation_rejected"},
