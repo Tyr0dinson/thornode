@@ -33,8 +33,9 @@
 #          times come from the "Applying block" log lines.
 #
 # Binaries must be built with TAG=mainnet from the release mainnet runs (plus
-# any changes under test). Changes that alter tx gas_used cannot be replayed:
-# the next real header's LastResultsHash would not match.
+# any changes under test). The handshake replay checks app hashes only, not
+# LastResultsHash, so changes that alter tx gas_used (but not state) replay too.
+# Runs share the host: compare a/b only from runs taken under similar load.
 #
 # Env: REPLAY_DIR (default ~/.cache/thornode-perf/mainnet-replay)
 #      STATESYNC_TRUST_HEIGHT (a height just below the snapshot peers offer),
@@ -144,7 +145,7 @@ statesync)
   node_env THOR_AUTO_STATE_SYNC_ENABLED=true "$bin" render-config >"$REPLAY_DIR/render.log" 2>&1
   # Verify against a trust point just below the snapshot: verifying backwards
   # from the auto-chosen height fetches every header in between and times out.
-  if [[ -n ${STATESYNC_TRUST_HEIGHT:-} ]]; then
+  if [[ -n ${STATESYNC_TRUST_HEIGHT-} ]]; then
     rpc=${STATESYNC_RPC:-https://gateway.liquify.com/chain/thorchain_rpc}
     base=${rpc%%\?*}
     query=
@@ -194,7 +195,7 @@ restore-local)
   h=${2:-$(node_env "$bin" snapshots list 2>/dev/null | awk '/height:/ {print $2}' | sort -n | tail -1)}
   data=$NODE_HOME/.thornode/data
   rm -rf "$data/application.db"
-  if [[ -n ${REPLAY_RESTORE_TMPFS:-} ]]; then
+  if [[ -n ${REPLAY_RESTORE_TMPFS-} ]]; then
     scratch=/dev/shm/thornode-replay-application.db
     rm -rf "$scratch"
     mkdir -p "$scratch"
@@ -262,7 +263,7 @@ run)
       sync
       log="$out/replay-$side-$r.log"
       profile_args=()
-      if [[ -n ${REPLAY_CPUPROFILE_DIR:-} ]]; then
+      if [[ -n ${REPLAY_CPUPROFILE_DIR-} ]]; then
         mkdir -p "$REPLAY_CPUPROFILE_DIR"
         profile_args=(--cpu-profile "$REPLAY_CPUPROFILE_DIR/cpu-$side-$r.pprof")
       fi

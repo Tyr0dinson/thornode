@@ -70,8 +70,8 @@ idea: A/B it with `PERF_TAGS=mocknet` and measure it with `test-times.sh`, never
 `scripts/perf/mainnet-replay.sh` replays a window of real mainnet blocks through two release
 (`TAG=mainnet`) binaries from the same restored state; CometBFT checks every block's app hash
 against mainnet, so it measures the real effect and proves consensus identity at once. Build the
-candidate as the deployed release tag plus the commits under test (gas-changing commits cannot
-replay). State setup is slow (hours; see the script header), so reuse `~/.cache/thornode-perf/mainnet-replay`
+candidate as the deployed release tag plus the commits under test (gas-only changes replay fine:
+the handshake checks app hashes, not LastResultsHash). State setup is slow (hours; see the script header), so reuse `~/.cache/thornode-perf/mainnet-replay`
 when it exists. Round 1+2 non-gas commits: 2000 blocks, 820s -> 455s (-44.5%), p99 1032 -> 477 ms.
 
 ## Keep bar
