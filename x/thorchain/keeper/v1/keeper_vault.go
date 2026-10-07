@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 
+	"google.golang.org/protobuf/encoding/protowire"
+
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
@@ -113,6 +115,125 @@ func (k KVStore) SortBySecurity(ctx cosmos.Context, vaults Vaults, signingTransP
 	return final
 }
 
+// NodeAccount protobuf field number of the bond, read by peekNodeAccountStatusBond.
+const nodeAccountBondField protowire.Number = 5
+
+// nodeAccountWireTypes are the wire types NodeAccount.Unmarshal requires of
+// its fields (1-17); it rejects any other wire type for them.
+var nodeAccountWireTypes = [...]protowire.Type{
+	1: protowire.BytesType, 2: protowire.VarintType, 3: protowire.BytesType,
+	4: protowire.BytesType, 5: protowire.BytesType, 6: protowire.VarintType,
+	7: protowire.BytesType, 8: protowire.VarintType, 9: protowire.BytesType,
+	10: protowire.VarintType, 11: protowire.VarintType, 12: protowire.VarintType,
+	13: protowire.BytesType, 14: protowire.BytesType, 15: protowire.VarintType,
+	16: protowire.VarintType, 17: protowire.VarintType,
+}
+
+// nodeAccountPubKeySetField is the PubKeySet message field of a NodeAccount.
+const nodeAccountPubKeySetField protowire.Number = 3
+
+// peekNodeAccountStatusBond returns the status and bond that the codec's
+// Unmarshal decodes from a NodeAccount's protobuf bytes, without decoding the
+// other fields. Unmarshal resets the record first, so an absent status is
+// Unknown and an absent bond is the zero Uint value (nil, not ZeroUint); the
+// last occurrence of a field wins and the bond goes through the same
+// Uint.Unmarshal. The other fields are only checked for what Unmarshal
+// rejects: their framing, wire type, and the framing and wire types of the
+// PubKeySet. ok is false if any of that fails or the status or bond do not
+// decode, in which case the caller must fully unmarshal to get the error.
+func peekNodeAccountStatusBond(bz []byte) (status NodeStatus, bond cosmos.Uint, ok bool) {
+	for len(bz) > 0 {
+		num, wtype, n := protowire.ConsumeTag(bz)
+		if n < 0 {
+			return 0, bond, false
+		}
+		bz = bz[n:]
+		if int(num) < len(nodeAccountWireTypes) && wtype != nodeAccountWireTypes[num] {
+			return 0, bond, false
+		}
+		switch num {
+		case nodeAccountStatusField:
+			v, m := protowire.ConsumeVarint(bz)
+			if m < 0 {
+				return 0, bond, false
+			}
+			bz = bz[m:]
+			status = NodeStatus(int32(v))
+		case nodeAccountBondField:
+			v, m := protowire.ConsumeBytes(bz)
+			if m < 0 {
+				return 0, bond, false
+			}
+			bz = bz[m:]
+			if err := bond.Unmarshal(v); err != nil {
+				return 0, bond, false
+			}
+		case nodeAccountPubKeySetField:
+			v, m := protowire.ConsumeBytes(bz)
+			if m < 0 || !wellFormedPubKeySet(v) {
+				return 0, bond, false
+			}
+			bz = bz[m:]
+		default:
+			m := protowire.ConsumeFieldValue(num, wtype, bz)
+			if m < 0 {
+				return 0, bond, false
+			}
+			bz = bz[m:]
+		}
+	}
+	return status, bond, true
+}
+
+// wellFormedPubKeySet reports whether PubKeySet.Unmarshal accepts bz: its two
+// fields are strings and it does not validate their contents.
+func wellFormedPubKeySet(bz []byte) bool {
+	for len(bz) > 0 {
+		num, wtype, n := protowire.ConsumeTag(bz)
+		if n < 0 {
+			return false
+		}
+		bz = bz[n:]
+		if (num == 1 || num == 2) && wtype != protowire.BytesType {
+			return false
+		}
+		m := protowire.ConsumeFieldValue(num, wtype, bz)
+		if m < 0 {
+			return false
+		}
+		bz = bz[m:]
+	}
+	return true
+}
+
+// getNodeStatusBondByPubKey returns the Status and Bond of
+// GetNodeAccountByPubKey(ctx, pk), with the same store access (Has, then Get
+// of the node account key), without decoding the rest of the node account.
+func (k KVStore) getNodeStatusBondByPubKey(ctx cosmos.Context, pk common.PubKey) (NodeStatus, cosmos.Uint, error) {
+	addr, err := pk.GetThorAddress()
+	if err != nil {
+		return NodeUnknown, cosmos.ZeroUint(), err
+	}
+	key := k.GetKey(prefixNodeAccount, addr.String())
+	store := k.kvStore(ctx)
+	if !store.Has(key) {
+		return NodeUnknown, cosmos.ZeroUint(), nil
+	}
+	bz := store.Get(key)
+	if status, bond, ok := peekNodeAccountStatusBond(bz); ok {
+		return status, bond, nil
+	}
+	emptyPubKeySet := common.PubKeySet{
+		Secp256k1: common.EmptyPubKey,
+		Ed25519:   common.EmptyPubKey,
+	}
+	record := NewNodeAccount(addr, NodeUnknown, emptyPubKeySet, "", cosmos.ZeroUint(), "", ctx.BlockHeight())
+	if err := k.cdc.Unmarshal(bz, &record); err != nil {
+		return record.Status, record.Bond, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", &record, key), err)
+	}
+	return record.Status, record.Bond, nil
+}
+
 // poolMemo is a pool decoded by getPoolMemo, with the bytes it was decoded from.
 type poolMemo struct {
 	bz   []byte
@@ -169,13 +290,13 @@ func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signi
 		// get total bond
 		totalBond := cosmos.ZeroUint()
 		for _, pk := range vault.GetMembership() {
-			na, err := k.GetNodeAccountByPubKey(ctx, pk)
+			status, bond, err := k.getNodeStatusBondByPubKey(ctx, pk)
 			if err != nil {
 				ctx.Logger().Error("failed to get node account by pubkey", "error", err)
 				continue
 			}
-			if na.Status == NodeActive {
-				totalBond = totalBond.Add(na.Bond)
+			if status == NodeActive {
+				totalBond = totalBond.Add(bond)
 			}
 		}
 
