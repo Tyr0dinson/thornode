@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unsafe"
 
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/runtime"
@@ -80,7 +81,7 @@ func (k KVStore) ListValidatorsByStatus(ctx cosmos.Context, status NodeStatus) (
 			continue
 		}
 		var na NodeAccount
-		if err := k.cdc.Unmarshal(naIterator.Value(), &na); err != nil {
+		if err := k.unmarshalNodeAccount(naIterator.Value(), &na); err != nil {
 			return nodeAccounts, dbError(ctx, "Unmarshal: node account", err)
 		}
 		if na.Type == NodeTypeValidator && na.Status == status {
@@ -130,6 +131,61 @@ func peekNodeAccountStatusType(bz []byte) (status NodeStatus, typ NodeType, ok b
 		bz = bz[m:]
 	}
 	return status, typ, true
+}
+
+const nodeAccountSignerMembershipField protowire.Number = 9
+
+// unmarshalNodeAccount is k.cdc.Unmarshal(bz, na) with signer_membership
+// decoded here. Nodes keep every vault they were ever a member of (on mainnet
+// ~100 each), so Unmarshal made ~100 string allocations per node; here the
+// entries share one buffer, in wire order as Unmarshal appends them. The buffer
+// is never written after the strings are made. The other fields go through
+// Unmarshal unchanged; bytes it cannot split are left to Unmarshal whole.
+func (k KVStore) unmarshalNodeAccount(bz []byte, na *NodeAccount) error {
+	count, size := 0, 0
+	for rest := bz; len(rest) > 0; {
+		num, wtype, n := protowire.ConsumeTag(rest)
+		if n < 0 {
+			return k.cdc.Unmarshal(bz, na)
+		}
+		m := protowire.ConsumeFieldValue(num, wtype, rest[n:])
+		if m < 0 {
+			return k.cdc.Unmarshal(bz, na)
+		}
+		if num == nodeAccountSignerMembershipField {
+			if wtype != protowire.BytesType {
+				return k.cdc.Unmarshal(bz, na)
+			}
+			count++
+			size += m
+		}
+		rest = rest[n+m:]
+	}
+	if count == 0 {
+		return k.cdc.Unmarshal(bz, na)
+	}
+
+	other := make([]byte, 0, len(bz)-size)
+	buf := make([]byte, 0, size)
+	members := make([]string, 0, count)
+	for rest := bz; len(rest) > 0; {
+		num, wtype, n := protowire.ConsumeTag(rest)
+		m := protowire.ConsumeFieldValue(num, wtype, rest[n:])
+		if num == nodeAccountSignerMembershipField {
+			v, _ := protowire.ConsumeBytes(rest[n:])
+			start := len(buf)
+			buf = append(buf, v...)
+			members = append(members, unsafe.String(unsafe.SliceData(buf[start:]), len(v)))
+		} else {
+			other = append(other, rest[:n+m]...)
+		}
+		rest = rest[n+m:]
+	}
+	if err := k.cdc.Unmarshal(other, na); err != nil {
+		return err
+	}
+	na.SignerMembership = members
+	return nil
 }
 
 // ListActiveValidators - get a list of active validator node accounts

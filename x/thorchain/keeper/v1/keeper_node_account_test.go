@@ -2,6 +2,7 @@ package keeperv1
 
 import (
 	"github.com/blang/semver"
+	"google.golang.org/protobuf/encoding/protowire"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -475,5 +476,52 @@ func (s *KeeperNodeAccountSuite) TestPeekNodeAccountStatusType(c *C) {
 	for _, na := range active {
 		c.Check(na.Status, Equals, NodeActive)
 		c.Check(na.Type, Equals, NodeTypeValidator)
+	}
+}
+
+func (s *KeeperNodeAccountSuite) TestUnmarshalNodeAccountMatchesCodec(c *C) {
+	_, k := setupKeeperForTest(c)
+	vaults := make([]string, 8)
+	for i := range vaults {
+		vaults[i] = GetRandomPubKey().String()
+	}
+	var blobs [][]byte
+	for i := 0; i < 50; i++ {
+		na := GetRandomValidatorNode(NodeActive)
+		na.Version = "3.20.0"
+		for j := 0; j < i%10; j++ {
+			na.SignerMembership = append(na.SignerMembership, vaults[(i+j)%len(vaults)])
+		}
+		bz, err := k.cdc.Marshal(&na)
+		c.Assert(err, IsNil)
+		blobs = append(blobs, bz)
+	}
+	// field 9 split around other fields, repeated scalar fields (last wins),
+	// an empty member, and malformed tails
+	extra := protowire.AppendTag(nil, nodeAccountSignerMembershipField, protowire.BytesType)
+	extra = protowire.AppendString(extra, vaults[0])
+	status := protowire.AppendTag(nil, nodeAccountStatusField, protowire.VarintType)
+	status = protowire.AppendVarint(status, uint64(NodeStandby))
+	empty := protowire.AppendTag(nil, nodeAccountSignerMembershipField, protowire.BytesType)
+	empty = protowire.AppendString(empty, "")
+	wrongType := protowire.AppendTag(nil, nodeAccountSignerMembershipField, protowire.VarintType)
+	wrongType = protowire.AppendVarint(wrongType, 1)
+	base := blobs[5]
+	blobs = append(blobs,
+		append(append(append(append([]byte{}, extra...), base...), status...), extra...),
+		append(append([]byte{}, base...), empty...),
+		append(append([]byte{}, base...), wrongType...),
+		append(append([]byte{}, base...), 0x4a, 0x05, 'a'),
+		[]byte{0xff},
+		nil,
+	)
+	for i, bz := range blobs {
+		var want, got NodeAccount
+		wantErr := k.cdc.Unmarshal(bz, &want)
+		gotErr := k.unmarshalNodeAccount(bz, &got)
+		c.Assert(gotErr == nil, Equals, wantErr == nil, Commentf("blob %d", i))
+		if wantErr == nil {
+			c.Assert(got, DeepEquals, want, Commentf("blob %d", i))
+		}
 	}
 }
