@@ -9,6 +9,12 @@ import (
 	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
+// TorAnchorMimirKey is the mimir key whose positive value marks the pool of
+// asset as a TOR anchor.
+func TorAnchorMimirKey(asset common.Asset) string {
+	return strings.ReplaceAll(fmt.Sprintf("TorAnchor-%s", asset.String()), ".", "-")
+}
+
 func (k KVStore) GetAnchors(ctx cosmos.Context, asset common.Asset) []common.Asset {
 	isTor := asset.Equals(common.TOR)
 	if isTor {
@@ -19,8 +25,7 @@ func (k KVStore) GetAnchors(ctx cosmos.Context, asset common.Asset) []common.Ass
 			return assets
 		}
 		for _, pool := range pools {
-			mimirKey := fmt.Sprintf("TorAnchor-%s", pool.Asset.String())
-			mimirKey = strings.ReplaceAll(mimirKey, ".", "-")
+			mimirKey := TorAnchorMimirKey(pool.Asset)
 			var val int64
 			val, err = k.GetMimir(ctx, mimirKey)
 			if err != nil {

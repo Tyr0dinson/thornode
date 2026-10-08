@@ -18,6 +18,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	keeperv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -503,7 +504,7 @@ func isStableToStable(ctx cosmos.Context, k keeper.Keeper, source, target common
 	// Same answer as checking both layer-1 assets against GetAnchors(TOR), which
 	// unmarshals every pool and reads a mimir per pool: an asset is a TOR anchor
 	// iff its pool exists and its TorAnchor-<asset> mimir is positive (as in
-	// StableReserveMgr.isTORAnchor). Reads only the two candidates.
+	// isTORAnchorAsset). Reads only the two candidates.
 	return isTORAnchorAsset(ctx, k, source.GetLayer1Asset()) && isTORAnchorAsset(ctx, k, target.GetLayer1Asset())
 }
 
@@ -512,8 +513,7 @@ func isTORAnchorAsset(ctx cosmos.Context, k keeper.Keeper, l1 common.Asset) bool
 	if !k.PoolExist(ctx, l1) {
 		return false
 	}
-	anchorKey := strings.ReplaceAll(fmt.Sprintf("TorAnchor-%s", l1.String()), ".", "-")
-	val, err := k.GetMimir(ctx, anchorKey)
+	val, err := k.GetMimir(ctx, keeperv1.TorAnchorMimirKey(l1))
 	return err == nil && val > 0
 }
 

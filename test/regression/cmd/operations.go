@@ -546,6 +546,10 @@ func (op *OpCreateBlocks) Execute(out io.Writer, path string, _, routine int, p 
 	// clear existing log output
 	drainLogs(logs)
 
+	// the loop below trims path in place for blockPath; record block times
+	// under the untrimmed suite path on every iteration
+	suite := path
+
 	for i := 0; i < op.Count; i++ {
 		// http request to localhost to unblock block creation
 		blockStart := time.Now()
@@ -592,7 +596,7 @@ func (op *OpCreateBlocks) Execute(out io.Writer, path string, _, routine int, p 
 			localLog.Err(err).Msg("failed to parse new block response")
 			return err
 		}
-		recordBlockTime(path, height, blockElapsed)
+		recordBlockTime(suite, height, blockElapsed)
 
 		// determine path for block output
 		path = strings.TrimPrefix(path, "suites/")

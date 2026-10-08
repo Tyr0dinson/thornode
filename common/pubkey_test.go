@@ -313,3 +313,42 @@ func (s *PubKeyTestSuite) TestNewPubKeyValidationCache(c *C) {
 		c.Check(err, NotNil)
 	}
 }
+
+func (s *PubKeyTestSuite) TestValidPubKeyCacheGenerations(c *C) {
+	validPubKeyCacheMu.Lock()
+	savedCur, savedPrev := validPubKeyCache, validPubKeyPrev
+	validPubKeyCache, validPubKeyPrev = make(map[string]struct{}), make(map[string]struct{})
+	validPubKeyCacheMu.Unlock()
+	defer func() {
+		validPubKeyCacheMu.Lock()
+		validPubKeyCache, validPubKeyPrev = savedCur, savedPrev
+		validPubKeyCacheMu.Unlock()
+	}()
+
+	_, pub, _ := testdata.KeyTestPubAddr()
+	pk, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, pub)
+	c.Assert(err, IsNil)
+	_, err = NewPubKey(pk)
+	c.Assert(err, IsNil)
+	hot := cosmos.GetConfig().GetBech32AccountPubPrefix() + "|" + pk
+
+	// fill past capacity with junk, touching the hot key once per generation
+	for gen := 0; gen < 3; gen++ {
+		for i := 0; i < validPubKeyCacheMax; i++ {
+			rememberValidPubKey(fmt.Sprintf("junk-%d-%d", gen, i))
+		}
+		_, err = NewPubKey(pk)
+		c.Assert(err, IsNil)
+		c.Assert(len(validPubKeyCache) <= validPubKeyCacheMax, Equals, true)
+		c.Assert(len(validPubKeyPrev) <= validPubKeyCacheMax, Equals, true)
+	}
+	_, inCur := validPubKeyCache[hot]
+	_, inPrev := validPubKeyPrev[hot]
+	c.Assert(inCur || inPrev, Equals, true)
+
+	// failures are never cached, and still fail on a full cache
+	_, err = NewPubKey("not-a-pubkey")
+	c.Assert(err, NotNil)
+	_, err = NewPubKey("not-a-pubkey")
+	c.Assert(err, NotNil)
+}

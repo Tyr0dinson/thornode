@@ -2,7 +2,6 @@ package keeperv1
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -72,8 +71,7 @@ func (k KVStore) IsPOLReserveEligiblePool(ctx cosmos.Context, asset common.Asset
 	}
 	// 4. TOR anchor pools are in the default set. Mirror the key format used by
 	// KVStore.GetAnchors so operators can reuse existing TorAnchor mimirs.
-	anchorKey := strings.ReplaceAll(fmt.Sprintf("TorAnchor-%s", asset.String()), ".", "-")
-	if v, err := k.GetMimir(ctx, anchorKey); err == nil && v > 0 {
+	if v, err := k.GetMimir(ctx, TorAnchorMimirKey(asset)); err == nil && v > 0 {
 		return true
 	}
 	return false

@@ -1069,9 +1069,13 @@ func (s *TypeObservedTxSuite) TestGetConsensusTxCountsActiveSignersOnce(c *C) {
 		return voter
 	}
 
-	// 3 distinct active of 5 accounts (+ a repeat) is short of 2/3; counting
-	// the standby or the repeat would reach it
-	voter := vote(active[0], active[1], active[2], standby, active[1])
+	// 3 distinct active of 5 accounts is short of 2/3; counting the standby
+	// would reach it
+	voter := vote(active[0], active[1], active[2], standby)
+	c.Check(voter.HasFinalised(accounts), Equals, false)
+	// Add rejects a repeat vote via HasSigned, so plant the duplicate signer
+	// directly; counting it would reach 2/3
+	voter.Txs[0].Signers = append(voter.Txs[0].Signers, active[1].NodeAddress.String())
 	c.Check(voter.HasFinalised(accounts), Equals, false)
 	// 4 distinct active of 5 accounts reaches it
 	voter = vote(active[0], active[1], active[2], active[3], standby)

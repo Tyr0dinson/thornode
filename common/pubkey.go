@@ -48,9 +48,12 @@ var (
 	pubkeyToAddressCache   = make(map[string]Address)
 	pubkeyToAddressCacheMu = &sync.RWMutex{}
 
-	// validPubKeyCache holds strings NewPubKey has accepted (bounded; failures
-	// are never cached)
+	// validPubKeyCache holds strings NewPubKey has accepted (failures are never
+	// cached). It is bounded by two generations: when cur fills it becomes prev
+	// and a fresh cur starts, and prev hits are promoted, so keys still in use
+	// survive while junk from query input ages out
 	validPubKeyCache   = make(map[string]struct{})
+	validPubKeyPrev    = make(map[string]struct{})
 	validPubKeyCacheMu sync.RWMutex
 )
 
@@ -71,20 +74,29 @@ func NewPubKey(key string) (PubKey, error) {
 	cacheKey := cosmos.GetConfig().GetBech32AccountPubPrefix() + "|" + key
 	validPubKeyCacheMu.RLock()
 	_, ok := validPubKeyCache[cacheKey]
+	_, inPrev := validPubKeyPrev[cacheKey]
 	validPubKeyCacheMu.RUnlock()
 	if ok {
 		return PubKey(key), nil
 	}
-	_, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, key)
-	if err != nil {
-		return EmptyPubKey, fmt.Errorf("%s is not bech32 encoded pub key,err : %w", key, err)
+	if !inPrev {
+		_, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, key)
+		if err != nil {
+			return EmptyPubKey, fmt.Errorf("%s is not bech32 encoded pub key,err : %w", key, err)
+		}
 	}
-	validPubKeyCacheMu.Lock()
-	if len(validPubKeyCache) < validPubKeyCacheMax {
-		validPubKeyCache[cacheKey] = struct{}{}
-	}
-	validPubKeyCacheMu.Unlock()
+	rememberValidPubKey(cacheKey)
 	return PubKey(key), nil
+}
+
+func rememberValidPubKey(cacheKey string) {
+	validPubKeyCacheMu.Lock()
+	defer validPubKeyCacheMu.Unlock()
+	if len(validPubKeyCache) >= validPubKeyCacheMax {
+		validPubKeyPrev = validPubKeyCache
+		validPubKeyCache = make(map[string]struct{}, validPubKeyCacheMax)
+	}
+	validPubKeyCache[cacheKey] = struct{}{}
 }
 
 // NewPubKeyFromCrypto

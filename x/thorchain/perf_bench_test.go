@@ -440,6 +440,7 @@ func BenchmarkPerfObservedTxQuorumIn(b *testing.B) {
 			obsTx := f.inboundSwap(b, 0, height, "quorum-in/"+tc.name)
 			h := NewObservedTxQuorumHandler(f.mgr)
 			fx := *f
+			fx.ctx, _ = f.ctx.CacheContext() // pre-state stays local to this sub-benchmark
 			if tc.pre > 0 {
 				fx.commitInto(func(ctx cosmos.Context) {
 					if _, err := h.Run(ctx.WithBlockHeight(height), f.quorumMsg(b, obsTx, true, f.nodes[:tc.pre])); err != nil {

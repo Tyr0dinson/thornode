@@ -108,10 +108,13 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 	trackPricePerNode := config.GetThornode().Telemetry.PricePerNode
 
 	// each feed carries one attestation over its own payload; verify them
-	// all concurrently up front
+	// all concurrently up front, skipping feeds handleQuorumPriceFeed rejects
+	// before it reaches signature verification
 	checks := make([]attestationCheck, 0, len(msg.QuoPriceFeeds))
 	for _, qpf := range msg.QuoPriceFeeds {
-		if qpf == nil || qpf.PriceFeed == nil || len(qpf.Attestations) != 1 {
+		if qpf == nil || qpf.PriceFeed == nil || len(qpf.Attestations) != 1 ||
+			!bytes.Equal(qpf.PriceFeed.Version, h.requiredVersion) ||
+			len(qpf.PriceFeed.Rates) != len(h.requiredSymbols) {
 			continue
 		}
 		signBz, err := qpf.PriceFeed.GetSignablePayload()
