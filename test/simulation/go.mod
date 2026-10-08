@@ -11,7 +11,6 @@ require (
 	github.com/cometbft/cometbft v0.38.21
 	github.com/cosmos/cosmos-sdk v0.53.0
 	github.com/dashpay/dashd-go v0.26.1
-	github.com/dashpay/dashd-go/btcutil v1.3.0
 	github.com/eager7/dogd v0.0.0-20200427085516-2caf59f59dbb
 	github.com/eager7/dogutil v0.0.0-20200427040807-200e961ba4b5
 	github.com/ethereum/go-ethereum v1.16.8
@@ -25,6 +24,8 @@ require (
 	google.golang.org/grpc v1.72.0
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
 )
+
+require github.com/dashpay/dashd-go/btcutil v1.3.0 // indirect
 
 require (
 	cel.dev/expr v0.20.0 // indirect
