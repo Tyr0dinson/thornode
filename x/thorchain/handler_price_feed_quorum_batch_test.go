@@ -630,8 +630,8 @@ func (s *HandlerPriceFeedQuorumBatchSuite) TestBondAddressPriceCopy(c *C) {
 			}
 			all = append(all, price)
 		}
-		_, median, err := common.MedianAbsoluteDeviation(all)
-		c.Assert(err, IsNil)
+		_, median, merr := common.MedianAbsoluteDeviation(all)
+		c.Assert(merr, IsNil)
 		expected[symbol] = median.Text('f', -1)
 	}
 

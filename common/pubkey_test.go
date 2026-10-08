@@ -379,8 +379,8 @@ func (s *PubKeyTestSuite) TestGetThorAddressCache(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(want.Empty(), Equals, false)
 	for i := 0; i < 2; i++ { // second pass is served from the cache
-		got, err := pk.GetThorAddress()
-		c.Assert(err, IsNil)
+		got, gerr := pk.GetThorAddress()
+		c.Assert(gerr, IsNil)
 		c.Check(got, DeepEquals, want)
 		got[0] ^= 0xff // callers get their own copy
 	}
