@@ -21,13 +21,15 @@ const (
 	ebifrostPort = 50051
 )
 
+var errNoSeedEndpoint = errors.New("no seed nodes endpoint provided")
+
 // getSeedAddrs returns the IPs of active nodes from the seed nodes endpoint. A
 // failure is returned rather than fatal: a node with an address book or configured
 // peers can still start (an upgrading network's own API may be down while it waits
 // for validators), so the caller decides how to proceed.
 func getSeedAddrs() ([]string, error) {
 	if config.Thornode.SeedNodesEndpoint == "" {
-		return nil, errors.New("no seed nodes endpoint provided")
+		return nil, errNoSeedEndpoint
 	}
 
 	// get nodes

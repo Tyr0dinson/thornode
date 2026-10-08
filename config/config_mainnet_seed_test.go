@@ -10,9 +10,9 @@ import (
 	. "gopkg.in/check.v1"
 )
 
-// A broken or unavailable seed endpoint must not stop the node: getSeedAddrs
-// returns an error with no seeds (callers fall back to the address book / saved
-// peers) instead of exiting.
+// A broken or unavailable seed endpoint is not fatal in getSeedAddrs: it
+// returns an error with no seeds, and the caller exits only when there is no
+// address book or persistent peer to fall back to.
 func (Test) TestGetSeedAddrsEndpointFailuresAreNotFatal(c *C) {
 	defer func(prev string) { config.Thornode.SeedNodesEndpoint = prev }(config.Thornode.SeedNodesEndpoint)
 

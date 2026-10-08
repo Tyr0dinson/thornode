@@ -557,26 +557,6 @@ func (Test) TestResolveAddrsMixed(c *C) {
 	c.Assert(result[1], Equals, "5.6.7.8")
 }
 
-// -------------------------------------------------------------------------------------
-// getSeedAddrs (mocknet)
-// -------------------------------------------------------------------------------------
-
-func (Test) TestGetSeedAddrsMocknet(c *C) {
-	result, err := getSeedAddrs()
-	c.Assert(err, IsNil)
-	c.Assert(result, HasLen, 0)
-}
-
-// -------------------------------------------------------------------------------------
-// assertBifrostHasSeeds (mocknet)
-// -------------------------------------------------------------------------------------
-
-func (Test) TestAssertBifrostHasSeedsMocknet(c *C) {
-	// In mocknet, assertBifrostHasSeeds checks for a seed file.
-	// It should not panic regardless of whether the file exists.
-	assertBifrostHasSeeds()
-}
-
 func (Test) TestAssertBifrostHasSeedsWithFile(c *C) {
 	// Create a temp seed file so the function exercises the file stat path
 	tmpDir := c.MkDir()

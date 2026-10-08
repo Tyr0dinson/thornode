@@ -6,6 +6,7 @@ import (
 	"embed"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -1335,6 +1336,30 @@ func resolveAddrs(addrs []string) []string {
 	return resolvedAddrs
 }
 
+// requireFallbackPeers returns an error when a node has nothing to dial without
+// seeds: no persistent peers and an empty (or missing) CometBFT address book.
+// CometBFT accepts an empty seed list without checking the address book, so such a
+// node would start stranded; exiting lets a restart retry the seed endpoint.
+func requireFallbackPeers(home string) error {
+	if config.Thornode.Tendermint.P2P.PersistentPeers != "" {
+		return nil
+	}
+	data, err := os.ReadFile(filepath.Join(home, "config", "addrbook.json"))
+	if err != nil {
+		return fmt.Errorf("no persistent peers and no address book: %w", err)
+	}
+	var book struct {
+		Addrs []json.RawMessage `json:"addrs"`
+	}
+	if err = json.Unmarshal(data, &book); err != nil {
+		return fmt.Errorf("no persistent peers and unreadable address book: %w", err)
+	}
+	if len(book.Addrs) == 0 {
+		return errors.New("no persistent peers and the address book is empty")
+	}
+	return nil
+}
+
 func thornodeSeeds() (seedAddrs, tmSeeds []string) {
 	// use environment variable if set
 	seeds := os.Getenv("SEEDS")
@@ -1343,8 +1368,13 @@ func thornodeSeeds() (seedAddrs, tmSeeds []string) {
 	} else {
 		log.Info().Msg("seeds not provided, initializing automatically...")
 		var err error
-		if seedAddrs, err = getSeedAddrs(); err != nil {
-			log.Warn().Err(err).Msg("no seeds from seed endpoint; starting without seed nodes")
+		if seedAddrs, err = getSeedAddrs(); err != nil && !errors.Is(err, errNoSeedEndpoint) {
+			if fbErr := requireFallbackPeers(os.ExpandEnv("$HOME/.thornode")); fbErr != nil {
+				log.Fatal().Err(err).AnErr("fallback", fbErr).Msg("no seeds from seed endpoint")
+			}
+			log.Warn().Err(err).Msg("no seeds from seed endpoint; starting from address book / persistent peers")
+		} else if err != nil {
+			log.Warn().Err(err).Msg("starting without seed nodes")
 		}
 	}
 

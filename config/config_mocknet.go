@@ -4,6 +4,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 
 	"github.com/rs/zerolog/log"
@@ -14,6 +15,8 @@ const (
 	p2pPort      = 26656
 	ebifrostPort = 50051
 )
+
+var errNoSeedEndpoint = errors.New("no seed nodes endpoint provided")
 
 func getSeedAddrs() ([]string, error) {
 	return []string{}, nil

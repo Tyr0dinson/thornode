@@ -720,18 +720,20 @@ func (c *Communication) checkBootstrapPeersAvailable() error {
 	if !requireBootstrapPeers {
 		return nil
 	}
+	// saved peers first: a local file read, where the config resolves every seed
+	// over HTTP
+	if c.stateManager != nil {
+		savedPeers, err := c.stateManager.RetrieveP2PAddresses()
+		if err == nil && len(savedPeers) > 0 {
+			return nil
+		}
+	}
 	cfgPeers, err := c.config.GetBootstrapPeers()
 	if err != nil {
 		return fmt.Errorf("fail to get bootstrap peers from config: %w", err)
 	}
 	if len(cfgPeers) > 0 {
 		return nil
-	}
-	if c.stateManager != nil {
-		savedPeers, err := c.stateManager.RetrieveP2PAddresses()
-		if err == nil && len(savedPeers) > 0 {
-			return nil
-		}
 	}
 	return errors.New("no TSS bootstrap peers: none configured or from the seed endpoint, and none saved")
 }
