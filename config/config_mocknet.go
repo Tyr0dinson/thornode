@@ -15,8 +15,8 @@ const (
 	ebifrostPort = 50051
 )
 
-func getSeedAddrs() []string {
-	return []string{}
+func getSeedAddrs() ([]string, error) {
+	return []string{}, nil
 }
 
 func assertBifrostHasSeeds() {

@@ -280,7 +280,7 @@ type Mgrs struct {
 	// Consensus is the only writer (recreateManagers), but queries served off the
 	// direct gRPC path read them concurrently, no longer serialized behind the
 	// comet ABCI lock. loadMu serializes LoadManagerIfNecessary itself (BeginBlock
-	// vs the regtest querier's initManager).
+	// vs the regtest querier's initManager) and LoadManagerForQuery.
 	mu     sync.RWMutex
 	loadMu sync.Mutex
 
@@ -378,6 +378,19 @@ func (mgr *Mgrs) LoadManagerIfNecessary(ctx cosmos.Context) error {
 	}
 
 	return nil
+}
+
+// LoadManagerForQuery builds managers for a node that has not run BeginBlock on
+// this binary. It never replaces a set that consensus already built: the nil check
+// runs under loadMu, so a query (possibly at a historical height) racing the first
+// BeginBlock cannot swap managers out from under a block in progress.
+func (mgr *Mgrs) LoadManagerForQuery(ctx cosmos.Context) error {
+	mgr.loadMu.Lock()
+	defer mgr.loadMu.Unlock()
+	if mgr.GetConstants() != nil {
+		return nil
+	}
+	return mgr.recreateManagers(ctx, mgr.Keeper().GetLowestActiveVersion(ctx))
 }
 
 func (mgr *Mgrs) recreateManagers(ctx cosmos.Context, v semver.Version) error {

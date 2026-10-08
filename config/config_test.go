@@ -562,7 +562,8 @@ func (Test) TestResolveAddrsMixed(c *C) {
 // -------------------------------------------------------------------------------------
 
 func (Test) TestGetSeedAddrsMocknet(c *C) {
-	result := getSeedAddrs()
+	result, err := getSeedAddrs()
+	c.Assert(err, IsNil)
 	c.Assert(result, HasLen, 0)
 }
 

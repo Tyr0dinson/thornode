@@ -10,8 +10,9 @@ import (
 	. "gopkg.in/check.v1"
 )
 
-// A broken or unavailable seed endpoint must not stop the node: it starts with no
-// seeds (falling back to its address book / configured peers) instead of exiting.
+// A broken or unavailable seed endpoint must not stop the node: getSeedAddrs
+// returns an error with no seeds (callers fall back to the address book / saved
+// peers) instead of exiting.
 func (Test) TestGetSeedAddrsEndpointFailuresAreNotFatal(c *C) {
 	defer func(prev string) { config.Thornode.SeedNodesEndpoint = prev }(config.Thornode.SeedNodesEndpoint)
 
@@ -26,13 +27,22 @@ func (Test) TestGetSeedAddrsEndpointFailuresAreNotFatal(c *C) {
 	} {
 		srv := httptest.NewServer(handler)
 		config.Thornode.SeedNodesEndpoint = srv.URL
-		c.Check(getSeedAddrs(), HasLen, 0, Commentf(name))
+		seeds, err := getSeedAddrs()
+		c.Check(err, NotNil, Commentf(name))
+		c.Check(seeds, HasLen, 0, Commentf(name))
 		srv.Close()
 	}
 
 	// unreachable endpoint
 	config.Thornode.SeedNodesEndpoint = "http://127.0.0.1:1"
-	c.Check(getSeedAddrs(), HasLen, 0)
+	seeds, err := getSeedAddrs()
+	c.Check(err, NotNil)
+	c.Check(seeds, HasLen, 0)
+
+	// no endpoint configured
+	config.Thornode.SeedNodesEndpoint = ""
+	_, err = getSeedAddrs()
+	c.Check(err, NotNil)
 
 	// a healthy endpoint still yields the active nodes' IPs
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -40,5 +50,7 @@ func (Test) TestGetSeedAddrsEndpointFailuresAreNotFatal(c *C) {
 	}))
 	defer srv.Close()
 	config.Thornode.SeedNodesEndpoint = srv.URL
-	c.Check(getSeedAddrs(), DeepEquals, []string{"1.2.3.4"})
+	seeds, err = getSeedAddrs()
+	c.Check(err, IsNil)
+	c.Check(seeds, DeepEquals, []string{"1.2.3.4"})
 }

@@ -708,6 +708,34 @@ func (c *Communication) getPeers() addr.AddrList {
 	return bootstrapPeers
 }
 
+// requireBootstrapPeers makes a node with no bootstrap peer source fail to start
+// instead of running isolated. Only mainnet: other networks have a genesis node
+// that legitimately starts with none.
+var requireBootstrapPeers = common.CurrentChainNetwork == common.MainNet
+
+// checkBootstrapPeersAvailable fails when there is nothing to bootstrap from: no
+// configured peers (e.g. the seed endpoint was unavailable) and no saved peers
+// (e.g. a fresh node). Failing lets the process restart and fetch seeds again.
+func (c *Communication) checkBootstrapPeersAvailable() error {
+	if !requireBootstrapPeers {
+		return nil
+	}
+	cfgPeers, err := c.config.GetBootstrapPeers()
+	if err != nil {
+		return fmt.Errorf("fail to get bootstrap peers from config: %w", err)
+	}
+	if len(cfgPeers) > 0 {
+		return nil
+	}
+	if c.stateManager != nil {
+		savedPeers, err := c.stateManager.RetrieveP2PAddresses()
+		if err == nil && len(savedPeers) > 0 {
+			return nil
+		}
+	}
+	return errors.New("no TSS bootstrap peers: none configured or from the seed endpoint, and none saved")
+}
+
 func (c *Communication) bootstrapConnectivityRequired() bool {
 	cfgBootstrapPeers, err := c.config.GetBootstrapPeers()
 	if err != nil {
@@ -767,6 +795,9 @@ func (c *Communication) bootStrapConnectivityCheck() error {
 }
 
 func (c *Communication) startChannel(privKeyBytes []byte) error {
+	if err := c.checkBootstrapPeersAvailable(); err != nil {
+		return err
+	}
 	ctx := context.Background()
 	p2pPriKey, err := crypto.UnmarshalSecp256k1PrivateKey(privKeyBytes)
 	if err != nil {

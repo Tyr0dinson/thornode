@@ -5,6 +5,8 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"math/rand/v2"
 	"net/http"
 	"os"
@@ -19,31 +21,29 @@ const (
 	ebifrostPort = 50051
 )
 
-func getSeedAddrs() (addrs []string) {
+// getSeedAddrs returns the IPs of active nodes from the seed nodes endpoint. A
+// failure is returned rather than fatal: a node with an address book or configured
+// peers can still start (an upgrading network's own API may be down while it waits
+// for validators), so the caller decides how to proceed.
+func getSeedAddrs() ([]string, error) {
 	if config.Thornode.SeedNodesEndpoint == "" {
-		log.Warn().Msg("no seed nodes endpoint provided")
-		return
+		return nil, errors.New("no seed nodes endpoint provided")
 	}
 
-	// get nodes. A seed endpoint is a convenience: a node with an address book or
-	// configured peers can still start, so failures warn instead of exiting (an
-	// upgrading network's own API may be down while it waits for validators).
+	// get nodes
 	res, err := http.Get(config.Thornode.SeedNodesEndpoint)
 	if err != nil {
-		log.Warn().Err(err).Msg("failed to get thorchain nodes, starting without seed nodes")
-		return
+		return nil, fmt.Errorf("failed to get thorchain nodes: %w", err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		log.Warn().Int("status", res.StatusCode).Msg("seed nodes endpoint returned non-200, starting without seed nodes")
-		return
+		return nil, fmt.Errorf("seed nodes endpoint returned status %d", res.StatusCode)
 	}
 
 	// parse nodes
 	var nodes []types.NodeAccount
 	if err = json.NewDecoder(res.Body).Decode(&nodes); err != nil {
-		log.Warn().Err(err).Msg("failed to decode thorchain nodes, starting without seed nodes")
-		return
+		return nil, fmt.Errorf("failed to decode thorchain nodes: %w", err)
 	}
 
 	// include active nodes with an ip address
@@ -65,7 +65,7 @@ func getSeedAddrs() (addrs []string) {
 
 	log.Info().Msgf("found %d thorchain seeds", len(seeds))
 
-	return seeds
+	return seeds, nil
 }
 
 func assertBifrostHasSeeds() {

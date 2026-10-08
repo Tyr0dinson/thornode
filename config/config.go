@@ -379,7 +379,11 @@ func InitBifrost() {
 
 	// set bootstrap peers from seeds endpoint if unset
 	if len(config.Bifrost.TSS.BootstrapPeers) == 0 {
-		config.Bifrost.TSS.BootstrapPeers = resolveAddrs(getSeedAddrs())
+		seeds, err := getSeedAddrs()
+		if err != nil {
+			log.Warn().Err(err).Msg("no TSS bootstrap peers from seed endpoint; relying on saved peers")
+		}
+		config.Bifrost.TSS.BootstrapPeers = resolveAddrs(seeds)
 	}
 }
 
@@ -1338,7 +1342,10 @@ func thornodeSeeds() (seedAddrs, tmSeeds []string) {
 		seedAddrs = strings.Split(seeds, ",")
 	} else {
 		log.Info().Msg("seeds not provided, initializing automatically...")
-		seedAddrs = getSeedAddrs()
+		var err error
+		if seedAddrs, err = getSeedAddrs(); err != nil {
+			log.Warn().Err(err).Msg("no seeds from seed endpoint; starting without seed nodes")
+		}
 	}
 
 	// resolve any hostnames

@@ -40,9 +40,9 @@ func (s *queryServer) unwrapSdkContext(c context.Context) sdk.Context {
 	// Managers are built in BeginBlock. A node that has not executed a block on
 	// this binary yet (e.g. started at an upgrade height, waiting for the network)
 	// would otherwise serve queries against nil managers and panic. Build them from
-	// the query context; any store writes on it are discarded.
+	// the query context. This never replaces managers consensus already built.
 	if s.mgr != nil && s.mgr.GetConstants() == nil {
-		if err := s.mgr.LoadManagerIfNecessary(ctx); err != nil {
+		if err := s.mgr.LoadManagerForQuery(ctx); err != nil {
 			ctx.Logger().Error("fail to load managers for query", "error", err)
 		}
 	}
