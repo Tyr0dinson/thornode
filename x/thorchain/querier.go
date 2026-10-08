@@ -3894,7 +3894,7 @@ func (qs queryServer) queryBlock(ctx cosmos.Context, req *types.QueryBlockReques
 		return nil, err
 	}
 	height := ctx.BlockHeight()
-	if parsed, err := strconv.ParseInt(req.Height, 10, 64); err == nil {
+	if parsed, parseErr := strconv.ParseInt(req.Height, 10, 64); parseErr == nil {
 		height = parsed
 	}
 
