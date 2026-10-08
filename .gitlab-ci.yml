@@ -206,10 +206,10 @@ variables:
   tags:
     - $SMALL_RUNNER_TAG
 
-# What test-simulation and test-regression wait for. On 2026-09-15..29 these
-# jobs caught 116 of the 122 pipelines that failed a check before the sim
-# (lint 40, generate 39, proto 37, unit-tests 14); in 33 of them lint was the
-# only failing check. With no trunk lock, lint starts with the pipeline and
+# What test-regression waits for (test-simulation used to as well). On
+# 2026-09-15..29 these jobs caught 116 of the 122 pipelines that failed a check
+# before the sim (lint 40, generate 39, proto 37, unit-tests 14); in 33 of them
+# lint was the only failing check. With no trunk lock, lint starts with the pipeline and
 # takes about as long as unit-tests, so gating on it costs little and keeps a
 # lint-only failure from spending a sim. `optional` covers pipelines where
 # rules leave a job out (lint on deployment branches, unit-tests on some merge
@@ -282,9 +282,9 @@ variables:
 # Jobs start from `needs:`, not from stage order. With stage order the
 # simulation started a median 27 min after the pipeline (p90 117 min), held back
 # by whichever protobuf or test job finished last. Checks that need nothing
-# start at once. test-simulation and test-regression wait only for the checks
-# that catch most bad branches (.long-test-gate), so a branch that fails those
-# does not also spend runner time on a sim. The build jobs keep their existing
+# start at once, as does test-simulation. test-regression waits only for the
+# checks that catch most bad branches (.long-test-gate), so a branch that fails
+# those does not also spend runner time on it. The build jobs keep their existing
 # stage order and publication rules: `build` comes before `long-test`, and the
 # build rules use `when: always`, so images do not wait for the sim, regression
 # or a failed check.
@@ -751,7 +751,10 @@ test-simulation:
       when: never
     - *rules
   timeout: 2h
-  needs: !reference [.long-test-gate, needs]
+  # Starts with the pipeline: the sim is the critical path, and waiting for
+  # .long-test-gate added its ~6.7 min (p50) to every pipeline. A failed check
+  # still cancels the sim within minutes (workflow auto_cancel on_job_failure).
+  needs: []
   retry:
     max: 2
     when:
