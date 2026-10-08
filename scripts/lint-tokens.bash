@@ -9,6 +9,12 @@ possibly_die() {
   fi
 }
 
+# The lists are compared with develop's tip. A shallow CI clone has no
+# origin/develop, so fetch just that commit.
+if ! git rev-parse -q --verify origin/develop >/dev/null; then
+  git fetch -q --depth=1 --no-tags origin develop:refs/remotes/origin/develop
+fi
+
 check_token_list() {
   local LIST="$1"
 

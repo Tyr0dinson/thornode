@@ -206,8 +206,7 @@ func Blake2bSignatureHash(
 	// reuse the pre-generated hashoutputs sighash fragment. Otherwise,
 	// we'll serialize and add only the target output index to the signature
 	// pre-image.
-	/* trunk-ignore(golangci-lint/gocritic) */
-	if hashType&sigHashMask != txscript.SigHashSingle && hashType&sigHashMask != txscript.SigHashNone {
+	if hashType&sigHashMask != txscript.SigHashSingle && hashType&sigHashMask != txscript.SigHashNone { //nolint:gocritic
 		sigHash.Write(sigHashes.HashOutputs[:])
 	} else if hashType&sigHashMask == txscript.SigHashSingle && idx < len(tx.TxOut) {
 		var (
@@ -421,8 +420,7 @@ func mergeScripts(
 	sigScript,
 	prevScript []byte,
 ) []byte {
-	/* trunk-ignore(golangci-lint/gocritic) */
-	switch class {
+	switch class { //nolint:gocritic
 	// It doesn't actually make sense to merge anything other than multiig
 	// and scripthash (because it could contain multisig). Everything else
 	// has either zero signature, can't be spent, or has a single signature

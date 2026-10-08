@@ -68,6 +68,15 @@ const (
 
 var errThorchainTransport = errors.New("thornode transport error")
 
+// Retry policy for bridge HTTP requests to THORNode; the defaults are
+// retryablehttp's. Exposed so tests that point a bridge at an unreachable
+// node can keep the retries but skip the real waiting.
+var (
+	BridgeRetryMax     = 4
+	BridgeRetryWaitMin = 1 * time.Second
+	BridgeRetryWaitMax = 30 * time.Second
+)
+
 // thorchainBridge will be used to send tx to THORChain
 type thorchainBridge struct {
 	logger        zerolog.Logger
@@ -172,6 +181,9 @@ func NewThorchainBridge(cfg config.BifrostClientConfiguration, m *metrics.Metric
 
 	httpClient := retryablehttp.NewClient()
 	httpClient.Logger = nil
+	httpClient.RetryMax = BridgeRetryMax
+	httpClient.RetryWaitMin = BridgeRetryWaitMin
+	httpClient.RetryWaitMax = BridgeRetryWaitMax
 
 	return &thorchainBridge{
 		logger:        logger,

@@ -152,13 +152,12 @@ type THORChainApp struct {
 	tkeys map[string]*storetypes.TransientStoreKey
 
 	// keepers
-	AccountKeeper authkeeper.AccountKeeper
-	BankKeeper    bankkeeper.BaseKeeper
-	StakingKeeper *stakingkeeper.Keeper
-	MintKeeper    mintkeeper.Keeper
-	UpgradeKeeper *upgradekeeper.Keeper
-	// trunk-ignore(golangci-lint/staticcheck): deprecated TODO: SDK 0.53 cleanup
-	ParamsKeeper          paramskeeper.Keeper
+	AccountKeeper         authkeeper.AccountKeeper
+	BankKeeper            bankkeeper.BaseKeeper
+	StakingKeeper         *stakingkeeper.Keeper
+	MintKeeper            mintkeeper.Keeper
+	UpgradeKeeper         *upgradekeeper.Keeper
+	ParamsKeeper          paramskeeper.Keeper //nolint:staticcheck // deprecated TODO: SDK 0.53 cleanup
 	ConsensusParamsKeeper consensusparamkeeper.Keeper
 
 	ThorchainKeeper  thorchainkeeper.Keeper
@@ -469,8 +468,7 @@ func NewChainApp(
 	bankModule := bank.NewAppModule(app.appCodec, app.BankKeeper, app.AccountKeeper, app.GetSubspace(banktypes.ModuleName))
 	consensusModule := consensus.NewAppModule(app.appCodec, app.ConsensusParamsKeeper)
 	genutilModule := genutil.NewAppModule(app.AccountKeeper, app.StakingKeeper, app, txConfig)
-	// trunk-ignore(golangci-lint/staticcheck): deprecated TODO: SDK 0.53 cleanup
-	paramsModule := params.NewAppModule(app.ParamsKeeper)
+	paramsModule := params.NewAppModule(app.ParamsKeeper) //nolint:staticcheck // deprecated TODO: SDK 0.53 cleanup
 	upgradeModule := upgrade.NewAppModule(app.UpgradeKeeper, app.AccountKeeper.AddressCodec())
 	wasmModule := wasm.NewAppModule(
 		app.appCodec,
@@ -983,10 +981,8 @@ func (app *THORChainApp) SetInterfaceRegistry(registry types.InterfaceRegistry) 
 	app.BaseApp.SetInterfaceRegistry(registry)
 }
 
-// trunk-ignore(golangci-lint/staticcheck): deprecated TODO: SDK 0.53 cleanup
-func initParamsKeeper(appCodec codec.BinaryCodec, legacyAmino *codec.LegacyAmino, key, tkey storetypes.StoreKey) paramskeeper.Keeper {
-	// trunk-ignore(golangci-lint/staticcheck): deprecated TODO: SDK 0.53 cleanup
-	paramsKeeper := paramskeeper.NewKeeper(appCodec, legacyAmino, key, tkey)
+func initParamsKeeper(appCodec codec.BinaryCodec, legacyAmino *codec.LegacyAmino, key, tkey storetypes.StoreKey) paramskeeper.Keeper { //nolint:staticcheck // deprecated TODO: SDK 0.53 cleanup
+	paramsKeeper := paramskeeper.NewKeeper(appCodec, legacyAmino, key, tkey) //nolint:staticcheck // deprecated TODO: SDK 0.53 cleanup
 
 	// required for testing finalized block migration
 	paramsKeeper.Subspace(baseapp.Paramspace)

@@ -234,8 +234,17 @@ lint:
 	@./scripts/lint.sh
 	@./scripts/trunk check --no-fix --show-existing --upstream origin/develop
 
+# The three checks are independent; run them at once, each one's output kept together.
 lint-ci:
+	@$(MAKE) --no-print-directory -j3 --output-sync=target lint-ci-scripts lint-ci-golangci lint-ci-trunk
+
+lint-ci-scripts:
 	@./scripts/lint.sh
+
+lint-ci-golangci:
+	@./scripts/golangci-ci.sh
+
+lint-ci-trunk:
 	@./scripts/trunk-ci.sh
 
 # ------------------------------ Unit Tests ------------------------------
@@ -250,8 +259,16 @@ coverage-report: test-coverage
 
 # only print the coverage total: the full per-function dump pushed the CI job log
 # past GitLab's 4MB cap, truncating the "total:" line the coverage regex reads
-test-coverage-sum: test-network-specific
-	@go run gotest.tools/gotestsum@v1.13.0 --junitfile report.xml --format testname -- ${TEST_BUILD_FLAGS} -v -coverprofile=coverage.txt -covermode count ${TEST_DIR}
+# test-network-specific runs alongside the main suite: its five sequential
+# `go test` runs took 95-130s in a 6-CPU CI slot, mostly waiting on tests, and
+# no longer hold up the main suite. Its output is printed when both finish, so
+# the main suite's output still streams.
+test-coverage-sum:
+	@$(MAKE) --no-print-directory test-network-specific > network-specific.log 2>&1 & ns=$$!; \
+	go run gotest.tools/gotestsum@v1.13.0 --junitfile report.xml --format testname -- ${TEST_BUILD_FLAGS} -v -coverprofile=coverage.txt -covermode count ${TEST_DIR}; main=$$?; \
+	wait $$ns; ns=$$?; \
+	echo "--- test-network-specific (exit $$ns)"; cat network-specific.log; \
+	[ $$main -eq 0 ] && [ $$ns -eq 0 ]
 	sed -i.bak '/\.pb\.go:/d' coverage.txt
 	@rm -f coverage.txt.bak
 	@GOFLAGS='${TEST_BUILD_FLAGS}' go run github.com/boumenot/gocover-cobertura@v1.4.0 < coverage.txt > coverage.xml

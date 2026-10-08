@@ -5,29 +5,11 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(dirname "$0")"
-BASE_BRANCH="origin/develop"
-# Each golangci-lint process takes ~3.2 GiB on a full-repo (--all) run; 8 at once
-# overran hedwig's 24 GiB job container (exit -9). 4 keeps it near 13 GiB.
-FLAGS=(--jobs=4 --ci)
-CHECK_EXISTING=false
-
-if [ -n "${CI_MERGE_REQUEST_ID-}" ]; then
-  # if go modules or trunk settings changed, also run with --all on merge requests
-  if ! git diff --exit-code "$BASE_BRANCH" -- go.mod go.sum .trunk >/dev/null; then
-    FLAGS+=(--all)
-  # if there is a trunk-ignore comment change, also run with --all on merge requests
-  elif git diff --unified=0 --no-prefix "$BASE_BRANCH" | sed '/^@@/d' | grep -q 'trunk-ignore'; then
-    FLAGS+=(--all)
-  # if this is a merge train, run with --all
-  elif [ "${CI_MERGE_REQUEST_EVENT_TYPE-}" = "merge_train" ]; then
-    FLAGS+=(--all)
-  else
-    FLAGS+=(--upstream "$BASE_BRANCH" --show-existing)
-    CHECK_EXISTING=true
-  fi
-else
-  FLAGS+=(--all)
-fi
+# golangci-lint runs on its own in scripts/golangci-ci.sh, over the whole
+# module. Every other linter checks all 3,300 files in about 30s, so there is no
+# upstream diff: develop passes this same --all check, so on a merge request any
+# issue is the branch's, and the job needs no merge base or git history.
+FLAGS=(--jobs=4 --ci --all --filter=-golangci-lint)
 
 # run trunk, retrying once if it crashed with an internal error or lost a tool
 # install race. The internal-error banner means trunk died before reporting
@@ -54,13 +36,4 @@ fi
 set -e
 if [ "$STATUS" -ne 0 ]; then
   exit "$STATUS"
-fi
-
-# confirm that we did not introduce lint errors outside our changes on merge requests
-if $CHECK_EXISTING; then
-  if echo "$OUT" | grep -q "ISSUES"; then
-    echo
-    echo "Changes introduce external lint errors."
-    exit 1
-  fi
 fi

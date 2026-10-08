@@ -72,8 +72,8 @@ variables:
   EXECUTOR_JOB_SECTION_ATTEMPTS: 3
   # Shallow clone. The project default is a full clone (941MB of history), which
   # averaged 78s per job, about 14% of all runner time on 2026-09-22..29. Only
-  # lint and fork need history (a merge base with the target branch) and set
-  # GIT_DEPTH 0 themselves; secret_detection sets its own 50 in the template.
+  # fork needs history (a merge base with the target branch) and sets
+  # GIT_DEPTH 0 itself; secret_detection sets its own 50 in the template.
   GIT_DEPTH: "20"
   SAST_EXCLUDED_PATHS: spec, test, tests, tmp, .cache
 
@@ -185,6 +185,15 @@ variables:
 .go-private-auth:
   before_script:
     - . ./scripts/ci-go-private-auth.sh
+
+# Content-derived mtimes for the checkout (scripts/ci-stable-mtimes.sh), so
+# go test reuses cached results for packages whose code and test inputs did
+# not change; a fresh clone otherwise invalidates every package that reads a
+# file. Include with `!reference [.stable-mtimes, before_script]` in jobs that
+# run go test.
+.stable-mtimes:
+  before_script:
+    - ./scripts/ci-stable-mtimes.sh
 
 # Every job except the sim and the image builds runs on a runner tagged
 # `small`, with small slots (today one: hedwig-small). The project had 7 slots
@@ -410,6 +419,7 @@ unit-tests:
   coverage: /total:\s+\(statements\)\s+(\d+.\d+\%)/
   before_script:
     - !reference [.go-private-auth, before_script]
+    - !reference [.stable-mtimes, before_script]
     - go install github.com/boumenot/gocover-cobertura@v1.4.0
     - go install gotest.tools/gotestsum@v1.13.0
   script:
@@ -450,6 +460,7 @@ xmr-e2e-gates:
   needs: []
   before_script:
     - !reference [.go-private-auth, before_script]
+    - !reference [.stable-mtimes, before_script]
   script:
     - make test-xmr-e2e
 
@@ -473,11 +484,12 @@ lint:
   # tool install race a cold cache can hit. The old global lock made lint wait
   # 25 min at p75 and 64 at p90 (2026-09-22..29), and did not prevent the trunk
   # internal errors it was added for: all 20 that week ran with no other lint.
+  # make lint-ci checks the whole tree rather than a diff against the merge
+  # base, so the job keeps the shallow clone (the full one cost 44s at p50 and
+  # 148s at p90); lint-tokens.bash fetches develop's tip for its comparison.
   variables:
     XDG_CACHE_HOME: /trunk-cache
     PKGS: jq
-    # trunk-ci.sh diffs against the merge base with origin/develop
-    GIT_DEPTH: "0"
   before_script:
     - !reference [.pkg-install, before_script]
     - !reference [.go-private-auth, before_script]
@@ -605,6 +617,7 @@ go-tss:
   needs: []
   before_script:
     - !reference [.go-private-auth, before_script]
+    - !reference [.stable-mtimes, before_script]
   script:
     - make test-go-tss
 
@@ -826,6 +839,7 @@ unit-tests-race-bifrost:
   timeout: 1h
   before_script:
     - !reference [.go-private-auth, before_script]
+    - !reference [.stable-mtimes, before_script]
   script:
     - make test-race-bifrost
 

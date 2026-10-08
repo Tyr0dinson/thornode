@@ -29,7 +29,17 @@ const (
 
 var m *metrics.Metrics
 
-func TestPackage(t *testing.T) { TestingT(t) }
+func TestPackage(t *testing.T) {
+	// Load the RPC fixtures here, not in init(): go test records the files a
+	// test opens only once tests start running, and CI reuses cached results
+	// when no recorded input changed (scripts/ci-stable-mtimes.sh). A fixture
+	// read in init() would not invalidate the cached result when it changed.
+	loadBTCFixtures()
+	loadBCHFixtures()
+	loadDOGEFixtures()
+	loadLTCFixtures()
+	TestingT(t)
+}
 
 func TestIsUTXOTxNotFoundErr(t *testing.T) {
 	// bitcoind/litecoind/dogecoind return RPC error -5 (ErrRPCInvalidAddressOrKey)

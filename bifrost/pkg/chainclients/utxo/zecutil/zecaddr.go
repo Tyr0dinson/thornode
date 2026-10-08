@@ -10,8 +10,7 @@ import (
 	bech32 "github.com/btcsuite/btcd/btcutil/bech32" // tex address
 	"github.com/btcsuite/btcd/chaincfg"
 
-	/* trunk-ignore(golangci-lint/gosec) */
-	"golang.org/x/crypto/ripemd160"
+	"golang.org/x/crypto/ripemd160" //nolint:gosec,staticcheck // Zcash transparent addresses are defined with RIPEMD-160
 )
 
 type ChainParams struct {
