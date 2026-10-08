@@ -13,7 +13,7 @@ import (
 // does not inherit an interval that can exceed 1,000 blocks.
 func NewChurnIntervalRestoreActor(rng *rand.Rand) *Actor {
 	a := NewActor("ChurnInterval-Restore", rng)
-	a.Append(newMultiNodeMimirActor(
+	a.Append(NewMultiNodeMimirActor(
 		constants.ChurnInterval.String(),
 		constants.NewConstantValue().GetInt64Value(constants.ChurnInterval),
 		rng,

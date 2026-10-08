@@ -38,8 +38,6 @@ type overSolvencyEventGroup struct {
 	assets []types.AssetOverSolvency
 }
 
-const xmrMonovaultGenesisBootstrapDelayBlocks int64 = 128
-
 func xmrMonovaultGenesisKeygenHeight(currentHeight int64) int64 {
 	if currentHeight < 1 {
 		currentHeight = 1

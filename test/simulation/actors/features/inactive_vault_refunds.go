@@ -71,7 +71,7 @@ func NewInactiveVaultRefundActor(asset common.Asset, rng *rand.Rand) *Actor {
 // any node's scanner. The completed payment must use that historical policy.
 func XMRHistoricalRefund(rng *rand.Rand) *Actor {
 	root := NewActor("XMRHistoricalRefund", rng)
-	root.Append(newMultiNodeMimirActor("HaltChurning", 1, rng))
+	root.Append(NewMultiNodeMimirActor("HaltChurning", 1, rng))
 	a := newInactiveVaultRefundActor(common.XMRAsset, rng)
 	a.requireHistoricalRecovery = true
 	a.Name = "XMRHistoricalRefund-DepartedSigner"

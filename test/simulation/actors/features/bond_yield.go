@@ -155,7 +155,7 @@ func NewBondYieldCleanupActor(rng *rand.Rand) *Actor {
 		// set by core.ScheduleChurn for the cluster churn and the churn-out
 		{constants.ChurnInterval.String(), defaults.GetInt64Value(constants.ChurnInterval)},
 	} {
-		a.Append(newMultiNodeMimirActor(setting.key, setting.value, rng))
+		a.Append(NewMultiNodeMimirActor(setting.key, setting.value, rng))
 	}
 	return a
 }

@@ -2,6 +2,8 @@ package core
 
 import (
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/rs/zerolog"
 
@@ -17,8 +19,10 @@ import (
 // churnScheduleLeadBlocks is how far ahead ScheduleChurn places the churn. Every
 // vote has to land before that height. A churn scheduled for a height that has
 // already passed waits for the next ChurnRetryInterval tick instead, which is
-// how the simulation churned before it scheduled churns.
-const churnScheduleLeadBlocks = int64(20)
+// how the simulation churned before it scheduled churns. The votes land 1-2
+// blocks after they are sent, so 8 keeps a 4x margin; at 20 each churn idled
+// ~25s before starting.
+const churnScheduleLeadBlocks = int64(8)
 
 // ScheduleChurn sets the CHURNINTERVAL Mimir so the next regular churn fires
 // churnScheduleLeadBlocks from now, and returns that height.
@@ -81,6 +85,7 @@ func ScheduleChurn(logger *zerolog.Logger, config *OpConfig) (int64, error) {
 	}
 
 	scheduledHeight := lastChurnHeight + interval
+	waitChurnIntervalApplied(logger, voters[0], interval, scheduledHeight)
 	logger.Info().
 		Int64("churn_interval", interval).
 		Int64("current_height", currentHeight).
@@ -119,4 +124,28 @@ func lastActiveVaultHeight(vaults []openapi.Vault) (int64, bool) {
 		}
 	}
 	return lastChurnHeight, found
+}
+
+// waitChurnIntervalApplied waits until the CHURNINTERVAL votes take effect, and
+// warns when they have not by the scheduled height, in which case the churn
+// waits for the next ChurnRetryInterval tick. It does not reschedule: the churn
+// may already be starting, and a second schedule could trigger another churn.
+func waitChurnIntervalApplied(logger *zerolog.Logger, node *User, interval, scheduledHeight int64) {
+	key := strings.ToUpper(constants.ChurnInterval.String())
+	for {
+		mimirs, err := thornode.GetMimirs()
+		if err == nil && mimirs[key] == interval {
+			return
+		}
+		height, err := node.Thorchain.GetBlockHeight()
+		if err == nil && height >= scheduledHeight {
+			logger.Warn().
+				Int64("height", height).
+				Int64("scheduled_height", scheduledHeight).
+				Int64("churn_interval", interval).
+				Msg("churn interval votes did not apply before the scheduled height; the churn will wait for ChurnRetryInterval")
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 }

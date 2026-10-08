@@ -134,7 +134,13 @@ services:
       HARDFORK_BLOCK_HEIGHT: ${HARDFORK_BLOCK_HEIGHT:-}
       NEW_GENESIS_TIME: ${NEW_GENESIS_TIME:-}
       CHURN_MIGRATE_ROUNDS: 2
-      FUND_MIGRATION_INTERVAL: 30
+      # Migration rounds (and ragnarok) run every FUND_MIGRATION_INTERVAL blocks.
+      # Chains with a migrate still unobserved skip a round (per-chain pending
+      # gate), so a short interval keeps multi-round migration without racing.
+      FUND_MIGRATION_INTERVAL: 15
+      # The genesis XMR keygen waits for bifrost to scan THOR blocks. 128 (the
+      # default) gated the simulation start; bifrost scans by about block 6.
+      XMR_MONOVAULT_GENESIS_DELAY_BLOCKS: 64
       SIGNING_TRANSACTION_PERIOD: 120
       EMISSION_CURVE: 100000
       AVAX_HOST: ${AVAX_HOST:-http://avalanche:9650/ext/bc/C/rpc}

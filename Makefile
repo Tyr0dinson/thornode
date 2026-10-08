@@ -634,22 +634,52 @@ _build-native-simtest:
 	@cd test/simulation && \
 		go build -ldflags '$(ldflags)' -tags mocknet -o $(NATIVE_SIM_DIR)/simtest ./cmd
 
+# XMR signer services of the cluster, which run a released image.
+MOCKNET_CLUSTER_XMR_SIGNER_SERVICES := xmr-frost-signer xmr-frost-signer-cat \
+	xmr-frost-signer-fox xmr-frost-signer-frog xmr-frost-signer-pig xmr-sim-helper
+
+# Images that do not need the Go binaries. The runtime image (apt and pip in an
+# empty dind), the monero image and the signer pulls took ~1.5 min after the Go
+# build; build-mocknet-cluster-native runs them alongside it, and each other.
+_build-native-base-images:
+	@DOCKER_BUILDKIT=1 docker build build/docker -f build/docker/Dockerfile \
+		--target runtime -t thornode-runtime:mocknet --build-arg DOCKER_MIRROR & runtime_pid=$$!; \
+	docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster build monero-daemon & monero_pid=$$!; \
+	docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster \
+		pull $(MOCKNET_CLUSTER_XMR_SIGNER_SERVICES); pull_rc=$$?; \
+	wait $$runtime_pid; runtime_rc=$$?; wait $$monero_pid; monero_rc=$$?; \
+	[ $$pull_rc -eq 0 ] && [ $$runtime_rc -eq 0 ] && [ $$monero_rc -eq 0 ]
+
 build-mocknet-cluster-native:
 	@rm -rf $(NATIVE_SIM_DIR) && mkdir -p $(NATIVE_SIM_DIR)
-	@$(MAKE) --no-print-directory _build-native-thornode _build-native-simtest
+	@$(MAKE) --no-print-directory _build-native-base-images & images_pid=$$!; \
+	$(MAKE) --no-print-directory -j2 _build-native-thornode _build-native-simtest; build_rc=$$?; \
+	wait $$images_pid; images_rc=$$?; \
+	[ $$build_rc -eq 0 ] && [ $$images_rc -eq 0 ]
 	@cp $$(go list -m -f '{{.Dir}}' github.com/CosmWasm/wasmvm/v2)/internal/api/libwasmvm.*.so $(NATIVE_SIM_DIR)/
 	@chmod u+w $(NATIVE_SIM_DIR)/libwasmvm.*.so
 	@cp -r build/scripts $(NATIVE_SIM_DIR)/scripts
-	@DOCKER_BUILDKIT=1 docker build build/docker -f build/docker/Dockerfile \
-		--target runtime -t thornode-runtime:mocknet --build-arg DOCKER_MIRROR
-	@for t in thornode:thornode:mocknet events:docker-events simtest:thornode-simtest-native; do \
+	@pids=; for t in thornode:thornode:mocknet events:docker-events simtest:thornode-simtest-native; do \
 		DOCKER_BUILDKIT=1 docker build $(NATIVE_SIM_DIR) -f build/docker/Dockerfile.native \
-			--target $${t%%:*} -t $${t#*:} || exit 1; \
-	done
-	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster build monero-daemon
+			--target $${t%%:*} -t $${t#*:} & pids="$$pids $$!"; \
+	done; rc=0; for p in $$pids; do wait $$p || rc=1; done; exit $$rc
+
+# Base images of the runtime and monero builds, read from their Dockerfiles.
+NATIVE_SIM_BASE_IMAGES = \
+	$(shell sed -n 's/^FROM \$${DOCKER_MIRROR}\(\S*\) AS runtime$$/\1/p' build/docker/Dockerfile) \
+	$(shell sed -n 's/^FROM \$${DOCKER_MIRROR}\(\S*\)$$/\1/p' build/docker/mocknet/monero/Dockerfile)
+
+# Pulled before the L1 chains start, so they do not share bandwidth with ~16 L1
+# image pulls: the debian base took ~60s on the critical path that way, against
+# ~4s on its own. A failed pull is left to the build, which pulls it again.
+_pull-native-base-images:
+	@for ref in $(NATIVE_SIM_BASE_IMAGES); do \
+		docker pull -q "$${DOCKER_MIRROR}$$ref" >/dev/null & \
+	done; wait; true
 
 # prepare-mocknet-cluster with the native build, and without midgard.
 prepare-mocknet-cluster-native: stop-mocknet-cluster
+	@$(MAKE) --no-print-directory _pull-native-base-images
 	@$(MAKE) --no-print-directory run-mocknet-cluster-l1 & l1_pid=$$!; \
 	$(MAKE) --no-print-directory build-mocknet-cluster-native; build_rc=$$?; \
 	wait $$l1_pid; l1_rc=$$?; \

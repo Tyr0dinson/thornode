@@ -1522,7 +1522,7 @@ func (c *EVMClient) GetConfirmationCount(txIn stypes.TxIn) int64 {
 	case common.BSCChain:
 		return 3 // round up from 2.5 blocks required for finality
 	case common.POLChain:
-		return 15
+		return polConfirmations
 	default:
 		c.logger.Fatal().Msgf("unsupported chain: %s", c.cfg.ChainID)
 		return 0

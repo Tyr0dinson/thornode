@@ -126,7 +126,9 @@ variables:
         if ! echo "$CI_DEPENDENCY_PROXY_PASSWORD" | docker login "$CI_DEPENDENCY_PROXY_SERVER" -u "$CI_DEPENDENCY_PROXY_USER" --password-stdin; then
           echo "Dependency proxy login failed; falling back to Docker Hub"
           unset DOCKER_MIRROR
-        elif ! docker manifest inspect "${DOCKER_MIRROR}golang:1.26.6" >/dev/null 2>&1; then
+        # imagetools resolves the manifest in ~1s; `docker manifest inspect`
+        # took 16-32s against the dependency proxy in every dind job.
+        elif ! docker buildx imagetools inspect "${DOCKER_MIRROR}golang:1.26.6" >/dev/null 2>&1; then
           echo "Dependency proxy missing golang:1.26.6; falling back to Docker Hub"
           unset DOCKER_MIRROR
         fi
@@ -725,9 +727,11 @@ build-events:
 test-simulation:
   # Run the cluster sim in parallel by default. Override per-pipeline with a
   # PARALLELISM CI variable; capped at 12 by the sim's user-mnemonic count.
+  # The swap, refund and ragnarok stages keep every slot busy at 4 (95% in
+  # the swap stage), so 8 shortens them by about a third.
   variables:
     DOCKER_BUILDKIT: "1"
-    PARALLELISM: "4"
+    PARALLELISM: "8"
     PKGS: python3
   rules:
     - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
