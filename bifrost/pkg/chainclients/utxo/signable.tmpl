@@ -14,7 +14,6 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
 	"gitlab.com/thorchain/thornode/v3/common"
-	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 {{- range $chain, $pkg := . }}
@@ -52,11 +51,13 @@ func (ts *tssSignable{{ ToUpper $chain }}) Sign(payload []byte) (*{{ $chain }}ec
 	sig.R = new(big.Int).SetBytes(result[:32])
 	sig.S = new(big.Int).SetBytes(result[32:])
 
-	// verify the signature
+	// SECURITY FIX (Layer 3): Verify the signature and fail-fast on verification failure.
+	// Invalid signatures must be rejected immediately to prevent NULLFAIL errors and signature mispairing.
 	if sig.Verify(payload, ts.GetPubKey()) {
-		ts.log.Info().Msg("we can verify the signature successfully")
+		ts.log.Info().Msg("signature verified successfully")
 	} else {
-		ts.log.Info().Msg("the signature can't be verified")
+		ts.log.Error().Msg("TSS signature verification failed - signature does not match message")
+		return nil, fmt.Errorf("signature verification failed: TSS produced invalid signature for message")
 	}
 
 	return &sig, nil
@@ -70,7 +71,7 @@ func (ts *tssSignable{{ ToUpper $chain }}) SignSchnorr(payload []byte) (*{{ $cha
 {{- end }}
 
 func (ts *tssSignable{{ ToUpper $chain }}) GetPubKey() *{{ $chain }}ec.PublicKey {
-	cpk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, ts.poolPubKey.String())
+	cpk, err := ts.poolPubKey.Decode()
 	if err != nil {
 		ts.log.Err(err).Str("pubkey", ts.poolPubKey.String()).Msg("fail to get pubic key from the bech32 pool public key string")
 		return nil
@@ -80,12 +81,12 @@ func (ts *tssSignable{{ ToUpper $chain }}) GetPubKey() *{{ $chain }}ec.PublicKey
 		ts.log.Err(err).Msgf("%s is not a secp256 k1 public key", ts.poolPubKey)
 		return nil
 	}
-	newPubkey, err := {{ $chain }}ec.ParsePubKey(secpPubKey.Bytes(), {{ $chain }}ec.S256())
+	newPubKey, err := {{ $chain }}ec.ParsePubKey(secpPubKey.Bytes(), {{ $chain }}ec.S256())
 	if err != nil {
 		ts.log.Err(err).Msg("fail to parse public key")
 		return nil
 	}
-	return newPubkey
+	return newPubKey
 }
 
 {{- end }}

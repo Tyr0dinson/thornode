@@ -945,6 +945,8 @@ github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0 h1:59Kx4K6lzOW5w6nFlA0v5+lk/6
 github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0/go.mod h1:7SFka0XMvUgj3hfZtydOrQY2mwhPclbT2snogU7SQQc=
 github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f h1:bAs4lUbRJpnnkd9VhRV3jjAVU7DJVjMaK+IsvSeZvFo=
 github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f/go.mod h1:TdznJufoqS23FtqVCzL0ZqgP5MqXbb4fg/WgDys70nA=
+github.com/btcsuite/btclog v1.0.0 h1:sEkpKJMmfGiyZjADwEIgB1NSwMyfdD1FB8v6+w1T0Ns=
+github.com/btcsuite/btclog v1.0.0/go.mod h1:w7xnGOhwT3lmrS4H3b/D1XAXxvh+tbhUm8xeHN2y3TQ=
 github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce/go.mod h1:0DVlHczLPewLcPGEIeUEzfOJhqGPQ0mJJRDBtD307+o=
 github.com/btcsuite/btcutil v1.0.3-0.20211129182920-9c4bbabe7acd h1:vAwk2PCYxzUUGAXXtw66PyY2IMCwWBnm8GR5aLIxS3Q=
 github.com/btcsuite/btcutil v1.0.3-0.20211129182920-9c4bbabe7acd/go.mod h1:0DVlHczLPewLcPGEIeUEzfOJhqGPQ0mJJRDBtD307+o=
@@ -1096,6 +1098,12 @@ github.com/creack/pty v1.1.7/go.mod h1:lj5s0c3V2DBrqTV7llrYr5NG6My20zk30Fl46Y7Do
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/danieljoos/wincred v1.2.1 h1:dl9cBrupW8+r5250DYkYxocLeZ1Y4vB1kxgtjxw8GQs=
 github.com/danieljoos/wincred v1.2.1/go.mod h1:uGaFL9fDn3OLTvzCGulzE+SzjEe5NGlh5FdCcyfPwps=
+github.com/dashpay/dashd-go v0.26.1 h1:/ZFgtPw1fPHpvoJgKfXo/v63ZXddjJm8KrHRpxcSpy0=
+github.com/dashpay/dashd-go v0.26.1/go.mod h1:7KKS2jSPkC1pTz9WLXpiXZ96wT5bUqKTRuk35AyRQ74=
+github.com/dashpay/dashd-go/btcec/v2 v2.2.0 h1:tk54BC++OvOUu0vcPoG8+45dGoJXKsmupYAawBO/1Vk=
+github.com/dashpay/dashd-go/btcec/v2 v2.2.0/go.mod h1:uOmCM/hVoJ1x6w+3SX+zQv+2LdrK3aO59RV41jNvTF4=
+github.com/dashpay/dashd-go/btcutil v1.3.0 h1:yDX8tz7C/KhFHbGlRXBpNN+zlkmAgwkICD9DlAv/Vsc=
+github.com/dashpay/dashd-go/btcutil v1.3.0/go.mod h1:sMWZ0iR8a/wmIA6b5+ccjOGUfq+iZvi5t6ECaLCW+kw=
 github.com/davecgh/go-spew v0.0.0-20171005155431-ecdeabc65495/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

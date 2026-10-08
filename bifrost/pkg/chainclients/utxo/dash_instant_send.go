@@ -1,17 +1,15 @@
 package utxo
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"math"
 	"math/big"
+	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"golang.org/x/sync/errgroup"
-	"golang.org/x/sync/semaphore"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
@@ -21,11 +19,11 @@ import (
 )
 
 const (
-	// used only in regtests and simulations
-	priceDashUSDForSimulationTesting = 50
+	// Fixed USD price per DASH on mocknet; oracle and pool prices are ignored.
+	mocknetDashPrice = 50
 
-	DashInstantSendEnabledMimirKey      = "DashInstantSendEnabled"
-	DashInstantSendUSDThresholdMimirKey = "DashInstantSendUSDThreshold"
+	DashInstantSendEnabledMimirKey              = "DashInstantSendEnabled"
+	DashInstantSendInboundValueLimitUSDMimirKey = "DashInstantSendInboundValueLimitUSD"
 )
 
 // updateInstantSendCfg refreshes the Dash InstantSend policy from mimir.
@@ -46,12 +44,12 @@ func (c *Client) updateInstantSendCfg() {
 		return
 	}
 
-	// Load InstantSend USD threshold mimir override.
-	usdThreshold, err := c.bridge.GetMimir(DashInstantSendUSDThresholdMimirKey)
+	// Load InstantSend inbound value limit mimir override.
+	inboundValueLimitUSD, err := c.bridge.GetMimir(DashInstantSendInboundValueLimitUSDMimirKey)
 	if err != nil {
-		c.log.Err(err).Msg("fail to get DashInstantSendUSDThreshold mimir")
-	} else if usdThreshold >= 0 {
-		c.instantSendCfg.USDThreshold = uint64(usdThreshold)
+		c.log.Err(err).Msg("fail to get DashInstantSendInboundValueLimitUSD mimir")
+	} else if inboundValueLimitUSD >= 0 {
+		c.instantSendCfg.InboundValueLimitUSD = uint64(inboundValueLimitUSD)
 	}
 }
 
@@ -77,7 +75,7 @@ func formatMilliSatPerVByte(feeRate uint64) string {
 //
 // When this returns false, we intentionally do NOT emit the tx via the
 // InstantSend mempool path and instead wait for the normal block-based flow
-// (which is already gated by `GetHeight()` using `getbestchainlock.height`).
+// (which checks the fetched block's ChainLock).
 func (c *Client) allowInstantSend(feeRateMilliSatPerVByte uint64, age time.Duration, fromAsgard bool, usdValue cosmos.Uint) (bool, string) {
 	// Fee-rate gate: avoid treating low-fee txs as final via InstantSend.
 	minFeeRateMilliSatPerVByte := feeRateSatPerVByteToMilliSat(c.instantSendCfg.MinFeeRateSatPerVByte)
@@ -96,47 +94,20 @@ func (c *Client) allowInstantSend(feeRateMilliSatPerVByte uint64, age time.Durat
 	if fromAsgard {
 		return true, ""
 	}
-	// If no threshold is configured, avoid InstantSend for inbound txs.
-	if c.instantSendCfg.USDThreshold == 0 {
-		return false, "no usd threshold configured"
+	// If no value limit is configured, avoid InstantSend for external inbound txs.
+	if c.instantSendCfg.InboundValueLimitUSD == 0 {
+		return false, "inbound value limit not configured"
 	}
 	// If we can't price the tx, fall back to block-based observation.
 	if usdValue.IsZero() {
-		return false, "unable to price usd value"
+		return false, "USD price unavailable"
 	}
-	// Only allow InstantSend for txs strictly below the high-value threshold.
-	usdThreshold := cosmos.NewUint(c.instantSendCfg.USDThreshold).MulUint64(common.One)
-	if usdValue.GTE(usdThreshold) {
-		return false, fmt.Sprintf("usd value %f >= threshold %d", cosmosAmountToFloat(usdValue), c.instantSendCfg.USDThreshold)
+	// Only allow InstantSend for txs strictly below the inbound value limit.
+	inboundValueLimitUSD := cosmos.NewUint(c.instantSendCfg.InboundValueLimitUSD).MulUint64(common.One)
+	if usdValue.GTE(inboundValueLimitUSD) {
+		return false, fmt.Sprintf("USD value %f >= inbound value limit %d", cosmosAmountToFloat(usdValue), c.instantSendCfg.InboundValueLimitUSD)
 	}
 	return true, ""
-}
-
-// usdValueForDash returns the USD value for the given DASH amount.
-//
-// TOR is Thornode's USD-denominated derived asset. Its pool is spawned from the
-// configured TOR anchor median, so Bifrost should use it instead of selecting a
-// single stablecoin pool locally.
-func (c *Client) usdValueForDash(amount cosmos.Uint) (cosmos.Uint, error) {
-	var priceErr error
-	if c.poolMgr != nil {
-		value, err := c.poolMgr.GetValue(common.DASHAsset, common.TOR, amount)
-		if err == nil && !value.IsZero() {
-			return value, nil
-		}
-		if err != nil {
-			priceErr = err
-		}
-	}
-	if common.CurrentChainNetwork == common.MockNet {
-		// `amount` is denominated in 1e8 DASH units; return USD in 1e8 units.
-		// Example: 1 DASH (1e8) at $50 => 50e8.
-		return amount.MulUint64(priceDashUSDForSimulationTesting), nil
-	}
-	if priceErr != nil {
-		return cosmos.ZeroUint(), fmt.Errorf("failed to price DASH in TOR: %w", priceErr)
-	}
-	return cosmos.ZeroUint(), errors.New("no TOR pool value available for pricing DASH in USD")
 }
 
 // cosmosAmountToFloat converts a 1e8-based cosmos.Uint asset amount into a
@@ -151,337 +122,234 @@ func cosmosAmountToFloat(u cosmos.Uint) float64 {
 	return f
 }
 
-// instantSendObservationHeight returns the deterministic height used for a
-// mempool InstantSend observation. The scanner height passed into
-// getInstantSendLocks is node-local, so using it would split attestations across
-// observers that saw the same lock at slightly different scan positions.
-func (c *Client) instantSendObservationHeight(lock *rpc.DashISLockResult, scanHeight int64) (int64, error) {
-	if lock == nil {
-		return 0, errors.New("missing instantsend lock")
+// instantSendObservationHeight uses the lock's network-agreed cycle, independent
+// of scanner lag and reorg retention settings. Core validates quorum eligibility.
+func (c *Client) instantSendObservationHeight(lock *rpc.ISLockResult, _ int64) (int64, error) {
+	if lock == nil || strings.TrimSpace(lock.CycleHash) == "" {
+		return 0, errors.New("missing InstantSend cycle hash")
 	}
-	cycleHash := strings.TrimSpace(lock.CycleHash)
-	if cycleHash == "" {
-		return 0, errors.New("missing instantsend cycle hash")
-	}
-	cycleBlock, err := c.rpc.GetBlockVerbose(cycleHash)
+	block, err := c.rpc.GetBlockVerbose(lock.CycleHash)
 	if err != nil {
-		return 0, fmt.Errorf("fail to fetch instantsend cycle block: %w", err)
+		return 0, fmt.Errorf("fail to fetch InstantSend cycle block: %w", err)
 	}
-	if cycleBlock.Height <= 0 {
-		return 0, fmt.Errorf("instantsend cycle block has invalid height: %d", cycleBlock.Height)
+	if block.Height <= 0 || block.Confirmations <= 0 || !strings.EqualFold(block.Hash, lock.CycleHash) {
+		return 0, errors.New("InstantSend cycle block is not in the active chain")
 	}
-	// Reject cycle heights outside the scanner's current reorg window so a bad
-	// lock payload cannot anchor an InstantSend observation far from local tip.
-	currentHeight := c.getCurrentBlockHeight()
-	if currentHeight <= 0 {
-		currentHeight = scanHeight
-	}
-	if currentHeight > 0 {
-		if cycleBlock.Height > currentHeight {
-			return 0, fmt.Errorf("instantsend cycle block height %d is above current height %d", cycleBlock.Height, currentHeight)
-		}
-		if c.cfg.BlockScanner.MaxReorgRescanBlocks > 0 {
-			minHeight := currentHeight - c.cfg.BlockScanner.MaxReorgRescanBlocks
-			if minHeight > 0 && cycleBlock.Height < minHeight {
-				return 0, fmt.Errorf("instantsend cycle block height %d is below reorg floor %d", cycleBlock.Height, minHeight)
-			}
-		}
-	}
-	// Use the lock's network-agreed cycle block, not the scanner's local
-	// current height, so all observers sign the same InstantSend observation.
-	return cycleBlock.Height, nil
+	return block.Height, nil
 }
 
-// getInstantSendLocks surfaces InstantSend-locked mempool txs as finalised observations.
-func (c *Client) getInstantSendLocks(height int64) (types.TxIn, error) {
-	// Collect InstantSend-locked transactions from the mempool and surface them
-	// as immediately usable observations so they can flow through the pipeline
-	// without waiting for the later chainlocked block scan.
-	txIn := types.TxIn{
-		Chain:                c.GetChain(),
-		MemPool:              false, // allow inbound observation even though not yet in a block
-		ConfirmationRequired: 0,
-	}
-
-	usdPerDash := cosmos.ZeroUint() // remains 0 if USDThreshold is 0 -> we skip USD value checks
-	if c.instantSendCfg.USDThreshold > 0 {
-		price, err := c.usdValueForDash(cosmos.NewUint(common.One))
-		if err != nil || price.IsZero() {
-			c.log.Debug().Err(err).Msg("unable to fetch DASH/USD price, falling back to block observation")
-		} else {
-			usdPerDash = price
+// instantSendCandidates rotates through the mempool so a bounded scan cannot starve
+// later txids behind candidates whose locks or policy checks are still pending.
+func (c *Client) instantSendCandidates(mempool map[string]rpc.GetRawMempoolVerboseResult) ([]string, error) {
+	ids := make([]string, 0, len(mempool))
+	for id, entry := range mempool {
+		if entry.InstantLock != "false" {
+			ids = append(ids, id)
 		}
 	}
+	sort.Strings(ids)
+	limit := len(ids)
+	if c.cfg.UTXO.TransactionBatchSize > 0 && c.cfg.UTXO.MaxMempoolBatches > 0 {
+		limit = min(limit, c.cfg.UTXO.TransactionBatchSize*c.cfg.UTXO.MaxMempoolBatches)
+	}
+	start := sort.Search(len(ids), func(i int) bool { return ids[i] > c.instantSendMempoolCursor })
+	candidates := make([]string, 0, limit)
+	for offset := 0; offset < len(ids) && len(candidates) < limit; offset++ {
+		id := ids[(start+offset)%len(ids)]
+		c.instantSendMempoolCursor = id
+		observed, err := c.temporalStorage.HasObservedTx(strings.ToLower(id))
+		if err != nil {
+			return nil, fmt.Errorf("fail to check observation marker for %s: %w", id, err)
+		}
+		if !observed {
+			candidates = append(candidates, id)
+		}
+	}
+	return candidates, nil
+}
 
+// getInstantSendLocks discovers final transactions. Pending groups are unclaimed
+// work: only the group being returned is marked, so later groups remain retryable.
+func (c *Client) getInstantSendLocks(height int64) (types.TxIn, error) {
+	if len(c.instantSendPendingObservations) == 0 {
+		groups, err := c.scanInstantSend(height)
+		if err != nil {
+			return types.TxIn{}, err
+		}
+		c.instantSendPendingObservations = groups
+	}
+	if len(c.instantSendPendingObservations) == 0 {
+		return types.TxIn{Chain: c.GetChain()}, nil
+	}
+	batch := c.instantSendPendingObservations[0]
+	var err error
+	batch.TxArray, err = c.trackObservedTxs(batch.TxArray)
+	if err != nil {
+		return types.TxIn{}, err
+	}
+	c.instantSendPendingObservations[0] = types.TxIn{}
+	c.instantSendPendingObservations = c.instantSendPendingObservations[1:]
+	if c.m != nil {
+		if counter := c.m.GetCounter(metrics.DashInstantSendObserved); counter != nil {
+			counter.Add(float64(len(batch.TxArray)))
+		}
+	}
+	return batch, nil
+}
+
+func (c *Client) scanInstantSend(height int64) ([]types.TxIn, error) {
+	// Only Dash currently supports the lock RPCs used by this scan.
+	if !c.GetChain().Equals(common.DASHChain) {
+		return nil, nil
+	}
 	mempool, err := c.rpc.GetRawMempoolVerbose()
 	if err != nil {
-		return txIn, fmt.Errorf("fail to get verbose mempool: %w", err)
+		return nil, fmt.Errorf("fail to get %s mempool: %w", c.GetChain(), err)
 	}
-
-	if err := c.temporalStorage.PruneMempoolTx(func(txid string) bool {
-		_, ok := mempool[txid]
-		return !ok
-	}); err != nil {
-		// Drop any tracked mempool txids that are no longer present to avoid
-		// skipping rebroadcasts or leaking cache entries indefinitely.
-		c.log.Err(err).Msg("fail to prune stale mempool cache")
+	ids, err := c.instantSendCandidates(mempool)
+	if err != nil {
+		return nil, err
 	}
-
-	maxWorkers := c.cfg.ParallelMempoolScan
-	if maxWorkers <= 0 {
-		maxWorkers = 5
+	if len(ids) == 0 {
+		return nil, nil
 	}
-
-	g, ctx := errgroup.WithContext(context.Background())
-	// Bound concurrent RPC fanout so a large mempool does not overwhelm dashd.
-	sem := semaphore.NewWeighted(int64(maxWorkers))
-	var mu sync.Mutex
-
-	maxEntries := len(mempool)
-	if c.cfg.UTXO.TransactionBatchSize > 0 && c.cfg.UTXO.MaxMempoolBatches > 0 {
-		if configuredMax := c.cfg.UTXO.TransactionBatchSize * c.cfg.UTXO.MaxMempoolBatches; configuredMax < maxEntries {
-			maxEntries = configuredMax
-		}
+	workers := c.cfg.ParallelMempoolScan
+	if workers <= 0 {
+		workers = 5
 	}
-
-	type instantSendCandidate struct {
-		hash  string
-		entry rpc.GetRawMempoolVerboseResult
-	}
-	// Keep the raw tx with its candidate once the cheap InstantLock flag says
-	// it is worth joining the single batched getislocks call below.
-	type lockedInstantSendCandidate struct {
-		instantSendCandidate
-		rawTx *rpc.DashTxRawResult
-	}
-	type resolvedInstantSendCandidate struct {
-		lockedInstantSendCandidate
-		observedHeight int64
-	}
-	candidates := make([]instantSendCandidate, 0, maxEntries)
-	for hash, entry := range mempool {
-		if len(candidates) >= maxEntries {
-			break
-		}
-		// Reserve the txid before fetching the full raw transaction. This skips
-		// already processed InstantSend txs before the expensive RPC and also
-		// caps the number of workers spawned for a large mempool.
-		if !c.tryAddToMemPoolCache(hash) {
-			continue
-		}
-		candidates = append(candidates, instantSendCandidate{hash: hash, entry: entry})
-	}
-
-	// Phase 1 stays parallel: raw tx fetches are the expensive per-tx work, but
-	// only txs that advertise InstantLock need the lock payload RPC.
-	lockedByIndex := make([]lockedInstantSendCandidate, len(candidates))
-	lockedIndexes := make([]bool, len(candidates))
-	for idx, candidate := range candidates {
-		g.Go(func() error {
-			removeFromCache := true
-			defer func() {
-				if removeFromCache {
-					c.removeFromMemPoolCache(candidate.hash)
-				}
-			}()
-
-			if err := sem.Acquire(ctx, 1); err != nil {
-				return err
+	// Indexed results avoid shared slice mutation and retain candidate order.
+	raw := make([]*rpc.TxResult, len(ids))
+	var group errgroup.Group
+	group.SetLimit(workers)
+	for i, id := range ids {
+		group.Go(func() error {
+			tx, fetchErr := c.rpc.GetRawTransactionVerbose(id)
+			if fetchErr != nil {
+				c.log.Debug().Err(fetchErr).Str("txid", id).Msg("retry InstantSend mempool transaction later")
+			} else if strings.EqualFold(tx.Txid, id) && tx.InstantSendLocked() {
+				raw[i] = tx
 			}
-			defer sem.Release(1)
-
-			// Re-fetch the full raw tx because the verbose mempool listing only
-			// gives summary fields; InstantLock flags live on the tx response.
-			rawTx, err := c.rpc.GetRawTransactionVerboseDASH(candidate.hash)
-			if err != nil {
-				c.log.Err(err).Str("txid", candidate.hash).Msg("fail to fetch instantsend tx")
-				return nil
-			}
-
-			// Only InstantSend-locked transactions are allowed onto the mempool
-			// observation path. Plain mempool txs wait for the chainlocked block path.
-			if !rawTx.InstantLock && !rawTx.InstantLockInternal {
-				return nil
-			}
-
-			mu.Lock()
-			lockedByIndex[idx] = lockedInstantSendCandidate{
-				instantSendCandidate: candidate,
-				rawTx:                rawTx,
-			}
-			lockedIndexes[idx] = true
-			mu.Unlock()
-			removeFromCache = false
 			return nil
 		})
 	}
-
-	if err := g.Wait(); err != nil {
-		c.log.Err(err).Msg("fail to fetch instantsend txs from mempool")
-	}
-
-	lockedCandidates := make([]lockedInstantSendCandidate, 0, len(candidates))
-	for idx, locked := range lockedIndexes {
-		if locked {
-			lockedCandidates = append(lockedCandidates, lockedByIndex[idx])
-		}
-	}
-
-	if len(lockedCandidates) == 0 {
-		return txIn, nil
-	}
-
-	// Dash returns getislocks results in input order, so preserve the filtered
-	// candidate order and use the same index when validating each lock result.
-	lockTxIDs := make([]string, 0, len(lockedCandidates))
-	for _, candidate := range lockedCandidates {
-		lockTxIDs = append(lockTxIDs, candidate.hash)
-	}
-	isLocks, err := c.rpc.GetISLocks(lockTxIDs)
+	err = group.Wait()
 	if err != nil {
-		c.log.Err(err).Int("tx_count", len(lockTxIDs)).Msg("fail to fetch instantsend locks")
-		for _, candidate := range lockedCandidates {
-			c.removeFromMemPoolCache(candidate.hash)
-		}
-		return txIn, nil
+		return nil, err
 	}
-	if len(isLocks) != len(lockedCandidates) {
-		c.log.Debug().Int("tx_count", len(lockTxIDs)).Int("lock_count", len(isLocks)).Msg("instantsend lock response count mismatch")
-		// A count mismatch breaks the input-order contract we rely on, so retry
-		// the whole filtered set later rather than pairing locks with wrong txids.
-		for _, candidate := range lockedCandidates {
-			c.removeFromMemPoolCache(candidate.hash)
+	lockedIDs := make([]string, 0, len(ids))
+	lockedTxs := make([]*rpc.TxResult, 0, len(ids))
+	for i, tx := range raw {
+		if tx != nil {
+			lockedIDs = append(lockedIDs, ids[i])
+			lockedTxs = append(lockedTxs, tx)
 		}
-		return txIn, nil
 	}
-
-	// Resolve each unique cycleHash once per scan; many IS locks can share the
-	// same quorum cycle block, so repeating GetBlockVerbose is wasted RPC work.
-	resolvedCandidates := make([]resolvedInstantSendCandidate, 0, len(lockedCandidates))
-	cycleHeightByHash := make(map[string]int64)
-	for idx, candidate := range lockedCandidates {
-		lock := isLocks[idx]
+	locks, err := c.rpc.GetISLocks(lockedIDs)
+	if err != nil {
+		// Successful chunks can still progress. Failed chunks have nil entries.
+		c.log.Debug().Err(err).Msg("retry missing InstantSend lock batches later")
+	}
+	usdPerAsset := cosmos.ZeroUint()
+	if c.instantSendCfg.InboundValueLimitUSD > 0 {
+		if common.CurrentChainNetwork == common.MockNet {
+			usdPerAsset = cosmos.NewUint(common.One).MulUint64(mocknetDashPrice)
+		} else {
+			asset := c.GetChain().GetGasAsset()
+			if c.bridge != nil {
+				usdPerAsset, err = c.bridge.GetOraclePrice(asset.Ticker.String())
+				if err != nil || usdPerAsset.IsNil() {
+					usdPerAsset = cosmos.ZeroUint()
+					c.log.Debug().Err(err).Msg("oracle price unavailable, falling back to pools")
+				}
+			}
+			if usdPerAsset.IsZero() && c.poolMgr != nil {
+				usdPerAsset, err = c.poolMgr.GetValue(asset, common.TOR, cosmos.NewUint(common.One))
+				if err != nil || usdPerAsset.IsNil() {
+					usdPerAsset = cosmos.ZeroUint()
+					c.log.Debug().Err(err).Msg("fail to price InstantSend observations from pools")
+				}
+			}
+		}
+	}
+	cycleHeights := make(map[string]int64)
+	items := make([]*types.TxInItem, len(locks))
+	for i, lock := range locks {
 		if lock == nil {
-			c.log.Debug().Str("txid", candidate.hash).Msg("instantsend lock not available yet")
-			c.removeFromMemPoolCache(candidate.hash)
 			continue
 		}
-		if lock.TxID != "" && !strings.EqualFold(lock.TxID, candidate.hash) {
-			c.log.Debug().Str("txid", candidate.hash).Str("lock_txid", lock.TxID).Msg("instantsend lock txid mismatch")
-			c.removeFromMemPoolCache(candidate.hash)
-			continue
-		}
-		cycleHash := strings.TrimSpace(lock.CycleHash)
-		observedHeight, ok := cycleHeightByHash[cycleHash]
-		if !ok {
-			var err error
-			observedHeight, err = c.instantSendObservationHeight(lock, height)
+		anchor, found := cycleHeights[lock.CycleHash]
+		if !found {
+			anchor, err = c.instantSendObservationHeight(lock, height)
 			if err != nil {
-				c.log.Debug().Err(err).Str("txid", candidate.hash).Msg("skip instantsend tx without deterministic lock height")
-				c.removeFromMemPoolCache(candidate.hash)
+				c.log.Debug().Err(err).Str("txid", lock.TxID).Msg("retry InstantSend cycle lookup later")
 				continue
 			}
-			cycleHeightByHash[cycleHash] = observedHeight
+			cycleHeights[lock.CycleHash] = anchor
 		}
-		resolvedCandidates = append(resolvedCandidates, resolvedInstantSendCandidate{
-			lockedInstantSendCandidate: candidate,
-			observedHeight:             observedHeight,
-		})
-	}
-
-	if len(resolvedCandidates) == 0 {
-		return txIn, nil
-	}
-
-	// Phase 2 resumes the normal per-candidate validation with the already
-	// fetched raw tx and pre-resolved observation height.
-	g, ctx = errgroup.WithContext(context.Background())
-	sem = semaphore.NewWeighted(int64(maxWorkers))
-	for _, candidate := range resolvedCandidates {
-		g.Go(func() error {
-			removeFromCache := true
-			defer func() {
-				if removeFromCache {
-					c.removeFromMemPoolCache(candidate.hash)
-				}
-			}()
-
-			if err := sem.Acquire(ctx, 1); err != nil {
-				return err
-			}
-			defer sem.Release(1)
-
-			txInItem, err := c.getTxIn(&candidate.rawTx.TxRawResult, candidate.observedHeight, true, nil)
-			if err != nil {
-				c.log.Debug().Err(err).Str("txid", candidate.hash).Msg("fail to build TxInItem for instantsend")
-				return nil
-			}
-			// Ignore txs that do not decode into an inbound coin movement.
-			if txInItem.IsEmpty() || txInItem.Coins.IsEmpty() {
-				removeFromCache = false
-				return nil
-			}
-			// Skip if it's not an inbound tx - the destination is not an Asgard address.
-			if !c.isAsgardAddress(txInItem.To) {
-				removeFromCache = false
-				return nil
-			}
-
-			// Derive policy inputs from the mempool entry: effective fee rate and
-			// how long the tx has been sitting in the mempool.
-			feeRateMilliSatPerVByte := candidate.entry.FeeRateMilliSatPerVByte()
-			age := time.Duration(0)
-			if candidate.entry.Time > 0 {
-				age = time.Since(time.Unix(candidate.entry.Time, 0))
-			}
-
-			fromAsgard := c.isAsgardAddress(txInItem.Sender)
-			usdValue := cosmos.ZeroUint()
-			if !usdPerDash.IsZero() {
-				// getTxIn() has already normalised the inbound amount into txInItem.Coins[0].
-				// Convert that DASH amount into USD so the high-value threshold can be enforced.
-				usdValue = txInItem.Coins[0].Amount.Mul(usdPerDash).QuoUint64(common.One)
-			}
-
-			// Enforce InstantSend policy: high-value / fee / age failures fall
-			// back to the normal chainlocked block path instead.
-			allow, reason := c.allowInstantSend(feeRateMilliSatPerVByte, age, fromAsgard, usdValue)
-			if !allow {
-				c.log.Info().Str("txid", candidate.hash).Str("reason", reason).Msg("instantsend tx did not meet policy; waiting for block")
-				return nil
-			}
-
-			// Mark as observed to avoid duplicate reporting once it later lands
-			// in a chainlocked block and the normal block scanner sees it.
-			added, err := c.temporalStorage.TrackObservedTx(txInItem.Tx)
-			if err != nil {
-				c.log.Err(err).Str("txid", candidate.hash).Msg("fail to track observed instantsend tx")
-				return nil
-			}
-			// Another path already recorded this tx, so do not emit it again.
-			if !added {
-				removeFromCache = false
-				return nil
-			}
-
-			if c.m != nil {
-				if counter := c.m.GetCounter(metrics.DashInstantSendObserved); counter != nil {
-					counter.Inc()
-				}
-			}
-
-			// Multiple workers can accept txs in parallel, so guard the shared output slice.
-			mu.Lock()
-			txIn.TxArray = append(txIn.TxArray, &txInItem)
-			mu.Unlock()
-			removeFromCache = false
+		group.Go(func() error {
+			items[i] = c.buildInstantSendTxInItem(lockedTxs[i], anchor, mempool[lockedIDs[i]], usdPerAsset)
 			return nil
 		})
 	}
-
-	if err := g.Wait(); err != nil {
-		c.log.Err(err).Msg("fail to process instantsend locks from mempool")
+	err = group.Wait()
+	if err != nil {
+		return nil, err
 	}
+	byHeight := make(map[int64][]*types.TxInItem)
+	for _, item := range items {
+		if item != nil {
+			byHeight[item.BlockHeight] = append(byHeight[item.BlockHeight], item)
+		}
+	}
+	return instantSendObservationGroups(c.GetChain(), byHeight), nil
+}
 
-	return txIn, nil
+func (c *Client) buildInstantSendTxInItem(tx *rpc.TxResult, anchor int64, entry rpc.GetRawMempoolVerboseResult, usdPerAsset cosmos.Uint) *types.TxInItem {
+	item, err := c.getTxIn(&tx.TxRawResult, anchor, true, nil)
+	if err != nil {
+		c.log.Debug().Err(err).Str("txid", tx.Txid).Msg("retry InstantSend inbound extraction later")
+		return nil
+	}
+	if item.IsEmpty() || item.Coins.IsEmpty() {
+		return nil
+	}
+	if !c.isAsgardAddress(item.To) {
+		return nil
+	}
+	if item.Coins[0].Amount.LT(c.cfg.ChainID.DustThreshold()) {
+		return nil
+	}
+	var age time.Duration
+	if entry.Time > 0 {
+		age = time.Since(time.Unix(entry.Time, 0))
+	}
+	value := item.Coins[0].Amount.Mul(usdPerAsset).QuoUint64(common.One)
+	allow, reason := c.allowInstantSend(entry.FeeRateMilliSatPerVByte(), age, c.isAsgardAddress(item.Sender), value)
+	if !allow {
+		c.log.Debug().Str("txid", item.Tx).Str("reason", reason).Msg("InstantSend transaction waiting for block observation")
+		return nil
+	}
+	return &item
+}
+
+// Observer uses a single finalization height for each batch. Mixing cycle heights
+// would make the signed observation depend on which worker happened to finish first.
+func instantSendObservationGroups(chain common.Chain, byHeight map[int64][]*types.TxInItem) []types.TxIn {
+	heights := make([]int64, 0, len(byHeight))
+	for height := range byHeight {
+		heights = append(heights, height)
+	}
+	sort.Slice(heights, func(i, j int) bool { return heights[i] < heights[j] })
+	groups := make([]types.TxIn, 0, len(heights))
+	for _, height := range heights {
+		groups = append(groups, types.TxIn{
+			Chain: chain,
+			// Compatibility with Observer's finalized-inbound path. These items
+			// have Core-validated finality despite originating in the mempool.
+			MemPool:              false,
+			ConfirmationRequired: 0,
+			TxArray:              byHeight[height],
+		})
+	}
+	return groups
 }

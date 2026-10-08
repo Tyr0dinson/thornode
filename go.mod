@@ -56,7 +56,7 @@ require (
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/btcsuite/btcd v0.24.2
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0
-	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f
+	github.com/btcsuite/btclog v1.0.0
 	github.com/btcsuite/btcutil v1.0.3-0.20211129182920-9c4bbabe7acd
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cometbft/cometbft v0.38.21
@@ -67,6 +67,9 @@ require (
 	github.com/cosmos/go-bip39 v1.0.0
 	github.com/cosmos/gogogateway v1.2.0
 	github.com/cosmos/gogoproto v1.7.0
+	github.com/dashpay/dashd-go v0.26.1
+	github.com/dashpay/dashd-go/btcec/v2 v2.2.0
+	github.com/dashpay/dashd-go/btcutil v1.3.0
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/deckarep/golang-set v1.8.0
 	github.com/decred/dcrd/dcrec/edwards/v2 v2.0.3

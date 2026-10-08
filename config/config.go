@@ -855,11 +855,13 @@ type BifrostAttestationGossipConfig struct {
 	PeerConcurrentReceives int `mapstructure:"peer_concurrent_receives"`
 }
 
-type DashInstantSendConfiguration struct {
+type InstantSendConfiguration struct {
 	// Enabled indicates if InstantSend mempool observation is enabled.
 	Enabled bool `mapstructure:"enabled"`
-	// USDThreshold enforces ChainLock finality for txs at or above this USD value.
-	USDThreshold uint64 `mapstructure:"usd_threshold"`
+	// InboundValueLimitUSD is the exclusive upper limit in whole USD for external
+	// inbound InstantSend observations. Payments at or above it wait for a ChainLocked block.
+	// Zero disables this path for external senders; Asgard senders are exempt from the limit.
+	InboundValueLimitUSD uint64 `mapstructure:"inbound_value_limit_usd"`
 	// MinFeeRateSatPerVByte requires InstantSend txs to meet a fee-rate floor.
 	MinFeeRateSatPerVByte float64 `mapstructure:"min_fee_rate_sat_per_vbyte"`
 	// MaxMempoolAge bounds how long a tx can sit in mempool before falling back to blocks.
@@ -868,22 +870,22 @@ type DashInstantSendConfiguration struct {
 
 const (
 	// Default minimum fee rate to accept InstantSend mempool txs (sat/vbyte).
-	defaultDashInstantSendMinFeeRateSatPerVByte = 8.0
+	defaultInstantSendMinFeeRateSatPerVByte = 8.0
 	// Default max mempool age for an InstantSend lock before falling back to blocks.
-	defaultDashInstantSendMaxMempoolAge = 2 * time.Minute
+	defaultInstantSendMaxMempoolAge = 2 * time.Minute
 )
 
-func (d DashInstantSendConfiguration) WithDefaults() DashInstantSendConfiguration {
-	if d.MaxMempoolAge <= 0 {
-		d.MaxMempoolAge = defaultDashInstantSendMaxMempoolAge
+func (cfg InstantSendConfiguration) WithDefaults() InstantSendConfiguration {
+	if cfg.MaxMempoolAge <= 0 {
+		cfg.MaxMempoolAge = defaultInstantSendMaxMempoolAge
 	}
 	// Preserve 0 as "disabled" (no fee-rate gate). Only negative values are
 	// treated as unset.
 	// analyze-ignore(float-comparison)
-	if d.MinFeeRateSatPerVByte < 0 {
-		d.MinFeeRateSatPerVByte = defaultDashInstantSendMinFeeRateSatPerVByte
+	if cfg.MinFeeRateSatPerVByte < 0 {
+		cfg.MinFeeRateSatPerVByte = defaultInstantSendMinFeeRateSatPerVByte
 	}
-	return d
+	return cfg
 }
 
 type BifrostChainConfiguration struct {
@@ -1019,7 +1021,7 @@ type BifrostChainConfiguration struct {
 	} `mapstructure:"evm"`
 
 	// InstantSend contains Dash-specific mempool observation controls.
-	InstantSend DashInstantSendConfiguration `mapstructure:"instant_send"`
+	InstantSend InstantSendConfiguration `mapstructure:"instant_send"`
 
 	// UTXO contains UTXO chain specific configuration.
 	UTXO struct {

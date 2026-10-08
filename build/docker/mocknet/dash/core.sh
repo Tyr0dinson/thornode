@@ -46,9 +46,9 @@ json_get_array_length() {
 waitforverificationprogresscomplete() {
   echo "Waiting for node ($1) verification..."
   while true; do
-    blockchaininfo=$(dash-cli -rpcconnect="$1" getblockchaininfo 2>/dev/null)
-    verificationprogress=$(json_get_number verificationprogress "$blockchaininfo")
-    if [[ -n $verificationprogress ]] && awk "BEGIN { exit !($verificationprogress >= 1) }"; then
+    blockchainInfo=$(dash-cli -rpcconnect="$1" getblockchaininfo 2>/dev/null)
+    verificationProgress=$(json_get_number verificationprogress "$blockchainInfo")
+    if [[ -n $verificationProgress ]] && awk "BEGIN { exit !($verificationProgress >= 1) }"; then
       break
     fi
     sleep 1
@@ -84,15 +84,15 @@ waitformasternodestatus() {
   echo "Waiting for masternode ($1) to reach $2 state..."
   while true; do
     sleep 1
-    mnstatus=$(dash-cli -rpcconnect="$1" masternode status 2>/dev/null)
-    if [[ $mnstatus == *"Method not found"* ]]; then
+    mnStatus=$(dash-cli -rpcconnect="$1" masternode status 2>/dev/null)
+    if [[ $mnStatus == *"Method not found"* ]]; then
       continue
     fi
-    if [[ $mnstatus == *"This is not a masternode"* ]]; then
+    if [[ $mnStatus == *"This is not a masternode"* ]]; then
       continue
     fi
-    mnstate=$(json_get_string state "$mnstatus")
-    if [[ $mnstate == "$2" ]]; then
+    mnState=$(json_get_string state "$mnStatus")
+    if [[ $mnState == "$2" ]]; then
       break
     fi
   done
@@ -102,9 +102,9 @@ waitformasternodestatus() {
 waitformasternodesync() {
   echo "Waiting for masternode ($1) to reach MASTERNODE_SYNC_FINISHED state..."
   while true; do
-    mnsync=$(dash-cli -rpcconnect="$1" mnsync status 2>/dev/null)
-    mnsyncstatus=$(json_get_string AssetName "$mnsync")
-    if [[ $mnsyncstatus == "MASTERNODE_SYNC_FINISHED" ]]; then
+    mnSync=$(dash-cli -rpcconnect="$1" mnsync status 2>/dev/null)
+    mnSyncStatus=$(json_get_string AssetName "$mnSync")
+    if [[ $mnSyncStatus == "MASTERNODE_SYNC_FINISHED" ]]; then
       break
     fi
     sleep 1

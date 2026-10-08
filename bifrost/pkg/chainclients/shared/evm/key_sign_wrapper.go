@@ -15,7 +15,6 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
 	"gitlab.com/thorchain/thornode/v3/common"
-	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 func GetPrivateKey(key cryptotypes.PrivKey) (*ecdsa.PrivateKey, error) {
@@ -88,7 +87,7 @@ func (w *KeySignWrapper) sign(tx *etypes.Transaction) ([]byte, error) {
 }
 
 func (w *KeySignWrapper) signTSS(tx *etypes.Transaction, poolPubKey string, thorchainHeight int64) ([]byte, error) {
-	pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, poolPubKey)
+	pk, err := common.DecodePubKey(poolPubKey)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get pub key: %w", err)
 	}

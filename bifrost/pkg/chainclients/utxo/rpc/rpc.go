@@ -129,9 +129,9 @@ func (c *Client) GetBlockHash(height int64) (string, error) {
 	return hash, extractBTCError(err)
 }
 
-// GetBlockVerbose returns information about the block with verbosity 2.
-func (c *Client) GetBlockVerboseTxs(hash string) (*btcjson.GetBlockVerboseTxResult, error) {
-	var block btcjson.GetBlockVerboseTxResult
+// GetBlockVerboseTxs returns information about the block with verbosity 2.
+func (c *Client) GetBlockVerboseTxs(hash string) (*BlockResult, error) {
+	var block BlockResult
 	err := c.Call(&block, "getblock", hash, 2)
 	return &block, extractBTCError(err)
 }
@@ -198,9 +198,9 @@ func (c *Client) GetRawMempool() ([]string, error) {
 }
 
 // GetRawTransactionVerbose returns a raw transaction for the transaction id.
-func (c *Client) GetRawTransactionVerbose(txid string) (*btcjson.TxRawResult, error) {
-	var tx btcjson.TxRawResult
-	err := c.Call(&tx, "getrawtransaction", txid, true)
+func (c *Client) GetRawTransactionVerbose(txID string) (*TxResult, error) {
+	var tx TxResult
+	err := c.Call(&tx, "getrawtransaction", txID, true)
 	return &tx, extractBTCError(err)
 }
 
@@ -212,15 +212,15 @@ func (c *Client) GetRawTransaction(txid string) (string, error) {
 }
 
 // BatchGetRawTransactionVerbose returns a raw transaction for given transaction ids.
-func (c *Client) BatchGetRawTransactionVerbose(txids []string) ([]*btcjson.TxRawResult, []error, error) {
+func (c *Client) BatchGetRawTransactionVerbose(txIDs []string) ([]*TxResult, []error, error) {
 	// create batch request
-	batch := make([]rpc.BatchElem, 0, len(txids))
-	for _, txid := range txids {
-		args := []interface{}{txid, true}
+	batch := make([]rpc.BatchElem, 0, len(txIDs))
+	for _, txID := range txIDs {
+		args := []interface{}{txID, true}
 		batch = append(batch, rpc.BatchElem{
 			Method: "getrawtransaction",
 			Args:   args,
-			Result: &btcjson.TxRawResult{},
+			Result: &TxResult{},
 		})
 	}
 
@@ -231,11 +231,11 @@ func (c *Client) BatchGetRawTransactionVerbose(txids []string) ([]*btcjson.TxRaw
 	}
 
 	// collect results
-	errs := make([]error, len(txids))
-	results := make([]*btcjson.TxRawResult, len(txids))
+	errs := make([]error, len(txIDs))
+	results := make([]*TxResult, len(txIDs))
 	var ok bool
 	for i, b := range batch {
-		results[i], ok = b.Result.(*btcjson.TxRawResult)
+		results[i], ok = b.Result.(*TxResult)
 		if !ok {
 			return nil, nil, fmt.Errorf("unexpected type returned from batch call: %T", b.Result)
 		}

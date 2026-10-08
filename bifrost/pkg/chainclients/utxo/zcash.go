@@ -263,26 +263,26 @@ func (c *Client) selectZecUtxos(pubkey common.PubKey, target btcutil.Amount, ref
 // within this selection. Unknown provenance defers the plan instead of silently
 // changing its inputs.
 func (c *Client) isZecVaultChange(candidate rpc.ZecAddressUTXO, vaultScript []byte, cache map[string]*btcjson.TxRawResult, isOtherAsgardScript func([]byte) (bool, error)) (bool, error) {
-	lookup := func(txid string) (*btcjson.TxRawResult, error) {
-		txid = strings.ToLower(txid)
-		if len(txid) != chainhash.MaxHashStringSize {
-			return nil, fmt.Errorf("invalid ZEC change proof transaction ID %q", txid)
+	lookup := func(txID string) (*btcjson.TxRawResult, error) {
+		txID = strings.ToLower(txID)
+		if len(txID) != chainhash.MaxHashStringSize {
+			return nil, fmt.Errorf("invalid ZEC change proof transaction ID %q", txID)
 		}
-		if _, err := chainhash.NewHashFromStr(txid); err != nil {
+		if _, err := chainhash.NewHashFromStr(txID); err != nil {
 			return nil, fmt.Errorf("invalid ZEC change proof transaction ID: %w", err)
 		}
-		if tx, ok := cache[txid]; ok {
+		if tx, ok := cache[txID]; ok {
 			return tx, nil
 		}
-		tx, err := c.rpc.GetRawTransactionVerbose(txid)
+		tx, err := c.rpc.GetRawTransactionVerbose(txID)
 		if err != nil {
-			return nil, fmt.Errorf("read ZEC change proof transaction %s: %w", txid, err)
+			return nil, fmt.Errorf("read ZEC change proof transaction %s: %w", txID, err)
 		}
-		if tx == nil || !strings.EqualFold(tx.Txid, txid) {
-			return nil, fmt.Errorf("ZEC change proof transaction identity mismatch for %s", txid)
+		if tx == nil || !strings.EqualFold(tx.Txid, txID) {
+			return nil, fmt.Errorf("ZEC change proof transaction identity mismatch for %s", txID)
 		}
-		cache[txid] = tx
-		return tx, nil
+		cache[txID] = &tx.TxRawResult
+		return &tx.TxRawResult, nil
 	}
 	creating, err := lookup(candidate.Txid)
 	if err != nil {

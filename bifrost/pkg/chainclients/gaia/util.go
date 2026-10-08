@@ -26,13 +26,13 @@ import (
 func buildUnsigned(
 	txConfig client.TxConfig,
 	msg *btypes.MsgSend,
-	pubkey common.PubKey,
+	pubKey common.PubKey,
 	memo string,
 	fee ctypes.Coins,
 	account uint64,
 	sequence uint64,
 ) (client.TxBuilder, error) {
-	cpk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, pubkey.String())
+	cpk, err := pubKey.Decode()
 	if err != nil {
 		return nil, fmt.Errorf("unable to GetPubKeyFromBech32 from cosmos: %w", err)
 	}

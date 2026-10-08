@@ -75,12 +75,12 @@ func TestSignAndBroadcastTxReusesTronPayloadOnUncertainFailures(t *testing.T) {
 		},
 	}
 
-	txid, err := SignAndBroadcastTx(client, SimTx{Chain: common.TRONChain})
+	txID, err := SignAndBroadcastTx(client, SimTx{Chain: common.TRONChain})
 	if err != nil {
 		t.Fatalf("expected tron retry helper to recover, got %v", err)
 	}
-	if txid != "confirmed" {
-		t.Fatalf("expected successful txid, got %s", txid)
+	if txID != "confirmed" {
+		t.Fatalf("expected successful txid, got %s", txID)
 	}
 	if client.signCalls != 1 {
 		t.Fatalf("expected 1 sign attempt, got %d", client.signCalls)
@@ -124,7 +124,7 @@ func TestSignAndBroadcastTxFailsUncertainOneShotMemo(t *testing.T) {
 		},
 	}
 
-	txid, err := SignAndBroadcastTx(client, SimTx{
+	txID, err := SignAndBroadcastTx(client, SimTx{
 		Chain:       common.TRONChain,
 		Memo:        "r:00001",
 		OneShotMemo: true,
@@ -132,8 +132,8 @@ func TestSignAndBroadcastTxFailsUncertainOneShotMemo(t *testing.T) {
 	if !errors.Is(err, ErrSimTxUncertain) {
 		t.Fatalf("expected uncertain one-shot transfer to stop with an error, got %v", err)
 	}
-	if txid != "unmined" {
-		t.Fatalf("expected original txid, got %s", txid)
+	if txID != "unmined" {
+		t.Fatalf("expected original txid, got %s", txID)
 	}
 	if client.signCalls != 1 {
 		t.Fatalf("expected 1 sign attempt, got %d", client.signCalls)

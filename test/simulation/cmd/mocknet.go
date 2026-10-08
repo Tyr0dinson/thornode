@@ -517,14 +517,14 @@ func broadcastFunding(master, user *User, chain common.Chain, fundingAmount sdkm
 		Memo:      fmt.Sprintf("SIMULATION:%s", user.Name()),
 	}
 
-	txid, err := signAndBroadcastFundingTx(master.ChainClients[chain], tx, time.Sleep)
+	txID, err := signAndBroadcastFundingTx(master.ChainClients[chain], tx, time.Sleep)
 	if err != nil {
 		log.Fatal().Err(err).Interface("tx", tx).Msg("failed to broadcast funding tx")
 	}
 
 	amountFloat := float64(fundingAmount.Uint64()) / float64(common.One)
 	log.Info().
-		Str("txid", txid).
+		Str("txid", txID).
 		Str("user", user.Name()).
 		Stringer("chain", chain).
 		Stringer("address", addr).
@@ -540,9 +540,15 @@ func signAndBroadcastFundingTx(client LiteChainClient, tx SimTx, sleep func(time
 		maxAttempts = 5
 	}
 	for attempt := 1; ; attempt++ {
-		txid, err := SignAndBroadcastTx(client, tx)
-		if err == nil || errors.Is(err, ErrSimTxUncertain) || txid != "" || attempt == maxAttempts {
-			return txid, err
+		txID, err := SignAndBroadcastTx(client, tx)
+		if err == nil {
+			return txID, nil
+		}
+		if errors.Is(err, ErrSimTxUncertain) || txID != "" {
+			return txID, err
+		}
+		if attempt == maxAttempts {
+			return txID, err
 		}
 		log.Warn().Err(err).
 			Stringer("chain", tx.Chain).

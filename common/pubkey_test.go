@@ -201,6 +201,61 @@ func (s *PubKeyTestSuite) TestPubKey(c *C) {
 	c.Assert(pk2.Equals(pk), Equals, true)
 }
 
+func (s *PubKeyTestSuite) TestDecodePubKey(c *C) {
+	_, secpKey, _ := testdata.KeyTestPubAddr()
+	_, edKey, _ := KeyTestPubAddrED25519()
+	for _, want := range []cryptotypes.PubKey{secpKey, edKey} {
+		encoded, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, want)
+		c.Assert(err, IsNil)
+		key, err := NewPubKey(encoded)
+		c.Assert(err, IsNil)
+
+		fromString, err := DecodePubKey(encoded)
+		c.Assert(err, IsNil)
+		fromKey, err := key.Decode()
+		c.Assert(err, IsNil)
+		for _, got := range []cryptotypes.PubKey{fromString, fromKey} {
+			c.Assert(got.Type(), Equals, want.Type())
+			c.Assert(got.Bytes(), DeepEquals, want.Bytes())
+			c.Assert(got.Equals(want), Equals, true)
+		}
+	}
+}
+
+func (s *PubKeyTestSuite) TestDecodePubKeyInvalid(c *C) {
+	_, pubKey, _ := testdata.KeyTestPubAddr()
+	encoded, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, pubKey)
+	c.Assert(err, IsNil)
+	consensusKey, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeConsPub, pubKey)
+	c.Assert(err, IsNil)
+	payload, err := cosmos.GetFromBech32(encoded, cosmos.GetConfig().GetBech32AccountPubPrefix())
+	c.Assert(err, IsNil)
+	wrongPrefix, err := ConvertAndEncode("wrongpub", payload)
+	c.Assert(err, IsNil)
+	invalidPayload, err := ConvertAndEncode(cosmos.GetConfig().GetBech32AccountPubPrefix(), []byte{1, 2, 3})
+	c.Assert(err, IsNil)
+	// Change one checksum character while retaining the valid Bech32 alphabet.
+	last := byte('q')
+	if encoded[len(encoded)-1] == last {
+		last = 'p'
+	}
+	badChecksum := encoded[:len(encoded)-1] + string(last)
+
+	for _, invalid := range []string{"", "invalid", consensusKey, wrongPrefix, invalidPayload, badChecksum} {
+		_, err = DecodePubKey(invalid)
+		c.Assert(err, NotNil, Commentf("accepted encoded key %q", invalid))
+		_, err = PubKey(invalid).Decode()
+		c.Assert(err, NotNil, Commentf("accepted PubKey %q", invalid))
+	}
+
+	// Construction still permits the empty sentinel; decoding requires a key.
+	empty, err := NewPubKey("")
+	c.Assert(err, IsNil)
+	c.Assert(empty, Equals, EmptyPubKey)
+	_, err = empty.Decode()
+	c.Assert(err, NotNil)
+}
+
 func (s *PubKeyTestSuite) TestPubKeySet(c *C) {
 	_, pubKey, _ := testdata.KeyTestPubAddr()
 	spk, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, pubKey)

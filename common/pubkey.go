@@ -15,6 +15,9 @@ import (
 	"github.com/btcsuite/btcutil/bech32"
 	"github.com/cometbft/cometbft/crypto"
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
+	dashbtcutil "github.com/dashpay/dashd-go/btcutil"
+	dashchaincfg "github.com/dashpay/dashd-go/chaincfg"
 	dogchaincfg "github.com/eager7/dogd/chaincfg"
 	"github.com/eager7/dogutil"
 	eth "github.com/ethereum/go-ethereum/crypto"
@@ -23,7 +26,6 @@ import (
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcutil"
 	"github.com/mr-tron/base58"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/dashutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
 	"golang.org/x/crypto/blake2b"
 
@@ -54,13 +56,20 @@ var (
 // PubKey
 ////////////////////////////////////////////////////////////////////////////////////////
 
+// DecodePubKey decodes THORChain's account public-key encoding using the
+// configured network prefix. It preserves the encoded key's algorithm and
+// returns an error for an empty or invalid key.
+func DecodePubKey(encoded string) (cryptotypes.PubKey, error) {
+	return cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, encoded)
+}
+
 // NewPubKey create a new instance of PubKey
 // key is bech32 encoded string
 func NewPubKey(key string) (PubKey, error) {
 	if len(key) == 0 {
 		return EmptyPubKey, nil
 	}
-	_, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, key)
+	_, err := DecodePubKey(key)
 	if err != nil {
 		return EmptyPubKey, fmt.Errorf("%s is not bech32 encoded pub key,err : %w", key, err)
 	}
@@ -95,8 +104,13 @@ func (p PubKey) String() string {
 	return string(p)
 }
 
+// Decode returns the decoded public key, or an error for an empty or invalid key.
+func (p PubKey) Decode() (cryptotypes.PubKey, error) {
+	return DecodePubKey(p.String())
+}
+
 func (p PubKey) Secp256K1() (*btcec.PublicKey, error) {
-	pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(p))
+	pk, err := p.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +152,7 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 		}
 		addressString = xrpkm.MasterPubKeyToAccountID(pk.SerializeCompressed())
 	case GAIAChain, THORChain, NOBLEChain:
-		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(p))
+		pk, err := p.Decode()
 		if err != nil {
 			return NoAddress, err
 		}
@@ -148,7 +162,7 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 		}
 		addressString = str
 	case BTCChain:
-		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(p))
+		pk, err := p.Decode()
 		if err != nil {
 			return NoAddress, err
 		}
@@ -165,7 +179,7 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 		}
 		addressString = addr.String()
 	case LTCChain:
-		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(p))
+		pk, err := p.Decode()
 		if err != nil {
 			return NoAddress, err
 		}
@@ -182,7 +196,7 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 		}
 		addressString = addr.String()
 	case DOGEChain:
-		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(p))
+		pk, err := p.Decode()
 		if err != nil {
 			return NoAddress, err
 		}
@@ -199,7 +213,7 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 		}
 		addressString = addr.String()
 	case BCHChain:
-		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(p))
+		pk, err := p.Decode()
 		if err != nil {
 			return NoAddress, err
 		}
@@ -216,24 +230,24 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 		}
 		addressString = addr.String()
 	case DASHChain:
-		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(p))
+		pk, err := p.Decode()
 		if err != nil {
 			return NoAddress, err
 		}
-		var net *chaincfg.Params
+		var net *dashchaincfg.Params
 		switch chainNetwork {
 		case MockNet:
-			net = &dashutil.RegressionNetParams
+			net = &dashchaincfg.RegressionNetParams
 		case MainNet, StageNet, ChainNet:
-			net = &dashutil.MainNetParams
+			net = &dashchaincfg.MainNetParams
 		}
-		addr, err := btcutil.NewAddressPubKeyHash(pk.Address().Bytes(), net)
+		addr, err := dashbtcutil.NewAddressPubKeyHash(pk.Address().Bytes(), net)
 		if err != nil {
-			return NoAddress, fmt.Errorf("fail to encode the address, err: %w", err)
+			return NoAddress, fmt.Errorf("failed to encode the address, err: %w", err)
 		}
 		addressString = addr.String()
 	case SOLChain:
-		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, p.String())
+		pk, err := p.Decode()
 		if err != nil {
 			return NoAddress, err
 		}
@@ -246,7 +260,7 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 		// Encode the public key to base58 to get the Solana address
 		addressString = base58.Encode(pubBz)
 	case TAOChain, DOTChain:
-		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, p.String())
+		pk, err := p.Decode()
 		if err != nil {
 			return NoAddress, err
 		}
@@ -279,7 +293,7 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 
 		addressString = base58.Encode(append(addr, checksum[:4]...))
 	case XMRChain:
-		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, p.String())
+		pk, err := p.Decode()
 		if err != nil {
 			return NoAddress, err
 		}
@@ -288,7 +302,7 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 			return NoAddress, fmt.Errorf("fail to derive monero address from pubkey: %w", err)
 		}
 	case ZECChain:
-		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, p.String())
+		pk, err := p.Decode()
 		if err != nil {
 			return NoAddress, fmt.Errorf("fail to get pubkey from bech32: %w", err)
 		}
@@ -306,7 +320,7 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 
 		addressString = zecutil.NewAddressPubKeyHash(bz, prefix).String()
 	case SUIChain:
-		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, p.String())
+		pk, err := p.Decode()
 		if err != nil {
 			return NoAddress, err
 		}
@@ -317,7 +331,7 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 
 		addressString = "0x" + hex.EncodeToString(hash[:])
 	case ADAChain:
-		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, p.String())
+		pk, err := p.Decode()
 		if err != nil {
 			return NoAddress, err
 		}

@@ -34,11 +34,11 @@ func (c *Client) GetBlockCount() (int64, error) {
 }
 
 // GetMempoolEntry returns mempool details for the given transaction.
-func (c *Client) GetMempoolEntry(txid string) (*btcjson.GetMempoolEntryResult, error) {
-	return c.rpc.GetMempoolEntry(txid)
+func (c *Client) GetMempoolEntry(txID string) (*btcjson.GetMempoolEntryResult, error) {
+	return c.rpc.GetMempoolEntry(txID)
 }
 
-// DashGetRawTransactionInfo returns Dash-specific tx metadata including InstantLock state.
-func (c *Client) DashGetRawTransactionInfo(txid string) (*rpc.DashTxRawResult, error) {
-	return c.rpc.GetRawTransactionVerboseDASH(txid)
+// GetRawTransactionVerbose returns transaction details, including lock metadata when available.
+func (c *Client) GetRawTransactionVerbose(txID string) (*rpc.TxResult, error) {
+	return c.rpc.GetRawTransactionVerbose(txID)
 }

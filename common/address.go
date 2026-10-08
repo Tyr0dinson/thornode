@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcutil/bech32"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	dashchaincfg "github.com/dashpay/dashd-go/chaincfg"
 	dogchaincfg "github.com/eager7/dogd/chaincfg"
 	"github.com/eager7/dogutil"
 	eth "github.com/ethereum/go-ethereum/common"
@@ -117,21 +118,12 @@ func NewAddress(address string) (Address, error) {
 // btcutil.DecodeAddress accepts those as P2PK for the caller's defaultNet, but
 // THORChain treats them as non-addresses across all chains.
 func IsValidDASHAddress(address string) bool {
-	for _, params := range []*chaincfg.Params{
-		&dashutil.MainNetParams,
-		&dashutil.RegressionNetParams,
-	} {
-		decoded, err := btcutil.DecodeAddress(address, params)
-		if err != nil {
-			continue
-		}
-
-		switch decoded.(type) {
-		case *btcutil.AddressPubKeyHash, *btcutil.AddressScriptHash:
+	for _, params := range []*dashchaincfg.Params{&dashchaincfg.MainNetParams, &dashchaincfg.RegressionNetParams} {
+		_, err := dashutil.DecodeAddress(address, params)
+		if err == nil {
 			return true
 		}
 	}
-
 	return false
 }
 
@@ -563,13 +555,16 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 			return MockNet
 		}
 	case DASHChain:
-		if _, err := btcutil.DecodeAddress(addr.String(), &dashutil.MainNetParams); err == nil {
+		_, err := dashutil.DecodeAddress(addr.String(), &dashchaincfg.MainNetParams)
+		if err == nil {
 			return mainNetPredicate()
 		}
-		if _, err := btcutil.DecodeAddress(addr.String(), &dashutil.TestNetParams); err == nil {
+		_, err = dashutil.DecodeAddress(addr.String(), &dashchaincfg.TestNet3Params)
+		if err == nil {
 			return MockNet
 		}
-		if _, err := btcutil.DecodeAddress(addr.String(), &dashutil.RegressionNetParams); err == nil {
+		_, err = dashutil.DecodeAddress(addr.String(), &dashchaincfg.RegressionNetParams)
+		if err == nil {
 			return MockNet
 		}
 	}

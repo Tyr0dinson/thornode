@@ -64,14 +64,14 @@ func TestSignAndBroadcastFundingTx(t *testing.T) {
 					return "confirmed", nil
 				},
 			}
-			txid, err := signAndBroadcastFundingTx(client, SimTx{Chain: tc.chain}, func(delay time.Duration) {
+			txID, err := signAndBroadcastFundingTx(client, SimTx{Chain: tc.chain}, func(delay time.Duration) {
 				sleeps++
 				if delay != 2*time.Second {
 					t.Fatalf("unexpected funding retry delay: %s", delay)
 				}
 			})
-			if !errors.Is(err, tc.wantErr) || txid != tc.wantTxID {
-				t.Fatalf("got txid=%q err=%v, want txid=%q err=%v", txid, err, tc.wantTxID, tc.wantErr)
+			if !errors.Is(err, tc.wantErr) || txID != tc.wantTxID {
+				t.Fatalf("got txid=%q err=%v, want txid=%q err=%v", txID, err, tc.wantTxID, tc.wantErr)
 			}
 			if signs != tc.wantSigns || broadcasts != tc.wantBroadcasts || sleeps != tc.wantSleeps {
 				t.Fatalf("got signs=%d broadcasts=%d sleeps=%d, want signs=%d broadcasts=%d sleeps=%d",

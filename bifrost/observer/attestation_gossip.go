@@ -24,7 +24,6 @@ import (
 	chainclienttypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
-	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
@@ -379,7 +378,7 @@ func (s *AttestationGossip) setActiveValidators(activeVals common.PubKeys) {
 	defer s.avMu.Unlock()
 	activePeers := make(map[peer.ID]bool, len(activeVals))
 	for _, pub := range activeVals {
-		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, pub.String())
+		pk, err := pub.Decode()
 		if err != nil {
 			s.logger.Error().Err(err).Msg("fail to convert bech32 pubkey to raw secp256k1 pubkey")
 			continue

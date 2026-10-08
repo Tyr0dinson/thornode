@@ -11,7 +11,6 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
 	"gitlab.com/thorchain/thornode/v3/common"
-	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 type vaultSpendKeyProvider interface {
@@ -23,7 +22,7 @@ func groupKeyHexFromVaultPubKey(vaultPubKey common.PubKey) (string, error) {
 		return "", fmt.Errorf("vault pubkey is empty")
 	}
 
-	pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, vaultPubKey.String())
+	pk, err := vaultPubKey.Decode()
 	if err != nil {
 		return "", fmt.Errorf("fail to decode vault pubkey %s: %w", vaultPubKey.String(), err)
 	}

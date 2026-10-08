@@ -2,23 +2,28 @@ package rpc
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
-	"github.com/btcsuite/btcd/btcjson"
-	"github.com/btcsuite/btcutil"
+	dashjson "github.com/dashpay/dashd-go/btcjson"
+	"github.com/dashpay/dashd-go/btcutil"
 )
 
-type GetBestChainlockResult struct {
+// GetBestChainLockResult describes DASH's best ChainLock.
+type GetBestChainLockResult struct {
 	BlockHash  string `json:"blockhash"`
 	Height     int64  `json:"height"`
 	Signature  string `json:"signature"`
 	KnownBlock bool   `json:"known_block"`
 }
 
+// GetRawMempoolVerboseResult describes DASH's lock-aware mempool entries.
 type GetRawMempoolVerboseResult struct {
+	// Dash Core returns "true", "false", or "unknown", rather than a JSON boolean.
+	InstantLock      string      `json:"instantlock"`
 	Size             int32       `json:"size"`
-	Vsize            int32       `json:"vsize"`
+	VSize            int32       `json:"vsize"`
 	Weight           int32       `json:"weight"`
 	Fee              float64     `json:"fee"`
 	Fees             MempoolFees `json:"fees"`
@@ -29,12 +34,12 @@ type GetRawMempoolVerboseResult struct {
 	Depends          []string    `json:"depends"`
 }
 
-type MempoolFees struct {
-	Base float64 `json:"base"`
-}
+// MempoolFees holds DASH's nested mempool fee fields.
+type MempoolFees = dashjson.MempoolFees
 
+// FeeRateMilliSatPerVByte computes DASH mempool fees using virtual size.
 func (r GetRawMempoolVerboseResult) FeeRateMilliSatPerVByte() uint64 {
-	if r.Vsize <= 0 {
+	if r.VSize <= 0 {
 		return 0
 	}
 
@@ -56,69 +61,96 @@ func (r GetRawMempoolVerboseResult) FeeRateMilliSatPerVByte() uint64 {
 		return 0
 	}
 	feeMilliSats := uint64(amount) * 1000
-	vsize := uint64(r.Vsize)
-	return (feeMilliSats + vsize/2) / vsize
+	vSize := uint64(r.VSize)
+	return (feeMilliSats + vSize/2) / vSize
 }
 
-type DashTxRawResult struct {
-	btcjson.TxRawResult
-	InstantLock         bool `json:"instantlock,omitempty"`
-	InstantLockInternal bool `json:"instantlock_internal,omitempty"`
-	ChainLock           bool `json:"chainlock,omitempty"`
+// QuorumLocked reports DASH's daemon-validated InstantSend or ChainLock finality.
+// Bifrost's observation policy is applied separately by the chain client.
+func (tx *TxResult) QuorumLocked() bool {
+	return tx.InstantLock || tx.InstantLockInternal || tx.ChainLock
 }
 
-type DashISLockInput struct {
+// InstantSendLocked interprets DASH's internal and combined InstantSend flags.
+func (tx *TxResult) InstantSendLocked() bool {
+	return tx.InstantLockInternal || (tx.InstantLock && !tx.ChainLock)
+}
+
+// ISLockInput identifies a locked transaction input for DASH.
+type ISLockInput struct {
 	TxID string `json:"txid"`
 	Vout uint32 `json:"vout"`
 }
 
-type DashISLockResult struct {
-	TxID      string            `json:"txid"`
-	Inputs    []DashISLockInput `json:"inputs"`
-	ID        string            `json:"id,omitempty"`
-	CycleHash string            `json:"cycleHash"`
-	Signature string            `json:"signature"`
-	Hex       string            `json:"hex"`
+// ISLockResult describes DASH's InstantSend lock.
+type ISLockResult struct {
+	TxID      string        `json:"txid"`
+	Inputs    []ISLockInput `json:"inputs"`
+	ID        string        `json:"id,omitempty"`
+	CycleHash string        `json:"cycleHash"`
+	Signature string        `json:"signature"`
+	Hex       string        `json:"hex"`
 }
 
-func (c *Client) GetBestChainlock() (*GetBestChainlockResult, error) {
-	var result GetBestChainlockResult
+// GetBestChainLock retrieves DASH's best ChainLock.
+func (c *Client) GetBestChainLock() (*GetBestChainLockResult, error) {
+	var result GetBestChainLockResult
 	err := c.Call(&result, "getbestchainlock")
 	return &result, extractBTCError(err)
 }
 
+// GetRawMempoolVerbose retrieves DASH's lock-aware mempool entries.
 func (c *Client) GetRawMempoolVerbose() (map[string]GetRawMempoolVerboseResult, error) {
 	result := make(map[string]GetRawMempoolVerboseResult)
 	err := c.Call(&result, "getrawmempool", true)
 	return result, extractBTCError(err)
 }
 
-func (c *Client) GetRawTransactionVerboseDASH(txid string) (*DashTxRawResult, error) {
-	var tx DashTxRawResult
-	err := c.Call(&tx, "getrawtransaction", txid, true)
-	return &tx, extractBTCError(err)
+// GetISLocks retrieves DASH's InstantSend locks and preserves input order,
+// including missing locks. Failed chunks remain nil and are reported in the
+// error; callers may still use successful chunks.
+func (c *Client) GetISLocks(txIDs []string) ([]*ISLockResult, error) {
+	locks := make([]*ISLockResult, len(txIDs))
+	var failures error
+	for start := 0; start < len(txIDs); start += 100 {
+		end := min(start+100, len(txIDs))
+		batch, err := c.getISLocksBatch(txIDs[start:end])
+		if err != nil {
+			failures = errors.Join(failures, fmt.Errorf("getislocks batch %d: %w", start/100, err))
+			continue
+		}
+		copy(locks[start:end], batch)
+	}
+	return locks, failures
 }
 
-func (c *Client) GetISLocks(txids []string) ([]*DashISLockResult, error) {
+// getISLocksBatch decodes one DASH getislocks response.
+func (c *Client) getISLocksBatch(txIDs []string) ([]*ISLockResult, error) {
 	var rawLocks []json.RawMessage
-	err := c.Call(&rawLocks, "getislocks", txids)
+	err := c.Call(&rawLocks, "getislocks", txIDs)
 	if err != nil {
 		return nil, extractBTCError(err)
 	}
-
-	// Dash returns one array entry per requested txid. Missing locks are the
-	// string "None" rather than a JSON null/object, so keep nils in-place to
-	// preserve the caller's txid-to-result ordering.
-	locks := make([]*DashISLockResult, len(rawLocks))
+	if len(rawLocks) != len(txIDs) {
+		return nil, fmt.Errorf("getislocks returned %d results for %d transactions", len(rawLocks), len(txIDs))
+	}
+	locks := make([]*ISLockResult, len(txIDs))
 	for i, raw := range rawLocks {
-		var none string
-		if err := json.Unmarshal(raw, &none); err == nil && strings.EqualFold(none, "None") {
+		if string(raw) == "null" {
 			continue
 		}
-
-		var lock DashISLockResult
-		if err := json.Unmarshal(raw, &lock); err != nil {
-			return nil, fmt.Errorf("decode getislocks result %d: %w", i, err)
+		var none string
+		err = json.Unmarshal(raw, &none)
+		if err == nil && none == "None" {
+			continue
+		}
+		var lock ISLockResult
+		err = json.Unmarshal(raw, &lock)
+		if err != nil {
+			return nil, fmt.Errorf("fail to decode getislocks result %d: %w", i, err)
+		}
+		if !strings.EqualFold(lock.TxID, txIDs[i]) {
+			return nil, fmt.Errorf("getislocks result %d: txid %q, want %q", i, lock.TxID, txIDs[i])
 		}
 		locks[i] = &lock
 	}

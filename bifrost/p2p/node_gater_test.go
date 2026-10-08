@@ -19,6 +19,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	tctypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -38,6 +39,10 @@ type MockThorchainBridge struct {
 	mimirValues       map[string]int64
 	mimirError        error
 	constants         map[string]int64
+}
+
+func (m *MockThorchainBridge) GetOraclePrice(string) (cosmos.Uint, error) {
+	return cosmos.ZeroUint(), fmt.Errorf("oracle price unavailable")
 }
 
 func NewMockThorchainBridge() *MockThorchainBridge {

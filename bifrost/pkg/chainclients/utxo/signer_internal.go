@@ -9,6 +9,9 @@ import (
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	dashbtcutil "github.com/dashpay/dashd-go/btcutil"
+	dashtxscript "github.com/dashpay/dashd-go/txscript"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/dashutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
 
 	"github.com/eager7/dogutil"
@@ -50,11 +53,11 @@ func (c *Client) getMaximumUtxosToSpend() int64 {
 
 // getAllUtxos will iterate unspend utxos for the given address and return the oldest
 // set of utxos that can cover the amount.
-func (c *Client) getUtxoToSpend(pubkey common.PubKey, total btcutil.Amount) ([]btcjson.ListUnspentResult, error) {
+func (c *Client) getUtxoToSpend(pubKey common.PubKey, total btcutil.Amount) ([]btcjson.ListUnspentResult, error) {
 	// get all unspent utxos
-	addr, err := pubkey.GetAddress(c.cfg.ChainID)
+	addr, err := pubKey.GetAddress(c.cfg.ChainID)
 	if err != nil {
-		return nil, fmt.Errorf("fail to get address from pubkey(%s): %w", pubkey, err)
+		return nil, fmt.Errorf("fail to get address from pubkey(%s): %w", pubKey, err)
 	}
 	utxos, err := c.rpc.ListUnspent(addr.String())
 	if err != nil {
@@ -73,6 +76,7 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total btcutil.Amount) ([]b
 
 	var result []btcjson.ListUnspentResult
 	var toSpend btcutil.Amount
+	finality := make(map[string]bool)
 	var excluded utxoExclusions
 	minUTXOAmt := btcutil.Amount(c.cfg.ChainID.DustThreshold().Uint64()).ToBTC()
 	utxosToSpend := c.getMaximumUtxosToSpend() // can be set by mimir
@@ -85,41 +89,49 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total btcutil.Amount) ([]b
 		}
 
 		// analyze-ignore(float-comparison)
-		if item.Confirmations < c.cfg.UTXO.MinUTXOConfirmations || item.Amount < minUTXOAmt {
-			// use all UTXOs sent from asgard, regardless of confirmations or dust threshold
-			isSelfTx := c.isSelfTransaction(item.TxID)
-
-			// confirm sender of the UTXO is not asgard in case of lost block meta
-			if !isSelfTx {
-				isSelfTx = c.isFromAsgard(item.TxID)
+		belowMinimum := item.Confirmations < c.cfg.UTXO.MinUTXOConfirmations || item.Amount < minUTXOAmt
+		if belowMinimum {
+			locked := false
+			// Finality replaces confirmations, never the dust requirement.
+			// analyze-ignore(float-comparison)
+			if c.cfg.ChainID == common.DASHChain && item.Amount >= minUTXOAmt {
+				locked, err = c.isTransactionQuorumLocked(item.TxID, finality)
+				if err != nil {
+					return nil, err
+				}
 			}
-			if !isSelfTx {
+			// Preserve the existing confirmation/dust exception for vault change.
+			if !locked && !c.isSelfTransaction(item.TxID) && !c.isFromAsgard(item.TxID) {
 				excluded.unconfirmedOrDust++
 				continue
 			}
+		}
 
-			// For unconfirmed UTXOs (even self-transactions), check ancestor, descendant, and combined
-			// chain count to avoid exceeding the chain's mempool limits. Set to 0 to disable.
-			if item.Confirmations == 0 && c.cfg.UTXO.MaxMempoolAncestors > 0 {
-				var entry *btcjson.GetMempoolEntryResult
-				entry, err = c.rpc.GetMempoolEntry(item.TxID)
-				if err != nil {
-					// If we cannot get the mempool entry, the tx is likely confirmed.
-					c.log.Debug().Err(err).Str("txid", item.TxID).Msg("failed to get mempool entry")
+		// For unconfirmed UTXOs (even self-transactions), check ancestor, descendant, and combined
+		// chain count to avoid exceeding the chain's mempool limits. Set to 0 to disable.
+		checkMempoolLimits := item.Confirmations == 0 && c.cfg.UTXO.MaxMempoolAncestors > 0
+		if checkMempoolLimits && (belowMinimum || c.cfg.ChainID == common.DASHChain) {
+			var entry *btcjson.GetMempoolEntryResult
+			entry, err = c.rpc.GetMempoolEntry(item.TxID)
+			if err != nil {
+				if c.cfg.ChainID == common.DASHChain {
+					return nil, fmt.Errorf("check Dash input mempool limits: %w", err)
 				}
+				// If we cannot get the mempool entry, the tx is likely confirmed.
+				c.log.Debug().Err(err).Str("txid", item.TxID).Msg("fail to get mempool entry")
+			}
 
-				// Check the combined ancestor and descendant counts to avoid exceeding mempool
-				// limits and receiving "-26: too-long-mempool-chain" errors on broadcast.
-				if err == nil && entry.AncestorCount+entry.DescendantCount >= c.cfg.UTXO.MaxMempoolAncestors {
-					c.log.Warn().
-						Str("txid", item.TxID).
-						Int64("ancestor_count", entry.AncestorCount).
-						Int64("descendant_count", entry.DescendantCount).
-						Int64("max_allowed", c.cfg.UTXO.MaxMempoolAncestors).
-						Msg("skipping UTXO with too many ancestors/descendants to avoid mempool chain limit")
-					excluded.mempoolChainLimit++
-					continue
-				}
+			// Check the combined ancestor and descendant counts to avoid exceeding mempool
+			// limits and receiving "-26: too-long-mempool-chain" errors on broadcast.
+			if err == nil && entry.AncestorCount+entry.DescendantCount >= c.cfg.UTXO.MaxMempoolAncestors {
+				c.log.Warn().
+					Str("txid", item.TxID).
+					Int64("ancestor_count", entry.AncestorCount).
+					Int64("descendant_count", entry.DescendantCount).
+					Int64("max_allowed", c.cfg.UTXO.MaxMempoolAncestors).
+					Msg("skipping UTXO with too many ancestors/descendants to avoid mempool chain limit")
+				excluded.mempoolChainLimit++
+				continue
 			}
 		}
 
@@ -327,12 +339,11 @@ func (c *Client) getSourceScript(tx stypes.TxOutItem) ([]byte, error) {
 		}
 		return btctxscript.PayToAddrScript(addr)
 	case common.DASHChain:
-		var addr btcutil.Address
-		addr, err = btcutil.DecodeAddress(sourceAddr.String(), c.getChainCfgDASH())
+		addr, err := dashutil.DecodeAddress(sourceAddr.String(), c.getChainCfgDASH())
 		if err != nil {
 			return nil, fmt.Errorf("fail to decode source address(%s): %w", sourceAddr.String(), err)
 		}
-		return btctxscript.PayToAddrScript(addr)
+		return dashtxscript.PayToAddrScript(addr)
 	case common.ZECChain:
 		params := c.getChainCfgZEC()
 		var addr btcutil.Address
@@ -578,24 +589,24 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte, zecReference 
 			return nil, nil, fmt.Errorf("fail to generate null data script: %w", err)
 		}
 	case common.DASHChain:
-		var outputAddr btcutil.Address
-		outputAddr, err = btcutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgDASH())
+		var outputAddr dashbtcutil.Address
+		outputAddr, err = dashutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgDASH())
 		if err != nil {
-			return nil, nil, fmt.Errorf("fail to decode next address: %w", err)
+			return nil, nil, fmt.Errorf("fail to decode destination address: %w", err)
 		}
-		buf, err = btctxscript.PayToAddrScript(outputAddr)
+		buf, err = dashtxscript.PayToAddrScript(outputAddr)
 		if err != nil {
-			return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
+			return nil, nil, fmt.Errorf("fail to build payment script: %w", err)
 		}
 		// Dash has no SegWit. Extended memos >80 bytes use the fake-address-dust
-		// pattern with P2PKH-shaped outputs (payToPubKeyHashDashMemo); DOGE/BCH
+		// pattern with P2PKH-shaped outputs (payToPubKeyHashMemoScript); DOGE/BCH
 		// use the P2WPKH shape, but dashd 23's TxoutType enum has no
 		// WITNESS_V0_KEYHASH variant so those outputs would be rejected as
 		// NONSTANDARD. getMemo on the observer side already handles the P2PKH
 		// overflow shape (client_internal.go: pubkeyhash scriptType branch).
-		nullDataScripts, err = MemoToScripts(tx.Memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, payToPubKeyHashDashMemo)
+		nullDataScripts, err = MemoToScripts(tx.Memo, dashtxscript.MaxDataCarrierSize, dashtxscript.NullDataScript, payToPubKeyHashMemoScript)
 		if err != nil {
-			return nil, nil, fmt.Errorf("fail to generate null data script: %w", err)
+			return nil, nil, fmt.Errorf("fail to build memo scripts: %w", err)
 		}
 	case common.ZECChain:
 		var outputAddr btcutil.Address

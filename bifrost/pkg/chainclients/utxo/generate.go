@@ -51,6 +51,7 @@ func main() {
 
 	// template data
 	data = map[string]string{
+		"dash": "github.com/dashpay/dashd-go",
 		"doge": "github.com/eager7/dogd",
 		"bch":  "github.com/gcash/bchd",
 		"ltc":  "github.com/ltcsuite/ltcd",

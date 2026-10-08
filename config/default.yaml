@@ -130,7 +130,7 @@ bifrost:
       xmr_consolidation_max_lock_bps: 0
       instant_send: &default-instant-send
         enabled: false
-        usd_threshold: 0
+        inbound_value_limit_usd: 0
         min_fee_rate_sat_per_vbyte: 0
         max_mempool_age: 0
       evm:
@@ -599,7 +599,7 @@ bifrost:
       instant_send:
         <<: *default-instant-send
         enabled: true
-        usd_threshold: 5000
+        inbound_value_limit_usd: 5000
         min_fee_rate_sat_per_vbyte: 8
         max_mempool_age: 2m
       block_scanner:

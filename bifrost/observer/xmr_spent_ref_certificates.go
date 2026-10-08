@@ -18,7 +18,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
 	bifrosttypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
-	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	thortypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -381,7 +380,7 @@ func (s *AttestationGossip) validateHistoricalXMRSpentRefCertificate(
 
 func historicalVaultContainsAttester(membership []string, attester []byte) bool {
 	for _, member := range membership {
-		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, member)
+		pk, err := common.DecodePubKey(member)
 		if err == nil && bytes.Equal(pk.Bytes(), attester) {
 			return true
 		}

@@ -12,11 +12,13 @@ import (
 	"sync"
 	"time"
 
+	dashwire "github.com/dashpay/dashd-go/wire"
 	bchwire "github.com/gcash/bchd/wire"
 	"github.com/gcash/bchutil"
 	"github.com/hashicorp/go-multierror"
 	ltcwire "github.com/ltcsuite/ltcd/wire"
 	"github.com/ltcsuite/ltcutil"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/dashutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
 
 	ltctxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/ltcd-txscript"
@@ -31,6 +33,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	chainclienttypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc/zec"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
@@ -123,7 +126,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 	}
 
 	// get chain specific address type
-	var outputAddr interface{}
+	var outputAddr fmt.Stringer
 	var outputAddrStr string
 	switch c.cfg.ChainID {
 	case common.DOGEChain:
@@ -167,15 +170,11 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		}
 		outputAddrStr = btcAddr.String()
 	case common.DASHChain:
-		outputAddr, err = btcutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgDASH())
+		outputAddr, err = dashutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgDASH())
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("fail to decode next address: %w", err)
+			return nil, nil, nil, fmt.Errorf("fail to decode destination address: %w", err)
 		}
-		dashAddr, ok := outputAddr.(btcutil.Address)
-		if !ok {
-			return nil, nil, nil, fmt.Errorf("decoded dash address has unexpected type %T", outputAddr)
-		}
-		outputAddrStr = dashAddr.String()
+		outputAddrStr = outputAddr.String()
 	case common.ZECChain:
 		outputAddr, err = zecutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgZEC().Name)
 		if err != nil {
@@ -281,6 +280,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 
 	// convert the wire tx to the chain specific tx for signing
 	var stx interface{}
+	var dashTx *dashwire.MsgTx
 	switch c.cfg.ChainID {
 	case common.DOGEChain:
 		stx = wireToDOGE(redeemTx)
@@ -291,10 +291,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 	case common.BTCChain:
 		stx = wireToBTC(redeemTx)
 	case common.DASHChain:
-		// Dash tx format is Bitcoin-compatible (legacy, non-SegWit), so we
-		// sign against the btcwire.MsgTx directly without a separate wire
-		// conversion step.
-		stx = redeemTx
+		dashTx = wireToDASH(redeemTx)
 	case common.ZECChain:
 		// signing is slightly different, using zecTx, no need to wire
 	default:
@@ -328,6 +325,20 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 			MsgTx:        redeemTx,
 			ExpiryHeight: checkpoint.ZecExpiryHeight,
 		}
+	}
+
+	var dashPrevOutputs []*dashwire.TxOut
+	var dashSignatureHashes, dashSignatureScripts [][]byte
+	if c.cfg.ChainID == common.DASHChain {
+		dashPrevOutputs = make([]*dashwire.TxOut, len(signings))
+		for i, signing := range signings {
+			dashPrevOutputs[i] = dashwire.NewTxOut(signing.amount, sourceScript)
+		}
+		dashSignatureHashes, err = dashutil.SignatureHashes(dashTx, dashPrevOutputs)
+		if err != nil {
+			return nil, checkpointBytes, nil, err
+		}
+		dashSignatureScripts = make([][]byte, len(signings))
 	}
 
 	// sign the tx
@@ -372,12 +383,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 				}
 				signErr = c.signUTXOBTC(msgTx, tx, amount, sourceScript, i, thorchainHeight)
 			case common.DASHChain:
-				msgTx, ok := stx.(*btcwire.MsgTx)
-				if !ok {
-					signErr = fmt.Errorf("unexpected dash signing tx type %T", stx)
-					break
-				}
-				signErr = c.signUTXODASH(msgTx, tx, amount, sourceScript, i, thorchainHeight)
+				dashSignatureScripts[i], signErr = c.signUTXODASH(dashSignatureHashes[i], tx, thorchainHeight)
 			case common.ZECChain:
 				signErr = c.signUTXOZEC(zecTx, tx, amount, sourceScript, i, thorchainHeight)
 			default:
@@ -415,6 +421,18 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 			return nil, nil, nil, fmt.Errorf("fail to sign the message: %w", err)
 		}
 		return nil, checkpointBytes, nil, fmt.Errorf("fail to sign the message: %w", err)
+	}
+
+	if c.cfg.ChainID == common.DASHChain {
+		for i, script := range dashSignatureScripts {
+			dashTx.TxIn[i].SignatureScript = script
+		}
+		err = dashutil.VerifyTransaction(dashTx, dashPrevOutputs)
+		if err != nil {
+			// Signatures may already be public. Retain the checkpoint and do not
+			// classify a local verification failure as a TSS party failure.
+			return nil, checkpointBytes, nil, err
+		}
 	}
 
 	if c.cfg.ChainID == common.ZECChain {
@@ -463,12 +481,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		}
 		redeemTx = btcToWire(msgTx)
 	case common.DASHChain:
-		// stx is already the same *btcwire.MsgTx as redeemTx; nothing to convert.
-		msgTx, ok := stx.(*btcwire.MsgTx)
-		if !ok {
-			return nil, checkpointBytes, nil, fmt.Errorf("unexpected dash signed tx type %T", stx)
-		}
-		redeemTx = msgTx
+		redeemTx = dashToWire(dashTx)
 	case common.ZECChain:
 		// using zecTx directly, no need to convert back
 	default:
@@ -478,6 +491,8 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 	var signedTx bytes.Buffer
 
 	switch c.cfg.ChainID {
+	case common.DASHChain:
+		err = dashTx.Serialize(&signedTx)
 	case common.ZECChain:
 		err = zecTx.ZecEncode(&signedTx, 0, btcwire.BaseEncoding)
 	default:
@@ -638,7 +653,7 @@ func isUTXOTxNotFoundErr(err error) bool {
 // operator can let an expired outbound re-sign after its inputs were re-spent by
 // another transaction. A not-found error is absence; any other error is ambiguous
 // (fail closed — the cache is respected).
-func utxoVerifyPresence(verbose *btcjson.TxRawResult, lookupErr error) signercache.LookupResult {
+func utxoVerifyPresence(verbose *rpc.TxResult, lookupErr error) signercache.LookupResult {
 	switch {
 	case lookupErr == nil:
 		if verbose == nil || verbose.Confirmations > 0 || verbose.BlockHash == "" {
@@ -692,25 +707,25 @@ func (c *Client) BroadcastTx(txOut stypes.TxOutItem, payload []byte) (string, er
 	redeemTx := btcwire.NewMsgTx(btcwire.TxVersion)
 
 	// broadcast tx
-	var txid string
+	var txID string
 	switch c.cfg.ChainID {
 	case common.ZECChain:
 		if len(payload) == 0 {
 			return "", fmt.Errorf("payload is empty")
 		}
-		txid, err = c.checkZecBroadcastExpiry(payload, height)
+		txID, err = c.checkZecBroadcastExpiry(payload, height)
 		if err != nil {
 			return "", err
 		}
-		if txid != "" {
+		if txID != "" {
 			// Already mined by another signer; retain the normal success/cache path.
 			break
 		}
 
 		args := []any{hex.EncodeToString(payload)}
 
-		err = c.rpc.Call(&txid, "sendrawtransaction", args...)
-		if txid == "" {
+		err = c.rpc.Call(&txID, "sendrawtransaction", args...)
+		if txID == "" {
 			c.log.Error().Msg("fail to call SendRawTransaction")
 		}
 	default:
@@ -727,11 +742,11 @@ func (c *Client) BroadcastTx(txOut stypes.TxOutItem, payload []byte) (string, er
 			maxFee = broadcastMaxFeeRate
 		}
 
-		txid, err = c.rpc.SendRawTransaction(redeemTx, maxFee)
+		txID, err = c.rpc.SendRawTransaction(redeemTx, maxFee)
 	}
 
-	if txid != "" {
-		bm.AddSelfTransaction(txid)
+	if txID != "" {
+		bm.AddSelfTransaction(txID)
 	}
 
 	msgs := []string{"already in block chain"}
@@ -745,7 +760,7 @@ func (c *Client) BroadcastTx(txOut stypes.TxOutItem, payload []byte) (string, er
 
 			slices.Reverse(final)
 
-			txid = hex.EncodeToString(final)
+			txID = hex.EncodeToString(final)
 
 			// zebrad specific messages
 			msgs = append(msgs, []string{
@@ -753,18 +768,18 @@ func (c *Client) BroadcastTx(txOut stypes.TxOutItem, payload []byte) (string, er
 				"transaction was committed to the best chain",
 			}...)
 		default:
-			txid = redeemTx.TxHash().String()
+			txID = redeemTx.TxHash().String()
 		}
 
 		for _, msg := range msgs {
 			if strings.Contains(err.Error(), msg) {
-				c.log.Info().Str("hash", txid).Msg("broadcasted by another node")
+				c.log.Info().Str("hash", txID).Msg("broadcasted by another node")
 				expiry := time.Now().Add(c.getSignerCacheExpiry()).UnixMilli()
-				cacheErr := c.signerCacheManager.SetSignedWithExpiry(txOut.CacheHash(), txOut.CacheVault(c.GetChain()), txid, expiry)
+				cacheErr := c.signerCacheManager.SetSignedWithExpiry(txOut.CacheHash(), txOut.CacheVault(c.GetChain()), txID, expiry)
 				if cacheErr != nil {
 					c.log.Err(cacheErr).Msgf("fail to mark tx out item (%+v) as signed", txOut)
 				}
-				return txid, nil
+				return txID, nil
 			}
 		}
 
@@ -773,9 +788,10 @@ func (c *Client) BroadcastTx(txOut stypes.TxOutItem, payload []byte) (string, er
 
 	// save tx id to block meta in case we need to errata later
 	expiry := time.Now().Add(c.getSignerCacheExpiry()).UnixMilli()
-	if err = c.signerCacheManager.SetSignedWithExpiry(txOut.CacheHash(), txOut.CacheVault(c.GetChain()), txid, expiry); err != nil {
+	err = c.signerCacheManager.SetSignedWithExpiry(txOut.CacheHash(), txOut.CacheVault(c.GetChain()), txID, expiry)
+	if err != nil {
 		c.log.Err(err).Msgf("fail to mark tx out item (%+v) as signed", txOut)
 	}
 
-	return txid, nil
+	return txID, nil
 }

@@ -12,6 +12,8 @@ import (
 
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/cometbft/cometbft/crypto/secp256k1"
+	dashchaincfg "github.com/dashpay/dashd-go/chaincfg"
+	dashtxscript "github.com/dashpay/dashd-go/txscript"
 	"github.com/hashicorp/go-multierror"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -367,18 +369,18 @@ func (c *Client) BroadcastTx(payload []byte) (string, error) {
 	if c.chain.Equals(common.ZECChain) {
 		var hash string
 		payloadHex := hex.EncodeToString(payload)
-		txid := chainhash.DoubleHashH(payload).String() // Our ZEC encoder emits v4.
+		txID := chainhash.DoubleHashH(payload).String() // Our ZEC encoder emits v4.
 		args := []any{payloadHex}
 		err := c.rpc.Call(&hash, "sendrawtransaction", args...)
-		if err == nil && !strings.EqualFold(hash, txid) {
-			err = fmt.Errorf("unexpected ZEC broadcast txid: got %q, expected %s", hash, txid)
+		if err == nil && !strings.EqualFold(hash, txID) {
+			err = fmt.Errorf("unexpected ZEC broadcast txid: got %q, expected %s", hash, txID)
 		}
 		if err != nil {
 			// Zebra may requeue verification after cancelling the RPC. Check
 			// the original payload in the mempool/chain before retrying it.
-			if accepted, _ := c.payloadAccepted(txid, payloadHex); accepted {
+			if accepted, _ := c.payloadAccepted(txID, payloadHex); accepted {
 				c.finalizePendingSpentUtxos(payloadHex)
-				return txid, nil
+				return txID, nil
 			}
 			// Keep these inputs reserved on an ambiguous result, including
 			// exhausted retries. They become spent only after acceptance; a
@@ -406,7 +408,7 @@ func (c *Client) BroadcastTx(payload []byte) (string, error) {
 	// Rebroadcasting identical bytes is idempotent, so transport failures reuse
 	// this payload. Signing again after a timed-out broadcast that the node
 	// accepted anyway spends other inputs and sends a duplicate inbound.
-	txid := redeemTx.TxHash().String()
+	txID := redeemTx.TxHash().String()
 	payloadHex := hex.EncodeToString(payload)
 	var err error
 	for attempt := 1; attempt <= utxoBroadcastAttempts; attempt++ {
@@ -415,9 +417,9 @@ func (c *Client) BroadcastTx(payload []byte) (string, error) {
 		if err == nil {
 			return hash, nil
 		}
-		accepted, absent := c.payloadAccepted(txid, payloadHex)
+		accepted, absent := c.payloadAccepted(txID, payloadHex)
 		if accepted {
-			return txid, nil
+			return txID, nil
 		}
 
 		// the node answered: an earlier attempt was mined, or the payload was
@@ -427,18 +429,18 @@ func (c *Client) BroadcastTx(payload []byte) (string, error) {
 		var rpcErr *btcjson.RPCError
 		if errors.As(err, &rpcErr) {
 			if rpcErr.Code == btcjson.ErrRPCTxAlreadyInChain {
-				return txid, nil
+				return txID, nil
 			}
 			if absent {
-				return "", fmt.Errorf("fail to broadcast %s tx %s: %w", c.chain, txid, err)
+				return "", fmt.Errorf("fail to broadcast %s tx %s: %w", c.chain, txID, err)
 			}
 		}
 		if attempt < utxoBroadcastAttempts {
 			time.Sleep(utxoBroadcastRetryDelay)
 		}
 	}
-	return txid, fmt.Errorf("%w: %s tx %s not found after %d broadcast attempts: %w",
-		ErrSimTxUncertain, c.chain, txid, utxoBroadcastAttempts, err)
+	return txID, fmt.Errorf("%w: %s tx %s not found after %d broadcast attempts: %w",
+		ErrSimTxUncertain, c.chain, txID, utxoBroadcastAttempts, err)
 }
 
 // payloadAccepted reports whether the node already holds the exact payload in
@@ -489,12 +491,11 @@ func (c *Client) getSourceScript(tx SimTx) ([]byte, error) {
 		}
 		return btctxscript.PayToAddrScript(addr)
 	case common.DASHChain:
-		var addr btcutil.Address
-		addr, err := btcutil.DecodeAddress(c.address.String(), c.getChainCfgDASH())
+		addr, err := dashutil.DecodeAddress(c.address.String(), c.getChainCfgDASH())
 		if err != nil {
 			return nil, fmt.Errorf("fail to decode source address(%s): %w", c.address, err)
 		}
-		return btctxscript.PayToAddrScript(addr)
+		return dashtxscript.PayToAddrScript(addr)
 	case common.ZECChain:
 		params := c.getChainCfgZEC()
 		var addr btcutil.Address
@@ -803,12 +804,11 @@ func (c *Client) buildTx(tx SimTx, sourceScript []byte) (
 			return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
 		}
 	case common.DASHChain:
-		var outputAddr btcutil.Address
-		outputAddr, err = btcutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgDASH())
+		outputAddr, err := dashutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgDASH())
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to decode next address: %w", err)
 		}
-		buf, err = btctxscript.PayToAddrScript(outputAddr)
+		buf, err = dashtxscript.PayToAddrScript(outputAddr)
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
 		}
@@ -921,12 +921,12 @@ func (c *Client) getChainCfgZEC() *btcchaincfg.Params {
 	}
 }
 
-func (c *Client) getChainCfgDASH() *btcchaincfg.Params {
+func (c *Client) getChainCfgDASH() *dashchaincfg.Params {
 	switch common.CurrentChainNetwork {
 	case common.MockNet:
-		return &dashutil.RegressionNetParams
+		return &dashchaincfg.RegressionNetParams
 	case common.MainNet, common.StageNet, common.ChainNet:
-		return &dashutil.MainNetParams
+		return &dashchaincfg.MainNetParams
 	default:
 		log.Fatal().Msg("unsupported network")
 		return nil
@@ -1032,19 +1032,20 @@ func (c *Client) signUTXODASH(redeemTx *btcwire.MsgTx, amount int64, sourceScrip
 	}
 
 	pkData := signable.GetPubKey().SerializeCompressed()
-	sigscript, err := btctxscript.NewScriptBuilder().AddData(sig).AddData(pkData).Script()
+	sigScript, err := btctxscript.NewScriptBuilder().AddData(sig).AddData(pkData).Script()
 	if err != nil {
 		return fmt.Errorf("fail to build signature script: %w", err)
 	}
-	redeemTx.TxIn[idx].SignatureScript = sigscript
+	redeemTx.TxIn[idx].SignatureScript = sigScript
 
 	flag := btctxscript.StandardVerifyFlags
 	engine, err := btctxscript.NewEngine(sourceScript, redeemTx, idx, flag, nil, nil, amount)
 	if err != nil {
-		return fmt.Errorf("fail to create engine: %w", err)
+		return fmt.Errorf("fail to create script engine: %w", err)
 	}
-	if err = engine.Execute(); err != nil {
-		return fmt.Errorf("fail to execute the script: %w", err)
+	err = engine.Execute()
+	if err != nil {
+		return fmt.Errorf("fail to verify signature script: %w", err)
 	}
 	return nil
 }

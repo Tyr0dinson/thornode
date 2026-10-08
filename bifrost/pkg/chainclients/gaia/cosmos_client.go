@@ -589,12 +589,12 @@ func (c *CosmosClient) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signe
 // signMsg takes an unsigned msg in a txBuilder and signs it using either private key or TSS.
 func (c *CosmosClient) signMsg(
 	txBuilder client.TxBuilder,
-	pubkey common.PubKey,
+	pubKey common.PubKey,
 	account uint64,
 	sequence uint64,
 	thorchainHeight int64,
 ) ([]byte, error) {
-	cpk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, pubkey.String())
+	cpk, err := pubKey.Decode()
 	if err != nil {
 		return nil, fmt.Errorf("unable to GetPubKeyFromBech32 from cosmos: %w", err)
 	}
@@ -622,14 +622,14 @@ func (c *CosmosClient) signMsg(
 		Sequence: sequence,
 	}
 
-	if c.localKeyManager.Pubkey().Equals(pubkey) {
+	if c.localKeyManager.Pubkey().Equals(pubKey) {
 		sigData.Signature, err = c.localKeyManager.Sign(signBytes)
 		if err != nil {
 			return nil, fmt.Errorf("unable to sign using localKeyManager: %w", err)
 		}
 	} else {
 		hashedMsg := crypto.Sha256(signBytes)
-		sigData.Signature, _, err = c.tssKeyManager.RemoteSign(hashedMsg, common.SigningAlgoSecp256k1, pubkey.String(), thorchainHeight)
+		sigData.Signature, _, err = c.tssKeyManager.RemoteSign(hashedMsg, common.SigningAlgoSecp256k1, pubKey.String(), thorchainHeight)
 		if err != nil {
 			return nil, err
 		}

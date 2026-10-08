@@ -3,11 +3,12 @@ package utxo
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
+	"sync"
 
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/rs/zerolog/log"
 	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb/opt"
 	"github.com/syndtr/goleveldb/leveldb/util"
 )
 
@@ -75,6 +76,7 @@ type SpentUtxosByHeight struct {
 type TemporalStorage struct {
 	db               *leveldb.DB
 	mempoolTxIDCache *lru.Cache
+	observedTxMu     sync.Mutex
 }
 
 func NewTemporalStorage(db *leveldb.DB, txidCacheSize int) (*TemporalStorage, error) {
@@ -247,55 +249,64 @@ func (t *TemporalStorage) UntrackMempoolTx(txid string) error {
 	return err
 }
 
-// PruneMempoolTx removes tracked mempool txids that match the provided filter.
-// The filter should return true when the txid should be deleted.
-func (t *TemporalStorage) PruneMempoolTx(filter func(txid string) bool) error {
-	if filter == nil {
-		return nil
-	}
-
-	iter := t.db.NewIterator(util.BytesPrefix([]byte(PrefixMempool)), nil)
-	defer iter.Release()
-
-	for iter.Next() {
-		key := string(iter.Key())
-		txid := strings.TrimPrefix(key, PrefixMempool)
-		if txid == "" {
-			continue
-		}
-		if !filter(txid) {
-			continue
-		}
-
-		if err := t.db.Delete([]byte(key), nil); err != nil {
-			return fmt.Errorf("fail to delete mempool tx %s: %w", txid, err)
-		}
-		if t.mempoolTxIDCache != nil {
-			t.mempoolTxIDCache.Remove(key)
-		}
-	}
-
-	return iter.Error()
+// TrackObservedTx synchronously tracks one observed txid. It returns true only
+// when a new marker was written successfully.
+func (t *TemporalStorage) TrackObservedTx(txid string) (bool, error) {
+	added, err := t.TrackObservedTxs([]string{txid})
+	return len(added) != 0, err
 }
 
-// TrackObservedTx attempts to track the provided observed txid. Returns
-// true if the txid was successfully added, and false if the txid was already tracked or
-// an error occurred during write.
-func (t *TemporalStorage) TrackObservedTx(txid string) (bool, error) {
-	key := t.getObservedTxKey(txid)
-	exist, err := t.db.Has([]byte(key), nil)
+// TrackObservedTxs claims new txids in one synchronous batch and returns them in
+// input order, without duplicates. On error it returns no accepted IDs. Markers
+// precede Observer delivery, so a lost handoff is deliberately not retried.
+func (t *TemporalStorage) TrackObservedTxs(txids []string) ([]string, error) {
+	if len(txids) == 0 {
+		return nil, nil
+	}
+	// Block and mempool scanners must not both claim the same transaction.
+	t.observedTxMu.Lock()
+	defer t.observedTxMu.Unlock()
+
+	batch := new(leveldb.Batch)
+	found := make(map[string]struct{}, len(txids))
+	var added []string
+	for _, txid := range txids {
+		if _, duplicate := found[txid]; duplicate {
+			continue
+		}
+		found[txid] = struct{}{}
+		key := t.getObservedTxKey(txid)
+		exist, err := t.db.Has([]byte(key), nil)
+		if err != nil {
+			return nil, err
+		}
+		if exist {
+			continue
+		}
+		batch.Put([]byte(key), []byte(txid))
+		added = append(added, txid)
+	}
+	if batch.Len() == 0 {
+		return nil, nil
+	}
+	err := t.db.Write(batch, &opt.WriteOptions{Sync: true})
 	if err != nil {
-		return exist, err
+		return nil, err
 	}
-	if exist {
-		return false, nil
-	}
-	err = t.db.Put([]byte(key), []byte(txid), nil)
-	return true, err
+	return added, nil
+}
+
+// HasObservedTx skips unnecessary RPC work. Callers must still use TrackObservedTx
+// or TrackObservedTxs before delivery to claim the transaction atomically.
+func (t *TemporalStorage) HasObservedTx(txid string) (bool, error) {
+	return t.db.Has([]byte(t.getObservedTxKey(txid)), nil)
 }
 
 // UntrackObservedTx untracks the provided observed txid.
 func (t *TemporalStorage) UntrackObservedTx(txid string) error {
+	t.observedTxMu.Lock()
+	defer t.observedTxMu.Unlock()
+
 	key := t.getObservedTxKey(txid)
 	return t.db.Delete([]byte(key), nil)
 }

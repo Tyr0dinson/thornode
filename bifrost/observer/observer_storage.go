@@ -316,7 +316,6 @@ func (s *ObserverStorage) applyErrataBatch(
 			return fmt.Errorf("encode observer errata tombstone: %w", err)
 		}
 		batch.Put([]byte(key), encoded)
-
 		// A committed quorum event is useful for the local durable outbox only
 		// when it contains this node's attestation. The gossip layer enforces
 		// that ownership check before calling recordLocalErrataCommitted.

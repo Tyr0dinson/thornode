@@ -16,7 +16,6 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
 	"gitlab.com/thorchain/thornode/v3/common"
-	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 type tssSignableBCH struct {
@@ -65,7 +64,7 @@ func (ts *tssSignableBCH) SignSchnorr(payload []byte) (*bchec.Signature, error) 
 }
 
 func (ts *tssSignableBCH) GetPubKey() *bchec.PublicKey {
-	cpk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, ts.poolPubKey.String())
+	cpk, err := ts.poolPubKey.Decode()
 	if err != nil {
 		ts.log.Err(err).Str("pubkey", ts.poolPubKey.String()).Msg("fail to get pubic key from the bech32 pool public key string")
 		return nil
@@ -75,12 +74,12 @@ func (ts *tssSignableBCH) GetPubKey() *bchec.PublicKey {
 		ts.log.Err(err).Msgf("%s is not a secp256 k1 public key", ts.poolPubKey)
 		return nil
 	}
-	newPubkey, err := bchec.ParsePubKey(secpPubKey.Bytes(), bchec.S256())
+	newPubKey, err := bchec.ParsePubKey(secpPubKey.Bytes(), bchec.S256())
 	if err != nil {
 		ts.log.Err(err).Msg("fail to parse public key")
 		return nil
 	}
-	return newPubkey
+	return newPubKey
 }
 
 type tssSignableBTC struct {
@@ -124,7 +123,7 @@ func (ts *tssSignableBTC) Sign(payload []byte) (*btcec.Signature, error) {
 }
 
 func (ts *tssSignableBTC) GetPubKey() *btcec.PublicKey {
-	cpk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, ts.poolPubKey.String())
+	cpk, err := ts.poolPubKey.Decode()
 	if err != nil {
 		ts.log.Err(err).Str("pubkey", ts.poolPubKey.String()).Msg("fail to get pubic key from the bech32 pool public key string")
 		return nil
@@ -134,12 +133,12 @@ func (ts *tssSignableBTC) GetPubKey() *btcec.PublicKey {
 		ts.log.Err(err).Msgf("%s is not a secp256 k1 public key", ts.poolPubKey)
 		return nil
 	}
-	newPubkey, err := btcec.ParsePubKey(secpPubKey.Bytes(), btcec.S256())
+	newPubKey, err := btcec.ParsePubKey(secpPubKey.Bytes(), btcec.S256())
 	if err != nil {
 		ts.log.Err(err).Msg("fail to parse public key")
 		return nil
 	}
-	return newPubkey
+	return newPubKey
 }
 
 type tssSignableDOGE struct {
@@ -183,7 +182,7 @@ func (ts *tssSignableDOGE) Sign(payload []byte) (*dogeec.Signature, error) {
 }
 
 func (ts *tssSignableDOGE) GetPubKey() *dogeec.PublicKey {
-	cpk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, ts.poolPubKey.String())
+	cpk, err := ts.poolPubKey.Decode()
 	if err != nil {
 		ts.log.Err(err).Str("pubkey", ts.poolPubKey.String()).Msg("fail to get pubic key from the bech32 pool public key string")
 		return nil
@@ -193,12 +192,12 @@ func (ts *tssSignableDOGE) GetPubKey() *dogeec.PublicKey {
 		ts.log.Err(err).Msgf("%s is not a secp256 k1 public key", ts.poolPubKey)
 		return nil
 	}
-	newPubkey, err := dogeec.ParsePubKey(secpPubKey.Bytes(), dogeec.S256())
+	newPubKey, err := dogeec.ParsePubKey(secpPubKey.Bytes(), dogeec.S256())
 	if err != nil {
 		ts.log.Err(err).Msg("fail to parse public key")
 		return nil
 	}
-	return newPubkey
+	return newPubKey
 }
 
 type tssSignableLTC struct {
@@ -242,7 +241,7 @@ func (ts *tssSignableLTC) Sign(payload []byte) (*ltcec.Signature, error) {
 }
 
 func (ts *tssSignableLTC) GetPubKey() *ltcec.PublicKey {
-	cpk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, ts.poolPubKey.String())
+	cpk, err := ts.poolPubKey.Decode()
 	if err != nil {
 		ts.log.Err(err).Str("pubkey", ts.poolPubKey.String()).Msg("fail to get pubic key from the bech32 pool public key string")
 		return nil
@@ -252,10 +251,10 @@ func (ts *tssSignableLTC) GetPubKey() *ltcec.PublicKey {
 		ts.log.Err(err).Msgf("%s is not a secp256 k1 public key", ts.poolPubKey)
 		return nil
 	}
-	newPubkey, err := ltcec.ParsePubKey(secpPubKey.Bytes(), ltcec.S256())
+	newPubKey, err := ltcec.ParsePubKey(secpPubKey.Bytes(), ltcec.S256())
 	if err != nil {
 		ts.log.Err(err).Msg("fail to parse public key")
 		return nil
 	}
-	return newPubkey
+	return newPubKey
 }

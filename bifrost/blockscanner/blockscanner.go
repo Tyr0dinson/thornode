@@ -399,11 +399,37 @@ func (b *BlockScanner) scanMempool() {
 			if err != nil {
 				b.logger.Error().Err(err).Msg("fail to fetch MemPool")
 			}
-			if len(txInMemPool.TxArray) > 0 {
+			if len(txInMemPool.TxArray) > 0 || txInMemPool.Persisted != nil {
 				select {
 				case <-b.stopChan:
 					return
 				case b.globalTxsQueue <- txInMemPool:
+				}
+				err = waitTxInPersistence(txInMemPool, b.stopChan)
+				if err != nil {
+					if txInMemPool.AbortPersistence != nil {
+						txInMemPool.AbortPersistence()
+					}
+					if !b.backoffAfterPersistenceFailure(
+						err,
+						"mempool_persistence_failed",
+						"observer failed to persist mempool transactions",
+					) {
+						return
+					}
+					continue
+				}
+				if txInMemPool.FinalizePersistence != nil {
+					err = txInMemPool.FinalizePersistence()
+					if err != nil {
+						if !b.backoffAfterPersistenceFailure(
+							err,
+							"mempool_finalize_failed",
+							"chain scanner failed to finalize mempool observations",
+						) {
+							return
+						}
+					}
 				}
 			} else {
 				// backoff between mempool scans (some chain clients always return nothing)

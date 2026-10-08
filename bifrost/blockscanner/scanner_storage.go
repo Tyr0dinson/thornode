@@ -29,8 +29,7 @@ func NewBlockScannerStorage(levelDbFolder string, opts config.LevelDBOptions) (*
 }
 
 // NewBlockScannerStorageWithScanPosSync creates scanner storage whose cursor
-// updates are fsynced. XMR uses this together with its durable reorg journal;
-// other chains retain the historical buffered LevelDB behavior.
+// updates are fsynced. XMR uses this with its durable reorg journal.
 func NewBlockScannerStorageWithScanPosSync(levelDbFolder string, opts config.LevelDBOptions) (*BlockScannerStorage, error) {
 	return newBlockScannerStorage(levelDbFolder, opts, true)
 }

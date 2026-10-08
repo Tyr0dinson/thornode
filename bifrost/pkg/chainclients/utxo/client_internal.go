@@ -11,6 +11,7 @@ import (
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
+	dashtxscript "github.com/dashpay/dashd-go/txscript"
 	bchtxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/bchd-txscript"
 	dogetxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/dogd-txscript"
 	ltctxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/ltcd-txscript"
@@ -406,7 +407,16 @@ func (c *Client) getBlock(height int64) (*btcjson.GetBlockVerboseTxResult, error
 	if err != nil {
 		return &btcjson.GetBlockVerboseTxResult{}, err
 	}
-	return c.rpc.GetBlockVerboseTxs(hash)
+	block, err := c.rpc.GetBlockVerboseTxs(hash)
+	if err != nil {
+		return nil, err
+	}
+	if c.cfg.ChainID == common.DASHChain {
+		if !block.ChainLock || block.Height != height || !strings.EqualFold(block.Hash, hash) {
+			return nil, btypes.ErrUnavailableBlock
+		}
+	}
+	return &block.GetBlockVerboseTxResult, nil
 }
 
 func (c *Client) isValidUTXO(hexPubKey string) bool {
@@ -472,16 +482,13 @@ func (c *Client) isValidUTXO(hexPubKey string) bool {
 		}
 
 	case common.DASHChain:
-		// Dash uses P2PKH/P2SH scripts identical to Bitcoin, so btctxscript
-		// parses them correctly provided the chain params have the right
-		// base58 prefix bytes (see dashutil).
-		scriptType, addresses, requireSigs, err := btctxscript.ExtractPkScriptAddrs(buf, c.getChainCfgDASH())
+		scriptType, addresses, requireSigs, err := dashtxscript.ExtractPkScriptAddrs(buf, c.getChainCfgDASH())
 		if err != nil {
 			c.log.Err(err).Msg("fail to extract pub key script")
 			return false
 		}
 		switch scriptType {
-		case btctxscript.MultiSigTy:
+		case dashtxscript.MultiSigTy:
 			return false
 		default:
 			return len(addresses) == 1 && requireSigs == 1
@@ -508,7 +515,7 @@ func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool, 
 		return types.TxInItem{}, nil
 	}
 	// RBF enabled transaction will not be observed until committed to block
-	if c.isRBFEnabled(tx) && isMemPool {
+	if c.cfg.ChainID != common.DASHChain && c.isRBFEnabled(tx) && isMemPool {
 		return types.TxInItem{}, nil
 	}
 	sender, err := c.getSender(tx, vinZeroTxs)
@@ -665,7 +672,7 @@ func (c *Client) getVinZeroTxs(block *btcjson.GetBlockVerboseTxResult) (map[stri
 
 		// add transactions to block result
 		for _, tx := range results {
-			vinZeroTxs[tx.Txid] = tx
+			vinZeroTxs[tx.Txid] = &tx.TxRawResult
 		}
 	}
 
@@ -712,19 +719,40 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 		if txInItem.Coins[0].Amount.LT(c.cfg.ChainID.DustThreshold()) {
 			continue
 		}
-		var added bool
-		added, err = c.temporalStorage.TrackObservedTx(txInItem.Tx)
-		if err != nil {
-			c.log.Err(err).Msgf("fail to determine whether hash(%s) had been observed before", txInItem.Tx)
-		}
-		if !added {
-			c.log.Info().Msgf("tx: %s had been report before, ignore", txInItem.Tx)
-			continue
-		}
 		txItems = append(txItems, &txInItem)
 	}
-	txIn.TxArray = txItems
-	return txIn, nil
+	txIn.TxArray, err = c.trackObservedTxs(txItems)
+	return txIn, err
+}
+
+// trackObservedTxs claims a scanner's batch before delivery. Markers remain even
+// if Observer never receives it, favoring missed observations over duplicate delivery.
+func (c *Client) trackObservedTxs(items []*types.TxInItem) ([]*types.TxInItem, error) {
+	if len(items) == 0 {
+		return nil, nil
+	}
+	ids := make([]string, 0, len(items))
+	byID := make(map[string]*types.TxInItem, len(items))
+	for _, item := range items {
+		id := item.Tx
+		if c.cfg.ChainID == common.DASHChain {
+			id = strings.ToLower(id)
+		}
+		if _, duplicate := byID[id]; duplicate {
+			continue
+		}
+		ids = append(ids, id)
+		byID[id] = item
+	}
+	added, err := c.temporalStorage.TrackObservedTxs(ids)
+	if err != nil {
+		return nil, fmt.Errorf("persist observed transaction markers: %w", err)
+	}
+	accepted := make([]*types.TxInItem, 0, len(added))
+	for _, id := range added {
+		accepted = append(accepted, byID[id])
+	}
+	return accepted, nil
 }
 
 // ignoreTx checks if we can already ignore a tx according to preset rules
@@ -738,7 +766,9 @@ func (c *Client) ignoreTx(tx *btcjson.TxRawResult, height int64) bool {
 	}
 	// LockTime <= current height doesn't affect spendability,
 	// and most wallets for users doing Memoless Savers deposits automatically set LockTime to the current height.
-	if tx.LockTime > uint32(height) {
+	// Dash RPC transactions have already passed Core finality checks. An IS
+	// cycle anchor is not a transaction lock-time reference height.
+	if c.cfg.ChainID != common.DASHChain && tx.LockTime > uint32(height) {
 		return true
 	}
 	countWithOutput := 0
@@ -809,18 +839,18 @@ func (c *Client) getOutput(sender string, tx *btcjson.TxRawResult, consolidate b
 // on the error would guarantee the member is not a part of consensus. Returning a false
 // negative should never be done, as it could result in members using an unconfirmed or
 // dust VIN not sent by asgard in an outbound, which can be gamed by a malicious party.
-func (c *Client) isFromAsgard(txid string) bool {
+func (c *Client) isFromAsgard(txID string) bool {
 	// lookup the txid
-	tx, err := c.rpc.GetRawTransactionVerbose(txid)
+	tx, err := c.rpc.GetRawTransactionVerbose(txID)
 	if err != nil {
-		c.log.Error().Err(err).Str("txid", txid).Msg("fail to get tx")
+		c.log.Error().Err(err).Str("txid", txID).Msg("fail to get tx")
 		return false
 	}
 
 	// get the sender
-	sender, err := c.getSender(tx, nil)
+	sender, err := c.getSender(&tx.TxRawResult, nil)
 	if err != nil {
-		c.log.Error().Err(err).Str("txid", txid).Msg("fail to get sender")
+		c.log.Error().Err(err).Str("txid", txID).Msg("fail to get sender")
 		return false
 	}
 
@@ -891,10 +921,6 @@ func (c *Client) getAddressesFromScriptPubKey(scriptPubKey btcjson.ScriptPubKeyR
 
 // getMemo returns memo for a btc tx, using vout OP_RETURN
 func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
-	if c.cfg.ChainID.Equals(common.DASHChain) {
-		return c.getMemoDASH(tx)
-	}
-
 	var memo string
 
 	if c.cfg.ChainID.Equals(common.ZECChain) {
@@ -932,9 +958,9 @@ func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
 			asm, err = bchtxscript.DisasmString(buf)
 		case common.LTCChain:
 			asm, err = ltctxscript.DisasmString(buf)
-		case common.BTCChain:
-			asm, err = btctxscript.DisasmString(buf)
-		case common.ZECChain:
+		case common.DASHChain:
+			asm, err = dashtxscript.DisasmString(buf)
+		case common.BTCChain, common.ZECChain:
 			asm, err = btctxscript.DisasmString(buf)
 		default:
 			c.log.Fatal().Msg("unsupported chain")
@@ -978,7 +1004,7 @@ func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
 			continue
 		}
 
-		var pubkey string
+		var pubKey string
 
 		switch len(fields) {
 		case 2:
@@ -988,7 +1014,7 @@ func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
 				continue
 			}
 
-			pubkey = fields[1]
+			pubKey = fields[1]
 		case 5:
 			// Pay-to-public-key-hash (P2PKH) script format
 			// Format: OP_DUP OP_HASH160 <20-byte-key-hash> OP_EQUALVERIFY OP_CHECKSIG
@@ -1009,7 +1035,7 @@ func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
 				continue
 			}
 
-			pubkey = fields[2]
+			pubKey = fields[2]
 		default:
 			continue
 		}
@@ -1017,14 +1043,14 @@ func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
 		// process pubkey
 
 		// pubkey hash is ripemd-160, which is 20 bytes, 40 chars in hex
-		if len(pubkey) != 40 {
+		if len(pubKey) != 40 {
 			continue
 		}
 
 		// remove trailing zeros, if found
-		pubkey = c.regexpRemoveTrailingZeros.ReplaceAllString(pubkey, "")
+		pubKey = c.regexpRemoveTrailingZeros.ReplaceAllString(pubKey, "")
 
-		decoded, err := c.decodeHexString(pubkey)
+		decoded, err := c.decodeHexString(pubKey)
 		if err != nil {
 			// silently return no memo to reduce log noise
 			return "", nil
@@ -1032,7 +1058,7 @@ func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
 		memo += decoded
 
 		// if pubkey has been stripped (was ending with "00") stop processing
-		if len(pubkey) != 40 {
+		if len(pubKey) != 40 {
 			break
 		}
 

@@ -65,19 +65,19 @@ func setupTestGossip(t *testing.T) (*AttestationGossip, *MockHost, *MockKeys, *M
 		privKey: privKey,
 	}
 
-	pubkey2 := thorchain.GetRandomPubKey()
-	pubkey3 := thorchain.GetRandomPubKey()
+	pubKey2 := thorchain.GetRandomPubKey()
+	pubKey3 := thorchain.GetRandomPubKey()
 
 	// derive peer IDs
 	peer1, err := conversion.GetPeerIDFromSecp256PubKey(privKey.PubKey().Bytes())
 	require.NoError(t, err)
-	pubkey2Bz, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, pubkey2.String())
+	pubKey2Bz, err := pubKey2.Decode()
 	require.NoError(t, err)
-	peer2, err := conversion.GetPeerIDFromSecp256PubKey(pubkey2Bz.Bytes())
+	peer2, err := conversion.GetPeerIDFromSecp256PubKey(pubKey2Bz.Bytes())
 	require.NoError(t, err)
-	pubkey3Bz, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, pubkey3.String())
+	pubKey3Bz, err := pubKey3.Decode()
 	require.NoError(t, err)
-	peer3, err := conversion.GetPeerIDFromSecp256PubKey(pubkey3Bz.Bytes())
+	peer3, err := conversion.GetPeerIDFromSecp256PubKey(pubKey3Bz.Bytes())
 	require.NoError(t, err)
 
 	peers := []peer.ID{peer1, peer2, peer3}
@@ -148,7 +148,7 @@ func setupTestGossip(t *testing.T) (*AttestationGossip, *MockHost, *MockKeys, *M
 	}
 
 	// Set active validators
-	ag.setActiveValidators([]common.PubKey{common.PubKey(pubKey), pubkey2, pubkey3})
+	ag.setActiveValidators([]common.PubKey{common.PubKey(pubKey), pubKey2, pubKey3})
 
 	return ag, host, keys, grpcClient, bridge, eventClient
 }
@@ -801,6 +801,7 @@ func TestHandleQuorumTxCommited(t *testing.T) {
 
 		quorumTx := common.QuorumTx{
 			ObsTx:                  tx,
+			Inbound:                true,
 			AllowFutureObservation: true,
 			Attestations: []*common.Attestation{
 				{

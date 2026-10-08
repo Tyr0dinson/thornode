@@ -19,6 +19,7 @@ import (
 	tsscommon "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/common"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/keysign"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	stypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -62,6 +63,10 @@ type mockBridgeForKeysign struct {
 }
 
 var _ thorclient.ThorchainBridge = (*mockBridgeForKeysign)(nil)
+
+func (m *mockBridgeForKeysign) GetOraclePrice(string) (cosmos.Uint, error) {
+	return cosmos.ZeroUint(), errors.New("oracle price unavailable")
+}
 
 func (m *mockBridgeForKeysign) EnsureNodeWhitelisted() error                { return nil }
 func (m *mockBridgeForKeysign) EnsureNodeWhitelistedWithTimeout() error     { return nil }

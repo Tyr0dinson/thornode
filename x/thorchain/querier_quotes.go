@@ -12,13 +12,14 @@ import (
 
 	btcchaincfg "github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
+	dashbtcutil "github.com/dashpay/dashd-go/btcutil"
+	dashchaincfg "github.com/dashpay/dashd-go/chaincfg"
 	dogechaincfg "github.com/eager7/dogd/chaincfg"
 	"github.com/eager7/dogutil"
 	bchchaincfg "github.com/gcash/bchd/chaincfg"
 	"github.com/gcash/bchutil"
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcutil"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/dashutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
 
 	"cosmossdk.io/log"
@@ -928,11 +929,11 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 	}
 
 	// trade assets must have from address on the source tx
-	fromPubkey, err := quotePlaceholderPubKey(fromChain)
+	fromPubKey, err := quotePlaceholderPubKey(fromChain)
 	if err != nil {
 		return nil, fmt.Errorf("failed to derive placeholder pubkey: %w", err)
 	}
-	fromAddress, err := fromPubkey.GetAddress(fromChain)
+	fromAddress, err := fromPubKey.GetAddress(fromChain)
 	if err != nil {
 		return nil, fmt.Errorf("bad from address: %w", err)
 	}
@@ -940,7 +941,7 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 	// if from asset is a trade asset, create fake balance
 	if fromAsset.IsTradeAsset() {
 		var thorAddr cosmos.AccAddress
-		thorAddr, err = fromPubkey.GetThorAddress()
+		thorAddr, err = fromPubKey.GetThorAddress()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get thor address: %w", err)
 		}
@@ -969,12 +970,12 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 			chain = toAsset.Chain
 		}
 
-		var destPubkey common.PubKey
-		destPubkey, err = quotePlaceholderPubKey(chain)
+		var destPubKey common.PubKey
+		destPubKey, err = quotePlaceholderPubKey(chain)
 		if err != nil {
 			return nil, fmt.Errorf("failed to derive placeholder pubkey: %w", err)
 		}
-		destination, err = destPubkey.GetAddress(chain)
+		destination, err = destPubKey.GetAddress(chain)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate address: %w", err)
 		}
@@ -1068,7 +1069,7 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 	// if from asset is a trade asset, create fake balance
 	if fromAsset.IsTradeAsset() {
 		var thorAddr cosmos.AccAddress
-		thorAddr, err = fromPubkey.GetThorAddress()
+		thorAddr, err = fromPubKey.GetThorAddress()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get thor address: %w", err)
 		}
@@ -1081,7 +1082,7 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 	// if from asset is a secured asset, create fake balance
 	if fromAsset.IsSecuredAsset() {
 		var thorAddr cosmos.AccAddress
-		thorAddr, err = fromPubkey.GetThorAddress()
+		thorAddr, err = fromPubKey.GetThorAddress()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get thor address: %w", err)
 		}
@@ -1371,11 +1372,11 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 			hash := zecutil.NewAddressPubKeyHash(bz, params)
 			address = hash.String()
 		case common.DASHChain:
-			params := &dashutil.MainNetParams
+			params := &dashchaincfg.MainNetParams
 			if network == common.MockNet {
-				params = &dashutil.RegressionNetParams
+				params = &dashchaincfg.RegressionNetParams
 			}
-			hash, err := btcutil.NewAddressPubKeyHash(data, params)
+			hash, err := dashbtcutil.NewAddressPubKeyHash(data, params)
 			if err != nil {
 				return nil, err
 			}

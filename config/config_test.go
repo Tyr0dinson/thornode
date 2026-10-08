@@ -1148,8 +1148,8 @@ func (Test) TestBifrostOracleConfigFields(c *C) {
 	c.Assert(oracle.LogLevel, Equals, "info")
 }
 
-func (Test) TestDashInstantSendWithDefaultsPreservesZeroMinFeeRate(c *C) {
-	cfg := DashInstantSendConfiguration{
+func (Test) TestInstantSendWithDefaultsPreservesZeroMinFeeRate(c *C) {
+	cfg := InstantSendConfiguration{
 		MinFeeRateSatPerVByte: 0,
 	}
 	got := cfg.WithDefaults()
@@ -1157,5 +1157,5 @@ func (Test) TestDashInstantSendWithDefaultsPreservesZeroMinFeeRate(c *C) {
 
 	cfg.MinFeeRateSatPerVByte = -1
 	got = cfg.WithDefaults()
-	c.Assert(got.MinFeeRateSatPerVByte, Equals, defaultDashInstantSendMinFeeRateSatPerVByte)
+	c.Assert(got.MinFeeRateSatPerVByte, Equals, defaultInstantSendMinFeeRateSatPerVByte)
 }

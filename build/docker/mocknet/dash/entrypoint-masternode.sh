@@ -13,7 +13,7 @@ masternode() {
   waitforblock dash1 "$initialBlocks"
 
   dashd -addnode=dash1 1>"$logPath" &
-  dashdpid="$!"
+  dashdPID="$!"
 
   waitforblock "$(hostname)" "$initialBlocks"
 
@@ -36,9 +36,9 @@ masternode() {
   collateralVout=1
   ipPort="$NODE_IP:19899"
   votingAddress=$(dash-cli getnewaddress "")
-  operatorBls=$(dash-cli bls generate)
-  operatorPrivkey=$(json_get_string secret "$operatorBls")
-  operatorPubkey=$(json_get_string public "$operatorBls")
+  operatorBLS=$(dash-cli bls generate)
+  operatorPrivKey=$(json_get_string secret "$operatorBLS")
+  operatorPubKey=$(json_get_string public "$operatorBLS")
   operatorReward=0
   payoutAddress=$(dash-cli getnewaddress "")
   feeSourceAddress=$ownerAddress
@@ -81,8 +81,8 @@ collateralHash           $collateralHash
 collateralVout           $collateralVout
 ipPort                   $ipPort
 ownerAddress             $ownerAddress
-operatorPrivkey          $operatorPrivkey
-operatorPubkey           $operatorPubkey
+operatorPrivKey          $operatorPrivKey
+operatorPubKey           $operatorPubKey
 votingAddress            $votingAddress
 operatorReward           $operatorReward
 payoutAddress            $payoutAddress
@@ -95,7 +95,7 @@ fundAddress              $fundAddress
     "$collateralAddress" \
     "$ipPort" \
     "$ownerAddress" \
-    "$operatorPubkey" \
+    "$operatorPubKey" \
     "$votingAddress" \
     "$operatorReward" \
     "$payoutAddress" \
@@ -112,8 +112,8 @@ fundAddress              $fundAddress
     output=$(dash-cli -rpcconnect=dash1 getrawtransaction "$registerHash" true 2>&1)
     if [[ $output == *"No such mempool or blockchain transaction."* || $output == *"error code"* ]]; then
       echo "Protx not accepted by genesis node, re-sending..."
-      rawtx=$(dash-cli getrawtransaction "$registerHash" 2>&1)
-      dash-cli sendrawtransaction "$rawtx" &>/dev/null
+      rawTx=$(dash-cli getrawtransaction "$registerHash" 2>&1)
+      dash-cli sendrawtransaction "$rawTx" &>/dev/null
       sleep 1
     else
       echo "Protx accepted by genesis node!"
@@ -122,13 +122,13 @@ fundAddress              $fundAddress
   done
 
   echo "Setting masternode operator bls key in dash.conf"
-  echo "  masternodeblsprivkey=$operatorPrivkey" >>"$configPath"
+  echo "  masternodeblsprivkey=$operatorPrivKey" >>"$configPath"
 
   echo "Restarting dashd to initiate masternode sync"
-  killpidandwait "$dashdpid"
+  killpidandwait "$dashdPID"
   sleep 2
   dashd -connect=dash1 1>"$logPath" &
-  dashdpid="$!"
+  dashdPID="$!"
 
   waitforverificationprogresscomplete "$(hostname)"
   waitformasternodestatus "$(hostname)" READY

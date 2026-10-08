@@ -16,7 +16,7 @@ MASTER_ADDR="${DASH_MASTER_ADDR:=yTPDMMXarsNWKC9NDTfHREkTGNqSWE555Y}"
 initialBlocks="${initialBlocks:-1000}"
 logPath="${logPath:-/home/dash/.dashcore/dashd.log}"
 genesisAddress=""
-minerpid=""
+minerPID=""
 
 startminer() {
   interval="$1"
@@ -25,16 +25,16 @@ startminer() {
     dash-cli generatetoaddress 1 "$genesisAddress" &>/dev/null
     sleep "$interval"
   done &
-  minerpid="$!"
+  minerPID="$!"
 }
 
 stopminer() {
-  if [[ -z ${minerpid} ]]; then
+  if [[ -z ${minerPID} ]]; then
     return
   fi
-  kill "${minerpid}" 2>/dev/null || true
-  wait "${minerpid}" 2>/dev/null || true
-  minerpid=""
+  kill "${minerPID}" 2>/dev/null || true
+  wait "${minerPID}" 2>/dev/null || true
+  minerPID=""
 }
 
 verifyinstantsendandchainlocks() {
@@ -43,11 +43,11 @@ verifyinstantsendandchainlocks() {
     echo "Verifying InstantSend and ChainLocks..."
     hash=$(dash-cli sendtoaddress "$genesisAddress" 10)
     sleep "$interval"
-    rawtx=$(dash-cli getrawtransaction "$hash" true)
-    instantlock=$(json_get_bool instantlock "$rawtx")
-    chainlock=$(json_get_bool chainlock "$rawtx")
+    rawTx=$(dash-cli getrawtransaction "$hash" true)
+    instantLock=$(json_get_bool instantlock "$rawTx")
+    chainLock=$(json_get_bool chainlock "$rawTx")
 
-    if [[ $instantlock == "true" && $chainlock == "true" ]]; then
+    if [[ $instantLock == "true" && $chainLock == "true" ]]; then
       echo "InstantSend OK"
       echo "ChainLock OK"
       break

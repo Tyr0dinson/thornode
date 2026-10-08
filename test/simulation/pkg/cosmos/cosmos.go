@@ -28,7 +28,6 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
-	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 )
@@ -231,7 +230,7 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 	sigData := &signingtypes.SingleSignatureData{
 		SignMode: signingtypes.SignMode_SIGN_MODE_DIRECT,
 	}
-	cpk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, c.pubKey.String())
+	cpk, err := c.pubKey.Decode()
 	if err != nil {
 		return nil, fmt.Errorf("fail to get cosmos pubkey: %w", err)
 	}

@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"math/rand"
 	"regexp"
+	"strings"
 	"sync"
 	stdatomic "sync/atomic"
 	"time"
@@ -79,10 +80,15 @@ type Client struct {
 	currentBlockHeight    stdatomic.Int64
 
 	// ---------- thornode state ----------
-	bridge         thorclient.ThorchainBridge
-	poolMgr        thorclient.PoolManager
-	asgardCache    stdatomic.Pointer[utxo.AsgardCache]
-	instantSendCfg config.DashInstantSendConfiguration
+	bridge      thorclient.ThorchainBridge
+	poolMgr     thorclient.PoolManager
+	asgardCache stdatomic.Pointer[utxo.AsgardCache]
+
+	// InstantSend state is used by DASH.
+	instantSendCfg config.InstantSendConfiguration
+	// Owned by the single mempool scanner; pending groups are rebuilt after restart.
+	instantSendMempoolCursor       string
+	instantSendPendingObservations []types.TxIn
 
 	// ---------- fees / solvency ----------
 	minRelayFeeSats         stdatomic.Uint64
@@ -229,11 +235,21 @@ func (c *Client) GetHeight() (int64, error) {
 		// Dash finality is driven by ChainLocks rather than generic best-block PoW depth.
 		// Use the best chainlocked height so downstream confirmation/finality logic keys off
 		// the latest irreversible Dash tip, not the latest un-finalized block tip.
-		bestChainlock, err := c.rpc.GetBestChainlock()
+		bestChainLock, err := c.rpc.GetBestChainLock()
 		if err != nil {
 			return 0, err
 		}
-		return bestChainlock.Height, nil
+		if !bestChainLock.KnownBlock || bestChainLock.Height < 0 {
+			return 0, fmt.Errorf("best Dash ChainLock block is not available locally")
+		}
+		hash, err := c.rpc.GetBlockHash(bestChainLock.Height)
+		if err != nil {
+			return 0, err
+		}
+		if !strings.EqualFold(hash, bestChainLock.BlockHash) {
+			return 0, fmt.Errorf("best Dash ChainLock does not match the active chain")
+		}
+		return bestChainLock.Height, nil
 	}
 	return c.rpc.GetBlockCount()
 }
@@ -311,10 +327,10 @@ func (c *Client) Stop() {
 ////////////////////////////////////////////////////////////////////////////////////////
 
 // RegisterPublicKey imports the provided public key in the chain daemon.
-func (c *Client) RegisterPublicKey(pubkey common.PubKey) error {
-	addr, err := pubkey.GetAddress(c.cfg.ChainID)
+func (c *Client) RegisterPublicKey(pubKey common.PubKey) error {
+	addr, err := pubKey.GetAddress(c.cfg.ChainID)
 	if err != nil {
-		return fmt.Errorf("fail to get address from pubkey(%s): %w", pubkey, err)
+		return fmt.Errorf("fail to get address from pubkey(%s): %w", pubKey, err)
 	}
 
 	// litecoin does not have a default wallet so we need to create one
@@ -330,7 +346,7 @@ func (c *Client) RegisterPublicKey(pubkey common.PubKey) error {
 	err = c.rpc.ImportAddress(addr.String())
 	if err != nil {
 		c.log.Error().Err(err).
-			Str("pubkey", pubkey.String()).
+			Str("pubkey", pubKey.String()).
 			Str("addr", addr.String()).
 			Msg("fail to import address")
 	}
@@ -338,30 +354,38 @@ func (c *Client) RegisterPublicKey(pubkey common.PubKey) error {
 }
 
 // GetAccount returns the account details for the given public key.
-func (c *Client) GetAccount(pubkey common.PubKey, height *big.Int) (common.Account, error) {
+func (c *Client) GetAccount(pubKey common.PubKey, height *big.Int) (common.Account, error) {
 	acct := common.Account{}
-	if pubkey.IsEmpty() {
+	if pubKey.IsEmpty() {
 		return acct, errors.New("pubkey can't be empty")
 	}
 
 	// get all unspent utxos
-	addr, err := pubkey.GetAddress(c.cfg.ChainID)
+	addr, err := pubKey.GetAddress(c.cfg.ChainID)
 	if err != nil {
-		return acct, fmt.Errorf("fail to get address from pubkey(%s): %w", pubkey, err)
+		return acct, fmt.Errorf("fail to get address from pubkey(%s): %w", pubKey, err)
 	}
 	utxos, err := c.rpc.ListUnspent(addr.String())
 	if err != nil {
 		return acct, fmt.Errorf("fail to get UTXOs: %w", err)
 	}
 
+	finality := make(map[string]bool)
 	total := 0.0
 	for _, item := range utxos {
 		if !c.isValidUTXO(item.ScriptPubKey) {
 			continue
 		}
 		if item.Confirmations == 0 {
-			// pending tx in mempool, only count sends from asgard
-			if !c.isSelfTransaction(item.TxID) && !c.isFromAsgard(item.TxID) {
+			final := false
+			if c.cfg.ChainID == common.DASHChain {
+				final, err = c.isTransactionQuorumLocked(item.TxID, finality)
+				if err != nil {
+					// An incomplete balance must not become a false insolvency report.
+					return acct, err
+				}
+			}
+			if !final && !c.isSelfTransaction(item.TxID) && !c.isFromAsgard(item.TxID) {
 				continue
 			}
 		}
@@ -403,8 +427,11 @@ func (c *Client) OnObservedTxIn(txIn types.TxInItem, blockHeight int64) {
 	if blockMeta == nil {
 		blockMeta = utxo.NewBlockMeta("", blockHeight, "")
 	}
-	if _, err = c.temporalStorage.TrackObservedTx(txIn.Tx); err != nil {
-		c.log.Err(err).Msgf("fail to add hash (%s) to observed tx cache", txIn.Tx)
+	if c.cfg.ChainID != common.DASHChain {
+		_, err = c.temporalStorage.TrackObservedTx(txIn.Tx)
+		if err != nil {
+			c.log.Err(err).Msgf("fail to add hash (%s) to observed tx cache", txIn.Tx)
+		}
 	}
 	if c.isAsgardAddress(txIn.Sender) {
 		c.log.Debug().Int64("height", blockHeight).Msgf("add hash %s as self transaction", txIn.Tx)
@@ -557,7 +584,11 @@ func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
 		// Dash does not use the generic UTXO mempool path. We only surface mempool
 		// transactions that are already InstantSend-locked. Ordinary unconfirmed txs
 		// must wait for the ChainLock-backed block path instead.
+		previousPolicy := c.instantSendCfg
 		c.updateInstantSendCfg()
+		if c.instantSendCfg != previousPolicy || !c.instantSendCfg.Enabled {
+			c.instantSendPendingObservations = nil
+		}
 		if !c.instantSendCfg.Enabled {
 			return types.TxIn{}, nil
 		}
@@ -617,7 +648,7 @@ func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
 	errCount := 0
 	for i, batch := range batches {
 		// fetch the batch of results
-		var results []*btcjson.TxRawResult
+		var results []*rpc.TxResult
 		var errs []error
 		results, errs, err = c.rpc.BatchGetRawTransactionVerbose(batch)
 		if err != nil { // clear mempool cache for unprocessed batches and return error
@@ -640,7 +671,7 @@ func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
 
 			// filter transactions
 			var txInItem types.TxInItem
-			txInItem, err = c.getTxIn(result, height, true, nil)
+			txInItem, err = c.getTxIn(&result.TxRawResult, height, true, nil)
 			if err != nil {
 				c.log.Debug().Err(err).Msg("fail to get TxInItem")
 				continue

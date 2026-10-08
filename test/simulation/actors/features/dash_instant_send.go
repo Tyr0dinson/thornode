@@ -16,7 +16,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/utxo"
 )
 
-const priceDashUSD = 50 // assumed DASH price in USD for threshold calculations
+const dashPrice = 50 // Fixed USD price per DASH used to calculate simulation amounts.
 
 type DashInstantSendActor struct {
 	Actor
@@ -25,24 +25,24 @@ type DashInstantSendActor struct {
 	inbound common.Address
 	dash    *utxo.Client
 
-	highValueUSDLimit uint64
-	minFeeRateSats    uint64
+	inboundValueLimitUSD uint64
+	minFeeRateSats       uint64
 }
 
 // DashInstantSend wires up a feature actor that exercises different InstantSend paths.
 func DashInstantSend(rng *rand.Rand) *Actor {
 	a := &DashInstantSendActor{
 		// Match the mocknet docker-compose InstantSend policy used by simulation.
-		// config/default.yaml keeps the DASH USD threshold at the network default.
-		Actor:             *NewActor("Feature-DASH-InstantSend", rng),
-		highValueUSDLimit: 100,
-		minFeeRateSats:    8,
+		// config/default.yaml keeps the DASH inbound value limit at the network default.
+		Actor:                *NewActor("Feature-DASH-InstantSend", rng),
+		inboundValueLimitUSD: 100,
+		minFeeRateSats:       8,
 	}
 	a.Timeout = 5 * time.Minute
 
 	a.Ops = []Op{
 		a.acquireUser,
-		a.initDashContext,
+		a.initContext,
 		a.happyPathInstantSend,
 		a.highValueFallback,
 		a.lowFeeFallback,
@@ -71,9 +71,9 @@ func (a *DashInstantSendActor) acquireUser(config *OpConfig) OpResult {
 	return OpResult{Continue: a.account != nil}
 }
 
-// initDashContext fetches the inbound address, computes pricing defaults, and logs
+// initContext fetches the inbound address, computes pricing defaults, and logs
 // the parameters that will drive the scenarios.
-func (a *DashInstantSendActor) initDashContext(_ *OpConfig) OpResult {
+func (a *DashInstantSendActor) initContext(_ *OpConfig) OpResult {
 	inboundAddr, _, err := thornode.GetInboundAddress(common.DASHChain)
 	if err != nil {
 		a.Log().Error().Err(err).Msg("failed to fetch DASH inbound address")
@@ -86,7 +86,7 @@ func (a *DashInstantSendActor) initDashContext(_ *OpConfig) OpResult {
 
 	a.Log().Info().
 		Stringer("inbound", a.inbound).
-		Uint64("high_value_usd_limit", a.highValueUSDLimit).
+		Uint64("inbound_value_limit_usd", a.inboundValueLimitUSD).
 		Uint64("min_fee_rate_sat_per_vbyte", a.minFeeRateSats).
 		Msg("dash instantsend context loaded")
 
@@ -111,10 +111,10 @@ func (a *DashInstantSendActor) initDashContext(_ *OpConfig) OpResult {
 //     Dash height hasn't advanced since broadcast.
 func (a *DashInstantSendActor) happyPathInstantSend(_ *OpConfig) OpResult {
 	if a.dash == nil {
-		return OpResult{Finish: true, Error: fmt.Errorf("dash client not initialized")}
+		return OpResult{Finish: true, Error: fmt.Errorf("Dash client not initialized")}
 	}
 
-	amount := a.highValueUSDLimit * common.One * 9 / 10 / priceDashUSD // 90% of threshold
+	amount := a.inboundValueLimitUSD * common.One * 9 / 10 / dashPrice // 90% of the inbound value limit
 
 	const (
 		maxAttempts      = 10
@@ -132,18 +132,20 @@ func (a *DashInstantSendActor) happyPathInstantSend(_ *OpConfig) OpResult {
 
 		// Broadcast right after a new DASH block to maximize time in the mempool before the next block.
 		broadcastHeight := int64(0)
-		if _, height, err := a.dash.WaitForBlockAdvance(blockSyncTimeout); err == nil {
+		_, height, err := a.dash.WaitForBlockAdvance(blockSyncTimeout)
+		if err == nil {
 			broadcastHeight = height
 		} else {
 			a.Log().Debug().Err(err).Msg("failed to sync to next DASH block before broadcast")
 		}
 
-		txid, err := a.broadcastDashTx("happy-path", amount, 0)
+		txID, err := a.broadcastTx("happy-path", amount, 0)
 		if err != nil {
 			return OpResult{Finish: true, Error: err}
 		}
 		if broadcastHeight == 0 {
-			if height, err := a.dash.GetBlockCount(); err == nil {
+			height, err := a.dash.GetBlockCount()
+			if err == nil {
 				broadcastHeight = height
 			}
 		}
@@ -161,7 +163,7 @@ func (a *DashInstantSendActor) happyPathInstantSend(_ *OpConfig) OpResult {
 				break
 			}
 
-			txInfo, err := a.dash.DashGetRawTransactionInfo(txid)
+			txInfo, err := a.dash.GetRawTransactionVerbose(txID)
 			if err == nil {
 				if txInfo.Confirmations == 0 && txInfo.InstantLock {
 					attemptSawMempoolLock = true
@@ -179,7 +181,7 @@ func (a *DashInstantSendActor) happyPathInstantSend(_ *OpConfig) OpResult {
 		}
 
 		if !metricObserved {
-			a.Log().Info().Int("attempt", attempt).Str("txid", txid).Msg("InstantSend metric did not move; retrying")
+			a.Log().Info().Int("attempt", attempt).Str("txid", txID).Msg("InstantSend metric did not move; retrying")
 			time.Sleep(time.Second)
 			continue
 		}
@@ -198,7 +200,7 @@ func (a *DashInstantSendActor) happyPathInstantSend(_ *OpConfig) OpResult {
 				}
 			}
 
-			stages, err := thornode.GetTxStages(txid)
+			stages, err := thornode.GetTxStages(txID)
 			if err != nil {
 				time.Sleep(250 * time.Millisecond)
 				continue
@@ -220,51 +222,52 @@ func (a *DashInstantSendActor) happyPathInstantSend(_ *OpConfig) OpResult {
 				break
 			}
 
-			txInfo, err := a.dash.DashGetRawTransactionInfo(txid)
+			txInfo, err := a.dash.GetRawTransactionVerbose(txID)
 			if err != nil || txInfo.Confirmations != 0 {
 				break
 			}
 
-			if _, err := a.dash.GetMempoolEntry(txid); err != nil {
+			_, err = a.dash.GetMempoolEntry(txID)
+			if err != nil {
 				break
 			}
 
 			a.Log().
 				Info().
 				Int("attempt", attempt).
-				Str("txid", txid).
+				Str("txid", txID).
 				Int64("dash_height", broadcastHeight).
 				Msg("InstantSend observed by Thornode while tx remained in Dash mempool")
 			return OpResult{Continue: true}
 		}
 
-		a.Log().Info().Int("attempt", attempt).Str("txid", txid).Msg("InstantSend metric moved, but tx was not provably observed before mining; retrying")
+		a.Log().Info().Int("attempt", attempt).Str("txid", txID).Msg("InstantSend metric moved, but tx was not provably observed before mining; retrying")
 		time.Sleep(time.Second)
 	}
 
 	switch {
 	case sawThornodeTx:
-		return OpResult{Finish: true, Error: fmt.Errorf("thornode saw the tx, but it was not provably still in the Dash mempool at that moment")}
+		return OpResult{Finish: true, Error: fmt.Errorf("failed to confirm observation before mining")}
 	case sawMempoolLock:
-		return OpResult{Finish: true, Error: fmt.Errorf("tx became InstantLocked while unconfirmed, but thornode never exposed it before mining")}
+		return OpResult{Finish: true, Error: fmt.Errorf("InstantSend-locked tx not observed by THORChain before mining")}
 	case sawConfirmedBeforeLock:
-		return OpResult{Finish: true, Error: fmt.Errorf("tx mined before InstantLock was observed in mempool; increase Dash mocknet block time")}
+		return OpResult{Finish: true, Error: fmt.Errorf("tx mined before InstantSend lock; increase Dash mocknet block time")}
 	default:
 		return OpResult{Finish: true, Error: fmt.Errorf("InstantSend lock not observed via mempool")}
 	}
 }
 
-// highValueFallback pushes a tx above the USD threshold so it should bypass
+// highValueFallback pushes a tx above the inbound value limit so it should bypass
 // InstantSend and only appear via blocks.
 func (a *DashInstantSendActor) highValueFallback(_ *OpConfig) OpResult {
-	amount := a.highValueUSDLimit * common.One * 11 / 10 / priceDashUSD // 110% of threshold
+	amount := a.inboundValueLimitUSD * common.One * 11 / 10 / dashPrice // 110% of the inbound value limit
 	return a.runScenario("high-value-fallback", amount, 0)
 }
 
 // lowFeeFallback drops the fee rate below the InstantSend minimum so it should
 // only show up on the block path.
 func (a *DashInstantSendActor) lowFeeFallback(_ *OpConfig) OpResult {
-	amount := a.highValueUSDLimit * common.One * 9 / 10 / priceDashUSD // 90% of threshold
+	amount := a.inboundValueLimitUSD * common.One * 9 / 10 / dashPrice // 90% of the inbound value limit
 
 	// Estimate a realistic tx size and set a fee rate below the InstantSend minimum.
 	const estimatedVBytes uint64 = 300
@@ -290,15 +293,15 @@ func (a *DashInstantSendActor) releaseAccount(_ *OpConfig) OpResult {
 func (a *DashInstantSendActor) runScenario(name string, amount uint64, feeSats uint64) OpResult {
 	startMetric, _ := readInstantSendMetric()
 
-	txid, err := a.broadcastDashTx(name, amount, feeSats)
+	txID, err := a.broadcastTx(name, amount, feeSats)
 	if err != nil {
 		return OpResult{Finish: true, Error: err}
 	}
 
-	return a.awaitObservation(txid, startMetric, name)
+	return a.awaitObservation(txID, startMetric, name)
 }
 
-func (a *DashInstantSendActor) broadcastDashTx(scenario string, amount uint64, feeSats uint64) (string, error) {
+func (a *DashInstantSendActor) broadcastTx(scenario string, amount uint64, feeSats uint64) (string, error) {
 	// Build memo and tx with a fixed fee override tuned for the scenario.
 	// Use NOOP to avoid pool-availability issues.
 	// This actor is focused on InstantSend finality paths, not swap execution.
@@ -315,24 +318,24 @@ func (a *DashInstantSendActor) broadcastDashTx(scenario string, amount uint64, f
 		return "", fmt.Errorf("failed to sign %s tx: %w", scenario, err)
 	}
 
-	txid, err := a.account.ChainClients[common.DASHChain].BroadcastTx(payload)
+	txID, err := a.account.ChainClients[common.DASHChain].BroadcastTx(payload)
 	if err != nil {
 		return "", fmt.Errorf("failed to broadcast %s tx: %w", scenario, err)
 	}
 
 	a.Log().Info().
 		Str("scenario", scenario).
-		Str("txid", txid).
+		Str("txid", txID).
 		Uint64("fee_sats", feeSats).
 		Str("amount_dash", fmt.Sprintf("%.8f", float64(amount)/float64(common.One))).
 		Msg("broadcasted DASH tx")
 
-	return txid, nil
+	return txID, nil
 }
 
 // awaitObservation polls metrics and tx details until the fallback tx is seen
 // via the block path or a timeout occurs.
-func (a *DashInstantSendActor) awaitObservation(txid string, startMetric float64, label string) OpResult {
+func (a *DashInstantSendActor) awaitObservation(txID string, startMetric float64, label string) OpResult {
 	deadline := time.Now().Add(4 * time.Minute)
 	var lastErr error
 
@@ -340,9 +343,9 @@ func (a *DashInstantSendActor) awaitObservation(txid string, startMetric float64
 		currentMetric, _ := readInstantSendMetric()
 		delta := currentMetric - startMetric
 
-		stages, err := thornode.GetTxStages(txid)
+		stages, err := thornode.GetTxStages(txID)
 		if err != nil {
-			a.Log().Error().Err(err).Str("scenario", label).Str("txid", txid).Msg("failed to fetch tx stages")
+			a.Log().Error().Err(err).Str("scenario", label).Str("txid", txID).Msg("failed to fetch tx stages")
 			lastErr = err
 			time.Sleep(2 * time.Second)
 			continue

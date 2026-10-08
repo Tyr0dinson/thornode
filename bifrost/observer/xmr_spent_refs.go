@@ -166,7 +166,7 @@ func sourceVaultAttestationQuorumForMembership(
 	}
 	memberKeys := make(map[string]struct{}, membershipSize)
 	for _, pubKey := range membership {
-		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, pubKey)
+		pk, err := common.DecodePubKey(pubKey)
 		if err != nil {
 			// An undecodable historical member still counts toward the threshold;
 			// silently shrinking the denominator would weaken authorization.

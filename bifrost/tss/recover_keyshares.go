@@ -24,7 +24,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/storage"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
-	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -851,7 +850,7 @@ func frostRecoveryGroupKey(vaultPubKey common.PubKey) (string, error) {
 	if vaultPubKey.IsEmpty() {
 		return "", fmt.Errorf("frost recovery vault pubkey is empty")
 	}
-	pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, vaultPubKey.String())
+	pk, err := vaultPubKey.Decode()
 	if err != nil {
 		return "", fmt.Errorf("fail to decode frost recovery vault pubkey: %w", err)
 	}
