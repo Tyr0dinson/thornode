@@ -111,6 +111,9 @@ func (s *PoolMgrCovCBSuite) TestEndBlockCyclesPoolsAndCleansPendingCovCB(c *C) {
 // cycling mimirs are unset: with the default (huge) minimum rune depth a
 // shallow available pool is demoted.
 func (s *PoolMgrCovCBSuite) TestEndBlockMimirFallbackCovCB(c *C) {
+	if notMocknetCov() {
+		c.Skip("mocknet only: pool cycle and status expectations use mocknet constants")
+	}
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockHeight(20)
 	k := mgr.Keeper()
@@ -224,6 +227,9 @@ func (s *PoolMgrCovCBSuite) setupSaverCovCB(c *C, ctx cosmos.Context, mgr Manage
 }
 
 func (s *PoolMgrCovCBSuite) TestCheckSaversUtilizationCovCB(c *C) {
+	if notMocknetCov() {
+		c.Skip("mocknet only: savers utilization thresholds use mocknet constants")
+	}
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockHeight(100)
 	k := mgr.Keeper()

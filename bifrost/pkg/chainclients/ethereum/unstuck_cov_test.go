@@ -110,18 +110,31 @@ func TestCovUnstuckActionGates(t *testing.T) {
 		return len(items)
 	}
 
-	// halted signing
+	// halted signing: with a valid signing period and an eligible item, the
+	// halt is the only thing stopping the pass
+	env.bridge.constants = map[string]int64{constants.SigningTransactionPeriod.String(): 300}
+	env.bridge.height = 1000
 	env.bridge.setMimir("HALTSIGNING", 1)
 	c.unstuckAction()
 	if remaining() != 1 || env.rpc.count("eth_getTransactionByHash") != 0 {
 		t.Fatal("halted signing must not unstuck")
 	}
+	// clearing the halt lets the same item through to the tx lookup (not found
+	// on chain, so it is dropped from the store)
 	env.bridge.setMimir("HALTSIGNING", 0)
+	c.unstuckAction()
+	if remaining() != 0 || env.rpc.count("eth_getTransactionByHash") != 1 {
+		t.Fatalf("unhalted pass: remaining=%d lookups=%d", remaining(), env.rpc.count("eth_getTransactionByHash"))
+	}
+	if err := c.AddSignedTxItem(hash, 800, env.pubKey.String(), nil); err != nil {
+		t.Fatal(err)
+	}
+	lookups := env.rpc.count("eth_getTransactionByHash")
 
 	// constants unavailable
 	env.bridge.constErr = errors.New("down")
 	c.unstuckAction()
-	if env.rpc.count("eth_getTransactionByHash") != 0 {
+	if env.rpc.count("eth_getTransactionByHash") != lookups || remaining() != 1 {
 		t.Fatal("constants error must abort")
 	}
 	env.bridge.constErr = nil
@@ -129,7 +142,7 @@ func TestCovUnstuckActionGates(t *testing.T) {
 	// invalid signing period
 	env.bridge.constants = map[string]int64{constants.SigningTransactionPeriod.String(): 0}
 	c.unstuckAction()
-	if env.rpc.count("eth_getTransactionByHash") != 0 {
+	if env.rpc.count("eth_getTransactionByHash") != lookups || remaining() != 1 {
 		t.Fatal("invalid signing period must abort")
 	}
 }
@@ -184,6 +197,9 @@ func TestCovUnstuckActionSelection(t *testing.T) {
 }
 
 func TestCovUnstuckTx(t *testing.T) {
+	if notMocknetCov() {
+		t.Skip("mocknet only: cancel-tx gas pricing uses the mocknet fee config")
+	}
 	env := newCovEnv(t, nil)
 	c := env.client
 	log := zerolog.Nop()
@@ -276,8 +292,10 @@ func TestCovUnstuckTxFixedGasRate(t *testing.T) {
 	}
 }
 
-// TestCovUnstuckTxNilTxOutItem documents that a pending signed item recorded
-// without a TxOutItem panics when unstuckTx dereferences item.TxOutItem.Height.
+// TestCovUnstuckTxNilTxOutItem: a pending signed item recorded without a
+// TxOutItem (corrupt or legacy store entry) cannot be cancelled, since the
+// cancel is signed at the outbound's height. unstuckTx must drop it (nil error,
+// so the caller removes it) without signing or broadcasting, not panic.
 func TestCovUnstuckTxNilTxOutItem(t *testing.T) {
 	env := newCovEnv(t, nil)
 	to := ecommon.HexToAddress(covRouter.String())
@@ -285,9 +303,14 @@ func TestCovUnstuckTxNilTxOutItem(t *testing.T) {
 	env.rpc.set("eth_getTransactionByHash", covResult(covTxByHash(t, orig, false)))
 	item := evmtypes.SignedTxItem{Hash: orig.Hash().Hex(), Height: 1, VaultPubKey: env.pubKey.String()}
 	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("expected nil TxOutItem dereference panic")
+		if r := recover(); r != nil {
+			t.Fatalf("unstuckTx panicked on a nil TxOutItem: %v", r)
 		}
 	}()
-	_ = env.client.unstuckTx(zerolog.Nop(), item)
+	if err := env.client.unstuckTx(zerolog.Nop(), item); err != nil {
+		t.Fatalf("expected the item to be dropped without error, got %v", err)
+	}
+	if n := env.rpc.count("eth_sendRawTransaction"); n != 0 {
+		t.Fatalf("expected no cancel broadcast, got %d", n)
+	}
 }

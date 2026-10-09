@@ -107,10 +107,10 @@ func TestKeeperMintToCov(t *testing.T) {
 	require.ErrorIs(t, k.MintToCov(ctx, good, accAddrs[0].String()), errBankCov)
 	bk.mintErr = nil
 
-	// invalid recipient: note the coins are already minted at this point
+	// an invalid recipient is rejected before anything is minted
 	err = k.MintToCov(ctx, good, "not-an-address")
 	require.Error(t, err)
-	require.Equal(t, "10x/btc", bk.minted.String())
+	require.True(t, bk.minted.IsZero(), "minted %s for an invalid recipient", bk.minted)
 
 	// send failure propagates
 	bk.toAccErr = errBankCov
@@ -118,7 +118,7 @@ func TestKeeperMintToCov(t *testing.T) {
 	bk.toAccErr = nil
 
 	require.NoError(t, k.MintToCov(ctx, good, accAddrs[0].String()))
-	require.Equal(t, "30x/btc", bk.minted.String())
+	require.Equal(t, "20x/btc", bk.minted.String())
 }
 
 func TestKeeperBurnFromCov(t *testing.T) {

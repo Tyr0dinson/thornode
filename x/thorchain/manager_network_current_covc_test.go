@@ -872,6 +872,9 @@ func (s *NetworkMgrCovCDSuite) TestMigrateFundsDustAndEdgesCovCD(c *C) {
 }
 
 func (s *NetworkMgrCovCDSuite) TestUpdateNetworkIncomeSplitsCovCD(c *C) {
+	if notMocknetCov() {
+		c.Skip("mocknet only: income split and burn expectations use mocknet constants")
+	}
 	ctx, mgr, ek, vm := covCDSetup(c)
 	p := covCDPool(c, ctx, ek, common.ETHAsset, 100*common.One, 100*common.One)
 	vault := GetRandomVault()

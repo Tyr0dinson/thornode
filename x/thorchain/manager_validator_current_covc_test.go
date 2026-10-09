@@ -163,6 +163,9 @@ func (s *ValidatorMgrCovCDSuite) TestPreflightCheckCovCD(c *C) {
 }
 
 func (s *ValidatorMgrCovCDSuite) TestMarkActorErrorsCovCD(c *C) {
+	if notMocknetCov() {
+		c.Skip("mocknet only: actor-marking expectations use mocknet constants")
+	}
 	ctx, _, ek, vm := covCDValSetup(c)
 	ek.fail["ListActiveValidators"] = true
 	c.Check(vm.markOldActor(ctx), Equals, errKaboom)

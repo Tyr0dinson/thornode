@@ -81,14 +81,16 @@ func (s *EncryptKeysharesCovSuite) TestDecryptKeysharesLayers(c *C) {
 	c.Assert(err, NotNil)
 
 	// a fully valid triple-encrypted payload that is not lzma compressed
-	// decrypts but fails raw decompression
+	// decrypts but fails raw decompression. The payload is shorter than the
+	// 13-byte lzma header, so the decoder fails before reading a dictionary
+	// size (a longer one can parse as a header asking for a multi-GiB window).
 	recipient, err := age.NewScryptRecipient(hex.EncodeToString(saltAndHash(Mnemonic, SaltAge)))
 	c.Assert(err, IsNil)
 	recipient.SetWorkFactor(ageWorkFactor)
 	ageBuf := new(bytes.Buffer)
 	w, err := age.Encrypt(ageBuf, recipient)
 	c.Assert(err, IsNil)
-	_, err = w.Write([]byte("definitely not an lzma stream"))
+	_, err = w.Write([]byte("not lzma"))
 	c.Assert(err, IsNil)
 	c.Assert(w.Close(), IsNil)
 	aesLayer, err = encryptAES(saltAndHash(Mnemonic, SaltAES), ageBuf.Bytes())
@@ -97,7 +99,7 @@ func (s *EncryptKeysharesCovSuite) TestDecryptKeysharesLayers(c *C) {
 	c.Assert(err, IsNil)
 	compressed, err := DecryptKeyshares(plainAge, Mnemonic)
 	c.Assert(err, IsNil)
-	c.Check(string(compressed), Equals, "definitely not an lzma stream")
+	c.Check(string(compressed), Equals, "not lzma")
 	_, err = DecryptRawKeyshares(plainAge, Mnemonic)
 	c.Assert(err, ErrorMatches, "failed to decompress raw keyshares.*")
 	err = writeRecoveredDecompressedKeyshares(filepath.Join(c.MkDir(), "ks.json"), plainAge, Mnemonic)

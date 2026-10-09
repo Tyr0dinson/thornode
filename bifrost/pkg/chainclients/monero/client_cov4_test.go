@@ -115,9 +115,14 @@ func TestReadRecoveryFileClientCov(t *testing.T) {
 	_, err := readRecoveryFile(filepath.Join(dir, "missing"))
 	require.ErrorContains(t, err, "lstat recovery file")
 
-	// A directory has several links, so the hard-link guard rejects it first.
+	// A directory is rejected. Which guard fires depends on the filesystem's
+	// directory link count: ext4/tmpfs/overlayfs report several links (the
+	// hard-link guard), btrfs reports one (the regular-file check).
 	_, err = readRecoveryFile(dir)
-	require.ErrorContains(t, err, "unexpected hard links")
+	require.Error(t, err)
+	require.Truef(t,
+		strings.Contains(err.Error(), "unexpected hard links") || strings.Contains(err.Error(), "not a regular file"),
+		"unexpected error for a directory: %v", err)
 
 	empty := filepath.Join(dir, "empty")
 	require.NoError(t, os.WriteFile(empty, nil, 0o600))
@@ -242,6 +247,9 @@ func TestValidateXMRSpentRefsForSidecarClientCov(t *testing.T) {
 }
 
 func TestGetConfirmationCountClientCov(t *testing.T) {
+	if notMocknetCov() {
+		t.Skip("mocknet only: confirmation math uses mocknet XMR defaults")
+	}
 	t.Parallel()
 
 	vault, vaultAddr := testVaultPubKeyAndAddress(t)

@@ -143,6 +143,9 @@ func rkbCovUnsealSDKConfig(t *testing.T) {
 }
 
 func TestMainCov(t *testing.T) {
+	if notMocknetCov() {
+		t.Skip("mocknet only: fixtures and expected bech32 prefixes are mocknet")
+	}
 	// The thorscan import's init() already sealed the sdk config, so main()
 	// as shipped panics on its very first prefix assignment.
 	require.PanicsWithValue(t, "Config is sealed", main)

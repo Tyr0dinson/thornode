@@ -381,6 +381,9 @@ func (s *KeeperCoreCovSuite) TestTCYClaimer(c *C) {
 }
 
 func (s *KeeperCoreCovSuite) TestTCYStaker(c *C) {
+	if notMocknetCov() {
+		c.Skip("mocknet only: needs the mocknet TCY smart contract addresses")
+	}
 	ctx, k := setupKeeperForTest(c)
 	addr := GetRandomTHORAddress()
 

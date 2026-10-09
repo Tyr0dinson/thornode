@@ -28,6 +28,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/common/crypto/ed25519"
 	"gitlab.com/thorchain/thornode/v3/config"
@@ -195,9 +196,16 @@ func mainCovEnv(dir string, extra ...string) []string {
 	return append(env, extra...)
 }
 
+// runMainCov runs bifrost's main in a re-executed copy of this test binary and
+// returns its combined output and exit code. It has a deadline: a hung main is
+// sent SIGQUIT, so its goroutine dump lands in the output instead of the test
+// blocking until the package timeout.
 func runMainCov(t *testing.T, env []string, args ...string) (string, int) {
 	t.Helper()
-	cmd := exec.Command(os.Args[0], args...) // #nosec G204 -- re-executes this test binary
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, os.Args[0], args...) // #nosec G204 -- re-executes this test binary
+	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGQUIT) }
 	cmd.Env = env
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -236,6 +244,7 @@ func newKeyringCov(t *testing.T, withEddsa bool) string {
 // the node account is active (whitelisted) and has nothing to recover.
 func thornodeMainCov(t *testing.T) string {
 	t.Helper()
+	skipUnlessMocknetCov(t)
 	na, err := json.Marshal(types.NodeAccount{Status: types.NodeStatus_Active})
 	require.NoError(t, err)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -308,5 +317,15 @@ func TestMainStartupChecksCov(t *testing.T) {
 			require.Equal(t, 1, code, out)
 			require.Contains(t, out, tc.want)
 		})
+	}
+}
+
+// skipUnlessMocknetCov skips tests whose fake THORNode serves mocknet-encoded
+// (tthor) node accounts: other builds cannot decode them, so main would retry
+// the whitelist check forever.
+func skipUnlessMocknetCov(t *testing.T) {
+	t.Helper()
+	if common.CurrentChainNetwork != common.MockNet {
+		t.Skip("main() startup fixtures are mocknet data")
 	}
 }

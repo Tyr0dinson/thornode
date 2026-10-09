@@ -16,6 +16,7 @@ import (
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/rs/zerolog/log"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/storage"
@@ -141,7 +142,7 @@ func TestEnsureVaultRegisteredCov(t *testing.T) {
 			return
 		}
 		var req sidecar.RegisterVaultReq
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&req))
 		mu.Lock()
 		reqs = append(reqs, req)
 		shouldFail := fail

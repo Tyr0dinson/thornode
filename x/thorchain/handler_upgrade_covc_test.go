@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"errors"
+	"strings"
 
 	upgradetypes "cosmossdk.io/x/upgrade/types"
 	"github.com/blang/semver"
@@ -93,15 +94,17 @@ func covCEUpgradeSetup(c *C, n int) (cosmos.Context, *covCEUpgradeKeeper, []Node
 // covCECorruptProposal overwrites the stored bytes of the named proposal.
 func covCECorruptProposal(c *C, ctx cosmos.Context, k keeper.Keeper, name string) {
 	iter := k.GetUpgradeProposalIterator(ctx)
-	var key []byte
+	var matches [][]byte
 	for ; iter.Valid(); iter.Next() {
-		if string(iter.Key()[len(iter.Key())-len(name):]) == name {
-			key = append([]byte(nil), iter.Key()...)
+		if strings.HasSuffix(string(iter.Key()), name) {
+			matches = append(matches, append([]byte(nil), iter.Key()...))
 		}
 	}
 	iter.Close()
-	c.Assert(key, NotNil)
-	ctx.KVStore(keyThorchain).Set(key, []byte{0xff, 0xff, 0xff})
+	// exactly one stored proposal must match, so the corrupted record is
+	// unambiguous even if more proposals are added to the fixtures later
+	c.Assert(matches, HasLen, 1, Commentf("proposals matching %q", name))
+	ctx.KVStore(keyThorchain).Set(matches[0], []byte{0xff, 0xff, 0xff})
 }
 
 func (s *HandlerUpgradeCovCESuite) TestInvalidMessagesCovCE(c *C) {

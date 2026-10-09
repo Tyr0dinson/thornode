@@ -71,10 +71,11 @@ func (s *HandlerBondCovCESuite) TestHandleNewNodeCovCE(c *C) {
 	c.Check(err, ErrorMatches, "(?s).*fail to send one RUNE to node address.*")
 
 	// bond events failing to emit are only logged
-	mgr.eventMgr = &covCEFailEventMgr{EventManager: mgr.eventMgr, failOn: 1}
+	origEventMgr := mgr.eventMgr
+	mgr.eventMgr = &covCEFailEventMgr{EventManager: origEventMgr, failOn: 1}
 	_, err = NewBondHandler(mgr).Run(ctx, msg)
 	c.Assert(err, IsNil)
-	mgr.eventMgr = &covCEFailEventMgr{EventManager: mgr.eventMgr, failOn: 1}
+	mgr.eventMgr = origEventMgr
 
 	na, err := k.GetNodeAccount(ctx, nodeAddr)
 	c.Assert(err, IsNil)

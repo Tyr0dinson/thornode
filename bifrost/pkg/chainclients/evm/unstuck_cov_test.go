@@ -217,10 +217,15 @@ func TestCovUnstuckTx(t *testing.T) {
 	txs[strings.ToLower(pending.Hash().Hex())] = covTxJSON(t, pending, big.NewInt(3))
 	require.NoError(t, c.unstuckTx(clog, covSignedItem(env, pending.Hash().Hex(), 1, 1)))
 
-	// documents current behaviour: a pending signed item without a TxOutItem panics
-	// when building the cancel (item.TxOutItem.Height is dereferenced).
+	// a pending signed item without a TxOutItem (corrupt or legacy store entry)
+	// cannot be cancelled, since the cancel is signed at the outbound's height:
+	// it is dropped (nil error, so the caller removes it) without signing or
+	// broadcasting, instead of panicking the client
 	txs[strings.ToLower(pending.Hash().Hex())] = covTxJSON(t, pending, nil)
 	nilToi := covSignedItem(env, pending.Hash().Hex(), 1, 1)
 	nilToi.TxOutItem = nil
-	require.Panics(t, func() { _ = c.unstuckTx(clog, nilToi) })
+	sentBefore := env.rpc.count("eth_sendRawTransaction")
+	require.NotPanics(t, func() { err = c.unstuckTx(clog, nilToi) })
+	require.NoError(t, err)
+	require.Equal(t, sentBefore, env.rpc.count("eth_sendRawTransaction"))
 }

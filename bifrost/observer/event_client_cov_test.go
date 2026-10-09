@@ -35,7 +35,7 @@ type bifrostClientCov struct {
 	mu         sync.Mutex
 	subscribed [][]string
 	err        error
-	events     chan *ebifrost.EventNotification
+	streams    []chan *ebifrost.EventNotification // one per subscription
 	attempt    chan struct{}
 }
 
@@ -43,6 +43,11 @@ func (c *bifrostClientCov) SubscribeToEvents(ctx context.Context, in *ebifrost.S
 	c.mu.Lock()
 	c.subscribed = append(c.subscribed, append([]string(nil), in.EventTypes...))
 	err := c.err
+	var events chan *ebifrost.EventNotification
+	if err == nil {
+		events = make(chan *ebifrost.EventNotification)
+		c.streams = append(c.streams, events)
+	}
 	c.mu.Unlock()
 	select {
 	case c.attempt <- struct{}{}:
@@ -51,7 +56,17 @@ func (c *bifrostClientCov) SubscribeToEvents(ctx context.Context, in *ebifrost.S
 	if err != nil {
 		return nil, err
 	}
-	return &streamCov{ctx: ctx, events: c.events}, nil
+	return &streamCov{ctx: ctx, events: events}, nil
+}
+
+// send delivers an event on the newest subscription's stream only. Each
+// subscription has its own channel, so a Recv goroutine left over from a
+// cancelled subscription can never take an event meant for the current one.
+func (c *bifrostClientCov) send(ev *ebifrost.EventNotification) {
+	c.mu.Lock()
+	events := c.streams[len(c.streams)-1]
+	c.mu.Unlock()
+	events <- ev
 }
 
 func (c *bifrostClientCov) subscriptions() [][]string {
@@ -71,7 +86,6 @@ func waitCov(t *testing.T, ch <-chan struct{}) {
 
 func TestEventClientResubscribesOnChangesCov(t *testing.T) {
 	client := &bifrostClientCov{
-		events:  make(chan *ebifrost.EventNotification),
 		attempt: make(chan struct{}, 10),
 	}
 	ec := NewEventClient(client)
@@ -83,7 +97,7 @@ func TestEventClientResubscribesOnChangesCov(t *testing.T) {
 	waitCov(t, client.attempt)
 
 	// an event of a registered type reaches its handler
-	client.events <- &ebifrost.EventNotification{EventType: "a", Payload: []byte("1")}
+	client.send(&ebifrost.EventNotification{EventType: "a", Payload: []byte("1")})
 	select {
 	case ev := <-gotA:
 		if string(ev.Payload) != "1" {
@@ -93,7 +107,7 @@ func TestEventClientResubscribesOnChangesCov(t *testing.T) {
 		t.Fatal("handler not called")
 	}
 	// an event without a handler is dropped
-	client.events <- &ebifrost.EventNotification{EventType: "unknown"}
+	client.send(&ebifrost.EventNotification{EventType: "unknown"})
 
 	// registering while active cancels the subscription; Start resubscribes
 	// with the new event set
@@ -105,7 +119,7 @@ func TestEventClientResubscribesOnChangesCov(t *testing.T) {
 	// Start while active restarts the subscription
 	ec.Start()
 	waitCov(t, client.attempt)
-	client.events <- &ebifrost.EventNotification{EventType: "b"}
+	client.send(&ebifrost.EventNotification{EventType: "b"})
 	waitCov(t, gotB)
 
 	ec.CleanShutdown()
