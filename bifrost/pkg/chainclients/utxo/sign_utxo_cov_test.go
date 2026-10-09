@@ -231,8 +231,14 @@ func TestGetAddressesFromScriptPubKeyBTCCov(t *testing.T) {
 	if got = c.getAddressesFromScriptPubKeyBTC(btcjson.ScriptPubKeyResult{Hex: "05"}); got != nil {
 		t.Fatalf("expected nil for unparseable script, got %v", got)
 	}
+	// The address is encoded for the build's network (bcrt1 on mocknet, bc1 on
+	// mainnet), so derive the expectation from the client's own chain params.
+	want, err := btcutil.NewAddressWitnessPubKeyHash(btcutil.Hash160(pk), c.getChainCfgBTC())
+	if err != nil {
+		t.Fatal(err)
+	}
 	got = c.getAddressesFromScriptPubKeyBTC(btcjson.ScriptPubKeyResult{Hex: hex.EncodeToString(p2wpkhCov(pk))})
-	if len(got) != 1 || !strings.HasPrefix(got[0], "bcrt1") {
-		t.Fatalf("expected one regtest bech32 address, got %v", got)
+	if len(got) != 1 || got[0] != want.String() {
+		t.Fatalf("expected [%s], got %v", want, got)
 	}
 }

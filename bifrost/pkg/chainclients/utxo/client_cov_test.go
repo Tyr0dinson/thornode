@@ -342,6 +342,9 @@ func (s *UTXOCovSuite) TestFetchTxsErrorsCov(c *C) {
 }
 
 func (s *UTXOCovSuite) TestFetchTxsNearTipCov(c *C) {
+	if common.CurrentChainNetwork != common.MockNet {
+		c.Skip("mocknet only: its block and vault fixtures are mocknet (tthorpub) data")
+	}
 	s.client.cfg.UTXO.BlockCacheCount = 10
 	s.client.cfg.BlockScanner.ObservationFlexibilityBlocks = 5
 	// the vault the block fixture pays to (see test/fixtures/endpoints/vaults/pubKeys.json)
@@ -431,6 +434,9 @@ func (s *UTXOCovSuite) TestFetchMemPoolCov(c *C) {
 }
 
 func (s *UTXOCovSuite) TestConfirmationCountCov(c *C) {
+	if common.CurrentChainNetwork != common.MockNet {
+		c.Skip("mocknet only: mainnet scales confirmations by the confirmation-multiplier mimir")
+	}
 	c.Check(s.client.GetConfirmationCount(types.TxIn{}), Equals, int64(0))
 	c.Check(s.client.GetConfirmationCount(types.TxIn{MemPool: true, TxArray: []*types.TxInItem{{}}}), Equals, int64(0))
 
