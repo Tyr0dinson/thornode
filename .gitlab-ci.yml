@@ -1,4 +1,4 @@
-image: golang:1.26.6
+image: golang:1.26.9
 
 # Retry jobs that failed for infrastructure reasons, never on script_failure.
 # Server-side execution timeouts are left out: those jobs really ran too long.
@@ -60,7 +60,7 @@ variables:
   # and resolve directly so the per-job git auth below takes effect.
   GOPRIVATE: gitlab.com/thorchain/tss/tss-lib-private.git
   # Alpine's go package defaults GOTOOLCHAIN=local; override so jobs that bootstrap
-  # Go via `apk add go` download the toolchain pinned in go.mod (toolchain go1.26.6).
+  # Go via `apk add go` download the toolchain pinned in go.mod (toolchain go1.26.9).
   GOTOOLCHAIN: auto
   SAST_EXCLUDED_ANALYZERS: eslint,bandit,semgrep
   # Let the runner retry the stages it owns. A failed source fetch ("fetch-pack:
@@ -128,8 +128,8 @@ variables:
           unset DOCKER_MIRROR
         # imagetools resolves the manifest in ~1s; `docker manifest inspect`
         # took 16-32s against the dependency proxy in every dind job.
-        elif ! docker buildx imagetools inspect "${DOCKER_MIRROR}golang:1.26.6" >/dev/null 2>&1; then
-          echo "Dependency proxy missing golang:1.26.6; falling back to Docker Hub"
+        elif ! docker buildx imagetools inspect "${DOCKER_MIRROR}golang:1.26.9" >/dev/null 2>&1; then
+          echo "Dependency proxy missing golang:1.26.9; falling back to Docker Hub"
           unset DOCKER_MIRROR
         fi
       fi

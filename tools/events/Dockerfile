@@ -3,7 +3,7 @@
 ########################################################################################
 
 ARG DOCKER_MIRROR=
-FROM ${DOCKER_MIRROR}golang:1.26.6-bookworm AS build
+FROM ${DOCKER_MIRROR}golang:1.26.9-bookworm AS build
 
 ENV GOBIN=/go/bin
 ENV GOPATH=/go
