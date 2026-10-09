@@ -1331,6 +1331,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 			if s.storage != nil {
 				if storeErr := s.storage.Set(item); storeErr != nil {
 					s.logger.Error().Err(storeErr).Msg("fail to persist refreshed txout gas")
+					return nil, nil, fmt.Errorf("persist refreshed txout gas before signing: %w", storeErr)
 				}
 			}
 		}
@@ -1373,6 +1374,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		item.Observation = observation
 		if storeErr := s.storage.Set(item); storeErr != nil {
 			s.logger.Error().Err(storeErr).Msg("fail to persist signed tx before broadcast")
+			return nil, nil, fmt.Errorf("persist signed tx before broadcast: %w", storeErr)
 		}
 	}
 
