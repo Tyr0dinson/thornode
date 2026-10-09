@@ -752,8 +752,11 @@ test-simulation:
     - *rules
   timeout: 2h
   needs: !reference [.long-test-gate, needs]
+  # One retry only. Measured over 2026-09-21..27: a second attempt rescued 24
+  # runs, a third only 5, while 46 chains failed all three attempts (~45m each)
+  # because the failure was real.
   retry:
-    max: 2
+    max: 1
     when:
       - runner_system_failure
       - runner_external_dependency_failure
