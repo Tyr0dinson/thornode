@@ -5,6 +5,7 @@ import fcntl
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import tempfile
@@ -13,6 +14,10 @@ import time
 ROOT = Path(__file__).resolve().parent.parent
 MANIFEST = Path(__file__).with_suffix('.json')
 LOCK = '/tmp/thornode-test-quality-build.lock'
+
+
+def lock_timeout(_signum, _frame):
+    raise TimeoutError('build lock wait exceeded')
 
 
 def invoke(package, test, overlay, seconds, toolchain):
@@ -72,16 +77,17 @@ def main():
     control_mutant = next(m for m in mutants if m['id'] == control['mutant'])
     baseline_keys.append((control_mutant['package'], control['test']))
     with open(LOCK, 'a+') as lock:
-        while True:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except BlockingIOError:
-                if time.monotonic() - started > args.lock_wait:
-                    summary['result'] = 'baseline_failed'
-                    summary['baseline'].append({'status': 'infrastructure', 'reason': 'build lock wait exceeded'})
-                    break
-                time.sleep(.25)
+        previous_handler = signal.signal(signal.SIGALRM, lock_timeout)
+        signal.setitimer(signal.ITIMER_REAL, args.lock_wait)
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+        except TimeoutError:
+            summary['result'] = 'baseline_failed'
+            summary['baseline'].append({'status': 'infrastructure', 'reason': 'build lock wait exceeded'})
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, previous_handler)
+        summary['lock_wait_elapsed_seconds'] = round(time.monotonic() - started, 2)
         if 'result' not in summary:
             with tempfile.TemporaryDirectory(prefix='thornode-security-mutations-') as temp:
                 tempdir = Path(temp)
