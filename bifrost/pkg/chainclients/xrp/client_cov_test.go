@@ -387,13 +387,19 @@ func (s *XrpTestSuite) TestSignTxRemoteTssCov(c *C) {
 	}
 	vaults := []common.PubKey{signVault, blameVault, idleVault, errVault}
 	results := make([]result, len(vaults))
-	// Sign one vault at a time: concurrent batches for different vaults race
-	// on KeySign.getVersion's unsynchronised version cache under -race.
+	// Sign every vault concurrently: their keysign batches run in parallel
+	// goroutines, which exercises KeySign's shared version cache under -race.
+	var wg sync.WaitGroup
 	for i, v := range vaults {
-		r := &results[i]
-		r.signed, r.checkpoint, r.txIn, r.err = client.SignTx(
-			txOutCov(c, v, strings.Repeat(fmt.Sprintf("%02X", i+1), 32)), 100)
+		wg.Add(1)
+		go func(i int, v common.PubKey) {
+			defer wg.Done()
+			r := &results[i]
+			r.signed, r.checkpoint, r.txIn, r.err = client.SignTx(
+				txOutCov(c, v, strings.Repeat(fmt.Sprintf("%02X", i+1), 32)), 100)
+		}(i, v)
 	}
+	wg.Wait()
 
 	// TSS signature is converted to DER, verified and the tx encoded.
 	ok := results[0]

@@ -39,6 +39,9 @@ func covCEInternalAdd(asset common.Asset, runeAmt, assetAmt uint64, runeAddr, as
 }
 
 func (s *HandlerAddLiquidityCovCESuite) TestValidateCovCE(c *C) {
+	if notMocknetCov() {
+		c.Skip("mocknet only: liquidity caps and bond checks use mocknet constants")
+	}
 	ctx, mgr := covCEAddLiqSetup(c)
 	h := NewAddLiquidityHandler(mgr)
 	signer := GetRandomBech32Addr()
@@ -111,6 +114,9 @@ func (s *HandlerAddLiquidityCovCESuite) TestAffiliateAddCovCE(c *C) {
 }
 
 func (s *HandlerAddLiquidityCovCESuite) TestSwapPathCovCE(c *C) {
+	if notMocknetCov() {
+		c.Skip("mocknet only: liquidity caps and bond checks use mocknet constants")
+	}
 	ctx, mgr := covCEAddLiqSetup(c)
 	h := NewAddLiquidityHandler(mgr)
 	btcAddr := GetRandomBTCAddress()

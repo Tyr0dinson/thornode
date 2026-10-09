@@ -764,6 +764,9 @@ func (s *QuerierCovQSuite) TestScheduledAndPendingOutboundCovQ(c *C) {
 }
 
 func (s *QuerierCovQSuite) TestSwapQueueAndDetailsCovQ(c *C) {
+	if notMocknetCov() {
+		c.Skip("mocknet only: relies on the mocknet advanced swap queue index")
+	}
 	ctx, k := s.ctx, s.mgr.Keeper()
 	_, err := s.qs.SwapDetails(ctx, &types.QuerySwapDetailsRequest{})
 	c.Assert(err, ErrorMatches, "missing tx_id parameter")

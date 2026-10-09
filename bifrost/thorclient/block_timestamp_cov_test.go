@@ -105,13 +105,7 @@ func (s *BlockTimestampCovSuite) TestBroadcastWithBlocking(c *C) {
 			// once the tx is accepted, the chain advances a block and the shared
 			// response cache is dropped so the next height poll is fresh
 			height.Add(1)
-			httpResponseCachesMu.Lock()
-			for k := range httpResponseCaches {
-				if strings.Contains(k, req.Host) {
-					delete(httpResponseCaches, k)
-				}
-			}
-			httpResponseCachesMu.Unlock()
+			resetResponseCacheForHostCov(req.Host)
 			httpTestHandler(c, rw, successFixture)
 		}
 	}))
@@ -206,4 +200,17 @@ func (s *BlockTimestampCovSuite) TestPrivateKeyWrongAlgo(c *C) {
 	_, err = k.GetPrivateKey()
 	c.Assert(err, NotNil)
 	c.Check(err.Error(), Equals, "fail to cast private key to secp256k1 private key")
+}
+
+// resetResponseCacheForHostCov drops the bridge's cached GET responses for one
+// server, so a test can force the next poll to hit it. Keeps tests out of the
+// cache's key format.
+func resetResponseCacheForHostCov(host string) {
+	httpResponseCachesMu.Lock()
+	defer httpResponseCachesMu.Unlock()
+	for k := range httpResponseCaches {
+		if strings.Contains(k, host) {
+			delete(httpResponseCaches, k)
+		}
+	}
 }

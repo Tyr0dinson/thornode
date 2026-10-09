@@ -183,6 +183,9 @@ func (s *KeeperMiscCovSuite) TestSolNonceAttestVoter(c *C) {
 }
 
 func (s *KeeperMiscCovSuite) TestAssertAdvSwapQueueIndexUnchanged(c *C) {
+	if notMocknetCov() {
+		c.Skip("mocknet only: the index assertion only exists in the mocknet build")
+	}
 	ctx, k := setupKeeperForTest(c)
 	msg := MsgSwap{
 		Tx:          GetRandomTx(),
@@ -379,6 +382,9 @@ func (s *KeeperMiscCovSuite) TestNodePauseChain(c *C) {
 }
 
 func (s *KeeperMiscCovSuite) TestGetMimirEnvFallback(c *C) {
+	if notMocknetCov() {
+		c.Skip("mocknet only: the mimir env fallback only exists in keeper_mimir_mocknet.go")
+	}
 	ctx, k := setupKeeperForTest(c)
 
 	restore := setEnvCov("COV_ENV_MIMIR", "42")

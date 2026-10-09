@@ -119,6 +119,9 @@ func covReceipt(tx *etypes.Transaction, status uint64, logs []*etypes.Log) *etyp
 // ---------------------------------------------------------------------------
 
 func TestCovScannerAccessors(t *testing.T) {
+	if notMocknetCov() {
+		t.Skip("mocknet only: expects the mocknet approval dust wei per chain")
+	}
 	env := newCovEnv(t, common.AVAXChain, nil)
 	s := env.client.evmScanner
 
@@ -322,12 +325,11 @@ func TestCovScannerReprocessHeaderFailure(t *testing.T) {
 
 func TestCovScannerOptimizedReceipts(t *testing.T) {
 	// metrics are only registered for AVAX, so keep the gas cache from filling.
-	// Concurrency is 1 because getTxInOptimized's receipt goroutines all assign
-	// the enclosing function's err variable without synchronization (a data race
-	// the race detector reports when more than one goroutine runs at a time).
+	// Concurrency > 1 runs the receipt goroutines in parallel, so -race checks
+	// they share no unsynchronized state.
 	env := newCovEnv(t, common.BSCChain, func(cfg *config.BifrostChainConfiguration) {
 		cfg.BlockScanner.GasCacheBlocks = 100
-		cfg.BlockScanner.Concurrency = 1
+		cfg.BlockScanner.Concurrency = 4
 	})
 	s := env.client.evmScanner
 	ch := newCovChain(env.rpc)

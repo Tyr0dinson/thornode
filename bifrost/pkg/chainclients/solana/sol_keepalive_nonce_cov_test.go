@@ -220,6 +220,9 @@ func (f *covFixture) staleSigs() {
 }
 
 func (s *KeepAliveNonceCovSuite) TestKeepAliveVaultBroadcastsSelfSend(c *C) {
+	if notMocknetCov() {
+		c.Skip("mocknet only: keep-alive cadence uses mocknet settings")
+	}
 	f := newCovFixture(c)
 	defer f.server.Close()
 	f.staleSigs()

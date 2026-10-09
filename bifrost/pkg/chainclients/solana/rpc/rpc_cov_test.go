@@ -4,11 +4,29 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 
 	. "gopkg.in/check.v1"
 )
 
-type RPCCovSuite struct{}
+type RPCCovSuite struct {
+	servers []*httptest.Server
+}
+
+// newServer starts a test server that TearDownTest closes, so a failed
+// assertion before a test's own Close cannot leak it into later tests.
+func (s *RPCCovSuite) newServer(handler http.HandlerFunc) (*httptest.Server, *SolRPC) {
+	server, r := newTestServer(handler)
+	s.servers = append(s.servers, server)
+	return server, r
+}
+
+func (s *RPCCovSuite) TearDownTest(_ *C) {
+	for _, server := range s.servers {
+		server.Close() // idempotent: also safe for servers a test closed itself
+	}
+	s.servers = nil
+}
 
 var _ = Suite(&RPCCovSuite{})
 
@@ -29,7 +47,7 @@ func rpcCovFail() http.HandlerFunc {
 
 func (s *RPCCovSuite) TestGetAccountMeta(c *C) {
 	var gotParams []interface{}
-	server, r := newTestServer(func(w http.ResponseWriter, req *http.Request) {
+	server, r := s.newServer(func(w http.ResponseWriter, req *http.Request) {
 		var payload struct {
 			Method string        `json:"method"`
 			Params []interface{} `json:"params"`
@@ -52,30 +70,30 @@ func (s *RPCCovSuite) TestGetAccountMeta(c *C) {
 }
 
 func (s *RPCCovSuite) TestGetAccountMetaMissingAndErrors(c *C) {
-	server, r := newTestServer(rpcCovFixed(`{"result":{"value":null}}`))
+	server, r := s.newServer(rpcCovFixed(`{"result":{"value":null}}`))
 	meta, err := r.GetAccountMeta("a")
 	c.Assert(err, IsNil)
 	c.Assert(meta.Exists, Equals, false)
 	server.Close()
 
-	server, r = newTestServer(rpcCovFixed(`{"error":{"code":-1,"message":"boom"}}`))
+	server, r = s.newServer(rpcCovFixed(`{"error":{"code":-1,"message":"boom"}}`))
 	_, err = r.GetAccountMeta("a")
 	c.Assert(err, ErrorMatches, "getAccountInfo error: -1 boom")
 	server.Close()
 
-	server, r = newTestServer(rpcCovFixed(`{}`))
+	server, r = s.newServer(rpcCovFixed(`{}`))
 	_, err = r.GetAccountMeta("a")
 	c.Assert(err, ErrorMatches, "getAccountInfo: empty result")
 	server.Close()
 
-	server, r = newTestServer(rpcCovFail())
+	server, r = s.newServer(rpcCovFail())
 	_, err = r.GetAccountMeta("a")
 	c.Assert(err, ErrorMatches, "failed to call getAccountInfo.*")
 	server.Close()
 }
 
 func (s *RPCCovSuite) TestGetMinimumBalanceForRentExemption(c *C) {
-	server, r := newTestServer(func(w http.ResponseWriter, req *http.Request) {
+	server, r := s.newServer(func(w http.ResponseWriter, req *http.Request) {
 		var payload struct {
 			Params []uint64 `json:"params"`
 		}
@@ -88,52 +106,52 @@ func (s *RPCCovSuite) TestGetMinimumBalanceForRentExemption(c *C) {
 	c.Assert(v, Equals, uint64(1447680))
 	server.Close()
 
-	server, r = newTestServer(rpcCovFixed(`{"error":{"code":-2,"message":"bad"}}`))
+	server, r = s.newServer(rpcCovFixed(`{"error":{"code":-2,"message":"bad"}}`))
 	_, err = r.GetMinimumBalanceForRentExemption(1)
 	c.Assert(err, ErrorMatches, "getMinimumBalanceForRentExemption error: -2 bad")
 	server.Close()
 
-	server, r = newTestServer(rpcCovFixed(`{}`))
+	server, r = s.newServer(rpcCovFixed(`{}`))
 	_, err = r.GetMinimumBalanceForRentExemption(1)
 	c.Assert(err, ErrorMatches, "getMinimumBalanceForRentExemption: empty result")
 	server.Close()
 
-	server, r = newTestServer(rpcCovFail())
+	server, r = s.newServer(rpcCovFail())
 	_, err = r.GetMinimumBalanceForRentExemption(1)
 	c.Assert(err, ErrorMatches, "failed to call getMinimumBalanceForRentExemption.*")
 	server.Close()
 }
 
 func (s *RPCCovSuite) TestSimulateTransaction(c *C) {
-	server, r := newTestServer(rpcCovFixed(`{"result":{"value":{"err":null}}}`))
+	server, r := s.newServer(rpcCovFixed(`{"result":{"value":{"err":null}}}`))
 	execErr, err := r.SimulateTransaction("dHg=")
 	c.Assert(err, IsNil)
 	c.Assert(execErr, IsNil)
 	server.Close()
 
-	server, r = newTestServer(rpcCovFixed(`{"result":{"value":{}}}`))
+	server, r = s.newServer(rpcCovFixed(`{"result":{"value":{}}}`))
 	execErr, err = r.SimulateTransaction("dHg=")
 	c.Assert(err, IsNil)
 	c.Assert(execErr, IsNil)
 	server.Close()
 
-	server, r = newTestServer(rpcCovFixed(`{"result":{"value":{"err":{"InstructionError":[0,"Custom"]}}}}`))
+	server, r = s.newServer(rpcCovFixed(`{"result":{"value":{"err":{"InstructionError":[0,"Custom"]}}}}`))
 	execErr, err = r.SimulateTransaction("dHg=")
 	c.Assert(err, IsNil)
 	c.Assert(string(execErr), Equals, `{"InstructionError":[0,"Custom"]}`)
 	server.Close()
 
-	server, r = newTestServer(rpcCovFixed(`{"error":{"code":-3,"message":"nope"}}`))
+	server, r = s.newServer(rpcCovFixed(`{"error":{"code":-3,"message":"nope"}}`))
 	_, err = r.SimulateTransaction("dHg=")
 	c.Assert(err, ErrorMatches, "simulateTransaction error: -3 nope")
 	server.Close()
 
-	server, r = newTestServer(rpcCovFixed(`{}`))
+	server, r = s.newServer(rpcCovFixed(`{}`))
 	_, err = r.SimulateTransaction("dHg=")
 	c.Assert(err, ErrorMatches, "simulateTransaction: empty result")
 	server.Close()
 
-	server, r = newTestServer(rpcCovFail())
+	server, r = s.newServer(rpcCovFail())
 	_, err = r.SimulateTransaction("dHg=")
 	c.Assert(err, ErrorMatches, "failed to call simulateTransaction.*")
 	server.Close()
@@ -143,7 +161,7 @@ func (s *RPCCovSuite) TestSimulateTransaction(c *C) {
 
 func (s *RPCCovSuite) TestGetOwnedTokenAccountLamports(c *C) {
 	var programs []string
-	server, r := newTestServer(func(w http.ResponseWriter, req *http.Request) {
+	server, r := s.newServer(func(w http.ResponseWriter, req *http.Request) {
 		var payload struct {
 			Params []json.RawMessage `json:"params"`
 		}
@@ -166,17 +184,17 @@ func (s *RPCCovSuite) TestGetOwnedTokenAccountLamports(c *C) {
 }
 
 func (s *RPCCovSuite) TestGetOwnedTokenAccountLamportsErrors(c *C) {
-	server, r := newTestServer(rpcCovFixed(`{"error":{"code":-32602,"message":"bad owner"}}`))
+	server, r := s.newServer(rpcCovFixed(`{"error":{"code":-32602,"message":"bad owner"}}`))
 	_, err := r.GetOwnedTokenAccountLamports("owner", "finalized")
 	c.Assert(err, ErrorMatches, "RPC Error -32602: bad owner")
 	server.Close()
 
-	server, r = newTestServer(rpcCovFixed(`{"result":{"value":[{"account":{"lamports":1.5}}]}}`))
+	server, r = s.newServer(rpcCovFixed(`{"result":{"value":[{"account":{"lamports":1.5}}]}}`))
 	_, err = r.GetOwnedTokenAccountLamports("owner", "finalized")
 	c.Assert(err, ErrorMatches, "failed to convert token account lamports.*")
 	server.Close()
 
-	server, r = newTestServer(rpcCovFail())
+	server, r = s.newServer(rpcCovFail())
 	_, err = r.GetOwnedTokenAccountLamports("owner", "finalized")
 	c.Assert(err, ErrorMatches, "failed to call getTokenAccountsByOwner for Tokenkeg.*")
 	server.Close()
@@ -185,7 +203,7 @@ func (s *RPCCovSuite) TestGetOwnedTokenAccountLamportsErrors(c *C) {
 // --- transactions.go ---
 
 func (s *RPCCovSuite) TestGetTransactionConfirmedCommitment(c *C) {
-	server, r := newTestServer(func(w http.ResponseWriter, req *http.Request) {
+	server, r := s.newServer(func(w http.ResponseWriter, req *http.Request) {
 		var payload struct {
 			Params []json.RawMessage `json:"params"`
 		}
@@ -202,7 +220,7 @@ func (s *RPCCovSuite) TestGetTransactionConfirmedCommitment(c *C) {
 }
 
 func (s *RPCCovSuite) TestGetSignatureStatus(c *C) {
-	server, r := newTestServer(rpcCovFixed(`{"result":{"value":[{"slot":9,"confirmations":3,"err":null,"confirmationStatus":"confirmed"}]}}`))
+	server, r := s.newServer(rpcCovFixed(`{"result":{"value":[{"slot":9,"confirmations":3,"err":null,"confirmationStatus":"confirmed"}]}}`))
 	st, err := r.GetSignatureStatus("sig")
 	c.Assert(err, IsNil)
 	c.Assert(st, NotNil)
@@ -211,24 +229,24 @@ func (s *RPCCovSuite) TestGetSignatureStatus(c *C) {
 	c.Assert(st.ConfirmationStatus, Equals, "confirmed")
 	server.Close()
 
-	server, r = newTestServer(rpcCovFixed(`{"result":{"value":[null]}}`))
+	server, r = s.newServer(rpcCovFixed(`{"result":{"value":[null]}}`))
 	st, err = r.GetSignatureStatus("sig")
 	c.Assert(err, IsNil)
 	c.Assert(st, IsNil)
 	server.Close()
 
-	server, r = newTestServer(rpcCovFixed(`{"result":{"value":[]}}`))
+	server, r = s.newServer(rpcCovFixed(`{"result":{"value":[]}}`))
 	st, err = r.GetSignatureStatus("sig")
 	c.Assert(err, IsNil)
 	c.Assert(st, IsNil)
 	server.Close()
 
-	server, r = newTestServer(rpcCovFixed(`{"error":{"code":-5,"message":"x"}}`))
+	server, r = s.newServer(rpcCovFixed(`{"error":{"code":-5,"message":"x"}}`))
 	_, err = r.GetSignatureStatus("sig")
 	c.Assert(err, ErrorMatches, "RPC Error -5: x")
 	server.Close()
 
-	server, r = newTestServer(rpcCovFail())
+	server, r = s.newServer(rpcCovFail())
 	_, err = r.GetSignatureStatus("sig")
 	c.Assert(err, ErrorMatches, "failed to call getSignatureStatuses.*")
 	server.Close()
@@ -237,7 +255,7 @@ func (s *RPCCovSuite) TestGetSignatureStatus(c *C) {
 // --- get_account_info.go ---
 
 func (s *RPCCovSuite) TestGetNonceAccountPostError(c *C) {
-	server, r := newTestServer(rpcCovFail())
+	server, r := s.newServer(rpcCovFail())
 	defer server.Close()
 	_, _, err := r.GetNonceAccount("pk", 0)
 	c.Assert(err, ErrorMatches, "failed to call getAccountInfo.*")

@@ -132,6 +132,9 @@ func (s *MigrationsCovCSuite) TestMigrate13to14CovC(c *C) {
 }
 
 func (s *MigrationsCovCSuite) TestCommonMigrate8to9CovC(c *C) {
+	if notMocknetCov() {
+		c.Skip("mocknet only: fee targets use mocknet constants")
+	}
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
 	m := NewMigrator(mgr)

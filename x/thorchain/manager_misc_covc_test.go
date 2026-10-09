@@ -85,6 +85,9 @@ func (s *ManagerMiscCovCSuite) TestScheduledMigrationMimirErrorCovC(c *C) {
 }
 
 func (s *ManagerMiscCovCSuite) TestRouterUpgradeCovC(c *C) {
+	if notMocknetCov() {
+		c.Skip("mocknet only: router upgrade targets are the mocknet router list")
+	}
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
 	r := NewRouterUpgradeController(mgr)

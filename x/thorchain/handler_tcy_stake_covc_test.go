@@ -26,6 +26,9 @@ func covCETCYStakeMsg(c *C, from common.Address, amt uint64) *MsgTCYStake {
 }
 
 func (s *HandlerTCYStakeCovCESuite) TestRunCovCE(c *C) {
+	if notMocknetCov() {
+		c.Skip("mocknet only: needs the mocknet TCY smart contract addresses")
+	}
 	ctx, k := setupKeeperForTest(c)
 	k.SetMimir(ctx, "TCYStakingHalt", 0)
 	h := NewTCYStakeHandler(NewDummyMgrWithKeeper(k))

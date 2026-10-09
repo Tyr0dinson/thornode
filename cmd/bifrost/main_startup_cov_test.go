@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -13,11 +12,9 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"os/exec"
 	"reflect"
 	"strings"
 	"sync/atomic"
-	"syscall"
 	"testing"
 	"time"
 	"unsafe"
@@ -164,6 +161,7 @@ func (c *fakeChainCov) RollbackBlockScanner() error                        { ret
 // passing every startup check up to the p2p layer.
 func mainStartupEnvCov(t *testing.T, mode string, extra ...string) []string {
 	t.Helper()
+	skipUnlessMocknetCov(t)
 	thornode := thornodeStartupCov(t)
 	env := []string{
 		mainFakesCovEnv + "=" + mode,
@@ -228,27 +226,6 @@ func allRPCHostsCov() []string {
 	return env
 }
 
-// runMainBoundedCov is runMainCov with a deadline: a hung main is sent SIGQUIT
-// so its goroutine dump lands in the returned output.
-func runMainBoundedCov(t *testing.T, env []string, args ...string) (string, int) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, os.Args[0], args...) // #nosec G204 -- re-executes this test binary
-	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGQUIT) }
-	cmd.Env = env
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &out
-	err := cmd.Run()
-	if err == nil {
-		return out.String(), 0
-	}
-	var exitErr *exec.ExitError
-	require.ErrorAs(t, err, &exitErr, out.String())
-	return out.String(), exitErr.ExitCode()
-}
-
 func TestMainTssErrorCov(t *testing.T) {
 	out, code := runMainCov(t, mainStartupEnvCov(t, "tss-error"))
 	require.Equal(t, 1, code, out)
@@ -275,7 +252,7 @@ func TestMainNoChainsLoadedCov(t *testing.T) {
 }
 
 func TestMainFullLifecycleCov(t *testing.T) {
-	out, code := runMainBoundedCov(t, mainStartupEnvCov(t, "full", allRPCHostsCov()...))
+	out, code := runMainCov(t, mainStartupEnvCov(t, "full", allRPCHostsCov()...))
 	if raceEnabledCov && code == 66 {
 		// Documents a race in main: the health-server goroutine assigns
 		// main's shared err variable while main keeps reusing it, so a race

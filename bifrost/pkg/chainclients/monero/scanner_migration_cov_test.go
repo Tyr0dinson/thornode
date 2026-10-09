@@ -127,10 +127,12 @@ func TestEnqueueAuthenticatedInternalInboundReplayErrorsCov(t *testing.T) {
 		f := newMigrationFixtureCov(t, "cov-enqueue-height")
 		tx := f.observed
 		tx.BlockHeight = 0
+		// an unmined observation is rejected by ObservedTx validation (so the
+		// scanner's own BlockHeight <= 0 guard after it is unreachable) and
+		// nothing is queued
 		queued, err := f.scanner.EnqueueAuthenticatedInternalInboundReplay(tx)
-		if err == nil {
-			require.False(t, queued)
-		}
+		require.ErrorContains(t, err, "block height can't be zero")
+		require.False(t, queued)
 	})
 	t.Run("location-failure", func(t *testing.T) {
 		f := newMigrationFixtureCov(t, "cov-enqueue-loc")

@@ -424,6 +424,9 @@ func (s *ModuleCovCSuite) TestGRPCGatewayRoutesAndHeightCovC(c *C) {
 }
 
 func (s *ModuleCovCSuite) TestSupplyCMCRouteCovC(c *C) {
+	if notMocknetCov() {
+		c.Skip("mocknet only: expected supply figures use mocknet TCY and RUNE constants")
+	}
 	SetupConfigForTest()
 	qs := &covCQueryServer{
 		supply:     &types.QuerySupplyResponse{Circulating: 300, Total: 500, Locked: &types.LockedSupply{Reserve: 200}},

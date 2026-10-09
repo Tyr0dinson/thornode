@@ -143,6 +143,14 @@ func (c *EVMClient) unstuckTx(clog zerolog.Logger, item evmtypes.SignedTxItem) e
 		return nil
 	}
 
+	// the cancel tx is signed at the outbound's height and re-registered in the
+	// signer cache under it, so an item without one (corrupt or legacy store
+	// entry) can never be cancelled: drop it rather than panic the client
+	if item.TxOutItem == nil {
+		clog.Error().Msg("signed tx item has no tx out item, cannot cancel")
+		return nil
+	}
+
 	pubKey, err := common.NewPubKey(item.VaultPubKey)
 	if err != nil {
 		clog.Err(err).Msg("vault public key is invalid")

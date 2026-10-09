@@ -57,15 +57,21 @@ func TestKVStoreDummyContractCov(t *testing.T) {
 	v := reflect.ValueOf(k)
 	vt := v.Type()
 
-	var kaboomErrs, panics int
+	// the only methods expected to panic (with kaboom): the dummy's upgrade
+	// vote writes have no error return. A new method that panics fails here
+	// by name rather than as an unexplained count mismatch.
+	expectedPanics := map[string]bool{"ApproveUpgrade": true, "RejectUpgrade": true}
+	var kaboomErrs int
+	panicked := map[string]bool{}
 	for i := 0; i < v.NumMethod(); i++ {
 		name := vt.Method(i).Name
 		out, p := callDummyMethodCov(ctx, v.Method(i))
 		if p != nil {
+			require.Truef(t, expectedPanics[name], "%s panicked unexpectedly: %v", name, p)
 			err, ok := p.(error)
 			require.Truef(t, ok, "%s panicked with non-error %v", name, p)
 			require.Truef(t, errors.Is(err, kaboom), "%s panicked with %v", name, err)
-			panics++
+			panicked[name] = true
 			continue
 		}
 		for _, o := range out {
@@ -84,7 +90,7 @@ func TestKVStoreDummyContractCov(t *testing.T) {
 	// sanity: the dummy really does fail most write paths and panics on
 	// upgrade votes.
 	require.Greater(t, kaboomErrs, 100)
-	require.Equal(t, 2, panics)
+	require.Equal(t, expectedPanics, panicked)
 }
 
 // The keeper interface must be satisfied by the dummy so it can be embedded

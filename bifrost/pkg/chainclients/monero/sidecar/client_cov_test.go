@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"gitlab.com/thorchain/thornode/v3/config"
@@ -435,7 +436,7 @@ func TestCanonicalTxLocationCov(t *testing.T) {
 
 	var resp CanonicalTxLocationResp
 	c := newCovClient(t, config.BifrostChainConfiguration{}, func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "/v1/monero/chain/tx/"+hashACov+"/location", r.URL.Path)
+		assert.Equal(t, "/v1/monero/chain/tx/"+hashACov+"/location", r.URL.Path)
 		writeJSONCov(w, resp)
 	})
 
@@ -471,7 +472,7 @@ func TestScannerStateAndCachedCov(t *testing.T) {
 
 	var body string
 	c := newCovClient(t, config.BifrostChainConfiguration{}, func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, scannerStatePath, r.URL.Path)
+		assert.Equal(t, scannerStatePath, r.URL.Path)
 		_, _ = io.WriteString(w, body)
 	})
 
@@ -562,7 +563,7 @@ func TestResetScannerCov(t *testing.T) {
 
 	var resp ScannerResetResp
 	c := newCovClient(t, config.BifrostChainConfiguration{}, func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "/v1/monero/scanner/reset", r.URL.Path)
+		assert.Equal(t, "/v1/monero/scanner/reset", r.URL.Path)
 		writeJSONCov(w, resp)
 	})
 
@@ -618,7 +619,7 @@ func TestChainBlockSidecarCov(t *testing.T) {
 
 	var status int
 	c := newCovClient(t, config.BifrostChainConfiguration{}, func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "/v1/monero/chain/block/8", r.URL.Path)
+		assert.Equal(t, "/v1/monero/chain/block/8", r.URL.Path)
 		if status != 0 {
 			w.WriteHeader(status)
 			return

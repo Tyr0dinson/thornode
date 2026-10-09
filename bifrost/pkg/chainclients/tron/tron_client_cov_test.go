@@ -217,6 +217,9 @@ func trxTxOutCov(vault common.PubKey, amount uint64) types.TxOutItem {
 // -------------------------------------------------------------------------------------
 
 func (s *TronTestSuite) TestNewTronClientCov(c *C) {
+	if notMocknetCov() {
+		c.Skip("mocknet only: reference-block settings are mocknet values")
+	}
 	bridge := &tronCovBridge{}
 	pkMgr := pubkeymanager.NewMockPoolAddressValidator()
 
@@ -308,11 +311,17 @@ func (s *TronTestSuite) TestRemoteSignCov(c *C) {
 		err error
 	}
 	results := make([]result, len(modes))
-	// Sign one vault at a time: concurrent batches for different vaults race
-	// on KeySign.getVersion's unsynchronised version cache under -race.
+	// Sign every vault concurrently: their keysign batches run in parallel
+	// goroutines, which exercises KeySign's shared version cache under -race.
+	var wg sync.WaitGroup
 	for i := range modes {
-		results[i].sig, results[i].err = client.sign(hash[:], trxTxOutCov(vaults[i], 100), 10)
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			results[i].sig, results[i].err = client.sign(hash[:], trxTxOutCov(vaults[i], 100), 10)
+		}(i)
 	}
+	wg.Wait()
 
 	// Successful TSS signature: R || S || V that recovers to the vault key.
 	c.Assert(results[0].err, IsNil)
