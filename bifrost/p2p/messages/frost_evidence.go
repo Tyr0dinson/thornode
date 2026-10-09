@@ -259,5 +259,9 @@ func UnmarshalFrostEquivocationEvidence(buf []byte) (FrostEquivocationEvidence, 
 	if evidence.Second.PayloadHash < evidence.First.PayloadHash {
 		return FrostEquivocationEvidence{}, fmt.Errorf("non-canonical FROST evidence ordering")
 	}
+	canonical, err := MarshalFrostEquivocationEvidence(evidence)
+	if err != nil || !bytes.Equal(buf, canonical) {
+		return FrostEquivocationEvidence{}, fmt.Errorf("non-canonical FROST evidence encoding")
+	}
 	return evidence, nil
 }
