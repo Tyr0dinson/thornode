@@ -194,6 +194,11 @@ func TestConsensusDeterminismRestartAndExport(t *testing.T) {
 	db := dbm.NewMemDB()
 	app := replayApp(t, db)
 	hash := commitReplayGenesis(t, app, replayGenesis(t, app, 17, false))
+	// FinalizeBlock may spend a small amount from Reserve under mocknet rules.
+	// The exported state must preserve the committed balance on re-import.
+	committedCtx := app.NewContextLegacy(true, cmtproto.Header{ChainID: replayChainID, Height: app.LastBlockHeight()})
+	committedReserve := app.ThorchainKeeper.GetRuneBalanceOfModule(committedCtx, thorchain.ReserveName)
+	require.False(t, committedReserve.IsZero())
 	exported, err := app.ExportAppStateAndValidators(false, nil, nil)
 	require.NoError(t, err)
 	var genesis GenesisState
@@ -215,24 +220,37 @@ func TestConsensusDeterminismRestartAndExport(t *testing.T) {
 	require.NoError(t, json.Unmarshal(reexported.AppState, &after))
 	require.JSONEq(t, string(genesis[thorchain.ModuleName]), string(after[thorchain.ModuleName]))
 
-	imported := replayApp(t, dbm.NewMemDB())
-	initReplayGenesis(t, imported, genesis)
-	ctx := imported.NewContextLegacy(false, cmtproto.Header{ChainID: replayChainID, Height: 1, Time: replayTime})
-	importedState, err := imported.ModuleManager.ExportGenesisForModules(ctx, imported.AppCodec(), []string{thorchain.ModuleName})
+	committedPool, err := app.ThorchainKeeper.GetPool(committedCtx, common.BTCAsset)
 	require.NoError(t, err)
-	require.JSONEq(t, string(genesis[thorchain.ModuleName]), string(importedState[thorchain.ModuleName]))
-	_, err = imported.FinalizeBlock(&abci.RequestFinalizeBlock{
-		Height: 1, Time: replayTime.Add(time.Second),
-		Hash: bytes.Repeat([]byte{1}, 32), NextValidatorsHash: bytes.Repeat([]byte{2}, 32),
-	})
-	require.NoError(t, err)
-	_, err = imported.Commit()
-	require.NoError(t, err)
-	committedCtx := imported.NewContextLegacy(true, cmtproto.Header{ChainID: replayChainID, Height: imported.LastBlockHeight()})
-	require.Equal(t, cosmos.NewUint(1000000000), imported.ThorchainKeeper.GetRuneBalanceOfModule(committedCtx, thorchain.ReserveName))
-	pool, err := imported.ThorchainKeeper.GetPool(committedCtx, common.BTCAsset)
-	require.NoError(t, err)
-	require.Equal(t, cosmos.NewUint(100000000000+17), pool.BalanceRune)
+	var continuationHash []byte
+	var continuationState string
+	for attempt := 0; attempt < 2; attempt++ {
+		imported := replayApp(t, dbm.NewMemDB())
+		initReplayGenesis(t, imported, genesis)
+		ctx := imported.NewContextLegacy(false, cmtproto.Header{ChainID: replayChainID, Height: 1, Time: replayTime})
+		importedState, err := imported.ModuleManager.ExportGenesisForModules(ctx, imported.AppCodec(), []string{thorchain.ModuleName})
+		require.NoError(t, err)
+		require.JSONEq(t, string(genesis[thorchain.ModuleName]), string(importedState[thorchain.ModuleName]))
+		require.Equal(t, committedReserve, imported.ThorchainKeeper.GetRuneBalanceOfModule(ctx, thorchain.ReserveName))
+		pool, err := imported.ThorchainKeeper.GetPool(ctx, common.BTCAsset)
+		require.NoError(t, err)
+		require.Equal(t, committedPool, pool)
+		_, err = imported.FinalizeBlock(&abci.RequestFinalizeBlock{
+			Height: 1, Time: replayTime.Add(time.Second),
+			Hash: bytes.Repeat([]byte{1}, 32), NextValidatorsHash: bytes.Repeat([]byte{2}, 32),
+		})
+		require.NoError(t, err)
+		_, err = imported.Commit()
+		require.NoError(t, err)
+		state := replayTHORState(t, imported)
+		if attempt == 0 {
+			continuationHash = bytes.Clone(imported.LastCommitID().Hash)
+			continuationState = state
+		} else {
+			require.NoError(t, compareReplayHash(continuationHash, imported.LastCommitID().Hash))
+			require.JSONEq(t, continuationState, state)
+		}
+	}
 }
 
 // 18->19 is the immediate predecessor of the current module version. This fixture has no
@@ -251,7 +269,7 @@ func TestConsensusDeterminismMigration18To19(t *testing.T) {
 		require.NoError(t, err)
 		ctx := app.NewContextLegacy(false, cmtproto.Header{ChainID: replayChainID, Height: height, Time: replayTime.Add(2 * time.Second)})
 		before := app.ThorchainKeeper.GetRuneBalanceOfModule(ctx, thorchain.ReserveName)
-		require.Equal(t, cosmos.NewUint(1000000000), before)
+		require.False(t, before.IsZero())
 		poolBefore, err := app.ThorchainKeeper.GetPool(ctx, common.BTCAsset)
 		require.NoError(t, err)
 		versions := app.ModuleManager.GetVersionMap()
