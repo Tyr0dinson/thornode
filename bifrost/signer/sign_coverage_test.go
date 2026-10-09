@@ -2739,9 +2739,9 @@ func (s *SignCoverageSuite) TestProcessTransaction_Round7StorageError(c *C) {
 	sign.processTransaction(item)
 }
 
-// ----- signAndBroadcast: broadcast failure with storage error -----
+// ----- signAndBroadcast: storage failure prevents broadcast -----
 
-func (s *SignCoverageSuite) TestSignAndBroadcast_BroadcastError_StoreError(c *C) {
+func (s *SignCoverageSuite) TestSignAndBroadcast_StoreErrorPreventsBroadcast(c *C) {
 	vaultPubKey, _ := common.NewPubKey(pubkeymanager.MockPubkey)
 	bridge := &mockSignBridge{
 		blockHeight: 200,
@@ -2782,9 +2782,10 @@ func (s *SignCoverageSuite) TestSignAndBroadcast_BroadcastError_StoreError(c *C)
 		Height: 190,
 	}
 	_, _, err = sign.signAndBroadcast(item)
-	// Broadcast fails, and Set also fails but that's logged, the broadcast error is returned
+	// Signed bytes must be durable before they can reach the chain.
 	c.Assert(err, NotNil)
-	c.Assert(err.Error(), Matches, ".*broadcast failed.*")
+	c.Assert(err.Error(), Matches, ".*persist signed tx before broadcast: leveldb: closed.*")
+	c.Assert(cc.broadcastTxs, Equals, 0)
 }
 
 // ----- storage error tests -----
