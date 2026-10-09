@@ -1,6 +1,7 @@
 package tokenlist
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -51,5 +52,12 @@ func GetEVMTokenList(chain common.Chain) EVMTokenList {
 
 	default:
 		return EVMTokenList{}
+	}
+}
+
+// mustUnmarshal decodes an embedded token list, panicking on malformed data.
+func mustUnmarshal(raw []byte, v any) {
+	if err := json.Unmarshal(raw, v); err != nil {
+		panic(err)
 	}
 }

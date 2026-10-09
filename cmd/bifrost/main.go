@@ -39,6 +39,14 @@ const (
 	serverIdentity = "bifrost"
 )
 
+// Startup dependencies, overridable in tests so main can run without real p2p
+// networking, TSS pre-parameter generation or chain RPC endpoints.
+var (
+	startP2P   = p2p.StartP2PWithBridge
+	newTss     = tss.NewTss
+	loadChains = chainclients.LoadChains
+)
+
 func printVersion() {
 	fmt.Printf("%s v%s, rev %s\n", serverIdentity, constants.Version, constants.GitCommit)
 }
@@ -153,7 +161,7 @@ func main() {
 	}
 
 	// Start P2P with bonded node gating enabled
-	comm, stateManager, err := p2p.StartP2PWithBridge(
+	comm, stateManager, err := startP2P(
 		cfg.TSS,
 		tmPrivateKey,
 		app.DefaultNodeHome,
@@ -163,7 +171,7 @@ func main() {
 		log.Fatal().Err(err).Msg("fail to start p2p")
 	}
 
-	tssIns, err := tss.NewTss(
+	tssIns, err := newTss(
 		comm,
 		stateManager,
 		tmPrivateKey,
@@ -202,7 +210,7 @@ func main() {
 		}
 	}
 	poolMgr := thorclient.NewPoolMgr(thorchainBridge)
-	chains, restart := chainclients.LoadChains(k, cfgChains, tssIns, thorchainBridge, m, pubkeyMgr, poolMgr)
+	chains, restart := loadChains(k, cfgChains, tssIns, thorchainBridge, m, pubkeyMgr, poolMgr)
 	if len(chains) == 0 {
 		log.Fatal().Msg("fail to load any chains")
 	}
@@ -311,15 +319,15 @@ func recoverLegacyKeysharesBeforeStartup(cfg config.Bifrost, bridge thorclient.T
 	}
 }
 
-const (
-	// legacyRecoveryRetryInitial/Max bound the background recovery backoff. The
-	// doubling cap keeps the worst case (a found-but-empty backup, where each
-	// re-attempt rescans blocks for the TssPool message) to ~48 scans/day while
-	// still noticing an operator fix — restored localstate short-circuits before
-	// any scan — within a minute at first.
-	legacyRecoveryRetryInitial = time.Minute
-	legacyRecoveryRetryMax     = 30 * time.Minute
-)
+// legacyRecoveryRetryInitial/Max bound the background recovery backoff. The
+// doubling cap keeps the worst case (a found-but-empty backup, where each
+// re-attempt rescans blocks for the TssPool message) to ~48 scans/day while
+// still noticing an operator fix — restored localstate short-circuits before
+// any scan — within a minute at first. The initial delay is a var so tests can
+// shorten it.
+var legacyRecoveryRetryInitial = time.Minute
+
+const legacyRecoveryRetryMax = 30 * time.Minute
 
 // superviseLegacyKeyshareRecovery re-attempts legacy keyshare recovery in the
 // background after bifrost started degraded. The moment an attempt succeeds —

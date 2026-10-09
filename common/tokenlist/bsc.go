@@ -1,17 +1,13 @@
 package tokenlist
 
 import (
-	"encoding/json"
-
 	"gitlab.com/thorchain/thornode/v3/common/tokenlist/bsctokens"
 )
 
 var bscTokenList EVMTokenList
 
 func init() {
-	if err := json.Unmarshal(bsctokens.BSCTokenListRaw, &bscTokenList); err != nil {
-		panic(err)
-	}
+	mustUnmarshal(bsctokens.BSCTokenListRaw, &bscTokenList)
 }
 
 func GetBSCTokenList() EVMTokenList {
