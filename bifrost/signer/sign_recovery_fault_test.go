@@ -16,6 +16,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // recoveryStore fails one selected write while keeping the real LevelDB store
@@ -110,12 +111,18 @@ func (s *SignCoverageSuite) TestRecoverySignedPayloadSurvivesAckLossAndRestart(c
 	stored, err = store.Get(item.Key())
 	c.Assert(err, IsNil)
 	c.Assert(stored.SignedTx, DeepEquals, chain.requests[0])
-	_, _, err = signer.signAndBroadcast(stored)
+	// Churn the vault before the retry. The real pipeline must finish the
+	// pending signed attempt and remove it after the RPC acknowledgement.
+	bridge.vault = ttypes.Vault{Status: ttypes.VaultStatus_RetiringVault}
+	pipeline, err := newPipeline(1)
 	c.Assert(err, IsNil)
+	pipeline.SpawnSignings(signer, bridge)
+	pipeline.Wait()
 	c.Assert(chain.signs, Equals, 2) // one failed write, one durable signature
 	c.Assert(chain.requests, HasLen, 2)
 	c.Assert(chain.requests[1], DeepEquals, chain.requests[0])
 	c.Assert(chain.payments, HasLen, 1)
+	c.Assert(store.List(), HasLen, 0)
 }
 
 func (s *SignCoverageSuite) TestRecoveryGasRefreshWriteFailureStopsBeforeSigning(c *C) {
