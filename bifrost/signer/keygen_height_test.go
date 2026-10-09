@@ -171,9 +171,10 @@ func TestKeygenRetryLaggingHeightRecoversOnce(t *testing.T) {
 			if signer.tryKeygenRetry(retry) {
 				t.Fatal("retry fired before target height")
 			}
-			// Execute at inclusive expiry: an empty Asgard key cannot create
-			// another retry here, so reads identify exactly one execution.
-			bridge.setHeight(3700)
+			// Execute at the last valid height (churn-1): an empty Asgard key
+			// cannot create another retry here, so reads identify exactly one
+			// execution.
+			bridge.setHeight(3699)
 			before := bridge.mimirReadCount(constants.ChurnRetryInterval.String())
 			if !signer.tryKeygenRetry(retry) {
 				t.Fatal("recovered retry did not finish")

@@ -161,6 +161,10 @@ func (h TssHandler) validate(ctx cosmos.Context, msg *MsgTssPool) error {
 		return fmt.Errorf("fail to get keygen block from data store: %w", err)
 	}
 	keygenValidityBlocks := keygenResultValidityBlocksForBlock(ctx, h.mgr.Keeper(), msg.KeygenType, keygenBlock)
+	// The window ends one block before the retry tick, so a result is rejected
+	// exactly at the block the churn retry schedules a replacement keygen. Matches
+	// ValidatorMgr.hasPendingKeygen; accepting a stale result there would let it
+	// finalize a vault the retry is replacing (a double-trigger).
 	if msg.Height < ctx.BlockHeight()-keygenValidityBlocks {
 		return cosmos.ErrUnknownRequest("invalid keygen block")
 	}
@@ -215,7 +219,14 @@ func keygenResultValidityBlocks(ctx cosmos.Context, k keeper.Keeper, keygenType 
 	if keygenType == XMRMonovaultKeygen {
 		blocks = max(blocks, durationToBlocks(6*time.Minute))
 	}
-	return blocks
+	// The window ends one block before the retry tick. A keygen scheduled at H is
+	// valid for ages 0..blocks-1 and expires at age `blocks`, the same age the
+	// churn retry fires (ticks run every ChurnRetryInterval). Returning the full
+	// interval instead kept the keygen valid AT the first tick, so hasPendingKeygen
+	// suppressed that retry and the effective interval doubled (the off-by-one).
+	// Subtracting one lets the first retry fire on schedule while a stale result is
+	// already rejected on that block, so the retry cannot double-trigger a live keygen.
+	return blocks - 1
 }
 
 func keygenResultValidityBlocksForBlock(ctx cosmos.Context, k keeper.Keeper, keygenType types.KeygenType, keygenBlock KeygenBlock) int64 {

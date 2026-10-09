@@ -138,7 +138,7 @@ func TestCommonRetryRetainsLookupFailures(t *testing.T) {
 					}
 				}
 				bridge.fail(lookup, nil)
-				bridge.setHeight(3700) // Inclusive expiry: no successor retry fits.
+				bridge.setHeight(3699) // Last valid height (churn-1): no successor retry fits.
 				want := 0
 				switch outcome {
 				case "resume":
@@ -146,7 +146,7 @@ func TestCommonRetryRetainsLookupFailures(t *testing.T) {
 				case "disabled":
 					bridge.setMimir(constants.KeygenRetryInterval.String(), 0)
 				case "expired":
-					bridge.setHeight(3701)
+					bridge.setHeight(3700)
 				case "shutdown":
 					close(signer.stopChan)
 				}
@@ -242,7 +242,9 @@ func TestCommonRetryDispatchesOnlyFailedAsgard(t *testing.T) {
 	}
 	block.Keygens = append(block.Keygens, companion)
 	retry := registerRetryTestWork(signer, block, 2800)
-	bridge.setHeight(3700)
+	// 3699 is the last in-window block (validity = churn-1 = 999); 3700 is the
+	// retry tick itself, now out of window.
+	bridge.setHeight(3699)
 	if !signer.tryKeygenRetry(retry) || generator.calls() != 1 {
 		t.Fatal("retry replayed successful companion")
 	}
@@ -294,13 +296,16 @@ func TestCommonRetryWindowAndScheduleBoundaries(t *testing.T) {
 		keygens []ttypes.Keygen
 		want    int64
 	}{
+		// Validity ends one block before the retry tick (mirror of THORNode's
+		// keygenResultValidityBlocks returning N-1). churn==0 keeps the disabled
+		// sentinel (returns 0, no subtraction).
 		{0, []ttypes.Keygen{asgard}, 0},
 		{0, []ttypes.Keygen{xmr}, 0},
-		{-1, []ttypes.Keygen{asgard}, constants.NewConstantValue().GetInt64Value(constants.ChurnRetryInterval)},
-		{1, []ttypes.Keygen{asgard}, 1},
-		{1, []ttypes.Keygen{xmr}, minimum},
-		{1, []ttypes.Keygen{asgard, xmr}, minimum},
-		{1000, []ttypes.Keygen{xmr}, 1000},
+		{-1, []ttypes.Keygen{asgard}, constants.NewConstantValue().GetInt64Value(constants.ChurnRetryInterval) - 1},
+		{1, []ttypes.Keygen{asgard}, 0},
+		{1, []ttypes.Keygen{xmr}, minimum - 1},
+		{1, []ttypes.Keygen{asgard, xmr}, minimum - 1},
+		{1000, []ttypes.Keygen{xmr}, 999},
 	} {
 		if got := keygenRetryValidityBlocks(test.value, ttypes.KeygenBlock{Keygens: test.keygens}); got != test.want {
 			t.Fatalf("validity=%d want=%d", got, test.want)
@@ -310,7 +315,10 @@ func TestCommonRetryWindowAndScheduleBoundaries(t *testing.T) {
 		height int64
 		done   bool
 		target int64
-	}{{2700, false, 2800}, {2817, false, 2900}, {3500, false, 3600}, {3600, true, 0}, {3701, true, 0}, {math.MaxInt64, true, 0}} {
+		// Scheduling keeps one interval of completion headroom inside the window.
+		// With validity now churn-1 (999) and interval 100, the last height that can
+		// still schedule is 3499 (target 3500); 3500 itself no longer fits.
+	}{{2700, false, 2800}, {2817, false, 2900}, {3499, false, 3500}, {3500, true, 0}, {3701, true, 0}, {math.MaxInt64, true, 0}} {
 		signer, bridge, _, block := newRetryTestSigner(t)
 		bridge.setHeight(test.height)
 		retry := &keygenRetry{block: block, keygen: block.Keygens[0]}

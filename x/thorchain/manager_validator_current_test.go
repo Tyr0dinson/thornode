@@ -1255,7 +1255,10 @@ func (vts *ValidatorMgrTestSuite) TestHasPendingCoScheduledKeygenUsesExtendedVal
 	c.Assert(pending, Equals, false)
 }
 
-func (vts *ValidatorMgrTestSuite) TestHasPendingStandaloneAsgardExpiresAfterRetryBoundary(c *C) {
+// A failed keygen must stop being pending exactly at its first retry tick
+// (age == ChurnRetryInterval), so the retry that fires on that block is not
+// suppressed as "pending" and the effective retry interval is one tick, not two.
+func (vts *ValidatorMgrTestSuite) TestHasPendingStandaloneAsgardExpiresAtRetryBoundary(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	const retryBlocks int64 = 2
 	k.SetMimir(ctx, constants.ChurnRetryInterval.String(), retryBlocks)
@@ -1270,14 +1273,19 @@ func (vts *ValidatorMgrTestSuite) TestHasPendingStandaloneAsgardExpiresAfterRetr
 	keygenBlock.Keygens = []Keygen{keygen}
 	k.SetKeygenBlock(ctx, keygenBlock)
 
+	// One block before the retry tick: still pending.
 	pending, err := validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+retryBlocks-1), AsgardKeygen)
 	c.Assert(err, IsNil)
 	c.Assert(pending, Equals, true)
 
+	// Exactly at the retry tick: expired, so the retry is NOT skipped. Before the
+	// off-by-one fix this returned true and the first retry silently no-opped,
+	// doubling the effective retry interval.
 	pending, err = validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+retryBlocks), AsgardKeygen)
 	c.Assert(err, IsNil)
-	c.Assert(pending, Equals, true)
+	c.Assert(pending, Equals, false)
 
+	// And after the tick.
 	pending, err = validatorMgr.hasPendingKeygen(ctx.WithBlockHeight(keygenHeight+retryBlocks+1), AsgardKeygen)
 	c.Assert(err, IsNil)
 	c.Assert(pending, Equals, false)

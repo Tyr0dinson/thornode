@@ -24,10 +24,19 @@ func keygenRetryValidityBlocks(churnRetryInterval int64, block ttypes.KeygenBloc
 	for _, keygen := range block.Keygens {
 		if keygen.Type == ttypes.KeygenType_XMRMonovaultKeygen {
 			minimum := int64((6*time.Minute + constants.ThorchainBlockTime - 1) / constants.ThorchainBlockTime)
-			return max(churnRetryInterval, minimum)
+			churnRetryInterval = max(churnRetryInterval, minimum)
+			break
 		}
 	}
-	return churnRetryInterval
+	// The window ends one block before the retry tick — mirror of THORNode's
+	// keygenResultValidityBlocks. A keygen scheduled at H is valid for ages
+	// 0..N-1 and expires at age N, the same block its churn retry fires, so a
+	// stale result is rejected on the block the retry proceeds and cannot
+	// double-trigger a live keygen. Returning the full interval kept the keygen
+	// valid AT the first tick, so the retry was suppressed and the effective
+	// interval doubled (the off-by-one). Subtracting one here keeps Bifrost's
+	// acceptance window identical to THORNode's.
+	return churnRetryInterval - 1
 }
 
 func (s *Signer) keygenValidityBlocks(block ttypes.KeygenBlock) (int64, error) {
