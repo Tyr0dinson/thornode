@@ -201,6 +201,7 @@ def main():
             )
         fcntl.flock(lock, fcntl.LOCK_UN)
     summary["elapsed_seconds"] = round(time.monotonic() - started, 2)
+    args.summary.parent.mkdir(parents=True, exist_ok=True)
     args.summary.write_text(json.dumps(summary, indent=2) + "\n")
     print(
         json.dumps(
