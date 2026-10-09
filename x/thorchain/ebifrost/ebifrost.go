@@ -57,7 +57,10 @@ func copyQuorum[T proto.Message](item T) (T, error) {
 	if err != nil {
 		return zero, err
 	}
-	copy := reflect.New(reflect.TypeOf(item).Elem()).Interface().(T)
+	copy, ok := reflect.New(reflect.TypeOf(item).Elem()).Interface().(T)
+	if !ok {
+		return zero, fmt.Errorf("quorum copy has unexpected type %T", item)
+	}
 	if err := proto.Unmarshal(bz, copy); err != nil {
 		return zero, err
 	}

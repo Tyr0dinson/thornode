@@ -74,81 +74,91 @@ func quorumOwnershipCases(att *common.Attestation) []quorumOwnershipCase {
 		{
 			name: "tx", event: EventQuorumTxCommitted, newServer: server,
 			message: func() proto.Message {
-				return createTestQuorumTx(common.BTCChain, "ownership-tx", true, []*common.Attestation{proto.Clone(att).(*common.Attestation)})
+				return createTestQuorumTx(common.BTCChain, "ownership-tx", true, []*common.Attestation{mustOwnershipType[*common.Attestation](proto.Clone(att))})
 			},
 			send: func(b *EnshrinedBifrost, m proto.Message) error {
-				_, err := b.SendQuorumTx(context.Background(), m.(*common.QuorumTx))
+				_, err := b.SendQuorumTx(context.Background(), mustOwnershipType[*common.QuorumTx](m))
 				return err
 			},
 			cached: func(b *EnshrinedBifrost) []proto.Message { return asMessages(b.quorumTxCache.Get()) },
 			confirm: func(b *EnshrinedBifrost, m proto.Message) {
-				b.MarkQuorumTxAttestationsConfirmed(ctx, m.(*common.QuorumTx))
+				b.MarkQuorumTxAttestationsConfirmed(ctx, mustOwnershipType[*common.QuorumTx](m))
 			},
-			mutate: func(m proto.Message) { m.(*common.QuorumTx).Attestations[0].Signature[0] = 'x' },
+			mutate: func(m proto.Message) { mustOwnershipType[*common.QuorumTx](m).Attestations[0].Signature[0] = 'x' },
 		},
 		{
 			name: "network-fee", event: EventQuorumNetworkFeeCommitted, newServer: server,
 			message: func() proto.Message {
-				return createTestNetworkFee(common.BTCChain, 100, []*common.Attestation{proto.Clone(att).(*common.Attestation)})
+				return createTestNetworkFee(common.BTCChain, 100, []*common.Attestation{mustOwnershipType[*common.Attestation](proto.Clone(att))})
 			},
 			send: func(b *EnshrinedBifrost, m proto.Message) error {
-				_, err := b.SendQuorumNetworkFee(context.Background(), m.(*common.QuorumNetworkFee))
+				_, err := b.SendQuorumNetworkFee(context.Background(), mustOwnershipType[*common.QuorumNetworkFee](m))
 				return err
 			},
 			cached: func(b *EnshrinedBifrost) []proto.Message { return asMessages(b.networkFeeCache.Get()) },
 			confirm: func(b *EnshrinedBifrost, m proto.Message) {
-				b.MarkQuorumNetworkFeeAttestationsConfirmed(ctx, m.(*common.QuorumNetworkFee))
+				b.MarkQuorumNetworkFeeAttestationsConfirmed(ctx, mustOwnershipType[*common.QuorumNetworkFee](m))
 			},
-			mutate: func(m proto.Message) { m.(*common.QuorumNetworkFee).Attestations[0].Signature[0] = 'x' },
+			mutate: func(m proto.Message) {
+				mustOwnershipType[*common.QuorumNetworkFee](m).Attestations[0].Signature[0] = 'x'
+			},
 		},
 		{
 			name: "solvency", event: EventQuorumSolvencyCommitted, newServer: server,
 			message: func() proto.Message {
-				return createTestSolvency(common.BTCChain, 100, []*common.Attestation{proto.Clone(att).(*common.Attestation)})
+				return createTestSolvency(common.BTCChain, 100, []*common.Attestation{mustOwnershipType[*common.Attestation](proto.Clone(att))})
 			},
 			send: func(b *EnshrinedBifrost, m proto.Message) error {
-				_, err := b.SendQuorumSolvency(context.Background(), m.(*common.QuorumSolvency))
+				_, err := b.SendQuorumSolvency(context.Background(), mustOwnershipType[*common.QuorumSolvency](m))
 				return err
 			},
 			cached: func(b *EnshrinedBifrost) []proto.Message { return asMessages(b.solvencyCache.Get()) },
 			confirm: func(b *EnshrinedBifrost, m proto.Message) {
-				b.MarkQuorumSolvencyAttestationsConfirmed(ctx, m.(*common.QuorumSolvency))
+				b.MarkQuorumSolvencyAttestationsConfirmed(ctx, mustOwnershipType[*common.QuorumSolvency](m))
 			},
-			mutate: func(m proto.Message) { m.(*common.QuorumSolvency).Attestations[0].Signature[0] = 'x' },
+			mutate: func(m proto.Message) { mustOwnershipType[*common.QuorumSolvency](m).Attestations[0].Signature[0] = 'x' },
 		},
 		{
 			name: "errata", event: EventQuorumErrataTxCommitted, newServer: server,
 			message: func() proto.Message {
-				return createTestErrataTx(common.BTCChain, "ownership-errata", []*common.Attestation{proto.Clone(att).(*common.Attestation)})
+				return createTestErrataTx(common.BTCChain, "ownership-errata", []*common.Attestation{mustOwnershipType[*common.Attestation](proto.Clone(att))})
 			},
 			send: func(b *EnshrinedBifrost, m proto.Message) error {
-				_, err := b.SendQuorumErrataTx(context.Background(), m.(*common.QuorumErrataTx))
+				_, err := b.SendQuorumErrataTx(context.Background(), mustOwnershipType[*common.QuorumErrataTx](m))
 				return err
 			},
 			cached: func(b *EnshrinedBifrost) []proto.Message { return asMessages(b.errataCache.Get()) },
 			confirm: func(b *EnshrinedBifrost, m proto.Message) {
-				b.MarkQuorumErrataTxAttestationsConfirmed(ctx, m.(*common.QuorumErrataTx))
+				b.MarkQuorumErrataTxAttestationsConfirmed(ctx, mustOwnershipType[*common.QuorumErrataTx](m))
 			},
-			mutate: func(m proto.Message) { m.(*common.QuorumErrataTx).Attestations[0].Signature[0] = 'x' },
+			mutate: func(m proto.Message) { mustOwnershipType[*common.QuorumErrataTx](m).Attestations[0].Signature[0] = 'x' },
 		},
 		{
 			name: "price-feed", event: EventQuorumPriceFeedBatchCommitted, newServer: server,
 			message: func() proto.Message {
-				return createTestPriceFeedBatch([]*common.QuorumPriceFeed{{Attestations: []*common.Attestation{proto.Clone(att).(*common.Attestation)}}})
+				return createTestPriceFeedBatch([]*common.QuorumPriceFeed{{Attestations: []*common.Attestation{mustOwnershipType[*common.Attestation](proto.Clone(att))}}})
 			},
 			send: func(b *EnshrinedBifrost, m proto.Message) error {
-				_, err := b.SendQuorumPriceFeedBatch(context.Background(), m.(*common.QuorumPriceFeedBatch))
+				_, err := b.SendQuorumPriceFeedBatch(context.Background(), mustOwnershipType[*common.QuorumPriceFeedBatch](m))
 				return err
 			},
 			cached: func(b *EnshrinedBifrost) []proto.Message { return asMessages(b.priceFeedCache.Get()) },
 			confirm: func(b *EnshrinedBifrost, m proto.Message) {
-				b.MarkQuorumPriceFeedBatchAttestationsConfirmed(ctx, m.(*common.QuorumPriceFeedBatch))
+				b.MarkQuorumPriceFeedBatchAttestationsConfirmed(ctx, mustOwnershipType[*common.QuorumPriceFeedBatch](m))
 			},
 			mutate: func(m proto.Message) {
-				m.(*common.QuorumPriceFeedBatch).QuorumPriceFeeds[0].Attestations[0].Signature[0] = 'x'
+				mustOwnershipType[*common.QuorumPriceFeedBatch](m).QuorumPriceFeeds[0].Attestations[0].Signature[0] = 'x'
 			},
 		},
 	}
+}
+
+func mustOwnershipType[T proto.Message](message proto.Message) T {
+	typed, ok := message.(T)
+	if !ok {
+		panic("unexpected quorum fixture type")
+	}
+	return typed
 }
 
 func asMessages[T proto.Message](items []T) []proto.Message {
@@ -233,7 +243,10 @@ func mustCopyQuorum[T proto.Message](item T) T {
 	if err != nil {
 		panic(err)
 	}
-	copy := reflect.New(reflect.TypeOf(item).Elem()).Interface().(T)
+	copy, ok := reflect.New(reflect.TypeOf(item).Elem()).Interface().(T)
+	if !ok {
+		panic("unexpected quorum copy type")
+	}
 	if err := proto.Unmarshal(bz, copy); err != nil {
 		panic(err)
 	}

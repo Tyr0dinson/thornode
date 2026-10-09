@@ -2,11 +2,11 @@
 """Report coverage of changed Go lines and compare profiles when a base is available."""
 
 import argparse
-from collections import defaultdict
 import json
-from pathlib import Path
 import re
 import subprocess
+from collections import defaultdict
+from pathlib import Path
 
 
 def profile(path):
@@ -20,8 +20,12 @@ def profile(path):
 
 
 def changed_lines(base):
-    result = subprocess.run(["git", "diff", "--unified=0", "--no-ext-diff", base, "HEAD", "--", "*.go"],
-                            text=True, capture_output=True, check=True)
+    result = subprocess.run(
+        ["git", "diff", "--unified=0", "--no-ext-diff", base, "HEAD", "--", "*.go"],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
     changed = defaultdict(set)
     filename = None
     for line in result.stdout.splitlines():
@@ -74,15 +78,28 @@ def main():
     current = summarize(current_profile, changed)
     changed_packages = {str(Path(name).parent) for name in changed}
     current_packages = package_summary(current_profile, changed_packages)
-    baseline = package_summary(profile(args.baseline_profile), changed_packages) if args.baseline_profile else None
-    report = {"base_ref": args.base_ref, "changed_go_files": sorted(changed),
-              "changed_lines_by_package": current, "changed_package_coverage": current_packages,
-              "baseline_available": baseline is not None}
+    baseline = (
+        package_summary(profile(args.baseline_profile), changed_packages)
+        if args.baseline_profile
+        else None
+    )
+    report = {
+        "base_ref": args.base_ref,
+        "changed_go_files": sorted(changed),
+        "changed_lines_by_package": current,
+        "changed_package_coverage": current_packages,
+        "baseline_available": baseline is not None,
+    }
     if baseline is not None:
         report["baseline_package_coverage"] = baseline
-        report["regressions"] = {name: {"base": prior, "current": current_packages[name]}
-            for name, prior in baseline.items() if prior[0] and current_packages.get(name, [0, 0])[0]
-            and current_packages[name][1] * prior[0] < prior[1] * current_packages[name][0]}
+        report["regressions"] = {
+            name: {"base": prior, "current": current_packages[name]}
+            for name, prior in baseline.items()
+            if prior[0]
+            and current_packages.get(name, [0, 0])[0]
+            and current_packages[name][1] * prior[0]
+            < prior[1] * current_packages[name][0]
+        }
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     Path(args.output).write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))

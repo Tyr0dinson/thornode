@@ -17,13 +17,13 @@ func TestSecurityMutationAttestationAuthenticityAndReplay(t *testing.T) {
 	}
 	state := []attestationSentState{}
 	valid := mutationMessage{payload: payload, attestation: &common.Attestation{PubKey: key.PubKey().Bytes(), Signature: sig}}
-	if err := ProcessAttestation(&state, valid); err != nil {
+	if err = ProcessAttestation(&state, valid); err != nil {
 		t.Fatal(err)
 	}
 	if len(state) != 1 {
 		t.Fatalf("valid count = %d", len(state))
 	}
-	if err := ProcessAttestation(&state, valid); err != nil || len(state) != 1 {
+	if err = ProcessAttestation(&state, valid); err != nil || len(state) != 1 {
 		t.Fatalf("duplicate changed count to %d: %v", len(state), err)
 	}
 	otherSig, err := other.Sign([]byte("transaction-C"))

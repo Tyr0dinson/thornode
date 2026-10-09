@@ -11,4 +11,4 @@ export GOCACHE=/tmp/thornode-test-quality-determinism-go-cache
 
 flock -w 600 /tmp/thornode-test-quality-build.lock \
   timeout 15m go test -p 2 ./app \
-    -run '^TestConsensusDeterminism' -count=1 -v
+  -run '^TestConsensusDeterminism' -count=1 -v

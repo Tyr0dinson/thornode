@@ -116,6 +116,7 @@ func (AccountingPropertySuite) TestSwapFlowConservation(c *C) {
 }
 
 func accountingSwapFlow(c *C, seed int64) {
+	//nolint:gosec // This seeded generator produces reproducible test cases, not cryptographic values.
 	rng := rand.New(rand.NewSource(seed))
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
@@ -130,7 +131,7 @@ func accountingSwapFlow(c *C, seed int64) {
 	pool.LPUnits = cosmos.NewUint(1000 * common.One)
 	c.Assert(k.SetPool(ctx, pool), IsNil)
 	reserveStart := k.GetBalanceOfModule(ctx, ReserveName, common.RuneAsset().Native()).Uint64()
-	var inRune, inAsset = pool.BalanceRune.Uint64(), pool.BalanceAsset.Uint64()
+	inRune, inAsset := pool.BalanceRune.Uint64(), pool.BalanceAsset.Uint64()
 	var outRune, outAsset uint64
 	trace := []string{fmt.Sprintf("seed=%d", seed)}
 	fail := func(format string, args ...any) {
@@ -234,6 +235,7 @@ func accountingSwapFlow(c *C, seed int64) {
 // units. Repeating the withdrawal must not pay it twice.
 func (AccountingPropertySuite) TestPendingLiquidityRefundConservation(c *C) {
 	for _, seed := range accountingPropertySeeds() {
+		//nolint:gosec // This seeded generator produces reproducible test cases, not cryptographic values.
 		rng := rand.New(rand.NewSource(seed))
 		ctx, mgr := setupManagerForTest(c)
 		k := mgr.Keeper()
@@ -305,6 +307,7 @@ func (AccountingPropertySuite) TestSeed15RoundedWithdrawRegression(c *C) {
 
 func (AccountingPropertySuite) TestNativeDepositPendingConservation(c *C) {
 	for _, seed := range accountingPropertySeeds() {
+		//nolint:gosec // This seeded generator produces reproducible test cases, not cryptographic values.
 		rng := rand.New(rand.NewSource(seed))
 		ctx, mgr := setupManagerForTest(c)
 		ctx = ctx.WithTxBytes([]byte(fmt.Sprintf("accounting-deposit-%d", seed)))
@@ -366,6 +369,7 @@ func (AccountingPropertySuite) TestNativeDepositPendingConservation(c *C) {
 // vault records even when one side contains dust.
 func (AccountingPropertySuite) TestVaultChurnBalanceConservation(c *C) {
 	for _, seed := range accountingPropertySeeds() {
+		//nolint:gosec // This seeded generator produces reproducible test cases, not cryptographic values.
 		rng := rand.New(rand.NewSource(seed))
 		ctx, mgr := setupManagerForTest(c)
 		k := mgr.Keeper()
@@ -405,6 +409,7 @@ func (AccountingPropertySuite) TestVaultChurnBalanceConservation(c *C) {
 }
 
 func accountingPoolFlow(c *C, seed int64) {
+	//nolint:gosec // This seeded generator produces reproducible test cases, not cryptographic values.
 	rng := rand.New(rand.NewSource(seed))
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
@@ -484,10 +489,10 @@ func accountingPoolFlow(c *C, seed int64) {
 			trace = append(trace, fmt.Sprintf("withdraw %d bps", bps))
 			msg := NewMsgWithdrawLiquidity(common.Tx{ID: nextTxID()}, runeAddr, cosmos.NewUint(bps), asset, common.EmptyAsset, accountingSigner(seed, "liquidity-signer"))
 			beforeEvents := len(ctx.EventManager().Events())
-			r, a, _, _, err := withdraw(ctx, *msg, mgr)
-			if err != nil {
-				if !strings.Contains(err.Error(), "LP units cannot increase") {
-					fail("withdraw: %v", err)
+			r, a, _, _, withdrawErr := withdraw(ctx, *msg, mgr)
+			if withdrawErr != nil {
+				if !strings.Contains(withdrawErr.Error(), "LP units cannot increase") {
+					fail("withdraw: %v", withdrawErr)
 				}
 				after, _ := k.GetPool(ctx, asset)
 				afterLP, _ := k.GetLiquidityProvider(ctx, asset, runeAddr)

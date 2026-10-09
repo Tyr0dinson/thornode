@@ -5,8 +5,14 @@ import argparse
 import json
 from pathlib import Path
 
-
-EXCLUDED = {".git", ".cache", "vendor", "node_modules", "test-quality-reports", "target"}
+EXCLUDED = {
+    ".git",
+    ".cache",
+    "vendor",
+    "node_modules",
+    "test-quality-reports",
+    "target",
+}
 
 
 def inventory(root):
@@ -29,8 +35,11 @@ def inventory(root):
         if path.name.endswith("_test.go"):
             package = str(path.parent.relative_to(root))
             test_files[package] = test_files.get(package, 0) + 1
-    return {"modules": sorted(modules), "build_constraints": dict(sorted(constraints.items())),
-            "test_file_counts_by_directory": dict(sorted(test_files.items()))}
+    return {
+        "modules": sorted(modules),
+        "build_constraints": dict(sorted(constraints.items())),
+        "test_file_counts_by_directory": dict(sorted(test_files.items())),
+    }
 
 
 if __name__ == "__main__":
@@ -41,5 +50,7 @@ if __name__ == "__main__":
     destination = Path(args.output)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(result, indent=2) + "\n")
-    print(f"Inventory: {len(result['modules'])} modules, {len(result['build_constraints'])} tagged files, "
-          f"{len(result['test_file_counts_by_directory'])} test directories")
+    print(
+        f"Inventory: {len(result['modules'])} modules, {len(result['build_constraints'])} tagged files, "
+        f"{len(result['test_file_counts_by_directory'])} test directories"
+    )

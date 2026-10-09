@@ -152,9 +152,7 @@
           "status": "killed",
           "exit_code": 1,
           "seconds": 2.98,
-          "failures": [
-            "TestSecurityMutationQuorumBoundary"
-          ],
+          "failures": ["TestSecurityMutationQuorumBoundary"],
           "command": [
             "go",
             "test",
@@ -174,9 +172,7 @@
           "status": "killed",
           "exit_code": 1,
           "seconds": 1.95,
-          "failures": [
-            "TestSecurityMutationSigningHaltBoundary"
-          ],
+          "failures": ["TestSecurityMutationSigningHaltBoundary"],
           "command": [
             "go",
             "test",
@@ -196,9 +192,7 @@
           "status": "killed",
           "exit_code": 1,
           "seconds": 7.85,
-          "failures": [
-            "TestSecurityMutationAttestationAuthenticityAndReplay"
-          ],
+          "failures": ["TestSecurityMutationAttestationAuthenticityAndReplay"],
           "command": [
             "go",
             "test",
@@ -218,9 +212,7 @@
           "status": "killed",
           "exit_code": 1,
           "seconds": 7.95,
-          "failures": [
-            "TestSecurityMutationAttestationAuthenticityAndReplay"
-          ],
+          "failures": ["TestSecurityMutationAttestationAuthenticityAndReplay"],
           "command": [
             "go",
             "test",
@@ -240,9 +232,7 @@
           "status": "killed",
           "exit_code": 1,
           "seconds": 2.99,
-          "failures": [
-            "TestSecurityMutationSafeSubConservation"
-          ],
+          "failures": ["TestSecurityMutationSafeSubConservation"],
           "command": [
             "go",
             "test",
@@ -416,9 +406,7 @@
           "status": "killed",
           "exit_code": 1,
           "seconds": 2.98,
-          "failures": [
-            "TestSecurityMutationQuorumBoundary"
-          ],
+          "failures": ["TestSecurityMutationQuorumBoundary"],
           "command": [
             "go",
             "test",
@@ -438,9 +426,7 @@
           "status": "killed",
           "exit_code": 1,
           "seconds": 1.82,
-          "failures": [
-            "TestSecurityMutationSigningHaltBoundary"
-          ],
+          "failures": ["TestSecurityMutationSigningHaltBoundary"],
           "command": [
             "go",
             "test",
@@ -460,9 +446,7 @@
           "status": "killed",
           "exit_code": 1,
           "seconds": 6.15,
-          "failures": [
-            "TestSecurityMutationAttestationAuthenticityAndReplay"
-          ],
+          "failures": ["TestSecurityMutationAttestationAuthenticityAndReplay"],
           "command": [
             "go",
             "test",
@@ -482,9 +466,7 @@
           "status": "killed",
           "exit_code": 1,
           "seconds": 5.95,
-          "failures": [
-            "TestSecurityMutationAttestationAuthenticityAndReplay"
-          ],
+          "failures": ["TestSecurityMutationAttestationAuthenticityAndReplay"],
           "command": [
             "go",
             "test",
@@ -504,9 +486,7 @@
           "status": "killed",
           "exit_code": 1,
           "seconds": 2.17,
-          "failures": [
-            "TestSecurityMutationSafeSubConservation"
-          ],
+          "failures": ["TestSecurityMutationSafeSubConservation"],
           "command": [
             "go",
             "test",
@@ -526,9 +506,7 @@
           "status": "killed",
           "exit_code": 1,
           "seconds": 2.03,
-          "failures": [
-            "TestSecurityMutationSigningHaltBoundary"
-          ],
+          "failures": ["TestSecurityMutationSigningHaltBoundary"],
           "command": [
             "go",
             "test",
@@ -548,9 +526,7 @@
           "status": "killed",
           "exit_code": 1,
           "seconds": 10.15,
-          "failures": [
-            "TestSecurityMutationQuorumBoundary"
-          ],
+          "failures": ["TestSecurityMutationQuorumBoundary"],
           "command": [
             "go",
             "test",

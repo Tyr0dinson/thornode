@@ -2,9 +2,12 @@
 set -euo pipefail
 
 case "${1:-fast}" in
-  fast) seeds=4 ;;
-  campaign) seeds=32 ;;
-  *) echo "usage: $0 [fast|campaign]" >&2; exit 2 ;;
+fast) seeds=4 ;;
+campaign) seeds=32 ;;
+*)
+  echo "usage: $0 [fast|campaign]" >&2
+  exit 2
+  ;;
 esac
 
 cd "$(dirname "$0")/.."

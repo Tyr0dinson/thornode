@@ -44,10 +44,10 @@ func (AccountingPropertySuite) TestRefundOutboundObligationConservation(c *C) {
 		observed := NewObservedTx(tx, 1024, vault.PubKey, 1024)
 		outbounds := func() []TxOutItem {
 			for height := w.ctx.BlockHeight(); height <= w.ctx.BlockHeight()+10; height++ {
-				items, err := w.mgr.TxOutStore().GetOutboundItems(w.ctx.WithBlockHeight(height))
-				c.Assert(err, IsNil, Commentf(trace))
-				if len(items) != 0 {
-					return items
+				outboundItems, getErr := w.mgr.TxOutStore().GetOutboundItems(w.ctx.WithBlockHeight(height))
+				c.Assert(getErr, IsNil, Commentf(trace))
+				if len(outboundItems) != 0 {
+					return outboundItems
 				}
 			}
 			return nil

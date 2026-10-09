@@ -11,7 +11,7 @@ set +e
 flock -w 1200 /tmp/thornode-test-quality-build.lock \
   env -u DOGE_SIM_INTEGRATION_RPC_URL -u ZEC_SIM_INTEGRATION_RPC_URL \
   GOMAXPROCS=4 GOTOOLCHAIN=go1.26.9 \
-  go test -p 2 -tags mocknet -count=1 -json ./... > "$report"
+  go test -p 2 -tags mocknet -count=1 -json ./... >"$report"
 test_status=$?
 set -e
 

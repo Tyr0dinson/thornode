@@ -19,22 +19,25 @@ targets=(
 selected=0
 for spec in "${targets[@]}"; do
   name=${spec%%|*}
-  if [[ "$target_filter" == all || "$target_filter" == "$name" ]]; then
+  if [[ $target_filter == all || $target_filter == "$name" ]]; then
     selected=$((selected + 1))
   fi
 done
-if (( selected == 0 )); then
+if ((selected == 0)); then
   printf 'No fuzz targets selected for %q\n' "$target_filter" >&2
   exit 2
 fi
 
 exec 9>/tmp/thornode-test-quality-build.lock
-flock -w 1200 9 || { echo 'Timed out waiting for shared Go build lock' >&2; exit 1; }
+flock -w 1200 9 || {
+  echo 'Timed out waiting for shared Go build lock' >&2
+  exit 1
+}
 printf 'Fuzzing %d target(s), each for %s; corpus cache: %s\n' "$selected" "$budget" "$corpus_dir"
 for spec in "${targets[@]}"; do
   name=${spec%%|*}
   package=${spec#*|}
-  if [[ "$target_filter" != all && "$target_filter" != "$name" ]]; then
+  if [[ $target_filter != all && $target_filter != "$name" ]]; then
     continue
   fi
   printf '\nRunning %s in %s\n' "$name" "$package"
@@ -43,7 +46,7 @@ done
 echo 'Completed targets:'
 for spec in "${targets[@]}"; do
   name=${spec%%|*}
-  if [[ "$target_filter" == all || "$target_filter" == "$name" ]]; then
+  if [[ $target_filter == all || $target_filter == "$name" ]]; then
     printf '  %s\n' "$name"
   fi
 done
