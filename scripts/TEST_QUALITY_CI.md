@@ -24,6 +24,9 @@ also fails if no top-level tests execute. Each run saves selected packages,
 JSON events, a JUnit report, skipped test counts, and coverage under
 `test-quality-reports/<module>-<configuration>/`. Generated protobuf files are
 excluded from the filtered profile, matching the root coverage target.
+The simulation module job fails on any skip outside its two named daemon
+integration exclusions and requires the core, Solana, and types gocheck suites
+to report their expected minimum case counts.
 The root unit job also saves a source inventory of modules, build constraints,
 and test-file directories. Its stagenet, chainnet, mainnet, mainnet migration,
 and mocknet subruns each publish their own JUnit and coverage artifacts.

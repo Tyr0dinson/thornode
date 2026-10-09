@@ -15,6 +15,16 @@ spec.loader.exec_module(runner)
 
 
 class QualityRunnerTest(unittest.TestCase):
+    def test_gocheck_case_counts_are_scoped_to_package(self):
+        lines = [json.dumps(event) for event in (
+            {"Action": "output", "Package": "example.com/actors/core", "Output": "OK: 1 passed\n"},
+            {"Action": "output", "Package": "example.com/pkg/types", "Output": "OK: 7 passed\n"},
+            {"Action": "output", "Package": "example.com/pkg/types", "Output": "ordinary output\n"},
+        )]
+        self.assertEqual(runner.gocheck_counts(lines), {
+            "example.com/actors/core": 1, "example.com/pkg/types": 7,
+        })
+
     def test_skipped_required_test_is_failure_even_with_other_passes(self):
         lines = [json.dumps(event) for event in (
             {"Action": "skip", "Package": "p", "Test": "SecurityGate"},

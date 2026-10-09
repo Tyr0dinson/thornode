@@ -312,7 +312,12 @@ test-race-bifrost:
 # separate directory so a skipped security test cannot pass unnoticed.
 .PHONY: test-quality-simulation test-quality-mainnet
 test-quality-simulation:
-	@python3 scripts/test-quality-run.py --module test/simulation --tags mocknet --fresh --report-dir test-quality-reports/simulation-mocknet ./...
+	@python3 scripts/test-quality-run.py --module test/simulation --tags mocknet --fresh \
+		--allow-skip-test TestDogeStalledBroadcastIsNotDuplicated \
+		--allow-skip-test TestZecIsolatedFunding \
+		--require-gocheck /actors/core:1 --require-gocheck /pkg/solana:1 \
+		--require-gocheck /pkg/types:7 \
+		--report-dir test-quality-reports/simulation-mocknet ./...
 
 test-quality-mainnet:
 	@python3 scripts/test-quality-run.py --tags mainnet --fresh --run '^TestNewClientRejectsNonMainnetDaemonOnMainnet$$' --require-test TestNewClientRejectsNonMainnetDaemonOnMainnet --report-dir test-quality-reports/root-mainnet-monero ./bifrost/pkg/chainclients/monero

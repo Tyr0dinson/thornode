@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
@@ -35,6 +36,22 @@ def events_to_report(lines, required):
     skipped = sum(v == "skip" for (_, n), v in tests.items() if "/" not in n)
     missing = [name for name in required if not any(n == name and v == "pass" for (_, n), v in tests.items())]
     return tests, packages, output, executed, skipped, missing
+
+
+def gocheck_counts(lines):
+    counts = {}
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("Action") != "output" or not event.get("Package"):
+            continue
+        match = re.search(r"OK: (\d+) passed", event.get("Output", ""))
+        if match:
+            package = event["Package"]
+            counts[package] = max(counts.get(package, 0), int(match.group(1)))
+    return counts
 
 
 def write_junit(path, tests, output, command_failed, selection_errors=()):
@@ -68,6 +85,10 @@ def main():
     parser.add_argument("--parallel", type=int, default=1)
     parser.add_argument("--min-tests", type=int, default=1)
     parser.add_argument("--max-skips", type=int)
+    parser.add_argument("--allow-skip-test", action="append", default=[],
+                        help="allow this named top-level skip; any other skip fails when set")
+    parser.add_argument("--require-gocheck", action="append", default=[],
+                        help="package import suffix and minimum gocheck cases, as suffix:count")
     parser.add_argument("--require-test", action="append", default=[])
     parser.add_argument("--require-package-tests", action="append", default=[],
                         help="package import path suffix that must execute a top-level test")
@@ -115,6 +136,7 @@ def main():
         _, stderr = proc.communicate()
     lines = (report / "events.jsonl").read_text().splitlines()
     tests, observed, output, executed, skipped, missing = events_to_report(lines, args.require_test)
+    checks = gocheck_counts(lines)
     missing_packages = [suffix for suffix in args.require_package_tests if not any(
         package.endswith(suffix) and "/" not in name and state in ("pass", "fail")
         for (package, name), state in tests.items())]
@@ -124,6 +146,20 @@ def main():
     selection_errors = [f"required test did not pass: {name}" for name in missing]
     selection_errors += [f"package executed no tests: {name}" for name in missing_packages]
     selection_errors += [f"unexpected skipped test: {name}" for name in forbidden_skips]
+    if args.allow_skip_test:
+        selection_errors += [f"unexpected skipped test: {package}:{name}"
+            for (package, name), state in tests.items()
+            if state == "skip" and "/" not in name and name not in args.allow_skip_test]
+    for requirement in args.require_gocheck:
+        try:
+            suffix, minimum = requirement.rsplit(":", 1)
+            minimum = int(minimum)
+        except ValueError:
+            parser.error(f"invalid --require-gocheck value: {requirement}")
+        actual = max((count for package, count in checks.items()
+                      if package.endswith(suffix)), default=0)
+        if actual < minimum:
+            selection_errors.append(f"gocheck cases for {suffix}: {actual}, minimum {minimum}")
     if executed < args.min_tests:
         selection_errors.append(f"executed {executed} tests, minimum {args.min_tests}")
     if args.max_skips is not None and skipped > args.max_skips:
@@ -137,6 +173,7 @@ def main():
                "executed_top_level": executed, "skipped_top_level": skipped, "required_tests_not_passed": missing,
                "required_packages_without_executed_tests": missing_packages,
                "unexpected_skips": forbidden_skips,
+               "gocheck_passes": checks,
                "go_test_exit": proc.returncode}
     (report / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(json.dumps(summary, indent=2))
