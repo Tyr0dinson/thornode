@@ -50,11 +50,15 @@ starting. Both integration jobs retry only runner or infrastructure failures;
 an assertion failure is a failed job. The full simulation's container and
 mocknet setup must be isolated from other concurrent test work.
 
-The determinism, fuzz, and mutation workspaces own their standalone runners.
-Wire a runner into a scheduled job only after it is committed and its command,
-budget, corpus or seed persistence, and failure semantics have been verified.
-The current schedule admits existing required jobs; it does not imply those
-future runner jobs have executed.
+The curated mutation runner is committed with this branch. Its fast mode runs
+for relevant MRs with a 30 minute runner budget; its deep mode runs on
+scheduled pipelines with a 55 minute budget. Both preserve JSON summaries and
+fail for unexpected surviving mutations. Run them locally with
+`python3 scripts/test-security-mutations.py --mode fast --summary /tmp/mutations-fast.json`
+or `python3 scripts/test-security-mutations.py --mode deep --budget-seconds 3300 --summary /tmp/mutations-deep.json`; the runner owns the build
+lock. The determinism and fuzz workspaces still own their standalone runners.
+Wire those jobs only after their runner, corpus or seed persistence, and failure
+semantics are committed and verified.
 
 Merge the `test-quality-sim-unit` fixture changes before enabling this CI
 configuration on the default branch. On the current base, live-service tests

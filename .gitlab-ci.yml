@@ -955,6 +955,63 @@ unit-tests-race-bifrost:
     paths:
       - test-quality-reports/root-mocknet-race-bifrost/
 
+# Curated mutations fail when an assertion survives, an anchor changes, or a
+# baseline cannot run. The runner owns the shared build lock and time budget.
+security-mutations-fast:
+  tags: !reference [.small-runner, tags]
+  rules:
+    - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
+      when: never
+    - if: '$CI_MERGE_REQUEST_IID && $CI_PIPELINE_SOURCE != "schedule"'
+      changes:
+        paths:
+          - bifrost/observer/**/*
+          - bifrost/pkg/chainclients/shared/signing/**/*
+          - common/**/*
+          - x/thorchain/types/**/*
+          - scripts/test-security-mutations*
+          - go.mod
+          - go.sum
+  stage: long-test
+  needs:
+    - job: unit-tests
+      optional: true
+      artifacts: false
+  timeout: 40m
+  variables:
+    PKGS: python3
+  before_script:
+    - !reference [.pkg-install, before_script]
+    - !reference [.go-private-auth, before_script]
+  script:
+    - python3 scripts/test-security-mutations.py --mode fast --budget-seconds 1800 --summary test-quality-reports/mutations-fast.json
+  artifacts:
+    when: always
+    paths:
+      - test-quality-reports/mutations-fast.json
+
+security-mutations-deep:
+  tags: !reference [.small-runner, tags]
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+  stage: long-test
+  needs:
+    - job: unit-tests
+      optional: true
+      artifacts: false
+  timeout: 1h
+  variables:
+    PKGS: python3
+  before_script:
+    - !reference [.pkg-install, before_script]
+    - !reference [.go-private-auth, before_script]
+  script:
+    - python3 scripts/test-security-mutations.py --mode deep --budget-seconds 3300 --summary test-quality-reports/mutations-deep.json
+  artifacts:
+    when: always
+    paths:
+      - test-quality-reports/mutations-deep.json
+
 test-regression:
   tags: !reference [.small-runner, tags]
   rules:
