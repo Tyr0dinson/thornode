@@ -343,24 +343,35 @@ func main() {
 	root := NewActor("Root", rng)
 	appendSimulationStages(root, enabledStages, rng)
 
-	// start watchers
-	enabledWatchers := []*Watcher{
-		watchers.NewInvariants(),
-		watchers.NewSolvencyHalt(),
-		watchers.NewSecurityEvents(),
+	// Check before actors start and again after they finish. Periodic checks
+	// alone can be skipped entirely by a short simulation.
+	invariants := watchers.NewInvariants()
+	if err := runWithInvariantChecks(cfg, invariants, func() {
+		for _, w := range []*Watcher{invariants, watchers.NewSolvencyHalt(), watchers.NewSecurityEvents()} {
+			log.Info().Str("watcher", w.Name).Msg("starting watcher")
+			go func(w *Watcher) {
+				if err := w.Execute(cfg, log.Output(os.Stderr)); err != nil {
+					log.Fatal().Err(err).Str("watcher", w.Name).Msg("watcher failed")
+				}
+			}(w)
+		}
+		dag.Execute(cfg, root, parallelismInt, rng)
+	}); err != nil {
+		log.Fatal().Err(err).Msg("invariant verification failed")
 	}
-	for _, w := range enabledWatchers {
-		log.Info().Str("watcher", w.Name).Msg("starting watcher")
-		go func(w *Watcher) {
-			err = w.Execute(cfg, log.Output(os.Stderr))
-			if err != nil {
-				log.Fatal().Err(err).Msg("watcher failed")
-			}
-		}(w)
-	}
+}
 
-	// run the simulation
-	dag.Execute(cfg, root, parallelismInt, rng)
+// runWithInvariantChecks makes both boundary checks mandatory even if the
+// simulation finishes before the first watcher interval.
+func runWithInvariantChecks(cfg *OpConfig, invariant *Watcher, run func()) error {
+	if err := invariant.Fn(cfg); err != nil {
+		return fmt.Errorf("initial invariant verification: %w", err)
+	}
+	run()
+	if err := invariant.Fn(cfg); err != nil {
+		return fmt.Errorf("final invariant verification: %w", err)
+	}
+	return nil
 }
 
 func waitForBifrostReadiness() {

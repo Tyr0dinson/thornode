@@ -51,6 +51,11 @@ func setupInvariantWatcherTestServer(t *testing.T, responder func(invariant stri
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		invariant := strings.TrimPrefix(r.URL.Path, "/thorchain/invariant/")
 		requests[invariant]++
+		height := "42"
+		if invariant == "asgard" && requests[invariant] == 1 {
+			height = "41"
+		}
+		w.Header().Set("x-cosmos-block-height", height)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(responder(invariant, requests[invariant])))
 	}))
