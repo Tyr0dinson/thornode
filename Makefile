@@ -293,8 +293,7 @@ install-git-hooks:
 
 test-coverage: test-network-specific
 	@go test ${TEST_BUILD_FLAGS} -v -coverprofile=coverage.txt -covermode count ${TEST_DIR}
-	sed -i.bak '/\.pb\.go:/d' coverage.txt
-	@rm -f coverage.txt.bak
+	@./scripts/coverage-strip-generated.sh coverage.txt
 
 coverage-report: test-coverage
 	@go tool cover -html=coverage.txt
@@ -311,8 +310,7 @@ test-coverage-sum:
 	wait $$ns; ns=$$?; \
 	echo "--- test-network-specific (exit $$ns)"; cat network-specific.log; \
 	[ $$main -eq 0 ] && [ $$ns -eq 0 ]
-	sed -i.bak '/\.pb\.go:/d' coverage.txt
-	@rm -f coverage.txt.bak
+	@./scripts/coverage-strip-generated.sh coverage.txt
 	@GOFLAGS='${TEST_BUILD_FLAGS}' go run github.com/boumenot/gocover-cobertura@v1.4.0 < coverage.txt > coverage.xml
 	@go tool cover -func=coverage.txt | tail -n 1
 	@go tool cover -html=coverage.txt -o coverage.html
