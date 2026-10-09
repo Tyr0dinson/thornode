@@ -129,10 +129,16 @@ generate-abi:
 	@cp chain/evm/router-abi.json test/simulation/pkg/evm/abi/router.json
 
 openapi:
-	@docker run --rm \
+	@image='$(DOCKER_MIRROR)openapitools/openapi-generator-cli:v6.0.0@sha256:310bd0353c11863c0e51e5cb46035c9e0778d4b9c6fe6a7fc8307b3b41997a35'; \
+	if ! docker image inspect "$$image" >/dev/null 2>&1 && ! docker pull -q "$$image" >/dev/null; then \
+		if [ -z '$(DOCKER_MIRROR)' ]; then exit 1; fi; \
+		image='openapitools/openapi-generator-cli:v6.0.0@sha256:310bd0353c11863c0e51e5cb46035c9e0778d4b9c6fe6a7fc8307b3b41997a35'; \
+		docker pull -q "$$image" >/dev/null || exit 1; \
+	fi; \
+	docker run --rm \
 		--user $(shell id -u):$(shell id -g) \
 		-v $$PWD/openapi:/mnt \
-		$(DOCKER_MIRROR)openapitools/openapi-generator-cli:v6.0.0@sha256:310bd0353c11863c0e51e5cb46035c9e0778d4b9c6fe6a7fc8307b3b41997a35 \
+		"$$image" \
 		generate -i /mnt/openapi.yaml -g go -o /mnt/gen
 	@rm openapi/gen/go.mod openapi/gen/go.sum
 	@find ./openapi/gen -type f -print0 | xargs -0 sed -i.bak \
