@@ -1,0 +1,286 @@
+package app
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"sort"
+	"testing"
+	"time"
+
+	"cosmossdk.io/log"
+	upgradetypes "cosmossdk.io/x/upgrade/types"
+	abci "github.com/cometbft/cometbft/abci/types"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	dbm "github.com/cosmos/cosmos-db"
+	"github.com/cosmos/cosmos-sdk/baseapp"
+	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
+	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
+	"github.com/cosmos/cosmos-sdk/types/module"
+	"github.com/stretchr/testify/require"
+
+	"gitlab.com/thorchain/thornode/v3/app/upgrades"
+	"gitlab.com/thorchain/thornode/v3/app/upgrades/standard"
+	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain"
+	thortypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
+)
+
+const replayChainID = "determinism-fixture"
+
+var replayTime = time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
+
+func replayNodeAddress() cosmos.AccAddress { return cosmos.AccAddress(bytes.Repeat([]byte{2}, 20)) }
+
+// These synthetic records contain no live network addresses or private keys. They
+// exercise THORChain's real genesis import, keeper writes, export, and app commit.
+func replayGenesis(t *testing.T, app *THORChainApp, seed int64, reverse bool) GenesisState {
+	t.Helper()
+	state := app.DefaultGenesis()
+	var tc thorchain.GenesisState
+	require.NoError(t, json.Unmarshal(state[thorchain.ModuleName], &tc))
+	assets := []common.Asset{common.BTCAsset, common.ETHAsset}
+	if reverse {
+		assets[0], assets[1] = assets[1], assets[0]
+	}
+	for _, asset := range assets {
+		pool := thorchain.NewPool()
+		pool.Asset = asset
+		pool.BalanceRune = cosmos.NewUint(uint64(100000000000 + seed))
+		pool.BalanceAsset = cosmos.NewUint(10000000000)
+		pool.LPUnits = cosmos.NewUint(10000000000)
+		tc.Pools = append(tc.Pools, pool)
+	}
+	tc.Reserve = 1000000000
+	consensusKey := ed25519.GenPrivKeyFromSecret([]byte("determinism fixture consensus key")).PubKey()
+	consensusBech32, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeConsPub, consensusKey)
+	require.NoError(t, err)
+	vaultBech32, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub,
+		secp256k1.GenPrivKeyFromSecret([]byte("determinism fixture vault key")).PubKey())
+	require.NoError(t, err)
+	vaultKey := common.PubKey(vaultBech32)
+	tc.NodeAccounts = append(tc.NodeAccounts, thorchain.NewNodeAccount(
+		replayNodeAddress(), thorchain.NodeActive, common.PubKeySet{Secp256k1: vaultKey}, consensusBech32,
+		cosmos.NewUint(100000000000000), common.Address(replayNodeAddress().String()), 1,
+	))
+	tc.NodeAccounts[0].Version = constants.SWVersion.String()
+	for i := 1; i <= 2; i++ {
+		txID, err := common.NewTxID(fmt.Sprintf("%064X", i))
+		require.NoError(t, err)
+		inbound := common.Tx{
+			ID: txID, Chain: common.BTCChain,
+			FromAddress: common.Address("bc1qfixturefrom"), ToAddress: common.Address("bc1qfixturevault"),
+			Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(100000000))},
+			Gas:   common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(1000))},
+			Memo:  "SWAP:ETH.ETH",
+		}
+		observed := common.NewObservedTx(inbound, 5, vaultKey, 5)
+		tc.ObservedTxInVoters = append(tc.ObservedTxInVoters, thorchain.NewObservedTxVoter(txID, []common.ObservedTx{observed}))
+	}
+	tc.TxOuts = []thorchain.TxOut{{Height: 10, TxArray: []thorchain.TxOutItem{{
+		Chain: common.BTCChain, ToAddress: common.Address("bc1qfixturedestination"),
+		VaultPubKey: vaultKey, InHash: tc.ObservedTxInVoters[0].TxID,
+		Coin:   common.NewCoin(common.BTCAsset, cosmos.NewUint(10000000)),
+		MaxGas: common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(1000))}, GasRate: 10,
+	}}}}
+	swap := thorchain.NewMsgSwap(
+		tc.ObservedTxInVoters[0].Txs[0].Tx, common.ETHAsset, common.NoopAddress,
+		cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil,
+		thorchain.MarketSwap, 1, 0, thortypes.SwapVersion_v2,
+		cosmos.AccAddress(bytes.Repeat([]byte{1}, 20)),
+	)
+	require.NoError(t, swap.ValidateBasic())
+	tc.SwapQueueItems = []thorchain.MsgSwap{*swap}
+	tc.NetworkFees = []thorchain.NetworkFee{
+		thorchain.NewNetworkFee(common.BTCChain, 250, 10),
+		thorchain.NewNetworkFee(common.ETHChain, 21000, 20),
+	}
+	// The module's InitGenesis decodes with its legacy amino codec, including
+	// numeric NodeType values. Match the format it also uses for ExportGenesis.
+	state[thorchain.ModuleName] = thorchain.ModuleCdc.MustMarshalJSON(&tc)
+	return state
+}
+
+func replayApp(t *testing.T, db dbm.DB) *THORChainApp {
+	t.Helper()
+	return NewChainApp(log.NewNopLogger(), db, nil, true,
+		NewTestAppOptionsWithFlagHome(t.TempDir()), nil, baseapp.SetChainID(replayChainID))
+}
+
+func initReplayGenesis(t *testing.T, app *THORChainApp, genesis GenesisState) {
+	t.Helper()
+	raw, err := json.Marshal(genesis)
+	require.NoError(t, err)
+	_, err = app.InitChain(&abci.RequestInitChain{ChainId: replayChainID, Time: replayTime, AppStateBytes: raw})
+	require.NoError(t, err)
+
+}
+
+func commitReplayGenesis(t *testing.T, app *THORChainApp, genesis GenesisState) []byte {
+	t.Helper()
+	initReplayGenesis(t, app, genesis)
+	_, err := app.FinalizeBlock(&abci.RequestFinalizeBlock{
+		Height: 1, Time: replayTime.Add(time.Second),
+		Hash: bytes.Repeat([]byte{1}, 32), NextValidatorsHash: bytes.Repeat([]byte{2}, 32),
+	})
+	require.NoError(t, err)
+	_, err = app.Commit()
+	require.NoError(t, err)
+	hash := bytes.Clone(app.LastCommitID().Hash)
+	require.NotEmpty(t, hash)
+	return hash
+}
+
+func compareReplayHash(expected, actual []byte) error {
+	if !bytes.Equal(expected, actual) {
+		return fmt.Errorf("committed app hash diverged: expected %X, got %X", expected, actual)
+	}
+	return nil
+}
+
+func replayTHORState(t *testing.T, app *THORChainApp) string {
+	t.Helper()
+	ctx := app.NewContextLegacy(true, cmtproto.Header{ChainID: replayChainID, Height: app.LastBlockHeight()})
+	state, err := app.ModuleManager.ExportGenesisForModules(ctx, app.AppCodec(), []string{thorchain.ModuleName})
+	require.NoError(t, err)
+	require.NotEmpty(t, state[thorchain.ModuleName])
+	return string(state[thorchain.ModuleName])
+}
+
+func TestConsensusDeterminismSimulationScope(t *testing.T) {
+	app := replayApp(t, dbm.NewMemDB())
+	var modules []string
+	for name, registered := range app.ModuleManager.Modules {
+		if _, ok := registered.(module.AppModuleSimulation); ok {
+			modules = append(modules, name)
+		}
+	}
+	sort.Strings(modules)
+	require.NotEmpty(t, modules)
+	require.NotContains(t, modules, thorchain.ModuleName)
+	t.Logf("SDK simulation modules: %v", modules)
+}
+
+func TestConsensusDeterminismReplay(t *testing.T) {
+	for _, seed := range []int64{17, 41} {
+		var reference []byte
+		var referenceState string
+		for attempt := 0; attempt < 3; attempt++ {
+			db := dbm.NewMemDB()
+			app := replayApp(t, db)
+			hash := commitReplayGenesis(t, app, replayGenesis(t, app, seed, attempt == 2))
+			if attempt == 0 {
+				reference = hash
+				referenceState = replayTHORState(t, app)
+			} else {
+				require.NoError(t, compareReplayHash(reference, hash), "seed %d attempt %d", seed, attempt)
+				require.JSONEq(t, referenceState, replayTHORState(t, app), "seed %d attempt %d", seed, attempt)
+			}
+		}
+	}
+}
+
+func TestConsensusDeterminismDetectsDivergence(t *testing.T) {
+	dbA, dbB := dbm.NewMemDB(), dbm.NewMemDB()
+	appA, appB := replayApp(t, dbA), replayApp(t, dbB)
+	hashA := commitReplayGenesis(t, appA, replayGenesis(t, appA, 17, false))
+	hashB := commitReplayGenesis(t, appB, replayGenesis(t, appB, 18, false))
+	require.ErrorContains(t, compareReplayHash(hashA, hashB), "committed app hash diverged")
+}
+
+func TestConsensusDeterminismRestartAndExport(t *testing.T) {
+	db := dbm.NewMemDB()
+	app := replayApp(t, db)
+	hash := commitReplayGenesis(t, app, replayGenesis(t, app, 17, false))
+	exported, err := app.ExportAppStateAndValidators(false, nil, nil)
+	require.NoError(t, err)
+	var genesis GenesisState
+	require.NoError(t, json.Unmarshal(exported.AppState, &genesis))
+	var tc thorchain.GenesisState
+	require.NoError(t, thorchain.ModuleCdc.UnmarshalJSON(genesis[thorchain.ModuleName], &tc))
+	require.Len(t, tc.Pools, 2)
+	require.NotEmpty(t, tc.NodeAccounts)
+	require.Equal(t, thorchain.NodeActive, tc.NodeAccounts[0].Status)
+	require.NotEmpty(t, tc.ObservedTxInVoters)
+	require.NotEmpty(t, tc.TxOuts)
+	require.Len(t, tc.NetworkFees, 2)
+
+	restarted := replayApp(t, db)
+	require.Equal(t, hash, restarted.LastCommitID().Hash)
+	reexported, err := restarted.ExportAppStateAndValidators(false, nil, nil)
+	require.NoError(t, err)
+	var after GenesisState
+	require.NoError(t, json.Unmarshal(reexported.AppState, &after))
+	require.JSONEq(t, string(genesis[thorchain.ModuleName]), string(after[thorchain.ModuleName]))
+
+	imported := replayApp(t, dbm.NewMemDB())
+	initReplayGenesis(t, imported, genesis)
+	ctx := imported.NewContextLegacy(false, cmtproto.Header{ChainID: replayChainID, Height: 1, Time: replayTime})
+	importedState, err := imported.ModuleManager.ExportGenesisForModules(ctx, imported.AppCodec(), []string{thorchain.ModuleName})
+	require.NoError(t, err)
+	require.JSONEq(t, string(genesis[thorchain.ModuleName]), string(importedState[thorchain.ModuleName]))
+	_, err = imported.FinalizeBlock(&abci.RequestFinalizeBlock{
+		Height: 1, Time: replayTime.Add(time.Second),
+		Hash: bytes.Repeat([]byte{1}, 32), NextValidatorsHash: bytes.Repeat([]byte{2}, 32),
+	})
+	require.NoError(t, err)
+	_, err = imported.Commit()
+	require.NoError(t, err)
+	committedCtx := imported.NewContextLegacy(true, cmtproto.Header{ChainID: replayChainID, Height: imported.LastBlockHeight()})
+	require.Equal(t, cosmos.NewUint(1000000000), imported.ThorchainKeeper.GetRuneBalanceOfModule(committedCtx, thorchain.ReserveName))
+	pool, err := imported.ThorchainKeeper.GetPool(committedCtx, common.BTCAsset)
+	require.NoError(t, err)
+	require.Equal(t, cosmos.NewUint(100000000000+17), pool.BalanceRune)
+}
+
+// 18->19 is the immediate predecessor of the current module version. This fixture has no
+// legacy affiliate collectors, but its nonzero Reserve and THORChain records
+// must survive the migration and the result must replay identically.
+func TestConsensusDeterminismMigration18To19(t *testing.T) {
+	var reference []byte
+	for attempt := 0; attempt < 2; attempt++ {
+		app := replayApp(t, dbm.NewMemDB())
+		commitReplayGenesis(t, app, replayGenesis(t, app, 17, false))
+		height := app.LastBlockHeight() + 1
+		_, err := app.FinalizeBlock(&abci.RequestFinalizeBlock{
+			Height: height, Time: replayTime.Add(2 * time.Second), Hash: bytes.Repeat([]byte{3}, 32),
+			NextValidatorsHash: bytes.Repeat([]byte{2}, 32),
+		})
+		require.NoError(t, err)
+		ctx := app.NewContextLegacy(false, cmtproto.Header{ChainID: replayChainID, Height: height, Time: replayTime.Add(2 * time.Second)})
+		before := app.ThorchainKeeper.GetRuneBalanceOfModule(ctx, thorchain.ReserveName)
+		require.Equal(t, cosmos.NewUint(1000000000), before)
+		poolBefore, err := app.ThorchainKeeper.GetPool(ctx, common.BTCAsset)
+		require.NoError(t, err)
+		versions := app.ModuleManager.GetVersionMap()
+		versions[thorchain.ModuleName] = 18
+		handler := standard.CreateUpgradeHandler(app.ModuleManager, app.configurator, &upgrades.AppKeepers{
+			ThorchainKeeper:       app.ThorchainKeeper,
+			AccountKeeper:         &app.AccountKeeper,
+			ParamsKeeper:          &app.ParamsKeeper,
+			ConsensusParamsKeeper: &app.ConsensusParamsKeeper,
+			Codec:                 app.AppCodec(),
+			GetStoreKey:           app.GetKey,
+		})
+		updated, err := handler(ctx, upgradetypes.Plan{Name: "3.20.0", Height: ctx.BlockHeight()}, versions)
+		require.NoError(t, err)
+		require.Equal(t, uint64(19), updated[thorchain.ModuleName])
+		node, err := app.ThorchainKeeper.GetNodeAccount(ctx, replayNodeAddress())
+		require.NoError(t, err)
+		require.Equal(t, "3.20.0", node.Version)
+		require.NoError(t, app.UpgradeKeeper.SetModuleVersionMap(ctx, updated))
+		require.Equal(t, before, app.ThorchainKeeper.GetRuneBalanceOfModule(ctx, thorchain.ReserveName))
+		poolAfter, err := app.ThorchainKeeper.GetPool(ctx, common.BTCAsset)
+		require.NoError(t, err)
+		require.Equal(t, poolBefore, poolAfter)
+		_, err = app.Commit()
+		require.NoError(t, err)
+		if attempt == 0 {
+			reference = bytes.Clone(app.LastCommitID().Hash)
+		} else {
+			require.NoError(t, compareReplayHash(reference, app.LastCommitID().Hash))
+		}
+	}
+}
