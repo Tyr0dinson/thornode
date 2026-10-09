@@ -19,11 +19,13 @@ import (
 // covScanBridge answers the scan loop's halt mimirs and network-fee read.
 type covScanBridge struct {
 	*covBridge
-	feeRate uint64
-	feeErr  error
+	feeRate  uint64
+	feeErr   error
+	feeReads int
 }
 
 func (b *covScanBridge) GetNetworkFee(common.Chain) (uint64, uint64, error) {
+	b.feeReads++
 	return 1, b.feeRate, b.feeErr
 }
 
@@ -118,15 +120,18 @@ func (s *ScanLoopCovSuite) TestScanObservesVaultAndAdvances(c *C) {
 	c.Assert(txIn.TxArray, HasLen, 1)
 	c.Assert(txIn.TxArray[0].Tx, Equals, "txsig1")
 
-	// Second pass: no new signatures. The vault keeps its cursor from memory and its
-	// slot advances; the initial-height path is no longer used.
-	f.rpc.setResult("getSlot", "260")
+	// Second pass crosses the next fee threshold with no new signatures. The
+	// failed fee lookup keeps the cached rate, while the vault cursor advances.
+	f.rpc.setResult("getSlot", "360")
 	f.rpc.setResult("getSignaturesForAddress", `[]`)
+	f.bridge.feeRate = 99
 	f.bridge.feeErr = errors.New("fee down")
+	feeReads := f.bridge.feeReads
 	f.scanner.scan()
-	c.Assert(f.scanner.getLastHeight(), Equals, uint64(260))
-	c.Assert(f.scanner.vaultScanStatuses[f.vaultAddr], DeepEquals, vaultScanStatus{lastSig: "txsig1", lastSlot: 260})
-	c.Assert(f.solvency, DeepEquals, []int64{250, 260})
+	c.Assert(f.bridge.feeReads, Equals, feeReads+1)
+	c.Assert(f.scanner.getLastHeight(), Equals, uint64(360))
+	c.Assert(f.scanner.vaultScanStatuses[f.vaultAddr], DeepEquals, vaultScanStatus{lastSig: "txsig1", lastSlot: 360})
+	c.Assert(f.solvency, DeepEquals, []int64{250, 360})
 	c.Assert(f.scanner.lastFeeRate.Load(), Equals, uint64(7))
 }
 
