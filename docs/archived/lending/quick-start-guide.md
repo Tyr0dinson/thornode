@@ -1,6 +1,6 @@
 # Quick Start Guide
 
-[Lending](https://docs.thorchain.org/thorchain-finance/lending) allows users to deposit native collateral, and then create a debt at a collateralization ratio `CR` (collateralization ratio). The debt is always denominated in USD (aka `TOR`) regardless of what L1 asset the user receives.
+[Lending](https://docs.thorchain.org/thornodes/archived/lending) allows users to deposit native collateral, and then create a debt at a collateralization ratio `CR` (collateralization ratio). The debt is always denominated in USD (aka `TOR`) regardless of what L1 asset the user receives.
 
 ```admonish info
 Lending will be moved to the App Layer; new loans within THORChain can no longer be opened.
@@ -44,7 +44,7 @@ Lending Quote endpoints have been created to simplify the implementation process
 }
 ```
 
-_If you send 1 BTC to `bc1q2hldv0pmy9mcpddj2qrvdgcx6pw6h6h7gqytwy` with the_ [_memo_](../concepts/memos.md#open-loan) _`$+:ETH.USDT:0xe7062003a7be4df3a86127293a0d6b1f54c04220` you will receive approx. 1128.8773 USDT debt sent to `0xe7062003a7be4df3a86127293a0d6b1f54c04220` with a CR of 314.6% and will incur 49 basis points (0.49%) slippage._
+_If you send 1 BTC to `bc1q2hldv0pmy9mcpddj2qrvdgcx6pw6h6h7gqytwy` with the_ [_memo_](../../concepts/memos.md) _`$+:ETH.USDT:0xe7062003a7be4df3a86127293a0d6b1f54c04220` you will receive approx. 1128.8773 USDT debt sent to `0xe7062003a7be4df3a86127293a0d6b1f54c04220` with a CR of 314.6% and will incur 49 basis points (0.49%) slippage._
 
 ```admonish danger
 The `Inbound_Address` changes regularly, do not cache!
@@ -124,11 +124,11 @@ All Borrowers position can be seen at [https://gateway.liquify.com/chain/thorcha
 
 ## More Information
 
-1. [Lending Documentation](https://docs.thorchain.org/thorchain-finance/lending)
+1. [Lending Documentation](https://docs.thorchain.org/thornodes/archived/lending)
 1. [Lending Module](https://gateway.liquify.com/chain/thorchain_api/thorchain/balance/module/lending)
 1. [Lending Mint and Burn Chart](https://thorcharts.org/thorchain_lending_rune_burned)
 1. [Lending Health Dashboard](https://dashboards.ninerealms.com/#lending)
-1. [Other Lending Resources](https://docs.thorchain.org/thorchain-finance/lending#lending-resources)
+1. [Other Lending Resources](https://docs.thorchain.org/thornodes/archived/lending#historical-resources)
 
 ### Support
 

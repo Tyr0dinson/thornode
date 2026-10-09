@@ -2,7 +2,7 @@
 
 ## Summary
 
-[THORNames](https://docs.thorchain.org/how-it-works/thorchain-name-service) are THORChain's vanity address system that allows affiliates to collect fees and track their user's transactions. THORNames exist on the THORChain L1, so you will need a THORChain address and $RUNE to create and manage a THORName.
+[THORNames](https://docs.thorchain.org/technical-documentation/technical-deep-dive/thorchain-name-service) are THORChain's vanity address system that allows affiliates to collect fees and track their user's transactions. THORNames exist on the THORChain L1, so you will need a THORChain address and $RUNE to create and manage a THORName.
 
 THORNames have the following properties:
 
@@ -82,7 +82,7 @@ _(Remember this value will be in 1e8, so adjust accordingly for your transaction
 
 ## Preferred Asset for Affiliate Fees
 
-Affiliates can collect their fees in the asset of their choice (choosing from the assets that have a pool on THORChain). In order to collect fees in a preferred asset, affiliates must use a [THORName](https://docs.thorchain.org/how-it-works/thorchain-name-service) in their swap memos.
+Affiliates can collect their fees in the asset of their choice (choosing from the assets that have a pool on THORChain). In order to collect fees in a preferred asset, affiliates must use a [THORName](https://docs.thorchain.org/technical-documentation/technical-deep-dive/thorchain-name-service) in their swap memos.
 
 ```admonish warning
 If a preferred asset is set but the THORName has no chain alias for that asset's chain, payouts will silently fail and RUNE will remain stuck in the `AffiliateCollector` module. Set the missing alias to unblock: `~:<thorname>:<CHAIN>:<address>`

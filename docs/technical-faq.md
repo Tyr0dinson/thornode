@@ -2,7 +2,7 @@
 
 ## Differentiating Features and Protocol Customizations
 
-THORChain is built on the [Cosmos SDK](https://docs.thorchain.org/technology/cosmos-sdk), with several alterations and customizations tailored to its use case.
+THORChain is built on the [Cosmos SDK](https://docs.thorchain.org/technical-documentation/technology/cosmos-sdk), with several alterations and customizations tailored to its use case.
 
 - **Custom Handlers:**
 
@@ -128,7 +128,7 @@ RUNE tokens can be transferred via:
 ### Full Node and Smart Contracts
 
 - **Local Mode**: Available through [mocknet](../README.md#start-standalone-full-stack) environment.
-- **Smart Contracts**: No current smart contracts; CosmWasm integration planned but not necessary for RUNE transfers.
+- **Smart Contracts**: CosmWasm (App Layer) is live; deployment is permissioned. Not required for RUNE transfers. See [ADR-020](./architecture/adr-020-app-layer.md).
 
 ## Staking
 
@@ -172,7 +172,7 @@ Yes, they are redelegated automatically, with no transaction required — except
 
 **How much staking rewards are distributed as a percentage of total issuance?**
 
-It depends on the [Incentive Pendulum](https://docs.thorchain.org/how-it-works/incentive-pendulum). When network security is optimal (2 RUNE for every 1 RUNE of non-RUNE pooled assets, e.g., $50m RUNE bonded and $25m L1 pooled), the network security is considered optimal, and block rewards are split 33%/67% in favor of liquidity providers. When network security approaches 1:1 (danger of becoming underbonded), block rewards shift 100% to node operators to incentivize more bonded RUNE.
+It depends on the [Incentive Pendulum](./concepts/incentive-pendulum.md). When network security is optimal (2 RUNE for every 1 RUNE of non-RUNE pooled assets, e.g., $50m RUNE bonded and $25m L1 pooled), the network security is considered optimal, and block rewards are split 33%/67% in favor of liquidity providers. When network security approaches 1:1 (danger of becoming underbonded), block rewards shift 100% to node operators to incentivize more bonded RUNE.
 
 ## Governance
 

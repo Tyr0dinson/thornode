@@ -44,7 +44,7 @@ THOR.RUNE is the only RUNE asset in use. All other RUNE assets on other chains a
 
 ## Synthetic Assets
 
-- [Synthetic Assets](https://docs.thorchain.org/thorchain-finance/synthetic-asset-model) are denoted as `CHAIN/ASSET` instead of `CHAIN.ASSET`, e.g. Synthetic BTC is `BTC/BTC` and Synthetic USDT is `ETH/USDT.` While Synthetic assets live on the THORChain blockchain, they retain their CHAIN identifier.
+- [Synthetic Assets](https://docs.thorchain.org/technical-documentation/thorchain-finance/synthetic-asset-model) are denoted as `CHAIN/ASSET` instead of `CHAIN.ASSET`, e.g. Synthetic BTC is `BTC/BTC` and Synthetic USDT is `ETH/USDT.` While Synthetic assets live on the THORChain blockchain, they retain their CHAIN identifier.
 - Synthetic Assets can only be created from THORChain-supported L1 assets and are only denoted as `CHAIN/ASSET`, no ticker or ID is required.
 - Chain differentiation is also used for Synthetics, e.g. `ETH/USDC` and `AVAX/USDC` are different Synthetic assets created and redeemable on different chains.
 
@@ -62,5 +62,5 @@ THOR.RUNE is the only RUNE asset in use. All other RUNE assets on other chains a
 ## Secured Assets
 
 - Secured Assets are accounted by the Cosmos SDK x/bank module, and are created from Layer1 assets, denoted as `CHAIN-ASSET`. The Bitcoin secured asset is `BTC-BTC`.
-- They are fungible and transferrable via a regular MsgSend, can be sent over IBC, and integrate with CosmWasm smart contracts
+- They are fungible and transferrable via a regular MsgSend, and integrate with CosmWasm smart contracts (IBC is not enabled on THORChain)
 - Each Secured Asset maintains a balance of the total underlying L1 tokens deposited. The x/bank native token is therefore a share token, representing an ownership of the Asset Pool (as a fraction of the total supply of the share token)
