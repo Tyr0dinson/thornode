@@ -11,11 +11,13 @@ import (
 	"syscall"
 	"time"
 
+	tcrypto "github.com/cometbft/cometbft/crypto"
 	"github.com/cosmos/cosmos-sdk/client/input"
 	golog "github.com/ipfs/go-log"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
+	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/storage"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/common"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
 )
@@ -28,6 +30,18 @@ var (
 	tssAddr       string
 	tssAuthFile   string
 	tssAuthPrompt bool
+
+	// test seams; production uses the real implementations below
+	logFatal = log.Fatal
+	startP2P = p2p.StartP2P
+	newTss   = func(comm *p2p.Communication, stateManager storage.LocalStateManager, priKey tcrypto.PrivKey, conf common.TssConfig) (tss.Server, error) {
+		return tss.NewTss(comm, stateManager, priKey, priKey, conf, nil)
+	}
+	waitForShutdown = func() {
+		ch := make(chan os.Signal, 1)
+		signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
+		<-ch
+	}
 )
 
 func main() {
@@ -60,21 +74,21 @@ func main() {
 	}
 	priKey, err := conversion.GetPriKey(priKeyBytes)
 	if err != nil {
-		log.Fatal(err)
+		logFatal(err)
 	}
 
-	comm, stateManager, err := p2p.StartP2P(
+	comm, stateManager, err := startP2P(
 		&p2pConf,
 		priKey,
 		baseFolder,
 	)
 	if err != nil {
-		log.Fatal(err)
+		logFatal(err)
 	}
 	// init tss module
-	tss, err := tss.NewTss(comm, stateManager, priKey, priKey, tssConf, nil)
+	tss, err := newTss(comm, stateManager, priKey, tssConf)
 	if nil != err {
-		log.Fatal(err)
+		logFatal(err)
 	}
 	s := NewTssHttpServerWithAuth(tssAddr, tss, tssAuth)
 	go func() {
@@ -82,9 +96,7 @@ func main() {
 			fmt.Println(err)
 		}
 	}()
-	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
-	<-ch
+	waitForShutdown()
 	fmt.Println("stop ")
 	fmt.Println(s.Stop())
 }

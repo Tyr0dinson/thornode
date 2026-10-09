@@ -30,6 +30,11 @@ var (
 	receivedIncomingMsgs,
 	nMinus1 float64
 	preParamTestData keygen.LocalPreParams
+
+	// exit and partyPreParams are test seams; production uses os.Exit and
+	// hands every party the same embedded preParamTestData.
+	exit           = os.Exit
+	partyPreParams = func(int) keygen.LocalPreParams { return preParamTestData }
 )
 
 func init() {
@@ -44,7 +49,7 @@ func usage() {
 		panic(err)
 	}
 	flag.PrintDefaults()
-	os.Exit(2)
+	exit(2)
 }
 
 func main() {
@@ -57,20 +62,20 @@ func main() {
 	flag.Usage = usage
 	if flag.Parse(); !flag.Parsed() {
 		usage()
-		os.Exit(1)
+		exit(1)
 	}
 	if *parties <= 0 || *quorum <= 1 || *parties < *quorum {
 		fmt.Println("Error: n must be greater than 0, q must be greater than 1, q cannot be less than n.")
-		os.Exit(1)
+		exit(1)
 	}
 	if flag.NArg() < 1 {
 		usage()
-		os.Exit(1)
+		exit(1)
 	}
 	dir := flag.Args()[0]
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
 		fmt.Printf("Error: `%s` already exists, delete it first and this tool will create it.\n", dir)
-		os.Exit(1)
+		exit(1)
 	}
 	if err := os.Mkdir(dir, os.ModePerm); err != nil {
 		panic(err)
@@ -90,7 +95,7 @@ func main() {
 
 	fmt.Printf("Done. %d shares written to `%s`.\n", *parties, dir)
 	_, _ = prt.Printf("Finished in %d ms.\n", elapsed.Milliseconds())
-	os.Exit(0)
+	exit(0)
 }
 
 func setUp(level string) {
@@ -139,7 +144,7 @@ func runKeyGen(dir string, t, n int) {
 		params := tss.NewParameters(tss.S256(), p2pCtx, pIDs[i], len(pIDs), t)
 		// fixed nonce: all bench parties run in-process in one session
 		params.SetSessionNonce(big.NewInt(1))
-		P := keygen.NewLocalParty(params, outCh, endCh, preParamTestData).(*keygen.LocalParty)
+		P := keygen.NewLocalParty(params, outCh, endCh, partyPreParams(i)).(*keygen.LocalParty)
 		parties = append(parties, P)
 		go func(P *keygen.LocalParty) {
 			if err := P.Start(); err != nil {

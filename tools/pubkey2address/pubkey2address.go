@@ -8,6 +8,9 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
+// chainNetwork selects the bech32 prefixes; a var so tests can cover every network.
+var chainNetwork = common.CurrentChainNetwork
+
 func main() {
 	raw := flag.String("p", "", "thor bech32 pubkey")
 	flag.Parse()
@@ -17,7 +20,7 @@ func main() {
 	}
 
 	// Read in the configuration file for the sdk
-	nw := common.CurrentChainNetwork
+	nw := chainNetwork
 	switch nw {
 	case common.MockNet:
 		fmt.Println("THORChain mocknet:")

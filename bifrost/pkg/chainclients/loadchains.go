@@ -32,6 +32,10 @@ type (
 	SpentOutputRefsGuardSetter = types.SpentOutputRefsGuardSetter
 )
 
+// failedChainRetryInterval is how often chains that failed to load are retried;
+// a var so tests can shorten it.
+var failedChainRetryInterval = time.Minute
+
 // LoadChains returns chain clients from chain configuration
 func LoadChains(thorKeys *thorclient.Keys,
 	cfg map[common.Chain]config.BifrostChainConfiguration,
@@ -103,7 +107,7 @@ func LoadChains(thorKeys *thorclient.Keys,
 	// watch failed chains minutely and restart bifrost if any succeed init
 	if len(failedChains) > 0 {
 		go func() {
-			tick := time.NewTicker(time.Minute)
+			tick := time.NewTicker(failedChainRetryInterval)
 			for range tick.C {
 				for _, chain := range failedChains {
 					ccfg := cfg[chain]

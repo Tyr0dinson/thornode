@@ -39,6 +39,14 @@ const (
 	serverIdentity = "bifrost"
 )
 
+// Startup dependencies, overridable in tests so main can run without real p2p
+// networking, TSS pre-parameter generation or chain RPC endpoints.
+var (
+	startP2P   = p2p.StartP2PWithBridge
+	newTss     = tss.NewTss
+	loadChains = chainclients.LoadChains
+)
+
 func printVersion() {
 	fmt.Printf("%s v%s, rev %s\n", serverIdentity, constants.Version, constants.GitCommit)
 }
@@ -164,7 +172,7 @@ func main() {
 	}
 
 	// Start P2P with bonded node gating enabled
-	comm, stateManager, err := p2p.StartP2PWithBridge(
+	comm, stateManager, err := startP2P(
 		cfg.TSS,
 		tmPrivateKey,
 		app.DefaultNodeHome,
@@ -174,7 +182,7 @@ func main() {
 		log.Fatal().Err(err).Msg("fail to start p2p")
 	}
 
-	tssIns, err := tss.NewTss(
+	tssIns, err := newTss(
 		comm,
 		stateManager,
 		tmPrivateKey,
@@ -213,7 +221,7 @@ func main() {
 		}
 	}
 	poolMgr := thorclient.NewPoolMgr(thorchainBridge)
-	chains, restart := chainclients.LoadChains(k, cfgChains, tssIns, thorchainBridge, m, pubkeyMgr, poolMgr)
+	chains, restart := loadChains(k, cfgChains, tssIns, thorchainBridge, m, pubkeyMgr, poolMgr)
 	if len(chains) == 0 {
 		log.Fatal().Msg("fail to load any chains")
 	}

@@ -13,9 +13,16 @@ type TCYClaimsJSON struct {
 var tcyClaims []TCYClaimsJSON
 
 func init() {
-	if err := json.Unmarshal(TCYClaimsListRaw, &tcyClaims); err != nil {
+	tcyClaims = mustParseClaims(TCYClaimsListRaw)
+}
+
+// mustParseClaims decodes the embedded claims list, panicking on malformed data.
+func mustParseClaims(raw []byte) []TCYClaimsJSON {
+	var claims []TCYClaimsJSON
+	if err := json.Unmarshal(raw, &claims); err != nil {
 		panic(err)
 	}
+	return claims
 }
 
 func GetTCYClaimsList() []TCYClaimsJSON {

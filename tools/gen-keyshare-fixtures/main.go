@@ -40,7 +40,20 @@ const (
 	threshold = 1 // 2-of-4
 )
 
+// Overridden in tests: generatePreParams to skip the slow safe-prime search,
+// newParameters to adjust the per-party keygen parameters.
+var (
+	generatePreParams = keygen.GeneratePreParams
+	newParameters     = tss.NewParameters
+)
+
 func main() {
+	if err := run(outDir); err != nil {
+		die("%v", err)
+	}
+}
+
+func run(outDir string) error {
 	conversion.SetupBech32Prefix()
 
 	// Sort the pubkeys to match GetParties' contract; the file layout in the
@@ -51,7 +64,7 @@ func main() {
 
 	partiesID, _, err := conversion.GetParties(sortedPubKeys, sortedPubKeys[0])
 	if err != nil {
-		die("GetParties: %v", err)
+		return fmt.Errorf("GetParties: %w", err)
 	}
 	n := len(partiesID)
 
@@ -61,24 +74,30 @@ func main() {
 	preParamsCh := make(chan struct {
 		idx int
 		p   *keygen.LocalPreParams
+		err error
 	}, n)
 	for i := 0; i < n; i++ {
 		go func(idx int) {
 			start := time.Now()
-			pp, ppErr := keygen.GeneratePreParams(20 * time.Minute)
+			pp, ppErr := generatePreParams(20 * time.Minute)
 			if ppErr != nil {
-				die("preParams[%d]: %v", idx, ppErr)
+				ppErr = fmt.Errorf("preParams[%d]: %w", idx, ppErr)
+			} else {
+				fmt.Fprintf(os.Stderr, "  party %d preParams in %s\n", idx, time.Since(start))
 			}
-			fmt.Fprintf(os.Stderr, "  party %d preParams in %s\n", idx, time.Since(start))
 			preParamsCh <- struct {
 				idx int
 				p   *keygen.LocalPreParams
-			}{idx, pp}
+				err error
+			}{idx, pp, ppErr}
 		}(i)
 	}
 	preParams := make([]*keygen.LocalPreParams, n)
 	for i := 0; i < n; i++ {
 		r := <-preParamsCh
+		if r.err != nil {
+			return r.err
+		}
 		preParams[r.idx] = r.p
 	}
 
@@ -91,10 +110,10 @@ func main() {
 	updater := test.SharedPartyUpdater
 
 	for i := 0; i < n; i++ {
-		params := tss.NewParameters(tss.S256(), p2pCtx, partiesID[i], n, threshold)
+		params := newParameters(tss.S256(), p2pCtx, partiesID[i], n, threshold)
 		party, ok := keygen.NewLocalParty(params, outCh, endCh, *preParams[i]).(*keygen.LocalParty)
 		if !ok {
-			die("party %d: NewLocalParty did not return *LocalParty", i)
+			return fmt.Errorf("party %d: NewLocalParty did not return *LocalParty", i)
 		}
 		parties = append(parties, party)
 		go func(P *keygen.LocalParty) {
@@ -111,7 +130,7 @@ loop:
 	for {
 		select {
 		case err := <-errCh:
-			die("keygen: %v", err)
+			return fmt.Errorf("keygen: %w", err)
 		case msg := <-outCh:
 			dest := msg.GetTo()
 			if dest == nil {
@@ -124,14 +143,14 @@ loop:
 				}
 			} else {
 				if dest[0].Index == msg.GetFrom().Index {
-					die("party %d tried to send to itself", dest[0].Index)
+					return fmt.Errorf("party %d tried to send to itself", dest[0].Index)
 				}
 				go updater(parties[dest[0].Index], msg, errCh)
 			}
 		case save := <-endCh:
 			idx, idxErr := save.OriginalIndex()
 			if idxErr != nil {
-				die("OriginalIndex: %v", idxErr)
+				return fmt.Errorf("OriginalIndex: %w", idxErr)
 			}
 			saveData[idx] = save
 			if atomic.AddInt32(&done, 1) == int32(n) {
@@ -143,18 +162,18 @@ loop:
 	// Sanity: every save must validate under the new v3 rules.
 	for i, sd := range saveData {
 		if !sd.ValidateWithProof() {
-			die("party %d save data failed ValidateWithProof", i)
+			return fmt.Errorf("party %d save data failed ValidateWithProof", i)
 		}
 	}
 
 	vaultPubKey, _, err := conversion.GetTssPubKeyECDSA(saveData[0].ECDSAPub)
 	if err != nil {
-		die("GetTssPubKeyECDSA: %v", err)
+		return fmt.Errorf("GetTssPubKeyECDSA: %w", err)
 	}
 	fmt.Fprintf(os.Stderr, "Vault pubkey: %s\n", vaultPubKey)
 
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
-		die("mkdir: %v", err)
+		return fmt.Errorf("mkdir: %w", err)
 	}
 
 	// saveData[k] belongs to partiesID[k], where partiesID is sorted by
@@ -171,11 +190,11 @@ loop:
 	for k := 0; k < n; k++ {
 		lexIdx, err := strconv.Atoi(partiesID[k].Id)
 		if err != nil {
-			die("partiesID[%d].Id %q is not an int: %v", k, partiesID[k].Id, err)
+			return fmt.Errorf("partiesID[%d].Id %q is not an int: %w", k, partiesID[k].Id, err)
 		}
 		localBytes, err := json.Marshal(saveData[k])
 		if err != nil {
-			die("marshal local data %d: %v", k, err)
+			return fmt.Errorf("marshal local data %d: %w", k, err)
 		}
 		state := storage.KeygenLocalState{
 			PubKey:          vaultPubKey,
@@ -185,11 +204,11 @@ loop:
 		}
 		wrap, err := json.Marshal(state)
 		if err != nil {
-			die("marshal wrapper %d: %v", k, err)
+			return fmt.Errorf("marshal wrapper %d: %w", k, err)
 		}
 		path := fmt.Sprintf("%s/%d.json", outDir, lexIdx)
 		if err := os.WriteFile(path, wrap, 0o600); err != nil {
-			die("write %s: %v", path, err)
+			return fmt.Errorf("write %s: %w", path, err)
 		}
 		fmt.Fprintf(os.Stderr, "wrote %s (party=%s, keyInt-idx=%d)\n", path, sortedPubKeys[lexIdx], k)
 	}
@@ -198,6 +217,7 @@ loop:
 	// the `PoolPubKey` literal in the three `keysign.NewRequest` calls in
 	// bifrost/tss/go-tss/keysign/ecdsa/keysign_test.go to match.
 	fmt.Println(vaultPubKey)
+	return nil
 }
 
 func die(format string, args ...any) {
