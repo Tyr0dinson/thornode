@@ -66,6 +66,11 @@ merge requests; `security-fuzz-deep` gives each target 20 seconds on schedules.
 Both fail when any target fails, save the command log, and reuse the Go fuzz
 cache across pipelines. The source seed corpus is committed under
 `testdata/fuzz` where needed. These jobs use the committed runners directly.
+The four-seed accounting property suite is part of the root unit job.
+`accounting-properties-deep` runs its 32-seed campaign on scheduled pipelines
+and saves the result log. Locally, run
+`scripts/test-accounting-property.sh fast` or
+`scripts/test-accounting-property.sh campaign`; the runner owns the build lock.
 
 The simulation fixture changes in this integrated branch make the nested
 module unit suite self-contained. Its two daemon integration tests remain
