@@ -115,7 +115,6 @@ func initReplayGenesis(t *testing.T, app *THORChainApp, genesis GenesisState) {
 	require.NoError(t, err)
 	_, err = app.InitChain(&abci.RequestInitChain{ChainId: replayChainID, Time: replayTime, AppStateBytes: raw})
 	require.NoError(t, err)
-
 }
 
 func commitReplayGenesis(t *testing.T, app *THORChainApp, genesis GenesisState) []byte {

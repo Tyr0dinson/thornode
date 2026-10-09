@@ -28,8 +28,10 @@ func TestRecoveryObservationErrataCrashMatrix(t *testing.T) {
 	observer := &Observer{logger: zerolog.Nop(), storage: storage, lock: &sync.Mutex{}, onDeck: make(map[txInKey]*types.TxIn)}
 	txID := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	observation := func(height int64) types.TxIn {
-		return types.TxIn{Chain: common.XMRChain, Filtered: true, ConfirmationRequired: 6,
-			TxArray: []*types.TxInItem{{Tx: txID, BlockHeight: height}}}
+		return types.TxIn{
+			Chain: common.XMRChain, Filtered: true, ConfirmationRequired: 6,
+			TxArray: []*types.TxInItem{{Tx: txID, BlockHeight: height}},
+		}
 	}
 	first := observation(100)
 	stored := 0

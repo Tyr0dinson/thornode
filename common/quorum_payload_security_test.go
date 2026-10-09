@@ -13,17 +13,23 @@ import (
 func TestQuorumPayloadSecurityMatrix(t *testing.T) {
 	key := secp256k1.GenPrivKey()
 	observed := ObservedTx{
-		Tx: Tx{ID: "tx-one", Chain: BTCChain, FromAddress: "from", ToAddress: "to",
+		Tx: Tx{
+			ID: "tx-one", Chain: BTCChain, FromAddress: "from", ToAddress: "to",
 			Coins: NewCoins(NewCoin(BTCAsset, cosmos.NewUint(100))),
-			Gas:   Gas{NewCoin(BTCAsset, cosmos.NewUint(2))}, Memo: "memo"},
+			Gas:   Gas{NewCoin(BTCAsset, cosmos.NewUint(2))}, Memo: "memo",
+		},
 		BlockHeight: 100, FinaliseHeight: 106, ObservedPubKey: "vault-one",
 	}
 	fee := NetworkFee{Chain: BTCChain, Height: 100, TransactionRate: 12, TransactionSize: 200}
-	solvency := Solvency{Id: "solvency-one", Chain: BTCChain, PubKey: "vault-one",
-		Coins: NewCoins(NewCoin(BTCAsset, cosmos.NewUint(100))), Height: 100}
+	solvency := Solvency{
+		Id: "solvency-one", Chain: BTCChain, PubKey: "vault-one",
+		Coins: NewCoins(NewCoin(BTCAsset, cosmos.NewUint(100))), Height: 100,
+	}
 	errata := ErrataTx{Id: "tx-one", Chain: BTCChain}
-	price := PriceFeed{Version: []byte("version1"), Time: 1000,
-		Rates: []*OraclePrice{{Amount: 100, Decimals: 2}}}
+	price := PriceFeed{
+		Version: []byte("version1"), Time: 1000,
+		Rates: []*OraclePrice{{Amount: 100, Decimals: 2}},
+	}
 
 	type variant struct {
 		name    string
