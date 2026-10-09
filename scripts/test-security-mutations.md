@@ -8,4 +8,6 @@ The weak quorum control runs a deliberately incomplete unanimity test against th
 
 The JSON summary includes the baseline runs, every command and test outcome, the seed, execution budget, per-command timeout, toolchain, mutant counts, and output tails. The seed is fixed for reproducible manifest order; this curated suite does not use random mutation generation. Default bounds are 300 seconds per Go command, 600 seconds for the shared build lock, and 1800 seconds for the suite. Tune these with `--seconds-per-command`, `--lock-wait`, and `--budget-seconds` in constrained CI environments.
 
+`test-security-mutations-results.json` records the verified fast and deep runs against the commit shown in its `tested_head` field. The compact result retains exact runner and Go commands, baseline and mutant outcomes, budgets, and elapsed times. Both runs passed: the fast set killed 5/5 mutants and the deep set killed 7/7; the weak control survived in both runs. Full Go JSON output for these local runs was written to `/tmp/thornode-security-mutations-fast.json` and `/tmp/thornode-security-mutations-deep.json`.
+
 CI wiring: run the fast command as an independent targeted job and preserve the JSON summary as an artifact on success and failure. The optional deep mode is suitable for a slower scheduled job. The CI workspace owns any root Makefile or `.gitlab-ci.yml` changes.

@@ -1,0 +1,578 @@
+{
+  "schema": 1,
+  "tested_head": "a5731e68fbd33af44f194f34076ddbfe3df9e827",
+  "runs": [
+    {
+      "mode": "fast",
+      "runner_command": [
+        "scripts/test-security-mutations.py",
+        "--mode",
+        "fast",
+        "--summary",
+        "/tmp/thornode-security-mutations-fast.json",
+        "--lock-wait",
+        "3600",
+        "--budget-seconds",
+        "5400",
+        "--seconds-per-command",
+        "600"
+      ],
+      "environment": {
+        "GOCACHE": "/home/cbarraford/.cache/go-build",
+        "GOMAXPROCS": "4",
+        "GOTOOLCHAIN": "go1.26.9"
+      },
+      "seed": 270919,
+      "budget_seconds": 5400,
+      "seconds_per_command": 600,
+      "lock_wait_seconds": 3600,
+      "lock_wait_elapsed_seconds": 71.87,
+      "elapsed_seconds": 124.25,
+      "result": "passed",
+      "baseline": [
+        {
+          "package": "./x/thorchain/types",
+          "test": "^TestSecurityMutationQuorumBoundary$",
+          "status": "passed",
+          "exit_code": 0,
+          "seconds": 3.03,
+          "failures": [],
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-count=1",
+            "-p",
+            "2",
+            "-run",
+            "^TestSecurityMutationQuorumBoundary$",
+            "./x/thorchain/types"
+          ]
+        },
+        {
+          "package": "./bifrost/pkg/chainclients/shared/signing",
+          "test": "^TestSecurityMutationSigningHaltBoundary$",
+          "status": "passed",
+          "exit_code": 0,
+          "seconds": 1.72,
+          "failures": [],
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-count=1",
+            "-p",
+            "2",
+            "-run",
+            "^TestSecurityMutationSigningHaltBoundary$",
+            "./bifrost/pkg/chainclients/shared/signing"
+          ]
+        },
+        {
+          "package": "./bifrost/observer",
+          "test": "^TestSecurityMutationAttestationAuthenticityAndReplay$",
+          "status": "passed",
+          "exit_code": 0,
+          "seconds": 7.85,
+          "failures": [],
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-count=1",
+            "-p",
+            "2",
+            "-run",
+            "^TestSecurityMutationAttestationAuthenticityAndReplay$",
+            "./bifrost/observer"
+          ]
+        },
+        {
+          "package": "./common",
+          "test": "^TestSecurityMutationSafeSubConservation$",
+          "status": "passed",
+          "exit_code": 0,
+          "seconds": 2.95,
+          "failures": [],
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-count=1",
+            "-p",
+            "2",
+            "-run",
+            "^TestSecurityMutationSafeSubConservation$",
+            "./common"
+          ]
+        },
+        {
+          "package": "./x/thorchain/types",
+          "test": "^TestMutationWeakUnanimity$",
+          "status": "passed",
+          "exit_code": 0,
+          "seconds": 2.95,
+          "failures": [],
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-count=1",
+            "-p",
+            "2",
+            "-run",
+            "^TestMutationWeakUnanimity$",
+            "./x/thorchain/types"
+          ]
+        }
+      ],
+      "control": {
+        "id": "weak_quorum_oracle",
+        "status": "survived",
+        "exit_code": 0,
+        "seconds": 10.14,
+        "failures": [],
+        "command": [
+          "go",
+          "test",
+          "-json",
+          "-count=1",
+          "-p",
+          "2",
+          "-run",
+          "^TestMutationWeakUnanimity$",
+          "-overlay",
+          "/tmp/thornode-security-mutations-uxhf6qlz/overlay-0.json",
+          "./x/thorchain/types"
+        ]
+      },
+      "mutants": [
+        {
+          "id": "quorum_boundary_lowered",
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.98,
+          "failures": [
+            "TestSecurityMutationQuorumBoundary"
+          ],
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-count=1",
+            "-p",
+            "2",
+            "-run",
+            "^TestSecurityMutationQuorumBoundary$",
+            "-overlay",
+            "/tmp/thornode-security-mutations-uxhf6qlz/overlay-1.json",
+            "./x/thorchain/types"
+          ]
+        },
+        {
+          "id": "halt_global_boundary_delayed",
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.95,
+          "failures": [
+            "TestSecurityMutationSigningHaltBoundary"
+          ],
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-count=1",
+            "-p",
+            "2",
+            "-run",
+            "^TestSecurityMutationSigningHaltBoundary$",
+            "-overlay",
+            "/tmp/thornode-security-mutations-uxhf6qlz/overlay-2.json",
+            "./bifrost/pkg/chainclients/shared/signing"
+          ]
+        },
+        {
+          "id": "attestation_signature_bypass",
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 7.85,
+          "failures": [
+            "TestSecurityMutationAttestationAuthenticityAndReplay"
+          ],
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-count=1",
+            "-p",
+            "2",
+            "-run",
+            "^TestSecurityMutationAttestationAuthenticityAndReplay$",
+            "-overlay",
+            "/tmp/thornode-security-mutations-uxhf6qlz/overlay-3.json",
+            "./bifrost/observer"
+          ]
+        },
+        {
+          "id": "attestation_replay_counted",
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 7.95,
+          "failures": [
+            "TestSecurityMutationAttestationAuthenticityAndReplay"
+          ],
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-count=1",
+            "-p",
+            "2",
+            "-run",
+            "^TestSecurityMutationAttestationAuthenticityAndReplay$",
+            "-overlay",
+            "/tmp/thornode-security-mutations-uxhf6qlz/overlay-4.json",
+            "./bifrost/observer"
+          ]
+        },
+        {
+          "id": "safe_subtract_wrong_direction",
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.99,
+          "failures": [
+            "TestSecurityMutationSafeSubConservation"
+          ],
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-count=1",
+            "-p",
+            "2",
+            "-run",
+            "^TestSecurityMutationSafeSubConservation$",
+            "-overlay",
+            "/tmp/thornode-security-mutations-uxhf6qlz/overlay-5.json",
+            "./common"
+          ]
+        }
+      ],
+      "counts": {
+        "killed": 5,
+        "survived": 0,
+        "invalid": 0,
+        "timeout": 0,
+        "infrastructure": 0
+      }
+    },
+    {
+      "mode": "deep",
+      "runner_command": [
+        "scripts/test-security-mutations.py",
+        "--mode",
+        "deep",
+        "--summary",
+        "/tmp/thornode-security-mutations-deep.json",
+        "--lock-wait",
+        "3600",
+        "--budget-seconds",
+        "5400",
+        "--seconds-per-command",
+        "600"
+      ],
+      "environment": {
+        "GOCACHE": "/home/cbarraford/.cache/go-build",
+        "GOMAXPROCS": "4",
+        "GOTOOLCHAIN": "go1.26.9"
+      },
+      "seed": 270919,
+      "budget_seconds": 5400,
+      "seconds_per_command": 600,
+      "lock_wait_seconds": 3600,
+      "lock_wait_elapsed_seconds": 27.9,
+      "elapsed_seconds": 77.96,
+      "result": "passed",
+      "baseline": [
+        {
+          "package": "./x/thorchain/types",
+          "test": "^TestSecurityMutationQuorumBoundary$",
+          "status": "passed",
+          "exit_code": 0,
+          "seconds": 2.87,
+          "failures": [],
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-count=1",
+            "-p",
+            "2",
+            "-run",
+            "^TestSecurityMutationQuorumBoundary$",
+            "./x/thorchain/types"
+          ]
+        },
+        {
+          "package": "./bifrost/pkg/chainclients/shared/signing",
+          "test": "^TestSecurityMutationSigningHaltBoundary$",
+          "status": "passed",
+          "exit_code": 0,
+          "seconds": 1.78,
+          "failures": [],
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-count=1",
+            "-p",
+            "2",
+            "-run",
+            "^TestSecurityMutationSigningHaltBoundary$",
+            "./bifrost/pkg/chainclients/shared/signing"
+          ]
+        },
+        {
+          "package": "./bifrost/observer",
+          "test": "^TestSecurityMutationAttestationAuthenticityAndReplay$",
+          "status": "passed",
+          "exit_code": 0,
+          "seconds": 6.12,
+          "failures": [],
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-count=1",
+            "-p",
+            "2",
+            "-run",
+            "^TestSecurityMutationAttestationAuthenticityAndReplay$",
+            "./bifrost/observer"
+          ]
+        },
+        {
+          "package": "./common",
+          "test": "^TestSecurityMutationSafeSubConservation$",
+          "status": "passed",
+          "exit_code": 0,
+          "seconds": 2.01,
+          "failures": [],
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-count=1",
+            "-p",
+            "2",
+            "-run",
+            "^TestSecurityMutationSafeSubConservation$",
+            "./common"
+          ]
+        },
+        {
+          "package": "./x/thorchain/types",
+          "test": "^TestMutationWeakUnanimity$",
+          "status": "passed",
+          "exit_code": 0,
+          "seconds": 2.89,
+          "failures": [],
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-count=1",
+            "-p",
+            "2",
+            "-run",
+            "^TestMutationWeakUnanimity$",
+            "./x/thorchain/types"
+          ]
+        }
+      ],
+      "control": {
+        "id": "weak_quorum_oracle",
+        "status": "survived",
+        "exit_code": 0,
+        "seconds": 3.13,
+        "failures": [],
+        "command": [
+          "go",
+          "test",
+          "-json",
+          "-count=1",
+          "-p",
+          "2",
+          "-run",
+          "^TestMutationWeakUnanimity$",
+          "-overlay",
+          "/tmp/thornode-security-mutations-5gygl9yy/overlay-0.json",
+          "./x/thorchain/types"
+        ]
+      },
+      "mutants": [
+        {
+          "id": "quorum_boundary_lowered",
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.98,
+          "failures": [
+            "TestSecurityMutationQuorumBoundary"
+          ],
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-count=1",
+            "-p",
+            "2",
+            "-run",
+            "^TestSecurityMutationQuorumBoundary$",
+            "-overlay",
+            "/tmp/thornode-security-mutations-5gygl9yy/overlay-1.json",
+            "./x/thorchain/types"
+          ]
+        },
+        {
+          "id": "halt_global_boundary_delayed",
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 1.82,
+          "failures": [
+            "TestSecurityMutationSigningHaltBoundary"
+          ],
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-count=1",
+            "-p",
+            "2",
+            "-run",
+            "^TestSecurityMutationSigningHaltBoundary$",
+            "-overlay",
+            "/tmp/thornode-security-mutations-5gygl9yy/overlay-2.json",
+            "./bifrost/pkg/chainclients/shared/signing"
+          ]
+        },
+        {
+          "id": "attestation_signature_bypass",
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 6.15,
+          "failures": [
+            "TestSecurityMutationAttestationAuthenticityAndReplay"
+          ],
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-count=1",
+            "-p",
+            "2",
+            "-run",
+            "^TestSecurityMutationAttestationAuthenticityAndReplay$",
+            "-overlay",
+            "/tmp/thornode-security-mutations-5gygl9yy/overlay-3.json",
+            "./bifrost/observer"
+          ]
+        },
+        {
+          "id": "attestation_replay_counted",
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 5.95,
+          "failures": [
+            "TestSecurityMutationAttestationAuthenticityAndReplay"
+          ],
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-count=1",
+            "-p",
+            "2",
+            "-run",
+            "^TestSecurityMutationAttestationAuthenticityAndReplay$",
+            "-overlay",
+            "/tmp/thornode-security-mutations-5gygl9yy/overlay-4.json",
+            "./bifrost/observer"
+          ]
+        },
+        {
+          "id": "safe_subtract_wrong_direction",
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.17,
+          "failures": [
+            "TestSecurityMutationSafeSubConservation"
+          ],
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-count=1",
+            "-p",
+            "2",
+            "-run",
+            "^TestSecurityMutationSafeSubConservation$",
+            "-overlay",
+            "/tmp/thornode-security-mutations-5gygl9yy/overlay-5.json",
+            "./common"
+          ]
+        },
+        {
+          "id": "halt_chain_boundary_delayed",
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 2.03,
+          "failures": [
+            "TestSecurityMutationSigningHaltBoundary"
+          ],
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-count=1",
+            "-p",
+            "2",
+            "-run",
+            "^TestSecurityMutationSigningHaltBoundary$",
+            "-overlay",
+            "/tmp/thornode-security-mutations-5gygl9yy/overlay-6.json",
+            "./bifrost/pkg/chainclients/shared/signing"
+          ]
+        },
+        {
+          "id": "quorum_excess_signers_allowed",
+          "status": "killed",
+          "exit_code": 1,
+          "seconds": 10.15,
+          "failures": [
+            "TestSecurityMutationQuorumBoundary"
+          ],
+          "command": [
+            "go",
+            "test",
+            "-json",
+            "-count=1",
+            "-p",
+            "2",
+            "-run",
+            "^TestSecurityMutationQuorumBoundary$",
+            "-overlay",
+            "/tmp/thornode-security-mutations-5gygl9yy/overlay-7.json",
+            "./x/thorchain/types"
+          ]
+        }
+      ],
+      "counts": {
+        "killed": 7,
+        "survived": 0,
+        "invalid": 0,
+        "timeout": 0,
+        "infrastructure": 0
+      }
+    }
+  ]
+}
