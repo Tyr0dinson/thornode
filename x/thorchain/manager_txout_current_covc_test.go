@@ -153,6 +153,48 @@ func (s *CovCCTxOutSuite) TestEndBlockSkipsPastAndFailedGas(c *C) {
 	}
 }
 
+func (s *CovCCTxOutSuite) TestEndBlockKeepsInactiveVaultRefundWithinGasBudget(c *C) {
+	w := getHandlerTestWrapper(c, 649, true, true)
+	tos := covCCTxOutStore(w, nil)
+	pubkey := GetRandomPubKey()
+	vault := NewVault(w.ctx.BlockHeight(), InactiveVault, AsgardVault, pubkey, common.Chains{common.BTCChain}.Strings(), nil)
+	c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil)
+
+	inHash := GetRandomTxHash()
+	item := TxOutItem{
+		Chain:       common.BTCChain,
+		ToAddress:   GetRandomBTCAddress(),
+		VaultPubKey: pubkey,
+		InHash:      inHash,
+		Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(2_560_083)),
+		MaxGas:      common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(49_000))},
+	}
+	voter := NewObservedTxVoter(inHash, nil)
+	voter.Actions = []TxOutItem{item}
+	w.keeper.SetObservedTxInVoter(w.ctx, voter)
+	c.Assert(w.keeper.SetTxOut(w.ctx, &TxOut{Height: w.ctx.BlockHeight(), TxArray: []TxOutItem{item}}), IsNil)
+
+	check := func(feeRate, wantGas, wantAmount uint64) {
+		c.Assert(w.keeper.SaveNetworkFee(w.ctx, common.BTCChain, NewNetworkFee(common.BTCChain, 1000, feeRate)), IsNil)
+		c.Assert(tos.EndBlock(w.ctx, w.mgr), IsNil)
+		items, err := tos.GetOutboundItems(w.ctx)
+		c.Assert(err, IsNil)
+		c.Assert(items, HasLen, 1)
+		updated, err := w.keeper.GetObservedTxInVoter(w.ctx, inHash)
+		c.Assert(err, IsNil)
+		c.Assert(updated.Actions, HasLen, 1)
+		for _, out := range []TxOutItem{items[0], updated.Actions[0]} {
+			c.Check(out.MaxGas.ToCoins().GetCoin(common.BTCAsset).Amount.Uint64(), Equals, wantGas)
+			c.Check(out.Coin.Amount.Uint64(), Equals, wantAmount)
+			c.Check(out.Coin.Amount.Add(out.MaxGas.ToCoins().GetCoin(common.BTCAsset).Amount).Uint64(), Equals, uint64(2_609_083))
+		}
+		c.Check(items[0].GasRate, Equals, updated.Actions[0].GasRate)
+	}
+
+	check(56, 84_000, 2_525_083)
+	check(20, 30_000, 2_579_083)
+}
+
 func (s *CovCCTxOutSuite) TestTakeAffiliateFeeBranches(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 	tos := covCCTxOutStore(w, nil)

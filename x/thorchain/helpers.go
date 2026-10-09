@@ -1659,6 +1659,12 @@ func getNonSigners(nas []NodeAccount, signers []cosmos.AccAddress) []cosmos.AccA
 // Update the ObservedTxVoter so the network can still match the outbound with
 // the observed inbound
 func updateTxOutGas(ctx cosmos.Context, keeper keeper.Keeper, txOut types.TxOutItem, gas common.Gas) error {
+	return updateTxOutGasAndCoin(ctx, keeper, txOut, gas, txOut.Coin)
+}
+
+// updateTxOutGasAndCoin keeps a queued outbound and its voter action in sync
+// when a gas change also changes the amount sent from an inactive vault.
+func updateTxOutGasAndCoin(ctx cosmos.Context, keeper keeper.Keeper, txOut types.TxOutItem, gas common.Gas, coin common.Coin) error {
 	// When txOut.InHash is 0000000000000000000000000000000000000000000000000000000000000000 , which means the outbound is trigger by the network internally
 	// For example , migration, etc. there is no related inbound observation , thus doesn't need to try to find it and update anything
 	if txOut.InHash == common.BlankTxID {
@@ -1674,6 +1680,7 @@ func updateTxOutGas(ctx cosmos.Context, keeper keeper.Keeper, txOut types.TxOutI
 		if tx.Equals(txOut) {
 			txOutIndex = i
 			voter.Actions[txOutIndex].MaxGas = gas
+			voter.Actions[txOutIndex].Coin = coin
 			keeper.SetObservedTxInVoter(ctx, voter)
 			break
 		}
