@@ -60,9 +60,22 @@ func (s *ProviderTestSuite) TestCoinbaseProvider(c *C) {
 
 	// test websocket
 
+	// The polling path was tested above. A poll started by Start can race with
+	// websocket updates and overwrite the websocket fixture prices.
+	provider.poll = func() {}
 	provider.Start()
 
-	time.Sleep(500 * time.Millisecond)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		tickers, err = provider.GetTickers()
+		c.Assert(err, IsNil)
+		btc, btcFound := tickers["BTC/USD"]
+		eth, ethFound := tickers["ETH/USD"]
+		if btcFound && ethFound && btc.Price.Text('f', 2) == "108741.64" && eth.Price.Text('f', 2) == "2610.05" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 
 	tickers, err = provider.GetTickers()
 	c.Assert(err, IsNil)
