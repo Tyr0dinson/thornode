@@ -35,6 +35,7 @@ cache/
 /docs/book
 /docs/theme
 /public
+/test-quality-reports/
 /tmp
 __pycache__
 typechain/
