@@ -382,7 +382,7 @@ func TestSmartContractLogParserTransferOutAndCallCov(t *testing.T) {
 	require.Nil(t, item.AggregatorTargetLimit)
 	require.Equal(t, outMemo, item.Memo)
 
-	// unparseable memo and non-outbound memo are ignored
+	// unparsable memo and non-outbound memo are ignored
 	for _, m := range []string{"NOT A MEMO :::", "REFUND:" + strings.Repeat("B", 64)} {
 		item = &stypes.TxInItem{}
 		_, err = parser.GetTxInItem([]*etypes.Log{
@@ -431,7 +431,7 @@ func TestSmartContractLogParserTransferAllowanceErrorsCov(t *testing.T) {
 	oldVault := "0x3fd2d4ce97b082d4bce3f9fee2a3d60668d2f473"
 	newVault := "0x6c4a2eeb8531e3c18bca51104df7eb2377708263"
 
-	// unparseable memo -> ignored
+	// unparsable memo -> ignored
 	item := &stypes.TxInItem{}
 	_, err = parser.GetTxInItem([]*etypes.Log{
 		h.getTransferAllowanceEvent(routerCov, oldVault, newVault, NativeTokenAddr, big.NewInt(10), "NOT A MEMO :::"),

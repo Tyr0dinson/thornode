@@ -182,7 +182,7 @@ func (s *CovCCTxOutSuite) TestTakeAffiliateFeeBranches(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(out.Equal(amt), Equals, true)
 
-	// unparseable inbound memo -> error and unchanged amount
+	// unparsable inbound memo -> error and unchanged amount
 	toi.Memo = ""
 	toi.InHash = setInbound("NOTAMEMO:foo")
 	out, err = tos.takeAffiliateFee(w.ctx, w.mgr, toi)
@@ -367,7 +367,7 @@ func (s *CovCCTxOutSuite) TestZeroRuneOutboundDropped(c *C) {
 	c.Assert(ok, Equals, false)
 	c.Assert(err, Equals, ErrNotEnoughToPayFee)
 
-	// inbound with unparseable memo -> dropped
+	// inbound with unparsable memo -> dropped
 	ok, err = tos.TryAddTxOutItem(w.ctx, w.mgr, mk(covCCSetInboundMemo(w, "NOTAMEMO")), cosmos.ZeroUint())
 	c.Assert(ok, Equals, false)
 	c.Assert(err, Equals, ErrNotEnoughToPayFee)
