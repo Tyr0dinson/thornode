@@ -325,7 +325,7 @@ func (s *XrpTestSuite) TestBroadcastTxPathsCov(c *C) {
 	c.Check(hash, Equals, txIn.Tx)
 	c.Check(rpcSrv.count("submit"), Equals, before)
 
-	// An unparseable tx lookup is treated as "needs broadcast".
+	// An unparsable tx lookup is treated as "needs broadcast".
 	rpcSrv.set("tx", `{"result":{"validated":"maybe"}}`, 0)
 	c.Check(client.txNeedsBroadcast(txIn.Tx), Equals, true)
 }

@@ -159,7 +159,7 @@ func (s *QuerierCovQSuite) TestCheckPendingCovQ(c *C) {
 	c.Assert(isPending, Equals, false)
 	c.Assert(pending, Equals, true)
 
-	// unparseable memo: not a swap
+	// unparsable memo: not a swap
 	bad := covQObservedTx(c, "covq-not-a-memo", 10, 10)
 	voter = NewObservedTxVoter(bad.Tx.ID, nil)
 	voter.Tx = bad

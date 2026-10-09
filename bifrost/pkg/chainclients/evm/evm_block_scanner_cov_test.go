@@ -223,10 +223,10 @@ func TestCovScannerFetchTxsAndReorg(t *testing.T) {
 	require.Equal(t, memo, in.Memo)
 	require.Equal(t, strings.ToLower(ext.Hex()), in.Sender)
 	require.Equal(t, uint64(1e7), in.Coins[0].Amount.Uint64())
-	fo := byTx[failedOut.Hash().Hex()[2:]]
-	require.NotNil(t, fo)
-	require.True(t, strings.HasPrefix(fo.Memo, "OUT:"))
-	require.Equal(t, uint64(1), fo.Coins[0].Amount.Uint64())
+	failedOutbound := byTx[failedOut.Hash().Hex()[2:]]
+	require.NotNil(t, failedOutbound)
+	require.True(t, strings.HasPrefix(failedOutbound.Memo, "OUT:"))
+	require.Equal(t, uint64(1), failedOutbound.Coins[0].Amount.Uint64())
 	cn := byTx[cancel.Hash().Hex()[2:]]
 	require.NotNil(t, cn)
 	require.Equal(t, common.AVAXChain.DustThreshold().Uint64(), cn.Coins[0].Amount.Uint64())

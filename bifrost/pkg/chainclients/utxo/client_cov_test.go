@@ -557,7 +557,7 @@ func (s *UTXOCovSuite) TestIsValidUTXOChainsCov(c *C) {
 		// 1-of-1 bare multisig is rejected
 		multisig := "5121" + "02" + strings.Repeat("22", 32) + "51ae"
 		c.Check(cl.isValidUTXO(multisig), Equals, false, Commentf("%s multisig", chain))
-		// unparseable script
+		// unparsable script
 		c.Check(cl.isValidUTXO("05"), Equals, false, Commentf("%s truncated", chain))
 		c.Check(cl.isValidUTXO("zz"), Equals, false, Commentf("%s bad hex", chain))
 	}

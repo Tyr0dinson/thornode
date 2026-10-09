@@ -322,8 +322,8 @@ func TestSwapSendSwapCovB(t *testing.T) {
 		t.Fatalf("send failed: %+v", res)
 	}
 	tx := btc.Signed[0]
-	wantTo := strings.Split(token.String(), "-")[0]
-	if tx.Memo != "=:"+wantTo+":0xdest" || tx.ToAddress != "bc1qvault" || !tx.Coin.Amount.Equal(sdkmath.NewUint(common.One)) {
+	expectedTarget := strings.Split(token.String(), "-")[0]
+	if tx.Memo != "=:"+expectedTarget+":0xdest" || tx.ToAddress != "bc1qvault" || !tx.Coin.Amount.Equal(sdkmath.NewUint(common.One)) {
 		t.Fatalf("UTXO swaps must fuzzy match token assets, got %+v", tx)
 	}
 

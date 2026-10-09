@@ -227,9 +227,9 @@ func TestGetAddressesFromScriptPubKeyBTCCov(t *testing.T) {
 	if got = c.getAddressesFromScriptPubKeyBTC(btcjson.ScriptPubKeyResult{Hex: "zz"}); got != nil {
 		t.Fatalf("expected nil for bad hex, got %v", got)
 	}
-	// Truncated push: unparseable script.
+	// Truncated push: unparsable script.
 	if got = c.getAddressesFromScriptPubKeyBTC(btcjson.ScriptPubKeyResult{Hex: "05"}); got != nil {
-		t.Fatalf("expected nil for unparseable script, got %v", got)
+		t.Fatalf("expected nil for unparsable script, got %v", got)
 	}
 	// The address is encoded for the build's network (bcrt1 on mocknet, bc1 on
 	// mainnet), so derive the expectation from the client's own chain params.

@@ -227,7 +227,7 @@ func TestSwapMemolessGetMemolessRefCovC(t *testing.T) {
 	}
 	api.JSON(path, `{"memo":"=:ETH.ETH:0xabc","reference":"x42"}`)
 	if res := a.getMemolessRef(nil); res.Continue || res.Error == nil {
-		t.Fatalf("unparseable reference must fail: %+v", res)
+		t.Fatalf("unparsable reference must fail: %+v", res)
 	}
 	api.JSON(path, `{"memo":"=:ETH.ETH:0xabc","reference":"00042"}`)
 	if res := a.getMemolessRef(nil); !res.Continue || a.memolessRef != 42 {

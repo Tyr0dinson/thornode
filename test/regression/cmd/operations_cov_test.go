@@ -864,7 +864,7 @@ func TestOpCreateBlocksCov(t *testing.T) {
 		t.Fatalf("expected exit code error, got %v", err)
 	}
 
-	// unparseable height
+	// unparsable height
 	b.height = "not-a-number"
 	op = &OpCreateBlocks{Count: 1, SkipInvariants: true}
 	if err := op.Execute(io.Discard, "suites/grp/cb.yaml", 0, routine, nil, nil); err == nil {
