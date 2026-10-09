@@ -45,8 +45,10 @@ func (s *HandlerTCYClaimCovCESuite) TestRunCovCE(c *C) {
 	// claim to a smart contract address is rejected
 	scAddrs, err := tcysmartcontract.GetTCYSmartContractAddresses()
 	c.Assert(err, IsNil)
-	_, err = h.Run(ctx, NewMsgTCYClaim(scAddrs[0], l1, signer))
-	c.Check(err, ErrorMatches, "cannot claim to TCY smart contract address.*")
+	for _, scAddr := range scAddrs {
+		_, err = h.Run(ctx, NewMsgTCYClaim(scAddr, l1, signer))
+		c.Check(err, ErrorMatches, "cannot claim to TCY smart contract address.*")
+	}
 
 	covCEFundTCYClaiming(c, ctx, k, 100)
 	c.Assert(k.SetTCYClaimer(ctx, types.TCYClaimer{L1Address: l1, Asset: common.BTCAsset, Amount: math.NewUint(40)}), IsNil)

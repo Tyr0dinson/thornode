@@ -268,14 +268,25 @@ func (s *NetworkMgrCovCDSuite) TestSpawnDerivedAssetEdgesCovCD(c *C) {
 	vm.suspendVirtualPool(ctx, mgr, common.DOGEAsset, errKaboom)
 	c.Check(ek.PoolExist(ctx, common.DOGEAsset.GetDerivedAsset()), Equals, false)
 
-	// with the layer1 pool present but no anchors, the derived pool stays suspended
-	covCDPool(c, ctx, ek, common.BTCAsset, 1000*common.One, 10*common.One)
+	// Enable derived depth, but make the layer1 pool unavailable as an anchor.
+	anchor := covCDPool(c, ctx, ek, common.BTCAsset, 1000*common.One, 10*common.One)
+	anchor.Status = PoolStaged
+	c.Assert(ek.SetPool(ctx, anchor), IsNil)
+	ek.SetMimir(ctx, constants.DerivedDepthBasisPts.String(), 10000)
 	dp.Status = PoolAvailable
 	c.Assert(ek.SetPool(ctx, dp), IsNil)
 	vm.SpawnDerivedAsset(ctx, common.BTCAsset, mgr)
 	got, err = ek.GetPool(ctx, derived)
 	c.Assert(err, IsNil)
 	c.Check(got.Status, Equals, PoolSuspended)
+
+	// Restoring the anchor makes the derived pool available with depth enabled.
+	anchor.Status = PoolAvailable
+	c.Assert(ek.SetPool(ctx, anchor), IsNil)
+	vm.SpawnDerivedAsset(ctx, common.BTCAsset, mgr)
+	got, err = ek.GetPool(ctx, derived)
+	c.Assert(err, IsNil)
+	c.Check(got.Status, Equals, PoolAvailable)
 
 	// disabling derived depth suspends as well
 	dp.Status = PoolAvailable
@@ -290,42 +301,66 @@ func (s *NetworkMgrCovCDSuite) TestSpawnDerivedAssetEdgesCovCD(c *C) {
 func (s *NetworkMgrCovCDSuite) TestRedeemSynthAssetToReserveCovCD(c *C) {
 	ctx, _, ek, vm := covCDSetup(c)
 	pool := covCDPool(c, ctx, ek, common.BTCAsset, 100*common.One, 10*common.One)
+	reserveBefore := ek.GetRuneBalanceOfModule(ctx, ReserveName)
+	asgardBefore := ek.GetRuneBalanceOfModule(ctx, AsgardName)
+	eventsBefore := ctx.EventManager().Events()
+	assertUnchanged := func() {
+		c.Check(ek.GetRuneBalanceOfModule(ctx, ReserveName).Equal(reserveBefore), Equals, true)
+		c.Check(ek.GetRuneBalanceOfModule(ctx, AsgardName).Equal(asgardBefore), Equals, true)
+		got, err := ek.GetPool(ctx, pool.Asset)
+		c.Assert(err, IsNil)
+		c.Check(got, DeepEquals, pool)
+		start, err := ek.GetPoolRagnarokStart(ctx, pool.Asset)
+		c.Assert(err, IsNil)
+		c.Check(start, Equals, int64(0))
+		c.Check(ctx.EventManager().Events(), DeepEquals, eventsBefore)
+	}
 
 	// no synths: nothing happens
 	c.Assert(vm.redeemSynthAssetToReserve(ctx, pool), IsNil)
-	start, err := ek.GetPoolRagnarokStart(ctx, common.BTCAsset)
-	c.Assert(err, IsNil)
-	c.Check(start, Equals, int64(0))
+	assertUnchanged()
 
 	// 1 BTC of synths is worth 10 RUNE at this pool price
 	synth := common.NewCoin(common.BTCAsset.GetSyntheticAsset(), cosmos.NewUint(common.One))
 	c.Assert(ek.MintToModule(ctx, ModuleName, synth), IsNil)
+	eventsBefore = ctx.EventManager().Events()
 
 	ek.fail["Send:"+AsgardName+":"+ReserveName] = true
 	c.Check(vm.redeemSynthAssetToReserve(ctx, pool), ErrorMatches, "fail to send redeemed synth RUNE to reserve.*")
 	delete(ek.fail, "Send:"+AsgardName+":"+ReserveName)
+	assertUnchanged()
 	ek.fail["SetPool"] = true
 	c.Check(vm.redeemSynthAssetToReserve(ctx, pool), ErrorMatches, "fail to save pool.*")
 	delete(ek.fail, "SetPool")
-	// the failed SetPool attempt already moved its RUNE; restore a clean view
-	reserveBefore := ek.GetRuneBalanceOfModule(ctx, ReserveName)
+	assertUnchanged()
+	c.Check(ek.GetTotalSupply(ctx, synth.Asset).Equal(synth.Amount), Equals, true)
 
 	c.Assert(vm.redeemSynthAssetToReserve(ctx, pool), IsNil)
 	c.Check(ek.GetRuneBalanceOfModule(ctx, ReserveName).Sub(reserveBefore).Uint64(), Equals, uint64(10*common.One))
+	c.Check(asgardBefore.Sub(ek.GetRuneBalanceOfModule(ctx, AsgardName)).Uint64(), Equals, uint64(10*common.One))
 	got, err := ek.GetPool(ctx, common.BTCAsset)
 	c.Assert(err, IsNil)
 	c.Check(got.BalanceRune.Uint64(), Equals, uint64(90*common.One))
-	start, err = ek.GetPoolRagnarokStart(ctx, common.BTCAsset)
+	start, err := ek.GetPoolRagnarokStart(ctx, common.BTCAsset)
 	c.Assert(err, IsNil)
 	c.Check(start, Equals, ctx.BlockHeight())
+	c.Check(ek.GetTotalSupply(ctx, synth.Asset).IsZero(), Equals, true)
+	// A retry after success must not redeem the same synth supply again.
+	c.Assert(vm.redeemSynthAssetToReserve(ctx, got), IsNil)
+	c.Check(ek.GetRuneBalanceOfModule(ctx, ReserveName).Sub(reserveBefore).Uint64(), Equals, uint64(10*common.One))
+	c.Check(asgardBefore.Sub(ek.GetRuneBalanceOfModule(ctx, AsgardName)).Uint64(), Equals, uint64(10*common.One))
 
 	// synth value larger than the pool's RUNE is capped at the pool's RUNE
 	small := covCDPool(c, ctx, ek, common.ETHAsset, common.One, common.One)
 	c.Assert(ek.MintToModule(ctx, ModuleName, common.NewCoin(common.ETHAsset.GetSyntheticAsset(), cosmos.NewUint(100*common.One))), IsNil)
+	reserveBefore = ek.GetRuneBalanceOfModule(ctx, ReserveName)
+	asgardBefore = ek.GetRuneBalanceOfModule(ctx, AsgardName)
 	c.Assert(vm.redeemSynthAssetToReserve(ctx, small), IsNil)
 	got, err = ek.GetPool(ctx, common.ETHAsset)
 	c.Assert(err, IsNil)
 	c.Check(got.BalanceRune.IsZero(), Equals, true)
+	c.Check(ek.GetRuneBalanceOfModule(ctx, ReserveName).Sub(reserveBefore).Equal(small.BalanceRune), Equals, true)
+	c.Check(asgardBefore.Sub(ek.GetRuneBalanceOfModule(ctx, AsgardName)).Equal(small.BalanceRune), Equals, true)
 }
 
 func (s *NetworkMgrCovCDSuite) TestClaimingSwapRuneToTCYCovCD(c *C) {

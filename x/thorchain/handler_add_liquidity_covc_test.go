@@ -98,6 +98,13 @@ func (s *HandlerAddLiquidityCovCESuite) TestAffiliateAddCovCE(c *C) {
 	btcAddr := GetRandomBTCAddress()
 
 	for _, aff := range []common.Address{GetRandomRUNEAddress(), GetRandomBTCAddress()} {
+		poolBefore, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+		c.Assert(err, IsNil)
+		userBefore, err := mgr.Keeper().GetLiquidityProvider(ctx, common.BTCAsset, runeAddr)
+		c.Assert(err, IsNil)
+		affBefore, err := mgr.Keeper().GetLiquidityProvider(ctx, common.BTCAsset, aff)
+		c.Assert(err, IsNil)
+
 		tx := GetRandomTx()
 		tx.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One))}
 		msg := NewMsgAddLiquidity(tx, common.BTCAsset, cosmos.NewUint(100*common.One), cosmos.NewUint(common.One),
@@ -106,11 +113,24 @@ func (s *HandlerAddLiquidityCovCESuite) TestAffiliateAddCovCE(c *C) {
 
 		affLP, err := mgr.Keeper().GetLiquidityProvider(ctx, common.BTCAsset, aff)
 		c.Assert(err, IsNil)
-		c.Check(affLP.Units.IsZero(), Equals, false, Commentf("affiliate %s", aff))
+		userLP, err := mgr.Keeper().GetLiquidityProvider(ctx, common.BTCAsset, runeAddr)
+		c.Assert(err, IsNil)
+		poolAfter, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
+		c.Assert(err, IsNil)
+
+		// The deposit matches the pool ratio, so 100 RUNE mints 100 units
+		// (in base units), split 90/10 by the 1000 bps affiliate fee.
+		userUnits := userLP.Units.Sub(userBefore.Units)
+		affUnits := affLP.Units.Sub(affBefore.Units)
+		mintedUnits := poolAfter.LPUnits.Sub(poolBefore.LPUnits)
+		c.Check(userUnits.Uint64(), Equals, uint64(90*common.One))
+		c.Check(affUnits.Uint64(), Equals, uint64(10*common.One), Commentf("affiliate %s", aff))
+		c.Check(mintedUnits.Uint64(), Equals, uint64(100*common.One))
+		c.Check(userUnits.Add(affUnits).Equal(mintedUnits), Equals, true,
+			Commentf("depositor and affiliate units must equal the pool's minted units for %s", aff))
+		c.Check(poolAfter.BalanceRune.Sub(poolBefore.BalanceRune).Equal(msg.RuneAmount), Equals, true)
+		c.Check(poolAfter.BalanceAsset.Sub(poolBefore.BalanceAsset).Equal(msg.AssetAmount), Equals, true)
 	}
-	userLP, err := mgr.Keeper().GetLiquidityProvider(ctx, common.BTCAsset, runeAddr)
-	c.Assert(err, IsNil)
-	c.Check(userLP.Units.IsZero(), Equals, false)
 }
 
 func (s *HandlerAddLiquidityCovCESuite) TestSwapPathCovCE(c *C) {
