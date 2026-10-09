@@ -26,7 +26,11 @@ func TestSecurityMutationAttestationAuthenticityAndReplay(t *testing.T) {
 	if err := ProcessAttestation(&state, valid); err != nil || len(state) != 1 {
 		t.Fatalf("duplicate changed count to %d: %v", len(state), err)
 	}
-	invalid := mutationMessage{payload: []byte("transaction-B"), attestation: &common.Attestation{PubKey: other.PubKey().Bytes(), Signature: sig}}
+	otherSig, err := other.Sign([]byte("transaction-C"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	invalid := mutationMessage{payload: []byte("transaction-B"), attestation: &common.Attestation{PubKey: other.PubKey().Bytes(), Signature: otherSig}}
 	if err := ProcessAttestation(&state, invalid); err == nil || len(state) != 1 {
 		t.Fatalf("forged attestation accepted: count=%d err=%v", len(state), err)
 	}
