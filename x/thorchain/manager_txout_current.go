@@ -90,12 +90,31 @@ func (tos *TxOutStorage) EndBlock(ctx cosmos.Context, mgr Manager) error {
 		}
 
 		if len(tx.MaxGas) == 0 || (!maxGasCoin.IsEmpty() && !maxGasCoin.Amount.Equal(tx.MaxGas[0].Amount)) {
+			coin := tx.Coin
+			// Inactive-vault gas-asset refunds have only the observed inbound to
+			// spend. Their coin was reduced by MaxGas when it was scheduled; keep
+			// coin + MaxGas constant when the gas estimate changes before signing.
+			if coin.Asset.IsGasAsset() {
+				vault, err := tos.keeper.GetVault(ctx, tx.VaultPubKey)
+				if err == nil && vault.Status == InactiveVault {
+					oldGas := tx.MaxGas.ToCoins().GetCoin(coin.Asset).Amount
+					newGas := common.Gas{maxGasCoin}.ToCoins().GetCoin(coin.Asset).Amount
+					budget := coin.Amount.Add(oldGas)
+					if budget.LTE(newGas) {
+						ctx.Logger().Error("inactive vault outbound cannot cover updated max gas", "hash", tx.InHash, "budget", budget, "max_gas", newGas)
+						continue
+					}
+					coin.Amount = budget.Sub(newGas)
+				}
+			}
 			// Update MaxGas in ObservedTxVoter action first; only update txOut if voter update succeeds
 			// to maintain consistency between the txOut item and the voter action.
-			if err := updateTxOutGas(ctx, tos.keeper, tx, common.Gas{maxGasCoin}); err != nil {
+			if err := updateTxOutGasAndCoin(ctx, tos.keeper, tx, common.Gas{maxGasCoin}, coin); err != nil {
 				ctx.Logger().Error("Failed to update MaxGas of action in ObservedTxVoter", "hash", tx.InHash, "error", err)
 			} else {
 				txOut.TxArray[i].MaxGas = common.Gas{maxGasCoin}
+				txOut.TxArray[i].Coin = coin
+				tx = txOut.TxArray[i]
 			}
 		}
 		if gasRate > 0 && txOut.TxArray[i].GasRate != gasRate {
