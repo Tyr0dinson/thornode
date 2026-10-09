@@ -531,20 +531,36 @@ func TestCovReconstructVaultLiability(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// NOTE (pre-existing bug): reconstructVaultLiability calls
-	// BlockByNumber(ctx, nil) expecting the pending block, but go-ethereum
-	// sends "latest" for nil. The vault's pending tx is therefore not found,
-	// no liability is reconstructed and the vault is not ready until the tx
-	// confirms. Fixing it (requesting "pending") should flip these assertions
-	// to ready with a 211_000 (value + gasFeeCap*gas) liability.
-	if requestedTag != "latest" {
+	if requestedTag != "pending" {
 		t.Fatalf("requested block tag %q", requestedTag)
 	}
-	if ready {
-		t.Fatal("expected not ready: the pending tx is not in the latest block")
+	if !ready {
+		t.Fatal("expected ready after reconstructing all pending transactions")
 	}
-	if got := c.getPendingLiability(vault, 4); got.Sign() != 0 {
+	// Only our pending nonce counts, including value + gasFeeCap*gas.
+	if got := c.getPendingLiability(vault, 0); got.Cmp(big.NewInt(211_000)) != 0 {
 		t.Fatalf("liability = %s", got)
+	}
+
+	// Startup becomes ready with pending liabilities, and retries do not double count.
+	c.signingReady.Store(false)
+	c.wg.Add(1)
+	c.reconstructLiabilities()
+	if !c.signingReady.Load() {
+		t.Fatal("expected signing ready after reconstructing pending liabilities")
+	}
+	if got := c.getPendingLiability(vault, 4); got.Cmp(big.NewInt(211_000)) != 0 {
+		t.Fatalf("liability after retry = %s", got)
+	}
+
+	// A transaction missing from the pending block keeps the vault unready.
+	env.rpc.set("eth_getTransactionCount", covNonces(4, 6))
+	ready, err = c.reconstructVaultLiability(vault)
+	if err != nil || ready {
+		t.Fatalf("missing pending transaction: ready=%v err=%v", ready, err)
+	}
+	if got := c.getPendingLiability(vault, 4); got.Cmp(big.NewInt(211_000)) != 0 {
+		t.Fatalf("partial liability = %s", got)
 	}
 
 	// rpc failures

@@ -437,10 +437,9 @@ func (c *EVMClient) reconstructVaultLiability(vaultAddr string) (bool, error) {
 		Msg("detected pending transactions on startup")
 
 	// Fetch pending block to find our transactions
-	// BlockByNumber with nil returns the pending block
 	ctx3, cancel3 := c.getTimeoutContext()
 	defer cancel3()
-	pendingBlock, err := c.ethClient.BlockByNumber(ctx3, nil)
+	pendingBlock, err := c.ethClient.BlockByNumber(ctx3, big.NewInt(int64(rpc.PendingBlockNumber)))
 	if err != nil {
 		return false, fmt.Errorf("failed to get pending block: %w", err)
 	}
