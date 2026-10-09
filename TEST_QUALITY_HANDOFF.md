@@ -12,18 +12,18 @@ Snapshot: 2026-10-09 21:53 UTC. This file is the entry point for a future sessio
 
 ## Topic merge requests opened 2026-10-09
 
-| Topic | Draft MR | Target |
-| --- | --- | --- |
-| eBifrost race | [!5182](https://gitlab.com/thorchain/thornode/-/merge_requests/5182) | `develop` |
-| Simulation unit | [!5183](https://gitlab.com/thorchain/thornode/-/merge_requests/5183) | `develop` |
-| Simulation invariants | [!5184](https://gitlab.com/thorchain/thornode/-/merge_requests/5184) | `develop` |
-| Test-quality CI | [!5185](https://gitlab.com/thorchain/thornode/-/merge_requests/5185) | `test-quality-sim-unit` (stacked on !5183) |
-| Consensus determinism | [!5186](https://gitlab.com/thorchain/thornode/-/merge_requests/5186) | `develop` |
-| Accounting | [!5187](https://gitlab.com/thorchain/thornode/-/merge_requests/5187) | `develop` |
-| Quorum security | [!5188](https://gitlab.com/thorchain/thornode/-/merge_requests/5188) | `develop` |
-| Signer/observer recovery | [!5189](https://gitlab.com/thorchain/thornode/-/merge_requests/5189) | `develop` |
-| Native security fuzz | [!5190](https://gitlab.com/thorchain/thornode/-/merge_requests/5190) | `develop` |
-| Curated mutation checks | [!5191](https://gitlab.com/thorchain/thornode/-/merge_requests/5191) | `develop` |
+| Topic                    | Draft MR                                                             | Target                                     |
+| ------------------------ | -------------------------------------------------------------------- | ------------------------------------------ |
+| eBifrost race            | [!5182](https://gitlab.com/thorchain/thornode/-/merge_requests/5182) | `develop`                                  |
+| Simulation unit          | [!5183](https://gitlab.com/thorchain/thornode/-/merge_requests/5183) | `develop`                                  |
+| Simulation invariants    | [!5184](https://gitlab.com/thorchain/thornode/-/merge_requests/5184) | `develop`                                  |
+| Test-quality CI          | [!5185](https://gitlab.com/thorchain/thornode/-/merge_requests/5185) | `test-quality-sim-unit` (stacked on !5183) |
+| Consensus determinism    | [!5186](https://gitlab.com/thorchain/thornode/-/merge_requests/5186) | `develop`                                  |
+| Accounting               | [!5187](https://gitlab.com/thorchain/thornode/-/merge_requests/5187) | `develop`                                  |
+| Quorum security          | [!5188](https://gitlab.com/thorchain/thornode/-/merge_requests/5188) | `develop`                                  |
+| Signer/observer recovery | [!5189](https://gitlab.com/thorchain/thornode/-/merge_requests/5189) | `develop`                                  |
+| Native security fuzz     | [!5190](https://gitlab.com/thorchain/thornode/-/merge_requests/5190) | `develop`                                  |
+| Curated mutation checks  | [!5191](https://gitlab.com/thorchain/thornode/-/merge_requests/5191) | `develop`                                  |
 
 All ten are draft, and all have `huginn-bot` as reviewer. The integrated draft !5181 overlaps them all. Coordinate the merge strategy before merging any of these; do not merge both an umbrella change and its component change without checking what has already landed. Some standalone branches gained focused CI wiring and lint fixes after the integrated MR's green pipeline. Use the latest pipeline for **each** MR, not the initial failed or auto-canceled pipeline. At this snapshot, !5183's simulation unit job, !5186's determinism job, and !5191's fast mutation job have individually passed, but the full pipelines are still in progress. !5182 and !5188 had existing race-suite timing failures under load and their failed/canceled jobs were retried. !5189 fixed an older signer test's obsolete broadcast expectation. !5185 removed a duplicate simulation job in the stacked merge result. Keep working until all ten latest pipelines pass.
 
