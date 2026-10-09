@@ -8488,3 +8488,47 @@ func (s AdvSwapQueueSuite) TestRapidSwapRefreshesPairsWhenDerivedPoolReactivates
 	c.Assert(mgr.Keeper().HasAdvSwapQueueItem(ctx, limit.Tx.ID, 0), Equals, false,
 		Commentf("limit swap on reactivated derived pool should fill in the same block"))
 }
+
+// TestCapFailedSwapReasons verifies capFailedSwapReasons trims the
+// FailedSwapReasons telemetry slice to the most recent
+// advSwapQueueMaxFailedReasons entries while leaving FailedSwaps untouched, so
+// FailCount()/SuccessCount() are unchanged (the cap is a storage bound, not a
+// consensus-accounting change).
+func (s AdvSwapQueueSuite) TestCapFailedSwapReasons(c *C) {
+	const n = 55
+	reasons := make([]string, n)
+	fails := make([]uint64, n)
+	for i := 0; i < n; i++ {
+		reasons[i] = fmt.Sprintf("reason-%d", i)
+		fails[i] = uint64(i)
+	}
+	msg := &MsgSwap{
+		State: &types.SwapState{
+			Count:             100,
+			FailedSwaps:       append([]uint64(nil), fails...),
+			FailedSwapReasons: append([]string(nil), reasons...),
+		},
+	}
+	beforeFail := msg.FailCount()
+	beforeSuccess := msg.SuccessCount()
+
+	capFailedSwapReasons(msg)
+
+	// reasons trimmed to the last advSwapQueueMaxFailedReasons, order preserved
+	c.Check(msg.State.FailedSwapReasons, HasLen, advSwapQueueMaxFailedReasons)
+	c.Check(msg.State.FailedSwapReasons[0], Equals, fmt.Sprintf("reason-%d", n-advSwapQueueMaxFailedReasons))
+	c.Check(msg.State.FailedSwapReasons[advSwapQueueMaxFailedReasons-1], Equals, fmt.Sprintf("reason-%d", n-1))
+	// FailedSwaps untouched -> FailCount/SuccessCount unchanged (consensus-safe)
+	c.Check(msg.State.FailedSwaps, HasLen, n)
+	c.Check(msg.FailCount(), Equals, beforeFail)
+	c.Check(msg.SuccessCount(), Equals, beforeSuccess)
+
+	// at/below the cap: unchanged
+	small := &MsgSwap{State: &types.SwapState{FailedSwapReasons: []string{"a", "b"}}}
+	capFailedSwapReasons(small)
+	c.Check(small.State.FailedSwapReasons, HasLen, 2)
+
+	// nil-safe
+	capFailedSwapReasons(nil)
+	capFailedSwapReasons(&MsgSwap{})
+}

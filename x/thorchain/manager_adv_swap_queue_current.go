@@ -767,6 +767,29 @@ func (vm *SwapQueueAdv) AddSwapQueueItem(ctx cosmos.Context, mgr Manager, msg *M
 	return nil
 }
 
+// advSwapQueueMaxFailedReasons bounds the per-item FailedSwapReasons telemetry
+// slice that EndBlock persists on every re-write of a streaming swap. Without a
+// bound each failed sub-swap appends a full error string that is never trimmed,
+// growing the stored MsgSwap blob to megabytes for a long-lived failing swap and
+// pinning that blob in the IAVL node cache (the dominant driver of validator RSS
+// growth to GOMEMLIMIT). Only the error-string history is trimmed; FailedSwaps
+// is deliberately left intact so FailCount()/SuccessCount() are unchanged.
+const advSwapQueueMaxFailedReasons = 10
+
+// capFailedSwapReasons trims msg.State.FailedSwapReasons to the most recent
+// advSwapQueueMaxFailedReasons entries. It copies into a fresh slice (rather than
+// re-slicing) so the discarded strings and the original backing array become
+// unreachable and can be freed. FailedSwaps is intentionally NOT touched: its
+// length is FailCount(), which drives SuccessCount() and limit-swap settlement.
+func capFailedSwapReasons(msg *MsgSwap) {
+	if msg == nil || msg.State == nil {
+		return
+	}
+	if n := len(msg.State.FailedSwapReasons); n > advSwapQueueMaxFailedReasons {
+		msg.State.FailedSwapReasons = append([]string(nil), msg.State.FailedSwapReasons[n-advSwapQueueMaxFailedReasons:]...)
+	}
+}
+
 // EndBlock trigger the real swap to be processed
 func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabled bool) error {
 	// Readiness and handler validation repeatedly query the same Mimir/halt
@@ -961,6 +984,7 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 				msg.State.LastHeight = ctx.BlockHeight()
 				msg.Tx.Coins[0].Amount = originalAmount
 				msg.TradeTarget = originalTradeTarget
+				capFailedSwapReasons(msg)
 				if err := vm.k.SetAdvSwapQueueItemState(cacheCtx, *msg); err != nil {
 					ctx.Logger().Error("fail to save swap item in cache context, discarding swap", "error", err)
 					continue
@@ -1011,6 +1035,7 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 			msg.TradeTarget = originalTradeTarget
 
 			// Save the updated swap state (failure path — no pool commit to be inconsistent with)
+			capFailedSwapReasons(msg)
 			if err := vm.k.SetAdvSwapQueueItemState(ctx, *msg); err != nil {
 				ctx.Logger().Error("fail to save swap item", "error", err)
 			}
