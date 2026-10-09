@@ -56,11 +56,15 @@ scheduled pipelines with a 55 minute budget. Both preserve JSON summaries and
 fail for unexpected surviving mutations. Run them locally with
 `python3 scripts/test-security-mutations.py --mode fast --summary /tmp/mutations-fast.json`
 or `python3 scripts/test-security-mutations.py --mode deep --budget-seconds 3300 --summary /tmp/mutations-deep.json`; the runner owns the build
-lock. The determinism and fuzz workspaces still own their standalone runners.
-Wire those jobs only after their runner, corpus or seed persistence, and failure
-semantics are committed and verified.
+lock. `consensus-determinism` runs the committed THORChain replay runner after
+unit tests on merge requests and schedules and saves its full output.
+`security-fuzz-fast` gives each of the five native targets 1,000 iterations on
+merge requests; `security-fuzz-deep` gives each target 20 seconds on schedules.
+Both fail when any target fails, save the command log, and reuse the Go fuzz
+cache across pipelines. The source seed corpus is committed under
+`testdata/fuzz` where needed. These jobs use the committed runners directly.
 
-Merge the `test-quality-sim-unit` fixture changes before enabling this CI
-configuration on the default branch. On the current base, live-service tests
-in `pkg/dag`, `pkg/solana`, and `pkg/types` fail in an isolated unit job. The
-CI job must retain those failures until the fixtures are made self-contained.
+The simulation fixture changes in this integrated branch make the nested
+module unit suite self-contained. Its two daemon integration tests remain
+explicit exclusions in `scripts/test-simulation-unit.sh` and require their
+own isolated service environment.

@@ -1012,6 +1012,74 @@ security-mutations-deep:
     paths:
       - test-quality-reports/mutations-deep.json
 
+# This runner commits real THORChain genesis state and checks same-version
+# replay, export/restart, divergence detection, and the 18-to-19 migration.
+consensus-determinism:
+  tags: !reference [.small-runner, tags]
+  rules: *rules
+  stage: long-test
+  needs:
+    - job: unit-tests
+      optional: true
+      artifacts: false
+  timeout: 25m
+  before_script:
+    - !reference [.go-private-auth, before_script]
+    - !reference [.stable-mtimes, before_script]
+  script:
+    - mkdir -p test-quality-reports
+    - sh -c 'scripts/test-consensus-determinism.sh > test-quality-reports/consensus-determinism.log 2>&1; rc=$?; cat test-quality-reports/consensus-determinism.log; exit "$rc"'
+  artifacts:
+    when: always
+    paths:
+      - test-quality-reports/consensus-determinism.log
+
+# Native fuzzing runs each target in a separate Go invocation. The cache keeps
+# generated inputs across pipelines; source seeds remain in testdata/fuzz.
+.security-fuzz-base:
+  tags: !reference [.small-runner, tags]
+  stage: long-test
+  needs:
+    - job: unit-tests
+      optional: true
+      artifacts: false
+  variables:
+    FUZZ_CORPUS_DIR: "$CI_PROJECT_DIR/.security-fuzz-cache"
+  cache:
+    key: security-fuzz-$CI_DEFAULT_BRANCH
+    paths:
+      - .security-fuzz-cache/
+  before_script:
+    - !reference [.go-private-auth, before_script]
+    - !reference [.stable-mtimes, before_script]
+  script:
+    - mkdir -p test-quality-reports
+    - sh -c 'scripts/test-security-fuzz.sh > test-quality-reports/security-fuzz.log 2>&1; rc=$?; cat test-quality-reports/security-fuzz.log; exit "$rc"'
+  artifacts:
+    when: always
+    paths:
+      - test-quality-reports/security-fuzz.log
+
+security-fuzz-fast:
+  extends: .security-fuzz-base
+  rules:
+    - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
+      when: never
+    - if: '$CI_MERGE_REQUEST_IID && $CI_PIPELINE_SOURCE != "schedule"'
+  timeout: 25m
+  variables:
+    FUZZ_TIME: 1000x
+    FUZZ_CORPUS_DIR: "$CI_PROJECT_DIR/.security-fuzz-cache"
+
+security-fuzz-deep:
+  extends: .security-fuzz-base
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+  timeout: 1h
+  variables:
+    FUZZ_TIME: 20s
+    FUZZ_CORPUS_DIR: "$CI_PROJECT_DIR/.security-fuzz-cache"
+
 test-regression:
   tags: !reference [.small-runner, tags]
   rules:
