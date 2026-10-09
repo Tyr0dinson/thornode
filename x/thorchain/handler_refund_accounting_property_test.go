@@ -15,6 +15,8 @@ import (
 func (AccountingPropertySuite) TestRefundOutboundObligationConservation(c *C) {
 	for _, seed := range accountingPropertySeeds() {
 		w := getHandlerTestWrapper(c, 1, true, false)
+		vaultKey := accountingVaultPubKey(c, "A")
+		senderKey := accountingVaultPubKey(c, "B")
 		asset := common.DOGEAsset
 		amount := uint64(100*common.One) + uint64(seed*1000)
 		trace := fmt.Sprintf("seed=%d refund DOGE=%d", seed, amount)
@@ -25,15 +27,15 @@ func (AccountingPropertySuite) TestRefundOutboundObligationConservation(c *C) {
 		pool.BalanceAsset = cosmos.NewUint(100 * common.One)
 		pool.LPUnits = cosmos.NewUint(100 * common.One)
 		c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil, Commentf(trace))
-		vault := NewVault(1, ActiveVault, AsgardVault, accountingVaultPubKeyA, common.Chains{common.DOGEChain}.Strings(), []ChainContract{})
+		vault := NewVault(1, ActiveVault, AsgardVault, vaultKey, common.Chains{common.DOGEChain}.Strings(), []ChainContract{})
 		vault.Coins = common.NewCoins(common.NewCoin(asset, cosmos.NewUint(amount)))
 		c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil, Commentf(trace))
 		c.Assert(w.keeper.SaveNetworkFee(w.ctx, common.DOGEChain, NetworkFee{
 			Chain: common.DOGEChain, TransactionSize: 1, TransactionFeeRate: 10_000,
 		}), IsNil, Commentf(trace))
-		from, err := accountingVaultPubKeyB.GetAddress(common.DOGEChain)
+		from, err := senderKey.GetAddress(common.DOGEChain)
 		c.Assert(err, IsNil, Commentf(trace))
-		to, err := accountingVaultPubKeyA.GetAddress(common.DOGEChain)
+		to, err := vaultKey.GetAddress(common.DOGEChain)
 		c.Assert(err, IsNil, Commentf(trace))
 		tx := common.NewTx(accountingTxID(seed, "refund"), from, to,
 			common.NewCoins(common.NewCoin(asset, cosmos.NewUint(amount))),

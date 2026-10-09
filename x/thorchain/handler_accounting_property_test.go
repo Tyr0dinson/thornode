@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -23,10 +24,12 @@ type AccountingPropertySuite struct{}
 
 var _ = Suite(&AccountingPropertySuite{})
 
-const (
-	accountingVaultPubKeyA = common.PubKey("thorpub1addwnpepq072srp46fp0fgzwkk8cv53n3z4lckzw5s6rxx4u0g805pu6uqp7u5dvtxv")
-	accountingVaultPubKeyB = common.PubKey("thorpub1addwnpepqgdfhpqtkzvj2shhumkad49rd89te6ff5rchd2lq0kt3e2dw9ty8qazpysp")
-)
+func accountingVaultPubKey(c *C, label string) common.PubKey {
+	pub := secp256k1.GenPrivKeyFromSecret([]byte("accounting vault " + label)).PubKey()
+	encoded, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, pub)
+	c.Assert(err, IsNil)
+	return common.PubKey(encoded)
+}
 
 func accountingDigest(seed int64, label string) [32]byte {
 	return sha256.Sum256([]byte(fmt.Sprintf("accounting:%d:%s", seed, label)))
@@ -374,8 +377,8 @@ func (AccountingPropertySuite) TestVaultChurnBalanceConservation(c *C) {
 		pool.BalanceAsset = cosmos.NewUint(100 * common.One)
 		pool.LPUnits = cosmos.NewUint(100 * common.One)
 		c.Assert(k.SetPool(ctx, pool), IsNil)
-		retiring := NewVault(1, RetiringVault, AsgardVault, accountingVaultPubKeyA, common.Chains{common.ETHChain}.Strings(), []ChainContract{})
-		active := NewVault(1, ActiveVault, AsgardVault, accountingVaultPubKeyB, common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+		retiring := NewVault(1, RetiringVault, AsgardVault, accountingVaultPubKey(c, "A"), common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+		active := NewVault(1, ActiveVault, AsgardVault, accountingVaultPubKey(c, "B"), common.Chains{common.ETHChain}.Strings(), []ChainContract{})
 		initial := uint64(100*common.One) + uint64(rng.Intn(1000))
 		retiring.AddFunds(common.NewCoins(common.NewCoin(asset, cosmos.NewUint(initial))))
 		c.Assert(k.SetVault(ctx, retiring), IsNil)
