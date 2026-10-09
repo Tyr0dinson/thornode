@@ -8,6 +8,32 @@ The initial implementation will leverage a static actor DAG that runs to complet
 
 ## Running Simulation Tests
 
+### Hermetic unit suite
+
+The simulation code is a separate Go module, so a root `go test ./...` does not
+run its unit tests. From the repository root, run:
+
+```bash
+scripts/test-simulation-unit.sh /tmp/simulation-unit.jsonl
+```
+
+The script runs every package in `test/simulation` with the `mocknet` build tag,
+Go 1.26.9, limited build parallelism, and the shared test-quality build lock.
+The JSON Lines report contains per-test results for CI or local inspection. It
+rejects unexpected skips and clears integration RPC settings, so it never
+connects to a live chain. `TestDogeStalledBroadcastIsNotDuplicated` and
+`TestZecIsolatedFunding` require separately provisioned isolated daemons and
+are the only expected skips. To check test order isolation, run from
+`test/simulation` with the same build lock:
+
+```bash
+flock -w 1200 /tmp/thornode-test-quality-build.lock env GOMAXPROCS=4 GOTOOLCHAIN=go1.26.9 go test -p 2 -tags mocknet -count=5 -shuffle=on ./pkg/types ./pkg/dag ./pkg/solana
+flock -w 1200 /tmp/thornode-test-quality-build.lock env GOMAXPROCS=4 GOTOOLCHAIN=go1.26.9 go test -p 2 -tags mocknet -count=5 -run '^Test$' -v ./pkg/types -check.f NewUser
+```
+
+These commands use only local fixtures. The second command exercises the
+gocheck account case by itself, without depending on other suite tests.
+
 Simulation tests can be run with the following command from the repo root:
 
 ```bash
