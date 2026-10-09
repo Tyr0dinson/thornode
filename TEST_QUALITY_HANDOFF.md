@@ -1,31 +1,31 @@
 # THORNode test-quality work handoff
 
-Snapshot: 2026-10-09 21:53 UTC. This file is the entry point for a future session continuing the THORNode test-quality project. Recheck GitLab and Orca before acting because the status below is a snapshot.
+Snapshot: 2026-10-09 22:45 UTC. This file is the entry point for a future session continuing the THORNode test-quality project. Recheck GitLab and Orca before acting because the status below is a snapshot.
 
 ## Current outcome and source of truth
 
 - Draft GitLab MR [!5181, Expand THORNode safety and security test coverage](https://gitlab.com/thorchain/thornode/-/merge_requests/5181) targets `develop` from `test-quality-integration`. Its source HEAD at this snapshot is `64bdecbc9b4e93fb7014f7948ca99fe4ab3a55ad`; GitLab reports it can be merged, but it should remain **draft** until human review.
 - [MR pipeline 2932029891](https://gitlab.com/thorchain/thornode/-/pipelines/2932029891) **passed all 20 jobs** on 2026-10-09 at 20:35 UTC. This includes lint, root and simulation unit tests, mainnet Monero, Bifrost race, real cluster simulation, regression, consensus determinism, fast fuzz and fast security mutations. All listed jobs were non-allow-failure except the pre-existing secret-detection job.
 - The integrated Orca workspace is `/home/cbarraford/orca/workspaces/thornode/thornode/test-quality-integration`. All ten topic workspace commits were merged here. This is the branch behind the MR and the place to make any follow-up source changes.
-- The ten topic branches remain Orca workspaces marked `in-review`. They are now pushed and each has a draft MR with `huginn-bot` assigned as reviewer. Their own pipelines are still being worked through; the green integration pipeline does not certify each topic MR. The user explicitly wants every topic MR to have passing CI.
+- The ten topic branches remain Orca workspaces marked `in-review`. Each is pushed, has a draft MR with `huginn-bot` assigned as reviewer, and has a **passing latest GitLab pipeline** at this snapshot. The user explicitly wanted every topic MR to have passing CI; this has been verified separately from the integrated MR.
 - This handoff lives in the original `unit-test-expansion` workspace, separate from the integrated MR. Its documentation commit should not trigger a new pipeline for !5181 or disturb the verified green HEAD.
 
 ## Topic merge requests opened 2026-10-09
 
-| Topic                    | Draft MR                                                             | Target                                     |
-| ------------------------ | -------------------------------------------------------------------- | ------------------------------------------ |
-| eBifrost race            | [!5182](https://gitlab.com/thorchain/thornode/-/merge_requests/5182) | `develop`                                  |
-| Simulation unit          | [!5183](https://gitlab.com/thorchain/thornode/-/merge_requests/5183) | `develop`                                  |
-| Simulation invariants    | [!5184](https://gitlab.com/thorchain/thornode/-/merge_requests/5184) | `develop`                                  |
-| Test-quality CI          | [!5185](https://gitlab.com/thorchain/thornode/-/merge_requests/5185) | `test-quality-sim-unit` (stacked on !5183) |
-| Consensus determinism    | [!5186](https://gitlab.com/thorchain/thornode/-/merge_requests/5186) | `develop`                                  |
-| Accounting               | [!5187](https://gitlab.com/thorchain/thornode/-/merge_requests/5187) | `develop`                                  |
-| Quorum security          | [!5188](https://gitlab.com/thorchain/thornode/-/merge_requests/5188) | `develop`                                  |
-| Signer/observer recovery | [!5189](https://gitlab.com/thorchain/thornode/-/merge_requests/5189) | `develop`                                  |
-| Native security fuzz     | [!5190](https://gitlab.com/thorchain/thornode/-/merge_requests/5190) | `develop`                                  |
-| Curated mutation checks  | [!5191](https://gitlab.com/thorchain/thornode/-/merge_requests/5191) | `develop`                                  |
+| Topic                    | Draft MR                                                             | Target                                     | Passing latest pipeline                                                    |
+| ------------------------ | -------------------------------------------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------- |
+| eBifrost race            | [!5182](https://gitlab.com/thorchain/thornode/-/merge_requests/5182) | `develop`                                  | [2932189437](https://gitlab.com/thorchain/thornode/-/pipelines/2932189437) |
+| Simulation unit          | [!5183](https://gitlab.com/thorchain/thornode/-/merge_requests/5183) | `develop`                                  | [2932197200](https://gitlab.com/thorchain/thornode/-/pipelines/2932197200) |
+| Simulation invariants    | [!5184](https://gitlab.com/thorchain/thornode/-/merge_requests/5184) | `develop`                                  | [2932183489](https://gitlab.com/thorchain/thornode/-/pipelines/2932183489) |
+| Test-quality CI          | [!5185](https://gitlab.com/thorchain/thornode/-/merge_requests/5185) | `test-quality-sim-unit` (stacked on !5183) | [2932256584](https://gitlab.com/thorchain/thornode/-/pipelines/2932256584) |
+| Consensus determinism    | [!5186](https://gitlab.com/thorchain/thornode/-/merge_requests/5186) | `develop`                                  | [2932189522](https://gitlab.com/thorchain/thornode/-/pipelines/2932189522) |
+| Accounting               | [!5187](https://gitlab.com/thorchain/thornode/-/merge_requests/5187) | `develop`                                  | [2932189576](https://gitlab.com/thorchain/thornode/-/pipelines/2932189576) |
+| Quorum security          | [!5188](https://gitlab.com/thorchain/thornode/-/merge_requests/5188) | `develop`                                  | [2932189614](https://gitlab.com/thorchain/thornode/-/pipelines/2932189614) |
+| Signer/observer recovery | [!5189](https://gitlab.com/thorchain/thornode/-/merge_requests/5189) | `develop`                                  | [2932208307](https://gitlab.com/thorchain/thornode/-/pipelines/2932208307) |
+| Native security fuzz     | [!5190](https://gitlab.com/thorchain/thornode/-/merge_requests/5190) | `develop`                                  | [2932208982](https://gitlab.com/thorchain/thornode/-/pipelines/2932208982) |
+| Curated mutation checks  | [!5191](https://gitlab.com/thorchain/thornode/-/merge_requests/5191) | `develop`                                  | [2932189789](https://gitlab.com/thorchain/thornode/-/pipelines/2932189789) |
 
-All ten are draft, and all have `huginn-bot` as reviewer. The integrated draft !5181 overlaps them all. Coordinate the merge strategy before merging any of these; do not merge both an umbrella change and its component change without checking what has already landed. Some standalone branches gained focused CI wiring and lint fixes after the integrated MR's green pipeline. Use the latest pipeline for **each** MR, not the initial failed or auto-canceled pipeline. At this snapshot, !5183's simulation unit job, !5186's determinism job, and !5191's fast mutation job have individually passed, but the full pipelines are still in progress. !5182 and !5188 had existing race-suite timing failures under load and their failed/canceled jobs were retried. !5189 fixed an older signer test's obsolete broadcast expectation. !5185 removed a duplicate simulation job in the stacked merge result. Keep working until all ten latest pipelines pass.
+All ten are draft, and all have `huginn-bot` as reviewer. The integrated draft !5181 overlaps them all. Coordinate the merge strategy before merging any of these; do not merge both an umbrella change and its component change without checking what has already landed. Some standalone branches gained focused CI wiring and lint fixes after the integrated MR's green pipeline. Use the latest pipeline for **each** MR, not an initial failed or auto-canceled attempt. !5182 and !5188 had race-suite timing failures under load; !5187 and !5185 had BTC inactive-vault refund simulation timeouts; !5186's first simulation stalled waiting for churn-out migration. The failing jobs were retried and the listed latest pipelines passed. !5189 fixed an older signer test's obsolete broadcast expectation. !5185 removed a duplicate simulation job in its stacked merge result.
 
 ## Workspaces and agent assignments
 
@@ -64,14 +64,14 @@ These failures occurred on earlier pipelines and are resolved in the green HEAD:
 3. Pipeline `2931993808`: repository `gofumpt` required four more test files to be formatted. Commit `b14f293227` did so. The repository `scripts/lint.sh`, Trunk check, and full `scripts/golangci-ci.sh` passed locally with Go 1.26.9.
 4. Pipeline `2932009480`: security mutations executed but failed when writing `test-quality-reports/mutations-fast.json` into a missing directory. Commit `64bdecbc9b` creates the directory. The exact fast command then passed locally (five killed, control survived) and the subsequent GitLab job passed.
 
-Do not retry those old failed pipelines; use the current MR branch and pipeline. A source push creates a new MR pipeline and GitLab auto-cancels running sibling jobs after a failure.
+Do not retry those old failed pipelines; use the current MR branch and pipeline. A source push creates a new MR pipeline and GitLab auto-cancels running sibling jobs after a failure. The separate topic pipelines also exposed intermittent cluster simulation timeouts in `InactiveVaultRefund-BTC.BTC` and long `BondYield-ChurnOut` migration waits. These passed on retry, but their intermittent behavior is a remaining test-reliability follow-up; a green pipeline does not erase the flake history.
 
 ## How to continue
 
 1. Read this file, then inspect the current MR and latest pipeline. `glab api projects/13422983/merge_requests/5181 | jq '{title,state,draft,sha,head_pipeline}'` and `glab api 'projects/13422983/merge_requests/5181/pipelines?per_page=5'` work with the current GitLab authentication. Project ID is `13422983` (`thorchain/thornode`). For job detail, use `glab api 'projects/13422983/pipelines/PIPELINE_ID/jobs?per_page=100'` and `glab api projects/13422983/jobs/JOB_ID/trace`.
 2. Check `git status` and `git log` in `test-quality-integration`; work on that branch for fixes. Use `orca-ide worktree list --json` to inspect the original workspaces. The Orca CLI is `orca-ide` on this Linux host; its local skill is `/home/cbarraford/.agents/skills/orca-cli/SKILL.md`.
-3. Keep all MRs draft through review. First finish the ten topic pipelines above, fix any failures in the relevant topic workspace, then coordinate a merge path with reviewers. The integrated green MR pipeline confirms its own merge-request gates, not the standalone MRs or future scheduled runs.
+3. Keep all MRs draft through review. All ten topic pipelines and the integrated pipeline are green at this snapshot; recheck latest results after any source push, then coordinate a merge path with reviewers. Future scheduled deep campaigns remain unverified on GitLab.
 4. If code changes, run the relevant focused tests, `scripts/trunk check --ci --filter=-golangci-lint`, and the appropriate Go lint/test target before pushing. The repository requires Go **1.26.9**; locally, `GOTOOLCHAIN=go1.26.9 ./scripts/golangci-ci.sh` worked. Every tracked Go file is checked by `gofumpt` in `scripts/lint.sh`.
-5. Keep this documentation accurate as each MR HEAD or CI state changes. The component workspaces are already represented in !5181, but each standalone MR now needs its own passing pipeline. Do not merge an MR or mark it ready without a user request/review decision.
+5. Keep this documentation accurate as each MR HEAD or CI state changes. The component workspaces are already represented in !5181, and each standalone MR has its own passing pipeline at this snapshot. Do not merge an MR or mark it ready without a user request/review decision.
 
 The full local cluster simulation was intentionally not run in the shared development workspace: its Make prerequisite resets live Docker volumes. The isolated GitLab `test-simulation` job did run and passed. All 20 jobs in the current MR pipeline passed, so there is no known CI blocker at this snapshot.
