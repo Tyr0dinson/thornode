@@ -106,7 +106,6 @@ func LoadChains(thorKeys *thorclient.Keys,
 	if len(failedChains) > 0 {
 		go func() {
 			tick := time.NewTicker(failedChainRetryInterval)
-			defer tick.Stop()
 			for range tick.C {
 				for _, chain := range failedChains {
 					ccfg := cfg[chain]

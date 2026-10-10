@@ -2773,9 +2773,7 @@ func (vm *NetworkMgr) redeemSynthAssetToReserve(ctx cosmos.Context, p Pool) erro
 		runeValue = p.BalanceRune
 	}
 
-	// Commit the transfer, pool balance and ragnarok marker together.
-	cacheCtx, commit := ctx.CacheContext()
-	if err := vm.k.SendFromModuleToModule(cacheCtx, AsgardName, ReserveName,
+	if err := vm.k.SendFromModuleToModule(ctx, AsgardName, ReserveName,
 		common.NewCoins(common.NewCoin(common.RuneNative, runeValue))); err != nil {
 		return fmt.Errorf("fail to send redeemed synth RUNE to reserve: %w", err)
 	}
@@ -2783,11 +2781,10 @@ func (vm *NetworkMgr) redeemSynthAssetToReserve(ctx cosmos.Context, p Pool) erro
 	p.BalanceRune = common.SafeSub(p.BalanceRune, runeValue)
 	// Here didn't set synth unit to zero , but `GetTotalSupply` will check pool ragnarok status
 	// with GetPoolRagnarokStart, then the synth supply will return zero.
-	if err := vm.k.SetPool(cacheCtx, p); err != nil {
+	if err := vm.k.SetPool(ctx, p); err != nil {
 		return fmt.Errorf("fail to save pool,err: %w", err)
 	}
-	vm.k.SetPoolRagnarokStart(cacheCtx, p.Asset)
-	commit()
+	vm.k.SetPoolRagnarokStart(ctx, p.Asset)
 	ctx.Logger().
 		With("synth_supply", totalSupply.String()).
 		With("rune_amount", runeValue).

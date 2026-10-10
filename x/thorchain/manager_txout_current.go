@@ -90,31 +90,12 @@ func (tos *TxOutStorage) EndBlock(ctx cosmos.Context, mgr Manager) error {
 		}
 
 		if len(tx.MaxGas) == 0 || (!maxGasCoin.IsEmpty() && !maxGasCoin.Amount.Equal(tx.MaxGas[0].Amount)) {
-			coin := tx.Coin
-			// Only outbounds whose principal was reduced by MaxGas at scheduling
-			// have a fixed coin + gas budget. Vault status can change later.
-			if tx.MaxGasDeducted && coin.Asset.IsGasAsset() {
-				oldGas := tx.MaxGas.ToCoins().GetCoin(coin.Asset).Amount
-				newGas := common.Gas{maxGasCoin}.ToCoins().GetCoin(coin.Asset).Amount
-				budget := coin.Amount.Add(oldGas)
-				if budget.LTE(newGas) {
-					ctx.Logger().Error("inactive vault outbound cannot cover updated max gas", "hash", tx.InHash, "budget", budget, "max_gas", newGas)
-					continue
-				}
-				coin.Amount = budget.Sub(newGas)
-				if coin.Amount.LT(tx.Chain.DustThreshold()) {
-					ctx.Logger().Error("inactive vault outbound would fall below dust threshold", "hash", tx.InHash, "amount", coin.Amount, "dust_threshold", tx.Chain.DustThreshold())
-					continue
-				}
-			}
 			// Update MaxGas in ObservedTxVoter action first; only update txOut if voter update succeeds
 			// to maintain consistency between the txOut item and the voter action.
-			if err := updateTxOutGasAndCoin(ctx, tos.keeper, tx, common.Gas{maxGasCoin}, coin); err != nil {
+			if err := updateTxOutGas(ctx, tos.keeper, tx, common.Gas{maxGasCoin}); err != nil {
 				ctx.Logger().Error("Failed to update MaxGas of action in ObservedTxVoter", "hash", tx.InHash, "error", err)
 			} else {
 				txOut.TxArray[i].MaxGas = common.Gas{maxGasCoin}
-				txOut.TxArray[i].Coin = coin
-				tx = txOut.TxArray[i]
 			}
 		}
 		if gasRate > 0 && txOut.TxArray[i].GasRate != gasRate {
@@ -937,7 +918,6 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 			if !feeDeduction && outputs[i].Coin.Asset.IsGasAsset() {
 				gasAmt := outputs[i].MaxGas.ToCoins().GetCoin(outputs[i].Coin.Asset).Amount
 				outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, gasAmt)
-				outputs[i].MaxGasDeducted = true
 			}
 		}
 

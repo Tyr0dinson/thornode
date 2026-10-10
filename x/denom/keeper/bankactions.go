@@ -13,14 +13,12 @@ func (k Keeper) mintTo(ctx sdk.Context, amount sdk.Coin, mintTo string) error {
 		return err
 	}
 
-	// resolve the recipient before minting so a bad address cannot leave
-	// freshly minted supply in the module account
-	addr, err := sdk.AccAddressFromBech32(mintTo)
+	err = k.bankKeeper.MintCoins(ctx, types.ModuleName, sdk.NewCoins(amount))
 	if err != nil {
 		return err
 	}
 
-	err = k.bankKeeper.MintCoins(ctx, types.ModuleName, sdk.NewCoins(amount))
+	addr, err := sdk.AccAddressFromBech32(mintTo)
 	if err != nil {
 		return err
 	}

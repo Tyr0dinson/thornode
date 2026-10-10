@@ -75,9 +75,6 @@ func (p *BitfinexProvider) GetAvailablePairs() ([]string, error) {
 
 	symbols := []string{}
 	for _, ticker := range tickers {
-		if len(ticker) == 0 {
-			continue
-		}
 		symbol, ok := ticker[0].(string)
 		if !ok {
 			continue
@@ -182,13 +179,6 @@ func (p *BitfinexProvider) HandleWsMessage(msg []byte) error {
 
 	err = json.Unmarshal(msg, &tickerMsg)
 	if err == nil {
-		// ticker updates are [channelId, values] and heartbeats are
-		// [channelId, "hb"]; anything shorter is malformed and must not panic
-		// the websocket reader goroutine
-		if len(tickerMsg) < 2 {
-			p.logger.Warn().Msg("fail to parse ticker")
-			return nil
-		}
 		channelId, ok := tickerMsg[0].(float64)
 		if !ok {
 			p.logger.Warn().Msg("fail to parse ticker")

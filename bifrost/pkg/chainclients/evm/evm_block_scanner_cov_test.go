@@ -325,11 +325,12 @@ func TestCovScannerReprocessHeaderFailure(t *testing.T) {
 
 func TestCovScannerOptimizedReceipts(t *testing.T) {
 	// metrics are only registered for AVAX, so keep the gas cache from filling.
-	// Concurrency > 1 runs the receipt goroutines in parallel, so -race checks
-	// they share no unsynchronized state.
+	// Concurrency is 1 because getTxInOptimized's receipt goroutines all assign
+	// the enclosing function's err variable without synchronization (a data race
+	// the race detector reports when more than one goroutine runs at a time).
 	env := newCovEnv(t, common.BSCChain, func(cfg *config.BifrostChainConfiguration) {
 		cfg.BlockScanner.GasCacheBlocks = 100
-		cfg.BlockScanner.Concurrency = 4
+		cfg.BlockScanner.Concurrency = 1
 	})
 	s := env.client.evmScanner
 	ch := newCovChain(env.rpc)

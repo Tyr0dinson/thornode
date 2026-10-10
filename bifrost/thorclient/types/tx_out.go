@@ -141,7 +141,6 @@ type TxArrayItem struct {
 	CloutSpent            string         `json:"clout_spent,omitempty"`
 	VaultPubKeyEddsa      common.PubKey  `json:"vault_pub_key_eddsa,omitempty"`
 	VaultPubKeyFrost      common.PubKey  `json:"vault_pub_key_frost,omitempty"`
-	MaxGasDeducted        bool           `json:"max_gas_deducted,omitempty"`
 }
 
 // TxOutItem convert the information to TxOutItem

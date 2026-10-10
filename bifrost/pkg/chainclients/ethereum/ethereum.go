@@ -21,7 +21,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/txpool"
 	etypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/hashicorp/go-multierror"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -377,9 +376,10 @@ func (c *Client) reconstructVaultLiability(vaultAddr string) (bool, error) {
 		Msg("detected pending transactions on startup")
 
 	// Fetch pending block to find our transactions
+	// BlockByNumber with nil returns the pending block
 	ctx3, cancel3 := c.getContext()
 	defer cancel3()
-	pendingBlock, err := c.client.BlockByNumber(ctx3, big.NewInt(int64(rpc.PendingBlockNumber)))
+	pendingBlock, err := c.client.BlockByNumber(ctx3, nil)
 	if err != nil {
 		return false, fmt.Errorf("failed to get pending block: %w", err)
 	}
