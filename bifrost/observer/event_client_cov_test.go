@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
 
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
@@ -145,9 +146,17 @@ func TestEventClientStopDuringBackoffCov(t *testing.T) {
 		attempt: make(chan struct{}, 10),
 	}
 	ec := NewEventClient(client)
+	// "Subscription error" is logged after the post-subscribe cancellation
+	// check, so once it fires the goroutine can only leave via the backoff wait
+	backoff := make(chan struct{}, 10)
+	ec.logger = ec.logger.Hook(zerolog.HookFunc(func(_ *zerolog.Event, _ zerolog.Level, msg string) {
+		if msg == "Subscription error" {
+			backoff <- struct{}{}
+		}
+	}))
 	ec.RegisterHandler("a", func(*ebifrost.EventNotification) {})
 	ec.Start()
-	waitCov(t, client.attempt)
+	waitCov(t, backoff)
 
 	// the first failure enters a >=1s backoff; Stop must interrupt it promptly
 	start := time.Now()

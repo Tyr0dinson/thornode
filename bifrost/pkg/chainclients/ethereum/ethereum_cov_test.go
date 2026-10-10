@@ -186,10 +186,16 @@ func TestCovNewClientValidation(t *testing.T) {
 
 	// chain id RPC error
 	rpc := newCovRPCServer(t)
+	// (a zero HTTPRequestTimeout would expire before the request is sent)
 	rpc.set("eth_chainId", covErr("nope"))
-	_, err = NewClient(keys, config.BifrostChainConfiguration{RPCHost: rpc.srv.URL}, nil, bridge, covMetrics(t), pkm, covPoolMgr{})
-	if err == nil || !strings.Contains(err.Error(), "fail to get chain id") {
+	errCfg := config.BifrostChainConfiguration{RPCHost: rpc.srv.URL}
+	errCfg.BlockScanner.HTTPRequestTimeout = 5 * time.Second
+	_, err = NewClient(keys, errCfg, nil, bridge, covMetrics(t), pkm, covPoolMgr{})
+	if err == nil || !strings.Contains(err.Error(), "fail to get chain id") || !strings.Contains(err.Error(), "nope") {
 		t.Fatalf("expected chain id error, got %v", err)
+	}
+	if rpc.count("eth_chainId") != 1 {
+		t.Fatalf("eth_chainId should reach the server once, got %d", rpc.count("eth_chainId"))
 	}
 
 	// chain id zero is rejected
