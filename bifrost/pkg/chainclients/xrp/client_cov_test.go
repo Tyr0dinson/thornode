@@ -405,8 +405,10 @@ func (s *XrpTestSuite) TestSignTxRemoteTssCov(c *C) {
 	c.Check(ok.txIn.Sender, Equals, addr.String())
 	c.Check(ok.txIn.Tx, Not(Equals), "")
 
-	// Keysign blame is forwarded to THORChain; once posted, SignTx reports no
-	// error but hands back the checkpoint so the retry reuses the sequence.
+	// Keysign blame is forwarded to THORChain and the checkpoint is handed back
+	// so a retry reuses the sequence. KNOWN BUG (listed in the MR notes): the
+	// deferred blame handler overwrites err with PostKeysignFailure's result,
+	// so a keysign failure returns a nil error. Flip blamed.err when fixed.
 	blamed := results[1]
 	c.Check(blamed.err, IsNil)
 	c.Check(blamed.signed, IsNil)

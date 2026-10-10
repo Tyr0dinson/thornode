@@ -845,6 +845,7 @@ func (s *NetworkMgrCovCDSuite) TestMigrateFundsDustAndEdgesCovCD(c *C) {
 	// the burn is not atomic: a SetVault failure keeps the reserve transfer and
 	// the saved pool, and a SetPool failure keeps the reserve transfer, so the
 	// dust is debited from the pool twice and compensated three times below
+	// (KNOWN BUG, tracked in #3394; flip the deltas when the burn is atomic)
 	ek.fail["GetTxOut"] = true
 	ek.fail["SetVault"] = true
 	c.Check(vm.migrateFunds(ctx, mgr), ErrorMatches, "fail to save vault.*")

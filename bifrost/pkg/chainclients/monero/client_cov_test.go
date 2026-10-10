@@ -221,7 +221,7 @@ func TestNewClientWithKeysAndAccessorsClientCov(t *testing.T) {
 
 	// Latest tx for vault from the signer cache.
 	_, _, err = client.GetLatestTxForVault(vault.String())
-	require.Error(t, err, "nothing recorded yet")
+	require.ErrorContains(t, err, "leveldb: not found") // nothing recorded yet
 	require.NoError(t, client.signerCacheManager.SetSigned("item-hash",
 		stypes.InboundCacheKey(vault.String(), common.XMRChain.String()), "in-tx"))
 	require.NoError(t, client.signerCacheManager.SetSigned("item-hash-2",
