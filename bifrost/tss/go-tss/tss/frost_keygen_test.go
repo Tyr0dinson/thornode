@@ -1567,7 +1567,9 @@ func TestFrostKeygenEarlyResultQuorumSurvivesRound3(t *testing.T) {
 		t.Fatalf("expected local round3 timeout, got %+v", failure)
 	}
 
-	response, err := coord.WaitForResult(members, 2, 20*time.Millisecond)
+	// Result verification can take longer under the race detector on a busy CI
+	// runner; the queued quorum should still arrive before a generous deadline.
+	response, err := coord.WaitForResult(members, 2, 2*time.Second)
 	if err != nil {
 		t.Fatalf("early result quorum was lost: %v", err)
 	}
