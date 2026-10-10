@@ -175,7 +175,8 @@ func TestAdvanceSidecarCatchupMarkerTransitionsCov(t *testing.T) {
 		fake.set(func(c *catchupSidecarCov) { c.blockFail[5] = http.StatusInternalServerError })
 		handled, _, err := scanner.advanceSidecarCatchup(6, 20)
 		require.True(t, handled)
-		require.Error(t, err, "anchor lookup failed")
+		// the anchor lookup for block 5 fails
+		require.ErrorContains(t, err, "/v1/monero/chain/block/5 returned status 500")
 		fake.set(func(c *catchupSidecarCov) {
 			delete(c.blockFail, 5)
 			c.blockFail[6] = http.StatusConflict

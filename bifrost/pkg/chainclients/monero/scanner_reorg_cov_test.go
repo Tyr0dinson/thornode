@@ -95,7 +95,9 @@ func TestProcessReorgGuardsCov(t *testing.T) {
 	t.Run("replay-fetch-failure-keeps-old-journal", func(t *testing.T) {
 		scanner, fake, store := newReorgJournalScannerCov(t, 11, 8)
 		_, err := scanner.processReorg(tipBlockCov(11), 20)
-		require.Error(t, err, "no sync endpoint for the replacement range")
+		// the fake has no scanner sync endpoint, so the replacement range fetch fails
+		require.ErrorContains(t, err, "fail to get monero transfers at 9")
+		require.ErrorContains(t, err, "/v1/monero/scanner/sync returned status 404")
 		fake.mu.Lock()
 		require.Len(t, fake.rewindCalls, 1)
 		require.Equal(t, uint64(9), fake.rewindCalls[0].TargetNextHeight)

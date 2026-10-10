@@ -1,8 +1,10 @@
 package solana
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http/httptest"
+	"sync"
 	"time"
 
 	. "gopkg.in/check.v1"
@@ -142,15 +144,39 @@ func (s *ScanLoopCovSuite) TestScanFloorAndFailure(c *C) {
 	f.scanner.netFeeSlotMultiple = 10 // fee threshold not crossed
 	f.scanner.cfg.FloorBlockHeight = 120
 	f.scanner.initialHeight[f.vaultAddr] = struct{}{}
+	// a cached cursor below the floor: without the clamp the query would use
+	// minContextSlot 50 and until "old-sig"
+	stale := vaultScanStatus{lastSig: "old-sig", lastSlot: 50}
+	f.scanner.vaultScanStatuses[f.vaultAddr] = stale
 	f.rpc.setResult("getSlot", "300")
-	f.rpc.setError("getSignaturesForAddress", "history unavailable")
+	var sent []map[string]any
+	var mu sync.Mutex
+	f.rpc.set("getSignaturesForAddress", func(p []json.RawMessage) string {
+		opts := map[string]any{}
+		if len(p) > 1 {
+			_ = json.Unmarshal(p[1], &opts)
+		}
+		mu.Lock()
+		sent = append(sent, opts)
+		mu.Unlock()
+		return `{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"history unavailable"}}`
+	})
 
 	f.scanner.scan()
 
 	c.Assert(f.scanner.IsHealthy(), Equals, false)
 	c.Assert(f.scanner.getLastHeight(), Equals, uint64(300))
+	// the vault was queried from the floor, with the stale cursor cleared
+	mu.Lock()
+	c.Assert(sent, HasLen, 1)
+	c.Check(sent[0]["minContextSlot"], Equals, float64(120))
+	_, hasUntil := sent[0]["until"]
+	c.Check(hasUntil, Equals, false)
+	_, hasBefore := sent[0]["before"]
+	c.Check(hasBefore, Equals, false)
+	mu.Unlock()
 	// an unsuccessful vault query does not advance that vault's cursor
-	c.Assert(f.scanner.vaultScanStatuses[f.vaultAddr], DeepEquals, vaultScanStatus{})
+	c.Assert(f.scanner.vaultScanStatuses[f.vaultAddr], DeepEquals, stale)
 }
 
 func (s *ScanLoopCovSuite) TestScanSkipsWhenRPCBehind(c *C) {
