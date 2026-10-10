@@ -162,12 +162,13 @@ func (s *CovCCTxOutSuite) TestEndBlockKeepsInactiveVaultRefundWithinGasBudget(c 
 
 	inHash := GetRandomTxHash()
 	item := TxOutItem{
-		Chain:       common.BTCChain,
-		ToAddress:   GetRandomBTCAddress(),
-		VaultPubKey: pubkey,
-		InHash:      inHash,
-		Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(2_560_083)),
-		MaxGas:      common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(49_000))},
+		Chain:          common.BTCChain,
+		ToAddress:      GetRandomBTCAddress(),
+		VaultPubKey:    pubkey,
+		InHash:         inHash,
+		Coin:           common.NewCoin(common.BTCAsset, cosmos.NewUint(2_560_083)),
+		MaxGas:         common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(49_000))},
+		MaxGasDeducted: true,
 	}
 	voter := NewObservedTxVoter(inHash, nil)
 	voter.Actions = []TxOutItem{item}
@@ -187,12 +188,53 @@ func (s *CovCCTxOutSuite) TestEndBlockKeepsInactiveVaultRefundWithinGasBudget(c 
 			c.Check(out.MaxGas.ToCoins().GetCoin(common.BTCAsset).Amount.Uint64(), Equals, wantGas)
 			c.Check(out.Coin.Amount.Uint64(), Equals, wantAmount)
 			c.Check(out.Coin.Amount.Add(out.MaxGas.ToCoins().GetCoin(common.BTCAsset).Amount).Uint64(), Equals, uint64(2_609_083))
+			c.Check(out.MaxGasDeducted, Equals, true)
 		}
 		c.Check(items[0].GasRate, Equals, updated.Actions[0].GasRate)
 	}
 
 	check(56, 84_000, 2_525_083)
 	check(20, 30_000, 2_579_083)
+}
+
+func (s *CovCCTxOutSuite) TestEndBlockPreservesNormalOutboundAfterVaultRetires(c *C) {
+	w := getHandlerTestWrapper(c, 649, true, true)
+	tos := covCCTxOutStore(w, nil)
+	pubkey := GetRandomPubKey()
+	vault := NewVault(w.ctx.BlockHeight(), RetiringVault, AsgardVault, pubkey, common.Chains{common.BTCChain}.Strings(), nil)
+	c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil)
+
+	inHash := GetRandomTxHash()
+	item := TxOutItem{
+		Chain:       common.BTCChain,
+		ToAddress:   GetRandomBTCAddress(),
+		VaultPubKey: pubkey,
+		InHash:      inHash,
+		Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(2_560_083)),
+		MaxGas:      common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(49_000))},
+	}
+	voter := NewObservedTxVoter(inHash, nil)
+	voter.Actions = []TxOutItem{item}
+	w.keeper.SetObservedTxInVoter(w.ctx, voter)
+	c.Assert(w.keeper.SetTxOut(w.ctx, &TxOut{Height: w.ctx.BlockHeight(), TxArray: []TxOutItem{item}}), IsNil)
+
+	// The delayed outbound was charged its normal outbound fee when scheduled.
+	// Its selected retiring vault drains before the signing block.
+	vault.Status = InactiveVault
+	c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil)
+	for _, test := range []struct{ feeRate, gas uint64 }{{56, 84_000}, {20, 30_000}} {
+		c.Assert(w.keeper.SaveNetworkFee(w.ctx, common.BTCChain, NewNetworkFee(common.BTCChain, 1000, test.feeRate)), IsNil)
+		c.Assert(tos.EndBlock(w.ctx, w.mgr), IsNil)
+		items, err := tos.GetOutboundItems(w.ctx)
+		c.Assert(err, IsNil)
+		updated, err := w.keeper.GetObservedTxInVoter(w.ctx, inHash)
+		c.Assert(err, IsNil)
+		for _, out := range []TxOutItem{items[0], updated.Actions[0]} {
+			c.Check(out.MaxGas.ToCoins().GetCoin(common.BTCAsset).Amount.Uint64(), Equals, test.gas)
+			c.Check(out.Coin.Amount.Uint64(), Equals, uint64(2_560_083))
+			c.Check(out.MaxGasDeducted, Equals, false)
+		}
+	}
 }
 
 func (s *CovCCTxOutSuite) TestTakeAffiliateFeeBranches(c *C) {
