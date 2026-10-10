@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	tssp "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
@@ -62,15 +63,15 @@ func TestFrostAdapterDKGAndHeightCov(t *testing.T) {
 	c := newCovClient(t, config.BifrostChainConfiguration{}, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v1/monero/dkg/round1":
-			require.NoError(t, json.NewDecoder(r.Body).Decode(&gotR1))
+			assert.NoError(t, json.NewDecoder(r.Body).Decode(&gotR1))
 			_ = json.NewEncoder(w).Encode(DKGRound1Resp{Commitments: "cm"})
 		case "/v1/monero/dkg/round3":
-			require.NoError(t, json.NewDecoder(r.Body).Decode(&gotR3))
+			assert.NoError(t, json.NewDecoder(r.Body).Decode(&gotR3))
 			_ = json.NewEncoder(w).Encode(DKGRound3Resp{Address: "addr", GroupKey: "gk"})
 		case "/v1/monero/chain/height":
 			_ = json.NewEncoder(w).Encode(ChainHeightResp{Height: 77})
 		case "/v1/monero/sign/prepare":
-			require.NoError(t, json.NewDecoder(r.Body).Decode(&gotPrepare))
+			assert.NoError(t, json.NewDecoder(r.Body).Decode(&gotPrepare))
 			_ = json.NewEncoder(w).Encode(SignPrepareResp{SessionID: "s", Preprocess: "p"})
 		case "/v1/monero/sign/combine":
 			_ = json.NewEncoder(w).Encode(SignCombineResp{

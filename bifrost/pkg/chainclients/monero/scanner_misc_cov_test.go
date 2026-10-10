@@ -185,7 +185,7 @@ func TestEnqueueAuthenticatedOutboundReplayErrorsCov(t *testing.T) {
 		tx := outbound(f)
 		f.fake.set(func(m *migrationSidecarCov) { m.locationFail = true })
 		_, err := f.scanner.EnqueueAuthenticatedOutboundReplay(tx)
-		require.Error(t, err)
+		require.ErrorContains(t, err, "fail to locate canonical monero transaction")
 	})
 	t.Run("future-scan-owns-delivery", func(t *testing.T) {
 		f := newMigrationFixtureCov(t, "cov-out-future")
@@ -200,7 +200,7 @@ func TestEnqueueAuthenticatedOutboundReplayErrorsCov(t *testing.T) {
 		tx := outbound(f)
 		f.fake.set(func(m *migrationSidecarCov) { m.markFail = true })
 		_, err := f.scanner.EnqueueAuthenticatedOutboundReplay(tx)
-		require.Error(t, err)
+		require.ErrorContains(t, err, "fail to call mark-observed endpoint")
 	})
 	t.Run("proof-mismatch", func(t *testing.T) {
 		f := newMigrationFixtureCov(t, "cov-out-proof")

@@ -127,6 +127,9 @@ func (s *KeeperCoreCovSuite) TestMintToModuleSupplyCap(c *C) {
 	// with a funded reserve the full amount is borrowed (zero minted)
 	c.Assert(k.SendFromModuleToModule(ctx, AsgardName, ReserveName, common.NewCoins(common.NewCoin(common.RuneNative, cosmos.NewUint(1000)))), IsNil)
 	modBefore := k.GetRuneBalanceOfModule(ctx, ModuleName)
+	// Simulation mode (quote traffic) only skips the reserve-borrow telemetry
+	// counters; state changes are identical. This call covers that branch and
+	// the non-simulated call below covers the counting branch.
 	sim := ctx.WithValue(constants.CtxSimulationMode, true)
 	c.Assert(k.MintToModule(sim, ModuleName, common.NewCoin(common.RuneNative, cosmos.NewUint(100))), IsNil)
 	c.Check(k.GetRuneBalanceOfModule(ctx, ModuleName).Uint64(), Equals, modBefore.Uint64()+100)

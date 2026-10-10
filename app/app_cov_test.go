@@ -50,10 +50,13 @@ func newAppCov(t *testing.T, db dbm.DB, home string) *THORChainApp {
 		// BaseApp in NewChainApp and blocks Commit, so these tests don't apply.
 		t.Skip("app construction tests do not apply to the regtest build")
 	}
-	return NewChainApp(
+	a := NewChainApp(
 		log.NewNopLogger(), db, nil, true, appCovOptions(home),
 		[]wasmkeeper.Option{}, baseapp.SetChainID(appCovChainID),
 	)
+	// each app holds its own wasm VM; release it when the test ends
+	t.Cleanup(func() { _ = a.Close() })
+	return a
 }
 
 // appCovGenesis returns the default genesis with one active thorchain node so
@@ -220,6 +223,9 @@ func TestAppAccessorsCov(t *testing.T) {
 }
 
 func TestAppServicesCov(t *testing.T) {
+	if regtestBuildCov {
+		t.Skip("app construction tests do not apply to the regtest build")
+	}
 	// The enshrined bifrost is disabled here: Start serves in a goroutine that
 	// panics if Close stops the server before Serve begins, so starting and
 	// immediately closing it in a test is racy.

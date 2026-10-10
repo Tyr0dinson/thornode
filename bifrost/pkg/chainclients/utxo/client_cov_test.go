@@ -501,14 +501,44 @@ func (s *UTXOCovSuite) TestReportSolvencyCov(c *C) {
 	c.Check(s.client.ReportSolvency(200), IsNil)
 	c.Check(len(queue), Equals, 0)
 
-	// ZEC sizes its gas estimate from the full ZIP-317 fee.
-	zec := &Client{
-		cfg:          config.BifrostChainConfiguration{ChainID: common.ZECChain},
-		log:          log.Logger,
-		bridge:       &utxoCovBridge{},
-		blockScanner: s.client.blockScanner,
+	// ZEC sizes the gas slack from lastFeeRate as the full ZIP-317 fee, not a
+	// per-byte rate. Same wallet (1.0 coin), fee 1000, two vaults: one fully
+	// funded, one 0.01 coin short. The allowed gap is 10x3x(txSize)xfee: BTC's
+	// per-byte 1000-byte estimate (3e7) hides the shortfall, ZEC's 1x (3e4)
+	// does not. With the scanner unhealthy, all-solvent vaults are reported as
+	// solvent (2 messages); an insolvent vault is reported alone (1 message).
+	pk1, pk2 := ttypes.GetRandomPubKey(), ttypes.GetRandomPubKey()
+	addr, script := regtestP2WPKHCov(c, pk1)
+	s.rpc.set("listunspent", rpcResultCov([]map[string]any{
+		{"txid": strings.Repeat("a", 64), "vout": 0, "address": addr, "scriptPubKey": script, "amount": 1.0, "confirmations": 3},
+	}))
+	s.client.lastFeeRate.Store(1000)
+	c.Assert(s.client.IsBlockScannerHealthy(), Equals, false)
+	shortfall := uint64(1_000_000)
+	for _, tc := range []struct {
+		chain    common.Chain
+		reported []common.PubKey
+	}{
+		{common.BTCChain, []common.PubKey{pk1, pk2}},
+		{common.ZECChain, []common.PubKey{pk2}},
+	} {
+		s.client.cfg.ChainID = tc.chain
+		s.client.lastSolvencyCheckHeight.Store(0)
+		asset := tc.chain.GetGasAsset()
+		s.bridge.asgards = ttypes.Vaults{
+			{PubKey: pk1, Coins: common.Coins{common.NewCoin(asset, cosmos.NewUint(common.One))}},
+			{PubKey: pk2, Coins: common.Coins{common.NewCoin(asset, cosmos.NewUint(common.One+shortfall))}},
+		}
+		c.Assert(s.client.ReportSolvency(100), IsNil)
+		var got []common.PubKey
+		for len(queue) > 0 {
+			msg := <-queue
+			c.Check(msg.Chain, Equals, tc.chain)
+			got = append(got, msg.PubKey)
+		}
+		c.Check(got, DeepEquals, tc.reported, Commentf("chain %s", tc.chain))
 	}
-	c.Check(zec.ReportSolvency(30), IsNil)
+	s.client.cfg.ChainID = common.BTCChain
 }
 
 func (s *UTXOCovSuite) TestCanDeleteBlockAndNetworkInfoCov(c *C) {

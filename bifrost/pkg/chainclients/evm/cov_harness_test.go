@@ -570,7 +570,8 @@ func covReceiptJSON(t *testing.T, tx *etypes.Transaction, status uint64, gasPric
 	return out
 }
 
-// covParamHash extracts a hash/string param at index i.
+// covParamString decodes the string param at index i (a block or nonce tag,
+// a hash, raw tx hex, ...), or returns "" if it is absent or not a string.
 func covParamString(params []json.RawMessage, i int) string {
 	if len(params) <= i {
 		return ""

@@ -387,17 +387,22 @@ func (s *XrpTestSuite) TestSignTxRemoteTssCov(c *C) {
 	}
 	vaults := []common.PubKey{signVault, blameVault, idleVault, errVault}
 	results := make([]result, len(vaults))
+	// Build the outbounds on the test goroutine: txOutCov uses c.Assert, which
+	// must not run on a worker goroutine.
+	txOuts := make([]stypes.TxOutItem, len(vaults))
+	for i, v := range vaults {
+		txOuts[i] = txOutCov(c, v, strings.Repeat(fmt.Sprintf("%02X", i+1), 32))
+	}
 	// Sign every vault concurrently: their keysign batches run in parallel
 	// goroutines, which exercises KeySign's shared version cache under -race.
 	var wg sync.WaitGroup
-	for i, v := range vaults {
+	for i := range vaults {
 		wg.Add(1)
-		go func(i int, v common.PubKey) {
+		go func(i int) {
 			defer wg.Done()
 			r := &results[i]
-			r.signed, r.checkpoint, r.txIn, r.err = client.SignTx(
-				txOutCov(c, v, strings.Repeat(fmt.Sprintf("%02X", i+1), 32)), 100)
-		}(i, v)
+			r.signed, r.checkpoint, r.txIn, r.err = client.SignTx(txOuts[i], 100)
+		}(i)
 	}
 	wg.Wait()
 
