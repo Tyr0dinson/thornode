@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients"
 	types "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -1166,6 +1167,7 @@ func TestObserverStartFailsClosedOnCorruptErrataTombstone(t *testing.T) {
 
 func TestInactiveTransitionRetainsAndActiveTransitionRegossipsXMRDeck(t *testing.T) {
 	observer, storage := newErrataOrderingObserver(t)
+	observer.tssKeysignMetricMgr = metrics.NewTssKeysignMetricMgr()
 	bridge := &MockThorchainBridge2{
 		nodeStatus:  stypes.NodeStatus_Standby,
 		activeNodes: common.PubKeys{},
@@ -1183,7 +1185,7 @@ func TestInactiveTransitionRetainsAndActiveTransitionRegossipsXMRDeck(t *testing
 		common.XMRChain,
 		100,
 		6,
-		errataOrderingItem("historical-xmr", 100, "historical"),
+		errataTestDeckItem(t, common.XMRChain, 3),
 	)
 	key := TxInKey(historical)
 	observer.onDeck[key] = historical
@@ -1196,10 +1198,9 @@ func TestInactiveTransitionRetainsAndActiveTransitionRegossipsXMRDeck(t *testing
 	require.Len(t, restored, 1, "inactive churn must retain the durable scanner handoff")
 
 	regossiped := 0
-	observer.sendDeckFn = func(deck *types.TxIn, _ bool, _ int64) []int {
-		require.Equal(t, "historical-xmr", deck.TxArray[0].Tx)
+	observer.sendObservedTxsFn = func(txs common.ObservedTxs, _ bool) {
+		require.Equal(t, historical.TxArray[0].Tx, txs[0].Tx.ID.String())
 		regossiped++
-		return nil
 	}
 	bridge.nodeStatus = stypes.NodeStatus_Active
 	observer.sendDeck(context.Background())

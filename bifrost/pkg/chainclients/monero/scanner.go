@@ -84,9 +84,6 @@ type Scanner struct {
 	observedOutgoingMu     sync.RWMutex
 	observedOutgoingByTxID map[string]observedOutgoingTx
 
-	mempoolMu   sync.Mutex
-	mempoolSeen map[string]struct{}
-
 	relocationWatchCursor string
 }
 
@@ -117,7 +114,6 @@ func NewScanner(
 		manualAddrByPK:         make(map[string]string),
 		manualPKByAddr:         make(map[string]common.PubKey),
 		observedOutgoingByTxID: make(map[string]observedOutgoingTx),
-		mempoolSeen:            make(map[string]struct{}),
 	}
 }
 
@@ -195,72 +191,13 @@ func (s *Scanner) SetVaultBootstrap(bootstrap vaultSpendKeyProvider) {
 	s.vaultBootstrap = bootstrap
 }
 
-// FetchMemPool emits only outbound mempool transfers with explicit sender metadata.
-// Inbound mempool attribution is intentionally unsupported for Monero.
-func (s *Scanner) FetchMemPool(height int64) (stypes.TxIn, error) {
-	txIn := stypes.TxIn{
-		Chain:   common.XMRChain,
-		MemPool: true,
-	}
-	if s.sidecar == nil {
-		return txIn, nil
-	}
-
-	resp, err := s.sidecar.Mempool()
-	if err != nil {
-		return txIn, fmt.Errorf("fail to get monero mempool transfers: %w", err)
-	}
-	if len(resp.Outgoing) == 0 {
-		return txIn, nil
-	}
-
-	candidate := len(resp.Outgoing)
-	emitted := 0
-	deduped := 0
-	skipped := 0
-
-	for _, transfer := range resp.Outgoing {
-		to := strings.TrimSpace(transfer.Address)
-		if to == "" {
-			skipped++
-			continue
-		}
-		_, err = common.NewAddress(to)
-		if err != nil {
-			s.logger.Debug().Err(err).Str("txid", transfer.TxID).Str("to", to).Msg("skip mempool outgoing transfer with invalid to address")
-			skipped++
-			continue
-		}
-
-		sender, vaultPubKey := s.resolveOutgoingSender(transfer)
-		if sender == "" || vaultPubKey.IsEmpty() {
-			skipped++
-			continue
-		}
-		item, ok := s.transferToTxInItem(transfer, sender, to, vaultPubKey, strings.TrimSpace(transfer.Note), height)
-		if !ok {
-			skipped++
-			continue
-		}
-		if !s.tryMarkMempoolSeen(item.Tx) {
-			deduped++
-			continue
-		}
-
-		txIn.TxArray = append(txIn.TxArray, item)
-		emitted++
-	}
-
-	if candidate > 0 {
-		s.logger.Info().
-			Int("candidate", candidate).
-			Int("emitted", emitted).
-			Int("deduped", deduped).
-			Int("skipped", skipped).
-			Msg("processed monero mempool outgoing transfers")
-	}
-
-	return txIn, nil
+// FetchMemPool is a no-op: XMR outbounds are auto-observed at signing and
+// inbounds require mined confirmations. Mempool observations can collide
+// with mined observation decks.
+// Monero's NewClient also hard-codes cfg.BlockScanner.ScanMemPool = false
+// to disable mempool polling.
+func (s *Scanner) FetchMemPool(_ int64) (stypes.TxIn, error) {
+	return stypes.TxIn{}, nil
 }
 
 // ValidateScannerRollback rejects churn replay outside the signer's rewind
@@ -434,16 +371,6 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (stypes.TxIn, error) 
 		// BlockScanner must not advance until Observer owns every observation
 		// durably (including the inactive producer certificate outbox).
 		txIn.Persisted = make(chan error, 1)
-	}
-	if len(txIn.TxArray) > 0 {
-		txIDs := make([]string, 0, len(txIn.TxArray))
-		for _, item := range txIn.TxArray {
-			if item == nil || strings.TrimSpace(item.Tx) == "" {
-				continue
-			}
-			txIDs = append(txIDs, item.Tx)
-		}
-		s.clearMempoolSeen(txIDs)
 	}
 
 	s.setCurrentHeight(fetchHeight)
@@ -3182,35 +3109,6 @@ func isXMRTxMigrateMemo(memoText string) bool {
 func hasUsableXMROutgoingTxKey(transfer sidecar.Transfer) bool {
 	txKey := strings.TrimSpace(transfer.TxKey)
 	return txKey != "" && common.ValidateXMRTxKey(common.XMRChain, txKey) == nil
-}
-
-func (s *Scanner) tryMarkMempoolSeen(txID string) bool {
-	normalized := normalizeTxID(txID)
-	if normalized == "" {
-		return false
-	}
-	s.mempoolMu.Lock()
-	defer s.mempoolMu.Unlock()
-	if _, ok := s.mempoolSeen[normalized]; ok {
-		return false
-	}
-	s.mempoolSeen[normalized] = struct{}{}
-	return true
-}
-
-func (s *Scanner) clearMempoolSeen(txIDs []string) {
-	if len(txIDs) == 0 {
-		return
-	}
-	s.mempoolMu.Lock()
-	defer s.mempoolMu.Unlock()
-	for _, txID := range txIDs {
-		normalized := normalizeTxID(txID)
-		if normalized == "" {
-			continue
-		}
-		delete(s.mempoolSeen, normalized)
-	}
 }
 
 func normalizeTxID(txID string) string {

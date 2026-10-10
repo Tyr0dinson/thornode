@@ -1,6 +1,7 @@
 package observer
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -117,10 +118,18 @@ func (m *peerManager) updateLimit(newLimit int) {
 }
 
 func (m *peerManager) acquire(peer peer.ID) (*peerSemaphore, error) {
+	return m.acquireContext(context.Background(), peer)
+}
+
+func (m *peerManager) acquireContext(ctx context.Context, peer peer.ID) (*peerSemaphore, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	sem := m.getSemaphoreForAcquire(peer)
 
 	// Create a timeout channel
-	timeout := time.After(semAcquireTimeout)
+	timer := time.NewTimer(semAcquireTimeout)
+	defer timer.Stop()
 
 	sem.mu.Lock()
 	tokens := sem.tokens
@@ -132,7 +141,11 @@ func (m *peerManager) acquire(peer peer.ID) (*peerSemaphore, error) {
 		// Successfully acquired token
 		return sem, nil
 
-	case <-timeout:
+	case <-ctx.Done():
+		m.decRefCount(sem)
+		return nil, ctx.Err()
+
+	case <-timer.C:
 		// Timed out
 		m.decRefCount(sem)
 		return nil, fmt.Errorf("peer %s is busy", peer.String())

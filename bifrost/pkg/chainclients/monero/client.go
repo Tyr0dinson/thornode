@@ -248,6 +248,8 @@ func NewClient(
 	if !cfg.ChainID.Equals(common.XMRChain) {
 		return nil, fmt.Errorf("monero client requires chain id %s, got %s", common.XMRChain, cfg.ChainID)
 	}
+	// Avoid starting a polling loop for XMR's disabled mempool scanner.
+	cfg.BlockScanner.ScanMemPool = false
 	if cfg.BlockScanner.PrefetchBlocks > 1 {
 		return nil, fmt.Errorf("xmr block prefetch must be 0 or 1 to preserve scanner height order")
 	}
@@ -1052,6 +1054,7 @@ func queryConsensusObservedXMRTx(
 		AggregatorTargetLimit: candidate.AggregatorTargetLimit,
 		SpentOutputRefs:       xmrOutputRefsFromPointers(candidate.GetSpentOutputRefs()),
 		XmrTxKey:              candidate.GetXmrTxKey(),
+		XmrMinedHeight:        candidate.GetXmrMinedHeight(),
 	}, false, true
 }
 

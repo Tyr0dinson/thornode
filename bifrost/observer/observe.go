@@ -27,6 +27,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	stypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -75,6 +76,14 @@ type txInKey struct {
 	chain                  common.Chain
 	height                 int64
 	allowFutureObservation bool
+}
+
+// durableObservedTxCommitter is implemented by chain clients whose local
+// duplicate-payment guard must reach durable storage before Observer removes or
+// marks the corresponding deck item. The separate method preserves the shared
+// ChainClient interface for clients without this requirement.
+type durableObservedTxCommitter interface {
+	OnObservedTxInDurable(txIn types.TxInItem, blockHeight int64) error
 }
 
 func TxInKey(txIn *types.TxIn) txInKey {
@@ -130,7 +139,7 @@ type Observer struct {
 	permanentErrataQuarantineFn func(common.ErrataTx, int64) error
 	errataAttestMu              sync.Mutex
 	errataOutcomeMu             sync.Mutex
-	sendDeckFn                  func(deck *types.TxIn, finalised bool, finaliseHeight int64) []int
+	sendObservedTxsFn           func(common.ObservedTxs, bool)
 }
 
 // NewObserver create a new instance of Observer for chain
@@ -203,6 +212,7 @@ func NewObserver(pubkeyMgr *pubkeymanager.PubKeyManager,
 		// event client. Otherwise a fast committed event can race startup and
 		// leave a durable deck/outbox entry pending indefinitely.
 		attestationGossip.certificateObserver = observer
+		attestationGossip.SetObserverStorage(observer.storage)
 		attestationGossip.SetObserverHandleObservedTxCommitted(observer)
 		attestationGossip.SetObserverHandleErrataTxCommitted(observer)
 	}
@@ -471,47 +481,69 @@ func (o *Observer) handleObservedTxCommitted(tx common.ObservedTx, allowFutureOb
 		if !txInItem.EqualsObservedTx(tx) {
 			continue
 		}
+		if deck.Chain.UsesHeightScopedErrata() && !deck.MemPool && !deck.AllowFutureObservation {
+			// Different mining locations can share a finalization height. A late
+			// commit must not complete the replacement location or its callback.
+			minedHeight, ok := canonicalTxInMinedHeight(deck, txInItem)
+			committedHeight, err := tx.CanonicalMinedHeight()
+			if !ok || err != nil || minedHeight != committedHeight {
+				continue
+			}
+		}
+		callbackItem := txInItem.Copy()
+		if !isFinal || deck.Chain.Equals(common.XMRChain) {
+			callbackItem.CommittedUnFinalised = !isFinal
+		}
+		chain, chainErr := o.getChain(deck.Chain)
+		if chainErr != nil {
+			o.logger.Error().Err(chainErr).Msg("chain not found")
+		}
+		durableCommitter, requiresDurableCommit := chain.(durableObservedTxCommitter)
+		if requiresDurableCommit {
+			if err := durableCommitter.OnObservedTxInDurable(*callbackItem, callbackItem.BlockHeight); err != nil {
+				o.logger.Error().Err(err).
+					Str("chain", deck.Chain.String()).
+					Str("txid", callbackItem.Tx).
+					Bool("final", isFinal).
+					Msg("chain client failed to durably accept committed observation; retaining observer deck item")
+				return
+			}
+		}
 		if isFinal {
 			o.logger.Debug().Msgf("tx final %s - %s removing from tx array", tx.Tx.Chain, tx.Tx.ID)
-			// if the tx is in the tx array, and it is final, remove it from the tx array.
-			deck.TxArray = slices.Delete(deck.TxArray, j, j+1)
-			if len(deck.TxArray) == 0 {
+			updated := *deck
+			updated.TxArray = slices.Delete(slices.Clone(deck.TxArray), j, j+1)
+			if len(updated.TxArray) == 0 {
 				o.logger.Debug().Msgf("deck is empty, removing from ondeck")
-
-				// if the deck is empty after removing, remove it from ondeck.
-				delete(o.onDeck, k)
-				if err := o.storage.RemoveTx(deck, tx.FinaliseHeight); err != nil {
+				if err := o.storage.RemoveTx(deck, k.height); err != nil {
 					o.logger.Error().Err(err).Msg("fail to remove tx from storage")
+					return
 				}
+				delete(o.onDeck, k)
 			} else {
 				if j == 0 {
 					// update block confirmation count
-					deck.ConfirmationRequired = k.height - deck.TxArray[0].BlockHeight
+					updated.ConfirmationRequired = k.height - updated.TxArray[0].BlockHeight
 				}
-				if err := o.storage.AddOrUpdateTx(deck); err != nil {
+				if err := o.storage.AddOrUpdateTx(&updated); err != nil {
 					o.logger.Error().Err(err).Msg("fail to update tx in storage")
+					return
 				}
+				o.onDeck[k] = &updated
 			}
 		} else {
-			// if the tx is not final, set tx.CommittedUnFinalised to true to indicate that it has been committed to thorchain but not finalised yet.
-			txInItem.CommittedUnFinalised = true
-			if err := o.storage.AddOrUpdateTx(deck); err != nil {
+			updated := *deck
+			updated.TxArray = slices.Clone(deck.TxArray)
+			updated.TxArray[j] = callbackItem
+			if err := o.storage.AddOrUpdateTx(&updated); err != nil {
 				o.logger.Error().Err(err).Msg("fail to update tx in storage")
+				return
 			}
+			o.onDeck[k] = &updated
 		}
 
-		chain, err := o.getChain(deck.Chain)
-		if err != nil {
-			o.logger.Error().Err(err).Msg("chain not found")
-		} else {
-			committedItem := *txInItem
-			if deck.Chain.Equals(common.XMRChain) {
-				// The deck remembers a prior pre-final commit. The signed-payload
-				// guard must receive this authoritative event's current finality,
-				// not the stale marker, to terminalize the exact outbound claim.
-				committedItem.CommittedUnFinalised = !isFinal
-			}
-			chain.OnObservedTxIn(committedItem, txInItem.BlockHeight)
+		if chainErr == nil && !requiresDurableCommit {
+			chain.OnObservedTxIn(*callbackItem, callbackItem.BlockHeight)
 		}
 
 		madeChanges = true
@@ -642,97 +674,103 @@ func (o *Observer) sendDeck(ctx context.Context) {
 		return
 	}
 
+	type preparedObservations struct {
+		txs         common.ObservedTxs
+		allowFuture bool
+	}
+	var prepared []preparedObservations
 	o.lock.Lock()
-	defer o.lock.Unlock()
-
 	for k, deck := range o.onDeck {
 		chainClient, err := o.getChain(deck.Chain)
 		if err != nil {
 			o.logger.Error().Err(err).Msg("fail to retrieve chain client")
 			continue
 		}
-
 		final := chainClient.ConfirmationCountReady(*deck) && !deck.MemPool
-		var invalidIndices []int
-		if o.sendDeckFn != nil {
-			invalidIndices = o.sendDeckFn(deck, final, k.height)
-		} else {
-			invalidIndices = o.sendToQuorumChecker(deck, final, k.height)
+		// Conversion owns the outgoing fields. Apply positional errors while
+		// the source deck is locked, leaving its callbacks on the original items.
+		txs, invalid, err := o.getThorchainTxIns(deck, final, k.height)
+		if err != nil {
+			o.logger.Error().Err(err).Msg("fail to convert txin to thorchain txins")
+			continue
 		}
-
-		// Remove invalid transactions from deck
-		if len(invalidIndices) > 0 {
-			// Sort indices in descending order to remove from highest to lowest
-			// This preserves indices during removal
-			for i := 0; i < len(invalidIndices); i++ {
-				for j := i + 1; j < len(invalidIndices); j++ {
-					if invalidIndices[i] < invalidIndices[j] {
-						invalidIndices[i], invalidIndices[j] = invalidIndices[j], invalidIndices[i]
-					}
-				}
-			}
-
-			firstItemRemoved := false
-			for _, idx := range invalidIndices {
-				if idx >= 0 && idx < len(deck.TxArray) {
-					if idx == 0 {
-						firstItemRemoved = true
-					}
-					o.logger.Info().Msgf("removing invalid tx (%s) from ondeck", deck.TxArray[idx].Tx)
-					deck.TxArray = slices.Delete(deck.TxArray, idx, idx+1)
-				}
-			}
-
-			if len(deck.TxArray) == 0 {
-				o.logger.Debug().Msgf("deck is empty after removing invalid txs, removing from ondeck")
-				delete(o.onDeck, k)
-				if err := o.storage.RemoveTx(deck, k.height); err != nil {
-					o.logger.Error().Err(err).Msg("fail to remove tx from storage")
-				}
+		o.removeInvalidDeckItemsLocked(k, deck, invalid)
+		if len(txs) > 0 {
+			if deck.Chain.Equals(common.XMRChain) {
+				prepared = append(prepared, preparedObservations{txs, deck.AllowFutureObservation})
 			} else {
-				// Update confirmation required if first item was removed
-				if firstItemRemoved && len(deck.TxArray) > 0 {
-					deck.ConfirmationRequired = k.height - deck.TxArray[0].BlockHeight
-				}
-				if err := o.storage.AddOrUpdateTx(deck); err != nil {
-					o.logger.Error().Err(err).Msg("fail to update tx in storage")
-				}
+				// Other chains retain submission serialized with TxID-wide
+				// cleanup; they do not have XMR's durable admission fence.
+				o.sendObservedTxs(txs, deck.AllowFutureObservation)
 			}
 		}
+	}
+	o.lock.Unlock()
+
+	// XMR submission takes the errata reader. Release the deck before network
+	// work to preserve cleanup's barrier -> deck lock order.
+	for _, work := range prepared {
+		o.sendObservedTxs(work.txs, work.allowFuture)
 	}
 }
 
-func (o *Observer) sendToQuorumChecker(deck *types.TxIn, finalised bool, finaliseHeight int64) []int {
-	txs, invalidIndices, err := o.getThorchainTxIns(deck, finalised, finaliseHeight)
-	if err != nil {
-		o.logger.Error().Err(err).Msg("fail to convert txin to thorchain txins")
-		return nil
+// removeInvalidDeckItemsLocked applies conversion failures under the deck lock.
+func (o *Observer) removeInvalidDeckItemsLocked(k txInKey, deck *types.TxIn, indices []int) {
+	if len(indices) == 0 {
+		return
 	}
+	slices.Sort(indices)
+	indices = slices.Compact(indices)
+	slices.Reverse(indices)
+	firstRemoved := false
+	for _, idx := range indices {
+		if idx < 0 || idx >= len(deck.TxArray) {
+			continue
+		}
+		firstRemoved = firstRemoved || idx == 0
+		deck.TxArray = slices.Delete(deck.TxArray, idx, idx+1)
+	}
+	if len(deck.TxArray) == 0 {
+		delete(o.onDeck, k)
+		if err := o.storage.RemoveTx(deck, k.height); err != nil {
+			o.logger.Error().Err(err).Msg("fail to remove tx from storage")
+		}
+		return
+	}
+	if firstRemoved {
+		deck.ConfirmationRequired = k.height - deck.TxArray[0].BlockHeight
+	}
+	if err := o.storage.AddOrUpdateTx(deck); err != nil {
+		o.logger.Error().Err(err).Msg("fail to update tx in storage")
+	}
+}
 
+func (o *Observer) sendObservedTxs(txs common.ObservedTxs, allowFutureObservation bool) {
 	if len(txs) == 0 {
-		// no tx to send, but return invalid indices so they can be cleaned up
-		return invalidIndices
+		return
+	}
+	if o.sendObservedTxsFn != nil {
+		o.sendObservedTxsFn(txs, allowFutureObservation)
+		return
 	}
 
 	inbound, outbound, err := o.thorchainBridge.GetInboundOutbound(txs)
 	if err != nil {
 		o.logger.Error().Err(err).Msg("fail to get inbound and outbound txs")
-		return invalidIndices
+		return
 	}
 
 	for _, tx := range inbound {
-		if err := o.attestationGossip.AttestObservedTx(context.Background(), &tx, true, deck.AllowFutureObservation); err != nil {
+		if err := o.attestationGossip.AttestObservedTx(context.Background(), &tx, true, allowFutureObservation); err != nil {
 			o.logger.Err(err).Msg("fail to send inbound tx to thorchain")
 		}
 	}
 
 	for _, tx := range outbound {
-		if err := o.attestationGossip.AttestObservedTx(context.Background(), &tx, false, deck.AllowFutureObservation); err != nil {
+		if err := o.attestationGossip.AttestObservedTx(context.Background(), &tx, false, allowFutureObservation); err != nil {
 			o.logger.Err(err).Msg("fail to send outbound tx to thorchain")
 		}
 	}
-
-	return invalidIndices
 }
 
 func (o *Observer) processTxIns() {
@@ -992,12 +1030,20 @@ func (o *Observer) processObservedTx(txIn types.TxIn) error {
 }
 
 func ackTxInPersisted(txIn types.TxIn, err error) {
-	if txIn.Persisted == nil {
-		return
+	tryAckPersisted(txIn.Persisted, err)
+}
+
+// tryAckPersisted keeps an abandoned acknowledgement from stalling shared
+// observer queues. Producers supply a buffered channel with room for one result.
+func tryAckPersisted(persisted chan error, err error) bool {
+	if persisted == nil {
+		return true
 	}
 	select {
-	case txIn.Persisted <- err:
+	case persisted <- err:
+		return true
 	default:
+		return false
 	}
 }
 
@@ -1107,7 +1153,7 @@ func (o *Observer) enforceErrataTombstones(txIn *types.TxIn) (
 		if err != nil {
 			return nil, nil, fmt.Errorf("check observer errata tombstone: %w", err)
 		}
-		if tombstone == nil || !tombstone.blocksHeight(item.BlockHeight) {
+		if tombstone == nil || !tombstone.blocksTxInItem(txIn, item) {
 			accepted = append(accepted, item)
 			continue
 		}
@@ -1336,21 +1382,9 @@ func (o *Observer) processErrataTx(ctx context.Context) {
 			// supplying Persisted. This path resumes a scanner journal only after
 			// observer cleanup and outbox state are both durable.
 			if errataBlock.Persisted != nil {
-				persistErr := o.storage.AddErrataBlock(errataBlock)
-				if persistErr != nil {
-					ackErrataPersistence(errataBlock, persistErr)
-					rejectErrataBlock(errataBlock, persistErr)
-					o.logger.Error().Err(persistErr).
-						Str("delivery_id", errataBlock.DeliveryID).
-						Msg("failed to persist errata before attestation")
-					continue
-				}
-
-				// The XMR scanner may emit a re-mined transaction as soon as this
-				// acknowledgement is released. Finish both durable on-deck cleanup
-				// and the local errata attestation first, so neither cleanup path can
-				// delete the fresh observation after it enters observer/gossip state.
-				processErr := o.attestErrataBlock(ctx, errataBlock, true)
+				// Acknowledge the atomic durable cleanup before attempting gossip.
+				// Outbox retries preserve delivery if the process stops before send.
+				processErr := o.filterErrataTx(errataBlock)
 				ackErrataPersistence(errataBlock, processErr)
 				if processErr != nil {
 					rejectErrataBlock(errataBlock, processErr)
@@ -1431,9 +1465,7 @@ func (o *Observer) processLegacyErrataBlock(ctx context.Context, errataBlock typ
 }
 
 func ackErrataPersistence(block types.ErrataBlock, err error) {
-	if block.Persisted != nil {
-		block.Persisted <- err
-	}
+	tryAckPersisted(block.Persisted, err)
 }
 
 // rejectErrataBlock services the callback half of the local errata handoff. It
@@ -1455,15 +1487,9 @@ func (o *Observer) pruneCommittedOnlyErrata() {
 	}
 }
 
-func (o *Observer) attestErrataBlock(ctx context.Context, errataBlock types.ErrataBlock, forceAttempt bool) error {
-	if err := o.cleanupErrataBlock(errataBlock); err != nil {
-		return err
-	}
-	return o.broadcastErrataBlock(ctx, errataBlock, time.Now(), forceAttempt)
-}
-
 func (o *Observer) cleanupErrataBlock(errataBlock types.ErrataBlock) error {
 	cleanupBlock := types.ErrataBlock{Height: errataBlock.Height, DeliveryID: errataBlock.DeliveryID}
+	var legacyCleanup []types.ErrataTx
 	for _, errataTx := range errataBlock.Txs {
 		record, found, err := o.storage.GetPendingErrataTx(errataTx)
 		if err != nil {
@@ -1471,24 +1497,26 @@ func (o *Observer) cleanupErrataBlock(errataBlock types.ErrataBlock) error {
 		}
 		if found && record.DeliverySeen && !record.CleanupComplete {
 			cleanupBlock.Txs = append(cleanupBlock.Txs, errataTx)
+			if !errataTx.Chain.Equals(common.XMRChain) {
+				legacyCleanup = append(legacyCleanup, errataTx)
+			}
 		}
 	}
 	if len(cleanupBlock.Txs) > 0 {
-		// filterErrataTx atomically fsyncs the TxID tombstones and the exact
-		// on-deck mutations. Marking the outbox records cleanup-complete
-		// afterwards is idempotent: a crash in between simply replays this
-		// block from the outbox on restart.
+		// XMR tombstones, deck mutations and CleanupComplete share one fsync.
+		// Older non-XMR outbox records still need their explicit completion:
+		// applyErrata deliberately creates/updates outbox state only for XMR.
 		if err := o.filterErrataTx(cleanupBlock); err != nil {
 			return err
 		}
-		if err := o.storage.CompleteErrataCleanup(cleanupBlock.Txs, nil); err != nil {
-			return err
+		if len(legacyCleanup) > 0 {
+			return o.storage.CompleteErrataCleanup(legacyCleanup, nil)
 		}
 	}
 	return nil
 }
 
-func (o *Observer) broadcastErrataBlock(ctx context.Context, errataBlock types.ErrataBlock, now time.Time, forceAttempt bool) error {
+func (o *Observer) broadcastErrataBlock(ctx context.Context, errataBlock types.ErrataBlock, now time.Time) error {
 	o.logger.Info().Int64("height", errataBlock.Height).
 		Str("delivery_id", errataBlock.DeliveryID).
 		Msg("processing durable errata block")
@@ -1502,9 +1530,6 @@ func (o *Observer) broadcastErrataBlock(ctx context.Context, errataBlock types.E
 			continue
 		}
 		if record.AttestationRetryExhausted {
-			if forceAttempt && broadcastErr == nil {
-				broadcastErr = fmt.Errorf("errata attestation retry horizon exhausted for %s/%s; operator recovery required", errataTx.Chain, errataTx.TxID)
-			}
 			continue
 		}
 		if !record.CleanupComplete {
@@ -1527,13 +1552,10 @@ func (o *Observer) broadcastErrataBlock(ctx context.Context, errataBlock types.E
 						o.errCounter.WithLabelValues("errata_retry_exhausted", errataTx.Chain.String()).Inc()
 					}
 				}
-				if forceAttempt && broadcastErr == nil {
-					broadcastErr = fmt.Errorf("errata attestation retry horizon exhausted for %s/%s; operator recovery required", errataTx.Chain, errataTx.TxID)
-				}
 				continue
 			}
 		}
-		if !forceAttempt && record.LastAttemptAtUnixNano != 0 {
+		if record.LastAttemptAtUnixNano != 0 {
 			lastAttempt := time.Unix(0, record.LastAttemptAtUnixNano)
 			if now.Before(lastAttempt.Add(errataAttestationRetryDelay(record.AttestationAttempts))) {
 				continue
@@ -1603,7 +1625,7 @@ func (o *Observer) retryPendingErrataAt(ctx context.Context, now time.Time) {
 			Txs:        []types.ErrataTx{record.Tx},
 		}
 		if err = o.cleanupErrataBlock(block); err == nil {
-			err = o.broadcastErrataBlock(ctx, block, now, false)
+			err = o.broadcastErrataBlock(ctx, block, now)
 		}
 		if err != nil {
 			if o.errCounter != nil {
@@ -1720,6 +1742,7 @@ func (o *Observer) reconcileCommittedXMRErrata() (int, error) {
 			continue
 		}
 
+		unlock := o.lockXMRErrataCleanup(types.ErrataBlock{Txs: []types.ErrataTx{{Chain: errata.Chain, TxID: errata.Id}}})
 		o.lock.Lock()
 		errataIDs := map[string]struct{}{
 			errataObservationKey(tombstone.Chain, tombstone.TxID.String()): {},
@@ -1730,6 +1753,10 @@ func (o *Observer) reconcileCommittedXMRErrata() (int, error) {
 			o.applyErrataDeckUpdates(updated)
 		}
 		o.lock.Unlock()
+		if err == nil && o.attestationGossip != nil {
+			o.attestationGossip.removeObservedTxsForErrata(errata, 0)
+		}
+		unlock()
 		if err != nil {
 			unresolved++
 			reconcileErrors = append(reconcileErrors, fmt.Errorf(
@@ -1771,9 +1798,16 @@ func (o *Observer) filterLegacyErrataTx(block types.ErrataBlock) error {
 }
 
 func (o *Observer) filterErrataTxWithOutbox(block types.ErrataBlock, durableOutbox bool) error {
+	// Cleanup wins either before an observation is admitted, or after its
+	// protected send functions return. Transport-queued requests may arrive later.
+	// Shared locks and mux teardown can delay cleanup and scanner acknowledgement;
+	// retained data and the durable outbox support recovery through retries.
+	// Never acquire this writer while holding o.lock.
+	unlock := o.lockXMRErrataCleanup(block)
 	o.lock.Lock()
 	if len(block.Txs) == 0 {
 		o.lock.Unlock()
+		unlock()
 		return nil
 	}
 
@@ -1793,11 +1827,21 @@ func (o *Observer) filterErrataTxWithOutbox(block types.ErrataBlock, durableOutb
 	}
 	if persistErr != nil {
 		o.lock.Unlock()
+		unlock()
 		return persistErr
 	}
 	o.applyErrataDeckUpdates(updated)
 	callbacks := takeObservedTxRejectedCallbacks(removedItems, errObservedTxErrata)
 	o.lock.Unlock()
+	if o.attestationGossip != nil {
+		for _, tx := range block.Txs {
+			if tx.Chain.Equals(common.XMRChain) {
+				o.attestationGossip.removeObservedTxsForErrata(common.ErrataTx{Chain: tx.Chain, Id: tx.TxID}, block.Height)
+			}
+		}
+	}
+	unlock()
+	// Callbacks may re-enter observation delivery and must run outside both locks.
 	invokeObservedTxCallbacks(callbacks)
 	for _, tx := range block.Txs {
 		o.logger.Info().Str("chain", tx.Chain.String()).
@@ -1805,6 +1849,18 @@ func (o *Observer) filterErrataTxWithOutbox(block types.ErrataBlock, durableOutb
 			Msg("durably removed on-deck transaction due to errata")
 	}
 	return nil
+}
+
+func (o *Observer) lockXMRErrataCleanup(block types.ErrataBlock) func() {
+	if o.attestationGossip != nil {
+		for _, tx := range block.Txs {
+			if tx.Chain.Equals(common.XMRChain) {
+				o.attestationGossip.xmrErrataBarrier.Lock()
+				return o.attestationGossip.xmrErrataBarrier.Unlock
+			}
+		}
+	}
+	return func() {}
 }
 
 // collectErrataDeckMutations runs with o.lock held and describes the exact
@@ -1841,8 +1897,9 @@ func (o *Observer) collectErrataDeckMutations(
 			// stamped with the scan cursor, not the mined height), leaving the
 			// observer re-attesting a view of a reverted TxID. Those chains keep
 			// the TxID-wide removal.
-			heightScoped := !allHeights && txIn.Chain.Equals(common.XMRChain)
-			if !matchingErrata || (heightScoped && item.BlockHeight != orphanHeight) {
+			heightScoped := !allHeights && txIn.Chain.UsesHeightScopedErrata()
+			minedHeight, hasMinedHeight := canonicalTxInMinedHeight(txIn, item)
+			if !matchingErrata || (heightScoped && hasMinedHeight && minedHeight != orphanHeight) {
 				kept = append(kept, item)
 				continue
 			}
@@ -1966,16 +2023,35 @@ func (o *Observer) getThorchainTxIns(txIn *types.TxIn, finalized bool, finaliseH
 		}
 		// Strip out any empty Coin from Coins and Gas, as even one empty Coin will make a MsgObservedTxIn for instance fail validation.
 		tx := common.NewTx(txID, sender, to, item.Coins.NoneEmpty(), item.Gas.NoneEmpty(), item.Memo)
+		// NoneEmpty allocates slices but retains Uint backing values. Prepared
+		// observations outlive the deck lock, so copy those values as well.
+		for i := range tx.Coins {
+			tx.Coins[i].Amount = cosmos.NewUintFromBigInt(tx.Coins[i].Amount.BigInt())
+		}
+		for i := range tx.Gas {
+			tx.Gas[i].Amount = cosmos.NewUintFromBigInt(tx.Gas[i].Amount.BigInt())
+		}
 		obsTx := common.NewObservedTx(tx, height, item.ObservedVaultPubKey, finaliseHeight)
 		obsTx.KeysignMs = o.tssKeysignMetricMgr.GetTssKeysignMetric(item.Tx)
 		obsTx.Aggregator = item.Aggregator
 		obsTx.AggregatorTarget = item.AggregatorTarget
-		obsTx.AggregatorTargetLimit = item.AggregatorTargetLimit
+		if item.AggregatorTargetLimit != nil {
+			limit := *item.AggregatorTargetLimit
+			if !limit.IsNil() {
+				limit = cosmos.NewUintFromBigInt(limit.BigInt())
+			}
+			obsTx.AggregatorTargetLimit = &limit
+		}
 		obsTx.SpentOutputRefs = common.OutputRefsFromPointers(item.SpentOutputRefs)
 		obsTx.XmrTxKey = item.TxKey
 		if item.SolNonce != nil {
 			sn := *item.SolNonce
 			obsTx.SolNonce = &sn
+		}
+		if txIn.Chain.UsesHeightScopedErrata() {
+			if minedHeight, ok := canonicalTxInMinedHeight(txIn, item); ok {
+				obsTx.XmrMinedHeight = minedHeight
+			}
 		}
 		obsTxs = append(obsTxs, obsTx)
 	}

@@ -324,6 +324,7 @@ func TestCatchupSpentOutputRefsReadsFromQueryAndCallsSidecar(t *testing.T) {
 			ObservedPubKey: frostKey,
 			FinaliseHeight: 100,
 			XmrTxKey:       strings.Repeat("5", 64),
+			XmrMinedHeight: 94,
 		},
 	}
 
@@ -339,6 +340,13 @@ func TestCatchupSpentOutputRefsReadsFromQueryAndCallsSidecar(t *testing.T) {
 	}
 
 	c.catchupSpentOutputRefs()
+
+	queried, retry, found := queryConsensusObservedXMRTx(voter, common.TxID(spendTxHash))
+	require.False(t, retry)
+	require.True(t, found)
+	height, heightErr := queried.CanonicalMinedHeight()
+	require.NoError(t, heightErr)
+	require.Equal(t, int64(94), height)
 
 	mu.Lock()
 	defer mu.Unlock()

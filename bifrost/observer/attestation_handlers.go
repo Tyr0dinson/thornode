@@ -70,9 +70,9 @@ func (s *AttestationGossip) attestObservedTx(ctx context.Context, obsTx *common.
 
 	// Handle the attestation locally first
 	s.logger.Debug().Msg("handling attestation locally")
-	s.handleObservedTxAttestation(ctx, msg)
-
-	s.batcher.AddObservedTx(msg)
+	// Keep local delivery independent of bucket compatibility. Enqueue validates
+	// the outgoing payload and rechecks durable XMR admission after local handling.
+	s.handleObservedTxAttestationInternal(ctx, msg, true)
 
 	return nil
 }
@@ -161,15 +161,17 @@ func (s *AttestationGossip) AttestSolvency(ctx context.Context, solvency common.
 
 // AttestErrata creates and broadcasts an attestation for an errata transaction
 func (s *AttestationGossip) AttestErrata(ctx context.Context, errata common.ErrataTx) error {
-	// First remove any observed transactions for this chain/tx ID
-	s.mu.Lock()
-	for k := range s.observedTxs {
-		if k.Chain.Equals(errata.Chain) && k.ID.Equals(errata.Id) {
-			// Remove this tx from the list as we've observed an error
-			delete(s.observedTxs, k)
+	// XMR durable retries only retransmit evidence: initial cleanup belongs
+	// to Observer. Preserve the legacy one-shot TxID cleanup for other chains.
+	if !errata.Chain.Equals(common.XMRChain) {
+		s.mu.Lock()
+		for k := range s.observedTxs {
+			if k.Chain.Equals(errata.Chain) && k.ID.Equals(errata.Id) {
+				delete(s.observedTxs, k)
+			}
 		}
+		s.mu.Unlock()
 	}
-	s.mu.Unlock()
 
 	if !s.isActiveValidator(s.host.ID()) {
 		return fmt.Errorf("skipping attest errata tx: not active")
@@ -203,6 +205,39 @@ func (s *AttestationGossip) AttestErrata(ctx context.Context, errata common.Erra
 	s.batcher.AddErrataTx(msg)
 
 	return nil
+}
+
+// removeObservedTxsForErrata is the volatile half of initial cleanup. XMR
+// callers hold the writer barrier; orphanHeight zero purges a permanent TxID.
+//
+// Finalization rewrites BlockHeight, so this height-scoped cleanup must ship
+// with canonical mined-height checks in cleanup, batch purging and admission:
+// https://gitlab.com/thorchain/thornode/-/merge_requests/5065.
+// Economic XMR activity may predate that change. Deployment must also handle
+// existing observations and voters without mined-height metadata.
+func (s *AttestationGossip) removeObservedTxsForErrata(errata common.ErrataTx, orphanHeight int64) {
+	s.mu.Lock()
+	for k, state := range s.observedTxs {
+		if !k.Chain.Equals(errata.Chain) || !k.ID.Equals(errata.Id) {
+			continue
+		}
+		if errata.Chain.Equals(common.XMRChain) && orphanHeight > 0 &&
+			state != nil && state.Item != nil && state.Item.ObservedTx != nil {
+			// Retain only a proven different location; unavailable metadata
+			// cannot establish that this queued observation survived the reorg.
+			minedHeight, err := state.Item.ObservedTx.CanonicalMinedHeight()
+			if err == nil && minedHeight != orphanHeight {
+				continue
+			}
+		}
+		// Do not pool detached state: an unrelated-chain handler may still
+		// own it. XMR readers are excluded by the cleanup writer.
+		delete(s.observedTxs, k)
+	}
+	s.mu.Unlock()
+	if s.batcher != nil {
+		s.batcher.removeObservedTxsForErrata(errata, orphanHeight)
+	}
 }
 
 // AttestPriceFeed creates and broadcasts an attestation for a price feed

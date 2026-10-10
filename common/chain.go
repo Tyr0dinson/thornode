@@ -346,6 +346,13 @@ func (c Chain) GetGasAssetDecimal() int64 {
 	}
 }
 
+// UsesHeightScopedErrata reports whether local orphan-location barriers need
+// explicit mined-height observation identity. It does not change the chain's
+// consensus errata voter or permanent TxID reversal policy.
+func (c Chain) UsesHeightScopedErrata() bool {
+	return c.Equals(XMRChain)
+}
+
 // RequiresExplicitRefundAddress reports whether an inbound observation may be
 // unable to provide a usable sender address. Higher layers use this capability
 // to require an explicit asset-chain address before funds arrive.

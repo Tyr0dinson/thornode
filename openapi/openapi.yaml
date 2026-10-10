@@ -3047,6 +3047,11 @@ components:
           type: string
           description: XMR outbound tx private key used by third parties to verify recipient outputs.
           example: "1111111111111111111111111111111111111111111111111111111111111111"
+        xmr_mined_height:
+          type: integer
+          format: int64
+          description: Original XMR mined height, retained when observation height changes at finalization. Zero means unavailable or pre-mining.
+          example: 7581328
         status:
           type: string
           enum: ["done", "incomplete"]

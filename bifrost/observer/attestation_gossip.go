@@ -212,6 +212,15 @@ type AttestationGossip struct {
 	pendingXMRSpentRefsReconcileRunning      bool
 	mu                                       sync.Mutex
 
+	// Lock order: XMR errata barrier -> observer deck / gossip map -> state
+	// or batch mutex. Readers protect local admission and THORNode submission;
+	// writers protect durable cleanup and its volatile purge. Never nest readers.
+	// Peer sends and state export hold no reader. Queue admission checks storage
+	// under the batch mutex. Shared locks can wait behind unrelated RPCs, and
+	// requests already handed to THORNode may complete remotely after cleanup.
+	xmrErrataBarrier sync.RWMutex
+	observerStorage  *ObserverStorage
+
 	observedTxsPool *AttestationStatePool[*attestableObservedTx]
 	networkFeesPool *AttestationStatePool[*common.NetworkFee]
 	solvenciesPool  *AttestationStatePool[*common.Solvency]
@@ -422,6 +431,19 @@ func (s *AttestationGossip) SetObserverHandleObservedTxCommitted(o *Observer) {
 
 func (s *AttestationGossip) SetObserverHandleErrataTxCommitted(o *Observer) {
 	s.observerHandleErrataTxCommitted = o.handleErrataTxCommitted
+}
+
+// SetObserverStorage wires durable admission before observer startup. XMR
+// admission fails closed until storage is ready, including in peer handlers.
+func (s *AttestationGossip) SetObserverStorage(storage *ObserverStorage) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.observerStorage = storage
+	if s.batcher != nil {
+		s.batcher.mu.Lock()
+		s.batcher.observerStorage = storage
+		s.batcher.mu.Unlock()
+	}
 }
 
 type spentOutputRefsImport = chainclienttypes.SpentOutputRefsImport
@@ -716,6 +738,55 @@ func (s *AttestationGossip) handleQuorumErrataTxCommitted(en *ebifrost.EventNoti
 	as.MarkAttestationsCommitted(qe.Attestations)
 }
 
+// Snapshot keys, not pooled state pointers: cleanup can run between attempts.
+// No global map mutex is held across an observation RPC, and a queued XMR
+// cleanup writer gets a turn before the next XMR key is read.
+func (s *AttestationGossip) reconcileObservedTxs(ctx context.Context) {
+	s.mu.Lock()
+	keys := make([]txKey, 0, len(s.observedTxs))
+	for k := range s.observedTxs {
+		keys = append(keys, k)
+	}
+	s.mu.Unlock()
+	for _, k := range keys {
+		if ctx.Err() != nil {
+			return
+		}
+		s.reconcileObservedTx(ctx, k)
+	}
+}
+
+func (s *AttestationGossip) reconcileObservedTx(ctx context.Context, k txKey) {
+	if k.Chain.Equals(common.XMRChain) {
+		s.xmrErrataBarrier.RLock()
+		defer s.xmrErrataBarrier.RUnlock()
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, xmrAttestationTimeout(s.config.PeerTimeout))
+		defer cancel()
+	}
+	s.mu.Lock()
+	state, ok := s.observedTxs[k]
+	if !ok {
+		s.mu.Unlock()
+		return
+	}
+	state.mu.Lock()
+	if state.ExpiredAfterQuorum(s.config.LateObserveTimeout, s.config.NonQuorumTimeout) {
+		delete(s.observedTxs, k)
+		// Every production pool get holds mu, so the state cannot be reused
+		// until its old mutex has been unlocked.
+		s.observedTxsPool.PutAttestationState(state)
+		state.mu.Unlock()
+		s.mu.Unlock()
+		return
+	}
+	s.mu.Unlock()
+	defer state.mu.Unlock()
+	if state.ShouldSendLate(s.config.MinTimeBetweenAttestations) {
+		s.sendObservedTxAttestationsToThornode(ctx, *state.Item.ObservedTx, state, k.Inbound, k.AllowFutureObservation, false)
+	}
+}
+
 // Start the attestation gossip service
 func (s *AttestationGossip) Start(ctx context.Context) {
 	s.runCtxMu.Lock()
@@ -743,21 +814,8 @@ func (s *AttestationGossip) Start(ctx context.Context) {
 		case <-ticker.C:
 			// prune old attestations and check for late ones to send
 			now := time.Now()
+			s.reconcileObservedTxs(ctx)
 			s.mu.Lock()
-
-			// Prune observed transactions
-			for k, state := range s.observedTxs {
-				state.mu.Lock()
-				if state.ExpiredAfterQuorum(s.config.LateObserveTimeout, s.config.NonQuorumTimeout) {
-					delete(s.observedTxs, k)
-					s.observedTxsPool.PutAttestationState(state)
-				} else if state.ShouldSendLate(s.config.MinTimeBetweenAttestations) {
-					s.logger.Debug().Msg("sending late observed tx attestations")
-
-					s.sendObservedTxAttestationsToThornode(ctx, *state.Item.ObservedTx, state, k.Inbound, k.AllowFutureObservation, false)
-				}
-				state.mu.Unlock()
-			}
 
 			// Prune network fees
 			for k, state := range s.networkFees {

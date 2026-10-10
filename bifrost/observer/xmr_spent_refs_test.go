@@ -83,6 +83,7 @@ func observerTestXMRPlan(t *testing.T) (common.ObservedTx, plannedXMROutbound) {
 		8,
 	)
 	obsTx.SpentOutputRefs = []common.OutputRef{observerTestOutputRef("xmr-peer-spent-ref", txID.String())}
+	obsTx.XmrMinedHeight = obsTx.BlockHeight
 
 	planned := plannedXMROutbound{
 		chain:            common.XMRChain,

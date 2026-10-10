@@ -1579,6 +1579,10 @@ func TestHistoricalXMRCertificateMatchesActiveObservationPhase(t *testing.T) {
 			require.NoError(t, err)
 			obs.SpentOutputRefs[0].SpendTxHash = obs.Tx.ID.String()
 			obs.BlockHeight = 1732
+			obs.XmrMinedHeight = obs.BlockHeight
+			if tc.mempool {
+				obs.XmrMinedHeight = 0
+			}
 			obs.FinaliseHeight = obs.BlockHeight + tc.confirmations
 			second, third, fourth := secp256k1.GenPrivKey(), secp256k1.GenPrivKey(), secp256k1.GenPrivKey()
 			ag.setActiveValidators(nil)
@@ -1715,6 +1719,7 @@ func TestHistoricalXMRCertificateUsesFullBatchAndSurvivesProducerRestart(t *test
 				require.NoError(t, got.Unmarshal(records[0].Payload))
 				expected := obs
 				expected.BlockHeight, expected.FinaliseHeight = 190, 237
+				expected.XmrMinedHeight = payout.BlockHeight
 				if finalized {
 					expected.BlockHeight = 237
 				}
@@ -1739,6 +1744,7 @@ func TestHistoricalXMRCertificateUsesFullBatchAndSurvivesProducerRestart(t *test
 				require.NoError(t, got.Unmarshal(records[0].Payload))
 				require.Equal(t, int64(237), got.ObsTx.BlockHeight, "saved full-batch finalization threshold survives restart")
 				require.Equal(t, int64(237), got.ObsTx.FinaliseHeight)
+				require.Equal(t, payout.BlockHeight, got.ObsTx.XmrMinedHeight, "original mined height survives restart")
 				finalBytes, err := got.ObsTx.GetSignablePayloadWithInbound(false)
 				require.NoError(t, err)
 				require.NoError(t, verifySignature(finalBytes, got.Attestation.Signature, got.Attestation.PubKey))

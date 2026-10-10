@@ -260,7 +260,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "ADD:BTC.BTC",
                       "to_address": "bcrt1qanq4fk6l89w3sfuxehwyprxqjdj3kuzp4ttaep"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -492,7 +493,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000001",
                       "to_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }

@@ -81,6 +81,18 @@ The `ObservedTx` struct is used across the following THORChain message types:
   - Broadcasting incorrect observations
 - **Mempool Handling:** For most chains, mempool transactions are ignored unless both the sender and recipient are THORChain vaults. This includes internal vault-to-vault actions such as consolidations or migrations.
 
+### Attestation deadlines and XMR cleanup
+
+Bifrost adds a deadline to observation, network-fee, solvency and errata quorum RPCs to THORNode. For non-XMR chains, this uses `bifrost.attestation_gossip.peer_timeout` (20 seconds by default), subject to an earlier caller deadline. These RPCs previously inherited the caller's context without adding this timeout. Price-feed batch RPCs are unchanged. Failed submissions do not mark attestations as sent; retained evidence remains available to the existing late-submission retry path.
+
+XMR admission and quorum submission use context budgets capped at one THORChain block. For live gossip batches containing at least one XMR observed-transaction attestation, every peer attempt shares one absolute deadline capped at one THORChain block; it covers all messages in that batch. Batches without an XMR observed-transaction attestation use separate per-peer timeouts from `bifrost.attestation_gossip.peer_timeout` (20 seconds by default), even if they contain XMR errata, network-fee or solvency attestations. Peer delivery holds no cleanup lock, and the batcher loop continues dispatching later batches; per-peer concurrency limits still apply.
+
+State export uses the existing 40-second deadlines for individual framing reads and writes, without a whole-transfer XMR timeout. Each frame rechecks XMR tombstones before serialization, then sends without a cleanup lock. Cleanup can complete during any transport or acknowledgement wait. A frame already prepared may still arrive afterward; subsequent frames filter removed XMR entries while preserving other state and the announced frame sequence.
+
+Local observations enter the gossip queue after their signatures are verified against their own payloads, independently of whether they merge into an existing attestation bucket. XMR enqueue additionally rechecks the durable tombstone under the queue mutex, preventing cleanup from being undone by a previously validated observation. Deck processing prepares independently owned observations and removes conversion failures under the deck lock. XMR submission then runs outside that lock; other chains retain submission serialized with their TxID-wide cleanup. Observation reconciliation releases the shared gossip map lock before each RPC for every chain. These change common delivery and concurrency behavior; signing payloads and quorum thresholds are unchanged.
+
+These deadlines do not guarantee a strict scanner acknowledgement time: shared locks may wait behind unrelated RPCs, and transport operations can outlast their deadlines. Bytes already handed to a transport cannot be recalled. Durable cleanup, retained observation data and the errata outbox preserve the existing recovery paths.
+
 ## Finality & Pre-Confirmation
 
 ### Instant-Finality Chains (e.g. Cosmos SDK, BFT)
