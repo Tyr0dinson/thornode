@@ -58,6 +58,16 @@ def gocheck_counts(lines):
     return counts
 
 
+# XML 1.0 forbids most C0 controls (ESC from colored logs among them) and
+# surrogates/non-characters; ElementTree would serialize them verbatim.
+XML_INVALID = re.compile(r"[^\t\n\r\x20-\ud7ff\ue000-\ufffd\U00010000-\U0010ffff]")
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+
+
+def xml_text(text):
+    return XML_INVALID.sub("\ufffd", ANSI_ESCAPE.sub("", text))
+
+
 def write_junit(path, tests, output, command_failed, selection_errors=()):
     setup_failure = int(command_failed and not any(v == "fail" for v in tests.values()))
     suite = ET.Element(
@@ -72,12 +82,14 @@ def write_junit(path, tests, output, command_failed, selection_errors=()):
         skipped=str(sum(v == "skip" for v in tests.values())),
     )
     for (package, name), state in sorted(tests.items()):
-        case = ET.SubElement(suite, "testcase", classname=package, name=name)
+        case = ET.SubElement(
+            suite, "testcase", classname=xml_text(package), name=xml_text(name)
+        )
         if state == "skip":
             ET.SubElement(case, "skipped")
         elif state == "fail":
-            ET.SubElement(case, "failure", message="go test failed").text = "\n".join(
-                output[-100:]
+            ET.SubElement(case, "failure", message="go test failed").text = xml_text(
+                "\n".join(output[-100:])
             )
     if command_failed and not any(v == "fail" for v in tests.values()):
         case = ET.SubElement(
@@ -85,8 +97,9 @@ def write_junit(path, tests, output, command_failed, selection_errors=()):
         )
         ET.SubElement(
             case, "failure", message="go test failed before a test completed"
-        ).text = "\n".join(output[-100:])
+        ).text = xml_text("\n".join(output[-100:]))
     for error in selection_errors:
+        error = xml_text(error)
         case = ET.SubElement(suite, "testcase", classname="test selection", name=error)
         ET.SubElement(case, "failure", message=error)
     ET.ElementTree(suite).write(path, encoding="utf-8", xml_declaration=True)
