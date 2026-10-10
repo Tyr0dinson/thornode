@@ -31,7 +31,7 @@ The root unit job also saves a source inventory of modules, build constraints,
 and test-file directories. Its stagenet, chainnet, mainnet, mainnet migration,
 and mocknet subruns each publish their own JUnit and coverage artifacts.
 
-`scripts/test-quality-coverage.py --profile coverage.txt --base-ref <base-sha>
+`python3 scripts/test-quality-coverage.py --profile coverage.txt --base-ref <base-sha>
 --output test-quality-reports/root-mocknet/changed-coverage.json` reports
 statement coverage for changed Go lines by package. Add
 `--baseline-profile <base-coverage.txt>` to compare overall coverage in changed
