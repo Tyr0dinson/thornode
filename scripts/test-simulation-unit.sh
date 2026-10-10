@@ -5,6 +5,8 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 report=${1:-$(mktemp "${TMPDIR:-/tmp}/thornode-simulation-unit.XXXXXXXX.jsonl")}
 mkdir -p "$(dirname "$report")"
+# Resolve against the caller's directory before cd-ing into the module.
+report="$(cd "$(dirname "$report")" && pwd)/$(basename "$report")"
 
 cd "$repo_root/test/simulation"
 set +e
@@ -41,7 +43,9 @@ with open(report, encoding="utf-8") as stream:
         elif action == "skip" and test:
             skipped.add((package, test))
         elif action == "fail":
-            failed.add((package, test))
+            # Package-level failures have no Test; normalize so sorting
+            # never compares None with a test name.
+            failed.add((package, test or ""))
         if action == "pass" and not test:
             package_passes.add(package)
         if action == "output":
