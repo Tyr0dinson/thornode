@@ -920,13 +920,16 @@ func TestSignedTxPayloadStoreBroadcastCov(t *testing.T) {
 		require.NoError(t, store.Reserve(plan))
 		require.NoError(t, store.Set(plan, "tx", standalonePayload("tx")))
 
+		// Rejections below must be decided before anything is dispatched.
+		mustNotDispatch := func() (string, error) { t.Fatal("must not dispatch"); return "", nil }
+
 		// Different committed alias.
 		signedStorePutCov(t, db, signedTxCommittedAliasKey("observe-key"), signedStoreTombstoneCov("other"))
-		_, err := broadcastCov(store, plan, "tx", func() (string, error) { return "tx", nil })
+		_, err := broadcastCov(store, plan, "tx", mustNotDispatch)
 		require.ErrorIs(t, err, errXMRSigningClaimAliasCommitted)
 		// Same committed alias: success without dispatch.
 		signedStorePutCov(t, db, signedTxCommittedAliasKey("observe-key"), signedStoreTombstoneCov("tx"))
-		hash, err := broadcastCov(store, plan, "tx", func() (string, error) { t.Fatal("must not dispatch"); return "", nil })
+		hash, err := broadcastCov(store, plan, "tx", mustNotDispatch)
 		require.NoError(t, err)
 		require.Equal(t, "tx", hash)
 		require.NoError(t, db.Delete([]byte(signedTxCommittedAliasKey("observe-key")), nil))
@@ -946,7 +949,7 @@ func TestSignedTxPayloadStoreBroadcastCov(t *testing.T) {
 
 		// Committed logical with a different tx.
 		signedStorePutCov(t, db, signedTxCommittedLogicalKey("logical"), signedStoreTombstoneCov("other"))
-		_, err = broadcastCov(store, plan, "tx", func() (string, error) { return "tx", nil })
+		_, err = broadcastCov(store, plan, "tx", mustNotDispatch)
 		require.ErrorIs(t, err, errXMRSigningClaimCommitted)
 		require.NoError(t, db.Delete([]byte(signedTxCommittedLogicalKey("logical")), nil))
 

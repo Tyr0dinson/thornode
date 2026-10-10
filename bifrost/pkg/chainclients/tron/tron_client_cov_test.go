@@ -415,7 +415,7 @@ func (s *TronTestSuite) TestGetTokenBalanceErrorsCov(c *C) {
 		{http.StatusOK, "not json", ".*invalid character.*"},
 		{http.StatusOK, `{"result":""}`, "response result is empty"},
 		{http.StatusOK, `{"result":"0xzz"}`, ".*invalid byte.*"},
-		{http.StatusOK, `{"result":"0x01"}`, ".*"},
+		{http.StatusOK, `{"result":"0x01"}`, "abi: improperly formatted output.*"},
 	}
 	for _, tc := range cases {
 		srv := staticTronServerCov(tc.status, tc.body)

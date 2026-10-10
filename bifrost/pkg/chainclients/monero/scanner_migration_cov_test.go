@@ -208,9 +208,17 @@ func TestEnqueueAuthenticatedInternalInboundReplayErrorsCov(t *testing.T) {
 	t.Run("no-fee", func(t *testing.T) {
 		f := newMigrationFixtureCov(t, "cov-enqueue-fee")
 		tx := f.observed
+		// gas paid only in another asset passes validation and is refused for
+		// carrying no XMR fee
+		tx.Tx.Gas = common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(1))}
+		queued, err := f.scanner.EnqueueAuthenticatedInternalInboundReplay(tx)
+		require.ErrorContains(t, err, "has no xmr fee")
+		require.False(t, queued)
+
+		// a zero XMR fee is already rejected by ObservedTx validation
 		tx.Tx.Gas = common.Gas{common.NewCoin(common.XMRAsset, cosmos.ZeroUint())}
-		_, err := f.scanner.EnqueueAuthenticatedInternalInboundReplay(tx)
-		require.Error(t, err)
+		_, err = f.scanner.EnqueueAuthenticatedInternalInboundReplay(tx)
+		require.ErrorContains(t, err, "amount cannot be zero")
 	})
 }
 

@@ -407,6 +407,8 @@ func TestWebsocketProviderStartLoopCov(t *testing.T) {
 		handled:   make(chan []byte, 10),
 	}
 	p := newWsProviderCov(t, ctx, srv.url(), fake)
+	// keepalive is disabled here, so the read loop never resets the backoff
+	// to minBackoff: the reconnect after the server closes waits this 1ms
 	p.backoff = time.Millisecond
 
 	p.Start()
