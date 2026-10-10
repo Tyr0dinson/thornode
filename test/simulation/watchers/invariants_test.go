@@ -55,7 +55,7 @@ func setupInvariantWatcherTestServer(t *testing.T, responder func(invariant stri
 		if invariant == "asgard" && requests[invariant] == 1 {
 			height = "41"
 		}
-		w.Header().Set("x-cosmos-block-height", height)
+		w.Header().Set(gatewayHeightHeader, height)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(responder(invariant, requests[invariant])))
 	}))

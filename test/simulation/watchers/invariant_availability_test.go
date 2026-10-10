@@ -104,7 +104,7 @@ func TestInvariantPinnedSnapshotAndBrokenResult(t *testing.T) {
 		if r.Header.Get("x-cosmos-block-height") != "" && r.Header.Get("x-cosmos-block-height") != "42" {
 			t.Errorf("unexpected requested height %q", r.Header.Get("x-cosmos-block-height"))
 		}
-		w.Header().Set("x-cosmos-block-height", "42")
+		w.Header().Set(gatewayHeightHeader, "42")
 		if strings.HasSuffix(r.URL.Path, "/asgard") {
 			fmt.Fprint(w, `{"invariant":"asgard","broken":true,"msg":["bad state"]}`)
 			return
@@ -137,7 +137,7 @@ func TestInvariantBrokenWithoutSnapshotCannotBeForgiven(t *testing.T) {
 
 func TestInvariantSameHeightRecoveryCannotBeForgiven(t *testing.T) {
 	cleanup, _ := invariantTestServer(t, func(w http.ResponseWriter, r *http.Request, count int) {
-		w.Header().Set("x-cosmos-block-height", "42")
+		w.Header().Set(gatewayHeightHeader, "42")
 		if count == 1 {
 			fmt.Fprintf(w, `{"invariant":%q,"broken":true,"msg":["bad state"]}`, strings.TrimPrefix(r.URL.Path, "/thorchain/invariant/"))
 			return
@@ -153,9 +153,9 @@ func TestInvariantSameHeightRecoveryCannotBeForgiven(t *testing.T) {
 func TestInvariantRejectsStalePinnedResponse(t *testing.T) {
 	cleanup, _ := invariantTestServer(t, func(w http.ResponseWriter, r *http.Request, count int) {
 		if r.Header.Get("x-cosmos-block-height") != "" {
-			w.Header().Set("x-cosmos-block-height", "41")
+			w.Header().Set(gatewayHeightHeader, "41")
 		} else {
-			w.Header().Set("x-cosmos-block-height", "42")
+			w.Header().Set(gatewayHeightHeader, "42")
 		}
 		healthyInvariant(w, r)
 	})
@@ -169,7 +169,7 @@ func TestInvariantRejectsStalePinnedResponse(t *testing.T) {
 func TestInvariantRejectsOlderVerificationSweep(t *testing.T) {
 	height := "42"
 	cleanup, _ := invariantTestServer(t, func(w http.ResponseWriter, r *http.Request, count int) {
-		w.Header().Set("x-cosmos-block-height", height)
+		w.Header().Set(gatewayHeightHeader, height)
 		healthyInvariant(w, r)
 	})
 	defer cleanup()
@@ -195,5 +195,27 @@ func TestInvariantCancellationBoundsRetries(t *testing.T) {
 	err := verifyInvariants(ctx, []string{"asgard"})
 	if err == nil || time.Since(start) > time.Second {
 		t.Fatalf("cancellation did not bound verification: %v", err)
+	}
+}
+
+func TestInvariantFetchReadsGatewayHeightHeader(t *testing.T) {
+	for name, header := range map[string]string{
+		"grpc-gateway prefixed": "Grpc-Metadata-X-Cosmos-Block-Height",
+		"bare":                  "x-cosmos-block-height",
+	} {
+		t.Run(name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set(header, "42")
+				healthyInvariant(w, r)
+			}))
+			defer server.Close()
+			_, observed, err := fetchInvariant(context.Background(), server.Client(), server.URL+"/thorchain/invariant/asgard", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if observed != "42" {
+				t.Fatalf("observed height %q, want 42", observed)
+			}
+		})
 	}
 }

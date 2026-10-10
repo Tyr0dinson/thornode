@@ -11,6 +11,9 @@ import (
 	"sync"
 	"time"
 
+	grpctypes "github.com/cosmos/cosmos-sdk/types/grpc"
+	"github.com/grpc-ecosystem/grpc-gateway/runtime"
+
 	keeperv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
 
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
@@ -27,22 +30,32 @@ type invariantResponse struct {
 	Msg       []string `json:"msg"`
 }
 
+// gatewayHeightHeader is the response header carrying the served height. THORChain's
+// CustomGRPCGatewayRouter keeps grpc-gateway's default outgoing matcher, so gRPC header
+// metadata comes back under the Grpc-Metadata- prefix (as cmd/bifrost/health.go reads it).
+var gatewayHeightHeader = runtime.MetadataHeaderPrefix + grpctypes.GRPCBlockHeightHeader
+
 // The REST gateway accepts x-cosmos-block-height and returns the observed height
-// in the response header. An empty height means an older gateway did not report it.
+// in the Grpc-Metadata- prefixed response header; the bare form is accepted for a
+// gateway that forwards headers unprefixed. An empty height means the gateway did
+// not report it.
 func fetchInvariant(ctx context.Context, cl *http.Client, endpoint, height string) (invariantResponse, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return invariantResponse{}, "", err
 	}
 	if height != "" {
-		req.Header.Set("x-cosmos-block-height", height)
+		req.Header.Set(grpctypes.GRPCBlockHeightHeader, height)
 	}
 	resp, err := cl.Do(req)
 	if err != nil {
 		return invariantResponse{}, "", err
 	}
 	defer resp.Body.Close()
-	observed := resp.Header.Get("x-cosmos-block-height")
+	observed := resp.Header.Get(gatewayHeightHeader)
+	if observed == "" {
+		observed = resp.Header.Get(grpctypes.GRPCBlockHeightHeader)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return invariantResponse{}, observed, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
