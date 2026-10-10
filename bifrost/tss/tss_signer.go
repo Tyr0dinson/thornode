@@ -42,7 +42,6 @@ type KeySign struct {
 	logger         zerolog.Logger
 	server         tssServer
 	bridge         thorclient.ThorchainBridge
-	versionMu      sync.Mutex // guards currentVersion and lastCheck: keysign batches for different vaults run concurrently
 	currentVersion semver.Version
 	lastCheck      time.Time
 	wg             *sync.WaitGroup
@@ -286,8 +285,6 @@ func getSignature(r, s string) ([]byte, error) {
 }
 
 func (s *KeySign) getVersion() semver.Version {
-	s.versionMu.Lock()
-	defer s.versionMu.Unlock()
 	requestTime := time.Now()
 	// analyze-ignore(float-comparison)
 	if !s.currentVersion.Equals(semver.Version{}) && requestTime.Sub(s.lastCheck).Seconds() < constants.ThorchainBlockTime.Seconds() {
