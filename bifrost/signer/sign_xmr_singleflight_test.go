@@ -231,9 +231,11 @@ func newSingleFlightXMRKeygen(t *testing.T, height int64) types2.KeygenBlock {
 
 func waitForSingleFlightReturn(t *testing.T, done <-chan struct{}, operation string) {
 	t.Helper()
+	// Coverage jobs run many packages concurrently; permit scheduling delays
+	// while still failing a worker that never completes.
 	select {
 	case <-done:
-	case <-time.After(time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatalf("%s did not return promptly", operation)
 	}
 }
