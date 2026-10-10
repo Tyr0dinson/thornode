@@ -95,10 +95,14 @@ count: 1
 ---
 ########################################################################################
 # set MaxSynthPerPoolDepth high enough to allow synth minting
+# The advanced queue checks the whole stream's quoted output (~250 BTC/BTC for the
+# 1_000_000 RUNE deposit below) against the cap when the swap is queued. At 7000 the
+# cap is 0.7 * 2 * 1_000 BTC = 1_400, leaving 400 above wolf's 1_000 BTC/BTC; at 6000
+# only 200 remains and the mint is refunded instead of streamed.
 ########################################################################################
 type: tx-mimir
 key: MaxSynthPerPoolDepth
-value: 6000
+value: 7000
 signer: {{ addr_thor_dog }}
 ---
 type: check
@@ -143,19 +147,29 @@ count: 9
 # synth swaps are priced at mocknet's 2x virtual depth, paying out more than the pool curve
 luvi_drop: [BTC.BTC]
 ---
+# Both streams are still running: the mint was queued rather than refunded, and
+# none of its sub-swaps hit the synth cap.
+type: check
+endpoint: http://localhost:1317/thorchain/swaps/streaming
+asserts:
+  - .|length == 2
+  - .[]|select(.target_asset=="BTC/BTC")|.count == 9
+  - .[]|select(.target_asset=="BTC/BTC")|(.failed_swaps // [] | length) == 0
+  - .[]|select(.target_asset=="THOR.RUNE")|.count == 9
+---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_wolf }}
 asserts:
-  - .asset_redeem_value == "9500000000"
-  - .rune_redeem_value == "3859511695020"
-  - .luvi_growth_pct == "0.211038754669499225"
+  - .asset_redeem_value == "5281350856"
+  - .rune_redeem_value == "4991693504664"
+  - .luvi_growth_pct == "0.026896125797961406"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_goat }}
 asserts:
-  - .asset_redeem_value == "85500000000"
-  - .rune_redeem_value == "34735605255186"
-  - .luvi_growth_pct == "0.211038754669499225"
+  - .asset_redeem_value == "47532157708"
+  - .rune_redeem_value == "44925241541977"
+  - .luvi_growth_pct == "0.026896125797961406"
 ---
 ########################################################################################
 # wolf withdraws right before the scheduled end of the streaming swap
@@ -176,7 +190,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
   - .|[..|select(.type?=="withdraw")] | length == 1
-  - ..|select(.type?=="withdraw").emit_rune == "7020548261035"
+  - ..|select(.type?=="withdraw").emit_rune == "9470052478762"
   # Under 2x the initial rune_redeem_value (noting the asymmetric withdrawal's swap fee),
   # of which the position's initial total value was 2x.
 ---
@@ -199,10 +213,10 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_wolf }}
 asserts:
-  - .units == "6063574928430"
+  - .units == "4493725748398"
   # Contrast with the initial units of "50_000_00000000" .
-  - .asset_redeem_value == "11874560167"
-  - .rune_redeem_value == "4735026239380"
+  - .asset_redeem_value == "4772949514"
+  - .rune_redeem_value == "4531115404777"
   # Contrast with the initial redeem values of "50_00000000" and "50_000_00000000".
   # <0.96x now, due to asymmetrical liquidity action swap fees
   # (not checking luvi_growth_pct which has been reset by the withdraw and deposit).
@@ -211,7 +225,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_goat }}
 asserts:
   - .units == ("450_000_00000000" | gsub("_";"")) # Unchanged.
-  - .asset_redeem_value == "88125439832"
-  - .rune_redeem_value == "35140355860547"
+  - .asset_redeem_value == "47796136254"
+  - .rune_redeem_value == "45374418607473"
   # Contrast with the initial redeem values of "450_00000000" and "450_000_00000000".
-  - .luvi_growth_pct == "0.236634235394306065"
+  - .luvi_growth_pct == "0.034878664961987833"
