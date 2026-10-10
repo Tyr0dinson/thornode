@@ -825,15 +825,26 @@ func (s *NetworkMgrCovCDSuite) TestMigrateFundsDustAndEdgesCovCD(c *C) {
 	drained.Deficit = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(5)))
 	c.Assert(ek.SetVault(ctx, drained), IsNil)
 
-	// error paths leave the dust in place
+	poolBefore, err := ek.GetPool(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	reserveBefore := ek.GetRuneBalanceOfModule(ctx, ReserveName)
+
+	// failures before the first write leave the dust and balances in place
 	for _, f := range []string{"GetPool:" + common.BTCAsset.String(), "Send:" + ReserveName + ":" + AsgardName} {
 		ek.fail[f] = true
 		c.Check(vm.migrateFunds(ctx, mgr), NotNil, Commentf("%s", f))
 		delete(ek.fail, f)
-		got, err := ek.GetVault(ctx, retiring.PubKey)
-		c.Assert(err, IsNil)
+		got, gerr := ek.GetVault(ctx, retiring.PubKey)
+		c.Assert(gerr, IsNil)
 		c.Check(got.GetCoin(common.BTCAsset).Amount.Uint64(), Equals, uint64(1000))
+		pool, gerr := ek.GetPool(ctx, common.BTCAsset)
+		c.Assert(gerr, IsNil)
+		c.Check(pool.BalanceAsset.Equal(poolBefore.BalanceAsset), Equals, true)
+		c.Check(ek.GetRuneBalanceOfModule(ctx, ReserveName).Equal(reserveBefore), Equals, true)
 	}
+	// the burn is not atomic: a SetVault failure keeps the reserve transfer and
+	// the saved pool, and a SetPool failure keeps the reserve transfer, so the
+	// dust is debited from the pool twice and compensated three times below
 	ek.fail["GetTxOut"] = true
 	ek.fail["SetVault"] = true
 	c.Check(vm.migrateFunds(ctx, mgr), ErrorMatches, "fail to save vault.*")
@@ -843,8 +854,6 @@ func (s *NetworkMgrCovCDSuite) TestMigrateFundsDustAndEdgesCovCD(c *C) {
 	c.Check(vm.migrateFunds(ctx, mgr), ErrorMatches, "fail to save pool.*")
 	delete(ek.fail, "SetPool")
 
-	poolBefore, err := ek.GetPool(ctx, common.BTCAsset)
-	c.Assert(err, IsNil)
 	c.Assert(vm.migrateFunds(ctx, mgr), IsNil)
 
 	got, err := ek.GetVault(ctx, retiring.PubKey)
@@ -854,9 +863,11 @@ func (s *NetworkMgrCovCDSuite) TestMigrateFundsDustAndEdgesCovCD(c *C) {
 	c.Check(got.Status, Equals, RetiringVault)
 	poolAfter, err := ek.GetPool(ctx, common.BTCAsset)
 	c.Assert(err, IsNil)
-	// the burnt dust is compensated to the pool from the reserve
-	c.Check(poolAfter.BalanceAsset.Uint64(), Equals, poolBefore.BalanceAsset.Uint64()-1000)
-	c.Check(poolAfter.BalanceRune.Uint64(), Equals, poolBefore.BalanceRune.Uint64()+100_000)
+	// the burnt dust is compensated to the pool from the reserve; the partial
+	// failures above double the pool debit and pay the reserve out three times
+	c.Check(poolAfter.BalanceAsset.Uint64(), Equals, poolBefore.BalanceAsset.Uint64()-2000)
+	c.Check(poolAfter.BalanceRune.Uint64(), Equals, poolBefore.BalanceRune.Uint64()+200_000)
+	c.Check(reserveBefore.Sub(ek.GetRuneBalanceOfModule(ctx, ReserveName)).Uint64(), Equals, uint64(300_000))
 
 	gotDrained, err := ek.GetVault(ctx, drained.PubKey)
 	c.Assert(err, IsNil)

@@ -186,13 +186,18 @@ func TestCovUnstuckActionSelection(t *testing.T) {
 		t.Fatal("dropped tx should be removed from signer cache")
 	}
 
-	// rpc errors keep the item and stop the pass
-	env.bridge.height = 1250 // early item now in its buffer as well
+	// rpc errors keep the item and stop the pass: at 1200 all three remaining
+	// items are inside their reschedule buffer, but only the first is checked
+	env.bridge.height = 1200
 	env.rpc.set("eth_getTransactionByHash", covErr("down"))
+	checked := env.rpc.count("eth_getTransactionByHash")
 	c.unstuckAction()
 	items, _ = c.ethScanner.blockMetaAccessor.GetSignedTxItems()
 	if len(items) != 3 {
 		t.Fatalf("errors must keep items, got %d", len(items))
+	}
+	if got := env.rpc.count("eth_getTransactionByHash") - checked; got != 1 {
+		t.Fatalf("an rpc error must stop the pass after one check, got %d", got)
 	}
 }
 

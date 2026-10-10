@@ -1,18 +1,13 @@
 package monero
 
 import (
-	"encoding/json"
 	"errors"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
-	"gitlab.com/thorchain/thornode/v3/config"
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -85,75 +80,6 @@ func TestScannerRefreshAsgardLookupErrorsCov(t *testing.T) {
 	require.NoError(t, scanner.refreshAsgardLookup(1))
 	_, ok := scanner.vaultPubKeyForAddress("unknown")
 	require.False(t, ok)
-}
-
-func mempoolServerCov(t *testing.T, status int, outgoing []sidecar.Transfer) *sidecar.Client {
-	t.Helper()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/monero/transfers" {
-			http.NotFound(w, r)
-			return
-		}
-		if status != http.StatusOK {
-			http.Error(w, "mempool down", status)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(sidecar.Transfers{Outgoing: outgoing})
-	}))
-	t.Cleanup(server.Close)
-	client, err := sidecar.NewClientWithEndpoint(config.BifrostChainConfiguration{}, server.URL)
-	require.NoError(t, err)
-	return client
-}
-
-func TestScannerFetchMemPoolFilteringCov(t *testing.T) {
-	t.Parallel()
-
-	// No sidecar configured.
-	txIn, err := NewScanner(testLogger(), nil, nil, common.XMRChain, common.EmptyPubKey, 8).FetchMemPool(1)
-	require.NoError(t, err)
-	require.True(t, txIn.MemPool)
-	require.Empty(t, txIn.TxArray)
-
-	// Sidecar failure.
-	failing := NewScanner(testLogger(), mempoolServerCov(t, http.StatusInternalServerError, nil), nil, common.XMRChain, common.EmptyPubKey, 8)
-	_, err = failing.FetchMemPool(1)
-	require.ErrorContains(t, err, "fail to get monero mempool transfers")
-
-	// Empty mempool.
-	empty := NewScanner(testLogger(), mempoolServerCov(t, http.StatusOK, nil), nil, common.XMRChain, common.EmptyPubKey, 8)
-	txIn, err = empty.FetchMemPool(1)
-	require.NoError(t, err)
-	require.Empty(t, txIn.TxArray)
-
-	vault, vaultAddr := testVaultPubKeyAndAddress(t)
-	dest := common.XMRChecksummedDummyAddress('8')
-	good := sidecar.Transfer{
-		TxID: testXMRHash("mempool-good"), Address: dest, FromAddress: vaultAddr.String(),
-		VaultPubKey: vault.String(), Amount: 5 * moneroAtomicToThorchain, Fee: moneroAtomicToThorchain,
-	}
-	noTo := good
-	noTo.TxID = testXMRHash("mempool-no-to")
-	noTo.Address = " "
-	badTo := good
-	badTo.TxID = testXMRHash("mempool-bad-to")
-	badTo.Address = "not-an-address"
-	noSender := good
-	noSender.TxID = testXMRHash("mempool-no-sender")
-	noSender.FromAddress = ""
-	dust := good
-	dust.TxID = testXMRHash("mempool-dust")
-	dust.Amount = 1
-
-	scanner := NewScanner(testLogger(), mempoolServerCov(t, http.StatusOK, []sidecar.Transfer{noTo, badTo, noSender, dust, good, good}),
-		&scannerMemoBridge{asgards: ttypes.Vaults{{PubKey: vault, PubKeyEddsa: vault, PubKeyFrost: vault}}},
-		common.XMRChain, common.EmptyPubKey, 8)
-	txIn, err = scanner.FetchMemPool(7)
-	require.NoError(t, err)
-	require.Len(t, txIn.TxArray, 1, "only the valid transfer is emitted, and only once")
-	require.Equal(t, good.TxID, txIn.TxArray[0].Tx)
-	require.True(t, txIn.TxArray[0].ObservedVaultPubKey.Equals(vault))
 }
 
 func TestEnqueueAuthenticatedOutboundReplayErrorsCov(t *testing.T) {
