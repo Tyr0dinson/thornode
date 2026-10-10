@@ -20,28 +20,60 @@ def lock_timeout(_signum, _frame):
     raise TimeoutError("build lock wait exceeded")
 
 
-def invoke(package, test, overlay, seconds, toolchain):
+def run_group(command, env, seconds):
+    """Run command in its own process group; on timeout kill and reap the whole group."""
+    proc = subprocess.Popen(
+        command,
+        cwd=ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr = proc.communicate(timeout=seconds)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        stdout, stderr = proc.communicate()
+        raise subprocess.TimeoutExpired(command, seconds, output=stdout, stderr=stderr)
+    finally:
+        # go test may leave compiler/test descendants behind even on a normal
+        # exit path; never release the build lock while any are still alive.
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    return subprocess.CompletedProcess(command, proc.returncode, stdout, stderr)
+
+
+def invoke(package, test, overlay, seconds, toolchain, deadline):
     command = ["go", "test", "-json", "-count=1", "-p", "2", "-run", test]
     if overlay:
         command += ["-overlay", str(overlay)]
     command += [package]
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return {
+            "status": "timeout",
+            "reason": "suite execution budget exhausted",
+            "command": command,
+        }
+    seconds = min(seconds, remaining)
     env = dict(os.environ, GOMAXPROCS="4", GOTOOLCHAIN=toolchain)
     env.setdefault("GOCACHE", "/tmp/thornode-test-quality-mutation-gocache")
     start = time.monotonic()
     try:
-        result = subprocess.run(
-            command, cwd=ROOT, env=env, capture_output=True, text=True, timeout=seconds
-        )
+        result = run_group(command, env, seconds)
     except subprocess.TimeoutExpired as exc:
         return {
             "status": "timeout",
-            "reason": f"go test exceeded {seconds}s",
+            "reason": f"go test exceeded {round(seconds, 2)}s",
             "command": command,
-            "output": (
-                (exc.stdout or b"")[-3000:].decode(errors="replace")
-                if isinstance(exc.stdout, bytes)
-                else (exc.stdout or "")[-3000:]
-            ),
+            "output": (exc.output or "")[-3000:],
         }
     events = []
     for line in result.stdout.splitlines():
@@ -107,6 +139,9 @@ def main():
         "runner_command": sys.argv,
     }
     started = time.monotonic()
+    # One deadline bounds baseline, control and mutant runs; each go test
+    # timeout is capped by whatever budget remains.
+    deadline = started + args.budget_seconds
     baseline_keys = list(dict.fromkeys((m["package"], m["test"]) for m in mutants))
     control = data["control"]
     control_mutant = next(m for m in mutants if m["id"] == control["mutant"])
@@ -132,7 +167,12 @@ def main():
                 tempdir = Path(temp)
                 for package, test in baseline_keys:
                     result = invoke(
-                        package, test, None, args.seconds_per_command, toolchain
+                        package,
+                        test,
+                        None,
+                        args.seconds_per_command,
+                        toolchain,
+                        deadline,
                     )
                     summary["baseline"].append(
                         {"package": package, "test": test, **result}
@@ -142,7 +182,7 @@ def main():
                         break
                 if "result" not in summary:
                     for index, mutant in enumerate([control_mutant] + mutants):
-                        if time.monotonic() - started >= args.budget_seconds:
+                        if time.monotonic() >= deadline:
                             result = {
                                 "status": "timeout",
                                 "reason": "suite execution budget exhausted",
@@ -173,6 +213,7 @@ def main():
                                     overlay,
                                     args.seconds_per_command,
                                     toolchain,
+                                    deadline,
                                 )
                                 if result["status"] == "passed":
                                     result["status"] = "survived"
