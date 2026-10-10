@@ -1374,7 +1374,10 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		item.Observation = observation
 		if storeErr := s.storage.Set(item); storeErr != nil {
 			s.logger.Error().Err(storeErr).Msg("fail to persist signed tx before broadcast")
-			return nil, nil, fmt.Errorf("persist signed tx before broadcast: %w", storeErr)
+			// Never broadcast an unpersisted signature, but hand the signed result
+			// back so processTransaction retries the write before another attempt
+			// can re-sign (and possibly pick a different nonce).
+			return checkpoint, observation, &unsavedSignedTxError{signedTx: signedTx, err: storeErr}
 		}
 	}
 
@@ -1427,6 +1430,18 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 
 	return nil, observation, nil
 }
+
+// unsavedSignedTxError reports a signed payload whose pre-broadcast write failed.
+type unsavedSignedTxError struct {
+	signedTx []byte
+	err      error
+}
+
+func (e *unsavedSignedTxError) Error() string {
+	return "persist signed tx before broadcast: " + e.err.Error()
+}
+
+func (e *unsavedSignedTxError) Unwrap() error { return e.err }
 
 func (s *Signer) isTssKeysign(pubKey common.PubKey) bool {
 	return !s.localPubKeyECDSA.Equals(pubKey) && !s.localPubKeyEDDSA.Equals(pubKey)
@@ -1552,7 +1567,18 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 		// Round7Retry persists on the item — its name is the legacy v1 label and
 		// is kept stable for on-disk schema compatibility.
 		isTerminalRound := errors.As(err, &ksErr) && ksErr.IsTerminalRound()
-		if checkpoint != nil || isTerminalRound {
+		// A signature whose pre-broadcast write failed already exists; retry that
+		// write so the next pass only rebroadcasts these bytes instead of re-signing.
+		var unsaved *unsavedSignedTxError
+		hasUnsaved := errors.As(err, &unsaved)
+		if hasUnsaved {
+			item.SignedTx = unsaved.signedTx
+			item.Observation = obs
+			if checkpoint == nil {
+				checkpoint = item.Checkpoint
+			}
+		}
+		if checkpoint != nil || isTerminalRound || hasUnsaved {
 			item.Checkpoint = checkpoint
 			if isTerminalRound {
 				s.logger.Error().Err(err).Interface("tx", item.TxOutItem).Msg("terminal-round signing error")

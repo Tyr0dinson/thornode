@@ -45,9 +45,10 @@ type recoveryChain struct {
 	lostFirst bool
 }
 
+// SignTx returns a nonce checkpoint on success, as EVMClient.SignTx does.
 func (c *recoveryChain) SignTx(types.TxOutItem, int64) ([]byte, []byte, *types.TxInItem, error) {
 	c.signs++
-	return []byte(fmt.Sprintf("nonce-and-payload-%d", c.signs)), nil, nil, nil
+	return []byte(fmt.Sprintf("nonce-and-payload-%d", c.signs)), []byte("nonce-7"), nil, nil
 }
 
 func (c *recoveryChain) BroadcastTx(_ types.TxOutItem, payload []byte) (string, error) {
@@ -87,7 +88,8 @@ func (s *SignCoverageSuite) TestRecoverySignedPayloadSurvivesAckLossAndRestart(c
 		tssKeysignMetricMgr: metrics.NewTssKeysignMetricMgr(),
 	}
 
-	// An unpersisted signature must never reach RPC.
+	// An unpersisted signature must never reach RPC, but the signed result and
+	// its checkpoint are written again before another attempt may re-sign.
 	fault := &recoveryStore{SignerStorage: store, failNext: true}
 	signer.storage = fault
 	_, _, err = signer.signAndBroadcast(item)
@@ -96,12 +98,23 @@ func (s *SignCoverageSuite) TestRecoverySignedPayloadSurvivesAckLossAndRestart(c
 	stored, err := store.Get(item.Key())
 	c.Assert(err, IsNil)
 	c.Assert(stored.SignedTx, HasLen, 0)
+	fault.failNext = true
+	signer.processTransaction(item)
+	c.Assert(chain.signs, Equals, 2)
+	c.Assert(chain.requests, HasLen, 0)
+	stored, err = store.Get(item.Key())
+	c.Assert(err, IsNil)
+	c.Assert(stored.SignedTx, DeepEquals, []byte("nonce-and-payload-2"))
+	c.Assert(stored.Checkpoint, DeepEquals, []byte("nonce-7"))
 
-	// A subsequent successful write is durable before an ambiguous RPC result.
+	// The next pass rebroadcasts the recovered bytes; its ambiguous RPC result
+	// leaves them durable.
 	signer.storage = store
 	_, _, err = signer.signAndBroadcast(stored)
 	c.Assert(err, ErrorMatches, "injected lost RPC acknowledgement")
+	c.Assert(chain.signs, Equals, 2)
 	c.Assert(chain.requests, HasLen, 1)
+	c.Assert(chain.requests[0], DeepEquals, []byte("nonce-and-payload-2"))
 	c.Assert(chain.payments, HasLen, 1)
 	c.Assert(store.Close(), IsNil)
 	store, err = NewSignerStore(path, config.LevelDBOptions{}, "")
@@ -118,7 +131,7 @@ func (s *SignCoverageSuite) TestRecoverySignedPayloadSurvivesAckLossAndRestart(c
 	c.Assert(err, IsNil)
 	pipeline.SpawnSignings(signer, bridge)
 	pipeline.Wait()
-	c.Assert(chain.signs, Equals, 2) // one failed write, one durable signature
+	c.Assert(chain.signs, Equals, 2) // only the two attempts whose first write failed
 	c.Assert(chain.requests, HasLen, 2)
 	c.Assert(chain.requests[1], DeepEquals, chain.requests[0])
 	c.Assert(chain.payments, HasLen, 1)
