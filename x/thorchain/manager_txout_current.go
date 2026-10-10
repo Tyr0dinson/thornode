@@ -102,6 +102,10 @@ func (tos *TxOutStorage) EndBlock(ctx cosmos.Context, mgr Manager) error {
 					continue
 				}
 				coin.Amount = budget.Sub(newGas)
+				if coin.Amount.LT(tx.Chain.DustThreshold()) {
+					ctx.Logger().Error("inactive vault outbound would fall below dust threshold", "hash", tx.InHash, "amount", coin.Amount, "dust_threshold", tx.Chain.DustThreshold())
+					continue
+				}
 			}
 			// Update MaxGas in ObservedTxVoter action first; only update txOut if voter update succeeds
 			// to maintain consistency between the txOut item and the voter action.
