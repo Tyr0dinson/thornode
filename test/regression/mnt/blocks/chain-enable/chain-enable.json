@@ -337,7 +337,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "noop",
                       "to_address": "5Caso3dXxEk1EMpCD2G4Ws9vqRfD17wQVHkuPop9kzeJLTkf"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -638,7 +639,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
                       "memo": "noop",
                       "to_address": "5Caso3dXxEk1EMpCD2G4Ws9vqRfD17wQVHkuPop9kzeJLTkf"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
