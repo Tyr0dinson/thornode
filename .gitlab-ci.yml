@@ -791,14 +791,6 @@ test-simulation:
     - !reference [.go-private-auth, before_script]
     - !reference [.dind-registries, before_script]
   script:
-    # This target builds Go binaries in the job container, so it does not
-    # pull the Go builder image checked by .dind-registries. Keep using the
-    # dependency proxy for its Docker base and L1 images when that check fails.
-    - |
-      if [ -z "${DOCKER_MIRROR:-}" ] && [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ] &&
-         docker buildx imagetools inspect "${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/ubuntu:24.04" >/dev/null 2>&1; then
-        export DOCKER_MIRROR="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
-      fi
     # Do not allow an inherited optional-XMR setting to bypass live coverage.
     - make test-simulation-cluster-native TEST_SIMULATION_REQUIRE_XMR=1
   # Diagnostics for the on_failure artifacts. On a passing run nothing keeps
