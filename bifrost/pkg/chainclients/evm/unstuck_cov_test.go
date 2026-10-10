@@ -144,6 +144,33 @@ func TestCovUnstuckActionScheduling(t *testing.T) {
 	require.Equal(t, 0, env.rpc.count("eth_sendRawTransaction"))
 }
 
+func TestCovUnstuckActionKeepsPendingItemWithoutTxOut(t *testing.T) {
+	env, txs := covUnstuckEnv(t)
+	c := env.client
+	acc := c.evmScanner.blockMetaAccessor
+	other := ecommon.HexToAddress("0x000000000000000000000000000000000000bEEF")
+	pending := covSignTx(t, c.kw.GetPrivKey(), 7, &other, big.NewInt(1), nil)
+	txs[strings.ToLower(pending.Hash().Hex())] = covTxJSON(t, pending, nil)
+	item := covSignedItem(env, pending.Hash().Hex(), 800, 800)
+	cacheHash := item.TxOutItem.CacheHash()
+	require.NoError(t, c.signerCacheManager.SetSigned(cacheHash, item.TxOutItem.CacheVault(c.GetChain()), item.Hash))
+	item.TxOutItem = nil
+	require.NoError(t, acc.AddSignedTxItem(item))
+	otherItem := covSignedItem(env, ecommon.HexToHash("0x06").Hex(), 800, 800)
+	require.NoError(t, acc.AddSignedTxItem(otherItem))
+
+	c.unstuckAction()
+	require.Len(t, covSignedItems(t, env), 1)
+	require.Equal(t, item.Hash, covSignedItems(t, env)[0].Hash)
+	require.True(t, c.signerCacheManager.HasSigned(cacheHash))
+	require.Equal(t, 0, env.rpc.count("eth_sendRawTransaction"))
+
+	delete(txs, strings.ToLower(pending.Hash().Hex()))
+	c.unstuckAction()
+	require.Empty(t, covSignedItems(t, env))
+	require.False(t, c.signerCacheManager.HasSigned(cacheHash))
+}
+
 func TestCovUnstuckTx(t *testing.T) {
 	env, txs := covUnstuckEnv(t)
 	c := env.client
@@ -219,13 +246,12 @@ func TestCovUnstuckTx(t *testing.T) {
 
 	// a pending signed item without a TxOutItem (corrupt or legacy store entry)
 	// cannot be cancelled, since the cancel is signed at the outbound's height:
-	// it is dropped (nil error, so the caller removes it) without signing or
-	// broadcasting, instead of panicking the client
+	// it remains tracked without signing or broadcasting
 	txs[strings.ToLower(pending.Hash().Hex())] = covTxJSON(t, pending, nil)
 	nilToi := covSignedItem(env, pending.Hash().Hex(), 1, 1)
 	nilToi.TxOutItem = nil
 	sentBefore := env.rpc.count("eth_sendRawTransaction")
 	require.NotPanics(t, func() { err = c.unstuckTx(clog, nilToi) })
-	require.NoError(t, err)
+	require.ErrorIs(t, err, errPendingWithoutTxOutItem)
 	require.Equal(t, sentBefore, env.rpc.count("eth_sendRawTransaction"))
 }

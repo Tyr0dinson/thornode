@@ -19,6 +19,8 @@ import (
 	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
+var errPendingWithoutTxOutItem = errors.New("pending transaction has no tx out item")
+
 // unstuck should be called in a goroutine and runs until the client stop channel is
 // closed. It ensures that stuck transactions are re-broadcast with higher gas price
 // before being rescheduled to a different vault.
@@ -105,6 +107,11 @@ func (c *EVMClient) unstuckAction() {
 		clog.Warn().Msg("attempting unstuck")
 
 		err = c.unstuckTx(clog, item)
+		if errors.Is(err, errPendingWithoutTxOutItem) {
+			// Keep polling the original transaction so a later mempool drop can
+			// clear its signer-cache entry. Other records can still be unstuck.
+			continue
+		}
 		if err != nil {
 			clog.Err(err).Msg("failed to unstuck tx")
 			// Break on error so that if a keysign fails from members getting out of sync
@@ -145,10 +152,10 @@ func (c *EVMClient) unstuckTx(clog zerolog.Logger, item evmtypes.SignedTxItem) e
 
 	// the cancel tx is signed at the outbound's height and re-registered in the
 	// signer cache under it, so an item without one (corrupt or legacy store
-	// entry) can never be cancelled: drop it rather than panic the client
+	// entry) can never be cancelled. Keep it for status polling.
 	if item.TxOutItem == nil {
 		clog.Error().Msg("signed tx item has no tx out item, cannot cancel")
-		return nil
+		return errPendingWithoutTxOutItem
 	}
 
 	pubKey, err := common.NewPubKey(item.VaultPubKey)

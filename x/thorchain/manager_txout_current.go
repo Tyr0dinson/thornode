@@ -91,21 +91,17 @@ func (tos *TxOutStorage) EndBlock(ctx cosmos.Context, mgr Manager) error {
 
 		if len(tx.MaxGas) == 0 || (!maxGasCoin.IsEmpty() && !maxGasCoin.Amount.Equal(tx.MaxGas[0].Amount)) {
 			coin := tx.Coin
-			// Inactive-vault gas-asset refunds have only the observed inbound to
-			// spend. Their coin was reduced by MaxGas when it was scheduled; keep
-			// coin + MaxGas constant when the gas estimate changes before signing.
-			if coin.Asset.IsGasAsset() {
-				vault, err := tos.keeper.GetVault(ctx, tx.VaultPubKey)
-				if err == nil && vault.Status == InactiveVault {
-					oldGas := tx.MaxGas.ToCoins().GetCoin(coin.Asset).Amount
-					newGas := common.Gas{maxGasCoin}.ToCoins().GetCoin(coin.Asset).Amount
-					budget := coin.Amount.Add(oldGas)
-					if budget.LTE(newGas) {
-						ctx.Logger().Error("inactive vault outbound cannot cover updated max gas", "hash", tx.InHash, "budget", budget, "max_gas", newGas)
-						continue
-					}
-					coin.Amount = budget.Sub(newGas)
+			// Only outbounds whose principal was reduced by MaxGas at scheduling
+			// have a fixed coin + gas budget. Vault status can change later.
+			if tx.MaxGasDeducted && coin.Asset.IsGasAsset() {
+				oldGas := tx.MaxGas.ToCoins().GetCoin(coin.Asset).Amount
+				newGas := common.Gas{maxGasCoin}.ToCoins().GetCoin(coin.Asset).Amount
+				budget := coin.Amount.Add(oldGas)
+				if budget.LTE(newGas) {
+					ctx.Logger().Error("inactive vault outbound cannot cover updated max gas", "hash", tx.InHash, "budget", budget, "max_gas", newGas)
+					continue
 				}
+				coin.Amount = budget.Sub(newGas)
 			}
 			// Update MaxGas in ObservedTxVoter action first; only update txOut if voter update succeeds
 			// to maintain consistency between the txOut item and the voter action.
@@ -946,6 +942,7 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 			if !feeDeduction && outputs[i].Coin.Asset.IsGasAsset() {
 				gasAmt := outputs[i].MaxGas.ToCoins().GetCoin(outputs[i].Coin.Asset).Amount
 				outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, gasAmt)
+				outputs[i].MaxGasDeducted = true
 			}
 		}
 
