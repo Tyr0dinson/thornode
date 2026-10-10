@@ -36,6 +36,8 @@ type ObservedTx struct {
 	SpentOutputRefs []OutputRef `json:"spent_output_refs,omitempty"`
 	// XMR outbound tx private key used by third parties to verify recipient outputs.
 	XmrTxKey *string `json:"xmr_tx_key,omitempty"`
+	// Original XMR mined height, retained when observation height changes at finalization. Zero means unavailable or pre-mining.
+	XmrMinedHeight *int64 `json:"xmr_mined_height,omitempty"`
 	Status *string `json:"status,omitempty"`
 }
 
@@ -465,6 +467,38 @@ func (o *ObservedTx) SetXmrTxKey(v string) {
 	o.XmrTxKey = &v
 }
 
+// GetXmrMinedHeight returns the XmrMinedHeight field value if set, zero value otherwise.
+func (o *ObservedTx) GetXmrMinedHeight() int64 {
+	if o == nil || o.XmrMinedHeight == nil {
+		var ret int64
+		return ret
+	}
+	return *o.XmrMinedHeight
+}
+
+// GetXmrMinedHeightOk returns a tuple with the XmrMinedHeight field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *ObservedTx) GetXmrMinedHeightOk() (*int64, bool) {
+	if o == nil || o.XmrMinedHeight == nil {
+		return nil, false
+	}
+	return o.XmrMinedHeight, true
+}
+
+// HasXmrMinedHeight returns a boolean if a field has been set.
+func (o *ObservedTx) HasXmrMinedHeight() bool {
+	if o != nil && o.XmrMinedHeight != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetXmrMinedHeight gets a reference to the given int64 and assigns it to the XmrMinedHeight field.
+func (o *ObservedTx) SetXmrMinedHeight(v int64) {
+	o.XmrMinedHeight = &v
+}
+
 // GetStatus returns the Status field value if set, zero value otherwise.
 func (o *ObservedTx) GetStatus() string {
 	if o == nil || o.Status == nil {
@@ -537,6 +571,9 @@ func (o ObservedTx) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if o.XmrTxKey != nil {
 		toSerialize["xmr_tx_key"] = o.XmrTxKey
+	}
+	if o.XmrMinedHeight != nil {
+		toSerialize["xmr_mined_height"] = o.XmrMinedHeight
 	}
 	if o.Status != nil {
 		toSerialize["status"] = o.Status

@@ -1535,7 +1535,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "=:THOR.RUNE:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr:10000000000",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -1794,7 +1795,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000001",
                       "to_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -2093,7 +2095,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000003",
                       "memo": "=:ETH.ETH:0xe3c64974c78f5693bd2bc68b3221d58df5c6e877:100000000",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -2352,7 +2355,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000004",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000003",
                       "to_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -2651,7 +2655,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000005",
                       "memo": "=:ETH/ETH:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr:100000000",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -2910,7 +2915,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000006",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000005",
                       "to_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -3209,7 +3215,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000007",
                       "memo": "=:DOGE.DOGE:mtEipf1SXxvWtcRpfwyE2ffh1P9ADJrFat:100000000",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -3468,7 +3475,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000008",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000007",
                       "to_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -3706,7 +3714,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000009",
                       "memo": "=:DOGE/DOGE:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr:100000000",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -4026,7 +4035,8 @@
                       "id": "000000000000000000000000000000000000000000000000000000000000000a",
                       "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000009",
                       "to_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }

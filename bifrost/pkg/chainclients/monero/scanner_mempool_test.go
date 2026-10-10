@@ -1,6 +1,8 @@
 package monero
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
@@ -12,7 +14,7 @@ import (
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
-func TestFetchMemPoolEmitsOutboundAndDedupesUntilConfirmed(t *testing.T) {
+func TestFetchMemPoolDisabledPreservesMinedScanning(t *testing.T) {
 	t.Parallel()
 
 	txID := "1111111111111111111111111111111111111111111111111111111111111111"
@@ -38,8 +40,16 @@ func TestFetchMemPoolEmitsOutboundAndDedupesUntilConfirmed(t *testing.T) {
 	)
 	defer frostServer.Close()
 
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("mempool") == "true" {
+			t.Error("disabled mempool scanner must not call the sidecar mempool endpoint")
+		}
+		frostServer.Config.Handler.ServeHTTP(w, r)
+	}))
+	defer server.Close()
+
 	cfg := config.BifrostChainConfiguration{}
-	frostSigner, err := sidecar.NewClientWithEndpoint(cfg, frostServer.URL)
+	frostSigner, err := sidecar.NewClientWithEndpoint(cfg, server.URL)
 	if err != nil {
 		t.Fatalf("new frost signer: %v", err)
 	}
@@ -53,19 +63,8 @@ func TestFetchMemPoolEmitsOutboundAndDedupesUntilConfirmed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first mempool fetch: %v", err)
 	}
-	if !first.MemPool {
-		t.Fatal("expected mempool flag to be true")
-	}
-	if len(first.TxArray) != 1 {
-		t.Fatalf("expected 1 mempool tx item, got %d", len(first.TxArray))
-	}
-
-	second, err := scanner.FetchMemPool(101)
-	if err != nil {
-		t.Fatalf("second mempool fetch: %v", err)
-	}
-	if len(second.TxArray) != 0 {
-		t.Fatalf("expected duplicate mempool tx to be suppressed, got %d items", len(second.TxArray))
+	if len(first.TxArray) != 0 {
+		t.Fatalf("expected no mempool observations, got %d", len(first.TxArray))
 	}
 
 	confirmed, err := scanner.FetchTxs(100, 100)
@@ -76,82 +75,11 @@ func TestFetchMemPoolEmitsOutboundAndDedupesUntilConfirmed(t *testing.T) {
 		t.Fatalf("expected 1 confirmed tx item, got %d", len(confirmed.TxArray))
 	}
 
-	third, err := scanner.FetchMemPool(102)
+	afterMined, err := scanner.FetchMemPool(102)
 	if err != nil {
-		t.Fatalf("third mempool fetch: %v", err)
+		t.Fatalf("mempool fetch after mined scan: %v", err)
 	}
-	if len(third.TxArray) != 1 {
-		t.Fatalf("expected mempool tx to be re-emittable after confirmed clear, got %d items", len(third.TxArray))
-	}
-}
-
-func TestFetchMemPoolSkipsInvalidOrUnattributedOutgoing(t *testing.T) {
-	t.Parallel()
-
-	vaultPubKey, vaultAddr := testVaultPubKeyAndAddress(t)
-	vaultAddress := vaultAddr.String()
-	_, mismatchedAddr := testVaultPubKeyAndAddress(t)
-	destinationAddress := common.XMRChecksummedDummyAddress('8')
-
-	frostServer := newFrostTransfersServer(
-		t,
-		[]sidecar.Transfer{
-			{
-				TxID:    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-				Address: vaultAddress,
-				Amount:  100000,
-				Fee:     10000,
-				Height:  77,
-			},
-		},
-		[]sidecar.Transfer{
-			{
-				TxID:        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-				Address:     destinationAddress,
-				FromAddress: vaultAddress,
-				VaultPubKey: vaultPubKey.String(),
-				Amount:      100000,
-				Fee:         10000,
-				Height:      77,
-			},
-			{
-				TxID:        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-				Address:     destinationAddress,
-				FromAddress: vaultAddress,
-				VaultPubKey: "",
-				Amount:      100000,
-				Fee:         10000,
-				Height:      77,
-			},
-			{
-				TxID:        "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-				Address:     destinationAddress,
-				FromAddress: mismatchedAddr.String(),
-				VaultPubKey: vaultPubKey.String(),
-				Amount:      100000,
-				Fee:         10000,
-				Height:      77,
-			},
-		},
-		[]string{vaultAddress},
-	)
-	defer frostServer.Close()
-
-	cfg := config.BifrostChainConfiguration{}
-	frostSigner, err := sidecar.NewClientWithEndpoint(cfg, frostServer.URL)
-	if err != nil {
-		t.Fatalf("new frost signer: %v", err)
-	}
-
-	scanner := NewScanner(log.Logger, frostSigner, nil, common.XMRChain, common.EmptyPubKey, 72)
-	txIn, err := scanner.FetchMemPool(200)
-	if err != nil {
-		t.Fatalf("fetch mempool: %v", err)
-	}
-	if len(txIn.TxArray) != 1 {
-		t.Fatalf("expected only 1 valid outgoing mempool tx, got %d", len(txIn.TxArray))
-	}
-	if txIn.TxArray[0].Tx != "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" {
-		t.Fatalf("unexpected tx emitted from mempool: %s", txIn.TxArray[0].Tx)
+	if len(afterMined.TxArray) != 0 {
+		t.Fatalf("expected no mempool observations after mined scan, got %d", len(afterMined.TxArray))
 	}
 }

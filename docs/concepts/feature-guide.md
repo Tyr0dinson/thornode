@@ -12,9 +12,9 @@ Each guide covers:
 ## Included Guides
 
 - **[TCY Guide](tcy.md)** — How TCY units are calculated and used for tracking swapper volume and staking weight.
-- **[Streaming Swaps](swap-guide/streaming-swaps.md)** — Break a swap into multiple parts over time to get a more consistent price (TWAP-style execution).
+- **[Streaming Swaps](../swap-guide/streaming-swaps.md)** — Break a swap into multiple parts over time to get a more consistent price (TWAP-style execution).
 - **[Trade Accounts](trade-accounts.md)** — Provides professional traders (mostly arbitrage bots) a method to execute instant trades on THORChain without involving Layer1 transactions on external blockchains.
-- **[Secured Assets](secured-assets.md)** — Allows L1 tokens to be deposited to THORChain, creating a new native asset, which can be transferred between accounts, over IBC and integrated with CosmWasm smart contracts using standard Cosmos SDK messages.
+- **[Secured Assets](secured-assets.md)** — Allows L1 tokens to be deposited to THORChain, creating a new native asset, which can be transferred between accounts and integrated with CosmWasm smart contracts using standard Cosmos SDK messages.
 - **[RUNE Pool](rune-pool.md)** — Deep dive into the RUNE-only liquidity pool and its implications for bonding and liquidity management.
 - **[Swapper Clout](swapper-clout.md)** — A score that reflects a user's swap volume over time and can influence incentives.
 

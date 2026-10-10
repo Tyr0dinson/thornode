@@ -64,7 +64,7 @@ func processTxInAttestation(
 	// gas/height race, re-observed once" case. Further variants (count >= 2) are
 	// self-inflicted spam and keep their observe slash point, so a node cannot file
 	// unlimited gas/height variants at zero cost to erase the per-observation charge.
-	redundantReObservation := voter.ShouldRefundRedundantObservation(tx, signer)
+	redundantReObservation := voter.ShouldRefundRedundantInboundObservation(tx, signer)
 
 	obsChain := telemetry.NewLabel("chain", telemChain(tx.Tx.Chain))
 	obsDir := telemetry.NewLabel("direction", "in")
@@ -108,18 +108,16 @@ func processTxInAttestation(
 
 			// This signer brings the voter to consensus;
 			// decrement all the signers' slash points and increment the non-signers' slash points.
-			signers := voter.GetObserveSigners()
+			signers := voter.GetInboundObserveSigners()
 			nonSigners := getNonSigners(nas, signers)
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
-			// Record the credited gas-agnostic observers on the consensus Tx so the
-			// ObservationDelayFlexibility branch below (keyed off Tx.HasSigned) does
-			// not refund the same node a second time when its own gas-used
-			// observation arrives after consensus has already formed.
+			// Persist the credited signer set, including legacy XMR observers,
+			// so later observations cannot collect the same consensus credit again.
 			voter.RecordObserveSigners(signers)
 		} else if ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
-			voter.Tx.EqualsConsensusIgnoreGas(tx) &&
+			voter.Tx.EqualsInboundObservationCredit(tx) &&
 			!voter.Tx.HasSigned(signer) {
 			// Track already-decremented slash points with the consensus Tx's Signers list.
 			voter.Tx.Signers = append(voter.Tx.Signers, signer.String())
@@ -145,18 +143,16 @@ func processTxInAttestation(
 
 			// This signer brings the voter to consensus;
 			// decrement all the signers' slash points and increment the non-signers' slash points.
-			signers := voter.GetObserveSigners()
+			signers := voter.GetInboundObserveSigners()
 			nonSigners := getNonSigners(nas, signers)
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
-			// Record the credited gas-agnostic observers on the consensus Tx so the
-			// ObservationDelayFlexibility branch below (keyed off Tx.HasSigned) does
-			// not refund the same node a second time when its own gas-used
-			// observation arrives after consensus has already formed.
+			// Persist the credited signer set, including legacy XMR observers,
+			// so later observations cannot collect the same consensus credit again.
 			voter.RecordObserveSigners(signers)
 		} else if ctx.BlockHeight() <= (voter.Height+observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
-			voter.Tx.EqualsConsensusIgnoreGas(tx) &&
+			voter.Tx.EqualsInboundObservationCredit(tx) &&
 			!voter.Tx.HasSigned(signer) {
 			// Track already-decremented slash points with the consensus Tx's Signers list.
 			voter.Tx.Signers = append(voter.Tx.Signers, signer.String())
@@ -695,7 +691,7 @@ func processTxOutAttestation(
 	// gas/height race, re-observed once" case. Further variants (count >= 2) are
 	// self-inflicted spam and keep their observe slash point, so a node cannot file
 	// unlimited gas/height variants at zero cost to erase the per-observation charge.
-	redundantReObservation := voter.ShouldRefundRedundantObservation(tx, signer)
+	redundantReObservation := voter.ShouldRefundRedundantOutboundObservation(tx, signer)
 
 	obsChain := telemetry.NewLabel("chain", telemChain(tx.Tx.Chain))
 	obsDir := telemetry.NewLabel("direction", "out")
@@ -765,7 +761,7 @@ func processTxOutAttestation(
 
 			// This signer brings the voter to consensus;
 			// decrement all the signers' slash points and increment the non-signers' slash points.
-			signers := voter.GetObserveSigners()
+			signers := voter.GetOutboundObserveSigners()
 			nonSigners := getNonSigners(nas, signers)
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
@@ -776,7 +772,7 @@ func processTxOutAttestation(
 			voter.RecordObserveSigners(signers)
 		} else if ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
-			voter.Tx.EqualsConsensusIgnoreGas(tx) &&
+			voter.Tx.EqualsOutboundObservationCredit(tx) &&
 			!voter.Tx.HasSigned(signer) {
 			// Track already-decremented slash points with the consensus Tx's Signers list.
 			voter.Tx.Signers = append(voter.Tx.Signers, signer.String())
@@ -818,7 +814,7 @@ func processTxOutAttestation(
 
 			// This signer brings the voter to consensus;
 			// decrement all the signers' slash points and increment the non-signers' slash points.
-			signers := voter.GetObserveSigners()
+			signers := voter.GetOutboundObserveSigners()
 			nonSigners := getNonSigners(nas, signers)
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
@@ -829,7 +825,7 @@ func processTxOutAttestation(
 			voter.RecordObserveSigners(signers)
 		} else if ctx.BlockHeight() <= (voter.Height+observeFlex) &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
-			voter.Tx.EqualsConsensusIgnoreGas(tx) &&
+			voter.Tx.EqualsOutboundObservationCredit(tx) &&
 			!voter.Tx.HasSigned(signer) {
 			// Track already-decremented slash points with the consensus Tx's Signers list.
 			voter.Tx.Signers = append(voter.Tx.Signers, signer.String())

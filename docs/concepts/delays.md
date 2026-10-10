@@ -95,7 +95,7 @@ A transaction in `"scheduled"` state is delayed. Once it reaches `"outbound"`, i
 Arbs and Traders who have trade history can have a reduced wait time due to [Swapper Clout.](./swapper-clout.md)
 ```
 
-See more information [here](https://docs.thorchain.org/how-it-works/security#b905-1).
+See more information [here](https://docs.thorchain.org/technical-documentation/technical-deep-dive/security#outbound-transaction-throttling).
 
 ### Swapper Clout Reduces Delay
 

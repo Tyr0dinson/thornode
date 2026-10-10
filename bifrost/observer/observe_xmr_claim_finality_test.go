@@ -50,6 +50,9 @@ func TestObservedXMRCommitCallbackPropagatesAuthoritativeFinality(t *testing.T) 
 				ID: common.TxID(item.Tx), Chain: chain, FromAddress: common.Address(item.Sender),
 				ToAddress: common.Address(item.To), Coins: item.Coins, Gas: item.Gas, Memo: item.Memo,
 			}, 100, vault, 110)
+			if chain.Equals(common.XMRChain) {
+				committed.XmrMinedHeight = item.BlockHeight
+			}
 
 			observer.handleObservedTxCommitted(committed, false)
 			require.Len(t, client.committed, 1)

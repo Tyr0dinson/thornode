@@ -2514,7 +2514,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "=:r:tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }

@@ -262,8 +262,26 @@ func (m *ObservedTxVoter) GetConsensusSigners() []cosmos.AccAddress {
 // scanner's later gas-used observation and would otherwise never be refunded
 // its observe slash point. The authoritative consensus tx/gas selection
 // (GetTx/getConsensusTx) stays gas-sensitive, so recorded gas and vault
-// accounting are unaffected.
+// accounting are unaffected. For pre-mining XMR outbounds, use
+// GetOutboundObserveSigners to also allow the unknown mined-height sentinel.
 func (m *ObservedTxVoter) GetObserveSigners() []cosmos.AccAddress {
+	return m.getObserveSigners(m.Tx.EqualsConsensusIgnoreGas)
+}
+
+// GetInboundObserveSigners also credits legacy XMR observations that lack the
+// mined-height field. Only slash accounting uses this compatibility matching.
+func (m *ObservedTxVoter) GetInboundObserveSigners() []cosmos.AccAddress {
+	return m.getObserveSigners(m.Tx.EqualsInboundObservationCredit)
+}
+
+// GetOutboundObserveSigners also credits legacy non-final and final pre-mining
+// XMR observations of the same outbound. Only slash accounting uses this
+// compatibility matching.
+func (m *ObservedTxVoter) GetOutboundObserveSigners() []cosmos.AccAddress {
+	return m.getObserveSigners(m.Tx.EqualsOutboundObservationCredit)
+}
+
+func (m *ObservedTxVoter) getObserveSigners(matches func(common.ObservedTx) bool) []cosmos.AccAddress {
 	if m.Tx.IsEmpty() {
 		return nil
 	}
@@ -276,7 +294,7 @@ func (m *ObservedTxVoter) GetObserveSigners() []cosmos.AccAddress {
 		if tx.IsFinal() != final {
 			continue
 		}
-		if !m.Tx.EqualsConsensusIgnoreGas(tx) {
+		if !matches(tx) {
 			continue
 		}
 
@@ -346,7 +364,21 @@ func equalsRefundableObservation(a, b common.ObservedTx) bool {
 		common.SpentOutputRefsEqual(a.SpentOutputRefs, b.SpentOutputRefs)
 }
 
-// ShouldRefundRedundantObservation reports whether this is the signer's first
+// ShouldRefundRedundantInboundObservation preserves the one-variant allowance
+// for legacy XMR observations, but never refunds a conflicting concrete height.
+func (m *ObservedTxVoter) ShouldRefundRedundantInboundObservation(tx common.ObservedTx, signer cosmos.AccAddress) bool {
+	return m.shouldRefundRedundantObservation(tx, signer, common.ObservedTx.EqualsInboundObservationCredit)
+}
+
+// ShouldRefundRedundantOutboundObservation uses the same transitive allowance
+// and exact-ref check, but also requires matching outbound credit identity. A
+// conflicting concrete mining location must keep its original observe point
+// when a later matching observation receives the late-signer refund.
+func (m *ObservedTxVoter) ShouldRefundRedundantOutboundObservation(tx common.ObservedTx, signer cosmos.AccAddress) bool {
+	return m.shouldRefundRedundantObservation(tx, signer, common.ObservedTx.EqualsOutboundObservationCredit)
+}
+
+// shouldRefundRedundantObservation reports whether this is the signer's first
 // redundant observation in the refund class and a prior observation has the
 // same canonical XMR spent refs. A committee member's pre-broadcast "instant"
 // observation and its later scanner observation can differ only in gas or block
@@ -376,7 +408,14 @@ func equalsRefundableObservation(a, b common.ObservedTx) bool {
 //     instant/scanner pair is indistinguishable from an honest one. So spam of N
 //     distinct bogus classes costs N-1 points, not N — inherent to the base
 //     feature and bounded at one free variant per class.
-func (m *ObservedTxVoter) ShouldRefundRedundantObservation(tx common.ObservedTx, signer cosmos.AccAddress) bool {
+func (m *ObservedTxVoter) shouldRefundRedundantObservation(tx common.ObservedTx, signer cosmos.AccAddress, matches func(common.ObservedTx, common.ObservedTx) bool) bool {
+	// A legacy zero-height variant must not bridge two conflicting locations
+	// once the consensus transaction has a concrete mined height.
+	if m.Tx.Tx.Chain.Equals(common.XMRChain) && tx.Tx.Chain.Equals(common.XMRChain) &&
+		m.Tx.IsFinal() == tx.IsFinal() && m.Tx.XmrMinedHeight > 0 && tx.XmrMinedHeight > 0 &&
+		!m.Tx.HasEquivalentCanonicalMinedHeight(tx) {
+		return false
+	}
 	count := 0
 	hasRefundableMatch := false
 	for _, existing := range m.Txs {
@@ -389,7 +428,8 @@ func (m *ObservedTxVoter) ShouldRefundRedundantObservation(tx common.ObservedTx,
 			continue
 		}
 		count++
-		if equalsRefundableObservation(existing, tx) {
+		if equalsRefundableObservation(existing, tx) &&
+			matches(existing, tx) {
 			hasRefundableMatch = true
 		}
 	}

@@ -54,7 +54,42 @@ func (m *ObservedTx) Valid() error {
 	if err := ValidateSolNonceUpdate(m.Tx.Chain, m.SolNonce); err != nil {
 		return err
 	}
+	// Zero remains valid for pre-mining outbound observations. Inbound
+	// admission and height-scoped decisions require CanonicalMinedHeight.
+	if m.XmrMinedHeight != 0 {
+		if _, err := m.CanonicalMinedHeight(); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// CanonicalMinedHeight resolves the location used by height-scoped errata.
+// Finalization rewrites BlockHeight, so XMR must carry its original location.
+// An absent/zero field is unavailable, never a fallback to the rewritten height.
+func (m ObservedTx) CanonicalMinedHeight() (int64, error) {
+	if !m.Tx.Chain.UsesHeightScopedErrata() {
+		if m.XmrMinedHeight != 0 {
+			return 0, errors.New("xmr mined height is only valid for XMR observed txs")
+		}
+		if m.BlockHeight <= 0 {
+			return 0, errors.New("canonical mined height must be positive")
+		}
+		return m.BlockHeight, nil
+	}
+	if m.XmrMinedHeight <= 0 {
+		return 0, errors.New("xmr canonical mined height is unavailable")
+	}
+	if m.BlockHeight <= 0 || m.FinaliseHeight <= 0 || m.BlockHeight > m.FinaliseHeight {
+		return 0, errors.New("xmr observed and finalization heights are invalid")
+	}
+	if m.XmrMinedHeight > m.BlockHeight {
+		return 0, errors.New("xmr mined height exceeds the reported observation height")
+	}
+	if !m.IsFinal() && m.XmrMinedHeight != m.BlockHeight {
+		return 0, errors.New("non-final xmr observation must report its block height as the mined height")
+	}
+	return m.XmrMinedHeight, nil
 }
 
 func ValidateXMRTxKey(chain Chain, txKey string) error {
@@ -145,6 +180,9 @@ func (m ObservedTx) Equals(tx2 ObservedTx) bool {
 	if m.FinaliseHeight != tx2.FinaliseHeight {
 		return false
 	}
+	if !m.HasEquivalentCanonicalMinedHeight(tx2) {
+		return false
+	}
 	if !strings.EqualFold(m.Aggregator, tx2.Aggregator) {
 		return false
 	}
@@ -197,22 +235,80 @@ func (m ObservedTx) HasEquivalentXMRTxKey(tx2 ObservedTx) bool {
 	return normalizeString(m.XmrTxKey) == normalizeString(tx2.XmrTxKey)
 }
 
+// HasEquivalentCanonicalMinedHeight keeps unavailable and valid locations in
+// separate voter buckets, including gas-agnostic consensus comparisons. This
+// consensus identity changes only at the scheduled v3.21 executable switch.
+func (m ObservedTx) HasEquivalentCanonicalMinedHeight(tx2 ObservedTx) bool {
+	if !m.Tx.Chain.UsesHeightScopedErrata() && !tx2.Tx.Chain.UsesHeightScopedErrata() {
+		return true
+	}
+	return m.XmrMinedHeight == tx2.XmrMinedHeight
+}
+
 func (m ObservedTx) EqualsConsensus(tx2 ObservedTx) bool {
 	return m.ObservedPubKey.Equals(tx2.ObservedPubKey) &&
 		m.Tx.EqualsEx(tx2.Tx) &&
 		m.HasEquivalentSpentOutputRefs(tx2) &&
-		m.HasEquivalentXMRTxKey(tx2)
+		m.HasEquivalentXMRTxKey(tx2) &&
+		m.HasEquivalentCanonicalMinedHeight(tx2)
 }
 
 func (m ObservedTx) EqualsConsensusIgnoreGas(tx2 ObservedTx) bool {
 	return m.ObservedPubKey.Equals(tx2.ObservedPubKey) &&
 		m.Tx.EqualsExIgnoreGas(tx2.Tx) &&
 		m.HasEquivalentSpentOutputRefs(tx2) &&
-		m.HasEquivalentXMRTxKey(tx2)
+		m.HasEquivalentXMRTxKey(tx2) &&
+		m.HasEquivalentCanonicalMinedHeight(tx2)
+}
+
+// EqualsInboundObservationCredit allows legacy XMR observations without a mined
+// height to receive slash-point credit alongside the same mined inbound. Both
+// observations must accommodate the concrete height and have the same finality.
+// This does not change stored heights, quorum identity, or errata matching.
+func (m ObservedTx) EqualsInboundObservationCredit(tx2 ObservedTx) bool {
+	if m.Tx.Chain.Equals(XMRChain) && tx2.Tx.Chain.Equals(XMRChain) {
+		if m.XmrMinedHeight != 0 && tx2.XmrMinedHeight == 0 {
+			m, tx2 = tx2, m
+		}
+		if m.XmrMinedHeight == 0 && tx2.XmrMinedHeight > 0 && m.IsFinal() == tx2.IsFinal() {
+			m.XmrMinedHeight = tx2.XmrMinedHeight
+			_, legacyErr := m.CanonicalMinedHeight()
+			_, minedErr := tx2.CanonicalMinedHeight()
+			if legacyErr != nil || minedErr != nil {
+				return false
+			}
+		}
+	}
+	return m.EqualsConsensusIgnoreGas(tx2)
+}
+
+// EqualsOutboundObservationCredit matches observations for outbound slash-point
+// credit only. Legacy non-final and final pre-mining XMR observations can match
+// a valid mined one of the same finality, but two different concrete mining
+// locations remain distinct. Consensus and gas correction stay strict.
+func (m ObservedTx) EqualsOutboundObservationCredit(tx2 ObservedTx) bool {
+	if !m.IsFinal() || !tx2.IsFinal() {
+		return m.EqualsInboundObservationCredit(tx2)
+	}
+	// A final sign-time observation can precede the actual mined block, so it
+	// cannot be validated with the borrowed height like a legacy non-final one.
+	if m.Tx.Chain.Equals(XMRChain) && tx2.Tx.Chain.Equals(XMRChain) {
+		// Normalize local copies so the pre-mining observation is on the left.
+		if m.XmrMinedHeight != 0 && tx2.XmrMinedHeight == 0 {
+			m, tx2 = tx2, m
+		}
+		if m.XmrMinedHeight == 0 && tx2.XmrMinedHeight > 0 &&
+			m.BlockHeight > 0 && m.IsFinal() && tx2.IsFinal() {
+			if _, err := tx2.CanonicalMinedHeight(); err == nil {
+				m.XmrMinedHeight = tx2.XmrMinedHeight
+			}
+		}
+	}
+	return m.EqualsConsensusIgnoreGas(tx2)
 }
 
 func (m ObservedTx) AttestationUniqueHash() string {
-	base := observedTxXMRMetadataUniqueHash(m.Tx.Hash(m.BlockHeight), m.Tx.Chain, m.XmrTxKey, m.SpentOutputRefs)
+	base := observedTxXMRMetadataUniqueHash(m.Tx.Hash(m.BlockHeight), m.Tx.Chain, m.XmrTxKey, m.SpentOutputRefs, m.XmrMinedHeight)
 	return solNonceUniqueHash(base, m.Tx.Chain, m.SolNonce)
 }
 

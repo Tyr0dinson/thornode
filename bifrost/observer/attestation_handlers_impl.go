@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -14,11 +15,35 @@ const priceFeedsUpdateDelay = time.Millisecond * 100
 
 // handleObservedTxAttestation processes attestations for observed transactions
 func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx common.AttestTx) {
+	s.handleObservedTxAttestationInternal(ctx, tx, false)
+}
+
+func (s *AttestationGossip) handleObservedTxAttestationInternal(ctx context.Context, tx common.AttestTx, queue bool) {
 	obsTx := tx.ObsTx
+	barrierHeld := obsTx.Tx.Chain.Equals(common.XMRChain)
+	if barrierHeld {
+		s.xmrErrataBarrier.RLock()
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, xmrAttestationTimeout(s.config.PeerTimeout))
+		defer cancel()
+		defer func() {
+			if barrierHeld {
+				s.xmrErrataBarrier.RUnlock()
+			}
+		}()
+	}
 
 	k := observedTxKey(obsTx, tx.Inbound, tx.AllowFutureObservation)
 
 	s.mu.Lock()
+	if ctx.Err() != nil {
+		s.mu.Unlock()
+		return
+	}
+	if barrierHeld && !s.admitXMRObservationLocked(obsTx) {
+		s.mu.Unlock()
+		return
+	}
 	state, ok := s.observedTxs[k]
 	if !ok {
 		state = s.observedTxsPool.NewAttestationState(&attestableObservedTx{
@@ -37,6 +62,13 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 	if err := state.AddAttestation(tx.Attestation); err != nil {
 		s.logger.Error().Err(err).Msg("fail to add attestation")
 		state.mu.Unlock()
+		if barrierHeld {
+			s.xmrErrataBarrier.RUnlock()
+			barrierHeld = false
+		}
+		if queue {
+			s.enqueueObservedTxAttestation(tx)
+		}
 		return
 	}
 	// This is the payload every attestation in state was verified against. The
@@ -93,6 +125,15 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 			k.Chain, k.ID, k.Inbound, k.Finalized, attestationCount, total)
 	}
 	state.mu.Unlock()
+	if barrierHeld {
+		s.xmrErrataBarrier.RUnlock()
+		barrierHeld = false
+	}
+	if queue {
+		s.enqueueObservedTxAttestation(tx)
+	}
+	// Spent-reference authorization/import uses separate recovery checks and
+	// must not extend this observation delivery critical section.
 	if maybeApplySpentRefsPayloadBound {
 		maybeApplySpentRefsAttestations = s.mergeHistoricalXMRCertificateAttestations(
 			maybeApplySpentRefsPayloadHash,
@@ -161,6 +202,27 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 	}
 }
 
+// Local delivery must not depend on merging into a bucket whose key omits
+// signed fields such as memo and gas. Verify the outgoing envelope itself even
+// if AddAttestation accepted a duplicate signature for a different envelope.
+// Call after releasing the state lock and XMR reader: AddObservedTx rechecks
+// durable admission under the queue mutex, so concurrent cleanup still wins.
+func (s *AttestationGossip) enqueueObservedTxAttestation(tx common.AttestTx) {
+	if s.batcher == nil || tx.Attestation == nil {
+		return
+	}
+	payload, err := tx.ObsTx.GetSignablePayloadWithInbound(tx.Inbound)
+	if err != nil {
+		s.logger.Error().Err(err).Msg("skip local observation gossip: fail to marshal payload")
+		return
+	}
+	if err = verifySignature(payload, tx.Attestation.Signature, tx.Attestation.PubKey); err != nil {
+		s.logger.Error().Err(err).Msg("skip local observation gossip: invalid signature")
+		return
+	}
+	s.batcher.AddObservedTx(tx)
+}
+
 // markXMRSpentRefsApplied flips the latch only on the live state bucket after
 // the sidecar confirms import success. This avoids marking a pruned or reused
 // AttestationState captured before the async import completed.
@@ -188,6 +250,42 @@ func (s *AttestationGossip) markXMRSpentRefsApplied(k txKey, expectedPayloadHash
 	liveState.mu.Unlock()
 }
 
+// admitXMRObservationLocked is shared by local, peer, and state-transfer
+// admission and export filtering. The caller holds mu to read observerStorage.
+func (s *AttestationGossip) admitXMRObservationLocked(tx common.ObservedTx) bool {
+	admitted, err := s.observerStorage.admitXMRObservation(tx)
+	if err != nil {
+		s.logger.Error().Err(err).Msg("reject xmr observation: errata storage read failed")
+		return false
+	}
+	return admitted
+}
+
+// Cap XMR admission, quorum submission and live batch context budgets.
+// A peer batch shares one context budget across its attempts. Shared mutex
+// acquisition and mux Close/Reset are not strictly bounded by this duration,
+// so it does not guarantee an end-to-end scanner acknowledgement deadline.
+func xmrAttestationTimeout(configured time.Duration) time.Duration {
+	if configured <= 0 || configured > constants.ThorchainBlockTime {
+		return constants.ThorchainBlockTime
+	}
+	return configured
+}
+
+// Observation, network-fee, solvency and errata quorum calls hold a state mutex.
+// Give legacy calls deadlines too, since periodic reconciliation holds the
+// shared map mutex across those calls. Price-feed batch calls are unchanged.
+// Several sequential RPC budgets can still prolong a shared-mutex wait.
+func (s *AttestationGossip) thornodeSubmissionContext(ctx context.Context, chain common.Chain) (context.Context, context.CancelFunc) {
+	timeout := s.config.PeerTimeout
+	if chain.Equals(common.XMRChain) {
+		timeout = xmrAttestationTimeout(timeout)
+	} else if timeout <= 0 {
+		timeout = defaultPeerTimeout
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
 // sendObservedTxAttestationsToThornode sends attestations to thornode via gRPC
 func (s *AttestationGossip) sendObservedTxAttestationsToThornode(
 	ctx context.Context,
@@ -201,7 +299,9 @@ func (s *AttestationGossip) sendObservedTxAttestationsToThornode(
 		return
 	}
 	// Send via gRPC to thornode
-	if _, err := s.grpcClient.SendQuorumTx(ctx, &common.QuorumTx{
+	rpcCtx, cancel := s.thornodeSubmissionContext(ctx, tx.Tx.Chain)
+	defer cancel()
+	if _, err := s.grpcClient.SendQuorumTx(rpcCtx, &common.QuorumTx{
 		ObsTx:                  tx,
 		Attestations:           unsent,
 		Inbound:                inbound,
@@ -266,7 +366,9 @@ func (s *AttestationGossip) sendNetworkFeeAttestationsToThornode(ctx context.Con
 		return
 	}
 	// Send via gRPC to thornode
-	if _, err := s.grpcClient.SendQuorumNetworkFee(ctx, &common.QuorumNetworkFee{
+	rpcCtx, cancel := s.thornodeSubmissionContext(ctx, networkFee.Chain)
+	defer cancel()
+	if _, err := s.grpcClient.SendQuorumNetworkFee(rpcCtx, &common.QuorumNetworkFee{
 		NetworkFee:   &networkFee,
 		Attestations: unsent,
 	}); err != nil {
@@ -333,7 +435,9 @@ func (s *AttestationGossip) sendSolvencyAttestationsToThornode(ctx context.Conte
 		return
 	}
 	// Send via gRPC to thornode
-	if _, err := s.grpcClient.SendQuorumSolvency(ctx, &common.QuorumSolvency{
+	rpcCtx, cancel := s.thornodeSubmissionContext(ctx, solvency.Chain)
+	defer cancel()
+	if _, err := s.grpcClient.SendQuorumSolvency(rpcCtx, &common.QuorumSolvency{
 		Solvency:     &solvency,
 		Attestations: unsent,
 	}); err != nil {
@@ -440,7 +544,9 @@ func (s *AttestationGossip) sendErrataAttestationsToThornode(ctx context.Context
 		return
 	}
 	// Send via gRPC to thornode
-	if _, err := s.grpcClient.SendQuorumErrataTx(ctx, &common.QuorumErrataTx{
+	rpcCtx, cancel := s.thornodeSubmissionContext(ctx, errata.Chain)
+	defer cancel()
+	if _, err := s.grpcClient.SendQuorumErrataTx(rpcCtx, &common.QuorumErrataTx{
 		ErrataTx:     &errata,
 		Attestations: unsent,
 	}); err != nil {

@@ -433,7 +433,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000001",
                       "memo": "secure+:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
                       "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -4145,7 +4146,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
                       "memo": "OUT:E67C8AAAF9F2B126E849C427310778383C12B2D40A146680D5FCC13CB11BA775",
                       "to_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
@@ -4729,7 +4731,8 @@
                       "id": "0000000000000000000000000000000000000000000000000000000000000003",
                       "memo": "OUT:F9F2B91C337F41B0FE6C233BE786151D29051D8C151074AE18F9B3A4A16635E7",
                       "to_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw"
-                    }
+                    },
+                    "xmr_mined_height": "0"
                   }
                 ]
               }
