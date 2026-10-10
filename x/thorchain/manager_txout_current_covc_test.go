@@ -197,6 +197,39 @@ func (s *CovCCTxOutSuite) TestEndBlockKeepsInactiveVaultRefundWithinGasBudget(c 
 	check(20, 30_000, 2_579_083)
 }
 
+func (s *CovCCTxOutSuite) TestEndBlockKeepsRefundAboveDustAfterGasIncrease(c *C) {
+	w := getHandlerTestWrapper(c, 649, true, true)
+	tos := covCCTxOutStore(w, nil)
+	inHash := GetRandomTxHash()
+	item := TxOutItem{
+		Chain:          common.BTCChain,
+		ToAddress:      GetRandomBTCAddress(),
+		VaultPubKey:    GetRandomPubKey(),
+		InHash:         inHash,
+		Coin:           common.NewCoin(common.BTCAsset, cosmos.NewUint(6_500)),
+		MaxGas:         common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(3_000))},
+		MaxGasDeducted: true,
+	}
+	voter := NewObservedTxVoter(inHash, nil)
+	voter.Actions = []TxOutItem{item}
+	w.keeper.SetObservedTxInVoter(w.ctx, voter)
+	c.Assert(w.keeper.SetTxOut(w.ctx, &TxOut{Height: w.ctx.BlockHeight(), TxArray: []TxOutItem{item}}), IsNil)
+
+	// 6,500 + 3,000 - 9,000 = 500 sats, below BTC's dust threshold.
+	c.Assert(w.keeper.SaveNetworkFee(w.ctx, common.BTCChain, NewNetworkFee(common.BTCChain, 1000, 6)), IsNil)
+	c.Assert(tos.EndBlock(w.ctx, w.mgr), IsNil)
+	items, err := tos.GetOutboundItems(w.ctx)
+	c.Assert(err, IsNil)
+	updated, err := w.keeper.GetObservedTxInVoter(w.ctx, inHash)
+	c.Assert(err, IsNil)
+	c.Assert(items, HasLen, 1)
+	c.Assert(updated.Actions, HasLen, 1)
+	for _, out := range []TxOutItem{items[0], updated.Actions[0]} {
+		c.Check(out.MaxGas.ToCoins().GetCoin(common.BTCAsset).Amount.Uint64(), Equals, uint64(3_000))
+		c.Check(out.Coin.Amount.Uint64(), Equals, uint64(6_500))
+	}
+}
+
 func (s *CovCCTxOutSuite) TestEndBlockPreservesNormalOutboundAfterVaultRetires(c *C) {
 	w := getHandlerTestWrapper(c, 649, true, true)
 	tos := covCCTxOutStore(w, nil)
