@@ -331,3 +331,93 @@ func (s *InvariantsSuite) TestTCYStakeInvariantIgnoresSmartContractStakers(c *C)
 	c.Assert(broken, Equals, false)
 	c.Assert(msg, IsNil)
 }
+
+func (s *InvariantsSuite) TestStreamingSwapsInvariant(c *C) {
+	newSwap := func(swapType types.SwapType, state types.SwapState) MsgSwap {
+		tx := GetRandomTx()
+		tx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(1000)))
+		if state.Deposit.IsNil() {
+			state.Deposit = cosmos.NewUint(1000)
+		}
+		if state.In.IsNil() {
+			state.In = cosmos.ZeroUint()
+		}
+		return MsgSwap{
+			Tx:          tx,
+			TargetAsset: common.BTCAsset,
+			TradeTarget: cosmos.ZeroUint(),
+			SwapType:    swapType,
+			State:       &state,
+		}
+	}
+
+	testCases := []struct {
+		name string
+		swap MsgSwap
+		// raw writes past SetAdvSwapQueueItem, which rejects a swap without coins
+		raw  bool
+		want func(MsgSwap) string // empty: invariant holds
+	}{
+		{
+			name: "market stream part way through",
+			swap: newSwap(types.SwapType_market, types.SwapState{Quantity: 5, Count: 2, In: cosmos.NewUint(400)}),
+		},
+		{
+			name: "limit stream with failed attempts within quantity",
+			// 4 attempts, 2 failed: 2 successes <= quantity 2
+			swap: newSwap(types.SwapType_limit, types.SwapState{Quantity: 2, Count: 4, FailedSwaps: []uint64{1, 2}}),
+		},
+		{
+			name: "non-streaming swap is not checked",
+			swap: newSwap(types.SwapType_market, types.SwapState{Quantity: 1, Deposit: cosmos.NewUint(999)}),
+		},
+		{
+			name: "deposit differs from coin",
+			swap: newSwap(types.SwapType_market, types.SwapState{Quantity: 5, Deposit: cosmos.NewUint(999)}),
+			want: func(m MsgSwap) string { return fmt.Sprintf("%s: swap.coin 1000 != state.deposit 999", m.Tx.ID) },
+		},
+		{
+			name: "market count exceeds quantity",
+			swap: newSwap(types.SwapType_market, types.SwapState{Quantity: 5, Count: 6}),
+			want: func(m MsgSwap) string { return fmt.Sprintf("%s: state.count 6 > state.quantity 5", m.Tx.ID) },
+		},
+		{
+			name: "limit success count exceeds quantity",
+			// 5 attempts, 2 failed: 3 successes > quantity 2
+			swap: newSwap(types.SwapType_limit, types.SwapState{Quantity: 2, Count: 5, FailedSwaps: []uint64{1, 2}}),
+			want: func(m MsgSwap) string { return fmt.Sprintf("%s: state.success_count 3 > state.quantity 2", m.Tx.ID) },
+		},
+		{
+			name: "in exceeds deposit",
+			swap: newSwap(types.SwapType_market, types.SwapState{Quantity: 5, Count: 2, In: cosmos.NewUint(1001)}),
+			want: func(m MsgSwap) string { return fmt.Sprintf("%s: state.in 1001 > state.deposit 1000", m.Tx.ID) },
+		},
+		{
+			name: "missing coins",
+			swap: func() MsgSwap {
+				m := newSwap(types.SwapType_market, types.SwapState{Quantity: 5})
+				m.Tx.Coins = nil
+				return m
+			}(),
+			raw:  true,
+			want: func(m MsgSwap) string { return fmt.Sprintf("%s: advanced swap missing coins", m.Tx.ID) },
+		},
+	}
+
+	for _, tc := range testCases {
+		ctx, k := setupKeeperForTest(c)
+		if tc.raw {
+			k.setMsgSwap(ctx, k.GetKey(prefixAdvSwapQueueItem, formatSwapQueueItemKey(tc.swap.Tx.ID, int(tc.swap.Index))), tc.swap)
+		} else {
+			c.Assert(k.SetAdvSwapQueueItem(ctx, tc.swap), IsNil, Commentf(tc.name))
+		}
+		msg, broken := StreamingSwapsInvariant(k)(ctx)
+		if tc.want == nil {
+			c.Check(broken, Equals, false, Commentf(tc.name))
+			c.Check(msg, IsNil, Commentf(tc.name))
+			continue
+		}
+		c.Check(broken, Equals, true, Commentf(tc.name))
+		c.Check(msg, DeepEquals, []string{tc.want(tc.swap)}, Commentf(tc.name))
+	}
+}
