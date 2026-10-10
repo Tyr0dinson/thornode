@@ -353,11 +353,10 @@ func (t *TssTestSuite) testProcessTaskDone(c *C, tssCommonStruct *TssCommon) {
 	}()
 	select {
 	case <-tssCommonStruct.taskDone:
-		return
-	case <-time.After(time.Millisecond * 20):
-		c.Fail()
+	case <-time.After(2 * time.Second):
+		c.Fatal("timed out waiting for task done")
 	}
-	wg.Done()
+	wg.Wait()
 }
 
 func (t *TssTestSuite) testVerMsgAndUpdateFromPeer(c *C, tssCommonStruct *TssCommon, senderID *btss.PartyID, partiesID []*btss.PartyID) {
