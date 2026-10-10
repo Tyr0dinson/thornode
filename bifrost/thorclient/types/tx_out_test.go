@@ -1,8 +1,11 @@
 package types
 
 import (
+	"encoding/json"
+
 	"gitlab.com/thorchain/thornode/v3/common"
 	cosmos "gitlab.com/thorchain/thornode/v3/common/cosmos"
+	thorchaintypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	. "gopkg.in/check.v1"
 )
 
@@ -255,6 +258,30 @@ func (TxOutTestSuite) TestTxArrayItemToTxOutItem(c *C) {
 	c.Check(txOut.AggregatorTargetLimit.Equal(cosmos.NewUint(500)), Equals, true)
 	c.Check(txOut.Height, Equals, int64(42))
 	c.Check(txOut.VaultPubKeyEddsa, Equals, common.PubKey("eddsapub1"))
+}
+
+// Bifrost verifies the signature over the JSON returned by THORNode. Its
+// TxArrayItem must preserve every field and field order in that signed JSON.
+func (TxOutTestSuite) TestTxOutKeysignJSONRoundTrip(c *C) {
+	for _, deducted := range []bool{false, true} {
+		signed := thorchaintypes.TxOut{
+			Height: 42,
+			TxArray: []thorchaintypes.TxOutItem{{
+				Chain:          common.XRPChain,
+				ToAddress:      common.Address("rRefundAddress"),
+				Coin:           common.NewCoin(common.XRPAsset, cosmos.NewUint(100)),
+				MaxGas:         common.Gas{common.NewCoin(common.XRPAsset, cosmos.NewUint(10))},
+				MaxGasDeducted: deducted,
+			}},
+		}
+		original, err := json.Marshal(signed)
+		c.Assert(err, IsNil)
+		var bifrost TxOut
+		c.Assert(json.Unmarshal(original, &bifrost), IsNil)
+		verified, err := json.Marshal(bifrost)
+		c.Assert(err, IsNil)
+		c.Check(string(verified), Equals, string(original))
+	}
 }
 
 func (TxOutTestSuite) TestXMRWireMemo(c *C) {
