@@ -3,6 +3,7 @@ package p2p
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"runtime"
 	"strings"
@@ -285,5 +286,136 @@ func TestQueueFrostBroadcastRejectsInvalidFrameLimit(t *testing.T) {
 	}
 	if len(comm.BroadcastMsgChan) != 0 {
 		t.Fatal("invalid limit admitted a frame")
+	}
+}
+
+func TestQueueFrostBroadcastRejectsOversizedFrameBeforeBackpressure(t *testing.T) {
+	for _, limit := range []int{FrostKeygenControlPayload, FrostMaxSessionPayload} {
+		t.Run(fmt.Sprint(limit), func(t *testing.T) {
+			_, oversized := encodedFrostBoundaryMessages(t, messages.TSSFrostVerifyMsg, limit)
+			comm := &Communication{
+				BroadcastMsgChan: make(chan *messages.BroadcastMsgChan, 1),
+				stopChan:         make(chan struct{}),
+			}
+			sentinel := &messages.BroadcastMsgChan{}
+			comm.BroadcastMsgChan <- sentinel
+			done := make(chan error, 1)
+			finished := make(chan struct{})
+			t.Cleanup(func() {
+				close(comm.stopChan)
+				select {
+				case <-finished:
+				case <-time.After(5 * time.Second):
+					t.Error("FROST producer did not exit after shutdown")
+				}
+			})
+			go func() {
+				defer close(finished)
+				done <- comm.QueueFrostBroadcast(oversized.PeersID, oversized.WrappedMessage.Payload,
+					oversized.WrappedMessage.MsgID, oversized.WrappedMessage.MessageType, limit)
+			}()
+			select {
+			case err := <-done:
+				if err == nil || !strings.Contains(err.Error(), "encoded FROST frame") {
+					t.Fatalf("oversized frame error = %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("oversized frame waited for queue capacity")
+			}
+			if len(comm.BroadcastMsgChan) != 1 || <-comm.BroadcastMsgChan != sentinel {
+				t.Fatal("oversized frame changed the full queue")
+			}
+		})
+	}
+}
+
+func TestQueueFrostBroadcastMessageIDBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		msgID string
+		valid bool
+	}{
+		{name: "maximum printable ID", msgID: strings.Repeat("~", maxTSSFrameMsgIDBytes), valid: true},
+		{name: "limit plus one", msgID: strings.Repeat("a", maxTSSFrameMsgIDBytes+1)},
+		{name: "space", msgID: "session with-space"},
+		{name: "control byte", msgID: "session\nforged-line"},
+		{name: "DEL byte", msgID: "session\x7f"},
+		{name: "non-ASCII", msgID: "session\u00e9"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			comm := &Communication{BroadcastMsgChan: make(chan *messages.BroadcastMsgChan, 1)}
+			err := comm.QueueFrostBroadcast(nil, []byte("payload"), tc.msgID, messages.TSSFrostShareMsg, FrostMaxSessionPayload)
+			if !tc.valid {
+				if err == nil || len(comm.BroadcastMsgChan) != 0 {
+					t.Fatalf("invalid ID admission: error=%v queued=%d", err, len(comm.BroadcastMsgChan))
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			queued := <-comm.BroadcastMsgChan
+			header, err := decodeTSSFrameHeader(queued.Encoded)
+			if err != nil || header.MsgID != tc.msgID {
+				t.Fatalf("receiver rejected maximum valid ID: header=%+v error=%v", header, err)
+			}
+		})
+	}
+}
+
+func TestFrostEncodedFrameReceiverBoundary(t *testing.T) {
+	for _, limit := range []int{FrostKeygenControlPayload, FrostMaxSessionPayload} {
+		for _, topic := range []messages.THORChainTSSMessageType{
+			messages.TSSFrostPreprocessMsg, messages.TSSFrostShareMsg,
+			messages.TSSFrostVerifyMsg, messages.TSSFrostResultMsg,
+			messages.TSSFrostDKGRound1Msg, messages.TSSFrostDKGRound2Msg,
+			messages.TSSFrostDKGRound3Msg, messages.TSSFrostDKGResultMsg,
+		} {
+			t.Run(fmt.Sprintf("%s/%d", topic, limit), func(t *testing.T) {
+				atLimit, above := encodedFrostBoundaryMessages(t, topic, limit)
+				below := *atLimit
+				below.WrappedMessage.MsgID = atLimit.WrappedMessage.MsgID[:len(atLimit.WrappedMessage.MsgID)-1]
+				for delta, fixture := range []*messages.BroadcastMsgChan{&below, atLimit, above} {
+					t.Run(fmt.Sprint(delta-1), func(t *testing.T) {
+						frame, err := json.Marshal(fixture.WrappedMessage)
+						if err != nil || len(frame) != limit+delta-1 {
+							t.Fatal("invalid encoded boundary fixture")
+						}
+						remote := peer.ID("member-peer")
+						msgID := fixture.WrappedMessage.MsgID
+						comm := newHandlerCommunication(topic, msgID, []peer.ID{remote})
+						comm.SetSubscribeWithPeers(topic, msgID, make(chan *Message, 1), []peer.ID{remote}, limit, 2)
+						t.Cleanup(func() { comm.CancelSubscribe(topic, msgID) })
+						sub := comm.getSubscriber(topic, msgID)
+						stream := framedPreflightStream(t, uint32(len(frame)), frame)
+						if delta == 2 {
+							stream.maxRead = LengthHeader + TSSFramePreflightBytes
+						}
+						got, readErr := readStreamWithBufferPreflight(stream, TSSFramePreflightBytes, func(length uint32, prefix []byte) error {
+							_, _, preflightErr := comm.preflightTSSFrame(remote, length, prefix)
+							return preflightErr
+						})
+						if delta == 2 {
+							if !errors.Is(readErr, ErrTSSFramePreflightRejected) || got != nil {
+								t.Fatalf("receiver admitted oversized encoded frame: error=%v", readErr)
+							}
+							if stream.overread || stream.read != LengthHeader+TSSFramePreflightBytes {
+								t.Fatal("oversized encoded frame was read past the preflight prefix")
+							}
+							if sub.sessionBytes != 0 || len(sub.peerBytes) != 0 || len(sub.peerCounts) != 0 {
+								t.Fatal("oversized encoded frame consumed a transport allowance")
+							}
+							return
+						}
+						if readErr != nil || !bytes.Equal(got, frame) {
+							t.Fatalf("receiver rejected valid encoded boundary frame: %v", readErr)
+						}
+						if sub.peerCounts[remote] != 1 || sub.peerBytes[remote] != uint64(len(frame)) || sub.sessionBytes != uint64(len(frame)) {
+							t.Fatal("receiver did not charge the encoded frame bytes exactly once")
+						}
+					})
+				}
+			})
+		}
 	}
 }
