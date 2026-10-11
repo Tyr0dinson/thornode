@@ -1167,9 +1167,11 @@ func TestChurnRecoveryResumesBlockScannerAfterStartupClamp(t *testing.T) {
 		close(stopConsumer)
 		<-consumerDone
 	}()
+	// Scanning 110 blocks under the race detector on a loaded CI runner can take
+	// longer than 5s; the deadline only bounds a hang, so keep it generous.
 	require.Eventually(t, func() bool {
 		return observations.Load() >= 1 && loop.PreviousHeight() == 1110
-	}, 5*time.Second, time.Millisecond, "startup clamping must retain block1001 and eventually reach the tip")
+	}, 30*time.Second, time.Millisecond, "startup clamping must retain block1001 and eventually reach the tip")
 	signer.mu.Lock()
 	defer signer.mu.Unlock()
 	require.Equal(t, []uint64{1001}, signer.rewinds)
