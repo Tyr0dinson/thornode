@@ -155,14 +155,26 @@ func (s *HandlerUnBondCovCESuite) TestUnbondGuardsCovCE(c *C) {
 	err = NewUnBondHandler(NewDummyMgrWithKeeper(newCovCEFailKeeper(k, "GetBondProviders"))).handle(ctx, *pmsg)
 	c.Check(errors.Is(err, errInternal), Equals, true)
 
-	// saving the providers after removal fails
-	err = NewUnBondHandler(NewDummyMgrWithKeeper(newCovCEFailKeeper(k, "SetBondProviders"))).handle(ctx, *pmsg)
+	// saving the providers after removal fails: refundBond's own
+	// SetBondProviders succeeds, the handler's second one fails. Run in a
+	// throwaway cache context so the refund does not leak into later cases.
+	fk := newCovCEFailKeeper(k, "SetBondProviders")
+	fk.skip["SetBondProviders"] = 1
+	cctx, _ := ctx.CacheContext()
+	err = NewUnBondHandler(NewDummyMgrWithKeeper(fk)).handle(cctx, *pmsg)
 	c.Check(err, ErrorMatches, "(?s).*fail to save bond providers.*")
+	c.Check(fk.calls["SetBondProviders"], Equals, 2)
 
-	// saving the node after crediting attached RUNE fails
+	// saving the node after crediting attached RUNE fails: refundBond's own
+	// SetNodeAccount succeeds, the handler's second one fails
 	tx := covCEUnbondTx(fx.na.BondAddress)
 	tx.Coins = common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One))}
 	cmsg := NewMsgUnBond(tx, fx.na.NodeAddress, cosmos.NewUint(common.One), fx.na.BondAddress, nil, fx.opAcc)
-	err = NewUnBondHandler(NewDummyMgrWithKeeper(newCovCEFailKeeper(k, "SetNodeAccount"))).handle(ctx, *cmsg)
+	fk = newCovCEFailKeeper(k, "SetNodeAccount")
+	fk.skip["SetNodeAccount"] = 1
+	cctx, _ = ctx.CacheContext()
+	err = NewUnBondHandler(NewDummyMgrWithKeeper(fk)).handle(cctx, *cmsg)
 	c.Check(errors.Is(err, errInternal), Equals, true)
+	c.Check(err, ErrorMatches, "(?s).*fail to save node account to key value store.*")
+	c.Check(fk.calls["SetNodeAccount"], Equals, 2)
 }

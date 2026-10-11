@@ -235,7 +235,9 @@ func (s *PoolMgrCovCBSuite) TestCheckSaversUtilizationCovCB(c *C) {
 	k := mgr.Keeper()
 	pm := newPoolMgr()
 
-	// disabled by default (SaversEjectInterval == 0)
+	// disabled (SaversEjectInterval == 0). The mocknet constant is 60, so set
+	// the mimir explicitly; with no active nodes an enabled check would error.
+	k.SetMimir(ctx, constants.SaversEjectInterval.String(), 0)
 	c.Assert(pm.checkSaversUtilization(ctx, mgr), IsNil)
 
 	k.SetMimir(ctx, constants.SaversEjectInterval.String(), 10)

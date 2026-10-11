@@ -14,18 +14,34 @@ import (
 )
 
 // covCEFailKeeper wraps a real keeper and returns errKaboom from the methods
-// named in fail.
+// named in fail. For methods that support it, skip lets the first N calls
+// succeed so a test can fail a later call, and calls counts every call.
 type covCEFailKeeper struct {
 	keeper.Keeper
-	fail map[string]bool
+	fail  map[string]bool
+	skip  map[string]int
+	calls map[string]int
 }
 
 func newCovCEFailKeeper(k keeper.Keeper, methods ...string) *covCEFailKeeper {
-	f := &covCEFailKeeper{Keeper: k, fail: map[string]bool{}}
+	f := &covCEFailKeeper{Keeper: k, fail: map[string]bool{}, skip: map[string]int{}, calls: map[string]int{}}
 	for _, m := range methods {
 		f.fail[m] = true
 	}
 	return f
+}
+
+// failNth reports whether this call of method should fail, honouring skip.
+func (k *covCEFailKeeper) failNth(method string) bool {
+	k.calls[method]++
+	if !k.fail[method] {
+		return false
+	}
+	if k.skip[method] > 0 {
+		k.skip[method]--
+		return false
+	}
+	return true
 }
 
 func (k *covCEFailKeeper) GetNodeAccount(ctx cosmos.Context, addr cosmos.AccAddress) (NodeAccount, error) {
@@ -36,7 +52,7 @@ func (k *covCEFailKeeper) GetNodeAccount(ctx cosmos.Context, addr cosmos.AccAddr
 }
 
 func (k *covCEFailKeeper) SetNodeAccount(ctx cosmos.Context, na NodeAccount) error {
-	if k.fail["SetNodeAccount"] {
+	if k.failNth("SetNodeAccount") {
 		return errKaboom
 	}
 	return k.Keeper.SetNodeAccount(ctx, na)
@@ -85,7 +101,7 @@ func (k *covCEFailKeeper) GetBondProviders(ctx cosmos.Context, addr cosmos.AccAd
 }
 
 func (k *covCEFailKeeper) SetBondProviders(ctx cosmos.Context, bp BondProviders) error {
-	if k.fail["SetBondProviders"] {
+	if k.failNth("SetBondProviders") {
 		return errKaboom
 	}
 	return k.Keeper.SetBondProviders(ctx, bp)

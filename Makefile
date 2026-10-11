@@ -337,8 +337,14 @@ test-network-specific:
 	@python3 scripts/test-quality-run.py --tags stagenet --run '$(RUN)' --report-dir test-quality-reports/network-stagenet ./common
 	@python3 scripts/test-quality-run.py --tags chainnet --run '$(RUN)' --report-dir test-quality-reports/network-chainnet ./common
 	@python3 scripts/test-quality-run.py --tags mainnet --run '$(RUN)' --report-dir test-quality-reports/network-mainnet ./common ./bifrost/pkg/chainclients/utxo/...
-	@python3 scripts/test-quality-run.py --tags mainnet --run TestPackage --test-arg=-check.f --test-arg='Migrate|Migration19to20Suite|EthThorRestoreSuite' --report-dir test-quality-reports/network-mainnet-migration ./x/thorchain # mainnet store-migration tests run under the gocheck TestPackage entrypoint (CI unit-tests is mocknet-only). The suites Migration19to20Suite/EthThorRestoreSuite lack the substring "Migrate", so -check.f names them explicitly; this filter must stay in sync with scripts/test-quality-inventory.py SELECTIONS (enforced by test_selection_filters_match_the_makefile).
+	@python3 scripts/test-quality-run.py --tags mainnet --run TestPackage --test-arg=-check.f --test-arg='Migrate|Migration19to20Suite|EthThorRestoreSuite|MigrationsMainnetCov' --report-dir test-quality-reports/network-mainnet-migration ./x/thorchain # mainnet store-migration tests run under the gocheck TestPackage entrypoint (CI unit-tests is mocknet-only). The suites Migration19to20Suite/EthThorRestoreSuite/MigrationsMainnetCov lack the substring "Migrate", so -check.f names them explicitly; this filter must stay in sync with scripts/test-quality-inventory.py SELECTIONS (enforced by test_selection_filters_match_the_makefile).
 	@python3 scripts/test-quality-run.py --tags mocknet --run '$(RUN)' --report-dir test-quality-reports/network-mocknet ./common ./bifrost/pkg/chainclients/utxo/...
+	# network-tagged unit tests elsewhere, filtered to the suites written for that tag
+	@python3 scripts/test-quality-run.py --tags mainnet --run TestPackage --test-arg=-check.f --test-arg='ConfAdjustmentMainnetCov' --report-dir test-quality-reports/network-mainnet-utxo-shared ./bifrost/pkg/chainclients/shared/utxo
+	@python3 scripts/test-quality-run.py --tags stagenet --run TestPackage --test-arg=-check.f --test-arg='MigrationsStagenetCov' --report-dir test-quality-reports/network-stagenet-thorchain ./x/thorchain
+	@python3 scripts/test-quality-run.py --tags chainnet --run TestPackage --test-arg=-check.f --test-arg='MigrationsChainnetCov' --report-dir test-quality-reports/network-chainnet-thorchain ./x/thorchain
+	@python3 scripts/test-quality-run.py --tags regtest --run 'RegtestCov' --report-dir test-quality-reports/network-regtest ./app ./cmd/thornode
+	@python3 scripts/test-quality-run.py --tags regtest --run TestPackage --test-arg=-check.f --test-arg='QuerierRegtestCov' --report-dir test-quality-reports/network-regtest-thorchain ./x/thorchain
 
 test-race:
 	@go test -race ${TEST_BUILD_FLAGS} ${RUN_FLAG} ${TEST_DIR}
