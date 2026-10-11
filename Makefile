@@ -299,7 +299,7 @@ test-network-specific:
 	@go test -tags mainnet ./bifrost/pkg/chainclients/shared/utxo -run TestPackage -check.f ConfAdjustmentMainnetCov
 	@go test -tags stagenet ./x/thorchain -run TestPackage -check.f MigrationsStagenetCov
 	@go test -tags chainnet ./x/thorchain -run TestPackage -check.f MigrationsChainnetCov
-	@go test -tags regtest ./app ./cmd/thornode -run RegtestCov
+	@go test -tags regtest ./app ./cmd/thornode -run 'Regtest.*Cov'
 	@go test -tags regtest ./x/thorchain -run TestPackage -check.f QuerierRegtestCov
 
 test-race:
