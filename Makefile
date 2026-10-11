@@ -343,7 +343,7 @@ test-network-specific:
 	@python3 scripts/test-quality-run.py --tags mainnet --run TestPackage --test-arg=-check.f --test-arg='ConfAdjustmentMainnetCov' --report-dir test-quality-reports/network-mainnet-utxo-shared ./bifrost/pkg/chainclients/shared/utxo
 	@python3 scripts/test-quality-run.py --tags stagenet --run TestPackage --test-arg=-check.f --test-arg='MigrationsStagenetCov' --report-dir test-quality-reports/network-stagenet-thorchain ./x/thorchain
 	@python3 scripts/test-quality-run.py --tags chainnet --run TestPackage --test-arg=-check.f --test-arg='MigrationsChainnetCov' --report-dir test-quality-reports/network-chainnet-thorchain ./x/thorchain
-	@python3 scripts/test-quality-run.py --tags regtest --run 'RegtestCov' --report-dir test-quality-reports/network-regtest ./app ./cmd/thornode
+	@python3 scripts/test-quality-run.py --tags regtest --run 'Regtest.*Cov' --report-dir test-quality-reports/network-regtest ./app ./cmd/thornode
 	@python3 scripts/test-quality-run.py --tags regtest --run TestPackage --test-arg=-check.f --test-arg='QuerierRegtestCov' --report-dir test-quality-reports/network-regtest-thorchain ./x/thorchain
 
 test-race:
