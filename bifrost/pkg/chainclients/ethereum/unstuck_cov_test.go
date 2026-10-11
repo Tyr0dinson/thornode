@@ -248,8 +248,10 @@ func TestCovUnstuckTx(t *testing.T) {
 	if sent.Gas() != 100_000 {
 		t.Fatalf("cancel gas = %d", sent.Gas())
 	}
-	if !c.signerCacheManager.HasSigned(item.TxOutItem.CacheHash()) {
-		t.Fatal("cancel tx should be recorded in signer cache")
+	// the fixture's SetSigned already marks the item signed, so check the
+	// recorded hash is the cancel tx's (only SetSignedWithExpiry stores one)
+	if got, ok := c.signerCacheManager.GetSignedTxHash(item.TxOutItem.CacheHash()); !ok || !strings.EqualFold(got, sent.Hash().Hex()) {
+		t.Fatalf("cancel tx should be recorded in signer cache, got %q ok=%v", got, ok)
 	}
 
 	// cheap original -> doubled current scanner price (2 * 20 gwei)

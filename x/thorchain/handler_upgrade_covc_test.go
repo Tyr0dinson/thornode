@@ -220,23 +220,28 @@ func (s *HandlerUpgradeCovCESuite) TestScheduleAndClearCovCE(c *C) {
 	c.Check(scheduleAnyApprovedUpgrade(ctx, uk), ErrorMatches, "failed to check upgrade quorum for 9.0.0.*kaboom")
 	uk.failListActive = false
 
-	// one rejection drops A under the majority; clearing fails
+	// one rejection drops A under the majority; clearing fails. In production
+	// the failed msg's writes are discarded (tx / CacheContext), so run it in a
+	// throwaway cache context: the vote must not stick.
 	reject := NewRejectUpgradeHandler(mgr)
 	uk.failClear = true
-	_, err = reject.Run(ctx, NewMsgRejectUpgrade("9.0.0", nodes[0].NodeAddress))
+	failCtx, _ := ctx.CacheContext()
+	_, err = reject.Run(failCtx, NewMsgRejectUpgrade("9.0.0", nodes[0].NodeAddress))
 	c.Check(err, ErrorMatches, "failed to clear upgrade plan: kaboom")
 	c.Check(uk.plan.Name, Equals, "9.0.0")
 	uk.failClear = false
 
-	// rejecting twice is refused
+	// the same reject succeeds for real: A is cleared and the already
+	// approved B is scheduled
 	_, err = reject.Run(ctx, NewMsgRejectUpgrade("9.0.0", nodes[0].NodeAddress))
-	c.Check(err, ErrorMatches, ".*upgrade already rejected: 9.0.0.*")
-
-	// re-run the clear: A is cleared and the already approved B is scheduled
-	c.Assert(clearUpgradeIfNecessary(ctx, uk, "9.0.0"), IsNil)
+	c.Assert(err, IsNil)
 	c.Assert(uk.plan, NotNil)
 	c.Check(uk.plan.Name, Equals, "9.1.0")
 	c.Check(uk.plan.Info, Equals, "info-9.1.0")
+
+	// rejecting twice is refused
+	_, err = reject.Run(ctx, NewMsgRejectUpgrade("9.0.0", nodes[0].NodeAddress))
+	c.Check(err, ErrorMatches, ".*upgrade already rejected: 9.0.0.*")
 }
 
 func (s *HandlerUpgradeCovCESuite) TestActiveValidatorAnteHandlerCovCE(c *C) {
