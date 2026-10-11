@@ -1167,8 +1167,8 @@ func TestChurnRecoveryResumesBlockScannerAfterStartupClamp(t *testing.T) {
 		close(stopConsumer)
 		<-consumerDone
 	}()
-	// Scanning 110 blocks under the race detector on a loaded CI runner can take
-	// longer than 5s; the deadline only bounds a hang, so keep it generous.
+	// Generous bound: the restarted loop rewinds a hundred blocks over HTTP,
+	// which took over five seconds under the race detector on a busy CI runner.
 	require.Eventually(t, func() bool {
 		return observations.Load() >= 1 && loop.PreviousHeight() == 1110
 	}, 30*time.Second, time.Millisecond, "startup clamping must retain block1001 and eventually reach the tip")
