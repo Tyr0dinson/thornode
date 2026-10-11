@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	ecommon "github.com/ethereum/go-ethereum/common"
 	etypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -535,5 +536,30 @@ func TestCovSmartContractAndFailedTx(t *testing.T) {
 	}
 	if item, err := e.getTxInFromTransaction(unsigned, rcpt); item != nil || err == nil {
 		t.Fatal("unsigned tx should error")
+	}
+}
+
+// TestCovGetDecimalsUint256ABI: with an ABI declaring decimals() as uint256 the
+// result decodes to *big.Int, whose value is used (the bundled ABI declares
+// uint8); values beyond uint64 are rejected rather than truncated.
+func TestCovGetDecimalsUint256ABI(t *testing.T) {
+	env := newCovEnv(t, nil)
+	e := env.client.ethScanner
+	bigABI, err := abi.JSON(strings.NewReader(`[{"constant":true,"inputs":[],"name":"decimals","outputs":[{"name":"","type":"uint256"}],"type":"function"}]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.erc20ABI = &bigABI
+
+	decimals := big.NewInt(9)
+	env.rpc.set("eth_call", func([]json.RawMessage) (any, error) { return covUint256(decimals), nil })
+	token := "0x" + strings.Repeat("ab", 20)
+	if d, err := e.getDecimals(token); err != nil || d != 9 {
+		t.Fatalf("decimals = %d %v, want 9", d, err)
+	}
+
+	decimals = new(big.Int).Lsh(big.NewInt(1), 64)
+	if d, err := e.getDecimals(token); err == nil || !strings.Contains(err.Error(), "invalid decimals") || d != defaultDecimals {
+		t.Fatalf("decimals = %d %v, want default with invalid decimals error", d, err)
 	}
 }
