@@ -134,12 +134,13 @@ type Observer struct {
 
 	// beforeObservedTxDeckLock is a deterministic race-test hook. Production
 	// leaves it nil.
-	beforeObservedTxDeckLock    func()
-	errataAttestFn              func(context.Context, common.ErrataTx) error
-	permanentErrataQuarantineFn func(common.ErrataTx, int64) error
-	errataAttestMu              sync.Mutex
-	errataOutcomeMu             sync.Mutex
-	sendObservedTxsFn           func(common.ObservedTxs, bool)
+	beforeObservedTxDeckLock        func()
+	errataAttestFn                  func(context.Context, common.ErrataTx) error
+	permanentErrataQuarantineFn     func(common.ErrataTx, int64) error
+	permanentErrataBroadcastBlockFn func(common.ErrataTx) error
+	errataAttestMu                  sync.Mutex
+	errataOutcomeMu                 sync.Mutex
+	sendObservedTxsFn               func(common.ObservedTxs, bool)
 }
 
 // NewObserver create a new instance of Observer for chain
@@ -569,13 +570,30 @@ func (o *Observer) handleObservedTxCommitted(tx common.ObservedTx, allowFutureOb
 		Msg("observed tx committed to thorchain")
 }
 
-// handleErrataTxCommitted is called only from AttestationGossip's committed
-// quorum event. The event proves delivery of the quorum message, but it does
-// not prove that Thornode set ObservedTxVoter.Reverted: the errata handler may
-// legitimately commit before the original observation reaches consensus.
-func (o *Observer) handleErrataTxCommitted(errata common.ErrataTx) error {
+// handleErrataTxCommitted retires this node's attestation only after a durable
+// terminal receipt. REVERTED still needs retryable local quarantine; a no-applicable
+// result describes processing time, while the TxID-wide on-chain errata continues
+// to protect accounting if an inbound observation reaches quorum later.
+func (o *Observer) handleErrataTxCommitted(errata common.ErrataTx, outcome common.ErrataTxOutcome) error {
+	if errata.Chain.RequiresTerminalErrataOutcome() {
+		switch outcome {
+		case common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED:
+			return nil
+		case common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED,
+			common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION:
+		default:
+			return fmt.Errorf("unknown committed XMR errata outcome %d", outcome)
+		}
+	}
+
+	if errata.Chain.Equals(common.XMRChain) && outcome == common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED {
+		if err := o.blockPermanentErrataBroadcast(errata); err != nil {
+			return err
+		}
+	}
+
 	o.lock.Lock()
-	err := o.storage.recordLocalErrataCommitted(errata)
+	err := o.storage.recordLocalErrataCommitted(errata, outcome)
 	o.lock.Unlock()
 	if err != nil {
 		o.logger.Error().Err(err).
@@ -583,17 +601,27 @@ func (o *Observer) handleErrataTxCommitted(errata common.ErrataTx) error {
 			Msg("fail to persist delivered errata receipt; outbox will remain pending")
 		return err
 	}
-	if errata.Chain.Equals(common.XMRChain) {
-		// Delivery durability must not depend on REST availability. Reconciliation
-		// initializes the post-event height barrier and confirms the voter through
-		// uncached reads; any transient failure remains a durable retry.
+	if errata.Chain.Equals(common.XMRChain) && outcome != common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION {
+		// The terminal receipt permits quarantine without REST confirmation.
+		// A failed local quarantine remains durable and is retried separately.
 		if _, reconcileErr := o.reconcileCommittedXMRErrata(); reconcileErr != nil {
 			o.logger.Warn().Err(reconcileErr).
 				Str("txid", errata.Id.String()).
-				Msg("XMR errata outcome is not confirmable yet; will retry")
+				Msg("XMR errata quarantine is incomplete; will retry")
 		}
 	}
 	return nil
+}
+
+func (o *Observer) blockPermanentErrataBroadcast(errata common.ErrataTx) error {
+	if o.permanentErrataBroadcastBlockFn != nil {
+		return o.permanentErrataBroadcastBlockFn(errata)
+	}
+	quarantiner, ok := o.chains[errata.Chain].(chainclients.PermanentErrataQuarantiner)
+	if !ok {
+		return fmt.Errorf("%s chain client lacks permanent errata broadcast blocking support", errata.Chain)
+	}
+	return quarantiner.BlockPermanentErrataBroadcast(errata)
 }
 
 func (o *Observer) quarantinePermanentErrata(tombstone errataTombstone) error {
@@ -1538,6 +1566,9 @@ func (o *Observer) broadcastErrataBlock(ctx context.Context, errataBlock types.E
 		if record.FirstAttemptAtUnixNano != 0 {
 			firstAttempt := time.Unix(0, record.FirstAttemptAtUnixNano)
 			if !now.Before(firstAttempt.Add(errataAttestationRetryHorizon)) {
+				// A known inbound may never reach observation quorum and thus
+				// never yield a terminal errata outcome. Bound automatic gossip
+				// here; retain the exhausted record for operator reconciliation.
 				exhausted, exhaustErr := o.storage.MarkErrataAttestationRetryExhausted(errataTx, now)
 				if exhaustErr != nil {
 					return exhaustErr
@@ -1657,76 +1688,95 @@ func (o *Observer) reconcileCommittedXMRErrata() (int, error) {
 	if len(pending) == 0 {
 		return 0, nil
 	}
-	bridge, ok := o.thorchainBridge.(errataOutcomeBridge)
-	if !ok || bridge == nil {
-		return len(pending), errors.New("thorchain bridge lacks uncached XMR errata confirmation support")
-	}
-	currentHeight, heightErr := bridge.GetBlockHeightUncached()
-	if heightErr == nil && (currentHeight < 0 || currentHeight == math.MaxInt64) {
-		heightErr = fmt.Errorf("thornode returned invalid height %d for XMR errata confirmation", currentHeight)
+	// Only pre-outcome durable receipts need REST confirmation. New terminal
+	// outcomes already carry THORNode's result and must not wait for a query.
+	var bridge errataOutcomeBridge
+	var currentHeight int64
+	var heightErr error
+	for _, tombstone := range pending {
+		if tombstone.Outcome != common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED {
+			continue
+		}
+		bridge, _ = o.thorchainBridge.(errataOutcomeBridge)
+		if bridge == nil {
+			heightErr = errors.New("thorchain bridge lacks uncached XMR errata confirmation support")
+		} else {
+			currentHeight, heightErr = bridge.GetBlockHeightUncached()
+			if heightErr == nil && (currentHeight < 0 || currentHeight == math.MaxInt64) {
+				heightErr = fmt.Errorf("thornode returned invalid height %d for XMR errata confirmation", currentHeight)
+			}
+		}
+		break
 	}
 
 	unresolved := 0
 	reconcileErrors := make([]error, 0)
 	for _, tombstone := range pending {
 		errata := common.ErrataTx{Chain: tombstone.Chain, Id: tombstone.TxID}
-		if tombstone.VerifyAfterHeight == 0 && heightErr == nil {
-			verifyAfterHeight := currentHeight + 1
-			o.lock.Lock()
-			err = o.storage.recordErrataCommitted(errata, verifyAfterHeight)
-			o.lock.Unlock()
-			if err != nil {
+		if tombstone.Outcome == common.ErrataTxOutcome_ERRATA_TX_OUTCOME_UNSPECIFIED {
+			if bridge == nil {
+				unresolved++
+				reconcileErrors = append(reconcileErrors, heightErr)
+				continue
+			}
+			if tombstone.VerifyAfterHeight == 0 && heightErr == nil {
+				verifyAfterHeight := currentHeight + 1
+				o.lock.Lock()
+				err = o.storage.recordErrataCommitted(errata, verifyAfterHeight)
+				o.lock.Unlock()
+				if err != nil {
+					unresolved++
+					reconcileErrors = append(reconcileErrors, fmt.Errorf(
+						"persist XMR errata verification barrier for %s: %w", tombstone.TxID, err,
+					))
+					continue
+				}
+				tombstone.VerifyAfterHeight = verifyAfterHeight
+			}
+
+			voter, found, voterErr := bridge.GetObservedTxVoterUncached(tombstone.TxID.String())
+			if voterErr != nil {
 				unresolved++
 				reconcileErrors = append(reconcileErrors, fmt.Errorf(
-					"persist XMR errata verification barrier for %s: %w", tombstone.TxID, err,
+					"query uncached XMR errata voter %s: %w", tombstone.TxID, voterErr,
 				))
+				o.logger.Warn().Err(voterErr).
+					Str("txid", tombstone.TxID.String()).
+					Msg("XMR errata voter outcome is not queryable yet; will retry")
 				continue
 			}
-			tombstone.VerifyAfterHeight = verifyAfterHeight
-		}
-
-		voter, found, voterErr := bridge.GetObservedTxVoterUncached(tombstone.TxID.String())
-		if voterErr != nil {
-			unresolved++
-			reconcileErrors = append(reconcileErrors, fmt.Errorf(
-				"query uncached XMR errata voter %s: %w", tombstone.TxID, voterErr,
-			))
-			o.logger.Warn().Err(voterErr).
-				Str("txid", tombstone.TxID.String()).
-				Msg("XMR errata voter outcome is not queryable yet; will retry")
-			continue
-		}
-		if found && (voter == nil || voter.TxID.IsEmpty() || !voter.TxID.Equals(tombstone.TxID)) {
-			unresolved++
-			mismatchErr := errors.New("uncached XMR errata voter response does not match the requested transaction")
-			reconcileErrors = append(reconcileErrors, fmt.Errorf("%s: %w", tombstone.TxID, mismatchErr))
-			actualTxID := ""
-			if voter != nil {
-				actualTxID = voter.TxID.String()
-			}
-			o.logger.Error().
-				Str("expected_txid", tombstone.TxID.String()).
-				Str("actual_txid", actualTxID).
-				Msg("ignore mismatched XMR errata voter response")
-			continue
-		}
-
-		// Reverted is monotonic and may be acted on immediately. A false or absent
-		// ObservedTxVoter is not a durable terminal: the committed event may have
-		// represented a partial errata batch and later votes can still reach
-		// consensus. Keep the outcome re-checkable after the height barrier.
-		if !found || !voter.Reverted {
-			if heightErr != nil || currentHeight < tombstone.VerifyAfterHeight {
+			if found && (voter == nil || voter.TxID.IsEmpty() || !voter.TxID.Equals(tombstone.TxID)) {
 				unresolved++
-				if heightErr != nil {
-					reconcileErrors = append(reconcileErrors, fmt.Errorf(
-						"query uncached Thornode height for %s: %w", tombstone.TxID, heightErr,
-					))
+				mismatchErr := errors.New("uncached XMR errata voter response does not match the requested transaction")
+				reconcileErrors = append(reconcileErrors, fmt.Errorf("%s: %w", tombstone.TxID, mismatchErr))
+				actualTxID := ""
+				if voter != nil {
+					actualTxID = voter.TxID.String()
 				}
+				o.logger.Error().
+					Str("expected_txid", tombstone.TxID.String()).
+					Str("actual_txid", actualTxID).
+					Msg("ignore mismatched XMR errata voter response")
 				continue
 			}
-			unresolved++
-			continue
+
+			// Reverted is monotonic and may be acted on immediately. A false or absent
+			// ObservedTxVoter is not a durable terminal: the committed event may have
+			// represented a partial errata batch and later votes can still reach
+			// consensus. Keep the outcome re-checkable after the height barrier.
+			if !found || !voter.Reverted {
+				if heightErr != nil || currentHeight < tombstone.VerifyAfterHeight {
+					unresolved++
+					if heightErr != nil {
+						reconcileErrors = append(reconcileErrors, fmt.Errorf(
+							"query uncached Thornode height for %s: %w", tombstone.TxID, heightErr,
+						))
+					}
+					continue
+				}
+				unresolved++
+				continue
+			}
 		}
 
 		// Quarantine the exact signed artifact and scanner state before making

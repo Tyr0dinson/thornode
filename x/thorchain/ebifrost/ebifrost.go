@@ -694,7 +694,28 @@ func (b *EnshrinedBifrost) MarkQuorumErrataTxAttestationsConfirmed(ctx context.C
 		b.logger.Error("Failed to copy quorum errata confirmation", "error", err)
 		return
 	}
+	// Freeze the committed receipt before cache cleanup or caller reuse.
+	// Subscriber delivery remains asynchronous and owns only the encoded bytes.
 	b.broadcastQuorumErrataTxEvent(qe)
+
+	if qe.ErrataTx.Chain.RequiresTerminalErrataOutcome() &&
+		qe.Outcome != common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED &&
+		qe.Outcome != common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION {
+		// A delivered pending batch is no longer in flight, but its signatures
+		// must be admissible on the next durable Bifrost retry. Recording it in
+		// recentBlockItems would delay retries until cache expiry, which
+		// expireXMRErrataReceipts checks on each local proposal.
+		b.errataCache.mu.Lock()
+		b.errataCache.markAttestationsConfirmedLocked(
+			qe, b.logger,
+			(*common.QuorumErrataTx).Equals,
+			(*common.QuorumErrataTx).GetAttestations,
+			(*common.QuorumErrataTx).RemoveAttestations,
+			func(*common.QuorumErrataTx, log.Logger) {},
+		)
+		b.errataCache.mu.Unlock()
+		return
+	}
 
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 	height := sdkCtx.BlockHeight()
@@ -753,12 +774,43 @@ func (b *EnshrinedBifrost) MarshalTx(msg sdk.Msg) ([]byte, error) {
 	return itx.Tx.Marshal()
 }
 
+// expireXMRErrataReceipts lets a durable Bifrost retry recover a lost terminal
+// event after the existing cache window. Quiet errata history must age with
+// proposal height, not depend on a different errata being confirmed first.
+// Keep other chains' delivery semantics unchanged.
+func (b *EnshrinedBifrost) expireXMRErrataReceipts(currentHeight int64) {
+	b.errataCache.mu.Lock()
+	defer b.errataCache.mu.Unlock()
+	// This is proposer-local retry history, not consensus state.
+	// analyze-ignore(map-iteration)
+	for height, items := range b.errataCache.recentBlockItems {
+		if height >= currentHeight-cachedBlocks {
+			continue
+		}
+		retained := items[:0]
+		for _, item := range items {
+			if item != nil && item.ErrataTx != nil && item.ErrataTx.Chain.RequiresTerminalErrataOutcome() {
+				continue
+			}
+			retained = append(retained, item)
+		}
+		clear(items[len(retained):])
+		if len(retained) == 0 {
+			delete(b.errataCache.recentBlockItems, height)
+		} else {
+			b.errataCache.recentBlockItems[height] = retained
+		}
+	}
+}
+
 // ProposalInjectTxs is intended to be called by the current proposing validator during PrepareProposal
 // and will return a list of in-quorum transactions to be included in the next block along with the total byte length of the transactions.
 func (b *EnshrinedBifrost) ProposalInjectTxs(ctx sdk.Context, maxTxBytes int64) ([][]byte, int64) {
 	if b == nil {
 		return nil, 0
 	}
+
+	b.expireXMRErrataReceipts(ctx.BlockHeight())
 
 	var injectTxs [][]byte
 	var txBzLen int64

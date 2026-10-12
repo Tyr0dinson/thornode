@@ -271,6 +271,7 @@ func TestQuorumErrataCommitCompletesDurableOutbox(t *testing.T) {
 	}
 	gossip.SetObserverHandleErrataTxCommitted(observer)
 	quorumErrata := common.QuorumErrataTx{
+		Outcome:  common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION,
 		ErrataTx: &common.ErrataTx{Chain: tx.Chain, Id: tx.TxID},
 		Attestations: []*common.Attestation{{
 			PubKey: gossip.pubKey,
