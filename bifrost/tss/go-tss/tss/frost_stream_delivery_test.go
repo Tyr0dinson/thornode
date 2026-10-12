@@ -17,7 +17,7 @@ import (
 
 // Exercise real restricted subscriptions. The transport must close a delivered
 // stream even when the coordinator has not consumed its queued frame yet.
-func newRestrictedFrostTestReceiver(t *testing.T) func(*testing.T, messages.THORChainTSSMessageType) *p2p.Message {
+func newRestrictedFrostTestReceiver(t *testing.T) func(*testing.T, messages.THORChainTSSMessageType, ...[]byte) *p2p.Message {
 	ensureBech32Prefix()
 	start := func(index int) *p2p.Communication {
 		encoded, err := base64.StdEncoding.DecodeString(testPriKeyArr[index])
@@ -35,7 +35,11 @@ func newRestrictedFrostTestReceiver(t *testing.T) func(*testing.T, messages.THOR
 		if err := comm.Start(key); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { comm.Stop() })
+		t.Cleanup(func() {
+			if stopErr := comm.Stop(); stopErr != nil {
+				t.Errorf("stop restricted receiver: %v", stopErr)
+			}
+		})
 		return comm
 	}
 	receiver, sender := start(0), start(1)
@@ -44,13 +48,17 @@ func newRestrictedFrostTestReceiver(t *testing.T) func(*testing.T, messages.THOR
 	if err := sender.GetHost().Connect(ctx, peer.AddrInfo{ID: receiver.GetHost().ID(), Addrs: receiver.GetHost().Addrs()}); err != nil {
 		t.Fatal(err)
 	}
-	receive := func(t *testing.T, topic messages.THORChainTSSMessageType) *p2p.Message {
+	receive := func(t *testing.T, topic messages.THORChainTSSMessageType, bodies ...[]byte) *p2p.Message {
 		t.Helper()
 		channel := make(chan *p2p.Message, 1)
 		id := t.Name()
 		receiver.SetSubscribeWithPeers(topic, id, channel, []peer.ID{sender.GetHost().ID()}, 4096, 1)
 		t.Cleanup(func() { receiver.CancelSubscribe(topic, id) })
-		payload, err := json.Marshal(messages.WrappedMessage{MessageType: topic, MsgID: id, Payload: []byte("{}")})
+		body := []byte("{}")
+		if len(bodies) > 0 {
+			body = bodies[0]
+		}
+		payload, err := json.Marshal(messages.WrappedMessage{MessageType: topic, MsgID: id, Payload: body})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -78,6 +86,30 @@ func newRestrictedFrostTestReceiver(t *testing.T) func(*testing.T, messages.THOR
 		}
 	}
 	return receive
+}
+
+func TestFrostKeysignResultWaiterDrainsNonResultQueues(t *testing.T) {
+	receive := newRestrictedFrostTestReceiver(t)
+	for _, topic := range []messages.THORChainTSSMessageType{
+		messages.TSSFrostPreprocessMsg, messages.TSSFrostShareMsg, messages.TSSFrostVerifyMsg,
+	} {
+		t.Run(topic.String(), func(t *testing.T) {
+			msg := receive(t, topic)
+			inbox := newFrostSignInbox()
+			channel, ok := inbox.messageChannel(topic)
+			if !ok {
+				t.Fatal("missing inbox channel")
+			}
+			channel <- msg
+			coord := newTestFrostSignCoordinator(testPubKeys[0], "different-session", inbox, time.Second)
+			if _, err := coord.WaitForResult([]string{testPubKeys[0]}, 1, 100*time.Millisecond); err == nil {
+				t.Fatal("result waiter unexpectedly succeeded without a result")
+			}
+			if len(channel) != 0 {
+				t.Fatal("keysign result waiter left non-result traffic queued")
+			}
+		})
+	}
 }
 
 func TestFrostInboxStreamsCloseBeforeConsumption(t *testing.T) {
