@@ -434,6 +434,25 @@ unit-tests:
     paths:
       - coverage*
 
+# The simulation directory has its own go.mod and is not reached by root ./....
+test-simulation-unit:
+  tags: !reference [.small-runner, tags]
+  rules: *rules
+  stage: test
+  needs: []
+  variables:
+    PKGS: python3 util-linux
+  before_script:
+    - !reference [.pkg-install, before_script]
+    - !reference [.go-private-auth, before_script]
+    - !reference [.stable-mtimes, before_script]
+  script:
+    - scripts/test-simulation-unit.sh test-quality-reports/simulation-unit.jsonl
+  artifacts:
+    when: always
+    paths:
+      - test-quality-reports/simulation-unit.jsonl
+
 test-mocknet-scripts:
   tags: !reference [.small-runner, tags]
   rules:
