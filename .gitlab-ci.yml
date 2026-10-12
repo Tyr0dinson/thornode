@@ -417,7 +417,10 @@ unit-tests:
   stage: test
   needs: []
   coverage: /total:\s+\(statements\)\s+(\d+.\d+\%)/
+  variables:
+    PKGS: jq # test/regression/cmd OpCheck tests shell out to jq; without it they skip
   before_script:
+    - !reference [.pkg-install, before_script]
     - !reference [.go-private-auth, before_script]
     - !reference [.stable-mtimes, before_script]
     - go install github.com/boumenot/gocover-cobertura@v1.4.0

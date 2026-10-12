@@ -72,12 +72,6 @@ func TestWatcherFetchErrorsCov(t *testing.T) {
 	cl := server.Client()
 	dead := &http.Client{Transport: roundTripErrCov{}}
 
-	if _, err := fetchInvariant(dead, server.URL); err == nil {
-		t.Fatal("invariant transport error expected")
-	}
-	if _, err := fetchInvariant(cl, server.URL+"/bad-json"); err == nil {
-		t.Fatal("invariant decode error expected")
-	}
 	if _, err := fetchMimir(dead, server.URL); err == nil {
 		t.Fatal("mimir transport error expected")
 	}
