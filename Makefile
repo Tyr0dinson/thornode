@@ -309,7 +309,7 @@ test-race:
 
 # bifrost is the concurrent half of the system; go-tss is covered by test-go-tss.
 test-race-bifrost:
-	@go test -race -timeout 20m ${TEST_BUILD_FLAGS} ${RUN_FLAG} $$(go list ./bifrost/... | grep -v bifrost/tss/go-tss)
+	@go test -race -timeout 20m ${TEST_BUILD_FLAGS} ${RUN_FLAG} $$(go list ./bifrost/... | grep -v bifrost/tss/go-tss) ./x/thorchain/ebifrost
 
 # ------------------------------ Performance Tests ------------------------------
 
