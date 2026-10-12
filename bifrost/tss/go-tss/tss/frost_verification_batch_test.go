@@ -321,6 +321,7 @@ type frostKeysignVerificationTraffic struct {
 	remoteStreamWrites   int
 	payloadBytes         int
 	networkBytes         uint64
+	maxEncodedFrameBytes int
 }
 
 func measureFrostKeysignVerificationTraffic(t *testing.T, partySize int, fragmentedWindows bool) frostKeysignVerificationTraffic {
@@ -353,9 +354,10 @@ func measureFrostKeysignVerificationTraffic(t *testing.T, partySize int, fragmen
 			if err != nil {
 				t.Fatalf("decode %s traffic batch: %v", round, err)
 			}
-			if got := len(payload); got >= p2p.FrostMaxSessionPayload {
-				t.Fatalf("%s traffic batch payload bytes=%d exceeds frame bound=%d", round, got, p2p.FrostMaxSessionPayload)
+			if got := len(queued.Encoded); got > p2p.FrostMaxSessionPayload {
+				t.Fatalf("%s traffic batch encoded bytes=%d exceeds frame bound=%d", round, got, p2p.FrostMaxSessionPayload)
 			}
+			traffic.maxEncodedFrameBytes = max(traffic.maxEncodedFrameBytes, len(queued.Encoded))
 			if got := len(queued.PeersID); got != partySize {
 				t.Fatalf("%s traffic batch fanout IDs=%d, want %d", round, got, partySize)
 			}
@@ -413,6 +415,8 @@ func measureFrostKeysignVerificationTraffic(t *testing.T, partySize int, fragmen
 		}
 		drain(round)
 	}
+	t.Logf("%d-party verification fragmented=%t: largest frame", partySize, fragmentedWindows)
+	assertFrostEncodedFrameFits(t, traffic.maxEncodedFrameBytes, p2p.FrostMaxSessionPayload)
 	return traffic
 }
 
