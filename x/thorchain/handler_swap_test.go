@@ -411,6 +411,34 @@ func (s *HandlerSwapSuite) TestHandle(c *C) {
 	keeper.haltChain = 0
 }
 
+func (s *HandlerSwapSuite) TestHandleRejectsWrongNetworkZECDestination(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	handler := NewSwapHandler(mgr)
+	observerAddr := GetRandomValidatorNode(NodeActive).NodeAddress
+	_, tex, _, wrongNetworkTex := zecTxOutAddresses()
+	wrongNetworkP2PKH := common.Address("tmEp4k7dSU8eGj32uJPi2wBSGuiNaVFBLN7")
+	if common.CurrentChainNetwork == common.MockNet {
+		wrongNetworkP2PKH = "t1h3iyd8qGvtJZ3V5CYryi5158h9RMkRhMU"
+	}
+	for _, dest := range []common.Address{wrongNetworkTex, wrongNetworkP2PKH} {
+		tx := common.NewTx(GetRandomTxHash(), GetRandomRUNEAddress(), GetRandomRUNEAddress(),
+			common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One))}, common.Gas{}, "")
+		msg := NewMsgSwap(tx, common.ZECAsset, dest, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, observerAddr)
+		_, _, err := handler.handleWithEmit(ctx, *msg)
+		c.Assert(err, NotNil, Commentf("destination: %s", dest))
+		c.Check(err.Error(), Equals, fmt.Sprintf("address(%s) is not same network", dest))
+	}
+
+	// A current-network destination passes the check and fails later on the
+	// missing pool instead.
+	tx := common.NewTx(GetRandomTxHash(), GetRandomRUNEAddress(), GetRandomRUNEAddress(),
+		common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One))}, common.Gas{}, "")
+	msg := NewMsgSwap(tx, common.ZECAsset, tex, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, observerAddr)
+	_, _, err := handler.handleWithEmit(ctx, *msg)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Not(Matches), ".*is not same network.*")
+}
+
 func (s *HandlerSwapSuite) TestHandleStreamingSwap(c *C) {
 	var err error
 	ctx, mgr := setupManagerForTest(c)

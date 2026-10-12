@@ -867,12 +867,7 @@ func (c *Client) getChainCfgDOGE() *dogechaincfg.Params {
 }
 
 func (c *Client) getChainCfgZEC() *btcchaincfg.Params {
-	switch common.CurrentChainNetwork {
-	case common.MockNet:
-		return &btcchaincfg.Params{Name: "testnet3"}
-	default:
-		return &btcchaincfg.Params{Name: "mainnet"}
-	}
+	return &btcchaincfg.Params{Name: common.ZECNetworkName()}
 }
 
 // ------------------------------ signing ------------------------------

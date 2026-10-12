@@ -1177,6 +1177,13 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	height := item.Height
 	tx := item.TxOutItem
 
+	// Block legacy TEX outbounds before signing or rebroadcasting saved bytes.
+	if tx.Chain.Equals(common.ZECChain) && strings.HasPrefix(tx.ToAddress.String(), "tex") {
+		s.logger.Warn().Stringer("to_address", tx.ToAddress).Str("memo", tx.Memo).
+			Msg("skipping ZEC TEX outbound; requires manual reconciliation")
+		return nil, nil, nil
+	}
+
 	// set the checkpoint on the tx out item if it was stored
 	if item.Checkpoint != nil {
 		tx.Checkpoint = item.Checkpoint

@@ -42,6 +42,11 @@ make test-simulation
 
 This will internally build the simulation framework image, start mocknet, and run the tests from a Docker container with host mode networking to reach the local mocknet.
 
+The `swaps` stage always schedules two required swaps to ZEC: one with a normal
+transparent destination and one with a TEX destination. Mocknet uses `tm` and
+`textest` in place of mainnet's `t1` and `tex`. Both swaps must complete, and their
+outbound actions and observations must use the normal transparent address.
+
 ### Inactive-vault refunds
 
 The cluster profile runs `inactive-vault-refunds` after churn, when eligible

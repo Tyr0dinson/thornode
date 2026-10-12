@@ -107,9 +107,9 @@ func quoteParseRefundAddress(ctx cosmos.Context, mgr *Mgrs, addrString string, s
 	if !addr.IsChain(sourceChain) {
 		return common.NoAddress, fmt.Errorf("refund address %s is not valid for source chain %s", addr, sourceChain)
 	}
-	// GetNetwork handles every accepted encoding for ordinary chains, including
-	// legacy UTXO forms that Chain.IsValidAddress does not classify completely.
-	if !common.CurrentChainNetwork.SoftEquals(addr.GetNetwork(sourceChain)) {
+	// Use the shared network check; Chain.IsValidAddress does not recognize all
+	// accepted legacy UTXO encodings.
+	if !addr.IsCurrentNetwork(sourceChain) {
 		return common.NoAddress, fmt.Errorf("refund address %s is not valid for %s on the current network", addr, sourceChain)
 	}
 	if sourceChain.RequiresExplicitRefundAddress() && !sourceChain.IsValidAddress(addr) {
@@ -735,6 +735,9 @@ func (qs queryServer) queryQuoteLimit(ctx cosmos.Context, req *types.QueryQuoteL
 	}
 	if err != nil {
 		return nil, fmt.Errorf("bad destination: %w", err)
+	}
+	if !destination.IsChain(toAsset.GetChain()) || !destination.IsCurrentNetwork(toAsset.GetChain()) {
+		return nil, fmt.Errorf("bad destination: address does not match target chain or current network")
 	}
 
 	// get inbound address

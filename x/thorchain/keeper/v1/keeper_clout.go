@@ -32,11 +32,13 @@ func (k KVStore) getSwapperClout(ctx cosmos.Context, key []byte, record *Swapper
 }
 
 func (k KVStore) SetSwapperClout(ctx cosmos.Context, record SwapperClout) error {
+	record.Address = record.Address.Canonical()
 	k.setSwapperClout(ctx, k.GetKey(prefixSwapperClout, record.Address.String()), record)
 	return nil
 }
 
 func (k KVStore) GetSwapperClout(ctx cosmos.Context, addr common.Address) (SwapperClout, error) {
+	addr = addr.Canonical()
 	record := NewSwapperClout(addr)
 	if addr.IsEmpty() {
 		return record, nil

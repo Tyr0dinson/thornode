@@ -245,6 +245,67 @@ func (s *QuotesSuite) TestQuoteLimitStaleState(c *C) {
 	}
 }
 
+func (s *QuotesSuite) TestQuoteLimitDestinationValidation(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	qs := queryServer{mgr: mgr}
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 1)
+
+	pool := NewPool()
+	pool.Asset = common.ZECAsset
+	pool.BalanceAsset = cosmos.NewUint(1_000_000_000_000)
+	pool.BalanceRune = cosmos.NewUint(10_000_000_000_000)
+	pool.LPUnits = cosmos.NewUint(100)
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, common.ZECChain, NewNetworkFee(common.ZECChain, 200, 10)), IsNil)
+
+	p2pkh, tex, p2sh, wrongNetworkTex := zecTxOutAddresses()
+	wrongNetworkP2PKH := common.Address("tmEp4k7dSU8eGj32uJPi2wBSGuiNaVFBLN7")
+	wrongNetworkP2SH := common.Address("t2BeXPVjcVq4XDf7dgW4w3mK6ZjoePxy7Gb")
+	if common.CurrentChainNetwork == common.MockNet {
+		wrongNetworkP2PKH = "t1h3iyd8qGvtJZ3V5CYryi5158h9RMkRhMU"
+		wrongNetworkP2SH = "t3cNKv7UpFVqcmRJrvFCMiuzGj9ywpKtDP5"
+	}
+	thorAddress := GetRandomTHORAddress()
+	for _, tc := range []struct {
+		name        string
+		asset       common.Asset
+		destination common.Address
+		valid       bool
+	}{
+		{"ZEC P2PKH", common.ZECAsset, p2pkh, true},
+		{"ZEC TEX", common.ZECAsset, tex, true},
+		{"ZEC P2SH", common.ZECAsset, p2sh, true},
+		{"wrong chain", common.ZECAsset, GetRandomBTCAddress(), false},
+		{"wrong network P2PKH", common.ZECAsset, wrongNetworkP2PKH, false},
+		{"wrong network TEX", common.ZECAsset, wrongNetworkTex, false},
+		{"wrong network P2SH", common.ZECAsset, wrongNetworkP2SH, false},
+		{"synth THOR destination", common.ZECAsset.GetSyntheticAsset(), thorAddress, true},
+		{"trade THOR destination", common.ZECAsset.GetTradeAsset(), thorAddress, true},
+		{"secured THOR destination", common.ZECAsset.GetSecuredAsset(), thorAddress, true},
+		{"synth rejects L1 destination", common.ZECAsset.GetSyntheticAsset(), p2pkh, false},
+	} {
+		comment := Commentf("case %q, network: %s", tc.name, common.CurrentChainNetwork)
+		quote, err := qs.queryQuoteLimit(ctx, &types.QueryQuoteLimitRequest{
+			FromAsset:   common.RuneNative.String(),
+			ToAsset:     tc.asset.String(),
+			Amount:      "100000000",
+			Destination: tc.destination.String(),
+			TargetOut:   "1000000",
+		})
+		if !tc.valid {
+			c.Assert(err, ErrorMatches, "bad destination: address does not match target chain or current network", comment)
+			c.Check(quote, IsNil, comment)
+			continue
+		}
+		c.Assert(err, IsNil, comment)
+		c.Assert(quote, NotNil, comment)
+		memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), quote.Memo)
+		c.Assert(err, IsNil, comment)
+		c.Check(memo.GetDestination(), Equals, tc.destination, comment)
+		c.Check(memo.GetAsset(), Equals, tc.asset, comment)
+	}
+}
+
 func (s *QuotesSuite) TestQuoteRefundAddressValidation(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	qs := queryServer{mgr: mgr}
