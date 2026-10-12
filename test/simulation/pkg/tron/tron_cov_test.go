@@ -140,7 +140,9 @@ func TestWaitForConfirmedBroadcastRebroadcastErrorsCov(t *testing.T) {
 		{"transport failure", ``, http.StatusInternalServerError, "broadcasttransaction"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			restore := overrideBroadcastObservationTimings(30*time.Millisecond, time.Millisecond)
+			// leave headroom for the first poll and rebroadcast on a loaded runner;
+			// a deadline that expires before any rebroadcast hides the failure text
+			restore := overrideBroadcastObservationTimings(500*time.Millisecond, time.Millisecond)
 			defer restore()
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
