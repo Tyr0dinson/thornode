@@ -123,8 +123,9 @@ func (m *frostCombineSidecarCov) FrostSignCombine(req FrostSidecarCombineReq) (F
 }
 
 // frostRouterCov wires several in-process coordinators together: everything a
-// coordinator broadcasts is delivered to the addressed peers' msgChan tagged
-// with the sender's peer ID, exactly like the p2p layer does.
+// coordinator broadcasts is delivered to the addressed peers' inbox channel
+// for its message type, tagged with the sender's peer ID, exactly like the p2p
+// layer does.
 type frostRouterCov struct {
 	coords  []*FrostSignCoordinator
 	peerIDs []peer.ID
@@ -132,8 +133,8 @@ type frostRouterCov struct {
 	wg      sync.WaitGroup
 	// mutate, when non-nil, may rewrite or drop (return nil) a delivery.
 	mutate func(from int, msg *messages.BroadcastMsgChan) *messages.BroadcastMsgChan
-	// inject, when non-nil, returns extra frames delivered to `to` ahead of
-	// each real frame from `from`.
+	// inject, when non-nil, returns extra frames delivered to `to` on the same
+	// topic ahead of each real frame from `from`.
 	inject func(from, to int, msg *messages.BroadcastMsgChan) []*p2p.Message
 }
 
@@ -153,7 +154,7 @@ func newFrostRouterCov(t *testing.T, members []string, msgID, planHash string, s
 		}
 		comm := &p2p.Communication{BroadcastMsgChan: make(chan *messages.BroadcastMsgChan, 256)}
 		r.coords = append(r.coords, NewFrostSignCoordinator(comm, nil, member, msgID, planHash,
-			make(chan *p2p.Message, 1024), timeout, priv))
+			newFrostSignInbox(), timeout, priv))
 	}
 	return r
 }
@@ -183,6 +184,10 @@ func (r *frostRouterCov) start() {
 							if j == from || pid != target {
 								continue
 							}
+							inbox, ok := r.coords[j].inbox.messageChannel(msg.WrappedMessage.MessageType)
+							if !ok {
+								continue
+							}
 							deliveries := []*p2p.Message{}
 							if r.inject != nil {
 								deliveries = append(deliveries, r.inject(from, j, msg)...)
@@ -190,7 +195,7 @@ func (r *frostRouterCov) start() {
 							deliveries = append(deliveries, &p2p.Message{PeerID: r.peerIDs[from], Payload: raw})
 							for _, d := range deliveries {
 								select {
-								case r.coords[j].msgChan <- d:
+								case inbox <- d:
 								case <-r.done:
 									return
 								}
@@ -294,14 +299,11 @@ func TestFrostExecuteCovStrictRejectsUnsignedPeerTraffic(t *testing.T) {
 		if from != 2 {
 			return msg
 		}
-		var generic map[string]json.RawMessage
-		if err := json.Unmarshal(msg.WrappedMessage.Payload, &generic); err != nil {
-			return msg
-		}
-		delete(generic, "signature")
-		delete(generic, "target_signature")
-		delete(generic, "attester_signature")
-		stripped, err := json.Marshal(generic)
+		stripped, err := editFrostPayloadCov(msg.WrappedMessage, func(m map[string]json.RawMessage) {
+			delete(m, "signature")
+			delete(m, "target_signature")
+			delete(m, "attester_signature")
+		})
 		if err != nil {
 			return msg
 		}
@@ -415,16 +417,16 @@ func TestFrostExecuteCovEquivocatingPreprocessAborts(t *testing.T) {
 		return p
 	}
 
-	msgChan := make(chan *p2p.Message, 16)
+	inbox := newFrostSignInbox()
 	peerIDs, err := conversion.GetPeerIDsFromPubKeys(members)
 	if err != nil {
 		t.Fatal(err)
 	}
 	coord := NewFrostSignCoordinator(&p2p.Communication{BroadcastMsgChan: make(chan *messages.BroadcastMsgChan, 64)},
-		newFrostCombineSidecarCov("aa", "cc"), members[0], msgID, testExpectedPlanHash, msgChan, 2*time.Second, frostPrivKeyCov(t, 0))
+		newFrostCombineSidecarCov("aa", "cc"), members[0], msgID, testExpectedPlanHash, inbox, 2*time.Second, frostPrivKeyCov(t, 0))
 	// two different validly signed preprocess payloads from the same sender
-	enqueueKeySignMessage(t, msgChan, messages.TSSFrostPreprocessMsg, msgID, remote, signedPreprocess("01"))
-	enqueueKeySignMessage(t, msgChan, messages.TSSFrostPreprocessMsg, msgID, remote, signedPreprocess("02"))
+	enqueueKeySignMessage(t, inbox, messages.TSSFrostPreprocessMsg, msgID, remote, signedPreprocess("01"))
+	enqueueKeySignMessage(t, inbox, messages.TSSFrostPreprocessMsg, msgID, remote, signedPreprocess("02"))
 
 	resp := coord.Execute(frostThreeMemberReqCov(members), members, peerIDs)
 	if resp.Status != tcommon.Fail || resp.Blame.FailReason != frostEquivocationFailReason {
@@ -445,7 +447,7 @@ func TestFrostExecuteCovValidationFailures(t *testing.T) {
 	base := frostThreeMemberReqCov(members)
 	newCoord := func(local, msgID string, sidecar FrostSidecarClient) *FrostSignCoordinator {
 		return NewFrostSignCoordinator(&p2p.Communication{BroadcastMsgChan: make(chan *messages.BroadcastMsgChan, 64)},
-			sidecar, local, msgID, testExpectedPlanHash, make(chan *p2p.Message, 4), time.Second, nil)
+			sidecar, local, msgID, testExpectedPlanHash, newFrostSignInbox(), time.Second, nil)
 	}
 	sidecar := newFrostCombineSidecarCov("aa", "cc")
 
@@ -503,7 +505,7 @@ func TestFrostExecuteCovCombineResultValidation(t *testing.T) {
 				prepareResp: FrostSidecarPrepareResp{SessionID: "s", Preprocess: "aa", SelectedInputs: selected},
 				partialResp: FrostSidecarPartialResp{SignatureShare: "cc"},
 				combineResp: combine,
-			}, members[0], testHashOf('6'), planHash, make(chan *p2p.Message, 4), time.Second, frostPrivKeyCov(t, 0))
+			}, members[0], testHashOf('6'), planHash, newFrostSignInbox(), time.Second, frostPrivKeyCov(t, 0))
 		return coord.Execute(frostThreeMemberReqCov(members), members, peerIDs)
 	}
 	selected := []FrostSpentOutputRef{{TxHash: testHashOf('c'), OutputIndex: 1, KeyImage: testHashOf('d')}}
@@ -990,6 +992,29 @@ func TestFrostBroadcastResultCov(t *testing.T) {
 	}
 }
 
+// editFrostPayloadCov rewrites the JSON fields of a round payload. Keysign
+// verification frames are batches, so the edit applies to every entry.
+func editFrostPayloadCov(w messages.WrappedMessage, edit func(map[string]json.RawMessage)) ([]byte, error) {
+	if w.MessageType != messages.TSSFrostVerifyMsg {
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(w.Payload, &fields); err != nil {
+			return nil, err
+		}
+		edit(fields)
+		return json.Marshal(fields)
+	}
+	var batch struct {
+		Verifications []map[string]json.RawMessage `json:"verifications"`
+	}
+	if err := json.Unmarshal(w.Payload, &batch); err != nil {
+		return nil, err
+	}
+	for _, entry := range batch.Verifications {
+		edit(entry)
+	}
+	return json.Marshal(batch)
+}
+
 // junkFramesCov derives malformed, spoofed and unauthorized variants of a real
 // round frame. Every variant must be ignored by the receiver.
 func junkFramesCov(t *testing.T, members []string, peerIDs []peer.ID, from, to int, msg *messages.BroadcastMsgChan) []*p2p.Message {
@@ -1018,17 +1043,16 @@ func junkFramesCov(t *testing.T, members []string, peerIDs []peer.ID, from, to i
 	broken.Payload = []byte("{")
 	out = append(out, &p2p.Message{PeerID: sender, Payload: wrap(broken)})
 
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(msg.WrappedMessage.Payload, &fields); err != nil {
+	signed := false
+	if _, err := editFrostPayloadCov(msg.WrappedMessage, func(m map[string]json.RawMessage) {
+		_, hasSignature := m["signature"]
+		_, hasAttesterSignature := m["attester_signature"]
+		signed = signed || hasSignature || hasAttesterSignature
+	}); err != nil {
 		t.Fatal(err)
 	}
 	variant := func(edit func(map[string]json.RawMessage)) {
-		cp := make(map[string]json.RawMessage, len(fields))
-		for k, v := range fields {
-			cp[k] = v
-		}
-		edit(cp)
-		inner, err := json.Marshal(cp)
+		inner, err := editFrostPayloadCov(msg.WrappedMessage, edit)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1050,13 +1074,13 @@ func junkFramesCov(t *testing.T, members []string, peerIDs []peer.ID, from, to i
 			m["preprocess_hex"] = str(" ")
 			m["share_hex"] = str(" ")
 		})
-		if _, signed := fields["signature"]; signed {
+		if signed {
 			variant(func(m map[string]json.RawMessage) { delete(m, "signature") })
 		}
 	case messages.TSSFrostVerifyMsg:
 		variant(func(m map[string]json.RawMessage) { m["round"] = str("bogus-round") })
 		variant(func(m map[string]json.RawMessage) { m["payload_hash"] = str("zz") })
-		if _, signed := fields["attester_signature"]; signed {
+		if signed {
 			variant(func(m map[string]json.RawMessage) { delete(m, "attester_signature") })
 		}
 	}
@@ -1174,7 +1198,7 @@ func TestNormalizeBlameForResultCov(t *testing.T) {
 
 func TestFrostWaitForResultCovQuorumValidation(t *testing.T) {
 	ensureBech32Prefix()
-	c := newTestFrostSignCoordinator(testPubKeys[0], "m", make(chan *p2p.Message, 1), 20*time.Millisecond)
+	c := newTestFrostSignCoordinator(testPubKeys[0], "m", newFrostSignInbox(), 20*time.Millisecond)
 	if _, err := c.WaitForResult([]string{"a", "A"}, 1, time.Millisecond); err == nil {
 		t.Fatal("duplicate participants accepted")
 	}
