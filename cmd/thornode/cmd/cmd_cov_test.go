@@ -58,7 +58,9 @@ func runPubKeyCmdCov(c *C, stdin string, args ...string) (string, error) {
 	cmd.SetOut(out)
 	cmd.SetErr(io.Discard)
 	cmd.SetIn(strings.NewReader(stdin))
-	cmd.SetArgs(args)
+	// a non-nil slice: cobra falls back to os.Args for nil, which picks up the
+	// test binary's own flags (e.g. -check.v)
+	cmd.SetArgs(append([]string{}, args...))
 	err := cmd.ExecuteContext(cmd.Context())
 	return out.String(), err
 }

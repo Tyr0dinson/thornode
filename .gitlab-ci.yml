@@ -431,6 +431,8 @@ unit-tests:
   stage: test
   needs: []
   coverage: /total:\s+\(statements\)\s+(\d+.\d+\%)/
+  variables:
+    PKGS: jq # test/regression/cmd OpCheck tests shell out to jq; without it they skip
   before_script:
     - !reference [.pkg-install, before_script]
     - !reference [.go-private-auth, before_script]
