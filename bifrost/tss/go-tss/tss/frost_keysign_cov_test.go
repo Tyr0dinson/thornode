@@ -1016,8 +1016,9 @@ func editFrostPayloadCov(w messages.WrappedMessage, edit func(map[string]json.Ra
 }
 
 // junkFramesCov derives malformed, spoofed and unauthorized variants of a real
-// round frame. Every variant must be ignored by the receiver.
-func junkFramesCov(t *testing.T, members []string, peerIDs []peer.ID, from, to int, msg *messages.BroadcastMsgChan) []*p2p.Message {
+// round frame. Every variant must be ignored by the receiver. Strict senders
+// sign their payloads and echoes, so only they get signature-stripped variants.
+func junkFramesCov(t *testing.T, members []string, peerIDs []peer.ID, from, to int, strict bool, msg *messages.BroadcastMsgChan) []*p2p.Message {
 	t.Helper()
 	outsider, err := conversion.GetPeerIDFromPubKey(testPubKeys[3])
 	if err != nil {
@@ -1043,14 +1044,6 @@ func junkFramesCov(t *testing.T, members []string, peerIDs []peer.ID, from, to i
 	broken.Payload = []byte("{")
 	out = append(out, &p2p.Message{PeerID: sender, Payload: wrap(broken)})
 
-	signed := false
-	if _, err := editFrostPayloadCov(msg.WrappedMessage, func(m map[string]json.RawMessage) {
-		_, hasSignature := m["signature"]
-		_, hasAttesterSignature := m["attester_signature"]
-		signed = signed || hasSignature || hasAttesterSignature
-	}); err != nil {
-		t.Fatal(err)
-	}
 	variant := func(edit func(map[string]json.RawMessage)) {
 		inner, err := editFrostPayloadCov(msg.WrappedMessage, edit)
 		if err != nil {
@@ -1074,13 +1067,13 @@ func junkFramesCov(t *testing.T, members []string, peerIDs []peer.ID, from, to i
 			m["preprocess_hex"] = str(" ")
 			m["share_hex"] = str(" ")
 		})
-		if signed {
+		if strict {
 			variant(func(m map[string]json.RawMessage) { delete(m, "signature") })
 		}
 	case messages.TSSFrostVerifyMsg:
 		variant(func(m map[string]json.RawMessage) { m["round"] = str("bogus-round") })
 		variant(func(m map[string]json.RawMessage) { m["payload_hash"] = str("zz") })
-		if signed {
+		if strict {
 			variant(func(m map[string]json.RawMessage) { delete(m, "attester_signature") })
 		}
 	}
@@ -1099,7 +1092,7 @@ func TestFrostExecuteCovIgnoresJunkFrames(t *testing.T) {
 			coord.sidecar = newFrostCombineSidecarCov("ab0"+string(rune('0'+i)), "cd0"+string(rune('0'+i)))
 		}
 		r.inject = func(from, to int, msg *messages.BroadcastMsgChan) []*p2p.Message {
-			return junkFramesCov(t, members, r.peerIDs, from, to, msg)
+			return junkFramesCov(t, members, r.peerIDs, from, to, strict, msg)
 		}
 		r.start()
 		results := r.executeAll(frostThreeMemberReqCov(members), members)
