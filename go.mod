@@ -263,8 +263,6 @@ require (
 	cloud.google.com/go/iam v1.11.0 // indirect
 	cloud.google.com/go/storage v1.62.1 // indirect
 	cosmossdk.io/depinject v1.2.1 // indirect
-	cosmossdk.io/log v1.4.0
-	cosmossdk.io/store v1.1.0
 	filippo.io/edwards25519 v1.2.0
 	github.com/99designs/go-keychain v0.0.0-20191008050251-8e49817e8af4 // indirect
 	github.com/BurntSushi/toml v1.6.0 // indirect
