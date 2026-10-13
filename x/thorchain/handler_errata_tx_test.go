@@ -907,9 +907,11 @@ func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx_BouncedNotCredited(c *C
 
 	ctx = ctx.WithEventManager(cosmos.NewEventManager())
 	er := &common.ErrataTx{Id: txID, Chain: common.ETHChain}
-	c.Assert(processErrataOutboundTx(ctx, k, mgr.EventMgr(), er), IsNil)
+	outcome, err := processErrataOutboundTx(ctx, k, mgr.EventMgr(), er)
+	c.Assert(err, IsNil)
+	c.Check(outcome, Equals, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED)
 
-	vault, err := k.GetVault(ctx, pubKey)
+	vault, err = k.GetVault(ctx, pubKey)
 	c.Assert(err, IsNil)
 	c.Check(vault.GetCoin(common.ETHAsset).Amount.Uint64(), Equals, uint64(500))
 	voter, err = k.GetObservedTxOutVoter(ctx, txID)

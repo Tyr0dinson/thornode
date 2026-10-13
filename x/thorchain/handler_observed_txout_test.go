@@ -1052,7 +1052,8 @@ func newBouncedOutboundFixture(c *C, activeNodes int) *bouncedOutboundFixture {
 // Reverted.
 func (f *bouncedOutboundFixture) errata(c *C) {
 	er := &common.ErrataTx{Id: f.tx.ID, Chain: f.tx.Chain}
-	c.Assert(processErrataOutboundTx(f.ctx, f.keeper, f.mgr.EventMgr(), er), IsNil)
+	_, err := processErrataOutboundTx(f.ctx, f.keeper, f.mgr.EventMgr(), er)
+	c.Assert(err, IsNil)
 	c.Check(f.keeper.voter.Reverted, Equals, true)
 }
 
