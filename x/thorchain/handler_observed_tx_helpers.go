@@ -3733,10 +3733,18 @@ func rollbackMempoolSwapCached(ctx cosmos.Context, keeper keeper.Keeper, mgr Man
 				"pool", sourceAsset.GetLayer1Asset(),
 				"asset_returned", action.Coin.Amount,
 				"asset_removed", eventAssetAmount)
+			// Report both movements: every action returns its escrowed output,
+			// while the phantom credit is removed only once.
 			emitPoolBalanceChangedEvent(ctx,
-				NewPoolMod(sourceAsset.GetLayer1Asset(), cosmos.ZeroUint(), false, eventAssetAmount, false),
+				NewPoolMod(sourceAsset.GetLayer1Asset(), cosmos.ZeroUint(), false, action.Coin.Amount, true),
 				"mempool swap rollback",
 				mgr)
+			if !eventAssetAmount.IsZero() {
+				emitPoolBalanceChangedEvent(ctx,
+					NewPoolMod(sourceAsset.GetLayer1Asset(), cosmos.ZeroUint(), false, eventAssetAmount, false),
+					"mempool swap rollback",
+					mgr)
+			}
 			continue
 		}
 

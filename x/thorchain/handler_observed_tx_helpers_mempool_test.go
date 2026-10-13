@@ -1652,13 +1652,22 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestSecuredTargetAdvQueuePartialR
 }
 
 func (s *HandlerObservedTxHelpersMempoolSuite) TestSameUnderlyingSecuredTargetRollbackUnwindsWithoutSwap(c *C) {
+	for _, fullyStaged := range []bool{false, true} {
+		s.checkSameUnderlyingSecuredTargetRollback(c, fullyStaged)
+	}
+}
+
+// checkSameUnderlyingSecuredTargetRollback rolls back a BTC.BTC -> BTC-BTC
+// swap either mid-stream (output still in queue state) or after the stream
+// completed and staged its escrowed output.
+func (s *HandlerObservedTxHelpersMempoolSuite) checkSameUnderlyingSecuredTargetRollback(c *C, fullyStaged bool) {
+	label := Commentf("fullyStaged=%t", fullyStaged)
 	ctx, mgr := setupAdvancedMempoolManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
 	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), int64(AdvSwapQueueModeEnabled))
 	mgr.Keeper().SetMimir(ctx, constants.AdvSwapQueueRapidSwapMax.String(), 1)
 	mgr.Keeper().SetMimir(ctx, "DollarsPerRune", 5_00000000)
 
-	// This test checks the partial advanced-queue case, before any staged outbound exists.
 	sourcePool := NewPool()
 	sourcePool.Asset = common.BTCAsset
 	sourcePool.BalanceRune = cosmos.NewUint(1000 * common.One)
@@ -1713,6 +1722,9 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestSameUnderlyingSecuredTargetRo
 	c.Assert(queuedSwap.State, NotNil)
 
 	queuedSwap.State.Quantity = 2
+	if fullyStaged {
+		queuedSwap.State.Quantity = 1
+	}
 	queuedSwap.State.Interval = 1
 	queuedSwap.State.Deposit = queuedSwap.Tx.Coins[0].Amount
 	queuedSwap.State.In = cosmos.ZeroUint()
@@ -1721,44 +1733,62 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestSameUnderlyingSecuredTargetRo
 	queuedSwap.State.LastHeight = ctx.BlockHeight() - 1
 	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, queuedSwap), IsNil)
 
-	// Run one queue step so the swap has partial output stored in queue state.
+	// Run one queue step: half the stream, or all of it.
 	c.Assert(mgr.AdvSwapQueueMgr().EndBlock(ctx, mgr, false), IsNil)
 
-	partialSwap, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, inTxID, 0)
+	stagedItems, err := mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
 	c.Assert(err, IsNil)
-	c.Check(partialSwap.State.Out.GT(cosmos.ZeroUint()), Equals, true, Commentf("partial advanced-queue execution should accumulate emitted output"))
-	// Only the executed slice of the deposit has reached the pool so far, so the
-	// rollback must unwind State.In rather than the full deposit.
-	c.Check(partialSwap.State.In.GT(cosmos.ZeroUint()), Equals, true, Commentf("partial advanced-queue execution should credit part of the deposit"))
-	c.Check(partialSwap.State.In.LT(partialSwap.State.Deposit), Equals, true, Commentf("stream must still be mid-flight for this to be a partial rollback"))
+	var stateIn, stateOut cosmos.Uint
+	if fullyStaged {
+		c.Assert(mgr.Keeper().HasAdvSwapQueueItem(ctx, inTxID, 0), Equals, false, label)
+		c.Assert(stagedItems, HasLen, 1, Commentf("completed stream should stage the escrowed output"))
+		c.Assert(stagedItems[0].TxOutItem.Coin.Asset.Equals(common.BTCAsset), Equals, true, label)
+		stateIn = queuedSwap.State.Deposit
+		stateOut = stagedItems[0].TxOutItem.Coin.Amount
+	} else {
+		var partialSwap MsgSwap
+		partialSwap, err = mgr.Keeper().GetAdvSwapQueueItem(ctx, inTxID, 0)
+		c.Assert(err, IsNil)
+		c.Check(partialSwap.State.Out.GT(cosmos.ZeroUint()), Equals, true, Commentf("partial advanced-queue execution should accumulate emitted output"))
+		// Only the executed slice of the deposit has reached the pool so far, so the
+		// rollback must unwind State.In rather than the full deposit.
+		c.Check(partialSwap.State.In.GT(cosmos.ZeroUint()), Equals, true, Commentf("partial advanced-queue execution should credit part of the deposit"))
+		c.Check(partialSwap.State.In.LT(partialSwap.State.Deposit), Equals, true, Commentf("stream must still be mid-flight for this to be a partial rollback"))
+		c.Check(stagedItems, HasLen, 0, Commentf("partial advanced-queue execution should not stage the secured outbound yet"))
+		stateIn = partialSwap.State.In
+		stateOut = partialSwap.State.Out
+	}
+	c.Assert(stateOut.IsZero(), Equals, false, label)
 
 	poolBeforeRollback, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
 	c.Assert(err, IsNil)
 
-	partialVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	rollbackVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
 	c.Assert(err, IsNil)
 
-	stagedItems, err := mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
-	c.Assert(err, IsNil)
-	c.Check(stagedItems, HasLen, 0, Commentf("partial advanced-queue execution should not stage the secured outbound yet"))
-	pendingAction, err := buildPendingMempoolRollbackAction(ctx, mgr.Keeper(), partialVoter)
-	c.Assert(err, IsNil)
-	c.Assert(pendingAction, NotNil)
-	// Escrow denominates a secured target's output in its underlying asset, so
-	// for a same-underlying swap the recovered output IS the source asset. A
-	// reverse swap would be source-to-source and MsgSwap.ValidateBasic rejects
-	// it, which is why this class unwinds through direct pool accounting.
-	c.Check(pendingAction.Coin.Asset.Equals(common.BTCAsset), Equals, true,
-		Commentf("same-underlying secured output should be recovered as the source asset"))
+	if !fullyStaged {
+		var pendingAction *TxOutItem
+		pendingAction, err = buildPendingMempoolRollbackAction(ctx, mgr.Keeper(), rollbackVoter)
+		c.Assert(err, IsNil)
+		c.Assert(pendingAction, NotNil)
+		// Escrow denominates a secured target's output in its underlying asset, so
+		// for a same-underlying swap the recovered output IS the source asset. A
+		// reverse swap would be source-to-source and MsgSwap.ValidateBasic rejects
+		// it, which is why this class unwinds through direct pool accounting.
+		c.Check(pendingAction.Coin.Asset.Equals(common.BTCAsset), Equals, true,
+			Commentf("same-underlying secured output should be recovered as the source asset"))
+	}
 
-	// Roll back the partial mempool execution.
-	err = rollbackMempoolSwapAtomic(ctx, mgr.Keeper(), mgr, partialVoter)
-	c.Assert(err, IsNil, Commentf("same-asset rollback must not abort on a source-to-source swap"))
+	recorder := &recordingMempoolEventManager{EventManager: mgr.EventMgr()}
+	rollbackMgr := mempoolSwapEventManagerOverride{Manager: mgr, eventMgr: recorder}
+	err = rollbackMempoolSwapAtomic(ctx, mgr.Keeper(), rollbackMgr, rollbackVoter)
+	c.Assert(err, IsNil, Commentf("same-asset rollback must not abort on a source-to-source swap (fullyStaged=%t)", fullyStaged))
 
 	_, err = mgr.Keeper().GetAdvSwapQueueItem(ctx, inTxID, 0)
-	c.Assert(err, NotNil, Commentf("partial rollback should remove the pending advanced-queue swap"))
-	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true, Commentf("partial rollback should release mempool swap capacity"))
-	c.Check(mgr.SecuredAssetManager().BalanceOf(ctx, common.BTCAsset, owner).IsZero(), Equals, true, Commentf("partial rollback should not credit the secured balance"))
+	c.Assert(err, NotNil, Commentf("rollback should remove the pending advanced-queue swap"))
+	c.Check(mgr.Keeper().HasStagedOutbound(ctx, inTxID), Equals, false, label)
+	c.Check(mgr.Keeper().GetMempoolSwapUsageTOR(ctx).IsZero(), Equals, true, Commentf("rollback should release mempool swap capacity"))
+	c.Check(mgr.SecuredAssetManager().BalanceOf(ctx, common.BTCAsset, owner).IsZero(), Equals, true, Commentf("rollback should not credit the secured balance"))
 	_, err = mgr.Keeper().GetSwapQueueItem(ctx, CreateMempoolRollbackTxID(inTxID, 0), 0)
 	c.Assert(err, NotNil, Commentf("same-asset rollback should not queue a reverse swap"))
 
@@ -1769,10 +1799,40 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestSameUnderlyingSecuredTargetRo
 	sourcePoolAfter, err := mgr.Keeper().GetPool(ctx, common.BTCAsset)
 	c.Assert(err, IsNil)
 	c.Check(sourcePoolAfter.BalanceAsset.Equal(sourcePool.BalanceAsset), Equals, true,
-		Commentf("same-asset rollback should restore the source pool asset balance to its pre-swap value: got %s want %s (before rollback %s, state_in %s, state_out %s)",
-			sourcePoolAfter.BalanceAsset, sourcePool.BalanceAsset, poolBeforeRollback.BalanceAsset, partialSwap.State.In, partialSwap.State.Out))
-	c.Check(sourcePoolAfter.BalanceAsset.Equal(common.SafeSub(poolBeforeRollback.BalanceAsset.Add(partialSwap.State.Out), partialSwap.State.In)), Equals, true,
-		Commentf("same-asset rollback should return the escrowed output and deduct only the credited State.In"))
+		Commentf("same-asset rollback should restore the source pool asset balance to its pre-swap value: got %s want %s (before rollback %s, state_in %s, state_out %s, fullyStaged=%t)",
+			sourcePoolAfter.BalanceAsset, sourcePool.BalanceAsset, poolBeforeRollback.BalanceAsset, stateIn, stateOut, fullyStaged))
+	c.Check(sourcePoolAfter.BalanceAsset.Equal(common.SafeSub(poolBeforeRollback.BalanceAsset.Add(stateOut), stateIn)), Equals, true,
+		Commentf("same-asset rollback should return the escrowed output and deduct only the credited State.In (fullyStaged=%t)", fullyStaged))
+
+	// Indexers rebuild depth from events, so the reported movements must sum
+	// to the actual change: +escrowed output, -credited input, plus any
+	// restored speculative fee on the RUNE side.
+	runeIn, runeOut := cosmos.ZeroUint(), cosmos.ZeroUint()
+	assetIn, assetOut := cosmos.ZeroUint(), cosmos.ZeroUint()
+	for _, item := range recorder.items {
+		switch evt := item.(type) {
+		case *types.EventPoolBalanceChanged:
+			c.Assert(evt.PoolChange.Asset.Equals(common.BTCAsset), Equals, true, label)
+			if evt.PoolChange.RuneAdd {
+				runeIn = runeIn.Add(evt.PoolChange.RuneAmt)
+			} else {
+				runeOut = runeOut.Add(evt.PoolChange.RuneAmt)
+			}
+			if evt.PoolChange.AssetAdd {
+				assetIn = assetIn.Add(evt.PoolChange.AssetAmt)
+			} else {
+				assetOut = assetOut.Add(evt.PoolChange.AssetAmt)
+			}
+		case *EventDonate:
+			c.Errorf("same-asset rollback should not donate (fullyStaged=%t)", fullyStaged)
+		}
+	}
+	c.Check(assetIn.String(), Equals, stateOut.String(), Commentf("reported asset returned (fullyStaged=%t)", fullyStaged))
+	c.Check(assetOut.String(), Equals, stateIn.String(), Commentf("reported asset removed (fullyStaged=%t)", fullyStaged))
+	c.Check(poolBeforeRollback.BalanceAsset.Add(assetIn).String(), Equals, sourcePoolAfter.BalanceAsset.Add(assetOut).String(),
+		Commentf("pool events must match the actual pool change (fullyStaged=%t)", fullyStaged))
+	c.Check(poolBeforeRollback.BalanceRune.Add(runeIn).String(), Equals, sourcePoolAfter.BalanceRune.Add(runeOut).String(),
+		Commentf("pool rune events must match the actual pool change (fullyStaged=%t)", fullyStaged))
 }
 
 // TestCompletedPartialMempoolRollbackUsesStagedRemainder verifies the
