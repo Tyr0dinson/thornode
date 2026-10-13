@@ -81,6 +81,7 @@
 
   - [EVM Whitelist Procedure](evm_whitelist_procedure.md)
   - [Upgrade Router](upgrade_router.md)
+  - [Consensus Determinism Replay](test-consensus-determinism.md)
   - [Architecture Decision Records (ADR)](architecture/README.md)
     - [ADR Creation Process](architecture/PROCESS.md)
     - [ADR {ADR-NUMBER}: {TITLE}](architecture/TEMPLATE.md)

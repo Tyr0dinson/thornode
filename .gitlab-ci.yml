@@ -873,6 +873,29 @@ unit-tests-race-bifrost:
   script:
     - make test-race-bifrost
 
+consensus-determinism:
+  tags: !reference [.small-runner, tags]
+  rules: *rules
+  stage: long-test
+  needs:
+    - job: unit-tests
+      optional: true
+      artifacts: false
+  timeout: 25m
+  variables:
+    PKGS: util-linux
+  before_script:
+    - !reference [.pkg-install, before_script]
+    - !reference [.go-private-auth, before_script]
+    - !reference [.stable-mtimes, before_script]
+  script:
+    - mkdir -p test-quality-reports
+    - sh -c 'scripts/test-consensus-determinism.sh > test-quality-reports/consensus-determinism.log 2>&1; rc=$?; cat test-quality-reports/consensus-determinism.log; exit "$rc"'
+  artifacts:
+    when: always
+    paths:
+      - test-quality-reports/consensus-determinism.log
+
 test-regression:
   tags: !reference [.small-runner, tags]
   rules:
