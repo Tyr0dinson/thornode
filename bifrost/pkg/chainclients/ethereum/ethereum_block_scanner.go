@@ -363,6 +363,22 @@ func (e *ETHScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 		MemPool:  false,
 	}
 
+	// Fetched once per block, before reorg handling, and threaded down as the
+	// activation height so each rescanned block resolves its own verdict (not
+	// stored on the scanner: prefetch runs processBlock for several heights
+	// concurrently). A lookup failure fails the block so the scanner retries it
+	// rather than scanning past it with bounce detection off. It has to be
+	// resolved before processReorg, which sends erratas and rewrites the stored
+	// block metas to the new canonical hashes: a failure after that would
+	// discard the replacement observations, and the retry would re-read the
+	// rewritten metas, see no reorg, and never re-observe the replaced blocks.
+	// It also precedes the gas update: each retry would otherwise append the
+	// same block's sample to the gas cache again, collapsing its deviation.
+	bounceFrom, err := e.bounceActivationHeight()
+	if err != nil {
+		return txIn, err
+	}
+
 	// update gas price
 	var priorityFees []*big.Int
 	for _, tx := range block.Transactions() {
@@ -373,20 +389,6 @@ func (e *ETHScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 		priorityFees = append(priorityFees, tipCap)
 	}
 	e.updateGasPrice(block.BaseFee(), priorityFees)
-
-	// Fetched once per block, before reorg handling, and threaded down as the
-	// activation height so each rescanned block resolves its own verdict (not
-	// stored on the scanner: prefetch runs processBlock for several heights
-	// concurrently). A lookup failure fails the block so the scanner retries it
-	// rather than scanning past it with bounce detection off. It has to be
-	// resolved before processReorg, which sends erratas and rewrites the stored
-	// block metas to the new canonical hashes: a failure after that would
-	// discard the replacement observations, and the retry would re-read the
-	// rewritten metas, see no reorg, and never re-observe the replaced blocks.
-	bounceFrom, err := e.bounceActivationHeight()
-	if err != nil {
-		return txIn, err
-	}
 
 	reorgedTxIns, err := e.processReorg(block.Header(), bounceFrom)
 	if err != nil {

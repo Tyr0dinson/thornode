@@ -345,15 +345,23 @@ func (s *BlockScannerTestSuite) TestProcessBlock(c *C) {
 	// a failed FetchTxs at the same height, so the receipt is re-read once
 	// thornode is reachable; scanning on with detection silently off would advance
 	// past it and debit the vault for coins that never left.
+	// Each failed attempt must leave the gas cache untouched: retries would
+	// otherwise append the same block's sample until it fills the cache and the
+	// deviation, and with it the 3x safety margin, drops to zero.
+	gasSamples := len(bs.gasCache)
 	bouncedMimirFails = true
-	_, err = bs.FetchTxs(int64(1), int64(1))
-	c.Assert(err, NotNil)
-	c.Check(strings.Contains(err.Error(), "bounced outbound mimir"), Equals, true)
+	for i := 0; i < 3; i++ {
+		_, err = bs.FetchTxs(int64(1), int64(1))
+		c.Assert(err, NotNil)
+		c.Check(strings.Contains(err.Error(), "bounced outbound mimir"), Equals, true)
+		c.Check(len(bs.gasCache), Equals, gasSamples)
+	}
 	bouncedMimirFails = false
 
 	txIn, err := bs.FetchTxs(int64(1), int64(1))
 	c.Assert(err, IsNil)
 	c.Check(len(txIn.TxArray), Equals, 1)
+	c.Check(len(bs.gasCache), Equals, gasSamples+1)
 
 	// The mimir is looked up once per block, before reorg handling. A reorg sends
 	// erratas and rewrites the stored block metas to the new canonical hashes, so
