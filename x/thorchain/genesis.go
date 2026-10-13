@@ -286,7 +286,7 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 		for keeper.HasAdvSwapQueueItem(ctx, item.Tx.ID, int(item.Index)) {
 			item.Index++
 		}
-		if _, err := queueLegacySwapItem(ctx, keeper, item); err != nil {
+		if _, err := queueLegacySwapItem(ctx, keeper, nil, item); err != nil {
 			panic(err)
 		}
 	}

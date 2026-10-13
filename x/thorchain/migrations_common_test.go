@@ -1045,3 +1045,61 @@ func (s *MigrationCommonSuite) TestDrainLegacySaversAddCreditsOnceWhenRemainingS
 	c.Assert(err, IsNil)
 	c.Check(lp.Units.Equal(units), Equals, true)
 }
+
+func (s *MigrationCommonSuite) TestDrainLegacyPendingStreamKeepsStreaming(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	k.SetMimir(ctx, "L1SlipMinBps", 100)
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	pool.LPUnits = cosmos.NewUint(1000 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	newTx := func() common.Tx {
+		tx := GetRandomTx()
+		tx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(50*common.One)))
+		return tx
+	}
+	legacySwap := func(tx common.Tx, interval uint64) MsgSwap {
+		return *NewMsgSwap(tx, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketSwap, 0, interval, types.SwapVersion_v1, GetRandomBech32Addr())
+	}
+
+	// a stream that asked for automatic sizing and has not run, so has no record
+	streamTx := newTx()
+	stream := legacySwap(streamTx, 1)
+	seedLegacySwapItem(c, ctx, mgr, stream, 0)
+	// and a one-shot next to it
+	oneShotTx := newTx()
+	seedLegacySwapItem(c, ctx, mgr, legacySwap(oneShotTx, 0), 0)
+
+	want, err := newSwapQueueAdv(k).getMaxSwapQuantity(ctx, mgr, common.RuneAsset(), common.BTCAsset, stream)
+	c.Assert(err, IsNil)
+	c.Assert(want > 1, Equals, true, Commentf("max quantity %d", want))
+
+	c.Assert(NewMigrator(mgr).drainLegacySwapQueue(ctx), IsNil)
+
+	got, err := k.GetAdvSwapQueueItem(ctx, streamTx.ID, 0)
+	c.Assert(err, IsNil)
+	c.Check(got.State.Quantity, Equals, want)
+	c.Check(got.State.Interval, Equals, uint64(1))
+	oneShot, err := k.GetAdvSwapQueueItem(ctx, oneShotTx.ID, 0)
+	c.Assert(err, IsNil)
+	c.Check(oneShot.State.Quantity, Equals, uint64(1))
+	c.Check(oneShot.State.Interval, Equals, uint64(0))
+
+	// it streams one sub-swap a block until it has run all of them
+	blocks := uint64(0)
+	for ; blocks < want+2 && k.HasAdvSwapQueueItem(ctx, streamTx.ID, 0); blocks++ {
+		ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+		c.Assert(newSwapQueueAdv(k).EndBlock(ctx, mgr, false), IsNil)
+		if item, getErr := k.GetAdvSwapQueueItem(ctx, streamTx.ID, 0); getErr == nil {
+			c.Check(item.State.Count, Equals, blocks+1)
+		}
+	}
+	c.Check(blocks, Equals, want)
+	c.Check(k.HasAdvSwapQueueItem(ctx, oneShotTx.ID, 0), Equals, false)
+}

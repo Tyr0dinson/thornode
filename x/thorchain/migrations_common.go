@@ -542,7 +542,10 @@ func (m Migrator) Migrate20to21(ctx cosmos.Context) error {
 // keeps its progress in a separate StreamingSwap record; that progress is folded
 // into State and the record is removed. Used by the Migrate20to21 drain and by
 // InitGenesis for legacy items in an older export.
-func queueLegacySwapItem(ctx cosmos.Context, k keeper.Keeper, msg MsgSwap) (MsgSwap, error) {
+//
+// mgr sizes a legacy stream that has not run yet. InitGenesis has no managers
+// and passes nil, which converts such a stream to a single swap.
+func queueLegacySwapItem(ctx cosmos.Context, k keeper.Keeper, mgr Manager, msg MsgSwap) (MsgSwap, error) {
 	// State is a pointer and IsStreaming()/NextSize() dereference it; an item
 	// written by an older binary can decode with a nil State. Normalise first.
 	if msg.State == nil {
@@ -584,6 +587,21 @@ func queueLegacySwapItem(ctx cosmos.Context, k keeper.Keeper, msg MsgSwap) (MsgS
 		// settlement credits that deferred output once (creditLegacySaversAdd).
 		if swp.Out.IsZero() || !isLegacySaversAdd(msg) {
 			k.RemoveStreamingSwap(ctx, msg.Tx.ID)
+		}
+	} else if msg.StreamInterval > 0 && msg.Version == types.SwapVersion_v1 && !msg.IsLimitSwap() && mgr != nil {
+		// A legacy stream that has not run yet has no record: the legacy
+		// handler sized it and wrote the record on its first sub-swap. Size it
+		// as that first sub-swap would have, rather than pinning it to a single
+		// swap of the whole deposit below.
+		maxLength := k.GetConfigInt64(ctx, constants.StreamingSwapMaxLength)
+		if uint64(maxLength) < msg.State.Interval { // nolint:gosec // mirrors the legacy handler
+			msg.State.Interval = uint64(maxLength) // nolint:gosec // mirrors the legacy handler
+		}
+		maxQuantity, err := newSwapQueueAdv(k).getMaxSwapQuantity(ctx, mgr, msg.Tx.Coins[0].Asset, msg.TargetAsset, msg)
+		if err != nil {
+			ctx.Logger().Error("fail to size legacy streaming swap, converting to a single swap", "tx", msg.Tx.ID, "error", err)
+		} else if msg.State.Quantity == 0 || msg.State.Quantity > maxQuantity {
+			msg.State.Quantity = maxQuantity
 		}
 	}
 
@@ -772,7 +790,7 @@ func (m Migrator) drainLegacySwapQueue(ctx sdk.Context) error {
 			continue
 		}
 
-		msg, err := queueLegacySwapItem(ctx, k, msg)
+		msg, err := queueLegacySwapItem(ctx, k, m.mgr, msg)
 		if err != nil {
 			return fmt.Errorf("drain legacy swap queue: %w", err)
 		}
