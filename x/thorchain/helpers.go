@@ -1951,6 +1951,9 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 	if err != nil {
 		return err
 	}
+	if err := creditLegacySaversAdd(ctx, mgr, msg); err != nil {
+		return err
+	}
 
 	// Schedule outbound for what was already swapped whenever settlement is the
 	// place materializing the final outbound. The advanced swap queue skips

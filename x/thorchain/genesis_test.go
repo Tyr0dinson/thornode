@@ -514,3 +514,33 @@ func (GenesisTestSuite) TestGenesisImportsLegacySwapQueueItems(c *C) {
 	c.Check(legacyIter.Valid(), Equals, false)
 	legacyIter.Close()
 }
+
+// A legacy streaming savers add in an older export still credits the output it
+// swapped before the export once the imported item settles.
+func (GenesisTestSuite) TestGenesisImportsLegacySaversAddDeferredOutput(c *C) {
+	SetupConfigForTest()
+	srcCtx, srcMgr := setupManagerForTest(c)
+	accumulated := cosmos.NewUint(99 * common.One / 100)
+	tx, synth := seedLegacySaversAdd(c, srcCtx, srcMgr, accumulated)
+	exported := ExportGenesis(srcCtx, srcMgr.Keeper())
+	c.Assert(exported.SwapQueueItems, HasLen, 1)
+	c.Assert(ValidateGenesis(exported), IsNil)
+
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	InitGenesis(ctx, k, exported)
+	held := common.NewCoin(synth, cosmos.NewUint(10*common.One).Add(accumulated))
+	c.Assert(k.MintToModule(ctx, ModuleName, held), IsNil)
+	c.Assert(k.SendFromModuleToModule(ctx, ModuleName, AsgardName, common.NewCoins(held)), IsNil)
+
+	migrated, err := k.GetAdvSwapQueueItem(ctx, tx.ID, 0)
+	c.Assert(err, IsNil)
+	c.Check(migrated.Version, Equals, types.SwapVersion_v2)
+	c.Check(k.StreamingSwapExists(ctx, tx.ID), Equals, true)
+	c.Assert(settleSwap(ctx, mgr, migrated, "remaining sub-swaps failed"), IsNil)
+
+	lp, err := k.GetLiquidityProvider(ctx, synth, tx.FromAddress)
+	c.Assert(err, IsNil)
+	c.Check(lp.AssetDepositValue.Equal(accumulated), Equals, true, Commentf("deposit value %s", lp.AssetDepositValue))
+	c.Check(k.StreamingSwapExists(ctx, tx.ID), Equals, false)
+}

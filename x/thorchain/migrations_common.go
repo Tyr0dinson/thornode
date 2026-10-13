@@ -577,9 +577,14 @@ func queueLegacySwapItem(ctx cosmos.Context, k keeper.Keeper, msg MsgSwap) (MsgS
 		msg.State.Out = swp.Out
 		msg.State.FailedSwaps = swp.FailedSwaps
 		msg.State.FailedSwapReasons = swp.FailedSwapReasons
-		// The queue item is now the sole source of truth. An orphaned record
-		// breaks the streaming_swaps invariant ("swap not found for stream").
-		k.RemoveStreamingSwap(ctx, msg.Tx.ID)
+		// The queue item is now the sole source of truth, except for a savers
+		// add with output already swapped: the legacy handler deferred the add
+		// to the last sub-swap and credited swp.Out then, while the advanced
+		// queue credits each sub-swap's output as it runs. Keep the record so
+		// settlement credits that deferred output once (creditLegacySaversAdd).
+		if swp.Out.IsZero() || !isLegacySaversAdd(msg) {
+			k.RemoveStreamingSwap(ctx, msg.Tx.ID)
+		}
 	}
 
 	// A legacy item that never streamed is a one-shot. Pin it: Quantity == 0
@@ -612,6 +617,76 @@ func queueLegacySwapItem(ctx cosmos.Context, k keeper.Keeper, msg MsgSwap) (MsgS
 		}
 	}
 	return msg, nil
+}
+
+// isLegacySaversAdd reports whether a legacy swap feeds a savers add. It reads
+// only the memo's type, the part a full parse dispatches on, so it touches no
+// store: settlement also runs inside limit swap cancellation transactions.
+func isLegacySaversAdd(msg MsgSwap) bool {
+	txType, err := StringToTxType(strings.Split(strings.Split(msg.Tx.Memo, "|")[0], ":")[0])
+	return err == nil && txType == TxAdd
+}
+
+// creditLegacySaversAdd credits the output a legacy streaming savers add
+// swapped before Migrate20to21, which queueLegacySwapItem left in the item's
+// StreamingSwap record. The legacy handler made this add on the stream's last
+// sub-swap; settlement is where the advanced queue finishes the stream, and
+// removing the record makes the credit happen once. If the add fails, the
+// output goes through the same cleanup as an output that cannot be paid out.
+func creditLegacySaversAdd(ctx cosmos.Context, mgr Manager, msg MsgSwap) error {
+	k := mgr.Keeper()
+	if !isLegacySaversAdd(msg) || !k.StreamingSwapExists(ctx, msg.Tx.ID) {
+		return nil
+	}
+	swp, err := k.GetStreamingSwap(ctx, msg.Tx.ID)
+	if err != nil {
+		return fmt.Errorf("get streaming swap %s: %w", msg.Tx.ID, err)
+	}
+	k.RemoveStreamingSwap(ctx, msg.Tx.ID)
+	if swp.Out.IsZero() {
+		return nil
+	}
+
+	asset := msg.TargetAsset
+	addErr := func() error {
+		mem, err := ParseMemoWithTHORNames(ctx, k, msg.Tx.Memo)
+		if err != nil {
+			return err
+		}
+		m, ok := mem.(AddLiquidityMemo)
+		if !ok {
+			return fmt.Errorf("fail to cast add liquidity memo")
+		}
+		m.Asset = fuzzyAssetMatch(ctx, k, m.Asset)
+		asset = m.Asset
+		tx := msg.Tx
+		tx.Coins = common.NewCoins(common.NewCoin(m.Asset, swp.Out))
+		addMsg, err := getMsgAddLiquidityFromMemo(ctx, m, ObservedTx{Tx: tx}, msg.Signer)
+		if err != nil {
+			return err
+		}
+		cacheCtx, commit := ctx.CacheContext()
+		if _, err := NewAddLiquidityHandler(mgr).Run(cacheCtx, addMsg); err != nil {
+			return err
+		}
+		commit()
+		return nil
+	}()
+	if addErr == nil {
+		return nil
+	}
+
+	ctx.Logger().Error("fail to credit legacy savers add", "tx", msg.Tx.ID, "error", addErr)
+	toi := TxOutItem{
+		Chain:     asset.GetChain(),
+		InHash:    msg.Tx.ID,
+		ToAddress: msg.Tx.FromAddress,
+		Coin:      common.NewCoin(asset, swp.Out),
+	}
+	unrefundableCoinCleanup(ctx, mgr, toi, "failed_outbound")
+	reason := fmt.Sprintf("%s; fail to refund (%s): savers add output", addErr, toi.Coin.String())
+	refundTx := common.NewTx(msg.Tx.ID, msg.Tx.FromAddress, msg.Tx.ToAddress, common.NewCoins(toi.Coin), msg.Tx.Gas, msg.Tx.Memo)
+	return mgr.EventMgr().EmitEvent(ctx, NewEventRefund(CodeFailAddOutboundTx, reason, refundTx, common.Fee{}))
 }
 
 // drainLegacySwapQueue moves every remaining legacy ("OG") swap queue item

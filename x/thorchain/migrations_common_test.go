@@ -945,3 +945,103 @@ func (s *MigrationCommonSuite) TestDrainLegacySwapQueue(c *C) {
 	// and the now-redundant record is gone, so the solvency invariant stays sane
 	c.Check(k.StreamingSwapExists(ctx, streamTx.ID), Equals, false)
 }
+
+// seedLegacySaversAdd queues a legacy (v1) streaming savers add part way through
+// its stream: one sub-swap has run, and its synth output sits in the side record
+// waiting for the add the legacy handler made on the last sub-swap.
+func seedLegacySaversAdd(c *C, ctx cosmos.Context, mgr *Mgrs, accumulated cosmos.Uint) (common.Tx, common.Asset) {
+	k := mgr.Keeper()
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceRune = cosmos.NewUint(10000 * common.One)
+	btcPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	btcPool.LPUnits = cosmos.NewUint(100 * common.One)
+	btcPool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, btcPool), IsNil)
+
+	synth := common.BTCAsset.GetSyntheticAsset()
+	saversPool := NewPool()
+	saversPool.Asset = synth
+	saversPool.BalanceAsset = cosmos.NewUint(10 * common.One)
+	saversPool.LPUnits = cosmos.NewUint(10 * common.One)
+	saversPool.Status = PoolAvailable
+	c.Assert(k.SetPool(ctx, saversPool), IsNil)
+	held := common.NewCoin(synth, saversPool.BalanceAsset.Add(accumulated))
+	c.Assert(k.MintToModule(ctx, ModuleName, held), IsNil)
+	c.Assert(k.SendFromModuleToModule(ctx, ModuleName, AsgardName, common.NewCoins(held)), IsNil)
+
+	deposit := cosmos.NewUint(2 * common.One)
+	tx := common.NewTx(GetRandomTxHash(), GetRandomBTCAddress(), GetRandomBTCAddress(),
+		common.NewCoins(common.NewCoin(common.BTCAsset, deposit)),
+		common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(10000))}, "+:BTC/BTC")
+	legacy := NewMsgSwap(tx, synth, common.NoopAddress, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketSwap, 0, 1, types.SwapVersion_v1, GetRandomBech32Addr())
+	legacy.State = nil
+	seedLegacySwapItem(c, ctx, mgr, *legacy, 0)
+
+	swp := NewStreamingSwap(tx.ID, 2, 1, cosmos.ZeroUint(), deposit)
+	swp.Count = 1
+	swp.In = cosmos.NewUint(common.One)
+	swp.Out = accumulated
+	k.SetStreamingSwap(ctx, swp)
+	return tx, synth
+}
+
+func (s *MigrationCommonSuite) TestDrainLegacySaversAddCreditsDeferredOutput(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	accumulated := cosmos.NewUint(99 * common.One / 100)
+	tx, synth := seedLegacySaversAdd(c, ctx, mgr, accumulated)
+
+	c.Assert(NewMigrator(mgr).drainLegacySwapQueue(ctx), IsNil)
+
+	// the record now carries only the deferred add
+	migrated, err := k.GetAdvSwapQueueItem(ctx, tx.ID, 0)
+	c.Assert(err, IsNil)
+	c.Check(migrated.State.Out.Equal(accumulated), Equals, true)
+	c.Check(k.StreamingSwapExists(ctx, tx.ID), Equals, true)
+
+	// the remaining sub-swap runs and the stream settles
+	for i := 0; i < 5 && k.HasAdvSwapQueueItem(ctx, tx.ID, 0); i++ {
+		ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+		c.Assert(newSwapQueueAdv(k).EndBlock(ctx, mgr, false), IsNil)
+	}
+	c.Assert(k.HasAdvSwapQueueItem(ctx, tx.ID, 0), Equals, false)
+	c.Check(k.StreamingSwapExists(ctx, tx.ID), Equals, false)
+
+	// the saver holds both the pre-migration output and the last sub-swap's
+	saversPool, err := k.GetPool(ctx, synth)
+	c.Assert(err, IsNil)
+	lp, err := k.GetLiquidityProvider(ctx, synth, tx.FromAddress)
+	c.Assert(err, IsNil)
+	added := common.SafeSub(saversPool.BalanceAsset, cosmos.NewUint(10*common.One))
+	c.Check(added.GT(accumulated), Equals, true, Commentf("added %s", added))
+	c.Check(lp.AssetDepositValue.Equal(added), Equals, true, Commentf("deposit value %s, added %s", lp.AssetDepositValue, added))
+}
+
+func (s *MigrationCommonSuite) TestDrainLegacySaversAddCreditsOnceWhenRemainingSwapsFail(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	k := mgr.Keeper()
+	accumulated := cosmos.NewUint(99 * common.One / 100)
+	tx, synth := seedLegacySaversAdd(c, ctx, mgr, accumulated)
+
+	c.Assert(NewMigrator(mgr).drainLegacySwapQueue(ctx), IsNil)
+
+	// the remaining sub-swap fails, so settlement finishes the stream
+	migrated, err := k.GetAdvSwapQueueItem(ctx, tx.ID, 0)
+	c.Assert(err, IsNil)
+	c.Assert(settleSwap(ctx, mgr, migrated, "remaining sub-swaps failed"), IsNil)
+	c.Check(k.HasAdvSwapQueueItem(ctx, tx.ID, 0), Equals, false)
+	c.Check(k.StreamingSwapExists(ctx, tx.ID), Equals, false)
+
+	lp, err := k.GetLiquidityProvider(ctx, synth, tx.FromAddress)
+	c.Assert(err, IsNil)
+	c.Check(lp.Units.IsZero(), Equals, false)
+	c.Check(lp.AssetDepositValue.Equal(accumulated), Equals, true, Commentf("deposit value %s", lp.AssetDepositValue))
+
+	// settling again does not credit the output a second time
+	units := lp.Units
+	c.Assert(settleSwap(ctx, mgr, migrated, "remaining sub-swaps failed"), IsNil)
+	lp, err = k.GetLiquidityProvider(ctx, synth, tx.FromAddress)
+	c.Assert(err, IsNil)
+	c.Check(lp.Units.Equal(units), Equals, true)
+}
