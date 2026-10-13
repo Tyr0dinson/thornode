@@ -110,6 +110,32 @@ func TestMergedRegistry(t *testing.T) {
 	require.Greater(t, r.NumFiles(), 0)
 }
 
+// TestCosmosEVMTypeURLs pins the type URLs registered by third_party/cosmos-evm.
+// The ethsecp256k1 key URLs match the previous cosmos/evm v1.0.0-rc2
+// dependency, so stored account public keys still resolve. The two EIP-712
+// extension options moved from cosmos.evm.types.v1 in v0.6.3; transactions
+// that carry the old URLs no longer decode after the upgrade.
+func TestCosmosEVMTypeURLs(t *testing.T) {
+	registry := MakeEncodingConfig().InterfaceRegistry
+
+	for _, typeURL := range []string{
+		"/cosmos.evm.crypto.v1.ethsecp256k1.PubKey",
+		"/cosmos.evm.crypto.v1.ethsecp256k1.PrivKey",
+		"/cosmos.evm.eip712.v1.ExtensionOptionsWeb3Tx",
+		"/cosmos.evm.ante.v1.ExtensionOptionDynamicFeeTx",
+	} {
+		_, err := registry.Resolve(typeURL)
+		require.NoError(t, err, typeURL)
+	}
+	for _, typeURL := range []string{
+		"/cosmos.evm.types.v1.ExtensionOptionsWeb3Tx",
+		"/cosmos.evm.types.v1.ExtensionOptionDynamicFeeTx",
+	} {
+		_, err := registry.Resolve(typeURL)
+		require.Error(t, err, typeURL)
+	}
+}
+
 func TestProtoAnnotations(t *testing.T) {
 	r, err := proto.MergedRegistry()
 	require.NoError(t, err)
