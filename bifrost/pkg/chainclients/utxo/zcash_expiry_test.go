@@ -180,7 +180,7 @@ func (s *ZcashSignerSuite) TestZECExpiryAcrossSignersAndCheckpointRetry(c *C) {
 	// A fresh signer after restart must use the saved expiry even if the
 	// historical state has since been pruned and the local tip has advanced.
 	restartedSigner := &zecDigestSigner{privateKey: privateKey, fail: true}
-	restarted, err := NewClient(s.keys, s.client.cfg, nil, s.bridge, s.m, nil)
+	restarted, err := NewClient(s.keys, s.client.cfg, nil, s.bridge, s.m)
 	c.Assert(err, IsNil)
 	restarted.rpc = s.client.rpc
 	restarted.bridge = bridge

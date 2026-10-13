@@ -199,7 +199,7 @@ func (s *DogecoinSuite) SetUpTest(c *C) {
 	s.bridge, err = thorclient.NewThorchainBridge(cfg, s.m, s.keys)
 	c.Assert(err, IsNil)
 	s.cfg.RPCHost = s.server.Listener.Addr().String()
-	s.client, err = NewClient(s.keys, s.cfg, nil, s.bridge, s.m, nil)
+	s.client, err = NewClient(s.keys, s.cfg, nil, s.bridge, s.m)
 	s.client.disableVinZeroBatch = true
 	s.client.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
 	c.Assert(err, IsNil)

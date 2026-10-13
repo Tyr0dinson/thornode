@@ -52,6 +52,7 @@ func NewConsolidateActor(asset common.Asset, consolidateCount int64, timeout tim
 		asset:            asset,
 		consolidateCount: consolidateCount,
 	}
+	a.Timeout = timeout
 
 	a.SetLogger(a.Log().With().Str("asset", asset.String()).Logger())
 

@@ -139,7 +139,7 @@ func (s *LitecoinFeeCapSuite) SetUpTest(c *C) {
 	m := GetMetricForTest(c, common.LTCChain)
 	bridge, err := thorclient.NewThorchainBridge(bridgeCfg, m, s.keys)
 	c.Assert(err, IsNil)
-	s.client, err = NewClient(s.keys, cfg, nil, bridge, m, nil)
+	s.client, err = NewClient(s.keys, cfg, nil, bridge, m)
 	c.Assert(err, IsNil)
 	s.db, err = leveldb.Open(storage.NewMemStorage(), nil)
 	c.Assert(err, IsNil)

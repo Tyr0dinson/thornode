@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	dashjson "github.com/dashpay/dashd-go/btcjson"
-	"github.com/dashpay/dashd-go/btcutil"
 )
 
 // GetBestChainLockResult describes DASH's best ChainLock.
@@ -36,34 +35,6 @@ type GetRawMempoolVerboseResult struct {
 
 // MempoolFees holds DASH's nested mempool fee fields.
 type MempoolFees = dashjson.MempoolFees
-
-// FeeRateMilliSatPerVByte computes DASH mempool fees using virtual size.
-func (r GetRawMempoolVerboseResult) FeeRateMilliSatPerVByte() uint64 {
-	if r.VSize <= 0 {
-		return 0
-	}
-
-	// Dash Core 23+ may omit top-level `fee` unless `-deprecatedrpc=fees`
-	// is enabled. Prefer the legacy field when present, otherwise use
-	// `fees.base`.
-	fee := r.Fee
-	// analyze-ignore(float-comparison)
-	if fee <= 0 {
-		fee = r.Fees.Base
-	}
-	// analyze-ignore(float-comparison)
-	if fee <= 0 {
-		return 0
-	}
-
-	amount, err := btcutil.NewAmount(fee)
-	if err != nil {
-		return 0
-	}
-	feeMilliSats := uint64(amount) * 1000
-	vSize := uint64(r.VSize)
-	return (feeMilliSats + vSize/2) / vSize
-}
 
 // QuorumLocked reports DASH's daemon-validated InstantSend or ChainLock finality.
 // Bifrost's observation policy is applied separately by the chain client.

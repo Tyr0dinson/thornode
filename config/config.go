@@ -858,34 +858,9 @@ type BifrostAttestationGossipConfig struct {
 type InstantSendConfiguration struct {
 	// Enabled indicates if InstantSend mempool observation is enabled.
 	Enabled bool `mapstructure:"enabled"`
-	// InboundValueLimitUSD is the exclusive upper limit in whole USD for external
-	// inbound InstantSend observations. Payments at or above it wait for a ChainLocked block.
-	// Zero disables this path for external senders; Asgard senders are exempt from the limit.
-	InboundValueLimitUSD uint64 `mapstructure:"inbound_value_limit_usd"`
-	// MinFeeRateSatPerVByte requires InstantSend txs to meet a fee-rate floor.
-	MinFeeRateSatPerVByte float64 `mapstructure:"min_fee_rate_sat_per_vbyte"`
 	// MaxMempoolAge bounds how long a tx can sit in mempool before falling back to blocks.
+	// Nonpositive values disable the age limit.
 	MaxMempoolAge time.Duration `mapstructure:"max_mempool_age"`
-}
-
-const (
-	// Default minimum fee rate to accept InstantSend mempool txs (sat/vbyte).
-	defaultInstantSendMinFeeRateSatPerVByte = 8.0
-	// Default max mempool age for an InstantSend lock before falling back to blocks.
-	defaultInstantSendMaxMempoolAge = 2 * time.Minute
-)
-
-func (cfg InstantSendConfiguration) WithDefaults() InstantSendConfiguration {
-	if cfg.MaxMempoolAge <= 0 {
-		cfg.MaxMempoolAge = defaultInstantSendMaxMempoolAge
-	}
-	// Preserve 0 as "disabled" (no fee-rate gate). Only negative values are
-	// treated as unset.
-	// analyze-ignore(float-comparison)
-	if cfg.MinFeeRateSatPerVByte < 0 {
-		cfg.MinFeeRateSatPerVByte = defaultInstantSendMinFeeRateSatPerVByte
-	}
-	return cfg
 }
 
 type BifrostChainConfiguration struct {

@@ -786,7 +786,7 @@ func (o *Observer) processTxIns() {
 					operation = "attestHistoricalXMRSpentRefCertificates"
 				} else {
 					rejectObservedTx(txIn.TxArray, errObservedTxInactive)
-					ackTxInPersisted(txIn, errObservedTxInactive)
+					ackTxInPersisted(txIn, nil)
 					continue
 				}
 			}

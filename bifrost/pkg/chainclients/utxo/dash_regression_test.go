@@ -105,8 +105,7 @@ func (s *DashSuite) TestDashLockedBalanceAndInputSelection(c *C) {
 	client, cleanup := newDashClientForRPCServer(c, server.URL)
 	defer cleanup()
 	client.bridge = &dashSelectionBridge{}
-	client.instantSendCfg.Enabled = false
-	client.poolMgr = nil
+	client.instantSendSettings.Enabled = false
 	account, err := client.GetAccount(pubKey, nil)
 	c.Assert(err, IsNil)
 	c.Assert(account.Coins.GetCoin(common.DASHAsset).Amount.Uint64(), Equals, uint64(20000000))
@@ -161,8 +160,8 @@ func (s *DashSuite) TestDashObservationGroupsClaimOnlyDeliveredTransactions(c *C
 		200: {{Tx: second, BlockHeight: 200}},
 		100: {{Tx: strings.ToUpper(first), BlockHeight: 100}},
 	})
-	client.instantSendPendingObservations = groups
-	batch, err := client.getInstantSendLocks(300)
+	client.instantSendQueuedBatches = groups
+	batch, err := client.fetchInstantSendBatch(300)
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 1)
 	c.Assert(batch.TxArray[0].BlockHeight, Equals, int64(100))
@@ -177,7 +176,7 @@ func (s *DashSuite) TestDashObservationGroupsClaimOnlyDeliveredTransactions(c *C
 	accepted, err := client.trackObservedTxs([]*types.TxInItem{{Tx: second}})
 	c.Assert(err, IsNil)
 	c.Assert(accepted, HasLen, 1)
-	batch, err = client.getInstantSendLocks(300)
+	batch, err = client.fetchInstantSendBatch(300)
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, HasLen, 0)
 	// Changing case cannot bypass the persistent marker.
@@ -204,22 +203,22 @@ func (s *DashSuite) TestDashObservationBatchPreservesOrderAndFirstItem(c *C) {
 func (s *DashSuite) TestDashObservationStorageFailureRetainsPendingGroup(c *C) {
 	client, closeStorage := newDashClientForRPCServer(c, "http://localhost:1")
 	item := &types.TxInItem{Tx: strings.Repeat("a", 64), BlockHeight: 100}
-	client.instantSendPendingObservations = instantSendObservationGroups(client.GetChain(), map[int64][]*types.TxInItem{100: {item}})
+	client.instantSendQueuedBatches = instantSendObservationGroups(client.GetChain(), map[int64][]*types.TxInItem{100: {item}})
 	closeStorage()
-	batch, err := client.getInstantSendLocks(200)
+	batch, err := client.fetchInstantSendBatch(200)
 	c.Assert(err, NotNil)
 	c.Assert(batch.TxArray, HasLen, 0)
-	c.Assert(client.instantSendPendingObservations, HasLen, 1)
-	c.Assert(client.instantSendPendingObservations[0].TxArray, DeepEquals, []*types.TxInItem{item})
+	c.Assert(client.instantSendQueuedBatches, HasLen, 1)
+	c.Assert(client.instantSendQueuedBatches[0].TxArray, DeepEquals, []*types.TxInItem{item})
 
 	// Once storage is available, retry the queued group without another RPC scan.
 	healthy, cleanup := newDashClientForRPCServer(c, "http://localhost:1")
 	defer cleanup()
 	client.temporalStorage = healthy.temporalStorage
-	batch, err = client.getInstantSendLocks(200)
+	batch, err = client.fetchInstantSendBatch(200)
 	c.Assert(err, IsNil)
 	c.Assert(batch.TxArray, DeepEquals, []*types.TxInItem{item})
-	c.Assert(client.instantSendPendingObservations, HasLen, 0)
+	c.Assert(client.instantSendQueuedBatches, HasLen, 0)
 }
 
 func (s *DashSuite) TestDashDifferentCyclesDeliveredSeparately(c *C) {
@@ -285,7 +284,7 @@ func (s *DashSuite) TestDashDifferentCyclesDeliveredSeparately(c *C) {
 	client.cfg.ParallelMempoolScan = 2
 	client.asgardCache.Store(&sharedutxo.AsgardCache{Addresses: []common.Address{common.Address(vault)}, FetchedAt: time.Now()})
 	for i, height := range []int64{100, 200} {
-		batch, err := client.getInstantSendLocks(201)
+		batch, err := client.fetchInstantSendBatch(201)
 		c.Assert(err, IsNil)
 		c.Assert(batch.TxArray, HasLen, 1)
 		c.Assert(batch.TxArray[0].Tx, Equals, ids[i])

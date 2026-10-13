@@ -130,8 +130,6 @@ bifrost:
       xmr_consolidation_max_lock_bps: 0
       instant_send: &default-instant-send
         enabled: false
-        inbound_value_limit_usd: 0
-        min_fee_rate_sat_per_vbyte: 0
         max_mempool_age: 0
       evm:
         max_gas_tip_percentage: 0
@@ -599,8 +597,6 @@ bifrost:
       instant_send:
         <<: *default-instant-send
         enabled: true
-        inbound_value_limit_usd: 5000
-        min_fee_rate_sat_per_vbyte: 8
         max_mempool_age: 2m
       block_scanner:
         <<: *default-block-scanner
@@ -616,7 +612,7 @@ bifrost:
       utxo:
         <<: *utxo
         block_cache_count: 576
-        estimated_average_tx_size: 300
+        estimated_average_tx_size: 2000
         max_sats_per_vbyte: 9765
         min_sats_per_vbyte: 2
 

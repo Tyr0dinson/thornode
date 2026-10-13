@@ -456,9 +456,10 @@ func quoteInboundInfo(ctx cosmos.Context, mgr *Mgrs, amount sdkmath.Uint, chain 
 	}
 
 	if chain.Equals(common.DASHChain) {
-		// Dash finality is handled by InstantSend or ChainLocks in Bifrost.
-		// Once observed, there is no additional confirmation wait.
-		return address, router, 0, nil
+		// Quote one block for inbounds that need ChainLock finality. Bifrost's
+		// local InstantSend policy can allow earlier observation, but a quote
+		// cannot guarantee that the eventual transaction will qualify.
+		return address, router, 1, nil
 	}
 
 	// estimate the inbound confirmation count blocks: ceil(amount/coinbase * conf adjustment)

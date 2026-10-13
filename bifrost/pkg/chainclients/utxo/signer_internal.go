@@ -745,6 +745,18 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte, zecReference 
 		}
 	}
 
+	// Check the fee after all caps, using the outputs the transaction will
+	// actually contain. An insufficient budget must fail before keysign rather
+	// than leave the signer retrying signed bytes that cannot satisfy relay policy.
+	changeScript := sourceScript
+	if balance == 0 {
+		changeScript = nil
+	}
+	finalSize := c.estimateTxSize(txes, nullDataScripts, buf, changeScript)
+	if err = c.validateRelayFee(gasAmtSats, finalSize); err != nil {
+		return nil, nil, err
+	}
+
 	gasAmt := btcutil.Amount(gasAmtSats)
 	if err = c.temporalStorage.UpsertTransactionFee(gasAmt.ToBTC(), int32(totalSize)); err != nil {
 		c.log.Err(err).Msg("fail to save gas info to UTXO storage")
@@ -775,6 +787,29 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte, zecReference 
 	}
 
 	return redeemTx, individualAmounts, nil
+}
+
+// validateRelayFee checks that the final fee covers the size-scaled relay minimum.
+// It only vetoes the transaction; it never raises a fee beyond its assigned budget.
+func (c *Client) validateRelayFee(fee uint64, vSize int64) error {
+	switch c.cfg.ChainID {
+	case common.BTCChain, common.LTCChain, common.BCHChain, common.DOGEChain, common.DASHChain:
+		// These chains express the daemon's relay fee per 1,000 bytes/vbytes.
+	default:
+		// ZEC has separate ZIP-317 fee handling.
+		return nil
+	}
+	if vSize <= 0 {
+		return fmt.Errorf("invalid estimated transaction size: %d", vSize)
+	}
+	// Round up without overflowing a uint64 multiplication.
+	minimum := cosmos.NewUint(c.minRelayFeeSats.Load()).
+		MulUint64(uint64(vSize)).AddUint64(999).QuoUint64(1000)
+	if cosmos.NewUint(fee).LT(minimum) {
+		return fmt.Errorf("%s fee %d is below relay minimum %s for %d bytes/vbytes",
+			c.cfg.ChainID, fee, minimum.String(), vSize)
+	}
+	return nil
 }
 
 // applyFeeLimits bounds the estimated gas by maxFeeSats, the min relay fee and the

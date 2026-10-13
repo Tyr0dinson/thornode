@@ -69,8 +69,9 @@ type Client struct {
 	consolidateInProgress stdatomic.Bool
 
 	// ---------- scanner ----------
-	blockScanner    *blockscanner.BlockScanner
-	temporalStorage *utxo.TemporalStorage
+	blockScanner          *blockscanner.BlockScanner
+	temporalStorage       *utxo.TemporalStorage
+	chainLockHeightHealth stdatomic.Pointer[chainLockHeightHealth]
 
 	// ---------- control ----------
 	globalErrataQueue     chan<- types.ErrataBlock
@@ -81,14 +82,15 @@ type Client struct {
 
 	// ---------- thornode state ----------
 	bridge      thorclient.ThorchainBridge
-	poolMgr     thorclient.PoolManager
 	asgardCache stdatomic.Pointer[utxo.AsgardCache]
 
-	// InstantSend state is used by DASH.
-	instantSendCfg config.InstantSendConfiguration
-	// Owned by the single mempool scanner; pending groups are rebuilt after restart.
-	instantSendMempoolCursor       string
-	instantSendPendingObservations []types.TxIn
+	// Effective InstantSend settings, including Mimir overrides.
+	instantSendSettings config.InstantSendConfiguration
+	// Owned by the single mempool scanner; queued batches are rebuilt after restart.
+	instantSendMempoolCursor string
+	instantSendQueuedBatches []types.TxIn
+	// True selects InstantSend on the next call; false selects ordinary outbounds.
+	instantSendScanNext bool
 
 	// ---------- fees / solvency ----------
 	minRelayFeeSats         stdatomic.Uint64
@@ -112,7 +114,6 @@ func NewClient(
 	server *gotss.TssServer,
 	bridge thorclient.ThorchainBridge,
 	m *metrics.Metrics,
-	poolMgr thorclient.PoolManager,
 ) (*Client, error) {
 	// verify the chain is supported
 	supported := map[common.Chain]bool{
@@ -172,8 +173,7 @@ func NewClient(
 		vaultLocks:                make(map[string]*sync.Mutex),
 		stopchan:                  make(chan struct{}),
 		bridge:                    bridge,
-		poolMgr:                   poolMgr,
-		instantSendCfg:            cfg.InstantSend.WithDefaults(),
+		instantSendSettings:       cfg.InstantSend,
 		regexpRemoveTrailingZeros: regexp.MustCompile(`(?:00)+$`),
 	}
 
@@ -226,29 +226,57 @@ func (c *Client) GetChain() common.Chain {
 
 // IsBlockScannerHealthy returns true if the block scanner is healthy.
 func (c *Client) IsBlockScannerHealthy() bool {
-	return c.blockScanner.IsHealthy()
+	if !c.blockScanner.IsHealthy() {
+		return false
+	}
+	if c.cfg.ChainID.Equals(common.DASHChain) {
+		return c.chainLockHeightHealth.Load().isHealthy(time.Now(), c.blockScanner.PreviousHeight())
+	}
+	return true
 }
 
-// GetHeight returns current chain (not scanner) height.
+// GetHeight returns the chain height to scan up to. For Dash this is the
+// ChainLock target, even while the local daemon is still catching up.
 func (c *Client) GetHeight() (int64, error) {
 	if c.cfg.ChainID.Equals(common.DASHChain) {
-		// Dash finality is driven by ChainLocks rather than generic best-block PoW depth.
-		// Use the best chainlocked height so downstream confirmation/finality logic keys off
-		// the latest irreversible Dash tip, not the latest un-finalized block tip.
+		// Slow RPCs must not publish old height data with a new timestamp.
+		checkedAt := time.Now()
 		bestChainLock, err := c.rpc.GetBestChainLock()
 		if err != nil {
 			return 0, err
 		}
-		if !bestChainLock.KnownBlock || bestChainLock.Height < 0 {
-			return 0, fmt.Errorf("best Dash ChainLock block is not available locally")
+		if bestChainLock.Height < 0 {
+			return 0, fmt.Errorf("best Dash ChainLock height is negative")
 		}
-		hash, err := c.rpc.GetBlockHash(bestChainLock.Height)
+		blockHeight, err := c.rpc.GetBlockCount()
 		if err != nil {
 			return 0, err
 		}
-		if !strings.EqualFold(hash, bestChainLock.BlockHash) {
-			return 0, fmt.Errorf("best Dash ChainLock does not match the active chain")
+		if blockHeight < 0 {
+			return 0, fmt.Errorf("best Dash block height is negative")
 		}
+		// During catch-up the target may not even have a known header yet.
+		// getBlock still requires each fetched block to be ChainLocked.
+		if blockHeight >= bestChainLock.Height {
+			if !bestChainLock.KnownBlock {
+				return 0, fmt.Errorf("best Dash ChainLock block is not available locally")
+			}
+			hash, err := c.rpc.GetBlockHash(bestChainLock.Height)
+			if err != nil {
+				return 0, err
+			}
+			if !strings.EqualFold(hash, bestChainLock.BlockHash) {
+				return 0, fmt.Errorf("best Dash ChainLock does not match the active chain")
+			}
+		}
+		// Failed reads or validation leave the previous snapshot to expire.
+		c.chainLockHeightHealth.Store(&chainLockHeightHealth{
+			blockHeight:     blockHeight,
+			chainLockHeight: bestChainLock.Height,
+			checkedAt:       checkedAt,
+		})
+		// Keep the network's ChainLock as the target and lag reference, even when
+		// the daemon cannot serve it yet. Never scan the unfinalized ordinary tip.
 		return bestChainLock.Height, nil
 	}
 	return c.rpc.GetBlockCount()
@@ -580,21 +608,37 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 
 // FetchMemPool retrieves txs from mempool
 func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
-	if c.cfg.ChainID.Equals(common.DASHChain) {
-		// Dash does not use the generic UTXO mempool path. We only surface mempool
-		// transactions that are already InstantSend-locked. Ordinary unconfirmed txs
-		// must wait for the ChainLock-backed block path instead.
-		previousPolicy := c.instantSendCfg
-		c.updateInstantSendCfg()
-		if c.instantSendCfg != previousPolicy || !c.instantSendCfg.Enabled {
-			c.instantSendPendingObservations = nil
-		}
-		if !c.instantSendCfg.Enabled {
-			return types.TxIn{}, nil
-		}
-		return c.getInstantSendLocks(height)
+	if !c.cfg.ChainID.Equals(common.DASHChain) {
+		return c.fetchMemPoolTransactions(height, false)
 	}
 
+	previousSettings := c.instantSendSettings
+	c.refreshInstantSendSettings()
+	if !c.instantSendSettings.Enabled {
+		c.instantSendQueuedBatches = nil
+		c.instantSendScanNext = false
+		return c.fetchMemPoolTransactions(height, true)
+	}
+	if c.instantSendSettings != previousSettings {
+		// Rebuild queued batches using the new observation settings.
+		c.instantSendQueuedBatches = nil
+	}
+
+	// Each batch has one finality flag, so alternate ordinary vault outbounds
+	// and finalized InstantSend observations, starting with outbounds.
+	// Select the next scan before fetching so errors cannot stall either path.
+	if c.instantSendScanNext {
+		c.instantSendScanNext = false
+		return c.fetchInstantSendBatch(height)
+	}
+	c.instantSendScanNext = true
+	return c.fetchMemPoolTransactions(height, true)
+}
+
+// fetchMemPoolTransactions returns non-final observations. Dash restricts this
+// path to vault senders so incoming deposits retain their InstantSend policy.
+// Mempool work markers must not claim the final observation used by block scans.
+func (c *Client) fetchMemPoolTransactions(height int64, onlyAsgardSenders bool) (types.TxIn, error) {
 	hashes, err := c.rpc.GetRawMempool()
 	if err != nil {
 		return types.TxIn{}, fmt.Errorf("fail to get tx hashes from mempool: %w", err)
@@ -680,6 +724,9 @@ func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
 				continue
 			}
 			if txInItem.Coins.IsEmpty() {
+				continue
+			}
+			if onlyAsgardSenders && !c.isAsgardAddress(txInItem.Sender) {
 				continue
 			}
 
@@ -822,6 +869,38 @@ func (c *Client) ReportSolvency(height int64) error {
 
 	if !c.shouldReportSolvency(height) {
 		return nil
+	}
+
+	if c.cfg.ChainID.Equals(common.DASHChain) {
+		// GetHeight permits scanner catch-up. Solvency must independently read
+		// both heights and validate local finality before trusting balances.
+		bestChainLock, err := c.rpc.GetBestChainLock()
+		if err != nil {
+			return fmt.Errorf("fail to get Dash ChainLock for solvency: %w", err)
+		}
+		if bestChainLock.Height < 0 {
+			return fmt.Errorf("best Dash ChainLock height is negative")
+		}
+		blockHeight, err := c.rpc.GetBlockCount()
+		if err != nil {
+			return fmt.Errorf("fail to get Dash block height for solvency: %w", err)
+		}
+		if blockHeight < bestChainLock.Height {
+			return fmt.Errorf("best Dash block height is below the ChainLock height")
+		}
+		if height > bestChainLock.Height {
+			return fmt.Errorf("Dash solvency height is above the ChainLock height")
+		}
+		if !bestChainLock.KnownBlock {
+			return fmt.Errorf("best Dash ChainLock block is not available locally")
+		}
+		hash, err := c.rpc.GetBlockHash(bestChainLock.Height)
+		if err != nil {
+			return fmt.Errorf("fail to get Dash ChainLock block hash for solvency: %w", err)
+		}
+		if !strings.EqualFold(hash, bestChainLock.BlockHash) {
+			return fmt.Errorf("best Dash ChainLock does not match the active chain")
+		}
 	}
 
 	// fetch all asgard vaults

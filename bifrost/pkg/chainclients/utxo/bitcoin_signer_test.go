@@ -156,7 +156,7 @@ func (s *BitcoinSignerSuite) SetUpTest(c *C) {
 	cfg.ChainHost = s.server.Listener.Addr().String()
 	s.bridge, err = thorclient.NewThorchainBridge(cfg, s.m, s.keys)
 	c.Assert(err, IsNil)
-	s.client, err = NewClient(s.keys, s.cfg, nil, s.bridge, s.m, nil)
+	s.client, err = NewClient(s.keys, s.cfg, nil, s.bridge, s.m)
 	c.Assert(err, IsNil)
 	storage := storage.NewMemStorage()
 	db, err := leveldb.Open(storage, nil)
@@ -344,6 +344,7 @@ func (m *keysignFailKeyManager) RemoteSign(msg []byte, algo common.SigningAlgo, 
 // checkpointed once a keysign got past forming its party. A tx whose party
 // never formed exposed no signature and must be rebuilt on the next attempt.
 func (s *BitcoinSignerSuite) TestSignTxCheckpointAfterKeysignFailure(c *C) {
+	s.client.cfg.UTXO.MaxSatsPerVByte = 100
 	addr, err := types2.GetRandomPubKey().GetAddress(common.BTCChain)
 	c.Assert(err, IsNil)
 	inHash := thorchain.GetRandomTxHash()
@@ -400,6 +401,7 @@ func (s *BitcoinSignerSuite) TestSignTxCheckpointAfterKeysignFailure(c *C) {
 }
 
 func (s *BitcoinSignerSuite) TestSignTxWithoutPredefinedMaxGas(c *C) {
+	s.client.cfg.UTXO.MaxSatsPerVByte = 100
 	addr, err := types2.GetRandomPubKey().GetAddress(common.BTCChain)
 	c.Assert(err, IsNil)
 	txOutItem := stypes.TxOutItem{

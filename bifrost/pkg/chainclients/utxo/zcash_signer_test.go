@@ -106,7 +106,7 @@ func (s *ZcashSignerSuite) SetUpTest(c *C) {
 	cfg.ChainHost = s.thorApi.Listener.Addr().String()
 	s.bridge, err = thorclient.NewThorchainBridge(cfg, s.m, s.keys)
 	c.Assert(err, IsNil)
-	s.client, err = NewClient(s.keys, s.cfg, nil, s.bridge, s.m, nil)
+	s.client, err = NewClient(s.keys, s.cfg, nil, s.bridge, s.m)
 	c.Assert(err, IsNil)
 	memStorage := storage.NewMemStorage()
 	db, err := leveldb.Open(memStorage, nil)

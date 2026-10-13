@@ -612,8 +612,10 @@ func (c *Client) getMemoScripts(memo string) ([][]byte, error) {
 		return memoToScripts(memo, bchtxscript.MaxDataCarrierSize, bchtxscript.NullDataScript, bchtxscript.PayToWitnessScript)
 	case common.LTCChain:
 		return memoToScripts(memo, ltctxscript.MaxDataCarrierSize, ltctxscript.NullDataScript, ltctxscript.PayToWitnessScript)
-	case common.BTCChain, common.DASHChain:
+	case common.BTCChain:
 		return memoToScripts(memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, btctxscript.PayToWitnessScript)
+	case common.DASHChain:
+		return memoToScripts(memo, dashtxscript.MaxDataCarrierSize, dashtxscript.NullDataScript, zecutil.PayToPubKeyHashScript)
 	case common.ZECChain:
 		return memoToScripts(memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, zecutil.PayToPubKeyHashScript)
 	default:

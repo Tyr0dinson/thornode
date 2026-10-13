@@ -280,7 +280,6 @@ services:
       BIFROST_CHAINS_DASH_DISABLED: "${BIFROST_CHAINS_DASH_DISABLED:-false}"
       BIFROST_CHAINS_DASH_RPC_HOST: ${BIFROST_CHAINS_DASH_RPC_HOST:-dash1:19898}
       BIFROST_CHAINS_DASH_INSTANT_SEND_ENABLED: "true"
-      BIFROST_CHAINS_DASH_INSTANT_SEND_INBOUND_VALUE_LIMIT_USD: 100
 
       # enable eth
       BIFROST_CHAINS_ETH_DISABLED: "${BIFROST_CHAINS_ETH_DISABLED:-false}"
@@ -764,7 +763,7 @@ services:
       - mocknet
       - mocknet-cluster
     hostname: dash1
-    image: dashpay/dashd:23.1.2
+    image: ${DOCKER_MIRROR:-}dashpay/dashd:23.1.2
     restart: unless-stopped
     volumes:
       - "./mocknet/dash:/mocknet"
@@ -784,7 +783,7 @@ services:
       - mocknet
       - mocknet-cluster
     hostname: dash2
-    image: dashpay/dashd:23.1.2
+    image: ${DOCKER_MIRROR:-}dashpay/dashd:23.1.2
     restart: unless-stopped
     volumes:
       - "./mocknet/dash:/mocknet"
@@ -801,7 +800,7 @@ services:
       - mocknet
       - mocknet-cluster
     hostname: dash3
-    image: dashpay/dashd:23.1.2
+    image: ${DOCKER_MIRROR:-}dashpay/dashd:23.1.2
     restart: unless-stopped
     volumes:
       - "./mocknet/dash:/mocknet"
@@ -818,7 +817,7 @@ services:
       - mocknet
       - mocknet-cluster
     hostname: dash4
-    image: dashpay/dashd:23.1.2
+    image: ${DOCKER_MIRROR:-}dashpay/dashd:23.1.2
     restart: unless-stopped
     volumes:
       - "./mocknet/dash:/mocknet"
@@ -835,7 +834,7 @@ services:
       - mocknet
       - mocknet-cluster
     hostname: dash5
-    image: dashpay/dashd:23.1.2
+    image: ${DOCKER_MIRROR:-}dashpay/dashd:23.1.2
     restart: unless-stopped
     volumes:
       - "./mocknet/dash:/mocknet"

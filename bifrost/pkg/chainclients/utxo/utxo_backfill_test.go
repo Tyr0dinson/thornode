@@ -188,7 +188,7 @@ func (s *CoverageBackfillSuite) SetUpTest(c *C) {
 	s.bridge, err = thorclient.NewThorchainBridge(cfg, s.m, s.keys)
 	c.Assert(err, IsNil)
 	s.cfg.RPCHost = s.server.Listener.Addr().String()
-	s.client, err = NewClient(s.keys, s.cfg, nil, s.bridge, s.m, nil)
+	s.client, err = NewClient(s.keys, s.cfg, nil, s.bridge, s.m)
 	// Check initialization before accessing client fields so a wallet RPC error
 	// is reported instead of being masked by a nil-pointer panic.
 	c.Assert(err, IsNil)
@@ -1194,7 +1194,7 @@ func (s *CoverageBackfillSuite) TestOnObservedTxIn(c *C) {
 func (s *CoverageBackfillSuite) TestNewClientUnsupportedChain(c *C) {
 	cfg := s.cfg
 	cfg.ChainID = common.ETHChain
-	_, err := NewClient(s.keys, cfg, nil, s.bridge, s.m, nil)
+	_, err := NewClient(s.keys, cfg, nil, s.bridge, s.m)
 	c.Assert(err, NotNil)
 	c.Assert(strings.Contains(err.Error(), "unsupported utxo chain"), Equals, true)
 }

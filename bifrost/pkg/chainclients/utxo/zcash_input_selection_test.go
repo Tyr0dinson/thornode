@@ -246,7 +246,7 @@ func (s *ZcashSignerSuite) TestZECConfirmedInputPlanAndCheckpointDigestsSurviveN
 	// A fresh signer can replay the old checkpoint even when the historical
 	// reference query is no longer available and the current input view changed.
 	restartedSigner := &zecDigestSigner{privateKey: fixture.signer.privateKey, fail: true}
-	restarted, err := NewClient(s.keys, s.client.cfg, nil, s.bridge, s.m, nil)
+	restarted, err := NewClient(s.keys, s.client.cfg, nil, s.bridge, s.m)
 	c.Assert(err, IsNil)
 	restarted.rpc = s.client.rpc
 	restarted.bridge = fixture.bridge

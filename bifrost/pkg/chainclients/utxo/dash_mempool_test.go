@@ -1,0 +1,249 @@
+package utxo
+
+import (
+	"encoding/json"
+	"strconv"
+	"strings"
+	"time"
+
+	sharedutxo "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
+	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
+	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
+	"gitlab.com/thorchain/thornode/v3/common"
+	. "gopkg.in/check.v1"
+)
+
+type dashMempoolFixture struct {
+	lockedOutbound, unlockedOutbound, inbound, lowFeeInbound string
+	asgard, user                                             string
+	txs                                                      map[string]map[string]any
+	entries                                                  map[string]map[string]any
+	failOrdinary, failInstantSend, chainLocked               bool
+	ordinaryCalls, instantSendCalls                          int
+}
+
+func newDashMempoolFixture(c *C) (*Client, *dashMempoolFixture, func()) {
+	f := &dashMempoolFixture{
+		lockedOutbound: strings.Repeat("a", 64), unlockedOutbound: strings.Repeat("b", 64),
+		inbound: strings.Repeat("c", 64), lowFeeInbound: strings.Repeat("d", 64),
+		asgard: newDashTestAddress(c, 0x11), user: newDashTestAddress(c, 0x22),
+		txs: make(map[string]map[string]any), entries: make(map[string]map[string]any),
+	}
+	prevVault, prevUser := strings.Repeat("e", 64), strings.Repeat("f", 64)
+	output := func(address string, amount float64) map[string]any {
+		return map[string]any{"n": 0, "value": amount, "scriptPubKey": map[string]any{
+			"hex": newDashP2PKHScriptHex(c, address), "type": "pubkeyhash", "addresses": []string{address},
+		}}
+	}
+	f.txs[prevVault] = map[string]any{"txid": prevVault, "vout": []any{output(f.asgard, 0.10002)}}
+	f.txs[prevUser] = map[string]any{"txid": prevUser, "vout": []any{output(f.user, 0.10002)}}
+	for _, id := range []string{f.lockedOutbound, f.unlockedOutbound, f.inbound, f.lowFeeInbound} {
+		prev, destination, memo := prevVault, f.user, "OUT:"+strings.Repeat("1", 64)
+		if id == f.inbound || id == f.lowFeeInbound {
+			prev, destination, memo = prevUser, f.asgard, "NOOP"
+		}
+		locked := id != f.unlockedOutbound
+		f.txs[id] = map[string]any{
+			"txid": id, "hash": id, "version": 2, "instantlock": locked,
+			"vin": []any{map[string]any{"txid": prev, "vout": 0, "sequence": uint32(4294967295)}},
+			"vout": []any{output(destination, 0.1), map[string]any{"n": 1, "value": 0,
+				"scriptPubKey": map[string]any{"hex": newDashMemoScriptHex(c, memo), "type": "nulldata"}}},
+		}
+		f.entries[id] = dashTestMempoolEntry()
+		f.entries[id]["instantlock"] = strconv.FormatBool(locked)
+	}
+	// Outbound observations do not require the InstantSend age policy.
+	for _, id := range []string{f.lockedOutbound, f.unlockedOutbound, f.lowFeeInbound} {
+		f.entries[id]["fees"] = map[string]any{"base": 0.000002}
+	}
+	f.entries[f.lockedOutbound]["time"] = time.Now().Add(-time.Hour).Unix()
+	blockHash := strings.Repeat("2", 64)
+	cycleHash := strings.Repeat("3", 64)
+	server := newRPCTestServer(c, func(method string, params []json.RawMessage) any {
+		switch method {
+		case "getrawmempool":
+			verbose := false
+			if len(params) > 0 {
+				c.Assert(json.Unmarshal(params[0], &verbose), IsNil)
+			}
+			if verbose {
+				f.instantSendCalls++
+				if f.failInstantSend {
+					return "invalid mempool response"
+				}
+				return f.entries
+			}
+			f.ordinaryCalls++
+			if f.failOrdinary {
+				return "invalid mempool response"
+			}
+			ids := make([]string, 0, len(f.entries))
+			for id := range f.entries {
+				ids = append(ids, id)
+			}
+			return ids
+		case "getrawtransaction":
+			var id string
+			c.Assert(json.Unmarshal(params[0], &id), IsNil)
+			c.Assert(f.txs[id], NotNil)
+			return f.txs[id]
+		case "getislocks":
+			var ids []string
+			c.Assert(json.Unmarshal(params[0], &ids), IsNil)
+			locks := make([]any, 0, len(ids))
+			for _, id := range ids {
+				locks = append(locks, map[string]any{"txid": id, "cycleHash": cycleHash})
+			}
+			return locks
+		case "getblockhash":
+			return blockHash
+		case "getblock":
+			var hash string
+			c.Assert(json.Unmarshal(params[0], &hash), IsNil)
+			if hash == cycleHash {
+				return map[string]any{"hash": hash, "height": 100, "confirmations": 1}
+			}
+			c.Assert(hash, Equals, blockHash)
+			return map[string]any{"hash": hash, "height": 150, "chainlock": f.chainLocked,
+				"tx": []any{f.txs[f.lockedOutbound], f.txs[f.unlockedOutbound]}}
+		default:
+			c.Fatalf("unexpected RPC %s", method)
+			return nil
+		}
+	})
+	client, cleanup := newDashClientForRPCServer(c, server.URL)
+	client.cfg.UTXO.TransactionBatchSize = 10
+	client.cfg.UTXO.MaxMempoolBatches = 1
+	client.asgardCache.Store(&sharedutxo.AsgardCache{
+		Addresses: []common.Address{common.Address(f.asgard)}, FetchedAt: time.Now(),
+	})
+	return client, f, func() { server.Close(); cleanup() }
+}
+
+func (s *DashSuite) TestDashFetchMemPoolOutboundsAndFinalObservations(c *C) {
+	client, f, cleanup := newDashMempoolFixture(c)
+	defer cleanup()
+
+	batch, err := client.FetchMemPool(123)
+	c.Assert(err, IsNil)
+	c.Assert(batch.Chain, Equals, common.DASHChain)
+	c.Assert(batch.MemPool, Equals, true)
+	c.Assert(batch.TxArray, HasLen, 2)
+	seen := make(map[string]bool)
+	for _, item := range batch.TxArray {
+		seen[item.Tx] = true
+		c.Assert(item.Sender, Equals, f.asgard)
+		c.Assert(item.To, Equals, f.user)
+		c.Assert(item.BlockHeight, Equals, int64(123))
+		observed, err := client.temporalStorage.HasObservedTx(item.Tx)
+		c.Assert(err, IsNil)
+		c.Assert(observed, Equals, false) // final block observation is still needed
+	}
+	c.Assert(seen, DeepEquals, map[string]bool{f.lockedOutbound: true, f.unlockedOutbound: true})
+
+	// The ordinary scan neither emits deposits nor suppresses InstantSend.
+	final, err := client.FetchMemPool(123)
+	c.Assert(err, IsNil)
+	c.Assert(final.MemPool, Equals, false)
+	c.Assert(final.TxArray, HasLen, 2)
+	c.Assert(final.TxArray[0].Tx, Equals, f.inbound)
+	c.Assert(final.TxArray[1].Tx, Equals, f.lowFeeInbound)
+	c.Assert(final.TxArray[0].BlockHeight, Equals, int64(100))
+	observed, err := client.temporalStorage.HasObservedTx(f.lowFeeInbound)
+	c.Assert(err, IsNil)
+	c.Assert(observed, Equals, true)
+
+	retry, err := client.FetchMemPool(123)
+	c.Assert(err, IsNil)
+	c.Assert(retry.MemPool, Equals, true)
+	c.Assert(retry.TxArray, HasLen, 0) // non-final mempool deduplication
+
+	// Both outbounds can still be observed once mined in a ChainLocked block.
+	_, err = client.getBlock(150)
+	c.Assert(err, NotNil)
+	f.chainLocked = true
+	block, err := client.getBlock(150)
+	c.Assert(err, IsNil)
+	client.disableVinZeroBatch = true
+	mined, err := client.extractTxs(block)
+	c.Assert(err, IsNil)
+	c.Assert(mined.MemPool, Equals, false)
+	c.Assert(mined.TxArray, HasLen, 2)
+	for _, item := range mined.TxArray {
+		c.Assert(seen[item.Tx], Equals, true)
+		c.Assert(item.BlockHeight, Equals, int64(150))
+	}
+	mined, err = client.extractTxs(block)
+	c.Assert(err, IsNil)
+	c.Assert(mined.TxArray, HasLen, 0)
+}
+
+type dashMempoolPolicyBridge struct {
+	thorclient.ThorchainBridge
+	enabled int64
+}
+
+func (b *dashMempoolPolicyBridge) GetMimir(key string) (int64, error) {
+	if key == DashInstantSendEnabledMimirKey {
+		return b.enabled, nil
+	}
+	return -1, nil
+}
+
+func (s *DashSuite) TestDashFetchMemPoolWithInstantSendDisabled(c *C) {
+	client, f, cleanup := newDashMempoolFixture(c)
+	defer cleanup()
+	bridge := &dashMempoolPolicyBridge{enabled: 0}
+	client.bridge = bridge
+	// A disabled policy must discard any previously prepared final batches.
+	client.instantSendQueuedBatches = instantSendObservationGroups(common.DASHChain,
+		map[int64][]*types.TxInItem{100: {{Tx: "stale-policy-batch"}}})
+	for i := 0; i < 2; i++ {
+		batch, err := client.FetchMemPool(123)
+		c.Assert(err, IsNil)
+		c.Assert(batch.MemPool, Equals, true)
+		if i == 0 {
+			c.Assert(batch.TxArray, HasLen, 2)
+		} else {
+			c.Assert(batch.TxArray, HasLen, 0)
+		}
+	}
+	c.Assert(client.instantSendQueuedBatches, HasLen, 0)
+	c.Assert(f.ordinaryCalls, Equals, 2)
+	c.Assert(f.instantSendCalls, Equals, 0)
+	bridge.enabled = 1
+	_, err := client.FetchMemPool(123) // ordinary scan resumes the alternating schedule
+	c.Assert(err, IsNil)
+	final, err := client.FetchMemPool(123)
+	c.Assert(err, IsNil)
+	c.Assert(final.MemPool, Equals, false)
+	c.Assert(final.TxArray, HasLen, 2)
+	c.Assert(final.TxArray[0].Tx, Equals, f.inbound)
+	c.Assert(final.TxArray[1].Tx, Equals, f.lowFeeInbound)
+}
+
+func (s *DashSuite) TestDashFetchMemPoolErrorsDoNotStarveOtherPath(c *C) {
+	client, f, cleanup := newDashMempoolFixture(c)
+	defer cleanup()
+	f.failOrdinary = true
+	_, err := client.FetchMemPool(123)
+	c.Assert(err, NotNil)
+	final, err := client.FetchMemPool(123)
+	c.Assert(err, IsNil)
+	c.Assert(final.TxArray, HasLen, 2)
+	c.Assert(final.MemPool, Equals, false)
+
+	f.failOrdinary = false
+	batch, err := client.FetchMemPool(123)
+	c.Assert(err, IsNil)
+	c.Assert(batch.TxArray, HasLen, 2)
+	c.Assert(batch.MemPool, Equals, true)
+	f.failInstantSend = true
+	_, err = client.FetchMemPool(123)
+	c.Assert(err, NotNil)
+	batch, err = client.FetchMemPool(123)
+	c.Assert(err, IsNil)
+	c.Assert(batch.MemPool, Equals, true)
+	c.Assert(f.ordinaryCalls, Equals, 3)
+	c.Assert(f.instantSendCalls, Equals, 2)
+}

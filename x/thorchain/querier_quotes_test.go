@@ -532,7 +532,7 @@ func (s *QuotesSuite) TestQuotePlaceholderIsDeterministic(c *C) {
 	}
 }
 
-func (s *QuotesSuite) TestQuoteInboundInfoDASHHasNoConfirmationDelay(c *C) {
+func (s *QuotesSuite) TestQuoteInboundInfoDASHEstimatesOneBlock(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
 	vault := GetRandomVault()
@@ -548,5 +548,5 @@ func (s *QuotesSuite) TestQuoteInboundInfoDASHHasNoConfirmationDelay(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(address.Equals(common.NoAddress), Equals, false)
 	c.Assert(router.Equals(common.NoAddress), Equals, true)
-	c.Assert(confirmations, Equals, int64(0))
+	c.Assert(confirmations, Equals, int64(1))
 }

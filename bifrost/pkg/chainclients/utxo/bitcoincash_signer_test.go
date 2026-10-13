@@ -135,7 +135,7 @@ func (s *BitcoinCashSignerSuite) SetUpTest(c *C) {
 	cfg.ChainHost = s.server.Listener.Addr().String()
 	s.bridge, err = thorclient.NewThorchainBridge(cfg, s.m, s.keys)
 	c.Assert(err, IsNil)
-	s.client, err = NewClient(s.keys, s.cfg, nil, s.bridge, s.m, nil)
+	s.client, err = NewClient(s.keys, s.cfg, nil, s.bridge, s.m)
 	c.Assert(err, IsNil)
 	storage := storage.NewMemStorage()
 	db, err := leveldb.Open(storage, nil)
@@ -246,6 +246,7 @@ func (s *BitcoinCashSignerSuite) TestSignTxHappyPathWithPrivateKey(c *C) {
 }
 
 func (s *BitcoinCashSignerSuite) TestSignTxWithoutPredefinedMaxGas(c *C) {
+	s.client.cfg.UTXO.MaxSatsPerVByte = 100
 	addr, err := types2.GetRandomPubKey().GetAddress(common.BCHChain)
 	c.Assert(err, IsNil)
 	txOutItem := stypes.TxOutItem{

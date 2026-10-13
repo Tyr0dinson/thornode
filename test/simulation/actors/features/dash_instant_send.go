@@ -16,27 +16,18 @@ import (
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/utxo"
 )
 
-const dashPrice = 50 // Fixed USD price per DASH used to calculate simulation amounts.
-
 type DashInstantSendActor struct {
 	Actor
 
 	account *User
 	inbound common.Address
 	dash    *utxo.Client
-
-	inboundValueLimitUSD uint64
-	minFeeRateSats       uint64
 }
 
 // DashInstantSend wires up a feature actor that exercises different InstantSend paths.
 func DashInstantSend(rng *rand.Rand) *Actor {
 	a := &DashInstantSendActor{
-		// Match the mocknet docker-compose InstantSend policy used by simulation.
-		// config/default.yaml keeps the DASH inbound value limit at the network default.
-		Actor:                *NewActor("Feature-DASH-InstantSend", rng),
-		inboundValueLimitUSD: 100,
-		minFeeRateSats:       8,
+		Actor: *NewActor("Feature-DASH-InstantSend", rng),
 	}
 	a.Timeout = 5 * time.Minute
 
@@ -44,8 +35,8 @@ func DashInstantSend(rng *rand.Rand) *Actor {
 		a.acquireUser,
 		a.initContext,
 		a.happyPathInstantSend,
-		a.highValueFallback,
-		a.lowFeeFallback,
+		a.largerPaymentInstantSend,
+		a.lowFeeInstantSend,
 		a.releaseAccount,
 	}
 
@@ -71,8 +62,7 @@ func (a *DashInstantSendActor) acquireUser(config *OpConfig) OpResult {
 	return OpResult{Continue: a.account != nil}
 }
 
-// initContext fetches the inbound address, computes pricing defaults, and logs
-// the parameters that will drive the scenarios.
+// initContext fetches the inbound address for the scenarios.
 func (a *DashInstantSendActor) initContext(_ *OpConfig) OpResult {
 	inboundAddr, _, err := thornode.GetInboundAddress(common.DASHChain)
 	if err != nil {
@@ -86,15 +76,16 @@ func (a *DashInstantSendActor) initContext(_ *OpConfig) OpResult {
 
 	a.Log().Info().
 		Stringer("inbound", a.inbound).
-		Uint64("inbound_value_limit_usd", a.inboundValueLimitUSD).
-		Uint64("min_fee_rate_sat_per_vbyte", a.minFeeRateSats).
 		Msg("dash instantsend context loaded")
 
 	return OpResult{Continue: true}
 }
 
-// happyPathInstantSend builds a DASH tx that should satisfy fee/value constraints and
-// then verifies that InstantSend was accepted by Bifrost via the mempool path.
+func (a *DashInstantSendActor) happyPathInstantSend(_ *OpConfig) OpResult {
+	return a.observeInstantSend("happy-path", 18*common.One/10, 0)
+}
+
+// observeInstantSend verifies that Bifrost accepted a DASH transaction via the mempool path.
 //
 // Verification method: we poll Bifrost's Prometheus counter
 // `dash_instantsend_observed_total` (served on `http://localhost:9000/metrics`).
@@ -109,12 +100,10 @@ func (a *DashInstantSendActor) initContext(_ *OpConfig) OpResult {
 //  2. Thornode exposes tx stages for the txid, and at that exact moment we confirm
 //     via Dash RPC that the tx is still unconfirmed and still in the mempool, and the
 //     Dash height hasn't advanced since broadcast.
-func (a *DashInstantSendActor) happyPathInstantSend(_ *OpConfig) OpResult {
+func (a *DashInstantSendActor) observeInstantSend(name string, amount, feeSats uint64) OpResult {
 	if a.dash == nil {
 		return OpResult{Finish: true, Error: fmt.Errorf("Dash client not initialized")}
 	}
-
-	amount := a.inboundValueLimitUSD * common.One * 9 / 10 / dashPrice // 90% of the inbound value limit
 
 	const (
 		maxAttempts      = 10
@@ -139,7 +128,7 @@ func (a *DashInstantSendActor) happyPathInstantSend(_ *OpConfig) OpResult {
 			a.Log().Debug().Err(err).Msg("failed to sync to next DASH block before broadcast")
 		}
 
-		txID, err := a.broadcastTx("happy-path", amount, 0)
+		txID, err := a.broadcastTx(name, amount, feeSats)
 		if err != nil {
 			return OpResult{Finish: true, Error: err}
 		}
@@ -257,26 +246,14 @@ func (a *DashInstantSendActor) happyPathInstantSend(_ *OpConfig) OpResult {
 	}
 }
 
-// highValueFallback pushes a tx above the inbound value limit so it should bypass
-// InstantSend and only appear via blocks.
-func (a *DashInstantSendActor) highValueFallback(_ *OpConfig) OpResult {
-	amount := a.inboundValueLimitUSD * common.One * 11 / 10 / dashPrice // 110% of the inbound value limit
-	return a.runScenario("high-value-fallback", amount, 0)
+// This payment exceeded the former $100 simulation limit at the fixed $50 DASH price.
+func (a *DashInstantSendActor) largerPaymentInstantSend(_ *OpConfig) OpResult {
+	return a.observeInstantSend("larger-payment", 22*common.One/10, 0)
 }
 
-// lowFeeFallback drops the fee rate below the InstantSend minimum so it should
-// only show up on the block path.
-func (a *DashInstantSendActor) lowFeeFallback(_ *OpConfig) OpResult {
-	amount := a.inboundValueLimitUSD * common.One * 9 / 10 / dashPrice // 90% of the inbound value limit
-
-	// Estimate a realistic tx size and set a fee rate below the InstantSend minimum.
-	const estimatedVBytes uint64 = 300
-	feeSats := (a.minFeeRateSats*estimatedVBytes + 3) / 4
-	if feeSats < 300 { // around 1 sat/vB at 300 vB
-		feeSats = 300
-	}
-
-	return a.runScenario("low-fee-fallback", amount, feeSats)
+// Use a fee below the former InstantSend floor while still paying for relay.
+func (a *DashInstantSendActor) lowFeeInstantSend(_ *OpConfig) OpResult {
+	return a.observeInstantSend("low-fee", 18*common.One/10, 600)
 }
 
 func (a *DashInstantSendActor) releaseAccount(_ *OpConfig) OpResult {
@@ -286,19 +263,6 @@ func (a *DashInstantSendActor) releaseAccount(_ *OpConfig) OpResult {
 	a.account = nil
 	a.dash = nil
 	return OpResult{Finish: true}
-}
-
-// runScenario crafts and broadcasts a DASH deposit, then waits for fallback
-// observation via block inclusion.
-func (a *DashInstantSendActor) runScenario(name string, amount uint64, feeSats uint64) OpResult {
-	startMetric, _ := readInstantSendMetric()
-
-	txID, err := a.broadcastTx(name, amount, feeSats)
-	if err != nil {
-		return OpResult{Finish: true, Error: err}
-	}
-
-	return a.awaitObservation(txID, startMetric, name)
 }
 
 func (a *DashInstantSendActor) broadcastTx(scenario string, amount uint64, feeSats uint64) (string, error) {
@@ -331,46 +295,6 @@ func (a *DashInstantSendActor) broadcastTx(scenario string, amount uint64, feeSa
 		Msg("broadcasted DASH tx")
 
 	return txID, nil
-}
-
-// awaitObservation polls metrics and tx details until the fallback tx is seen
-// via the block path or a timeout occurs.
-func (a *DashInstantSendActor) awaitObservation(txID string, startMetric float64, label string) OpResult {
-	deadline := time.Now().Add(4 * time.Minute)
-	var lastErr error
-
-	for time.Now().Before(deadline) {
-		currentMetric, _ := readInstantSendMetric()
-		delta := currentMetric - startMetric
-
-		stages, err := thornode.GetTxStages(txID)
-		if err != nil {
-			a.Log().Error().Err(err).Str("scenario", label).Str("txid", txID).Msg("failed to fetch tx stages")
-			lastErr = err
-			time.Sleep(2 * time.Second)
-			continue
-		}
-
-		sawTx := stages.InboundObserved.FinalCount > 0 || stages.InboundObserved.Completed
-		// analyze-ignore(float-comparison)
-		sawInstant := delta > 0
-
-		if sawTx {
-			if sawInstant {
-				return OpResult{Finish: true, Error: fmt.Errorf("scenario %s observed via InstantSend unexpectedly", label)}
-			}
-			a.Log().Info().Str("scenario", label).Msg("observed via block path")
-			return OpResult{Continue: true}
-		}
-
-		time.Sleep(2 * time.Second)
-	}
-
-	if lastErr != nil {
-		return OpResult{Finish: true, Error: fmt.Errorf("timeout waiting for %s: last error %w", label, lastErr)}
-	}
-
-	return OpResult{Finish: true, Error: fmt.Errorf("timeout waiting for %s", label)}
 }
 
 // readInstantSendMetric scrapes the local Bifrost metrics endpoint for the

@@ -54,7 +54,7 @@ func LoadChains(thorKeys *thorclient.Keys,
 		case common.GAIAChain, common.NOBLEChain:
 			return gaia.NewCosmosClient(thorKeys, chain, server, thorchainBridge, m, pubKeyValidator)
 		case common.BTCChain, common.BCHChain, common.LTCChain, common.DOGEChain, common.ZECChain, common.DASHChain:
-			return utxo.NewClient(thorKeys, chain, server, thorchainBridge, m, poolMgr)
+			return utxo.NewClient(thorKeys, chain, server, thorchainBridge, m)
 		case common.TRONChain:
 			return tron.NewTronClient(thorKeys, chain, server, thorchainBridge, m, pubKeyValidator, poolMgr)
 		case common.XRPChain:

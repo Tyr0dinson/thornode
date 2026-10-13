@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -32,8 +31,6 @@ type rpcRequest struct {
 	ID     any               `json:"id"`
 }
 
-type dashTestPoolMgr struct{}
-
 type dashOracleBridge struct {
 	thorclient.ThorchainBridge
 	getPrice func(string) (cosmos.Uint, error)
@@ -41,22 +38,6 @@ type dashOracleBridge struct {
 
 func (b dashOracleBridge) GetOraclePrice(symbol string) (cosmos.Uint, error) {
 	return b.getPrice(symbol)
-}
-
-type dashTestPoolMgrFunc func(common.Asset, common.Asset, cosmos.Uint) (cosmos.Uint, error)
-
-func (f dashTestPoolMgrFunc) GetValue(source, target common.Asset, amount cosmos.Uint) (cosmos.Uint, error) {
-	return f(source, target, amount)
-}
-
-func (dashTestPoolMgr) GetValue(source common.Asset, target common.Asset, amount cosmos.Uint) (cosmos.Uint, error) {
-	if !source.Equals(common.DASHAsset) {
-		return cosmos.ZeroUint(), fmt.Errorf("unexpected source asset: %s", source)
-	}
-	if !target.Equals(common.TOR) {
-		return cosmos.ZeroUint(), fmt.Errorf("unexpected target asset: %s", target)
-	}
-	return amount.MulUint64(mocknetDashPrice), nil
 }
 
 func newDashTestAddress(c *C, seed byte) string {
@@ -84,16 +65,35 @@ func newRPCTestServer(c *C, handler func(method string, params []json.RawMessage
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 
-		var req rpcRequest
-		err := json.NewDecoder(r.Body).Decode(&req)
+		var body json.RawMessage
+		err := json.NewDecoder(r.Body).Decode(&body)
 		if err != nil {
 			c.Fatalf("decode request: %v", err)
 		}
-
-		resp := map[string]any{
-			"jsonrpc": "2.0",
-			"id":      req.ID,
-			"result":  handler(req.Method, req.Params),
+		respond := func(req rpcRequest) map[string]any {
+			result := handler(req.Method, req.Params)
+			if rpcErr, ok := result.(*btcjson.RPCError); ok {
+				return map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": rpcErr}
+			}
+			return map[string]any{
+				"jsonrpc": "2.0",
+				"id":      req.ID,
+				"result":  result,
+			}
+		}
+		var resp any
+		if bytes.HasPrefix(bytes.TrimSpace(body), []byte("[")) {
+			var requests []rpcRequest
+			c.Assert(json.Unmarshal(body, &requests), IsNil)
+			responses := make([]map[string]any, len(requests))
+			for i, req := range requests {
+				responses[i] = respond(req)
+			}
+			resp = responses
+		} else {
+			var req rpcRequest
+			c.Assert(json.Unmarshal(body, &req), IsNil)
+			resp = respond(req)
 		}
 		err = json.NewEncoder(w).Encode(resp)
 		if err != nil {
@@ -122,12 +122,9 @@ func newDashClientForRPCServer(c *C, serverURL string) (*Client, func()) {
 		regexpRemoveTrailingZeros: regexp.MustCompile(`(00)+$`),
 		rpc:                       rpcClient,
 		temporalStorage:           temporalStorage,
-		poolMgr:                   dashTestPoolMgr{},
-		instantSendCfg: config.InstantSendConfiguration{
-			Enabled:               true,
-			InboundValueLimitUSD:  100,
-			MinFeeRateSatPerVByte: 1.5,
-			MaxMempoolAge:         2 * time.Minute,
+		instantSendSettings: config.InstantSendConfiguration{
+			Enabled:       true,
+			MaxMempoolAge: 2 * time.Minute,
 		},
 	}, cleanup
 }
@@ -171,6 +168,8 @@ func (s *DashSuite) TestDashGetHeightUsesBestChainLock(c *C) {
 		switch method {
 		case "getbestchainlock":
 			return map[string]any{"blockhash": hash, "height": 321, "known_block": known}
+		case "getblockcount":
+			return 322
 		case "getblockhash":
 			return activeHash
 		}
@@ -238,7 +237,7 @@ func (s *DashSuite) TestDashGetInstantSendLocksSkipsCachedBeforeRawTxFetch(c *C)
 	c.Assert(err, IsNil)
 	c.Assert(added, Equals, true)
 
-	txIn, err := client.getInstantSendLocks(123)
+	txIn, err := client.fetchInstantSendBatch(123)
 	c.Assert(err, IsNil)
 	c.Assert(len(txIn.TxArray), Equals, 0)
 	c.Assert(rawLookups, DeepEquals, []string{fresh})
@@ -290,7 +289,7 @@ func (s *DashSuite) TestDashGetInstantSendLocksCapsMempoolWork(c *C) {
 	client.cfg.UTXO.TransactionBatchSize = 1
 	client.cfg.UTXO.MaxMempoolBatches = 1
 
-	txIn, err := client.getInstantSendLocks(123)
+	txIn, err := client.fetchInstantSendBatch(123)
 	c.Assert(err, IsNil)
 	c.Assert(len(txIn.TxArray), Equals, 0)
 	c.Assert(rawLookups, Equals, 1)
@@ -366,7 +365,7 @@ func (s *DashSuite) TestDashGetInstantSendLocksBatchesLockLookupAndCachesCycleHe
 	client.cfg.UTXO.TransactionBatchSize = 10
 	client.cfg.UTXO.MaxMempoolBatches = 1
 
-	txIn, err := client.getInstantSendLocks(123)
+	txIn, err := client.fetchInstantSendBatch(123)
 	c.Assert(err, IsNil)
 	c.Assert(len(txIn.TxArray), Equals, 0)
 	c.Assert(lockBatches, HasLen, 1)
@@ -411,26 +410,15 @@ func (s *DashSuite) TestDashCycleHeightIndependentOfScanner(c *C) {
 	c.Assert(err, NotNil)
 }
 
-func (s *DashSuite) TestDashAllowInstantSendPolicyBoundaries(c *C) {
-	client := Client{
-		instantSendCfg: config.InstantSendConfiguration{
-			InboundValueLimitUSD:  10,
-			MinFeeRateSatPerVByte: 1.5,
-		},
+func (s *DashSuite) TestDashAllowInstantSendAgeBoundaries(c *C) {
+	client := Client{instantSendSettings: config.InstantSendConfiguration{MaxMempoolAge: 2 * time.Minute}}
+	for _, age := range []time.Duration{0, time.Minute, 2 * time.Minute} {
+		allow, reason := client.allowInstantSend(age)
+		c.Assert(allow, Equals, true, Commentf(reason))
 	}
-	inboundValueLimitUSD := cosmos.NewUint(10).MulUint64(common.One)
-
-	allow, reason := client.allowInstantSend(1499, 0, true, cosmos.ZeroUint())
+	allow, reason := client.allowInstantSend(2*time.Minute + time.Nanosecond)
 	c.Assert(allow, Equals, false)
-	c.Assert(reason, Equals, "fee rate too low: 1.499 sat/vB < 1.500 sat/vB")
-
-	allow, reason = client.allowInstantSend(1500, 0, false, inboundValueLimitUSD)
-	c.Assert(allow, Equals, false)
-	c.Assert(reason, Equals, "USD value 10.000000 >= inbound value limit 10")
-
-	allow, reason = client.allowInstantSend(1500, 0, false, inboundValueLimitUSD.Sub(cosmos.NewUint(1)))
-	c.Assert(allow, Equals, true, Commentf(reason))
-	c.Assert(reason, Equals, "")
+	c.Assert(reason, Matches, "mempool age too high:.*")
 }
 
 func (s *DashSuite) TestDashGetInstantSendLocksFiltersUnlockedTxs(c *C) {
@@ -571,7 +559,7 @@ func (s *DashSuite) TestDashGetInstantSendLocksFiltersUnlockedTxs(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(item.IsEmpty(), Equals, false)
 
-	txIn, err := client.getInstantSendLocks(123)
+	txIn, err := client.fetchInstantSendBatch(123)
 	c.Assert(err, IsNil)
 	c.Assert(txIn.MemPool, Equals, false)
 	c.Assert(txIn.ConfirmationRequired, Equals, int64(0))
@@ -588,7 +576,7 @@ func (s *DashSuite) TestDashGetInstantSendLocksFiltersUnlockedTxs(c *C) {
 	c.Assert(txIn.Persisted, IsNil)
 	c.Assert(txIn.TxArray[0].OnObservedTxStored, IsNil)
 	// No Observer acknowledgement is needed; a lost handoff is not retried.
-	retry, err := client.getInstantSendLocks(123)
+	retry, err := client.fetchInstantSendBatch(123)
 	c.Assert(err, IsNil)
 	c.Assert(retry.TxArray, HasLen, 0)
 	// Mining the InstantSend transaction must not create another observation.
@@ -598,7 +586,7 @@ func (s *DashSuite) TestDashGetInstantSendLocksFiltersUnlockedTxs(c *C) {
 	c.Assert(mined.TxArray, HasLen, 0)
 }
 
-func (s *DashSuite) TestDashGetInstantSendLocksRetriesPolicyFailures(c *C) {
+func (s *DashSuite) TestDashInstantSendAcceptsLargeLowFeePaymentsWithoutPricing(c *C) {
 	asgardAddress := newDashTestAddress(c, 0x33)
 	senderAddress := newDashTestAddress(c, 0x44)
 
@@ -610,27 +598,18 @@ func (s *DashSuite) TestDashGetInstantSendLocksRetriesPolicyFailures(c *C) {
 	senderScript := newDashP2PKHScriptHex(c, senderAddress)
 	memoScript := newDashMemoScriptHex(c, "NOOP")
 
-	mempoolCalls := 0
+	amount := float64(1000)
+	entryTime := time.Now().Unix()
+	includeFee := true
 	server := newRPCTestServer(c, func(method string, params []json.RawMessage) any {
 		switch method {
 		case "getrawmempool":
-			mempoolCalls++
-			baseFee := 0.000002 // 1 sat/vB for a 200-vbyte tx, below policy.
-			if mempoolCalls > 1 {
-				baseFee = 0.00002 // 10 sat/vB for a 200-vbyte tx, above policy.
+			entry := map[string]any{"time": entryTime, "height": 123}
+			if includeFee {
+				entry["vsize"] = 200
+				entry["fees"] = map[string]any{"base": 0.000002} // 1 sat/vB, below the former floor.
 			}
-			return map[string]any{
-				mempoolLocked: map[string]any{
-					"size":   200,
-					"vsize":  200,
-					"weight": 800,
-					"fees": map[string]any{
-						"base": baseFee,
-					},
-					"time":   time.Now().Unix(),
-					"height": 123,
-				},
-			}
+			return map[string]any{mempoolLocked: entry}
 		case "getrawtransaction":
 			var txID string
 			err := json.Unmarshal(params[0], &txID)
@@ -649,7 +628,7 @@ func (s *DashSuite) TestDashGetInstantSendLocksRetriesPolicyFailures(c *C) {
 					"instantlock":          true,
 					"instantlock_internal": false,
 					"vin":                  []map[string]any{{"txid": prevLocked, "vout": 0, "sequence": uint32(4294967295)}},
-					"vout":                 []map[string]any{{"n": 0, "value": 0.1, "scriptPubKey": map[string]any{"hex": lockedOutputScript, "type": "pubkeyhash", "addresses": []string{asgardAddress}}}, {"n": 1, "value": 0.0, "scriptPubKey": map[string]any{"hex": memoScript, "type": "nulldata"}}},
+					"vout":                 []map[string]any{{"n": 0, "value": amount, "scriptPubKey": map[string]any{"hex": lockedOutputScript, "type": "pubkeyhash", "addresses": []string{asgardAddress}}}, {"n": 1, "value": 0.0, "scriptPubKey": map[string]any{"hex": memoScript, "type": "nulldata"}}},
 				}
 			case prevLocked:
 				return map[string]any{
@@ -659,7 +638,7 @@ func (s *DashSuite) TestDashGetInstantSendLocksRetriesPolicyFailures(c *C) {
 					"locktime":      0,
 					"confirmations": 1,
 					"vin":           []map[string]any{{"txid": "coinbase", "vout": 0}},
-					"vout":          []map[string]any{{"n": 0, "value": 0.10002, "scriptPubKey": map[string]any{"hex": senderScript, "type": "pubkeyhash", "addresses": []string{senderAddress}}}},
+					"vout":          []map[string]any{{"n": 0, "value": amount + 0.000002, "scriptPubKey": map[string]any{"hex": senderScript, "type": "pubkeyhash", "addresses": []string{senderAddress}}}},
 				}
 			default:
 				c.Fatalf("unexpected tx lookup: %s", txID)
@@ -708,120 +687,37 @@ func (s *DashSuite) TestDashGetInstantSendLocksRetriesPolicyFailures(c *C) {
 		FetchedAt: time.Now(),
 	})
 
-	txIn, err := client.getInstantSendLocks(123)
-	c.Assert(err, IsNil)
-	c.Assert(len(txIn.TxArray), Equals, 0)
-
-	// Once the fee is sufficient, pricing decides whether this 0.1 DASH deposit
-	// can be observed. Mocknet always uses $50 and skips both real price sources.
-	isMocknet := common.CurrentChainNetwork == common.MockNet
-	poolErr := fmt.Errorf("pool unavailable")
-	for _, tc := range []struct {
-		name              string
-		noPool            bool
-		value             cosmos.Uint
-		err               error
-		limit             uint64
-		wantGroups        int
-		wantMocknetGroups int
-	}{
-		{"pool price below limit", false, cosmos.NewUint(900 * common.One), nil, 100, 1, 1},
-		{"pool price at limit", false, cosmos.NewUint(1000 * common.One), nil, 100, 0, 1},
-		{"missing pool manager", true, cosmos.ZeroUint(), nil, 100, 0, 1},
-		{"zero pool value", false, cosmos.ZeroUint(), nil, 100, 0, 1},
-		{"uninitialized pool value", false, cosmos.Uint{}, nil, 100, 0, 1},
-		{"pool error", false, cosmos.ZeroUint(), poolErr, 100, 0, 1},
-		{"discard value on pool error", false, cosmos.NewUint(1000 * common.One), poolErr, 100, 0, 1},
-		{"fixed mocknet price below limit", false, cosmos.NewUint(900 * common.One), nil, 6, 0, 1},
-		{"fixed mocknet price at limit", false, cosmos.NewUint(900 * common.One), nil, 5, 0, 0},
-		{"fixed mocknet price above limit", false, cosmos.NewUint(900 * common.One), nil, 4, 0, 0},
-		{"zero limit skips pricing", false, cosmos.NewUint(900 * common.One), nil, 0, 0, 0},
-	} {
-		calls := 0
-		client.instantSendCfg.InboundValueLimitUSD = tc.limit
-		client.poolMgr = nil
-		if !tc.noPool {
-			client.poolMgr = dashTestPoolMgrFunc(func(source, target common.Asset, amount cosmos.Uint) (cosmos.Uint, error) {
-				calls++
-				c.Assert(source.Equals(common.DASHAsset), Equals, true, Commentf(tc.name))
-				c.Assert(target.Equals(common.TOR), Equals, true, Commentf(tc.name))
-				c.Assert(amount.Equal(cosmos.NewUint(common.One)), Equals, true, Commentf(tc.name))
-				return tc.value, tc.err
-			})
-		}
-		groups, scanErr := client.scanInstantSend(123)
-		c.Assert(scanErr, IsNil, Commentf(tc.name))
-		wantGroups := tc.wantGroups
-		if isMocknet {
-			wantGroups = tc.wantMocknetGroups
-		}
-		c.Assert(groups, HasLen, wantGroups, Commentf(tc.name))
-		if wantGroups > 0 {
-			c.Assert(groups[0].TxArray, HasLen, 1, Commentf(tc.name))
-			c.Assert(groups[0].TxArray[0].Tx, Equals, mempoolLocked, Commentf(tc.name))
-		}
-		wantCalls := 0
-		if !isMocknet && !tc.noPool && tc.limit > 0 {
-			wantCalls = 1
-		}
-		c.Assert(calls, Equals, wantCalls, Commentf(tc.name))
-	}
-
-	// Outside mocknet, the oracle takes priority even when its price rejects an
-	// otherwise eligible deposit. A missing or invalid feed restores pool pricing.
-	client.instantSendCfg.InboundValueLimitUSD = 100
-	for _, tc := range []struct {
-		price      cosmos.Uint
-		oracleErr  error
-		wantGroups int
-		wantPools  int
-	}{
-		{cosmos.NewUint(1000 * common.One), nil, 0, 0},
-		{cosmos.NewUint(900 * common.One), nil, 1, 0},
-		{cosmos.ZeroUint(), fmt.Errorf("oracle unavailable"), 1, 1},
-		{cosmos.NewUint(1000 * common.One), fmt.Errorf("oracle failed with a value"), 1, 1},
-		{cosmos.ZeroUint(), nil, 1, 1},
-		{cosmos.Uint{}, nil, 1, 1},
-	} {
-		oracleCalls, poolCalls := 0, 0
-		client.bridge = dashOracleBridge{getPrice: func(symbol string) (cosmos.Uint, error) {
-			oracleCalls++
-			c.Assert(symbol, Equals, "DASH")
-			return tc.price, tc.oracleErr
-		}}
-		client.poolMgr = dashTestPoolMgrFunc(func(source, target common.Asset, amount cosmos.Uint) (cosmos.Uint, error) {
-			poolCalls++
-			return dashTestPoolMgr{}.GetValue(source, target, amount)
-		})
-		groups, scanErr := client.scanInstantSend(123)
-		c.Assert(scanErr, IsNil)
-		if isMocknet {
-			c.Assert(groups, HasLen, 1)
-			c.Assert(oracleCalls, Equals, 0)
-			c.Assert(poolCalls, Equals, 0)
-		} else {
-			c.Assert(groups, HasLen, tc.wantGroups)
-			c.Assert(oracleCalls, Equals, 1)
-			c.Assert(poolCalls, Equals, tc.wantPools)
-		}
-	}
-	client.instantSendCfg.InboundValueLimitUSD = 0
 	client.bridge = dashOracleBridge{getPrice: func(string) (cosmos.Uint, error) {
-		c.Fatal("zero limit must skip oracle pricing")
+		c.Fatal("InstantSend must not request a USD price")
 		return cosmos.ZeroUint(), nil
 	}}
-	client.poolMgr = dashTestPoolMgrFunc(func(common.Asset, common.Asset, cosmos.Uint) (cosmos.Uint, error) {
-		c.Fatal("zero limit must skip pool pricing")
-		return cosmos.ZeroUint(), nil
-	})
-	_, err = client.scanInstantSend(123)
+	// A large locked payment is eligible with a low fee or without fee metadata.
+	for _, withFee := range []bool{true, false} {
+		includeFee = withFee
+		groups, err := client.scanInstantSend(123)
+		c.Assert(err, IsNil)
+		c.Assert(groups, HasLen, 1)
+		c.Assert(groups[0].MemPool, Equals, false)
+		c.Assert(groups[0].ConfirmationRequired, Equals, int64(0))
+		c.Assert(groups[0].TxArray, HasLen, 1)
+		c.Assert(groups[0].TxArray[0].Tx, Equals, mempoolLocked)
+		c.Assert(groups[0].TxArray[0].Coins[0].Amount.Equal(cosmos.NewUint(1000*common.One)), Equals, true)
+	}
+
+	// Age and dust checks still apply, and rejection must not suppress a retry.
+	entryTime = time.Now().Add(-3 * time.Minute).Unix()
+	groups, err := client.scanInstantSend(123)
 	c.Assert(err, IsNil)
-	client.bridge = nil
-	client.poolMgr = dashTestPoolMgr{}
-	client.instantSendCfg.InboundValueLimitUSD = 100
-	txIn, err = client.getInstantSendLocks(123)
+	c.Assert(groups, HasLen, 0)
+	entryTime = time.Now().Unix()
+	amount = 0.00000001
+	groups, err = client.scanInstantSend(123)
 	c.Assert(err, IsNil)
-	c.Assert(len(txIn.TxArray), Equals, 1)
+	c.Assert(groups, HasLen, 0)
+	amount = 1000
+	txIn, err := client.fetchInstantSendBatch(123)
+	c.Assert(err, IsNil)
+	c.Assert(txIn.TxArray, HasLen, 1)
 	c.Assert(txIn.TxArray[0].Tx, Equals, mempoolLocked)
 }
 

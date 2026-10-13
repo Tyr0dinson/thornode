@@ -161,7 +161,7 @@ func (s *DogecoinSignerSuite) SetUpTest(c *C) {
 
 	s.bridge, err = thorclient.NewThorchainBridge(cfg, s.m, s.keys)
 	c.Assert(err, IsNil)
-	s.client, _ = NewClient(s.keys, s.cfg, nil, s.bridge, s.m, nil)
+	s.client, _ = NewClient(s.keys, s.cfg, nil, s.bridge, s.m)
 	storage := storage.NewMemStorage()
 	db, err := leveldb.Open(storage, nil)
 	c.Assert(err, IsNil)
@@ -271,6 +271,7 @@ func (s *DogecoinSignerSuite) TestSignTxHappyPathWithPrivateKey(c *C) {
 }
 
 func (s *DogecoinSignerSuite) TestSignTxWithoutPredefinedMaxGas(c *C) {
+	s.client.cfg.UTXO.MaxSatsPerVByte = 100
 	addr, err := types2.GetRandomPubKey().GetAddress(common.DOGEChain)
 	c.Assert(err, IsNil)
 	txOutItem := stypes.TxOutItem{

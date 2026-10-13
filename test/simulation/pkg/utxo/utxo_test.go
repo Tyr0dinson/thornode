@@ -1,6 +1,7 @@
 package utxo
 
 import (
+	"bytes"
 	"encoding/hex"
 	"io"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	dashtxscript "github.com/dashpay/dashd-go/txscript"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	btctxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/txscript"
 	"gitlab.com/thorchain/thornode/v3/cmd"
@@ -179,6 +181,40 @@ func TestGetMemoScriptsSplitsLongMemoForUTXO(t *testing.T) {
 	}
 	if len(scripts) != 2 {
 		t.Fatalf("expected 2 scripts for an 81-byte BTC memo, got %d", len(scripts))
+	}
+}
+
+func TestDASHMemoScriptsPreserveLongMemoInP2PKHOutputs(t *testing.T) {
+	client := &Client{chain: common.DASHChain}
+	for _, size := range []int{81, 100, 139} {
+		t.Run(strconv.Itoa(size), func(t *testing.T) {
+			memo := strings.Repeat("a", size)
+			scripts, err := client.getMemoScripts(memo)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(scripts) != 1+(size-79+19)/20 || dashtxscript.GetScriptClass(scripts[0]) != dashtxscript.NullDataTy {
+				t.Fatal("expected OP_RETURN followed by memo continuation outputs")
+			}
+			data, err := dashtxscript.PushedData(scripts[0])
+			if err != nil || len(data) != 1 || string(data[0]) != memo[:79]+"^" {
+				t.Fatalf("invalid first memo chunk: %x, %v", data, err)
+			}
+			recovered := append([]byte(nil), data[0][:79]...)
+			for _, script := range scripts[1:] {
+				if dashtxscript.GetScriptClass(script) != dashtxscript.PubKeyHashTy {
+					t.Fatalf("Dash continuation must be P2PKH: %x", script)
+				}
+				data, err = dashtxscript.PushedData(script)
+				if err != nil || len(data) != 1 || len(data[0]) != 20 {
+					t.Fatalf("invalid continuation chunk: %x, %v", data, err)
+				}
+				recovered = append(recovered, data[0]...)
+			}
+			if string(bytes.TrimRight(recovered, "\x00")) != memo {
+				t.Fatalf("memo did not round-trip: %q", recovered)
+			}
+		})
 	}
 }
 
