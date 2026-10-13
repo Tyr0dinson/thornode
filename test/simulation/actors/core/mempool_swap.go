@@ -62,12 +62,18 @@ var (
 	mempoolEarlyLifecycleTarget    = common.BTCAsset
 	mempoolCumulativeProfileTarget = common.AVAXAsset
 	mempoolMaxCountFallbackTarget  = common.ETHAsset
+
+	// mempoolSourceAsset funds every speculative inbound. Bifrost waits 12
+	// confirmations on mocknet BASE (3s blocks), about 36s in which the inbound
+	// is mined and observed but not final. Mocknet POL now finalizes after 3
+	// 2s blocks, too short for the streaming and preemption scenarios.
+	mempoolSourceAsset = common.BaseETHAsset
 )
 
 // MempoolSwapSimulationActor exercises the real L1 -> Bifrost -> Thornode
-// lifecycle. POL is deliberately used for speculative inbounds: Bifrost waits
-// for 15 POL confirmations, providing a stable window in which the transaction
-// is mined and observed but not final.
+// lifecycle. Speculative inbounds use mempoolSourceAsset, whose confirmation
+// delay provides a stable window in which the transaction is mined and
+// observed but not final.
 type MempoolSwapSimulationActor struct {
 	Actor
 }
@@ -516,7 +522,7 @@ func mempoolDestinationBalance(swap *mempoolLiveSwap) (cosmos.Uint, error) {
 }
 
 func (a *MempoolSwapSimulationActor) scenarioHappyMarket(config *OpConfig) error {
-	swap, err := a.startSwap(config, "happy-market", common.POLAsset, mempoolEarlyLifecycleTarget, 2_000, "")
+	swap, err := a.startSwap(config, "happy-market", mempoolSourceAsset, mempoolEarlyLifecycleTarget, 2_000, "")
 	if err != nil {
 		return err
 	}
@@ -553,7 +559,7 @@ func (a *MempoolSwapSimulationActor) scenarioAffiliateRevShareFinality(config *O
 	swap, err := a.prepareSwap(
 		config,
 		"affiliate-revshare-finality",
-		common.POLAsset,
+		mempoolSourceAsset,
 		mempoolCumulativeProfileTarget,
 		2_000,
 		"",
@@ -688,7 +694,7 @@ func parseMempoolAffiliateCollectorBalance(raw string) (cosmos.Uint, error) {
 }
 
 func (a *MempoolSwapSimulationActor) scenarioStreamSettleBeforeFinality(config *OpConfig) error {
-	swap, err := a.startSwap(config, "stream-settle-before-finality", common.POLAsset, mempoolEarlyLifecycleTarget, 2_000, "0/1/3")
+	swap, err := a.startSwap(config, "stream-settle-before-finality", mempoolSourceAsset, mempoolEarlyLifecycleTarget, 2_000, "0/1/3")
 	if err != nil {
 		return err
 	}
@@ -700,7 +706,7 @@ func (a *MempoolSwapSimulationActor) scenarioStreamSettleBeforeFinality(config *
 }
 
 func (a *MempoolSwapSimulationActor) scenarioStreamFinalityBeforeSettlement(config *OpConfig) error {
-	swap, err := a.startSwap(config, "stream-finality-before-settlement", common.POLAsset, mempoolEarlyLifecycleTarget, 2_000, "0/10/6")
+	swap, err := a.startSwap(config, "stream-finality-before-settlement", mempoolSourceAsset, mempoolEarlyLifecycleTarget, 2_000, "0/10/6")
 	if err != nil {
 		return err
 	}
@@ -786,15 +792,15 @@ func (a *MempoolSwapSimulationActor) scenarioStreamFinalityBeforeSettlement(conf
 // deltas with no foreign mutation in between; it is not a priority claim. Since
 // an unconfirmed inbound can be replaced under full-RBF, letting it outrank a
 // confirmed one would be an availability lever, so the speculative owner is
-// resolved rather than waited out. POL needs fifteen confirmations and AVAX
-// only a couple, giving the final swap a wide window in which the owner is
-// still speculative.
+// resolved rather than waited out. The BASE source needs twelve confirmations
+// and AVAX only a couple, giving the final swap a wide window in which the
+// owner is still speculative.
 func (a *MempoolSwapSimulationActor) scenarioPoolPreemption(config *OpConfig) error {
 	startHeight, err := thornode.GetBlockHeight()
 	if err != nil {
 		return err
 	}
-	owner, err := a.prepareSwap(config, "pool-preemption-owner", common.POLAsset, mempoolEarlyLifecycleTarget, 2_000, "")
+	owner, err := a.prepareSwap(config, "pool-preemption-owner", mempoolSourceAsset, mempoolEarlyLifecycleTarget, 2_000, "")
 	if err != nil {
 		return err
 	}
@@ -883,12 +889,12 @@ func (a *MempoolSwapSimulationActor) scenarioMaxCountFallback(config *OpConfig) 
 		}
 	}()
 
-	owner, err := a.prepareSwap(config, "max-count-owner", common.POLAsset, mempoolCumulativeProfileTarget, 2_000, "")
+	owner, err := a.prepareSwap(config, "max-count-owner", mempoolSourceAsset, mempoolCumulativeProfileTarget, 2_000, "")
 	if err != nil {
 		return err
 	}
 	defer owner.release()
-	fallback, err := a.prepareSwap(config, "max-count-fallback", common.POLAsset, mempoolMaxCountFallbackTarget, 2_000, "")
+	fallback, err := a.prepareSwap(config, "max-count-fallback", mempoolSourceAsset, mempoolMaxCountFallbackTarget, 2_000, "")
 	if err != nil {
 		return err
 	}
@@ -975,13 +981,13 @@ func (a *MempoolSwapSimulationActor) runExcludedSwap(config *OpConfig, label str
 			return err
 		}
 		a.Log().Warn().Err(err).Int("attempt", attempt).Str("scenario", label).
-			Msg("POL finality outran the pre-finality window; retrying on a fresh swap")
+			Msg("source finality outran the pre-finality window; retrying on a fresh swap")
 	}
 	return err
 }
 
 func (a *MempoolSwapSimulationActor) runExcludedSwapAttempt(config *OpConfig, label string) error {
-	swap, err := a.startSwap(config, label, common.POLAsset, mempoolCumulativeProfileTarget, 2_000, "")
+	swap, err := a.startSwap(config, label, mempoolSourceAsset, mempoolCumulativeProfileTarget, 2_000, "")
 	if err != nil {
 		return err
 	}
@@ -1042,7 +1048,7 @@ func (a *MempoolSwapSimulationActor) scenarioTimeoutRollback(config *OpConfig) (
 	if err != nil {
 		return err
 	}
-	swap, err := a.startSwap(config, "timeout-rollback", common.POLAsset, mempoolCumulativeProfileTarget, 2_000, "")
+	swap, err := a.startSwap(config, "timeout-rollback", mempoolSourceAsset, mempoolCumulativeProfileTarget, 2_000, "")
 	if err != nil {
 		return err
 	}
@@ -1065,7 +1071,7 @@ func (a *MempoolSwapSimulationActor) scenarioTimeoutRollback(config *OpConfig) (
 		return err
 	}
 	// Restore both temporary timeout controls as soon as the rollback state is
-	// observed; watcher/event verification and later POL finality run under the
+	// observed; watcher/event verification and later source finality run under the
 	// caller's original signing configuration.
 	if err = a.restoreMimirs(config, restoreValues); err != nil {
 		return fmt.Errorf("restore timeout rollback mimirs before verification: %w", err)
@@ -1109,7 +1115,7 @@ func (a *MempoolSwapSimulationActor) scenarioErrataRollback(config *OpConfig) er
 	if err != nil {
 		return err
 	}
-	swap, err := a.startSwap(config, "errata-rollback", common.POLAsset, mempoolCumulativeProfileTarget, 2_000, "")
+	swap, err := a.startSwap(config, "errata-rollback", mempoolSourceAsset, mempoolCumulativeProfileTarget, 2_000, "")
 	if err != nil {
 		return err
 	}
@@ -1151,7 +1157,7 @@ func (a *MempoolSwapSimulationActor) scenarioErrataRollback(config *OpConfig) er
 
 	// Let Bifrost deliver the later final observation. Reverted is monotonic: no
 	// vault credit, queue entry, pool mutation, or outbound may reappear.
-	if err = waitForMempoolCondition("final POL observation after errata "+swap.txID, 75*time.Second, func() (bool, error) {
+	if err = waitForMempoolCondition("final source observation after errata "+swap.txID, 75*time.Second, func() (bool, error) {
 		stages, queryErr := thornode.GetTxStages(swap.txID)
 		if queryErr != nil {
 			return false, queryErr
@@ -1405,7 +1411,7 @@ func (a *MempoolSwapSimulationActor) broadcastErrataConsensus(config *OpConfig, 
 		submissions = append(submissions, submission)
 	}
 	// Submit every quorum vote before waiting for blocks. This keeps the errata
-	// quorum inside the POL pre-finality window while still proving each vote's
+	// quorum inside the source pre-finality window while still proving each vote's
 	// individual DeliverTx result.
 	for _, submission := range submissions {
 		if err = waitForThorTxCommit(submission.startHeight, submission.txID, 30*time.Second); err != nil {
@@ -1443,7 +1449,7 @@ func broadcastErrataCheckTxFromNode(node *User, txID string) (mempoolThorTxSubmi
 	if err != nil {
 		return submission, err
 	}
-	submission.txID, err = strict.BroadcastStrict(thortypes.NewMsgErrataTx(parsed, common.POLChain, addr))
+	submission.txID, err = strict.BroadcastStrict(thortypes.NewMsgErrataTx(parsed, mempoolSourceAsset.Chain, addr))
 	if err != nil {
 		return submission, fmt.Errorf("strict errata CheckTx from %s: %w", node.Name(), err)
 	}
@@ -1804,7 +1810,7 @@ type mempoolStopWaitError struct {
 	err error
 }
 
-// errMempoolMissedWindow marks a POL finality that outran the sim's first
+// errMempoolMissedWindow marks a source-chain finality that outran the sim's first
 // observation, which proves nothing about the lifecycle under test.
 var errMempoolMissedWindow = errors.New("missed required pre-finality window")
 
