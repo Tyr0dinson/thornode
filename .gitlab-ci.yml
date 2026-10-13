@@ -44,6 +44,7 @@ workflow:
     - if: $CI_PIPELINE_SOURCE == "api"
     - if: $CI_PIPELINE_SOURCE == "web"
     - if: $CI_PIPELINE_SOURCE == "webide"
+    - if: $CI_PIPELINE_SOURCE == "schedule"
 
 variables:
   # Runner tag for the short jobs (see .small-runner). A project CI/CD variable
@@ -234,6 +235,12 @@ variables:
     - job: unit-tests
       optional: true
       artifacts: false
+    - job: test-mainnet-monero
+      optional: true
+      artifacts: false
+    - job: test-simulation-unit
+      optional: true
+      artifacts: false
 
 # Install $PKGS from the distro mirror. A DNS blip on the runner ("Temporary
 # failure resolving 'deb.debian.org'") only warns in `apt-get update` and then
@@ -410,6 +417,8 @@ generate:
 
 unit-tests:
   tags: !reference [.small-runner, tags]
+  variables:
+    PKGS: python3
   rules:
     - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
       when: never
@@ -418,21 +427,66 @@ unit-tests:
   needs: []
   coverage: /total:\s+\(statements\)\s+(\d+.\d+\%)/
   before_script:
+    - !reference [.pkg-install, before_script]
     - !reference [.go-private-auth, before_script]
     - !reference [.stable-mtimes, before_script]
     - go install github.com/boumenot/gocover-cobertura@v1.4.0
     - go install gotest.tools/gotestsum@v1.13.0
   script:
+    # Fails if a *_test.go file is compiled by no CI test configuration.
+    - python3 scripts/test-quality-inventory.py --check-selection --output test-quality-reports/root-mocknet/source-inventory.json
     - make test-coverage-sum
+    - |
+      if [ -n "${CI_MERGE_REQUEST_DIFF_BASE_SHA:-}" ] && ! git cat-file -e "${CI_MERGE_REQUEST_DIFF_BASE_SHA}^{commit}" 2>/dev/null; then
+        timeout 30 git fetch --no-tags --depth=1 origin "$CI_MERGE_REQUEST_DIFF_BASE_SHA" || true
+      fi
+      if [ -n "${CI_MERGE_REQUEST_DIFF_BASE_SHA:-}" ] && git cat-file -e "${CI_MERGE_REQUEST_DIFF_BASE_SHA}^{commit}" 2>/dev/null; then
+        python3 scripts/test-quality-fetch-baseline.py test-quality-reports/root-mocknet/baseline-coverage.txt
+        baseline_arg=
+        if [ -f test-quality-reports/root-mocknet/baseline-coverage.txt ]; then
+          baseline_arg='--baseline-profile test-quality-reports/root-mocknet/baseline-coverage.txt'
+        fi
+        python3 scripts/test-quality-coverage.py --profile coverage.txt --base-ref "$CI_MERGE_REQUEST_DIFF_BASE_SHA" $baseline_arg --output test-quality-reports/root-mocknet/changed-coverage.json
+      else
+        mkdir -p test-quality-reports/root-mocknet
+        echo '{"baseline_available":false,"reason":"MR base commit unavailable; changed coverage comparison not run"}' > test-quality-reports/root-mocknet/changed-coverage.json
+      fi
   artifacts:
     when: always
     reports:
-      junit: report.xml
+      junit:
+        - report.xml
+        - test-quality-reports/network-*/junit.xml
       coverage_report:
         coverage_format: cobertura
         path: coverage.xml
     paths:
       - coverage*
+      - report.xml
+      - network-specific.log
+      - test-quality-reports/root-mocknet/
+      - test-quality-reports/network-*/
+
+# The fail-closed Monero daemon check skips in the normal mocknet suite.
+test-mainnet-monero:
+  tags: !reference [.small-runner, tags]
+  variables:
+    PKGS: python3
+  rules: *rules
+  stage: test
+  needs: []
+  before_script:
+    - !reference [.pkg-install, before_script]
+    - !reference [.go-private-auth, before_script]
+    - !reference [.stable-mtimes, before_script]
+  script:
+    - make test-quality-mainnet
+  artifacts:
+    when: always
+    reports:
+      junit: test-quality-reports/root-mainnet-monero/junit.xml
+    paths:
+      - test-quality-reports/root-mainnet-monero/
 
 # The simulation directory has its own go.mod and is not reached by root ./....
 test-simulation-unit:
@@ -463,11 +517,12 @@ test-mocknet-scripts:
   needs: []
   image: alpine:3.21
   variables:
-    PKGS: bash python3 jq make
+    PKGS: bash python3 jq make git
   before_script:
     - !reference [.pkg-install, before_script]
   script:
     - python3 -m unittest discover -s build/scripts/tests -v
+    - python3 -m unittest discover -s scripts/tests -p 'test_quality_*_test.py' -v
 
 xmr-e2e-gates:
   tags: !reference [.small-runner, tags]
@@ -618,6 +673,8 @@ chain-evm:
 
 go-tss:
   tags: !reference [.small-runner, tags]
+  variables:
+    PKGS: python3
   rules:
     # Keeps honest fork MRs from running with tss-lib-private credentials. It is
     # not a security boundary: a fork MR pipeline a maintainer runs in this
@@ -628,17 +685,34 @@ go-tss:
     - changes:
         paths:
           - bifrost/tss/go-tss/**/*
+          - bifrost/tss/*.go
+          - bifrost/tss/curvelock/**/*
+          - bifrost/p2p/**/*
+          - bifrost/metrics/**/*
+          - common/**/*
+          - constants/**/*
+          - crypto/**/*
+          - x/thorchain/ebifrost/**/*
+          - x/thorchain/types/**/*
           # go-tss is excluded from unit-tests (TEST_PATHS), so a tss-lib bump in
           # go.mod would otherwise run no TSS tests at all.
           - go.mod
           - go.sum
   stage: test
+  timeout: 1h
   needs: []
   before_script:
+    - !reference [.pkg-install, before_script]
     - !reference [.go-private-auth, before_script]
     - !reference [.stable-mtimes, before_script]
   script:
     - make test-go-tss
+  artifacts:
+    when: always
+    reports:
+      junit: test-quality-reports/root-mocknet-go-tss/junit.xml
+    paths:
+      - test-quality-reports/root-mocknet-go-tss/
 
 pages:
   rules:
@@ -773,7 +847,8 @@ test-simulation:
   needs: !reference [.long-test-gate, needs]
   # One retry only. Measured over 2026-09-21..27: a second attempt rescued 24
   # runs, a third only 5, while 46 chains failed all three attempts (~45m each)
-  # because the failure was real.
+  # because the failure was real. The retry reuses the recorded seed, so a
+  # failure that passes on retry is still reproducible from seed.txt.
   retry:
     max: 1
     when:
@@ -787,21 +862,24 @@ test-simulation:
       - unknown_failure
       - data_integrity_failure
       - script_failure
+    exit_codes:
+      - 75
   stage: long-test
   # The Go binaries are built here, not in the dind daemon (see
   # test-simulation-cluster-native in the Makefile), with the runner's warm Go
   # caches. bookworm is the build stage of build/docker/Dockerfile, so the
   # binaries link against the glibc of the bookworm runtime they run on; the
-  # default golang:1.26.4 is trixie. The module cache is warm, so like
+  # default golang:1.26.9 is trixie. The module cache is warm, so like
   # unit-tests this only warns when no credential can read tss-lib-private.
-  image: golang:1.26.4-bookworm
+  image: golang:1.26.9-bookworm
   services:
     - docker:28.5.2-dind
   artifacts:
-    when: on_failure
+    when: always
     name: $CI_JOB_NAME-$CI_COMMIT_REF_NAME
     paths:
       - ./logs/
+      - ./test-quality-reports/simulation-run/
   environment:
     name: integration
   before_script:
@@ -819,9 +897,15 @@ test-simulation:
         export DOCKER_MIRROR="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
       fi
     # Do not allow an inherited optional-XMR setting to bypass live coverage.
-    - make test-simulation-cluster-native TEST_SIMULATION_REQUIRE_XMR=1
-  # Diagnostics for the on_failure artifacts. On a passing run nothing keeps
-  # them, and the event replay and log dump took up to 3.6 min.
+    - |
+      mkdir -p test-quality-reports/simulation-run
+      # Stable across job retries, distinct across pipelines. The first attempt
+      # can always be reconstructed even if GitLab replaces retry artifacts.
+      export RANDOM_SEED_HEX="${RANDOM_SEED_HEX:-$(printf '%s' "$CI_PIPELINE_ID:$CI_COMMIT_SHA:$CI_JOB_NAME" | sha256sum | cut -d' ' -f1)}"
+      printf '%s\n' "$RANDOM_SEED_HEX" > test-quality-reports/simulation-run/seed.txt
+      make test-simulation-cluster-native TEST_SIMULATION_REQUIRE_XMR=1
+  # Expensive diagnostics are collected only after a failure. The seed artifact
+  # is retained on success too, so a later flake can be reproduced.
   after_script:
     - |
       if [ "$CI_JOB_STATUS" = "success" ]; then
@@ -852,6 +936,8 @@ test-simulation:
 
 unit-tests-race-bifrost:
   tags: !reference [.small-runner, tags]
+  variables:
+    PKGS: python3
   rules:
     - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
       when: never
@@ -868,10 +954,74 @@ unit-tests-race-bifrost:
       artifacts: false
   timeout: 1h
   before_script:
+    - !reference [.pkg-install, before_script]
     - !reference [.go-private-auth, before_script]
     - !reference [.stable-mtimes, before_script]
   script:
     - make test-race-bifrost
+  artifacts:
+    when: always
+    reports:
+      junit: test-quality-reports/root-mocknet-race-bifrost/junit.xml
+    paths:
+      - test-quality-reports/root-mocknet-race-bifrost/
+
+# Curated mutations fail when an assertion survives, an anchor changes, or a
+# baseline cannot run. The runner owns the shared build lock and time budget.
+security-mutations-fast:
+  tags: !reference [.small-runner, tags]
+  rules:
+    - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
+      when: never
+    - if: '$CI_MERGE_REQUEST_IID && $CI_PIPELINE_SOURCE != "schedule"'
+      changes:
+        paths:
+          - bifrost/observer/**/*
+          - bifrost/pkg/chainclients/shared/signing/**/*
+          - common/**/*
+          - x/thorchain/types/**/*
+          - scripts/test-security-mutations*
+          - go.mod
+          - go.sum
+  stage: long-test
+  needs:
+    - job: unit-tests
+      optional: true
+      artifacts: false
+  timeout: 40m
+  variables:
+    PKGS: python3
+  before_script:
+    - !reference [.pkg-install, before_script]
+    - !reference [.go-private-auth, before_script]
+  script:
+    - python3 scripts/test-security-mutations.py --mode fast --budget-seconds 1800 --summary test-quality-reports/mutations-fast.json
+  artifacts:
+    when: always
+    paths:
+      - test-quality-reports/mutations-fast.json
+
+security-mutations-deep:
+  tags: !reference [.small-runner, tags]
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+  stage: long-test
+  needs:
+    - job: unit-tests
+      optional: true
+      artifacts: false
+  timeout: 1h
+  variables:
+    PKGS: python3
+  before_script:
+    - !reference [.pkg-install, before_script]
+    - !reference [.go-private-auth, before_script]
+  script:
+    - python3 scripts/test-security-mutations.py --mode deep --budget-seconds 3300 --summary test-quality-reports/mutations-deep.json
+  artifacts:
+    when: always
+    paths:
+      - test-quality-reports/mutations-deep.json
 
 consensus-determinism:
   tags: !reference [.small-runner, tags]
@@ -915,7 +1065,10 @@ test-regression:
       - unknown_failure
       - data_integrity_failure
       - script_failure
+    exit_codes:
+      - 75
   stage: long-test
+  timeout: 2h
   needs: !reference [.long-test-gate, needs]
   # Runs in the job container instead of building ci/Dockerfile.regtest in an
   # empty dind daemon, so the runner's warm /go-build-cache and /go-mod-cache

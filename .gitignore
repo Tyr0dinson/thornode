@@ -35,6 +35,8 @@ cache/
 /docs/book
 /docs/theme
 /public
+/test-quality-reports/
+/.security-fuzz-cache/
 /tmp
 __pycache__
 typechain/

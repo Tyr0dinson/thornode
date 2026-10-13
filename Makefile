@@ -282,8 +282,10 @@ test-coverage-sum:
 	@go tool cover -html=coverage.txt -o coverage.html
 
 test:
+ifneq ($(filter test,$(MAKECMDGOALS)),)
 ifeq ($(TEST_DIR),$(TEST_PATHS))
 	@$(MAKE) test-network-specific
+endif
 endif
 	@go test ${TEST_BUILD_FLAGS} ${RUN_FLAG} ${TEST_DIR}
 	@TAG=stagenet $(MAKE) build
@@ -292,24 +294,39 @@ test-all: test-network-specific
 	@go test ${TEST_BUILD_FLAGS} ${RUN_FLAG} "./..."
 
 test-go-tss:
-	@go test ${TEST_BUILD_FLAGS} ${RUN_FLAG} --race "./bifrost/tss/go-tss/..."
+	@python3 scripts/test-quality-run.py --tags mocknet --race --parallel $(PARALLELISM) --run '$(RUN)' --max-skips 0 --report-dir test-quality-reports/root-mocknet-go-tss ./bifrost/tss/go-tss/...
 
 test-xmr-e2e:
 	@go test -count=1 ./bifrost/pkg/chainclients/monero -run '${XMR_E2E_RUN}'
 
 test-network-specific:
-	@go test -tags stagenet ${RUN_FLAG} ./common
-	@go test -tags chainnet ${RUN_FLAG} ./common
-	@go test -tags mainnet ${RUN_FLAG} ./common ./bifrost/pkg/chainclients/utxo/...
-	@go test -tags mainnet ./x/thorchain -run TestPackage -check.f Migrate # mainnet store-migration tests are mainnet-tagged; otherwise they never run in CI (unit-tests job is mocknet-only)
-	@go test -tags mocknet ${RUN_FLAG} ./common ./bifrost/pkg/chainclients/utxo/...
+	@python3 scripts/test-quality-run.py --tags stagenet --run '$(RUN)' --report-dir test-quality-reports/network-stagenet ./common
+	@python3 scripts/test-quality-run.py --tags chainnet --run '$(RUN)' --report-dir test-quality-reports/network-chainnet ./common
+	@python3 scripts/test-quality-run.py --tags mainnet --run '$(RUN)' --report-dir test-quality-reports/network-mainnet ./common ./bifrost/pkg/chainclients/utxo/...
+	@python3 scripts/test-quality-run.py --tags mainnet --run TestPackage --test-arg=-check.f --test-arg=Migrate --report-dir test-quality-reports/network-mainnet-migration ./x/thorchain
+	@python3 scripts/test-quality-run.py --tags mocknet --run '$(RUN)' --report-dir test-quality-reports/network-mocknet ./common ./bifrost/pkg/chainclients/utxo/...
 
 test-race:
 	@go test -race ${TEST_BUILD_FLAGS} ${RUN_FLAG} ${TEST_DIR}
 
 # bifrost is the concurrent half of the system; go-tss is covered by test-go-tss.
+# ebifrost processes concurrent Bifrost callbacks on the thornode side.
 test-race-bifrost:
-	@go test -race -timeout 20m ${TEST_BUILD_FLAGS} ${RUN_FLAG} $$(go list ./bifrost/... | grep -v bifrost/tss/go-tss) ./x/thorchain/ebifrost
+	@python3 scripts/test-quality-run.py --tags mocknet --race --parallel $(PARALLELISM) --run '$(RUN)' --timeout 20m $(if $(RUN),,--require-package-tests /x/thorchain/ebifrost) --forbid-skip-package /x/thorchain/ebifrost --exclude-prefix gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss --report-dir test-quality-reports/root-mocknet-race-bifrost ./bifrost/... ./x/thorchain/ebifrost
+
+# Each command emits inventory, JSON events, JUnit, and filtered coverage in a
+# separate directory so a skipped security test cannot pass unnoticed.
+.PHONY: test-quality-simulation test-quality-mainnet
+test-quality-simulation:
+	@python3 scripts/test-quality-run.py --module test/simulation --tags mocknet --fresh \
+		--allow-skip-test TestDogeStalledBroadcastIsNotDuplicated \
+		--allow-skip-test TestZecIsolatedFunding \
+		--require-gocheck /actors/core:1 --require-gocheck /pkg/solana:1 \
+		--require-gocheck /pkg/types:7 \
+		--report-dir test-quality-reports/simulation-mocknet ./...
+
+test-quality-mainnet:
+	@python3 scripts/test-quality-run.py --tags mainnet --fresh --run '^TestNewClientRejectsNonMainnetDaemonOnMainnet$$' --require-test TestNewClientRejectsNonMainnetDaemonOnMainnet --report-dir test-quality-reports/root-mainnet-monero ./bifrost/pkg/chainclients/monero
 
 # ------------------------------ Performance Tests ------------------------------
 

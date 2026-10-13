@@ -1359,8 +1359,19 @@ func (s *ClientBackfillSuite) TestReportSolvencyConcurrentNoRace(c *C) {
 	}
 	wg.Wait()
 
-	// height == steps*SolvencyBlocks sits exactly on boundary `steps`, which is not
-	// yet crossed, so the highest reportable multiple is steps-1.
+	// TryLock intentionally drops overlapping report attempts, so the concurrent
+	// burst need not visit every cadence boundary. Once contention ends, repeated
+	// scanner passes at the same height must catch up without regressing.
+	last := client.getSolvencySlotMultiple()
+	c.Assert(last >= 1 && last <= steps-1, Equals, true)
+	for last < steps-1 {
+		c.Assert(client.ReportSolvency(int64(steps)*client.cfg.SolvencyBlocks), IsNil)
+		next := client.getSolvencySlotMultiple()
+		c.Assert(next > last, Equals, true)
+		last = next
+	}
+	// height == steps*SolvencyBlocks sits exactly on boundary `steps`, which is
+	// not yet crossed, so the highest reportable multiple is steps-1.
 	c.Assert(client.getSolvencySlotMultiple(), Equals, int64(steps-1))
 }
 
