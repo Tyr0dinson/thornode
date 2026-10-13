@@ -455,6 +455,9 @@ func deriveConsensusBlame(reports []*thortypes.TssKeysignFailReport, members Nod
 	}
 
 	blamed := make([]string, 0, len(counts))
+	// analyze-ignore(map-iteration): order-independent. jail is a pure function of
+	// count[pk], len(members) and activeBlameRule, and blamed is sorted before return, so
+	// the jailed set is identical regardless of map iteration order.
 	for pk, count := range counts {
 		var jail bool
 		switch activeBlameRule {
