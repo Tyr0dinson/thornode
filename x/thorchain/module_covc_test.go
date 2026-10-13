@@ -215,7 +215,7 @@ func (s *ModuleCovCSuite) TestAppModuleBasicsCovC(c *C) {
 	am.IsAppModule()
 	am.IsOnePerModuleType()
 	am.RegisterInvariants(nil)
-	c.Check(am.ConsensusVersion(), Equals, uint64(19))
+	c.Check(am.ConsensusVersion(), Equals, uint64(20))
 	c.Check(am.QuerierRoute(), Equals, types.QuerierRoute)
 	c.Check(am.msgServer, NotNil)
 	c.Check(am.queryServer, NotNil)

@@ -121,33 +121,24 @@ func TestEnqueueAuthenticatedOutboundReplayErrorsCov(t *testing.T) {
 		require.NoError(t, err)
 		require.False(t, queued)
 	})
-	t.Run("mark-failure", func(t *testing.T) {
-		f := newMigrationFixtureCov(t, "cov-out-mark")
-		tx := outbound(f)
-		f.fake.set(func(m *migrationSidecarCov) { m.markFail = true })
-		_, err := f.scanner.EnqueueAuthenticatedOutboundReplay(tx)
-		require.ErrorContains(t, err, "fail to call mark-observed endpoint")
-	})
-	t.Run("proof-mismatch", func(t *testing.T) {
-		f := newMigrationFixtureCov(t, "cov-out-proof")
-		tx := outbound(f)
-		f.fake.set(func(m *migrationSidecarCov) { m.proof.Amount = 9 * moneroAtomicToThorchain })
-		_, err := f.scanner.EnqueueAuthenticatedOutboundReplay(tx)
-		require.ErrorContains(t, err, "payment mismatch")
-	})
-	t.Run("success-and-ineligible", func(t *testing.T) {
+	t.Run("durable-enqueue-defers-mark-observed", func(t *testing.T) {
 		f := newMigrationFixtureCov(t, "cov-out-ok")
 		tx := outbound(f)
+		// enrollment only persists the record; MarkObserved, proof and receipt
+		// failures surface when FetchTxs drains it (scanner_outbound_replay_test.go)
+		f.fake.set(func(m *migrationSidecarCov) {
+			m.markFail = true
+			m.proof.ObservationEligible = false
+		})
 		queued, err := f.scanner.EnqueueAuthenticatedOutboundReplay(tx)
 		require.NoError(t, err)
 		require.True(t, queued)
+		count, err := f.replay.Count()
+		require.NoError(t, err)
+		require.Equal(t, 1, count)
 		receipts, err := f.reorg.ListObservationReceipts()
 		require.NoError(t, err)
-		require.Len(t, receipts, 1)
-		require.Equal(t, int64(100), receipts[0].entry.Height)
-
-		f.fake.set(func(m *migrationSidecarCov) { m.proof.ObservationEligible = false })
-		_, err = f.scanner.EnqueueAuthenticatedOutboundReplay(tx)
-		require.ErrorContains(t, err, "not eligible")
+		require.Empty(t, receipts)
+		f.fake.set(func(m *migrationSidecarCov) { require.Zero(t, m.markCalls) })
 	})
 }
