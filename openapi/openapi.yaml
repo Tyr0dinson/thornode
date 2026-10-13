@@ -5770,8 +5770,9 @@ components:
           format: uint64
           description: |
             user swaps counted in this epoch; a streaming swap counts once, not
-            once per sub-swap. Epochs below L1DynamicFeeMinSwaps do not seal and
-            roll into the next one, so this may span several epochs
+            once per sub-swap. Epochs below L1DynamicFeeMinSwaps swaps or
+            L1DynamicFeeMinVolumeUSD of volume do not seal and roll into the
+            next one, so this may span several epochs
           example: 42
         pool_volume_tor:
           type: string
@@ -5864,8 +5865,10 @@ components:
           type: integer
           format: uint64
           description: |
-            running count of user swaps for this accumulator; compare against
-            L1DynamicFeeMinSwaps to see whether the epoch will seal or roll
+            running count of user swaps for this accumulator, summed across any
+            epochs it has rolled over. The epoch seals only if swap_count >=
+            L1DynamicFeeMinSwaps and volume_tor >= L1DynamicFeeMinVolumeUSD * 1e8;
+            if either falls short, the accumulator rolls into the next epoch
           example: 4
         pool_volume_tor:
           type: string

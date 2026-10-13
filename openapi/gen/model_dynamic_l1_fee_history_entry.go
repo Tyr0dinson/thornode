@@ -23,7 +23,7 @@ type DynamicL1FeeHistoryEntry struct {
 	FeesTor string `json:"fees_tor"`
 	// dynamic_bps value at the close of the epoch
 	BpsAtClose int32 `json:"bps_at_close"`
-	// user swaps counted in this epoch; a streaming swap counts once, not once per sub-swap. Epochs below L1DynamicFeeMinSwaps do not seal and roll into the next one, so this may span several epochs 
+	// user swaps counted in this epoch; a streaming swap counts once, not once per sub-swap. Epochs below L1DynamicFeeMinSwaps swaps or L1DynamicFeeMinVolumeUSD of volume do not seal and roll into the next one, so this may span several epochs 
 	SwapCount int32 `json:"swap_count"`
 	// TOR-denominated (1e8-precision USD value) total volume through the pair over the same span, regardless of affiliate. It is the denominator that normalizes fees_tor against market-wide activity 
 	PoolVolumeTor string `json:"pool_volume_tor"`

@@ -8,7 +8,7 @@ Name | Type | Description | Notes
 **VolumeTor** | **string** | TOR-denominated (1e8-precision USD value) swap volume in this epoch  | 
 **FeesTor** | **string** | TOR-denominated (1e8-precision USD value) fees accrued in this epoch  | 
 **BpsAtClose** | **int32** | dynamic_bps value at the close of the epoch | 
-**SwapCount** | **int32** | user swaps counted in this epoch; a streaming swap counts once, not once per sub-swap. Epochs below L1DynamicFeeMinSwaps do not seal and roll into the next one, so this may span several epochs  | 
+**SwapCount** | **int32** | user swaps counted in this epoch; a streaming swap counts once, not once per sub-swap. Epochs below L1DynamicFeeMinSwaps swaps or L1DynamicFeeMinVolumeUSD of volume do not seal and roll into the next one, so this may span several epochs  | 
 **PoolVolumeTor** | **string** | TOR-denominated (1e8-precision USD value) total volume through the pair over the same span, regardless of affiliate. It is the denominator that normalizes fees_tor against market-wide activity  | 
 
 ## Methods

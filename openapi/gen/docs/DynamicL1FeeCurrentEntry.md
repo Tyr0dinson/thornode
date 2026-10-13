@@ -9,7 +9,7 @@ Name | Type | Description | Notes
 **VolumeTor** | **string** | running TOR-denominated (1e8-precision USD value) volume for this (thorname, pair) accumulator in the current epoch  | 
 **FeesTor** | **string** | running TOR-denominated (1e8-precision USD value) fees for this (thorname, pair) accumulator in the current epoch  | 
 **Epoch** | **int32** | current epoch index this accumulator belongs to | 
-**SwapCount** | **int32** | running count of user swaps for this accumulator; compare against L1DynamicFeeMinSwaps to see whether the epoch will seal or roll  | 
+**SwapCount** | **int32** | running count of user swaps for this accumulator, summed across any epochs it has rolled over. The epoch seals only if swap_count &gt;&#x3D; L1DynamicFeeMinSwaps and volume_tor &gt;&#x3D; L1DynamicFeeMinVolumeUSD * 1e8; if either falls short, the accumulator rolls into the next epoch  | 
 **PoolVolumeTor** | **string** | running TOR-denominated total volume through the pair, including the pair&#39;s in-progress slice that is only folded in at the seal  | 
 
 ## Methods
