@@ -63,11 +63,11 @@ var (
 	mempoolCumulativeProfileTarget = common.AVAXAsset
 	mempoolMaxCountFallbackTarget  = common.ETHAsset
 
-	// mempoolSourceAsset funds every speculative inbound. Bifrost waits 12
-	// confirmations on mocknet BASE (3s blocks), about 36s in which the inbound
-	// is mined and observed but not final. Mocknet POL now finalizes after 3
-	// 2s blocks, too short for the streaming and preemption scenarios.
-	mempoolSourceAsset = common.BaseETHAsset
+	// mempoolSourceAsset funds every speculative inbound. Bifrost waits 15
+	// confirmations on mocknet POL (2s blocks), about 30s in which the inbound
+	// is mined and observed but not final. BASE reports confirmations ready
+	// immediately, so it never opens a pre-finality window.
+	mempoolSourceAsset = common.POLAsset
 )
 
 // MempoolSwapSimulationActor exercises the real L1 -> Bifrost -> Thornode
@@ -792,9 +792,9 @@ func (a *MempoolSwapSimulationActor) scenarioStreamFinalityBeforeSettlement(conf
 // deltas with no foreign mutation in between; it is not a priority claim. Since
 // an unconfirmed inbound can be replaced under full-RBF, letting it outrank a
 // confirmed one would be an availability lever, so the speculative owner is
-// resolved rather than waited out. The BASE source needs twelve confirmations
-// and AVAX only a couple, giving the final swap a wide window in which the
-// owner is still speculative.
+// resolved rather than waited out. The POL source needs fifteen confirmations
+// while AVAX is final immediately, giving the final swap a wide window in which
+// the owner is still speculative.
 func (a *MempoolSwapSimulationActor) scenarioPoolPreemption(config *OpConfig) error {
 	startHeight, err := thornode.GetBlockHeight()
 	if err != nil {

@@ -10,10 +10,11 @@ import (
 )
 
 // polConfirmations is the POL inbound confirmation count. Mocknet bor seals a
-// block every 2s (--dev.period 2) and never reorgs, so the mainnet 15 blocks
-// only added 30s to every POL inbound in the simulation. 3 (the BSC count) still
-// takes inbounds through a pre-confirmation observation before the final one.
-const polConfirmations = 3
+// block every 2s (--dev.period 2), so 15 blocks keep a POL inbound observed but
+// not final for about 30s. The mempool swap simulation needs that window for its
+// speculative, streaming and preemption scenarios; every other simulated chain
+// finalizes within a few seconds (BASE immediately).
+const polConfirmations = 15
 
 // GetHeight returns the current block height.
 func (e *EVMScanner) GetHeight() (int64, error) {
