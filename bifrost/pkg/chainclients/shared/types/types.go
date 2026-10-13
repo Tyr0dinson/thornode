@@ -74,6 +74,9 @@ type ChainClient interface {
 // before returning success. Observer currently requires this hook for XMR,
 // whose transactions do not expire, and leaves other chains unchanged.
 type PermanentErrataQuarantiner interface {
+	// BlockPermanentErrataBroadcast persists the exact hash fence without the
+	// broader logical-owner/alias/scanner cleanup performed by quarantine.
+	BlockPermanentErrataBroadcast(errata common.ErrataTx) error
 	QuarantinePermanentErrata(errata common.ErrataTx, orphanHeight int64) error
 }
 

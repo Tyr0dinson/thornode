@@ -2126,7 +2126,7 @@ func (s *SlashingSuite) TestNeedsNewVaultMatchesDestination(c *C) {
 	c.Check(slasherNeedsNewVault(c, mgr, ctx, vaultOf(pk1, pk2, pk3), matchedToi), Equals, false)
 
 	// A Zcash tex destination and its P2PKH form are one address.
-	p2pkhAddress, err := common.NewAddress("tmEp4k7dSU8eGj32uJPi2wBSGuiNaVFBLN7")
+	p2pkhAddress, err := GetRandomPubKey().GetAddress(common.ZECChain)
 	c.Assert(err, IsNil)
 	texAddress, err := p2pkhAddress.ToTexAddress()
 	c.Assert(err, IsNil)

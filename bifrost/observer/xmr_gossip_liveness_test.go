@@ -146,7 +146,7 @@ func TestStateExportRejectsQuarantinedOrUnreadableSnapshot(t *testing.T) {
 				require.NoError(t, o.filterErrataTx(btypes.ErrataBlock{Height: 100, Txs: []btypes.ErrataTx{
 					{Chain: common.XMRChain, TxID: "restricted"},
 				}}))
-				require.NoError(t, o.handleErrataTxCommitted(common.ErrataTx{Chain: common.XMRChain, Id: "restricted"}))
+				require.NoError(t, o.handleErrataTxCommitted(common.ErrataTx{Chain: common.XMRChain, Id: "restricted"}, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED))
 			case "unavailable":
 				g.SetObserverStorage(nil)
 			case "corrupt":

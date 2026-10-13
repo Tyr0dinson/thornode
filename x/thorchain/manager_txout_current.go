@@ -407,6 +407,7 @@ func (tos *TxOutStorage) UnSafeAddTxOutItem(ctx cosmos.Context, mgr Manager, toi
 		}
 		toi.ToAddress = newBCHAddress
 	}
+	// Preserve legacy ZEC TEX destinations so the signer continues to reject them.
 	return tos.addToBlockOut(ctx, mgr, toi, height)
 }
 
@@ -768,6 +769,14 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 			return outputs, cosmos.ZeroUint(), fmt.Errorf("empty to address , can't send out")
 		}
 		toi.ToAddress = newBCHAddress
+	}
+	// Normalize before copying the destination into both voter.Actions and the
+	// outbound queue so the stored address matches the daemon's observation.
+	if toi.Chain.Equals(common.ZECChain) && strings.HasPrefix(toi.ToAddress.String(), "tex") {
+		toi.ToAddress, err = common.ConvertToZECTransparentAddress(toi.ToAddress)
+		if err != nil {
+			return outputs, cosmos.ZeroUint(), fmt.Errorf("fail to normalize ZEC outbound address: %w", err)
+		}
 	}
 
 	// ensure amount is rounded to appropriate decimals

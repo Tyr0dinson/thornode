@@ -234,7 +234,7 @@ type AttestationGossip struct {
 
 	certificateObserver               *Observer
 	observerHandleObservedTxCommitted func(tx common.ObservedTx, allowFutureObservation bool)
-	observerHandleErrataTxCommitted   func(errata common.ErrataTx) error
+	observerHandleErrataTxCommitted   func(errata common.ErrataTx, outcome common.ErrataTxOutcome) error
 	observerApplySpentOutputRefs      func(request spentOutputRefsImport, onOutcome func(applied bool))
 	observerApplyCommittedSpentRefs   func(context.Context, common.PubKey, common.TxID) (common.ObservedTx, bool)
 	applySpentRefsSem                 chan struct{}
@@ -702,6 +702,18 @@ func (s *AttestationGossip) handleQuorumErrataTxCommitted(en *ebifrost.EventNoti
 		return
 	}
 
+	if qe.ErrataTx.Chain.RequiresTerminalErrataOutcome() {
+		switch qe.Outcome {
+		case common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED,
+			common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION:
+		default:
+			// An accepted batch can still lack current-active-set quorum.
+			// Keep its outbox and every attestation retryable; unknown outcomes
+			// also fail closed instead of silently discarding evidence.
+			return
+		}
+	}
+
 	// A committed batch can contain only another node's vote. Clear this
 	// observer's durable outbox only when Thornode confirms that this node's
 	// exact attestation was included in the delivered message.
@@ -713,7 +725,7 @@ func (s *AttestationGossip) handleQuorumErrataTxCommitted(en *ebifrost.EventNoti
 		}
 	}
 	if localAttestationCommitted && s.observerHandleErrataTxCommitted != nil {
-		if err := s.observerHandleErrataTxCommitted(*qe.ErrataTx); err != nil {
+		if err := s.observerHandleErrataTxCommitted(*qe.ErrataTx, qe.Outcome); err != nil {
 			s.logger.Error().Err(err).
 				Str("chain", qe.ErrataTx.Chain.String()).
 				Str("txid", qe.ErrataTx.Id.String()).

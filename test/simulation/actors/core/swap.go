@@ -52,6 +52,7 @@ type SwapActor struct {
 
 	// Required verification actors must fail rather than skip an unfunded swap.
 	requireOutbound bool
+	useTexAddress   bool
 
 	xmrSwapSlotAcquired bool
 
@@ -72,6 +73,23 @@ func swapQuoteRecommendedMinAttempts(from, to common.Asset) int {
 }
 
 func NewSwapActor(from, to common.Asset, rng *rand.Rand) *Actor {
+	return &newSwapActor(from, to, rng).Actor
+}
+
+// NewZECSwapActor requires a completed ZEC swap using the selected address format.
+func NewZECSwapActor(from common.Asset, useTexAddress bool, rng *rand.Rand) *Actor {
+	a := newSwapActor(from, common.ZECAsset, rng)
+	a.requireOutbound = true
+	a.useTexAddress = useTexAddress
+	if useTexAddress {
+		a.Name += " (TEX)"
+	} else {
+		a.Name += " (transparent)"
+	}
+	return &a.Actor
+}
+
+func newSwapActor(from, to common.Asset, rng *rand.Rand) *SwapActor {
 	a := &SwapActor{
 		Actor: *NewActor(fmt.Sprintf("Swap %s => %s", from, to), rng),
 		from:  from,
@@ -95,7 +113,7 @@ func NewSwapActor(from, to common.Asset, rng *rand.Rand) *Actor {
 	// verify the swap within expected range
 	a.Ops = append(a.Ops, a.verifyOutbound)
 
-	return &a.Actor
+	return a
 }
 
 func swapActorTimeout(from, to common.Asset) time.Duration {
@@ -511,6 +529,13 @@ func (a *SwapActor) acquireUserForAmount(config *OpConfig, targetAmount sdkmath.
 			a.Log().Fatal().Err(err).Msg("failed to get L1 address")
 		}
 		a.toAddress = toAddress
+		if a.useTexAddress {
+			a.toAddress, err = toAddress.ToTexAddress()
+			if err != nil {
+				a.releaseUserSelection()
+				return OpResult{Finish: true, Error: err}
+			}
+		}
 
 		// get to asset balance for tracking
 		a.toBalance = accountAssetAmount(toAcct, a.to)
@@ -913,6 +938,16 @@ func (a *SwapActor) verifyOutbound(config *OpConfig) OpResult {
 	// verify outbound amount + max gas within expected range
 	action := details.Actions[0]
 	out := details.OutTxs[0]
+	if a.to.Chain.Equals(common.ZECChain) {
+		// Both the action and observation must use the wallet's Base58 address.
+		address, addressErr := a.user.PubKey(common.ZECChain).GetAddress(common.ZECChain)
+		if addressErr != nil {
+			err = addressErr
+		} else if action.Chain != common.ZECChain.String() || out.GetChain() != common.ZECChain.String() ||
+			action.ToAddress != address.String() || out.GetToAddress() != address.String() {
+			err = fmt.Errorf("expected ZEC action and outbound to use transparent address %s, got %s and %s", address, action.ToAddress, out.GetToAddress())
+		}
+	}
 	if !a.expectedOutboundVault.IsEmpty() {
 		vaultPubKey := action.GetVaultPubKey()
 		if a.to.Chain.Equals(common.XMRChain) {

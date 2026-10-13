@@ -275,18 +275,10 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 			return NoAddress, fmt.Errorf("fail to get pubkey from bech32: %w", err)
 		}
 
-		var prefix string
-		switch chainNetwork {
-		case MockNet:
-			prefix = "testnet3"
-		case MainNet, StageNet, ChainNet:
-			prefix = "mainnet"
-		}
-
 		var bz [20]byte
 		copy(bz[:], pk.Address().Bytes())
 
-		addressString = zecutil.NewAddressPubKeyHash(bz, prefix).String()
+		addressString = zecutil.NewAddressPubKeyHash(bz, ZECNetworkName()).String()
 	case SUIChain:
 		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, p.String())
 		if err != nil {

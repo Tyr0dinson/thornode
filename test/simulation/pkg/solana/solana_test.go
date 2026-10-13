@@ -1,7 +1,10 @@
 package solana
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -24,6 +27,30 @@ type SolanaSuite struct{}
 var _ = Suite(&SolanaSuite{})
 
 func (s *SolanaSuite) TestClient(c *C) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Method string `json:"method"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		var result any
+		switch request.Method {
+		case "getLatestBlockhash":
+			result = map[string]any{"value": map[string]any{"blockhash": "11111111111111111111111111111111"}}
+		case "sendTransaction":
+			result = "local-signature"
+		case "getTransaction":
+			result = map[string]any{"slot": 1, "meta": map[string]any{"err": nil}}
+		default:
+			http.Error(w, "unexpected RPC method: "+request.Method, http.StatusBadRequest)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": 1, "result": result})
+	}))
+	defer server.Close()
+
 	mnemonic := "master master master master master master master master master master master master master master master master master master master master master master master notice"
 
 	registry := codectypes.NewInterfaceRegistry()
@@ -42,7 +69,7 @@ func (s *SolanaSuite) TestClient(c *C) {
 	// create thorclient.Keys for chain client construction
 	keys := thorclient.NewKeysWithKeybase(kr, name, "")
 
-	client, err := NewClient(common.SOLChain, "http://localhost:8899", keys)
+	client, err := NewClient(common.SOLChain, server.URL, keys)
 	c.Assert(err, IsNil)
 	c.Assert(client, NotNil)
 
@@ -61,5 +88,5 @@ func (s *SolanaSuite) TestClient(c *C) {
 	// Broadcast tx
 	hash, err := client.BroadcastTx(sig)
 	c.Assert(err, IsNil)
-	c.Assert(len(hash), Not(Equals), 0)
+	c.Assert(hash, Equals, "local-signature")
 }

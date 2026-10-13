@@ -343,13 +343,10 @@ func (TypeObservedTxSuite) TestAddOutTx(c *C) {
 	c.Assert(voter.GetTx(activeNodes).Equals(voter.Tx), Equals, true)
 }
 
-// A Zcash outbound scheduled to a tex address is observed in its P2PKH form, so
-// the action must still match - otherwise the vault is slashed for "extra
-// funds" over a payment the network itself ordered.
 func (TypeObservedTxSuite) TestMatchActionItemZecTex(c *C) {
-	p2pkhAddr, err := common.NewAddress("tmEp4k7dSU8eGj32uJPi2wBSGuiNaVFBLN7")
+	p2pkhAddr, err := GetRandomPubKey().GetAddress(common.ZECChain)
 	c.Assert(err, IsNil)
-	otherAddr, err := common.NewAddress("tmAbHS91acTju5QaDawZ1M5Pkbv2FFnRwUX")
+	otherAddr, err := GetRandomPubKey().GetAddress(common.ZECChain)
 	c.Assert(err, IsNil)
 	texAddr, err := p2pkhAddr.ToTexAddress()
 	c.Assert(err, IsNil)

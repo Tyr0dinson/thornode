@@ -1177,6 +1177,13 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	height := item.Height
 	tx := item.TxOutItem
 
+	// Block legacy TEX outbounds before signing or rebroadcasting saved bytes.
+	if tx.Chain.Equals(common.ZECChain) && strings.HasPrefix(tx.ToAddress.String(), "tex") {
+		s.logger.Warn().Stringer("to_address", tx.ToAddress).Str("memo", tx.Memo).
+			Msg("skipping ZEC TEX outbound; requires manual reconciliation")
+		return nil, nil, nil
+	}
+
 	// set the checkpoint on the tx out item if it was stored
 	if item.Checkpoint != nil {
 		tx.Checkpoint = item.Checkpoint
@@ -1331,6 +1338,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 			if s.storage != nil {
 				if storeErr := s.storage.Set(item); storeErr != nil {
 					s.logger.Error().Err(storeErr).Msg("fail to persist refreshed txout gas")
+					return nil, nil, fmt.Errorf("persist refreshed txout gas before signing: %w", storeErr)
 				}
 			}
 		}
@@ -1373,6 +1381,10 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		item.Observation = observation
 		if storeErr := s.storage.Set(item); storeErr != nil {
 			s.logger.Error().Err(storeErr).Msg("fail to persist signed tx before broadcast")
+			// Never broadcast an unpersisted signature, but hand the signed result
+			// back so processTransaction retries the write before another attempt
+			// can re-sign (and possibly pick a different nonce).
+			return checkpoint, observation, &unsavedSignedTxError{item: item, err: storeErr}
 		}
 	}
 
@@ -1425,6 +1437,21 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 
 	return nil, observation, nil
 }
+
+// unsavedSignedTxError reports a signed payload whose pre-broadcast write failed.
+// It carries the complete item that should have been written (signed payload,
+// observation and any gas refreshed before signing) so the retry write cannot
+// pair the signature with the caller's stale copy.
+type unsavedSignedTxError struct {
+	item TxOutStoreItem
+	err  error
+}
+
+func (e *unsavedSignedTxError) Error() string {
+	return "persist signed tx before broadcast: " + e.err.Error()
+}
+
+func (e *unsavedSignedTxError) Unwrap() error { return e.err }
 
 func (s *Signer) isTssKeysign(pubKey common.PubKey) bool {
 	return !s.localPubKeyECDSA.Equals(pubKey) && !s.localPubKeyEDDSA.Equals(pubKey)
@@ -1550,7 +1577,17 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 		// Round7Retry persists on the item — its name is the legacy v1 label and
 		// is kept stable for on-disk schema compatibility.
 		isTerminalRound := errors.As(err, &ksErr) && ksErr.IsTerminalRound()
-		if checkpoint != nil || isTerminalRound {
+		// A signature whose pre-broadcast write failed already exists; retry that
+		// write so the next pass only rebroadcasts these bytes instead of re-signing.
+		var unsaved *unsavedSignedTxError
+		hasUnsaved := errors.As(err, &unsaved)
+		if hasUnsaved {
+			item = unsaved.item
+			if checkpoint == nil {
+				checkpoint = item.Checkpoint
+			}
+		}
+		if checkpoint != nil || isTerminalRound || hasUnsaved {
 			item.Checkpoint = checkpoint
 			if isTerminalRound {
 				s.logger.Error().Err(err).Interface("tx", item.TxOutItem).Msg("terminal-round signing error")

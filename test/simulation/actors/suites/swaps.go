@@ -174,7 +174,13 @@ func Swaps(rng *rand.Rand) *Actor {
 		for j == i {
 			j = rng.IntN(len(swapPools))
 		}
-		a.Children[core.NewSwapActor(swapPools[j], pool, rng)] = true
+		if pool.Equals(common.ZECAsset) {
+			// Always exercise both ZEC address encodings.
+			a.Children[core.NewZECSwapActor(swapPools[j], false, rng)] = true
+			a.Children[core.NewZECSwapActor(swapPools[j], true, rng)] = true
+		} else {
+			a.Children[core.NewSwapActor(swapPools[j], pool, rng)] = true
+		}
 	}
 
 	return a
