@@ -39,6 +39,8 @@ const (
 	maxScannerReorgRewind            = uint64(730)
 )
 
+var errSignerRedirect = errors.New("sidecar redirects are not allowed")
+
 type scannerContinuityCache struct {
 	resetEpoch       uint64
 	nextHeight       uint64
@@ -180,6 +182,12 @@ func NewClientWithEndpoint(cfg config.BifrostChainConfiguration, endpoint string
 		}
 	}
 
+	// Signer routes are fixed. Redirects must not bypass endpoint policy or
+	// be accepted as successful responses by the JSON helpers.
+	rejectRedirect := func(_ *http.Request, _ []*http.Request) error {
+		return errSignerRedirect
+	}
+
 	return &Client{
 		endpoint:       endpoint,
 		daemonEndpoint: daemonEndpoint,
@@ -207,9 +215,9 @@ func NewClientWithEndpoint(cfg config.BifrostChainConfiguration, endpoint string
 		chainBlockPath:    "/v1/monero/chain/block",
 		chainTxPath:       "/v1/monero/chain/tx",
 
-		client:                    &http.Client{Timeout: timeout},
+		client:                    &http.Client{Timeout: timeout, CheckRedirect: rejectRedirect},
 		daemonClient:              &http.Client{Timeout: timeout},
-		signClient:                &http.Client{Timeout: signTimeout},
+		signClient:                &http.Client{Timeout: signTimeout, CheckRedirect: rejectRedirect},
 		signerUsername:            signerUsername,
 		signerPassword:            signerPassword,
 		signerBearer:              signerBearer,
@@ -1607,6 +1615,15 @@ func (c *Client) RestoreKeysContext(ctx context.Context, vaultPubKey string, key
 
 // --- HTTP helpers ---
 
+func sidecarCallError(path string, err error) error {
+	if errors.Is(err, errSignerRedirect) {
+		// net/http wraps redirect rejection with the untrusted Location value,
+		// which may contain credentials. Keep only the local rejection reason.
+		err = errSignerRedirect
+	}
+	return fmt.Errorf("fail to call sidecar endpoint %s: %w", path, err)
+}
+
 func (c *Client) callGet(path string, out any) error {
 	return c.callGetContext(context.Background(), path, out)
 }
@@ -1620,7 +1637,7 @@ func (c *Client) callGetContext(ctx context.Context, path string, out any) error
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("fail to call sidecar endpoint %s: %w", path, err)
+		return sidecarCallError(path, err)
 	}
 	defer func() {
 		if resp != nil && resp.Body != nil {
@@ -1628,7 +1645,8 @@ func (c *Client) callGetContext(ctx context.Context, path string, out any) error
 		}
 	}()
 
-	if resp.StatusCode >= http.StatusBadRequest {
+	// net/http skips CheckRedirect when a redirect has no Location header.
+	if resp.StatusCode >= http.StatusMultipleChoices {
 		respBody, truncated, readErr := readBoundedErrorBody(resp.Body)
 		if readErr != nil {
 			return fmt.Errorf("fail to read sidecar error response: %w", readErr)
@@ -1689,7 +1707,7 @@ func (c *Client) callJSONContext(ctx context.Context, method, path string, body 
 	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("fail to call sidecar endpoint %s: %w", path, err)
+		return sidecarCallError(path, err)
 	}
 	defer func() {
 		if resp != nil && resp.Body != nil {
@@ -1697,7 +1715,8 @@ func (c *Client) callJSONContext(ctx context.Context, method, path string, body 
 		}
 	}()
 
-	if resp.StatusCode >= http.StatusBadRequest {
+	// net/http skips CheckRedirect when a redirect has no Location header.
+	if resp.StatusCode >= http.StatusMultipleChoices {
 		respBody, truncated, readErr := readBoundedErrorBody(resp.Body)
 		if readErr != nil {
 			return fmt.Errorf("fail to read sidecar error response: %w", readErr)
