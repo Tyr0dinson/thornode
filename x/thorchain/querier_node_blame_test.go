@@ -229,3 +229,65 @@ func (s *QuerierNodeBlameSuite) TestNodeBlamesStableOrderOnTies(c *C) {
 		c.Check(first.Blames[i].NodeAddress.Equals(second.Blames[i].NodeAddress), Equals, true)
 	}
 }
+
+func (s *QuerierNodeBlameSuite) TestNodeBlamesTiesOrderedByNodeAddress(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	qs := &queryServer{mgr: mgr}
+
+	for i := 0; i < 5; i++ {
+		setupBlameRecord(c, ctx, mgr, int64(i), int64(i), 5, int64(i))
+	}
+
+	for _, order := range []string{"desc", "asc"} {
+		resp, err := qs.queryNodeBlames(ctx, &types.QueryNodeBlamesRequest{SortOrder: order})
+		c.Assert(err, IsNil)
+		c.Assert(len(resp.Blames), Equals, 5)
+		for i := 1; i < len(resp.Blames); i++ {
+			c.Check(resp.Blames[i-1].NodeAddress.String() < resp.Blames[i].NodeAddress.String(), Equals, true,
+				Commentf("sort_order=%s: ties at index %d not ordered by node address", order, i))
+		}
+	}
+}
+
+// Active nodes that have never been blamed have no stored record but must
+// still be listed, with zero counters; records of non-active nodes must not.
+func (s *QuerierNodeBlameSuite) TestNodeBlamesIncludesUnblamedActiveNodes(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	qs := &queryServer{mgr: mgr}
+
+	blamed := setupBlameRecord(c, ctx, mgr, 3, 1, 2, 1)
+
+	clean := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, clean), IsNil)
+
+	standby := GetRandomValidatorNode(NodeStandby)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, standby), IsNil)
+	record := types.NewNodeBlameRecord(standby.NodeAddress)
+	record.KeygenBlameCountTotal = 9
+	record.KeygenBlameCountSinceChurn = 9
+	c.Assert(mgr.Keeper().SetNodeBlameRecord(ctx, record), IsNil)
+
+	resp, err := qs.queryNodeBlames(ctx, &types.QueryNodeBlamesRequest{})
+	c.Assert(err, IsNil)
+	c.Assert(len(resp.Blames), Equals, 2)
+
+	// Default sort is keygen_since_churn descending: blamed (2) before clean (0).
+	c.Check(resp.Blames[0].NodeAddress.Equals(blamed.NodeAddress), Equals, true)
+	c.Check(resp.Blames[0].KeygenBlameCountTotal, Equals, int64(3))
+
+	got := resp.Blames[1]
+	c.Check(got.NodeAddress.Equals(clean.NodeAddress), Equals, true)
+	c.Check(got.NodeOperatorAddress, Equals, clean.BondAddress.String())
+	c.Check(got.KeygenBlameCountTotal, Equals, int64(0))
+	c.Check(got.KeysignBlameCountTotal, Equals, int64(0))
+	c.Check(got.KeygenBlameCountSinceChurn, Equals, int64(0))
+	c.Check(got.KeysignBlameCountSinceChurn, Equals, int64(0))
+
+	// The unblamed node's JSON entry still carries its address and counters.
+	body, err := resp.MarshalJSONPB(nil)
+	c.Assert(err, IsNil)
+	var blames []openapi.NodeBlameResponse
+	c.Assert(json.Unmarshal(body, &blames), IsNil)
+	c.Assert(len(blames), Equals, 2)
+	c.Check(blames[1].NodeAddress, Equals, clean.NodeAddress.String())
+}

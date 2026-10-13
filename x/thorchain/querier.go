@@ -1409,7 +1409,8 @@ func (qs queryServer) queryNodeBlame(ctx cosmos.Context, req *types.QueryNodeBla
 	}, nil
 }
 
-// queryNodeBlames returns blame records for active nodes only.
+// queryNodeBlames returns blame counters for every active node. Active nodes
+// with no stored blame record are reported with zero counters.
 //
 // Supported query args:
 //   - sort_by: keygen_since_churn (default), keysign_since_churn, keygen_total, keysign_total
@@ -1428,30 +1429,16 @@ func (qs queryServer) queryNodeBlames(ctx cosmos.Context, req *types.QueryNodeBl
 	if err != nil {
 		return nil, fmt.Errorf("fail to list active validators: %w", err)
 	}
-	operatorByNode := make(map[string]string, len(activeNodes))
+
+	result := make([]*types.QueryNodeBlameResponse, 0, len(activeNodes))
 	for _, na := range activeNodes {
-		operatorByNode[na.NodeAddress.String()] = na.BondAddress.String()
-	}
-
-	result := make([]*types.QueryNodeBlameResponse, 0)
-	iter := qs.mgr.Keeper().GetNodeBlameIterator(ctx)
-	defer iter.Close()
-
-	for ; iter.Valid(); iter.Next() {
-		var record NodeBlameRecord
-		if err := qs.mgr.Keeper().Cdc().Unmarshal(iter.Value(), &record); err != nil {
-			ctx.Logger().Error("fail to unmarshal node blame record", "error", err)
-			continue
+		record, err := qs.mgr.Keeper().GetNodeBlameRecord(ctx, na.NodeAddress)
+		if err != nil {
+			return nil, fmt.Errorf("fail to get node blame record: %w", err)
 		}
-
-		operator, active := operatorByNode[record.NodeAddress.String()]
-		if !active {
-			continue
-		}
-
 		result = append(result, &types.QueryNodeBlameResponse{
-			NodeAddress:                 record.NodeAddress,
-			NodeOperatorAddress:         operator,
+			NodeAddress:                 na.NodeAddress,
+			NodeOperatorAddress:         na.BondAddress.String(),
 			KeygenBlameCountTotal:       record.KeygenBlameCountTotal,
 			KeysignBlameCountTotal:      record.KeysignBlameCountTotal,
 			KeygenBlameCountSinceChurn:  record.KeygenBlameCountSinceChurn,
@@ -1459,13 +1446,16 @@ func (qs queryServer) queryNodeBlames(ctx cosmos.Context, req *types.QueryNodeBl
 		})
 	}
 
-	// SliceStable preserves iterator order (byte-sorted by node address) for
-	// records with equal sort keys.
-	sort.SliceStable(result, func(i, j int) bool {
-		if descending {
-			return keyFn(result[i]) > keyFn(result[j])
+	// Records with equal sort keys are ordered by node address.
+	sort.Slice(result, func(i, j int) bool {
+		ki, kj := keyFn(result[i]), keyFn(result[j])
+		if ki != kj {
+			if descending {
+				return ki > kj
+			}
+			return ki < kj
 		}
-		return keyFn(result[i]) < keyFn(result[j])
+		return result[i].NodeAddress.String() < result[j].NodeAddress.String()
 	})
 
 	return &types.QueryNodeBlamesResponse{Blames: result}, nil
