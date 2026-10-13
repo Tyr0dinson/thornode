@@ -446,3 +446,60 @@ func (m Migrator) Migrate18to19(ctx cosmos.Context) error {
 	commit()
 	return nil
 }
+
+// Migrate19to20 merges swapper clout recorded under ZEC TEX addresses into the
+// transparent address record. Outbounds now go to the transparent address, and
+// the keeper credits, spends and reclaims clout under that form.
+func (m Migrator) Migrate19to20(ctx cosmos.Context) error {
+	if err := m.mgr.LoadManagerIfNecessary(ctx); err != nil {
+		return err
+	}
+	k := m.mgr.Keeper()
+	type entry struct {
+		key   []byte
+		clout SwapperClout
+	}
+	var entries []entry
+	iter := k.GetSwapperCloutIterator(ctx)
+	for ; iter.Valid(); iter.Next() {
+		clout := NewSwapperClout(common.NoAddress)
+		if err := k.Cdc().Unmarshal(iter.Value(), &clout); err != nil {
+			ctx.Logger().Error("fail to read swapper clout", "key", string(iter.Key()), "error", err)
+			continue
+		}
+		if strings.HasPrefix(clout.Address.String(), "tex") {
+			entries = append(entries, entry{append([]byte(nil), iter.Key()...), clout})
+		}
+	}
+	iter.Close()
+
+	// Iterators are closed before writes. Restore each record before merging so a
+	// recent spend on one cannot keep the other's stale spend outstanding.
+	cloutReset := k.GetConfigInt64(ctx, constants.CloutReset)
+	for _, item := range entries {
+		transparent, err := common.ConvertToZECTransparentAddress(item.clout.Address)
+		if err != nil {
+			ctx.Logger().Error("fail to convert swapper clout address", "address", item.clout.Address, "error", err)
+			continue
+		}
+		merged, err := k.GetSwapperClout(ctx, transparent)
+		if err != nil {
+			ctx.Logger().Error("fail to get swapper clout", "address", transparent, "error", err)
+			continue
+		}
+		merged.Restore(ctx.BlockHeight(), cloutReset)
+		item.clout.Restore(ctx.BlockHeight(), cloutReset)
+		merged.Score = merged.Score.Add(item.clout.Score)
+		merged.Spent = merged.Spent.Add(item.clout.Spent)
+		merged.Reclaimed = merged.Reclaimed.Add(item.clout.Reclaimed)
+		merged.LastSpentHeight = max(merged.LastSpentHeight, item.clout.LastSpentHeight)
+		merged.LastReclaimHeight = max(merged.LastReclaimHeight, item.clout.LastReclaimHeight)
+		if err := k.SetSwapperClout(ctx, merged); err != nil {
+			ctx.Logger().Error("fail to save swapper clout", "address", transparent, "error", err)
+			continue
+		}
+		k.DeleteKey(ctx, item.key)
+		ctx.Logger().Info("merged TEX swapper clout", "tex", item.clout.Address, "address", transparent)
+	}
+	return nil
+}

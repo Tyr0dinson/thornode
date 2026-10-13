@@ -742,6 +742,24 @@ func (s *signedTxPayloadStore) planQuarantinedLocked(plan signedTxPayloadClaimPl
 	return false, nil
 }
 
+// BlockRevertedTxHash durably fences the exact artifact without a history scan.
+// It may still wait behind existing store operations sharing the mutex.
+func (s *signedTxPayloadStore) BlockRevertedTxHash(rawTxHash string) error {
+	if s == nil || s.db == nil {
+		return errors.New("xmr signed tx payload store is not initialized")
+	}
+	txHash := normalizeSignedTxClaimHash(rawTxHash)
+	if txHash == "" {
+		return errors.New("xmr reverted signing transaction hash is empty")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.db.Put([]byte(signedTxQuarantinedTxKey(txHash)), []byte(txHash), signedTxPayloadWriteOptions); err != nil {
+		return fmt.Errorf("block reverted xmr signing transaction: %w", err)
+	}
+	return nil
+}
+
 // QuarantineReverted makes an errata'd transaction a one-way terminal state.
 // The exact payload is deliberately retained as forensic evidence, but a
 // synced batch blocks its transaction hash, logical owner, and every known

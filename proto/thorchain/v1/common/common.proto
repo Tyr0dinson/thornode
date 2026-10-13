@@ -220,6 +220,19 @@ message ErrataTx {
   string chain = 2 [ (gogoproto.casttype) = "Chain" ];
 }
 
+// ErrataTxOutcome records processing-time applicability after errata quorum.
+// It does not change the signed ErrataTx payload or its TxID-based identity.
+enum ErrataTxOutcome {
+  // No terminal result yet, including records written before this field.
+  ERRATA_TX_OUTCOME_UNSPECIFIED = 0;
+  // An applicable observation was reverted, or was already reverted.
+  ERRATA_TX_OUTCOME_REVERTED = 1;
+  // No applicable observation existed when processing completed. A later
+  // inbound quorum still applies the committed TxID-wide errata before
+  // accounting.
+  ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION = 2;
+}
+
 message AttestErrataTx {
   option (gogoproto.stringer) = true;
 
@@ -232,6 +245,8 @@ message QuorumErrataTx {
 
   ErrataTx errata_tx = 1;
   repeated Attestation attestations = 2;
+  // THORNode's result, never an attested or submitter-authoritative field.
+  ErrataTxOutcome outcome = 3;
 }
 
 message PriceFeed {

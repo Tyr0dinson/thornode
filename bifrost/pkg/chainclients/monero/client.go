@@ -425,11 +425,19 @@ func (c *Client) Start(
 	}()
 }
 
+// BlockPermanentErrataBroadcast fences the signed hash before receipt delivery.
+func (c *Client) BlockPermanentErrataBroadcast(errata common.ErrataTx) error {
+	if !errata.Chain.Equals(common.XMRChain) || errata.Id.IsEmpty() {
+		return errors.New("invalid XMR permanent errata broadcast block request")
+	}
+	return c.signedTxPayloadStore.BlockRevertedTxHash(errata.Id.String())
+}
+
 // QuarantinePermanentErrata closes the event-first gap where THORChain can
 // commit a Reverted voter before this node's Scanner has produced a receipt
 // callback. The exact signed artifact is blocked first, then the scanner's
 // permanent TxID filter is fsynced. Both writes are idempotent, so Observer can
-// safely replay every tombstone during startup or after a partial failure.
+// safely retry unfinished quarantine after a partial failure or restart.
 func (c *Client) QuarantinePermanentErrata(errata common.ErrataTx, orphanHeight int64) error {
 	if !errata.Chain.Equals(common.XMRChain) || errata.Id.IsEmpty() {
 		return errors.New("invalid XMR permanent errata quarantine request")

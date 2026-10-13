@@ -234,6 +234,13 @@ type FrostVerifyPayload struct {
 	AttesterSignature      []byte `json:"attester_signature,omitempty"`
 }
 
+// FrostVerifyBatchPayload is the homogeneous keysign verification wire format.
+// Every entry remains independently validated and accounted. Keygen uses its
+// separate whole-round transcript vote format.
+type FrostVerifyBatchPayload struct {
+	Verifications []FrostVerifyPayload `json:"verifications"`
+}
+
 type FrostResultPayload struct {
 	SenderPubKey string      `json:"sender_pub_key"`
 	Response     FrostResult `json:"response"`

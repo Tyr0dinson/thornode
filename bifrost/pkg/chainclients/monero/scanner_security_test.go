@@ -518,6 +518,7 @@ func TestAuthenticatedMigrationReplayObserverAckRejectAndReorg(t *testing.T) {
 	locationHash := blockHash
 	locationParent := parentHash
 	var historicalSyncCalls atomic.Int32
+	var markObservedCalls atomic.Int32
 	var failMarkObserved atomic.Bool
 	failMarkObserved.Store(true)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -555,6 +556,7 @@ func TestAuthenticatedMigrationReplayObserverAckRejectAndReorg(t *testing.T) {
 			canonicalMu.RUnlock()
 			_ = json.NewEncoder(w).Encode(resp)
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/monero/outputs/mark-observed":
+			markObservedCalls.Add(1)
 			if failMarkObserved.Load() {
 				http.Error(w, "temporary reconciliation failure", http.StatusServiceUnavailable)
 				return
@@ -690,7 +692,30 @@ func TestAuthenticatedMigrationReplayObserverAckRejectAndReorg(t *testing.T) {
 	locationHash = relocatedBlockHash
 	locationParent = reorgHash
 	canonicalMu.Unlock()
+	marksBeforeFutureReplay := markObservedCalls.Load()
 	items, claims, err = scanner.replayAuthenticatedInternalInbounds(103, 103)
+	if err != nil || len(items) != 0 || len(claims) != 0 {
+		t.Fatalf("future migration must wait for its block: items=%d claims=%d err=%v", len(items), len(claims), err)
+	}
+	if markObservedCalls.Load() != marksBeforeFutureReplay {
+		t.Fatal("future migration crossed MarkObserved before its block was scanned")
+	}
+	count, err = store.Count()
+	if err != nil || count != 1 {
+		t.Fatalf("future migration was not retained: count=%d err=%v", count, err)
+	}
+	futureMeta, futureErr := reorgStore.Get(int64(relocatedHeight))
+	if futureErr != nil || futureMeta != nil {
+		t.Fatalf("future migration advanced the journal: meta=%+v err=%v", futureMeta, futureErr)
+	}
+	// Ordinary scanning has now reached the canonical replacement block.
+	if err = reorgStore.Set(&reorgBlockMeta{
+		Height: int64(relocatedHeight), BlockHash: relocatedBlockHash, PreviousHash: reorgHash,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	scanner.setCurrentHeight(int64(relocatedHeight))
+	items, claims, err = scanner.replayAuthenticatedInternalInbounds(int64(relocatedHeight), int64(relocatedHeight))
 	if err != nil || len(items) != 1 || len(claims) != 1 {
 		t.Fatalf("relocated replay must remain deliverable: items=%d claims=%d err=%v", len(items), len(claims), err)
 	}

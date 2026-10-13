@@ -346,6 +346,12 @@ func (c Chain) GetGasAssetDecimal() int64 {
 	}
 }
 
+// RequiresTerminalErrataOutcome reports whether delivery alone is insufficient
+// to retire errata retries, including transactions with no known observation.
+func (c Chain) RequiresTerminalErrataOutcome() bool {
+	return c.Equals(XMRChain)
+}
+
 // UsesHeightScopedErrata reports whether local orphan-location barriers need
 // explicit mined-height observation identity. It does not change the chain's
 // consensus errata voter or permanent TxID reversal policy.

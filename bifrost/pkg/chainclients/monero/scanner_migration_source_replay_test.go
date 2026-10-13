@@ -261,6 +261,8 @@ func TestLatePayoutReplayRecreatesPrunedJournalAndPersistsSource(t *testing.T) {
 			watchKey := []byte(scannerRelocationWatchPrefix + normalizeTxID(txID))
 			require.NoError(t, scanner.reorgStore.db.Put(watchKey, []byte("malformed"), syncScannerWrite))
 			_, err = scanner.EnqueueAuthenticatedOutboundReplay(observed)
+			require.NoError(t, err)
+			_, _, err = scanner.replayAuthenticatedInternalInbounds(201, 201)
 			require.ErrorContains(t, err, "malformed")
 			absent, err := scanner.reorgStore.Get(100)
 			require.NoError(t, err)
@@ -275,6 +277,8 @@ func TestLatePayoutReplayRecreatesPrunedJournalAndPersistsSource(t *testing.T) {
 			queued, err := scanner.EnqueueAuthenticatedOutboundReplay(observed)
 			require.NoError(t, err)
 			require.True(t, queued)
+			_, _, err = scanner.replayAuthenticatedInternalInbounds(201, 201)
+			require.NoError(t, err)
 			watches, err := scanner.reorgStore.ListRelocationWatches(1)
 			require.NoError(t, err)
 			require.Len(t, watches, 1)
@@ -297,7 +301,15 @@ func TestLatePayoutReplayRecreatesPrunedJournalAndPersistsSource(t *testing.T) {
 			// Query replay never creates a fresh vote from a consensus-only proof.
 			proof.Origin = sidecar.OutgoingOriginChainCommitted
 			_, err = scanner.EnqueueAuthenticatedOutboundReplay(observed)
-			require.ErrorContains(t, err, "not eligible")
+			require.NoError(t, err)
+			_, _, err = scanner.replayAuthenticatedInternalInbounds(202, 202)
+			require.NoError(t, err)
+			count, err := scanner.internalReplayStore.Count()
+			require.NoError(t, err)
+			require.Equal(t, 1, count, "ineligible proof must retain the pending replay")
+			retainedReceipts, err := scanner.canonicalObservationReceipts()
+			require.NoError(t, err)
+			require.Equal(t, claims, retainedReceipts, "failed replay must not change the existing receipt")
 		})
 	}
 }

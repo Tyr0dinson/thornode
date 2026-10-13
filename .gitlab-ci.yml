@@ -434,6 +434,25 @@ unit-tests:
     paths:
       - coverage*
 
+# The simulation directory has its own go.mod and is not reached by root ./....
+test-simulation-unit:
+  tags: !reference [.small-runner, tags]
+  rules: *rules
+  stage: test
+  needs: []
+  variables:
+    PKGS: python3 util-linux
+  before_script:
+    - !reference [.pkg-install, before_script]
+    - !reference [.go-private-auth, before_script]
+    - !reference [.stable-mtimes, before_script]
+  script:
+    - scripts/test-simulation-unit.sh test-quality-reports/simulation-unit.jsonl
+  artifacts:
+    when: always
+    paths:
+      - test-quality-reports/simulation-unit.jsonl
+
 test-mocknet-scripts:
   tags: !reference [.small-runner, tags]
   rules:
@@ -791,6 +810,14 @@ test-simulation:
     - !reference [.go-private-auth, before_script]
     - !reference [.dind-registries, before_script]
   script:
+    # This target builds Go binaries in the job container, so it does not
+    # pull the Go builder image checked by .dind-registries. Keep using the
+    # dependency proxy for its Docker base and L1 images when that check fails.
+    - |
+      if [ -z "${DOCKER_MIRROR:-}" ] && [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ] &&
+         docker buildx imagetools inspect "${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/ubuntu:24.04" >/dev/null 2>&1; then
+        export DOCKER_MIRROR="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
+      fi
     # Do not allow an inherited optional-XMR setting to bypass live coverage.
     - make test-simulation-cluster-native TEST_SIMULATION_REQUIRE_XMR=1
   # Diagnostics for the on_failure artifacts. On a passing run nothing keeps

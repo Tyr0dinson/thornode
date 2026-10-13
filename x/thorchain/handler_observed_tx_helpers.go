@@ -1095,6 +1095,11 @@ func handleObservedTxOutQuorum(
 		debitVault(ctx, mgr, &vault, tx, toSlash, vaultDeficitReasonVaultSlash)
 		if err := k.SetVault(ctx, vault); err != nil {
 			ctx.Logger().Error("fail to save vault", "error", err)
+		} else if tx.Tx.Chain.RequiresTerminalErrataOutcome() {
+			// Record the principal debit only once it is stored, so errata
+			// restores exactly what this observation removed from the vault.
+			voter.UpdatedVault = true
+			k.SetObservedTxOutVoter(ctx, voter)
 		}
 
 		return nil
@@ -1206,6 +1211,7 @@ func handleObservedTxOutQuorum(
 	}
 
 	// If sending from one of our vaults, decrement coins
+	principalDebited := false
 	vault, err := k.GetVault(ctx, tx.ObservedPubKey)
 	if err != nil {
 		ctx.Logger().Error("fail to get vault", "error", err)
@@ -1227,6 +1233,7 @@ func handleObservedTxOutQuorum(
 				// THORChain must record the deficit and halt/signal rather than keep
 				// phantom credit on the vault.
 				debitVault(ctx, mgr, &vault, tx, tx.Tx.Coins, vaultDeficitReasonOutbound)
+				principalDebited = true
 			}
 			vault.OutboundTxCount++
 		}
@@ -1262,6 +1269,10 @@ func handleObservedTxOutQuorum(
 		}
 		if err := k.SetVault(ctx, vault); err != nil {
 			ctx.Logger().Error("fail to save vault", "error", err)
+		} else if principalDebited && tx.Tx.Chain.RequiresTerminalErrataOutcome() {
+			// Record the principal debit only once it is stored, so errata
+			// restores exactly what this observation removed from the vault.
+			voter.UpdatedVault = true
 		}
 	}
 	saveXMRSpentOutputRefsWithQuorum(ctx, mgr, voter, tx, activeNodeAccounts)
