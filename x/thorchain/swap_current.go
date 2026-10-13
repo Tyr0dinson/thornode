@@ -71,7 +71,10 @@ func (s *SwapperImpl) Swap(ctx cosmos.Context,
 		// WithdrawLiquidityHandler.validate relaxes the matching gate for ragnarok
 		// and queues this swap; without the same exception here the queued saver
 		// payout would be rejected, deleting the saver claim with no outbound.
+		// A mempool rollback burns back a synth this network already minted;
+		// blocking it would retry the rollback forever while holding the pool.
 		if burnHeight > 0 && ctx.BlockHeight() > burnHeight &&
+			executionMode != mempoolSwapExecutionRollback &&
 			!mgr.Keeper().IsRagnarok(ctx, []common.Asset{source.GetLayer1Asset()}) {
 			return cosmos.ZeroUint(), effectiveInput, swapEvents, fmt.Errorf("burning synthetics has been disabled")
 		}
