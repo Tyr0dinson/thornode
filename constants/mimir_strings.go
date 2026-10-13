@@ -111,7 +111,7 @@ const (
 	// payload and observers scan asynchronously, so a flag would have them
 	// disagree about receipts scanned either side of the change. Set it ahead of
 	// the chain's current head - a height already scanned past reintroduces
-	// exactly that split. Rollout order matters too: Bounced is proto field 14
+	// exactly that split. Rollout order matters too: Bounced is proto field 16
 	// and old binaries reject messages carrying it, so only set this once every
 	// node runs a build that knows the field, and only on chains whose deployed
 	// router is V6 or later (earlier routers emit no TransferFailed).
