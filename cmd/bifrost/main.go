@@ -266,15 +266,6 @@ func main() {
 	}
 }
 
-// recoverLegacyKeysharesBeforeStartup returns (start, degraded). start is false
-// only when a shutdown signal interrupts the retry loop. degraded is true when
-// startup should proceed WITHOUT complete keyshares: recovery failed with an
-// error foreground retries can never fix (source blocks pruned below the node's
-// floor, or a TssPool message found with an empty backup) — blocking here would
-// take down observations for every chain, which is strictly worse than degraded
-// signing, so the caller must hand recovery to superviseLegacyKeyshareRecovery.
-// Transient errors (RPC flake, message not yet found) keep the foreground retry
-// loop, which usually resolves within a few blocks.
 // checkKeygenTimeout ensures the keygen timeout is shorter than every jail
 // period a failed keygen can produce, so a jailed node is never released
 // while the keygen that blamed it may still be running. JailTimeKeygen
@@ -290,6 +281,15 @@ func checkKeygenTimeout(keygenTimeout time.Duration, consts constants.ConstantVa
 	return nil
 }
 
+// recoverLegacyKeysharesBeforeStartup returns (start, degraded). start is false
+// only when a shutdown signal interrupts the retry loop. degraded is true when
+// startup should proceed WITHOUT complete keyshares: recovery failed with an
+// error foreground retries can never fix (source blocks pruned below the node's
+// floor, or a TssPool message found with an empty backup) — blocking here would
+// take down observations for every chain, which is strictly worse than degraded
+// signing, so the caller must hand recovery to superviseLegacyKeyshareRecovery.
+// Transient errors (RPC flake, message not yet found) keep the foreground retry
+// loop, which usually resolves within a few blocks.
 func recoverLegacyKeysharesBeforeStartup(cfg config.Bifrost, bridge thorclient.ThorchainBridge) (start, degraded bool) {
 	ctx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stopSignals()
