@@ -153,7 +153,7 @@ func newFrostRouterCov(t *testing.T, members []string, msgID, planHash string, s
 		}
 		comm := &p2p.Communication{BroadcastMsgChan: make(chan *messages.BroadcastMsgChan, 256)}
 		r.coords = append(r.coords, NewFrostSignCoordinator(comm, nil, member, msgID, planHash,
-			make(chan *p2p.Message, 1024), timeout, priv))
+			newFrostSignInbox(), timeout, priv))
 	}
 	return r
 }
@@ -178,9 +178,15 @@ func (r *frostRouterCov) start() {
 					if err != nil {
 						continue
 					}
+					// injected junk keeps the real frame's type, so it rides the same topic
+					topic := msg.WrappedMessage.MessageType
 					for _, target := range msg.PeersID {
 						for j, pid := range r.peerIDs {
 							if j == from || pid != target {
+								continue
+							}
+							topicChan, ok := r.coords[j].inbox.messageChannel(topic)
+							if !ok {
 								continue
 							}
 							deliveries := []*p2p.Message{}
@@ -190,7 +196,7 @@ func (r *frostRouterCov) start() {
 							deliveries = append(deliveries, &p2p.Message{PeerID: r.peerIDs[from], Payload: raw})
 							for _, d := range deliveries {
 								select {
-								case r.coords[j].msgChan <- d:
+								case topicChan <- d:
 								case <-r.done:
 									return
 								}
@@ -415,7 +421,7 @@ func TestFrostExecuteCovEquivocatingPreprocessAborts(t *testing.T) {
 		return p
 	}
 
-	msgChan := make(chan *p2p.Message, 16)
+	msgChan := newFrostSignInbox()
 	peerIDs, err := conversion.GetPeerIDsFromPubKeys(members)
 	if err != nil {
 		t.Fatal(err)
@@ -445,7 +451,7 @@ func TestFrostExecuteCovValidationFailures(t *testing.T) {
 	base := frostThreeMemberReqCov(members)
 	newCoord := func(local, msgID string, sidecar FrostSidecarClient) *FrostSignCoordinator {
 		return NewFrostSignCoordinator(&p2p.Communication{BroadcastMsgChan: make(chan *messages.BroadcastMsgChan, 64)},
-			sidecar, local, msgID, testExpectedPlanHash, make(chan *p2p.Message, 4), time.Second, nil)
+			sidecar, local, msgID, testExpectedPlanHash, newFrostSignInbox(), time.Second, nil)
 	}
 	sidecar := newFrostCombineSidecarCov("aa", "cc")
 
@@ -503,7 +509,7 @@ func TestFrostExecuteCovCombineResultValidation(t *testing.T) {
 				prepareResp: FrostSidecarPrepareResp{SessionID: "s", Preprocess: "aa", SelectedInputs: selected},
 				partialResp: FrostSidecarPartialResp{SignatureShare: "cc"},
 				combineResp: combine,
-			}, members[0], testHashOf('6'), planHash, make(chan *p2p.Message, 4), time.Second, frostPrivKeyCov(t, 0))
+			}, members[0], testHashOf('6'), planHash, newFrostSignInbox(), time.Second, frostPrivKeyCov(t, 0))
 		return coord.Execute(frostThreeMemberReqCov(members), members, peerIDs)
 	}
 	selected := []FrostSpentOutputRef{{TxHash: testHashOf('c'), OutputIndex: 1, KeyImage: testHashOf('d')}}
@@ -1174,7 +1180,7 @@ func TestNormalizeBlameForResultCov(t *testing.T) {
 
 func TestFrostWaitForResultCovQuorumValidation(t *testing.T) {
 	ensureBech32Prefix()
-	c := newTestFrostSignCoordinator(testPubKeys[0], "m", make(chan *p2p.Message, 1), 20*time.Millisecond)
+	c := newTestFrostSignCoordinator(testPubKeys[0], "m", newFrostSignInbox(), 20*time.Millisecond)
 	if _, err := c.WaitForResult([]string{"a", "A"}, 1, time.Millisecond); err == nil {
 		t.Fatal("duplicate participants accepted")
 	}
