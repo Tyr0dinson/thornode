@@ -374,8 +374,10 @@ const (
 //
 // EFFECTIVE SEMANTICS — read this before changing anything. The jail bar and the
 // consensus gate are the SAME predicate over the SAME denominator:
-//     HasConsensus       -> HasSimpleMajority(MemberSignerCount, len(members))
-//     deriveConsensusBlame -> HasSimpleMajority(count(X),        len(members))
+//
+//	HasConsensus       -> HasSimpleMajority(MemberSignerCount, len(members))
+//	deriveConsensusBlame -> HasSimpleMajority(count(X),        len(members))
+//
 // Consensus fires on the report that first pushes MemberSignerCount to
 // min = ceil(len(members)/2), and derive runs immediately after that gate — so
 // at derive there are EXACTLY `min` member-reporters present, and X clears the
