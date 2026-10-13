@@ -646,11 +646,15 @@ type NodeBlameRecord struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	NodeAddress                 []byte `protobuf:"bytes,1,opt,name=node_address,json=nodeAddress,proto3" json:"node_address,omitempty"`
-	KeygenBlameCountTotal       int64  `protobuf:"varint,2,opt,name=keygen_blame_count_total,json=keygenBlameCountTotal,proto3" json:"keygen_blame_count_total,omitempty"`                     // Total keygen blames (lifetime)
-	KeysignBlameCountTotal      int64  `protobuf:"varint,3,opt,name=keysign_blame_count_total,json=keysignBlameCountTotal,proto3" json:"keysign_blame_count_total,omitempty"`                  // Total keysign blames (lifetime)
-	KeygenBlameCountSinceChurn  int64  `protobuf:"varint,4,opt,name=keygen_blame_count_since_churn,json=keygenBlameCountSinceChurn,proto3" json:"keygen_blame_count_since_churn,omitempty"`    // Keygen blames since last successful keygen
-	KeysignBlameCountSinceChurn int64  `protobuf:"varint,5,opt,name=keysign_blame_count_since_churn,json=keysignBlameCountSinceChurn,proto3" json:"keysign_blame_count_since_churn,omitempty"` // Keysign blames since last successful keygen
+	NodeAddress            []byte `protobuf:"bytes,1,opt,name=node_address,json=nodeAddress,proto3" json:"node_address,omitempty"`
+	KeygenBlameCountTotal  int64  `protobuf:"varint,2,opt,name=keygen_blame_count_total,json=keygenBlameCountTotal,proto3" json:"keygen_blame_count_total,omitempty"`    // Total keygen blames (lifetime)
+	KeysignBlameCountTotal int64  `protobuf:"varint,3,opt,name=keysign_blame_count_total,json=keysignBlameCountTotal,proto3" json:"keysign_blame_count_total,omitempty"` // Total keysign blames (lifetime)
+	// Keygen blames since the last reset: success of a regular Asgard keygen
+	// the node is a member of, or completion of a regular churn (all nodes).
+	KeygenBlameCountSinceChurn int64 `protobuf:"varint,4,opt,name=keygen_blame_count_since_churn,json=keygenBlameCountSinceChurn,proto3" json:"keygen_blame_count_since_churn,omitempty"`
+	// Keysign blames since the last reset: success of a regular Asgard keygen
+	// the node is a member of, or completion of a regular churn (all nodes).
+	KeysignBlameCountSinceChurn int64 `protobuf:"varint,5,opt,name=keysign_blame_count_since_churn,json=keysignBlameCountSinceChurn,proto3" json:"keysign_blame_count_since_churn,omitempty"`
 }
 
 func (x *NodeBlameRecord) Reset() {

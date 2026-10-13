@@ -24,9 +24,9 @@ type NodeBlameResponse struct {
 	KeygenBlameCountTotal int64 `json:"keygen_blame_count_total"`
 	// Lifetime count of keysign blame attributions for this node.
 	KeysignBlameCountTotal int64 `json:"keysign_blame_count_total"`
-	// Keygen blame attributions since the most recent churn (resets each churn).
+	// Keygen blame attributions since this node's counters were last reset. Both since-churn counters reset for a node when a regular Asgard keygen it is a member of succeeds, and for all nodes when a regular churn completes; XMR monovault keygens reset neither. During a multi-Asgard churn, members of an already-succeeded vault can therefore read 0 before the churn completes.
 	KeygenBlameCountSinceChurn int64 `json:"keygen_blame_count_since_churn"`
-	// Keysign blame attributions since the most recent churn (resets each churn).
+	// Keysign blame attributions since this node's counters were last reset. Both since-churn counters reset for a node when a regular Asgard keygen it is a member of succeeds, and for all nodes when a regular churn completes; XMR monovault keygens reset neither. During a multi-Asgard churn, members of an already-succeeded vault can therefore read 0 before the churn completes.
 	KeysignBlameCountSinceChurn int64 `json:"keysign_blame_count_since_churn"`
 }
 

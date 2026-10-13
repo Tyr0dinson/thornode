@@ -8,8 +8,8 @@ Name | Type | Description | Notes
 **NodeOperatorAddress** | **string** | Operator (bond) address associated with the node. | 
 **KeygenBlameCountTotal** | **int64** | Lifetime count of keygen blame attributions for this node. | 
 **KeysignBlameCountTotal** | **int64** | Lifetime count of keysign blame attributions for this node. | 
-**KeygenBlameCountSinceChurn** | **int64** | Keygen blame attributions since the most recent churn (resets each churn). | 
-**KeysignBlameCountSinceChurn** | **int64** | Keysign blame attributions since the most recent churn (resets each churn). | 
+**KeygenBlameCountSinceChurn** | **int64** | Keygen blame attributions since this node&#39;s counters were last reset. Both since-churn counters reset for a node when a regular Asgard keygen it is a member of succeeds, and for all nodes when a regular churn completes; XMR monovault keygens reset neither. During a multi-Asgard churn, members of an already-succeeded vault can therefore read 0 before the churn completes. | 
+**KeysignBlameCountSinceChurn** | **int64** | Keysign blame attributions since this node&#39;s counters were last reset. Both since-churn counters reset for a node when a regular Asgard keygen it is a member of succeeds, and for all nodes when a regular churn completes; XMR monovault keygens reset neither. During a multi-Asgard churn, members of an already-succeeded vault can therefore read 0 before the churn completes. | 
 
 ## Methods
 

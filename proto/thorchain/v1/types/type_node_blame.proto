@@ -12,8 +12,10 @@ message NodeBlameRecord {
             "github.com/cosmos/cosmos-sdk/types.AccAddress" ];
   int64 keygen_blame_count_total = 2;  // Total keygen blames (lifetime)
   int64 keysign_blame_count_total = 3; // Total keysign blames (lifetime)
-  int64 keygen_blame_count_since_churn =
-      4; // Keygen blames since last successful keygen
-  int64 keysign_blame_count_since_churn =
-      5; // Keysign blames since last successful keygen
+  // Keygen blames since the last reset: success of a regular Asgard keygen
+  // the node is a member of, or completion of a regular churn (all nodes).
+  int64 keygen_blame_count_since_churn = 4;
+  // Keysign blames since the last reset: success of a regular Asgard keygen
+  // the node is a member of, or completion of a regular churn (all nodes).
+  int64 keysign_blame_count_since_churn = 5;
 }

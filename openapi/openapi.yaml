@@ -4366,11 +4366,11 @@ components:
         keygen_blame_count_since_churn:
           type: integer
           format: int64
-          description: Keygen blame attributions since the most recent churn (resets each churn).
+          description: Keygen blame attributions since this node's counters were last reset. Both since-churn counters reset for a node when a regular Asgard keygen it is a member of succeeds, and for all nodes when a regular churn completes; XMR monovault keygens reset neither. During a multi-Asgard churn, members of an already-succeeded vault can therefore read 0 before the churn completes.
         keysign_blame_count_since_churn:
           type: integer
           format: int64
-          description: Keysign blame attributions since the most recent churn (resets each churn).
+          description: Keysign blame attributions since this node's counters were last reset. Both since-churn counters reset for a node when a regular Asgard keygen it is a member of succeeds, and for all nodes when a regular churn completes; XMR monovault keygens reset neither. During a multi-Asgard churn, members of an already-succeeded vault can therefore read 0 before the churn completes.
 
     NodeBlamesResponse:
       type: array
