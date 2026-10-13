@@ -271,17 +271,14 @@ func (h *TokenManager) getDecimals(token string) (uint64, error) {
 	if err != nil {
 		return h.defaultDecimals, fmt.Errorf("fail to unpack decimal method call result: %w", err)
 	}
-	switch output[0].(type) {
+	switch decimals := output[0].(type) {
 	case uint8:
-		decimals, ok := abi.ConvertType(output[0], new(uint8)).(*uint8)
-		if !ok {
-			return h.defaultDecimals, fmt.Errorf("dev error: fail to cast uint8")
-		}
-		return uint64(*decimals), nil
+		return uint64(decimals), nil
 	case *big.Int:
-		decimals, ok := abi.ConvertType(output[0], new(*big.Int)).(*big.Int)
-		if !ok {
-			return h.defaultDecimals, fmt.Errorf("dev error: fail to cast big.Int")
+		// only reached with an ABI declaring decimals() as uint256 (the bundled
+		// ABIs declare uint8)
+		if decimals == nil || !decimals.IsUint64() {
+			return h.defaultDecimals, fmt.Errorf("invalid decimals: %s", decimals)
 		}
 		return decimals.Uint64(), nil
 	}

@@ -299,9 +299,11 @@ func TestCovUnstuckTxFixedGasRate(t *testing.T) {
 	}
 }
 
-// TestCovUnstuckTxNilTxOutItem documents current behaviour: a pending signed
-// item recorded without a TxOutItem panics when unstuckTx dereferences
-// item.TxOutItem.Height.
+// TestCovUnstuckTxNilTxOutItem: a pending signed item recorded without a
+// TxOutItem (corrupt or legacy store entry) cannot be cancelled, since the
+// cancel is signed at the outbound's height. unstuckTx reports it with
+// errPendingWithoutTxOutItem (so the caller keeps tracking it) without
+// signing, broadcasting or panicking.
 func TestCovUnstuckTxNilTxOutItem(t *testing.T) {
 	env := newCovEnv(t, nil)
 	to := ecommon.HexToAddress(covRouter.String())
@@ -309,9 +311,88 @@ func TestCovUnstuckTxNilTxOutItem(t *testing.T) {
 	env.rpc.set("eth_getTransactionByHash", covResult(covTxByHash(t, orig, false)))
 	item := evmtypes.SignedTxItem{Hash: orig.Hash().Hex(), Height: 1, VaultPubKey: env.pubKey.String()}
 	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("expected nil TxOutItem dereference panic")
+		if r := recover(); r != nil {
+			t.Fatalf("unstuckTx panicked on a nil TxOutItem: %v", r)
 		}
 	}()
-	_ = env.client.unstuckTx(zerolog.Nop(), item)
+	if err := env.client.unstuckTx(zerolog.Nop(), item); !errors.Is(err, errPendingWithoutTxOutItem) {
+		t.Fatalf("expected errPendingWithoutTxOutItem, got %v", err)
+	}
+	if n := env.rpc.count("eth_sendRawTransaction"); n != 0 {
+		t.Fatalf("expected no cancel broadcast, got %d", n)
+	}
+}
+
+// TestCovUnstuckActionKeepsPendingItemWithoutTxOut: unstuckAction keeps a
+// pending record that has no TxOutItem (and its signer-cache entry) while the
+// transaction is pending, still processes other records, and once the
+// transaction is gone from the chain removes the record and releases the
+// signer cache so the outbound can be signed again.
+func TestCovUnstuckActionKeepsPendingItemWithoutTxOut(t *testing.T) {
+	covInitConfig()
+	env := newCovEnv(t, nil)
+	c := env.client
+	env.bridge.constants = map[string]int64{constants.SigningTransactionPeriod.String(): 300}
+	env.bridge.height = 1000
+	acc := c.ethScanner.blockMetaAccessor
+	items := func() []evmtypes.SignedTxItem {
+		got, err := acc.GetSignedTxItems()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+
+	to := ecommon.HexToAddress(covRouter.String())
+	pending := env.covSignedTx(t, etypes.NewTransaction(7, to, big.NewInt(0), 21000, big.NewInt(1), nil))
+	item := env.stuckItem(t, pending.Hash().Hex(), 800) // also records the signer cache
+	cacheHash := item.TxOutItem.CacheHash()
+	item.TxOutItem = nil
+	if err := acc.AddSignedTxItem(item); err != nil {
+		t.Fatal(err)
+	}
+	// a second, already mined record is processed in the same pass
+	mined := env.covSignedTx(t, etypes.NewTransaction(8, to, big.NewInt(0), 21000, big.NewInt(1), nil))
+	minedItem := env.stuckItem(t, mined.Hash().Hex(), 800)
+	if err := acc.AddSignedTxItem(minedItem); err != nil {
+		t.Fatal(err)
+	}
+
+	present := map[string]json.RawMessage{
+		strings.ToLower(pending.Hash().Hex()): covTxByHash(t, pending, false),
+		strings.ToLower(mined.Hash().Hex()):   covTxByHash(t, mined, true),
+	}
+	env.rpc.set("eth_getTransactionByHash", func(p []json.RawMessage) (any, error) {
+		var h string
+		if err := json.Unmarshal(p[0], &h); err != nil {
+			return nil, err
+		}
+		if tx, ok := present[strings.ToLower(h)]; ok {
+			return tx, nil
+		}
+		return nil, nil // not found
+	})
+
+	c.unstuckAction()
+	got := items()
+	if len(got) != 1 || got[0].Hash != item.Hash {
+		t.Fatalf("expected only the pending record to remain, got %+v", got)
+	}
+	if !c.signerCacheManager.HasSigned(cacheHash) {
+		t.Fatal("signer cache must keep protecting the still-pending transaction")
+	}
+	if n := env.rpc.count("eth_sendRawTransaction"); n != 0 {
+		t.Fatalf("expected no cancel broadcast, got %d", n)
+	}
+
+	// the transaction drops out of the mempool: the record goes and the
+	// signer cache is released
+	delete(present, strings.ToLower(pending.Hash().Hex()))
+	c.unstuckAction()
+	if got = items(); len(got) != 0 {
+		t.Fatalf("expected no records, got %+v", got)
+	}
+	if c.signerCacheManager.HasSigned(cacheHash) {
+		t.Fatal("signer cache entry must be released once the transaction is gone")
+	}
 }
