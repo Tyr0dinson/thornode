@@ -30,7 +30,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	sutxo "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zcash"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	btctxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/txscript"
@@ -869,7 +869,8 @@ func (s *CoverageBackfillSuite) TestMemoToScripts(c *C) {
 }
 
 func (s *CoverageBackfillSuite) TestZECMemoContinuationUsesTransparentP2PKH(c *C) {
-	scripts, err := MemoToScripts(strings.Repeat("Z", 100), btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, zecutil.PayToPubKeyHashScript)
+	memo := strings.Repeat("Z", 100)
+	scripts, err := MemoToScripts(memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, zcash.PayToPubKeyHashScript)
 	c.Assert(err, IsNil)
 	c.Assert(len(scripts), Equals, 3)
 

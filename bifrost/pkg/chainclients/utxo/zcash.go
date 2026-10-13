@@ -13,11 +13,10 @@ import (
 	btcchaincfg "github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	chainclienttypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zcash"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	btctxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/txscript"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -34,7 +33,7 @@ func (c *Client) getZecExpiryHeight(thorchainHeight int64) (uint32, error) {
 	if err != nil {
 		return 0, fmt.Errorf("get agreed ZEC height for expiry: %w", err)
 	}
-	if height <= 0 || height > int64(math.MaxUint32-ZecTxExpiry) {
+	if height <= 0 || height >= 5e8-int64(ZecTxExpiry) {
 		return 0, fmt.Errorf("invalid agreed ZEC height for expiry: %d", height)
 	}
 	return uint32(height) + ZecTxExpiry, nil
@@ -55,16 +54,11 @@ func checkZecExpiry(expiry uint32, chainHeight int64) error {
 // checkZecBroadcastExpiry returns a confirmed txid when another signer already
 // mined the payload. An ambiguous lookup remains retryable; an expired payload
 // that is absent, orphaned, or still in the mempool must leave the retry queue.
-func (c *Client) checkZecBroadcastExpiry(payload []byte, chainHeight int64) (string, error) {
-	tx := &zecutil.MsgTx{MsgTx: &wire.MsgTx{}}
-	if err := tx.ZecDeserialize(bytes.NewReader(payload)); err != nil {
-		return "", fmt.Errorf("fail to deserialize ZEC payload: %w", err)
-	}
-	expiryErr := checkZecExpiry(tx.ExpiryHeight, chainHeight)
+func (c *Client) checkZecBroadcastExpiry(expiry uint32, txid string, chainHeight int64) (string, error) {
+	expiryErr := checkZecExpiry(expiry, chainHeight)
 	if !errors.Is(expiryErr, chainclienttypes.ErrTxExpired) {
 		return "", expiryErr
 	}
-	txid := chainhash.DoubleHashH(payload).String()
 	confirmed, err := c.rpc.GetRawTransactionVerbose(txid)
 	if err != nil {
 		if isUTXOTxNotFoundErr(err) {
@@ -238,9 +232,9 @@ func (c *Client) selectZecUtxos(pubkey common.PubKey, target btcutil.Amount, ref
 	// a different fresh digest than peers which have not stored that spend yet.
 	for _, input := range selected {
 		key := formatUtxoKey(input.TxID, input.Vout)
-		spent, err := c.temporalStorage.HasSpentUtxo(key)
-		if err != nil {
-			return nil, fmt.Errorf("read ZEC input spend %s: %w", key, err)
+		spent, spentErr := c.temporalStorage.HasSpentUtxo(key)
+		if spentErr != nil {
+			return nil, fmt.Errorf("read ZEC input spend %s: %w", key, spentErr)
 		}
 		if spent {
 			return nil, fmt.Errorf("selected ZEC input %s is locally spent; wait for reconciliation", key)
@@ -319,13 +313,13 @@ func decodeZecDustProofScript(value string) ([]byte, error) {
 	if err != nil || len(script) == 0 {
 		return nil, fmt.Errorf("invalid script hex in ZEC change proof")
 	}
-	if _, err := txscript.DisasmString(script); err != nil {
+	if _, err = txscript.DisasmString(script); err != nil {
 		return nil, fmt.Errorf("invalid script in ZEC change proof: %w", err)
 	}
 	return script, nil
 }
 
-func (c *Client) signUTXOZEC(zecTx *zecutil.MsgTx, tx stypes.TxOutItem, amount int64, sourceScript []byte, idx int, thorchainHeight int64) (err error) {
+func (c *Client) signUTXOZEC(zecTx *zcash.Tx, hashes *zcash.SigHashes, tx stypes.TxOutItem, idx int, thorchainHeight int64) (err error) {
 	var signable btctxscript.Signable
 	if tx.VaultPubKey.Equals(c.nodePubKey) {
 		signable = btctxscript.NewPrivateKeySignable(c.nodePrivKey)
@@ -333,12 +327,7 @@ func (c *Client) signUTXOZEC(zecTx *zecutil.MsgTx, tx stypes.TxOutItem, amount i
 		signable = newTssSignableBTC(tx.VaultPubKey, c.tssKeySigner, c.log, thorchainHeight)
 	}
 
-	var cache *zecutil.TxSigHashes
-	if cache, err = zecutil.NewTxSigHashes(zecTx); err != nil {
-		return err
-	}
-
-	blakeHash, err := zecutil.Blake2bSignatureHash(sourceScript, cache, txscript.SigHashAll, zecTx, idx, amount)
+	blakeHash, err := hashes.SignatureHash(idx)
 	if err != nil {
 		return err
 	}

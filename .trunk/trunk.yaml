@@ -61,7 +61,6 @@ lint:
         - third_party/**
         - test/regression/mnt/blocks/**
         - bifrost/pkg/chainclients/tron/api/core
-        - bifrost/pkg/chainclients/utxo/zecutil
         - chain/evm/contracts/audits/**
 actions:
   disabled:

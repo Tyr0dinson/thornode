@@ -1202,7 +1202,7 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-    image: ${DOCKER_MIRROR:-}zfnd/zebra:6.2.1
+    image: ${DOCKER_MIRROR:-}zfnd/zebra:6.4.2
     restart: unless-stopped
     entrypoint: ["/etc/entrypoint.sh"]
     environment:

@@ -106,6 +106,10 @@ Consolidation is **initiated by Bifrost** but **validated by THORChain**. This l
 
 Replace-by-fee (RBF) is supported for user-initiated deposits to Asgard vaults. This allows users to bump the fee on a stuck transaction by rebroadcasting it with a higher fee. Vault-generated transactions do not use RBF. Instead, fee bumping (if required) is handled via other mechanisms such as child-pays-for-parent (CPFP).
 
+## Zcash Network Upgrades
+
+Matching Zebra upgrade schedules are an operator requirement. Before the agreed ZEC signing height reaches `activation height - 40`, operators must ensure their daemons report the same schedule. Different schedules can produce different transaction expiries and prevent a signing party from forming, even before activation. Update comfortably before this boundary; identical Zebra versions are not required if their schedules match.
+
 ## Related Pages
 
 - [Chain Clients Overview](./README.md)

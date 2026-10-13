@@ -9,7 +9,7 @@ import (
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zcash"
 
 	"github.com/eager7/dogutil"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signing"
@@ -328,12 +328,11 @@ func (c *Client) getSourceScript(tx stypes.TxOutItem) ([]byte, error) {
 		return btctxscript.PayToAddrScript(addr)
 	case common.ZECChain:
 		params := c.getChainCfgZEC()
-		var addr btcutil.Address
-		addr, err := zecutil.DecodeAddress(sourceAddr.String(), params.Name)
+		addr, err := zcash.DecodeAddress(sourceAddr.String(), params.Name)
 		if err != nil {
 			return nil, fmt.Errorf("fail to decode source address(%s): %w", sourceAddr.String(), err)
 		}
-		return zecutil.PayToAddrScript(addr)
+		return addr.Script()
 	default:
 		c.log.Fatal().Msg("unsupported chain")
 		return nil, nil
@@ -571,16 +570,16 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte, zecReference 
 			return nil, nil, fmt.Errorf("fail to generate null data script: %w", err)
 		}
 	case common.ZECChain:
-		var outputAddr btcutil.Address
-		outputAddr, err = zecutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgZEC().Name)
+		var outputAddr *zcash.Address
+		outputAddr, err = zcash.DecodeAddress(tx.ToAddress.String(), c.getChainCfgZEC().Name)
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to decode next address: %w", err)
 		}
-		buf, err = zecutil.PayToAddrScript(outputAddr)
+		buf, err = outputAddr.Script()
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
 		}
-		nullDataScripts, err = MemoToScripts(tx.Memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, zecutil.PayToPubKeyHashScript)
+		nullDataScripts, err = MemoToScripts(tx.Memo, btctxscript.MaxDataCarrierSize, btctxscript.NullDataScript, zcash.PayToPubKeyHashScript)
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to generate null data script: %w", err)
 		}

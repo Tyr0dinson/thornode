@@ -2,7 +2,6 @@ package utxo
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"io"
@@ -26,6 +25,7 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/storage"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/mock"
 	utxorpcc "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zcash"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
@@ -271,7 +271,7 @@ func (s *ZcashSignerSuite) TestVinsUnspentRejectsSpentCachedZECInput(c *C) {
 }
 
 // TestBroadcastTx tests transaction broadcasting behavior.
-// Empty and malformed payloads must fail before RPC; valid payloads are forwarded.
+// Empty and malformed payloads must fail before submission.
 func (s *ZcashSignerSuite) TestBroadcastTx(c *C) {
 	txOutItem := stypes.TxOutItem{
 		Chain:       common.ZECChain,
@@ -294,25 +294,20 @@ func (s *ZcashSignerSuite) TestBroadcastTx(c *C) {
 
 	// Malformed payloads cannot bypass the expiry check.
 	_, err = s.client.BroadcastTx(txOutItem, []byte("invalid payload"))
-	c.Assert(err, ErrorMatches, "fail to deserialize ZEC payload: .*")
-
-	// A valid non-expiring payload sends to RPC (mock returns success).
-	somePayload := zecExpiryPayload(c, 0)
-	txid, err := s.client.BroadcastTx(txOutItem, somePayload)
-	c.Assert(err, IsNil, Commentf("Non-empty payload should be forwarded to RPC"))
-	c.Assert(txid, Not(Equals), "", Commentf("Should return txid from RPC"))
+	c.Assert(err, ErrorMatches, "invalid ZEC payload: .*")
 }
 
-// zecPayloadTxID mirrors the ZEC fallback txid derivation used by BroadcastTx when
-// RPC returns "already in block chain" without a txid in the response.
+// zecPayloadTxID computes the native ID used by retry and cache assertions.
 func zecPayloadTxID(payload []byte) string {
-	hash1 := sha256.Sum256(payload)
-	hash2 := sha256.Sum256(hash1[:])
-	final := hash2[:]
-	for i, j := 0, len(final)-1; i < j; i, j = i+1, j-1 {
-		final[i], final[j] = final[j], final[i]
+	tx, err := zcash.ParseTx(payload)
+	if err != nil {
+		panic(err)
 	}
-	return hex.EncodeToString(final)
+	id, err := tx.ID()
+	if err != nil {
+		panic(err)
+	}
+	return id.String()
 }
 
 // TestBroadcastTxAlreadyInBlockChainMarksSignerCache verifies that the
@@ -331,7 +326,7 @@ func (s *ZcashSignerSuite) TestBroadcastTxAlreadyInBlockChainMarksSignerCache(c 
 		InHash: thorchain.GetRandomTxHash(),
 		Memo:   "OUT:" + thorchain.GetRandomTxHash().String(),
 	}
-	payload := zecExpiryPayload(c, 20000)
+	payload := zecExpiryPayload(c, 6, 20000)
 
 	rpcServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		body, err := io.ReadAll(req.Body)

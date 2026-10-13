@@ -1,6 +1,7 @@
 package utxo
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
@@ -9,16 +10,28 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zcash"
 	"gitlab.com/thorchain/thornode/v3/common"
 )
 
 func TestZecBroadcastRecoversOriginalTransaction(t *testing.T) {
-	payload := []byte("fixed signed v4 transaction")
+	tx := &zcash.Tx{MsgTx: wire.NewMsgTx(6), ConsensusBranchID: 0x37a5165b, ExpiryHeight: 120}
+	tx.AddTxIn(wire.NewTxIn(&wire.OutPoint{}, []byte{1}, nil))
+	tx.AddTxOut(wire.NewTxOut(1, []byte{0x51}))
+	var encoded bytes.Buffer
+	if err := tx.Serialize(&encoded); err != nil {
+		t.Fatal(err)
+	}
+	payload := encoded.Bytes()
 	payloadHex := hex.EncodeToString(payload)
-	txid := chainhash.DoubleHashH(payload).String()
+	id, err := tx.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	txid := id.String()
 	for _, tc := range []struct {
 		name             string
 		firstError       string

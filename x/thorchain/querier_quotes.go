@@ -18,7 +18,7 @@ import (
 	"github.com/gcash/bchutil"
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcutil"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zcash"
 
 	"cosmossdk.io/log"
 	sdkmath "cosmossdk.io/math"
@@ -1364,7 +1364,10 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 
 			var bz [20]byte
 			copy(bz[:], data[:20])
-			hash := zecutil.NewAddressPubKeyHash(bz, params)
+			hash, err := zcash.NewAddressPubKeyHash(bz, params)
+			if err != nil {
+				return nil, err
+			}
 			address = hash.String()
 		default:
 			return nil, fmt.Errorf("chain not supported")
