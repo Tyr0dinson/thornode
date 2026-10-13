@@ -215,7 +215,8 @@ func (s *ModuleCovCSuite) TestAppModuleBasicsCovC(c *C) {
 	am.IsAppModule()
 	am.IsOnePerModuleType()
 	am.RegisterInvariants(nil)
-	c.Check(am.ConsensusVersion(), Equals, uint64(19))
+	// Other merge requests may advance the consensus version before this test merges.
+	c.Check(am.ConsensusVersion() >= 19, Equals, true)
 	c.Check(am.QuerierRoute(), Equals, types.QuerierRoute)
 	c.Check(am.msgServer, NotNil)
 	c.Check(am.queryServer, NotNil)
