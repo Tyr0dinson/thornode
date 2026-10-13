@@ -2672,12 +2672,13 @@ func securityEventMsg(ctx cosmos.Context) string {
 // TestKeygenSuccessResetsOnlyMembershipBlame drives a complete keygen success
 // (full consensus + matching check signatures) and verifies the handler resets
 // since_churn counters for the just-succeeded vault's members but leaves a
-// non-member node's counters intact. This locks in the fix from commit
-// 656937e ("scope keygen since_churn reset to just-succeeded vault members"),
-// which prevents a parallel multi-Asgard success in one vault from wiping
-// pending blame counters of nodes participating in another, still-failing
-// Asgard keygen. It also exercises the handler-level pubkey-to-thor-address
-// derivation at handler_tss.go:537-558.
+// non-member node's counters intact. This locks in the membership-scoped
+// reset, which prevents a parallel multi-Asgard success in one vault from
+// wiping pending blame counters of nodes participating in another,
+// still-failing Asgard keygen. It also exercises the membership
+// pubkey-to-thor-address derivation that feeds
+// ResetSinceChurnCountersForMembers on the AsgardKeygen success path of
+// TssHandler.handle.
 func (s *HandlerTssSuite) TestKeygenSuccessResetsOnlyMembershipBlame(c *C) {
 	helper := newTssHandlerTestHelper(c)
 	handler := NewTssHandler(NewDummyMgrWithKeeper(helper.keeper))
@@ -2699,8 +2700,9 @@ func (s *HandlerTssSuite) TestKeygenSuccessResetsOnlyMembershipBlame(c *C) {
 
 	// Drive a full keygen success: each member signs the same msg with the
 	// same non-empty Secp256K1Signature so the voter reaches both 8/8
-	// consensus and the identical-check-signature consensus required at
-	// handler_tss.go:484. Use handler.handle to bypass the secp256k1
+	// consensus and the identical-check-signature consensus
+	// (ConsensusCheckSignature) that TssHandler.handle requires for
+	// AsgardKeygen. Use handler.handle to bypass the secp256k1
 	// signature verification done in handler.validate.
 	keygenTime := int64(1024)
 	poolPubKey := GetRandomPubKey()
@@ -2742,7 +2744,8 @@ func (s *HandlerTssSuite) TestKeygenSuccessResetsOnlyMembershipBlame(c *C) {
 // A regression that uses baseJailTime in place of escalatedJailTime for
 // releaseHeight, or baseSlashPoints in place of escalatedSlashPoints for
 // CalcNodeRewards, would produce a different jail height / bond delta and
-// fail this test. See handler_tss.go else-branch around lines 351-424.
+// fail this test. See the non-active-node escalated-penalty branch of the
+// keygen-failure blame loop in TssHandler.handle.
 func (s *HandlerTssSuite) TestKeygenFailEscalationMath(c *C) {
 	// 2 prior blames; the handler increments to 3, so the multiplier is 3.
 	assertKeygenFailEscalation(c, 2, 3)
