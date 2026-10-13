@@ -796,7 +796,7 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "03AF0CF5B7918EE3A5D81EA1E717DDDE8589A1CD078004952FCC8B8FEA0AE41A",
+      "data_hash": "12B19F76F123B4E5B6A7CD42AB9F0783C103767F8502F0B090A23C41DAFB9D38",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
@@ -810,7 +810,7 @@
     "end_block_events": [],
     "txs": [
       {
-        "hash": "BC8018F229013F722FC1CF551794127AA4EA78C9C50C17F081468509939483A4",
+        "hash": "490926A0AA9B5FCD85BE7BADDED800976C7DAC030B41AF61E3086BD14AE13C85",
         "tx": {
           "auth_info": {
             "fee": {
@@ -875,7 +875,7 @@
             "unordered": false
           },
           "signatures": [
-            "OenHUdTr/lSsHYelq0+WtN5hN/yGxGJL6y16YKlsdKAyHN8USynLqSN7wDPETVgIyn6Zg0KdPpjTSE4Sjv+C2w=="
+            "vz/eP27VPLCHFipqZuQMXZiQ2DOzK0seulP1AqMVCGhCwHFgV9FUMNvErZ2wfatrpyrOr6nQ6UzgX9ooyx/1lw=="
           ]
         },
         "result": {
@@ -893,7 +893,7 @@
               "type": "tx"
             },
             {
-              "signature": "OenHUdTr/lSsHYelq0+WtN5hN/yGxGJL6y16YKlsdKAyHN8USynLqSN7wDPETVgIyn6Zg0KdPpjTSE4Sjv+C2w==",
+              "signature": "vz/eP27VPLCHFipqZuQMXZiQ2DOzK0seulP1AqMVCGhCwHFgV9FUMNvErZ2wfatrpyrOr6nQ6UzgX9ooyx/1lw==",
               "type": "tx"
             },
             {
@@ -953,7 +953,7 @@
               "chain": "THOR",
               "coin": "500000000000 THOR.RUNE",
               "from": "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f",
-              "id": "BC8018F229013F722FC1CF551794127AA4EA78C9C50C17F081468509939483A4",
+              "id": "490926A0AA9B5FCD85BE7BADDED800976C7DAC030B41AF61E3086BD14AE13C85",
               "memo": "BOND:tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
               "msg_index": "0",
               "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
@@ -986,7 +986,7 @@
               "chain": "THOR",
               "coin": "500000000000 THOR.RUNE",
               "from": "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f",
-              "id": "BC8018F229013F722FC1CF551794127AA4EA78C9C50C17F081468509939483A4-1",
+              "id": "490926A0AA9B5FCD85BE7BADDED800976C7DAC030B41AF61E3086BD14AE13C85-1",
               "memo": "BOND:tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
               "msg_index": "0",
               "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
@@ -1019,7 +1019,7 @@
               "chain": "THOR",
               "coin": "500000000000 THOR.RUNE",
               "from": "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f",
-              "id": "BC8018F229013F722FC1CF551794127AA4EA78C9C50C17F081468509939483A4-2",
+              "id": "490926A0AA9B5FCD85BE7BADDED800976C7DAC030B41AF61E3086BD14AE13C85-2",
               "memo": "BOND:tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
               "msg_index": "0",
               "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
