@@ -180,7 +180,7 @@ func (f *errataOrderingFixture) outbound(c *C) ObservedTxVoter {
 }
 
 func (f *errataOrderingFixture) assertOneGasSettlement(c *C) {
-	f.mgr.GasMgr().EndBlock(f.ctx, f.mgr.Keeper(), f.mgr.EventMgr())
+	f.mgr.GasMgr().EndBlock(f.ctx, f.mgr)
 	pool, err := f.mgr.Keeper().GetPool(f.ctx, common.XMRAsset)
 	c.Assert(err, IsNil)
 	c.Check(pool.BalanceAsset.Uint64(), Equals, uint64(9999))
@@ -459,6 +459,9 @@ func (*ErrataOrderingSuite) TestErrataOrderingForeignInboundDoesNotBecomeReverte
 	voter := NewObservedTxVoter(f.tx.Tx.ID, ObservedTxs{foreign})
 	voter.Tx = foreign
 	f.mgr.Keeper().SetObservedTxInVoter(f.ctx, voter)
+	// Compare against the stored form so zero-valued Uint fields match.
+	voter, err := f.mgr.Keeper().GetObservedTxInVoter(f.ctx, f.tx.Tx.ID)
+	c.Assert(err, IsNil)
 	result := f.errata(c, 2)
 	c.Assert(f.deliver(c, result), IsNil)
 	c.Check(result.QuoErrata.Outcome, Equals, common.ErrataTxOutcome_ERRATA_TX_OUTCOME_NO_APPLICABLE_OBSERVATION)

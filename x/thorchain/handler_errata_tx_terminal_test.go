@@ -561,6 +561,9 @@ func (s *HandlerErrataTxQuorumSuite) TestTerminalErrataForeignInboundOutcome(c *
 	inbound := NewObservedTxVoter(tx.Tx.ID, ObservedTxs{tx})
 	inbound.Tx = tx
 	mgr.Keeper().SetObservedTxInVoter(ctx, inbound)
+	// Compare against the stored form so zero-valued Uint fields match.
+	inbound, err := mgr.Keeper().GetObservedTxInVoter(ctx, tx.Tx.ID)
+	c.Assert(err, IsNil)
 	msg := newSignedErrataQuorumMessage(c, makeErrataTx(tx.Tx.ID, common.XMRChain), NodeAccounts{na}, key)
 	for range 2 {
 		c.Assert(runErrataQuorum(ctx, mgr, msg), IsNil)

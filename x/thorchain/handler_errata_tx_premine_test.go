@@ -126,7 +126,7 @@ func (s *HandlerErrataTxQuorumSuite) TestPreMiningOutboundQuorumErrata(c *C) {
 		}
 		// Errata restores principal, preserving the single gas debit.
 		c.Assert(mgr.GasMgr().GetGas().ToCoins().GetCoin(common.XMRAsset).Amount.Uint64(), Equals, uint64(1))
-		mgr.GasMgr().EndBlock(ctx, mgr.Keeper(), mgr.EventMgr())
+		mgr.GasMgr().EndBlock(ctx, mgr)
 		pool, err = mgr.Keeper().GetPool(ctx, common.XMRAsset)
 		c.Assert(err, IsNil)
 		c.Assert(pool.BalanceAsset.Uint64(), Equals, uint64(9999))
