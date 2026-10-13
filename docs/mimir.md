@@ -321,8 +321,11 @@ active node has voted.
 While a key is in the required state:
 
 - One active node that hasn't voted is marked for churn out each churn, per pending ADR key.
-  The node is picked pseudo-randomly using the last app hash, so nobody can tell in advance
-  whether it is them. This is a graceful churn out — no slash and no ban — and the BFT churn
+  The node is picked deterministically from the previous block's app hash, the mimir key and
+  the non-voters sorted by address. Anyone can compute the pick once the block before the
+  churn block commits, but by then it is too late for a vote to change it, so until that
+  point every non-voter has to assume it is them. The selection is not secret, and the
+  previous block's proposer can influence it. This is a graceful churn out — no slash and no ban — and the BFT churn
   caps still apply.
 - A standby node that hasn't voted cannot churn in. This shows up in the node preflight status
   (`/thorchain/node/{address}`) as `node account has not voted on required mimir: <KEY>`.

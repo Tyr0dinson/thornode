@@ -1757,8 +1757,11 @@ func (vm *ValidatorMgr) markActor(ctx cosmos.Context, na NodeAccount, reason str
 }
 
 // markNonVotingActors marks one active node per pending ADR mimir for churn out, chosen
-// pseudo-randomly from the last app hash. Nodes cannot predict the pick before the block
-// commits, so every non-voter has to assume it is them.
+// deterministically from the previous block's app hash, the key and the sorted non-voters.
+// The pick is computable once the previous block commits, which is too late for a vote to
+// change it (this runs in BeginBlock, before the block's txs), but it is not secret and the
+// previous block's proposer can influence it. Until then every non-voter has to assume it
+// is them.
 func (vm *ValidatorMgr) markNonVotingActors(ctx cosmos.Context) error {
 	pending, err := pendingADRVotes(ctx, vm.k)
 	if err != nil {
