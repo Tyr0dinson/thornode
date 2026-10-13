@@ -897,9 +897,13 @@ func TestCommittedXMRSpentRefsLatchExactPayload(t *testing.T) {
 		state, ok := observerTestConflictState(ag, exact)
 		return ok && state == xmrSpentRefsImportConfirmed
 	}, time.Second, 10*time.Millisecond)
-	ag.mu.Lock()
-	assert.True(t, ag.historicalXMRSpentRefCertificates[exactPayloadHash].applied)
-	ag.mu.Unlock()
+	// The committed callback marks the historical bucket after the live state
+	// and conflict entry, so wait for that final write rather than racing it.
+	require.Eventually(t, func() bool {
+		ag.mu.Lock()
+		defer ag.mu.Unlock()
+		return ag.historicalXMRSpentRefCertificates[exactPayloadHash].applied
+	}, time.Second, 10*time.Millisecond)
 
 	var vaultCalls atomic.Int32
 	bridge.getVaultFunc = func(string) (thortypes.Vault, error) {
