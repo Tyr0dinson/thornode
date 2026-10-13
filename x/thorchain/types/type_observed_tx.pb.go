@@ -45,8 +45,12 @@ type ObservedTxVoter struct {
 	// recently at each finality level. An entry keeps the signatures it once held
 	// forever, so without this a verdict the network has moved off of could be
 	// tipped back over the supermajority line by a handful of nodes that never
-	// observed it, and the vault's coin accounting oscillated at will. Only the
-	// outbound correction quorum reads it; consensus formation is unchanged.
+	// observed it, and the vault's coin accounting oscillated at will. Both
+	// consensus formation (GetTx/HasConsensus/HasFinalised) and the outbound
+	// correction quorum count only each signer's current vote. Only AddLatest
+	// (outbound observations) writes it, and only once a signer has signed a
+	// second entry at a finality level, so inbound (Add-only) voters never
+	// populate it and their consensus is unchanged.
 	LatestVotes []ObservedTxVote `protobuf:"bytes,13,rep,name=latest_votes,json=latestVotes,proto3" json:"latest_votes,omitempty"`
 }
 
