@@ -845,7 +845,20 @@ func applyTxOutAttestation(
 			if !ok && !voter.Reverted && !prevConsensusTx.IsEmpty() &&
 				voter.Tx.Bounced != prevConsensusTx.Bounced &&
 				prevConsensusTx.EqualsConsensusIgnoreGas(voter.Tx) {
-				reconcileBounceCorrection(ctx, mgr, voter.Tx, voter.Tx.Bounced)
+				// A finalised consensus below the non-final one's height is stale,
+				// not a newer receipt: typically the signers' receipt-less instant
+				// observations (filed at the signing tip, before inclusion, so never
+				// Bounced and carrying the gas limit), late-sent after the scanner
+				// had already reported the receipt. Keep the receipt's verdict, gas
+				// and height rather than reconcile onto it.
+				if voter.Tx.BlockHeight < prevConsensusTx.BlockHeight {
+					voter.Tx.Bounced = prevConsensusTx.Bounced
+					voter.Tx.Tx.Gas = prevConsensusTx.Tx.Gas
+					voter.Tx.BlockHeight = prevConsensusTx.BlockHeight
+					voter.Tx.FinaliseHeight = prevConsensusTx.BlockHeight
+				} else {
+					reconcileBounceCorrection(ctx, mgr, voter.Tx, voter.Tx.Bounced)
+				}
 			}
 
 			ctx.Logger().Debug(
@@ -1074,7 +1087,19 @@ func correctOutboundObservation(ctx cosmos.Context, mgr Manager, voter *Observed
 	// once held back over the line. A replacement receipt byte-identical to one a
 	// node already filed cannot be re-filed (AddLatest has no take-backs), so only
 	// a re-inclusion with a different height or gas can move the verdict back.
-	if !HasSuperMajority(countMatchingSigners(*voter, tx, nas), len(nas)) {
+	//
+	// Arrival order is not freshness either: a node's attestation of a superseded
+	// receipt, or its receipt-less instant observation, can be late-sent after its
+	// current one and move its vote back. A Bounced change therefore only counts
+	// observations at or above the height of the verdict it overturns, and that
+	// height advances with each bounce correction. A stale variant at the same
+	// height (a same-height fork) is indistinguishable without a signed block hash
+	// or revision in the attestation.
+	minHeight := int64(0)
+	if bounceChanged {
+		minHeight = voter.Tx.BlockHeight
+	}
+	if !HasSuperMajority(countMatchingSignersFrom(*voter, tx, nas, minHeight), len(nas)) {
 		return
 	}
 	if gasChanged {
@@ -1087,6 +1112,8 @@ func correctOutboundObservation(ctx cosmos.Context, mgr Manager, voter *Observed
 		// scheduled TxOutItem that handleObservedTxOutQuorum wrote onto voter.Tx.
 		reconcileBounceCorrection(ctx, mgr, consensus, tx.Bounced)
 		voter.Tx.Bounced = tx.Bounced
+		voter.Tx.BlockHeight = tx.BlockHeight
+		voter.Tx.FinaliseHeight = tx.FinaliseHeight
 	}
 }
 
@@ -1135,9 +1162,15 @@ func reconcileBounceCorrection(ctx cosmos.Context, mgr Manager, consensusTx comm
 // one - its vote moved with it (ObservedTxVoter.AddLatest). A signer with no
 // recorded vote at all predates the record and counts where it signed, as before.
 func countMatchingSigners(voter ObservedTxVoter, tx ObservedTx, nas NodeAccounts) int {
+	return countMatchingSignersFrom(voter, tx, nas, 0)
+}
+
+// countMatchingSignersFrom is countMatchingSigners restricted to entries
+// observed at or above minHeight.
+func countMatchingSignersFrom(voter ObservedTxVoter, tx ObservedTx, nas NodeAccounts, minHeight int64) int {
 	matching := make([]bool, len(voter.Txs))
 	for i, otherTx := range voter.Txs {
-		matching[i] = otherTx.IsFinal() == tx.IsFinal() &&
+		matching[i] = otherTx.IsFinal() == tx.IsFinal() && otherTx.BlockHeight >= minHeight &&
 			otherTx.ObservedPubKey.Equals(tx.ObservedPubKey) &&
 			otherTx.EqualsConsensus(tx)
 	}

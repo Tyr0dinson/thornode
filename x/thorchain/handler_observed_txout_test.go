@@ -1856,3 +1856,102 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionRejectsReplayedQuo
 	c.Check(f.ethBalance(c), Equals, untouched-bounceGas)
 	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
 }
+
+// voteInstant submits node i's signer-side instant observation of the outbound:
+// no receipt, so never Bounced, filed at the signing-tip height with the gas
+// limit as gas and zero confirmations, so it is final.
+func (f *bouncedOutboundFixture) voteInstant(c *C, i int, gas uint64, height int64) {
+	f.voteAtGasHeight(c, i, false, gas, height)
+}
+
+// TestHandleBounceLateInstantCannotReverseReceipt: delivery order is not
+// freshness. The signers' receipt-less instant observations can reach THORNode
+// after the scanner's finalised Bounced quorum (they are late-sent when their
+// signing-tip heights split them into sub-quorum gossip buckets). They sit below
+// the inclusion height the receipt reported, so they must not reverse the
+// receipt-backed verdict and debit principal that never left the vault.
+func (s *HandlerObservedTxOutSuite) TestHandleBounceLateInstantCannotReverseReceipt(c *C) {
+	const (
+		untouched  = uint64(20000000000) // 200 ETH
+		scannerGas = uint64(37500)       // gas used, from the receipt
+		instantGas = uint64(60000)       // gas limit, the instant observation's guess
+	)
+
+	f := newBouncedOutboundFixture(c, 6)
+	for i := 0; i < 4; i++ {
+		f.voteAtGasHeight(c, i, true, scannerGas, 12)
+	}
+	c.Assert(f.keeper.voter.Tx.Bounced, Equals, true)
+	c.Assert(f.ethBalance(c), Equals, untouched-scannerGas)
+
+	for i := 0; i < 6; i++ {
+		f.voteInstant(c, i, instantGas, 11)
+	}
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
+	c.Check(f.ethBalance(c), Equals, untouched-scannerGas)
+}
+
+// TestHandleBounceLateInstantCannotReverseOnFinalisation: the same late instant
+// observations can form the finalised consensus after a non-final scanner
+// consensus already retained the coins as Bounced. The hand-off must keep the
+// receipt's verdict and gas rather than debit the coins and adopt the gas limit,
+// and the scanner's own finalised observations then change nothing.
+func (s *HandlerObservedTxOutSuite) TestHandleBounceLateInstantCannotReverseOnFinalisation(c *C) {
+	const (
+		untouched  = uint64(20000000000) // 200 ETH
+		scannerGas = uint64(37500)       // the fixture tx's gas
+		instantGas = uint64(60000)
+	)
+
+	f := newBouncedOutboundFixture(c, 6)
+	for i := 0; i < 4; i++ {
+		f.voteAt(c, i, true, 12, 15) // unfinalised: bounced, coins retained
+	}
+	c.Assert(f.keeper.voter.Tx.Bounced, Equals, true)
+	c.Assert(f.ethBalance(c), Equals, untouched-scannerGas)
+
+	for i := 0; i < 4; i++ {
+		f.voteInstant(c, i, instantGas, 11)
+	}
+	c.Check(f.keeper.voter.FinalisedHeight > 0, Equals, true)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
+	c.Check(f.ethBalance(c), Equals, untouched-scannerGas)
+
+	for i := 0; i < 4; i++ {
+		f.voteAt(c, i, true, 12, 12) // the scanner's finalised receipt
+	}
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
+	c.Check(f.ethBalance(c), Equals, untouched-scannerGas)
+}
+
+// TestHandleBounceStaleReceiptCannotDisplaceNewer: a re-inclusion moved the
+// outbound from a bounced receipt at height 12 to a delivered one at height 14.
+// Two nodes' attestations of the superseded height-12 receipt are late-sent after
+// that and move their latest votes back onto it, which gives it a supermajority
+// of current votes again. A receipt below the height of the verdict it would
+// overturn is stale, so the delivery stands.
+func (s *HandlerObservedTxOutSuite) TestHandleBounceStaleReceiptCannotDisplaceNewer(c *C) {
+	const (
+		untouched   = uint64(20000000000) // 200 ETH
+		bounceGas   = uint64(37500)
+		deliveryGas = uint64(40000)
+	)
+
+	f := newBouncedOutboundFixture(c, 6)
+	for i := 0; i < 4; i++ {
+		f.voteAtGasHeight(c, i, true, bounceGas, 12)
+	}
+	c.Assert(f.ethBalance(c), Equals, untouched-bounceGas)
+
+	for i := 2; i < 6; i++ {
+		f.voteAtGasHeight(c, i, false, deliveryGas, 14)
+	}
+	c.Assert(f.keeper.voter.Tx.Bounced, Equals, false)
+	c.Assert(f.ethBalance(c), Equals, untouched-deliveryGas-1)
+
+	for i := 4; i < 6; i++ {
+		f.voteAtGasHeight(c, i, true, bounceGas, 12)
+	}
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
+	c.Check(f.ethBalance(c), Equals, untouched-deliveryGas-1)
+}
