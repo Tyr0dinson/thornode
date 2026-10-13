@@ -45,6 +45,21 @@ func newAddress(address string) (Address, error) {
 		}
 	}
 
+	// Check LTC taproot (bech32m) addresses with regtest. Segwit v0 regtest
+	// addresses are already accepted above because ltcutil decodes any
+	// registered bech32 HRP, but the taproot decoder checks the HRP of the
+	// network it is given, so the mocknet vault address form needs its own
+	// check.
+	outputAddr, err = ltctxscript.DecodeAddress(address, &ltcchaincfg.RegressionNetParams)
+	switch outputAddr.(type) {
+	case *ltcutil.AddressPubKey:
+		// AddressPubKey format is not supported by THORChain.
+	default:
+		if err == nil {
+			return Address(address), nil
+		}
+	}
+
 	// Check BCH address formats with testnet
 	outputAddr, err = bchutil.DecodeAddress(address, &bchchaincfg.TestNet3Params)
 	switch outputAddr.(type) {

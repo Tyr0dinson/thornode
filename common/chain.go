@@ -39,7 +39,17 @@ const (
 
 	SigningAlgoSecp256k1 = SigningAlgo("secp256k1")
 	SigningAlgoEd25519   = SigningAlgo("ed25519")
+	// SigningAlgoSecp256k1Taproot tags a vault key that is a FROST (BIP-340)
+	// group key for a Taproot chain. The key is an ordinary secp256k1 point, so
+	// this tag is what tells address derivation to use the P2TR form instead of
+	// the ECDSA one.
+	SigningAlgoSecp256k1Taproot = SigningAlgo("secp256k1-taproot")
 )
+
+// taprootVaultBuildEnabled is the compile-time gate: only
+// stagenet and mocknet builds ever treat a vault key as a Taproot key. Mainnet
+// and chainnet binaries keep today's behaviour unchanged.
+const taprootVaultBuildEnabled = CurrentChainNetwork == StageNet || CurrentChainNetwork == MockNet
 
 var AllChains = [...]Chain{
 	BSCChain,
@@ -193,6 +203,24 @@ func (c Chain) GetSigningAlgo() SigningAlgo {
 	default:
 		return SigningAlgoSecp256k1
 	}
+}
+
+// SupportsTaprootVaults reports whether vaults on this chain may hold a FROST
+// key and publish a Taproot (bech32m, witness v1) address in this build. Only
+// LTC, and only in stagenet and mocknet builds.
+func (c Chain) SupportsTaprootVaults() bool {
+	return taprootVaultBuildEnabled && c.Equals(LTCChain)
+}
+
+// AcceptsSigningAlgo reports whether vault keys tagged with algo can hold this
+// chain's funds. Every chain accepts its GetSigningAlgo. LTC additionally
+// accepts SigningAlgoSecp256k1Taproot where SupportsTaprootVaults is true,
+// because ECDSA (P2WPKH) and FROST (P2TR) vaults coexist while vaults churn.
+func (c Chain) AcceptsSigningAlgo(algo SigningAlgo) bool {
+	if algo == c.GetSigningAlgo() {
+		return true
+	}
+	return algo == SigningAlgoSecp256k1Taproot && c.SupportsTaprootVaults()
 }
 
 // GetGasAsset chain's base asset

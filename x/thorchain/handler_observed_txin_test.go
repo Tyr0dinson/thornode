@@ -799,7 +799,7 @@ func (k *TestObservedTxInHandleKeeper) AddObservingAddresses(_ cosmos.Context, a
 }
 
 func (k *TestObservedTxInHandleKeeper) GetVault(_ cosmos.Context, key common.PubKey) (Vault, error) {
-	if k.vault.PubKey.Equals(key) {
+	if k.vault.PubKey.Equals(key) || (!k.vault.PubKeyFrost.IsEmpty() && k.vault.PubKeyFrost.Equals(key)) {
 		return k.vault, nil
 	}
 	return GetRandomVault(), errKaboom

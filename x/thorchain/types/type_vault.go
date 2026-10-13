@@ -504,9 +504,38 @@ func (m *Vault) RemovePendingTxBlockHeights(blockHeight int64) {
 	}
 }
 
+// TaprootPubKey returns the vault's FROST key when it is a Taproot (secp256k1)
+// key for chain in this build. XMR monovaults also set PubKeyFrost, but with an
+// ed25519 key, so the curve of the key tells the two uses apart.
+func (m *Vault) TaprootPubKey(chain common.Chain) (common.PubKey, bool) {
+	if m.PubKeyFrost.IsEmpty() || !chain.SupportsTaprootVaults() {
+		return common.EmptyPubKey, false
+	}
+	algo, err := m.PubKeyFrost.KeyAlgo()
+	if err != nil || algo != common.SigningAlgoSecp256k1 {
+		return common.EmptyPubKey, false
+	}
+	return m.PubKeyFrost, true
+}
+
+// ChainSigningAlgo returns the algorithm this vault signs chain with: the
+// chain's default, or SigningAlgoSecp256k1Taproot when the vault holds a
+// Taproot key for it.
+func (m *Vault) ChainSigningAlgo(chain common.Chain) common.SigningAlgo {
+	if _, ok := m.TaprootPubKey(chain); ok {
+		return common.SigningAlgoSecp256k1Taproot
+	}
+	return chain.GetSigningAlgo()
+}
+
+// AlgoPubKey returns the key this vault uses for chain. Pair it with
+// ChainSigningAlgo when deriving an address; GetAddress does both.
 func (m *Vault) AlgoPubKey(chain common.Chain) (common.PubKey, error) {
 	switch chain.GetSigningAlgo() {
 	case common.SigningAlgoSecp256k1:
+		if taprootPubKey, ok := m.TaprootPubKey(chain); ok {
+			return taprootPubKey, nil
+		}
 		return m.PubKey, nil
 	case common.SigningAlgoEd25519:
 		if chain == common.XMRChain {
@@ -532,7 +561,7 @@ func (m *Vault) GetAddress(chain common.Chain) (common.Address, error) {
 	if err != nil {
 		return common.NoAddress, fmt.Errorf("fail to get vault address: %w", err)
 	}
-	return pubKey.GetAddress(chain)
+	return pubKey.GetAddressForAlgo(chain, m.ChainSigningAlgo(chain))
 }
 
 // SortBy order coins by the given asset

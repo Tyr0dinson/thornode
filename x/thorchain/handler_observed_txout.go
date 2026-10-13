@@ -67,6 +67,9 @@ func (h ObservedTxOutHandler) handle(ctx cosmos.Context, msg MsgObservedTxOut) (
 			ctx.Logger().Error("fail to ensure vault and get tx out voter", "error", err)
 			continue
 		}
+		if !observedAddressMatchesVault(ctx, k, tx, false) {
+			continue
+		}
 
 		// check whether the tx has consensus
 		voter, isQuorum := processTxOutAttestation(ctx, h.mgr, voter, activeNodeAccounts, tx, msg.Signer, true)

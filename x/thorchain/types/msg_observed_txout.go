@@ -42,11 +42,12 @@ func (m *MsgObservedTxOut) ValidateBasic() error {
 		if err := tx.Valid(); err != nil {
 			return cosmos.ErrUnknownRequest(err.Error())
 		}
-		obAddr, err := tx.ObservedPubKey.GetAddress(tx.Tx.Coins[0].Asset.GetChain())
-		if err != nil {
+		if _, err := tx.ObservedPubKey.GetAddress(tx.Tx.Coins[0].Asset.GetChain()); err != nil {
 			return cosmos.ErrUnknownRequest(err.Error())
 		}
-		if !common.AddressEquals(tx.Tx.Chain, tx.Tx.FromAddress, obAddr) {
+		// A key may own more than one address form on a chain (an LTC Taproot
+		// vault key also has an unused ECDSA form), so match against all of them.
+		if !tx.ObservedPubKey.HasAddress(tx.Tx.Coins[0].Asset.GetChain(), tx.Tx.FromAddress) {
 			return cosmos.ErrUnknownRequest("Request is not an outbound observed transaction")
 		}
 		if tx.Tx.Chain.Equals(common.XMRChain) && strings.TrimSpace(tx.XmrTxKey) == "" {

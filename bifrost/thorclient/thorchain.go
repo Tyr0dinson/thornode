@@ -501,8 +501,9 @@ func (b *thorchainBridge) GetInboundOutbound(txIns common.ObservedTxs) (common.O
 			return nil, nil, fmt.Errorf("xmr observed vault pubkey %s does not map to an address", tx.ObservedPubKey.String())
 		}
 
-		vaultToAddress := tx.Tx.ToAddress.Equals(obAddr)
-		vaultFromAddress := tx.Tx.FromAddress.Equals(obAddr)
+		// HasAddress also matches the Taproot form of an LTC FROST vault key.
+		vaultToAddress := tx.Tx.ToAddress.Equals(obAddr) || tx.ObservedPubKey.HasAddress(chain, tx.Tx.ToAddress)
+		vaultFromAddress := tx.Tx.FromAddress.Equals(obAddr) || tx.ObservedPubKey.HasAddress(chain, tx.Tx.FromAddress)
 		var inInboundArray, inOutboundArray bool
 		if vaultToAddress {
 			inInboundArray = inbound.Contains(tx)
@@ -1044,7 +1045,7 @@ func (b *thorchainBridge) GetPubKeys() ([]PubKeyContractAddressPair, error) {
 			kp := PubKeyContractAddressPair{
 				PubKey:     common.PubKey(*v.PubKeyFrost),
 				Contracts:  make(map[common.Chain]common.Address),
-				Algo:       common.SigningAlgoEd25519,
+				Algo:       vaultFrostKeyAlgo(common.PubKey(*v.PubKeyFrost)),
 				Membership: membership,
 				Inactive:   inactive,
 			}
@@ -1108,7 +1109,7 @@ func (b *thorchainBridge) GetAsgardPubKeys() ([]PubKeyContractAddressPair, error
 			kp := PubKeyContractAddressPair{
 				PubKey:    common.PubKey(*v.PubKeyFrost),
 				Contracts: make(map[common.Chain]common.Address),
-				Algo:      common.SigningAlgoEd25519,
+				Algo:      vaultFrostKeyAlgo(common.PubKey(*v.PubKeyFrost)),
 			}
 			for _, item := range v.Routers {
 				kp.Contracts[common.Chain(*item.Chain)] = common.Address(*item.Router)
@@ -1344,6 +1345,15 @@ func (b *thorchainBridge) GetMimirWithRef(template, ref string) (int64, error) {
 }
 
 // PubKeyContractAddressPair is an entry to map pubkey and contract addresses
+// vaultFrostKeyAlgo tags a vault's FROST pubkey by its curve: ed25519 keys
+// belong to the XMR monovault, secp256k1 keys are LTC Taproot vault keys.
+func vaultFrostKeyAlgo(pk common.PubKey) common.SigningAlgo {
+	if algo, err := pk.KeyAlgo(); err == nil && algo == common.SigningAlgoSecp256k1 {
+		return common.SigningAlgoSecp256k1Taproot
+	}
+	return common.SigningAlgoEd25519
+}
+
 type PubKeyContractAddressPair struct {
 	PubKey     common.PubKey
 	Contracts  map[common.Chain]common.Address

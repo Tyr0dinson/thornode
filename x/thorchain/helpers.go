@@ -44,9 +44,44 @@ func txOutVaultPubKeyEddsa(chain common.Chain, pubKey common.PubKey) common.PubK
 	return pubKey
 }
 
+// txOutUsesTaprootVault reports whether the outbound is spent from an LTC
+// Taproot (FROST) vault: the item carries a secp256k1 FROST key for a chain
+// that supports Taproot vaults in this build.
+func txOutUsesTaprootVault(item TxOutItem) bool {
+	if !item.Chain.SupportsTaprootVaults() || item.VaultPubKeyFrost.IsEmpty() {
+		return false
+	}
+	algo, err := item.VaultPubKeyFrost.KeyAlgo()
+	return err == nil && algo == common.SigningAlgoSecp256k1
+}
+
+// txOutSigningAlgo returns the algorithm the outbound's source vault signs
+// item.Chain with.
+func txOutSigningAlgo(item TxOutItem) common.SigningAlgo {
+	if txOutUsesTaprootVault(item) {
+		return common.SigningAlgoSecp256k1Taproot
+	}
+	return item.Chain.GetSigningAlgo()
+}
+
+// txOutSourceAddress returns the address the outbound is spent from: the
+// source key's address under txOutSigningAlgo. Use this rather than
+// txOutSourcePubKey(...).GetAddress(...), which would give an LTC Taproot vault
+// its unused ECDSA address.
+func txOutSourceAddress(item TxOutItem) (common.Address, error) {
+	pubKey, err := txOutSourcePubKey(item)
+	if err != nil {
+		return common.NoAddress, err
+	}
+	return pubKey.GetAddressForAlgo(item.Chain, txOutSigningAlgo(item))
+}
+
 func txOutSourcePubKey(item TxOutItem) (common.PubKey, error) {
 	switch item.Chain.GetSigningAlgo() {
 	case common.SigningAlgoSecp256k1:
+		if txOutUsesTaprootVault(item) {
+			return item.VaultPubKeyFrost, nil
+		}
 		if item.VaultPubKey.IsEmpty() {
 			return common.EmptyPubKey, fmt.Errorf("vault pubkey is empty")
 		}

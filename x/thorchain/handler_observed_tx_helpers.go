@@ -176,6 +176,47 @@ func processTxInAttestation(
 
 // ensureVaultAndGetTxInVoter will make sure the vault exists, then get the ObservedTxInVoter from the store.
 // if it doesn't exist, it will create a new one.
+// observedAddressMatchesVault reports whether the vault-side address of an
+// observation (ToAddress for inbounds, FromAddress for outbounds) is the
+// address the resolved vault actually uses on the chain.
+//
+// Message validation only holds the bare observed pubkey and, on chains that
+// support Taproot vaults, accepts both address forms of a secp256k1 key. This
+// keeper-side check restores the exact match there, so an observation to the
+// unused form of a key (the ECDSA form of a FROST key, or the Taproot form of
+// an ECDSA key) never credits a vault. On every other chain the message check
+// is already exact, so this returns true without touching state and mainnet
+// behaviour is unchanged.
+func observedAddressMatchesVault(ctx cosmos.Context, k keeper.Keeper, tx common.ObservedTx, inbound bool) bool {
+	chain := tx.Tx.Chain
+	if !chain.SupportsTaprootVaults() {
+		return true
+	}
+	vault, err := k.GetVault(ctx, tx.ObservedPubKey)
+	if err != nil {
+		ctx.Logger().Error("fail to get vault for observed address check", "pubkey", tx.ObservedPubKey, "error", err)
+		return false
+	}
+	vaultAddress, err := vault.GetAddress(chain)
+	if err != nil {
+		ctx.Logger().Error("fail to get vault address for observed address check", "pubkey", tx.ObservedPubKey, "chain", chain, "error", err)
+		return false
+	}
+	observed := tx.Tx.ToAddress
+	if !inbound {
+		observed = tx.Tx.FromAddress
+	}
+	if common.EquivalentAddresses(chain, observed, vaultAddress) {
+		return true
+	}
+	ctx.Logger().Error(
+		"observed address is not the vault's address on this chain",
+		"tx", tx.Tx.ID, "chain", chain, "inbound", inbound,
+		"observed", observed, "vault_address", vaultAddress, "vault_pubkey", tx.ObservedPubKey,
+	)
+	return false
+}
+
 func ensureVaultAndGetTxInVoter(ctx cosmos.Context, vaultPubKey common.PubKey, txID common.TxID, k keeper.Keeper) (ObservedTxVoter, error) {
 	// check we are sending to a valid vault
 	if !k.VaultExists(ctx, vaultPubKey) {
@@ -618,11 +659,7 @@ func xmrMigrateInboundMatchesTxOut(tx common.Tx, item TxOutItem) bool {
 		return false
 	}
 
-	sourcePubKey, err := txOutSourcePubKey(item)
-	if err != nil {
-		return false
-	}
-	fromAddress, err := sourcePubKey.GetAddress(item.Chain)
+	fromAddress, err := txOutSourceAddress(item)
 	if err != nil {
 		return false
 	}

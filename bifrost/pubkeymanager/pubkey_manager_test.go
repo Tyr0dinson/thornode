@@ -451,17 +451,17 @@ func (s *PubKeyMgrSuite) TestMatchAddress(c *C) {
 	// Valid match
 	addr, err := pk.GetAddress(common.ETHChain)
 	c.Assert(err, IsNil)
-	ok, cpi := matchAddress(addr.String(), common.ETHChain, pk)
+	ok, cpi := matchAddress(addr.String(), common.ETHChain, pk, common.SigningAlgoSecp256k1)
 	c.Check(ok, Equals, true)
 	c.Check(cpi.PoolAddress.String(), Equals, addr.String())
 
 	// Non-matching address
-	ok, cpi = matchAddress("0x0000000000000000000000000000000000000000", common.ETHChain, pk)
+	ok, cpi = matchAddress("0x0000000000000000000000000000000000000000", common.ETHChain, pk, common.SigningAlgoSecp256k1)
 	c.Check(ok, Equals, false)
 	c.Check(cpi, Equals, common.EmptyChainPoolInfo)
 
 	// Invalid chain/key combo that causes NewChainPoolInfo error
-	ok, cpi = matchAddress("invalid", common.EmptyChain, pk)
+	ok, cpi = matchAddress("invalid", common.EmptyChain, pk, common.SigningAlgoSecp256k1)
 	c.Check(ok, Equals, false)
 	c.Check(cpi, Equals, common.EmptyChainPoolInfo)
 }

@@ -72,6 +72,14 @@ func (h ObservedTxInHandler) handle(ctx cosmos.Context, msg MsgObservedTxIn) (*c
 			// would mislabel the voter-read failure as an unknown vault.
 			continue
 		}
+		if !observedAddressMatchesVault(ctx, h.mgr.Keeper(), tx, true) {
+			telemetry.IncrCounterWithLabels(
+				[]string{"thornode", "observation", "dropped"},
+				1,
+				[]metrics.Label{telemetry.NewLabel("reason", "txin_address_mismatch")},
+			)
+			continue
+		}
 
 		voter, isQuorum := processTxInAttestation(ctx, h.mgr, voter, activeNodeAccounts, tx, msg.Signer, true)
 		if err := handleObservedTxInQuorum(ctx, h.mgr, msg.Signer, activeNodeAccounts, handler, tx, voter, voter.Tx.GetSigners(), isQuorum); err != nil {

@@ -321,15 +321,15 @@ func (pkm *PubKeyManager) invalidatePoolAddressCacheNoLock() {
 func (pkm *PubKeyManager) buildPoolAddressCacheNoLock(chain common.Chain, includeInactive bool) map[string]common.ChainPoolInfo {
 	result := make(map[string]common.ChainPoolInfo)
 	for _, pk := range pkm.pubkeys {
-		// skip pubkeys with a different algo than the chain
-		if chain.GetSigningAlgo() != pk.Algo {
+		// skip pubkeys whose algo cannot hold this chain's funds
+		if !chain.AcceptsSigningAlgo(pk.Algo) {
 			continue
 		}
 		if !includeInactive && pk.Inactive {
 			continue
 		}
 
-		cpi, err := common.NewChainPoolInfo(chain, pk.PubKey)
+		cpi, err := common.NewChainPoolInfoForAlgo(chain, pk.PubKey, pk.Algo)
 		if err != nil {
 			continue
 		}
@@ -384,8 +384,8 @@ func (pkm *PubKeyManager) isPoolAddress(addr string, chain common.Chain, include
 	return false, common.EmptyChainPoolInfo
 }
 
-func matchAddress(addr string, chain common.Chain, key common.PubKey) (bool, common.ChainPoolInfo) {
-	cpi, err := common.NewChainPoolInfo(chain, key)
+func matchAddress(addr string, chain common.Chain, key common.PubKey, algo common.SigningAlgo) (bool, common.ChainPoolInfo) {
+	cpi, err := common.NewChainPoolInfoForAlgo(chain, key, algo)
 	if err != nil {
 		return false, common.EmptyChainPoolInfo
 	}
@@ -401,12 +401,12 @@ func (pkm *PubKeyManager) IsValidPoolAddress(addr string, chain common.Chain) (b
 	defer pkm.rwMutex.RUnlock()
 
 	for _, pk := range pkm.pubkeys {
-		// skip pubkeys with a different algo than the chain
-		if chain.GetSigningAlgo() != pk.Algo {
+		// skip pubkeys whose algo cannot hold this chain's funds
+		if !chain.AcceptsSigningAlgo(pk.Algo) {
 			continue
 		}
 
-		ok, cpi := matchAddress(addr, chain, pk.PubKey)
+		ok, cpi := matchAddress(addr, chain, pk.PubKey, pk.Algo)
 		if ok {
 			return ok, cpi
 		}

@@ -116,6 +116,9 @@ func (h ObservedTxQuorumHandler) handle(ctx cosmos.Context, msg types.MsgObserve
 			return &cosmos.Result{}, nil
 		}
 	}
+	if !observedAddressMatchesVault(ctx, k, obsTx, inbound) {
+		return &cosmos.Result{}, nil
+	}
 
 	var crossedQuorum bool
 	for _, accAddr := range accAddrs {

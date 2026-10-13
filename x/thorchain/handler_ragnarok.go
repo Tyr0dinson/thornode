@@ -81,12 +81,7 @@ func (h RagnarokHandler) handle(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Re
 			// in to trigger it, it is trigger by thorchain itself.
 
 			var fromAddress common.Address
-			sourcePubKey, sourceErr := txOutSourcePubKey(tx)
-			if sourceErr != nil {
-				err = sourceErr
-			} else {
-				fromAddress, err = sourcePubKey.GetAddress(tx.Chain)
-			}
+			fromAddress, err = txOutSourceAddress(tx)
 			if err != nil {
 				ctx.Logger().Error(
 					"fail to get from address from vault pubkey",

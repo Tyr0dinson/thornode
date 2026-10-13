@@ -67,6 +67,16 @@ func NewAddress(address string) (Address, error) {
 	// Check bech32 addresses, would succeed any string bech32 encoded (e.g. GAIA)
 	_, _, err := bech32.Decode(address)
 	if err == nil {
+		// On builds with LTC Taproot vaults, LTC taproot forms (witness v1 and
+		// above) are not accepted on the strength of a bech32 checksum alone: a
+		// malformed one would pass here, be scheduled, and then fail in the
+		// signer. They go through the network-specific decoder, which requires
+		// bech32m, witness v1 and a 32-byte program. Witness v0 addresses keep
+		// the generic acceptance, and other builds keep it for every form, so
+		// mainnet validation is unchanged by this work.
+		if LTCChain.SupportsTaprootVaults() && isLTCWitnessV1OrLater(address) {
+			return newAddress(address)
+		}
 		return Address(address), nil
 	}
 
@@ -103,6 +113,21 @@ func NewAddress(address string) (Address, error) {
 
 	// Network-specific (with build tags) address checking.
 	return newAddress(address)
+}
+
+// isLTCWitnessV1OrLater reports whether address is a bech32 or bech32m string
+// with an LTC human-readable part and a witness version other than 0.
+func isLTCWitnessV1OrLater(address string) bool {
+	hrp, data, _, err := bech32.DecodeGeneric(address)
+	if err != nil || len(data) == 0 {
+		return false
+	}
+	switch strings.ToLower(hrp) {
+	case "ltc", "tltc", "rltc":
+		return data[0] != 0
+	default:
+		return false
+	}
 }
 
 func IsValidXRPAddress(address string) bool {

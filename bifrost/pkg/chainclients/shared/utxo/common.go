@@ -23,13 +23,14 @@ func GetAsgardAddress(chain common.Chain, bridge thorclient.ThorchainBridge) ([]
 
 	newAddresses := make([]common.Address, 0)
 	for _, v := range vaults {
-		// we only care about secp256k1 keys
-		if v.Algo != common.SigningAlgoSecp256k1 {
+		// only keys that can hold this chain's funds (secp256k1, plus Taproot
+		// vault keys where the chain supports them)
+		if !chain.AcceptsSigningAlgo(v.Algo) {
 			continue
 		}
 
 		var addr common.Address
-		addr, err = v.PubKey.GetAddress(chain)
+		addr, err = v.PubKey.GetAddressForAlgo(chain, v.Algo)
 		if err != nil {
 			continue
 		}

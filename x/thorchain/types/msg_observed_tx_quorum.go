@@ -43,8 +43,8 @@ func (m *MsgObservedTxQuorum) ValidateBasic() error {
 	if err := tx.Valid(); err != nil {
 		return cosmos.ErrUnknownRequest(err.Error())
 	}
-	obAddr, err := tx.ObservedPubKey.GetAddress(tx.Tx.Coins[0].Asset.GetChain())
-	if err != nil {
+	observedChain := tx.Tx.Coins[0].Asset.GetChain()
+	if _, err := tx.ObservedPubKey.GetAddress(observedChain); err != nil {
 		return cosmos.ErrUnknownRequest(err.Error())
 	}
 	if m.QuoTx.Inbound {
@@ -61,11 +61,11 @@ func (m *MsgObservedTxQuorum) ValidateBasic() error {
 		if strings.TrimSpace(tx.XmrTxKey) != "" {
 			return cosmos.ErrUnknownRequest("xmr tx key is only valid for outbound observed transactions")
 		}
-		if !common.AddressEquals(tx.Tx.Chain, tx.Tx.ToAddress, obAddr) {
+		if !tx.ObservedPubKey.HasAddress(observedChain, tx.Tx.ToAddress) {
 			return cosmos.ErrUnknownRequest("request is not an inbound observed transaction")
 		}
 	} else {
-		if !common.AddressEquals(tx.Tx.Chain, tx.Tx.FromAddress, obAddr) {
+		if !tx.ObservedPubKey.HasAddress(observedChain, tx.Tx.FromAddress) {
 			return cosmos.ErrUnknownRequest("request is not an outbound observed transaction")
 		}
 		if tx.Tx.Chain.Equals(common.XMRChain) && strings.TrimSpace(tx.XmrTxKey) == "" {

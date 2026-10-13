@@ -2,6 +2,7 @@
 package types
 
 import (
+	"encoding/hex"
 	"math/rand"
 	"os"
 	"path"
@@ -14,8 +15,10 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	simtypes "github.com/cosmos/cosmos-sdk/types/simulation"
 
+	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"gitlab.com/thorchain/thornode/v3/cmd"
 	"gitlab.com/thorchain/thornode/v3/common"
+
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 )
@@ -239,4 +242,21 @@ func GetCurrentVersion() semver.Version {
 		panic(err)
 	}
 	return v
+}
+
+// GetTaprootTestPubKey returns the BIP-341 scriptPubKey vector 0 output key as
+// a THORChain pubkey, encoded the way an LTC FROST vault key is stored:
+// compressed and already tweaked. Its regtest address is
+// rltc1p2wsldez5mud2yam29q22wgfh9439spgduvct83k3pm50fcxa5dpsxhprzv.
+func GetTaprootTestPubKey() common.PubKey {
+	x, err := hex.DecodeString("53a1f6e454df1aa2776a2814a721372d6258050de330b3c6d10ee8f4e0dda343")
+	if err != nil {
+		panic(err)
+	}
+	pk := &secp256k1.PubKey{Key: append([]byte{0x02}, x...)}
+	bech, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, pk)
+	if err != nil {
+		panic(err)
+	}
+	return common.PubKey(bech)
 }

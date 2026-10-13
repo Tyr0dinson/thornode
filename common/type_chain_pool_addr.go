@@ -33,6 +33,28 @@ func NewChainPoolInfo(chain Chain, pubKey PubKey) (ChainPoolInfo, error) {
 	}, nil
 }
 
+// NewChainPoolInfoForAlgo is NewChainPoolInfo for a key used under a specific
+// signing algorithm, so a Taproot vault key yields its P2TR address.
+func NewChainPoolInfoForAlgo(chain Chain, pubKey PubKey, algo SigningAlgo) (ChainPoolInfo, error) {
+	if chain.IsEmpty() {
+		return EmptyChainPoolInfo, fmt.Errorf("chain is empty")
+	}
+	if pubKey.IsEmpty() {
+		return EmptyChainPoolInfo, fmt.Errorf("pubkey is empty")
+	}
+
+	addr, err := pubKey.GetAddressForAlgo(chain, algo)
+	if err != nil {
+		return EmptyChainPoolInfo, fmt.Errorf("fail to get address for chain %s,%w", chain, err)
+	}
+
+	return ChainPoolInfo{
+		Chain:       chain,
+		PubKey:      pubKey,
+		PoolAddress: addr,
+	}, nil
+}
+
 // IsEmpty whether the struct is empty
 func (cpi ChainPoolInfo) IsEmpty() bool {
 	return cpi.Chain.IsEmpty() || cpi.PubKey.IsEmpty()
