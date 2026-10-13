@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"cosmossdk.io/log"
+	"cosmossdk.io/log/v2"
 	"github.com/cometbft/cometbft/crypto/secp256k1"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"

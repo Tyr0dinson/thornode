@@ -196,21 +196,21 @@ func (s *keysignFrameReadBarrier) Reset() error {
 func TestFrostKeysignCancellationAllowsNextRealSession(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	senderHost, senderErr := libp2p.New(ctx, libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/0"))
+	senderHost, senderErr := libp2p.New(libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/0"))
 	if senderErr != nil {
 		t.Fatal(senderErr)
 	}
 	t.Cleanup(func() { _ = senderHost.Close() })
-	receiverHost, receiverErr := libp2p.New(ctx, libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/0"))
+	receiverHost, receiverErr := libp2p.New(libp2p.ListenAddrStrings("/ip4/127.0.0.1/tcp/0"))
 	if receiverErr != nil {
 		t.Fatal(receiverErr)
 	}
 	t.Cleanup(func() { _ = receiverHost.Close() })
 	receiver := &Communication{
-		logger: zerolog.Nop(), host: receiverHost, stopChan: make(chan struct{}), streamMgr: NewStreamMgr(),
+		logger: zerolog.Nop(), host: receiverHost, stopChan: make(chan struct{}),
 		subscribers: make(map[messages.THORChainTSSMessageType]*MessageIDSubscriber), subscriberLocker: &sync.Mutex{},
 	}
-	sender := &Communication{logger: zerolog.Nop(), host: senderHost, stopChan: make(chan struct{}), streamMgr: NewStreamMgr()}
+	sender := &Communication{logger: zerolog.Nop(), host: senderHost, stopChan: make(chan struct{})}
 	const cancelledID = "cancelled-keysign-session"
 	const nextID = "subsequent-keysign-session"
 	topic := messages.TSSFrostShareMsg
@@ -276,14 +276,14 @@ func TestFrostKeysignCancellationAllowsNextRealSession(t *testing.T) {
 	if errors.As(oldReadErr, &timeoutErr) && timeoutErr.Timeout() {
 		t.Fatal("cancelled stream remained open until its read deadline")
 	}
-	if observed.resets.Load() != 1 || parkedStreamCount(receiver.streamMgr) != 0 {
+	if observed.resets.Load() != 1 {
 		t.Fatal("cancellation did not give the frame one terminal reset owner")
 	}
 	receiverHost.SetStreamHandler(TSSProtocolID, receiver.handleStreamTss)
 	nextMessages := make(chan *Message, 1)
 	receiver.SetSubscribeWithPeers(topic, nextID, nextMessages, []peer.ID{senderHost.ID()}, FrostMaxSessionPayload, 1)
 	nextFrame := frostTestFrame(t, topic, nextID)
-	if writeErr := sender.writeToStream(receiverHost.ID(), nextFrame, nextID, true); writeErr != nil {
+	if writeErr := sender.writeToStream(receiverHost.ID(), nextFrame); writeErr != nil {
 		t.Fatalf("subsequent real session could not write: %v", writeErr)
 	}
 	connections := senderHost.Network().ConnsToPeer(receiverHost.ID())

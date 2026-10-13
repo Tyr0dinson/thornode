@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"io"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -307,7 +306,7 @@ func TestFrostKeysignTransportFailureLeavesNextSessionUsable(t *testing.T) {
 			failed.writeErr = errors.New("transient payload write failure")
 			healthy := newRetryWriteStream()
 			opens := 0
-			comm := &Communication{logger: zerolog.Nop(), stopChan: make(chan struct{}), streamMgr: NewStreamMgr()}
+			comm := &Communication{logger: zerolog.Nop(), stopChan: make(chan struct{})}
 			comm.connectToOnePeerFn = func(peer.ID) (network.Stream, error) {
 				opens++
 				switch opens {
@@ -320,17 +319,14 @@ func TestFrostKeysignTransportFailureLeavesNextSessionUsable(t *testing.T) {
 				}
 			}
 			policy := streamPolicyFor(topic)
-			if policy.attempts != 1 || !policy.fullClose {
+			if policy.attempts != 1 {
 				t.Fatalf("keysign transport policy changed: %+v", policy)
 			}
 			for i := range 2 {
 				attempts, writeErr := comm.writeToStreamWithRetryDelay(peer.ID("receiver"), []byte("failed-session"),
-					fmt.Sprintf("failed-keysign-%d", i), policy.attempts, policy.fullClose, 0)
+					fmt.Sprintf("failed-keysign-%d", i), policy.attempts, 0)
 				if writeErr == nil || attempts != 1 || opens != i+1 {
 					t.Fatalf("failure %d: attempts=%d opens=%d err=%v", i, attempts, opens, writeErr)
-				}
-				if parkedStreamCount(comm.streamMgr) != 0 {
-					t.Fatal("failed keysign attempt retained a ceremony-owned stream")
 				}
 			}
 			if failed.resetCount.Load() != 1 || failed.closeCount.Load() != 0 {
@@ -338,15 +334,12 @@ func TestFrostKeysignTransportFailureLeavesNextSessionUsable(t *testing.T) {
 			}
 			payload := frostTestFrame(t, topic, "subsequent-valid-keysign")
 			attempts, writeErr := comm.writeToStreamWithRetryDelay(peer.ID("receiver"), payload,
-				"subsequent-valid-keysign", policy.attempts, policy.fullClose, 0)
+				"subsequent-valid-keysign", policy.attempts, 0)
 			if writeErr != nil || attempts != 1 || opens != 3 {
 				t.Fatalf("subsequent session did not progress: attempts=%d opens=%d err=%v", attempts, opens, writeErr)
 			}
 			if !bytes.Equal(healthy.written.Bytes(), framedPayload(payload)) || healthy.closeCount.Load() != 1 || healthy.resetCount.Load() != 0 {
 				t.Fatal("subsequent session did not write its exact frame and close once")
-			}
-			if parkedStreamCount(comm.streamMgr) != 0 {
-				t.Fatal("subsequent session parked a successful FROST stream")
 			}
 		})
 	}
