@@ -308,6 +308,8 @@ services:
       # Follow fast mocknet blocks and retry signer throttling without a 30s pause.
       BIFROST_CHAINS_XMR_BLOCK_SCANNER_BLOCK_HEIGHT_DISCOVER_BACK_OFF: "${BLOCK_SCANNER_BACKOFF:-1s}"
       BIFROST_CHAINS_XMR_SIGNER_ENDPOINT: "http://xmr-frost-signer:8283"
+      # Fixed credentials are confined to loopback-only local mocknet services.
+      # Production-like XMR Compose files require an explicit random bearer.
       BIFROST_CHAINS_XMR_SIGNER_AUTHORIZATION_BEARER: "${XMR_FROST_AUTH_BEARER:-xmr-frost-mocknet-token}"
       BIFROST_CHAINS_XMR_SIGNER_EXPECTED_NETWORK: "mocknet"
       BIFROST_CHAINS_XMR_SIGNER_ALLOW_INSECURE_HTTP: "true"
@@ -906,11 +908,12 @@ services:
       XMR_FROST_MAX_REQUESTS_PER_SECOND: "256"
       XMR_FROST_MAX_REQUESTS_PER_IP_SECOND: "64"
       SIGNER_SEED_PHRASE: "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
+      # Must match Bifrost's local-only default above.
       XMR_FROST_AUTH_BEARER: "${XMR_FROST_AUTH_BEARER:-xmr-frost-mocknet-token}"
     volumes:
       - xmr-frost-data:/home/serai/xmr-frost
     ports:
-      - 8283:8283
+      - "127.0.0.1:8283:8283"
     healthcheck:
       test:
         [
@@ -924,27 +927,29 @@ services:
 
   xmr-frost-signer-cat:
     <<: *xmr-frost-signer
+    profiles:
+      - mocknet-cluster
+    # Service-level YAML merges do not merge nested environment maps. Reapply
+    # the shared signer contract before overriding this node's identity.
     environment:
       <<: *xmr-frost-signer-environment
       SIGNER_SEED_PHRASE: "cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat crawl"
-    profiles:
-      - mocknet-cluster
     volumes:
       - xmr-frost-data-cat:/home/serai/xmr-frost
     ports:
-      - 8285:8283 # host-side simulation readiness probe
+      - "127.0.0.1:8285:8283" # host-side simulation readiness probe
 
   xmr-frost-signer-fox:
     <<: *xmr-frost-signer
+    profiles:
+      - mocknet-cluster
     environment:
       <<: *xmr-frost-signer-environment
       SIGNER_SEED_PHRASE: "fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox filter"
-    profiles:
-      - mocknet-cluster
     volumes:
       - xmr-frost-data-fox:/home/serai/xmr-frost
     ports:
-      - 8286:8283 # host-side simulation readiness probe
+      - "127.0.0.1:8286:8283" # host-side simulation readiness probe
 
   xmr-frost-signer-frog:
     <<: *xmr-frost-signer
@@ -956,19 +961,19 @@ services:
     volumes:
       - xmr-frost-data-frog:/home/serai/xmr-frost
     ports:
-      - 8288:8283 # host-side simulation readiness probe
+      - "127.0.0.1:8288:8283" # host-side simulation readiness probe
 
   xmr-frost-signer-pig:
     <<: *xmr-frost-signer
+    profiles:
+      - mocknet-cluster
     environment:
       <<: *xmr-frost-signer-environment
       SIGNER_SEED_PHRASE: "pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig quick"
-    profiles:
-      - mocknet-cluster
     volumes:
       - xmr-frost-data-pig:/home/serai/xmr-frost
     ports:
-      - 8287:8283 # host-side simulation readiness probe
+      - "127.0.0.1:8287:8283" # host-side simulation readiness probe
 
   xmr-sim-helper:
     profiles:
@@ -1015,7 +1020,7 @@ services:
     volumes:
       - xmr-sim-data:/home/serai/xmr-sim
     ports:
-      - 8284:8284
+      - "127.0.0.1:8284:8284"
     healthcheck:
       test:
         [
