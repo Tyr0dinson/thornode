@@ -110,6 +110,18 @@ Replace-by-fee (RBF) is supported for user-initiated deposits to Asgard vaults. 
 
 Matching Zebra upgrade schedules are an operator requirement. Before the agreed ZEC signing height reaches `activation height - 40`, operators must ensure their daemons report the same schedule. Different schedules can produce different transaction expiries and prevent a signing party from forming, even before activation. Update comfortably before this boundary; identical Zebra versions are not required if their schedules match.
 
+### Transparent transaction version switch (v5 → v6)
+
+The vault signs fresh transparent outbounds as **v6 (ZIP-229)**, the standard format on mainnet since NU6.3. v5 and v6 produce **different** ZIP-244 signing digests (the version/version-group id is committed in the header digest and the empty-shielded digest uses v6 personalizations), so a fleet running a mix of v5-signing and v6-signing builds **cannot form a keysign party** for ZEC.
+
+Any release that changes the signed transaction version is therefore a coordinated switch gated operationally by `HALTSIGNINGZEC`:
+
+1. Set `HALTSIGNINGZEC=1` **before** any node upgrades.
+2. Roll the new build out to the whole fleet.
+3. Release the halt (`HALTSIGNINGZEC=0`) **only after the last node** is on the new build.
+
+In-flight v5 checkpoints signed before the switch are still accepted and finished as v5 on resume (the version is pinned in the checkpoint, not re-chosen), but over a multi-block halt they will reach their `ZecTxExpiry` (40 blocks) and be retired and rebuilt as v6. The v5 resume support is a short-lived safety net, not something the rollout depends on.
+
 ## Related Pages
 
 - [Chain Clients Overview](./README.md)

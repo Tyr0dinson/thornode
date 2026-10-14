@@ -220,6 +220,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 
 	} else {
 		var zecReference int64
+		var zecVersion int32
 		if c.cfg.ChainID == common.ZECChain {
 			checkpoint.ZecExpiryHeight, err = c.getZecExpiryHeight(thorchainHeight)
 			if err != nil {
@@ -238,6 +239,15 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 			}
 			checkpoint.ZecConsensusBranchID = branch
 			checkpoint.ZecExpiryHeight = expiry
+			// Choose the transaction version from the daemon's upgrade schedule: v6
+			// (ZIP-229) once the agreed height is at or past NU6.3, else v5. Fixed by the
+			// consensus-agreed height + branch schedule, so every signer picks the same
+			// version, and it is committed in the checkpoint's UnsignedTx for retries.
+			if consensus.V6Active(agreedHeight) {
+				zecVersion = 6
+			} else {
+				zecVersion = 5
+			}
 			tip, tipErr := c.rpc.GetBlockCount()
 			if tipErr != nil {
 				return nil, nil, nil, fmt.Errorf("get ZEC tip before input selection: %w", tipErr)
@@ -251,10 +261,18 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 			return nil, nil, nil, err
 		}
 		if c.cfg.ChainID == common.ZECChain {
-			// Sign transparent payments as v5 (ZIP-225 / ZIP-244). v5 is valid both before and
-			// after NU7, so no version gate is needed; the active branch is committed via the
-			// height-agreed ZecConsensusBranchID.
-			redeemTx.Version = 5
+			// Sign transparent payments as v6 (ZIP-229) once NU6.3 is active at the agreed
+			// height, else v5 (the daemon rejects a v6 tx under a pre-NU6.3 branch). v6 is the
+			// standard transparent format on mainnet since NU6.3 (block 3,428,143) and stays
+			// valid under NU7; v5 is valid on every branch since NU5. zecVersion was fixed above
+			// from the consensus-agreed height + daemon schedule, so every signer picks the same
+			// version. The transparent code path (input selection, serialization, the transparent
+			// sub-digest) is identical for v5 and v6; the full ZIP-244 SIGHASH differs, because
+			// the header digest commits the version/version-group id and the empty-shielded digest
+			// uses v6 personalizations. A mixed-version signer set therefore cannot form a keysign
+			// party, so a version switch is gated operationally by HALTSIGNINGZEC (held until every
+			// bifrost runs the new build, then unhalted).
+			redeemTx.Version = zecVersion
 		}
 		buf := bytes.NewBuffer([]byte{})
 		err = redeemTx.Serialize(buf)
@@ -319,7 +337,15 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		if err = checkZecExpiry(checkpoint.ZecExpiryHeight, chainHeight); err != nil {
 			return nil, checkpointBytes, nil, err
 		}
-		if redeemTx.Version != 5 || checkpoint.ZecConsensusBranchID == 0 {
+		// Accept v5 and v6: both are chain-valid under the current branch and the version
+		// is pinned in the checkpoint bytes (not re-chosen here), so a signer that holds a
+		// v5 checkpoint resumes it as v5 instead of burning its expiry window on
+		// "unsupported Zcash checkpoint". Checkpoints are per-signer local storage, not
+		// shared: a member without the checkpoint rebuilds via the else-branch as v6, so a
+		// fleet with in-flight v5 signings at the flip still cannot form a party until those
+		// retire — stagenet must drain or halt ZEC signing before the switch. Moot on
+		// mainnet, which is HALTSIGNINGZEC-halted and has never signed a ZEC outbound.
+		if (redeemTx.Version != 5 && redeemTx.Version != 6) || checkpoint.ZecConsensusBranchID == 0 {
 			return nil, checkpointBytes, nil, errors.New("unsupported Zcash checkpoint")
 		}
 		zecTx = &zcash.Tx{

@@ -13,9 +13,10 @@ attached ECDSA signatures — and mines them as version 5, with the node's repor
 equal to `ID()`. Regenerate with `GEN_V5=1 go test -run TestGenerateV5Vectors`.
 
 v5 is a valid transaction version both before and after NU7 (only v4 and earlier are
-rejected at NU7), so the vault signs v5 for all transparent payments regardless of the
-active network upgrade. The `nConsensusBranchID` in the header is the only digest input
-that changes across the NU6.x→NU7 boundary.
+rejected at NU7). The vault now signs fresh transparent payments as **v6** (see `../v6`);
+these v5 vectors remain as regression fixtures and cover the resume path, which still
+accepts and finishes an in-flight v5 checkpoint. The `nConsensusBranchID` in the header is
+the only digest input that changes across the NU6.x→NU7 boundary.
 
 `bitcoin` is the btcd input/output container, `raw` the Zcash v5 wire encoding, `txid`
 RPC display order, and `sighashes` raw per-input SIGHASH_ALL digest bytes.

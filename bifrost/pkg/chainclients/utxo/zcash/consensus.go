@@ -5,6 +5,12 @@ import (
 	"strconv"
 )
 
+// nu63BranchID is the Zcash NU6.3 consensus branch id. ZIP-229 v6 transactions first
+// became valid at NU6.3 and remain valid under NU7 and every later upgrade. Consensus
+// branch ids are network-independent constants (only activation heights vary per
+// network), so this value identifies NU6.3 on mainnet, stagenet and regtest alike.
+const nu63BranchID = uint32(0x37a5165b)
+
 // ConsensusState contains the daemon's native upgrade schedule.
 type ConsensusState struct {
 	Blocks   int64 `json:"blocks"`
@@ -15,6 +21,23 @@ type ConsensusState struct {
 		ChainTip  string `json:"chaintip"`
 		NextBlock string `json:"nextblock"`
 	} `json:"consensus"`
+}
+
+// V6Active reports whether ZIP-229 v6 transactions are valid at height on this daemon's
+// schedule: true once height is at or past NU6.3's activation. v6 stays valid under every
+// later upgrade, so this is a height comparison against NU6.3's activation (which also
+// holds for NU7 and beyond) rather than a branch-equality check. When the schedule does
+// not list NU6.3 (e.g. an older daemon) or disables it, v6 is treated as not yet active so
+// the caller signs v5, which is valid on every branch since NU5.
+func (s ConsensusState) V6Active(height uint32) bool {
+	for text, upgrade := range s.Upgrades {
+		id, err := strconv.ParseUint(text, 16, 32)
+		if err != nil || uint32(id) != nu63BranchID {
+			continue
+		}
+		return upgrade.ActivationHeight >= 0 && int64(height) >= upgrade.ActivationHeight
+	}
+	return false
 }
 
 // PaymentState fixes the branch and expiry from an agreed height, never a moving local tip.

@@ -79,3 +79,33 @@ func TestConsensusStateSharedActivation(t *testing.T) {
 		})
 	}
 }
+
+// TestConsensusStateV6Active checks that v6 is reported active only at or past NU6.3's
+// activation (branch id 0x37a5165b) on the daemon's own schedule.
+func TestConsensusStateV6Active(t *testing.T) {
+	for _, test := range []struct {
+		name, upgrades string
+		height         uint32
+		want           bool
+	}{
+		{"nu6.3 active from genesis", `{"37a5165b":{"activationheight":1}}`, 100, true},
+		{"before nu6.3 activation", `{"c8e71055":{"activationheight":1},"37a5165b":{"activationheight":200}}`, 100, false},
+		{"one block before activation", `{"37a5165b":{"activationheight":200}}`, 199, false},
+		{"exactly at activation", `{"37a5165b":{"activationheight":200}}`, 200, true},
+		{"after activation", `{"37a5165b":{"activationheight":200}}`, 201, true},
+		{"nu6.3 absent (older daemon)", `{"c8e71055":{"activationheight":1}}`, 1000000, false},
+		{"nu6.3 disabled", `{"37a5165b":{"activationheight":-1}}`, 1000000, false},
+		{"uppercase branch key", `{"37A5165B":{"activationheight":1}}`, 100, true},
+		{"empty schedule", `{}`, 100, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var state ConsensusState
+			if err := json.Unmarshal([]byte(`{"upgrades":`+test.upgrades+`}`), &state); err != nil {
+				t.Fatal(err)
+			}
+			if got := state.V6Active(test.height); got != test.want {
+				t.Fatalf("V6Active(%d) = %v, want %v", test.height, got, test.want)
+			}
+		})
+	}
+}

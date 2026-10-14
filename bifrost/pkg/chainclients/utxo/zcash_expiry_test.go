@@ -196,7 +196,7 @@ func (s *ZcashSignerSuite) TestZECExpiryAcrossSignersAndCheckpointRetry(c *C) {
 	c.Assert(checkpoint.ZecConsensusBranchID, Equals, uint32(0x37a5165b))
 	var unsigned wire.MsgTx
 	c.Assert(unsigned.Deserialize(bytes.NewReader(checkpoint.UnsignedTx)), IsNil)
-	c.Assert(unsigned.Version, Equals, int32(5))
+	c.Assert(unsigned.Version, Equals, int32(6))
 
 	// A fresh signer after restart must use the saved expiry even if the
 	// historical state has since been pruned and the local tip has advanced.
@@ -247,21 +247,21 @@ func (s *ZcashSignerSuite) TestZECExpiryAcrossSignersAndCheckpointRetry(c *C) {
 	signed, err := zcash.ParseTx(raw)
 	c.Assert(err, IsNil)
 	c.Assert(signed.ExpiryHeight, Equals, uint32(agreedHeight)+ZecTxExpiry)
-	c.Assert(signed.Version, Equals, int32(5))
+	c.Assert(signed.Version, Equals, int32(6))
 	c.Assert(signed.ConsensusBranchID, Equals, uint32(0x37a5165b))
 	c.Assert(observation.Tx, Equals, zecPayloadTxID(raw))
 }
 
-// TestZECV5RejectsLegacyCheckpoint prevents changing the digest of an unfinished signing round.
-func (s *ZcashSignerSuite) TestZECV5RejectsLegacyCheckpoint(c *C) {
+// TestZECRejectsUnsupportedCheckpoint prevents changing the digest of an unfinished signing round.
+func (s *ZcashSignerSuite) TestZECRejectsUnsupportedCheckpoint(c *C) {
 	fixture := s.newZecExpiryFixture(c)
 	defer fixture.rpcServer.Close()
 	_, saved, _, signErr := s.client.SignTx(fixture.tx, 1237)
 	c.Assert(signErr, ErrorMatches, "(?s).*injected signing failure.*")
 	fixture.upgradesErr.Store(true)
-	// Non-canonical versions (1, 2, 4) are rejected by the version check; the canonical v5
-	// with a zeroed branch exercises the other rejection clause.
-	for _, version := range []int32{1, 2, 4, 5} {
+	// Non-signable versions (1, 2, 4) are rejected by the version check; the signable
+	// versions (5, 6) with a zeroed branch exercise the other rejection clause.
+	for _, version := range []int32{1, 2, 4, 5, 6} {
 		var checkpoint sharedutxo.SignCheckpoint
 		c.Assert(json.Unmarshal(saved, &checkpoint), IsNil)
 		var tx wire.MsgTx
@@ -270,7 +270,7 @@ func (s *ZcashSignerSuite) TestZECV5RejectsLegacyCheckpoint(c *C) {
 		var encoded bytes.Buffer
 		c.Assert(tx.Serialize(&encoded), IsNil)
 		checkpoint.UnsignedTx = encoded.Bytes()
-		if version == 5 {
+		if version == 5 || version == 6 {
 			checkpoint.ZecConsensusBranchID = 0
 		}
 		var marshalErr error
@@ -560,6 +560,9 @@ func (s *ZcashSignerSuite) TestZECExpiryBroadcast(c *C) {
 		broadcasts, lookups int32
 	}{
 		{"last valid block", 5, 39, 40, "", false, false, 1, 0},
+		{"v6 last valid block", 6, 39, 40, "", false, false, 1, 0},
+		{"v6 at expiry", 6, 40, 40, "missing", true, true, 0, 1},
+		{"v6 past expiry", 6, 41, 40, "missing", true, true, 0, 1},
 		{"at expiry", 5, 40, 40, "missing", true, true, 0, 1},
 		{"past expiry", 5, 41, 40, "missing", true, true, 0, 1},
 		{"already mined", 5, 41, 40, "confirmed", false, false, 0, 1},
@@ -579,7 +582,7 @@ func (s *ZcashSignerSuite) TestZECExpiryBroadcast(c *C) {
 	} {
 		payload := zecExpiryPayload(c, tc.version, tc.expiry)
 		var txid string
-		if tc.version == 5 {
+		if tc.version == 5 || tc.version == 6 {
 			txid = zecPayloadTxID(payload)
 		} else {
 			txid = chainhash.DoubleHashH(payload).String()

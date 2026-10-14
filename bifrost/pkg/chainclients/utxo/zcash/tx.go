@@ -14,10 +14,11 @@ import (
 
 const (
 	// v5GroupID is the ZIP-225 version-group id for transaction version 5. v5 is valid both
-	// before and after NU7 (only v4 and earlier are rejected at NU7), so THORChain signs v5
-	// transparent txs across the boundary. v6 (ZIP-229/OrchardZSA) is deferred.
+	// before and after NU7 (only v4 and earlier are rejected at NU7). THORChain now signs fresh
+	// transparent txs as v6, but still accepts and resumes in-flight v5 checkpoints.
 	v5GroupID uint32 = 0x26A7270A
-	// v6GroupID is the (deferred) ZIP-229 version-group id for transaction version 6.
+	// v6GroupID is the ZIP-229 version-group id for transaction version 6. v6 is the standard
+	// transparent format on mainnet since NU6.3 and is what THORChain signs for fresh outbounds.
 	v6GroupID uint32 = 0xd884b698
 )
 
@@ -86,7 +87,7 @@ func (tx *Tx) Serialize(w io.Writer) error {
 	return err
 }
 
-// ParseTx decodes transparent v5 payments (and deferred v6, plus saved v3/v4 payloads) using
+// ParseTx decodes transparent v6 and v5 payments (plus saved v3/v4 payloads) using
 // btcd's wire codec.
 func ParseTx(payload []byte) (*Tx, error) {
 	if len(payload) < 8 || len(payload) > wire.MaxMessagePayload {
