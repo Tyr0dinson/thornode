@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/cosmos/cosmos-sdk/telemetry"
-	"github.com/cosmos/gogoproto/proto"
 	"github.com/hashicorp/go-metrics"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -1067,20 +1066,22 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 			if shouldSkipRapidSwapDirection(pick.msg, lastPoolDir, iteration) {
 				continue
 			}
-			data, marshalErr := proto.Marshal(&pick.msg)
-			if marshalErr != nil {
-				ctx.Logger().Error("fail to marshal msg swap", "error", marshalErr)
+			// Execute the persisted item rather than the fetched snapshot. An
+			// earlier swap in this batch can preempt this item's lifecycle, and
+			// rollback removes its queue entry and unwinds its State.Out while the
+			// snapshot remains in swaps. Without a lifecycle the snapshot would
+			// otherwise run as an ordinary swap, skipping voter validation and
+			// speculative execution mode. The store read is also a fresh copy, so
+			// later mutations never alias the fetched batch.
+			stored, readErr := vm.k.GetAdvSwapQueueItem(ctx, pick.msg.Tx.ID, int(pick.msg.Index))
+			if readErr != nil {
+				ctx.Logger().Debug("skip swap removed from queue earlier in this pass",
+					"tx", pick.msg.Tx.ID,
+					"index", pick.msg.Index,
+					"error", readErr)
 				continue
 			}
-			if len(data) == 0 {
-				ctx.Logger().Error("skip empty swap message", "tx", pick.msg.Tx.ID)
-				continue
-			}
-			msg := &MsgSwap{}
-			if marshalErr = proto.Unmarshal(data, msg); marshalErr != nil {
-				ctx.Logger().Error("fail to unmarshal msg swap", "error", marshalErr)
-				continue
-			}
+			msg := &stored
 
 			// Errata and recovery mark a lifecycle rollback-pending before doing
 			// potentially fallible cleanup. Never execute another speculative leg

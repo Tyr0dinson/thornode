@@ -585,6 +585,66 @@ func (s *MempoolSwapExecutionGateSuite) TestEndBlockExecutesFinalSwapHeldByRepla
 	}
 }
 
+// Preemption rolls the owner back and removes its queue entry while the owner's
+// fetched snapshot is still in the batch. Visiting that snapshot afterwards must
+// not execute it as an ordinary swap: its lifecycle is gone, so neither voter
+// validation nor speculative execution mode would apply, and its State.Out has
+// already been unwound.
+func (s *MempoolSwapExecutionGateSuite) TestPreemptedOwnerSnapshotIsNotExecutedInSameBatch(c *C) {
+	ctx, mgr, fixture := setupMempoolSwapLifecycleFixture(c)
+	queue := newSwapQueueAdv(mgr.Keeper())
+	c.Assert(queue.EndBlock(ctx, mgr, false), IsNil)
+	ownerItem, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, fixture.voter.TxID, 0)
+	c.Assert(err, IsNil)
+	c.Assert(ownerItem.State.Count, Equals, uint64(1))
+	_, found, err := mgr.Keeper().GetMempoolSwapPoolOwner(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, true)
+
+	// The owner's next slice is due, so both swaps land in the same batch. The
+	// larger final swap sorts first and preempts the owner.
+	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+	amount := cosmos.NewUint(10 * common.One)
+	final := newLifecyclelessMempoolSwapExecutionSwap(fixture.msg)
+	final.Tx.Coins = common.Coins{common.NewCoin(common.BTCAsset, amount)}
+	final.StreamQuantity = 1
+	final.StreamInterval = 0
+	final.State = &types.SwapState{
+		Quantity:   1,
+		Interval:   0,
+		Deposit:    amount,
+		Withdrawn:  cosmos.ZeroUint(),
+		In:         cosmos.ZeroUint(),
+		Out:        cosmos.ZeroUint(),
+		LastHeight: ctx.BlockHeight() - 1,
+	}
+	c.Assert(queue.AddSwapQueueItem(ctx, mgr, &final), IsNil)
+
+	pairs, pools := queue.getAssetPairs(ctx)
+	batch, err := queue.FetchQueue(ctx, mgr, pairs, pools, nil)
+	c.Assert(err, IsNil)
+	batch, err = queue.scoreMsgs(ctx, batch, 10_000)
+	c.Assert(err, IsNil)
+	batch = batch.Sort()
+	c.Assert(batch, HasLen, 2)
+	c.Assert(batch[0].msg.Tx.ID, Equals, final.Tx.ID,
+		Commentf("the final swap must sort first so it preempts before the owner is visited"))
+	c.Assert(batch[1].msg.Tx.ID, Equals, fixture.voter.TxID)
+
+	c.Assert(queue.EndBlock(ctx, mgr, false), IsNil)
+
+	c.Check(mgr.Keeper().HasMempoolSwap(ctx, fixture.voter.TxID, 0), Equals, false)
+	c.Check(mgr.Keeper().HasAdvSwapQueueItem(ctx, fixture.voter.TxID, 0), Equals, false,
+		Commentf("the preempted owner's snapshot must not recreate its queue entry"))
+	_, found, err = mgr.Keeper().GetMempoolSwapPoolOwner(ctx, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Check(found, Equals, false)
+	if stored, getErr := mgr.Keeper().GetAdvSwapQueueItem(ctx, final.Tx.ID, int(final.Index)); getErr == nil {
+		c.Check(stored.State.FailedSwaps, HasLen, 0)
+		c.Check(stored.State.Count, Equals, uint64(1))
+	}
+}
+
 // The legacy queue has the same exposure: its items are always final, so an
 // unconfirmed inbound must not be able to park on their pools.
 func (s *MempoolSwapExecutionGateSuite) TestLegacyQueuePreemptsUnconfirmedPoolOwner(c *C) {
