@@ -72,6 +72,34 @@ func (s *VaultSuite) TestVault(c *C) {
 	c.Check(vault1.HasAsset(common.ETHAsset), Equals, false)
 }
 
+// HasFundsAboveDustForChain applies HasFundsAboveDust's predicate to one chain only.
+func (s *VaultSuite) TestHasFundsAboveDustForChain(c *C) {
+	vault := NewVault(12, VaultStatus_RetiringVault, VaultType_AsgardVault, GetRandomPubKey(),
+		common.Chains{common.LTCChain, common.ETHChain}.Strings(), []ChainContract{})
+	dust := common.LTCChain.DustThreshold()
+
+	// gas dust, summed across duplicate entries, does not count
+	halfDust := dust.QuoUint64(2)
+	vault.Coins = common.Coins{
+		common.NewCoin(common.LTCAsset, halfDust),
+		common.NewCoin(common.LTCAsset, dust.Sub(halfDust)),
+	}
+	c.Check(vault.HasFundsForChain(common.LTCChain), Equals, true)
+	c.Check(vault.HasFundsAboveDustForChain(common.LTCChain), Equals, false)
+	vault.Coins[1].Amount = vault.Coins[1].Amount.Add(cosmos.OneUint())
+	c.Check(vault.HasFundsAboveDustForChain(common.LTCChain), Equals, true)
+
+	// funds above dust on another chain do not count for this one
+	vault.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)))
+	c.Check(vault.HasFundsAboveDustForChain(common.LTCChain), Equals, false)
+	c.Check(vault.HasFundsAboveDustForChain(common.ETHChain), Equals, true)
+
+	// a non-gas token counts at any amount
+	tokenAsset := common.Asset{Chain: common.ETHChain, Symbol: "TOKEN", Ticker: "TOKEN"}
+	vault.Coins = common.NewCoins(common.NewCoin(tokenAsset, cosmos.OneUint()))
+	c.Check(vault.HasFundsAboveDustForChain(common.ETHChain), Equals, true)
+}
+
 func (s *VaultSuite) TestHasFundsAboveDust(c *C) {
 	pk := GetRandomPubKey()
 	vault := NewVault(12, VaultStatus_RetiringVault, VaultType_AsgardVault, pk, common.Chains{common.XMRChain}.Strings(), []ChainContract{})

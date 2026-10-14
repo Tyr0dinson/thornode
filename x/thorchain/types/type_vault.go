@@ -160,14 +160,29 @@ func (m Vault) HasFunds() bool {
 // are terminal dust; any positive non-gas balance remains actionable.
 func (m Vault) HasFundsAboveDust() bool {
 	for _, coin := range m.coinAmounts() {
-		if coin.IsRune() { // native RUNE is omitted from the calculation
-			continue
-		}
-		if !coin.Asset.IsGasAsset() || coin.Amount.GT(coin.Asset.GetChain().DustThreshold()) {
+		if isAboveDust(coin) {
 			return true
 		}
 	}
 	return false
+}
+
+// HasFundsAboveDustForChain is HasFundsAboveDust restricted to one chain's coins.
+func (m Vault) HasFundsAboveDustForChain(chain common.Chain) bool {
+	for _, coin := range m.coinAmounts() {
+		if coin.Asset.GetChain().Equals(chain) && isAboveDust(coin) {
+			return true
+		}
+	}
+	return false
+}
+
+// isAboveDust reports whether a vault coin still requires migration.
+func isAboveDust(coin common.Coin) bool {
+	if coin.IsRune() { // native RUNE is omitted from the calculation
+		return false
+	}
+	return !coin.Asset.IsGasAsset() || coin.Amount.GT(coin.Asset.GetChain().DustThreshold())
 }
 
 // GetDeficit returns the unsettled deficit for an asset.

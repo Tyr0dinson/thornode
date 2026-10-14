@@ -418,13 +418,12 @@ func chainActivationReady(ctx cosmos.Context, k keeper.Keeper, chain common.Chai
 	// unsatisfiable for the same reason a fee-voter freshness window is (see
 	// chainAttesters).
 	//
-	// Deliberately looser than the churn blocker, which is HasFundsAboveDust over the
-	// whole vault: any non-zero balance on this chain disarms the rule, so a sub-dust
-	// remainder does too even though it would not have stalled anything. The exact
-	// predicate would be per-chain-above-dust, which no helper offers.
+	// Only funds that hold the churn count: the churn blocker is HasFundsAboveDust, so a
+	// sub-dust gas remainder or an account reserve never stalls anything and must not
+	// disarm the rule. HasFundsAboveDustForChain is the same predicate on this chain.
 	stranded := false
 	for _, retired := range retiring {
-		if !isChainActivationExempt(retired) && retired.HasChain(chain) && retired.HasFundsForChain(chain) {
+		if !isChainActivationExempt(retired) && retired.HasChain(chain) && retired.HasFundsAboveDustForChain(chain) {
 			stranded = true
 			break
 		}

@@ -1150,6 +1150,19 @@ func (s *ChainActivationTestSuite) TestRestampAllowedWhenDroppedChainStrandedFun
 	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), fresh.PubKey), activationChain.String()), Equals, true)
 }
 
+// A sub-dust gas remainder never holds the churn, so it is not stranded funds and must
+// not disarm the rule.
+func (s *ChainActivationTestSuite) TestNoRestampWhenDroppedChainHoldsOnlyDust(c *C) {
+	ctx, mgr, retiring, fresh := setupDroppedChain(c, 1, staleProofHeight)
+	retiring[0].AddFunds(common.NewCoins(common.NewCoin(activationChain.GetGasAsset(), activationChain.DustThreshold())))
+	c.Assert(retiring[0].HasFundsAboveDust(), Equals, false)
+	c.Assert(mgr.Keeper().SetVault(ctx, retiring[0]), IsNil)
+
+	runActivation(ctx, c, mgr)
+
+	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), fresh.PubKey), activationChain.String()), Equals, false)
+}
+
 // Mainnet churns several Asgards out together, so the carve-out has to be measured over
 // the retiring set rather than per vault. Two retiring vaults with the same BlockHeight
 // and the same Chains, one still holding a balance on the chain and one already drained:
