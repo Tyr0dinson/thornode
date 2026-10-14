@@ -103,7 +103,13 @@ func setReadinessProof(ctx cosmos.Context, c *C, k keeper.Keeper, chain common.C
 		TransactionFeeRate: 10,
 	}), IsNil)
 	c.Assert(k.SetLastChainHeight(ctx, chain, feeHeight), IsNil)
+	return setFeeVoter(ctx, k, chain, signers, consensusHeight, feeHeight)
+}
 
+// setFeeVoter writes only the consensus voter, without the fee and height records
+// processNetworkFeeAttestation writes beside it. A gate test uses it to withhold one
+// of those records while the rest of the proof - G6b's attesters included - holds.
+func setFeeVoter(ctx cosmos.Context, k keeper.Keeper, chain common.Chain, signers NodeAccounts, consensusHeight, feeHeight int64) string {
 	voter := types.NewObservedNetworkFeeVoter(feeHeight, chain)
 	voter.FeeRate = 10
 	voter.TransactionSize = 1000
@@ -164,36 +170,51 @@ func (s *ChainActivationTestSuite) TestNoStampWhenMimirInFuture(c *C) {
 }
 
 // GetNetworkFee returns a zero-valued fee with a NIL error for an absent chain, so
-// the gate must test Valid() rather than the error. This asserts that shape.
+// the gate must test Valid() rather than the error. This asserts that shape. Every
+// other gate is satisfied - a consensus voter, the height, and the mimir - so only G2
+// stands between the chain and a stamp.
 func (s *ChainActivationTestSuite) TestNoStampWhenNetworkFeeAbsent(c *C) {
 	ctx, mgr, nodes := setupActivation(c, 4)
+	k := mgr.Keeper()
 	vault := newActivationVault(c, ActiveVault, nodes)
-	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
-	c.Assert(mgr.Keeper().SetLastChainHeight(ctx, activationChain, activationChainHeight), IsNil)
-	mgr.Keeper().SetMimir(ctx, activationMimirKey(activationChain), 1)
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+	// the full proof minus the fee record: SaveNetworkFee refuses an invalid fee, so
+	// the record is withheld rather than zeroed after the fact
+	c.Assert(k.SetLastChainHeight(ctx, activationChain, activationChainHeight), IsNil)
+	setFeeVoter(ctx, k, activationChain, nodes, ctx.BlockHeight(), activationChainHeight)
+	k.SetMimir(ctx, activationMimirKey(activationChain), 1)
 
-	nf, err := mgr.Keeper().GetNetworkFee(ctx, activationChain)
+	nf, err := k.GetNetworkFee(ctx, activationChain)
 	c.Assert(err, IsNil)         // absent fee does NOT error
 	c.Assert(nf.Valid(), NotNil) // it is simply invalid
 	c.Assert(nf.TransactionSize, Equals, uint64(0))
 
+	ok, _, reason := chainActivationReady(ctx, k, activationChain, Vaults{vault}, nodes, nil)
+	c.Assert(ok, Equals, false)
+	c.Assert(reason, Equals, "no network fee consensus")
+
 	runActivation(ctx, c, mgr)
 
-	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), vault.PubKey), activationChain.String()), Equals, false)
+	c.Assert(slices.Contains(vaultChains(ctx, c, k, vault.PubKey), activationChain.String()), Equals, false)
 }
 
+// The full proof, then only the observed chain height cleared, so only G3 can refuse.
 func (s *ChainActivationTestSuite) TestNoStampWhenNoObservedChainHeight(c *C) {
 	ctx, mgr, nodes := setupActivation(c, 4)
+	k := mgr.Keeper()
 	vault := newActivationVault(c, ActiveVault, nodes)
-	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
-	c.Assert(mgr.Keeper().SaveNetworkFee(ctx, activationChain, types.NetworkFee{
-		Chain: activationChain, TransactionSize: 1000, TransactionFeeRate: 10,
-	}), IsNil)
-	mgr.Keeper().SetMimir(ctx, activationMimirKey(activationChain), 1)
+	c.Assert(k.SetVault(ctx, vault), IsNil)
+	satisfyActivationGates(ctx, c, k, activationChain, nodes)
+	k.ForceSetLastChainHeight(ctx, activationChain, 0) // SetLastChainHeight cannot go backward
+	k.SetMimir(ctx, activationMimirKey(activationChain), 1)
+
+	ok, _, reason := chainActivationReady(ctx, k, activationChain, Vaults{vault}, nodes, nil)
+	c.Assert(ok, Equals, false)
+	c.Assert(reason, Equals, "no observed chain height")
 
 	runActivation(ctx, c, mgr)
 
-	c.Assert(slices.Contains(vaultChains(ctx, c, mgr.Keeper(), vault.PubKey), activationChain.String()), Equals, false)
+	c.Assert(slices.Contains(vaultChains(ctx, c, k, vault.PubKey), activationChain.String()), Equals, false)
 }
 
 // The fee record carries no signers and no height, so a fee with no voter behind it
