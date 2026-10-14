@@ -112,10 +112,20 @@ func (vm *ValidatorMgr) BeginBlock(ctx cosmos.Context, mgr Manager, existingVali
 		return nil
 	}
 
-	// collect all chains for active vaults
+	// collect all chains for active vaults, including chains a vault holds funds or a
+	// deficit on without carrying them: a migration the removed migrateFunds fallback
+	// queued before the upgrade is credited without stamping its chain, and a halt on
+	// that chain must still block churn.
 	activeChains := make(common.Chains, 0)
 	for _, v := range vaults {
 		activeChains = append(activeChains, v.GetChains()...)
+		for _, coins := range []common.Coins{v.Coins, v.Deficit} {
+			for _, coin := range coins {
+				if !coin.Amount.IsZero() {
+					activeChains = append(activeChains, coin.Asset.GetChain())
+				}
+			}
+		}
 	}
 	activeChains = activeChains.Distinct()
 

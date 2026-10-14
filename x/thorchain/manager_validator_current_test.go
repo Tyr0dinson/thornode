@@ -130,6 +130,47 @@ func (vts *ValidatorMgrTestSuite) TestChurnWithHaltedEmptyChain(c *C) {
 	c.Assert(len(ready2), Equals, 0) // funds on the halted chain still block
 }
 
+// A credited legacy migration leaves its coins on an active vault whose Chains does not
+// carry them. A halt on that chain must still block rotation once the retiring source
+// has drained, through either the coins or a deficit on it.
+func (vts *ValidatorMgrTestSuite) TestChurnBlockedByHaltedChainHeldButNotCarried(c *C) {
+	minBond := constants.GetConstantValues(GetCurrentVersion()).GetInt64Value(constants.MinimumBondInRune)
+	for _, held := range []string{"coins", "deficit"} {
+		ctx, k := setupKeeperForTest(c)
+		mgr := NewDummyMgr()
+		mgr.K = k
+		networkMgr := newValidatorMgr(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+		standbyNode := GetRandomValidatorNode(NodeStandby)
+		standbyNode.Bond = cosmos.NewUint(uint64(minBond))
+		c.Assert(k.SetNodeAccount(ctx, standbyNode), IsNil)
+
+		vault := NewVault(1, ActiveVault, AsgardVault, GetRandomPubKey(),
+			common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+		vault.Membership = append(vault.Membership, standbyNode.PubKeySet.Secp256k1.String())
+		ltc := common.NewCoins(common.NewCoin(common.LTCAsset, cosmos.NewUint(100*common.One)))
+		if held == "coins" {
+			vault.Coins = ltc
+		} else {
+			vault.Deficit = ltc
+		}
+		c.Assert(k.SetVault(ctx, vault), IsNil)
+		k.SetMimir(ctx, constants.ChurnInterval.String(), 60)
+		ctx = ctx.WithBlockHeight(61)
+		k.SetMimir(ctx, "HaltLTCChain", 1)
+
+		c.Assert(networkMgr.BeginBlock(ctx, mgr, nil), IsNil)
+		ready, err := k.ListValidatorsByStatus(ctx, NodeReady)
+		c.Assert(err, IsNil)
+		c.Assert(len(ready), Equals, 0, Commentf("LTC %s", held))
+
+		k.SetMimir(ctx, "HaltLTCChain", -1)
+		c.Assert(networkMgr.BeginBlock(ctx, mgr, nil), IsNil)
+		ready, err = k.ListValidatorsByStatus(ctx, NodeReady)
+		c.Assert(err, IsNil)
+		c.Assert(len(ready), Equals, 1, Commentf("LTC %s", held))
+	}
+}
+
 // HaltTHORChain must keep blocking rotation unconditionally. Native RUNE is not held
 // as a coin in Vault.Coins, so the funds narrowing would read THORChain as empty every
 // time and remove that stop entirely - a churn-safety regression rather than the
