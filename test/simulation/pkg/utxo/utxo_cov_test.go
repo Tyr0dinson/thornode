@@ -76,6 +76,13 @@ func newFakeUTXONodeCov(t *testing.T, f *fakeUTXONodeCov) string {
 			reply(f.unspent)
 		case "getblockcount":
 			reply(3_000_000)
+		case "getblockchaininfo":
+			// ZEC signing picks its consensus branch from the upgrade schedule
+			reply(map[string]any{
+				"blocks":    3_000_000,
+				"upgrades":  map[string]any{"c2d6d0b4": map[string]any{"activationheight": 0}},
+				"consensus": map[string]any{"chaintip": "c2d6d0b4", "nextblock": "c2d6d0b4"},
+			})
 		case "getaddressutxos":
 			if f.failList {
 				replyErr(-1, "list failed")
