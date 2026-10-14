@@ -19,6 +19,14 @@ SCRIPT = Path(__file__).resolve().parents[3] / "scripts/govulncheck.sh"
 GO_STUB = """#!/bin/sh
 printf '%s\\n' "$@" > "$STUB_ARGS"
 case "$2" in golang.org/x/vuln/cmd/govulncheck@*) ;; *) exit 97 ;; esac
+case "$PWD" in
+*/govulncheck-base.*)
+  # the base scan runs in a temporary checkout of GOVULNCHECK_BASE_REF
+  touch "$STUB_BASE_SCANNED"
+  [ -z "$STUB_BASE_OUTPUT" ] || cat "$STUB_BASE_OUTPUT"
+  exit "${STUB_BASE_RC:-0}"
+  ;;
+esac
 [ -z "$STUB_OUTPUT" ] || cat "$STUB_OUTPUT"
 exit "${STUB_RC:-0}"
 """
@@ -64,19 +72,29 @@ class GovulncheckScriptTest(unittest.TestCase):
         self.output = self.dir / "scan.json"
         self.ignore = self.dir / "ignore"
         self.args = self.dir / "args"
+        self.base_output = self.dir / "base-scan.json"
+        self.base_scanned = self.dir / "base-scanned"
         self.env = {
             "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', os.defpath)}",
             "STUB_OUTPUT": str(self.output),
             "STUB_ARGS": str(self.args),
+            "STUB_BASE_OUTPUT": str(self.base_output),
+            "STUB_BASE_SCANNED": str(self.base_scanned),
             "IGNORE_FILE": str(self.ignore),
+            "TMPDIR": str(self.dir),
         }
 
-    def run_script(self, output, ignore="", rc=0, args=()):
+    def run_script(self, output, ignore="", rc=0, args=(), base=None, env=None):
+        """Run the script; `base` is the base scan's output and sets GOVULNCHECK_BASE_REF."""
         self.output.write_text(output)
         self.ignore.write_text(ignore)
+        extra = {"STUB_RC": str(rc), **(env or {})}
+        if base is not None:
+            self.base_output.write_text(base)
+            extra.setdefault("GOVULNCHECK_BASE_REF", "HEAD")
         return subprocess.run(
             ["bash", str(SCRIPT), *args],
-            env={**self.env, "STUB_RC": str(rc)},
+            env={**self.env, **extra},
             capture_output=True,
             text=True,
             timeout=60,
@@ -235,6 +253,58 @@ class GovulncheckScriptTest(unittest.TestCase):
         self.assertHas("  ... and 1995 more traces", result.stdout)
         self.assertHas("GO-2026-0002: summary of GO-2026-0002", result.stdout)
         self.assertHas("Upgrade the affected dependency", result.stdout)
+
+    def test_base_ref_skips_base_scan_when_clean(self):
+        result = self.run_script(stream(CONFIG), base=stream(CONFIG))
+        self.assertExit(result, 0)
+        self.assertFalse(self.base_scanned.exists())
+
+    def test_findings_already_on_base_do_not_block(self):
+        output = stream(CONFIG, osv("GO-2026-0100"), finding("GO-2026-0100"))
+        result = self.run_script(output, base=output)
+        self.assertExit(result, 3)
+        self.assertTrue(self.base_scanned.exists())
+        # still reported in full so the target branch can be fixed
+        self.assertHas("GO-2026-0100: summary of GO-2026-0100", result.stdout)
+        self.assertHas("this change did not introduce them", result.stdout)
+        self.assertEqual(list(self.dir.glob("govulncheck-base.*")), [])
+
+    def test_findings_new_relative_to_base_block(self):
+        output = stream(
+            CONFIG,
+            osv("GO-2026-0100"),
+            osv("GO-2026-0200"),
+            finding("GO-2026-0100"),
+            finding("GO-2026-0200"),
+        )
+        base = stream(CONFIG, osv("GO-2026-0100"), finding("GO-2026-0100"))
+        result = self.run_script(output, base=base)
+        self.assertExit(result, 1)
+        self.assertHas("introduced by this change", result.stdout)
+        self.assertHas(": GO-2026-0200\n", result.stdout)
+
+    def test_unreachable_base_finding_does_not_excuse_reachable_one(self):
+        output = stream(CONFIG, osv("GO-2026-0100"), finding("GO-2026-0100"))
+        base = stream(
+            CONFIG, osv("GO-2026-0100"), finding("GO-2026-0100", reachable=False)
+        )
+        result = self.run_script(output, base=base)
+        self.assertExit(result, 1)
+        self.assertHas("introduced by this change", result.stdout)
+
+    def test_base_scan_failures_block(self):
+        output = stream(CONFIG, osv("GO-2026-0100"), finding("GO-2026-0100"))
+        cases = {
+            "scanner error": ({"STUB_BASE_RC": "1"}, output),
+            "invalid output": ({}, "not json\n"),
+            "unknown ref": ({"GOVULNCHECK_BASE_REF": "no-such-ref-x"}, output),
+        }
+        for name, (env, base) in cases.items():
+            with self.subTest(name):
+                result = self.run_script(output, base=base, env=env)
+                self.assertExit(result, 1)
+                self.assertHas("base scan failed", result.stdout)
+                self.assertEqual(list(self.dir.glob("govulncheck-base.*")), [])
 
 
 if __name__ == "__main__":

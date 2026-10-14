@@ -242,6 +242,18 @@ variables:
       optional: true
       artifacts: false
 
+# First script step of a long job: end it as passed when the MR changes nothing
+# the job builds or tests (docs only, or for some jobs packages outside its Go
+# dependency graph). Rules per job live in scripts/ci-affected.py; it prints
+# why it ran or skipped. Non-MR pipelines, FORCE_ALL_JOBS=1 and any selector
+# error run the job. Needs python3 and go.
+.skip-if-unaffected:
+  script:
+    - |
+      rc=0
+      python3 scripts/ci-affected.py "$CI_JOB_NAME" || rc=$?
+      if [ "$rc" -eq 10 ]; then exit 0; fi
+
 # Install $PKGS from the distro mirror. A DNS blip on the runner ("Temporary
 # failure resolving 'deb.debian.org'") only warns in `apt-get update` and then
 # fails the install as a script error, so retry and exit 75 if the mirror stays
@@ -913,6 +925,7 @@ test-simulation:
     - !reference [.go-private-auth, before_script]
     - !reference [.dind-registries, before_script]
   script:
+    - !reference [.skip-if-unaffected, script]
     # This target builds Go binaries in the job container, so it does not
     # pull the Go builder image checked by .dind-registries. Keep using the
     # dependency proxy for its Docker base and L1 images when that check fails.
@@ -983,6 +996,7 @@ unit-tests-race-bifrost:
     - !reference [.go-private-auth, before_script]
     - !reference [.stable-mtimes, before_script]
   script:
+    - !reference [.skip-if-unaffected, script]
     - make test-race-bifrost
   artifacts:
     when: always
@@ -1058,12 +1072,13 @@ consensus-determinism:
       artifacts: false
   timeout: 25m
   variables:
-    PKGS: util-linux
+    PKGS: python3 util-linux
   before_script:
     - !reference [.pkg-install, before_script]
     - !reference [.go-private-auth, before_script]
     - !reference [.stable-mtimes, before_script]
   script:
+    - !reference [.skip-if-unaffected, script]
     - mkdir -p test-quality-reports
     - sh -c 'scripts/test-consensus-determinism.sh > test-quality-reports/consensus-determinism.log 2>&1; rc=$?; cat test-quality-reports/consensus-determinism.log; exit "$rc"'
   artifacts:
@@ -1108,7 +1123,7 @@ test-regression:
     TIME_FACTOR: "2"
     PARALLELISM: "10"
     FAIL_FAST: "true"
-    PKGS: jq
+    PKGS: jq python3
     REGTEST_BIN_DIR: /tmp/regtest-bin
     REGTEST_HOME_BASE: /tmp/regtest-home
     REGTEST_MNT_DIR: $CI_PROJECT_DIR/test/regression/mnt
@@ -1116,6 +1131,7 @@ test-regression:
     - !reference [.pkg-install, before_script]
     - !reference [.go-private-auth, before_script]
   script:
+    - !reference [.skip-if-unaffected, script]
     - make _build-test-regression
     - make _test-regression UID=0 GID=0
     - |
@@ -1165,9 +1181,26 @@ govulncheck:
   rules: *rules
   variables:
     PKGS: jq
+  # Exit 3: every unaccepted finding is also on the target branch, so the MR did
+  # not introduce it. Over 2026-09-14..10-14 govulncheck failed in 23 of the 38
+  # failed merge-train pipelines, nearly all for newly published advisories that
+  # blocked every MR at once. MR and train pipelines now warn on those and fail
+  # only on findings the MR adds; develop, tag and scheduled pipelines have no
+  # base and still fail on any unaccepted finding.
+  allow_failure:
+    exit_codes:
+      - 3
   before_script:
     - !reference [.pkg-install, before_script]
     - !reference [.go-private-auth, before_script]
   script:
     # fails on reachable vulnerable symbols not accepted in .govulncheck-ignore
-    - ./scripts/govulncheck.sh
+    - |
+      if [ -n "${CI_MERGE_REQUEST_IID:-}" ]; then
+        # set on merged-result and merge-train pipelines; the diff base otherwise
+        export GOVULNCHECK_BASE_REF="${CI_MERGE_REQUEST_TARGET_BRANCH_SHA:-${CI_MERGE_REQUEST_DIFF_BASE_SHA:-}}"
+        if [ -n "$GOVULNCHECK_BASE_REF" ] && ! git cat-file -e "${GOVULNCHECK_BASE_REF}^{commit}" 2>/dev/null; then
+          timeout 60 git fetch --no-tags --depth=1 origin "$GOVULNCHECK_BASE_REF" || true
+        fi
+      fi
+      ./scripts/govulncheck.sh
