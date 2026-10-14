@@ -470,7 +470,7 @@ func (s *MempoolSwapLifecycleIntegrationSuite) TestAdmissionPersistsNormalizedLi
 	c.Check(record.NextRecoveryHeight >= queued.InitialBlockHeight+30, Equals, true)
 }
 
-func (s *MempoolSwapLifecycleIntegrationSuite) TestDeferredPoolCycleAdvancesOnlyExistingOverlayOwner(c *C) {
+func (s *MempoolSwapLifecycleIntegrationSuite) TestDeferredPoolCycleAdvancesOwnerAndClearPoolTraffic(c *C) {
 	ctx, mgr, fixture := setupMempoolSwapLifecycleFixture(c)
 	book := newSwapQueueAdv(mgr.Keeper())
 	poolMgr := newPoolMgr()
@@ -483,9 +483,9 @@ func (s *MempoolSwapLifecycleIntegrationSuite) TestDeferredPoolCycleAdvancesOnly
 	c.Check(ownerRecord.LatestSwap.State.Count, Equals, uint64(1))
 	c.Check(mempoolSwapOwnsPoolCycleOverlay(ownerRecord), Equals, true)
 
-	// Queue an unrelated swap through a disjoint pool. It must not be allowed to
-	// create a second overlay (or ordinary finalized-pool traffic) while the
-	// deferred cycle is waiting for the original owner to resolve.
+	// Queue an unrelated confirmed swap through a disjoint pool. It can neither
+	// observe the owner's reversible depth nor create an overlay of its own, so
+	// a deferred cycle must not stall it for the owner's recovery window.
 	ethPool := NewPool()
 	ethPool.Asset = common.ETHAsset
 	ethPool.BalanceRune = cosmos.NewUint(1_000 * common.One)
@@ -514,6 +514,29 @@ func (s *MempoolSwapLifecycleIntegrationSuite) TestDeferredPoolCycleAdvancesOnly
 	)
 	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, *unrelated), IsNil)
 
+	// A confirmed swap through the owner's BTC pool would observe reversible
+	// depth, and preempting the owner mid-pass would let the cycle run in a
+	// block that already executed swaps. It must wait for the clean block.
+	blockedTx := GetRandomTx()
+	blockedTx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(common.One)))
+	blocked := NewMsgSwap(
+		blockedTx,
+		common.BTCAsset,
+		GetRandomBTCAddress(),
+		cosmos.ZeroUint(),
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		"",
+		"",
+		nil,
+		MarketSwap,
+		1,
+		0,
+		types.SwapVersion_v2,
+		GetRandomBech32Addr(),
+	)
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, *blocked), IsNil)
+
 	const poolCycle int64 = 10
 	mgr.Keeper().SetMimir(ctx, constants.PoolCycle.String(), poolCycle)
 	mgr.Keeper().SetMimir(ctx, constants.MaxAvailablePools.String(), 100)
@@ -531,23 +554,28 @@ func (s *MempoolSwapLifecycleIntegrationSuite) TestDeferredPoolCycleAdvancesOnly
 	c.Assert(poolMgr.EndBlock(boundaryCtx, mgr), IsNil)
 	c.Check(getPoolCycleRetryHeight(boundaryCtx, mgr), Equals, boundaryHeight)
 
-	// On the retry block only the existing owner is visible. Its final stream
-	// slice may advance, while the unrelated queue item remains untouched.
+	// On the retry block the existing owner and the unrelated confirmed swap are
+	// visible; the confirmed swap through the owner's pool is not.
 	retryCtx := boundaryCtx.WithBlockHeight(boundaryHeight + 1)
 	pairs, pools = book.getAssetPairs(retryCtx)
 	retryItems, err := book.FetchQueue(retryCtx, mgr, pairs, pools, nil)
 	c.Assert(err, IsNil)
-	c.Assert(retryItems, HasLen, 1)
-	c.Check(retryItems[0].msg.Tx.ID.Equals(fixture.voter.TxID), Equals, true)
+	c.Assert(retryItems, HasLen, 2)
+	c.Check(retryItems.HasItem(fixture.voter.TxID), Equals, true)
+	c.Check(retryItems.HasItem(unrelated.Tx.ID), Equals, true)
+	c.Check(retryItems.HasItem(blocked.Tx.ID), Equals, false)
 	c.Assert(book.EndBlock(retryCtx, mgr, false), IsNil)
 
 	ownerRecord, _, err = mgr.Keeper().GetMempoolSwap(retryCtx, fixture.voter.TxID, 0)
 	c.Assert(err, IsNil)
 	c.Check(ownerRecord.LatestSwap.State.Count, Equals, uint64(2))
 	c.Check(mempoolSwapOwnsPoolCycleOverlay(ownerRecord), Equals, true)
-	unrelatedAfter, err := mgr.Keeper().GetAdvSwapQueueItem(retryCtx, unrelated.Tx.ID, int(unrelated.Index))
+	c.Check(mgr.Keeper().HasAdvSwapQueueItem(retryCtx, unrelated.Tx.ID, int(unrelated.Index)), Equals, false,
+		Commentf("the unrelated single-slice swap must execute and settle during the retry"))
+	blockedAfter, err := mgr.Keeper().GetAdvSwapQueueItem(retryCtx, blocked.Tx.ID, int(blocked.Index))
 	c.Assert(err, IsNil)
-	c.Check(unrelatedAfter.State.Count, Equals, uint64(0))
+	c.Check(blockedAfter.State.Count, Equals, uint64(0))
+	c.Check(blockedAfter.State.FailedSwaps, HasLen, 0)
 
 	// PoolMgr runs after the queue and must still see the owner's retained
 	// lifecycle overlay, so no cycle write occurs in the progress block.
@@ -571,7 +599,7 @@ func (s *MempoolSwapLifecycleIntegrationSuite) TestDeferredPoolCycleAdvancesOnly
 	pairs, pools = book.getAssetPairs(resumedCtx)
 	resumedItems, err := book.FetchQueue(resumedCtx, mgr, pairs, pools, nil)
 	c.Assert(err, IsNil)
-	c.Check(resumedItems.HasItem(unrelated.Tx.ID), Equals, true)
+	c.Check(resumedItems.HasItem(blocked.Tx.ID), Equals, true)
 }
 
 func (s *MempoolSwapLifecycleIntegrationSuite) TestErrataBeforeExecutionClearsEveryOwner(c *C) {

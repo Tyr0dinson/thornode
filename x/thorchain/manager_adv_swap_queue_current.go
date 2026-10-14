@@ -117,8 +117,25 @@ func mempoolSwapOwnsPoolCycleOverlay(record types.MempoolSwap) bool {
 	return false
 }
 
-func (vm *SwapQueueAdv) filterPoolCycleRetryOwners(ctx cosmos.Context, items swapItems) swapItems {
-	owners := make(swapItems, 0, len(items))
+// filterPoolCycleRetryItems narrows a fetched batch while a deferred pool
+// cycle is waiting on speculative overlays. Established overlay owners may
+// advance, and a swap without a lifecycle may run when none of its pools
+// carries an overlay or a pending errata correction: it can neither observe
+// reversible depth nor create a new overlay, so it cannot postpone the cycle.
+// Speculative swaps that do not yet own an overlay stay deferred, since
+// admitting them would let ordinary queue traffic hold the cycle off
+// indefinitely.
+//
+// Confirmed swaps are admitted only while the cycle preflight still defers.
+// Once no overlay remains, the batch is reduced to (normally no) owners so the
+// cycle gets a clean retry block.
+func (vm *SwapQueueAdv) filterPoolCycleRetryItems(ctx cosmos.Context, mgr Manager, items swapItems) swapItems {
+	_, deferCycle, err := newPoolMgr().mempoolSwapAffectedPool(ctx, mgr)
+	if err != nil {
+		ctx.Logger().Error("fail to check pool-cycle finality for swap queue", "error", err)
+		deferCycle = false
+	}
+	kept := make(swapItems, 0, len(items))
 	for _, item := range items {
 		record, found, err := vm.k.GetMempoolSwap(ctx, item.msg.Tx.ID, item.msg.Index)
 		if err != nil {
@@ -128,14 +145,32 @@ func (vm *SwapQueueAdv) filterPoolCycleRetryOwners(ctx cosmos.Context, items swa
 				"index", item.msg.Index)
 			continue
 		}
-		if !found {
+		if found {
+			if mempoolSwapOwnsPoolCycleOverlay(record) {
+				kept = append(kept, item)
+			}
 			continue
 		}
-		if mempoolSwapOwnsPoolCycleOverlay(record) {
-			owners = append(owners, item)
+		if deferCycle && mempoolSwapExecutionPoolsFinalized(ctx, vm.k, item.msg) {
+			kept = append(kept, item)
 		}
 	}
-	return owners
+	return kept
+}
+
+// mempoolSwapExecutionPoolsFinalized reports whether every pool a swap touches
+// is free of speculative overlays and pending errata corrections.
+func mempoolSwapExecutionPoolsFinalized(ctx cosmos.Context, k keeper.Keeper, msg MsgSwap) bool {
+	pools, err := mempoolSwapExecutionPools(msg)
+	if err != nil {
+		return false
+	}
+	for _, asset := range pools {
+		if err = ensureMempoolSwapPoolFinalized(ctx, k, asset); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 // FetchQueue - grabs all swap queue items from the kvstore and returns them
@@ -152,7 +187,7 @@ func (vm *SwapQueueAdv) fetchQueue(ctx cosmos.Context, mgr Manager, pairs tradeP
 	if poolCycle > 0 && ctx.BlockHeight()%poolCycle == 0 {
 		return nil, nil
 	}
-	retryOwnersOnly := poolCycle > 0 && poolCycleRetryPending(ctx, mgr)
+	cycleRetry := poolCycle > 0 && poolCycleRetryPending(ctx, mgr)
 
 	// If todo is empty, set it to every pair
 	if len(todo) == 0 {
@@ -195,13 +230,14 @@ func (vm *SwapQueueAdv) fetchQueue(ctx cosmos.Context, mgr Manager, pairs tradeP
 		newItems := vm.discoverLimitSwaps(ctx, mgr, pair, pools)
 		items = append(items, newItems...)
 	}
-	if retryOwnersOnly {
+	if cycleRetry {
 		// PoolMgr runs after AdvSwapQueue and repeats its read-only finality
 		// preflight before any cycle write. Advancing an existing owner cannot
-		// remove its unfinalized lifecycle overlay; finality or rollback clears it
-		// before a later queue pass, which then returns no owner and gives the
-		// cycle a clean retry block.
-		items = vm.filterPoolCycleRetryOwners(ctx, items)
+		// remove its unfinalized lifecycle overlay, and EndBlock does not preempt
+		// owners during a retry, so admitted swaps cannot clear the overlay within
+		// this pass. Finality or rollback clears it before a later queue pass,
+		// which then returns no owner and gives the cycle a clean retry block.
+		items = vm.filterPoolCycleRetryItems(ctx, mgr, items)
 	}
 
 	return items, nil
@@ -999,6 +1035,9 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 	// Track the last swap direction per pool for rapid swap safety.
 	lastPoolDir := make(poolSwapDir)
 
+	poolCycle := mgr.Keeper().GetConfigInt64(ctx, constants.PoolCycle)
+	cycleRetry := poolCycle > 0 && poolCycleRetryPending(ctx, mgr)
+
 	// An owner which cannot be preempted stays that way for the whole pass, so
 	// track those pools across rapid-swap iterations rather than per iteration.
 	preemptions := newMempoolSwapPreemptionAttempts()
@@ -1133,7 +1172,10 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 				// Both ordinary final swaps and streams with a verified FINALIZED
 				// lifecycle can preempt an unconfirmed owner. Retaining a journal
 				// must not make a confirmed inbound wait for the owner's timeout.
-				if (owner != nil && owner.Status != types.MempoolSwapStatus_FINALIZED) || !errors.Is(poolErr, errMempoolSwapPoolExecutionPending) {
+				// A deferred pool cycle needs its overlay owners to clear through
+				// finality or rollback ahead of the queue pass, not mid-pass after
+				// other swaps have run, so confirmed swaps wait during a retry.
+				if (owner != nil && owner.Status != types.MempoolSwapStatus_FINALIZED) || !errors.Is(poolErr, errMempoolSwapPoolExecutionPending) || cycleRetry {
 					ctx.Logger().Debug("deferring swap behind unfinalized mempool pool owner",
 						"tx", msg.Tx.ID,
 						"error", poolErr)
