@@ -197,7 +197,7 @@ func processErrataTx(ctx cosmos.Context, mgr Manager, er *common.ErrataTx) (comm
 	// closes the never-credited case.
 	if !observedVoter.UpdatedVault {
 		ctx.Logger().Info("inbound was never credited, so errata leaves the pool untouched", "tx_id", er.Id)
-		return nil
+		return common.ErrataTxOutcome_ERRATA_TX_OUTCOME_REVERTED, nil
 	}
 
 	runeCoin := common.NoCoin
