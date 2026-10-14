@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	keeperv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
 )
 
 func invariantTestServer(t *testing.T, handler func(http.ResponseWriter, *http.Request, int)) (func(), map[string]int) {
@@ -94,8 +96,8 @@ func TestInvariantTransientTransportRecovery(t *testing.T) {
 	if err := NewInvariants().Fn(nil); err != nil {
 		t.Fatal(err)
 	}
-	if len(counts) != 10 {
-		t.Fatalf("not all routes verified: %v", counts)
+	if expected := len(keeperv1.KVStore{}.InvariantRoutes()); len(counts) != expected {
+		t.Fatalf("not all %d routes verified: %v", expected, counts)
 	}
 }
 
