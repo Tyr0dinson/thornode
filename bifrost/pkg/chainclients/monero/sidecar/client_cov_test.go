@@ -600,11 +600,18 @@ func TestRegisterVaultCov(t *testing.T) {
 	_, err := c.RegisterVault(RegisterVaultReq{VaultCreationHeight: -1})
 	require.EqualError(t, err, "vault creation height must be non-negative")
 
-	body = `{"registered":true,"reset_epoch":0}`
+	// key-recovery registration: no birthday, reset or cursor, so no continuity
+	body = `{"registered":true,"effective_birthday":0,"reset_epoch":0}`
+	_, err = c.RegisterVault(RegisterVaultReq{})
+	require.NoError(t, err)
+	_, ok := c.CachedScannerState()
+	require.False(t, ok)
+
+	body = `{"registered":true,"effective_birthday":0,"reset_epoch":1}`
 	_, err = c.RegisterVault(RegisterVaultReq{})
 	require.ErrorContains(t, err, "invalid scanner continuity")
 
-	body = `{"registered":true,"reset_epoch":1,"expected_next_height":42}`
+	body = `{"registered":true,"effective_birthday":0,"reset_epoch":1,"expected_next_height":42}`
 	out, err := c.RegisterVault(RegisterVaultReq{})
 	require.NoError(t, err)
 	require.True(t, out.Registered)
@@ -728,7 +735,8 @@ func TestTypesUnmarshalErrorsCov(t *testing.T) {
 
 	var reg RegisterVaultResp
 	require.Error(t, json.Unmarshal([]byte(`{"registered":"x"}`), &reg))
-	require.EqualError(t, json.Unmarshal([]byte(`{"registered":true}`), &reg), "register vault response omitted reset_epoch")
+	require.EqualError(t, json.Unmarshal([]byte(`{"registered":true}`), &reg), "register vault response omitted effective_birthday")
+	require.EqualError(t, json.Unmarshal([]byte(`{"registered":true,"effective_birthday":0}`), &reg), "register vault response omitted reset_epoch")
 
 	var st ScannerState
 	require.Error(t, json.Unmarshal([]byte(`{"reset_epoch":"x"}`), &st))

@@ -15,7 +15,7 @@ import (
 	"github.com/ltcsuite/ltcutil"
 	. "gopkg.in/check.v1"
 
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zcash"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/common/crypto/ss58"
 )
@@ -201,8 +201,11 @@ func (s *AddressCovSuite) TestGetNetworkDOGE(c *C) {
 func (s *AddressCovSuite) TestGetNetworkZECAndADA(c *C) {
 	var h [20]byte
 	copy(h[:], addressCovHash)
-	mainZ := zecutil.NewAddressPubKeyHash(h, "mainnet").String()
-	testZ := zecutil.NewAddressPubKeyHash(h, "testnet3").String()
+	mainAddr, err := zcash.NewAddressPubKeyHash(h, "mainnet")
+	c.Assert(err, IsNil)
+	testAddr, err := zcash.NewAddressPubKeyHash(h, "testnet3")
+	c.Assert(err, IsNil)
+	mainZ, testZ := mainAddr.String(), testAddr.String()
 	c.Assert(Address(mainZ).GetNetwork(ZECChain), Equals, addressCovMainNet())
 	c.Assert(Address(testZ).GetNetwork(ZECChain), Equals, MockNet)
 	c.Assert(Address("garbage").GetNetwork(ZECChain), Equals, CurrentChainNetwork)
@@ -227,7 +230,9 @@ func (s *AddressCovSuite) TestToTexAddressAndEquivalence(c *C) {
 	if CurrentChainNetwork == MockNet {
 		network = "testnet3"
 	}
-	p2pkh := Address(zecutil.NewAddressPubKeyHash(h, network).String())
+	zAddr, err := zcash.NewAddressPubKeyHash(h, network)
+	c.Assert(err, IsNil)
+	p2pkh := Address(zAddr.String())
 
 	tex, err := p2pkh.ToTexAddress()
 	c.Assert(err, IsNil)

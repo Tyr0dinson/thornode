@@ -92,6 +92,7 @@ SELECTIONS = (
 # Test files no CI job compiles today. Each entry needs a reason; an entry that
 # becomes selected or is deleted fails the check so the list cannot go stale.
 KNOWN_UNSELECTED = {
+    "cmd/bifrost/race_on_cov_test.go": "race tag (no tests, only a -race constant); no -race job builds cmd/bifrost",
     "bifrost/pkg/chainclients/utxo/bitcoin_signer_testnet_test.go": "testnet tag; no job builds testnet",
     "bifrost/pkg/chainclients/utxo/bitcoin_testnet_test.go": "testnet tag; no job builds testnet",
     "bifrost/tss/go-tss/tss/frost_keygen_faultinject_mainnet_test.go": "!mocknet; go-tss job builds mocknet only",
