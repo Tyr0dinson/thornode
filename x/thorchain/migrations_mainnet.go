@@ -2606,7 +2606,7 @@ func (m *Migrator) adr028ZeroSavers(ctx cosmos.Context, synthAsset common.Asset)
 // to 20, so a release shipped with this false drops the migration permanently
 // (the slash refund, donations, ETH.THOR restore, synth retirement and the
 // h28181638 ZEC slash refund would then need a new 20->21 migration).
-const mainnetDonationSpecComplete = false
+const mainnetDonationSpecComplete = true
 
 // mainnetDonationSpec19to20 is the 3.21.0 donation spec.
 func mainnetDonationSpec19to20() (donationMigrationSpec, error) {
