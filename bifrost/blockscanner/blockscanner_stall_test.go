@@ -27,6 +27,20 @@ func armStall(scanner *BlockScanner, height int64) {
 	scanner.stallSince = time.Now().Add(-24 * time.Hour)
 }
 
+// RunStalledScannerForTest lets external-package integration tests use the real
+// scan loop with an expired stall clock and observe its natural return.
+func RunStalledScannerForTest(scanner *BlockScanner) <-chan struct{} {
+	armStall(scanner, scanner.PreviousHeight()+1)
+	scanner.healthy.Store(true)
+	scanner.wg.Add(1)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		scanner.scanBlocks()
+	}()
+	return done
+}
+
 // lastObservedServer serves just enough of the THORNode API for GetStartHeight
 // and skipAheadIfStalled: /status for WaitToCatchUp and a per-chain lastblock.
 func lastObservedServer(body string) *httptest.Server {

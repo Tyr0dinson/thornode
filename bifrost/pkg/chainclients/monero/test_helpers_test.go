@@ -88,6 +88,7 @@ func testVaultPubKeyAndAddress(t *testing.T) (common.PubKey, common.Address) {
 func testRegisterVaultResponse(nextHeight uint64) sidecar.RegisterVaultResp {
 	return sidecar.RegisterVaultResp{
 		Registered:         true,
+		EffectiveBirthday:  nextHeight,
 		ResetEpoch:         0,
 		ExpectedNextHeight: &nextHeight,
 	}
@@ -143,6 +144,10 @@ func (s *testScannerContinuity) handle(t *testing.T, w http.ResponseWriter, r *h
 		var req sidecar.ScannerRewindReq
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
+			return true
+		}
+		if req.Network != "mocknet" {
+			http.Error(w, "unexpected scanner rewind network", http.StatusBadRequest)
 			return true
 		}
 		s.rewindCalls++
