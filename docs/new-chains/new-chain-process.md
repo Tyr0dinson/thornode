@@ -164,6 +164,12 @@ a current supermajority`, the recovery depends on how the chain's scanner posts:
 A voter key is `CHAIN-height-rate-size`, which is why alignment is what decides whether
 independent nodes land on the same one.
 
+The proof is always the latest fee consensus, never older fee history. A chain whose
+last fee consensus predates this upgrade, or any chain after a genesis export and import
+(network-fee voters are not exported), has no proof until its next fee consensus; refresh
+it as above. A vote for an older chain height that completes late never replaces a
+newer one.
+
 **A churn that drops the chain outranks an older proof.** Bifrost reports every chain it
 is configured to run (not `Disabled`, not `OptToRetire`) at keygen. When a churn retires
 a vault that served the chain in favour of one that does not, the rotation records the
@@ -182,7 +188,7 @@ drop, refreshed as above. The rule only applies to a chain that was dropped. A c
 that no vault has served yet is never held to it, because a single early keygen reporter
 without the client is enough to leave a chain off a new vault. It also stops applying
 once every active vault carries the chain again. There is one exception: a drop that
-stranded funds on a retiring vault. There the stale proof is accepted, since re-stamping
+stranded funds above dust on a retiring vault. There the stale proof is accepted, since re-stamping
 the chain is the only way to let migration and the churn proceed.
 
 A fresh proof shows the network can observe the chain, not that it wants the chain.
