@@ -423,7 +423,7 @@ generate:
 unit-tests:
   tags: !reference [.small-runner, tags]
   variables:
-    PKGS: python3
+    PKGS: python3 jq # test/regression/cmd OpCheck tests shell out to jq; without it they skip
   rules:
     - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
       when: never
@@ -431,8 +431,6 @@ unit-tests:
   stage: test
   needs: []
   coverage: /total:\s+\(statements\)\s+(\d+.\d+\%)/
-  variables:
-    PKGS: jq # test/regression/cmd OpCheck tests shell out to jq; without it they skip
   before_script:
     - !reference [.pkg-install, before_script]
     - !reference [.go-private-auth, before_script]
