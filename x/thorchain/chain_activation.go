@@ -195,16 +195,15 @@ func retiringNeedsStamping(ctx cosmos.Context, k keeper.Keeper, chain common.Cha
 // (handler_observed_tx_helpers.go) - so it drifts off the fee heights as soon as the
 // chain sees any traffic, and anyone can push it off deliberately by sending dust to
 // the derived pre-activation address. processNetworkFeeAttestation therefore records
-// the voter's ID when it reaches consensus, while activation is requested.
+// the voter's ID on every fee consensus (advanceLatestNetworkFeeVoter).
 //
 // That pointer is what bounds the cost. This runs every block for as long as a chain
-// sits unconverged, and the voter store is never pruned, so scanning the chain's voters
-// each time would make EndBlock cost scale with its lifetime fee history. When no
-// pointer exists yet - the mimir was set after the chain's last fee consensus, or the
-// history predates the pointer - one scan re-derives it (the voter with the highest
-// consensus height, the first in key order on a tie) and stores it, so the scan runs
-// once per activation episode rather than once per block. Nodes that sign after
-// consensus are appended to the same stored voter, so the pointer sees them too.
+// sits unconverged, and the voter store is never pruned, so reading the chain's voters
+// would make EndBlock cost scale with its lifetime fee history. History is never
+// scanned: with no pointer - the chain's last fee consensus predates the upgrade that
+// introduced it - there are no attesters until the next fee consensus records one.
+// Nodes that sign after consensus are appended to the same stored voter, so the pointer
+// sees them too.
 //
 // No freshness window is applied to the voter itself. Bifrost posts MsgNetworkFee only
 // when the rate *changes* (utxo/client_internal.go, xrp/block_scanner.go,
@@ -240,10 +239,7 @@ func chainAttesters(ctx cosmos.Context, k keeper.Keeper, chain common.Chain, act
 		return attesters, 0
 	}
 	if !found {
-		if voter, found = latestConsensusNetworkFeeVoter(ctx, k, chain); !found {
-			return attesters, 0
-		}
-		k.SetLatestObservedNetworkFeeVoterID(ctx, chain, voter.ID())
+		return attesters, 0
 	}
 	// BlockHeight is stamped only by the attestation that carried the voter to a
 	// supermajority, so an unfinished vote is not proof of anything.
@@ -263,25 +259,25 @@ func chainAttesters(ctx cosmos.Context, k keeper.Keeper, chain common.Chain, act
 	return attesters, voter.BlockHeight
 }
 
-// latestConsensusNetworkFeeVoter scans the chain's voters for the one that most recently
-// reached consensus. Unbounded in the chain's fee history, so it is only the fallback
-// that re-derives chainAttesters' pointer, never the per-block path.
-func latestConsensusNetworkFeeVoter(ctx cosmos.Context, k keeper.Keeper, chain common.Chain) (ObservedNetworkFeeVoter, bool) {
-	var latest ObservedNetworkFeeVoter
-	iter := k.GetObservedNetworkFeeVoterIteratorForChain(ctx, chain)
-	defer iter.Close()
-	for ; iter.Valid(); iter.Next() {
-		var voter ObservedNetworkFeeVoter
-		if err := k.Cdc().Unmarshal(iter.Value(), &voter); err != nil {
-			ctx.Logger().Error("fail to unmarshal network fee voter", "error", err)
-			continue
-		}
-		// strictly greater, so a tie keeps the first in key order - deterministic
-		if voter.Chain.Equals(chain) && voter.BlockHeight > latest.BlockHeight {
-			latest = voter
-		}
+// advanceLatestNetworkFeeVoter points chainAttesters at a voter that just reached
+// consensus, on every fee consensus, so activation never has to scan the chain's
+// never-pruned voter history. The pointer only moves forward in chain height: a voter
+// for an older height can still complete late - a returning or syncing node re-reports
+// an old block, completing a vote its other signers cast long ago - and its consensus
+// height would otherwise date that old observation after a keygen drop that came in
+// between, passing G6a on signatures that predate the drop. LastChainHeight is not the
+// bound, because observed inbounds advance it too and an ordinary fee vote finishing a
+// block behind them would never move the pointer. Fee votes for the same height tie
+// forward, so a changed rate at one height still moves it.
+func advanceLatestNetworkFeeVoter(ctx cosmos.Context, k keeper.Keeper, voter ObservedNetworkFeeVoter) {
+	current, found, err := k.GetLatestObservedNetworkFeeVoter(ctx, voter.Chain)
+	if err != nil {
+		// an unreadable record cannot bound anything; replace it
+		ctx.Logger().Error("fail to get latest network fee voter", "chain", voter.Chain, "error", err)
+	} else if found && voter.ReportBlockHeight < current.ReportBlockHeight {
+		return
 	}
-	return latest, latest.BlockHeight > 0
+	k.SetLatestObservedNetworkFeeVoterID(ctx, voter.Chain, voter.ID())
 }
 
 // chainActivationReady applies the objective gates. On success it also returns the set
@@ -381,7 +377,9 @@ func chainActivationReady(ctx cosmos.Context, k keeper.Keeper, chain common.Chai
 	//
 	// The proof is dated by its consensus height, so a vote whose early signatures predate
 	// the drop but which completed after it still counts - a residual bounded by how long
-	// one fee vote takes to gather. And a fresh proof attests observability, not intent:
+	// one fee vote takes to gather, since the pointer never moves back to a vote for an
+	// older chain height (advanceLatestNetworkFeeVoter) however late that vote completes.
+	// And a fresh proof attests observability, not intent:
 	// OptToRetire leaves the client running and posting fees, so a chain retired that way
 	// is re-enabled by its next fee consensus for as long as the mimir stays set. Unset
 	// the mimir to retire a chain.

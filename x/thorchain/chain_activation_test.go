@@ -95,7 +95,7 @@ func newActivationVault(c *C, status types.VaultStatus, members NodeAccounts) Va
 // them - the same three records processNetworkFeeAttestation writes on fee consensus.
 // consensusHeight is the THORChain height the voter reached consensus at; feeHeight is
 // the chain height the fee was reported for, which is also part of the voter key.
-// Returns the voter's ID, for a caller that also maintains the latest-voter pointer.
+// It advances the latest-voter pointer as consensus does, and returns the voter's ID.
 func setReadinessProof(ctx cosmos.Context, c *C, k keeper.Keeper, chain common.Chain, signers NodeAccounts, consensusHeight, feeHeight int64) string {
 	c.Assert(k.SaveNetworkFee(ctx, chain, types.NetworkFee{
 		Chain:              chain,
@@ -106,7 +106,7 @@ func setReadinessProof(ctx cosmos.Context, c *C, k keeper.Keeper, chain common.C
 	return setFeeVoter(ctx, k, chain, signers, consensusHeight, feeHeight)
 }
 
-// setFeeVoter writes only the consensus voter, without the fee and height records
+// setFeeVoter writes only the consensus voter and its pointer, without the fee and height records
 // processNetworkFeeAttestation writes beside it. A gate test uses it to withhold one
 // of those records while the rest of the proof - G6b's attesters included - holds.
 func setFeeVoter(ctx cosmos.Context, k keeper.Keeper, chain common.Chain, signers NodeAccounts, consensusHeight, feeHeight int64) string {
@@ -118,6 +118,7 @@ func setFeeVoter(ctx cosmos.Context, k keeper.Keeper, chain common.Chain, signer
 		voter.Sign(na.NodeAddress)
 	}
 	k.SetObservedNetworkFeeVoter(ctx, voter)
+	advanceLatestNetworkFeeVoter(ctx, k, voter)
 	return voter.ID()
 }
 
@@ -525,74 +526,96 @@ func (s *ChainActivationTestSuite) TestNoStampWhenAttesterJailedOutOfParty(c *C)
 	c.Assert(slices.Contains(vaultChains(ctx, c, k, vault.PubKey), activationChain.String()), Equals, true)
 }
 
-// The attester set comes from the pointed-to voter alone, so its cost is bounded
-// rather than a scan of the chain's lifetime fee history on every block. Without a
-// pointer, one scan re-derives it from the latest consensus voter and stores it.
+// chainAttesters reads only the voter the pointer names. A consensus voter in the
+// store without a pointer - one that reached consensus before the upgrade - proves
+// nothing until the next fee consensus records one: history is never scanned.
 func (s *ChainActivationTestSuite) TestAttestersReadFromLatestVoterPointer(c *C) {
 	ctx, mgr, nodes := setupActivation(c, 4)
 	k := mgr.Keeper()
 
-	setReadinessProof(ctx, c, k, activationChain, nodes[0:2], 10, activationChainHeight)
-	// an older consensus whose key sorts after the latest one, which the backfill scan
-	// must not pick
-	older := types.NewObservedNetworkFeeVoter(activationChainHeight+5, activationChain)
-	older.BlockHeight = 5
-	older.Sign(nodes[3].NodeAddress)
-	k.SetObservedNetworkFeeVoter(ctx, older)
-
+	legacy := types.NewObservedNetworkFeeVoter(activationChainHeight, activationChain)
+	legacy.BlockHeight = 5
+	for _, na := range nodes {
+		legacy.Sign(na.NodeAddress)
+	}
+	k.SetObservedNetworkFeeVoter(ctx, legacy)
 	attesters, provedAt := chainAttesters(ctx, k, activationChain, nodes)
+	c.Assert(attesters, HasLen, 0)
+	c.Assert(provedAt, Equals, int64(0))
+
+	setReadinessProof(ctx, c, k, activationChain, nodes[0:2], 10, activationChainHeight+1)
+	attesters, provedAt = chainAttesters(ctx, k, activationChain, nodes)
 	c.Assert(attesters, DeepEquals, map[string]bool{
 		nodes[0].NodeAddress.String(): true,
 		nodes[1].NodeAddress.String(): true,
 	})
 	c.Assert(provedAt, Equals, int64(10))
-	latest, found, err := k.GetLatestObservedNetworkFeeVoter(ctx, activationChain)
-	c.Assert(err, IsNil)
-	c.Assert(found, Equals, true)
-	c.Assert(latest.ReportBlockHeight, Equals, activationChainHeight)
-
-	// a later voter written behind the pointer's back is not scanned: the history is
-	// no longer read once the pointer exists
-	setReadinessProof(ctx, c, k, activationChain, nodes[2:3], 20, activationChainHeight+10)
-	again, _ := chainAttesters(ctx, k, activationChain, nodes)
-	c.Assert(again, DeepEquals, attesters)
 }
 
-// Fee consensus keeps the pointer current while activation is requested - including
-// signers that arrive after consensus - and clears it otherwise, so a network that
-// never sets the mimir stores nothing new.
+// Fee consensus keeps the pointer current whether or not activation is requested,
+// including signers that arrive after consensus, and only moves it forward in chain
+// height: a vote for an older height that completes late does not displace it.
 func (s *ChainActivationTestSuite) TestFeeConsensusMaintainsLatestVoterPointer(c *C) {
 	ctx, mgr, nodes := setupActivation(c, 4)
 	k := mgr.Keeper()
 	handler := NewNetworkFeeHandler(mgr)
-	broadcast := func(feeHeight int64, signers NodeAccounts) {
+	broadcast := func(feeHeight int64, rate uint64, signers NodeAccounts) {
 		for _, na := range signers {
-			_, err := handler.handle(ctx, *NewMsgNetworkFee(feeHeight, activationChain, 1000, 10, na.NodeAddress))
+			_, err := handler.handle(ctx, *NewMsgNetworkFee(feeHeight, activationChain, 1000, rate, na.NodeAddress))
 			c.Assert(err, IsNil)
 		}
 	}
+	latestAt := func() int64 {
+		latest, found, err := k.GetLatestObservedNetworkFeeVoter(ctx, activationChain)
+		c.Assert(err, IsNil)
+		c.Assert(found, Equals, true)
+		return latest.ReportBlockHeight
+	}
 
-	// mimir unset: consensus stores no pointer
-	broadcast(activationChainHeight, nodes)
-	_, found, err := k.GetLatestObservedNetworkFeeVoter(ctx, activationChain)
+	// mimir unset: consensus at 3 of 4 records the voter, and the late 4th signer shows
+	broadcast(activationChainHeight+1, 10, nodes)
+	c.Assert(latestAt(), Equals, activationChainHeight+1)
+	latest, _, err := k.GetLatestObservedNetworkFeeVoter(ctx, activationChain)
 	c.Assert(err, IsNil)
-	c.Assert(found, Equals, false)
-
-	// mimir set: consensus at 3 of 4 records the voter, and the late 4th signer shows
-	k.SetMimir(ctx, activationMimirKey(activationChain), 1)
-	broadcast(activationChainHeight+1, nodes)
-	latest, found, err := k.GetLatestObservedNetworkFeeVoter(ctx, activationChain)
-	c.Assert(err, IsNil)
-	c.Assert(found, Equals, true)
-	c.Assert(latest.ReportBlockHeight, Equals, activationChainHeight+1)
 	c.Assert(latest.GetSigners(), HasLen, 4)
 
-	// mimir unset again: the next consensus clears it, so it cannot go stale
-	k.SetMimir(ctx, activationMimirKey(activationChain), 0)
-	broadcast(activationChainHeight+2, nodes)
-	_, found, err = k.GetLatestObservedNetworkFeeVoter(ctx, activationChain)
+	// an older height that completes later leaves the pointer where it is
+	broadcast(activationChainHeight, 10, nodes)
+	c.Assert(latestAt(), Equals, activationChainHeight+1)
+
+	// a new rate at the same height, and a newer height, both move it
+	broadcast(activationChainHeight+1, 20, nodes)
+	latest, _, err = k.GetLatestObservedNetworkFeeVoter(ctx, activationChain)
 	c.Assert(err, IsNil)
-	c.Assert(found, Equals, false)
+	c.Assert(latest.FeeRate, Equals, int64(20))
+	broadcast(activationChainHeight+2, 20, nodes)
+	c.Assert(latestAt(), Equals, activationChainHeight+2)
+}
+
+// A vote for a chain height from before a keygen drop that only completes after it -
+// a returning node re-reports an old block, adding the last signature - must not date
+// the old observation after the drop. The pointer stays on the newer pre-drop vote, so
+// the drop still vetoes the stale proof.
+func (s *ChainActivationTestSuite) TestLateCompletedOldVoteDoesNotOutdateDrop(c *C) {
+	ctx, mgr, _, fresh := setupDroppedChain(c, 1, staleProofHeight)
+	k := mgr.Keeper()
+	nodes, err := k.ListActiveValidators(ctx)
+	c.Assert(err, IsNil)
+
+	late := types.NewObservedNetworkFeeVoter(activationChainHeight-10, activationChain)
+	late.FeeRate = 10
+	late.TransactionSize = 1000
+	late.BlockHeight = ctx.BlockHeight()
+	for _, na := range nodes {
+		late.Sign(na.NodeAddress)
+	}
+	k.SetObservedNetworkFeeVoter(ctx, late)
+	advanceLatestNetworkFeeVoter(ctx, k, late)
+
+	_, provedAt := chainAttesters(ctx, k, activationChain, nodes)
+	c.Assert(provedAt, Equals, staleProofHeight)
+	runActivation(ctx, c, mgr)
+	c.Assert(slices.Contains(vaultChains(ctx, c, k, fresh.PubKey), activationChain.String()), Equals, false)
 }
 
 // --- the happy path ---
@@ -1077,9 +1100,7 @@ func assertDropSurvivesMigration(ctx cosmos.Context, c *C, mgr Manager, networkM
 	c.Assert(slices.Contains(vaultChains(ctx, c, k, fresh.PubKey), activationChain.String()), Equals, false)
 
 	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
-	freshID := setReadinessProof(ctx, c, k, activationChain, nodes, ctx.BlockHeight(), activationChainHeight+1)
-	// as processNetworkFeeAttestation does on consensus while the mimir is set
-	k.SetLatestObservedNetworkFeeVoterID(ctx, activationChain, freshID)
+	setReadinessProof(ctx, c, k, activationChain, nodes, ctx.BlockHeight(), activationChainHeight+1)
 	c.Assert(networkMgr.EndBlock(ctx, mgr), IsNil)
 	c.Assert(slices.Contains(vaultChains(ctx, c, k, fresh.PubKey), activationChain.String()), Equals, true)
 }

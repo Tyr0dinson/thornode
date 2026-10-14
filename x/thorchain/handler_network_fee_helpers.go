@@ -58,15 +58,7 @@ func processNetworkFeeAttestation(
 
 	voter.BlockHeight = ctx.BlockHeight()
 
-	// Keep chain activation's pointer to the latest consensus voter current - only while
-	// activation is requested, so a network that never sets the mimir writes nothing new.
-	// Cleared otherwise, so a mimir set again later cannot read a stale voter; the
-	// activation path re-derives it with one scan when absent.
-	if chainActivationRequested(ctx, mgr.Keeper(), nf.Chain) {
-		mgr.Keeper().SetLatestObservedNetworkFeeVoterID(ctx, nf.Chain, voter.ID())
-	} else if _, found, _ := mgr.Keeper().GetLatestObservedNetworkFeeVoter(ctx, nf.Chain); found {
-		mgr.Keeper().SetLatestObservedNetworkFeeVoterID(ctx, nf.Chain, "")
-	}
+	advanceLatestNetworkFeeVoter(ctx, mgr.Keeper(), *voter)
 
 	// Record the height at which this chain's network fee last reached consensus.
 	// A frozen fee value is otherwise indistinguishable from a stable one.
