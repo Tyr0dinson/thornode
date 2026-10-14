@@ -39,7 +39,6 @@ func TestXMRStartupMissingClientKeepsOtherChainsAvailable(t *testing.T) {
 	require.True(t, deferred)
 	require.True(t, o.IsChainClientStarted(common.BTCChain))
 	require.False(t, o.IsChainClientStarted(common.XMRChain))
-	o.wg = &sync.WaitGroup{}
 	o.startXMRErrataMaintenance(context.Background(), deferred) // No configured XMR client: no worker.
 	o.xmrStartupWG.Wait()
 	after, err := storage.db.Get([]byte(errataTombstoneKey(er.Chain, er.Id.String())), nil)
@@ -98,7 +97,6 @@ func TestXMRStartupRestoresCompletedQuarantineAfterRestart(t *testing.T) {
 	deferred, err := o.startRestoredChainClients()
 	require.NoError(t, err)
 	require.True(t, deferred)
-	o.wg = &sync.WaitGroup{}
 	o.startXMRErrataMaintenance(context.Background(), deferred)
 	t.Cleanup(func() { o.stopStartedChainClients(); o.xmrStartupWG.Wait() })
 	require.Eventually(t, func() bool { return o.IsChainClientStarted(common.XMRChain) }, time.Second, time.Millisecond)

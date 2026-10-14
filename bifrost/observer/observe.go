@@ -259,10 +259,7 @@ func (o *Observer) getReporterChains() map[common.Chain]reporter.ChainClient {
 }
 
 func (o *Observer) isChainStarted(chain common.Chain) bool {
-	o.chainLifecycleMu.Lock()
-	defer o.chainLifecycleMu.Unlock()
-	_, started := o.startedChains[chain]
-	return started
+	return o.IsChainClientStarted(chain)
 }
 
 func (o *Observer) startChainClient(chainID common.Chain, chain chainclients.ChainClient) bool {
@@ -305,6 +302,16 @@ func (o *Observer) IsChainClientStarted(chainID common.Chain) bool {
 // startRestoredChainClients validates shared history before starting any chain.
 // Only XMR waits for its historical quarantine writes and voter reconciliation.
 func (o *Observer) startRestoredChainClients() (bool, error) {
+	deferXMR, err := o.shouldDeferRestoredXMR()
+	if err != nil {
+		return false, err
+	}
+	o.startConfiguredChainClients(deferXMR)
+	return deferXMR, nil
+}
+
+// shouldDeferRestoredXMR validates history before reporter workers or clients start.
+func (o *Observer) shouldDeferRestoredXMR() (bool, error) {
 	tombstones, err := o.storage.getErrataTombstones()
 	if err != nil {
 		return false, fmt.Errorf("load observer errata startup state: %w", err)
@@ -316,7 +323,6 @@ func (o *Observer) startRestoredChainClients() (bool, error) {
 			break
 		}
 	}
-	o.startConfiguredChainClients(deferXMR)
 	return deferXMR, nil
 }
 
@@ -439,6 +445,10 @@ func (o *Observer) Start(ctx context.Context) error {
 	if err := o.restoreDeck(); err != nil {
 		return fmt.Errorf("restore observer deck: %w", err)
 	}
+	deferXMR, err := o.shouldDeferRestoredXMR()
+	if err != nil {
+		return err
+	}
 	// The reporter dispatcher is the active solvency path for every chain.
 	o.reporterDispatcher = reporter.NewDispatcher(
 		o.getReporterChains(),
@@ -449,10 +459,7 @@ func (o *Observer) Start(ctx context.Context) error {
 		o.stopChan,
 		o.reporterWG,
 	)
-	deferXMR, err := o.startRestoredChainClients()
-	if err != nil {
-		return err
-	}
+	o.startConfiguredChainClients(deferXMR)
 	o.oracle.Start()
 	go o.processOracle()
 	go o.processTxIns()

@@ -2,12 +2,12 @@ package monero
 
 import (
 	"context"
-	"sync"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,9 +16,9 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
 	"gitlab.com/thorchain/thornode/v3/bifrost/reporter"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/monero/sidecar"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -41,14 +41,17 @@ func (*recoverySolvencyBridge) GetMimir(key string) (int64, error) {
 func (*recoverySolvencyBridge) GetBlockHeight() (int64, error)                     { return 1000, nil }
 func (*recoverySolvencyBridge) GetNetworkFee(common.Chain) (uint64, uint64, error) { return 1, 1, nil }
 
-
 func (b *recoverySolvencyBridge) GetAsgards() (ttypes.Vaults, error) { return b.asgards, nil }
-func (*recoverySolvencyBridge) FetchNodeStatus() (ttypes.NodeStatus, error) { return ttypes.NodeStatus_Active, nil }
+func (*recoverySolvencyBridge) FetchNodeStatus() (ttypes.NodeStatus, error) {
+	return ttypes.NodeStatus_Active, nil
+}
+
 func (*recoverySolvencyBridge) GetSolvencyMsg(height int64, chain common.Chain, pubKey common.PubKey, coins common.Coins) *ttypes.MsgSolvency {
 	return &ttypes.MsgSolvency{Height: height, Chain: chain, PubKey: pubKey, Coins: coins}
 }
 
 type recoverySolvencyAttester chan common.Solvency
+
 func (a recoverySolvencyAttester) AttestSolvency(_ context.Context, solvency common.Solvency) error {
 	a <- solvency
 	return nil
@@ -86,7 +89,7 @@ func TestXMRSolvencyAfterAvailabilityRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	scanner := NewScanner(zerolog.Nop(), signer, nil, common.XMRChain, common.EmptyPubKey, 72)
-	scanner.lastFee.Store(10)
+	scanner.lastFee.Store(moneroAtomicToThorchain)
 	vault := ttypes.Vault{PubKey: vaultKey, PubKeyFrost: vaultKey, Coins: common.NewCoins(common.NewCoin(common.XMRAsset, cosmos.NewUint(1000)))}
 	bridge := &recoverySolvencyBridge{asgards: ttypes.Vaults{vault}}
 	reports := make(recoverySolvencyAttester, 4)
@@ -104,7 +107,7 @@ func TestXMRSolvencyAfterAvailabilityRecovery(t *testing.T) {
 	client.blockScanner = shared
 	stopper := make(chan struct{})
 	var wg sync.WaitGroup
-	dispatcher := reporter.NewDispatcher(map[common.Chain]reporter.ChainClient{common.XMRChain: client}, bridge, reports, nil, stopper, &wg)
+	dispatcher := reporter.NewDispatcher(map[common.Chain]reporter.ChainClient{common.XMRChain: client}, nil, bridge, reports, nil, stopper, &wg)
 	shared.Start(make(chan stypes.TxIn, 4), make(chan common.NetworkFee, 4), dispatcher)
 	defer func() { shared.Stop(); close(stopper); wg.Wait() }()
 	wait := func(condition func() bool) {
@@ -118,6 +121,16 @@ func TestXMRSolvencyAfterAvailabilityRecovery(t *testing.T) {
 		}
 	}
 	wait(func() bool { return shared.PreviousHeight() == 99 && shared.IsHealthy() })
+	// Complete the initial canonical report before changing the chain tip.
+	// The dispatcher is asynchronous, so scanner progress alone is not a barrier.
+	select {
+	case baseline := <-reports:
+		if baseline.Height != 90 {
+			t.Fatalf("unexpected initial report height: %d", baseline.Height)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("initial solvency report did not complete")
+	}
 	height := int64(100)
 	ready.Store(false)
 	failures.Store(0)

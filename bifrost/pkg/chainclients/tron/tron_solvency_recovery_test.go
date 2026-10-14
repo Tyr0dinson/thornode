@@ -2,12 +2,12 @@ package tron
 
 import (
 	"context"
-	"sync"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -16,10 +16,10 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
-	"gitlab.com/thorchain/thornode/v3/bifrost/reporter"
-	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/tron/api"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
+	"gitlab.com/thorchain/thornode/v3/bifrost/reporter"
+	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -36,14 +36,17 @@ func (*recoverySolvencyBridge) GetMimir(string) (int64, error)                  
 func (*recoverySolvencyBridge) GetBlockHeight() (int64, error)                     { return 1000, nil }
 func (*recoverySolvencyBridge) GetNetworkFee(common.Chain) (uint64, uint64, error) { return 1, 1, nil }
 
-
 func (b *recoverySolvencyBridge) GetAsgards() (ttypes.Vaults, error) { return b.asgards, nil }
-func (*recoverySolvencyBridge) FetchNodeStatus() (ttypes.NodeStatus, error) { return ttypes.NodeStatus_Active, nil }
+func (*recoverySolvencyBridge) FetchNodeStatus() (ttypes.NodeStatus, error) {
+	return ttypes.NodeStatus_Active, nil
+}
+
 func (*recoverySolvencyBridge) GetSolvencyMsg(height int64, chain common.Chain, pubKey common.PubKey, coins common.Coins) *ttypes.MsgSolvency {
 	return &ttypes.MsgSolvency{Height: height, Chain: chain, PubKey: pubKey, Coins: coins}
 }
 
 type recoverySolvencyAttester chan common.Solvency
+
 func (a recoverySolvencyAttester) AttestSolvency(_ context.Context, solvency common.Solvency) error {
 	a <- solvency
 	return nil
@@ -112,7 +115,7 @@ func TestTRONSolvencyAfterReceiptRecovery(t *testing.T) {
 	client.blockScanner = shared
 	stopper := make(chan struct{})
 	var wg sync.WaitGroup
-	dispatcher := reporter.NewDispatcher(map[common.Chain]reporter.ChainClient{common.TRONChain: client}, bridge, reports, nil, stopper, &wg)
+	dispatcher := reporter.NewDispatcher(map[common.Chain]reporter.ChainClient{common.TRONChain: client}, nil, bridge, reports, nil, stopper, &wg)
 	shared.Start(make(chan stypes.TxIn, 4), make(chan common.NetworkFee, 4), dispatcher)
 	defer func() { shared.Stop(); close(stopper); wg.Wait() }()
 	wait := func(ready func() bool) {
@@ -126,6 +129,16 @@ func TestTRONSolvencyAfterReceiptRecovery(t *testing.T) {
 		}
 	}
 	wait(func() bool { return shared.PreviousHeight() == height-1 && shared.IsHealthy() })
+	// Fresh reporters first check the preceding canonical cadence boundary.
+	// Drain that baseline before introducing the unavailable block or receipt.
+	select {
+	case baseline := <-reports:
+		if baseline.Height != 90-19 {
+			t.Fatalf("unexpected initial report height: %d", baseline.Height)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("initial solvency report did not complete")
+	}
 	tip.Store(height)
 	wait(func() bool { return failedReceipts.Load() >= 3 && !shared.IsHealthy() })
 	if shared.PreviousHeight() != height-1 || len(reports) != 0 {
@@ -155,4 +168,3 @@ func TestTRONSolvencyAfterReceiptRecovery(t *testing.T) {
 		t.Fatal("FetchTxs still reports outside the ordered loop")
 	}
 }
-

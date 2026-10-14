@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	acommon "gitlab.com/thorchain/thornode/v3/test/simulation/actors/common"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 )
 
@@ -151,5 +152,42 @@ func TestTRONSolvencyStandaloneDoesNotAddChurn(t *testing.T) {
 	})
 	if !reflect.DeepEqual(names, []string{"test", "TRONSolvencyFragmentation"}) {
 		t.Fatalf("standalone TRON on an active cluster must not add setup or churn: %v", names)
+	}
+}
+
+func TestTRONSolvencySharesClusterChurnAndXMRVerification(t *testing.T) {
+	previous := acommon.XMRChainEnabled()
+	t.Cleanup(func() { acommon.SetXMRChainEnabled(previous) })
+	acommon.SetXMRChainEnabled(false)
+	t.Setenv("XMR_POST_CHURN_REQUIRED", "1")
+	for _, selector := range []string{"cluster-churn", "bond-yield"} {
+		t.Run(selector, func(t *testing.T) {
+			rng := rand.New(rand.NewPCG(7, 8))
+			root := NewActor("test", rng)
+			appendSimulationStages(root, map[string]bool{
+				selector: true, "churn": true, "tron-solvency-fragmentation": true, "xmr-post-churn": true,
+			}, rng)
+			root.InitRoot()
+			actors := map[string][]*Actor{}
+			root.WalkDepthFirst(func(actor *Actor) bool {
+				actors[actor.Name] = append(actors[actor.Name], actor)
+				return true
+			})
+			for _, name := range []string{"ClusterChurn", "Churn", "TRONSolvencyFragmentation", "BondYield-SelectTarget", "XMRPreChurnOut", "BondYield-ChurnOut", "XMRPostChurn BTC.BTC => XMR.XMR"} {
+				if len(actors[name]) != 1 {
+					t.Fatalf("expected one %s, got %d", name, len(actors[name]))
+				}
+			}
+			for _, edge := range [][2]string{
+				{"Churn", "TRONSolvencyFragmentation"},
+				{"TRONSolvencyFragmentation", "BondYield-SelectTarget"},
+				{"XMRPreChurnOut", "BondYield-ChurnOut"},
+				{"BondYield-ChurnOut", "XMRPostChurn BTC.BTC => XMR.XMR"},
+			} {
+				if !actorDependsOn(actors[edge[1]][0], actors[edge[0]][0]) {
+					t.Fatalf("%s must finish before %s", edge[0], edge[1])
+				}
+			}
+		})
 	}
 }

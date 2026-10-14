@@ -197,7 +197,7 @@ func TestClientChurnRollbackBeyondSignerLimitPreservesForwardScan(t *testing.T) 
 	require.NoError(t, err)
 	client := &Client{blockScanner: loop, scanner: scanner}
 	queue := make(chan stypes.TxIn)
-	loop.Start(queue, make(chan common.NetworkFee, 10))
+	loop.Start(queue, make(chan common.NetworkFee, 10), nil)
 	defer loop.Stop()
 
 	// Ready -> Active requests block 815 after a long period without deposits.
@@ -408,7 +408,7 @@ func TestClientChurnRollbackRetriesValidation(t *testing.T) {
 					}
 				}
 			}()
-			loop.Start(queue, make(chan common.NetworkFee, 10))
+			loop.Start(queue, make(chan common.NetworkFee, 10), nil)
 			defer func() {
 				loop.Stop()
 				close(stopConsumer)
@@ -550,7 +550,7 @@ func TestClientChurnRollbackCoalescesWhileValidationWaits(t *testing.T) {
 					}
 				}
 			}()
-			loop.Start(queue, make(chan common.NetworkFee, 10))
+			loop.Start(queue, make(chan common.NetworkFee, 10), nil)
 			defer func() {
 				loop.Stop()
 				close(stopConsumer)
@@ -650,7 +650,7 @@ func TestClientChurnRollbackResumesScanner(t *testing.T) {
 					}
 				}
 			}()
-			loop.Start(queue, make(chan common.NetworkFee, 10))
+			loop.Start(queue, make(chan common.NetworkFee, 10), nil)
 			defer func() {
 				if mode == "in-flight scan" {
 					releaseScan()
@@ -1161,7 +1161,7 @@ func TestChurnRecoveryResumesBlockScannerAfterStartupClamp(t *testing.T) {
 			}
 		}
 	}()
-	loop.Start(queue, make(chan common.NetworkFee, 10))
+	loop.Start(queue, make(chan common.NetworkFee, 10), nil)
 	defer func() {
 		loop.Stop()
 		close(stopConsumer)

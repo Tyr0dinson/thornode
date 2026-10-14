@@ -111,7 +111,7 @@ func (s *BlockScannerExtraSuite) TestRollbackValidationWaitStopsWithoutMovingCur
 	// Queue before starting so the test cannot enter the ordinary at-tip wait.
 	scanner.rollbackChan = make(chan int64, 1)
 	scanner.rollbackChan <- 7
-	scanner.Start(make(chan stypes.TxIn, 1), make(chan common.NetworkFee, 1))
+	scanner.Start(make(chan stypes.TxIn, 1), make(chan common.NetworkFee, 1), nil)
 	var stopOnce sync.Once
 	stopped := make(chan struct{})
 	stop := func() {

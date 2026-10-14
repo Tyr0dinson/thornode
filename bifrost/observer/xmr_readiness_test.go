@@ -243,7 +243,7 @@ func TestXMRStopLeavesRemainingQuarantineForRestart(t *testing.T) {
 
 func TestXMRPeriodicRetryStartsClientAfterFailure(t *testing.T) {
 	o, _ := newTerminalErrataObserver(t)
-	o.stopChan, o.wg = make(chan struct{}), &sync.WaitGroup{}
+	o.stopChan = make(chan struct{})
 	xmr := &errataStartOrderChain{}
 	o.chains = map[common.Chain]chainclients.ChainClient{common.XMRChain: xmr}
 	er := common.ErrataTx{Chain: common.XMRChain, Id: "periodic-retry"}

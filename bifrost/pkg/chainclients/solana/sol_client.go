@@ -34,6 +34,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )

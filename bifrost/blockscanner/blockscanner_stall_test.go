@@ -236,7 +236,7 @@ func (s *BlockScannerExtraSuite) startStalledScanner(c *C, err error) int64 {
 	armStall(scanner, 2801)
 	scanner.healthy.Store(true)
 
-	scanner.Start(make(chan types.TxIn, 1), make(chan common.NetworkFee, 1))
+	scanner.Start(make(chan types.TxIn, 1), make(chan common.NetworkFee, 1), nil)
 	defer scanner.Stop()
 	// The stall clock is already expired, so a failure that may skip does so on
 	// its first fetch of 2801; 50 failed fetches with the cursor unmoved mean it
@@ -305,7 +305,7 @@ func (s *BlockScannerExtraSuite) TestUnavailableBlockHealthRecovers(c *C) {
 	}, storage, m, s.makeBridge(c, server), fetcher)
 	c.Assert(err, IsNil)
 	scanner.healthy.Store(true)
-	scanner.Start(make(chan types.TxIn, 1), make(chan common.NetworkFee, 1))
+	scanner.Start(make(chan types.TxIn, 1), make(chan common.NetworkFee, 1), nil)
 	defer scanner.Stop()
 	deadline := time.Now().Add(2 * time.Second)
 	for scanner.IsHealthy() && time.Now().Before(deadline) {
@@ -461,7 +461,7 @@ func (s *BlockScannerExtraSuite) TestSolvencyHookOrderedAfterHealthRecovery(c *C
 			defer server.Close()
 			fetcher := &orderedSolvencyFetcher{configFetcher: configFetcher{chainHeight: 104}, attempted: make(map[int64]bool)}
 			scanner, err := NewBlockScanner(config.BifrostBlockScannerConfiguration{
-				ChainID: common.ETHChain, StartBlockHeight: 99, PrefetchBlocks: prefetch, BlockHeightDiscoverBackoff: time.Millisecond,
+				ChainID: common.ETHChain, StartBlockHeight: 99, PrefetchBlocks: prefetch, BlockHeightDiscoverBackoff: time.Millisecond, ObservationFlexibilityBlocks: 3,
 			}, NewMockScannerStorage(), m, s.makeBridge(c, server), fetcher)
 			c.Assert(err, IsNil)
 			fetcher.scanner = scanner
@@ -475,15 +475,17 @@ func (s *BlockScannerExtraSuite) TestSolvencyHookOrderedAfterHealthRecovery(c *C
 			// Join the final dispatcher call; the persisted cursor precedes it.
 			for time.Now().Before(deadline) {
 				fetcher.mu.Lock()
-				complete := len(fetcher.reported) == 5
+				complete := len(fetcher.reported) == 4
 				fetcher.mu.Unlock()
-				if complete { break }
+				if complete {
+					break
+				}
 				time.Sleep(time.Millisecond)
 			}
 			fetcher.mu.Lock()
 			defer fetcher.mu.Unlock()
 			c.Check(fetcher.wrongState, Equals, false)
-			c.Check(fetcher.reported, DeepEquals, []int64{100, 101, 102, 103, 104}, Commentf("prefetch=%d", prefetch))
+			c.Check(fetcher.reported, DeepEquals, []int64{101, 102, 103, 104}, Commentf("prefetch=%d", prefetch))
 		}()
 	}
 }
