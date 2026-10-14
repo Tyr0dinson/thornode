@@ -37,7 +37,13 @@ SELECTIONS = (
         "unit-tests test-network-specific",
         None,
     ),
-    (".", "mainnet", ("./x/thorchain",), "unit-tests test-network-specific", "Migrate"),
+    (
+        ".",
+        "mainnet",
+        ("./x/thorchain",),
+        "unit-tests test-network-specific",
+        "Migrate|Migration19to20Suite|EthThorRestoreSuite",
+    ),
     (
         ".",
         "mainnet",

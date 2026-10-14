@@ -501,5 +501,13 @@ func (m Migrator) Migrate19to20(ctx cosmos.Context) error {
 		k.DeleteKey(ctx, item.key)
 		ctx.Logger().Info("merged TEX swapper clout", "tex", item.clout.Address, "address", transparent)
 	}
+	// Mainnet-only follow-on steps (no-op off mainnet): reverse the erroneous rzxslmgc /
+	// h28181638 ZEC / h28172517 TRON slashes + refund bond providers, donate the Secured-Ops
+	// LP positions + repay NDT, restore ETH.THOR depth, and retire the low-synth pools. Run
+	// AFTER the TEX clout merge so develop's step semantics are unchanged; each sub-step
+	// soft-skips on drift and the whole set is gated behind mainnetDonationSpecComplete.
+	if err := m.migrate19to20Mainnet(ctx); err != nil {
+		return err
+	}
 	return nil
 }
