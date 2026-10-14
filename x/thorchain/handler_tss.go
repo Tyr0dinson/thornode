@@ -103,13 +103,15 @@ func (h TssHandler) validate(ctx cosmos.Context, msg *MsgTssPool) error {
 	// bound into the message ID (and so into the voter identity) or be pinned to
 	// a fixed value here, otherwise one keygen member can pin bogus values and
 	// every honest report is rejected before it is counted, stalling the keygen
-	// (issue #2953). The FROST pubkey and the observed Monero height are only
-	// part of the ID for XMR keygens, so reject asgard messages that set them -
-	// bifrost never populates them for an asgard keygen, and a non-empty FROST
-	// pubkey would additionally be written onto the asgard vault.
+	// (issue #2953). The observed Monero height is only part of the ID for XMR
+	// keygens, so reject asgard messages that set it. The FROST pubkey is bound
+	// into the asgard ID whenever it is present; validateAsgardKeygenFrost
+	// decides whether an asgard report may, or must, carry one (LTC Taproot
+	// vaults on builds and heights where EnableFrostLTC is active), and rejects
+	// it everywhere else so it is never written onto an asgard vault by mistake.
 	if msg.KeygenType == AsgardKeygen {
-		if !msg.PoolPubKeyFrost.IsEmpty() {
-			return cosmos.ErrUnknownRequest("asgard keygen must not set frost pool pubkey")
+		if err := validateAsgardKeygenFrost(ctx, h.mgr.Keeper(), msg); err != nil {
+			return err
 		}
 		if msg.ObservedMoneroHeight != 0 {
 			return cosmos.ErrUnknownRequest("asgard keygen must not set observed monero height")
@@ -137,7 +139,7 @@ func (h TssHandler) validate(ctx cosmos.Context, msg *MsgTssPool) error {
 			msg.ObservedMoneroHeight,
 		)
 	} else {
-		newMsg, err = NewMsgTssPoolV2(msg.PubKeys, msg.PoolPubKey, nil, nil, msg.KeygenType, msg.Height, msg.Blame, msg.Chains, msg.Signer, msg.KeygenTime, msg.PoolPubKeyEddsa, msg.KeysharesBackupEddsa, nil, common.EmptyPubKey)
+		newMsg, err = NewMsgTssPoolV2(msg.PubKeys, msg.PoolPubKey, nil, nil, msg.KeygenType, msg.Height, msg.Blame, msg.Chains, msg.Signer, msg.KeygenTime, msg.PoolPubKeyEddsa, msg.KeysharesBackupEddsa, nil, msg.PoolPubKeyFrost)
 	}
 	if err != nil {
 		return fmt.Errorf("fail to recreate MsgTssPool,err: %w", err)
@@ -216,7 +218,10 @@ func keygenResultValidityBlocks(ctx cosmos.Context, k keeper.Keeper, keygenType 
 	if blocks < 0 {
 		blocks = constants.NewConstantValue().GetInt64Value(constants.ChurnRetryInterval)
 	}
-	if keygenType == XMRMonovaultKeygen {
+	// FROST DKGs (the XMR monovault, and asgard keygens that include the LTC
+	// Taproot key while EnableFrostLTC is active) take longer than the ECDSA
+	// ceremony, so give their results the same minimum window.
+	if keygenType == XMRMonovaultKeygen || (keygenType == AsgardKeygen && frostLTCKeygenActive(ctx, k)) {
 		blocks = max(blocks, durationToBlocks(6*time.Minute))
 	}
 	// The window ends one block before the retry tick. A keygen scheduled at H is
@@ -635,6 +640,7 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 				"height", msg.Height,
 				"id", msg.ID,
 				"pubkey", msg.PoolPubKey,
+				"pubkey_frost", msg.PoolPubKeyFrost,
 			)
 
 			if msg.KeygenType == AsgardKeygen {

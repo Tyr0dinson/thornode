@@ -25,8 +25,11 @@ func NewMsgTssPoolV2(
 	poolPubKeyFrost common.PubKey,
 ) (*MsgTssPool, error) {
 	id, err := getTssID(pks, poolpk, poolPubKeyEddsa, height, bl)
-	if keygenType == KeygenType_XMRMonovaultKeygen {
+	switch keygenType {
+	case KeygenType_XMRMonovaultKeygen:
 		id, err = getXMRTssID(pks, poolpk, poolPubKeyEddsa, height, bl, poolPubKeyFrost, 0)
+	case KeygenType_AsgardKeygen:
+		id, err = getAsgardTssID(pks, poolpk, poolPubKeyEddsa, height, bl, poolPubKeyFrost)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("fail to get tss id: %w", err)

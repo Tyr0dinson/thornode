@@ -66,14 +66,21 @@ func NewMsgTssPool(pks []string, poolpk common.PubKey, secp256k1Signature, keysh
 // rejected before it is counted - so a single keygen member could otherwise
 // pin a bogus value and stall consensus for that keygen (issue #2953).
 func getTssID(members []string, poolPk, poolPubKeyEddsa common.PubKey, height int64, bl []Blame) (string, error) {
-	return getTssIDWithXMRFields(members, poolPk, poolPubKeyEddsa, height, bl, common.EmptyPubKey, 0, false)
+	return getTssIDWithFields(members, poolPk, poolPubKeyEddsa, height, bl, common.EmptyPubKey, 0, false, false)
+}
+
+// getAsgardTssID binds the FROST pool pubkey into an asgard keygen ID when one
+// is reported (an LTC Taproot vault key), so members reporting different FROST
+// keys tally in different voters. Reports without one keep the legacy ID.
+func getAsgardTssID(members []string, poolPk, poolPubKeyEddsa common.PubKey, height int64, bl []Blame, poolPubKeyFrost common.PubKey) (string, error) {
+	return getTssIDWithFields(members, poolPk, poolPubKeyEddsa, height, bl, poolPubKeyFrost, 0, !poolPubKeyFrost.IsEmpty(), false)
 }
 
 func getXMRTssID(members []string, poolPk, poolPubKeyEddsa common.PubKey, height int64, bl []Blame, poolPubKeyFrost common.PubKey, observedMoneroHeight int64) (string, error) {
-	return getTssIDWithXMRFields(members, poolPk, poolPubKeyEddsa, height, bl, poolPubKeyFrost, observedMoneroHeight, true)
+	return getTssIDWithFields(members, poolPk, poolPubKeyEddsa, height, bl, poolPubKeyFrost, observedMoneroHeight, true, true)
 }
 
-func getTssIDWithXMRFields(
+func getTssIDWithFields(
 	members []string,
 	poolPk common.PubKey,
 	poolPubKeyEddsa common.PubKey,
@@ -81,7 +88,8 @@ func getTssIDWithXMRFields(
 	bl []Blame,
 	poolPubKeyFrost common.PubKey,
 	observedMoneroHeight int64,
-	includeXMRFields bool,
+	includeFrost bool,
+	includeXMRHeight bool,
 ) (string, error) {
 	// ensure input pubkeys list is deterministically sorted
 	sort.SliceStable(members, func(i, j int) bool {
@@ -117,8 +125,10 @@ func getTssIDWithXMRFields(
 	sb.WriteString(poolPk.String())
 	sb.WriteString(fmt.Sprintf("%d", height))
 	sb.WriteString("e:" + poolPubKeyEddsa.String())
-	if includeXMRFields {
+	if includeFrost {
 		sb.WriteString("f:" + poolPubKeyFrost.String())
+	}
+	if includeXMRHeight {
 		sb.WriteString(fmt.Sprintf("x:%d", observedMoneroHeight))
 	}
 	hash := sha256.New()
@@ -197,6 +207,13 @@ func (m *MsgTssPool) ValidateBasic() error {
 	// ensure pool pubkey is a valid bech32 pubkey
 	if _, err := common.NewPubKey(m.PoolPubKey.String()); err != nil {
 		return cosmos.ErrUnknownRequest(err.Error())
+	}
+	if m.KeygenType == KeygenType_AsgardKeygen && !m.PoolPubKeyFrost.IsEmpty() {
+		// Whether an asgard report may carry a FROST key is policy, checked by
+		// the handler with keeper access; here only the encoding is checked.
+		if _, err := common.NewPubKey(m.PoolPubKeyFrost.String()); err != nil {
+			return cosmos.ErrUnknownRequest("invalid frost pool pubkey")
+		}
 	}
 	if m.KeygenType == KeygenType_XMRMonovaultKeygen && m.IsSuccess() {
 		if m.PoolPubKeyFrost.IsEmpty() {

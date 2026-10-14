@@ -70,6 +70,20 @@ const (
 	// height stops keygen.
 	MimirKeyHaltMonovaultKeygen = "HaltMonovaultKeygen"
 
+	// MimirKeyEnableFrostLTC is the keygen-time opt-in for FROST (Taproot) LTC
+	// vaults on builds that support them (stagenet and mocknet; see
+	// common.Chain.SupportsTaprootVaults). While it is active, a successful
+	// asgard keygen whose chain set includes LTC must carry the FROST pool
+	// pubkey and bifrost runs the LTC DKG; while it is not, no asgard keygen may
+	// carry one. Vaults keep the engine they were created with. It intentionally
+	// lacks an operational-Mimir prefix.
+	MimirKeyEnableFrostLTC = "EnableFrostLTC"
+	// MimirKeyHaltFrostLTCKeygen halts the FROST LTC keygen independently of
+	// HaltChurning, with the same semantics as HaltMonovaultKeygen: unset or 0
+	// does not halt; an activation height at or below the current THORChain
+	// height halts, which makes EnableFrostLTC count as inactive.
+	MimirKeyHaltFrostLTCKeygen = "HaltFrostLTCKeygen"
+
 	// MimirKeyPreflightChainSetDisabled turns off the preflight check that keeps a
 	// node out of the Ready set after it reported an asgard keygen chain set that
 	// omitted a chain the active vaults serve. Set above 0 to disable the check.
