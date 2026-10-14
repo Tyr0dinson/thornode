@@ -1864,13 +1864,15 @@ func (f *bouncedOutboundFixture) voteInstant(c *C, i int, gas uint64, height int
 	f.voteAtGasHeight(c, i, false, gas, height)
 }
 
-// TestHandleBounceLateInstantCannotReverseReceipt: delivery order is not
-// freshness. The signers' receipt-less instant observations can reach THORNode
-// after the scanner's finalised Bounced quorum (they are late-sent when their
-// signing-tip heights split them into sub-quorum gossip buckets). They sit below
-// the inclusion height the receipt reported, so they must not reverse the
-// receipt-backed verdict and debit principal that never left the vault.
-func (s *HandlerObservedTxOutSuite) TestHandleBounceLateInstantCannotReverseReceipt(c *C) {
+// TestHandleBounceLateInstantDebitsAtWorst: delivery order is not freshness. The
+// signers' receipt-less instant observations can reach THORNode after the
+// scanner's finalised Bounced quorum (late-sent when their signing-tip heights
+// split them into sub-quorum gossip buckets). Without a signed freshness token
+// they are indistinguishable from a reorg re-including the tx below the bounced
+// receipt as delivered, so a supermajority of them debits the coins. That is the
+// recoverable direction: the vault under-counts coins it still holds, as it did
+// before bounce detection, rather than over-counting coins that left.
+func (s *HandlerObservedTxOutSuite) TestHandleBounceLateInstantDebitsAtWorst(c *C) {
 	const (
 		untouched  = uint64(20000000000) // 200 ETH
 		scannerGas = uint64(37500)       // gas used, from the receipt
@@ -1884,19 +1886,24 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceLateInstantCannotReverseRece
 	c.Assert(f.keeper.voter.Tx.Bounced, Equals, true)
 	c.Assert(f.ethBalance(c), Equals, untouched-scannerGas)
 
-	for i := 0; i < 6; i++ {
+	// a minority of late instant observations changes nothing
+	for i := 0; i < 3; i++ {
 		f.voteInstant(c, i, instantGas, 11)
 	}
 	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
 	c.Check(f.ethBalance(c), Equals, untouched-scannerGas)
+
+	f.voteInstant(c, 3, instantGas, 11)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
+	c.Check(f.ethBalance(c), Equals, untouched-instantGas-1)
 }
 
-// TestHandleBounceLateInstantCannotReverseOnFinalisation: the same late instant
+// TestHandleBounceLateInstantDebitsOnFinalisation: the same late instant
 // observations can form the finalised consensus after a non-final scanner
-// consensus already retained the coins as Bounced. The hand-off must keep the
-// receipt's verdict and gas rather than debit the coins and adopt the gas limit,
-// and the scanner's own finalised observations then change nothing.
-func (s *HandlerObservedTxOutSuite) TestHandleBounceLateInstantCannotReverseOnFinalisation(c *C) {
+// consensus retained the coins as Bounced. A delivered finalised consensus below
+// the non-final height is reconciled (debited) like any other, for the same
+// reason as TestHandleBounceLateInstantDebitsAtWorst.
+func (s *HandlerObservedTxOutSuite) TestHandleBounceLateInstantDebitsOnFinalisation(c *C) {
 	const (
 		untouched  = uint64(20000000000) // 200 ETH
 		scannerGas = uint64(37500)       // the fixture tx's gas
@@ -1914,14 +1921,79 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceLateInstantCannotReverseOnFi
 		f.voteInstant(c, i, instantGas, 11)
 	}
 	c.Check(f.keeper.voter.FinalisedHeight > 0, Equals, true)
-	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
-	c.Check(f.ethBalance(c), Equals, untouched-scannerGas)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
+	c.Check(f.ethBalance(c), Equals, untouched-scannerGas-1)
+}
+
+// TestHandleBounceCorrectionAtLowerReinclusionHeight: a reorg's replacement
+// chain includes a bounced outbound earlier (12 < 13) and this time it was
+// delivered. Every node attests the new receipt, so the coins must be debited
+// even though its height is below the bounced verdict's.
+func (s *HandlerObservedTxOutSuite) TestHandleBounceCorrectionAtLowerReinclusionHeight(c *C) {
+	const (
+		untouched   = uint64(20000000000) // 200 ETH
+		bounceGas   = uint64(37500)
+		deliveryGas = uint64(41000)
+	)
+
+	f := newBouncedOutboundFixture(c, 6)
+	for i := 0; i < 6; i++ {
+		f.voteAtGasHeight(c, i, true, bounceGas, 13)
+	}
+	c.Assert(f.keeper.voter.Tx.Bounced, Equals, true)
+	c.Assert(f.ethBalance(c), Equals, untouched-bounceGas)
+
+	for i := 0; i < 6; i++ {
+		f.voteAtGasHeight(c, i, false, deliveryGas, 12)
+	}
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
+	c.Check(f.keeper.voter.Tx.BlockHeight, Equals, int64(12))
+	c.Check(f.ethBalance(c), Equals, untouched-deliveryGas-1)
+}
+
+// TestHandleBounceReversedOnFinalisationAtLowerHeight: the non-final consensus
+// retained the coins as Bounced at height 13, and the finalised consensus is a
+// delivered re-inclusion at height 12. The hand-off debits the coins.
+func (s *HandlerObservedTxOutSuite) TestHandleBounceReversedOnFinalisationAtLowerHeight(c *C) {
+	const untouched = uint64(20000000000) // 200 ETH
+	const gas = uint64(37500)             // the fixture tx's gas
+
+	f := newBouncedOutboundFixture(c, 6)
+	for i := 0; i < 4; i++ {
+		f.voteAt(c, i, true, 13, 16) // unfinalised: bounced, coins retained
+	}
+	c.Assert(f.ethBalance(c), Equals, untouched-gas)
 
 	for i := 0; i < 4; i++ {
-		f.voteAt(c, i, true, 12, 12) // the scanner's finalised receipt
+		f.voteAt(c, i, false, 12, 12)
 	}
-	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
-	c.Check(f.ethBalance(c), Equals, untouched-scannerGas)
+	c.Check(f.keeper.voter.FinalisedHeight > 0, Equals, true)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
+	c.Check(f.ethBalance(c), Equals, untouched-gas-1)
+}
+
+// TestHandleBounceFinalisationBelowDeliveryKeepsDebit: the converse of
+// TestHandleBounceReversedOnFinalisationAtLowerHeight. A Bounced finalised
+// consensus below a delivered non-final one may be a superseded receipt
+// late-sent after the newer one, so the hand-off keeps the delivery rather than
+// credit back coins that may have left.
+func (s *HandlerObservedTxOutSuite) TestHandleBounceFinalisationBelowDeliveryKeepsDebit(c *C) {
+	const untouched = uint64(20000000000) // 200 ETH
+	const gas = uint64(37500)             // the fixture tx's gas
+
+	f := newBouncedOutboundFixture(c, 6)
+	for i := 0; i < 4; i++ {
+		f.voteAt(c, i, false, 13, 16) // unfinalised: delivered, coins debited
+	}
+	c.Assert(f.ethBalance(c), Equals, untouched-gas-1)
+
+	for i := 0; i < 4; i++ {
+		f.voteAt(c, i, true, 12, 12)
+	}
+	c.Check(f.keeper.voter.FinalisedHeight > 0, Equals, true)
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
+	c.Check(f.keeper.voter.Tx.BlockHeight, Equals, int64(13))
+	c.Check(f.ethBalance(c), Equals, untouched-gas-1)
 }
 
 // TestHandleBounceStaleReceiptCannotDisplaceNewer: a re-inclusion moved the

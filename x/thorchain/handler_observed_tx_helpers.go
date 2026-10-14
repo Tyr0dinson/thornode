@@ -845,13 +845,13 @@ func applyTxOutAttestation(
 			if !ok && !voter.Reverted && !prevConsensusTx.IsEmpty() &&
 				voter.Tx.Bounced != prevConsensusTx.Bounced &&
 				prevConsensusTx.EqualsConsensusIgnoreGas(voter.Tx) {
-				// A finalised consensus below the non-final one's height is stale,
-				// not a newer receipt: typically the signers' receipt-less instant
-				// observations (filed at the signing tip, before inclusion, so never
-				// Bounced and carrying the gas limit), late-sent after the scanner
-				// had already reported the receipt. Keep the receipt's verdict, gas
-				// and height rather than reconcile onto it.
-				if voter.Tx.BlockHeight < prevConsensusTx.BlockHeight {
+				// A finalised Bounced consensus below the non-final one's height may
+				// be a superseded receipt late-sent after the newer one, and crediting
+				// on it would leave the vault holding coins that left. Keep the
+				// receipt's verdict, gas and height rather than reconcile onto it. A
+				// lower delivered consensus is reconciled: it may be a reorg's earlier
+				// re-inclusion, and debiting errs safe (see correctOutboundObservation).
+				if voter.Tx.Bounced && voter.Tx.BlockHeight < prevConsensusTx.BlockHeight {
 					voter.Tx.Bounced = prevConsensusTx.Bounced
 					voter.Tx.Tx.Gas = prevConsensusTx.Tx.Gas
 					voter.Tx.BlockHeight = prevConsensusTx.BlockHeight
@@ -1090,13 +1090,18 @@ func correctOutboundObservation(ctx cosmos.Context, mgr Manager, voter *Observed
 	//
 	// Arrival order is not freshness either: a node's attestation of a superseded
 	// receipt, or its receipt-less instant observation, can be late-sent after its
-	// current one and move its vote back. A Bounced change therefore only counts
-	// observations at or above the height of the verdict it overturns, and that
-	// height advances with each bounce correction. A stale variant at the same
-	// height (a same-height fork) is indistinguishable without a signed block hash
-	// or revision in the attestation.
+	// current one and move its vote back. Without a signed block hash or revision in
+	// the attestation that is indistinguishable from a reorg re-including the tx at
+	// a lower height, so the floor is applied only where a wrong correction is
+	// unrecoverable. A correction to Bounced (crediting the coins back) counts only
+	// observations at or above the height of the verdict it overturns: wrongly
+	// credited coins that left the vault would be an undetected shortfall. A
+	// correction to delivered (debiting them) counts every current vote, so a
+	// canonical re-inclusion below the bounced receipt is still accounted; a stale
+	// delivered observation can at worst under-count coins still held, which is
+	// the pre-bounce-detection behaviour and shows up as a vault surplus.
 	minHeight := int64(0)
-	if bounceChanged {
+	if bounceChanged && tx.Bounced {
 		minHeight = voter.Tx.BlockHeight
 	}
 	if !HasSuperMajority(countMatchingSignersFrom(*voter, tx, nas, minHeight), len(nas)) {
