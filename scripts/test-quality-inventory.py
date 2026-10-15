@@ -60,6 +60,7 @@ KNOWN_UNSELECTED = {
     "bifrost/pkg/chainclients/utxo/bitcoin_signer_testnet_test.go": "testnet tag; no job builds testnet",
     "bifrost/pkg/chainclients/utxo/bitcoin_testnet_test.go": "testnet tag; no job builds testnet",
     "bifrost/tss/go-tss/tss/frost_keygen_faultinject_mainnet_test.go": "!mocknet; go-tss job builds mocknet only",
+    "bifrost/tss/go-tss/tss/tss_fullsize_mocknet_test.go": "tss_fullsize tag; manual 40-node keygen, too slow for CI",
 }
 
 
