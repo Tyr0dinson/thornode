@@ -2175,8 +2175,11 @@ func (vm *NetworkMgr) withdrawLiquidity(ctx cosmos.Context, pool Pool, na NodeAc
 // reaches a terminal lifecycle state. Native balances must leave Asgard before
 // their record is removed; L1 balances become ordinary vault surplus. If a
 // native transfer fails, retaining the record preserves the pre-transfer
-// accounting state while Ragnarok proceeds. EndBlock cannot settle the escrow
-// again unless a backing pool exists.
+// accounting state while Ragnarok proceeds. We intentionally accept that these
+// accumulated protocol fees may remain stranded rather than block Ragnarok;
+// this escrow does not represent user swap principal or LP claims. EndBlock
+// cannot settle it again without an available, funded backing pool, and the
+// failed Treasury transfer is not retried independently.
 func (vm *NetworkMgr) forfeitAltNativeFeeEscrow(ctx cosmos.Context, asset common.Asset) {
 	escrow, exists := vm.k.GetAltNativeFeeEscrow(ctx, asset)
 	if !exists {
