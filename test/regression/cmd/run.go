@@ -58,6 +58,11 @@ func run(out io.Writer, path string, routine int, doneWithRetries func(path stri
 		"GOCOVERDIR=" + filepath.Join(mntDir, "coverage"),
 	}
 
+	// opt-in CPU profile of the node under test (see scripts/perf)
+	if dir := os.Getenv("REGTEST_CPUPROFILE_DIR"); dir != "" {
+		env = append(env, "THORNODE_CPUPROFILE="+filepath.Join(dir, fmt.Sprintf("routine-%d", routine)))
+	}
+
 	// if DEBUG is set also output thornode debug logs
 	debugVar := os.Getenv("DEBUG")
 	if debugVar != "" {

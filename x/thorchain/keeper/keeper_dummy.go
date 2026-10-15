@@ -335,6 +335,10 @@ func (k KVStoreDummy) ListActiveValidators(_ cosmos.Context) (NodeAccounts, erro
 	return nil, kaboom
 }
 
+func (k KVStoreDummy) ListActiveValidatorsUpTo(_ cosmos.Context, _ int) (NodeAccounts, error) {
+	return nil, kaboom
+}
+
 func (k KVStoreDummy) GetLowestActiveVersion(_ cosmos.Context) semver.Version {
 	return semver.Version{
 		Major: 0,

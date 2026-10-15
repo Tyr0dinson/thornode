@@ -25,6 +25,7 @@ import (
 	wasmvmtypes "github.com/CosmWasm/wasmvm/v2/types"
 	abci "github.com/cometbft/cometbft/abci/types"
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	cmtlocal "github.com/cometbft/cometbft/rpc/client/local"
 	dbm "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/client"
@@ -365,7 +366,7 @@ func NewChainApp(
 	)
 
 	app.ThorchainKeeper = thorchainkeeperv1.NewKeeper(
-		app.appCodec, runtime.NewKVStoreService(keys[thorchaintypes.StoreKey]), app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper,
+		app.appCodec, keys[thorchaintypes.StoreKey], app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper,
 	)
 
 	wasmDir := filepath.Join(homePath, "data") // "wasm" subdirectory created here
@@ -442,7 +443,7 @@ func NewChainApp(
 		app.restQueryViaGRPC = cast.ToBool(v)
 	}
 
-	mgrs := thorchain.NewManagers(app.ThorchainKeeper, app.appCodec, runtime.NewKVStoreService(keys[thorchaintypes.StoreKey]), app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper, app.WasmKeeper)
+	mgrs := thorchain.NewManagers(app.ThorchainKeeper, app.appCodec, keys[thorchaintypes.StoreKey], app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper, app.WasmKeeper)
 	app.msgServiceRouter.AddCustomRoute("cosmos.bank.v1beta1.Msg", thorchain.NewBankSendHandler(thorchain.NewSendHandler(mgrs)))
 
 	thorchainModule := thorchain.NewAppModule(mgrs, telemetryEnabled, testApp)
@@ -916,6 +917,13 @@ func (app *THORChainApp) RegisterTxService(clientCtx client.Context) {
 
 // RegisterTendermintService implements the Application.RegisterTendermintService method.
 func (app *THORChainApp) RegisterTendermintService(clientCtx client.Context) {
+	// With CometBFT in-process the SDK hands us a client that calls the node
+	// directly; serve /thorchain/block through it instead of a JSON-RPC round
+	// trip to the node's own RPC server.
+	if lc, ok := clientCtx.Client.(*cmtlocal.Local); ok {
+		thorchain.SetLocalTendermintClient(lc)
+	}
+
 	cmtApp := server.NewCometABCIWrapper(app)
 	cmtservice.RegisterTendermintService(
 		clientCtx,

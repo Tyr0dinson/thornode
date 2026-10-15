@@ -303,3 +303,79 @@ func (s ObservedTxSuite) TestAttestationUniqueHash_DiffersOnDifferentRefs(c *C) 
 	tx2 := makeXMRObservedTx(c, []OutputRef{b})
 	c.Assert(tx1.AttestationUniqueHash() != tx2.AttestationUniqueHash(), Equals, true)
 }
+
+func (s ObservedTxSuite) TestSignerAddressCache(c *C) {
+	addr := cosmos.AccAddress([]byte("perf-signer-cache-01"))
+	signer := addr.String()
+
+	// cached and uncached decodes agree
+	first, err := signerAddress(signer)
+	c.Assert(err, IsNil)
+	second, err := signerAddress(signer)
+	c.Assert(err, IsNil)
+	c.Check(first.Equals(addr), Equals, true)
+	c.Check(second.Equals(addr), Equals, true)
+
+	// callers get their own copy
+	second[0] ^= 0xff
+	third, err := signerAddress(signer)
+	c.Assert(err, IsNil)
+	c.Check(third.Equals(addr), Equals, true)
+
+	// failures are not cached and still fail
+	_, err = signerAddress("bogus")
+	c.Check(err, NotNil)
+	_, err = signerAddress("bogus")
+	c.Check(err, NotNil)
+
+	tx := ObservedTx{Signers: []string{signer, "bogus", signer}}
+	c.Check(tx.GetSigners(), HasLen, 2)
+	c.Check(tx.HasSigned(addr), Equals, true)
+
+	// SignerAddressString agrees with signerAddress, memoized or not, and is
+	// not affected by callers modifying their copies
+	fresh := cosmos.AccAddress([]byte("perf-signer-cache-02")).String()
+	for _, s := range []string{fresh, fresh, signer, strings.ToUpper(signer)} {
+		got, ok := SignerAddressString(s)
+		c.Assert(ok, Equals, true)
+		want, err := signerAddress(s)
+		c.Assert(err, IsNil)
+		c.Check(got, Equals, string(want))
+		want[0] ^= 0xff
+		again, _ := SignerAddressString(s)
+		c.Check(again, Equals, got)
+	}
+	for _, s := range []string{"bogus", "", strings.ToUpper(signer[:1]) + signer[1:]} {
+		got, ok := SignerAddressString(s)
+		c.Check(ok, Equals, false)
+		c.Check(got, Equals, "")
+		_, err := signerAddress(s)
+		c.Check(err, NotNil)
+	}
+}
+
+func (s ObservedTxSuite) TestHasSignedMatchesDecodedSigners(c *C) {
+	addr := cosmos.AccAddress([]byte("perf-has-signed-0001"))
+	other := cosmos.AccAddress([]byte("perf-has-signed-0002"))
+	upper := strings.ToUpper(addr.String()) // bech32 decodes all-uppercase too
+
+	for _, signers := range [][]string{
+		{addr.String()},
+		{upper},
+		{"bogus", other.String(), upper},
+		{other.String()},
+		{"bogus", ""},
+		nil,
+	} {
+		tx := ObservedTx{Signers: signers}
+		want := false
+		for _, signer := range tx.GetSigners() {
+			if signer.Equals(addr) {
+				want = true
+			}
+		}
+		c.Check(tx.HasSigned(addr), Equals, want, Commentf("signers %v", signers))
+	}
+	c.Check((&ObservedTx{Signers: []string{upper}}).HasSigned(addr), Equals, true)
+	c.Check((&ObservedTx{Signers: []string{""}}).HasSigned(cosmos.AccAddress{}), Equals, false)
+}

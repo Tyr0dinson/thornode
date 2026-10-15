@@ -33,6 +33,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/constants"
 
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/client/cli"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
@@ -183,6 +184,9 @@ func (am AppModule) RegisterServices(cfg module.Configurator) {
 func (am AppModule) BeginBlock(goCtx context.Context) error {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 	ctx = ctx.WithLogger(ctx.Logger().With("module", "x/"+ModuleName, "height", ctx.BlockHeight()))
+	// BeginBlock lists the active validators several times; share one decode
+	// until a node account is written. Not in DeliverTx: gas_used would change.
+	ctx = keeper.WithActiveValidatorsCache(ctx)
 
 	votes := ctx.CometInfo().GetLastCommit().Votes()
 	var existingValidators []string
@@ -231,6 +235,9 @@ func (am AppModule) BeginBlock(goCtx context.Context) error {
 func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 	ctx = ctx.WithLogger(ctx.Logger().With("module", "x/"+ModuleName, "height", ctx.BlockHeight()))
+	// EndBlock lists the active validators many times (per POL pool, per
+	// outbound, per manager); share one decode until a node account is written.
+	ctx = keeper.WithActiveValidatorsCache(ctx)
 
 	ctx.Logger().Debug("End Block")
 

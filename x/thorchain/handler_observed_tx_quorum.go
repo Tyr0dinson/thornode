@@ -67,8 +67,9 @@ func (h ObservedTxQuorumHandler) handle(ctx cosmos.Context, msg types.MsgObserve
 
 	var accAddrs []cosmos.AccAddress
 	attestations := deduplicateAttestations(msg.QuoTx.Attestations, len(activeNodeAccounts))
+	sigs := preverifyAttestations(activeNodeAccounts, attestationChecks(attestations, signBz))
 	for _, att := range attestations {
-		accAddr, verifyErr := verifyQuorumAttestation(activeNodeAccounts, signBz, att)
+		accAddr, verifyErr := verifyQuorumAttestation(activeNodeAccounts, signBz, att, sigs)
 		if verifyErr != nil {
 			telemetry.IncrCounterWithLabels(
 				[]string{"thornode", "quorum", "attestation_invalid"}, 1,

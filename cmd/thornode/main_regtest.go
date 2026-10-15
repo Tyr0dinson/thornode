@@ -4,8 +4,10 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/signal"
+	"runtime/pprof"
 	"syscall"
 
 	svrcmd "github.com/cosmos/cosmos-sdk/server/cmd"
@@ -14,6 +16,17 @@ import (
 )
 
 func main() {
+	// opt-in CPU profile for perf analysis, one file per process
+	if path := os.Getenv("THORNODE_CPUPROFILE"); path != "" {
+		f, err := os.Create(fmt.Sprintf("%s.%d.pprof", path, os.Getpid()))
+		if err == nil && pprof.StartCPUProfile(f) == nil {
+			defer func() {
+				pprof.StopCPUProfile()
+				f.Close()
+			}()
+		}
+	}
+
 	// for coverage data we need to exit main without allowing the server to call os.Exit
 	syn := make(chan error)
 	go func() {
@@ -27,6 +40,7 @@ func main() {
 	case <-sig:
 	case err := <-syn:
 		if err != nil {
+			pprof.StopCPUProfile()
 			os.Exit(1)
 		}
 	}

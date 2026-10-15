@@ -3,14 +3,13 @@ package keeperv1
 import (
 	"fmt"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
 )
 
 func (k KVStore) setTradeAccount(ctx cosmos.Context, key []byte, record TradeAccount) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -20,7 +19,7 @@ func (k KVStore) setTradeAccount(ctx cosmos.Context, key []byte, record TradeAcc
 }
 
 func (k KVStore) getTradeAccount(ctx cosmos.Context, key []byte, record *TradeAccount) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
@@ -57,7 +56,7 @@ func (k KVStore) RemoveTradeAccount(ctx cosmos.Context, tr TradeAccount) {
 }
 
 func (k KVStore) setTradeUnit(ctx cosmos.Context, key []byte, record TradeUnit) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -67,7 +66,7 @@ func (k KVStore) setTradeUnit(ctx cosmos.Context, key []byte, record TradeUnit) 
 }
 
 func (k KVStore) getTradeUnit(ctx cosmos.Context, key []byte, record *TradeUnit) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}

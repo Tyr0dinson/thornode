@@ -1148,6 +1148,9 @@ func (vm *NetworkMgr) POLCycle(ctx cosmos.Context, mgr Manager) error {
 		return fmt.Errorf("no POL pools")
 	}
 
+	// polPoolValue only changes when a POL add commits or POL is removed;
+	// most adds fail validation (e.g. paused deposits) and leave it as is
+	polValue := &polValueMemo{}
 	for idx, pool := range pools {
 		val := mimirVals[idx]
 
@@ -1163,6 +1166,7 @@ func (vm *NetworkMgr) POLCycle(ctx cosmos.Context, mgr Manager) error {
 			if err := vm.removePOLLiquidity(ctx, pool, polAddress, asgardAddress, signer, maxMovement, synthPerPoolDepth, cosmos.NewUint(10_000), mgr); err != nil {
 				ctx.Logger().Error("fail to manage POL in pool", "pool", pool.Asset.String(), "error", err)
 			}
+			polValue.reset()
 			continue
 		}
 
@@ -1172,7 +1176,7 @@ func (vm *NetworkMgr) POLCycle(ctx cosmos.Context, mgr Manager) error {
 				ctx.Logger().Info("maximum rune deployed from POL")
 				continue
 			}
-			if err := vm.addPOLLiquidity(ctx, pool, polAddress, asgardAddress, signer, maxMovement, synthPerPoolDepth, loopTarget, mgr); err != nil {
+			if err := vm.addPOLLiquidity(ctx, pool, polAddress, asgardAddress, signer, maxMovement, synthPerPoolDepth, loopTarget, mgr, polValue); err != nil {
 				ctx.Logger().Error("fail to manage POL in pool", "pool", pool.Asset.String(), "error", err)
 			}
 			continue
@@ -1183,6 +1187,7 @@ func (vm *NetworkMgr) POLCycle(ctx cosmos.Context, mgr Manager) error {
 			if err := vm.removePOLLiquidity(ctx, pool, polAddress, asgardAddress, signer, maxMovement, synthPerPoolDepth, loopTarget, mgr); err != nil {
 				ctx.Logger().Error("fail to manage POL in pool", "pool", pool.Asset.String(), "error", err)
 			}
+			polValue.reset()
 		}
 	}
 
@@ -1394,6 +1399,7 @@ func (vm *NetworkMgr) addPOLLiquidity(
 	signer cosmos.AccAddress,
 	maxMovement, synthPerPoolDepth, targetSynthPerPoolDepth cosmos.Uint,
 	mgr Manager,
+	polValue *polValueMemo,
 ) error {
 	handler := NewInternalHandler(mgr)
 
@@ -1421,7 +1427,7 @@ func (vm *NetworkMgr) addPOLLiquidity(
 	// compute the new provider units
 	if !runePool.TotalUnits().IsZero() {
 		var rpValue cosmos.Uint
-		rpValue, err = runePoolValue(ctx, mgr)
+		rpValue, err = polValue.runePoolValue(ctx, mgr)
 		if err != nil {
 			return fmt.Errorf("fail to get rune pool value: %s", err)
 		}
@@ -1448,6 +1454,7 @@ func (vm *NetworkMgr) addPOLLiquidity(
 		}
 		return handlerErr
 	}
+	polValue.reset()
 
 	// deposit was successful, update the rune pool units accordingly
 	runePool.ReserveUnits = runePool.ReserveUnits.Add(depositUnits)

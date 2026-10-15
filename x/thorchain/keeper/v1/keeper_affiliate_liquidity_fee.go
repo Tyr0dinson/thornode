@@ -5,8 +5,6 @@ import (
 	"math"
 	"strings"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
-
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
@@ -81,7 +79,7 @@ func (k KVStore) GetAffiliateLiquidityFees(ctx cosmos.Context) []keeper.Affiliat
 func (k KVStore) DeleteAffiliateLiquidityFees(ctx cosmos.Context) {
 	iter := k.getIterator(ctx, prefixAffiliateLiquidityFee)
 	defer iter.Close()
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	// Collect keys first; mutating the store while iterating is unsafe.
 	var keys [][]byte
 	for ; iter.Valid(); iter.Next() {

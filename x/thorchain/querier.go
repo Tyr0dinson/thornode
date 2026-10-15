@@ -57,7 +57,7 @@ var (
 	queryExport = func(_ sdk.Context, _ *Mgrs) ([]byte, error) {
 		return nil, fmt.Errorf("export query not supported")
 	}
-	tendermintClient    *tmhttp.HTTP
+	tendermintClient    *tmhttp.HTTP // fallback when no in-process client is set
 	tendermintClientErr error
 	initTendermintOnce  = sync.Once{}
 )
@@ -3889,21 +3889,21 @@ func (qs queryServer) queryInvariant(ctx cosmos.Context, req *types.QueryInvaria
 }
 
 func (qs queryServer) queryBlock(ctx cosmos.Context, req *types.QueryBlockRequest) (*types.QueryBlockResponse, error) {
-	initTendermintOnce.Do(initTendermint)
-	if tendermintClientErr != nil {
-		return nil, tendermintClientErr
+	tmClient, err := getTendermintClient()
+	if err != nil {
+		return nil, err
 	}
 	height := ctx.BlockHeight()
-	if parsed, err := strconv.ParseInt(req.Height, 10, 64); err == nil {
+	if parsed, parseErr := strconv.ParseInt(req.Height, 10, 64); parseErr == nil {
 		height = parsed
 	}
 
 	// get the block and results from tendermint rpc
-	block, err := tendermintClient.Block(ctx.Context(), &height)
+	block, err := tmClient.Block(ctx.Context(), &height)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get block from tendermint rpc: %w", err)
 	}
-	results, err := tendermintClient.BlockResults(ctx.Context(), &height)
+	results, err := tmClient.BlockResults(ctx.Context(), &height)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get block results from tendermint rpc: %w", err)
 	}
@@ -4112,8 +4112,9 @@ func eventMap(e sdk.Event) map[string]string {
 }
 
 func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) {
-	// use the first active node account as the signer
-	nodeAccounts, err := mgr.Keeper().ListActiveValidators(ctx)
+	// use the first active node account as the signer (same store access as
+	// ListActiveValidators, without unmarshalling the other active nodes)
+	nodeAccounts, err := mgr.Keeper().ListActiveValidatorsUpTo(ctx, 1)
 	if err != nil {
 		return nil, fmt.Errorf("no active node accounts: %w", err)
 	}
@@ -4142,6 +4143,9 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 	cms := ctx.MultiStore().CacheMultiStore() // never call cms.Write()
 	em := cosmos.NewEventManager()
 	ctx = ctx.WithMultiStore(cms).WithEventManager(em)
+	// cms is discarded, so its txout writes need not disable the caller's
+	// txout cache (if any) for the caller's later simulations
+	ctx = keeper.ForkTxOutCache(ctx)
 
 	// disable logging
 	ctx = ctx.WithLogger(nullLogger)

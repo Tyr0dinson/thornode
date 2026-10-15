@@ -78,8 +78,9 @@ func (h SolvencyQuorumHandler) handle(ctx cosmos.Context, msg types.MsgSolvencyQ
 	}
 
 	attestations := deduplicateAttestations(msg.QuoSolvency.Attestations, len(active))
+	sigs := preverifyAttestations(active, attestationChecks(attestations, signBz))
 	for _, att := range attestations {
-		accAddr, err := verifyQuorumAttestation(active, signBz, att)
+		accAddr, err := verifyQuorumAttestation(active, signBz, att, sigs)
 		if err != nil {
 			ctx.Logger().Error("fail to verify quorum solvency attestation", "error", err)
 			continue

@@ -97,7 +97,7 @@ func NewChain(chainID string) (Chain, error) {
 
 // Equals compare two chain to see whether they represent the same chain
 func (c Chain) Equals(c2 Chain) bool {
-	return strings.EqualFold(c.String(), c2.String())
+	return equalFoldUpper(string(c), string(c2))
 }
 
 func (c Chain) OneOf(chains ...Chain) bool {

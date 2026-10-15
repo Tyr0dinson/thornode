@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
+	"unsafe"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
@@ -329,11 +331,74 @@ func (m *ObservedTx) GetOutHashes() TxIDs {
 	return txIDs
 }
 
+// signerAddressCache memoizes bech32 signer string -> address decoding. Voters
+// re-decode the same ~100 node addresses on every attestation, and decoding is a
+// pure function of the string and the account prefix, so the cache cannot change
+// results. Bounded: once full, new strings are decoded without being stored.
+var (
+	signerAddressCache   = make(map[signerAddressKey]cosmos.AccAddress)
+	signerAddressCacheMu sync.RWMutex
+)
+
+// signerAddressKey keys signerAddressCache: the account prefix the string was
+// decoded under, and the string.
+type signerAddressKey struct{ prefix, signer string }
+
+const signerAddressCacheMax = 4096
+
+// signerAddress is cosmos.AccAddressFromBech32 with memoization of successes.
+// The returned address is a fresh copy the caller may modify.
+func signerAddress(signer string) (cosmos.AccAddress, error) {
+	addr, cached, err := lookupSignerAddress(signer)
+	if cached {
+		return append(cosmos.AccAddress(nil), addr...), nil
+	}
+	return addr, err
+}
+
+// lookupSignerAddress is cosmos.AccAddressFromBech32 with memoization of
+// successes. If cached, addr is the memoized copy, which is never written and
+// must not be modified; otherwise it is the caller's own.
+func lookupSignerAddress(signer string) (addr cosmos.AccAddress, cached bool, err error) {
+	key := signerAddressKey{cosmos.GetConfig().GetBech32AccountAddrPrefix(), signer}
+	signerAddressCacheMu.RLock()
+	addr, ok := signerAddressCache[key]
+	signerAddressCacheMu.RUnlock()
+	if ok {
+		return addr, true, nil
+	}
+	addr, err = cosmos.AccAddressFromBech32(signer)
+	if err != nil {
+		return nil, false, err
+	}
+	signerAddressCacheMu.Lock()
+	if len(signerAddressCache) < signerAddressCacheMax {
+		signerAddressCache[key] = append(cosmos.AccAddress(nil), addr...)
+	}
+	signerAddressCacheMu.Unlock()
+	return addr, false, nil
+}
+
+// SignerAddressString returns the bytes of the address GetSigners yields for
+// signer, as a string, or false if GetSigners skips signer (it does not decode).
+// It allocates only when the decoding is not memoized.
+func SignerAddressString(signer string) (string, bool) {
+	addr, cached, err := lookupSignerAddress(signer)
+	if err != nil {
+		return "", false
+	}
+	if cached && len(addr) > 0 {
+		// the memoized copy is never written, so it can back a string
+		return unsafe.String(&addr[0], len(addr)), true
+	}
+	return string(addr), true
+}
+
 // GetSigners return all the node address that had sign the tx
 func (m *ObservedTx) GetSigners() []cosmos.AccAddress {
 	addrs := make([]cosmos.AccAddress, 0)
 	for _, a := range m.Signers {
-		addr, err := cosmos.AccAddressFromBech32(a)
+		addr, err := signerAddress(a)
 		if err != nil {
 			continue
 		}
@@ -349,8 +414,16 @@ func (m *ObservedTx) String() string {
 
 // HasSigned - check if given address has signed
 func (m *ObservedTx) HasSigned(signer cosmos.AccAddress) bool {
-	for _, sign := range m.GetSigners() {
-		if sign.Equals(signer) {
+	// Same result as scanning GetSigners(): a signer string can only decode to
+	// signer if it equals signer's bech32 encoding up to case, so only such
+	// strings need decoding.
+	encoded := signer.String()
+	for _, a := range m.Signers {
+		if !strings.EqualFold(a, encoded) {
+			continue
+		}
+		addr, err := signerAddress(a)
+		if err == nil && addr.Equals(signer) {
 			return true
 		}
 	}

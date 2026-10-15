@@ -3,7 +3,6 @@ package keeperv1
 import (
 	"fmt"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
@@ -15,7 +14,7 @@ func (k KVStore) GetRUNEPool(ctx cosmos.Context) (RUNEPool, error) {
 	record := NewRUNEPool()
 	key := k.GetKey(prefixRUNEPool, "")
 
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return record, nil
 	}
@@ -28,7 +27,7 @@ func (k KVStore) GetRUNEPool(ctx cosmos.Context) (RUNEPool, error) {
 }
 
 func (k KVStore) SetRUNEPool(ctx cosmos.Context, pool RUNEPool) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	key := k.GetKey(prefixRUNEPool, "")
 	buf := k.cdc.MustMarshal(&pool)
 	store.Set(key, buf)
@@ -39,7 +38,7 @@ func (k KVStore) SetRUNEPool(ctx cosmos.Context, pool RUNEPool) {
 ////////////////////////////////////////////////////////////////////////////////////////
 
 func (k KVStore) setRUNEProvider(ctx cosmos.Context, key []byte, record RUNEProvider) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
 		store.Delete(key)
@@ -49,7 +48,7 @@ func (k KVStore) setRUNEProvider(ctx cosmos.Context, key []byte, record RUNEProv
 }
 
 func (k KVStore) getRUNEProvider(ctx cosmos.Context, key []byte, record *RUNEProvider) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
