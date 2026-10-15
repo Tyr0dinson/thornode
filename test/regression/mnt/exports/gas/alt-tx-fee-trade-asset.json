@@ -336,6 +336,12 @@
       "swap_queue_items": [],
       "swapper_clout": [
         {
+          "address": "noop",
+          "reclaimed": "0",
+          "score": "19",
+          "spent": "0"
+        },
+        {
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "reclaimed": "0",
           "score": "4901584",
