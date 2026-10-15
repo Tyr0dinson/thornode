@@ -1066,10 +1066,12 @@ type OpTxTssPool struct {
 	PoolPubKeyEddsa      common.PubKey    `json:"pool_pub_key_eddsa"`
 	KeysharesBackupEddsa []byte           `json:"keyshares_backup_eddsa"`
 	KeysharesBackupFrost []byte           `json:"keyshares_backup_frost"`
+	PoolPubKeyFrost      common.PubKey    `json:"pool_pub_key_frost"`
+	ObservedMoneroHeight int64            `json:"observed_monero_height"`
 }
 
 func (op *OpTxTssPool) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
-	msg, err := types.NewMsgTssPoolV2(op.PubKeys, op.PoolPubKey, op.Secp256K1Signature, op.KeysharesBackup, op.KeygenType, op.Height, op.Blame, op.Chains, op.Signer, op.KeygenTime, op.PoolPubKeyEddsa, op.KeysharesBackupEddsa, op.KeysharesBackupFrost, common.EmptyPubKey)
+	msg, err := types.NewMsgTssPoolV3(op.PubKeys, op.PoolPubKey, op.Secp256K1Signature, op.KeysharesBackup, op.KeygenType, op.Height, op.Blame, op.Chains, op.Signer, op.KeygenTime, op.PoolPubKeyEddsa, op.KeysharesBackupEddsa, op.KeysharesBackupFrost, op.PoolPubKeyFrost, op.ObservedMoneroHeight)
 	if err != nil {
 		return err
 	}

@@ -94,7 +94,8 @@ TEST_BUILD_FLAGS := -parallel=$(PARALLELISM) -tags=mocknet
 ifdef RUN
 RUN_FLAG := -run=$(RUN)
 endif
-XMR_E2E_RUN := TestSeraiDistributedSignAndSubmitFlow|TestSeraiDistributedSignFailsClosedWhenThresholdCannotBeMet|TestKeygenFailsClosedWhenPeerCoordinationFails|TestXMRScannerInboundDeferredReferenceMemoAttribution|TestXMRScannerInboundMemolessDeferredAttribution|TestXMRReportSolvencyMultiVaultAccounting
+# Monero scanner attribution + solvency gates (bifrost/pkg/chainclients/monero/e2e_gates_test.go).
+XMR_E2E_RUN := ^(TestXMRScannerInboundNoteMemoAttribution|TestXMRScannerInboundMemolessDeferredAttribution|TestXMRScannerOutgoingMemolessDeferredAttribution|TestXMRReportSolvencyMultiVaultAccounting)$$
 BINARIES?=./cmd/thornode ./cmd/bifrost ./tools/recover-keyshare-backup
 GOVERSION=$(shell awk '($$1 == "go") { print $$2 }' go.mod)
 
@@ -106,6 +107,10 @@ endif
 endif
 
 HTTPS_GIT := https://gitlab.com/thorchain/thornode.git
+
+# Compare stacked MRs with their target branch; other runs keep the develop baseline.
+PROTO_BREAKING_BRANCH ?= $(or $(CI_MERGE_REQUEST_TARGET_BRANCH_NAME),develop)
+export PROTO_BREAKING_BRANCH
 
 ########################################################################################
 # Targets
@@ -190,7 +195,8 @@ proto-lint:
 	@$(protoImage) sh -c "cd proto/thorchain/v1 && buf lint --error-format=json"
 
 proto-check-breaking:
-	@$(protoImage) sh -c "cd proto/thorchain/v1 && buf breaking --against $(HTTPS_GIT)#branch=develop,subdir=proto/thorchain/v1"
+	@$(protoImage) sh -c 'cd proto/thorchain/v1 && buf breaking --against "$$1"' sh \
+		"$(HTTPS_GIT)#branch=$$PROTO_BREAKING_BRANCH,subdir=proto/thorchain/v1"
 
 # ------------------------------ Docs ------------------------------
 

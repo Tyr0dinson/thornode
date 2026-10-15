@@ -795,6 +795,131 @@ func (s *QuerierSuite) TestQueryQueue(c *C) {
 	c.Assert(q.ScheduledOutboundValue, Equals, queryQueueResp.ScheduledOutboundValue)
 }
 
+func (s *QuerierSuite) TestQueryPendingOutboundKeepsExtendedSigningPeriodItems(c *C) {
+	period := s.mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	s.checkQueryOutboundSigningPeriods(c, period)
+}
+
+func (s *QuerierSuite) TestQueryQueueCountsMemolessOutbounds(c *C) {
+	ctx := s.ctx.WithBlockHeight(1500)
+	qs := queryServer{mgr: s.mgr}
+	zero := cosmos.ZeroUint()
+	inHash := GetRandomTxHash()
+	for _, memos := range []struct {
+		memo         string
+		originalMemo string
+	}{
+		{"", NewOutboundMemo(inHash).String()},
+		{"", NewRefundMemo(inHash).String()},
+		{NewOutboundMemo(inHash).String(), ""},
+		{NewMigrateMemo(ctx.BlockHeight()).String(), ""},
+	} {
+		c.Assert(s.k.AppendTxOut(ctx, ctx.BlockHeight(), TxOutItem{
+			Chain:                 common.BTCChain,
+			ToAddress:             GetRandomBTCAddress(),
+			VaultPubKey:           GetRandomPubKey(),
+			Coin:                  common.NewCoin(common.BTCAsset, cosmos.NewUint(100)),
+			Memo:                  memos.memo,
+			OriginalMemo:          memos.originalMemo,
+			InHash:                inHash,
+			CloutSpent:            &zero,
+			AggregatorTargetLimit: &zero,
+		}), IsNil)
+	}
+
+	pending, err := qs.queryPendingOutbound(ctx, &types.QueryPendingOutboundRequest{})
+	c.Assert(err, IsNil)
+	c.Assert(pending.TxOutItems, HasLen, 4)
+
+	queue, err := qs.queryQueue(ctx, &types.QueryQueueRequest{})
+	c.Assert(err, IsNil)
+	c.Assert(queue.Outbound, Equals, int64(3))
+	c.Assert(queue.Internal, Equals, int64(1))
+}
+
+func (s *QuerierSuite) TestQueryOutboundHonorsLongerMimirSigningPeriod(c *C) {
+	period := 2 * s.mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	s.k.SetMimir(s.ctx, constants.SigningTransactionPeriod.String(), period)
+	s.checkQueryOutboundSigningPeriods(c, period)
+}
+
+func (s *QuerierSuite) TestQueryOutboundHonorsShorterMimirSigningPeriod(c *C) {
+	period := s.mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod) / 2
+	s.k.SetMimir(s.ctx, constants.SigningTransactionPeriod.String(), period)
+	s.checkQueryOutboundSigningPeriods(c, period)
+}
+
+func (s *QuerierSuite) TestQueryOutboundFallsBackAfterSigningPeriodMimirRemoved(c *C) {
+	period := s.mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	s.k.SetMimir(s.ctx, constants.SigningTransactionPeriod.String(), 2*period)
+	s.k.SetMimir(s.ctx, constants.SigningTransactionPeriod.String(), -1)
+	s.checkQueryOutboundSigningPeriods(c, period)
+}
+
+func (s *QuerierSuite) checkQueryOutboundSigningPeriods(c *C, period int64) {
+	ctx := s.ctx.WithBlockHeight(5 * period)
+	qs := queryServer{mgr: s.mgr}
+	zero := cosmos.ZeroUint()
+	usdc, err := common.NewAsset("ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")
+	c.Assert(err, IsNil)
+
+	classes := []struct {
+		name       string
+		chain      common.Chain
+		asset      common.Asset
+		aggregator string
+		window     int64
+	}{
+		{name: "BTC", chain: common.BTCChain, asset: common.BTCAsset, window: period},
+		{name: "EVM gas asset", chain: common.ETHChain, asset: common.ETHAsset, window: period},
+		{name: "XMR", chain: common.XMRChain, asset: common.XMRAsset, window: 3 * period},
+		{name: "EVM token", chain: common.ETHChain, asset: usdc, window: 3 * period},
+		{name: "EVM aggregator", chain: common.ETHChain, asset: common.ETHAsset, aggregator: "0xaggregator", window: 3 * period},
+	}
+
+	expected := make(map[string]bool)
+	for _, class := range classes {
+		appendItem := func(height int64) common.TxID {
+			inHash := GetRandomTxHash()
+			c.Assert(s.k.AppendTxOut(ctx, height, TxOutItem{
+				Chain:                 class.chain,
+				ToAddress:             GetRandomBTCAddress(),
+				VaultPubKey:           GetRandomPubKey(),
+				Coin:                  common.NewCoin(class.asset, cosmos.NewUint(100)),
+				Memo:                  NewOutboundMemo(inHash).String(),
+				InHash:                inHash,
+				Aggregator:            class.aggregator,
+				CloutSpent:            &zero,
+				AggregatorTargetLimit: &zero,
+			}), IsNil, Commentf("class %s", class.name))
+			return inHash
+		}
+
+		// Each class stays visible at its expiry boundary and disappears one block later.
+		edge := appendItem(ctx.BlockHeight() - class.window)
+		expected[edge.String()] = true
+		appendItem(ctx.BlockHeight() - class.window - 1)
+		if class.window > period {
+			// Extended outbounds must also remain visible after the standard window.
+			live := appendItem(ctx.BlockHeight() - 2*period)
+			expected[live.String()] = true
+		}
+	}
+
+	resp, err := qs.queryPendingOutbound(ctx, &types.QueryPendingOutboundRequest{})
+	c.Assert(err, IsNil)
+	got := make(map[string]bool)
+	for _, item := range resp.TxOutItems {
+		got[item.InHash] = true
+	}
+	c.Check(got, DeepEquals, expected)
+	c.Check(resp.TxOutItems, HasLen, len(expected))
+
+	queue, err := qs.queryQueue(ctx, &types.QueryQueueRequest{})
+	c.Assert(err, IsNil)
+	c.Check(queue.Outbound, Equals, int64(len(expected)))
+}
+
 func (s *QuerierSuite) TestQueryHeights(c *C) {
 	queryChainsLastBlockResp, err := s.queryServer.ChainsLastBlock(s.ctx, &types.QueryChainsLastBlockRequest{
 		Chain: strconv.FormatInt(s.ctx.BlockHeight(), 10),

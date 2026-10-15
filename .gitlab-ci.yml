@@ -625,7 +625,7 @@ proto-lint:
 
 proto-check-breaking:
   tags: !reference [.small-runner, tags]
-  # Compares this branch's protos against upstream `develop` via `buf breaking`.
+  # Compare MR protos with their target branch; other runs compare with develop.
   # The long-lived deployment branches (mainnet/stagenet/chainnet) intentionally
   # lag develop's schema and will report upstream-only additions as "deletions".
   # On those branches the result is informational, not gating; on MRs and

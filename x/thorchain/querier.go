@@ -3054,8 +3054,10 @@ func (qs queryServer) queryKeysign(ctx cosmos.Context, heightStr, pubKey string)
 // queryOutQueue - iterates over txout, counting how many transactions are waiting to be sent
 func (qs queryServer) queryQueue(ctx cosmos.Context, _ *types.QueryQueueRequest) (*types.QueryQueueResponse, error) {
 	constAccessor := qs.mgr.GetConstants()
-	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
-	startHeight := ctx.BlockHeight() - signingTransactionPeriod
+	signingTransactionPeriod := qs.mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
+	// XMR and EVM token/aggregator outbounds stay live for an extended signing
+	// period; scan that window and apply each item's own period below.
+	startHeight := ctx.BlockHeight() - types.MaxTxOutSigningTransactionPeriod(signingTransactionPeriod)
 	var query types.QueryQueueResponse
 	scheduledOutboundValue := cosmos.ZeroUint()
 	scheduledOutboundClout := cosmos.ZeroUint()
@@ -3088,8 +3090,8 @@ func (qs queryServer) queryQueue(ctx cosmos.Context, _ *types.QueryQueueRequest)
 			return nil, fmt.Errorf("fail to get tx out array from key value store: %w", err)
 		}
 		for _, tx := range txs.TxArray {
-			if tx.OutHash.IsEmpty() {
-				memo, _ := ParseMemoWithTHORNames(ctx, qs.mgr.Keeper(), tx.Memo)
+			if tx.OutHash.IsEmpty() && height >= ctx.BlockHeight()-tx.SigningTransactionPeriod(signingTransactionPeriod) {
+				memo, _ := ParseMemoWithTHORNames(ctx, qs.mgr.Keeper(), tx.GetMemo())
 				if memo.IsInternal() {
 					query.Internal++
 				} else if memo.IsOutbound() {
@@ -3665,10 +3667,12 @@ func (qs queryServer) queryScheduledOutbound(ctx cosmos.Context, _ *types.QueryS
 }
 
 func (qs queryServer) queryPendingOutbound(ctx cosmos.Context, _ *types.QueryPendingOutboundRequest) (*types.QueryOutboundResponse, error) {
-	constAccessor := qs.mgr.GetConstants()
-	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
+	signingTransactionPeriod := qs.mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
 	rescheduleCoalesceBlocks := qs.mgr.Keeper().GetConfigInt64(ctx, constants.RescheduleCoalesceBlocks)
-	startHeight := ctx.BlockHeight() - signingTransactionPeriod
+	// XMR and EVM token/aggregator outbounds stay live for an extended signing
+	// period (see LackSigning); scan that window and apply each item's own period
+	// below so they remain visible until they are actually rescheduled.
+	startHeight := ctx.BlockHeight() - types.MaxTxOutSigningTransactionPeriod(signingTransactionPeriod)
 	if startHeight < 1 {
 		startHeight = 1
 	}
@@ -3690,7 +3694,7 @@ func (qs queryServer) queryPendingOutbound(ctx cosmos.Context, _ *types.QueryPen
 			return nil, fmt.Errorf("fail to get tx out array from key value store: %w", err)
 		}
 		for _, tx := range txs.TxArray {
-			if tx.OutHash.IsEmpty() {
+			if tx.OutHash.IsEmpty() && height >= ctx.BlockHeight()-tx.SigningTransactionPeriod(signingTransactionPeriod) {
 				result = append(result, castTxOutItem(tx, height))
 			}
 		}
