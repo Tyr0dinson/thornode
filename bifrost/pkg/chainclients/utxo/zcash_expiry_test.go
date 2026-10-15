@@ -264,14 +264,15 @@ func (s *ZcashSignerSuite) TestZECExpiryAcrossSignersAndCheckpointRetry(c *C) {
 	c.Assert(signed.ExpiryHeight, Equals, uint32(agreedHeight)+ZecTxExpiry)
 	c.Assert(signed.Version, Equals, int32(6))
 	c.Assert(signed.ConsensusBranchID, Equals, uint32(0x37a5165b))
-	c.Assert(observation.Tx, Equals, zecPayloadTxID(raw))
+	c.Assert(observation, HasLen, 1)
+	c.Assert(observation[0].Tx, Equals, zecPayloadTxID(raw))
 }
 
 // TestZECRejectsUnsupportedCheckpoint prevents changing the digest of an unfinished signing round.
 func (s *ZcashSignerSuite) TestZECRejectsUnsupportedCheckpoint(c *C) {
 	fixture := s.newZecExpiryFixture(c)
 	defer fixture.rpcServer.Close()
-	_, saved, _, signErr := s.client.SignTx(fixture.tx, 1237)
+	_, saved, _, signErr := s.client.SignTx([]stypes.TxOutItem{fixture.tx}, 1237)
 	c.Assert(signErr, ErrorMatches, "(?s).*injected signing failure.*")
 	fixture.upgradesErr.Store(true)
 	// Non-signable versions (1, 2, 4) are rejected by the version check; the signable
@@ -288,13 +289,13 @@ func (s *ZcashSignerSuite) TestZECRejectsUnsupportedCheckpoint(c *C) {
 		if version == 5 || version == 6 {
 			checkpoint.ZecConsensusBranchID = 0
 		}
-		var marshalErr error
-		fixture.tx.Checkpoint, marshalErr = json.Marshal(checkpoint)
+		stored, marshalErr := json.Marshal(checkpoint)
 		c.Assert(marshalErr, IsNil)
-		raw, kept, observation, err := s.client.SignTx(fixture.tx, 1237)
+		s.setZecCheckpoint(c, fixture.tx, stored)
+		raw, kept, observation, err := s.client.SignTx([]stypes.TxOutItem{fixture.tx}, 1237)
 		c.Assert(err, ErrorMatches, "unsupported Zcash checkpoint")
 		c.Assert(raw, IsNil)
-		c.Assert(kept, DeepEquals, fixture.tx.Checkpoint)
+		c.Assert(kept, DeepEquals, stored)
 		c.Assert(observation, IsNil)
 
 		// Expiry retires even unsupported signing formats, at the boundary too.
@@ -303,7 +304,8 @@ func (s *ZcashSignerSuite) TestZECRejectsUnsupportedCheckpoint(c *C) {
 			int64(checkpoint.ZecExpiryHeight) + 1,
 		} {
 			fixture.localHeight.Store(tip)
-			raw, _, observation, err = s.client.SignTx(fixture.tx, 1237)
+			s.setZecCheckpoint(c, fixture.tx, stored)
+			raw, _, observation, err = s.client.SignTx([]stypes.TxOutItem{fixture.tx}, 1237)
 			c.Assert(errors.Is(err, chainclienttypes.ErrTxExpired), Equals, true)
 			c.Assert(raw, IsNil)
 			c.Assert(observation, IsNil)
@@ -311,16 +313,18 @@ func (s *ZcashSignerSuite) TestZECRejectsUnsupportedCheckpoint(c *C) {
 
 		// Lose the tip after input verification; retain the checkpoint.
 		fixture.afterUTXOs = func() { fixture.heightErr.Store(true) }
-		raw, kept, observation, err = s.client.SignTx(fixture.tx, 1237)
+		s.setZecCheckpoint(c, fixture.tx, stored)
+		raw, kept, observation, err = s.client.SignTx([]stypes.TxOutItem{fixture.tx}, 1237)
 		c.Assert(err, ErrorMatches, "get ZEC tip for expiry check: .*")
-		c.Assert(kept, DeepEquals, fixture.tx.Checkpoint)
+		c.Assert(kept, DeepEquals, stored)
 		c.Assert(raw, IsNil)
 		c.Assert(observation, IsNil)
 
 		// Spent inputs retire without another tip lookup or a v5 digest.
 		fixture.heightErr.Store(false)
 		fixture.inputsSpent.Store(true)
-		raw, kept, observation, err = s.client.SignTx(fixture.tx, 1237)
+		s.setZecCheckpoint(c, fixture.tx, stored)
+		raw, kept, observation, err = s.client.SignTx([]stypes.TxOutItem{fixture.tx}, 1237)
 		c.Assert(err, IsNil)
 		c.Assert(fixture.heightErr.Load(), Equals, true)
 		c.Assert(kept, IsNil)
@@ -339,16 +343,16 @@ func (s *ZcashSignerSuite) TestZECV6DaemonBranchCheckpoint(c *C) {
 	fixture := s.newZecExpiryFixture(c)
 	defer fixture.rpcServer.Close()
 	fixture.upgrades = `{"37a5165b":{"activationheight":1},"01020304":{"activationheight":3500000}}`
-	_, saved, _, err := s.client.SignTx(fixture.tx, 1237)
+	_, saved, _, err := s.client.SignTx([]stypes.TxOutItem{fixture.tx}, 1237)
 	c.Assert(err, ErrorMatches, "(?s).*injected signing failure.*")
 	var checkpoint sharedutxo.SignCheckpoint
 	c.Assert(json.Unmarshal(saved, &checkpoint), IsNil)
 	c.Assert(checkpoint.ZecConsensusBranchID, Equals, uint32(0x01020304))
 
-	fixture.tx.Checkpoint = saved
+	s.setZecCheckpoint(c, fixture.tx, saved)
 	fixture.upgradesErr.Store(true)
 	fixture.signer.fail = false
-	raw, _, observation, err := s.client.SignTx(fixture.tx, 1237)
+	raw, _, observation, err := s.client.SignTx([]stypes.TxOutItem{fixture.tx}, 1237)
 	c.Assert(err, IsNil)
 	c.Assert(observation, NotNil)
 	tx, err := zcash.ParseTx(raw)
@@ -366,12 +370,12 @@ func (s *ZcashSignerSuite) TestZECV6UpgradeExpiry(c *C) {
 	fixture.upgrades = `{"37a5165b":{"activationheight":1},"01020304":{"activationheight":3500020}}`
 	// Shortening expiry must not lower the input-selection catch-up boundary.
 	fixture.localHeight.Store(fixture.bridge.observedHeight - 1)
-	_, _, _, err := s.client.SignTx(fixture.tx, 1237)
+	_, _, _, err := s.client.SignTx([]stypes.TxOutItem{fixture.tx}, 1237)
 	c.Assert(err, ErrorMatches, ".*local ZEC tip 3499999 is behind input reference 3500000")
 	c.Assert(fixture.signer.digests, HasLen, 0)
 	fixture.localHeight.Store(fixture.bridge.observedHeight + 1)
 	fixture.signer.fail = false
-	raw, _, _, err := s.client.SignTx(fixture.tx, 1237)
+	raw, _, _, err := s.client.SignTx([]stypes.TxOutItem{fixture.tx}, 1237)
 	c.Assert(err, IsNil)
 	tx, err := zcash.ParseTx(raw)
 	c.Assert(err, IsNil)

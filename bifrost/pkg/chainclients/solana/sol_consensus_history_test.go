@@ -473,7 +473,7 @@ func (s *SolTestSuite) TestSignTxCommittedNonceReadErrorRetains(c *C) {
 	inner := &mockSOLThorchainBridge{}
 	cl := s.durableTestClient(c, &committedNonceBridge{mockSOLThorchainBridge: inner, err: errors.New("thornode unavailable")}, srv)
 
-	result, checkpoint, obs, err := cl.SignTx(durableTestTx(c, types2.GetRandomEd25519PubKey()), keysignHeight)
+	result, checkpoint, obs, err := cl.SignTx([]stypes.TxOutItem{durableTestTx(c, types2.GetRandomEd25519PubKey())}, keysignHeight)
 	c.Assert(err, ErrorMatches, ".*retaining outbound.*") // retained, neither signed legacy nor dropped
 	c.Assert(result, IsNil)
 	c.Assert(checkpoint, IsNil)
@@ -507,7 +507,7 @@ func (s *SolTestSuite) TestSignTxCommittedNonceSignsDurable(c *C) {
 	// retained nor dropped by the expired recent-blockhash anchor.)
 	cl.tssKeyManager = &mockSOLThorchainKeyManager{err: errors.New("keysign failed")}
 	// On a keysign error finishSign returns the checkpoint (message bytes) first.
-	checkpoint, _, _, err := cl.SignTx(durableTestTx(c, vault), keysignHeight)
+	checkpoint, _, _, err := cl.SignTx([]stypes.TxOutItem{durableTestTx(c, vault)}, keysignHeight)
 	c.Assert(err, ErrorMatches, ".*fail to sign tx.*")
 	c.Assert(checkpoint, NotNil)
 
@@ -530,7 +530,7 @@ func (s *SolTestSuite) TestSignTxCommittedNonceForeignAccountRetains(c *C) {
 	c.Assert(err, IsNil)
 	committed := thorclient.SolVaultNonce{NonceAccount: foreign.String(), Nonce: foreign.String(), Slot: 1000}
 	cl := s.durableTestClient(c, &committedNonceBridge{mockSOLThorchainBridge: &mockSOLThorchainBridge{}, committed: committed}, srv)
-	result, _, _, err := cl.SignTx(durableTestTx(c, types2.GetRandomEd25519PubKey()), keysignHeight)
+	result, _, _, err := cl.SignTx([]stypes.TxOutItem{durableTestTx(c, types2.GetRandomEd25519PubKey())}, keysignHeight)
 	c.Assert(err, ErrorMatches, ".*invalid committed durable nonce.*")
 	c.Assert(result, IsNil)
 }
@@ -571,7 +571,7 @@ func (s *SolTestSuite) TestSignTxDropsWhenCommittedNonceAdvanced(c *C) {
 
 	cl := s.durableTestClient(c, &committedNonceBridge{mockSOLThorchainBridge: &mockSOLThorchainBridge{}, committed: f.committed, latest: &advanced}, srv)
 	cl.tssKeyManager = &mockSOLThorchainKeyManager{err: errors.New("keysign must not be reached")}
-	result, checkpoint, obs, err := cl.SignTx(durableTestTx(c, f.vault), keysignHeight)
+	result, checkpoint, obs, err := cl.SignTx([]stypes.TxOutItem{durableTestTx(c, f.vault)}, keysignHeight)
 	c.Assert(err, IsNil) // a drop, not an error and not a keysign
 	c.Assert(result, IsNil)
 	c.Assert(checkpoint, IsNil)
@@ -581,7 +581,7 @@ func (s *SolTestSuite) TestSignTxDropsWhenCommittedNonceAdvanced(c *C) {
 	same := f.committed
 	cl2 := s.durableTestClient(c, &committedNonceBridge{mockSOLThorchainBridge: &mockSOLThorchainBridge{}, committed: f.committed, latest: &same}, srv)
 	cl2.tssKeyManager = &mockSOLThorchainKeyManager{err: errors.New("keysign reached")}
-	_, _, _, err = cl2.SignTx(durableTestTx(c, f.vault), keysignHeight)
+	_, _, _, err = cl2.SignTx([]stypes.TxOutItem{durableTestTx(c, f.vault)}, keysignHeight)
 	c.Assert(err, ErrorMatches, ".*keysign reached.*")
 }
 

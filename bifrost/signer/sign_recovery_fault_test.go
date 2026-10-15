@@ -51,7 +51,7 @@ type recoveryChain struct {
 }
 
 // SignTx returns a nonce checkpoint on success, as EVMClient.SignTx does.
-func (c *recoveryChain) SignTx(types.TxOutItem, int64) ([]byte, []byte, *types.TxInItem, error) {
+func (c *recoveryChain) SignTx([]types.TxOutItem, int64) ([]byte, []byte, []*types.TxInItem, error) {
 	c.signs++
 	return []byte(fmt.Sprintf("nonce-and-payload-%d", c.signs)), []byte("nonce-7"), nil, nil
 }

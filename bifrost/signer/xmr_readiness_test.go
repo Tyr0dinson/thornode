@@ -31,7 +31,7 @@ type countingSigningTestClient struct {
 	broadcasts atomic.Int64
 }
 
-func (c *countingSigningTestClient) SignTx(types.TxOutItem, int64) ([]byte, []byte, *types.TxInItem, error) {
+func (c *countingSigningTestClient) SignTx([]types.TxOutItem, int64) ([]byte, []byte, []*types.TxInItem, error) {
 	c.signatures.Add(1)
 	return []byte("signed"), nil, nil, nil
 }

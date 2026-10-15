@@ -42,7 +42,7 @@ func (s *SolTestSuite) TestSignTxDurableNonceOffLegacyShape(c *C) {
 	e.solScanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
 	pubkeys := pubkeyMgr.GetPubKeys()
 
-	result, _, obs, err := e.SignTx(stypes.TxOutItem{
+	result, _, obs, err := e.SignTx([]stypes.TxOutItem{{
 		Chain:            common.SOLChain,
 		ToAddress:        "D9A6eE2pZ6oSiGb8BPkag4gvAeEhHvc3eEYPBoLSMshG",
 		VaultPubKey:      pubkeys[0],
@@ -55,7 +55,7 @@ func (s *SolTestSuite) TestSignTxDurableNonceOffLegacyShape(c *C) {
 		},
 		GasRate: 1,
 		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
-	}, 1)
+	}}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 	c.Assert(obs, NotNil)

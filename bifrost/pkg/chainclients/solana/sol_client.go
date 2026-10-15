@@ -800,7 +800,7 @@ func (c *SOLClient) SignTx(txs []stypes.TxOutItem, height int64) ([]byte, []byte
 // durable-nonce path so both produce identical downstream behaviour; the
 // only difference between the two is how solTx was built (recent blockhash vs.
 // AdvanceNonceAccount + stored durable nonce).
-func (c *SOLClient) finishSign(solTx types.Transaction, tx stypes.TxOutItem, memoForParsing string, height int64) ([]byte, []byte, *stypes.TxInItem, error) {
+func (c *SOLClient) finishSign(solTx types.Transaction, tx stypes.TxOutItem, memoForParsing string, height int64) ([]byte, []byte, []*stypes.TxInItem, error) {
 	checkPointBytes, err := solTx.Message.Serialize()
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to serialize checkpoint bytes: %w", err)

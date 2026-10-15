@@ -123,7 +123,7 @@ func newErrataClientFixture(t *testing.T, beforeBroadcastReply func()) *errataCl
 	client.sidecar = signer
 	client.signedTxPayloadStore = newSignedTxPayloadStore(f.db)
 	f.client, f.tx = client, tx
-	f.signed, _, _, err = client.SignTx(tx, 12345)
+	f.signed, _, _, err = client.SignTx([]stypes.TxOutItem{tx}, 12345)
 	require.NoError(t, err)
 	require.NotEmpty(t, f.signed)
 	require.NoError(t, json.Unmarshal(f.signed, &f.payload))
@@ -157,7 +157,7 @@ func (f *errataClientFixture) requireBlocked(t *testing.T) {
 	t.Helper()
 	signingBefore, rpcBefore := f.signingCalls.Load(), f.rpcCalls.Load()
 	broadcastBefore := f.broadcastCalls.Load()
-	signed, checkpoint, observation, err := f.client.SignTx(f.tx, 12346)
+	signed, checkpoint, observation, err := f.client.SignTx([]stypes.TxOutItem{f.tx}, 12346)
 	require.ErrorIs(t, err, errXMRSigningClaimQuarantined)
 	require.Empty(t, signed)
 	require.Empty(t, checkpoint)

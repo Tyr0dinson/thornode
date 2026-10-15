@@ -29,7 +29,7 @@ func (s *SolTestSuite) presignOutcome(c *C, setup func(tx *stypes.TxOutItem, vau
 	defer srv.Close()
 	cl = s.durableTestClient(c, &committedNonceBridge{mockSOLThorchainBridge: &mockSOLThorchainBridge{}, committed: f.committed}, srv)
 	cl.tssKeyManager = &mockSOLThorchainKeyManager{err: errors.New("keysign reached")}
-	result, checkpoint, obs, err := cl.SignTx(tx, keysignHeight)
+	result, checkpoint, obs, err := cl.SignTx([]stypes.TxOutItem{tx}, keysignHeight)
 	if err != nil {
 		c.Assert(err, ErrorMatches, ".*keysign reached.*")
 		return true, cl, tx
