@@ -50,6 +50,13 @@ message ObservedTxVoter {
     (gogoproto.nullable) = false,
     (gogoproto.jsontag) = "latest_votes,omitempty"
   ];
+  // bounce_credit_floor is the highest external height of a Bounced verdict
+  // that a correction to delivered has superseded. A later correction back to
+  // Bounced (crediting the coins again) must be at a strictly greater height:
+  // otherwise the superseded receipt's own late-sent attestations, from nodes
+  // that had not yet filed it, could re-credit coins that left the vault once a
+  // lower-height delivery had lowered the consensus height.
+  int64 bounce_credit_floor = 15;
 }
 
 // ObservedTxVote is one signer's most recent observation of an outbound at one

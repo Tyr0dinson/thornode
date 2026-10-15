@@ -219,19 +219,20 @@ func (x *_ObservedTxVoter_13_list) IsValid() bool {
 }
 
 var (
-	md_ObservedTxVoter                    protoreflect.MessageDescriptor
-	fd_ObservedTxVoter_tx_id              protoreflect.FieldDescriptor
-	fd_ObservedTxVoter_tx                 protoreflect.FieldDescriptor
-	fd_ObservedTxVoter_height             protoreflect.FieldDescriptor
-	fd_ObservedTxVoter_txs                protoreflect.FieldDescriptor
-	fd_ObservedTxVoter_actions            protoreflect.FieldDescriptor
-	fd_ObservedTxVoter_out_txs            protoreflect.FieldDescriptor
-	fd_ObservedTxVoter_finalised_height   protoreflect.FieldDescriptor
-	fd_ObservedTxVoter_updated_vault      protoreflect.FieldDescriptor
-	fd_ObservedTxVoter_reverted           protoreflect.FieldDescriptor
-	fd_ObservedTxVoter_outbound_height    protoreflect.FieldDescriptor
-	fd_ObservedTxVoter_unfinalized_height protoreflect.FieldDescriptor
-	fd_ObservedTxVoter_latest_votes       protoreflect.FieldDescriptor
+	md_ObservedTxVoter                     protoreflect.MessageDescriptor
+	fd_ObservedTxVoter_tx_id               protoreflect.FieldDescriptor
+	fd_ObservedTxVoter_tx                  protoreflect.FieldDescriptor
+	fd_ObservedTxVoter_height              protoreflect.FieldDescriptor
+	fd_ObservedTxVoter_txs                 protoreflect.FieldDescriptor
+	fd_ObservedTxVoter_actions             protoreflect.FieldDescriptor
+	fd_ObservedTxVoter_out_txs             protoreflect.FieldDescriptor
+	fd_ObservedTxVoter_finalised_height    protoreflect.FieldDescriptor
+	fd_ObservedTxVoter_updated_vault       protoreflect.FieldDescriptor
+	fd_ObservedTxVoter_reverted            protoreflect.FieldDescriptor
+	fd_ObservedTxVoter_outbound_height     protoreflect.FieldDescriptor
+	fd_ObservedTxVoter_unfinalized_height  protoreflect.FieldDescriptor
+	fd_ObservedTxVoter_latest_votes        protoreflect.FieldDescriptor
+	fd_ObservedTxVoter_bounce_credit_floor protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -249,6 +250,7 @@ func init() {
 	fd_ObservedTxVoter_outbound_height = md_ObservedTxVoter.Fields().ByName("outbound_height")
 	fd_ObservedTxVoter_unfinalized_height = md_ObservedTxVoter.Fields().ByName("unfinalized_height")
 	fd_ObservedTxVoter_latest_votes = md_ObservedTxVoter.Fields().ByName("latest_votes")
+	fd_ObservedTxVoter_bounce_credit_floor = md_ObservedTxVoter.Fields().ByName("bounce_credit_floor")
 }
 
 var _ protoreflect.Message = (*fastReflection_ObservedTxVoter)(nil)
@@ -388,6 +390,12 @@ func (x *fastReflection_ObservedTxVoter) Range(f func(protoreflect.FieldDescript
 			return
 		}
 	}
+	if x.BounceCreditFloor != int64(0) {
+		value := protoreflect.ValueOfInt64(x.BounceCreditFloor)
+		if !f(fd_ObservedTxVoter_bounce_credit_floor, value) {
+			return
+		}
+	}
 }
 
 // Has reports whether a field is populated.
@@ -427,6 +435,8 @@ func (x *fastReflection_ObservedTxVoter) Has(fd protoreflect.FieldDescriptor) bo
 		return x.UnfinalizedHeight != int64(0)
 	case "types.ObservedTxVoter.latest_votes":
 		return len(x.LatestVotes) != 0
+	case "types.ObservedTxVoter.bounce_credit_floor":
+		return x.BounceCreditFloor != int64(0)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.ObservedTxVoter"))
@@ -467,6 +477,8 @@ func (x *fastReflection_ObservedTxVoter) Clear(fd protoreflect.FieldDescriptor) 
 		x.UnfinalizedHeight = int64(0)
 	case "types.ObservedTxVoter.latest_votes":
 		x.LatestVotes = nil
+	case "types.ObservedTxVoter.bounce_credit_floor":
+		x.BounceCreditFloor = int64(0)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.ObservedTxVoter"))
@@ -531,6 +543,9 @@ func (x *fastReflection_ObservedTxVoter) Get(descriptor protoreflect.FieldDescri
 		}
 		listValue := &_ObservedTxVoter_13_list{list: &x.LatestVotes}
 		return protoreflect.ValueOfList(listValue)
+	case "types.ObservedTxVoter.bounce_credit_floor":
+		value := x.BounceCreditFloor
+		return protoreflect.ValueOfInt64(value)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.ObservedTxVoter"))
@@ -583,6 +598,8 @@ func (x *fastReflection_ObservedTxVoter) Set(fd protoreflect.FieldDescriptor, va
 		lv := value.List()
 		clv := lv.(*_ObservedTxVoter_13_list)
 		x.LatestVotes = *clv.list
+	case "types.ObservedTxVoter.bounce_credit_floor":
+		x.BounceCreditFloor = value.Int()
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.ObservedTxVoter"))
@@ -646,6 +663,8 @@ func (x *fastReflection_ObservedTxVoter) Mutable(fd protoreflect.FieldDescriptor
 		panic(fmt.Errorf("field outbound_height of message types.ObservedTxVoter is not mutable"))
 	case "types.ObservedTxVoter.unfinalized_height":
 		panic(fmt.Errorf("field unfinalized_height of message types.ObservedTxVoter is not mutable"))
+	case "types.ObservedTxVoter.bounce_credit_floor":
+		panic(fmt.Errorf("field bounce_credit_floor of message types.ObservedTxVoter is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.ObservedTxVoter"))
@@ -688,6 +707,8 @@ func (x *fastReflection_ObservedTxVoter) NewField(fd protoreflect.FieldDescripto
 	case "types.ObservedTxVoter.latest_votes":
 		list := []*ObservedTxVote{}
 		return protoreflect.ValueOfList(&_ObservedTxVoter_13_list{list: &list})
+	case "types.ObservedTxVoter.bounce_credit_floor":
+		return protoreflect.ValueOfInt64(int64(0))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.ObservedTxVoter"))
@@ -807,6 +828,9 @@ func (x *fastReflection_ObservedTxVoter) ProtoMethods() *protoiface.Methods {
 				n += 1 + l + runtime.Sov(uint64(l))
 			}
 		}
+		if x.BounceCreditFloor != 0 {
+			n += 1 + runtime.Sov(uint64(x.BounceCreditFloor))
+		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
 		}
@@ -835,6 +859,11 @@ func (x *fastReflection_ObservedTxVoter) ProtoMethods() *protoiface.Methods {
 		if x.unknownFields != nil {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
+		}
+		if x.BounceCreditFloor != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.BounceCreditFloor))
+			i--
+			dAtA[i] = 0x78
 		}
 		if len(x.LatestVotes) > 0 {
 			for iNdEx := len(x.LatestVotes) - 1; iNdEx >= 0; iNdEx-- {
@@ -1330,6 +1359,25 @@ func (x *fastReflection_ObservedTxVoter) ProtoMethods() *protoiface.Methods {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
 				}
 				iNdEx = postIndex
+			case 15:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field BounceCreditFloor", wireType)
+				}
+				x.BounceCreditFloor = 0
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					x.BounceCreditFloor |= int64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
 			default:
 				iNdEx = preIndex
 				skippy, err := runtime.Skip(dAtA[iNdEx:])
@@ -1873,6 +1921,13 @@ type ObservedTxVoter struct {
 	// second entry at a finality level, so inbound (Add-only) voters never
 	// populate it and their consensus is unchanged.
 	LatestVotes []*ObservedTxVote `protobuf:"bytes,13,rep,name=latest_votes,json=latestVotes,proto3" json:"latest_votes,omitempty"`
+	// bounce_credit_floor is the highest external height of a Bounced verdict
+	// that a correction to delivered has superseded. A later correction back to
+	// Bounced (crediting the coins again) must be at a strictly greater height:
+	// otherwise the superseded receipt's own late-sent attestations, from nodes
+	// that had not yet filed it, could re-credit coins that left the vault once a
+	// lower-height delivery had lowered the consensus height.
+	BounceCreditFloor int64 `protobuf:"varint,15,opt,name=bounce_credit_floor,json=bounceCreditFloor,proto3" json:"bounce_credit_floor,omitempty"`
 }
 
 func (x *ObservedTxVoter) Reset() {
@@ -1979,6 +2034,13 @@ func (x *ObservedTxVoter) GetLatestVotes() []*ObservedTxVote {
 	return nil
 }
 
+func (x *ObservedTxVoter) GetBounceCreditFloor() int64 {
+	if x != nil {
+		return x.BounceCreditFloor
+	}
+	return 0
+}
+
 // ObservedTxVote is one signer's most recent observation of an outbound at one
 // finality level, as an index into ObservedTxVoter.txs (which is append-only).
 type ObservedTxVote struct {
@@ -2033,7 +2095,7 @@ var file_types_type_observed_tx_proto_rawDesc = []byte{
 	0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x17, 0x74, 0x79, 0x70, 0x65,
 	0x73, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x5f, 0x74, 0x78, 0x5f, 0x6f, 0x75, 0x74, 0x2e, 0x70, 0x72,
 	0x6f, 0x74, 0x6f, 0x1a, 0x14, 0x67, 0x6f, 0x67, 0x6f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x67,
-	0x6f, 0x67, 0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0xaf, 0x05, 0x0a, 0x0f, 0x4f, 0x62,
+	0x6f, 0x67, 0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0xdf, 0x05, 0x0a, 0x0f, 0x4f, 0x62,
 	0x73, 0x65, 0x72, 0x76, 0x65, 0x64, 0x54, 0x78, 0x56, 0x6f, 0x74, 0x65, 0x72, 0x12, 0x4d, 0x0a,
 	0x05, 0x74, 0x78, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x42, 0x38, 0xe2, 0xde,
 	0x1f, 0x04, 0x54, 0x78, 0x49, 0x44, 0xfa, 0xde, 0x1f, 0x2c, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62,
@@ -2076,7 +2138,10 @@ var file_types_type_observed_tx_proto_rawDesc = []byte{
 	0x4f, 0x62, 0x73, 0x65, 0x72, 0x76, 0x65, 0x64, 0x54, 0x78, 0x56, 0x6f, 0x74, 0x65, 0x42, 0x1e,
 	0xc8, 0xde, 0x1f, 0x00, 0xea, 0xde, 0x1f, 0x16, 0x6c, 0x61, 0x74, 0x65, 0x73, 0x74, 0x5f, 0x76,
 	0x6f, 0x74, 0x65, 0x73, 0x2c, 0x6f, 0x6d, 0x69, 0x74, 0x65, 0x6d, 0x70, 0x74, 0x79, 0x52, 0x0b,
-	0x6c, 0x61, 0x74, 0x65, 0x73, 0x74, 0x56, 0x6f, 0x74, 0x65, 0x73, 0x22, 0x43, 0x0a, 0x0e, 0x4f,
+	0x6c, 0x61, 0x74, 0x65, 0x73, 0x74, 0x56, 0x6f, 0x74, 0x65, 0x73, 0x12, 0x2e, 0x0a, 0x13, 0x62,
+	0x6f, 0x75, 0x6e, 0x63, 0x65, 0x5f, 0x63, 0x72, 0x65, 0x64, 0x69, 0x74, 0x5f, 0x66, 0x6c, 0x6f,
+	0x6f, 0x72, 0x18, 0x0f, 0x20, 0x01, 0x28, 0x03, 0x52, 0x11, 0x62, 0x6f, 0x75, 0x6e, 0x63, 0x65,
+	0x43, 0x72, 0x65, 0x64, 0x69, 0x74, 0x46, 0x6c, 0x6f, 0x6f, 0x72, 0x22, 0x43, 0x0a, 0x0e, 0x4f,
 	0x62, 0x73, 0x65, 0x72, 0x76, 0x65, 0x64, 0x54, 0x78, 0x56, 0x6f, 0x74, 0x65, 0x12, 0x16, 0x0a,
 	0x06, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x73,
 	0x69, 0x67, 0x6e, 0x65, 0x72, 0x12, 0x19, 0x0a, 0x08, 0x74, 0x78, 0x5f, 0x69, 0x6e, 0x64, 0x65,

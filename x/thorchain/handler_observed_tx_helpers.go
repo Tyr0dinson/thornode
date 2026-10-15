@@ -851,12 +851,16 @@ func applyTxOutAttestation(
 				// receipt's verdict, gas and height rather than reconcile onto it. A
 				// lower delivered consensus is reconciled: it may be a reorg's earlier
 				// re-inclusion, and debiting errs safe (see correctOutboundObservation).
-				if voter.Tx.Bounced && voter.Tx.BlockHeight < prevConsensusTx.BlockHeight {
+				if voter.Tx.Bounced && (voter.Tx.BlockHeight < prevConsensusTx.BlockHeight ||
+					voter.Tx.BlockHeight <= voter.BounceCreditFloor) {
 					voter.Tx.Bounced = prevConsensusTx.Bounced
 					voter.Tx.Tx.Gas = prevConsensusTx.Tx.Gas
 					voter.Tx.BlockHeight = prevConsensusTx.BlockHeight
 					voter.Tx.FinaliseHeight = prevConsensusTx.BlockHeight
 				} else {
+					if !voter.Tx.Bounced {
+						voter.RaiseBounceCreditFloor(prevConsensusTx.BlockHeight)
+					}
 					reconcileBounceCorrection(ctx, mgr, voter.Tx, voter.Tx.Bounced)
 				}
 			}
@@ -1100,8 +1104,19 @@ func correctOutboundObservation(ctx cosmos.Context, mgr Manager, voter *Observed
 	// canonical re-inclusion below the bounced receipt is still accounted; a stale
 	// delivered observation can at worst under-count coins still held, which is
 	// the pre-bounce-detection behaviour and shows up as a vault surplus.
+	//
+	// A debit at a lower height lowers the consensus height, so it cannot be the
+	// only floor: the superseded Bounced receipt's own late-sent attestations,
+	// from nodes that had not filed it yet, would clear it and re-credit coins
+	// that left. A credit must also land strictly above every Bounced verdict a
+	// debit has superseded (BounceCreditFloor). A canonical receipt at or below
+	// that height (a reorg back to the original fork) is refused too - again the
+	// recoverable direction.
 	minHeight := int64(0)
 	if bounceChanged && tx.Bounced {
+		if tx.BlockHeight <= voter.BounceCreditFloor {
+			return
+		}
 		minHeight = voter.Tx.BlockHeight
 	}
 	if !HasSuperMajority(countMatchingSignersFrom(*voter, tx, nas, minHeight), len(nas)) {
@@ -1115,6 +1130,9 @@ func correctOutboundObservation(ctx cosmos.Context, mgr Manager, voter *Observed
 		// Pass the memo-substituted copy: the cancel/approval exemption below is
 		// keyed off the empty observed memo, not the memo recovered from the
 		// scheduled TxOutItem that handleObservedTxOutQuorum wrote onto voter.Tx.
+		if !tx.Bounced {
+			voter.RaiseBounceCreditFloor(voter.Tx.BlockHeight)
+		}
 		reconcileBounceCorrection(ctx, mgr, consensus, tx.Bounced)
 		voter.Tx.Bounced = tx.Bounced
 		voter.Tx.BlockHeight = tx.BlockHeight

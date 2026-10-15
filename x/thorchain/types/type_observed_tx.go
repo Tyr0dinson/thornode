@@ -147,6 +147,15 @@ func (m *ObservedTxVote) String() string {
 	return fmt.Sprintf("%s:%d", m.Signer, m.TxIndex)
 }
 
+// RaiseBounceCreditFloor records that a correction to delivered superseded a
+// Bounced verdict at external height h, so no later correction may credit the
+// coins back at or below h (see BounceCreditFloor).
+func (m *ObservedTxVoter) RaiseBounceCreditFloor(h int64) {
+	if h > m.BounceCreditFloor {
+		m.BounceCreditFloor = h
+	}
+}
+
 // LatestVote returns the index in Txs of the entry the signer filed most
 // recently at the given finality level, and whether one is recorded at all.
 func (m *ObservedTxVoter) LatestVote(signer cosmos.AccAddress, final bool) (int, bool) {

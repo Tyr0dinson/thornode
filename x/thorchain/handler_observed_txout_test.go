@@ -1996,6 +1996,77 @@ func (s *HandlerObservedTxOutSuite) TestHandleBounceFinalisationBelowDeliveryKee
 	c.Check(f.ethBalance(c), Equals, untouched-gas-1)
 }
 
+// TestHandleBounceStaleBounceAfterLowerDeliveryCannotCredit: A-D establish
+// Bounced at height 13, then a reorg's canonical delivery at height 12 from C-F
+// debits the coins and lowers the consensus height to 12. E and F's delayed
+// attestations of the superseded height-13 bounce then arrive; with A and B they
+// are four current votes at a height above 12. The superseded verdict's height
+// stays the floor for credits, so the coins are not credited back.
+func (s *HandlerObservedTxOutSuite) TestHandleBounceStaleBounceAfterLowerDeliveryCannotCredit(c *C) {
+	const (
+		untouched   = uint64(20000000000) // 200 ETH
+		bounceGas   = uint64(37500)
+		deliveryGas = uint64(40000)
+	)
+
+	f := newBouncedOutboundFixture(c, 6)
+	for i := 0; i < 4; i++ {
+		f.voteAtGasHeight(c, i, true, bounceGas, 13)
+	}
+	c.Assert(f.ethBalance(c), Equals, untouched-bounceGas)
+
+	for i := 2; i < 6; i++ {
+		f.voteAtGasHeight(c, i, false, deliveryGas, 12)
+	}
+	c.Assert(f.keeper.voter.Tx.Bounced, Equals, false)
+	c.Assert(f.keeper.voter.Tx.BlockHeight, Equals, int64(12))
+	c.Assert(f.keeper.voter.BounceCreditFloor, Equals, int64(13))
+	c.Assert(f.ethBalance(c), Equals, untouched-deliveryGas-1)
+
+	for i := 4; i < 6; i++ {
+		f.voteAtGasHeight(c, i, true, bounceGas, 13)
+	}
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
+	c.Check(f.ethBalance(c), Equals, untouched-deliveryGas-1)
+
+	// a bounce receipt above the superseded verdict is a new one and credits
+	for i := 0; i < 4; i++ {
+		f.voteAtGasHeight(c, i, true, bounceGas+1, 14)
+	}
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, true)
+	c.Check(f.ethBalance(c), Equals, untouched-bounceGas-1)
+}
+
+// TestHandleBounceStaleBounceAfterLowerDeliveryCannotCreditOnFinalisation: the
+// same sequence through the non-final to final hand-off. The non-final Bounced
+// verdict at 13 is debited by a finalised delivery at 12, and a finalised
+// consensus of the superseded height-13 bounce (still above the delivery's
+// height) must not credit the coins back.
+func (s *HandlerObservedTxOutSuite) TestHandleBounceStaleBounceAfterLowerDeliveryCannotCreditOnFinalisation(c *C) {
+	const untouched = uint64(20000000000) // 200 ETH
+	const gas = uint64(37500)             // the fixture tx's gas
+
+	f := newBouncedOutboundFixture(c, 6)
+	for i := 0; i < 4; i++ {
+		f.voteAt(c, i, true, 13, 16) // unfinalised: bounced, coins retained
+	}
+	c.Assert(f.ethBalance(c), Equals, untouched-gas)
+
+	for i := 2; i < 6; i++ {
+		f.voteAt(c, i, false, 12, 12)
+	}
+	c.Assert(f.keeper.voter.FinalisedHeight > 0, Equals, true)
+	c.Assert(f.keeper.voter.Tx.Bounced, Equals, false)
+	c.Assert(f.keeper.voter.BounceCreditFloor, Equals, int64(13))
+	c.Assert(f.ethBalance(c), Equals, untouched-gas-1)
+
+	for i := 0; i < 6; i++ {
+		f.voteAt(c, i, true, 13, 13)
+	}
+	c.Check(f.keeper.voter.Tx.Bounced, Equals, false)
+	c.Check(f.ethBalance(c), Equals, untouched-gas-1)
+}
+
 // TestHandleBounceStaleReceiptCannotDisplaceNewer: a re-inclusion moved the
 // outbound from a bounced receipt at height 12 to a delivered one at height 14.
 // Two nodes' attestations of the superseded height-12 receipt are late-sent after
