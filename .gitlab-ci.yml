@@ -1071,6 +1071,59 @@ consensus-determinism:
     paths:
       - test-quality-reports/consensus-determinism.log
 
+.security-fuzz-base:
+  tags: !reference [.small-runner, tags]
+  stage: long-test
+  needs:
+    - job: unit-tests
+      optional: true
+      artifacts: false
+  variables:
+    PKGS: util-linux
+    FUZZ_CORPUS_DIR: "$CI_PROJECT_DIR/.security-fuzz-corpus"
+  # Each branch keeps its own corpus, seeded from the default branch's, so a
+  # crasher saved by one branch is never replayed on another.
+  cache:
+    key: security-fuzz-corpus-v2-$CI_COMMIT_REF_SLUG
+    fallback_keys:
+      - security-fuzz-corpus-v2-$CI_DEFAULT_BRANCH
+    paths:
+      - .security-fuzz-corpus/
+  before_script:
+    - !reference [.pkg-install, before_script]
+    - !reference [.go-private-auth, before_script]
+    - !reference [.stable-mtimes, before_script]
+  script:
+    - mkdir -p test-quality-reports
+    - sh -c 'scripts/test-security-fuzz.sh > test-quality-reports/security-fuzz.log 2>&1; rc=$?; cat test-quality-reports/security-fuzz.log; exit "$rc"'
+  artifacts:
+    when: always
+    paths:
+      - test-quality-reports/security-fuzz.log
+      # go test -fuzz writes failing inputs under the package's testdata/fuzz;
+      # keep them so the logged rerun command has its reproducer.
+      - x/thorchain/memo/testdata/fuzz/
+      - common/testdata/fuzz/
+      - bifrost/pkg/chainclients/solana/rpc/testdata/fuzz/
+      - bifrost/p2p/messages/testdata/fuzz/
+
+security-fuzz-fast:
+  extends: .security-fuzz-base
+  rules: *rules
+  timeout: 25m
+  variables:
+    FUZZ_TIME: 1000x
+    FUZZ_CORPUS_DIR: "$CI_PROJECT_DIR/.security-fuzz-corpus"
+
+security-fuzz-deep:
+  extends: .security-fuzz-base
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+  timeout: 1h
+  variables:
+    FUZZ_TIME: 20s
+    FUZZ_CORPUS_DIR: "$CI_PROJECT_DIR/.security-fuzz-corpus"
+
 test-regression:
   tags: !reference [.small-runner, tags]
   rules:

@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -304,11 +305,16 @@ func (m MemoBase) GetAffiliates() []string                 { return nil }
 func (m MemoBase) GetAffiliatesBasisPoints() []cosmos.Uint { return nil }
 func (m MemoBase) GetAddress() common.Address              { return common.NoAddress }
 
+// errMemoPanic marks a recovered parser panic. The formatted error text is
+// unchanged, but callers can tell it apart from validation errors that echo
+// the memo back.
+var errMemoPanic = errors.New("panicked parsing memo")
+
 func ParseMemo(version semver.Version, memo string) (mem Memo, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			mem = EmptyMemo
-			err = fmt.Errorf("panicked parsing memo(%s), err: %s", memo, r)
+			err = fmt.Errorf("%w(%s), err: %s", errMemoPanic, memo, r)
 		}
 	}()
 
@@ -324,7 +330,7 @@ func ParseMemoWithTHORNames(ctx cosmos.Context, keeper keeper.Keeper, memo strin
 	defer func() {
 		if r := recover(); r != nil {
 			mem = EmptyMemo
-			err = fmt.Errorf("panicked parsing memo(%s), err: %s", memo, r)
+			err = fmt.Errorf("%w(%s), err: %s", errMemoPanic, memo, r)
 		}
 	}()
 
