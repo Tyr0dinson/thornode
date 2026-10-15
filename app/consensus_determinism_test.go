@@ -321,7 +321,7 @@ func TestConsensusDeterminismMigration18To19(t *testing.T) {
 		// FinalizeBlock has already flushed its branched store into the root
 		// store, so writes through NewContextLegacy(false, ...) would be dropped by
 		// Commit. Migrate on the root store's working state, which Commit persists.
-		ctx := app.NewUncachedContext(false, header)
+		ctx := app.NewUncachedContext(false, header) //nolint:staticcheck // SA1019: NewNextBlockContext would reset the finalize state; this needs the root store
 		legacyKeys := seedLegacyCollectors(t, app, ctx)
 		payeeBefore := app.ThorchainKeeper.GetBalanceOf(ctx, legacyPayee(), common.RuneAsset()).Amount
 		before := app.ThorchainKeeper.GetRuneBalanceOfModule(ctx, thorchain.ReserveName)
