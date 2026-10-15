@@ -7,6 +7,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/v3/common"
+	openapi "gitlab.com/thorchain/thornode/v3/openapi/gen"
 	acommon "gitlab.com/thorchain/thornode/v3/test/simulation/actors/common"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/actors/core"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/evm"
@@ -19,26 +20,32 @@ import (
 ////////////////////////////////////////////////////////////////////////////////////////
 
 func Bootstrap(rng *rand.Rand) *Actor {
+	return bootstrap(rng, thornode.GetPools)
+}
+
+func bootstrap(rng *rand.Rand, getPools func() ([]openapi.Pool, error)) *Actor {
 	a := NewActor("Bootstrap", rng)
 	a.Timeout = 10 * time.Minute
 	a.Ops = append(a.Ops, waitForInitialXMRInbound)
 
-	pools, err := thornode.GetPools()
+	pools, err := getPools()
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to get pools")
 	}
 
-	// Start from any pools already present in genesis/mocknet bootstrap so the
-	// verification logic stays accurate if the environment pre-seeds any pools.
-	count := len(pools)
+	// Adding liquidity to an existing pool does not create another pool.
+	expectedPools := make(map[string]struct{}, len(pools))
+	for _, pool := range pools {
+		expectedPools[pool.Asset] = struct{}{}
+	}
 
 	// Bootstrap the native NAMI pool inside the simulation.
-	count++
+	expectedPools[common.NAMI.String()] = struct{}{}
 	a.Children[core.NewDualLPActor(common.NAMI, rng)] = true
 
 	// Bootstrap pools for all simulated L1 gas assets.
 	for _, chain := range acommon.SimChains {
-		count++
+		expectedPools[chain.GetGasAsset().String()] = struct{}{}
 		a.Children[core.NewDualLPActor(chain.GetGasAsset(), rng)] = true
 	}
 
@@ -52,9 +59,8 @@ func Bootstrap(rng *rand.Rand) *Actor {
 		if chain.Equals(common.BSCChain) {
 			continue
 		}
-		count++
-
 		for asset := range evm.Tokens(chain) {
+			expectedPools[asset.String()] = struct{}{}
 			tokenPools.Children[core.NewDualLPActor(asset, rng)] = true
 		}
 	}
@@ -64,7 +70,7 @@ func Bootstrap(rng *rand.Rand) *Actor {
 	verify := NewActor("Bootstrap-Verify", rng)
 	verify.Ops = append(
 		verify.Ops, func(config *OpConfig) OpResult {
-			pools, err = thornode.GetPools()
+			pools, err = getPools()
 			if err != nil {
 				return OpResult{Finish: true, Error: err}
 			}
@@ -80,10 +86,10 @@ func Bootstrap(rng *rand.Rand) *Actor {
 			}
 
 			// all chains should have pools
-			if len(pools) != count {
+			if len(pools) != len(expectedPools) {
 				return OpResult{
 					Finish: true,
-					Error:  fmt.Errorf("expected %d pools, got %d", count, len(pools)),
+					Error:  fmt.Errorf("expected %d pools, got %d", len(expectedPools), len(pools)),
 				}
 			}
 
