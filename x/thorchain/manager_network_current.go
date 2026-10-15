@@ -3582,18 +3582,12 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 			if item.Chain.IsTHORChain() && !isSecuredEscrow {
 				continue
 			}
-			// Secured escrow is a native-prepared item and has no external vault
-			// pubkey. Apply the vault-status filter only to real L1 outbounds.
-			if !isSecuredEscrow {
-				vault, err := getVault(item.VaultPubKey)
-				if err != nil {
-					ctx.Logger().Error("fail to get vault for staged outbound", "pubkey", item.VaultPubKey, "error", err)
-					continue
-				}
-				if vault.Status == InactiveVault {
-					continue
-				}
-			}
+			// Unlike scheduled TxOut items, staged outbounds are not filtered by
+			// signing-vault status. migrateFunds does not reserve staged amounts,
+			// so a retiring vault's backing migrates to an active vault and the
+			// selected vault can go inactive while the claim is still owed.
+			// Finalization re-prepares the item against current vaults, so it
+			// stays a liability until finalization or rollback removes it.
 
 			if !item.Coin.IsEmpty() {
 				if _, ok := assetAmounts[item.Coin.Asset]; !ok {

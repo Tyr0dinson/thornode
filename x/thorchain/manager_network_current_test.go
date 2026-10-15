@@ -4853,10 +4853,13 @@ func (s *NetworkManagerTestSuite) TestSolvencyWithStagedOutbounds(c *C) {
 	c.Assert(solvency[0].Amount.Equal(expectedSolvency), Equals, true,
 		Commentf("expected %s, got %s", expectedSolvency, solvency[0].Amount))
 
-	// Test 3: Staged outbound from inactive vault should be skipped
+	// Test 3: A staged outbound whose selected signing vault has since gone
+	// inactive is still owed. Its backing migrated to the active vault, so it
+	// must keep counting until finalization or rollback removes it.
 	inactiveVault := GetRandomVault()
 	inactiveVault.Type = AsgardVault
 	inactiveVault.Status = InactiveVault
+	inactiveVault.Coins = common.Coins{}
 	c.Assert(mgr.Keeper().SetVault(ctx, inactiveVault), IsNil)
 
 	stagedItemInactive := TxOutItem{
@@ -4870,9 +4873,10 @@ func (s *NetworkManagerTestSuite) TestSolvencyWithStagedOutbounds(c *C) {
 
 	solvency, err = nmgr.calculateNetworkSolvency(ctx, mgr)
 	c.Assert(err, IsNil)
-	// Should still be 13 - inactive vault staged outbound is skipped
+	// 13 - 50 = -37: the retired-vault claim is not reported as surplus.
+	expectedSolvency = math.NewInt(-37 * common.One)
 	c.Assert(solvency[0].Amount.Equal(expectedSolvency), Equals, true,
-		Commentf("inactive vault staged outbound should be skipped: expected %s, got %s", expectedSolvency, solvency[0].Amount))
+		Commentf("inactive-vault staged outbound must stay a liability: expected %s, got %s", expectedSolvency, solvency[0].Amount))
 
 	// Test 4: Native (THORChain) staged outbounds should be skipped
 	nativeStagedItem := TxOutItem{
@@ -4886,9 +4890,52 @@ func (s *NetworkManagerTestSuite) TestSolvencyWithStagedOutbounds(c *C) {
 
 	solvency, err = nmgr.calculateNetworkSolvency(ctx, mgr)
 	c.Assert(err, IsNil)
-	// Should still be 13 - native outbounds don't affect external vault solvency
+	// Should still be -37 - native outbounds don't affect external vault solvency
 	c.Assert(solvency[0].Amount.Equal(expectedSolvency), Equals, true,
 		Commentf("native staged outbound should be skipped: expected %s, got %s", expectedSolvency, solvency[0].Amount))
+}
+
+// The staged output's signing vault retired after its 25 BTC backing migrated
+// to the still-active inbound vault. Vault 100 - pool 75 - staged 25 balances;
+// dropping the staged claim would report 25 BTC of sweepable surplus.
+func (s *NetworkManagerTestSuite) TestSolvencyCountsStagedOutboundOfRetiredSigningVault(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceAsset = cosmos.NewUint(75 * common.One)
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	inboundVault := GetRandomVault()
+	inboundVault.Type = AsgardVault
+	inboundVault.Status = ActiveVault
+	inboundVault.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One))}
+	c.Assert(mgr.Keeper().SetVault(ctx, inboundVault), IsNil)
+
+	retired := GetRandomVault()
+	retired.Type = AsgardVault
+	retired.Status = InactiveVault
+	retired.Coins = common.Coins{}
+	c.Assert(mgr.Keeper().SetVault(ctx, retired), IsNil)
+
+	staged := TxOutItem{
+		Chain:       common.BTCChain,
+		Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(25*common.One)),
+		ToAddress:   GetRandomBTCAddress(),
+		VaultPubKey: retired.PubKey,
+		InHash:      GetRandomTxHash(),
+	}
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, staged, ctx.BlockHeight()+10), IsNil)
+
+	solvency, err := nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	c.Assert(solvency, HasLen, 1)
+	c.Check(solvency[0].Asset.Equals(common.BTCAsset), Equals, true)
+	c.Check(solvency[0].Amount.IsZero(), Equals, true,
+		Commentf("expected 0 (100 - 75 - 25), got %s", solvency[0].Amount))
 }
 
 func (s *NetworkManagerTestSuite) TestSolvencyCountsStagedSecuredTargetEscrow(c *C) {
