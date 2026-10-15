@@ -766,6 +766,29 @@ func (t *SmartContractLogParserTestSuite) TestGetTxInItem_BouncedRequiresSameVau
 	}, txInItem)
 	c.Assert(err, IsNil)
 	c.Assert(txInItem.Bounced, Equals, true)
+
+	// a callback reached from the vault's outbound calls a second router itself:
+	// the nested pair agrees on router and vault, but its vault is the callback
+	// contract, not the vault sending the outbound, so the refund is not the
+	// vault's and its outbound is not bounced
+	const callback = "0x1111111111111111111111111111111111111111"
+	txInItem = &types.TxInItem{Sender: vault}
+	_, err = parser.GetTxInItem([]*etypes.Log{
+		t.getTransferFailedEvent(otherRouter, callback, to, NativeTokenAddr, amount, ""),
+		t.getTransferOutEvent(otherRouter, callback, to, NativeTokenAddr, amount, memo),
+		t.getTransferOutEvent(router, vault, to, NativeTokenAddr, amount, memo),
+	}, txInItem)
+	c.Assert(err, IsNil)
+	c.Assert(txInItem.Bounced, Equals, false)
+
+	// sender comparison is case-insensitive, as the scanners lower-case it
+	txInItem = &types.TxInItem{Sender: strings.ToLower(vault)}
+	_, err = parser.GetTxInItem([]*etypes.Log{
+		t.getTransferFailedEvent(router, vault, to, NativeTokenAddr, amount, ""),
+		t.getTransferOutEvent(router, vault, to, NativeTokenAddr, amount, memo),
+	}, txInItem)
+	c.Assert(err, IsNil)
+	c.Assert(txInItem.Bounced, Equals, true)
 }
 
 // TestDetectBounceAt: the activation is an external block height so that every

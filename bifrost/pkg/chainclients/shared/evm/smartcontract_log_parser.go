@@ -208,9 +208,18 @@ type bounce struct {
 // establishes that _that_ router returned the coins to _that_ vault. Pairing it
 // with an outbound from a different vault or router would suppress a legitimate
 // vault debit for coins that did leave.
-func matchesBounce(bounces []bounce, router, vault, asset, to ecommon.Address, amount *big.Int) bool {
+//
+// The vault must also be the observed transaction's sender. A callback reached
+// from an aggregator can call a second admitted router itself, which emits a
+// self-consistent TransferFailed/TransferOut pair naming the callback contract
+// as the vault; that refund went to the callback, not to the vault sending the
+// outbound, so it must not mark the vault's outbound as bounced.
+func matchesBounce(bounces []bounce, sender string, router, vault, asset, to ecommon.Address, amount *big.Int) bool {
 	if !strings.EqualFold(asset.String(), NativeTokenAddr) {
 		return false // only native transfers bounce; an ERC20 leg never returns to the vault
+	}
+	if sender == "" || !strings.EqualFold(sender, vault.String()) {
+		return false
 	}
 	for _, b := range bounces {
 		if b.router != router || b.evt.Vault != vault {
@@ -325,7 +334,7 @@ func (scp *SmartContractLogParser) GetTxInItem(logs []*etypes.Log, txInItem *typ
 			txInItem.Coins = common.NewCoins(
 				common.NewCoin(asset, scp.amtConverter(transferOutEvt.Asset.String(), transferOutEvt.Amount)).WithDecimals(decimals),
 			)
-			txInItem.Bounced = matchesBounce(bounces, item.Address, transferOutEvt.Vault, transferOutEvt.Asset, transferOutEvt.To, transferOutEvt.Amount)
+			txInItem.Bounced = matchesBounce(bounces, txInItem.Sender, item.Address, transferOutEvt.Vault, transferOutEvt.Asset, transferOutEvt.To, transferOutEvt.Amount)
 			earlyExit = true
 			isVaultTransfer = false
 		case transferFailedEvent:
@@ -423,7 +432,7 @@ func (scp *SmartContractLogParser) GetTxInItem(logs []*etypes.Log, txInItem *typ
 				continue
 			}
 
-			txInItem.Bounced = matchesBounce(bounces, item.Address, transferOutAndCall.Vault, ecommon.HexToAddress(NativeTokenAddr), transferOutAndCall.To, transferOutAndCall.Amount)
+			txInItem.Bounced = matchesBounce(bounces, txInItem.Sender, item.Address, transferOutAndCall.Vault, ecommon.HexToAddress(NativeTokenAddr), transferOutAndCall.To, transferOutAndCall.Amount)
 			txInItem.To = transferOutAndCall.To.String()
 			txInItem.Memo = transferOutAndCall.Memo
 			txInItem.Sender = transferOutAndCall.Vault.String()
