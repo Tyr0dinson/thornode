@@ -129,25 +129,45 @@ func (c *Client) SignTx(txs []stypes.TxOutItem, thorchainHeight int64) ([]byte, 
 			if err != nil {
 				continue
 			}
-			outputAddrStr = outputAddr.(dogutil.Address).String() // trunk-ignore(golangci-lint/forcetypeassert)
+			dogeAddr, ok := outputAddr.(dogutil.Address)
+			if !ok {
+				c.log.Error().Msgf("decoded doge address has unexpected type %T", outputAddr)
+				continue
+			}
+			outputAddrStr = dogeAddr.String()
 		case common.BCHChain:
 			outputAddr, err = bchutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgBCH())
 			if err != nil {
 				continue
 			}
-			outputAddrStr = outputAddr.(bchutil.Address).String() // trunk-ignore(golangci-lint/forcetypeassert)
+			bchAddr, ok := outputAddr.(bchutil.Address)
+			if !ok {
+				c.log.Error().Msgf("decoded bch address has unexpected type %T", outputAddr)
+				continue
+			}
+			outputAddrStr = bchAddr.String()
 		case common.LTCChain:
 			outputAddr, err = ltctxscript.DecodeAddress(tx.ToAddress.String(), c.getChainCfgLTC())
 			if err != nil {
 				continue
 			}
-			outputAddrStr = outputAddr.(ltcutil.Address).String() // trunk-ignore(golangci-lint/forcetypeassert)
+			ltcAddr, ok := outputAddr.(ltcutil.Address)
+			if !ok {
+				c.log.Error().Msgf("decoded ltc address has unexpected type %T", outputAddr)
+				continue
+			}
+			outputAddrStr = ltcAddr.String()
 		case common.BTCChain:
 			outputAddr, err = btcutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgBTC())
 			if err != nil {
 				continue
 			}
-			outputAddrStr = outputAddr.(btcutil.Address).String()
+			btcAddr, ok := outputAddr.(btcutil.Address)
+			if !ok {
+				c.log.Error().Msgf("decoded btc address has unexpected type %T", outputAddr)
+				continue
+			}
+			outputAddrStr = btcAddr.String()
 		case common.ZECChain:
 			outputAddr, err = zcash.DecodeAddress(tx.ToAddress.String(), c.getChainCfgZEC().Name)
 			if err != nil {
