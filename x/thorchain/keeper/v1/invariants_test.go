@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -249,7 +248,7 @@ func setupValidMempoolSwapInvariant(c *C) (cosmos.Context, KVStore, MempoolSwap)
 
 func (s *InvariantsSuite) TestMempoolSwapsInvariantChecksCanonicalPhysicalKey(c *C) {
 	ctx, k, record := setupValidMempoolSwapInvariant(c)
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	canonicalKey := k.mempoolSwapKey(record.TxId, record.Index)
 	bz := append([]byte(nil), store.Get(canonicalKey)...)
 	store.Delete(canonicalKey)
@@ -265,7 +264,7 @@ func (s *InvariantsSuite) TestMempoolSwapsInvariantChecksCanonicalPhysicalKey(c 
 
 func (s *InvariantsSuite) TestMempoolSwapsInvariantChecksOverlayPhysicalKeys(c *C) {
 	ctx, k, record := setupValidMempoolSwapInvariant(c)
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 
 	poolKey := k.mempoolSwapPoolBalanceOverlayKey(record.PendingEffects.Pools[0].Asset)
 	poolBz := append([]byte(nil), store.Get(poolKey)...)
@@ -319,7 +318,7 @@ func (s *InvariantsSuite) TestMempoolSwapsInvariantRetainsFinalizedTombstoneOwne
 
 func (s *InvariantsSuite) TestMempoolSwapsInvariantReportsNilVoterTORWithoutPanic(c *C) {
 	ctx, k, record := setupValidMempoolSwapInvariant(c)
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	txID := record.TxId.String()
 	c.Assert(len(txID) < 128, Equals, true)
 

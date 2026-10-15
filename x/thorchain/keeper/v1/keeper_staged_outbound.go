@@ -3,7 +3,6 @@ package keeperv1
 import (
 	"fmt"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
@@ -202,7 +201,7 @@ func (k KVStore) adjustStagedOutboundTotals(ctx cosmos.Context, items []StagedOu
 		return nil
 	}
 
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	type coinUpdate struct {
 		key  []byte
 		coin common.Coin
@@ -258,7 +257,7 @@ func (k KVStore) adjustStagedOutboundTotals(ctx cosmos.Context, items []StagedOu
 
 func (k KVStore) setStagedOutboundList(ctx cosmos.Context, inHash common.TxID, list StagedOutboundList) error {
 	key := k.GetKey(prefixStagedOutbound, inHash.String())
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 
 	if len(list.Items) == 0 {
 		store.Delete(key)
@@ -272,7 +271,7 @@ func (k KVStore) setStagedOutboundList(ctx cosmos.Context, inHash common.TxID, l
 
 func (k KVStore) getStagedOutboundList(ctx cosmos.Context, inHash common.TxID) (StagedOutboundList, error) {
 	key := k.GetKey(prefixStagedOutbound, inHash.String())
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 
 	list := StagedOutboundList{
 		InHash: inHash,

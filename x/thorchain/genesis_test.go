@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/btcsuite/btcutil/bech32"
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/cmd"
 	. "gopkg.in/check.v1"
 
@@ -574,7 +573,7 @@ func (GenesisTestSuite) TestInitGenesisNormalizesMempoolSwapVoterMirror(c *C) {
 
 func (GenesisTestSuite) TestExportGenesisFailsClosedOnInvalidMempoolSwapLifecycle(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	store := runtime.KVStoreAdapter(serviceThorchain.OpenKVStore(ctx))
+	store := ctx.KVStore(keyThorchain)
 	record := newGenesisMempoolSwap(GetRandomPubKey())
 	key := rawGenesisMempoolSwapKey(record)
 
@@ -593,7 +592,7 @@ func (GenesisTestSuite) TestExportGenesisFailsClosedOnInvalidMempoolSwapLifecycl
 
 func (GenesisTestSuite) TestExportGenesisFailsClosedOnNonCanonicalMempoolSwapKey(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	store := runtime.KVStoreAdapter(serviceThorchain.OpenKVStore(ctx))
+	store := ctx.KVStore(keyThorchain)
 	record := newGenesisMempoolSwap(GetRandomPubKey())
 	bz, err := mgr.Keeper().Cdc().Marshal(&record)
 	c.Assert(err, IsNil)
@@ -605,7 +604,7 @@ func (GenesisTestSuite) TestExportGenesisFailsClosedOnNonCanonicalMempoolSwapKey
 
 func (GenesisTestSuite) TestExportGenesisFailsClosedOnSwappedMempoolSwapKeys(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	store := runtime.KVStoreAdapter(serviceThorchain.OpenKVStore(ctx))
+	store := ctx.KVStore(keyThorchain)
 	recordA := newGenesisMempoolSwap(GetRandomPubKey())
 	recordB := newGenesisMempoolSwap(GetRandomPubKey())
 	recordB.TxId = GetRandomTxHash()
@@ -624,7 +623,7 @@ func (GenesisTestSuite) TestExportGenesisFailsClosedOnSwappedMempoolSwapKeys(c *
 
 func (GenesisTestSuite) TestExportGenesisFailsClosedOnDuplicatePhysicalMempoolSwapIdentity(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	store := runtime.KVStoreAdapter(serviceThorchain.OpenKVStore(ctx))
+	store := ctx.KVStore(keyThorchain)
 	record := newGenesisMempoolSwap(GetRandomPubKey())
 	c.Assert(mgr.Keeper().SetMempoolSwap(ctx, record), IsNil)
 	bz, err := mgr.Keeper().Cdc().Marshal(&record)
@@ -645,7 +644,7 @@ func (GenesisTestSuite) TestExportGenesisFailsClosedOnMissingOrCorruptLifecycleV
 	corruptCtx, corruptMgr := setupManagerForTest(c)
 	corruptRecord := newGenesisMempoolSwap(GetRandomPubKey())
 	c.Assert(corruptMgr.Keeper().SetMempoolSwap(corruptCtx, corruptRecord), IsNil)
-	corruptStore := runtime.KVStoreAdapter(serviceThorchain.OpenKVStore(corruptCtx))
+	corruptStore := corruptCtx.KVStore(keyThorchain)
 	corruptStore.Set(rawGenesisObservedTxInKey(corruptRecord.TxId), []byte{0xff})
 	c.Assert(func() { ExportGenesis(corruptCtx, corruptMgr.Keeper()) }, PanicMatches,
 		"fail to get voter for mempool swap lifecycle record .*:.*")

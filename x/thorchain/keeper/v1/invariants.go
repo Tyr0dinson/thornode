@@ -6,8 +6,6 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
-
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	keepertypes "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
@@ -308,7 +306,7 @@ func MempoolSwapsInvariant(k KVStore) common.Invariant {
 					continue
 				}
 				expectedPoolOwners[mapKey] = canonicalKey
-				store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+				store := k.kvStore(ctx)
 				if !store.Has(ownerKey) || !bytes.Equal(store.Get(ownerKey), canonicalKey) {
 					broken = true
 					msg = append(msg, fmt.Sprintf("mempool swap %s is missing its pool owner index for %s", identity, asset))

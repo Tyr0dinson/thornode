@@ -271,9 +271,29 @@ func (s *KeeperVaultSecuritySuite) TestGetPoolMemo(c *C) {
 	c.Check(&memo[common.ETHAsset].key[0] == ethKey, Equals, true)
 }
 
-// getSortedVaultSecurityOracle is getSortedVaultSecurity as on develop.
+// getSortedVaultSecurityOracle is getSortedVaultSecurity before the decode
+// memoization: develop's implementation with mempool swap overlays removed from
+// pool depths once per asset.
 func getSortedVaultSecurityOracle(k KVStore, ctx cosmos.Context, vaults Vaults, signingTransPeriod int64) []VaultSecurity {
 	vaultSecurity := make([]VaultSecurity, len(vaults))
+	poolCache := make(map[common.Asset]Pool)
+	getFinalityPool := func(asset common.Asset) (Pool, error) {
+		asset = asset.GetLayer1Asset()
+		if pool, ok := poolCache[asset]; ok {
+			return pool, nil
+		}
+		pool, err := k.GetPool(ctx, asset)
+		if err != nil {
+			return Pool{}, err
+		}
+		rawPool := pool
+		pool, err = k.finalityAdjustedPool(ctx, pool)
+		if err != nil {
+			pool = rawPool
+		}
+		poolCache[asset] = pool
+		return pool, nil
+	}
 
 	for i, vault := range vaults {
 		// get total bond
@@ -295,7 +315,7 @@ func getSortedVaultSecurityOracle(k KVStore, ctx cosmos.Context, vaults Vaults, 
 			if coin.IsRune() {
 				continue
 			} else {
-				pool, err := k.GetPool(ctx, coin.Asset)
+				pool, err := getFinalityPool(coin.Asset)
 				if err != nil {
 					ctx.Logger().Error("failed to get pool", "error", err)
 					continue
@@ -328,7 +348,7 @@ func getSortedVaultSecurityOracle(k KVStore, ctx cosmos.Context, vaults Vaults, 
 							totalValue = common.SafeSub(totalValue, item.Coin.Amount)
 						} else {
 							var pool Pool
-							pool, err = k.GetPool(ctx, item.Coin.Asset)
+							pool, err = getFinalityPool(item.Coin.Asset)
 							if err != nil {
 								ctx.Logger().Error("failed to get pool", "error", err)
 								continue
@@ -340,7 +360,7 @@ func getSortedVaultSecurityOracle(k KVStore, ctx cosmos.Context, vaults Vaults, 
 							totalValue = totalValue.Add(item.Coin.Amount)
 						} else {
 							var pool Pool
-							pool, err = k.GetPool(ctx, item.Coin.Asset)
+							pool, err = getFinalityPool(item.Coin.Asset)
 							if err != nil {
 								ctx.Logger().Error("failed to get pool", "error", err)
 								continue
@@ -379,8 +399,8 @@ func getSortedVaultSecurityOracle(k KVStore, ctx cosmos.Context, vaults Vaults, 
 	return vaultSecurity
 }
 
-// getSortedVaultSecurity matches develop's result and its store access, so its
-// gas: inside a tx gas_used is consensus-visible.
+// getSortedVaultSecurity matches the oracle's result and its store access, so
+// its gas: inside a tx gas_used is consensus-visible.
 func (s *KeeperVaultSecuritySuite) TestGetSortedVaultSecurityMatchesDevelop(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	ctx = ctx.WithBlockHeight(100)

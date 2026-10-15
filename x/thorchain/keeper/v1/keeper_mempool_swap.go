@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	storetypes "cosmossdk.io/store/types"
-	"github.com/cosmos/cosmos-sdk/runtime"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -176,7 +175,7 @@ func (k KVStore) updateMempoolSwapPoolOwners(ctx cosmos.Context, previous, next 
 	nextAssets := mempoolSwapRecordPoolOwnerAssets(next)
 	orderedKeys := sortedMempoolSwapMapUnionKeys(previousAssets, nextAssets)
 
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	for _, key := range orderedKeys {
 		asset := previousAssets[key]
 		if asset.IsEmpty() {
@@ -221,7 +220,7 @@ func (k KVStore) updateMempoolSwapPoolBalanceOverlays(ctx cosmos.Context, previo
 	nextOverlays := mempoolSwapRecordPoolBalanceOverlays(next)
 	orderedKeys := sortedMempoolSwapMapUnionKeys(previousOverlays, nextOverlays)
 
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	for _, key := range orderedKeys {
 		asset := previousOverlays[key].Asset
 		if asset.IsEmpty() {
@@ -276,7 +275,7 @@ func (k KVStore) updateMempoolSwapPoolBalanceOverlays(ctx cosmos.Context, previo
 func (k KVStore) GetMempoolSwapPoolBalanceOverlay(ctx cosmos.Context, asset common.Asset) (MempoolSwapPoolBalanceOverlay, error) {
 	asset = asset.GetLayer1Asset()
 	overlay := newMempoolSwapPoolBalanceOverlay(asset)
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	key := k.mempoolSwapPoolBalanceOverlayKey(asset)
 	if !store.Has(key) {
 		return overlay, nil
@@ -400,7 +399,7 @@ func (k KVStore) updateMempoolSwapNativeSupplyOverlays(ctx cosmos.Context, previ
 	nextOverlays := mempoolSwapRecordNativeSupplyOverlays(next)
 	orderedKeys := sortedMempoolSwapMapUnionKeys(previousOverlays, nextOverlays)
 
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	for _, key := range orderedKeys {
 		asset := previousOverlays[key].Asset
 		if asset.IsEmpty() {
@@ -448,7 +447,7 @@ func (k KVStore) updateMempoolSwapNativeSupplyOverlays(ctx cosmos.Context, previ
 // zeros; corrupt keys fail closed for irreversible consumers.
 func (k KVStore) GetMempoolSwapNativeSupplyOverlay(ctx cosmos.Context, asset common.Asset) (MempoolSwapNativeSupplyOverlay, error) {
 	overlay := newMempoolSwapNativeSupplyOverlay(asset)
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	key := k.mempoolSwapNativeSupplyOverlayKey(asset)
 	if !store.Has(key) {
 		return overlay, nil
@@ -473,7 +472,7 @@ func (k KVStore) GetMempoolSwapNativeSupplyOverlay(ctx cosmos.Context, asset com
 // pool consumer can act on the wrong lifecycle.
 func (k KVStore) GetMempoolSwapPoolOwner(ctx cosmos.Context, asset common.Asset) (MempoolSwap, bool, error) {
 	l1Asset := asset.GetLayer1Asset()
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	indexKey := k.mempoolSwapPoolOwnerKey(l1Asset)
 	if !store.Has(indexKey) {
 		return MempoolSwap{}, false, nil
@@ -533,7 +532,7 @@ func (k KVStore) setMempoolSwap(ctx cosmos.Context, record MempoolSwap) error {
 	}
 
 	cacheCtx, commit := ctx.CacheContext()
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(cacheCtx))
+	store := k.kvStore(cacheCtx)
 	canonicalKey := k.mempoolSwapKey(record.TxId, record.Index)
 
 	var previous MempoolSwap
@@ -577,7 +576,7 @@ func (k KVStore) setMempoolSwap(ctx cosmos.Context, record MempoolSwap) error {
 }
 
 func (k KVStore) getMempoolSwap(ctx cosmos.Context, key []byte, record *MempoolSwap) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	bz := store.Get(key)
 	if bz == nil {
 		return false, nil
@@ -634,7 +633,7 @@ func (k KVStore) DeleteMempoolSwap(ctx cosmos.Context, txID common.TxID, index u
 		return nil
 	}
 
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(cacheCtx))
+	store := k.kvStore(cacheCtx)
 	if err = k.updateMempoolSwapPoolBalanceOverlays(cacheCtx, &record, nil); err != nil {
 		return err
 	}
@@ -691,7 +690,7 @@ func (k KVStore) GetMempoolSwapsByVaultAfter(ctx cosmos.Context, vaultPubKey com
 	}
 
 	prefix := k.GetKey(prefixMempoolSwapVault, vaultPubKey.String()+"/")
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	start := prefix
 	if cursor != "" {
 		start = append(append([]byte{}, prefix...), []byte(strings.ToUpper(cursor))...)
@@ -829,7 +828,7 @@ func (k KVStore) GetErrataPoolCorrections(ctx cosmos.Context, asset common.Asset
 		return []common.TxID{}, nil
 	}
 	prefix := k.GetKey(prefixErrataPoolCorrection, asset.GetLayer1Asset().String()+"/")
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	iter := store.Iterator(prefix, storetypes.PrefixEndBytes(prefix))
 	defer iter.Close()
 	txIDs := make([]common.TxID, 0)
