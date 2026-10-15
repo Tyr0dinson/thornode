@@ -847,6 +847,12 @@ type BifrostAttestationGossipConfig struct {
 	// how long to wait when sending a single attestation to a peer before giving up.
 	PeerTimeout time.Duration `mapstructure:"peer_timeout"`
 
+	// Absolute budget per attestation-state exchange, including requester
+	// dialing or sender snapshot construction. Later header ACKs and the
+	// final ACK use the remaining budget; ordinary frame deadlines still apply.
+	// Expiry resets the stream but does not cancel lock waits or processing.
+	StateSyncTimeout time.Duration `mapstructure:"state_sync_timeout"`
+
 	// maximum concurrent sends to a single peer
 	PeerConcurrentSends int `mapstructure:"peer_concurrent_sends"`
 

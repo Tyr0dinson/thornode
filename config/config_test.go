@@ -1152,3 +1152,13 @@ func (Test) TestBifrostOracleConfigFields(c *C) {
 	c.Assert(oracle.Enabled, Equals, true)
 	c.Assert(oracle.LogLevel, Equals, "info")
 }
+
+func (Test) TestAttestationStateSyncTimeoutDefault(c *C) {
+	confMap := map[interface{}]interface{}{}
+	c.Assert(yaml.Unmarshal(defaultConfig, &confMap), IsNil)
+	bifrostMap, ok := confMap["bifrost"].(map[interface{}]interface{})
+	c.Assert(ok, Equals, true)
+	gossipMap, ok := bifrostMap["attestation_gossip"].(map[interface{}]interface{})
+	c.Assert(ok, Equals, true)
+	c.Assert(gossipMap["state_sync_timeout"], Equals, "30m")
+}

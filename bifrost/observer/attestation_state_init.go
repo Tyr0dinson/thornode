@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"sync"
+	"time"
 
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -16,60 +17,105 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 )
 
-// askForAttestationState will ask other validators for their attestation state
-func (s *AttestationGossip) askForAttestationState(ctx context.Context) {
-	allPeers := s.host.Peerstore().Peers()
-	if len(allPeers) == 0 {
-		s.logger.Debug().Msg("no peers to ask for attestation state")
-		return
-	}
-	peersWithoutMe := make([]peer.ID, 0, len(allPeers)-1)
-	// Skip self, send to 3 active vals that we are peered with
-	activeVals := s.getActiveValidators()
-	for _, peerID := range allPeers {
-		if peerID == s.host.ID() {
-			continue
-		}
-		if _, ok := activeVals[peerID]; ok {
-			peersWithoutMe = append(peersWithoutMe, peerID)
-		}
-	}
+// Match the processing budget used by bounded state-sync receivers. This is
+// operational headroom, not a bound on signature work, lock waits or RPCs.
+const (
+	defaultStateSyncTimeout = 30 * time.Minute
+	// Match S14: a single stalled peer cannot own both copies. This bounds
+	// simultaneous copies, not the size of the legacy snapshot itself.
+	maxConcurrentAttestationStateSnapshots = 2
+)
 
-	if len(peersWithoutMe) == 0 {
-		s.logger.Debug().Msg("no active val peers without me to ask for attestation state")
-		return
+func (s *AttestationGossip) stateSyncTimeout() time.Duration {
+	if s.config.StateSyncTimeout > 0 {
+		return s.config.StateSyncTimeout
 	}
-	// ask 3 random peers for their attestation state
-	rand.Shuffle(len(peersWithoutMe), func(i, j int) {
-		peersWithoutMe[i], peersWithoutMe[j] = peersWithoutMe[j], peersWithoutMe[i]
-	})
-	numPeers := s.config.AskPeers
-	if len(peersWithoutMe) < numPeers {
-		numPeers = len(peersWithoutMe)
-	}
-	peers := peersWithoutMe[:numPeers]
+	return defaultStateSyncTimeout
+}
 
+func (s *AttestationGossip) acquireAttestationStateExport(remote peer.ID) bool {
+	s.stateExportMu.Lock()
+	defer s.stateExportMu.Unlock()
+	if _, exists := s.stateExports[remote]; exists || len(s.stateExports) >= maxConcurrentAttestationStateSnapshots {
+		return false
+	}
+	if s.stateExports == nil {
+		s.stateExports = make(map[peer.ID]struct{})
+	}
+	s.stateExports[remote] = struct{}{}
+	return true
+}
+
+// The owning handler releases capacity only when its work has returned.
+// A stream reset cannot interrupt a local lock wait or release its copy early.
+func (s *AttestationGossip) releaseAttestationStateExport(remote peer.ID) {
+	s.stateExportMu.Lock()
+	defer s.stateExportMu.Unlock()
+	delete(s.stateExports, remote)
+}
+
+// One absolute transport budget prevents successive ACKs from refreshing the
+// wait indefinitely. Reset interrupts I/O, not snapshot locks or processing.
+func (s *AttestationGossip) stateExchangeDeadline(parent context.Context, stream network.Stream) (time.Time, func()) {
+	ctx, cancel := context.WithTimeout(parent, s.stateSyncTimeout())
+	stop := context.AfterFunc(ctx, func() { _ = stream.Reset() })
+	deadline, _ := ctx.Deadline()
+	return deadline, func() { stop(); cancel() }
+}
+
+// askForAttestationState collects one parallel group. A failed peer never
+// cancels other imports; the owner waits for the whole group before retrying.
+func (s *AttestationGossip) askForAttestationState(ctx context.Context, peers ...peer.ID) attestationStateGroupResult {
+	if len(peers) == 0 {
+		peers = s.attestationStatePeers()
+		rand.Shuffle(len(peers), func(i, j int) { peers[i], peers[j] = peers[j], peers[i] })
+		fanout := s.config.AskPeers
+		if fanout <= 0 {
+			fanout = defaultAskPeers
+		}
+		peers = peers[:min(len(peers), fanout)]
+	}
+	if len(peers) == 0 {
+		return attestationStateGroupResult{}
+	}
 	s.stateInitMu.Lock()
 	s.stateInitPeers = make(map[peer.ID]bool, len(peers))
-	for _, peer := range peers {
-		s.stateInitPeers[peer] = true
+	for _, remote := range peers {
+		s.stateInitPeers[remote] = true
 	}
 	s.stateInitMu.Unlock()
+	defer func() {
+		s.stateInitMu.Lock()
+		s.stateInitPeers = nil
+		s.stateInitMu.Unlock()
+	}()
 
-	var wg sync.WaitGroup
-	wg.Add(len(peers))
-	for _, peer := range peers {
-		go s.askPeerForState(ctx, peer, &wg)
+	results := make(chan bool, len(peers))
+	for _, remote := range peers {
+		go func() { results <- s.askPeerForState(ctx, remote) }()
 	}
-	wg.Wait()
-	// Reset the state init peers
-	s.stateInitMu.Lock()
-	s.stateInitPeers = nil
-	s.stateInitMu.Unlock()
+	var group attestationStateGroupResult
+	for range peers {
+		if <-results {
+			group.completed++
+		} else {
+			group.failed++
+		}
+	}
+	return group
 }
 
 func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 	remotePeer := stream.Conn().RemotePeer()
+	if !s.acquireAttestationStateExport(remotePeer) {
+		s.logger.Debug().Str("peer", remotePeer.String()).Msg("state export capacity exhausted")
+		_ = stream.Reset()
+		return
+	}
+	defer s.releaseAttestationStateExport(remotePeer)
+	deadline, stopDeadline := s.stateExchangeDeadline(context.Background(), stream)
+	defer stopDeadline()
+
 	s.logger.Debug().Str("peer", remotePeer.String()).Msg("sending attestation state")
 	// Snapshot under the map/state locks. Each frame revalidates durable XMR
 	// admission later; no transport operation holds a cleanup reader.
@@ -202,7 +248,7 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 	}
 
 	// Wait for acknowledgment
-	ack, err := p2p.ReadStreamWithBuffer(stream)
+	ack, err := p2p.ReadStreamWithBufferLimit(stream, uint32(len(streamAckHeader)))
 	if err != nil {
 		s.logger.Error().Err(err).Msg("failed to read ack after batch begin")
 		return
@@ -226,7 +272,7 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 
 	// Send batches
 	for batchNum, batch := range batches {
-		if err = s.sendAttestationStateBatch(stream, batchNum, batch); err != nil {
+		if err = s.sendAttestationStateBatch(stream, batchNum, batch, deadline); err != nil {
 			s.logger.Error().Err(err).Int("batch", batchNum+1).Msg("failed to send state batch")
 			return
 		}
@@ -243,9 +289,9 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 		return
 	}
 
-	// Wait for the final acknowledgment
+	// The receiver sends done only after processing the final batch.
 	var endAck []byte
-	endAck, err = p2p.ReadStreamWithBuffer(stream)
+	endAck, err = p2p.ReadStreamWithBufferLimitAndDeadline(stream, uint32(len(streamAckHeader)), deadline)
 	if err != nil {
 		s.logger.Error().Err(err).Msg("failed to read final ack")
 		return
@@ -268,8 +314,8 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 // sendAttestationStateBatch rechecks durable XMR admission for each frame.
 // Transport and ACK waits hold no cleanup reader. A frame already prepared
 // may arrive after cleanup; the receiving peer applies its own admission check.
-// Existing per-operation framing deadlines apply without a whole-transfer cap.
-func (s *AttestationGossip) sendAttestationStateBatch(stream network.Stream, batchNum int, batch common.QuorumState) error {
+// The sender owns one absolute deadline, including snapshot construction.
+func (s *AttestationGossip) sendAttestationStateBatch(stream network.Stream, batchNum int, batch common.QuorumState, deadline time.Time) error {
 	hasXMR := false
 	for _, tx := range batch.QuoTxs {
 		if tx.ObsTx.Tx.Chain.Equals(common.XMRChain) {
@@ -305,7 +351,14 @@ func (s *AttestationGossip) sendAttestationStateBatch(stream network.Stream, bat
 	if err = p2p.WriteStreamWithBuffer(append(prefixBatchHeader, batchInfo...), stream); err != nil {
 		return fmt.Errorf("write state batch header: %w", err)
 	}
-	headerAck, err := p2p.ReadStreamWithBuffer(stream)
+	var headerAck []byte
+	if batchNum == 0 {
+		headerAck, err = p2p.ReadStreamWithBufferLimit(stream, uint32(len(streamAckHeader)))
+	} else {
+		// Inline receivers finish the previous batch before reading this header.
+		// Earlier batches and snapshot construction consume the same budget.
+		headerAck, err = p2p.ReadStreamWithBufferLimitAndDeadline(stream, uint32(len(streamAckHeader)), deadline)
+	}
 	if err != nil {
 		return fmt.Errorf("read state batch header ACK: %w", err)
 	}
@@ -316,7 +369,7 @@ func (s *AttestationGossip) sendAttestationStateBatch(stream network.Stream, bat
 		return fmt.Errorf("write state batch data: %w", err)
 	}
 
-	dataAck, err := p2p.ReadStreamWithBuffer(stream)
+	dataAck, err := p2p.ReadStreamWithBufferLimit(stream, uint32(len(streamAckHeader)))
 	if err != nil {
 		return fmt.Errorf("read state batch data ACK: %w", err)
 	}
@@ -499,40 +552,46 @@ func (s *AttestationGossip) processAttestationStateBatch(logger zerolog.Logger, 
 	}
 }
 
-// askPeerForState will ask a specific peer for its attestation state
-func (s *AttestationGossip) askPeerForState(ctx context.Context, peer peer.ID, wg *sync.WaitGroup) {
-	defer wg.Done()
-	stream, err := s.host.NewStream(ctx, peer, attestationStateProtocol)
-	if err != nil {
-		s.logger.Error().Err(err).Msgf("fail to create stream to peer: %s", peer)
-		return
+// The attempt budget includes dialing. Cancellation resets transport, while
+// the existing asynchronous receiver still joins any processing it has started.
+func (s *AttestationGossip) askPeerForState(parent context.Context, remote peer.ID) bool {
+	ctx, cancel := context.WithTimeout(parent, s.stateSyncTimeout())
+	defer cancel()
+	if ctx.Err() != nil {
+		return false
 	}
-
-	s.askStreamForState(stream)
+	stream, err := s.host.NewStream(ctx, remote, attestationStateProtocol)
+	if err != nil {
+		s.logger.Error().Err(err).Msgf("fail to create stream to peer: %s", remote)
+		return false
+	}
+	stop := context.AfterFunc(ctx, func() { _ = stream.Reset() })
+	defer stop()
+	return s.askStreamForState(stream) && ctx.Err() == nil
 }
 
 // askStreamForState will ask a specific stream for its attestation state
-func (s *AttestationGossip) askStreamForState(stream network.Stream) {
+func (s *AttestationGossip) askStreamForState(stream network.Stream) bool {
 	peer := stream.Conn().RemotePeer()
 
 	defer closeStream(s.logger, stream)
 
 	if err := p2p.WriteStreamWithBuffer(prefixSendState, stream); err != nil {
 		s.logger.Error().Err(err).Msgf("fail to write payload to peer: %s", peer)
-		return
+		return false
 	}
 
 	// Read initial response from peer
 	initialData, err := p2p.ReadStreamWithBuffer(stream)
 	if err != nil {
 		s.logger.Error().Err(err).Msgf("fail to read reply from peer: %s", peer)
-		return
+		return false
 	}
 
 	// If it's not the batch begin prefix, it's an error
 	if !bytes.HasPrefix(initialData, prefixBatchBegin) {
 		s.logger.Error().Msgf("unexpected attestation state format from peer: %s", peer)
-		return
+		return false
 	}
 
 	// Process the batched attestation state
@@ -543,5 +602,7 @@ func (s *AttestationGossip) askStreamForState(stream network.Stream) {
 	// breaking the handshake on every state-init exchange after a restart.
 	if err := s.receiveBatchedAttestationState(stream, initialData[len(prefixBatchBegin):]); err != nil {
 		s.logger.Error().Err(err).Msgf("fail to receive batched attestation state from peer: %s", peer)
+		return false
 	}
+	return true
 }

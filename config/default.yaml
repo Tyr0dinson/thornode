@@ -52,6 +52,7 @@ bifrost:
     max_batch_size: 100
     batch_interval: 2s
     peer_timeout: 20s
+    state_sync_timeout: 30m
     peer_concurrent_sends: 4
     peer_concurrent_receives: 5
   signer:

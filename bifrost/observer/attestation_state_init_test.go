@@ -2,20 +2,28 @@ package observer
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
+	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p-core/protocol"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
@@ -879,6 +887,7 @@ func TestSendReceiveBatchedAttestationState(t *testing.T) {
 
 // AutoResponderStream is a stream that automatically responds to protocol messages
 type AutoResponderStream struct {
+	pendingRead []byte
 	MockStream
 	writtenData *bytes.Buffer
 	readData    chan []byte
@@ -903,12 +912,16 @@ func NewAutoResponderStream(peer peer.ID) *AutoResponderStream {
 
 // Read implementation that returns the next item from the readData channel
 func (s *AutoResponderStream) Read(p []byte) (n int, err error) {
-	select {
-	case data := <-s.readData:
-		return copy(p, data), nil
-	case <-time.After(100 * time.Millisecond):
-		return 0, io.EOF
+	if len(s.pendingRead) == 0 {
+		select {
+		case s.pendingRead = <-s.readData:
+		case <-time.After(100 * time.Millisecond):
+			return 0, io.EOF
+		}
 	}
+	n = copy(p, s.pendingRead)
+	s.pendingRead = s.pendingRead[n:]
+	return n, nil
 }
 
 // Write implementation that captures the data and automatically responds
@@ -1068,6 +1081,7 @@ func TestSendAttestationStateEmptyProtocolCorrect(t *testing.T) {
 // of always replying ack_begin like AutoResponderStream. Used to verify the
 // sender does not fall through to the ack_begin check after a valid done ack.
 type doneResponderStream struct {
+	pendingRead []byte
 	MockStream
 	writtenData *bytes.Buffer
 	readData    chan []byte
@@ -1085,12 +1099,16 @@ func newDoneResponderStream(peer peer.ID) *doneResponderStream {
 }
 
 func (s *doneResponderStream) Read(p []byte) (n int, err error) {
-	select {
-	case data := <-s.readData:
-		return copy(p, data), nil
-	case <-time.After(100 * time.Millisecond):
-		return 0, io.EOF
+	if len(s.pendingRead) == 0 {
+		select {
+		case s.pendingRead = <-s.readData:
+		case <-time.After(100 * time.Millisecond):
+			return 0, io.EOF
+		}
 	}
+	n = copy(p, s.pendingRead)
+	s.pendingRead = s.pendingRead[n:]
+	return n, nil
 }
 
 func (s *doneResponderStream) Write(p []byte) (n int, err error) {
@@ -1208,4 +1226,894 @@ func TestAskStreamForStateEmptyState(t *testing.T) {
 	assert.Equal(t, 0, len(agReceiver.observedTxs), "receiver should have no txs after empty-state init")
 	assert.Equal(t, 0, len(agReceiver.networkFees), "receiver should have no network fees after empty-state init")
 	assert.Equal(t, 0, len(agReceiver.solvencies), "receiver should have no solvencies after empty-state init")
+}
+
+const stateSyncTestFrameTimeout = time.Second
+
+// Successful stream cleanup may log after the handler and its test return.
+type stateSyncLogBuffer struct {
+	mu     sync.Mutex
+	buffer bytes.Buffer
+}
+
+func (b *stateSyncLogBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.Write(p)
+}
+
+func (b *stateSyncLogBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.String()
+}
+
+type stateSyncReadDeadline struct {
+	at       time.Time
+	deadline time.Time
+	ordinary bool
+}
+
+// TCP buffers the next small header while the receiver processes a batch.
+// Unlike the older pipe fixture, these streams enforce deadlines. Scale only
+// the sender's ordinary 40-second reads to keep regressions fast; record the
+// requested deadline and pass absolute exchange deadlines through unchanged.
+// Receiver reads and all writes retain their production deadlines.
+type stateSyncDeadlineStream struct {
+	MockStream
+	transport  net.Conn
+	shortReads bool
+	reads      chan stateSyncReadDeadline
+	resets     atomic.Int32
+	closes     atomic.Int32
+}
+
+func (s *stateSyncDeadlineStream) Read(p []byte) (int, error) {
+	return s.transport.Read(p)
+}
+
+func (s *stateSyncDeadlineStream) Write(p []byte) (int, error) {
+	return s.transport.Write(p)
+}
+
+func (s *stateSyncDeadlineStream) SetReadDeadline(deadline time.Time) error {
+	now := time.Now()
+	remaining := deadline.Sub(now)
+	ordinary := remaining > p2p.TimeoutReadPayload-time.Second && remaining <= p2p.TimeoutReadPayload
+	s.reads <- stateSyncReadDeadline{at: now, deadline: deadline, ordinary: ordinary}
+	if ordinary && s.shortReads {
+		deadline = now.Add(stateSyncTestFrameTimeout)
+	}
+	return s.transport.SetReadDeadline(deadline)
+}
+
+func (s *stateSyncDeadlineStream) SetWriteDeadline(deadline time.Time) error {
+	return s.transport.SetWriteDeadline(deadline)
+}
+
+func (s *stateSyncDeadlineStream) Reset() error {
+	s.resets.Add(1)
+	return s.transport.Close()
+}
+
+func (s *stateSyncDeadlineStream) Close() error {
+	s.closes.Add(1)
+	return s.transport.Close()
+}
+
+func stateSyncDeadlinePair(t *testing.T) (*stateSyncDeadlineStream, *stateSyncDeadlineStream) {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = listener.Close() })
+	client, err := net.DialTimeout("tcp", listener.Addr().String(), time.Second)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = client.Close() })
+	server, err := listener.Accept()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = server.Close() })
+	require.NoError(t, listener.Close())
+	wrap := func(conn net.Conn, remote peer.ID, shortReads bool) *stateSyncDeadlineStream {
+		return &stateSyncDeadlineStream{
+			MockStream: MockStream{peer: remote},
+			transport:  conn,
+			shortReads: shortReads,
+			reads:      make(chan stateSyncReadDeadline, 32),
+		}
+	}
+	return wrap(server, "receiver", true), wrap(client, "sender", false)
+}
+
+func stateSyncDeadlineFixture(t *testing.T, count int) *AttestationGossip {
+	t.Helper()
+	sender, _, _, _, _, _ := setupTestGossip(t)
+	sender.logger = zerolog.Nop()
+	sender.config.StateSyncTimeout = 15 * time.Second
+	for i := range count {
+		fee := &common.NetworkFee{Chain: common.BTCChain, Height: int64(123 + i), TransactionSize: 100, TransactionRate: 42}
+		payload, err := fee.GetSignablePayload()
+		require.NoError(t, err)
+		signature, err := sender.privKey.Sign(payload)
+		require.NoError(t, err)
+		att := &common.Attestation{PubKey: sender.pubKey, Signature: signature}
+		sender.networkFees[*fee] = &AttestationState[*common.NetworkFee]{
+			Item: fee, attestations: []attestationSentState{{attestation: att}},
+		}
+	}
+	return sender
+}
+
+func stateSyncDeadlineTestSettings(t *testing.T) {
+	t.Helper()
+	previousLimit, previousDeadline := maxAttestationBatchBytes, p2p.ApplyDeadline.Load()
+	maxAttestationBatchBytes = 1 // One small, valid item per batch.
+	p2p.ApplyDeadline.Store(true)
+	t.Cleanup(func() {
+		maxAttestationBatchBytes = previousLimit
+		p2p.ApplyDeadline.Store(previousDeadline)
+	})
+}
+
+func waitStateSyncDeadlineHandler(t *testing.T, done <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("state handler did not finish")
+	}
+}
+
+func stateSyncNextReadDeadline(t *testing.T, stream *stateSyncDeadlineStream) stateSyncReadDeadline {
+	t.Helper()
+	select {
+	case deadline := <-stream.reads:
+		return deadline
+	case <-time.After(5 * time.Second):
+		t.Fatal("sender did not start the expected read")
+		return stateSyncReadDeadline{}
+	}
+}
+
+// This receiver keeps the existing wire messages but processes each batch
+// inline, matching the bounded receiver's ACK order. Processing uses the real
+// import handler; only the injected processing delay is synthetic.
+func stateSyncReceiveInline(t *testing.T, receiver *AttestationGossip, client *stateSyncDeadlineStream, slowBatch int) {
+	t.Helper()
+	write := func(payload []byte) { require.NoError(t, p2p.WriteStreamWithBuffer(payload, client)) }
+	read := func(prefix []byte) []byte {
+		message, err := p2p.ReadStreamWithBuffer(client)
+		require.NoError(t, err)
+		require.True(t, bytes.HasPrefix(message, prefix))
+		return message
+	}
+	write(prefixSendState)
+	begin := read(prefixBatchBegin)
+	require.Len(t, begin, 5)
+	count := binary.LittleEndian.Uint32(begin[1:])
+	require.EqualValues(t, 3, count)
+	write([]byte(streamAckBegin))
+	for i := range count {
+		header := read(prefixBatchHeader)
+		require.Len(t, header, 9)
+		require.Equal(t, i, binary.LittleEndian.Uint32(header[1:5]))
+		write([]byte(streamAckHeader))
+		data := read(prefixBatchData)
+		require.EqualValues(t, len(data)-1, binary.LittleEndian.Uint32(header[5:9]))
+		var batch common.QuorumState
+		require.NoError(t, batch.Unmarshal(data[1:]))
+		write([]byte(streamAckData))
+		if int(i)+1 == slowBatch {
+			time.Sleep(2 * stateSyncTestFrameTimeout)
+		}
+		receiver.processAttestationStateBatch(zerolog.Nop(), batch)
+	}
+	require.Equal(t, prefixBatchEnd, read(prefixBatchEnd))
+	write([]byte(p2p.StreamMsgDone))
+}
+
+func TestStateSyncSenderProcessingACKDeadlines(t *testing.T) {
+	stateSyncDeadlineTestSettings(t)
+	for _, tc := range []struct {
+		name string
+		slow int
+	}{
+		{"inline middle batch", 2},
+		{"inline final batch", 3},
+		{"legacy receiver", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sender := stateSyncDeadlineFixture(t, 3)
+			receiver, _, _, _, _, _ := setupTestGossip(t)
+			receiver.logger = zerolog.Nop()
+			var logs stateSyncLogBuffer
+			sender.logger = zerolog.New(&logs)
+			server, client := stateSyncDeadlinePair(t)
+			done := make(chan struct{})
+			go func() { sender.handleStreamAttestationState(server); close(done) }()
+			t.Cleanup(func() { _ = server.transport.Close(); waitStateSyncDeadlineHandler(t, done) })
+			if tc.slow == 0 {
+				receiver.askStreamForState(client)
+			} else {
+				stateSyncReceiveInline(t, receiver, client, tc.slow)
+			}
+			waitStateSyncDeadlineHandler(t, done)
+			require.Contains(t, logs.String(), "successfully sent attestation state in batches")
+			require.NotContains(t, logs.String(), "i/o timeout")
+			require.Len(t, receiver.networkFees, 3)
+			for fee := range sender.networkFees {
+				require.NotNil(t, receiver.networkFees[fee])
+				require.Equal(t, 1, receiver.networkFees[fee].AttestationCount())
+			}
+			var exchangeDeadline time.Time
+			for _, ordinary := range []bool{true, true, true, true, false, true, false, true, false} {
+				got := stateSyncNextReadDeadline(t, server)
+				require.Equal(t, ordinary, got.ordinary)
+				if !ordinary {
+					if exchangeDeadline.IsZero() {
+						exchangeDeadline = got.deadline
+					}
+					require.Equal(t, exchangeDeadline, got.deadline, "processing must not restart the budget")
+				}
+			}
+		})
+	}
+}
+
+// Stop at a selected sender ACK read, without sending that ACK.
+func stateSyncStallAtACK(t *testing.T, client *stateSyncDeadlineStream, phase string) {
+	t.Helper()
+	write := func(data []byte) {
+		require.NoError(t, p2p.WriteStreamWithBuffer(data, client))
+	}
+	read := func(prefix []byte) {
+		message, err := p2p.ReadStreamWithBuffer(client)
+		require.NoError(t, err)
+		require.True(t, bytes.HasPrefix(message, prefix))
+	}
+	write(prefixSendState)
+	read(prefixBatchBegin)
+	if phase == "begin" {
+		return
+	}
+	write([]byte(streamAckBegin))
+	read(prefixBatchHeader)
+	if phase == "first header" {
+		return
+	}
+	write([]byte(streamAckHeader))
+	read(prefixBatchData)
+	if phase == "data" {
+		return
+	}
+	write([]byte(streamAckData))
+	if phase == "next header" {
+		read(prefixBatchHeader)
+	} else {
+		require.Equal(t, "final", phase)
+		read(prefixBatchEnd)
+	}
+}
+
+func TestStateSyncSenderOrdinaryACKDeadlines(t *testing.T) {
+	stateSyncDeadlineTestSettings(t)
+	for _, tc := range []struct {
+		phase string
+		reads int
+		log   string
+	}{
+		{"begin", 2, "failed to read ack after batch begin"},
+		{"first header", 3, "read state batch header ACK"},
+		{"data", 4, "read state batch data ACK"},
+	} {
+		t.Run(tc.phase, func(t *testing.T) {
+			sender := stateSyncDeadlineFixture(t, 1)
+			var logs stateSyncLogBuffer
+			sender.logger = zerolog.New(&logs)
+			server, client := stateSyncDeadlinePair(t)
+			done := make(chan struct{})
+			go func() { sender.handleStreamAttestationState(server); close(done) }()
+			t.Cleanup(func() { _ = server.transport.Close(); waitStateSyncDeadlineHandler(t, done) })
+			stateSyncStallAtACK(t, client, tc.phase)
+			var got stateSyncReadDeadline
+			for range tc.reads {
+				got = stateSyncNextReadDeadline(t, server)
+				require.True(t, got.ordinary)
+				require.InDelta(t, float64(p2p.TimeoutReadPayload), float64(got.deadline.Sub(got.at)), float64(time.Second))
+			}
+			waitStateSyncDeadlineHandler(t, done)
+			require.GreaterOrEqual(t, time.Since(got.at), stateSyncTestFrameTimeout)
+			require.Contains(t, logs.String(), tc.log)
+			require.Contains(t, logs.String(), "i/o timeout")
+			require.Zero(t, stateSyncExportCount(sender))
+		})
+	}
+}
+
+func TestStateSyncSenderProcessingACKExpiry(t *testing.T) {
+	stateSyncDeadlineTestSettings(t)
+	for _, phase := range []string{"next header", "final"} {
+		t.Run(phase, func(t *testing.T) {
+			count := 1
+			if phase == "next header" {
+				count = 2
+			}
+			sender := stateSyncDeadlineFixture(t, count)
+			sender.config.StateSyncTimeout = 3 * stateSyncTestFrameTimeout
+			var logs stateSyncLogBuffer
+			sender.logger = zerolog.New(&logs)
+			server, client := stateSyncDeadlinePair(t)
+			done := make(chan struct{})
+			go func() { sender.handleStreamAttestationState(server); close(done) }()
+			t.Cleanup(func() { _ = server.transport.Close(); waitStateSyncDeadlineHandler(t, done) })
+			stateSyncStallAtACK(t, client, phase)
+			for range 4 {
+				require.True(t, stateSyncNextReadDeadline(t, server).ordinary)
+			}
+			got := stateSyncNextReadDeadline(t, server)
+			require.False(t, got.ordinary)
+			waitStateSyncDeadlineHandler(t, done)
+			require.False(t, time.Now().Before(got.deadline))
+			require.NotContains(t, logs.String(), "successfully sent attestation state")
+		})
+	}
+}
+
+func TestStateSyncSenderBudgetIncludesSnapshotConstruction(t *testing.T) {
+	stateSyncDeadlineTestSettings(t)
+	sender := stateSyncDeadlineFixture(t, 1)
+	sender.config.StateSyncTimeout = time.Second
+	server, client := stateSyncDeadlinePair(t)
+	sender.mu.Lock()
+	locked := true
+	done := make(chan struct{})
+	go func() { sender.handleStreamAttestationState(server); close(done) }()
+	t.Cleanup(func() {
+		if locked {
+			sender.mu.Unlock()
+		}
+		_ = server.transport.Close()
+		waitStateSyncDeadlineHandler(t, done)
+	})
+	require.NoError(t, p2p.WriteStreamWithBuffer(prefixSendState, client))
+	require.Eventually(t, func() bool { return server.resets.Load() > 0 }, 3*time.Second, time.Millisecond,
+		"budget must expire even while snapshot construction waits on its lock")
+	require.Equal(t, 1, stateSyncExportCount(sender), "reset cannot release a still-running owner")
+	// Reset cannot interrupt the lock; releasing it must let the handler exit.
+	sender.mu.Unlock()
+	locked = false
+	waitStateSyncDeadlineHandler(t, done)
+	require.Zero(t, stateSyncExportCount(sender))
+}
+
+func TestStateSyncSenderDeadlineCancellationAndFallback(t *testing.T) {
+	for _, timeout := range []time.Duration{0, -time.Second, 5 * time.Second} {
+		t.Run(timeout.String(), func(t *testing.T) {
+			sender := stateSyncDeadlineFixture(t, 0)
+			sender.config.StateSyncTimeout = timeout
+			server, _ := stateSyncDeadlinePair(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			before := time.Now()
+			deadline, stop := sender.stateExchangeDeadline(ctx, server)
+			defer stop()
+			want := timeout
+			if want <= 0 {
+				want = 30 * time.Minute
+			}
+			require.False(t, deadline.Before(before.Add(want)))
+			require.False(t, deadline.After(time.Now().Add(want)))
+			cancel()
+			require.Eventually(t, func() bool { return server.resets.Load() > 0 }, time.Second, time.Millisecond)
+		})
+	}
+	sender := stateSyncDeadlineFixture(t, 0)
+	server, _ := stateSyncDeadlinePair(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	_, stop := sender.stateExchangeDeadline(ctx, server)
+	stop()
+	cancel()
+	time.Sleep(20 * time.Millisecond)
+	require.Zero(t, server.resets.Load(), "finished transfers must disarm their reset")
+}
+
+func stateSyncExportCount(s *AttestationGossip) int {
+	s.stateExportMu.Lock()
+	defer s.stateExportMu.Unlock()
+	return len(s.stateExports)
+}
+
+func startStateSyncExport(t *testing.T, sender *AttestationGossip, remote peer.ID) (*stateSyncDeadlineStream, *stateSyncDeadlineStream, <-chan struct{}) {
+	t.Helper()
+	server, client := stateSyncDeadlinePair(t)
+	server.peer = remote
+	done := make(chan struct{})
+	go func() { sender.handleStreamAttestationState(server); close(done) }()
+	t.Cleanup(func() { _ = server.transport.Close(); waitStateSyncDeadlineHandler(t, done) })
+	return server, client, done
+}
+
+func TestStateSyncExportAdmission(t *testing.T) {
+	stateSyncDeadlineTestSettings(t)
+	sender := stateSyncDeadlineFixture(t, 2)
+	_, a, doneA := startStateSyncExport(t, sender, "a")
+	stateSyncStallAtACK(t, a, "next header")
+	require.Equal(t, 1, stateSyncExportCount(sender))
+
+	// A duplicate must not consume the other peer's free slot.
+	duplicate, duplicateClient, duplicateDone := startStateSyncExport(t, sender, "a")
+	require.NoError(t, p2p.WriteStreamWithBuffer(prefixSendState, duplicateClient))
+	waitStateSyncDeadlineHandler(t, duplicateDone)
+	require.Positive(t, duplicate.resets.Load())
+	require.Equal(t, 1, stateSyncExportCount(sender))
+	receiver := stateSyncDeadlineFixture(t, 0)
+	_, b, doneB := startStateSyncExport(t, sender, "b")
+	require.True(t, receiver.askStreamForState(b))
+	waitStateSyncDeadlineHandler(t, doneB)
+	require.Len(t, receiver.networkFees, 2)
+	require.Equal(t, 1, stateSyncExportCount(sender))
+
+	_, b, doneB = startStateSyncExport(t, sender, "b")
+	stateSyncStallAtACK(t, b, "next header")
+	require.Equal(t, 2, stateSyncExportCount(sender))
+
+	// With both copies held, rejection must not wait for the snapshot lock.
+	sender.mu.Lock()
+	locked := true
+	t.Cleanup(func() {
+		if locked {
+			sender.mu.Unlock()
+		}
+	})
+	rejected, c, doneC := startStateSyncExport(t, sender, "c")
+	require.NoError(t, p2p.WriteStreamWithBuffer(prefixSendState, c))
+	select {
+	case <-doneC:
+	case <-time.After(time.Second):
+		sender.mu.Unlock()
+		locked = false
+		t.Fatal("full capacity reached the snapshot lock")
+	}
+	require.Positive(t, rejected.resets.Load())
+	require.Equal(t, 2, stateSyncExportCount(sender))
+	sender.mu.Unlock()
+	locked = false
+	require.NoError(t, a.Reset())
+	require.NoError(t, b.Reset())
+	waitStateSyncDeadlineHandler(t, doneA)
+	waitStateSyncDeadlineHandler(t, doneB)
+	require.Zero(t, stateSyncExportCount(sender))
+}
+
+func TestStateSyncExportReleaseOnEveryExit(t *testing.T) {
+	stateSyncDeadlineTestSettings(t)
+	for _, phase := range []string{"begin", "next header", "final", "bad ack", "reset", "success", "empty"} {
+		t.Run(phase, func(t *testing.T) {
+			count := 1
+			if phase == "next header" {
+				count = 2
+			}
+			if phase == "empty" {
+				count = 0
+			}
+			sender := stateSyncDeadlineFixture(t, count)
+			sender.config.StateSyncTimeout = 300 * time.Millisecond
+			_, client, done := startStateSyncExport(t, sender, "peer")
+			if phase == "success" || phase == "empty" {
+				receiver := stateSyncDeadlineFixture(t, 0)
+				require.True(t, receiver.askStreamForState(client))
+			} else {
+				stall := phase
+				if phase == "bad ack" || phase == "reset" {
+					stall = "begin"
+				}
+				stateSyncStallAtACK(t, client, stall)
+				require.Equal(t, 1, stateSyncExportCount(sender))
+				switch phase {
+				case "bad ack":
+					require.NoError(t, p2p.WriteStreamWithBuffer([]byte("wrong"), client))
+				case "reset":
+					require.NoError(t, client.Reset())
+				}
+			}
+			waitStateSyncDeadlineHandler(t, done)
+			require.Zero(t, stateSyncExportCount(sender))
+			// The same identity can obtain a new copy after any exit.
+			sender.config.StateSyncTimeout = 15 * time.Second
+			_, retry, retryDone := startStateSyncExport(t, sender, "peer")
+			receiver := stateSyncDeadlineFixture(t, 0)
+			require.True(t, receiver.askStreamForState(retry))
+			waitStateSyncDeadlineHandler(t, retryDone)
+			require.Zero(t, stateSyncExportCount(sender))
+		})
+	}
+}
+
+// A small framed reply or a blocked read. Cancellation is exercised through
+// Reset, rather than pretending deadline setters interrupt a bytes.Buffer.
+type startupRetryStream struct {
+	MockStream
+	data                *bytes.Reader
+	started, stopped    chan struct{}
+	startOnce, stopOnce sync.Once
+	gate, join          <-chan struct{}
+	block               bool
+	resets              atomic.Int32
+}
+
+func newStartupRetryStream(remote peer.ID, empty bool) *startupRetryStream {
+	var frame []byte
+	if empty {
+		payload := append(append([]byte(nil), prefixBatchBegin...), 0, 0, 0, 0)
+		frame = make([]byte, 4+len(payload))
+		binary.LittleEndian.PutUint32(frame, uint32(len(payload)))
+		copy(frame[4:], payload)
+	}
+	return &startupRetryStream{
+		MockStream: MockStream{peer: remote}, data: bytes.NewReader(frame),
+		started: make(chan struct{}), stopped: make(chan struct{}),
+	}
+}
+
+func (s *startupRetryStream) Read(p []byte) (int, error) {
+	s.startOnce.Do(func() { close(s.started) })
+	if s.block {
+		<-s.stopped
+		if s.join != nil {
+			<-s.join
+		}
+		return 0, io.ErrClosedPipe
+	}
+	if s.gate != nil {
+		select {
+		case <-s.gate:
+		case <-s.stopped:
+			return 0, io.ErrClosedPipe
+		}
+	}
+	return s.data.Read(p)
+}
+
+func (s *startupRetryStream) Write(p []byte) (int, error) { return len(p), nil }
+func (s *startupRetryStream) Reset() error {
+	s.resets.Add(1)
+	s.stopOnce.Do(func() { close(s.stopped) })
+	return nil
+}
+
+func (s *startupRetryStream) Close() error {
+	s.stopOnce.Do(func() { close(s.stopped) })
+	return nil
+}
+
+func startupRetryGossip(t *testing.T, ids ...peer.ID) (*AttestationGossip, *MockHost) {
+	t.Helper()
+	g := stateSyncDeadlineFixture(t, 0)
+	h := NewMockHost(append([]peer.ID{"self"}, ids...))
+	g.host = h
+	g.activeVals = map[peer.ID]bool{"padding1": true, "padding2": true, "padding3": true}
+	for _, id := range ids {
+		g.activeVals[id] = true
+	}
+	g.config.AskPeers = len(ids)
+	h.streamFunc = func(_ context.Context, id peer.ID, _ ...protocol.ID) (network.Stream, error) {
+		return newStartupRetryStream(id, true), nil
+	}
+	t.Cleanup(g.stopStartupStateSync)
+	return g, h
+}
+
+func settleStartupRetry(t *testing.T, g *AttestationGossip, now time.Time) {
+	t.Helper()
+	require.NotNil(t, g.startupState.group)
+	waitStateSyncDeadlineHandler(t, g.startupState.group.done)
+	g.tickAttestationStateSync(context.Background(), true, false, now)
+}
+
+func TestStartupStateSyncBusyThenRecovers(t *testing.T) {
+	stateSyncDeadlineTestSettings(t)
+	sender := stateSyncDeadlineFixture(t, 2)
+	_, stalledA, doneA := startStateSyncExport(t, sender, "holder-a")
+	_, stalledB, doneB := startStateSyncExport(t, sender, "holder-b")
+	stateSyncStallAtACK(t, stalledA, "next header")
+	stateSyncStallAtACK(t, stalledB, "next header")
+	require.Equal(t, 2, stateSyncExportCount(sender))
+
+	requesters := make([]*AttestationGossip, 3)
+	exits := make(chan chan struct{}, 20)
+	for i := range requesters {
+		g, h := startupRetryGossip(t, "server")
+		requesters[i] = g
+		// Prepare sockets on the test goroutine; the production dial callback
+		// only consumes prepared pairs and starts the real remote handler.
+		pairs := make(chan [2]*stateSyncDeadlineStream, 5)
+		for range 5 {
+			server, client := stateSyncDeadlinePair(t)
+			server.peer = peer.ID(fmt.Sprintf("requester-%d", i))
+			pairs <- [2]*stateSyncDeadlineStream{server, client}
+		}
+		h.streamFunc = func(context.Context, peer.ID, ...protocol.ID) (network.Stream, error) {
+			select {
+			case pair := <-pairs:
+				done := make(chan struct{})
+				exits <- done
+				go func() { sender.handleStreamAttestationState(pair[0]); close(done) }()
+				return pair[1], nil
+			default:
+				return nil, fmt.Errorf("retry socket budget exhausted")
+			}
+		}
+	}
+	joinSenders := func() {
+		for len(exits) > 0 {
+			waitStateSyncDeadlineHandler(t, <-exits)
+		}
+	}
+	now := time.Now()
+	for _, g := range requesters {
+		g.tickAttestationStateSync(context.Background(), true, true, now)
+	}
+	for _, g := range requesters {
+		settleStartupRetry(t, g, now)
+		require.Equal(t, 1, g.startupState.result.failed)
+		require.False(t, g.startupState.finished)
+	}
+	joinSenders()
+	require.NoError(t, stalledA.Reset())
+	require.NoError(t, stalledB.Reset())
+	waitStateSyncDeadlineHandler(t, doneA)
+	waitStateSyncDeadlineHandler(t, doneB)
+	for range 4 {
+		for _, g := range requesters {
+			if !g.startupState.finished {
+				g.tickAttestationStateSync(context.Background(), true, false, g.startupState.next)
+			}
+		}
+		for _, g := range requesters {
+			if !g.startupState.finished {
+				settleStartupRetry(t, g, g.startupState.next)
+			}
+		}
+		joinSenders()
+	}
+	for _, g := range requesters {
+		require.True(t, g.startupState.finished)
+		require.Equal(t, 1, g.startupState.result.completed)
+		require.LessOrEqual(t, g.startupState.requests, 5)
+		require.Len(t, g.networkFees, 2)
+		for _, state := range g.networkFees {
+			require.Equal(t, 1, state.AttestationCount())
+		}
+	}
+	require.Zero(t, stateSyncExportCount(sender))
+}
+
+func TestStartupStateSyncWholeGroupAndEmptySuccess(t *testing.T) {
+	g, h := startupRetryGossip(t, "empty", "failed", "slow")
+	gate := make(chan struct{})
+	defer close(gate)
+	slow := newStartupRetryStream("slow", true)
+	slow.gate = gate
+	empty := newStartupRetryStream("empty", true)
+	h.streamFunc = func(_ context.Context, id peer.ID, _ ...protocol.ID) (network.Stream, error) {
+		switch id {
+		case "slow":
+			return slow, nil
+		case "empty":
+			return empty, nil
+		default:
+			return nil, fmt.Errorf("busy")
+		}
+	}
+	now := time.Now()
+	g.tickAttestationStateSync(context.Background(), true, true, now)
+	waitStateSyncDeadlineHandler(t, slow.started)
+	waitStateSyncDeadlineHandler(t, empty.stopped)
+	for range 3 {
+		g.tickAttestationStateSync(context.Background(), true, false, now.Add(time.Minute))
+	}
+	require.Equal(t, 3, g.startupState.requests)
+	require.False(t, g.startupState.finished)
+	require.Zero(t, slow.resets.Load(), "a completed peer must not cancel another import")
+	// Reset ends the still-running peer; the valid empty response remains success.
+	require.NoError(t, slow.Reset())
+	settleStartupRetry(t, g, now.Add(time.Minute))
+	require.True(t, g.startupState.finished)
+	require.Equal(t, attestationStateGroupResult{completed: 1, failed: 2}, g.startupState.result)
+	g.tickAttestationStateSync(context.Background(), true, false, now.Add(time.Hour))
+	require.Equal(t, 3, g.startupState.requests)
+}
+
+func TestStartupStateSyncFreshPeersAndRequestBudget(t *testing.T) {
+	g, h := startupRetryGossip(t, "a", "b", "c", "d")
+	g.config.AskPeers = 2
+	calls := make(chan peer.ID, 10)
+	h.streamFunc = func(_ context.Context, id peer.ID, _ ...protocol.ID) (network.Stream, error) {
+		calls <- id
+		return nil, fmt.Errorf("busy")
+	}
+	now := time.Now()
+	g.startupState = newAttestationStateCollection(context.Background(), now, time.Hour, 5)
+	deadline := g.startupState.deadline
+	for _, count := range []int{2, 4, 5} {
+		dispatch := g.startupState.next
+		g.tickAttestationStateSync(context.Background(), true, false, dispatch)
+		require.Equal(t, count, g.startupState.requests)
+		settleStartupRetry(t, g, dispatch)
+		require.Equal(t, deadline, g.startupState.deadline, "retries must not renew the collection window")
+		ctxDeadline, _ := g.startupState.ctx.Deadline()
+		require.Equal(t, deadline, ctxDeadline)
+		if count < 5 {
+			g.tickAttestationStateSync(context.Background(), true, false, dispatch.Add(time.Second))
+			require.Nil(t, g.startupState.group, "all retry groups require backoff")
+		}
+	}
+	require.True(t, g.startupState.finished)
+	require.Equal(t, attestationStateGroupResult{failed: 5}, g.startupState.result)
+	seen := map[peer.ID]bool{}
+	for range 4 {
+		seen[<-calls] = true
+	}
+	require.Len(t, seen, 4)
+	require.True(t, seen[<-calls])
+	old := g.startupState
+	g.tickAttestationStateSync(context.Background(), true, false, now.Add(2*time.Hour))
+	require.Same(t, old, g.startupState)
+	require.Equal(t, 5, g.startupState.requests)
+
+	// A peer discovered after reuse still precedes any previously asked peer.
+	c := newAttestationStateCollection(context.Background(), now, time.Hour, 50)
+	defer c.cancel()
+	c.selectPeers([]peer.ID{"a"}, 1)
+	c.selectPeers([]peer.ID{"a"}, 1)
+	require.Equal(t, []peer.ID{"new"}, c.selectPeers([]peer.ID{"a", "new"}, 2))
+}
+
+func TestStartupStateSyncCancellationAndWindow(t *testing.T) {
+	for _, mode := range []string{"parent", "shutdown", "leave", "window", "attempt"} {
+		t.Run(mode, func(t *testing.T) {
+			g, h := startupRetryGossip(t, "peer")
+			stream := newStartupRetryStream("peer", false)
+			stream.block = true
+			var dialDeadline time.Time
+			h.streamFunc = func(ctx context.Context, _ peer.ID, _ ...protocol.ID) (network.Stream, error) {
+				dialDeadline, _ = ctx.Deadline()
+				return stream, nil
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			now := time.Now()
+			window := time.Hour
+			if mode == "window" {
+				window = 50 * time.Millisecond
+			}
+			if mode == "attempt" {
+				g.config.StateSyncTimeout = 50 * time.Millisecond
+			}
+			g.startupState = newAttestationStateCollection(ctx, now, window, 50)
+			g.tickAttestationStateSync(ctx, true, false, now)
+			group := g.startupState.group
+			waitStateSyncDeadlineHandler(t, stream.started)
+			switch mode {
+			case "parent":
+				cancel()
+			case "shutdown":
+				g.stopStartupStateSync()
+			case "leave":
+				g.tickAttestationStateSync(ctx, false, false, now)
+			}
+			waitStateSyncDeadlineHandler(t, group.done)
+			g.tickAttestationStateSync(ctx, true, false, now)
+			require.Positive(t, stream.resets.Load())
+			require.Equal(t, 1, g.startupState.requests)
+			require.Equal(t, mode != "attempt", g.startupState.finished)
+			if mode == "window" {
+				require.Equal(t, g.startupState.deadline, dialDeadline)
+			}
+			if mode == "attempt" {
+				require.True(t, dialDeadline.Before(g.startupState.deadline))
+			}
+		})
+	}
+}
+
+func TestStartupStateSyncReactivationJoinsPriorGroup(t *testing.T) {
+	g, h := startupRetryGossip(t, "peer")
+	join := make(chan struct{})
+	var once sync.Once
+	release := func() { once.Do(func() { close(join) }) }
+	defer release()
+	stream := newStartupRetryStream("peer", false)
+	stream.block, stream.join = true, join
+	var calls atomic.Int32
+	h.streamFunc = func(_ context.Context, id peer.ID, _ ...protocol.ID) (network.Stream, error) {
+		if calls.Add(1) == 1 {
+			return stream, nil
+		}
+		return newStartupRetryStream(id, true), nil
+	}
+	now := time.Now()
+	g.tickAttestationStateSync(context.Background(), true, true, now)
+	old := g.startupState
+	waitStateSyncDeadlineHandler(t, stream.started)
+	g.tickAttestationStateSync(context.Background(), false, false, now)
+	waitStateSyncDeadlineHandler(t, stream.stopped)
+	activated := now.Add(time.Second)
+	g.tickAttestationStateSync(context.Background(), true, true, activated)
+	require.Same(t, old, g.startupState)
+	require.EqualValues(t, 1, calls.Load())
+	release()
+	waitStateSyncDeadlineHandler(t, old.group.done)
+	g.tickAttestationStateSync(context.Background(), true, false, activated.Add(time.Minute))
+	require.NotSame(t, old, g.startupState)
+	require.Equal(t, activated.Add(startupStateSyncWindow), g.startupState.deadline)
+	settleStartupRetry(t, g, activated.Add(time.Minute))
+	require.True(t, g.startupState.finished)
+	require.EqualValues(t, 2, calls.Load())
+}
+
+func TestStartupStateSyncNoPeersAndJitter(t *testing.T) {
+	g, _ := startupRetryGossip(t)
+	now := time.Now()
+	g.startupState = newAttestationStateCollection(context.Background(), now, 30*time.Millisecond, 50)
+	g.tickAttestationStateSync(context.Background(), true, false, now)
+	require.Nil(t, g.startupState.group)
+	require.Zero(t, g.startupState.requests)
+	waitStateSyncDeadlineHandler(t, g.startupState.ctx.Done())
+	g.tickAttestationStateSync(context.Background(), true, false, now)
+	require.True(t, g.startupState.finished)
+	for _, round := range []int{1, 2, 10, 1000} {
+		for _, random := range []float64{0, 0.5, 1} {
+			delay := attestationStateRetryDelay(round, random)
+			require.GreaterOrEqual(t, delay, 2500*time.Millisecond)
+			require.LessOrEqual(t, delay, time.Minute)
+		}
+	}
+}
+
+func TestStartupStateSyncObserverStopJoinsBeforeStorageClose(t *testing.T) {
+	g, h := startupRetryGossip(t, "peer")
+	pkm, err := pubkeymanager.NewPubKeyManager(nil, nil)
+	require.NoError(t, err)
+	o, err := NewObserver(pkm, nil, &MockThorchainBridge{}, getSharedTestMetrics(), t.TempDir(), metrics.NewTssKeysignMetricMgr(), g, "")
+	require.NoError(t, err)
+	release := make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	defer unblock()
+	stream := newStartupRetryStream("peer", false)
+	stream.block, stream.join = true, release
+	h.streamFunc = func(context.Context, peer.ID, ...protocol.ID) (network.Stream, error) { return stream, nil }
+	g.tickAttestationStateSync(context.Background(), true, true, time.Now())
+	group := g.startupState.group
+	waitStateSyncDeadlineHandler(t, stream.started)
+	stopped := make(chan error, 1)
+	go func() { stopped <- o.Stop() }()
+	waitStateSyncDeadlineHandler(t, stream.stopped)
+	select {
+	case stopErr := <-stopped:
+		t.Fatalf("observer stopped before joining its import: %v", stopErr)
+	default:
+	}
+	_, err = o.storage.db.Has([]byte("still-open"), nil)
+	require.NoError(t, err, "storage must remain usable until the owned import returns")
+	unblock()
+	select {
+	case stopErr := <-stopped:
+		require.NoError(t, stopErr)
+	case <-time.After(time.Second):
+		t.Fatal("observer failed to join the cancelled import")
+	}
+	waitStateSyncDeadlineHandler(t, group.done)
+	require.ErrorIs(t, g.startupState.ctx.Err(), context.Canceled)
+	require.True(t, g.startupState.finished)
+	require.True(t, g.startupStateStopped)
+	_, err = o.storage.db.Has([]byte("now-closed"), nil)
+	require.Error(t, err)
+}
+
+func TestStartupStateSyncPeerSelectionFiltersSelfInactiveAndDuplicates(t *testing.T) {
+	g, h := startupRetryGossip(t, "a", "b")
+	h.peers = []peer.ID{"self", "inactive", "a", "a", "b"}
+	g.activeVals["self"] = true
+	require.ElementsMatch(t, []peer.ID{"a", "b"}, g.attestationStatePeers())
 }

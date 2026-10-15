@@ -189,11 +189,11 @@ func TestStateFrameFailuresAllowRetry(t *testing.T) {
 			batch := common.QuorumState{QuoTxs: []*common.QuorumTx{{ObsTx: tx, Inbound: true, Attestations: []*common.Attestation{msg.Attestation}}}}
 			stream := newPausedAttestationStateStream(prefixBatchEnd) // no pause in a single-frame call
 			stream.failWritePrefix, stream.failReadPrefix = failure.write, failure.read
-			require.Error(t, g.sendAttestationStateBatch(stream, 0, batch))
+			require.Error(t, g.sendAttestationStateBatch(stream, 0, batch, time.Now().Add(defaultStateSyncTimeout)))
 			require.True(t, g.xmrErrataBarrier.TryLock(), "failed frame must release cleanup")
 			g.xmrErrataBarrier.Unlock()
 			require.Len(t, g.observedTxs, 1, "failed export must retain retryable evidence")
-			require.NoError(t, g.sendAttestationStateBatch(NewAutoResponderStream("retry-peer"), 0, batch))
+			require.NoError(t, g.sendAttestationStateBatch(NewAutoResponderStream("retry-peer"), 0, batch, time.Now().Add(defaultStateSyncTimeout)))
 		})
 	}
 }

@@ -699,7 +699,6 @@ func (o *Observer) sendDeck(ctx context.Context) {
 
 		if nodeStatus == stypes.NodeStatus_Active {
 			o.logger.Info().Msg("node is now active, will begin observation and gossip")
-			o.attestationGossip.askForAttestationState(ctx)
 			if lastNodeStatus != stypes.NodeStatus_Unknown {
 				// if this is not the first startup, we just churned in. rollback block scanners to re-observe recent blocks
 				for _, chain := range o.startedChainClientSnapshot() {
@@ -710,6 +709,9 @@ func (o *Observer) sendDeck(ctx context.Context) {
 			}
 		}
 	}
+	o.attestationGossip.tickAttestationStateSync(ctx,
+		nodeStatus == stypes.NodeStatus_Active,
+		nodeStatus == stypes.NodeStatus_Active && nodeStatus != lastNodeStatus, time.Now())
 	if nodeStatus != stypes.NodeStatus_Active {
 		o.logger.Debug().Msg("node is not active, will not handle tx in")
 		return
@@ -2194,6 +2196,9 @@ func (o *Observer) processPriceFeedQueue(ctx context.Context) {
 
 // Stop the observer
 func (o *Observer) Stop() error {
+	if o.attestationGossip != nil {
+		o.attestationGossip.stopStartupStateSync()
+	}
 	o.logger.Debug().Msg("request to stop observer")
 	defer o.logger.Debug().Msg("observer stopped")
 

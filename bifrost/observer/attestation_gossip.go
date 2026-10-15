@@ -247,6 +247,16 @@ type AttestationGossip struct {
 	// peerManager is used to limit the number of concurrent receives from a peer
 	peerMgr *peerManager
 
+	// Export admission is separate from ordinary gossip concurrency. Own one
+	// copied snapshot per peer, with a fixed total before any snapshot work.
+	stateExportMu sync.Mutex
+	stateExports  map[peer.ID]struct{}
+
+	startupStateMu      sync.Mutex
+	startupState        *attestationStateCollection
+	startupStatePending time.Time
+	startupStateStopped bool
+
 	stateInitPeers map[peer.ID]bool // peers that we have asked for their attestation state
 	stateInitMu    sync.Mutex
 }
