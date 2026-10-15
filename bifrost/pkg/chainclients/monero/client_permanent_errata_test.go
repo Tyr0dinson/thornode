@@ -162,7 +162,7 @@ func (f *errataClientFixture) requireBlocked(t *testing.T) {
 	require.Empty(t, signed)
 	require.Empty(t, checkpoint)
 	require.Nil(t, observation)
-	hash, err := f.client.BroadcastTx(f.tx, f.signed)
+	hash, err := f.client.BroadcastTx([]stypes.TxOutItem{f.tx}, f.signed)
 	require.ErrorIs(t, err, errXMRSigningClaimQuarantined)
 	require.Empty(t, hash)
 	require.Equal(t, signingBefore, f.signingCalls.Load(), "fenced retry must not enter FROST")
@@ -173,7 +173,7 @@ func (f *errataClientFixture) requireBlocked(t *testing.T) {
 func TestPermanentErrataFenceBlocksClientRPCsAcrossQuarantineRetry(t *testing.T) {
 	f := newErrataClientFixture(t, nil)
 	// The same bytes must be broadcastable before installing the fence.
-	hash, err := f.client.BroadcastTx(f.tx, f.signed)
+	hash, err := f.client.BroadcastTx([]stypes.TxOutItem{f.tx}, f.signed)
 	require.NoError(t, err)
 	require.Equal(t, f.payload.TxHash, hash)
 	require.Equal(t, int32(1), f.broadcastCalls.Load())
@@ -221,7 +221,7 @@ func TestPermanentErrataFenceRejectsInFlightClientBroadcastCompletion(t *testing
 	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
 	done := make(chan error, 1)
 	go func() {
-		_, err := f.client.BroadcastTx(f.tx, f.signed)
+		_, err := f.client.BroadcastTx([]stypes.TxOutItem{f.tx}, f.signed)
 		done <- err
 	}()
 	select {

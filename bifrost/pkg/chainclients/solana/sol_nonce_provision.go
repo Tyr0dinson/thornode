@@ -353,7 +353,7 @@ func (c *SOLClient) signAndBroadcastNonceTx(solTx types.Transaction, vault ttype
 		return "", fmt.Errorf("fail to serialize signed nonce tx: %w", err)
 	}
 
-	txid, err := c.BroadcastTx(toi, signedBytes)
+	txid, err := c.BroadcastTx([]stypes.TxOutItem{toi}, signedBytes)
 	if err != nil {
 		return "", fmt.Errorf("fail to broadcast nonce tx: %w", err)
 	}

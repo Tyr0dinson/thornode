@@ -56,7 +56,7 @@ func (c *recoveryChain) SignTx(types.TxOutItem, int64) ([]byte, []byte, *types.T
 	return []byte(fmt.Sprintf("nonce-and-payload-%d", c.signs)), []byte("nonce-7"), nil, nil
 }
 
-func (c *recoveryChain) BroadcastTx(_ types.TxOutItem, payload []byte) (string, error) {
+func (c *recoveryChain) BroadcastTx(_ []types.TxOutItem, payload []byte) (string, error) {
 	c.requests = append(c.requests, bytes.Clone(payload))
 	c.payments[string(payload)] = true
 	if !c.lostFirst {

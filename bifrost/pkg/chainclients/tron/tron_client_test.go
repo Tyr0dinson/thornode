@@ -836,7 +836,7 @@ func (s *TronTestSuite) TestFailedPaymentRecoveryNewScheduleAndRestart(c *C) {
 	original := s.failedRetryTxOut(11300)
 	original.Height = 100
 	failed, signed := f.signedTransaction(c, original)
-	id, err := f.client.BroadcastTx(original, signed)
+	id, err := f.client.BroadcastTx([]types.TxOutItem{original}, signed)
 	c.Assert(err, IsNil)
 	c.Assert(id, Equals, failed.TxId)
 	f.cache(c, original, failed.TxId, time.Now().Add(-time.Minute).UnixMilli())
@@ -856,7 +856,7 @@ func (s *TronTestSuite) TestFailedPaymentRecoveryNewScheduleAndRestart(c *C) {
 	c.Assert(calls, DeepEquals, []string{"/wallet/gettransactionbyid", "/wallet/getnodeinfo", "/wallet/gettransactioninfobyid"})
 	c.Assert(ids, DeepEquals, []string{failed.TxId, failed.TxId})
 
-	id, err = f.client.BroadcastTx(retry, replacementBytes)
+	id, err = f.client.BroadcastTx([]types.TxOutItem{retry}, replacementBytes)
 	c.Assert(err, IsNil)
 	c.Assert(id, Equals, replacement.TxId)
 	f.reopen(c)
@@ -1073,7 +1073,7 @@ func (s *TronTestSuite) TestFailedPaymentRecoveryExpiredReplacementCheckpoint(c 
 	f.rpc.mu.Lock()
 	f.rpc.broadcastDuplicate = true
 	f.rpc.mu.Unlock()
-	id, err := f.client.BroadcastTx(tx, signed)
+	id, err := f.client.BroadcastTx([]types.TxOutItem{tx}, signed)
 	c.Assert(err, IsNil)
 	c.Assert(id, Equals, expired.TxId)
 	f.reopen(c)

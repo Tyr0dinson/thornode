@@ -36,7 +36,7 @@ func (c *countingSigningTestClient) SignTx(types.TxOutItem, int64) ([]byte, []by
 	return []byte("signed"), nil, nil, nil
 }
 
-func (c *countingSigningTestClient) BroadcastTx(types.TxOutItem, []byte) (string, error) {
+func (c *countingSigningTestClient) BroadcastTx([]types.TxOutItem, []byte) (string, error) {
 	c.broadcasts.Add(1)
 	return "signed-hash", nil
 }

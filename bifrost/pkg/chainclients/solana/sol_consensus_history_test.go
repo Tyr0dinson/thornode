@@ -301,7 +301,7 @@ func (s *SolTestSuite) TestSignTxStrandedHistoryRetainsThenSignsWhenHistoryRetur
 	c.Assert(err, IsNil)
 	c.Assert(rawTx, NotNil)
 
-	txSig, err := e.BroadcastTx(txOut, rawTx)
+	txSig, err := e.BroadcastTx([]stypes.TxOutItem{txOut}, rawTx)
 	c.Assert(err, IsNil)
 	c.Assert(txSig, Equals, "broadcast-sig")
 	c.Assert(mock.count("sendTransaction"), Equals, 1)
@@ -353,7 +353,7 @@ func (s *SolTestSuite) TestBroadcastTxExpiredAnchorRetainsSignedTx(c *C) {
 		e.consensusHashes = nil
 		e.consensusHashMu.Unlock()
 
-		_, err = e.BroadcastTx(txOut, rawTx)
+		_, err = e.BroadcastTx([]stypes.TxOutItem{txOut}, rawTx)
 		c.Assert(err, NotNil, Commentf("%s", tc.name))
 		c.Assert(errors.Is(err, stypes.ErrResignRequired), Equals, false, Commentf("%s", tc.name))
 		c.Assert(e.isResignDeadHash(anchorHash), Equals, false, Commentf("%s", tc.name))
@@ -635,7 +635,7 @@ func (s *SolTestSuite) TestBroadcastTxDeadDurableResigns(c *C) {
 		txOut := durableTestTx(c, f.vault)
 		txOut.Height = keysignHeight
 
-		_, err := cl.BroadcastTx(txOut, durableRawTx(c, f))
+		_, err := cl.BroadcastTx([]stypes.TxOutItem{txOut}, durableRawTx(c, f))
 		c.Assert(err, NotNil, Commentf("%s", tc.name))
 		c.Assert(errors.Is(err, stypes.ErrResignRequired), Equals, tc.wantResign, Commentf("%s", tc.name))
 		server.Close()

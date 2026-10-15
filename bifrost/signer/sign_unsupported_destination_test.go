@@ -56,7 +56,7 @@ func (c *protectedDestinationClient) SignTx(tx types.TxOutItem, _ int64) ([]byte
 	return nil, tx.Checkpoint, nil, chainclienttypes.ErrUnsupportedXMRDestination
 }
 
-func (c *protectedDestinationClient) BroadcastTx(types.TxOutItem, []byte) (string, error) {
+func (c *protectedDestinationClient) BroadcastTx([]types.TxOutItem, []byte) (string, error) {
 	c.broadcastCount++
 	return "", chainclienttypes.ErrUnsupportedXMRDestination
 }
@@ -114,7 +114,7 @@ func (c *destinationChainClient) SignTx(tx types.TxOutItem, height int64) ([]byt
 	return c.ChainClient.SignTx(tx, height)
 }
 
-func (c *destinationChainClient) BroadcastTx(types.TxOutItem, []byte) (string, error) {
+func (c *destinationChainClient) BroadcastTx([]types.TxOutItem, []byte) (string, error) {
 	c.broadcasts++
 	return "", fmt.Errorf("unexpected broadcast")
 }

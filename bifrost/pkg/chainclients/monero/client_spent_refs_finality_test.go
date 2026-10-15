@@ -120,7 +120,7 @@ func TestSpentRefImportKeepsExactBroadcastLiveUntilAuthoritativeObservation(t *t
 					require.NoError(t, recoverErr)
 					require.True(t, found)
 					require.Equal(t, payloadBytes, recovered, "visibility-only import must retain the exact recoverable payload")
-					txHash, broadcastErr := client.BroadcastTx(tx, recovered)
+					txHash, broadcastErr := client.BroadcastTx([]stypes.TxOutItem{tx}, recovered)
 					require.NoError(t, broadcastErr)
 					require.Equal(t, payload.TxHash, txHash)
 					select {
@@ -152,7 +152,7 @@ func TestSpentRefImportKeepsExactBroadcastLiveUntilAuthoritativeObservation(t *t
 				applied, retry = client.applySpentOutputRefsOnce(chainclienttypes.SpentOutputRefsImport{Tx: imported, WireMemo: imported.Tx.Memo})
 				require.True(t, applied)
 				require.False(t, retry)
-				_, err = client.BroadcastTx(tx, payloadBytes)
+				_, err = client.BroadcastTx([]stypes.TxOutItem{tx}, payloadBytes)
 				require.NoError(t, err)
 				require.Empty(t, broadcasts, "committed observation must retain its reversible broadcast barrier")
 				observation.CommittedUnFinalised = false
@@ -160,7 +160,7 @@ func TestSpentRefImportKeepsExactBroadcastLiveUntilAuthoritativeObservation(t *t
 				applied, retry = client.applySpentOutputRefsOnce(chainclienttypes.SpentOutputRefsImport{Tx: imported, WireMemo: imported.Tx.Memo})
 				require.True(t, applied)
 				require.False(t, retry)
-				_, err = client.BroadcastTx(tx, payloadBytes)
+				_, err = client.BroadcastTx([]stypes.TxOutItem{tx}, payloadBytes)
 				require.NoError(t, err)
 				require.Empty(t, broadcasts, "authoritative final observation must suppress exact rebroadcast")
 				_, _, err = client.signedTxPayloadStore.GetOwned(plan.CacheVault, plan.CacheHash, plan.LogicalHash)

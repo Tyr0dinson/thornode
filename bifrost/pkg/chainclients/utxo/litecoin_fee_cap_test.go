@@ -340,7 +340,7 @@ func (s *LitecoinFeeCapSuite) TestFeeCapHoldsForFinalSignedSize(c *C) {
 		}
 
 		// Litecoin Core accepts the signed transaction under the broadcast fee-rate limit.
-		txid, err := s.client.BroadcastTx(txOut, payload)
+		txid, err := s.client.BroadcastTx([]stypes.TxOutItem{txOut}, payload)
 		c.Assert(err, IsNil, comment)
 		c.Check(txid, Equals, signed.TxHash().String(), comment)
 	}

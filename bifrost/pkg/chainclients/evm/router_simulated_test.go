@@ -214,7 +214,7 @@ func (s *RouterSimSuite) outbound(asset common.Asset, amount uint64) stypes.TxOu
 }
 
 func (s *RouterSimSuite) broadcastAndMine(c *C, item stypes.TxOutItem, raw []byte) {
-	txid, err := s.client.BroadcastTx(item, raw)
+	txid, err := s.client.BroadcastTx([]stypes.TxOutItem{item}, raw)
 	c.Assert(err, IsNil)
 	c.Assert(s.chain.commit(), IsNil)
 	s.mined(c, ecommon.HexToHash(txid))
