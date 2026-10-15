@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	storetypes "cosmossdk.io/store/types"
+	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
 	"google.golang.org/protobuf/encoding/protowire"
 	. "gopkg.in/check.v1"
 

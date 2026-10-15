@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"math/big"
 
-	storetypes "cosmossdk.io/store/types"
 	"github.com/blang/semver"
+	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
 	"google.golang.org/protobuf/encoding/protowire"
 	. "gopkg.in/check.v1"
 

@@ -10,9 +10,9 @@ import (
 	"sync"
 	"testing"
 
-	storetypes "cosmossdk.io/store/types"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	storetypes "github.com/cosmos/cosmos-sdk/store/v2/types"
 	"google.golang.org/protobuf/encoding/protowire"
 	. "gopkg.in/check.v1"
 
