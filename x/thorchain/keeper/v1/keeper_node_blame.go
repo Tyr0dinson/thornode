@@ -4,22 +4,20 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/cosmos/cosmos-sdk/runtime"
-
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 // setNodeBlameRecord internal helper to save node blame record
 func (k KVStore) setNodeBlameRecord(ctx cosmos.Context, key []byte, record NodeBlameRecord) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	buf := k.cdc.MustMarshal(&record)
 	store.Set(key, buf)
 }
 
 // getNodeBlameRecord internal helper to get node blame record
 func (k KVStore) getNodeBlameRecord(ctx cosmos.Context, key []byte, record *NodeBlameRecord) (bool, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	if !store.Has(key) {
 		return false, nil
 	}
@@ -108,7 +106,7 @@ func (k KVStore) CalculateKeygenPenaltyMultiplier(ctx cosmos.Context, addr cosmo
 
 // GetNodeBlameIterator returns iterator for all blame records
 func (k KVStore) GetNodeBlameIterator(ctx cosmos.Context) cosmos.Iterator {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	return cosmos.KVStorePrefixIterator(store, []byte(prefixNodeBlameRecord))
 }
 

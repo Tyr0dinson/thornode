@@ -1,7 +1,6 @@
 package keeperv1
 
 import (
-	"github.com/cosmos/cosmos-sdk/runtime"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -245,7 +244,7 @@ func (s *KeeperNodeBlameSuite) TestResetSinceChurnCountersForMembers(c *C) {
 	addr5 := GetRandomBech32Addr()
 	c.Assert(k.IncrementKeygenBlame(ctx, addr5), IsNil)
 	corrupt := GetRandomBech32Addr()
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := k.kvStore(ctx)
 	store.Set(k.GetKey(prefixNodeBlameRecord, corrupt.String()), []byte{0xff, 0xff, 0xff})
 
 	err = k.ResetSinceChurnCountersForMembers(ctx, []cosmos.AccAddress{corrupt, addr5})
