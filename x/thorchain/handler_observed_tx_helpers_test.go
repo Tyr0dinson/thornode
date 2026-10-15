@@ -2544,3 +2544,90 @@ func (s *HandlerObservedTxHelpersSuite) TestBuildPendingMempoolRollbackActionRej
 	c.Assert(err, ErrorMatches, "pending adv swap item missing state")
 	c.Assert(action, IsNil)
 }
+
+// Staging applies memoless outbound handling, which clears Memo and keeps the
+// REFUND marker only in OriginalMemo. The deferred affiliate fee must still
+// exempt those refunds at finalization, for a full refund and for the unused
+// input refund of a partial stream, while the swap output still pays it.
+func (s *HandlerObservedTxHelpersSuite) TestDeferredAffiliateFeeExemptsMemolessRefunds(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	mgr.Keeper().SetMimir(ctx, constants.EnableAdvSwapQueue.String(), 0)
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+	for _, asset := range []common.Asset{common.BTCAsset, common.ETHAsset} {
+		pool := NewPool()
+		pool.Asset = asset
+		pool.Status = PoolAvailable
+		pool.BalanceRune = cosmos.NewUint(100000 * common.One)
+		pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+		pool.LPUnits = cosmos.NewUint(1000 * common.One)
+		c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+	}
+
+	setup := func() (common.TxID, common.Address, common.Address) {
+		inHash := GetRandomTxHash()
+		sender := GetRandomBTCAddress()
+		destination := GetRandomETHAddress()
+		affiliate := GetRandomTHORAddress()
+		observed := common.ObservedTx{
+			Tx: common.Tx{
+				ID:          inHash,
+				Chain:       common.BTCChain,
+				FromAddress: sender,
+				ToAddress:   GetRandomBTCAddress(),
+				Coins:       common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(common.One))},
+				Gas:         common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(1))},
+				Memo:        NewSwapMemo(ctx, mgr, common.ETHAsset, destination, cosmos.ZeroUint(), affiliate.String(), cosmos.NewUint(500)),
+			},
+			Status:      common.Status_done,
+			BlockHeight: ctx.BlockHeight(),
+			Signers:     []string{na.NodeAddress.String()},
+		}
+		voter := NewObservedTxVoter(inHash, common.ObservedTxs{observed})
+		voter.Tx = observed
+		mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+		return inHash, sender, destination
+	}
+	staged := func(item TxOutItem) finalizedMempoolOutbound {
+		applyMemolessOutboundLogic(mgr.GetVersion(), &item, 1)
+		return finalizedMempoolOutbound{item: item, cleanupItem: item, scheduledHeight: ctx.BlockHeight()}
+	}
+	refundItem := func(inHash common.TxID, sender common.Address, amount cosmos.Uint) TxOutItem {
+		return TxOutItem{
+			Chain:     common.BTCChain,
+			ToAddress: sender,
+			InHash:    inHash,
+			Coin:      common.NewCoin(common.BTCAsset, amount),
+			Memo:      NewRefundMemo(inHash).String(),
+		}
+	}
+
+	// Full refund.
+	inHash, sender, _ := setup()
+	full := staged(refundItem(inHash, sender, cosmos.NewUint(common.One)))
+	c.Assert(full.item.Memo, Equals, "", Commentf("memoless outbound must clear the staged refund memo"))
+	c.Assert(strings.HasPrefix(full.item.GetMemo(), constants.MemoPrefixRefund), Equals, true)
+	adjusted, err := applyDeferredAffiliateFees(ctx, mgr, []finalizedMempoolOutbound{full})
+	c.Assert(err, IsNil)
+	c.Assert(adjusted, HasLen, 1)
+	c.Check(adjusted[0].item.Coin.Amount.String(), Equals, cosmos.NewUint(common.One).String())
+
+	// Partial stream: swap output plus a refund of the unused input.
+	inHash, sender, destination := setup()
+	outAmount := cosmos.NewUint(5 * common.One)
+	output := staged(TxOutItem{
+		Chain:     common.ETHChain,
+		ToAddress: destination,
+		InHash:    inHash,
+		Coin:      common.NewCoin(common.ETHAsset, outAmount),
+		Memo:      NewOutboundMemo(inHash).String(),
+	})
+	partial := staged(refundItem(inHash, sender, cosmos.NewUint(common.One/2)))
+	adjusted, err = applyDeferredAffiliateFees(ctx, mgr, []finalizedMempoolOutbound{output, partial})
+	c.Assert(err, IsNil)
+	c.Assert(adjusted, HasLen, 2)
+	c.Check(adjusted[0].item.Coin.Amount.LT(outAmount), Equals, true,
+		Commentf("the swap output still pays the deferred affiliate fee"))
+	c.Check(adjusted[1].item.Coin.Amount.String(), Equals, cosmos.NewUint(common.One/2).String(),
+		Commentf("the unused-input refund is exempt"))
+}

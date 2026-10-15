@@ -3008,7 +3008,7 @@ func deferredAffiliateGroupKey(item TxOutItem) string {
 		item.Chain,
 		item.ToAddress,
 		item.Coin.Asset,
-		item.Memo,
+		item.GetMemo(),
 		item.ModuleName,
 	)
 }
@@ -3039,6 +3039,13 @@ func applyDeferredAffiliateFees(ctx cosmos.Context, mgr Manager, outbounds []fin
 	for _, key := range groupOrder {
 		indices := grouped[key]
 		groupItem := adjusted[indices[0]].item
+		// Staging already ran memoless outbound handling, which clears Memo and
+		// keeps the REFUND/MIGRATE marker only in OriginalMemo. takeAffiliateFee
+		// checks Memo alone, so apply the exemption against the effective memo
+		// here or a staged refund would pay affiliates out of unused input.
+		if tos.isAffiliateFeeExemptOutbound(groupItem.GetMemo()) {
+			continue
+		}
 		groupTotal := cosmos.ZeroUint()
 		for _, idx := range indices {
 			groupTotal = groupTotal.Add(adjusted[idx].item.Coin.Amount)
