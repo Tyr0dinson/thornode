@@ -1211,6 +1211,312 @@ func (s *HandlerObservedTxHelpersSuite) TestGasCorrectionOnReorg(c *C) {
 	c.Assert(vault.GetCoin(common.ETHAsset).Amount.Equal(vaultBalanceAfter), Equals, true)
 }
 
+// finalBucketOutbound builds the ETH outbound used by the gas-correction final-bucket
+// tests below. These cover the EVM over-credit incident: a pre-mine MaxGas signer
+// self-observation (final-shaped, ConfirmationRequired:0) overwriting the finalized
+// voter.Tx gas after the quorum already debited the real gas.
+func finalBucketOutbound(txID common.TxID, vaultPubKey common.PubKey) common.Tx {
+	return common.Tx{
+		ID:          txID,
+		Chain:       common.ETHChain,
+		FromAddress: GetRandomETHAddress(),
+		ToAddress:   GetRandomETHAddress(),
+		Coins:       common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(305570))),
+		Memo:        "OUT:xyz",
+	}
+}
+
+// TestGasCorrectionIncidentOrderingNoPhantom: a non-final real-gas consensus executes
+// and debits first, then pre-mine MaxGas self-observations (final-shaped) complete a
+// FINAL consensus that overwrites voter.Tx, then the real final gas is observed. The
+// pre-fix code credited (MaxGas-real) the vault was never debited; the fix preserves the
+// executed gas (and finality) across the finalization overwrite so the correction is a
+// no-op. Asserts no phantom credit and voter.Tx stays final-shaped.
+func (s *HandlerObservedTxHelpersSuite) TestGasCorrectionIncidentOrderingNoPhantom(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+
+	nas := NodeAccounts{
+		GetRandomValidatorNode(NodeActive), GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive), GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+	}
+	vaultPubKey := GetRandomPubKey()
+	vault := GetRandomVault()
+	vault.PubKey = vaultPubKey
+	vault.AddFunds(common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One))})
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	txID := GetRandomTxHash()
+	base := finalBucketOutbound(txID, vaultPubKey)
+	maxGas := common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(150000))}
+	realGas := common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(10129))}
+	mk := func(g common.Gas, bh, fh int64) common.ObservedTx {
+		t := base
+		t.Gas = g
+		return common.NewObservedTx(t, bh, vaultPubKey, fh)
+	}
+
+	voter := NewObservedTxVoter(txID, []common.ObservedTx{})
+	for _, na := range nas {
+		voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, mk(realGas, 89, 91), na.NodeAddress, false)
+	}
+	c.Assert(voter.Height > 0, Equals, true)
+	c.Assert(voter.FinalisedHeight, Equals, int64(0))
+	c.Assert(voter.Tx.Tx.Gas.Equals(realGas), Equals, true)
+
+	vault, err := mgr.Keeper().GetVault(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	balBefore := vault.GetCoin(common.ETHAsset).Amount
+
+	ctx = ctx.WithBlockHeight(101)
+	for _, na := range nas[:4] {
+		voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, mk(maxGas, 88, 88), na.NodeAddress, false)
+	}
+	c.Assert(voter.FinalisedHeight > 0, Equals, true)
+	c.Assert(voter.Tx.Tx.Gas.Equals(realGas), Equals, true,
+		Commentf("finalization must preserve the executed gas, got %s", common.Coins(voter.Tx.Tx.Gas)))
+	c.Assert(voter.Tx.IsFinal(), Equals, true, Commentf("voter.Tx must remain final-shaped"))
+
+	ctx = ctx.WithBlockHeight(102)
+	for _, na := range nas {
+		voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, mk(realGas, 91, 91), na.NodeAddress, false)
+	}
+	vault, err = mgr.Keeper().GetVault(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(vault.GetCoin(common.ETHAsset).Amount.Equal(balBefore), Equals, true,
+		Commentf("no phantom credit from the MaxGas placeholder: before %s, after %s",
+			balBefore, vault.GetCoin(common.ETHAsset).Amount))
+	c.Assert(voter.Tx.IsFinal(), Equals, true)
+}
+
+// TestGasCorrectionMirrorOrderingKeepsRefund: when MaxGas consensus forms FIRST (and in
+// production the quorum debits MaxGas), the real-gas observation MUST still credit the
+// difference back - that credit is the legitimate refund, not a phantom. (A debit-only
+// "fix" would wrongly drop it and strand funds.)
+func (s *HandlerObservedTxHelpersSuite) TestGasCorrectionMirrorOrderingKeepsRefund(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+
+	nas := NodeAccounts{
+		GetRandomValidatorNode(NodeActive), GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive), GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+	}
+	vaultPubKey := GetRandomPubKey()
+	vault := GetRandomVault()
+	vault.PubKey = vaultPubKey
+	vault.AddFunds(common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One))})
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	txID := GetRandomTxHash()
+	base := finalBucketOutbound(txID, vaultPubKey)
+	maxGas := common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(150000))}
+	realGas := common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(10129))}
+	mk := func(g common.Gas, bh, fh int64) common.ObservedTx {
+		t := base
+		t.Gas = g
+		return common.NewObservedTx(t, bh, vaultPubKey, fh)
+	}
+
+	voter := NewObservedTxVoter(txID, []common.ObservedTx{})
+	for _, na := range nas[:4] {
+		voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, mk(maxGas, 88, 88), na.NodeAddress, false)
+	}
+	c.Assert(voter.FinalisedHeight > 0, Equals, true)
+	c.Assert(voter.Tx.Tx.Gas.Equals(maxGas), Equals, true)
+	c.Assert(voter.Tx.IsFinal(), Equals, true)
+
+	vault, err := mgr.Keeper().GetVault(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	balBefore := vault.GetCoin(common.ETHAsset).Amount
+
+	ctx = ctx.WithBlockHeight(101)
+	for _, na := range nas {
+		voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, mk(realGas, 91, 91), na.NodeAddress, false)
+	}
+	vault, err = mgr.Keeper().GetVault(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	expectedCredit := cosmos.NewUint(150000 - 10129)
+	c.Assert(vault.GetCoin(common.ETHAsset).Amount.Sub(balBefore).Equal(expectedCredit), Equals, true,
+		Commentf("the legit MaxGas refund must still be credited: delta %s, expected %s",
+			vault.GetCoin(common.ETHAsset).Amount.Sub(balBefore), expectedCredit))
+	c.Assert(voter.Tx.Tx.Gas.Equals(realGas), Equals, true)
+	c.Assert(voter.Tx.IsFinal(), Equals, true, Commentf("voter.Tx must remain final-shaped after the correction"))
+}
+
+// TestGasCorrectionNoOverDebitFromMaxGasStraggler: after the real gas corrects the voter
+// down, a late MaxGas straggler (pre-mine, lower block) must be rejected by the
+// block-height guard, not drive a phantom DEBIT back up.
+func (s *HandlerObservedTxHelpersSuite) TestGasCorrectionNoOverDebitFromMaxGasStraggler(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+
+	nas := NodeAccounts{
+		GetRandomValidatorNode(NodeActive), GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive), GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+	}
+	vaultPubKey := GetRandomPubKey()
+	vault := GetRandomVault()
+	vault.PubKey = vaultPubKey
+	vault.AddFunds(common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One))})
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	txID := GetRandomTxHash()
+	base := finalBucketOutbound(txID, vaultPubKey)
+	maxGas := common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(150000))}
+	realGas := common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(10129))}
+	mk := func(g common.Gas, bh, fh int64) common.ObservedTx {
+		t := base
+		t.Gas = g
+		return common.NewObservedTx(t, bh, vaultPubKey, fh)
+	}
+	maxGasFinal := mk(maxGas, 88, 88)
+
+	voter := NewObservedTxVoter(txID, []common.ObservedTx{})
+	for _, na := range nas[:3] {
+		voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, maxGasFinal, na.NodeAddress, false)
+	}
+	ctx = ctx.WithBlockHeight(101)
+	for _, na := range nas {
+		voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, mk(realGas, 91, 91), na.NodeAddress, false)
+	}
+	c.Assert(voter.Tx.Tx.Gas.Equals(realGas), Equals, true)
+	c.Assert(voter.Tx.IsFinal(), Equals, true)
+
+	vault, err := mgr.Keeper().GetVault(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	balAfterCorrection := vault.GetCoin(common.ETHAsset).Amount
+
+	ctx = ctx.WithBlockHeight(102)
+	for _, na := range nas {
+		voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, maxGasFinal, na.NodeAddress, false)
+	}
+	vault, err = mgr.Keeper().GetVault(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(vault.GetCoin(common.ETHAsset).Amount.Equal(balAfterCorrection), Equals, true,
+		Commentf("late MaxGas straggler must not over-debit: before %s, after %s",
+			balAfterCorrection, vault.GetCoin(common.ETHAsset).Amount))
+	c.Assert(voter.Tx.IsFinal(), Equals, true)
+}
+
+// TestGasCorrectionNormalOutboundNoFinalityFlip: the 99% case - a non-final then final
+// observation of the SAME gas must finalize voter.Tx FINAL-shaped (the fix must be a
+// no-op when the gas is unchanged, or every confirmation-counted outbound would flip to
+// non-final and drift slash accounting). A later same-height different-gas reorg still
+// corrects (the guard is >=, not >).
+func (s *HandlerObservedTxHelpersSuite) TestGasCorrectionNormalOutboundNoFinalityFlip(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+
+	nas := NodeAccounts{
+		GetRandomValidatorNode(NodeActive), GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive), GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+	}
+	vaultPubKey := GetRandomPubKey()
+	vault := GetRandomVault()
+	vault.PubKey = vaultPubKey
+	vault.AddFunds(common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One))})
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	txID := GetRandomTxHash()
+	base := finalBucketOutbound(txID, vaultPubKey)
+	g1 := common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(22131))}
+	g2 := common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(23061))}
+	mk := func(g common.Gas, bh, fh int64) common.ObservedTx {
+		t := base
+		t.Gas = g
+		return common.NewObservedTx(t, bh, vaultPubKey, fh)
+	}
+
+	voter := NewObservedTxVoter(txID, []common.ObservedTx{})
+	for _, na := range nas {
+		voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, mk(g1, 90, 92), na.NodeAddress, false)
+	}
+	c.Assert(voter.Height > 0, Equals, true)
+	c.Assert(voter.FinalisedHeight, Equals, int64(0))
+	c.Assert(voter.Tx.IsFinal(), Equals, false)
+
+	ctx = ctx.WithBlockHeight(101)
+	for _, na := range nas {
+		voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, mk(g1, 92, 92), na.NodeAddress, false)
+	}
+	c.Assert(voter.FinalisedHeight > 0, Equals, true)
+	c.Assert(voter.Tx.IsFinal(), Equals, true, Commentf("same-gas finalization must not flip IsFinal()"))
+	c.Assert(voter.Tx.Tx.Gas.Equals(g1), Equals, true)
+
+	vault, err := mgr.Keeper().GetVault(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	balBefore := vault.GetCoin(common.ETHAsset).Amount
+
+	ctx = ctx.WithBlockHeight(102)
+	for _, na := range nas {
+		voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, mk(g2, 92, 92), na.NodeAddress, false)
+	}
+	vault, err = mgr.Keeper().GetVault(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(balBefore.Sub(vault.GetCoin(common.ETHAsset).Amount).Equal(cosmos.NewUint(23061-22131)), Equals, true,
+		Commentf("same-height reorg must still correct: delta %s", balBefore.Sub(vault.GetCoin(common.ETHAsset).Amount)))
+	c.Assert(voter.Tx.Tx.Gas.Equals(g2), Equals, true)
+	c.Assert(voter.Tx.IsFinal(), Equals, true)
+}
+
+// TestGasCorrectionReorgFinalizesFirstStillCorrects: the fix must not drop a GENUINE
+// reorg. A non-final gas executes, then a different-gas reorg at a HIGHER block finalizes;
+// the carry preserves the executed gas, but the higher-block reorg still corrects in the
+// same call (unlike a lower-block placeholder).
+func (s *HandlerObservedTxHelpersSuite) TestGasCorrectionReorgFinalizesFirstStillCorrects(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+
+	nas := NodeAccounts{
+		GetRandomValidatorNode(NodeActive), GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive), GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+	}
+	vaultPubKey := GetRandomPubKey()
+	vault := GetRandomVault()
+	vault.PubKey = vaultPubKey
+	vault.AddFunds(common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One))})
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	txID := GetRandomTxHash()
+	base := finalBucketOutbound(txID, vaultPubKey)
+	g1 := common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(10129))}
+	g2 := common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(12000))}
+	mk := func(g common.Gas, bh, fh int64) common.ObservedTx {
+		t := base
+		t.Gas = g
+		return common.NewObservedTx(t, bh, vaultPubKey, fh)
+	}
+
+	voter := NewObservedTxVoter(txID, []common.ObservedTx{})
+	for _, na := range nas {
+		voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, mk(g1, 89, 91), na.NodeAddress, false)
+	}
+	c.Assert(voter.Height > 0, Equals, true)
+	c.Assert(voter.FinalisedHeight, Equals, int64(0))
+
+	vault, err := mgr.Keeper().GetVault(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	balBefore := vault.GetCoin(common.ETHAsset).Amount
+
+	ctx = ctx.WithBlockHeight(101)
+	for _, na := range nas {
+		voter, _ = processTxOutAttestation(ctx, mgr, voter, nas, mk(g2, 92, 92), na.NodeAddress, false)
+	}
+	c.Assert(voter.FinalisedHeight > 0, Equals, true)
+	c.Assert(voter.Tx.IsFinal(), Equals, true)
+	c.Assert(voter.Tx.Tx.Gas.Equals(g2), Equals, true, Commentf("higher-block reorg must correct, got %s", common.Coins(voter.Tx.Tx.Gas)))
+
+	vault, err = mgr.Keeper().GetVault(ctx, vaultPubKey)
+	c.Assert(err, IsNil)
+	c.Assert(balBefore.Sub(vault.GetCoin(common.ETHAsset).Amount).Equal(cosmos.NewUint(12000-10129)), Equals, true,
+		Commentf("reorg must debit the extra gas: delta %s", balBefore.Sub(vault.GetCoin(common.ETHAsset).Amount)))
+}
+
 // The following three tests drive real manager/keeper slash accounting through
 // processTxOutAttestation and assert the PERSISTED slash points (not just the
 // GetObserveSigners return set), covering the facets fixed in #3081/#3104. Each

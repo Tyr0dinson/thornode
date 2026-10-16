@@ -735,6 +735,9 @@ func processTxOutAttestation(
 				[]string{"thornode", "observe", "consensus"}, 1,
 				[]metrics.Label{obsChain, obsDir, telemetry.NewLabel("finalised", "true")},
 			)
+			// Whether an earlier (non-final) consensus already executed this outbound and
+			// debited its gas. Captured before voter.Height is set below.
+			executedOnPriorConsensus := voter.Height != 0
 			if voter.Height == 0 {
 				ok = true
 				// Record the consensus height at which outbound consensus actions are taken.
@@ -744,7 +747,27 @@ func processTxOutAttestation(
 				}
 			}
 			voter.FinalisedHeight = ctx.BlockHeight()
-			voter.Tx = *voter.GetTx(nas)
+			finalTx := *voter.GetTx(nas)
+			if executedOnPriorConsensus && !finalTx.Tx.Gas.Equals(voter.Tx.Tx.Gas) {
+				// An earlier (non-final) consensus already executed and debited this
+				// outbound at voter.Tx's gas. Finalizing on a DIFFERENT-gas variant (e.g.
+				// a pre-mine MaxGas self-observation, final-shaped because bifrost sends it
+				// ConfirmationRequired:0) must NOT change the gas the quorum debited, or the
+				// correction below would credit/debit a delta against a gas that was never
+				// debited -> phantom vault balance -> false solvency halt. Keep the executed
+				// gas, and keep voter.Tx final-shaped at the prior confirmation height so
+				// IsFinal() and the block-height guard below both stay correct. When the gas
+				// matches (the normal confirmation of the same outbound) take the finalized
+				// consensus Tx unchanged - no behaviour change on any ordinary outbound.
+				executedGas := voter.Tx.Tx.Gas
+				priorFinaliseHeight := voter.Tx.FinaliseHeight
+				voter.Tx = finalTx
+				voter.Tx.Tx.Gas = executedGas
+				voter.Tx.BlockHeight = priorFinaliseHeight
+				voter.Tx.FinaliseHeight = priorFinaliseHeight
+			} else {
+				voter.Tx = finalTx
+			}
 
 			ctx.Logger().Debug(
 				"tx out finalized and has consensus",
@@ -785,14 +808,27 @@ func processTxOutAttestation(
 		// When a voter is finalized but a re-observation has the same tx except gas
 		// (likely due to a reorg changing the effective gas price), check if enough
 		// nodes agree on the corrected gas to update vault accounting.
+		//
+		// Only correct toward an observation at or above the current consensus Tx's
+		// block height. A pre-mine MaxGas self-observation sits BELOW the mined block,
+		// so it can never pull the gas up (phantom credit) or, once the real gas is in,
+		// push it back up (phantom debit); a genuine reorg re-inclusion sits at >= the
+		// original height and still corrects. Advancing voter.Tx.BlockHeight on each
+		// correction keeps a later placeholder below it.
 		if voter.FinalisedHeight > 0 &&
 			voter.Tx.IsFinal() == tx.IsFinal() &&
 			!voter.Tx.Tx.Gas.Equals(tx.Tx.Gas) &&
+			tx.BlockHeight >= voter.Tx.BlockHeight &&
 			voter.Tx.EqualsConsensusIgnoreGas(tx) {
 			gasCorrectionSigners := countMatchingSigners(voter, tx, nas)
 			if HasSuperMajority(gasCorrectionSigners, len(nas)) {
 				correctOutboundGas(ctx, mgr, voter.Tx, tx)
 				voter.Tx.Tx.Gas = tx.Tx.Gas
+				// Track the corrected observation's height (and keep voter.Tx final-shaped;
+				// tx is final here, so BlockHeight==FinaliseHeight) so a later lower-block
+				// placeholder is rejected by the guard above.
+				voter.Tx.BlockHeight = tx.BlockHeight
+				voter.Tx.FinaliseHeight = tx.FinaliseHeight
 			}
 		}
 	}
