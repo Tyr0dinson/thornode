@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/blang/semver"
-	"github.com/cosmos/cosmos-sdk/runtime"
 	"github.com/hashicorp/go-metrics"
 	. "gopkg.in/check.v1"
 
@@ -21,8 +20,7 @@ import (
 // corruptKeyCov writes bytes under key that no protobuf message can decode,
 // so that getters exercise their unmarshal error branches.
 func corruptKeyCov(ctx cosmos.Context, k KVStore, key []byte) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	store.Set(key, []byte{0xff, 0xff, 0xff})
+	k.kvStore(ctx).Set(key, []byte{0xff, 0xff, 0xff})
 }
 
 type KeeperMiscCovSuite struct{}

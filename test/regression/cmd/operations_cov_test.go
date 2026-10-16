@@ -1190,7 +1190,7 @@ func TestOpTxPriceFeedCov(t *testing.T) {
 	ebifrost.RegisterLocalhostBifrostServer(srv, fake)
 	go func() { _ = srv.Serve(lis) }()
 	defer srv.Stop()
-	routine := portCov(t, lis.Addr()) - 50051
+	routine := portCov(t, lis.Addr()) - regtestEbifrostPort(0)
 
 	op := &OpTxPriceFeed{Prices: map[string]string{"USDC": "1.25"}}
 	if err = op.Execute(io.Discard, "", 0, routine, nil, nil); err != nil {
@@ -1260,7 +1260,7 @@ func TestOpTxPriceFeedCov(t *testing.T) {
 	if err = (&OpTxPriceFeed{Prices: map[string]string{"USDC": "1e40"}}).Execute(io.Discard, "", 0, routine, nil, nil); err == nil || !strings.Contains(err.Error(), "failed to build oracle price for USDC") {
 		t.Fatalf("expected oracle price error, got %v", err)
 	}
-	closed := closedPortCov(t) - 50051
+	closed := closedPortCov(t) - regtestEbifrostPort(0)
 	if err = (&OpTxPriceFeed{}).Execute(io.Discard, "", 0, closed, nil, nil); err == nil || !strings.Contains(err.Error(), "failed to send price feed") {
 		t.Fatalf("expected send error, got %v", err)
 	}

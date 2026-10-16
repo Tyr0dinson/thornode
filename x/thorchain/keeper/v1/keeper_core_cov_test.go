@@ -19,7 +19,7 @@ var _ = Suite(&KeeperCoreCovSuite{})
 
 func (s *KeeperCoreCovSuite) TestNewKeeperAndDeleteKey(c *C) {
 	ctx, k := setupKeeperForTest(c)
-	nk := NewKeeper(k.cdc, k.storeService, k.coinKeeper, k.accountKeeper, k.upgradeKeeper)
+	nk := NewKeeper(k.cdc, k.storeKey, k.coinKeeper, k.accountKeeper, k.upgradeKeeper)
 	c.Check(nk.GetVersion().String(), Equals, "0.0.0")
 	c.Check(nk.Cdc(), NotNil)
 

@@ -326,7 +326,7 @@ func TestInfoCovChurnLifecycle(t *testing.T) {
 
 	// old (keygen height 90) and new (110) node sets
 	node := func(addr, status string, extra map[string]any) map[string]any {
-		m := map[string]any{"node_address": addr, "status": status, "total_bond": "1000"}
+		m := map[string]any{"node_address": addr, "status": status, "total_bond": "1000", "status_since": 100}
 		for k, v := range extra {
 			m[k] = v
 		}
@@ -334,9 +334,9 @@ func TestInfoCovChurnLifecycle(t *testing.T) {
 	}
 	e.set("thorchain/nodes?height=90", []map[string]any{
 		node("thor1nodeKEEP", "Active", nil),
-		node("thor1nodeWRST", "Active", map[string]any{"leave_height": 200, "slash_points": 100, "total_bond": "500", "active_block_height": 10}),
+		node("thor1nodeWRST", "Active", map[string]any{"leave_height": 200, "slash_points": 200, "total_bond": "500", "active_block_height": 10}),
 		node("thor1nodeLBND", "Active", map[string]any{"leave_height": 200, "slash_points": 1, "total_bond": "1", "active_block_height": 20}),
-		node("thor1nodeOLDS", "Active", map[string]any{"leave_height": 200, "slash_points": 1, "active_block_height": 1}),
+		node("thor1nodeOLDS", "Active", map[string]any{"leave_height": 200, "slash_points": 1, "active_block_height": 1, "status_since": 1}),
 		node("thor1nodeLEAV", "Active", map[string]any{"leave_height": 200, "active_block_height": 30, "requested_to_leave": true}),
 		node("thor1nodeMISS", "Active", map[string]any{"leave_height": 200, "active_block_height": 40, "missing_blocks": 1000}),
 		node("thor1nodePLAN", "Active", map[string]any{"leave_height": 200, "active_block_height": 50}),
@@ -355,6 +355,8 @@ func TestInfoCovChurnLifecycle(t *testing.T) {
 		{"status": "ActiveVault", "pub_key": "tthorpubNOED"},
 		{"status": "RetiringVault", "pub_key": "tthorpubRETI", "pub_key_eddsa": "tthorpubRETE"},
 	})
+	// no pending version, so no node is labelled for a low version
+	e.set("thorchain/version?height=90", map[string]any{"current": "3.0.0"})
 	var migrating atomic.Bool
 	migrating.Store(true)
 	e.set("thorchain/network", func(*http.Request) any {
@@ -392,7 +394,9 @@ func TestInfoCovChurnLifecycle(t *testing.T) {
 	require.Contains(t, out, "EDDA (EDDSA): 1/4 (25.00%)")
 	require.NotContains(t, out, "RETI")
 	require.Contains(t, out, "NEWN")
-	require.Contains(t, out, "WRST (worst), LBND (lowest bond), OLDS (oldest), LEAV (leave), MISS (missing), LEFT (leave), PLAN")
+	// LBND stays unlabelled: the mocknet active set is below DesiredValidatorSet,
+	// so the lowest-bond rule does not apply
+	require.Contains(t, out, "LEAV (leave), MISS (missing), OLDS (oldest), WRST (worst), LEFT (leave), LBND, PLAN")
 	require.NotContains(t, out, "NOLH")
 	require.NotContains(t, out, "Churn Complete")
 	require.NoError(t, util.Load("churn", &info))

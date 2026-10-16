@@ -354,9 +354,6 @@ func TestAskPeerForStateStreamErrorCov(t *testing.T) {
 		called = append(called, p)
 		return nil, errors.New("dial failed")
 	}
-	var wg sync.WaitGroup
-	wg.Add(1)
-	ag.askPeerForState(context.Background(), "remote", &wg)
-	wg.Wait()
+	require.False(t, ag.askPeerForState(context.Background(), "remote"))
 	require.Equal(t, []peer.ID{"remote"}, called)
 }
