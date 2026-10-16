@@ -1695,11 +1695,14 @@ func TestStateSyncExportReleaseOnEveryExit(t *testing.T) {
 			}
 			sender := stateSyncDeadlineFixture(t, count)
 			sender.config.StateSyncTimeout = time.Second
-			// Build receivers before the handler starts: the sender's first
-			// read is scaled to one second, and fixture setup can exceed it.
-			receiver := stateSyncDeadlineFixture(t, 0)
-			_, client, done := startStateSyncExport(t, sender, "peer")
+			var receiver *AttestationGossip
 			if phase == "success" || phase == "empty" {
+				// Successful exchanges test slot release, not fixture setup speed.
+				receiver = stateSyncDeadlineFixture(t, 0)
+				sender.config.StateSyncTimeout = 15 * time.Second
+			}
+			_, client, done := startStateSyncExport(t, sender, "peer")
+			if receiver != nil {
 				require.True(t, receiver.askStreamForState(client).completed)
 			} else {
 				stall := phase
