@@ -51,7 +51,7 @@ func run(out io.Writer, path string, routine int, doneWithRetries func(path stri
 		fmt.Sprintf("THOR_TENDERMINT_CONSENSUS_TIMEOUT_COMMIT=%s", time.Second*getTimeFactor()),
 		// all ports will be offset by the routine number
 		fmt.Sprintf("THOR_COSMOS_API_ADDRESS=tcp://0.0.0.0:%d", 1317+routine),
-		fmt.Sprintf("THOR_COSMOS_EBIFROST_ADDRESS=127.0.0.1:%d", 50051+routine),
+		fmt.Sprintf("THOR_COSMOS_EBIFROST_ADDRESS=127.0.0.1:%d", regtestEbifrostPort(routine)),
 		fmt.Sprintf("THOR_TENDERMINT_RPC_LISTEN_ADDRESS=tcp://0.0.0.0:%d", 26657+routine),
 		fmt.Sprintf("THOR_TENDERMINT_P2P_LISTEN_ADDRESS=tcp://0.0.0.0:%d", 27000+routine),
 		"CREATE_BLOCK_PORT=" + strconv.Itoa(regtestCreateBlockPort(routine)),

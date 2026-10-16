@@ -906,7 +906,7 @@ func (op *OpTxPriceFeed) Execute(out io.Writer, _ string, _, routine int, _ *os.
 	}
 
 	// Deliver to the node's ebifrost gRPC (same container, port offset by routine).
-	addr := fmt.Sprintf("127.0.0.1:%d", 50051+routine)
+	addr := fmt.Sprintf("127.0.0.1:%d", regtestEbifrostPort(routine))
 	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return fmt.Errorf("failed to dial ebifrost at %s: %w", addr, err)
