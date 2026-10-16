@@ -85,12 +85,17 @@ func (c *Client) checkZecBroadcastExpiry(expiry uint32, txid string, chainHeight
 // are needed, or older inputs spent between reads, can still change the plan.
 // This is not a historical snapshot or shared allocation across outbounds.
 func (c *Client) getZecUtxoToSpend(pubkey common.PubKey, target btcutil.Amount, reference int64, consolidate bool) ([]btcjson.ListUnspentResult, error) {
-	return c.selectZecUtxos(pubkey, target, reference, consolidate, nil)
+	return c.selectZecUtxos(pubkey, target, 0, reference, consolidate, nil)
 }
 
 // extraFee handles ordinary payments without MaxGas. Its only variable input is
 // the selected input count; local fee history must not affect the chosen prefix.
-func (c *Client) selectZecUtxos(pubkey common.PubKey, target btcutil.Amount, reference int64, consolidate bool, extraFee func(int) btcutil.Amount) ([]btcjson.ListUnspentResult, error) {
+//
+// A positive floor (at most target) lets a payment whose eligible inputs all
+// together fall short of target proceed with every one of them, as long as they
+// cover floor. It is for targets that include MaxGas, which only bounds the fee;
+// buildTx checks the actual fee fits. A floor of zero requires the full target.
+func (c *Client) selectZecUtxos(pubkey common.PubKey, target, floor btcutil.Amount, reference int64, consolidate bool, extraFee func(int) btcutil.Amount) ([]btcjson.ListUnspentResult, error) {
 	if reference <= 0 || reference > int64(math.MaxUint32-ZecTxExpiry) {
 		return nil, fmt.Errorf("invalid ZEC input reference: %d", reference)
 	}
@@ -224,7 +229,18 @@ func (c *Client) selectZecUtxos(pubkey common.PubKey, target btcutil.Amount, ref
 		return selected, nil
 	}
 	if len(selected) == 0 || total < required {
-		return nil, fmt.Errorf("insufficient confirmed ZEC inputs at tip %d: have %d, need %d", tip, total, required)
+		if floor <= 0 || len(selected) == 0 || total < floor {
+			if floor > 0 {
+				required = floor
+			}
+			return nil, fmt.Errorf("insufficient confirmed ZEC inputs at tip %d: have %d, need %d", tip, total, required)
+		}
+		c.log.Info().
+			Int64("available", int64(total)).
+			Int64("target", int64(target)).
+			Int64("floor", int64(floor)).
+			Int("inputs", len(selected)).
+			Msg("confirmed ZEC inputs cover the payment but not its full max gas, spending all of them")
 	}
 
 	// Local spent markers may veto the selected plan, never replace an input.
