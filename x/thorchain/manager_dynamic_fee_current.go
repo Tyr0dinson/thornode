@@ -49,43 +49,34 @@ func dynamicFeeWhitelistState(ctx cosmos.Context, k keeper.Keeper, thorname stri
 	return val
 }
 
-// dominantEligibleAffiliate returns the largest-bps affiliate that is both an
-// existing THORName and whose dynamic-fee whitelist state appears in
-// allowedStates. Filtering ineligible entries out of the selection (rather
-// than picking-then-rejecting) prevents an integrator from listing an
-// unparsable / address-form / unwhitelisted secondary affiliate at higher
-// bps to steer the dynamic-fee selector to "no match" and collapse the floor
-// to static — see ADR §4 free-rider discussion. First-wins on ties matches
-// the prior largest-bps-only behavior.
+// singleEligibleAffiliate returns the memo's affiliate when the memo lists
+// exactly one affiliate entry with a non-zero bps split, and that entry is an
+// existing THORName whose dynamic-fee whitelist state appears in
+// allowedStates.
 //
-// Returns "", false when the inputs are malformed, empty, or no affiliate
-// satisfies the eligibility predicate.
-func (m *DynamicFeeMgr) dominantEligibleAffiliate(ctx cosmos.Context, affiliates []string, affiliateBps []cosmos.Uint, allowedStates ...int64) (string, bool) {
-	if len(affiliates) == 0 || len(affiliates) != len(affiliateBps) {
+// Dynamic fees apply only to single-affiliate memos. Any multi-affiliate
+// memo (including `ns/ss:25`, where one bps value is applied to both names,
+// and duplicates like `ss/ss`) gets the static floor and no credit. This
+// closes the free-rider pattern where an unwhitelisted THORName keeps most of
+// the affiliate bps while co-listing a whitelisted partner at a token split
+// to inherit the partner's floor and pollute its controller.
+//
+// Returns "", false otherwise.
+func (m *DynamicFeeMgr) singleEligibleAffiliate(ctx cosmos.Context, affiliates []string, affiliateBps []cosmos.Uint, allowedStates ...int64) (string, bool) {
+	if len(affiliates) != 1 || len(affiliateBps) != 1 {
 		return "", false
 	}
-	bestIdx := -1
-	bestBps := cosmos.ZeroUint()
-	for i, bps := range affiliateBps {
-		aff := affiliates[i]
-		if aff == "" {
-			continue
-		}
-		if !m.keeper.THORNameExists(ctx, aff) {
-			continue
-		}
-		if !slices.Contains(allowedStates, dynamicFeeWhitelistState(ctx, m.keeper, aff)) {
-			continue
-		}
-		if bps.GT(bestBps) {
-			bestBps = bps
-			bestIdx = i
-		}
-	}
-	if bestIdx < 0 {
+	aff := affiliates[0]
+	if aff == "" || affiliateBps[0].IsZero() {
 		return "", false
 	}
-	return affiliates[bestIdx], true
+	if !m.keeper.THORNameExists(ctx, aff) {
+		return "", false
+	}
+	if !slices.Contains(allowedStates, dynamicFeeWhitelistState(ctx, m.keeper, aff)) {
+		return "", false
+	}
+	return aff, true
 }
 
 // CreditSwap accumulates volume and fees for a (thorname, pair) into the
@@ -105,8 +96,8 @@ func (m *DynamicFeeMgr) CreditSwap(ctx cosmos.Context, affiliates []string, affi
 
 	// Allow whitelist state 1 (active) or 2 (monitor) so monitor-mode
 	// thornames still accumulate the revenue signal without affecting
-	// live fee charging.
-	aff, ok := m.dominantEligibleAffiliate(ctx, affiliates, affiliateBps, 1, 2)
+	// live fee charging. Multi-affiliate memos credit nothing.
+	aff, ok := m.singleEligibleAffiliate(ctx, affiliates, affiliateBps, 1, 2)
 	if !ok {
 		return
 	}
@@ -199,7 +190,8 @@ func (m *DynamicFeeMgr) GetDynamicBps(ctx cosmos.Context, affiliates []string, a
 
 	// Only state 1 (active) thornames govern live fees; monitor-mode
 	// (state 2) entries are excluded so they do not drive the floor.
-	thorname, ok := m.dominantEligibleAffiliate(ctx, affiliates, affiliateBps, 1)
+	// Multi-affiliate memos get the static floor.
+	thorname, ok := m.singleEligibleAffiliate(ctx, affiliates, affiliateBps, 1)
 	if !ok {
 		return 0
 	}

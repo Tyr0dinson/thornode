@@ -2,6 +2,13 @@
 
 ## Changelog
 
+- 2026-10-15: Dynamic fees apply only to single-affiliate memos. Any
+  multi-affiliate memo gets `L1SlipMinBPS` and records no credit. This
+  replaces largest-split selection, which the implementation had
+  applied only after filtering out ineligible affiliates: an
+  unwhitelisted thorname could keep most of the affiliate bps
+  (`ns/ss:24/1`) and still get the whitelisted partner's floor, while
+  its flow fed that partner's controller.
 - 2026-07-22: Status moved to Implemented — the feature is live on mainnet
   (`L1DynamicFeeEnabled = 1`).
 - 2026-04-27: Switch the gradient signal from `fees_rune` to `fees_tor`
@@ -314,15 +321,16 @@ DollarsPerRune / 1e8`). When `DollarsPerRune == 0` (no TOR anchor
    pool, or all halted), skip the credit entirely — recording zeros
    would drag the windowed-mean signal toward zero and provoke
    spurious controller reversals.
-4. **Thorname credit.** For each affiliate entry in the memo:
-   - If the entry is a registered thorname whose whitelist state is
-     `1` (active) or `2` (monitor), add the swap's full `volume_tor`
-     and `fees_tor` to the `(thorname, pair)` current-epoch
-     accumulator. (Multi-affiliate memos credit each eligible listed
-     thorname in full — no proportional split.)
-   - Otherwise (raw address, unregistered thorname, or a registered
-     thorname with whitelist state `0` / absent), no thorname-level
-     credit is recorded.
+4. **Thorname credit.** Only single-affiliate memos are credited:
+   - If the memo lists exactly one affiliate entry, and it is a
+     registered thorname whose whitelist state is `1` (active) or `2`
+     (monitor), add the swap's full `volume_tor` and `fees_tor` to the
+     `(thorname, pair)` current-epoch accumulator.
+   - Otherwise (a multi-affiliate memo, a raw address, an unregistered
+     thorname, or a registered thorname with whitelist state `0` /
+     absent), no thorname-level credit is recorded. This keeps
+     free-rider flow from co-listed memos out of a whitelisted
+     thorname's controller.
 5. **Streaming swaps.** Each sub-swap is credited independently as it
    completes, into the epoch in which its completion block lands. A
    streaming swap that spans an epoch boundary is therefore split
@@ -349,17 +357,14 @@ For an in-scope L1 swap, at the point slip fees are computed:
      `dynamic_bps` continues to be computed each epoch, but it is
      **not** applied to the swap.
    - State `0` or absent: use `L1SlipMinBPS`.
-4. For multi-affiliate memos, the thorname with the **largest
-   affiliate-bps split** is the one whose record applies (ties broken
-   by order of appearance). This prevents a free-rider exploit where
-   an integrator co-lists an active thorname as a token secondary to
-   inherit its discount — to benefit from a thorname's dynamic bps,
-   you must give that thorname the largest share of the affiliate
-   revenue. If the largest-split thorname is in state `2` or
-   unenrolled, step 3 falls through to `L1SlipMinBPS` for this
-   swap — secondary listed thornames do not "rescue" the floor.
-   Attribution credit to all eligible listed thornames is unchanged
-   (see Attribution rules §3).
+4. **Multi-affiliate memos** use `L1SlipMinBPS`. Dynamic fees apply
+   only when the memo lists exactly one affiliate entry. This includes
+   memos that apply one bps value to several names (`ns/ss:25`) and
+   duplicates (`ss/ss`). It prevents a free-rider exploit where an
+   integrator co-lists an active thorname as a token secondary (for
+   example `ns/ss:24/1`) to inherit its discount while keeping most of
+   the affiliate revenue. Multi-affiliate memos also record no credit
+   (see Attribution rules §4).
 
 ### Epoch-boundary algorithm
 
@@ -556,7 +561,7 @@ is used anywhere in the algorithm.
   continue_down, reverse_up, reverse_down, hold (in deadband), and
   the "no baseline" edge where `fees_before` is zero.
 - Unit tests on attribution: L1-only filtering, pair normalization,
-  RUNE-endpoint handling, multi-affiliate credit, streaming sub-swap
+  RUNE-endpoint handling, no credit for multi-affiliate memos, streaming sub-swap
   crediting, raw-address / unregistered-thorname exclusion,
   whitelist state gating (state `0`/absent, `1`, `2`).
 - Unit tests on epoch rollover: sealing into history, floor/ceiling
@@ -567,7 +572,7 @@ is used anywhere in the algorithm.
   move, unlike the previous share-based design.
 - Unit tests on fee-floor selection: whitelist state `1` applies
   `dynamic_bps`, state `2` uses `L1SlipMinBPS` but still collects,
-  largest-bps-split selection in multi-affiliate memos.
+  multi-affiliate memos use `L1SlipMinBPS`.
 - Regression tests covering a multi-epoch scenario where a thorname
   is added to the whitelist as `2` (monitor), observed, promoted to
   `1` (active), earns a bps reduction, is demoted back to `2`, and

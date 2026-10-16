@@ -1,0 +1,381 @@
+type: env
+key: SLIP_MIN_BPS_MAX
+value: "1000"
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-usdc-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Dynamic L1 fee floors apply ONLY to single-affiliate memos (ADR-026 "Fee floor
+# selection" step 4). Any multi-affiliate memo gets the static L1SlipMinBps and
+# credits no thorname. Free-rider pattern: NS (registered, not whitelisted) keeps
+# most of the affiliate bps while co-listing whitelisted SS at 1 bp, as in
+# `ns/ss:24/1`.
+#
+# SS and TT are active (state 1), MON is monitor (state 2). With no record yet an
+# active thorname's floor is L1DynamicFeeFloorBPS (200 bps). L1SlipMinBps is
+# 600 bps, so the two floors are easy to tell apart.
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "1000000001"
+    asset: "rune"
+memo: "~:ns:THOR:{{ addr_thor_cat }}"
+---
+type: create-blocks
+count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "1000000001"
+    asset: "rune"
+memo: "~:ss:THOR:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "1000000001"
+    asset: "rune"
+memo: "~:tt:THOR:{{ addr_thor_cat }}"
+---
+type: create-blocks
+count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "1000000001"
+    asset: "rune"
+memo: "~:mon:THOR:{{ addr_thor_cat }}"
+---
+type: create-blocks
+count: 1
+---
+# Each mimir is signed by dog; a create-blocks between them keeps the account
+# sequences from colliding within one block.
+type: tx-mimir
+key: L1DynamicFeeEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: L1DynamicFeeFloorBPS
+value: 200
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: L1SlipMinBps
+value: 600
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: DollarsPerRune
+value: 100000000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: DYNAMICFEE-WHITELIST-SS
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: DYNAMICFEE-WHITELIST-TT
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: DYNAMICFEE-WHITELIST-MON
+value: 2
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .L1DYNAMICFEEENABLED == 1
+  - .L1DYNAMICFEEFLOORBPS == 200
+  - .L1SLIPMINBPS == 600
+  - .DOLLARSPERRUNE == 100000000
+  - .["DYNAMICFEE-WHITELIST-SS"] == 1
+  - .["DYNAMICFEE-WHITELIST-TT"] == 1
+  - .["DYNAMICFEE-WHITELIST-MON"] == 2
+  - .["DYNAMICFEE-WHITELIST-NS"] == null
+---
+########################################################################################
+# Fee floors (quotes)
+########################################################################################
+# No affiliate: static.
+type: check
+endpoint: http://localhost:1317/thorchain/quote/swap
+params:
+  from_asset: THOR.RUNE
+  to_asset: BTC.BTC
+  amount: 1000000000
+  destination: {{ addr_btc_fox }}
+asserts:
+  - .fees.slippage_bps >= 600
+---
+# Single active affiliate: dynamic.
+type: check
+endpoint: http://localhost:1317/thorchain/quote/swap
+params:
+  from_asset: THOR.RUNE
+  to_asset: BTC.BTC
+  amount: 1000000000
+  affiliate: ss
+  affiliate_bps: 1
+  destination: {{ addr_btc_fox }}
+asserts:
+  - .fees.slippage_bps >= 200
+  - .fees.slippage_bps < 600
+---
+# Single monitor-mode affiliate: static.
+type: check
+endpoint: http://localhost:1317/thorchain/quote/swap
+params:
+  from_asset: THOR.RUNE
+  to_asset: BTC.BTC
+  amount: 1000000000
+  affiliate: mon
+  affiliate_bps: 24
+  destination: {{ addr_btc_fox }}
+asserts:
+  - .fees.slippage_bps >= 600
+---
+# Single unwhitelisted affiliate: static.
+type: check
+endpoint: http://localhost:1317/thorchain/quote/swap
+params:
+  from_asset: THOR.RUNE
+  to_asset: BTC.BTC
+  amount: 1000000000
+  affiliate: ns
+  affiliate_bps: 24
+  destination: {{ addr_btc_fox }}
+asserts:
+  - .fees.slippage_bps >= 600
+---
+# Single raw address: static.
+type: check
+endpoint: http://localhost:1317/thorchain/quote/swap
+params:
+  from_asset: THOR.RUNE
+  to_asset: BTC.BTC
+  amount: 1000000000
+  affiliate: {{ addr_thor_cat }}
+  affiliate_bps: 24
+  destination: {{ addr_btc_fox }}
+asserts:
+  - .fees.slippage_bps >= 600
+---
+# Free rider, largest split unwhitelisted: static.
+type: check
+endpoint: http://localhost:1317/thorchain/quote/swap
+params:
+  from_asset: THOR.RUNE
+  to_asset: BTC.BTC
+  amount: 1000000000
+  affiliate: ns/ss
+  affiliate_bps: 24/1
+  destination: {{ addr_btc_fox }}
+asserts:
+  - .fees.slippage_bps >= 600
+---
+# Free rider, order reversed: static.
+type: check
+endpoint: http://localhost:1317/thorchain/quote/swap
+params:
+  from_asset: THOR.RUNE
+  to_asset: BTC.BTC
+  amount: 1000000000
+  affiliate: ss/ns
+  affiliate_bps: 1/24
+  destination: {{ addr_btc_fox }}
+asserts:
+  - .fees.slippage_bps >= 600
+---
+# Whitelisted affiliate holds the largest split: still static.
+type: check
+endpoint: http://localhost:1317/thorchain/quote/swap
+params:
+  from_asset: THOR.RUNE
+  to_asset: BTC.BTC
+  amount: 1000000000
+  affiliate: ss/ns
+  affiliate_bps: 13/12
+  destination: {{ addr_btc_fox }}
+asserts:
+  - .fees.slippage_bps >= 600
+---
+# Duplicate affiliate: static.
+type: check
+endpoint: http://localhost:1317/thorchain/quote/swap
+params:
+  from_asset: THOR.RUNE
+  to_asset: BTC.BTC
+  amount: 1000000000
+  affiliate: ss/ss
+  affiliate_bps: 12/12
+  destination: {{ addr_btc_fox }}
+asserts:
+  - .fees.slippage_bps >= 600
+---
+# Two whitelisted affiliates: static.
+type: check
+endpoint: http://localhost:1317/thorchain/quote/swap
+params:
+  from_asset: THOR.RUNE
+  to_asset: BTC.BTC
+  amount: 1000000000
+  affiliate: ss/tt
+  affiliate_bps: 13/12
+  destination: {{ addr_btc_fox }}
+asserts:
+  - .fees.slippage_bps >= 600
+---
+########################################################################################
+# Credit (live swaps). Multi-affiliate memos credit no thorname; a single active or
+# monitor-mode affiliate is credited.
+########################################################################################
+# Free rider: no credit.
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "1000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}::ns/ss:24/1"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/dynamic_l1_fees_current
+asserts:
+  - (.entries // [])|length == 0
+---
+# Order reversed: no credit.
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "1000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}::ss/ns:1/24"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/dynamic_l1_fees_current
+asserts:
+  - (.entries // [])|length == 0
+---
+# Duplicate affiliate: no credit.
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "1000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}::ss/ss:12/12"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/dynamic_l1_fees_current
+asserts:
+  - (.entries // [])|length == 0
+---
+# Two whitelisted affiliates: no credit.
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "1000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}::ss/tt:13/12"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/dynamic_l1_fees_current
+asserts:
+  - (.entries // [])|length == 0
+---
+# Single unwhitelisted affiliate: no credit.
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "1000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}::ns:24"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/dynamic_l1_fees_current
+asserts:
+  - (.entries // [])|length == 0
+---
+# Single active affiliate: credited.
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "1000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}::ss:1"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/dynamic_l1_fees_current
+asserts:
+  - .entries|length == 1
+  - .entries|map(.thorname)|sort == ["ss"]
+---
+# Single monitor-mode affiliate: credited.
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "1000000000"
+    asset: "rune"
+memo: "=:BTC.BTC:{{ addr_btc_fox }}::mon:24"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/dynamic_l1_fees_current
+asserts:
+  - .entries|length == 2
+  - .entries|map(.thorname)|sort == ["mon", "ss"]
