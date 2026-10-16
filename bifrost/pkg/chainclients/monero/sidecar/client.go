@@ -34,6 +34,13 @@ const (
 	idempotentSignCombineMaxAttempts = 3
 	defaultSignCombineInitialBackoff = 200 * time.Millisecond
 	defaultSignCombineMaxBackoff     = time.Second
+	// A 429 from sign/partial is an admission rejection: the signer produced no
+	// share for it. Peers keep waiting for this node's share for the keysign
+	// timeout, so a short bounded replay of the same request keeps the round
+	// alive instead of failing it after the other shares were already sent.
+	defaultSignPartialMaxAttempts    = 5
+	defaultSignPartialInitialBackoff = 250 * time.Millisecond
+	defaultSignPartialMaxBackoff     = 2 * time.Second
 	scannerStatePath                 = "/v1/monero/scanner/state"
 	scannerRewindPath                = "/v1/monero/scanner/rewind"
 	maxScannerReorgRewind            = uint64(730)
@@ -111,6 +118,9 @@ type Client struct {
 	signCombineMaxAttempts    int
 	signCombineInitialBackoff time.Duration
 	signCombineMaxBackoff     time.Duration
+	signPartialMaxAttempts    int
+	signPartialInitialBackoff time.Duration
+	signPartialMaxBackoff     time.Duration
 }
 
 // NewClient wires a sidecar Client from a Bifrost chain configuration.
@@ -229,6 +239,9 @@ func NewClientWithEndpoint(cfg config.BifrostChainConfiguration, endpoint string
 		signCombineMaxAttempts:    defaultSignCombineMaxAttempts,
 		signCombineInitialBackoff: defaultSignCombineInitialBackoff,
 		signCombineMaxBackoff:     defaultSignCombineMaxBackoff,
+		signPartialMaxAttempts:    defaultSignPartialMaxAttempts,
+		signPartialInitialBackoff: defaultSignPartialInitialBackoff,
+		signPartialMaxBackoff:     defaultSignPartialMaxBackoff,
 	}, nil
 }
 
@@ -374,9 +387,40 @@ func (c *Client) SignPrepare(req SignPrepareReq) (SignPrepareResp, error) {
 }
 
 func (c *Client) SignPartial(req SignPartialReq) (SignPartialResp, error) {
+	return c.SignPartialContext(context.Background(), req)
+}
+
+// SignPartialContext retries only HTTP 429, which the signer returns before it
+// processes the request. Every attempt reuses the exact serialized msg_id,
+// session_id and all_preprocesses, so a retry stays inside the same FROST
+// session and can never start a second signing ceremony.
+func (c *Client) SignPartialContext(ctx context.Context, req SignPartialReq) (SignPartialResp, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	body, err := json.Marshal(req)
+	if err != nil {
+		return SignPartialResp{}, fmt.Errorf("fail to marshal sign partial request: %w", err)
+	}
+
+	maxAttempts, backoff, maxBackoff := c.signPartialRetryPolicy()
 	var out SignPartialResp
-	if err := c.call(http.MethodPost, c.signPartialPath, req, &out); err != nil {
-		return SignPartialResp{}, fmt.Errorf("fail to call sign partial endpoint: %w", err)
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		out = SignPartialResp{}
+		err = c.callJSONContext(ctx, http.MethodPost, c.signPartialPath, body, &out)
+		if err == nil {
+			break
+		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return SignPartialResp{}, fmt.Errorf("sign partial canceled: %w", ctxErr)
+		}
+		if attempt == maxAttempts || !isRateLimitedError(err) {
+			return SignPartialResp{}, fmt.Errorf("fail to call sign partial endpoint: %w", err)
+		}
+		if waitErr := waitForSignCombineRetry(ctx, backoff); waitErr != nil {
+			return SignPartialResp{}, fmt.Errorf("sign partial retry canceled: %w", waitErr)
+		}
+		backoff = nextSignCombineBackoff(backoff, maxBackoff)
 	}
 	if strings.TrimSpace(out.SignatureShare) == "" {
 		return SignPartialResp{}, fmt.Errorf("sign partial endpoint returned empty signature_share")
@@ -460,6 +504,32 @@ func (c *Client) signCombineRetryPolicy() (int, time.Duration, time.Duration) {
 		maxBackoff = backoff
 	}
 	return maxAttempts, backoff, maxBackoff
+}
+
+func (c *Client) signPartialRetryPolicy() (int, time.Duration, time.Duration) {
+	maxAttempts := c.signPartialMaxAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = defaultSignPartialMaxAttempts
+	}
+	backoff := c.signPartialInitialBackoff
+	if backoff < 0 {
+		backoff = 0
+	} else if backoff == 0 {
+		backoff = defaultSignPartialInitialBackoff
+	}
+	maxBackoff := c.signPartialMaxBackoff
+	if maxBackoff <= 0 {
+		maxBackoff = defaultSignPartialMaxBackoff
+	}
+	if maxBackoff < backoff {
+		maxBackoff = backoff
+	}
+	return maxAttempts, backoff, maxBackoff
+}
+
+func isRateLimitedError(err error) bool {
+	var httpErr *HTTPError
+	return errors.As(err, &httpErr) && httpErr.Status == http.StatusTooManyRequests
 }
 
 func isRetryableSignCombineError(ctx context.Context, err error) bool {
